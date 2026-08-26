@@ -1,0 +1,50 @@
+{
+  "_note": "TUTULMUŞ SET — 25.08.2026'da BİR KEZ üretildi ve MÜHÜRLENDİ. Bir daha dokunulmayacak. Hafızalar dataset.json'daki 24 kayıtla aynı (dondurulmuş); buradaki sorgular AYNI DAĞILIMDA ama YENİ (dev'dekilerle örtüşmeyen sözcüklerle), paraphrase + boş ağırlıklı. Amaç: dev'i geçen adayın gerçekten genelleyip genellemediğini görmek. Eşik dev'de bir kez seçilir, burada dokunulmaz. Sorgular algoritmanın çıktısına bakılmadan, insan gibi yazıldı.",
+  "queries": [
+    {"q": "terfi pompası tasarımın altında mı kalıyordu", "expect": "corum-pompa-verim", "type": "paraphrase"},
+    {"q": "depodaki su kaç metredeydi", "expect": "corum-depo-seviye", "type": "paraphrase"},
+    {"q": "holding register'ı hangi adresten çekiyoruz", "expect": "modbus-register", "type": "paraphrase"},
+    {"q": "cihaz neden sürekli bağlantıyı düşürüyor", "expect": "modbus-hata", "type": "paraphrase"},
+    {"q": "kayseri tarafında kaç kuyu izleniyor", "expect": "kayseri-kuyu", "type": "paraphrase"},
+    {"q": "veritabanı ne sıklıkla yedekleniyordu", "expect": "postgres-yedek", "type": "paraphrase"},
+    {"q": "basınç ölçeri kaç noktadan ayarlıyoruz", "expect": "sensor-kalibrasyon", "type": "paraphrase"},
+    {"q": "bitcoin kaç liraydı", "expect": "btc-fiyat", "type": "paraphrase"},
+    {"q": "fareyi klavyeyi kullanabiliyor musun", "expect": "ekran-kontrol", "type": "paraphrase"},
+    {"q": "beni ne iş yaparken tanıyorsun", "expect": "fatih", "type": "paraphrase"},
+    {"q": "raporlarda yüzdeleri nasıl göstereyim", "expect": "rapor-format", "type": "paraphrase"},
+    {"q": "etiketleri hangi düzende isimlendiriyoruz", "expect": "tag-adlandirma", "type": "paraphrase"},
+    {"q": "çıkış suyunun asitliği ne durumdaydı", "expect": "ph-olcum", "type": "paraphrase"},
+    {"q": "sen yalnızca kod mu yazıyorsun", "expect": "neocp-hedef", "type": "paraphrase"},
+    {"q": "günde ne kadar su çıkıyordu", "expect": "su-uretim", "type": "paraphrase"},
+
+    {"q": "çorum terfi2 alarmı kaç bardı", "expect": "corum-alarm", "type": "exact"},
+    {"q": "yerel model hangi portta çalışıyor", "expect": "lmstudio", "type": "exact"},
+    {"q": "ana kesici K1 durumu ne", "expect": "kesici", "type": "exact"},
+    {"q": "çorum terfi1 debimetresi kaç okuyor", "expect": "debimetre", "type": "exact"},
+    {"q": "mcp sunucusunu ne zaman bitirme hedefi var", "expect": "yaz-plani", "type": "exact"},
+
+    {"q": "koru1000", "expect": "fatih", "type": "entity"},
+    {"q": "5.11.239.227 cihazı", "expect": "modbus-hata", "type": "entity"},
+    {"q": "pg_dump", "expect": "postgres-yedek", "type": "entity"},
+
+    {"q": "peki onun verimi kaçtı", "expect": "corum-pompa-verim", "type": "followup"},
+    {"q": "başka istasyonda alarm olmuş muydu", "expect": "corum-alarm", "type": "followup"},
+
+    {"q": "yağmur yağacak mı bugün", "expect": null, "type": "none"},
+    {"q": "selam naber ne yapıyorsun", "expect": null, "type": "none"},
+    {"q": "üç kere dört kaç eder", "expect": null, "type": "none"},
+    {"q": "bana bir şarkı öner", "expect": null, "type": "none"},
+    {"q": "almanya'nın başkenti neresi", "expect": null, "type": "none"},
+    {"q": "komik bir şey söyle", "expect": null, "type": "none"},
+    {"q": "javascript'te diziyi nasıl sıralarım", "expect": null, "type": "none"},
+    {"q": "en yakın market nerede", "expect": null, "type": "none"},
+    {"q": "sağ ol kanka", "expect": null, "type": "none"},
+    {"q": "bugün ayın kaçı", "expect": null, "type": "none"},
+    {"q": "güzel bir dizi öner", "expect": null, "type": "none"},
+    {"q": "çay nasıl demlenir", "expect": null, "type": "none"},
+    {"q": "euro bugün kaç lira", "expect": null, "type": "none"},
+    {"q": "ankara trafiği nasıl", "expect": null, "type": "none"},
+    {"q": "nasıl daha kolay kilo veririm", "expect": null, "type": "none"},
+    {"q": "kediler neden mırlar", "expect": null, "type": "none"}
+  ]
+}

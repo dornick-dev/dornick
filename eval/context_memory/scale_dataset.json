@@ -1,0 +1,1980 @@
+{
+  "_note": "Ölçek benchmark korpusu — üretici: scale_gen istemi, donmuş.",
+  "memories": [
+    {
+      "slug": "koru-klor-esigi",
+      "kind": "procedure",
+      "title": "Klor alarm eşiği ve ilk adım",
+      "content": "Koru1000'de klor düşük alarm eşiği 0.2 mg/L. Selçuklu P3'te bu alarm gelirse önce sahadan numune istenir, sonra dozaj pompası kontrol edilir.",
+      "tags": [
+        "klor",
+        "alarm",
+        "koru1000"
+      ],
+      "domain": "scada"
+    },
+    {
+      "slug": "p5-modbus-ip",
+      "kind": "fact",
+      "title": "P5 Modbus cihazı adresi",
+      "content": "Meram P5 terfi istasyonundaki Modbus TCP dönüştürücünün IP'si 5.11.42.17, port 502, cihaz ID 3.",
+      "tags": [
+        "modbus",
+        "ip",
+        "p5"
+      ],
+      "domain": "scada"
+    },
+    {
+      "slug": "depo-seviye-register",
+      "kind": "fact",
+      "title": "Ana depo seviye register'ı",
+      "content": "Karatay ana depo seviye ölçümü holding register 40012'de tutuluyor; ham değer 0-4000, mühendislik birimi 0-8 metre.",
+      "tags": [
+        "register",
+        "seviye",
+        "depo"
+      ],
+      "domain": "scada"
+    },
+    {
+      "slug": "kepware-dongle-dersi",
+      "kind": "lesson",
+      "title": "Kepware dongle davranışı",
+      "content": "Kepware SCD-SRV01 üzerinde koşuyor; USB lisans dongle'ı çıkarsa sunucu 2 saatlik demo moduna düşüyor. Dongle takıldıktan sonra servisin elle yeniden başlatılması gerekiyor.",
+      "tags": [
+        "kepware",
+        "lisans",
+        "sunucu"
+      ],
+      "domain": "scada"
+    },
+    {
+      "slug": "cumra-kuyu-debisi",
+      "kind": "fact",
+      "title": "Çumra K-7 kuyusu",
+      "content": "Çumra K-7 sondaj kuyusunun nominal debisi 42 L/s; dalgıç pompa 55 kW ve yumuşak yolvericiyle kalkıyor.",
+      "tags": [
+        "sondaj",
+        "kuyu",
+        "debi"
+      ],
+      "domain": "scada"
+    },
+    {
+      "slug": "alarm-eskalasyon",
+      "kind": "procedure",
+      "title": "Kritik alarm eskalasyonu",
+      "content": "Kritik alarm 10 dakika içinde onaylanmazsa Koru1000 vardiya amirine SMS atar. Gece vardiyasında ayrıca Ahmet Usta telefonla aranır.",
+      "tags": [
+        "alarm",
+        "eskalasyon",
+        "vardiya"
+      ],
+      "domain": "scada"
+    },
+    {
+      "slug": "plc-yedek-proseduru",
+      "kind": "procedure",
+      "title": "PLC yedekleme günü",
+      "content": "PLC programları her ayın ilk pazartesisi yedeklenir ve SCD-SRV02 üzerindeki plc-yedek klasörüne kopyalanır.",
+      "tags": [
+        "plc",
+        "yedek",
+        "prosedur"
+      ],
+      "domain": "scada"
+    },
+    {
+      "slug": "gprs-timeout-dersi",
+      "kind": "lesson",
+      "title": "GPRS hatlarında Modbus timeout",
+      "content": "5.11.60.x bloğundaki GPRS modemli uzak istasyonlarda Modbus timeout'u en az 5000 ms olmalı. 2000 ms ile sürekli kopma yaşadık.",
+      "tags": [
+        "gprs",
+        "modbus",
+        "timeout"
+      ],
+      "domain": "scada"
+    },
+    {
+      "slug": "tag-adlandirma",
+      "kind": "procedure",
+      "title": "Tag adlandırma standardı",
+      "content": "Koru1000 tag adlandırma standardı İSTASYON_CİHAZ_SİNYAL biçiminde; örnek: P5_POMPA1_CALISMA.",
+      "tags": [
+        "tag",
+        "standart",
+        "koru1000"
+      ],
+      "domain": "scada"
+    },
+    {
+      "slug": "p3-klor-analizoru",
+      "kind": "fact",
+      "title": "P3 klor analizörü",
+      "content": "Selçuklu P3'teki klor analizörü Prominent DULCOMETER; 4-20 mA çıkışı PLC'nin AI-2 kanalına bağlı.",
+      "tags": [
+        "klor",
+        "analizor",
+        "p3"
+      ],
+      "domain": "scada"
+    },
+    {
+      "slug": "depo-kritik-seviye",
+      "kind": "fact",
+      "title": "Depo kritik seviye otomatiği",
+      "content": "Karatay ana depoda kritik düşük seviye 1.2 m; bu seviyenin altında P5'teki 1 ve 2 numaralı pompalar otomatik devreye girer.",
+      "tags": [
+        "depo",
+        "seviye",
+        "otomasyon"
+      ],
+      "domain": "scada"
+    },
+    {
+      "slug": "p7-enerji-analizoru",
+      "kind": "fact",
+      "title": "P7 enerji analizörü",
+      "content": "Ereğli P7 istasyonundaki enerji analizörü Entes MPR-46S; Modbus ID 12, IP 5.11.77.30.",
+      "tags": [
+        "enerji",
+        "analizor",
+        "modbus"
+      ],
+      "domain": "scada"
+    },
+    {
+      "slug": "gprs-modem-reset",
+      "kind": "procedure",
+      "title": "Uzak istasyon iletişim kopması",
+      "content": "Uzak istasyonla iletişim koparsa önce modemin 8080 portundaki web arayüzünden yeniden başlatma yapılır; düzelmezse elektrik ekibi sahaya yönlendirilir.",
+      "tags": [
+        "modem",
+        "iletisim",
+        "ariza"
+      ],
+      "domain": "scada"
+    },
+    {
+      "slug": "haftalik-ariza-raporu",
+      "kind": "procedure",
+      "title": "Haftalık arıza raporu",
+      "content": "Haftalık SCADA arıza raporu her cuma 16:00'da işletme müdürü Selim Bey'e mail atılır.",
+      "tags": [
+        "rapor",
+        "cuma",
+        "isletme"
+      ],
+      "domain": "scada"
+    },
+    {
+      "slug": "koru-surum-notu",
+      "kind": "fact",
+      "title": "Koru1000 sürüm durumu",
+      "content": "Koru1000 sunucusu v4.2.1 sürümünde; v4.3 güncellemesi tarihsel veri tabanı migrasyonu gerektirdiği için şimdilik beklemede.",
+      "tags": [
+        "koru1000",
+        "surum",
+        "guncelleme"
+      ],
+      "domain": "scada"
+    },
+    {
+      "slug": "terfi-hatti-basinc",
+      "kind": "fact",
+      "title": "P5 terfi hattı basıncı",
+      "content": "Meram P5 terfi hattının işletme basıncı 12 bar; 14 bar üzerinde yüksek basınç alarmı kurulu.",
+      "tags": [
+        "basinc",
+        "terfi",
+        "alarm"
+      ],
+      "domain": "scada"
+    },
+    {
+      "slug": "basinc-sensor-kalibrasyon",
+      "kind": "procedure",
+      "title": "Basınç sensörü kalibrasyonu",
+      "content": "Basınç sensörleri yılda bir kalibre edilir; kalibrasyon kaydı KOSKİ kalite sistemine FRM-034 form koduyla işlenir.",
+      "tags": [
+        "kalibrasyon",
+        "sensor",
+        "kalite"
+      ],
+      "domain": "scada"
+    },
+    {
+      "slug": "kuyu-donma-dersi",
+      "kind": "lesson",
+      "title": "Kuyu kabinlerinde donma riski",
+      "content": "Ocak ayında K-3 kuyu başındaki klor hattı dondu ve dozaj durdu. Sıfırın altına düşen gecelerde kuyu kabinlerindeki ısıtıcı termostatları 5 dereceye ayarlanmalı.",
+      "tags": [
+        "donma",
+        "kuyu",
+        "kis"
+      ],
+      "domain": "scada"
+    },
+    {
+      "slug": "p1-titresim-sensoru",
+      "kind": "fact",
+      "title": "P1 titreşim izleme",
+      "content": "Selçuklu P1'deki 3 numaralı pompaya titreşim sensörü takıldı; 7.1 mm/s üzerinde uyarı, 11 mm/s üzerinde durdurma tanımlı.",
+      "tags": [
+        "titresim",
+        "pompa",
+        "izleme"
+      ],
+      "domain": "scada"
+    },
+    {
+      "slug": "dsi-debi-bildirimi",
+      "kind": "procedure",
+      "title": "DSİ aylık bildirim",
+      "content": "Aylık kuyu çekim miktarları her ayın 5'ine kadar DSİ portalına girilir; değerler Koru1000 aylık raporundan alınır.",
+      "tags": [
+        "dsi",
+        "bildirim",
+        "kuyu"
+      ],
+      "domain": "scada"
+    },
+    {
+      "slug": "vpn-erisim",
+      "kind": "fact",
+      "title": "SCADA ağına erişim",
+      "content": "Saha istasyonlarına VPN üzerinden FortiClient ile bağlanılıyor; SCADA VLAN'ı 10.80.0.0/16 ve dış dünyaya kapalı.",
+      "tags": [
+        "vpn",
+        "ag",
+        "guvenlik"
+      ],
+      "domain": "scada"
+    },
+    {
+      "slug": "vardiya-defteri",
+      "kind": "procedure",
+      "title": "Vardiya teslim kuralı",
+      "content": "Vardiya teslimi Koru1000'in vardiya defteri modülünden yapılır; açık alarmlar ve sahadaki ekipler mutlaka not düşülür.",
+      "tags": [
+        "vardiya",
+        "teslim",
+        "defter"
+      ],
+      "domain": "scada"
+    },
+    {
+      "slug": "klor-dozaj-orani",
+      "kind": "fact",
+      "title": "Klor dozaj bandı",
+      "content": "Ana depoya klor dozajı 0.8-1.2 mg/L bandında tutulur; şebeke ucunda hedef değer 0.5 mg/L.",
+      "tags": [
+        "klor",
+        "dozaj",
+        "sebeke"
+      ],
+      "domain": "scada"
+    },
+    {
+      "slug": "p5-pompa2-kecesi",
+      "kind": "fact",
+      "title": "P5 pompa-2 salmastra arızası",
+      "content": "P5'teki 2 numaralı pompanın mekanik salmastrası sızdırıyor; yedek salmastra sipariş edildi, montaj planlı duruşta yapılacak.",
+      "tags": [
+        "pompa",
+        "salmastra",
+        "ariza"
+      ],
+      "domain": "scada"
+    },
+    {
+      "slug": "scada-ups",
+      "kind": "fact",
+      "title": "SCADA sunucu UPS'i",
+      "content": "SCD-SRV01 ve SCD-SRV02 sunucuları 10 kVA UPS üzerinde; aküler 2024'te değişti, otonomi yaklaşık 45 dakika.",
+      "tags": [
+        "ups",
+        "sunucu",
+        "enerji"
+      ],
+      "domain": "scada"
+    },
+    {
+      "slug": "btc-destek-seviyesi",
+      "kind": "fact",
+      "title": "BTC destek seviyesi",
+      "content": "BTC'de 3.7 milyon TL'yi güçlü destek olarak izliyorum; bu seviyenin altında günlük kapanış olursa pozisyon küçültme kuralım devreye giriyor.",
+      "tags": [
+        "btc",
+        "destek",
+        "seviye"
+      ],
+      "domain": "borsa"
+    },
+    {
+      "slug": "stop-loss-dersi",
+      "kind": "lesson",
+      "title": "Stop-loss dersi",
+      "content": "2024 Mayıs düşüşünde stop-loss koymadığım için ETH pozisyonunda yüzde 28 kaybettim. Artık her alımda emirle birlikte stop giriyorum.",
+      "tags": [
+        "stop",
+        "risk",
+        "ders"
+      ],
+      "domain": "borsa"
+    },
+    {
+      "slug": "borsa-platform-tercihi",
+      "kind": "preference",
+      "title": "Borsa platform tercihi",
+      "content": "TL çiftlerinde BtcTurk, USDT çiftlerinde Binance kullanıyorum; iki borsa arasındaki makası haftada bir kontrol ederim.",
+      "tags": [
+        "btcturk",
+        "binance",
+        "platform"
+      ],
+      "domain": "borsa"
+    },
+    {
+      "slug": "portfoy-dagilimi",
+      "kind": "goal",
+      "title": "Hedef portföy dağılımı",
+      "content": "Hedef portföy dağılımı yüzde 60 BTC, yüzde 30 ETH, yüzde 10 nakit TL; çeyrek sonlarında dengeleme yapıyorum.",
+      "tags": [
+        "portfoy",
+        "dagilim",
+        "hedef"
+      ],
+      "domain": "borsa"
+    },
+    {
+      "slug": "eth-alim-notu",
+      "kind": "fact",
+      "title": "ETH maliyeti ve satış planı",
+      "content": "ETH'yi 145.000 TL ortalama maliyetle topladım; 200.000 TL üzerinde kademeli satış planlıyorum.",
+      "tags": [
+        "eth",
+        "maliyet",
+        "satis"
+      ],
+      "domain": "borsa"
+    },
+    {
+      "slug": "kaldirac-kurali",
+      "kind": "lesson",
+      "title": "Kaldıraç yasağım",
+      "content": "Kaldıraçlı işlem bana göre değil; 2023'te 10x denemesinde iki günde likide oldum. Spot dışına çıkmıyorum.",
+      "tags": [
+        "kaldirac",
+        "risk",
+        "spot"
+      ],
+      "domain": "borsa"
+    },
+    {
+      "slug": "dca-plani",
+      "kind": "procedure",
+      "title": "Aylık düzenli alım",
+      "content": "Her ayın 15'inde maaştan 5.000 TL ile BTC alıyorum, fiyata bakmadan; düzenli alım planımın temeli bu.",
+      "tags": [
+        "dca",
+        "alim",
+        "aylik"
+      ],
+      "domain": "borsa"
+    },
+    {
+      "slug": "soguk-cuzdan",
+      "kind": "fact",
+      "title": "Soğuk cüzdan düzeni",
+      "content": "Uzun vadelik BTC'ler Ledger Nano X soğuk cüzdanda duruyor; borsada sadece işlem yapacağım kadar bakiye tutarım.",
+      "tags": [
+        "ledger",
+        "cuzdan",
+        "guvenlik"
+      ],
+      "domain": "borsa"
+    },
+    {
+      "slug": "fiyat-alarm-kurali",
+      "kind": "procedure",
+      "title": "Fiyat alarmları",
+      "content": "Fiyat alarmlarını BtcTurk uygulamasından kuruyorum; BTC için 3.7M ve 4.2M, ETH için 150K seviyelerinde alarm var.",
+      "tags": [
+        "alarm",
+        "fiyat",
+        "uygulama"
+      ],
+      "domain": "borsa"
+    },
+    {
+      "slug": "fomo-dersi",
+      "kind": "lesson",
+      "title": "FOMO dersi",
+      "content": "Twitter'da gündem olan coine girmek yok; SHIB'e FOMO ile girip yüzde 40 kaybettim. İzleme listemde olmayan coine para koymuyorum.",
+      "tags": [
+        "fomo",
+        "ders",
+        "altcoin"
+      ],
+      "domain": "borsa"
+    },
+    {
+      "slug": "teknik-analiz-tercihi",
+      "kind": "preference",
+      "title": "Analiz alışkanlığım",
+      "content": "Analizde 4 saatlik grafik, RSI ve 200 günlük ortalama kullanıyorum; 15 dakikalık grafiğe bakmayı bıraktım.",
+      "tags": [
+        "analiz",
+        "rsi",
+        "grafik"
+      ],
+      "domain": "borsa"
+    },
+    {
+      "slug": "kar-al-kurali",
+      "kind": "procedure",
+      "title": "Kâr alma kuralı",
+      "content": "Bir pozisyon yüzde 25 kâra geçince yarısını satarım; kalan yarı için stop'u maliyet seviyesine çekerim.",
+      "tags": [
+        "kar",
+        "kural",
+        "pozisyon"
+      ],
+      "domain": "borsa"
+    },
+    {
+      "slug": "vergi-kayit-notu",
+      "kind": "procedure",
+      "title": "İşlem kayıtları",
+      "content": "Tüm alım-satımları ay sonunda Excel dosyasına işliyorum; olası kripto vergilendirmesi için kayıtlar düzenli dursun.",
+      "tags": [
+        "vergi",
+        "kayit",
+        "excel"
+      ],
+      "domain": "borsa"
+    },
+    {
+      "slug": "haber-kaynagi-tercihi",
+      "kind": "preference",
+      "title": "Haber kaynağı tercihi",
+      "content": "Kripto haberlerinde kaynağım Coindesk ve Kriptokoin; Telegram sinyal gruplarına güvenmiyorum.",
+      "tags": [
+        "haber",
+        "kaynak",
+        "guven"
+      ],
+      "domain": "borsa"
+    },
+    {
+      "slug": "altcoin-limiti",
+      "kind": "goal",
+      "title": "Altcoin sınırı",
+      "content": "Altcoin toplamı portföyün yüzde 10'unu geçmeyecek; şu an sadece AVAX ve SOL'da küçük pozisyon var.",
+      "tags": [
+        "altcoin",
+        "limit",
+        "portfoy"
+      ],
+      "domain": "borsa"
+    },
+    {
+      "slug": "neocp-hafiza-katmanlari",
+      "kind": "fact",
+      "title": "Hafıza katmanları",
+      "content": "neocp hafızası üç katmandan oluşuyor: warm (aktif bağlam), scatter (dağınık kısa notlar) ve legend (kalıcı damıtılmış bilgi).",
+      "tags": [
+        "hafiza",
+        "mimari",
+        "katman"
+      ],
+      "domain": "neocp"
+    },
+    {
+      "slug": "neocp-embedding-yasagi",
+      "kind": "fact",
+      "title": "Embedding kullanmama kararı",
+      "content": "Recall tarafında embedding kullanmama kararı kesin; sadece FTS ve kalibre edilmiş sözlüksel birleşim skoru kullanılacak.",
+      "tags": [
+        "recall",
+        "embedding",
+        "karar"
+      ],
+      "domain": "neocp"
+    },
+    {
+      "slug": "neocp-episode-kirliligi",
+      "kind": "lesson",
+      "title": "Episode kirliliği",
+      "content": "Recall kalitesini asıl bozan şey episode kirliliği; konuşma turları anı gibi indekslenince taklit sonuçlar öne geçiyor. _relevant süzgeci bu yüzden şart.",
+      "tags": [
+        "episode",
+        "kirlilik",
+        "recall"
+      ],
+      "domain": "neocp"
+    },
+    {
+      "slug": "neocp-fts-stopword-dersi",
+      "kind": "lesson",
+      "title": "FTS stopword yarası",
+      "content": "FTS sorgusundaki tüm kelimeler stopword olunca arama boş dönüyordu; kalibre birleşim ile bu yara kapandı ve skor 0.55'ten 0.85'e çıktı.",
+      "tags": [
+        "fts",
+        "stopword",
+        "skor"
+      ],
+      "domain": "neocp"
+    },
+    {
+      "slug": "neocp-tts-tercihi",
+      "kind": "preference",
+      "title": "Ses çıkışı tercihi",
+      "content": "neocp'nin sesi için Edge TTS'in tr-TR-EmelNeural sesini kullanıyorum; ilk cümle gecikmesini azaltmak için akış modunda çalışıyor.",
+      "tags": [
+        "tts",
+        "ses",
+        "tercih"
+      ],
+      "domain": "neocp"
+    },
+    {
+      "slug": "neocp-commit-kurali",
+      "kind": "procedure",
+      "title": "Commit kuralları",
+      "content": "neocp commit mesajları Türkçe yazılır, küçük harfle başlar ve tek satır özet içerir; gerekirse gövdeye madde işaretli detay eklenir.",
+      "tags": [
+        "commit",
+        "kural",
+        "git"
+      ],
+      "domain": "neocp"
+    },
+    {
+      "slug": "neocp-test-aliskanligi",
+      "kind": "procedure",
+      "title": "Recall testi alışkanlığı",
+      "content": "Her recall değişikliğinden sonra benchmark korpusu koşulur; skor düşerse commit atılmaz.",
+      "tags": [
+        "test",
+        "benchmark",
+        "recall"
+      ],
+      "domain": "neocp"
+    },
+    {
+      "slug": "neocp-mcp-baglayicilar",
+      "kind": "fact",
+      "title": "MCP bağlayıcı durumu",
+      "content": "neocp'ye MCP bağlayıcıları ayarlar panelinden ekleniyor; OAuth bilerek yok, token elle giriliyor.",
+      "tags": [
+        "mcp",
+        "baglayici",
+        "ayar"
+      ],
+      "domain": "neocp"
+    },
+    {
+      "slug": "neocp-sqlite",
+      "kind": "fact",
+      "title": "Hafıza depolama",
+      "content": "neocp hafızası tek SQLite dosyasında; FTS5 sanal tablosu ile anı meta tablosu aynı veritabanında duruyor.",
+      "tags": [
+        "sqlite",
+        "fts5",
+        "depolama"
+      ],
+      "domain": "neocp"
+    },
+    {
+      "slug": "neocp-super-ajan-vizyonu",
+      "kind": "goal",
+      "title": "Süper ajan vizyonu",
+      "content": "Hedef: neocp bilgisayarı ekran ve el araçlarıyla kendisi kullanabilsin; ayar ve model değişimi yeniden başlatma gerektirmesin.",
+      "tags": [
+        "vizyon",
+        "ekran",
+        "hedef"
+      ],
+      "domain": "neocp"
+    },
+    {
+      "slug": "neocp-ilke-kurali",
+      "kind": "preference",
+      "title": "Genel kural ilkesi",
+      "content": "Promptlara protokol bazlı reçete yazmıyorum; ajan dış kaynağı kendisi keşfetsin, ilk açılışta tanışmayı kendisi başlatsın.",
+      "tags": [
+        "ilke",
+        "prompt",
+        "kesif"
+      ],
+      "domain": "neocp"
+    },
+    {
+      "slug": "neocp-recall-esigi",
+      "kind": "fact",
+      "title": "Otomatik hatırlatma eşiği",
+      "content": "Otomatik hatırlatmada skor eşiği 0.30; eşik altında kalan anılar sessizce elenir, boş sonuçta hiç blok basılmaz.",
+      "tags": [
+        "recall",
+        "esik",
+        "skor"
+      ],
+      "domain": "neocp"
+    },
+    {
+      "slug": "neocp-sinonim-tavani",
+      "kind": "lesson",
+      "title": "Sinonim tavanı",
+      "content": "Sinonim sorgularında skor tavanı 0.88 civarında; embedding yasak olduğu için sinonim sınıfı bilinen zayıf noktamız.",
+      "tags": [
+        "sinonim",
+        "tavan",
+        "recall"
+      ],
+      "domain": "neocp"
+    },
+    {
+      "slug": "neocp-atolye-dersi",
+      "kind": "lesson",
+      "title": "Dağılmış ev dersi",
+      "content": "Üst klasörden launch edilince parent dizinde ikinci bir .neocp/atolye oluştu; ev dizini bu yüzden neocp köküne sabitlendi.",
+      "tags": [
+        "atolye",
+        "ev",
+        "dizin"
+      ],
+      "domain": "neocp"
+    },
+    {
+      "slug": "neocp-benchmark-hedefi",
+      "kind": "goal",
+      "title": "Benchmark hedefi",
+      "content": "Benchmark hedefi: exact sınıfında 0.90 üzeri skor, trap sınıfında sıfır yanlış hatırlatma.",
+      "tags": [
+        "benchmark",
+        "hedef",
+        "skor"
+      ],
+      "domain": "neocp"
+    },
+    {
+      "slug": "es-bilgisi",
+      "kind": "user",
+      "title": "Eşim",
+      "content": "Eşim Zeynep, Konya'da sınıf öğretmeni; okul döneminde sabah 7'de evden çıkıyor.",
+      "tags": [
+        "aile",
+        "es",
+        "zeynep"
+      ],
+      "domain": "kisisel"
+    },
+    {
+      "slug": "cocuklar-bilgisi",
+      "kind": "user",
+      "title": "Çocuklar",
+      "content": "İki çocuğumuz var: kızımız Elif 2019 doğumlu, oğlumuz Mert 2023 doğumlu.",
+      "tags": [
+        "aile",
+        "cocuk"
+      ],
+      "domain": "kisisel"
+    },
+    {
+      "slug": "cay-tercihi",
+      "kind": "preference",
+      "title": "Çay tercihi",
+      "content": "Kahve içmem, çay içerim; demli ve şekersiz olacak.",
+      "tags": [
+        "cay",
+        "icecek",
+        "tercih"
+      ],
+      "domain": "kisisel"
+    },
+    {
+      "slug": "gece-calisma",
+      "kind": "preference",
+      "title": "Gece çalışması",
+      "content": "En verimli çalışma saatlerim 22:00 sonrası; toplantıları öğleden önceye koymamaya çalışırım.",
+      "tags": [
+        "gece",
+        "verim",
+        "calisma"
+      ],
+      "domain": "kisisel"
+    },
+    {
+      "slug": "zeynep-dogum-gunu",
+      "kind": "fact",
+      "title": "Zeynep'in doğum günü",
+      "content": "Zeynep'in doğum günü 14 Mart; geçen yıl son güne kalmıştı, hediyeyi bir hafta önceden ayarla.",
+      "tags": [
+        "dogumgunu",
+        "zeynep",
+        "hediye"
+      ],
+      "domain": "kisisel"
+    },
+    {
+      "slug": "elif-dogum-gunu",
+      "kind": "fact",
+      "title": "Elif'in doğum günü",
+      "content": "Elif'in doğum günü 2 Haziran; kutlamayı genelde hafta sonuna denk getiriyoruz.",
+      "tags": [
+        "dogumgunu",
+        "elif",
+        "kutlama"
+      ],
+      "domain": "kisisel"
+    },
+    {
+      "slug": "ev-bilgisi",
+      "kind": "fact",
+      "title": "Ev ve kombi",
+      "content": "Meram'da 3+1 bir dairede oturuyoruz; kombi Baymak marka, yıllık bakımı ekim ayında yapılıyor.",
+      "tags": [
+        "ev",
+        "kombi",
+        "bakim"
+      ],
+      "domain": "kisisel"
+    },
+    {
+      "slug": "anne-ziyareti",
+      "kind": "procedure",
+      "title": "Anne ziyareti düzeni",
+      "content": "Annem Karatay'da yalnız oturuyor; pazar öğlenleri yemeğe gidiyoruz ve tansiyon ilacını sorması gereken kişi benim.",
+      "tags": [
+        "anne",
+        "ziyaret",
+        "ilac"
+      ],
+      "domain": "kisisel"
+    },
+    {
+      "slug": "evlilik-yildonumu",
+      "kind": "fact",
+      "title": "Evlilik yıl dönümü",
+      "content": "Evlilik yıl dönümümüz 21 Eylül; Zeynep sürprizden çok birlikte akşam yemeğine çıkmayı sever.",
+      "tags": [
+        "yildonumu",
+        "evlilik",
+        "yemek"
+      ],
+      "domain": "kisisel"
+    },
+    {
+      "slug": "tatil-plani",
+      "kind": "goal",
+      "title": "Yaz tatili planı",
+      "content": "Bu yılki tatil planı Kaş; eylülün ilk haftası, otel yerine pansiyon tercih ediyoruz.",
+      "tags": [
+        "tatil",
+        "kas",
+        "plan"
+      ],
+      "domain": "kisisel"
+    },
+    {
+      "slug": "kitap-aliskanligi",
+      "kind": "preference",
+      "title": "Uyku öncesi kitap",
+      "content": "Uyumadan önce yarım saat kitap okurum; bilim kurgu ağırlıklı ve e-kitap değil basılı kitap.",
+      "tags": [
+        "kitap",
+        "uyku",
+        "aliskanlik"
+      ],
+      "domain": "kisisel"
+    },
+    {
+      "slug": "mert-alerji",
+      "kind": "fact",
+      "title": "Mert'in alerjisi",
+      "content": "Mert'in fındık alerjisi var; dışarıdan tatlı alırken içerik etiketine mutlaka bakılıyor.",
+      "tags": [
+        "alerji",
+        "mert",
+        "saglik"
+      ],
+      "domain": "kisisel"
+    },
+    {
+      "slug": "portal-nextjs-tercihi",
+      "kind": "preference",
+      "title": "Portal framework tercihi",
+      "content": "Belediye açık veri portalını Next.js 14 App Router ile yazıyorum; sayfalar statik, veri setleri ISR ile saatte bir yenileniyor.",
+      "tags": [
+        "nextjs",
+        "portal",
+        "framework"
+      ],
+      "domain": "websitesi"
+    },
+    {
+      "slug": "portal-tasarim-karari",
+      "kind": "fact",
+      "title": "Portal tasarım kararı",
+      "content": "Portalın ana rengi belediyenin kurumsal lacivertinden (#1B2A5B) türetildi; ana ekranda kart listesi yerine tablo görünümü tercih edildi.",
+      "tags": [
+        "tasarim",
+        "renk",
+        "arayuz"
+      ],
+      "domain": "websitesi"
+    },
+    {
+      "slug": "portal-deploy-notu",
+      "kind": "procedure",
+      "title": "Portal deploy düzeni",
+      "content": "Portal, belediyenin Ubuntu sunucusuna Docker imajıyla deploy ediliyor; Vercel kurumsal ağ politikası yüzünden elendi.",
+      "tags": [
+        "deploy",
+        "docker",
+        "sunucu"
+      ],
+      "domain": "websitesi"
+    },
+    {
+      "slug": "portal-api-karari",
+      "kind": "fact",
+      "title": "Veri kaynağı kararı",
+      "content": "Veri setleri CKAN API'sinden çekiliyor; portal tarafında ayrı veritabanı yok, sadece önbellek katmanı var.",
+      "tags": [
+        "ckan",
+        "api",
+        "onbellek"
+      ],
+      "domain": "websitesi"
+    },
+    {
+      "slug": "portal-harita-katmani",
+      "kind": "fact",
+      "title": "Harita kütüphanesi",
+      "content": "Harita sayfasında Leaflet ve OpenStreetMap kullanıyorum; Google Maps lisans maliyeti yüzünden elendi.",
+      "tags": [
+        "harita",
+        "leaflet",
+        "osm"
+      ],
+      "domain": "websitesi"
+    },
+    {
+      "slug": "portal-erisilebilirlik",
+      "kind": "goal",
+      "title": "Erişilebilirlik hedefi",
+      "content": "Portal WCAG AA seviyesini hedefliyor; kontrast ve klavye gezinimi lansmandan önce denetlenecek.",
+      "tags": [
+        "erisilebilirlik",
+        "wcag",
+        "denetim"
+      ],
+      "domain": "websitesi"
+    },
+    {
+      "slug": "portal-domain",
+      "kind": "fact",
+      "title": "Portal alan adı",
+      "content": "Portal acikveri.konya.bel.tr alt alan adında yayınlanacak; SSL belediyenin joker sertifikasından geliyor.",
+      "tags": [
+        "domain",
+        "ssl",
+        "yayin"
+      ],
+      "domain": "websitesi"
+    },
+    {
+      "slug": "portal-veri-oncelik",
+      "kind": "fact",
+      "title": "İlk yayın veri setleri",
+      "content": "İlk yayında öncelikli veri setleri: otobüs hatları, su kesintileri ve nöbetçi eczaneler.",
+      "tags": [
+        "veri",
+        "oncelik",
+        "yayin"
+      ],
+      "domain": "websitesi"
+    },
+    {
+      "slug": "portal-lansman-hedefi",
+      "kind": "goal",
+      "title": "Lansman hedefi",
+      "content": "Açık veri portalının lansman hedefi ekim ayındaki meclis toplantısı; öncesinde basın için kısa bir demo hazırlanacak.",
+      "tags": [
+        "lansman",
+        "hedef",
+        "demo"
+      ],
+      "domain": "websitesi"
+    },
+    {
+      "slug": "portal-grafik-kutuphane",
+      "kind": "preference",
+      "title": "Grafik kütüphanesi",
+      "content": "Portal grafiklerinde Recharts kullanıyorum; D3'ü doğrudan kullanmak bakım maliyeti yüzünden elendi.",
+      "tags": [
+        "grafik",
+        "recharts",
+        "tercih"
+      ],
+      "domain": "websitesi"
+    },
+    {
+      "slug": "arac-modeli",
+      "kind": "fact",
+      "title": "Araç bilgisi",
+      "content": "Arabam 2018 model Skoda Octavia 1.6 TDI; kilometre şu an 151.000 civarında.",
+      "tags": [
+        "arac",
+        "skoda",
+        "model"
+      ],
+      "domain": "arac"
+    },
+    {
+      "slug": "yag-degisim-kurali",
+      "kind": "procedure",
+      "title": "Yağ değişim aralığı",
+      "content": "Yağ değişimi her 15.000 km'de yapılıyor; son değişim 148.500 km'deydi, sıradaki değişim 163.500 km'de.",
+      "tags": [
+        "yag",
+        "bakim",
+        "km"
+      ],
+      "domain": "arac"
+    },
+    {
+      "slug": "lastik-notu",
+      "kind": "fact",
+      "title": "Lastik düzeni",
+      "content": "Kışlıklar Lassa Snoways ve kasım başında takılıyor; yazlıklar Michelin Primacy 4, son ölçümde diş derinliği 5 mm.",
+      "tags": [
+        "lastik",
+        "kislik",
+        "yazlik"
+      ],
+      "domain": "arac"
+    },
+    {
+      "slug": "muayene-tarihi",
+      "kind": "fact",
+      "title": "Araç muayenesi",
+      "content": "Araç muayenesi Kasım 2026'da; randevuyu ekim sonunda almayı unutma.",
+      "tags": [
+        "muayene",
+        "randevu",
+        "tarih"
+      ],
+      "domain": "arac"
+    },
+    {
+      "slug": "usta-tercihi",
+      "kind": "preference",
+      "title": "Usta tercihi",
+      "content": "Motor işleri için Karatay sanayisindeki Ramazan Usta'ya gidiyorum; elektronik arızalarda yetkili servisi tercih ederim.",
+      "tags": [
+        "usta",
+        "servis",
+        "tamir"
+      ],
+      "domain": "arac"
+    },
+    {
+      "slug": "fren-balata-notu",
+      "kind": "fact",
+      "title": "Balata durumu",
+      "content": "Ön balatalar son bakımda yüzde 30 kalmıştı; bir sonraki yağ değişiminde birlikte değiştirilecek.",
+      "tags": [
+        "fren",
+        "balata",
+        "bakim"
+      ],
+      "domain": "arac"
+    },
+    {
+      "slug": "yakit-tuketimi",
+      "kind": "fact",
+      "title": "Yakıt tüketimi",
+      "content": "Ortalama tüketim şehir içinde 5.8 L/100 km; uzun yolda 4.5'e kadar düşüyor.",
+      "tags": [
+        "yakit",
+        "tuketim",
+        "ortalama"
+      ],
+      "domain": "arac"
+    },
+    {
+      "slug": "kasko-yenileme",
+      "kind": "fact",
+      "title": "Kasko poliçesi",
+      "content": "Kasko poliçesi Anadolu Sigorta'da ve yenileme tarihi 10 Şubat; hasarsızlık indirimi 4. kademede.",
+      "tags": [
+        "kasko",
+        "sigorta",
+        "yenileme"
+      ],
+      "domain": "arac"
+    },
+    {
+      "slug": "kosu-programi",
+      "kind": "procedure",
+      "title": "Haftalık koşu programı",
+      "content": "Koşu günlerim salı, perşembe ve cumartesi; salı tempo, perşembe kısa toparlama, cumartesi uzun koşu.",
+      "tags": [
+        "kosu",
+        "program",
+        "hafta"
+      ],
+      "domain": "spor"
+    },
+    {
+      "slug": "bes-k-hedefi",
+      "kind": "goal",
+      "title": "5K hedefi",
+      "content": "5K hedefim 25 dakikanın altına inmek; son ölçümüm 26:40.",
+      "tags": [
+        "5k",
+        "hedef",
+        "sure"
+      ],
+      "domain": "spor"
+    },
+    {
+      "slug": "sakatlik-dersi",
+      "kind": "lesson",
+      "title": "Isınma dersi",
+      "content": "Isınmadan tempo koşusuna çıkınca aşil tendonum ağrıdı ve iki hafta koşamadım. Artık her koşudan önce 10 dakika ısınma şart.",
+      "tags": [
+        "sakatlik",
+        "isinma",
+        "asil"
+      ],
+      "domain": "spor"
+    },
+    {
+      "slug": "kosu-ayakkabisi",
+      "kind": "fact",
+      "title": "Koşu ayakkabısı",
+      "content": "Koşu ayakkabım Asics Gel-Nimbus 26; yaklaşık 600 km'ye gelince yenisiyle değiştirmeyi planlıyorum.",
+      "tags": [
+        "ayakkabi",
+        "asics",
+        "km"
+      ],
+      "domain": "spor"
+    },
+    {
+      "slug": "kosu-rotasi",
+      "kind": "preference",
+      "title": "Koşu rotası",
+      "content": "Uzun koşuları Meram Deresi yürüyüş yolunda yapıyorum; asfalt yerine stabilize zemini tercih ederim.",
+      "tags": [
+        "rota",
+        "meram",
+        "zemin"
+      ],
+      "domain": "spor"
+    },
+    {
+      "slug": "nabiz-bolgeleri",
+      "kind": "fact",
+      "title": "Nabız bölgelerim",
+      "content": "Kolay koşuda nabzım 145'in altında kalmalı; eşik antrenmanında 165-172 bandında koşuyorum.",
+      "tags": [
+        "nabiz",
+        "bolge",
+        "antrenman"
+      ],
+      "domain": "spor"
+    },
+    {
+      "slug": "agirlik-programi",
+      "kind": "procedure",
+      "title": "Ağırlık günleri",
+      "content": "Pazartesi ve cuma ağırlık günü; squat, deadlift ve bench ana hareketler, koşu günleriyle çakıştırmıyorum.",
+      "tags": [
+        "agirlik",
+        "fitness",
+        "program"
+      ],
+      "domain": "spor"
+    },
+    {
+      "slug": "yari-maraton-hedefi",
+      "kind": "goal",
+      "title": "Yarı maraton hedefi",
+      "content": "Hedefim bahar aylarındaki Konya Yarı Maratonu'nu 2 saatin altında bitirmek.",
+      "tags": [
+        "maraton",
+        "hedef",
+        "konya"
+      ],
+      "domain": "spor"
+    },
+    {
+      "slug": "sabah-onemli-isler",
+      "kind": "preference",
+      "title": "Sabah kuralı",
+      "content": "Önemli işleri sabah erken saate koy; öğleden sonra verim düşüyor.",
+      "tags": [
+        "sabah",
+        "verim"
+      ],
+      "domain": "genel"
+    },
+    {
+      "slug": "not-alma-hatirlatma",
+      "kind": "preference",
+      "title": "Not alma",
+      "content": "Aklına gelen işi hemen not al; akşam not defterini bir kez gözden geçir.",
+      "tags": [
+        "not",
+        "hatirlatma"
+      ],
+      "domain": "genel"
+    },
+    {
+      "slug": "telefon-sessiz",
+      "kind": "preference",
+      "title": "Sessiz mod",
+      "content": "Derin çalışma bloklarında telefon sessizde dursun.",
+      "tags": [
+        "telefon",
+        "odak"
+      ],
+      "domain": "genel"
+    },
+    {
+      "slug": "haftalik-gozden-gecirme",
+      "kind": "procedure",
+      "title": "Haftalık gözden geçirme",
+      "content": "Pazar akşamları haftalık gözden geçirme yapılır; yarım kalan işler yeni haftaya taşınır.",
+      "tags": [
+        "hafta",
+        "plan",
+        "rutin"
+      ],
+      "domain": "genel"
+    },
+    {
+      "slug": "olcum-dokumu-a",
+      "kind": "fact",
+      "title": "Karışık ölçüm dökümü A",
+      "content": "Saha ölçüm dökümü: 12.4, 8.75, 950, 40021, 3.14, 5580, 77.3, 0.42, 118, 2600 — hangi cihaza ait olduğu belirsiz, ayıklanacak.",
+      "tags": [
+        "olcum",
+        "dokum",
+        "karisik"
+      ],
+      "domain": "genel"
+    },
+    {
+      "slug": "olcum-dokumu-b",
+      "kind": "fact",
+      "title": "Karışık ölçüm dökümü B",
+      "content": "Eski defterden sayılar: 42.17, 5000, 148, 3.7, 60.12, 8080, 502, 12, 165, 26.4 — bağlamı kayıp, muhtemelen çöp.",
+      "tags": [
+        "sayi",
+        "defter",
+        "karisik"
+      ],
+      "domain": "genel"
+    },
+    {
+      "slug": "olcum-dokumu-c",
+      "kind": "fact",
+      "title": "Karışık ölçüm dökümü C",
+      "content": "Karışık liste: 40012, 1.2, 0.2, 55, 25, 5.11, 14, 4.2, 600, 21 — nereden kopyalandığı bilinmiyor.",
+      "tags": [
+        "liste",
+        "sayi",
+        "belirsiz"
+      ],
+      "domain": "genel"
+    }
+  ],
+  "episodes": [
+    {
+      "title": "kullanıcı: P5 pompa sesi",
+      "content": "P5'teki 2 numaralı pompa yine tuhaf ses yapıyor, öğleden sonra sahaya gidip dinleyeceğim."
+    },
+    {
+      "title": "asistan: P5 salmastra hatırlatması",
+      "content": "P5 için son notunda mekanik salmastra sızıntısından bahsetmiştin; yedek parça geldiyse planlı duruşu bu haftaya çekebilirsin."
+    },
+    {
+      "title": "kullanıcı: BTC yatay seyir",
+      "content": "BTC bugün yatay, akşam grafiklere bakarım. Şimdilik bir şey yapmıyorum."
+    },
+    {
+      "title": "asistan: alarm önerisi",
+      "content": "Anlaşıldı, izlediğin seviyelere yaklaşırsa haber vermemi istersen söyle yeter."
+    },
+    {
+      "title": "kullanıcı: Elif'in yarışması",
+      "content": "Elif bugün okulda resim yarışmasında birinci olmuş, akşam pastayla kutlayacağız."
+    },
+    {
+      "title": "asistan: kutlama",
+      "content": "Harika haber! Elif'i tebrik ederim, akşam güzel geçsin."
+    },
+    {
+      "title": "kullanıcı: portal mobil sorunu",
+      "content": "Portalın ana sayfasındaki tablo görünümü masaüstünde iyi ama mobilde sağa taşıyor, çirkin duruyor."
+    },
+    {
+      "title": "asistan: tablo taşması çözümü",
+      "content": "Tabloyu yatay kaydırılabilir bir kapsayıcıya almak en temiz çözüm; sütun sayısını mobilde üçe düşürmek de düşünülebilir."
+    },
+    {
+      "title": "kullanıcı: koşu iptali",
+      "content": "Bugünkü uzun koşuya çıkamadım, sabah bardaktan boşalırcasına yağmur vardı."
+    },
+    {
+      "title": "asistan: program kaydırma",
+      "content": "Sorun değil, uzun koşuyu yarın sabaha kaydırabilirsin; haftanın toplam yükü değişmez."
+    },
+    {
+      "title": "kullanıcı: Kepware tanılama",
+      "content": "Kepware'de kanal tanılamasına baktım, K-7 kuyusunun tag kalitesi iyi görünüyor, kopmalar azalmış."
+    },
+    {
+      "title": "asistan: modem yorumu",
+      "content": "Güzel, demek ki son timeout ayarı işe yaramış; birkaç gün daha izleyip raporuna not düşebilirsin."
+    },
+    {
+      "title": "kullanıcı: benchmark sonucu",
+      "content": "neocp'de recall testini koştum: exact 0.91, paraphrase 0.83 ama synonym hâlâ 0.71'de sürünüyor."
+    },
+    {
+      "title": "asistan: sinonim yorumu",
+      "content": "Synonym sınıfının tavanını konuşmuştuk; sözlüksel yöntemle 0.88 civarı üst sınır, 0.71 yine de iyileştirilebilir görünüyor."
+    },
+    {
+      "title": "kullanıcı: P3 klor olayı",
+      "content": "Bugün vardiyada ilginç bir şey oldu: P3'te klor değeri aniden 0.05'e düştü ve alarm çaldı, sahaya numuneci gönderdik. Numune normal çıktı, sorun analizör hortumundaki hava kabarcığıymış. Hortumu değiştirdik, değer 0.65'e oturdu. Yine de olayı haftalık rapora işledim, Selim Bey sormadan görsün."
+    },
+    {
+      "title": "asistan: yalancı alarm yorumu",
+      "content": "İyi yönetmişsin; yalancı alarm da olsa numune alınması doğru adımdı. Hortum kaynaklı kabarcık sorunu tekrarlarsa analizöre otomatik purge eklemek konuşulabilir."
+    },
+    {
+      "title": "kullanıcı: öğlen yemeği",
+      "content": "Öğlen ne yesem bilmiyorum, tesiste yemek yine nohut."
+    },
+    {
+      "title": "asistan: yemek",
+      "content": "Nohut fena değil aslında; yanına pilav varsa gün kurtulur."
+    },
+    {
+      "title": "kullanıcı: Zeynep'in toplantısı",
+      "content": "Zeynep'in okulunda veli toplantısı varmış, akşam Mert bende. Çalışma planımı ona göre kurarım."
+    },
+    {
+      "title": "asistan: akşam planı",
+      "content": "Not ettim; akşamki işleri hafif tutup derin işleri Mert uyuduktan sonraya bırakmak mantıklı."
+    },
+    {
+      "title": "kullanıcı: muayene randevusu düşüncesi",
+      "content": "Aracın muayenesine daha var ama randevular hızlı doluyormuş diye duydum."
+    },
+    {
+      "title": "asistan: randevu hatırlatması",
+      "content": "Doğru, dönem sonlarında yoğunluk oluyor; vakti gelince erken randevu almak sırayı kurtarır."
+    },
+    {
+      "title": "kullanıcı: DSİ girişleri",
+      "content": "DSİ portalına bu ayın çekim değerlerini girdim, K-7 ve K-3 toplamı geçen aya göre yüzde 6 artmış."
+    },
+    {
+      "title": "asistan: çekim artışı",
+      "content": "Artış yaz talebiyle uyumlu görünüyor; kuyu seviyelerinde düşüş eğilimi başlarsa erken uyarı için not almakta fayda var."
+    },
+    {
+      "title": "kullanıcı: ETH hareketi",
+      "content": "ETH bugün sert yükseldi, satış bölgeme yaklaşıyor. Elim tetikte bekliyorum."
+    },
+    {
+      "title": "asistan: kademeli satış",
+      "content": "Planın kademeliydi; tek seferde boşaltmak yerine planına sadık kalman geçmiş derslerinle uyumlu olur."
+    },
+    {
+      "title": "kullanıcı: sunucu bakımı",
+      "content": "SCD-SRV02'ye Windows güncellemeleri geldi, gece vardiyasında yeniden başlatacağız."
+    },
+    {
+      "title": "asistan: bakım penceresi",
+      "content": "Gece penceresi uygun; yeniden başlatma öncesi Kepware servislerinin otomatik başlama ayarını kontrol etmekte fayda var."
+    },
+    {
+      "title": "kullanıcı: kombi sesi",
+      "content": "Evdeki kombi tık tık ses yapmaya başladı, bakım zamanı gelmeden servis mi çağırsam?"
+    },
+    {
+      "title": "asistan: kombi önerisi",
+      "content": "Ses basınç düşüklüğünden de olabilir; önce manometre değerine bakıp sonra servisi aramak daha ekonomik."
+    },
+    {
+      "title": "kullanıcı: portal CKAN gecikmesi",
+      "content": "CKAN API bazı veri setlerinde 4-5 saniye gecikiyor, portalda sayfa açılışı hantallaşıyor."
+    },
+    {
+      "title": "asistan: önbellek önerisi",
+      "content": "Önbellek süresini o veri setleri için uzatıp arka planda yenileme yapmak gecikmeyi kullanıcıdan gizler."
+    },
+    {
+      "title": "kullanıcı: koşu ayakkabısı km",
+      "content": "Koşu uygulamasına göre ayakkabı 520 km olmuş, taban da sertleşti sanki."
+    },
+    {
+      "title": "asistan: ayakkabı planı",
+      "content": "600 km sınırına yaklaşmışsın; indirim dönemini bekleyip şimdiden modeline bakmaya başlayabilirsin."
+    },
+    {
+      "title": "kullanıcı: neocp arayüz fikri",
+      "content": "neocp'nin dock'una hafıza sayacını koydum, bağlam doluluğu artık her an görünüyor. Fena olmadı."
+    },
+    {
+      "title": "asistan: sayaç yorumu",
+      "content": "Görünürlük iyi bir adım; sayacın sayfa yenilemesinde durumu koruması da önemliydi, o da tamamsa arayüz tarafı oturdu demektir."
+    },
+    {
+      "title": "kullanıcı: hafta sonu planı",
+      "content": "Cumartesi sabah koşu, öğlen anneme uğrarız, akşam da boşuz galiba."
+    },
+    {
+      "title": "asistan: hafta sonu",
+      "content": "Dengeli bir gün; akşamı Zeynep'le film için boş bırakmak iyi olabilir."
+    },
+    {
+      "title": "kullanıcı: BtcTurk arayüz değişikliği",
+      "content": "BtcTurk uygulama arayüzünü değiştirmiş, alarm menüsünü bulamadım bir an."
+    },
+    {
+      "title": "asistan: menü tarifi",
+      "content": "Genelde bu tür güncellemelerde alarmlar profil ya da piyasa detay ekranına taşınıyor; bulamazsan sürüm notlarına bakabiliriz."
+    },
+    {
+      "title": "kullanıcı: P1 titreşim verisi",
+      "content": "P1'deki titreşim sensörü ilk haftasını doldurdu, 3 numaralı pompa 4.2 mm/s bandında seyrediyor, gayet sağlıklı."
+    },
+    {
+      "title": "asistan: titreşim değerlendirme",
+      "content": "4.2 mm/s uyarı eşiğinin epey altında; haftalık eğilim grafiği çıkarırsan rulman yaşlanmasını erken yakalarsın."
+    },
+    {
+      "title": "kullanıcı: Mert'in uykusu",
+      "content": "Mert bu gece üç kez uyandı, sabah zor kalktım. Bugün ağır iş yok bende."
+    },
+    {
+      "title": "asistan: hafif gün",
+      "content": "Geçmiş olsun; bugünü rutin kontrollere ayırıp zihin isteyen işleri yarına bırakmak akıllıca."
+    },
+    {
+      "title": "kullanıcı: portal eczane verisi",
+      "content": "Nöbetçi eczane verisini il sağlık müdürlüğünden almak gerekiyormuş, yazışma başlattım."
+    },
+    {
+      "title": "asistan: yazışma notu",
+      "content": "Kurumlar arası yazışma uzayabilir; lansman planını etkilememesi için bu veri setini ikinci faza almak güvenli olur."
+    },
+    {
+      "title": "kullanıcı: trafikte geçen gün",
+      "content": "Bugün trafik berbattı, tesise 50 dakikada gelebildim."
+    },
+    {
+      "title": "asistan: trafik",
+      "content": "Zor sabah olmuş; erken çıkış yapabildiğin günlerde o yol yarım saate iniyor diye hatırlıyorum."
+    },
+    {
+      "title": "kullanıcı: FTS tartışması",
+      "content": "Recall'da birleşim skorunun ağırlıklarını yeniden kalibre etsem mi diye düşünüyorum, trap sınıfında bir sızıntı gördüm. Sayısal içerikli sorgular alakasız sayı yığını notlarını çekmiş. Eşiği oynatmadan önce sayı token'larının ağırlığını kısmak daha doğru gibi."
+    },
+    {
+      "title": "asistan: sayı ağırlığı",
+      "content": "Katılıyorum; eşik oynamak tüm sınıfları etkiler, sayı token'larının IDF katkısını sınırlamak ise sadece o yarayı hedefler. Değişiklikten sonra benchmark'ı koşmayı unutma."
+    },
+    {
+      "title": "kullanıcı: lastik fiyatları",
+      "content": "Kışlık lastik fiyatlarına baktım, geçen yıla göre epey zamlanmış."
+    },
+    {
+      "title": "asistan: lastik zamanı",
+      "content": "Kasım yaklaşmadan almak genelde daha ucuz; diş derinliğin iyiyse bu sezon idare de edebilir."
+    },
+    {
+      "title": "kullanıcı: UPS testi",
+      "content": "Aylık UPS testini yaptık, akü grubu 42 dakika taşıdı, değerler normal."
+    },
+    {
+      "title": "asistan: ups kaydı",
+      "content": "42 dakika beklentiyle uyumlu; test sonucunu bakım kaydına işlersen yıl sonu denetiminde işini kolaylaştırır."
+    },
+    {
+      "title": "kullanıcı: akşam çayı",
+      "content": "Akşam çayını demledim, bir saat daha çalışırım herhalde."
+    },
+    {
+      "title": "asistan: gece mesaisi",
+      "content": "Verimli saatlerin zaten şimdi başlıyor; yarın sabah erken toplantın yoksa rahat çalış."
+    },
+    {
+      "title": "kullanıcı: yıldönümü fikri",
+      "content": "Yıl dönümü için Meram'daki yeni açılan lokantaya rezervasyon yaptırmayı düşünüyorum."
+    },
+    {
+      "title": "asistan: rezervasyon",
+      "content": "Güzel fikir; hafta içi akşamları daha sakin oluyor, pencere kenarı istemeyi unutma."
+    },
+    {
+      "title": "kullanıcı: koşuda diz hafif ağrı",
+      "content": "Bugünkü tempo koşusunda sol dizde hafif bir sızı vardı, durunca geçti."
+    },
+    {
+      "title": "asistan: yük azaltma",
+      "content": "Ağrı tekrarlarsa tempoyu bir hafta kısmak iyi olur; geçmişte aşil olayında erken davranmamak iki haftaya mal olmuştu."
+    }
+  ],
+  "queries": [
+    {
+      "q": "Karatay ana deponun seviye register adresi neydi?",
+      "type": "exact",
+      "gold": [
+        "depo-seviye-register"
+      ],
+      "domain": "scada"
+    },
+    {
+      "q": "Klor düşük alarm eşiği kaç mg/L ve alarm gelince ilk ne yapıyorduk?",
+      "type": "exact",
+      "gold": [
+        "koru-klor-esigi"
+      ],
+      "domain": "scada"
+    },
+    {
+      "q": "P5 terfi istasyonundaki Modbus cihazının IP'si ve portu neydi?",
+      "type": "exact",
+      "gold": [
+        "p5-modbus-ip"
+      ],
+      "domain": "scada"
+    },
+    {
+      "q": "Kepware'in lisans dongle'ı çıkarsa ne oluyordu?",
+      "type": "exact",
+      "gold": [
+        "kepware-dongle-dersi"
+      ],
+      "domain": "scada"
+    },
+    {
+      "q": "Kritik alarm onaylanmazsa eskalasyon nasıl işliyordu?",
+      "type": "exact",
+      "gold": [
+        "alarm-eskalasyon"
+      ],
+      "domain": "scada"
+    },
+    {
+      "q": "Çumra K-7 sondaj kuyusunun debisi kaçtı?",
+      "type": "exact",
+      "gold": [
+        "cumra-kuyu-debisi"
+      ],
+      "domain": "scada"
+    },
+    {
+      "q": "BTC'de destek olarak izlediğim seviye neresiydi?",
+      "type": "exact",
+      "gold": [
+        "btc-destek-seviyesi"
+      ],
+      "domain": "borsa"
+    },
+    {
+      "q": "Her ayın 15'inde yaptığım düzenli BTC alımı ne kadardı?",
+      "type": "exact",
+      "gold": [
+        "dca-plani"
+      ],
+      "domain": "borsa"
+    },
+    {
+      "q": "TL çiftlerinde hangi borsayı kullanıyordum?",
+      "type": "exact",
+      "gold": [
+        "borsa-platform-tercihi"
+      ],
+      "domain": "borsa"
+    },
+    {
+      "q": "neocp hafızasının üç katmanı nelerdi?",
+      "type": "exact",
+      "gold": [
+        "neocp-hafiza-katmanlari"
+      ],
+      "domain": "neocp"
+    },
+    {
+      "q": "Otomatik hatırlatmada skor eşiği kaçtı?",
+      "type": "exact",
+      "gold": [
+        "neocp-recall-esigi"
+      ],
+      "domain": "neocp"
+    },
+    {
+      "q": "neocp commit mesajı kurallarımız neydi?",
+      "type": "exact",
+      "gold": [
+        "neocp-commit-kurali"
+      ],
+      "domain": "neocp"
+    },
+    {
+      "q": "Zeynep'in doğum günü ne zamandı?",
+      "type": "exact",
+      "gold": [
+        "zeynep-dogum-gunu"
+      ],
+      "domain": "kisisel"
+    },
+    {
+      "q": "Mert'in alerjisi neye karşıydı?",
+      "type": "exact",
+      "gold": [
+        "mert-alerji"
+      ],
+      "domain": "kisisel"
+    },
+    {
+      "q": "Çay mı kahve mi tercih ediyorum, nasıl içerim?",
+      "type": "exact",
+      "gold": [
+        "cay-tercihi"
+      ],
+      "domain": "kisisel"
+    },
+    {
+      "q": "Açık veri portalını hangi framework ile yazıyordum?",
+      "type": "exact",
+      "gold": [
+        "portal-nextjs-tercihi"
+      ],
+      "domain": "websitesi"
+    },
+    {
+      "q": "Portalın harita sayfası için hangi kütüphaneyi seçmiştik?",
+      "type": "exact",
+      "gold": [
+        "portal-harita-katmani"
+      ],
+      "domain": "websitesi"
+    },
+    {
+      "q": "Portal hangi alan adında yayınlanacaktı?",
+      "type": "exact",
+      "gold": [
+        "portal-domain"
+      ],
+      "domain": "websitesi"
+    },
+    {
+      "q": "Bir sonraki yağ değişimi kaç kilometredeydi?",
+      "type": "exact",
+      "gold": [
+        "yag-degisim-kurali"
+      ],
+      "domain": "arac"
+    },
+    {
+      "q": "Araç muayenesi ne zamandı?",
+      "type": "exact",
+      "gold": [
+        "muayene-tarihi"
+      ],
+      "domain": "arac"
+    },
+    {
+      "q": "Kışlık lastikler hangi marka ve ne zaman takılıyordu?",
+      "type": "exact",
+      "gold": [
+        "lastik-notu"
+      ],
+      "domain": "arac"
+    },
+    {
+      "q": "Koşu günlerim hangileriydi?",
+      "type": "exact",
+      "gold": [
+        "kosu-programi"
+      ],
+      "domain": "spor"
+    },
+    {
+      "q": "5K hedefim ve son ölçümüm neydi?",
+      "type": "exact",
+      "gold": [
+        "bes-k-hedefi"
+      ],
+      "domain": "spor"
+    },
+    {
+      "q": "Kolay koşuda nabzım kaçın altında kalmalıydı?",
+      "type": "exact",
+      "gold": [
+        "nabiz-bolgeleri"
+      ],
+      "domain": "spor"
+    },
+    {
+      "q": "Uzaktaki istasyonlarla haberleşme sık kopuyordu, bekleme süresini nasıl ayarlamıştık ve kopunca ilk ne yapıyorduk?",
+      "type": "paraphrase",
+      "gold": [
+        "gprs-timeout-dersi",
+        "gprs-modem-reset"
+      ],
+      "domain": "scada"
+    },
+    {
+      "q": "Ana haznedeki su çok azalırsa sistem kendiliğinden ne yapıyordu?",
+      "type": "paraphrase",
+      "gold": [
+        "depo-kritik-seviye"
+      ],
+      "domain": "scada"
+    },
+    {
+      "q": "Zarar büyümeden pozisyondan çıkmak konusunda geçmişte ne öğrenmiştim?",
+      "type": "paraphrase",
+      "gold": [
+        "stop-loss-dersi"
+      ],
+      "domain": "borsa"
+    },
+    {
+      "q": "Elimdeki varlıkları hangi oranlarda bölüştürmeyi hedefliyordum?",
+      "type": "paraphrase",
+      "gold": [
+        "portfoy-dagilimi"
+      ],
+      "domain": "borsa"
+    },
+    {
+      "q": "Konuşma kayıtlarının hatırlatma sonuçlarına karışması sorununu nasıl değerlendirmiştik?",
+      "type": "paraphrase",
+      "gold": [
+        "neocp-episode-kirliligi"
+      ],
+      "domain": "neocp"
+    },
+    {
+      "q": "Ajanın sesli konuşabilmesi için hangi çözümü seçmiştim?",
+      "type": "paraphrase",
+      "gold": [
+        "neocp-tts-tercihi"
+      ],
+      "domain": "neocp"
+    },
+    {
+      "q": "Yatmadan önce ne yapmayı severim?",
+      "type": "paraphrase",
+      "gold": [
+        "kitap-aliskanligi"
+      ],
+      "domain": "kisisel"
+    },
+    {
+      "q": "Belediye sitesini nereye kuruyorduk, yayına hangi yöntemle çıkıyordu?",
+      "type": "paraphrase",
+      "gold": [
+        "portal-deploy-notu"
+      ],
+      "domain": "websitesi"
+    },
+    {
+      "q": "Arabanın motoruna bakan tanıdık kimdi?",
+      "type": "paraphrase",
+      "gold": [
+        "usta-tercihi"
+      ],
+      "domain": "arac"
+    },
+    {
+      "q": "Koşudan önce vücudu hazırlamamak yüzünden başıma ne gelmişti?",
+      "type": "paraphrase",
+      "gold": [
+        "sakatlik-dersi"
+      ],
+      "domain": "spor"
+    },
+    {
+      "q": "Yarın Konya'da hava nasıl olacak?",
+      "type": "trap",
+      "gold": [],
+      "domain": "hava"
+    },
+    {
+      "q": "Konyaspor maçı kaç kaç bitti?",
+      "type": "trap",
+      "gold": [],
+      "domain": "spor"
+    },
+    {
+      "q": "Bu akşam izlemelik güzel bir film önerir misin?",
+      "type": "trap",
+      "gold": [],
+      "domain": "genel"
+    },
+    {
+      "q": "İstanbul'a uçak bileti fiyatları ne durumda?",
+      "type": "trap",
+      "gold": [],
+      "domain": "genel"
+    },
+    {
+      "q": "Akşam yemeği için kolay bir tarif lazım.",
+      "type": "trap",
+      "gold": [],
+      "domain": "genel"
+    },
+    {
+      "q": "Yeni telefon alacağım, hangi modeli önerirsin?",
+      "type": "trap",
+      "gold": [],
+      "domain": "genel"
+    },
+    {
+      "q": "Borsada seviye ne durumda, destek kırıldı mı?",
+      "type": "trap",
+      "gold": [
+        "btc-destek-seviyesi"
+      ],
+      "domain": "borsa"
+    },
+    {
+      "q": "Depo seviyesi şu an kaç metre görünüyor, kritik sınır neydi?",
+      "type": "trap",
+      "gold": [
+        "depo-seviye-register",
+        "depo-kritik-seviye"
+      ],
+      "domain": "scada"
+    },
+    {
+      "q": "Fiyat için alarm kurmak istiyorum, bunu nasıl yapıyordum?",
+      "type": "trap",
+      "gold": [
+        "fiyat-alarm-kurali"
+      ],
+      "domain": "borsa"
+    },
+    {
+      "q": "Pompa hattında basınç yine yükseldi, alarm sınırı kaçtı?",
+      "type": "trap",
+      "gold": [
+        "terfi-hatti-basinc"
+      ],
+      "domain": "scada"
+    },
+    {
+      "q": "ETH staking getirisi şu an yüzde kaç?",
+      "type": "trap",
+      "gold": [],
+      "domain": "borsa"
+    },
+    {
+      "q": "Koru1000'in mobil uygulaması var mıydı?",
+      "type": "trap",
+      "gold": [],
+      "domain": "scada"
+    },
+    {
+      "q": "selam",
+      "type": "empty",
+      "gold": [],
+      "domain": "genel"
+    },
+    {
+      "q": "günaydın",
+      "type": "empty",
+      "gold": [],
+      "domain": "genel"
+    },
+    {
+      "q": "nasılsın?",
+      "type": "empty",
+      "gold": [],
+      "domain": "genel"
+    },
+    {
+      "q": "teşekkürler, eline sağlık",
+      "type": "empty",
+      "gold": [],
+      "domain": "genel"
+    },
+    {
+      "q": "tamamdır",
+      "type": "empty",
+      "gold": [],
+      "domain": "genel"
+    },
+    {
+      "q": "eyvallah",
+      "type": "empty",
+      "gold": [],
+      "domain": "genel"
+    },
+    {
+      "q": "ok",
+      "type": "empty",
+      "gold": [],
+      "domain": "genel"
+    },
+    {
+      "q": "hmm ilginç",
+      "type": "empty",
+      "gold": [],
+      "domain": "genel"
+    },
+    {
+      "q": "Dün kaldığımız portal işine devam edelim.",
+      "type": "continuation",
+      "gold": [
+        "portal-nextjs-tercihi",
+        "portal-lansman-hedefi"
+      ],
+      "domain": "websitesi"
+    },
+    {
+      "q": "neocp benchmark çalışmasını sürdürelim.",
+      "type": "continuation",
+      "gold": [
+        "neocp-benchmark-hedefi",
+        "neocp-test-aliskanligi"
+      ],
+      "domain": "neocp"
+    },
+    {
+      "q": "P5 istasyonundaki arıza konusuna geri dönelim.",
+      "type": "continuation",
+      "gold": [
+        "p5-pompa2-kecesi"
+      ],
+      "domain": "scada"
+    },
+    {
+      "q": "Kepware tarafında kaldığımız yerden devam edelim.",
+      "type": "continuation",
+      "gold": [
+        "kepware-dongle-dersi"
+      ],
+      "domain": "scada"
+    },
+    {
+      "q": "Araba bakım planına devam edelim, neler eksikti?",
+      "type": "continuation",
+      "gold": [
+        "yag-degisim-kurali",
+        "fren-balata-notu",
+        "muayene-tarihi"
+      ],
+      "domain": "arac"
+    },
+    {
+      "q": "Aylık alım planını konuşmaya devam edelim.",
+      "type": "continuation",
+      "gold": [
+        "dca-plani"
+      ],
+      "domain": "borsa"
+    },
+    {
+      "q": "Yarı maraton hazırlığına devam, program neydi?",
+      "type": "continuation",
+      "gold": [
+        "yari-maraton-hedefi",
+        "kosu-programi"
+      ],
+      "domain": "spor"
+    },
+    {
+      "q": "Hafıza katmanları işini kaldığımız yerden sürdürelim.",
+      "type": "continuation",
+      "gold": [
+        "neocp-hafiza-katmanlari"
+      ],
+      "domain": "neocp"
+    },
+    {
+      "q": "5.11.42.17 adresine ping atamıyorum, bu cihaz neydi?",
+      "type": "numeric",
+      "gold": [
+        "p5-modbus-ip"
+      ],
+      "domain": "scada"
+    },
+    {
+      "q": "40012 register'ından okuduğum değer donuk görünüyor, burası neyi ölçüyordu?",
+      "type": "numeric",
+      "gold": [
+        "depo-seviye-register"
+      ],
+      "domain": "scada"
+    },
+    {
+      "q": "BTC 3.700.000 TL'nin altına sarktı, planımız neydi?",
+      "type": "numeric",
+      "gold": [
+        "btc-destek-seviyesi"
+      ],
+      "domain": "borsa"
+    },
+    {
+      "q": "Kilometre 163.000'i geçti, yapmam gereken bir şey var mıydı?",
+      "type": "numeric",
+      "gold": [
+        "yag-degisim-kurali"
+      ],
+      "domain": "arac"
+    },
+    {
+      "q": "Zarar durdurma emri konusunda geçmiş tecrübem neydi?",
+      "type": "synonym",
+      "gold": [
+        "stop-loss-dersi"
+      ],
+      "domain": "borsa"
+    },
+    {
+      "q": "TÜVTÜRK randevusu ne zamana denk geliyordu?",
+      "type": "synonym",
+      "gold": [
+        "muayene-tarihi"
+      ],
+      "domain": "arac"
+    },
+    {
+      "q": "Dezenfeksiyon dozunu hangi aralıkta tutuyorduk?",
+      "type": "synonym",
+      "gold": [
+        "klor-dozaj-orani"
+      ],
+      "domain": "scada"
+    },
+    {
+      "q": "Metinden sese çözümü olarak neyi seçmiştik?",
+      "type": "synonym",
+      "gold": [
+        "neocp-tts-tercihi"
+      ],
+      "domain": "neocp"
+    }
+  ]
+}

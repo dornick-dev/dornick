@@ -1,0 +1,43 @@
+[project]
+name = "neocp"
+version = "0.1.0"
+description = "Bilgisayarı kullanabilen, kendi zihnine erişebilen bir ajan harness'ı"
+requires-python = ">=3.11"
+dependencies = [
+    "anthropic>=0.92",
+    "rich>=13.7",
+]
+
+[project.optional-dependencies]
+# Sinirsel sesler. Isletim sisteminin kendi sentezleyicisi robot gibi
+# konusuyor; bu paket gercek insan tonunda ses uretiyor.
+voice = ["edge-tts>=7.0"]
+# Yerel konusma tanima. Ses bilgisayardan cikmiyor; model ilk
+# kullanimda indirilip diskte kaliyor.
+listen = ["faster-whisper>=1.0", "sounddevice>=0.5"]
+# Sistem tepsisi: pencere kapaninca program kapanmasin.
+tray = ["pystray>=0.19", "pillow>=10.0"]
+# Kamera izleme. Hareket yerelde olculuyor; model yalnizca bir sey
+# degistiginde uyaniyor.
+watch = ["opencv-python-headless>=4.9"]
+# LM Studio, Ollama, vLLM, llama.cpp — OpenAI-uyumlu her sunucu.
+local = ["openai>=1.60"]
+# Masaüstü penceresi. İşletim sisteminin kendi webview'ını kullanır
+# (Windows'ta WebView2) — Chromium paketlenmez.
+app = ["pywebview>=5.0"]
+mcp = ["mcp>=1.2"]
+dev = ["pytest>=8.0", "pytest-asyncio>=0.23", "openai>=1.60", "pywebview>=5.0"]
+
+[project.scripts]
+neocp = "neocp.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/neocp"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]

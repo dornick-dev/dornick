@@ -1,0 +1,663 @@
+"""Zihin deposu.
+
+Dört yüzey:
+
+    semantik    öğrenilen bilgiler, tercihler, dersler   -> memories.jsonl
+    prosedürel  işe yarayan yordamlar (kind="procedure")  -> memories.jsonl
+    çalışma     hedef yığını                              -> goals.jsonl
+    epizodik    geçmiş oturumların olay günlükleri        -> sessions/*.jsonl
+
+Epizodik belleğin ayrı bir deposu yok — oturum günlükleri zaten odur. Zihin
+onların üzerine bir arama yüzeyi geçirir. Bu, olay günlüğünü tek gerçek kaynak
+tutma kararının doğrudan getirisi.
+
+Yazma biçimi her yerde append-only JSONL: aynı id'ye sahip sonraki kayıt
+öncekini geçersiz kılar. Silme diye bir şey yok, tombstone var — zihnin
+neyi ne zaman unuttuğu da zihnin bir parçası.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import threading
+from dataclasses import asdict, dataclass, field
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any, Iterable
+from uuid import uuid4
+
+from ..recall import Step, open_store
+from .search import Scored, excerpt, rank
+
+# "episode" digerlerinden farkli: onu ajan elle yazmiyor, baglam
+# sikistirmasi yaziyor. Ruha girmiyor (soul() turleri tek tek seciyor)
+# ama cagrisimla geri gelebiliyor — sikistirmanin kalici olma sebebi bu.
+MEMORY_KINDS = ("fact", "preference", "lesson", "procedure", "user", "voice", "episode")
+GOAL_STATES = ("active", "done", "dropped")
+
+# Ruh özetine girecek azami kayıt sayısı (tür başına). Ruh sistem promptunun
+# parçası; sınırsız büyürse her oturum daha pahalı başlar.
+SOUL_LIMIT = 8
+
+# Epizodik aramada taranacak azami oturum sayısı. Günlükler büyüdükçe
+# burası bir indeksle değiştirilir.
+MAX_SCANNED_SESSIONS = 60
+
+
+def _now() -> str:
+    # Milisaniye çözünürlük: aynı saniye içinde yazılan iki kaydın sırası
+    # kaybolmasın (tazelik sıralaması buna bakıyor).
+    return datetime.now(timezone.utc).isoformat(timespec="milliseconds")
+
+
+def _new_id(prefix: str) -> str:
+    return f"{prefix}_{uuid4().hex[:8]}"
+
+
+@dataclass(slots=True)
+class Memory:
+    id: str
+    ts: str
+    kind: str
+    title: str
+    content: str
+    tags: list[str] = field(default_factory=list)
+    session_id: str = ""
+    deleted: bool = False
+
+    def searchable(self) -> str:
+        return f"{self.title}\n{self.content}\n{' '.join(self.tags)}"
+
+    def render(self) -> str:
+        tags = f" [{', '.join(self.tags)}]" if self.tags else ""
+        return f"({self.kind}) {self.title}{tags}\n{self.content}"
+
+
+@dataclass(slots=True)
+class Goal:
+    id: str
+    ts: str
+    text: str
+    status: str = "active"
+    session_id: str = ""
+    note: str = ""
+
+
+@dataclass(slots=True)
+class Soul:
+    """Oturumlar arasında hayatta kalan kimlik.
+
+    Diskte duran zihinden türetilir ve oturum başında sistem promptuna
+    yerleşir. Ajanın "ben kimim, bu kullanıcı kim, şimdiye kadar ne öğrendim"
+    sorusuna, hiçbir araç çağırmadan sahip olduğu cevap.
+
+    Yordamların yalnızca başlıkları girer — detay `mind_recall` ile gelir.
+    Her şeyi prompta yığmak kademeli açığa çıkarmanın tersidir ve her oturumu
+    gereksiz pahalı başlatır.
+    """
+
+    persona: str
+    user: list[Memory]
+    preferences: list[Memory]
+    lessons: list[Memory]
+    voice: list[Memory]
+    procedures: list[Memory]
+    goals: list[Goal]
+    sessions: int
+    first_seen: str
+
+    @property
+    def is_blank(self) -> bool:
+        return not any(
+            (self.persona, self.user, self.preferences, self.lessons, self.voice,
+             self.procedures, self.goals)
+        )
+
+    def render(self) -> str:
+        if self.is_blank:
+            # İlk karşılaşma yönergesi buraya, IDENTITY'ye değil: kalıcı
+            # kimliğe yazılsaydı yüzüncü oturumda da "tanışalım" derdi.
+            # Ruh dolduğu anda bu blok kendiliğinden düşüyor.
+            return (
+                "Bu kullanıcıyla ilk kez karşılaşıyorsun; diskteki zihnin henüz "
+                "boş. Bu bir eksiklik değil, bir başlangıç — tanışmaya istekli "
+                "ol.\n\n"
+                "İlk konuşmada:\n"
+                "- Kendini bir cümleyle tanıt ve adını sor. Adını söylerse "
+                "`mind_memory` ile kaydet (kind=user); ikinci oturumda ona "
+                "adıyla hitap edebilmelisin.\n"
+                "- Ne üzerinde çalıştığını, seni ne için kullanmak istediğini "
+                "merak et. Sorgu listesi gibi değil — turda bir iki soru, "
+                "gerisi zamanla.\n"
+                "- Duyularını gözden geçir: sistem promptundaki \"Duyuların\" "
+                "bölümünde ne var ne yok yazıyor. Eksik olanları (mikrofon "
+                "yok, kamera yok, ses kapalı) bir kez, kısaca söyle ki "
+                "kullanıcı senden ne bekleyebileceğini bilsin.\n\n"
+                "Kaydettiğin, kullanıcının söylediği olsun — senin tahminin "
+                "değil. Sistem promptunda zaten yazan (çalışma alanı, tarih, "
+                "işletim sistemi) hatıra değildir; onlar her oturumda hazır."
+            )
+
+        parts = [self._history_line()]
+        if self.persona:
+            parts.append(self.persona)
+
+        # Konuşma biçimi en başta: cevabın tonunu belirleyen şey, cevabın
+        # içeriğinden önce okunmalı.
+        if self.voice:
+            parts.append(
+                "Bu kullanıcıyla nasıl konuştuğun:\n"
+                + "\n".join(f"- {m.content}" for m in self.voice)
+            )
+
+        for title, items in (
+            ("Kullanıcı hakkında bildiklerin", self.user),
+            ("Kullanıcının tercihleri", self.preferences),
+            ("Çıkardığın dersler", self.lessons),
+        ):
+            if items:
+                parts.append(f"{title}:\n" + "\n".join(f"- {m.content}" for m in items))
+
+        if self.procedures:
+            titles = "\n".join(f"- {m.title}" for m in self.procedures)
+            parts.append(
+                f"Bildiğin yordamlar (detay için mind_recall):\n{titles}"
+            )
+
+        if self.goals:
+            parts.append(
+                "Önceki oturumlardan kalan açık hedefler:\n"
+                + "\n".join(f"- [{g.id}] {g.text}" for g in self.goals)
+            )
+
+        return "\n\n".join(parts)
+
+    def _history_line(self) -> str:
+        if self.sessions <= 1:
+            return "Aşağıdakiler diskteki zihninden geliyor — önceki oturumlarda öğrendiklerin."
+        since = self.first_seen[:10] if self.first_seen else "bir süredir"
+        return (
+            f"Aşağıdakiler diskteki zihninden geliyor: {self.sessions} oturumdur "
+            f"({since} tarihinden beri) bu kullanıcıyla çalışıyorsun."
+        )
+
+
+@dataclass(slots=True)
+class Episode:
+    session_id: str
+    started: str
+    turns: int
+    tools: list[str]
+    digest: str
+
+    def searchable(self) -> str:
+        return f"{self.digest}\n{' '.join(self.tools)}"
+
+
+class Mind:
+    def __init__(self, mind_dir: Path, sessions_dir: Path, session_id: str = "") -> None:
+        self.dir = mind_dir
+        self.sessions_dir = sessions_dir
+        self.session_id = session_id
+        self.dir.mkdir(parents=True, exist_ok=True)
+
+        self._goals: dict[str, Goal] = {}
+        self._episode_cache: dict[str, tuple[int, Episode]] = {}
+        self._lock = threading.Lock()
+
+        # Hatıralar indeksli depoda: arama tarama değil, indeks araması.
+        # Hedefler JSONL kalıyor — sayıları sınırlı, taramanın maliyeti yok.
+        self.store = open_store(self.dir)
+        self.last_trace: list[Step] = []
+        self._migrate_jsonl()
+        # Diskteki imzalar daha ilk mesaj gelmeden arka planda RAM'e
+        # alınıyor: ilk hatırlama indeks kurulumunu beklememeli.
+        self.store.warm()
+
+        _load(self.dir / "goals.jsonl", Goal, self._goals)
+
+    def _migrate_jsonl(self) -> None:
+        """Eski memories.jsonl kayıtlarını bir kez indeksli depoya taşır."""
+        legacy = self.dir / "memories.jsonl"
+        if not legacy.exists() or self.store.count():
+            return
+        old: dict[str, Memory] = {}
+        _load(legacy, Memory, old)
+        for memory in old.values():
+            if memory.deleted:
+                continue
+            self.store.remember(
+                memory.content,
+                kind=memory.kind,
+                title=memory.title,
+                tags=memory.tags,
+                session=memory.session_id,
+            )
+        legacy.rename(legacy.with_suffix(".jsonl.migrated"))
+
+    # -- semantik / prosedürel ----------------------------------------
+
+    def remember(
+        self,
+        content: str,
+        *,
+        kind: str = "fact",
+        title: str = "",
+        tags: Iterable[str] = (),
+    ) -> Memory:
+        if kind not in MEMORY_KINDS:
+            raise ValueError(f"Bilinmeyen bellek türü: {kind}")
+        node = self.store.remember(
+            content,
+            kind=kind,
+            title=title,
+            tags=tags,
+            session=self.session_id,
+        )
+        return _from_node(node)
+
+    def bridge(self, src: str, dst: str, reason: str = "") -> tuple[Memory, Memory] | None:
+        """İki hatırayı bilinçli olarak birbirine bağlar.
+
+        Otomatik örgü (`_weave`) içerik benzerliğine bakıyor — "bunlar
+        birbirine benziyor" diyor. Buradaki bağ farklı: **neden** bağlı
+        olduğunu ajan söylüyor ve o gerekçe kenarda duruyor.
+
+        Fark pratikte şu: "dün 3,71M, bugün 3,72M" iki ayrı kayıt olarak
+        birbirine benzemiyor bile olabilir, ama "aynı ölçümün bir sonraki
+        günü" diye bağlanınca zaman dizisi oluşuyor ve çağrışım o zinciri
+        yürüyebiliyor.
+        """
+        first, second = self.store.peek(src), self.store.peek(dst)
+        if first is None or second is None:
+            return None
+        self.store.link(src, dst, weight=1.0, reason=reason.strip() or "ajan bağladı")
+        return _from_node(first), _from_node(second)
+
+    def series(self, tag: str, *, limit: int = 20) -> list[Memory]:
+        """Aynı etiketi taşıyan kayıtlar, eskiden yeniye.
+
+        Bir ölçümün zaman içindeki hali: "btc-fiyat" etiketiyle kaydedilen
+        her gözlem sırasıyla geliyor. "Dünden bugüne ne oldu" sorusunun
+        cevabı bu — tek tek hatırlayıp kafadan sıralamak değil.
+        """
+        wanted = tag.strip().lower()
+        if not wanted:
+            return []
+        found = [
+            _from_node(node)
+            for node in self.store.by_kind_any(limit=500)
+            if wanted in [t.lower() for t in node.tags]
+        ]
+        found.sort(key=lambda m: m.ts)
+        return found[-limit:]
+
+    def forget(self, memory_id: str) -> Memory | None:
+        node = self.store.peek(memory_id)
+        if node is None or not self.store.forget(memory_id):
+            return None
+        return _from_node(node, deleted=True)
+
+    def memories(self, kind: str | None = None) -> list[Memory]:
+        kinds = [kind] if kind else list(MEMORY_KINDS)
+        out: list[Memory] = []
+        for k in kinds:
+            out.extend(_from_node(n) for n in self.store.by_kind(k, limit=200))
+        return sorted(out, key=lambda m: m.ts, reverse=True)
+
+    def recall(self, query: str, *, kind: str | None = None, limit: int = 8) -> list[Scored]:
+        """İndeksten tohumlanır, bağlar üzerinden yayılır.
+
+        Aktivasyonun uğradığı yol `last_trace` içinde kalıyor; araç katmanı
+        onu olay günlüğüne yazınca arayüz hatırlamayı canlandırabiliyor.
+        """
+        recollection = self.store.recall(query, limit=limit * 2)
+        self.last_trace = recollection.trace
+
+        hits = [n for n in recollection.hits if not kind or n.kind == kind][:limit]
+        activation = {step.node: step.activation for step in recollection.trace}
+        return [
+            Scored(item=_from_node(node), score=activation.get(node.id, 0.0), matched=[])
+            for node in hits
+        ]
+
+    # -- çalışma belleği ----------------------------------------------
+
+    def push_goal(self, text: str) -> Goal:
+        goal = Goal(id=_new_id("goal"), ts=_now(), text=text.strip(), session_id=self.session_id)
+        self._write("goals.jsonl", goal)
+        self._goals[goal.id] = goal
+        return goal
+
+    def set_goal_status(self, goal_id: str, status: str, note: str = "") -> Goal | None:
+        if status not in GOAL_STATES:
+            raise ValueError(f"Bilinmeyen hedef durumu: {status}")
+        goal = self._goals.get(goal_id)
+        if goal is None:
+            return None
+        updated = Goal(**{**asdict(goal), "status": status, "ts": _now(), "note": note})
+        self._write("goals.jsonl", updated)
+        self._goals[goal_id] = updated
+        return updated
+
+    def goals(self, *, active_only: bool = True) -> list[Goal]:
+        items = list(self._goals.values())
+        if active_only:
+            items = [g for g in items if g.status == "active"]
+        return sorted(items, key=lambda g: g.ts)
+
+    def goal_digest(self) -> str:
+        """Aktif hedeflerin tek satırlık özeti.
+
+        Ajan bunu operatör kanalından (role="system") geri alır; böylece
+        uzun bir görevin ortasında ne yapmaya çalıştığını unutmaz.
+        """
+        active = self.goals()
+        if not active:
+            return ""
+        lines = [f"{i}. {g.text}" for i, g in enumerate(active, 1)]
+        return "Aktif hedefler:\n" + "\n".join(lines)
+
+    # -- ruh -----------------------------------------------------------
+
+    def soul(self, persona: str = "", limit: int = SOUL_LIMIT) -> Soul:
+        """Oturum başında yüklenen kimlik özeti.
+
+        Ajan bunu bir araç çağırarak değil, hazır bulur — kim olduğunu
+        hatırlamak için önce "hatırlamayı düşünmesi" gerekmemeli.
+        """
+        return Soul(
+            persona=persona.strip(),
+            user=self.memories("user")[:limit],
+            preferences=self.memories("preference")[:limit],
+            lessons=self.memories("lesson")[:limit],
+            voice=self.memories("voice")[:limit],
+            procedures=self.memories("procedure")[:limit],
+            goals=self.goals(),
+            sessions=self._session_count(),
+            first_seen=self._first_seen(),
+        )
+
+    def _session_count(self) -> int:
+        if not self.sessions_dir.is_dir():
+            return 0
+        return sum(1 for _ in self.sessions_dir.glob("*.jsonl"))
+
+    def _first_seen(self) -> str:
+        stems = sorted(p.stem for p in self.sessions_dir.glob("*.jsonl")) if self.sessions_dir.is_dir() else []
+        if stems:
+            return _stem_to_date(stems[0])
+        oldest = min((m.ts for m in self.memories()), default="")
+        return oldest[:10]
+
+    # -- epizodik ------------------------------------------------------
+
+    def episodes(self, query: str, *, limit: int = 5, include_current: bool = False) -> list[Scored]:
+        """Geçmiş oturumlarda arama.
+
+        Mevcut oturum varsayılan olarak dışarıda: o zaten bağlamda, tekrar
+        getirmek token harcamaktan başka bir işe yaramaz.
+        """
+        pool = [
+            ep
+            for ep in self._scan_sessions()
+            if include_current or ep.session_id != self.session_id
+        ]
+        return rank(
+            query,
+            pool,
+            text_of=lambda e: e.searchable(),
+            time_of=lambda e: e.started,
+            limit=limit,
+        )
+
+    def episode(self, session_id: str) -> Episode | None:
+        return next((e for e in self._scan_sessions() if e.session_id == session_id), None)
+
+    def sessions(self, limit: int = 60) -> list[Episode]:
+        """Tüm geçmiş oturumlar, en yeniden eskiye. Sohbet listesi bununla.
+
+        `episodes`'ten farkı sorgusuz olması: arama değil, gezinme. Boş bir
+        oturum (tek mesajlık, dijesti çıkmayan) listeye girmiyor — tıklanınca
+        boş bir şey açmak iyi bir sohbet listesi değil.
+        """
+        eps = self._scan_sessions()
+        eps.sort(key=lambda e: e.started, reverse=True)
+        return eps[:limit]
+
+    def transcript(self, session_id: str) -> list[dict[str, str]]:
+        """Bir oturumun konuşma dökümü: yalnızca metin turları.
+
+        Araç çağrıları ve düşünme dışarıda — geçmiş bir sohbete bakan
+        kullanıcı ne söylendiğini okumak istiyor, araç argümanlarını değil.
+        """
+        path = self.sessions_dir / f"{session_id}.jsonl"
+        if not path.is_file():
+            return []
+        out: list[dict[str, str]] = []
+        try:
+            with path.open(encoding="utf-8") as fh:
+                for line in fh:
+                    if not (line := line.strip()):
+                        continue
+                    try:
+                        event = json.loads(line)
+                    except json.JSONDecodeError:
+                        continue
+                    role = event.get("role")
+                    if role not in ("user", "assistant"):
+                        continue
+                    text = "\n".join(_plain_text(event.get("content"))).strip()
+                    if text:
+                        out.append({"role": role, "text": text})
+        except OSError:
+            return []
+        return out
+
+    # -- projeler (sohbet klasörleri) --------------------------------------
+    #
+    # Bir konuşmayı bir projeye bağlamak: gezinme kolaylığı, anı DEĞİL.
+    # Atama basit bir eşleme dosyasında (oturum → proje adı); günlükler
+    # değişmiyor. Anılar hâlâ konuşmalardan ayrıca oluşuyor.
+
+    def _projects_path(self) -> Path:
+        return self.sessions_dir / "_projects.json"
+
+    def projects(self) -> dict[str, str]:
+        """Oturum → proje adı eşlemesi. Atanmamışlar burada yok."""
+        path = self._projects_path()
+        if not path.is_file():
+            return {}
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return {}
+        return {str(k): str(v) for k, v in data.items()} if isinstance(data, dict) else {}
+
+    def set_project(self, session_id: str, project: str) -> dict[str, str]:
+        """Bir oturumu bir projeye bağlar; boş ad bağlamayı kaldırır."""
+        with self._lock:
+            mapping = self.projects()
+            name = (project or "").strip()
+            if name:
+                mapping[session_id] = name
+            else:
+                mapping.pop(session_id, None)
+            try:
+                self.sessions_dir.mkdir(parents=True, exist_ok=True)
+                self._projects_path().write_text(
+                    json.dumps(mapping, ensure_ascii=False, indent=2), encoding="utf-8")
+            except OSError:
+                pass
+            return mapping
+
+    def _scan_sessions(self) -> list[Episode]:
+        if not self.sessions_dir.is_dir():
+            return []
+        paths = sorted(self.sessions_dir.glob("*.jsonl"), reverse=True)[:MAX_SCANNED_SESSIONS]
+        out: list[Episode] = []
+        for path in paths:
+            try:
+                mtime = path.stat().st_mtime_ns
+            except OSError:
+                continue
+            cached = self._episode_cache.get(path.stem)
+            if cached and cached[0] == mtime:
+                out.append(cached[1])
+                continue
+            episode = _digest_session(path)
+            if episode is not None:
+                self._episode_cache[path.stem] = (mtime, episode)
+                out.append(episode)
+        return out
+
+    def links(self) -> list[tuple[str, str, float]]:
+        """Hatiralar arasindaki cagrisim baglari. Arayuz agi bununla ciziyor."""
+        return self.store.links()
+
+    def close(self) -> None:
+        self.store.close()
+
+    # -- yazma ---------------------------------------------------------
+
+    def _write(self, filename: str, record: Any) -> None:
+        path = self.dir / filename
+        with self._lock, path.open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps(asdict(record), ensure_ascii=False, separators=(",", ":")) + "\n")
+            fh.flush()
+            os.fsync(fh.fileno())
+
+
+# ---------------------------------------------------------------------
+
+
+def _load(path: Path, kind: type, into: dict[str, Any]) -> None:
+    if not path.exists():
+        return
+    with path.open(encoding="utf-8") as fh:
+        for line in fh:
+            if not (line := line.strip()):
+                continue
+            try:
+                record = kind(**json.loads(line))
+            except (json.JSONDecodeError, TypeError):
+                continue  # ileri sürüm alanı ya da yarım satır: atla
+            into[record.id] = record  # sonraki kayıt öncekini geçersiz kılar
+
+
+
+def _from_node(node, *, deleted: bool = False) -> Memory:
+    """Depo kaydini eski Memory bicimine cevirir.
+
+    Arayuz, ruh ve graf katmanlari bu bicimi bekliyor; depo degisimi
+    onlara sizmasin diye tek noktada cevriliyor.
+    """
+    return Memory(
+        id=node.id,
+        ts=node.created,
+        kind=node.kind,
+        title=node.title,
+        content=node.body,
+        tags=list(node.tags),
+        session_id=node.session,
+        deleted=deleted,
+    )
+
+def _stem_to_date(stem: str) -> str:
+    """20260822T203420Z -> 2026-08-22. Tanınmayan biçimi olduğu gibi bırakır."""
+    digits = stem[:8]
+    if len(digits) == 8 and digits.isdigit():
+        return f"{digits[:4]}-{digits[4:6]}-{digits[6:]}"
+    return stem
+
+
+def _first_line(text: str) -> str:
+    return next((line.strip() for line in text.splitlines() if line.strip()), "(başlıksız)")
+
+
+def _digest_session(path: Path) -> Episode | None:
+    """Bir oturum günlüğünü aranabilir tek bir özete indirger."""
+    started = ""
+    turns = 0
+    tools: list[str] = []
+    fragments: list[str] = []
+
+    try:
+        with path.open(encoding="utf-8") as fh:
+            for line in fh:
+                if not (line := line.strip()):
+                    continue
+                try:
+                    event = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+
+                started = started or event.get("ts", "")
+
+                if event.get("kind") == "meta":
+                    if event.get("content") == "tool_start":
+                        name = event.get("meta", {}).get("tool")
+                        if name and name not in tools:
+                            tools.append(name)
+                    continue
+
+                role = event.get("role")
+                if role == "assistant":
+                    turns += 1
+                if role not in ("user", "assistant"):
+                    continue
+                fragments.extend(_text_of(event.get("content")))
+    except OSError:
+        return None
+
+    if not fragments:
+        return None
+
+    return Episode(
+        session_id=path.stem,
+        started=started,
+        turns=turns,
+        tools=tools,
+        digest=" ".join(fragments)[:8000],
+    )
+
+
+def _plain_text(content: Any) -> list[str]:
+    """Yalnızca metin blokları — araç çağrısı ve düşünme dışarıda.
+
+    `_text_of`'tan farkı: o arama için tool_use'u da metne çeviriyor;
+    burada insana gösterilecek konuşma dökümü isteniyor, o yüzden sadece
+    gerçek söz alınıyor.
+    """
+    if isinstance(content, str):
+        return [content]
+    if not isinstance(content, list):
+        return []
+    return [str(b.get("text", "")) for b in content
+            if isinstance(b, dict) and b.get("type") == "text"]
+
+
+def _text_of(content: Any) -> list[str]:
+    if isinstance(content, str):
+        return [content]
+    if not isinstance(content, list):
+        return []
+    out: list[str] = []
+    for block in content:
+        if not isinstance(block, dict):
+            continue
+        if block.get("type") == "text":
+            out.append(str(block.get("text", "")))
+        elif block.get("type") == "tool_use":
+            out.append(f"{block.get('name', '')} {json.dumps(block.get('input', {}), ensure_ascii=False)}")
+    return out
+
+
+def render_hits(hits: list[Scored], *, text_of, header: str) -> str:
+    if not hits:
+        return f"{header}: sonuç yok."
+    lines = [header + ":"]
+    for hit in hits:
+        lines.append(excerpt(text_of(hit.item), hit.matched))
+    return "\n\n".join(lines)

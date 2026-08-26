@@ -1,0 +1,336 @@
+"""Zihin katmanı testleri.
+
+Odak: kalıcılık (yeniden açınca kaybolmuyor mu), arama isabeti, ve zihnin
+döngüye gerçekten bağlanıp bağlanmadığı.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import json
+import sqlite3
+from pathlib import Path
+
+import pytest
+
+from neocp.config import Config
+from neocp.events import EventLog
+from neocp.mind import Mind, open_mind
+from neocp.mind.search import rank, tokenize
+from neocp.session import PendingToolUse, Session
+from neocp.tools import ToolContext, build_registry, execute
+from neocp.permissions import PermissionEngine
+
+
+@pytest.fixture()
+def mind(tmp_path: Path) -> Mind:
+    return open_mind(tmp_path / "mind", tmp_path / "sessions", "cur")
+
+
+# -- sıralama ----------------------------------------------------------
+
+
+def test_stopwords_are_dropped() -> None:
+    assert "ve" not in tokenize("kahve ve çay")
+    assert "kahve" in tokenize("kahve ve çay")
+
+
+def test_rare_terms_outrank_common_ones() -> None:
+    items = [
+        "dosya okuma hakkında not",
+        "dosya yazma hakkında not",
+        "dosya silme ve postgres bağlantısı hakkında not",
+    ]
+    hits = rank("postgres dosya", items, text_of=lambda s: s, limit=3)
+    # "dosya" her belgede var, "postgres" nadir — nadir olan sıralamayı belirlemeli.
+    assert "postgres" in hits[0].item
+
+
+@pytest.mark.parametrize(
+    ("query", "document"),
+    [
+        ("rapor", "raporları hazırladım"),      # sorgu kök, belge ekli
+        ("raporları", "rapor formatı"),          # sorgu ekli, belge kök
+        ("yedek", "yedeklemeyi otomatikleştir"), # araya ek girmiş
+        ("dosya", "dosyaların listesi"),
+    ],
+)
+def test_suffixed_forms_match_the_stem(query: str, document: str) -> None:
+    """Türkçe sondan eklemeli — tam sözcük eşleşmesi aramanın yarısını kaybettirir."""
+    hits = rank(query, [document, "tamamen alakasız bir metin"], text_of=lambda s: s)
+    assert hits and hits[0].item == document
+
+
+def test_short_words_do_not_prefix_match() -> None:
+    """Kısa sözcükler için ön ek eşleşmesi gürültü üretir; birebir olmalı."""
+    hits = rank("kar", ["karpuz kavun", "kar yağıyor"], text_of=lambda s: s)
+    assert [h.item for h in hits] == ["kar yağıyor"]
+
+
+def test_empty_query_returns_newest_first(mind: Mind) -> None:
+    mind.remember("ilk", title="ilk")
+    mind.remember("ikinci", title="ikinci")
+    hits = mind.recall("", limit=2)
+    assert hits[0].item.title == "ikinci"
+
+
+# -- semantik bellek ---------------------------------------------------
+
+
+def test_memories_survive_reopen(tmp_path: Path) -> None:
+    first = open_mind(tmp_path / "mind", tmp_path / "sessions", "s1")
+    saved = first.remember(
+        "Kullanıcı PowerShell kullanıyor, bash değil.", kind="preference", tags=["kabuk"]
+    )
+
+    reopened = open_mind(tmp_path / "mind", tmp_path / "sessions", "s2")
+    assert [m.id for m in reopened.memories()] == [saved.id]
+    assert reopened.memories()[0].kind == "preference"
+
+
+def test_forget_is_a_tombstone_not_a_deletion(tmp_path: Path) -> None:
+    mind = open_mind(tmp_path / "mind", tmp_path / "sessions")
+    memory = mind.remember("yanlış bir bilgi")
+    mind.forget(memory.id)
+
+    assert mind.memories() == []
+    assert mind.forget(memory.id) is None  # iki kez silinmez
+
+    # Mezar taşı: kayıt silinmedi, işaretlendi. Neyin ne zaman unutulduğu
+    # da zihnin parçası; depo artık indeksli olduğu için işaret orada.
+    with sqlite3.connect(tmp_path / "mind" / "recall.db") as db:
+        rows = db.execute("SELECT deleted FROM node WHERE id=?", (memory.id,)).fetchall()
+    assert rows == [(1,)]
+
+
+def test_recall_filters_by_kind(mind: Mind) -> None:
+    mind.remember("git rebase yordamı", kind="procedure", title="rebase")
+    mind.remember("git hakkında bir olgu", kind="fact", title="olgu")
+
+    hits = mind.recall("git", kind="procedure")
+    assert [h.item.title for h in hits] == ["rebase"]
+
+
+# -- hedefler ----------------------------------------------------------
+
+
+def test_goal_lifecycle_and_digest(mind: Mind) -> None:
+    a = mind.push_goal("veriyi topla")
+    b = mind.push_goal("raporu yaz")
+
+    digest = mind.goal_digest()
+    assert "veriyi topla" in digest and "raporu yaz" in digest
+
+    mind.set_goal_status(a.id, "done", note="bitti")
+    assert "veriyi topla" not in mind.goal_digest()
+    assert [g.id for g in mind.goals()] == [b.id]
+
+
+def test_goals_survive_reopen(tmp_path: Path) -> None:
+    first = open_mind(tmp_path / "mind", tmp_path / "sessions")
+    goal = first.push_goal("kalıcı hedef")
+    first.set_goal_status(goal.id, "done")
+
+    reopened = open_mind(tmp_path / "mind", tmp_path / "sessions")
+    assert reopened.goals() == []
+    assert reopened.goals(active_only=False)[0].status == "done"
+
+
+# -- epizodik ----------------------------------------------------------
+
+
+def _write_session(sessions: Path, name: str, user_text: str, tool: str) -> None:
+    sessions.mkdir(parents=True, exist_ok=True)
+    log = EventLog(sessions / f"{name}.jsonl")
+    log.message("user", [{"type": "text", "text": user_text}])
+    log.note("tool_start", tool=tool)
+    log.message("assistant", [{"type": "text", "text": "yapıldı"}])
+    log.close()
+
+
+def test_episodes_search_past_sessions(tmp_path: Path) -> None:
+    sessions = tmp_path / "sessions"
+    _write_session(sessions, "20260101T000000Z", "postgres yedeğini al", "shell")
+    _write_session(sessions, "20260102T000000Z", "tatil fotoğraflarını sırala", "list_dir")
+
+    mind = open_mind(tmp_path / "mind", sessions, "cur")
+    hits = mind.episodes("postgres yedek")
+
+    assert hits and hits[0].item.session_id == "20260101T000000Z"
+    assert "shell" in hits[0].item.tools
+
+
+def test_current_session_is_excluded_from_episodes(tmp_path: Path) -> None:
+    """Mevcut oturum zaten bağlamda; tekrar getirmek boşa token."""
+    sessions = tmp_path / "sessions"
+    _write_session(sessions, "cur", "postgres yedeğini al", "shell")
+
+    mind = open_mind(tmp_path / "mind", sessions, "cur")
+    assert mind.episodes("postgres") == []
+    assert mind.episodes("postgres", include_current=True)
+
+
+# -- araç yüzeyi -------------------------------------------------------
+
+
+@pytest.fixture()
+def ctx(tmp_path: Path, mind: Mind) -> ToolContext:
+    config = Config.load(tmp_path)
+    config.ensure_dirs()
+    session = Session(EventLog(tmp_path / "s.jsonl"), "cur")
+    return ToolContext(config=config, session=session, cancel=asyncio.Event())
+
+
+async def _call(registry, ctx, name: str, args: dict, *, expect_error: bool = False) -> str:
+    """Aracı çağırır ve hata durumunu doğrular.
+
+    Yürütücü araç içindeki istisnayı yakalayıp hata sonucuna çeviriyor —
+    doğru davranış, ama testte kontrol edilmezse patlayan bir araç sessizce
+    'geçti' görünür. Bir kez tam olarak bu oldu.
+    """
+    blocks = await execute(
+        [PendingToolUse("x", name, args)],
+        registry=registry,
+        permissions=PermissionEngine("yolo", allow=[], deny=[]),
+        ctx=ctx,
+        approve=lambda *_: asyncio.sleep(0, result=True),
+    )
+    block = blocks[0]
+    assert block["is_error"] is expect_error, block["content"]
+    return block["content"]
+
+
+async def test_mind_tools_are_registered_only_with_a_mind(mind: Mind) -> None:
+    assert "mind_recall" not in build_registry()
+    assert "mind_recall" in build_registry(mind)
+
+
+async def test_save_then_recall_through_the_tool_surface(ctx: ToolContext, mind: Mind) -> None:
+    registry = build_registry(mind)
+
+    await _call(
+        registry,
+        ctx,
+        "mind_memory",
+        {"action": "save", "content": "Kullanıcı raporları xlsx istiyor.", "kind": "preference"},
+    )
+    found = await _call(registry, ctx, "mind_recall", {"query": "rapor formatı", "scope": "memory"})
+
+    assert "xlsx" in found
+
+
+async def test_recall_says_so_when_nothing_is_known(ctx: ToolContext, mind: Mind) -> None:
+    registry = build_registry(mind)
+    out = await _call(registry, ctx, "mind_recall", {"query": "hiç konuşulmamış konu"})
+    assert "kayıt yok" in out
+
+
+async def test_introspect_flags_repeated_identical_calls(ctx: ToolContext, mind: Mind) -> None:
+    """Aynı çağrıyı üst üste denemek en sık takılma biçimi; zihin bunu görmeli."""
+    for _ in range(3):
+        ctx.session.log.note("tool_start", tool="shell", input={"command": "make build"})
+        ctx.session.log.note("tool_end", tool="shell", ms=10, error=True)
+
+    registry = build_registry(mind)
+    report = await _call(registry, ctx, "mind_introspect", {"aspect": "session"})
+
+    assert "3+ kez aynı argümanlarla" in report
+    assert "3 hata" in report
+
+
+async def test_goal_tool_updates_digest(ctx: ToolContext, mind: Mind) -> None:
+    registry = build_registry(mind)
+    out = await _call(registry, ctx, "mind_goals", {"action": "push", "text": "testi geçir"})
+    assert "testi geçir" in out
+    assert mind.goals()[0].text == "testi geçir"
+
+
+# -- konuşma geçmişi: anı DEĞİL, ham oturumlar -------------------------
+
+
+def test_sessions_lists_past_conversations_newest_first(tmp_path):
+    """Sohbet listesi: geçmiş oturumlar, en yeniden eskiye. Bu bir anı
+    listesi değil — ham konuşmaların kendisi."""
+    from neocp.events import EventLog
+    from neocp.mind import open_mind
+
+    sessions = tmp_path / "sessions"
+    sessions.mkdir(parents=True)
+    for stem, turns in [
+        ("20260610T090000Z", [("user", "çorum pompa verimi ne"), ("assistant", "%72")]),
+        ("20260612T140000Z", [("user", "modbus kopuyor"), ("assistant", "yeni bağlantı aç")]),
+    ]:
+        log = EventLog(sessions / f"{stem}.jsonl")
+        for r, t in turns:
+            log.append("message", role=r, content=t)
+        log.close()
+
+    mind = open_mind(tmp_path / "mind", sessions, "cur")
+    got = mind.sessions()
+    assert len(got) == 2
+    assert got[0].session_id == "20260612T140000Z"  # en yeni başta
+
+
+def test_transcript_returns_only_spoken_turns(tmp_path):
+    """Döküm yalnızca metin turları — araç çağrısı ve düşünme dışarıda."""
+    from neocp.events import EventLog
+    from neocp.mind import open_mind
+
+    sessions = tmp_path / "sessions"
+    sessions.mkdir(parents=True)
+    log = EventLog(sessions / "20260610T090000Z.jsonl")
+    log.append("message", role="user", content="kuyu seviyesi ne kadar")
+    log.append("message", role="assistant", content=[
+        {"type": "text", "text": "Seviye 2,77 m."},
+        {"type": "tool_use", "name": "shell", "input": {"command": "cat x"}},
+    ])
+    log.close()
+
+    mind = open_mind(tmp_path / "mind", sessions, "cur")
+    turns = mind.transcript("20260610T090000Z")
+    assert turns == [
+        {"role": "user", "text": "kuyu seviyesi ne kadar"},
+        {"role": "assistant", "text": "Seviye 2,77 m."},
+    ]
+
+
+def test_projects_assign_and_clear(tmp_path):
+    """Bir konuşma bir projeye bağlanıp çözülebiliyor; kalıcı ve boş ad
+    bağlamayı kaldırıyor. Bir konuşma bir anı değil — bu yalnızca klasör."""
+    from neocp.mind import open_mind
+
+    sessions = tmp_path / "sessions"
+    sessions.mkdir(parents=True)
+    mind = open_mind(tmp_path / "mind", sessions, "cur")
+
+    assert mind.projects() == {}
+    mind.set_project("20260610T090000Z", "Çorum SCADA")
+    assert mind.projects()["20260610T090000Z"] == "Çorum SCADA"
+
+    # Yeniden açınca korunuyor (diske yazıldı).
+    again = open_mind(tmp_path / "mind", sessions, "cur")
+    assert again.projects()["20260610T090000Z"] == "Çorum SCADA"
+
+    # Boş ad bağlamayı kaldırıyor.
+    again.set_project("20260610T090000Z", "")
+    assert "20260610T090000Z" not in again.projects()
+
+
+# -- gövde sınırı -------------------------------------------------------
+
+
+def test_recall_answers_are_body_capped(tmp_path):
+    """Sınırsızdı: bir episode kaydı (sıkıştırma özeti 8.000 harfe kadar)
+    tek isabette binlerce token yiyip gerçek eşleşmeyi boğuyordu. Kırpılan
+    kayıp değil — model sorguyu daraltıp yeniden arayabilir ve cevap bunu
+    söylüyor."""
+    from neocp.mind.tools import RECALL_BODY_CAP, _bounded
+
+    short = "kısa kayıt"
+    assert _bounded(short) == short
+
+    long = "postgres " * 400
+    cut = _bounded(long)
+    assert len(cut) < len(long)
+    assert cut.startswith(long[:RECALL_BODY_CAP])
+    assert "kırpıldı" in cut

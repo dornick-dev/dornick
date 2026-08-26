@@ -1,0 +1,576 @@
+"""Sağlayıcı çevirisi ve OpenAI-uyumlu backend testleri.
+
+Biçim hataları bu katmanın en sinsi hata sınıfı: sunucu 400 döndürür ama
+sebebi mesaj dizisinin ortasında bir yerdedir. Çeviri saf fonksiyonlar
+olduğu için hepsi ağ olmadan doğrulanabiliyor.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import json
+from types import SimpleNamespace
+
+import pytest
+
+from neocp.backends import build_client
+from neocp.backends.openai_backend import OpenAIBackend
+from neocp.backends.translate import (
+    map_finish_reason,
+    parse_arguments,
+    to_anthropic_blocks,
+    to_openai_messages,
+    to_openai_tools,
+)
+from neocp.config import ModelConfig
+from neocp.context import Prepared
+
+SYSTEM = [{"type": "text", "text": "çekirdek"}, {"type": "text", "text": "ruh"}]
+
+
+# -- giden çeviri ------------------------------------------------------
+
+
+def test_system_blocks_collapse_into_one_message() -> None:
+    out = to_openai_messages(SYSTEM, [])
+    assert out == [{"role": "system", "content": "çekirdek\n\nruh"}]
+
+
+def test_tool_use_becomes_tool_calls() -> None:
+    messages = [
+        {
+            "role": "assistant",
+            "content": [
+                {"type": "text", "text": "bakıyorum"},
+                {"type": "tool_use", "id": "t1", "name": "shell", "input": {"command": "ls"}},
+            ],
+        }
+    ]
+    assistant = to_openai_messages([], messages)[0]
+
+    assert assistant["content"] == "bakıyorum"
+    call = assistant["tool_calls"][0]
+    assert call["id"] == "t1"
+    assert call["function"]["name"] == "shell"
+    assert json.loads(call["function"]["arguments"]) == {"command": "ls"}
+
+
+def test_tool_results_precede_user_text() -> None:
+    """OpenAI sıralaması katı: tool mesajları asistanın tool_calls'ını
+    doğrudan izlemeli. Araya user mesajı girerse sunucu reddeder."""
+    messages = [
+        {
+            "role": "user",
+            "content": [
+                {"type": "text", "text": "bir de şuna bak"},
+                {"type": "tool_result", "tool_use_id": "t1", "content": "çıktı"},
+            ],
+        }
+    ]
+    out = to_openai_messages([], messages)
+
+    assert [m["role"] for m in out] == ["tool", "user"]
+    assert out[0]["tool_call_id"] == "t1"
+
+
+def test_error_results_are_marked_for_the_model() -> None:
+    messages = [
+        {
+            "role": "user",
+            "content": [
+                {"type": "tool_result", "tool_use_id": "t1", "content": "yok", "is_error": True}
+            ],
+        }
+    ]
+    assert to_openai_messages([], messages)[0]["content"].startswith("HATA:")
+
+
+def test_thinking_blocks_are_dropped() -> None:
+    """Yerel modeller thinking bloğunu anlamaz; göndermek hataya yol açar."""
+    messages = [
+        {
+            "role": "assistant",
+            "content": [
+                {"type": "thinking", "thinking": "gizli akıl yürütme", "signature": "x"},
+                {"type": "text", "text": "cevap"},
+            ],
+        }
+    ]
+    assistant = to_openai_messages([], messages)[0]
+    assert assistant["content"] == "cevap"
+    assert "gizli" not in json.dumps(assistant, ensure_ascii=False)
+
+
+def test_images_become_data_urls() -> None:
+    messages = [
+        {
+            "role": "user",
+            "content": [
+                {"type": "text", "text": "bu ne"},
+                {
+                    "type": "image",
+                    "source": {"type": "base64", "media_type": "image/png", "data": "AAA"},
+                },
+            ],
+        }
+    ]
+    parts = to_openai_messages([], messages)[0]["content"]
+    assert parts[1]["image_url"]["url"] == "data:image/png;base64,AAA"
+
+
+def test_lone_text_is_sent_as_a_plain_string() -> None:
+    """Bazı uyumlu sunucular dizi biçimini yalnızca görüntü varken kabul ediyor."""
+    messages = [{"role": "user", "content": [{"type": "text", "text": "selam"}]}]
+    assert to_openai_messages([], messages)[0]["content"] == "selam"
+
+
+def test_image_inside_tool_result_degrades_to_a_note() -> None:
+    """role=tool içeriği dize olmak zorunda; görüntü sessizce kaybolmamalı."""
+    messages = [
+        {
+            "role": "user",
+            "content": [
+                {
+                    "type": "tool_result",
+                    "tool_use_id": "t1",
+                    "content": [
+                        {"type": "text", "text": "ekran alındı"},
+                        {"type": "image", "source": {"type": "base64", "data": "AAA"}},
+                    ],
+                }
+            ],
+        }
+    ]
+    content = to_openai_messages([], messages)[0]["content"]
+    assert "ekran alındı" in content
+    assert "görüntü" in content
+
+
+def test_tool_schema_shape() -> None:
+    tools = to_openai_tools(
+        [{"name": "shell", "description": "d", "input_schema": {"type": "object"}}]
+    )
+    assert tools[0]["type"] == "function"
+    assert tools[0]["function"]["parameters"] == {"type": "object"}
+
+
+# -- dönen çeviri ------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        ('{"a": 1}', {"a": 1}),
+        ('```json\n{"a": 1}\n```', {"a": 1}),          # markdown çiti
+        ('Tabii! {"a": 1}', {"a": 1}),                  # önüne sohbet eklemiş
+        ("", {}),
+        ("tamamen bozuk", {}),
+        ('["liste"]', {}),                              # sözlük değil
+    ],
+)
+def test_parse_arguments_repairs_common_local_model_mistakes(raw: str, expected: dict) -> None:
+    assert parse_arguments(raw) == expected
+
+
+def test_missing_call_id_is_synthesized() -> None:
+    """tool_result eşleşmesi id'ye dayanıyor; eksikse üretmek zorundayız."""
+    blocks = to_anthropic_blocks("", [{"name": "shell", "arguments": "{}"}])
+    assert blocks[0]["id"]
+
+
+@pytest.mark.parametrize(
+    ("finish", "expected"),
+    [("stop", "end_turn"), ("tool_calls", "tool_use"), ("length", "max_tokens"), (None, "end_turn")],
+)
+def test_finish_reason_mapping(finish: str | None, expected: str) -> None:
+    assert map_finish_reason(finish) == expected
+
+
+# -- backend ----------------------------------------------------------
+
+
+def chunk(
+    content=None, tool_calls=None, finish=None, usage=None, reasoning=None, extra=None
+) -> SimpleNamespace:
+    delta = SimpleNamespace(
+        content=content,
+        tool_calls=tool_calls,
+        reasoning_content=reasoning,
+        model_extra=extra or {},
+    )
+    return SimpleNamespace(
+        choices=[SimpleNamespace(delta=delta, finish_reason=finish)], usage=usage
+    )
+
+
+def fragment(index: int, *, id=None, name=None, arguments=None) -> SimpleNamespace:
+    return SimpleNamespace(
+        index=index, id=id, function=SimpleNamespace(name=name, arguments=arguments)
+    )
+
+
+class FakeStream:
+    """Kapatılıp kapatılmadığını kaydeden akış."""
+
+    def __init__(self, chunks: list[SimpleNamespace]) -> None:
+        self.chunks = chunks
+        self.closed = False
+
+    def __aiter__(self):
+        async def gen():
+            for c in self.chunks:
+                yield c
+
+        return gen()
+
+    async def close(self) -> None:
+        self.closed = True
+
+
+class FakeOpenAI:
+    def __init__(self, chunks: list[SimpleNamespace]) -> None:
+        self.seen: dict = {}
+        self.stream = FakeStream(chunks)
+        self.chat = SimpleNamespace(completions=SimpleNamespace(create=self._create))
+
+    async def _create(self, **kwargs):
+        self.seen = kwargs
+        return self.stream
+
+    async def close(self) -> None:
+        pass
+
+
+def backend(chunks: list[SimpleNamespace], **overrides) -> tuple[OpenAIBackend, FakeOpenAI]:
+    fake = FakeOpenAI(chunks)
+    model = ModelConfig(
+        name="local-model", provider="openai", base_url="http://localhost:1234/v1", **overrides
+    )
+    return OpenAIBackend(model, client=fake), fake
+
+
+def prepared() -> Prepared:
+    return Prepared(
+        system=SYSTEM,
+        messages=[{"role": "user", "content": [{"type": "text", "text": "merhaba"}]}],
+        betas=[],
+        context_management=None,
+    )
+
+
+async def test_text_stream_is_assembled(monkeypatch) -> None:
+    be, _ = backend([chunk(content="mer"), chunk(content="haba", finish="stop")])
+    result = await be.turn(prepared(), [], cancel=asyncio.Event())
+
+    assert result.content == [{"type": "text", "text": "merhaba"}]
+    assert result.stop_reason == "end_turn"
+
+
+async def test_tool_call_assembled_from_fragments() -> None:
+    """Argümanlar parça parça gelir; birleştirme hatası sessizce bozuk JSON üretir."""
+    be, _ = backend(
+        [
+            chunk(tool_calls=[fragment(0, id="c1", name="shell", arguments='{"comm')]),
+            chunk(tool_calls=[fragment(0, arguments='and": "ls"}')]),
+            chunk(finish="tool_calls"),
+        ]
+    )
+    result = await be.turn(prepared(), [], cancel=asyncio.Event())
+
+    assert result.stop_reason == "tool_use"
+    assert result.tool_uses() == [
+        {"type": "tool_use", "id": "c1", "name": "shell", "input": {"command": "ls"}}
+    ]
+
+
+async def test_parallel_tool_calls_keep_their_slots() -> None:
+    be, _ = backend(
+        [
+            chunk(
+                tool_calls=[
+                    fragment(0, id="a", name="read_file", arguments='{"path":"x"}'),
+                    fragment(1, id="b", name="list_dir", arguments='{"path":"y"}'),
+                ]
+            ),
+            chunk(finish="tool_calls"),
+        ]
+    )
+    result = await be.turn(prepared(), [], cancel=asyncio.Event())
+    assert [b["name"] for b in result.tool_uses()] == ["read_file", "list_dir"]
+
+
+async def test_tool_calls_imply_tool_use_even_without_finish_reason() -> None:
+    """Bazı uyumlu sunucular finish_reason atlıyor; döngü o zaman turu
+    end_turn sanıp aracı hiç çalıştırmadan dururdu."""
+    be, _ = backend([chunk(tool_calls=[fragment(0, id="c1", name="shell", arguments="{}")])])
+    result = await be.turn(prepared(), [], cancel=asyncio.Event())
+    assert result.stop_reason == "tool_use"
+
+
+async def test_cancel_stops_mid_stream() -> None:
+    cancel = asyncio.Event()
+    cancel.set()
+    be, _ = backend([chunk(content="hiç görünmemeli", finish="stop")])
+
+    result = await be.turn(prepared(), [], cancel=cancel)
+    assert result.interrupted is True
+    assert result.message is None
+
+
+async def test_usage_is_carried_over() -> None:
+    usage = SimpleNamespace(prompt_tokens=120, completion_tokens=30)
+    be, _ = backend([chunk(content="x", finish="stop", usage=usage)])
+
+    result = await be.turn(prepared(), [], cancel=asyncio.Event())
+    assert result.usage.input_tokens == 120
+    assert result.usage.output_tokens == 30
+
+
+async def test_anthropic_only_parameters_are_not_sent_to_local_servers() -> None:
+    """effort ve thinking yerel sunucularda 400 sebebi olur."""
+    be, fake = backend([chunk(content="x", finish="stop")], temperature=0.4)
+    await be.turn(prepared(), [{"name": "shell", "description": "d", "input_schema": {}}], cancel=asyncio.Event())
+
+    assert "output_config" not in fake.seen
+    assert "thinking" not in fake.seen
+    assert fake.seen["temperature"] == 0.4
+    assert fake.seen["model"] == "local-model"
+
+
+async def test_reasoning_only_turn_is_marked_incomplete_not_answered() -> None:
+    """Düşünme modelleri turu bazen yalnızca reasoning kanalında bitirir:
+    plan yapar, "şimdi şunu yapmalıyım" der ve durur.
+
+    Bunu cevap diye sunmak kullanıcıyı yarıda bırakıyordu — gerçek bir
+    koşuda ekranda "Şimdi bilgi toplayıp sunmalıyım:" yazıp konuşma bitti.
+    Akıl yürütme geçmişe girmeli (model kendi planını görsün) ama cevap
+    sayılmamalı; döngü `empty_turn` görünce turu sürdürüyor.
+    """
+    from neocp.backends import Callbacks
+
+    shown: list[str] = []
+    be, _ = backend([chunk(reasoning="Şimdi şunu yapmalıyım:", finish="stop")])
+    result = await be.turn(
+        prepared(), [], cancel=asyncio.Event(), callbacks=Callbacks(on_text=shown.append)
+    )
+
+    assert result.error is None
+    assert result.stop_reason == "empty_turn"
+    # Geçmişte duruyor...
+    assert result.content == [{"type": "text", "text": "Şimdi şunu yapmalıyım:"}]
+    # ...ama cevap kanalından akmadı.
+    assert shown == []
+
+
+async def test_reasoning_in_model_extra_is_found() -> None:
+    """Alan OpenAI şemasında yok; SDK onu model_extra'ya koyuyor."""
+    be, _ = backend([chunk(extra={"reasoning_content": "gizli kanal"}, finish="stop")])
+    result = await be.turn(prepared(), [], cancel=asyncio.Event())
+    assert result.content == [{"type": "text", "text": "gizli kanal"}]
+
+
+async def test_completely_empty_response_is_an_error_not_an_empty_turn() -> None:
+    """Boş content dizisini geçmişe yazmak sonraki isteği bozar."""
+    be, _ = backend([chunk(finish="stop")])
+    result = await be.turn(prepared(), [], cancel=asyncio.Event())
+
+    assert result.message is None
+    assert "boş yanıt" in (result.error or "")
+
+
+async def test_stream_is_closed_after_normal_completion() -> None:
+    """Kapatılmazsa httpx bağlantısı kapanışta toplanır ve hata basar."""
+    be, fake = backend([chunk(content="bitti", finish="stop")])
+    await be.turn(prepared(), [], cancel=asyncio.Event())
+    assert fake.stream.closed is True
+
+
+async def test_stream_is_closed_when_cancelled() -> None:
+    cancel = asyncio.Event()
+    cancel.set()
+    be, fake = backend([chunk(content="x", finish="stop")])
+
+    await be.turn(prepared(), [], cancel=cancel)
+    assert fake.stream.closed is True
+
+
+def test_unknown_provider_fails_loudly() -> None:
+    with pytest.raises(ValueError, match="Bilinmeyen sağlayıcı"):
+        build_client(ModelConfig(provider="llamafile"))
+
+
+# -- metne sizan arac cagrilari ----------------------------------------
+
+
+def test_inline_tool_call_in_text_is_executed_not_shown() -> None:
+    """Bazi yerel modeller cagriyi tool_calls alaninda degil metinde uretiyor.
+
+    Ayristirilmazsa cagri hic calismaz ve ham XML kullaniciya cevap gibi
+    gorunur — gercek bir kosuda tam olarak bu oldu.
+    """
+    from neocp.backends.translate import extract_inline_calls
+
+    raw = (
+        "Tamam, kaydediyorum.\n"
+        "<tool_call>\n<function=mind_memory>\n"
+        "<parameter=action>\nsave\n</parameter>\n"
+        "<parameter=content>\nFatih SCADA ile calisiyor.\n</parameter>\n"
+        "</function>\n</tool_call>"
+    )
+    text, calls = extract_inline_calls(raw)
+
+    assert text == "Tamam, kaydediyorum."
+    assert "<tool_call>" not in text
+    assert calls == [
+        {"name": "mind_memory",
+         "arguments": {"action": "save", "content": "Fatih SCADA ile calisiyor."}}
+    ]
+
+
+def test_inline_json_form_is_parsed() -> None:
+    from neocp.backends.translate import extract_inline_calls
+
+    text, calls = extract_inline_calls(
+        'Bak: <tool_call>{"name": "shell", "arguments": {"command": "ls"}}</tool_call>'
+    )
+    assert text == "Bak:"
+    assert calls == [{"name": "shell", "arguments": {"command": "ls"}}]
+
+
+def test_plain_text_is_left_alone() -> None:
+    from neocp.backends.translate import extract_inline_calls
+
+    assert extract_inline_calls("sadece bir cevap") == ("sadece bir cevap", [])
+
+
+async def test_backend_turns_inline_calls_into_tool_use() -> None:
+    be, _ = backend([
+        chunk(content="Bakiyorum. <tool_call><function=list_dir>"),
+        chunk(content="<parameter=path>src</parameter></function></tool_call>", finish="stop"),
+    ])
+    result = await be.turn(prepared(), [], cancel=asyncio.Event())
+
+    assert result.stop_reason == "tool_use"
+    assert result.tool_uses() == [
+        {"type": "tool_use", "id": "inline_0", "name": "list_dir", "input": {"path": "src"}}
+    ]
+    # Ham etiket cevaba sizmamali.
+    assert "<tool_call>" not in result.content[0]["text"]
+
+
+# -- düşünme çabası ----------------------------------------------------
+#
+# "Çaba" ayarı OpenAI uyumlu sunuculara hiç gönderilmiyordu: qwen3 gibi
+# düşünen modeller kendi kararlarıyla akıl yürütüyor ve ayar sayfasındaki
+# değer hiçbir şey yapmıyordu. Ölçüm (qwen3-27b, OpenRouter, tek kelimelik
+# istem): high 8,97 sn — low 1,60 sn. Selam vermek için dokuz saniye akıl
+# yürütmek asistanı gerçek zamanlı olmaktan çıkarıyor.
+
+
+def _backend(**fields):
+    from neocp.backends.openai_backend import OpenAIBackend
+    from neocp.config import ModelConfig
+
+    return OpenAIBackend(ModelConfig(**{"name": "qwen", **fields}), client=object())
+
+
+def test_the_effort_setting_actually_reaches_the_server() -> None:
+    assert _backend(effort="low")._reasoning() == {"effort": "low"}
+    assert _backend(effort="high")._reasoning() == {"effort": "high"}
+
+
+def test_turning_thinking_off_says_so_explicitly() -> None:
+    """Alanı hiç göndermemek "model bildiği gibi düşünsün" demek."""
+    assert _backend(thinking=False)._reasoning() == {"enabled": False}
+
+
+def test_efforts_the_server_does_not_know_are_folded_down() -> None:
+    """xhigh/max yalnızca Claude'da var; olduğu gibi göndermek 400 demek."""
+    assert _backend(effort="xhigh")._reasoning() == {"effort": "high"}
+    assert _backend(effort="max")._reasoning() == {"effort": "high"}
+    assert _backend(effort="")._reasoning() is None
+
+
+def test_a_server_that_rejects_the_field_is_recognised() -> None:
+    """Alanı tanımayan sunucu 400 dönüyor; bir kez alan atılıp yeniden
+    deneniyor ve bir daha gönderilmiyor."""
+    from neocp.backends.openai_backend import _rejects_reasoning
+
+    assert _rejects_reasoning(Exception("400: unknown field 'reasoning'"))
+    assert _rejects_reasoning(Exception("Unrecognized request argument: extra_body"))
+    # Gerçek bir hatayı alan hatası sanıp sessizce yutmamalı.
+    assert not _rejects_reasoning(Exception("rate limit exceeded"))
+
+
+def test_the_field_is_only_dropped_once() -> None:
+    """Her istekte 400 alıp yeniden denemek, her cevaba bir tur gecikme
+    eklerdi."""
+    backend = _backend(effort="low")
+    assert backend._no_reasoning is False
+
+
+# -- metin-only modelde görüntü sıyırma (auto-heal) --------------------
+
+
+class ImageRejectingOpenAI:
+    """İlk çağrıda görüntü hatası, sonra başarılı — metin-only modeli taklit."""
+
+    def __init__(self, chunks: list[SimpleNamespace]) -> None:
+        self.stream = FakeStream(chunks)
+        self.calls: list[dict] = []
+        self._fail_next = True
+        self.chat = SimpleNamespace(completions=SimpleNamespace(create=self._create))
+
+    async def _create(self, **kwargs):
+        self.calls.append(kwargs)
+        if self._fail_next:
+            self._fail_next = False
+            exc = Exception("Error code: 404 - No endpoints found that support image input")
+            exc.status_code = 404  # type: ignore[attr-defined]
+            raise exc
+        return self.stream
+
+    async def close(self) -> None:
+        pass
+
+
+def _image_prepared() -> Prepared:
+    return Prepared(
+        system=SYSTEM,
+        messages=[{"role": "user", "content": [
+            {"type": "text", "text": "bak"},
+            {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": "AAAA"}},
+        ]}],
+        betas=[],
+        context_management=None,
+    )
+
+
+async def test_text_only_model_strips_images_and_retries() -> None:
+    """Metin-only modele geçince geçmişteki kare 404 veriyor; backend bir
+    kez öğrenip kareyi sıyırıp yeniden deniyor — kullanıcı hata görmüyor."""
+    fake = ImageRejectingOpenAI([chunk(content="tamam", finish="stop")])
+    model = ModelConfig(name="deepseek-flash", provider="openai", base_url="http://x/v1")
+    be = OpenAIBackend(model, client=fake)
+
+    result = await be.turn(_image_prepared(), [], cancel=asyncio.Event())
+
+    assert result.content == [{"type": "text", "text": "tamam"}]
+    assert len(fake.calls) == 2, "hata sonrası yeniden denenmedi"
+    second = str(fake.calls[1]["messages"])
+    assert "image_url" not in second, "görüntü hâlâ istekte"
+    assert "göremiyor" in second, "görüntü izi konmadı"
+    assert be._no_vision, "metin-only olduğu öğrenilmedi"
+
+
+async def test_learned_no_vision_strips_before_sending() -> None:
+    """Bir kez öğrenildikten sonra sonraki turlar boşa 404 yememeli:
+    kareler baştan sıyrılıyor."""
+    fake = FakeOpenAI([chunk(content="ok", finish="stop")])
+    model = ModelConfig(name="x", provider="openai", base_url="http://x/v1")
+    be = OpenAIBackend(model, client=fake)
+    be._no_vision = True
+
+    await be.turn(_image_prepared(), [], cancel=asyncio.Event())
+
+    assert "image_url" not in str(fake.seen["messages"])

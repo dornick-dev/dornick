@@ -1,0 +1,24 @@
+# Çalışma zamanı durumu — kullanıcı verisi, asla repoya girmez
+.neocp/
+atolye/
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+*.egg-info/
+dist/
+build/
+.env
+
+# Kurulum çıktısı
+installer/cikti/
+
+# Eğitim düzeneği: anahtar, veri ve model çıktıları git dışıdır.
+# Büyük dosyalar (eniyi.pt, korpus*.jsonl) GitHub Releases'ten indirilir.
+egitim/anahtar.env
+egitim/veri/
+egitim/out/
+*.pt
