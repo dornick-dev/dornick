@@ -15,7 +15,7 @@ const Dil = (() => {
   try { mode = localStorage.getItem("neo-dil") || ""; } catch { /* dosya:// */ }
   if (!mode) {
     // İlk açılış: kurulum sihirbazında seçilen dil sunucudan okunuyor
-    // (/api/dil → kurulum.json). Eşzamanlı istek bilinçli: çeviri kipi
+    // (/api/dil → setup.json). Eşzamanlı istek bilinçli: çeviri kipi
     // daha ilk betik yüklenirken belli olmalı; yerel sunucuda bu bir
     // milisaniyelik iş. Cevap ne olursa olsun karar localStorage'a
     // yazılıyor ki bundan sonrası kullanıcının kendi seçimiyle aksın.

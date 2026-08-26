@@ -14,7 +14,7 @@ build/
 .env
 
 # Kurulum çıktısı
-installer/cikti/
+installer/dist/
 
 # Training rig: keys, personal data and generated artifacts stay out of git.
 # Committed exceptions: the synthetic teacher corpora and the base checkpoint

@@ -10,7 +10,7 @@ browser, files — and whose memory, goals and history are first-class,
 queryable structures. What it learns about you is written into a memory
 network that you can literally watch grow on screen.
 
-![neo welcome screen](docs/ekran/karsilama.png)
+![neo welcome screen](docs/screenshots/karsilama.png)
 
 ## What's inside
 
@@ -43,13 +43,13 @@ network that you can literally watch grow on screen.
 * **Turkish and English** interface; the memory layer is built for
   agglutinative Turkish (prefix-matching FTS) and works in English too.
 
-![Memory network scene](docs/ekran/beyin.png)
+![Memory network scene](docs/screenshots/beyin.png)
 
 ## Quick start
 
 ### From the installer (Windows)
 
-Download `neo-kurulum-<version>.exe` from
+Download `neo-setup-<version>.exe` from
 [Releases](../../releases), run it, and launch **neo** from the Start menu.
 The setup page in the app lets you pick a model (local server or API key).
 
@@ -105,7 +105,7 @@ model gets deployed. Everything runs locally.
 
 ### Settings
 
-![Settings page](docs/ekran/ayarlar.png)
+![Settings page](docs/screenshots/ayarlar.png)
 
 ## Training rig
 

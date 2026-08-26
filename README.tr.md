@@ -10,7 +10,7 @@ ve hafızası, hedefleri, geçmişi birinci sınıf, sorgulanabilir yapılar ola
 kişisel bir ajan. Senin hakkında öğrendikleri, ekranda büyüdüğünü
 izleyebildiğin bir hafıza ağına yazılır.
 
-![neo karşılama ekranı](docs/ekran/karsilama.png)
+![neo karşılama ekranı](docs/screenshots/karsilama.png)
 
 ## İçinde ne var
 
@@ -43,13 +43,13 @@ izleyebildiğin bir hafıza ağına yazılır.
 * **Türkçe ve İngilizce** arayüz; hafıza katmanı sondan eklemeli Türkçe
   için kurulmuştur (önek eşleyen FTS) ve İngilizcede de çalışır.
 
-![Hafıza ağı sahnesi](docs/ekran/beyin.png)
+![Hafıza ağı sahnesi](docs/screenshots/beyin.png)
 
 ## Hızlı başlangıç
 
 ### Kurulum sihirbazıyla (Windows)
 
-[Releases](../../releases) sayfasından `neo-kurulum-<sürüm>.exe` indir,
+[Releases](../../releases) sayfasından `neo-setup-<sürüm>.exe` indir,
 çalıştır, Başlat menüsünden **neo**'yu aç. Uygulamanın ayar sayfasından
 model seçilir (yerel sunucu ya da API anahtarı).
 
@@ -105,7 +105,7 @@ yerelde koşar.
 
 ### Ayarlar
 
-![Ayar sayfası](docs/ekran/ayarlar.png)
+![Ayar sayfası](docs/screenshots/ayarlar.png)
 
 ## Eğitim düzeneği
 

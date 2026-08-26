@@ -449,18 +449,23 @@ class _Handler(BaseHTTPRequestHandler):
                         "hazir": tanima.hazir(), "son": d["son_kosu"]})
         elif route == "/api/dil":
             # Kurulum sihirbazının seçtiği arayüz dili. localStorage'a
-            # kurulumdan yazılamıyor; sihirbaz çalışma alanına kurulum.json
+            # kurulumdan yazılamıyor; sihirbaz çalışma alanına setup.json
             # bırakıyor, ilk açılışta dil.js buradan okuyup kendine yazıyor.
-            # Dosya yoksa boş dönülüyor — dil.js Türkçe'ye düşer.
+            # Eski sürümler aynı dosyayı kurulum.json adıyla bırakmıştı;
+            # setup.json yoksa ona da bakılır — mevcut kurulumlar kırılmaz.
+            # Hiçbiri yoksa boş dönülüyor — dil.js Türkçe'ye düşer.
             config = getattr(self.server, "config", None)
             dil = ""
             if config is not None:
-                try:
-                    dil = str(json.loads(
-                        (config.workspace / "kurulum.json").read_text(encoding="utf-8")
-                    ).get("dil") or "")
-                except (OSError, ValueError):
-                    dil = ""
+                for ad in ("setup.json", "kurulum.json"):
+                    try:
+                        dil = str(json.loads(
+                            (config.workspace / ad).read_text(encoding="utf-8")
+                        ).get("dil") or "")
+                    except (OSError, ValueError):
+                        dil = ""
+                    if dil:
+                        break
             self._json({"dil": dil})
         elif route == "/api/settings":
             self._settings()

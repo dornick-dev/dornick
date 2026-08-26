@@ -1,7 +1,7 @@
 ﻿; neo — Windows kurulum sihirbazı (Inno Setup 6).
 ;
-; Önce installer\hazirla.ps1 çalıştırılır: gömülü Python + bağımlılıklar +
-; kaynak + eğitim düzeneği cikti\paket altına dizilir; bu betik yalnız o
+; Önce installeruild.ps1 çalıştırılır: gömülü Python + bağımlılıklar +
+; kaynak + eğitim düzeneği dist\paket altına dizilir; bu betik yalnız o
 ; ağacı paketler. Kurulan ağaç geliştirici deposunun düzenini birebir
 ; taklit eder (src\, eval\, training\, .neocp\) — ürün kodu tek bir düzen
 ; tanır, "kurulumda başka yol" diye ikinci bir gerçek yoktur.
@@ -11,7 +11,7 @@
 
 #define Ad "neo"
 #define Surum "0.1.0"
-#define Paket "cikti\paket"
+#define Paket "dist\paket"
 
 [Setup]
 AppId={{7E2F4B7A-9C1D-4E5B-A9D3-1F2E3D4C5B6A}
@@ -22,8 +22,8 @@ DefaultDirName={localappdata}\{#Ad}
 DisableProgramGroupPage=yes
 ; Yönetici gerektirmez: her şey kullanıcının kendi klasörüne gider.
 PrivilegesRequired=lowest
-OutputDir=cikti
-OutputBaseFilename=neo-kurulum-{#Surum}
+OutputDir=dist
+OutputBaseFilename=neo-setup-{#Surum}
 Compression=lzma2/fast
 SolidCompression=yes
 ArchitecturesAllowed=x64compatible
@@ -33,7 +33,7 @@ UninstallDisplayIcon={app}\src\neocp\assets\neo.ico
 WizardStyle=modern
 
 [Languages]
-; Sihirbazın dili buradan; seçim ayrıca kurulum.json'a yazılır ve
+; Sihirbazın dili buradan; seçim ayrıca setup.json'a yazılır ve
 ; uygulamanın arayüz dili ilk açılışta oradan gelir (/api/dil → dil.js).
 Name: "tr"; MessagesFile: "compiler:Languages\Turkish.isl"
 Name: "en"; MessagesFile: "compiler:Default.isl"
@@ -89,6 +89,8 @@ Filename: "{app}\python\pythonw.exe"; Parameters: "-m neocp --app -C ""{app}""";
 ; bytecode önbellekleri (__pycache__ iç içe her pakette türüyor, o yüzden
 ; SALT KOD içeren klasörler bütünüyle siliniyor). .neocp ile training\data
 ; (kişisel korpus/filigran) bilerek listede YOK — kullanıcı verisi kalır.
+Type: files; Name: "{app}\setup.json"
+; Eski sürümlerin bıraktığı ad — güncellenmiş kurulumlarda kalıntı kalmasın.
 Type: files; Name: "{app}\kurulum.json"
 Type: filesandordirs; Name: "{app}\python"
 Type: filesandordirs; Name: "{app}\src"
@@ -108,7 +110,7 @@ begin
   if CurStep = ssPostInstall then
   begin
     if ActiveLanguage = 'en' then Dil := 'en' else Dil := 'tr';
-    SaveStringToFile(ExpandConstant('{app}\kurulum.json'),
+    SaveStringToFile(ExpandConstant('{app}\setup.json'),
       '{"dil": "' + Dil + '"}', False);
   end;
 end;

@@ -14,7 +14,7 @@
 #   5. Inno Setup (iscc) bulunursa neo.iss'i derler.
 #
 # Kullanım:
-#   powershell -ExecutionPolicy Bypass -File installer\hazirla.ps1
+#   powershell -ExecutionPolicy Bypass -File installeruild.ps1
 #   ... -AtlaTorch    : eğitim bileşenini (torch + düzenek) paketleme
 #   ... -AtlaDerleme  : iscc'yi çağırma, yalnız paketi hazırla
 
@@ -27,7 +27,7 @@ $ErrorActionPreference = "Stop"
 
 # -- yollar -------------------------------------------------------------------
 $Kok      = Split-Path -Parent $PSScriptRoot          # depo kökü
-$Cikti    = Join-Path $PSScriptRoot "cikti"
+$Cikti    = Join-Path $PSScriptRoot "dist"
 $Indirme  = Join-Path $Cikti "indirme"                # arşivler burada önbelleklenir
 $Paket    = Join-Path $Cikti "paket"                  # kurulacak ağacın birebir kopyası
 $TabanDepo = Join-Path $Kok "training"                # eğitim düzeneği depo içinde

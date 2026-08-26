@@ -211,12 +211,14 @@ def test_server_serves_page_and_graph(tmp_path: Path, mind: Mind) -> None:
         log.close()
 
 
-def test_install_language_is_served_from_kurulum_json(tmp_path: Path, mind: Mind) -> None:
+def test_install_language_is_served_from_setup_json(tmp_path: Path, mind: Mind) -> None:
     """Kurulum sihirbazının dil seçimi /api/dil'den okunuyor.
 
     localStorage'a kurulumdan yazılamaz; sihirbaz çalışma alanına
-    kurulum.json bırakır ve dil.js ilk açılışta buradan okur. Dosya
-    yoksa boş dönmeli — arayüz Türkçe'ye düşer.
+    setup.json bırakır ve dil.js ilk açılışta buradan okur. Eski
+    sürümlerin bıraktığı kurulum.json da tanınır — güncelleme dil
+    seçimini kaybettirmemeli. Dosya yoksa boş dönmeli — arayüz
+    Türkçe'ye düşer.
     """
     from neocp.config import Config
 
@@ -232,10 +234,17 @@ def test_install_language_is_served_from_kurulum_json(tmp_path: Path, mind: Mind
 
     try:
         assert fetch() == {"dil": ""}
+        # Eski ad tek başına: geriye uyumluluk (mevcut kurulumlar).
         (tmp_path / "kurulum.json").write_text('{"dil": "en"}', encoding="utf-8")
         assert fetch() == {"dil": "en"}
-        # Bozuk dosya sunucuyu düşürmemeli; sessizce Türkçe'ye dönülür.
-        (tmp_path / "kurulum.json").write_text("{bozuk", encoding="utf-8")
+        # Yeni ad öncelikli.
+        (tmp_path / "setup.json").write_text('{"dil": "tr"}', encoding="utf-8")
+        assert fetch() == {"dil": "tr"}
+        # Bozuk yeni dosya sunucuyu düşürmemeli; eski ada düşülür.
+        (tmp_path / "setup.json").write_text("{bozuk", encoding="utf-8")
+        assert fetch() == {"dil": "en"}
+        # Tek başına bozuk dosya: sessizce Türkçe'ye dönülür.
+        (tmp_path / "kurulum.json").unlink()
         assert fetch() == {"dil": ""}
     finally:
         server.stop()
