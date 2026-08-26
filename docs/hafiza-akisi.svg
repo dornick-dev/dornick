@@ -1,0 +1,59 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 920 300" font-family="Segoe UI, Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="ok" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#8b949e"/>
+    </marker>
+  </defs>
+  <style>
+    .kutu { fill: rgba(139,148,158,0.08); stroke: #8b949e; stroke-width: 1.4; rx: 8; }
+    .vurgu { fill: rgba(217,130,43,0.10); stroke: #d9822b; stroke-width: 1.6; }
+    .baslik { fill: #8b949e; font-size: 14px; font-weight: 600; }
+    .not { fill: #8b949e; font-size: 11px; }
+    .amber { fill: #d9822b; font-size: 11px; font-weight: 600; }
+    .cizgi { stroke: #8b949e; stroke-width: 1.4; fill: none; marker-end: url(#ok); }
+  </style>
+
+  <!-- question -->
+  <rect class="kutu" x="20" y="110" width="130" height="60" rx="8"/>
+  <text class="baslik" x="85" y="136" text-anchor="middle">question</text>
+  <text class="not" x="85" y="154" text-anchor="middle">"what was that report?"</text>
+
+  <line class="cizgi" x1="150" y1="140" x2="196" y2="140"/>
+
+  <!-- base rewriter -->
+  <rect class="kutu vurgu" x="200" y="100" width="160" height="80" rx="8"/>
+  <text class="baslik" x="280" y="128" text-anchor="middle">base rewriter</text>
+  <text class="not" x="280" y="146" text-anchor="middle">10.8M byte-level model</text>
+  <text class="amber" x="280" y="164" text-anchor="middle">pure numpy · ~ms on CPU</text>
+
+  <line class="cizgi" x1="360" y1="140" x2="406" y2="140"/>
+  <text class="not" x="383" y="128" text-anchor="middle">synonyms,</text>
+  <text class="not" x="383" y="160" text-anchor="middle">pronouns</text>
+
+  <!-- two indexes -->
+  <rect class="kutu" x="410" y="55" width="180" height="70" rx="8"/>
+  <text class="baslik" x="500" y="83" text-anchor="middle">card catalog</text>
+  <text class="not" x="500" y="101" text-anchor="middle">SQLite FTS5 · term → record</text>
+
+  <rect class="kutu" x="410" y="155" width="180" height="70" rx="8"/>
+  <text class="baslik" x="500" y="183" text-anchor="middle">fingerprints</text>
+  <text class="not" x="500" y="201" text-anchor="middle">256-bit SimHash · one XOR</text>
+
+  <line class="cizgi" x1="590" y1="90" x2="646" y2="128"/>
+  <line class="cizgi" x1="590" y1="190" x2="646" y2="152"/>
+
+  <!-- filter -->
+  <rect class="kutu" x="650" y="100" width="120" height="80" rx="8"/>
+  <text class="baslik" x="710" y="132" text-anchor="middle">filter</text>
+  <text class="not" x="710" y="150" text-anchor="middle">calibrated union,</text>
+  <text class="not" x="710" y="164" text-anchor="middle">silence on traps</text>
+
+  <line class="cizgi" x1="770" y1="140" x2="816" y2="140"/>
+
+  <!-- desk -->
+  <rect class="kutu vurgu" x="820" y="110" width="80" height="60" rx="8"/>
+  <text class="baslik" x="860" y="136" text-anchor="middle">desk</text>
+  <text class="not" x="860" y="154" text-anchor="middle">context</text>
+
+  <text class="not" x="460" y="272" text-anchor="middle">recall stays ~constant time as memory grows — 0.05 ms at 1 record and at 50,001 records</text>
+</svg>

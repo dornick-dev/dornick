@@ -1,0 +1,70 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 920 340" font-family="Segoe UI, Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="ok2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#8b949e"/>
+    </marker>
+    <marker id="ok2a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#d9822b"/>
+    </marker>
+  </defs>
+  <style>
+    .kutu { fill: rgba(139,148,158,0.08); stroke: #8b949e; stroke-width: 1.4; }
+    .vurgu { fill: rgba(217,130,43,0.10); stroke: #d9822b; stroke-width: 1.6; }
+    .baslik { fill: #8b949e; font-size: 14px; font-weight: 600; }
+    .not { fill: #8b949e; font-size: 11px; }
+    .amber { fill: #d9822b; font-size: 11px; font-weight: 600; }
+    .cizgi { stroke: #8b949e; stroke-width: 1.4; fill: none; marker-end: url(#ok2); }
+    .acizgi { stroke: #d9822b; stroke-width: 1.6; fill: none; marker-end: url(#ok2a); }
+  </style>
+
+  <!-- day -->
+  <rect class="kutu" x="20" y="120" width="150" height="70" rx="8"/>
+  <text class="baslik" x="95" y="148" text-anchor="middle">daytime</text>
+  <text class="not" x="95" y="166" text-anchor="middle">conversations → memories</text>
+
+  <line class="cizgi" x1="170" y1="155" x2="216" y2="155"/>
+
+  <!-- harvest -->
+  <rect class="kutu" x="220" y="120" width="130" height="70" rx="8"/>
+  <text class="baslik" x="285" y="148" text-anchor="middle">harvest</text>
+  <text class="not" x="285" y="166" text-anchor="middle">new memories only</text>
+
+  <line class="cizgi" x1="350" y1="155" x2="396" y2="155"/>
+
+  <!-- distill -->
+  <rect class="kutu" x="400" y="120" width="130" height="70" rx="8"/>
+  <text class="baslik" x="465" y="148" text-anchor="middle">distill</text>
+  <text class="not" x="465" y="166" text-anchor="middle">question → term pairs</text>
+
+  <line class="cizgi" x1="530" y1="155" x2="576" y2="155"/>
+
+  <!-- fine-tune -->
+  <rect class="kutu" x="580" y="120" width="140" height="70" rx="8"/>
+  <text class="baslik" x="650" y="148" text-anchor="middle">fine-tune</text>
+  <text class="not" x="650" y="166" text-anchor="middle">low priority, at night</text>
+
+  <line class="cizgi" x1="720" y1="155" x2="766" y2="155"/>
+
+  <!-- exam gate -->
+  <rect class="kutu vurgu" x="770" y="105" width="130" height="100" rx="8"/>
+  <text class="baslik" x="835" y="133" text-anchor="middle">exam gate</text>
+  <text class="not" x="835" y="151" text-anchor="middle">accuracy ≥ current</text>
+  <text class="not" x="835" y="165" text-anchor="middle">silence intact</text>
+  <text class="not" x="835" y="179" text-anchor="middle">fast enough on CPU</text>
+
+  <!-- pass -->
+  <path class="acizgi" d="M835 105 V 60 H 480"/>
+  <rect class="kutu vurgu" x="330" y="35" width="150" height="50" rx="8"/>
+  <text class="baslik" x="405" y="56" text-anchor="middle">deploy</text>
+  <text class="not" x="405" y="72" text-anchor="middle">new taban.npz takes over</text>
+  <text class="amber" x="650" y="50" text-anchor="middle">passed</text>
+
+  <!-- fail -->
+  <path class="cizgi" d="M835 205 V 255 H 480"/>
+  <rect class="kutu" x="330" y="230" width="150" height="50" rx="8"/>
+  <text class="baslik" x="405" y="251" text-anchor="middle">discard</text>
+  <text class="not" x="405" y="267" text-anchor="middle">current model stays</text>
+  <text class="not" x="650" y="248" text-anchor="middle">regressed</text>
+
+  <text class="not" x="460" y="320" text-anchor="middle">a candidate that regresses never replaces the model the user already trusts</text>
+</svg>
