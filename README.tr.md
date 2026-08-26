@@ -120,6 +120,16 @@ oynamaya değer vidalar için bkz. [`training/README.md`](training/README.md)
 
 ![Eğitim hattı](docs/training-pipeline.svg)
 
+## Değerlendirme
+
+neo'ya dış kapı API'sinden üç kodlama görevi (kolay / orta / zor) verdik ve her
+çıktıyı bağımsız denetledik — sonra aynı görevleri hem değerlendiricinin
+kendisiyle hem de neo'nun kendi modelinin **çıplak, tek atış** haliyle koşturduk.
+neo **294/300** aldı: değerlendiricisiyle baş başa (289) ve kendi çıplak
+modelinin (280) önünde — aynı model, kabuk içinde +14 puan ve sıfır bozuk
+teslimat. Tam rapor: [docs/evaluation.tr.md](docs/evaluation.tr.md)
+([English](docs/evaluation.md)).
+
 ## Yol haritası
 
 * Daha güçlü İngilizce taban modeli (eğitim verisi bugün Türkçe ağırlıklı)

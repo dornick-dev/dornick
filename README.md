@@ -119,6 +119,16 @@ for the pipeline, the frozen data format and the knobs worth turning.
 
 ![Training pipeline](docs/training-pipeline.svg)
 
+## Evaluation
+
+We handed neo three coding tasks (easy / medium / hard) through the external
+gate API and audited everything independently — then ran the same tasks with
+the evaluator itself and with neo's own model bare over the raw API, one-shot.
+neo scored **294/300**, matching its evaluator (289) and beating its own bare
+model (280): same model, +14 points inside the harness and zero broken
+deliveries. Full write-up: [docs/evaluation.md](docs/evaluation.md)
+([Türkçe](docs/evaluation.tr.md)).
+
 ## Roadmap
 
 * Stronger English base model (training data is currently Turkish-heavy)
