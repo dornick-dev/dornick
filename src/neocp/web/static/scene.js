@@ -1027,11 +1027,23 @@ const Scene = (() => {
   const PAINT_MS = 33;
   let lastPaint = 0;
 
+  // Panel aç/kapa (ayarlar, görüntüleyici, geçmiş) tuvali BÜYÜTMÜYOR:
+  // #scene sabit tam ekran, değişen şey sohbet sütununun YERİ (--gut).
+  // ResizeObserver konum değişimini görmez — kutu boyutu aynı kalıyor —
+  // ve merkez ancak 30 sn'lik graf tazelemesi layout'u çağırınca
+  // düzeliyordu: beyin panelin altında sıkışmış görünüyor, sonra
+  // "kendiliğinden" ortalanıyordu. Boş alan her karede yoklanıyor;
+  // değiştiyse merkez ve yerleşim ANINDA güncelleniyor — panelin geçiş
+  // animasyonu sırasında da düzgün kalıyor.
+  let lastFree = 0;
+
   function frame() {
     raf = requestAnimationFrame(frame);
     const t = now();
     if (t - lastPaint >= PAINT_MS) {
       lastPaint = t;
+      const free = freeWidth();
+      if (Math.abs(free - lastFree) > 0.5) { lastFree = free; layout(); }
       paint(t);
     }
   }

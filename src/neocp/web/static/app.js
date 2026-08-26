@@ -1956,6 +1956,12 @@ async function loadState() {
       dockContext(Number(s.prompt_total));
       if (!lastUsage) lastUsage = { prompt_total: Number(s.prompt_total) };
     }
+    // Yenileme oturumu bitirmiyor: sayfa hangi sebeple yenilenirse yenilensin
+    // (dil değişimi, F5) süren konuşmanın dökümü geri gelsin. Eskiden yenileme
+    // sonrası ekran bomboş açılıyordu — oysa oturum sunucuda sürüyordu.
+    // Döküm boşsa karşılama zaten yerinde duruyor: loadTranscript boş dökümde
+    // thread'e dokunmuyor, ilk satır çizilirken karşılama kendiliğinden kalkıyor.
+    if (s.session) loadTranscript(s.session);
   } catch { setStatus("off", t("Sunucu yok")); }
 }
 

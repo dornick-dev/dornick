@@ -8,6 +8,16 @@
 // Opt-in: varsayılan minimal görünümde yok, isteyince açılıyor. Kaynak
 // `/api/sessions` (liste) ve `/api/session?id=` (döküm).
 
+// Bu dosyanın kullanıcıya gösterdiği metinlerin İngilizceleri. Kaynak
+// metin Türkçe kalıyor; görüntüleme noktasında t("...") ile çevriliyor.
+Dil.ekle({
+  "şu an açık": "open now",
+  "Geçiliyor…": "Switching…",
+  "Tur bitince geçilebilir": "You can switch when the turn ends",
+  "Geçilemedi — neo meşgul olabilir, tur bitince dene.":
+    "Could not switch — neo may be busy; try again after the turn.",
+});
+
 const History = (() => {
   const panel = document.getElementById("hist-panel");
   const body = document.getElementById("hist-body");
@@ -17,7 +27,6 @@ const History = (() => {
   let knownProjects = [];       // var olan proje adları (atama için öneri)
   let collapsed = new Set();    // kapalı proje klasörleri
   let loaded = false;
-  let openId = "";   // dökümü açık olan oturum
   const UNFILED = "— Projesiz —";
 
   const el = (tag, cls, text) => {
@@ -90,6 +99,9 @@ const History = (() => {
     // Durum noktası: dolu = çalışıyor, boş = tamamlandı.
     line.append(el("span", "hist-dot"));
     line.append(el("span", "hist-title", s.title));
+    // Aktif konuşma yazıyla da işaretli: nokta ve renk tek başına
+    // okunmuyordu — hangi satırın "şu an açık" olduğu sözle söyleniyor.
+    if (s.current) line.append(el("span", "hist-live", t("şu an açık")));
     const meta = el("span", "hist-meta", _time(s.date) + (s.turns ? " · " + s.turns + " tur" : ""));
     line.append(meta);
     // Projeye taşı: klasör ikonu. Satır tıklamasını yutuyor.
@@ -97,9 +109,11 @@ const History = (() => {
     move.title = "Projeye taşı";
     move.onclick = (ev) => { ev.stopPropagation(); assignProject(s, wrap); };
     line.append(move);
-    // Satıra tıklamak o konuşmaya GEÇER (sürdürür). Zaten açık olan konuşmada
-    // geçilecek yer yok; onda döküm açılıp kapanıyor (göz atmak için).
-    line.onclick = () => (s.current ? toggle(s, wrap) : resume(s));
+    // Satıra tıklamak: AKTİF konuşmada panel kapanır ve süren sohbet görünür —
+    // geçiş çağrısı gerekmediği için neo meşgulken de her zaman çalışır.
+    // Başka konuşmada o konuşmaya geçilir (sürdürür); meşgulse resume
+    // kullanıcıya söylüyor, tık sessiz ölmüyor.
+    line.onclick = () => { if (s.current) close(); else resume(s, wrap); };
     wrap.append(line);
     return wrap;
   }
@@ -109,7 +123,6 @@ const History = (() => {
   function assignProject(s, wrap) {
     const existing = wrap.querySelector(".hist-assign-box");
     if (existing) { existing.remove(); return; }
-    wrap.querySelectorAll(".hist-transcript").forEach(n => n.remove());
 
     const box = el("div", "hist-assign-box");
     const input = el("input", "hist-assign-input");
@@ -168,47 +181,10 @@ const History = (() => {
     }
   }
 
-  // Bir konuşmayı açıp dökümünü gösterir; ikinci tık kapatır.
-  async function toggle(s, wrap) {
-    const existing = wrap.querySelector(".hist-transcript");
-    if (existing) { existing.remove(); openId = ""; return; }
-    // Aynı anda tek döküm açık kalsın: liste dağılmasın.
-    body.querySelectorAll(".hist-transcript").forEach(n => n.remove());
-    openId = s.id;
-
-    const box = el("div", "hist-transcript");
-    box.append(el("p", "hist-loading", "Yükleniyor…"));
-    wrap.append(box);
-
-    let data;
-    try {
-      data = await (await fetch("/api/session?id=" + encodeURIComponent(s.id))).json();
-    } catch {
-      box.textContent = ""; box.append(el("p", "hist-loading", "Okunamadı")); return;
-    }
-    if (openId !== s.id) return;   // arada başka biri açıldı
-    box.textContent = "";
-    // Sürdürme düğmesi: bu konuşmayı aktif yap, yeni mesajlar buraya eklensin.
-    // Şu an açık olan konuşmada gösterilmiyor (zaten oradasın).
-    if (!s.current) {
-      const cont = el("button", "hist-continue", "Bu konuşmaya devam et");
-      cont.onclick = (ev) => { ev.stopPropagation(); resume(s); };
-      box.append(cont);
-    }
-    const turns = data.turns || [];
-    if (!turns.length) { box.append(el("p", "hist-loading", "Boş konuşma")); return; }
-    for (const t of turns) {
-      const line = el("div", "hist-turn " + (t.role === "user" ? "user" : "neo"));
-      line.append(el("span", "hist-who", t.role === "user" ? "Sen" : "neo"));
-      line.append(el("span", "hist-text", t.text));
-      box.append(line);
-    }
-  }
-
   // Geçmiş bir konuşmayı sürdür: sunucu oturumu değiştirip session_reset
   // yayınlıyor; ana akış thread'i temizleyip dökümü yüklüyor.
-  async function resume(s) {
-    status("Geçiliyor…");
+  async function resume(s, wrap) {
+    status(t("Geçiliyor…"));
     let res;
     try {
       res = await (await fetch("/api/session/resume", {
@@ -217,11 +193,19 @@ const History = (() => {
         body: JSON.stringify({ id: s.id }),
       })).json();
     } catch { res = { ok: false }; }
-    if (res && res.ok) { close(); }
-    else {
-      // Görünür hata: neo meşgulse ("tur bitince dene") ya da köprü yoksa.
-      status((res && res.error) ? res.error : "Geçilemedi — neo meşgul olabilir, tur bitince dene.");
+    if (res && res.ok) { close(); return; }
+    if (res && res.busy) {
+      // Meşgulken tık sessiz ölmüyor: kısa geri bildirim + satır görsel
+      // olarak "beklemede" işaretleniyor. Tur bitince tekrar tıklanır.
+      status(t("Tur bitince geçilebilir"));
+      if (wrap) {
+        wrap.classList.add("waiting");
+        setTimeout(() => wrap.classList.remove("waiting"), 4000);
+      }
+      return;
     }
+    // Görünür hata: köprü yoksa ya da oturum bulunamadıysa.
+    status((res && res.error) ? res.error : t("Geçilemedi — neo meşgul olabilir, tur bitince dene."));
   }
 
   // Panelin üstünde kısa bir durum/hata satırı.

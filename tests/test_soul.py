@@ -39,12 +39,16 @@ def test_blank_soul_says_it_is_the_first_meeting(mind: Mind) -> None:
 
 
 def test_blank_soul_wants_to_meet_the_user(mind: Mind) -> None:
-    """İlk karşılaşmada tanışmayı ajan istemeli: adını sormalı ve eksik
-    duyularını söylemeli. Bu yönerge ruhta duruyor ki zihin dolunca düşsün."""
+    """İlk karşılaşma kısa ve kendinden emin: tek doğal soru (ad — o da
+    verilmemişse), donanım envanteri ve "nasıl hitap edeyim" gibi meta
+    sorular yok. Bu yönerge ruhta duruyor ki zihin dolunca düşsün."""
     rendered = mind.soul().render()
     assert "tanış" in rendered.lower()
-    assert "adını sor" in rendered
-    assert "Duyuların" in rendered
+    # Ad tek doğal soru — ama konuşmada zaten verilmişse sorulmaz.
+    assert "adını" in rendered and "söylemediyse" in rendered
+    # Eksik donanım tanışmada sayılmaz; hitap kalıbı sorulmaz.
+    assert "envanteri sayma" in rendered
+    assert "hitap kalıbı sorulmaz" in rendered
 
 
 def test_the_prompt_carries_the_senses(tmp_path: Path) -> None:
