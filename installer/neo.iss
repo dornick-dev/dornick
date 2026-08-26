@@ -1,6 +1,6 @@
 ﻿; neo — Windows kurulum sihirbazı (Inno Setup 6).
 ;
-; Önce installeruild.ps1 çalıştırılır: gömülü Python + bağımlılıklar +
+; Önce installer\build.ps1 çalıştırılır: gömülü Python + bağımlılıklar +
 ; kaynak + eğitim düzeneği dist\paket altına dizilir; bu betik yalnız o
 ; ağacı paketler. Kurulan ağaç geliştirici deposunun düzenini birebir
 ; taklit eder (src\, eval\, training\, .neocp\) — ürün kodu tek bir düzen
@@ -10,7 +10,11 @@
 ; sonradan biriken kişisel dosyalara DOKUNMAZ — kullanıcı verisi kalır.
 
 #define Ad "neo"
-#define Surum "0.1.0"
+; Sürüm tek yerden: build.ps1 pyproject.toml'dan okuyup /DSurum=... ile
+; geçer; elle derlemede buradaki yedek değer geçerli.
+#ifndef Surum
+  #define Surum "0.1.1"
+#endif
 #define Paket "dist\paket"
 
 [Setup]
@@ -43,6 +47,10 @@ tr.AnaBilesen=neo (gerekli)
 en.AnaBilesen=neo (required)
 tr.EgitimBileseni=Beni tanı eğitimi (gece kişisel öğrenme, ~1,5 GB)
 en.EgitimBileseni=Know-me training (nightly personal learning, ~1.5 GB)
+tr.DinlemeBileseni=Dinleme (mikrofon) — yerel tanıma, ~250 MB
+en.DinlemeBileseni=Listening (microphone) — local recognition, ~250 MB
+tr.KameraBileseni=Kamera izleme
+en.KameraBileseni=Camera watching
 tr.OtomatikBaslat=Windows ile başlat
 en.OtomatikBaslat=Start with Windows
 tr.TamKurulum=Tam kurulum (eğitim dahil)
@@ -60,6 +68,8 @@ Name: "custom"; Description: "{cm:OzelKurulum}"; Flags: iscustom
 [Components]
 Name: "ana"; Description: "{cm:AnaBilesen}"; Types: full compact custom; Flags: fixed
 Name: "egitim"; Description: "{cm:EgitimBileseni}"; Types: full
+Name: "dinleme"; Description: "{cm:DinlemeBileseni}"; Types: full
+Name: "kamera"; Description: "{cm:KameraBileseni}"; Types: full
 
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"
@@ -70,6 +80,8 @@ Source: "{#Paket}\python\*"; DestDir: "{app}\python"; Flags: recursesubdirs igno
 Source: "{#Paket}\src\*"; DestDir: "{app}\src"; Flags: recursesubdirs ignoreversion; Components: ana
 Source: "{#Paket}\neo.cmd"; DestDir: "{app}"; Flags: ignoreversion; Components: ana
 Source: "{#Paket}\training\*"; DestDir: "{app}\training"; Flags: recursesubdirs ignoreversion; Components: egitim
+Source: "{#Paket}\listen\*"; DestDir: "{app}\listen"; Flags: recursesubdirs ignoreversion; Components: dinleme
+Source: "{#Paket}\watch\*"; DestDir: "{app}\watch"; Flags: recursesubdirs ignoreversion; Components: kamera
 Source: "{#Paket}\eval\*"; DestDir: "{app}\eval"; Flags: recursesubdirs ignoreversion; Components: egitim
 
 [Icons]
@@ -96,6 +108,8 @@ Type: filesandordirs; Name: "{app}\python"
 Type: filesandordirs; Name: "{app}\src"
 Type: filesandordirs; Name: "{app}\eval"
 Type: filesandordirs; Name: "{app}\training\site"
+Type: filesandordirs; Name: "{app}\listen"
+Type: filesandordirs; Name: "{app}\watch"
 Type: filesandordirs; Name: "{app}\training\scripts\__pycache__"
 Type: filesandordirs; Name: "{app}\training\model\__pycache__"
 Type: filesandordirs; Name: "{app}\training\__pycache__"

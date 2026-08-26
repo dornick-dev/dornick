@@ -31,6 +31,8 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
+from . import ortam
+
 # Taramada atlanan gürültü. Bunları göstermek katalogu kullanılmaz yapıyor.
 SKIP = {"__pycache__", ".git", ".venv", "node_modules", ".idea", ".vscode"}
 # neo'nun kendi altyapı klasörleri atölyede duruyor ama PROJE değil: bir "araç
@@ -612,7 +614,8 @@ def stop(pid: int) -> dict[str, Any]:
     try:
         if sys.platform == "win32":
             subprocess.run(["taskkill", "/PID", str(pid), "/T", "/F"],
-                           capture_output=True, timeout=10)
+                           capture_output=True, timeout=10,
+                           **ortam.sessiz_bayraklar())
         else:
             info["proc"].terminate()
         # Öldü mü gerçekten? "Durdurdum" deyip çalışır bırakmak, kullanıcının
@@ -725,6 +728,7 @@ def _proc_parents() -> dict[int, int]:
                  "Select-Object ProcessId,ParentProcessId | "
                  "ConvertTo-Csv -NoTypeInformation"],
                 capture_output=True, text=True, timeout=5,
+                **ortam.sessiz_bayraklar(),
             )
             for line in res.stdout.splitlines()[1:]:
                 parts = [p.strip().strip('"') for p in line.split(",")]
@@ -767,6 +771,7 @@ def _listening_ports() -> dict[int, list[int]]:
             ["netstat", "-ano", "-p", "TCP"] if sys.platform == "win32"
             else ["netstat", "-tlnp"],
             capture_output=True, text=True, timeout=3,
+            **ortam.sessiz_bayraklar(),
         )
     except Exception:
         return out

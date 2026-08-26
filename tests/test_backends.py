@@ -658,3 +658,18 @@ async def test_interrupt_before_first_token_returns_interrupted() -> None:
     assert result.interrupted is True
     assert result.error is None
     assert fake.stream.closed, "kesilen akış kapatılmalı"
+
+
+def test_tur_ortasi_sistem_notu_user_notuna_cevrilir():
+    """Anthropic ailesi system'i yalnız dizi başında kabul ediyor; tur ortası
+    notlar user-notu olarak gitmeli — yoksa Claude modelleri 400 döndürüyor."""
+    from neocp.backends.translate import to_openai_messages
+
+    mesajlar = [
+        {"role": "user", "content": [{"type": "text", "text": "merhaba"}]},
+        {"role": "assistant", "content": [{"type": "text", "text": "selam"}]},
+        {"role": "system", "content": [{"type": "text", "text": "hedef notu"}]},
+    ]
+    out = to_openai_messages([{"type": "text", "text": "sistem promptu"}], mesajlar)
+    assert [m["role"] for m in out] == ["system", "user", "assistant", "user"]
+    assert out[-1]["content"].startswith("[Sistem notu]")

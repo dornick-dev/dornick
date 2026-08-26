@@ -31,6 +31,16 @@ INSTALL_HINT = (
     "OpenAI-uyumlu sağlayıcı için openai paketi gerekli: pip install 'neocp[local]'"
 )
 
+
+def _hint() -> str:
+    """openai paketi kuruluma dahil; kuruluda yokluğu onarım gerektirir."""
+    from .. import ortam
+
+    if ortam.kurulu_mu():
+        return ("openai paketi bu kurulumda eksik görünüyor. Kurulum "
+                "sihirbazını yeniden çalıştırmak eksiği onarır.")
+    return INSTALL_HINT
+
 # Yerel sunucular anahtar doğrulamaz ama istemci boş dize kabul etmez.
 PLACEHOLDER_KEY = "local"
 
@@ -331,7 +341,7 @@ def _make_client(model: ModelConfig) -> Any:
     try:
         from openai import AsyncOpenAI
     except ImportError as exc:  # pragma: no cover - kurulum yolu
-        raise RuntimeError(INSTALL_HINT) from exc
+        raise RuntimeError(_hint()) from exc
 
     key = os.getenv(model.api_key_env or "OPENAI_API_KEY") or PLACEHOLDER_KEY
     kwargs: dict[str, Any] = {"api_key": key}

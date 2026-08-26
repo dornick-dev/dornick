@@ -14,13 +14,20 @@
 #   5. Inno Setup (iscc) bulunursa neo.iss'i derler.
 #
 # Kullanım:
-#   powershell -ExecutionPolicy Bypass -File installeruild.ps1
+#   powershell -ExecutionPolicy Bypass -File installer\build.ps1
 #   ... -AtlaTorch    : eğitim bileşenini (torch + düzenek) paketleme
+#   ... -AtlaDinleme  : dinleme bileşenini (faster-whisper + sounddevice) paketleme
+#   ... -AtlaKamera   : kamera bileşenini (opencv-python-headless) paketleme
 #   ... -AtlaDerleme  : iscc'yi çağırma, yalnız paketi hazırla
 
 param(
     [switch]$AtlaTorch,
-    [switch]$AtlaDerleme
+    [switch]$AtlaDinleme,
+    [switch]$AtlaKamera,
+    [switch]$AtlaDerleme,
+    # Paket sürümü. Boş bırakılırsa pyproject.toml'daki version okunur —
+    # sürüm tek yerden yönetilir, iss'e /DSurum ile geçer.
+    [string]$Surum = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -31,6 +38,12 @@ $Cikti    = Join-Path $PSScriptRoot "dist"
 $Indirme  = Join-Path $Cikti "indirme"                # arşivler burada önbelleklenir
 $Paket    = Join-Path $Cikti "paket"                  # kurulacak ağacın birebir kopyası
 $TabanDepo = Join-Path $Kok "training"                # eğitim düzeneği depo içinde
+
+if (-not $Surum) {
+    $eslesme = Select-String -Path (Join-Path $Kok "pyproject.toml") -Pattern '^version\s*=\s*"([^"]+)"'
+    if (-not $eslesme) { throw "pyproject.toml içinde version bulunamadı" }
+    $Surum = $eslesme.Matches[0].Groups[1].Value
+}
 
 $PySurum  = "3.11.9"
 $PyZip    = "python-$PySurum-embed-amd64.zip"
@@ -84,6 +97,8 @@ $pth = Join-Path $PyDizin "python311._pth"
     "Lib\site-packages",
     "..\src",
     "..\training\site",
+    "..\listen\site",
+    "..\watch\site",
     "import site"
 ) | Set-Content -Path $pth -Encoding Ascii
 
@@ -135,6 +150,25 @@ if (-not $AtlaTorch) {
     if ($LASTEXITCODE -ne 0) { throw "torch kurulamadı" }
 }
 
+# -- 4b) dinleme bileşeni (isteğe bağlı) --------------------------------------
+# faster-whisper (ctranslate2, onnxruntime dahil) + sounddevice kendi site
+# klasörüne gidiyor: bileşen seçilmezse klasör hedefe hiç kopyalanmaz,
+# import düşer ve özellik kapalı görünür — torch kalıbının aynısı.
+if (-not $AtlaDinleme) {
+    Adim "Dinleme bileşeni (faster-whisper + sounddevice)"
+    & $PyExe -m pip install --no-warn-script-location `
+        --target (Join-Path $Paket "listen\site") faster-whisper sounddevice
+    if ($LASTEXITCODE -ne 0) { throw "dinleme paketleri kurulamadı" }
+}
+
+# -- 4c) kamera bileşeni (isteğe bağlı) ---------------------------------------
+if (-not $AtlaKamera) {
+    Adim "Kamera bileşeni (opencv-python-headless)"
+    & $PyExe -m pip install --no-warn-script-location `
+        --target (Join-Path $Paket "watch\site") opencv-python-headless
+    if ($LASTEXITCODE -ne 0) { throw "kamera paketi kurulamadı" }
+}
+
 # -- 5) başlatıcı -------------------------------------------------------------
 Adim "Başlatıcı yazılıyor"
 # Kısayollar doğrudan pythonw'yu hedefliyor (konsolsuz); neo.cmd klasörden
@@ -180,7 +214,7 @@ if (-not $iscc) {
 }
 
 Adim "Sihirbaz derleniyor ($iscc)"
-& $iscc (Join-Path $PSScriptRoot "neo.iss")
+& $iscc "/DSurum=$Surum" (Join-Path $PSScriptRoot "neo.iss")
 if ($LASTEXITCODE -ne 0) { throw "iscc başarısız" }
 
 $exe = Get-ChildItem (Join-Path $Cikti "*.exe") | Sort-Object LastWriteTime | Select-Object -Last 1

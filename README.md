@@ -52,6 +52,8 @@ network that you can literally watch grow on screen.
 Download `neo-setup-<version>.exe` from
 [Releases](../../releases), run it, and launch **neo** from the Start menu.
 The setup page in the app lets you pick a model (local server or API key).
+Optional installer components: know-me training, listening (microphone),
+camera watching.
 
 ### From source
 

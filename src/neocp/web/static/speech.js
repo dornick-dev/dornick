@@ -225,6 +225,18 @@ const Speech = (() => {
   // düşülüyor.
   const clips = new Map();
 
+  // Ses uretimi ilk kez basarisiz oldugunda kullaniciya BIR KEZ soylenir.
+  // Eskiden sessizce yutuluyordu: kullanici sesi aciyor, hicbir sey
+  // duymuyor ve neden calismadigini hicbir yerde goremiyordu.
+  let troubled = false;
+  function voiceTrouble() {
+    if (troubled) return;
+    troubled = true;
+    try {
+      document.dispatchEvent(new CustomEvent("neo:voice-trouble"));
+    } catch { /* cok eski webview: haber yok ama is durmaz */ }
+  }
+
   async function synth(text) {
     const response = await fetch("/api/speak", {
       method: "POST",
@@ -232,7 +244,12 @@ const Speech = (() => {
       body: JSON.stringify({ text }),
     });
     // 204: söylenecek bir şey kalmamış (yalnızca kod bloğuydu gibi).
-    if (response.status === 204 || !response.ok) return null;
+    if (response.status === 204) return null;
+    if (!response.ok) {
+      // 501 paket yok, 503 servis/ag — ikisinde de ses yok; soyle.
+      voiceTrouble();
+      return null;
+    }
     const blob = await response.blob();
     const url = URL.createObjectURL(blob);
     clips.set(url, blob);

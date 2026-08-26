@@ -35,6 +35,17 @@ from typing import Any, Callable
 
 INSTALL_HINT = "Kamera izleme için: pip install 'neocp[watch]'"
 
+
+def hint() -> str:
+    """Eksik-özellik mesajı: kurulu düzende bileşen önerilir, pip değil."""
+    from . import ortam
+
+    if ortam.kurulu_mu():
+        return ("Kamera izleme bu kuruluma dahil edilmemiş. Kurulum "
+                "sihirbazını yeniden çalıştırıp 'Kamera izleme' "
+                "bileşenini işaretleyerek ekleyebilirsin.")
+    return INSTALL_HINT
+
 # Karşılaştırma bu ölçüde yapılıyor. Küçük olması hem hızlı hem de gölge,
 # gürültü ve sıkıştırma titremesine karşı dayanıklı.
 COMPARE = (64, 48)

@@ -171,6 +171,8 @@ Dil.ekle({
   // ses
   "Ses paketi kurulu degil. Kurmak icin: pip install \"neocp[voice]\"":
     "Voice package not installed. To install: pip install \"neocp[voice]\"",
+  "Ses paketi bu kurulumda eksik gorunuyor. Kurulum sihirbazini yeniden calistirmak eksigi onarir.":
+    "The voice package appears to be missing from this installation. Re-running the setup wizard repairs it.",
   "Sesli konus": "Speak aloud",
   "Cevaplar cumle cumle sesletilir; ses bulutta uretiliyor, internet gerekiyor":
     "Answers are spoken sentence by sentence; audio is generated in the cloud, so internet is required",
@@ -196,6 +198,8 @@ Dil.ekle({
   // mikrofon
   "Tanima paketi kurulu degil. Kurmak icin: pip install \"neocp[listen]\"":
     "Recognition package not installed. To install: pip install \"neocp[listen]\"",
+  "Dinleme bu kuruluma dahil edilmemis. Kurulum sihirbazini yeniden calistirip 'Dinleme (mikrofon)' bilesenini isaretleyerek ekleyebilirsin.":
+    "Listening isn't included in this installation. Re-run the setup wizard and tick the 'Listening (microphone)' component to add it.",
   "Mikrofon": "Microphone",
   "Acinca yazma satirinda bas-konus dugmesi cikar; ses bilgisayardan cikmaz":
     "When on, a push-to-talk button appears in the input line; audio never leaves the computer",
@@ -235,6 +239,8 @@ Dil.ekle({
   "kameralar okunamadi": "could not load cameras",
   "Goruntu paketi kurulu degil. Kurmak icin: pip install \"neocp[watch]\"":
     "Vision package not installed. To install: pip install \"neocp[watch]\"",
+  "Kamera izleme bu kuruluma dahil edilmemis. Kurulum sihirbazini yeniden calistirip 'Kamera izleme' bilesenini isaretleyerek ekleyebilirsin.":
+    "Camera watching isn't included in this installation. Re-run the setup wizard and tick the 'Camera watching' component to add it.",
   "genel bakış": "general view",
   " sn": " s",
   "＋ Yeni kamera": "＋ New camera",
@@ -1229,8 +1235,11 @@ const Settings = (() => {
     pane.textContent = "";
 
     if (!state.voice.available) {
-      pane.append(el("p", "pane-note bad",
-        t("Ses paketi kurulu degil. Kurmak icin: pip install \"neocp[voice]\"")));
+      // Kurulu duzende pip onermek anlamsiz: paket kuruluma dahil,
+      // yoklugu eksik/bozuk kurulum demek — sihirbaz onarir.
+      pane.append(el("p", "pane-note bad", t(state.installed
+        ? "Ses paketi bu kurulumda eksik gorunuyor. Kurulum sihirbazini yeniden calistirmak eksigi onarir."
+        : "Ses paketi kurulu degil. Kurmak icin: pip install \"neocp[voice]\"")));
       return;
     }
 
@@ -1342,8 +1351,10 @@ const Settings = (() => {
     pane.textContent = "";
 
     if (!state.listen.available) {
-      pane.append(el("p", "pane-note bad",
-        t("Tanima paketi kurulu degil. Kurmak icin: pip install \"neocp[listen]\"")));
+      // Kuruluda dogru oneri sihirbazdaki bilesen — pip degil.
+      pane.append(el("p", "pane-note bad", t(state.installed
+        ? "Dinleme bu kuruluma dahil edilmemis. Kurulum sihirbazini yeniden calistirip 'Dinleme (mikrofon)' bilesenini isaretleyerek ekleyebilirsin."
+        : "Tanima paketi kurulu degil. Kurmak icin: pip install \"neocp[listen]\"")));
       return;
     }
 
@@ -1459,8 +1470,9 @@ const Settings = (() => {
     pane.textContent = "";
 
     if (!data.available) {
-      pane.append(el("p", "pane-note bad",
-        t("Goruntu paketi kurulu degil. Kurmak icin: pip install \"neocp[watch]\"")));
+      pane.append(el("p", "pane-note bad", t((state && state.installed)
+        ? "Kamera izleme bu kuruluma dahil edilmemis. Kurulum sihirbazini yeniden calistirip 'Kamera izleme' bilesenini isaretleyerek ekleyebilirsin."
+        : "Goruntu paketi kurulu degil. Kurmak icin: pip install \"neocp[watch]\"")));
       return;
     }
 

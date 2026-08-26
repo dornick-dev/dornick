@@ -1094,13 +1094,15 @@ def _kill_ghosts() -> None:
         import json
         import subprocess
 
+        from . import ortam
+
         out = subprocess.run(
             ["powershell", "-NoProfile", "-Command",
              "Get-CimInstance Win32_Process -Filter \"Name='python.exe' or "
              "Name='pythonw.exe'\" | Select-Object ProcessId,CommandLine | "
              "ConvertTo-Json"],
             capture_output=True, text=True, timeout=10, encoding="utf-8",
-            errors="replace",
+            errors="replace", **ortam.sessiz_bayraklar(),
         ).stdout
         rows = json.loads(out or "[]")
         if isinstance(rows, dict):
@@ -1113,7 +1115,8 @@ def _kill_ghosts() -> None:
                 continue
             if "neocp" in cmd and ("--app" in cmd or "desktop" in cmd):
                 subprocess.run(["taskkill", "/PID", str(pid), "/T", "/F"],
-                               capture_output=True)
+                               capture_output=True,
+                               **ortam.sessiz_bayraklar())
                 print(f"[neo] eski örnek kapatıldı (PID {pid})", flush=True)
     except Exception:
         pass
@@ -1149,7 +1152,11 @@ def run(config: Config, *, port: int = 8765, resume: bool = False) -> int:
     try:
         import webview
     except ImportError:
+        from . import ortam
         raise SystemExit(
+            "Bu kurulum eksik görünüyor (pencere paketi yok). Kurulum "
+            "sihirbazını yeniden çalıştırmak eksiği onarır."
+            if ortam.kurulu_mu() else
             "Masaüstü penceresi için pywebview gerekli: pip install 'neocp[app]'"
         ) from None
 

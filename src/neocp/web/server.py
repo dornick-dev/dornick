@@ -1121,7 +1121,7 @@ class _Handler(BaseHTTPRequestHandler):
 
         ear = _ear(self.server, config)
         if ear is None:
-            self.send_error(501, listen.INSTALL_HINT)
+            self.send_error(501, listen.hint())
             return
 
         # Tanıyıcı dosya yolu istiyor; parça küçük ve geçici.

@@ -24,6 +24,22 @@ from typing import Any
 
 INSTALL_HINT = "Sesli komut için: pip install 'neocp[listen]'"
 
+
+def hint() -> str:
+    """Kullanıcıya gösterilecek eksik-özellik mesajı.
+
+    Geliştirici deposunda pip önerisi doğru; kurulum sihirbazından
+    geçmiş birine pip önermek anlamsız — ona sihirbazı yeniden
+    çalıştırması söylenir (bileşen: Dinleme).
+    """
+    from . import ortam
+
+    if ortam.kurulu_mu():
+        return ("Dinleme özelliği bu kuruluma dahil edilmemiş. Kurulum "
+                "sihirbazını yeniden çalıştırıp 'Dinleme (mikrofon)' "
+                "bileşenini işaretleyerek ekleyebilirsin.")
+    return INSTALL_HINT
+
 # Boyut/doğruluk dengesi. `tiny` uyandırma sözü için yeter; dikte için
 # `small` gözle görülür biçimde daha iyi.
 # `large-v3` listede: 12 GB'lık bir kartta rahat çalışıyor ve Türkçe'de
@@ -156,7 +172,7 @@ class Listener:
         try:
             from faster_whisper import WhisperModel
         except ImportError as exc:  # pragma: no cover - kurulum yolu
-            raise RuntimeError(INSTALL_HINT) from exc
+            raise RuntimeError(hint()) from exc
 
         size = self.config.size if self.config.size in SIZES else "small"
         self._model = self._open(WhisperModel, size)

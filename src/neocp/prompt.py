@@ -468,9 +468,12 @@ def _wsl_distros() -> str:
         import shutil
         import subprocess
 
+        from . import ortam
+
         if shutil.which("wsl"):
             try:
-                res = subprocess.run(["wsl", "-l", "-q"], capture_output=True, timeout=5)
+                res = subprocess.run(["wsl", "-l", "-q"], capture_output=True,
+                                     timeout=5, **ortam.sessiz_bayraklar())
                 # wsl.exe UTF-16 konuşuyor; utf-8 çözmek NUL'lu çöp veriyor.
                 names = [n.strip() for n in
                          res.stdout.decode("utf-16-le", errors="ignore").splitlines()

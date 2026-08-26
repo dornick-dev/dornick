@@ -33,6 +33,8 @@ import time
 from pathlib import Path
 from typing import Any
 
+from . import ortam
+
 DEFAULT_PORT = 9222
 
 # Tarayıcının kapıyı açması ilk kurulumda yavaş olabiliyor.
@@ -267,6 +269,9 @@ class Browser:
             ],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
+            # Chrome/Edge zaten pencereli (GUI) süreç; bayrak konsollu
+            # bir sarmalayıcıdan başlatılsa bile cmd parlatmamayı garantiler.
+            **ortam.sessiz_bayraklar(),
         )
         deadline = time.monotonic() + BOOT_WAIT_S
         while time.monotonic() < deadline:

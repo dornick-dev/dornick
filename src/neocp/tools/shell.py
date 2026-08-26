@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any
 
 from .base import ToolContext, ToolRegistry, ToolResult, object_schema
+from .. import ortam
 
 MAX_OUTPUT_CHARS = 30_000
 DEFAULT_TIMEOUT_S = 120
@@ -85,6 +86,7 @@ async def _run_shell(
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.STDOUT,
         env={**os.environ, "NEOCP_SESSION": session_id},
+        **ortam.sessiz_bayraklar(),
     )
 
     comm = asyncio.ensure_future(proc.communicate())

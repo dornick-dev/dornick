@@ -239,7 +239,7 @@ const Markdown = (() => {
   // işarete bakmak gerekiyordu; renk bunu bir bakışta veriyor. Yalnızca
   // **açık işaretli** olanlar renkleniyor — işaretsiz bir sayı fiyat da
   // olabilir, adet de.
-  const SIGNED = /([+−-])\s?(\d[\d.,\s]*)\s?(%|puan|bp)?/g;
+  const SIGNED = /([+−-])\s?(\d[\d.,\s]*)\s?(%|puan\b|bp\b)?/g;
 
   function signed(parent, text) {
     let at = 0;

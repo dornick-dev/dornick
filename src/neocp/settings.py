@@ -25,7 +25,7 @@ from typing import Any
 
 from . import listen as listen_module
 from . import lmstudio
-from . import organs, startup
+from . import organs, ortam, startup
 from . import voice as voice_module
 from .config import (
     BrowserConfig,
@@ -224,6 +224,9 @@ def snapshot(config: Config) -> dict[str, Any]:
         "place": asdict(config.place),
         # Makinede gerçekten var mı. Olmayan bir aygıtı açılabilir
         # göstermek, çalışmayan bir düğmeye tıklatmak demek.
+        # Kurulu düzen mi (sihirbazla)? Arayüz eksik-özellik metnini buna
+        # göre seçiyor: kuruluda pip önerilmez, sihirbaz önerilir.
+        "installed": ortam.kurulu_mu(),
         "hardware": {
             "microphone": organs.has_microphone(),
             "camera": organs.has_camera(),

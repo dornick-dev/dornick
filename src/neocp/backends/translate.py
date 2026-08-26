@@ -64,7 +64,14 @@ def to_openai_messages(system: list[Block], messages: list[Message]) -> list[Mes
         if role == "assistant":
             out.append(_assistant_message(content))
         elif role == "system":
-            out.append({"role": "system", "content": _flatten_text(content)})
+            # Tur ortası sistem notları (hedef senkronu, harness notları)
+            # user rolüyle gider: Anthropic ailesi — OpenAI-uyumlu uçlar
+            # üzerinden bile — system'ı yalnız dizinin başında kabul ediyor
+            # ("role 'system' must precede an 'assistant' message"), OpenAI
+            # ailesi ise user-notunu aynı şekilde okuyor. Tek biçim, sıfır
+            # sağlayıcı koklama.
+            out.append({"role": "user",
+                        "content": "[Sistem notu]\n" + _flatten_text(content)})
         else:
             out.extend(_user_messages(content))
 

@@ -23,6 +23,20 @@ from typing import Any
 # program çalışmaya devam ediyor.
 INSTALL_HINT = "Sesli konuşma için: pip install 'neocp[voice]'"
 
+
+def hint() -> str:
+    """Eksik-paket mesajı: kurulu düzende pip değil onarım önerilir.
+
+    edge-tts kurulum paketine dahil; kuruluda yokluğu eksik/bozuk bir
+    kurulum demek — sihirbazı yeniden çalıştırmak onarır.
+    """
+    from . import ortam
+
+    if ortam.kurulu_mu():
+        return ("Ses paketi bu kurulumda eksik görünüyor. Kurulum "
+                "sihirbazını yeniden çalıştırmak eksiği onarır.")
+    return INSTALL_HINT
+
 DEFAULT_VOICE = "tr-TR-EmelNeural"
 
 # Bir seferde sesletilecek azami karakter. Uzun metin hem gecikme hem de
@@ -180,7 +194,7 @@ async def synthesize(text: str, config: VoiceConfig) -> bytes:
     try:
         import edge_tts
     except ImportError as exc:  # pragma: no cover - kurulum yolu
-        raise RuntimeError(INSTALL_HINT) from exc
+        raise RuntimeError(hint()) from exc
 
     rate, pitch = tone_of(words)
     speech = edge_tts.Communicate(

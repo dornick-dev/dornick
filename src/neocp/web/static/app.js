@@ -4,6 +4,8 @@
 // Bu dosyanın kullanıcıya gösterdiği metinlerin İngilizceleri. Kaynak
 // metin Türkçe kalıyor; görüntüleme noktasında t("...") ile çevriliyor.
 Dil.ekle({
+  "Ses su an uretilemiyor — ses servisine ulasilamiyor olabilir (internet gerekli). Metin ekranda; ses duzelince kendiliginden devam eder.":
+    "Speech is unavailable right now — the voice service may be unreachable (internet required). The text stays on screen; audio resumes once the service is back.",
   // Araya girme ve yardımcı onayı
   "araya girdi": "interjected",
   "yardımcı": "helper",
@@ -1968,6 +1970,11 @@ fetch("/api/speaking", {
 loadState();
 connect();
 setInterval(() => { Scene.load(); loadOrgans(); }, 30000);
+
+// speech.js ses uretemediginde bir kez haber verir; satir sohbete duser.
+document.addEventListener("neo:voice-trouble", () => {
+  line("alert", t("Ses su an uretilemiyor — ses servisine ulasilamiyor olabilir (internet gerekli). Metin ekranda; ses duzelince kendiliginden devam eder."));
+});
 loadOrgans();
 input.focus();
 

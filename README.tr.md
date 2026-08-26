@@ -51,7 +51,8 @@ izleyebildiğin bir hafıza ağına yazılır.
 
 [Releases](../../releases) sayfasından `neo-setup-<sürüm>.exe` indir,
 çalıştır, Başlat menüsünden **neo**'yu aç. Uygulamanın ayar sayfasından
-model seçilir (yerel sunucu ya da API anahtarı).
+model seçilir (yerel sunucu ya da API anahtarı). İsteğe bağlı
+bileşenler: beni tanı eğitimi, dinleme (mikrofon), kamera izleme.
 
 ### Kaynaktan
 
