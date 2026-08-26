@@ -109,12 +109,15 @@ model gets deployed. Everything runs locally.
 
 ## Training rig
 
-The `egitim/` directory contains the full training rig for the base
-rewriter: corpus generation with a teacher LLM, labeling, training,
-export to numpy, and the acceptance exam. Large artifacts (the trained
-checkpoint and corpora) are not in the repo — see
-[`egitim/README.md`](egitim/README.md); they are published under
-[Releases](../../releases).
+The [`training/`](training/) directory contains the full, self-sufficient
+training rig for the base rewriter — **data included**: the ~164.5k-example
+bilingual teacher corpus, the trained base checkpoint
+(`training/checkpoints/base.pt`), and every script from corpus generation
+through the acceptance exam and the nightly personal loop. Anyone can
+retrain or improve the model; see [`training/README.md`](training/README.md)
+for the pipeline, the frozen data format and the knobs worth turning.
+
+![Training pipeline](docs/training-pipeline.svg)
 
 ## Roadmap
 

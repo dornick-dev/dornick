@@ -1,0 +1,78 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 920 330" font-family="Segoe UI, Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="ok3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#8b949e"/>
+    </marker>
+    <marker id="ok3a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#d9822b"/>
+    </marker>
+  </defs>
+  <style>
+    .kutu { fill: rgba(139,148,158,0.08); stroke: #8b949e; stroke-width: 1.4; }
+    .vurgu { fill: rgba(217,130,43,0.10); stroke: #d9822b; stroke-width: 1.6; }
+    .baslik { fill: #8b949e; font-size: 14px; font-weight: 600; }
+    .not { fill: #8b949e; font-size: 11px; }
+    .amber { fill: #d9822b; font-size: 11px; font-weight: 600; }
+    .cizgi { stroke: #8b949e; stroke-width: 1.4; fill: none; marker-end: url(#ok3); }
+    .acizgi { stroke: #d9822b; stroke-width: 1.6; fill: none; marker-end: url(#ok3a); }
+  </style>
+
+  <!-- teacher -->
+  <rect class="kutu" x="20" y="40" width="150" height="70" rx="8"/>
+  <text class="baslik" x="95" y="68" text-anchor="middle">teacher LLM</text>
+  <text class="not" x="95" y="86" text-anchor="middle">budget-guarded</text>
+
+  <line class="cizgi" x1="170" y1="75" x2="216" y2="75"/>
+
+  <!-- generate -->
+  <rect class="kutu" x="220" y="40" width="170" height="70" rx="8"/>
+  <text class="baslik" x="305" y="63" text-anchor="middle">01 generate</text>
+  <text class="not" x="305" y="81" text-anchor="middle">plain · pronoun · silence</text>
+  <text class="not" x="305" y="96" text-anchor="middle">40 domains × 5 styles</text>
+
+  <line class="cizgi" x1="390" y1="75" x2="436" y2="75"/>
+
+  <!-- label -->
+  <rect class="kutu" x="440" y="40" width="150" height="70" rx="8"/>
+  <text class="baslik" x="515" y="63" text-anchor="middle">02 label</text>
+  <text class="not" x="515" y="81" text-anchor="middle">≤8 search terms each</text>
+  <text class="not" x="515" y="96" text-anchor="middle">silence labeled ""</text>
+
+  <line class="cizgi" x1="590" y1="75" x2="636" y2="75"/>
+
+  <!-- corpus -->
+  <rect class="kutu vurgu" x="640" y="40" width="150" height="70" rx="8"/>
+  <text class="baslik" x="715" y="63" text-anchor="middle">corpus</text>
+  <text class="not" x="715" y="81" text-anchor="middle">164.5k bilingual pairs</text>
+  <text class="amber" x="715" y="96" text-anchor="middle">committed to the repo</text>
+
+  <path class="cizgi" d="M715 110 V 145 H 320 V 175"/>
+
+  <!-- train -->
+  <rect class="kutu" x="230" y="180" width="180" height="70" rx="8"/>
+  <text class="baslik" x="320" y="203" text-anchor="middle">03 train</text>
+  <text class="not" x="320" y="221" text-anchor="middle">10.8M byte-level GPT</text>
+  <text class="not" x="320" y="236" text-anchor="middle">no tokenizer · TR + EN</text>
+
+  <line class="cizgi" x1="410" y1="215" x2="456" y2="215"/>
+
+  <!-- export -->
+  <rect class="kutu" x="460" y="180" width="170" height="70" rx="8"/>
+  <text class="baslik" x="545" y="203" text-anchor="middle">04 export</text>
+  <text class="not" x="545" y="221" text-anchor="middle">fp16 npz · pure numpy</text>
+  <text class="not" x="545" y="236" text-anchor="middle">torch↔numpy parity gate</text>
+
+  <line class="cizgi" x1="630" y1="215" x2="676" y2="215"/>
+
+  <!-- exams -->
+  <rect class="kutu vurgu" x="680" y="180" width="150" height="70" rx="8"/>
+  <text class="baslik" x="755" y="203" text-anchor="middle">05–06 exams</text>
+  <text class="not" x="755" y="221" text-anchor="middle">TR bench 0.87→0.93</text>
+  <text class="not" x="755" y="236" text-anchor="middle">EN probe · speed gates</text>
+
+  <path class="acizgi" d="M755 250 V 285 H 200"/>
+  <rect class="kutu vurgu" x="30" y="262" width="165" height="50" rx="8"/>
+  <text class="baslik" x="112" y="283" text-anchor="middle">ships with neo</text>
+  <text class="not" x="112" y="299" text-anchor="middle">assets/taban.npz</text>
+  <text class="amber" x="480" y="277" text-anchor="middle">passed every gate</text>
+</svg>

@@ -16,4 +16,5 @@ First public release.
 * Desktop app (WebView2), web UI, terminal mode; brain scene visualisation.
 * Gate API (`POST /api/gate`) for external agents, MCP connectors,
   skills, TR/EN interface.
-* Windows installer (Inno Setup) and training rig (`egitim/`).
+* Windows installer (Inno Setup) and the full training rig (`training/`)
+  with the bilingual teacher corpus and base checkpoint included.

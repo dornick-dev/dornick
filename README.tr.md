@@ -109,11 +109,16 @@ yerelde koşar.
 
 ## Eğitim düzeneği
 
-`egitim/` dizini taban yazıcının tam eğitim düzeneğini içerir: öğretmen
-LLM ile korpus üretimi, etiketleme, eğitim, numpy'a aktarma ve kabul
-sınavı. Büyük dosyalar (eğitilmiş checkpoint ve korpuslar) repoda değildir —
-bkz. [`egitim/README.md`](egitim/README.md); [Releases](../../releases)
-altında yayımlanır.
+[`training/`](training/) dizini taban yazıcının tam, kendine yeter eğitim
+düzeneğini içerir — **verisiyle birlikte**: ~164.5k örneklik iki dilli
+öğretmen korpusu, eğitilmiş taban checkpoint'i
+(`training/checkpoints/base.pt`) ve korpus üretiminden kabul sınavına ve
+gecelik kişisel döngüye kadar bütün betikler. İsteyen modeli yeniden
+eğitebilir ya da ileri götürebilir; hat, dondurulmuş veri biçimi ve
+oynamaya değer vidalar için bkz. [`training/README.md`](training/README.md)
+(bu klasörün kodu, ML topluluğu okuyabilsin diye İngilizce adlandırılmıştır).
+
+![Eğitim hattı](docs/training-pipeline.svg)
 
 ## Yol haritası
 

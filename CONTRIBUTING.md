@@ -28,6 +28,10 @@ py eval/context_memory/scale_bench.py
   project-wide convention (`hatirla`, `taban_yazici`, `sinav_kapisi` …).
   Please keep new code consistent with it — English identifiers are only
   used where an external API dictates them (tool names, HTTP fields).
+  **Exception: `training/`** — the training rig is written in English
+  (names and comments) so the ML community can read and retrain it; keep
+  new code there English. Its data schema and npz/checkpoint key names
+  stay Turkish — they are a frozen wire format (see `training/README.md`).
 * Comments explain *why*, not *what*.
 * No new runtime dependencies without discussion — the product core runs
   on the standard library plus a handful of small packages.
