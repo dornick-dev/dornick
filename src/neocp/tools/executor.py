@@ -117,6 +117,13 @@ async def _run_one(
 
     observe("tool_start", {"tool": spec.name, "input": call.input, "id": call.id})
     started = time.monotonic()
+    # Araç kendi zaman aşımını istediyse (ör. shell'e `timeout: 600` verildi)
+    # yürütücünün 180 sn'lik genel sınırı onu ezmemeli: model 10 dakikalık
+    # bir derleme için açıkça süre istiyor ve eski hal onu 3 dakikada
+    # öldürüyordu. Genel sınır, süre istemeyen araçlar için aynen duruyor.
+    wanted = call.input.get("timeout")
+    if isinstance(wanted, (int, float)) and wanted > 0:
+        timeout_s = max(timeout_s, float(wanted) + 30.0)
     try:
         result = await asyncio.wait_for(spec.handler(call.input, ctx), timeout=timeout_s)
     except asyncio.TimeoutError:

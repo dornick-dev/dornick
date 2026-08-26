@@ -112,6 +112,27 @@ def cut_point(messages: list[Message], *, keep: int = KEEP_MESSAGES) -> int:
     return 0
 
 
+def work_cut(messages: list[Message], *, keep: int = KEEP_MESSAGES) -> int:
+    """Tek koşunun ORTASI için kesim: bir asistan mesajının önü.
+
+    Yüz araçlık tek bir koşuda gerçek kullanıcı turu yalnızca en başta —
+    `cut_point` 0 döner ve sıkıştırma hiç çalışamazdı: pencere dolunca
+    koşu "yeni oturum aç" ile ölüyordu. Oysa bir asistan mesajının önü de
+    güvenli bir kesimdir: o mesajın tool_use'ları ve karşılıkları birlikte
+    pencerede kalır, öncekiler birlikte özete katlanır; pencerenin başını
+    zaten carry_over (user) mesajı açıyor.
+
+    `cut_point` yine önce deneniyor (gerçek kullanıcı turu daha iyi bir
+    sınır); burası yalnızca onun bulamadığı durumun yedeği.
+    """
+    if len(messages) <= keep:
+        return 0
+    for index in range(len(messages) - keep, 0, -1):
+        if messages[index].get("role") == "assistant":
+            return index
+    return 0
+
+
 def _is_user_turn(message: Message) -> bool:
     if message.get("role") != "user":
         return False

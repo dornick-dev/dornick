@@ -20,6 +20,11 @@ from .base import ToolContext, ToolRegistry, ToolResult, object_schema
 MAX_OUTPUT_CHARS = 30_000
 DEFAULT_TIMEOUT_S = 120
 
+# Arka plana alınan (arka_plan: true) işin varsayılan sigortası. Uzun ama
+# BİTEN işler için: derleme, kurulum, test koşusu, indirme. 2 saat cömert;
+# model isterse `timeout` ile değiştirir.
+JOB_TIMEOUT_S = 7200
+
 # Hiç bitmeyen sunucu-tipi komutların imzaları. Bunları önplanda beklemek turu
 # sonsuza dek dondurur — kullanıcının "takıldı kaldı" dediği durum. Model
 # `background:true` demeyi atlasa bile shell bunları KENDİSİ tanıyıp arka plana
@@ -65,6 +70,54 @@ def _shell_command(command: str) -> list[str]:
     return [exe, "-lc", command]
 
 
+async def _run_shell(
+    command: str, cwd: Path, session_id: str, timeout: float, cancel: asyncio.Event
+) -> tuple[str, str, int]:
+    """Komutu koşturur: (durum, çıktı, kod). durum: ok | stop | timeout.
+
+    Komut KESME olayıyla yarıştırılıyor: kullanıcı "durdur" dediğinde
+    (cancel) çalışan komut anında öldürülüyor. Senkron yol ctx.cancel ile,
+    arka plan işi kendi defter bayrağıyla çağırıyor — mekanizma tek.
+    """
+    proc = await asyncio.create_subprocess_exec(
+        *_shell_command(command),
+        cwd=str(cwd),
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.STDOUT,
+        env={**os.environ, "NEOCP_SESSION": session_id},
+    )
+
+    comm = asyncio.ensure_future(proc.communicate())
+    stop = asyncio.ensure_future(cancel.wait())
+    try:
+        done, _pending = await asyncio.wait(
+            {comm, stop}, timeout=timeout, return_when=asyncio.FIRST_COMPLETED
+        )
+    except asyncio.CancelledError:
+        proc.kill()
+        await proc.wait()
+        comm.cancel()
+        stop.cancel()
+        raise
+
+    if stop in done:
+        proc.kill()
+        await proc.wait()
+        comm.cancel()
+        return ("stop", "", -1)
+
+    stop.cancel()
+    if comm not in done:
+        proc.kill()
+        await proc.wait()
+        comm.cancel()
+        return ("timeout", "", -1)
+
+    output, _ = comm.result()
+    text = _truncate(output.decode("utf-8", errors="replace").strip())
+    return ("ok", text, proc.returncode or 0)
+
+
 def _truncate(text: str, limit: int = MAX_OUTPUT_CHARS) -> str:
     if len(text) <= limit:
         return text
@@ -91,11 +144,13 @@ daha güvenli ve daha ucuz. Onlar varken kabuktan cat/echo yapma.
 Komut kendi kabuğunda çalışır: değişkenler, cd, fonksiyonlar turlar arasında
 korunmaz. Dizin değiştirmen gerekiyorsa `cwd` argümanını kullan.
 
-UZUN SÜREN SÜREÇLER (bir sunucu başlatmak gibi: `python app.py`, `npm start`,
-`flask run`): `background: true` kullan. Sunucu hiç bitmediği için normal kip
-onu bekler ve tur takılıp kalır — kullanıcının "takıldı kaldı" dediği durum.
-Arka planda başlatılan süreç hemen döner, çalışmaya devam eder ve kullanıcı
-onu Uygulamalar › Çalışıyor'dan görüp durdurabilir; canlı adres belirir.
+UZUN SÜREN SÜREÇLER — iki ayrı kip, karıştırma:
+- Uzun ama BİTEN iş (derleme, kurulum, test koşusu, indirme): `arka_plan: true`.
+  Araç hemen "başlatıldı · id" döner, sen beklemeden devam edersin; komut
+  bitince ÇIKTISI sana bildirilir. Durumu `task_status` ile görürsün.
+- HİÇ bitmeyen süreç (sunucu: `python app.py`, `npm start`, `flask run`):
+  `background: true`. Detached başlar, çıktı takibi yok; kullanıcı onu
+  Uygulamalar › Çalışıyor'dan görüp durdurabilir; canlı adres belirir.
         """,
         input_schema=object_schema(
             {
@@ -113,8 +168,14 @@ onu Uygulamalar › Çalışıyor'dan görüp durdurabilir; canlı adres belirir
                 },
                 "background": {
                     "type": "boolean",
-                    "description": "Uzun süren bir süreç (sunucu gibi) için: detached "
+                    "description": "HİÇ bitmeyen süreç (sunucu gibi) için: detached "
                                    "başlar, komutun bitmesini beklemez, turu bloke etmez.",
+                },
+                "arka_plan": {
+                    "type": "boolean",
+                    "description": "Uzun ama BİTEN iş (derleme, kurulum, test, "
+                                   "indirme) için: komut arkada koşar, araç hemen "
+                                   "döner, bitince ÇIKTISI sana bildirilir.",
                 },
             },
             required=["command"],
@@ -177,56 +238,48 @@ onu Uygulamalar › Çalışıyor'dan görüp durdurabilir; canlı adres belirir
                 "tarayıcıdan açmak isterse o adresi ver."
             )
 
+        # Uzun ama BİTEN iş: arka plan defterine. Araç hemen döner, iş
+        # bitince çıktısı harness notuyla ajana bildirilir (yardımcıların
+        # bildirim altyapısının aynısı). Sunucu-tipi komut buraya girmez —
+        # o hiç bitmez, yukarıdaki detached yol onun için.
+        if args.get("arka_plan") and ctx.job_bg is not None:
+            session_id = ctx.session.id
+            job_timeout = float(args.get("timeout") or JOB_TIMEOUT_S)
+
+            async def runner(cancel: asyncio.Event) -> str:
+                durum, text, code = await _run_shell(
+                    command, cwd, session_id, job_timeout, cancel)
+                if durum == "stop":
+                    return "(kesildi — süreç sonlandırıldı)"
+                if durum == "timeout":
+                    return f"(zaman aşımı: {job_timeout:.0f} sn — süreç sonlandırıldı)"
+                if code != 0:
+                    return f"Çıkış kodu {code}\n\n{text or '(çıktı yok)'}"
+                return text or "(çıktı yok, komut başarılı)"
+
+            handle = ctx.job_bg(f"$ {command[:60]}", runner)
+            return ToolResult(
+                f"Arka plan işi başlatıldı · id={handle.id} — beklemeden işine "
+                "devam et; komut bitince çıktısı sana bildirilecek. Durumunu "
+                "`task_status` ile görebilirsin."
+            )
+
         timeout = int(args.get("timeout") or DEFAULT_TIMEOUT_S)
 
-        proc = await asyncio.create_subprocess_exec(
-            *_shell_command(command),
-            cwd=str(cwd),
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.STDOUT,
-            env={**os.environ, "NEOCP_SESSION": ctx.session.id},
-        )
+        durum, text, code = await _run_shell(
+            command, cwd, ctx.session.id, timeout, ctx.cancel)
 
-        # Komutu KESME olayıyla yarıştırıyoruz: kullanıcı "durdur" dediğinde
-        # (ctx.cancel) çalışan komut anında öldürülüyor. Eski hal yalnızca
-        # `communicate()`'i bekliyordu ve kesmeyi hiç görmüyordu — uzun ya da
-        # hiç bitmeyen bir komutta "durdur" işe yaramıyor, tur takılı kalıyor
-        # ve sıradaki mesaj da işlenemiyordu.
-        comm = asyncio.ensure_future(proc.communicate())
-        stop = asyncio.ensure_future(ctx.cancel.wait())
-        try:
-            done, _pending = await asyncio.wait(
-                {comm, stop}, timeout=timeout, return_when=asyncio.FIRST_COMPLETED
-            )
-        except asyncio.CancelledError:
-            proc.kill()
-            await proc.wait()
-            comm.cancel()
-            stop.cancel()
-            raise
-
-        if stop in done:
+        if durum == "stop":
             # Kullanıcı durdurdu.
-            proc.kill()
-            await proc.wait()
-            comm.cancel()
             return ToolResult.error("Durduruldu — çalışan komut sonlandırıldı.")
 
-        stop.cancel()
-        if comm not in done:
-            # Zaman aşımı.
-            proc.kill()
-            await proc.wait()
-            comm.cancel()
+        if durum == "timeout":
             return ToolResult.error(
                 f"Komut {timeout} saniyede bitmedi ve durduruldu. "
-                "Sunucu gibi uzun sürecek bir şeyse `background: true` kullan; "
-                "yoksa daha dar bir komut dene ya da `timeout` değerini artır."
+                "Uzun ama biten bir işse (derleme, kurulum) `arka_plan: true` "
+                "ile arkada koştur ya da `timeout` değerini artır; sunucu gibi "
+                "hiç bitmeyecek bir şeyse `background: true` kullan."
             )
-
-        output, _ = comm.result()
-        text = _truncate(output.decode("utf-8", errors="replace").strip())
-        code = proc.returncode or 0
 
         if code != 0:
             return ToolResult(

@@ -14,10 +14,12 @@ Kesme güvenliği burada iki noktada zorlanır:
 from __future__ import annotations
 
 import asyncio
+import json
 import re
 import time
 from collections import deque
 from dataclasses import asdict, dataclass, field
+from pathlib import Path
 from typing import Any, Awaitable, Callable
 from uuid import uuid4
 
@@ -30,12 +32,34 @@ from .session import PendingToolUse, Session, cancelled_result
 from .tools import ToolContext, ToolRegistry, build_registry, execute
 from .tools.base import ToolSpec
 
-# Tek kullanıcı isteği için azami model turu. Kaçak döngü emniyeti.
+# Uzun koşu kontrol noktası aralığı. Eskiden SERT tavandı: 60. turda döngü
+# durur, saatlik bir iş yarıda kalırdı. Artık her 60 turda bir ajan kısa bir
+# ilerleme notu yazmaya çağrılıyor ve iş SÜRÜYOR; gerçek fren kullanıcı
+# (durdurma ilk andan işliyor) + aşağıdaki mutlak sigorta.
 MAX_TURNS = 60
 
+# Koşu başına mutlak tur sigortası. Kaçak döngüye karşı son emniyet; normal
+# bir iş buraya çarpmaz (600 tur ≈ yüzlerce araç çağrısı).
+HARD_TURN_LIMIT = 600
+
 # Tavana carpan bir yanit kac kez surdurulsun. Sinirsiz birakmak, uzun
-# uzun yazip hicbir zaman bitirmeyen bir modelde donguye doner.
+# uzun yazip hicbir zaman bitirmeyen bir modelde donguye doner. Sayaç,
+# araç çağıran (yani ilerleyen) her turda sıfırlanır: uzun bir koşuda
+# arada bir tavana çarpmak işi kapanış turuna sürüklememeli.
 MAX_CONTINUATIONS = 4
+
+# Model hatasında (bağlantı, 5xx, zaman aşımı) yeniden deneme aralıkları.
+# Üstel geri çekilme: tek bir sağlayıcı hıçkırığı saatlik bir işi
+# öldürmemeli. Testler kısaltmak için modül değişkenini yamalıyor.
+RETRY_DELAYS = (15.0, 30.0, 60.0, 120.0, 300.0)
+
+# Denemeler tükenince iş PARK edilir: ölmez, seyrek yoklamayla bekler ve
+# model dönünce kaldığı yerden sürer. Yoklama ucuz — probe isteğin kendisi.
+PARK_PROBE_S = 180.0
+
+# Park kaydı: uygulama kapansa bile yarım işin izi diskte durur; açılışta
+# görülürse koşu otomatik sürdürülür.
+PARK_DOSYASI = "park.json"
 
 # Alt ajan yuvalanma sınırı. 1 demek: ana ajan yardımcı çıkarabilir,
 # yardımcı çıkaramaz. Sınırsız bırakmak tek bir isteği ağaç gibi açar ve
@@ -183,6 +207,48 @@ SAY_NOTE = (
     "kat; öncelik gerekiyorsa yön değiştir."
 )
 
+# Arka plan İŞİ (uzun komut/derleme/test koşusu) bittiğinde düşen notlar.
+# Yardımcı (model koşan alt ajan) notlarından ayrı: bu bir süreç çıktısı.
+JOB_DONE_NOTE = "[Arka plan işi bitti · {title} (id={id})] Çıktısı: {result}"
+JOB_FAIL_NOTE = "[Arka plan işi hata verdi · {title} (id={id})] {result}"
+
+# Uzun koşu kontrol noktası: eski sert tavanın yerini alan yumuşak dürtü.
+CHECKPOINT_NOTE = (
+    "[Uzun koşu kontrol noktası — {turns} tur] Bir-iki cümleyle ilerleme "
+    "durumunu yaz (ne bitti, ne kaldı) ve işe DEVAM ET. Bu not kullanıcıdan "
+    "gelmedi ve bir bitirme çağrısı değil; iş bitmeden durma."
+)
+
+
+# -- park kaydı ---------------------------------------------------------
+#
+# Model kesintisinde koşunun durumu zaten diskte (oturum jsonl + notlar);
+# park kaydı yalnızca "yarım bir iş var ve bekliyor" işareti. Açılışta
+# görülürse koşu otomatik sürdürülür; kullanıcı keserse ya da iş biterse
+# silinir.
+
+
+def read_park(state_dir: Path) -> dict[str, Any] | None:
+    try:
+        raw = json.loads((state_dir / PARK_DOSYASI).read_text(encoding="utf-8"))
+        return raw if isinstance(raw, dict) and raw.get("session") else None
+    except (OSError, ValueError):
+        return None
+
+
+def write_park(state_dir: Path, session_id: str, reason: str) -> None:
+    (state_dir / PARK_DOSYASI).write_text(
+        json.dumps({"session": session_id, "ts": time.time(),
+                    "reason": (reason or "")[:300]}, ensure_ascii=False),
+        encoding="utf-8")
+
+
+def clear_park(state_dir: Path) -> None:
+    try:
+        (state_dir / PARK_DOSYASI).unlink(missing_ok=True)
+    except OSError:
+        pass
+
 
 @dataclass(slots=True)
 class AgentIO:
@@ -224,6 +290,9 @@ class ChildHandle:
     id: str
     title: str
     model: str
+    # "yardımcı": model koşan alt ajan · "iş": arka plan süreci (uzun komut).
+    # İkisi aynı defteri ve aynı bildirim yolunu paylaşıyor.
+    kind: str = "yardımcı"
     arka_plan: bool = False
     session_id: str = ""
     state: str = "kosuyor"          # kosuyor | bitti | hata
@@ -250,6 +319,9 @@ class TurnStats:
     usage: dict[str, int] = field(default_factory=dict)
     interrupted: bool = False
     stop_reason: str | None = None
+    # Art arda kaç model çağrısı hata verdi. Başarılı turda sıfırlanır;
+    # geri çekilme merdiveni ve park kararı buna bakıyor.
+    api_errors: int = 0
     # Tavana carpip surdurulen tur sayisi.
     continuations: int = 0
     # Kapanis turu verildi mi. Bir kez: yoksa kilitlenen dongu kapanis
@@ -362,6 +434,13 @@ class Agent:
         # Bir yardımcı bitince köprüye (varsa) haber: ana ajan boştaysa
         # köprü bir sürdürme turu açar. Masaüstü katmanı bağlıyor.
         self.on_children_settled: Callable[[], None] | None = None
+        # Model kesintisinde her yeniden denemeden önce çağrılır. Köprü
+        # buraya bekleyen model/ayar değişikliğini uygulayan çağrıyı bağlar:
+        # bozuk adres/anahtar düzeltildiyse yeni istemci ancak böyle devreye
+        # girer (normalde değişiklik tur SONUNU bekler, parklı tur bitmez).
+        self.on_retry_wait: Callable[[], None] | None = None
+        # İş park edildi mi (model ulaşılamıyor, bekliyor).
+        self._parked = False
 
     def _soul_resident(self) -> set[str]:
         """Ruhun tam gövdesiyle prompta koyduğu kayıtların kimlikleri."""
@@ -563,6 +642,9 @@ class Agent:
             spawn_bg=self._spawn_bg if self.depth < MAX_DEPTH else None,
             child_say=self._child_say if self.depth < MAX_DEPTH else None,
             child_status=self._child_status if self.depth < MAX_DEPTH else None,
+            # Uzun süreçler yalnız ana ajanda arka plana alınabiliyor: alt
+            # ajan işi bitmeden ölürse bildirimin gideceği kimse kalmaz.
+            job_bg=self._job_bg if self.depth < MAX_DEPTH else None,
             schedule=self.schedule,
             lens=self.lens,
             ear=self.ear,
@@ -574,8 +656,17 @@ class Agent:
             on_tool_start=lambda name: None,
         )
 
-        while stats.turns < MAX_TURNS:
+        while stats.turns < HARD_TURN_LIMIT:
             stats.turns += 1
+
+            # Uzun koşu kontrol noktası: eski sert tavan (60. turda dur)
+            # yumuşak bir dürtüye çevrildi — ajan kısa bir ilerleme notu
+            # yazar ve İŞ SÜRER. Gerçek fren kullanıcı + mutlak sigorta.
+            if stats.turns > 1 and stats.turns % MAX_TURNS == 0:
+                self.session.log.note("turn_checkpoint", turns=stats.turns)
+                self.session.add_harness_note(CHECKPOINT_NOTE.format(turns=stats.turns))
+                self.io.on_notice(
+                    f"Uzun koşu: {stats.turns} tur — ilerleme notu istendi, iş sürüyor.")
 
             await self._relieve_pressure()
             self._sync_goals()
@@ -584,14 +675,20 @@ class Agent:
             self._drain_children()
             self._drain_inbox()
             prepared = self.policy.prepare(self._system, self.session.messages())
-            result = await self.client.turn(
-                prepared,
-                # Kapanis turu araçsız: tekrar araç çağırmasına izin vermek,
-                # kilitlenen döngünün bir turunu daha çalıştırmak demek.
-                [] if stats.closing else self.registry.api_schemas(brief=self.lean),
-                cancel=self.cancel,
-                callbacks=callbacks,
-            )
+            try:
+                result = await self.client.turn(
+                    prepared,
+                    # Kapanis turu araçsız: tekrar araç çağırmasına izin vermek,
+                    # kilitlenen döngünün bir turunu daha çalıştırmak demek.
+                    [] if stats.closing else self.registry.api_schemas(brief=self.lean),
+                    cancel=self.cancel,
+                    callbacks=callbacks,
+                )
+            except Exception as exc:
+                # Bağlantı hiç kurulamadı (adres kapalı, DNS, soket). Eskiden
+                # buradan yükselen istisna koşuyu düşürüyordu; artık hata
+                # yoluna girer ve yeniden dener.
+                result = TurnResult(error=f"{type(exc).__name__}: {exc}")
 
             if result.interrupted:
                 self.session.log.note("interrupted", stage="stream", dropped=result.partial_text)
@@ -601,8 +698,25 @@ class Agent:
 
             if result.error:
                 self.session.log.note("api_error", detail=result.error)
-                self.io.on_notice(result.error)
+                # Bozuk istek (400 vb.) yeniden denemekle düzelmez: eski
+                # davranış. Geçici hata (bağlantı, 5xx, zaman aşımı, 429)
+                # uzun işi ÖLDÜRMEZ: geri çekilerek dener, sonra park eder.
+                if _fatal_error(result.error):
+                    self.io.on_notice(result.error)
+                    self._unpark()
+                    break
+                stats.api_errors += 1
+                stats.turns -= 1   # deneme turdan sayılmaz; sigorta kaçmasın
+                if await self._await_model(stats, result.error):
+                    continue
+                stats.interrupted = True
                 break
+
+            if stats.api_errors:
+                # Kesinti atlatıldı: sayaç sıfır, park kaydı (varsa) kalksın.
+                stats.api_errors = 0
+                self._unpark()
+                self.io.on_notice("Model geri geldi — iş kaldığı yerden sürüyor.")
 
             report = cache_report(result.usage)
             stats.usage = report
@@ -633,9 +747,17 @@ class Agent:
             break
 
         else:
-            self.io.on_notice(f"{MAX_TURNS} tur sınırına ulaşıldı, döngü durduruldu.")
-            self.session.log.note("turn_limit", limit=MAX_TURNS)
+            # Mutlak sigorta: normal iş buraya çarpmaz (kontrol noktaları işi
+            # sürdürür); burası kaçak döngünün son freni.
+            self.io.on_notice(
+                f"{HARD_TURN_LIMIT} turluk mutlak sigortaya ulaşıldı, koşu durduruldu.")
+            self.session.log.note("turn_limit", limit=HARD_TURN_LIMIT)
 
+        # Koşu bitti: park kaydı (kalmışsa) düşsün — açılışta bitmiş bir işi
+        # yeniden sürdürmeye kalkmayalım.
+        if self.depth == 0:
+            self._parked = False
+            clear_park(self.config.state_dir)
         return stats
 
     async def _handle_stop(
@@ -650,6 +772,11 @@ class Agent:
                 for b in result.tool_uses()
             ]
             stats.tool_calls += len(calls)
+            # Araç çağıran tur ilerliyor demektir: sürdürme hakkı tazelenir.
+            # Uzun bir koşuda arada bir max_tokens tavanına çarpmak, işi
+            # kapanış turuna sürüklememeli.
+            if not stats.closing:
+                stats.continuations = 0
             blocks = await execute(
                 calls,
                 registry=self.registry,
@@ -753,6 +880,69 @@ class Agent:
         self.session.add_continuation_note(note)
         self.session.log.note(why, continuation=stats.continuations)
         return True
+
+    # -- model kesintisi dayanıklılığı ---------------------------------
+
+    async def _await_model(self, stats: TurnStats, error: str) -> bool:
+        """Model hatasında bekler; True → yeniden dene, False → kullanıcı kesti.
+
+        İlk denemeler üstel geri çekilme (RETRY_DELAYS); tükenince iş PARK
+        edilir: ölmez, PARK_PROBE_S aralıklarla yoklamaya düşer — yoklama
+        isteğin kendisi. Oto kipinde her yeni deneme sağlık sıralamasından
+        geçer ve havuzdaki başka bir modele düşebilir; belirli model
+        seçiliyse model DEĞİŞTİRİLMEZ, yalnızca beklenir.
+        """
+        retries = len(RETRY_DELAYS)
+        if stats.api_errors <= retries:
+            delay = RETRY_DELAYS[stats.api_errors - 1]
+            self.io.on_notice(
+                f"Model yanıt vermiyor; {delay:.0f} sn sonra yeniden denenecek "
+                f"({stats.api_errors}/{retries}). ({_clip(error, 120)})")
+        else:
+            delay = PARK_PROBE_S
+            self._park(error)
+
+        # Kesilebilir bekleyiş: kullanıcı "dur" derse bekleme anında biter.
+        try:
+            await asyncio.wait_for(self.cancel.wait(), timeout=delay)
+        except asyncio.TimeoutError:
+            # Süre doldu: yeniden dene. Bekleyen bir model/ayar değişikliği
+            # varsa önce uygula — bozuk adres/anahtar düzeltildiyse yeni
+            # istemci ancak böyle devreye girer.
+            if self.on_retry_wait is not None:
+                try:
+                    self.on_retry_wait()
+                except Exception:
+                    pass
+            return True
+
+        # Kullanıcı kesti: bilinçli durdurma — park kaydı da düşer.
+        self._unpark()
+        self.io.on_notice("Kesildi.")
+        return False
+
+    def _park(self, error: str) -> None:
+        if self._parked:
+            return
+        self._parked = True
+        if self.depth == 0:
+            try:
+                write_park(self.config.state_dir, self.session.id, error)
+            except OSError:
+                pass
+        self.session.log.note("parked", error=_clip(error, 300))
+        self.io.on_notice(
+            "Model ulaşılamıyor — işin bekletiliyor; bağlantı gelince kaldığı "
+            f"yerden sürecek (her {int(PARK_PROBE_S)} sn'de bir yoklanıyor). "
+            "İpucu: Ayarlar › model'de Oto kipi, kesintide havuzdaki başka "
+            "modellerle sürmemi sağlar.")
+
+    def _unpark(self) -> None:
+        if self.depth == 0:
+            clear_park(self.config.state_dir)
+        if self._parked:
+            self._parked = False
+            self.session.log.note("unparked")
 
     # -- alt ajanlar ---------------------------------------------------
 
@@ -926,12 +1116,15 @@ class Agent:
                 pass
 
     def _drain_children(self) -> None:
-        """Biten ve henüz bildirilmemiş yardımcıların sonuçlarını nota döker."""
+        """Biten ve henüz bildirilmemiş yardımcı/iş sonuçlarını nota döker."""
         for handle in self._children.values():
             if handle.state == "kosuyor" or handle.bildirildi:
                 continue
             handle.bildirildi = True
-            template = CHILD_DONE_NOTE if handle.state == "bitti" else CHILD_FAIL_NOTE
+            if handle.kind == "iş":
+                template = JOB_DONE_NOTE if handle.state == "bitti" else JOB_FAIL_NOTE
+            else:
+                template = CHILD_DONE_NOTE if handle.state == "bitti" else CHILD_FAIL_NOTE
             self.session.add_harness_note(template.format(
                 title=handle.title, id=handle.id,
                 result=_clip(handle.sonuc, CHILD_RESULT_CLIP)))
@@ -969,6 +1162,9 @@ class Agent:
             known = ", ".join(self._children) or "(defter boş)"
             return False, (f"'{cid}' diye bir yardımcı yok. Defterdekiler: {known}. "
                            "`task_status` ile bak.")
+        if handle.kind == "iş":
+            return False, (f"'{handle.title}' bir arka plan işi (süreç), mesaj almaz. "
+                           "Bitince çıktısı zaten sana bildirilecek.")
         if handle.state == "kosuyor":
             if handle.agent is None:
                 # Ajan kapısında sırada: nesne henüz kurulmadı.
@@ -999,6 +1195,8 @@ class Agent:
             if wanted and h.id != wanted:
                 continue
             row = f"- id={h.id} · {h.title} · {h.state}"
+            if h.kind == "iş":
+                row += " · süreç"
             if h.arka_plan:
                 row += " · arka plan"
             if h.state != "kosuyor" and h.sonuc:
@@ -1008,6 +1206,40 @@ class Agent:
             return (f"'{wanted}' diye bir yardımcı yok. "
                     f"Defterdekiler: {', '.join(self._children)}")
         return "\n".join(rows)
+
+    # -- arka plan işleri (uzun süreçler) ------------------------------
+
+    def _job_bg(self, title: str, runner: Callable[[asyncio.Event], Awaitable[str]]) -> ChildHandle:
+        """Uzun bir işi (derleme, kurulum, test koşusu) arka plana alır.
+
+        Yardımcı defterinin AYNISI kullanılıyor: kayıt, bildirim notu,
+        boştayken sürdürme turu ve türev kesme — hepsi hazır altyapı.
+        Fark: model koşan bir alt ajan değil, tek bir eşyordam (süreç).
+        `runner` kendi kesme bayrağını alır — ana `interrupt()` onu kurar.
+        """
+        handle = ChildHandle(id=uuid4().hex[:6], title=title, model="",
+                             kind="iş", arka_plan=True)
+        self._register_child(handle)
+        self.session.log.note("job_start", title=title, id=handle.id)
+        self.io.on_child_start(handle.title, "süreç", handle.id, True)
+        handle.task = asyncio.get_running_loop().create_task(
+            self._job_round(handle, runner))
+        return handle
+
+    async def _job_round(self, handle: ChildHandle,
+                         runner: Callable[[asyncio.Event], Awaitable[str]]) -> None:
+        try:
+            handle.sonuc = _clip(await runner(handle.cancel), CHILD_RESULT_CLIP)
+            handle.state = "bitti"
+        except Exception as exc:  # işin çökmesi ajanı düşürmemeli
+            handle.state = "hata"
+            handle.sonuc = f"{type(exc).__name__}: {exc}"
+        handle.bitis_ts = time.time()
+        self.session.log.note("job_end", title=handle.title, id=handle.id,
+                              state=handle.state)
+        self.io.on_child_end(handle.title, handle.state == "bitti", 0, 0,
+                             handle.id, _clip(handle.sonuc, 200))
+        self._children_settled()
 
     def _client_for(self, model: str) -> tuple[Any, Config]:
         """Başka bir model için istemci kurar.
@@ -1120,7 +1352,17 @@ class Agent:
             self.session.log.note("compact_failed", reason=reason)
             return False
 
+        # İş durumu özetin BAŞINA sabitleniyor: kaybolan bağlamda en kritik
+        # şey "neyin peşindeydim, nerede kalmıştım". Özetleyici bunu bazen
+        # gömüyor; burada garanti altına alınıyor.
+        if state := self._is_durumu(from_seq):
+            summary = state + "\n\n" + summary
+
         self.session.compact(summary, from_seq)
+        # Hedef notu özete katlandı; canlı hedefler bir sonraki turda
+        # yeniden enjekte edilebilsin (aksi halde dijest değişmediği için
+        # _sync_goals susar ve hedefler bağlamdan tümden düşerdi).
+        self._last_goal_digest = ""
         self._last_usage = {}
         # Eski prime notları özete katlandı; artık bağlamda durmuyorlar.
         # Tekrar hakkı geri gelmeli, yoksa özetin kaybettiği bir hatıra
@@ -1173,6 +1415,40 @@ class Agent:
             for block in result.content
             if isinstance(block, dict) and block.get("type") == "text"
         ).strip()
+
+    def _is_durumu(self, before_seq: int) -> str:
+        """Sıkıştırmada özetin başına sabitlenen iş durumu bölümü.
+
+        İki parça: hedef yığını (varsa) + katlanan bölgedeki son asistan
+        sözü ("son ilerleme"). Uzun bir koşuda özetin kaybetmemesi gereken
+        şey tam olarak bu ikisi.
+        """
+        parts: list[str] = []
+        if self.mind is not None:
+            try:
+                if digest := self.mind.goal_digest():
+                    parts.append(digest)
+            except Exception:
+                pass
+        if progress := self._son_ilerleme(before_seq):
+            parts.append(f"Son ilerleme: {_clip(progress, 600)}")
+        if not parts:
+            return ""
+        return "[İŞ DURUMU]\n" + "\n".join(parts)
+
+    def _son_ilerleme(self, before_seq: int) -> str:
+        """Katlanan bölgedeki son asistan metni — modelin kendi anlatımı."""
+        for event in reversed(self.session.log.messages()):
+            if event.seq >= before_seq or event.role != "assistant":
+                continue
+            blocks = event.content if isinstance(event.content, list) else []
+            text = "\n".join(
+                str(b.get("text", "")) for b in blocks
+                if isinstance(b, dict) and b.get("type") == "text"
+            ).strip()
+            if text:
+                return text
+        return ""
 
     # -- yardımcılar ---------------------------------------------------
 
@@ -1317,6 +1593,20 @@ def _grounded(item: Any, stems: set[str]) -> bool:
         return True
     text = f"{item.title} {item.content} {' '.join(item.tags)}".casefold()
     return any(stem in text for stem in stems)
+
+
+def _fatal_error(text: str) -> bool:
+    """Yeniden denemenin işe yaramayacağı hata mı?
+
+    Bozuk istek (400/404/405/413/422) ve pencere taşması (n_ctx) aynı
+    istekle tekrar denemekle düzelmez — eski davranış korunur, hemen durur.
+    Bağlantı, zaman aşımı, 401/403 (anahtar sonradan düzelebilir), 408/429
+    ve 5xx geçici sayılır: uzun işi tek bir sağlayıcı hıçkırığı öldürmemeli.
+    """
+    t = text or ""
+    if re.search(r"\b(400|404|405|413|422)\b", t):
+        return True
+    return "n_ctx" in t
 
 
 def _clip(text: str, limit: int) -> str:

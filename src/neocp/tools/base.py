@@ -71,6 +71,12 @@ class ToolContext:
     child_say: Callable[[str, str], tuple[bool, str]] | None = None
     child_status: Callable[[str], str] | None = None
 
+    # Uzun ama BİTEN bir işi (derleme, kurulum, test koşusu) arka plana
+    # alır: kayıt defterine yazar, bitince çıktısı harness notuyla ajana
+    # bildirilir. `shell` gibi araçların `arka_plan` seçeneği bunu kullanır.
+    # Runner kendi kesme bayrağını alır; ana interrupt hepsini kurar.
+    job_bg: Callable[[str, Callable[[asyncio.Event], Awaitable[str]]], Any] | None = None
+
     # Zamanlanmış görev defteri. Döngü veriyor; None ise `schedule`
     # aracı kendini kullanılamaz ilan ediyor.
     schedule: Any = None

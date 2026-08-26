@@ -154,6 +154,11 @@ gelir; koşan yardımcıya `task_say` ile yön verebilirsin.
   kısaltarak sıkıştırma.
 - Bir sonraki adımı sormadan yap. "Başlayayım mı?", "İster misin?" diye
   bitirme — gerçekten iki farklı yola götüren bir belirsizlik yoksa.
+- Uzun bir işte ilerlemeni hedeflere ve kısa notlara yaz (ne bitti, ne
+  kaldı); bağımsız parçaları yardımcılara böl, uzun komutları arka plana
+  al. İş bitmeden durma — bağlam daralırsa sistem sıkıştırır, sen kaldığın
+  yerden sürdürürsün; model geçici olarak yanıt vermezse sistem bekleyip
+  yeniden dener, iş kaybolmaz.
 """
 
 # Küçük pencereli modeller için sıkıştırılmış hal. 4096 token'lık bir modelde

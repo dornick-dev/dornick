@@ -41,7 +41,7 @@ from . import (
 )
 from .config import Config
 from .context import ContextPolicy
-from .loop import Agent, AgentIO, BARGE_NOTE
+from .loop import Agent, AgentIO, BARGE_NOTE, clear_park, read_park
 from .mind import open_mind
 from .permissions import PermissionEngine
 from .session import Session
@@ -133,6 +133,10 @@ async def _retire(client: Any) -> None:
 # görünce (ajan o an boş demektir — kuyruk seri) bir sürdürme turu açar.
 # Metin değil nesne: hiçbir kullanıcı mesajıyla karışamaz.
 _CHILD_DONE = object()
+
+# Açılışta bulunan park kaydı (yarım kalmış uzun iş): pump bunu görünce
+# koşuyu kaldığı yerden sürdürür.
+_PARK_RESUME = object()
 
 
 @dataclass(slots=True)
@@ -504,8 +508,35 @@ class Bridge:
             if item is _CHILD_DONE:
                 await self._surdur()
                 continue
+            if item is _PARK_RESUME:
+                await self._park_surdur()
+                continue
             text, image = item
             await self._isle(text, image)
+
+    async def _park_surdur(self) -> None:
+        """Park edilmiş (yarım kalmış) koşuyu kaldığı yerden sürdürür.
+
+        Açılışta park kaydı bulunduğunda kuyruğa düşen işaretin karşılığı.
+        `resume_after_interrupt` karşılıksız tool_use'ları kapatıp döngüyü
+        yeniden sürer; model hâlâ ulaşılamıyorsa aynı koşu içinde yeniden
+        deneme/park zinciri zaten devrede.
+        """
+        agent = self.agent
+        if agent is None:
+            return
+        self._busy = True
+        self.hub.emit({"type": "status", "busy": True})
+        try:
+            await agent.resume_after_interrupt()
+        except Exception as exc:  # sürdürme uygulamayı düşürmemeli
+            self.hub.emit({"type": "notice", "text": f"{type(exc).__name__}: {exc}"})
+        finally:
+            self._busy = False
+            if self._wanted_model is not None:
+                self._swap_model()
+            self.hub.emit({"type": "status", "busy": False})
+            self.hub.emit({"type": "turn_end"})
 
     async def _surdur(self) -> None:
         """Bir yardımcı bitti ve ajan boşta: sonucu değerlendiren tur.
@@ -702,6 +733,50 @@ def _open_ear(config: Config, bridge: "Bridge", hub: Hub) -> Any:
     return ear
 
 
+def _yarim_is(sessions_dir: Any) -> str | None:
+    """Çökme artığı var mı: son oturumda cevapsız tool_use kalmış mı?
+
+    Park kaydı olmadan yarım kalmış bir koşunun izi. Yalnızca haber vermek
+    için kullanılıyor (otomatik sürdürme park kaydına bağlı); o yüzden en
+    iyi çaba — okunamayan/bozuk günlükte sessizce None.
+    """
+    import json as _json
+    from pathlib import Path as _Path
+
+    try:
+        files = sorted(_Path(sessions_dir).glob("*.jsonl"))
+        if not files:
+            return None
+        requested: list[str] = []
+        answered: set[str] = set()
+        for line in files[-1].read_text(encoding="utf-8").splitlines():
+            try:
+                ev = _json.loads(line)
+            except ValueError:
+                continue
+            meta = ev.get("meta") or {}
+            # Yardımcı (alt ajan) oturumu: ana listeye konu değil.
+            if ev.get("content") == "subagent_start" and meta.get("parent"):
+                return None
+            if ev.get("kind") != "message":
+                continue
+            content = ev.get("content")
+            if not isinstance(content, list):
+                continue
+            if ev.get("role") == "assistant":
+                requested = [str(b.get("id")) for b in content
+                             if isinstance(b, dict) and b.get("type") == "tool_use"]
+            elif ev.get("role") == "user":
+                for b in content:
+                    if isinstance(b, dict) and b.get("type") == "tool_result":
+                        answered.add(str(b.get("tool_use_id")))
+        if any(r not in answered for r in requested):
+            return files[-1].stem
+        return None
+    except Exception:
+        return None
+
+
 def _prepare_model(config: Config) -> None:
     """Modeli ayarlardaki pencereyle yüklü hale getirir (yalnızca LM Studio).
 
@@ -759,9 +834,25 @@ async def _boot(config: Config, port: int, resume: bool) -> Runtime:
     # zaten oradan okuyor, ikinci bir yol acmaya gerek yok.
     settings.export_keys(config.state_dir)
 
-    session = (Session.latest(config.sessions_dir) if resume else None) or Session.create(
-        config.sessions_dir
-    )
+    # Park kaydı: önceki koşuda model ulaşılamaz olmuş ve iş bekletilirken
+    # uygulama kapanmış olabilir. Kayıt varsa O oturum açılır ve aşağıda
+    # (pump kurulunca) koşu kaldığı yerden otomatik sürdürülür.
+    park_session = None
+    if parked := read_park(config.state_dir):
+        p = config.sessions_dir / f"{parked.get('session', '')}.jsonl"
+        if p.is_file():
+            park_session = Session.resume(p)
+        else:
+            clear_park(config.state_dir)
+
+    # Park kaydı yok ama son oturumda cevapsız tool_use kalmışsa (çökme
+    # artığı) kullanıcıya yalnızca haber verilir — belirsiz durumda sorma
+    # tarafında kalınıyor, kendiliğinden sürdürülmüyor.
+    yarim = None if (park_session or resume) else _yarim_is(config.sessions_dir)
+
+    session = park_session or (
+        Session.latest(config.sessions_dir) if resume else None
+    ) or Session.create(config.sessions_dir)
     hub = Hub()
     bridge = Bridge(hub, asyncio.get_running_loop())
 
@@ -859,6 +950,11 @@ async def _boot(config: Config, port: int, resume: bool) -> Runtime:
         # Arka plan yardımcısı bitince köprü haber alsın: ajan boştaysa
         # sonucu değerlendiren bir sürdürme turu açılır.
         agent.on_children_settled = bridge.child_done
+        # Model kesintisinde her yeniden denemeden önce bekleyen ayar/model
+        # değişikliği uygulansın: bozuk adres/anahtar düzeltildiğinde parklı
+        # koşu yeni istemciyle sürebilsin (normalde değişim tur sonunu
+        # bekler; parklı tur hiç bitmez).
+        agent.on_retry_wait = bridge._swap_model
     bridge.agent = agent
 
     # Sürekli dinleme Python tarafında: tarayıcıda duramıyor çünkü pencere
@@ -913,6 +1009,17 @@ async def _boot(config: Config, port: int, resume: bool) -> Runtime:
 
     loop = asyncio.get_running_loop()
     loop.create_task(bridge.pump())
+
+    # Yarım kalmış uzun iş: park kaydı varsa otomatik sürdürülür; yalnızca
+    # çökme artığı (kayıtsız yarım tur) varsa haber verilir, karar kullanıcının.
+    if park_session is not None and agent is not None:
+        hub.emit({"type": "notice",
+                  "text": "Yarım kalmış uzun iş bulundu — kaldığı yerden sürdürülüyor."})
+        loop.create_task(bridge.queue.put(_PARK_RESUME))
+    elif yarim:
+        hub.emit({"type": "notice",
+                  "text": f"Yarım kalmış bir iş görünüyor (oturum {yarim}). "
+                          "Geçmiş'ten açıp 'devam et' diyebilirsin."})
 
     # Zamanlayıcı ajanın döngüsünde koşuyor: tetiklenen görev doğrudan
     # çalışmıyor, kullanıcının mesaj kuyruğuna giriyor. Böylece ajan bir

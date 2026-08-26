@@ -190,6 +190,11 @@ class Session:
         projected = [{"role": e.role, "content": e.content} for e in events]
         cut = compaction.cut_point(projected, keep=keep)
         if cut <= 0:
+            # Tek koşunun ortası: gerçek kullanıcı turu yalnız başta olabilir.
+            # Asistan sınırından kesmek de güvenli — uzun bir iş, pencere
+            # doldu diye ölmek zorunda değil.
+            cut = compaction.work_cut(projected, keep=keep)
+        if cut <= 0:
             return None
         return events[cut].seq, compaction.transcript(projected[:cut])
 
