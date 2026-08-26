@@ -337,8 +337,8 @@ def test_spawning_a_subagent_emits_channel_events(tmp_path: Path) -> None:
     events: list[tuple] = []
     io = AgentIO(
         approve=_always_yes,
-        on_child_start=lambda title, model, cid: events.append(("start", title, model)),
-        on_child_end=lambda title, ok, turns, tools: events.append(("end", title, ok)),
+        on_child_start=lambda title, model, cid, bg: events.append(("start", title, model)),
+        on_child_end=lambda title, ok, turns, tools, cid, ozet: events.append(("end", title, ok)),
     )
 
     config = Config.load(tmp_path)

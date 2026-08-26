@@ -114,6 +114,22 @@ class Session:
             return
         self.log.message("system", text)
 
+    def add_harness_note(self, text: str) -> None:
+        """Harness'ın tur ortası notu: yardımcı bitti, kullanıcı araya yazdı.
+
+        `add_system_note`'tan farkı iki yerde:
+          * Kaybolmaz. System notu bir user mesajını takip etmek zorunda;
+            uymuyorsa (ör. peş peşe iki not) buradaki not user kanalından
+            girer — düşürülmez.
+          * Görünmez. `internal` işareti arayüzde saklanmasını sağlıyor:
+            kullanıcının yazmadığı bir metin sohbette mesaj gibi durmamalı
+            (araya giren mesajın balonu zaten `araya` olayıyla çizildi).
+        """
+        if self._can_take_system_note():
+            self.log.message("system", text, internal=True)
+        else:
+            self.log.message("user", [{"type": "text", "text": text}], internal=True)
+
     def add_continuation_note(self, text: str) -> None:
         """Tavana çarpmış bir yanıtı sürdürmesi için dürtü.
 

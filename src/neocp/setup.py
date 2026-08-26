@@ -81,10 +81,13 @@ def write_config(config: Config, choice: Provider) -> None:
     model = dict(existing.get("model") or {})
     model["provider"] = choice.provider
     model["name"] = choice.model
-    if choice.base_url:
-        model["base_url"] = choice.base_url
-    else:
-        model.pop("base_url", None)
+    # Adres AÇIKÇA yazılıyor (None dahil): alanı dosyadan silmek, varsayılana
+    # (artık OpenRouter) düşmek demek — Anthropic'e geçen kullanıcının
+    # istekleri OpenRouter'a gider ve hata ancak ilk mesajda görünürdü.
+    model["base_url"] = choice.base_url
+    # Anahtar değişkeni de sağlayıcıyla birlikte: yerel sunucular anahtar
+    # istemiyor, kalan bir OPENROUTER_API_KEY "anahtar yok" uyarısı üretirdi.
+    model["api_key_env"] = "ANTHROPIC_API_KEY" if choice.provider == "anthropic" else None
     existing["model"] = model
 
     path.write_text(json.dumps(existing, ensure_ascii=False, indent=2), encoding="utf-8")

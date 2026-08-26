@@ -13,7 +13,7 @@ import anthropic
 
 from ..config import ModelConfig
 from ..context import Prepared
-from .base import Callbacks, TurnResult
+from .base import Callbacks, Interrupted, TurnResult, cancellable
 
 
 class AnthropicBackend:
@@ -49,23 +49,20 @@ class AnthropicBackend:
         kwargs = prepared.request_kwargs(self.model, tools)
         stream_fn = self._stream_api(prepared)
         buffer: list[str] = []
-        interrupted = False
 
         callbacks.on_turn_start()
 
         try:
             async with stream_fn(**kwargs) as stream:
-                async for event in stream:
-                    if cancel.is_set():
-                        interrupted = True
-                        break
+                # `cancellable`: kesme, parça BEKLERKEN de yoklanıyor — ilk
+                # token'dan önce Durdur'un işlememesi burada düzeltildi.
+                async for event in cancellable(stream, cancel):
                     _dispatch(event, callbacks, buffer)
-
-                if interrupted:
-                    return TurnResult(interrupted=True, partial_text="".join(buffer))
 
                 message = await stream.get_final_message()
 
+        except Interrupted:
+            return TurnResult(interrupted=True, partial_text="".join(buffer))
         except anthropic.APIStatusError as exc:
             return TurnResult(error=_explain_status_error(exc), partial_text="".join(buffer))
         except anthropic.APIConnectionError as exc:

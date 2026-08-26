@@ -61,6 +61,16 @@ class ToolContext:
     # kaydedilmiyor.
     spawn: Callable[[str, str, str], Awaitable[str]] | None = None
 
+    # Arka plan yardımcı başlatıcı: hemen defter kaydını (handle) döndürür,
+    # iş arkada koşar ve bitince ana ajana bildirilir. None ise `task`
+    # aracının `arka_plan` seçeneği çalışmaz.
+    spawn_bg: Callable[[str, str, str], Any] | None = None
+
+    # Koşan ya da bitmiş bir yardımcıya sonradan mesaj (task_say) ve
+    # yardımcıların durum özeti (task_status). Döngü veriyor; alt ajanda None.
+    child_say: Callable[[str, str], tuple[bool, str]] | None = None
+    child_status: Callable[[str], str] | None = None
+
     # Zamanlanmış görev defteri. Döngü veriyor; None ise `schedule`
     # aracı kendini kullanılamaz ilan ediyor.
     schedule: Any = None

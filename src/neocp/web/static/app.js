@@ -4,6 +4,9 @@
 // Bu dosyanın kullanıcıya gösterdiği metinlerin İngilizceleri. Kaynak
 // metin Türkçe kalıyor; görüntüleme noktasında t("...") ile çevriliyor.
 Dil.ekle({
+  // Araya girme ve yardımcı onayı
+  "araya girdi": "interjected",
+  "yardımcı": "helper",
   // Karşılama
   "Ne yapmamı istersin?": "What would you like me to do?",
   "Bilgisayarında çalışıyorum. Öğrendiklerim etrafımdaki ağa yazılıyor.":
@@ -104,6 +107,23 @@ Dil.ekle({
   // Bildirimler
   "Model bu isteği reddetti.": "The model refused this request.",
   "Kesildi.": "Interrupted.",
+  // İlk kurulum yönlendirmesi (settings.KURULUM_YONLENDIRME ile birebir)
+  ["Henüz bir yapay zekâ sağlayıcısı tanımlı değil. Ayarlar › Model'den bir " +
+   "sağlayıcı seçip API anahtarı girmelisin. Varsayılan sağlayıcı " +
+   "OpenRouter'dır — anahtarını girdiğinde ücretsiz modellerle 'Oto' modda " +
+   "hemen başlayabilirsin."]:
+    "No AI provider is configured yet. Open Settings › Model, pick a " +
+    "provider and enter an API key. The default provider is OpenRouter — " +
+    "once you enter your key you can start right away in 'Auto' mode with " +
+    "free models.",
+  // Oto kipi notu (yalnız OpenRouter + "oto")
+  ["Oto modda OpenRouter'ın ücretsiz modelleri kullanılır; kalite ve hız " +
+   "düşebilir, model istek sırasında değişebilir. Bazı ücretsiz uçlar " +
+   "veriyi eğitimde kullanabilir; istekler 'veri toplama: reddet' " +
+   "tercihiyle gönderilir."]:
+    "Auto mode uses OpenRouter's free models; quality and speed may drop, " +
+    "and the model can change per request. Some free endpoints may use " +
+    "your data for training; requests are sent with 'data collection: deny'.",
   "Köprü: ": "Bridge: ", "bağlandı": "linked",
   // Hatırlama izi
   "İz · ": "Trace · ", "Hatırlama izi": "Recall trace",
@@ -1336,10 +1356,20 @@ $("dock-model").addEventListener("click", () => {
   fillModelPop(pop, note);
 });
 
+// Oto kipinin arayüz notu. YALNIZ OpenRouter + "oto" seçiliyken görünür;
+// başka sağlayıcı/modelde bu uyarının işi yok.
+const OTO_NOTU =
+  "Oto modda OpenRouter'ın ücretsiz modelleri kullanılır; kalite ve hız " +
+  "düşebilir, model istek sırasında değişebilir. Bazı ücretsiz uçlar " +
+  "veriyi eğitimde kullanabilir; istekler 'veri toplama: reddet' " +
+  "tercihiyle gönderilir.";
+
 async function fillModelPop(pop, note) {
   let catalog = [];
+  let provider = "";
   try {
     const s = await (await fetch("/api/settings")).json();
+    provider = s.provider || "";
     const answer = await post("/api/models", {
       base_url: s.model.base_url,
       provider: s.model.provider,
@@ -1348,6 +1378,11 @@ async function fillModelPop(pop, note) {
     catalog = (answer && answer.models) || [];
   } catch { /* aşağıda ele alınıyor */ }
   if (popFor !== $("dock-model")) return;   // kutu bu arada kapandı
+
+  // Oto seçiliyken kutunun başında ne anlama geldiği yazıyor.
+  if (provider === "openrouter" && modelName === "oto") {
+    pop.insertBefore(mk("div", "pop-note", t(OTO_NOTU)), note);
+  }
 
   if (!catalog.length) {
     note.textContent = t("Sunucu liste vermiyor — ayarlardan elle yazılır.");
@@ -1464,7 +1499,10 @@ function askApproval(e) {
   $("approve-target").hidden = !target;
 
   const tag = $("approve-kind");
-  tag.textContent = e.mutates ? t("Değişiklik yapar · ") + e.tool : t("Salt okuma · ") + e.tool;
+  let label = e.mutates ? t("Değişiklik yapar · ") + e.tool : t("Salt okuma · ") + e.tool;
+  // İsteyen bir yardımcıysa kullanıcı bunu görmeli: kime izin veriyor.
+  if (e.channel && e.channel.title) label += "  [" + t("yardımcı") + ": " + e.channel.title + "]";
+  tag.textContent = label;
   tag.className = "tag" + (e.mutates ? " mutates" : "");
 
   // Ham argümanlar yalnızca özet yetmediğinde.
@@ -1706,6 +1744,19 @@ function handle(e) {
       break;
     }
 
+    // Araya girme: meşgulken yazılan mesaj sıraya değil, KOŞAN turun içine
+    // girdi (harness notu olarak). Balon normal kullanıcı mesajı gibi
+    // çiziliyor + küçük bir "araya girdi" rozeti. Geçmişte user mesajı
+    // olarak durmadığı için message-echo eşleşmesi yok; satır burada kalıcı.
+    case "araya": {
+      const row = line("user", e.text);
+      const badge = document.createElement("span");
+      badge.className = "queue-badge araya";
+      badge.textContent = t("araya girdi");
+      row.appendChild(badge);
+      break;
+    }
+
     case "message":
       if (e.role === "user") {
         // Sırası geldi: bekleyen satır gerçek satırla değiştiriliyor.
@@ -1764,6 +1815,15 @@ function handle(e) {
     case "hush":
       Speech.stop();
       break;
+    // İlk kurulum yönlendirmesi: model hiç çağrılmadı, sunucu yol
+    // gösteriyor. Asistan satırı gibi çiziliyor (uyarı şeridi değil) —
+    // kullanıcının sorusuna gelen cevap bu.
+    case "setup_hint": {
+      clearWelcome();
+      const el = line("agent", t(e.text));
+      el.classList.add("done");
+      break;
+    }
     case "notice": clearWelcome(); line("alert", e.text); break;
     case "api_error": clearWelcome(); line("alert", e.detail); break;
     case "refusal": clearWelcome(); line("alert", t("Model bu isteği reddetti.")); break;

@@ -304,6 +304,10 @@ button { font: inherit; cursor: pointer; border: none; background: none; color: 
   color: var(--amber); background: #ffc85714; border-radius: 5px;
   padding: 2px 8px; vertical-align: middle;
 }
+/* Araya girme: sıraya değil, koşan turun içine girdi — camgöbeği rozet. */
+.queue-badge.araya {
+  color: var(--cyan); background: #4fe3ff14;
+}
 
 .line.agent {
   color: var(--text);
@@ -2137,6 +2141,19 @@ body.left-resize { cursor: ew-resize; user-select: none; }
 .orch-ch-act.ok { color: var(--mint); }
 .orch-ch-act.fail { color: var(--rose); }
 .orch-ch-count { flex: 0 0 auto; font: 9px var(--mono); color: var(--faint); }
+
+/* Arka planda koşan yardımcı rozeti. */
+.orch-ch-bg {
+  flex: 0 0 auto; font: 8px var(--mono); letter-spacing: .12em; text-transform: uppercase;
+  color: var(--cyan); background: #4fe3ff14; border-radius: 5px; padding: 1px 6px;
+}
+/* Biten kanal tıklanabilir: sonucun özeti açılır. */
+.orch-ch.clickable { cursor: pointer; }
+.orch-ch-ozet {
+  margin-top: 6px; padding-top: 6px; box-shadow: inset 0 1px 0 var(--edge);
+  font: 10.5px var(--font); color: var(--dim); line-height: 1.45;
+  white-space: pre-wrap; word-break: break-word;
+}
 
 .orch-foot { padding: 7px 12px; box-shadow: inset 0 1px 0 var(--edge); }
 .orch-cap { font: 8.5px var(--mono); letter-spacing: .06em; color: var(--faint); }

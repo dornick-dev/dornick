@@ -87,6 +87,13 @@ Dil.ekle({
   " model": " models",
   "araç kullanır": "uses tools",
   "görüntü okur": "reads images",
+  ["Oto modda OpenRouter'ın ücretsiz modelleri kullanılır; kalite ve hız " +
+   "düşebilir, model istek sırasında değişebilir. Bazı ücretsiz uçlar " +
+   "veriyi eğitimde kullanabilir; istekler 'veri toplama: reddet' " +
+   "tercihiyle gönderilir."]:
+    "Auto mode uses OpenRouter's free models; quality and speed may drop, " +
+    "and the model can change per request. Some free endpoints may use " +
+    "your data for training; requests are sent with 'data collection: deny'.",
   "En fazla ": "Up to ",
   " token": " tokens",
   "şu an yüklü: ": "loaded now: ",
@@ -424,6 +431,13 @@ const Settings = (() => {
   // Kaydedilmemiş değişiklikler. Sunucudan gelen görüntü değil, kullanıcının
   // dokunduğu alanlar burada birikiyor.
   let patch = {};
+
+  // Oto kipinin açıklaması: yalnız OpenRouter + "oto" seçiliyken görünür.
+  const OTO_NOTU =
+    "Oto modda OpenRouter'ın ücretsiz modelleri kullanılır; kalite ve hız " +
+    "düşebilir, model istek sırasında değişebilir. Bazı ücretsiz uçlar " +
+    "veriyi eğitimde kullanabilir; istekler 'veri toplama: reddet' " +
+    "tercihiyle gönderilir.";
 
   const el = (tag, cls, text) => {
     const node = document.createElement(tag);
@@ -890,8 +904,14 @@ const Settings = (() => {
     // Modelin ne yapabildiği seçimin altında yazıyor: görüntü kabul etmeyen
     // bir modelde kamerayı açmanın anlamı yok.
     function note(id) {
-      const m = found.find((x) => x.id === id);
       if (!hint) return;
+      // Oto: gerçek bir model kimliği değil, ücretsiz havuzla çalışan kip.
+      // Not YALNIZ OpenRouter'da (Oto zaten yalnız orada listeleniyor).
+      if (id === "oto" && (patch.provider || state.provider) === "openrouter") {
+        hint.textContent = t(OTO_NOTU);
+        return;
+      }
+      const m = found.find((x) => x.id === id);
       if (!m || m.max_context === undefined) { hint.textContent = found.length + t(" model"); return; }
 
       const can = [];

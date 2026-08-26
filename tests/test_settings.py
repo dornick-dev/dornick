@@ -22,6 +22,9 @@ def config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Config:
     for entry in settings.PROVIDERS:
         if entry["env"]:
             monkeypatch.delenv(entry["env"], raising=False)
+    # Anahtar doğrulama ağa çıkmasın: testte OpenRouter yok, sahte anahtar
+    # canlı uca gidip 401 alırdı.
+    monkeypatch.setattr("neocp.otomod.dogrula_anahtar", lambda _aday: "ok")
     cfg = Config(workspace=tmp_path, state_dir=tmp_path / ".neocp")
     cfg.ensure_dirs()
     return cfg

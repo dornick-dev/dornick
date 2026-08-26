@@ -410,7 +410,9 @@ def test_the_turn_reopens_the_window() -> None:
 
     from neocp import desktop
 
-    source = inspect.getsource(desktop.Bridge.pump)
+    # Mesaj işleme pump'tan _isle'ye taşındı (ilk-kurulum kapısı için);
+    # kulağı açan çağrı artık orada.
+    source = inspect.getsource(desktop.Bridge._isle)
     assert "self.ear.engage()" in source
 
 

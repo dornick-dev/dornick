@@ -574,3 +574,87 @@ async def test_learned_no_vision_strips_before_sending() -> None:
     await be.turn(_image_prepared(), [], cancel=asyncio.Event())
 
     assert "image_url" not in str(fake.seen["messages"])
+
+
+# -- kesme: ilk token'dan önce -----------------------------------------
+#
+# Yara: kesme yalnız parça GELİNCE yoklanıyordu. Önbelleksiz İLK turda
+# istem işleme dakikalar sürebiliyor ve o sırada hiç parça yok — Durdur
+# hiçbir şey yapmıyordu ("ilk konuşmada durdurma çalışmıyor" raporunun
+# kökü). `cancellable` her adımı kesme bekleyişiyle yarıştırıyor.
+
+
+class _SilentStream:
+    """İlk token'ı hiç göndermeyen akış: sunucu istemi işliyor."""
+
+    def __init__(self) -> None:
+        self.closed = False
+
+    def __aiter__(self):
+        return self
+
+    async def __anext__(self):
+        await asyncio.sleep(3600)
+
+    async def close(self) -> None:
+        self.closed = True
+
+
+async def test_cancellable_fires_while_waiting_for_the_first_chunk() -> None:
+    from neocp.backends.base import Interrupted, cancellable
+
+    cancel = asyncio.Event()
+
+    async def consume() -> None:
+        async for _ in cancellable(_SilentStream(), cancel):
+            raise AssertionError("parça gelmemeliydi")
+
+    task = asyncio.ensure_future(consume())
+    await asyncio.sleep(0.01)
+    assert not task.done(), "akış beklemede olmalı"
+    cancel.set()
+    with pytest.raises(Interrupted):
+        await asyncio.wait_for(task, timeout=2)
+
+
+async def test_cancellable_passes_chunks_through_untouched() -> None:
+    from neocp.backends.base import cancellable
+
+    cancel = asyncio.Event()
+    got = []
+    async for c in cancellable(FakeStream([chunk(content="a"), chunk(content="b")]).__aiter__(), cancel):
+        got.append(c.choices[0].delta.content)
+    assert got == ["a", "b"]
+
+
+async def test_interrupt_before_first_token_returns_interrupted() -> None:
+    """Uçtan uca: turun kendisi, parça beklerken kesilebiliyor ve sonuç
+    `interrupted` — hata değil (oto-mod hanesine hata yazılmamalı)."""
+
+    class SilentOpenAI:
+        def __init__(self) -> None:
+            self.stream = _SilentStream()
+            self.chat = SimpleNamespace(
+                completions=SimpleNamespace(create=self._create))
+
+        async def _create(self, **kwargs):
+            return self.stream
+
+        async def close(self) -> None:
+            pass
+
+    fake = SilentOpenAI()
+    model = ModelConfig(name="x", provider="openai", base_url="http://x/v1")
+    be = OpenAIBackend(model, client=fake)
+
+    cancel = asyncio.Event()
+    task = asyncio.ensure_future(be.turn(prepared(), [], cancel=cancel))
+    await asyncio.sleep(0.01)
+    assert not task.done()
+
+    cancel.set()
+    result = await asyncio.wait_for(task, timeout=2)
+
+    assert result.interrupted is True
+    assert result.error is None
+    assert fake.stream.closed, "kesilen akış kapatılmalı"

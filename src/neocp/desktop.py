@@ -41,7 +41,7 @@ from . import (
 )
 from .config import Config
 from .context import ContextPolicy
-from .loop import Agent, AgentIO
+from .loop import Agent, AgentIO, BARGE_NOTE
 from .mind import open_mind
 from .permissions import PermissionEngine
 from .session import Session
@@ -129,6 +129,12 @@ async def _retire(client: Any) -> None:
         pass
 
 
+# Kuyruğa düşen iç işaret: bir arka plan yardımcısı bitti. pump bunu
+# görünce (ajan o an boş demektir — kuyruk seri) bir sürdürme turu açar.
+# Metin değil nesne: hiçbir kullanıcı mesajıyla karışamaz.
+_CHILD_DONE = object()
+
+
 @dataclass(slots=True)
 class Pending:
     """Bekleyen izin istegi.
@@ -181,13 +187,45 @@ class Bridge:
 
     # -- HTTP thread'inden çağrılanlar ---------------------------------
 
-    def submit(self, text: str, image: str = "") -> None:
-        # Ajan çalışırken gelen mesaj atılmıyor, sıraya giriyor. Ama sırada
-        # beklediği ekranda görünmeli: kullanıcı yazıp enter'a basıyor ve
-        # hiçbir şey olmuyor gibi duruyordu.
+    def submit(self, text: str, image: str = "", *, siraya: bool = False) -> None:
+        """Kullanıcı mesajını ajana verir.
+
+        Ajan MEŞGULKEN gelen düz metin artık kuyruğa değil, koşan turun
+        gelen kutusuna giriyor: mesaj aynı turun bir sonraki adımında
+        harness notu olarak modelin önüne düşüyor ("araya girme"). Kullanıcı
+        turun bitmesini beklemeden yön değiştirebiliyor.
+
+        Eski kuyruk davranışı üç durumda korunuyor:
+          * `siraya=True` — zamanlanmış görev ve dış kapı gibi, koşan işin
+            ortasına karışmaması gereken kaynaklar.
+          * Görüntülü mesaj — görüntü bloğu harness notuna giremiyor
+            (system kanalı düz metin); basit tutmak için eski kuyruk.
+          * Gelen kutusu dolduysa — araya girme tekil bir jest, sel değil.
+        """
+        agent = self.agent
+        if (self._busy and not siraya and not image
+                and agent is not None and not agent.inbox_full()):
+            self.hub.emit({"type": "araya", "text": text})
+            note = BARGE_NOTE.format(text=text)
+            self.loop.call_soon_threadsafe(
+                lambda: agent.take_note(note, encode=text))
+            return
+        # Ajan çalışırken sıraya giren mesaj atılmıyor ama sırada beklediği
+        # ekranda görünmeli: kullanıcı yazıp enter'a basıyor ve hiçbir şey
+        # olmuyor gibi duruyordu.
         if self._busy:
             self.hub.emit({"type": "queued", "text": text})
         asyncio.run_coroutine_threadsafe(self.queue.put((text, image)), self.loop)
+
+    def child_done(self) -> None:
+        """Bir arka plan yardımcısı bitti (asyncio thread'inden çağrılır).
+
+        Kuyruğa iç işaret düşer; sırası gelince (ajan boşken) sürdürme
+        turu açılır. Ajan meşgulse işaret turun bitmesini kuyrukta bekler —
+        o zamana kadar sonuç zaten tur başındaki notla verilmiş olabilir,
+        `_surdur` boşa model çağırmaz.
+        """
+        self.queue.put_nowait(_CHILD_DONE)
 
     def new_session(self) -> dict[str, Any]:
         """Taze bir konuşma başlatır: yeni oturum, boş bağlam."""
@@ -404,16 +442,23 @@ class Bridge:
             on_notice=lambda text: self.hub.emit({"type": "notice", "text": text}),
             on_usage=lambda report: self.hub.emit({"type": "usage", **report}),
             # Orkestra kanalları: alt ajanlar canlı görünsün (şef modu).
-            on_child_start=lambda title, model, cid: self.hub.emit(
-                {"type": "child_start", "title": title, "model": model, "id": cid}),
+            on_child_start=lambda title, model, cid, bg=False: self.hub.emit(
+                {"type": "child_start", "title": title, "model": model, "id": cid,
+                 "bg": bool(bg)}),
             on_child_tool=lambda title, tool, phase: self.hub.emit(
                 {"type": "child_tool", "title": title, "tool": tool, "phase": phase}),
-            on_child_end=lambda title, ok, turns, tools: self.hub.emit(
-                {"type": "child_end", "title": title, "ok": ok, "turns": turns, "tools": tools}),
+            on_child_end=lambda title, ok, turns, tools, cid="", ozet="": self.hub.emit(
+                {"type": "child_end", "title": title, "ok": ok, "turns": turns,
+                 "tools": tools, "id": cid, "ozet": ozet}),
             approve=self._approve,
         )
 
-    async def _approve(self, spec: ToolSpec, args: dict[str, Any]) -> bool:
+    async def _approve(
+        self,
+        spec: ToolSpec,
+        args: dict[str, Any],
+        channel: dict[str, Any] | None = None,
+    ) -> bool:
         """İzin isteğini arayüze gönderir ve cevabı bekler.
 
         Pencere cevap vermeden kapanırsa bu future asla çözülmez; kapanış
@@ -423,15 +468,18 @@ class Bridge:
         future: asyncio.Future[bool] = self.loop.create_future()
         self._pending[request_id] = Pending(future=future, spec=spec, args=dict(args))
 
-        self.hub.emit(
-            {
-                "type": "approval_request",
-                "id": request_id,
-                "tool": spec.name,
-                "args": args,
-                "mutates": spec.mutates,
-            }
-        )
+        payload = {
+            "type": "approval_request",
+            "id": request_id,
+            "tool": spec.name,
+            "args": args,
+            "mutates": spec.mutates,
+        }
+        # İsteyen bir yardımcıysa kimliği/başlığı da gidiyor: kullanıcı
+        # diyalogda "[yardımcı: başlık]" görsün, kime izin verdiğini bilsin.
+        if channel:
+            payload["channel"] = channel
+        self.hub.emit(payload)
         try:
             granted = await future
         except asyncio.CancelledError:
@@ -450,28 +498,76 @@ class Bridge:
     async def pump(self) -> None:
         """Arayüzden gelen mesajları sırayla ajana verir."""
         while True:
-            text, image = await self.queue.get()
+            item = await self.queue.get()
             if self.agent is None:
                 continue
-            self._busy = True
-            self.hub.emit({"type": "status", "busy": True})
-            try:
-                await self.agent.run(text, image)
-            except Exception as exc:  # ajan bir istekte patlarsa uygulama ölmemeli
-                self.hub.emit({"type": "notice", "text": f"{type(exc).__name__}: {exc}"})
-            finally:
-                self._busy = False
-                # Karşılık verildi: sohbet açık. Bu süre boyunca söylenen
-                # her şey ona söylenmiş sayılıyor, adını tekrarlamak
-                # gerekmiyor — karşındaki insana da her cümlede adıyla
-                # başlamıyorsun.
-                if self.ear is not None:
-                    self.ear.engage()
-                # Tur sırasında model değiştirilmişse şimdi geçiliyor.
-                if self._wanted_model is not None:
-                    self._swap_model()
-                self.hub.emit({"type": "status", "busy": False})
-                self.hub.emit({"type": "turn_end"})
+            if item is _CHILD_DONE:
+                await self._surdur()
+                continue
+            text, image = item
+            await self._isle(text, image)
+
+    async def _surdur(self) -> None:
+        """Bir yardımcı bitti ve ajan boşta: sonucu değerlendiren tur.
+
+        Bildirilecek bir şey kalmadıysa (sonuç koşan turun başında zaten
+        verildiyse) model hiç çağrılmaz — sessizce geçilir.
+        """
+        agent = self.agent
+        if agent is None or not agent.has_unreported_children():
+            return
+        self._busy = True
+        self.hub.emit({"type": "status", "busy": True})
+        try:
+            await agent.resume_for_children()
+        except Exception as exc:  # sürdürme turu uygulamayı düşürmemeli
+            self.hub.emit({"type": "notice", "text": f"{type(exc).__name__}: {exc}"})
+        finally:
+            self._busy = False
+            if self._wanted_model is not None:
+                self._swap_model()
+            self.hub.emit({"type": "status", "busy": False})
+            self.hub.emit({"type": "turn_end"})
+
+    async def _isle(self, text: str, image: str) -> None:
+        """Tek mesajı işler.
+
+        pump'tan ayrı durması bilinçli: testler bir turu kuyruk ve sonsuz
+        döngüye bulaşmadan koşturabiliyor.
+        """
+        self._busy = True
+        self.hub.emit({"type": "status", "busy": True})
+        try:
+            # İlk kurulum: hiçbir sağlayıcı kullanılabilir değilken model
+            # HİÇ çağrılmıyor — cevapsız kalan ya da anlaşılmaz bir API
+            # hatasıyla biten bir mesaj yerine, sohbete yol gösteren bir
+            # asistan mesajı düşüyor. Kullanıcı tekrar yazarsa yeniden
+            # hatırlatılıyor; ama bir mesaj bir kez cevaplanıyor.
+            if settings.yapilandirilmamis(self.agent.config.model):
+                self.agent.session.add_user_text(text)
+                self.agent.session.add_assistant(
+                    [{"type": "text", "text": settings.KURULUM_YONLENDIRME}]
+                )
+                self.hub.emit(
+                    {"type": "setup_hint", "text": settings.KURULUM_YONLENDIRME}
+                )
+                return
+            await self.agent.run(text, image)
+        except Exception as exc:  # ajan bir istekte patlarsa uygulama ölmemeli
+            self.hub.emit({"type": "notice", "text": f"{type(exc).__name__}: {exc}"})
+        finally:
+            self._busy = False
+            # Karşılık verildi: sohbet açık. Bu süre boyunca söylenen
+            # her şey ona söylenmiş sayılıyor, adını tekrarlamak
+            # gerekmiyor — karşındaki insana da her cümlede adıyla
+            # başlamıyorsun.
+            if self.ear is not None:
+                self.ear.engage()
+            # Tur sırasında model değiştirilmişse şimdi geçiliyor.
+            if self._wanted_model is not None:
+                self._swap_model()
+            self.hub.emit({"type": "status", "busy": False})
+            self.hub.emit({"type": "turn_end"})
 
 
 @dataclass(slots=True)
@@ -760,6 +856,9 @@ async def _boot(config: Config, port: int, resume: bool) -> Runtime:
             schedule=book,
             mind=mind,
         )
+        # Arka plan yardımcısı bitince köprü haber alsın: ajan boştaysa
+        # sonucu değerlendiren bir sürdürme turu açılır.
+        agent.on_children_settled = bridge.child_done
     bridge.agent = agent
 
     # Sürekli dinleme Python tarafında: tarayıcıda duramıyor çünkü pencere
@@ -821,7 +920,9 @@ async def _boot(config: Config, port: int, resume: bool) -> Runtime:
     def fire(task: Any) -> None:
         hub.emit({"type": "notice", "text": f"Zamanlanmış görev: {task.title}"})
         book.note_run(task.id, "kuyruğa alındı")
-        bridge.submit(task.prompt)
+        # `siraya`: zamanlanmış görev koşan bir turun ortasına karışmaz,
+        # kendi turunu bekler — araya girme kullanıcının jesti.
+        bridge.submit(task.prompt, siraya=True)
 
     ticker = loop.create_task(scheduling.run_forever(book, fire))
 

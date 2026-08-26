@@ -103,6 +103,8 @@ def test_unconfigured_run_is_blocked(config: Config, monkeypatch: pytest.MonkeyP
     ne yapması gerektiğini söylüyoruz.
     """
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    # Taze kurulumun varsayılanı OpenRouter: onun anahtarı da yoksa kapalı.
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
     assert _has_model(config) is False
 
 
@@ -114,4 +116,7 @@ def test_local_address_is_enough(config: Config, monkeypatch: pytest.MonkeyPatch
 
 def test_anthropic_key_is_enough(config: Config, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test")
-    assert _has_model(config) is True
+    # Varsayılan artık OpenRouter; Anthropic'in yeterliliği kendi
+    # yapılandırmasında ölçülmeli.
+    write_config(config, Provider("Anthropic", "anthropic", "claude-opus-4-8"))
+    assert _has_model(Config.load(config.workspace)) is True

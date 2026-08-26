@@ -143,7 +143,13 @@ def sor(
     abonelik_iptal = log.subscribe(dinle)
     kanal: queue.Queue[str] = hub.register()
     try:
-        controller.submit(str(text), str(image or ""))
+        # `siraya`: dış kapının mesajı koşan bir turun ortasına KARIŞMAZ,
+        # kendi turunu bekler — eşleştirme (kullanıcı mesajı → turn_end)
+        # ancak böyle çalışır. Eski imzalı köprüler için geri düşüş var.
+        try:
+            controller.submit(str(text), str(image or ""), siraya=True)
+        except TypeError:
+            controller.submit(str(text), str(image or ""))
         son_tarih = baslangic + bekle_sn
         bitti = False
         while time.time() < son_tarih:

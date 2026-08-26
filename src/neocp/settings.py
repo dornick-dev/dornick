@@ -125,6 +125,17 @@ PERMISSION_MODES: tuple[dict[str, str], ...] = (
 )
 
 
+# İlk kurulum yönlendirmesi: hiçbir sağlayıcı kullanılabilir değilken
+# kullanıcı yazarsa (ya da konuşursa) model hiç çağrılmıyor; sohbete bu
+# mesaj düşüyor. Metin arayüzde t() ile İngilizceye çevriliyor (app.js).
+KURULUM_YONLENDIRME = (
+    "Henüz bir yapay zekâ sağlayıcısı tanımlı değil. Ayarlar › Model'den bir "
+    "sağlayıcı seçip API anahtarı girmelisin. Varsayılan sağlayıcı "
+    "OpenRouter'dır — anahtarını girdiğinde ücretsiz modellerle 'Oto' modda "
+    "hemen başlayabilirsin."
+)
+
+
 def provider_of(config: ModelConfig) -> str:
     """Ayarlardaki modelin hangi sağlayıcıya denk düştüğü.
 
@@ -137,6 +148,32 @@ def provider_of(config: ModelConfig) -> str:
         if entry["base_url"] == (config.base_url or entry["base_url"]):
             return str(entry["id"])
     return "anthropic" if config.provider == "anthropic" else "openai"
+
+
+def _gerekli_env(model: ModelConfig) -> str | None:
+    """Bu yapılandırmanın çalışması için gereken anahtar değişkeni.
+
+    Adres bilinen bir sağlayıcıya denk düşüyorsa onun anahtarı; düşmüyorsa
+    (özel/yerel bir uç) kullanıcı ne yazdıysa o. None = anahtar gerekmiyor.
+    """
+    entry = next((e for e in PROVIDERS if e["id"] == provider_of(model)), None)
+    if entry is not None and entry["base_url"] == (model.base_url or entry["base_url"]):
+        return entry["env"]
+    return model.api_key_env
+
+
+def yapilandirilmamis(model: ModelConfig) -> bool:
+    """Hiçbir sağlayıcı kullanılabilir durumda değil mi?
+
+    Tanım: model adı boş YA DA anahtar isteyen sağlayıcıda anahtar yok.
+    Yerel sunucular (env=None) anahtar istemiyor — onlar adla yapılandırılmış
+    sayılır. Anahtarlar açılışta ortama yükleniyor (export_keys), o yüzden
+    tek bakılan yer ortam.
+    """
+    if not (model.name or "").strip():
+        return True
+    env = _gerekli_env(model)
+    return bool(env) and not os.environ.get(env)
 
 
 # -- okuma -------------------------------------------------------------
@@ -320,7 +357,15 @@ def scan_models(config: Config) -> list[dict[str, Any]]:
             for m in found
         ]
     # LM Studio değilse yalnızca ad var.
-    return [{"id": name} for name in available_models(config)]
+    entries: list[dict[str, Any]] = [{"id": name} for name in available_models(config)]
+    # OpenRouter'da katalog "Oto" ile açılıyor: ücretsiz havuzla çalışan
+    # kip, gerçek bir model kimliği değil. Ağ yokken bile listede durmalı —
+    # taze kurulumun varsayılanı bu.
+    if provider_of(config.model) == "openrouter":
+        from .config import OTO_MODEL
+
+        entries.insert(0, {"id": OTO_MODEL, "name": "Oto — ücretsiz model havuzu"})
+    return entries
 
 
 def available_models(config: Config) -> list[str]:
@@ -439,6 +484,11 @@ def apply(config: Config, patch: dict[str, Any]) -> Config:
 
     if permissions.mode not in {m["id"] for m in PERMISSION_MODES}:
         raise ValueError(f"Bilinmeyen izin kipi: {permissions.mode}")
+    # OpenRouter anahtarı kaydedilmeden ÖNCE canlı doğrulanıyor: yanlış
+    # yapıştırılan bir anahtar ancak ilk mesajda patlıyordu ve hata ayar
+    # sayfasından uzaktaydı. Ağ yoksa doğrulama atlanıyor — çevrimdışı bir
+    # kurulum kilitlenmemeli.
+    _dogrula_openrouter_anahtari(patch.get("keys") or {})
     if model.max_tokens < 256:
         raise ValueError("max_tokens en az 256 olmalı.")
     if model.context_window < model.max_tokens:
@@ -474,6 +524,33 @@ def apply(config: Config, patch: dict[str, Any]) -> Config:
         export_keys(config.state_dir)
 
     return updated
+
+
+def _dogrula_openrouter_anahtari(keys: dict[str, Any]) -> None:
+    """Yamadaki OpenRouter anahtarını kaydetmeden yoklar.
+
+    401 dönerse ValueError: ayar sayfası bunu kırmızı satır olarak basıyor
+    ve HİÇBİR ŞEY diske yazılmıyor. Ağ yoksa (belirsiz) atla-kaydet; not
+    terminale düşüyor — çevrimdışı kurulum kilitlenmemeli.
+    """
+    aday = str(keys.get("OPENROUTER_API_KEY") or "").strip()
+    if not aday or aday == MASK:
+        return
+
+    from . import otomod
+
+    durum = otomod.dogrula_anahtar(aday)
+    if durum == "gecersiz":
+        raise ValueError(
+            "OpenRouter anahtarı geçersiz (401) — kaydedilmedi. "
+            "openrouter.ai/keys sayfasından anahtarı kontrol et."
+        )
+    if durum == "belirsiz":
+        print(
+            "[neo] OpenRouter anahtarı doğrulanamadı (ağ yok?) — "
+            "doğrulama atlandı, anahtar kaydedildi.",
+            flush=True,
+        )
 
 
 def _from_disk(config: Config) -> Config:

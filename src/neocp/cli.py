@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import os
 import signal
 import sys
 import webbrowser
@@ -299,13 +298,14 @@ def _command(
 def _has_model(config: Config) -> bool:
     """Calistirmadan once model erisilebilir mi?
 
-    Anahtar yoksa ve yerel sunucu adresi tanimli degilse istemci ancak ilk
-    mesajda patlardi. Kullaniciyi bos bir pencereyle bas basa birakmak yerine
-    burada durdurup ne yapmasi gerektigini soyluyoruz.
+    Anahtar yoksa istemci ancak ilk mesajda patlardi. Kullaniciyi bos bir
+    pencereyle bas basa birakmak yerine burada durdurup ne yapmasi
+    gerektigini soyluyoruz. Tanim ayar katmaninda tek yerde duruyor:
+    anahtar isteyen saglayicida anahtar yok YA DA model adi bos.
     """
-    if config.model.provider == "anthropic":
-        return bool(os.getenv(config.model.api_key_env or "ANTHROPIC_API_KEY"))
-    return bool(config.model.base_url)
+    from . import settings as saved_settings
+
+    return not saved_settings.yapilandirilmamis(config.model)
 
 
 def _force_utf8() -> None:

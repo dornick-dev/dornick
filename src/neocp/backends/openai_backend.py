@@ -15,9 +15,10 @@ import os
 import re
 from typing import Any
 
+from .. import otomod
 from ..config import ModelConfig
 from ..context import Prepared
-from .base import Callbacks, SimpleMessage, SimpleUsage, TurnResult
+from .base import Callbacks, Interrupted, SimpleMessage, SimpleUsage, TurnResult, cancellable
 from .translate import (
     extract_inline_calls,
     map_finish_reason,
@@ -54,6 +55,12 @@ class OpenAIBackend:
         # kalıyor ve sunucu 404 veriyor. İlk hatadan sonra kareler sıyrılıp
         # bir daha gönderilmiyor.
         self._no_vision = False
+        # Oto kipi: adres OpenRouter ve ad "oto" ise istekler ücretsiz
+        # havuzdan atılıyor (bkz. otomod). Başka sağlayıcı/model
+        # isteklerine DOKUNULMUYOR. Sağlık defteri bellek-içi: arka arkaya
+        # hata veren model bir süre havuzun sonuna itiliyor.
+        self._oto = otomod.oto_mu(model)
+        self._saglik = otomod.Saglik()
 
     async def close(self) -> None:
         await self._client.close()
@@ -100,11 +107,60 @@ class OpenAIBackend:
         if (reasoning := self._reasoning()) is not None and not self._no_reasoning:
             extra["reasoning"] = reasoning
 
+        # Oto kipi: model ücretsiz havuzun başından seçiliyor, sıradaki
+        # birkaçı OpenRouter'ın yerel yedek zincirine (`models`) yazılıyor.
+        # `provider.data_collection=deny`: ücretsiz uçların bir kısmı veriyi
+        # eğitimde kullanabiliyor; reddeden uca yönlendirilsin.
+        secilen = ""
+        if self._oto:
+            secilen, oto_ek = await asyncio.to_thread(self._oto_hazirla)
+            if not secilen:
+                return TurnResult(
+                    error=(
+                        "Oto havuzu kurulamadı: OpenRouter model listesine "
+                        "ulaşılamadı ve önbellek boş. Ağı kontrol et ya da "
+                        "Ayarlar › Model'den belirli bir model seç."
+                    )
+                )
+            kwargs["model"] = secilen
+            extra.update(oto_ek)
+
         if extra:
             kwargs["extra_body"] = extra
 
         async with self._gate:
-            return await self._stream(kwargs, cancel, callbacks)
+            try:
+                result = await self._stream(kwargs, cancel, callbacks)
+            except Exception:
+                # İstek hiç kurulamadı (örn. bağlantı reddi): bu da o
+                # modelin hanesine hata yazılır.
+                if self._oto and secilen:
+                    self._saglik.kaydet(secilen, False)
+                raise
+
+        # Zaman aşımı, boş yanıt ve hata aynı kefede: çağrı başarısız.
+        # Kesme kullanıcının kararı, modelin suçu değil — sayılmıyor.
+        if self._oto and secilen and not result.interrupted:
+            self._saglik.kaydet(secilen, ok=not result.error)
+        return result
+
+    def _oto_hazirla(self) -> tuple[str, dict[str, Any]]:
+        """Oto kipinin istek parçaları: seçilen model + ek gövde alanları.
+
+        Havuz sağlık sırasına göre diziliyor: cezalı modeller sona. Son
+        seçim teşhis için önbellek dosyasına not ediliyor — "hangi modelle
+        konuştum" sorusunun cevabı orada.
+        """
+        pool = self._saglik.sirala(otomod.havuz())
+        if not pool:
+            return "", {}
+        ek: dict[str, Any] = {
+            "provider": {"data_collection": "deny", "require_parameters": True},
+        }
+        if yedekler := pool[1:4]:
+            ek["models"] = yedekler
+        otomod.son_yaz(pool[0])
+        return pool[0], ek
 
     def _heal(self, kwargs: dict[str, Any], exc: Exception) -> bool:
         """Bilinen bir reddi bir kez iyileştirir; iyileştirdiyse True.
@@ -179,10 +235,10 @@ class OpenAIBackend:
             raise RuntimeError("istek kurulamadı")
 
         try:
-            async for chunk in stream:
-                if cancel.is_set():
-                    return TurnResult(interrupted=True, partial_text="".join(text))
-
+            # `cancellable`: kesme yalnız parça gelince değil, parça BEKLERKEN
+            # de yoklanıyor. İlk token'dan önceki uzun istem işleme sırasında
+            # (önbelleksiz ilk tur) Durdur işlemiyordu — kökü burasıydı.
+            async for chunk in cancellable(stream, cancel):
                 if raw_usage := getattr(chunk, "usage", None):
                     usage = _usage(raw_usage)
 
@@ -193,6 +249,8 @@ class OpenAIBackend:
                 finish = getattr(choice, "finish_reason", None) or finish
                 _consume(getattr(choice, "delta", None), callbacks, text, reasoning, calls)
 
+        except Interrupted:
+            return TurnResult(interrupted=True, partial_text="".join(text))
         except Exception as exc:  # openai paketi opsiyonel; tipe bağlanamayız
             return TurnResult(error=_explain(exc, self.model), partial_text="".join(text))
         finally:

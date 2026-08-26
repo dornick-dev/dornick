@@ -14,13 +14,64 @@ Opus'la konuştuğun bir işi yarın yerel bir modelle sürdürebilesin.
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
 from dataclasses import dataclass
-from typing import Any, Callable, Protocol, runtime_checkable
+from typing import Any, AsyncIterator, Callable, Protocol, runtime_checkable
 
 from ..context import Prepared
 from ..session import blocks_to_dicts
 
 TextSink = Callable[[str], None]
+
+
+class Interrupted(Exception):
+    """Kullanıcı akışı kesti — bu bir hata değil, bir karar.
+
+    Backend'ler bunu yakalayıp `TurnResult(interrupted=True)` döndürür;
+    genel hata yoluna düşmemeli (hata sayılırsa oto-mod modele kara liste
+    puanı yazar, arayüz de "hata" diye gösterir).
+    """
+
+
+async def cancellable(stream: Any, cancel: Any) -> AsyncIterator[Any]:
+    """Akışı, kesme bayrağını DA dinleyerek dolaşır.
+
+    `async for` yalnızca parça GELDİĞİNDE kontrol veriyor. İlk token'dan
+    önce — istek kuruldu, sunucu istemi işliyor — hiç parça yok ve kesme
+    hiç yoklanmıyordu. Önbelleksiz İLK turda istem işleme dakikalar
+    sürebiliyor: kullanıcı Durdur'a basıyor ve hiçbir şey olmuyordu
+    ("ilk konuşmada durdurma çalışmıyor" yarasının kökü). Sonraki turlarda
+    önbellek ilk token'ı hızlandırdığı için hata gizleniyordu.
+
+    Burada her adım kesme bekleyişiyle yarıştırılıyor: hangisi önce
+    gelirse o kazanır. Kesildiğinde `Interrupted` yükselir; akışın
+    kapatılması çağıranın sorumluluğunda kalır (openai: _aclose,
+    anthropic: context manager).
+    """
+    iterator = stream.__aiter__()
+    stop = asyncio.ensure_future(cancel.wait())
+    try:
+        while True:
+            if stop.done():
+                raise Interrupted
+            step = asyncio.ensure_future(iterator.__anext__())
+            done, _ = await asyncio.wait({step, stop}, return_when=asyncio.FIRST_COMPLETED)
+            if step not in done:
+                # Kesme kazandı: yarım kalan okuma adımını iptal et.
+                step.cancel()
+                with contextlib.suppress(BaseException):
+                    await step
+                raise Interrupted
+            try:
+                chunk = step.result()
+            except StopAsyncIteration:
+                return
+            yield chunk
+    finally:
+        stop.cancel()
+        with contextlib.suppress(BaseException):
+            await stop
 
 
 @dataclass(slots=True)

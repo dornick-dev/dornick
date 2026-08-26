@@ -15,8 +15,11 @@ from __future__ import annotations
 
 import asyncio
 import re
+import time
+from collections import deque
 from dataclasses import asdict, dataclass, field
 from typing import Any, Awaitable, Callable
+from uuid import uuid4
 
 from . import compaction, prompt
 from .backends import Backend, Callbacks, TurnResult
@@ -38,6 +41,15 @@ MAX_CONTINUATIONS = 4
 # yardımcı çıkaramaz. Sınırsız bırakmak tek bir isteği ağaç gibi açar ve
 # ne kadar iş yapıldığını kimse bilemez.
 MAX_DEPTH = 1
+
+# Yardımcı defterinin boyu. Bitmiş kayıtlar sınırsız birikmesin diye en
+# eski bitmişler düşürülür; koşan bir yardımcı asla düşürülmez. Oturumlar
+# diskte durmaya devam ediyor — defterden düşmek veri kaybı değil.
+MAX_CHILDREN = 8
+
+# Bildirim notundaki sonucun tavanı: yardımcının cevabı ana bağlama girer,
+# sınırsız girerse bağlamı bölme amacı boşa çıkar.
+CHILD_RESULT_CLIP = 2000
 
 # Her kullanici mesajindan once zihinden onune konacak hatira sayisi.
 # Fazlası bağlam israfı: ilgisiz hatira modeli konudan uzaklastiriyor.
@@ -144,6 +156,33 @@ ACT_NOTE = (
     "cevabı doğrudan kullanıcıya yaz. Planı tekrar anlatma."
 )
 
+# Arka planda biten yardımcının sonucu tur başında ana ajanın önüne bu
+# notla konuyor. Kanal harness'ın: kullanıcı yazmadı, model bunu bilmeli.
+CHILD_DONE_NOTE = "[Yardımcı bitti · {title} (id={id})] Sonucu: {result}"
+CHILD_FAIL_NOTE = "[Yardımcı hata verdi · {title} (id={id})] {result}"
+
+# Ana ajan boştayken bir yardımcı bittiğinde açılan sürdürme turunun
+# girdisi. Kullanıcı mesajı DEĞİL: continuation kanalından gidiyor,
+# arayüzde görünmüyor.
+CHILDREN_RESUME_NOTE = (
+    "Arka plandaki yardımcı(lar) bitti: {titles}. Sonuçları sistem "
+    "notlarında. Değerlendir ve gerekiyorsa kullanıcıya kısaca aktar; "
+    "kullanıcı yeni bir şey istemedi, yeni iş başlatma."
+)
+
+# Tur ortasında kullanıcıdan gelen mesajın zarfı. Köprü (desktop) gelen
+# kutusuna bu zarfla koyuyor; buradan tanımlı çünkü testler de kullanıyor.
+BARGE_NOTE = (
+    "[Kullanıcı bu arada yazdı] {text} — koşan işi sürdürürken bunu da "
+    "ele al; öncelik gerekiyorsa yön değiştir."
+)
+
+# `task_say`: ana ajandan koşan yardımcıya giden ara mesajın zarfı.
+SAY_NOTE = (
+    "[Ana ajandan ara mesaj] {message} — işini sürdürürken bunu da hesaba "
+    "kat; öncelik gerekiyorsa yön değiştir."
+)
+
 
 @dataclass(slots=True)
 class AgentIO:
@@ -159,9 +198,9 @@ class AgentIO:
     # çağırdığında ve bittiğinde. Arayüz bunları canlı kanal olarak çiziyor;
     # ana sohbete karışmadan "kimin ne yaptığı" görünür oluyor. Varsayılan
     # boş: alt ajan kullanmayan çağıranlar (testler, salt-metin) etkilenmiyor.
-    on_child_start: Callable[[str, str, str], None] = lambda *_: None   # title, model, id
+    on_child_start: Callable[[str, str, str, bool], None] = lambda *_: None  # title, model, id, bg
     on_child_tool: Callable[[str, str, str], None] = lambda *_: None    # title, tool, phase
-    on_child_end: Callable[[str, bool, int, int], None] = lambda *_: None  # title, ok, turns, tools
+    on_child_end: Callable[[str, bool, int, int, str, str], None] = lambda *_: None  # title, ok, turns, tools, id, özet
     approve: Callable[[ToolSpec, dict[str, Any]], Awaitable[bool]] = None  # type: ignore[assignment]
 
     def __post_init__(self) -> None:
@@ -170,6 +209,38 @@ class AgentIO:
                 return False
 
             self.approve = deny_all
+
+
+@dataclass(slots=True)
+class ChildHandle:
+    """Bir yardımcının defter kaydı.
+
+    Senkron yardımcı da buraya yazılıyor (task_say bitmiş bir yardımcıyı
+    sürdürebilsin diye) ama asıl müşteri arka plan yardımcısı: `task`
+    aracı hemen dönüyor, iş bu kayıt üzerinden izleniyor ve bitince
+    sonucu buradan bildiriliyor.
+    """
+
+    id: str
+    title: str
+    model: str
+    arka_plan: bool = False
+    session_id: str = ""
+    state: str = "kosuyor"          # kosuyor | bitti | hata
+    sonuc: str = ""
+    bitis_ts: float = 0.0
+    # Sonuç ana ajana duyuruldu mu. Senkron yolda araç sonucu zaten döndü;
+    # arka planda tur başındaki bildirim notu bunu True yapar.
+    bildirildi: bool = False
+    # Arka plan görevinin referansı: referanssız asyncio.Task çöp
+    # toplayıcıya gidebilir ve iş sessizce kaybolur.
+    task: asyncio.Task | None = None
+    # Koşarken canlı ajan nesnesi (task_say notu buna gidiyor); bitince None.
+    agent: "Agent | None" = None
+    # Çocuğun KENDİ kesme bayrağı. Ananınkini paylaşmak olmuyordu: ana her
+    # `run`da bayrağını tazeliyor ve arka plandaki çocuk eski bayrakta
+    # sahipsiz kalıyordu. Ana `interrupt()` hepsini türev olarak kurar.
+    cancel: asyncio.Event = field(default_factory=asyncio.Event)
 
 
 @dataclass(slots=True)
@@ -281,6 +352,16 @@ class Agent:
         # çok daha ağır.
         self._agent_gate = asyncio.Semaphore(
             max(1, getattr(config.context, "max_agents", 3)))
+        # Yardımcı defteri: id → kayıt. Arka planda koşanlar, bitmişler ve
+        # (task_say için) senkron koşmuş olanlar burada.
+        self._children: dict[str, ChildHandle] = {}
+        # Tur ortası gelen kutusu: koşan tur bitmeden araya giren kullanıcı
+        # mesajları (ve çocukta: task_say notları). Her turun başında
+        # boşaltılıp harness notu olarak geçmişe giriyor.
+        self._inbox: deque[str] = deque()
+        # Bir yardımcı bitince köprüye (varsa) haber: ana ajan boştaysa
+        # köprü bir sürdürme turu açar. Masaüstü katmanı bağlıyor.
+        self.on_children_settled: Callable[[], None] | None = None
 
     def _soul_resident(self) -> set[str]:
         """Ruhun tam gövdesiyle prompta koyduğu kayıtların kimlikleri."""
@@ -319,7 +400,35 @@ class Agent:
         self._system = prompt.build(config, self.registry, soul=self.soul)
 
     def interrupt(self) -> None:
+        """Dur: ana turu VE koşan tüm yardımcıları durdurur.
+
+        Kullanıcı beklentisi "dur = her şey durur". Yardımcıların bayrağı
+        ayrı (bkz. ChildHandle.cancel) ama karar türev: buradan hepsine
+        yayılıyor.
+        """
         self.cancel.set()
+        for handle in self._children.values():
+            if handle.state == "kosuyor":
+                handle.cancel.set()
+
+    def take_note(self, note: str, *, encode: str = "") -> None:
+        """Koşan turun bir sonraki adımına girecek harness notu.
+
+        Tur ortasında araya giren kullanıcı mesajı (köprüden) ve koşan bir
+        yardımcıya `task_say` ile verilen yön buradan giriyor. Not kuyruğu
+        her turun başında boşaltılır; tur o sırada bitmişse bir adım daha
+        verilir ki mesaj kaybolmasın.
+
+        `encode` doluysa metin anlık belleğe de yazılır — araya giren söz
+        de söylenmiş bir sözdür.
+        """
+        self._inbox.append(note)
+        if encode:
+            self._encode_turn("kullanıcı", encode)
+
+    def inbox_full(self) -> bool:
+        """Gelen kutusu taştı mı? Köprü doluysa eski kuyruk yoluna düşer."""
+        return len(self._inbox) >= 8
 
     def _arm(self) -> None:
         """Yeni bir istek için kesmeyi sıfırlar.
@@ -448,8 +557,12 @@ class Agent:
             session=self.session,
             cancel=self.cancel,
             # Alt ajanın alt ajanı olmuyor: None geçince `task` aracı
-            # kendini kullanılamaz ilan ediyor.
+            # kendini kullanılamaz ilan ediyor. Aynı sınır arka plan ve
+            # yönlendirme uçları için de geçerli.
             spawn=self._spawn if self.depth < MAX_DEPTH else None,
+            spawn_bg=self._spawn_bg if self.depth < MAX_DEPTH else None,
+            child_say=self._child_say if self.depth < MAX_DEPTH else None,
+            child_status=self._child_status if self.depth < MAX_DEPTH else None,
             schedule=self.schedule,
             lens=self.lens,
             ear=self.ear,
@@ -466,6 +579,10 @@ class Agent:
 
             await self._relieve_pressure()
             self._sync_goals()
+            # Bu arada biten yardımcılar ve araya giren kullanıcı mesajları
+            # modelin önüne bu adımda konuyor: tur başında, istek gitmeden.
+            self._drain_children()
+            self._drain_inbox()
             prepared = self.policy.prepare(self._system, self.session.messages())
             result = await self.client.turn(
                 prepared,
@@ -505,8 +622,15 @@ class Agent:
                 self.session.log.note("empty_assistant_turn", stop_reason=result.stop_reason)
 
             stats.stop_reason = result.stop_reason
-            if not await self._handle_stop(result, ctx, stats):
-                break
+            if await self._handle_stop(result, ctx, stats):
+                continue
+            # Tur normal bitti ama kullanıcı bu arada araya yazdıysa mesaj
+            # kaybolmamalı: not düşülür ve AYNI tur içinde bir adım daha
+            # verilir (MAX_TURNS tavanı hâlâ geçerli).
+            if result.stop_reason == "end_turn" and self._inbox and not self.cancel.is_set():
+                self._drain_inbox()
+                continue
+            break
 
         else:
             self.io.on_notice(f"{MAX_TURNS} tur sınırına ulaşıldı, döngü durduruldu.")
@@ -658,6 +782,46 @@ class Agent:
         İzin motoru ve atölye sınırı paylaşılıyor — "ben alt ajanım" diyerek
         atlanabilen bir kapı, kapı değildir.
         """
+        handle = ChildHandle(id=uuid4().hex[:6], title=title,
+                             model=model or self.config.model.name)
+        self._register_child(handle)
+        answer = await self._child_round(handle, instruction)
+        # Sonuç araç sonucuyla zaten döndü; bir de bildirim notu düşülmesin.
+        handle.bildirildi = True
+        return answer
+
+    def _spawn_bg(self, title: str, instruction: str, model: str = "") -> ChildHandle:
+        """Yardımcıyı arka planda başlatır ve HEMEN döner.
+
+        Ana ajan beklemeden işine devam ediyor; yardımcı bitince sonucu
+        tur başındaki bildirim notuyla (ya da ana ajan boştaysa köprünün
+        açtığı sürdürme turuyla) ana ajanın önüne konuyor.
+        """
+        handle = ChildHandle(id=uuid4().hex[:6], title=title,
+                             model=model or self.config.model.name, arka_plan=True)
+        self._register_child(handle)
+        # Referans defterde saklanıyor: referanssız task çöp toplanabilir.
+        handle.task = asyncio.get_running_loop().create_task(
+            self._bg_round(handle, instruction))
+        return handle
+
+    async def _bg_round(self, handle: ChildHandle, instruction: str,
+                        *, resume: bool = False) -> None:
+        """Arka plan sarmalayıcı: koştur, ne olursa olsun defteri düşür,
+        köprüye haber ver."""
+        try:
+            await self._child_round(handle, instruction, resume=resume)
+        except Exception as exc:  # arka plandaki çöküş sessiz kalmamalı
+            handle.state = "hata"
+            handle.sonuc = f"Alt ajan hata verdi: {type(exc).__name__}: {exc}"
+            handle.bitis_ts = time.time()
+            self.session.log.note("subagent_failed", title=handle.title, error=str(exc))
+        self._children_settled()
+
+    async def _child_round(self, handle: ChildHandle, instruction: str,
+                           *, resume: bool = False) -> str:
+        """Bir yardımcının tam turu: oturum aç (ya da diskten sürdür),
+        koştur, defteri güncelle, sonucu döndür."""
         from .session import Session
 
         # Alt ajan başka bir modelle koşabiliyor: tarama işi küçük ve hızlı
@@ -665,50 +829,185 @@ class Agent:
         # gidebilsin. Aynı model isteniyorsa istemci paylaşılıyor — ikinci
         # bir istemci ikinci bir bağlantı havuzu demek.
         client, config = self.client, self.config
-        if model and model != self.config.model.name:
-            client, config = self._client_for(model)
+        if handle.model and handle.model != self.config.model.name:
+            client, config = self._client_for(handle.model)
 
-        child = Session.create(self.config.sessions_dir)
-        child.log.note("subagent_start", title=title, parent=self.session.id)
-        self.session.log.note("subagent_start", title=title, session=child.id)
-        # Orkestra kanalı doğdu: arayüz canlı göstersin.
-        self.io.on_child_start(title, model or self.config.model.name, child.id)
+        # Ajan kapısı: makinenin taşıyabileceği kadarı aynı anda koşar,
+        # gerisi sırada bekler (ayarlardan: context.max_agents). Kanal
+        # olayı kapı ALINDIKTAN sonra yayılıyor — sırada bekleyen kanal
+        # arayüzde "çalışıyor" görünmesin.
+        async with self._agent_gate:
+            if resume:
+                child = Session.resume(
+                    self.config.sessions_dir / f"{handle.session_id}.jsonl")
+            else:
+                child = Session.create(self.config.sessions_dir)
+                handle.session_id = child.id
+                child.log.note("subagent_start", title=handle.title, parent=self.session.id)
+                self.session.log.note("subagent_start", title=handle.title, session=child.id)
+            # Orkestra kanalı doğdu: arayüz canlı göstersin.
+            self.io.on_child_start(handle.title, handle.model, handle.id, handle.arka_plan)
 
-        agent = Agent(
-            config=config,
-            session=child,
-            # Alt ajanın kendi defteri: `task` aracı olmadan.
-            registry=self._child_registry(),
-            client=client,
-            io=self._child_io(title),
-            permissions=self.permissions,
-            policy=self.policy,
-            mind=self.mind,
-            depth=self.depth + 1,
-            schedule=self.schedule,
-            # Kesme yukarıdan aşağı geçmeli: kullanıcı durdur dediğinde alt
-            # ajan da durmalı, yoksa arkada çalışmaya devam ediyor.
-            cancel=self.cancel,
-        )
+            agent = Agent(
+                config=config,
+                session=child,
+                # Alt ajanın kendi defteri: `task` aracı olmadan.
+                registry=self._child_registry(),
+                client=client,
+                io=self._child_io(handle.title, handle.id),
+                permissions=self.permissions,
+                policy=self.policy,
+                mind=self.mind,
+                depth=self.depth + 1,
+                schedule=self.schedule,
+                # Çocuğun KENDİ bayrağı; ana `interrupt()` türev olarak
+                # kurar ("dur = her şey durur"). Paylaşmak olmuyordu: ana
+                # her `run`da bayrağını tazeliyor ve arka plandaki çocuk
+                # eski bayrakta sahipsiz kalıyordu.
+                cancel=handle.cancel,
+            )
+            handle.agent = agent
 
-        try:
-            # Ajan kapısı: makinenin taşıyabileceği kadarı aynı anda koşar,
-            # gerisi sırada bekler (ayarlardan: context.max_agents).
-            async with self._agent_gate:
+            try:
                 stats = await agent.run(instruction)
-        except Exception as exc:  # alt ajanın çökmesi ana turu düşürmemeli
-            self.session.log.note("subagent_failed", title=title, error=str(exc))
-            self.io.on_child_end(title, False, 0, 0)
-            return f"Alt ajan hata verdi: {type(exc).__name__}: {exc}"
-        finally:
-            child.close()
+            except Exception as exc:  # yardımcının çökmesi ana turu düşürmemeli
+                self.session.log.note("subagent_failed", title=handle.title, error=str(exc))
+                handle.state = "hata"
+                handle.sonuc = f"Alt ajan hata verdi: {type(exc).__name__}: {exc}"
+                self.io.on_child_end(handle.title, False, 0, 0, handle.id,
+                                     _clip(handle.sonuc, 200))
+                return handle.sonuc
+            finally:
+                handle.agent = None
+                handle.bitis_ts = time.time()
+                # Günlük kapanıyor ama oturum diskte duruyor: `task_say`
+                # bitmiş bir yardımcıyı Session.resume ile geri açabiliyor.
+                child.close()
 
         answer = _last_text(child)
+        if stats.interrupted:
+            # Kesilen yardımcı için bildirim turu açılmaz: durduran zaten
+            # kullanıcının kendisi.
+            handle.state = "hata"
+            handle.sonuc = answer or "(kesildi)"
+            handle.bildirildi = True
+        else:
+            handle.state = "bitti"
+            handle.sonuc = answer
         self.session.log.note(
-            "subagent_end", title=title, turns=stats.turns, tools=stats.tool_calls
+            "subagent_end", title=handle.title, turns=stats.turns, tools=stats.tool_calls
         )
-        self.io.on_child_end(title, True, stats.turns, stats.tool_calls)
+        self.io.on_child_end(handle.title, not stats.interrupted, stats.turns,
+                             stats.tool_calls, handle.id, _clip(answer, 200))
         return answer
+
+    def _register_child(self, handle: ChildHandle) -> None:
+        self._children[handle.id] = handle
+        # Defter sınırlı: koşan atılmaz, en eski bitmişler düşer.
+        while len(self._children) > MAX_CHILDREN:
+            finished = [h for h in self._children.values() if h.state != "kosuyor"]
+            if not finished:
+                break
+            oldest = min(finished, key=lambda h: h.bitis_ts)
+            self._children.pop(oldest.id, None)
+
+    def _children_settled(self) -> None:
+        """Bir yardımcı bitti: köprüye (varsa) haber ver.
+
+        Köprü, ana ajan boştaysa bir sürdürme turu açar; meşgulse haber
+        kuyruğa düşer ve tur bitince değerlendirilir. Köprüsüz kullanımda
+        (test, salt-metin) sonuç bir sonraki turun başında zaten bildirilir.
+        """
+        callback = self.on_children_settled
+        if callback is not None:
+            try:
+                callback()
+            except Exception:
+                pass
+
+    def _drain_children(self) -> None:
+        """Biten ve henüz bildirilmemiş yardımcıların sonuçlarını nota döker."""
+        for handle in self._children.values():
+            if handle.state == "kosuyor" or handle.bildirildi:
+                continue
+            handle.bildirildi = True
+            template = CHILD_DONE_NOTE if handle.state == "bitti" else CHILD_FAIL_NOTE
+            self.session.add_harness_note(template.format(
+                title=handle.title, id=handle.id,
+                result=_clip(handle.sonuc, CHILD_RESULT_CLIP)))
+
+    def _drain_inbox(self) -> None:
+        """Gelen kutusunu geçmişe harness notu olarak boşaltır."""
+        while self._inbox:
+            self.session.add_harness_note(self._inbox.popleft())
+
+    def has_unreported_children(self) -> bool:
+        return any(h.state != "kosuyor" and not h.bildirildi
+                   for h in self._children.values())
+
+    async def resume_for_children(self) -> TurnStats | None:
+        """Boştayken biten yardımcıları değerlendiren sürdürme turu.
+
+        Girdisi kullanıcı mesajı değil: continuation kanalından bir not
+        (arayüzde görünmez) + sonuçların harness notları. Hiç bekleyen
+        bildirim yoksa None döner ve model hiç çağrılmaz.
+        """
+        done = [h for h in self._children.values()
+                if h.state != "kosuyor" and not h.bildirildi]
+        if not done:
+            return None
+        self._arm()
+        titles = ", ".join(f"{h.title} (id={h.id})" for h in done)
+        self.session.add_continuation_note(CHILDREN_RESUME_NOTE.format(titles=titles))
+        self._drain_children()
+        return await self._drive()
+
+    def _child_say(self, cid: str, message: str) -> tuple[bool, str]:
+        """`task_say`: koşan yardımcıya not, bitmiş yardımcıya devam turu."""
+        handle = self._children.get((cid or "").strip())
+        if handle is None:
+            known = ", ".join(self._children) or "(defter boş)"
+            return False, (f"'{cid}' diye bir yardımcı yok. Defterdekiler: {known}. "
+                           "`task_status` ile bak.")
+        if handle.state == "kosuyor":
+            if handle.agent is None:
+                # Ajan kapısında sırada: nesne henüz kurulmadı.
+                return False, (f"'{handle.title}' henüz sırada (ajan kapısı dolu); "
+                               "birazdan tekrar dene.")
+            handle.agent.take_note(SAY_NOTE.format(message=message))
+            return True, (f"İletildi: '{handle.title}' (id={handle.id}) bir sonraki "
+                          "adımında bu notu görecek.")
+        if not handle.session_id:
+            return False, f"'{handle.title}' oturumsuz bitti; sürdürülemiyor."
+        # Bitmiş yardımcı: oturumu diskten açılıp arka planda sürdürülüyor.
+        handle.state = "kosuyor"
+        handle.bildirildi = False
+        handle.sonuc = ""
+        handle.cancel = asyncio.Event()
+        handle.task = asyncio.get_running_loop().create_task(
+            self._bg_round(handle, message, resume=True))
+        return True, (f"'{handle.title}' (id={handle.id}) bitmişti; oturumu diskten "
+                      "açılıp arka planda sürdürülüyor — bitince sonucu bildirilecek.")
+
+    def _child_status(self, cid: str = "") -> str:
+        """`task_status`: tek/tüm yardımcıların durum özeti."""
+        if not self._children:
+            return "Defter boş: başlatılmış yardımcı yok."
+        wanted = (cid or "").strip()
+        rows = []
+        for h in self._children.values():
+            if wanted and h.id != wanted:
+                continue
+            row = f"- id={h.id} · {h.title} · {h.state}"
+            if h.arka_plan:
+                row += " · arka plan"
+            if h.state != "kosuyor" and h.sonuc:
+                row += f" · sonuç: {_clip(h.sonuc, 300)}"
+            rows.append(row)
+        if not rows:
+            return (f"'{wanted}' diye bir yardımcı yok. "
+                    f"Defterdekiler: {', '.join(self._children)}")
+        return "\n".join(rows)
 
     def _client_for(self, model: str) -> tuple[Any, Config]:
         """Başka bir model için istemci kurar.
@@ -732,20 +1031,40 @@ class Agent:
         self._clients[model] = pair
         return pair
 
-    def _child_io(self, title: str) -> AgentIO:
+    def _child_io(self, title: str, cid: str) -> AgentIO:
         """Alt ajanın arayüz bağlantısı.
 
         Metni akıtmıyor: alt ajanın ara cümleleri ana sohbete karışsa
         kullanıcı kimin konuştuğunu ayırt edemezdi. Araç olayları geçiyor —
         ne yaptığı izlenebilmeli.
+
+        Onay isteği kanal kimliğiyle gidiyor: kullanıcı diyalogda hangi
+        yardımcının izin istediğini görsün. Köprünün onayı üçüncü bir
+        `channel` parametresi alabiliyor; testlerin iki parametreli onayları
+        olduğu gibi çalışmaya devam ediyor.
         """
+        import inspect
+
+        approve = self.io.approve
+        try:
+            takes_channel = len(inspect.signature(approve).parameters) >= 3
+        except (TypeError, ValueError):
+            takes_channel = False
+        if takes_channel:
+            channel = {"id": cid, "title": title}
+
+            async def child_approve(spec: ToolSpec, args: dict[str, Any]) -> bool:
+                return await approve(spec, args, channel)
+        else:
+            child_approve = approve
+
         return AgentIO(
             # Araç olayları alt ajanın kanalına yazılıyor (ana sohbete değil):
             # "kim ne yapıyor" orkestra panelinde görünür olsun.
             on_tool_start=lambda name, args: self.io.on_child_tool(title, name, "start"),
             on_tool_end=lambda name, ok, ms: self.io.on_child_tool(title, name, "ok" if ok else "fail"),
             on_notice=lambda text: self.io.on_notice(f"[{title}] {text}"),
-            approve=self.io.approve,
+            approve=child_approve,
         )
 
     # -- bağlam basıncı ------------------------------------------------
@@ -998,6 +1317,12 @@ def _grounded(item: Any, stems: set[str]) -> bool:
         return True
     text = f"{item.title} {item.content} {' '.join(item.tags)}".casefold()
     return any(stem in text for stem in stems)
+
+
+def _clip(text: str, limit: int) -> str:
+    """Uzun bir sonucu keser — bildirim notu bağlamı boğmasın."""
+    flat = (text or "").strip()
+    return flat if len(flat) <= limit else flat[:limit] + "…"
 
 
 def _one_line(text: str, limit: int = 220) -> str:

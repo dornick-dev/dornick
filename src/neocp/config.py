@@ -18,7 +18,16 @@ from .place import PlaceConfig
 from .voice import VoiceConfig
 
 # Model kimlikleri tahmin edilmez. Bkz. platform.claude.com/docs -> models.
-DEFAULT_MODEL = "claude-opus-4-8"
+DEFAULT_ANTHROPIC_MODEL = "claude-opus-4-8"
+
+# Taze kurulumun varsayılanı OpenRouter + "oto": tek anahtarla çok sağlayıcı
+# ve anahtar girilir girilmez ücretsiz modellerle çalışan bir kurulum
+# (bkz. otomod.py). Mevcut kullanıcılar etkilenmez — ayar sayfası model
+# bölümünü TÜM alanlarıyla yazıyor, dosyadaki değerler bu varsayılanları
+# eziyor.
+OPENROUTER_URL = "https://openrouter.ai/api/v1"
+OTO_MODEL = "oto"
+DEFAULT_MODEL = OTO_MODEL
 
 # Streaming olmadan bu değerin üstü SDK'da HTTP timeout riski taşır.
 NONSTREAM_TOKEN_CEILING = 16_000
@@ -44,12 +53,12 @@ class ModelConfig:
     # anthropic | openai
     # "openai" OpenAI-uyumlu her sunucuyu kapsar: LM Studio, Ollama, vLLM,
     # llama.cpp server, OpenRouter, OpenAI'nin kendisi.
-    provider: str = "anthropic"
+    provider: str = "openai"
     # LM Studio: http://localhost:1234/v1 · Ollama: http://localhost:11434/v1
-    base_url: str | None = None
+    base_url: str | None = OPENROUTER_URL
     # API anahtarının okunacağı ortam değişkeni. Yerel sunucular anahtar
     # istemez ama istemci bir değer bekler.
-    api_key_env: str | None = None
+    api_key_env: str | None = "OPENROUTER_API_KEY"
     # Yerel modellerde işe yarar; Anthropic 4.7+ üzerinde 400 döndüğü için
     # yalnızca openai sağlayıcısında gönderilir.
     temperature: float | None = None

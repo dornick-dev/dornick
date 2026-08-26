@@ -190,6 +190,11 @@ class Episode:
     turns: int
     tools: list[str]
     digest: str
+    # Bir alt ajanın (yardımcının) oturumu mu? Yardımcı günlüğünün başında
+    # `subagent_start(parent=...)` notu var; sohbet listesi bunları saklıyor —
+    # kullanıcının konuşma geçmişi kendi konuşmaları, yardımcıların ara
+    # işleri değil.
+    child: bool = False
 
     def searchable(self) -> str:
         return f"{self.digest}\n{' '.join(self.tools)}"
@@ -422,7 +427,10 @@ class Mind:
         oturum (tek mesajlık, dijesti çıkmayan) listeye girmiyor — tıklanınca
         boş bir şey açmak iyi bir sohbet listesi değil.
         """
-        eps = self._scan_sessions()
+        # Yardımcı (alt ajan) oturumları listeye girmiyor: kullanıcının
+        # sohbet geçmişi kendi konuşmaları — arka planda koşan yardımcıların
+        # ara işleri değil. Günlükleri diskte duruyor, aramada da varlar.
+        eps = [e for e in self._scan_sessions() if not e.child]
         eps.sort(key=lambda e: e.started, reverse=True)
         return eps[:limit]
 
@@ -582,6 +590,7 @@ def _digest_session(path: Path) -> Episode | None:
     turns = 0
     tools: list[str] = []
     fragments: list[str] = []
+    child = False
 
     try:
         with path.open(encoding="utf-8") as fh:
@@ -600,6 +609,12 @@ def _digest_session(path: Path) -> Episode | None:
                         name = event.get("meta", {}).get("tool")
                         if name and name not in tools:
                             tools.append(name)
+                    # Yardımcının kendi günlüğündeki doğum notu: `parent`
+                    # alanı yalnız çocukta var (ana ajandaki eş nota
+                    # `session` yazılıyor).
+                    elif (event.get("content") == "subagent_start"
+                          and event.get("meta", {}).get("parent")):
+                        child = True
                     continue
 
                 role = event.get("role")
@@ -620,6 +635,7 @@ def _digest_session(path: Path) -> Episode | None:
         turns=turns,
         tools=tools,
         digest=" ".join(fragments)[:8000],
+        child=child,
     )
 
 

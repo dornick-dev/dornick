@@ -175,7 +175,12 @@ async def test_a_blank_instruction_is_refused(tmp_path: Path, full) -> None:
 
 
 async def test_interrupting_the_parent_stops_the_child(tmp_path: Path, full) -> None:
-    """Kullanıcı durdur dediğinde alt ajan arkada çalışmaya devam etmemeli."""
+    """Kullanıcı durdur dediğinde alt ajan arkada çalışmaya devam etmemeli.
+
+    Bayrak artık paylaşılmıyor (arka plandaki çocuk, ananın `_arm`inde
+    sahipsiz kalıyordu); çocuğun KENDİ bayrağı var ve ana `interrupt()`
+    hepsini türev olarak kuruyor. Sözleşme aynı: dur = her şey durur.
+    """
     client = FakeClient(
         tool_turn(("c1", "task", {"task": "uzun iş"})),
         text_turn("alt ajan cevabı"),
@@ -187,7 +192,6 @@ async def test_interrupting_the_parent_stops_the_child(tmp_path: Path, full) -> 
     original = agent._spawn
 
     async def watched(title: str, instruction: str, model: str = "") -> str:
-        # Alt ajanın kesme bayrağı ana ajanınkiyle aynı nesne olmalı.
         import neocp.loop as loop_module
 
         made: list = []
@@ -209,7 +213,485 @@ async def test_interrupting_the_parent_stops_the_child(tmp_path: Path, full) -> 
     await agent.run("başla")
 
     assert captured, "alt ajan hiç kurulmadı"
-    assert captured[0].cancel is agent.cancel
+    # Çocuğun bayrağı defterdeki handle'ın bayrağı; ana interrupt() onu kurar.
+    handle = next(iter(agent._children.values()))
+    assert captured[0].cancel is handle.cancel
+    assert not captured[0].cancel.is_set()
+    agent.interrupt()
+    assert agent.cancel.is_set()
+    # Bitmiş çocuğun bayrağına dokunulmaz; koşan çocuk için kurulduğunu
+    # ayrı bir sahte handle ile doğrula.
+    from neocp.loop import ChildHandle
+
+    running = ChildHandle(id="abc123", title="koşan", model="m")
+    agent._children[running.id] = running
+    agent.interrupt()
+    assert running.cancel.is_set()
+
+
+# -- arka plan yardımcıları ---------------------------------------------
+
+
+class SlowClient(FakeClient):
+    """Her turu biraz geciktiren sahte istemci: çocuk, ana ajandan sonra
+    bitsin diye. Zamanlama testin özü değil, sıralamayı sabitliyor."""
+
+    def __init__(self, *script, delay: float = 0.05) -> None:
+        super().__init__(*script)
+        self.delay = delay
+
+    async def turn(self, prepared, tools, *, cancel, callbacks=None):
+        import asyncio
+
+        await asyncio.sleep(self.delay)
+        return await super().turn(prepared, tools, cancel=cancel, callbacks=callbacks)
+
+
+async def test_a_background_helper_returns_immediately_and_reports_later(
+    tmp_path: Path, full
+) -> None:
+    """arka_plan=true: araç sonucu HEMEN dönüyor, iş arkada koşuyor ve
+    bitince sonucu bir sonraki turun başında nota dökülüyor."""
+    parent = FakeClient(
+        tool_turn(("c1", "task", {"title": "sayım", "task": "dosyaları say",
+                                  "arka_plan": True, "model": "kucuk"})),
+        text_turn("başlattım, beklemeden devam ediyorum"),
+        text_turn("sonucu gördüm"),
+    )
+    child_client = SlowClient(text_turn("42 dosya var"))
+    agent = build_agent(tmp_path, parent, full)
+    agent._client_for = lambda name: (child_client, agent.config)
+
+    await agent.run("dosyaları arka planda say")
+
+    # Araç sonucu beklemeden döndü; defterde koşan kayıt var.
+    history = str(agent.session.messages())
+    assert "yardımcı başlatıldı" in history
+    handle = next(iter(agent._children.values()))
+    assert handle.arka_plan and handle.task is not None
+
+    # Çocuk bitene kadar bekle: sonuç defterde, henüz bildirilmedi.
+    await handle.task
+    assert handle.state == "bitti"
+    assert "42 dosya var" in handle.sonuc
+    assert agent.has_unreported_children()
+
+    # Bir sonraki turun başında sonuç nota dökülüyor.
+    await agent.run("nasıl gitti?")
+    notes = str(agent.session.messages())
+    assert "[Yardımcı bitti" in notes
+    assert "42 dosya var" in notes
+    assert not agent.has_unreported_children()
+
+
+async def test_resume_for_children_opens_a_continuation_turn(
+    tmp_path: Path, full
+) -> None:
+    """Ana ajan boştayken biten yardımcı: sürdürme turu continuation
+    notuyla açılıyor (kullanıcı mesajı değil) ve sonucu değerlendiriyor."""
+    from neocp.loop import ChildHandle
+
+    client = FakeClient(text_turn("başlat"), text_turn("sonucu aktardım"))
+    agent = build_agent(tmp_path, client, full)
+    await agent.run("merhaba de")   # geçmişte en az bir tur olsun
+
+    handle = ChildHandle(id="ab12cd", title="şiir", model="m",
+                         arka_plan=True, state="bitti", sonuc="beş kelimelik şiir hazır")
+    agent._children[handle.id] = handle
+
+    stats = await agent.resume_for_children()
+    assert stats is not None and stats.turns == 1
+
+    # Girdi kullanıcı mesajı DEĞİL: continuation işaretli.
+    nudges = [e for e in agent.session.log.messages() if e.meta.get("continuation")]
+    assert nudges and "yardımcı(lar) bitti" in str(nudges[-1].content)
+    # Sonuç harness notu olarak geçmişte.
+    assert "beş kelimelik şiir hazır" in str(agent.session.messages())
+
+    # Bildirilecek bir şey kalmadıysa model hiç çağrılmıyor.
+    assert await agent.resume_for_children() is None
+
+
+async def test_interrupt_stops_a_background_helper(tmp_path: Path, full) -> None:
+    """Dur = her şey durur: arka planda koşan yardımcı da."""
+    import asyncio
+
+    class WaitsForCancel(FakeClient):
+        async def turn(self, prepared, tools, *, cancel, callbacks=None):
+            await cancel.wait()
+            from neocp.backends import TurnResult
+
+            return TurnResult(interrupted=True)
+
+    parent = FakeClient(text_turn("tamam"))
+    agent = build_agent(tmp_path, parent, full)
+    agent._client_for = lambda name: (WaitsForCancel(), agent.config)
+
+    handle = agent._spawn_bg("uzun iş", "hiç bitmeyecek bir şey yap", "kucuk")
+    await asyncio.sleep(0.05)   # çocuk kapıyı alıp koşmaya başlasın
+    assert handle.state == "kosuyor"
+
+    agent.interrupt()
+    await handle.task
+
+    assert handle.state == "hata"
+    assert handle.bildirildi, "kesilen yardımcı için bildirim turu açılmamalı"
+
+
+# -- tur ortası gelen kutusu --------------------------------------------
+
+
+async def test_a_mid_turn_note_lands_in_the_same_turn(tmp_path: Path) -> None:
+    """Koşan tur sürerken düşen not, AYNI koşunun bir sonraki isteğine
+    harness notu olarak giriyor."""
+    from neocp.tools import ToolRegistry, ToolResult, object_schema
+
+    reg = ToolRegistry()
+    holder: dict = {}
+
+    @reg.tool("poke", "dürt", object_schema({}))
+    async def _poke(args, ctx):
+        holder["agent"].take_note("[Kullanıcı bu arada yazdı] rengi mavi yap")
+        return ToolResult("dürtüldü")
+
+    client = FakeClient(tool_turn(("t1", "poke", {})), text_turn("tamam, mavi"))
+    agent = build_agent(tmp_path, client, reg)
+    holder["agent"] = agent
+
+    stats = await agent.run("bir şey çiz")
+
+    assert stats.turns == 2
+    second_request = str(client.seen_messages[-1])
+    assert "rengi mavi yap" in second_request
+    assert not agent._inbox, "kutu boşalmalı"
+
+
+async def test_a_note_after_the_final_answer_gets_one_more_step(
+    tmp_path: Path
+) -> None:
+    """Model son cevabını verirken kullanıcı araya yazdıysa mesaj
+    kaybolmuyor: aynı tur içinde bir adım daha veriliyor."""
+    from neocp.tools import ToolRegistry
+
+    class InterjectedClient(FakeClient):
+        """İlk turun ORTASINDA (model cevap üretirken) not düşer."""
+
+        def __init__(self, agent_box: dict, *script) -> None:
+            super().__init__(*script)
+            self.box = agent_box
+            self.first = True
+
+        async def turn(self, prepared, tools, *, cancel, callbacks=None):
+            result = await super().turn(prepared, tools, cancel=cancel, callbacks=callbacks)
+            if self.first:
+                self.first = False
+                self.box["agent"].take_note("[Kullanıcı bu arada yazdı] bir şey daha var")
+            return result
+
+    box: dict = {}
+    client = InterjectedClient(box, text_turn("ilk cevap"), text_turn("notu da gördüm"))
+    agent = build_agent(tmp_path, client, ToolRegistry())
+    box["agent"] = agent
+
+    stats = await agent.run("bir şey anlat")
+
+    assert stats.turns == 2, "not için bir adım daha verilmeliydi"
+    assert "bir şey daha var" in str(client.seen_messages[-1])
+
+
+def test_the_inbox_note_is_invisible_in_the_chat(tmp_path: Path) -> None:
+    """Harness notu arayüzde mesaj gibi görünmemeli (balon zaten `araya`
+    olayıyla çizildi); system kanalı uygun değilse user kanalından girer
+    ama yine `internal` işaretli."""
+    from neocp.events import EventLog
+    from neocp.session import Session
+    from neocp.web.server import _payload
+
+    session = Session(EventLog(tmp_path / "n.jsonl"), "test")
+    session.add_user_text("merhaba")
+    session.add_harness_note("[Kullanıcı bu arada yazdı] birinci")   # system kanalı
+    session.add_harness_note("[Kullanıcı bu arada yazdı] ikinci")    # user kanalına düşer
+    events = session.log.messages()
+    assert [e.role for e in events] == ["user", "system", "user"]
+    assert _payload(events[1]) is None
+    assert _payload(events[2]) is None
+    # İkisi de modele gidiyor.
+    sent = str(session.messages())
+    assert "birinci" in sent and "ikinci" in sent
+
+
+# -- task_say / task_status ---------------------------------------------
+
+
+async def test_task_say_reaches_a_running_child(tmp_path: Path, full) -> None:
+    from neocp.loop import ChildHandle
+
+    client = FakeClient(
+        tool_turn(("c1", "task_say", {"id": "abc123", "message": "kapsamı daralt"})),
+        text_turn("ilettim"),
+    )
+    agent = build_agent(tmp_path, client, full)
+
+    notes: list[str] = []
+
+    class StubAgent:
+        def take_note(self, note, **kw):
+            notes.append(note)
+
+    handle = ChildHandle(id="abc123", title="tarama", model="m")
+    handle.agent = StubAgent()
+    agent._children[handle.id] = handle
+
+    await agent.run("yardımcıya kapsamı daraltmasını söyle")
+
+    assert notes and "kapsamı daralt" in notes[0]
+    assert "[Ana ajandan ara mesaj]" in notes[0]
+
+
+async def test_task_say_resumes_a_finished_child(tmp_path: Path, full) -> None:
+    """Bitmiş yardımcı: oturumu diskten `Session.resume` ile açılıp aynı
+    handle üzerinden arka planda sürdürülüyor."""
+    client = FakeClient(
+        tool_turn(("c1", "task", {"title": "iş", "task": "bir şey yap"})),
+        text_turn("çocuğun ilk cevabı"),
+        text_turn("tamam"),
+        text_turn("çocuğun devam cevabı"),   # sürdürülen koşunun turu
+    )
+    agent = build_agent(tmp_path, client, full)
+    await agent.run("başla")
+
+    handle = next(iter(agent._children.values()))
+    assert handle.state == "bitti" and handle.session_id
+    before = handle.session_id
+
+    ok, msg = agent._child_say(handle.id, "şimdi bir de özet çıkar")
+    assert ok, msg
+    await handle.task
+
+    assert handle.state == "bitti"
+    assert handle.session_id == before, "aynı oturum sürdürülmeli, yenisi açılmamalı"
+    assert "devam cevabı" in handle.sonuc
+    assert agent.has_unreported_children()
+
+    # Diskte hâlâ TEK çocuk oturumu var ve içinde sürdürme izi duruyor.
+    files = list(agent.config.sessions_dir.glob("*.jsonl"))
+    assert len(files) == 1
+    text = files[0].read_text(encoding="utf-8")
+    assert "session_resume" in text
+    assert "özet çıkar" in text
+
+
+async def test_task_status_reports_the_ledger(tmp_path: Path, full) -> None:
+    from neocp.loop import ChildHandle
+
+    client = FakeClient(
+        tool_turn(("c1", "task_status", {})),
+        text_turn("durumu aktardım"),
+    )
+    agent = build_agent(tmp_path, client, full)
+    agent._children["aa11"] = ChildHandle(id="aa11", title="koşan", model="m",
+                                          arka_plan=True)
+    agent._children["bb22"] = ChildHandle(id="bb22", title="biten", model="m",
+                                          state="bitti", sonuc="üç dosya bulundu")
+
+    await agent.run("yardımcılar ne durumda")
+
+    history = str(agent.session.messages())
+    assert "id=aa11" in history and "kosuyor" in history
+    assert "id=bb22" in history and "üç dosya bulundu" in history
+
+
+def test_the_ledger_keeps_at_most_eight_finished_children(tmp_path: Path, full) -> None:
+    from neocp.loop import MAX_CHILDREN, ChildHandle
+
+    client = FakeClient(text_turn("tamam"))
+    agent = build_agent(tmp_path, client, full)
+    for i in range(12):
+        agent._register_child(ChildHandle(
+            id=f"h{i:02d}", title=f"iş {i}", model="m",
+            state="bitti", bitis_ts=float(i), bildirildi=True))
+
+    assert len(agent._children) == MAX_CHILDREN
+    # En eskiler düştü, en yeniler duruyor.
+    assert "h00" not in agent._children and "h11" in agent._children
+
+
+# -- köprü: araya girme ve sürdürme turu ---------------------------------
+
+
+class _Hub:
+    def __init__(self) -> None:
+        self.events: list[dict] = []
+
+    def emit(self, payload: dict) -> None:
+        self.events.append(payload)
+
+
+async def test_submitting_while_busy_interjects_into_the_running_turn(
+    tmp_path: Path
+) -> None:
+    """Meşgulken gelen düz metin kuyruğa değil, koşan turun gelen kutusuna
+    giriyor; arayüze `araya` olayı basılıyor (queued değil)."""
+    import asyncio
+
+    from neocp.desktop import Bridge
+
+    hub = _Hub()
+    bridge = Bridge(hub, asyncio.get_running_loop())
+    bridge._busy = True
+
+    notes: list[tuple[str, str]] = []
+
+    class StubAgent:
+        def take_note(self, note, *, encode=""):
+            notes.append((note, encode))
+
+        def inbox_full(self):
+            return False
+
+    bridge.agent = StubAgent()
+    bridge.submit("rengi mavi yap")
+    await asyncio.sleep(0)   # call_soon_threadsafe işlesin
+
+    assert notes and "rengi mavi yap" in notes[0][0]
+    assert "[Kullanıcı bu arada yazdı]" in notes[0][0]
+    assert notes[0][1] == "rengi mavi yap"          # anlık belleğe de gidiyor
+    kinds = [e["type"] for e in hub.events]
+    assert "araya" in kinds and "queued" not in kinds
+    assert bridge.queue.empty(), "araya giren mesaj kuyruğa da düşmemeli"
+
+
+async def test_scheduled_and_gate_messages_still_queue(tmp_path: Path) -> None:
+    """`siraya=True` (zamanlanmış görev, dış kapı): eski kuyruk davranışı."""
+    import asyncio
+
+    from neocp.desktop import Bridge
+
+    hub = _Hub()
+    bridge = Bridge(hub, asyncio.get_running_loop())
+    bridge._busy = True
+    bridge.agent = object()   # take_note'suz: inbox yolu zaten kapalı
+
+    bridge.submit("zamanlanmış iş", siraya=True)
+    await asyncio.sleep(0.05)   # run_coroutine_threadsafe kuyruğa yazsın
+
+    assert [e["type"] for e in hub.events] == ["queued"]
+    assert bridge.queue.qsize() == 1
+
+
+async def test_child_done_opens_a_resume_turn_when_idle(tmp_path: Path) -> None:
+    """Yardımcı bitti sinyali kuyruğa düşüyor; sırası gelince (ajan boş)
+    sürdürme turu koşuluyor ve turn_end yayılıyor."""
+    import asyncio
+
+    from neocp.desktop import _CHILD_DONE, Bridge
+
+    hub = _Hub()
+    bridge = Bridge(hub, asyncio.get_running_loop())
+
+    resumed = []
+
+    class StubAgent:
+        def has_unreported_children(self):
+            return True
+
+        async def resume_for_children(self):
+            resumed.append(True)
+
+    bridge.agent = StubAgent()
+    bridge.child_done()
+    assert bridge.queue.get_nowait() is _CHILD_DONE
+
+    await bridge._surdur()
+
+    assert resumed == [True]
+    kinds = [e["type"] for e in hub.events]
+    assert kinds[-1] == "turn_end"
+    assert {"type": "status", "busy": True} in hub.events
+
+
+async def test_a_resume_with_nothing_to_report_is_silent(tmp_path: Path) -> None:
+    import asyncio
+
+    from neocp.desktop import Bridge
+
+    hub = _Hub()
+    bridge = Bridge(hub, asyncio.get_running_loop())
+
+    class StubAgent:
+        def has_unreported_children(self):
+            return False
+
+        async def resume_for_children(self):
+            raise AssertionError("model çağrılmamalıydı")
+
+    bridge.agent = StubAgent()
+    await bridge._surdur()
+    assert hub.events == []
+
+
+async def test_an_approval_from_a_helper_carries_its_channel(tmp_path: Path) -> None:
+    """Onay diyaloğu kimin izin istediğini bilsin: yardımcının kimliği ve
+    başlığı approval_request olayında."""
+    import asyncio
+
+    from neocp.desktop import Bridge
+    from neocp.tools.base import ToolSpec
+
+    hub = _Hub()
+    bridge = Bridge(hub, asyncio.get_running_loop())
+
+    async def handler(args, ctx):  # pragma: no cover - sadece imza
+        return None
+
+    spec = ToolSpec(name="shell", description="d", input_schema={}, handler=handler)
+    task = asyncio.ensure_future(
+        bridge._approve(spec, {"command": "ls"}, {"id": "ab12", "title": "tarama"}))
+    await asyncio.sleep(0)
+
+    ask = next(e for e in hub.events if e["type"] == "approval_request")
+    assert ask["channel"] == {"id": "ab12", "title": "tarama"}
+
+    bridge.resolve_approval(ask["id"], True)
+    await asyncio.sleep(0)
+    assert await task is True
+
+    # Ana ajanın kendi isteğinde kanal alanı hiç yok.
+    task = asyncio.ensure_future(bridge._approve(spec, {"command": "ls"}))
+    await asyncio.sleep(0)
+    ask = [e for e in hub.events if e["type"] == "approval_request"][-1]
+    assert "channel" not in ask
+    bridge.resolve_approval(ask["id"], False)
+    await asyncio.sleep(0)
+    assert await task is False
+
+
+# -- sohbet listesi ------------------------------------------------------
+
+
+async def test_child_sessions_stay_out_of_the_chat_list(tmp_path: Path, full) -> None:
+    """Yardımcı oturumları /api/sessions listesine (mind.sessions) girmiyor;
+    günlükleri diskte duruyor ve arşiv taramasında hâlâ bulunuyorlar."""
+    from neocp.mind import open_mind
+
+    client = FakeClient(
+        tool_turn(("c1", "task", {"task": "bir şey yap"})),
+        text_turn("çocuk cevabı"),
+        text_turn("tamam"),
+    )
+    agent = build_agent(tmp_path, client, full)
+    await agent.run("başla")
+
+    files = list(agent.config.sessions_dir.glob("*.jsonl"))
+    assert files, "çocuk oturumu diske yazılmalıydı"
+
+    mind = open_mind(tmp_path / "mind2", agent.config.sessions_dir, "test")
+    listed = [e.session_id for e in mind.sessions()]
+    assert files[0].stem not in listed
+    # Silinmedi: doğrudan bakınca hâlâ orada ve çocuk işaretli.
+    episode = mind.episode(files[0].stem)
+    assert episode is not None and episode.child
+    mind.store.close()
 
 
 async def test_a_subagent_can_use_another_model(tmp_path: Path, full) -> None:
