@@ -30,24 +30,32 @@ from typing import Any
 
 DOSYA = "tanima.json"
 
-# Eğitim düzeneğinin yeri. Önce kurulum düzeni: paket <kök>/src/neocp
-# altında yaşıyorsa düzenek <kök>/egitim'de aranıyor (Windows kurulum
-# sihirbazı oraya koyuyor). Yoksa geliştirici yolu — bu da yoksa özellik
-# pasif: ayar sayfası anahtarın yanında "kurulu değil" notu gösteriyor.
-_KURULUM_BETIK = (Path(__file__).resolve().parents[2]
-                  / "egitim" / "betikler" / "08_kisisel_dongu.py")
-_GELISTIRICI_BETIK = (Path("D:/Projects/ai/neocp-base-model")
-                      / "betikler" / "08_kisisel_dongu.py")
-DONGU_BETIK = _KURULUM_BETIK if _KURULUM_BETIK.exists() else _GELISTIRICI_BETIK
+# Eğitim düzeneğinin yeri. Sıra: (1) açık kaynak düzeni — düzenek ürünle
+# aynı ağaçta <kök>/training altında (depo ve yeni kurulum sihirbazı);
+# (2) eski kurulum düzeni <kök>/egitim; (3) geliştirici yolu. Hiçbiri
+# yoksa özellik pasif: ayar sayfası "kurulu değil" notu gösteriyor.
+_KOK = Path(__file__).resolve().parents[2]
+_ADAYLAR = (
+    _KOK / "training" / "scripts" / "personal_loop.py",
+    _KOK / "egitim" / "betikler" / "08_kisisel_dongu.py",
+    Path("D:/Projects/ai/neocp-base-model") / "betikler" / "08_kisisel_dongu.py",
+)
+DONGU_BETIK = next((p for p in _ADAYLAR if p.exists()), _ADAYLAR[0])
+
+# Düzenin dosya adları: yeni (training/) düzen İngilizce adlar kullanıyor,
+# eski düzenler Türkçe. İkisi de aynı şemayı taşıyor (son_created filigranı).
+_YENI_DUZEN = DONGU_BETIK.name == "personal_loop.py"
 
 # Döngünün filigranı: en son hangi anıya kadar hasat edildiği burada.
 # Yeni anı sayısı buna göre ölçülüyor; dosya/alan yoksa boş filigran —
 # her şey yeni sayılır, ilk kurulumda doğru davranış.
-FILIGRAN = DONGU_BETIK.parents[1] / "veri" / "kisisel_durum.json"
+FILIGRAN = (DONGU_BETIK.parents[1] / "data" / "personal_state.json" if _YENI_DUZEN
+            else DONGU_BETIK.parents[1] / "veri" / "kisisel_durum.json")
 
 # Kullanıcıdan damıtılan soru→terim çiftleri: kişisel eğitimin ham maddesi.
 # Taşıma (transfer) ve sıfırlama bu iki dosyayı birlikte ele alıyor.
-KORPUS = DONGU_BETIK.parents[1] / "veri" / "kisisel_korpus.jsonl"
+KORPUS = (DONGU_BETIK.parents[1] / "data" / "personal_corpus.jsonl" if _YENI_DUZEN
+          else DONGU_BETIK.parents[1] / "veri" / "kisisel_korpus.jsonl")
 
 # Akıllı tetik: yoklamada iki yoldan biri koşturur.
 #   (a) filigrandan beri YENI_ANI_ESIGI anı birikti VE son koşudan en az

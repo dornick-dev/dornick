@@ -26,11 +26,11 @@ param(
 $ErrorActionPreference = "Stop"
 
 # -- yollar -------------------------------------------------------------------
-$Kok      = Split-Path -Parent $PSScriptRoot          # neocp deposu
+$Kok      = Split-Path -Parent $PSScriptRoot          # depo kökü
 $Cikti    = Join-Path $PSScriptRoot "cikti"
 $Indirme  = Join-Path $Cikti "indirme"                # arşivler burada önbelleklenir
 $Paket    = Join-Path $Cikti "paket"                  # kurulacak ağacın birebir kopyası
-$TabanDepo = "D:\Projects\ai\neocp-base-model"        # eğitim düzeneğinin kaynağı
+$TabanDepo = Join-Path $Kok "training"                # eğitim düzeneği depo içinde
 
 $PySurum  = "3.11.9"
 $PyZip    = "python-$PySurum-embed-amd64.zip"
@@ -83,7 +83,7 @@ $pth = Join-Path $PyDizin "python311._pth"
     ".",
     "Lib\site-packages",
     "..\src",
-    "..\egitim\sitepaket",
+    "..\training\site",
     "import site"
 ) | Set-Content -Path $pth -Encoding Ascii
 
@@ -108,19 +108,19 @@ Kopyala (Join-Path $Kok "src\neocp") (Join-Path $Paket "src\neocp") @("__pycache
 # -- 4) eğitim bileşeni (isteğe bağlı) ---------------------------------------
 if (-not $AtlaTorch) {
     Adim "Eğitim düzeneği kopyalanıyor ($TabanDepo)"
-    if (-not (Test-Path $TabanDepo)) { throw "Eğitim deposu yok: $TabanDepo" }
-    $Egitim = Join-Path $Paket "egitim"
+    if (-not (Test-Path $TabanDepo)) { throw "Eğitim düzeneği yok: $TabanDepo" }
+    $Egitim = Join-Path $Paket "training"
 
-    Kopyala (Join-Path $TabanDepo "betikler") (Join-Path $Egitim "betikler") @("__pycache__")
-    Kopyala (Join-Path $TabanDepo "model")    (Join-Path $Egitim "model")    @("__pycache__")
-    # ayarlar.py yedek öğretmen içindir; anahtar.env BİLEREK paket dışı —
+    Kopyala (Join-Path $TabanDepo "scripts") (Join-Path $Egitim "scripts") @("__pycache__")
+    Kopyala (Join-Path $TabanDepo "model")   (Join-Path $Egitim "model")   @("__pycache__")
+    # teacher.py yedek öğretmen içindir; .env BİLEREK paket dışı —
     # anahtarsız yedek sessizce devre dışı kalır, seçili model yeter.
-    Copy-Item (Join-Path $TabanDepo "ayarlar.py") $Egitim
-    New-Item -ItemType Directory -Force (Join-Path $Egitim "out")  | Out-Null
-    New-Item -ItemType Directory -Force (Join-Path $Egitim "veri") | Out-Null
-    Copy-Item (Join-Path $TabanDepo "out\eniyi.pt") (Join-Path $Egitim "out")
-    Copy-Item (Join-Path $TabanDepo "veri\korpus.jsonl")    (Join-Path $Egitim "veri")
-    Copy-Item (Join-Path $TabanDepo "veri\korpus_en.jsonl") (Join-Path $Egitim "veri")
+    Copy-Item (Join-Path $TabanDepo "teacher.py") $Egitim
+    New-Item -ItemType Directory -Force (Join-Path $Egitim "checkpoints") | Out-Null
+    New-Item -ItemType Directory -Force (Join-Path $Egitim "data")        | Out-Null
+    Copy-Item (Join-Path $TabanDepo "checkpoints\base.pt")  (Join-Path $Egitim "checkpoints")
+    Copy-Item (Join-Path $TabanDepo "data\corpus.jsonl")    (Join-Path $Egitim "data")
+    Copy-Item (Join-Path $TabanDepo "data\corpus_en.jsonl") (Join-Path $Egitim "data")
 
     # Sınav kapısının TR ölçütü: ürünün kendi kıyaslama düzeneği.
     $Eval = Join-Path $Paket "eval\context_memory"
@@ -130,7 +130,7 @@ if (-not $AtlaTorch) {
 
     Adim "Torch (CPU) eğitim bileşenine kuruluyor"
     & $PyExe -m pip install --no-warn-script-location `
-        --target (Join-Path $Egitim "sitepaket") `
+        --target (Join-Path $Egitim "site") `
         --index-url "https://download.pytorch.org/whl/cpu" torch
     if ($LASTEXITCODE -ne 0) { throw "torch kurulamadı" }
 }

@@ -16,9 +16,13 @@ build/
 # Kurulum çıktısı
 installer/cikti/
 
-# Eğitim düzeneği: anahtar, veri ve model çıktıları git dışıdır.
-# Büyük dosyalar (eniyi.pt, korpus*.jsonl) GitHub Releases'ten indirilir.
-egitim/anahtar.env
-egitim/veri/
-egitim/out/
-*.pt
+# Training rig: keys, personal data and generated artifacts stay out of git.
+# Committed exceptions: the synthetic teacher corpora and the base checkpoint
+# (the seed of the nightly personal loop).
+training/.env
+training/data/*
+!training/data/corpus.jsonl
+!training/data/corpus_en.jsonl
+training/checkpoints/*
+!training/checkpoints/base.pt
+training/site/

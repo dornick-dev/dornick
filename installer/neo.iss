@@ -3,10 +3,10 @@
 ; Önce installer\hazirla.ps1 çalıştırılır: gömülü Python + bağımlılıklar +
 ; kaynak + eğitim düzeneği cikti\paket altına dizilir; bu betik yalnız o
 ; ağacı paketler. Kurulan ağaç geliştirici deposunun düzenini birebir
-; taklit eder (src\, eval\, egitim\, .neocp\) — ürün kodu tek bir düzen
+; taklit eder (src\, eval\, training\, .neocp\) — ürün kodu tek bir düzen
 ; tanır, "kurulumda başka yol" diye ikinci bir gerçek yoktur.
 ;
-; Kaldırıcı .neocp'ye (anılar, anahtarlar, oturumlar) ve egitim\veri'de
+; Kaldırıcı .neocp'ye (anılar, anahtarlar, oturumlar) ve training\data'da
 ; sonradan biriken kişisel dosyalara DOKUNMAZ — kullanıcı verisi kalır.
 
 #define Ad "neo"
@@ -69,7 +69,7 @@ Name: "autostart"; Description: "{cm:OtomatikBaslat}"; Flags: unchecked
 Source: "{#Paket}\python\*"; DestDir: "{app}\python"; Flags: recursesubdirs ignoreversion; Components: ana
 Source: "{#Paket}\src\*"; DestDir: "{app}\src"; Flags: recursesubdirs ignoreversion; Components: ana
 Source: "{#Paket}\neo.cmd"; DestDir: "{app}"; Flags: ignoreversion; Components: ana
-Source: "{#Paket}\egitim\*"; DestDir: "{app}\egitim"; Flags: recursesubdirs ignoreversion; Components: egitim
+Source: "{#Paket}\training\*"; DestDir: "{app}\training"; Flags: recursesubdirs ignoreversion; Components: egitim
 Source: "{#Paket}\eval\*"; DestDir: "{app}\eval"; Flags: recursesubdirs ignoreversion; Components: egitim
 
 [Icons]
@@ -87,16 +87,16 @@ Filename: "{app}\python\pythonw.exe"; Parameters: "-m neocp --app -C ""{app}""";
 [UninstallDelete]
 ; Bizim ürettiğimiz kalıntılar: dil seçimi ve çalışma sırasında oluşan
 ; bytecode önbellekleri (__pycache__ iç içe her pakette türüyor, o yüzden
-; SALT KOD içeren klasörler bütünüyle siliniyor). .neocp ile egitim\veri
+; SALT KOD içeren klasörler bütünüyle siliniyor). .neocp ile training\data
 ; (kişisel korpus/filigran) bilerek listede YOK — kullanıcı verisi kalır.
 Type: files; Name: "{app}\kurulum.json"
 Type: filesandordirs; Name: "{app}\python"
 Type: filesandordirs; Name: "{app}\src"
 Type: filesandordirs; Name: "{app}\eval"
-Type: filesandordirs; Name: "{app}\egitim\sitepaket"
-Type: filesandordirs; Name: "{app}\egitim\betikler\__pycache__"
-Type: filesandordirs; Name: "{app}\egitim\model\__pycache__"
-Type: filesandordirs; Name: "{app}\egitim\__pycache__"
+Type: filesandordirs; Name: "{app}\training\site"
+Type: filesandordirs; Name: "{app}\training\scripts\__pycache__"
+Type: filesandordirs; Name: "{app}\training\model\__pycache__"
+Type: filesandordirs; Name: "{app}\training\__pycache__"
 
 [Code]
 procedure CurStepChanged(CurStep: TSetupStep);
