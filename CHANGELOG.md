@@ -1,5 +1,66 @@
 # Changelog
 
+## 0.4.0 — 2026-08-27
+
+Automations: a repeated job becomes a graph of steps you can watch run.
+
+* **Automation tasks.** Tasks now come in two kinds. A *simple* task is one
+  instruction on a schedule (as before). An *automation* is a graph of nodes
+  and edges stored in `.neocp/workflows/<id>.json` — `mail_read` → `agent` →
+  `http` → `skill`, or whatever the job needs. Node types are open strings,
+  so adding one does not break the format. There is still only **one**
+  scheduler: `schedule.Task` gained `kind_ui` and `workflow_id`, and a
+  triggered automation runs the graph instead of a prompt. Skills were not
+  duplicated into a second script engine — a `skill` node calls the existing
+  one.
+* **Watch it run.** The flow lights up while it works: each node shows
+  *running / done / failed* in colour **and in words**, the active edge is
+  highlighted, and the panel refreshes every 1.5 s then stops on its own when
+  the run ends. The output stays on the same screen — an automation that
+  produces an app does not send you off to the Apps panel.
+* **Self-repair, bounded.** When a step fails, neo asks the model to fix that
+  step's config, writes it to disk and retries — once per step, at most three
+  steps per run, config and skill only. What changed is written into the
+  report; a silent repair is not a repair, it's a surprise. A step you edited
+  by hand is marked ✎ and is **never** rewritten: that would be a quiet
+  revert, not a fix. If the model answers with prose instead of JSON, nothing
+  changes.
+* **Automations live in memory.** A saved flow is remembered as a
+  `procedure`, a broken step as a `lesson`, in a fixed shape from every path
+  (tool or UI). The shape matters: these records also feed the nightly
+  on-device fine-tune, and an event written differently every time has no
+  pattern to learn. `workflow action=list` now prints each flow's steps, so
+  "do I already have something that does this?" is answerable in one call —
+  and both the tool and its output say the same thing: use what fits, don't
+  bend what doesn't.
+* **Local model optimisation.** With `local_optimize` on (off by default,
+  localhost only), neo unloads other LM Studio models, *then* measures free
+  VRAM, and fits the context window to what is left — without double-counting
+  a model that is already resident. Without a GPU reading it only applies the
+  model's own context ceiling. NVIDIA (`nvidia-smi`) only for now.
+
+### Installer
+
+* Installing over an existing copy is now **tested** for all three choices:
+  update (data kept), clean install (code rewritten, data kept), and reset
+  data too (backup written *before* deletion, then data genuinely removed).
+  Eight scenarios, all passing, including backup rotation, running-copy
+  detection and uninstall leaving `.neocp` in place.
+
+### Fixes
+
+* Automations could not be created at all: the scheduler, the runner and the
+  UI all understood `kind_ui`/`workflow_id`, but nothing could write them —
+  the API dropped them silently and the tool had no such field.
+* Run history was filed under an id derived from the workflow while the UI
+  asked by task id, so history looked empty and live progress never arrived.
+* Progress was only recorded when a step *finished*, so nothing appeared to
+  be running during a long step.
+* The English interface was half Turkish: `<html lang>` was pinned to `tr`,
+  which made CSS `text-transform: uppercase` render "SIMPLE" as "SİMPLE";
+  several toolbar tooltips had no translation at all and `aria-label` was
+  never translated, so screen readers heard Turkish in English mode.
+
 ## 0.3.0 — 2026-08-27
 
 The coding release. neo could already write code; this version is about

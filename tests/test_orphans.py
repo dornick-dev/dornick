@@ -200,6 +200,73 @@ async def test_task_say_resumes_an_adopted_orphan(tmp_path: Path, registry) -> N
     assert "session_resume" in text
 
 
+async def test_bridge_gorev_devam_resumes_orphan(tmp_path: Path, registry) -> None:
+    """UI 'Devam et' → Bridge.gorev_devam → _child_say (HTTP thread güvenli)."""
+    import asyncio
+
+    from neocp.desktop import Bridge
+
+    class _Hub:
+        def emit(self, *_a, **_k):
+            pass
+
+    client = FakeClient(text_turn("panelden sürdürüldü"))
+    agent = build_agent(tmp_path, client, registry)
+    sid = "20250101T000200Z"
+    _cocuk_gunluk(agent.config.sessions_dir, sid, "Market Lens", "ana")
+    (handle,) = agent.adopt_orphans([{"title": "Market Lens", "session": sid}])
+
+    bridge = Bridge(_Hub(), asyncio.get_running_loop())
+    bridge.agent = agent
+
+    # gorev_devam call_soon + wait kullanır — döngü thread'inde çağırma.
+    result = await asyncio.to_thread(bridge.gorev_devam, "c:" + handle.id)
+    assert result.get("ok"), result
+    await handle.task
+    assert handle.state == "bitti"
+    assert "sürdürüldü" in handle.sonuc
+
+    missing = await asyncio.to_thread(bridge.gorev_devam, "c:yokid")
+    assert missing.get("ok") is False
+
+    running = ChildHandle(id="run1", title="koşan", model="m",
+                          session_id="x", state="kosuyor")
+    agent._children["run1"] = running
+    busy = await asyncio.to_thread(bridge.gorev_devam, "c:run1")
+    assert busy.get("ok") is False
+    assert "koşuyor" in (busy.get("error") or "").lower() or "zaten" in (
+        busy.get("error") or "").lower()
+
+
+def test_gorevler_marks_orphans_as_resumable(tmp_path: Path, registry) -> None:
+    """Canlı liste surdurulebilir bayrağını yetim satırına koyar."""
+    import asyncio
+
+    from neocp.desktop import Bridge
+
+    class _Hub:
+        def emit(self, *_a, **_k):
+            pass
+
+    async def scenario() -> dict:
+        agent = build_agent(tmp_path, FakeClient(), registry)
+        agent._children["y1"] = ChildHandle(
+            id="y1", title="yarım", model="", arka_plan=True,
+            state="yetim", session_id="sess1", sonuc="yarım kaldı")
+        agent._children["r1"] = ChildHandle(
+            id="r1", title="koşan", model="m", arka_plan=True,
+            state="kosuyor", session_id="sess2")
+        bridge = Bridge(_Hub(), asyncio.get_running_loop())
+        bridge.agent = agent
+        return bridge.gorevler()
+
+    payload = asyncio.run(scenario())
+    by_id = {r["id"]: r for r in payload["gorevler"]}
+    assert by_id["c:y1"]["surdurulebilir"] is True
+    assert by_id["c:r1"]["surdurulebilir"] is False
+    assert by_id["c:r1"]["durdurulabilir"] is True
+
+
 # -- panel tohumu (snapshot kanalları) ------------------------------------
 
 
@@ -277,7 +344,21 @@ def test_the_deck_seeds_from_the_snapshot() -> None:
     assert "channels.clear()" in orch_js          # hayaletler silinir
     assert '"Yarım kaldı"' in orch_js             # yetim durumu çiziliyor
     assert '"Yarım kaldı": "Left unfinished"' in orch_js   # EN çevirisi
+    assert "/api/gorevler/devam" in orch_js
+    assert "Devam et" in orch_js
+
+    gorev_js = (STATIC / "gorevler.js").read_text(encoding="utf-8")
+    assert "/api/gorevler/devam" in gorev_js
+    assert "surdurulebilir" in gorev_js or 'durum === "yetim"' in gorev_js
+
+    server = (Path(__file__).resolve().parents[1]
+              / "src" / "neocp" / "web" / "server.py").read_text(encoding="utf-8")
+    assert "/api/gorevler/devam" in server
+    assert "gorev_devam" in (
+        Path(__file__).resolve().parents[1] / "src" / "neocp" / "desktop.py"
+    ).read_text(encoding="utf-8")
 
     css = (STATIC / "app.css").read_text(encoding="utf-8")
     # İki temada da çalışan token'larla: yetim durumu görsel dile bağlı.
     assert ".orch-ch.yetim" in css and "--amber" in css
+    assert ".task-resume" in css and ".orch-resume" in css

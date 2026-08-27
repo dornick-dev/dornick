@@ -99,11 +99,28 @@ Dil.ekle({
   "Adres (base URL)": "Address (base URL)",
   "Özel/yerel bir OpenAI-uyumlu uç için düzenle. Boşsa sağlayıcının resmî adresi kullanılır.":
     "Edit for a custom or local OpenAI-compatible endpoint. Left empty, the provider's official address is used.",
+  "Seçili sağlayıcının resmi adresi. Gerekirse özel proxy için değiştir.":
+    "Official address for the selected provider. Change only for a custom proxy.",
+  "Yerel sunucu adresi (LM Studio / Ollama / vLLM). Port farklıysa düzenle.":
+    "Local server address (LM Studio / Ollama / vLLM). Edit if the port differs.",
   "Gerekiyorsa API anahtarı / token": "API key / token if required",
   "https://… ya da http://localhost:1234/v1": "https://… or http://localhost:1234/v1",
-  "API anahtarı": "API key",
+  "Bağlam": "Context",
+  "Bağlam penceresi (token)": "Context window (tokens)",
+  "Algıla": "Detect",
+  "Soruluyor…": "Asking…",
+  "Tek yanıtta azami token": "Max tokens per reply",
+  "Geçmişte tutulan görüntü": "Images kept in history",
+  "Kabuk ortamından geliyor": "Coming from the shell environment",
+  "Kayıtlı — değiştirmek için yaz": "Saved — type to replace",
+  "Yapıştır": "Paste",
+  " — API anahtarı": " — API key",
   "LM Studio / özel bir uç kimlik doğrulaması istiyorsa buraya yaz. Anahtarlar diske ayrı yazılır, bir daha okunmaz.":
     "If LM Studio or a custom endpoint wants authentication, enter it here. Keys are written to disk separately and never read back.",
+  "Bu sağlayıcının API anahtarı. Anahtarlar diske ayrı yazılır, bir daha okunmaz.":
+    "API key for this provider. Keys are written to disk separately and never read back.",
+  "Yerel sunucu auth istiyorsa buraya yaz. Anahtarlar diske ayrı yazılır, bir daha okunmaz.":
+    "If the local server wants authentication, enter it here. Keys are written to disk separately and never read back.",
   "Çaba": "Effort",
   "Düşünen modellerde ne kadar akıl yürüteceği. Ölçüm (qwen3-27b, tek kelimelik istem): high 8,97 sn — low 1,60 sn. Sohbet için low, gerçek iş için high":
     "How much a thinking model reasons. Measured (qwen3-27b, one-word prompt): high 8.97 s — low 1.60 s. Low for chat, high for real work",
@@ -188,6 +205,13 @@ Dil.ekle({
   "Durduruldu": "Paused",
   "  ·  Son: ": "  ·  Last: ",
   "＋ Yeni görev": "＋ New task",
+  "Kaydet": "Save",
+  "Raporu aç": "Open report",
+  "Ana ekranda aç": "Open on main screen",
+  "Bu görev şu an çalışıyor": "This task is running now",
+  "Son koşu: ": "Last run: ",
+  "Sırada: ": "Next: ",
+  "Durduruldu": "Paused",
   "Kurulu görev yok. Yukarıdan ekleyebilir ya da ajana söyleyebilirsin: \"her sabah 9'da borsayı kontrol et\".":
     "No tasks set up. Add one above, or just tell the agent: \"check the market every morning at 9\".",
   "Yeni gorev": "New task",
@@ -347,13 +371,13 @@ Dil.ekle({
   "adres yeter; kaydedince tarayıcıda giriş açılır":
     "just an address; saving opens a browser login",
   "Uzak — sabit token": "Remote — fixed token",
-  "token dosyaya değil Anahtarlar'a yazılır": "the token goes to Keys, not into the file",
+  "token dosyaya değil Model'e yazılır": "the token goes under Model, not into the file",
   "Yerel komut": "Local command",
   "npx / py gibi bir komut başlatılır (LM Studio biçimi)":
     "starts a command like npx / py (LM Studio format)",
   "ad — ör. notion": "name — e.g. notion",
-  "token — Anahtarlar'a kaydedilir, dosyaya adı yazılır":
-    "token — saved to Keys; only its name goes into the file",
+  "token — Model'e kaydedilir, dosyaya adı yazılır":
+    "token — saved under Model; only its name goes into the file",
   "komut ve argümanlar — ör. npx -y bir-mcp":
     "command and arguments — e.g. npx -y some-mcp",
   "Ekle ve bağlan": "Add & connect",
@@ -364,8 +388,8 @@ Dil.ekle({
   "Token kaydedilemedi": "Could not save the token",
   "sunucu tanımlarını düzenle": "edit the server definitions",
   "Yeniden bağlan": "Reconnect",
-  "Biçim Claude Code'unkiyle aynı (mcpServers): yerel sunucu için command/args, uzak sunucu için url/headers. Gizli değeri dosyaya yazma — \"${AD}\" yaz, değeri Anahtarlar sekmesine AD adıyla ekle.":
-    "The format matches Claude Code's (mcpServers): command/args for a local server, url/headers for a remote one. Don't write secrets into the file — write \"${NAME}\" and add the value under NAME in the Keys tab.",
+  "Biçim Claude Code'unkiyle aynı (mcpServers): yerel sunucu için command/args, uzak sunucu için url/headers. Gizli değeri dosyaya yazma — \"${AD}\" yaz, değeri Model sekmesindeki anahtar alanına AD adıyla ekle.":
+    "The format matches Claude Code's (mcpServers): command/args for a local server, url/headers for a remote one. Don't write secrets into the file — write \"${NAME}\" and add the value under NAME in the Model tab key field.",
   "Kaydet ve bağlan": "Save & connect",
 
   // konum ve açılış
@@ -391,6 +415,12 @@ Dil.ekle({
   "Aynı anda model isteği": "Concurrent model requests",
   "Yerel sunucularda 1 kalmalı: LM Studio meşgul bir modele ikinci istek gelince modelin ikinci bir kopyasını yüklüyor":
     "Keep it at 1 for local servers: when a second request hits a busy model, LM Studio loads a second copy of it",
+  "Yerel model optimizasyonu": "Local model optimization",
+  "Açıkken: diğer modelleri boşaltır, tek kopya tutar, VRAM/model boyutuna göre bağlamı düşürür. Kapalıysa normal kullanım.":
+    "When on: unloads other models, keeps a single copy, fits context to VRAM/model size. When off: normal use.",
+  "Ekran kartı": "Graphics card",
+  "nvidia-smi yok — VRAM otomatik ölçülemeyecek; yine de diğer modeller boşaltılır":
+    "nvidia-smi missing — VRAM won't be measured automatically; other models are still unloaded",
   "Aynı anda araç": "Concurrent tools",
   "Model bir turda on araç birden isteyebiliyor; hepsini aynı anda başlatmak zayıf bir makinede belleği tüketiyor":
     "The model can request ten tools in one turn; launching them all at once exhausts memory on a weak machine",
@@ -460,6 +490,8 @@ Dil.ekle({
   "Makine": "Machine",
   "Dosyalar": "Files",
   "Taşı": "Transfer",
+  "Sağlayıcı, anahtar, model ve bağlam — hepsi burada.":
+    "Provider, key, model and context — all here.",
   "Sağlayıcı, model ve düşünme derinliği.": "Provider, model and thinking depth.",
   "Sağlayıcı anahtarları — diske ayrı yazılır, geri okunmaz.":
     "Provider keys — written to disk separately, never read back.",
@@ -507,8 +539,6 @@ const Settings = (() => {
   const note = document.getElementById("settings-note");
   const panes = {
     model: document.getElementById("pane-model"),
-    keys: document.getElementById("pane-keys"),
-    limits: document.getElementById("pane-limits"),
     mail: document.getElementById("pane-mail"),
     tasks: document.getElementById("pane-tasks"),
     voice: document.getElementById("pane-voice"),
@@ -577,9 +607,7 @@ const Settings = (() => {
 
   function draw() {
     drawModel();
-    drawKeys();
     drawMail();
-    drawLimits();
     drawVoice();
     drawHearing();
     drawMachine();
@@ -792,12 +820,36 @@ const Settings = (() => {
     say("Kaydedilmedi");
   }
 
+  function chosenProvider() {
+    const id = patch.provider || state.provider;
+    return (state.providers || []).find((p) => p.id === id) || null;
+  }
+
+  function isLocalBase() {
+    const url = String((patch.model || {}).base_url ?? state.model.base_url ?? "");
+    return /localhost|127\.0\.0\.1|\[::1\]/i.test(url);
+  }
+
+  function baseUrlHint() {
+    if (isLocalBase()) {
+      return "Yerel sunucu adresi (LM Studio / Ollama / vLLM). Port farklıysa düzenle.";
+    }
+    return "Seçili sağlayıcının resmi adresi. Gerekirse özel proxy için değiştir.";
+  }
+
+  function apiKeyHintKey() {
+    if (isLocalBase() || !(chosenProvider() && chosenProvider().env)) {
+      return "Yerel sunucu auth istiyorsa buraya yaz. Anahtarlar diske ayrı yazılır, bir daha okunmaz.";
+    }
+    return "Bu sağlayıcının API anahtarı. Anahtarlar diske ayrı yazılır, bir daha okunmaz.";
+  }
+
   // --- model ------------------------------------------------------------
 
   function drawModel() {
     const pane = panes.model;
     pane.textContent = "";
-    head(pane, "Model", "Sağlayıcı, model ve düşünme derinliği.");
+    head(pane, "Model", "Sağlayıcı, anahtar, model ve bağlam — hepsi burada.");
 
     const chosen = () => patch.provider || state.provider;
     const picker = el("div", "choices");
@@ -867,34 +919,52 @@ const Settings = (() => {
     // sunucu ya da başka bir OpenAI-uyumlu uç için elle düzenlenebilir.
     const url = text((patch.model || {}).base_url ?? state.model.base_url ?? "",
                      (v) => set("model", "base_url", v.trim()));
-    url.placeholder = t("https://… ya da http://localhost:1234/v1");
-    pane.append(field("Adres (base URL)",
-      "Özel/yerel bir OpenAI-uyumlu uç için düzenle. Boşsa sağlayıcının " +
-      "resmî adresi kullanılır.", url));
+    url.placeholder = isLocalBase()
+      ? t("http://localhost:1234/v1")
+      : t("https://…");
+    pane.append(field("Adres (base URL)", baseUrlHint(), url));
 
-    // API anahtarı / token: her sağlayıcı için — yerel dahil. LM Studio ya
-    // da özel bir uç auth istiyorsa buraya. Anahtar hangi ortam değişkenine
-    // yazılacaksa (yoksa OPENAI_API_KEY) oraya gidiyor; backend Bearer olarak
-    // gönderiyor. Boş bırakılırsa kayıtlı anahtara dokunulmuyor.
+    // API anahtarı: yalnız seçili sağlayıcı (ayrı Anahtarlar sayfası yok).
+    const pMeta = chosenProvider();
     const authKey = el("input", "input-text");
     authKey.type = "password";
     authKey.autocomplete = "off";
-    authKey.placeholder = t("Gerekiyorsa API anahtarı / token");
+    const keyVar = (patch.model || {}).api_key_env ?? state.model.api_key_env
+      ?? (pMeta && pMeta.env) ?? null;
+    const keyKnown = !!(pMeta && pMeta.has_key);
+    authKey.placeholder = keyKnown
+      ? t("Kayıtlı — değiştirmek için yaz")
+      : t("Yapıştır");
     authKey.addEventListener("input", () => {
       const v = authKey.value;
-      if (!v) return;
-      const env = (patch.model || {}).api_key_env ?? state.model.api_key_env ?? "OPENAI_API_KEY";
+      const env = keyVar || "OPENAI_API_KEY";
       patch.keys = patch.keys || {};
+      // Boş = silme isteği (keys.json'dan düşer).
       patch.keys[env] = v;
-      // Yerel sağlayıcıda env boşsa, backend'in okuyabilmesi için ayarla.
       if (!((patch.model || {}).api_key_env ?? state.model.api_key_env)) {
         set("model", "api_key_env", env);
       }
       say("Kaydedilmedi");
     });
-    pane.append(field("API anahtarı",
-      "LM Studio / özel bir uç kimlik doğrulaması istiyorsa buraya yaz. " +
-      "Anahtarlar diske ayrı yazılır, bir daha okunmaz.", authKey));
+    const keyLabel = pMeta && pMeta.label
+      ? (pMeta.label + (keyKnown ? " ✓" : ""))
+      : t("API anahtarı");
+    pane.append(field(keyLabel, apiKeyHintKey(), authKey));
+    if (pMeta && pMeta.env && !isLocalBase()) {
+      const note = authKey.parentElement && authKey.parentElement.querySelector(".field-hint");
+      if (note) {
+        const kabuk = pMeta.from_env
+          ? (" · " + t("Kabuk ortamından geliyor"))
+          : "";
+        note.textContent = t(apiKeyHintKey())
+          + " · " + (pMeta.hint || "") + " · " + pMeta.env + kabuk;
+      }
+    } else if (pMeta && pMeta.from_env) {
+      const note = authKey.parentElement && authKey.parentElement.querySelector(".field-hint");
+      if (note) {
+        note.textContent = t("Kabuk ortamından geliyor") + " (" + pMeta.env + ")";
+      }
+    }
 
     const effort = el("select", "input-text");
     for (const level of ["low", "medium", "high", "xhigh", "max"]) {
@@ -917,6 +987,47 @@ const Settings = (() => {
       "Kapatmak yerel küçük modellerde daha kararlı sonuç veriyor",
       toggleBox((patch.model || {}).thinking ?? state.model.thinking,
                 (v) => set("model", "thinking", v))
+    ));
+
+    // Bağlam — ayrı sekme yok; seçili modelin penceresi burada.
+    pane.append(el("h3", "pane-sub", t("Bağlam")));
+    const window_ = number((patch.model || {}).context_window ?? state.model.context_window,
+                           (v) => set("model", "context_window", v));
+    const detect = el("button", "detect", t("Algıla"));
+    detect.type = "button";
+    detect.addEventListener("click", async () => {
+      detect.textContent = t("Soruluyor…");
+      let answer = {};
+      try {
+        answer = await (await fetch("/api/detect-window", { method: "POST" })).json();
+      } catch { /* aşağıda */ }
+      detect.textContent = t("Algıla");
+      if (answer.window) {
+        window_.value = answer.window;
+        set("model", "context_window", answer.window);
+      } else {
+        say("Sunucu pencere boyutunu bildirmiyor — elle gir", true);
+      }
+    });
+    const winRow = el("div", "with-action");
+    winRow.append(window_, detect);
+    pane.append(field(
+      "Bağlam penceresi (token)",
+      "Modelin gerçek sınırı. Fazla büyük yazmak sıkıştırmayı hiç tetiklememek, " +
+      "yani sunucunun istemin başını atması demek",
+      winRow
+    ));
+    pane.append(field(
+      "Tek yanıtta azami token",
+      "Küçük tutmak uzun cevapların ortasından kesilmesine yol açıyor",
+      number((patch.model || {}).max_tokens ?? state.model.max_tokens,
+             (v) => set("model", "max_tokens", v))
+    ));
+    pane.append(field(
+      "Geçmişte tutulan görüntü",
+      "Bir ekran görüntüsü ~1.5–4.8k token; eskiler metne çevriliyor",
+      number((patch.context || {}).keep_recent_images ?? state.context.keep_recent_images,
+             (v) => set("context", "keep_recent_images", Number(v)))
     ));
 
     pane.append(el("p", "pane-note",
@@ -976,9 +1087,11 @@ const Settings = (() => {
     if (!found.length) {
       // Sunucu listeyi vermiyorsa elle yazma yolu açık kalıyor.
       if (hint) {
-        hint.textContent = ((patch.model || {}).base_url ?? state.model.base_url)
+        const why = answer.error ? (" — " + answer.error) : "";
+        const base = ((patch.model || {}).base_url ?? state.model.base_url)
           ? t("Sunucuya ulaşılamadı ya da liste vermiyor — kimliği elle yaz")
           : t("Sunucu liste vermiyor — kimliği elle yaz");
+        hint.textContent = base + why;
       }
       return;
     }
@@ -1085,93 +1198,7 @@ const Settings = (() => {
     }
   }
 
-  // --- anahtarlar -------------------------------------------------------
-
-  function drawKeys() {
-    const pane = panes.keys;
-    pane.textContent = "";
-    head(pane, "Anahtarlar", "Sağlayıcı anahtarları — diske ayrı yazılır, geri okunmaz.");
-
-    const needs = state.providers.filter((p) => p.env);
-    for (const entry of needs) {
-      const input = el("input", "input-text");
-      input.type = "password";
-      input.placeholder = entry.has_key ? t("Kayıtlı — değiştirmek için yaz") : t("Yapıştır");
-      input.autocomplete = "off";
-      input.addEventListener("input", () => {
-        patch.keys = patch.keys || {};
-        patch.keys[entry.env] = input.value;
-        say("Kaydedilmedi");
-      });
-
-      const hint = entry.from_env
-        ? t("Kabuk ortamından geliyor") + " (" + entry.env + ")"
-        : entry.hint + " · " + entry.env;
-      pane.append(field(entry.label + (entry.has_key ? " ✓" : ""), hint, input));
-    }
-
-    pane.append(el("p", "pane-note",
-      t("Anahtarlar ") + state.state_dir + t("\\keys.json içinde tutuluyor ve " +
-      "bu sayfaya bir daha gönderilmiyor. Silmek için alanı boşaltıp kaydet.")));
-  }
-
-  // --- bağlam -----------------------------------------------------------
-
-  function drawLimits() {
-    const pane = panes.limits;
-    pane.textContent = "";
-    head(pane, "Bağlam", "Pencere boyutu, yanıt uzunluğu ve görüntü bütçesi.");
-
-    // Yanlış pencere ayarının belirtisi sinsi: sıkıştırma hiç tetiklenmiyor,
-    // sunucu istemin başını sessizce atıyor ve model kim olduğunu unutuyor.
-    // Tahmin ettirmek yerine sunucuya soruyoruz.
-    const window_ = number((patch.model || {}).context_window ?? state.model.context_window,
-                           (v) => set("model", "context_window", v));
-    const detect = el("button", "detect", t("Algıla"));
-    detect.type = "button";
-    detect.addEventListener("click", async () => {
-      detect.textContent = t("Soruluyor…");
-      let answer = {};
-      try {
-        answer = await (await fetch("/api/detect-window", { method: "POST" })).json();
-      } catch { /* aşağıda ele alınıyor */ }
-      detect.textContent = t("Algıla");
-
-      if (answer.window) {
-        window_.value = answer.window;
-        set("model", "context_window", answer.window);
-      } else {
-        say("Sunucu pencere boyutunu bildirmiyor — elle gir", true);
-      }
-    });
-
-    const row = el("div", "with-action");
-    row.append(window_, detect);
-    pane.append(field(
-      "Bağlam penceresi (token)",
-      "Modelin gerçek sınırı. Fazla büyük yazmak sıkıştırmayı hiç tetiklememek, " +
-      "yani sunucunun istemin başını atması demek",
-      row
-    ));
-
-    pane.append(field(
-      "Tek yanıtta azami token",
-      "Küçük tutmak uzun cevapların ortasından kesilmesine yol açıyor",
-      number((patch.model || {}).max_tokens ?? state.model.max_tokens,
-             (v) => set("model", "max_tokens", v))
-    ));
-
-    pane.append(field(
-      "Geçmişte tutulan görüntü",
-      "Bir ekran görüntüsü ~1.5–4.8k token; eskiler metne çevriliyor",
-      number((patch.context || {}).keep_recent_images ?? state.context.keep_recent_images,
-             (v) => set("context", "keep_recent_images", Number(v)))
-    ));
-
-    pane.append(el("p", "pane-note",
-      t("Pencere %75 dolunca konuşma özetlenip sürüyor; özet aynı anda kalıcı " +
-      "belleğe de yazılıyor, yani oturum kapansa da kaybolmuyor.")));
-  }
+  // Anahtarlar / Bağlam ayrı sekme değil: seçili sağlayıcıyla Model'de.
 
   async function loadRules(box, body) {
     let answer = {};
@@ -1291,15 +1318,28 @@ const Settings = (() => {
   function drawTasks(tasks) {
     const pane = panes.tasks;
     pane.textContent = "";
-    head(pane, "Görevler", "Zamanlanmış işler: ne, ne zaman, en son ne oldu.");
+    head(pane, "Görevler",
+      "Zamanlanmış işler — asıl yüzey ana ekran Görevler menüsü (liste + koşu geçmişi).");
+    const openMain = el("button", "job-act", t("Ana ekranda aç"));
+    openMain.type = "button";
+    openMain.addEventListener("click", () => {
+      if (window.JobsPanel) JobsPanel.open();
+      // Ayarlar panelini kapat
+      const settings = document.getElementById("settings");
+      if (settings) settings.hidden = true;
+    });
+    pane.append(openMain);
 
     const list = el("div", "rows");
     for (const task of tasks) {
+      const kosuyor = task.last_status === "koşuyor";
       const line = row({
         name: task.title,
         desc: task.prompt,
-        meta: task.enabled ? task.describe + " · " + short(task.next_run) : t("durdu"),
-        state: task.enabled ? "" : "off",
+        meta: kosuyor
+          ? t("Bu görev şu an çalışıyor")
+          : (task.enabled ? task.describe + " · " + short(task.next_run) : t("durdu")),
+        state: kosuyor ? "live" : (task.enabled ? "" : "off"),
         click: true,
         acts: [
           [t("Çalıştır"), () => loadTasks({ action: "run", id: task.id })],
@@ -1309,16 +1349,36 @@ const Settings = (() => {
         ],
       });
       line.addEventListener("click", () => detail(line, (box) => {
-        box.append(el("p", "job-prompt dim", task.prompt));
-        box.append(el("p", "job-prompt dim",
-          (task.enabled ? t("Sırada: ") + short(task.next_run) : t("Durduruldu")) +
-          (task.last_status ? t("  ·  Son: ") + task.last_status : "")));
-      }));
+        box.append(editTaskForm(task));
+        const durum = el("p", "job-prompt dim");
+        const parcalar = [];
+        if (kosuyor) parcalar.push(t("Bu görev şu an çalışıyor"));
+        else if (task.enabled) parcalar.push(t("Sırada: ") + short(task.next_run));
+        else parcalar.push(t("Durduruldu"));
+        if (task.last_run) parcalar.push(t("Son koşu: ") + short(task.last_run));
+        if (task.last_status && task.last_status !== "koşuyor") {
+          parcalar.push(t("Son: ") + task.last_status);
+        }
+        durum.textContent = parcalar.join("  ·  ");
+        box.append(durum);
+        if (task.last_child_id) {
+          const ac = el("button", "job-act", t("Raporu aç"));
+          ac.type = "button";
+          ac.addEventListener("click", (ev) => {
+            ev.stopPropagation();
+            if (typeof Viewer !== "undefined" && Viewer.page) {
+              Viewer.page("/gorev-rapor/" + encodeURIComponent(task.last_child_id) + "/",
+                          task.title || task.last_child_id);
+            }
+          });
+          box.append(ac);
+        }
+      }, "edit"));
       list.append(line);
     }
 
     const adder = row({ name: t("＋ Yeni görev"), state: "off", click: true });
-    adder.addEventListener("click", () => detail(adder, (box) => box.append(newTaskForm())));
+    adder.addEventListener("click", () => detail(adder, (box) => box.append(newTaskForm()), "new"));
     list.append(adder);
     pane.append(list);
 
@@ -1379,6 +1439,56 @@ const Settings = (() => {
       loadTasks(draft);
     });
     box.append(add);
+    return box;
+  }
+
+  function editTaskForm(task) {
+    const box = el("div");
+    const draft = {
+      action: "update",
+      id: task.id,
+      title: task.title || "",
+      prompt: task.prompt || "",
+      kind: task.kind || "every",
+      every_s: Number(task.every_s) || 3600,
+      at: task.at || "09:00",
+    };
+
+    box.append(field("Ad", "", text(draft.title, (v) => (draft.title = v), t("Ad"))));
+    box.append(field("Ne yapsın", "Tetiklenince yardımcıya gidecek metin (sohbet değil)",
+                     text(draft.prompt, (v) => (draft.prompt = v))));
+
+    const kind = el("select", "input-text");
+    kind.append(option("every", t("Belirli araliklarla"), draft.kind === "every"));
+    kind.append(option("daily", t("Her gun belirli saatte"), draft.kind === "daily"));
+    box.append(field("Tekrar", "", kind));
+
+    const slot = el("div", "with-action");
+    const every = number(Math.max(1, Math.round(draft.every_s / 60)),
+                         (v) => (draft.every_s = Number(v) * 60));
+    const at = text(draft.at, (v) => (draft.at = v));
+    function fillSlot() {
+      slot.textContent = "";
+      if (draft.kind === "daily") {
+        slot.append(at, el("span", "field-hint", t("Saat (HH:MM)")));
+      } else {
+        slot.append(every, el("span", "field-hint", t("Dakikada bir")));
+      }
+    }
+    fillSlot();
+    box.append(field("Aralık", "", slot));
+    kind.addEventListener("change", () => {
+      draft.kind = kind.value;
+      fillSlot();
+    });
+
+    const save = el("button", "job-act add", t("Kaydet"));
+    save.type = "button";
+    save.addEventListener("click", () => {
+      if (!String(draft.prompt || "").trim()) { say("Gorev metni bos", true); return; }
+      loadTasks(draft);
+    });
+    box.append(save);
     return box;
   }
 
@@ -2082,7 +2192,7 @@ const Settings = (() => {
       const kinds = el("div", "choices");
       const KINDS = [
         ["oauth", "Uzak — girişli", "adres yeter; kaydedince tarayıcıda giriş açılır"],
-        ["token", "Uzak — sabit token", "token dosyaya değil Anahtarlar'a yazılır"],
+        ["token", "Uzak — sabit token", "token dosyaya değil Model'e yazılır"],
         ["stdio", "Yerel komut", "npx / py gibi bir komut başlatılır (LM Studio biçimi)"],
       ];
       const nameBox = el("input", "input-text");
@@ -2091,7 +2201,7 @@ const Settings = (() => {
       urlBox.placeholder = "https://…/mcp";
       const tokenBox = el("input", "input-text");
       tokenBox.type = "password";
-      tokenBox.placeholder = t("token — Anahtarlar'a kaydedilir, dosyaya adı yazılır");
+      tokenBox.placeholder = t("token — Model'e kaydedilir, dosyaya adı yazılır");
       const cmdBox = el("input", "input-text");
       cmdBox.placeholder = t("komut ve argümanlar — ör. npx -y bir-mcp");
 
@@ -2172,7 +2282,7 @@ const Settings = (() => {
       box.append(el("p", "pane-note",
         t("Biçim Claude Code'unkiyle aynı (mcpServers): yerel sunucu için " +
         "command/args, uzak sunucu için url/headers. Gizli değeri dosyaya " +
-        "yazma — \"${AD}\" yaz, değeri Anahtarlar sekmesine AD adıyla ekle.")));
+        "yazma — \"${AD}\" yaz, değeri Model sekmesindeki anahtar alanına AD adıyla ekle.")));
       const area = el("textarea", "input-text input-area");
       area.rows = 12;
       area.spellcheck = false;
@@ -2308,6 +2418,36 @@ const Settings = (() => {
       }
       surumKutu.append(sonuc);
     });
+
+    pane.append(field(
+      "Yerel model optimizasyonu",
+      "Açıkken: diğer modelleri boşaltır, tek kopya tutar, VRAM/model boyutuna göre bağlamı düşürür. Kapalıysa normal kullanım.",
+      toggleBox(
+        (patch.model || {}).local_optimize ?? state.model.local_optimize ?? false,
+        (v) => {
+          set("model", "local_optimize", !!v);
+          if (v) {
+            set("model", "max_calls", 1);
+            set("context", "max_agents", 1);
+          }
+        }
+      )
+    ));
+
+    const gpus = ((state.hardware || {}).gpu) || [];
+    if (gpus.length) {
+      const info = el("div", "field-hint");
+      info.textContent = gpus.map((g) =>
+        `${g.name}: ${g.free_mb} / ${g.total_mb} MB boş`
+      ).join(" · ");
+      pane.append(field("Ekran kartı", "", info));
+    } else {
+      pane.append(field(
+        "Ekran kartı",
+        "nvidia-smi yok — VRAM otomatik ölçülemeyecek; yine de diğer modeller boşaltılır",
+        el("span", null, "—")
+      ));
+    }
 
     pane.append(field(
       "Aynı anda model isteği",

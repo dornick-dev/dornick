@@ -26,8 +26,21 @@ INSTALL_HINT = "Sistem tepsisi için: pip install 'neocp[tray]'"
 
 # X'e basılınca iş sürüyorsa gösterilen balon. Yalnızca İLK seferde —
 # her gizlenişte bildirim basmak rahatsız eder, bir kez öğretmek yeter.
-ARKA_PLAN_NOTU = ("neo arka planda çalışmaya devam ediyor — "
-                  "tepsiden açabilirsin")
+ARKA_PLAN_NOTU = ("neo arka planda — zamanlanmış görevler ve otomasyonlar "
+                  "çalışmaya devam eder; tepsiden açabilirsin")
+
+# Zamanlanmış / otomasyon işi bittiğinde Windows tepsi bildirimi.
+GOREV_BITTI = "Görev tamamlandı: {title}"
+GOREV_HATA = "Görev hata verdi: {title}"
+
+
+def gorev_bildirim_metni(title: str, *, ok: bool) -> str:
+    """Koşu bitiş balonu metni — test edilebilir, UI'dan bağımsız."""
+    sablon = GOREV_BITTI if ok else GOREV_HATA
+    ad = (title or "görev").strip() or "görev"
+    if len(ad) > 80:
+        ad = ad[:79] + "…"
+    return sablon.format(title=ad)
 
 # Tepsiden Çıkış seçildi ama ajan meşgul: yarım kalacak işin onayı.
 CIKIS_SORUSU = ("Bir iş sürüyor; çıkarsan yarım kalır (kaldığın yerden "
@@ -57,6 +70,41 @@ def cikis_karari(mesgul: bool, onayla: Callable[[str], bool] | None) -> bool:
         return bool(onayla(CIKIS_SORUSU))
     except Exception:
         return True
+
+
+class Kapanis:
+    """X ile "Çıkış"ı ayıran bayrak.
+
+    İkisi de pencere katmanının AYNI olayına (pywebview `closing`) düşüyor:
+    X'e basmak da, `destroy()` çağırmak da. Olay tek başına niyeti
+    taşımadığı için, ayrımı burada tutulan bayrak yapıyor.
+
+    Bayrak olmadan tepsideki Çıkış sessizce gizlemeye düşüyordu: kullanıcı
+    onay penceresinde Evet diyor, `destroy()` çağrılıyor, `closing` kancası
+    "bu bir X'tir" varsayıp kapanışı iptal ediyor. Program yaşamaya devam
+    ediyor — üstelik tepsi simgesi çoktan kapandığı için geri de gelinemiyor.
+    """
+
+    def __init__(self, gizle: Callable[[], None], yok_et: Callable[[], None]) -> None:
+        self._gizle = gizle
+        self._yok_et = yok_et
+        self._cikiliyor = False
+
+    @property
+    def cikiliyor(self) -> bool:
+        return self._cikiliyor
+
+    def cik(self) -> None:
+        """Tepsiden Çıkış: bayrağı kaldır, sonra pencereyi yok et."""
+        self._cikiliyor = True
+        self._yok_et()
+
+    def kapanabilir_mi(self) -> bool:
+        """`closing` olayının dönüş değeri: True kapan, False iptal et."""
+        if self._cikiliyor:
+            return True
+        self._gizle()
+        return False
 
 
 def available() -> bool:
@@ -96,6 +144,7 @@ class Tray:
         title: str = "neo",
         busy: Callable[[], bool] | None = None,
         confirm: Callable[[str], bool] | None = None,
+        jobs: Callable[[], None] | None = None,
     ) -> None:
         self.show = show
         self.hide = hide
@@ -106,6 +155,8 @@ class Tray:
         # verilmezse eski davranış (sorgusuz çıkış) aynen durur.
         self.busy = busy
         self.confirm = confirm
+        # Tepsiden Görevler: pencereyi açıp HUD Görevler panelini getirir.
+        self.jobs = jobs
         self._icon: Any = None
         self._thread: threading.Thread | None = None
         # Bir kez gösterilmiş balonlar. "Arka planda çalışmaya devam
@@ -127,6 +178,7 @@ class Tray:
             menu=pystray.Menu(
                 # İlk madde varsayılan: simgeye çift tıklayınca bu çalışıyor.
                 pystray.MenuItem("Göster", self._show, default=True),
+                pystray.MenuItem("Görevler", self._jobs),
                 pystray.MenuItem("Gizle", self._hide),
                 pystray.Menu.SEPARATOR,
                 pystray.MenuItem("Çıkış", self._quit),
@@ -175,6 +227,10 @@ class Tray:
 
     def _show(self, *_args: Any) -> None:
         _safely(self.show)
+
+    def _jobs(self, *_args: Any) -> None:
+        # Ayrı `jobs` yoksa en azından pencereyi göster — menü kırılmasın.
+        _safely(self.jobs or self.show)
 
     def _hide(self, *_args: Any) -> None:
         _safely(self.hide)

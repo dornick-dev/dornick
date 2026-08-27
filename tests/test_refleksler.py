@@ -418,9 +418,9 @@ def test_the_prompt_separates_syntax_checking_from_running(core: str) -> None:
 def test_the_prompt_gives_the_real_web_verification_sequence(core: str) -> None:
     """"200 döndü" bir doğrulama değil: boş bir sayfa da 200 döner."""
     assert "200 dönmesine bakma" in core
-    for adim in ("`konsol`", "`ag`", "`read`"):
-        assert adim in core, adim
-    assert 'hata varken "çalışıyor" deme' in core
+    assert "TEK doğrulama turu" in core or "`read`" in core
+    assert "`konsol`" in core and "`ag`" in core
+    assert '"çalışıyor" deme' in core
     # Sayfaya yama atmak düzeltmek değil: yama yenileyince gider.
     assert "kaynağı düzelt" in core
 

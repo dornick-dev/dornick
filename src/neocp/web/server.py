@@ -14,6 +14,7 @@ oturumları var — dışarı açılacak bir yüzey değil.
 from __future__ import annotations
 
 import asyncio
+import html
 import json
 import os
 import queue
@@ -22,7 +23,7 @@ import tempfile
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, quote, urlparse
 from typing import Any, Protocol
 
 from .. import (listen, ortam, sandbox, schedule as scheduling, settings,
@@ -37,6 +38,24 @@ STATIC = Path(__file__).parent / "static"
 HEARTBEAT_S = 15.0
 QUEUE_LIMIT = 500
 
+
+def _attachment_disposition(title: str, suffix: str = ".html") -> str:
+    """Content-Disposition: HTTP header latin-1; Türkçe başlık ASCII + RFC5987.
+
+    `filename=` yalnız ASCII; `filename*=UTF-8''…` yüzde kodlu gerçek ad.
+    """
+    raw = str(title or "download").strip() or "download"
+    if suffix and not raw.lower().endswith(suffix.lower()):
+        display = raw + suffix
+    else:
+        display = raw
+    ascii_name = re.sub(r"[^A-Za-z0-9._-]+", "_", display).strip("._") or "download"
+    if suffix and not ascii_name.lower().endswith(suffix.lower()):
+        ascii_name = ascii_name + suffix
+    return (
+        f'attachment; filename="{ascii_name}"; '
+        f"filename*=UTF-8''{quote(display, safe='')}"
+    )
 # Kullanıcının hedef panelinden elle yazdığı maddenin tavanı. Panelde tek
 # satır olarak duruyor; roman uzunluğunda bir madde ne panelde ne de
 # modelin bağlamında işe yarar.
@@ -73,6 +92,8 @@ ASSETS = {
     "/listen.js": "text/javascript; charset=utf-8",
     "/camera.js": "text/javascript; charset=utf-8",
     "/drop.js": "text/javascript; charset=utf-8",
+    "/workflow.js": "text/javascript; charset=utf-8",
+    "/jobs.js": "text/javascript; charset=utf-8",
 }
 
 # Arayüze akıtılan meta olaylar. Gerisi (oturum başlangıcı, izin kaydı gibi)
@@ -97,6 +118,8 @@ STREAMED_NOTES = frozenset(
         "queued",
         # Artifact yayınlandı/güncellendi: sohbette kart olarak görünür.
         "artifact",
+        # Büyük iş planı: onay kartı.
+        "plan",
     }
 )
 
@@ -269,6 +292,53 @@ def _plain_blocks(content: Any) -> list[str]:
         return []
     return [str(b.get("text") or "") for b in content
             if isinstance(b, dict) and b.get("type") == "text" and b.get("text")]
+
+
+def _rapor_html(metin: str) -> str:
+    """Görev raporunu güvenli HTML'e çevirir (hafif markdown).
+
+    Tam markdown motoru yok; başlık / liste / link / kod yeter — rapor
+    sohbete yapışmak yerine Viewer'da okunur.
+    """
+    out: list[str] = []
+    in_ul = False
+    for ham in (metin or "").replace("\r\n", "\n").split("\n"):
+        s = ham.rstrip()
+        if s.startswith("### "):
+            if in_ul:
+                out.append("</ul>"); in_ul = False
+            out.append("<h3>" + _inline_md(s[4:]) + "</h3>")
+        elif s.startswith("## "):
+            if in_ul:
+                out.append("</ul>"); in_ul = False
+            out.append("<h2>" + _inline_md(s[3:]) + "</h2>")
+        elif re.match(r"^[-*]\s+", s):
+            if not in_ul:
+                out.append("<ul>"); in_ul = True
+            out.append("<li>" + _inline_md(re.sub(r"^[-*]\s+", "", s)) + "</li>")
+        elif not s:
+            if in_ul:
+                out.append("</ul>"); in_ul = False
+            out.append("<br>")
+        else:
+            if in_ul:
+                out.append("</ul>"); in_ul = False
+            out.append("<p>" + _inline_md(s) + "</p>")
+    if in_ul:
+        out.append("</ul>")
+    return "\n".join(out) or "<p><i>(boş rapor)</i></p>"
+
+
+def _inline_md(s: str) -> str:
+    t = html.escape(s)
+    t = re.sub(r"`([^`]+)`", r"<code>\1</code>", t)
+    t = re.sub(r"\*\*([^*]+)\*\*", r"<strong>\1</strong>", t)
+    t = re.sub(
+        r"\[([^\]]+)\]\((https?://[^)\s]+)\)",
+        r'<a href="\2" target="_blank" rel="noopener">\1</a>',
+        t,
+    )
+    return t
 
 
 def _search_files(root: Path, want: str, *, limit: int = SEARCH_LIMIT) -> list[dict[str, Any]]:
@@ -645,6 +715,18 @@ class _Handler(BaseHTTPRequestHandler):
             self._json(self._controller_call("gorevler") or {"gorevler": [], "kosan": 0})
         elif route == "/api/gorevler/dokum":
             self._gorev_dokumu()
+        elif route == "/api/gorevler/rapor":
+            self._gorev_raporu()
+        elif route == "/api/jobs":
+            self._jobs_list()
+        elif route == "/api/jobs/runs":
+            self._jobs_runs()
+        elif route == "/api/workflows":
+            self._workflows_list()
+        elif route == "/api/plans":
+            self._plans_list()
+        elif route.startswith("/gorev-rapor/"):
+            self._gorev_rapor_sayfasi(route)
         elif route == "/api/degisiklikler":
             self._degisiklikler()
         elif route == "/api/degisiklikler/fark":
@@ -700,6 +782,15 @@ class _Handler(BaseHTTPRequestHandler):
             return
         if route == "/api/tasks":
             self._tasks(body)
+            return
+        if route == "/api/jobs":
+            self._jobs_action(body)
+            return
+        if route == "/api/workflows":
+            self._workflows_action(body)
+            return
+        if route == "/api/plans":
+            self._plans_action(body)
             return
         if route == "/api/rules":
             self._rules(body)
@@ -777,6 +868,15 @@ class _Handler(BaseHTTPRequestHandler):
             result = self._controller_call("gorev_durdur", str((body or {}).get("id") or ""))
             self._json(result if isinstance(result, dict)
                        else {"ok": False, "error": "Görev durdurma desteklenmiyor."})
+            return
+        if route == "/api/gorevler/devam":
+            result = self._controller_call(
+                "gorev_devam",
+                str((body or {}).get("id") or ""),
+                str((body or {}).get("message") or ""),
+            )
+            self._json(result if isinstance(result, dict)
+                       else {"ok": False, "error": "Görev sürdürme desteklenmiyor."})
             return
         if route == "/api/degisiklikler/geri":
             self._degisiklik_geri(body)
@@ -1113,7 +1213,7 @@ class _Handler(BaseHTTPRequestHandler):
         if wanted:
             config = replace(config, model=replace(config.model, **wanted))
 
-        self._json({"models": settings.scan_models(config)})
+        self._json(settings.scan_models_result(config))
 
     # -- izlenen kameralar ------------------------------------------------
 
@@ -1232,6 +1332,12 @@ class _Handler(BaseHTTPRequestHandler):
 
         try:
             if action == "add":
+                # Akış kimliği verildiyse görev otomasyondur. Bu iki alan
+                # eskiden burada DÜŞÜYORDU: zamanlayıcı, koşucu ve arayüz
+                # `kind_ui`/`workflow_id` biliyordu ama onları yazabilen
+                # hiçbir yol yoktu — otomasyon kurulamıyor, süzgeç hep boş
+                # kalıyordu.
+                akis = str(body.get("workflow_id") or "").strip()
                 book.add(
                     scheduling.Task(
                         id="",
@@ -1240,6 +1346,8 @@ class _Handler(BaseHTTPRequestHandler):
                         kind=str(body.get("kind") or "every"),
                         every_s=int(body.get("every_s") or 3600),
                         at=str(body.get("at") or "09:00"),
+                        kind_ui="automation" if akis else "simple",
+                        workflow_id=akis,
                     )
                 )
             elif action == "update":
@@ -1248,19 +1356,239 @@ class _Handler(BaseHTTPRequestHandler):
             elif action == "remove":
                 book.remove(task_id)
             elif action == "run":
-                # Elle çalıştırma: zamanı beklemeden kuyruğa bırakıyor.
+                # Elle çalıştırma: zamanı beklemeden arka plan yardımcı.
                 task = book.get(task_id)
                 controller = getattr(self.server, "controller", None)
                 if task is None or controller is None:
                     self.send_error(404, "Görev yok")
                     return
-                book.note_run(task_id, "elle çalıştırıldı")
-                controller.submit(task.prompt)
+                if hasattr(controller, "run_scheduled"):
+                    result = controller.run_scheduled(task)
+                    if not isinstance(result, dict) or not result.get("ok"):
+                        self._json({
+                            "ok": False,
+                            "error": str((result or {}).get("error") or "başlatılamadı"),
+                            "tasks": scheduling.payload(book.all()),
+                        })
+                        return
+                else:
+                    book.note_run(task_id, "elle çalıştırıldı")
+                    controller.submit(task.prompt)
+            elif action in ("missed_run", "missed_skip"):
+                result = self._controller_call(
+                    "resolve_missed",
+                    "run" if action == "missed_run" else "skip",
+                )
+                if not isinstance(result, dict) or not result.get("ok"):
+                    self._json({
+                        "ok": False,
+                        "error": str((result or {}).get("error") or "işlenemedi"),
+                        "tasks": scheduling.payload(book.all()),
+                    })
+                    return
         except (ValueError, TypeError) as exc:
             self._json({"ok": False, "error": str(exc), "tasks": scheduling.payload(book.all())})
             return
 
         self._json({"ok": True, "tasks": scheduling.payload(book.all())})
+
+    def _jobs_list(self) -> None:
+        """Ana ekran Görevler: zamanlanmış işler + son koşum özeti."""
+        from .. import task_runs
+
+        book = getattr(self.server, "schedule", None)
+        config = getattr(self.server, "config", None)
+        if book is None or config is None:
+            self._json({"ok": False, "error": "zamanlayıcı yok", "tasks": []})
+            return
+        rows = []
+        for task in scheduling.payload(book.all()):
+            tid = task.get("id") or ""
+            runs = []
+            try:
+                runs = [task_runs.to_dict(r) for r in
+                        task_runs.list_runs(config.state_dir, tid, limit=5)]
+            except Exception:
+                runs = []
+            task["recent_runs"] = runs
+            rows.append(task)
+        self._json({"ok": True, "tasks": rows})
+
+    def _jobs_runs(self) -> None:
+        """Tek görevin koşum arşivi: ?id=<task_id>&run=<run_id?>"""
+        from .. import task_runs
+
+        config = getattr(self.server, "config", None)
+        if config is None:
+            self._json({"ok": False, "error": "yapılandırma yok"})
+            return
+        q = parse_qs(urlparse(self.path).query)
+        tid = (q.get("id") or [""])[0]
+        rid = (q.get("run") or [""])[0]
+        if not tid:
+            self._json({"ok": False, "error": "id gerekli"})
+            return
+        try:
+            if rid:
+                run = task_runs.get_run(config.state_dir, tid, rid)
+                if run is None:
+                    self._json({"ok": False, "error": "koşum yok"})
+                    return
+                self._json({"ok": True, "run": task_runs.to_dict(run)})
+                return
+            runs = [task_runs.to_dict(r) for r in
+                    task_runs.list_runs(config.state_dir, tid, limit=80)]
+            self._json({"ok": True, "runs": runs})
+        except Exception as exc:
+            self._json({"ok": False, "error": str(exc)})
+
+    def _jobs_action(self, body: dict[str, Any]) -> None:
+        """Ana ekrandan Çalıştır / güncelle — /api/tasks ile aynı defter."""
+        self._tasks(body)
+
+    def _workflows_list(self) -> None:
+        from .. import workflows
+
+        config = getattr(self.server, "config", None)
+        if config is None:
+            self._json({"ok": False, "workflows": []})
+            return
+        rows = []
+        for wf in workflows.list_all(config.state_dir):
+            rows.append({
+                "id": wf.id, "title": wf.title,
+                "nodes": len(wf.nodes), "edges": len(wf.edges),
+                "updated": wf.updated,
+            })
+        self._json({"ok": True, "workflows": rows})
+
+    def _workflows_action(self, body: dict[str, Any]) -> None:
+        from .. import workflows
+
+        config = getattr(self.server, "config", None)
+        if config is None:
+            self._json({"ok": False, "error": "yapılandırma yok"})
+            return
+        action = str((body or {}).get("action") or "").strip()
+        try:
+            if action == "get":
+                wf = workflows.get(config.state_dir, str(body.get("id") or ""))
+                if wf is None:
+                    self._json({"ok": False, "error": "akış yok"})
+                    return
+                self._json({"ok": True, "workflow": workflows.to_dict(wf)})
+                return
+            if action == "save":
+                payload = body.get("workflow") or body
+                wf = workflows.save(config.state_dir, payload)
+                # Arayüzden kaydedilen akış da hafızaya girsin: kayıt yolu
+                # araca göre değişirse, "daha önce yapmıştım" anı bazen
+                # geliyor bazen gelmiyor olurdu.
+                from .. import workflow_mind
+                workflow_mind.akisi_hatirla(getattr(self.server, "mind", None), wf)
+                self._json({"ok": True, "workflow": workflows.to_dict(wf)})
+                return
+            if action == "remove":
+                ok = workflows.remove(config.state_dir, str(body.get("id") or ""))
+                self._json({"ok": ok})
+                return
+            if action == "run":
+                # Elle çalıştırma, zamanlayıcının kullandığı YOLUN AYNISI:
+                # takvimsiz bir Task ile `run_scheduled`. Böyle olması şart —
+                # elle koşan akış ile zamanlı koşan akış farklı yollardan
+                # giderse ikisi ayrı ayrı bozulur ve biri çalışırken diğeri
+                # çalışmaz. Kimliksiz Task defteri kirletmiyor: `mark_running`
+                # ve `note_run` boş id'de hiçbir şey yazmıyor.
+                wid = str(body.get("id") or "")
+                controller = getattr(self.server, "controller", None)
+                if controller is None or not hasattr(controller, "run_scheduled"):
+                    self._json({"ok": False, "error": "koşturucu yok"})
+                    return
+                from ..schedule import Task
+                gecici = Task(id="", title=wid, prompt=".", kind_ui="automation",
+                              workflow_id=wid)
+                result = controller.run_scheduled(gecici)
+                self._json(result if isinstance(result, dict)
+                           else {"ok": False, "error": "koşturulamadı"})
+                return
+            self._json({"ok": False, "error": "bilinmeyen eylem"})
+        except Exception as exc:
+            self._json({"ok": False, "error": f"{type(exc).__name__}: {exc}"})
+
+    def _plans_list(self) -> None:
+        from .. import plans as plan_store
+
+        config = getattr(self.server, "config", None)
+        if config is None:
+            self._json({"ok": True, "plans": []})
+            return
+        self._json({"ok": True, "plans": plan_store.listing(config.state_dir)})
+
+    def _plans_action(self, body: dict[str, Any]) -> None:
+        from .. import plans as plan_store
+
+        config = getattr(self.server, "config", None)
+        if config is None:
+            self._json({"ok": False, "error": "yapılandırma yok"})
+            return
+        action = str((body or {}).get("action") or "").strip()
+        try:
+            if action == "create":
+                plan = plan_store.create(
+                    config.state_dir,
+                    title=str(body.get("title") or "Plan"),
+                    steps=body.get("steps") or [],
+                )
+                self._json({"ok": True, "plan": plan_store.to_dict(plan)})
+                # SSE: arayüz Plan kartını çizsin.
+                hub = getattr(self.server, "hub", None)
+                if hub is not None:
+                    hub.emit({"type": "plan", **plan_store.to_dict(plan)})
+                return
+            if action == "update":
+                plan = plan_store.update(
+                    config.state_dir, str(body.get("id") or ""),
+                    status=body.get("status"),
+                    steps=body.get("steps"),
+                    title=body.get("title"),
+                )
+                if plan is None:
+                    self._json({"ok": False, "error": "plan yok"})
+                    return
+                self._json({"ok": True, "plan": plan_store.to_dict(plan)})
+                hub = getattr(self.server, "hub", None)
+                if hub is not None:
+                    hub.emit({"type": "plan", **plan_store.to_dict(plan)})
+                return
+            if action == "approve":
+                plan = plan_store.update(
+                    config.state_dir, str(body.get("id") or ""),
+                    status="onaylandi")
+                if plan is None:
+                    self._json({"ok": False, "error": "plan yok"})
+                    return
+                # Onay → ajana devam notu.
+                controller = getattr(self.server, "controller", None)
+                if controller is not None and hasattr(controller, "submit"):
+                    controller.submit(
+                        f"[Plan onaylandı · {plan.id}] {plan.title}. "
+                        f"Adımları uygula:\n" + "\n".join(
+                            f"- {s.get('text') or s}" for s in (plan.steps or [])),
+                        siraya=True)
+                self._json({"ok": True, "plan": plan_store.to_dict(plan)})
+                hub = getattr(self.server, "hub", None)
+                if hub is not None:
+                    hub.emit({"type": "plan", **plan_store.to_dict(plan)})
+                return
+            if action == "cancel":
+                plan = plan_store.update(
+                    config.state_dir, str(body.get("id") or ""),
+                    status="iptal")
+                self._json({"ok": True, "plan": plan_store.to_dict(plan) if plan else None})
+                return
+            self._json({"ok": False, "error": "bilinmeyen eylem"})
+        except Exception as exc:
+            self._json({"ok": False, "error": f"{type(exc).__name__}: {exc}"})
 
     # -- hedef yığını -----------------------------------------------------
 
@@ -1808,6 +2136,75 @@ class _Handler(BaseHTTPRequestHandler):
         # Uzun bir koşuda yüzlerce adım olabiliyor; son 200 yeter.
         self._json({"ok": True, "oturum": sid, "adimlar": adimlar[-200:]})
 
+    def _gorev_raporu(self) -> None:
+        """Tam yardımcı/iş metni: `?id=c:<cid>` — paneller Viewer'a açar."""
+        result = self._controller_call(
+            "gorev_rapor",
+            parse_qs(urlparse(self.path).query).get("id", [""])[0],
+        )
+        self._json(result if isinstance(result, dict)
+                   else {"ok": False, "error": "Rapor bu köprüde yok."})
+
+    def _gorev_rapor_sayfasi(self, route: str) -> None:
+        """Artifact benzeri sayfa: /gorev-rapor/<cid>/ → HTML rapor."""
+        cid = route[len("/gorev-rapor/"):].strip("/")
+        # URL'de yalnız ham id; API tarafı c: öneki de kabul eder.
+        result = self._controller_call("gorev_rapor", cid)
+        if not isinstance(result, dict) or not result.get("ok"):
+            self.send_error(404, str((result or {}).get("error") or "Rapor yok"))
+            return
+        title = html.escape(str(result.get("title") or "Rapor"))
+        metin = str(result.get("metin") or "")
+        body = _rapor_html(metin)
+        deliverable = result.get("deliverable") if isinstance(result.get("deliverable"), dict) else None
+        app_block = ""
+        if deliverable and deliverable.get("kind") == "app" and deliverable.get("url"):
+            app_url = html.escape(str(deliverable["url"]))
+            app_block = (
+                f'<p class="cta"><a class="btn" href="{app_url}" target="_blank" rel="noopener">'
+                f"Canlı uygulamayı aç</a></p>"
+                f'<iframe class="live" src="{app_url}" title="Canlı uygulama"></iframe>'
+            )
+        elif deliverable and deliverable.get("kind") == "artifact" and deliverable.get("url"):
+            art = html.escape(str(deliverable["url"]))
+            app_block = (
+                f'<p class="cta"><a class="btn" href="{art}">Yayınlanan raporu aç</a></p>'
+            )
+        page = (
+            "<!doctype html><html lang=tr><head><meta charset=utf-8>"
+            f"<title>{title}</title>"
+            "<style>"
+            "html,body{margin:0;background:#0b1218;color:#dceefc;"
+            "font:15px/1.6 system-ui,Segoe UI,sans-serif}"
+            "html{scrollbar-width:thin;scrollbar-color:rgba(79,227,255,.35) transparent}"
+            "::-webkit-scrollbar{width:8px;height:8px}"
+            "::-webkit-scrollbar-thumb{background:rgba(79,227,255,.3);border-radius:4px}"
+            "main{max-width:960px;margin:0 auto;padding:28px 22px 48px}"
+            "h1{font:600 22px/1.3 system-ui;margin:0 0 8px;color:#eaf6ff}"
+            ".meta{font:12px ui-monospace,Consolas,monospace;color:#7fa0c0;"
+            "margin:0 0 18px}"
+            ".cta{margin:0 0 16px}"
+            ".btn{display:inline-block;padding:8px 14px;border-radius:8px;"
+            "background:#4fe3ff22;color:#4fe3ff;text-decoration:none;font:600 13px system-ui}"
+            ".btn:hover{background:#4fe3ff33}"
+            "iframe.live{width:100%;height:min(70vh,720px);border:1px solid #1e3a4c;"
+            "border-radius:10px;background:#061018;margin:0 0 22px}"
+            ".rapor{white-space:pre-wrap;word-break:break-word}"
+            ".rapor h2{font:600 17px/1.3 system-ui;margin:1.4em 0 .5em;color:#a8e8ff}"
+            ".rapor h3{font:600 15px/1.3 system-ui;margin:1.2em 0 .4em;color:#a8e8ff}"
+            ".rapor ul{padding-left:1.2em;margin:.4em 0}"
+            ".rapor a{color:#4fe3ff}"
+            ".rapor code{font:13px ui-monospace,Consolas,monospace;"
+            "background:#05121d;padding:1px 5px;border-radius:4px}"
+            "</style></head><body><main>"
+            f"<h1>{title}</h1>"
+            f"<p class=meta>{html.escape(str(result.get('id') or ''))}</p>"
+            f"{app_block}"
+            f"<div class=rapor>{body}</div>"
+            "</main></body></html>"
+        ).encode("utf-8")
+        self._send(200, "text/html; charset=utf-8", page)
+
     # -- değişiklik defteri ---------------------------------------------
 
     def _defter(self) -> Any:
@@ -1921,23 +2318,56 @@ class _Handler(BaseHTTPRequestHandler):
         })
 
     def _degisiklik_geri(self, body: dict[str, Any]) -> None:
-        """Son n değişikliği geri alır — `undo` aracının kullandığı yol.
+        """Değişiklik geri alır — `undo` aracının kullandığı yol.
 
-        Onay arayüzde (iki adımlı düğme). Burada tek güvence sayının
-        makul olması; gerisini defter kendisi denetliyor (görüntüsü olmayan
-        bir kayıt varsa HİÇBİR ŞEY geri alınmıyor).
+        Gövde seçenekleri:
+          * `{n}` — son n kayıt (tur undo)
+          * `{sira}` — tek kayıt (dosya Keep/Undo)
+          * `{siralar: [...]}` — birden fazla kayıt (Accept All dışı toplu undo)
+
+        Onay arayüzde. Görüntüsüz kayıtta defter hiçbir şey yazmaz (n yolu)
+        ya da o satırı reddeder (sira yolu).
         """
         defter = self._defter()
         if defter is None:
             self._json({"ok": False, "error": "Değişiklik defteri yok."})
             return
-        try:
-            n = int((body or {}).get("n") or 1)
-        except (TypeError, ValueError):
-            n = 1
-        n = max(1, min(n, 200))
-        yapilan, hata = defter.geri_al(n)
+        body = body or {}
         hub = getattr(self.server, "hub", None)
+        yapilan: list[str] = []
+        hata: str | None = None
+
+        if body.get("sira") is not None or body.get("siralar") is not None:
+            ham = body.get("siralar")
+            if ham is None:
+                ham = [body.get("sira")]
+            if not isinstance(ham, list) or not ham:
+                self._json({"ok": False, "error": "Geçersiz sira listesi."})
+                return
+            siralar: list[int] = []
+            for x in ham:
+                try:
+                    siralar.append(int(x))
+                except (TypeError, ValueError):
+                    self._json({"ok": False, "error": "Geçersiz sira."})
+                    return
+            # En yeniden eskiye: aynı dosyada üst üste kayıt varsa doğru sıra.
+            for sira in sorted(siralar, reverse=True):
+                parca, err = defter.geri_al_sira(sira)
+                yapilan.extend(parca)
+                if err:
+                    hata = err
+                    break
+        elif body.get("dosya"):
+            yapilan, hata = defter.geri_al_dosya(str(body.get("dosya") or ""))
+        else:
+            try:
+                n = int(body.get("n") or 1)
+            except (TypeError, ValueError):
+                n = 1
+            n = max(1, min(n, 200))
+            yapilan, hata = defter.geri_al(n)
+
         if hata:
             self._json({"ok": False, "error": hata, "yapilan": yapilan})
             return
@@ -2233,6 +2663,19 @@ class _Handler(BaseHTTPRequestHandler):
         except OSError:
             self.send_error(404, "Artifact okunamadı")
             return
+        # ?download=1 → dosya olarak indir (HTML standart teslimat).
+        want_dl = "download=1" in (urlparse(self.path).query or "")
+        if want_dl:
+            try:
+                meta = artifacts.read_meta(config.state_dir, artifact_id)
+            except artifacts.ArtifactError:
+                meta = {}
+            raw_name = str(meta.get("title") or artifact_id).strip() or artifact_id
+            self._send(
+                200, "text/html; charset=utf-8", body,
+                headers={"Content-Disposition": _attachment_disposition(raw_name, ".html")},
+            )
+            return
         self._send(200, "text/html; charset=utf-8", body)
 
     def _parcalar(self) -> list[str] | None:
@@ -2449,11 +2892,14 @@ class _Handler(BaseHTTPRequestHandler):
         body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
         self._send(200, "application/json; charset=utf-8", body)
 
-    def _send(self, status: int, content_type: str, body: bytes) -> None:
+    def _send(self, status: int, content_type: str, body: bytes,
+              headers: dict[str, str] | None = None) -> None:
         self.send_response(status)
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "no-store")
+        for key, value in (headers or {}).items():
+            self.send_header(key, value)
         self.end_headers()
         self.wfile.write(body)
 

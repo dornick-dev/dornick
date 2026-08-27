@@ -11,6 +11,8 @@ Dil.ekle({
   " · geliştirme": " · development",
   // Araya girme ve yardımcı onayı
   "araya girdi": "interjected",
+  "Araya alındı": "Interjected",
+  "İşleniyor": "Working it in",
   "yardımcı": "helper",
   // Karşılama
   "Ne yapmamı istersin?": "What would you like me to do?",
@@ -92,6 +94,10 @@ Dil.ekle({
   "Bağlantılar": "Connectors", "MCP sunucuları": "MCP servers",
   "Yetenekler": "Skills", "kendi araçların": "your own tools",
   "Yeni görev": "New task", "zamanlanmış iş": "scheduled job",
+  "Program kapalıyken zamanı geçmiş görevler var.":
+    "Some scheduled tasks were due while neo was closed.",
+  "Bu seferlik atla": "Skip this time",
+  "Şimdi yap": "Run now",
   "Listeden çıkar": "Remove from list",
   "Konuşulan": "Talking about", "Bağlamdan çıkar": "Remove from context",
   // Yetki
@@ -197,6 +203,13 @@ Dil.ekle({
   "Dosyayı aç": "Open file",
   "düzenleme": "edit", "yazma": "write", "okuma": "read", "dizin": "dir",
   "değişiklik": "change",
+  "Dosyayı aç": "Open file",
+  "Keep": "Keep",
+  "Undo": "Undo",
+  "Düzenle": "Edit",
+  "Yeniden gönder": "Resend",
+  "Yeniden üret": "Regenerate",
+  "Fark okunamadı.": "Could not read the diff.",
   "Diff yok — old/new gelmedi": "No diff — old/new missing",
   "(içerik aynı)": "(unchanged)",
   "dosya": "file",
@@ -234,6 +247,8 @@ Dil.ekle({
   "Yayınlıyor": "Publishing",
   "yayınlandı": "published", "güncellendi": "updated",
   "Aç": "Open", "Artifact": "Artifact",
+  "İndir": "Download", "Yazdır / PDF": "Print / PDF",
+  "Tıkla — sayfayı görüntüleyicide aç": "Click — open page in viewer",
   "Tıkla — sayfayı görüntüleyicide aç": "Click to open the page in the viewer",
   // Hedef paneli
   "Hedefler": "Goals",
@@ -243,6 +258,9 @@ Dil.ekle({
   "Planı uygula": "Apply plan",
   "Planı uygula.": "Apply the plan.",
   "Plan hazır — uygulamak yetki ister": "Plan ready — applying needs authority",
+  "Plan": "Plan", "Onayla": "Approve", "Düzenle": "Edit", "İptal": "Cancel",
+  "Otomasyon olarak kaydet": "Save as automation",
+  "Adımları düzenle (satır = adım)": "Edit steps (one per line)",
 });
 
 const $ = (id) => document.getElementById(id);
@@ -404,9 +422,63 @@ function line(kind, text) {
   const el = document.createElement("div");
   el.className = "line " + kind;
   if (text) el.textContent = text;
+  if (kind === "user" || kind === "agent") {
+    if (text) el._rawText = String(text);
+    attachMsgActs(el, kind);
+  }
   thread.append(el);
   scroll();
   return el;
+}
+
+function attachMsgActs(el, kind) {
+  const old = el.querySelector(".msg-acts");
+  if (old) old.remove();
+  const acts = document.createElement("div");
+  acts.className = "msg-acts";
+  if (kind === "user") {
+    const edit = document.createElement("button");
+    edit.type = "button";
+    edit.className = "msg-act";
+    edit.textContent = t("Düzenle");
+    edit.onclick = (ev) => {
+      ev.stopPropagation();
+      const raw = el._rawText || el.textContent || "";
+      input.value = raw;
+      input.focus();
+      input.dispatchEvent(new Event("input"));
+    };
+    const resend = document.createElement("button");
+    resend.type = "button";
+    resend.className = "msg-act";
+    resend.textContent = t("Yeniden gönder");
+    resend.onclick = (ev) => {
+      ev.stopPropagation();
+      if (busy || !ready) return;
+      const raw = (el._rawText || el.textContent || "").trim();
+      if (!raw) return;
+      post("/api/chat", { text: raw });
+      resumeFollow(false);
+    };
+    acts.append(edit, resend);
+  } else {
+    const regen = document.createElement("button");
+    regen.type = "button";
+    regen.className = "msg-act";
+    regen.textContent = t("Yeniden üret");
+    regen.onclick = (ev) => {
+      ev.stopPropagation();
+      if (busy || !ready) return;
+      let prev = el.previousElementSibling;
+      while (prev && !prev.classList.contains("user")) prev = prev.previousElementSibling;
+      const raw = prev && (prev._rawText || prev.textContent || "").trim();
+      if (!raw) return;
+      post("/api/chat", { text: raw });
+      resumeFollow(false);
+    };
+    acts.append(regen);
+  }
+  el.append(acts);
 }
 
 function shouldFoldAlert(text) {
@@ -476,7 +548,9 @@ async function loadTranscript(id) {
     // "**kalın**" ve backtick'leri çıplak gösteriyordu — canlı akışta
     // render edilen konuşma, geçmişten yüklenince bozuk görünüyordu.
     const el = line("agent", "");
+    el._rawText = t.text || "";
     Markdown.into(el, t.text || "");
+    attachMsgActs(el, "agent");
     el.classList.add("done");
   }
   scroll();
@@ -972,6 +1046,12 @@ function closeThought() {
           open = !open;
           box.textContent = open ? arsiv.join("\n\n———\n\n") : label;
           box.classList.toggle("open", open);
+          // Açılınca sayfa uzamasın diye CSS max-height + iç scroll;
+          // burada yalnızca kutuyu görünür alanda tut.
+          if (open) {
+            box.scrollTop = 0;
+            box.scrollIntoView({ block: "nearest", behavior: "smooth" });
+          }
         };
       }
     }
@@ -980,13 +1060,10 @@ function closeThought() {
   thought = "";
 }
 
-// Uzun bir cevabın tamamı ekranda durunca sonuç kayboluyor. Tur bitince
-// ilk paragraf açıkta kalıyor, gerisi "devamı" ile katlanıyor: kullanıcı
-// sonucu okuyup geçebiliyor, isterse alta inip nasıl varıldığına bakıyor.
-// Bundan uzun bir cevap katlanıyor. Eşik yükseltildi: ara anlatım artık
-// şeride giriyor ve burada kalan şey cevabın kendisi — onu erkenden
-// katlamak "ne dediği belli değil" demek oluyordu.
-const FOLD_AFTER = 1400;
+// Cevap tam açık kalır. Eskiden FOLD_AFTER eşiğinde "Devamı"ya katlanıyordu;
+// soru-cevapta (ürün listesi, açıklama) kullanıcı her seferinde tıklamak
+// zorunda kalıyordu — mantıksız. Araç izi zaten acts şeridinde; asıl metin
+// katlanmaz.
 
 // Akmakta olan metin bloğunu kapatır ve ekranda bırakır.
 function finishAgentLine() {
@@ -1000,8 +1077,9 @@ function finishAgentLine() {
   if (!raw.trim() || sahteCagri(raw)) agentLine.remove();
   else {
     Markdown.into(agentLine, raw);
+    agentLine._rawText = raw;
+    attachMsgActs(agentLine, "agent");
     agentLine.classList.add("done");
-    if (raw.length > FOLD_AFTER) fold(agentLine);
   }
   agentLine = null;
   raw = "";
@@ -1362,7 +1440,7 @@ function toggleFocus() {
     try { Viewer.close(); } catch {}
     try { Apps.close(); } catch {}
     try { History.close(); } catch {}
-    try { Gorevler.kapat(); } catch {}
+    try { if (window.JobsPanel) JobsPanel.close(); else Gorevler.kapat(); } catch {}
     const s = document.getElementById("settings"); if (s) s.hidden = true;
     document.body.classList.remove("viewing", "settling");
   }
@@ -1487,25 +1565,35 @@ fetch("/api/tanima").then((r) => r.json()).then((d) => {
 (() => {
   const root = document.documentElement;
   let active = false;
-  const move = (e) => {
-    if (!active) return;
-    const max = Math.min(window.innerWidth - 260, window.innerWidth * 0.6);
-    const w = Math.max(240, Math.min(max, e.clientX));
-    root.style.setProperty("--left-w", w + "px");
-  };
+  let onMove = null;
   const stop = () => {
     active = false;
     document.body.classList.remove("left-resize");
-    window.removeEventListener("pointermove", move);
+    if (onMove) window.removeEventListener("pointermove", onMove);
     window.removeEventListener("pointerup", stop);
+    onMove = null;
   };
   document.addEventListener("pointerdown", (e) => {
     const grip = e.target.closest("[data-left-grip]");
     if (!grip) return;
     e.preventDefault();
     active = true;
+    const jobs = grip.closest(".jobs-panel");
     document.body.classList.add("left-resize");
-    window.addEventListener("pointermove", move);
+    onMove = jobs
+      ? (ev) => {
+          if (!active) return;
+          const max = Math.min(window.innerWidth - 48, window.innerWidth * 0.94);
+          const w = Math.max(520, Math.min(max, ev.clientX));
+          root.style.setProperty("--jobs-w", w + "px");
+        }
+      : (ev) => {
+          if (!active) return;
+          const max = Math.min(window.innerWidth - 260, window.innerWidth * 0.6);
+          const w = Math.max(240, Math.min(max, ev.clientX));
+          root.style.setProperty("--left-w", w + "px");
+        };
+    window.addEventListener("pointermove", onMove);
     window.addEventListener("pointerup", stop);
   });
 })();
@@ -2096,6 +2184,46 @@ function askApproval(e) {
   overlay.hidden = false;
 }
 
+// --- kaçırılan zamanlanmış görevler (açılış sorusu) --------------------
+
+let missedOpen = false;
+
+function showMissedTasks(e) {
+  const tasks = e.tasks || [];
+  if (!tasks.length || missedOpen) return;
+  missedOpen = true;
+  $("missed-why").textContent = t(
+    "Program kapalıyken zamanı geçmiş görevler var.");
+  const list = $("missed-list");
+  list.replaceChildren();
+  for (const task of tasks) {
+    const li = document.createElement("li");
+    const ad = task.title || task.id || "?";
+    const tarif = task.describe || "";
+    li.textContent = tarif ? ad + " — " + tarif : ad;
+    list.append(li);
+  }
+  $("missed-overlay").hidden = false;
+}
+
+async function resolveMissed(action) {
+  $("missed-overlay").hidden = true;
+  missedOpen = false;
+  try {
+    await fetch("/api/tasks", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        action: action === "run" ? "missed_run" : "missed_skip",
+      }),
+    });
+  } catch { /* sunucu yok */ }
+  if (window.JobsPanel) JobsPanel.load();
+}
+
+$("missed-run")?.addEventListener("click", () => resolveMissed("run"));
+$("missed-skip")?.addEventListener("click", () => resolveMissed("skip"));
+
 // --- iş şeridi --------------------------------------------------------
 //
 // Bir turda olan biten tek bir satırda toplanıyor: düşünme, araç çağrıları
@@ -2118,7 +2246,8 @@ function ensureWork() {
   head.onclick = () => {
     body.hidden = !body.hidden;
     head.classList.toggle("open", !body.hidden);
-    scroll();
+    // Alta fırlatma: kullanıcı şeridi okumak için tıkladı; nearest yeter.
+    if (!body.hidden) head.scrollIntoView({ block: "nearest", behavior: "smooth" });
   };
   thread.append(head, body);
   head.classList.add("busy");   // çalışıyor: başlık nabız atıyor
@@ -2333,6 +2462,10 @@ function sealThinkArchive(w) {
     open = !open;
     row.textContent = open ? arsiv.join("\n\n———\n\n") : label;
     row.classList.toggle("open", open);
+    if (open) {
+      row.scrollTop = 0;
+      row.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    }
   };
   w.body.append(row);
 }
@@ -2742,6 +2875,38 @@ function diffBlock(card) {
     if (stats.line) chips.append(document.createTextNode("L" + stats.line));
     bar.append(chips);
   }
+  const actions = el2("span", "diff-actions");
+  if (path && (card.tool === "edit_file" || card.tool === "write_file")) {
+    const keep = el2("button", "diff-btn keep", t("Keep"));
+    const undo = el2("button", "diff-btn undo", t("Undo"));
+    keep.type = "button";
+    undo.type = "button";
+    keep.onclick = (ev) => {
+      ev.stopPropagation();
+      const cardEl = wrap.closest(".act-card");
+      if (cardEl) cardEl.classList.add("kept");
+      keep.disabled = true;
+      undo.disabled = true;
+    };
+    undo.onclick = async (ev) => {
+      ev.stopPropagation();
+      undo.disabled = true;
+      keep.disabled = true;
+      let cevap = null;
+      if (typeof Degisiklik !== "undefined" && Degisiklik.kartUndoDosya) {
+        cevap = await Degisiklik.kartUndoDosya(path);
+      }
+      if (!cevap || cevap.ok === false) {
+        line("alert", (cevap && cevap.error) || t("Fark okunamadı."));
+        undo.disabled = false;
+        keep.disabled = false;
+        return;
+      }
+      const cardEl = wrap.closest(".act-card");
+      if (cardEl) cardEl.classList.add("undone");
+    };
+    actions.append(keep, undo);
+  }
   if (path && typeof Viewer !== "undefined" && Viewer.present) {
     const open = el2("button", "diff-open", t("Dosyayı aç"));
     open.type = "button";
@@ -2749,13 +2914,18 @@ function diffBlock(card) {
       ev.stopPropagation();
       Viewer.present(path);
     };
-    bar.append(open);
+    actions.append(open);
   }
+  bar.append(actions);
   wrap.append(bar);
 
   const pairs = editPairs(card.input);
   let lineBase = Number(card.detail && card.detail.line) || 1;
   if (!pairs.length) {
+    if (card.tool === "write_file") {
+      wrap.append(codeBlock(String(card.input.content || ""), extLang(path)));
+      return wrap;
+    }
     wrap.append(el2("div", "diff-empty", t("Diff yok — old/new gelmedi")));
     return wrap;
   }
@@ -2877,7 +3047,7 @@ function buildCard(card) {
   } else if (card.tool === "edit_file") {
     box.append(diffBlock(card));
   } else if (card.tool === "write_file") {
-    box.append(codeBlock(String(card.input.content || ""), extLang(card.input.path)));
+    box.append(diffBlock(card));
   } else if (card.tool === "read_file") {
     // Okuma çıktısı zaten satır numaralı geliyor; olduğu gibi gösteriliyor.
     if (output) box.append(outBlock(output));
@@ -3257,18 +3427,135 @@ function artifactCard(e) {
   open.type = "button";
   open.setAttribute("aria-label", t("Aç") + " — " + (e.title || e.id));
 
-  card.append(glyph, main, badge, open);
+  const dl = el2("button", "art-open art-export", t("İndir"));
+  dl.type = "button";
+  dl.title = t("İndir") + " (.html)";
+  const pr = el2("button", "art-open art-export", t("Yazdır / PDF"));
+  pr.type = "button";
+
+  card.append(glyph, main, badge, open, dl, pr);
 
   const go = (ev) => { ev.stopPropagation(); openArtifact(card._art); };
   card.addEventListener("click", go);
   open.addEventListener("click", go);
+  dl.addEventListener("click", (ev) => {
+    ev.stopPropagation();
+    const url = artifactAddress(card._art);
+    if (Viewer.downloadArtifact) Viewer.downloadArtifact(url);
+    else window.location.href = url + (url.includes("?") ? "&" : "?") + "download=1";
+  });
+  pr.addEventListener("click", (ev) => {
+    ev.stopPropagation();
+    const url = artifactAddress(card._art);
+    if (Viewer.printPage) Viewer.printPage(url);
+    else window.open(url, "_blank", "noopener");
+  });
   card.addEventListener("keydown", (ev) => {
     if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); openArtifact(card._art); }
   });
-
   thread.append(card);
   reflash(card);
   scroll();
+}
+
+function planCard(e) {
+  if (!e || !e.id) return;
+  clearWelcome();
+  const found = thread.querySelector('.plan-card[data-id="' + e.id + '"]');
+  if (found) {
+    found.querySelector(".plan-title").textContent = e.title || e.id;
+    found.querySelector(".plan-status").textContent = e.status || "";
+    found._plan = e;
+    renderPlanSteps(found, e);
+    return;
+  }
+  const card = el2("div", "plan-card");
+  card.dataset.id = e.id;
+  card._plan = e;
+  const head = el2("div", "plan-head");
+  head.append(el2("span", "plan-kind", t("Plan")));
+  head.append(el2("span", "plan-title", e.title || e.id));
+  head.append(el2("span", "plan-status", e.status || "bekliyor"));
+  card.append(head);
+  renderPlanSteps(card, e);
+  const acts = el2("div", "plan-acts");
+  const ok = el2("button", "plan-btn", t("Onayla"));
+  ok.type = "button";
+  ok.onclick = async (ev) => {
+    ev.stopPropagation();
+    await fetch("/api/plans", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "approve", id: e.id }),
+    });
+  };
+  const edit = el2("button", "plan-btn", t("Düzenle"));
+  edit.type = "button";
+  edit.onclick = (ev) => {
+    ev.stopPropagation();
+    const steps = (card._plan.steps || []).map((s) => (s.text || s)).join("\n");
+    const next = prompt(t("Adımları düzenle (satır = adım)"), steps);
+    if (next == null) return;
+    const list = next.split("\n").map((s) => s.trim()).filter(Boolean);
+    fetch("/api/plans", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "update", id: e.id, steps: list }),
+    });
+  };
+  const cancel = el2("button", "plan-btn muted", t("İptal"));
+  cancel.type = "button";
+  cancel.onclick = async (ev) => {
+    ev.stopPropagation();
+    await fetch("/api/plans", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "cancel", id: e.id }),
+    });
+  };
+  const saveAuto = el2("button", "plan-btn muted", t("Otomasyon olarak kaydet"));
+  saveAuto.type = "button";
+  saveAuto.onclick = async (ev) => {
+    ev.stopPropagation();
+    const steps = card._plan.steps || [];
+    const nodes = steps.map((s, i) => ({
+      id: "s" + (i + 1),
+      title: String(s.text || s || ("Adım " + (i + 1))).slice(0, 80),
+      type: "custom",
+      config: { prompt: s.text || String(s) },
+      secrets_needed: [],
+      skill: "",
+      position: { x: 40, y: 40 + i * 90 },
+    }));
+    const edges = nodes.slice(0, -1).map((n, i) => ({
+      from: n.id, to: nodes[i + 1].id, on: "ok",
+    }));
+    await fetch("/api/workflows", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        action: "save",
+        workflow: { title: e.title || "Plan", nodes, edges },
+      }),
+    });
+    if (window.JobsPanel) JobsPanel.open();
+  };
+  acts.append(ok, edit, cancel, saveAuto);
+  card.append(acts);
+  thread.append(card);
+  scroll();
+}
+
+function renderPlanSteps(card, e) {
+  let list = card.querySelector(".plan-steps");
+  if (!list) {
+    list = el2("ol", "plan-steps");
+    card.append(list);
+  }
+  list.replaceChildren();
+  for (const s of e.steps || []) {
+    list.append(el2("li", null, s.text || s.title || String(s)));
+  }
 }
 
 // --- plan kipi: onay döngüsü --------------------------------------------
@@ -3356,12 +3643,26 @@ function handle(e) {
     // girdi (harness notu olarak). Balon normal kullanıcı mesajı gibi
     // çiziliyor + küçük bir "araya girdi" rozeti. Geçmişte user mesajı
     // olarak durmadığı için message-echo eşleşmesi yok; satır burada kalıcı.
+    // Araya girme: meşgulken yazılan mesaj sıraya değil, KOŞAN turun içine
+    // girdi (harness notu olarak). Balon + rozet; şerit hemen altına çekilir
+    // ki "arka planda iş sürüyor / sen araya girdin" tek bakışta okunsun.
     case "araya": {
+      if (agentLine) finishAgentLine();
+      closeThought();
       const row = line("user", e.text);
       const badge = document.createElement("span");
       badge.className = "queue-badge araya";
       badge.textContent = t("araya girdi");
       row.appendChild(badge);
+      if (work) {
+        dockWork(work);
+        work.head.classList.add("busy");
+        workHead(t("Araya alındı") + " · " + (work.steps
+          ? stepsWord(work.steps) + since(work.since)
+          : t("İşleniyor") + since(work.since)));
+        // Şerit kapalıysa zorla açma — sadece konumu netleştir.
+        work.head.scrollIntoView({ block: "nearest", behavior: "smooth" });
+      }
       break;
     }
 
@@ -3416,6 +3717,7 @@ function handle(e) {
     // Aynı artifact'ın güncellemesi yeni kart basmaz — mevcut kartın
     // rozetini tazeler (sohbet kopya kartlarla dolmasın).
     case "artifact": artifactCard(e); break;
+    case "plan": planCard(e); break;
 
     // Oturum değişti (yeni ya da devam): thread temizlenir; devam eden bir
     // konuşmaysa geçmiş dökümü yüklenir ki kullanıcı kaldığı yeri görsün.
@@ -3497,11 +3799,43 @@ function handle(e) {
     // Orkestra: alt ajan kanalları (şef modu). Ana sohbete karışmıyorlar;
     // canlı olarak orkestra güvertesinde izleniyorlar.
     case "child_start": orchStart(e); tasksRefresh(); break;
-    case "child_tool": orchTool(e); break;
+    case "child_tool": orchTool(e);
+      if (typeof Gorevler !== "undefined" && Gorevler.tazele) Gorevler.tazele();
+      if (window.JobsPanel && JobsPanel.refreshLive) JobsPanel.refreshLive();
+      break;
     // Biten kanal iki yere gidiyor: orkestra sahnesine (kart kapanır) ve
     // görevler defterine (satır güncellenir; arka plan işiyse sohbete
     // tıklanabilir bildirim düşer).
-    case "child_end": orchEnd(e); tasksDone(e); break;
+    case "child_end":
+      orchEnd(e); tasksDone(e);
+      if (window.JobsPanel) JobsPanel.load();
+      // App/artifact teslimatı: zayıf 2 satır rapor yerine canlı ürün.
+      if (e.ok && e.deliverable && e.deliverable.url && typeof Viewer !== "undefined") {
+        const d = e.deliverable;
+        if (d.kind === "app" || d.kind === "artifact") {
+          Viewer.page(d.url, e.title || d.url);
+        }
+      }
+      break;
+    case "child_wait":
+      if (typeof Gorevler !== "undefined" && Gorevler.tazele) Gorevler.tazele();
+      if (typeof Orchestra !== "undefined" && Orchestra.wait) Orchestra.wait(e);
+      if (window.JobsPanel && JobsPanel.refreshLive) JobsPanel.refreshLive();
+      break;
+    // Tepsiden Göster / Görevler: arka planda biten koşular görünsün.
+    case "open_jobs":
+      if (window.JobsPanel) JobsPanel.open();
+      break;
+    case "jobs_refresh":
+      if (window.JobsPanel) JobsPanel.load();
+      break;
+    case "missed_tasks":
+      showMissedTasks(e);
+      break;
+    case "missed_resolved":
+      $("missed-overlay").hidden = true;
+      missedOpen = false;
+      break;
     // Sunucu gerçek kanal listesini gönderdi (açılışta yetimler bulununca):
     // panel baştan kurulur — açılış sırasında yüklenen sayfa snapshot'ı
     // ajan hazır olmadan çekmiş olabilir.
@@ -3691,6 +4025,9 @@ async function loadState() {
     // Döküm boşsa karşılama zaten yerinde duruyor: loadTranscript boş dökümde
     // thread'e dokunmuyor, ilk satır çizilirken karşılama kendiliğinden kalkıyor.
     if (s.session) loadTranscript(s.session);
+    if (s.missed_tasks && s.missed_tasks.length) {
+      showMissedTasks({ tasks: s.missed_tasks });
+    }
   } catch { setStatus("off", t("Sunucu yok")); }
 }
 

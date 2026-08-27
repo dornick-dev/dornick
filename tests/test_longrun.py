@@ -351,6 +351,36 @@ async def test_a_long_outage_parks_then_resumes(
     assert "iş bitti" in str(agent.session.messages())
 
 
+async def test_child_agent_fails_instead_of_parking_forever(
+    tmp_path: Path, registry: ToolRegistry, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Alt ajan (görev/orkestra) max retry sonrası park ETMEZ — hata ile biter.
+
+    Ana sohbet çalışırken Market Lens'in 'Model bekleniyor (5/5) · 300s'
+    kilidinde kalmasının kök nedeni buydu.
+    """
+    monkeypatch.setattr(loop_module, "RETRY_DELAYS", (0.01, 0.01))
+    monkeypatch.setattr(loop_module, "PARK_PROBE_S", 30.0)
+    client = FakeClient(
+        *[TurnResult(error="Bağlantı kurulamadı") for _ in range(6)],
+        text_turn("buraya gelinmemeli"),
+    )
+    agent = build_agent(tmp_path, client, registry)
+    agent.depth = 1
+
+    waits: list[dict] = []
+    agent.io.on_wait = waits.append
+
+    stats = await agent.run("zamanlanmış tarama")
+
+    assert stats.interrupted is True
+    assert stats.fail_reason
+    assert not agent.session.log.notes("parked"), "alt ajan park etmemeli"
+    assert read_park(agent.config.state_dir) is None
+    assert any(w.get("kip") == "hata" for w in waits)
+    assert client.script, "başarılı tur hiç denenmemeliydi"
+
+
 async def test_interrupt_during_backoff_stops_and_unparks(
     tmp_path: Path, registry: ToolRegistry, monkeypatch: pytest.MonkeyPatch
 ) -> None:

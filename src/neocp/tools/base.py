@@ -81,6 +81,9 @@ class ToolContext:
     # aracı kendini kullanılamaz ilan ediyor.
     schedule: Any = None
 
+    # Otomasyon grafiği koşturucu (workflow run). None ise araç stub döner.
+    run_workflow: Callable[[str], Awaitable[Any]] | None = None
+
     # Yerel kameranın sürekli açık tamponu. Kareler burada duruyor ve
     # kendiliğinden modele gitmiyor; `look` aracı istediğinde alınıyor.
     lens: Any = None

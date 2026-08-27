@@ -51,6 +51,11 @@ MASK = "••••••••"
 # Sağlayıcı listesi tek yerde: hem ayar sayfası hem `neocp setup` buradan
 # okuyor. `env` alanı anahtarın hangi ortam değişkenine yazılacağını söyler;
 # None olanlar yerel sunucular, anahtar istemiyorlar.
+#
+# Bulut önayarları resmi OpenAI-uyumlu uçlardan (2026): rastgele ekleme yok.
+# Kaynaklar: ai.google.dev/gemini-api/docs/openai · build.nvidia.com ·
+# api-docs.deepseek.com · console.groq.com/docs/openai · docs.mistral.ai ·
+# help.aliyun.com/en/model-studio/base-url
 PROVIDERS: tuple[dict[str, Any], ...] = (
     {
         "id": "anthropic",
@@ -75,6 +80,56 @@ PROVIDERS: tuple[dict[str, Any], ...] = (
         "base_url": "https://openrouter.ai/api/v1",
         "env": "OPENROUTER_API_KEY",
         "hint": "tek anahtarla çok sağlayıcı",
+    },
+    {
+        "id": "gemini",
+        "label": "Gemini",
+        "provider": "openai",
+        "base_url": "https://generativelanguage.googleapis.com/v1beta/openai",
+        "env": "GEMINI_API_KEY",
+        "hint": "aistudio.google.com — OpenAI-uyumlu uç",
+    },
+    {
+        "id": "nvidia",
+        "label": "NVIDIA NIM",
+        "provider": "openai",
+        "base_url": "https://integrate.api.nvidia.com/v1",
+        "env": "NVIDIA_API_KEY",
+        "hint": "build.nvidia.com/settings",
+    },
+    {
+        "id": "deepseek",
+        "label": "DeepSeek",
+        "provider": "openai",
+        "base_url": "https://api.deepseek.com",
+        "env": "DEEPSEEK_API_KEY",
+        "hint": "platform.deepseek.com",
+    },
+    {
+        "id": "groq",
+        "label": "Groq",
+        "provider": "openai",
+        "base_url": "https://api.groq.com/openai/v1",
+        "env": "GROQ_API_KEY",
+        "hint": "console.groq.com",
+    },
+    {
+        "id": "mistral",
+        "label": "Mistral",
+        "provider": "openai",
+        "base_url": "https://api.mistral.ai/v1",
+        "env": "MISTRAL_API_KEY",
+        "hint": "console.mistral.ai",
+    },
+    {
+        "id": "qwen",
+        "label": "Qwen (DashScope)",
+        "provider": "openai",
+        # Ortak DashScope alanı hâlâ geçerli; üretimde workspace/bölge
+        # adresine geçmek için Model › Adres alanını düzenle.
+        "base_url": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
+        "env": "DASHSCOPE_API_KEY",
+        "hint": "Model Studio — bölgeye göre adresi değiştir",
     },
     {
         "id": "lmstudio",
@@ -134,6 +189,23 @@ KURULUM_YONLENDIRME = (
     "OpenRouter'dır — anahtarını girdiğinde ücretsiz modellerle 'Oto' modda "
     "hemen başlayabilirsin."
 )
+
+
+def _gpu_snapshot() -> list[dict[str, Any]]:
+    """Ayarlar › Makine için VRAM özeti. nvidia-smi yoksa []."""
+    try:
+        from . import gpu as gpu_module
+        return [
+            {
+                "name": g.name,
+                "total_mb": g.total_mb,
+                "free_mb": g.free_mb,
+                "used_mb": g.used_mb,
+            }
+            for g in gpu_module.nvidia_gpus()
+        ]
+    except Exception:
+        return []
 
 
 def provider_of(config: ModelConfig) -> str:
@@ -248,6 +320,7 @@ def snapshot(config: Config) -> dict[str, Any]:
         "hardware": {
             "microphone": organs.has_microphone(),
             "camera": organs.has_camera(),
+            "gpu": _gpu_snapshot(),
         },
         "startup": {
             "available": startup.available(),
@@ -297,6 +370,9 @@ def snapshot(config: Config) -> dict[str, Any]:
 # 8k–32k. Sunucuya sorup öğrenebiliyorsak tahmin etmeyelim.
 
 PROBE_TIMEOUT = 2.0
+# Bulut katalogları (NVIDIA, OpenRouter…) yerelden yavaş olabilir; 2 sn
+# sessizce boş listeye düşüyordu — "model yüklenmiyor" gibi görünüyordu.
+REMOTE_PROBE_TIMEOUT = 10.0
 
 # Uyumlu sunucuların pencereyi bildirdiği alan adları. Standart değil, her
 # sunucu kendi adını kullanıyor.
@@ -314,26 +390,57 @@ WINDOW_FIELDS = (
 )
 
 
+def _openai_models_payload(
+    config: Config,
+) -> tuple[dict[str, Any] | None, str | None]:
+    """OpenAI-uyumlu `{base}/models`.
+
+    Dönüş: (payload, hata). Anahtarlı uçlar Bearer ister (Gemini…).
+    Hata kısa Türkçe — ayar sayfası 'liste yok' yerine nedeni göstersin.
+    """
+    if config.model.provider != "openai" or not config.model.base_url:
+        return None, None
+
+    import urllib.error
+    import urllib.request
+
+    url = config.model.base_url.rstrip("/") + "/models"
+    headers = {"User-Agent": "neocp"}
+    env = config.model.api_key_env
+    if env and (key := os.environ.get(env)):
+        headers["Authorization"] = f"Bearer {key}"
+    timeout = (
+        PROBE_TIMEOUT
+        if lmstudio.is_local_url(config.model.base_url)
+        else REMOTE_PROBE_TIMEOUT
+    )
+    try:
+        req = urllib.request.Request(url, headers=headers)
+        with urllib.request.urlopen(req, timeout=timeout) as response:
+            payload = json.load(response)
+    except urllib.error.HTTPError as exc:
+        return None, f"HTTP {exc.code}"
+    except TimeoutError:
+        return None, "zaman aşımı"
+    except (urllib.error.URLError, OSError, ValueError) as exc:
+        reason = getattr(exc, "reason", None) or exc
+        return None, str(reason)[:80]
+    if not isinstance(payload, dict):
+        return None, "beklenmeyen yanıt"
+    return payload, None
+
+
 def detect_window(config: Config) -> int | None:
     """Sunucudan modelin gerçek pencere boyutunu sorar.
 
     Bulamazsa None döner — uydurmak, yanlış ayarı sessizce sürdürmekten
     daha kötü.
     """
-    if config.model.provider != "openai" or not config.model.base_url:
+    payload, _err = _openai_models_payload(config)
+    if not payload:
         return None
 
-    import urllib.error
-    import urllib.request
-
-    try:
-        url = config.model.base_url.rstrip("/") + "/models"
-        with urllib.request.urlopen(url, timeout=PROBE_TIMEOUT) as response:
-            payload = json.load(response)
-    except (urllib.error.URLError, OSError, ValueError, TimeoutError):
-        return None
-
-    entries = payload.get("data") if isinstance(payload, dict) else None
+    entries = payload.get("data")
     if not isinstance(entries, list):
         return None
 
@@ -364,55 +471,57 @@ def scan_models(config: Config) -> list[dict[str, Any]]:
     kamerayı açmanın, araç kullanmak için eğitilmemiş bir modelde araçları
     beklemenin anlamı yok. LM Studio bunları söylüyor.
     """
-    found = lmstudio.models(config.model.base_url)
-    if found:
-        return [
-            {
-                "id": m.key,
-                "name": m.name,
-                "max_context": m.max_context,
-                "vision": m.vision,
-                "tools": m.tools,
-                "loaded": [{"id": i.id, "context": i.context} for i in m.instances],
+    return scan_models_result(config)["models"]
+
+
+def scan_models_result(config: Config) -> dict[str, Any]:
+    """`{models, error}` — ayar sayfası boş listede nedeni göstersin."""
+    # LM Studio yönetimi yalnız localhost — NVIDIA/OpenRouter'a
+    # /api/v1/models yoklamak yanlış ve gecikme.
+    if lmstudio.is_local_url(config.model.base_url):
+        found = lmstudio.models(config.model.base_url)
+        if found:
+            return {
+                "models": [
+                    {
+                        "id": m.key,
+                        "name": m.name,
+                        "max_context": m.max_context,
+                        "vision": m.vision,
+                        "tools": m.tools,
+                        "loaded": [
+                            {"id": i.id, "context": i.context} for i in m.instances
+                        ],
+                    }
+                    for m in found
+                ],
+                "error": None,
             }
-            for m in found
-        ]
-    # LM Studio değilse yalnızca ad var.
-    entries: list[dict[str, Any]] = [{"id": name} for name in available_models(config)]
-    # OpenRouter'da katalog "Oto" ile açılıyor: ücretsiz havuzla çalışan
-    # kip, gerçek bir model kimliği değil. Ağ yokken bile listede durmalı —
-    # taze kurulumun varsayılanı bu.
+
+    names, err = available_models_with_error(config)
+    entries: list[dict[str, Any]] = [{"id": name} for name in names]
     if provider_of(config.model) == "openrouter":
         from .config import OTO_MODEL
 
         entries.insert(0, {"id": OTO_MODEL, "name": "Oto — ücretsiz model havuzu"})
-    return entries
+    return {"models": entries, "error": err if not entries else None}
 
 
 def available_models(config: Config) -> list[str]:
-    """Sunucunun sunduğu model kimlikleri.
+    """Sunucunun sunduğu model kimlikleri."""
+    names, _err = available_models_with_error(config)
+    return names
 
-    Kimliği elle yazdırmak hataya davetiye: "qwen3.5-9b" ile
-    "qwen/qwen3.5-9b" arasındaki fark 404 demek ve hata ancak ilk mesajda
-    görünüyor. Sunucu listeyi veriyorsa seçtirmek doğrusu; vermiyorsa elle
-    yazma yolu açık kalıyor.
-    """
-    if config.model.provider != "openai" or not config.model.base_url:
-        return []
 
-    import urllib.error
-    import urllib.request
+def available_models_with_error(config: Config) -> tuple[list[str], str | None]:
+    """Sunucunun sunduğu model kimlikleri + hata özeti."""
+    payload, err = _openai_models_payload(config)
+    if not payload:
+        return [], err
 
-    try:
-        url = config.model.base_url.rstrip("/") + "/models"
-        with urllib.request.urlopen(url, timeout=PROBE_TIMEOUT) as response:
-            payload = json.load(response)
-    except (urllib.error.URLError, OSError, ValueError, TimeoutError):
-        return []
-
-    entries = payload.get("data") if isinstance(payload, dict) else None
+    entries = payload.get("data")
     if not isinstance(entries, list):
-        return []
+        return [], err or "liste yok"
 
     names = [
         str(entry.get("id"))
@@ -423,7 +532,7 @@ def available_models(config: Config) -> list[str]:
         and entry.get("type") not in ("embeddings", "embedding")
         and "embed" not in str(entry.get("id")).lower()
     ]
-    return sorted(dict.fromkeys(names))
+    return sorted(dict.fromkeys(names)), None
 
 
 def loaded_models(config: Config) -> list[dict[str, Any]]:
@@ -632,6 +741,11 @@ def _model_patch(current: ModelConfig, patch: dict[str, Any]) -> ModelConfig:
     for name in ("max_tokens", "context_window"):
         if name in fields and fields[name] is not None:
             fields[name] = int(fields[name])
+
+    # Yerel opt açılınca çift kopyayı engelle — kullanıcı açıkça max_calls
+    # yazmadıysa 1'e çek.
+    if fields.get("local_optimize") is True and "max_calls" not in fields:
+        fields["max_calls"] = 1
 
     return replace(current, **fields)
 

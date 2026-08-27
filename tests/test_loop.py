@@ -699,3 +699,12 @@ async def test_same_turn_is_not_encoded_twice(tmp_path: Path, registry: ToolRegi
 
     episodes = [m for m in mind.memories("episode") if "modbus" in m.content]
     assert len(episodes) == 1, f"aynı tur {len(episodes)} kez yazıldı"
+
+
+def test_infer_deliverable_prefers_app_root_over_api_path() -> None:
+    from neocp.loop import _infer_deliverable
+
+    d = _infer_deliverable("POST http://127.0.0.1:8090/api/refresh sonra bak")
+    assert d == {"kind": "app", "url": "http://127.0.0.1:8090/"}
+    a = _infer_deliverable("rapor /artifact/ot-scada-bulten/")
+    assert a == {"kind": "artifact", "url": "/artifact/ot-scada-bulten/"}

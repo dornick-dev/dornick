@@ -309,6 +309,28 @@ def test_a_new_file_is_undone_by_deleting_it(tmp_path: Path, mind: Mind) -> None
         log.close()
 
 
+def test_a_single_file_can_be_undone_by_sira(tmp_path: Path, mind: Mind) -> None:
+    """Cursor Keep/Undo: bir dosyayı geri almak diğerine dokunmaz."""
+    server, config, log = _kur(tmp_path, mind)
+    bir = Path(config.workspace) / "bir.txt"
+    iki = Path(config.workspace) / "iki.txt"
+    try:
+        _defter_yaz(config, bir, "A", "A2")
+        _defter_yaz(config, iki, "B", "B2")
+        kayitlar = _get(server, "/api/degisiklikler")["kayitlar"]
+        # En yenisi önce: iki=sira2, bir=sira1
+        sira_bir = next(k["sira"] for k in kayitlar if k["ad"] == "bir.txt")
+        assert _post(server, "/api/degisiklikler/geri", {"sira": sira_bir})["ok"] is True
+        assert bir.read_text(encoding="utf-8") == "A"
+        assert iki.read_text(encoding="utf-8") == "B2"
+        assert _post(server, "/api/degisiklikler/geri",
+                     {"dosya": str(iki)})["ok"] is True
+        assert iki.read_text(encoding="utf-8") == "B"
+    finally:
+        server.stop()
+        log.close()
+
+
 # -- bütçe freni --------------------------------------------------------
 
 

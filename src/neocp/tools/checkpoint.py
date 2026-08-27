@@ -122,20 +122,67 @@ class Defter:
 
         yapilan: list[str] = []
         for k in reversed(secilen):  # en yeniden en eskiye
-            hedef = Path(k["dosya"])
-            # Redo yolu: geri almadan önce şimdiki hal de kaydedilir.
-            self.kaydet(hedef, "undo")
-            try:
-                if k["yoktu"]:
-                    hedef.unlink(missing_ok=True)
-                    yapilan.append(f"{k['sira']}. kayıt: {hedef} silindi (oluşturma geri alındı).")
-                else:
-                    hedef.parent.mkdir(parents=True, exist_ok=True)
-                    shutil.copy2(self.dizin / k["goruntu"], hedef)
-                    yapilan.append(f"{k['sira']}. kayıt: {hedef} eski haline döndü.")
-            except OSError as exc:
-                return yapilan, f"{k['sira']}. kayıt geri alınamadı: {exc}"
+            ok, mesaj = self._tek_geri(k)
+            yapilan.append(mesaj)
+            if not ok:
+                return yapilan, mesaj
         return yapilan, None
+
+    def geri_al_sira(self, sira: int) -> tuple[list[str], str | None]:
+        """Tek bir kayıt sırasını geri alır (dosya bazlı Keep/Undo).
+
+        Tur şeridindeki bir satırın Undo'su buraya düşer: diğer dosyalara
+        dokunulmaz. Kayıt yoksa veya görüntüsüzse hiçbir şey yazılmaz.
+        """
+        kayitlar = self._oku()
+        if not kayitlar:
+            return [], "Bu oturumda kayıtlı değişiklik yok."
+        k = next((x for x in kayitlar if int(x.get("sira") or 0) == int(sira)), None)
+        if k is None:
+            return [], f"{sira}. kayıt bulunamadı."
+        if k["goruntu"] is None and not k["yoktu"]:
+            return [], (
+                f"{k['sira']}. kayıt geri alınamaz ({k['dosya']}): "
+                f"{k['atlandi'] or 'görüntü yok'}."
+            )
+        ok, mesaj = self._tek_geri(k)
+        return ([mesaj], None if ok else mesaj)
+
+    def geri_al_dosya(self, dosya: str) -> tuple[list[str], str | None]:
+        """Bu yol için en son kaydı geri alır (diff kartı Undo)."""
+        hedef = Path(dosya)
+        try:
+            hedef_key = str(hedef.resolve()) if hedef.exists() else str(hedef)
+        except OSError:
+            hedef_key = str(hedef)
+        hedef_norm = hedef_key.replace("\\", "/").lower()
+        kayitlar = self._oku()
+        for k in reversed(kayitlar):
+            ham = str(k.get("dosya") or "")
+            if not ham:
+                continue
+            p = Path(ham)
+            try:
+                key = str(p.resolve()) if p.exists() else ham
+            except OSError:
+                key = ham
+            if key.replace("\\", "/").lower() == hedef_norm:
+                return self.geri_al_sira(int(k["sira"]))
+        return [], f"Bu oturumda {dosya!r} için kayıt yok."
+
+    def _tek_geri(self, k: dict[str, Any]) -> tuple[bool, str]:
+        """Tek kaydı uygular; (ok, mesaj). Redo için önce kaydet çağırır."""
+        hedef = Path(k["dosya"])
+        self.kaydet(hedef, "undo")
+        try:
+            if k["yoktu"]:
+                hedef.unlink(missing_ok=True)
+                return True, f"{k['sira']}. kayıt: {hedef} silindi (oluşturma geri alındı)."
+            hedef.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(self.dizin / k["goruntu"], hedef)
+            return True, f"{k['sira']}. kayıt: {hedef} eski haline döndü."
+        except OSError as exc:
+            return False, f"{k['sira']}. kayıt geri alınamadı: {exc}"
 
     # -- iç işler ------------------------------------------------------
 

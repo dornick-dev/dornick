@@ -81,6 +81,10 @@ class ModelConfig:
     # 6.5 GB'lık bir modelde 20 GB. Resmî API'lerde böyle bir sorun yok,
     # orada yükseltilebilir.
     max_calls: int = 1
+    # Yerel LLM optimizasyonu (opt-in). Açıkken: diğer modelleri boşalt,
+    # tek kopya tut, VRAM/model boyutuna göre bağlamı düşür. Kapalıysa
+    # bugünkü davranış — kullanıcı ne yazdıysa o.
+    local_optimize: bool = False
 
     @property
     def is_local(self) -> bool:

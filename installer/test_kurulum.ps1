@@ -187,7 +187,53 @@ try {
 }
 
 # -- 8) senaryo: kaldırma .neocp'ye dokunmaz ----------------------------
+Write-Host "`n== Senaryo 7: TEMİZ KURULUM — kod sıfırdan, VERİ DURUR" -ForegroundColor Cyan
+# Kullanıcının "temiz kur" dediğinde beklediği şey: bozulmuş bir kurulumun
+# kodu gitsin ama anıları/görevleri KALSIN. İkisi karışırsa kullanıcı
+# "temiz kurulum" derken hafızasını siliyor demektir.
+New-Item -ItemType Directory -Force (Join-Path $Neocp "mind") | Out-Null
+'{"n":"temiz-senaryo"}' | Set-Content (Join-Path $Neocp "anilar.json") -Encoding utf8
+'gorev' | Set-Content (Join-Path $Neocp "tasks.json") -Encoding utf8
+$sahteKod = Join-Path (Join-Path $Hedef 'src') 'artik.py'
+New-Item -ItemType Directory -Force (Join-Path $Hedef 'src') | Out-Null
+'eski surumden kalan' | Set-Content $sahteKod -Encoding utf8
+
+$kod = Kur $Kur022 @("/TEMIZLE=temiz")
+Dogrula ($kod -eq 0) "temiz kurulum çıkış kodu 0 (gerçek: $kod)"
+Dogrula (Test-Path (Join-Path $Neocp "anilar.json")) "TEMİZ kurulumda anılar DURUYOR"
+Dogrula (Test-Path (Join-Path $Neocp "tasks.json")) "TEMİZ kurulumda görevler DURUYOR"
+Dogrula (-not (Test-Path $sahteKod)) "eski sürümden kalan kod dosyası silindi"
+Dogrula (Test-Path (Join-Path $Hedef "pyproject.toml")) "yeni kod yerine kondu"
+
+Write-Host "`n== Senaryo 8: VERİLERİ DE SIFIRLA — önce yedek, sonra silme" -ForegroundColor Cyan
+# En tehlikeli yol. İki şey birden doğru olmalı: veri GERÇEKTEN gitmeli
+# (yoksa "sıfırla" yalan olur) ve gitmeden ÖNCE yedeklenmiş olmalı.
+# Yedek adedi 5'te tavanlı (Senaryo 3): "sayı arttı mı" yanlış ölçüt olurdu.
+# Doğru ölçüt, EN YENİ yedeğin değişmiş olması.
+$oncekiEnYeni = (Get-ChildItem $Yedek -Filter "neo-backup-*.zip" -ErrorAction SilentlyContinue |
+                 Sort-Object LastWriteTime | Select-Object -Last 1).Name
+Start-Sleep -Seconds 1   # yedek adı saniye damgalı: aynı saniyeye düşmesin
+$kod = Kur $Kur022 @("/TEMIZLE=veri")
+Dogrula ($kod -eq 0) "veri sıfırlama çıkış kodu 0 (gerçek: $kod)"
+$sonYedek = @(Get-ChildItem $Yedek -Filter "neo-backup-*.zip" -ErrorAction SilentlyContinue)
+$sonEnYeni = ($sonYedek | Sort-Object LastWriteTime | Select-Object -Last 1).Name
+Dogrula ($sonEnYeni -ne $oncekiEnYeni) "silmeden ÖNCE yeni yedek alındı ($sonEnYeni)"
+Dogrula (-not (Test-Path (Join-Path $Neocp "anilar.json"))) "anılar gerçekten silindi"
+Dogrula (-not (Test-Path (Join-Path $Neocp "tasks.json"))) "görevler gerçekten silindi"
+Dogrula (Test-Path (Join-Path $Hedef "pyproject.toml")) "silme sonrası kurulum yine sağlam"
+# Yedeğin İÇİNDE silinen veri olmalı — boş bir zip, yedek değildir.
+$enYeni = $sonYedek | Sort-Object LastWriteTime | Select-Object -Last 1
+Add-Type -AssemblyName System.IO.Compression.FileSystem
+$zip = [System.IO.Compression.ZipFile]::OpenRead($enYeni.FullName)
+$icerik = @($zip.Entries | ForEach-Object { $_.FullName })
+$zip.Dispose()
+Dogrula (($icerik -join [char]10) -match 'anilar') "yedeğin içinde silinen anılar var"
+
 Write-Host "`n== Senaryo 6: kaldırma sonrası .neocp yerinde" -ForegroundColor Cyan
+# Kendi ön koşulunu kuruyor: Senaryo 8 veriyi bilerek sildi, buradaki soru
+# ise "kaldırma veriyi siler mi" — o yüzden taze veri konuyor.
+New-Item -ItemType Directory -Force $Neocp | Out-Null
+'{"n":"kaldirma-senaryosu"}' | Set-Content (Join-Path $Neocp "anilar.json") -Encoding utf8
 $unins = Join-Path $Hedef "unins000.exe"
 if (Test-Path $unins) {
     Start-Process -FilePath $unins -ArgumentList @("/VERYSILENT", "/SUPPRESSMSGBOXES") -Wait

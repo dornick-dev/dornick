@@ -31,6 +31,11 @@ Dil.ekle({
   " araç": " tools",
   "arka plan": "background",
   "(özet yok)": "(no summary)",
+  "Raporu aç": "Open report",
+  "Model bekleniyor": "Waiting for model",
+  "Model yanıt vermedi": "Model did not respond",
+  "Devam et": "Continue",
+  "Sürdürülüyor…": "Resuming…",
 });
 
 const Orchestra = (() => {
@@ -46,6 +51,8 @@ const Orchestra = (() => {
 
   // Bitmiş kanallardan en fazla bu kadarı tutuluyor; en eskisi düşüyor.
   const KEEP_DONE = 5;
+  // Koşan kanalda son N araç satırı (kısa act listesi).
+  const KEEP_ACTS = 8;
 
   const el = (tag, cls, text) => {
     const n = document.createElement(tag);
@@ -61,7 +68,8 @@ const Orchestra = (() => {
   function start(ev) {
     channels.set(keyOf(ev), {
       title: ev.title, model: ev.model || "", id: ev.id || "",
-      bg: !!ev.bg, tool: "", tools: 0, state: "run", ozet: "", open: false,
+      bg: !!ev.bg, tool: "", hedef: "", tools: 0, state: "run",
+      ozet: "", open: false, acts: [],
     });
     prune();
     open();
@@ -74,8 +82,33 @@ const Orchestra = (() => {
     const ch = [...channels.values()].find(c => c.title === ev.title && c.state === "run")
       || channels.get(ev.title);
     if (!ch) return;
-    if (ev.phase === "start") { ch.tool = ev.tool; ch.tools += 1; }
-    else { ch.tool = ev.tool + (ev.phase === "fail" ? " ✗" : " ✓"); }
+    if (!ch.acts) ch.acts = [];
+    if (ev.phase === "start") {
+      ch.tool = ev.tool;
+      ch.hedef = ev.hedef || "";
+      ch.tools += 1;
+      ch.acts.push({
+        name: ev.tool || "",
+        hedef: ev.hedef || "",
+        phase: "run",
+      });
+      if (ch.acts.length > KEEP_ACTS) ch.acts.shift();
+    } else {
+      ch.tool = ev.tool + (ev.phase === "fail" ? " ✗" : " ✓");
+      if (ev.hedef) ch.hedef = ev.hedef;
+      const last = ch.acts[ch.acts.length - 1];
+      if (last && last.name === ev.tool) {
+        last.phase = ev.phase === "fail" ? "fail" : "ok";
+        if (ev.hedef) last.hedef = ev.hedef;
+      } else {
+        ch.acts.push({
+          name: ev.tool || "",
+          hedef: ev.hedef || "",
+          phase: ev.phase === "fail" ? "fail" : "ok",
+        });
+        if (ch.acts.length > KEEP_ACTS) ch.acts.shift();
+      }
+    }
     render();
   }
 
@@ -84,8 +117,12 @@ const Orchestra = (() => {
     if (!ch) return;
     ch.state = ev.ok ? "done" : "fail";
     ch.tool = "";
+    ch.wait = null;
     ch.turns = ev.turns; ch.tools = ev.tools != null ? ev.tools : ch.tools;
     if (ev.ozet) ch.ozet = ev.ozet;
+    if (ev.deliverable) ch.deliverable = ev.deliverable;
+    if (ev.model) ch.model = ev.model;
+    if (ev.usage) ch.usage = ev.usage;
     prune();
     render();
     // Hepsi bittiyse ve sabitli değilse güverte bir süre sonra çekiliyor —
@@ -94,6 +131,34 @@ const Orchestra = (() => {
       clearTimeout(fadeTimer);
       fadeTimer = setTimeout(() => { if (!anyRunning()) hide(); }, 6000);
     }
+  }
+
+  function wait(ev) {
+    const ch = channels.get(keyOf(ev))
+      || [...channels.values()].find(c => c.title === ev.title && c.state === "run");
+    if (!ch || ch.state !== "run") return;
+    if (ev.kip === "bitti" || ev.kip === "iptal") {
+      ch.wait = null;
+      if (!ch.tool || String(ch.tool).startsWith(t("Model bekleniyor"))
+          || String(ch.tool).startsWith(t("Model yanıt vermedi"))) {
+        ch.tool = "";
+      }
+      render();
+      return;
+    }
+    let msg = ev.kip === "hata"
+      ? t("Model yanıt vermedi")
+      : t("Model bekleniyor");
+    if (ev.deneme && ev.toplam) msg += ` (${ev.deneme}/${ev.toplam})`;
+    if (ev.saniye) msg += ` · ${ev.saniye}s`;
+    ch.tool = msg;
+    ch.wait = ev;
+    if (ev.kip === "hata") {
+      ch.state = "fail";
+      ch.wait = null;
+    }
+    open();
+    render();
   }
 
   const anyRunning = () => [...channels.values()].some(c => c.state === "run");
@@ -171,7 +236,9 @@ const Orchestra = (() => {
 
     const line = el("div", "orch-ch-line");
     if (ch.state === "run") {
-      line.append(el("span", "orch-ch-act", ch.tool ? "▶ " + ch.tool : t("Düşünüyor…")));
+      const act = (ch.tool ? "▶ " + ch.tool : t("Düşünüyor…"))
+        + (ch.hedef ? " · " + ch.hedef : "");
+      line.append(el("span", "orch-ch-act", act));
     } else if (ch.state === "fail") {
       line.append(el("span", "orch-ch-act fail", t("Hata verdi")));
     } else if (ch.state === "yetim") {
@@ -184,13 +251,69 @@ const Orchestra = (() => {
     if (ch.state !== "yetim") {
       line.append(el("span", "orch-ch-count", ch.tools + t(" araç")));
     }
+    const meter = formatUsage(ch.usage);
+    if (meter) line.append(el("span", "orch-ch-meter", meter));
     wrap.append(line);
 
-    // Biten kanal tıklanınca sonucun özeti açılıp kapanıyor.
+    if (ch.state === "run" && ch.acts && ch.acts.length) {
+      const list = el("div", "orch-ch-acts");
+      for (const a of ch.acts.slice(-KEEP_ACTS)) {
+        const mark = a.phase === "fail" ? "✗"
+          : a.phase === "ok" ? "✓" : "·";
+        const row = el("div", "orch-ch-act-row" + (a.phase === "fail" ? " err" : ""));
+        row.append(el("span", "orch-ch-act-mark", mark));
+        row.append(el("b", null, a.name || ""));
+        if (a.hedef) row.append(el("span", "orch-ch-act-hedef", a.hedef));
+        list.append(row);
+      }
+      wrap.append(list);
+    }
+
+    if (ch.state === "yetim" && ch.id) {
+      const acts = el("div", "orch-ch-resume-row");
+      const devam = el("button", "orch-resume", t("Devam et"));
+      devam.type = "button";
+      devam.addEventListener("click", async (ev) => {
+        ev.stopPropagation();
+        devam.disabled = true;
+        devam.textContent = t("Sürdürülüyor…");
+        try {
+          await fetch("/api/gorevler/devam", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ id: "c:" + ch.id }),
+          });
+        } catch { /* yoklama/SSE günceller */ }
+        // Snapshot tazelensin — koşuya geçince kart run olur.
+        try {
+          const s = await (await fetch("/api/state")).json();
+          if (s && s.channels) seed(s.channels);
+        } catch { render(); }
+      });
+      acts.append(devam);
+      wrap.append(acts);
+    }
+
+    // Biten kanal: tıklayınca özet değil TAM rapor — artifact gibi Viewer.
     if (ch.state !== "run") {
-      if (ch.open) wrap.append(el("div", "orch-ch-ozet", ch.ozet || t("(özet yok)")));
-      wrap.addEventListener("click", () => { ch.open = !ch.open; render(); });
       wrap.classList.add("clickable");
+      wrap.title = t("Raporu aç");
+      wrap.addEventListener("click", (ev) => {
+        ev.stopPropagation();
+        if (ch.deliverable && ch.deliverable.url && typeof Viewer !== "undefined" && Viewer.page) {
+          Viewer.page(ch.deliverable.url, ch.title);
+          return;
+        }
+        if (ch.id && typeof Viewer !== "undefined" && Viewer.page) {
+          Viewer.page("/gorev-rapor/" + encodeURIComponent(ch.id) + "/", ch.title);
+          return;
+        }
+        ch.open = !ch.open;
+        render();
+      });
+      if (ch.open && !ch.id) {
+        wrap.append(el("div", "orch-ch-ozet", ch.ozet || t("(özet yok)")));
+      }
     }
     return wrap;
   }
@@ -200,6 +323,13 @@ const Orchestra = (() => {
     const cut = s.split("/").pop();
     return cut.length > 22 ? cut.slice(0, 22) + "…" : cut;
   };
+
+  function formatUsage(u) {
+    if (!u) return "";
+    const g = Number(u.girdi || 0) + Number(u.cikti || 0);
+    if (!g) return "";
+    return g >= 1000 ? (g / 1000).toFixed(1) + "k tok" : g + " tok";
+  }
 
   // Ayarlardaki yardımcı sınırını göstermek için okunuyor (bilgi amaçlı).
   let maxAgents = null;
@@ -231,5 +361,5 @@ const Orchestra = (() => {
   document.getElementById("orch-close").addEventListener("click", () => { pinned = false; hide(); });
   loadCap();
 
-  return { start, tool, end, toggle, seed };
+  return { start, tool, end, wait, toggle, seed };
 })();

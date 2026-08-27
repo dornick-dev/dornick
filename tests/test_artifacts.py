@@ -250,6 +250,26 @@ def test_artifact_pages_are_served_at_a_stable_address(tmp_path: Path, mind: Min
         log.close()
 
 
+def test_artifact_download_sends_attachment_header(tmp_path: Path, mind: Mind) -> None:
+    """?download=1 → Content-Disposition; HTML standart dışa aktarma."""
+    server, log, config = _server(tmp_path, mind)
+    meta = artifacts.publish(config.state_dir, "Günlük Özet", "<!DOCTYPE html><p>x</p>")
+    try:
+        with urllib.request.urlopen(
+            server.url + f"artifact/{meta['id']}/?download=1", timeout=5
+        ) as response:
+            disp = response.headers.get("Content-Disposition") or ""
+            assert "attachment" in disp
+            assert ".html" in disp
+            # HTTP header latin-1: tüm satır encode edilebilmeli; UTF-8 ad filename*'da.
+            disp.encode("latin-1")
+            assert "filename*=UTF-8''" in disp
+            assert "x" in response.read().decode("utf-8")
+    finally:
+        server.stop()
+        log.close()
+
+
 def test_escape_attempts_get_a_404(tmp_path: Path, mind: Mind) -> None:
     """Yol istekten geliyor; depo dışına çıkma denemesi diske dokunmadan 404."""
     server, log, config = _server(tmp_path, mind)

@@ -511,9 +511,42 @@ def _reasoning_of(delta: Any) -> str | None:
 
 
 def _usage(raw: Any) -> SimpleUsage:
+    """OpenAI/OpenRouter usage → SimpleUsage (cache alanları dahil).
+
+    `prompt_tokens` genelde önbellek + taze toplamıdır. `prompt_tokens_details.
+    cached_tokens` varsa cache_read'e yazılır; input_tokens taze kısım kalır
+    ki `cache_report.prompt_total` çift saymasın.
+    """
+    if isinstance(raw, dict):
+        prompt = int(raw.get("prompt_tokens") or 0)
+        output = int(raw.get("completion_tokens") or 0)
+        nested = raw.get("prompt_tokens_details") or {}
+        cached = int(nested.get("cached_tokens") or 0) if isinstance(nested, dict) else 0
+        created = int(nested.get("cache_creation_tokens") or 0) if isinstance(nested, dict) else 0
+    else:
+        prompt = int(getattr(raw, "prompt_tokens", 0) or 0)
+        output = int(getattr(raw, "completion_tokens", 0) or 0)
+        cached = 0
+        created = 0
+        details = getattr(raw, "prompt_tokens_details", None)
+        if isinstance(details, dict):
+            cached = int(details.get("cached_tokens") or 0)
+            created = int(details.get("cache_creation_tokens") or 0)
+        elif details is not None:
+            cached = int(getattr(details, "cached_tokens", 0) or 0)
+            created = int(getattr(details, "cache_creation_tokens", 0) or 0)
+        elif isinstance(getattr(raw, "model_extra", None), dict):
+            nested = raw.model_extra.get("prompt_tokens_details") or {}
+            if isinstance(nested, dict):
+                cached = int(nested.get("cached_tokens") or 0)
+                created = int(nested.get("cache_creation_tokens") or 0)
+
+    fresh = max(0, prompt - cached - created) if (cached or created) else prompt
     return SimpleUsage(
-        input_tokens=getattr(raw, "prompt_tokens", 0) or 0,
-        output_tokens=getattr(raw, "completion_tokens", 0) or 0,
+        input_tokens=fresh,
+        output_tokens=output,
+        cache_read_input_tokens=cached,
+        cache_creation_input_tokens=created,
     )
 
 

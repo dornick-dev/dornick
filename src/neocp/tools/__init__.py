@@ -57,9 +57,11 @@ def build_registry(mind: Any = None, *, subagents: bool = True) -> ToolRegistry:
         learn,
         mail,
         place,
+        plan_tool,
         search,
         shell,
         web,
+        workflow,
     )
 
     registry = ToolRegistry()
@@ -81,6 +83,10 @@ def build_registry(mind: Any = None, *, subagents: bool = True) -> ToolRegistry:
     kosucu.register(registry)
     web.register(registry)
     jobs.register(registry)
+    # İş akışı grafikleri: schedule tek prompt; workflow düğüm/kenar.
+    workflow.register(registry)
+    # Büyük iş planı (onay kapısı).
+    plan_tool.register(registry)
     eyes.register(registry)
     # Ekran ve el: yalnızca yakalama gerçekten mümkünse. Olmayan bir eli
     # listede göstermek, modeli boşa tıklatmak demek.

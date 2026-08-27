@@ -73,7 +73,10 @@ const Komut = (() => {
     { ad: "model", ne: "Model seç — katalogda ara", kos: () => tik("dock-model") },
     { ad: "yetki", ne: "Yetki kipini değiştir", kos: () => tik("dock-mode") },
     { ad: "gorevler", ne: "Koşan görevler — arka plan işleri ve yardımcılar",
-      kos: () => tik("tasks") },
+      kos: () => {
+        if (window.JobsPanel && JobsPanel.openLive) JobsPanel.openLive();
+        else tik("jobs");
+      } },
     { ad: "uygulamalar", ne: "Atölyedeki uygulamalar", kos: () => tik("apps") },
     { ad: "artifact", ne: "Yayınlanan artifact'lar — Uygulamalar panelinde",
       kos: () => tik("apps") },

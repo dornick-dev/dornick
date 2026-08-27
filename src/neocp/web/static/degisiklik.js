@@ -1,18 +1,7 @@
-// "Bu turda ne değişti" + geri al.
+// "Bu turda ne değişti" + Keep / Undo / Accept All.
 //
-// Bir tur bitiyor ve model üç dosyaya dokunmuş oluyor. Hangileri? Cevap
-// şimdiye kadar konuşmanın içinde dağınık duruyordu (araç kartları, "yazdım"
-// cümleleri). Burada tek satır: "3 dosya değişti — göster". Açılınca liste,
-// her satırda "farkı gör" ve üstte "bu turu geri al".
-//
-// Uydurma bir defter YOK: kaynak `tools/checkpoint.py`nin yazdığı değişiklik
-// defteri — ajanın `undo` aracının okuduğu defterin aynısı. Geri alma da o
-// aracın `restore` yolunu çağırıyor. Yani panelin gösterdiği şeyle ajanın
-// bildiği şey tek gerçek.
-//
-// Tur sınırı `sira` numarasıyla çiziliyor: tur başlarken defterin son sırası
-// alınıyor, tur bitince ondan sonrası soruluyor. Zaman damgasıyla değil —
-// saniye çözünürlüğü aynı saniyede olan iki yazımı ayıramıyor.
+// Kaynak: tools/checkpoint.py defteri. Keep yalnızca UI (dosya zaten yazıldı).
+// Undo: /api/degisiklikler/geri {sira} veya {n} / {siralar}.
 
 Dil.ekle({
   " dosya değişti": " file(s) changed",
@@ -21,19 +10,21 @@ Dil.ekle({
   "farkı gör": "see the diff",
   "farkı gizle": "hide the diff",
   "bu turu geri al": "undo this turn",
+  "hepsini kabul et": "accept all",
+  "Keep": "Keep",
+  "Undo": "Undo",
   "Emin misin? Bir daha tıkla": "Sure? Click again",
   "Geri alınıyor…": "Undoing…",
   "yeni dosya": "new file",
   "geri alınamaz": "cannot be undone",
+  "kabul edildi": "accepted",
+  "geri alındı": "undone",
   "Fark okunamadı.": "Could not read the diff.",
   "İkili ya da okunamayan dosya — fark çizilmiyor.":
     "Binary or unreadable file — no diff drawn.",
 });
 
 const Degisiklik = (() => {
-  // Bu turun başlangıç sırası. Sayfa açılışında defterin O ANKİ sonu
-  // alınıyor: geçmiş turların değişiklikleri "bu turda oldu" diye
-  // gösterilmemeli.
   let taban = 0;
   let turBasi = 0;
 
@@ -57,12 +48,18 @@ const Degisiklik = (() => {
     return taban;
   }
 
-  // --- tur sınırı ------------------------------------------------------
+  async function geriIstek(govde) {
+    try {
+      return await (await fetch("/api/degisiklikler/geri", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(govde),
+      })).json();
+    } catch { return null; }
+  }
 
   function turBasladi() {
     turBasi = taban;
-    // Tur başında defteri bir kez tazeliyoruz: arada başka bir yol
-    // (ajanın kendi `undo`su, başka bir pencere) yazmış olabilir.
     tabanAl().then((son) => { turBasi = son; });
   }
 
@@ -70,21 +67,13 @@ const Degisiklik = (() => {
     const veri = await defter(turBasi);
     if (!veri) return;
     taban = veri.son || taban;
-    // Sınır HER tur sonunda ilerliyor. Yalnız `turBasladi`ya güvenmek
-    // yetmiyor: bir yardımcı bitince açılan SÜRDÜRME turunun kullanıcı
-    // mesajı yok, dolayısıyla başlangıcı da yok — o tur bir öncekinin
-    // değişikliklerini kendi hanesine yazıyordu ("3 dosya" derken "6").
     const kayitlar = veri.kayitlar || [];
     turBasi = taban;
-    if (!kayitlar.length) return;   // sessiz tur: şerit basılmaz
+    if (!kayitlar.length) return;
     serit(kayitlar);
   }
 
-  // --- şerit -----------------------------------------------------------
-
   function serit(kayitlar) {
-    // Kendi sınıfı: `system` satırı tek satırlık bir not için biçimlenmiş
-    // (nowrap + ellipsis); açılan liste orada görünmez kalırdı.
     const satir = line("changed");
     satir.replaceChildren();
 
@@ -99,37 +88,79 @@ const Degisiklik = (() => {
     govde.hidden = true;
     satir.append(govde);
 
+    // En eskiden yeniye (inceleme sırası).
+    const sirali = [...kayitlar].sort((a, b) => (a.sira || 0) - (b.sira || 0));
+    const durum = new Map(); // sira → kept|undone
+
     let kurulu = false;
     bas.addEventListener("click", () => {
       govde.hidden = !govde.hidden;
       aksiyon.textContent = govde.hidden ? t("göster") : t("gizle");
-      if (!kurulu) { kurulu = true; govdeKur(govde, kayitlar); }
+      if (!kurulu) {
+        kurulu = true;
+        govdeKur(govde, sirali, durum, () => {
+          const kalan = sirali.filter((k) => !durum.has(k.sira)).length;
+          say.textContent = (kalan || sirali.length) + t(" dosya değişti");
+          if (!kalan) aksiyon.textContent = t("gizle");
+        });
+      }
       scroll();
     });
     scroll();
     return satir;
   }
 
-  function govdeKur(govde, kayitlar) {
-    govde.append(geriAlDugmesi(kayitlar));
-    for (const k of kayitlar) govde.append(dosyaSatiri(k));
+  function govdeKur(govde, kayitlar, durum, onChange) {
+    const bar = el("div", "chg-undo");
+    bar.append(acceptAllDugmesi(kayitlar, durum, onChange));
+    bar.append(geriAlDugmesi(kayitlar, durum, onChange));
+    govde.append(bar);
+    for (const k of kayitlar) govde.append(dosyaSatiri(k, durum, onChange));
   }
 
-  // İki adımlı onay: ilk tık uyarır, ikinci tık uygular. Yanlışlıkla
-  // basılan bir düğmenin turu silmesi kabul edilemez.
-  function geriAlDugmesi(kayitlar) {
-    const kutu = el("div", "chg-undo");
+  function acceptAllDugmesi(kayitlar, durum, onChange) {
+    const dugme = el("button", "chg-accept-btn", t("hepsini kabul et"));
+    dugme.type = "button";
+    dugme.addEventListener("click", () => {
+      for (const k of kayitlar) {
+        if (durum.has(k.sira)) continue;
+        durum.set(k.sira, "kept");
+        const row = govdeSatir(k.sira);
+        if (row) isaretle(row, "kept");
+      }
+      dugme.disabled = true;
+      onChange();
+    });
+    return dugme;
+  }
+
+  function govdeSatir(sira) {
+    return document.querySelector('.chg-row[data-sira="' + sira + '"]');
+  }
+
+  function isaretle(row, kind) {
+    row.classList.remove("kept", "undone");
+    row.classList.add(kind);
+    const acts = row.querySelector(".chg-row-acts");
+    if (acts) acts.replaceChildren(el("span", "chg-tag " + kind,
+      kind === "kept" ? t("kabul edildi") : t("geri alındı")));
+  }
+
+  function geriAlDugmesi(kayitlar, durum, onChange) {
     const dugme = el("button", "chg-undo-btn", t("bu turu geri al"));
     dugme.type = "button";
     let onay = false;
     let zaman = null;
     dugme.addEventListener("click", async () => {
+      const aktif = kayitlar.filter((k) => !durum.has(k.sira) && k.gerialinabilir);
+      if (!aktif.length) {
+        dugme.disabled = true;
+        return;
+      }
       if (!onay) {
         onay = true;
         dugme.classList.add("warn");
         dugme.textContent = t("Emin misin? Bir daha tıkla");
-        // Onay penceresi kapanıyor: beş saniye sonra düğme eski hâline
-        // dönüyor ki ekranda "silahı kurulu" bir düğme unutulmasın.
         zaman = setTimeout(() => {
           onay = false;
           dugme.classList.remove("warn");
@@ -140,14 +171,7 @@ const Degisiklik = (() => {
       clearTimeout(zaman);
       dugme.disabled = true;
       dugme.textContent = t("Geri alınıyor…");
-      let cevap = null;
-      try {
-        cevap = await (await fetch("/api/degisiklikler/geri", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ n: kayitlar.length }),
-        })).json();
-      } catch { cevap = null; }
+      const cevap = await geriIstek({ siralar: aktif.map((k) => k.sira) });
       if (!cevap || cevap.ok === false) {
         line("alert", (cevap && cevap.error) || t("Fark okunamadı."));
         dugme.disabled = false;
@@ -156,18 +180,22 @@ const Degisiklik = (() => {
         onay = false;
         return;
       }
-      kutu.replaceChildren(el("span", "chg-undone",
-        (cevap.yapilan || []).join("\n")));
-      // Geri alma da deftere yazıldı (redo mümkün): taban tazelenmeli,
-      // yoksa bir sonraki tur bu kayıtları "yeni" sanır.
+      for (const k of aktif) {
+        durum.set(k.sira, "undone");
+        const row = govdeSatir(k.sira);
+        if (row) isaretle(row, "undone");
+      }
+      dugme.replaceWith(el("span", "chg-undone",
+        (cevap.yapilan || []).join("\n") || t("geri alındı")));
       tabanAl();
+      onChange();
     });
-    kutu.append(dugme);
-    return kutu;
+    return dugme;
   }
 
-  function dosyaSatiri(k) {
+  function dosyaSatiri(k, durum, onChange) {
     const satir = el("div", "chg-row");
+    satir.dataset.sira = String(k.sira);
     const bas = el("div", "chg-row-head");
     bas.append(el("span", "chg-mark", k.yoktu ? "+" : "~"));
     const ad = el("b", null, k.ad || k.dosya);
@@ -177,9 +205,39 @@ const Degisiklik = (() => {
     if (k.yoktu) bas.append(el("span", "chg-tag new", t("yeni dosya")));
     if (!k.gerialinabilir) bas.append(el("span", "chg-tag warn", t("geri alınamaz")));
 
+    const acts = el("div", "chg-row-acts");
     const fark = el("button", "chg-diff-btn", t("farkı gör"));
     fark.type = "button";
-    bas.append(fark);
+    acts.append(fark);
+
+    if (k.gerialinabilir) {
+      const keep = el("button", "chg-keep-btn", t("Keep"));
+      keep.type = "button";
+      keep.addEventListener("click", () => {
+        durum.set(k.sira, "kept");
+        isaretle(satir, "kept");
+        onChange();
+      });
+      acts.append(keep);
+
+      const undo = el("button", "chg-file-undo", t("Undo"));
+      undo.type = "button";
+      undo.addEventListener("click", async () => {
+        undo.disabled = true;
+        const cevap = await geriIstek({ sira: k.sira });
+        if (!cevap || cevap.ok === false) {
+          line("alert", (cevap && cevap.error) || t("Fark okunamadı."));
+          undo.disabled = false;
+          return;
+        }
+        durum.set(k.sira, "undone");
+        isaretle(satir, "undone");
+        tabanAl();
+        onChange();
+      });
+      acts.append(undo);
+    }
+    bas.append(acts);
     satir.append(bas);
 
     const kutu = el("div", "chg-diff");
@@ -202,9 +260,6 @@ const Degisiklik = (() => {
     return satir;
   }
 
-  // Fark ÇİZİMİ mevcut kartın aynısı: `diffHunk` app.js'te yaşıyor ve araç
-  // kartlarında kullanılıyor. İkinci bir diff çizici yazmak, bir gün
-  // ikisinin ayrı görünmesi demekti.
   function farkKutusu(veri) {
     if (!veri || !veri.ok) {
       return el("div", "diff-empty", (veri && veri.error) || t("Fark okunamadı."));
@@ -215,9 +270,22 @@ const Degisiklik = (() => {
     return diffHunk(veri.eski, veri.yeni, 1);
   }
 
-  // Açılışta tabanı al: bu oturumda daha önce yapılmış değişiklikler ilk
-  // turun özetine karışmasın.
+  // Kart Keep/Undo — app.js diffBlock çağırır.
+  async function kartUndo(sira) {
+    if (!sira) return { ok: false, error: "sira yok" };
+    const cevap = await geriIstek({ sira });
+    if (cevap && cevap.ok) tabanAl();
+    return cevap || { ok: false };
+  }
+
+  async function kartUndoDosya(dosya) {
+    if (!dosya) return { ok: false, error: "dosya yok" };
+    const cevap = await geriIstek({ dosya });
+    if (cevap && cevap.ok) tabanAl();
+    return cevap || { ok: false };
+  }
+
   tabanAl();
 
-  return { turBasladi, turBitti, tabanAl, serit };
+  return { turBasladi, turBitti, tabanAl, serit, kartUndo, kartUndoDosya };
 })();

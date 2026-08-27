@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import re
 import sys
 import threading
 from dataclasses import dataclass
@@ -337,6 +338,13 @@ class Bridge:
         # Uyandırma sözü duyulunca pencereyi geri getiren çağrı.
         # Masaüstü katmanı kuruyor; arayüz önizlemesinde None kalıyor.
         self.on_wake: Any = None
+        # Sistem tepsisi: arka plan görev bitince Windows bildirimi.
+        # Masaüstü `run()` bağlar; önizleme / headless'ta None.
+        self.tray: Any = None
+        # Açılışta kaçırılan zamanlanmış görevler: kullanıcı karar verene
+        # dek zamanlayıcı bekler (bkz. schedule.run_forever `paused`).
+        self._missed_ids: list[str] = []
+        self._missed_fire: Any = None
         # Açılış sırasında nerede olunduğu. Model yüklenmeden konuşmak
         # anlamsız: arayüz bu bilgiyle giriş satırını kapalı tutuyor.
         self.stage = "uyanıyor"
@@ -401,6 +409,59 @@ class Bridge:
         `_surdur` boşa model çağırmaz.
         """
         self.queue.put_nowait(_CHILD_DONE)
+
+    def run_scheduled(self, task: Any) -> dict[str, Any]:
+        """Zamanlanmış görevi sohbete değil Orkestra yardımcısı olarak koşturur.
+
+        Otomasyon (`kind_ui=automation` + workflow_id) → workflow runner;
+        basit görev → sessiz spawn_scheduled. Her koşum task_runs'a yazılır.
+        """
+        agent = self.agent
+        if agent is None:
+            return {"ok": False, "error": "ajan henüz hazır değil"}
+
+        title = str(getattr(task, "title", "") or "görev")
+        prompt = str(getattr(task, "prompt", "") or "")
+        tid = str(getattr(task, "id", "") or "")
+        kind_ui = str(getattr(task, "kind_ui", "") or "simple")
+        workflow_id = str(getattr(task, "workflow_id", "") or "")
+
+        if kind_ui == "automation" and workflow_id and hasattr(agent, "run_workflow"):
+            try:
+                # Görev kimliği geçiyor: koşum, arayüzün baktığı deftere
+                # yazılsın (bkz. `run_workflow` içindeki gerekçe).
+                fut = asyncio.run_coroutine_threadsafe(
+                    agent.run_workflow(workflow_id, tid), self.loop)
+                result = fut.result(timeout=30)
+                return result if isinstance(result, dict) else {"ok": True, "result": result}
+            except Exception as exc:
+                return {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
+
+        if not hasattr(agent, "spawn_scheduled"):
+            return {"ok": False, "error": "zamanlanmış koşum yok"}
+        if not prompt.strip():
+            return {"ok": False, "error": "görev metni boş"}
+
+        box: dict[str, Any] = {}
+        done = threading.Event()
+
+        def _start() -> None:
+            try:
+                handle = agent.spawn_scheduled(title, prompt, tid)
+                book = getattr(agent, "schedule", None)
+                if book is not None and tid:
+                    book.mark_running(tid, handle.id)
+                box.update({"ok": True, "id": handle.id, "title": handle.title,
+                            "run_id": getattr(handle, "run_id", "")})
+            except Exception as exc:
+                box.update({"ok": False, "error": f"{type(exc).__name__}: {exc}"})
+            finally:
+                done.set()
+
+        self.loop.call_soon_threadsafe(_start)
+        if not done.wait(15):
+            return {"ok": False, "error": "zaman aşımı"}
+        return box or {"ok": False, "error": "başlatılamadı"}
 
     def new_session(self) -> dict[str, Any]:
         """Taze bir konuşma başlatır: yeni oturum, boş bağlam."""
@@ -685,7 +746,68 @@ class Bridge:
             # Sahada "hangi sürüm açık?" sorusu cevapsız kalmasın.
             "surum": ortam.surum(),
             "kurulu": ortam.kurulu_mu(),
+            # Program kapalıyken zamanı geçmiş görevler (açılış sorusu).
+            "missed_tasks": self._missed_tasks_payload(),
         }
+
+    def missed_pending(self) -> bool:
+        """Kaçırılan görevler için kullanıcı kararı bekleniyor mu?"""
+        return bool(self._missed_ids)
+
+    def _missed_tasks_payload(self) -> list[dict[str, Any]]:
+        if not self._missed_ids:
+            return []
+        book = getattr(self.agent, "schedule", None) if self.agent else None
+        if book is None:
+            return []
+        from . import schedule as scheduling
+
+        out: list[dict[str, Any]] = []
+        for tid in self._missed_ids:
+            task = book.get(tid)
+            if task is not None:
+                row = scheduling.payload([task])
+                if row:
+                    out.append(row[0])
+        return out
+
+    def resolve_missed(self, action: str) -> dict[str, Any]:
+        """Kaçırılan görevler: şimdi koştur veya bu seferlik atla."""
+        if not self._missed_ids:
+            return {"ok": True, "resolved": 0}
+
+        book = getattr(self.agent, "schedule", None) if self.agent else None
+        if book is None:
+            return {"ok": False, "error": "zamanlayıcı yok"}
+
+        ids = list(self._missed_ids)
+        act = str(action or "").strip().lower()
+        count = 0
+
+        if act in ("run", "missed_run", "yap"):
+            claimed = book.due(only=ids)
+            fire = self._missed_fire
+            for task in claimed:
+                try:
+                    if fire is not None:
+                        fire(task)
+                    else:
+                        self.run_scheduled(task)
+                    count += 1
+                except Exception as exc:
+                    book.note_run(task.id, f"başlatılamadı: {type(exc).__name__}")
+        elif act in ("skip", "missed_skip", "atla"):
+            for tid in ids:
+                if book.skip_occurrence(tid):
+                    count += 1
+        else:
+            return {"ok": False, "error": "run veya skip gerekli"}
+
+        self._missed_ids = []
+        self.hub.emit({"type": "missed_resolved", "action": act, "count": count})
+        if act.startswith("skip") or act == "atla":
+            self.hub.emit({"type": "jobs_refresh"})
+        return {"ok": True, "action": act, "count": count}
 
     # -- maliyet çipi ---------------------------------------------------
 
@@ -832,6 +954,16 @@ class Bridge:
                 "arka_plan": bool(h.arka_plan),
                 "pid": None,
                 "durdurulabilir": h.state == "kosuyor",
+                "surdurulebilir": (
+                    h.state in ("yetim", "bitti", "hata")
+                    and bool(h.session_id)
+                    and h.kind != "iş"
+                ),
+                "son_arac": h.son_arac if h.state == "kosuyor" else "",
+                "son_hedef": h.son_hedef if h.state == "kosuyor" else "",
+                "wait": h.wait if h.state == "kosuyor" else None,
+                "deliverable": h.deliverable,
+                "usage": dict(h.usage) if h.usage else None,
             })
 
         for pid, info in list(katalog._PROCS.items()):
@@ -866,21 +998,102 @@ class Bridge:
         return {"gorevler": rows,
                 "kosan": sum(1 for r in rows if r["durum"] == "kosuyor")}
 
+    def gorev_rapor(self, gid: str) -> dict[str, Any]:
+        """Tam yardımcı/iş metni — Orkestra/Görevler tıklanınca Viewer'a.
+
+        Sohbete yapıştırılan uzun bültenlerin yerine: panelde kısa satır,
+        tıklanınca artifact benzeri sayfa.
+        """
+        gid = str(gid or "").strip()
+        cid = gid[2:] if gid.startswith("c:") else gid
+        if not cid or not re.match(r"^[A-Za-z0-9_-]+$", cid):
+            return {"ok": False, "error": "Geçersiz görev kimliği."}
+        children = getattr(self.agent, "_children", None) or {}
+        handle = children.get(cid)
+        if handle is None:
+            return {"ok": False, "error": "Görev bulunamadı."}
+        metin = str(handle.sonuc or "").strip()
+        if not metin and handle.state == "kosuyor":
+            # Koşarken boş rapor yerine anlık durum — Viewer / Raporu aç.
+            parcalar: list[str] = ["Görev hâlâ çalışıyor."]
+            if handle.wait:
+                w = handle.wait
+                satir = "Model bekleniyor"
+                if w.get("deneme") and w.get("toplam"):
+                    satir += f" ({w['deneme']}/{w['toplam']})"
+                if w.get("saniye"):
+                    satir += f" · {w['saniye']}s"
+                parcalar.append(satir)
+            elif handle.son_arac:
+                satir = f"Şu an: {handle.son_arac}"
+                if handle.son_hedef:
+                    satir += f" — {handle.son_hedef}"
+                parcalar.append(satir)
+            else:
+                parcalar.append("Araç bekleniyor…")
+            metin = "\n".join(parcalar)
+        deliverable = getattr(handle, "deliverable", None)
+        if not deliverable and getattr(handle, "schedule_id", ""):
+            try:
+                from .loop import _infer_deliverable
+                book = scheduling.Schedule(self.agent.config.state_dir)
+                task = book.get(handle.schedule_id)
+                if task is not None:
+                    deliverable = _infer_deliverable(task.prompt or "", metin)
+                    if deliverable:
+                        handle.deliverable = deliverable
+            except Exception:
+                pass
+        return {
+            "ok": True,
+            "id": "c:" + handle.id,
+            "title": handle.title,
+            "state": handle.state,
+            "metin": metin or "(çıktı yok)",
+            "deliverable": deliverable,
+        }
+
     def gorev_durdur(self, gid: str) -> dict[str, Any]:
-        """Tek bir görevi durdurur. `gid` gorevler() satırındaki kimlik."""
+        """Tek bir görevi durdurur. `gid` gorevler() satırındaki kimlik.
+
+        Canlı yardımcıya cancel yollar; planlanmış 'koşuyor' hayaletini de
+        temizler (çocuk yoksa / bitmişse UI'da takılı kalmasın).
+        """
         from . import apps as katalog
 
-        gid = str(gid or "")
+        gid = str(gid or "").strip()
         if gid.startswith("c:"):
+            cid = gid[2:]
+            if not cid or not re.match(r"^[A-Za-z0-9_-]+$", cid):
+                return {"ok": False, "error": "Geçersiz görev kimliği."}
             children = getattr(self.agent, "_children", None) or {}
-            handle = children.get(gid[2:])
+            handle = children.get(cid)
+
+            if handle is not None and handle.state == "kosuyor":
+                def _stop(h=handle) -> None:
+                    h.cancel.set()
+                    agent = h.agent
+                    if agent is not None:
+                        try:
+                            agent.cancel.set()
+                        except Exception:
+                            pass
+                self.loop.call_soon_threadsafe(_stop)
+
+            # Hayalet / canlı: planlanmış satır 'koşuyor'da kalmasın.
+            cleared = self._clear_schedule_running(cid, handle)
+            try:
+                self.hub.emit({"type": "jobs_refresh"})
+            except Exception:
+                pass
             if handle is None:
-                return {"ok": False, "error": "Görev bulunamadı."}
+                return {"ok": True, "id": gid, "cleared": True,
+                        "note": "Kayıt temizlendi (canlı yardımcı yoktu)."}
             if handle.state != "kosuyor":
-                return {"ok": False, "error": "Bu görev zaten bitmiş."}
-            # asyncio.Event thread-güvenli değil: karar döngüye taşınıyor.
-            self.loop.call_soon_threadsafe(handle.cancel.set)
-            return {"ok": True, "id": gid}
+                return {"ok": True, "id": gid, "cleared": cleared,
+                        "note": "Görev zaten bitmişti; durum güncellendi."}
+            return {"ok": True, "id": gid, "cleared": cleared}
+
         if gid.startswith("p:"):
             try:
                 pid = int(gid[2:])
@@ -888,6 +1101,122 @@ class Bridge:
                 return {"ok": False, "error": "Geçersiz süreç kimliği."}
             return katalog.stop(pid)
         return {"ok": False, "error": "Geçersiz görev kimliği."}
+
+    def _clear_schedule_running(
+        self, child_id: str, handle: Any = None,
+    ) -> bool:
+        """last_status=koşuyor + last_child_id eşleşen görevleri 'kesildi' yap."""
+        agent = self.agent
+        if agent is None:
+            return False
+        book = getattr(agent, "schedule", None)
+        if book is None:
+            return False
+        cleared = False
+        state_dir = getattr(getattr(agent, "config", None), "state_dir", None)
+        for task in book.all():
+            if task.last_child_id != child_id:
+                continue
+            if task.last_status != "koşuyor":
+                continue
+            try:
+                book.note_run(task.id, "kesildi")
+                cleared = True
+            except Exception:
+                continue
+            if state_dir is None:
+                continue
+            try:
+                from . import task_runs
+                from .loop import _report_with_meter, _run_meter
+
+                if handle is not None and not getattr(handle, "bitis_ts", 0):
+                    try:
+                        import time as _time
+                        handle.bitis_ts = _time.time()
+                    except Exception:
+                        pass
+                meter = (
+                    _run_meter(handle, agent.config)
+                    if handle is not None else {}
+                )
+                for run in task_runs.list_runs(state_dir, task.id, limit=8):
+                    if run.status != "koşuyor":
+                        continue
+                    if run.child_id and run.child_id != child_id:
+                        continue
+                    body = "Kullanıcı durdurdu."
+                    if handle is not None and getattr(handle, "sonuc", None):
+                        body = str(handle.sonuc)[:500] or body
+                    report = body
+                    if handle is not None:
+                        report = _report_with_meter(
+                            handle, agent.config, body)
+                    elif meter.get("line"):
+                        report = body + "\n\n---\n" + meter["line"]
+                    task_runs.finish_run(
+                        state_dir, task.id, run.id,
+                        status="hata",
+                        report=report,
+                        child_id=child_id,
+                        model=meter.get("model") or (
+                            getattr(handle, "model", "") if handle else ""),
+                        usage=meter.get("usage"),
+                        cost_usd=meter.get("cost_usd"),
+                        tools=meter.get("tools"),
+                        duration_s=meter.get("duration_s"),
+                        last_tool=meter.get("last_tool"),
+                    )
+            except Exception:
+                pass
+        return cleared
+
+    def gorev_devam(self, gid: str, message: str = "") -> dict[str, Any]:
+        """Yetim / bitmiş yardımcıyı disk oturumundan sürdürür.
+
+        `task_say` / `_child_say` yolunun HTTP sarmalayıcısı — ajan döngüsünde
+        `create_task` gerekir.
+        """
+        gid = str(gid or "").strip()
+        cid = gid[2:] if gid.startswith("c:") else gid
+        if not cid or not re.match(r"^[A-Za-z0-9_-]+$", cid):
+            return {"ok": False, "error": "Geçersiz görev kimliği."}
+
+        agent = self.agent
+        if agent is None:
+            return {"ok": False, "error": "Ajan henüz hazır değil."}
+        children = getattr(agent, "_children", None) or {}
+        handle = children.get(cid)
+        if handle is None:
+            return {"ok": False, "error": "Görev bulunamadı."}
+        if handle.kind == "iş":
+            return {"ok": False, "error": "Arka plan süreci sürdürülemez."}
+        if handle.state == "kosuyor":
+            return {"ok": False, "error": "Bu görev zaten koşuyor."}
+        if not handle.session_id:
+            return {"ok": False, "error": "Oturum yok; sürdürülemiyor."}
+
+        msg = (message or "").strip() or "Kaldığın yerden devam et."
+        box: dict[str, Any] = {}
+        done = threading.Event()
+
+        def _start() -> None:
+            try:
+                ok, text = agent._child_say(cid, msg)
+                box.update({"ok": bool(ok), "id": "c:" + cid,
+                            "text": text or ""})
+                if not ok:
+                    box["error"] = text or "Sürdürülemedi."
+            except Exception as exc:
+                box.update({"ok": False,
+                            "error": f"{type(exc).__name__}: {exc}"})
+            finally:
+                done.set()
+
+        self.loop.call_soon_threadsafe(_start)
+        if not done.wait(timeout=15):
+            return {"ok": False, "error": "Sürdürme zaman aşımı."}
+        return box if box else {"ok": False, "error": "Sürdürülemedi."}
 
     def _fiyat_getir(self) -> None:
         """Seçili modelin fiyatını arka planda bir kez çeker.
@@ -936,17 +1265,54 @@ class Bridge:
             on_child_start=lambda title, model, cid, bg=False: self.hub.emit(
                 {"type": "child_start", "title": title, "model": model, "id": cid,
                  "bg": bool(bg)}),
-            on_child_tool=lambda title, tool, phase: self.hub.emit(
-                {"type": "child_tool", "title": title, "tool": tool, "phase": phase}),
+            on_child_tool=lambda title, tool, phase, hedef="": self.hub.emit(
+                {"type": "child_tool", "title": title, "tool": tool,
+                 "phase": phase, "hedef": hedef or ""}),
             # `bg`: bu biten kanal arka planda mı koşuyordu. Görevler paneli
             # sohbete "bitti" bildirimini YALNIZ arka plan işleri için
             # düşürüyor — senkron yardımcının sonucu zaten cevabın içinde.
-            on_child_end=lambda title, ok, turns, tools, cid="", ozet="": self.hub.emit(
-                {"type": "child_end", "title": title, "ok": ok, "turns": turns,
-                 "tools": tools, "id": cid, "ozet": ozet,
-                 "bg": self._cocuk_arka_plan(cid)}),
+            on_child_end=self._child_end,
+            on_child_wait=lambda payload: self.hub.emit(
+                {"type": "child_wait", **(payload or {})}),
             approve=self._approve,
         )
+
+    def _child_end(
+        self,
+        title: str,
+        ok: bool,
+        turns: int,
+        tools: int,
+        cid: str = "",
+        ozet: str = "",
+    ) -> None:
+        """Alt kanal bitti: Orkestra + (arka plansa) Windows tepsi balonu."""
+        bg = self._cocuk_arka_plan(cid)
+        deliverable = None
+        children = getattr(self.agent, "_children", None) or {}
+        handle = children.get(cid) if cid else None
+        if handle is not None:
+            deliverable = getattr(handle, "deliverable", None)
+        usage = dict(getattr(handle, "usage", None) or {}) if handle else {}
+        self.hub.emit({
+            "type": "child_end", "title": title, "ok": ok, "turns": turns,
+            "tools": tools, "id": cid, "ozet": ozet, "bg": bg,
+            "deliverable": deliverable,
+            "model": getattr(handle, "model", "") if handle else "",
+            "usage": usage or None,
+        })
+        # Pencere kapalı olsa da kullanıcı haberdar olsun — yalnız arka
+        # plan / zamanlanmış / otomasyon işleri (senkron yardımcı zaten
+        # sohbette).
+        if not bg:
+            return
+        t = self.tray
+        if t is None:
+            return
+        try:
+            t.note(tray_module.gorev_bildirim_metni(title, ok=bool(ok)))
+        except Exception:
+            pass
 
     async def _approve(
         self,
@@ -1285,13 +1651,50 @@ def _prepare_model(config: Config) -> None:
     Aynı yerde fazla kopyalar da kaldırılıyor: meşgul bir modele ikinci
     istek gelince LM Studio ikinci bir kopya yüklüyor ve bellek katlanıyor.
 
+    `local_optimize` açıksa (ve adres localhost ise): diğer modeller boşaltılır,
+    VRAM/model boyutuna göre bağlam düşürülür. Kapalıysa dokunulmaz.
+
     Sessizce başarısız oluyor: LM Studio yoksa uçlar da yok ve bu normal.
     """
     if config.model.provider != "openai":
         return
 
     url = config.model.base_url
-    for gone in lmstudio.drop_duplicates(url, config.model.name):
+    name = config.model.name
+    context = config.model.context_window
+
+    optimize = bool(config.model.local_optimize) and lmstudio.is_local_url(url)
+    if optimize:
+        for gone in lmstudio.unload_others(url, name):
+            print(f"[neo] yerel opt: başka model boşaltıldı: {gone}", flush=True)
+        # Boşaltmadan sonra VRAM ölç — önceki modelin yeri geri gelsin.
+        model = lmstudio.find(url, name)
+        free_mb = None
+        try:
+            from . import gpu as gpu_module
+            free_mb = gpu_module.primary_free_mb()
+        except Exception:
+            free_mb = None
+        if model is not None:
+            # Model zaten yüklüyse VRAM'de ağırlık yer kaplıyor — size'ı
+            # tekrar düşmek çifte sayım olur, bağlamı gereksiz keser.
+            size_for_fit = 0 if model.instances else model.size_bytes
+            fitted = lmstudio.suggest_context(
+                context,
+                max_context=model.max_context,
+                size_bytes=size_for_fit,
+                params_b=model.params_b,
+                free_vram_mb=free_mb,
+            )
+            if fitted != context:
+                print(
+                    f"[neo] yerel opt: bağlam {context} → {fitted}"
+                    + (f" (VRAM boş {free_mb} MB)" if free_mb is not None else ""),
+                    flush=True,
+                )
+                context = fitted
+
+    for gone in lmstudio.drop_duplicates(url, name):
         print(f"[neo] fazla kopya kaldırıldı: {gone}", flush=True)
 
     # keep_loaded ayarlanmışsa onu, yoksa cömert bir varsayılan (30 dk) TTL
@@ -1299,7 +1702,7 @@ def _prepare_model(config: Config) -> None:
     # isteği "Model unloaded" ile düşürüyordu. Böylece konuşma sürerken model
     # yüklü kalıyor.
     ttl = config.model.keep_loaded or 1800
-    result = lmstudio.ensure_loaded(url, config.model.name, config.model.context_window, ttl=ttl)
+    result = lmstudio.ensure_loaded(url, name, context, ttl=ttl)
     if result.get("state") == "loaded":
         print(f"[neo] model {result['context']} token pencereyle yüklendi "
               f"({result.get('seconds', 0):.1f} sn)")
@@ -1547,17 +1950,27 @@ async def _boot(config: Config, port: int, resume: bool) -> Runtime:
                   "text": f"Yarım kalmış bir iş görünüyor (oturum {yarim}). "
                           "Geçmiş'ten açıp 'devam et' diyebilirsin."})
 
-    # Zamanlayıcı ajanın döngüsünde koşuyor: tetiklenen görev doğrudan
-    # çalışmıyor, kullanıcının mesaj kuyruğuna giriyor. Böylece ajan bir
-    # işin ortasındayken araya girmiyor ve çıktı normal bir tur gibi akıyor.
+    # Zamanlayıcı ajanın döngüsünde koşuyor: tetiklenen görev sohbet
+    # kuyruğuna değil arka plan yardımcıya düşüyor — rapor Orkestra'da.
     def fire(task: Any) -> None:
         hub.emit({"type": "notice", "text": f"Zamanlanmış görev: {task.title}"})
-        book.note_run(task.id, "kuyruğa alındı")
-        # `siraya`: zamanlanmış görev koşan bir turun ortasına karışmaz,
-        # kendi turunu bekler — araya girme kullanıcının jesti.
-        bridge.submit(task.prompt, siraya=True)
+        result = bridge.run_scheduled(task)
+        if not result.get("ok"):
+            book.note_run(task.id, f"başlatılamadı: {result.get('error') or '?'}")
+            hub.emit({"type": "notice",
+                      "text": f"Görev başlatılamadı: {task.title}"})
 
-    ticker = loop.create_task(scheduling.run_forever(book, fire))
+    bridge._missed_fire = fire
+    missed = book.overdue()
+    if missed:
+        bridge._missed_ids = [t.id for t in missed]
+        hub.emit({
+            "type": "missed_tasks",
+            "tasks": scheduling.payload(missed),
+        })
+
+    ticker = loop.create_task(scheduling.run_forever(
+        book, fire, paused=bridge.missed_pending))
 
     # Geliş: uzun bir sessizlikten sonra biri odaya girdiğinde ajan bir kez
     # bakıyor. Küçük bir çocuk gibi — kimse yokken kendini beklemeye alıyor,
@@ -1757,14 +2170,34 @@ def run(config: Config, *, port: int = 8765, resume: bool = False) -> int:
     # native bir Evet/Hayır penceresi soruyor — süren iş sessizce ölmesin.
     # Evet'te temiz kapanış: park/yetim mekanizmaları izi düşürür ve açılış
     # sürdürmeyi zaten teklif eder.
+    # X ile Çıkış aynı `closing` olayına düşüyor; ayrımı `Kapanis` tutuyor.
+    # `gizle` aşağıda tanımlanan `_hide_to_tray`e bağlanıyor (balon dahil),
+    # ama o daha ilerideki satırlarda doğduğu için buradan geç bağlanıyor.
+    kapanis = tray_module.Kapanis(
+        gizle=lambda: _hide_to_tray(),
+        yok_et=lambda: window.destroy(),
+    )
+
+    def _show_from_tray() -> None:
+        """Tepsiden / uyandırma: pencere gelsin; arka planda biten işler
+        Görevler panelinde görünsün (liste tazelensin)."""
+        window.show()
+        runtime.bridge.hub.emit({"type": "jobs_refresh"})
+
+    def _open_jobs_from_tray() -> None:
+        window.show()
+        runtime.bridge.hub.emit({"type": "open_jobs"})
+
     tray = tray_module.Tray(
-        show=lambda: window.show(),
+        show=_show_from_tray,
         hide=lambda: window.hide(),
-        quit=lambda: window.destroy(),
+        quit=kapanis.cik,
         busy=lambda: runtime.bridge.busy,
         confirm=_confirm_quit,
+        jobs=_open_jobs_from_tray,
     )
     live = tray.start()
+    runtime.bridge.tray = tray
 
     # Tek şerit: OS başlık çubuğu sökülüyor (strip_caption, _titlebar_boot'ta)
     # ve pencere denetimleri app'in kendi şeridine geçiyor. Native davranışlar
@@ -1828,8 +2261,7 @@ def run(config: Config, *, port: int = 8765, resume: bool = False) -> int:
     # gizlenir — app şeridindeki X ile aynı yol.
     if hide_on_close:
         def _hide_instead_of_close() -> bool:
-            _hide_to_tray()
-            return False   # kapatmayı iptal et
+            return kapanis.kapanabilir_mi()
 
         try:
             window.events.closing += _hide_instead_of_close
@@ -1838,12 +2270,15 @@ def run(config: Config, *, port: int = 8765, resume: bool = False) -> int:
 
     # Uyandırma sözü duyulduğunda pencere geri geliyor: gizliyken de sayfa
     # çalışmaya devam ediyor, mikrofon dinliyor.
-    runtime.bridge.on_wake = lambda: window.show()
+    runtime.bridge.on_wake = _show_from_tray
 
     if hide_on_close:
-        print("[neo] tepside çalışıyor — X pencereyi gizler, Çıkış tepsiden", flush=True)
+        print("[neo] tepside çalışıyor — X pencereyi gizler; görevler arka "
+              "planda sürer, Çıkış tepsiden", flush=True)
     else:
-        print("[neo] tepsi yok; pencereyi kapatmak programı da kapatır", flush=True)
+        print("[neo] tepsi yok; pencereyi kapatmak programı da kapatır "
+              "(arka plan görevleri için: pip install 'neocp[tray]')",
+              flush=True)
 
     try:
         # Pencere/görev çubuğu simgesi: tek kaynak logodan (tepsi ve sekmeyle
@@ -2218,12 +2653,16 @@ def _win_do(action: str) -> bool:
         return False
 
 
-def _neo_windows() -> list[int]:
+def _neo_windows(*, gizli_de: bool = False) -> list[int]:
     """Bu süreçte 'neo' başlıklı görünür top-level pencerelerin HWND'leri.
 
     FindWindowW(None, title) tek bir eşleşme döndürüyor ve bazı kurulumlarda
     hiç bulamıyordu; EnumWindows tüm eşleşmeleri güvenle veriyor (canlı
     pencerede kanıtlandı).
+
+    `gizli_de=True` görünürlük süzgecini kaldırıyor: pencere tepsiye
+    gizlenmişken de bir sahip (owner) HWND'sine ihtiyaç duyan tek yer
+    `_confirm_quit` — ve tam o an pencere gizli oluyor.
     """
     import ctypes
     from ctypes import wintypes
@@ -2234,7 +2673,7 @@ def _neo_windows() -> list[int]:
 
     @ctypes.WINFUNCTYPE(ctypes.c_bool, wintypes.HWND, wintypes.LPARAM)
     def _enum(hwnd, _lparam):
-        if not user32.IsWindowVisible(hwnd):
+        if not gizli_de and not user32.IsWindowVisible(hwnd):
             return True
         # YALNIZCA bu sürecin penceresi: iki neo örneği açıkken (ya da bir
         # test örneği varken) düğmeler ÖTEKİ örneğin penceresini yönetiyordu —
@@ -2398,6 +2837,13 @@ def _confirm_quit(question: str) -> bool:
     Pencere gizliyken de görünmesi gerekiyor; MB_TOPMOST + MB_SETFOREGROUND
     onu öne getiriyor. Windows dışı ya da diyalog kurulamayan durumda True:
     kullanıcının açık Çıkış jesti "çıkamıyorum" tuzağına dönüşmesin.
+
+    SAHİP pencere veriliyor. Sahipsiz (hWnd=0) bir MessageBox kendi görev
+    çubuğu düğmesini alıyor ve o düğmenin simgesi uygulamanınki değil,
+    sürecin varsayılanı — yani Python'un yılan simgesi — oluyordu. Sahipli
+    bir kutu ayrı düğme açmıyor. Pencere bulunamazsa (henüz doğmamış ya da
+    yok edilmiş) 0'a düşüyoruz: yanlış simgeli bir soru, sorulmayan bir
+    sorudan iyidir.
     """
     if sys.platform != "win32":
         return True
@@ -2409,8 +2855,12 @@ def _confirm_quit(question: str) -> bool:
         MB_TOPMOST = 0x00040000
         MB_SETFOREGROUND = 0x00010000
         IDYES = 6
+        try:
+            sahipler = _neo_windows(gizli_de=True)
+        except Exception:
+            sahipler = []
         answer = ctypes.windll.user32.MessageBoxW(
-            0, question, WINDOW_TITLE,
+            sahipler[0] if sahipler else 0, question, WINDOW_TITLE,
             MB_YESNO | MB_ICONWARNING | MB_TOPMOST | MB_SETFOREGROUND,
         )
         return answer == IDYES

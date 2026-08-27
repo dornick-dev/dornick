@@ -52,10 +52,10 @@ const Scene = (() => {
   // alındı ve parlaklık düşürüldü. Kip canlandırmasını yine bunlar
   // taşıyor — düşünürken hızlanan şey bu halkalar.
   const RINGS = [
-    { scale: 1.62, speed: 0.16, parts: 3, gap: 0.30, width: 1.6, alpha: 0.30 },
-    { scale: 1.86, speed: -0.26, parts: 6, gap: 0.42, width: 1.0, alpha: 0.22 },
-    { scale: 2.10, speed: 0.46, parts: 12, gap: 0.55, width: 0.9, alpha: 0.16 },
-    { scale: 2.38, speed: -0.09, parts: 2, gap: 0.72, width: 0.9, alpha: 0.12 }
+    { scale: 1.62, speed: 0.08, parts: 3, gap: 0.30, width: 1.6, alpha: 0.30 },
+    { scale: 1.86, speed: -0.12, parts: 6, gap: 0.42, width: 1.0, alpha: 0.22 },
+    { scale: 2.10, speed: 0.20, parts: 12, gap: 0.55, width: 0.9, alpha: 0.16 },
+    { scale: 2.38, speed: -0.04, parts: 2, gap: 0.72, width: 0.9, alpha: 0.12 }
   ];
 
   // Çekirdeğin halleri. Ajanın ne yaptığı ekranda okunabilir olmalı:
@@ -68,17 +68,16 @@ const Scene = (() => {
   //   glow   auranın gücü
   //   wedge  konik süpürmenin hızı
   //   tint   çekirdeğin rengi
-  // Hızlar bilerek düşük: dönüş/süpürme/nabız "aşırı hızlı, göz yoruyor"du.
-  // Sakin ama ölü değil — çalışırken canlı, ama izlemesi rahat. (Önceki
-  // değerler yaklaşık iki katıydı.)
+  // Hızlar bilerek düşük: halka/süpürme "aşırı hızlı dönüyor, hoş değil"
+  // diyene kadar kısılıyor. Canlı kalsın, göz yormasın.
   const MODES = {
     // Uyanma: yavaş, sönük, soğuk. Henüz kimse yok.
-    waking:    { spin: 0.16, beat: 3000, glow: 0.04, wedge: 0.08, tint: [58, 96, 128] },
-    idle:      { spin: 0.50, beat: 2000, glow: 0.10, wedge: 0.28, tint: [79, 227, 255] },
-    thinking:  { spin: 0.90, beat: 1200, glow: 0.17, wedge: 0.80, tint: [162, 142, 255] },
-    writing:   { spin: 0.65, beat: 1000, glow: 0.15, wedge: 0.55, tint: [96, 242, 214] },
-    recalling: { spin: 1.10, beat: 1050, glow: 0.21, wedge: 1.15, tint: [79, 227, 255] },
-    working:   { spin: 1.00, beat: 1100, glow: 0.18, wedge: 0.95, tint: [255, 176, 84] }
+    waking:    { spin: 0.10, beat: 3200, glow: 0.04, wedge: 0.05, tint: [58, 96, 128] },
+    idle:      { spin: 0.26, beat: 2400, glow: 0.10, wedge: 0.12, tint: [79, 227, 255] },
+    thinking:  { spin: 0.42, beat: 1600, glow: 0.17, wedge: 0.32, tint: [162, 142, 255] },
+    writing:   { spin: 0.34, beat: 1400, glow: 0.15, wedge: 0.24, tint: [96, 242, 214] },
+    recalling: { spin: 0.48, beat: 1500, glow: 0.21, wedge: 0.40, tint: [79, 227, 255] },
+    working:   { spin: 0.44, beat: 1500, glow: 0.18, wedge: 0.36, tint: [255, 176, 84] }
   };
 
   // Kip geçişinin bir karedeki payı. 1'e yaklaştıkça geçiş sertleşir.
@@ -854,16 +853,10 @@ const Scene = (() => {
     // bir kez hesaplanıyor, sonra web ve düğümler onu kullanıyor.
     projectNodes(t);
     drawWeb();
-    // Işıkta beyin MÜREKKEP silüeti anıların ÜSTÜNE basılınca düğümler ve
-    // yazılar kayboluyordu. Koyuda nokta bulutu seyrek: anılar önce, beyin
-    // yüzey olarak üstte. Işıkta tersi: silüet zemin, anılar üstte okunur.
-    if (isLight()) {
-      drawCore(t);
-      drawNodes(t);
-    } else {
-      drawNodes(t);
-      drawCore(t);
-    }
+    // Anılar her zaman üstte: silüet zemin, düğüm/yazı okunur. (Eski koyu
+    // yol seyrek bulutu üste basıyordu — tebeşir netleşince anıları yutar.)
+    drawCore(t);
+    drawNodes(t);
     drawLimbs(t);
     drawSignals(t);
     drawBridges(t);
@@ -1252,7 +1245,7 @@ const Scene = (() => {
   // Beynin o karedeki dönüşü. Hem bulut hem anılar aynı rotasyonu
   // kullanıyor ki birlikte dönsünler — anı beynin içinde bir yere ait.
   function brainSpin(t) {
-    const s = t / 13000 * (0.5 + look.spin * 0.5);
+    const s = t / 22000 * (0.5 + look.spin * 0.5);
     return { cosY: Math.cos(s), sinY: Math.sin(s), cosX: Math.cos(TILT), sinX: Math.sin(TILT) };
   }
 
@@ -1314,21 +1307,22 @@ const Scene = (() => {
   function drawBrain(t) {
     const points = brainCloud();
     const r = core.r * 1.25;
-    const beat = (Math.sin(t / look.beat) + 1) / 2;
-    const spin = t / 13000 * (0.5 + look.spin * 0.5);
+    const spin = t / 22000 * (0.5 + look.spin * 0.5);
 
     const cosY = Math.cos(spin), sinY = Math.sin(spin);
     const cosX = Math.cos(TILT), sinX = Math.sin(TILT);
-    // Işık kipinde bulut MÜREKKEP: koyu ton, beyaza doğru açılma YOK. Koyu
-    // kipteki "parlak cyan + beyaza kalkış" beyaz zeminde birebir görünmezlik
-    // demekti ("renkler arka ile aynı olup kayboluyor"). Kip rengi korunuyor
-    // ama koyultularak (0.30×) — düşünürken mor, çalışırken amber yine belli.
+    // Işık: MÜREKKEP silüet (koyu slate). Koyu: TEBEŞİR silüet (buz).
+    // Eski koyu yol (kip tinti + 0.10 alfa + yarım nokta) HUD halkalarında
+    // kayboluyordu — ışıkta net, siyahta silik. Kip rengi tebeşire karışır
+    // (düşünürken mor, çalışırken amber hâlâ okunur).
     const light = isLight();
-    // Işıkta koyu slate silüet (kullanıcının beğendiği netlik) — anılar
-    // drawNodes ile ÜSTTE çizildiği için düğümler/yazılar yutulmaz.
-    const colour = (light
+    const colour = light
       ? [28, 48, 68]
-      : look.tint).map(Math.round);
+      : [
+          Math.round(look.tint[0] * 0.28 + 210 * 0.72),
+          Math.round(look.tint[1] * 0.28 + 232 * 0.72),
+          Math.round(look.tint[2] * 0.28 + 248 * 0.72),
+        ];
 
     // Uzaktaki nokta önce çizilmeli, yoksa yakındakiler arkada kalıyor.
     // Sıralama her karede: 1500 nokta için maliyeti ölçülemeyecek kadar az.
@@ -1360,22 +1354,15 @@ const Scene = (() => {
     for (const p of shown) {
       const near = (p.z + 1.1) / 2.2;
       const near2 = near * near;
-      if (light) {
-        // Net silüet, ama tam opak leke değil — üstteki renkli anılar okunur.
-        ctx.globalAlpha = (0.58 + near2 * 0.32) * p.f;
-        const shade = 0.88 + near2 * 0.12;
-        ctx.fillStyle = "rgb(" + Math.round(colour[0] * shade) + ","
-          + Math.round(colour[1] * shade) + "," + Math.round(colour[2] * shade) + ")";
-        const size = (1.05 + near2 * 0.7) * p.s;
-        ctx.fillRect(p.x - size / 2, p.y - size / 2, size, size);
-      } else {
-        ctx.globalAlpha = Math.min(1, (0.10 + near2 * 0.85) * p.f);
-        const lift = near2 * 110;
-        ctx.fillStyle = "rgb(" + Math.max(0, Math.min(255, colour[0] + lift)) + ","
-          + Math.max(0, Math.min(255, colour[1] + lift)) + "," + Math.max(0, Math.min(255, colour[2] + lift)) + ")";
-        const size = (0.5 + near2 * 0.9) * p.s;
-        ctx.fillRect(p.x - size / 2, p.y - size / 2, size, size);
-      }
+      // Her iki kipte aynı silüet dili: yüksek alfa, okunaklı nokta boyutu.
+      // Derinlik shade ile (uzak biraz sönük); beyaza "lift" yok — o yol
+      // koyuda da noktayı zemine yediriyordu.
+      ctx.globalAlpha = (0.55 + near2 * 0.35) * p.f;
+      const shade = light ? (0.88 + near2 * 0.12) : (0.78 + near2 * 0.22);
+      ctx.fillStyle = "rgb(" + Math.round(colour[0] * shade) + ","
+        + Math.round(colour[1] * shade) + "," + Math.round(colour[2] * shade) + ")";
+      const size = (1.05 + near2 * 0.7) * p.s;
+      ctx.fillRect(p.x - size / 2, p.y - size / 2, size, size);
     }
 
     // Ateşlemeler: birkaç nokta parlıyor. Beynin çalıştığı buradan
@@ -1384,7 +1371,7 @@ const Scene = (() => {
     ctx.shadowColor = css("ice");
     ctx.shadowBlur = light ? 0 : 10;
     ctx.fillStyle = css("ice");
-    const period = 1600 / (0.5 + look.spin);
+    const period = 2400 / (0.5 + look.spin);
     for (let n = 0; n < SPARKS; n++) {
       const phase = ((t + n * (period / SPARKS)) % period) / period;
       const round = Math.floor((t + n * (period / SPARKS)) / period);
@@ -1393,14 +1380,6 @@ const Scene = (() => {
       ctx.globalAlpha = Math.sin(phase * Math.PI) * 0.9;
       ctx.beginPath();
       ctx.arc(p.x, p.y, 1.6 * p.s, 0, Math.PI * 2);
-      ctx.fill();
-    }
-
-    if (!light) {
-      ctx.globalAlpha = beat * 0.05 * (0.5 + look.glow * 4);
-      ctx.fillStyle = `rgb(${colour[0]},${colour[1]},${colour[2]})`;
-      ctx.beginPath();
-      ctx.arc(0, 0, r * 0.95, 0, Math.PI * 2);
       ctx.fill();
     }
 
@@ -1443,7 +1422,7 @@ const Scene = (() => {
     ctx.globalAlpha = light ? 0.78 : 0.3;
     ctx.shadowBlur = 0;
     for (let i = 0; i < 60; i++) {
-      const a = (i / 60) * Math.PI * 2 + seconds * 0.05;
+      const a = (i / 60) * Math.PI * 2 + seconds * 0.025;
       const out = tickR + (i % 5 === 0 ? 9 : 4);
       ctx.beginPath();
       ctx.moveTo(Math.cos(a) * tickR, Math.sin(a) * tickR);
@@ -1602,13 +1581,13 @@ const Scene = (() => {
   // toplandığı, henüz söylenmediği hissi.
   function thinkingMotes(t) {
     const count = 14;
-    const cycle = 2600;
+    const cycle = 3600;
     ctx.save();
     ctx.translate(core.x, core.y);
     for (let i = 0; i < count; i++) {
       const phase = ((t + i * (cycle / count)) % cycle) / cycle;
       const r = core.r * (3.1 - phase * 2.0);
-      const a = (i / count) * Math.PI * 2 + phase * 2.4 + t / 4000;
+      const a = (i / count) * Math.PI * 2 + phase * 1.4 + t / 7000;
       // Baş ve son sönük: içeri girerken beliriyor, çekirdekte eriyor.
       const alpha = Math.sin(phase * Math.PI) * 0.75;
 
@@ -1629,7 +1608,7 @@ const Scene = (() => {
   // ekranda belirirken kaynağının çekirdek olduğu görünüyor.
   function writingStream(t) {
     const lanes = 7;
-    const cycle = 1100;
+    const cycle = 1700;
     const reach = Math.min(view.h - core.y - core.r * 1.6, core.r * 3.4);
     if (reach <= 0) return;
 
@@ -1658,8 +1637,7 @@ const Scene = (() => {
   // Hatırlama: çekirdekten ağa doğru yayılan sonar halkaları. Aktivasyonun
   // dışarı doğru yürüdüğü bu; hangi düğüme vardığını `activate` gösteriyor.
   function recallSweep(t) {
-    const cycle = 1500;
-    const rings = 3;
+    const cycle = 2200;
     const far = Math.min(view.w, view.h) * 0.52;
 
     ctx.save();
@@ -1695,7 +1673,7 @@ const Scene = (() => {
     ctx.shadowBlur = 12;
     for (let i = 0; i < count; i++) {
       // Kademeli hız: paketler sıra sıra değil, dağınık geçiyor.
-      const a = t / 900 * (1 + (i % 3) * 0.14) + (i / count) * Math.PI * 2;
+      const a = t / 1800 * (1 + (i % 3) * 0.14) + (i / count) * Math.PI * 2;
       ctx.globalAlpha = 0.35 + 0.45 * ((Math.sin(a * 3) + 1) / 2);
       ctx.fillRect(Math.cos(a) * r - size / 2, Math.sin(a) * r - size / 2, size, size);
     }

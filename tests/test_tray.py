@@ -116,3 +116,92 @@ def test_tray_without_guards_keeps_the_old_behaviour() -> None:
                   quit=lambda: calls.append("quit"))
     t._quit()
     assert calls == ["quit"]
+
+
+# -- X ile Çıkış'ın ayrımı ------------------------------------------------
+#
+# İkisi de pencere katmanının aynı `closing` olayına düşüyor. Ayrımı bir
+# bayrak yapıyor; bayrak olmayınca Çıkış sessizce gizlemeye düşüyordu.
+
+
+def _kapanis() -> tuple[tray.Kapanis, list[str]]:
+    iz: list[str] = []
+    k = tray.Kapanis(gizle=lambda: iz.append("gizle"),
+                     yok_et=lambda: iz.append("yok et"))
+    return k, iz
+
+
+def test_x_hides_and_cancels_the_close() -> None:
+    k, iz = _kapanis()
+    assert k.kapanabilir_mi() is False, "X kapanışı İPTAL etmeli"
+    assert iz == ["gizle"]
+
+
+def test_quit_from_the_tray_actually_closes() -> None:
+    """Canlıda kırılan tam bu zincirdi: kullanıcı Evet diyor, pencere
+    yok edilmeye çalışılıyor, `closing` kancası bunu bir X sanıp iptal
+    ediyor ve program kapanmıyordu."""
+    k, iz = _kapanis()
+    k.cik()
+    assert iz == ["yok et"], "Çıkış gizlemeye DÜŞMEMELİ"
+    assert k.kapanabilir_mi() is True, "kapanış artık iptal edilmemeli"
+    assert iz == ["yok et"], "izin verirken bir daha gizlenmemeli"
+
+
+def test_the_flag_only_lifts_for_a_real_quit() -> None:
+    """Bayrak kendiliğinden kalkmıyor: birkaç X üst üste hep gizler."""
+    k, iz = _kapanis()
+    for _ in range(3):
+        assert k.kapanabilir_mi() is False
+    assert iz == ["gizle"] * 3
+    assert k.cikiliyor is False
+    k.cik()
+    assert k.cikiliyor is True
+
+
+# -- Görev bitiş bildirimi / tepsi Görevler -------------------------------
+
+
+def test_gorev_bildirim_ok_and_fail() -> None:
+    assert tray.gorev_bildirim_metni("Rapor", ok=True) == "Görev tamamlandı: Rapor"
+    assert tray.gorev_bildirim_metni("Rapor", ok=False) == "Görev hata verdi: Rapor"
+
+
+def test_gorev_bildirim_trims_long_title() -> None:
+    uzun = "x" * 100
+    metin = tray.gorev_bildirim_metni(uzun, ok=True)
+    assert metin.startswith("Görev tamamlandı: ")
+    assert metin.endswith("…")
+    assert len(metin) < 120
+
+
+def test_tray_jobs_menu_calls_jobs_or_falls_back_to_show() -> None:
+    calls: list[str] = []
+    t = tray.Tray(
+        show=lambda: calls.append("show"),
+        hide=lambda: None,
+        quit=lambda: None,
+        jobs=lambda: calls.append("jobs"),
+    )
+    t._jobs()
+    assert calls == ["jobs"]
+
+    calls.clear()
+    t2 = tray.Tray(show=lambda: calls.append("show"),
+                   hide=lambda: None, quit=lambda: None)
+    t2._jobs()
+    assert calls == ["show"]
+
+
+def test_arka_plan_notu_mentions_tasks() -> None:
+    assert "görev" in tray.ARKA_PLAN_NOTU.lower() or "otomasyon" in tray.ARKA_PLAN_NOTU.lower()
+
+
+def test_installer_asks_keep_or_wipe_data() -> None:
+    """Kurulumda eski veri (görevler dahil) koru / sıfırla seçenekleri durur."""
+    from pathlib import Path
+    iss = Path(__file__).resolve().parents[1] / "installer" / "neo.iss"
+    text = iss.read_text(encoding="utf-8-sig")
+    assert "görevler" in text.lower() or "tasks" in text.lower()
+    assert "SecVeri" in text and "SecGuncelle" in text
+    assert "OnayAnladim" in text

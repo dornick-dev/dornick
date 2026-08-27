@@ -209,6 +209,17 @@ def test_the_formatter_is_loaded_before_the_app_uses_it() -> None:
 VIEWER_JS = (STATIC / "viewer.js").read_text(encoding="utf-8")
 
 
+def _kodu(metin: str) -> str:
+    """Yorumlari atilmis kaynak.
+
+    Guvenlik testleri bir adin GECTIGI yere degil, KULLANILDIGI yere
+    bakmali: "srcdoc kullanmiyoruz" diye bir yorum, "srcdoc kullaniyoruz"
+    ile ayni metni tasiyor ve ham arama ikisini ayirt edemiyor.
+    """
+    metin = re.sub(r"/\*.*?\*/", "", metin, flags=re.S)
+    return re.sub(r"(?m)^\s*//.*$", "", metin)
+
+
 def test_the_agents_page_runs_isolated() -> None:
     """Ajanin kurdugu sayfa gercekten calissin diye cercevede gosteriliyor.
 
@@ -227,12 +238,25 @@ def test_the_agents_page_runs_isolated() -> None:
 
 def test_srcdoc_is_only_used_inside_the_isolated_frame() -> None:
     """`srcdoc` isaretlemeyi yorumlatan tek yol; yalnizca yalitilmis
-    cercevede gecerli, sayfanin kendisinde degil."""
+    cercevede gecerli, sayfanin kendisinde degil.
+
+    Ham metinde saymak yetmiyor: "srcdoc DEGIL, kendi origin'inde iframe"
+    diye bir YORUM da eslesiyordu ve test, guvenlik ozelligi bozulmadigi
+    halde kirmizi donuyordu. Sayilan sey artik ATAMA — yani `srcdoc`u
+    gercekten kuran satir.
+    """
     for name in SCRIPTS:
         if name == "viewer.js":
             continue
-        assert "srcdoc" not in (STATIC / name).read_text(encoding="utf-8"), name
-    assert VIEWER_JS.count("srcdoc") == 1
+        assert "srcdoc" not in _kodu((STATIC / name).read_text(encoding="utf-8")), name
+
+    govde = _kodu(VIEWER_JS)
+    atamalar = re.findall(r"\.srcdoc\s*=", govde)
+    assert len(atamalar) == 1, f"srcdoc {len(atamalar)} yerde atanmis"
+    # Ve o tek atama, sandbox'li cerceveyi kuran yardimcinin icinde olmali.
+    frame_govdesi = govde[govde.index("function frame("):].split("\n  }")[0]
+    assert ".srcdoc" in frame_govdesi, \
+        "srcdoc atamasi sandbox'li frame() disina cikmis"
 
 
 def test_code_surfaces_never_render_ligatures() -> None:
@@ -1134,9 +1158,9 @@ def test_a_command_in_the_headline_is_not_shouted() -> None:
     rule = re.search(r"\.acts-head \.head-target \{([^}]*)\}", CSS)
     assert rule and "text-transform: none" in rule.group(1)
     assert "var(--mono)" in rule.group(1)
-    # Şeridin kendisi hâlâ büyük harfli: kural yalnız hedefi kapsıyor.
+    # Şerit Cursor dili: bağıran UPPERCASE HUD değil, sakin status satırı.
     band = re.search(r"^\.acts-head \{([^}]*)\}", CSS, re.M)
-    assert band and "text-transform: uppercase" in band.group(1)
+    assert band and "text-transform: none" in band.group(1)
 
 
 def test_the_headline_trims_shell_wrappers() -> None:
@@ -1475,15 +1499,17 @@ def test_the_task_panel_can_stop_one_job_and_only_a_stoppable_one() -> None:
 def test_a_finished_background_job_knocks_on_the_conversation() -> None:
     """Panel kapalıyken biten iş kaybolmamalı: sohbete tıklanabilir satır.
     Yalnız ARKA PLAN işleri — senkron yardımcının sonucu zaten cevapta."""
-    assert re.search(r"case \"child_end\":.*?tasksDone\(e\)", APP_JS)
+    assert re.search(r"case \"child_end\":[\s\S]*?tasksDone\(e\)", APP_JS)
     bitti = re.search(r"function bitti\(ev\) \{(.*?)\n  \}", GOREV_JS, re.S)
     assert bitti, "Gorevler.bitti() bulunamadı"
     assert "if (!ev || !ev.bg) return;" in bitti.group(1)
     assert "task-note" in bitti.group(1)
-    # Köprü `bg` alanını gerçekten yayıyor.
+    # Köprü `bg` alanını gerçekten yayıyor (_child_end içinde).
     bridge = (Path(__file__).resolve().parents[1] / "src" / "neocp"
               / "desktop.py").read_text(encoding="utf-8")
-    assert '"bg": self._cocuk_arka_plan(cid)' in bridge
+    assert "def _child_end" in bridge
+    assert "bg = self._cocuk_arka_plan(cid)" in bridge
+    assert '"bg": bg' in bridge
 
 
 def test_the_running_time_ticks_without_asking_the_server() -> None:
@@ -1493,12 +1519,58 @@ def test_the_running_time_ticks_without_asking_the_server() -> None:
     assert re.search(r"setInterval\(\(\) => \{[^}]*task-time", GOREV_JS, re.S)
 
 
-def test_the_task_panel_and_the_orchestra_stay_separate_surfaces() -> None:
-    """Bilinçli karar: orkestra ŞU ANKİ turun sahnesi, görevler defter.
+def test_the_live_jobs_ledger_stays_separate_from_orchestra() -> None:
+    """Bilinçli karar: orkestra ŞU ANKİ turun sahnesi, canlı koşum defteri ayrı.
     İkisi tek panele indirilirse ya sahne kalıcı olur ya defter kaybolur —
     karar kodda yazılı olsun ki sonra 'kopya panel' diye silinmesin."""
+    jobs = (STATIC / "jobs.js").read_text(encoding="utf-8")
     assert "Orkestra güvertesinden AYRI" in GOREV_JS
-    assert 'id="tasks-panel"' in HTML and 'id="orch-deck"' in HTML
+    assert 'id="orch-deck"' in HTML
+    assert 'id="tasks-panel"' not in HTML
+    assert "openLive" in jobs and "Canlı" in jobs
+
+
+def test_scheduled_tasks_are_editable_and_not_chat_dumps() -> None:
+    """Zamanlanmış görev: silip yeniden eklemek yok; tık → düzenle + rapor.
+    Tetikleme sohbet kuyruğu değil (run_scheduled / spawn_scheduled)."""
+    settings = (STATIC / "settings.js").read_text(encoding="utf-8")
+    assert "function editTaskForm" in settings
+    assert 'action: "update"' in settings
+    assert "Raporu aç" in settings
+    assert "spawn_scheduled" in (Path(__file__).resolve().parents[1]
+        / "src" / "neocp" / "loop.py").read_text(encoding="utf-8")
+    assert "run_scheduled" in (Path(__file__).resolve().parents[1]
+        / "src" / "neocp" / "desktop.py").read_text(encoding="utf-8")
+    assert "sessiz" in (Path(__file__).resolve().parents[1]
+        / "src" / "neocp" / "loop.py").read_text(encoding="utf-8")
+
+
+def test_main_jobs_panel_and_artifact_export_exist() -> None:
+    """Ana Görevler paneli + artifact indir/yazdır yüzeyi yerinde."""
+    html = HTML
+    jobs = (STATIC / "jobs.js").read_text(encoding="utf-8")
+    viewer = (STATIC / "viewer.js").read_text(encoding="utf-8")
+    orch = (STATIC / "orchestra.js").read_text(encoding="utf-8")
+    assert 'id="jobs"' in html and 'id="jobs-panel"' in html
+    assert "/jobs.js" in html and "/workflow.js" in html
+    assert "function renderDefForm" in jobs
+    assert "function renderSettingsForm" in jobs
+    assert "view === \"live\"" in jobs  # load() Canlıyı silmesin
+    assert "formatRunMeter" in jobs
+    assert "duration_s" in jobs and "last_tool" in jobs
+    assert "fmtDuration" in jobs
+    assert "renderLiveRun" in jobs and "Canlı adımlar" in jobs
+    assert "refreshLive" in jobs
+    assert "download=1" in (Path("src/neocp/web/server.py").read_text(encoding="utf-8"))
+    assert "downloadArtifact" in viewer and "injectScrollCss" in viewer
+    assert "function wait(" in orch or "wait(ev)" in orch
+    assert "ch.hedef" in orch or "ev.hedef" in orch
+    assert "KEEP_ACTS" in orch and "orch-ch-acts" in orch
+    assert "child_wait" in APP_JS
+    assert "Gorevler.tazele" in APP_JS
+    assert "DOKUM_TTL_MS" in (STATIC / "gorevler.js").read_text(encoding="utf-8")
+    assert "function planCard" in APP_JS
+    assert "function editTaskForm" in (STATIC / "settings.js").read_text(encoding="utf-8")
 
 
 # -- "bu turda ne değişti" + geri al -----------------------------------
@@ -1509,8 +1581,13 @@ def test_the_turn_summary_reads_the_agents_own_ledger() -> None:
     okuduğu defterin aynısı (tools/checkpoint.py)."""
     assert "/api/degisiklikler" in CHG_JS
     assert "checkpoint import KLASOR, Defter" in SERVER_SRC
-    # Geri alma da o aracın yolundan geçiyor.
+    # Geri alma: tur (n), dosya (sira/siralar) veya path.
     assert "defter.geri_al(n)" in SERVER_SRC
+    assert "geri_al_sira" in SERVER_SRC
+    assert "geri_al_dosya" in SERVER_SRC
+    assert "kartUndoDosya" in CHG_JS
+    assert "hepsini kabul et" in CHG_JS
+    assert "diff-btn keep" in APP_JS
 
 
 def test_the_turn_boundary_is_a_sequence_number_not_a_clock() -> None:
@@ -1523,14 +1600,15 @@ def test_the_turn_boundary_is_a_sequence_number_not_a_clock() -> None:
 
 def test_undoing_a_turn_asks_twice() -> None:
     """Yanlışlıkla basılan bir düğmenin turu silmesi kabul edilemez."""
-    dugme = re.search(r"function geriAlDugmesi\(kayitlar\) \{(.*?)\n  \}", CHG_JS, re.S)
+    dugme = re.search(r"function geriAlDugmesi\(kayitlar, durum, onChange\) \{(.*?)\n  \}",
+                      CHG_JS, re.S)
     assert dugme, "geriAlDugmesi() bulunamadı"
     body = dugme.group(1)
     assert "if (!onay)" in body and "Emin misin?" in body
     # Onay penceresi kendiliğinden kapanıyor: kurulu bir düğme unutulmasın.
     assert "setTimeout(" in body
-    # Geri alınacak sayı bu turdaki değişiklik sayısı.
-    assert "n: kayitlar.length" in body
+    # Geri alınacaklar: bu turda hâlâ açık kayıtların sira listesi.
+    assert "siralar:" in body
 
 
 def test_the_diff_in_the_summary_is_the_same_diff_card() -> None:
@@ -1618,3 +1696,25 @@ def test_the_project_row_is_honest_about_what_changes() -> None:
     added = re.search(r"Dil\.ekle\(\{(.*?)\n\}\);", src, re.S)
     assert added and "Çalışılan proje" in added.group(1)
     assert "Son projeler" in added.group(1)
+
+
+def test_every_toolbar_button_is_translated() -> None:
+    """İngilizce arayüzde Türkçe başlık kalmamalı — `title` ve `aria-label`.
+
+    Yaşanmış hâli: dil İngilizce'yken araç çubuğunun bütün ipuçları Türkçe
+    duruyordu, çünkü eşleme yalnız bazı id'ler için ve yalnız `title` için
+    yazılmıştı. `aria-label` hiç çevrilmiyordu: ekran okuyucu kullanan biri
+    İngilizce arayüzde Türkçe etiket duyuyordu.
+    """
+    html = (STATIC / "index.html").read_text(encoding="utf-8")
+    dil = (STATIC / "dil.js").read_text(encoding="utf-8")
+
+    # index.html'de id'si ve title/aria-label'ı olan her öğe eşlenmiş olmalı.
+    for nitelik in ("title", "aria-label"):
+        desen = re.compile(
+            r'id="([a-z0-9-]+)"[^>]*\b' + nitelik + r'="([^"]+)"', re.I)
+        for eid, metin in desen.findall(html):
+            if not re.search(r"[çğıöşüÇĞİÖŞÜ]", metin):
+                continue        # zaten Türkçeye özgü harf yoksa atla
+            assert f'"{eid}"' in dil, (
+                f'index.html#{eid} {nitelik}="{metin}" için çeviri yok')

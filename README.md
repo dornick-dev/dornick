@@ -1,16 +1,38 @@
-# neo
+# neo — a local-first personal AI agent with a living memory
 
-**A local-first personal AI agent with a living, brain-like memory.**
+**Open-source, self-hosted AI assistant for Windows that remembers you,
+uses your computer, and builds its own automations.**
 
-[Türkçe README](README.tr.md)
+[Türkçe README](README.tr.md) · [Releases](../../releases) · MIT licensed
 
-neo is not a coding assistant. It is a personal agent that lives on your
-computer, can use the computer the way you do — screen, mouse, keyboard,
-browser, files — and whose memory, goals and history are first-class,
-queryable structures. What it learns about you is written into a memory
-network that you can literally watch grow on screen.
+neo is not a coding assistant. It is a personal AI agent that runs on *your*
+machine, uses the computer the way you do — screen, mouse, keyboard, browser,
+files — and keeps its memory, goals and history as first-class, queryable
+structures instead of an appended notes file. What it learns about you is
+written into a memory network you can watch grow on screen.
 
-![neo welcome screen](docs/screenshots/karsilama.png)
+It works with **any model**: Anthropic's API, OpenRouter, or a local server —
+LM Studio, Ollama, vLLM, llama.cpp. Your conversations and memories never
+leave the machine unless you point it at a hosted model.
+
+![neo's home screen: a 3D memory network around a brain, with the memory
+types listed on the left — user, preference, lesson, procedure,
+fact](docs/screenshots/home-memory-web.jpg)
+
+## Why it's different
+
+Most assistants forget you between sessions, or paste a notes file into the
+prompt and call it memory. neo keeps an actual associative network, ships a
+small model of its own that learns *your* vocabulary overnight on your CPU,
+and turns repeated work into automations you can watch run step by step.
+
+| | most assistants | neo |
+|---|---|---|
+| Memory | a text file in the prompt | associative graph, ~constant-time recall at 50k records |
+| Learning | none — the model is fixed | nightly on-device fine-tune, gated by an exam |
+| Repeated work | you re-ask every time | automations: a step graph on a schedule |
+| Where it runs | someone's cloud | your machine; local models supported |
+| Proof | screenshots | measured benchmarks in this repo |
 
 ## What's inside
 
@@ -29,6 +51,13 @@ network that you can literally watch grow on screen.
   priority. Every candidate model must pass an exam gate — beat the current
   model on the benchmark, keep silence on trap questions, stay fast — or it
   is discarded. Your data never leaves the computer.
+* **Automations you can watch run.** A repeated job — "every morning, read
+  my mail, pick what matters, send it to me on WhatsApp" — becomes a graph of
+  steps, not a prompt you retype. Ask the agent and it builds the flow; you
+  can open any step and edit it by hand. Steps light up as they run, so you
+  see where it is, and the output stays on the same screen. If a step breaks,
+  neo repairs it once and retries — but it never rewrites a step you edited
+  yourself, and it always says what it changed.
 * **Computer use.** Screen capture, mouse/keyboard control, window
   management, and a real browser driven over the DevTools protocol
   (`neo chrome`) — sessions and logins persist in its own profile, forms get
@@ -59,7 +88,7 @@ network that you can literally watch grow on screen.
 * **Turkish and English** interface; the memory layer is built for
   agglutinative Turkish (prefix-matching FTS) and works in English too.
 
-![Memory network scene](docs/screenshots/beyin.png)
+![The memory network: memories as coloured nodes linked to their nearest neighbours](docs/screenshots/home-memory-web.jpg)
 
 ## Quick start
 
@@ -70,6 +99,19 @@ Download `neo-setup-<version>.exe` from
 The setup page in the app lets you pick a model (local server or API key).
 Optional installer components: know-me training, listening (microphone),
 camera watching.
+
+**Installing over an existing copy** gives you three choices, and the
+installer is tested against all of them:
+
+| choice | what happens to your code | what happens to your data |
+|---|---|---|
+| **Update** (default) | replaced | kept — memories, tasks, automations untouched |
+| **Clean install** | wiped and rewritten | kept |
+| **Reset data too** | wiped and rewritten | deleted — **after** a backup zip is written |
+
+A backup zip is taken before anything is removed; if the backup fails,
+nothing is deleted. The last five backups are kept. Uninstalling removes the
+program and leaves your `.neocp` data in place.
 
 ### From source
 
@@ -91,6 +133,21 @@ neocp --app     # desktop window (WebView2)
 
 On first launch the mind is empty. It fills itself as you talk; by the
 second session it starts remembering you.
+
+## Automations
+
+![The Tasks panel: a list with Simple and Automation badges, and the flow
+graph of a daily mail digest with four steps — read inbox, pick what matters,
+send to WhatsApp, archive the rest](docs/screenshots/automation-flow.jpg)
+
+Each node names its type (`mail_read`, `agent`, `http`, `skill`), the secrets
+it needs, and whether you edited it by hand — a step marked ✎ *manual* is one
+the automatic repair will never touch. The same screen works in both themes:
+
+![The same automation flow in light theme](docs/screenshots/automation-flow-light.jpg)
+
+Run it on a schedule, or press **Run** and watch the steps turn from
+*running* to *done*. Nothing is hidden in a separate log.
 
 ## Architecture
 
@@ -123,7 +180,7 @@ model gets deployed. Everything runs locally.
 
 ### Settings
 
-![Settings page](docs/screenshots/ayarlar.png)
+![neo settings, showing the model, voice, permissions and machine tabs](docs/screenshots/settings.jpg)
 
 ## Training rig
 
@@ -185,3 +242,12 @@ that collaboration.
 ## License
 
 [MIT](LICENSE) © 2026 Fatih Kütük
+
+---
+
+<sub>Keywords: open-source AI agent · local-first personal assistant ·
+self-hosted LLM agent · AI with long-term memory · LM Studio / Ollama /
+llama.cpp / vLLM client · OpenRouter desktop app · Anthropic Claude API
+client · AI workflow automation · agent with cron scheduling · computer-use
+agent for Windows · on-device fine-tuning · MCP client and server ·
+Python AI agent framework</sub>

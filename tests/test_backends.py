@@ -326,6 +326,24 @@ async def test_usage_is_carried_over() -> None:
     assert result.usage.output_tokens == 30
 
 
+async def test_usage_maps_cached_tokens_from_prompt_details() -> None:
+    """OpenRouter/OpenAI prompt_tokens_details.cached_tokens → cache_read."""
+    from neocp.backends.openai_backend import _usage
+    from neocp.context import cache_report
+
+    raw = SimpleNamespace(
+        prompt_tokens=5000,
+        completion_tokens=40,
+        prompt_tokens_details=SimpleNamespace(cached_tokens=4200),
+    )
+    usage = _usage(raw)
+    assert usage.cache_read_input_tokens == 4200
+    assert usage.input_tokens == 800  # taze = toplam - cache
+    report = cache_report(usage)
+    assert report["cache_read"] == 4200
+    assert report["prompt_total"] == 5000
+
+
 async def test_anthropic_only_parameters_are_not_sent_to_local_servers() -> None:
     """effort ve thinking yerel sunucularda 400 sebebi olur."""
     be, fake = backend([chunk(content="x", finish="stop")], temperature=0.4)

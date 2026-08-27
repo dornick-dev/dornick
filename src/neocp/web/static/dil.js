@@ -63,6 +63,12 @@ const Dil = (() => {
   const SECICI = [];
   function secici(sel, text) { SECICI.push([sel, text]); }
 
+  // Sayfa dili: CSS `text-transform: uppercase` locale'e bakıyor ve Türkçe
+  // locale'de "i" → "İ" oluyor. İngilizce arayüzde "SIMPLE" rozeti "SİMPLE"
+  // diye çıkıyordu — görünmez sanılan bir ayarın çok görünür sonucu.
+  try { document.documentElement.lang = (mode === "en") ? "en" : "tr"; }
+  catch { /* dosya:// */ }
+
   document.addEventListener("DOMContentLoaded", uygula);
 
   return { t, ekle, sec, statik, secici, get mode() { return mode; } };
@@ -92,6 +98,50 @@ Dil.statik("orchestra", "Orchestra", "title");
 Dil.statik("focus", "Focus", "title");
 Dil.statik("theme", "Theme", "title");
 Dil.statik("gear", "Settings", "title");
+// Eksik kalanlar: bu düğmelerin hiçbir eşlemesi yoktu ve İngilizce arayüzde
+// Türkçe başlık gösteriyorlardı.
+Dil.statik("reveal", "Show every memory in the web", "title");
+Dil.statik("authority", "Permissions", "title");
+Dil.statik("jobs", "Tasks", "title");
+Dil.statik("tanima-ikon", "Learn me", "title");
+
+// aria-label'lar da çevriliyor. Eskiden yalnız `title` eşleniyordu; ekran
+// okuyucu kullanan biri İngilizce arayüzde Türkçe etiket duyuyordu —
+// göze görünmeyen bir eksik, ama eksik.
+for (const [id, metin] of [
+  ["reveal", "Show every memory in the web"],
+  ["authority", "Permissions"],
+  ["eye", "Viewer"],
+  ["apps", "Apps"],
+  ["new-chat", "New chat"],
+  ["history", "Past conversations"],
+  ["jobs", "Tasks"],
+  ["orchestra", "Subagents"],
+  ["focus", "Focus mode"],
+  ["tanima-ikon", "Learn me"],
+  ["theme", "Light / dark mode"],
+  ["gear", "Settings"],
+  ["stop", "Stop"],
+  ["mute", "Voice"],
+  ["plus", "Add"],
+  ["mic", "Microphone"],
+  ["clip", "File"],
+  ["cam", "Camera"],
+  ["jump", "Jump to latest"],
+  ["send", "Send"],
+  ["win-min", "Minimize"],
+  ["win-max", "Maximize"],
+  ["viewer-grip", "Resize panel"],
+  ["capsule-external", "Open outside"],
+]) {
+  Dil.statik(id, metin, "aria-label");
+}
+
+// Görüntüleyici ve canlı-uygulama kapsülünün ipuçları.
+Dil.statik("viewer-grip", "Drag to resize", "title");
+Dil.statik("capsule-dot", "Live", "title");
+Dil.statik("capsule-addr", "Open the address in a new tab", "title");
+Dil.statik("capsule-external", "Open outside", "title");
 Dil.statik("dock-model", "Model — opens settings", "title");
 Dil.statik("dock-effort", "Thinking depth — click to change", "title");
 Dil.statik("dock-mode", "Permission mode — click to change", "title");
@@ -101,10 +151,10 @@ Dil.statik("settings-save", "Save");
 Dil.statik("lens-snap", "Take frame");
 Dil.secici(".lens-tag", "Vision");
 Dil.secici(".panel-head b", "SETTINGS");
+Dil.secici("#jobs-panel .jobs-tag", "Tasks");
+Dil.secici("#jobs-panel .jobs-desc", "Scheduled work · live runs");
 // Ayar sekmeleri (data-tab düğmeleri) ve grup başlıkları.
 Dil.secici('[data-tab="model"]', "Model");
-Dil.secici('[data-tab="keys"]', "Keys");
-Dil.secici('[data-tab="limits"]', "Context");
 Dil.secici('[data-tab="voice"]', "Voice");
 Dil.secici('[data-tab="hearing"]', "Microphone");
 Dil.secici('[data-tab="eyes"]', "Cameras");

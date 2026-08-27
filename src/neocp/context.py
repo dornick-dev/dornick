@@ -46,7 +46,16 @@ IMAGE_PLACEHOLDER = "[eski ekran görüntüsü bağlamdan çıkarıldı]"
 # yapıyor ama yalnız Anthropic arka ucunda; bu yol her arka uçta çalışıyor.
 TRIM_TOOL_CHARS = 1_600
 TRIM_KEEP_MESSAGES = 6
+# Browser / büyük dump araçları: son 1–2 mesaj hariç daha agresif kısalt.
+TRIM_BROWSER_CHARS = 600
+TRIM_BROWSER_KEEP = 2
 TRIM_NOTE = "… [{gone:,} harf geçmişten kısaltıldı — gerekirse dosyadan/araçtan yeniden oku]"
+
+# Bu araçların sonuçları HTML/DOM/ağ dökümü taşıyor; geçmişte tutmak
+# Market Lens tarzı taramalarda istemi şişiriyor.
+_HEAVY_TOOLS = frozenset({
+    "browser", "fetch", "read_file", "write_file", "edit_file",
+})
 
 
 @dataclass(slots=True)
@@ -240,24 +249,41 @@ def prune_tool_payloads(
 
     Son `keep` mesaj DOKUNULMAZ — model az önceki içeriğe atıf yapabilir.
     Daha eskisinde: tool_use girdilerindeki ve tool_result içeriklerindeki
-    `cap`'i aşan metinler baş+son korunarak kısaltılır. Kısaltma
-    DETERMİNİSTİK: aynı mesaj her istekte aynı bayta iner, önek önbelleği
-    istekten isteğe tutmaya devam eder. Bir mesaj koruma penceresinden
-    çıktığı TEK seferde o noktadan sonrası önbellekten düşer — görüntü
-    budamanın zaten ödediği, kabul edilmiş bedel.
+    `cap`'i aşan metinler baş+son korunarak kısaltılır. Browser / fetch /
+    dosya dump'ları için daha sıkı keep+cap uygulanır.
     """
     if cap <= 0:
         return
 
-    def shorten(text: str) -> str:
-        if len(text) <= cap:
+    def shorten(text: str, limit: int) -> str:
+        if len(text) <= limit:
             return text
-        head = cap * 2 // 3
-        tail = cap // 3
+        head = limit * 2 // 3
+        tail = limit // 3
         note = TRIM_NOTE.format(gone=len(text) - head - tail)
         return text[:head] + note + text[-tail:]
 
-    for msg in messages[: max(0, len(messages) - keep)]:
+    # Önce genel pencere.
+    _prune_range(messages, end_keep=keep, cap=cap, shorten=shorten)
+    # Ağır araçlar: daha kısa kuyruk + daha düşük tavan.
+    _prune_range(
+        messages,
+        end_keep=TRIM_BROWSER_KEEP,
+        cap=TRIM_BROWSER_CHARS,
+        shorten=shorten,
+        only_heavy=True,
+    )
+
+
+def _prune_range(
+    messages: list[Message],
+    *,
+    end_keep: int,
+    cap: int,
+    shorten,
+    only_heavy: bool = False,
+) -> None:
+    for msg in messages[: max(0, len(messages) - end_keep)]:
         content = msg.get("content")
         if not isinstance(content, list):
             continue
@@ -265,21 +291,46 @@ def prune_tool_payloads(
             if not isinstance(block, dict):
                 continue
             if block.get("type") == "tool_use":
+                name = str(block.get("name") or "")
+                if only_heavy and name not in _HEAVY_TOOLS:
+                    continue
                 arguments = block.get("input")
                 if isinstance(arguments, dict):
                     for key, value in arguments.items():
                         if isinstance(value, str) and len(value) > cap:
-                            arguments[key] = shorten(value)
+                            arguments[key] = shorten(value, cap)
             elif block.get("type") == "tool_result":
+                if only_heavy and not _result_looks_heavy(block):
+                    continue
                 inner = block.get("content")
                 if isinstance(inner, str) and len(inner) > cap:
-                    block["content"] = shorten(inner)
+                    block["content"] = shorten(inner, cap)
                 elif isinstance(inner, list):
                     for sub in inner:
                         if (isinstance(sub, dict) and sub.get("type") == "text"
                                 and isinstance(sub.get("text"), str)
                                 and len(sub["text"]) > cap):
-                            sub["text"] = shorten(sub["text"])
+                            sub["text"] = shorten(sub["text"], cap)
+
+
+def _result_looks_heavy(block: dict[str, Any]) -> bool:
+    """tool_result'ta ad yok; HTML/DOM/URL ipuçlarıyla browser dump say."""
+    inner = block.get("content")
+    text = inner if isinstance(inner, str) else ""
+    if isinstance(inner, list):
+        parts = []
+        for sub in inner:
+            if isinstance(sub, dict) and isinstance(sub.get("text"), str):
+                parts.append(sub["text"])
+        text = "\n".join(parts)
+    # Çok büyük dump'lar her zaman ağır sayılır.
+    if len(text) > TRIM_TOOL_CHARS:
+        return True
+    head = text[:400].lower()
+    return any(k in head for k in (
+        "<html", "<!doctype", "http://", "https://", "konsol",
+        "başarısız istek", "dom", "screenshot", "ekran",
+    ))
 
 
 def _iter_image_blocks(msg: Message):

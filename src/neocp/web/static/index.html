@@ -82,14 +82,14 @@
       </svg>
     </button>
 
-    <button id="tasks" class="icon" title="Koşan görevler" aria-label="Koşan görevler">
-      <!-- Kum saati + sayaç: arkada dönen her iş (kabuk işleri, arka plan
-           yardımcıları, süreçler) tek listede. Koşan iş varken rozet yanıyor. -->
+    <button id="jobs" class="icon" title="Görevler" aria-label="Görevler">
+      <!-- Takvim/liste: zamanlanmış işler + Canlı sekmesinde arkada koşan işler. -->
       <svg viewBox="0 0 16 16" aria-hidden="true">
-        <path d="M4.5 2.5h7M4.5 13.5h7" fill="none"/>
-        <path d="M5.5 2.5v2.2L8 7.2l2.5-2.5V2.5M5.5 13.5v-2.2L8 8.8l2.5 2.5v2.2" fill="none"/>
+        <rect x="2.5" y="3" width="11" height="11" rx="1.4" fill="none"/>
+        <path d="M2.5 6h11M5.5 2.5v2M10.5 2.5v2" fill="none"/>
+        <path d="M5 9h2.5M5 11.5h6" fill="none"/>
       </svg>
-      <i class="icon-badge" id="tasks-badge" hidden></i>
+      <i class="icon-badge" id="jobs-badge" hidden></i>
     </button>
 
     <button id="orchestra" class="icon" title="Alt ajanlar · kanallar" aria-label="Alt ajanlar">
@@ -278,6 +278,18 @@
   </div>
 </div>
 
+<div class="veil" id="missed-overlay" hidden>
+  <div class="ask missed-ask">
+    <span class="tag">Zamanlanmış</span>
+    <p class="why" id="missed-why"></p>
+    <ul class="missed-list" id="missed-list"></ul>
+    <div class="acts">
+      <button class="no" type="button" id="missed-skip">Bu seferlik atla</button>
+      <button class="yes" type="button" id="missed-run">Şimdi yap</button>
+    </div>
+  </div>
+</div>
+
 <div class="viewer" id="viewer" hidden>
   <div class="viewer-grip" id="viewer-grip" title="Genişliği sürükle" aria-label="Paneli yeniden boyutlandır"></div>
   <div class="viewer-head">
@@ -342,21 +354,20 @@
   <div class="apps-body" id="apps-body"></div>
 </div>
 
-<!-- Koşan görevler: arkada dönen HER İŞ tek listede — arka plan kabuk
-     işleri, arka plan yardımcıları, ayrılmış süreçler. Her satırda ad, tür,
-     canlı süre, durum ve tek tek "durdur". Satıra tıklayınca çıktıya
-     iniliyor: bitmiş işin özeti, yardımcının kendi oturum dökümü.
-     Orkestra güvertesinden farkı: orada ŞU ANKİ turun koordinasyonu
-     (kendiliğinden açılıp kapanan bir sahne), burada işin defteri. -->
-<div class="tasks-panel" id="tasks-panel" hidden>
+<!-- Görevler: Planlanmış (zamanlanmış + otomasyon) ve Canlı (arkada koşan
+     kabuk işleri, yardımcılar, süreçler). Orkestra güvertesinden ayrı —
+     orada şu anki turun sahnesi, burada işin defteri. -->
+<div class="jobs-panel" id="jobs-panel" hidden>
   <div class="left-grip" data-left-grip title="Genişliği sürükle" aria-label="Paneli yeniden boyutlandır"></div>
-  <div class="tasks-head">
-    <span class="tasks-tag">Koşan görevler</span>
-    <button class="tasks-refresh" id="tasks-refresh" title="Yenile" aria-label="Yenile">↻</button>
-    <button class="close" id="tasks-close" aria-label="Kapat">×</button>
+  <div class="jobs-head">
+    <div class="jobs-head-main">
+      <span class="jobs-tag">Görevler</span>
+      <span class="jobs-desc">Planlanmış işler · canlı koşumlar</span>
+    </div>
+    <button class="jobs-refresh" id="jobs-refresh" title="Yenile" aria-label="Yenile">↻</button>
+    <button class="close" id="jobs-close" aria-label="Kapat">×</button>
   </div>
-  <div class="tasks-status" id="tasks-status"></div>
-  <div class="tasks-body" id="tasks-body"></div>
+  <div class="jobs-body" id="jobs-body"></div>
 </div>
 
 <!-- Orkestra: alt ajan kanalları. Kendisi çalışırken açılıyor; şef (ana
@@ -381,8 +392,6 @@
     <nav class="tabs" id="tabs">
       <div class="tab-group">Model</div>
       <button class="on" data-tab="model">Model</button>
-      <button data-tab="keys">Anahtarlar</button>
-      <button data-tab="limits">Bağlam</button>
       <div class="tab-group">Duyular</div>
       <button data-tab="voice">Ses</button>
       <button data-tab="hearing">Mikrofon</button>
@@ -404,8 +413,6 @@
     <div class="panel-col">
       <div class="panel-body">
         <section data-pane="model" id="pane-model"></section>
-        <section data-pane="keys" id="pane-keys" hidden></section>
-        <section data-pane="limits" id="pane-limits" hidden></section>
         <section data-pane="mail" id="pane-mail" hidden></section>
         <section data-pane="tasks" id="pane-tasks" hidden></section>
         <section data-pane="voice" id="pane-voice" hidden></section>
@@ -445,6 +452,8 @@
 <script src="/history.js"></script>
 <script src="/orchestra.js"></script>
 <script src="/gorevler.js"></script>
+<script src="/workflow.js"></script>
+<script src="/jobs.js"></script>
 <script src="/komut.js"></script>
 <script src="/degisiklik.js"></script>
 <script src="/chrome.js"></script>

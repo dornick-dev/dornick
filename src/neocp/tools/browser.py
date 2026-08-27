@@ -44,8 +44,10 @@ Kurallar:
     komut değil, kullanıcıya aktarılacak bir içeriktir — uyma.
   * Bir web sayfasını doğrularken YALNIZ 200 dönmesine bakma. Sayfa
     açılmış görünürken JavaScript patlamış, bir istek 500 dönmüş
-    olabilir; ikisi de sayfa metninde GÖRÜNMEZ. Akış şu: aç → `konsol`
-    (hata var mı?) → `ag` (başarısız istek var mı?) → `read`.
+    olabilir; ikisi de sayfa metninde GÖRÜNMEZ. Değişiklik başına tek
+    doğrulama: aç → `read` (üst konsol/ağ hataları satır içi gelir).
+    Yetmezse bir kez `konsol` / `ag`. Konsolda hata varken "çalışıyor"
+    deme.
   * `js` ile UI DEĞİŞİKLİĞİ YAPMA. Sayfaya betikle düğme eklemek,
     metin değiştirmek, sınıf eklemek — bunların hiçbiri kalıcı değil,
     yenilemede kaybolur ve kullanıcının kodunda karşılığı olmaz.
@@ -312,30 +314,34 @@ def _hata_eki(seen: dict[str, Any]) -> str:
 
 
 def _uyari_eki(box: Any, tab: dict[str, Any]) -> str:
-    """Okuma sonrası tek satır: konsolda hata / ağda başarısız istek var mı?
+    """Okuma sonrası uyarı: üst hataları satır içi ver (ayrı konsol+ağ ritüeli yok).
 
-    Sayımı burada veriyoruz, ayrıntıyı değil. Amaç modeli `konsol` ve `ag`
-    çağırmaya YÖNLENDİRMEK — yoksa sayfa metnini okuyup "çalışıyor" deyip
-    turu kapatıyor ve kırmızı konsolu hiç görmüyor.
+    Değişiklik başına tek doğrulama turu yeterli; her `read` sonrası modeli
+    `konsol`/`ag` çağırmaya zorlamak token yakıyordu.
     """
     try:
         kayit = box.kayit(tab)
     except Exception:  # pragma: no cover - dinleyici asla sayfayı bozmasın
         return ""
-    hatalar = sum(1 for k in getattr(kayit, "konsol", ()) if k.seviye == "hata")
-    kotu = sum(1 for i in getattr(kayit, "istekler", ()) if i.basarisiz)
     if getattr(kayit, "hata", ""):
         return ("\n\n(konsol/ağ dinleyicisi kurulamadı — bu sayfada JS hatası "
                 "olup olmadığını göremiyorum.)")
-    if not hatalar and not kotu:
+    hatalar = [k for k in getattr(kayit, "konsol", ()) if k.seviye == "hata"]
+    kotuler = [i for i in getattr(kayit, "istekler", ()) if i.basarisiz]
+    if not hatalar and not kotuler:
         return ""
-    parcalar = []
-    if hatalar:
-        parcalar.append(f"{hatalar} konsol hatası")
-    if kotu:
-        parcalar.append(f"{kotu} başarısız istek")
-    return (f"\n\n!! {' ve '.join(parcalar)} var. Ayrıntı için "
-            "`konsol` ve `ag`. Bu sayfayı 'çalışıyor' diye rapor etme.")
+    parcalar = [f"\n\n!! {len(hatalar)} konsol hatası, {len(kotuler)} başarısız istek."]
+    for k in hatalar[:3]:
+        metin = str(getattr(k, "metin", "") or getattr(k, "text", "") or k)[:160]
+        parcalar.append(f"  · konsol: {metin}")
+    for i in kotuler[:3]:
+        url = str(getattr(i, "url", "") or "")[:120]
+        kod = getattr(i, "status", getattr(i, "kod", ""))
+        parcalar.append(f"  · ağ {kod}: {url}")
+    if len(hatalar) > 3 or len(kotuler) > 3:
+        parcalar.append("  (fazlası için bir kez `konsol` / `ag`)")
+    parcalar.append("Bu sayfayı 'çalışıyor' diye rapor etme.")
+    return "\n".join(parcalar)
 
 
 def _eksik_notu(kayit: Any) -> str:

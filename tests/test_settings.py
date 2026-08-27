@@ -55,13 +55,18 @@ def test_a_key_from_the_shell_counts_as_present(
 
 
 def test_provider_is_recognized_from_the_address(config: Config) -> None:
-    """Altı sağlayıcı da 'openai' protokolünü konuşuyor; hangisinin seçili
+    """Birçok sağlayıcı 'openai' protokolünü konuşuyor; hangisinin seçili
     olduğu yalnızca adresten anlaşılıyor."""
     updated = settings.apply(config, {"provider": "lmstudio"})
     assert settings.snapshot(updated)["provider"] == "lmstudio"
 
     updated = settings.apply(updated, {"provider": "openrouter"})
     assert settings.snapshot(updated)["provider"] == "openrouter"
+
+    updated = settings.apply(updated, {"provider": "gemini"})
+    assert settings.snapshot(updated)["provider"] == "gemini"
+    assert updated.model.base_url.endswith("/v1beta/openai")
+    assert updated.model.api_key_env == "GEMINI_API_KEY"
 
 
 # -- yazma -------------------------------------------------------------
@@ -74,6 +79,14 @@ def test_choosing_a_provider_sets_address_and_key_variable(config: Config) -> No
     assert updated.model.provider == "openai"
     assert updated.model.base_url == "http://localhost:1234/v1"
     assert updated.model.api_key_env is None
+
+    nvidia = settings.apply(config, {"provider": "nvidia"})
+    assert nvidia.model.base_url == "https://integrate.api.nvidia.com/v1"
+    assert nvidia.model.api_key_env == "NVIDIA_API_KEY"
+
+    deepseek = settings.apply(config, {"provider": "deepseek"})
+    assert deepseek.model.base_url == "https://api.deepseek.com"
+    assert deepseek.model.api_key_env == "DEEPSEEK_API_KEY"
 
 
 def test_settings_survive_a_restart(config: Config) -> None:
@@ -407,3 +420,51 @@ def test_snapshot_surumu_tasir(config: Config) -> None:
     kar = settings.snapshot(config)
     assert kar["surum"] == ortam.surum()
     assert kar["surum"] not in ("", "0.0.0")
+
+
+def test_catalog_providers_have_unique_ids_and_openai_urls() -> None:
+    """Önayarlar çakışmasın; openai protokolü gerçek uç kalıbında olsun."""
+    ids = [e["id"] for e in settings.PROVIDERS]
+    assert len(ids) == len(set(ids))
+    assert {"gemini", "nvidia", "deepseek", "groq", "mistral", "qwen"} <= set(ids)
+    for entry in settings.PROVIDERS:
+        if entry["provider"] != "openai" or not entry["base_url"]:
+            continue
+        url = str(entry["base_url"])
+        assert url.startswith("http"), entry["id"]
+        assert (
+            "localhost" in url
+            or url.rstrip("/").endswith("/v1")
+            or url.rstrip("/").endswith("/openai")
+            or "deepseek.com" in url
+        ), entry
+
+
+def test_openai_models_request_sends_bearer(
+    config: Config, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Gemini / Groq gibi uçlar anahtarsız 401/404 verir; Bearer şart."""
+    seen: dict[str, str] = {}
+
+    class _Resp:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def read(self):
+            return b'{"data":[{"id":"gemini-2.5-flash"}]}'
+
+    def fake_urlopen(req, timeout=0):  # noqa: ARG001
+        seen["auth"] = req.get_header("Authorization") or ""
+        seen["url"] = req.full_url
+        return _Resp()
+
+    monkeypatch.setattr("urllib.request.urlopen", fake_urlopen)
+    monkeypatch.setenv("GEMINI_API_KEY", "sk-test-gemini")
+    updated = settings.apply(config, {"provider": "gemini", "name": "gemini-2.5-flash"})
+    names = settings.available_models(updated)
+    assert names == ["gemini-2.5-flash"]
+    assert seen["auth"] == "Bearer sk-test-gemini"
+    assert seen["url"].endswith("/v1beta/openai/models")

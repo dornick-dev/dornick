@@ -32,6 +32,10 @@ const Viewer = (() => {
     "Okunamadı": "Could not read", "Henüz bir şeye dokunulmadı": "Nothing touched yet",
     "Dosyanın başı gösteriliyor": "Showing the head of the file",
     "Sayfa yok": "No page",
+    "İndir": "Download", "Yazdır / PDF": "Print / PDF",
+    "İndirilemedi": "Could not download",
+    "Yazdırılamadı": "Could not print",
+    "Adres yok": "No address",
   });
 
   // Bu araçlar bir dosyaya dokunuyor; hangisinin hangi argümanda olduğu
@@ -194,6 +198,15 @@ const Viewer = (() => {
       modes.textContent = "";
       const token = {};
       loading = token;
+      // Canlı uygulama (localhost): srcdoc değil — kendi origin'inde iframe.
+      if (/^https?:\/\/(127\.0\.0\.1|localhost)(:\d+)?\//i.test(url)
+          || /^https?:\/\/(127\.0\.0\.1|localhost):\d+/i.test(url)) {
+        if (loading !== token) return;
+        body.textContent = "";
+        body.append(liveFrame(url));
+        modes.append(pageExportActs(url));
+        return;
+      }
       let html = "";
       try {
         const res = await fetch(url, { cache: "no-store" });
@@ -209,6 +222,11 @@ const Viewer = (() => {
       if (loading !== token) return;
       body.textContent = "";
       body.append(frame(html));
+      if (url.startsWith("/artifact/") || url.includes("/artifact/")
+          || url.startsWith("/gorev-rapor/") || url.includes("/gorev-rapor/")) {
+        modes.textContent = "";
+        modes.append(pageExportActs(url));
+      }
       return;
     }
 
@@ -552,7 +570,18 @@ const Viewer = (() => {
     node.className = "viewer-frame";
     node.setAttribute("sandbox", "allow-scripts");
     node.setAttribute("referrerpolicy", "no-referrer");
-    node.srcdoc = html;
+    node.srcdoc = injectScrollCss(html);
+    return node;
+  }
+
+  function liveFrame(url) {
+    const node = document.createElement("iframe");
+    node.className = "viewer-frame viewer-live";
+    node.setAttribute("referrerpolicy", "no-referrer");
+    // Canlı app kendi origin'inde: API çağrıları çalışsın.
+    node.setAttribute("sandbox",
+      "allow-scripts allow-forms allow-same-origin allow-popups allow-downloads");
+    node.src = url;
     return node;
   }
 
@@ -617,5 +646,95 @@ const Viewer = (() => {
     });
   })();
 
-  return { present, page, showing, watch, refresh, show, open, close, toggle };
+  // Canlı sayfa: indir (blob) + yazdır (popup yok — pywebview dostu).
+  function pageExportActs(url) {
+    const wrap = el("span", "viewer-export");
+    const base = String(url).split("?")[0];
+    const dl = el("button", "viewer-act", t("İndir"));
+    dl.type = "button";
+    dl.title = t("İndir") + " (.html)";
+    dl.addEventListener("click", (ev) => {
+      ev.stopPropagation();
+      downloadArtifact(base).catch((err) => {
+        if (typeof say === "function") say(String(err.message || err), true);
+      });
+    });
+    const pr = el("button", "viewer-act", t("Yazdır / PDF"));
+    pr.type = "button";
+    pr.addEventListener("click", (ev) => {
+      ev.stopPropagation();
+      printPage(base);
+    });
+    wrap.append(dl, pr);
+    return wrap;
+  }
+
+  async function downloadArtifact(url) {
+    const base = String(url || "").split("?")[0];
+    if (!base) throw new Error(t("Adres yok"));
+    const res = await fetch(base + (base.includes("?") ? "&" : "?") + "download=1",
+                            { cache: "no-store" });
+    if (!res.ok) throw new Error(t("İndirilemedi") + " (" + res.status + ")");
+    const blob = await res.blob();
+    let name = "download.html";
+    const cd = res.headers.get("Content-Disposition") || "";
+    const star = /filename\*=UTF-8''([^;]+)/i.exec(cd);
+    const plain = /filename="?([^";]+)"?/i.exec(cd);
+    if (star) {
+      try { name = decodeURIComponent(star[1].trim()); } catch { name = star[1].trim(); }
+    } else if (plain) {
+      name = plain[1].trim();
+    }
+    const href = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = href;
+    a.download = name;
+    a.rel = "noopener";
+    document.body.append(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(href), 2000);
+  }
+
+  function printPage(url) {
+    const base = String(url || "").split("?")[0];
+    if (!base) return;
+    fetch(base, { cache: "no-store" })
+      .then((r) => { if (!r.ok) throw new Error(String(r.status)); return r.text(); })
+      .then((html) => {
+        const blob = new Blob([injectScrollCss(html)], { type: "text/html;charset=utf-8" });
+        const href = URL.createObjectURL(blob);
+        const iframe = document.createElement("iframe");
+        iframe.setAttribute("aria-hidden", "true");
+        iframe.style.cssText = "position:fixed;right:0;bottom:0;width:0;height:0;border:0;opacity:0";
+        iframe.onload = () => {
+          try { iframe.contentWindow.focus(); iframe.contentWindow.print(); }
+          catch { /* pywebview / sandbox */ }
+          setTimeout(() => { iframe.remove(); URL.revokeObjectURL(href); }, 1500);
+        };
+        iframe.src = href;
+        document.body.append(iframe);
+      })
+      .catch((err) => {
+        if (typeof say === "function") say(t("Yazdırılamadı") + ": " + (err.message || err), true);
+      });
+  }
+
+  function injectScrollCss(html) {
+    const css = "<style id=\"neo-scroll-theme\">"
+      + "html{scrollbar-width:thin;scrollbar-color:rgba(79,227,255,.35) transparent}"
+      + "::-webkit-scrollbar{width:8px;height:8px}"
+      + "::-webkit-scrollbar-thumb{background:rgba(79,227,255,.3);border-radius:4px}"
+      + "::-webkit-scrollbar-track{background:transparent}"
+      + "</style>";
+    const src = String(html || "");
+    if (/<\/head>/i.test(src)) return src.replace(/<\/head>/i, css + "</head>");
+    if (/<html[\s>]/i.test(src)) {
+      return src.replace(/<html[^>]*>/i, (m) => m + "<head>" + css + "</head>");
+    }
+    return css + src;
+  }
+
+  return { present, page, showing, watch, refresh, show, open, close, toggle,
+           downloadArtifact, printPage };
 })();

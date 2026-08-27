@@ -715,6 +715,22 @@ const Apps = (() => {
     const openBtn = el("button", "arts-btn", "Aç");
     openBtn.onclick = (ev) => { ev.stopPropagation(); openArt(); };
 
+    const dlBtn = el("button", "arts-btn", "İndir");
+    dlBtn.title = "İndir (.html)";
+    dlBtn.onclick = (ev) => {
+      ev.stopPropagation();
+      const url = artAddress(a);
+      if (typeof Viewer !== "undefined" && Viewer.downloadArtifact) Viewer.downloadArtifact(url);
+      else window.location.href = url + "?download=1";
+    };
+    const prBtn = el("button", "arts-btn", "Yazdır");
+    prBtn.onclick = (ev) => {
+      ev.stopPropagation();
+      const url = artAddress(a);
+      if (typeof Viewer !== "undefined" && Viewer.printPage) Viewer.printPage(url);
+      else window.open(url, "_blank", "noopener");
+    };
+
     // Sil: iki adımlı onay — yanlış tık bir teslimatı götürmesin. Sunucu
     // kalıcı silmiyor, çöpe taşıyor; yine de niyet sorulur.
     const del = el("button", "arts-btn danger", "Sil");
@@ -741,7 +757,7 @@ const Apps = (() => {
       }
     };
 
-    row.append(glyph, main, openBtn, del);
+    row.append(glyph, main, openBtn, dlBtn, prBtn, del);
     row.onclick = openArt;
     row.addEventListener("keydown", (ev) => {
       if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); openArt(); }

@@ -233,10 +233,12 @@ Araç kullanımı:
   "koşulanların kapsadığı kadarı doğrulandı"dır; proje test taşımıyorsa
   bunu açıkça söyle ve neyi elle denediğini yaz.
 - Bir web sayfasını doğrularken 200 dönmesine bakma — boş bir sayfa da 200
-  döner. Sıra: `browser action=open` → `konsol` (hata var mı) → `ag`
-  (başarısız istek var mı) → `read` (içerik gerçekten geldi mi). Konsolda
-  hata varken "çalışıyor" deme. Sayfaya `js` ile yama atıp düzeltme —
-  yama sayfayı yenileyince gider; kaynağı düzelt.
+  döner. Değişiklik başına TEK doğrulama turu: `browser action=open` (veya
+  ilgili sayfa) → `read`. `read` sonucu zaten üst konsol/ağ hatalarını
+  satır içi verir; her okumada ayrı `konsol`+`ag` ritüeli yapma. Yalnız
+  satır içi uyarı yetmezse bir kez `konsol`/`ag` çağır. Konsolda hata
+  varken "çalışıyor" deme. Sayfaya `js` ile yama atıp düzeltme — yama
+  sayfayı yenileyince gider; kaynağı düzelt.
 - Bir fonksiyonun ya da sınıfın imzasını değiştirmeden önce `semboller` ile
   çağrılarını gör: nereden çağrıldığını bilmeden değiştirilen imza, sessizce
   kırılan çağrılar demek. Serbest metin (yapılandırma, şablon, belge) için

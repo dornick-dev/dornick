@@ -10,7 +10,7 @@ ve hafızası, hedefleri, geçmişi birinci sınıf, sorgulanabilir yapılar ola
 kişisel bir ajan. Senin hakkında öğrendikleri, ekranda büyüdüğünü
 izleyebildiğin bir hafıza ağına yazılır.
 
-![neo karşılama ekranı](docs/screenshots/karsilama.png)
+![neo ana ekranı: beynin çevresinde 3B hafıza ağı, solda hafıza türleri](docs/screenshots/home-memory-web.jpg)
 
 ## İçinde ne var
 
@@ -29,6 +29,13 @@ izleyebildiğin bir hafıza ağına yazılır.
   model bir sınav kapısından geçmek zorundadır — benchmark'ta mevcut modeli
   geçecek, tuzak sorularda susacak, hızlı kalacak — yoksa çöpe gider.
   Verin bilgisayardan çıkmaz.
+* **Koşarken izlediğin otomasyonlar.** Tekrarlayan bir iş — "her sabah
+  postalarımı oku, önemlileri seç, WhatsApp'tan at" — her seferinde yeniden
+  yazdığın bir istem değil, adımlardan oluşan bir grafik oluyor. Ajana söyle,
+  akışı o kursun; istediğin adımı açıp elle düzenle. Adımlar koşarken
+  renkleniyor, çıktı aynı ekranda kalıyor. Bir adım bozulursa neo onu bir kez
+  onarıp yeniden deniyor — ama SENİN elle düzenlediğin adıma asla dokunmuyor
+  ve ne değiştirdiğini her zaman söylüyor.
 * **Bilgisayar kullanımı.** Ekran görüntüsü, fare/klavye kontrolü, pencere
   yönetimi ve DevTools protokolüyle sürülen gerçek bir tarayıcı
   (`neo chrome`) — oturumlar kendi profilinde kalıcıdır, formlar doldurulur,
@@ -60,7 +67,7 @@ izleyebildiğin bir hafıza ağına yazılır.
 * **Türkçe ve İngilizce** arayüz; hafıza katmanı sondan eklemeli Türkçe
   için kurulmuştur (önek eşleyen FTS) ve İngilizcede de çalışır.
 
-![Hafıza ağı sahnesi](docs/screenshots/beyin.png)
+![Hafıza ağı: anılar renkli düğümler olarak en yakın komşularına bağlı](docs/screenshots/home-memory-web.jpg)
 
 ## Hızlı başlangıç
 
@@ -70,6 +77,19 @@ izleyebildiğin bir hafıza ağına yazılır.
 çalıştır, Başlat menüsünden **neo**'yu aç. Uygulamanın ayar sayfasından
 model seçilir (yerel sunucu ya da API anahtarı). İsteğe bağlı
 bileşenler: beni tanı eğitimi, dinleme (mikrofon), kamera izleme.
+
+**Var olan kurulumun üstüne kurarken** üç seçenek çıkıyor ve kurulum üçü için
+de test edilmiş durumda:
+
+| seçenek | koda ne olur | verine ne olur |
+|---|---|---|
+| **Güncelle** (varsayılan) | yenilenir | **korunur** — anılar, görevler, otomasyonlar aynen kalır |
+| **Temiz kurulum** | silinip sıfırdan yazılır | **korunur** |
+| **Verileri de sıfırla** | silinip sıfırdan yazılır | silinir — ama **önce** yedek zip'i yazılır |
+
+Hiçbir şey silinmeden önce yedek alınıyor; yedek alınamazsa hiçbir şey
+silinmiyor. Son beş yedek saklanıyor. Kaldırma, programı siler ve `.neocp`
+verini yerinde bırakır.
 
 ### Kaynaktan
 
@@ -91,6 +111,20 @@ neocp --app     # masaüstü penceresi (WebView2)
 
 İlk açılışta zihin boştur. Konuştukça kendi kendine dolar; ikinci oturumda
 seni hatırlamaya başlar.
+
+## Otomasyonlar
+
+![Görevler paneli: Basit ve Otomasyon rozetli liste ve günlük posta özetinin
+dört adımlı akış grafiği](docs/screenshots/automation-flow.jpg)
+
+Her düğüm türünü (`mail_read`, `agent`, `http`, `skill`), ihtiyaç duyduğu
+gizli alanları ve elle düzenlenip düzenlenmediğini yazar — ✎ *manual* işaretli
+bir adıma otomatik onarım asla dokunmaz. Aynı ekran iki temada da çalışır:
+
+![Aynı akış açık temada](docs/screenshots/automation-flow-light.jpg)
+
+Zamana bağla, ya da **Run**'a bas ve adımların *koşuyor*dan *bitti*ye
+dönüşünü izle. Hiçbir şey ayrı bir günlüğe saklanmıyor.
 
 ## Mimari
 
@@ -123,7 +157,7 @@ yerelde koşar.
 
 ### Ayarlar
 
-![Ayar sayfası](docs/screenshots/ayarlar.png)
+![neo ayarları: model, ses, yetki ve makine sekmeleri](docs/screenshots/settings.jpg)
 
 ## Eğitim düzeneği
 

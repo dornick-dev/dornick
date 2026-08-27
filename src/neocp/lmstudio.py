@@ -55,6 +55,8 @@ class Model:
     vision: bool
     tools: bool
     instances: list[Instance]
+    size_bytes: int = 0
+    params_b: float = 0.0
 
     @property
     def loaded(self) -> bool:
@@ -86,6 +88,8 @@ def models(base_url: str | None) -> list[Model]:
                 max_context=int(entry.get("max_context_length") or 0),
                 vision=bool(skills.get("vision")),
                 tools=bool(skills.get("trained_for_tool_use")),
+                size_bytes=int(entry.get("size_bytes") or 0),
+                params_b=_params_b(entry.get("params_string")),
                 instances=[
                     Instance(
                         id=str(item.get("id") or ""),
@@ -170,6 +174,92 @@ def drop_duplicates(base_url: str | None, key: str) -> list[str]:
     keep = max(model.instances, key=lambda i: i.context)
     dropped = [i.id for i in model.instances if i.id != keep.id and unload(base_url, i.id)]
     return dropped
+
+
+def unload_others(base_url: str | None, keep_key: str) -> list[str]:
+    """Seçili model dışındaki TÜM yüklü kopyaları boşaltır.
+
+    İki farklı model aynı anda VRAM'de kalmasın diye — yerel optimizasyon
+    açıkken `_prepare_model` burayı çağırıyor.
+    """
+    dropped: list[str] = []
+    for model in models(base_url):
+        if model.key == keep_key:
+            continue
+        for inst in model.instances:
+            if inst.id and unload(base_url, inst.id):
+                dropped.append(inst.id)
+    return dropped
+
+
+def suggest_context(
+    wanted: int,
+    *,
+    max_context: int = 0,
+    size_bytes: int = 0,
+    params_b: float = 0.0,
+    free_vram_mb: int | None = None,
+) -> int:
+    """İstenen bağlamı GPU / model boyutuna sığacak şekilde düşürür.
+
+    VRAM ölçümü yoksa yalnızca modelin `max_context` tavanı uygulanır.
+    Ölçüm varsa: ağırlık + %15 pay + 512 MB yedek düşülür; kalan KV önbelleğe
+    ayrılır. Kabaca ~0.06 MB × parametre_B / 1k token (Q4 sınıfı).
+    """
+    ceiling = wanted if wanted > 0 else 8192
+    if max_context and max_context > 0:
+        ceiling = min(ceiling, max_context)
+    if free_vram_mb is None or free_vram_mb <= 0 or size_bytes <= 0:
+        return ceiling if ceiling > 0 else JIT_CONTEXT
+
+    model_mb = size_bytes / (1024 * 1024)
+    headroom = free_vram_mb - model_mb * 1.15 - 512.0
+    if headroom < 256:
+        # Modele zar zor yer: JIT penceresi — konuşma yine de başlasın.
+        return min(ceiling, JIT_CONTEXT)
+
+    # KV önbellek kabaca: ~2.5 MB × B-parametre / 1k token (Q4, dikkatli).
+    # Eski 0.06×B tahmini VRAM'i aşırı iyimser okuyordu.
+    params = params_b if params_b > 0 else max(7.0, model_mb / 550.0)
+    kv_mb_per_1k = max(16.0, 2.5 * params)
+    from_vram = int(headroom / kv_mb_per_1k * 1000)
+    fitted = min(ceiling, max(JIT_CONTEXT, from_vram))
+    return _snap_context(fitted)
+
+
+def is_local_url(base_url: str | None) -> bool:
+    """localhost / 127.0.0.1 / ::1 — bulut uçlarında optimizasyon yok."""
+    host = (base_url or "").lower()
+    return any(
+        token in host
+        for token in ("localhost", "127.0.0.1", "[::1]", "0.0.0.0")
+    )
+
+
+def _snap_context(n: int) -> int:
+    """Bağlamı bilinen basamaklara yuvarla (LM Studio dostu)."""
+    steps = (4096, 6144, 8192, 12288, 16384, 24576, 32768, 49152, 65536,
+             98304, 131072, 196608, 262144)
+    best = steps[0]
+    for step in steps:
+        if step <= n:
+            best = step
+        else:
+            break
+    return best
+
+
+def _params_b(raw: Any) -> float:
+    """'9.0B' / '70B' → float milyar parametre."""
+    text = str(raw or "").strip().upper().replace(",", ".")
+    if not text:
+        return 0.0
+    if text.endswith("B"):
+        text = text[:-1]
+    try:
+        return float(text)
+    except ValueError:
+        return 0.0
 
 
 # -- HTTP --------------------------------------------------------------

@@ -15,14 +15,14 @@ from ..schedule import MIN_INTERVAL_S, Task
 from .base import ToolContext, ToolRegistry, ToolResult, object_schema
 
 DESCRIPTION = """
-Zamanlanmış görevleri yönetir: kurar, listeler, durdurur, siler.
+Zamanlanmış görevleri yönetir: kurar, listeler, günceller, durdurur, siler.
 
 Kullanıcı tekrar eden bir iş istediğinde ("her sabah", "günde bir", "saat
 başı") bunu kullan — işi bir kez yapıp geçme.
 
-`prompt` alanını eksiksiz yaz. Görev tetiklendiğinde bu metin sana yeni bir
-mesaj gibi gelecek ve o anki konuşmayı görmeyeceksin: neyi, nerede, nasıl
-yapacağın orada yazmalı.
+`prompt` alanını eksiksiz yaz. Tetiklenince bu metin sohbet balonu değil
+arka plan yardımcıya gider; rapor Orkestra'da açılır. O anki konuşmayı
+görmez: neyi, nerede, nasıl yapacağı orada yazmalı.
 
 Tekrar biçimleri:
   every  — `every_s` saniyede bir (en az 60)
@@ -38,18 +38,28 @@ def register(registry: ToolRegistry) -> None:
             {
                 "action": {
                     "type": "string",
-                    "enum": ["add", "list", "pause", "resume", "remove"],
+                    "enum": ["add", "list", "update", "pause", "resume", "remove"],
                     "description": "Yapılacak işlem.",
                 },
                 "title": {"type": "string", "description": "Kısa ad; listede bu görünür."},
                 "prompt": {
                     "type": "string",
-                    "description": "Tetiklendiğinde sana gelecek eksiksiz yönerge.",
+                    "description": "Tetiklenince yardımcıya gidecek eksiksiz yönerge.",
                 },
                 "kind": {"type": "string", "enum": ["every", "daily"]},
                 "every_s": {"type": "integer", "description": f"Saniye (en az {MIN_INTERVAL_S})."},
                 "at": {"type": "string", "description": "daily için 'HH:MM'."},
-                "id": {"type": "string", "description": "pause/resume/remove için görev kimliği."},
+                "id": {"type": "string", "description": "update/pause/resume/remove için kimlik."},
+                "workflow_id": {
+                    "type": "string",
+                    "description": (
+                        "Bir iş akışını (workflow) zamana bağlamak için akış "
+                        "kimliği. Verildiğinde görev otomasyon olur ve "
+                        "tetiklenince `prompt` değil O AKIŞ koşar. Tek bir "
+                        "yönerge yetiyorsa boş bırak — akış kurmak çok "
+                        "adımlı, dallanan iş içindir."
+                    ),
+                },
             },
             required=["action"],
         ),
@@ -75,6 +85,11 @@ def register(registry: ToolRegistry) -> None:
             return ToolResult("\n".join(lines), detail={"count": len(tasks)})
 
         if action == "add":
+            # Akış kimliği verildiyse görev otomasyondur: tetiklenince
+            # `prompt` değil grafiğin kendisi koşar. Tek alandan türetiliyor
+            # ki ikisi çelişemesin (workflow_id dolu + kind_ui="simple" gibi
+            # bir kayıt, koşucunun sessizce prompt'a düşmesi demek olurdu).
+            akis = str(args.get("workflow_id") or "").strip()
             task = Task(
                 id="",
                 title=str(args.get("title") or "").strip() or _headline(args.get("prompt", "")),
@@ -82,6 +97,8 @@ def register(registry: ToolRegistry) -> None:
                 kind=str(args.get("kind") or "every"),
                 every_s=int(args.get("every_s") or 3600),
                 at=str(args.get("at") or "09:00"),
+                kind_ui="automation" if akis else "simple",
+                workflow_id=akis,
             )
             try:
                 created = book.add(task)
@@ -101,6 +118,29 @@ def register(registry: ToolRegistry) -> None:
             if not book.remove(task_id):
                 return ToolResult.error(f"Görev yok: {task_id}")
             return ToolResult(f"[{task_id}] silindi.")
+
+        if action == "update":
+            fields = {}
+            for key in ("title", "prompt", "kind", "every_s", "at", "workflow_id"):
+                if key in args and args[key] is not None and args[key] != "":
+                    fields[key] = args[key]
+            # Akış bağlanınca tür de değişmeli; ikisi ayrı kalırsa görev
+            # "otomasyon değil ama akışı var" gibi tutarsız bir hâle düşer.
+            if fields.get("workflow_id"):
+                fields["kind_ui"] = "automation"
+            if not fields:
+                return ToolResult.error(
+                    "Güncellenecek alan yok (title/prompt/kind/every_s/at/workflow_id).")
+            try:
+                updated = book.update(task_id, **fields)
+            except ValueError as exc:
+                return ToolResult.error(str(exc))
+            if updated is None:
+                return ToolResult.error(f"Görev yok: {task_id}")
+            return ToolResult(
+                f"Güncellendi: [{updated.id}] {updated.title} — {updated.describe()}.",
+                detail={"id": updated.id},
+            )
 
         if action in ("pause", "resume"):
             updated = book.update(task_id, enabled=action == "resume")

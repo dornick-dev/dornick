@@ -351,14 +351,12 @@ def test_big_open_ended_work_must_lead_with_a_visible_plan() -> None:
 
 
 def test_the_long_run_checkpoint_also_addresses_the_user() -> None:
-    """Kontrol noktası yalnız günlüğe değil kullanıcıya da konuşturmalı:
-    55 dakikalık sessizlik yarasının ikinci yarısı."""
+    """Kontrol noktası kullanıcıya konuşur ve kabul edilince end_turn serbest."""
     from neocp.loop import CHECKPOINT_NOTE
 
     assert "kullanıcıya da yaz" in CHECKPOINT_NOTE
-    assert "DEVAM ET" in CHECKPOINT_NOTE
-    # Eski güvence duruyor: bitirme çağrısı değil.
-    assert "bitirme çağrısı değil" in CHECKPOINT_NOTE
+    assert "end_turn" in CHECKPOINT_NOTE
+    assert "iş bitmeden durma" not in CHECKPOINT_NOTE
 
 
 # -- eski araç yüklerinin kısaltılması ----------------------------------
@@ -420,6 +418,26 @@ def test_trimming_is_deterministic_for_the_cache() -> None:
     prune_tool_payloads(a)
     prune_tool_payloads(b)
     assert json.dumps(a, sort_keys=True) == json.dumps(b, sort_keys=True)
+
+
+def test_browser_dumps_are_trimmed_more_aggressively() -> None:
+    """Browser HTML dump'ları keep=2 dışında agresif kısaltılır."""
+    from neocp.context import TRIM_BROWSER_CHARS, prune_tool_payloads
+
+    html = "<html>" + ("z" * 5_000) + "</html>"
+    messages = [
+        {"role": "user", "content": [
+            {"type": "tool_result", "tool_use_id": "b1", "content": html}]},
+        {"role": "assistant", "content": "ok1"},
+        {"role": "user", "content": "devam"},
+        {"role": "assistant", "content": "ok2"},
+        {"role": "user", "content": "son"},
+        {"role": "assistant", "content": "ok3"},
+    ]
+    prune_tool_payloads(messages)
+    trimmed = messages[0]["content"][0]["content"]
+    assert len(trimmed) < TRIM_BROWSER_CHARS + 200
+    assert "kısaltıldı" in trimmed
 
 
 def test_trimming_flows_through_prepare() -> None:

@@ -38,9 +38,9 @@ from .tools.base import ToolSpec
 # (durdurma ilk andan işliyor) + aşağıdaki mutlak sigorta.
 MAX_TURNS = 60
 
-# Koşu başına mutlak tur sigortası. Kaçak döngüye karşı son emniyet; normal
-# bir iş buraya çarpmaz (600 tur ≈ yüzlerce araç çağrısı).
-HARD_TURN_LIMIT = 600
+# Koşu başına mutlak tur sigortası. Kaçak döngüye karşı son emniyet.
+# 600 tur token yakıyordu (Market Lens ~80+ adım); 240 ≈ 4× soft MAX_TURNS.
+HARD_TURN_LIMIT = 240
 
 # Tavana carpan bir yanit kac kez surdurulsun. Sinirsiz birakmak, uzun
 # uzun yazip hicbir zaman bitirmeyen bir modelde donguye doner. Sayaç,
@@ -53,8 +53,9 @@ MAX_CONTINUATIONS = 4
 # öldürmemeli. Testler kısaltmak için modül değişkenini yamalıyor.
 RETRY_DELAYS = (15.0, 30.0, 60.0, 120.0, 300.0)
 
-# Denemeler tükenince iş PARK edilir: ölmez, seyrek yoklamayla bekler ve
-# model dönünce kaldığı yerden sürer. Yoklama ucuz — probe isteğin kendisi.
+# Denemeler tükenince ANA ajan işi PARK eder: ölmez, seyrek yoklamayla
+# bekler. Alt ajan / zamanlı görev PARK ETMEZ — sonsuz "Model bekleniyor
+# (5/5)" kilidi yerine hata ile biter (chat çalışırken görev takılı kalmasın).
 PARK_PROBE_S = 180.0
 
 # Park kaydı: uygulama kapansa bile yarım işin izi diskte durur; açılışta
@@ -288,9 +289,20 @@ CHILD_FAIL_NOTE = "[Yardımcı hata verdi · {title} (id={id})] {result}"
 # girdisi. Kullanıcı mesajı DEĞİL: continuation kanalından gidiyor,
 # arayüzde görünmüyor.
 CHILDREN_RESUME_NOTE = (
-    "Arka plandaki yardımcı(lar) bitti: {titles}. Sonuçları sistem "
-    "notlarında. Değerlendir ve gerekiyorsa kullanıcıya kısaca aktar; "
-    "kullanıcı yeni bir şey istemedi, yeni iş başlatma."
+    "Arka plandaki yardımcı(lar) bitti: {titles}. "
+    "Tam rapor Orkestra / Görevler panelinde duruyor; kullanıcı tıklayınca "
+    "ayrı görüntüleyicide açılıyor (sohbet balonu değil). "
+    "Sohbete raporu veya uzun özeti YAPIŞTIRMA — en fazla bir cümle: "
+    "'X hazır; soldaki Orkestra'dan aç.' Kullanıcı yeni bir şey istemedi, "
+    "yeni iş başlatma."
+)
+
+# Zamanlanmış görev yardımcısına verilen zarf: çıktı rapor, sohbet değil.
+SCHEDULE_CHILD_WRAP = (
+    "[Zamanlanmış görev · {title}]\n{prompt}\n\n"
+    "Bu bir zamanlanmış iş. Sonucu sohbet cevabı gibi değil, kendi başına "
+    "okunabilir bir RAPOR olarak yaz (başlık + maddeler + kaynaklar). "
+    "Rapor Orkestra panelinden açılacak; ana sohbete yapıştırılmayacak."
 )
 
 # Tur ortasında kullanıcıdan gelen mesajın zarfı. Köprü (desktop) gelen
@@ -479,13 +491,15 @@ KIRMIZI_NOTU = (
 )
 
 
-# Uzun koşu kontrol noktası: eski sert tavanın yerini alan yumuşak dürtü.
+# Uzun koşu kontrol noktası: yumuşak dürtü — kabul ölçütü geçildiyse
+# `end_turn` serbest. Eski "iş bitmeden durma" uzun tarama işlerini
+# sonsuz döngüye sokuyordu.
 CHECKPOINT_NOTE = (
     "[Uzun koşu kontrol noktası — {turns} tur] Bir-iki cümleyle ilerleme "
-    "durumunu yaz (ne bitti, ne kaldı) — bu satırı kullanıcıya da yaz, "
-    "kullanıcı uzun bir işte dakikalarca sessizlik yaşamamalı — ve işe "
-    "DEVAM ET. Bu not kullanıcıdan gelmedi ve bir bitirme çağrısı değil; "
-    "iş bitmeden durma."
+    "durumunu yaz (ne bitti, ne kaldı) — bu satırı kullanıcıya da yaz. "
+    "Kabul ölçütü sağlandıysa araç çağırmadan bitir (`end_turn`). "
+    "Eksik kaldıysa yalnız eksikleri tamamla; aynı tarama/doğrulama "
+    "ritüelini tekrarlama."
 )
 
 
@@ -685,8 +699,10 @@ class AgentIO:
     # ana sohbete karışmadan "kimin ne yaptığı" görünür oluyor. Varsayılan
     # boş: alt ajan kullanmayan çağıranlar (testler, salt-metin) etkilenmiyor.
     on_child_start: Callable[[str, str, str, bool], None] = lambda *_: None  # title, model, id, bg
-    on_child_tool: Callable[[str, str, str], None] = lambda *_: None    # title, tool, phase
+    on_child_tool: Callable[..., None] = lambda *_: None  # title, tool, phase, hedef=""
     on_child_end: Callable[[str, bool, int, int, str, str], None] = lambda *_: None  # title, ok, turns, tools, id, özet
+    # Alt ajan bekleme/retry (model boş yanıt vb.) — panel kanalı.
+    on_child_wait: Callable[[dict[str, Any]], None] | None = None
     approve: Callable[[ToolSpec, dict[str, Any]], Awaitable[bool]] = None  # type: ignore[assignment]
 
     def __post_init__(self) -> None:
@@ -735,6 +751,28 @@ class ChildHandle:
     # `run`da bayrağını tazeliyor ve arka plandaki çocuk eski bayrakta
     # sahipsiz kalıyordu. Ana `interrupt()` hepsini türev olarak kurar.
     cancel: asyncio.Event = field(default_factory=asyncio.Event)
+    # Zamanlanmış görev kimliği (varsa): bitince deftere yazılıyor.
+    schedule_id: str = ""
+    # Sessiz: bitince ana ajan sürdürme turu AÇMAZ — rapor panellerde kalır.
+    # Zamanlanmış işler için: sohbet Q&A değil, görev alanı.
+    sessiz: bool = False
+    # task_runs arşivindeki koşum kimliği.
+    run_id: str = ""
+    # Otomasyon workflow kimliği (varsa).
+    workflow_id: str = ""
+    # Bitişte açılacak teslimat: {kind: app|artifact|json|text, url?, body?}
+    deliverable: dict[str, Any] | None = None
+    # Canlı panel: son araç adı / model bekleme durumu.
+    son_arac: str = ""
+    son_hedef: str = ""
+    wait: dict[str, Any] | None = None
+    # Koşum ölçümü: {girdi, cikti, cagri} — chat dock ile aynı birimler.
+    usage: dict[str, int] = field(
+        default_factory=lambda: {"girdi": 0, "cikti": 0, "cagri": 0})
+    # Mid-run task_runs.patch_run throttle.
+    last_patch_ts: float = 0.0
+    # Kaç araç çağrısı başladı (panel + koşum arşivi).
+    tools_count: int = 0
 
 
 @dataclass(slots=True)
@@ -758,6 +796,8 @@ class TurnStats:
     # Kırmızı kapısı bu turda bir kez açıldı mı. En fazla bir kez: model
     # ikinci turda yine bitirmek isterse bırakılıyor — sonsuz döngü yok.
     kirmizi_uyarildi: bool = False
+    # Alt ajan: max retry sonrası model hatası metni (park yerine).
+    fail_reason: str | None = None
 
 
 def _without_numbers(text: str) -> str:
@@ -1151,6 +1191,7 @@ class Agent:
             # ajan işi bitmeden ölürse bildirimin gideceği kimse kalmaz.
             job_bg=self._job_bg if self.depth < MAX_DEPTH else None,
             schedule=self.schedule,
+            run_workflow=self.run_workflow if self.depth < MAX_DEPTH else None,
             lens=self.lens,
             ear=self.ear,
             watcher=self.watcher,
@@ -1459,6 +1500,18 @@ class Agent:
                 self.io.on_notice(
                     f"Model yanıt vermiyor; {delay:.0f} sn sonra yeniden denenecek "
                     f"({stats.api_errors}/{retries}). ({_clip(error, 120)})")
+        elif self.depth > 0:
+            # Alt ajan: ana sohbet çalışsa bile burada sonsuz park YOK.
+            # Orkestra "Model bekleniyor (5/5) · 300s"de kilitlenmesin.
+            stats.fail_reason = _clip(error, 400)
+            self._bekleme_olayi(
+                kip="hata", deneme=stats.api_errors, toplam=retries,
+                saniye=0, detay=stats.fail_reason,
+            )
+            self.io.on_notice(
+                f"Model {retries} denemede yanıt vermedi — görev durdu. "
+                f"({_clip(error, 120)})")
+            return False
         else:
             delay = PARK_PROBE_S
             self._park(error)
@@ -1626,6 +1679,128 @@ class Agent:
             self._bg_round(handle, instruction))
         return handle
 
+    def spawn_scheduled(self, title: str, prompt: str, schedule_id: str) -> ChildHandle:
+        """Zamanlanmış görevi sessiz arka plan yardımcı olarak koşturur.
+
+        Sohbet kuyruğuna düşmez; bitince ana ajanı konuşturmaz. Rapor
+        Orkestra / Görevler + Viewer'da kalır. Her koşum task_runs'a yazılır.
+        """
+        from . import task_runs
+
+        instruction = SCHEDULE_CHILD_WRAP.format(
+            title=title or "görev", prompt=(prompt or "").strip())
+        handle = ChildHandle(
+            id=uuid4().hex[:6],
+            title=title or "zamanlanmış",
+            model=self.config.model.name,
+            arka_plan=True,
+            schedule_id=str(schedule_id or ""),
+            sessiz=True,
+            deliverable=_infer_deliverable(prompt or ""),
+        )
+        if schedule_id:
+            try:
+                run = task_runs.start_run(
+                    self.config.state_dir, schedule_id,
+                    title=title or "", child_id=handle.id)
+                handle.run_id = run.id
+            except Exception:
+                pass
+        self._register_child(handle)
+        handle.task = asyncio.get_running_loop().create_task(
+            self._bg_round(handle, instruction))
+        return handle
+
+    async def run_workflow(self, workflow_id: str,
+                           schedule_id: str = "") -> dict[str, Any]:
+        """Otomasyon grafiğini sessiz yardımcı olarak koşturur.
+
+        `schedule_id` verilmişse koşum O GÖREVİN defterine yazılıyor.
+        Şarttır: arayüz koşum geçmişini görev kimliğiyle soruyor
+        (`/api/jobs/runs?id=<görev>`). Akıştan türetilmiş bir kimlik
+        kullanmak, koşumları kimsenin bakmadığı bir çekmeceye yazmak
+        demekti — geçmiş boş görünüyor, canlı ilerleme hiç gelmiyordu.
+        Görevsiz (doğrudan akış) koşumlar için eski türetme duruyor.
+        """
+        from . import task_runs, workflows
+        from .workflow_run import execute_workflow
+
+        wf = workflows.get(self.config.state_dir, workflow_id)
+        if wf is None:
+            return {"ok": False, "error": f"Akış yok: {workflow_id}"}
+
+        handle = ChildHandle(
+            id=uuid4().hex[:6],
+            title=wf.title or workflow_id,
+            model=self.config.model.name,
+            arka_plan=True,
+            sessiz=True,
+            workflow_id=wf.id,
+            schedule_id=(schedule_id or f"wf_{wf.id}")[:48],
+        )
+        try:
+            run = task_runs.start_run(
+                self.config.state_dir, handle.schedule_id,
+                title=handle.title, child_id=handle.id)
+            handle.run_id = run.id
+        except Exception:
+            pass
+        self._register_child(handle)
+        # Orkestra kanalı: düğüm tool olayları kanalsız düşmesin.
+        try:
+            self.io.on_child_start(
+                handle.title, handle.model, handle.id, handle.arka_plan)
+        except Exception:
+            pass
+
+        async def _go() -> None:
+            progress: list = []
+            try:
+                report, progress, ok = await execute_workflow(
+                    wf, self, handle)
+                handle.state = "bitti" if ok else "hata"
+                handle.sonuc = report
+                handle.bitis_ts = time.time()
+                if not handle.deliverable:
+                    handle.deliverable = _infer_deliverable(
+                        wf.title or "", report or "")
+                self.io.on_child_end(
+                    handle.title, ok, 0, len(progress or []),
+                    handle.id, _clip(report, 200))
+            except Exception as exc:
+                handle.state = "hata"
+                handle.sonuc = f"{type(exc).__name__}: {exc}"
+                handle.bitis_ts = time.time()
+                self.io.on_child_end(
+                    handle.title, False, 0, 0, handle.id,
+                    _clip(handle.sonuc, 200))
+            if handle.sessiz:
+                handle.bildirildi = True
+            if handle.schedule_id and handle.run_id:
+                try:
+                    from . import task_runs as tr
+                    meter = _run_meter(handle, self.config)
+                    tr.finish_run(
+                        self.config.state_dir, handle.schedule_id, handle.run_id,
+                        status="bitti" if handle.state == "bitti" else "hata",
+                        report=_report_with_meter(handle, self.config),
+                        child_id=handle.id,
+                        nodes_progress=progress or None,
+                        model=meter["model"],
+                        usage=meter["usage"],
+                        cost_usd=meter["cost_usd"],
+                        tools=meter["tools"],
+                        duration_s=meter["duration_s"],
+                        last_tool=meter["last_tool"],
+                    )
+                except Exception:
+                    pass
+            self._children_settled()
+
+        handle.task = asyncio.get_running_loop().create_task(_go())
+        return {"ok": True, "id": handle.id, "workflow_id": wf.id,
+                "run_id": handle.run_id}
+
     async def _bg_round(self, handle: ChildHandle, instruction: str,
                         *, resume: bool = False) -> None:
         """Arka plan sarmalayıcı: koştur, ne olursa olsun defteri düşür,
@@ -1638,6 +1813,34 @@ class Agent:
             handle.bitis_ts = time.time()
             self.session.log.note("subagent_failed", title=handle.title,
                                   session=handle.session_id, error=str(exc))
+        if handle.sessiz:
+            # Zamanlı iş: ana sohbet sürdürme turu yok — rapor panelde.
+            handle.bildirildi = True
+        if handle.schedule_id and self.schedule is not None:
+            try:
+                durum = ("bitti" if handle.state == "bitti"
+                         else f"hata: {_clip(handle.sonuc, 80)}")
+                self.schedule.note_run(handle.schedule_id, durum)
+            except Exception:
+                pass
+        if handle.schedule_id and handle.run_id:
+            try:
+                from . import task_runs
+                meter = _run_meter(handle, self.config)
+                task_runs.finish_run(
+                    self.config.state_dir, handle.schedule_id, handle.run_id,
+                    status="bitti" if handle.state == "bitti" else "hata",
+                    report=_report_with_meter(handle, self.config),
+                    child_id=handle.id,
+                    model=meter["model"],
+                    usage=meter["usage"],
+                    cost_usd=meter["cost_usd"],
+                    tools=meter["tools"],
+                    duration_s=meter["duration_s"],
+                    last_tool=meter["last_tool"],
+                )
+            except Exception:
+                pass
         self._children_settled()
 
     async def _child_round(self, handle: ChildHandle, instruction: str,
@@ -1655,10 +1858,19 @@ class Agent:
             client, config = self._client_for(handle.model)
 
         # Ajan kapısı: makinenin taşıyabileceği kadarı aynı anda koşar,
-        # gerisi sırada bekler (ayarlardan: context.max_agents). Kanal
-        # olayı kapı ALINDIKTAN sonra yayılıyor — sırada bekleyen kanal
-        # arayüzde "çalışıyor" görünmesin.
-        async with self._agent_gate:
+        # gerisi sırada bekler. Durdur (cancel) kapıda beklerken de işlesin —
+        # yoksa "koşuyor" görünen görev Durdur'a cevap vermiyordu.
+        try:
+            await self._acquire_agent_gate(handle)
+        except asyncio.CancelledError:
+            handle.state = "hata"
+            handle.sonuc = "(kesildi)"
+            handle.bildirildi = True
+            handle.bitis_ts = time.time()
+            self.io.on_child_end(handle.title, False, 0, 0, handle.id, "(kesildi)")
+            return handle.sonuc
+
+        try:
             if resume:
                 child = Session.resume(
                     self.config.sessions_dir / f"{handle.session_id}.jsonl")
@@ -1688,6 +1900,21 @@ class Agent:
                 # eski bayrakta sahipsiz kalıyordu.
                 cancel=handle.cancel,
             )
+            # Ana sohbet ayardan model değiştirdiyse retry'de çocuğa da geçsin
+            # — chat çalışırken görev ölü modelde kilitlenmesin.
+            def _child_retry_wait(
+                _agent=agent, _handle=handle, _parent=self,
+            ) -> None:
+                if _parent.on_retry_wait is not None:
+                    try:
+                        _parent.on_retry_wait()
+                    except Exception:
+                        pass
+                _agent.client = _parent.client
+                _agent.config = _parent.config
+                _handle.model = _parent.config.model.name
+
+            agent.on_retry_wait = _child_retry_wait
             handle.agent = agent
 
             try:
@@ -1706,17 +1933,27 @@ class Agent:
                 # Günlük kapanıyor ama oturum diskte duruyor: `task_say`
                 # bitmiş bir yardımcıyı Session.resume ile geri açabiliyor.
                 child.close()
+        finally:
+            self._agent_gate.release()
 
         answer = _last_text(child)
         if stats.interrupted:
             # Kesilen yardımcı için bildirim turu açılmaz: durduran zaten
-            # kullanıcının kendisi.
+            # kullanıcının kendisi — ya da model max retry ile durdu.
             handle.state = "hata"
-            handle.sonuc = answer or "(kesildi)"
+            if stats.fail_reason:
+                handle.sonuc = (
+                    f"Model {len(RETRY_DELAYS)} denemede yanıt vermedi.\n"
+                    f"{stats.fail_reason}"
+                )
+            else:
+                handle.sonuc = answer or "(kesildi)"
             handle.bildirildi = True
         else:
             handle.state = "bitti"
             handle.sonuc = answer
+        if not handle.deliverable:
+            handle.deliverable = _infer_deliverable(instruction, handle.sonuc or "")
         # `session` yetim taraması için: açılışta start/end eşleşmesi
         # kimlikle yapılıyor (başlık benzersiz olmak zorunda değil).
         self.session.log.note(
@@ -1724,8 +1961,9 @@ class Agent:
             turns=stats.turns, tools=stats.tool_calls
         )
         self.io.on_child_end(handle.title, not stats.interrupted, stats.turns,
-                             stats.tool_calls, handle.id, _clip(answer, 200))
-        return answer
+                             stats.tool_calls, handle.id,
+                             _clip(handle.sonuc or answer, 200))
+        return handle.sonuc or answer
 
     def _register_child(self, handle: ChildHandle) -> None:
         self._children[handle.id] = handle
@@ -1796,7 +2034,9 @@ class Agent:
                 template = CHILD_DONE_NOTE if handle.state == "bitti" else CHILD_FAIL_NOTE
             self.session.add_harness_note(template.format(
                 title=handle.title, id=handle.id,
-                result=_clip(handle.sonuc, CHILD_RESULT_CLIP)))
+                # Panele tam metin gidiyor; modele yalnızca kısa özet —
+                # uzun bülteni sohbete yapıştırmasın.
+                result=_clip(handle.sonuc, 400)))
 
     def _drain_inbox(self) -> None:
         """Gelen kutusunu geçmişe harness notu olarak boşaltır."""
@@ -1898,7 +2138,8 @@ class Agent:
     async def _job_round(self, handle: ChildHandle,
                          runner: Callable[[asyncio.Event], Awaitable[str]]) -> None:
         try:
-            handle.sonuc = _clip(await runner(handle.cancel), CHILD_RESULT_CLIP)
+            # Tam çıktı panellerde/Viewer'da; harness notuna kısaltma ayrı.
+            handle.sonuc = await runner(handle.cancel)
             handle.state = "bitti"
         except Exception as exc:  # işin çökmesi ajanı düşürmemeli
             handle.state = "hata"
@@ -1909,6 +2150,42 @@ class Agent:
         self.io.on_child_end(handle.title, handle.state == "bitti", 0, 0,
                              handle.id, _clip(handle.sonuc, 200))
         self._children_settled()
+
+    async def _acquire_agent_gate(self, handle: "ChildHandle") -> None:
+        """Ajan semaforunu al; Durdur gelirse CancelledError.
+
+        Düz `async with gate` cancel'i dinlemiyordu — planlanmış görev
+        kapıda beklerken UI 'koşuyor' diyordu, Durdur hiçbir işe yaramıyordu.
+        """
+        if handle.cancel.is_set():
+            raise asyncio.CancelledError()
+        acquire = asyncio.ensure_future(self._agent_gate.acquire())
+        stopper = asyncio.ensure_future(handle.cancel.wait())
+        try:
+            done, pending = await asyncio.wait(
+                {acquire, stopper}, return_when=asyncio.FIRST_COMPLETED)
+            for task in pending:
+                task.cancel()
+                try:
+                    await task
+                except (asyncio.CancelledError, Exception):
+                    pass
+            if stopper in done and acquire not in done:
+                raise asyncio.CancelledError()
+            # acquire tamamlandı (veya ikisi birden — yine de kapı alınmış).
+            if acquire.cancelled() or acquire.exception():
+                raise asyncio.CancelledError()
+        except asyncio.CancelledError:
+            if not acquire.done():
+                acquire.cancel()
+                try:
+                    await acquire
+                except (asyncio.CancelledError, Exception):
+                    pass
+            elif not acquire.cancelled() and acquire.exception() is None:
+                # Kapıyı almışken kesildik — serbest bırak.
+                self._agent_gate.release()
+            raise
 
     def _client_for(self, model: str) -> tuple[Any, Config]:
         """Başka bir model için istemci kurar.
@@ -1959,16 +2236,135 @@ class Agent:
         else:
             child_approve = approve
 
+        def on_tool_start(name: str, args: dict[str, Any]) -> None:
+            hedef = _tool_hedef(args)
+            self._child_tool_mark(cid, name, "start", hedef)
+            self.io.on_child_tool(title, name, "start", hedef)
+
+        def on_tool_end(name: str, ok: bool, ms: float) -> None:
+            self._child_tool_mark(cid, name, "ok" if ok else "fail")
+            self.io.on_child_tool(title, name, "ok" if ok else "fail", "")
+
+        def on_usage(report: dict[str, int], _c: str = cid) -> None:
+            h = self._children.get(_c)
+            if h is None:
+                return
+            h.usage["girdi"] = int(h.usage.get("girdi") or 0) + int(
+                report.get("prompt_total") or 0)
+            h.usage["cikti"] = int(h.usage.get("cikti") or 0) + int(
+                report.get("output") or 0)
+            h.usage["cagri"] = int(h.usage.get("cagri") or 0) + 1
+
         return AgentIO(
             # Araç olayları alt ajanın kanalına yazılıyor (ana sohbete değil):
             # "kim ne yapıyor" orkestra panelinde görünür olsun.
-            on_tool_start=lambda name, args: self.io.on_child_tool(title, name, "start"),
-            on_tool_end=lambda name, ok, ms: self.io.on_child_tool(title, name, "ok" if ok else "fail"),
+            on_tool_start=on_tool_start,
+            on_tool_end=on_tool_end,
+            on_usage=on_usage,
             # Ham BadRequestError duvarı ana sohbete sarı cevap gibi
             # dökülmesin — kısa özet; tam metin arayüzde tıkla-aç.
+            # Bekleme/retry sohbete spam olmasın: yapısal child_wait.
             on_notice=lambda text: self.io.on_notice(_child_notice_line(title, text)),
+            on_wait=lambda payload, _t=title, _c=cid: self._child_wait(_t, _c, payload),
             approve=child_approve,
         )
+
+    def _child_tool_mark(self, cid: str, name: str, phase: str,
+                         hedef: str = "") -> None:
+        handle = self._children.get(cid)
+        if handle is None:
+            return
+        if phase == "start":
+            handle.son_arac = name
+            handle.son_hedef = hedef or ""
+            handle.wait = None
+            handle.tools_count = int(handle.tools_count or 0) + 1
+        else:
+            handle.son_arac = name + (" ✗" if phase == "fail" else " ✓")
+            if not handle.son_hedef and hedef:
+                handle.son_hedef = hedef
+        self._maybe_patch_run(handle)
+
+    def _maybe_patch_run(self, handle: ChildHandle) -> None:
+        """Zamanlı koşum arşivine canlı özet yazar (throttle)."""
+        if not handle.schedule_id or not handle.run_id:
+            return
+        now = time.time()
+        if now - (handle.last_patch_ts or 0) < 3.0:
+            return
+        handle.last_patch_ts = now
+        try:
+            from . import task_runs
+            meter = _run_meter(handle, self.config)
+            lines: list[str] = ["(koşuyor)"]
+            if meter.get("line"):
+                lines.append(str(meter["line"]))
+            if handle.son_arac:
+                line = f"Araç: {handle.son_arac}"
+                if handle.son_hedef:
+                    line += f" · {handle.son_hedef}"
+                lines.append(line)
+            if handle.wait:
+                w = handle.wait
+                msg = "Model bekleniyor"
+                if w.get("deneme") and w.get("toplam"):
+                    msg += f" ({w['deneme']}/{w['toplam']})"
+                lines.append(msg)
+            task_runs.patch_run(
+                self.config.state_dir, handle.schedule_id, handle.run_id,
+                report="\n".join(lines),
+                model=meter.get("model") or handle.model,
+                usage=meter.get("usage"),
+                cost_usd=meter.get("cost_usd"),
+                tools=meter.get("tools"),
+                duration_s=meter.get("duration_s"),
+                last_tool=meter.get("last_tool"),
+            )
+        except Exception:
+            pass
+
+    def _child_wait(self, title: str, cid: str, payload: dict[str, Any]) -> None:
+        """Alt ajan model beklemesi → panel (sohbet duvarı değil)."""
+        body = dict(payload or {})
+        body.setdefault("title", title)
+        body.setdefault("id", cid)
+        kip = str(body.get("kip") or "")
+        handle = self._children.get(cid)
+        if handle is not None:
+            if kip in ("bitti", "iptal"):
+                handle.wait = None
+            else:
+                handle.wait = body
+                handle.son_arac = ""
+                handle.son_hedef = ""
+            if kip in ("deneme", "park", "hata"):
+                self._maybe_patch_run(handle)
+        # Bridge / CLI: on_child_wait yoksa notice'a düşme — kip bitti/iptal
+        # hariç kısa satır.
+        emit = getattr(self.io, "on_child_wait", None)
+        if callable(emit):
+            try:
+                emit(body)
+                return
+            except Exception:
+                pass
+        if kip in ("bitti", "iptal"):
+            return
+        if kip in ("deneme", "park", "hata"):
+            detay = _clip(str(body.get("detay") or ""), 120)
+            sn = body.get("saniye")
+            den = body.get("deneme")
+            top = body.get("toplam")
+            msg = f"[{title}] Model yanıt vermiyor"
+            if kip == "hata":
+                msg = f"[{title}] Model yanıt vermedi — görev durdu"
+            if den and top:
+                msg += f" ({den}/{top})"
+            if sn:
+                msg += f"; {sn} sn"
+            if detay:
+                msg += f". ({detay})"
+            self.io.on_notice(msg)
 
     # -- bağlam basıncı ------------------------------------------------
 
@@ -2301,6 +2697,170 @@ def _clip(text: str, limit: int) -> str:
     """Uzun bir sonucu keser — bildirim notu bağlamı boğmasın."""
     flat = (text or "").strip()
     return flat if len(flat) <= limit else flat[:limit] + "…"
+
+
+_APP_URL_RE = re.compile(
+    r"https?://(?:127\.0\.0\.1|localhost):\d+(?:/[^\s\"'<>]*)?",
+    re.I,
+)
+_ARTIFACT_RE = re.compile(r"/artifact/[A-Za-z0-9_-]+/?", re.I)
+
+
+def _tool_hedef(args: Any, limit: int = 100) -> str:
+    """Araç argümanından tek satır: komut / yol / url."""
+    if not isinstance(args, dict):
+        return ""
+    for key in ("command", "path", "query", "url", "title", "id", "text", "run"):
+        value = args.get(key)
+        if isinstance(value, str) and value.strip():
+            flat = " ".join(value.split())
+            return flat if len(flat) <= limit else flat[:limit] + "…"
+    return ""
+
+
+def _report_with_deliverable(handle: ChildHandle) -> str:
+    """task_runs.report: özet + varsa canlı app/artifact adresi."""
+    text = str(handle.sonuc or "").strip()
+    d = handle.deliverable if isinstance(handle.deliverable, dict) else None
+    if not d or not d.get("url"):
+        return text
+    url = str(d["url"])
+    if url in text:
+        return text or "(özet yok)"
+    kind = str(d.get("kind") or "")
+    if kind == "app":
+        footer = f"\n\n---\nCanlı uygulama: {url}"
+    elif kind == "artifact":
+        footer = f"\n\n---\nYayınlanan rapor: {url}"
+    else:
+        footer = f"\n\n---\nTeslimat: {url}"
+    return (text or "(özet yok)") + footer
+
+
+def _run_meter(handle: ChildHandle, config: Any) -> dict[str, Any]:
+    """Koşum ölçümü: model + token + süre + araç + tahmini USD."""
+    from dataclasses import replace
+
+    from . import fiyat
+
+    usage = {
+        "girdi": int((handle.usage or {}).get("girdi") or 0),
+        "cikti": int((handle.usage or {}).get("cikti") or 0),
+        "cagri": int((handle.usage or {}).get("cagri") or 0),
+    }
+    cost: float | None = None
+    model_name = str(handle.model or "")
+    model_cfg = getattr(config, "model", None)
+    state_dir = getattr(config, "state_dir", None)
+    if model_cfg is not None and model_name:
+        try:
+            model_cfg = replace(model_cfg, name=model_name)
+        except Exception:
+            pass
+    if model_cfg is not None and state_dir is not None:
+        try:
+            tag = fiyat.etiket(model_cfg, state_dir)
+        except Exception:
+            tag = None
+        if tag and (usage["girdi"] or usage["cikti"]):
+            cost = (
+                usage["girdi"] * float(tag["girdi"])
+                + usage["cikti"] * float(tag["cikti"])
+            )
+    end = handle.bitis_ts or time.time()
+    start = handle.baslangic_ts or end
+    duration_s = max(0, int(end - start)) if start else 0
+    tools = int(handle.tools_count or 0)
+    last_tool = ""
+    if handle.son_arac:
+        last_tool = handle.son_arac
+        if handle.son_hedef:
+            last_tool += f" · {handle.son_hedef}"
+    return {
+        "model": model_name,
+        "usage": usage,
+        "cost_usd": cost,
+        "tools": tools,
+        "duration_s": duration_s,
+        "last_tool": last_tool[:200],
+        "line": _meter_line(
+            model_name, usage, cost, tools, duration_s, last_tool),
+    }
+
+
+def _meter_line(
+    model: str,
+    usage: dict[str, int],
+    cost: float | None,
+    tools: int,
+    duration_s: int,
+    last_tool: str = "",
+) -> str:
+    """Tek satır özet — rapor dosyasında ve panelde kalır."""
+    parts: list[str] = []
+    if model:
+        parts.append(model.rsplit("/", 1)[-1])
+    tok = int(usage.get("girdi") or 0) + int(usage.get("cikti") or 0)
+    if tok:
+        parts.append(f"{tok} tok")
+    if usage.get("cagri"):
+        parts.append(f"{usage['cagri']} tur")
+    if tools:
+        parts.append(f"{tools} araç")
+    if duration_s:
+        parts.append(_fmt_duration(duration_s))
+    if cost is not None:
+        parts.append(
+            f"≈${cost:.2f}" if cost >= 0.01 or cost == 0 else f"≈${cost:.3f}")
+    if last_tool:
+        parts.append(f"son: {last_tool[:80]}")
+    return " · ".join(parts)
+
+
+def _fmt_duration(seconds: int) -> str:
+    s = max(0, int(seconds))
+    if s < 60:
+        return f"{s} sn"
+    m, s = divmod(s, 60)
+    if m < 60:
+        return f"{m} dk {s} sn" if s else f"{m} dk"
+    h, m = divmod(m, 60)
+    return f"{h} sa {m} dk"
+
+
+def _report_with_meter(handle: ChildHandle, config: Any, body: str = "") -> str:
+    """Rapor gövdesi + kalıcı meter satırı (uygulama kapanınca da kalsın)."""
+    text = (body if body is not None else _report_with_deliverable(handle)).strip()
+    meter = _run_meter(handle, config)
+    line = meter.get("line") or ""
+    if not line:
+        return text
+    if line in text:
+        return text
+    return (text or "(özet yok)") + "\n\n---\n" + line
+
+
+def _infer_deliverable(*texts: str) -> dict[str, Any] | None:
+    """Prompt/çıktıdan bitiş teslimatı çıkar: canlı app veya artifact adresi."""
+    from urllib.parse import urlparse
+
+    blob = "\n".join(str(t) for t in texts if t)
+    if not blob.strip():
+        return None
+    m = _APP_URL_RE.search(blob)
+    if m:
+        raw = m.group(0).rstrip(".,;)\"]'")
+        parsed = urlparse(raw)
+        # /api/refresh gibi uçlar yerine uygulamanın kökünü aç.
+        url = f"{parsed.scheme}://{parsed.netloc}/"
+        return {"kind": "app", "url": url}
+    m = _ARTIFACT_RE.search(blob)
+    if m:
+        path = m.group(0)
+        if not path.endswith("/"):
+            path += "/"
+        return {"kind": "artifact", "url": path}
+    return None
 
 
 def _child_notice_line(title: str, text: str) -> str:
