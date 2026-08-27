@@ -41,7 +41,15 @@ from . import (
 )
 from .config import Config
 from .context import ContextPolicy
-from .loop import Agent, AgentIO, BARGE_NOTE, clear_park, read_park
+from .loop import (
+    Agent,
+    AgentIO,
+    BARGE_NOTE,
+    clear_park,
+    read_park,
+    yetim_isaretle,
+    yetim_tara,
+)
 from .mind import open_mind
 from .permissions import PermissionEngine
 from .session import Session
@@ -148,6 +156,41 @@ def _active_goals(agent: Any) -> list[dict[str, str]]:
         return [
             {"id": g.id, "text": g.text}
             for g in mind.goals()[:GOAL_SNAPSHOT_LIMIT]
+        ]
+    except Exception:
+        return []
+
+
+# Yardımcı durumlarının arayüz dili. Defterde Türkçe halleri duruyor;
+# panel tarafı olaylarla aynı kelimeleri (run/done/fail) bekliyor.
+_KANAL_DURUM = {"kosuyor": "run", "bitti": "done", "yetim": "yetim"}
+
+
+def _live_channels(agent: Any) -> list[dict[str, Any]]:
+    """Yardımcı kanallarının arayüz dökümü (orkestra panelinin tohumu).
+
+    Panel olay güdümlü (child_start/child_end) ama sayfa yenilenince ya da
+    uygulama yeniden açılınca olaylar kaçmış oluyor ve panel hayalet
+    "çalışıyor" kartlarıyla kalabiliyordu. Tek doğru kaynak ajanın defteri
+    (`Agent._children`): snapshot bu listeyle panele kaldığı yeri veriyor,
+    listede olmayan "çalışıyor" kanalı çizilmiyor. Hedef panelindeki
+    tohumlama kalıbının aynısı (bkz. _active_goals).
+    """
+    children = getattr(agent, "_children", None)
+    if not children:
+        return []
+    try:
+        return [
+            {
+                "id": h.id,
+                "title": h.title,
+                "model": h.model,
+                "bg": bool(h.arka_plan),
+                "kind": h.kind,
+                "state": _KANAL_DURUM.get(h.state, "fail"),
+                "ozet": "" if h.state == "kosuyor" else (h.sonuc or "")[:200],
+            }
+            for h in children.values()
         ]
     except Exception:
         return []
@@ -459,6 +502,10 @@ class Bridge:
             # kaçırmış oluyor; panel bu listeyle tohumlanıp kaldığı yerden
             # sürüyor.
             "goals": _active_goals(agent),
+            # Yardımcı kanalları: orkestra paneli de aynı sebepten buradan
+            # tohumlanıyor — hayalet "çalışıyor" kartı kalmasın, yetimler
+            # "yarım kaldı" olarak görünsün.
+            "channels": _live_channels(agent),
             "voice": bool(agent and agent.config.voice.enabled),
             # Sesin karakteri tarayıcıda uygulanıyor: sentezleyici düz bir
             # insan sesi üretiyor, katman onun üstüne biniyor.
@@ -882,6 +929,16 @@ async def _boot(config: Config, port: int, resume: bool) -> Runtime:
     # tarafında kalınıyor, kendiliğinden sürdürülmüyor.
     yarim = None if (park_session or resume) else _yarim_is(config.sessions_dir)
 
+    # Yetim yardımcılar: geçen oturumda arka planda koşarken uygulamayla
+    # birlikte ölen alt ajanlar (subagent_start var, subagent_end yok).
+    # Park/yarım işten ayrı bir yara — orada ana koşu, burada çocuklar
+    # yarım. Bir kez bulunur ve çocuk günlüğüne hemen işaret düşülür ki
+    # ikinci açılış aynı yetimi yeniden bildirmesin; haber aşağıda (ajan
+    # kurulunca) hem kullanıcıya hem modele veriliyor.
+    yetimler = yetim_tara(config.sessions_dir)
+    if yetimler:
+        yetim_isaretle(config.sessions_dir, yetimler)
+
     session = park_session or (
         Session.latest(config.sessions_dir) if resume else None
     ) or Session.create(config.sessions_dir)
@@ -1041,6 +1098,24 @@ async def _boot(config: Config, port: int, resume: bool) -> Runtime:
 
     loop = asyncio.get_running_loop()
     loop.create_task(bridge.pump())
+
+    # Yetim yardımcılar: tek toplu bildirim + defter kaydı. Defter kaydıyla
+    # panel "yarım kaldı" satırını çizebiliyor (snapshot kanalları) ve
+    # kullanıcı "sürdür" derse model `task_say` ile diskteki oturumu
+    # diriltebiliyor — harness notunu adopt_orphans düşürüyor.
+    if yetimler:
+        if agent is not None:
+            agent.adopt_orphans(yetimler)
+        adlar = ", ".join(
+            (y.get("title") or y.get("session") or "?") for y in yetimler)
+        hub.emit({"type": "notice", "text": (
+            f"Geçen oturumdan {len(yetimler)} yardımcı yarım kaldı: {adlar}. "
+            "Uygulama kapanınca arka plan yardımcıları durur; istersen "
+            "kaldıkları yerden sürdürebilirim.")})
+        # Açılış sırasında yüklenmiş sayfa snapshot'ı ajan kurulmadan çekmiş
+        # olabilir (kanallar o an boş); panel bu olayla gerçek listeye
+        # tohumlanıyor — pencereyi yenilemeye gerek kalmıyor.
+        hub.emit({"type": "channels", "channels": _live_channels(agent)})
 
     # Yarım kalmış uzun iş: park kaydı varsa otomatik sürdürülür; yalnızca
     # çökme artığı (kayıtsız yarım tur) varsa haber verilir, karar kullanıcının.

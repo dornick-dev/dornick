@@ -1046,6 +1046,7 @@ function el2(tag, cls, text) {
 function orchStart(e) { if (typeof Orchestra !== "undefined") Orchestra.start(e); }
 function orchTool(e) { if (typeof Orchestra !== "undefined") Orchestra.tool(e); }
 function orchEnd(e) { if (typeof Orchestra !== "undefined") Orchestra.end(e); }
+function orchSeed(list) { if (typeof Orchestra !== "undefined" && Orchestra.seed) Orchestra.seed(list); }
 
 function withContext(text) {
   if (!appContext) return text;
@@ -2436,6 +2437,10 @@ function handle(e) {
     case "child_start": orchStart(e); break;
     case "child_tool": orchTool(e); break;
     case "child_end": orchEnd(e); break;
+    // Sunucu gerçek kanal listesini gönderdi (açılışta yetimler bulununca):
+    // panel baştan kurulur — açılış sırasında yüklenen sayfa snapshot'ı
+    // ajan hazır olmadan çekmiş olabilir.
+    case "channels": orchSeed(e.channels || []); break;
     // Python tarafındaki kulağın duyduğu seviye: mikrofon simgesi
     // canlanıyor, yani arkada dinlendiği görünüyor.
     case "level": showLevel(e.value); break;
@@ -2509,6 +2514,18 @@ function handle(e) {
 // gözden kaçıyor) ama **ses iki kez çalıyor** — kopyalanan kuyruk.
 let stream = null;
 let retry = null;
+// Bağlantı bir kez koptu mu? Kopup geri gelen akış, uygulamanın yeniden
+// başladığı anlama gelebilir (gece kapandı, sabah açıldı): açık kalmış
+// sekmenin orkestra güvertesi bayat "çalışıyor" kartlarıyla oturuyordu.
+// Geri bağlanınca gerçek kanal listesi sunucudan tazeleniyor.
+let dropped = false;
+
+async function resyncChannels() {
+  try {
+    const s = await (await fetch("/api/state")).json();
+    orchSeed(s.channels || []);
+  } catch { /* sunucu henüz ayakta değil; bir sonraki bağlanışta */ }
+}
 
 function connect() {
   if (stream) { stream.close(); stream = null; }
@@ -2520,7 +2537,10 @@ function connect() {
   // bekleyen araçları süresiz bloke ediyor.
   window.__stream = source;
 
-  source.onopen = () => setBusy(busy);
+  source.onopen = () => {
+    setBusy(busy);
+    if (dropped) { dropped = false; resyncChannels(); }
+  };
   source.onmessage = (msg) => {
     // Yerini yeni bir bağlantıya bırakmış eski bir akıştan gelen olay
     // yok sayılıyor.
@@ -2531,6 +2551,7 @@ function connect() {
     if (source !== stream) { source.close(); return; }
     source.close();
     stream = null;
+    dropped = true;
     setStatus("off", t("Bağlantı koptu"));
     clearTimeout(retry);
     retry = setTimeout(connect, 2000);
@@ -2554,6 +2575,10 @@ async function loadState() {
     // Aktif hedefler: panel olay akışını kaçırdıysa (yenileme) buradan
     // tohumlanıp kaldığı yerden sürüyor.
     Goals.seed(s.goals || []);
+    // Orkestra kanalları da aynı sebepten: yenileme/yeniden açılış sonrası
+    // panel gerçek listeyle kurulur — hayalet "çalışıyor" kartı kalmaz,
+    // geçen oturumdan yarım kalan yardımcılar "yarım kaldı" olarak görünür.
+    orchSeed(s.channels || []);
     dockEffort = s.effort || "";
     contextWindow = Number(s.context_window) || 0;
     dockRender();

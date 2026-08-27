@@ -2251,6 +2251,7 @@ body.left-resize { cursor: ew-resize; user-select: none; }
   content: "◍ "; animation: throb 1.3s ease-in-out infinite; display: inline;
 }
 .orch-status.done { color: var(--mint); }
+.orch-status.yetim { color: var(--amber); }
 .orch-head .close { font-size: 17px; }
 
 .orch-body { flex: 1; overflow-y: auto; padding: 8px; display: flex; flex-direction: column; gap: 7px; }
@@ -2265,6 +2266,9 @@ body.left-resize { cursor: ew-resize; user-select: none; }
 .orch-ch.run { box-shadow: inset 2px 0 0 var(--cyan); background: #4fe3ff0c; }
 .orch-ch.done { box-shadow: inset 2px 0 0 var(--mint); }
 .orch-ch.fail { box-shadow: inset 2px 0 0 var(--rose); }
+/* Yetim: geçen oturumdan yarım kalan yardımcı — soluk kehribar; koşmuyor,
+   ölmedi de: istenirse sürdürülebilir. */
+.orch-ch.yetim { box-shadow: inset 2px 0 0 var(--amber); opacity: .72; }
 .orch-ch-top { display: flex; align-items: center; gap: 7px; }
 .orch-ch-dot {
   flex: 0 0 auto; width: 6px; height: 6px; border-radius: 50%; background: var(--faint);
@@ -2272,6 +2276,7 @@ body.left-resize { cursor: ew-resize; user-select: none; }
 .orch-ch.run .orch-ch-dot { background: var(--cyan); box-shadow: 0 0 9px var(--cyan); animation: throb 1.1s ease-in-out infinite; }
 .orch-ch.done .orch-ch-dot { background: var(--mint); box-shadow: 0 0 8px var(--mint); }
 .orch-ch.fail .orch-ch-dot { background: var(--rose); box-shadow: 0 0 8px var(--rose); }
+.orch-ch.yetim .orch-ch-dot { background: var(--amber); box-shadow: 0 0 8px var(--amber); }
 .orch-ch-title {
   flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   font: 12px var(--font); color: var(--ice);
@@ -2284,6 +2289,7 @@ body.left-resize { cursor: ew-resize; user-select: none; }
 }
 .orch-ch-act.ok { color: var(--mint); }
 .orch-ch-act.fail { color: var(--rose); }
+.orch-ch-act.yetim { color: var(--amber); }
 .orch-ch-count { flex: 0 0 auto; font: 9px var(--mono); color: var(--faint); }
 
 /* Arka planda koşan yardımcı rozeti. */

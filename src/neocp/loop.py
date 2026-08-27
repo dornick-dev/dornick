@@ -212,6 +212,23 @@ SAY_NOTE = (
 JOB_DONE_NOTE = "[Arka plan işi bitti · {title} (id={id})] Çıktısı: {result}"
 JOB_FAIL_NOTE = "[Arka plan işi hata verdi · {title} (id={id})] {result}"
 
+# Açılışta bulunan yetim yardımcılar (geçen oturumda uygulamayla birlikte
+# ölen arka plan alt ajanları) modele bu notla tanıtılıyor: kullanıcı
+# "sürdür" derse `task_say` bitmiş/diskteki oturumu zaten diriltebiliyor.
+YETIM_NOTU = (
+    "[Harness notu] Geçen oturumdan {n} yardımcı yarım kaldı: {liste}. "
+    "Uygulama kapanınca arka plan yardımcıları durur; oturumları diskte "
+    "duruyor. Kullanıcı sürdürmek isterse `task_say` (id + yönerge) ile "
+    "kaldıkları yerden devam ettirebilirsin; kullanıcı istemeden "
+    "kendiliğinden başlatma."
+)
+
+# Yetim yardımcının defterdeki sonucu — panel ve `task_status` bunu gösteriyor.
+YETIM_SONUC = (
+    "Uygulama kapanınca yarım kaldı. Oturumu diskte duruyor; `task_say` ile "
+    "kaldığı yerden sürdürülebilir."
+)
+
 # Uzun koşu kontrol noktası: eski sert tavanın yerini alan yumuşak dürtü.
 CHECKPOINT_NOTE = (
     "[Uzun koşu kontrol noktası — {turns} tur] Bir-iki cümleyle ilerleme "
@@ -248,6 +265,144 @@ def clear_park(state_dir: Path) -> None:
         (state_dir / PARK_DOSYASI).unlink(missing_ok=True)
     except OSError:
         pass
+
+
+# -- yetim yardımcılar ---------------------------------------------------
+#
+# Uygulama kapanınca arka planda koşan yardımcılar süreçle birlikte ölür:
+# ana oturumun günlüğünde subagent_start olur ama subagent_end olmaz.
+# Kullanıcıya hiçbir şey söylenmezse sabah "ne oldu bilmiyorum" kalıyor.
+# Açılışta bu iz taranır (yetim_tara), kullanıcıya ve modele bir kez haber
+# verilir, çocuk günlüğüne subagent_end(orphaned=True) düşülür
+# (yetim_isaretle) — ikinci açılış aynı yetimi yeniden bildirmesin.
+
+# Taramanın dosya tavanı: son bu kadar oturum günlüğüne bakılır. Yıllık bir
+# arşivi her açılışta baştan sona okumanın alemi yok; yetimler doğaları
+# gereği en son oturumlardadır.
+YETIM_TARAMA_TAVANI = 40
+
+
+def _gunluk_oku(path: Path) -> list[dict[str, Any]]:
+    """Oturum günlüğünü ham satırlar halinde okur — en iyi çaba.
+
+    Sert kapanan bir süreç son satırı yarım bırakmış olabilir; bozuk satır
+    sessizce atlanır. `EventLog` burada bilerek kullanılmıyor: o bozuk
+    satırda ValueError fırlatıyor ve açılış taraması bir teşhis, tamir değil.
+    """
+    out: list[dict[str, Any]] = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        try:
+            ev = json.loads(line)
+        except ValueError:
+            continue
+        if isinstance(ev, dict):
+            out.append(ev)
+    return out
+
+
+def _cocuk_gunlugu_mu(events: list[dict[str, Any]]) -> bool:
+    """Bir günlük çocuk (alt ajan) oturumuna mı ait?
+
+    Çocuk oturumun ilk notlarından biri parent'lı subagent_start — ana
+    oturumdaki aynı adlı notta parent değil session (çocuğun kimliği) var.
+    """
+    return any(
+        ev.get("content") == "subagent_start" and (ev.get("meta") or {}).get("parent")
+        for ev in events
+    )
+
+
+def yetim_tara(sessions_dir: Path | str) -> list[dict[str, str]]:
+    """Geçen oturum(lar)dan yetim kalan yardımcıları bulur.
+
+    Ana oturum günlüklerinde subagent_start olup karşılığında subagent_end
+    olmayan çocuklar aranır (çocuk oturum kimliği start notunun meta'sında).
+    Eşleşme kimlikle; eski kayıtlar (end notunda session yokken) başlıkla
+    eşleşir. Çocuğun kendi günlüğünde herhangi bir subagent_end (normal
+    bitiş ya da önceki açılışın orphaned işareti) varsa yetim sayılmaz.
+
+    En iyi çaba: okunamayan/bozuk günlükte sessizce boş liste — açılış
+    taraması uygulamayı düşürmemeli.
+    """
+    try:
+        files = sorted(Path(sessions_dir).glob("*.jsonl"))[-YETIM_TARAMA_TAVANI:]
+        adaylar: list[dict[str, str]] = []
+        for path in files:
+            try:
+                events = _gunluk_oku(path)
+            except OSError:
+                continue
+            if _cocuk_gunlugu_mu(events):
+                continue
+            # Bu ana oturumun açtığı çocuklar: end'i görülen start düşer.
+            starts: list[dict[str, str]] = []
+            for ev in events:
+                if ev.get("kind") != "meta":
+                    continue
+                meta = ev.get("meta") or {}
+                if ev.get("content") == "subagent_start" and meta.get("session"):
+                    starts.append({
+                        "title": str(meta.get("title") or ""),
+                        "session": str(meta["session"]),
+                    })
+                elif ev.get("content") in ("subagent_end", "subagent_failed"):
+                    # subagent_failed da bir kapanış: çöken yardımcı zaten
+                    # bildirildi, bir de yetim diye anons edilmesin.
+                    sid = str(meta.get("session") or "")
+                    title = str(meta.get("title") or "")
+                    for i, s in enumerate(starts):
+                        if s["session"] == sid or (not sid and s["title"] == title):
+                            del starts[i]
+                            break
+            adaylar.extend(starts)
+
+        yetimler: list[dict[str, str]] = []
+        for aday in adaylar:
+            child = Path(sessions_dir) / f"{aday['session']}.jsonl"
+            if not child.is_file():
+                # Oturum dosyası hiç doğmamış: sürdürülecek bir iz de yok.
+                continue
+            try:
+                child_events = _gunluk_oku(child)
+            except OSError:
+                continue
+            if any(ev.get("content") == "subagent_end" for ev in child_events):
+                continue   # önceki açılışta işaretlenmiş ya da kapanmış
+            yetimler.append(aday)
+        return yetimler
+    except Exception:
+        return []
+
+
+def yetim_isaretle(sessions_dir: Path | str, yetimler: list[dict[str, str]]) -> None:
+    """Yetimlerin çocuk günlüğüne subagent_end(orphaned=True) düşer.
+
+    İşaret bir mezar taşı: bir sonraki açılış aynı yardımcıyı yeniden
+    "yarım kaldı" diye bildirmesin. Oturum diskte duruyor — `task_say`
+    istenirse yine diriltebiliyor.
+    """
+    from .events import EventLog
+
+    for y in yetimler:
+        path = Path(sessions_dir) / f"{y['session']}.jsonl"
+        try:
+            log = EventLog(path)
+            log.note("subagent_end", title=y["title"], orphaned=True)
+            log.close()
+        except Exception:
+            # Sert kapanış son satırı yarım bırakmış olabilir ve EventLog
+            # bozuk satırda açılmıyor. İşaret yine de düşmeli — yoksa aynı
+            # yetim her açılışta yeniden bildirilir. Satır elle ekleniyor;
+            # tarama (yetim_tara) ham JSON okuduğu için bunu görüyor.
+            try:
+                with path.open("a", encoding="utf-8") as fh:
+                    fh.write("\n" + json.dumps({
+                        "seq": -1, "ts": time.time(), "kind": "meta",
+                        "role": None, "content": "subagent_end",
+                        "meta": {"title": y["title"], "orphaned": True},
+                    }, ensure_ascii=False) + "\n")
+            except OSError:
+                continue   # tek bozuk günlük diğerlerini engellemesin
 
 
 @dataclass(slots=True)
@@ -1005,7 +1160,8 @@ class Agent:
             handle.state = "hata"
             handle.sonuc = f"Alt ajan hata verdi: {type(exc).__name__}: {exc}"
             handle.bitis_ts = time.time()
-            self.session.log.note("subagent_failed", title=handle.title, error=str(exc))
+            self.session.log.note("subagent_failed", title=handle.title,
+                                  session=handle.session_id, error=str(exc))
         self._children_settled()
 
     async def _child_round(self, handle: ChildHandle, instruction: str,
@@ -1061,7 +1217,8 @@ class Agent:
             try:
                 stats = await agent.run(instruction)
             except Exception as exc:  # yardımcının çökmesi ana turu düşürmemeli
-                self.session.log.note("subagent_failed", title=handle.title, error=str(exc))
+                self.session.log.note("subagent_failed", title=handle.title,
+                                      session=handle.session_id, error=str(exc))
                 handle.state = "hata"
                 handle.sonuc = f"Alt ajan hata verdi: {type(exc).__name__}: {exc}"
                 self.io.on_child_end(handle.title, False, 0, 0, handle.id,
@@ -1084,8 +1241,11 @@ class Agent:
         else:
             handle.state = "bitti"
             handle.sonuc = answer
+        # `session` yetim taraması için: açılışta start/end eşleşmesi
+        # kimlikle yapılıyor (başlık benzersiz olmak zorunda değil).
         self.session.log.note(
-            "subagent_end", title=handle.title, turns=stats.turns, tools=stats.tool_calls
+            "subagent_end", title=handle.title, session=handle.session_id,
+            turns=stats.turns, tools=stats.tool_calls
         )
         self.io.on_child_end(handle.title, not stats.interrupted, stats.turns,
                              stats.tool_calls, handle.id, _clip(answer, 200))
@@ -1100,6 +1260,39 @@ class Agent:
                 break
             oldest = min(finished, key=lambda h: h.bitis_ts)
             self._children.pop(oldest.id, None)
+
+    def adopt_orphans(self, yetimler: list[dict[str, str]]) -> list[ChildHandle]:
+        """Geçen oturumun yetim yardımcılarını deftere alır.
+
+        Defter kaydı iki kapıyı birden açıyor: arayüz paneli yetimi soluk
+        bir "yarım kaldı" satırı olarak çizebiliyor (snapshot kanalları) ve
+        kullanıcı "sürdür" derse `task_say` diskteki oturumu handle
+        üzerinden diriltebiliyor. Modele tek toplu harness notu düşer —
+        gelen kutusundan, yani ilk turun başında önüne konur.
+        """
+        adopted: list[ChildHandle] = []
+        for y in yetimler:
+            sid = str(y.get("session") or "")
+            if not sid:
+                continue
+            handle = ChildHandle(
+                id=uuid4().hex[:6],
+                title=str(y.get("title") or "") or sid,
+                model="",
+                arka_plan=True,
+                session_id=sid,
+                state="yetim",
+                sonuc=YETIM_SONUC,
+                bitis_ts=time.time(),
+                # Bildirim turu açılmasın: haber notu zaten aşağıda.
+                bildirildi=True,
+            )
+            self._register_child(handle)
+            adopted.append(handle)
+        if adopted:
+            liste = ", ".join(f"{h.title} (id={h.id})" for h in adopted)
+            self.take_note(YETIM_NOTU.format(n=len(adopted), liste=liste))
+        return adopted
 
     def _children_settled(self) -> None:
         """Bir yardımcı bitti: köprüye (varsa) haber ver.

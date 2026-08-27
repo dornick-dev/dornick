@@ -9,6 +9,9 @@
 //
 // Kaynak canlı SSE olayları: child_start / child_tool / child_end. Bir anı
 // DEĞİL — anlık koordinasyon. Kendisi çalışırken açılıyor, sabitlenebiliyor.
+// Sayfa açılışında /api/state'teki gerçek kanal listesiyle tohumlanıyor
+// (seed): hayalet "çalışıyor" kartı kalmıyor, geçen oturumdan yarım kalan
+// yardımcılar soluk "yarım kaldı" satırıyla görünüyor.
 
 Dil.ekle({
   "Şu an alt ajan yok. neo bir işi böldüğünde kanallar burada belirir.":
@@ -22,6 +25,9 @@ Dil.ekle({
   "Düşünüyor…": "Thinking…",
   "Hata verdi": "Failed",
   "Bitti": "Done",
+  "Yarım kaldı": "Left unfinished",
+  "Yarım kalan yardımcı var — istersen sürdürülebilir":
+    "Some helpers were left unfinished — they can be resumed",
   " araç": " tools",
   "arka plan": "background",
   "(özet yok)": "(no summary)",
@@ -92,6 +98,29 @@ const Orchestra = (() => {
 
   const anyRunning = () => [...channels.values()].some(c => c.state === "run");
 
+  // Açılış tohumu: panel olay güdümlü ama sayfa yenilenince/uygulama yeniden
+  // açılınca olaylar kaçmış oluyor. Tek doğru kaynak /api/state'teki gerçek
+  // kanal listesi (ajanın defteri): harita baştan kurulur — snapshot'ta
+  // olmayan "çalışıyor" kanalı hayalettir, çizilmez. Yetimler (geçen
+  // oturumdan yarım kalanlar) soluk "yarım kaldı" satırı olarak listelenir.
+  function seed(list) {
+    channels.clear();
+    for (const ev of list || []) {
+      if (!ev || (!ev.id && !ev.title)) continue;
+      channels.set(keyOf(ev), {
+        title: ev.title || ev.id, model: ev.model || "", id: ev.id || "",
+        bg: !!ev.bg, tool: "", tools: 0, state: ev.state || "done",
+        ozet: ev.ozet || "", open: false,
+      });
+    }
+    prune();
+    render();
+    // Gerçekten koşan kanal varsa güverte açık gelsin; yoksa rozet yeter —
+    // yetim/bitmiş envanter kullanıcı tıklayınca görünür.
+    if (anyRunning()) open();
+    else if (!pinned) hide();
+  }
+
   // Bitmiş kanal envanteri sınırlı: en eski bitenler düşer, koşanlar kalır.
   function prune() {
     const done = [...channels.entries()].filter(([, c]) => c.state !== "run");
@@ -112,6 +141,9 @@ const Orchestra = (() => {
     if (running > 0) {
       status.textContent = t("Şef bekliyor · ") + running + t(" kanal çalışıyor");
       status.className = "orch-status waiting";
+    } else if (list.some(c => c.state === "yetim")) {
+      status.textContent = t("Yarım kalan yardımcı var — istersen sürdürülebilir");
+      status.className = "orch-status yetim";
     } else if (list.length) {
       status.textContent = t("Şef sürüyor · tüm kanallar bitti");
       status.className = "orch-status done";
@@ -142,10 +174,16 @@ const Orchestra = (() => {
       line.append(el("span", "orch-ch-act", ch.tool ? "▶ " + ch.tool : t("Düşünüyor…")));
     } else if (ch.state === "fail") {
       line.append(el("span", "orch-ch-act fail", t("Hata verdi")));
+    } else if (ch.state === "yetim") {
+      line.append(el("span", "orch-ch-act yetim", t("Yarım kaldı")));
     } else {
       line.append(el("span", "orch-ch-act ok", t("Bitti")));
     }
-    line.append(el("span", "orch-ch-count", ch.tools + t(" araç")));
+    // Yetimde araç sayacı yok: geçen oturumun sayısı bilinmiyor, "0 araç"
+    // yazmak yanlış bilgi olurdu.
+    if (ch.state !== "yetim") {
+      line.append(el("span", "orch-ch-count", ch.tools + t(" araç")));
+    }
     wrap.append(line);
 
     // Biten kanal tıklanınca sonucun özeti açılıp kapanıyor.
@@ -193,5 +231,5 @@ const Orchestra = (() => {
   document.getElementById("orch-close").addEventListener("click", () => { pinned = false; hide(); });
   loadCap();
 
-  return { start, tool, end, toggle };
+  return { start, tool, end, toggle, seed };
 })();
