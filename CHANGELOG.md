@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.1 — 2026-08-27
+
+* **Orphaned helpers.** Subagent helpers cut short by an app shutdown
+  are now detected at startup: the user and the model are notified
+  once, and the orchestra panel is seeded with their "left unfinished"
+  state — no more ghost "running" channels after a restart. A second
+  launch does not re-announce the same orphan.
+
 ## 0.2.0 — 2026-08-27
 
 The overnight wave: conversation clarity, a new settings design and
