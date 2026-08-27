@@ -3573,50 +3573,113 @@ body.settling .mentions { left: calc((100vw - min(520px, 44vw)) / 2); }
 
 .jobs-prompt { white-space: pre-wrap; color: var(--ink); font: 13px/1.5 var(--font); }
 .wf-editor { display: flex; flex-direction: column; gap: 8px; min-height: 320px; }
-/* Zemin token'dan: sabit koyu deger (#05101888) acik temada siyah bir
-   kutu birakiyordu. */
-.wf-canvas {
-  position: relative; flex: 1; min-height: 260px; background: var(--field);
-  border: 1px solid var(--edge); border-radius: 8px; overflow: auto;
-}
-.wf-edges { position: absolute; inset: 0; pointer-events: none; color: var(--cyan); }
-.wf-node {
-  position: absolute; width: 150px; padding: 8px; border-radius: 8px;
-  background: var(--raise); border: 1px solid var(--edge); cursor: grab;
-}
-.wf-node:focus-visible { outline: 2px solid var(--cyan); outline-offset: 2px; }
-.wf-node-type { font: 10px ui-monospace, Consolas, monospace; color: var(--cyan); }
-.wf-node-title { display: block; font: 600 12px/1.2 var(--font); margin-top: 2px; }
-.wf-node-sec { font: 10px var(--font); color: var(--faint); }
+/* -- otomasyon akış şeması ------------------------------------------- */
 
-/* Koşu durumu: kenarlik + rozet. Renk TEK basina tasiyici degil —
-   rozette durum yazisi da var (ekran okuyucu ve renk ayrimi icin). */
-.wf-node-state { display: block; margin-top: 4px; font: 600 10px var(--font); }
-.wf-node-detail {
-  display: block; margin-top: 2px; font: 10px/1.35 var(--font);
-  color: var(--dim); overflow: hidden; text-overflow: ellipsis;
-  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+.wf-editor { display: flex; flex-direction: column; gap: 10px; min-height: 340px; }
+
+/* Tuval: token zemin (sabit koyu değer açık temada siyah kutu bırakıyordu),
+   ince ızgara dokusu derinlik veriyor, kaydırma kendi içinde. */
+.wf-canvas {
+  /* Yükseklik içerikten geliyor (workflow.js) — flex:1 + sabit min, kısa bir
+     akışın altında yarım panel boşluk bırakıyordu. */
+  position: relative; flex: 0 0 auto; overflow: auto;
+  background:
+    radial-gradient(circle at 1px 1px, var(--edge) 1px, transparent 0) 0 0 / 22px 22px,
+    var(--field);
+  border: 1px solid var(--edge); border-radius: 10px;
 }
-.wf-node.wf-run { border-color: var(--cyan); box-shadow: 0 0 0 1px var(--cyan) inset; }
-.wf-node.wf-run .wf-node-state { color: var(--cyan); }
+.wf-edges { position: absolute; inset: 0; pointer-events: none; overflow: visible; }
+
+/* Kenarlar: yön ok ucuyla, geçmiş yol belirgin, hata dalı ayrı renk. */
+.wf-edge { stroke: var(--dim); stroke-width: 1.6; opacity: .55; }
+.wf-edge-done { stroke: var(--mint); opacity: .8; }
+.wf-edge-fail { stroke: var(--rose); opacity: .75; stroke-dasharray: 6 4; }
+.wf-edge-live {
+  stroke: var(--cyan); stroke-width: 2.4; opacity: 1;
+  stroke-dasharray: 6 5; animation: wf-akis 900ms linear infinite;
+}
+@keyframes wf-akis { to { stroke-dashoffset: -22; } }
+@media (prefers-reduced-motion: reduce) { .wf-edge-live { animation: none; } }
+
+.wf-arrow { fill: var(--dim); }
+.wf-arrow-live { fill: var(--cyan); }
+.wf-arrow-fail { fill: var(--rose); }
+
+.wf-edge-tag {
+  fill: var(--dim); font: 600 9px var(--font);
+  text-transform: uppercase; letter-spacing: .04em;
+}
+.wf-edge-tag-fail { fill: var(--rose); }
+
+/* Kart: sabit genişlik, ritmik iç boşluk, tür rengi sol şeritte. */
+.wf-node {
+  position: absolute; width: 168px; box-sizing: border-box;
+  padding: 9px 11px 9px 13px; border-radius: 10px;
+  background: var(--panel); border: 1px solid var(--edge);
+  border-left: 3px solid var(--tur-renk, var(--dim));
+  box-shadow: 0 1px 3px rgba(0,0,0,.18);
+  cursor: grab; transition: box-shadow .12s ease, border-color .12s ease;
+}
+.wf-node:hover { box-shadow: 0 3px 10px rgba(0,0,0,.26); }
+.wf-node:focus-visible { outline: 2px solid var(--cyan); outline-offset: 2px; }
+.wf-node.wf-dragging { cursor: grabbing; box-shadow: 0 6px 18px rgba(0,0,0,.34); }
+
+/* Tür rengi: süs değil sınıflandırma — dışarı çıkan, sisteme dokunan ve
+   modele soran adımlar bir bakışta ayrılsın. */
+.wf-node-type {
+  display: block; font: 10px/1.3 ui-monospace, Consolas, monospace;
+  color: var(--tur-renk, var(--dim)); letter-spacing: .02em;
+}
+.wf-node [data-tur="gelen"]   { --tur-renk: var(--violet); }
+.wf-node [data-tur="ag"]      { --tur-renk: var(--cyan); }
+.wf-node [data-tur="sistem"]  { --tur-renk: var(--amber); }
+.wf-node [data-tur="yetenek"] { --tur-renk: var(--mint); }
+.wf-node [data-tur="model"]   { --tur-renk: var(--ice); }
+.wf-node:has([data-tur="gelen"])   { --tur-renk: var(--violet); }
+.wf-node:has([data-tur="ag"])      { --tur-renk: var(--cyan); }
+.wf-node:has([data-tur="sistem"])  { --tur-renk: var(--amber); }
+.wf-node:has([data-tur="yetenek"]) { --tur-renk: var(--mint); }
+.wf-node:has([data-tur="model"])   { --tur-renk: var(--ice); }
+
+.wf-node-title {
+  display: block; margin-top: 3px; font: 600 12px/1.35 var(--font);
+  color: var(--ink);
+}
+.wf-node-foot {
+  display: flex; flex-wrap: wrap; gap: 4px 8px; margin-top: 6px;
+  padding-top: 6px; border-top: 1px solid var(--edge);
+}
+.wf-node-sec { font: 10px var(--font); color: var(--faint); }
+.wf-node-lock { font: 10px var(--font); color: var(--amber); }
+
+/* Koşu durumu: renk TEK BAŞINA taşıyıcı değil — rozette durum yazısı da var. */
+.wf-node-state { display: block; margin-top: 5px; font: 600 10px var(--font); }
+.wf-node-detail {
+  display: -webkit-box; margin-top: 3px; font: 10px/1.35 var(--font);
+  color: var(--dim); overflow: hidden; -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+.wf-node.wf-run  { border-color: var(--cyan); box-shadow: 0 0 0 1px var(--cyan) inset; }
+.wf-node.wf-run  .wf-node-state { color: var(--cyan); }
 .wf-node.wf-done { border-color: var(--mint); }
 .wf-node.wf-done .wf-node-state { color: var(--mint); }
 .wf-node.wf-fail { border-color: var(--rose); }
 .wf-node.wf-fail .wf-node-state { color: var(--rose); }
-.wf-edge-live { stroke-dasharray: 5 4; animation: wf-akis 900ms linear infinite; }
-@keyframes wf-akis { to { stroke-dashoffset: -18; } }
-@media (prefers-reduced-motion: reduce) {
-  .wf-edge-live { animation: none; }
-}
 
-/* Cikti akisin KENDI ekraninda: otomasyon bir uygulama uretse bile
-   kullanici Uygulamalar paneline gonderilmiyor. */
-.wf-out { padding: 8px; border-top: 1px solid var(--edge); display: grid; gap: 6px; }
-.wf-out h3 { margin: 0; font: 600 12px var(--font); color: var(--dim); }
+/* Çıktı akışın KENDİ ekranında: otomasyon bir uygulama üretse bile
+   kullanıcı Uygulamalar paneline gönderilmiyor. */
+.wf-out { padding: 10px 2px 2px; border-top: 1px solid var(--edge); display: grid; gap: 7px; }
+.wf-out h3 {
+  margin: 0; font: 600 11px var(--font); color: var(--dim);
+  text-transform: uppercase; letter-spacing: .06em;
+}
 .wf-out-text {
-  margin: 0; white-space: pre-wrap; font: 12px/1.5 var(--font);
+  margin: 0; white-space: pre-wrap; font: 12px/1.55 var(--font);
   color: var(--ink); max-height: 220px; overflow: auto;
 }
+
+.wf-bar { display: flex; gap: 8px; align-items: center; }
+
 .wf-inspector { padding: 8px; border-top: 1px solid var(--edge); display: grid; gap: 4px; }
 .wf-inspector .input-text { width: 100%; }
 .plan-card {
@@ -3848,5 +3911,9 @@ body.settling .mentions { left: calc((100vw - min(520px, 44vw)) / 2); }
 
 /* Otomasyon formu: akış seçici alt alta yerleşsin. */
 .jobs-slot-col { display: flex; flex-direction: column; gap: 6px; align-items: stretch; }
-/* Elle düzenlenmiş adım — onarımın dokunmadığı adım görünür olmalı. */
-.wf-node-lock { display: block; margin-top: 2px; font: 10px var(--font); color: var(--amber); }
+
+/* Akış düzlemi: ölçek buraya uygulanıyor, sol üstten. */
+.wf-plane { position: relative; transform-origin: 0 0; }
+/* Sığdırma açıkken yatay kaydırma gereksiz — kaydırma çubuğu görünmesin. */
+.wf-canvas.wf-fit { overflow: hidden; }
+.wf-fit-btn { margin-left: auto; }

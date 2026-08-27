@@ -4,6 +4,18 @@
 
 *On `main`, not in the 0.4.0 installer yet.*
 
+* **The flow diagram is a real diagram now.** Layout is computed from the
+  graph — layer by longest path, columns centred vertically — so the flow
+  reads left to right without lines crossing under cards. Edges leave and
+  enter at the card's edge, curve, and carry **arrowheads**; a hand-dragged
+  node keeps its own position. An `on: error` branch used to look identical
+  to a normal one, which was a loss of information: it is now red, dashed
+  and labelled **ON ERROR**. Node colour classifies rather than decorates —
+  steps that reach the network, touch the system, ask the model, call a
+  skill or read the inbox are told apart at a glance. A five-step flow no
+  longer overflows the panel: a **Fit** control scales it down (never up)
+  and steps aside the moment you drag a node.
+
 * **A written entry point must actually be run.** The sharpest result in our
   own benchmark was a task delivered with 14 passing tests, 18 real
   assertions and 20/20 code health — whose command line did not work at all:
