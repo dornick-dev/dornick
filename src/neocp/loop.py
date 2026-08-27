@@ -491,6 +491,49 @@ KIRMIZI_NOTU = (
 )
 
 
+# -- teslim edileni ÇALIŞTIRMA kapısı ------------------------------------
+#
+# Ölçümün en keskin sonucu: bir görev 14 geçen test, 18 gerçek iddia ve
+# kod sağlığı 20/20 ile teslim edildi — ve istemin asıl istediği komut
+# satırı HİÇ çalışmıyordu. `py ara.py bul "salmastra"` her sorguda kendi
+# kullanım satırını basıp 1 ile çıkıyordu. Testler iç fonksiyonları
+# kapsamış; kullanıcının yazacağı giriş noktasına hiçbir şey dokunmamış.
+#
+# Bu vaka kırmızı kapısını AŞIYOR: takım yeşildi, orada durduracak bir şey
+# yoktu. Yakalayan tek şey, teslim edileni kullanıcının çalıştıracağı gibi
+# çalıştırmak.
+#
+# Kapı dar tutuluyor. Yalnızca KENDİNİ ÇALIŞTIRILMAK ÜZERE İLAN EDEN bir
+# dosya sayılıyor: `__main__` bloğu, `sys.argv`/`argparse`, `process.argv`,
+# PHP `$argv`. Kütüphane modülü, sınıf dosyası, yapılandırma bunu taşımaz —
+# onları doğrudan koşmak zaten yanlış olurdu.
+
+_GIRIS_IZLERI = (
+    re.compile(r"""if\s+__name__\s*==\s*['"]__main__['"]"""),
+    re.compile(r"\bsys\.argv\b|\bargparse\b|\bclick\.command\b"),
+    re.compile(r"\bprocess\.argv\b|\brequire\.main\s*===\s*module\b"),
+    re.compile(r"\$argv\b|\bgetopt\b"),
+)
+
+# Girişi olabilecek dosyalar. HTML/CSS/JSON dışarıda: onları "çalıştırmak"
+# başka bir şey (tarayıcı kapısının işi), burada karıştırılmamalı.
+_KOSULABILIR_UZANTI = frozenset({".py", ".js", ".mjs", ".cjs", ".ts", ".php", ".sh", ".ps1"})
+
+
+def giris_noktasi_mi(metin: str) -> bool:
+    """Bu dosya kendini komut satırından çalıştırılmak üzere ilan ediyor mu?"""
+    return any(d.search(metin or "") for d in _GIRIS_IZLERI)
+
+
+GIRIS_NOTU = (
+    "[Doğrulama] Bu turda {dosya} yazdın ve o dosya kendini komut "
+    "satırından çalıştırılmak üzere ilan ediyor — ama onu hiç "
+    "ÇALIŞTIRMADIN. Testlerin yeşil olması yetmiyor: testler iç "
+    "fonksiyonları çağırıyor, kullanıcı ise komutu yazıyor. Bitti demeden "
+    "önce kullanıcının yazacağı komutu aynen çalıştır ve çıktısına bak."
+)
+
+
 # Uzun koşu kontrol noktası: yumuşak dürtü — kabul ölçütü geçildiyse
 # `end_turn` serbest. Eski "iş bitmeden durma" uzun tarama işlerini
 # sonsuz döngüye sokuyordu.
@@ -796,6 +839,8 @@ class TurnStats:
     # Kırmızı kapısı bu turda bir kez açıldı mı. En fazla bir kez: model
     # ikinci turda yine bitirmek isterse bırakılıyor — sonsuz döngü yok.
     kirmizi_uyarildi: bool = False
+    # Teslim-edileni-çalıştır kapısı bu turda açıldı mı. Aynı sebeple bir kez.
+    giris_uyarildi: bool = False
     # Alt ajan: max retry sonrası model hatası metni (park yerine).
     fail_reason: str | None = None
 
@@ -921,6 +966,12 @@ class Agent:
         # temizlensin — yeşile dönen bir koşum artık kırmızı değil. Her
         # kullanıcı turunda sıfırlanıyor (bkz. run).
         self._kirmizi: dict[str, str] = {}
+        # Teslim defteri: bu turda YAZILAN dosya yolları ve bu turda
+        # KOŞULAN komutların metni. Kapı ikisini karşılaştırıyor —
+        # yazdığın ama hiç çalıştırmadığın bir giriş noktası var mı?
+        # Her kullanıcı turunda sıfırlanıyor (bkz. run).
+        self._yazilan: list[str] = []
+        self._komutlar: list[str] = []
 
     def _soul_resident(self) -> set[str]:
         """Ruhun tam gövdesiyle prompta koyduğu kayıtların kimlikleri."""
@@ -1024,6 +1075,10 @@ class Agent:
         # Kırmızı defteri her kullanıcı turunda sıfırdan: "yalnız BU TURDA
         # üretilmiş kırmızı" sayılıyor, geçen turun kırmızısı değil.
         self._kirmizi.clear()
+        # Teslim defterleri de her turda sıfırdan: geçen turda yazılıp
+        # çalıştırılmış bir dosya bu turun borcu değil.
+        self._yazilan.clear()
+        self._komutlar.clear()
         stats = await self._drive()
         self._zihin_kapisi(user_input)
         return stats
@@ -1038,6 +1093,63 @@ class Agent:
             return
         self.session.add_harness_note(PLAN_NOTU)
         self.session.log.note("plan_refleksi")
+
+    def _teslim_izi(self, tool: str, args: dict[str, Any]) -> None:
+        """Bu turda ne yazıldı, ne koşuldu — kapının okuduğu iki defter."""
+        if tool in ("write_file", "edit_file"):
+            if yol := str(args.get("path") or "").strip():
+                self._yazilan.append(yol)
+        elif tool in ("shell", "kos"):
+            # `kos` komutu kendi bulur; onun da neyi koşturduğu argümanda
+            # olmayabiliyor, o yüzden yol/desen alanları da toplanıyor.
+            for alan in ("command", "cmd", "path", "hedef", "argv"):
+                if (deger := args.get(alan)) is not None:
+                    self._komutlar.append(str(deger))
+
+    def _kosulmayan_giris(self) -> str:
+        """Yazılıp hiç çalıştırılmamış bir giriş noktası varsa onun yolu.
+
+        Dosya diskten okunuyor: "çalıştırılmak üzere ilan edildi mi"
+        sorusunun cevabı içeriğinde. Okunamayan dosya sayılmıyor —
+        emin olamadığımız bir şey için modeli dürtmek yanlış.
+        """
+        komut_metni = "\n".join(self._komutlar)
+        for yol in self._yazilan:
+            p = Path(yol)
+            if p.suffix.lower() not in _KOSULABILIR_UZANTI:
+                continue
+            # Adı herhangi bir komutta geçtiyse çalıştırılmış sayılıyor.
+            if p.name and p.name in komut_metni:
+                continue
+            try:
+                metin = p.read_text(encoding="utf-8", errors="ignore")
+            except OSError:
+                continue
+            if giris_noktasi_mi(metin):
+                return p.name
+        return ""
+
+    def _giris_kapisi(self, stats: TurnStats, blocks: list[dict[str, Any]]) -> bool:
+        """Yazılan giriş noktası hiç çalıştırılmadan "bitti" deniyorsa bir tur daha.
+
+        True dönerse tur SÜRÜYOR. Kırmızı kapısıyla aynı üç fren:
+          * Ortada bu turda yazılmış, kendini çalıştırılabilir ilan eden ve
+            hiç koşulmamış bir dosya olacak.
+          * Cevap araçsız (`end_turn`) ve işi bitmiş ilan ediyor olacak —
+            neyin eksik olduğunu zaten söyleyen dürüst bir cevap dürtülmez.
+          * Tur başına EN FAZLA BİR KEZ.
+        """
+        if stats.giris_uyarildi or not self._yazilan:
+            return False
+        if not bitti_iddiasi(_text_of_blocks(blocks)):
+            return False
+        dosya = self._kosulmayan_giris()
+        if not dosya:
+            return False
+        stats.giris_uyarildi = True
+        self.session.log.note("giris_kapisi", dosya=dosya)
+        self.session.add_harness_note(GIRIS_NOTU.format(dosya=dosya))
+        return True
 
     def _kirmizi_kapisi(self, stats: TurnStats, blocks: list[dict[str, Any]]) -> bool:
         """Kırmızı bir koşumun üstüne "bitti" deniyorsa bir tur daha ver.
@@ -1331,6 +1443,12 @@ class Agent:
             # varken model araçsız bir bitirme cevabıyla kapatmaya
             # çalışıyorsa bir tur daha veriliyor.
             if result.stop_reason == "end_turn" and self._kirmizi_kapisi(stats, blocks):
+                continue
+            # Teslim edileni çalıştırma kapısı: yeşil testle bitirilen ama
+            # kullanıcının yazacağı komutu hiç koşmamış bir turu bir kez
+            # geri çeviriyor. Kırmızı kapısından SONRA: kırmızı varsa asıl
+            # söylenmesi gereken odur.
+            if result.stop_reason == "end_turn" and self._giris_kapisi(stats, blocks):
                 continue
             if await self._handle_stop(result, ctx, stats):
                 continue
@@ -2548,6 +2666,7 @@ class Agent:
             # Model kendi defterine yazdıysa tur sonu dürtüsü gereksiz.
             if data.get("tool") == "mind_memory":
                 self._zihin_yazildi = True
+            self._teslim_izi(str(data.get("tool") or ""), data.get("input") or {})
             self.io.on_tool_start(data["tool"], data.get("input") or {})
         elif event == "tool_end":
             # Kırmızı defteri: doğrulama araçlarının verdiği son hüküm.

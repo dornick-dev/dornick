@@ -1,5 +1,25 @@
 # Changelog
 
+## Unreleased
+
+*On `main`, not in the 0.4.0 installer yet.*
+
+* **A written entry point must actually be run.** The sharpest result in our
+  own benchmark was a task delivered with 14 passing tests, 18 real
+  assertions and 20/20 code health — whose command line did not work at all:
+  every query printed the usage line and exited 1. The tests called the
+  internal functions; nothing ever ran the command a user would type. That
+  case slips past the red-test gate, because the suite was *green*.
+
+  Now, when a file written this turn declares itself runnable from the
+  command line (`__main__`, `sys.argv`, `argparse`, `process.argv`, PHP
+  `$argv`) and its name never appears in any command that ran, a "done"
+  answer is turned back once. The gate is deliberately narrow — a library
+  module, a class file or a JSON file never triggers it — and it carries the
+  same three brakes as the red-test gate: only this turn's writes, only a
+  tool-less answer that claims completion, and at most once per turn. An
+  answer that admits it hasn't run the thing is left alone.
+
 ## 0.4.0 — 2026-08-27
 
 Automations: a repeated job becomes a graph of steps you can watch run.

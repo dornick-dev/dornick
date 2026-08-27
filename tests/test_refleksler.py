@@ -517,3 +517,144 @@ def test_the_page_still_calls_the_route_it_needs() -> None:
               / "server.py").read_text(encoding="utf-8")
     assert '"/api/wake"' in app_js
     assert '"/api/wake"' in server
+
+
+# -- 3) teslim edileni ÇALIŞTIRMA kapısı --------------------------------
+#
+# Ölçümün en keskin sonucu: 14 geçen test, 18 gerçek iddia, kod sağlığı
+# 20/20 — ve istemin asıl istediği komut satırı hiç çalışmıyor. Testler iç
+# fonksiyonları çağırıyor, kullanıcı ise komutu yazıyor. Kırmızı kapısı bu
+# vakayı yakalayamaz: takım YEŞİLDİ.
+
+
+def _yazan_arac(registry: ToolRegistry, kok: Path) -> None:
+    """Gerçekten dosya yazan sahte bir `write_file`."""
+    from neocp.tools import ToolResult, object_schema
+
+    @registry.tool(name="write_file", description="yaz",
+                   input_schema=object_schema({"path": {"type": "string"},
+                                               "content": {"type": "string"}}),
+                   mutates=True)
+    async def _yaz(args, _ctx) -> ToolResult:
+        yol = Path(args["path"])
+        yol.parent.mkdir(parents=True, exist_ok=True)
+        yol.write_text(args.get("content", ""), encoding="utf-8")
+        return ToolResult(f"{yol.name} yazıldı.")
+
+
+def _kabuk_araci(registry: ToolRegistry) -> None:
+    from neocp.tools import ToolResult, object_schema
+
+    @registry.tool(name="shell", description="koş",
+                   input_schema=object_schema({"command": {"type": "string"}}),
+                   mutates=True)
+    async def _kos(args, _ctx) -> ToolResult:
+        return ToolResult("çıkış 0")
+
+
+CLI_KAYNAK = (
+    "import sys\n\n"
+    "def bul(kelime):\n    return []\n\n"
+    'if __name__ == "__main__":\n'
+    "    print(sys.argv)\n"
+)
+KUTUPHANE_KAYNAK = "def topla(a, b):\n    return a + b\n"
+
+
+def test_a_written_entry_point_that_was_never_run_buys_one_more_turn(
+    tmp_path: Path,
+) -> None:
+    """Yaşanmış vaka: CLI yazıldı, testler yeşil, komut hiç çalıştırılmadı."""
+    registry = ToolRegistry()
+    _yazan_arac(registry, tmp_path)
+    hedef = tmp_path / "ara.py"
+    client = FakeClient(
+        tool_turn(("c1", "write_file", {"path": str(hedef), "content": CLI_KAYNAK})),
+        text_turn("Hazır, arama aracı çalışıyor."),
+        text_turn("Haklısın — komutu çalıştırıp çıktısına bakıyorum."),
+    )
+    agent = build_agent(tmp_path, client, registry)
+
+    stats = asyncio.run(agent.run("bir not arama aracı yaz"))
+
+    notlar = [n for n in _harness_notlari(agent) if "[Doğrulama]" in n]
+    assert len(notlar) == 1, notlar
+    assert "ara.py" in notlar[0]
+    assert "ÇALIŞTIRMADIN" in notlar[0]
+    assert stats.turns == 3
+    assert stats.giris_uyarildi is True
+
+
+def test_running_the_entry_point_closes_the_turn_normally(tmp_path: Path) -> None:
+    """Kullanıcının yazacağı komutu çalıştıran model dürtülmüyor."""
+    registry = ToolRegistry()
+    _yazan_arac(registry, tmp_path)
+    _kabuk_araci(registry)
+    hedef = tmp_path / "ara.py"
+    client = FakeClient(
+        tool_turn(("c1", "write_file", {"path": str(hedef), "content": CLI_KAYNAK})),
+        tool_turn(("c2", "shell", {"command": f'py {hedef.name} bul "salmastra"'})),
+        text_turn("Hazır — komutu koşturdum, doğru notu buluyor."),
+    )
+    agent = build_agent(tmp_path, client, registry)
+
+    stats = asyncio.run(agent.run("bir not arama aracı yaz"))
+
+    assert not [n for n in _harness_notlari(agent) if "[Doğrulama]" in n]
+    assert stats.giris_uyarildi is False
+
+
+def test_a_library_module_is_never_nagged(tmp_path: Path) -> None:
+    """Kütüphane modülünü doğrudan koşmak zaten yanlış olurdu: kapı susar.
+
+    Yanlış pozitifin bedeli gerçek: her yazmadan sonra "bunu çalıştır" diyen
+    bir kapı, hiç uyarmayan bir kapı kadar kötüdür.
+    """
+    registry = ToolRegistry()
+    _yazan_arac(registry, tmp_path)
+    hedef = tmp_path / "hesap.py"
+    client = FakeClient(
+        tool_turn(("c1", "write_file",
+                   {"path": str(hedef), "content": KUTUPHANE_KAYNAK})),
+        text_turn("Hazır, modül yazıldı."),
+    )
+    agent = build_agent(tmp_path, client, registry)
+
+    stats = asyncio.run(agent.run("toplama modülü yaz"))
+
+    assert not [n for n in _harness_notlari(agent) if "[Doğrulama]" in n]
+    assert stats.giris_uyarildi is False
+
+
+def test_an_honest_report_about_an_unrun_entry_point_is_left_alone(
+    tmp_path: Path,
+) -> None:
+    """Çalıştırmadığını kendi söyleyen cevap dürtülmez."""
+    registry = ToolRegistry()
+    _yazan_arac(registry, tmp_path)
+    hedef = tmp_path / "ara.py"
+    client = FakeClient(
+        tool_turn(("c1", "write_file", {"path": str(hedef), "content": CLI_KAYNAK})),
+        text_turn("Dosyayı yazdım ama komutu henüz çalıştırmadım, eksik."),
+    )
+    agent = build_agent(tmp_path, client, registry)
+
+    stats = asyncio.run(agent.run("bir not arama aracı yaz"))
+
+    assert not [n for n in _harness_notlari(agent) if "[Doğrulama]" in n]
+    assert stats.giris_uyarildi is False
+
+
+@pytest.mark.parametrize("kaynak,giris", [
+    (CLI_KAYNAK, True),
+    ('import argparse\np = argparse.ArgumentParser()\n', True),
+    ("const [,, komut] = process.argv;\n", True),
+    ("<?php\n$ad = $argv[1];\n", True),
+    (KUTUPHANE_KAYNAK, False),
+    ("class Kutu:\n    pass\n", False),
+    ("{\n  \"ad\": \"deneme\"\n}\n", False),
+])
+def test_which_files_declare_an_entry_point(kaynak: str, giris: bool) -> None:
+    from neocp.loop import giris_noktasi_mi
+
+    assert giris_noktasi_mi(kaynak) is giris
