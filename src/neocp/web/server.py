@@ -39,6 +39,7 @@ QUEUE_LIMIT = 500
 # türetmek dizin dışına çıkma açığının klasik yolu.
 ASSETS = {
     "/app.css": "text/css; charset=utf-8",
+    "/settings.css": "text/css; charset=utf-8",
     "/logo.png": "image/png",
     "/app.js": "text/javascript; charset=utf-8",
     # Dil katmanı: diğer betiklerden ÖNCE yüklenir (t() ve Dil.ekle onlarda).
@@ -81,6 +82,8 @@ STREAMED_NOTES = frozenset(
         "refusal",
         "recall_trace",
         "queued",
+        # Artifact yayınlandı/güncellendi: sohbette kart olarak görünür.
+        "artifact",
     }
 )
 
@@ -477,6 +480,10 @@ class _Handler(BaseHTTPRequestHandler):
             self._projects()
         elif route == "/api/apps/running":
             self._apps_running()
+        elif route == "/api/artifacts":
+            self._artifacts_list()
+        elif route.startswith("/artifact/"):
+            self._artifact_page(route)
         elif route == "/api/transfer/export":
             self._transfer_export()
         elif route == "/api/sessions":
@@ -565,6 +572,9 @@ class _Handler(BaseHTTPRequestHandler):
                 return
             self._json(catalog.open_path(config.open_sandbox().root, path,
                                          base=Path(config.workspace)))
+            return
+        if route == "/api/artifacts":
+            self._artifacts_edit(body)
             return
         if route == "/api/transfer/import":
             self._transfer_import(raw)
@@ -1447,6 +1457,77 @@ class _Handler(BaseHTTPRequestHandler):
             self._json({"running": catalog.running()})
         except Exception as exc:
             self._json({"running": [], "error": str(exc)})
+
+    # -- artifact'lar ----------------------------------------------------
+
+    def _artifacts_list(self) -> None:
+        """Yayınlanmış artifact'lar: kimlik, başlık, sürüm, güncellenme.
+
+        Depo yoksa boş liste — galeri bunu "henüz yok" gösteriyor.
+        """
+        from .. import artifacts
+
+        config = getattr(self.server, "config", None)
+        if config is None:
+            self._json({"artifacts": []})
+            return
+        self._json({"artifacts": artifacts.listing(config.state_dir)})
+
+    def _artifacts_edit(self, body: dict[str, Any]) -> None:
+        """Galerinin tek yazma ucu: {"action": "remove", "id": ...}.
+
+        Kalıcı silme yok — depo çöpe taşıyor; onay arayüzde (iki adımlı
+        düğme). Cevap her durumda güncel listeyi de taşıyor ki panel
+        bayat kalmasın.
+        """
+        from .. import artifacts
+
+        config = getattr(self.server, "config", None)
+        if config is None:
+            self.send_error(503, "Yapılandırma yüklü değil")
+            return
+
+        action = str((body or {}).get("action") or "")
+        if action != "remove":
+            self._json({"ok": False, "error": "`action` remove olmalı",
+                        "artifacts": artifacts.listing(config.state_dir)})
+            return
+        try:
+            artifacts.remove(config.state_dir, str((body or {}).get("id") or ""))
+        except (artifacts.ArtifactError, OSError) as exc:
+            self._json({"ok": False, "error": str(exc),
+                        "artifacts": artifacts.listing(config.state_dir)})
+            return
+        self._json({"ok": True, "artifacts": artifacts.listing(config.state_dir)})
+
+    def _artifact_page(self, route: str) -> None:
+        """Artifact sayfası: /artifact/<id>/ → index.html.
+
+        Yol istekten geliyor ama diske istekten kurulmuyor: kimlik depo
+        modülünün sıkı deseninden geçiyor ve çözümlenen yolun depo altında
+        kaldığı orada bir daha doğrulanıyor (ASSETS kalıbındaki ilke:
+        servis edilen şey istek metni değil, doğrulanmış bir kayıt).
+        Sayfa olduğu gibi render ediliyor — betikler dahil; içerik yerel
+        makinede, kullanıcının kendi ajanının ürettiği sayfa.
+        """
+        from .. import artifacts
+
+        config = getattr(self.server, "config", None)
+        if config is None:
+            self.send_error(503, "Yapılandırma yüklü değil")
+            return
+
+        artifact_id = route[len("/artifact/"):].strip("/")
+        page = artifacts.page_path(config.state_dir, artifact_id)
+        if page is None:
+            self.send_error(404, "Artifact yok")
+            return
+        try:
+            body = page.read_bytes()
+        except OSError:
+            self.send_error(404, "Artifact okunamadı")
+            return
+        self._send(200, "text/html; charset=utf-8", body)
 
     def _parcalar(self) -> list[str] | None:
         """İstekteki parça seçimi: ?parcalar=anilar,tanima → liste.

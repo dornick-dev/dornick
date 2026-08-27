@@ -148,6 +148,12 @@ async def _run_one(
         # kendisi zaten modelin bağlamında, kullanıcıya akıtılmıyor.
         "summary": _brief(result),
     }
+    # Zengin adım kartı: adım açıldığında arayüz gerçek çıktıyı (komut
+    # çıktısı, okuma önizlemesi, çıkış kodu, değişikliğin satırı)
+    # gösterebilsin. Ham dökümün tamamı değil — uzun çıktıda baş + son;
+    # hub'ı ve tarayıcı DOM'unu şişirmemek için sert kırpılıyor.
+    if card := _card(result):
+        note["detail"] = card
     # Dokunulan yol arayüze taşınıyor: görüntüleyici işi biten dosyayı
     # tazeleyebilsin. Aracın kendi bildirdiği yol, çağrıdaki argümandan
     # daha doğru — göreli yol çözülmüş halde geliyor.
@@ -163,6 +169,40 @@ async def _run_one(
         block["_image"] = image
         return block
     return result.to_block(call.id)
+
+
+# Kart çıktısının kırpma sınırları: baştan/sondan satır, toplam karakter.
+# Bir pytest dökümünde ilginç olan baş (hangi testler) ve son (özet satırı);
+# ortası zaten modelin bağlamında duruyor.
+CARD_HEAD = 60
+CARD_TAIL = 20
+CARD_CHARS = 12_000
+
+
+def _card(result: ToolResult) -> dict[str, Any]:
+    """Adım kartının veri yükü: kırpılmış çıktı + araca özgü küçük alanlar.
+
+    Görüntü dönen araçlarda content blok listesi olur; oradan metin
+    çekilmiyor — kart görüntü taşımıyor, görüntü zaten sohbete iliştiriliyor.
+    """
+    card: dict[str, Any] = {}
+    # Kabuk kartındaki çıkış rozeti; edit kartındaki değişiklik satırı.
+    for key in ("exit_code", "line"):
+        if (value := result.detail.get(key)) is not None:
+            card[key] = value
+    text = result.content.strip() if isinstance(result.content, str) else ""
+    if text:
+        lines = text.splitlines()
+        if len(lines) > CARD_HEAD + CARD_TAIL + 1:
+            skipped = len(lines) - CARD_HEAD - CARD_TAIL
+            lines = (lines[:CARD_HEAD]
+                     + [f"… ({skipped} satır atlandı) …"]
+                     + lines[-CARD_TAIL:])
+        output = "\n".join(lines)
+        if len(output) > CARD_CHARS:
+            output = output[:CARD_CHARS] + "…"
+        card["output"] = output
+    return card
 
 
 def _brief(result: ToolResult, width: int = 90) -> str:

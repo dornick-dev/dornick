@@ -60,10 +60,27 @@ _TITLE = re.compile(r"<title[^>]*>(.*?)</title>", re.S | re.I)
 
 # DuckDuckGo'nun betiksiz sürümü: anahtar istemiyor ve sonuçlar düz HTML.
 SEARCH_URL = "https://html.duckduckgo.com/html/"
+# Yedek kaynak: html.* kırıldığında (biçim değişikliği ya da ağ hatası)
+# denenen daha da yalın sürüm. Kazıma tek kaynağa yaslanınca, kaynak sessizce
+# biçim değiştirdiğinde ajan "sonuç yok" sanıyordu.
+LITE_URL = "https://lite.duckduckgo.com/lite/"
 _RESULT = re.compile(
     r'<a[^>]+class="[^"]*result__a[^"]*"[^>]+href="([^"]+)"[^>]*>(.*?)</a>', re.S | re.I
 )
 _SNIPPET = re.compile(r'class="[^"]*result__snippet[^"]*"[^>]*>(.*?)</a>', re.S | re.I)
+# Lite sürümünde sonuçlar tablo satırları: bağlantı `result-link`, özet
+# `result-snippet` sınıfında. Nitelik sırası değişebildiği için bağlantı
+# etiketi bütün halinde yakalanıp href ayrıca aranıyor.
+_LITE_LINK = re.compile(r"<a\b([^>]*)>(.*?)</a>", re.S | re.I)
+_LITE_HREF = re.compile(r'href="([^"]+)"', re.I)
+# Lite sayfası niteliklerde tek tırnak kullanıyor; iki tırnağa da dayanıklı.
+_LITE_SNIPPET = re.compile(
+    r"class=['\"][^'\"]*result-snippet[^'\"]*['\"][^>]*>(.*?)</td>", re.S | re.I
+)
+
+# Gerçekten sonuçsuz bir arama sayfasının izleri. Bunlar da yoksa sayfa
+# "boş" değil "tanınmaz" demektir — sessiz boş dönüş yerine açık hata.
+_BOS_ISARET = ("no-results", "no results", "sonuç yok", "sonuç bulunamadı")
 
 
 def register(registry: ToolRegistry) -> None:
@@ -137,28 +154,53 @@ yönlendirmek için, cevap vermek için değil.
             return ToolResult.error("Boş arama. Ne aradığını `query` alanına yaz.")
 
         limit = max(1, min(int(args.get("limit") or 5), MAX_RESULTS))
-        try:
-            body, _, _ = await asyncio.to_thread(
-                _get, SEARCH_URL + "?" + urllib.parse.urlencode({"q": query})
-            )
-        except (urllib.error.URLError, OSError, TimeoutError) as exc:
-            return ToolResult.error(f"Arama yapılamadı: {exc}")
 
-        hits = _results(body, limit)
-        if not hits:
-            return ToolResult(
-                content=f"'{query}' için sonuç bulunamadı.",
-                detail={"query": query, "results": 0},
+        # Ana kaynak kırılınca (ağ hatası YA DA sayfa gelip desenin
+        # tutmaması) yedek kaynak deneniyor; ikisi de kırılırsa neyin neden
+        # kırıldığı açıkça raporlanıyor. Sessiz boş dönüş, ajanı "aradım,
+        # yokmuş" yalanına itiyordu.
+        denemeler: list[str] = []
+        for url, parser in ((SEARCH_URL, _results), (LITE_URL, _lite_results)):
+            try:
+                body, _, _ = await asyncio.to_thread(
+                    _get, url + "?" + urllib.parse.urlencode({"q": query})
+                )
+            except (urllib.error.URLError, OSError, TimeoutError) as exc:
+                denemeler.append(f"{url}: ağ hatası — {exc}")
+                continue
+
+            hits = parser(body, limit)
+            if hits:
+                lines = [f"'{query}' için {len(hits)} sonuç:", ""]
+                for index, (title, link, snippet) in enumerate(hits, 1):
+                    lines.append(f"{index}. {title}")
+                    lines.append(f"   {link}")
+                    if snippet:
+                        lines.append(f"   {snippet}")
+                    lines.append("")
+                return ToolResult(
+                    content="\n".join(lines),
+                    detail={"query": query, "results": len(hits), "source": url},
+                )
+
+            # Boş dönüş iki farklı şey olabilir ve ikisi aynı cevabı hak
+            # etmiyor: sayfa "sonuç yok" diyorsa arama gerçekten boş; sayfa
+            # tanınmıyorsa kaynak biçim değiştirmiş demektir.
+            if _gercekten_bos(body):
+                return ToolResult(
+                    content=f"'{query}' için sonuç bulunamadı.",
+                    detail={"query": query, "results": 0},
+                )
+            denemeler.append(
+                f"{url}: sayfa geldi ama sonuç deseni tutmadı — "
+                "arama kaynağı biçim değiştirmiş olabilir"
             )
 
-        lines = [f"'{query}' için {len(hits)} sonuç:", ""]
-        for index, (title, link, snippet) in enumerate(hits, 1):
-            lines.append(f"{index}. {title}")
-            lines.append(f"   {link}")
-            if snippet:
-                lines.append(f"   {snippet}")
-            lines.append("")
-        return ToolResult(content="\n".join(lines), detail={"query": query, "results": len(hits)})
+        return ToolResult.error(
+            "Arama yapılamadı:\n"
+            + "\n".join(f"- {d}" for d in denemeler)
+            + "\nAradığın sayfanın adresini biliyorsan `fetch` ile doğrudan git."
+        )
 
 
 # -- getirme -----------------------------------------------------------
@@ -241,6 +283,36 @@ def _results(body: str, limit: int) -> list[tuple[str, str, str]]:
             snippets[index] if index < len(snippets) else "",
         ))
     return out
+
+
+def _lite_results(body: str, limit: int) -> list[tuple[str, str, str]]:
+    """Lite sürümünün tablo düzeninden sonuç çıkarır."""
+    snippets = [_collapse(html.unescape(_TAG.sub("", s))) for s in _LITE_SNIPPET.findall(body)]
+
+    out: list[tuple[str, str, str]] = []
+    for attrs, title in _LITE_LINK.findall(body):
+        if len(out) >= limit:
+            break
+        if "result-link" not in attrs:
+            continue
+        found = _LITE_HREF.search(attrs)
+        if not found:
+            continue
+        link = _unwrap(html.unescape(found.group(1)))
+        if not _is_web(link):
+            continue
+        out.append((
+            _collapse(html.unescape(_TAG.sub("", title))),
+            link,
+            snippets[len(out)] if len(out) < len(snippets) else "",
+        ))
+    return out
+
+
+def _gercekten_bos(body: str) -> bool:
+    """Sayfa 'sonuç yok' mu diyor, yoksa tanınmıyor mu?"""
+    kucuk = body.lower()
+    return any(isaret in kucuk for isaret in _BOS_ISARET)
 
 
 def _unwrap(href: str) -> str:

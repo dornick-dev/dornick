@@ -62,6 +62,35 @@ def test_the_prompt_carries_the_senses(tmp_path: Path) -> None:
     assert "mikrofon" in prompt.core.lower()
 
 
+def test_the_prompt_tells_the_model_its_permission_mode(tmp_path: Path) -> None:
+    """Kip istemde görünmüyordu ve model plan kipinde reddedilen mutasyonu
+    hata sanıp tekrar deniyordu. Varsayılan kip (ask) bile yazılmalı —
+    model hangi kapının arkasında çalıştığını bilmeli."""
+    config = Config.load(tmp_path)
+    config.ensure_dirs()
+    prompt = build_prompt(config, build_registry())
+    assert "Yetki kipin: ask" in prompt.core
+
+
+def test_plan_mode_carries_the_planning_contract(tmp_path: Path) -> None:
+    """Plan kipi yalnız bir kapı değil bir çalışma biçimi: keşfet, numaralı
+    bir plan yaz, onayı bekle — kendiliğinden uygulamaya geçme."""
+    config = Config.load(tmp_path)
+    config.ensure_dirs()
+    config.permissions.mode = "plan"
+
+    prompt = build_prompt(config, build_registry())
+    assert "PLANLAMAKTIR" in prompt.core
+    assert "onayını bekleyerek dur" in prompt.core
+    assert "kendiliğinden geçme" in prompt.core
+
+    # Dar pencerede de kip düşmüyor: plan kipinde ne yapacağını bilmeyen
+    # küçük model, kapıya çarpa çarpa turu tüketiyor.
+    config.model.context_window = 4096
+    lean = build_prompt(config, build_registry())
+    assert "PLANLAMAKTIR" in lean.core
+
+
 def test_soul_carries_what_it_knows_about_the_user(mind: Mind) -> None:
     mind.remember("Fatih, SCADA sistemleri üzerine çalışıyor.", kind="user")
     mind.remember("Türkçe konuşmayı tercih ediyor.", kind="preference")

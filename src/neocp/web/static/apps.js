@@ -83,6 +83,7 @@ const Apps = (() => {
   async function load() {
     body.textContent = "";
     await drawRunning();   // çalışanlar en üstte, projelerden önce
+    drawArts();            // artifact'lar: kalıcı sayfalar, katalogdan önce
     try {
       all = (await (await fetch("/api/projects")).json()).projects || [];
     } catch {
@@ -378,6 +379,124 @@ const Apps = (() => {
     toast(p.name + ": açılacak giriş dosyası bulunamadı — \"neo'ya sor\" ile sorabilirsin");
   }
 
+  // --- artifact'lar ----------------------------------------------------
+  //
+  // Ajanın yayınladığı kalıcı sayfalar (rapor, pano, görselleştirme).
+  // Sohbetteki kart akıp gidebilir; galeri hepsini bir arada tutar:
+  // aç (uygulama içi görüntüleyici) + sil (iki adımlı onay — sunucu
+  // kalıcı silmez, çöpe taşır).
+
+  const artAddress = (a) => "/artifact/" + a.id + "/";
+
+  // ISO damgayı kısa yerel tarihe çevirir: "26.08 14:05".
+  function artWhen(iso) {
+    const d = new Date(iso || "");
+    if (isNaN(d)) return "";
+    return d.toLocaleDateString("tr-TR", { day: "2-digit", month: "2-digit" })
+      + " " + d.toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit" });
+  }
+
+  async function drawArts() {
+    const old = body.querySelector(".apps-arts");
+    if (old) old.remove();
+
+    const sec = el("div", "apps-arts");
+    const head = el("div", "apps-group", "Artifact'lar");
+    head.append(el("i", "apps-group-hint", "kalıcı sayfalar"));
+    const holder = el("div", "arts-body");
+    holder.append(el("p", "apps-blank", "Yükleniyor…"));
+    sec.append(head, holder);
+    // Katalogdan önce, çalışanlardan sonra dursun.
+    body.insertBefore(sec, body.querySelector(".apps-catalog"));
+
+    let rows;
+    try {
+      rows = (await (await fetch("/api/artifacts")).json()).artifacts || [];
+    } catch {
+      holder.textContent = "";
+      holder.append(el("p", "apps-blank", "Okunamadı"));
+      return;
+    }
+    renderArts(holder, rows);
+  }
+
+  function renderArts(holder, rows) {
+    holder.textContent = "";
+    const count = holder.parentElement.querySelector(".apps-group b");
+    if (count) count.remove();
+    if (!rows.length) {
+      holder.append(el("p", "apps-blank",
+        "Henüz artifact yok. neo kalıcı bir rapor ya da pano yayınladığında burada belirir."));
+      return;
+    }
+    holder.parentElement.querySelector(".apps-group")
+      .append(el("b", "apps-group-count", String(rows.length)));
+    for (const a of rows) holder.append(artRow(a, holder));
+  }
+
+  function artRow(a, holder) {
+    const row = el("div", "arts-row");
+    row.tabIndex = 0;
+    row.setAttribute("role", "button");
+    row.title = (a.title || a.id) + " — görüntüleyicide aç";
+
+    // Simge app.js'teki artGlyphSvg'den (DOM API — işaretleme metni yok);
+    // bir ihtimal yüklenmemişse düz karakter yedeği.
+    const glyph = el("span", "arts-glyph");
+    if (typeof artGlyphSvg === "function") glyph.append(artGlyphSvg());
+    else glyph.textContent = "⬒";
+
+    const main = el("div", "arts-main");
+    main.append(el("div", "arts-name", a.title || a.id));
+    main.append(el("div", "arts-meta",
+      "v" + (a.surum || 1) + (a.updated ? " · " + artWhen(a.updated) : "")));
+
+    const openArt = () => {
+      if (typeof Viewer !== "undefined" && Viewer.page) {
+        Viewer.page(artAddress(a), a.title || a.id);
+        close();
+      } else {
+        window.open(artAddress(a), "_blank", "noopener");
+      }
+    };
+
+    const openBtn = el("button", "arts-btn", "Aç");
+    openBtn.onclick = (ev) => { ev.stopPropagation(); openArt(); };
+
+    // Sil: iki adımlı onay — yanlış tık bir teslimatı götürmesin. Sunucu
+    // kalıcı silmiyor, çöpe taşıyor; yine de niyet sorulur.
+    const del = el("button", "arts-btn danger", "Sil");
+    del.onclick = async (ev) => {
+      ev.stopPropagation();
+      if (!del.dataset.armed) {
+        del.dataset.armed = "1";
+        del.textContent = "Emin misin?";
+        setTimeout(() => { delete del.dataset.armed; del.textContent = "Sil"; }, 3500);
+        return;
+      }
+      let res;
+      try {
+        res = await (await fetch("/api/artifacts", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "remove", id: a.id }),
+        })).json();
+      } catch { res = { ok: false, error: "Ulaşılamadı" }; }
+      if (res.ok) {
+        toast((a.title || a.id) + " kaldırıldı (çöpe taşındı — geri alınabilir)");
+        renderArts(holder, res.artifacts || []);
+      } else {
+        toast(res.error || "Silinemedi");
+      }
+    };
+
+    row.append(glyph, main, openBtn, del);
+    row.onclick = openArt;
+    row.addEventListener("keydown", (ev) => {
+      if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); openArt(); }
+    });
+    return row;
+  }
+
   // --- çalışan uygulamalar --------------------------------------------
   //
   // Ajan bir betik/sunucu başlattıysa burada canlı görünüyor: bir web
@@ -475,7 +594,7 @@ const Apps = (() => {
       if (typeof History !== "undefined") History.close();  // iki sol panel çakışmasın
       panel.hidden = false;
       document.body.classList.add("apps-open");
-      if (!loaded) load(); else { render(); drawRunning(); }
+      if (!loaded) load(); else { render(); drawRunning(); drawArts(); }
       // Çalışanları panel açıkken canlı tut (canlı adres gecikmeli belirir,
       // süreç kendi kendine bitebilir). Kapanınca yoklamayı durduruyoruz.
       clearInterval(pollTimer);

@@ -126,6 +126,22 @@ def test_goal_lifecycle_and_digest(mind: Mind) -> None:
     assert [g.id for g in mind.goals()] == [b.id]
 
 
+def test_snapshot_lists_only_active_goals(mind: Mind) -> None:
+    """Arayüzdeki hedef paneli sayfa yenilenince snapshot'tan tohumlanıyor:
+    döküm yalnız aktifleri, id + metin olarak taşımalı. Zihinsiz ajan
+    (ya da patlayan okuma) boş liste demek — sohbet düşmemeli."""
+    from neocp.desktop import _active_goals
+
+    keep = mind.push_goal("kalan iş")
+    done = mind.push_goal("biten iş")
+    mind.set_goal_status(done.id, "done")
+
+    agent = type("A", (), {"mind": mind})()
+    assert _active_goals(agent) == [{"id": keep.id, "text": "kalan iş"}]
+    assert _active_goals(type("A", (), {"mind": None})()) == []
+    assert _active_goals(object()) == []
+
+
 def test_goals_survive_reopen(tmp_path: Path) -> None:
     first = open_mind(tmp_path / "mind", tmp_path / "sessions")
     goal = first.push_goal("kalıcı hedef")

@@ -253,6 +253,97 @@ async def test_an_empty_query_is_refused(registry: ToolRegistry, ctx: ToolContex
     assert (await call(registry, "search", ctx, query="   ")).is_error
 
 
+# -- yedek kaynak ------------------------------------------------------
+
+LITE_PAGE = """
+<table>
+  <tr><td>
+    <a rel="nofollow" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fbir.com%2Fa" class='result-link'>Lite Birinci</a>
+  </td></tr>
+  <tr><td class='result-snippet'>Lite özet</td></tr>
+  <tr><td>
+    <a rel="nofollow" href="https://iki.com/b" class='result-link'>Lite İkinci</a>
+  </td></tr>
+</table>
+"""
+
+
+async def test_the_lite_fallback_catches_a_broken_primary(
+    registry: ToolRegistry, ctx: ToolContext, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """html.duckduckgo kırıldığında arama sessizce boş dönmemeli; yedek
+    kaynak denenmeli."""
+    import urllib.error
+
+    asked: list[str] = []
+
+    def fake(url: str) -> tuple[str, str, str]:
+        asked.append(url)
+        if "html.duckduckgo" in url:
+            raise urllib.error.URLError("bağlantı reddedildi")
+        return LITE_PAGE, "text/html", url
+
+    monkeypatch.setattr(web, "_get", fake)
+    result = await call(registry, "search", ctx, query="deneme")
+
+    assert not result.is_error
+    assert "Lite Birinci" in result.content
+    assert "https://bir.com/a" in result.content        # yönlendirici çözülmüş
+    assert "Lite özet" in result.content
+    assert any("lite.duckduckgo" in u for u in asked)
+    assert result.detail["source"] == web.LITE_URL
+
+
+async def test_a_changed_format_is_an_error_not_silence(
+    registry: ToolRegistry, ctx: ToolContext, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Sayfa geldi ama desen tutmadı: bu 'sonuç yok' değil, 'kaynak biçim
+    değiştirdi' — ajan farkı bilmeli."""
+    serving(monkeypatch, "<html><body><div>bambaşka bir düzen</div></body></html>")
+    result = await call(registry, "search", ctx, query="deneme")
+
+    assert result.is_error
+    assert "biçim değiştirmiş" in result.content
+
+
+async def test_a_format_change_still_tries_the_fallback(
+    registry: ToolRegistry, ctx: ToolContext, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def fake(url: str) -> tuple[str, str, str]:
+        if "html.duckduckgo" in url:
+            return "<html><body><div>tanınmaz düzen</div></body></html>", "text/html", url
+        return LITE_PAGE, "text/html", url
+
+    monkeypatch.setattr(web, "_get", fake)
+    result = await call(registry, "search", ctx, query="deneme")
+
+    assert not result.is_error
+    assert "Lite Birinci" in result.content
+
+
+async def test_network_failure_on_both_sources_is_explicit(
+    registry: ToolRegistry, ctx: ToolContext, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import urllib.error
+
+    def boom(url: str):
+        raise urllib.error.URLError("ağ kapalı")
+
+    monkeypatch.setattr(web, "_get", boom)
+    result = await call(registry, "search", ctx, query="deneme")
+
+    assert result.is_error
+    assert "ağ hatası" in result.content
+    assert "html.duckduckgo" in result.content and "lite.duckduckgo" in result.content
+
+
+def test_the_lite_parser_reads_the_table_layout() -> None:
+    hits = web._lite_results(LITE_PAGE, 5)
+
+    assert hits[0] == ("Lite Birinci", "https://bir.com/a", "Lite özet")
+    assert hits[1][1] == "https://iki.com/b"
+
+
 # -- kayıt -------------------------------------------------------------
 
 

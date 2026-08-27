@@ -169,6 +169,20 @@ gelir; koşan yardımcıya `task_say` ile yön verebilirsin.
   al. İş bitmeden durma — bağlam daralırsa sistem sıkıştırır, sen kaldığın
   yerden sürdürürsün; model geçici olarak yanıt vermezse sistem bekleyip
   yeniden dener, iş kaybolmaz.
+
+Bitti'nin tanımı: bir iş, KULLANICININ yaşayacağı yoldan doğrulanmadan
+bitmiş sayılmaz. Kod yazdıysan çalıştır; arayüz/ürün yaptıysan tarayıcıda
+kullanıcı gibi gez — akışı yürüt, formu gönder, boş/hata durumlarına ve
+görünüme bak. "Sözdizimi geçti" ya da "sayfa 200 döndü" bitti demek
+değildir; kalite iddiasını ancak gözünle gördüğün şeye dayandır.
+
+Büyük ve ucu açık bir istekte ("gelişmiş bir panel yap" gibi) önce kapsamı
+aç: işi modüllere böl, her modüle bir kabul ölçütü koy ve bu planı bir-iki
+cümleyle kullanıcıya söyle; sonra modül modül ilerle — her modülü kendi
+ölçütünden geçirmeden sıradakine geçme. Özellik listesi saymak iş bitirmek
+değildir; "eklendi" dediğin her şeyin çalıştığını göstermiş ol. Bitirince
+kendine son bir denetim sorusu sor: "Bunu bir müşteriye bu haliyle
+gösterir miydim?" — cevabın hayırsa, eksik olanı söyle ve kapat.
 """
 
 # Küçük pencereli modeller için sıkıştırılmış hal. 4096 token'lık bir modelde
@@ -233,6 +247,9 @@ Araç kullanımı:
   Bir aracın kurulu olup olmadığını varsayma — kabuğa sorup öğren; eksikse
   kur ya da kuramıyorsan kullanıcıya söyle. Linux gereken işler için WSL
   varsa `wsl <komut>` ile kullanabilirsin (Ortam bölümünde yazar).
+- Kalıcı olması gereken bir teslimat ürettiğinde (rapor, pano,
+  görselleştirme) onu `artifact` ile yayınla: sohbet mesajı akıp gider,
+  artifact adresinde kalır — sonraki turlarda aynı id ile güncellenir.
 - Çalıştırılabilir bir PROJE ürettiğinde (backend + frontend gibi) kök
   klasörüne bir `app.json` yaz: {name, type (web/service/tool), entry, run,
   scope, desc, howto}. `desc` TEK CÜMLE ve kullanıcı dilinde: bu uygulama ne
@@ -242,6 +259,48 @@ Araç kullanımı:
   `scope` olarak yaz ("in-app" / "external"). Böylece Uygulamalar panelinde
   doğru grupta, doğru rozetle ve ne-yaptığı belli şekilde görünür.
 """
+
+# Plan kipinin çalışma sözleşmesi. İzin motoru mutasyonu zaten kapıda
+# reddediyor (permissions.py — karar döngünün DIŞINDA, model ikna edemez);
+# buradaki metin modelin o kapıya hiç çarpmadan doğru davranması için.
+# Genel kural, tarif değil: hangi aracın salt okunur olduğunu model kendi
+# şemalarından biliyor, burada araç listesi sayılmıyor.
+PLAN_RULES = """
+Yetki kipin: plan — salt okunur keşif.
+
+Bu kipteyken amacın uygulamak değil PLANLAMAKTIR. Keşif serbest: oku, ara,
+listele, incele — değişiklik yapmayan her araç çalışır. Değişiklik yapan
+araçlar izin kapısında reddedilir; bunu bir hata sayıp zorlamayı deneme.
+Keşfin bitince numaralı, somut bir plan yaz — hangi dosya, hangi değişiklik,
+hangi sırayla — ve kullanıcının onayını bekleyerek dur. Onay gelmeden
+uygulamaya kendiliğinden geçme; kullanıcı onaylayınca kip değişir ve planı
+o zaman uygularsın.
+"""
+
+# Öteki kiplerin tek satırlık karşılığı. Model hangi kapının arkasında
+# çalıştığını bilmeli — "bu araç neden reddedildi" sorusunun cevabı ve
+# gereksiz izin turlarından kaçınma buna bağlı.
+MODE_TELL = {
+    "auto": "değişiklik yapmayan araçlar serbest, değişiklik yapanlar kullanıcıya sorulur",
+    "ask": "her araç çağrısı kullanıcıya sorulur",
+    "yolo": "hiçbir şey sorulmaz",
+}
+
+
+def _authority(config: Config) -> str:
+    """Yetki kipinin istemdeki karşılığı.
+
+    Kip istemde görünmüyordu ve model plan kipinde reddedilen mutasyonu
+    hata sanıp tekrar tekrar deniyordu. Kip değişince Bridge.reload →
+    Agent.reconfigure çekirdeği zaten yeniden kuruyor; bu blok o yoldan
+    güncel kalır (tur ortasında değişmez, önbellek öngörülebilir düşer).
+    """
+    mode = config.permissions.mode
+    if mode == "plan":
+        return PLAN_RULES.strip()
+    tell = MODE_TELL.get(mode, "")
+    return f"Yetki kipin: {mode}" + (f" — {tell}." if tell else ".")
+
 
 MEMORY_RULES = """
 Zihnini büyütmek:
@@ -331,7 +390,10 @@ def build(config: Config, registry: ToolRegistry, soul: Any = None) -> SystemPro
     # bellek yönergesi düşüyor — ikisi de aracın kendi açıklamasında zaten
     # var ve 4096 token'lık bir modelde konuşmaya yer bırakmak gerekiyor.
     parts = (
-        (LEAN_IDENTITY.strip(), _environment(config), config.open_sandbox().briefing())
+        # Dar pencerede de kip düşmüyor: plan kipinde ne yapması gerektiğini
+        # bilmeyen model, kapıya çarpa çarpa turu tüketiyor.
+        (LEAN_IDENTITY.strip(), _environment(config),
+         config.open_sandbox().briefing(), _authority(config))
         if is_lean(config)
         else (
             IDENTITY.strip(),
@@ -344,6 +406,8 @@ def build(config: Config, registry: ToolRegistry, soul: Any = None) -> SystemPro
             # biliyor olması gerekiyor. Dar pencerede düşüyor — orada
             # konuşmaya yer bırakmak öncelikli.
             _devices(config),
+            # Yetki kipi: modelin hangi kapının arkasında çalıştığı.
+            _authority(config),
             TOOL_RULES.strip(),
             MEMORY_RULES.strip() if _has_mind(registry) else "",
             _tool_list(registry),

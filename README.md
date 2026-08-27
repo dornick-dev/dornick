@@ -133,9 +133,14 @@ deliveries. Full write-up: [docs/evaluation.md](docs/evaluation.md)
 
 ## Roadmap
 
-* Stronger English base model (training data is currently Turkish-heavy)
-* More senses: continuous listening and camera watching are in, more to come
-* Windows is the primary target today; broader platform support later
+See [docs/parity.md](docs/parity.md) for the full agentic parity map —
+what matches the current harness landscape, where neo is ahead (the
+user-learning model, the living memory, memory-as-MCP, the gate), and
+what is deliberately deferred:
+
+* Deeper browser control (accessibility refs, forms, console/network)
+* Hooks, OS-level shell sandboxing, transcript search, LSP
+* Stronger English base model; broader platform support (Windows-first today)
 
 ## Contributing
 

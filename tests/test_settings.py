@@ -270,6 +270,24 @@ def test_a_change_mid_turn_waits_for_the_turn(tmp_path: Path) -> None:
     bridge.loop.close()
 
 
+def test_a_mode_change_reaches_the_page_as_an_event(tmp_path: Path) -> None:
+    """Kip değişimi yalnız notice metniyle duyuruluyordu — metin makine
+    okunur değil. Dock çipi ve plan-onay düğmesi gerçek kipi ancak ayrı
+    bir `mode` olayıyla izleyebiliyor (ayar sayfası dışından — dış kapı,
+    başka sekme — değişen kip de dahil)."""
+    from dataclasses import replace
+
+    from neocp.config import Config
+
+    config = Config.load(tmp_path)
+    bridge, _ = _bridge(config)
+
+    bridge.reload(replace(config, permissions=replace(config.permissions, mode="plan")))
+
+    assert {"type": "mode", "mode": "plan"} in bridge.hub.seen
+    bridge.loop.close()
+
+
 def test_settings_that_do_not_touch_the_model_leave_it_alone(tmp_path: Path) -> None:
     """Her kaydetmede istemciyi yeniden kurmak, bağlantıyı boşuna
     tazelemek demek."""

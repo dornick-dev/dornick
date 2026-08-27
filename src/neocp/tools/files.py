@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any
 
 from ..sandbox import OutsideSandbox
+from . import checkpoint
 from .base import ToolContext, ToolRegistry, ToolResult, object_schema
 
 MAX_READ_CHARS = 60_000
@@ -56,6 +57,20 @@ def _guard(path: Path, ctx: ToolContext) -> ToolResult | None:
     except OutsideSandbox as exc:
         return ToolResult.error(str(exc))
     return None
+
+
+def _gozle(path: Path, ctx: ToolContext, arac: str) -> None:
+    """Atölye içindeki dosya için değişiklik öncesi anlık görüntü.
+
+    Görüntü alınamaması yazmayı DURDURMAZ: emniyet kemeri takılamıyor diye
+    arabayı durdurmak modeli kilitler. `undo` görüntüsüz kaydı dürüstçe
+    "geri alınamaz" diye raporlar.
+    """
+    try:
+        if ctx.sandbox.contains(path):
+            checkpoint.defter(ctx).kaydet(path, arac)
+    except OSError:
+        pass
 
 
 def register(registry: ToolRegistry) -> None:
@@ -150,6 +165,8 @@ Küçük değişiklikler için write_file yerine edit_file kullan.
                 )
 
         def _write() -> int:
+            # Yazmadan hemen önce anlık görüntü: `undo` ancak böyle mümkün.
+            _gozle(path, ctx, "write_file")
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(content, encoding="utf-8")
             return path.stat().st_mtime_ns
@@ -171,15 +188,31 @@ Bir dosyada tam metin değişimi yapar. `old` metni dosyada tam olarak bir kez
 geçmelidir — sıfır ya da birden fazla eşleşmede işlem yapılmaz ve hata döner.
 Benzersiz kılmak için etrafından yeterince bağlam al.
 
+Aynı dosyada birden fazla değişiklik için `edits` ver: [{old, new}, ...].
+Uygulama ATOMİKTİR — önce hepsi doğrulanır, biri bile tutmazsa hiçbiri
+uygulanmaz ve hangi maddenin neden tutmadığı söylenir.
+
 Dosyayı önce read_file ile okumuş olman gerekir.
         """,
         input_schema=object_schema(
             {
                 "path": {"type": "string", "description": "Dosya yolu."},
-                "old": {"type": "string", "description": "Değiştirilecek tam metin."},
-                "new": {"type": "string", "description": "Yerine yazılacak metin."},
+                "old": {"type": "string", "description": "Değiştirilecek tam metin (tekli kullanım)."},
+                "new": {"type": "string", "description": "Yerine yazılacak metin (tekli kullanım)."},
+                "edits": {
+                    "type": "array",
+                    "description": "Çoklu değişiklik: [{old, new}, ...]. Hepsi ya da hiçbiri.",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "old": {"type": "string"},
+                            "new": {"type": "string"},
+                        },
+                        "required": ["old", "new"],
+                    },
+                },
             },
-            required=["path", "old", "new"],
+            required=["path"],
         ),
         mutates=True,
         parallel_safe=False,
@@ -188,7 +221,18 @@ Dosyayı önce read_file ile okumuş olman gerekir.
         path = _resolve(args["path"], ctx)
         if refused := _guard(path, ctx):
             return refused
-        old, new = args["old"], args["new"]
+
+        edits = args.get("edits")
+        if edits:
+            pairs = [(e.get("old"), e.get("new")) for e in edits if isinstance(e, dict)]
+            if len(pairs) != len(edits):
+                return ToolResult.error("`edits` maddeleri {old, new} nesneleri olmalı.")
+        elif "old" in args and "new" in args:
+            pairs = [(args["old"], args["new"])]
+        else:
+            return ToolResult.error(
+                "Ya `old`+`new` (tek değişiklik) ya da `edits` (çoklu) vermelisin."
+            )
 
         if not path.exists():
             return ToolResult.error(f"Dosya yok: {path}")
@@ -196,24 +240,63 @@ Dosyayı önce read_file ile okumuş olman gerekir.
             return ToolResult.error(f"{path} bu oturumda okunmadı. Önce read_file ile oku.")
 
         text = await asyncio.to_thread(path.read_text, encoding="utf-8")
-        count = text.count(old)
-        if count == 0:
-            return ToolResult.error(
-                "Aranan metin dosyada yok. Girintiyi ve satır sonlarını birebir eşleştir; "
-                "emin değilsen dosyayı tekrar oku."
-            )
-        if count > 1:
-            return ToolResult.error(
-                f"Aranan metin {count} kez geçiyor, hangisi olduğu belirsiz. "
-                "Öncesinden/sonrasından bağlam ekleyerek benzersizleştir."
-            )
+
+        # Önce HEPSİ doğrulanır; hata metni maddeyi numarasıyla gösterir ki
+        # model neyi düzelteceğini bilsin. Hiçbir şey henüz yazılmadı.
+        spans: list[tuple[int, int, str, int]] = []  # (baş, son, yeni, madde no)
+        coklu = len(pairs) > 1
+        for no, (old, new) in enumerate(pairs, 1):
+            hangi = f"{no}. madde: " if coklu else ""
+            hicbiri = " Hiçbir değişiklik uygulanmadı." if coklu else ""
+            if not isinstance(old, str) or not isinstance(new, str) or not old:
+                return ToolResult.error(
+                    f"{hangi}`old` ve `new` dolu birer metin olmalı.{hicbiri}"
+                )
+            count = text.count(old)
+            if count == 0:
+                return ToolResult.error(
+                    f"{hangi}Aranan metin dosyada yok. Girintiyi ve satır sonlarını "
+                    f"birebir eşleştir; emin değilsen dosyayı tekrar oku.{hicbiri}"
+                )
+            if count > 1:
+                return ToolResult.error(
+                    f"{hangi}Aranan metin {count} kez geçiyor, hangisi olduğu belirsiz. "
+                    f"Öncesinden/sonrasından bağlam ekleyerek benzersizleştir.{hicbiri}"
+                )
+            start = text.index(old)
+            spans.append((start, start + len(old), new, no))
+
+        # Sıra bağımsız çakışma kontrolü: iki madde aynı bölgeye dokunuyorsa
+        # sonuç maddelerin sırasına bağlı olurdu — bu bir belirsizlik, hata.
+        spans.sort()
+        for (b1, s1, _, n1), (b2, _, _, n2) in zip(spans, spans[1:]):
+            if b2 < s1:
+                return ToolResult.error(
+                    f"{n1}. ve {n2}. maddeler çakışıyor (aynı metin bölgesini "
+                    "değiştiriyorlar). Maddeleri birleştir. Hiçbir değişiklik uygulanmadı."
+                )
 
         def _apply() -> int:
-            path.write_text(text.replace(old, new, 1), encoding="utf-8")
+            # Yazmadan hemen önce anlık görüntü: `undo` ancak böyle mümkün.
+            _gozle(path, ctx, "edit_file")
+            yeni = text
+            # Sondan başa: önceki değişimler sonrakilerin konumunu kaydırmasın.
+            for start, end, new, _ in reversed(spans):
+                yeni = yeni[:start] + new + yeni[end:]
+            path.write_text(yeni, encoding="utf-8")
             return path.stat().st_mtime_ns
 
         seen[path] = await asyncio.to_thread(_apply)
-        return ToolResult(content=f"{path} güncellendi.", detail={"path": str(path)})
+        # Değişikliğin başladığı satır: arayüzdeki adım kartı diff'i gerçek
+        # satır numaralarıyla çizebilsin. Çoklu değişiklikte İLK değişikliğin
+        # satırı (arayüz sözleşmesi).
+        line = text[: spans[0][0]].count("\n") + 1
+        mesaj = (
+            f"{path} güncellendi ({len(spans)} değişiklik)."
+            if len(spans) > 1
+            else f"{path} güncellendi."
+        )
+        return ToolResult(content=mesaj, detail={"path": str(path), "line": line})
 
     @registry.tool(
         name="copy_in",
@@ -256,8 +339,13 @@ dosya varsa yolu budur.
         def _copy() -> int:
             target.parent.mkdir(parents=True, exist_ok=True)
             if source.is_dir():
+                # Dizin kopyası defterde tutulmuyor: onlarca dosyayı tek
+                # "yoktu" kaydına sığdırmak geri almayı yalancı yapardı.
                 shutil.copytree(source, target)
                 return sum(1 for _ in target.rglob("*") if _.is_file())
+            # Hedef henüz yok ("yoktu" kaydı düşer); günün birinde üzerine
+            # yazma serbest kalırsa aynı çağrı mevcut hali de saklar.
+            _gozle(target, ctx, "copy_in")
             shutil.copy2(source, target)
             return 1
 

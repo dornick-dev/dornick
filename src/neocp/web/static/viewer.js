@@ -56,6 +56,29 @@ const Viewer = (() => {
     show(path.trim());
   }
 
+  // Sunucudan servis edilen CANLI bir sayfa (artifact gibi): dosya değil
+  // adres. İçerik her açılışta sunucudan taze çekilir ve çizimlerle AYNI
+  // yalıtılmış çerçevede gösterilir (allow-same-origin yok): ajanın yazdığı
+  // sayfa programın DOM'una ve /api uçlarına erişemiyor — kendi izin
+  // kapısını betikle atlaması bu programda en pahalı hata olurdu.
+  let pageLabel = "";
+
+  function page(url, label) {
+    if (typeof url !== "string" || !url.trim()) return;
+    dismissed = false;
+    mode = "live";
+    pageLabel = label || url;
+    current = "url:" + url.trim();
+    panel.hidden = false;
+    document.body.classList.add("viewing");
+    load(current);
+  }
+
+  // Bu adres şu an panelde açık mı? (artifact güncellenince tazelemek için)
+  function showing(url) {
+    return !panel.hidden && current === "url:" + url;
+  }
+
   // İş bittiğinde gösterileni tazele: yazma tamamlandığında panelde hâlâ
   // eski içerik duruyordu. Aracın bildirdiği yol çözülmüş halde geliyor,
   // o yüzden `current` ile birebir tutmayabilir — panel açıksa ve dokunulan
@@ -102,6 +125,33 @@ const Viewer = (() => {
   }
 
   async function load(path) {
+    // Adres kipi: sunucunun servis ettiği sayfa taze çekilip yalıtılmış
+    // çerçevede açılıyor. Aynı yarış kuralı: son istek kazanır.
+    if (typeof path === "string" && path.startsWith("url:")) {
+      const url = path.slice(4);
+      title.textContent = pageLabel || url;
+      title.title = url;
+      modes.textContent = "";
+      const token = {};
+      loading = token;
+      let html = "";
+      try {
+        const res = await fetch(url, { cache: "no-store" });
+        if (!res.ok) {
+          if (loading === token) blank("Sayfa yok (" + res.status + ")");
+          return;
+        }
+        html = await res.text();
+      } catch {
+        if (loading === token) blank("Okunamadı");
+        return;
+      }
+      if (loading !== token) return;
+      body.textContent = "";
+      body.append(frame(html));
+      return;
+    }
+
     title.textContent = label(path) || "—";
     title.title = path || "";
     if (!path) { blank("Henüz bir şeye dokunulmadı"); return; }
@@ -229,5 +279,5 @@ const Viewer = (() => {
     });
   })();
 
-  return { present, watch, refresh, show, close, toggle };
+  return { present, page, showing, watch, refresh, show, close, toggle };
 })();

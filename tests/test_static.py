@@ -576,6 +576,89 @@ def test_the_route_list_also_separates_used_from_scanned() -> None:
     assert "used += 1" in inner
 
 
+# -- hedef paneli ------------------------------------------------------
+#
+# Zihindeki hedef yığını (mind_goals) sağ üstte görünür bir kontrol
+# listesi: goal_push/goal_status olayları paneli sürüyor. Buradaki
+# kontroller, olay-güdümlü durum makinesini sessizce koparan hataları
+# yakalıyor — olayın panele bağlanmaması ekranda hata değil, yalnızca
+# hiç görünmeyen bir panel demek.
+
+
+def test_goal_events_drive_the_goal_panel() -> None:
+    push = re.search(r'case "goal_push":(.*?)break;', APP_JS, re.S)
+    assert push and "Goals.push(e.goal_id, e.text)" in push.group(1)
+
+    status = re.search(r'case "goal_status":(.*?)break;', APP_JS, re.S)
+    assert status and "Goals.status(e.goal_id, e.status)" in status.group(1)
+
+    # Panel işaretlemede var ve varsayılan gizli: hedef yokken görünmemeli.
+    assert re.search(r'id="goals"[^>]*\shidden', HTML)
+    # Sayfa yenilenince olay akışı kaçmış oluyor; panel /api/state'teki
+    # aktif hedeflerle tohumlanmalı — yoksa yenileme paneli sıfırlıyor.
+    assert "Goals.seed(s.goals || [])" in APP_JS
+
+
+def test_finished_goals_linger_struck_through_then_leave() -> None:
+    """Biten hedef önce üstü çizili görünmeli (kullanıcı bittiğini OKUSUN),
+    sonra sessizce listeden düşmeli. Bırakılan soluk düşer."""
+    linger = re.search(r"const GOAL_LINGER = (\d+)", APP_JS)
+    assert linger and int(linger.group(1)) >= 3000, "madde okunamadan siliniyor"
+    assert re.search(r"items\.delete\(id\); render\(\);", APP_JS)
+
+    assert re.search(r"\.goal-item\.done span \{[^}]*line-through", CSS)
+    assert re.search(r"\.goal-item\.dropped \{[^}]*opacity", CSS)
+
+
+def test_a_long_goal_list_is_clipped_with_a_count() -> None:
+    """Yirmi hedefli bir koşuda panel sohbeti kaplamamalı: ilk birkaç
+    madde + "…+N", gövde de kendi içinde kayar (sınırlı yükseklik)."""
+    show = re.search(r"const GOAL_SHOW = (\d+)", APP_JS)
+    assert show and int(show.group(1)) == 6
+    assert re.search(r'"…\+" \+ \(rows\.length - GOAL_SHOW\)', APP_JS)
+
+    body = re.search(r"^\.goals-body \{(.*?)\}", CSS, re.S | re.M)
+    assert body and "max-height" in body.group(1) and "overflow-y: auto" in body.group(1)
+
+
+# -- plan kipi onay döngüsü --------------------------------------------
+
+
+def test_plan_mode_offers_an_apply_button_after_the_turn() -> None:
+    """Plan kipinde tur bitince "Planı uygula" düğmesi belirmeli — ama
+    yalnız plan kipinde: başka kipte her turun sonuna düğme koymak olmaz."""
+    block = re.search(r'case "turn_end":(.*?)break;', APP_JS, re.S)
+    assert block and "maybeOfferPlan()" in block.group(1)
+
+    body = re.search(r"function maybeOfferPlan\(\) \{(.*?)\n\}", APP_JS, re.S)
+    assert body, "maybeOfferPlan() bulunamadı — desen bayatlamış olabilir"
+    assert 'mode !== "plan"' in body.group(1)
+    assert re.search(r"^\.plan-apply button \{", CSS, re.M)
+
+
+def test_applying_the_plan_switches_mode_before_sending() -> None:
+    """Sıra önemli: önce kip değişir, sunucu kabul ederse mesaj gider.
+    Ters sırada "Planı uygula." mesajı hâlâ salt okunur kapıya çarpar."""
+    body = re.search(r"async function applyPlan\(\) \{(.*?)\n\}", APP_JS, re.S)
+    assert body, "applyPlan() bulunamadı — desen bayatlamış olabilir"
+
+    inner = body.group(1)
+    assert inner.index('"/api/settings"') < inner.index('"/api/chat"')
+    # Sunucu reddederse ekran gerçeğe döner ve mesaj gitmez.
+    assert "answer.ok === false" in inner
+    assert 't("Planı uygula.")' in inner
+
+
+def test_a_stale_plan_offer_is_withdrawn() -> None:
+    """Kullanıcı kendi sözünü söylerse ya da kip plandan çıkarsa bekleyen
+    teklif kalkmalı — bayat bir "uygula" düğmesi yanlış planı uygular."""
+    message = re.search(r'case "message":(.*?)break;', APP_JS, re.S)
+    assert message and "hidePlanOffer()" in message.group(1)
+
+    authority = re.search(r"function setAuthority\((.*?)\n\}", APP_JS, re.S)
+    assert authority and 'if (next !== "plan") hidePlanOffer();' in authority.group(1)
+
+
 def test_drawings_open_in_the_isolated_frame() -> None:
     """Çizim bir dosya değil bir sunum: kaynağını okumak istenen şey değil.
     Ama yalıtım kalkmamalı — ajanın yazdığı bir betik kendi izin kapısını

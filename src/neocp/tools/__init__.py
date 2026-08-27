@@ -41,11 +41,33 @@ def build_registry(mind: Any = None, *, subagents: bool = True) -> ToolRegistry:
     MCP sunucularından gelen araçlar sonradan aynı deftere eklenir; döngü
     aracın nereden geldiğini bilmez.
     """
-    from . import browser, canvas, devices, eyes, files, hands, hearing, jobs, learn, mail, place, shell, web
+    from . import (
+        artifacts,
+        browser,
+        canvas,
+        checkpoint,
+        devices,
+        eyes,
+        files,
+        hands,
+        hearing,
+        jobs,
+        learn,
+        mail,
+        place,
+        search,
+        shell,
+        web,
+    )
 
     registry = ToolRegistry()
     shell.register(registry)
     files.register(registry)
+    # İçerik arama: "X nerede geçiyor?" için dosya dosya okumak yerine tek araç.
+    search.register(registry)
+    # Değişiklik defteri: dosya araçlarının aldığı anlık görüntüleri listeler
+    # ve geri alır (undo/redo).
+    checkpoint.register(registry)
     web.register(registry)
     jobs.register(registry)
     eyes.register(registry)
@@ -68,6 +90,9 @@ def build_registry(mind: Any = None, *, subagents: bool = True) -> ToolRegistry:
     place.register(registry)
     # Ekrana çizim: bazı cevaplar yazıyla anlatılınca kayboluyor.
     canvas.register(registry)
+    # Artifact: kalıcı teslimat sayfaları — sohbet akar, artifact adreste
+    # kalır ve aynı kimlikle güncellenir.
+    artifacts.register(registry)
     # Kulak yönetimi: "beni dinleme" gerçek bir eylem olabilmeli.
     hearing.register(registry)
     # Model listesi yalnizca alt ajan varken ise yariyor: alt ajan

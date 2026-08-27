@@ -66,8 +66,10 @@ _AYARLAR = "ayarlar/"
 
 # Atölye taramasında atlanan dizinler: araç artıkları, sürüm kontrolü,
 # çöp kutusu (server.py'deki SKIPPED / gate._ATLA ile aynı akıl).
+# .neocp da listede: değişiklik görüntüleri (.neocp/degisiklikler) ve diğer
+# oturum artıkları pakete girmesin — atölye kökü bir gün state ile çakışsa bile.
 _ATLA = frozenset({".git", "__pycache__", "node_modules", ".venv",
-                   ".mypy_cache", ".geri-donusum"})
+                   ".mypy_cache", ".geri-donusum", ".neocp"})
 
 
 def export_bundle(config: Any, mind: Any,

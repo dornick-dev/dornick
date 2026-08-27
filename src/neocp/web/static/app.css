@@ -490,6 +490,28 @@ button { font: inherit; cursor: pointer; border: none; background: none; color: 
 }
 .line.alert { color: var(--amber); font-size: 13.5px; text-shadow: 0 0 16px #ffc85744; }
 
+/* Plan kipi onayi: tur bitince son cevabin altinda beliren "Plani uygula"
+   dugmesi. Sohbetin dilinde sessiz bir hap; tiklayinca kip geri cevrilip
+   uygulama mesaji kendiliginden gidiyor (app.js applyPlan). */
+.plan-apply {
+  display: flex; align-items: center; gap: 10px;
+  padding: 4px 0 14px;
+  animation: surface .25s ease-out;
+}
+.plan-apply button {
+  cursor: pointer;
+  font: 12px var(--mono); letter-spacing: .05em;
+  color: var(--cyan); background: var(--raise);
+  border: 1px solid var(--edge); border-radius: 999px;
+  padding: 6px 14px; transition: border-color .16s, background .16s, color .16s;
+}
+.plan-apply button:hover { border-color: var(--glow); background: var(--field); color: var(--ice); }
+.plan-apply button:focus-visible { outline: 1px solid var(--cyan); outline-offset: 2px; }
+.plan-hint {
+  font-size: 11px; color: var(--faint);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
 /* Ajanin yaptigi isler tek satirda toplaniyor: her arac icin ayri bir
    satir birakmak, uc adimlik bir iste sohbeti arac kaydina ceviriyordu.
    Ayrinti kaybolmuyor, katlaniyor. */
@@ -578,6 +600,85 @@ button { font: inherit; cursor: pointer; border: none; background: none; color: 
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .act-result.err { color: var(--rose); opacity: .85; }
+
+/* --- adim kartlari ------------------------------------------------------
+   Adim satiri tiklaninca acilan zengin detay: renklendirilmis komut,
+   cikti + cikis rozeti, gercek satirlarla diff, icerik onizlemesi.
+   Kart SINIRLI yukseklikte ve KENDI ICINDE kayar — uzun bir cikti sohbeti
+   sayfalarca itmez; "tumunu genislet" (⤢) isteyene tam boy acar.
+   Kod bloklari yatayda da kendi icinde kayar; sayfa asla yatay kaymaz. */
+.act:not(.note) { cursor: pointer; }
+.act.opened .what { color: var(--ice); }
+.act-result { cursor: pointer; }
+.act-card {
+  margin: -2px 0 12px 15px; padding: 9px 11px;
+  border-radius: 9px; background: var(--raise);
+  box-shadow: inset 0 0 0 1px #4fe3ff1a;
+  max-height: min(48vh, 420px); overflow-y: auto;
+  font: 11.5px/1.55 var(--mono); color: var(--dim);
+  scrollbar-width: thin; scrollbar-color: #4fe3ff40 transparent;
+  cursor: auto; user-select: text;
+}
+.act-card::-webkit-scrollbar { width: 6px; }
+.act-card::-webkit-scrollbar-thumb { background: #4fe3ff2a; border-radius: 3px; }
+.act-card.full { max-height: none; overflow-y: visible; }
+.card-head { display: flex; align-items: center; gap: 10px; margin-bottom: 7px; }
+.card-head b { flex: 0 0 auto; font-size: 10.5px; letter-spacing: .08em; color: var(--ice); }
+.card-path {
+  flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis;
+  white-space: nowrap; font-size: 11px; color: var(--faint);
+}
+.card-exit {
+  flex: 0 0 auto; font: 10px var(--mono); font-style: normal;
+  padding: 1px 8px; border-radius: 9px;
+  color: var(--mint); background: #5ce6a414; box-shadow: inset 0 0 0 1px #5ce6a42a;
+}
+.card-exit.err { color: var(--rose); background: #ff7a9014; box-shadow: inset 0 0 0 1px #ff7a902a; }
+.card-grow {
+  flex: 0 0 auto; background: none; border: 0; cursor: pointer;
+  font-size: 13px; line-height: 1; color: var(--faint); transition: .14s;
+}
+.card-grow:hover { color: var(--cyan); }
+/* Komut ve cikti bloklari: kod kuyusu tonu, kendi yatay kaydirmasi. */
+.card-code, .card-out {
+  margin: 0 0 7px; padding: 7px 10px; border-radius: 7px;
+  background: var(--code-bg); overflow-x: auto;
+}
+.card-code code, .card-out code {
+  display: block; font: 11.5px/1.6 var(--mono); color: var(--code-ink);
+  white-space: pre; text-shadow: none;
+}
+.card-out { opacity: .92; }
+.card-out code { color: var(--dim); }
+/* Diff: eski satirlar kirmizimsi, yeniler yesilimsi; numaralar gercek. */
+.card-diff { margin: 0 0 4px; overflow-x: auto; }
+.diff-row { display: flex; gap: 8px; font: 11.5px/1.6 var(--mono); }
+.diff-row .diff-no {
+  flex: 0 0 34px; text-align: right; color: var(--faint);
+  font-variant-numeric: tabular-nums; user-select: none;
+}
+.diff-row .diff-mark { flex: 0 0 10px; text-align: center; color: var(--faint); user-select: none; }
+.diff-row .diff-text { flex: 1; white-space: pre; color: var(--dim); }
+.diff-row.del { background: #ff7a9014; }
+.diff-row.del .diff-mark, .diff-row.del .diff-text { color: var(--rose); }
+.diff-row.add { background: #5ce6a414; }
+.diff-row.add .diff-mark, .diff-row.add .diff-text { color: var(--mint); }
+/* Bilinmeyen aracin argüman tablosu. */
+.card-args { margin: 0 0 6px; }
+.arg-row { display: flex; gap: 10px; margin: 0 0 3px; font: 11.5px/1.5 var(--mono); }
+.arg-row b { flex: 0 0 auto; min-width: 64px; color: var(--ice); font-weight: 600; }
+.arg-row span { flex: 1; min-width: 0; color: var(--dim); word-break: break-word; }
+/* 200+ adimda eskilerin indigi tek ozet satir. */
+.act.note.gone { color: var(--faint); box-shadow: inset 2px 0 0 #7f9ec033; }
+
+/* Hizli inme dugmesi: takip koptugunda sag altta "↓ N yeni". */
+.jump {
+  position: fixed; right: calc(var(--gut) + 6px); bottom: 130px; z-index: 7;
+  padding: 6px 13px; border: 0; border-radius: 15px; cursor: pointer;
+  background: var(--field); color: var(--ice); font: 11px var(--mono);
+  box-shadow: 0 0 0 1px #4fe3ff2e, 0 6px 18px #00000066; transition: .16s;
+}
+.jump:hover { color: var(--cyan); box-shadow: 0 0 0 1px #4fe3ff66, 0 6px 18px #00000088; }
 
 /* ---------- yazma satiri ----------
    Kenarlik yok. Alttaki isik kenarlara dogru soner: sert cizgi degil. */
@@ -983,6 +1084,59 @@ body.focus #focus.on { color: var(--cyan); }
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .route .step .hop { font: 9px var(--mono); color: var(--faint); }
+
+/* ---------- hedef paneli ----------
+   Ajanin hedef yigini (mind_goals) sohbetin sag ustunde kucuk bir kontrol
+   listesi olarak yasiyor. Goze batmamali: hedef yokken hic yok, varken
+   yari saydam duruyor ve ancak uzerine gelince tam gorunuyor (soldaki
+   hatirlama izi paneliyle ayni dil). Basliga tiklamak katlar/acar. */
+.goals {
+  position: fixed; right: var(--gut); top: 58px; z-index: 5;
+  width: max-content; max-width: min(300px, var(--aside));
+  display: flex; flex-direction: column;
+  padding: 7px 12px 8px; border-radius: 10px;
+  background: var(--panel-glass); border: 1px solid var(--edge);
+  opacity: .5; transition: opacity .2s;
+  animation: surface .3s ease-out;
+}
+.goals:hover, .goals:focus-within { opacity: 1; }
+.goals-head {
+  background: none; border: 0; padding: 0; cursor: pointer;
+  text-align: left; width: 100%;
+  font: 9.5px var(--mono); letter-spacing: .2em; text-transform: uppercase;
+  color: var(--faint); transition: color .16s;
+}
+.goals-head:hover { color: var(--dim); }
+.goals-head:focus-visible { outline: 1px solid var(--cyan); outline-offset: 3px; border-radius: 3px; }
+.goals:not(.folded) .goals-head { margin-bottom: 6px; }
+/* Uzun liste sohbeti kapatmasin: govde kendi icinde kayar. */
+.goals-body {
+  display: flex; flex-direction: column; gap: 2px;
+  max-height: 28vh; overflow-y: auto; overscroll-behavior: contain;
+}
+.goals-body::-webkit-scrollbar { width: 4px; }
+.goals-body::-webkit-scrollbar-thumb { background: #4fe3ff22; border-radius: 3px; }
+.goal-item {
+  display: flex; align-items: baseline; gap: 8px;
+  font-size: 12px; color: var(--dim); padding: 2px 0;
+  text-shadow: var(--halo);
+  transition: color .18s, opacity .25s;
+  animation: surface .25s ease-out;
+}
+.goal-item i {
+  font: 10px var(--mono); font-style: normal;
+  color: var(--cyan); min-width: 12px; opacity: .85;
+}
+.goal-item span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Biten: ustu cizili, isaret nane yesili — birkac saniye sonra listeden
+   duser (app.js GOAL_LINGER). Birakilan: soluk ve ustu cizili. */
+.goal-item.done { color: var(--faint); }
+.goal-item.done span { text-decoration: line-through; }
+.goal-item.done i { color: var(--mint); }
+.goal-item.dropped { opacity: .38; }
+.goal-item.dropped span { text-decoration: line-through; }
+.goal-item.dropped i { color: var(--faint); }
+.goal-more { font: 10px var(--mono); color: var(--faint); padding: 2px 0 0 20px; }
 
 /* ---------- ayar sayfasi ----------
    Sahnenin uzerinde yuzen bir levha. Kutu kutu bir ayar penceresi degil:
@@ -2196,3 +2350,121 @@ body.left-resize { cursor: ew-resize; user-select: none; }
   }
   .stream { max-height: 42vh; }
 }
+
+/* ============================================================
+   Artifact: kalıcı teslimat sayfaları.
+   Sohbetteki kart (yayınlandı/güncellendi) + Uygulamalar panelindeki
+   galeri. Kart bir sohbet balonu değil, adreslenebilir bir nesne:
+   sınırlı genişlik, belge simgesi, sürüm rozeti, tek eylem (Aç).
+   ============================================================ */
+
+.artifact-card {
+  display: flex; align-items: center; gap: 12px;
+  margin: 14px 0; padding: 12px 14px;
+  max-width: 540px;
+  background: var(--panel-glass);
+  border: 1px solid var(--edge);
+  border-radius: 12px;
+  cursor: pointer;
+  transition: border-color .16s, background .16s;
+}
+.artifact-card:hover { border-color: #4fe3ff55; background: var(--raise); }
+:root[data-theme="light"] .artifact-card:hover { border-color: rgba(10, 122, 156, .45); }
+.artifact-card:focus-visible { outline: 1px solid var(--cyan); outline-offset: 3px; }
+
+/* Yayın/güncelleme anı: kart bir kez nabız atar — göz habere çekilsin. */
+.artifact-card.flash { animation: art-flash 1.1s ease-out; }
+@keyframes art-flash {
+  0% { box-shadow: 0 0 0 0 var(--glow); border-color: var(--cyan); }
+  100% { box-shadow: 0 0 0 14px transparent; }
+}
+
+.art-glyph {
+  flex: 0 0 auto; width: 30px; height: 30px;
+  display: grid; place-items: center;
+  border-radius: 8px; background: #4fe3ff14; color: var(--cyan);
+}
+:root[data-theme="light"] .art-glyph { background: rgba(10, 122, 156, .1); }
+.art-glyph svg { width: 16px; height: 16px; stroke: currentColor; stroke-width: 1.2; fill: none; }
+
+.art-main { flex: 1 1 auto; min-width: 0; }
+.art-title {
+  font: 600 13.5px/1.35 var(--font); color: var(--ink);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.art-meta { display: flex; gap: 8px; align-items: baseline; margin-top: 2px; }
+.art-kind {
+  font: 8.5px var(--mono); letter-spacing: .22em; text-transform: uppercase;
+  color: var(--cyan); opacity: .85;
+}
+.art-addr {
+  font: 10px var(--mono); color: var(--faint);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
+.art-badge {
+  flex: 0 0 auto; font: 9.5px var(--mono); letter-spacing: .06em;
+  color: var(--dim); background: var(--raise);
+  padding: 3px 8px; border-radius: 999px;
+  box-shadow: inset 0 0 0 1px var(--edge);
+  transition: color .16s, background .16s;
+}
+/* Güncellenen kartın rozeti tazelenir: v2'ye çıkan sayaç mint yanar. */
+.art-badge.fresh { color: var(--mint); background: #5ce6a414; box-shadow: inset 0 0 0 1px #5ce6a433; }
+:root[data-theme="light"] .art-badge.fresh {
+  background: rgba(11, 125, 82, .1); box-shadow: inset 0 0 0 1px rgba(11, 125, 82, .3);
+}
+
+.art-open {
+  flex: 0 0 auto; font: 11px var(--font); color: var(--cyan);
+  background: #4fe3ff14; border: 0; padding: 7px 14px; border-radius: 7px;
+  cursor: pointer; box-shadow: inset 0 0 0 1px #4fe3ff2e; transition: .16s;
+}
+.art-open:hover { background: #4fe3ff22; box-shadow: inset 0 0 0 1px #4fe3ff55; }
+.art-open:focus-visible { outline: 1px solid var(--cyan); outline-offset: 2px; }
+:root[data-theme="light"] .art-open {
+  background: rgba(10, 122, 156, .09); box-shadow: inset 0 0 0 1px rgba(10, 122, 156, .25);
+}
+:root[data-theme="light"] .art-open:hover {
+  background: rgba(10, 122, 156, .15); box-shadow: inset 0 0 0 1px rgba(10, 122, 156, .45);
+}
+
+/* --- galeri: Uygulamalar panelindeki Artifact'lar bölümü --- */
+
+.apps-arts { margin: 2px 4px 12px; }
+.apps-arts .apps-group { color: var(--violet); opacity: .85; }
+
+.arts-row {
+  display: flex; align-items: center; gap: 10px;
+  margin: 2px 4px; padding: 8px 10px; border-radius: 9px;
+  cursor: pointer; transition: background .14s;
+}
+.arts-row:hover { background: var(--raise); }
+.arts-row:focus-visible { outline: 1px solid var(--cyan); outline-offset: 2px; }
+
+.arts-glyph {
+  flex: 0 0 auto; width: 24px; height: 24px;
+  display: grid; place-items: center;
+  border-radius: 6px; background: #b39cff14; color: var(--violet);
+}
+:root[data-theme="light"] .arts-glyph { background: rgba(91, 63, 196, .1); }
+.arts-glyph svg { width: 13px; height: 13px; stroke: currentColor; stroke-width: 1.2; fill: none; }
+
+.arts-main { flex: 1 1 auto; min-width: 0; }
+.arts-name {
+  font: 12px var(--font); color: var(--ice);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.arts-meta { font: 9.5px var(--mono); color: var(--faint); margin-top: 1px; }
+
+/* Satır eylemleri sönük durur, satıra gelince (ya da klavye odağında)
+   belirir — liste taranırken düğme kalabalığı olmasın. */
+.arts-btn {
+  flex: 0 0 auto; font: 10.5px var(--font); color: var(--dim);
+  background: var(--raise); border: 0; padding: 5px 10px; border-radius: 6px;
+  cursor: pointer; transition: .14s; opacity: 0;
+}
+.arts-row:hover .arts-btn, .arts-row:focus-within .arts-btn { opacity: 1; }
+.arts-btn:hover { color: var(--cyan); background: #4fe3ff14; }
+.arts-btn:focus-visible { opacity: 1; outline: 1px solid var(--cyan); outline-offset: 2px; }
+.arts-btn.danger:hover { color: var(--rose); background: rgba(214, 59, 92, .1); }

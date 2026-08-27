@@ -409,6 +409,48 @@ Dil.ekle({
   "Tanıma eğitimi açıldı": "Personal training enabled",
   "Tanıma eğitimi kapatıldı": "Personal training disabled",
   " · eğitim düzeneği bu makinede kurulu değil": " · the training rig is not installed on this machine",
+
+  // bölüm başlıkları (pane-head): sekme adı + tek cümlelik ne-işe-yarar
+  "Anahtarlar": "Keys",
+  "Bağlam": "Context",
+  "Kameralar": "Cameras",
+  "Konum": "Location",
+  "Varlıklar": "Assets",
+  "Yetenekler": "Skills",
+  "Bağlantılar": "Connectors",
+  "Posta": "Mail",
+  "Görevler": "Tasks",
+  "Yetki": "Permissions",
+  "Makine": "Machine",
+  "Dosyalar": "Files",
+  "Taşı": "Transfer",
+  "Sağlayıcı, model ve düşünme derinliği.": "Provider, model and thinking depth.",
+  "Sağlayıcı anahtarları — diske ayrı yazılır, geri okunmaz.":
+    "Provider keys — written to disk separately, never read back.",
+  "Pencere boyutu, yanıt uzunluğu ve görüntü bütçesi.":
+    "Window size, answer length and the image budget.",
+  "neo'nun sesi: açık/kapalı, ton ve karakter.":
+    "neo's voice: on/off, tone and character.",
+  "Dinleme, uyandırma sözü ve kamera girişi.":
+    "Listening, the wake word and camera input.",
+  "İzlenen kameralar — hareket görülünce modele soru gider.":
+    "Watched cameras — motion sends the model a question.",
+  "Nerede olduğun ve bilgisayar açılınca başlatma.":
+    "Where you are, and starting at boot.",
+  "neo'nun tanıdığı cihazlar ve sistemler.":
+    "The devices and systems neo knows.",
+  "neo'nun araç olarak yüklediği betikler.":
+    "The scripts neo loads as tools.",
+  "Dış araç sunucuları (MCP).": "External tool servers (MCP).",
+  "Posta okuma ve gönderme hesabı.": "The account for reading and sending mail.",
+  "Zamanlanmış işler: ne, ne zaman, en son ne oldu.":
+    "Scheduled jobs: what, when, and what happened last.",
+  "Neye izin var: kip, kurallar ve atölye sınırı.":
+    "What is allowed: mode, rules and the workshop boundary.",
+  "Eşzamanlılık, arayüz dili, tarayıcı ve dış kapı.":
+    "Concurrency, interface language, browser and the external gate.",
+  "Atölyede üretilen dosyalar.": "Files produced in the workshop.",
+  "Paketle taşı, birleştir, sıfırla.": "Bundle, merge, reset.",
 });
 
 const Settings = (() => {
@@ -452,11 +494,11 @@ const Settings = (() => {
     return node;
   };
 
-  function say(text, bad) {
+  function say(text, bad, good) {
     // Çeviri burada, tek noktada: sunucudan gelen hata eşleşmez, olduğu
     // gibi görünür; buradaki sabit metinler İngilizceye döner.
     note.textContent = t(text) || "";
-    note.className = "panel-note" + (bad ? " bad" : "");
+    note.className = "panel-note" + (bad ? " bad" : good ? " good" : "");
   }
 
   // --- açılış / kapanış -------------------------------------------------
@@ -507,6 +549,7 @@ const Settings = (() => {
     const pane = panes.transfer;
     if (!pane) return;
     pane.textContent = "";
+    head(pane, "Taşı", "Paketle taşı, birleştir, sıfırla.");
 
     pane.append(el("p", "pane-note",
       t("neo'nun burada biriktirdikleri — anılar, bağlar, hedefler, ruh, " +
@@ -596,7 +639,8 @@ const Settings = (() => {
       });
       return btn;
     };
-    const resetRow = el("div", "xfer-row");
+    // Tehlike bölgesi: sıfırlamalar görsel olarak da ayrık dursun.
+    const resetRow = el("div", "xfer-row danger-zone");
     resetRow.append(el("span", "xfer-lead", t("Sıfırla")),
                     sifirlaBtn("Anıları sıfırla", "anilar"),
                     sifirlaBtn("Beni tanımayı sıfırla", "tanima"));
@@ -646,6 +690,16 @@ const Settings = (() => {
 
   // --- alan yardımcıları ------------------------------------------------
 
+  // Bölüm başlığı: her sekmenin üstünde büyükçe ad + tek cümlelik açıklama.
+  // Sekme listesi adı zaten söylüyor ama içerik alanı başlıksız açılınca
+  // sayfa ortasından başlıyormuş gibi duruyordu.
+  function head(pane, title, desc) {
+    const box = el("div", "pane-head");
+    box.append(el("h2", "pane-title", t(title)));
+    if (desc) box.append(el("p", "pane-desc", t(desc)));
+    pane.append(box);
+  }
+
   function field(label, hint, control) {
     // Etiket ve ipucu görüntüleme anında çevriliyor: sunucudan ya da
     // değişkenden gelen metin eşleşmez ve olduğu gibi kalır.
@@ -694,6 +748,7 @@ const Settings = (() => {
   function drawModel() {
     const pane = panes.model;
     pane.textContent = "";
+    head(pane, "Model", "Sağlayıcı, model ve düşünme derinliği.");
 
     const chosen = () => patch.provider || state.provider;
     const picker = el("div", "choices");
@@ -937,6 +992,7 @@ const Settings = (() => {
   function drawKeys() {
     const pane = panes.keys;
     pane.textContent = "";
+    head(pane, "Anahtarlar", "Sağlayıcı anahtarları — diske ayrı yazılır, geri okunmaz.");
 
     const needs = state.providers.filter((p) => p.env);
     for (const entry of needs) {
@@ -966,6 +1022,7 @@ const Settings = (() => {
   function drawLimits() {
     const pane = panes.limits;
     pane.textContent = "";
+    head(pane, "Bağlam", "Pencere boyutu, yanıt uzunluğu ve görüntü bütçesi.");
 
     // Yanlış pencere ayarının belirtisi sinsi: sıkıştırma hiç tetiklenmiyor,
     // sunucu istemin başını sessizce atıyor ve model kim olduğunu unutuyor.
@@ -1086,6 +1143,7 @@ const Settings = (() => {
   function drawMail() {
     const pane = panes.mail;
     pane.textContent = "";
+    head(pane, "Posta", "Posta okuma ve gönderme hesabı.");
 
     for (const entry of state.mail) {
       const node = el("input", "input-text");
@@ -1135,6 +1193,7 @@ const Settings = (() => {
   function drawTasks(tasks) {
     const pane = panes.tasks;
     pane.textContent = "";
+    head(pane, "Görevler", "Zamanlanmış işler: ne, ne zaman, en son ne oldu.");
 
     const list = el("div", "rows");
     for (const task of tasks) {
@@ -1233,6 +1292,7 @@ const Settings = (() => {
   function drawVoice() {
     const pane = panes.voice;
     pane.textContent = "";
+    head(pane, "Ses", "neo'nun sesi: açık/kapalı, ton ve karakter.");
 
     if (!state.voice.available) {
       // Kurulu duzende pip onermek anlamsiz: paket kuruluma dahil,
@@ -1349,6 +1409,7 @@ const Settings = (() => {
   function drawHearing() {
     const pane = panes.hearing;
     pane.textContent = "";
+    head(pane, "Mikrofon", "Dinleme, uyandırma sözü ve kamera girişi.");
 
     if (!state.listen.available) {
       // Kuruluda dogru oneri sihirbazdaki bilesen — pip degil.
@@ -1468,6 +1529,7 @@ const Settings = (() => {
   function drawCameras(data) {
     const pane = panes.eyes;
     pane.textContent = "";
+    head(pane, "Kameralar", "İzlenen kameralar — hareket görülünce modele soru gider.");
 
     if (!data.available) {
       pane.append(el("p", "pane-note bad", t((state && state.installed)
@@ -1580,6 +1642,7 @@ const Settings = (() => {
   function drawDevices(data) {
     const pane = panes.devices;
     pane.textContent = "";
+    head(pane, "Varlıklar", "neo'nun tanıdığı cihazlar ve sistemler.");
 
     const list = el("div", "rows");
     for (const device of data.devices || []) list.append(deviceRow(device));
@@ -1740,6 +1803,7 @@ const Settings = (() => {
   function drawSkills(data) {
     const pane = panes.skills;
     pane.textContent = "";
+    head(pane, "Yetenekler", "neo'nun araç olarak yüklediği betikler.");
 
     if (data.error) pane.append(el("p", "pane-note bad", data.error));
 
@@ -1863,6 +1927,7 @@ const Settings = (() => {
   function drawConnectors(data) {
     const pane = panes.connectors;
     pane.textContent = "";
+    head(pane, "Bağlantılar", "Dış araç sunucuları (MCP).");
 
     for (const problem of data.problems || []) {
       pane.append(el("p", "pane-note bad", problem));
@@ -2042,6 +2107,7 @@ const Settings = (() => {
   function drawPlace() {
     const pane = panes.place;
     pane.textContent = "";
+    head(pane, "Konum", "Nerede olduğun ve bilgisayar açılınca başlatma.");
 
     pane.append(field(
       "Bulunduğun yer",
@@ -2095,6 +2161,7 @@ const Settings = (() => {
   function drawMachine() {
     const pane = panes.machine;
     pane.textContent = "";
+    head(pane, "Makine", "Eşzamanlılık, arayüz dili, tarayıcı ve dış kapı.");
 
     pane.append(field(
       "Aynı anda model isteği",
@@ -2247,6 +2314,7 @@ const Settings = (() => {
   function drawAccess() {
     const pane = panes.access;
     pane.textContent = "";
+    head(pane, "Yetki", "Neye izin var: kip, kurallar ve atölye sınırı.");
 
     const chosen = () => (patch.permissions || {}).mode ?? state.permissions.mode;
     const picker = el("div", "choices");
@@ -2304,6 +2372,7 @@ const Settings = (() => {
   async function browse(path) {
     const pane = panes.files;
     pane.textContent = "";
+    head(pane, "Dosyalar", "Atölyede üretilen dosyalar.");
     here = path;
 
     let data;
@@ -2404,7 +2473,7 @@ const Settings = (() => {
 
     state = answer.settings;
     patch = {};
-    say("Kaydedildi");
+    say("Kaydedildi", false, true);
     // Ana ekran da tazelensin: model değişti ama üst şeritte eskisi
     // yazmaya devam ediyordu.
     if (typeof loadState === "function") loadState();

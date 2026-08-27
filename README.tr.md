@@ -133,9 +133,14 @@ teslimat. Tam rapor: [docs/evaluation.tr.md](docs/evaluation.tr.md)
 
 ## Yol haritası
 
-* Daha güçlü İngilizce taban modeli (eğitim verisi bugün Türkçe ağırlıklı)
-* Daha çok duyu: sürekli dinleme ve kamera izleme var, devamı gelecek
-* Bugün birincil hedef Windows; daha geniş platform desteği sonra
+Tam ajanlık eşdeğerlik haritası için bkz. [docs/parity.md](docs/parity.md) —
+neyin piyasa standardını yakaladığı, neo'nun nerede önde olduğu
+(kullanıcısını öğrenen model, yaşayan hafıza, MCP-sunucusu-hafıza, dış kapı)
+ve nelerin bilinçle ertelendiği:
+
+* Daha derin tarayıcı kontrolü (erişilebilirlik referansları, formlar, konsol/ağ)
+* Kancalar, OS-seviyesi kabuk hapsi, oturum dökümü araması, LSP
+* Daha güçlü İngilizce taban modeli; daha geniş platform desteği (bugün Windows-öncelikli)
 
 ## Katkı
 

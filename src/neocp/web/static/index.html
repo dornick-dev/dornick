@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>neo</title>
 <link rel="stylesheet" href="/app.css">
+<link rel="stylesheet" href="/settings.css">
 <link rel="icon" type="image/png" href="/logo.png">
 <!-- Kayıtlı temayı sayfa çizilmeden uygula: yoksa koyu açılıp açığa
      "sıçrıyor" (flash). Varsayılan koyu. -->
@@ -144,6 +145,18 @@
     <h1>Ne yapmamı istersin?</h1>
     <p>Bilgisayarında çalışıyorum. Öğrendiklerim etrafımdaki ağa yazılıyor.</p>
   </div>
+</div>
+<!-- Hızlı inme: kullanıcı yukarı kaydırınca otomatik takip durur; bu düğme
+     yeni içerik sayısını gösterir ve tıklanınca en alta iner. -->
+<button id="jump" class="jump" hidden title="En alta in" aria-label="En alta in">↓</button>
+
+<!-- Hedefler: ajanın hedef yığınının (mind_goals) görünür kontrol listesi.
+     Hedef yokken hiç görünmez; başlığa tıklamak katlar/açar, biten madde
+     üstü çizilip birkaç saniye sonra listeden düşer. -->
+<div class="goals" id="goals" hidden>
+  <button class="goals-head" id="goals-head" type="button"
+          title="Tıkla — katla/aç" aria-label="Hedefler — katla/aç"></button>
+  <div class="goals-body" id="goals-body"></div>
 </div>
 
 <form class="entry" id="composer">

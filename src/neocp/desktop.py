@@ -129,6 +129,30 @@ async def _retire(client: Any) -> None:
         pass
 
 
+# Snapshot'a giren hedef sayısının tavanı. Panel zaten ilk altısını açıkta
+# gösteriyor; yüzlerce bayat hedefi her sayfa yüklemede taşımanın alemi yok.
+GOAL_SNAPSHOT_LIMIT = 20
+
+
+def _active_goals(agent: Any) -> list[dict[str, str]]:
+    """Aktif hedeflerin arayüz dökümü (id + metin).
+
+    Hedef paneli olay güdümlü (goal_push/goal_status) ama sayfa yenilenince
+    olaylar kaçmış oluyor; snapshot bu listeyle panele kaldığı yeri veriyor.
+    Zihin yoksa ya da okunamıyorsa boş liste — panel görünmez, sohbet düşmez.
+    """
+    mind = getattr(agent, "mind", None)
+    if mind is None:
+        return []
+    try:
+        return [
+            {"id": g.id, "text": g.text}
+            for g in mind.goals()[:GOAL_SNAPSHOT_LIMIT]
+        ]
+    except Exception:
+        return []
+
+
 # Kuyruğa düşen iç işaret: bir arka plan yardımcısı bitti. pump bunu
 # görünce (ajan o an boş demektir — kuyruk seri) bir sürdürme turu açar.
 # Metin değil nesne: hiçbir kullanıcı mesajıyla karışamaz.
@@ -332,6 +356,10 @@ class Bridge:
 
         if was != config.permissions.mode:
             self.hub.emit({"type": "notice", "text": f"İzin kipi: {config.permissions.mode}"})
+            # Dock çipi ve plan-onay düğmesi gerçek kipi göstersin: ayar
+            # sayfası DIŞINDAN (başka sekme, dış kapı) değişen kip de
+            # arayüze olay olarak düşmeli — notice metni makine okunur değil.
+            self.hub.emit({"type": "mode", "mode": config.permissions.mode})
 
         model_changed = before != config.model
         if model_changed or force:
@@ -427,6 +455,10 @@ class Bridge:
             # sıfırdan değil kaldığı yerden başlasın.
             "prompt_total": int((getattr(agent, "_last_usage", None) or {}).get("prompt_total") or 0) if agent else 0,
             "mode": agent.permissions.mode if agent else "",
+            # Aktif hedefler: sayfa yenilenince hedef paneli olay akışını
+            # kaçırmış oluyor; panel bu listeyle tohumlanıp kaldığı yerden
+            # sürüyor.
+            "goals": _active_goals(agent),
             "voice": bool(agent and agent.config.voice.enabled),
             # Sesin karakteri tarayıcıda uygulanıyor: sentezleyici düz bir
             # insan sesi üretiyor, katman onun üstüne biniyor.
