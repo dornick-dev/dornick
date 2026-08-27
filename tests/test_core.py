@@ -89,6 +89,31 @@ def test_system_note_needs_user_turn_first(tmp_path: Path) -> None:
     assert [m["role"] for m in s.messages()] == ["user", "system"]
 
 
+def test_resume_son_kullanilan_oturumu_aciyor(tmp_path: Path) -> None:
+    """`--resume` en son AÇILAN'ı değil en son KULLANILAN'ı sürdürmeli.
+
+    Kullanıcı geçmişten eski bir konuşmaya dönüp oradan devam ettiğinde
+    ada göre sıralama, yeniden başlatmada onu bambaşka bir konuşmaya
+    atıyordu — canlıda birebir bu yaşandı.
+    """
+    import os
+
+    eski = tmp_path / "20260827T095449Z.jsonl"   # önce açıldı, SON kullanıldı
+    yeni = tmp_path / "20260827T101349Z.jsonl"   # sonra açıldı, bırakıldı
+    for yol in (eski, yeni):
+        yol.write_text("", encoding="utf-8")
+    os.utime(yeni, (1_700_000_000, 1_700_000_000))
+    os.utime(eski, (1_700_003_600, 1_700_003_600))
+
+    oturum = Session.latest(tmp_path)
+    assert oturum is not None
+    assert oturum.id == "20260827T095449Z"
+
+    bos = tmp_path / "bos"
+    bos.mkdir()
+    assert Session.latest(bos) is None, "boş klasörde patlamamalı"
+
+
 # -- önbellek breakpoint'leri -----------------------------------------
 
 
@@ -306,6 +331,34 @@ def test_the_prompt_forbids_inventing_a_missing_premise() -> None:
     # Üç basamak: zihnine bak, kendin bul, soramıyorsan sor.
     assert "mind_recall" in builder.IDENTITY
     assert "tek cümlelik bir soru sor" in builder.IDENTITY
+
+
+def test_big_open_ended_work_must_lead_with_a_visible_plan() -> None:
+    """Kanıtlanmış atlama: 55 dakikalık bir işte ilk mesaj plansız geldi.
+
+    Kural artık öneri değil sıra kuralı: İLK yazılan şey modül planı ve
+    kabul ölçütleri; "kafandaki plan sayılmaz". Uzun koşuda anlatım ritmi
+    de bağlayıcı — her kilometre taşında kullanıcıya bir cümle durum.
+    """
+    from neocp import prompt as builder
+
+    duz = " ".join(builder.IDENTITY.split())   # satır kırılımından bağımsız
+    assert "İLK yazdığın şey modül planı ve kabul ölçütleridir" in duz
+    assert "planı yazmadan koda başlama" in duz
+    assert "kafandaki plan sayılmaz" in duz
+    # Anlatım ritmi: kullanıcı dakikalarca sessizliğe bakmamalı.
+    assert "her kilometre taşında kullanıcıya bir cümle durum yaz" in duz
+
+
+def test_the_long_run_checkpoint_also_addresses_the_user() -> None:
+    """Kontrol noktası yalnız günlüğe değil kullanıcıya da konuşturmalı:
+    55 dakikalık sessizlik yarasının ikinci yarısı."""
+    from neocp.loop import CHECKPOINT_NOTE
+
+    assert "kullanıcıya da yaz" in CHECKPOINT_NOTE
+    assert "DEVAM ET" in CHECKPOINT_NOTE
+    # Eski güvence duruyor: bitirme çağrısı değil.
+    assert "bitirme çağrısı değil" in CHECKPOINT_NOTE
 
 
 # -- eski araç yüklerinin kısaltılması ----------------------------------

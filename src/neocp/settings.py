@@ -25,7 +25,7 @@ from typing import Any
 
 from . import listen as listen_module
 from . import lmstudio
-from . import organs, ortam, startup
+from . import organs, ortam, sandbox, startup
 from . import voice as voice_module
 from .config import (
     BrowserConfig,
@@ -204,6 +204,26 @@ def export_keys(state_dir: Path) -> int:
     return loaded
 
 
+def _sandbox_snapshot(config: Config) -> dict[str, Any]:
+    """Atölye + proje durumu, ayar sayfasının çizdiği hâliyle."""
+    box = config.open_sandbox()
+    secilen = config.sandbox.project.strip()
+    # Ayarda duran yol geçersizleşmiş olabilir (klasör silinmiş, elle
+    # düzenlenmiş): sandbox onu sessizce düşürüyor, kullanıcı SEBEBİNİ
+    # burada görüyor.
+    engel = sandbox.kok_engeli(Path(secilen).expanduser()) if secilen else None
+    return {
+        **asdict(config.sandbox),
+        # Ayarda göreli bir ad durabiliyor; kullanıcının görmesi
+        # gereken çözülmüş hali.
+        "root": str(box.root),
+        "project_root": str(box.project) if box.project else "",
+        "project_error": engel or "",
+        "project_note": box.note,
+        "recent": sandbox.son_projeler(config.state_dir),
+    }
+
+
 def snapshot(config: Config) -> dict[str, Any]:
     """Ayar sayfasının çizdiği her şey. Anahtar değerleri asla girmiyor."""
     keys = load_keys(config.state_dir)
@@ -211,12 +231,7 @@ def snapshot(config: Config) -> dict[str, Any]:
         "model": asdict(config.model),
         "context": asdict(config.context),
         "permissions": asdict(config.permissions),
-        "sandbox": {
-            **asdict(config.sandbox),
-            # Ayarda göreli bir ad durabiliyor; kullanıcının görmesi
-            # gereken çözülmüş hali.
-            "root": str(config.open_sandbox().root),
-        },
+        "sandbox": _sandbox_snapshot(config),
         "voice": {**asdict(config.voice), "available": voice_module.available()},
         # Konum ve otomatik başlatma. İkisi de kapalı geliyor: biri
         # kullanıcının adresini üçüncü bir servise gönderiyor, diğeri
@@ -227,6 +242,9 @@ def snapshot(config: Config) -> dict[str, Any]:
         # Kurulu düzen mi (sihirbazla)? Arayüz eksik-özellik metnini buna
         # göre seçiyor: kuruluda pip önerilmez, sihirbaz önerilir.
         "installed": ortam.kurulu_mu(),
+        # Sahada "hangi sürüm kurulu?" sorusu cevapsızdı: Makine sekmesi
+        # salt-okunur gösteriyor, kurulu/geliştirme ayrımı installed'dan.
+        "surum": ortam.surum(),
         "hardware": {
             "microphone": organs.has_microphone(),
             "camera": organs.has_camera(),
@@ -498,6 +516,12 @@ def apply(config: Config, patch: dict[str, Any]) -> Config:
         raise ValueError("Bağlam penceresi max_tokens'tan küçük olamaz.")
     if not workshop.directory.strip():
         raise ValueError("Atölye klasörü boş olamaz.")
+    # Proje seçimi yazma iznini genişletiyor: doğrulama burada, arayüzde
+    # değil. Geçersiz bir kök (sürücü kökü, sistem klasörü) ancak ajan
+    # oraya yazmaya çalışınca patlardı ve o çok geç.
+    if (proje := workshop.project.strip()):
+        if (engel := sandbox.kok_engeli(Path(proje).expanduser())) is not None:
+            raise ValueError(engel)
 
     updated = replace(
         base,
@@ -512,6 +536,11 @@ def apply(config: Config, patch: dict[str, Any]) -> Config:
         browser=surfing,
     )
     _write_config(updated)
+
+    # Proje DEĞİŞTİYSE son projeler defterine yaz. Her kaydedişte değil:
+    # kullanıcı sesi değiştirdiğinde defterin başı karışmamalı.
+    if proje and proje != base.sandbox.project.strip():
+        sandbox.proje_hatirla(updated.state_dir, str(Path(proje).expanduser()))
 
     if keys := patch.get("keys"):
         _write_keys(config.state_dir, keys)

@@ -68,8 +68,19 @@ class Session:
 
     @classmethod
     def latest(cls, sessions_dir: Path) -> Session | None:
-        files = sorted(sessions_dir.glob("*.jsonl"))
-        return cls.resume(files[-1]) if files else None
+        """`--resume`'un sürdürdüğü oturum: en son KULLANILAN.
+
+        Ada göre sıralamak en son AÇILAN'ı veriyordu. İkisi çoğu zaman
+        aynı oturum — ama kullanıcı geçmişten eski bir konuşmaya dönüp
+        oradan devam ettiyse değil: o durumda yeniden başlatma, kullanıcıyı
+        günün ilk yarısında bıraktığı başka bir konuşmaya atıyordu.
+        Dosyaya her olayda yazıldığı için mtime "son etkinlik" demek.
+        """
+        files = list(sessions_dir.glob("*.jsonl"))
+        if not files:
+            return None
+        # Eşit mtime'da ad ikinci ölçüt: sıralama belirsiz kalmasın.
+        return cls.resume(max(files, key=lambda p: (p.stat().st_mtime, p.name)))
 
     # -- yazma ---------------------------------------------------------
 

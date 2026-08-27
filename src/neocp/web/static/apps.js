@@ -13,29 +13,136 @@
 //
 // Kaynak `/api/projects`; sınıflama sunucuda, burada yalnızca çizim var.
 
+// Bu dosyanın kullanıcıya gösterdiği metinlerin İngilizceleri. Kaynak metin
+// Türkçe kalıyor; görüntüleme noktasında t("...") ile çevriliyor.
+Dil.ekle({
+  "Aç": "Open",
+  "Başlat": "Start",
+  "Durdur": "Stop",
+  "Klasörü göster": "Show folder",
+  "Arşivle": "Archive",
+  "çalışıyor": "running",
+  "durdu": "stopped",
+  "eksik": "incomplete",
+  "web": "web",
+  "servis": "service",
+  "betik": "script",
+  "belge": "document",
+  "sistem içi": "in-app",
+  "dış": "external",
+  "belirsiz": "unsorted",
+  "Tümü": "All",
+  "Web": "Web",
+  "Servis": "Service",
+  "Betik": "Script",
+  "Belge": "Document",
+  "Sistem içi": "In-app",
+  "Dış uygulamalar": "External apps",
+  "Belirsiz": "Unsorted",
+  "Sorunlu manifestler": "Broken manifests",
+  "neo'nun içinde çalışır": "runs inside neo",
+  "kendi başına çalışır": "runs on its own",
+  "kapsamı sorulmadı — neo'ya sorabilirsin": "scope unknown — you can ask neo",
+  "yanlış yere yazılmış — uygulama sayılmadı":
+    "written in the wrong place — not counted as an app",
+  "toplu temizlik: artık kullanmadıklarını Arşivle ile kaldırabilirsin":
+    "bulk cleanup: archive the ones you no longer use",
+  "Henüz uygulama yok — neo bir şey üretince burada belirir.":
+    "No apps yet — anything neo builds will show up here.",
+  "Aramana uyan uygulama yok.": "Nothing matches your search.",
+  "Okunamadı": "Could not read",
+  "Ulaşılamadı": "Unreachable",
+  "arşivlendi (atolye/.geri-donusum içinde — geri alınabilir)":
+    "archived (in atolye/.geri-donusum — recoverable)",
+  "Arşivlenemedi — çalışıyorsa önce durdur":
+    "Could not archive — stop it first if it is running",
+  "neo (kendisi)": "neo (itself)",
+  "neo'nun kendi süreci — panelden durdurulmuyor":
+    "neo's own process — not stoppable from the panel",
+  "Açıklama yok — neo'ya sorup app.json'a yazdırabilirsin.":
+    "No description — you can ask neo to write one into app.json.",
+  "Bu uygulamanın klasörünü dosya gezgininde aç":
+    "Open this app's folder in the file explorer",
+  "Emin misin?": "Are you sure?",
+  "Açılacak giriş dosyası bulunamadı": "No entry file to open",
+});
+
 const Apps = (() => {
   const panel = document.getElementById("apps-panel");
   const body = document.getElementById("apps-body");
 
-  let loaded = false;
   const folded = new Set();   // kapalı kapsam grupları
   let all = [];               // son okunan projeler
   let procs = [];             // son okunan çalışanlar
   let query = "";             // arama metni
   let kindFilter = "";        // "" | web | service | tool | doc
+  let sorunlar = [];          // yanlış yere yazılmış manifestler
 
+  // Metin her zaman t()'den geçiyor: kaynak Türkçe, görüntü kullanıcının
+  // diline göre. (Dil eşlemede yoksa Türkçesi kalıyor — eksik çeviri göze
+  // batsın diye.)
   const el = (tag, cls, text) => {
     const node = document.createElement(tag);
     if (cls) node.className = cls;
-    if (text !== undefined) node.textContent = text;
+    if (text !== undefined) node.textContent = (typeof t === "function") ? t(text) : text;
     return node;
   };
+
+  // Panelin KENDİ stilleri panelle birlikte duruyor: rozetler, sorunlu
+  // bölümü, eylem sırası. Ana sayfa yaprağını (app.css) şişirmeden
+  // uygulamalar paneli kendi görünümünü taşıyor.
+  (function stil() {
+    if (document.getElementById("apps-ek-stil")) return;
+    const s = document.createElement("style");
+    s.id = "apps-ek-stil";
+    s.textContent = `
+/* Rozetler, neden, adres ve eylemler açıklama satırıyla AYNI hizada
+   (soldan 30px): kart tek bir sütun gibi okunsun. */
+.proj-badges {
+  display: flex; gap: 5px; align-items: center; flex-wrap: wrap;
+  margin: 0 8px 6px 30px;
+}
+.proj-name { flex: 1 1 auto; min-width: 0; }
+.proj-state {
+  font: 9px/1.5 var(--mono); letter-spacing: .04em; text-transform: uppercase;
+  padding: 1px 6px; border-radius: 999px; white-space: nowrap;
+}
+.proj-state.live { color: var(--mint); background: #5ce6a418; box-shadow: inset 0 0 0 1px #5ce6a440; }
+.proj-state.idle { color: var(--dim); background: var(--raise); }
+.proj-state.gap  { color: var(--amber); background: #ffc85718; box-shadow: inset 0 0 0 1px #ffc85740; }
+.proj-why {
+  font: 10px/1.5 var(--mono); color: var(--amber); margin: 0 8px 6px 30px;
+  overflow-wrap: anywhere;
+}
+.proj-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+.proj .proj-actions { margin: 0 8px 10px 30px; }
+.proj-view .proj-actions { margin-top: 8px; }
+.proj-addr {
+  font: 10px var(--mono); color: var(--mint); background: none; border: 0;
+  cursor: pointer; padding: 0; margin: 0 8px 6px 30px; display: block;
+  text-align: left; overflow-wrap: anywhere;
+}
+.proj-addr:hover { text-decoration: underline; }
+.apps-group-hint.tidy { color: var(--amber); }
+.apps-sorun { margin: 6px 4px 12px; }
+.apps-sorun-row {
+  padding: 7px 9px; margin: 5px 0; border-radius: 7px;
+  background: #ffc8570d; box-shadow: inset 0 0 0 1px #ffc85733;
+}
+.apps-sorun-name { font: 11px var(--mono); color: var(--amber); }
+.apps-sorun-why { font-size: 11px; color: var(--dim); margin-top: 3px; line-height: 1.5; }
+.apps-sorun-fix { font: 10px var(--mono); color: var(--faint); margin-top: 5px; line-height: 1.55; }
+.apps-proc.self .apps-proc-dot { background: var(--faint); animation: none; }
+.apps-proc-self-note { font: 9px var(--mono); color: var(--faint); flex: 0 0 auto; }
+`;
+    document.head.append(s);
+  })();
 
   // Proje türü → simge ve etiket.
   const PKIND = {
     web: { glyph: "◈", tag: "web" },
     service: { glyph: "⧉", tag: "servis" },
-    tool: { glyph: "▶", tag: "araç" },
+    tool: { glyph: "▶", tag: "betik" },
     doc: { glyph: "≡", tag: "belge" },
   };
   // Kapsam rozeti: sistem içi mi (neo'nun içinde), dış mı (kendi başına).
@@ -55,7 +162,7 @@ const Apps = (() => {
   }
   if (chips) {
     const KINDS = [["", "Tümü"], ["web", "Web"], ["service", "Servis"],
-                   ["tool", "Araç"], ["doc", "Belge"]];
+                   ["tool", "Betik"], ["doc", "Belge"]];
     for (const [key, label] of KINDS) {
       const chip = el("button", "apps-chip" + (key === "" ? " on" : ""), label);
       chip.dataset.kind = key;
@@ -85,12 +192,13 @@ const Apps = (() => {
     await drawRunning();   // çalışanlar en üstte, projelerden önce
     drawArts();            // artifact'lar: kalıcı sayfalar, katalogdan önce
     try {
-      all = (await (await fetch("/api/projects")).json()).projects || [];
+      const data = await (await fetch("/api/projects")).json();
+      all = data.projects || [];
+      sorunlar = data.sorunlar || [];
     } catch {
       body.append(el("p", "apps-blank", "Okunamadı"));
       return;
     }
-    loaded = true;
     render();
   }
 
@@ -101,10 +209,12 @@ const Apps = (() => {
     const box = el("div", "apps-catalog");
     body.append(box);
 
+    drawSorunlar(box);
+
     if (!all.length) {
-      if (!procs.length) {
+      if (!procs.length && !sorunlar.length) {
         box.append(el("p", "apps-blank",
-          "Atölye henüz boş. neo bir proje ürettiğinde burada bir kart olarak belirir."));
+          "Henüz uygulama yok — neo bir şey üretince burada belirir."));
       }
       return;
     }
@@ -130,7 +240,13 @@ const Apps = (() => {
       const head = el("div", "apps-group scope-" + (g.key || "unknown"));
       head.append(el("span", "apps-fold", isOpen ? "▾" : "▸"));
       head.append(el("span", null, g.title));
-      head.append(el("i", "apps-group-hint", g.hint));
+      // Belirsiz kutusu kalabalıklaştığında (eski denemeler, aynı işin üç
+      // kopyası) temizlik ipucu veriliyor: her kartta Arşivle var, bir
+      // tıkla .geri-donusum'a taşınıyor ve geri alınabiliyor.
+      const hint = (g.key === "" && items.length >= 8)
+        ? "toplu temizlik: artık kullanmadıklarını Arşivle ile kaldırabilirsin"
+        : g.hint;
+      head.append(el("i", "apps-group-hint" + (hint === g.hint ? "" : " tidy"), hint));
       head.append(el("b", "apps-group-count", String(items.length)));
       const groupBody = el("div", "apps-group-body");
       groupBody.hidden = !isOpen;
@@ -145,8 +261,11 @@ const Apps = (() => {
     markCards();
   }
 
-  // Bir proje kartı: ad, tür rozeti, kapsam rozeti, ana eylem
-  // (Çalıştır/Aç/Durdur) ve tıklanınca açılan proje görünümü.
+  // Bir proje kartı. Kullanıcının bir bakışta cevabını istediği dört soru,
+  // sırayla: NE (ad + tür rozeti), NE YAPAR (tek satır açıklama), NE
+  // DURUMDA (çalışıyor / durdu / eksik) ve NE YAPABİLİRİM (Aç ·
+  // Başlat/Durdur · Klasörü göster). Eskiden kartta yalnız tek bir
+  // "Çalıştır" düğmesi vardı ve durum hiç yazmıyordu.
   function projectCard(p) {
     const wrap = el("div", "proj");
     wrap.dataset.path = p.path || "";
@@ -155,53 +274,196 @@ const Apps = (() => {
     const meta = PKIND[p.kind] || PKIND.doc;
     head.append(el("span", "proj-glyph", meta.glyph));
     head.append(el("span", "proj-dot"));   // çalışıyor işareti (CSS gösterir)
-    head.append(el("span", "proj-name", p.name));
-    head.append(el("span", "proj-kind-tag " + p.kind, meta.tag));
-    const scope = SCOPE[p.scope] || SCOPE[""];
-    head.append(el("span", "proj-scope " + scope.cls, scope.label));
-
-    const act = el("button", "proj-run", runnable(p) ? "Çalıştır" : "Aç");
-    if (!runnable(p)) act.dataset.open = "1";
-    act.onclick = (ev) => {
-      ev.stopPropagation();
-      const r = runningOf(p);
-      if (r) stopProc(r); else launchProject(p);
-    };
-    head.append(act);
-
+    const name = el("span", "proj-name", p.name);
+    name.title = p.name;
+    head.append(name);
     head.onclick = () => toggleView(p, wrap);
     wrap.append(head);
+
+    // Rozetler ADIN ALTINDA, kendi satırında. Panel dar (256px): rozetleri
+    // ada yandaş dizmek adı sıfır genişliğe eziyordu — kullanıcı kartın
+    // hangi uygulama olduğunu göremiyordu.
+    const badges = el("div", "proj-badges");
+    badges.append(el("span", "proj-kind-tag " + p.kind, meta.tag));
+    // Durum rozeti: kartın en çok sorulan bilgisi. "eksik" olan uygulama
+    // listeden DÜŞMÜYOR — nedeni altında yazıyor.
+    const st = state(p);
+    badges.append(el("span", "proj-state " + st.cls, st.label));
+    const scope = SCOPE[p.scope] || SCOPE[""];
+    badges.append(el("span", "proj-scope " + scope.cls, scope.label));
+    wrap.append(badges);
     // Tek cümlelik özet: bu uygulama NE YAPAR. "Çalıştır'a bastım ama ne
     // olduğunu bilmiyorum" tam da bu satırın yokluğuydu. app.json'daki
     // `desc`ten, yoksa README/docstring ilk satırından geliyor.
     wrap.append(el("div", "proj-desc" + (p.desc ? "" : " empty"),
       p.desc || "Açıklama yok — neo'ya sorup app.json'a yazdırabilirsin."));
+    // Eksikse NEDENİ: "entry bulunamadı: static/index.html". Kullanıcı da
+    // model de neyin yanlış olduğunu okuyabilsin.
+    if (p.eksik && p.neden) wrap.append(el("p", "proj-why", p.neden));
+
+    // Canlı adres kartın üstünde: çalışan bir uygulamaya ulaşmak için
+    // kartı açmak gerekmesin.
+    const live = liveOf(p);
+    if (live && live.address) {
+      const addr = el("button", "proj-addr", live.address);
+      addr.onclick = (ev) => { ev.stopPropagation(); openLive(p, live); };
+      wrap.append(addr);
+    }
+
+    wrap.append(actionRow(p, live, "card"));
     return wrap;
+  }
+
+  // Kartın eylem sırası. Aynı satır proje görünümünde de kullanılıyor —
+  // iki yerde iki farklı düğme kümesi olması kafa karıştırıyordu.
+  function actionRow(p, live, where) {
+    const row = el("div", "proj-actions");
+    const stop = (ev) => ev.stopPropagation();
+
+    // Aç: bir adresi varsa canlı uygulamayı, yoksa giriş dosyasını.
+    if ((live && live.address) || p.entry) {
+      const open = el("button", "proj-btn primary", "Aç");
+      open.onclick = (ev) => { stop(ev); openApp(p, live); };
+      row.append(open);
+    }
+    // Başlat / Durdur: aynı yerde tek düğme — durumu ne ise onu sunar.
+    if (live && live.stoppable !== false) {
+      const st = el("button", "proj-btn danger", "Durdur");
+      st.onclick = (ev) => { stop(ev); stopProc(live); };
+      row.append(st);
+    } else if (!live && runnable(p)) {
+      const st = el("button", "proj-btn", "Başlat");
+      st.onclick = (ev) => { stop(ev); launchProject(p); };
+      row.append(st);
+    }
+    // Klasörü göster: "nerede bu şey?" — kartta yol yazıyordu ama diskte
+    // bulmak kullanıcının işiydi.
+    const show = el("button", "proj-btn", "Klasörü göster");
+    show.title = t("Bu uygulamanın klasörünü dosya gezgininde aç");
+    show.onclick = async (ev) => {
+      stop(ev);
+      let res;
+      try {
+        res = await (await fetch("/api/apps/reveal", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ path: p.path || p.entry }),
+        })).json();
+      } catch { res = { ok: false, error: t("Ulaşılamadı") }; }
+      if (!res.ok) toast(res.error || t("Ulaşılamadı"));
+    };
+    row.append(show);
+
+    // Arşivle yalnız kartta (proje görünümünde ayrıntılı "Sil" duruyor):
+    // kapsamı belirsiz kalabalığı tek tıkla toparlamak için.
+    if (where === "card" && !(p.scope || "")) {
+      const arch = el("button", "proj-btn", "Arşivle");
+      arch.onclick = (ev) => { stop(ev); archive(p, arch); };
+      row.append(arch);
+    }
+    return row;
+  }
+
+  // Durum rozeti. Üç hal, üç renk: canlı (yeşil), durdu (gri), eksik (amber).
+  function state(p) {
+    if (liveOf(p)) return { cls: "live", label: "çalışıyor" };
+    if (p.eksik) return { cls: "gap", label: "eksik" };
+    return { cls: "idle", label: "durdu" };
   }
 
   const runnable = (p) => !!(p.run || p.kind === "service" || p.kind === "tool");
 
-  // Bu projenin çalışan bir süreci var mı? (süreç defteri proje yolunu
-  // ya da giriş dosyasını taşıyor olabilir — ikisine de bakılıyor)
-  function runningOf(p) {
-    return procs.find((r) =>
-      r.path === p.path || (p.entry && r.path === p.entry)) || null;
+  // Bu projenin çalışan bir süreci var mı? İki kaynak: (1) çalışanlar
+  // listesi (süreç defteri), (2) sunucunun kartın kendisine iliştirdiği
+  // canlı bilgisi — neo yeniden başlatılmışsa süreç defterde yoktur ama
+  // uygulama portunu dinlemeye devam eder.
+  function liveOf(p) {
+    const r = procs.find((q) =>
+      q.path === p.path || (p.entry && q.path === p.entry));
+    if (r) return r;
+    if (p.address) {
+      return { pid: p.pid, name: p.name, path: p.path,
+               address: p.address, stoppable: p.stoppable !== false };
+    }
+    return null;
   }
 
-  // Kartlardaki canlı durumu tazeler: yeşil nokta + Durdur düğmesi.
+  // Kartlardaki canlı durumu tazeler: yeşil nokta + durum rozeti + eylem.
   // Kartları baştan çizmek yerine yerinde işaretleniyor — açık proje
   // görünümü ve arama odağı bozulmasın.
   function markCards() {
     body.querySelectorAll(".proj").forEach((w) => {
-      const r = procs.find((q) =>
-        q.path === w.dataset.path || (w.dataset.entry && q.path === w.dataset.entry));
+      const p = all.find((q) => (q.path || "") === w.dataset.path);
+      const r = p ? liveOf(p) : procs.find((q) => q.path === w.dataset.path);
       w.classList.toggle("running", !!r);
-      const act = w.querySelector(".proj-run");
-      if (act) {
-        act.textContent = r ? "Durdur" : (act.dataset.open === "1" ? "Aç" : "Çalıştır");
-        act.classList.toggle("stop", !!r);
+      const badge = w.querySelector(".proj-state");
+      if (badge && p) {
+        const st = state(p);
+        badge.className = "proj-state " + st.cls;
+        badge.textContent = t(st.label);
       }
     });
+  }
+
+  // "Aç": çalışan bir uygulama varsa CANLI adresi (kapsülde), yoksa giriş
+  // dosyası (görüntüleyici). Kullanıcı için ikisi de "aç" — hangi yolun
+  // seçileceği panelin işi.
+  function openApp(p, live) {
+    if (live && live.address) { openLive(p, live); return; }
+    if (typeof Viewer !== "undefined" && p.entry) { Viewer.present(p.entry); close(); return; }
+    toast(p.name + ": " + (p.neden || t("Açılacak giriş dosyası bulunamadı")));
+  }
+
+  function openLive(p, live) {
+    if (typeof Capsule !== "undefined") {
+      Capsule.open({ name: p.name, pid: live.pid, address: live.address,
+                     started: live.started });
+      close();
+    } else window.open(live.address, "_blank", "noopener");
+  }
+
+  // Arşivle: .geri-donusum'a taşır (kalıcı silmez). İki adımlı onay —
+  // yanlış tık bir projeyi götürmesin.
+  async function archive(p, btn) {
+    if (!btn.dataset.armed) {
+      btn.dataset.armed = "1";
+      btn.textContent = t("Emin misin?");
+      setTimeout(() => { delete btn.dataset.armed; btn.textContent = t("Arşivle"); }, 3500);
+      return;
+    }
+    let res;
+    try {
+      res = await (await fetch("/api/apps/remove", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ path: p.path }),
+      })).json();
+    } catch { res = { ok: false, error: t("Ulaşılamadı") }; }
+    if (res.ok) {
+      toast(p.name + " " + t("arşivlendi (atolye/.geri-donusum içinde — geri alınabilir)"));
+      load();
+    } else {
+      toast(res.error || t("Arşivlenemedi — çalışıyorsa önce durdur"));
+    }
+  }
+
+  // Yanlış yere yazılmış manifestler. Sessizce yok saymak modeli de
+  // kullanıcıyı da karanlıkta bırakıyordu ("uygulamayı yaptım ama panelde
+  // yok"): burada NEDENİYLE ve DOĞRUSUYLA duruyorlar.
+  function drawSorunlar(box) {
+    if (!sorunlar.length) return;
+    const sec = el("div", "apps-sorun");
+    const head = el("div", "apps-group");
+    head.append(el("span", null, "Sorunlu manifestler"));
+    head.append(el("i", "apps-group-hint", "yanlış yere yazılmış — uygulama sayılmadı"));
+    head.append(el("b", "apps-group-count", String(sorunlar.length)));
+    sec.append(head);
+    for (const s of sorunlar) {
+      const row = el("div", "apps-sorun-row");
+      row.append(el("div", "apps-sorun-name", "atolye/" + s.path));
+      row.append(el("div", "apps-sorun-why", s.uyari || ""));
+      if (s.ogretici) row.append(el("div", "apps-sorun-fix", s.ogretici));
+      sec.append(row);
+    }
+    box.append(sec);
   }
 
   // Proje görünümü: README/nasıl-çalıştır + eylemler + canlı durum.
@@ -213,23 +475,20 @@ const Apps = (() => {
     const view = el("div", "proj-view");
 
     // Canlı durum: çalışıyorsa adresi ve süresi burada da görünsün.
-    const r = runningOf(p);
+    const r = liveOf(p);
     if (r) {
       const live = el("div", "proj-live");
       live.append(el("span", "apps-proc-dot"));
       live.append(el("span", null, "Çalışıyor" + (r.pid ? " · PID " + r.pid : "")));
       if (r.address) {
         const link = el("button", "apps-proc-addr", r.address);
-        link.onclick = () => {
-          if (typeof Capsule !== "undefined") {
-            Capsule.open({ name: p.name, pid: r.pid, address: r.address, started: r.started });
-            close();
-          } else window.open(r.address, "_blank", "noopener");
-        };
+        link.onclick = () => openLive(p, r);
         live.append(link);
       }
       view.append(live);
     }
+    // Eksik manifestin nedeni burada da: "entry bulunamadı: static/index.html".
+    if (p.eksik && p.neden) view.append(el("p", "proj-why", p.neden));
 
     // Nasıl çalıştırılır (README). Markdown varsa render, yoksa düz metin.
     if (p.howto) {
@@ -248,16 +507,9 @@ const Apps = (() => {
     view.append(el("p", "proj-path", rel.startsWith("atolye") ? rel : "atolye/" + rel));
     if (p.run) view.append(el("p", "proj-cmd", "» " + p.run));
 
-    const row = el("div", "proj-actions");
-    if (r) {
-      const stopBtn = el("button", "proj-btn danger", "Durdur");
-      stopBtn.onclick = () => stopProc(r);
-      row.append(stopBtn);
-    } else {
-      const run = el("button", "proj-btn primary", runnable(p) ? "Çalıştır" : "Aç");
-      run.onclick = () => launchProject(p);
-      row.append(run);
-    }
+    // Aç · Başlat/Durdur · Klasörü göster — kartla AYNI sıra: aynı işin
+    // iki yerde iki farklı düğme kümesi olması kafa karıştırıyordu.
+    const row = actionRow(p, r, "view");
 
     // Sistem dışında aç: statik bir web sayfası server'sız, gerçek tarayıcıda
     // dosyadan tam çalışır — "içeride açıyor ama tarayıcıda da istiyorum".
@@ -527,12 +779,22 @@ const Apps = (() => {
     const sec = el("div", "apps-running");
     sec.append(el("div", "apps-group", "Çalışıyor"));
     for (const p of procs) {
-      const r = el("div", "apps-proc");
+      // neo'nun KENDİ kopyası (model `neocp --web ...` çalıştırdıysa):
+      // görünür ama "uygulaman" gibi değil — ayrı ad, sönük nokta,
+      // Durdur yok. Gizlemek de yanlış olurdu; kullanıcı orada bir şey
+      // çalıştığını bilmeli.
+      const r = el("div", "apps-proc" + (p.self ? " self" : ""));
       r.append(el("span", "apps-proc-dot"));
-      const name = el("span", "apps-proc-name", p.name);
+      const name = el("span", "apps-proc-name", p.self ? t("neo (kendisi)") : p.name);
       name.title = (p.run || p.path || "") + (p.started ? " · " + mmss(p.started) : "");
       r.append(name);
       r.append(el("span", "apps-proc-time", mmss(p.started)));
+      if (p.self) {
+        r.append(el("i", "apps-proc-self-note",
+          "neo'nun kendi süreci — panelden durdurulmuyor"));
+        sec.append(r);
+        continue;
+      }
       if (p.address) {
         // Canlı sunucu: sistem içinde kapsülde aç (neo'nun içinde). Kapsülün
         // kendi "dışarıda aç" düğmesi ayrı sekme isteyene duruyor.
@@ -594,7 +856,12 @@ const Apps = (() => {
       if (typeof History !== "undefined") History.close();  // iki sol panel çakışmasın
       panel.hidden = false;
       document.body.classList.add("apps-open");
-      if (!loaded) load(); else { render(); drawRunning(); drawArts(); }
+      // HER açılışta yeniden okunuyor. Eskiden ilk açılıştan sonra yalnız
+      // önbellek çiziliyordu: neo bir uygulamayı panel açıldıktan SONRA
+      // ürettiyse (ya da manifestini sonradan yazdıysa) kullanıcı elle
+      // "yenile"ye basana kadar eski listeyi görüyordu — "yaptığı uygulama
+      // panelde görünmedi" şikâyetinin doğrudan sebebi buydu.
+      load();
       // Çalışanları panel açıkken canlı tut (canlı adres gecikmeli belirir,
       // süreç kendi kendine bitebilir). Kapanınca yoklamayı durduruyoruz.
       clearInterval(pollTimer);

@@ -27,17 +27,22 @@ param(
     [switch]$AtlaDerleme,
     # Paket sürümü. Boş bırakılırsa pyproject.toml'daki version okunur —
     # sürüm tek yerden yönetilir, iss'e /DSurum ile geçer.
-    [string]$Surum = ""
+    [string]$Surum = "",
+    # Eğitim düzeneğinin kaynağı. Varsayılan geliştirme makinesinin yolu;
+    # depoyu klonlayan biri kendi yolunu verebilir. Yol yoksa betik
+    # PATLAMIYOR, eğitim bileşenini atlayıp söylüyor — "kurulum paketi
+    # üretemedim" demek, kullanıcının istemediği bir bileşen yüzünden
+    # orantısız.
+    [string]$TabanDepo = "D:\Projects\ai\neocp-base-model"
 )
 
 $ErrorActionPreference = "Stop"
 
 # -- yollar -------------------------------------------------------------------
-$Kok      = Split-Path -Parent $PSScriptRoot          # depo kökü
+$Kok      = Split-Path -Parent $PSScriptRoot          # neocp deposu
 $Cikti    = Join-Path $PSScriptRoot "dist"
 $Indirme  = Join-Path $Cikti "indirme"                # arşivler burada önbelleklenir
 $Paket    = Join-Path $Cikti "paket"                  # kurulacak ağacın birebir kopyası
-$TabanDepo = Join-Path $Kok "training"                # eğitim düzeneği depo içinde
 
 if (-not $Surum) {
     $eslesme = Select-String -Path (Join-Path $Kok "pyproject.toml") -Pattern '^version\s*=\s*"([^"]+)"'
@@ -96,7 +101,7 @@ $pth = Join-Path $PyDizin "python311._pth"
     ".",
     "Lib\site-packages",
     "..\src",
-    "..\training\site",
+    "..\egitim\sitepaket",
     "..\listen\site",
     "..\watch\site",
     "import site"
@@ -119,23 +124,35 @@ if ($LASTEXITCODE -ne 0) { throw "pip install başarısız" }
 # -- 3) uygulama kaynağı ------------------------------------------------------
 Adim "Kaynak kopyalanıyor (src/neocp + varlıklar)"
 Kopyala (Join-Path $Kok "src\neocp") (Join-Path $Paket "src\neocp") @("__pycache__")
+# Sürümün tek gerçek kaynağı pyproject.toml; ortam.surum() çalışma zamanında
+# paket kökünden okur — kurulu ağaç da depo gibi kökünde taşımalı.
+Copy-Item (Join-Path $Kok "pyproject.toml") $Paket
 
 # -- 4) eğitim bileşeni (isteğe bağlı) ---------------------------------------
+if (-not $AtlaTorch -and -not (Test-Path $TabanDepo)) {
+    # Depoyu klonlayan biri bu yolu taşımıyor. Patlamak yerine bileşeni
+    # atlıyoruz: kullanıcı "kurulum paketi üretemedim" değil, "eğitim
+    # bileşeni pakete girmedi, sebebi şu" duymalı.
+    Write-Host ("`nEğitim deposu bulunamadı: {0}" -f $TabanDepo) -ForegroundColor Yellow
+    Write-Host "Eğitim bileşeni (Beni tanı) pakete girmeyecek."
+    Write-Host "Kendi yolunu vermek için: -TabanDepo <yol>   ·   bilerek atlamak için: -AtlaTorch"
+    $AtlaTorch = $true
+}
+
 if (-not $AtlaTorch) {
     Adim "Eğitim düzeneği kopyalanıyor ($TabanDepo)"
-    if (-not (Test-Path $TabanDepo)) { throw "Eğitim düzeneği yok: $TabanDepo" }
-    $Egitim = Join-Path $Paket "training"
+    $Egitim = Join-Path $Paket "egitim"
 
-    Kopyala (Join-Path $TabanDepo "scripts") (Join-Path $Egitim "scripts") @("__pycache__")
-    Kopyala (Join-Path $TabanDepo "model")   (Join-Path $Egitim "model")   @("__pycache__")
-    # teacher.py yedek öğretmen içindir; .env BİLEREK paket dışı —
+    Kopyala (Join-Path $TabanDepo "betikler") (Join-Path $Egitim "betikler") @("__pycache__")
+    Kopyala (Join-Path $TabanDepo "model")    (Join-Path $Egitim "model")    @("__pycache__")
+    # ayarlar.py yedek öğretmen içindir; anahtar.env BİLEREK paket dışı —
     # anahtarsız yedek sessizce devre dışı kalır, seçili model yeter.
-    Copy-Item (Join-Path $TabanDepo "teacher.py") $Egitim
-    New-Item -ItemType Directory -Force (Join-Path $Egitim "checkpoints") | Out-Null
-    New-Item -ItemType Directory -Force (Join-Path $Egitim "data")        | Out-Null
-    Copy-Item (Join-Path $TabanDepo "checkpoints\base.pt")  (Join-Path $Egitim "checkpoints")
-    Copy-Item (Join-Path $TabanDepo "data\corpus.jsonl")    (Join-Path $Egitim "data")
-    Copy-Item (Join-Path $TabanDepo "data\corpus_en.jsonl") (Join-Path $Egitim "data")
+    Copy-Item (Join-Path $TabanDepo "ayarlar.py") $Egitim
+    New-Item -ItemType Directory -Force (Join-Path $Egitim "out")  | Out-Null
+    New-Item -ItemType Directory -Force (Join-Path $Egitim "veri") | Out-Null
+    Copy-Item (Join-Path $TabanDepo "out\eniyi.pt") (Join-Path $Egitim "out")
+    Copy-Item (Join-Path $TabanDepo "veri\korpus.jsonl")    (Join-Path $Egitim "veri")
+    Copy-Item (Join-Path $TabanDepo "veri\korpus_en.jsonl") (Join-Path $Egitim "veri")
 
     # Sınav kapısının TR ölçütü: ürünün kendi kıyaslama düzeneği.
     $Eval = Join-Path $Paket "eval\context_memory"
@@ -145,7 +162,7 @@ if (-not $AtlaTorch) {
 
     Adim "Torch (CPU) eğitim bileşenine kuruluyor"
     & $PyExe -m pip install --no-warn-script-location `
-        --target (Join-Path $Egitim "site") `
+        --target (Join-Path $Egitim "sitepaket") `
         --index-url "https://download.pytorch.org/whl/cpu" torch
     if ($LASTEXITCODE -ne 0) { throw "torch kurulamadı" }
 }
@@ -213,7 +230,7 @@ if (-not $iscc) {
     exit 2
 }
 
-Adim "Sihirbaz derleniyor ($iscc)"
+Adim "Sihirbaz derleniyor ($iscc, sürüm $Surum)"
 & $iscc "/DSurum=$Surum" (Join-Path $PSScriptRoot "neo.iss")
 if ($LASTEXITCODE -ne 0) { throw "iscc başarısız" }
 

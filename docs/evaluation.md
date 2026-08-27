@@ -74,6 +74,90 @@ until a Claude-family model was actually selected. Fixed in
 user notes, valid for every provider) with a regression test. Evaluations
 that exercise real paths find real bugs.
 
+## Part two: the automated rig (2026-08-27)
+
+The matrix above was graded by hand, which does not scale and cannot be
+re-run after a change. So it was turned into a rig that lives in the repo:
+[`eval/coding/`](../eval/coding/README.md). Nine tasks across easy/medium/hard
+in Python, Node and PHP; each runs in its own temp workspace with **an empty
+mind** and its own neo instance, driven through the gate. The grader then
+enters the workshop and **executes the code** — imports the module, starts the
+server, POSTs to the endpoint, logs in to the panel.
+
+Two rules keep the number honest:
+
+- **An axis that could not be measured leaves the denominator** — otherwise
+  "I couldn't measure it" and "it failed" collapse to the same score.
+- **No `works` axis, no score at all.** This rule came from a bug: a task
+  scored 100.0 while both load-bearing axes were unmeasured.
+
+### Baseline — `minimax/minimax-m2.7`, all 9 tasks
+
+| Task | Difficulty | Works (40) | Coverage (25) | Health (20) | Tests (15) | **Score** |
+|---|---|---|---|---|---|---|
+| k1-modul | easy/py | 40.0 | 15.0 | 20.0 | 9.0 | **84.0** |
+| k2-cli | easy/node | 40.0 | 25.0 | 20.0 | — | **100.0** |
+| k3-tamir | easy/php | 40.0 | 25.0 | 20.0 | — | **100.0** |
+| o1-rapor | med/py | 40.0 | 25.0 | 20.0 | — | **100.0** |
+| o2-servis | med/py | 40.0 | 25.0 | 18.7 | 9.0 | **92.7** |
+| o3-ozellik | med/node | 40.0 | 25.0 | 20.0 | — | **100.0** |
+| z1-arama | hard/py | 25.0 | 7.0 | 20.0 | 15.0 | **67.0** |
+| z2-panel | hard/php | 40.0 | 20.0 | 14.0 | — | **87.1** |
+| z3-gizli-hata | hard/py | 40.0 | 25.0 | 20.0 | — | **100.0** |
+
+**Average 92.3/100.** (`—` = the prompt didn't ask for tests: measured,
+reported, excluded from the score.)
+
+### What the behavioural columns say — and they say more than the score
+
+The rig also records non-scoring behaviour, and this is where the real gaps are.
+
+**1. Green tests are not a working product.** `z1-arama` is the sharpest result
+in the whole set. The agent shipped 14 tests, all passing, 18 assertions, none
+of them free — and code health 20/20. And the CLI the prompt actually asked
+for does not work: `py ara.py bul "salmastra"` prints its own usage line and
+exits 1, for every query. The tests covered the internal functions; nothing
+ever exercised the entry point a user would type. The agent verified itself
+and was satisfied.
+
+This one matters because it survives the obvious fix. A gate that refuses to
+finish on a red suite does nothing here — the suite was green. The only thing
+that catches it is running the delivered thing the way the user will run it,
+which is exactly what the grader does and the agent didn't.
+
+**2. Three of nine turns never finished.** `o2-servis`, `z1-arama` and
+`z3-gizli-hata` all hit the 900-second ceiling; their scores measure whatever
+was lying in the workshop when the clock ran out, so they are biased downward.
+All three are the medium/hard end — the agent does not converge on hard work
+inside fifteen minutes.
+
+**3. Red tests shipped twice, and a plan never once.** `k1-modul` delivered a
+module rejecting all five valid inputs while its own suite showed `FFFFF`;
+`o2-servis` delivered with one of eight failing. In both, the agent ran the
+suite, saw red, and said done. And across all nine tasks, a plan was written
+**zero** times — the system prompt asks for one on multi-file work, and
+prompt-level advice did not survive contact with a single task.
+
+Also worth naming: `z2-panel` shipped 31% duplicated lines across 38 repeated
+blocks, and one of its four pages silently falls back to the login form after a
+*successful* login — a "does it return 200?" check would have called it green.
+And 39 malformed tool calls across the nine tasks, roughly a tenth of all calls.
+
+Finding 3 is why the following wave converted prompt advice into harness
+reflexes: a plan step the loop performs rather than requests, and a done-gate
+that refuses to close a turn on a red suite. The table above is the **before**
+measurement, kept deliberately so the after has something to be compared
+against. Finding 1 is not yet addressed and is the most valuable open problem
+in this file.
+
+### Honesty about this rig
+
+Single run per task, so ±5 points is noise; only a >15-point move means
+anything. Each run starts from an empty mind, so this measures the coding
+pipeline — **not** what memory contributes to coding. Rows are marked `†` in
+the generated report when they were inherited from an earlier run the same day;
+all rows come from the same build.
+
 ## Honesty notes
 
 - Single run per cell, single grader; treat ±2 points as noise. Bare-fable's

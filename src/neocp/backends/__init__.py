@@ -33,6 +33,22 @@ PROVIDERS = ("anthropic", "openai")
 
 
 def build_client(model: ModelConfig) -> Backend:
+    """Yapılandırmaya göre istemci kurar.
+
+    Yedek model tanımlıysa asıl istemci bir sarmalayıcının içine giriyor:
+    asıl model kalıcı olarak susarsa (kredi bitti, kimlik geçersiz) tur
+    ölmek yerine yedekle sürüyor. Döngü farkı görmüyor — gördüğü şey yine
+    tek bir `Backend`.
+    """
+    if (model.fallback_model or "").strip() and model.fallback_model != model.name:
+        from .fallback import FallbackBackend
+
+        return FallbackBackend(model, _plain_client)
+
+    return _plain_client(model)
+
+
+def _plain_client(model: ModelConfig) -> Backend:
     if model.provider == "anthropic":
         from .anthropic_backend import AnthropicBackend
 

@@ -119,6 +119,15 @@ class ToolSpec:
     handler: Handler
     # Sistem durumunu değiştiriyor mu? İzin motoru buna bakar.
     mutates: bool = False
+    # `mutates` olsa bile onay GEREKTİRMEYEN eylemler (`action` alanı).
+    #
+    # Kanıtlanmış yara: ajanın KENDİ defterine yazması (`mind_memory
+    # save`) mutasyon sayılıyordu. Sonuç: her hatıra için kullanıcıya onay
+    # penceresi, plan kipinde ise düpedüz RET. Zihin iki gün boyunca
+    # hiçbir tercih/ders/olgu kaydetmedi — konuşma dökümü akmaya devam
+    # ederken kalıcı bellek durdu. Kendi not defterine yazmak bir sistem
+    # mutasyonu değil; SİLMEK (forget) hâlâ öyle ve gated kalıyor.
+    safe_actions: tuple[str, ...] = ()
     # Aynı turda diğer araçlarla eşzamanlı çalışabilir mi?
     parallel_safe: bool = True
     # Hangi MCP sunucusundan geldi (yerel araçlar için None).
@@ -173,6 +182,7 @@ class ToolRegistry:
         *,
         mutates: bool = False,
         parallel_safe: bool = True,
+        safe_actions: tuple[str, ...] = (),
     ) -> Callable[[Handler], Handler]:
         def decorate(fn: Handler) -> Handler:
             self.register(
@@ -183,6 +193,7 @@ class ToolRegistry:
                     handler=fn,
                     mutates=mutates,
                     parallel_safe=parallel_safe,
+                    safe_actions=safe_actions,
                 )
             )
             return fn
@@ -231,6 +242,107 @@ def object_schema(
         "properties": properties,
         "required": required or [],
     }
+
+
+# -- şema doğrulaması ---------------------------------------------------
+#
+# Kanıtlanmış zincir: model `write_file`'ı `path` olmadan çağırdı → araç
+# içinde `args["path"]` patladı → modele HAM `KeyError: 'path'` gitti →
+# model bunu "araç bozuk" sanıp gerçek çağrı yerine çağrı XML'ini düz metin
+# yazdı → kullanıcı ekranında ham XML.
+#
+# Zincirin ilk halkası burada kırılıyor: handler ÇAĞRILMADAN önce çağrı
+# şemaya vuruluyor ve uymuyorsa modele istisna değil YÖNERGE dönüyor —
+# hangi alan eksik, ne verdin, şema ne. Tek merkezden: her araç için aynı
+# güvence, tek tek araçlara yama gerekmiyor.
+
+# JSON Schema tipleri → Python karşılıkları. `number` int'i de kabul eder
+# (JSON'da 1 hem integer hem number); `bool` int'in alt sınıfı olduğu için
+# sayı kontrollerinde ayrıca eleniyor.
+_JSON_TIPLERI: dict[str, tuple[type, ...]] = {
+    "string": (str,),
+    "number": (int, float),
+    "integer": (int,),
+    "boolean": (bool,),
+    "array": (list,),
+    "object": (dict,),
+}
+
+
+def _tip_uyar(deger: Any, tip: str) -> bool:
+    beklenen = _JSON_TIPLERI.get(tip)
+    if beklenen is None:
+        return True   # tanımadığımız tip: karışma
+    if tip in ("number", "integer") and isinstance(deger, bool):
+        return False  # True bir sayı değil; model karıştırdıysa söylensin
+    return isinstance(deger, beklenen)
+
+
+def _sema_ozeti(schema: dict[str, Any], limit: int = 6) -> str:
+    """Şemanın tek satırlık hali: "path (string, zorunlu), text (string)".
+
+    Modelin şemayı zaten görmüş olması yetmiyor — hatanın yanında tekrar
+    görmek düzeltmeyi aynı turda mümkün kılıyor.
+    """
+    props = schema.get("properties")
+    if not isinstance(props, dict):
+        return ""
+    zorunlu = set(schema.get("required") or [])
+    parcalar: list[str] = []
+    for ad, tanim in list(props.items())[:limit]:
+        tip = (tanim or {}).get("type", "any") if isinstance(tanim, dict) else "any"
+        etiket = f"{ad} ({tip}"
+        if ad in zorunlu:
+            etiket += ", zorunlu"
+        parcalar.append(etiket + ")")
+    if len(props) > limit:
+        parcalar.append("…")
+    return ", ".join(parcalar)
+
+
+def sema_ihlali(spec: ToolSpec, args: dict[str, Any]) -> str | None:
+    """Çağrı şemaya uyuyor mu? Uyuyorsa None, uymuyorsa öğretici mesaj.
+
+    Yalnızca modelin gerçekten düzeltebileceği üç ihlale bakılıyor: eksik
+    zorunlu alan, yanlış tip, enum dışı değer. Fazladan alan hata değil —
+    bir çağrıyı fazladan alan yüzünden reddetmek, çalışan aracı bozardı.
+    """
+    schema = spec.input_schema or {}
+    props = schema.get("properties")
+    if not isinstance(props, dict):
+        return None
+    ozet = _sema_ozeti(schema)
+    kuyruk = f" Şema: {ozet}." if ozet else ""
+    verilen = ", ".join(args) or "hiçbiri"
+
+    eksik = [ad for ad in (schema.get("required") or []) if ad not in args]
+    if eksik:
+        alanlar = ", ".join(f"`{ad}`" for ad in eksik)
+        cogul = "alanları zorunlu" if len(eksik) > 1 else "alanı zorunlu"
+        return (
+            f"'{spec.name}' çağrın eksik: {alanlar} {cogul}. "
+            f"Verdiğin alanlar: {verilen}.{kuyruk} "
+            "Aracı bu alanları ekleyerek yeniden çağır."
+        )
+
+    for ad, deger in args.items():
+        tanim = props.get(ad)
+        if not isinstance(tanim, dict):
+            continue
+        if (secenekler := tanim.get("enum")) and deger not in secenekler:
+            gecerli = ", ".join(str(s) for s in secenekler)
+            return (
+                f"'{spec.name}' çağrısında `{ad}` için geçerli değerler: "
+                f"{gecerli}. Sen {deger!r} verdin. Birini seçip yeniden çağır."
+            )
+        tip = tanim.get("type")
+        if isinstance(tip, str) and not _tip_uyar(deger, tip):
+            return (
+                f"'{spec.name}' çağrısında `{ad}` alanı {tip} olmalı; sen "
+                f"{type(deger).__name__} verdin.{kuyruk} "
+                "Değeri doğru tipte verip yeniden çağır."
+            )
+    return None
 
 
 def _first_paragraph(text: str, limit: int = 220) -> str:

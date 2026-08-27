@@ -9,6 +9,42 @@
 
 // TR→EN çeviriler (dil.js): kaynak metin Türkçe kalır, İngilizce görüntüde gelir.
 Dil.ekle({
+  // proje kipi
+  "Çalışılan proje": "Working project",
+  "boş — yalnızca atölye": "empty — workshop only",
+  "Klasör seç…": "Choose a folder…",
+  "Bu klasörü seç": "Use this folder",
+  "Son projeler": "Recent projects",
+  "yukarı": "up",
+  "Bu bilgisayar": "This computer",
+  "Alt klasör yok": "No subfolders",
+  " dosya": " files",
+  " klasör": " folders",
+  "Proje seçilmedi — yazma yalnızca atölyede serbest.":
+    "No project selected — writing is allowed only in the workshop.",
+  "Kaydedince burada çalışmaya başlayacağım.":
+    "Once you save, I'll start working here.",
+  "Şu an burada çalışıyorum; yazma izni bu klasörde geçerli.":
+    "I'm working here now; write access applies to this folder.",
+  "Kendi kodunda çalışmamı istediğin klasör. Seçmek bir ONAYDIR: orası yazılabilir olur. Atölye ayrıca durmaya devam eder — neo'nun kendi işleri oraya gider. Proje değiştirmek konuşmayı, anıları ve oturum geçmişini ETKİLEMEZ; yalnızca nerede çalışıldığını değiştirir.":
+    "The folder where you want me to work on your own code. Choosing it is "
+    + "an APPROVAL: that folder becomes writable. The workshop stays as it "
+    + "is — neo's own work still goes there. Switching projects does NOT "
+    + "affect the conversation, memories or session history; it only changes "
+    + "where the work happens.",
+  "neo'nun KENDİ alanı — kendi işleri, denemeleri buraya. Şu an: ":
+    "neo's OWN area — its own work and experiments go here. Now: ",
+  // yedek model
+  "Yedek model": "Fallback model",
+  "boş — yedek yok": "empty — no fallback",
+  // Anahtar TEK parça olmalı: nesne anahtarı bir ifade olamaz ("a" + "b"
+  // sözdizimi hatası) ve dosyanın tamamı yüklenmezdi. Kaynak metin
+  // `field()` çağrısında birleştiriliyor; buradaki anahtar onun birleşmiş
+  // hâliyle birebir aynı olmak zorunda.
+  "Asıl model kalıcı olarak yanıt vermezse (kredi bitti, kimlik geçersiz) tur burada sürer ve sohbete tek satır düşer. Geçici hatalar zaten yeniden deneniyor — yedeğe düşmezler.":
+    "If the main model fails permanently (out of credit, invalid id) the "
+    + "turn continues here and one line appears in the chat. Transient "
+    + "errors are already retried — they never reach the fallback.",
   // durum satırı / genel
   "Yükleniyor…": "Loading…",
   "Yukleniyor…": "Loading…",
@@ -447,8 +483,21 @@ Dil.ekle({
     "Scheduled jobs: what, when, and what happened last.",
   "Neye izin var: kip, kurallar ve atölye sınırı.":
     "What is allowed: mode, rules and the workshop boundary.",
-  "Eşzamanlılık, arayüz dili, tarayıcı ve dış kapı.":
-    "Concurrency, interface language, browser and the external gate.",
+  "Sürüm, eşzamanlılık, arayüz dili, tarayıcı ve dış kapı.":
+    "Version, concurrency, interface language, browser and the external gate.",
+
+  // sürüm
+  "Sürüm": "Version",
+  "kurulum": "installed",
+  "geliştirme": "development",
+  "Güncellemeleri denetle": "Check for updates",
+  "Denetim yalnız bu düğmeyle yapılır — arka planda kendiliğinden ağa çıkılmaz":
+    "Checks run only with this button — nothing phones home in the background",
+  " mevcut — indir": " available — download",
+  "Güncel — daha yeni sürüm yok": "Up to date — no newer release",
+  "Ağa ulaşılamadı — internet bağlantısını denetle":
+    "Could not reach the network — check your internet connection",
+  "Yayınlanmış sürüm bulunamadı": "No published release found",
   "Atölyede üretilen dosyalar.": "Files produced in the workshop.",
   "Paketle taşı, birleştir, sıfırla.": "Bundle, merge, reset.",
 });
@@ -793,6 +842,27 @@ const Settings = (() => {
     ));
     fillModels(slot);
 
+    // Yedek model: asıl model KALICI olarak susarsa (kredi bitti, kimlik
+    // geçersiz) tur ölmek yerine bununla sürüyor. Boş bırakmak bugünkü
+    // davranış — hata olduğu gibi yüzeye çıkar. Geçici hatalar buraya hiç
+    // uğramıyor; onlar zaten yeniden deneniyor.
+    const yedek = text((patch.model || {}).fallback_model ?? state.model.fallback_model ?? "",
+                       (v) => set("model", "fallback_model", v.trim()));
+    yedek.placeholder = t("boş — yedek yok");
+    yedek.setAttribute("list", "yedek-modeller");
+    const yedekListe = el("datalist");
+    yedekListe.id = "yedek-modeller";
+    const yedekAlan = field(
+      "Yedek model",
+      "Asıl model kalıcı olarak yanıt vermezse (kredi bitti, kimlik " +
+      "geçersiz) tur burada sürer ve sohbete tek satır düşer. Geçici " +
+      "hatalar zaten yeniden deneniyor — yedeğe düşmezler.",
+      yedek
+    );
+    yedekAlan.append(yedekListe);
+    pane.append(yedekAlan);
+    fillFallback(yedekListe);
+
     // Adres (base URL): preset yalnızca başlangıç. Özel bir port, uzak bir
     // sunucu ya da başka bir OpenAI-uyumlu uç için elle düzenlenebilir.
     const url = text((patch.model || {}).base_url ?? state.model.base_url ?? "",
@@ -853,6 +923,34 @@ const Settings = (() => {
       t("Model değişikliği kaydeder kaydetmez geçerli olur; konuşma geçmişi " +
       "yeni modele taşınır. Ajan o sırada çalışıyorsa değişiklik turun " +
       "bitmesini bekler — akan bir cevabı yarıda kesmemek için.")));
+  }
+
+  // Yedek model alanının önerileri. Aynı katalog, ama seçim ZORUNLU değil:
+  // alan serbest metin kalıyor — sunucu liste vermeyen bir uçta da yedek
+  // yazılabilmeli.
+  async function fillFallback(listNode) {
+    let answer = {};
+    const pending = patch.model || {};
+    try {
+      answer = await (await fetch("/api/models", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          base_url: pending.base_url ?? state.model.base_url,
+          provider: pending.provider ?? state.model.provider,
+          api_key_env: pending.api_key_env ?? state.model.api_key_env,
+        }),
+      })).json();
+    } catch { return; }
+    const asil = pending.name ?? state.model.name;
+    for (const m of (answer.models || []).slice(0, 400)) {
+      // Asıl modeli yedek diye önermek anlamsız: aynı model iki kez
+      // denenmiş olurdu.
+      if (m.id === asil) continue;
+      const option = el("option");
+      option.value = m.id;
+      listNode.append(option);
+    }
   }
 
   async function fillModels(slot) {
@@ -2161,7 +2259,55 @@ const Settings = (() => {
   function drawMachine() {
     const pane = panes.machine;
     pane.textContent = "";
-    head(pane, "Makine", "Eşzamanlılık, arayüz dili, tarayıcı ve dış kapı.");
+    head(pane, "Makine", "Sürüm, eşzamanlılık, arayüz dili, tarayıcı ve dış kapı.");
+
+    // Sürüm: salt-okunur. Sahada "hangi sürüm kurulu?" sorusu cevapsızdı —
+    // tek gerçek kaynak pyproject, buraya /api/settings'ten geliyor.
+    // Kurulu/geliştirme ayrımı önemli: iki kopya aynı makinede yaşayabiliyor.
+    const surumYazi = el("span", "surum-deger",
+      (state.surum || "?") + " · " + t(state.installed ? "kurulum" : "geliştirme"));
+    const denetle = el("button", "detect", t("Güncellemeleri denetle"));
+    denetle.type = "button";
+    const surumKutu = el("div", "with-action");
+    surumKutu.append(surumYazi, denetle);
+    const surumAlan = field(
+      "Sürüm",
+      "Denetim yalnız bu düğmeyle yapılır — arka planda kendiliğinden ağa çıkılmaz",
+      surumKutu
+    );
+    pane.append(surumAlan);
+    denetle.addEventListener("click", async () => {
+      denetle.disabled = true;
+      denetle.textContent = t("Soruluyor…");
+      let cevap = {};
+      try {
+        cevap = await (await fetch("/api/surum", { method: "POST" })).json();
+      } catch { /* aşağıda ele alınıyor */ }
+      denetle.disabled = false;
+      denetle.textContent = t("Güncellemeleri denetle");
+
+      // Önceki sonucu temizle: art arda basınca satırlar birikmesin.
+      const eski = surumAlan.querySelector(".surum-sonuc");
+      if (eski) eski.remove();
+      const sonuc = el("span", "surum-sonuc");
+      if (cevap.yeni) {
+        const uc = el("a", "surum-yeni",
+          "v" + cevap.yeni + t(" mevcut — indir"));
+        uc.href = cevap.url || "#";
+        // pywebview penceresinde dış bağlantı sistem tarayıcısına gider.
+        uc.addEventListener("click", (e) => {
+          e.preventDefault();
+          if (cevap.url) window.open(cevap.url, "_blank", "noopener");
+        });
+        sonuc.append(uc);
+      } else if (cevap.ok) {
+        sonuc.textContent = t("Güncel — daha yeni sürüm yok");
+      } else {
+        sonuc.className += " bad";
+        sonuc.textContent = cevap.hata ? t(cevap.hata) : t("Ağa ulaşılamadı — internet bağlantısını denetle");
+      }
+      surumKutu.append(sonuc);
+    });
 
     pane.append(field(
       "Aynı anda model isteği",
@@ -2347,9 +2493,18 @@ const Settings = (() => {
 
     pane.append(el("hr", "md-rule"));
 
+    // --- proje ---
+    //
+    // Kullanıcının kendi klasöründe çalışmak: "atölyeye kopyala" yolu bir
+    // AĞAÇ için işlemiyor (kopyası orijinali olmuyor). Klasörü seçmek bir
+    // onaydır; seçilen yer yazılabilir oluyor. Atölye her koşulda kalıyor.
+    projectSection(pane);
+
+    pane.append(el("hr", "md-rule"));
+
     pane.append(field(
       "Atölye klasörü",
-      t("Ajanın kendi alanı — yazma yalnızca burada serbest. " +
+      t("neo'nun KENDİ alanı — kendi işleri, denemeleri buraya. " +
       "Şu an: ") + state.sandbox.root,
       text((patch.sandbox || {}).directory ?? state.sandbox.directory,
            (v) => set("sandbox", "directory", v), "atolye")
@@ -2360,6 +2515,164 @@ const Settings = (() => {
       "Kapatmak ajanın bilgisayardaki her yere yazabilmesi demek",
       toggleBox((patch.sandbox || {}).enabled ?? state.sandbox.enabled,
                 (v) => set("sandbox", "enabled", v))
+    ));
+  }
+
+  // --- proje -------------------------------------------------------------
+  //
+  // "Benim projemde çalışacaksan klasörü seçmem gerekiyor." Atölye neo'nun
+  // kendi işleri için kalıyor; proje kullanıcının kodu. Seçim bir onaydır:
+  // seçilen klasör yazılabilir oluyor.
+  //
+  // Proje bir OTURUM değil — değiştirmek zihni, anıları ya da konuşma
+  // geçmişini etkilemiyor. Bu, kullanıcıya da açıkça yazılıyor.
+
+  function projectSection(pane) {
+    const kutu = el("div", "proj-pick");
+    const secili = (patch.sandbox || {}).project ?? state.sandbox.project ?? "";
+
+    const alan = text(secili, (v) => set("sandbox", "project", v.trim()),
+                      t("boş — yalnızca atölye"));
+    kutu.append(alan);
+
+    // Durum satırı: neyin geçerli olduğu, hata ve uyarı.
+    const durum = el("div", "proj-state");
+    kutu.append(durum);
+
+    function durumCiz() {
+      durum.textContent = "";
+      const yol = (patch.sandbox || {}).project ?? state.sandbox.project ?? "";
+      if (!yol.trim()) {
+        durum.append(el("span", "pane-note",
+          t("Proje seçilmedi — yazma yalnızca atölyede serbest.")));
+        return;
+      }
+      if (state.sandbox.project_error && yol === state.sandbox.project) {
+        durum.append(el("span", "pane-note bad", state.sandbox.project_error));
+        return;
+      }
+      if (yol !== state.sandbox.project) {
+        durum.append(el("span", "pane-note",
+          t("Kaydedince burada çalışmaya başlayacağım.")));
+        return;
+      }
+      const satir = el("span", "pane-note good",
+        t("Şu an burada çalışıyorum; yazma izni bu klasörde geçerli.")
+        + " " + (state.sandbox.project_root || yol));
+      durum.append(satir);
+      if (state.sandbox.project_note) {
+        durum.append(el("span", "pane-note bad", state.sandbox.project_note));
+      }
+    }
+    durumCiz();
+
+    // Gezgin: native diyalog yok, seçici sayfanın kendi içinde.
+    const gezginKutu = el("div", "proj-browse");
+    gezginKutu.hidden = true;
+    const ac = el("button", "job-act add", t("Klasör seç…"));
+    ac.type = "button";
+    ac.addEventListener("click", () => {
+      gezginKutu.hidden = !gezginKutu.hidden;
+      if (!gezginKutu.hidden) gozat("");
+    });
+    kutu.append(ac);
+    kutu.append(gezginKutu);
+
+    async function gozat(yol) {
+      gezginKutu.textContent = "";
+      gezginKutu.append(el("p", "pane-note", t("Yukleniyor…")));
+      let veri;
+      try {
+        veri = await (await fetch("/api/gozat?yol=" + encodeURIComponent(yol))).json();
+      } catch {
+        gezginKutu.textContent = "";
+        gezginKutu.append(el("p", "pane-note bad", t("Sunucuya ulaşılamadı")));
+        return;
+      }
+      gezginKutu.textContent = "";
+      if (veri.hata) {
+        gezginKutu.append(el("p", "pane-note bad", veri.hata));
+        return;
+      }
+
+      // Başlık: nerede olduğumuz + yukarı çık.
+      const bas = el("div", "proj-crumb");
+      if (veri.ust !== null && veri.ust !== undefined) {
+        const yukari = el("button", "crumb-link", "↑ " + t("yukarı"));
+        yukari.type = "button";
+        yukari.addEventListener("click", () => gozat(veri.ust));
+        bas.append(yukari);
+      }
+      bas.append(el("span", "proj-here", veri.yol || t("Bu bilgisayar")));
+      gezginKutu.append(bas);
+
+      // Buradaki klasörü SEÇ: yalnızca gerçek bir klasördeysek ve engel yoksa.
+      if (veri.yol) {
+        const ozet = [];
+        if (typeof veri.dosya === "number") ozet.push(veri.dosya + t(" dosya"));
+        if (veri.klasorler) ozet.push(veri.klasorler.length + t(" klasör"));
+        if (veri.tur) ozet.push(veri.tur);
+        gezginKutu.append(el("p", "pane-note", ozet.join(" · ")));
+
+        if (veri.engel) {
+          gezginKutu.append(el("p", "pane-note bad", veri.engel));
+        } else {
+          if (veri.uyari) gezginKutu.append(el("p", "pane-note bad", veri.uyari));
+          const sec = el("button", "job-act add", t("Bu klasörü seç"));
+          sec.type = "button";
+          sec.addEventListener("click", () => {
+            alan.value = veri.yol;
+            set("sandbox", "project", veri.yol);
+            gezginKutu.hidden = true;
+            durumCiz();
+          });
+          gezginKutu.append(sec);
+        }
+      }
+
+      const liste = el("div", "proj-list");
+      for (const klasor of (veri.klasorler || [])) {
+        const satir = el("button", "proj-row");
+        satir.type = "button";
+        satir.textContent = "▸ " + klasor.ad;
+        satir.addEventListener("click", () => gozat(klasor.yol));
+        liste.append(satir);
+      }
+      if (!(veri.klasorler || []).length) {
+        liste.append(el("p", "pane-note", t("Alt klasör yok")));
+      }
+      gezginKutu.append(liste);
+    }
+
+    // Son projeler: tek tıkla geçiş.
+    const gecmis = state.sandbox.recent || [];
+    if (gecmis.length) {
+      const serit = el("div", "proj-recent");
+      for (const yol of gecmis) {
+        const cip = el("button", "proj-chip" + (yol === secili ? " on" : ""));
+        cip.type = "button";
+        cip.textContent = yol.split(/[\\/]/).filter(Boolean).pop() || yol;
+        cip.title = yol;
+        cip.addEventListener("click", () => {
+          alan.value = yol;
+          set("sandbox", "project", yol);
+          durumCiz();
+        });
+        serit.append(cip);
+      }
+      kutu.append(el("span", "field-hint", t("Son projeler")));
+      kutu.append(serit);
+    }
+
+    alan.addEventListener("input", durumCiz);
+
+    pane.append(field(
+      "Çalışılan proje",
+      "Kendi kodunda çalışmamı istediğin klasör. Seçmek bir ONAYDIR: " +
+      "orası yazılabilir olur. Atölye ayrıca durmaya devam eder — neo'nun " +
+      "kendi işleri oraya gider. Proje değiştirmek konuşmayı, anıları ve " +
+      "oturum geçmişini ETKİLEMEZ; yalnızca nerede çalışıldığını değiştirir.",
+      kutu
     ));
   }
 

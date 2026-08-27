@@ -673,3 +673,174 @@ def test_tur_ortasi_sistem_notu_user_notuna_cevrilir():
     out = to_openai_messages([{"type": "text", "text": "sistem promptu"}], mesajlar)
     assert [m["role"] for m in out] == ["system", "user", "assistant", "user"]
     assert out[-1]["content"].startswith("[Sistem notu]")
+
+
+# -- yedek model -------------------------------------------------------
+#
+# Uzun bir iş koşarken kredi bitiyor (402) ya da ayarlardaki model kimliği
+# geçersizleşiyor. Sağlayıcı her istekte aynı cevabı veriyor: beklemek işe
+# yaramıyor ve saatlerdir süren iş yarıda kalıyor. Yedek model tanımlıysa
+# tur ölmek yerine orada sürüyor.
+
+from neocp.backends.base import Callbacks, TurnResult      # noqa: E402
+from neocp.backends.fallback import FallbackBackend, is_permanent   # noqa: E402
+
+
+class _SahteBackend:
+    """Sırayla verilen sonuçları döndüren backend taklidi."""
+
+    def __init__(self, name: str, results: list[TurnResult]) -> None:
+        self.name = name
+        self._results = list(results)
+        self.calls = 0
+        self.closed = False
+
+    async def turn(self, prepared, tools, *, cancel=None, callbacks=None) -> TurnResult:
+        self.calls += 1
+        return self._results.pop(0) if self._results else TurnResult(error="senaryo bitti")
+
+    async def count_tokens(self, prepared, tools) -> int:
+        return 0
+
+    async def close(self) -> None:
+        self.closed = True
+
+
+def _kur(primary_results, fallback_results=None):
+    """Yedekli sarmalayıcı + iki sahte backend."""
+    model = ModelConfig(name="asil", fallback_model="yedek")
+    made: dict[str, _SahteBackend] = {}
+
+    def build(cfg: ModelConfig) -> _SahteBackend:
+        results = primary_results if cfg.name == "asil" else (fallback_results or [])
+        made[cfg.name] = _SahteBackend(cfg.name, results)
+        return made[cfg.name]
+
+    return FallbackBackend(model, build), made
+
+
+def _ok(text: str = "tamam") -> TurnResult:
+    return TurnResult(message=SimpleNamespace(content=[{"type": "text", "text": text}],
+                                              stop_reason="end_turn", usage=None))
+
+
+def test_permanent_and_transient_errors_are_told_apart() -> None:
+    """Ölçü tek soru: aynı istek birazdan tekrar gönderilse sonuç değişir mi?
+
+    Değişecekse (bağlantı, 429, 5xx) döngünün yeniden deneme merdiveni
+    doğru yer; yedeğe düşmek bir sağlayıcı hıçkırığında kalıcı olarak
+    zayıf bir modele geçmek demek olurdu.
+    """
+    for kalici in ("openrouter 402: insufficient credits",
+                   "qwen3.1-14b is not a valid model ID",
+                   "openrouter 404: model bulunamadı",
+                   "403: unsupported_country"):
+        assert is_permanent(kalici), kalici
+
+    for gecici in ("Connection error", "openrouter 429: rate limited",
+                   "openrouter 500: upstream", "timeout", "", None):
+        assert not is_permanent(gecici), gecici
+
+
+def test_a_permanent_failure_continues_on_the_fallback() -> None:
+    client, made = _kur([TurnResult(error="openrouter 402: insufficient credits")], [_ok("yedek konuştu")])
+
+    said: list[str] = []
+    result = asyncio.run(client.turn(None, [], cancel=None,
+                                     callbacks=Callbacks(on_text=said.append)))
+
+    assert result.error is None
+    assert made["yedek"].calls == 1
+    assert client.switched
+    # Kullanıcı ne olduğunu görmeli: sessiz bir model değişimi, kalitesi
+    # sessizce düşmüş bir iş demek.
+    assert any("yedek" in line for line in said)
+
+
+def test_the_notice_never_enters_the_answer_content() -> None:
+    """Satır GÖSTERİM kanalından gidiyor: geçmişe modelin söylemediği bir
+    cümleyi yazmak, sonraki turlarda modelin kendi sözü sanılırdı."""
+    client, _ = _kur([TurnResult(error="402: payment required")], [_ok("asıl cevap")])
+    result = asyncio.run(client.turn(None, [], cancel=None, callbacks=Callbacks()))
+    metin = " ".join(b.get("text", "") for b in result.content)
+    assert "yedek modelle" not in metin
+    assert metin == "asıl cevap"
+
+
+def test_a_transient_failure_is_left_to_the_retry_ladder() -> None:
+    """Geçici hata yedeğe hiç uğramamalı: döngü onu zaten yeniden deniyor."""
+    client, made = _kur([TurnResult(error="Connection error")], [_ok()])
+    result = asyncio.run(client.turn(None, [], cancel=None, callbacks=Callbacks()))
+
+    assert result.error == "Connection error"
+    assert "yedek" not in made          # yedek istemci hiç kurulmadı
+    assert not client.switched
+
+
+def test_an_interruption_is_a_decision_not_a_failure() -> None:
+    client, made = _kur([TurnResult(interrupted=True)], [_ok()])
+    result = asyncio.run(client.turn(None, [], cancel=None, callbacks=Callbacks()))
+    assert result.interrupted and "yedek" not in made
+
+
+def test_once_switched_the_main_model_is_not_tried_again() -> None:
+    """Her turda asıl modeli yeniden denemek turu iki isteğe çıkarır ve
+    kredi bittiyse hiçbir zaman düzelmez."""
+    client, made = _kur([TurnResult(error="402: no credit")], [_ok(), _ok()])
+    asyncio.run(client.turn(None, [], cancel=None, callbacks=Callbacks()))
+    asyncio.run(client.turn(None, [], cancel=None, callbacks=Callbacks()))
+
+    assert made["asil"].calls == 1      # ikinci turda hiç denenmedi
+    assert made["yedek"].calls == 2
+
+
+def test_without_a_fallback_nothing_changes() -> None:
+    """Yedek yoksa bugünkü davranış aynen kalmalı: hata yüzeye çıkar."""
+    plain = build_client(ModelConfig(name="asil"))
+    assert not isinstance(plain, FallbackBackend)
+    # Yedek asıl modelle aynıysa sarmalamak anlamsız: aynı model iki kez.
+    same = build_client(ModelConfig(name="asil", fallback_model="asil"))
+    assert not isinstance(same, FallbackBackend)
+
+
+def test_the_fallback_client_keeps_the_provider_and_address() -> None:
+    """Yedek "aynı kapıdaki başka model" demek. Sessizce başka bir
+    sağlayıcıya düşmek, hangi anahtarla konuşulduğunu görünmez kılardı."""
+    seen: list[ModelConfig] = []
+
+    def build(cfg: ModelConfig):
+        seen.append(cfg)
+        return _SahteBackend(cfg.name, [_ok()])
+
+    model = ModelConfig(name="asil", fallback_model="yedek",
+                        base_url="http://localhost:1234/v1", api_key_env="LOCAL_KEY")
+    client = FallbackBackend(model, build)
+    client.switched = True
+    asyncio.run(client.turn(None, [], cancel=None, callbacks=Callbacks()))
+
+    yedek = seen[-1]
+    assert yedek.name == "yedek"
+    assert yedek.base_url == "http://localhost:1234/v1"
+    assert yedek.api_key_env == "LOCAL_KEY"
+    # Yedeğin yedeği yok: sonsuz zincir olmasın.
+    assert yedek.fallback_model == ""
+
+
+def test_closing_releases_both_clients() -> None:
+    client, made = _kur([TurnResult(error="402")], [_ok()])
+    asyncio.run(client.turn(None, [], cancel=None, callbacks=Callbacks()))
+    asyncio.run(client.close())
+    assert made["asil"].closed and made["yedek"].closed
+
+
+def test_the_fallback_field_survives_a_settings_round_trip(tmp_path) -> None:
+    """Alan config.json'a yazılıp geri okunmazsa ayar sayfası çalışıyor
+    görünür ama hiçbir şey değişmez."""
+    from neocp import settings
+    from neocp.config import Config
+
+    config = Config.load(tmp_path)
+    config.ensure_dirs()
+    updated = settings.apply(config, {"model": {"fallback_model": "yedek-model"}})
+    assert updated.model.fallback_model == "yedek-model"
+    assert Config.load(tmp_path).model.fallback_model == "yedek-model"

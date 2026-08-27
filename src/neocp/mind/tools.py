@@ -149,6 +149,10 @@ bir düzeltme yaptığında (nedeniyle birlikte), bu makineye/projeye özgü ve
 koddan çıkarılamayacak bir şey öğrendiğinde, ya da işe yarayan bir yordam
 bulduğunda (kind=procedure).
 
+Bunu O AN yap, tur sonuna bırakma — konu geçerken yazılmayan şey yazılmıyor.
+İzin istemene gerek yok, kendi defterin. Yazmadığın şey, gelecekteki senin
+bilmeyeceği şeydir: kullanıcı aynı şeyi ikinci kez anlatmak zorunda kalır.
+
 Ne zaman kaydetme: repoda zaten yazılı olanı, konuşma bitince değeri
 kalmayacak şeyleri, doğrulamadığın tahminleri.
 
@@ -218,6 +222,10 @@ hatırlamalar o yoldan yürüyor.
             required=["action"],
         ),
         mutates=True,
+        # Kendi defterine yazmak sistem mutasyonu değil: onay penceresi
+        # arkasında kalınca zihin iki gün boyunca hiçbir tercih/ders
+        # kaydetmedi. `forget` (kalıcı silme) listede YOK — o gated kalıyor.
+        safe_actions=("save", "list", "link", "series"),
         parallel_safe=False,
     )
     async def mind_memory(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
@@ -338,6 +346,9 @@ Tek adımlık işler için kullanma; kayıt tutmanın maliyeti getirisinden fazl
             required=["action"],
         ),
         mutates=True,
+        # İş listesi de ajanın kendi defteri: her hedef için onay sormak
+        # uzun bir işi soru yağmuruna çeviriyordu.
+        safe_actions=("push", "done", "drop", "list"),
         parallel_safe=False,
     )
     async def mind_goals(args: dict[str, Any], ctx: ToolContext) -> ToolResult:

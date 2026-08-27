@@ -180,6 +180,105 @@ ACT_NOTE = (
     "cevabı doğrudan kullanıcıya yaz. Planı tekrar anlatma."
 )
 
+# Model gerçek araç çağrısı yerine çağrı XML'ini DÜZ METİN yazdı. Bu bir
+# cevap değil, başarısız bir araç denemesi: kullanıcıya gösterilmiyor
+# (arayüz çizmiyor) ve model tek satırlık bir notla düzeltiliyor. Tur
+# devam ediyor — burada durmak, kullanıcıyı sessizce yarım bırakırdı.
+SAHTE_CAGRI_NOTU = (
+    "[Harness notu] Az önce bir araç çağrısını DÜZ METİN olarak yazdın "
+    "(<function_calls>… gibi). O metin çalıştırılmadı ve kullanıcıya "
+    "gösterilmedi. Araçları yalnızca gerçek araç çağrısı kanalıyla "
+    "çağırabilirsin: aynı isteği araç çağrısı olarak yap."
+)
+
+# Aynı turda tekrarladı: not sertleşiyor. Yumuşak not işe yaramadıysa
+# sebebi çoğu zaman modelin önceki hatayı "araç bozuk" diye okuması.
+SAHTE_CAGRI_SERT_NOTU = (
+    "[Harness notu] Araç çağrısını YİNE metin olarak yazdın. Yazdığın XML "
+    "hiçbir şey çalıştırmıyor. Araçlar çalışıyor; sorun çağrı biçiminde. "
+    "Ya aracı gerçek araç çağrısı olarak çağır ya da araç kullanmadan "
+    "kullanıcıya doğrudan cevap yaz. Üçüncü bir seçenek yok."
+)
+
+# Sahte çağrı düzeltme denemesinin mutlak sigortası. Not sertleştikçe
+# düzelmeyen model (çoğu zaman araç çağıramayan ücretsiz bir uç) turu
+# sonsuza kadar meşgul etmesin: bu sayıdan sonra tur kendi akışına
+# bırakılıyor ve kullanıcıya durum bildiriliyor — model değiştirebilsin.
+SAHTE_CAGRI_TAVANI = 5
+
+# Asistan metninde araç çağrısı XML'i. Arayüzdeki savunmayla (app.js
+# SAHTE_CAGRI_KALIBI) aynı kalıp — biri kaçarsa diğeri tutuyor.
+SAHTE_CAGRI_DESENI = re.compile(
+    r"<\s*/?\s*(function_calls|invoke\b|parameter\b|antml:)", re.IGNORECASE)
+
+
+def sahte_arac_cagrisi(text: str) -> bool:
+    """Metin, araç çağrısı XML'i taşıyor mu?
+
+    Model araç kanalını kullanamadığını sandığında (ör. ham bir istisna
+    mesajını "araç bozuk" diye okuduğunda) çağrıyı düz metin olarak
+    yazıyor. Kullanıcı ekranında ham XML olarak göründüğü kanıtlandı.
+    """
+    return bool(SAHTE_CAGRI_DESENI.search(text or ""))
+
+
+# -- zihin yazma refleksi ----------------------------------------------
+#
+# Ölçülmüş regresyon: son altı oturumda `mind_memory` çağrısı SIFIR — 91
+# araç çağrısı yapılan turda bile. Otomatik yol (episode encode) akmaya
+# devam ediyordu ama model-güdümlü kalıcı yazma tamamen durmuştu; iki gün
+# boyunca tek bir tercih/ders/olgu kaydedilmedi.
+#
+# Kök asimetri: HATIRLAMA bir refleks (her kullanıcı mesajından önce
+# `_prime_recall` kendiliğinden koşuyor), YAZMA ise yalnızca bir öğüt.
+# Zayıf ya da orta bir model o öğüdü hiç seçmiyor. Simetri kuruluyor:
+# hatırlama nasıl sistem tarafından tetikleniyorsa, yazmaya GEÇİŞ de
+# tetikleniyor — kararı yine model veriyor.
+#
+# Sezgi bilerek UCUZ ve DÜRÜST: anahtar kelime düzeyinde, model çağrısı
+# yok. Yanlış pozitifin zararı yok çünkü not "değmezse yok say" diyor.
+KALICI_SINYALLER = (
+    # Kalıcı kural / tercih bildirimi
+    r"\bbundan sonra\b", r"\bbundan böyle\b", r"\bher zaman\b", r"\bhep\b",
+    r"\basla\b", r"\bhiçbir zaman\b", r"\bşunu yapma\b", r"\byapma artık\b",
+    r"\btercih ediyorum\b", r"\bsevmiyorum\b", r"\bistemiyorum\b",
+    r"\bşöyle olsun\b", r"\bböyle olsun\b", r"\bkuralımız\b",
+    r"\bunutma\b", r"\baklında tut\b", r"\bnot al\b",
+    # Düzeltme: modelin yanlışını gösteren cümleler
+    r"\byanlış\b", r"\böyle değil\b", r"\bdüzelt\b", r"\bhayır,",
+    # Kullanıcıya ait bir olgu bildirimi
+    r"\bbenim\b", r"\bbizim\b", r"\badım\b", r"\bçalıştığım\b",
+    r"\bkullanıyorum\b", r"\bprojem\b", r"\bişim\b",
+    # İngilizce karşılıklar: kullanıcı iki dilde de yazıyor
+    r"\bfrom now on\b", r"\balways\b", r"\bnever\b", r"\bdon't\b",
+    r"\bi prefer\b", r"\bremember that\b", r"\bmy name is\b",
+    r"\bactually,", r"\bthat's wrong\b",
+)
+
+_KALICI = re.compile("|".join(KALICI_SINYALLER), re.IGNORECASE)
+
+
+def kalici_koku(text: str) -> bool:
+    """Bu mesajda kalıcı olabilecek bir şey geçti mi?
+
+    Kesinlik iddiası yok — bir koku. Kararı model veriyor; buradaki tek iş
+    konuyu modelin önüne getirmek.
+    """
+    return bool(_KALICI.search(text or ""))
+
+
+# Kokunun karşılığı: tek satır, iç kanaldan. Sohbete DÜŞMEZ (internal).
+# Emir değil davet: yanlış pozitifte model yok sayıp geçiyor.
+ZIHIN_DURTUSU = (
+    "[Zihin] Bu turda kalıcı olabilecek bir şey geçti: \"{alinti}\" "
+    "Kaydetmeye değerse `mind_memory` ile yaz — oturum kapanınca bağlam "
+    "gider, zihin kalır. Değmezse bu notu yok say."
+)
+
+# Dürtüdeki alıntının uzunluğu: konuyu hatırlatmaya yetecek kadar.
+DURTU_ALINTI = 160
+
+
 # Arka planda biten yardımcının sonucu tur başında ana ajanın önüne bu
 # notla konuyor. Kanal harness'ın: kullanıcı yazmadı, model bunu bilmeli.
 CHILD_DONE_NOTE = "[Yardımcı bitti · {title} (id={id})] Sonucu: {result}"
@@ -229,11 +328,164 @@ YETIM_SONUC = (
     "kaldığı yerden sürdürülebilir."
 )
 
+# -- plan refleksi -------------------------------------------------------
+#
+# İstemde "büyük işte önce modül planı yaz" YAZIYOR ve ÇALIŞMIYOR: yedi
+# görevlik bir ölçümde yedisinde de plan yazılmadı. Hafıza yazmada
+# öğrenilen ders burada da geçerli — öğüt yetmiyor, refleks gerekiyor.
+#
+# Kapı UCUZ: model çağrısı yok, regex ve uzunluk düzeyinde. Yanlış
+# pozitifin bedeli gereksiz bir plan cümlesi (kabul edilebilir); yanlış
+# negatifin bedeli plansız başlayan bir koşu (asıl kaçınılan). Yine de
+# seyrek tetiklenmesi için üç sinyalin BİRLİKTE aranması şart: yapım
+# fiili + (ölçek sözü ya da madde listesi ya da uzun metin).
+
+BUYUK_IS_UZUNLUK = 180      # bu kadar karakterden uzun istek
+BUYUK_IS_MADDE = 3          # ya da bu kadar madde/teslimat
+
+# "Bir şey ÜRETMEMİ istiyor" fiilleri. Soru sormak, okumak, açmak,
+# düzeltmek burada yok — onlar plan gerektiren işler değil.
+_YAPIM_FIILI = re.compile(
+    r"\b(yap|yapar\s+mısın|kur|geliştir|gelistir|tamamla|oluştur|olustur|"
+    r"inşa\s+et|insa\s+et|tasarla|hazırla|hazirla|yazar\s+mısın|"
+    r"build|create|implement|develop|make)\w*\b",
+    re.IGNORECASE,
+)
+
+# Ölçek sözü: tek dosyalık bir betik değil, birden çok parçası olan bir şey.
+_OLCEK_SOZU = re.compile(
+    r"\b(panel|dashboard|sistem|system|uygulama|app|servis|service|site|"
+    r"web\s*sitesi|proje|project|platform|api|arayüz|arayuz|altyapı|altyapi|"
+    r"modül|modul|module|oyun|game|bot|editör|editor|yönetim|yonetim|"
+    r"admin|crm|erp|panosu|pano)\w*\b",
+    re.IGNORECASE,
+)
+
+# Madde listesi: "şunlar olsun: - a - b - c" biçimindeki çoklu teslimat.
+_MADDE_SATIRI = re.compile(r"^\s*(?:[-*•]|\d+[.)])\s+\S", re.MULTILINE)
+
+
+def buyuk_is(text: str) -> bool:
+    """Bu istek "büyük / ucu açık" mı görünüyor?
+
+    Kesinlik iddiası yok — `kalici_koku` gibi bir koku. Karar yine modelin;
+    buradaki tek iş plan yazma sırasını modelin önüne koymak.
+    """
+    metin = (text or "").strip()
+    if not metin or not _YAPIM_FIILI.search(metin):
+        # Yapım fiili yoksa bu bir soru, bir sohbet ya da küçük bir düzeltme.
+        # Plan istemek gürültü olurdu.
+        return False
+    if len(_MADDE_SATIRI.findall(metin)) >= BUYUK_IS_MADDE:
+        return True
+    if _OLCEK_SOZU.search(metin):
+        return True
+    return len(metin) >= BUYUK_IS_UZUNLUK
+
+
+# Kokunun karşılığı: TEK satır, iç kanaldan, tur başında bir kez. Sohbete
+# düşmez. Emir değil sıra kuralı — istemdeki uzun anlatımın refleks hali.
+PLAN_NOTU = (
+    "[Plan] Bu iş büyük görünüyor. İlk cevabında modül listesi + her modül "
+    "için kabul ölçütü yaz, sonra başla."
+)
+
+
+# -- kırmızıyken "bitti" deme kapısı -------------------------------------
+#
+# Ölçümde bir görev kendi test takımı KIRMIZIYKEN teslim edildi. İstemde
+# "bitti demeden doğrula" yazıyor; yazmak yetmiyor.
+#
+# Kırmızının izi araç sonuçlarından okunuyor. Araç katmanı `detail`i modele
+# ve döngüye taşımıyor (executor `_card` ile kırpıyor), o yüzden okunan şey
+# döngünün gerçekten gördüğü iki alan: `error` (ToolResult.is_error) ve
+# aracın KENDİ başlık satırı. Tool başına ne anlama geldikleri farklı:
+#
+#   kos      — kırmızıyı kendisi işaretliyor (is_error): başarısız test,
+#              sıfırdan farklı çıkış kodu, zaman aşımı, kesilme.
+#   denetle  — hatayı is_error ile işaretlemiyor (bir denetim bulgusu
+#              yazmayı düşürmemeli); kırmızı kendi metninde yazıyor.
+#   browser  — konsol/ağ dökümü hiç hata döndürmüyor; sayılar başlıkta.
+#
+# Yalnız bu üçü sayılıyor: başarısız bir `read_file` kırmızı bir koşu değil.
+
+DOGRULAMA_ARACLARI = frozenset({"kos", "denetle", "browser"})
+
+_DENETIM_HATASI = re.compile(r",\s*\d+\s+hata:")
+_KONSOL_HATASI = re.compile(r"\((\d+)\s+hata\)")
+_AG_HATASI = re.compile(r"(\d+)\s+başarısız")
+# Executor'ın hacim eki ("  (+22 satır)"): aracın hükmü değil, arayüz izi.
+_HACIM_EKI = re.compile(r"\s*\(\+\d+\s+satır\)\s*$")
+
+
+def kirmizi_iz(tool: str, note: dict[str, Any]) -> str:
+    """Bu araç sonucu kırmızı mı? Kırmızıysa tek satırlık özeti, değilse "".
+
+    `note` executor'ın `tool_end` gözlem yükü: {tool, error, summary,
+    detail: {output, exit_code, …}}.
+    """
+    if tool not in DOGRULAMA_ARACLARI:
+        return ""
+    ozet = _HACIM_EKI.sub("", str(note.get("summary") or "").strip())
+    govde = ozet + "\n" + str((note.get("detail") or {}).get("output") or "")
+
+    if tool == "kos":
+        return (ozet or "test koşumu başarısız") if note.get("error") else ""
+
+    if tool == "denetle":
+        return (ozet or "denetimde hata var") if _DENETIM_HATASI.search(govde) else ""
+
+    # browser: konsolda hata ya da başarısız istek.
+    if (m := _KONSOL_HATASI.search(govde)) and int(m.group(1)) > 0:
+        return f"tarayıcı konsolunda {m.group(1)} hata"
+    if (m := _AG_HATASI.search(govde)) and int(m.group(1)) > 0:
+        return f"{m.group(1)} başarısız istek"
+    return ""
+
+
+# "Bitti" iddiası: model turu araçsız kapatırken işi bitmiş ilan ediyor mu.
+_BITTI_IDDIASI = re.compile(
+    r"\b(bitti|bitirdim|tamamlandı|tamamlandi|tamamladım|tamamladim|"
+    r"hazır|hazir|hazırdır|hazirdir|çalışıyor|calisiyor|sorunsuz|"
+    r"done|completed?|finished|ready|works|working)\b",
+    re.IGNORECASE,
+)
+
+# Kırmızıyı zaten söylüyorsa dürtme: dürüst rapor, yanlış "bitti" değil.
+_KIRMIZI_ITIRAFI = re.compile(
+    r"\b(başarısız|basarisiz|kırmızı|kirmizi|geçmedi|gecmedi|hata\s+var|"
+    r"düzeltemedim|duzeltemedim|kaldı|kaldi|eksik|çalışmıyor|calismiyor|"
+    r"fail(ing|ed|s)?|broken|not\s+working)\b",
+    re.IGNORECASE,
+)
+
+
+def bitti_iddiasi(text: str) -> bool:
+    """Araçsız kapanan bu cevap işi bitmiş ilan ediyor mu?
+
+    Kırmızıyı zaten söyleyen bir cevap "bitti" dese de dürüsttür —
+    dürtülmez. Yanlış pozitifin bedeli tek bir fazladan tur ve o tur
+    yalnızca ortada gerçekten kırmızı bir koşum varken açılıyor.
+    """
+    metin = text or ""
+    if not _BITTI_IDDIASI.search(metin):
+        return False
+    return not _KIRMIZI_ITIRAFI.search(metin)
+
+
+KIRMIZI_NOTU = (
+    "[Doğrulama] Son koşumun kırmızıydı ({ozet}). Bitti demeden önce ya "
+    "düzelt ya da neyin çalışmadığını açıkça söyle."
+)
+
+
 # Uzun koşu kontrol noktası: eski sert tavanın yerini alan yumuşak dürtü.
 CHECKPOINT_NOTE = (
     "[Uzun koşu kontrol noktası — {turns} tur] Bir-iki cümleyle ilerleme "
-    "durumunu yaz (ne bitti, ne kaldı) ve işe DEVAM ET. Bu not kullanıcıdan "
-    "gelmedi ve bir bitirme çağrısı değil; iş bitmeden durma."
+    "durumunu yaz (ne bitti, ne kaldı) — bu satırı kullanıcıya da yaz, "
+    "kullanıcı uzun bir işte dakikalarca sessizlik yaşamamalı — ve işe "
+    "DEVAM ET. Bu not kullanıcıdan gelmedi ve bir bitirme çağrısı değil; "
+    "iş bitmeden durma."
 )
 
 
@@ -414,7 +666,20 @@ class AgentIO:
     on_tool_start: Callable[[str, dict[str, Any]], None] = lambda *_: None
     on_tool_end: Callable[[str, bool, int], None] = lambda *_: None
     on_notice: Callable[[str], None] = lambda _: None
+    # Model kesintisinde bekleme durumunun YAPISAL kanalı. Arayüz bunu
+    # çalışma şeridinde tek canlı satır olarak çizer (geri sayım, deneme
+    # sayacı, katlanır ayrıntı) — sohbete ham hata duvarı basılmaz.
+    # None kalırsa (CLI, testler) eski düz-metin on_notice yolu işler.
+    # Sözleşme: {"kip": "deneme"|"park"|"bitti"|"iptal",
+    #            "deneme": int, "toplam": int, "saniye": int, "detay": str}
+    on_wait: Callable[[dict[str, Any]], None] | None = None
     on_usage: Callable[[dict[str, int]], None] = lambda _: None
+    # Bütçe freni. Her model çağrısından ÖNCE soruluyor: boş dize "sınır
+    # yok ya da aşılmadı", dolu dize ise sohbete basılacak tek satır ve
+    # "dur" emri. Fiyat bilgisi harness'ta değil köprüde duruyor (bkz.
+    # desktop.Bridge._butce_freni) — döngü yalnızca kararı soruyor, tur
+    # yolunda ağ isteği ya da fiyat tablosu okuması yapmıyor.
+    butce_freni: Callable[[], str] = lambda: ""
     # Alt ajan (orkestra) kanalları: bir alt ajan doğduğunda, bir araç
     # çağırdığında ve bittiğinde. Arayüz bunları canlı kanal olarak çiziyor;
     # ana sohbete karışmadan "kimin ne yaptığı" görünür oluyor. Varsayılan
@@ -452,6 +717,11 @@ class ChildHandle:
     session_id: str = ""
     state: str = "kosuyor"          # kosuyor | bitti | hata
     sonuc: str = ""
+    # Ne zaman başladı. Kayıt işin başladığı anda kuruluyor, o yüzden
+    # varsayılan "şimdi" doğru cevap: görevler paneli süreyi buradan
+    # canlı sayıyor ("2 dk 14 sn"). Yetim kayıtlarında (geçen oturumdan
+    # devralınan) gerçek başlangıç bilinmiyor; panel orada süre çizmiyor.
+    baslangic_ts: float = field(default_factory=time.time)
     bitis_ts: float = 0.0
     # Sonuç ana ajana duyuruldu mu. Senkron yolda araç sonucu zaten döndü;
     # arka planda tur başındaki bildirim notu bunu True yapar.
@@ -482,6 +752,12 @@ class TurnStats:
     # Kapanis turu verildi mi. Bir kez: yoksa kilitlenen dongu kapanis
     # turunda da kilitlenir ve ayni yere geri gelinir.
     closing: bool = False
+    # Model bu turda kaç kez araç çağrısını DÜZ METİN olarak yazdı
+    # (gerçek çağrı yerine XML). Tekrar ederse not sertleşiyor.
+    sahte_cagri: int = 0
+    # Kırmızı kapısı bu turda bir kez açıldı mı. En fazla bir kez: model
+    # ikinci turda yine bitirmek isterse bırakılıyor — sonsuz döngü yok.
+    kirmizi_uyarildi: bool = False
 
 
 def _without_numbers(text: str) -> str:
@@ -596,6 +872,15 @@ class Agent:
         self.on_retry_wait: Callable[[], None] | None = None
         # İş park edildi mi (model ulaşılamıyor, bekliyor).
         self._parked = False
+        # Zihin yazma refleksi (bkz. _zihin_kapisi): bu turda model kendi
+        # defterine yazdı mı, ve en son hangi cümle için dürtüldü.
+        self._zihin_yazildi = False
+        self._son_durtu = ""
+        # Kırmızı defteri: doğrulama aracı → o aracın son KIRMIZI izi.
+        # Araç başına tutuluyor ki model düzeltip yeniden koşturunca kayıt
+        # temizlensin — yeşile dönen bir koşum artık kırmızı değil. Her
+        # kullanıcı turunda sıfırlanıyor (bkz. run).
+        self._kirmizi: dict[str, str] = {}
 
     def _soul_resident(self) -> set[str]:
         """Ruhun tam gövdesiyle prompta koyduğu kayıtların kimlikleri."""
@@ -690,7 +975,72 @@ class Agent:
         # Kullanıcının söylediği o an belleğe geçiyor: gece değil, şimdi.
         self._encode_turn("kullanıcı", user_input)
         self._prime_recall(user_input)
-        return await self._drive()
+        # Yazma refleksinin kapısı: bu turda model kendi defterine yazdı mı?
+        self._zihin_yazildi = False
+        # Plan refleksi: iş büyük görünüyorsa modelin önüne tek satır not.
+        # İLK model çağrısından ÖNCE ve tur başına bir kez — sonradan
+        # hatırlatmanın anlamı yok, plan sıradan sonra yazılmaz.
+        self._plan_refleksi(user_input)
+        # Kırmızı defteri her kullanıcı turunda sıfırdan: "yalnız BU TURDA
+        # üretilmiş kırmızı" sayılıyor, geçen turun kırmızısı değil.
+        self._kirmizi.clear()
+        stats = await self._drive()
+        self._zihin_kapisi(user_input)
+        return stats
+
+    def _plan_refleksi(self, user_input: str) -> None:
+        """Büyük/ucu açık istekte plan sırasını modelin önüne koyar.
+
+        Yalnız ana ajanda (`depth == 0`): alt ajana verilen yönerge zaten
+        dar ve tanımlı bir iş, ondan modül planı istemek gürültü.
+        """
+        if self.depth or not buyuk_is(user_input):
+            return
+        self.session.add_harness_note(PLAN_NOTU)
+        self.session.log.note("plan_refleksi")
+
+    def _kirmizi_kapisi(self, stats: TurnStats, blocks: list[dict[str, Any]]) -> bool:
+        """Kırmızı bir koşumun üstüne "bitti" deniyorsa bir tur daha ver.
+
+        True dönerse tur SÜRÜYOR. Üç fren var:
+          * Ortada bu turda üretilmiş kırmızı bir koşum olacak.
+          * Cevap araçsız olacak (`end_turn`) ve gerçekten bitmiş ilan
+            edecek — kırmızıyı zaten söyleyen dürüst bir cevap dürtülmez.
+          * Tur başına EN FAZLA BİR KEZ. Model ikinci turda yine bitirmek
+            isterse bırakılıyor; sonsuz bir "hayır bitmedi" döngüsü, yarım
+            bir cevaptan kötü.
+        """
+        if stats.kirmizi_uyarildi or not self._kirmizi:
+            return False
+        if not bitti_iddiasi(_text_of_blocks(blocks)):
+            return False
+        stats.kirmizi_uyarildi = True
+        ozet = "; ".join(self._kirmizi.values())[:200]
+        self.session.log.note("kirmizi_kapisi", ozet=ozet)
+        self.session.add_harness_note(KIRMIZI_NOTU.format(ozet=ozet))
+        return True
+
+    def _zihin_kapisi(self, user_input: str) -> None:
+        """Tur sonu refleksi: kalıcı bir şey geçtiyse ve model yazmadıysa dürt.
+
+        `_prime_recall`ın kardeşi ve tersi: o hatırlamayı, bu yazmayı
+        sistemden tetikliyor. Not modelin ÖNÜNE konuyor (harness kanalı,
+        `internal` — sohbette görünmez); kararı yine model veriyor.
+
+        Üç fren var: model zaten yazdıysa dürtme (gereksiz), koku yoksa
+        dürtme (gürültü), ve art arda dürtme (bıkkınlık) — kullanıcı yeni
+        bir şey söylemedikçe not tekrarlanmıyor.
+        """
+        if self.depth or self.mind is None or self._zihin_yazildi:
+            return
+        if not kalici_koku(user_input):
+            return
+        alinti = _one_line(user_input)[:DURTU_ALINTI]
+        if alinti == self._son_durtu:
+            return   # aynı konuda ikinci kez dürtmek bıkkınlık
+        self._son_durtu = alinti
+        self.session.add_harness_note(ZIHIN_DURTUSU.format(alinti=alinti))
+        self.session.log.note("zihin_durtusu")
 
     def _encode_turn(self, role: str, text: str) -> None:
         """Bir konuşma turunu **anlık** olarak aranabilir belleğe yazar.
@@ -812,6 +1162,22 @@ class Agent:
         )
 
         while stats.turns < HARD_TURN_LIMIT:
+            # Bütçe freni: bu oturum için konmuş üst sınıra ulaşıldıysa YENİ
+            # bir model çağrısı yapılmıyor. Kesme mevcut yoldan gidiyor
+            # (`interrupt`: koşan yardımcılar da duruyor) ve yarım iş
+            # KAYBOLMUYOR — kullanıcı mesajı geçmişte, gelen kutusundaki
+            # notlar yerinde, oturum olduğu gibi duruyor. Sınır yükseltilince
+            # konuşma kaldığı yerden sürüyor.
+            #
+            # Yalnız ana ajanda: alt ajanın kendi turunu ayrıca kesmek,
+            # ananın zaten kestiği işi iki kez kesmek olurdu.
+            if self.depth == 0 and (fren := self.io.butce_freni()):
+                self.session.log.note("butce_freni", detay=_clip(fren, 200))
+                self.io.on_notice(fren)
+                self.interrupt()
+                stats.interrupted = True
+                break
+
             stats.turns += 1
 
             # Uzun koşu kontrol noktası: eski sert tavan (60. turda dur)
@@ -869,9 +1235,13 @@ class Agent:
 
             if stats.api_errors:
                 # Kesinti atlatıldı: sayaç sıfır, park kaydı (varsa) kalksın.
+                denemeler = stats.api_errors
                 stats.api_errors = 0
                 self._unpark()
-                self.io.on_notice("Model geri geldi — iş kaldığı yerden sürüyor.")
+                # Şerit varsa toparlanma da şeritte yaşar (tek yeşil satır);
+                # sohbete ayrıca bildirim düşmez.
+                if not self._bekleme_olayi(kip="bitti", deneme=denemeler):
+                    self.io.on_notice("Model geri geldi — iş kaldığı yerden sürüyor.")
 
             report = cache_report(result.usage)
             stats.usage = report
@@ -882,8 +1252,27 @@ class Agent:
             # hem de boş content dizisi bir sonraki isteği bozabilir. Reddetme
             # (refusal) turları meşru olarak boş gelir; durum yine de aşağıda
             # işlenir.
+            # Sahte araç çağrısı: model gerçek çağrı yerine XML'i DÜZ METİN
+            # yazdı. Geçmişe girmesi doğru (model ne yaptığını görmeli) ama
+            # kullanıcıya CEVAP DEĞİL — `internal` ile işaretleniyor, yoksa
+            # oturum sürdürülünce ham XML ajan mesajı olarak geri gelirdi.
+            sahte_metin = bool(
+                result.content and result.stop_reason == "end_turn"
+                and sahte_arac_cagrisi(_text_of_blocks(result.content)))
+
             if blocks := result.content:
-                self.session.add_assistant(blocks, usage=report)
+                # `empty_turn`: model turu YALNIZCA akıl yürüterek bitirdi ve
+                # sağlayıcı katmanı o muhakemeyi metin bloğuna çevirdi (bkz.
+                # openai_backend: reasoning-only tur). Model kendi planını
+                # görsün diye geçmişe giriyor — ama bu KULLANICIYA CEVAP
+                # DEĞİL. `internal` işareti tam da bunun için: sohbete ve
+                # döküme çıkmıyor (iç not sızıntısıyla aynı savunma hattı;
+                # ham muhakemenin sohbete italik paragraflar hâlinde
+                # düştüğü görüldü). Muhakeme kaybolmuyor: arayüzde katlı
+                # "✻ Düşündü" başlığının altında yaşıyor.
+                self.session.add_assistant(
+                    blocks, usage=report,
+                    internal=(result.stop_reason == "empty_turn" or sahte_metin))
                 # Asistanın söylediği de anlık belleğe: bir ölçüm sonucu ya
                 # da bir açıklama, sonra "az önce ne demiştin" ile bulunsun.
                 self._encode_turn("neo", _text_of_blocks(blocks))
@@ -891,6 +1280,17 @@ class Agent:
                 self.session.log.note("empty_assistant_turn", stop_reason=result.stop_reason)
 
             stats.stop_reason = result.stop_reason
+            # Sahte araç çağrısı: model gerçek çağrı yerine XML'i düz metin
+            # yazıp turu bitirdi. Cevap sayılmaz — düzeltme notuyla bir tur
+            # daha veriliyor. Gerçek bir araç çağrısı VARSA (tool_use)
+            # karışılmıyor: iş yürüyor demektir.
+            if result.stop_reason == "end_turn" and self._sahte_cagriyi_duzelt(stats, blocks):
+                continue
+            # Kırmızıyken "bitti" deme kapısı: bu turda kırmızı bir koşum
+            # varken model araçsız bir bitirme cevabıyla kapatmaya
+            # çalışıyorsa bir tur daha veriliyor.
+            if result.stop_reason == "end_turn" and self._kirmizi_kapisi(stats, blocks):
+                continue
             if await self._handle_stop(result, ctx, stats):
                 continue
             # Tur normal bitti ama kullanıcı bu arada araya yazdıysa mesaj
@@ -1050,12 +1450,22 @@ class Agent:
         retries = len(RETRY_DELAYS)
         if stats.api_errors <= retries:
             delay = RETRY_DELAYS[stats.api_errors - 1]
-            self.io.on_notice(
-                f"Model yanıt vermiyor; {delay:.0f} sn sonra yeniden denenecek "
-                f"({stats.api_errors}/{retries}). ({_clip(error, 120)})")
+            # Yapısal kanal varsa ham hata sohbete DÜŞMEZ: çalışma şeridi
+            # tek canlı satırda geri sayımı işletir, ayrıntı tık ile açılır.
+            if not self._bekleme_olayi(
+                kip="deneme", deneme=stats.api_errors, toplam=retries,
+                saniye=int(delay), detay=_clip(error, 1500),
+            ):
+                self.io.on_notice(
+                    f"Model yanıt vermiyor; {delay:.0f} sn sonra yeniden denenecek "
+                    f"({stats.api_errors}/{retries}). ({_clip(error, 120)})")
         else:
             delay = PARK_PROBE_S
             self._park(error)
+            # Her yoklama turunda şerit tazelenir: "iş bekletiliyor" satırı
+            # canlı kalır (sayfa yenilense de bir sonraki yoklamada geri gelir).
+            self._bekleme_olayi(
+                kip="park", saniye=int(delay), detay=_clip(error, 1500))
 
         # Kesilebilir bekleyiş: kullanıcı "dur" derse bekleme anında biter.
         try:
@@ -1073,8 +1483,74 @@ class Agent:
 
         # Kullanıcı kesti: bilinçli durdurma — park kaydı da düşer.
         self._unpark()
+        self._bekleme_olayi(kip="iptal")   # şeritteki bekleme satırı kapansın
         self.io.on_notice("Kesildi.")
         return False
+
+    # -- sahte araç çağrısı --------------------------------------------
+
+    def _sahte_cagriyi_duzelt(
+        self, stats: TurnStats, blocks: list[dict[str, Any]]
+    ) -> bool:
+        """Model araç çağrısını metin olarak mı yazdı? Yazdıysa düzelt.
+
+        True dönerse tur SÜRÜYOR: modele tek satırlık bir not düşüldü ve
+        bir tur daha veriliyor. Burada durmak kullanıcıyı ham XML'le (ya
+        da arayüz onu çizmediği için hiçbir şeyle) baş başa bırakırdı.
+        """
+        if not sahte_arac_cagrisi(_text_of_blocks(blocks)):
+            return False
+
+        stats.sahte_cagri += 1
+        self.session.log.note("sahte_arac_cagrisi", deneme=stats.sahte_cagri)
+        # Oto havuzunda bu bir sağlık sinyali: araç çağıramayan uç elensin.
+        self._kusurlu("sahte araç çağrısı")
+
+        if stats.sahte_cagri > SAHTE_CAGRI_TAVANI:
+            # Mutlak sigorta: model düzelmiyor (çoğu zaman araç çağrısını
+            # hiç desteklemeyen bir uç). Turu kendi akışına bırak ve
+            # kullanıcıya söyle — çözüm onun elinde: model değiştirmek.
+            self.io.on_notice(
+                "Model araç çağrılarını metin olarak yazmayı sürdürüyor ve "
+                "düzelmedi. Ayarlar › Model'den başka bir model denemek "
+                "gerekebilir.")
+            return False
+
+        self.session.add_harness_note(
+            SAHTE_CAGRI_NOTU if stats.sahte_cagri == 1 else SAHTE_CAGRI_SERT_NOTU)
+        return True
+
+    def _kusurlu(self, sebep: str) -> None:
+        """Tur teknik olarak başarılı ama İÇERİĞİ kusurlu.
+
+        Şema ihlali ve sahte araç çağrısı, hata/zaman aşımı kadar gerçek
+        birer başarısızlık: ikisi de turu boşa harcıyor. Oto kipinde bu
+        sinyal sağlık defterine yazılıyor, model havuzun sonuna itiliyor
+        ve ücretsiz havuzda araç çağıramayan uç kendiliğinden eleniyor.
+        Başka sağlayıcıda karşılığı yok — sessizce geçiliyor.
+        """
+        kaydet = getattr(self.client, "kusurlu", None)
+        if kaydet is None:
+            return
+        try:
+            kaydet(sebep)
+        except Exception:
+            pass   # sağlık defteri koşuyu düşürmemeli
+
+    def _bekleme_olayi(self, **payload: Any) -> bool:
+        """Bekleme durumunu yapısal kanala yazar.
+
+        True dönerse arayüz canlı satırı üstlendi demektir; çağıran düz
+        metin bildirimini basmaz. Kanal yoksa (CLI/test) False döner ve
+        eski davranış aynen sürer. Kanalın hatası koşuyu düşürmez.
+        """
+        if self.io.on_wait is None:
+            return False
+        try:
+            self.io.on_wait(payload)
+        except Exception:
+            pass
+        return True
 
     def _park(self, error: str) -> None:
         if self._parked:
@@ -1488,7 +1964,9 @@ class Agent:
             # "kim ne yapıyor" orkestra panelinde görünür olsun.
             on_tool_start=lambda name, args: self.io.on_child_tool(title, name, "start"),
             on_tool_end=lambda name, ok, ms: self.io.on_child_tool(title, name, "ok" if ok else "fail"),
-            on_notice=lambda text: self.io.on_notice(f"[{title}] {text}"),
+            # Ham BadRequestError duvarı ana sohbete sarı cevap gibi
+            # dökülmesin — kısa özet; tam metin arayüzde tıkla-aç.
+            on_notice=lambda text: self.io.on_notice(_child_notice_line(title, text)),
             approve=child_approve,
         )
 
@@ -1671,9 +2149,26 @@ class Agent:
     def _observe(self, event: str, data: dict[str, Any]) -> None:
         self.session.log.note(event, **data)
         if event == "tool_start":
+            # Model kendi defterine yazdıysa tur sonu dürtüsü gereksiz.
+            if data.get("tool") == "mind_memory":
+                self._zihin_yazildi = True
             self.io.on_tool_start(data["tool"], data.get("input") or {})
         elif event == "tool_end":
-            self.io.on_tool_end(data["tool"], not data["error"], data["ms"])
+            # Kırmızı defteri: doğrulama araçlarının verdiği son hüküm.
+            # Yeşile dönen bir koşum kaydı SİLİYOR — model düzeltip yeniden
+            # koşturduysa kapı açılmamalı.
+            tool = data["tool"]
+            if tool in DOGRULAMA_ARACLARI:
+                if iz := kirmizi_iz(tool, data):
+                    self._kirmizi[tool] = iz
+                else:
+                    self._kirmizi.pop(tool, None)
+            self.io.on_tool_end(tool, not data["error"], data["ms"])
+        elif event == "sema_ihlali":
+            # Şemaya uymayan çağrı da boşa giden bir tur: oto havuzunda
+            # sağlık sinyali sayılıyor (bkz. _kusurlu). Araç hiç çalışmadı,
+            # arayüzde adım satırı da yok — yalnızca günlükte ve defterde.
+            self._kusurlu("şema ihlali")
 
 
 def worth_recalling(text: str) -> bool:
@@ -1806,6 +2301,27 @@ def _clip(text: str, limit: int) -> str:
     """Uzun bir sonucu keser — bildirim notu bağlamı boğmasın."""
     flat = (text or "").strip()
     return flat if len(flat) <= limit else flat[:limit] + "…"
+
+
+def _child_notice_line(title: str, text: str) -> str:
+    """Alt ajan uyarısını ana sohbete kısa satır olarak taşır.
+
+    Ham BadRequestError / JSON duvarı sarı "cevap" gibi ekranı kaplıyordu.
+    Mesaj çıkarılabiliyorsa onu kullan; yoksa ilk satırı kısalt.
+    """
+    raw = (text or "").strip()
+    if not raw:
+        return f"[{title}]"
+    msg = re.search(r"'message':\s*'([^']+)'", raw) or re.search(
+        r'"message"\s*:\s*"([^"]+)"', raw
+    )
+    if msg:
+        return f"[{title}] {msg.group(1)}"
+    err = re.match(r"^(\w+Error)\b", raw)
+    if err and ("Error code" in raw or "{" in raw):
+        return f"[{title}] {err.group(1)}"
+    first = raw.split("\n", 1)[0].strip()
+    return f"[{title}] {_clip(first, 140)}"
 
 
 def _one_line(text: str, limit: int = 220) -> str:

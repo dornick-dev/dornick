@@ -52,6 +52,8 @@ def build_registry(mind: Any = None, *, subagents: bool = True) -> ToolRegistry:
         hands,
         hearing,
         jobs,
+        kod,
+        kosucu,
         learn,
         mail,
         place,
@@ -62,12 +64,21 @@ def build_registry(mind: Any = None, *, subagents: bool = True) -> ToolRegistry:
 
     registry = ToolRegistry()
     shell.register(registry)
+    # Dosya araçları + `denetle`: yazılan kod, yazıldığı anda dilinin kendi
+    # denetleyicisinden geçiyor ve sonuç aracın cevabına giriyor. Ayrı bir
+    # kayıt satırı yok — tanı dosya yazmanın parçası, ayrı bir yetenek değil.
     files.register(registry)
     # İçerik arama: "X nerede geçiyor?" için dosya dosya okumak yerine tek araç.
     search.register(registry)
+    # Yapısal arama: `grep` metin görür, `semboller` tanımı kullanımdan
+    # ayırır — imzasını değiştireceğin fonksiyonun çağrılarını görmek için.
+    kod.register(registry)
     # Değişiklik defteri: dosya araçlarının aldığı anlık görüntüleri listeler
     # ve geri alır (undo/redo).
     checkpoint.register(registry)
+    # Test koşucusu: `denetle` sözdizimine bakar, `kos` kodu ÇALIŞTIRIR.
+    # Tip/davranış hatalarını yakalayan tek şey bu.
+    kosucu.register(registry)
     web.register(registry)
     jobs.register(registry)
     eyes.register(registry)

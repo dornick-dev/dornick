@@ -24,6 +24,40 @@ SIZE = 64
 
 INSTALL_HINT = "Sistem tepsisi için: pip install 'neocp[tray]'"
 
+# X'e basılınca iş sürüyorsa gösterilen balon. Yalnızca İLK seferde —
+# her gizlenişte bildirim basmak rahatsız eder, bir kez öğretmek yeter.
+ARKA_PLAN_NOTU = ("neo arka planda çalışmaya devam ediyor — "
+                  "tepsiden açabilirsin")
+
+# Tepsiden Çıkış seçildi ama ajan meşgul: yarım kalacak işin onayı.
+CIKIS_SORUSU = ("Bir iş sürüyor; çıkarsan yarım kalır (kaldığın yerden "
+                "sürdürülebilir).\n\nYine de çık?")
+
+
+def kapatma_karari(tepsi_acik: bool) -> str:
+    """X'e basılınca ne olur: tepsi yaşıyorsa pencere GİZLENİR, uygulama
+    tepside sürer (Claude Code / masaüstü geleneği). Tepsi yoksa gizlemek
+    programı kapanmaz hale getirirdi — gerçekten kapatılır."""
+    return "gizle" if tepsi_acik else "kapat"
+
+
+def cikis_karari(mesgul: bool, onayla: Callable[[str], bool] | None) -> bool:
+    """Tepsiden Çıkış seçildi: çıkılsın mı?
+
+    Ajan meşgulse kullanıcıya sorulur — yarım kalacak işten haberi olsun.
+    Boştaysa sorgusuz çıkılır. Onay sorulamıyorsa (diyalog yok/patladı)
+    kullanıcının açık jesti kazanır: çıkılır — "çıkamıyorum" durumu,
+    yarım işten daha kötü bir tuzak.
+    """
+    if not mesgul:
+        return True
+    if onayla is None:
+        return True
+    try:
+        return bool(onayla(CIKIS_SORUSU))
+    except Exception:
+        return True
+
 
 def available() -> bool:
     try:
@@ -60,13 +94,24 @@ class Tray:
         hide: Callable[[], None],
         quit: Callable[[], None],
         title: str = "neo",
+        busy: Callable[[], bool] | None = None,
+        confirm: Callable[[str], bool] | None = None,
     ) -> None:
         self.show = show
         self.hide = hide
         self.quit = quit
         self.title = title
+        # Çıkış bekçisi: ajan meşgulken Çıkış seçilirse `confirm` ile
+        # sorulur — süren iş sessizce ölmesin. İkisi de isteğe bağlı:
+        # verilmezse eski davranış (sorgusuz çıkış) aynen durur.
+        self.busy = busy
+        self.confirm = confirm
         self._icon: Any = None
         self._thread: threading.Thread | None = None
+        # Bir kez gösterilmiş balonlar. "Arka planda çalışmaya devam
+        # ediyor" bilgisi ÖĞRETİCİ: ilk gizlenişte gerekli, her
+        # gizlenişte rahatsız edici.
+        self._gosterilen: set[str] = set()
 
     def start(self) -> bool:
         """Simgeyi ayrı bir thread'de açar. Paket yoksa False."""
@@ -84,7 +129,7 @@ class Tray:
                 pystray.MenuItem("Göster", self._show, default=True),
                 pystray.MenuItem("Gizle", self._hide),
                 pystray.Menu.SEPARATOR,
-                pystray.MenuItem("Çık", self._quit),
+                pystray.MenuItem("Çıkış", self._quit),
             ),
         )
 
@@ -101,6 +146,19 @@ class Tray:
             self._icon.notify(text, self.title)
         except Exception:
             pass
+
+    def note_once(self, text: str) -> bool:
+        """Aynı balonu ömürde bir kez basar. Bastıysa True.
+
+        X'e ilk basışta "neo arka planda çalışmaya devam ediyor" demek
+        gerekiyor — pencere kaybolunca kullanıcı programın kapandığını
+        sanıyor. İkinci kez demek ise öğretmek değil, dırdır.
+        """
+        if text in self._gosterilen:
+            return False
+        self._gosterilen.add(text)
+        self.note(text)
+        return True
 
     def stop(self) -> None:
         if self._icon is not None:
@@ -122,6 +180,16 @@ class Tray:
         _safely(self.hide)
 
     def _quit(self, *_args: Any) -> None:
+        # Meşgulken onay: yarım kalacak iş varsa kullanıcı bilerek çıksın.
+        # `busy` sorgusu patlarsa meşgul DEĞİL sayılır — çıkışı kilitleme.
+        mesgul = False
+        if self.busy is not None:
+            try:
+                mesgul = bool(self.busy())
+            except Exception:
+                mesgul = False
+        if not cikis_karari(mesgul, self.confirm):
+            return
         self.stop()
         _safely(self.quit)
 

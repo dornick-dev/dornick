@@ -31,7 +31,23 @@ network that you can literally watch grow on screen.
   is discarded. Your data never leaves the computer.
 * **Computer use.** Screen capture, mouse/keyboard control, window
   management, and a real browser driven over the DevTools protocol
-  (`neo chrome`) — sessions and logins persist in its own profile.
+  (`neo chrome`) — sessions and logins persist in its own profile, forms get
+  filled, and neo reads the console and network log to tell "the page opened"
+  apart from "the page works".
+* **Work in your own repo.** Point neo at a project folder and it works
+  *there* — not in a sandbox corner. Every file it writes is compiled or
+  linted on the spot (`compile()`, `php -l`, `node --check`, `tsc`, ruff), and
+  the `kos` tool finds the project's real test command from evidence and runs
+  it. It never invents a test command it cannot justify.
+* **Your rules, enforced.** `.neocp/kancalar.json` lets you run your own shell
+  command before or after any tool; a non-zero exit **vetoes** the tool.
+  Deliberately outside the permission prompt — your own rule shouldn't ask
+  your permission — and the hook file is closed to the model: the write tools
+  refuse it by path, and any other *mutating* call that names it (a shell
+  command, say) is refused before the permission gate. Reading it is allowed;
+  the model should know the rules it works under. Honest boundary: this stops
+  a model that decides a hook is in its way, not one deliberately hiding the
+  filename — against that, the fence is the permission engine.
 * **External gate (API).** Other agents and tools can talk to neo
   programmatically: `POST /api/gate` on `127.0.0.1` with
   `{"text": "..."}` returns the full answer. Off by default.
@@ -128,8 +144,18 @@ gate API and audited everything independently — then ran the same tasks with
 the evaluator itself and with neo's own model bare over the raw API, one-shot.
 neo scored **294/300**, matching its evaluator (289) and beating its own bare
 model (280): same model, +14 points inside the harness and zero broken
-deliveries. Full write-up: [docs/evaluation.md](docs/evaluation.md)
-([Türkçe](docs/evaluation.tr.md)).
+deliveries.
+
+That grading was done by hand, so it was turned into a rig that lives in the
+repo: [`eval/coding/`](eval/coding/README.md). Nine tasks in Python, Node and
+PHP; each runs in its own temp workspace with an empty mind and its own neo
+instance, and the grader **executes the delivered code** rather than checking
+that files exist. Current baseline on a mid-tier model: **92.3/100** across all
+nine tasks — and, more usefully, three named weaknesses the behavioural columns
+exposed. The sharpest: one task shipped 14 passing tests, 18 real assertions and
+a CLI that exits 1 on every query, because the tests covered the functions and
+nothing ever ran the command a user would type. Full write-up:
+[docs/evaluation.md](docs/evaluation.md) ([Türkçe](docs/evaluation.tr.md)).
 
 ## Roadmap
 
@@ -138,8 +164,10 @@ what matches the current harness landscape, where neo is ahead (the
 user-learning model, the living memory, memory-as-MCP, the gate), and
 what is deliberately deferred:
 
-* Deeper browser control (accessibility refs, forms, console/network)
-* Hooks, OS-level shell sandboxing, transcript search, LSP
+* OS-level shell sandboxing; a real LSP instead of the `ast`/regex
+  approximation behind the `semboller` tool
+* Typed subagent definitions; MCP client-side OAuth
+* Memory-informed coding — the coding pipeline still runs with an empty mind
 * Stronger English base model; broader platform support (Windows-first today)
 
 ## Contributing

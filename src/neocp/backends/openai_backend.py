@@ -71,6 +71,10 @@ class OpenAIBackend:
         # hata veren model bir süre havuzun sonuna itiliyor.
         self._oto = otomod.oto_mu(model)
         self._saglik = otomod.Saglik()
+        # Oto kipinde en son hangi ucu seçtik. İçerik kusuru (şema ihlali,
+        # sahte araç çağrısı) tur BİTTİKTEN sonra döngüde anlaşılıyor;
+        # cezayı doğru modele yazabilmek için seçim burada saklanıyor.
+        self._son_secilen = ""
 
     async def close(self) -> None:
         await self._client.close()
@@ -133,6 +137,7 @@ class OpenAIBackend:
                     )
                 )
             kwargs["model"] = secilen
+            self._son_secilen = secilen
             extra.update(oto_ek)
 
         if extra:
@@ -153,6 +158,22 @@ class OpenAIBackend:
         if self._oto and secilen and not result.interrupted:
             self._saglik.kaydet(secilen, ok=not result.error)
         return result
+
+    def kusurlu(self, sebep: str = "") -> None:
+        """İçerik kusuru: tur teknik olarak başarılı ama boşa gitti.
+
+        Döngü çağırıyor (bkz. `Agent._kusurlu`): şemaya uymayan araç
+        çağrısı ya da gerçek çağrı yerine düz metin yazılmış çağrı XML'i.
+        Ücretsiz havuzda bunlar hata kadar gerçek: araç çağıramayan bir uç
+        işi ilerletmiyor, yalnızca tur harcıyor. Sağlık defterine
+        başarısızlık olarak yazılıyor; eşiği aşan model havuzun sonuna
+        itiliyor ve kendiliğinden eleniyor.
+
+        Oto kipi dışında karşılığı yok: kullanıcı modeli kendi seçti,
+        onu arkasından sıralamaya sokmak bize düşmez.
+        """
+        if self._oto and self._son_secilen:
+            self._saglik.kaydet(self._son_secilen, False)
 
     def _oto_hazirla(self) -> tuple[str, dict[str, Any]]:
         """Oto kipinin istek parçaları: seçilen model + ek gövde alanları.

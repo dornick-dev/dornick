@@ -125,6 +125,7 @@ def sor(
                 and ev.role == "user"
                 and not ev.meta.get("tool_results")
                 and not ev.meta.get("continuation")
+                and not ev.meta.get("internal")
                 and _metinler(ev.content).strip() == text.strip()
             ):
                 mesaj_gorüldu.set()
@@ -138,7 +139,12 @@ def sor(
                 elif blok.get("type") == "tool_use":
                     araclar.append(str(blok.get("name", "")))
         elif ev.kind == "meta" and ev.content == "permission":
-            onay_bekliyor.set()
+            # Yalnız GERÇEKTEN kullanıcıya sorulan izin sayılır. `yolo`
+            # kipinde her araç da bir permission olayı bırakıyor; hepsini
+            # "onay bekliyor" saymak, zaman aşımı mesajının her seferinde
+            # yanlış yere ("izin onayla") işaret etmesine yol açıyordu.
+            if str((ev.meta or {}).get("decision") or "") == "ask":
+                onay_bekliyor.set()
 
     abonelik_iptal = log.subscribe(dinle)
     kanal: queue.Queue[str] = hub.register()

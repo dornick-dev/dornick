@@ -95,6 +95,7 @@ Dil.statik("gear", "Settings", "title");
 Dil.statik("dock-model", "Model — opens settings", "title");
 Dil.statik("dock-effort", "Thinking depth — click to change", "title");
 Dil.statik("dock-mode", "Permission mode — click to change", "title");
+Dil.statik("dock-cost", "Estimated spend — click for the breakdown", "title");
 Dil.statik("dock-ctx", "Context usage", "title");
 Dil.statik("settings-save", "Save");
 Dil.statik("lens-snap", "Take frame");

@@ -71,3 +71,122 @@ def test_sessiz_bayraklar_konsol_penceresi_actirmaz() -> None:
         assert bayraklar == {"creationflags": subprocess.CREATE_NO_WINDOW}
     else:
         assert bayraklar == {}
+
+
+# -- sürüm ---------------------------------------------------------------
+#
+# Sahada hangi kopyanın kurulu olduğu görünmüyordu. Tek gerçek kaynak
+# pyproject.toml: geliştirici deposunda kökte durur, kurulu ağaca
+# build.ps1 koyar — ikisinde de aynı yerden okunur.
+
+
+def test_surum_pyprojecttan_okunur() -> None:
+    """surum() pyproject.toml'daki version ile birebir aynı olmalı."""
+    import re
+
+    metin = (ortam._kok() / "pyproject.toml").read_text(encoding="utf-8")
+    beklenen = re.search(r'^version\s*=\s*"([^"]+)"', metin, re.M).group(1)
+    ortam.surum.cache_clear()
+    try:
+        assert ortam.surum() == beklenen
+    finally:
+        ortam.surum.cache_clear()
+
+
+def test_surum_sahte_kokten_okunur(tmp_path: Path, monkeypatch) -> None:
+    """Kök nereye taşınırsa taşınsın (kurulu düzen dahil) oradaki
+    pyproject okunur — yol varsayımı değil, dosyanın kendisi konuşur."""
+    (tmp_path / "pyproject.toml").write_text(
+        '[project]\nname = "neocp"\nversion = "9.9.9"\n', encoding="utf-8")
+    monkeypatch.setattr(ortam, "_kok", lambda: tmp_path)
+    ortam.surum.cache_clear()
+    try:
+        assert ortam.surum() == "9.9.9"
+    finally:
+        ortam.surum.cache_clear()
+
+
+def test_surum_bozuk_agacta_patlamaz(tmp_path: Path, monkeypatch) -> None:
+    """pyproject yoksa (elle bozulmuş kurulum) istisna değil, bir dizgi
+    dönmeli — arayüz sürümsüz de açılabilmeli."""
+    monkeypatch.setattr(ortam, "_kok", lambda: tmp_path)
+    ortam.surum.cache_clear()
+    try:
+        deger = ortam.surum()
+        assert isinstance(deger, str) and deger
+    finally:
+        ortam.surum.cache_clear()
+
+
+def test_surum_parcalama_v_onekini_ve_metni_yutar() -> None:
+    assert ortam._surum_parcala("v0.2.10") == (0, 2, 10)
+    assert ortam._surum_parcala("0.2.2") == (0, 2, 2)
+    assert ortam._surum_parcala("surum yok") == ()
+    # Karşılaştırma sayısal: 0.2.10 > 0.2.9 (dizgi kıyası bunu ıskalar).
+    assert ortam._surum_parcala("0.2.10") > ortam._surum_parcala("0.2.9")
+
+
+# -- güncelleme denetimi -------------------------------------------------
+#
+# YALNIZ elle tetiklenir (Ayarlar › Makine). Testler ağa hiç çıkmaz:
+# urlopen yerine sahte açıcı veriliyor.
+
+
+class _SahteCevap:
+    def __init__(self, govde: dict) -> None:
+        import json
+
+        self._govde = json.dumps(govde).encode("utf-8")
+
+    def read(self) -> bytes:
+        return self._govde
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args) -> None:
+        pass
+
+
+def test_guncelleme_yeni_surum_varsa_soyler(monkeypatch) -> None:
+    monkeypatch.setattr(ortam, "surum", lambda: "0.2.2")
+    cevap = ortam.guncelleme_denetle(
+        _ac=lambda *a, **k: _SahteCevap(
+            {"tag_name": "v0.9.0", "html_url": "https://ornek/yayin"}))
+    assert cevap["ok"] and cevap["yeni"] == "0.9.0"
+    assert cevap["url"] == "https://ornek/yayin"
+    assert cevap["mevcut"] == "0.2.2"
+
+
+def test_guncelleme_ayni_surumde_sessiz(monkeypatch) -> None:
+    monkeypatch.setattr(ortam, "surum", lambda: "0.2.2")
+    cevap = ortam.guncelleme_denetle(
+        _ac=lambda *a, **k: _SahteCevap({"tag_name": "v0.2.2"}))
+    assert cevap["ok"] and cevap["yeni"] == "" and cevap["hata"] == ""
+
+
+def test_guncelleme_agsizken_kibar_hata(monkeypatch) -> None:
+    """Ağ yoksa istisna değil, insan diliyle bir hata metni dönmeli."""
+    import urllib.error
+
+    def agsiz(*a, **k):
+        raise urllib.error.URLError("dns yok")
+
+    monkeypatch.setattr(ortam, "surum", lambda: "0.2.2")
+    cevap = ortam.guncelleme_denetle(_ac=agsiz)
+    assert not cevap["ok"] and cevap["yeni"] == ""
+    assert "internet" in cevap["hata"].lower() or "ağ" in cevap["hata"].lower()
+
+
+def test_guncelleme_yayin_yoksa_dogru_soyler(monkeypatch) -> None:
+    """404 (yayın hiç yapılmamış/depo görünmüyor) ağ hatasıyla karışmasın."""
+    import io
+    import urllib.error
+
+    def yok(*a, **k):
+        raise urllib.error.HTTPError("u", 404, "Not Found", {}, io.BytesIO(b""))
+
+    monkeypatch.setattr(ortam, "surum", lambda: "0.2.2")
+    cevap = ortam.guncelleme_denetle(_ac=yok)
+    assert not cevap["ok"]
+    assert "sürüm" in cevap["hata"].lower() or "yayın" in cevap["hata"].lower()

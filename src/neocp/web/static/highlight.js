@@ -27,6 +27,11 @@ const Syntax = (() => {
     bash: "clike", sh: "clike", sql: "clike", toml: "clike", yaml: "clike",
     yml: "clike", c: "clike", cpp: "clike", go: "clike", rust: "clike",
     java: "clike",
+    // PHP burada yoktu ve PHP dosyaları renksiz düz metin kalıyordu; aynı
+    // aileden komşuları da eklendi. Kabalık bilinçli: yanlış ailede birkaç
+    // sözcük renklenmek, hiç renklenmemekten iyi.
+    php: "clike", cs: "clike", ruby: "clike", rb: "clike", lua: "clike",
+    kotlin: "clike", kt: "clike", swift: "clike",
   };
 
   // Anahtar sözcükler. Kabaca — birkaç dilin sözcüğü ortak havuzda; yanlış
@@ -39,7 +44,8 @@ const Syntax = (() => {
     "lambda pass global nonlocal public private protected static readonly " +
     "type namespace declare extends implements super this self param begin " +
     "process end foreach select where insert update join values create table " +
-    "drop alter into group order by having union all set match"
+    "drop alter into group order by having union all set match " +
+    "echo use require include elseif endif endforeach"
   ).split(" ");
   const KEYWORDS = new Set(WORDS);
 

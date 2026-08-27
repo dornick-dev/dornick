@@ -1,0 +1,3 @@
+Isletme egitimi plani
+Iki gunluk egitim: birinci gun SCADA arayuzu, ikinci gun alarm yonetimi.
+Katilimci sayisi 12. Yer: Kayseri OSB toplanti salonu.

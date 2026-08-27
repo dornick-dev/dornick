@@ -30,7 +30,9 @@ from .backends import build_client
 from . import (
     connectors as linking,
     ear as hearing,
+    fiyat as fiyatlama,
     lmstudio,
+    ortam,
     prompt,
     schedule as scheduling,
     settings,
@@ -142,23 +144,107 @@ async def _retire(client: Any) -> None:
 GOAL_SNAPSHOT_LIMIT = 20
 
 
-def _active_goals(agent: Any) -> list[dict[str, str]]:
-    """Aktif hedeflerin arayüz dökümü (id + metin).
+def _active_goals(agent: Any) -> list[dict[str, Any]]:
+    """Aktif hedeflerin arayüz dökümü (id + metin + bu oturumdan mı).
 
     Hedef paneli olay güdümlü (goal_push/goal_status) ama sayfa yenilenince
     olaylar kaçmış oluyor; snapshot bu listeyle panele kaldığı yeri veriyor.
     Zihin yoksa ya da okunamıyorsa boş liste — panel görünmez, sohbet düşmez.
+
+    `eski`: madde GEÇMİŞ bir oturumda açılmış. Kullanıcı haklı olarak "bu
+    görevleri kim oluşturuyor" diye soruyordu ve birikmiş listenin çoğu
+    bayat maddeydi; panelde ayırt edilebilmeli.
     """
     mind = getattr(agent, "mind", None)
     if mind is None:
         return []
+    simdiki = getattr(mind, "session_id", "")
     try:
         return [
-            {"id": g.id, "text": g.text}
+            {"id": g.id, "text": g.text,
+             "eski": bool(simdiki and g.session_id and g.session_id != simdiki)}
             for g in mind.goals()[:GOAL_SNAPSHOT_LIMIT]
         ]
     except Exception:
         return []
+
+
+# Kaba token tahmini: karakter / bu sayı. Sağlayıcıdan gelen gerçek sayıya
+# hiçbir zaman denk gelmez ve gelmesi de beklenmiyor — kullanıcının bilmek
+# istediği "ne kadar doluyum", tam rakam değil. Bu yüzden tahmin olduğu
+# arayüzde açıkça söyleniyor (title'da).
+TAHMIN_BOLEN = 4
+
+
+def _gecmis_kullanim(agent: Any) -> dict[str, Any]:
+    """Sürdürülen bir oturumun bağlam/token durumu.
+
+    Kanıtlanmış yara: uygulama kapanıp açılınca ya da geçmişten bir
+    konuşma sürdürülünce dock'taki bağlam çubuğu ve token sayacı SIFIRDAN
+    başlıyordu. Oysa geçmiş yüklü ve bağlam gerçekten dolu — kullanıcı
+    "ne kadar doluyum" bilgisini kaybediyordu. Bu turda hiç model
+    çağrılmadığı için `_last_usage` boş; doğru kaynak oturum günlüğü.
+
+    Kaynak sırası:
+      1. Son asistan mesajının `usage` meta'sı — sağlayıcının saydığı
+         gerçek rakam, en doğrusu.
+      2. Yoksa yüklü mesajlardan kaba tahmin (karakter/4). `tahmin`
+         bayrağı arayüze taşınıyor: uydurma bir kesinlik satılmıyor.
+
+    Yeni oturumda ikisi de boş çıkar ve sayaç gerçekten sıfırdan başlar.
+    """
+    bos = {"prompt_total": 0, "output": 0, "cagri": 0, "tahmin": False}
+    session = getattr(agent, "session", None)
+    if session is None:
+        return bos
+    try:
+        mesajlar = session.log.messages()
+    except Exception:
+        return bos
+
+    cagri = 0
+    son: dict[str, Any] | None = None
+    toplam_cikti = 0
+    for ev in mesajlar:
+        if ev.role != "assistant":
+            continue
+        kullanim = ev.meta.get("usage")
+        if isinstance(kullanim, dict) and kullanim.get("prompt_total"):
+            son = kullanim
+            cagri += 1
+            toplam_cikti += int(kullanim.get("output") or 0)
+
+    if son is not None:
+        return {
+            "prompt_total": int(son.get("prompt_total") or 0),
+            "output": toplam_cikti,
+            "cagri": cagri,
+            "tahmin": False,
+        }
+
+    # Usage yok (eski günlük ya da sayaç vermeyen sağlayıcı): kaba tahmin.
+    # Sıfır göstermektense yaklaşık göstermek doğru — yeter ki tahmin
+    # olduğu söylensin.
+    harf = 0
+    for ev in mesajlar:
+        harf += len(_metin_uzunlugu(ev.content))
+    if not harf:
+        return bos
+    return {"prompt_total": harf // TAHMIN_BOLEN, "output": 0,
+            "cagri": 0, "tahmin": True}
+
+
+def _metin_uzunlugu(content: Any) -> str:
+    """Bir mesajın metin gövdesi (tahmin için). Görüntüler sayılmıyor."""
+    if isinstance(content, str):
+        return content
+    if not isinstance(content, list):
+        return ""
+    parcalar = []
+    for blok in content:
+        if isinstance(blok, dict) and isinstance(blok.get("text"), str):
+            parcalar.append(blok["text"])
+    return "\n".join(parcalar)
 
 
 # Yardımcı durumlarının arayüz dili. Defterde Türkçe halleri duruyor;
@@ -255,6 +341,24 @@ class Bridge:
         # anlamsız: arayüz bu bilgiyle giriş satırını kapalı tutuyor.
         self.stage = "uyanıyor"
         self.ready = False
+        # Maliyet çipi: tur ve oturum toplamları (token) + seçili modelin
+        # fiyat etiketi (USD/token, OpenRouter kataloğundan). Fiyat arka
+        # plan thread'inde EN FAZLA bir kez çekiliyor; tur ağ beklemiyor.
+        self._fiyat: dict[str, float] | None = None
+        self._fiyat_bakildi = False
+        self._tur_kullanim = {"girdi": 0, "cikti": 0, "cagri": 0}
+        self._oturum_kullanim = {"girdi": 0, "cikti": 0, "cagri": 0}
+        # Sürdürülen oturumun geçmiş harcaması bir kez tohumlanır; bkz.
+        # _oturum_tohumla. Yeni oturumda tohum yok — sayaç gerçekten sıfır.
+        self._oturum_tohumlandi = False
+        # Bütçe freni: bu oturum için üst sınır (USD). None = sınırsız.
+        # Ayar sayfasında değil, maliyet çipinin açılır kutusunda duruyor —
+        # rakamın yanında. Sınıra ulaşılınca koşan tur duruyor (bkz.
+        # _butce_freni ve loop.Agent._drive).
+        self._butce_usd: float | None = None
+        # Sınır bir kez bildirildi mi: her model çağrısından önce sorulan
+        # fren, aynı satırı turda onlarca kez basmasın.
+        self._butce_bildirildi = False
 
     # -- HTTP thread'inden çağrılanlar ---------------------------------
 
@@ -343,6 +447,39 @@ class Bridge:
         self.server.rebind(session)
         self.hub.emit({"type": "session_reset", "id": session.id, "resumed": resumed})
         return {"ok": True, "id": session.id, "resumed": resumed}
+
+    def compact_now(self) -> dict[str, Any]:
+        """Bağlamı ŞİMDİ sıkıştırır (kompozerdeki `/sifirla` komutu).
+
+        Aynı yol kendiliğinden de işliyor: pencere dolmaya yaklaşınca
+        `_relieve_pressure` bunu zaten çağırıyor. Buradaki tek fark kararı
+        kullanıcının vermesi — "konuşma ağırlaştı, topla" diyebilmek.
+
+        Yalnız boştayken: akan bir turun altından geçmişi özetleyip
+        değiştirmek o cevabı bozar.
+        """
+        agent = self.agent
+        if agent is None:
+            return {"ok": False, "error": "henüz hazır değil"}
+        if self._busy:
+            return {"ok": False, "error": "neo meşgul; tur bitince dene", "busy": True}
+
+        async def _kos() -> None:
+            self._busy = True
+            self.hub.emit({"type": "status", "busy": True})
+            try:
+                if not await agent._compact(reason="kullanıcı istedi"):
+                    self.hub.emit({"type": "notice", "text":
+                                   "Sıkıştıracak kadar geçmiş yok — bağlam zaten kısa."})
+            except Exception as exc:   # sıkıştırma uygulamayı düşürmemeli
+                self.hub.emit({"type": "notice", "text": f"{type(exc).__name__}: {exc}"})
+            finally:
+                self._busy = False
+                self.hub.emit({"type": "status", "busy": False})
+                self.hub.emit({"type": "turn_end"})
+
+        asyncio.run_coroutine_threadsafe(_kos(), self.loop)
+        return {"ok": True}
 
     def wake(self) -> None:
         """Uyandırma sözü duyuldu: pencere gizliyse geri gelsin.
@@ -462,6 +599,11 @@ class Bridge:
         # ayrı düşerse biri yeni modele biri eskisine göre kalır.
         if pending is not None:
             agent.reconfigure(pending)
+        # Yeni modelin fiyatı yeniden sorulmalı: eski etiketle harcama
+        # göstermek yanlış rakam basmak olur. Bir sonraki usage olayı
+        # arka planda taze etiketi çektirir.
+        self._fiyat = None
+        self._fiyat_bakildi = False
         note = self._swap_note or f"Model değişti: {wanted.name}."
         self._swap_note = ""
         self.hub.emit({"type": "notice", "text": note})
@@ -483,6 +625,15 @@ class Bridge:
 
     def snapshot(self) -> dict[str, Any]:
         agent = self.agent
+        # Bu süreçte bir tur koştuysa canlı sayaç doğrudur; koşmadıysa
+        # (sürdürülen oturum, taze açılış) gerçek durum oturum günlüğünde.
+        canli = int((getattr(agent, "_last_usage", None) or {}).get("prompt_total") or 0)
+        gecmis = ({"prompt_total": canli, "output": 0, "cagri": 0, "tahmin": False}
+                  if canli else _gecmis_kullanim(agent) if agent
+                  else {"prompt_total": 0, "output": 0, "cagri": 0, "tahmin": False})
+        # Maliyet çipinin oturum toplamı da aynı kaynaktan tohumlanıyor:
+        # yeni turlar bunun ÜSTÜNE ekleniyor (bkz. _usage_yay).
+        self._oturum_tohumla(gecmis)
         return {
             "busy": self._busy,
             "ready": self.ready,
@@ -494,9 +645,25 @@ class Bridge:
             # penceresi. Pencere olmadan kullanım yüzdesi hesaplanamıyor.
             "effort": agent.config.model.effort if agent else "",
             "context_window": int(agent.config.model.context_window) if agent else 0,
-            # Son turun istem toplamı: sayfa yenilenince bağlam göstergesi
-            # sıfırdan değil kaldığı yerden başlasın.
-            "prompt_total": int((getattr(agent, "_last_usage", None) or {}).get("prompt_total") or 0) if agent else 0,
+            # Son turun istem toplamı: sayfa yenilenince — ve uygulama
+            # kapanıp açılınca — bağlam göstergesi sıfırdan değil kaldığı
+            # yerden başlasın. Bu süreçte hiç tur koşmadıysa (sürdürülen
+            # oturum) değer oturum günlüğünden geliyor; bkz. _gecmis_kullanim.
+            "prompt_total": gecmis["prompt_total"],
+            # Rakam sağlayıcının saydığı gerçek değil, kaba bir tahmin mi?
+            # Arayüz bunu title'da söylüyor — uydurma kesinlik satılmıyor.
+            "tahmin": gecmis["tahmin"],
+            # Maliyet çipi: sayfa yenilenince harcama göstergesi sıfırdan
+            # değil kaldığı yerden başlasın. Fiyat bilinmiyorsa None —
+            # çip token sayısına düşer.
+            "fiyat": self._fiyat,
+            "kullanim": {
+                "tur": dict(self._tur_kullanim),
+                "oturum": dict(self._oturum_kullanim),
+            },
+            # Bu oturum için konmuş harcama sınırı (USD) — None = sınırsız.
+            # Sayfa yenilenince maliyet çipi sınırı unutmasın.
+            "butce": self._butce_usd,
             "mode": agent.permissions.mode if agent else "",
             # Aktif hedefler: sayfa yenilenince hedef paneli olay akışını
             # kaçırmış oluyor; panel bu listeyle tohumlanıp kaldığı yerden
@@ -514,7 +681,241 @@ class Bridge:
             "wake": bool(agent and agent.config.listen.wake.strip()),
             "camera": bool(agent and agent.config.camera.enabled),
             "tools": len(agent.registry) if agent else 0,
+            # Çalışan kopyanın sürümü: üst bar marka ipucu buradan besleniyor.
+            # Sahada "hangi sürüm açık?" sorusu cevapsız kalmasın.
+            "surum": ortam.surum(),
+            "kurulu": ortam.kurulu_mu(),
         }
+
+    # -- maliyet çipi ---------------------------------------------------
+
+    def _oturum_tohumla(self, gecmis: dict[str, Any]) -> None:
+        """Sürdürülen oturumun harcamasını çipe bir kez tohumlar.
+
+        Bağlam çubuğuyla aynı yara: yeniden açılan bir konuşmada çip de
+        sıfırdan başlıyordu. Tohum YALNIZCA bir kez ve yalnızca bu süreçte
+        hiç tur koşmamışken konuyor — yoksa her snapshot çağrısı (sayfa
+        her yenilendiğinde) toplamı şişirirdi.
+        """
+        if self._oturum_tohumlandi or self._oturum_kullanim["cagri"]:
+            return
+        if not gecmis.get("cagri"):
+            return
+        self._oturum_tohumlandi = True
+        self._oturum_kullanim = {
+            "girdi": int(gecmis.get("prompt_total") or 0),
+            "cikti": int(gecmis.get("output") or 0),
+            "cagri": int(gecmis.get("cagri") or 0),
+        }
+
+    def _usage_yay(self, report: dict[str, int]) -> None:
+        """Tur-sonu kullanım raporunu toplayarak hub'a akıtır.
+
+        Olay sözleşmesi (arayüzdeki maliyet çipi buna bağlı):
+            {type: "usage", ...cache_report alanları,
+             tur:    {girdi, cikti, cagri},    bu kullanıcı turunun toplamı
+             oturum: {girdi, cikti, cagri},    oturumun toplamı
+             fiyat:  {girdi, cikti} | None}    USD/token; bilinmiyorsa None
+
+        `girdi` istemin tamamı (prompt_total: önbellek dahil) — tahmin
+        kasıtlı olarak muhafazakâr, önbellek indirimi sayılmıyor. Fiyat
+        None ise çip token sayısı gösterir.
+        """
+        for hedef in (self._tur_kullanim, self._oturum_kullanim):
+            hedef["girdi"] += int(report.get("prompt_total") or 0)
+            hedef["cikti"] += int(report.get("output") or 0)
+            hedef["cagri"] += 1
+        self._fiyat_getir()
+        self.hub.emit({
+            "type": "usage", **report,
+            "tur": dict(self._tur_kullanim),
+            "oturum": dict(self._oturum_kullanim),
+            "fiyat": self._fiyat,
+        })
+
+    # -- bütçe freni ----------------------------------------------------
+
+    def butce(self, usd: Any = None) -> dict[str, Any]:
+        """Bu oturumun harcama üst sınırını okur ya da kurar (HTTP thread).
+
+        `usd` None/boş ise sınır KALKAR (sınırsız). Sıfır ya da negatif de
+        sınırsız sayılıyor: "0 dolar harca" diye bir istek yok, elini
+        klavyeye sürtmüş bir kullanıcı var.
+
+        Sınır ayar dosyasına yazılmıyor — bilinçli. Bu bir tercih değil, bu
+        oturuma konmuş bir emniyet kemeri; yarın açılan konuşma dün konan
+        sınırla sessizce durmamalı.
+        """
+        if usd is None or usd == "":
+            self._butce_usd = None
+        else:
+            try:
+                deger = float(usd)
+            except (TypeError, ValueError):
+                return {"ok": False, "error": "Sayı bekleniyordu.",
+                        "butce": self._butce_usd}
+            self._butce_usd = deger if deger > 0 else None
+        # Sınır değişti: "ulaşıldı" satırı bir kez daha basılabilsin.
+        self._butce_bildirildi = False
+        return {"ok": True, "butce": self._butce_usd,
+                "harcanan": self._harcanan()}
+
+    def _harcanan(self) -> float | None:
+        """Bu oturumun tahmini harcaması (USD). Fiyat bilinmiyorsa None."""
+        if not self._fiyat:
+            return None
+        o = self._oturum_kullanim
+        return o["girdi"] * self._fiyat["girdi"] + o["cikti"] * self._fiyat["cikti"]
+
+    def _butce_freni(self) -> str:
+        """Sınıra ulaşıldı mı? Ulaşıldıysa sohbete basılacak tek satır.
+
+        Ajan döngüsü her model çağrısından ÖNCE soruyor (bkz.
+        loop.AgentIO.butce_freni). Burada ağ yok, dosya yok: yalnızca
+        elimizdeki sayaç ile elimizdeki fiyat etiketi.
+
+        Fiyat bilinmiyorsa (yerel sunucu, katalog dışı model) fren ÇALIŞMAZ.
+        Uydurma bir dolar rakamıyla kullanıcının işini durdurmak, sınırı hiç
+        koymamaktan kötü olurdu.
+        """
+        sinir = self._butce_usd
+        if not sinir or self._butce_bildirildi:
+            return ""
+        harcanan = self._harcanan()
+        if harcanan is None or harcanan < sinir:
+            return ""
+        self._butce_bildirildi = True
+        return (f"Bütçe sınırına ulaşıldı (${sinir:.2f}) — "
+                "devam etmek için sınırı yükselt.")
+
+    # -- koşan görevler -------------------------------------------------
+
+    def _cocuk_arka_plan(self, cid: str) -> bool:
+        """Bu kanal arka planda mı koşuyordu (biten kanal bildirimi için)."""
+        children = getattr(self.agent, "_children", None) or {}
+        handle = children.get(cid)
+        return bool(handle is not None and handle.arka_plan)
+
+    def gorevler(self) -> dict[str, Any]:
+        """Koşan (ve yakın zamanda bitmiş) her işin tek listesi (HTTP thread).
+
+        İki kaynak birleşiyor, çünkü kullanıcı için ikisi de "arkada koşan
+        bir şey":
+
+          * `Agent._children` — arka plan yardımcıları (`kind="yardımcı"`)
+            ve arka plan kabuk işleri (`kind="iş"`, `shell` aracının
+            `arka_plan: true` yolu).
+          * `apps._PROCS` — ayrılmış (detached) süreçler: `shell`in
+            `background: true` yolu ve panelden başlatılan uygulamalar.
+
+        Süre CANLI: satır `basladi` damgasını taşıyor, saymayı arayüz
+        yapıyor — sunucuya saniyede bir sormaya gerek yok.
+        """
+        from . import apps as katalog
+
+        rows: list[dict[str, Any]] = []
+
+        children = getattr(self.agent, "_children", None) or {}
+        for h in children.values():
+            rows.append({
+                "id": "c:" + h.id,
+                "ad": h.title,
+                "tur": h.kind,
+                "durum": h.state,
+                # Yetimde gerçek başlangıç bilinmiyor (geçen oturumdan
+                # devralındı): 0 gönderiliyor, arayüz süre çizmiyor.
+                "basladi": 0.0 if h.state == "yetim" else h.baslangic_ts,
+                "bitti": h.bitis_ts,
+                "ozet": "" if h.state == "kosuyor" else (h.sonuc or "")[:400],
+                "model": h.model,
+                "oturum": h.session_id,
+                "arka_plan": bool(h.arka_plan),
+                "pid": None,
+                "durdurulabilir": h.state == "kosuyor",
+            })
+
+        for pid, info in list(katalog._PROCS.items()):
+            proc = info.get("proc")
+            if proc is None:
+                continue
+            biten = proc.poll() is not None
+            komut = str(info.get("path") or "")
+            kendi = katalog.neo_sureci_mi(komut) or katalog.neo_sureci_mi(
+                str(info.get("run") or ""))
+            rows.append({
+                "id": "p:" + str(pid),
+                "ad": "neo (kendisi)" if kendi else str(info.get("name") or komut or pid),
+                "tur": "süreç",
+                "durum": "bitti" if biten else "kosuyor",
+                "basladi": float(info.get("started") or 0.0),
+                "bitti": 0.0,
+                "ozet": "",
+                "model": "",
+                "oturum": "",
+                "arka_plan": True,
+                "pid": pid,
+                "komut": komut,
+                # Kendi kopyasını panelden öldürmek uygulamayı kapatmak olur.
+                "durdurulabilir": (not biten) and not kendi,
+            })
+
+        # Koşanlar önce, sonra en yeni bitenler: kullanıcının aradığı şey
+        # neredeyse hep "şu an ne dönüyor".
+        rows.sort(key=lambda r: (r["durum"] != "kosuyor",
+                                 -(r["bitti"] or r["basladi"])))
+        return {"gorevler": rows,
+                "kosan": sum(1 for r in rows if r["durum"] == "kosuyor")}
+
+    def gorev_durdur(self, gid: str) -> dict[str, Any]:
+        """Tek bir görevi durdurur. `gid` gorevler() satırındaki kimlik."""
+        from . import apps as katalog
+
+        gid = str(gid or "")
+        if gid.startswith("c:"):
+            children = getattr(self.agent, "_children", None) or {}
+            handle = children.get(gid[2:])
+            if handle is None:
+                return {"ok": False, "error": "Görev bulunamadı."}
+            if handle.state != "kosuyor":
+                return {"ok": False, "error": "Bu görev zaten bitmiş."}
+            # asyncio.Event thread-güvenli değil: karar döngüye taşınıyor.
+            self.loop.call_soon_threadsafe(handle.cancel.set)
+            return {"ok": True, "id": gid}
+        if gid.startswith("p:"):
+            try:
+                pid = int(gid[2:])
+            except ValueError:
+                return {"ok": False, "error": "Geçersiz süreç kimliği."}
+            return katalog.stop(pid)
+        return {"ok": False, "error": "Geçersiz görev kimliği."}
+
+    def _fiyat_getir(self) -> None:
+        """Seçili modelin fiyatını arka planda bir kez çeker.
+
+        Ağ isteği turun yolunda DEĞİL: thread bitince `fiyat` olayı
+        yayınlanıyor ve çip token sayısından dolara döner. Katalogda
+        olmayan model için de bir kez bakılıp bırakılıyor — her turda
+        yeniden ağa çıkmak olmaz. Model değişince bayrak sıfırlanır.
+        """
+        if self._fiyat_bakildi:
+            return
+        agent = self.agent
+        if agent is None:
+            return
+        self._fiyat_bakildi = True
+        model = agent.config.model
+        state_dir = agent.config.state_dir
+
+        def _kos() -> None:
+            try:
+                etiket = fiyatlama.etiket(model, state_dir, ag=True)
+            except Exception:
+                return
+            if etiket is not None:
+                self._fiyat = etiket
+                self.hub.emit({"type": "fiyat", "fiyat": etiket})
+
+        threading.Thread(target=_kos, daemon=True).start()
 
     # -- asyncio thread ------------------------------------------------
 
@@ -523,16 +924,27 @@ class Bridge:
             on_text=lambda chunk: self.hub.emit({"type": "assistant_delta", "text": chunk}),
             on_thinking=lambda chunk: self.hub.emit({"type": "thinking_delta", "text": chunk}),
             on_notice=lambda text: self.hub.emit({"type": "notice", "text": text}),
-            on_usage=lambda report: self.hub.emit({"type": "usage", **report}),
+            # Model kesintisi: yapısal bekleme olayı. Arayüz bunu çalışma
+            # şeridinde TEK canlı satır olarak işler — sohbete hata duvarı
+            # basılmaz (bkz. app.js "bekleme").
+            on_wait=lambda payload: self.hub.emit({"type": "bekleme", **payload}),
+            on_usage=self._usage_yay,
+            # Bütçe freni: döngü her model çağrısından önce soruyor. Fiyat
+            # ve sayaçlar burada olduğu için karar da burada.
+            butce_freni=self._butce_freni,
             # Orkestra kanalları: alt ajanlar canlı görünsün (şef modu).
             on_child_start=lambda title, model, cid, bg=False: self.hub.emit(
                 {"type": "child_start", "title": title, "model": model, "id": cid,
                  "bg": bool(bg)}),
             on_child_tool=lambda title, tool, phase: self.hub.emit(
                 {"type": "child_tool", "title": title, "tool": tool, "phase": phase}),
+            # `bg`: bu biten kanal arka planda mı koşuyordu. Görevler paneli
+            # sohbete "bitti" bildirimini YALNIZ arka plan işleri için
+            # düşürüyor — senkron yardımcının sonucu zaten cevabın içinde.
             on_child_end=lambda title, ok, turns, tools, cid="", ozet="": self.hub.emit(
                 {"type": "child_end", "title": title, "ok": ok, "turns": turns,
-                 "tools": tools, "id": cid, "ozet": ozet}),
+                 "tools": tools, "id": cid, "ozet": ozet,
+                 "bg": self._cocuk_arka_plan(cid)}),
             approve=self._approve,
         )
 
@@ -646,6 +1058,13 @@ class Bridge:
         döngüye bulaşmadan koşturabiliyor.
         """
         self._busy = True
+        # Yeni kullanıcı mesajı = yeni tur: çipin "bu tur" toplamı sıfırdan
+        # başlar. Oturum toplamına dokunulmuyor; sürdürme turları
+        # (_surdur, park) aynı işin devamı sayılıp sıfırlamıyor.
+        self._tur_kullanim = {"girdi": 0, "cikti": 0, "cagri": 0}
+        # Yeni mesaj = yeni deneme: sınır hâlâ aşılmışsa fren bir kez daha
+        # konuşsun. Yoksa kullanıcı yazıyor ve hiçbir şey olmuyor.
+        self._butce_bildirildi = False
         self.hub.emit({"type": "status", "busy": True})
         try:
             # İlk kurulum: hiçbir sağlayıcı kullanılabilir değilken model
@@ -1333,10 +1752,17 @@ def run(config: Config, *, port: int = 8765, resume: bool = False) -> int:
     # gereken işleri var (zamanlanmış görevler, kameraları izleyen alt
     # ajanlar, uyandırma sözünü bekleyen mikrofon). Tepsi yoksa kapatma
     # gerçekten kapatıyor — yoksa program kapanmaz hale gelirdi.
+    #
+    # Çıkış bekçisi: tepsiden Çıkış seçildiğinde ajan bir işin ortasındaysa
+    # native bir Evet/Hayır penceresi soruyor — süren iş sessizce ölmesin.
+    # Evet'te temiz kapanış: park/yetim mekanizmaları izi düşürür ve açılış
+    # sürdürmeyi zaten teklif eder.
     tray = tray_module.Tray(
         show=lambda: window.show(),
         hide=lambda: window.hide(),
         quit=lambda: window.destroy(),
+        busy=lambda: runtime.bridge.busy,
+        confirm=_confirm_quit,
     )
     live = tray.start()
 
@@ -1370,27 +1796,39 @@ def run(config: Config, *, port: int = 8765, resume: bool = False) -> int:
     def is_zoomed() -> bool:
         return _is_zoomed()
 
-    # Tepsiye gizlenmek yalnızca arka planda gerçek bir iş varken anlamlı:
-    # kulak (sürekli dinleme) açık. Kapalıyken X'in gizlemesi hayalet süreç
-    # üretiyordu — kullanıcı kapandı sanıyor, eski kod portu tutup yeni
-    # açılışları sabote ediyordu.
-    hide_on_close = live and config.listen.enabled
+    # X = gizle, uygulama TEPSİDE yaşar (Claude Code / masaüstü geleneği):
+    # süren iş, zamanlanmış görevler ve duyular pencereyle birlikte ölmez.
+    # Eskiden yalnızca kulak açıkken gizleniyordu; ama X'in işi yarıda
+    # kesmesi kulaktan bağımsız bir yara — koşan bir görev de pencere
+    # kapandı diye ölmemeli. Hayalet-süreç riski kalmadı: her açılış
+    # eski örnekleri kapatıyor (_kill_ghosts) ve tepsiden gerçek Çıkış var.
+    # Tepsi hiç açılamadıysa (paket yok) X gerçekten kapatır — yoksa
+    # program kapanmaz hale gelirdi.
+    hide_on_close = live
+
+    # X'e İLK basışta bir kez balon bildirimi: "arka planda çalışmaya devam
+    # ediyor". Meşgul olup olmamasından bağımsız — pencere kaybolunca
+    # kullanıcı programın kapandığını sanıyor ve asıl öğretilmesi gereken
+    # şey bu. Tekrarı `note_once` engelliyor (her gizlenişte balon = dırdır).
+    def _hide_to_tray() -> None:
+        window.hide()
+        tray.note_once(tray_module.ARKA_PLAN_NOTU)
 
     def close() -> None:
         if hide_on_close:
-            window.hide()
+            _hide_to_tray()
         else:
             window.destroy()
 
     for fn in (minimize, maximize, drag, resize, close, is_zoomed):
         window.expose(fn)
 
-    # Native kapatma (X) programı YOK ETMESİN, tepsiye gizlesin: ajanın arka
-    # planda işleri var (zamanlanmış görevler, kamera izleyen alt ajanlar,
-    # uyandırma sözünü bekleyen mikrofon). Tepsi yoksa normal kapanış geçerli.
+    # Native kapatma (X / Alt+F4) programı YOK ETMESİN, tepsiye gizlesin:
+    # pywebview'in closing olayı False dönünce kapanış iptal olur ve pencere
+    # gizlenir — app şeridindeki X ile aynı yol.
     if hide_on_close:
         def _hide_instead_of_close() -> bool:
-            window.hide()
+            _hide_to_tray()
             return False   # kapatmayı iptal et
 
         try:
@@ -1403,9 +1841,9 @@ def run(config: Config, *, port: int = 8765, resume: bool = False) -> int:
     runtime.bridge.on_wake = lambda: window.show()
 
     if hide_on_close:
-        print("[neo] tepside çalışıyor — pencereyi kapatmak programı kapatmaz", flush=True)
-    elif live:
-        print("[neo] tepsi açık; pencereyi kapatmak programı da kapatır", flush=True)
+        print("[neo] tepside çalışıyor — X pencereyi gizler, Çıkış tepsiden", flush=True)
+    else:
+        print("[neo] tepsi yok; pencereyi kapatmak programı da kapatır", flush=True)
 
     try:
         # Pencere/görev çubuğu simgesi: tek kaynak logodan (tepsi ve sekmeyle
@@ -1952,6 +2390,32 @@ def _wake(window: Any) -> Any:
         window.show()
 
     return wake
+
+
+def _confirm_quit(question: str) -> bool:
+    """Çıkış onayı: native Evet/Hayır penceresi (tepsi thread'inden güvenli).
+
+    Pencere gizliyken de görünmesi gerekiyor; MB_TOPMOST + MB_SETFOREGROUND
+    onu öne getiriyor. Windows dışı ya da diyalog kurulamayan durumda True:
+    kullanıcının açık Çıkış jesti "çıkamıyorum" tuzağına dönüşmesin.
+    """
+    if sys.platform != "win32":
+        return True
+    try:
+        import ctypes
+
+        MB_YESNO = 0x0004
+        MB_ICONWARNING = 0x0030
+        MB_TOPMOST = 0x00040000
+        MB_SETFOREGROUND = 0x00010000
+        IDYES = 6
+        answer = ctypes.windll.user32.MessageBoxW(
+            0, question, WINDOW_TITLE,
+            MB_YESNO | MB_ICONWARNING | MB_TOPMOST | MB_SETFOREGROUND,
+        )
+        return answer == IDYES
+    except Exception:
+        return True
 
 
 def _teardown(loop: asyncio.AbstractEventLoop, runtime: Runtime) -> None:

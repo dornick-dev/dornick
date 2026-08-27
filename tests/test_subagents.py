@@ -28,6 +28,22 @@ def full(tmp_path: Path):
     return build_registry()
 
 
+@pytest.fixture(autouse=True)
+def _agsiz_katalog(monkeypatch):
+    """Bu dosyadaki testler AĞA ÇIKMAMALI.
+
+    `task` aracı, kendisine bir model kimliği verildiğinde onu sağlayıcının
+    kataloğuyla doğruluyor ve katalog gerçek bir HTTP isteğiyle geliyor.
+    Testin sonucu makinenin internetine bağlı olamaz: burada katalog
+    varsayılan olarak BOŞ, yani "sunucu liste vermiyor" hali — doğrulama
+    atlanır ve model aynen geçer. Doğrulamayı sınayan testler kataloğu
+    kendileri sabitliyor.
+    """
+    from neocp import settings
+
+    monkeypatch.setattr(settings, "scan_models", lambda _config: [])
+
+
 # -- kayıt -------------------------------------------------------------
 
 
@@ -709,6 +725,140 @@ async def test_a_subagent_can_use_another_model(tmp_path: Path, full) -> None:
 
     await agent.run("başla")
     assert made == ["kucuk-model"]
+
+
+# -- model doğrulaması -------------------------------------------------
+#
+# Sahada görülen: model yardımcıya UYDURMA bir kimlik verdi
+# (`qwen3.1-14b`), sağlayıcı 400 döndürdü ve yardımcı tur boyunca boşa
+# yandı. Hata alt ajanın günlüğünde patlıyor; ana ajan yalnızca "hata
+# verdi" görüyor ve sebebini bilmiyor. Kimlik spawn'dan ÖNCE katalogla
+# karşılaştırılmalı.
+
+
+@pytest.fixture()
+def kayit(tmp_path: Path):
+    """Aracı doğrudan çağırmak için bağlam + çağrı yardımcısı."""
+    import asyncio
+
+    from neocp.config import Config
+    from neocp.events import EventLog
+    from neocp.session import Session
+    from neocp.tools.base import ToolContext
+
+    config = Config.load(tmp_path)
+    config.ensure_dirs()
+
+    spawned: list[str] = []
+
+    async def spawn(title: str, task: str, model: str) -> str:
+        spawned.append(model)
+        return "yardımcı sonucu"
+
+    ctx = ToolContext(
+        config=config,
+        session=Session(EventLog(tmp_path / "s.jsonl"), "test"),
+        cancel=asyncio.Event(),
+        spawn=spawn,
+    )
+    return build_registry().get("task"), ctx, spawned
+
+
+def _katalog(monkeypatch, ids: list[str]) -> None:
+    """Sağlayıcının model kataloğunu sabitler; boş liste = ağ yok."""
+    from neocp import settings
+
+    monkeypatch.setattr(settings, "scan_models", lambda _config: [{"id": i} for i in ids])
+
+
+async def test_a_made_up_model_falls_back_to_the_main_one(kayit, monkeypatch) -> None:
+    """İş ölmemeli: yardımcı ana modelle başlar. Ama sessizce değil —
+    aracın cevabı ne olduğunu ve nereye bakılacağını söyler."""
+    tool, ctx, spawned = kayit
+    _katalog(monkeypatch, ["qwen3-14b", "llama-3.1-8b"])
+
+    result = await tool.handler({"task": "iş", "model": "qwen3.1-14b"}, ctx)
+
+    assert spawned == [""]                       # ana modelle başladı
+    assert "yardımcı sonucu" in result.content    # iş yapıldı
+    assert "`qwen3.1-14b` geçerli bir model kimliği değil" in result.content
+    assert "`models`" in result.content           # nereye bakacağını söylüyor
+    # Yakın adaylar öneriliyor: "hangi kimlik doğru" sorusunun cevabı elde.
+    assert "qwen3-14b" in result.content
+
+
+async def test_a_real_model_passes_through_untouched(kayit, monkeypatch) -> None:
+    tool, ctx, spawned = kayit
+    _katalog(monkeypatch, ["qwen3-14b", "llama-3.1-8b"])
+
+    result = await tool.handler({"task": "iş", "model": "qwen3-14b"}, ctx)
+
+    assert spawned == ["qwen3-14b"]
+    assert "geçerli bir model kimliği değil" not in result.content
+
+
+async def test_validation_is_skipped_when_the_catalogue_is_unreachable(
+    kayit, monkeypatch
+) -> None:
+    """Çevrimdışı bir makinede aracı çalışmaz yapmak, uydurma kimlikten
+    daha kötü: katalog yoksa doğrulama atlanır ve model aynen geçer."""
+    tool, ctx, spawned = kayit
+    _katalog(monkeypatch, [])
+
+    await tool.handler({"task": "iş", "model": "her-neyse"}, ctx)
+    assert spawned == ["her-neyse"]
+
+
+async def test_a_catalogue_lookup_that_explodes_does_not_kill_the_task(
+    kayit, monkeypatch
+) -> None:
+    """Doğrulama bir kolaylık; patlarsa işin kendisi durmamalı."""
+    from neocp import settings
+
+    tool, ctx, spawned = kayit
+
+    def patla(_config):
+        raise RuntimeError("katalog yandı")
+
+    monkeypatch.setattr(settings, "scan_models", patla)
+
+    await tool.handler({"task": "iş", "model": "her-neyse"}, ctx)
+    assert spawned == ["her-neyse"]
+
+
+async def test_only_the_letter_case_is_corrected_silently(kayit, monkeypatch) -> None:
+    """`Qwen3-14B` bir uydurma değil, bir yazım kayması: katalogdaki
+    hâliyle düzeltilip devam ediliyor — ana model dayatmak gereksiz."""
+    tool, ctx, spawned = kayit
+    _katalog(monkeypatch, ["qwen3-14b"])
+
+    result = await tool.handler({"task": "iş", "model": "Qwen3-14B"}, ctx)
+
+    assert spawned == ["qwen3-14b"]
+    assert "geçerli bir model kimliği değil" not in result.content
+
+
+async def test_no_model_asked_means_no_catalogue_lookup(kayit, monkeypatch) -> None:
+    """Alan boşsa ana model kullanılıyor; katalog için ağa çıkmanın anlamı
+    yok — her `task` çağrısına bir istek eklemek pahalı."""
+    from neocp import settings
+
+    tool, ctx, spawned = kayit
+    monkeypatch.setattr(
+        settings, "scan_models",
+        lambda _c: pytest.fail("boş model alanında kataloğa bakılmamalı"),
+    )
+
+    await tool.handler({"task": "iş"}, ctx)
+    assert spawned == [""]
+
+
+def test_the_tool_tells_the_model_not_to_invent_ids(full) -> None:
+    """Doğrulama son savunma; ilk savunma aracın kendi açıklaması."""
+    schema = full.get("task").input_schema
+    note = schema["properties"]["model"]["description"]
+    assert "UYDURMA" in note
+    assert "boş bırak" in note and "`models`" in note
 
 
 async def test_the_same_model_reuses_the_parent_client(tmp_path: Path, full) -> None:

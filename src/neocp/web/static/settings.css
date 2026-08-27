@@ -255,6 +255,20 @@
 }
 .panel .rule-add .input-text { padding: 6px 10px; }
 
+/* ---------- makine: sürüm satırı ---------- */
+
+/* Salt-okunur sürüm değeri: giriş kutusu değil, sakin bir rozet. */
+.panel .surum-deger {
+  padding: 6px 12px; border-radius: 7px;
+  background: var(--raise); box-shadow: inset 0 0 0 1px var(--set-line);
+  font: 600 12px var(--mono, var(--font)); color: var(--text);
+  letter-spacing: .03em; white-space: nowrap;
+}
+.panel .surum-sonuc { font: 500 11.5px var(--font); color: var(--dim); }
+.panel .surum-sonuc.bad { color: var(--rose); }
+.panel .surum-yeni { color: var(--cyan); text-decoration: none; cursor: pointer; }
+.panel .surum-yeni:hover { text-decoration: underline; }
+
 /* ---------- dosyalar ---------- */
 
 .panel .files { border: 1px solid var(--set-line-strong); border-radius: 10px; overflow: hidden; }
@@ -288,4 +302,63 @@
 }
 .panel :is(input[type="text"], input[type="password"], input[type="search"], input[type="number"], textarea):focus-visible {
   outline: none; /* metin girdilerinde odak zaten iç halkayla gösteriliyor */
+}
+
+/* ============================================================
+   PROJE SEÇİMİ
+   "Benim projemde çalışacaksan klasörü seçmem gerekiyor." Atölye neo'nun
+   kendi işleri için kalıyor; proje kullanıcının kodu. Native bir klasör
+   diyaloğu kullanılamadığı için seçici sayfanın kendi içinde yaşıyor.
+   ============================================================ */
+
+.panel .proj-pick { display: flex; flex-direction: column; gap: 8px; }
+
+/* Durum satırı: seçili mi, kaydedilmiş mi, bir engel/uyarı var mı.
+   Kullanıcı KAYDETMEDEN önce ne olacağını okumalı. */
+.panel .proj-state { display: flex; flex-direction: column; gap: 4px; }
+.panel .proj-state .pane-note { margin: 0; padding-left: 10px; }
+.panel .pane-note.good {
+  color: var(--mint); box-shadow: inset 2px 0 0 rgba(92, 230, 164, .45);
+  word-break: break-all;
+}
+
+/* Gezgin: yukarı çık · neredeyim · seç · alt klasörler. */
+.panel .proj-browse {
+  display: flex; flex-direction: column; gap: 8px;
+  padding: 12px; border-radius: 9px;
+  background: var(--raise); box-shadow: inset 0 0 0 1px var(--set-ring);
+}
+.panel .proj-crumb { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.panel .proj-here {
+  flex: 1; min-width: 0; font: 11.5px var(--mono); color: var(--ice);
+  word-break: break-all;
+}
+.panel .proj-list {
+  display: flex; flex-direction: column; gap: 1px;
+  max-height: 240px; overflow-y: auto;
+  border-radius: 7px; background: var(--field);
+  scrollbar-width: thin; scrollbar-color: rgba(79, 227, 255, .25) transparent;
+}
+.panel .proj-list::-webkit-scrollbar { width: 6px; }
+.panel .proj-list::-webkit-scrollbar-thumb {
+  background: rgba(79, 227, 255, .22); border-radius: 3px;
+}
+.panel .proj-row {
+  text-align: left; background: none; border: 0; cursor: pointer;
+  padding: 6px 10px; border-radius: 6px;
+  font: 12px var(--mono); color: var(--dim); transition: .14s;
+}
+.panel .proj-row:hover { color: var(--ice); background: rgba(79, 227, 255, .09); }
+
+/* Son projeler: tek tıkla geçiş. */
+.panel .proj-recent { display: flex; flex-wrap: wrap; gap: 6px; }
+.panel .proj-chip {
+  font: 11px var(--font); color: var(--dim); background: var(--raise);
+  border: 0; cursor: pointer; padding: 4px 11px; border-radius: 999px;
+  box-shadow: inset 0 0 0 1px var(--set-ring); transition: .14s;
+}
+.panel .proj-chip:hover { color: var(--ice); box-shadow: inset 0 0 0 1px var(--set-ring-hover); }
+.panel .proj-chip.on {
+  color: var(--cyan); background: rgba(79, 227, 255, .12);
+  box-shadow: inset 0 0 0 1px var(--set-ring-hover);
 }

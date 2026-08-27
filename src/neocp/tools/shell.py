@@ -190,6 +190,23 @@ UZUN SÜREN SÜREÇLER — iki ayrı kip, karıştırma:
         if not command:
             return ToolResult.error("Boş komut. `command` alanını doldur.")
 
+        # neo KENDİNİ başlatmasın. Model kafası karıştığında ("uygulamayı
+        # ayağa kaldırayım") `neocp --web 8873` çalıştırıp neo'nun ikinci bir
+        # kopyasını açıyordu; kullanıcı panelde kendi programının klonunu
+        # "uygulaman" diye görüyordu. Sessiz reddetmek yerine NEDENİ ve
+        # doğrusu söyleniyor — model bir sonraki hamlede kendi uygulamasını
+        # kendi portunda başlatabilsin.
+        from .. import apps as _apps
+
+        if _apps.neo_sureci_mi(command):
+            return ToolResult.error(
+                "neo zaten çalışıyor; kendini yeniden başlatma. Bu komut "
+                "neo'nun (neocp) ikinci bir kopyasını açardı — kullanıcı "
+                "panelde kendi programının klonunu görür. Kullanıcının "
+                "uygulamasını KENDİ klasöründe, KENDİ portunda başlat "
+                "(örn. `py app.py`)."
+            )
+
         # Varsayılan çalışma dizini atölye: ajanın ürettiği her şey oraya
         # düşsün. Kabuk dosya araçları gibi bağlanamıyor — bir komut
         # istediği yere yazabilir — o sınırı izin motoru tutuyor.
@@ -201,8 +218,11 @@ UZUN SÜREN SÜREÇLER — iki ayrı kip, karıştırma:
         # Arka plan (detached): sunucu gibi hiç bitmeyen süreçler. Beklemeden
         # başlatılıyor; apps süreç defterine yazılıyor ki Uygulamalar ›
         # Çalışıyor'dan görülüp durdurulabilsin ve canlı adresi belirsin.
-        # Çıktı PIPE'a bağlanmıyor: dinlenmeyen bir boru dolunca süreci
-        # kilitler — yeni bir konsola bırakılıyor.
+        # Çıktı PIPE'a değil DOSYAYA gidiyor: dinlenmeyen boru süreci
+        # kilitler, görünür konsol ise kullanıcının ekranında pencere
+        # patlatır ("neo çalışırken durmadan cmd açılıyor" şikâyetinin
+        # köklerinden biri buydu) — dosya ikisini de çözer ve log sonradan
+        # okunabilir kalır.
         #
         # `background` açıkça verilmese bile komut sunucu-tipi görünüyorsa
         # KENDİLİĞİNDEN arka plana alıyoruz: model bayrağı unutsa da tur
@@ -212,18 +232,28 @@ UZUN SÜREN SÜREÇLER — iki ayrı kip, karıştırma:
             import subprocess
             import time as _time
 
-            from .. import apps
+            from .. import apps, ortam
 
-            flags = getattr(subprocess, "CREATE_NEW_CONSOLE", 0) if sys.platform == "win32" else 0
+            log_dir = ctx.config.state_dir / "surec-loglari"
+            try:
+                log_dir.mkdir(parents=True, exist_ok=True)
+                log_path = log_dir / f"{int(_time.time())}-{os.getpid()}.log"
+                log = open(log_path, "ab")
+            except OSError:
+                log, log_path = subprocess.DEVNULL, None
             try:
                 bg = subprocess.Popen(
                     _shell_command(command),
                     cwd=str(cwd),
                     env={**os.environ, "NEOCP_SESSION": ctx.session.id},
-                    creationflags=flags,
+                    stdout=log, stderr=subprocess.STDOUT,
+                    **ortam.sessiz_bayraklar(),
                 )
             except Exception as exc:
                 return ToolResult.error(f"Arka planda başlatılamadı: {type(exc).__name__}: {exc}")
+            finally:
+                if log is not subprocess.DEVNULL:
+                    log.close()  # Popen kendi tanıtıcısını miras aldı
             apps._PROCS[bg.pid] = {
                 "proc": bg, "path": command[:80], "name": command.split()[0] if command.split() else "süreç",
                 "started": _time.time(),

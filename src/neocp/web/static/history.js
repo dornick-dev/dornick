@@ -16,6 +16,26 @@ Dil.ekle({
   "Tur bitince geçilebilir": "You can switch when the turn ends",
   "Geçilemedi — neo meşgul olabilir, tur bitince dene.":
     "Could not switch — neo may be busy; try again after the turn.",
+  "Okunamadı": "Could not load",
+  "Eşleşen konuşma yok": "No matching conversation",
+  "Henüz konuşma yok": "No conversations yet",
+  "Aranıyor…": "Searching…",
+  "Yükleniyor…": "Loading…",
+  "içinde ara": "search inside",
+  "Konuşmaların İÇİNDE ara — başlıkta değil, dökümde geçen söz":
+    "Search inside conversations — the words spoken, not just the title",
+  "Yeniden adlandır": "Rename",
+  "Etiketle": "Tag",
+  "Projeye taşı": "Move to project",
+  "Ad (boş = tarihten türet)": "Name (empty = derive from the talk)",
+  "Etiketler — virgülle ayır (boş = kaldır)": "Tags — comma separated (empty = clear)",
+  "Proje adı (boş = çıkar)": "Project name (empty = remove)",
+  "Etiket süzgeci": "Tag filter",
+  "süzgeci kaldır": "clear filter",
+  " tur": " turns",
+  " eşleşme": " matches",
+  "Yeni oturum için yeniden başlat": "Restart for a new session",
+  " Yeni konuşma": " New conversation",
 });
 
 const History = (() => {
@@ -25,8 +45,13 @@ const History = (() => {
 
   let sessions = [];
   let knownProjects = [];       // var olan proje adları (atama için öneri)
+  let knownTags = [];           // var olan etiketler (öneri + süzgeç)
   let collapsed = new Set();    // kapalı proje klasörleri
   let loaded = false;
+  let deep = false;             // "içinde ara": döküm araması açık mı
+  let searching = false;        // sunucu araması sürüyor
+  let tagFilter = "";           // seçili etiket süzgeci
+  let deepTimer = null;
   const UNFILED = "— Projesiz —";
 
   const el = (tag, cls, text) => {
@@ -38,31 +63,70 @@ const History = (() => {
 
   // --- yükleme ---------------------------------------------------------
 
-  async function load() {
-    body.textContent = "";
+  // `ara` verilirse sunucu DÖKÜMLERİN içinde de arıyor ve eşleşen satırları
+  // (`hits`) gönderiyor. Verilmezse bu yalnızca liste tazelemesi.
+  async function load(ara) {
+    if (!loaded) { body.textContent = ""; body.append(el("p", "hist-blank", t("Yükleniyor…"))); }
     let data;
     try {
-      data = await (await fetch("/api/sessions")).json();
+      const url = ara ? "/api/sessions?ara=" + encodeURIComponent(ara) : "/api/sessions";
+      data = await (await fetch(url)).json();
     } catch {
-      body.append(el("p", "hist-blank", "Okunamadı"));
+      body.textContent = "";
+      body.append(el("p", "hist-blank", t("Okunamadı")));
       return;
     }
     sessions = data.sessions || [];
     knownProjects = data.projects || [];
+    knownTags = data.tags || [];
     loaded = true;
+    searching = false;
     render();
+  }
+
+  // Döküm araması sunucuya gidiyor; her tuşta istek atmamak için kısa bir
+  // bekleme. Kutu boşalırsa arama iptal ve liste tazeleniyor.
+  const DEEP_DELAY = 320;
+
+  function scheduleDeep() {
+    clearTimeout(deepTimer);
+    const q = (search.value || "").trim();
+    if (!deep || q.length < 2) {
+      searching = false;
+      // Derin arama kapandı: eşleşme izleri kalmasın.
+      for (const s of sessions) s.hits = [];
+      render();
+      return;
+    }
+    searching = true;
+    render();
+    deepTimer = setTimeout(() => load(q), DEEP_DELAY);
   }
 
   function render() {
     body.textContent = "";
     const q = (search.value || "").trim().toLowerCase();
-    const shown = q
-      ? sessions.filter(s => (s.title + " " + s.preview + " " + (s.project || "")).toLowerCase().includes(q))
+    // Yerel süzgeç her zaman çalışıyor (ad, önizleme, proje, etiket); derin
+    // arama açıkken sunucudan gelen eşleşmeler de kabul ediliyor — söz
+    // başlıkta değil dökümün ortasında geçiyor olabilir.
+    let shown = q
+      ? sessions.filter(s =>
+          (s.title + " " + s.preview + " " + (s.project || "") + " " + (s.tags || []).join(" "))
+            .toLowerCase().includes(q) || (s.hits || []).length)
       : sessions;
+    if (tagFilter) shown = shown.filter(s => (s.tags || []).includes(tagFilter));
+
+    drawTools();
+
+    if (searching) {
+      body.append(el("p", "hist-blank", t("Aranıyor…")));
+      return;
+    }
 
     if (!shown.length) {
       body.append(el("p", "hist-blank",
-        loaded ? (q ? "Eşleşen konuşma yok" : "Henüz konuşma yok") : "…"));
+        loaded ? (q || tagFilter ? t("Eşleşen konuşma yok") : t("Henüz konuşma yok"))
+               : t("Yükleniyor…")));
       return;
     }
 
@@ -93,29 +157,189 @@ const History = (() => {
     }
   }
 
+  // Arama kutusunun altındaki şerit: "içinde ara" anahtarı ve (varsa)
+  // etkin etiket süzgeci. Kutunun kendisi işaretlemede duruyor; bu şerit
+  // onun hemen altına bir kez kuruluyor.
+  function drawTools() {
+    let strip = document.getElementById("hist-tools");
+    if (!strip) {
+      strip = el("div", "hist-tools");
+      strip.id = "hist-tools";
+      search.parentElement.insertBefore(strip, search.nextSibling);
+    }
+    strip.textContent = "";
+
+    const anahtar = el("button", "hist-deep" + (deep ? " on" : ""));
+    anahtar.type = "button";
+    anahtar.textContent = (deep ? "◉ " : "○ ") + t("içinde ara");
+    anahtar.title = t("Konuşmaların İÇİNDE ara — başlıkta değil, dökümde geçen söz");
+    anahtar.onclick = () => { deep = !deep; scheduleDeep(); };
+    strip.append(anahtar);
+
+    if (tagFilter) {
+      const cip = el("button", "hist-label on");
+      cip.type = "button";
+      cip.textContent = "#" + tagFilter + " ×";
+      cip.title = t("süzgeci kaldır");
+      cip.onclick = () => { tagFilter = ""; render(); };
+      strip.append(cip);
+    }
+  }
+
   function row(s) {
     const wrap = el("div", "hist-item" + (s.current ? " current" : ""));
     const line = el("div", "hist-row");
     // Durum noktası: dolu = çalışıyor, boş = tamamlandı.
     line.append(el("span", "hist-dot"));
-    line.append(el("span", "hist-title", s.title));
+    const baslik = el("span", "hist-title" + (s.named ? " named" : ""), s.title);
+    // Kullanıcının verdiği ad ile türetilen başlık ayırt edilebilmeli:
+    // türetilen başlık konuşmanın ilk sözü, ad ise bir karar.
+    baslik.title = s.named ? s.title : s.preview || s.title;
+    line.append(baslik);
     // Aktif konuşma yazıyla da işaretli: nokta ve renk tek başına
     // okunmuyordu — hangi satırın "şu an açık" olduğu sözle söyleniyor.
     if (s.current) line.append(el("span", "hist-live", t("şu an açık")));
-    const meta = el("span", "hist-meta", _time(s.date) + (s.turns ? " · " + s.turns + " tur" : ""));
+    const meta = el("span", "hist-meta", _time(s.date) + (s.turns ? " · " + s.turns + t(" tur") : ""));
     line.append(meta);
-    // Projeye taşı: klasör ikonu. Satır tıklamasını yutuyor.
-    const move = el("button", "hist-assign", "⌗");
-    move.title = "Projeye taşı";
-    move.onclick = (ev) => { ev.stopPropagation(); assignProject(s, wrap); };
-    line.append(move);
+    // Eylemler: yeniden adlandır · etiketle · projeye taşı. Hepsi satır
+    // tıklamasını yutuyor, yoksa düzenlemeye başlarken konuşma değişirdi.
+    // Eylemler AYRI bir katmanda, satırın sağ ucunda: yerinde dursalardı
+    // dar panelde başlığın genişliğini yerlerdi (üç düğme ~54px) ve satırda
+    // yalnız saat görünüyordu — canlıda ölçüldü. Şimdi ancak üzerine
+    // gelince beliriyorlar, başlık her zaman tam genişlikte.
+    const acts = el("div", "hist-acts");
+    for (const [glif, ipucu, islev] of [
+      ["✎", "Yeniden adlandır", editName],
+      ["#", "Etiketle", editTags],
+      ["⌗", "Projeye taşı", assignProject],
+    ]) {
+      const dugme = el("button", "hist-assign", glif);
+      dugme.title = t(ipucu);
+      dugme.onclick = (ev) => { ev.stopPropagation(); islev(s, wrap); };
+      acts.append(dugme);
+    }
+    line.append(acts);
     // Satıra tıklamak: AKTİF konuşmada panel kapanır ve süren sohbet görünür —
     // geçiş çağrısı gerekmediği için neo meşgulken de her zaman çalışır.
     // Başka konuşmada o konuşmaya geçilir (sürdürür); meşgulse resume
     // kullanıcıya söylüyor, tık sessiz ölmüyor.
     line.onclick = () => { if (s.current) close(); else resume(s, wrap); };
     wrap.append(line);
+
+    // Etiket rozetleri: tıklayınca o etikete süzülüyor. Etiket bir klasör
+    // değil — bir konuşma birden çok etiket taşıyabiliyor, proje ise tek.
+    if ((s.tags || []).length) {
+      const şerit = el("div", "hist-tags");
+      for (const etiket of s.tags) {
+        const cip = el("button", "hist-label" + (etiket === tagFilter ? " on" : ""));
+        cip.type = "button";
+        cip.textContent = "#" + etiket;
+        cip.onclick = (ev) => {
+          ev.stopPropagation();
+          tagFilter = (tagFilter === etiket) ? "" : etiket;
+          render();
+        };
+        şerit.append(cip);
+      }
+      wrap.append(şerit);
+    }
+
+    // Döküm araması eşleşmeleri: hangi sözün nerede geçtiği. Satıra
+    // tıklamak yine konuşmayı açıyor.
+    for (const hit of (s.hits || [])) {
+      const iz = el("div", "hist-hit");
+      iz.append(el("span", "hist-hit-who", hit.role === "user" ? "sen" : "neo"));
+      iz.append(el("span", "hist-hit-text", hit.text));
+      iz.onclick = () => { if (s.current) close(); else resume(s, wrap); };
+      wrap.append(iz);
+    }
+
     return wrap;
+  }
+
+  // Yeniden adlandırma: satır içi tek kutu. Boş bırakmak adı kaldırıyor ve
+  // başlık yine konuşmanın ilk sözünden türetiliyor — "adı sil" ayrı bir
+  // düğme istemiyor.
+  function editName(s, wrap) {
+    const existing = wrap.querySelector(".hist-assign-box");
+    if (existing) { existing.remove(); return; }
+
+    const box = el("div", "hist-assign-box");
+    const input = el("input", "hist-assign-input");
+    input.type = "text";
+    input.placeholder = t("Ad (boş = tarihten türet)");
+    input.value = s.named ? s.title : "";
+
+    const save = async () => {
+      const ad = input.value.trim();
+      box.remove();
+      const kayit = await saveMeta(s.id, { ad });
+      if (kayit) {
+        s.named = !!kayit.ad;
+        if (kayit.ad) s.title = kayit.ad;
+      }
+      // Ad silindiyse türetilen başlığı sunucu biliyor: listeyi tazele.
+      if (!ad) await load();
+      else render();
+    };
+    input.onkeydown = (ev) => {
+      if (ev.key === "Enter") { ev.preventDefault(); save(); }
+      else if (ev.key === "Escape") { box.remove(); }
+    };
+    box.append(input);
+    wrap.append(box);
+    input.focus();
+    input.select();
+  }
+
+  // Etiketler: virgülle ayrılmış serbest metin. Var olanlar öneriliyor.
+  function editTags(s, wrap) {
+    const existing = wrap.querySelector(".hist-assign-box");
+    if (existing) { existing.remove(); return; }
+
+    const box = el("div", "hist-assign-box");
+    const input = el("input", "hist-assign-input");
+    input.type = "text";
+    input.placeholder = t("Etiketler — virgülle ayır (boş = kaldır)");
+    input.value = (s.tags || []).join(", ");
+    input.setAttribute("list", "hist-tags-list");
+    let list = document.getElementById("hist-tags-list");
+    if (!list) { list = el("datalist"); list.id = "hist-tags-list"; document.body.append(list); }
+    list.replaceChildren(...knownTags.map(x => { const o = el("option"); o.value = x; return o; }));
+
+    const save = async () => {
+      const etiketler = input.value.split(",").map(x => x.trim()).filter(Boolean);
+      box.remove();
+      const kayit = await saveMeta(s.id, { etiketler });
+      if (kayit) s.tags = kayit.etiketler || [];
+      for (const etiket of s.tags) {
+        if (!knownTags.includes(etiket)) knownTags.push(etiket);
+      }
+      render();
+    };
+    input.onkeydown = (ev) => {
+      if (ev.key === "Enter") { ev.preventDefault(); save(); }
+      else if (ev.key === "Escape") { box.remove(); }
+    };
+    box.append(input);
+    wrap.append(box);
+    input.focus();
+    input.select();
+  }
+
+  // Ad/etiket yazımı. Gönderilmeyen alan sunucuda DOKUNULMADAN kalıyor:
+  // yalnız etiket değiştiren bir istek adı silmemeli.
+  async function saveMeta(id, alanlar) {
+    try {
+      const res = await (await fetch("/api/session/meta", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id, ...alanlar }),
+      })).json();
+      if (res && res.ok) return res.meta || {};
+      status((res && res.error) || t("Okunamadı"));
+    } catch { status(t("Okunamadı")); }
+    return null;
   }
 
   // Küçük satır-içi düzenleyici: oturuma proje adı ata (ya da boş bırakıp
@@ -127,7 +351,7 @@ const History = (() => {
     const box = el("div", "hist-assign-box");
     const input = el("input", "hist-assign-input");
     input.type = "text";
-    input.placeholder = "Proje adı (boş = çıkar)";
+    input.placeholder = t("Proje adı (boş = çıkar)");
     input.value = s.project || "";
     input.setAttribute("list", "hist-projects");
     let list = document.getElementById("hist-projects");
@@ -250,7 +474,8 @@ const History = (() => {
   // dedi). Başarılıysa session_reset akışı thread'i temizliyor.
   const newBtn = document.getElementById("new-chat");
   if (newBtn) newBtn.addEventListener("click", newConversation);
-  search.addEventListener("input", render);
+  // Her tuşta: yerel süzgeç anında, döküm araması gecikmeli.
+  search.addEventListener("input", () => { render(); scheduleDeep(); });
 
   return { open, close, toggle: toggle_panel, newChat: newConversation };
 })();

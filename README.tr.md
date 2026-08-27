@@ -31,7 +31,24 @@ izleyebildiğin bir hafıza ağına yazılır.
   Verin bilgisayardan çıkmaz.
 * **Bilgisayar kullanımı.** Ekran görüntüsü, fare/klavye kontrolü, pencere
   yönetimi ve DevTools protokolüyle sürülen gerçek bir tarayıcı
-  (`neo chrome`) — oturumlar kendi profilinde kalıcıdır.
+  (`neo chrome`) — oturumlar kendi profilinde kalıcıdır, formlar doldurulur,
+  konsol ve ağ günlüğü okunur: "sayfa açıldı" ile "sayfa çalışıyor" ayrı
+  şeylerdir.
+* **Kendi projende çalışır.** neo'yu bir proje klasörüne yönlendir, işi
+  *orada* yapar — kenardaki bir kum havuzunda değil. Yazdığı her dosya
+  yazıldığı anda kendi dilinde denetlenir (`compile()`, `php -l`,
+  `node --check`, `tsc`, ruff) ve `kos` aracı projenin **gerçek** test
+  komutunu kanıta bakarak bulup çalıştırır. Gerekçelendiremediği bir test
+  komutunu asla uydurmaz.
+* **Senin kuralın, uygulanır.** `.neocp/kancalar.json` ile herhangi bir
+  aracın öncesine ya da sonrasına kendi komutunu koyarsın; sıfırdan farklı
+  çıkış aracı **veto eder**. Bilerek izin penceresinin dışında — kendi kuralın
+  senden izin istemez — ve kanca dosyası modele kapalıdır: yazma araçları yola
+  bakıp reddediyor, dosyanın adını anan başka bir **değiştiren** çağrı (örneğin
+  bir kabuk komutu) izin kapısından önce reddediliyor. Okumak serbest; model
+  hangi kuralın altında çalıştığını bilmeli. Sınırı dürüstçe: bu, bir kancayı
+  yolunda engel gören modeli durdurur, adı bilerek gizleyeni değil — ona karşı
+  çit izin motorudur.
 * **Dış kapı (API).** Başka ajanlar ve araçlar neo'yla programla konuşabilir:
   `127.0.0.1`'e `POST /api/gate`, gövde `{"text": "..."}` — yanıtın tamamı
   döner. Varsayılan kapalı.
@@ -128,7 +145,18 @@ neo'ya dış kapı API'sinden üç kodlama görevi (kolay / orta / zor) verdik v
 kendisiyle hem de neo'nun kendi modelinin **çıplak, tek atış** haliyle koşturduk.
 neo **294/300** aldı: değerlendiricisiyle baş başa (289) ve kendi çıplak
 modelinin (280) önünde — aynı model, kabuk içinde +14 puan ve sıfır bozuk
-teslimat. Tam rapor: [docs/evaluation.tr.md](docs/evaluation.tr.md)
+teslimat.
+
+O puanlama elle yapılmıştı; bu yüzden depoda yaşayan bir düzeneğe dönüştü:
+[`eval/coding/`](eval/coding/README.md). Python, Node ve PHP'de dokuz görev;
+her biri kendi geçici alanında, boş bir zihinle, kendi neo örneğiyle koşuyor
+ve puanlayıcı dosya var mı diye bakmak yerine **teslim edilen kodu
+çalıştırıyor**. Orta sınıf bir modelle güncel taban: dokuz görevin tamamında
+**92,3/100** — ve daha faydalısı, davranış sütunlarının ortaya çıkardığı üç
+adı konmuş zayıflık. En keskini: bir görev 14 geçen test, 18 gerçek iddia ve
+her sorguda 1 ile çıkan bir komut satırıyla teslim edildi; çünkü testler
+fonksiyonları kapsamış, kullanıcının yazacağı komutu hiçbir şey
+çalıştırmamıştı. Tam rapor: [docs/evaluation.tr.md](docs/evaluation.tr.md)
 ([English](docs/evaluation.md)).
 
 ## Yol haritası
@@ -138,8 +166,10 @@ neyin piyasa standardını yakaladığı, neo'nun nerede önde olduğu
 (kullanıcısını öğrenen model, yaşayan hafıza, MCP-sunucusu-hafıza, dış kapı)
 ve nelerin bilinçle ertelendiği:
 
-* Daha derin tarayıcı kontrolü (erişilebilirlik referansları, formlar, konsol/ağ)
-* Kancalar, OS-seviyesi kabuk hapsi, oturum dökümü araması, LSP
+* OS-seviyesi kabuk hapsi; `semboller` aracının arkasındaki `ast`/regex
+  yaklaşımı yerine gerçek bir LSP
+* Tipli alt-ajan tanımları; MCP istemci tarafı OAuth
+* Hafızayla beslenen kodlama — kodlama boru hattı hâlâ boş zihinle koşuyor
 * Daha güçlü İngilizce taban modeli; daha geniş platform desteği (bugün Windows-öncelikli)
 
 ## Katkı

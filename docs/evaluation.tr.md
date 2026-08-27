@@ -73,6 +73,84 @@ dek görünmez kalan gerçek bir gedik. `backends/translate.py`'de düzeltildi
 sağlayıcıda geçerli), gerileme testiyle. Gerçek yolları çalıştıran
 değerlendirmeler gerçek hataları buluyor.
 
+## İkinci bölüm: otomatik düzenek (27.08.2026)
+
+Yukarıdaki matris elle puanlandı; bu ne ölçeklenir ne de bir değişiklikten
+sonra yeniden koşulabilir. O yüzden depoda yaşayan bir düzeneğe dönüştü:
+[`eval/coding/`](../eval/coding/README.md). Python, Node ve PHP'de
+kolay/orta/zor dokuz görev; her biri kendi geçici alanında, **boş bir
+zihinle**, kendi neo örneğiyle, dış kapıdan sürülüyor. Sonra puanlayıcı
+atölyeye girip **kodu çalıştırıyor** — modülü import ediyor, sunucuyu
+kaldırıyor, uca POST atıyor, panele giriş yapıyor.
+
+İki kural sayıyı dürüst tutuyor:
+
+- **Ölçülemeyen eksen paydadan düşer** — yoksa "ölçemedim" ile "başarısız"
+  aynı sayıya iner.
+- **`çalışır` ekseni yoksa puan da yok.** Bu kural bir hatadan doğdu: bir
+  görev, iki taşıyıcı ekseni hiç ölçülmemişken 100.0 almıştı.
+
+### Taban ölçüm — `minimax/minimax-m2.7`, 9 görevin hepsi
+
+| görev | zorluk | çalışır (40) | kapsam (25) | sağlık (20) | test (15) | **puan** |
+|---|---|---|---|---|---|---|
+| k1-modul | kolay/py | 40.0 | 15.0 | 20.0 | 9.0 | **84.0** |
+| k2-cli | kolay/node | 40.0 | 25.0 | 20.0 | — | **100.0** |
+| k3-tamir | kolay/php | 40.0 | 25.0 | 20.0 | — | **100.0** |
+| o1-rapor | orta/py | 40.0 | 25.0 | 20.0 | — | **100.0** |
+| o2-servis | orta/py | 40.0 | 25.0 | 18.7 | 9.0 | **92.7** |
+| o3-ozellik | orta/node | 40.0 | 25.0 | 20.0 | — | **100.0** |
+| z1-arama | zor/py | 25.0 | 7.0 | 20.0 | 15.0 | **67.0** |
+| z2-panel | zor/php | 40.0 | 20.0 | 14.0 | — | **87.1** |
+| z3-gizli-hata | zor/py | 40.0 | 25.0 | 20.0 | — | **100.0** |
+
+**Ortalama 92.3/100.** (`—` = istem test istemedi: ölçüldü, raporlandı,
+puana katılmadı.)
+
+### Davranış sütunları ne diyor — puandan çok şey söylüyorlar
+
+**1. Yeşil test, çalışan ürün demek değil.** Bütün setin en keskin sonucu
+`z1-arama`. Ajan 14 test yazdı, hepsi geçti, 18 iddia, hiçbiri bedava değil —
+kod sağlığı 20/20. Ve istemin asıl istediği komut satırı **çalışmıyor**:
+`py ara.py bul "salmastra"` her sorguda kendi kullanım satırını basıp 1 ile
+çıkıyor. Testler iç fonksiyonları kapsamış; kullanıcının yazacağı giriş
+noktasına hiç dokunulmamış. Ajan kendini doğruladı ve tatmin oldu.
+
+Bu bulgu önemli, çünkü akla ilk gelen çözümü aşıyor: kırmızı takımda turu
+kapatmayı reddeden bir kapı burada hiçbir şey yapmaz — takım yeşildi. Bunu
+yakalayan tek şey, teslim edilen şeyi kullanıcının çalıştıracağı gibi
+çalıştırmak; puanlayıcının yaptığı, ajanın yapmadığı şey de tam bu.
+
+**2. Dokuz turun üçü hiç bitmedi.** `o2-servis`, `z1-arama` ve
+`z3-gizli-hata` 900 saniyelik tavana çarptı; o satırlardaki puan, süre
+dolduğunda atölyede ne kaldıysa onu ölçüyor — aşağı yönlü sapmalı. Üçü de
+orta/zor uçta: ajan zor işi on beş dakikada toparlayamıyor.
+
+**3. İki kez kırmızı testle teslim, bir kez bile plan yok.** `k1-modul` beş
+geçerli girdinin beşini de reddeden bir modülü kendi takımı `FFFFF`
+gösterirken teslim etti; `o2-servis` sekiz testin biri başarısızken. İkisinde
+de ajan takımı koştu, kırmızıyı gördü, bitti dedi. Dokuz görevin hepsinde
+plan yazma sayısı **sıfır** — sistem promptu çok dosyalı işte plan istiyor ve
+bu öğüt tek bir görevle temasta bile yaşamadı.
+
+Ayrıca: `z2-panel` %31 tekrar eden satır ve 38 yinelenen blokla geldi, ve dört
+sayfasından biri **başarılı** girişten sonra sessizce giriş formuna düşüyor —
+"200 dönüyor mu?" denetimi buna yeşil derdi. Bir de dokuz görevde 39 hatalı
+araç çağrısı, yani çağrıların yaklaşık onda biri.
+
+3. numaralı bulgu, sonraki dalganın prompt öğüdünü **harness refleksine**
+çevirmesinin sebebi: döngünün rica etmek yerine kendi attığı bir plan adımı ve
+kırmızı takımda turu kapatmayı reddeden bir bitiş kapısı. Yukarıdaki tablo
+bilerek saklanan **öncesi** ölçümüdür. 1. numaralı bulgu ise henüz
+karşılıksız — bu dosyadaki en değerli açık problem.
+
+### Bu düzenek hakkında dürüstlük
+
+Görev başına tek koşu; ±5 puan gürültü, ancak >15 puanlık oynama anlamlı.
+Her koşu boş zihinle başlıyor, yani bu ölçüm kodlama boru hattını ölçüyor —
+hafızanın kodlamaya katkısını **değil**. Üretilen raporda `†` işaretli
+satırlar aynı günün önceki koşusundan devralınmıştır; hepsi aynı yapıdan.
+
 ## Dürüstlük notları
 
 - Hücre başına tek koşu, tek değerlendirici; ±2 puan gürültü sayılmalı.

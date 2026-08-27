@@ -50,6 +50,13 @@ class ModelConfig:
     # "omitted" varsayılan; kullanıcıya düşünceyi göstereceksek "summarized".
     thinking_display: str = "summarized"
 
+    # Asıl model KALICI olarak çalışmazsa (kredi bitti, kimlik geçersiz,
+    # model kaldırıldı) turun ölmesi yerine devreye giren model. Boşsa
+    # bugünkü davranış: hata olduğu gibi yüzeye çıkar. Geçici hatalar
+    # (bağlantı, 429, 5xx) buraya hiç uğramaz — onlar zaten yeniden
+    # deneniyor ve yedeğe düşmek onları gizlerdi.
+    fallback_model: str = ""
+
     # anthropic | openai
     # "openai" OpenAI-uyumlu her sunucuyu kapsar: LM Studio, Ollama, vLLM,
     # llama.cpp server, OpenRouter, OpenAI'nin kendisi.
@@ -149,6 +156,12 @@ class SandboxConfig:
 
     enabled: bool = True
     directory: str = sandbox.DEFAULT_DIR
+    # Kullanıcının seçtiği proje klasörü. Boşsa yalnızca atölye yazılabilir
+    # (bugüne kadarki davranış). Doluysa orası da yazılabilir oluyor:
+    # seçimin kendisi onaydır — kullanıcı "burada çalış" demiş demektir.
+    # Proje bir OTURUM değil: değiştirmek zihni, anıları ya da konuşma
+    # geçmişini etkilemiyor, yalnızca nerede çalışıldığını değiştiriyor.
+    project: str = ""
 
 
 @dataclass(slots=True)
@@ -206,7 +219,8 @@ class Config:
 
     def open_sandbox(self) -> "sandbox.Sandbox":
         return sandbox.Sandbox.open(
-            self.workspace, self.sandbox.directory, enabled=self.sandbox.enabled
+            self.workspace, self.sandbox.directory, enabled=self.sandbox.enabled,
+            project=self.sandbox.project, state_dir=self.state_dir,
         )
 
     def ensure_dirs(self) -> None:

@@ -65,6 +65,27 @@ DOC = {".md", ".txt", ".csv", ".tsv", ".json", ".jsonl", ".yaml", ".yml",
 # Manifest dosyasının adı. Varsa klasör tek bir uygulama sayılıyor.
 MANIFEST = "app.json"
 
+# Keşif kaç seviye iner. Bir uygulama atölyenin dibinde de olabiliyor
+# (`site/panolar/kuyu/app.json`); tek seviye bakmak onu görünmez yapıyordu.
+# Üç seviye insan eliyle kurulan her yerleşimi yakalıyor, daha derini
+# kütüphane/derleme çöplüğü oluyor.
+PROJE_DERINLIK = 3
+
+# Derin keşifte hiç inilmeyen klasörler: bağımlılık/derleme/çöp. Bunların
+# içindeki bir `app.json` kullanıcının uygulaması değil, bir paketin kendi
+# manifesti — kart olarak göstermek katalogu kirletiyor.
+KESIF_ATLA = SKIP | {"vendor", "dist", "build", "site-packages", ".geri-donusum",
+                     "bower_components", "target", "obj", "bin"}
+
+# Manifest yanlış yere yazıldığında ya da doğrulama düştüğünde MODELE dönen
+# metin. Kural değil TARİF veriyor: nereye, neye göreli, örneğiyle. Model bu
+# cümleyi okuyup manifesti doğru yere taşıyabilsin diye tek yerde duruyor.
+MANIFEST_OGRETICI = (
+    "Uygulama manifesti uygulamanın KENDİ klasöründe `app.json` olmalı; "
+    "`entry` o klasöre göreli. Örnek: atolye/borsa-ara/app.json → "
+    '{"entry": "static/index.html", "run": "py app.py"}'
+)
+
 _TITLE = re.compile(r"<title[^>]*>(.*?)</title>", re.IGNORECASE | re.DOTALL)
 _NAME = re.compile(r"""^\s*NAME\s*=\s*["'](.+?)["']""", re.MULTILINE)
 _DESC = re.compile(r"""^\s*DESCRIPTION\s*=\s*["'](.+?)["']""", re.MULTILINE)
@@ -103,25 +124,55 @@ class Project:
     desc: str = ""            # tek cümle: bu uygulama NE YAPAR (kart üstünde)
     howto: str = ""           # README / nasıl çalıştırılır (kısa)
     single: bool = False      # tek dosyalık mı (klasör değil)
+    # Doğrulama: manifest bir şey vaat edip tutmuyorsa uygulama listeden
+    # DÜŞMÜYOR — "eksik" rozetiyle ve NEDENİYLE duruyor. Sessizce kaybolmak
+    # ("uygulamamı yaptım ama panelde yok") tam da düzeltilen kusurdu.
+    eksik: bool = False
+    neden: str = ""
+    # Canlı durum: bu uygulamaya ait çalışan bir süreç var mı.
+    pid: int = 0
+    address: str = ""         # "http://127.0.0.1:8090"
+    port: int = 0             # tespit edilen/ilan edilen port
+    stoppable: bool = False   # panelden durdurulabilir mi (neo'nun kendisi değil)
 
 
 def projects(sandbox_root: Path, base: Path | None = None) -> list[dict[str, Any]]:
     """Atölyeyi PROJE birimlerine çevirir (dosya ağacı değil).
 
-    Üst düzeydeki her klasör bir proje; manifest (app.json) varsa onu, yoksa
-    sezgiyi kullanıyor (web mi servis mi, giriş dosyası, README). Üst düzeydeki
-    tek dosyalar da (bir pano.html gibi) kendi başına birer proje.
+    Geriye dönük yüzey: yalnız proje listesi. Başıboş manifest uyarılarını da
+    isteyen çağıran `katalog()` kullanıyor.
+    """
+    return katalog(sandbox_root, base)["projects"]
+
+
+def katalog(sandbox_root: Path, base: Path | None = None,
+            canli: bool = True) -> dict[str, Any]:
+    """Atölyenin uygulama kataloğu: projeler + manifest sorunları.
+
+    Bir uygulama = içinde `app.json` olan bir KLASÖR (en fazla
+    `PROJE_DERINLIK` seviye derinde) ya da kendi başına yeten bir dosya
+    (bir pano.html, bir betik). Manifesti olmayan üst düzey klasörler de
+    sezgiyle proje sayılıyor — atölye manifest yazmadan da kullanılabilmeli.
+
+    Atölye KÖKÜNDEKİ manifestler uygulama DEĞİL: atölye bir uygulama değil,
+    uygulamaların yaşadığı yer. Kökteki `app.json` ya da `llm-donanim-app.json`
+    gibi başıboş dosyalar yok sayılıyor ve `sorunlar` altında NEDENİYLE
+    bildiriliyor — model manifesti yanlış yere yazdığında sessizlik değil,
+    öğretici bir uyarı alıyor.
     """
     root = sandbox_root.resolve()
     ref = (base or root).resolve()
     if not root.is_dir():
-        return []
+        return {"projects": [], "sorunlar": []}
+
+    sorunlar = _basibos_manifestler(root)
+    basibos = {s["path"] for s in sorunlar}
 
     out: list[Project] = []
     try:
         entries = sorted(root.iterdir(), key=lambda p: (p.is_file(), p.name.lower()))
     except OSError:
-        return []
+        return {"projects": [], "sorunlar": sorunlar}
 
     for path in entries:
         # Gizli, iç altyapı, ya da geçici/kilit dosyaları (~$Word.docx, ~yedek)
@@ -129,13 +180,80 @@ def projects(sandbox_root: Path, base: Path | None = None) -> list[dict[str, Any
         if path.name in SKIP or path.name.startswith(".") or path.name.startswith("~"):
             continue
         if path.is_dir():
-            if path.name in INTERNAL:
+            if path.name in INTERNAL or path.name in KESIF_ATLA:
                 continue
-            out.append(_project_from_folder(path, ref))
-        elif path.is_file() and path.suffix.lower() not in SKIP_SUFFIX and path.name != MANIFEST:
+            out.extend(_klasor_projeleri(path, ref))
+        elif path.is_file() and path.suffix.lower() not in SKIP_SUFFIX \
+                and path.name != MANIFEST and path.name not in basibos:
             out.append(_project_from_file(path, ref))
 
-    return [asdict(p) for p in out]
+    if canli:
+        _canli_isaretle(out, root, ref)
+    return {"projects": [asdict(p) for p in out], "sorunlar": sorunlar}
+
+
+def _basibos_manifestler(root: Path) -> list[dict[str, str]]:
+    """Atölye KÖKÜNDE duran, bir uygulamaya ait olmayan manifestler.
+
+    İki hal: (1) `atolye/app.json` — atölyenin tamamını tek uygulama gibi
+    tarif ediyor; (2) `atolye/llm-donanim-app.json` — klasörsüz, uydurma
+    adlı bir manifest. İkisi de keşfe girmiyor; kullanıcıya ve modele tek
+    satır uyarı + `MANIFEST_OGRETICI` dönüyor.
+    """
+    out: list[dict[str, str]] = []
+    try:
+        entries = sorted(root.iterdir(), key=lambda p: p.name.lower())
+    except OSError:
+        return out
+    for path in entries:
+        if not path.is_file():
+            continue
+        ad = path.name
+        if ad != MANIFEST and not ad.lower().endswith("-app.json"):
+            continue
+        out.append({
+            "path": ad,
+            "uyari": f"atolye/{ad} geçersiz — manifest uygulamanın kendi "
+                     "klasöründe olmalı",
+            "ogretici": MANIFEST_OGRETICI,
+        })
+    return out
+
+
+def _klasor_projeleri(folder: Path, ref: Path) -> list[Project]:
+    """Bir üst düzey klasörden çıkan proje(ler).
+
+    Kendi manifesti varsa: tek proje, o. Yoksa altında (en fazla
+    `PROJE_DERINLIK` seviye) manifestli klasörler aranıyor; bulunursa asıl
+    uygulamalar ONLAR — üst klasör yalnızca bir kap, kart olarak
+    tekrarlanmıyor. Hiç manifest yoksa eski davranış: klasörün kendisi
+    sezgiyle bir proje.
+    """
+    if (folder / MANIFEST).is_file():
+        return [_project_from_folder(folder, ref)]
+    ic = _manifestli_klasorler(folder, PROJE_DERINLIK - 1)
+    if ic:
+        return [_project_from_folder(p, ref) for p in ic]
+    return [_project_from_folder(folder, ref)]
+
+
+def _manifestli_klasorler(folder: Path, kalan: int) -> list[Path]:
+    """`folder` altında manifest taşıyan klasörler (en fazla `kalan` seviye)."""
+    if kalan <= 0:
+        return []
+    out: list[Path] = []
+    try:
+        entries = sorted(folder.iterdir(), key=lambda p: p.name.lower())
+    except OSError:
+        return out
+    for path in entries:
+        if not path.is_dir() or path.name.startswith(".") or path.name in KESIF_ATLA:
+            continue
+        if (path / MANIFEST).is_file():
+            out.append(path)          # manifestli klasörün İÇİNE inilmiyor
+            continue
+        out.extend(_manifestli_klasorler(path, kalan - 1))
+    return out
 
 
 def _project_from_folder(folder: Path, root: Path) -> Project:
@@ -146,16 +264,21 @@ def _project_from_folder(folder: Path, root: Path) -> Project:
     if manifest:
         scope = _scope(manifest.get("scope"))
         entry_rel = str(manifest.get("entry") or entry or "")
+        run_cmd = str(manifest.get("run") or run)
+        neden = _dogrula(folder, entry_rel, run_cmd)
         return Project(
             name=str(manifest.get("name") or folder.name),
             path=_rel(folder, root),
             scope=scope,
             kind=str(manifest.get("type") or manifest.get("kind") or kind),
             entry=_rel(folder / entry_rel, root) if entry_rel else "",
-            run=str(manifest.get("run") or run),
+            run=run_cmd,
             url=str(manifest.get("url") or ""),
             desc=str(manifest.get("desc") or "") or _first_line(howto),
             howto=str(manifest.get("howto") or howto),
+            eksik=bool(neden),
+            neden=neden,
+            port=_port_ipucu(folder, manifest, entry_rel),
         )
 
     return Project(
@@ -167,7 +290,112 @@ def _project_from_folder(folder: Path, root: Path) -> Project:
         run=run,
         desc=_first_line(howto),
         howto=howto,
+        port=_port_ipucu(folder, None, entry),
     )
+
+
+def _dogrula(folder: Path, entry_rel: str, run_cmd: str) -> str:
+    """Manifest vaadini tutuyor mu? Tutmuyorsa NEDENİ (yoksa boş metin).
+
+    Uygulama listeden düşmüyor — "eksik" rozetiyle nedeniyle duruyor. Yanlış
+    yazılmış bir `entry` ("site/llm-donanım.html" ama dosya `llm-donanim.html")
+    eskiden sessizce boş bir Aç düğmesi oluyordu; artık nedeni kartta yazıyor.
+    """
+    if entry_rel:
+        try:
+            if not (folder / entry_rel).exists():
+                return f"entry bulunamadı: {entry_rel}"
+        except OSError:
+            return f"entry okunamadı: {entry_rel}"
+    if run_cmd.strip() and not _komut_anlamli(run_cmd, folder):
+        return f"run komutu anlaşılmadı: {run_cmd.strip()}"
+    if not entry_rel and not run_cmd.strip():
+        return "ne `entry` ne `run` var — uygulama nasıl açılacağı belirsiz"
+    return ""
+
+
+# Bir çalıştırma komutunun ilk kelimesi olarak anlamlı sayılan araçlar.
+# Liste temkinli: tanımadığımız bir komut, PATH'te varsa ya da klasörde bir
+# dosyaya karşılık geliyorsa yine geçerli sayılıyor — amaç yanlış alarm değil,
+# apaçık bozuk komutu ("bir şeyler çalıştır") yakalamak.
+_BILINEN_KOMUTLAR = {"npm", "npx", "yarn", "pnpm", "dotnet", "java", "make",
+                     "cargo", "go", "deno", "bun", "flask", "uvicorn",
+                     "gunicorn", "streamlit", "rails", "composer"}
+
+
+def _komut_anlamli(run_cmd: str, folder: Path) -> bool:
+    import shutil as _shutil
+
+    tokens = run_cmd.split()
+    if not tokens:
+        return False
+    head = tokens[0].lower().removesuffix(".exe")
+    if head in _SIMPLE_RUNNERS or head in _BILINEN_KOMUTLAR:
+        return True
+    try:
+        if (folder / tokens[0]).exists():
+            return True
+    except OSError:
+        pass
+    return bool(_shutil.which(tokens[0]))
+
+
+# Kaynak/metin içinde ilan edilmiş port. Sırayla denenen kalıplar; hepsi
+# "port" kelimesine ya da bir adrese bağlı — çıplak sayı yakalanmıyor
+# (bir sürüm numarasını port sanmak yanlış canlı rozeti doğururdu).
+_PORT_KALIPLARI = (
+    re.compile(r"""port\s*[=:]\s*["']?(\d{4,5})""", re.IGNORECASE),
+    re.compile(r"""--port[\s=]+(\d{4,5})"""),
+    re.compile(r"""\.listen\(\s*(\d{4,5})"""),
+    re.compile(r"""(?:localhost|127\.0\.0\.1|0\.0\.0\.0)[:/](\d{4,5})"""),
+)
+
+
+def _port_ipucu(folder: Path, manifest: dict[str, Any] | None, entry_rel: str) -> int:
+    """Bu uygulamanın hangi portta yaşadığı — ilan edilmiş ya da kaynakta yazılı.
+
+    Sıra: manifestteki `port`/`url`, sonra `run`/`howto` metni, en son giriş
+    ya da sunucu dosyasının kaynağı (`app.run(..., port=8090)`). Canlı rozeti
+    bu portun gerçekten DİNLENİYOR olmasına bakıyor; tahmin değil kanıt.
+    """
+    if manifest:
+        try:
+            acik = int(str(manifest.get("port") or "").strip() or 0)
+            if 1 <= acik <= 65535:
+                return acik
+        except ValueError:
+            pass
+        for alan in ("url", "run", "howto", "desc"):
+            bulunan = _porttan(str(manifest.get(alan) or ""))
+            if bulunan:
+                return bulunan
+
+    adaylar: list[Path] = []
+    if entry_rel:
+        adaylar.append(folder / entry_rel)
+    for ad in ("app.py", "main.py", "server.py", "run.py",
+               "server.js", "app.js", "index.js", "main.js"):
+        adaylar.append(folder / ad)
+    for aday in adaylar:
+        try:
+            if not aday.is_file() or aday.suffix.lower() not in RUN:
+                continue
+        except OSError:
+            continue
+        bulunan = _porttan(_head(aday, 20000))
+        if bulunan:
+            return bulunan
+    return 0
+
+
+def _porttan(text: str) -> int:
+    for kalip in _PORT_KALIPLARI:
+        match = kalip.search(text or "")
+        if match:
+            deger = int(match.group(1))
+            if 1024 <= deger <= 65535:
+                return deger
+    return 0
 
 
 def _project_from_file(path: Path, root: Path) -> Project:
@@ -553,7 +781,8 @@ def launch(sandbox_root: Path, rel_path: str, base: Path | None = None) -> dict[
         else:
             return {"ok": False,
                     "error": "Çalıştırma komutu bulunamadı: app.json'a "
-                             "bir `run` satırı ekletebilirsin (neo'ya sor)."}
+                             "bir `run` satırı ekletebilirsin (neo'ya sor). "
+                             + MANIFEST_OGRETICI}
 
     if not target.is_file():
         return {"ok": False, "error": f"Dosya yok: {rel_path}"}
@@ -569,35 +798,193 @@ def launch(sandbox_root: Path, rel_path: str, base: Path | None = None) -> dict[
     return {"ok": True, "run": _run_line(target), "path": rel_path, "pid": pid}
 
 
-def running() -> list[dict[str, Any]]:
+def running(sandbox_root: Path | None = None,
+            base: Path | None = None) -> list[dict[str, Any]]:
     """Hâlâ çalışan, izlenebilen uygulamalar — canlı adresleriyle.
 
     Ölmüş süreçler ayıklanıyor. Adres (bir web sunucusu bağladıysa) netstat
     ile PID → dinlenen port eşleştirilerek bulunuyor; port henüz bağlanmadıysa
     boş döner ve sonraki yoklamada belirir.
+
+    neo'nun KENDİ süreçleri bu listeden düşüyor. Model kafası karışıp
+    `neocp --web 8873` çalıştırdığında panel neo'nun bir kopyasını
+    "uygulaman" diye listeliyordu; kullanıcının gördüğü şey kendi
+    programının klonuydu. Kendi kopyası ayrı bir satır olarak, DURDURULAMAZ
+    biçimde görünüyor — gizlemek de yanlış olurdu, kullanıcı orada bir şey
+    çalıştığını bilmeli.
     """
     out: list[dict[str, Any]] = []
     dead: list[int] = []
-    # Süreç ağacı ve dinlenen portlar bir KEZ toplanıyor: her süreç için ayrı
-    # ayrı sorgulamak yoklamayı ağırlaştırırdı.
-    parents = _proc_parents()
+    # Süreç ağacı, komut satırları ve dinlenen portlar bir KEZ toplanıyor:
+    # her süreç için ayrı ayrı sorgulamak yoklamayı ağırlaştırırdı.
+    bilgi = _proc_bilgi()
+    parents = {pid: v["ppid"] for pid, v in bilgi.items()}
     listen = _listening_ports()
     for pid, info in list(_PROCS.items()):
         proc = info["proc"]
         if proc.poll() is not None:   # bitmiş
             dead.append(pid)
             continue
+        # Kaydın kendi metni en güvenilir işaret (kabuk aracı komutu olduğu
+        # gibi yazıyor); ağaç taraması yedek.
+        kendi = (neo_sureci_mi(str(info.get("path") or ""))
+                 or neo_sureci_mi(str(info.get("run") or ""))
+                 or _neo_ailesi(pid, bilgi))
         out.append({
             "pid": pid,
             "path": info["path"],
-            "name": info["name"],
+            "name": "neo (kendisi)" if kendi else info["name"],
             "address": _address(pid, parents, listen),
             "started": info.get("started", 0),
             "run": info.get("run", ""),
+            "self": kendi,
+            "stoppable": not kendi,
         })
     for pid in dead:
         _PROCS.pop(pid, None)
+
+    # Defterde OLMAYAN ama atölyeye ait çalışan sunucular: neo yeniden
+    # başlatıldığında ya da uygulamayı kullanıcı elle koşturduğunda süreç
+    # `_PROCS`'ta yok — panel "hiçbir şey çalışmıyor" diyordu, oysa
+    # uygulama 8090'da hizmet veriyordu. Proje portu gerçekten dinleniyorsa
+    # o uygulama CANLI sayılıyor.
+    if sandbox_root is not None:
+        bilinen = {row["pid"] for row in out}
+        for row in _kesfedilen_sunucular(sandbox_root, bilgi, listen, base):
+            if row["pid"] not in bilinen:
+                out.append(row)
+                bilinen.add(row["pid"])
     return out
+
+
+def _kesfedilen_sunucular(
+    sandbox_root: Path,
+    bilgi: dict[int, dict[str, Any]],
+    listen: dict[int, list[int]],
+    base: Path | None = None,
+) -> list[dict[str, Any]]:
+    """Atölyedeki projelerin ilan ettiği portları DİNLEYEN süreçler.
+
+    Kanıt bir soket: proje "8090'da yaşıyorum" diyor, 8090'ı dinleyen bir
+    süreç var ve o süreç neo'nun kendisi değil → uygulama çalışıyor.
+
+    Yollar `base`'e göre veriliyor (panel proje yollarıyla eşleştiriyor);
+    farklı köke göre üretilen iki yol aynı uygulamayı iki kez gösterirdi.
+    """
+    out: list[dict[str, Any]] = []
+    try:
+        items = katalog(sandbox_root, base, canli=False)["projects"]
+    except Exception:
+        return out
+    sahip: dict[int, int] = {}     # port → pid
+    for pid, ports in listen.items():
+        for port in ports:
+            sahip.setdefault(port, pid)
+    for p in items:
+        port = int(p.get("port") or 0)
+        pid = sahip.get(port, 0)
+        if not port or not pid or _neo_ailesi(pid, bilgi):
+            continue
+        _KESFEDILEN.add(pid)
+        out.append({
+            "pid": pid,
+            "path": p.get("path", ""),
+            "name": p.get("name", ""),
+            "address": f"http://127.0.0.1:{port}",
+            "started": 0,
+            "run": p.get("run", ""),
+            "self": False,
+            "stoppable": True,
+            "discovered": True,
+        })
+    return out
+
+
+def _canli_isaretle(items: list[Project], root: Path, ref: Path) -> None:
+    """Projelere canlı durumu işler: pid, adres, durdurulabilirlik.
+
+    İki kaynak birlikte: (1) süreç defteri (`_PROCS`) — neo'nun kendi
+    başlattıkları; (2) ilan edilen portun gerçekten dinleniyor olması —
+    neo yeniden başlatılsa da, uygulamayı kullanıcı elle koşturmuş olsa da
+    çalışan şey görünüyor.
+    """
+    izlenen: dict[str, int] = {}
+    for pid, info in _PROCS.items():
+        if info["proc"].poll() is None:
+            izlenen[str(info.get("path") or "")] = pid
+    ilan = {p.port for p in items if p.port}
+    if not items or (not izlenen and not ilan):
+        return   # eşleşecek hiçbir şey yok: süreç sorgusu bile açma
+
+    try:
+        listen = _listening_ports()
+    except Exception:
+        return
+    sahip: dict[int, int] = {}
+    for pid, ports in listen.items():
+        for port in ports:
+            sahip.setdefault(port, pid)
+    if not izlenen and not (ilan & set(sahip)):
+        return   # ilan edilen portların hiçbiri dinlenmiyor
+
+    bilgi = _proc_bilgi()
+    parents = {pid: v["ppid"] for pid, v in bilgi.items()}
+
+    for p in items:
+        pid = izlenen.get(p.path) or (izlenen.get(p.entry) if p.entry else 0) or 0
+        if pid:
+            p.pid = pid
+            p.address = _address(pid, parents, listen)
+            p.stoppable = not _neo_ailesi(pid, bilgi)
+        if p.port and not p.address:
+            dinleyen = sahip.get(p.port, 0)
+            if dinleyen and not _neo_ailesi(dinleyen, bilgi):
+                p.pid = p.pid or dinleyen
+                p.address = f"http://127.0.0.1:{p.port}"
+                p.stoppable = True
+                _KESFEDILEN.add(dinleyen)
+
+
+# neo'nun kendi süreçleri: komut satırında `neocp` geçen her şey. Model
+# uygulamasını başlatmak yerine neo'yu başlattığında (`neocp --web 8873`)
+# panel onu "uygulaman" diye listeliyordu — kullanıcı kendi programının
+# klonuna bakıyordu. Bu kalıp o kopyayı tanıyor.
+_NEO_IZI = re.compile(r"(^|[\\/\s\"'])(-m\s+)?neocp(\.exe)?([\s\"']|$)", re.IGNORECASE)
+
+# Port kanıtıyla keşfedilmiş (defterde olmayan) süreçler. `stop()` yalnızca
+# bir kez görülmüş bir pid'i durdurabilsin diye tutuluyor: panel rastgele bir
+# sistem sürecini öldüremez.
+_KESFEDILEN: set[int] = set()
+
+
+def neo_sureci_mi(cmdline: str) -> bool:
+    """Bu komut satırı neo'nun kendisini mi başlatıyor? (dışarıdan da kullanılır)"""
+    return bool(_NEO_IZI.search(cmdline or ""))
+
+
+def _neo_ailesi(pid: int, bilgi: dict[int, dict[str, Any]]) -> bool:
+    """pid ya da ATALARINDAN biri neo mu?
+
+    Sarmalayıcıya bakmak yetmiyor: `powershell -Command "neocp --web 8873"`
+    zincirinde asıl neo torun süreç. Zincir yukarı taranıyor.
+    """
+    if pid == os.getpid():
+        return True
+    gorulen: set[int] = set()
+    cur = pid
+    while cur and cur not in gorulen:
+        gorulen.add(cur)
+        kayit = bilgi.get(cur)
+        if kayit is None:
+            break
+        if neo_sureci_mi(str(kayit.get("cmd") or "")):
+            return True
+        cur = int(kayit.get("ppid") or 0)
+    # Torunlarda neo var mı (sarmalayıcı pid defterde, neo çocuğunda)
+    for cocuk, kayit in bilgi.items():
+        if kayit.get("ppid") == pid and neo_sureci_mi(str(kayit.get("cmd") or "")):
+            return True
+    return False
 
 
 def stop(pid: int) -> dict[str, Any]:
@@ -610,7 +997,30 @@ def stop(pid: int) -> dict[str, Any]:
     ağacı indiriyor."""
     info = _PROCS.get(pid)
     if info is None:
-        return {"ok": False, "error": "Bu süreç izlenmiyor ya da zaten bitmiş."}
+        # Defterde yok ama PORT KANITIYLA keşfedilmişse durdurulabilir: neo
+        # yeniden başlatıldığında uygulamalar "durdurulamaz" hale geliyordu.
+        # Rastgele bir sistem sürecini öldürmemek için yalnızca `running()`
+        # tarafından bir kez görülmüş pid'ler kabul ediliyor.
+        if pid not in _KESFEDILEN:
+            return {"ok": False, "error": "Bu süreç izlenmiyor ya da zaten bitmiş."}
+        if _neo_ailesi(pid, _proc_bilgi()):
+            return {"ok": False, "error": "Bu neo'nun kendi süreci — panelden durdurulmuyor."}
+        try:
+            if sys.platform == "win32":
+                subprocess.run(["taskkill", "/PID", str(pid), "/T", "/F"],
+                               capture_output=True, timeout=10,
+                               **ortam.sessiz_bayraklar())
+            else:
+                os.kill(pid, 15)
+        except Exception as exc:
+            return {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
+        _KESFEDILEN.discard(pid)
+        return {"ok": True, "pid": pid}
+    # Defterdeki kaydın kendi metni yetiyor (süreç ağacını sorgulamaya gerek
+    # yok): kabuk aracı komutu olduğu gibi yazıyor, `neocp --web 8873` orada
+    # görünüyor.
+    if neo_sureci_mi(str(info.get("path") or "")) or neo_sureci_mi(str(info.get("run") or "")):
+        return {"ok": False, "error": "Bu neo'nun kendi süreci — panelden durdurulmuyor."}
     try:
         if sys.platform == "win32":
             subprocess.run(["taskkill", "/PID", str(pid), "/T", "/F"],
@@ -657,6 +1067,33 @@ def open_path(sandbox_root: Path, rel_path: str, base: Path | None = None) -> di
     except Exception as exc:
         return {"ok": False, "error": f"Açılamadı: {type(exc).__name__}: {exc}"}
     return {"ok": True, "opened": str(target)}
+
+
+def reveal(sandbox_root: Path, rel_path: str, base: Path | None = None) -> dict[str, Any]:
+    """Uygulamanın klasörünü dosya gezgininde açar.
+
+    "Nerede bu şey?" panelin en sık sorulan sorusu: kart bir yol yazıyor ama
+    kullanıcı onu diskte bulmak için elle geziniyordu. Dosya verilirse
+    klasörü açılıyor (dosya seçili).
+    """
+    root = sandbox_root.resolve()
+    ref = (base or root).resolve()
+    target = (ref / rel_path).resolve() if rel_path else root
+    if target != root and root not in target.parents:
+        return {"ok": False, "error": "Atölye dışı: yalnızca atölyedekiler gösterilir."}
+    if not target.exists():
+        return {"ok": False, "error": f"Yok: {rel_path}"}
+    try:
+        if sys.platform == "win32":
+            if target.is_dir():
+                os.startfile(str(target))  # type: ignore[attr-defined]
+            else:
+                subprocess.Popen(["explorer", "/select,", str(target)])
+        else:
+            subprocess.Popen(["xdg-open", str(target if target.is_dir() else target.parent)])
+    except Exception as exc:
+        return {"ok": False, "error": f"Açılamadı: {type(exc).__name__}: {exc}"}
+    return {"ok": True, "shown": _rel(target, root)}
 
 
 def remove(sandbox_root: Path, rel_path: str, base: Path | None = None) -> dict[str, Any]:
@@ -719,30 +1156,55 @@ def _address(
 
 def _proc_parents() -> dict[int, int]:
     """pid → ppid haritası. Süreç ağacında torunları bulmak için."""
-    out: dict[int, int] = {}
+    return {pid: v["ppid"] for pid, v in _proc_bilgi().items()}
+
+
+def _proc_bilgi() -> dict[int, dict[str, Any]]:
+    """pid → {ppid, cmd}. Süreç ağacı VE komut satırları tek sorguda.
+
+    Komut satırı gerekiyor çünkü neo'nun kendi kopyasını (`neocp --web ...`)
+    kullanıcının uygulamasından ancak o ayırıyor. Ayrı bir sorgu daha açmak
+    4 saniyelik yoklamayı iki katına çıkarırdı; aynı sorguya bir alan
+    eklemek bedavaya yakın.
+
+    Ayraç `|`: CSV, komut satırındaki virgüllerde bozuluyordu.
+    """
+    out: dict[int, dict[str, Any]] = {}
     try:
         if sys.platform == "win32":
             res = subprocess.run(
                 ["powershell", "-NoProfile", "-Command",
-                 "Get-CimInstance Win32_Process | "
-                 "Select-Object ProcessId,ParentProcessId | "
-                 "ConvertTo-Csv -NoTypeInformation"],
-                capture_output=True, text=True, timeout=5,
+                 "Get-CimInstance Win32_Process | ForEach-Object { "
+                 "\"$($_.ProcessId)|$($_.ParentProcessId)|"
+                 "$($_.CommandLine -replace '[\\r\\n\\|]',' ')\" }"],
+                # errors="replace": komut satırlarında konsol kod sayfasının
+                # çözemediği baytlar olabiliyor (çökme değil, bozuk karakter
+                # kabul edilir — aradığımız iz `neocp` zaten ASCII).
+                capture_output=True, text=True, errors="replace", timeout=8,
                 **ortam.sessiz_bayraklar(),
             )
-            for line in res.stdout.splitlines()[1:]:
-                parts = [p.strip().strip('"') for p in line.split(",")]
-                if len(parts) >= 2 and parts[0].isdigit() and parts[1].isdigit():
-                    out[int(parts[0])] = int(parts[1])
+            for line in res.stdout.splitlines():
+                parts = line.split("|", 2)
+                if len(parts) >= 2 and parts[0].strip().isdigit() \
+                        and parts[1].strip().isdigit():
+                    out[int(parts[0])] = {
+                        "ppid": int(parts[1]),
+                        "cmd": parts[2].strip() if len(parts) > 2 else "",
+                    }
         else:
-            import os
             for entry in os.listdir("/proc"):
                 if not entry.isdigit():
                     continue
                 try:
                     with open(f"/proc/{entry}/stat") as fh:
                         fields = fh.read().split()
-                    out[int(entry)] = int(fields[3])
+                    try:
+                        with open(f"/proc/{entry}/cmdline", "rb") as ch:
+                            cmd = ch.read().replace(b"\0", b" ").decode(
+                                "utf-8", "replace").strip()
+                    except OSError:
+                        cmd = ""
+                    out[int(entry)] = {"ppid": int(fields[3]), "cmd": cmd}
                 except Exception:
                     continue
     except Exception:
@@ -770,7 +1232,7 @@ def _listening_ports() -> dict[int, list[int]]:
         proc = subprocess.run(
             ["netstat", "-ano", "-p", "TCP"] if sys.platform == "win32"
             else ["netstat", "-tlnp"],
-            capture_output=True, text=True, timeout=3,
+            capture_output=True, text=True, errors="replace", timeout=3,
             **ortam.sessiz_bayraklar(),
         )
     except Exception:

@@ -1,11 +1,14 @@
 [project]
 name = "neocp"
-version = "0.2.1"
+version = "0.3.0"
 description = "Bilgisayarı kullanabilen, kendi zihnine erişebilen bir ajan harness'ı"
 requires-python = ">=3.11"
 dependencies = [
     "anthropic>=0.92",
     "rich>=13.7",
+    # PDF metin cikarma (`read_file`). Kurulu degilse arac dusuruyor degil,
+    # durustce "okuyamiyorum" diyor — ama o zaman kullanici PDF veremiyor.
+    "pypdf>=4.0",
 ]
 
 [project.optional-dependencies]

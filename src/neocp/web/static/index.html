@@ -82,6 +82,16 @@
       </svg>
     </button>
 
+    <button id="tasks" class="icon" title="Koşan görevler" aria-label="Koşan görevler">
+      <!-- Kum saati + sayaç: arkada dönen her iş (kabuk işleri, arka plan
+           yardımcıları, süreçler) tek listede. Koşan iş varken rozet yanıyor. -->
+      <svg viewBox="0 0 16 16" aria-hidden="true">
+        <path d="M4.5 2.5h7M4.5 13.5h7" fill="none"/>
+        <path d="M5.5 2.5v2.2L8 7.2l2.5-2.5V2.5M5.5 13.5v-2.2L8 8.8l2.5 2.5v2.2" fill="none"/>
+      </svg>
+      <i class="icon-badge" id="tasks-badge" hidden></i>
+    </button>
+
     <button id="orchestra" class="icon" title="Alt ajanlar · kanallar" aria-label="Alt ajanlar">
       <!-- Fan-out: bir ana düğüm birden çok kanala dağılıyor — alt ajanlar. -->
       <svg viewBox="0 0 16 16" aria-hidden="true">
@@ -140,24 +150,28 @@
   </div>
 </div>
 
-<div class="stream" id="thread">
-  <div class="welcome" id="welcome">
-    <h1>Ne yapmamı istersin?</h1>
-    <p>Bilgisayarında çalışıyorum. Öğrendiklerim etrafımdaki ağa yazılıyor.</p>
+<!-- Sohbet sütunu: hedef şeridi ve akış AYNI kutunun içinde, üst üste
+     değil ALT ALTA. Panel eskiden akışın üstünde yüzen ayrı bir kutuydu ve
+     uzun bir konuşmada metni örtüyordu; artık yer kaplıyor, örtmüyor. -->
+<div class="stream-wrap" id="stream-wrap">
+  <!-- Hedefler: ajanın kendine yazdığı iş listesi (mind_goals). Hedef
+       yokken hiç görünmez; varsayılan KATLI (tek satır), tıklayınca açılır
+       ve tercih hatırlanır. Açıkken ne olduğunu kendi anlatıyor. -->
+  <div class="goals" id="goals" hidden>
+    <button class="goals-head" id="goals-head" type="button"
+            title="Tıkla — katla/aç" aria-label="Hedefler — katla/aç"></button>
+    <div class="goals-body" id="goals-body"></div>
+  </div>
+  <div class="stream" id="thread">
+    <div class="welcome" id="welcome">
+      <h1>Ne yapmamı istersin?</h1>
+      <p>Bilgisayarında çalışıyorum. Öğrendiklerim etrafımdaki ağa yazılıyor.</p>
+    </div>
   </div>
 </div>
 <!-- Hızlı inme: kullanıcı yukarı kaydırınca otomatik takip durur; bu düğme
      yeni içerik sayısını gösterir ve tıklanınca en alta iner. -->
 <button id="jump" class="jump" hidden title="En alta in" aria-label="En alta in">↓</button>
-
-<!-- Hedefler: ajanın hedef yığınının (mind_goals) görünür kontrol listesi.
-     Hedef yokken hiç görünmez; başlığa tıklamak katlar/açar, biten madde
-     üstü çizilip birkaç saniye sonra listeden düşer. -->
-<div class="goals" id="goals" hidden>
-  <button class="goals-head" id="goals-head" type="button"
-          title="Tıkla — katla/aç" aria-label="Hedefler — katla/aç"></button>
-  <div class="goals-body" id="goals-body"></div>
-</div>
 
 <form class="entry" id="composer">
   <button id="plus" type="button" class="icon" title="Ekle — dosya, bağlantı, yetenek" aria-label="Ekle">
@@ -183,9 +197,19 @@
       <circle cx="7.5" cy="9" r="2.2" fill="none"/>
     </svg>
   </button>
-  <textarea id="input" rows="1" placeholder="Konuş…"></textarea>
+  <textarea id="input" rows="1" placeholder="Konuş…  ·  / komut  ·  @ dosya"></textarea>
   <button id="send" type="submit" aria-label="Gönder">→</button>
 </form>
+
+<!-- Kompozer yüzeyleri: satır başında `/` komut defterini, `@` çalışma
+     alanı dosya seçicisini açıyor. Tek kutu var — hangisi açıksa onun
+     içeriğiyle dolup kompozerin ÜSTÜNDE duruyor (dock kutularıyla aynı
+     yerleşim). Klavye ile gezilir: ok tuşları, Enter seçer, Escape kapatır. -->
+<div class="pop compose-pop" id="compose-pop" hidden></div>
+
+<!-- `@` ile işaret edilen dosyalar: gönderilmeden önce cip olarak burada
+     duruyor. Gizli enjeksiyon yok — mesaja eklenen satır cipte yazan yol. -->
+<div class="mentions" id="mentions" hidden></div>
 
 <!-- Kompozerin altındaki durum şeridi: model, düşünme derinliği, yetki kipi
      ve bağlam doluluğu. Ayar sayfasını açmadan bir bakışta görülüyor ve
@@ -203,6 +227,9 @@
   <button id="dock-model" type="button" class="dock-chip" title="Model — ayarları açar">model</button>
   <button id="dock-effort" type="button" class="dock-chip" title="Düşünme derinliği — tıkla: değiştir">—</button>
   <button id="dock-mode" type="button" class="dock-chip" title="Yetki kipi — tıkla: değiştir">—</button>
+  <!-- Maliyet çipi: bu turun tahmini harcaması (fiyat bilinmiyorsa token).
+       İlk kullanım olayına kadar gizli — boş bir "$0" göstermenin anlamı yok. -->
+  <button id="dock-cost" type="button" class="dock-chip" title="Tahmini harcama — tıkla: kırılım" hidden>—</button>
   <!-- Beni tanı: kişisel ince ayar arka planda koşarken yanan sessiz çip. -->
   <span class="dock-tanima" id="dock-tanima" hidden></span>
   <span class="dock-ctx" id="dock-ctx" title="Bağlam doluluğu">
@@ -315,6 +342,23 @@
   <div class="apps-body" id="apps-body"></div>
 </div>
 
+<!-- Koşan görevler: arkada dönen HER İŞ tek listede — arka plan kabuk
+     işleri, arka plan yardımcıları, ayrılmış süreçler. Her satırda ad, tür,
+     canlı süre, durum ve tek tek "durdur". Satıra tıklayınca çıktıya
+     iniliyor: bitmiş işin özeti, yardımcının kendi oturum dökümü.
+     Orkestra güvertesinden farkı: orada ŞU ANKİ turun koordinasyonu
+     (kendiliğinden açılıp kapanan bir sahne), burada işin defteri. -->
+<div class="tasks-panel" id="tasks-panel" hidden>
+  <div class="left-grip" data-left-grip title="Genişliği sürükle" aria-label="Paneli yeniden boyutlandır"></div>
+  <div class="tasks-head">
+    <span class="tasks-tag">Koşan görevler</span>
+    <button class="tasks-refresh" id="tasks-refresh" title="Yenile" aria-label="Yenile">↻</button>
+    <button class="close" id="tasks-close" aria-label="Kapat">×</button>
+  </div>
+  <div class="tasks-status" id="tasks-status"></div>
+  <div class="tasks-body" id="tasks-body"></div>
+</div>
+
 <!-- Orkestra: alt ajan kanalları. Kendisi çalışırken açılıyor; şef (ana
      ajan) bekler ve beklediğini söyler. Sabitlenip geçmiş koşu da izlenebilir. -->
 <div class="orch-deck" id="orch-deck" hidden>
@@ -400,6 +444,9 @@
 <script src="/apps.js"></script>
 <script src="/history.js"></script>
 <script src="/orchestra.js"></script>
+<script src="/gorevler.js"></script>
+<script src="/komut.js"></script>
+<script src="/degisiklik.js"></script>
 <script src="/chrome.js"></script>
 </body>
 </html>

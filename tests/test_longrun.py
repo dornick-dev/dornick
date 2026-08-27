@@ -392,6 +392,134 @@ async def test_retry_wait_applies_a_pending_model_swap(
     assert swaps, "yeniden denemeden önce bekleyen değişiklik uygulanmalıydı"
 
 
+async def test_wait_events_carry_the_structured_fields(
+    tmp_path: Path, registry: ToolRegistry, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Bekleme-durumu olay sözleşmesi: yapısal kanal (on_wait) bağlıyken her
+    deneme kip/deneme/toplam/saniye/detay alanlarıyla gider, toparlanma tek
+    bir "bitti" olayıdır ve sohbet kanalına (on_notice) HAM HATA DÜŞMEZ —
+    arayüz bunu çalışma şeridinde tek canlı satır olarak çizer."""
+    monkeypatch.setattr(loop_module, "RETRY_DELAYS", (0.01, 0.01, 0.01))
+    client = FakeClient(
+        TurnResult(error="APIStatusError 402: {'detail': 'insufficient credits'}"),
+        TurnResult(error="Bağlantı kurulamadı: connection refused"),
+        text_turn("kesinti atlatıldı"),
+    )
+    agent = build_agent(tmp_path, client, registry)
+
+    events: list[dict] = []
+    notices: list[str] = []
+    agent.io.on_wait = events.append
+    agent.io.on_notice = notices.append
+
+    stats = await agent.run("uzun iş")
+
+    assert stats.stop_reason == "end_turn"
+    assert [e["kip"] for e in events] == ["deneme", "deneme", "bitti"]
+    first = events[0]
+    assert first["deneme"] == 1 and first["toplam"] == len(loop_module.RETRY_DELAYS)
+    assert first["saniye"] == 0          # int(0.01) — alan var ve sayısal
+    assert "402" in first["detay"]
+    assert events[-1]["deneme"] == 2, "bitti olayı kaç deneme sürdüğünü taşımalı"
+    # Sohbet temiz: ne ham hata duvarı ne de ayrı "geri geldi" satırı.
+    assert not any("402" in n for n in notices)
+    assert not any("geri geldi" in n for n in notices)
+
+
+async def test_wait_events_fall_back_to_notices_without_the_channel(
+    tmp_path: Path, registry: ToolRegistry, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """on_wait bağlı değilse (CLI, testler) eski düz-metin davranışı aynen
+    durur: deneme bildirimi ve "geri geldi" satırı on_notice'tan akar."""
+    monkeypatch.setattr(loop_module, "RETRY_DELAYS", (0.01,))
+    client = FakeClient(
+        TurnResult(error="openrouter 503: overloaded"),
+        text_turn("döndü"),
+    )
+    agent = build_agent(tmp_path, client, registry)
+    notices: list[str] = []
+    agent.io.on_notice = notices.append
+
+    await agent.run("iş")
+
+    assert any("yeniden denenecek" in n for n in notices)
+    assert any("geri geldi" in n for n in notices)
+
+
+async def test_parked_wait_emits_park_events_but_keeps_the_notice(
+    tmp_path: Path, registry: ToolRegistry, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Park uç durum: şerit "park" olayını alır (canlı satır), sohbetteki tek
+    park bildirimi de durur — kullanıcının aksiyon alabileceği (Oto kipi
+    ipucu) tek yer orası."""
+    monkeypatch.setattr(loop_module, "RETRY_DELAYS", (0.01,))
+    monkeypatch.setattr(loop_module, "PARK_PROBE_S", 0.01)
+    client = FakeClient(
+        *[TurnResult(error="Bağlantı kurulamadı") for _ in range(3)],
+        text_turn("model döndü"),
+    )
+    agent = build_agent(tmp_path, client, registry)
+    events: list[dict] = []
+    notices: list[str] = []
+    agent.io.on_wait = events.append
+    agent.io.on_notice = notices.append
+
+    stats = await agent.run("saatlik iş")
+
+    assert stats.stop_reason == "end_turn"
+    kips = [e["kip"] for e in events]
+    assert kips[0] == "deneme" and "park" in kips and kips[-1] == "bitti"
+    park = next(e for e in events if e["kip"] == "park")
+    assert park["saniye"] == int(0.01) and "Bağlantı" in park["detay"]
+    assert any("bekletiliyor" in n for n in notices), "park bildirimi sohbette kalır"
+
+
+async def test_interrupting_a_wait_emits_the_cancel_event(
+    tmp_path: Path, registry: ToolRegistry, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Beklerken "dur": şeritteki canlı satır "iptal" olayıyla kapanır."""
+    monkeypatch.setattr(loop_module, "RETRY_DELAYS", (30.0,))   # beklerken kesilecek
+    client = FakeClient(*[TurnResult(error="Bağlantı kurulamadı") for _ in range(3)])
+    agent = build_agent(tmp_path, client, registry)
+    events: list[dict] = []
+    agent.io.on_wait = events.append
+
+    async def stop_soon() -> None:
+        await asyncio.sleep(0.05)
+        agent.interrupt()
+
+    stopper = asyncio.ensure_future(stop_soon())
+    stats = await agent.run("iş")
+    await stopper
+
+    assert stats.interrupted is True
+    assert [e["kip"] for e in events] == ["deneme", "iptal"]
+
+
+async def test_the_bridge_publishes_wait_events_to_the_hub(tmp_path: Path) -> None:
+    """Köprü sözleşmesi: on_wait yükü hub'a "bekleme" tipiyle, alanlar
+    olduğu gibi taşınarak düşer — app.js tek canlı satırı bununla çizer."""
+    from neocp.desktop import Bridge
+
+    class _Hub:
+        def __init__(self) -> None:
+            self.events: list[dict] = []
+
+        def emit(self, payload: dict) -> None:
+            self.events.append(payload)
+
+    hub = _Hub()
+    bridge = Bridge(hub, asyncio.get_running_loop())
+    io = bridge.io()
+
+    assert io.on_wait is not None, "masaüstü köprüsü yapısal kanalı bağlamalı"
+    io.on_wait({"kip": "deneme", "deneme": 2, "toplam": 5,
+                "saniye": 30, "detay": "APIStatusError 402"})
+
+    assert hub.events == [{"type": "bekleme", "kip": "deneme", "deneme": 2,
+                           "toplam": 5, "saniye": 30, "detay": "APIStatusError 402"}]
+
+
 def test_outage_rotates_the_auto_pool() -> None:
     """Oto kipinde kesinti hata sayılır: cezalı model havuzun sonuna düşer,
     bir sonraki deneme başka modelle gider."""
@@ -443,3 +571,109 @@ async def test_the_bridge_resumes_a_parked_run(tmp_path: Path) -> None:
 
     assert resumed == [True]
     assert [e["type"] for e in hub.events][-1] == "turn_end"
+
+
+# -- sürdürülen oturumun sayaçları --------------------------------------
+#
+# Kanıtlanmış yara: uygulama kapanıp açılınca ya da geçmişten bir konuşma
+# sürdürülünce dock'taki bağlam çubuğu ve token sayacı SIFIRDAN başlıyordu.
+# Geçmiş yüklüydü, bağlam gerçekten doluydu — kullanıcı "ne kadar doluyum"
+# bilgisini kaybediyordu. Doğru kaynak oturum günlüğü.
+
+
+def _oturum(tmp_path: Path, satirlar: list[tuple[str, str, dict]]):
+    """Verilen mesajlarla bir oturum kurar ve onu taşıyan sahte ajanı döner."""
+    from neocp.events import EventLog
+    from neocp.session import Session
+
+    session = Session(EventLog(tmp_path / "s.jsonl"), "s")
+    for role, text, meta in satirlar:
+        session.log.message(role, [{"type": "text", "text": text}], **meta)
+    return SimpleNamespace(session=session)
+
+
+def test_a_resumed_session_seeds_the_counters_from_real_usage(tmp_path: Path) -> None:
+    """En doğru kaynak: son asistan turunun `usage` meta'sı — sağlayıcının
+    saydığı gerçek rakam. Tahmin bayrağı DÜŞÜK: uydurma yok."""
+    from neocp.desktop import _gecmis_kullanim
+
+    agent = _oturum(tmp_path, [
+        ("user", "merhaba", {}),
+        ("assistant", "selam", {"usage": {"prompt_total": 1200, "output": 40}}),
+        ("user", "devam", {}),
+        ("assistant", "tamam", {"usage": {"prompt_total": 5400, "output": 90}}),
+    ])
+
+    durum = _gecmis_kullanim(agent)
+
+    assert durum["prompt_total"] == 5400, "SON turun istemi geçerli olan"
+    assert durum["output"] == 130, "çıktı oturum boyunca toplanır"
+    assert durum["cagri"] == 2
+    assert durum["tahmin"] is False
+
+
+def test_an_old_log_without_usage_falls_back_to_an_estimate(tmp_path: Path) -> None:
+    """Usage yoksa (eski günlük ya da sayaç vermeyen sağlayıcı) sıfır
+    göstermektense yaklaşık göstermek doğru — yeter ki tahmin olduğu
+    söylensin. `tahmin` bayrağı arayüzde title'a dönüşüyor."""
+    from neocp.desktop import _gecmis_kullanim
+
+    agent = _oturum(tmp_path, [
+        ("user", "a" * 400, {}),
+        ("assistant", "b" * 400, {}),
+    ])
+
+    durum = _gecmis_kullanim(agent)
+
+    assert durum["tahmin"] is True
+    assert durum["prompt_total"] > 0
+    assert durum["cagri"] == 0
+
+
+def test_a_fresh_session_really_starts_at_zero(tmp_path: Path) -> None:
+    """Yeni konuşmada tohum YOK: sayaç gerçekten sıfırdan başlamalı."""
+    from neocp.desktop import _gecmis_kullanim
+
+    agent = _oturum(tmp_path, [])
+
+    assert _gecmis_kullanim(agent) == {
+        "prompt_total": 0, "output": 0, "cagri": 0, "tahmin": False}
+
+
+async def test_the_snapshot_carries_the_resumed_context(tmp_path: Path) -> None:
+    """Köprü sözleşmesi: snapshot bağlam doluluğunu ve harcama toplamını
+    taşıyor — app.js açılışta bunlarla tohumlanıyor (goals/channels
+    tohumlama kalıbının aynısı)."""
+    from neocp.desktop import Bridge
+
+    class _Hub:
+        def emit(self, payload: dict) -> None:
+            pass
+
+    bridge = Bridge(_Hub(), asyncio.get_running_loop())
+    agent = _oturum(tmp_path, [
+        ("user", "merhaba", {}),
+        ("assistant", "selam", {"usage": {"prompt_total": 3000, "output": 50}}),
+    ])
+    # snapshot ajanın ayarlarına da bakıyor; gerçek bir Config yeterli.
+    from neocp.config import Config
+    from neocp.permissions import PermissionEngine
+
+    config = Config.load(tmp_path)
+    config.ensure_dirs()
+    agent.config = config
+    agent.permissions = PermissionEngine("ask", allow=[], deny=[])
+    agent.mind = None
+    agent._children = None
+    agent._last_usage = None
+    agent.registry = ToolRegistry()
+    bridge.agent = agent
+
+    state = bridge.snapshot()
+
+    assert state["prompt_total"] == 3000
+    assert state["tahmin"] is False
+    # Maliyet çipinin oturum toplamı da aynı kaynaktan tohumlandı.
+    assert state["kullanim"]["oturum"] == {"girdi": 3000, "cikti": 50, "cagri": 1}
+    # İkinci snapshot (sayfa yenilendi) toplamı ŞİŞİRMEZ: tohum bir kez.
+    assert bridge.snapshot()["kullanim"]["oturum"]["cagri"] == 1

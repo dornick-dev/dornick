@@ -13,12 +13,17 @@ import shutil
 from pathlib import Path
 from typing import Any
 
+from .. import kancalar, kosum, tanilar
 from ..sandbox import OutsideSandbox
 from . import checkpoint
 from .base import ToolContext, ToolRegistry, ToolResult, object_schema
 
 MAX_READ_CHARS = 60_000
 MAX_LIST_ENTRIES = 400
+
+# Elle denetimde tek turda bakılacak en fazla dosya. Bir klasörü denetlemek
+# istenen şey; bütün depoyu taramak değil.
+MAX_DENETIM_DOSYA = 60
 
 
 def _resolve(raw: str, ctx: ToolContext) -> Path:
@@ -52,6 +57,21 @@ def _guard(path: Path, ctx: ToolContext) -> ToolResult | None:
     Hata metni ne yapılacağını da söylüyor: modelin bir sonraki turda
     `copy_in`e yönelmesi için "izin yok" demek yetmiyor.
     """
+    # Kanca dosyası her şeyden önce: atölyenin içinde bile olsa yazılamaz.
+    #
+    # Kancalar izin motorunun DIŞINDA çalışan, kullanıcının kendi
+    # komutlarıdır. Bu ancak model o dosyaya dokunamıyorsa güvenli: aksi
+    # halde kendisini engelleyen kancayı silerek ya da oraya kendi komutunu
+    # yazarak izin kapısını tümüyle atlardı. Kural tek yerde ve tüm yazma
+    # araçları buradan geçiyor.
+    if kancalar.korunan_mu(path):
+        return ToolResult.error(
+            f"{path} kanca dosyasıdır ve yazmaya kapalıdır. Kancalar "
+            "kullanıcının senin üzerinde kurduğu kurallardır; onay "
+            "penceresi olmadan çalışırlar ve tam bu yüzden senin "
+            "değiştirebileceğin bir yerde durmazlar. Bir kancanın "
+            "değişmesi gerekiyorsa kullanıcıya söyle, kendin düzenleme."
+        )
     try:
         ctx.sandbox.check(path)
     except OutsideSandbox as exc:
@@ -73,21 +93,229 @@ def _gozle(path: Path, ctx: ToolContext, arac: str) -> None:
         pass
 
 
+# -- metin olmayan dosyalar ---------------------------------------------
+#
+# Kanıtlanmış yara: bir PNG'yi `read_file` ile açmak, modele bir ekran
+# dolusu "��" gönderiyordu. Model bunu "dosya bozuk" diye okuyup
+# kullanıcıya öyle söylüyordu — oysa dosya sapasağlamdı, biz yanlış
+# gözle bakıyorduk.
+
+# API'nin kabul ettiği görüntü türleri. Başkasını göndermek 400 döner;
+# o yüzden listede olmayan bir uzantı görüntü yoluna hiç girmiyor.
+GORSEL_TURLERI = {
+    ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
+    ".gif": "image/gif", ".webp": "image/webp",
+}
+
+# Görüntü tavanı. API base64 gövdesinde ~5 MB'ı reddediyor; base64 ham
+# boyutu 4/3'e çıkardığı için ham tavan bunun dörtte üçünden biraz altta.
+MAX_GORSEL = 3_500_000
+
+# PDF'te tek turda çıkarılan varsayılan ve en fazla sayfa. Bir sözleşmenin
+# tamamını bağlama boşaltmak, aranan paragrafı bulmayı kolaylaştırmıyor.
+PDF_SAYFA = 10
+PDF_MAX_SAYFA = 40
+MAX_PDF_KARAKTER = 40_000
+
+
+def _gorsel_mu(path: Path) -> bool:
+    return path.suffix.lower() in GORSEL_TURLERI
+
+
+def _boyut(sayi: int) -> str:
+    if sayi >= 1_048_576:
+        return f"{sayi / 1_048_576:.1f} MB"
+    # Küçük dosyalarda "0 KB" yazmak yanlış bilgi: dosya boş değil.
+    return f"{sayi / 1024:.0f} KB" if sayi >= 1024 else f"{sayi} bayt"
+
+
+def _gorsel_oku(path: Path) -> ToolResult:
+    """Görseli modele GÖRÜNTÜ olarak verir.
+
+    Taşıma yolu hazırdı ve kullanılmıyordu: araç sonucu bir görüntü
+    taşıyamıyor (API `tool_result` içeriğinin dize olmasını istiyor), ama
+    yürütücü `detail["image"]`ı görüp bloğa `_image` olarak iliştiriyor ve
+    döngü onu bir sonraki kullanıcı turuna görüntü bloğu olarak koyuyor —
+    `look`/`screen` araçlarının yıllardır kullandığı yol. Buraya
+    bağlanması bir satırlık iş; eksik olan yalnızca bağlantıydı.
+    """
+    import base64
+
+    try:
+        boyut = path.stat().st_size
+    except OSError as exc:
+        return ToolResult.error(f"Okunamadı: {exc}")
+
+    if boyut > MAX_GORSEL:
+        # Uydurma yok: görüntüyü gönderemiyorsak bunu söylüyoruz.
+        return ToolResult(
+            f"{path.name} bir görsel ({_boyut(boyut)}) ama modele "
+            f"gönderilemeyecek kadar büyük (tavan {_boyut(MAX_GORSEL)}). "
+            "İçeriğini göremiyorum; küçültülmüş bir kopyası verilirse "
+            "bakabilirim.",
+            is_error=True,
+        )
+    try:
+        ham = path.read_bytes()
+    except OSError as exc:
+        return ToolResult.error(f"Okunamadı: {exc}")
+
+    tur = GORSEL_TURLERI[path.suffix.lower()]
+    veri = base64.b64encode(ham).decode("ascii")
+    return ToolResult(
+        content=f"{path.name} ({tur}, {_boyut(boyut)}) açıldı. Aşağıda görüyorsun.",
+        detail={"path": str(path), "image": f"data:{tur};base64,{veri}"},
+    )
+
+
+def _pdf_oku(path: Path, offset: Any, limit: Any) -> ToolResult:
+    """PDF'in ilk sayfalarının METNİNİ çıkarır.
+
+    İki dürüstlük kuralı:
+      * Metinsiz (taranmış) PDF'te "boş" demiyoruz — sayfaların görüntü
+        olduğunu ve metin katmanı taşımadığını söylüyoruz. "Boş" demek,
+        modelin dosyayı içeriksiz sanmasına yol açardı.
+      * Kaç sayfanın okunduğu ve kaç sayfa olduğu her zaman yazılıyor;
+        model 3. sayfayı okuyup 200 sayfalık raporu özetlediğini
+        sanmasın.
+    """
+    try:
+        from pypdf import PdfReader
+    except ImportError:
+        return ToolResult(
+            f"{path.name} bir PDF ama okuyamıyorum: `pypdf` bu makinede "
+            "kurulu değil. İçeriği hakkında tahminde bulunmayacağım — "
+            "kullanıcıya bildir.",
+            is_error=True,
+        )
+
+    try:
+        okuyucu = PdfReader(str(path))
+        toplam = len(okuyucu.pages)
+    except Exception as exc:
+        return ToolResult(
+            f"{path.name} açılamadı ({type(exc).__name__}: {exc}). Dosya "
+            "bozuk ya da parola korumalı olabilir.",
+            is_error=True,
+        )
+
+    if toplam == 0:
+        return ToolResult(f"{path.name} sayfa içermiyor.", is_error=True)
+
+    bas = max(1, int(offset or 1))
+    kac = max(1, min(int(limit or PDF_SAYFA), PDF_MAX_SAYFA))
+    son = min(toplam, bas + kac - 1)
+    if bas > toplam:
+        return ToolResult.error(
+            f"{path.name} {toplam} sayfa; {bas}. sayfa yok. `offset` değerini "
+            f"1 ile {toplam} arasında ver."
+        )
+
+    parcalar: list[str] = []
+    dolu = 0
+    for no in range(bas, son + 1):
+        try:
+            metin = (okuyucu.pages[no - 1].extract_text() or "").strip()
+        except Exception:  # tek bozuk sayfa dosyanın tamamını düşürmesin
+            metin = ""
+        if metin:
+            dolu += 1
+        parcalar.append(f"--- sayfa {no} ---\n{metin or '(bu sayfada metin yok)'}")
+
+    govde = "\n\n".join(parcalar)
+    if len(govde) > MAX_PDF_KARAKTER:
+        govde = govde[:MAX_PDF_KARAKTER] + "\n… (kırpıldı)"
+
+    basli = f"{path.name} — {toplam} sayfa, {bas}-{son} arası okundu."
+    if dolu == 0:
+        return ToolResult(
+            f"{basli}\n\nBu sayfalar METİN KATMANI TAŞIMIYOR — büyük "
+            "olasılıkla taranmış görüntüler. İçeriğini okuyamadım; ne "
+            "yazdığını uydurma. Sayfayı görsel olarak incelemek gerekirse "
+            "kullanıcıdan bir ekran görüntüsü iste.",
+            detail={"path": str(path), "sayfa": toplam, "metinsiz": True},
+        )
+
+    kuyruk = ""
+    if son < toplam:
+        kuyruk = (f"\n\n[{toplam} sayfanın {bas}-{son} arası. Devamı için "
+                  f"offset={son + 1}.]")
+    return ToolResult(
+        content=f"{basli}\n\n{govde}{kuyruk}",
+        detail={"path": str(path), "sayfa": toplam, "okunan": [bas, son]},
+    )
+
+
+async def _kosum_eki(path: Path, yazim: int) -> str:
+    """Yazma sonrası tek satırlık koşum hatırlatması (yoksa boş dize).
+
+    Tanı bir adım attı ama tavanı sözdizimi: `php -l` bildirilen dönüş
+    tipiyle uyuşmayan bir `return`u görmez, tip hatası ancak kod koşunca
+    patlar. Bunu gören tek şey testi ÇALIŞTIRMAK — ve çoğu projede o
+    düzenek zaten var, ajan onu bilmiyordu.
+
+    Testi burada kendiliğinden koşturmuyoruz: koşum saniyeler, bazen
+    dakikalar sürer ve ajan aynı dosyaya arka arkaya yazar — aradaki her
+    koşum boşa giderdi. Onun yerine düzeneğin VARLIĞINI bildiriyoruz.
+    Bilgi bedava, koşum pahalı, karar modelin.
+    """
+    try:
+        return await asyncio.to_thread(kosum.hatirlatma, path, yazim=yazim)
+    except Exception:  # pragma: no cover - hatırlatma hiçbir zaman engel olmaz
+        return ""
+
+
+async def _tani_eki(path: Path) -> tuple[str, dict[str, Any]]:
+    """Yazılan dosyanın tanısı: (araç sonucuna eklenecek metin, detay).
+
+    Bu, modülün en önemli yeri. Ajanın en pahalı hata sınıfı "yazdım,
+    çalıştırmadım, bitti dedim" — hata dosyada durur, tur kapanır, kullanıcı
+    sayfayı açınca patlar. Dilin kendi denetleyicisini yazma biter bitmez
+    koşturup sonucu ARACIN CEVABINA koymak bu zinciri kırıyor: model bir
+    sonraki turda hatayı görür ve daha kimse fark etmeden düzeltir.
+
+    Tanı asla yazmayı geçersiz kılmaz: dosya diskte, sonuç başarılı. Tanı
+    yalnızca bir NOT ekler. Denetleyici çöktüyse hiçbir şey eklenmez —
+    tanının kendi arızası, çalışan bir aracı bozmamalı.
+    """
+    try:
+        tani = await asyncio.to_thread(tanilar.denetle, path)
+    except Exception:  # pragma: no cover - tanı katmanı hiçbir zaman engel olmaz
+        return "", {}
+    if tani is None:
+        return "", {}
+    return "\n\n" + tani.metin(), {"tani": tani.detay()}
+
+
 def register(registry: ToolRegistry) -> None:
     # Yazma öncesi bayatlık kontrolü için: yol -> son okunduğundaki mtime_ns.
     seen: dict[Path, int] = {}
+    # Bu oturumda en son değiştirilen dosya: `denetle` yolsuz çağrılırsa
+    # bakacağı yer. Model "kodu yazdım, bir kontrol edeyim" diyebilsin.
+    son_yazilan: list[Path] = []
+    # Dosya başına yazım sayısı. Aynı dosyaya üçüncü kez yazmak "gözle
+    # düzeltmeye çalışıyorum ve göremiyorum" demek; koşum hatırlatması
+    # orada sertleşiyor.
+    yazim_sayaci: dict[Path, int] = {}
 
     @registry.tool(
         name="read_file",
         description="""
-Bir metin dosyasını okur. Uzun dosyalar için `offset` ve `limit` ile
-satır aralığı verilebilir; çıktı satır numaralı gelir.
+Bir dosyayı okur. Metin dosyalarında uzun içerik için `offset` ve `limit`
+ile satır aralığı verilebilir; çıktı satır numaralı gelir.
+
+Görsel dosyaları (png, jpg, gif, webp) GERÇEKTEN GÖRÜRSÜN: dosya sana
+görüntü olarak gelir. Ekran görüntüsü, tasarım dosyası, hata fotoğrafı —
+"okuyamıyorum" deme, aç ve bak.
+
+PDF'lerde ilk sayfaların metni çıkarılır. Taranmış (metinsiz) bir PDF'te
+bunu açıkça söyler; o durumda içeriği uydurma.
         """,
         input_schema=object_schema(
             {
                 "path": {"type": "string", "description": "Dosya yolu (göreli ya da mutlak)."},
-                "offset": {"type": "integer", "description": "Başlangıç satırı (1'den başlar)."},
-                "limit": {"type": "integer", "description": "Okunacak satır sayısı."},
+                "offset": {"type": "integer", "description": "Başlangıç satırı (1'den başlar). PDF'te başlangıç sayfası."},
+                "limit": {"type": "integer", "description": "Okunacak satır sayısı. PDF'te sayfa sayısı."},
             },
             required=["path"],
         ),
@@ -98,6 +326,15 @@ satır aralığı verilebilir; çıktı satır numaralı gelir.
             return ToolResult.error(f"Dosya yok: {path}")
         if path.is_dir():
             return ToolResult.error(f"{path} bir dizin. İçeriği için list_dir kullan.")
+
+        # Metin olmayan biçimler kendi yollarından: bir PNG'yi utf-8 diye
+        # okumak modele bir ekran dolusu çöp gönderiyordu ("��…"),
+        # ve model o çöpe bakıp dosyanın bozuk olduğunu sanıyordu.
+        if _gorsel_mu(path):
+            return await asyncio.to_thread(_gorsel_oku, path)
+        if path.suffix.lower() == ".pdf":
+            return await asyncio.to_thread(
+                _pdf_oku, path, args.get("offset"), args.get("limit"))
 
         def _read() -> tuple[str, int]:
             data = path.read_text(encoding="utf-8", errors="replace")
@@ -176,9 +413,16 @@ Küçük değişiklikler için write_file yerine edit_file kullan.
         except OSError as exc:
             return ToolResult.error(f"Yazılamadı: {exc}")
 
+        son_yazilan[:] = [path]
+        yazim_sayaci[path] = yazim_sayaci.get(path, 0) + 1
+        kosum.dokunuldu(path)
+        tani_metni, tani_detay = await _tani_eki(path)
+        kosum_metni = await _kosum_eki(path, yazim_sayaci[path])
         return ToolResult(
-            content=f"{path} yazıldı ({len(content.splitlines())} satır).",
-            detail={"path": str(path), "bytes": len(content.encode("utf-8"))},
+            content=f"{path} yazıldı ({len(content.splitlines())} satır)."
+                    + tani_metni + (f"\n{kosum_metni}" if kosum_metni else ""),
+            detail={"path": str(path), "bytes": len(content.encode("utf-8")),
+                    **tani_detay},
         )
 
     @registry.tool(
@@ -296,7 +540,15 @@ Dosyayı önce read_file ile okumuş olman gerekir.
             if len(spans) > 1
             else f"{path} güncellendi."
         )
-        return ToolResult(content=mesaj, detail={"path": str(path), "line": line})
+        son_yazilan[:] = [path]
+        yazim_sayaci[path] = yazim_sayaci.get(path, 0) + 1
+        kosum.dokunuldu(path)
+        tani_metni, tani_detay = await _tani_eki(path)
+        kosum_metni = await _kosum_eki(path, yazim_sayaci[path])
+        return ToolResult(
+            content=mesaj + tani_metni + (f"\n{kosum_metni}" if kosum_metni else ""),
+            detail={"path": str(path), "line": line, **tani_detay},
+        )
 
     @registry.tool(
         name="copy_in",
@@ -404,3 +656,84 @@ arar (örn. "**/*.py"). Dizinler sonunda / ile gösterilir.
         if len(names) == MAX_LIST_ENTRIES:
             body += f"\n\n... ilk {MAX_LIST_ENTRIES} girdi gösterildi, daha var."
         return ToolResult(content=f"{root}\n{body}")
+
+    @registry.tool(
+        name="denetle",
+        description="""
+Kodu, dilinin kendi denetleyicisiyle sınar ve bulduğu hataları satır
+numaralarıyla döndürür (Python derleyicisi/ruff, `php -l`, `node --check`,
+tsc, JSON/YAML ayrıştırıcıları).
+
+`path` bir dosya ya da klasör olabilir; verilmezse en son yazdığın dosyaya
+bakar. Klasörde `pattern` ile daraltabilirsin (örn. "*.php").
+
+Ne zaman kullan: bir dosyayı düzenledikten sonra — yazma araçları tanıyı
+zaten kendiliğinden ekler, ama elle yazdığın ya da kabuktan ürettiğin
+kodu buradan sınarsın.
+
+Dikkat: temiz sonuç "kod çalışıyor" demek DEĞİLDİR. Denetleyiciler
+çoğunlukla sözdizimine bakar; tip hataları ve çalışma zamanı davranışı
+ancak kodu gerçekten koşturunca ortaya çıkar. Hangi denetleyicinin baktığı
+cevapta yazar.
+        """,
+        input_schema=object_schema(
+            {
+                "path": {
+                    "type": "string",
+                    "description": "Denetlenecek dosya ya da klasör. "
+                                   "Boş bırakılırsa en son yazılan dosya.",
+                },
+                "pattern": {
+                    "type": "string",
+                    "description": "Klasör denetiminde ad deseni (örn. \"*.py\").",
+                },
+            },
+        ),
+    )
+    async def denetle(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
+        ham = (args.get("path") or "").strip()
+        if ham:
+            hedef = _resolve(ham, ctx)
+        elif son_yazilan:
+            hedef = son_yazilan[0]
+        else:
+            return ToolResult.error(
+                "Bu oturumda henüz bir dosya yazmadın, denetlenecek bir şey yok. "
+                "Denetlemek istediğin dosyayı `path` ile ver."
+            )
+
+        if not hedef.exists():
+            return ToolResult.error(f"Yol yok: {hedef}")
+
+        desen = args.get("pattern") or None
+        if hedef.is_dir():
+            yollar = await asyncio.to_thread(
+                tanilar.toplu_yollar, hedef, desen=desen, tavan=MAX_DENETIM_DOSYA
+            )
+            kok: Path | None = hedef
+        else:
+            yollar, kok = [hedef], hedef.parent
+
+        if not yollar:
+            return ToolResult(
+                content=f"{hedef} altında denetlenebilir dosya yok. "
+                        "Tanınan uzantılar: " + ", ".join(sorted(tanilar.UZANTILAR)) + "."
+            )
+
+        taniler = await asyncio.to_thread(tanilar.denetle_coklu, yollar)
+        if not taniler:
+            # Tek dosya ve uzantısı tanınmıyor: uydurma yapma, dürüstçe söyle.
+            return ToolResult(
+                content=f"{hedef} için bir denetleyici tanımıyorum "
+                        f"({hedef.suffix or 'uzantısız'}). Kontrol edilmedi."
+            )
+
+        hatali = sum(1 for t in taniler if t.durum == "hata")
+        return ToolResult(
+            content=tanilar.ozet(taniler, kok=kok),
+            detail={
+                "path": str(hedef),
+                "hatali": hatali,
+                "taniler": [t.detay() for t in taniler],
+            },
+        )

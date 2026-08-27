@@ -94,7 +94,9 @@ def register(registry: ToolRegistry) -> None:
                         "kullanır. Basit tarama işini küçük ve hızlı bir "
                         "modele, görüntü gerektiren işi görüntü okuyan bir "
                         "modele ver — hangi modellerin ne yapabildiğini "
-                        "`models` ile öğren."
+                        "`models` ile öğren. KİMLİĞİ UYDURMA: emin "
+                        "değilsen bu alanı boş bırak (ana model kullanılır) "
+                        "ya da önce `models` ile bak."
                     ),
                 },
                 "arka_plan": {
@@ -128,12 +130,12 @@ def register(registry: ToolRegistry) -> None:
             return ToolResult.error("Boş görev. Alt ajanın ne yapacağını `task` alanına yaz.")
 
         title = str(args.get("title") or "").strip() or _headline(instruction)
-        model = str(args.get("model") or "")
+        model, uyari = _dogrula_model(str(args.get("model") or ""), ctx)
 
         if bool(args.get("arka_plan")) and ctx.spawn_bg is not None:
             handle = ctx.spawn_bg(title, instruction, model)
             return ToolResult(
-                content=(
+                content=uyari + (
                     f"yardımcı başlatıldı · id={handle.id} · başlık={handle.title} — "
                     "bitince sonucu sana bildirilecek; beklemeden işine devam et. "
                     "Koşarken `task_say` ile yön verebilir, `task_status` ile "
@@ -145,10 +147,11 @@ def register(registry: ToolRegistry) -> None:
         answer = await ctx.spawn(title, instruction, model)
         if not answer.strip():
             return ToolResult.error(
-                f"'{title}' alt ajanı bir sonuç döndürmeden bitti. "
+                uyari
+                + f"'{title}' alt ajanı bir sonuç döndürmeden bitti. "
                 "Görevi daha açık yazıp tekrar dene."
             )
-        return ToolResult(content=answer, detail={"title": title})
+        return ToolResult(content=uyari + answer, detail={"title": title})
 
     @registry.tool(
         name="task_say",
@@ -203,3 +206,72 @@ def register(registry: ToolRegistry) -> None:
 def _headline(text: str, limit: int = 60) -> str:
     flat = " ".join(text.split())
     return flat if len(flat) <= limit else flat[:limit] + "…"
+
+
+# --- model doğrulaması ---------------------------------------------------
+#
+# Model, yardımcıya UYDURMA bir kimlik verebiliyor. Sahada görüleni:
+# `qwen3.1-14b` — sağlayıcıda böyle bir model yok, yardımcı ilk istekte
+# 400 alıyor ve tur boşa yanıyor. Hata alt ajanın günlüğünde patlıyor;
+# ana ajan yalnızca "yardımcı hata verdi" görüyor ve sebebini bilmiyor.
+#
+# Kural: kimlik verildiyse spawn'dan ÖNCE katalogla karşılaştır.
+#   - katalog boş (ağ yok, sunucu liste vermiyor) → doğrulama ATLANIR;
+#     çevrimdışı bir makinede aracı çalışmaz yapmak daha kötü olurdu
+#   - kimlik katalogda → aynen geçer
+#   - yalnız harf büyüklüğü tutmuyor → katalogdaki yazımla düzeltilir
+#   - katalogda yok → yardımcı ANA modelle başlar (iş ölmez) ve aracın
+#     cevabı ne olduğunu öğretir
+
+
+def _katalog(ctx: ToolContext) -> list[str]:
+    """Sağlayıcının GERÇEK model kimlikleri; ulaşılamıyorsa boş liste.
+
+    "Oto" (ücretsiz model havuzu) katalogdan çıkarılıyor: o bir model değil
+    bir kip ve sağlayıcı liste vermediğinde bile listeye ekleniyor. Tek
+    başına kalırsa ortada bir katalog yok demektir — onunla doğrulamak
+    sağlayıcının HER gerçek kimliğini "geçersiz" ilan ederdi.
+    """
+    try:
+        from .. import settings
+        from ..config import OTO_MODEL
+
+        return [
+            kimlik
+            for entry in settings.scan_models(ctx.config)
+            if isinstance(entry, dict) and (kimlik := str(entry.get("id") or ""))
+            and kimlik != OTO_MODEL
+        ]
+    except Exception:
+        # Doğrulama bir kolaylık; patlarsa işin kendisi durmamalı.
+        return []
+
+
+def _dogrula_model(model: str, ctx: ToolContext) -> tuple[str, str]:
+    """(kullanılacak model, ana ajana verilecek uyarı) döndürür."""
+    model = model.strip()
+    if not model:
+        return "", ""
+
+    katalog = _katalog(ctx)
+    if not katalog:
+        return model, ""      # ağ yok / sunucu liste vermiyor: doğrulama atlanır
+    if model in katalog:
+        return model, ""
+
+    # Yalnızca harf büyüklüğü tutmuyorsa bu bir uydurma değil, bir yazım
+    # kayması: katalogdaki hâliyle düzeltip sessizce devam ediyoruz.
+    for aday in katalog:
+        if aday.lower() == model.lower():
+            return aday, ""
+
+    from difflib import get_close_matches
+
+    yakin = get_close_matches(model, katalog, n=3, cutoff=0.6)
+    ipucu = (" Bunu mu demek istedin: " + ", ".join(f"`{a}`" for a in yakin) + "."
+             if yakin else "")
+    return "", (
+        f"`{model}` geçerli bir model kimliği değil. Yardımcıyı ana modelle "
+        f"başlatıyorum.{ipucu} Kullanılabilir modelleri `models` aracıyla "
+        "görebilirsin.\n\n"
+    )

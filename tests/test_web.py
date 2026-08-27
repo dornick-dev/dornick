@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import urllib.error
+import urllib.parse
 import urllib.request
 from pathlib import Path
 
@@ -433,3 +434,347 @@ def test_the_body_survives_a_server_without_settings(tmp_path: Path, mind: Mind)
         log.close()
 
     assert body == {"organs": []}
+
+
+# -- sürüm görünürlüğü -------------------------------------------------
+
+
+def test_bridge_snapshot_surumu_tasir() -> None:
+    """/api/state'in "surum" alanı: üst bardaki marka ipucu buradan.
+
+    Ajan hiç açılmamışken bile sürüm görünmeli — sahada "hangi kopya
+    açık?" sorusu tam da bozuk açılışlarda soruluyor.
+    """
+    import asyncio
+
+    from neocp import ortam
+    from neocp.desktop import Bridge
+
+    loop = asyncio.new_event_loop()
+    try:
+        durum = Bridge(Hub(), loop).snapshot()
+        assert durum["surum"] == ortam.surum()
+        assert isinstance(durum["kurulu"], bool)
+    finally:
+        loop.close()
+
+
+def test_surum_denetimi_ucu_agsiz_calisir(
+    tmp_path: Path, mind: Mind, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """POST /api/surum sunucu tarafında denetler; test ağa hiç çıkmaz."""
+    from neocp.web import server as server_module
+
+    monkeypatch.setattr(
+        server_module.ortam, "guncelleme_denetle",
+        lambda: {"ok": True, "mevcut": "0.2.2", "yeni": "0.3.0",
+                 "url": "https://ornek/yayin", "hata": ""})
+
+    log = EventLog(tmp_path / "s.jsonl")
+    server = MindServer(mind, log, port=0)
+    server.start()
+    try:
+        istek = urllib.request.Request(
+            server.url + "api/surum", data=b"{}",
+            headers={"Content-Type": "application/json"}, method="POST")
+        with urllib.request.urlopen(istek, timeout=5) as cevap:
+            veri = json.loads(cevap.read().decode("utf-8"))
+        assert veri["yeni"] == "0.3.0" and veri["url"] == "https://ornek/yayin"
+    finally:
+        server.stop()
+        log.close()
+
+
+# -- ham dosya ucu (/api/raw) ------------------------------------------
+#
+# `/api/files` metin döndürüyor: bir PNG oradan yalnızca "ikili dosya"
+# olarak geliyordu ve görüntüleyici görseli gösteremiyordu. Bu uç ham
+# baytları veriyor — ama aynı kapıdan: yol doğrulanıyor, tür uzantıdan
+# ve kısa bir listeden veriliyor.
+
+# 1x1 saydam PNG (gerçek bayt, sahte değil): tür ve uzunluk sınanabilsin.
+TINY_PNG = bytes.fromhex(
+    "89504e470d0a1a0a0000000d494844520000000100000001080600000"
+    "01f15c4890000000a49444154789c6300010000050001"
+    "0d0a2db40000000049454e44ae426082"
+)
+
+
+def test_raw_serves_real_bytes_with_a_declared_type(tmp_path: Path, mind: Mind) -> None:
+    """Görüntüleyicinin bir görseli GERÇEKTEN açabilmesi buna bağlı."""
+    from neocp.config import Config
+
+    config = Config.load(tmp_path)
+    config.ensure_dirs()
+    (tmp_path / "kare.png").write_bytes(TINY_PNG)
+
+    log = EventLog(tmp_path / "s.jsonl")
+    server = MindServer(mind, log, port=0, config=config)
+    server.start()
+    try:
+        with urllib.request.urlopen(server.url + "api/raw?path=kare.png", timeout=5) as cevap:
+            gövde = cevap.read()
+            assert cevap.headers["Content-Type"] == "image/png"
+            # Tarayıcı içeriğe bakıp kendi türünü uydurmasın.
+            assert cevap.headers["X-Content-Type-Options"] == "nosniff"
+        assert gövde == TINY_PNG
+    finally:
+        server.stop()
+        log.close()
+
+
+def test_raw_refuses_to_leave_the_workspace(tmp_path: Path, mind: Mind) -> None:
+    """Yolu istekten türetmek dizin dışına çıkma açığının klasik yolu:
+    `..` ile yukarı çıkan bir istek dosyayı ALMAMALI."""
+    from neocp.config import Config
+
+    workspace = tmp_path / "ws"
+    workspace.mkdir()
+    (tmp_path / "sir.txt").write_text("gizli", encoding="utf-8")
+
+    config = Config.load(workspace)
+    config.ensure_dirs()
+    log = EventLog(tmp_path / "s.jsonl")
+    server = MindServer(mind, log, port=0, config=config)
+    server.start()
+    try:
+        with pytest.raises(urllib.error.HTTPError) as caught:
+            urllib.request.urlopen(server.url + "api/raw?path=../sir.txt", timeout=5)
+        assert caught.value.code == 403
+        # Olmayan dosya 404: "yok" ile "yasak" ayrı cevaplar.
+        with pytest.raises(urllib.error.HTTPError) as missing:
+            urllib.request.urlopen(server.url + "api/raw?path=yok.png", timeout=5)
+        assert missing.value.code == 404
+    finally:
+        server.stop()
+        log.close()
+
+
+def test_raw_never_serves_a_workspace_file_as_html(tmp_path: Path, mind: Mind) -> None:
+    """Ajanın yazdığı bir sayfayı ANA kökte html olarak servis etmek, o
+    sayfaya programın DOM'unu ve `/api` uçlarını açardı. Bilinmeyen tür
+    indirilir, yorumlanmaz."""
+    from neocp.config import Config
+
+    config = Config.load(tmp_path)
+    config.ensure_dirs()
+    (tmp_path / "sayfa.html").write_text("<script>alert(1)</script>", encoding="utf-8")
+
+    log = EventLog(tmp_path / "s.jsonl")
+    server = MindServer(mind, log, port=0, config=config)
+    server.start()
+    try:
+        with urllib.request.urlopen(server.url + "api/raw?path=sayfa.html", timeout=5) as cevap:
+            assert cevap.headers["Content-Type"] == "application/octet-stream"
+    finally:
+        server.stop()
+        log.close()
+
+
+def test_raw_supports_ranges_so_media_can_seek(tmp_path: Path, mind: Mind) -> None:
+    """Ses/video oynatıcıları ileri sarmak için menzil istiyor."""
+    import http.client
+
+    from neocp.config import Config
+
+    config = Config.load(tmp_path)
+    config.ensure_dirs()
+    (tmp_path / "ses.mp3").write_bytes(bytes(range(256)))
+
+    log = EventLog(tmp_path / "s.jsonl")
+    server = MindServer(mind, log, port=0, config=config)
+    server.start()
+    try:
+        host, port = server.url.split("//")[1].rstrip("/").split(":")
+        conn = http.client.HTTPConnection(host, int(port), timeout=5)
+        conn.request("GET", "/api/raw?path=ses.mp3", headers={"Range": "bytes=10-19"})
+        cevap = conn.getresponse()
+        gövde = cevap.read()
+        assert cevap.status == 206
+        assert cevap.getheader("Content-Range") == "bytes 10-19/256"
+        assert gövde == bytes(range(10, 20))
+        conn.close()
+    finally:
+        server.stop()
+        log.close()
+
+
+# -- oturum kimliği ve döküm araması (uçlar) ---------------------------
+
+
+def _oturum_yaz(sessions_dir: Path, sid: str, turlar: list[tuple[str, str]]) -> None:
+    sessions_dir.mkdir(parents=True, exist_ok=True)
+    lines = [json.dumps({"kind": "note", "name": "session_start"})]
+    for role, text in turlar:
+        lines.append(json.dumps({
+            "kind": "message", "role": role,
+            "content": [{"type": "text", "text": text}],
+        }, ensure_ascii=False))
+    (sessions_dir / f"{sid}.jsonl").write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def test_naming_a_session_reaches_the_listing(tmp_path: Path, mind: Mind) -> None:
+    """Ad verilmiş konuşma listede o adla görünmeli; verilmemişse başlık
+    yine konuşmanın ilk sözünden türetiliyor."""
+    _oturum_yaz(mind.sessions_dir, "20260101T000000Z",
+                [("user", "Kayseri OSB için SCADA teklifi hazırla")])
+
+    log = EventLog(tmp_path / "s.jsonl")
+    server = MindServer(mind, log, port=0)
+    server.start()
+    try:
+        def liste() -> dict:
+            with urllib.request.urlopen(server.url + "api/sessions", timeout=5) as cevap:
+                return json.loads(cevap.read().decode("utf-8"))
+
+        ilk = liste()["sessions"][0]
+        assert not ilk["named"] and "SCADA" in ilk["title"]
+
+        istek = urllib.request.Request(
+            server.url + "api/session/meta",
+            data=json.dumps({"id": "20260101T000000Z", "ad": "Kayseri teklifi",
+                             "etiketler": ["scada", "teklif"]}).encode("utf-8"),
+            headers={"Content-Type": "application/json"}, method="POST")
+        with urllib.request.urlopen(istek, timeout=5) as cevap:
+            assert json.loads(cevap.read().decode("utf-8"))["ok"] is True
+
+        veri = liste()
+        satir = veri["sessions"][0]
+        assert satir["title"] == "Kayseri teklifi" and satir["named"]
+        assert satir["tags"] == ["scada", "teklif"]
+        # Panelin süzgeç listesi: var olan etiketler.
+        assert veri["tags"] == ["scada", "teklif"]
+    finally:
+        server.stop()
+        log.close()
+
+
+def test_the_meta_endpoint_refuses_a_path_shaped_id(tmp_path: Path, mind: Mind) -> None:
+    """Kimlik dosya adına dönüşüyor: `..` ile yukarı çıkan bir istek
+    dizin dışına yazamamalı."""
+    log = EventLog(tmp_path / "s.jsonl")
+    server = MindServer(mind, log, port=0)
+    server.start()
+    try:
+        istek = urllib.request.Request(
+            server.url + "api/session/meta",
+            data=json.dumps({"id": "../gizli", "ad": "x"}).encode("utf-8"),
+            headers={"Content-Type": "application/json"}, method="POST")
+        with urllib.request.urlopen(istek, timeout=5) as cevap:
+            veri = json.loads(cevap.read().decode("utf-8"))
+        assert veri["ok"] is False
+    finally:
+        server.stop()
+        log.close()
+
+
+def test_the_listing_searches_inside_transcripts(tmp_path: Path, mind: Mind) -> None:
+    """Arama bugüne kadar yalnızca başlığı süzüyordu; söz konuşmanın
+    ortasında geçiyorsa liste onu bulamıyordu."""
+    _oturum_yaz(mind.sessions_dir, "20260101T000000Z",
+                [("user", "selam"), ("assistant", "Modbus kayıtlarını okudum.")])
+    _oturum_yaz(mind.sessions_dir, "20260102T000000Z", [("user", "hava nasıl")])
+
+    log = EventLog(tmp_path / "s.jsonl")
+    server = MindServer(mind, log, port=0)
+    server.start()
+    try:
+        with urllib.request.urlopen(server.url + "api/sessions?ara=modbus", timeout=5) as cevap:
+            veri = json.loads(cevap.read().decode("utf-8"))
+        assert veri["searched"] is True
+        eslesen = {s["id"]: s["hits"] for s in veri["sessions"] if s["hits"]}
+        assert set(eslesen) == {"20260101T000000Z"}
+        assert "Modbus" in eslesen["20260101T000000Z"][0]["text"]
+
+        # Aramasız istek eskisi gibi: eşleşme alanı boş, liste tam.
+        with urllib.request.urlopen(server.url + "api/sessions", timeout=5) as cevap:
+            duz = json.loads(cevap.read().decode("utf-8"))
+        assert duz["searched"] is False
+        assert all(not s["hits"] for s in duz["sessions"])
+        assert len(duz["sessions"]) == 2
+    finally:
+        server.stop()
+        log.close()
+
+
+# -- klasör gezgini (proje seçimi) -------------------------------------
+#
+# `/api/files` çalışma alanının içinde kalıyor; proje tam olarak onun
+# DIŞINDA bir yer ve native bir klasör diyaloğu kullanılamıyor.
+
+
+def test_the_browser_lists_folders_anywhere_but_only_folders(
+    tmp_path: Path, mind: Mind
+) -> None:
+    kok = tmp_path / "kod"
+    (kok / "proje" / "src").mkdir(parents=True)
+    (kok / ".gizli").mkdir()
+    (kok / "not.txt").write_text("x", encoding="utf-8")
+
+    log = EventLog(tmp_path / "s.jsonl")
+    server = MindServer(mind, log, port=0)
+    server.start()
+    try:
+        adres = server.url + "api/gozat?yol=" + urllib.parse.quote(str(kok))
+        with urllib.request.urlopen(adres, timeout=5) as cevap:
+            veri = json.loads(cevap.read().decode("utf-8"))
+
+        adlar = [k["ad"] for k in veri["klasorler"]]
+        assert adlar == ["proje"]          # yalnız klasörler, gizliler elenmiş
+        assert veri["dosya"] == 1          # dosyalar yalnızca SAYI olarak
+        assert veri["ust"] == str(tmp_path)
+        assert veri["engel"] == ""         # seçilebilir
+        # Dosya adları ya da içerikleri hiç dönmüyor.
+        assert "not.txt" not in json.dumps(veri)
+    finally:
+        server.stop()
+        log.close()
+
+
+def test_the_browser_says_when_a_folder_cannot_be_a_project(
+    tmp_path: Path, mind: Mind
+) -> None:
+    """Kullanıcı KAYDETMEDEN önce görmeli: seçim ekranında engel yazıyor."""
+    log = EventLog(tmp_path / "s.jsonl")
+    server = MindServer(mind, log, port=0)
+    server.start()
+    try:
+        kok = Path(tmp_path.anchor or "/")
+        adres = server.url + "api/gozat?yol=" + urllib.parse.quote(str(kok))
+        with urllib.request.urlopen(adres, timeout=5) as cevap:
+            veri = json.loads(cevap.read().decode("utf-8"))
+        assert veri["engel"]
+
+        # Olmayan klasör: hata, çökme değil.
+        yok = server.url + "api/gozat?yol=" + urllib.parse.quote(str(tmp_path / "yok"))
+        with urllib.request.urlopen(yok, timeout=5) as cevap:
+            assert json.loads(cevap.read().decode("utf-8"))["hata"]
+
+        # Yolsuz istek: başlangıç yerleri (sürücüler / ev).
+        with urllib.request.urlopen(server.url + "api/gozat", timeout=5) as cevap:
+            bas = json.loads(cevap.read().decode("utf-8"))
+        assert bas["klasorler"] and bas["ust"] is None
+    finally:
+        server.stop()
+        log.close()
+
+
+def test_the_settings_snapshot_carries_the_project_state(
+    tmp_path: Path, mind: Mind
+) -> None:
+    """Ayar sayfası projeyi çizebilmeli: seçili yol, çözülmüş kök, son
+    projeler ve (varsa) sebep."""
+    from neocp import settings as settings_module
+    from neocp.config import Config
+
+    proje = tmp_path / "musteri"
+    proje.mkdir()
+    config = Config.load(tmp_path)
+    config.ensure_dirs()
+    updated = settings_module.apply(config, {"sandbox": {"project": str(proje)}})
+
+    kutu = settings_module.snapshot(updated)["sandbox"]
+    assert kutu["project"] == str(proje)
+    assert kutu["project_root"] == str(proje.resolve())
+    assert kutu["project_error"] == ""
+    assert str(proje) in kutu["recent"]

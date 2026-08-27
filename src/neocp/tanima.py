@@ -30,32 +30,24 @@ from typing import Any
 
 DOSYA = "tanima.json"
 
-# Eğitim düzeneğinin yeri. Sıra: (1) açık kaynak düzeni — düzenek ürünle
-# aynı ağaçta <kök>/training altında (depo ve yeni kurulum sihirbazı);
-# (2) eski kurulum düzeni <kök>/egitim; (3) geliştirici yolu. Hiçbiri
-# yoksa özellik pasif: ayar sayfası "kurulu değil" notu gösteriyor.
-_KOK = Path(__file__).resolve().parents[2]
-_ADAYLAR = (
-    _KOK / "training" / "scripts" / "personal_loop.py",
-    _KOK / "egitim" / "betikler" / "08_kisisel_dongu.py",
-    Path("D:/Projects/ai/neocp-base-model") / "betikler" / "08_kisisel_dongu.py",
-)
-DONGU_BETIK = next((p for p in _ADAYLAR if p.exists()), _ADAYLAR[0])
-
-# Düzenin dosya adları: yeni (training/) düzen İngilizce adlar kullanıyor,
-# eski düzenler Türkçe. İkisi de aynı şemayı taşıyor (son_created filigranı).
-_YENI_DUZEN = DONGU_BETIK.name == "personal_loop.py"
+# Eğitim düzeneğinin yeri. Önce kurulum düzeni: paket <kök>/src/neocp
+# altında yaşıyorsa düzenek <kök>/egitim'de aranıyor (Windows kurulum
+# sihirbazı oraya koyuyor). Yoksa geliştirici yolu — bu da yoksa özellik
+# pasif: ayar sayfası anahtarın yanında "kurulu değil" notu gösteriyor.
+_KURULUM_BETIK = (Path(__file__).resolve().parents[2]
+                  / "egitim" / "betikler" / "08_kisisel_dongu.py")
+_GELISTIRICI_BETIK = (Path("D:/Projects/ai/neocp-base-model")
+                      / "betikler" / "08_kisisel_dongu.py")
+DONGU_BETIK = _KURULUM_BETIK if _KURULUM_BETIK.exists() else _GELISTIRICI_BETIK
 
 # Döngünün filigranı: en son hangi anıya kadar hasat edildiği burada.
 # Yeni anı sayısı buna göre ölçülüyor; dosya/alan yoksa boş filigran —
 # her şey yeni sayılır, ilk kurulumda doğru davranış.
-FILIGRAN = (DONGU_BETIK.parents[1] / "data" / "personal_state.json" if _YENI_DUZEN
-            else DONGU_BETIK.parents[1] / "veri" / "kisisel_durum.json")
+FILIGRAN = DONGU_BETIK.parents[1] / "veri" / "kisisel_durum.json"
 
 # Kullanıcıdan damıtılan soru→terim çiftleri: kişisel eğitimin ham maddesi.
 # Taşıma (transfer) ve sıfırlama bu iki dosyayı birlikte ele alıyor.
-KORPUS = (DONGU_BETIK.parents[1] / "data" / "personal_corpus.jsonl" if _YENI_DUZEN
-          else DONGU_BETIK.parents[1] / "veri" / "kisisel_korpus.jsonl")
+KORPUS = DONGU_BETIK.parents[1] / "veri" / "kisisel_korpus.jsonl"
 
 # Akıllı tetik: yoklamada iki yoldan biri koşturur.
 #   (a) filigrandan beri YENI_ANI_ESIGI anı birikti VE son koşudan en az
@@ -130,17 +122,38 @@ def _yeni_ani_sayisi(state_dir: Path) -> int:
     return int(n)
 
 
-def belki_baslat(state_dir: Path, hub: Any, *, zorla: bool = False) -> bool:
-    """Şartlar uygunsa döngüyü başlatır; başlattıysa True.
+def belki_baslat(state_dir: Path, hub: Any, *, zorla: bool = False) -> str:
+    """Şartlar uygunsa döngüyü başlatır. Dönen değer SEBEP kodudur.
 
-    `zorla` yalnızca zaman/birikim şartlarını atlar ("şimdi çalıştır"
-    düğmesi); kapalı özelliği, eksik düzeneği ya da koşan süreci atlamaz.
+        basladi      koşu başladı
+        kapali       özellik kapalı
+        duzenek_yok  eğitim düzeneği kurulu değil
+        kosuyor      zaten koşuyor
+        veri_yok     yeni veri yok (eğitecek bir şey yok)
+        ara_yok      zaman/birikim şartı henüz oluşmadı
+        baslatilamadi süreç açılamadı
+
+    Sebep döndürmesi bilinçli: "Şimdi eğit" düğmesi sessizce hiçbir şey
+    yapmıyordu. Gerçek şuydu — döngü başlıyor ve bir saniyeden kısa sürede
+    "yeni veri az: 0/50" deyip çıkıyordu; kullanıcı ekranda hiçbir şey
+    görmüyordu. Artık neden olmadığını arayüz söyleyebiliyor.
+
+    `zorla` yalnızca ZAMAN şartını atlar ("şimdi çalıştır" düğmesi);
+    kapalı özelliği, eksik düzeneği, koşan süreci ve eğitecek veri
+    olmamasını atlamaz — olmayan veriyle süreç açmak, kullanıcıya boş bir
+    "başladı" göstermek olurdu.
     """
     global _surec
     with _kilit:
         d = durum(state_dir)
-        if not d["on"] or not hazir() or kosuyor():
-            return False
+        if not d["on"]:
+            return "kapali"
+        if not hazir():
+            return "duzenek_yok"
+        if kosuyor():
+            return "kosuyor"
+        if zorla and _yeni_ani_sayisi(state_dir) <= 0:
+            return "veri_yok"
         if not zorla and d["son_kosu"]:
             try:
                 son = datetime.fromisoformat(d["son_kosu"])
@@ -152,7 +165,7 @@ def belki_baslat(state_dir: Path, hub: Any, *, zorla: bool = False) -> bool:
                 gecen >= EN_AZ_ARA_SAAT * 3600
                 and _yeni_ani_sayisi(state_dir) >= YENI_ANI_ESIGI
             ):
-                return False
+                return "ara_yok"
 
         # Günlük dosyaya ekleniyor: döngünün kendi çıktısı burada birikiyor
         # ve canlı doğrulamanın baktığı yer de burası.
@@ -174,7 +187,7 @@ def belki_baslat(state_dir: Path, hub: Any, *, zorla: bool = False) -> bool:
             )
         except OSError:
             gunluk.close()
-            return False
+            return "baslatilamadi"
         surec = _surec
 
     hub.emit({"type": "tanima", "state": "basladi"})
@@ -192,7 +205,7 @@ def belki_baslat(state_dir: Path, hub: Any, *, zorla: bool = False) -> bool:
         hub.emit({"type": "tanima", "state": "bitti"})
 
     threading.Thread(target=izle, daemon=True, name="neo-tanima").start()
-    return True
+    return "basladi"
 
 
 def sifirla(state_dir: Path) -> dict:

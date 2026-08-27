@@ -440,6 +440,13 @@ class Mind:
 
         Araç çağrıları ve düşünme dışarıda — geçmiş bir sohbete bakan
         kullanıcı ne söylendiğini okumak istiyor, araç argümanlarını değil.
+
+        Harness'ın kendi notları da dışarıda. Bu, kanıtlanmış bir sızıntının
+        kökü: canlı akışta hub süzüyordu (`_payload`), ama DÖKÜM süzmüyordu —
+        oturum sürdürülünce ya da geçmişten açılınca "Planını yazdın ama
+        uygulamadın…" gibi iç dürtüler sohbete KULLANICI MESAJI gibi
+        düşüyordu. İşaretler günlükte zaten duruyor (`internal`,
+        `continuation`, `tool_results`); tek eksik onlara burada da bakmaktı.
         """
         path = self.sessions_dir / f"{session_id}.jsonl"
         if not path.is_file():
@@ -456,6 +463,8 @@ class Mind:
                         continue
                     role = event.get("role")
                     if role not in ("user", "assistant"):
+                        continue
+                    if _harness_notu(event):
                         continue
                     text = "\n".join(_plain_text(event.get("content"))).strip()
                     if text:
@@ -500,6 +509,121 @@ class Mind:
             except OSError:
                 pass
             return mapping
+
+    # -- oturum kimliği (ad + etiket) --------------------------------------
+    #
+    # Başlık bugüne kadar dijestin ilk sözcüklerinden türetiliyordu: ucuz
+    # ama kullanıcının seçtiği bir ad değil. "Şu CMS işi neredeydi?" diye
+    # bakan biri kendi verdiği adı arıyor.
+    #
+    # Ad ve etiketler `_oturumlar.json` içinde, projelerle AYNI kalıpta:
+    # ayrı bir eşleme dosyası, ham günlüklere hiç dokunmadan. Günlük
+    # değişmez olmalı — anılar ondan üretiliyor ve elle düzenlenen bir ad
+    # geçmişi yeniden yazmak anlamına gelirdi.
+
+    def _meta_path(self) -> Path:
+        return self.sessions_dir / "_oturumlar.json"
+
+    def session_meta(self) -> dict[str, dict[str, Any]]:
+        """Oturum → {ad, etiketler}. Kaydı olmayan oturumlar burada yok."""
+        path = self._meta_path()
+        if not path.is_file():
+            return {}
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return {}
+        if not isinstance(data, dict):
+            return {}
+        out: dict[str, dict[str, Any]] = {}
+        for key, value in data.items():
+            if not isinstance(value, dict):
+                continue
+            etiketler = value.get("etiketler")
+            out[str(key)] = {
+                "ad": str(value.get("ad") or ""),
+                "etiketler": [str(e) for e in etiketler] if isinstance(etiketler, list) else [],
+            }
+        return out
+
+    def set_session_meta(
+        self,
+        session_id: str,
+        *,
+        ad: str | None = None,
+        etiketler: list[str] | None = None,
+    ) -> dict[str, Any]:
+        """Adı ve/veya etiketleri yazar; None verilen alan dokunulmadan kalır.
+
+        Boş ad kaydı siler (türetilmiş başlığa dönülür); boş etiket listesi
+        etiketleri temizler. İkisi de boşsa oturumun kaydı tamamen düşer —
+        dosyada anlamsız boş kayıtlar birikmesin.
+        """
+        with self._lock:
+            mapping = self.session_meta()
+            kayit = mapping.get(session_id, {"ad": "", "etiketler": []})
+            if ad is not None:
+                kayit["ad"] = " ".join(str(ad).split())[:80]
+            if etiketler is not None:
+                temiz: list[str] = []
+                for etiket in etiketler:
+                    flat = " ".join(str(etiket).split()).strip().lower()[:24]
+                    if flat and flat not in temiz:
+                        temiz.append(flat)
+                kayit["etiketler"] = temiz[:8]
+
+            if kayit["ad"] or kayit["etiketler"]:
+                mapping[session_id] = kayit
+            else:
+                mapping.pop(session_id, None)
+
+            try:
+                self.sessions_dir.mkdir(parents=True, exist_ok=True)
+                self._meta_path().write_text(
+                    json.dumps(mapping, ensure_ascii=False, indent=2), encoding="utf-8")
+            except OSError:
+                pass
+            return mapping.get(session_id, {"ad": "", "etiketler": []})
+
+    # -- döküm araması -----------------------------------------------------
+
+    def search_transcripts(
+        self,
+        query: str,
+        *,
+        limit: int = 40,
+        per_session: int = 3,
+    ) -> dict[str, list[dict[str, str]]]:
+        """Oturum günlüklerinin İÇİNDE metin arar.
+
+        Panelin arama kutusu bugüne kadar yalnızca başlığı süzüyordu:
+        "borsa taramasını nerede konuşmuştuk" sorusunun cevabı listede
+        görünmüyordu çünkü söz başlıkta değil, konuşmanın ortasındaydı.
+
+        Sınırlar bilinçli ve ucuzluk için: yalnızca SON `limit` oturum
+        taranıyor (eskiler zaten anılara süzülmüş oluyor), her oturumdan en
+        çok `per_session` eşleşme dönüyor ve satırlar kırpılıyor. Amaç
+        "hangi konuşmaydı" sorusunu cevaplamak; tam metin arama motoru
+        olmak değil.
+        """
+        needle = " ".join((query or "").split()).lower()
+        if len(needle) < 2:
+            return {}
+
+        found: dict[str, list[dict[str, str]]] = {}
+        for episode in self.sessions()[:limit]:
+            hits: list[dict[str, str]] = []
+            for turn in self.transcript(episode.session_id):
+                text = turn.get("text") or ""
+                at = text.lower().find(needle)
+                if at < 0:
+                    continue
+                hits.append({"role": turn.get("role", ""), "text": _cevre(text, at, len(needle))})
+                if len(hits) >= per_session:
+                    break
+            if hits:
+                found[episode.session_id] = hits
+        return found
 
     def _scan_sessions(self) -> list[Episode]:
         if not self.sessions_dir.is_dir():
@@ -638,6 +762,43 @@ def _digest_session(path: Path) -> Episode | None:
         digest=" ".join(fragments)[:8000],
         child=child,
     )
+
+
+# Kullanıcının yazmadığı turların günlükteki işaretleri. Üçü de aynı şeyi
+# söylüyor: bu satırı harness koydu, sohbette mesaj gibi görünmemeli.
+HARNESS_ISARETLERI = ("internal", "continuation", "tool_results")
+
+
+def _cevre(text: str, at: int, length: int, span: int = 60) -> str:
+    """Eşleşmenin çevresinden okunur bir alıntı çıkarır.
+
+    Turun tamamını döndürmek listeyi duvara çevirirdi; aranan sözcük
+    bağlamıyla birlikte görünmeli ki "hangi konuşmaydı" bir bakışta
+    anlaşılsın.
+    """
+    flat = " ".join(text.split())
+    # Boşluk sadeleştirmesi indeksi kaydırıyor; alıntıyı sadeleşmiş metin
+    # üzerinde yeniden bulmak, kayan bir pencereden daha doğru.
+    yeni = flat.lower().find(text[at:at + length].strip().lower())
+    if yeni < 0:
+        yeni = 0
+    bas = max(0, yeni - span)
+    son = min(len(flat), yeni + length + span)
+    return ("…" if bas else "") + flat[bas:son].strip() + ("…" if son < len(flat) else "")
+
+
+def _harness_notu(event: dict[str, Any]) -> bool:
+    """Bu günlük satırı harness'ın kendi notu mu?
+
+    Kullanıcı turu gibi yazılırlar (bazıları user kanalından gitmek
+    ZORUNDA — bkz. `Session.add_continuation_note`), ama kullanıcı
+    yazmadı; dökümde gösterilirlerse kullanıcı kendi ağzından çıkmamış
+    bir cümle okur.
+    """
+    meta = event.get("meta")
+    if not isinstance(meta, dict):
+        return False
+    return any(meta.get(isaret) for isaret in HARNESS_ISARETLERI)
 
 
 def _plain_text(content: Any) -> list[str]:

@@ -1,0 +1,4 @@
+Kayseri OSB SCADA teklifi
+Musteri 40 noktali izleme istiyor. PLC modulu sayisi 8.
+Teklif tutari kalemleri: pompa panosu, kablo kanali, isletme egitimi.
+Termin: Eylul sonu.

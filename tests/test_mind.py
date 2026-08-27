@@ -128,8 +128,9 @@ def test_goal_lifecycle_and_digest(mind: Mind) -> None:
 
 def test_snapshot_lists_only_active_goals(mind: Mind) -> None:
     """Arayüzdeki hedef paneli sayfa yenilenince snapshot'tan tohumlanıyor:
-    döküm yalnız aktifleri, id + metin olarak taşımalı. Zihinsiz ajan
-    (ya da patlayan okuma) boş liste demek — sohbet düşmemeli."""
+    döküm yalnız aktifleri taşımalı — id, metin ve maddenin geçmiş bir
+    oturumdan kalıp kalmadığı (`eski`). Zihinsiz ajan (ya da patlayan
+    okuma) boş liste demek — sohbet düşmemeli."""
     from neocp.desktop import _active_goals
 
     keep = mind.push_goal("kalan iş")
@@ -137,7 +138,8 @@ def test_snapshot_lists_only_active_goals(mind: Mind) -> None:
     mind.set_goal_status(done.id, "done")
 
     agent = type("A", (), {"mind": mind})()
-    assert _active_goals(agent) == [{"id": keep.id, "text": "kalan iş"}]
+    assert _active_goals(agent) == [
+        {"id": keep.id, "text": "kalan iş", "eski": False}]
     assert _active_goals(type("A", (), {"mind": None})()) == []
     assert _active_goals(object()) == []
 
@@ -350,3 +352,119 @@ def test_recall_answers_are_body_capped(tmp_path):
     assert len(cut) < len(long)
     assert cut.startswith(long[:RECALL_BODY_CAP])
     assert "kırpıldı" in cut
+
+
+# -- oturum kimliği ve döküm araması ------------------------------------
+#
+# Başlık bugüne kadar dijestin ilk sözcüklerinden türetiliyordu: ucuz ama
+# kullanıcının seçtiği bir ad değil. "Şu CMS işi neredeydi?" diye bakan
+# biri kendi verdiği adı arıyor — ya da konuşmanın ortasında geçen bir söz.
+
+
+def _oturum_yaz(sessions_dir: Path, sid: str, turlar: list[tuple[str, str]]) -> None:
+    """Sahte bir oturum günlüğü: rol + metin satırları."""
+    sessions_dir.mkdir(parents=True, exist_ok=True)
+    lines = [json.dumps({"kind": "note", "name": "session_start"})]
+    for role, text in turlar:
+        lines.append(json.dumps({
+            "kind": "message", "role": role,
+            "content": [{"type": "text", "text": text}],
+        }, ensure_ascii=False))
+    (sessions_dir / f"{sid}.jsonl").write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def test_a_conversation_can_be_named_and_tagged(tmp_path: Path, mind: Mind) -> None:
+    kayit = mind.set_session_meta("s1", ad="CMS göçü", etiketler=["cms", "acil"])
+    assert kayit == {"ad": "CMS göçü", "etiketler": ["cms", "acil"]}
+
+    # Diskten taze okunduğunda da orada: panel her açılışta yeniden okuyor.
+    taze = open_mind(tmp_path / "mind", tmp_path / "sessions", "cur")
+    assert taze.session_meta()["s1"]["ad"] == "CMS göçü"
+
+
+def test_touching_one_field_leaves_the_other_alone(tmp_path: Path, mind: Mind) -> None:
+    """Yalnız etiket değiştiren bir istek adı silmemeli."""
+    mind.set_session_meta("s1", ad="CMS göçü", etiketler=["cms"])
+    kayit = mind.set_session_meta("s1", etiketler=["cms", "borsa"])
+    assert kayit["ad"] == "CMS göçü"
+    kayit = mind.set_session_meta("s1", ad="Yeni ad")
+    assert kayit["etiketler"] == ["cms", "borsa"]
+
+
+def test_tags_are_normalised_and_bounded(tmp_path: Path, mind: Mind) -> None:
+    """Etiket bir süzgeç anahtarı: "CMS" ile "cms" iki ayrı küme olamaz."""
+    kayit = mind.set_session_meta(
+        "s1", etiketler=["  CMS  ", "cms", "Borsa", "", "   "])
+    assert kayit["etiketler"] == ["cms", "borsa"]
+    # Sınır: bir konuşmaya sekiz etiketten fazlası panelde okunmuyor.
+    cok = mind.set_session_meta("s2", etiketler=[f"e{i}" for i in range(20)])
+    assert len(cok["etiketler"]) == 8
+
+
+def test_an_empty_name_and_no_tags_drops_the_record(tmp_path: Path, mind: Mind) -> None:
+    """Adı silmek türetilen başlığa dönmek demek; dosyada boş kayıt birikmesin."""
+    mind.set_session_meta("s1", ad="Bir ad")
+    mind.set_session_meta("s1", ad="")
+    assert "s1" not in mind.session_meta()
+
+
+def test_a_corrupt_meta_file_does_not_break_the_panel(tmp_path: Path, mind: Mind) -> None:
+    """Elle düzenlenip bozulan bir dosya geçmiş panelini kapatmamalı."""
+    (tmp_path / "sessions").mkdir(parents=True, exist_ok=True)
+    (tmp_path / "sessions" / "_oturumlar.json").write_text("{bozuk", encoding="utf-8")
+    assert mind.session_meta() == {}
+
+
+def test_the_raw_logs_are_never_touched_by_naming(tmp_path: Path, mind: Mind) -> None:
+    """Anılar günlüklerden üretiliyor: elle verilen bir ad geçmişi yeniden
+    yazmak anlamına gelirdi."""
+    sessions = tmp_path / "sessions"
+    _oturum_yaz(sessions, "20260101T000000Z", [("user", "merhaba")])
+    once = (sessions / "20260101T000000Z.jsonl").read_bytes()
+    mind.set_session_meta("20260101T000000Z", ad="Selamlaşma", etiketler=["x"])
+    assert (sessions / "20260101T000000Z.jsonl").read_bytes() == once
+
+
+def test_search_finds_words_spoken_inside_a_conversation(tmp_path: Path, mind: Mind) -> None:
+    """Aranan söz çoğu zaman başlıkta değil, konuşmanın ortasında."""
+    sessions = tmp_path / "sessions"
+    _oturum_yaz(sessions, "20260101T000000Z", [
+        ("user", "selam"),
+        ("assistant", "Kayseri OSB için SCADA teklifini hazırladım."),
+    ])
+    _oturum_yaz(sessions, "20260102T000000Z", [("user", "hava nasıl")])
+
+    found = mind.search_transcripts("scada")
+    assert set(found) == {"20260101T000000Z"}
+    hit = found["20260101T000000Z"][0]
+    assert hit["role"] == "assistant"
+    assert "SCADA" in hit["text"]
+
+    # Eşleşme yoksa boş: "hiç sonuç yok" ile "her şey" karışmamalı.
+    assert mind.search_transcripts("bulunmayan-sozcuk") == {}
+    # Çok kısa sorgu taranmıyor: tek harf her konuşmada geçer.
+    assert mind.search_transcripts("a") == {}
+
+
+def test_search_clips_the_quote_and_caps_the_hits(tmp_path: Path, mind: Mind) -> None:
+    """Turun tamamını döndürmek listeyi duvara çevirirdi."""
+    sessions = tmp_path / "sessions"
+    uzun = "dolgu " * 200 + "ANAHTAR" + " dolgu" * 200
+    _oturum_yaz(sessions, "20260101T000000Z",
+                [("user", uzun)] + [("user", "ANAHTAR burada")] * 6)
+
+    found = mind.search_transcripts("anahtar", per_session=3)
+    hits = found["20260101T000000Z"]
+    assert len(hits) == 3                      # oturum başına sınır
+    assert len(hits[0]["text"]) < 200          # alıntı kırpıldı
+    assert "ANAHTAR" in hits[0]["text"]
+    assert hits[0]["text"].startswith("…")     # kırpma görünür
+
+
+def test_search_only_scans_the_most_recent_sessions(tmp_path: Path, mind: Mind) -> None:
+    """Sınır ucuzluk için: eskiler zaten anılara süzülmüş oluyor."""
+    sessions = tmp_path / "sessions"
+    for i in range(1, 6):
+        _oturum_yaz(sessions, f"2026010{i}T000000Z", [("user", "ANAHTAR")])
+
+    assert len(mind.search_transcripts("anahtar", limit=2)) == 2

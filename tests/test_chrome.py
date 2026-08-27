@@ -158,6 +158,15 @@ def test_the_wire_refuses_a_non_websocket_answer() -> None:
 # Sahte CDP'nin gördüğü tuş vuruşları — press/type testleri bunu okuyor.
 KEYSTROKES: list[dict[str, Any]] = []
 
+# Sahte CDP'ye giden sayfa betikleri — fill/submit testleri, gönderilen
+# JS'in doğru ölçütleri ve olayları taşıdığını buradan denetliyor.
+EXPRESSIONS: list[str] = []
+
+# fill/submit yardımcılarının sayfa sözleşmesi ({ok} / {err, adaylar});
+# test, senaryosuna göre bu kutuları dolduruyor.
+FILL_OUTCOME: dict[str, Any] = {}
+SUBMIT_OUTCOME: dict[str, Any] = {}
+
 
 def cdp_answer(body: bytes) -> bytes:
     """Runtime.evaluate, screenshot, navigate ve Input.* bilen minicik CDP."""
@@ -166,6 +175,7 @@ def cdp_answer(body: bytes) -> bytes:
     params = message.get("params") or {}
     if method == "Runtime.evaluate":
         source = params["expression"]
+        EXPRESSIONS.append(source)
         value: Any = {
             "document.readyState": "complete",
             "document.title": "Deneme Sayfası",
@@ -174,6 +184,10 @@ def cdp_answer(body: bytes) -> bytes:
         # click/focus yardımcıları uzun IIFE; eşleşen metni geri döndür.
         if "hit.click()" in source:
             value = "Giriş"
+        elif "// neo:fill" in source:
+            value = dict(FILL_OUTCOME)
+        elif "// neo:submit" in source:
+            value = dict(SUBMIT_OUTCOME)
         elif "pick.focus()" in source:
             value = "e-posta"
         result = {"result": {"value": value}}
@@ -288,6 +302,98 @@ def test_click_type_press_drive_the_page(tmp_path) -> None:
         ws_box.close()
 
 
+def test_fill_carries_the_target_and_the_events_to_the_page(tmp_path) -> None:
+    """fill'in sayfaya yolladığı betik hedef ölçütlerini (label/name/
+    placeholder/selector) taşımalı ve çerçevelerin dinlediği input+change
+    olaylarını tetiklemeli — yoksa React'li bir form değeri hiç görmez."""
+    EXPRESSIONS.clear()
+    FILL_OUTCOME.clear()
+    FILL_OUTCOME["ok"] = "E-posta / name=email"
+    ws_url, _thread, ws_box = ws_server(cdp_answer)
+    http = FakeCdpHttp(ws_url)
+    try:
+        box = chrome.Browser(tmp_path, port=http.port)
+        tab = box.tabs()[0]
+
+        where = box.fill(tab, "ali@ornek.com", label="E-posta")
+        assert where == "E-posta / name=email"
+
+        source = next(s for s in EXPRESSIONS if "// neo:fill" in s)
+        # Hedef ölçütleri sayfaya gitmiş olmalı.
+        assert '"E-posta"' in source and '"ali@ornek.com"' in source
+        # Etiket, name ve placeholder eşlemesi sayfa betiğinde.
+        for needle in ("labels", "aria-label", "el.name", "el.placeholder"):
+            assert needle in source
+        # Yerli ayarlayıcı + input/change olayları: çerçeveler bunu dinliyor.
+        assert "getOwnPropertyDescriptor" in source
+        assert 'new Event("input"' in source and 'new Event("change"' in source
+    finally:
+        http.stop()
+        ws_box.close()
+
+
+def test_a_crowded_fill_match_names_the_candidates(tmp_path) -> None:
+    """Birden çok alan eşleşince sessizce ilkine yazılmaz: hata, adayları
+    sayar ki model hedefi daraltabilsin."""
+    FILL_OUTCOME.clear()
+    FILL_OUTCOME.update({
+        "err": "Birden çok alan eşleşti; hedefi daralt.",
+        "adaylar": ["Ad / name=ad", "Soyad / name=soyad"],
+    })
+    ws_url, _thread, ws_box = ws_server(cdp_answer)
+    http = FakeCdpHttp(ws_url)
+    try:
+        box = chrome.Browser(tmp_path, port=http.port)
+        tab = box.tabs()[0]
+        with pytest.raises(chrome.BrowseError) as caught:
+            box.fill(tab, "x", name="ad")
+        assert "name=ad" in str(caught.value)
+        assert "name=soyad" in str(caught.value)
+    finally:
+        http.stop()
+        ws_box.close()
+
+
+def test_fill_without_a_target_is_refused_before_touching_the_page(tmp_path) -> None:
+    box = chrome.Browser(tmp_path, port=1)  # sunucu yok; çağrı da olmamalı
+    with pytest.raises(chrome.BrowseError):
+        box.fill({"webSocketDebuggerUrl": "ws://127.0.0.1:1/x"}, "metin")
+
+
+def test_submit_finds_the_form_and_reports_the_button(tmp_path) -> None:
+    """submit iki yolu da bilmeli: düğme varsa tıklama, yoksa requestSubmit.
+    Seçici verilirse sayfaya taşınmalı; çoklu form hatası adaylarıyla gelmeli."""
+    EXPRESSIONS.clear()
+    SUBMIT_OUTCOME.clear()
+    SUBMIT_OUTCOME["ok"] = "Giriş Yap"
+    ws_url, _thread, ws_box = ws_server(cdp_answer)
+    http = FakeCdpHttp(ws_url)
+    try:
+        box = chrome.Browser(tmp_path, port=http.port)
+        tab = box.tabs()[0]
+
+        assert box.submit(tab) == "Giriş Yap"
+        source = next(s for s in EXPRESSIONS if "// neo:submit" in s)
+        # İki gönderim yolu da sayfa betiğinde: düğme tıklama + requestSubmit.
+        assert "btn.click()" in source and "requestSubmit" in source
+
+        EXPRESSIONS.clear()
+        assert box.submit(tab, "#giris-formu") == "Giriş Yap"
+        assert any('"#giris-formu"' in s for s in EXPRESSIONS)
+
+        SUBMIT_OUTCOME.clear()
+        SUBMIT_OUTCOME.update({
+            "err": "Birden çok form var; `selector` ile birini seç.",
+            "adaylar": ["#giris → /giris", "#arama → /ara"],
+        })
+        with pytest.raises(chrome.BrowseError) as caught:
+            box.submit(tab)
+        assert "#giris" in str(caught.value) and "#arama" in str(caught.value)
+    finally:
+        http.stop()
+        ws_box.close()
+
+
 def test_an_unknown_key_is_refused(tmp_path) -> None:
     ws_url, _thread, ws_box = ws_server(cdp_answer)
     http = FakeCdpHttp(ws_url)
@@ -323,6 +429,22 @@ def test_the_browser_tool_is_in_the_subagent_registry() -> None:
         import pytest as _p
         _p.skip("bu makinede tarayıcı yok")
     assert "browser" in build_registry(subagents=False)
+
+
+def test_the_tool_offers_fill_and_submit() -> None:
+    """Form doldurma araç yüzeyinde olmalı: neo, ürettiği uygulamada giriş
+    yapamazsa giriş-sonrası sayfaları hiç doğrulayamıyor."""
+    from neocp.tools import ToolRegistry
+    from neocp.tools import browser as surf
+
+    registry = ToolRegistry()
+    surf.register(registry)
+    spec = registry.get("browser")
+    assert spec is not None
+    actions = spec.input_schema["properties"]["action"]["enum"]
+    assert "fill" in actions and "submit" in actions
+    for prop in ("selector", "label", "name", "placeholder"):
+        assert prop in spec.input_schema["properties"]
 
 
 def test_the_tool_stays_shut_until_the_user_opens_it(tmp_path) -> None:

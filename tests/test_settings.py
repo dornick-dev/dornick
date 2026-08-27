@@ -394,3 +394,16 @@ def test_switch_refused_while_busy(tmp_path):
     assert not res["ok"] and res.get("busy")
     assert rebinds == []          # meşgulken hiçbir şey değişmedi
     bridge.loop.close()
+
+
+def test_snapshot_surumu_tasir(config: Config) -> None:
+    """Ayarlar › Makine'deki salt-okunur sürüm satırı buradan besleniyor.
+
+    Sahada hangi sürümün kurulu olduğu görünmüyordu; alan pyproject'teki
+    gerçek sürümle birebir aynı olmalı — ikinci bir sürüm kaynağı yok.
+    """
+    from neocp import ortam
+
+    kar = settings.snapshot(config)
+    assert kar["surum"] == ortam.surum()
+    assert kar["surum"] not in ("", "0.0.0")

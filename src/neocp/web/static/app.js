@@ -6,6 +6,9 @@
 Dil.ekle({
   "Ses su an uretilemiyor — ses servisine ulasilamiyor olabilir (internet gerekli). Metin ekranda; ses duzelince kendiliginden devam eder.":
     "Speech is unavailable right now — the voice service may be unreachable (internet required). The text stays on screen; audio resumes once the service is back.",
+  // Marka ipucundaki sürüm eki
+  " · kurulum": " · installed",
+  " · geliştirme": " · development",
   // Araya girme ve yardımcı onayı
   "araya girdi": "interjected",
   "yardımcı": "helper",
@@ -51,12 +54,28 @@ Dil.ekle({
   "Konuma bakıyor": "Checking location",
   // İş şeridi
   "Düşündü": "Thought", "✻ Düşündü": "✻ Thought", " kelime": " words",
-  "Tıkla — muhakemenin tamamını gör": "Click to see the full reasoning",
+  "Tıkla — bu turun muhakemesini gör": "Click to see this turn's reasoning",
+  " kez": " times",
   "Tıkla — tamamını gör": "Click to see all",
   "Hatırlananlar — tıkla, tamamını gör": "Recalled — click to see all",
   "Devamı": "More", "Kısalt": "Collapse",
   "Sırada": "Queued",
   " argüman": " arguments",
+  // Model bekleme durumu (çalışma şeridinde yaşar, sohbete düşmez)
+  "Model bekleniyor": "Waiting for model",
+  "deneme": "attempt",
+  "yeniden deneniyor…": "retrying…",
+  "İş bekletiliyor — model erişilebilir olunca sürecek":
+    "Job on hold — resumes when the model is reachable",
+  "İş bekletiliyor": "Job on hold",
+  "Model çağrısı": "Model call",
+  "bekletiliyor": "on hold",
+  "Model geri geldi": "Model is back",
+  " deneme sonrası": " attempts later",
+  "kesildi": "interrupted",
+  "Tıkla — ayrıntıyı gör": "Click to see details",
+  "Tıkla — hatanın ayrıntısını gör": "Click to see the error detail",
+  "Tıkla — adımın ayrıntısını gör": "Click to see the step detail",
   // Kamera ve ses
   "Kamera açılıyor…": "Opening camera…",
   "Kamera açılamadı. İzin verilmemiş ya da başka bir program kullanıyor olabilir.":
@@ -100,6 +119,29 @@ Dil.ekle({
   "Son istem: ": "Last prompt: ", " (önbellekten ": " (cached ",
   "Son cevap: ": "Last reply: ", " token": " tokens", " önbellek": " cached",
   "Bu oturumda henüz tur yok.": "No turns in this session yet.",
+  // Maliyet çipi
+  "Bu turun tahmini harcaması — tıkla: kırılım":
+    "This turn's estimated spend — click for the breakdown",
+  " · premium model (çıktı > $20/M)": " · premium model (output > $20/M)",
+  "Tahmini harcama": "Estimated spend",
+  // Bütçe freni (maliyet çipinin kutusunda)
+  " · oturum sınırı: ": " · session cap: ",
+  "Bu oturum için üst sınır": "Cap for this session",
+  "sınırsız": "no cap",
+  "Uygula": "Apply",
+  "Sınıra ulaşılınca koşan tur durur; yükseltince kaldığı yerden sürer.":
+    "When the cap is hit the running turn stops; raise it and work resumes.",
+  "Fiyat bilinmiyor (yerel sunucu ya da katalog dışı model) — fren çalışmaz.":
+    "Price unknown (local server or model outside the catalogue) — the brake cannot work.",
+  "Sınır kaydedilemedi.": "Could not save the cap.",
+  "Premium model: çıktı fiyatı $20/M üstünde.":
+    "Premium model: output price above $20/M.",
+  "Bu tur: ": "This turn: ", "oturum: ": "session: ",
+  "Girdi: ": "Input: ", "Çıktı: ": "Output: ",
+  "Tahmin — önbellek indirimi hesaba katılmaz.":
+    "An estimate — cache discounts are not counted.",
+  "Fiyat bilinmiyor — yalnız token sayısı.":
+    "Price unknown — token counts only.",
   // Onay diyaloğu
   "Bir komut çalıştıracak.": "Will run a command.",
   "Bir dosyayı okuyacak.": "Will read a file.",
@@ -151,6 +193,41 @@ Dil.ekle({
   "çıkış ": "exit ",
   "hata": "error",
   "Tümünü genişlet": "Expand fully",
+  "Kopyala": "Copy", "Kopyalanamadı": "Could not copy",
+  "Dosyayı aç": "Open file",
+  "düzenleme": "edit", "yazma": "write", "okuma": "read", "dizin": "dir",
+  "değişiklik": "change",
+  "Diff yok — old/new gelmedi": "No diff — old/new missing",
+  "(içerik aynı)": "(unchanged)",
+  "dosya": "file",
+  "Kartta kaydır": "Scroll in card",
+  "Bağlam doluluğu": "Context usage",
+  // Hedef paneli: yönetim
+  "neo'nun kendine yazdığı iş listesi — tıkla: katla/aç":
+    "neo's own task list — click to fold/unfold",
+  " iş listesi": " task list", "İş listesi": "Task list",
+  "Bunlar neo'nun kendine yazdığı iş listesi — uzun işlerde ne yaptığını takip etmek için. Sen de ekleyebilir, silebilirsin.":
+    "This is neo's own task list — so you can follow what it is doing on long jobs. You can add and remove items too.",
+  "＋ kendi maddeni yaz": "＋ add your own item",
+  "Yeni iş maddesi": "New task item", "Ekle": "Add",
+  "eski": "old", "Geçen oturumlardan kaldı": "Left over from earlier sessions",
+  // "Şimdi eğit" sonucu — sessiz kalmıyor, her durum tek satırla söyleniyor
+  "Tanıma eğitimi başladı — arka planda sürüyor.":
+    "Personal training started — running in the background.",
+  "Yeni veri yok — yeni anılar biriktikçe kendiliğinden çalışacak.":
+    "No new data — it will run on its own as new memories accumulate.",
+  "Eğitim zaten koşuyor.": "Training is already running.",
+  "Eğitim düzeneği bu makinede kurulu değil.":
+    "The training setup is not installed on this machine.",
+  "Beni tanı kapalı — Ayarlar'dan açabilirsin.":
+    "Personal training is off — you can turn it on in Settings.",
+  "Henüz sırası değil — yeni anılar biriktikçe kendiliğinden çalışacak.":
+    "Not due yet — it will run on its own as new memories accumulate.",
+  "Eğitim başlatılamadı.": "Could not start training.",
+  "Tamamlandı": "Done", "Kaldır": "Remove",
+  "tümünü temizle": "clear all", "Emin misin?": "Are you sure?",
+  "Bağlam doluluğu — yaklaşık (geçmişten tahmin)":
+    "Context usage — approximate (estimated from history)",
   "Kartta kaydır": "Scroll inside the card",
   "Tıkla — adımın ayrıntısını gör": "Click to see the step's detail",
   // Artifact kartı
@@ -176,6 +253,55 @@ let agentLine = null;      // akmakta olan cevabın kabı
 let busy = false;
 let approvalId = null;
 let lastQuery = "";
+
+// --- sızıntı savunması (ikinci hat) ------------------------------------
+//
+// Birinci hat sunucuda: hub `_payload` iç notları süzüyor, döküm okuyucusu
+// (mind/store.transcript) da öyle. Buradaki ikinci hat, o süzgeçlerden
+// birinin bir gün kaçırdığı hali kullanıcının ekranından uzak tutuyor —
+// ikisi de kanıtlanmış yaralar, bir daha aynı şey ekrana düşmesin.
+//
+// İki kalıp çizilmiyor:
+//
+//   1. HARNESS NOTU — kullanıcının yazmadığı iç dürtüler ("Planını yazdın
+//      ama uygulamadın. Şimdi yap: …", "[Yardımcı bitti · …]"). Sohbete
+//      kullanıcı mesajı gibi düştüğü görüldü; kullanıcı kendi ağzından
+//      çıkmamış bir cümle okuyor.
+//   2. SAHTE ARAÇ ÇAĞRISI — model gerçek araç çağrısı yerine çağrı XML'ini
+//      DÜZ METİN olarak yazdı. Bu bir cevap değil, başarısız bir deneme;
+//      ham XML sohbete basılmamalı. (Döngü tarafında modele "gerçek araç
+//      çağrısı yap" notu düşüyor ve tur sürüyor.)
+//
+// Kalıplar bilerek DAR: iç notların ayırt edici açılışları. Geniş bir
+// desen (ör. her köşeli parantez) kullanıcının kendi cümlesini yutardı.
+
+const IC_NOT_KALIPLARI = [
+  /^\s*\[(Harness notu|Yardımcı|Arka plan işi|Kullanıcı bu arada yazdı|Ana ajandan|Uzun koşu kontrol noktası)/,
+  /^\s*Planını yazdın ama uygulamadın/,
+  /^\s*Önceki yanıtın uzunluk sınırında kesildi/,
+  /^\s*Sürdürme hakkın bitti/,
+  /^\s*Yukarıdaki görüntü senin kendi bakışın/,
+  /^\s*Arka plandaki yardımcı\(lar\) bitti/,
+  /^\s*Kameradan bir kare\. Gerçekten bak/,
+];
+
+// Araç çağrısı XML'i: metnin herhangi bir yerinde geçmesi yeter — model
+// çoğu zaman önce bir-iki cümle yazıp sonra XML'e giriyor.
+const SAHTE_CAGRI_KALIBI = /<\/?(function_calls|invoke\b|parameter\b|antml:)/i;
+
+function icNot(text) {
+  const s = String(text || "");
+  return IC_NOT_KALIPLARI.some((k) => k.test(s));
+}
+
+function sahteCagri(text) {
+  return SAHTE_CAGRI_KALIBI.test(String(text || ""));
+}
+
+// Kullanıcı satırı çizilmeli mi? İç not ise hayır — sessizce yutulur.
+function cizilir(text) {
+  return !icNot(text) && !sahteCagri(text);
+}
 
 Scene.init({
   canvas: $("scene"), probe: $("probe"), reveal: $("reveal"),
@@ -270,12 +396,69 @@ document.getElementById("jump").addEventListener("click", () => resumeFollow(tru
 
 function line(kind, text) {
   clearWelcome();
+  // Uzun / teknik uyarılar cevap gibi sarı duvar olmasın: tek satır özet,
+  // tıklanınca ham metin. Kısa bilgilendirme düz kalır.
+  if (kind === "alert" && text && shouldFoldAlert(text)) {
+    return alertFold(text);
+  }
   const el = document.createElement("div");
   el.className = "line " + kind;
   if (text) el.textContent = text;
   thread.append(el);
   scroll();
   return el;
+}
+
+function shouldFoldAlert(text) {
+  const s = String(text || "");
+  if (s.length > 110) return true;
+  return /Error code|BadRequest|Traceback|Exception|error['"]?\s*:/i.test(s);
+}
+
+function alertFold(text) {
+  const el = document.createElement("div");
+  el.className = "line alert folded";
+  const head = document.createElement("button");
+  head.type = "button";
+  head.className = "alert-head";
+  head.textContent = summarizeAlert(text);
+  head.title = t("Tıkla — ayrıntıyı gör");
+  const body = document.createElement("pre");
+  body.className = "alert-detail";
+  body.hidden = true;
+  body.textContent = text;
+  head.onclick = () => {
+    const open = body.hidden;
+    body.hidden = !open;
+    head.classList.toggle("open", open);
+    el.classList.toggle("open", open);
+    scroll();
+  };
+  el.append(head, body);
+  thread.append(el);
+  scroll();
+  return el;
+}
+
+function summarizeAlert(text) {
+  const s = String(text || "").trim();
+  // [kanal] mesaj  — alt ajan
+  const tagged = s.match(/^\[([^\]]+)\]\s*(.*)$/s);
+  if (tagged) {
+    const title = tagged[1];
+    const rest = (tagged[2] || "").trim();
+    const msg = rest.match(/'message':\s*'([^']+)'/)
+      || rest.match(/"message"\s*:\s*"([^"]+)"/);
+    if (msg) return "⚠ " + title + " · " + msg[1];
+    const err = rest.match(/^(\w+Error)\b/);
+    if (err) return "⚠ " + title + " · " + err[1];
+    const one = rest.split("\n")[0].trim();
+    return "⚠ " + title + (one ? " · " + (one.length > 72 ? one.slice(0, 72) + "…" : one) : "");
+  }
+  const msg = s.match(/'message':\s*'([^']+)'/) || s.match(/"message"\s*:\s*"([^"]+)"/);
+  if (msg) return "⚠ " + msg[1];
+  const one = s.split("\n")[0].trim();
+  return "⚠ " + (one.length > 96 ? one.slice(0, 96) + "…" : one);
 }
 
 // Sürdürülen bir konuşmanın geçmiş dökümünü thread'e basar: kullanıcı
@@ -285,6 +468,9 @@ async function loadTranscript(id) {
   try { data = await (await fetch("/api/session?id=" + encodeURIComponent(id))).json(); }
   catch { return; }
   for (const t of (data.turns || [])) {
+    // Eski dökümlerin içinde harness notları duruyor olabilir (süzgeç
+    // sonradan kondu): geçmişi yeniden yazmıyoruz, çizmiyoruz.
+    if (!cizilir(t.text)) continue;
     if (t.role === "user") { line("user", t.text); continue; }
     // Ajan satırları geçmişte de MARKDOWN: düz textContent basmak
     // "**kalın**" ve backtick'leri çıplak gösteriyordu — canlı akışta
@@ -474,12 +660,33 @@ let pending = null;
 const REDRAW_MS = 100;
 
 function write(chunk) {
-  if (!agentLine) { agentLine = line("agent", ""); raw = ""; }
   raw += chunk;
   bumpStream(chunk);
+  if (!agentLine) {
+    // BOŞLUK SATIR AÇMAZ. Model araçtan sonra çoğu zaman önce "\n\n"
+    // akıtıyor ve asıl metin saniyeler sonra geliyor. Eski hal ilk parçada
+    // bloğu doğuruyordu: şerit sakinleşiyor ("▸ 1 adım · 19 sn"), sonra
+    // ekranda boş bir "NEO ▮" saniyelerce yanıp sönüyordu — kullanıcı ne
+    // olduğunu bilmiyor. Artık gerçek metin gelene kadar şerit canlı
+    // kalıyor ("Düşünüyor · N sn", tickBusy işletiyor) ve blok ancak
+    // yazılacak bir şey varken doğuyor.
+    if (!raw.trim()) return;
+    raw = raw.replace(/^\s+/, "");   // baştaki boşluk bloğa girmesin
+    // Cevap akmaya başlıyor: şerit sakinleşir ve yeni metin şeridin HEMEN
+    // altında doğar (restWork şeridi akışın sonuna indirir). Eski hal canlı
+    // "Düşünüyor" başlığını turun tepesinde asılı bırakıyor, cevap onun
+    // çok altına yazıyordu — gösterge içeriği takip etmiyordu.
+    restWork();
+    agentLine = line("agent", "");
+  }
   if (pending) return;
   pending = setTimeout(() => {
     pending = null;
+    // Sahte araç çağrısı: model gerçek çağrı yerine XML'i düz metin yazdı.
+    // Cevap değil, başarısız bir deneme — blok DOM'dan düşer (imleç de
+    // onunla gider). Model tarafı döngüde düzeltiliyor: "araç çağrını metin
+    // olarak yazdın" notu gidiyor ve tur sürüyor.
+    if (sahteCagri(raw)) { agentLine.remove(); return; }
     Markdown.into(agentLine, raw);
     scroll();
   }, REDRAW_MS);
@@ -524,9 +731,9 @@ function bumpStream(chunk) {
 
 function resetStream() {
   streamStart = 0; streamTok = 0; streamRate = 0;
-  // Yeni tur: ara-anlatım güvenlik ağı bayrakları da sıfırdan; kelime
-  // tohumu bir ilerliyor — düşünme/eylem sözcükleri turdan tura değişsin.
-  lastNarr = ""; answerKept = false;
+  // Kelime tohumu bir ilerliyor — düşünme/eylem sözcükleri turdan tura
+  // değişsin. (Ara-anlatım güvenlik ağı bayrakları kalktı: model metni
+  // artık katlanmıyor, geri getirilecek bir şey yok.)
   turnSeed += 1;
 }
 
@@ -563,6 +770,9 @@ function tickBusy() {
   busyNote = s + " sn";
   showMeta();
   if (!work) return;
+  // Model bekleniyor: başlık geri sayımı işletir — donuk "Düşünüyor" değil,
+  // bekleme durumunun kendisi görünür (deneme sayacı + kalan saniye).
+  if (waitState) { paintWait(); return; }
   // Açık araç satırlarının canlı süresi ("SHELL … 8 sn").
   const openRows = [...work.open.values()];
   for (const row of openRows) {
@@ -577,7 +787,7 @@ function tickBusy() {
   if (openRows.length) {
     const first = openRows[0];
     const t = Math.round((Date.now() - (first._start || work.since)) / 1000);
-    workHead(liveHead() + " · " + t + " sn");
+    paintLive(" · " + t + " sn");
   } else if (!agentLine) {
     workHead(mull() + since(work.since) + streamNote());
   }
@@ -629,14 +839,45 @@ function renumberQueue() {
 // duruyor ve okunacak şey sanılıyordu. Akan şey artık tek bir satır —
 // ne yaptığı ve ne kadar sürdüğü. Muhakemenin kendisi kaybolmuyor:
 // satıra tıklayınca açılıyor, düşünürken de bittikten sonra da.
+// Düşünme satırı ne zaman AÇILIR?
+//
+// Her araç adımı arasında model bir-iki saniye düşünüyor ve eski hal her
+// birine bir satır açıyordu: 30 adımlık bir turda 30 tane "✻ Düşündü · 1 sn
+// · 27 kelime". Şerit açıldığında okunacak şey (adımlar) bu gürültünün
+// içinde kayboluyordu. Önemsiz düşünme satır AÇMAZ.
+//
+// Eşikler: bir muhakeme ya UZUN sürmüşse (kullanıcı beklediyse, sebebini
+// görmeye hakkı var) ya da HACİMLİyse (gerçekten bir plan kurulmuş)
+// satır olur. İkisinin de altındaki, iki araç arasındaki refleks
+// düşüncedir — anlatacak bir şeyi yok.
+const THINK_MIN_S = 3;        // bu kadar sürdüyse: kullanıcı bekledi
+const THINK_MIN_WORDS = 60;   // bu kadar yazdıysa: plan kurmuş
+
 function think(chunk) {
   const w = ensureWork();
+  // Akış sırası korunuyor: o ana kadar akan cevap metni ara-anlatım olarak
+  // şeride katlanır ve şerit akışın sonuna iner — düşünme kutusu daha önce
+  // yazılmış metnin ÜSTÜNE (turun tepesine) düşmez, kronoloji bozulmaz.
+  foldNarration();
+  dockWork(w);
+  w.head.classList.add("busy");
   if (!w.thought) {
-    w.thought = document.createElement("div");
-    w.thought.className = "act note think";
-    w.body.append(w.thought);
-    w.thinkStart = Date.now();
-    thought = "";
+    // Ardışık düşünme birleşir: araya adım girmediyse bu, kesilmiş TEK bir
+    // muhakemedir. İki ayrı satır açmak onu iki iş gibi gösterirdi.
+    const son = w.body.lastElementChild;
+    if (son && son.classList.contains("think") && son.classList.contains("done")) {
+      w.thought = son;
+      son.classList.remove("done", "open");
+      son.onclick = null;
+      thought = (son._full || "") + "\n\n";
+      w.thinkStart = Date.now() - (son._secs || 0) * 1000;
+    } else {
+      w.thought = document.createElement("div");
+      w.thought.className = "act note think";
+      w.body.append(w.thought);
+      w.thinkStart = Date.now();
+      thought = "";
+    }
   }
   thought += chunk;
   bumpStream(chunk);
@@ -705,20 +946,31 @@ function closeThought() {
     const box = work.thought;
     const full = thought.trim();
     if (box) {
-      if (!full) box.remove();
-      else {
-        const secs = Math.round((Date.now() - (work.thinkStart || work.since)) / 1000);
-        const words = full.split(/\s+/).length;
+      const secs = Math.round((Date.now() - (work.thinkStart || work.since)) / 1000);
+      const words = full ? full.split(/\s+/).length : 0;
+      // Muhakeme HER HÂLÜKÂRDA saklanıyor — eşik yalnızca satır açma
+      // kuralı, saklama kuralı değil. Yutulan düşünce de turun arşivine
+      // giriyor ve açılan herhangi bir "✻ Düşündü" satırından okunabiliyor.
+      if (full) work.thinkAll.push(full);
+
+      if (!full || (secs < THINK_MIN_S && words < THINK_MIN_WORDS)) {
+        // Önemsiz: satır açılmaz. (Metin arşivde duruyor.)
+        box.remove();
+      } else {
         const label = t("✻ Düşündü") + (secs > 0 ? " · " + secs + " sn" : "")
                     + " · " + words + t(" kelime");
         box.classList.add("done");
         box.textContent = label;
-        box.title = t("Tıkla — muhakemenin tamamını gör");
+        box.title = t("Tıkla — bu turun muhakemesini gör");
+        // Birleştirme ve yeniden açma için satırda taşınıyor.
+        box._full = full;
+        box._secs = secs;
+        const arsiv = work.thinkAll;   // aynı dizi: sonra yutulanlar da görünür
         let open = false;
         box.onclick = (ev) => {
           ev.stopPropagation();
           open = !open;
-          box.textContent = open ? full : label;
+          box.textContent = open ? arsiv.join("\n\n———\n\n") : label;
           box.classList.toggle("open", open);
         };
       }
@@ -743,32 +995,49 @@ function finishAgentLine() {
   if (!agentLine) return;
 
   // Model araç çağırmadan önce sık sık boşluk akıtıyor; bu bomboş bir
-  // satır bırakıyordu.
-  if (!raw.trim()) agentLine.remove();
+  // satır bırakıyordu. Sahte araç çağrısı da aynı kefede: ham XML sohbette
+  // kalmaz (bkz. sahteCagri).
+  if (!raw.trim() || sahteCagri(raw)) agentLine.remove();
   else {
     Markdown.into(agentLine, raw);
     agentLine.classList.add("done");
     if (raw.length > FOLD_AFTER) fold(agentLine);
-    answerKept = true;   // ekranda tam boy bir cevap kaldı: güvenlik ağı gerekmez
   }
   agentLine = null;
   raw = "";
 }
 
+// --- asılı akış imleci -------------------------------------------------
+//
+// İmleç (yanıp sönen ▮) bir DURUM değil, bir CSS kuralı: `.line.agent`
+// `.done` almadıkça imleç basılıyor. Yani akış biterken `.done` almayan ya
+// da hiç kapanmayan bir blok, ekranda sonsuza kadar yanıp sönen boş bir
+// "NEO ▮" olarak kalıyor — kullanıcı neo hâlâ yazıyor sanıyor.
+//
+// Kanıtlanmış boşluklar: "interrupted" olayı satırı hiç mühürlemiyordu ve
+// "empty_assistant_turn" (model hiçbir şey döndürmedi) arayüzde hiç
+// karşılanmıyordu. Tek tek yamamak yerine burada bir SÜPÜRGE var: turun
+// bittiği her yolda, canlı akış dışındaki bütün mühürsüz ajan blokları
+// kapatılıyor — boşsa DOM'dan siliniyor, doluysa mühürleniyor. Böylece
+// yarın yeni bir yol açılsa da imleç asılı kalmıyor.
+function clearCursor() {
+  for (const el of thread.querySelectorAll(".line.agent:not(.done)")) {
+    if (el === agentLine) continue;   // canlı akış: imleci hak ediyor
+    if (el.textContent.trim()) el.classList.add("done");
+    else el.remove();
+  }
+}
+
+// Eskiden burada bir "güvenlik ağı" vardı: tur araçla bitip ekranda cevap
+// kalmadıysa, şeride katlanmış son anlatımı geri getiriyordu. Yamaya gerek
+// kalmadı — model metni artık hiç katlanmıyor (bkz. foldNarration), yani
+// geri getirilecek bir şey de yok. Aynı metnin iki kez görünme riski de
+// böylece kökten kalktı.
 function sealLine() {
   closeThought();
   closeWork();
   finishAgentLine();
-  // Güvenlik ağı: tur bir araçla bitti ve ekranda tam boy bir cevap kalmadıysa
-  // (ör. model son sözünü söyleyip ardından mind_memory çağırdı, o metin şeride
-  // katlandı), son ara-anlatımı cevap olarak göster — yoksa kullanıcı yalnızca
-  // kapalı şeridi görüp "cevap nerede" derdi.
-  if (!answerKept && lastNarr) {
-    const row = line("agent", "");
-    Markdown.into(row, lastNarr);
-    row.classList.add("done");
-    answerKept = true;
-  }
+  clearCursor();
 }
 
 // Kaç blok açıkta kalıyor. Bir blok çoğu zaman bir başlık ya da tek bir
@@ -830,7 +1099,7 @@ async function send() {
   if (!text && !frame && !attached.length && !Camera.on) return;
   // İyimser çizim yok: mesaj olay günlüğüne yazılınca SSE ile geri geliyor.
   // İki kaynaktan çizmek kopyalanmaya yol açardı.
-  const posted = withContext(withFiles(text));
+  const posted = withContext(withFiles(withMentions(text)));
   // Gönderilen görsel ve dosyalar SSE echo'sunda taşınmıyor (görüntü ağır,
   // ayrıca araçtan gelen kareler `internal`). İstemci elindeki veriyle:
   // mesaj satırı geldiğinde küçük resmi ve dosya etiketlerini ona iliştir.
@@ -1042,11 +1311,26 @@ function el2(tag, cls, text) {
   return n;
 }
 
+// `@` ile işaret edilen dosyalar mesaja açıkça yazılıyor (bkz. komut.js).
+// Modül yoksa metin olduğu gibi geçiyor.
+function withMentions(text) {
+  return (typeof Komut !== "undefined" && Komut.bahisEkle) ? Komut.bahisEkle(text) : text;
+}
+
 // Orkestra güvertesine köprü: modül yoksa (yüklenmemişse) sessiz geç.
 function orchStart(e) { if (typeof Orchestra !== "undefined") Orchestra.start(e); }
 function orchTool(e) { if (typeof Orchestra !== "undefined") Orchestra.tool(e); }
 function orchEnd(e) { if (typeof Orchestra !== "undefined") Orchestra.end(e); }
 function orchSeed(list) { if (typeof Orchestra !== "undefined" && Orchestra.seed) Orchestra.seed(list); }
+
+// Koşan görevler paneline köprü: aynı kalıp. Panel kapalıyken de tazeleniyor
+// — üst bardaki rozet gerçeği söylemeli.
+function tasksRefresh() { if (typeof Gorevler !== "undefined") Gorevler.tazele(); }
+function tasksDone(e) { if (typeof Gorevler !== "undefined") Gorevler.bitti(e); }
+
+// Değişiklik defteri köprüsü: tur sınırları.
+function chgTurnStart() { if (typeof Degisiklik !== "undefined") Degisiklik.turBasladi(); }
+function chgTurnEnd() { if (typeof Degisiklik !== "undefined") Degisiklik.turBitti(); }
 
 function withContext(text) {
   if (!appContext) return text;
@@ -1078,6 +1362,7 @@ function toggleFocus() {
     try { Viewer.close(); } catch {}
     try { Apps.close(); } catch {}
     try { History.close(); } catch {}
+    try { Gorevler.kapat(); } catch {}
     const s = document.getElementById("settings"); if (s) s.hidden = true;
     document.body.classList.remove("viewing", "settling");
   }
@@ -1129,6 +1414,11 @@ setTimeout(syncTitlebar, 800);
 
 let tanimaSon = "";        // son eğitimin ISO tarihi; ipucunda kısa biçim
 let tanimaKosuyor = false;
+let tanimaBasladi = 0;     // nabzın en az görünmesi gereken sürenin başı
+
+// Nabız bu süreden kısa görünmesin: bir saniyeden kısa süren bir koşuda
+// kullanıcı düğmeye basıyor ve ekranda hiçbir şey olmuyormuş gibi oluyor.
+const TANIMA_EN_AZ_MS = 3000;
 
 function tanimaTarih() {
   if (!tanimaSon) return t("henüz yok");
@@ -1144,8 +1434,16 @@ function tanimaIkon(state) {
   if (!ikon) return;
   if (state === "acik") ikon.hidden = false;
   else if (state === "kapali") ikon.hidden = true;
-  else if (state === "basladi") tanimaKosuyor = true;
-  else if (state === "bitti") { tanimaKosuyor = false; tanimaSon = new Date().toISOString(); }
+  else if (state === "basladi") { tanimaKosuyor = true; tanimaBasladi = Date.now(); }
+  else if (state === "bitti") {
+    // Nabız EN AZ bu kadar görünsün: eğitim bazen bir saniyeden kısa
+    // sürüyor ve kullanıcı düğmeye bastığında ekranda hiçbir şey olmamış
+    // gibi oluyordu. "Bir şey oldu" görülmeli.
+    const kalan = TANIMA_EN_AZ_MS - (Date.now() - tanimaBasladi);
+    if (kalan > 0) { setTimeout(() => tanimaIkon("bitti"), kalan); return; }
+    tanimaKosuyor = false;
+    tanimaSon = new Date().toISOString();
+  }
   ikon.classList.toggle("kosuyor", tanimaKosuyor);
   ikon.title = tanimaKosuyor
     ? t("Şu an seni tanıyorum — eğitim arka planda sürüyor")
@@ -1153,11 +1451,27 @@ function tanimaIkon(state) {
       + " · " + t("tıkla: şimdi eğit");
 }
 
-$("tanima-ikon").addEventListener("click", () => {
+// "Şimdi eğit" SESSİZ KALMAZ. Eski hal düğmeye basınca ekranda hiçbir şey
+// göstermiyordu; gerçekte döngü başlayıp bir saniyeden kısa sürede "yeni
+// veri az: 0/50" deyip çıkıyordu. Artık her sonuç tek satırla söyleniyor —
+// başladıysa da, başlayamadıysa NEDENİYLE.
+const TANIMA_SEBEP = {
+  basladi: "Tanıma eğitimi başladı — arka planda sürüyor.",
+  veri_yok: "Yeni veri yok — yeni anılar biriktikçe kendiliğinden çalışacak.",
+  kosuyor: "Eğitim zaten koşuyor.",
+  duzenek_yok: "Eğitim düzeneği bu makinede kurulu değil.",
+  kapali: "Beni tanı kapalı — Ayarlar'dan açabilirsin.",
+  ara_yok: "Henüz sırası değil — yeni anılar biriktikçe kendiliğinden çalışacak.",
+  baslatilamadi: "Eğitim başlatılamadı.",
+};
+
+$("tanima-ikon").addEventListener("click", async () => {
   // Koşarken tıklama sessizce yok sayılır: ipucu zaten durumu söylüyor,
   // ikinci bir koşu açmak da mümkün değil (süreç tekil).
   if (tanimaKosuyor) return;
-  post("/api/tanima", { simdi: true });
+  const cevap = await post("/api/tanima", { simdi: true });
+  const sebep = (cevap && cevap.sebep) || "baslatilamadi";
+  line("alert", t(TANIMA_SEBEP[sebep] || TANIMA_SEBEP.baslatilamadi));
 });
 
 fetch("/api/tanima").then((r) => r.json()).then((d) => {
@@ -1352,7 +1666,7 @@ function dockRender() {
 
 // Bağlam doluluğu. Yüzde `usage` olayından: istemin toplamı / pencere.
 // Dolmaya yaklaşınca renk değişiyor — sayı okunmadan da fark edilsin.
-function dockContext(promptTotal) {
+function dockContext(promptTotal, tahmin) {
   if (!contextWindow || !promptTotal) return;
   const pct = Math.min(100, Math.round((promptTotal / contextWindow) * 100));
   $("dock-ctx-pct").textContent = "%" + pct;
@@ -1360,6 +1674,133 @@ function dockContext(promptTotal) {
   const box = $("dock-ctx");
   box.classList.toggle("warn", pct >= 70 && pct < 90);
   box.classList.toggle("hot", pct >= 90);
+  // Sürdürülen bir oturumda rakam sağlayıcının saydığı gerçek değer
+  // olmayabilir (eski günlükte usage yok): kaba tahmin olduğu söyleniyor.
+  // Uydurma bir kesinlik satmaktansa "yaklaşık" demek dürüst.
+  box.classList.toggle("tahmin", !!tahmin);
+  box.title = tahmin ? t("Bağlam doluluğu — yaklaşık (geçmişten tahmin)")
+                     : t("Bağlam doluluğu");
+}
+
+// --- maliyet çipi -------------------------------------------------------
+//
+// Bu turun tahmini harcaması, Claude Code'un /usage ruhuyla: "≈$0.42".
+// Fiyat OpenRouter kataloğundan geliyor (usage/fiyat olayında USD/token);
+// bilinmiyorsa (yerel sunucu, katalog dışı model) çip token sayısına düşer —
+// yanlış bir dolar rakamı basmaktan iyi. Tıklayınca oturum toplamı ve
+// girdi/çıktı kırılımı açılıyor.
+
+let fiyat = null;                              // {girdi, cikti} USD/token | null
+let kullanim = { tur: null, oturum: null };    // usage olayının toplamları
+// Bu oturum için harcama üst sınırı (USD); null = sınırsız. Gerçek fren
+// sunucuda (bkz. desktop.Bridge._butce_freni): oradaki sayaç tur döngüsünü
+// durduruyor. Buradaki kopya yalnızca göstermek ve kutuyu doldurmak için.
+let butce = null;
+
+// Çıktı fiyatı $/M bu eşiğin üstündeyse model "premium": çip amber tona
+// döner ve title'a not düşer — göze batmadan uyarır.
+const PREMIUM_USD_M = 20;
+
+function para(n) {
+  // Küçük tutarlar iki basamakta "0.00" olup kayboluyordu; kuruş altı üç
+  // basamak gösteriliyor.
+  return "$" + (n >= 0.01 || n === 0 ? n.toFixed(2) : n.toFixed(3));
+}
+
+function maliyet(k) { return k.girdi * fiyat.girdi + k.cikti * fiyat.cikti; }
+
+function kisaTok(n) { return (n >= 1000 ? (n / 1000).toFixed(1) + "k" : String(n)); }
+
+function premiumMu() { return !!(fiyat && fiyat.cikti * 1e6 > PREMIUM_USD_M); }
+
+function dockCost() {
+  const chip = $("dock-cost");
+  const tur = kullanim.tur;
+  // Sınır konmuşsa çip ilk turdan önce de görünür: emniyet kemerinin
+  // takılı olduğu görünmeli, harcama sıfırken bile.
+  if ((!tur || !(tur.girdi || tur.cikti)) && !butce) { chip.hidden = true; return; }
+  chip.hidden = false;
+  chip.classList.toggle("premium", premiumMu());
+  const harcanan = fiyat && kullanim.oturum ? maliyet(kullanim.oturum) : null;
+  let metin = !tur || !(tur.girdi || tur.cikti) ? "≈$0.00"
+    : fiyat ? "≈" + para(maliyet(tur))
+    : kisaTok(tur.girdi + tur.cikti) + " tok";
+  // Sınır varken çip iki sayıyı birden taşıyor: oturumda ne harcandı ve
+  // tavan ne. "Ne kadar kaldı" sorusu kutuyu açmadan cevaplansın.
+  if (butce) metin += " · " + para(harcanan == null ? 0 : harcanan) + "/" + para(butce);
+  chip.textContent = metin;
+  chip.classList.toggle("over", !!(butce && harcanan != null && harcanan >= butce));
+  chip.title = t("Bu turun tahmini harcaması — tıkla: kırılım")
+    + (butce ? t(" · oturum sınırı: ") + para(butce) : "")
+    + (premiumMu() ? t(" · premium model (çıktı > $20/M)") : "");
+}
+
+// Kırılım kutusu: oturum toplamı + girdi/çıktı × fiyat.
+$("dock-cost").addEventListener("click", () => {
+  const pop = dockPop($("dock-cost"));
+  if (!pop) return;
+  pop.append(mk("div", "pop-head", t("Tahmini harcama")));
+  const tr = (n) => (n || 0).toLocaleString("tr-TR");
+  const satir = (metin) => pop.append(mk("div", "pop-note", metin));
+  const tur = kullanim.tur, oturum = kullanim.oturum;
+  if (!oturum || !oturum.cagri) {
+    satir(t("Bu oturumda henüz tur yok."));
+  } else if (fiyat) {
+    if (premiumMu()) satir(t("Premium model: çıktı fiyatı $20/M üstünde."));
+    satir(t("Bu tur: ") + "≈" + para(tur ? maliyet(tur) : 0)
+      + " · " + t("oturum: ") + "≈" + para(maliyet(oturum)));
+    satir(t("Girdi: ") + tr(oturum.girdi) + t(" token") + " × $"
+      + (fiyat.girdi * 1e6).toFixed(2) + "/M = " + para(oturum.girdi * fiyat.girdi));
+    satir(t("Çıktı: ") + tr(oturum.cikti) + t(" token") + " × $"
+      + (fiyat.cikti * 1e6).toFixed(2) + "/M = " + para(oturum.cikti * fiyat.cikti));
+    satir(t("Tahmin — önbellek indirimi hesaba katılmaz."));
+  } else {
+    satir(t("Fiyat bilinmiyor — yalnız token sayısı."));
+    satir(t("Girdi: ") + tr(oturum.girdi) + t(" token")
+      + " · " + t("Çıktı: ") + tr(oturum.cikti) + t(" token"));
+  }
+  pop.append(butceAlani());
+  placePop($("dock-cost"));
+});
+
+// Bütçe freni: harcamanın YANINDA duruyor, ayar sayfasında değil. Sınır bu
+// oturuma ait — yarın açılan konuşma dün konan sınırla sessizce durmamalı.
+// Boş bırakmak sınırsız demek. Fiyat bilinmiyorsa fren çalışamıyor ve bunu
+// saklamak yerine söylüyoruz.
+function butceAlani() {
+  const kutu = mk("div", "pop-butce");
+  kutu.append(mk("div", "pop-head", t("Bu oturum için üst sınır")));
+  const satir = mk("div", "pop-butce-row");
+  const dolar = mk("span", "pop-butce-dolar", "$");
+  const alan = mk("input", "pop-butce-input");
+  alan.type = "text";
+  alan.inputMode = "decimal";
+  alan.placeholder = t("sınırsız");
+  alan.value = butce ? String(butce) : "";
+  const kaydet = mk("button", "pop-butce-ok", t("Uygula"));
+  kaydet.type = "button";
+  const not = mk("div", "pop-note", fiyat
+    ? t("Sınıra ulaşılınca koşan tur durur; yükseltince kaldığı yerden sürer.")
+    : t("Fiyat bilinmiyor (yerel sunucu ya da katalog dışı model) — fren çalışmaz."));
+
+  const uygula = async () => {
+    const ham = alan.value.trim().replace(",", ".");
+    const cevap = await post("/api/butce", { usd: ham === "" ? null : ham });
+    if (!cevap || cevap.ok === false) {
+      not.textContent = (cevap && cevap.error) || t("Sınır kaydedilemedi.");
+      return;
+    }
+    butce = cevap.butce == null ? null : Number(cevap.butce);
+    dockCost();
+    hidePop();
+  };
+  kaydet.addEventListener("click", uygula);
+  alan.addEventListener("keydown", (ev) => {
+    if (ev.key === "Enter") { ev.preventDefault(); uygula(); }
+  });
+  satir.append(dolar, alan, kaydet);
+  kutu.append(satir, not);
+  return kutu;
 }
 
 // Beni tanı çipi: eğitim arka planda koşarken dock'ta sessiz bir işaret.
@@ -1665,8 +2106,6 @@ function askApproval(e) {
 // Ayrıntı kayboluyor değil, katlanıyor: başlığa tıklayınca hepsi açılıyor.
 
 let work = null;   // { head, body, steps, since, thought, open }
-let lastNarr = "";     // son katlanan ara-anlatım (tur araçla biterse cevaba yükseltilir)
-let answerKept = false; // bu turda ekranda tam boy bir cevap kaldı mı
 
 function ensureWork() {
   if (work) return work;
@@ -1684,23 +2123,108 @@ function ensureWork() {
   thread.append(head, body);
   head.classList.add("busy");   // çalışıyor: başlık nabız atıyor
   work = { head, body, steps: 0, since: Date.now(), thought: null, open: new Map(),
-           gone: null, trimmed: 0 };
+           gone: null, trimmed: 0,
+           // Bu turun BÜTÜN muhakemesi — satır açmayanlar dahil. Hiçbir
+           // şey silinmiyor: eşik yalnızca satır açma kuralı.
+           thinkAll: [] };
   return work;
+}
+
+// Şerit akışla birlikte ilerler (Claude Code düzeni): canlı gösterge her
+// zaman yeni içeriğin HEMEN üstünde durur, turun tepesine çakılı kalmaz.
+// Şeridin altına başka bir üst-düzey blok girdiyse (araya giren mesaj,
+// artifact kartı) şerit akışın sonuna taşınır — DOM düğümleri aynı,
+// içindeki adımlar ve katlanmış düşünceler olduğu gibi birlikte gelir.
+function dockWork(w) {
+  if (!w || !w.body) return;
+  if (w.body.nextElementSibling || w.head.nextElementSibling !== w.body) {
+    thread.append(w.head, w.body);
+  }
+}
+
+// Cevap akmaya başladı: şerit sakinleşir. Nabız durur, başlık o ana kadarki
+// işin özetine döner ve şerit akışın sonuna iner ki yeni metin hemen altında
+// yazılsın. Tur sürerken model yine düşünür ya da araç çağırırsa think/actLine
+// başlığı tekrar canlandırır.
+function restWork() {
+  if (!work) return;
+  dockWork(work);
+  if (!work.open.size) {
+    // Tur hâlâ sürüyorsa nabzı söndürme: araçlar arası boşlukta
+    // "kapandı / açıldı" hissi buradan geliyordu.
+    if (busy) {
+      workHead(mull() + since(work.since) + streamNote());
+      return;
+    }
+    work.head.classList.remove("busy");
+    workHead(work.steps ? stepsWord(work.steps) + since(work.since)
+                        : t("Düşündü") + since(work.since));
+  }
 }
 
 // Şeridin canlı başlığı: o anki eylem + hedefi + kaçıncı adım. Kullanıcı
 // şeridi açmadan da "şu an ne oluyor / kaç adım oldu"yu okuyabilsin —
 // eski başlık yalnız fiili söylüyordu ("Çalıştırıyor…") ve uzun bir turda
 // hangi dosyada, kaçıncı adımda olunduğu ancak şerit açılınca görünüyordu.
-const HEAD_ARG = 44;
+const HEAD_ARG = 72;
 
+// Şerit başlığı iki CİNS parça taşıyor ve ikisi aynı tipografiyle
+// çizilemez:
+//
+//   * ANLATIM — fiil ve sayaçlar ("Koşturuyor", "15 adım", "18 sn").
+//   * HEDEF — komut ya da dosya yolu. Bu KOD: büyük harfe çevrilmez.
+//
+// Yapı flex satır: [fiil] [hedef…] [meta] — dar sütunda kırılma yok;
+// hedef ellipsis, meta sağda sabit.
+
+// Hedefi kod gibi göstermesi gereken araçlar: komut ve dosya yolu.
+const KOD_HEDEFLI = new Set([
+  "shell", "bash", "powershell", "read_file", "write_file", "edit_file",
+  "list_dir", "search_files", "checkpoint",
+]);
+
+// Kabuk sarmalayıcıları: kullanıcının ilgilendiği şey bunların İÇİ.
+// "powershell -NoProfile -Command "netstat -ano"" satırında okunmaya değer
+// olan `netstat -ano`; sarmalayıcı her komutta aynı ve yer kaplıyor.
+const SARMALAYICILAR =
+  /^\s*(?:(?:pwsh|powershell(?:\.exe)?|cmd(?:\.exe)?|bash|sh|zsh)\b(?:\s+-[\w-]+)*\s*(?:-Command|-c|\/c)\s*)/i;
+
+function komutOzeti(text) {
+  let s = String(text || "").trim();
+  const ic = s.replace(SARMALAYICILAR, "");
+  if (ic !== s) {
+    s = ic.trim();
+    // Sarmalayıcı komutu tırnağa alır; tırnaklar sarmalayıcıya aitti.
+    if ((s.startsWith('"') && s.endsWith('"')) || (s.startsWith("'") && s.endsWith("'")))
+      s = s.slice(1, -1).trim();
+  }
+  // Çok satırlı komutta ilk anlamlı satır: gerisi adım kartında duruyor.
+  const ilk = s.split("\n").map((r) => r.trim()).find(Boolean) || "";
+  return ilk.length > HEAD_ARG ? ilk.slice(0, HEAD_ARG).trimEnd() + "…" : ilk;
+}
+
+// Canlı satırın başlık parçaları. Yoksa null — çağıran kendi yedeğini yazar.
 function liveHead() {
-  if (!work || !work.open.size) return "";
+  if (!work || !work.open.size) return null;
   const row = [...work.open.values()][0];
-  const verb = row.querySelector(".who").textContent;
   const what = row.querySelector(".what").textContent;
-  const target = what.length > HEAD_ARG ? what.slice(0, HEAD_ARG) + "…" : what;
-  return verb + (target ? " · " + target : "") + " · " + stepsWord(work.steps);
+  const kod = row.dataset.kod === "1";
+  const target = kod ? komutOzeti(what)
+    : (what.length > HEAD_ARG ? what.slice(0, HEAD_ARG) + "…" : what);
+  return {
+    verb: row.querySelector(".who").textContent,
+    target, kod,
+    tail: stepsWord(work.steps),
+  };
+}
+
+// Canlı başlığı çizer. Çizecek canlı satır yoksa false — çağıran yedeğini
+// yazsın (eski `workHead(liveHead() || …)` kalıbının yerini tutuyor).
+function paintLive(extra) {
+  const live = liveHead();
+  if (!live) return false;
+  workHead(live.verb, live.target, live.tail + (extra || ""), live.kod);
+  return true;
 }
 
 // DOM freni: yüzlerce adımlı bir turda şerit gövdesi sınırsız büyümesin.
@@ -1730,19 +2254,97 @@ function trimSteps(w) {
 
 // Başlık her adımda tazeleniyor: çalışırken o an ne yapıldığı, bitince
 // kaç adım sürdüğü.
-function workHead(label) {
-  if (work) work.head.textContent = label;
+//
+// DOM'u her saniye yeniden kurmak (replaceChildren) komut chip'inin
+// kaybolup gelmesine yol açıyordu — kullanıcı "CLI açılıp kapanıyor"
+// sanıyordu. Üç çocuk sabit; yalnız metin/sınıf güncellenir.
+function workHead(label, target, tail, kod) {
+  if (!work) return;
+  const head = work.head;
+  let verb = head.querySelector(":scope > .head-verb");
+  let box = head.querySelector(":scope > .head-target");
+  let meta = head.querySelector(":scope > .head-meta");
+  if (!verb) {
+    verb = document.createElement("span");
+    verb.className = "head-verb";
+    head.prepend(verb);
+  }
+  if (verb.textContent !== label) verb.textContent = label;
+
+  if (!target) {
+    if (box) box.hidden = true;
+    if (meta) meta.hidden = true;
+    return;
+  }
+  if (!box) {
+    box = document.createElement(kod ? "code" : "span");
+    box.className = kod ? "head-target kod" : "head-target";
+    verb.after(box);
+  } else {
+    const want = kod ? "CODE" : "SPAN";
+    if (box.tagName !== want) {
+      const next = document.createElement(kod ? "code" : "span");
+      next.className = kod ? "head-target kod" : "head-target";
+      box.replaceWith(next);
+      box = next;
+    } else {
+      box.className = kod ? "head-target kod" : "head-target";
+    }
+  }
+  box.hidden = false;
+  if (box.textContent !== target) box.textContent = target;
+  box.title = target;
+
+  const metaText = tail ? String(tail).replace(/^\s*·\s*/, "") : "";
+  if (!metaText) {
+    if (meta) meta.hidden = true;
+    return;
+  }
+  if (!meta) {
+    meta = document.createElement("span");
+    meta.className = "head-meta";
+    head.append(meta);
+  }
+  meta.hidden = false;
+  if (meta.textContent !== metaText) meta.textContent = metaText;
 }
 
 // "N adım" özeti. Test ham kaynağı grepliyor (steps + " adım") — birim
 // ifadesi burada duruyor, İngilizce karşılığı da buradan çıkıyor.
 const stepsWord = (steps) => Dil.mode === "en" ? steps + " steps" : steps + " adım";
 
+// Turun bütün düşünmesi eşiğin altında kaldıysa şeritte tek bir düşünme
+// satırı bile yoktur — ve o zaman arşive girecek kapı da kalmaz. Hiçbir
+// şey KAYBOLMAMALI: tur kapanırken tek bir toplu satır ekleniyor.
+// Adım başına değil TUR başına bir satır: gürültü değil, kapı.
+function sealThinkArchive(w) {
+  if (!w.thinkAll.length) return;
+  if (w.body.querySelector(".think")) return;   // zaten açık bir kapı var
+  const row = document.createElement("div");
+  row.className = "act note think done";
+  const kez = w.thinkAll.length;
+  const label = t("✻ Düşündü") + " · " + kez + t(" kez");
+  row.textContent = label;
+  row.title = t("Tıkla — bu turun muhakemesini gör");
+  const arsiv = w.thinkAll;
+  let open = false;
+  row.onclick = (ev) => {
+    ev.stopPropagation();
+    open = !open;
+    row.textContent = open ? arsiv.join("\n\n———\n\n") : label;
+    row.classList.toggle("open", open);
+  };
+  w.body.append(row);
+}
+
 function closeWork() {
   if (!work) return;
+  // Tur beklerken kapandıysa (kesme) bekleme satırı da mühürlenir.
+  if (waitState) closeWait(null);
+  sealThinkArchive(work);
   workHead(work.steps ? stepsWord(work.steps) + since(work.since)
                       : t("Düşündü") + since(work.since));
-  work.head.classList.remove("busy");   // nabız durur
+  work.head.classList.remove("busy", "wait");   // nabız durur
   work.head.classList.add("done");       // bitti: ✓
   // Tur bitti: gövde özete katlanır — kullanıcı tur içinde açmış olsa
   // bile. Bitmiş turun adım seli sohbette açık kalınca asıl okunacak şey
@@ -1752,52 +2354,36 @@ function closeWork() {
   work = null;
 }
 
-// Araçtan ÖNCE gelen metin ara anlatımdır — uzun olsa bile. Bir araç çağrısı
-// takip ettiği için tanımı gereği "ara adım", nihai cevap değil. Eskiden
-// uzunluğa bakılıyordu (140+ ise cevap sayılıp ekranda bırakılıyordu); ama çok
-// konuşan yerel modeller her adımda paragraflarca "düşünce" yazınca sohbet
-// sayfalarca "NEO" bloğuna boğuluyor, kullanıcı ne yukarıyı ne aşağıyı takip
-// edebiliyordu ("sendeki gibi olsun, sayfalarca yazıyor, kontrol edilemez").
-// Artık hepsi katlanan şeridin İÇİNE giriyor (başlığa tıkla → hepsi açılır).
-// Nihai cevap — ardından araç GELMEYEN metin — buraya hiç uğramaz, sohbette
-// tam boy kalır. Güvenlik ağı sealLine'da: tur bir araçla bitip ekranda hiç
-// cevap kalmazsa son anlatım cevaba yükseltilir.
+// MODEL METNİ HER ZAMAN GÖRÜNÜR.
+//
+// Ayrım "tur ortası mı, tur sonu mu" DEĞİL — "kim yazdı":
+//
+//   model  → sohbette normal cevap bloğu (iki araç çağrısının arasında
+//            yazılmış olsa bile: kullanıcıya hitap eden her cümle)
+//   harness→ şeritte ya da gizli (araç adımları, hatırlama izi, hedef
+//            senkronu, sürdürme dürtüsü, iş durumu)
+//   model'in kendi kendine düşünmesi → şeritte katlı ("✻ Düşündü")
+//
+// Eski hal araçtan ÖNCE gelen her metni şeride katlıyordu ve `sealLine`da
+// bir "güvenlik ağı" ile geri getirmeye çalışıyordu. Kullanıcı "yarım mı
+// kaldı?" diye sorduğunda neo cevabı yazdı, cevap şeridin içine katlandı
+// ve ekranda yalnızca "▸ HARMANLIYOR · 13 SN" kaldı — kullanıcı sorduğu
+// sorunun cevabını görmek için şeridi açmak zorunda kaldı. Yama kalktı,
+// kaynak düzeldi: metin geldiği yerde, normal blok olarak duruyor.
+//
+// Bu yüzden burada yapılan tek şey akan bloğu MÜHÜRLEMEK: blok sohbette
+// kalır, sıradaki adım şeridi onun ALTINA taşır (dockWork).
 function foldNarration() {
-  if (!agentLine || !work) return;
-  const text = raw.trim();
-
-  clearTimeout(pending);
-  pending = null;
-  agentLine.remove();
-  agentLine = null;
-  raw = "";
-  if (!text) return;
-  // Anlatım da kompakt: ilk satır açıkta, tamamı tıklayınca (markdown'la).
-  // Çok konuşan model her araçtan önce paragraf yazınca şerit açıldığında
-  // yine sayfalarca metin çıkıyordu.
-  const note = document.createElement("div");
-  note.className = "act note";
-  const first = text.split("\n")[0];
-  const short = first.length > 100 ? first.slice(0, 100) + "…" : first;
-  note.textContent = short;
-  if (short !== text) {
-    note.title = t("Tıkla — tamamını gör");
-    let open = false;
-    note.onclick = (ev) => {
-      ev.stopPropagation();
-      open = !open;
-      if (open) { note.textContent = ""; Markdown.into(note, text); }
-      else note.textContent = short;
-      note.classList.toggle("open", open);
-    };
-  }
-  work.body.append(note);
-  lastNarr = text;   // güvenlik ağı: tur araçla biterse bu cevaba yükseltilir
+  finishAgentLine();
 }
 
 function actLine(e) {
   const w = ensureWork();
   foldNarration();
+  // Şerit akışı takip eder: araya başka bir blok girdiyse (artifact kartı,
+  // araya giren mesaj) canlı satır onun altında, akışın ucunda doğar.
+  dockWork(w);
+  w.head.classList.add("busy");
   // Önceki düşünme bloğu tek satıra katlansın ve sıradaki blok kendi
   // satırını alsın. (Eskiden yalnızca null'lanıyordu ve tam metin şeritte
   // tam boy kalıyordu.)
@@ -1818,6 +2404,10 @@ function actLine(e) {
   const what = document.createElement("span"); what.className = "what";
   what.textContent = summarize(e.input);
   what.title = t("Tıkla — adımın ayrıntısını gör");
+  // Hedefi KOD olan adımlar (komut, dosya yolu) işaretleniyor: şerit
+  // başlığı onu büyük harfe çevirmeden, mono ve olduğu gibi çizsin.
+  // Kırpma yalnız GÖRÜNTÜDE — tam komut adım kartında duruyor (row._card).
+  if (KOD_HEDEFLI.has(e.tool)) { row.dataset.kod = "1"; what.classList.add("kod"); }
   const took = document.createElement("span"); took.className = "took";
   row.append(spark, who, what, took);
 
@@ -1828,7 +2418,7 @@ function actLine(e) {
   row._card = { tool: e.tool, input: e.input || {} };
   row.onclick = () => toggleCard(row);
   w.open.set(e.id, row);
-  workHead(liveHead());
+  paintLive();
   trimSteps(w);
   scroll();
   Scene.ripple();
@@ -1843,25 +2433,225 @@ function closeAct(e) {
     row.classList.add(e.error ? "err" : "ok");
     const took = row.querySelector(".took");
     if (took && e.ms != null) took.textContent = Math.round(e.ms) + " ms";
-    // Kartın sonuç yükü: kırpılmış çıktı, çıkış kodu, değişiklik satırı.
     if (row._card) { row._card.detail = e.detail || null; row._card.error = !!e.error; }
-    // Sonuç izi: araç satırının altına "⎿ ilk satır (+N satır)". Sunucu
-    // özetliyor (executor._brief) — ham çıktı buraya hiç gelmiyor.
-    if (e.summary) {
+
+    // Dosya değişikliği: Cursor gibi satırın altında net iz + diff kartı.
+    const tool = row._card && row._card.tool;
+    if (tool === "edit_file" || tool === "write_file") {
+      const trace = fileChangeTrace(row._card, e);
+      if (trace) {
+        const old = row.nextElementSibling;
+        if (old && old.classList.contains("act-result")) old.remove();
+        trace.onclick = () => toggleCard(row);
+        row.after(trace);
+      }
+      if (!e.error) openCard(row);   // diff'i kendiliğinden göster
+    } else if (e.summary) {
+      const existing = row.nextElementSibling;
+      if (existing && existing.classList.contains("act-result")) existing.remove();
       const trace = document.createElement("div");
       trace.className = "act-result" + (e.error ? " err" : "");
       trace.textContent = "⎿ " + e.summary;
       trace.onclick = () => toggleCard(row);
       row.after(trace);
     }
-    // Kart araç koşarken açıldıysa sonuç geldiğinde tazelenir: çıktı ve
-    // rozet eklensin diye kapatıp aynı yerde yeniden kuruyoruz.
-    if (row._cardEl) {
-      toggleCard(row);
-      toggleCard(row);
-    }
+    // Açık kartı yerinde tazele (kapat-aç flicker yok).
+    if (row._cardEl) refreshCard(row);
   }
-  workHead(liveHead() || stepsWord(work.steps) + since(work.since));
+  if (!paintLive()) {
+    workHead(busy ? mull() + since(work.since) + streamNote()
+                  : stepsWord(work.steps) + since(work.since));
+  }
+}
+
+// edit/write sonrası: "+3 −1 · path" — tıklanınca diff / içerik.
+function fileChangeTrace(card, e) {
+  const path = (card.input && card.input.path) || e.path || "";
+  const name = String(path).replace(/\\/g, "/").split("/").pop() || path;
+  if (!name && !e.summary) return null;
+  const stats = diffStats(card);
+  const line = document.createElement("div");
+  line.className = "act-result file-change" + (e.error ? " err" : "");
+  const mark = document.createElement("span");
+  mark.className = "file-mark";
+  mark.textContent = card.tool === "write_file" ? "✎" : "±";
+  const file = document.createElement("span");
+  file.className = "file-name";
+  file.textContent = name || t("dosya");
+  file.title = path;
+  line.append(mark, file);
+  if (stats) {
+    const chip = document.createElement("span");
+    chip.className = "file-stats";
+    if (stats.add) {
+      const a = document.createElement("b");
+      a.className = "add"; a.textContent = "+" + stats.add;
+      chip.append(a);
+    }
+    if (stats.del) {
+      const d = document.createElement("b");
+      d.className = "del"; d.textContent = "−" + stats.del;
+      chip.append(d);
+    }
+    if (stats.line) {
+      chip.append(document.createTextNode(" · L" + stats.line));
+    }
+    line.append(chip);
+  } else if (e.summary) {
+    line.append(document.createTextNode(" · " + e.summary));
+  }
+  return line;
+}
+
+function diffStats(card) {
+  if (!card || card.tool !== "edit_file") {
+    if (card && card.tool === "write_file") {
+      const n = String(card.input.content || "").split("\n").length;
+      return { add: n, del: 0, line: 1 };
+    }
+    return null;
+  }
+  const pairs = editPairs(card.input);
+  let add = 0, del = 0;
+  for (const [oldT, newT] of pairs) {
+    const o = String(oldT || "").split("\n");
+    const n = String(newT || "").split("\n");
+    // Basit: değişen satır sayısı (ortak prefix/suffix kırpılmadan üst sınır).
+    del += o.length;
+    add += n.length;
+    // Ortak uçları çıkar — daha doğru +/- .
+    let pre = 0;
+    while (pre < o.length && pre < n.length && o[pre] === n[pre]) pre++;
+    let post = 0;
+    while (post < o.length - pre && post < n.length - pre
+           && o[o.length - 1 - post] === n[n.length - 1 - post]) post++;
+    del -= pre + post;
+    add -= pre + post;
+  }
+  const line = card.detail && card.detail.line;
+  return { add: Math.max(0, add), del: Math.max(0, del), line: line || null };
+}
+
+function editPairs(input) {
+  if (!input) return [];
+  if (Array.isArray(input.edits) && input.edits.length)
+    return input.edits.map((e) => [e.old, e.new]);
+  if ("old" in input || "new" in input) return [[input.old, input.new]];
+  return [];
+}
+
+// --- model bekleme durumu ---------------------------------------------
+//
+// Kesinti sohbete hata duvarı BASMAZ (Claude Code davranışı): bekleme,
+// çalışma şeridinin kendisinde yaşar. Şeridin canlı başlığı geri sayımlı
+// duruma döner ("MODEL BEKLENİYOR · DENEME 4/5 · 118 SN" — nabız uyarı
+// tonunda), hata ise adım listesinde TEK satırdır: her yeni denemede aynı
+// satır güncellenir, tıklayınca sınırlı yükseklikte bir kod kartında ham
+// ayrıntı açılır. Model dönünce aynı satır yeşile döner ("model geri
+// geldi · N deneme sonrası") ve şerit normal akışını sürdürür.
+
+let waitState = null;   // {kip, deneme, toplam, deadline, row, detail}
+
+function waitHead() {
+  if (!waitState) return "";
+  const kalan = Math.max(0, Math.ceil((waitState.deadline - Date.now()) / 1000));
+  const sn = kalan > 0 ? kalan + " sn" : t("yeniden deneniyor…");
+  if (waitState.kip === "park")
+    return t("İş bekletiliyor — model erişilebilir olunca sürecek") + " · " + sn;
+  return t("Model bekleniyor") + " · " + t("deneme") + " "
+       + waitState.deneme + "/" + waitState.toplam + " · " + sn;
+}
+
+// Geri sayım başlıkta işler: tickBusy her saniye burayı çağırır — üst üste
+// yeni satır yığılmaz, AYNI başlık canlı kalır.
+function paintWait() {
+  if (waitState) workHead(waitHead());
+}
+
+function bekleme(e) {
+  if (e.kip === "bitti" || e.kip === "iptal") { closeWait(e); return; }
+
+  const w = ensureWork();
+  foldNarration();
+  dockWork(w);
+  closeThought();
+  w.head.classList.add("busy", "wait");
+
+  if (!waitState) {
+    // Kesinti bölümünün tek adım satırı: sonraki denemeler bunu günceller.
+    const row = document.createElement("div");
+    row.className = "act wait-adim";
+    const spark = document.createElement("span");
+    spark.className = "spark"; spark.textContent = "⏳";
+    const who = document.createElement("span");
+    who.className = "who"; who.textContent = t("Model çağrısı");
+    const what = document.createElement("span"); what.className = "what";
+    const took = document.createElement("span"); took.className = "took";
+    row.append(spark, who, what, took);
+
+    // Ham hata: varsayılan GİZLİ; tık ile açılan, sınırlı yükseklikte ve
+    // kendi içinde kayan kod kartı — diğer adım kartlarıyla aynı jest.
+    const detail = document.createElement("pre");
+    detail.className = "wait-detay";
+    detail.hidden = true;
+    row.title = t("Tıkla — hatanın ayrıntısını gör");
+    row.onclick = (ev) => {
+      ev.stopPropagation();
+      detail.hidden = !detail.hidden;
+      row.classList.toggle("opened", !detail.hidden);
+      scroll();
+    };
+
+    w.body.append(row, detail);
+    w.steps += 1;
+    waitState = { row, detail };
+    scroll();
+  }
+
+  waitState.kip = e.kip;
+  waitState.deneme = e.deneme || 0;
+  waitState.toplam = e.toplam || 0;
+  waitState.deadline = Date.now() + (e.saniye || 0) * 1000;
+
+  const kisa = String(e.detay || "").split("\n")[0];
+  waitState.row.querySelector(".what").textContent =
+    kisa.length > HEAD_ARG ? kisa.slice(0, HEAD_ARG) + "…" : kisa;
+  waitState.row.querySelector(".took").textContent = e.kip === "park"
+    ? t("bekletiliyor")
+    : t("deneme") + " " + waitState.deneme + "/" + waitState.toplam;
+  waitState.detail.textContent = e.detay || "";
+  // Sahne ve üst şerit de aynı gerçeği söylesin: donuk "Düşünüyor" değil,
+  // bekleme durumu (Claude Code'un durum satırı gibi).
+  setMode("thinking", e.kip === "park" ? t("İş bekletiliyor") : t("Model bekleniyor"));
+  // "Model yükleniyor…" bekçisi bu durumda yanlış hikâye anlatır: akış yok
+  // ama sebep belli — model BEKLENİYOR. Bekçi susturulur.
+  waiting(false);
+  paintWait();
+}
+
+// Bekleme bitti: "bitti" → satır yeşile döner ve şerit normale döner;
+// "iptal" → satır söner. Her iki durumda başlıktaki uyarı tonu kalkar.
+function closeWait(e) {
+  if (!waitState) return;
+  const { row } = waitState;
+  waitState = null;
+  if (e && e.kip === "bitti") {
+    row.classList.add("ok");
+    row.querySelector(".spark").textContent = "✓";
+    row.querySelector(".who").textContent = t("Model geri geldi");
+    row.querySelector(".what").textContent =
+      e.deneme ? e.deneme + t(" deneme sonrası") : "";
+    row.querySelector(".took").textContent = "";
+  } else {
+    row.classList.add("err");
+    row.querySelector(".took").textContent = t("kesildi");
+  }
+  if (work) {
+    work.head.classList.remove("wait");
+    if (!paintLive()) workHead(mull() + since(work.since) + streamNote());
+  }
+  // Tur sürüyorsa sahne/üst şerit normal düşünme akışına döner.
+  if (busy) setMode("thinking");
 }
 
 // --- adım kartları ----------------------------------------------------
@@ -1883,13 +2673,24 @@ function toggleCard(row) {
     row.classList.remove("opened");
     return;
   }
+  openCard(row);
+}
+
+function openCard(row) {
+  if (!row._card || row._cardEl) return;
   const box = buildCard(row._card);
-  // İz satırı ("⎿ …") varsa kart onun altına oturur.
   const next = row.nextElementSibling;
   const anchor = next && next.classList.contains("act-result") ? next : row;
   anchor.after(box);
   row._cardEl = box;
   row.classList.add("opened");
+}
+
+function refreshCard(row) {
+  if (!row._card || !row._cardEl) return;
+  const fresh = buildCard(row._card);
+  row._cardEl.replaceWith(fresh);
+  row._cardEl = fresh;
 }
 
 // Bu boyutun üstünde renklendirme yok: belirteçleme ana thread'de koşuyor
@@ -1927,8 +2728,49 @@ function extLang(path) {
 const DIFF_CTX = 2;
 
 function diffBlock(card) {
-  const oldLines = String(card.input.old || "").split("\n");
-  const newLines = String(card.input.new || "").split("\n");
+  const wrap = el2("div", "card-diff-wrap");
+  const path = card.input.path || "";
+  const stats = diffStats(card);
+  const bar = el2("div", "diff-bar");
+  const title = el2("span", "diff-file", String(path).replace(/\\/g, "/").split("/").pop() || path);
+  title.title = path;
+  bar.append(title);
+  if (stats) {
+    const chips = el2("span", "diff-chips");
+    if (stats.add) chips.append(el2("b", "add", "+" + stats.add));
+    if (stats.del) chips.append(el2("b", "del", "−" + stats.del));
+    if (stats.line) chips.append(document.createTextNode("L" + stats.line));
+    bar.append(chips);
+  }
+  if (path && typeof Viewer !== "undefined" && Viewer.present) {
+    const open = el2("button", "diff-open", t("Dosyayı aç"));
+    open.type = "button";
+    open.onclick = (ev) => {
+      ev.stopPropagation();
+      Viewer.present(path);
+    };
+    bar.append(open);
+  }
+  wrap.append(bar);
+
+  const pairs = editPairs(card.input);
+  let lineBase = Number(card.detail && card.detail.line) || 1;
+  if (!pairs.length) {
+    wrap.append(el2("div", "diff-empty", t("Diff yok — old/new gelmedi")));
+    return wrap;
+  }
+  pairs.forEach(([oldT, newT], idx) => {
+    if (pairs.length > 1) {
+      wrap.append(el2("div", "diff-part", (idx + 1) + ". " + t("değişiklik")));
+    }
+    wrap.append(diffHunk(oldT, newT, idx === 0 ? lineBase : 1));
+  });
+  return wrap;
+}
+
+function diffHunk(oldText, newText, start) {
+  const oldLines = String(oldText || "").split("\n");
+  const newLines = String(newText || "").split("\n");
   let pre = 0;
   while (pre < oldLines.length && pre < newLines.length
          && oldLines[pre] === newLines[pre]) pre += 1;
@@ -1936,7 +2778,6 @@ function diffBlock(card) {
   while (post < oldLines.length - pre && post < newLines.length - pre
          && oldLines[oldLines.length - 1 - post] === newLines[newLines.length - 1 - post]) post += 1;
 
-  const start = Number(card.detail && card.detail.line) || 1;
   const box = el2("div", "card-diff");
   for (let i = Math.max(0, pre - DIFF_CTX); i < pre; i++) {
     box.append(diffRow(start + i, " ", oldLines[i]));
@@ -1951,6 +2792,9 @@ function diffBlock(card) {
     const at = oldLines.length - post + i;
     box.append(diffRow(start + at, " ", oldLines[at]));
   }
+  if (!box.childElementCount) {
+    box.append(diffRow(start, " ", t("(içerik aynı)")));
+  }
   return box;
 }
 
@@ -1958,7 +2802,7 @@ function diffRow(no, mark, text) {
   const row = el2("div", "diff-row" + (mark === "-" ? " del" : mark === "+" ? " add" : ""));
   row.append(el2("span", "diff-no", String(no)));
   row.append(el2("span", "diff-mark", mark));
-  row.append(el2("span", "diff-text", text));
+  row.append(el2("span", "diff-text", text == null ? "" : text));
   return row;
 }
 
@@ -1979,15 +2823,40 @@ function buildCard(card) {
   const box = el2("div", "act-card");
 
   const head = el2("div", "card-head");
-  head.append(el2("b", null, card.tool));
+  const toolLabel = ({
+    shell: "shell", edit_file: t("düzenleme"), write_file: t("yazma"),
+    read_file: t("okuma"), list_dir: t("dizin"),
+  })[card.tool] || card.tool;
+  head.append(el2("b", null, toolLabel));
   const target = card.input.path || card.input.command || card.input.url || card.input.query;
-  if (typeof target === "string" && target) head.append(el2("span", "card-path", clipArg(target)));
+  if (typeof target === "string" && target) {
+    const pathEl = el2("span", "card-path", clipArg(target));
+    pathEl.title = target;
+    head.append(pathEl);
+  }
   const code = card.detail ? card.detail.exit_code : undefined;
   if (code !== undefined) {
     head.append(el2("i", "card-exit" + (code ? " err" : ""), t("çıkış ") + code));
   } else if (card.error) {
     head.append(el2("i", "card-exit err", t("hata")));
   }
+  // Kopyala: kartta duran şey TAM hâl (sarmalayıcısıyla birlikte komutun
+  // kendisi, dosya içeriği ya da argümanlar). Şerit başlığındaki kırpma
+  // yalnızca görüntüdedir; veri burada eksiksiz ve alınabilir olmalı.
+  const kopya = el2("button", "card-copy", "⧉");
+  kopya.type = "button";
+  kopya.title = t("Kopyala");
+  kopya.onclick = (ev) => {
+    ev.stopPropagation();
+    const metin = card.input.command || card.input.content
+      || card.input.path || JSON.stringify(card.input, null, 2);
+    navigator.clipboard.writeText(String(metin)).then(() => {
+      kopya.textContent = "✓";
+      setTimeout(() => { kopya.textContent = "⧉"; }, 1200);
+    }).catch(() => { kopya.title = t("Kopyalanamadı"); });
+  };
+  head.append(kopya);
+
   const grow = el2("button", "card-grow", "⤢");
   grow.type = "button";
   grow.title = t("Tümünü genişlet");
@@ -2001,7 +2870,9 @@ function buildCard(card) {
 
   const output = card.detail && card.detail.output;
   if (card.tool === "shell") {
-    box.append(codeBlock(String(card.input.command || ""), "powershell"));
+    const cmd = codeBlock(String(card.input.command || ""), "powershell");
+    cmd.classList.add("shell-cmd");
+    box.append(cmd);
     if (output) box.append(outBlock(output));
   } else if (card.tool === "edit_file") {
     box.append(diffBlock(card));
@@ -2071,23 +2942,92 @@ function summarize(args) {
 const GOAL_SHOW = 6;        // açıkta duran madde sayısı; gerisi "…+N"
 const GOAL_LINGER = 6000;   // biten/bırakılan madde bu kadar ms sonra düşer
 
+// Dar pencerede panel kendiliğinden katlanır: sohbet sütunu zaten tüm
+// genişliği kaplıyor ve açık bir liste metnin üstünde yer kaplıyor.
+const GOAL_FOLD_WIDTH = 1020;   // CSS'teki dar-pencere eşiğiyle aynı
+
+// Katlı/açık tercihi hatırlanıyor: her açılışta aynı kararı yeniden
+// vermek zorunda kalmak yorucu.
+const GOAL_FOLD_KEY = "neo.goals.folded";
+
+// Panel ne olduğunu KENDİ anlatıyor. Kullanıcının sorusu buydu: "bu
+// görevleri kim oluşturuyor bilmiyorum". Cevap ekranda dursun.
+const GOAL_ACIKLAMA =
+  "Bunlar neo'nun kendine yazdığı iş listesi — uzun işlerde ne yaptığını takip etmek için. Sen de ekleyebilir, silebilirsin.";
+
 const Goals = (() => {
-  const items = new Map();   // id → { text, status } — ekleniş sırasıyla
-  let folded = false;
+  const items = new Map();   // id → { text, status, eski } — ekleniş sırasıyla
+  // VARSAYILAN KATLI: panel tek satır doğuyor ("3 iş listesi"), merak eden
+  // açıyor. Açık doğan panel, kullanıcının istemediği bir listeyi her
+  // açılışta yüzüne dayıyordu.
+  let folded = true;
+  try {
+    const kayit = localStorage.getItem(GOAL_FOLD_KEY);
+    if (kayit !== null) folded = kayit === "1";
+  } catch { /* gizli sekme / kapalı depolama: varsayılan katlı kalır */ }
+  if (window.innerWidth <= GOAL_FOLD_WIDTH) folded = true;
+  let clearArmed = false;    // "tümünü temizle" iki adımlı: ikinci tık uygular
+
+  function rememberFold() {
+    try { localStorage.setItem(GOAL_FOLD_KEY, folded ? "1" : "0"); }
+    catch { /* depolama yoksa tercih bu oturumluk */ }
+  }
+
+  // Bir maddenin eylemi sunucuya: ajanın kullandığı defterin aynısı.
+  function ask(action, id, text) {
+    const yuk = { action };
+    if (id) yuk.id = id;
+    if (text) yuk.text = text;
+    return fetch("/api/goals", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(yuk),
+    }).then((r) => r.json()).catch(() => ({ ok: false }));
+  }
+
+  // Madde eylemi: ✓ tamamlandı, × kaldır. Ekran hemen tepki veriyor
+  // (iyimser), sunucu reddederse madde eski durumuna dönüyor.
+  function act(id, action) {
+    const got = items.get(id);
+    if (!got) return;
+    const onceki = got.status;
+    got.status = action === "done" ? "done" : "dropped";
+    render();
+    ask(action, id).then((res) => {
+      if (res && res.ok) { settle(id); return; }
+      got.status = onceki;   // sunucu almadı: gerçeği geri koy
+      render();
+    });
+  }
 
   function render() {
     const box = $("goals");
     if (!box) return;
-    if (!items.size) { box.hidden = true; return; }
+    // Boş durumda panel yok: yer de kaplamıyor (artık akışın kardeşi).
+    if (!items.size) { box.hidden = true; clearArmed = false; return; }
     box.hidden = false;
     const active = [...items.values()].filter((g) => g.status === "active").length;
-    $("goals-head").textContent = t("Hedefler") + (active ? " · " + active : "");
+    // Katlıyken TEK SATIR ve ne olduğunu söylüyor: "◷ 3 iş listesi".
+    // "Hedefler · 3" kimseye bir şey anlatmıyordu.
+    $("goals-head").textContent = folded
+      ? "◷ " + (active || items.size) + t(" iş listesi")
+      : t("İş listesi") + (active ? " · " + active : "");
+    $("goals-head").title = t("neo'nun kendine yazdığı iş listesi — tıkla: katla/aç");
     box.classList.toggle("folded", folded);
     const body = $("goals-body");
     body.hidden = folded;
+    if (folded) return;   // katlı: gövde hiç kurulmuyor
     body.textContent = "";
-    const rows = [...items.values()];
-    rows.slice(0, GOAL_SHOW).forEach((g) => {
+
+    // Açılınca ilk satır: bu liste nedir, kim yazıyor, kullanıcı ne
+    // yapabilir. Kullanıcının sorusu buydu — cevap ekranda dursun.
+    const ne = document.createElement("p");
+    ne.className = "goals-what";
+    ne.textContent = t(GOAL_ACIKLAMA);
+    body.append(ne);
+
+    const rows = [...items.entries()];
+    rows.slice(0, GOAL_SHOW).forEach(([id, g]) => {
       const row = document.createElement("div");
       row.className = "goal-item " + g.status;
       const mark = document.createElement("i");
@@ -2098,6 +3038,22 @@ const Goals = (() => {
       label.title = g.text + (g.status === "done" ? " — " + t("tamamlandı")
                             : g.status === "dropped" ? " — " + t("bırakıldı") : "");
       row.append(mark, label);
+      // "Kim koydu bunu" sorusunun yarısı: bu madde bu oturumdan değil,
+      // geçmiş bir oturumdan kalmış.
+      if (g.eski) {
+        const rozet = document.createElement("span");
+        rozet.className = "goal-eski";
+        rozet.textContent = t("eski");
+        rozet.title = t("Geçen oturumlardan kaldı");
+        row.append(rozet);
+      }
+      // Yönetim: yalnızca aktif maddede ve yalnızca üzerine gelince.
+      // Panel salt gösterim değil artık — birikmiş hedefi kullanıcı da
+      // kapatabiliyor.
+      if (g.status === "active") {
+        row.append(goalBtn("✓", t("Tamamlandı"), () => act(id, "done")),
+                   goalBtn("×", t("Kaldır"), () => act(id, "drop")));
+      }
       body.append(row);
     });
     if (rows.length > GOAL_SHOW) {
@@ -2106,6 +3062,67 @@ const Goals = (() => {
       more.textContent = "…+" + (rows.length - GOAL_SHOW);
       body.append(more);
     }
+    // Tümünü temizle: iki adımlı. İlk tık soruyor, ikincisi uyguluyor —
+    // birikmiş bir listeyi tek yanlış tıkla silmek istemezsin.
+    const clear = document.createElement("button");
+    clear.type = "button";
+    clear.className = "goals-clear" + (clearArmed ? " armed" : "");
+    clear.textContent = clearArmed ? t("Emin misin?") : t("tümünü temizle");
+    clear.onclick = (ev) => {
+      ev.stopPropagation();
+      if (!clearArmed) { clearArmed = true; render(); return; }
+      clearArmed = false;
+      ask("clear").then((res) => {
+        if (res && res.ok) { items.clear(); }
+        render();
+      });
+    };
+    body.append(clear);
+
+    // Kullanıcının kendi maddesi: liste artık iki taraflı. "Kim
+    // oluşturuyor" sorusunun diğer yarısı — sen de oluşturabilirsin.
+    body.append(addRow());
+  }
+
+  function addRow() {
+    const wrap = document.createElement("div");
+    wrap.className = "goals-add";
+    const alan = document.createElement("input");
+    alan.type = "text";
+    alan.placeholder = t("＋ kendi maddeni yaz");
+    alan.setAttribute("aria-label", t("Yeni iş maddesi"));
+    const gonder = () => {
+      const metin = alan.value.trim();
+      if (!metin) return;
+      alan.value = "";
+      ask("add", "", metin).then((res) => {
+        if (res && res.ok && res.id) items.set(res.id, { text: metin, status: "active" });
+        render();
+      });
+    };
+    alan.onkeydown = (ev) => {
+      ev.stopPropagation();   // sohbet kısayolları alana karışmasın
+      if (ev.key === "Enter") { ev.preventDefault(); gonder(); }
+    };
+    alan.onclick = (ev) => ev.stopPropagation();
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.textContent = "＋";
+    btn.title = t("Ekle");
+    btn.onclick = (ev) => { ev.stopPropagation(); gonder(); };
+    wrap.append(alan, btn);
+    return wrap;
+  }
+
+  function goalBtn(sign, label, onClick) {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "goal-act";
+    b.textContent = sign;
+    b.title = label;
+    b.setAttribute("aria-label", label);
+    b.onclick = (ev) => { ev.stopPropagation(); onClick(); };
+    return b;
   }
 
   // Biten madde hemen kaybolmuyor: üstü çizili hali okunacak kadar durup
@@ -2119,7 +3136,9 @@ const Goals = (() => {
   function seed(list) {
     items.clear();
     for (const g of list || []) {
-      if (g && g.id) items.set(g.id, { text: g.text || g.id, status: "active" });
+      // `eski`: madde geçmiş bir oturumda açılmış — panelde rozetle
+      // ayrılıyor ("kim koydu bunu" sorusunun yarısı).
+      if (g && g.id) items.set(g.id, { text: g.text || g.id, status: "active", eski: !!g.eski });
     }
     render();
   }
@@ -2139,7 +3158,17 @@ const Goals = (() => {
   }
 
   // Başlık gerçek bir düğme: tıklama ve klavye (Enter/Space) katlayıp açar.
-  $("goals-head").addEventListener("click", () => { folded = !folded; render(); });
+  // Tercih hatırlanıyor — her açılışta aynı kararı vermek yorucu.
+  $("goals-head").addEventListener("click", () => {
+    folded = !folded;
+    rememberFold();
+    render();
+  });
+  // Dar pencerede liste sohbetten yer çalmasın: kendiliğinden katlanıyor.
+  window.addEventListener("resize", () => {
+    if (window.innerWidth <= GOAL_FOLD_WIDTH && !folded) folded = true;
+    render();
+  });
 
   return { seed, push, status };
 })();
@@ -2337,7 +3366,11 @@ function handle(e) {
     }
 
     case "message":
-      if (e.role === "user") {
+      // İkinci savunma (`cizilir`): sunucu süzgeci bir gün kaçırırsa iç not
+      // — harness dürtüsü — kullanıcı balonu olarak ÇİZİLMEZ. Sunucu
+      // tarafında zaten `internal`/`continuation` işaretleriyle süzülüyor;
+      // burası o süzgecin arkasındaki emniyet.
+      if (e.role === "user" && cizilir(e.text)) {
         // Sırası geldi: bekleyen satır gerçek satırla değiştiriliyor.
         const at = waitingLines.findIndex((w) => w.text === e.text);
         if (at >= 0) { waitingLines[at].row.remove(); waitingLines.splice(at, 1); renumberQueue(); }
@@ -2346,6 +3379,8 @@ function handle(e) {
         hidePlanOffer();
         sealLine();
         resetStream();          // yeni tur: canlı token sayacı sıfırdan
+        // Yeni tur: "bu turda ne değişti" şeridinin sınırı buradan başlıyor.
+        chgTurnStart();
         const row = line("user", e.text);
         const media = pendingMedia.get(e.text);
         if (media) { attachMedia(row, media); pendingMedia.delete(e.text); scroll(); }
@@ -2387,12 +3422,19 @@ function handle(e) {
     case "session_reset": {
       thread.replaceChildren();
       waitingLines.length = 0;
-      work = null; agentLine = null; raw = "";
+      work = null; agentLine = null; raw = ""; waitState = null;
       planOffer = null;   // düğme thread ile birlikte gitti; referans kalmasın
       resumeFollow(false);   // yeni döküm: takip baştan açık
-      if (e.resumed && e.id) loadTranscript(e.id);
+      // Sürdürülen oturum: döküm kadar SAYAÇLAR da kaldığı yerden gelmeli.
+      // Durum anlık görüntüsü bağlam çubuğunu ve harcama çipini oturum
+      // günlüğünden tohumluyor — yoksa dolu bir konuşma "%0" görünüyordu.
+      if (e.resumed && e.id) { loadTranscript(e.id); loadState(); }
       else showWelcome();   // taze oturum: karşılama geri gelsin (boş ekran değil)
       if (typeof History !== "undefined") History.close();
+      // Oturum değişti: değişiklik defterinin sınırı da yeni oturumun
+      // defterine göre kurulmalı — önceki konuşmanın kayıtları bu turun
+      // özetine karışmasın.
+      if (typeof Degisiklik !== "undefined") Degisiklik.tabanAl();
       break;
     }
     // "neo ile kes": neo konuşurken uyandırma sözüyle araya girildi —
@@ -2414,14 +3456,34 @@ function handle(e) {
       break;
     }
     case "notice": clearWelcome(); line("alert", e.text); break;
-    case "api_error": clearWelcome(); line("alert", e.detail); break;
+    // Model kesintisi: sohbete satır DÜŞMEZ — çalışma şeridinin canlı
+    // başlığı duruma döner, ayrıntı şeritteki adım satırında yaşar.
+    case "bekleme": bekleme(e); break;
+    // Günlükteki api_error notu SOHBETE BASILMAZ: geçici hata çalışma
+    // şeridindeki bekleme satırında yaşıyor (ham ayrıntı tık ile), ölümcül
+    // hata ise zaten notice olarak geliyor. Eskiden bu olay ham JSON
+    // duvarını sohbete döküyordu — "bilmeyen biri hata aldı sanır".
+    case "api_error": break;
     case "refusal": clearWelcome(); line("alert", t("Model bu isteği reddetti.")); break;
     case "interrupted":
       clearWelcome();
       // Sesi de kes: metin durup hoparlörün cümleyi bitirmeye devam
       // etmesi, sözü kesilmiş ama konuşmayı sürdüren biri gibi.
       Speech.stop();
+      // Akış yarıda kaldı: blok MÜHÜRLENİR. Eskiden mühürlenmiyordu ve
+      // yarım kalan (çoğu zaman bomboş) "NEO ▮" bloğu ekranda sonsuza
+      // kadar yanıp sönüyordu — kesilmiş bir turda hâlâ yazıyor gibi.
+      sealLine();
       line("alert", t("Kesildi."));
+      break;
+
+    // Model hiçbir şey döndürmedi (yalnızca akıl yürütüp durdu). Döngü bir
+    // sürdürme turu veriyor; arayüzde yapılacak tek şey açık kalmış boş
+    // bloğu ve imlecini temizlemek — yoksa sürdürme turu boyunca ekranda
+    // boş bir "NEO ▮" asılı kalıyor.
+    case "empty_assistant_turn":
+      finishAgentLine();
+      clearCursor();
       break;
 
     case "approval_request": askApproval(e); break;
@@ -2434,9 +3496,12 @@ function handle(e) {
 
     // Orkestra: alt ajan kanalları (şef modu). Ana sohbete karışmıyorlar;
     // canlı olarak orkestra güvertesinde izleniyorlar.
-    case "child_start": orchStart(e); break;
+    case "child_start": orchStart(e); tasksRefresh(); break;
     case "child_tool": orchTool(e); break;
-    case "child_end": orchEnd(e); break;
+    // Biten kanal iki yere gidiyor: orkestra sahnesine (kart kapanır) ve
+    // görevler defterine (satır güncellenir; arka plan işiyse sohbete
+    // tıklanabilir bildirim düşer).
+    case "child_end": orchEnd(e); tasksDone(e); break;
     // Sunucu gerçek kanal listesini gönderdi (açılışta yetimler bulununca):
     // panel baştan kurulur — açılış sırasında yüklenen sayfa snapshot'ı
     // ajan hazır olmadan çekmiş olabilir.
@@ -2448,6 +3513,10 @@ function handle(e) {
       sealLine(); Speech.flush();
       // Plan kipinde biten tur bir plan bırakmıştır: uygulama teklifi.
       maybeOfferPlan();
+      // Tur bitti: bu turda dosya değiştiyse tek satırlık özet düşsün.
+      chgTurnEnd();
+      // Arka planda koşan bir şey varsa rozet gerçeği söylesin.
+      tasksRefresh();
       break;
 
     // Ajanin gercekten gezdigi yol: dugumler bu sirayla atesleniyor.
@@ -2504,6 +3573,18 @@ function handle(e) {
         dockContext(e.prompt_total);
         lastUsage = e;
       }
+      // Maliyet çipi: tur/oturum toplamları ve fiyat etiketi aynı olayda
+      // geliyor (bkz. desktop._usage_yay sözleşmesi).
+      if (e.tur) kullanim = { tur: e.tur, oturum: e.oturum || kullanim.oturum };
+      if (e.fiyat !== undefined && e.fiyat !== null) fiyat = e.fiyat;
+      dockCost();
+      break;
+
+    // Fiyat etiketi arka planda sonradan geldi: çip token sayısından
+    // dolara döner — bir sonraki turu beklemeden.
+    case "fiyat":
+      fiyat = e.fiyat || null;
+      dockCost();
       break;
   }
 }
@@ -2565,6 +3646,14 @@ async function loadState() {
     // anlatıyor.
     setWaking(s.stage, s.ready);
     setBusy(!!s.busy);
+    // Üst bardaki markanın ipucu: hangi sürüm, hangi düzen. Sahada iki
+    // kopyanın hangisinin açık olduğu görünmüyordu — imleci markaya
+    // getirince cevap burada.
+    if (s.surum) {
+      const marka = document.querySelector(".brand");
+      if (marka) marka.title = "neo " + s.surum +
+        (s.kurulu ? t(" · kurulum") : t(" · geliştirme"));
+    }
     modelName = s.model || "";
     showMeta();
     setVoice(!!s.voice);
@@ -2584,9 +3673,18 @@ async function loadState() {
     dockRender();
     // Süren oturumun son kullanımı: yenilenen sayfa kaldığı yerden başlasın.
     if (Number(s.prompt_total)) {
-      dockContext(Number(s.prompt_total));
+      // Sürdürülen oturum: çubuk ve sayaç SIFIRDAN başlamaz — sunucu
+      // oturum günlüğünden gerçek (ya da tahmini) doluluğu veriyor.
+      dockContext(Number(s.prompt_total), s.tahmin);
       if (!lastUsage) lastUsage = { prompt_total: Number(s.prompt_total) };
     }
+    // Maliyet çipi de aynı sebepten buradan tohumlanıyor: yenileme
+    // harcama göstergesini sıfırlamamalı.
+    if (s.fiyat) fiyat = s.fiyat;
+    if (s.kullanim && s.kullanim.oturum && s.kullanim.oturum.cagri) kullanim = s.kullanim;
+    // Bütçe sınırı da tohumdan: yenilenen sayfa emniyet kemerini unutmasın.
+    butce = s.butce == null ? null : Number(s.butce);
+    dockCost();
     // Yenileme oturumu bitirmiyor: sayfa hangi sebeple yenilenirse yenilensin
     // (dil değişimi, F5) süren konuşmanın dökümü geri gelsin. Eskiden yenileme
     // sonrası ekran bomboş açılıyordu — oysa oturum sunucuda sürüyordu.

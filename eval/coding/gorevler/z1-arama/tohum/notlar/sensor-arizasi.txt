@@ -1,0 +1,3 @@
+Sensor arizasi kaydi
+Basinc sensoru kablosu neme maruz kalmis, izolasyon bozulmus.
+Gecici cozum: kablo kanali icine tasindi. Kalici cozum icin IP68 kutu siparis edildi.
