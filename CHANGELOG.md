@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.2.0 — 2026-08-27
+
+The overnight wave: conversation clarity, a new settings design and
+four core tool capabilities.
+
+* **Conversation clarity.** Tool steps collapse into cards; diffs and
+  shell output render as rich cards; smart scrolling stops yanking the
+  view while you read; step summaries draw on a wide vocabulary.
+* **New settings design.** The settings page moved to a unified visual
+  language (`settings.css`); three UI bugs and the welcome screen fixed.
+* **Four core tool capabilities.** A `grep` tool (tools/search.py),
+  atomic multi-edit, checkpoint + undo, and resilient web search with
+  a fallback provider.
+* **Goals panel and plan-approval flow.** The agent's goal list is
+  visible in the UI; plans go to the user for approval before work
+  starts.
+* **Artifact system.** Persistent, addressable, updatable deliverable
+  pages (`artifacts.py`).
+* **Definition-of-done guide.** The agent's "when does work count as
+  finished" bar is now systematic.
+
 ## 0.1.1 — 2026-08-27
 
 Fixes from the first real end-user installs, plus two new installer
