@@ -862,3 +862,133 @@ def test_the_fallback_field_survives_a_settings_round_trip(tmp_path) -> None:
     updated = settings.apply(config, {"model": {"fallback_model": "yedek-model"}})
     assert updated.model.fallback_model == "yedek-model"
     assert Config.load(tmp_path).model.fallback_model == "yedek-model"
+
+
+# -- sağlayıcıya özel alanların gidiş-dönüşü ----------------------------
+#
+# Gemini düşünen modellerde her araç çağrısına bir `thought_signature`
+# iliştiriyor ve SONRAKİ turda onu geri göndermeni ŞART koşuyor. neo bir tur
+# içinde aracı çağırıp cevabı geri yolladığı için bu tam da bizim yolumuza
+# düşüyordu ve alan çeviride kayboluyordu:
+#
+#   400 — Function call is missing a thought_signature in functionCall parts.
+#
+# Çözüm alanı MODELLEMEK değil KAYBETMEMEK: adını bilmediğimiz bir alanı da
+# taşıyoruz, böylece böyle bir alan ekleyen bir sonraki sağlayıcıda kırılmıyoruz.
+
+
+def test_provider_fields_survive_the_round_trip() -> None:
+    from neocp.backends.translate import to_anthropic_blocks, to_openai_messages
+
+    bloklar = to_anthropic_blocks("", [{
+        "id": "call_1", "name": "mind_memory", "arguments": '{"kind": "fact"}',
+        "ek": {"thought_signature": "ABC123", "extra_content": {"google": {"x": 1}}},
+    }])
+    (blok,) = bloklar
+    assert blok["saglayici"]["thought_signature"] == "ABC123"
+
+    mesajlar = to_openai_messages([], [{"role": "assistant", "content": bloklar}])
+    (cagri,) = mesajlar[0]["tool_calls"]
+    assert cagri["thought_signature"] == "ABC123"
+    assert cagri["extra_content"] == {"google": {"x": 1}}
+    # Kimlik ve argüman BİZİM: sağlayıcı alanı onların üstüne yazmıyor.
+    assert cagri["id"] == "call_1"
+    assert cagri["function"]["name"] == "mind_memory"
+
+
+def test_a_call_without_provider_fields_is_unchanged() -> None:
+    """Alanı olmayan sağlayıcıda çıktı bir harf bile değişmemeli."""
+    from neocp.backends.translate import to_anthropic_blocks, to_openai_messages
+
+    bloklar = to_anthropic_blocks("", [
+        {"id": "c1", "name": "shell", "arguments": '{"command": "ls"}'}])
+    assert "saglayici" not in bloklar[0]
+    (cagri,) = to_openai_messages([], [{"role": "assistant", "content": bloklar}])[0]["tool_calls"]
+    assert set(cagri) == {"id", "type", "function"}
+
+
+def test_provider_fields_never_reach_anthropic() -> None:
+    """Anthropic tanımadığı alanı reddediyor; aynı konuşma iki sağlayıcı
+    arasında taşınabildiği için (yedek model, model değiştirme) ayıklama şart."""
+    from neocp.context import saglayici_alanlarini_at
+
+    mesajlar = [
+        {"role": "user", "content": [{"type": "text", "text": "selam"}]},
+        {"role": "assistant", "content": [
+            {"type": "text", "text": "bakıyorum"},
+            {"type": "tool_use", "id": "c1", "name": "shell", "input": {"command": "ls"},
+             "saglayici": {"thought_signature": "ABC123"}},
+        ]},
+    ]
+    temiz = saglayici_alanlarini_at(mesajlar)
+    arac = temiz[1]["content"][1]
+    assert "saglayici" not in arac
+    assert arac["id"] == "c1" and arac["input"] == {"command": "ls"}
+    # Kaynak liste DEĞİŞMEMELİ: aynı konuşma OpenAI yoluna da gidiyor.
+    assert "saglayici" in mesajlar[1]["content"][1]
+
+
+def test_stripping_does_not_copy_when_there_is_nothing_to_strip() -> None:
+    """Alan yoksa liste olduğu gibi dönüyor — her istekte derin kopya değil."""
+    from neocp.context import saglayici_alanlarini_at
+
+    mesajlar = [{"role": "user", "content": [{"type": "text", "text": "selam"}]}]
+    assert saglayici_alanlarini_at(mesajlar) is mesajlar
+
+
+def test_every_array_in_a_tool_schema_declares_items() -> None:
+    """Gemini `items`siz bir array görünce ARACIN değil, araç listesinin
+    TAMAMINI reddediyor — yani tek bir aracın eksiği neo'yu o modelde
+    tümüyle çalışmaz yapıyor. Canlıda birebir bu oldu:
+
+        function_declarations[23].parameters.properties[steps].items: missing
+        function_declarations[37].parameters.properties[nodes].items: missing
+    """
+    import pathlib
+    import tempfile
+
+    from neocp.config import Config
+    from neocp.tools import build_registry
+
+    cfg = Config.load(pathlib.Path(tempfile.mkdtemp()))
+    cfg.ensure_dirs()
+    registry = build_registry(cfg)
+
+    def eksikler(sema, yol=""):
+        if not isinstance(sema, dict):
+            return []
+        bulunan = []
+        if sema.get("type") == "array" and "items" not in sema:
+            bulunan.append(yol or "(kök)")
+        for ad, alt in (sema.get("properties") or {}).items():
+            bulunan += eksikler(alt, f"{yol}.{ad}" if yol else ad)
+        if isinstance(sema.get("items"), dict):
+            bulunan += eksikler(sema["items"], yol + "[]")
+        return bulunan
+
+    kusurlu = {s.name: e for s in registry.all() if (e := eksikler(s.input_schema))}
+    assert not kusurlu, f"`items` eksik: {kusurlu}"
+
+
+def test_the_converter_repairs_a_schema_that_slipped_through() -> None:
+    """Şemaları elle düzeltmek şart ama yetmez: bir sonraki araç aynı
+    hatayla yazıldığında da sağlayıcıya bozuk şema gitmemeli."""
+    from neocp.backends.translate import to_openai_tools
+
+    (arac,) = to_openai_tools([{
+        "name": "deneme",
+        "description": "d",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "liste": {"type": "array"},
+                "ic": {"type": "object", "properties": {"derin": {"type": "array"}}},
+                "saglam": {"type": "array", "items": {"type": "string"}},
+            },
+        },
+    }])
+    alanlar = arac["function"]["parameters"]["properties"]
+    assert alanlar["liste"]["items"] == {}
+    assert alanlar["ic"]["properties"]["derin"]["items"] == {}
+    # Zaten doğru olan şemaya DOKUNULMUYOR.
+    assert alanlar["saglam"]["items"] == {"type": "string"}

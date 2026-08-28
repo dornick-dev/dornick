@@ -89,16 +89,20 @@ def _assistant_message(content: list[Block]) -> Message:
         if kind == "text":
             texts.append(block.get("text", ""))
         elif kind == "tool_use":
-            tool_calls.append(
-                {
-                    "id": block.get("id", ""),
-                    "type": "function",
-                    "function": {
-                        "name": block.get("name", ""),
-                        "arguments": json.dumps(block.get("input") or {}, ensure_ascii=False),
-                    },
-                }
-            )
+            cagri: Message = {
+                "id": block.get("id", ""),
+                "type": "function",
+                "function": {
+                    "name": block.get("name", ""),
+                    "arguments": json.dumps(block.get("input") or {}, ensure_ascii=False),
+                },
+            }
+            # Sağlayıcının kendi alanları geri konuyor (bkz. to_anthropic_blocks).
+            # Bilinen alanların üstüne yazmıyor: kimlik ve argüman bizim.
+            for anahtar, deger in (block.get("saglayici") or {}).items():
+                if anahtar not in cagri:
+                    cagri[anahtar] = deger
+            tool_calls.append(cagri)
 
     message: Message = {"role": "assistant", "content": "\n".join(t for t in texts if t) or None}
     if tool_calls:
@@ -173,6 +177,31 @@ def _flatten_text(content: list[Block]) -> str:
     return "\n".join(b.get("text", "") for b in content if b.get("type") == "text")
 
 
+def sema_onar(sema: Any) -> Any:
+    """Şemayı sağlayıcıların en katısına göre onarır.
+
+    Bugünkü tek onarım: `items`i olmayan bir `array`e serbest bir `items`
+    konuyor. Anthropic ve OpenAI bunu hoş görüyor; Gemini görmüyor ve
+    ARACIN DEĞİL, araç listesinin TAMAMINI reddediyor:
+
+        GenerateContentRequest.tools[0].function_declarations[23]
+        .parameters.properties[steps].items: missing field
+
+    Yani tek bir aracın eksiği, o modelde neo'yu tümüyle çalışmaz yapıyor.
+    Şemaları elle düzeltmek şart ama yetmez: bir sonraki araç aynı hatayla
+    yazıldığında da kırılmamak için burada da yakalanıyor.
+    """
+    if isinstance(sema, list):
+        return [sema_onar(x) for x in sema]
+    if not isinstance(sema, dict):
+        return sema
+    yeni_sema = {k: sema_onar(v) for k, v in sema.items()}
+    if yeni_sema.get("type") == "array" and "items" not in yeni_sema:
+        # Serbest içerik: neyin geldiğini bilmiyoruz, uydurmuyoruz da.
+        yeni_sema["items"] = {}
+    return yeni_sema
+
+
 def to_openai_tools(tools: list[Block]) -> list[Message]:
     return [
         {
@@ -180,7 +209,8 @@ def to_openai_tools(tools: list[Block]) -> list[Message]:
             "function": {
                 "name": tool["name"],
                 "description": tool.get("description", ""),
-                "parameters": tool.get("input_schema") or {"type": "object", "properties": {}},
+                "parameters": sema_onar(
+                    tool.get("input_schema") or {"type": "object", "properties": {}}),
             },
         }
         for tool in tools
@@ -195,16 +225,21 @@ def to_anthropic_blocks(text: str, tool_calls: list[dict[str, Any]]) -> list[Blo
     if text.strip():
         blocks.append({"type": "text", "text": text})
     for index, call in enumerate(tool_calls):
-        blocks.append(
-            {
-                "type": "tool_use",
-                # Bazı uyumlu sunucular id göndermiyor; eksikse üretiyoruz,
-                # çünkü tool_result eşleşmesi buna dayanıyor.
-                "id": call.get("id") or f"call_{index}",
-                "name": call.get("name", ""),
-                "input": parse_arguments(call.get("arguments", "")),
-            }
-        )
+        blok: Block = {
+            "type": "tool_use",
+            # Bazı uyumlu sunucular id göndermiyor; eksikse üretiyoruz,
+            # çünkü tool_result eşleşmesi buna dayanıyor.
+            "id": call.get("id") or f"call_{index}",
+            "name": call.get("name", ""),
+            "input": parse_arguments(call.get("arguments", "")),
+        }
+        # Sağlayıcıya özel alanlar (Gemini `thought_signature` gibi) blokta
+        # saklanıyor ve sonraki turda AYNEN geri gönderiliyor. Kaybolursa
+        # Gemini araç çağrısını reddediyor: "Function call is missing a
+        # thought_signature in functionCall parts."
+        if ek := call.get("ek"):
+            blok["saglayici"] = dict(ek)
+        blocks.append(blok)
     return blocks
 
 

@@ -54,13 +54,41 @@ def register(registry: ToolRegistry) -> None:
                 },
                 "id": {"type": "string", "description": "get/update/remove/run için kimlik."},
                 "title": {"type": "string", "description": "create/update için başlık."},
+                # `items` ŞART: Gemini `items`siz bir array gördüğünde araç
+                # listesinin TAMAMINI reddediyor. Şekli burada yazmak ayrıca
+                # modelin alan adlarını tahmin etmesini de bitiriyor.
                 "nodes": {
                     "type": "array",
-                    "description": "Düğüm listesi: id, title, type, config, secrets_needed, skill, position.",
+                    "description": "Grafiğin düğümleri.",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "id": {"type": "string"},
+                            "title": {"type": "string"},
+                            "type": {"type": "string",
+                                     "description": "mail_read, http, skill, shell, agent, custom, …"},
+                            "config": {"type": "object",
+                                       "description": "Türe özel ayar (prompt, url, command, …)."},
+                            "secrets_needed": {"type": "array", "items": {"type": "string"},
+                                               "description": "Gizli alan ADLARI; değer YAZILMAZ."},
+                            "skill": {"type": "string"},
+                        },
+                        "required": ["id"],
+                    },
                 },
                 "edges": {
                     "type": "array",
-                    "description": "Kenar listesi: from, to, on.",
+                    "description": "Düğümler arası geçişler.",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "from": {"type": "string"},
+                            "to": {"type": "string"},
+                            "on": {"type": "string",
+                                   "description": "'ok', 'hata' ya da boş (her zaman)."},
+                        },
+                        "required": ["from", "to"],
+                    },
                 },
             },
             required=["action"],

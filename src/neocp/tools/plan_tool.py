@@ -31,7 +31,14 @@ def register(registry: ToolRegistry) -> None:
                 },
                 "id": {"type": "string"},
                 "title": {"type": "string"},
-                "steps": {"type": "array"},
+                # `items` ŞART: Gemini `items`siz bir array gördüğünde
+                # araç listesinin TAMAMINI reddediyor
+                # ("parameters.properties[steps].items: missing field").
+                "steps": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Adımlar, sırayla; her biri tek satır.",
+                },
                 "status": {"type": "string"},
             },
             required=["action"],

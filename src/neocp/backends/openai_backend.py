@@ -410,14 +410,25 @@ def _consume(
 
     for fragment in getattr(delta, "tool_calls", None) or []:
         slot = calls.setdefault(
-            getattr(fragment, "index", 0), {"id": "", "name": "", "arguments": ""}
+            getattr(fragment, "index", 0),
+            {"id": "", "name": "", "arguments": "", "ek": {}},
         )
         if identifier := getattr(fragment, "id", None):
             slot["id"] = identifier
 
+        # Sağlayıcıya özel alanlar: TANIMADAN taşınıyor. Gemini düşünen
+        # modellerde her araç çağrısına bir `thought_signature` iliştiriyor
+        # ve SONRAKİ turda onu geri göndermeni ŞART koşuyor; göndermezsen
+        # 400 veriyor ("missing a thought_signature in functionCall parts").
+        # Alanın adını ve yerini sağlayıcıya göre kodlamak yerine bilmediğimiz
+        # her şeyi olduğu gibi saklıyoruz — böyle bir alan ekleyen bir sonraki
+        # sağlayıcıda da kırılmıyor.
+        _ek_topla(slot["ek"], fragment)
+
         function = getattr(fragment, "function", None)
         if function is None:
             continue
+        _ek_topla(slot["ek"], function)
 
         if name := getattr(function, "name", None):
             # Çoğu sunucu adı tek parça yollar, bazıları parçalar. Aynı parçayı
@@ -430,6 +441,30 @@ def _consume(
 
         if arguments := getattr(function, "arguments", None):
             slot["arguments"] += arguments
+
+
+# SDK'nin modellemedigi alanlar `model_extra`da durur (pydantic). Araç
+# çağrısında ne varsa oradan alıyoruz: adını bilmediğimiz bir alanı da
+# taşıyabilmek için tek tek saymıyoruz.
+_EK_ATLA = frozenset({"index", "id", "type", "name", "arguments", "function"})
+
+
+def _ek_topla(kutu: dict[str, Any], nesne: Any) -> None:
+    """Tanınmayan sağlayıcı alanlarını kutuya biriktirir (sessiz, en iyi çaba)."""
+    try:
+        fazla = getattr(nesne, "model_extra", None) or {}
+    except Exception:
+        return
+    for anahtar, deger in fazla.items():
+        if anahtar in _EK_ATLA or deger is None:
+            continue
+        # Akış parça parça geliyor; metin alanları ekleniyor, ötekiler
+        # son gelen kazanıyor (imza tek parça geliyor).
+        if isinstance(deger, str) and isinstance(kutu.get(anahtar), str):
+            if not kutu[anahtar].endswith(deger):
+                kutu[anahtar] += deger
+        else:
+            kutu[anahtar] = deger
 
 
 # Alanı tanımayan bir sunucunun reddi. Sunucudan sunucuya metin değişiyor,

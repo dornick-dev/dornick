@@ -72,7 +72,7 @@ class Prepared:
             "model": model.name,
             "max_tokens": model.max_tokens,
             "system": self.system,
-            "messages": self.messages,
+            "messages": saglayici_alanlarini_at(self.messages),
             "tools": tools,
             "output_config": {"effort": model.effort},
         }
@@ -122,6 +122,42 @@ class ContextPolicy:
             betas=betas,
             context_management={"edits": edits} if edits else None,
         )
+
+
+def saglayici_alanlarini_at(messages: list[Message]) -> list[Message]:
+    """Anthropic'e giderken sağlayıcıya özel alanları ayıklar.
+
+    `tool_use` bloklarında OpenAI-uyumlu sağlayıcıların kendi alanları
+    taşınıyor (Gemini'nin `thought_signature`'ı gibi) — o sağlayıcıya geri
+    göndermek ZORUNLU, ama Anthropic tanımadığı alanı reddediyor. Aynı
+    konuşma iki sağlayıcı arasında taşınabildiği için (yedek model, model
+    değiştirme) bu ayıklama şart.
+
+    Gereksiz kopya yok: böyle bir alan taşıyan blok yoksa liste olduğu gibi
+    dönüyor — bu, mesajların ezici çoğunluğu için geçerli.
+    """
+    if not any(
+        isinstance(b, dict) and "saglayici" in b
+        for m in messages
+        for b in (m.get("content") or [] if isinstance(m.get("content"), list) else [])
+    ):
+        return messages
+
+    temiz: list[Message] = []
+    for m in messages:
+        icerik = m.get("content")
+        if not isinstance(icerik, list):
+            temiz.append(m)
+            continue
+        temiz.append({
+            **m,
+            "content": [
+                {k: v for k, v in b.items() if k != "saglayici"}
+                if isinstance(b, dict) and "saglayici" in b else b
+                for b in icerik
+            ],
+        })
+    return temiz
 
 
 def build_system(system: "SystemPrompt") -> list[Block]:

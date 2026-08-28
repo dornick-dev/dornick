@@ -1,5 +1,21 @@
 # Changelog
 
+## Unreleased
+
+* **Gemini works again.** Gemini requires every `array` property in a tool
+  schema to declare `items`; without it, it rejects **the entire tool list**,
+  not just that tool — so one tool's omission made neo unusable on every
+  Gemini model. Three properties were missing it. The schemas are fixed, and
+  the OpenAI-compatible converter now fills in a permissive `items` for any
+  array that lacks one, so the next tool written the same way cannot break a
+  provider. A test walks every registered tool's schema.
+* **Provider-specific fields on tool calls are no longer dropped.** Gemini
+  attaches a `thought_signature` to function calls from thinking models and
+  requires it back on the next turn; our translation kept only id, name and
+  input, so such a field was lost. Unknown fields are now carried through the
+  round trip verbatim — not modelled, just not lost — and stripped on the
+  Anthropic path, which rejects fields it does not know.
+
 ## 0.4.1 — 2026-08-28
 
 Two things that landed right after 0.4.0 was cut, now in the installer.
