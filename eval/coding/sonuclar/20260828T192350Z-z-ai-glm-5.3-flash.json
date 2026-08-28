@@ -1,0 +1,235 @@
+{
+  "zaman": "20260828T192350Z",
+  "model": "z-ai/glm-5.3-flash",
+  "tekrar": 1,
+  "bekle_sn": 900.0,
+  "gorevler": [
+    {
+      "ad": "z2-panel",
+      "baslik": "Giriş korumalı mini yönetim paneli",
+      "zorluk": "zor",
+      "dil": "php",
+      "ozet": {
+        "gorev": "z2-panel",
+        "puan": 100.0,
+        "ham": 85.0,
+        "olculen_tavan": 85,
+        "olculemeyen": [],
+        "bozuk_teslim": false,
+        "eksenler": [
+          {
+            "ad": "calisir",
+            "tavan": 40,
+            "alinan": 40.0,
+            "kanit": [
+              "+ index.php var (8p) — panel",
+              "! 8098 tutuluydu (ajan kendi sunucusunu açık bırakmış olabilir); ölçüm 8099 portunda yapıldı",
+              "+ sunucu ayağa kalkıyor (10p) — port açıldı",
+              "+ giriş sayfası açılıyor (10p) — 200, 824 karakter; şifre alanı: True",
+              "+ doğru şifreyle içeri giriliyor (12p) — giriş POST → HTTP 200; ozet.php → HTTP 200"
+            ],
+            "sebep": "",
+            "harici": false
+          },
+          {
+            "ad": "kapsam",
+            "tavan": 25,
+            "alinan": 25.0,
+            "kanit": [
+              "~ girişsiz erişim engelleniyor (7.0/7p) — ozet.php: engelli; kullanicilar.php: engelli; ayarlar.php: engelli",
+              "+ yanlış şifre reddediliyor (3p) — yanlış şifreden sonra ozet.php → HTTP 302",
+              "+ ozet.php giriş sonrası çalışıyor (5p) — 200, 771 karakter",
+              "+ kullanicilar.php giriş sonrası çalışıyor (5p) — 200, 982 karakter",
+              "+ ayarlar.php giriş sonrası çalışıyor (5p) — 200, 1005 karakter"
+            ],
+            "sebep": "",
+            "harici": false
+          },
+          {
+            "ad": "saglik",
+            "tavan": 20,
+            "alinan": 20.0,
+            "kanit": [
+              "~ sözdizimi temiz (8.0/8p) — 6/6 dosya",
+              "~ boy/karmaşıklık (6.0/6p) — temiz",
+              "~ tekrar yok (6.0/6p) — tekrar eden satır %0, 0 yinelenen blok"
+            ],
+            "sebep": "",
+            "harici": false
+          },
+          {
+            "ad": "test",
+            "tavan": 15,
+            "alinan": 0.0,
+            "kanit": [
+              "- test dosyası yok (0p)"
+            ],
+            "sebep": "",
+            "harici": true
+          }
+        ],
+        "davranis": {
+          "arac_cagrisi": 11,
+          "araclar": {
+            "write_file": 6,
+            "shell": 4,
+            "browser": 1
+          },
+          "hatali_arac": 2,
+          "model_turu": 8,
+          "api_hatasi": 0,
+          "dogruladi_mi": true,
+          "dogrulama_izi": [
+            "browser: ",
+            "shell: $jar = \"$env:TEMP\\pnut.jar\"; \"1) korumasız erişim: \" + (curl.exe -s -o NUL -w \"%{http_code",
+            "shell: $jar = \"$env:TEMP\\pnut.jar\"; curl.exe -s -c $jar -d \"kullanici=admin&sifre=yanlis\" http://"
+          ],
+          "calistirma_izi": [],
+          "plan_yazdi_mi": false,
+          "plan_kaniti": "",
+          "token_prompt_son": 18671,
+          "token_prompt_toplam": 138471,
+          "token_cikti": 3618,
+          "token_cache_okuma": 116480,
+          "model_cagrisi": 8,
+          "maliyet_usd": 0.0113,
+          "sure_sn": 103.1,
+          "degisen_dosya": 6,
+          "kapi_ok": true,
+          "duvar_saati_sn": 105.5
+        },
+        "notlar": [
+          "ölçüm dışı (dokunulmamış tur öncesi dosya): 7"
+        ]
+      },
+      "tum_puanlar": [
+        100.0
+      ],
+      "puan_sapma": null,
+      "bozuk_teslim": 0,
+      "devralindi": ""
+    },
+    {
+      "ad": "z3-gizli-hata",
+      "baslik": "Sepet modülündeki 3 gizli hatayı bul ve düzelt",
+      "zorluk": "zor",
+      "dil": "python",
+      "ozet": {
+        "gorev": "z3-gizli-hata",
+        "puan": 100.0,
+        "ham": 85.0,
+        "olculen_tavan": 85,
+        "olculemeyen": [],
+        "bozuk_teslim": false,
+        "eksenler": [
+          {
+            "ad": "calisir",
+            "tavan": 40,
+            "alinan": 40.0,
+            "kanit": [
+              "+ sepet.py duruyor (6p) — sepet\\sepet.py",
+              "+ modül import ediliyor (10p) — tamam",
+              "+ bozulmamış regresyon takımı koşuyor (8p) — ........ [100%] 8 passed in 0.01s",
+              "+ regresyon takımı tamamen yeşil (16p) — ........ [100%] 8 passed in 0.01s"
+            ],
+            "sebep": "",
+            "harici": false
+          },
+          {
+            "ad": "kapsam",
+            "tavan": 25,
+            "alinan": 25.0,
+            "kanit": [
+              "+ hata 1: aynı ürün eklenince adet birikiyor (8p) — beklenen [7, 21.0], çıkan [7, 21.0]",
+              "+ hata 2: indirim sınırları dahil (8p) — 500→0.05 (0.05), 1000→0.1 (0.10), 499.99→0.0 (0.0)",
+              "+ hata 3: toplam kuruşu koruyor (6p) — 7 × 14.29 → beklenen 100.03, çıkan 100.03",
+              "+ gizli vaka: 1500 → %10, 500 → %5 (2p) — 1500→1350.0 (1350.0), 500→475.0 (475.0)",
+              "+ var olan koruma sökülmemiş (adet 0 → ValueError) (1p) — {'ok': True, 'deger': 'ValueError'}"
+            ],
+            "sebep": "",
+            "harici": false
+          },
+          {
+            "ad": "saglik",
+            "tavan": 20,
+            "alinan": 20.0,
+            "kanit": [
+              "~ sözdizimi temiz (8.0/8p) — 1/1 dosya",
+              "~ boy/karmaşıklık (6.0/6p) — temiz",
+              "~ tekrar yok (6.0/6p) — tekrar eden satır %0, 0 yinelenen blok"
+            ],
+            "sebep": "",
+            "harici": false
+          },
+          {
+            "ad": "test",
+            "tavan": 15,
+            "alinan": 0.0,
+            "kanit": [
+              "! regresyon takımı tohumla geliyor — bu eksen ajanın kendi katkısını ayıramaz, puana katılmıyor",
+              "- test dosyası yok (0p)"
+            ],
+            "sebep": "",
+            "harici": true
+          }
+        ],
+        "davranis": {
+          "arac_cagrisi": 9,
+          "araclar": {
+            "shell": 4,
+            "list_dir": 2,
+            "edit_file": 2,
+            "read_file": 1
+          },
+          "hatali_arac": 3,
+          "model_turu": 9,
+          "api_hatasi": 0,
+          "dogruladi_mi": true,
+          "dogrulama_izi": [
+            "shell: py -m pytest atolye/sepet -x -q",
+            "shell: py -m pytest sepet -q",
+            "shell: py -m pytest sepet -q",
+            "shell: py -m pytest sepet -q"
+          ],
+          "calistirma_izi": [],
+          "plan_yazdi_mi": false,
+          "plan_kaniti": "",
+          "token_prompt_son": 16716,
+          "token_prompt_toplam": 145612,
+          "token_cikti": 673,
+          "token_cache_okuma": 119488,
+          "model_cagrisi": 9,
+          "maliyet_usd": 0.0111,
+          "sure_sn": 65.6,
+          "degisen_dosya": 1,
+          "kapi_ok": true,
+          "duvar_saati_sn": 67.4
+        },
+        "notlar": [
+          "ölçüm dışı (dokunulmamış tur öncesi dosya): 8"
+        ]
+      },
+      "tum_puanlar": [
+        100.0
+      ],
+      "puan_sapma": null,
+      "bozuk_teslim": 0,
+      "devralindi": ""
+    }
+  ],
+  "kosulmayan": [
+    "k1-modul",
+    "k2-cli",
+    "k3-tamir",
+    "o1-rapor",
+    "o2-servis",
+    "o3-ozellik",
+    "z1-arama"
+  ],
+  "eksen_tavanlari": {
+    "calisir": 40,
+    "kapsam": 25,
+    "saglik": 20,
+    "test": 15
+  }
+}

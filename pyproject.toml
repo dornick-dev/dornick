@@ -1,6 +1,6 @@
 [project]
 name = "neocp"
-version = "0.4.1"
+version = "0.4.2"
 description = "Bilgisayarı kullanabilen, kendi zihnine erişebilen bir ajan harness'ı"
 requires-python = ">=3.11"
 dependencies = [

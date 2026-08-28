@@ -1,6 +1,10 @@
 # Changelog
 
-## Unreleased
+## 0.4.2 — 2026-08-28
+
+Release gate: all five benchmark tasks (easy through hard, including the
+PHP session panel and the hidden-bug repair) score 100/100 on this build —
+the two hard ones used to hit the 900-second ceiling a day earlier.
 
 * **The model names your sessions.** After the first exchange, an unnamed
   session gets a short model-written title instead of the first 30

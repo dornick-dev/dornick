@@ -1,6 +1,6 @@
 # Kodlama Ölçüm Raporu
 
-**Koşu:** 20260828T163730Z · **Model:** `z-ai/glm-5.3-flash` · **Tekrar:** 1 · **Düzenek:** `eval/coding/` (dış kapı + izole örnek)
+**Koşu:** 20260828T192350Z · **Model:** `z-ai/glm-5.3-flash` · **Tekrar:** 1 · **Düzenek:** `eval/coding/` (dış kapı + izole örnek)
 
 Puan dört eksenden: **çalışır mı** 40 · **istenen kapsam** 25 · **kod sağlığı** 20 · **test kalitesi** 15. Bir eksen ölçülemediyse paydadan da düşer; istem o işi istemiyorsa (*istenmedi*) ölçülür ama puana katılmaz. Puan sütunu 100'e normalize edilmiş haldir.
 
@@ -8,9 +8,8 @@ Puan dört eksenden: **çalışır mı** 40 · **istenen kapsam** 25 · **kod sa
 
 | görev | zorluk | dil | çalışır (40) | kapsam (25) | sağlık (20) | test (15) | **puan** |
 |---|---|---|---|---|---|---|---|
-| k2-cli | kolay | node | 40.0 | 25.0 | 20.0 | 0.0* | **100.0** |
-| o1-rapor | orta | python | 40.0 | 25.0 | 20.0 | 0.0* | **100.0** |
-| z1-arama | zor | python | 40.0 | 25.0 | 20.0 | 15.0 | **100.0** |
+| z2-panel | zor | php | 40.0 | 25.0 | 20.0 | 0.0* | **100.0** |
+| z3-gizli-hata | zor | python | 40.0 | 25.0 | 20.0 | 0.0* | **100.0** |
 
 `*` = istem bu işi istemedi; ölçüldü, raporlanıyor, puana katılmıyor.
 
@@ -18,13 +17,12 @@ Puan dört eksenden: **çalışır mı** 40 · **istenen kapsam** 25 · **kod sa
 
 | görev | tur bitti | araç çağrısı | hatalı araç | süre sn | token (giren/çıkan) | maliyet $ | kendini doğruladı | plan yazdı | bozuk teslim |
 |---|---|---|---|---|---|---|---|---|---|
-| k2-cli | evet | 2 | 0 | 51.6 | 46759/778 | 0.0037 | hayır | hayır | 0/1 |
-| o1-rapor | evet | 4 | 0 | 35.3 | 63941/734 | 0.0050 | hayır | hayır | 0/1 |
-| z1-arama | evet | 14 | 4 | 175.7 | 248122/4216 | 0.0197 | evet | hayır | 0/1 |
+| z2-panel | evet | 11 | 2 | 103.1 | 138471/3618 | 0.0113 | evet | hayır | 0/1 |
+| z3-gizli-hata | evet | 9 | 3 | 65.6 | 145612/673 | 0.0111 | evet | hayır | 0/1 |
 
-**Ortalama puan:** 100.0/100 (3 görev ölçüldü)
+**Ortalama puan:** 100.0/100 (2 görev ölçüldü)
 
-**Koşulmadı:** k1-modul, k3-tamir, o2-servis, o3-ozellik, z2-panel, z3-gizli-hata
+**Koşulmadı:** k1-modul, k2-cli, k3-tamir, o1-rapor, o2-servis, o3-ozellik, z1-arama
 
 ## Bu sayılar ne kadar sağlam?
 
@@ -34,69 +32,50 @@ Puan dört eksenden: **çalışır mı** 40 · **istenen kapsam** 25 · **kod sa
 
 ## Kanıt dökümü
 
-### k2-cli — Node görev listesi CLI
+### z2-panel — Giriş korumalı mini yönetim paneli
 
 - **çalışır mı: 40.0/40**
-  - `+ gorev.js var (10p) — gorev.js`
-  - `! ajanın bıraktığı gorevler.json ölçümden önce silindi (temiz sayfa)`
-  - `+ ekle çalışıyor (10p) — çıkış 0/0`
-  - `+ liste çalışıyor (10p) — 1. [ ] süt al 2. [ ] faturayı öde`
-  - `+ bilinmeyen komut hata veriyor (10p) — çıkış kodu 1`
+  - `+ index.php var (8p) — panel`
+  - `! 8098 tutuluydu (ajan kendi sunucusunu açık bırakmış olabilir); ölçüm 8099 portunda yapıldı`
+  - `+ sunucu ayağa kalkıyor (10p) — port açıldı`
+  - `+ giriş sayfası açılıyor (10p) — 200, 824 karakter; şifre alanı: True`
+  - `+ doğru şifreyle içeri giriliyor (12p) — giriş POST → HTTP 200; ozet.php → HTTP 200`
 - **istenen kapsam: 25.0/25**
-  - `+ eklenenler listede görünüyor (10p) — «süt al»: True, «faturayı öde»: True`
-  - `+ bitir listeyi değiştiriyor (kalan görev duruyor) (8p) — bitir çıkışı 0; liste değişti`
-  - `+ gorevler.json'da kalıcı (7p) — gorevler.json, 109 karakter`
+  - `~ girişsiz erişim engelleniyor (7.0/7p) — ozet.php: engelli; kullanicilar.php: engelli; ayarlar.php: engelli`
+  - `+ yanlış şifre reddediliyor (3p) — yanlış şifreden sonra ozet.php → HTTP 302`
+  - `+ ozet.php giriş sonrası çalışıyor (5p) — 200, 771 karakter`
+  - `+ kullanicilar.php giriş sonrası çalışıyor (5p) — 200, 982 karakter`
+  - `+ ayarlar.php giriş sonrası çalışıyor (5p) — 200, 1005 karakter`
 - **kod sağlığı: 20.0/20**
-  - `~ sözdizimi temiz (8.0/8p) — 1/1 dosya`
+  - `~ sözdizimi temiz (8.0/8p) — 6/6 dosya`
   - `~ boy/karmaşıklık (6.0/6p) — temiz`
   - `~ tekrar yok (6.0/6p) — tekrar eden satır %0, 0 yinelenen blok`
 - **test kalitesi: 0.0/15** *(istenmedi)*
   - `- test dosyası yok (0p)`
-- araçlar: write_file×1, shell×1
+- doğrulama izi: `browser: `; `shell: $jar = "$env:TEMP\pnut.jar"; "1) korumasız erişim: " + (curl.exe -s -o NUL -w "%{http_code`; `shell: $jar = "$env:TEMP\pnut.jar"; curl.exe -s -c $jar -d "kullanici=admin&sifre=yanlis" http://`
+- araçlar: write_file×6, shell×4, browser×1
 - ! ölçüm dışı (dokunulmamış tur öncesi dosya): 7
 
-### o1-rapor — CSV satış raporu + CLI
+### z3-gizli-hata — Sepet modülündeki 3 gizli hatayı bul ve düzelt
 
 - **çalışır mı: 40.0/40**
-  - `+ rapor.py var (8p) — rapor.py`
-  - `+ csv ile koşuyor (16p) — çıkış 0; 2026-01 Toplam ciro: 47553.25 Pompa 25197.00 Sensor 12159.05 PLC 8249.70 2026-02 Toplam ciro: 33938.45 Sensor 17278.65 Pompa 8399.00 PLC 5499.80 2026-03 Toplam `
-  - `+ çıktı boş değil (8p) — 310 karakter`
-  - `+ --ay koşuyor (8p) — çıkış 0; 2026-03 Toplam ciro: 99286.90 Pompa 54593.50 PLC 30248.90 Sensor 12799.00`
+  - `+ sepet.py duruyor (6p) — sepet\sepet.py`
+  - `+ modül import ediliyor (10p) — tamam`
+  - `+ bozulmamış regresyon takımı koşuyor (8p) — ........ [100%] 8 passed in 0.01s`
+  - `+ regresyon takımı tamamen yeşil (16p) — ........ [100%] 8 passed in 0.01s`
 - **istenen kapsam: 25.0/25**
-  - `~ aylık cirolar doğru (10.0/10p) — 3/3 ay tuttu: 2026-01, 2026-02, 2026-03`
-  - `+ en çok ciro yapan 3 ürün var (5p) — Pompa, PLC, Sensor`
-  - `+ üçü çoktan aza sıralı (5p) — sıra tuttu`
-  - `+ --ay 2026-03 doğru ayı veriyor (3p) — beklenen 99286.9`
-  - `+ --ay diğer ayları süzüyor (2p) — temiz`
+  - `+ hata 1: aynı ürün eklenince adet birikiyor (8p) — beklenen [7, 21.0], çıkan [7, 21.0]`
+  - `+ hata 2: indirim sınırları dahil (8p) — 500→0.05 (0.05), 1000→0.1 (0.10), 499.99→0.0 (0.0)`
+  - `+ hata 3: toplam kuruşu koruyor (6p) — 7 × 14.29 → beklenen 100.03, çıkan 100.03`
+  - `+ gizli vaka: 1500 → %10, 500 → %5 (2p) — 1500→1350.0 (1350.0), 500→475.0 (475.0)`
+  - `+ var olan koruma sökülmemiş (adet 0 → ValueError) (1p) — {'ok': True, 'deger': 'ValueError'}`
 - **kod sağlığı: 20.0/20**
   - `~ sözdizimi temiz (8.0/8p) — 1/1 dosya`
   - `~ boy/karmaşıklık (6.0/6p) — temiz`
   - `~ tekrar yok (6.0/6p) — tekrar eden satır %0, 0 yinelenen blok`
 - **test kalitesi: 0.0/15** *(istenmedi)*
+  - `! regresyon takımı tohumla geliyor — bu eksen ajanın kendi katkısını ayıramaz, puana katılmıyor`
   - `- test dosyası yok (0p)`
-- araçlar: shell×2, read_file×1, write_file×1
+- doğrulama izi: `shell: py -m pytest atolye/sepet -x -q`; `shell: py -m pytest sepet -q`; `shell: py -m pytest sepet -q`; `shell: py -m pytest sepet -q`
+- araçlar: shell×4, list_dir×2, edit_file×2, read_file×1
 - ! ölçüm dışı (dokunulmamış tur öncesi dosya): 8
-
-### z1-arama — SQLite kalıcılıklı not arama aracı
-
-- **çalışır mı: 40.0/40**
-  - `+ ara.py var (5p) — ara.py`
-  - `+ ekle koşuyor (12p) — çıkış 0; 0 dosya indekslendi, 9 not indeks içinde.`
-  - `+ SQLite dosyası oluştu (8p) — notlar.db`
-  - `+ bul ayrı süreçte koşuyor (15p) — çıkış 0; 2 eşleşme: [skor 2] salmastra.txt Hidrolik silindir salmastra seti 40mm, yaylı keçe kullanılıyor. [skor 1] pompa-katalog.txt …, debi 12 m3/saat. Yedek parca: ru`
-- **istenen kapsam: 25.0/25**
-  - `+ tek kelime doğru notu buluyor (8p) — «salmastra» → pompa-katalog bekleniyordu; çıktı: '2 eşleşme:\n\n[skor 2] salmastra.txt\n  Hidrolik silindir salmastra seti 40mm, yaylı keçe kullanılıyor.\n\n[skor 1] pompa-kat'`
-  - `+ çok kelimede hepsi geçen not üstte (10p) — «rulman titresim» → kuyu-bakim yeri 97, pompa-katalog yeri 213`
-  - `+ olmayan kelimede sonuç uydurmuyor (7p) — «helikopter» → çıktı: '"helikopter" için hiçbir notta eşleşme bulunamadı.\n\n'`
-- **kod sağlığı: 20.0/20**
-  - `~ sözdizimi temiz (8.0/8p) — 2/2 dosya`
-  - `~ boy/karmaşıklık (6.0/6p) — temiz`
-  - `~ tekrar yok (6.0/6p) — tekrar eden satır %0, 0 yinelenen blok`
-- **test kalitesi: 15.0/15**
-  - `+ testler yeşil (6p) — ....... [100%] 7 passed in 0.75s`
-  - `~ test adedi (4.0/4p) — 7 test bulundu`
-  - `~ kritik yol kapsanıyor (3.0/3p) — 2/2: ekle, bul`
-  - `~ iddialar dolu (2.0/2p) — 15 iddia, 0 tanesi bedava geçiyor`
-- doğrulama izi: `shell: py -m pytest test_ara.py -v`; `shell: py -m pytest test_ara.py -v`; `shell: py -m pytest test_ara.py -v`
-- araçlar: edit_file×5, shell×4, write_file×2, read_file×2, kos×1
-- ! ölçüm dışı (dokunulmamış tur öncesi dosya): 13
