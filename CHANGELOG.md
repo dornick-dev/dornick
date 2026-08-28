@@ -1,8 +1,8 @@
 # Changelog
 
-## Unreleased
+## 0.4.1 — 2026-08-28
 
-*On `main`, not in the 0.4.0 installer yet.*
+Two things that landed right after 0.4.0 was cut, now in the installer.
 
 * **The flow diagram is a real diagram now.** Layout is computed from the
   graph — layer by longest path, columns centred vertically — so the flow
