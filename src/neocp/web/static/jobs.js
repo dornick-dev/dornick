@@ -148,7 +148,19 @@
     if (typeof Gorevler !== "undefined") Gorevler.mount(host);
   }
 
+  // Solo kip: kenar çubuğundan gelindi — orta alanda liste yok, yalnız
+  // seçilen görevin detayı (liste zaten solda). HUD düğmesi tam görünüm.
+  let solo = false;
+
   function open() {
+    solo = false;
+    openInner();
+  }
+
+  function openInner() {
+    // Orta alanda tek yüzey: uygulamalar açıksa çekilir (üst üste binme yok).
+    if (typeof Apps !== "undefined") Apps.close();
+    panel.classList.toggle("jobs-solo", solo);
     panel.hidden = false;
     document.body.classList.add("jobs-open");
     if (view === "live") {
@@ -163,6 +175,8 @@
     view = "live";
     open();
   }
+  // openInner open ile aynı gövdeyi paylaşıyor; solo bayrağını open
+  // sıfırlıyor, show koruyor.
   function close() {
     panel.hidden = true;
     document.body.classList.remove("jobs-open");
@@ -1011,5 +1025,13 @@
     else load();
   });
 
-  window.JobsPanel = { open, openLive, close, load, toggle, refreshLive };
+  // Kenar çubuğundan: belirli bir görevin detayıyla, LİSTESİZ aç.
+  function show(id) {
+    view = "scheduled";
+    selectedId = id;
+    solo = true;
+    openInner();
+  }
+
+  window.JobsPanel = { open, openLive, close, load, toggle, refreshLive, show };
 })();

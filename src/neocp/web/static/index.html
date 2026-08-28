@@ -7,83 +7,92 @@
 <link rel="stylesheet" href="/app.css">
 <link rel="stylesheet" href="/settings.css">
 <link rel="icon" type="image/png" href="/logo.png">
-<!-- Kayıtlı temayı sayfa çizilmeden uygula: yoksa koyu açılıp açığa
-     "sıçrıyor" (flash). Varsayılan koyu. -->
-<script>try{var tema=localStorage.getItem("neo-theme");if(tema==="light")document.documentElement.dataset.theme="light";}catch(e){}</script>
+<!-- Kayıtlı temayı sayfa çizilmeden uygula: yoksa yanlış tema açılıp
+     doğrusuna "sıçrıyor" (flash). Varsayılan AYDINLIK (kullanıcı kararı,
+     28.08); koyu, ancak bilinçli seçilmişse. -->
+<script>try{var tema=localStorage.getItem("neo-theme");if(tema!=="dark")document.documentElement.dataset.theme="light";}catch(e){document.documentElement.dataset.theme="light";}</script>
 </head>
 <body>
 
 <canvas id="scene"></canvas>
 
-<div class="reveal" id="reveal" title="Ağdaki tüm hatıraları göster" role="button" aria-label="Ağdaki tüm hatıraları göster">◍</div>
+<!-- Beyin paneli: sağ sütun. Sahne tuvali tam ekran kalıyor; çekirdek bu
+     panelin ortasına oturuyor. Panel tıklamaları tuvale geçirsin diye
+     pointer-events kapalı; yalnız başlık şeridi etkileşimli. -->
+<aside class="mind" id="mind" aria-label="Beyin">
+  <div class="mind-grip" id="mind-grip" title="Genişliği sürükle" aria-label="Paneli yeniden boyutlandır"></div>
+  <div class="mind-head">
+    <span class="mind-tag">Beyin</span>
+    <input class="mind-search" id="mind-search" type="search" placeholder="Anılarda ara" aria-label="Anılarda ara">
+    <div class="reveal" id="reveal" title="Ağdaki tüm hatıraları göster" role="button" aria-label="Ağdaki tüm hatıraları göster">◍</div>
+    <button class="mind-hide" id="mind-close" title="Beyin panelini kapat" aria-label="Beyin panelini kapat">›</button>
+  </div>
+  <div class="mind-foot">
+    <button class="mind-legend-toggle" id="legend-toggle" type="button"
+            title="Renk açıklamasını aç/kapat" aria-label="Renk açıklamasını aç/kapat">Açıklama ▸</button>
+  </div>
+</aside>
 
 <div class="hud">
-  <!-- Tek şerit: marka + ikonlar + min/max/close. OS caption yok;
-       sürükleme chrome.js → HTCAPTION; kenar resize kabukta. -->
+  <!-- Gerçek başlık çubuğu (Claude Code): solda kenar çubuğu anahtarı +
+       yeni sohbet + marka + durum; sağda YALNIZ pencere düğmeleri.
+       Özellik ikonları burada yaşamaz — bağlam araçları orta içeriğin
+       sağ üstünde, sistem ikonları kenar çubuğunun dibinde. -->
 
   <div class="hud-left">
-    <span class="brand"><img class="brand-mark" src="/logo.png" alt="">neo</span>
-    <span class="status" id="status"><i></i><b>Bağlanıyor</b></span>
-  </div>
-  <div class="hud-right">
-    <span class="meta" id="meta"></span>
-
-    <!-- Metin yerine simge: dort tane yan yana yazi ust seridi
-         kalabaliklastiriyordu. Ne oldugu uzerine gelince yaziyor. -->
-    <button id="stop" class="icon" title="Durdur" aria-label="Durdur" hidden>
-      <svg viewBox="0 0 16 16" aria-hidden="true"><rect x="4" y="4" width="8" height="8" rx="1"/></svg>
-    </button>
-
-    <button id="mute" class="icon" title="Sesi kapat" aria-label="Ses" hidden>
-      <svg viewBox="0 0 16 16" aria-hidden="true">
-        <path d="M7 3 4 6H2v4h2l3 3z"/>
-        <path class="wave" d="M10 5.5a3.5 3.5 0 0 1 0 5M12 3.5a6 6 0 0 1 0 9" fill="none"/>
-        <path class="cross" d="M10.5 6 14 9.5M14 6l-3.5 3.5" fill="none"/>
-      </svg>
-    </button>
-
-    <button id="authority" class="icon" title="Yetki" aria-label="Yetki">
-      <svg viewBox="0 0 16 16" aria-hidden="true">
-        <rect x="3.5" y="7" width="9" height="6.5" rx="1.4" fill="none"/>
-        <path class="shackle" d="M5.6 7V5.2a2.4 2.4 0 0 1 4.8 0V7" fill="none"/>
-        <path class="open-shackle" d="M5.6 7V5.2a2.4 2.4 0 0 1 4.6-.8" fill="none"/>
-      </svg>
-    </button>
-
-    <button id="eye" class="icon" title="Görüntüleyici" aria-label="Görüntüleyici">
-      <svg viewBox="0 0 16 16" aria-hidden="true">
-        <rect x="2" y="3" width="12" height="10" rx="1.4" fill="none"/>
-        <path d="M2 6h12" fill="none"/>
-      </svg>
-    </button>
-
-    <button id="apps" class="icon" title="Uygulamalar" aria-label="Uygulamalar">
-      <!-- Dort kutu: atolyede uretilen uygulamalarin listesi. -->
-      <svg viewBox="0 0 16 16" aria-hidden="true">
-        <rect x="2" y="2" width="5" height="5" rx="1" fill="none"/>
-        <rect x="9" y="2" width="5" height="5" rx="1" fill="none"/>
-        <rect x="2" y="9" width="5" height="5" rx="1" fill="none"/>
-        <rect x="9" y="9" width="5" height="5" rx="1" fill="none"/>
-      </svg>
-    </button>
-
-    <button id="new-chat" class="icon" title="Yeni konuşma" aria-label="Yeni konuşma">
-      <!-- Konuşma balonu + arti: dogrudan yeni sohbet (gecmis panelini acmadan). -->
-      <svg viewBox="0 0 16 16" aria-hidden="true">
-        <path d="M2 3.5h12v7H8l-3 2.5V10.5H2z" fill="none"/>
-        <path d="M8 5.3v3.4M6.3 7h3.4" fill="none"/>
-      </svg>
-    </button>
-
-    <button id="history" class="icon" title="Konuşmalar" aria-label="Geçmiş konuşmalar">
-      <!-- Ust uste satirlar: gecmis konusmalar listesi. -->
+    <button id="history" class="icon" title="Kenar çubuğu" aria-label="Kenar çubuğu">
       <svg viewBox="0 0 16 16" aria-hidden="true">
         <path d="M3 4h10M3 8h10M3 12h6" fill="none"/>
       </svg>
     </button>
+    <span class="brand"><svg class="brand-mark" viewBox="0 0 32 32" role="img" aria-label="neo"><polyline points="8,26 8,13 16,8 24,13 24,26" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/><circle cx="8" cy="26" r="2.6" fill="currentColor"/><circle cx="8" cy="13" r="2.6" fill="currentColor"/><circle cx="24" cy="13" r="2.6" fill="currentColor"/><circle cx="24" cy="26" r="2.6" fill="currentColor"/><circle cx="16" cy="8" r="3.4" fill="var(--cyan)"/></svg>neo</span>
+    <span class="status" id="status"><i></i><b>Bağlanıyor</b></span>
+  </div>
+  <div class="hud-right">
+    <button id="stop" class="icon" title="Durdur" aria-label="Durdur" hidden>
+      <svg viewBox="0 0 16 16" aria-hidden="true"><rect x="4" y="4" width="8" height="8" rx="1"/></svg>
+    </button>
+    <div class="chrome" id="chrome" hidden>
+      <button id="win-min" aria-label="Küçült"></button>
+      <button id="win-max" aria-label="Büyüt"></button>
+      <button id="win-close" aria-label="Kapat"></button>
+    </div>
+  </div>
+</div>
 
+<!-- Bağlam araçları (Claude Code'un orta-sağ üst ikonları): görüntüleyici,
+     orkestra, ses; ⋮ menüsünde görevler · uygulamalar · odak · beni tanı. -->
+<div class="ctx-tools" id="ctx-tools">
+  <button id="mute" class="icon" title="Sesi kapat" aria-label="Ses" hidden>
+    <svg viewBox="0 0 16 16" aria-hidden="true">
+      <path d="M7 3 4 6H2v4h2l3 3z"/>
+      <path class="wave" d="M10 5.5a3.5 3.5 0 0 1 0 5M12 3.5a6 6 0 0 1 0 9" fill="none"/>
+      <path class="cross" d="M10.5 6 14 9.5M14 6l-3.5 3.5" fill="none"/>
+    </svg>
+  </button>
+  <button id="eye" class="icon" title="Görüntüleyici" aria-label="Görüntüleyici">
+    <svg viewBox="0 0 16 16" aria-hidden="true">
+      <rect x="2" y="3" width="12" height="10" rx="1.4" fill="none"/>
+      <path d="M2 6h12" fill="none"/>
+    </svg>
+  </button>
+  <button id="orchestra" class="icon" title="Alt ajanlar · kanallar" aria-label="Alt ajanlar">
+    <svg viewBox="0 0 16 16" aria-hidden="true">
+      <path d="M5 8h2M7 8 11 4M7 8h4M7 8 11 12" fill="none"/>
+      <circle cx="3.4" cy="8" r="1.5" fill="none"/>
+      <circle cx="12.4" cy="3.6" r="1.5" fill="none"/>
+      <circle cx="12.4" cy="8" r="1.5" fill="none"/>
+      <circle cx="12.4" cy="12.4" r="1.5" fill="none"/>
+    </svg>
+  </button>
+  <button id="mind-open" class="icon mind-open" title="Beyin panelini aç" aria-label="Beyin panelini aç">◍</button>
+  <button id="more-tools" class="icon" title="Diğer araçlar" aria-label="Diğer araçlar">
+    <svg viewBox="0 0 16 16" aria-hidden="true">
+      <circle cx="8" cy="3.5" r="1.2"/><circle cx="8" cy="8" r="1.2"/><circle cx="8" cy="12.5" r="1.2"/>
+    </svg>
+  </button>
+  <div class="pop more-pop" id="more-pop" hidden>
     <button id="jobs" class="icon" title="Görevler" aria-label="Görevler">
-      <!-- Takvim/liste: zamanlanmış işler + Canlı sekmesinde arkada koşan işler. -->
       <svg viewBox="0 0 16 16" aria-hidden="true">
         <rect x="2.5" y="3" width="11" height="11" rx="1.4" fill="none"/>
         <path d="M2.5 6h11M5.5 2.5v2M10.5 2.5v2" fill="none"/>
@@ -91,29 +100,21 @@
       </svg>
       <i class="icon-badge" id="jobs-badge" hidden></i>
     </button>
-
-    <button id="orchestra" class="icon" title="Alt ajanlar · kanallar" aria-label="Alt ajanlar">
-      <!-- Fan-out: bir ana düğüm birden çok kanala dağılıyor — alt ajanlar. -->
+    <button id="apps" class="icon" title="Uygulamalar" aria-label="Uygulamalar">
       <svg viewBox="0 0 16 16" aria-hidden="true">
-        <path d="M5 8h2M7 8 11 4M7 8h4M7 8 11 12" fill="none"/>
-        <circle cx="3.4" cy="8" r="1.5" fill="none"/>
-        <circle cx="12.4" cy="3.6" r="1.5" fill="none"/>
-        <circle cx="12.4" cy="8" r="1.5" fill="none"/>
-        <circle cx="12.4" cy="12.4" r="1.5" fill="none"/>
+        <rect x="2" y="2" width="5" height="5" rx="1" fill="none"/>
+        <rect x="9" y="2" width="5" height="5" rx="1" fill="none"/>
+        <rect x="2" y="9" width="5" height="5" rx="1" fill="none"/>
+        <rect x="9" y="9" width="5" height="5" rx="1" fill="none"/>
       </svg>
     </button>
-
     <button id="focus" class="icon" title="Odak modu" aria-label="Odak modu">
-      <!-- Ic ice cember: paneller kapanir, cekirdek + sohbet kalir. -->
       <svg viewBox="0 0 16 16" aria-hidden="true">
         <circle cx="8" cy="8" r="6" fill="none"/>
         <circle cx="8" cy="8" r="1.6"/>
       </svg>
     </button>
-
     <button id="tanima-ikon" class="icon" title="Beni tanı" aria-label="Beni tanı" hidden>
-      <!-- Filiz + kıvılcım: geceleri anılardan büyüyen model. Kapalıyken
-           gizli; eğitim koşarken app.css'teki nabızla canlanıyor. -->
       <svg viewBox="0 0 16 16" aria-hidden="true">
         <path d="M8 14V7" fill="none"/>
         <path d="M8 9.2C8 6.9 6.4 5.5 4 5.3 4.2 7.8 5.7 9.2 8 9.2z" fill="none"/>
@@ -121,33 +122,15 @@
         <path d="M12.5 9.8v2.6M11.2 11.1h2.6" fill="none"/>
       </svg>
     </button>
-
-    <button id="theme" class="icon" title="Gece / gündüz" aria-label="Gece / gündüz modu">
-      <!-- Koyuda ay, açıkta güneş: app.js `hidden` ile değiştiriyor. -->
-      <svg class="ic-moon" viewBox="0 0 16 16" aria-hidden="true">
-        <path d="M13 9.2A5 5 0 1 1 6.8 3a4 4 0 0 0 6.2 6.2z" fill="none"/>
-      </svg>
-      <svg class="ic-sun" viewBox="0 0 16 16" aria-hidden="true" hidden>
-        <circle cx="8" cy="8" r="3" fill="none"/>
-        <path d="M8 1v1.6M8 13.4V15M1 8h1.6M13.4 8H15M3.4 3.4l1.1 1.1M11.5 11.5l1.1 1.1M12.6 3.4l-1.1 1.1M4.5 11.5l-1.1 1.1" fill="none"/>
-      </svg>
-    </button>
-
-    <button id="gear" class="icon" title="Ayarlar" aria-label="Ayarlar">
-      <!-- Gercek bir disli: onceki hal (cember + isinlar) parlaklik ya da
-           renk temasi dugmesi gibi duruyordu. -->
-      <svg viewBox="0 0 24 24" aria-hidden="true">
-        <path fill="none" d="M12 15.2a3.2 3.2 0 1 0 0-6.4 3.2 3.2 0 0 0 0 6.4z"/>
-        <path fill="none" d="M19.1 13.6a1.5 1.5 0 0 0 .3 1.65l.05.06a1.8 1.8 0 1 1-2.55 2.55l-.06-.06a1.5 1.5 0 0 0-1.65-.3 1.5 1.5 0 0 0-.9 1.37v.17a1.8 1.8 0 1 1-3.6 0v-.09a1.5 1.5 0 0 0-.98-1.37 1.5 1.5 0 0 0-1.65.3l-.06.06a1.8 1.8 0 1 1-2.55-2.55l.06-.06a1.5 1.5 0 0 0 .3-1.65 1.5 1.5 0 0 0-1.37-.9h-.17a1.8 1.8 0 1 1 0-3.6h.09a1.5 1.5 0 0 0 1.37-.98 1.5 1.5 0 0 0-.3-1.65l-.06-.06a1.8 1.8 0 1 1 2.55-2.55l.06.06a1.5 1.5 0 0 0 1.65.3h.07a1.5 1.5 0 0 0 .9-1.37v-.17a1.8 1.8 0 1 1 3.6 0v.09a1.5 1.5 0 0 0 .9 1.37 1.5 1.5 0 0 0 1.65-.3l.06-.06a1.8 1.8 0 1 1 2.55 2.55l-.06.06a1.5 1.5 0 0 0-.3 1.65v.07a1.5 1.5 0 0 0 1.37.9h.17a1.8 1.8 0 1 1 0 3.6h-.09a1.5 1.5 0 0 0-1.37.9z"/>
-      </svg>
-    </button>
-
-    <div class="chrome" id="chrome" hidden>
-      <button id="win-min" aria-label="Küçült"></button>
-      <button id="win-max" aria-label="Büyüt"></button>
-      <button id="win-close" aria-label="Kapat"></button>
-    </div>
   </div>
+</div>
+
+<!-- İş listesi aynası: neo çalışırken adımların hâli sağ üstte küçük bir
+     kartta akar — ✓ bitti, ● şu an, ○ sırada. Veri sohbet içindeki
+     hedef şeridiyle AYNI (mind_goals); bu yalnız izleme aynası. -->
+<div class="plan-dock" id="plan-dock" hidden>
+  <button class="plan-dock-head" id="plan-dock-head" type="button"></button>
+  <div class="plan-dock-body" id="plan-dock-body"></div>
 </div>
 
 <!-- Sohbet sütunu: hedef şeridi ve akış AYNI kutunun içinde, üst üste
@@ -296,8 +279,10 @@
     <span class="viewer-tag">Görüntüleyici</span>
     <span class="viewer-path" id="viewer-path"></span>
     <span class="viewer-modes" id="viewer-modes"></span>
+    <button class="viewer-max" id="viewer-max" title="Büyüt / yerine dön" aria-label="Büyüt / yerine dön">⤢</button>
     <button class="close" id="viewer-close" aria-label="Kapat">×</button>
   </div>
+  <div class="viewer-tabs" id="viewer-tabs" hidden></div>
   <div class="viewer-body" id="viewer-body"></div>
 </div>
 
@@ -314,7 +299,7 @@
     <span class="capsule-uptime" id="capsule-uptime"></span>
     <span class="capsule-spacer"></span>
     <button class="capsule-btn" id="capsule-reload" title="Yenile" aria-label="Yenile">↻</button>
-    <button class="capsule-btn" id="capsule-external" title="Dışarıda aç" aria-label="Dışarıda aç">⇱</button>
+    <button class="capsule-btn" id="capsule-external" title="Sistem tarayıcısında aç" aria-label="Sistem tarayıcısında aç">Tarayıcıda aç</button>
     <button class="capsule-btn stop" id="capsule-stop" title="Durdur">Durdur</button>
     <button class="close" id="capsule-close" aria-label="Kapat">×</button>
   </div>
@@ -329,13 +314,60 @@
 
 <div class="hist-panel" id="hist-panel" hidden>
   <div class="left-grip" data-left-grip title="Genişliği sürükle" aria-label="Paneli yeniden boyutlandır"></div>
-  <div class="hist-head">
-    <span class="hist-tag">Konuşmalar</span>
-    <button class="close" id="hist-close" aria-label="Kapat">×</button>
-  </div>
   <button class="hist-new" id="hist-new"><span class="hist-new-plus">+</span> Yeni konuşma</button>
-  <input class="hist-search" id="hist-search" type="search" placeholder="Konuşmalarda ara" aria-label="Ara">
+  <div class="side-search">
+    <input class="hist-search" id="hist-search" type="search" placeholder="Konuşmalarda ara" aria-label="Ara">
+    <button class="side-funnel" id="hist-filter-toggle" type="button"
+            title="Süzgeçleri aç/kapat" aria-label="Süzgeçleri aç/kapat">
+      <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 3h12L9.5 8.5V13l-3 1.5V8.5z" fill="none"/></svg>
+    </button>
+  </div>
+  <div class="side-label">Konuşmalar</div>
   <div class="hist-body" id="hist-body"></div>
+  <!-- Hızlı gezinti (Claude Code'un New/Artifacts sırası): satıra tık,
+       detay orta alanda. Listelerin kendisi orta yüzeyde yaşar. -->
+  <nav class="side-nav">
+    <button class="side-nav-item" id="side-jobs-nav" type="button">
+      <svg viewBox="0 0 16 16" aria-hidden="true">
+        <rect x="2.5" y="3" width="11" height="11" rx="1.4" fill="none"/>
+        <path d="M2.5 6h11M5.5 2.5v2M10.5 2.5v2" fill="none"/>
+      </svg><span>Görevler · Otomasyonlar</span>
+    </button>
+    <button class="side-nav-item" id="side-apps-nav" type="button">
+      <svg viewBox="0 0 16 16" aria-hidden="true">
+        <rect x="2" y="2" width="5" height="5" rx="1" fill="none"/>
+        <rect x="9" y="2" width="5" height="5" rx="1" fill="none"/>
+        <rect x="2" y="9" width="5" height="5" rx="1" fill="none"/>
+        <rect x="9" y="9" width="5" height="5" rx="1" fill="none"/>
+      </svg><span>Uygulamalar</span>
+    </button>
+  </nav>
+  <!-- Dip: sistem ikonları (Claude Code'un sol-alt köşesi). -->
+  <div class="side-foot">
+    <button id="authority" class="icon" title="Yetki" aria-label="Yetki">
+      <svg viewBox="0 0 16 16" aria-hidden="true">
+        <rect x="3.5" y="7" width="9" height="6.5" rx="1.4" fill="none"/>
+        <path class="shackle" d="M5.6 7V5.2a2.4 2.4 0 0 1 4.8 0V7" fill="none"/>
+        <path class="open-shackle" d="M5.6 7V5.2a2.4 2.4 0 0 1 4.6-.8" fill="none"/>
+      </svg>
+    </button>
+    <button id="theme" class="icon" title="Gece / gündüz" aria-label="Gece / gündüz modu">
+      <svg class="ic-moon" viewBox="0 0 16 16" aria-hidden="true">
+        <path d="M13 9.2A5 5 0 1 1 6.8 3a4 4 0 0 0 6.2 6.2z" fill="none"/>
+      </svg>
+      <svg class="ic-sun" viewBox="0 0 16 16" aria-hidden="true" hidden>
+        <circle cx="8" cy="8" r="3" fill="none"/>
+        <path d="M8 1v1.6M8 13.4V15M1 8h1.6M13.4 8H15M3.4 3.4l1.1 1.1M11.5 11.5l1.1 1.1M12.6 3.4l-1.1 1.1M4.5 11.5l-1.1 1.1" fill="none"/>
+      </svg>
+    </button>
+    <button id="gear" class="icon" title="Ayarlar" aria-label="Ayarlar">
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path fill="none" d="M12 15.2a3.2 3.2 0 1 0 0-6.4 3.2 3.2 0 0 0 0 6.4z"/>
+        <path fill="none" d="M19.1 13.6a1.5 1.5 0 0 0 .3 1.65l.05.06a1.8 1.8 0 1 1-2.55 2.55l-.06-.06a1.5 1.5 0 0 0-1.65-.3 1.5 1.5 0 0 0-.9 1.37v.17a1.8 1.8 0 1 1-3.6 0v-.09a1.5 1.5 0 0 0-.98-1.37 1.5 1.5 0 0 0-1.65.3l-.06.06a1.8 1.8 0 1 1-2.55-2.55l.06-.06a1.5 1.5 0 0 0 .3-1.65 1.5 1.5 0 0 0-1.37-.9h-.17a1.8 1.8 0 1 1 0-3.6h.09a1.5 1.5 0 0 0 1.37-.98 1.5 1.5 0 0 0-.3-1.65l-.06-.06a1.8 1.8 0 1 1 2.55-2.55l.06.06a1.5 1.5 0 0 0 1.65.3h.07a1.5 1.5 0 0 0 .9-1.37v-.17a1.8 1.8 0 1 1 3.6 0v.09a1.5 1.5 0 0 0 .9 1.37 1.5 1.5 0 0 0 1.65-.3l.06-.06a1.8 1.8 0 1 1 2.55 2.55l-.06.06a1.5 1.5 0 0 0-.3 1.65v.07a1.5 1.5 0 0 0 1.37.9h.17a1.8 1.8 0 1 1 0 3.6h-.09a1.5 1.5 0 0 0-1.37.9z"/>
+      </svg>
+    </button>
+    <span class="meta" id="meta"></span>
+  </div>
 </div>
 
 <div class="apps-panel" id="apps-panel" hidden>
@@ -397,10 +429,10 @@
       <button data-tab="hearing">Mikrofon</button>
       <button data-tab="eyes">Kameralar</button>
       <button data-tab="place">Konum</button>
-      <div class="tab-group">Yetenekler</div>
+      <div class="tab-group">Araçlar</div>
       <button data-tab="devices">Varlıklar</button>
-      <button data-tab="skills">Yetenekler</button>
-      <button data-tab="connectors">Bağlantılar</button>
+      <button data-tab="skills">Skills</button>
+      <button data-tab="connectors">Bağlantılar (MCP)</button>
       <button data-tab="mail">Posta</button>
       <button data-tab="tasks">Görevler</button>
       <div class="tab-group">Sistem</div>

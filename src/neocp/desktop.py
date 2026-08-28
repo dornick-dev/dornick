@@ -472,6 +472,114 @@ class Bridge:
         (geçmiş mesajları) yükler ve yeni mesajlar oraya eklenir."""
         return self._switch(sid)
 
+    def open_path(self, path: str, *, message: str = "") -> dict[str, Any]:
+        """Windows 'Neo ile aç': yeni sohbet + çalışma klasörü + isteğe bağlı tohum.
+
+        Dosya → üst klasör proje; klasör → doğrudan proje. Yeni oturum meta'sına
+        path yazılır; ardından isteğe bağlı kullanıcı mesajı kuyruğa girer.
+        """
+        from pathlib import Path
+
+        raw = str(path or "").strip().strip('"')
+        if not raw:
+            return {"ok": False, "error": "yol boş"}
+        target = Path(raw).expanduser()
+        try:
+            target = target.resolve()
+        except OSError:
+            return {"ok": False, "error": "yol çözülemedi"}
+        if not target.exists():
+            return {"ok": False, "error": "yol yok"}
+
+        folder = target if target.is_dir() else target.parent
+        seed = (message or "").strip()
+        if not seed:
+            if target.is_file():
+                seed = f"Bu dosyayı açtım: {target}\nÇalışma klasörü: {folder}\nNe yapmamı istersin?"
+            else:
+                seed = f"Bu klasörü açtım: {folder}\nNe yapmamı istersin?"
+
+        switched = self._switch(None)
+        if not switched.get("ok"):
+            return switched
+        sid = str(switched.get("id") or "")
+        agent = self.agent
+        if agent is not None and sid and hasattr(agent.mind, "set_session_meta"):
+            try:
+                agent.mind.set_session_meta(
+                    sid,
+                    ad=folder.name[:80] or "Neo ile aç",
+                    path=str(folder),
+                )
+                # Proje klasörü etiketine de yaz: geçmiş listesinde gruplansın.
+                if hasattr(agent.mind, "set_project"):
+                    agent.mind.set_project(sid, folder.name[:80] or "Neo ile aç")
+            except Exception:
+                pass
+            try:
+                self._apply_session_context(sid)
+            except Exception:
+                pass
+
+        # Tohum mesajı: chat kuyruğu üzerinden (tur boşsa hemen başlar).
+        if seed:
+            try:
+                self.submit(seed)
+            except Exception:
+                pass
+        try:
+            self.hub.emit({"type": "jobs_refresh"})
+            self.hub.emit({"type": "notice", "text": f"Açıldı: {folder}"})
+        except Exception:
+            pass
+        return {"ok": True, "id": sid, "path": str(folder)}
+
+    def apply_session_context(self, session_id: str) -> None:
+        """Dış çağrı (sohbet-modeli seçildi/temizlendi): canlıya uygula."""
+        self._apply_session_context(session_id)
+
+    def _apply_session_context(self, session_id: str) -> None:
+        """Oturum metasındaki klasör + modeli canlıya uygular.
+
+        Klasör kalıcı ayardır (settings.apply, diske yazar). Model ise
+        SOHBETE özeldir ve yalnız BELLEKTE uygulanır — eski hal
+        settings.apply'dan geçiyordu ve sohbet pini küresel varsayılanın
+        üzerine diske yazılıyordu; başka sohbete geçince eski model geri
+        gelmiyordu. Şimdi taban her zaman diskteki küresel ayar: pin varsa
+        üstüne biner, pin yoksa (ya da silindiyse) taban geri gelir.
+        """
+        agent = self.agent
+        if agent is None:
+            return
+        mind = agent.mind
+        if not hasattr(mind, "session_meta"):
+            return
+        kayit = (mind.session_meta() or {}).get(session_id) or {}
+        path = str(kayit.get("path") or "").strip()
+        model_name = str(kayit.get("model") or "").strip()
+
+        from dataclasses import replace as _degistir
+
+        from . import settings as saved_settings
+
+        if path:
+            try:
+                self.reload(saved_settings.apply(
+                    agent.config, {"sandbox": {"project": path}}))
+            except Exception:
+                pass
+
+        try:
+            taban = saved_settings._from_disk(agent.config).model
+        except Exception:
+            taban = agent.config.model
+        hedef = _degistir(taban, name=model_name) if model_name else taban
+        if hedef != agent.config.model:
+            try:
+                self.reload(_degistir(agent.config, model=hedef))
+            except Exception:
+                pass
+
     def _switch(self, sid: str | None) -> dict[str, Any]:
         """Aktif oturumu değiştirir. sid None ise yeni, değilse o oturum.
 
@@ -502,10 +610,31 @@ class Bridge:
             session = Session.create(sessions_dir)
             resumed = False
 
+        onceki_sid = ""
+        if agent.session is not None:
+            onceki_sid = str(getattr(agent.session, "id", "") or "")
         agent.session = session
         agent.mind.session_id = session.id
         agent._last_encoded = ""      # yeni oturumda anlık-encode tekrarını sıfırla
         self.server.rebind(session)
+        # Yeni sohbet son sohbetin modelini devralır — yalnız son sohbet bir
+        # model SABİTLEMİŞSE. Sabitlemeyen kullanıcıda akış eskisi gibi:
+        # küresel varsayılan neyse o.
+        if not resumed and onceki_sid and hasattr(agent.mind, "session_meta"):
+            try:
+                eski_kayit = (agent.mind.session_meta() or {}).get(onceki_sid) or {}
+                if eski_kayit.get("model"):
+                    agent.mind.set_session_meta(
+                        session.id,
+                        model=str(eski_kayit["model"]),
+                        provider=str(eski_kayit.get("provider") or ""))
+            except Exception:
+                pass
+        # Sohbete özel klasör / model — geçişte uygula.
+        try:
+            self._apply_session_context(session.id)
+        except Exception:
+            pass
         self.hub.emit({"type": "session_reset", "id": session.id, "resumed": resumed})
         return {"ok": True, "id": session.id, "resumed": resumed}
 
@@ -2020,6 +2149,27 @@ async def _boot(config: Config, port: int, resume: bool) -> Runtime:
     )
 
 
+def _handoff_open(port: int, path: str) -> bool:
+    """Çalışan neo örneğine yolu devret. Başarılıysa True (yeni örnek açma)."""
+    import json
+    import urllib.error
+    import urllib.request
+
+    payload = json.dumps({"path": path}).encode("utf-8")
+    req = urllib.request.Request(
+        f"http://127.0.0.1:{int(port)}/api/open",
+        data=payload,
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=2.5) as resp:
+            body = json.loads(resp.read().decode("utf-8", errors="replace") or "{}")
+        return bool(body.get("ok"))
+    except (urllib.error.URLError, TimeoutError, OSError, ValueError, json.JSONDecodeError):
+        return False
+
+
 def _kill_ghosts() -> None:
     """Bu makinedeki DİĞER neo masaüstü örneklerini kapatır.
 
@@ -2061,7 +2211,8 @@ def _kill_ghosts() -> None:
         pass
 
 
-def run(config: Config, *, port: int = 8765, resume: bool = False) -> int:
+def run(config: Config, *, port: int = 8765, resume: bool = False,
+        open_path: str | None = None) -> int:
     """Pencereyi açar ve kapanana kadar bloke eder."""
     # Görev çubuğu kimliği: bu ayarlanmazsa Windows pencereyi python.exe'nin
     # grubunda gösteriyor ve simge PYTHON logosu kalıyordu. Kendi kimliğiyle
@@ -2072,6 +2223,11 @@ def run(config: Config, *, port: int = 8765, resume: bool = False) -> int:
             ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("fatih.neo.app")
         except Exception:
             pass
+
+    # 'Neo ile aç': çalışan örnek varsa ona devret — hayalet avı öldürmesin.
+    pending_open = str(open_path or "").strip() or None
+    if pending_open and _handoff_open(port, pending_open):
+        return 0
 
     # HAYALET AVI: tepside gizli kalmış eski neo örnekleri portu ve pencere
     # hedeflemesini ele geçirip yeni örneği sağır bırakıyordu — kullanıcı
@@ -2137,6 +2293,13 @@ def run(config: Config, *, port: int = 8765, resume: bool = False) -> int:
         raise SystemExit(f"Başlatılamadı: {error}")
 
     runtime: Runtime = box["runtime"]
+
+    # Soğuk açılışta --open: boot bittikten sonra yeni sohbet + klasör.
+    if pending_open:
+        try:
+            runtime.bridge.open_path(pending_open)
+        except Exception:
+            pass
 
     # Native çerçeve: işletim sisteminin başlık çubuğu ve kenarları — böylece
     # TAŞIMA, büyüt/küçült, kenardan RESIZE ve Windows snap hepsi normal bir

@@ -1,0 +1,130 @@
+{
+  "zaman": "20260828T133225Z",
+  "model": "z-ai/glm-5.3-flash",
+  "tekrar": 1,
+  "bekle_sn": 900.0,
+  "gorevler": [
+    {
+      "ad": "o1-rapor",
+      "baslik": "CSV satış raporu + CLI",
+      "zorluk": "orta",
+      "dil": "python",
+      "ozet": {
+        "gorev": "o1-rapor",
+        "puan": 100.0,
+        "ham": 85.0,
+        "olculen_tavan": 85,
+        "olculemeyen": [],
+        "bozuk_teslim": false,
+        "eksenler": [
+          {
+            "ad": "calisir",
+            "tavan": 40,
+            "alinan": 40.0,
+            "kanit": [
+              "+ rapor.py var (8p) — rapor.py",
+              "+ csv ile koşuyor (16p) — çıkış 0; === 2026-01 === Toplam ciro: 47.553,25 TL En cok ciro yapan 3 urun: 1. Pompa: 25.197,00 TL 2. Sensor: 12.159,05 TL 3. PLC: 8.249,70 TL === 2026-02 === Toplam ci",
+              "+ çıktı boş değil (8p) — 424 karakter",
+              "+ --ay koşuyor (8p) — çıkış 0; === 2026-03 === Toplam ciro: 99.286,90 TL En cok ciro yapan 3 urun: 1. Pompa: 54.593,50 TL 2. PLC: 30.248,90 TL 3. Senso"
+            ],
+            "sebep": "",
+            "harici": false
+          },
+          {
+            "ad": "kapsam",
+            "tavan": 25,
+            "alinan": 25.0,
+            "kanit": [
+              "~ aylık cirolar doğru (10.0/10p) — 3/3 ay tuttu: 2026-01, 2026-02, 2026-03",
+              "+ en çok ciro yapan 3 ürün var (5p) — Pompa, PLC, Sensor",
+              "+ üçü çoktan aza sıralı (5p) — sıra tuttu",
+              "+ --ay 2026-03 doğru ayı veriyor (3p) — beklenen 99286.9",
+              "+ --ay diğer ayları süzüyor (2p) — temiz"
+            ],
+            "sebep": "",
+            "harici": false
+          },
+          {
+            "ad": "saglik",
+            "tavan": 20,
+            "alinan": 20.0,
+            "kanit": [
+              "~ sözdizimi temiz (8.0/8p) — 1/1 dosya",
+              "~ boy/karmaşıklık (6.0/6p) — temiz",
+              "~ tekrar yok (6.0/6p) — tekrar eden satır %0, 0 yinelenen blok"
+            ],
+            "sebep": "",
+            "harici": false
+          },
+          {
+            "ad": "test",
+            "tavan": 15,
+            "alinan": 0.0,
+            "kanit": [
+              "- test dosyası yok (0p)"
+            ],
+            "sebep": "",
+            "harici": true
+          }
+        ],
+        "davranis": {
+          "arac_cagrisi": 15,
+          "araclar": {
+            "shell": 10,
+            "ozet_csv": 2,
+            "read_file": 2,
+            "write_file": 1
+          },
+          "hatali_arac": 6,
+          "model_turu": 16,
+          "api_hatasi": 0,
+          "dogruladi_mi": true,
+          "dogrulama_izi": [
+            "shell: py -c \"print('ok')\"",
+            "shell: python -c \"print('ok')\""
+          ],
+          "calistirma_izi": [
+            "shell: py rapor.py satislar.csv; py rapor.py satislar.csv --ay 2026-03; py rapor.py satislar.csv ",
+            "shell: py rapor.py satislar.csv"
+          ],
+          "plan_yazdi_mi": false,
+          "plan_kaniti": "",
+          "token_prompt_son": 25250,
+          "token_prompt_toplam": 384676,
+          "token_cikti": 2740,
+          "model_cagrisi": 16,
+          "maliyet_usd": 0.0295,
+          "sure_sn": 671.5,
+          "degisen_dosya": 1,
+          "kapi_ok": true,
+          "duvar_saati_sn": 673.7
+        },
+        "notlar": [
+          "ölçüm dışı (dokunulmamış tur öncesi dosya): 7"
+        ]
+      },
+      "tum_puanlar": [
+        100.0
+      ],
+      "puan_sapma": null,
+      "bozuk_teslim": 0,
+      "devralindi": ""
+    }
+  ],
+  "kosulmayan": [
+    "k1-modul",
+    "k2-cli",
+    "k3-tamir",
+    "o2-servis",
+    "o3-ozellik",
+    "z1-arama",
+    "z2-panel",
+    "z3-gizli-hata"
+  ],
+  "eksen_tavanlari": {
+    "calisir": 40,
+    "kapsam": 25,
+    "saglik": 20,
+    "test": 15
+  }
+}

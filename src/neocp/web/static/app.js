@@ -209,6 +209,11 @@ Dil.ekle({
   "Düzenle": "Edit",
   "Yeniden gönder": "Resend",
   "Yeniden üret": "Regenerate",
+  "Devamını göster": "Show more",
+  "Daralt": "Collapse",
+  " satır": " lines",
+  "Durdur": "Stop",
+  "Gönder": "Send",
   "Fark okunamadı.": "Could not read the diff.",
   "Diff yok — old/new gelmedi": "No diff — old/new missing",
   "(içerik aynı)": "(unchanged)",
@@ -259,6 +264,7 @@ Dil.ekle({
   "Planı uygula.": "Apply the plan.",
   "Plan hazır — uygulamak yetki ister": "Plan ready — applying needs authority",
   "Plan": "Plan", "Onayla": "Approve", "Düzenle": "Edit", "İptal": "Cancel",
+  "Kaydet": "Save", "Vazgeç": "Cancel",
   "Otomasyon olarak kaydet": "Save as automation",
   "Adımları düzenle (satır = adım)": "Edit steps (one per line)",
 });
@@ -324,8 +330,106 @@ function cizilir(text) {
 Scene.init({
   canvas: $("scene"), probe: $("probe"), reveal: $("reveal"),
   onRoute: renderRoute,
+  // Anıya çift tık / karttaki "Konuşmaya git": anının doğduğu oturuma
+  // geçilir — geçmiş panelindeki tıkla aynı yol (meşgulse bekletir).
+  onSession: (id) => { if (typeof History !== "undefined") History.resumeById(id); },
 });
 Scene.load();
+
+Dil.ekle({ "Açıklama ▸": "Key ▸", "Açıklama ▾": "Key ▾" });
+
+// --- bağlam araçları ⋮ menüsü --------------------------------------------
+(() => {
+  const dugme = $("more-tools"), kutu = $("more-pop");
+  if (!dugme || !kutu) return;
+  dugme.addEventListener("click", (ev) => {
+    ev.stopPropagation();
+    kutu.hidden = !kutu.hidden;
+  });
+  kutu.addEventListener("click", () => { kutu.hidden = true; });
+  document.addEventListener("click", () => { kutu.hidden = true; });
+})();
+
+// --- beyin paneli aç/kapa ------------------------------------------------
+// Sağ sütun marka katmanı; kapatmak odak demek. Tercih hatırlanıyor.
+// Kapalıyken tuval de gizli (display:none) ve sahne çizimi duruyor —
+// görünmeyen sahneyi canlandırmak boşa yakılan pil.
+(() => {
+  const uygula = (acik) => {
+    document.body.classList.toggle("mind-on", acik);
+    document.body.classList.toggle("mind-off", !acik);
+    try { localStorage.setItem("neo-mind", acik ? "acik" : "kapali"); } catch { /* dosya:// */ }
+    if (acik) Scene.resume(); else Scene.pause();
+  };
+  let kayit = null;
+  try { kayit = localStorage.getItem("neo-mind"); } catch { /* dosya:// */ }
+  uygula(kayit !== "kapali");
+  $("mind-close").addEventListener("click", () => uygula(false));
+  $("mind-open").addEventListener("click", () => uygula(true));
+  // Anı araması: eşleşen düğümler parlar, kalanı söner. Kutu boşalınca
+  // sahne normale döner.
+  const ara = $("mind-search");
+  ara.addEventListener("input", () => Scene.search(ara.value));
+
+  // Legend katlanır; varsayılan KAPALI ("kocaman yer kaplamış").
+  const cips = $("legend-toggle");
+  const legendUygula = (acik) => {
+    Scene.legend(acik);
+    cips.classList.toggle("on", acik);
+    cips.textContent = acik ? t("Açıklama ▾") : t("Açıklama ▸");
+    try { localStorage.setItem("neo-legend", acik ? "acik" : "kapali"); } catch { /* dosya:// */ }
+  };
+  let leg = null;
+  try { leg = localStorage.getItem("neo-legend"); } catch { /* dosya:// */ }
+  legendUygula(leg === "acik");
+  cips.addEventListener("click", () =>
+    legendUygula(!cips.classList.contains("on")));
+
+  // Kayıtlı panel genişliği açılışta geri gelsin.
+  try {
+    const w = parseInt(localStorage.getItem("neo-mind-w") || "", 10);
+    if (w >= 240) document.documentElement.style.setProperty("--mind-w-user", w + "px");
+  } catch { /* dosya:// */ }
+})();
+
+// Beyin panelini sol kenarından sürükleyerek boyutlandırma — sol rail
+// tutamağının aynası. Genişlik hatırlanır.
+(() => {
+  const grip = $("mind-grip");
+  if (!grip) return;
+  const root = document.documentElement;
+  let active = false;
+  const onMove = (ev) => {
+    if (!active) return;
+    const max = Math.min(620, window.innerWidth * 0.42);
+    const w = Math.max(240, Math.min(max, window.innerWidth - ev.clientX));
+    root.style.setProperty("--mind-w-user", w + "px");
+  };
+  const stop = () => {
+    if (!active) return;
+    active = false;
+    document.body.classList.remove("mind-resize");
+    window.removeEventListener("pointermove", onMove);
+    window.removeEventListener("pointerup", stop);
+    try {
+      const w = parseInt(getComputedStyle(root).getPropertyValue("--mind-w-user"), 10);
+      if (w) localStorage.setItem("neo-mind-w", String(w));
+    } catch { /* dosya:// */ }
+  };
+  grip.addEventListener("pointerdown", (ev) => {
+    ev.preventDefault();
+    active = true;
+    // İşaretçiyi yakala: fare pencere dışına/iframe üstüne kaçsa da
+    // bırakma olayı BİZE gelir. Yakalanmayınca pointerup kaçıyor ve panel
+    // fare her hareketinde büyüyüp küçülmeye devam ediyordu (canlı şikâyet).
+    try { grip.setPointerCapture(ev.pointerId); } catch { /* eski motor */ }
+    document.body.classList.add("mind-resize");
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", stop);
+    window.addEventListener("pointercancel", stop);
+    window.addEventListener("blur", stop);
+  });
+})();
 
 // Cevabı dönüyor: bazı çağrılar (yetki değişimi) sunucunun kabul edip
 // etmediğine bakmak zorunda.
@@ -421,6 +525,43 @@ function line(kind, text) {
   }
   const el = document.createElement("div");
   el.className = "line " + kind;
+  // Uzun yapıştırma (kod, günlük, belge) sohbeti kaplamasın: katlı gelir,
+  // "Devamını göster" ile açılır (Claude Code'un show more'u). Ham metin
+  // _rawText'te — Düzenle/Yeniden gönder aynen çalışır.
+  if (kind === "user" && text
+      && (text.length > 800 || text.split("\n").length > 14)) {
+    el._rawText = String(text);
+    const satir = text.split("\n").length;
+    const kirp = document.createElement("div");
+    kirp.className = "msg-clip";
+    kirp.textContent = text;
+    const ac = document.createElement("button");
+    ac.type = "button";
+    ac.className = "msg-more";
+    const boya = () => {
+      const acik = el.classList.contains("open");
+      ac.textContent = acik ? t("Daralt")
+        : t("Devamını göster") + " · " + satir + t(" satır");
+    };
+    ac.addEventListener("click", () => { el.classList.toggle("open"); boya(); scroll(); });
+    boya();
+    el.append(kirp, ac);
+    attachMsgActs(el, kind);
+    thread.append(el);
+    scroll();
+    return el;
+  }
+
+  // Aynı turda arka arkaya gelen model parçaları TEK mesaj gibi okunsun:
+  // son konuşan yine modelse bu parça "devam"dır — "neo" başlığı ve koca
+  // aralık tekrar etmez. Metin yine SOHBETTE ve görünür (katlama yok);
+  // yalnız görsel merdiven kırılıyor.
+  if (kind === "agent") {
+    const konusan = [...thread.children].reverse().find((n) =>
+      n.classList && n.classList.contains("line")
+      && (n.classList.contains("agent") || n.classList.contains("user")));
+    if (konusan && konusan.classList.contains("agent")) el.classList.add("cont");
+  }
   if (text) el.textContent = text;
   if (kind === "user" || kind === "agent") {
     if (text) el._rawText = String(text);
@@ -581,9 +722,21 @@ function setWaking(stage, done) {
   if (ready) input.focus();
 }
 
+// Gönder düğmesi koşarken DURDUR olur (Claude Code): kutu boşken ■,
+// kutuda yazı varsa yine → (meşgulken gönderilen sıraya girer).
+function paintSend() {
+  const g = $("send");
+  const dur = busy && !input.value.trim();
+  g.classList.toggle("stop", dur);
+  g.textContent = dur ? "■" : "→";
+  g.title = dur ? t("Durdur") : t("Gönder");
+  g.setAttribute("aria-label", dur ? t("Durdur") : t("Gönder"));
+}
+
 function setBusy(value) {
   busy = value;
   stopBtn.hidden = !value;
+  paintSend();
   // Düğme yalnızca meşgulken kilitlenir. Boş metni send() zaten eliyor;
   // kilidi metnin varlığına bağlamak, değer programatik değiştiğinde
   // (yapıştırma, otomatik doldurma, IME) düğmeyi kilitli bırakıyordu.
@@ -593,7 +746,11 @@ function setBusy(value) {
   waiting(value);
   // Canlı "yaşıyor" sayacı meşgul olduğu sürece ilerlesin, bitince dursun.
   if (value) startBusyTicker(); else stopBusyTicker();
-  if (!value) sealLine();
+  if (!value) {
+    sealLine();
+    // Plan kartı tur metninin ALTINDA: önce metin mühürlensin, sonra kart.
+    flushDeferredPlans();
+  }
 }
 
 // Sahnenin ve durum satırının tek kaynağı. "meşgul/boşta" ikilisi her işi
@@ -779,6 +936,7 @@ let thought = "";
 // model adını siliyordu — model değiştirildiğinde ekranda hiçbir zaman
 // yeni ad görünmüyordu.
 let modelName = "";
+let oturumId = "";   // aktif sohbet — sohbete özel model seçimi buna yazar
 let tokenNote = "";
 let busyNote = "";   // meşgulken saniye saniye ilerleyen "yaşıyor" notu
 
@@ -1146,7 +1304,13 @@ function fold(box) {
 }
 
 // --- sohbet -----------------------------------------------------------
-$("composer").addEventListener("submit", (ev) => { ev.preventDefault(); send(); });
+$("composer").addEventListener("submit", (ev) => {
+  ev.preventDefault();
+  // Koşarken boş kutuyla basmak = durdur; yazı varsa eski kuyruk davranışı.
+  if (busy && !input.value.trim()) { post("/api/interrupt"); Speech.stop(); return; }
+  send();
+});
+input.addEventListener("input", paintSend);
 
 input.addEventListener("input", () => {
   input.style.height = "auto";
@@ -1177,14 +1341,19 @@ async function send() {
   if (!text && !frame && !attached.length && !Camera.on) return;
   // İyimser çizim yok: mesaj olay günlüğüne yazılınca SSE ile geri geliyor.
   // İki kaynaktan çizmek kopyalanmaya yol açardı.
+  // Ekler withFiles içinde SIFIRLANIYOR: ad listesi ve görsel ondan ÖNCE
+  // alınmalı (eski sıralama, iliştirilen dosya etiketlerini hep boş
+  // bırakıyordu). Kamera karesi yoksa son eklenen görüntü mesaja gider.
+  const ekler = attached.slice();
+  const gorsel = frame || (ekler.filter((a) => a.image).pop() || {}).image || "";
   const posted = withContext(withFiles(withMentions(text)));
   // Gönderilen görsel ve dosyalar SSE echo'sunda taşınmıyor (görüntü ağır,
   // ayrıca araçtan gelen kareler `internal`). İstemci elindeki veriyle:
   // mesaj satırı geldiğinde küçük resmi ve dosya etiketlerini ona iliştir.
-  if (frame || attached.length) {
-    pendingMedia.set(posted, { frame, files: attached.map(a => a.name) });
+  if (gorsel || ekler.length) {
+    pendingMedia.set(posted, { frame: gorsel, files: ekler.map((a) => a.name) });
   }
-  post("/api/chat", { text: posted, image: frame });
+  post("/api/chat", { text: posted, image: gorsel });
   // Kullanıcı kendi sözünü söyledi: bekleyen "Planı uygula" teklifi bayat.
   hidePlanOffer();
   // Mesaj gönderen kullanıcı cevabı görmek istiyor: yukarıda unutulmuş bir
@@ -1310,8 +1479,14 @@ function drawDrops() {
 
   for (const item of attached) {
     const chip = document.createElement("span");
-    chip.className = "chip";
-    chip.textContent = item.name + " · " + size(item.bytes);
+    chip.className = "chip" + (item.image ? " img" : "");
+    if (item.image) {
+      const kucuk = document.createElement("img");
+      kucuk.src = item.image;
+      kucuk.alt = item.name;
+      chip.append(kucuk);
+    }
+    chip.append(document.createTextNode(item.name + " · " + size(item.bytes)));
     const drop = document.createElement("button");
     drop.type = "button";
     drop.textContent = "×";
@@ -1578,6 +1753,9 @@ fetch("/api/tanima").then((r) => r.json()).then((d) => {
     if (!grip) return;
     e.preventDefault();
     active = true;
+    try { grip.setPointerCapture(e.pointerId); } catch { /* eski motor */ }
+    window.addEventListener("pointercancel", stop);
+    window.addEventListener("blur", stop);
     const jobs = grip.closest(".jobs-panel");
     document.body.classList.add("left-resize");
     onMove = jobs
@@ -2065,6 +2243,10 @@ async function fillModelPop(pop, note) {
   }
   note.remove();
 
+  // Seçim bu sohbet için: her konuşma kendi modelini taşıyabilir, yeni
+  // sohbet son sohbetin seçimini devralır. Küresel varsayılan ayarlarda.
+  pop.append(mk("div", "pop-note", t(
+    "Seçim bu sohbet için geçerli — yeni sohbet devralır. Küresel varsayılan: Ayarlar → Model.")));
   const search = mk("input", "pop-search");
   search.type = "search";
   search.placeholder = catalog.length + " " + t("model içinde ara…");
@@ -2082,11 +2264,21 @@ async function fillModelPop(pop, note) {
         const was = modelName;
         modelName = item.id;
         showMeta(); dockRender();
-        const answer = await post("/api/settings", { model: { name: item.id } });
+        // Sohbete yazılır (meta) ve sunucu aktif oturuma ANINDA uygular;
+        // oturum kimliği yoksa (eski akış) küresel ayara düşer.
+        const answer = oturumId
+          ? await post("/api/session/meta", { id: oturumId, model: item.id })
+          : await post("/api/settings", { model: { name: item.id } });
         if (answer && answer.ok === false) { modelName = was; showMeta(); dockRender(); }
       }));
     }
     if (!shown) list.append(mk("div", "pop-note", t("Eşleşen yok.")));
+    if (oturumId && !search.value.trim()) {
+      list.append(popRow(t("↺ Küresel varsayılana dön"), "", false, async () => {
+        await post("/api/session/meta", { id: oturumId, model: "" });
+        loadState();   // gerçek model sunucudan gelsin
+      }));
+    }
   };
   search.addEventListener("input", paint);
   paint();
@@ -2584,6 +2776,7 @@ function closeAct(e) {
       if (existing && existing.classList.contains("act-result")) existing.remove();
       const trace = document.createElement("div");
       trace.className = "act-result" + (e.error ? " err" : "");
+      requestAnimationFrame(() => trace.scrollIntoView({ block: "nearest", behavior: "smooth" }));
       trace.textContent = "⎿ " + e.summary;
       trace.onclick = () => toggleCard(row);
       row.after(trace);
@@ -2817,6 +3010,9 @@ function openCard(row) {
   anchor.after(box);
   row._cardEl = box;
   row.classList.add("opened");
+  // Kart çoğu zaman ekranın altında doğuyor: görünür alana getir —
+  // "tıkladım, hiçbir şey olmadı" hissinin köküydü.
+  requestAnimationFrame(() => box.scrollIntoView({ block: "nearest", behavior: "smooth" }));
 }
 
 function refreshCard(row) {
@@ -3170,7 +3366,72 @@ const Goals = (() => {
     });
   }
 
+  // Sağ üstteki iş listesi aynası: adım durumları tek bakışta.
+  // İlk AKTİF madde "şu an çalışılan" sayılır (neo listeyi yukarıdan
+  // aşağı yürütüyor) — ● ile atar; bitenler ✓, kalanlar ○.
+  let dockFolded = false;
+  try { dockFolded = localStorage.getItem("neo-plan-dock") === "katli"; } catch { /* dosya:// */ }
+
+  function renderDock() {
+    const kart = $("plan-dock");
+    if (!kart) return;
+    const rows = [...items.entries()];
+    if (!rows.length || innerWidth <= 1100) { kart.hidden = true; return; }
+    kart.hidden = false;
+    const done = rows.filter(([, g]) => g.status === "done").length;
+    const head = $("plan-dock-head");
+    head.textContent = (dockFolded ? "▸ " : "▾ ") + t("İş listesi")
+      + " · " + done + "/" + rows.length;
+    head.title = t("neo'nun kendine yazdığı iş listesi — tıkla: katla/aç");
+    const body = $("plan-dock-body");
+    body.hidden = dockFolded;
+    body.textContent = "";
+    if (dockFolded) return;
+    let calisan = false;
+    for (const [id, g] of rows.slice(0, 10)) {
+      const row = document.createElement("div");
+      const simdi = g.status === "active" && !calisan;
+      if (simdi) calisan = true;
+      row.className = "plan-step " + g.status + (simdi ? " now" : "");
+      const mark = document.createElement("i");
+      mark.textContent = g.status === "done" ? "✓"
+        : g.status === "dropped" ? "×" : simdi ? "●" : "○";
+      const label = document.createElement("span");
+      label.textContent = g.text;
+      label.title = g.text;
+      row.append(mark, label);
+      // Dock salt ayna değil: madde buradan da kapanır/silinir. Kullanıcı
+      // düzenleme düğmesini panelde arıyordu, bulamıyordu — listeyi asıl
+      // gördüğü yer burası.
+      if (g.status === "active") {
+        row.append(goalBtn("✓", t("Tamamlandı"), () => act(id, "done")),
+                   goalBtn("×", t("Kaldır"), () => act(id, "drop")));
+      }
+      body.append(row);
+    }
+    if (rows.length > 10) {
+      const more = document.createElement("div");
+      more.className = "plan-step more";
+      more.textContent = "…+" + (rows.length - 10);
+      body.append(more);
+    }
+    // Kendi maddeni ekle + tümünü temizle: goals paneliyle aynı defter.
+    body.append(addRow());
+    const temiz = document.createElement("button");
+    temiz.type = "button";
+    temiz.className = "goals-clear" + (clearArmed ? " armed" : "");
+    temiz.textContent = clearArmed ? t("Emin misin?") : t("tümünü temizle");
+    temiz.onclick = (ev) => {
+      ev.stopPropagation();
+      if (!clearArmed) { clearArmed = true; renderDock(); return; }
+      clearArmed = false;
+      ask("clear").then((res) => { if (res && res.ok) items.clear(); render(); });
+    };
+    body.append(temiz);
+  }
+
   function render() {
+    renderDock();
     const box = $("goals");
     if (!box) return;
     // Boş durumda panel yok: yer de kaplamıyor (artık akışın kardeşi).
@@ -3334,6 +3595,13 @@ const Goals = (() => {
     rememberFold();
     render();
   });
+  const dockHead = $("plan-dock-head");
+  if (dockHead) dockHead.addEventListener("click", () => {
+    dockFolded = !dockFolded;
+    try { localStorage.setItem("neo-plan-dock", dockFolded ? "katli" : "acik"); } catch { /* dosya:// */ }
+    render();
+  });
+  window.addEventListener("resize", renderDock);
   // Dar pencerede liste sohbetten yer çalmasın: kendiliğinden katlanıyor.
   window.addEventListener("resize", () => {
     if (window.innerWidth <= GOAL_FOLD_WIDTH && !folded) folded = true;
@@ -3458,15 +3726,56 @@ function artifactCard(e) {
   scroll();
 }
 
+const deferredPlans = new Map();
+
 function planCard(e) {
   if (!e || !e.id) return;
   clearWelcome();
+  // Tur sürerken kartı hemen basma: model hâlâ metin yazıyor; kart üstte
+  // kalıp altına "bir şeyler daha" düşüyordu. Tur bitince flush.
+  if (busy) {
+    deferredPlans.set(e.id, e);
+    const found = thread.querySelector('.plan-card[data-id="' + e.id + '"]');
+    if (found) applyPlanData(found, e);
+    return;
+  }
+  showPlanCard(e);
+}
+
+function flushDeferredPlans() {
+  if (!deferredPlans.size) {
+    pinPlanCards();
+    return;
+  }
+  const batch = [...deferredPlans.values()];
+  deferredPlans.clear();
+  for (const e of batch) showPlanCard(e);
+  pinPlanCards();
+}
+
+function pinPlanCards() {
+  // Açık plan kartları sohbetin en sonunda (plan-apply teklifinin üstünde).
+  const offer = planOffer;
+  for (const card of [...thread.querySelectorAll(".plan-card")]) {
+    if (offer && offer.parentNode === thread) thread.insertBefore(card, offer);
+    else thread.append(card);
+  }
+}
+
+function applyPlanData(card, e) {
+  card._plan = e;
+  const title = card.querySelector(".plan-title");
+  const status = card.querySelector(".plan-status");
+  if (title) title.textContent = e.title || e.id;
+  if (status) status.textContent = e.status || "";
+  if (!card.querySelector(".plan-edit")) renderPlanSteps(card, e);
+}
+
+function showPlanCard(e) {
   const found = thread.querySelector('.plan-card[data-id="' + e.id + '"]');
   if (found) {
-    found.querySelector(".plan-title").textContent = e.title || e.id;
-    found.querySelector(".plan-status").textContent = e.status || "";
-    found._plan = e;
-    renderPlanSteps(found, e);
+    applyPlanData(found, e);
+    pinPlanCards();
     return;
   }
   const card = el2("div", "plan-card");
@@ -3493,15 +3802,7 @@ function planCard(e) {
   edit.type = "button";
   edit.onclick = (ev) => {
     ev.stopPropagation();
-    const steps = (card._plan.steps || []).map((s) => (s.text || s)).join("\n");
-    const next = prompt(t("Adımları düzenle (satır = adım)"), steps);
-    if (next == null) return;
-    const list = next.split("\n").map((s) => s.trim()).filter(Boolean);
-    fetch("/api/plans", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "update", id: e.id, steps: list }),
-    });
+    enterPlanEdit(card);
   };
   const cancel = el2("button", "plan-btn muted", t("İptal"));
   cancel.type = "button";
@@ -3513,44 +3814,78 @@ function planCard(e) {
       body: JSON.stringify({ action: "cancel", id: e.id }),
     });
   };
-  const saveAuto = el2("button", "plan-btn muted", t("Otomasyon olarak kaydet"));
-  saveAuto.type = "button";
-  saveAuto.onclick = async (ev) => {
-    ev.stopPropagation();
-    const steps = card._plan.steps || [];
-    const nodes = steps.map((s, i) => ({
-      id: "s" + (i + 1),
-      title: String(s.text || s || ("Adım " + (i + 1))).slice(0, 80),
-      type: "custom",
-      config: { prompt: s.text || String(s) },
-      secrets_needed: [],
-      skill: "",
-      position: { x: 40, y: 40 + i * 90 },
-    }));
-    const edges = nodes.slice(0, -1).map((n, i) => ({
-      from: n.id, to: nodes[i + 1].id, on: "ok",
-    }));
-    await fetch("/api/workflows", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        action: "save",
-        workflow: { title: e.title || "Plan", nodes, edges },
-      }),
-    });
-    if (window.JobsPanel) JobsPanel.open();
-  };
-  acts.append(ok, edit, cancel, saveAuto);
+  // "Otomasyon olarak kaydet" bilerek yok: tek seferlik bir proje planını
+  // tekrarlanan otomasyona çevirmek anlamsızdı ve kullanıcıyı şaşırttı
+  // ("bu projeyi neden sürekli yaptırayım?"). Otomasyon kurma yeri akış
+  // editörü (Görevler) — plan kartı değil.
+  acts.append(ok, edit, cancel);
   card.append(acts);
   thread.append(card);
+  pinPlanCards();
   scroll();
+}
+
+function enterPlanEdit(card) {
+  if (card.querySelector(".plan-edit")) return;
+  const plan = card._plan || {};
+  const steps = (plan.steps || []).map((s) => (s.text || s)).join("\n");
+  const list = card.querySelector(".plan-steps");
+  if (list) list.remove();
+  const acts = card.querySelector(".plan-acts");
+  if (acts) acts.hidden = true;
+
+  const box = el2("div", "plan-edit");
+  const ta = document.createElement("textarea");
+  ta.className = "plan-edit-area";
+  ta.rows = Math.min(14, Math.max(4, steps.split("\n").length + 1));
+  ta.value = steps;
+  ta.setAttribute("aria-label", t("Adımları düzenle (satır = adım)"));
+  const row = el2("div", "plan-edit-acts");
+  const save = el2("button", "plan-btn", t("Kaydet"));
+  save.type = "button";
+  const abort = el2("button", "plan-btn muted", t("Vazgeç"));
+  abort.type = "button";
+  row.append(save, abort);
+  box.append(ta, row);
+  if (acts) card.insertBefore(box, acts);
+  else card.append(box);
+  ta.focus();
+
+  const leave = () => {
+    box.remove();
+    if (acts) acts.hidden = false;
+    renderPlanSteps(card, card._plan || plan);
+  };
+  abort.onclick = (ev) => { ev.stopPropagation(); leave(); };
+  save.onclick = async (ev) => {
+    ev.stopPropagation();
+    const listSteps = ta.value.split("\n").map((s) => s.trim()).filter(Boolean);
+    save.disabled = true;
+    try {
+      await fetch("/api/plans", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "update", id: plan.id || card.dataset.id, steps: listSteps,
+        }),
+      });
+      card._plan = {
+        ...plan,
+        steps: listSteps.map((text, i) => ({ id: "s" + (i + 1), text, status: "bekliyor" })),
+      };
+    } finally {
+      leave();
+    }
+  };
 }
 
 function renderPlanSteps(card, e) {
   let list = card.querySelector(".plan-steps");
   if (!list) {
     list = el2("ol", "plan-steps");
-    card.append(list);
+    const acts = card.querySelector(".plan-acts");
+    if (acts) card.insertBefore(list, acts);
+    else card.append(list);
   }
   list.replaceChildren();
   for (const s of e.steps || []) {
@@ -3722,17 +4057,25 @@ function handle(e) {
     // Oturum değişti (yeni ya da devam): thread temizlenir; devam eden bir
     // konuşmaysa geçmiş dökümü yüklenir ki kullanıcı kaldığı yeri görsün.
     case "session_reset": {
+      oturumId = e.id || "";
       thread.replaceChildren();
       waitingLines.length = 0;
       work = null; agentLine = null; raw = ""; waitState = null;
       planOffer = null;   // düğme thread ile birlikte gitti; referans kalmasın
+      deferredPlans.clear();
       resumeFollow(false);   // yeni döküm: takip baştan açık
       // Sürdürülen oturum: döküm kadar SAYAÇLAR da kaldığı yerden gelmeli.
       // Durum anlık görüntüsü bağlam çubuğunu ve harcama çipini oturum
       // günlüğünden tohumluyor — yoksa dolu bir konuşma "%0" görünüyordu.
       if (e.resumed && e.id) { loadTranscript(e.id); loadState(); }
       else showWelcome();   // taze oturum: karşılama geri gelsin (boş ekran değil)
-      if (typeof History !== "undefined") History.close();
+      // Rail kalıcı bir sütun: konuşma değişimi onu KAPATMAZ ("konuşmaya
+      // tıklıyorum, sidebar gidiyor" — canlı şikâyet, ikinci kök buradaydı).
+      // Geniş ekranda liste tazelenir ki "şu an açık" işareti taşınsın;
+      // yalnız dar pencerede overlay kapanır.
+      if (typeof History !== "undefined") {
+        if (innerWidth <= 860) History.close(); else History.open();
+      }
       // Oturum değişti: değişiklik defterinin sınırı da yeni oturumun
       // defterine göre kurulmalı — önceki konuşmanın kayıtları bu turun
       // özetine karışmasın.
@@ -3989,6 +4332,7 @@ async function loadState() {
         (s.kurulu ? t(" · kurulum") : t(" · geliştirme"));
     }
     modelName = s.model || "";
+    oturumId = s.session || oturumId;
     showMeta();
     setVoice(!!s.voice);
     Speech.setCharacter(s.character);

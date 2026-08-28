@@ -34,6 +34,17 @@ def build_graph(mind: Mind, *, episode_limit: int = 8) -> dict[str, Any]:
     nodes: list[dict[str, Any]] = [
         {"id": "self", "label": "neocp", "group": "self", "size": 26, "detail": ""}
     ]
+
+    # "Konuşmaya git" ancak kaynak oturum DOSYASI hâlâ duruyorsa vaat
+    # edilebilir: taşınmış/birleştirilmiş anıların oturumları çoğu zaman
+    # bu makinede yok ve düğme sessizce ölüyordu (canlıda görüldü).
+    def _kaynak_var(session_id: str) -> bool:
+        if not session_id:
+            return False
+        try:
+            return (mind.sessions_dir / f"{session_id}.jsonl").is_file()
+        except OSError:
+            return False
     edges: list[dict[str, str]] = []
 
     buckets = _buckets(mind, episode_limit)
@@ -76,6 +87,18 @@ def build_graph(mind: Mind, *, episode_limit: int = 8) -> dict[str, Any]:
     }
 
 
+# "Konuşmaya git" ancak kaynak oturum DOSYASI hâlâ duruyorsa vaat
+# edilebilir: taşınmış/birleştirilmiş anıların oturumları çoğu zaman bu
+# makinede yok ve düğme sessizce ölüyordu (canlıda görüldü).
+def _kaynak_var(mind: Mind, session_id: str) -> bool:
+    if not session_id:
+        return False
+    try:
+        return (mind.sessions_dir / f"{session_id}.jsonl").is_file()
+    except (OSError, AttributeError, TypeError):
+        return False
+
+
 def _links(mind: Mind) -> list[tuple[str, str, float]]:
     getter = getattr(mind, "links", None)
     return getter() if callable(getter) else []
@@ -91,12 +114,19 @@ def _buckets(mind: Mind, episode_limit: int) -> dict[str, list[dict[str, Any]]]:
                 "label": _clip(memory.title or memory.content),
                 "detail": memory.content,
                 "meta": ", ".join(memory.tags),
+                # "Nasıl öğrendim": hangi konuşmada, ne zaman. Arayüz çift
+                # tıkla kaynağa gidiyor — kimlik olmadan gidilemezdi.
+                "kaynak": memory.session_id,
+                "kaynak_var": _kaynak_var(mind, memory.session_id),
+                "ts": memory.ts,
             }
             for memory in mind.memories(kind)
         ]
 
     buckets["goal"] = [
-        {"id": goal.id, "label": _clip(goal.text), "detail": goal.text, "meta": goal.status}
+        {"id": goal.id, "label": _clip(goal.text), "detail": goal.text,
+         "meta": goal.status, "kaynak": goal.session_id,
+         "kaynak_var": _kaynak_var(mind, goal.session_id), "ts": goal.ts}
         for goal in mind.goals()
     ]
 

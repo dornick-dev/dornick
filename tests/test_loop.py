@@ -401,7 +401,8 @@ async def test_relevant_memories_arrive_before_the_model_asks(
 
     await agent.run("veritabani yedegi ne zaman aliniyordu")
 
-    sent = str(client.seen_messages[-1])
+    # Son çağrı oturum-başlığı olabilir (zihinli koşu): ANA isteme bak.
+    sent = str(client.seen_messages[0])
     assert "03:00" in sent
     # Ilgisiz hatira bagami sismemeli.
     assert "Kahve" not in sent

@@ -658,3 +658,392 @@ def test_which_files_declare_an_entry_point(kaynak: str, giris: bool) -> None:
     from neocp.loop import giris_noktasi_mi
 
     assert giris_noktasi_mi(kaynak) is giris
+
+
+# -- kabul-listesi kapısı ----------------------------------------------
+#
+# Ölçülen yara (CMS koşusu, 28.08): plan maddesinde "zengin metin editörü"
+# yazarken teslim düz textarea çıktı ve hiçbir kapı yakalamadı — madde
+# sessizce düşmüştü. Kapı: iş defterinde AÇIK madde dururken araçsız bir
+# "bitti" cevabı BİR kez geri çevrilir.
+
+
+def _akilli_agent(tmp_path: Path, client: Any, registry: ToolRegistry, hedefler: list[str]):
+    """Zihinli ajan: defterine hedef yazılmış halde."""
+    from neocp.mind import open_mind
+    from neocp.loop import Agent, AgentIO
+    from neocp.permissions import PermissionEngine
+    from neocp.session import Session
+    from .test_loop import _always_yes
+
+    config = Config.load(tmp_path)
+    config.ensure_dirs()
+    mind = open_mind(config.mind_dir, config.sessions_dir, "test")
+    for hedef in hedefler:
+        mind.push_goal(hedef)
+    session = Session(EventLog(tmp_path / "s.jsonl"), "test")
+    return Agent(
+        config=config,
+        session=session,
+        registry=registry,
+        client=client,
+        io=AgentIO(approve=_always_yes),
+        permissions=PermissionEngine("yolo", allow=[], deny=[]),
+        mind=mind,
+    )
+
+
+def test_open_goals_block_a_done_claim(tmp_path: Path) -> None:
+    registry = ToolRegistry()
+    client = FakeClient(
+        text_turn("Bitti, her şey hazır."),
+        text_turn("Haklısın — zengin metin editörü maddesi açık kalmış, ekliyorum."),
+    )
+    agent = _akilli_agent(tmp_path, client, registry,
+                          ["M4: zengin metin editörü", "M5: sitemap"])
+
+    stats = asyncio.run(agent.run("cms'i bitir"))
+
+    notlar = [n for n in _harness_notlari(agent) if "[Kabul]" in n]
+    assert len(notlar) == 1, notlar
+    assert "zengin metin editörü" in notlar[0]
+    assert stats.turns == 2
+    assert stats.kabul_uyarildi is True
+
+
+def test_no_open_goals_no_kabul_gate(tmp_path: Path) -> None:
+    registry = ToolRegistry()
+    client = FakeClient(text_turn("Bitti, her şey hazır."))
+    agent = _akilli_agent(tmp_path, client, registry, [])
+
+    stats = asyncio.run(agent.run("küçük işi yap"))
+
+    assert not [n for n in _harness_notlari(agent) if "[Kabul]" in n]
+    assert stats.turns == 1
+
+
+def test_kabul_gate_fires_at_most_once(tmp_path: Path) -> None:
+    """İkinci "bitti" bırakılır: sonsuz "hayır bitmedi" döngüsü yarım
+    cevaptan kötü (kırmızı kapısıyla aynı sözleşme)."""
+    registry = ToolRegistry()
+    client = FakeClient(
+        text_turn("Bitti."),
+        text_turn("Yine de bitti diyorum."),
+    )
+    agent = _akilli_agent(tmp_path, client, registry, ["açık madde"])
+
+    stats = asyncio.run(agent.run("işi yap"))
+
+    notlar = [n for n in _harness_notlari(agent) if "[Kabul]" in n]
+    assert len(notlar) == 1
+    assert stats.turns == 2
+
+
+def test_an_honest_open_items_report_is_not_a_done_claim(tmp_path: Path) -> None:
+    """Dürüst "şunlar açık kaldı" cevabı dürtülmez — kapı yalnız bitti
+    İDDİASINDA açılır."""
+    registry = ToolRegistry()
+    client = FakeClient(text_turn("İki madde açık kaldı: editör ve sitemap; yarın sürerim."))
+    agent = _akilli_agent(tmp_path, client, registry, ["editör", "sitemap"])
+
+    stats = asyncio.run(agent.run("işi yap"))
+
+    assert not [n for n in _harness_notlari(agent) if "[Kabul]" in n]
+    assert stats.turns == 1
+
+
+# -- küçük-aile diyeti --------------------------------------------------
+
+
+def test_small_family_is_recognised_and_briefed() -> None:
+    from neocp import prompt as p
+
+    assert p.kucuk_aile("z-ai/glm-5.3-flash")
+    assert p.kucuk_aile("gemini-2.5-flash-lite")
+    assert not p.kucuk_aile("claude-opus-5")
+    assert not p.kucuk_aile("z-ai/glm-5.3")
+
+
+def test_small_family_gets_the_brevity_block_and_brief_schemas(tmp_path: Path) -> None:
+    from dataclasses import replace
+    from neocp import prompt as p
+
+    config = Config.load(tmp_path)
+    config.ensure_dirs()
+    config.model = replace(config.model, name="z-ai/glm-5.3-flash")
+    registry = ToolRegistry()
+    sistem = p.build(config, registry)
+    assert "Kısalık sözleşmesi" in sistem.core
+
+    agent = build_agent_with_config(tmp_path, FakeClient(text_turn("ok")), registry, config)
+    assert agent.kisa_sema is True
+
+    config.model = replace(config.model, name="claude-opus-5")
+    sistem2 = p.build(config, registry)
+    assert "Kısalık sözleşmesi" not in sistem2.core
+
+
+def build_agent_with_config(tmp_path: Path, client: Any, registry: ToolRegistry, config):
+    from neocp.loop import Agent, AgentIO
+    from neocp.permissions import PermissionEngine
+    from neocp.session import Session
+    from .test_loop import _always_yes
+
+    session = Session(EventLog(tmp_path / "s2.jsonl"), "test")
+    return Agent(
+        config=config,
+        session=session,
+        registry=registry,
+        client=client,
+        io=AgentIO(approve=_always_yes),
+        permissions=PermissionEngine("yolo", allow=[], deny=[]),
+    )
+
+
+# -- öğretici kabuk hataları --------------------------------------------
+
+
+def test_known_shell_traps_teach_the_way_out() -> None:
+    from neocp.tools.shell import kabuk_ipucu
+
+    assert "betiğe yaz" in kabuk_ipucu("At line:1 char:9 ... Unexpected token '|' in expression")
+    assert "sürüm komutuyla" in kabuk_ipucu(
+        "'gh' is not recognized as the name of a cmdlet, function...")
+    assert "list_dir" in kabuk_ipucu("Cannot find path 'D:\yok\yer'")
+    assert kabuk_ipucu("normal çıktı, sorun yok") == ""
+
+
+# -- model oturum başlığı ----------------------------------------------
+#
+# Canlı şikâyet: sohbet listesi kullanıcı cümlesinin ilk 30 karakteriyle
+# doluyor ("bana profesonel bir cms yapa ama..."). Başlığı ilk alışveriş
+# bitince model koyar; elle verilmiş ad ASLA ezilmez.
+
+
+def test_model_names_unnamed_session(tmp_path: Path) -> None:
+    registry = ToolRegistry()
+    client = FakeClient(
+        text_turn("CMS iskeleti kuruldu, model katmanı hazır."),
+        text_turn("CMS iskeleti kurulumu"),   # başlık çağrısının cevabı
+    )
+    agent = _akilli_agent(tmp_path, client, registry, [])
+
+    asyncio.run(agent.run("bana profesyonel bir cms yap"))
+
+    meta = agent.mind.session_meta()
+    assert meta["test"]["ad"] == "CMS iskeleti kurulumu"
+    # Başlık çağrısı araçsız gider ve sistemi ana istem değil kısa yönerge.
+    assert client.seen_tools[-1] == []
+    assert "başlık" in client.seen_system[-1][0]["text"].lower()
+
+
+def test_named_session_is_not_retitled(tmp_path: Path) -> None:
+    registry = ToolRegistry()
+    client = FakeClient(text_turn("tamam, yaptım."))
+    agent = _akilli_agent(tmp_path, client, registry, [])
+    agent.mind.set_session_meta("test", ad="Elle verilen ad")
+
+    asyncio.run(agent.run("küçük bir iş"))
+
+    assert agent.mind.session_meta()["test"]["ad"] == "Elle verilen ad"
+    # Ek başlık çağrısı hiç gitmedi: tek tur görüldü.
+    assert len(client.seen_messages) == 1
+
+
+# -- plan dürtüsü işin ortasında susar ---------------------------------
+#
+# Canlı saçmalık (28.08): 240 turluk koşunun ortasında, 97 dosya değişmiş
+# ve iş listesi doluyken "sıfırdan" plan kartı çıktı. Plan işin BAŞININ
+# işi: defterde açık madde ya da önceki alışveriş varsa dürtü susar.
+
+
+def _plan_notu_dustu_mu(agent) -> bool:
+    return any("plan" in str(n.data).lower()
+               for n in agent.session.log.notes("plan_refleksi"))
+
+
+def test_plan_nudge_fires_on_fresh_big_request(tmp_path: Path) -> None:
+    registry = ToolRegistry()
+    client = FakeClient(text_turn("plan geliyor"))
+    agent = _akilli_agent(tmp_path, client, registry, [])
+
+    asyncio.run(agent.run("bana profesyonel bir cms projesi yap baştan sona"))
+
+    assert len(agent.session.log.notes("plan_refleksi")) == 1
+
+
+def test_plan_nudge_is_silent_while_goals_are_open(tmp_path: Path) -> None:
+    registry = ToolRegistry()
+    client = FakeClient(text_turn("devam ediyorum"),
+                        text_turn("Madde kapatıldı."))
+    agent = _akilli_agent(tmp_path, client, registry,
+                          ["M3: yazılar CRUD", "M4: medya"])
+
+    asyncio.run(agent.run("bana profesyonel bir cms projesi yap baştan sona"))
+
+    assert not agent.session.log.notes("plan_refleksi")
+
+
+def test_plan_nudge_is_silent_mid_conversation(tmp_path: Path) -> None:
+    registry = ToolRegistry()
+    client = FakeClient(text_turn("ilk cevap"), text_turn("ikinci cevap"),
+                        text_turn("başlık"), text_turn("başlık2"))
+    agent = _akilli_agent(tmp_path, client, registry, [])
+
+    asyncio.run(agent.run("merhaba, kısa bir soru"))
+    asyncio.run(agent.run("şimdi bana profesyonel bir cms projesi yap baştan sona"))
+
+    assert not agent.session.log.notes("plan_refleksi")
+
+
+# -- kabuk: stdin kapalı, zaman aşımı ağacı öldürür --------------------
+#
+# Canlı yakalanan yara (28.08 üçlü kıyas): ajanın yazdığı rapor.py stdin
+# bekliyordu; çocuk stdin'i miras aldığı için tur dakikalarca asıldı ve
+# "durduruldu" denen sürecin torunu 7,5 dk yaşadı. stdin DEVNULL →
+# input() anında EOFError; taskkill /T → ağaç komple iner.
+
+
+def test_shell_child_gets_no_stdin(tmp_path: Path) -> None:
+    import time
+    from neocp.tools.shell import _run_shell
+
+    async def kos():
+        t0 = time.monotonic()
+        durum, text, code = await _run_shell(
+            'py -c "input()"', tmp_path, "t", 20, asyncio.Event())
+        return durum, code, time.monotonic() - t0
+
+    durum, code, gecen = asyncio.run(kos())
+    assert durum == "ok" and code != 0     # EOFError ile hemen düştü
+    assert gecen < 10, f"stdin bekledi: {gecen:.1f} sn"
+
+
+def test_shell_timeout_kills_the_process_tree(tmp_path: Path) -> None:
+    import time
+    from neocp.tools.shell import _run_shell
+
+    async def kos():
+        t0 = time.monotonic()
+        durum, _, _ = await _run_shell(
+            'py -c "import time; time.sleep(60)"', tmp_path, "t", 3,
+            asyncio.Event())
+        return durum, time.monotonic() - t0
+
+    durum, gecen = asyncio.run(kos())
+    assert durum == "timeout"
+    assert gecen < 15, f"ağaç ölmedi, bekleme sürdü: {gecen:.1f} sn"
+
+
+# -- edit_file boşluk toleransı ----------------------------------------
+#
+# Ölçülen yara (üçlü kıyas z1): 18 hatalı aracın 7'si "aranan metin yok"
+# ve hepsi boşluk/girinti farkıydı. Tolerans: satır sonu, kuyruk boşluğu,
+# tek-tip girinti kayması — hepsinde eşleşme TEK olmak şartıyla.
+
+
+from neocp.tools.files import _esnek_esle
+
+NL = chr(10)
+CRLF = chr(13) + NL
+
+
+def test_esnek_esle_kuyruk_boslugu() -> None:
+    text = NL.join(['a = 1   ', 'b = 2', 'c = 3', ''])
+    hit = _esnek_esle(text, NL.join(['a = 1', 'b = 2']),
+                      NL.join(['a = 9', 'b = 2']))
+    assert hit and hit[3] == 'kuyruk boşlukları göz ardı edildi'
+    b, e, yeni, _ = hit
+    assert text[b:e] == NL.join(['a = 1   ', 'b = 2'])
+
+
+def test_esnek_esle_girinti_kaymasi_new_de_kayar() -> None:
+    text = NL.join(['def f():', '    if x:', '        git()', ''])
+    # Model bir seviye eksik girintiyle hatırlamış:
+    hit = _esnek_esle(text, NL.join(['if x:', '    git()']),
+                      NL.join(['if x:', '    kal()']))
+    assert hit and 'girinti' in hit[3]
+    b, e, yeni, _ = hit
+    assert text[b:e] == NL.join(['    if x:', '        git()'])
+    assert yeni == NL.join(['    if x:', '        kal()'])
+
+
+def test_esnek_esle_crlf() -> None:
+    text = NL.join(['x = 1', 'y = 2', ''])
+    hit = _esnek_esle(text, CRLF.join(['x = 1', 'y = 2']),
+                      CRLF.join(['x = 1', 'y = 3']))
+    assert hit and hit[3] == 'satır sonları normalize edildi'
+    assert hit[2] == NL.join(['x = 1', 'y = 3'])
+
+
+def test_esnek_esle_coklu_aday_belirsiz() -> None:
+    # Aynı içerik iki farklı tek-tip kaymayla iki yerde: hangisi olduğu
+    # belirsiz — dokunma, hata döndür.
+    text = NL.join(['  x()', '  y()', 'ara', '    x()', '    y()', ''])
+    hit = _esnek_esle(text, NL.join(['x()', 'y()']), NL.join(['x()', 'z()']))
+    assert hit == ('coklu', 2)
+
+
+def test_esnek_esle_icerik_farki_hosgorulmez() -> None:
+    assert _esnek_esle('a = 1' + NL, 'a = 2', 'a = 3') is None
+
+
+# -- sohbete özel model ------------------------------------------------
+#
+# Eski tesisat sohbet pinini settings.apply'dan geçiriyordu: pin DİSKE,
+# küresel varsayılanın üzerine yazılıyordu ve başka sohbete geçince eski
+# model geri gelmiyordu. Artık taban her zaman diskteki ayar; pin bellekte
+# üstüne biner, silinince taban döner.
+
+
+def _kopru(tmp_path: Path):
+    import json
+    from neocp.desktop import Bridge
+    from neocp.mind import open_mind
+
+    config = Config.load(tmp_path)
+    config.ensure_dirs()
+    (tmp_path / ".neocp" / "config.json").write_text(
+        json.dumps({"model": {"name": "kuresel-model"}}), encoding="utf-8")
+    from dataclasses import replace
+    config = replace(config, model=replace(config.model, name="kuresel-model"))
+
+    mind = open_mind(config.mind_dir, config.sessions_dir, "s1")
+    kopru = Bridge.__new__(Bridge)
+    uygulananlar: list[str] = []
+
+    class _Ajan:
+        pass
+    ajan = _Ajan()
+    ajan.config = config
+    ajan.mind = mind
+    kopru.agent = ajan
+
+    def _reload(updated, force=False):
+        ajan.config = updated
+        uygulananlar.append(updated.model.name)
+    kopru.reload = _reload
+    return kopru, ajan, mind, uygulananlar, tmp_path / ".neocp" / "config.json"
+
+
+def test_session_model_pin_applies_in_memory_only(tmp_path: Path) -> None:
+    import json
+    kopru, ajan, mind, uygulanan, disk = _kopru(tmp_path)
+    mind.set_session_meta("s1", model="sohbet-modeli")
+
+    kopru._apply_session_context("s1")
+
+    assert ajan.config.model.name == "sohbet-modeli"
+    # Küresel varsayılan diskte DEĞİŞMEDİ — pin sohbetin, kurulumun değil.
+    assert json.loads(disk.read_text(encoding="utf-8"))["model"]["name"] == "kuresel-model"
+
+
+def test_clearing_session_model_returns_to_global(tmp_path: Path) -> None:
+    kopru, ajan, mind, uygulanan, disk = _kopru(tmp_path)
+    mind.set_session_meta("s1", model="sohbet-modeli")
+    kopru._apply_session_context("s1")
+    assert ajan.config.model.name == "sohbet-modeli"
+
+    mind.set_session_meta("s1", model="")
+    kopru._apply_session_context("s1")
+    assert ajan.config.model.name == "kuresel-model"

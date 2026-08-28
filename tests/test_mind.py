@@ -375,7 +375,11 @@ def _oturum_yaz(sessions_dir: Path, sid: str, turlar: list[tuple[str, str]]) -> 
 
 def test_a_conversation_can_be_named_and_tagged(tmp_path: Path, mind: Mind) -> None:
     kayit = mind.set_session_meta("s1", ad="CMS göçü", etiketler=["cms", "acil"])
-    assert kayit == {"ad": "CMS göçü", "etiketler": ["cms", "acil"]}
+    # Birebir sozluk esitligi DEGIL: kayit sonradan yeni alanlar kazandi
+    # (model/path/provider — pencere devri isi) ve her yeni alan bu testi
+    # kirmamali. Test, verdigimiz iki alanin dogru dondugunu sinar.
+    assert kayit["ad"] == "CMS göçü"
+    assert kayit["etiketler"] == ["cms", "acil"]
 
     # Diskten taze okunduğunda da orada: panel her açılışta yeniden okuyor.
     taze = open_mind(tmp_path / "mind", tmp_path / "sessions", "cur")
@@ -406,6 +410,16 @@ def test_an_empty_name_and_no_tags_drops_the_record(tmp_path: Path, mind: Mind) 
     mind.set_session_meta("s1", ad="Bir ad")
     mind.set_session_meta("s1", ad="")
     assert "s1" not in mind.session_meta()
+
+
+def test_session_meta_keeps_path_and_model(tmp_path: Path, mind: Mind) -> None:
+    """Klasör/model bağlıysa ad silinse bile kayıt düşmez."""
+    mind.set_session_meta(
+        "s1", ad="İş", path=r"D:\proj\foo", model="openai/gpt-4o-mini")
+    kayit = mind.set_session_meta("s1", ad="")
+    assert kayit["path"].endswith("foo")
+    assert kayit["model"] == "openai/gpt-4o-mini"
+    assert "s1" in mind.session_meta()
 
 
 def test_a_corrupt_meta_file_does_not_break_the_panel(tmp_path: Path, mind: Mind) -> None:

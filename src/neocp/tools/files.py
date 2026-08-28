@@ -287,6 +287,96 @@ async def _tani_eki(path: Path) -> tuple[str, dict[str, Any]]:
     return "\n\n" + tani.metin(), {"tani": tani.detay()}
 
 
+def _esnek_esle(text: str, old: str, new: str):
+    """Tam eşleşme yoksa toleranslı arama. (start, end, new, not) ya da
+    ("coklu", N) ya da None.
+
+    Ölçülen yara (28.08 üçlü kıyası, z1): 18 hatalı aracın 7'si "aranan
+    metin dosyada yok"tu ve hepsi boşluk/girinti/satır-sonu farkıydı —
+    içerik doğruydu. Model dosyayı yeniden okuyup turu yakıyordu. Sıra:
+    satır-sonu normalizasyonu → kuyruk boşluğu → tek-tip girinti kayması.
+    Her adımda eşleşme TEK olmalı; birden fazlaysa belirsizlik hatası
+    (yanlış yeri sessizce değiştirmekten her zaman iyidir).
+    """
+    o2 = old.replace("\r\n", "\n").replace("\r", "\n")
+    n2 = new.replace("\r\n", "\n").replace("\r", "\n")
+    if o2 != old:
+        say = text.count(o2)
+        if say == 1:
+            i = text.index(o2)
+            return i, i + len(o2), n2, "satır sonları normalize edildi"
+        if say > 1:
+            return ("coklu", say)
+
+    old_lines = o2.split("\n")
+    fl = text.split("\n")
+    n = len(old_lines)
+    if not n or len(fl) < n:
+        return None
+    offs = [0]
+    for ln in fl[:-1]:
+        offs.append(offs[-1] + len(ln) + 1)
+
+    def aralik(i):
+        return offs[i], offs[i + n - 1] + len(fl[i + n - 1])
+
+    # Kuyruk boşlukları: satır içeriği aynı, satır sonundaki boşluk farklı.
+    hedef = [l.rstrip() for l in old_lines]
+    adaylar = [i for i in range(len(fl) - n + 1)
+               if [l.rstrip() for l in fl[i:i + n]] == hedef]
+    if len(adaylar) == 1:
+        b, e = aralik(adaylar[0])
+        return b, e, n2, "kuyruk boşlukları göz ardı edildi"
+    if len(adaylar) > 1:
+        return ("coklu", len(adaylar))
+
+    # Tek-tip girinti kayması: içerik aynı, tüm dolu satırlarda girinti
+    # farkı SABİT. `new` de aynı kaymayla yeniden girintilenir — modelin
+    # old'u yanlış girintiliyse new'i de aynı biçimde yanlıştır.
+    icerik = [l.strip() for l in old_lines]
+
+    def girinti(l):
+        return l[: len(l) - len(l.lstrip())]
+
+    uyanlar = []
+    for i in range(len(fl) - n + 1):
+        pencere = fl[i:i + n]
+        if [l.strip() for l in pencere] != icerik:
+            continue
+        fark = None
+        ek = ""
+        uydu = True
+        for a, b in zip(old_lines, pencere):
+            if not a.strip():
+                continue
+            d = len(girinti(b)) - len(girinti(a))
+            if fark is None:
+                fark = d
+                if d > 0:
+                    ek = girinti(b)[: d]
+            elif d != fark:
+                uydu = False
+                break
+        if uydu and fark is not None and fark != 0:
+            uyanlar.append((i, fark, ek))
+    if len(uyanlar) > 1:
+        return ("coklu", len(uyanlar))
+    if len(uyanlar) == 1:
+        i, fark, ek = uyanlar[0]
+        b, e = aralik(i)
+        yeni_satirlar = []
+        for l in n2.split("\n"):
+            if not l.strip():
+                yeni_satirlar.append(l)
+            elif fark > 0:
+                yeni_satirlar.append(ek + l)
+            else:
+                kes = min(-fark, len(girinti(l)))
+                yeni_satirlar.append(l[kes:])
+        return b, e, "\n".join(yeni_satirlar), f"girinti {fark:+d} kaydırılarak eşleşti"
+    return None
+
+
 def register(registry: ToolRegistry) -> None:
     # Yazma öncesi bayatlık kontrolü için: yol -> son okunduğundaki mtime_ns.
     seen: dict[Path, int] = {}
@@ -430,6 +520,9 @@ Küçük değişiklikler için write_file yerine edit_file kullan.
         description="""
 Bir dosyada tam metin değişimi yapar. `old` metni dosyada tam olarak bir kez
 geçmelidir — sıfır ya da birden fazla eşleşmede işlem yapılmaz ve hata döner.
+Boşluk farkları hoş görülür: satır sonu (CRLF/LF), satır sonundaki boşluk ve
+TEK-TİP girinti kayması eşleşmeyi bozmaz (yine tek eşleşme şartıyla; kayma
+`new`e de uygulanır). İçerik farkı hoş görülmez.
 Benzersiz kılmak için etrafından yeterince bağlam al.
 
 Aynı dosyada birden fazla değişiklik için `edits` ver: [{old, new}, ...].
@@ -488,6 +581,7 @@ Dosyayı önce read_file ile okumuş olman gerekir.
         # Önce HEPSİ doğrulanır; hata metni maddeyi numarasıyla gösterir ki
         # model neyi düzelteceğini bilsin. Hiçbir şey henüz yazılmadı.
         spans: list[tuple[int, int, str, int]] = []  # (baş, son, yeni, madde no)
+        notlar: list[str] = []   # toleransla eşleşenlerin izahı — mesaja girer
         coklu = len(pairs) > 1
         for no, (old, new) in enumerate(pairs, 1):
             hangi = f"{no}. madde: " if coklu else ""
@@ -498,10 +592,24 @@ Dosyayı önce read_file ile okumuş olman gerekir.
                 )
             count = text.count(old)
             if count == 0:
-                return ToolResult.error(
-                    f"{hangi}Aranan metin dosyada yok. Girintiyi ve satır sonlarını "
-                    f"birebir eşleştir; emin değilsen dosyayı tekrar oku.{hicbiri}"
-                )
+                # Boşluk/girinti/satır-sonu toleransı: içerik doğruysa tur
+                # yakılmaz. Eşleşme yine TEK olmak zorunda.
+                esnek = _esnek_esle(text, old, new)
+                if isinstance(esnek, tuple) and esnek and esnek[0] == "coklu":
+                    return ToolResult.error(
+                        f"{hangi}Aranan metin (boşluk toleransıyla) {esnek[1]} kez "
+                        f"geçiyor, hangisi olduğu belirsiz. Bağlam ekleyerek "
+                        f"benzersizleştir.{hicbiri}"
+                    )
+                if esnek is None:
+                    return ToolResult.error(
+                        f"{hangi}Aranan metin dosyada yok. Girintiyi ve satır sonlarını "
+                        f"birebir eşleştir; emin değilsen dosyayı tekrar oku.{hicbiri}"
+                    )
+                b, e, yeni_metin, notu = esnek
+                spans.append((b, e, yeni_metin, no))
+                notlar.append(f"{hangi}{notu}")
+                continue
             if count > 1:
                 return ToolResult.error(
                     f"{hangi}Aranan metin {count} kez geçiyor, hangisi olduğu belirsiz. "
@@ -540,6 +648,10 @@ Dosyayı önce read_file ile okumuş olman gerekir.
             if len(spans) > 1
             else f"{path} güncellendi."
         )
+        if notlar:
+            # Tolerans devreye girdiyse model bilsin: bir dahaki old'u
+            # dosyadaki gerçek biçimden alması gerektiğinin işareti.
+            mesaj += " (" + "; ".join(notlar) + ")"
         son_yazilan[:] = [path]
         yazim_sayaci[path] = yazim_sayaci.get(path, 0) + 1
         kosum.dokunuldu(path)

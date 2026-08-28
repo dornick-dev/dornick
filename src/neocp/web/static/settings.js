@@ -127,8 +127,10 @@ Dil.ekle({
   "Düşünme": "Thinking",
   "Kapatmak yerel küçük modellerde daha kararlı sonuç veriyor":
     "Turning it off gives steadier results on small local models",
-  "Model değişikliği kaydeder kaydetmez geçerli olur; konuşma geçmişi yeni modele taşınır. Ajan o sırada çalışıyorsa değişiklik turun bitmesini bekler — akan bir cevabı yarıda kesmemek için.":
-    "A model change takes effect the moment you save; the conversation history moves to the new model. If the agent is mid-turn, the change waits for the turn to finish — so a streaming answer is not cut off.",
+  "Bu sekmede seçim ANINDA uygulanır — Kaydet yok; konuşma geçmişi yeni modele taşınır. Ajan o sırada çalışıyorsa değişiklik turun bitmesini bekler — akan bir cevabı yarıda kesmemek için.":
+    "Choices on this tab apply INSTANTLY — no Save; the conversation history moves to the new model. If the agent is mid-turn, the change waits for the turn to finish — so a streaming answer is not cut off.",
+  "Uygulanıyor…": "Applying…",
+  "Uygulanacak — yazım bitince": "Will apply once you finish typing",
   "Sunucuya ulaşılamadı ya da liste vermiyor — kimliği elle yaz":
     "Could not reach the server, or it lists nothing — type the id by hand",
   "Sunucu liste vermiyor — kimliği elle yaz":
@@ -206,6 +208,7 @@ Dil.ekle({
   "  ·  Son: ": "  ·  Last: ",
   "＋ Yeni görev": "＋ New task",
   "Kaydet": "Save",
+  "Ayarlarda ara": "Search settings",
   "Raporu aç": "Open report",
   "Ana ekranda aç": "Open on main screen",
   "Bu görev şu an çalışıyor": "This task is running now",
@@ -333,6 +336,34 @@ Dil.ekle({
     "An asset record does nothing by itself: it says where to connect. The work is done by a skill attached to it — tell neo \"write a skill for this asset\" and it writes one.",
   " nokta": " points",
   "Düzenle": "Edit",
+  "Evet, sil": "Yes, delete",
+  "Vazgeç": "Cancel",
+  "Yetenekler": "Skills",
+  "Neo'nun araç olarak yüklediği Python betikleri. Satıra tıkla → düzenle.":
+    "Python scripts neo loads as tools. Click a row to edit.",
+  "Bu yetenek dosyadan ve araç defterinden silinir. Geri gelmez.":
+    "This skill is removed from disk and the tool ledger. It will not come back.",
+  "Yetenek kaydedilemedi": "Could not save the skill",
+  "Neo'nun araç olarak yüklediği Python betikleri. Satıra tıkla → detay.":
+    "Python scripts neo loads as tools. Click a row for details.",
+  "Kodu göster": "Show code",
+  "Kodu gizle": "Hide code",
+  "Açıklama yok — dosyanın başındaki docstring buraya düşer.":
+    "No description — the file's leading docstring shows up here.",
+  "Bağlantılar (MCP)": "Connections (MCP)",
+  "Dış araç sunucuları. Listele → düzenle → bağlan. Ham JSON ileri seviye.":
+    "External tool servers. List → edit → connect. Raw JSON is advanced.",
+  "Bu MCP sunucusu listeden çıkarılır.": "This MCP server will be removed from the list.",
+  "ham tanım — ileri seviye": "raw definition — advanced",
+  "yeni token (boş = eskisi kalsın)": "new token (empty = keep current)",
+  "Token Model → anahtarlara yazıldı: ": "Token saved under Model → keys: ",
+  "token — Model anahtarlarına kaydedilir, dosyaya adı yazılır":
+    "token — saved to Model keys; only the name is written to the file",
+  "Ad gerekli: yalnızca harf, rakam, - ve _": "Name required: letters, digits, - and _ only",
+  "Komut boş": "Command is empty",
+  "Adres http(s):// ile başlamalı": "Address must start with http(s)://",
+  "Token boş": "Token is empty",
+  "Token kaydedilemedi": "Could not save the token",
   "Yetenek: ": "Skills: ",
   "Bağlı yetenek yok": "No skills attached",
   "  ·  Ekleyen: ": "  ·  Added by: ",
@@ -361,7 +392,13 @@ Dil.ekle({
   "Kaldır": "Remove",
   "adres · ": "address · ",
   "komut · ": "command · ",
-  "girişli · ": "logged in · ",
+  "streamable HTTP; url yeter, kaydedince tarayıcıda OAuth girişi açılır":
+    "streamable HTTP; a url is enough — saving opens the OAuth login in the browser",
+  "Authorization: Bearer başlığı; token Model → anahtarlara yazılır":
+    "Authorization: Bearer header; the token is stored under Model → keys",
+  "npx / py gibi bir komut başlatılır (Claude Desktop / Cursor'daki stdio)":
+    "starts a command like npx / py (the same stdio as Claude Desktop / Cursor)",
+  "stdio — yerel komut": "stdio — local command",
   " araç": " tools",
   "bağlanamadı": "connection failed",
   "araç bildirmedi": "no tools reported",
@@ -559,6 +596,23 @@ const Settings = (() => {
   // dokunduğu alanlar burada birikiyor.
   let patch = {};
 
+  // Model sekmesi ANINDA uygulanır (Cursor/Claude alışkanlığı: seç = aktif;
+  // "aşağı inip Kaydet" yok). Kısa bekleme art arda tıklamaları tek kayda
+  // indiriyor; metin alanları yazım bitince (change) kaydediliyor, harf harf
+  // değil. save(true): otomatik kayıt panelleri YENİDEN ÇİZMEZ — kullanıcı
+  // yazarken alan elinden alınmasın.
+  let saveTimer = null;
+  function saveSoon(ms) {
+    clearTimeout(saveTimer);
+    say("Uygulanıyor…");
+    saveTimer = setTimeout(() => save(true), ms || 450);
+  }
+  // Metin/sayı alanı: yazım bitince kaydet.
+  const applyOnChange = (node) => {
+    node.addEventListener("change", () => saveSoon(150));
+    return node;
+  };
+
   // Oto kipinin açıklaması: yalnız OpenRouter + "oto" seçiliyken görünür.
   const OTO_NOTU =
     "Oto modda OpenRouter'ın ücretsiz modelleri kullanılır; kalite ve hız " +
@@ -597,6 +651,8 @@ const Settings = (() => {
     patch = {};
     say("");
     draw();
+    const onTab = document.querySelector("#tabs button.on");
+    if (onTab && onTab.dataset.tab) syncSaveFoot(onTab.dataset.tab);
   }
 
   const close = () => {
@@ -873,8 +929,8 @@ const Settings = (() => {
         patch.model = { ...(patch.model || {}), base_url: entry.base_url,
                         provider: entry.provider, api_key_env: entry.env,
                         name: "" };
-        say("Kaydedilmedi");
         drawModel();
+        saveSoon(900);   // katalog ilk modeli yazana kadar küçük pay
       });
       picker.append(card);
     }
@@ -885,8 +941,8 @@ const Settings = (() => {
     // "qwen/qwen3.5-9b" arasındaki fark 404 demek ve hata ancak ilk
     // mesajda görünüyor. Sunucu listeyi veriyorsa seçtiriyoruz.
     const slot = el("div", "model-pick");
-    slot.append(text((patch.model || {}).name ?? state.model.name,
-                     (v) => set("model", "name", v.trim())));
+    slot.append(applyOnChange(text((patch.model || {}).name ?? state.model.name,
+                     (v) => set("model", "name", v.trim()))));
     pane.append(field(
       "Model",
       "Yüklü modeller soruluyor…",
@@ -898,8 +954,8 @@ const Settings = (() => {
     // geçersiz) tur ölmek yerine bununla sürüyor. Boş bırakmak bugünkü
     // davranış — hata olduğu gibi yüzeye çıkar. Geçici hatalar buraya hiç
     // uğramıyor; onlar zaten yeniden deneniyor.
-    const yedek = text((patch.model || {}).fallback_model ?? state.model.fallback_model ?? "",
-                       (v) => set("model", "fallback_model", v.trim()));
+    const yedek = applyOnChange(text((patch.model || {}).fallback_model ?? state.model.fallback_model ?? "",
+                       (v) => set("model", "fallback_model", v.trim())));
     yedek.placeholder = t("boş — yedek yok");
     yedek.setAttribute("list", "yedek-modeller");
     const yedekListe = el("datalist");
@@ -917,8 +973,8 @@ const Settings = (() => {
 
     // Adres (base URL): preset yalnızca başlangıç. Özel bir port, uzak bir
     // sunucu ya da başka bir OpenAI-uyumlu uç için elle düzenlenebilir.
-    const url = text((patch.model || {}).base_url ?? state.model.base_url ?? "",
-                     (v) => set("model", "base_url", v.trim()));
+    const url = applyOnChange(text((patch.model || {}).base_url ?? state.model.base_url ?? "",
+                     (v) => set("model", "base_url", v.trim())));
     url.placeholder = isLocalBase()
       ? t("http://localhost:1234/v1")
       : t("https://…");
@@ -944,8 +1000,9 @@ const Settings = (() => {
       if (!((patch.model || {}).api_key_env ?? state.model.api_key_env)) {
         set("model", "api_key_env", env);
       }
-      say("Kaydedilmedi");
+      say("Uygulanacak — yazım bitince");
     });
+    authKey.addEventListener("change", () => saveSoon(150));
     const keyLabel = pMeta && pMeta.label
       ? (pMeta.label + (keyKnown ? " ✓" : ""))
       : t("API anahtarı");
@@ -973,7 +1030,7 @@ const Settings = (() => {
       if (level === ((patch.model || {}).effort ?? state.model.effort)) option.selected = true;
       effort.append(option);
     }
-    effort.addEventListener("change", () => set("model", "effort", effort.value));
+    effort.addEventListener("change", () => { set("model", "effort", effort.value); saveSoon(); });
     pane.append(field(
       "Çaba",
       "Düşünen modellerde ne kadar akıl yürüteceği. Ölçüm (qwen3-27b, tek " +
@@ -986,13 +1043,13 @@ const Settings = (() => {
       "Düşünme",
       "Kapatmak yerel küçük modellerde daha kararlı sonuç veriyor",
       toggleBox((patch.model || {}).thinking ?? state.model.thinking,
-                (v) => set("model", "thinking", v))
+                (v) => { set("model", "thinking", v); saveSoon(); })
     ));
 
     // Bağlam — ayrı sekme yok; seçili modelin penceresi burada.
     pane.append(el("h3", "pane-sub", t("Bağlam")));
-    const window_ = number((patch.model || {}).context_window ?? state.model.context_window,
-                           (v) => set("model", "context_window", v));
+    const window_ = applyOnChange(number((patch.model || {}).context_window ?? state.model.context_window,
+                           (v) => set("model", "context_window", v)));
     const detect = el("button", "detect", t("Algıla"));
     detect.type = "button";
     detect.addEventListener("click", async () => {
@@ -1005,6 +1062,7 @@ const Settings = (() => {
       if (answer.window) {
         window_.value = answer.window;
         set("model", "context_window", answer.window);
+        saveSoon();
       } else {
         say("Sunucu pencere boyutunu bildirmiyor — elle gir", true);
       }
@@ -1020,18 +1078,18 @@ const Settings = (() => {
     pane.append(field(
       "Tek yanıtta azami token",
       "Küçük tutmak uzun cevapların ortasından kesilmesine yol açıyor",
-      number((patch.model || {}).max_tokens ?? state.model.max_tokens,
-             (v) => set("model", "max_tokens", v))
+      applyOnChange(number((patch.model || {}).max_tokens ?? state.model.max_tokens,
+             (v) => set("model", "max_tokens", v)))
     ));
     pane.append(field(
       "Geçmişte tutulan görüntü",
       "Bir ekran görüntüsü ~1.5–4.8k token; eskiler metne çevriliyor",
-      number((patch.context || {}).keep_recent_images ?? state.context.keep_recent_images,
-             (v) => set("context", "keep_recent_images", Number(v)))
+      applyOnChange(number((patch.context || {}).keep_recent_images ?? state.context.keep_recent_images,
+             (v) => set("context", "keep_recent_images", Number(v))))
     ));
 
     pane.append(el("p", "pane-note",
-      t("Model değişikliği kaydeder kaydetmez geçerli olur; konuşma geçmişi " +
+      t("Bu sekmede seçim ANINDA uygulanır — Kaydet yok; konuşma geçmişi " +
       "yeni modele taşınır. Ajan o sırada çalışıyorsa değişiklik turun " +
       "bitmesini bekler — akan bir cevabı yarıda kesmemek için.")));
   }
@@ -1102,6 +1160,7 @@ const Settings = (() => {
     if (!chosen) {
       chosen = found[0].id;
       set("model", "name", chosen);
+      saveSoon(200);   // sağlayıcı değişiminin ikinci yarısı: ad da gitsin
     }
     // Native <select> yerine ARAMA + TIKLANABİLİR LİSTE. Neden: 400+ modelde
     // native select süzülünce ilk seçenek kendiliğinden "seçili" gelir ama
@@ -1122,14 +1181,15 @@ const Settings = (() => {
     manual.textContent = t("Kimliği elle yaz…");
     manual.addEventListener("click", () => {
       slot.textContent = "";
-      const t = text(selected, (v) => set("model", "name", v.trim()));
+      const t = applyOnChange(text(selected, (v) => set("model", "name", v.trim())));
       slot.append(t);
       t.focus();
     });
 
     function pick(id) {
       selected = id;
-      set("model", "name", id);   // seçim beklemedeki yapılandırmaya YAZILIR
+      set("model", "name", id);   // seçim beklemedeki yapılandırmaya yazılır
+      saveSoon();                 // ve ANINDA uygulanır — Kaydet'e inmek yok
       note(id);
       renderList();               // işareti taşı
     }
@@ -1959,10 +2019,21 @@ const Settings = (() => {
       panes.skills.append(el("p", "pane-note bad", t("Yetenekler okunamadı")));
       return;
     }
+    if (answer.ok === false) {
+      say(answer.error || t("Yetenek kaydedilemedi"), true);
+      // Listeyi yine çiz — kullanıcı bozulmuş hali görsün.
+    }
     drawSkills(answer);
-    // Ana ekrandaki organ halkası da tazelensin: buradan silinen bir
-    // yeteneğin sahnede durmaya devam etmesi, iki ayrı gerçek demek.
     if (typeof loadOrgans === "function") loadOrgans();
+    // Oluştur → hemen kod editörü: ayrı "Düzenle" adımı yok.
+    if (body && body.action === "new" && answer.ok !== false) {
+      const name = String(body.name || "").trim().toLowerCase();
+      const line = [...panes.skills.querySelectorAll(".row")].find((r) => {
+        const n = r.querySelector(".row-name");
+        return n && n.textContent === name;
+      });
+      if (line) editSkill(name, line);
+    }
   }
 
   // --- kompakt satirlar -------------------------------------------------
@@ -1972,7 +2043,10 @@ const Settings = (() => {
   // satirin altina acilir — sayfa yalnizca bakilan seye yer harcar.
 
   function row(opts) {
-    const line = el("div", "row" + (opts.click ? " click" : ""));
+    const line = el("div", "row" + (opts.click ? " click" : "")
+      + (opts.adder ? " adder" : "")
+      + (opts.advanced ? " advanced" : "")
+      + (opts.stay ? " stay" : ""));
     line.append(el("span", "row-dot" + (opts.state ? " " + opts.state : "")));
     line.append(el("b", "row-name", opts.name));
     line.append(el("span", "row-desc", opts.desc || ""));
@@ -2008,10 +2082,28 @@ const Settings = (() => {
     line.classList.add("open");
   }
 
+  function confirmRow(line, message, onYes) {
+    detail(line, (box) => {
+      box.append(el("p", "pane-note", message));
+      const yes = action(t("Evet, sil"), () => {
+        box.remove();
+        line.classList.remove("open");
+        onYes();
+      });
+      yes.classList.add("risky");
+      const no = action(t("Vazgeç"), () => {
+        box.remove();
+        line.classList.remove("open");
+      });
+      box.append(yes, no);
+    }, "confirm");
+  }
+
   function drawSkills(data) {
     const pane = panes.skills;
     pane.textContent = "";
-    head(pane, "Yetenekler", "neo'nun araç olarak yüklediği betikler.");
+    head(pane, "Skills",
+      t("Neo'nun araç olarak yüklediği Python betikleri. Satıra tıkla → detay."));
 
     if (data.error) pane.append(el("p", "pane-note bad", data.error));
 
@@ -2020,29 +2112,34 @@ const Settings = (() => {
       const line = row({
         name: skill.name,
         desc: (skill.description || "").split("\n")[0],
+        stay: true,
+        click: true,
         acts: [
-          [t("Düzenle"), () => editSkill(skill.name, line)],
-          [t("Sil"), () => loadSkills({ action: "remove", name: skill.name }), true],
+          [t("Düzenle"), () => editSkill(skill.name, line, skill)],
+          [t("Sil"), () => confirmRow(line,
+            t("Bu yetenek dosyadan ve araç defterinden silinir. Geri gelmez."),
+            () => loadSkills({ action: "remove", name: skill.name })), true],
         ],
       });
       line.title = skill.path;
+      line.addEventListener("click", () => editSkill(skill.name, line, skill));
       list.append(line);
     }
 
     for (const problem of data.broken || []) {
-      const line = row({ name: t("yüklenemedi"), desc: problem.split("\n")[0], state: "bad" });
+      const line = row({ name: t("yüklenemedi"), desc: problem.split("\n")[0], state: "bad", stay: true });
       line.title = problem;
       list.append(line);
     }
 
-    const adder = row({ name: t("＋ Yeni yetenek"), state: "off", click: true });
+    const adder = row({ name: t("＋ Yeni yetenek"), state: "off", click: true, adder: true });
     adder.addEventListener("click", () => detail(adder, (box) => {
       const nameBox = el("input", "input-text");
       nameBox.placeholder = t("ad — ör. rapor_ozeti");
       const descBox = el("input", "input-text");
       descBox.placeholder = t("ne işe yarar, ne zaman kullanılmalı");
       const make = action(t("Oluştur"), () => {
-        if (!nameBox.value.trim()) { say("Yeteneğe bir ad ver", true); return; }
+        if (!nameBox.value.trim()) { say(t("Yeteneğe bir ad ver"), true); return; }
         loadSkills({
           action: "new",
           name: nameBox.value.trim(),
@@ -2062,11 +2159,12 @@ const Settings = (() => {
       "geri gelmez. neo da iş sırasında kendine yetenek yazar.")));
   }
 
-  // Yetenek düzenleyici: dosyanın tamamı satırın altında bir kod alanında.
-  // Kaydet anında yükler; hata varsa o an söylenir.
-  async function editSkill(name, line) {
+  // Skill detayı (Claude Code kalıbı): satıra tıklayınca önce KART —
+  // ad, dosya, tam açıklama (docstring) ve eylemler. Ham kod duvarı
+  // ancak "Kodu göster" denince açılır; Kaydet anında yükler.
+  async function editSkill(name, line, meta) {
     const open = line.nextElementSibling;
-    if (open && open.classList.contains("row-detail")) {
+    if (open && open.classList.contains("row-detail") && open.dataset.kind !== "confirm") {
       open.remove();
       line.classList.remove("open");
       return;
@@ -2079,19 +2177,39 @@ const Settings = (() => {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "read", name }),
       })).json();
-    } catch { say("Dosya okunamadı", true); return; }
-    if (!answer.ok) { say(answer.error || "Dosya okunamadı", true); return; }
+    } catch { say(t("Dosya okunamadı"), true); return; }
+    if (!answer.ok) { say(answer.error || t("Dosya okunamadı"), true); return; }
 
     detail(line, (box) => {
+      const kart = el("div", "skill-card");
+      const bas = el("div", "skill-card-head");
+      bas.append(el("b", "skill-card-name", name));
+      if (meta && meta.path) bas.append(el("span", "skill-card-path", meta.path));
+      kart.append(bas);
+      const aciklama = (meta && meta.description) || "";
+      kart.append(el("p", "skill-card-desc" + (aciklama ? "" : " empty"),
+        aciklama || t("Açıklama yok — dosyanın başındaki docstring buraya düşer.")));
+      box.append(kart);
+
       const area = el("textarea", "input-text input-area");
       area.rows = 16;
       area.spellcheck = false;
       area.value = answer.code || "";
+      area.hidden = true;
       const keep = action(t("Kaydet ve yükle"), () =>
         loadSkills({ action: "write", name, code: area.value }));
       keep.classList.add("add");
-      box.append(area, keep);
-    });
+      keep.hidden = true;
+
+      const goster = action(t("Kodu göster"), () => {
+        const acik = area.hidden;
+        area.hidden = !acik;
+        keep.hidden = !acik;
+        goster.textContent = acik ? t("Kodu gizle") : t("Kodu göster");
+        if (acik) area.focus();
+      });
+      box.append(goster, area, keep);
+    }, "edit");
   }
 
   // --- bağlantılar (MCP) ------------------------------------------------
@@ -2132,78 +2250,94 @@ const Settings = (() => {
     if (typeof loadOrgans === "function") loadOrgans();
   }
 
+  // Popüler katalog (Claude'daki bağlayıcı dizini gibi): bilinen gerçek
+  // uçlar tek tıkla forma dolar — kullanıcı adres/komut ezberlemez.
+  const CONN_KATALOG = [
+    ["github", "GitHub", "oauth", "https://api.githubcopilot.com/mcp/", "", "depo, PR ve issue erişimi"],
+    ["notion", "Notion", "oauth", "https://mcp.notion.com/mcp", "", "sayfa ve veritabanları"],
+    ["linear", "Linear", "oauth", "https://mcp.linear.app/mcp", "", "issue ve proje yönetimi"],
+    ["sentry", "Sentry", "oauth", "https://mcp.sentry.dev/mcp", "", "hata ve izleme verisi"],
+    ["stripe", "Stripe", "oauth", "https://mcp.stripe.com", "", "ödeme nesneleri"],
+    ["playwright", "Playwright", "stdio", "", "npx -y @playwright/mcp@latest", "tarayıcı otomasyonu"],
+    ["dosyalar", "Dosya sistemi", "stdio", "", "npx -y @modelcontextprotocol/server-filesystem .", "yerel klasör erişimi"],
+    ["bellek", "Bellek", "stdio", "", "npx -y @modelcontextprotocol/server-memory", "kalıcı bilgi grafiği"],
+  ];
+  const connFiltre = { q: "", only: "" };   // only: "" | "ok" | "bad"
+  let connSonVeri = null;
+
   function drawConnectors(data) {
+    connSonVeri = data;
     const pane = panes.connectors;
     pane.textContent = "";
-    head(pane, "Bağlantılar", "Dış araç sunucuları (MCP).");
+    head(pane, t("Bağlayıcılar"),
+      t("Dış araç sunucuları (MCP). Listele → düzenle → bağlan. Ham JSON ileri seviye."));
+
+    // Arama + durum filtreleri: Claude'daki dizinle aynı okuma düzeni.
+    const bar = el("div", "conn-bar");
+    const ara = el("input", "input-text conn-search");
+    ara.type = "search";
+    ara.placeholder = t("Bağlayıcı ara…");
+    ara.value = connFiltre.q;
+    ara.addEventListener("input", () => {
+      connFiltre.q = ara.value.trim().toLowerCase();
+      drawConnectors(connSonVeri);
+      const geri = pane.querySelector(".conn-search");
+      if (geri) { geri.focus(); geri.setSelectionRange(geri.value.length, geri.value.length); }
+    });
+    bar.append(ara);
+    for (const [kod, ad] of [["", "Tümü"], ["ok", "Bağlı"], ["bad", "Bağlı değil"]]) {
+      const cip = el("button", "conn-chip" + (connFiltre.only === kod ? " on" : ""));
+      cip.type = "button";
+      cip.textContent = t(ad);
+      cip.addEventListener("click", () => {
+        connFiltre.only = kod;
+        drawConnectors(connSonVeri);
+      });
+      bar.append(cip);
+    }
+    pane.append(bar);
 
     for (const problem of data.problems || []) {
       pane.append(el("p", "pane-note bad", problem));
     }
 
     const list = el("div", "rows");
-    for (const server of data.servers || []) {
-      const acts = [];
-      // OAuth yalnızca uzak sunucularda: 401 dönen sunucu için tarayıcıda
-      // giriş; girişliyken çıkış jetonları siler.
-      if (server.kind === "http" && !server.auth) {
-        acts.push([t("Giriş yap"), () => loadConnectors({ action: "login", name: server.name })]);
-      }
-      if (server.auth) {
-        acts.push([t("Çıkış"), () => loadConnectors({ action: "logout", name: server.name }), true]);
-      }
-      acts.push([t("Kaldır"), () => {
-        let current = {};
-        try { current = JSON.parse(data.raw || "{}"); } catch { current = {}; }
-        const servers = current.mcpServers || current;
-        delete servers[server.name];
-        loadConnectors({ action: "save", raw: JSON.stringify(current, null, 2) });
-      }, true]);
-      const line = row({
-        name: server.name,
-        desc: (server.kind === "http" ? t("adres · ") : t("komut · ")) + server.where,
-        meta: (server.auth ? t("girişli · ") : "") +
-              (server.ok ? server.tools.length + t(" araç") : t("bağlanamadı")),
-        state: server.ok ? "" : "bad",
-        click: true,
-        acts,
-      });
-      // Bağlanamayan sunucuda çare düğmesi (Giriş yap) hover beklemesin:
-      // kullanıcı düğmeyi görmezse hata çözümsüz görünüyor.
-      if (!server.ok) line.classList.add("stay");
-      // Detay tiklayinca: araclarin tam listesi ya da baglanti hatasi.
-      line.addEventListener("click", () => detail(line, (box) => {
-        if (server.ok) {
-          box.append(el("p", "job-prompt dim",
-            server.tools.length ? server.tools.join("\n") : t("araç bildirmedi")));
-        } else {
-          box.append(el("p", "pane-note bad", server.error || t("sebep bilinmiyor")));
-        }
-      }));
-      list.append(line);
-    }
 
-    // Yeni bağlantı: tür seçimi + iki üç alan. JSON bilmeden ekleme yolu
-    // bu; mcp.json editörü güç kullanıcıya kalıyor.
-    const adder = row({ name: t("＋ Yeni bağlantı"), state: "off", click: true });
-    adder.addEventListener("click", () => detail(adder, (box) => {
-      let kind = "oauth";
+    const parseRaw = () => {
+      let current = {};
+      try { current = JSON.parse(data.raw || "{}"); } catch { current = {}; }
+      if (!current.mcpServers || typeof current.mcpServers !== "object") {
+        current = { mcpServers: (current && typeof current === "object" && !Array.isArray(current))
+          ? (current.mcpServers || {}) : {} };
+      }
+      return current;
+    };
 
+    const saveServers = (current) =>
+      loadConnectors({ action: "save", raw: JSON.stringify(current, null, 2) });
+
+    const fillConnectorForm = (box, pref) => {
+      let kind = pref.kind || "oauth";
       const kinds = el("div", "choices");
       const KINDS = [
-        ["oauth", "Uzak — girişli", "adres yeter; kaydedince tarayıcıda giriş açılır"],
-        ["token", "Uzak — sabit token", "token dosyaya değil Model'e yazılır"],
-        ["stdio", "Yerel komut", "npx / py gibi bir komut başlatılır (LM Studio biçimi)"],
+        ["oauth", "HTTP — OAuth", "streamable HTTP; url yeter, kaydedince tarayıcıda OAuth girişi açılır"],
+        ["token", "HTTP — Bearer token", "Authorization: Bearer başlığı; token Model → anahtarlara yazılır"],
+        ["stdio", "stdio — yerel komut", "npx / py gibi bir komut başlatılır (Claude Desktop / Cursor'daki stdio)"],
       ];
       const nameBox = el("input", "input-text");
       nameBox.placeholder = t("ad — ör. notion");
+      nameBox.value = pref.name || "";
+      if (pref.lockName) nameBox.readOnly = true;
       const urlBox = el("input", "input-text");
       urlBox.placeholder = "https://…/mcp";
+      urlBox.value = pref.url || "";
       const tokenBox = el("input", "input-text");
       tokenBox.type = "password";
-      tokenBox.placeholder = t("token — Model'e kaydedilir, dosyaya adı yazılır");
+      tokenBox.placeholder = pref.tokenHint
+        || t("token — Model anahtarlarına kaydedilir, dosyaya adı yazılır");
       const cmdBox = el("input", "input-text");
       cmdBox.placeholder = t("komut ve argümanlar — ör. npx -y bir-mcp");
+      cmdBox.value = pref.cmd || "";
 
       const fit = () => {
         urlBox.hidden = kind === "stdio";
@@ -2224,58 +2358,165 @@ const Settings = (() => {
       }
       fit();
 
-      const make = action(t("Ekle ve bağlan"), async () => {
+      const make = action(pref.saveLabel || t("Ekle ve bağlan"), async () => {
         const name = nameBox.value.trim().toLowerCase();
         if (!/^[a-z0-9_-]+$/.test(name)) {
-          say("Ad gerekli: yalnızca harf, rakam, - ve _", true);
+          say(t("Ad gerekli: yalnızca harf, rakam, - ve _"), true);
           return;
         }
         let entry;
         if (kind === "stdio") {
           const parts = cmdBox.value.trim().split(/\s+/).filter(Boolean);
-          if (!parts.length) { say("Komut boş", true); return; }
+          if (!parts.length) { say(t("Komut boş"), true); return; }
           entry = { command: parts[0], args: parts.slice(1) };
         } else {
           const where = urlBox.value.trim();
-          if (!/^https?:\/\//.test(where)) { say("Adres http(s):// ile başlamalı", true); return; }
+          if (!/^https?:\/\//.test(where)) {
+            say(t("Adres http(s):// ile başlamalı"), true);
+            return;
+          }
           entry = { url: where };
           if (kind === "token") {
             const secret = tokenBox.value.trim();
-            if (!secret) { say("Token boş", true); return; }
-            // Token mcp.json'a değil Anahtarlar'a: dosya sürüm kontrolüne
-            // girebilir, gizli değer giremez.
-            const env = name.toUpperCase().replace(/[^A-Z0-9]/g, "_") + "_MCP_TOKEN";
-            const kept = await post("/api/settings", { keys: { [env]: secret } });
-            if (!kept || kept.ok === false) {
-              say((kept && kept.error) || "Token kaydedilemedi", true);
+            if (secret) {
+              const env = name.toUpperCase().replace(/[^A-Z0-9]/g, "_") + "_MCP_TOKEN";
+              const kept = await post("/api/settings", { keys: { [env]: secret } });
+              if (!kept || kept.ok === false) {
+                say((kept && kept.error) || t("Token kaydedilemedi"), true);
+                return;
+              }
+              entry.headers = { Authorization: "Bearer ${" + env + "}" };
+              say(t("Token Model → anahtarlara yazıldı: ") + env);
+            } else if (pref.keepHeaders) {
+              entry.headers = pref.keepHeaders;
+            } else {
+              say(t("Token boş"), true);
               return;
             }
-            entry.headers = { Authorization: "Bearer ${" + env + "}" };
+          } else if (pref.keepHeaders) {
+            entry.headers = pref.keepHeaders;
           }
         }
 
-        let current = {};
-        try { current = JSON.parse(data.raw || "{}"); } catch { current = {}; }
-        if (!current.mcpServers || typeof current.mcpServers !== "object") {
-          current = { mcpServers: current.mcpServers || {} };
+        const current = parseRaw();
+        if (pref.renameFrom && pref.renameFrom !== name) {
+          delete current.mcpServers[pref.renameFrom];
         }
         current.mcpServers[name] = entry;
-        await loadConnectors({ action: "save", raw: JSON.stringify(current, null, 2) });
-        // Girişli sunucuda kayıttan sonra giriş kendiliğinden başlıyor:
-        // "ekle, sonra bir de Giriş yap'ı bul" iki adımdı, bu tek adım.
-        if (kind === "oauth") loadConnectors({ action: "login", name });
+        await saveServers(current);
+        if (kind === "oauth" && !pref.lockName) {
+          loadConnectors({ action: "login", name });
+        }
       });
       make.classList.add("add");
       box.append(kinds, nameBox, urlBox, tokenBox, cmdBox, make);
       nameBox.focus();
-    }));
+    };
+
+    // Popüler: kurulmamış katalog girdileri tek tıkla forma dolar.
+    const kurulu = new Set((data.servers || []).map((s) => s.name));
+    const populer = CONN_KATALOG.filter(([ad, baslik]) => !kurulu.has(ad)
+      && (!connFiltre.q || (ad + " " + baslik).toLowerCase().includes(connFiltre.q)));
+    if (populer.length && connFiltre.only !== "ok") {
+      pane.append(el("p", "pane-note conn-pop-label", t("Popüler")));
+      const raf = el("div", "conn-pop");
+      for (const [ad, baslik, kind, url, cmd, ne] of populer) {
+        const kart = el("button", "conn-card");
+        kart.type = "button";
+        kart.append(el("b", null, baslik), el("span", null, t(ne)));
+        kart.title = kind === "stdio" ? cmd : url;
+        kart.addEventListener("click", () => {
+          const adder2 = pane.querySelector(".row.adder");
+          if (!adder2) return;
+          detail(adder2, (box) => {
+            fillConnectorForm(box, { name: ad, kind, url, cmd });
+          }, "add");
+        });
+        raf.append(kart);
+      }
+      pane.append(raf);
+    }
+
+    for (const server of data.servers || []) {
+      // Arama ve durum filtresi listeyi süzer; veri olduğu gibi durur.
+      if (connFiltre.q && !server.name.toLowerCase().includes(connFiltre.q)) continue;
+      if (connFiltre.only === "ok" && !server.ok) continue;
+      if (connFiltre.only === "bad" && server.ok) continue;
+      const acts = [];
+      if (server.kind === "http" && !server.auth) {
+        acts.push([t("Giriş yap"), () => loadConnectors({ action: "login", name: server.name })]);
+      }
+      if (server.auth) {
+        acts.push([t("Çıkış"), () => loadConnectors({ action: "logout", name: server.name }), true]);
+      }
+      acts.push([t("Düzenle"), () => {
+        detail(line, (box) => {
+          const current = parseRaw();
+          const entry = (current.mcpServers || {})[server.name] || {};
+          const isStdio = !!(entry.command);
+          const cmd = isStdio
+            ? [entry.command].concat(entry.args || []).join(" ")
+            : "";
+          fillConnectorForm(box, {
+            kind: isStdio ? "stdio" : (entry.headers ? "token" : "oauth"),
+            name: server.name,
+            lockName: true,
+            url: entry.url || server.where || "",
+            cmd,
+            keepHeaders: entry.headers,
+            tokenHint: t("yeni token (boş = eskisi kalsın)"),
+            saveLabel: t("Kaydet ve bağlan"),
+            renameFrom: server.name,
+          });
+        }, "edit");
+      }]);
+      acts.push([t("Kaldır"), () => confirmRow(line,
+        t("Bu MCP sunucusu listeden çıkarılır."),
+        () => {
+          const current = parseRaw();
+          delete current.mcpServers[server.name];
+          saveServers(current);
+        }), true]);
+      var line = row({
+        name: server.name,
+        desc: (server.kind === "http" ? "HTTP · " : "stdio · ") + server.where,
+        meta: (server.auth ? "OAuth · " : "") +
+              (server.ok ? server.tools.length + t(" araç") : t("bağlanamadı")),
+        state: server.ok ? "" : "bad",
+        click: true,
+        stay: true,
+        acts,
+      });
+      line.addEventListener("click", () => detail(line, (box) => {
+        if (server.ok) {
+          if (!server.tools.length) {
+            box.append(el("p", "job-prompt dim", t("araç bildirmedi")));
+            return;
+          }
+          const chips = el("div", "tool-chips");
+          for (const tool of server.tools) chips.append(el("span", "tool-chip", tool));
+          box.append(chips);
+        } else {
+          box.append(el("p", "pane-note bad", server.error || t("sebep bilinmiyor")));
+        }
+      }, "tools"));
+      list.append(line);
+    }
+
+    const adder = row({ name: t("＋ Yeni bağlantı"), state: "off", click: true, adder: true });
+    adder.classList.add("adder");
+    adder.addEventListener("click", () => detail(adder, (box) => {
+      fillConnectorForm(box, {});
+    }, "add"));
     list.append(adder);
 
     const editRow = row({
       name: "mcp.json",
-      desc: t("sunucu tanımlarını düzenle"),
+      desc: t("ham tanım — ileri seviye"),
       state: "off",
       click: true,
+      advanced: true,
+      stay: true,
       acts: [[t("Yeniden bağlan"), () => loadConnectors({ action: "reload" })]],
     });
     editRow.addEventListener("click", () => detail(editRow, (box) => {
@@ -2292,12 +2533,10 @@ const Settings = (() => {
         loadConnectors({ action: "save", raw: area.value }));
       keep.classList.add("add");
       box.append(keep);
-    }));
+    }, "raw"));
     list.append(editRow);
     pane.append(list);
 
-    // Hiç sunucu yokken ekleme formu açık gelsin: boş listeye bakmak yol
-    // göstermiyor, ham JSON editörü de ilk karşılama değil.
     if (!(data.servers || []).length) adder.click();
   }
 
@@ -2342,23 +2581,36 @@ const Settings = (() => {
     if (!state.startup.available) {
       pane.append(field("Bilgisayar açılınca başlat",
                         "Yalnızca Windows'ta", el("span", "pane-note", t("Yok"))));
-      return;
+    } else {
+      pane.append(field(
+        "bilgisayar açılınca başlat",
+        "Tepside çalışan, \"hey neo\" ile uyanan bir ajanı her açılışta elle " +
+        "başlatmak gerekmesin",
+        toggleBox((patch.startup || {}).enabled ?? state.startup.enabled,
+                  (v) => set("startup", "enabled", v))
+      ));
+
+      // Ne yazıldığı görünsün: açılışa sessizce bir şey eklemek doğru değil.
+      const line = el("p", "pane-note mono", state.startup.command);
+      pane.append(field("Çalıştırılacak satır",
+                        "Kayıt: HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run · " +
+                        "Görev Yöneticisi › Başlangıç'tan da görebilirsin",
+                        line));
     }
 
-    pane.append(field(
-      "bilgisayar açılınca başlat",
-      "Tepside çalışan, \"hey neo\" ile uyanan bir ajanı her açılışta elle " +
-      "başlatmak gerekmesin",
-      toggleBox((patch.startup || {}).enabled ?? state.startup.enabled,
-                (v) => set("startup", "enabled", v))
-    ));
-
-    // Ne yazıldığı görünsün: açılışa sessizce bir şey eklemek doğru değil.
-    const line = el("p", "pane-note mono", state.startup.command);
-    pane.append(field("Çalıştırılacak satır",
-                      "Kayıt: HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run · " +
-                      "Görev Yöneticisi › Başlangıç'tan da görebilirsin",
-                      line));
+    // --- Explorer sağ tık ---
+    const shell = state.shell_assoc || {};
+    if (!shell.available) {
+      pane.append(field("Sağ tık · Neo ile aç",
+                        "Yalnızca Windows'ta", el("span", "pane-note", t("Yok"))));
+    } else {
+      pane.append(field(
+        "Sağ tık menüsünde Neo ile aç",
+        "Dosya veya klasöre sağ tık → yeni sohbette o klasörle açar",
+        toggleBox((patch.shell_assoc || {}).enabled ?? shell.enabled,
+                  (v) => set("shell_assoc", "enabled", v))
+      ));
+    }
   }
 
   // --- makine -----------------------------------------------------------
@@ -2906,8 +3158,14 @@ const Settings = (() => {
 
   // --- kaydetme ---------------------------------------------------------
 
-  async function save() {
-    if (!Object.keys(patch).length) { say("Değişiklik yok"); return; }
+  async function save(auto) {
+    // Sağlayıcı değişince ad bir anlığına boş: katalog gelmeden otokayıt
+    // düşerse boş adı diske YAZMA — "Model değişti: ." diye anlamsız bir
+    // satır düşüyor ve yapılandırma çalışmaz hale geliyordu (canlıda
+    // görüldü). Ad, katalog ilk modeli seçince ya da kullanıcı yazınca
+    // kendi kaydını tetikliyor.
+    if (auto && patch.model && patch.model.name === "") delete patch.model.name;
+    if (!Object.keys(patch).length) { if (!auto) say("Değişiklik yok"); return; }
     say("Kaydediliyor…");
 
     let answer;
@@ -2931,14 +3189,42 @@ const Settings = (() => {
     // yazmaya devam ediyordu.
     if (typeof loadState === "function") loadState();
     if (typeof loadOrgans === "function") loadOrgans();
-    draw();
+    // Otomatik kayıt yeniden çizmez: ekrandaki değerler zaten kaydedilen
+    // değerler; çizim, yazılmakta olan alanı elden alıyordu.
+    if (!auto) draw();
   }
 
   // --- bağlama ----------------------------------------------------------
 
   document.getElementById("gear").addEventListener("click", toggle);
   document.getElementById("settings-close").addEventListener("click", close);
-  document.getElementById("settings-save").addEventListener("click", save);
+  // Claude Code alışkanlığı: Escape diyaloğu kapatır.
+  document.addEventListener("keydown", (ev) => {
+    if (ev.key === "Escape" && !panel.hidden) close();
+  });
+
+  // Nav araması: sekme adlarını süzer (Claude Code'daki Search kutusu).
+  // Boş grup başlıkları da gizlenir; kutu boşalınca hepsi geri gelir.
+  (() => {
+    const nav = document.getElementById("tabs");
+    const ara = el("input", "tabs-search");
+    ara.type = "search";
+    ara.placeholder = t("Ayarlarda ara");
+    ara.setAttribute("aria-label", t("Ayarlarda ara"));
+    nav.prepend(ara);
+    ara.addEventListener("input", () => {
+      const q = ara.value.trim().toLocaleLowerCase("tr");
+      let grup = null;
+      for (const dugme of nav.children) {
+        if (dugme === ara) continue;
+        if (dugme.classList.contains("tab-group")) { grup = dugme; dugme.hidden = !!q; continue; }
+        const uyan = !q || dugme.textContent.toLocaleLowerCase("tr").includes(q);
+        dugme.hidden = !uyan;
+        if (uyan && q === "" && grup) grup.hidden = false;
+      }
+    });
+  })();
+  document.getElementById("settings-save").addEventListener("click", () => save());
 
   document.getElementById("tabs").addEventListener("click", (ev) => {
     const name = ev.target.dataset ? ev.target.dataset.tab : null;
@@ -2947,6 +3233,7 @@ const Settings = (() => {
       button.classList.toggle("on", button === ev.target);
     }
     for (const [key, pane] of Object.entries(panes)) pane.hidden = key !== name;
+    syncSaveFoot(name);
     if (name === "files") browse(here ?? state.sandbox.directory);
     if (name === "tasks") loadTasks();
     if (name === "eyes") loadCameras();
@@ -2955,6 +3242,19 @@ const Settings = (() => {
     if (name === "skills") loadSkills();
     if (name === "connectors") loadConnectors();
   });
+
+  // Skills / MCP / dosya gibi anlık API sekmelerinde alttaki "Kaydet"
+  // yanıltıcı — patch kaydı değil, o sekmenin kendi düğmesi var.
+  const LIVE_TABS = new Set([
+    "model", "skills", "connectors", "files", "devices", "tasks", "eyes",
+  ]);
+  function syncSaveFoot(tab) {
+    const foot = document.querySelector(".panel-foot");
+    if (!foot) return;
+    foot.classList.toggle("save-hidden", LIVE_TABS.has(tab));
+  }
+  const onTab = document.querySelector("#tabs button.on");
+  if (onTab && onTab.dataset.tab) syncSaveFoot(onTab.dataset.tab);
 
   return { open, close, toggle };
 })();

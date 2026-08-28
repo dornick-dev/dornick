@@ -37,9 +37,6 @@ const Drop = (() => {
     const data = await read(file);
     if (!data) { onNote(`${file.name} okunamadı`); return; }
 
-    // Görüntü mesaja iliştiriliyor: model bakabilsin.
-    if (isImage(file)) onImage(data);
-
     let answer = {};
     try {
       answer = await (await fetch("/api/drop", {
@@ -53,7 +50,11 @@ const Drop = (() => {
     }
 
     if (!answer.ok) { onNote(answer.error || "Yazılamadı"); return; }
-    onFile(answer);
+    // Görüntü AYRI bir önizleme yüzeyine bölünmüyor: tek kayıt, küçük
+    // resmiyle. (Eski hal hem kare önizlemesi hem ad çipi doğuruyordu —
+    // "ikisine ayrı ayrı çarpı demem gerekiyor".) Gönderimde son görüntü
+    // mesaja iliştirilir; kopya atölyede zaten duruyor.
+    onFile(isImage(file) ? { ...answer, image: data } : answer);
   }
 
   function read(file) {

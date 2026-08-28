@@ -65,6 +65,13 @@ class OpenAIBackend:
         # kalıyor ve sunucu 404 veriyor. İlk hatadan sonra kareler sıyrılıp
         # bir daha gönderilmiyor.
         self._no_vision = False
+        # İstem önbelleği işaretleri yalnız OpenRouter'da: ilk sistem +
+        # son iki mesaja ephemeral nokta (OpenCode'un ölçülmüş kalıbı —
+        # aynı model, aynı iş: %77 isabet, ~6,7x maliyet farkı). Başka
+        # uçlara gönderilmiyor; OpenRouter'da bile reddeden olursa bir
+        # kez öğrenilip kapatılıyor.
+        self._cache_isaretli = "openrouter" in str(model.base_url or "").lower()
+        self._cache_kapali = False
         # Oto kipi: adres OpenRouter ve ad "oto" ise istekler ücretsiz
         # havuzdan atılıyor (bkz. otomod). Başka sağlayıcı/model
         # isteklerine DOKUNULMUYOR. Sağlık defteri bellek-içi: arka arkaya
@@ -95,6 +102,8 @@ class OpenAIBackend:
         # ilk turda öğrenildi, sonraki turlar boşa 404 yememeli.
         if self._no_vision:
             _strip_images(messages)
+        if self._cache_isaretli and not self._cache_kapali:
+            _cache_isaretle(messages)
 
         kwargs: dict[str, Any] = {
             "model": self.model.name,
@@ -215,6 +224,13 @@ class OpenAIBackend:
             _strip_images(kwargs["messages"])
             return True
 
+        # Önbellek işaretini tanımayan uç: işareti söküp bir daha gönderme.
+        if (self._cache_isaretli and not self._cache_kapali
+                and "cache_control" in str(exc).lower()):
+            self._cache_kapali = True
+            _cache_sok(kwargs["messages"])
+            return True
+
         return False
 
     def _reasoning(self) -> dict[str, Any] | None:
@@ -240,6 +256,15 @@ class OpenAIBackend:
             return {"enabled": False}
         # OpenRouter "low/medium/high" kabul ediyor; xhigh/max karşılığı yok.
         effort = {"xhigh": "high", "max": "high"}.get(self.model.effort, self.model.effort)
+        # Küçük/hızlı ailede tavan medium: flash sınıfı modelde her araç
+        # çağrısına yüksek-çaba akıl yürütme, 11 çağrılık işi 900 sn
+        # tavanına taşıdı (28.08 kıyası; OpenCode aynı modeli düz koşup
+        # 140 sn'de bitirdi). Kalite kapılardan geliyor, düşünme süresinden
+        # değil — o koşuda iki taraf da 96+ aldı.
+        if effort == "high":
+            from ..prompt import kucuk_aile
+            if kucuk_aile(self.model.name):
+                effort = "medium"
         return {"effort": effort} if effort in ("low", "medium", "high") else None
 
     async def _stream(self, kwargs: dict[str, Any], cancel: Any, callbacks: Callbacks) -> TurnResult:
@@ -502,6 +527,42 @@ def _rejects_image(exc: Exception) -> bool:
 # Görüntü sıyrıldığında yerine konan iz. Model göremiyor ama bir görüntünün
 # orada olduğunu bilmesi, "az önce gösterdiğim" gibi göndermelere yardımcı.
 _IMAGE_PLACEHOLDER = "[görüntü — bu model göremiyor]"
+
+
+def _cache_isaretle(messages: list[dict[str, Any]]) -> None:
+    """OpenRouter istem önbelleği: ilk sistem + son iki mesaja ephemeral.
+
+    İşaret bir içerik PARÇASININ üstünde yaşar; düz metin içerik tek
+    parçaya sarılır. En fazla üç nokta — Anthropic ailesinin dört-nokta
+    sınırının güvenli altında, OpenRouter diğer modellerde işareti ya
+    kullanır ya yok sayar.
+    """
+    isaret = {"type": "ephemeral"}
+    adaylar = [m for m in messages if m.get("role") == "system"][:1]
+    adaylar += [m for m in messages if m.get("role") != "system"][-2:]
+    gorulen: set[int] = set()
+    for m in adaylar:
+        if id(m) in gorulen:
+            continue
+        gorulen.add(id(m))
+        icerik = m.get("content")
+        if isinstance(icerik, str):
+            m["content"] = [{"type": "text", "text": icerik,
+                             "cache_control": dict(isaret)}]
+        elif isinstance(icerik, list) and icerik:
+            son = icerik[-1]
+            if isinstance(son, dict):
+                son["cache_control"] = dict(isaret)
+
+
+def _cache_sok(messages: list[dict[str, Any]]) -> None:
+    """İşaretleri geri alır (uç kabul etmedi): parçalardan düşürülür."""
+    for m in messages:
+        icerik = m.get("content")
+        if isinstance(icerik, list):
+            for parca in icerik:
+                if isinstance(parca, dict):
+                    parca.pop("cache_control", None)
 
 
 def _strip_images(messages: list[dict[str, Any]]) -> None:

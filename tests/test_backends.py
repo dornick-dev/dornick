@@ -992,3 +992,65 @@ def test_the_converter_repairs_a_schema_that_slipped_through() -> None:
     assert alanlar["ic"]["properties"]["derin"]["items"] == {}
     # Zaten doğru olan şemaya DOKUNULMUYOR.
     assert alanlar["saglam"]["items"] == {"type": "string"}
+
+
+# -- istem önbelleği işaretleri (OpenRouter) ---------------------------
+#
+# OpenCode incelemesinden alınan ölçülmüş kalıp: ilk sistem + son iki
+# mesaja ephemeral nokta. İşaretsiz gidiş, aynı model/aynı işte ~6,7x
+# maliyet farkı olarak ölçüldü (kiyas-opencode-2608.md).
+
+
+def test_cache_markers_land_on_system_and_last_two() -> None:
+    from neocp.backends.openai_backend import _cache_isaretle
+
+    messages = [
+        {"role": "system", "content": "sistem istemi"},
+        {"role": "user", "content": "ilk soru"},
+        {"role": "assistant", "content": "cevap"},
+        {"role": "tool", "content": "araç çıktısı", "tool_call_id": "t1"},
+    ]
+    _cache_isaretle(messages)
+
+    # Sistem: düz metin tek parçaya sarılıp işaretlenir.
+    sistem = messages[0]["content"]
+    assert isinstance(sistem, list) and sistem[0]["cache_control"] == {"type": "ephemeral"}
+    assert sistem[0]["text"] == "sistem istemi"
+    # Son iki (assistant + tool) işaretli; ilk kullanıcı mesajı DEĞİL.
+    assert isinstance(messages[1]["content"], str)
+    assert messages[2]["content"][0]["cache_control"] == {"type": "ephemeral"}
+    assert messages[3]["content"][0]["cache_control"] == {"type": "ephemeral"}
+    # Toplam üç nokta: Anthropic ailesinin 4 sınırının altında.
+    noktalar = sum(
+        1
+        for m in messages
+        if isinstance(m.get("content"), list)
+        for p in m["content"]
+        if isinstance(p, dict) and "cache_control" in p
+    )
+    assert noktalar == 3
+
+
+def test_cache_markers_can_be_stripped_after_rejection() -> None:
+    from neocp.backends.openai_backend import _cache_isaretle, _cache_sok
+
+    messages = [
+        {"role": "system", "content": "s"},
+        {"role": "user", "content": "u"},
+    ]
+    _cache_isaretle(messages)
+    _cache_sok(messages)
+    for m in messages:
+        icerik = m.get("content")
+        if isinstance(icerik, list):
+            assert all("cache_control" not in p for p in icerik if isinstance(p, dict))
+
+
+def test_cache_markers_only_for_openrouter_base() -> None:
+    """LM Studio / Ollama gibi uçlara işaret hiç gitmez: bayrak adresten."""
+    import re
+    from pathlib import Path
+
+    kaynak = (Path(__file__).parent.parent / "src/neocp/backends/openai_backend.py").read_text(encoding="utf-8")
+    assert re.search(r'_cache_isaretli = "openrouter" in', kaynak)
+    assert "_cache_isaretle(messages)" in kaynak

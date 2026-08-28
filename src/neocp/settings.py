@@ -25,7 +25,7 @@ from typing import Any
 
 from . import listen as listen_module
 from . import lmstudio
-from . import organs, ortam, sandbox, startup
+from . import organs, ortam, sandbox, shell_assoc, startup
 from . import voice as voice_module
 from .config import (
     BrowserConfig,
@@ -327,6 +327,10 @@ def snapshot(config: Config) -> dict[str, Any]:
             "enabled": startup.enabled(),
             "command": startup.current() or startup.command(),
         },
+        "shell_assoc": {
+            "available": shell_assoc.available(),
+            "enabled": shell_assoc.enabled(),
+        },
         "camera": asdict(config.camera),
         "browser": asdict(config.browser),
         "mail": [
@@ -608,6 +612,8 @@ def apply(config: Config, patch: dict[str, Any]) -> Config:
     # tutmanın anlamı yok, gerçek durum kaydın kendisi.
     if (wanted := (patch.get("startup") or {}).get("enabled")) is not None:
         startup.apply(bool(wanted))
+    if (wanted := (patch.get("shell_assoc") or {}).get("enabled")) is not None:
+        shell_assoc.apply(bool(wanted))
     hearing = _section(ListenConfig, base.listen, patch.get("listen"))
     eye = _section(CameraConfig, base.camera, patch.get("camera"))
     surfing = _section(BrowserConfig, base.browser, patch.get("browser"))

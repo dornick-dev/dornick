@@ -525,7 +525,11 @@ class Mind:
         return self.sessions_dir / "_oturumlar.json"
 
     def session_meta(self) -> dict[str, dict[str, Any]]:
-        """Oturum → {ad, etiketler}. Kaydı olmayan oturumlar burada yok."""
+        """Oturum → {ad, etiketler, path, model, provider}.
+
+        Kaydı olmayan oturumlar burada yok. `path` çalışma klasörü;
+        `model`/`provider` bu sohbete özel model (geçişte uygulanır).
+        """
         path = self._meta_path()
         if not path.is_file():
             return {}
@@ -543,6 +547,9 @@ class Mind:
             out[str(key)] = {
                 "ad": str(value.get("ad") or ""),
                 "etiketler": [str(e) for e in etiketler] if isinstance(etiketler, list) else [],
+                "path": str(value.get("path") or "").strip(),
+                "model": str(value.get("model") or "").strip(),
+                "provider": str(value.get("provider") or "").strip(),
             }
         return out
 
@@ -552,16 +559,19 @@ class Mind:
         *,
         ad: str | None = None,
         etiketler: list[str] | None = None,
+        path: str | None = None,
+        model: str | None = None,
+        provider: str | None = None,
     ) -> dict[str, Any]:
-        """Adı ve/veya etiketleri yazar; None verilen alan dokunulmadan kalır.
+        """Ad / etiket / klasör / model yazar; None verilen alan dokunulmaz.
 
-        Boş ad kaydı siler (türetilmiş başlığa dönülür); boş etiket listesi
-        etiketleri temizler. İkisi de boşsa oturumun kaydı tamamen düşer —
-        dosyada anlamsız boş kayıtlar birikmesin.
+        Boş ad türetilmiş başlığa döner. Hepsi boşsa kayıt silinir.
         """
         with self._lock:
             mapping = self.session_meta()
-            kayit = mapping.get(session_id, {"ad": "", "etiketler": []})
+            kayit = mapping.get(session_id, {
+                "ad": "", "etiketler": [], "path": "", "model": "", "provider": "",
+            })
             if ad is not None:
                 kayit["ad"] = " ".join(str(ad).split())[:80]
             if etiketler is not None:
@@ -571,8 +581,16 @@ class Mind:
                     if flat and flat not in temiz:
                         temiz.append(flat)
                 kayit["etiketler"] = temiz[:8]
+            if path is not None:
+                kayit["path"] = str(path or "").strip()[:500]
+            if model is not None:
+                kayit["model"] = str(model or "").strip()[:120]
+            if provider is not None:
+                kayit["provider"] = str(provider or "").strip()[:40]
 
-            if kayit["ad"] or kayit["etiketler"]:
+            if (kayit.get("ad") or kayit.get("etiketler")
+                    or kayit.get("path") or kayit.get("model")
+                    or kayit.get("provider")):
                 mapping[session_id] = kayit
             else:
                 mapping.pop(session_id, None)
@@ -583,7 +601,9 @@ class Mind:
                     json.dumps(mapping, ensure_ascii=False, indent=2), encoding="utf-8")
             except OSError:
                 pass
-            return mapping.get(session_id, {"ad": "", "etiketler": []})
+            return mapping.get(session_id, {
+                "ad": "", "etiketler": [], "path": "", "model": "", "provider": "",
+            })
 
     # -- döküm araması -----------------------------------------------------
 

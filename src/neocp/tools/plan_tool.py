@@ -9,8 +9,12 @@ from .base import ToolContext, ToolRegistry, ToolResult, object_schema
 
 DESCRIPTION = """
 Büyük veya çok adımlı bir iş istendiğinde ÖNCE plan üret: sohbete uzun
-duvar metin yapıştırma. `plan` aracıyla yapılandırılmış Plan oluştur;
-kullanıcı arayüzde Onayla / Düzenle / İptal eder.
+duvar metin / numaralı adım listesi yapıştırma. `plan` aracıyla
+yapılandırılmış Plan oluştur; kullanıcı arayüzde Onayla / Düzenle / İptal
+eder — adımlar kartta görünür.
+
+create sonrası: en fazla 1–2 kısa cümle (neden bu plan / onay bekle).
+Adımları sohbete tekrar yazma. Plan kartı sohbetin EN SONUNDA durur.
 
 Eylemler:
   create  title + steps (metin listesi veya {text} nesneleri)

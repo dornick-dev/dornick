@@ -90,10 +90,10 @@ Dil.statik("jump", "Jump to latest", "title");
 Dil.statik("goals-head", "Click to fold or unfold", "title");
 Dil.statik("goals-head", "Goals — fold/unfold", "aria-label");
 Dil.statik("mute", "Toggle voice", "title");
-Dil.statik("eye", "Camera", "title");
+Dil.statik("eye", "Viewer", "title");
 Dil.statik("apps", "Apps", "title");
 Dil.statik("new-chat", "New chat", "title");
-Dil.statik("history", "History", "title");
+Dil.statik("history", "Toggle sidebar", "title");
 Dil.statik("orchestra", "Orchestra", "title");
 Dil.statik("focus", "Focus", "title");
 Dil.statik("theme", "Theme", "title");
@@ -114,7 +114,7 @@ for (const [id, metin] of [
   ["eye", "Viewer"],
   ["apps", "Apps"],
   ["new-chat", "New chat"],
-  ["history", "Past conversations"],
+  ["history", "Toggle sidebar"],
   ["jobs", "Tasks"],
   ["orchestra", "Subagents"],
   ["focus", "Focus mode"],
@@ -138,10 +138,36 @@ for (const [id, metin] of [
 }
 
 // Görüntüleyici ve canlı-uygulama kapsülünün ipuçları.
+Dil.statik("side-jobs-head", "Toggle the tasks section", "title");
+Dil.statik("side-jobs-head", "Toggle the tasks section", "aria-label");
+Dil.statik("side-apps-head", "Toggle the apps section", "title");
+Dil.statik("side-apps-head", "Toggle the apps section", "aria-label");
+Dil.secici("#side-jobs-head span", "Tasks · Automations");
+Dil.secici("#side-apps-head span", "Apps");
+Dil.statik("more-tools", "More tools", "title");
+Dil.statik("more-tools", "More tools", "aria-label");
+Dil.statik("hist-filter-toggle", "Toggle filters", "title");
+Dil.statik("hist-filter-toggle", "Toggle filters", "aria-label");
+Dil.secici(".side-label", "Chats");
+Dil.statik("mind-grip", "Drag to resize", "title");
+Dil.statik("mind-grip", "Resize panel", "aria-label");
+Dil.statik("legend-toggle", "Toggle the colour key", "title");
+Dil.statik("legend-toggle", "Toggle the colour key", "aria-label");
+Dil.statik("mind-close", "Hide the brain panel", "title");
+Dil.statik("mind-close", "Hide the brain panel", "aria-label");
+Dil.statik("mind-open", "Show the brain panel", "title");
+Dil.statik("mind-open", "Show the brain panel", "aria-label");
+Dil.statik("mind-search", "Search memories", "aria-label");
+Dil.statik("mind-search", "Search memories", "placeholder");
+Dil.statik("mind", "Brain", "aria-label");
+Dil.secici(".mind-tag", "Brain");
+Dil.statik("viewer-max", "Maximize / restore", "title");
+Dil.statik("viewer-max", "Maximize / restore", "aria-label");
 Dil.statik("viewer-grip", "Drag to resize", "title");
 Dil.statik("capsule-dot", "Live", "title");
 Dil.statik("capsule-addr", "Open the address in a new tab", "title");
-Dil.statik("capsule-external", "Open outside", "title");
+Dil.statik("capsule-external", "Open in your browser", "title");
+Dil.statik("capsule-external", "Open in browser");
 Dil.statik("dock-model", "Model — opens settings", "title");
 Dil.statik("dock-effort", "Thinking depth — click to change", "title");
 Dil.statik("dock-mode", "Permission mode — click to change", "title");

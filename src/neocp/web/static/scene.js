@@ -27,6 +27,12 @@ Dil.ekle({
   "Duyular": "Senses", "Cihazlar": "Devices", "Yetenekler": "Skills",
   // Legend açıklamaları
   "Seni tanıdıklarım": "What I know about you",
+  // Anı kartı
+  "Anahtar kelimeler": "Keywords", "Nasıl öğrendim": "How I learned it",
+  "Konuşmaya git →": "Open the conversation →",
+  "çift tık da açar": "double-click also opens it",
+  "kaynak konuşma artık yok": "the source conversation is gone",
+  "bu konuşmada": "in this conversation",
   "Tercihlerin": "Your preferences",
   "Çıkardığım dersler": "Lessons I have drawn",
   "Yöntemlerim": "My methods",
@@ -72,12 +78,12 @@ const Scene = (() => {
   // diyene kadar kısılıyor. Canlı kalsın, göz yormasın.
   const MODES = {
     // Uyanma: yavaş, sönük, soğuk. Henüz kimse yok.
-    waking:    { spin: 0.10, beat: 3200, glow: 0.04, wedge: 0.05, tint: [58, 96, 128] },
-    idle:      { spin: 0.26, beat: 2400, glow: 0.10, wedge: 0.12, tint: [79, 227, 255] },
-    thinking:  { spin: 0.42, beat: 1600, glow: 0.17, wedge: 0.32, tint: [162, 142, 255] },
-    writing:   { spin: 0.34, beat: 1400, glow: 0.15, wedge: 0.24, tint: [96, 242, 214] },
-    recalling: { spin: 0.48, beat: 1500, glow: 0.21, wedge: 0.40, tint: [79, 227, 255] },
-    working:   { spin: 0.44, beat: 1500, glow: 0.18, wedge: 0.36, tint: [255, 176, 84] }
+    waking:    { spin: 0.10, beat: 3200, glow: 0.04, wedge: 0.05, tint: [96, 88, 74] },
+    idle:      { spin: 0.26, beat: 2400, glow: 0.10, wedge: 0.12, tint: [240, 160, 32] },
+    thinking:  { spin: 0.42, beat: 1600, glow: 0.17, wedge: 0.32, tint: [196, 181, 253] },
+    writing:   { spin: 0.34, beat: 1400, glow: 0.15, wedge: 0.24, tint: [134, 239, 172] },
+    recalling: { spin: 0.48, beat: 1500, glow: 0.21, wedge: 0.40, tint: [245, 239, 228] },
+    working:   { spin: 0.44, beat: 1500, glow: 0.18, wedge: 0.36, tint: [235, 120, 50] }
   };
 
   // Kip geçişinin bir karedeki payı. 1'e yaklaştıkça geçiş sertleşir.
@@ -95,6 +101,7 @@ const Scene = (() => {
   const WEB_ALPHA = 0.055;  // sinaps bağlarının sönük hali
 
   let canvas, ctx, probe, revealBtn, onRoute = () => {};
+  let onSession = () => {};   // çift tık / "Konuşmaya git": kaynağa geçiş
   let view = { w: 0, h: 0 };
   let nodes = [], byId = new Map(), web = [], stats = {};
   let core = { x: 0, y: 0, r: 0 };
@@ -105,6 +112,8 @@ const Scene = (() => {
   let route = [], focused = -1;
   let selected = null, hovered = null;
   let raf = null, pointer = { x: 0, y: 0 };
+  let pane = null;         // sağ beyin panelinin güncel dikdörtgeni (yoksa null)
+  let searchHits = null;   // anı araması: eşleşen düğüm kimlikleri (yoksa null)
 
   const css = (n) => getComputedStyle(document.documentElement).getPropertyValue("--" + n).trim();
 
@@ -127,7 +136,7 @@ const Scene = (() => {
       waking: "session", idle: "cyan", thinking: "violet",
       writing: "mint", recalling: "ice", working: "amber"
     }[mode] || "cyan";
-    return hexRgb(css(key)) || [10, 122, 156];
+    return hexRgb(css(key)) || [180, 112, 10];
   }
 
   // Soluk alfanın kâğıtta tabanı: 0.2 × renk, açık zeminde görünmez.
@@ -146,12 +155,24 @@ const Scene = (() => {
     return (h >>> 0) / 4294967296;
   }
 
+  let _inited = false;
+
   function init(opts) {
+    // Çift init = iki rAF döngüsü = ortada çift beyin (script yeniden
+    // bağlanırsa / hot path). İkinci çağrı yalnızca referansları tazeler.
     canvas = opts.canvas;
     ctx = canvas.getContext("2d");
     probe = opts.probe;
     revealBtn = opts.reveal;
     onRoute = opts.onRoute || onRoute;
+    onSession = opts.onSession || onSession;
+
+    if (_inited) {
+      resize();
+      start();
+      return;
+    }
+    _inited = true;
 
     // ResizeObserver pencere olayından üstün: gizliyken 0 olan kutu
     // görünür olunca kendiliğinden bildiriliyor.
@@ -163,6 +184,17 @@ const Scene = (() => {
     if (aside) watch.observe(aside);
     canvas.addEventListener("mousemove", onMove);
     canvas.addEventListener("mousedown", onDown);
+    // Çift tık: anının OLUŞTUĞU konuşmaya gider (oturum düğümünde
+    // konuşmanın kendisine). Organ ve dal göbeğinde anlamı yok.
+    canvas.addEventListener("dblclick", (ev) => {
+      const dugum = at(ev);
+      const gider = dugum && !dugum.organ && !dugum.branchHub
+        && (dugum.group === "session" || dugum.kaynak_var !== false);
+      const hedef = gider
+        ? (dugum.kaynak || (dugum.group === "session" ? dugum.id : null))
+        : null;
+      if (hedef) { probe.hidden = true; selected = null; onSession(hedef); }
+    });
 
     // Pencere küçültülünce çizimi durdur: görünmeyen sahneyi canlandırmak
     // gün boyu açık kalan bir programda boşa yakılan pil.
@@ -212,26 +244,57 @@ const Scene = (() => {
   // varsayılmıyor — ölçülüyor.
   const NARROW = 380;   // bundan az boş alan kalırsa sütun düzeni anlamsız
 
+  let freeLeft = 0;   // boş alanın SOL kenarı (rail sütunu varsa onun sağı)
+
   function freeWidth() {
     const aside = document.querySelector(".stream");
     const rect = aside ? aside.getBoundingClientRect() : null;
+    freeLeft = 0;
     if (!rect || !rect.width) return view.w;
+    // Sol rail sütun kipindeyken boş alan onun SAĞINDAN başlar: çekirdek
+    // eskiden panelin arkasına ortalanıp görünmez oluyordu.
+    const rail = document.getElementById("hist-panel");
+    if (rail && !rail.hidden) {
+      const rr = rail.getBoundingClientRect();
+      if (rr.width && rr.left <= 1 && rr.right < rect.left) freeLeft = rr.right;
+    }
     // Sütunun soluna düşen alan. Dar pencerede yazı zaten sahnenin
     // üstünde duruyor; orada çekirdek yine ortada kalıyor.
-    return rect.left > NARROW ? rect.left : view.w;
+    const usable = rect.left - freeLeft;
+    if (usable > NARROW) return usable;
+    freeLeft = 0;
+    return view.w;
   }
 
   // Sohbet yanda mı, altta mı. Sahnenin boş bıraktığı taraf buna göre
   // değişiyor ve organlar oraya diziliyor.
   const sideways = () => freeWidth() < view.w;
 
+  // Sağ beyin paneli: varsa çekirdek onun içine oturur. Dikdörtgen taze
+  // ölçülür — panel açılıp kapanabilir, tutamakla genişleyebilir.
+  function mindRect() {
+    const m = document.getElementById("mind");
+    if (!m) return null;
+    const r = m.getBoundingClientRect();
+    return r.width > 150 && r.height > 220 ? r : null;
+  }
+
   function layout() {
+    pane = mindRect();
+    if (pane) {
+      // Panel kipi: beyin üstte; altına durum, organ listesi ve legend
+      // sığmalı. Halkaların en dışı (×2.38) panel kenarını taşmasın.
+      core.x = pane.left + pane.width / 2;
+      core.y = pane.top + Math.min(pane.height * 0.26, 240);
+      core.r = Math.min(pane.width / 4.9, view.h * 0.15, 96);
+    } else {
     const free = freeWidth();
-    core.x = free / 2;
+    core.x = freeLeft + free / 2;
     // Sohbet altta olduğunda çekirdek yukarı çekiliyor: ortada kalırsa
     // yazının altında kalıyor ve izlenecek şey görünmüyor.
     core.y = view.h * (free < view.w ? 0.46 : 0.42);
     core.r = Math.min(free * 0.11, view.h * 0.17, 150);
+    }
 
     // Anılar artık düz bir 2B dağılımda değil, dönen beynin HACMİNİN
     // İÇİNDE. Her düğüme kimliğinden türeyen sabit bir 3B konum veriliyor
@@ -629,8 +692,29 @@ const Scene = (() => {
 
   let branches = [];
 
+  // Panel kipi: organlar yelpaze değil, beynin altında okunur bir liste.
+  // (Yelpaze 340px'lik sütunda birbirine giriyordu — "el kol belli değil".)
+  // Satır konumları her karede drawLimbRows'ta diziliyor (dal aç/kapa
+  // canlı); burada yalnız dal üyeliği kuruluyor.
+  function placeRows() {
+    const filled = BRANCHES.filter((b) => limbs.some((l) => branchOf(l) === b));
+    branches = filled.map((meta) => ({
+      ...meta,
+      own: limbs.filter((l) => branchOf(l) === meta),
+      below: true,
+    }));
+    for (const branch of branches) {
+      for (const limb of branch.own) {
+        limb.stem = branch;
+        limb.below = true;
+        if (limb.x === undefined) { limb.x = core.x; limb.y = core.y; }
+      }
+    }
+  }
+
   function place() {
     if (!limbs.length) { branches = []; return; }
+    if (pane) { placeRows(); return; }
     const free = freeWidth();
     const down = free < view.w ? 1 : -1;
 
@@ -701,8 +785,135 @@ const Scene = (() => {
     if (limb) { limb.doing = ""; limb.since = 0; }
   }
 
+  // Panel kipindeki organ listesi. Dal başlığı: renkli göbek + ok +
+  // "DUYULAR · 3". Açık dalın organları altında satır satır; o an
+  // KULLANILAN organ nabız atıyor, çekirdekten satırına kıvılcım iniyor
+  // (signal "limb") ve ne yaptığı adının yanında yazıyor — "şu an neyi
+  // kullanıyor" tek bakışta okunuyor.
+  function drawLimbRows(t) {
+    const family = getComputedStyle(document.body).fontFamily;
+    const left = pane.left + 22;
+    let y = core.y + core.r * 2.55 + 34;
+
+    // Legend panelin dibinde (açıksa); liste ona girmesin.
+    const kinds = new Set(nodes.map((n) => n.group)).size;
+    const limbKinds = new Set(limbs.map((l) => branchOf(l).id)).size;
+    const maxY = legendOn
+      ? pane.bottom - (kinds + limbKinds + 1) * 19 - 34
+      : pane.bottom - 44;
+
+    // Hangi dallar açık: tıklanmış, üzerinde durulan ya da o an kullanılan.
+    const expanded = new Set();
+    for (const branch of branches) {
+      const busy = branch.own.some((l) => l.since > 0 && t - l.since < USE_HOLD);
+      const hovering = hoverBranch && hoverBranch.id === branch.id;
+      if (openBranches.has(branch.id) || hovering || busy) {
+        expanded.add(branch.id);
+        if (!branchWake[branch.id]) branchWake[branch.id] = t;
+      } else {
+        delete branchWake[branch.id];
+      }
+    }
+
+    ctx.textAlign = "left";
+    ctx.textBaseline = "middle";
+    for (const branch of branches) {
+      const busy = branch.own.some((l) => l.since > 0 && t - l.since < USE_HOLD);
+      const open = expanded.has(branch.id);
+      const tone = css(branch.tone);
+      branch.x = left; branch.y = y;
+      branch.branchHub = true;
+      branch._hit = y < maxY ? { x: left + 52, y, r: 38 } : null;
+      if (y > maxY) break;
+
+      ctx.globalAlpha = paperAlpha(busy ? 0.95 : 0.55);
+      ctx.fillStyle = tone;
+      ctx.beginPath(); ctx.arc(left, y, 3.4, 0, Math.PI * 2); ctx.fill();
+      ctx.font = "600 9.5px " + family;
+      ctx.fillText(open ? "▾" : "▸", left + 9, y + 0.5);
+      ctx.globalAlpha = paperAlpha(busy ? 0.95 : 0.6);
+      ctx.fillText(Dil.t(branch.label).toUpperCase() + " · " + branch.own.length,
+                   left + 20, y + 0.5);
+      y += 21;
+
+      if (!open) {
+        // Kapalı dalın organı çizilmez; sinyalin hedefi dal göbeği olur.
+        for (const limb of branch.own) { limb._hit = null; limb.x = left; limb.y = branch.y; }
+        continue;
+      }
+
+      const wake = Math.min(1, (t - (branchWake[branch.id] || t)) / 180);
+      for (const limb of branch.own) {
+        if (y > maxY) { limb._hit = null; limb.x = left; limb.y = branch.y; continue; }
+        const lx = left + 14;
+        limb.x = lx; limb.y = y;
+        const busyL = limb.since > 0 && t - limb.since < USE_HOLD;
+        const beat = busyL ? (Math.sin((t - limb.since) / USE_MS * Math.PI * 2) + 1) / 2 : 0;
+        const heat = Math.max(limb.live ? 0.5 : LIMB_DIM,
+                              busyL ? 0.7 + beat * 0.3 : 0,
+                              limb === hovered ? 0.95 : 0);
+        const color = css(LIMB_COLOR[limb.kind] || "fact");
+        const r = 4.6;
+
+        // Kullanımdayken genişleyen halka — yelpaze kipiyle aynı dil.
+        if (busyL) {
+          const k = ((t - limb.since) % USE_MS) / USE_MS;
+          ctx.globalAlpha = (1 - k) * 0.5 * wake;
+          ctx.strokeStyle = color;
+          ctx.lineWidth = 1.2;
+          ctx.beginPath(); ctx.arc(lx, y, r + 3 + k * 14, 0, Math.PI * 2); ctx.stroke();
+        }
+
+        // Gövde: tür şekli (altıgen duyu, kare cihaz, üçgen yetenek).
+        ctx.globalAlpha = paperAlpha(heat) * wake;
+        ctx.fillStyle = limb.live ? color + "33" : "rgba(0,0,0,0)";
+        ctx.strokeStyle = color;
+        ctx.lineWidth = isLight() ? 1.6 : 1.3;
+        ctx.shadowColor = color;
+        ctx.shadowBlur = busyL && !isLight() ? 12 : 0;
+        const sides = LIMB_SIDES[limb.kind] || 6;
+        const turn = sides === 4 ? Math.PI / 4 : -Math.PI / 2;
+        ctx.beginPath();
+        for (let i = 0; i < sides; i++) {
+          const a = (i / sides) * Math.PI * 2 + turn;
+          const px = lx + Math.cos(a) * r, py = y + Math.sin(a) * r;
+          i ? ctx.lineTo(px, py) : ctx.moveTo(px, py);
+        }
+        ctx.closePath(); ctx.fill(); ctx.stroke();
+        ctx.shadowBlur = 0;
+
+        // Ad + o an ne yaptığı (sığdığı kadar, taşarsa kırpılır).
+        ctx.globalAlpha = (isLight() ? 0.95 : Math.min(1, heat + 0.35)) * wake;
+        ctx.fillStyle = busyL || limb === hovered ? css("text") : css("dim");
+        ctx.font = "500 11px " + family;
+        ctx.fillText(limb.name, lx + 12, y + 0.5);
+        if (busyL && limb.doing) {
+          const nameW = ctx.measureText(limb.name).width;
+          ctx.globalAlpha = 0.85 * wake;
+          ctx.fillStyle = color;
+          ctx.font = "500 10px " + family;
+          const room = pane.right - (lx + 12 + nameW + 8) - 12;
+          let doing = limb.doing;
+          while (doing && ctx.measureText("· " + doing + "…").width > room) {
+            doing = doing.slice(0, -2);
+          }
+          if (doing) {
+            ctx.fillText("· " + (doing === limb.doing ? doing : doing + "…"),
+                         lx + 12 + nameW + 8, y + 0.5);
+          }
+        }
+        limb._hit = { x: lx + 30, y, r: 24 };
+        y += 19;
+      }
+      y += 5;
+    }
+    ctx.textBaseline = "alphabetic";
+    ctx.globalAlpha = 1;
+  }
+
   function drawLimbs(t) {
     if (!limbs.length) return;
+    if (pane) { drawLimbRows(t); return; }
     const family = getComputedStyle(document.body).fontFamily;
 
     // Hangi dallar açık: tıklanmış, üzerinde durulan ya da o an kullanılan.
@@ -846,7 +1057,13 @@ const Scene = (() => {
   // --- çizim ----------------------------------------------------------
   function paint(t) {
     blend();
-    ctx.clearRect(0, 0, view.w, view.h);
+    // Kimlik dönüşümüyle clearRect kenarda 1 px hayalet bırakabiliyor —
+    // panel açılınca merkez kayınca eski beyin bir an çift görünüyordu.
+    // Device piksellerinde sil, sonra CSS ölçeğine dön.
+    const ratio = window.devicePixelRatio || 1;
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
     drawAura(t);
     drawRipples(t);
     // Anıların ekran konumu beynin dönüşünden türetiliyor: çizimden önce
@@ -932,8 +1149,13 @@ const Scene = (() => {
   let focusMode = false;
   function focus(on) { focusMode = !!on; }
 
+  // Legend istenince: panelde kocaman sabit bir blok yerine katlanır.
+  let legendOn = false;
+  function legend(on) { legendOn = !!on; start(); }
+
   function drawLegend() {
     if (focusMode) return;
+    if (pane && !legendOn) return;
     const kinds = [...new Set(nodes.map(n => n.group))]
       .sort((a, b) => LEGEND_ORDER.indexOf(a) - LEGEND_ORDER.indexOf(b));
     const rows = kinds.map(g => ({
@@ -955,9 +1177,11 @@ const Scene = (() => {
     if (!rows.length && !limbRows.length) return;
 
     const family = getComputedStyle(document.body).fontFamily;
-    const lh = 20, r = 5, x = 16;
+    const lh = pane ? 19 : 20, r = 5, x = pane ? pane.left + 22 : 16;
     const total = (rows.length + limbRows.length + gap) * lh;
-    let y = Math.max(24, core.y - total / 2);
+    // Panel kipinde legend en altta durur; panel yoksa sol kenarda ortalı.
+    let y = pane ? Math.max(core.y + core.r * 2.4, pane.bottom - total - 18)
+                 : Math.max(24, core.y - total / 2);
     // Daha okunur: eskisi (0.26) fark edilmiyordu. Nokta parlak, yazı orta,
     // açıklama sönük — üç kademe bir bakışta ayrışsın.
     const base = reveal ? 0.95 : (isLight() ? 0.92 : 0.5);
@@ -1035,7 +1259,8 @@ const Scene = (() => {
     const t = now();
     if (t - lastPaint >= PAINT_MS) {
       lastPaint = t;
-      const free = freeWidth();
+      const mr = mindRect();
+      const free = mr ? -(mr.left * 3 + mr.width) : freeWidth();
       if (Math.abs(free - lastFree) > 0.5) { lastFree = free; layout(); }
       paint(t);
     }
@@ -1062,7 +1287,7 @@ const Scene = (() => {
       const onPath = edge.a.order && edge.b.order &&
         Math.abs(edge.a.order - edge.b.order) === 1;
       const light = isLight();
-      ctx.strokeStyle = onPath ? css(edge.b.group) : (light ? css("text") : "#5f86a8");
+      ctx.strokeStyle = onPath ? css(edge.b.group) : (light ? css("text") : "#8A8071");
       ctx.lineWidth = light ? 1.35 : 1;
       ctx.globalAlpha = onPath ? (light ? 0.85 : 0.5) : (light ? 0.38 : WEB_ALPHA * (reveal ? 3 : 1));
       ctx.beginPath();
@@ -1079,6 +1304,12 @@ const Scene = (() => {
     // Uzaktaki (beynin arkasındaki) anı önce çizilmeli ki öndekiler
     // üstünde kalsın — beyin bulutuyla aynı ressam sıralaması.
     const ordered = [...nodes].sort((a, b) => (a.depth ?? 0) - (b.depth ?? 0));
+    // "Tüm hatıraları göster": hepsini aynı anda ETİKETLEMEK okunmaz bir
+    // çorbaya dönüyordu (canlıda görüldü). En öndeki ~10 anı etiketlenir;
+    // beyin döndükçe sıra hepsine gelir — dönen bir vitrin.
+    const vitrin = reveal && !searchHits
+      ? new Set(ordered.slice(-10).map((n) => n.id))
+      : null;
     for (const node of ordered) {
       if (node.flash > 0 && node.lit) {
         const k = (t - node.lit) / FLASH_MS;
@@ -1092,11 +1323,14 @@ const Scene = (() => {
 
       const onPath = node.order > 0;
       const isFocused = onPath && route[focused] && route[focused].node === node.id;
+      const hit = searchHits ? searchHits.has(node.id) : false;
+      const dim = searchHits && !hit ? 0.2 : 1;   // arama varken eşleşmeyen söner
       const base = onPath ? PATH_FLOOR : 0;
       const heat = Math.max(
         base + node.flash * (1 - base),
         node === selected || node === hovered ? 0.8 : 0,
         isFocused ? 1 : 0,
+        hit ? 0.75 : 0,
         reveal ? 0.4 : 0
       );
       const color = css(node.group);
@@ -1122,7 +1356,7 @@ const Scene = (() => {
         const g = ctx.createRadialGradient(node.x, node.y, 0, node.x, node.y, r * 5);
         g.addColorStop(0, color + alpha);
         g.addColorStop(1, color + "00");
-        ctx.globalAlpha = 1;
+        ctx.globalAlpha = dim;
         ctx.fillStyle = g;
         ctx.beginPath(); ctx.arc(node.x, node.y, r * 5, 0, Math.PI * 2); ctx.fill();
       }
@@ -1130,7 +1364,7 @@ const Scene = (() => {
       const twk = 0.68 + 0.32 * (Math.sin(t / 1500 + (node.p3.x - node.p3.z) * 8) * 0.5 + 0.5);
       ctx.globalAlpha = Math.min(1, lightNode
         ? (0.78 + heat * 0.22) * depthAlpha
-        : (LATENT * twk + heat * (1 - LATENT)) * depthAlpha);
+        : (LATENT * twk + heat * (1 - LATENT)) * depthAlpha) * dim;
       ctx.shadowBlur = heat > 0.05 && !lightNode ? 14 : 0; ctx.shadowColor = color;
       ctx.fillStyle = color;
       ctx.beginPath(); ctx.arc(node.x, node.y, r, 0, Math.PI * 2); ctx.fill();
@@ -1140,15 +1374,21 @@ const Scene = (() => {
       // seçiliyse ya da imleç üstündeyse. "Detayları göster" açıkken bile
       // hepsini birden yazmak ekranı okunmaz yapıyordu — onlarca etiket
       // sohbet metninin üstüne biniyordu.
-      const named = onPath || node === selected || node === hovered;
+      // "Tüm hatıraları göster" açıkken ÖN yüzdekiler adlarıyla yazılır:
+      // açık temada düğümler zaten parlak olduğundan düğme "çalışmıyor"
+      // görünüyordu — görünür etkisi etiketler.
+      const named = onPath || node === selected || node === hovered || hit
+        || (vitrin && vitrin.has(node.id));
       if (named && heat > 0.3) {
         // Etiket normalde dışa doğru yazılıyor. Kenara yakın bir düğümde
         // dışarısı ekranın dışı demek: yazı kesiliyor ya da sohbetin
         // altına giriyor. O durumda içeri dönüyor.
         const LABEL_ROOM = 130;
         let outward = Math.cos(node.angle) >= 0 ? 1 : -1;
-        if (outward > 0 && node.x + LABEL_ROOM > freeWidth()) outward = -1;
-        else if (outward < 0 && node.x - LABEL_ROOM < 0) outward = 1;
+        const rEdge = pane ? pane.right - 6 : freeLeft + freeWidth();
+        const lEdge = pane ? pane.left + 6 : freeLeft;
+        if (outward > 0 && node.x + LABEL_ROOM > rEdge) outward = -1;
+        else if (outward < 0 && node.x - LABEL_ROOM < lEdge) outward = 1;
         ctx.textAlign = outward > 0 ? "left" : "right";
         ctx.globalAlpha = Math.min(1, (heat - 0.3) * 2.6);
         const lx = node.x + outward * (r + 9);
@@ -1176,7 +1416,7 @@ const Scene = (() => {
           ctx.fillStyle = isFocused ? css("text") : color;
         } else {
           ctx.shadowBlur = 12; ctx.shadowColor = "#000";
-          ctx.fillStyle = isFocused ? "#ffffff" : "#dceefc";
+          ctx.fillStyle = isFocused ? "#ffffff" : "#EFE8DC";
         }
         ctx.fillText(label, lx, ly);
         ctx.shadowBlur = 0;
@@ -1491,6 +1731,12 @@ const Scene = (() => {
   function onMove(ev) {
     pointer = { x: ev.clientX, y: ev.clientY };
     hovered = at(ev);
+    // Üzerine gelince ne olduğu tıklamadan okunur: kısa kimlik. Tıklanmış
+    // (sabitlenmiş) bir kart varsa hover onu ezmez.
+    if (!selected) {
+      if (hovered && !hovered.branchHub) showProbeAt(hovered, ev.clientX, ev.clientY, true);
+      else probe.hidden = true;
+    }
     // Dal, üzerindeyken geçici açılır; yaprağın üstündeyken de açık kalır
     // (göbekten yaprağa giderken yelpaze kapanmasın).
     hoverBranch = hovered && hovered.branchHub ? hovered
@@ -1513,8 +1759,20 @@ const Scene = (() => {
     showProbeAt(selected, ev.clientX, ev.clientY);
   }
 
-  function showProbeAt(node, x, y) {
+  // ISO damgayı okunur güne çevirir: "2026-08-23T17:30" -> "23.08 17:30".
+  function gun(ts) {
+    const s = String(ts || "");
+    return /^\d{4}-\d{2}-\d{2}T/.test(s)
+      ? s.slice(8, 10) + "." + s.slice(5, 7) + " " + s.slice(11, 16)
+      : "";
+  }
+
+  // mini: üzerine gelince görünen kısa kimlik (başlık + tür). Sabit kart
+  // (tıklama) detayı, anahtar kelimeleri, "Nasıl öğrendim"i ve kaynağa
+  // giden eylemi taşır.
+  function showProbeAt(node, x, y, mini) {
     probe.textContent = "";
+    probe.classList.toggle("pinned", !mini);
     const title = document.createElement("div");
     title.className = "t";
     const kind = document.createElement("div");
@@ -1528,12 +1786,56 @@ const Scene = (() => {
       title.textContent = node.name;
       kind.textContent = [node.state, node.doing].filter(Boolean).join(" · ");
       body.textContent = node.detail || "";
+      probe.append(title, kind, body);
     } else {
       title.textContent = node.order ? node.order + ". " + node.label : node.label;
-      kind.textContent = [t(LABEL[node.group]) || node.group, node.meta].filter(Boolean).join(" · ");
-      body.textContent = node.detail || "";
+      kind.textContent = [t(LABEL[node.group]) || node.group,
+                          mini ? "" : node.meta && node.group === "goal" ? node.meta : ""]
+        .filter(Boolean).join(" · ");
+      body.textContent = mini ? "" : (node.detail || "");
+      probe.append(title, kind, body);
+
+      if (!mini) {
+        // Anahtar kelimeler: kayıttaki etiketler.
+        if (node.meta && node.group !== "goal" && node.group !== "session") {
+          const keys = document.createElement("div");
+          keys.className = "probe-keys";
+          keys.textContent = t("Anahtar kelimeler") + ": " + node.meta;
+          probe.append(keys);
+        }
+        // Nasıl öğrendim: ne zaman, hangi konuşmada + kaynağa giden eylem.
+        // Kaynak oturumun dosyası artık yoksa (taşınmış/birleştirilmiş
+        // anılar) düğme HİÇ çıkmaz — tıklanıp da gitmeyen bir vaat yerine
+        // kart dürüstçe durumu söyler.
+        const ulasilabilir = node.group === "session" || node.kaynak_var !== false;
+        const hedef = ulasilabilir
+          ? (node.kaynak || (node.group === "session" ? node.id : null))
+          : null;
+        if (hedef || gun(node.ts) || (node.kaynak && !ulasilabilir)) {
+          const learn = document.createElement("div");
+          learn.className = "probe-learn";
+          learn.textContent = t("Nasıl öğrendim") + ": "
+            + [gun(node.ts),
+               hedef ? t("bu konuşmada") : (node.kaynak ? t("kaynak konuşma artık yok") : "")]
+              .filter(Boolean).join(" · ");
+          if (node.group === "session") learn.textContent = "";
+          if (learn.textContent) probe.append(learn);
+        }
+        if (hedef) {
+          const git = document.createElement("button");
+          git.type = "button";
+          git.className = "probe-git";
+          git.textContent = t("Konuşmaya git →");
+          git.title = t("çift tık da açar");
+          git.addEventListener("click", () => {
+            probe.hidden = true;
+            selected = null;
+            onSession(hedef);
+          });
+          probe.append(git);
+        }
+      }
     }
-    probe.append(title, kind, body);
 
     probe.hidden = false;
     const rect = probe.getBoundingClientRect();
@@ -1638,6 +1940,8 @@ const Scene = (() => {
   // dışarı doğru yürüdüğü bu; hangi düğüme vardığını `activate` gösteriyor.
   function recallSweep(t) {
     const cycle = 2200;
+    const rings = 3;   // eşzamanlı sonar halkası (tanımsızdı: hatırlama
+                       // kipinde ReferenceError kare döngüsünü öldürüyordu)
     const far = Math.min(view.w, view.h) * 0.52;
 
     ctx.save();
@@ -1681,9 +1985,28 @@ const Scene = (() => {
     ctx.globalAlpha = 1; ctx.shadowBlur = 0;
   }
 
+
+  // Anı araması (panel başlığındaki kutu): eşleşen düğümler yanar, kalanı
+  // söner. Etiket + tür + detay içinde, harf büyüklüğü önemsiz.
+  function search(q) {
+    const needle = String(q || "").trim().toLocaleLowerCase("tr");
+    if (needle.length < 2) { searchHits = null; start(); return; }
+    searchHits = new Set(nodes
+      .filter((n) => ((n.label || "") + " " + (n.group || "") + " "
+                      + (n.detail || "") + " " + (n.meta || ""))
+        .toLocaleLowerCase("tr").includes(needle))
+      .map((n) => n.id));
+    start();
+  }
+
+  // Panel kapalıyken tuval de gizli; görünmeyen sahneyi çizmek boşa
+  // yakılan pil. resume ölçüp kaldığı yerden sürer.
+  const pause = stop;
+  const resume = () => { resize(); start(); };
+
   const summary = () => stats;
 
   return { init, load, activate, focusStep, clearRoute, ripple, bridge,
-           signal, deposit, organs, use, release,
-           setBusy, setMode, summary, redraw, focus };
+           signal, deposit, organs, use, release, search, pause, resume,
+           setBusy, setMode, summary, redraw, focus, legend };
 })();

@@ -206,10 +206,14 @@ async def _run_node(node: WorkflowNode, ctx: dict[str, Any], agent: Any) -> str:
         cmd = str(cfg.get("command") or cfg.get("cmd") or "")
         if not cmd:
             raise RuntimeError("shell düğümü için command gerekli")
+        # Penceresiz: otomasyon her tetiklendiğinde ekranda cmd parlıyordu
+        # ("arasıra cmd açıp kapatıyor" — canlı şikâyet). Çıktı zaten boruda.
+        from . import ortam
         proc = await asyncio.create_subprocess_shell(
             cmd,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.STDOUT,
+            **ortam.sessiz_bayraklar(),
         )
         out, _ = await proc.communicate()
         text = (out or b"").decode("utf-8", errors="replace")[:8000]

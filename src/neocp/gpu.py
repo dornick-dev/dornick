@@ -24,6 +24,10 @@ def nvidia_gpus() -> list[GpuMemory]:
     if not shutil.which("nvidia-smi"):
         return []
     try:
+        from . import ortam
+
+        # CREATE_NO_WINDOW: ayarlar kaydı / yerel opt VRAM ölçümü her
+        # nvidia-smi'de ekranda siyah cmd parlatıyordu.
         raw = subprocess.check_output(
             [
                 "nvidia-smi",
@@ -35,6 +39,7 @@ def nvidia_gpus() -> list[GpuMemory]:
             text=True,
             encoding="utf-8",
             errors="replace",
+            **ortam.sessiz_bayraklar(),
         )
     except (OSError, subprocess.SubprocessError):
         return []

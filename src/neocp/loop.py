@@ -490,6 +490,23 @@ KIRMIZI_NOTU = (
     "düzelt ya da neyin çalışmadığını açıkça söyle."
 )
 
+# Kabul-listesi kapısı: iş defterinde AÇIK maddeler dururken "bitti"
+# denirse bir tur geri veriliyor. Ölçülen yara (CMS koşusu): plan M4'te
+# "zengin metin editörü" yazarken teslim düz textarea çıktı ve hiçbir şey
+# yakalamadı — madde sessizce düşmüştü.
+# Başlığı MODEL koyar (Claude Code gibi): kullanıcının ilk cümlesinin ilk
+# 30 karakteri başlık değildir. İlk alışverişten sonra tek küçük çağrı.
+BASLIK_ISTEMI = (
+    "Aşağıdaki konuşma için 2-5 kelimelik kısa bir başlık üret. Yalnız "
+    "başlığı yaz: tırnak, nokta, emoji, açıklama yok. Konuşmanın dilinde."
+)
+
+KABUL_NOTU = (
+    "[Kabul] İş listende hâlâ açık maddeler var: {ozet}. Bitti demeden "
+    "önce her birini ya tamamla (mind_goals ile kapat) ya da neden açık "
+    "kaldığını tek cümleyle söyle — plan maddesi sessizce düşmez."
+)
+
 
 # -- teslim edileni ÇALIŞTIRMA kapısı ------------------------------------
 #
@@ -839,6 +856,7 @@ class TurnStats:
     # Kırmızı kapısı bu turda bir kez açıldı mı. En fazla bir kez: model
     # ikinci turda yine bitirmek isterse bırakılıyor — sonsuz döngü yok.
     kirmizi_uyarildi: bool = False
+    kabul_uyarildi: bool = False
     # Teslim-edileni-çalıştır kapısı bu turda açıldı mı. Aynı sebeple bir kez.
     giris_uyarildi: bool = False
     # Alt ajan: max retry sonrası model hatası metni (park yerine).
@@ -912,6 +930,10 @@ class Agent:
         # azalıyor. 4096 token'lık bir modelde bunlar olmadan konuşmaya
         # hiç yer kalmıyor.
         self.lean = prompt.is_lean(config)
+        # Küçük aile: tam şema (~11k token) yerine kısa şema (~6k). Dar
+        # pencere zaten kısaydı; flash sınıfı geniş pencerede de kısayı
+        # hak ediyor — kıyasta tur başına taşınan yükün ana kalemi buydu.
+        self.kisa_sema = self.lean or prompt.kucuk_aile(config.model.name)
         # Yanlış pencere ayarı bir kez söylenip bırakılıyor: her turda
         # tekrarlamak uyarıyı gürültüye çeviriyor.
         self._window_warned = False
@@ -1007,6 +1029,7 @@ class Agent:
         self.config = config
         self.policy = ContextPolicy(config.context)
         self.lean = prompt.is_lean(config)
+        self.kisa_sema = self.lean or prompt.kucuk_aile(config.model.name)
         self._system = prompt.build(config, self.registry, soul=self.soul)
 
     def interrupt(self) -> None:
@@ -1091,6 +1114,18 @@ class Agent:
         """
         if self.depth or not buyuk_is(user_input):
             return
+        # Plan işin BAŞININ işi. İş zaten yürüyorken (defterde açık madde
+        # ya da oturumda önceki alışveriş) dürtü saçmalıyor: canlıda 240
+        # turluk koşunun ortasında "sıfırdan" plan kartı çıktı — 97 dosya
+        # değişmişken. Yürüyen işte kapılar (kabul/giriş) devrede zaten.
+        try:
+            if self.mind is not None and self.mind.goals(active_only=True):
+                return
+        except Exception:
+            pass
+        if sum(1 for m in self.session.messages()
+               if m.get("role") == "user") > 1:
+            return
         self.session.add_harness_note(PLAN_NOTU)
         self.session.log.note("plan_refleksi")
 
@@ -1170,6 +1205,31 @@ class Agent:
         ozet = "; ".join(self._kirmizi.values())[:200]
         self.session.log.note("kirmizi_kapisi", ozet=ozet)
         self.session.add_harness_note(KIRMIZI_NOTU.format(ozet=ozet))
+        return True
+
+    def _kabul_kapisi(self, stats: TurnStats, blocks: list[dict[str, Any]]) -> bool:
+        """Açık iş maddeleri varken "bitti" deniyorsa bir tur daha ver.
+
+        Kırmızı kapısıyla aynı sözleşme: yalnız araçsız bitirme cevabında,
+        tur başına EN FAZLA BİR KEZ, ve yalnız gerçekten açık madde varsa.
+        Alt ajanlar muaf — defter ana koşunun.
+        """
+        if stats.kabul_uyarildi or self.depth or self.mind is None:
+            return False
+        if not bitti_iddiasi(_text_of_blocks(blocks)):
+            return False
+        try:
+            acik = [g.text for g in self.mind.goals(active_only=True)]
+        except Exception:
+            return False
+        if not acik:
+            return False
+        stats.kabul_uyarildi = True
+        ozet = "; ".join(t[:60] for t in acik[:5])
+        if len(acik) > 5:
+            ozet += f"; (+{len(acik) - 5})"
+        self.session.log.note("kabul_kapisi", acik=len(acik))
+        self.session.add_harness_note(KABUL_NOTU.format(ozet=ozet))
         return True
 
     def _zihin_kapisi(self, user_input: str) -> None:
@@ -1354,7 +1414,7 @@ class Agent:
                     prepared,
                     # Kapanis turu araçsız: tekrar araç çağırmasına izin vermek,
                     # kilitlenen döngünün bir turunu daha çalıştırmak demek.
-                    [] if stats.closing else self.registry.api_schemas(brief=self.lean),
+                    [] if stats.closing else self.registry.api_schemas(brief=self.kisa_sema),
                     cancel=self.cancel,
                     callbacks=callbacks,
                 )
@@ -1450,6 +1510,10 @@ class Agent:
             # söylenmesi gereken odur.
             if result.stop_reason == "end_turn" and self._giris_kapisi(stats, blocks):
                 continue
+            # Kabul kapısı: iş defterinde açık madde dururken "bitti" deniyor
+            # — kapılar zincirinin sonuncusu, en genel olanı.
+            if result.stop_reason == "end_turn" and self._kabul_kapisi(stats, blocks):
+                continue
             if await self._handle_stop(result, ctx, stats):
                 continue
             # Tur normal bitti ama kullanıcı bu arada araya yazdıysa mesaj
@@ -1472,7 +1536,49 @@ class Agent:
         if self.depth == 0:
             self._parked = False
             clear_park(self.config.state_dir)
+            # İlk alışveriş bittiyse başlığı model koysun (adsız oturumda).
+            await self._oturum_basligi()
         return stats
+
+    async def _oturum_basligi(self) -> None:
+        """Adsız oturumun ilk alışverişinden kısa bir başlık üretir.
+
+        Kullanıcı adının ilk 30 karakteri başlık değildir ("bana
+        profesonel bir cms yapa ama plan oluştur..." diye listelenmesi
+        canlı şikâyetti). Tek küçük çağrı; her hata sessizce yutulur —
+        başlık süs, koşunun sonucu değil.
+        """
+        if self.depth or self.mind is None or self.cancel.is_set():
+            return
+        try:
+            meta = (self.mind.session_meta() or {}).get(self.session.id) or {}
+            if meta.get("ad"):
+                return
+            mesajlar = self.session.messages()
+            if sum(1 for m in mesajlar if m.get("role") == "user") > 2:
+                return   # ilk alışveriş çoktan geçmiş: başlığı kurcalama
+            soru = cevap = ""
+            for m in mesajlar:
+                govde = m.get("content")
+                metin = govde if isinstance(govde, str) else _text_of_blocks(govde or [])
+                if m.get("role") == "user" and not soru:
+                    soru = metin
+                elif m.get("role") == "assistant" and metin:
+                    cevap = metin
+            alinti = ("KULLANICI: " + _one_line(soru)[:400]
+                      + "\nASISTAN: " + _one_line(cevap)[:300])
+            hazir = Prepared(
+                system=[{"type": "text", "text": BASLIK_ISTEMI}],
+                messages=[{"role": "user", "content": alinti}],
+                betas=[], context_management=None)
+            sonuc = await self.client.turn(hazir, [], cancel=asyncio.Event())
+            baslik = _one_line(_text_of_blocks(
+                getattr(sonuc.message, "content", None) or [])).strip().strip("\"'.!")
+            if baslik and len(baslik) <= 60:
+                self.mind.set_session_meta(self.session.id, ad=baslik)
+                self.session.log.note("baslik", ad=baslik)
+        except Exception:
+            pass   # başlık üretilemedi: türetilmiş başlık zaten var
 
     async def _handle_stop(
         self, result: TurnResult, ctx: ToolContext, stats: TurnStats

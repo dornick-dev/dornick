@@ -350,6 +350,12 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="masaüstü penceresinde aç (terminal yerine)",
     )
+    parser.add_argument(
+        "--open",
+        default=None,
+        metavar="YOL",
+        help="dosya/klasörü Neo ile aç (yeni sohbet + çalışma klasörü)",
+    )
     args = parser.parse_args(argv)
 
     config = Config.load(args.workspace)
@@ -377,7 +383,7 @@ def main(argv: list[str] | None = None) -> int:
 
     saved_settings.export_keys(config.state_dir)
 
-    if args.app:
+    if args.app or args.open:
         # Masaüstünde model kapısı yok: model yapılandırılmamışsa pencere
         # yine açılır ve ayar sayfası yol gösterir (bkz. desktop._boot).
         # Kurulum sihirbazından çıkan kullanıcının terminali yok — konsola
@@ -385,7 +391,12 @@ def main(argv: list[str] | None = None) -> int:
         from .desktop import run as run_desktop
 
         _force_utf8()
-        return run_desktop(config, port=args.web or 8765, resume=args.resume)
+        return run_desktop(
+            config,
+            port=args.web or 8765,
+            resume=args.resume,
+            open_path=args.open,
+        )
 
     if not _has_model(config):
         _force_utf8()

@@ -7,66 +7,74 @@
 [hidden] { display: none !important; }
 
 :root {
-  --cyan: #4fe3ff;
-  --ice: #a8e8ff;
-  --violet: #b39cff;
-  --amber: #ffc857;
-  --rose: #ff7a90;
-  --mint: #5ce6a4;
+  /* Tema: OCAK — sicak komur zemin + kehribar vurgu. Token adlari
+     tarihsel (--cyan artik kehribar tasiyor): 4000 satir bilesen kodu
+     bu adlari kullaniyor, adlari degistirmek ayri bir goc isi. */
+  --cyan: #F0A020;
+  --ice: #F5EFE4;
+  --violet: #C4B5FD;
+  --amber: #F0A020;
+  --rose: #F87171;
+  --mint: #86EFAC;
 
-  --self: #4fe3ff;
-  --user: #b39cff;
-  --preference: #35e0c4;
-  --lesson: #ffc857;
-  --procedure: #5ce6a4;
-  --fact: #6ab4ff;
-  --goal: #ff7a90;
-  --session: #7f9ec0;
+  --self: #F0A020;
+  --user: #7DD3FC;
+  --preference: #C4B5FD;
+  --lesson: #5EEAD4;
+  --procedure: #FCA5A5;
+  --fact: #F9A8D4;
+  --goal: #F87171;
+  --session: #8A8071;
 
-  --text: #dceefc;
-  --dim: #7fa0c0;
-  --faint: #4b6684;
+  --text: #EFE8DC;
+  --dim: #A89F91;
+  --faint: #776F63;
   --ink: var(--text);       /* form/yazi: hist-search vs. --text ile ayni */
 
   /* ---------- yuzey token'lari (tema) ----------
      Sahne bu degerleri getComputedStyle ile okuyor; hem koyu hem acik
      palet dogru olmali. Koyu degerler mevcut gomulu renklerle ayni. */
-  --bg: #03060d;            /* body/sahne zemini */
-  --panel: #0a1a26;         /* opak panel govdesi (settings/apps/history/viewer) */
-  --panel-glass: rgba(8,18,28,.86);  /* cam panel (blur'lu) */
-  --edge: rgba(255,255,255,.08);     /* ince ayrac/cizgi */
-  --raise: rgba(255,255,255,.05);    /* hafif yukseltilmis yuzey (kart) */
-  --field: #04121b;         /* input zemini */
-  --overlay: rgba(3,6,13,.72);       /* modal arkasi karartma */
-  --scrim: 5, 10, 15;                /* sohbet alt/yan solum gradyani (RGB) */
-  --caption: #0b0e14;                /* tek baslik seridi (DWM koyu ile ayni) */
+  --bg: #0F0E0C;            /* body/sahne zemini */
+  --panel: #1B1814;         /* opak panel govdesi (settings/apps/history/viewer) */
+  --panel-glass: rgba(27,24,20,.88);  /* cam panel (blur'lu) */
+  --edge: rgba(239,232,220,.09);     /* ince ayrac/cizgi */
+  --raise: rgba(239,232,220,.05);    /* hafif yukseltilmis yuzey (kart) */
+  --field: #161310;         /* input zemini */
+  --overlay: rgba(10,9,7,.72);       /* modal arkasi karartma */
+  --scrim: 15, 14, 12;                /* sohbet alt/yan solum gradyani (RGB) */
+  --caption: #131110;                /* tek baslik seridi (DWM koyu ile ayni) */
   --h1-hi: #ffffff;                  /* karsilama basligi gradyan uclari */
-  --h1-lo: #59b6e0;
-  --user-ink: #eaf6ff;               /* kullanici mesaji murekkebi */
+  --h1-lo: #E8A33D;
+  --user-ink: #F5EFE4;               /* kullanici mesaji murekkebi */
   --user-glow: rgba(0,0,0,.9);       /* kullanici mesaji golgesi */
   --halo: 0 1px 12px #000c;          /* koyu sahnede yazi okunurlugu */
-  --code-bg: #05121d;                /* kod kuyusu — her temada koyu */
-  --code-ink: #cfe9ff;
-  --send-off: #17293d;
-  --send-off-ink: #3f5b78;
-  --glow: #4fe3ff88;
+  --code-bg: #141210;                /* kod kuyusu — her temada koyu */
+  --code-ink: #E6DFD2;
+  --send-off: #2C2820;
+  --send-off-ink: #776F63;
+  --glow: #F0A02088;
   /* Sozdizimi: arayuz accent'inden AYRI. Acik temada --mint koyuluyor;
      ayni token kodda kullanilinca koyu-yesil-ustune-koyu-kuyu oluyordu.
      Kod her temada ayni neon paleti tasiyor. */
-  --hl-com: #5a7089;
-  --hl-str: #5ce6a4;
-  --hl-num: #ffc857;
-  --hl-key: #b39cff;
-  --hl-fn: #4fe3ff;
-  --hl-tag: #ff7a90;
-  --hl-punc: #6f88a4;
-  --hl-var: #a8e8ff;
+  --hl-com: #7A7264;
+  --hl-str: #86EFAC;
+  --hl-num: #F0A020;
+  --hl-key: #C4B5FD;
+  --hl-fn: #7DD3FC;
+  --hl-tag: #F87171;
+  --hl-punc: #8A8378;
+  --hl-var: #F5EFE4;
 
   /* Sohbet sutunu. Ortada duran metin sahneyi tam gobeginden kapatiyordu;
      dusunce akisini gorebilmek icin yazi kenara cekildi. Tek yerden
      yonetiliyor: sohbet, yazma satiri, onizleme ve ekler ayni sutunda. */
-  --aside: min(420px, 33vw);
-  --gut: 26px;
+  --rail-w: 0px;              /* sol rail kapali */
+  --mind-w: 0px;              /* sag beyin paneli kapali */
+  /* DIKKAT: --aside/--gut formulleri body'de. var() bildirimin yapildigi
+     elemanda cozulur; formul :root'ta kalsaydi body.hist-open'in
+     degistirdigi --rail-w'yi hic gormezdi (canlida gorüldü). */
+  --aside: min(820px, calc(100vw - 96px));
+  --gut: calc((100vw - var(--aside)) / 2);
   /* Görüntüleyici panelinin genişliği. Kenarından sürüklenince JS bunu
      değiştiriyor; hem panel hem de sohbet sütununun kayması buna bağlı. */
   --viewer-w: min(520px, 44vw);
@@ -76,21 +84,21 @@
   /* Görevler: liste + detay — daha geniş master-detail yüzeyi. */
   --jobs-w: min(920px, calc(100vw - 64px));
 
-  --font: "Segoe UI Variable Text", -apple-system, system-ui, sans-serif;
+  --font: "Inter", "Segoe UI Variable Text", "Segoe UI", -apple-system, system-ui, sans-serif;
   /* Ligatürsüz üye önde: Cascadia Code "=>"yu "⇒"ya birleştiriyordu ve PHP
      kaynağı yanlış karakterle görünüyordu. Aşağıdaki ligatür kapatma kuralı
      asıl güvence; buradaki sıralama yalnızca en temiz aileyi öne alıyor. */
   --mono: "Cascadia Mono", "Cascadia Code", "JetBrains Mono", ui-monospace, Consolas, monospace;
 
   /* Cursor-benzeri inceleme / kart yüzeyi — neon cam değil, sakin editör. */
-  --card-bg: rgba(255, 255, 255, .03);
-  --card-edge: rgba(255, 255, 255, .10);
-  --diff-add-bg: rgba(92, 230, 164, .14);
-  --diff-del-bg: rgba(255, 122, 144, .14);
-  --diff-add-ink: #7dcca0;
-  --diff-del-ink: #e895a3;
-  --review-keep: #7dcca0;
-  --review-undo: #e8a0a8;
+  --card-bg: rgba(239, 232, 220, .03);
+  --card-edge: rgba(239, 232, 220, .10);
+  --diff-add-bg: rgba(134, 239, 172, .14);
+  --diff-del-bg: rgba(248, 113, 113, .14);
+  --diff-add-ink: #8FD8A8;
+  --diff-del-ink: #E89AA0;
+  --review-keep: #8FD8A8;
+  --review-undo: #E89AA0;
 }
 
 /* ---------- acik (gunduz) tema ----------
@@ -99,58 +107,58 @@
    dusunce satirlari kayboluyordu); paneller saf beyaz, kod ise koyu-tema
    acik-maviyle beyaza basiliyordu. */
 :root[data-theme="light"] {
-  --bg: #e7edf4;
+  --bg: #FBF8F2;
   /* Panel = sayfanın aynı soğuk kâğıt ailesi (krem #f7f4ee tema dışı
      duruyordu: ayarlar “başka bir uygulama” gibi kopuyordu). */
-  --panel: #f4f7fb;
-  --panel-glass: rgba(244, 247, 251, .97);
-  --edge: rgba(22, 40, 58, .14);
-  --raise: rgba(22, 40, 58, .06);
-  --field: #e8eef5;
-  --overlay: rgba(28, 42, 58, .38);
-  --scrim: 231, 237, 244;
-  --caption: #e7edf4;                /* tek baslik seridi (DWM acik ile ayni) */
-  --h1-hi: #0a1c2c;
-  --h1-lo: #0a5a74;
-  --user-ink: #0c2438;
+  --panel: #F7F3EA;
+  --panel-glass: rgba(247, 243, 234, .97);
+  --edge: rgba(52, 44, 32, .14);
+  --raise: rgba(52, 44, 32, .06);
+  --field: #F3EEE4;
+  --overlay: rgba(40, 34, 24, .38);
+  --scrim: 251, 248, 242;
+  --caption: #FBF8F2;                /* tek baslik seridi (DWM acik ile ayni) */
+  --h1-hi: #221E18;
+  --h1-lo: #B4700A;
+  --user-ink: #221E18;
   --user-glow: transparent;
   --halo: none;
-  --code-bg: #12202c;
-  --code-ink: #d5ebf8;
-  --send-off: #d5dee8;
-  --send-off-ink: #5a7186;
-  --glow: rgba(10, 122, 156, .28);
+  --code-bg: #1B1814;
+  --code-ink: #E6DFD2;
+  --send-off: #E5DDCB;
+  --send-off-ink: #776F63;
+  --glow: rgba(180, 112, 10, .28);
 
-  --text: #121c28;
-  --dim: #2f4558;
-  --faint: #3d5568;
+  --text: #221E18;
+  --dim: #5C554A;
+  --faint: #6E6656;
   --ink: var(--text);
 
   /* accent: ayni aile, kagitta WCAG'e yakin derinlikte */
-  --cyan: #0a7a9c;
-  --ice: #0d6b86;
-  --violet: #5b3fc4;
-  --amber: #9a6b00;
-  --rose: #c42d4e;
-  --mint: #0b7d52;
+  --cyan: #B4700A;
+  --ice: #8A5B10;
+  --violet: #7C3AED;
+  --amber: #B4700A;
+  --rose: #C0392B;
+  --mint: #15803D;
 
-  --self: #0a7a9c;
-  --user: #5b3fc4;
-  --preference: #0b7d52;
-  --lesson: #9a6b00;
-  --procedure: #0b7d52;
-  --fact: #1e5fbf;
-  --goal: #c42d4e;
-  --session: #4a6580;
+  --self: #B4700A;
+  --user: #0284C7;
+  --preference: #7C3AED;
+  --lesson: #0D9488;
+  --procedure: #DC5B5B;
+  --fact: #DB2777;
+  --goal: #C0392B;
+  --session: #75695E;
 
-  --card-bg: rgba(22, 40, 58, .04);
-  --card-edge: rgba(22, 40, 58, .12);
-  --diff-add-bg: rgba(11, 125, 82, .10);
-  --diff-del-bg: rgba(196, 45, 78, .10);
-  --diff-add-ink: #0b7d52;
-  --diff-del-ink: #c42d4e;
-  --review-keep: #0b7d52;
-  --review-undo: #c42d4e;
+  --card-bg: rgba(52, 44, 32, .04);
+  --card-edge: rgba(52, 44, 32, .12);
+  --diff-add-bg: rgba(21, 128, 61, .10);
+  --diff-del-bg: rgba(192, 57, 43, .10);
+  --diff-add-ink: #15803D;
+  --diff-del-ink: #C0392B;
+  --review-keep: #15803D;
+  --review-undo: #C0392B;
 }
 
 * { box-sizing: border-box; }
@@ -158,8 +166,8 @@ html, body { height: 100%; margin: 0; overflow: hidden; }
 
 /* Seçim rengi temayla: varsayılan mavi vurgu, açık temada metni "şerit
    şerit boyalı" gösteriyordu. */
-::selection { background: rgba(79, 227, 255, .3); }
-:root[data-theme="light"] ::selection { background: rgba(10, 122, 156, .22); }
+::selection { background: rgba(240, 160, 32, .35); }
+:root[data-theme="light"] ::selection { background: rgba(180, 112, 10, .22); }
 
 /* Acik temada koyu-sahne kalintilari: neon hale, siyah yazi golgesi,
    soluk perde. Token'lar yetmeyince burasi tamamlar. */
@@ -183,15 +191,15 @@ html, body { height: 100%; margin: 0; overflow: hidden; }
   box-shadow: inset -1px 0 0 var(--edge);
 }
 :root[data-theme="light"] .tabs button:hover {
-  color: var(--ice); background: rgba(10, 122, 156, .08);
+  color: var(--ice); background: rgba(180, 112, 10, .08);
 }
 :root[data-theme="light"] .tabs button.on {
-  color: var(--ice); background: rgba(10, 122, 156, .12);
+  color: var(--ice); background: rgba(180, 112, 10, .12);
   box-shadow: inset 2px 0 0 var(--cyan);
 }
 :root[data-theme="light"] .panel-body::-webkit-scrollbar-thumb,
 :root[data-theme="light"] .tabs::-webkit-scrollbar-thumb {
-  background: rgba(10, 122, 156, .22);
+  background: rgba(180, 112, 10, .22);
 }
 :root[data-theme="light"] .panel-foot {
   box-shadow: inset 0 1px 0 var(--edge);
@@ -200,14 +208,14 @@ html, body { height: 100%; margin: 0; overflow: hidden; }
   background: var(--cyan); color: #f4f9fc;
 }
 :root[data-theme="light"] .panel-foot .save:hover {
-  background: var(--ice); box-shadow: 0 0 16px rgba(10, 122, 156, .22);
+  background: var(--ice); box-shadow: 0 0 16px rgba(180, 112, 10, .22);
 }
 :root[data-theme="light"] .input-text {
   background: var(--field); color: var(--text);
   box-shadow: inset 0 0 0 1px var(--edge);
 }
 :root[data-theme="light"] .input-text:focus {
-  box-shadow: inset 0 0 0 1px var(--cyan), 0 0 0 3px rgba(10, 122, 156, .14);
+  box-shadow: inset 0 0 0 1px var(--cyan), 0 0 0 3px rgba(180, 112, 10, .14);
 }
 :root[data-theme="light"] .viewer {
   box-shadow: inset 1px 0 0 var(--edge), -18px 0 40px rgba(28, 42, 58, .12);
@@ -223,10 +231,27 @@ body {
   font: 13.5px/1.55 var(--font);
   -webkit-font-smoothing: antialiased;
   background: var(--bg);
+  /* Sütun formülleri BURADA: rail/beyin sınıfları --rail-w/--mind-w'yi
+     body'de değiştiriyor ve var() aynı elemanda çözülüyor. */
+  --aside: min(820px, calc(100vw - var(--rail-w) - var(--mind-w) - 96px));
+  --gut: calc(var(--mind-w) + (100vw - var(--rail-w) - var(--mind-w) - var(--aside)) / 2);
 }
 
 button { font: inherit; cursor: pointer; border: none; background: none; color: inherit; }
-::-webkit-scrollbar { width: 0; height: 0; }
+/* Kaydirma cubuklari: HICBIR yerde tarayici varsayilani kalmaz.
+   Eski kural cubugu tumden gizliyordu; kaydirilabilir oldugu gorunmeyen
+   panel, kesilmis icerik gibi okunuyordu. Ince + temali. */
+* { scrollbar-width: thin; scrollbar-color: var(--faint) transparent; }
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: var(--faint); border-radius: 999px;
+  border: 3px solid transparent; background-clip: content-box;
+}
+::-webkit-scrollbar-thumb:hover { background: var(--dim); background-clip: content-box; }
+::-webkit-scrollbar-corner { background: transparent; }
+/* Sahne ve sohbet akisinin kendisi cubuksuz kalir — tasarim geregi. */
+.stream::-webkit-scrollbar, body > canvas::-webkit-scrollbar { width: 0; height: 0; }
 
 /* Kod yüzeylerinde ligatür YOK: "=>" iki karakterdir, "⇒" değil. Kaynak
    gösteren bir araçta yazılan ile görünenin birebir olması pazarlıksız —
@@ -253,8 +278,23 @@ pre, code, kbd, samp, .input-area, .viewer-code, .diff-row {
   border-bottom: 1px solid var(--edge);
 }
 .hud-left, .hud-right {
-  display: flex; align-items: center; gap: 12px;
+  display: flex; align-items: center; gap: 10px;
   position: relative; z-index: 1;
+}
+.hud-cluster {
+  display: inline-flex; align-items: center; gap: 2px;
+}
+.hud-sep {
+  display: inline-block; width: 1px; height: 16px; margin: 0 2px;
+  background: var(--edge); opacity: .9; flex: 0 0 auto;
+}
+.icon.accent {
+  color: var(--cyan);
+  box-shadow: inset 0 0 0 1px #F0A02028;
+}
+.icon.accent:hover {
+  color: var(--ice); background: #F0A02018;
+  box-shadow: inset 0 0 0 1px #F0A02055;
 }
 
 /* Wordmark: küçük harf "neo" + beyin çekirdeği noktası. Aralıklı büyük harf
@@ -269,7 +309,7 @@ pre, code, kbd, samp, .input-area, .viewer-code, .diff-row {
    dosya — her yerde tek kimlik. */
 .brand-mark {
   width: 17px; height: 17px; flex: 0 0 auto;
-  filter: drop-shadow(0 0 6px #4fe3ff66);
+  filter: drop-shadow(0 0 6px #F0A02066);
   -webkit-user-drag: none; user-select: none;
 }
 .status { display: flex; align-items: center; gap: 8px; }
@@ -335,12 +375,13 @@ pre, code, kbd, samp, .input-area, .viewer-code, .diff-row {
    koyulasan yumusak bir gecis. Onceki hal sagda neredeyse opak bir panel
    gibi duruyordu (#050a0fee); daha seffaf ve kenarsiz. */
 .stream::before {
-  content: ""; position: fixed; inset: 0 0 0 auto;
-  width: calc(var(--aside) + var(--gut) + 80px);
+  content: ""; position: fixed; inset: 0 auto 0 auto;
+  right: calc(var(--gut) - 40px);
+  width: calc(var(--aside) + 80px);
   z-index: -1; pointer-events: none;
   background: linear-gradient(90deg,
-    rgba(var(--scrim), 0) 0%, rgba(var(--scrim), .10) 40%,
-    rgba(var(--scrim), .32) 70%, rgba(var(--scrim), .48) 100%);
+    rgba(var(--scrim), 0) 0%, rgba(var(--scrim), .30) 12%,
+    rgba(var(--scrim), .30) 88%, rgba(var(--scrim), 0) 100%);
 }
 
 .welcome { padding-bottom: 6px; }
@@ -366,7 +407,7 @@ pre, code, kbd, samp, .input-area, .viewer-code, .diff-row {
   color: var(--dim);
 }
 :root[data-theme="light"] .acts-head.busy .head-target.kod {
-  color: var(--h1-lo); border-color: rgba(10, 122, 156, .28);
+  color: var(--h1-lo); border-color: rgba(180, 112, 10, .28);
   background: var(--field);
 }
 :root[data-theme="light"] .act-card {
@@ -425,11 +466,11 @@ pre, code, kbd, samp, .input-area, .viewer-code, .diff-row {
 .msg-media { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 9px; align-items: center; }
 .msg-thumb {
   max-width: 180px; max-height: 130px; border-radius: 9px;
-  box-shadow: 0 0 0 1px #4fe3ff2e, 0 6px 22px #0009; object-fit: cover;
+  box-shadow: 0 0 0 1px #F0A0202e, 0 6px 22px #0009; object-fit: cover;
 }
 .msg-file {
-  font: 10.5px var(--mono); color: var(--cyan); background: #4fe3ff12;
-  box-shadow: inset 0 0 0 1px #4fe3ff22; border-radius: 6px; padding: 4px 9px;
+  font: 10.5px var(--mono); color: var(--cyan); background: #F0A02012;
+  box-shadow: inset 0 0 0 1px #F0A02022; border-radius: 6px; padding: 4px 9px;
 }
 /* Model turu da kim konuştuğunu söylüyor — küçük bir "neo" etiketi. İz
    yok: model asıl içerik, tam genişlikte. Etiket kullanıcıyla simetri
@@ -477,14 +518,14 @@ pre, code, kbd, samp, .input-area, .viewer-code, .diff-row {
 
 .md-quote {
   margin: 0 0 12px; padding-left: 14px; color: var(--dim);
-  box-shadow: inset 2px 0 0 #4fe3ff33;
+  box-shadow: inset 2px 0 0 #F0A02033;
 }
 
-.md-rule { border: 0; height: 1px; margin: 18px 0; background: linear-gradient(90deg, #4fe3ff22, transparent); }
+.md-rule { border: 0; height: 1px; margin: 18px 0; background: linear-gradient(90deg, #F0A02022, transparent); }
 
 .md-inline {
   font: .88em var(--mono); color: var(--preference);
-  background: #4fe3ff12; padding: 1px 5px; border-radius: 4px;
+  background: #F0A02012; padding: 1px 5px; border-radius: 4px;
   font-variant-ligatures: none;
   /* Uzun bir yol/tanımlayıcı dar sütunu yatay taşırmasın. */
   overflow-wrap: anywhere;
@@ -493,7 +534,7 @@ pre, code, kbd, samp, .input-area, .viewer-code, .diff-row {
 .md-code {
   position: relative; margin: 0 0 14px; padding: 14px 16px;
   background: var(--code-bg); border-radius: 8px;
-  box-shadow: inset 0 0 0 1px #4fe3ff14, 0 6px 26px #0008;
+  box-shadow: inset 0 0 0 1px #F0A02014, 0 6px 26px #0008;
   /* Uzun satir sayfayi yatay kaydirmamali; blok kendi icinde kaysin. */
   overflow-x: auto;
 }
@@ -512,26 +553,26 @@ pre, code, kbd, samp, .input-area, .viewer-code, .diff-row {
   position: absolute; top: 5px; right: 8px; z-index: 1;
   font: 10px var(--mono); letter-spacing: .12em; text-transform: uppercase;
   color: var(--dim); background: var(--code-bg); border: 0; cursor: pointer;
-  padding: 3px 8px; border-radius: 6px; box-shadow: inset 0 0 0 1px #4fe3ff24;
+  padding: 3px 8px; border-radius: 6px; box-shadow: inset 0 0 0 1px #F0A02024;
   opacity: 0; transition: opacity .15s, color .15s;
 }
 .md-code:hover .md-copy, .md-copy:focus-visible, .md-copy.ok { opacity: 1; }
 .md-code:hover .md-lang { opacity: 0; }
-.md-copy:hover { color: var(--ice); box-shadow: inset 0 0 0 1px #4fe3ff55; }
-.md-copy.ok { color: var(--mint); box-shadow: inset 0 0 0 1px #5ce6a444; }
+.md-copy:hover { color: var(--ice); box-shadow: inset 0 0 0 1px #F0A02055; }
+.md-copy.ok { color: var(--mint); box-shadow: inset 0 0 0 1px #86EFAC44; }
 
 /* Kod kuyusu her temada koyu; genel (açık tema) seçim rengi orada görünmez
    kalıyordu. Kod yüzeylerinde seçim kendi tonunu taşıyor. */
 .md-code ::selection, .card-code ::selection, .card-out ::selection,
 .viewer-code ::selection, .viewer-plain ::selection {
-  background: rgba(79, 227, 255, .3);
+  background: rgba(240, 160, 32, .3);
 }
 :root[data-theme="light"] .md-code ::selection,
 :root[data-theme="light"] .card-code ::selection,
 :root[data-theme="light"] .card-out ::selection,
 :root[data-theme="light"] .viewer-code ::selection,
 :root[data-theme="light"] .viewer-plain ::selection {
-  background: rgba(79, 227, 255, .3);
+  background: rgba(240, 160, 32, .3);
 }
 
 /* Sozdizimi renklendirme (highlight.js). Tokenler DOM span'i olarak geliyor;
@@ -555,7 +596,7 @@ pre, code, kbd, samp, .input-area, .viewer-code, .diff-row {
 .md-down { color: var(--rose); }
 .md-table td .md-up, .md-table td .md-down { font-weight: 600; }
 
-.md-link { color: var(--cyan); border-bottom: 1px dotted #4fe3ff44; cursor: help; }
+.md-link { color: var(--cyan); border-bottom: 1px dotted #F0A02044; cursor: help; }
 
 /* ---------- dosya referansları ----------
    Cevaptaki `src/neocp/loop.py:42` bir bağ: tıklayınca görüntüleyici o
@@ -563,20 +604,20 @@ pre, code, kbd, samp, .input-area, .viewer-code, .diff-row {
    diliyle aynı (mono, ligatürsüz) — okunan şey bir yol, cümle değil. */
 .md-file {
   font: .88em var(--mono); color: var(--ice);
-  background: #4fe3ff10; padding: 1px 5px; border-radius: 4px;
-  border-bottom: 1px solid #4fe3ff33; cursor: pointer;
+  background: #F0A02010; padding: 1px 5px; border-radius: 4px;
+  border-bottom: 1px solid #F0A02033; cursor: pointer;
   overflow-wrap: anywhere; transition: background .14s, color .14s;
 }
-.md-file:hover { color: var(--cyan); background: #4fe3ff20; border-bottom-color: var(--cyan); }
+.md-file:hover { color: var(--cyan); background: #F0A02020; border-bottom-color: var(--cyan); }
 .md-file:focus-visible { outline: 1px solid var(--cyan); outline-offset: 2px; }
 /* Ters tırnak içindeki yol: kod görünümü kalıyor, tıklanabilirlik ekleniyor. */
-.md-inline.md-file-code { cursor: pointer; border-bottom: 1px solid #4fe3ff33; }
-.md-inline.md-file-code:hover { color: var(--ice); background: #4fe3ff20; }
+.md-inline.md-file-code { cursor: pointer; border-bottom: 1px solid #F0A02033; }
+.md-inline.md-file-code:hover { color: var(--ice); background: #F0A02020; }
 .md-inline.md-file-code:focus-visible { outline: 1px solid var(--cyan); outline-offset: 2px; }
 
 /* Görüntüleyicide hedef satır: kısa bir vurgu. Kalıcı olsaydı dosyada
    gezinirken yanlış yeri işaret eden bir leke olurdu. */
-.viewer-code .vl.hit { background: #4fe3ff1c; }
+.viewer-code .vl.hit { background: #F0A0201c; }
 .viewer-code .vl.hit::before { color: var(--cyan); background: #0d2233; }
 :root[data-theme="light"] .viewer-code .vl.hit::before { background: #123244; }
 
@@ -591,8 +632,11 @@ pre, code, kbd, samp, .input-area, .viewer-code, .diff-row {
   background: var(--raise); box-shadow: inset 0 0 0 1px var(--edge);
   transition: box-shadow .14s, background .14s;
 }
-.md-source:hover { background: #4fe3ff14; box-shadow: inset 0 0 0 1px #4fe3ff55; }
+.md-source:hover { background: #F0A02014; box-shadow: inset 0 0 0 1px #F0A02055; }
 .md-source:focus-visible { outline: 1px solid var(--cyan); outline-offset: 2px; }
+/* Çip artık gerçek <a>: tarayıcı link görünümü (altçizgi/mor) çipe sızmasın. */
+a.md-source { text-decoration: none; color: inherit; }
+.md-cite a { text-decoration: none; color: inherit; }
 .md-source-title {
   min-width: 0; max-width: 34ch; overflow: hidden;
   text-overflow: ellipsis; white-space: nowrap;
@@ -671,7 +715,7 @@ pre, code, kbd, samp, .input-area, .viewer-code, .diff-row {
   margin: 0 0 14px; overflow-x: auto; border-radius: 8px;
   /* Zemin token: koyu sabit zemin + koyu yazı açık temada tabloyu okunmaz
      yapıyordu. */
-  background: var(--field); box-shadow: inset 0 0 0 1px #4fe3ff14;
+  background: var(--field); box-shadow: inset 0 0 0 1px #F0A02014;
 }
 .md-table { border-collapse: collapse; width: 100%; font-size: 13px; }
 .md-table th, .md-table td {
@@ -680,11 +724,11 @@ pre, code, kbd, samp, .input-area, .viewer-code, .diff-row {
 .md-table th {
   font: 10.5px var(--mono); letter-spacing: .14em; text-transform: uppercase;
   color: var(--faint); font-weight: 400;
-  box-shadow: inset 0 -1px 0 #4fe3ff1c;
+  box-shadow: inset 0 -1px 0 #F0A0201c;
 }
-.md-table td { color: var(--text); box-shadow: inset 0 -1px 0 #4fe3ff0a; }
+.md-table td { color: var(--text); box-shadow: inset 0 -1px 0 #F0A0200a; }
 .md-table tbody tr:last-child td { box-shadow: none; }
-.md-table tbody tr:hover td { background: #4fe3ff08; }
+.md-table tbody tr:hover td { background: #F0A02008; }
 /* Sayilar sagda ve tabular: sutun kaymasin. */
 .md-table td { font-variant-numeric: tabular-nums; }
 
@@ -716,7 +760,7 @@ pre, code, kbd, samp, .input-area, .viewer-code, .diff-row {
 .thought-body {
   margin: -4px 0 14px; padding-left: 16px; color: var(--faint);
   font-size: 12.5px; white-space: pre-wrap;
-  box-shadow: inset 2px 0 0 #b39cff22;
+  box-shadow: inset 2px 0 0 #C4B5FD22;
 }
 
 .line.system {
@@ -729,7 +773,7 @@ pre, code, kbd, samp, .input-area, .viewer-code, .diff-row {
 .note-body {
   margin: -4px 0 14px; padding-left: 16px; color: var(--faint);
   font-size: 12.5px; white-space: pre-wrap;
-  box-shadow: inset 2px 0 0 #b39cff22;
+  box-shadow: inset 2px 0 0 #C4B5FD22;
 }
 .line.alert {
   color: var(--amber); font-size: 12px;
@@ -741,12 +785,12 @@ pre, code, kbd, samp, .input-area, .viewer-code, .diff-row {
   display: block; width: 100%; max-width: 100%;
   margin: 0; padding: 6px 10px 6px 12px; text-align: left; cursor: pointer;
   font: 11.5px/1.4 var(--mono); color: var(--amber);
-  background: #ffc85710; border: 0; border-radius: 7px;
-  box-shadow: inset 2px 0 0 #ffc85766;
+  background: #F0A02010; border: 0; border-radius: 7px;
+  box-shadow: inset 2px 0 0 #F0A02066;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   transition: background .14s, color .14s;
 }
-.line.alert .alert-head:hover { background: #ffc85718; color: var(--ice); }
+.line.alert .alert-head:hover { background: #F0A02018; color: var(--ice); }
 .line.alert .alert-head::before {
   content: "▸ "; color: var(--amber); opacity: .7;
 }
@@ -756,12 +800,12 @@ pre, code, kbd, samp, .input-area, .viewer-code, .diff-row {
   max-height: min(28vh, 220px); overflow: auto;
   font: 11px/1.45 var(--mono); color: var(--dim);
   background: var(--code-bg); border-radius: 7px;
-  border: 1px solid #ffc85722;
+  border: 1px solid #F0A02022;
   white-space: pre-wrap; word-break: break-word;
-  scrollbar-width: thin; scrollbar-color: #ffc85740 transparent;
+  scrollbar-width: thin; scrollbar-color: #F0A02040 transparent;
 }
 .line.alert .alert-detail::-webkit-scrollbar { width: 6px; }
-.line.alert .alert-detail::-webkit-scrollbar-thumb { background: #ffc85733; border-radius: 3px; }
+.line.alert .alert-detail::-webkit-scrollbar-thumb { background: #F0A02033; border-radius: 3px; }
 
 /* Plan kipi onayi: tur bitince son cevabin altinda beliren "Plani uygula"
    dugmesi. Sohbetin dilinde sessiz bir hap; tiklayinca kip geri cevrilip
@@ -889,18 +933,18 @@ pre, code, kbd, samp, .input-area, .viewer-code, .diff-row {
 .act.note {
   display: block; white-space: pre-wrap; font: 12px/1.6 var(--font);
   color: var(--dim); margin: 0 0 10px; padding-left: 15px;
-  box-shadow: inset 2px 0 0 #4fe3ff22;
+  box-shadow: inset 2px 0 0 #F0A02022;
 }
 .act.note.think {
   font-style: italic; color: var(--faint);
-  box-shadow: inset 2px 0 0 #b39cff22;
+  box-shadow: inset 2px 0 0 #C4B5FD22;
   /* Canlı düşünme: kutu içinde kayar, sayfayı itmez. */
   max-height: min(24vh, 200px); overflow-y: auto;
   overscroll-behavior: contain;
-  scrollbar-width: thin; scrollbar-color: #b39cff40 transparent;
+  scrollbar-width: thin; scrollbar-color: #C4B5FD40 transparent;
 }
 .act.note.think::-webkit-scrollbar { width: 6px; }
-.act.note.think::-webkit-scrollbar-thumb { background: #b39cff33; border-radius: 3px; }
+.act.note.think::-webkit-scrollbar-thumb { background: #C4B5FD33; border-radius: 3px; }
 .act.note.think::-webkit-scrollbar-track { background: transparent; }
 /* Biten: tek satır özet. Açılınca da AYNI tavan — Devamı gibi sayfa
    uzamaz; metin mini pencerede kayar (Cursor thought paneli). */
@@ -917,14 +961,14 @@ pre, code, kbd, samp, .input-area, .viewer-code, .diff-row {
   padding: 6px 8px 6px 12px;
   border-radius: 6px;
   background: var(--card-bg);
-  box-shadow: inset 2px 0 0 #b39cff44;
+  box-shadow: inset 2px 0 0 #C4B5FD44;
 }
 .act.note.think.done:hover { color: var(--dim); }
 /* Kirpilmis ara-anlatim: ilk satir + tiklayinca tamami. */
 .act.note[title] { cursor: pointer; }
 .act.note.open { color: var(--dim); }
 /* Kendiliginden hatirlananlar: mor-nane arasi ayri bir iz, tiklanabilir. */
-.act.note.recall { box-shadow: inset 2px 0 0 #5ce6a422; cursor: pointer; }
+.act.note.recall { box-shadow: inset 2px 0 0 #86EFAC22; cursor: pointer; }
 .act-result {
   margin: -2px 0 8px 14px; font: 11px var(--mono); color: var(--faint);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
@@ -1008,12 +1052,12 @@ pre, code, kbd, samp, .input-area, .viewer-code, .diff-row {
   margin: -2px 0 10px 24px; padding: 8px 10px;
   max-height: 160px; overflow: auto;
   font: 11px/1.5 var(--mono); color: var(--dim);
-  background: #ffc85708; border: 1px solid #ffc85722; border-radius: 6px;
+  background: #F0A02008; border: 1px solid #F0A02022; border-radius: 6px;
   white-space: pre-wrap; word-break: break-word;
-  scrollbar-width: thin; scrollbar-color: #ffc85740 transparent;
+  scrollbar-width: thin; scrollbar-color: #F0A02040 transparent;
 }
 .wait-detay::-webkit-scrollbar { width: 6px; }
-.wait-detay::-webkit-scrollbar-thumb { background: #ffc85733; border-radius: 3px; }
+.wait-detay::-webkit-scrollbar-thumb { background: #F0A02033; border-radius: 3px; }
 .wait-detay::-webkit-scrollbar-track { background: transparent; }
 
 /* --- adim kartlari ------------------------------------------------------
@@ -1112,9 +1156,9 @@ pre, code, kbd, samp, .input-area, .viewer-code, .diff-row {
   position: fixed; right: calc(var(--gut) + 6px); bottom: 130px; z-index: 7;
   padding: 6px 13px; border: 0; border-radius: 15px; cursor: pointer;
   background: var(--field); color: var(--ice); font: 11px var(--mono);
-  box-shadow: 0 0 0 1px #4fe3ff2e, 0 6px 18px #00000066; transition: .16s;
+  box-shadow: 0 0 0 1px #F0A0202e, 0 6px 18px #00000066; transition: .16s;
 }
-.jump:hover { color: var(--cyan); box-shadow: 0 0 0 1px #4fe3ff66, 0 6px 18px #00000088; }
+.jump:hover { color: var(--cyan); box-shadow: 0 0 0 1px #F0A02066, 0 6px 18px #00000088; }
 
 /* ---------- yazma satiri ----------
    Kenarlik yok. Alttaki isik kenarlara dogru soner: sert cizgi degil. */
@@ -1165,7 +1209,7 @@ pre, code, kbd, samp, .input-area, .viewer-code, .diff-row {
   width: 54px; height: 3px; border-radius: 2px; background: var(--raise);
   overflow: hidden;
   /* Boşken de seçilsin: koyu zeminde çıplak --raise kayboluyordu. */
-  box-shadow: inset 0 0 0 1px #4fe3ff24;
+  box-shadow: inset 0 0 0 1px #F0A02024;
 }
 .dock-bar i {
   display: block; height: 100%; width: 0; border-radius: 2px;
@@ -1183,7 +1227,7 @@ pre, code, kbd, samp, .input-area, .viewer-code, .diff-row {
 .pop {
   position: fixed; z-index: 40; min-width: 250px; max-width: 340px;
   background: var(--panel); border-radius: 10px; padding: 8px;
-  box-shadow: 0 0 0 1px #4fe3ff22, 0 18px 50px #000a;
+  box-shadow: 0 0 0 1px #F0A02022, 0 18px 50px #000a;
 }
 .pop-head {
   font: 10px var(--mono); letter-spacing: .14em; text-transform: uppercase;
@@ -1204,12 +1248,12 @@ pre, code, kbd, samp, .input-area, .viewer-code, .diff-row {
 .pop-search {
   width: 100%; margin: 0 0 6px; padding: 6px 9px; border: 0; border-radius: 7px;
   background: var(--field); color: var(--text); font: 12px var(--mono);
-  outline: none; box-shadow: inset 0 0 0 1px #4fe3ff1a;
+  outline: none; box-shadow: inset 0 0 0 1px #F0A0201a;
 }
-.pop-search:focus { box-shadow: inset 0 0 0 1px #4fe3ff44; }
+.pop-search:focus { box-shadow: inset 0 0 0 1px #F0A02044; }
 .pop-list { max-height: 260px; overflow-y: auto; }
 .pop-list::-webkit-scrollbar { width: 6px; }
-.pop-list::-webkit-scrollbar-thumb { background: #4fe3ff22; border-radius: 3px; }
+.pop-list::-webkit-scrollbar-thumb { background: #F0A02022; border-radius: 3px; }
 .pop-note { padding: 4px 8px; font-size: 11px; color: var(--faint); }
 /* Baglam detayindaki dolum cubugu: dock'takinin genis hali. */
 .pop-bar {
@@ -1228,8 +1272,8 @@ pre, code, kbd, samp, .input-area, .viewer-code, .diff-row {
      gorunuyordu. */
   position: fixed; top: 68px; right: var(--gut); bottom: auto;
   z-index: 8; width: var(--aside); border-radius: 12px; overflow: hidden;
-  background: #030b12;
-  box-shadow: 0 0 0 1px #4fe3ff33, 0 18px 60px #000c;
+  background: #141210;
+  box-shadow: 0 0 0 1px #F0A02033, 0 18px 60px #000c;
   animation: surface .3s ease-out;
 }
 /* Onizleme sutunun ustunde duruyor; sohbet o kadar kisaliyor. */
@@ -1246,11 +1290,11 @@ body.lensing .stream-wrap { max-height: calc(100vh - 196px - 30vh - var(--goals-
 /* Bulucu yoksa ortada sabit nisangah. */
 .lens-frame:empty::after {
   content: ""; position: absolute; left: 28%; top: 14%; width: 44%; height: 62%;
-  border: 2px dashed #ffc857; border-radius: 3px; opacity: .75;
+  border: 2px dashed #F0A020; border-radius: 3px; opacity: .75;
 }
 .lens-box {
-  position: absolute; border: 2px dashed #ffc857; border-radius: 3px;
-  box-shadow: 0 0 22px #ffc85744; transition: all .12s linear;
+  position: absolute; border: 2px dashed #F0A020; border-radius: 3px;
+  box-shadow: 0 0 22px #F0A02044; transition: all .12s linear;
   /* Video aynalandigi icin kutu da aynalanmali. */
   transform: scaleX(-1); transform-origin: center;
 }
@@ -1258,7 +1302,7 @@ body.lensing .stream-wrap { max-height: calc(100vh - 196px - 30vh - var(--goals-
 /* Tarama cizgisi: yukaridan asagi suzulen ince bir isik. */
 .lens-scan {
   position: absolute; left: 0; right: 0; height: 2px; pointer-events: none;
-  background: linear-gradient(90deg, transparent, #4fe3ffcc, transparent);
+  background: linear-gradient(90deg, transparent, #F0A020cc, transparent);
   animation: scan 3.4s linear infinite;
 }
 @keyframes scan { from { top: 0; } to { top: 100%; } }
@@ -1277,11 +1321,11 @@ body.lensing .stream-wrap { max-height: calc(100vh - 196px - 30vh - var(--goals-
 }
 .lens-foot button {
   background: none; border: 0; cursor: pointer; padding: 4px 10px;
-  border-radius: 12px; box-shadow: inset 0 0 0 1px #4fe3ff26;
+  border-radius: 12px; box-shadow: inset 0 0 0 1px #F0A02026;
   font: 10px var(--mono); letter-spacing: .14em; text-transform: uppercase;
   color: var(--dim); transition: .16s; flex: 0 0 auto;
 }
-.lens-foot button:hover { color: var(--ice); box-shadow: inset 0 0 0 1px #4fe3ff55; }
+.lens-foot button:hover { color: var(--ice); box-shadow: inset 0 0 0 1px #F0A02055; }
 #lens-close { box-shadow: none; font-size: 16px; padding: 2px 8px; }
 #lens-close:hover { color: var(--rose); box-shadow: none; }
 
@@ -1291,7 +1335,7 @@ body.lensing .stream-wrap { max-height: calc(100vh - 196px - 30vh - var(--goals-
 .shot {
   position: fixed; bottom: 114px; right: var(--gut);
   z-index: 7; border-radius: 10px; overflow: hidden;
-  box-shadow: 0 0 0 1px #4fe3ff33, 0 12px 40px #000a;
+  box-shadow: 0 0 0 1px #F0A02033, 0 12px 40px #000a;
   animation: surface .26s ease-out;
 }
 body.viewing .shot,
@@ -1303,7 +1347,7 @@ body.settling .shot { left: calc((100vw - min(520px, 44vw)) / 2); }
   background: #04101ac8; border: 0; border-radius: 50%;
   color: var(--ice); font-size: 15px; line-height: 1; transition: .16s;
 }
-.shot button:hover { background: #ff7a90; color: #fff; }
+.shot button:hover { background: #F87171; color: #fff; }
 
 #plus, #clip, #cam { color: var(--faint); flex: 0 0 auto; }
 #plus:hover, #clip:hover, #cam:hover { color: var(--ice); }
@@ -1314,8 +1358,8 @@ body.dropping::after {
   content: "birak — atolyene kopyalanacak";
   position: fixed; inset: 12px; z-index: 60; pointer-events: none;
   display: grid; place-items: end center; padding-bottom: 140px;
-  border-radius: 14px; box-shadow: inset 0 0 0 2px #4fe3ff55;
-  background: #4fe3ff0a;
+  border-radius: 14px; box-shadow: inset 0 0 0 2px #F0A02055;
+  background: #F0A0200a;
   font: 11px var(--mono); letter-spacing: .2em; text-transform: uppercase;
   color: var(--ice);
 }
@@ -1331,7 +1375,7 @@ body.settling .drops { left: calc((100vw - min(520px, 44vw)) / 2); }
 .chip {
   display: inline-flex; align-items: center; gap: 6px;
   padding: 4px 8px 4px 11px; border-radius: 14px;
-  background: #4fe3ff14; box-shadow: inset 0 0 0 1px #4fe3ff2c;
+  background: #F0A02014; box-shadow: inset 0 0 0 1px #F0A0202c;
   font: 11px var(--mono); color: var(--ice);
 }
 .chip button {
@@ -1349,10 +1393,10 @@ body.settling .drops { left: calc((100vw - min(520px, 44vw)) / 2); }
   --level: 0;
 }
 #mic:hover { color: var(--ice); }
-#mic.live { color: var(--rose); background: #ff7a9018; }
+#mic.live { color: var(--rose); background: #F8717118; }
 #mic.live::after {
   content: ""; position: absolute; inset: 0; border-radius: 8px;
-  box-shadow: 0 0 0 1px #ff7a9066;
+  box-shadow: 0 0 0 1px #F8717166;
   animation: throb 1.2s ease-in-out infinite;
 }
 /* Halka: yaricap dogrudan seviyeden geliyor. Arkada dinlerken de
@@ -1410,6 +1454,26 @@ body.waking .entry textarea { cursor: not-allowed; }
   font-size: 12.5px; color: var(--dim); white-space: pre-wrap;
   word-break: break-word; text-shadow: var(--halo);
 }
+/* Sabitlenmiş anı kartı: hover kimliğinin aksine bir YÜZEY — içinde
+   eylem var, tıklanabilir olmalı. */
+.probe.pinned {
+  pointer-events: auto;
+  background: var(--panel-glass); backdrop-filter: blur(10px);
+  padding: 12px 14px; border-radius: 10px;
+  box-shadow: 0 0 0 1px var(--edge), 0 14px 40px rgba(0, 0, 0, .35);
+}
+.probe-keys {
+  margin-top: 8px; font: 10.5px var(--mono); color: var(--faint);
+  word-break: break-word;
+}
+.probe-learn { margin-top: 4px; font: 10.5px var(--mono); color: var(--faint); }
+.probe-git {
+  margin-top: 9px; padding: 5px 11px; border: 0; border-radius: 7px;
+  background: #F0A0201c; color: var(--cyan); font: 11px var(--font);
+  cursor: pointer; transition: .16s;
+}
+.probe-git:hover { background: #F0A02030; }
+.probe-git:focus-visible { outline: 2px solid var(--cyan); outline-offset: 1px; }
 
 /* ---------- onay ---------- */
 .veil {
@@ -1429,7 +1493,7 @@ body.waking .entry textarea { cursor: not-allowed; }
   display: inline-block; font: 10px var(--mono); letter-spacing: .2em;
   text-transform: uppercase; color: var(--cyan); margin-bottom: 14px;
 }
-.tag.mutates { color: var(--rose); text-shadow: 0 0 16px #ff7a9066; }
+.tag.mutates { color: var(--rose); text-shadow: 0 0 16px #F8717166; }
 .ask .why {
   margin: 0 0 6px; font-size: 20px; font-weight: 300; color: var(--ink);
   text-shadow: var(--halo);
@@ -1458,7 +1522,7 @@ body.waking .entry textarea { cursor: not-allowed; }
   padding: 10px 0; transition: .2s;
 }
 .acts .no { color: var(--faint); }
-.acts .no:hover { color: var(--rose); text-shadow: 0 0 16px #ff7a9066; }
+.acts .no:hover { color: var(--rose); text-shadow: 0 0 16px #F8717166; }
 .acts .yes { color: var(--cyan); }
 .acts .always { color: var(--mint); }
 .acts .always:hover { text-shadow: 0 0 20px var(--mint); }
@@ -1474,11 +1538,11 @@ body.waking .entry textarea { cursor: not-allowed; }
   /* Token zemin: sabit koyu daire açık temada sol altta siyah leke gibi
      duruyordu. */
   color: var(--dim); background: var(--panel-glass);
-  box-shadow: inset 0 0 0 1px #4fe3ff1c;
+  box-shadow: inset 0 0 0 1px #F0A0201c;
   transition: color .2s, box-shadow .2s, background .2s; user-select: none;
 }
-.reveal:hover { color: var(--cyan); box-shadow: inset 0 0 0 1px #4fe3ff55, 0 0 16px #4fe3ff33; }
-.reveal.on { color: var(--cyan); background: var(--field); box-shadow: inset 0 0 0 1px #4fe3ff66; }
+.reveal:hover { color: var(--cyan); box-shadow: inset 0 0 0 1px #F0A02055, 0 0 16px #F0A02033; }
+.reveal.on { color: var(--cyan); background: var(--field); box-shadow: inset 0 0 0 1px #F0A02066; }
 
 /* Odak modu: çevre süsü çekilir, geriye çekirdek ve yazma alanı kalır —
    biriyle konuşur gibi. Panelleri JS kapatıyor, legend'i sahne söndürüyor;
@@ -1507,7 +1571,7 @@ body.focus #focus.on { color: var(--cyan); }
 }
 .route:hover { opacity: 1; max-height: 46vh; }
 .route::-webkit-scrollbar { width: 4px; }
-.route::-webkit-scrollbar-thumb { background: #4fe3ff22; border-radius: 3px; }
+.route::-webkit-scrollbar-thumb { background: #F0A02022; border-radius: 3px; }
 .route .step { font-size: 11px; padding: 1px 0; }
 .route .head {
   font: 9.5px var(--mono); letter-spacing: .2em; text-transform: uppercase;
@@ -1599,7 +1663,7 @@ body.focus #focus.on { color: var(--cyan); }
   max-height: 28vh; overflow-y: auto; overscroll-behavior: contain;
 }
 .goals-body::-webkit-scrollbar { width: 4px; }
-.goals-body::-webkit-scrollbar-thumb { background: #4fe3ff22; border-radius: 3px; }
+.goals-body::-webkit-scrollbar-thumb { background: #F0A02022; border-radius: 3px; }
 .goal-item {
   display: flex; align-items: baseline; gap: 8px;
   font-size: 12px; color: var(--dim); padding: 2px 0;
@@ -1631,9 +1695,15 @@ body.focus #focus.on { color: var(--cyan); }
   opacity: 0; transition: opacity .14s, color .14s, background .14s;
 }
 .goal-item:hover .goal-act, .goal-item:focus-within .goal-act { opacity: 1; }
+/* Dock satırları da düzenlenir: aynı düğmeler, aynı görünme kuralı. */
+.plan-step:hover .goal-act, .plan-step:focus-within .goal-act { opacity: 1; }
+.plan-step .goal-act { margin-left: auto; }
+.plan-step span { min-width: 0; }
+.plan-dock .goals-add { margin: 6px 2px 2px; }
+.plan-dock .goals-clear { margin: 4px 2px 0; }
 .goal-act:focus-visible { opacity: 1; outline: 1px solid var(--cyan); outline-offset: 1px; }
 .goal-act:hover { color: var(--mint); background: var(--raise); }
-.goal-act:last-child:hover { color: var(--rose); background: #ff7a9014; }
+.goal-act:last-child:hover { color: var(--rose); background: #F8717114; }
 /* Tumunu temizle: iki adimli. Silik duruyor, kurulunca (armed) gul rengine
    donup soruyor — birikmis bir listeyi tek yanlis tikla silmek olmaz. */
 .goals-clear {
@@ -1644,7 +1714,7 @@ body.focus #focus.on { color: var(--cyan); }
 }
 .goals:hover .goals-clear, .goals:focus-within .goals-clear { opacity: 1; }
 .goals-clear:hover { color: var(--rose); }
-.goals-clear.armed { color: var(--rose); opacity: 1; background: #ff7a9014; }
+.goals-clear.armed { color: var(--rose); opacity: 1; background: #F8717114; }
 
 /* ---------- ayar sayfasi ----------
    Sahnenin uzerinde yuzen bir levha. Kutu kutu bir ayar penceresi degil:
@@ -1679,15 +1749,15 @@ body.focus #focus.on { color: var(--cyan); }
     linear-gradient(var(--faint), var(--faint)) center/1px 11px no-repeat;
   transform: rotate(45deg);
 }
-.chrome button:hover { background: #4fe3ff14; }
+.chrome button:hover { background: #F0A02014; }
 .chrome button:hover::before { border-color: var(--ice); }
-#win-close:hover { background: #ff7a9020; }
+#win-close:hover { background: #F8717120; }
 #win-close:hover::before {
   background:
     linear-gradient(var(--rose), var(--rose)) center/11px 1px no-repeat,
     linear-gradient(var(--rose), var(--rose)) center/1px 11px no-repeat;
 }
-:root[data-theme="light"] .chrome button:hover { background: rgba(10, 122, 156, .1); }
+:root[data-theme="light"] .chrome button:hover { background: rgba(180, 112, 10, .1); }
 :root[data-theme="light"] #win-close:hover { background: rgba(200, 50, 70, .12); }
 
 /* ---------- serit simgeleri ----------
@@ -1707,7 +1777,7 @@ body.focus #focus.on { color: var(--cyan); }
 .icon svg :not([fill="none"]) { fill: currentColor; }
 
 .icon { color: var(--faint); }
-.icon:hover { color: var(--ice); background: #4fe3ff12; }
+.icon:hover { color: var(--ice); background: #F0A02012; }
 /* Beni tanı ikonu: eğitim koşarken yumuşak nabız; hareket istemeyenlerde
    animasyonsuz, yalnızca renk vurgusu kalıyor. */
 #tanima-ikon.kosuyor { color: var(--cyan); }
@@ -1724,7 +1794,7 @@ body.focus #focus.on { color: var(--cyan); }
 }
 
 #stop { color: var(--rose); }
-#stop:hover { background: #ff7a9020; }
+#stop:hover { background: #F8717120; }
 
 /* Ses acikken simge canli, kapaliyken sonuk ve uzeri cizili. */
 #mute { color: var(--preference); }
@@ -1736,7 +1806,7 @@ body.focus #focus.on { color: var(--cyan); }
 /* Kilit kapaliyken kapali cizilir; tam yetkide acik ve kirmizi —
    her komutun sorulmadan calistigi bir hal saklanmamali. */
 #authority .open-shackle { display: none; }
-#authority.full { color: var(--rose); background: #ff7a9014; }
+#authority.full { color: var(--rose); background: #F8717114; }
 #authority.full .shackle { display: none; }
 #authority.full .open-shackle { display: block; }
 
@@ -1746,7 +1816,7 @@ body.focus #focus.on { color: var(--cyan); }
   font: 10px var(--mono); letter-spacing: .16em; text-transform: uppercase;
   color: var(--preference); transition: .18s;
 }
-#mute:hover { text-shadow: 0 0 14px #35e0c466; }
+#mute:hover { text-shadow: 0 0 14px #C4B5FD66; }
 #mute.off { color: var(--faint); text-shadow: none; }
 
 /* Kilit once metin rozetiydi ("TAM YETKI"), yatay dolgu ondan kalmisti.
@@ -1758,14 +1828,14 @@ body.focus #focus.on { color: var(--cyan); }
   background: none; border: 0; cursor: pointer; padding: 0;
   display: inline-flex; align-items: center; justify-content: center;
   width: 28px; height: 28px;
-  border-radius: 50%; box-shadow: inset 0 0 0 1px #4fe3ff1c;
+  border-radius: 50%; box-shadow: inset 0 0 0 1px #F0A0201c;
   color: var(--faint); transition: .18s;
 }
-#authority:hover { color: var(--ice); box-shadow: inset 0 0 0 1px #4fe3ff44; }
+#authority:hover { color: var(--ice); box-shadow: inset 0 0 0 1px #F0A02044; }
 /* Tam yetki aciklen bunu saklamiyoruz: her komut sorulmadan calisiyor. */
 #authority.full {
-  color: var(--rose); box-shadow: inset 0 0 0 1px #ff7a9055;
-  background: #ff7a9014; text-shadow: 0 0 14px #ff7a9066;
+  color: var(--rose); box-shadow: inset 0 0 0 1px #F8717155;
+  background: #F8717114; text-shadow: 0 0 14px #F8717166;
 }
 
 #gear {
@@ -1777,32 +1847,28 @@ body.focus #focus.on { color: var(--cyan); }
   font: 10.5px var(--mono); letter-spacing: .18em; text-transform: uppercase;
   color: var(--faint); transition: .2s;
 }
-#gear:hover { color: var(--ice); text-shadow: 0 0 14px #4fe3ff88; }
+#gear:hover { color: var(--ice); text-shadow: 0 0 14px #F0A02088; }
 
 .panel {
-  /* İki sütun: solda gruplu dikey sekme listesi, sağda içerik + kaydet.
-     Önceki hal 14 sekmeyi yatay sarıyordu — üç sıralık bir sekme duvarı,
-     dağınık ve okunmaz. Dikey liste hem düzenli hem gruplu. */
-  position: fixed; top: 52px; right: 24px;
-  width: min(840px, calc(100vw - 48px));
-  max-height: min(86vh, calc(100vh - 92px));
+  /* TAM SAYFA çalışma yüzeyi, modal değil (Cursor Settings düzeni):
+     solda gruplu dikey sekme listesi, sağda içerik + kaydet. Sol rail
+     açıksa onun sağından başlıyor — konuşmalar ayarlardayken de elde. */
+  position: fixed; top: 48px; left: var(--rail-w); right: 0; bottom: 0;
   z-index: 40;
   display: flex; flex-direction: column; overflow: hidden;
-  background: var(--panel-glass);
-  backdrop-filter: blur(20px);
-  border-radius: 16px;
-  box-shadow: 0 0 0 1px #4fe3ff1e, 0 30px 100px #000d;
-  animation: panel-in .26s cubic-bezier(.2,.8,.3,1);
+  background: var(--bg);
+  box-shadow: inset 1px 0 0 var(--edge), inset 0 1px 0 var(--edge);
+  animation: panel-in .18s ease-out;
 }
-@keyframes panel-in { from { opacity: 0; transform: translateY(14px) scale(.985); } }
+@keyframes panel-in { from { opacity: 0; } }
 
 .panel-head {
   display: flex; align-items: center; gap: 16px;
-  padding: 17px 20px 15px; box-shadow: inset 0 -1px 0 #4fe3ff12;
+  padding: 17px 20px 15px; box-shadow: inset 0 -1px 0 #F0A02012;
 }
 .panel-title {
   flex: 1; font: 600 11px var(--font); letter-spacing: .34em; text-transform: uppercase;
-  color: var(--ice); text-shadow: 0 0 16px #4fe3ff55;
+  color: var(--ice); text-shadow: 0 0 16px #F0A02055;
 }
 .panel-head .close {
   background: none; border: 0; cursor: pointer;
@@ -1814,12 +1880,12 @@ body.focus #focus.on { color: var(--cyan); }
 
 /* Sol dikey sekme kolonu, gruplu. */
 .tabs {
-  flex: 0 0 158px; display: flex; flex-direction: column; gap: 1px;
+  flex: 0 0 208px; display: flex; flex-direction: column; gap: 1px;
   padding: 14px 10px 18px; overflow-y: auto;
-  box-shadow: inset -1px 0 0 #4fe3ff10;
+  box-shadow: inset -1px 0 0 #F0A02010;
 }
 .tabs::-webkit-scrollbar { width: 5px; }
-.tabs::-webkit-scrollbar-thumb { background: #4fe3ff20; border-radius: 3px; }
+.tabs::-webkit-scrollbar-thumb { background: #F0A02020; border-radius: 3px; }
 .tab-group {
   margin: 14px 8px 4px; font: 8.5px var(--mono); letter-spacing: .2em;
   text-transform: uppercase; color: var(--faint); opacity: .75;
@@ -1829,27 +1895,35 @@ body.focus #focus.on { color: var(--cyan); }
   text-align: left; background: none; border: 0; cursor: pointer; padding: 7px 10px;
   font: 12.5px var(--font); color: var(--dim); border-radius: 7px; transition: .16s;
 }
-.tabs button:hover { color: var(--ice); background: #4fe3ff0c; }
+.tabs button:hover { color: var(--ice); background: #F0A0200c; }
 .tabs button.on {
-  color: var(--ice); background: #4fe3ff14; box-shadow: inset 2px 0 0 var(--cyan);
+  color: var(--ice); background: #F0A02014; box-shadow: inset 2px 0 0 var(--cyan);
 }
 
 .panel-col { flex: 1; display: flex; flex-direction: column; min-width: 0; }
-.panel-body { flex: 1; overflow-y: auto; padding: 22px 22px 8px; }
+.panel-body {
+  flex: 1; overflow-y: auto; padding: 26px 36px 8px;
+  /* Sekmeler arasında çubuk belirip kaybolunca içerik zıplıyor, diyalog
+     "eni değişiyor" gibi görünüyordu — oluk hep ayrık. */
+  scrollbar-gutter: stable;
+}
+/* Tam sayfada satırlar duvardan duvara uzamasın: bölüm genişliği sınırlı. */
+.panel-body > section { max-width: 860px; }
+.panel-foot { max-width: 932px; }
 .panel-body::-webkit-scrollbar { width: 6px; }
-.panel-body::-webkit-scrollbar-thumb { background: #4fe3ff22; border-radius: 3px; }
+.panel-body::-webkit-scrollbar-thumb { background: #F0A02022; border-radius: 3px; }
 
 .panel-foot {
   display: flex; align-items: center; gap: 14px;
   padding: 14px 22px 18px;
-  box-shadow: inset 0 1px 0 #4fe3ff10;
+  box-shadow: inset 0 1px 0 #F0A02010;
 }
 
 @media (max-width: 620px) {
   .panel-main { flex-direction: column; }
   .tabs {
     flex: 0 0 auto; flex-direction: row; flex-wrap: wrap; gap: 2px;
-    box-shadow: inset 0 -1px 0 #4fe3ff10; padding: 10px 12px;
+    box-shadow: inset 0 -1px 0 #F0A02010; padding: 10px 12px;
   }
   .tab-group { display: none; }
 }
@@ -1859,11 +1933,11 @@ body.focus #focus.on { color: var(--cyan); }
 .pane-note.mono { font: 11px var(--mono); word-break: break-all; }
 .panel-foot .save {
   padding: 8px 20px; border: 0; border-radius: 20px; cursor: pointer;
-  background: #4fe3ff1c; color: var(--ice);
+  background: #F0A0201c; color: var(--ice);
   font: 11px var(--mono); letter-spacing: .18em; text-transform: uppercase;
   transition: .18s;
 }
-.panel-foot .save:hover { background: #4fe3ff30; box-shadow: 0 0 22px #4fe3ff40; }
+.panel-foot .save:hover { background: #F0A02030; box-shadow: 0 0 22px #F0A02040; }
 
 /* --- alanlar --- */
 .field { display: block; margin: 0 0 22px; }
@@ -1877,10 +1951,10 @@ body.focus #focus.on { color: var(--cyan); }
 .input-text {
   width: 100%; padding: 9px 12px; box-sizing: border-box;
   background: var(--field); border: 0; border-radius: 7px;
-  box-shadow: inset 0 0 0 1px #4fe3ff14;
+  box-shadow: inset 0 0 0 1px #F0A02014;
   color: var(--text); font: 13px var(--font); outline: none; transition: .18s;
 }
-.input-text:focus { box-shadow: inset 0 0 0 1px #4fe3ff44, 0 0 20px #4fe3ff1c; }
+.input-text:focus { box-shadow: inset 0 0 0 1px #F0A02044, 0 0 20px #F0A0201c; }
 .input-num { width: 160px; font-variant-numeric: tabular-nums; }
 
 /* Makinede olmayan bir aygitin dugmesi: gorunur ama tiklanmaz. Gizlemek
@@ -1907,8 +1981,8 @@ body.focus #focus.on { color: var(--cyan); }
 }
 .model-row:hover { background: var(--raise); }
 .model-row.on {
-  background: rgba(79,227,255,.12);
-  border-color: rgba(79,227,255,.4);
+  background: rgba(240,160,32,.12);
+  border-color: rgba(240,160,32,.4);
 }
 .model-row-id { font: 12px var(--mono); color: var(--text); word-break: break-all; }
 .model-row.on .model-row-id { color: var(--cyan); }
@@ -1919,7 +1993,7 @@ body.focus #focus.on { color: var(--cyan); }
   background: transparent; border: 1px solid var(--edge); border-radius: 6px;
   font: 11px var(--mono); color: var(--dim); cursor: pointer;
 }
-.model-manual:hover { color: var(--text); border-color: rgba(79,227,255,.4); }
+.model-manual:hover { color: var(--text); border-color: rgba(240,160,32,.4); }
 
 /* Kapsül: sistem içi bir uygulama neo'nun İÇİNDE. HUD'un altında büyük bir
    çalışma yüzeyi; üstte kontrol şeridi (canlı adres · süre · yenile · dışarıda
@@ -1957,7 +2031,7 @@ body.focus #focus.on { color: var(--cyan); }
   padding: 3px 8px; cursor: pointer; max-width: 340px; overflow: hidden;
   text-overflow: ellipsis; white-space: nowrap;
 }
-.capsule-addr:hover { color: var(--cyan); border-color: rgba(79, 227, 255, .4); }
+.capsule-addr:hover { color: var(--cyan); border-color: rgba(240, 160, 32, .4); }
 .capsule-uptime { font: 11px var(--mono); color: var(--faint); }
 .capsule-spacer { flex: 1; }
 .capsule-btn {
@@ -1965,7 +2039,7 @@ body.focus #focus.on { color: var(--cyan); }
   background: transparent; border: 1px solid var(--edge); border-radius: 6px;
   padding: 4px 9px; cursor: pointer;
 }
-.capsule-btn:hover { color: var(--text); border-color: rgba(79, 227, 255, .4); }
+.capsule-btn:hover { color: var(--text); border-color: rgba(240, 160, 32, .4); }
 .capsule-btn.stop:hover { color: var(--rose); border-color: rgba(214, 59, 92, .5); }
 .capsule-body { position: relative; flex: 1; min-height: 0; background: #fff; }
 .capsule-body iframe { width: 100%; height: 100%; border: 0; display: block; background: #fff; }
@@ -2011,11 +2085,11 @@ body.focus #focus.on { color: var(--cyan); }
 .with-action .input-text { width: 160px; }
 .detect {
   background: none; border: 0; cursor: pointer; padding: 6px 12px;
-  border-radius: 16px; box-shadow: inset 0 0 0 1px #4fe3ff26;
+  border-radius: 16px; box-shadow: inset 0 0 0 1px #F0A02026;
   font: 10px var(--mono); letter-spacing: .16em; text-transform: uppercase;
   color: var(--dim); transition: .18s; white-space: nowrap;
 }
-.detect:hover { color: var(--ice); box-shadow: inset 0 0 0 1px #4fe3ff55; }
+.detect:hover { color: var(--ice); box-shadow: inset 0 0 0 1px #F0A02055; }
 .input-check { width: 16px; height: 16px; accent-color: var(--cyan); }
 
 /* --- secim kartlari --- */
@@ -2024,32 +2098,32 @@ body.focus #focus.on { color: var(--cyan); }
   display: flex; flex-direction: column; gap: 3px; align-items: flex-start;
   padding: 10px 12px; cursor: pointer; text-align: left;
   background: var(--raise); border: 0; border-radius: 8px;
-  box-shadow: inset 0 0 0 1px #4fe3ff10; transition: .18s;
+  box-shadow: inset 0 0 0 1px #F0A02010; transition: .18s;
 }
-.choice:hover { box-shadow: inset 0 0 0 1px #4fe3ff30; }
+.choice:hover { box-shadow: inset 0 0 0 1px #F0A02030; }
 .choice b { font: 600 13px var(--font); color: var(--text); }
 .choice span { font: 10.5px var(--mono); color: var(--faint); word-break: break-all; }
 .choice .warn { font: 10px var(--mono); color: var(--amber); font-style: normal; }
 .choice.on {
-  background: #4fe3ff14;
-  box-shadow: inset 0 0 0 1px #4fe3ff55, 0 0 24px #4fe3ff1a;
+  background: #F0A02014;
+  box-shadow: inset 0 0 0 1px #F0A02055, 0 0 24px #F0A0201a;
 }
 .choice.on b { color: var(--ice); }
 .choice.risky.on {
-  background: #ff7a9014;
-  box-shadow: inset 0 0 0 1px #ff7a9055, 0 0 24px #ff7a901a;
+  background: #F8717114;
+  box-shadow: inset 0 0 0 1px #F8717155, 0 0 24px #F871711a;
 }
 .choice.risky.on b { color: var(--rose); }
 
 .loaded { display: flex; flex-direction: column; gap: 4px; }
 .loaded-row {
   display: flex; align-items: baseline; gap: 12px;
-  padding: 6px 10px; border-radius: 6px; background: #4fe3ff08;
+  padding: 6px 10px; border-radius: 6px; background: #F0A02008;
 }
 .loaded-id { flex: 1; font: 12px var(--mono); color: var(--text); }
 .loaded-window { font: 10.5px var(--mono); color: var(--faint); }
 
-.pane-note.bad { color: var(--amber); box-shadow: inset 2px 0 0 #ffc85744; }
+.pane-note.bad { color: var(--amber); box-shadow: inset 2px 0 0 #F0A02044; }
 
 /* --- izin kurallari --- */
 .rules { display: flex; flex-direction: column; gap: 4px; }
@@ -2063,7 +2137,7 @@ body.focus #focus.on { color: var(--cyan); }
 
 .rule {
   display: flex; align-items: center; gap: 8px;
-  padding: 5px 10px; border-radius: 6px; background: #4fe3ff08;
+  padding: 5px 10px; border-radius: 6px; background: #F0A02008;
 }
 .rule code { flex: 1; font: 11.5px var(--mono); color: var(--text); }
 .rule.deny code { color: var(--rose); }
@@ -2077,24 +2151,24 @@ body.focus #focus.on { color: var(--cyan); }
 .rule-add .input-text { flex: 1; font: 11.5px var(--mono); padding: 6px 10px; }
 .rule-go {
   background: none; border: 0; cursor: pointer; padding: 4px 12px;
-  border-radius: 12px; box-shadow: inset 0 0 0 1px #4fe3ff26;
+  border-radius: 12px; box-shadow: inset 0 0 0 1px #F0A02026;
   font: 10px var(--mono); letter-spacing: .14em; text-transform: uppercase;
   color: var(--dim); transition: .16s;
 }
-.rule-go:hover { color: var(--ice); box-shadow: inset 0 0 0 1px #4fe3ff55; }
+.rule-go:hover { color: var(--ice); box-shadow: inset 0 0 0 1px #F0A02055; }
 
 /* --- zamanlanmis gorevler --- */
 .job {
   margin: 0 0 12px; padding: 12px 14px; border-radius: 9px;
-  background: var(--raise); box-shadow: inset 0 0 0 1px #4fe3ff12;
+  background: var(--raise); box-shadow: inset 0 0 0 1px #F0A02012;
 }
 .job.paused { opacity: .55; }
-.job.new { background: none; box-shadow: inset 0 0 0 1px #4fe3ff22; }
+.job.new { background: none; box-shadow: inset 0 0 0 1px #F0A02022; }
 .job-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 6px; }
 .job-head b { font: 600 13.5px var(--font); color: var(--text); }
 .job-when {
   font: 10px var(--mono); letter-spacing: .12em; text-transform: uppercase;
-  color: var(--cyan); padding: 2px 8px; border-radius: 10px; background: #4fe3ff14;
+  color: var(--cyan); padding: 2px 8px; border-radius: 10px; background: #F0A02014;
 }
 .job-prompt {
   margin: 0 0 10px; font-size: 12.5px; line-height: 1.6; color: var(--dim);
@@ -2115,18 +2189,18 @@ body.focus #focus.on { color: var(--cyan); }
 .job-last { color: var(--preference); }
 .job-act {
   margin-left: auto; background: none; border: 0; cursor: pointer;
-  padding: 4px 10px; border-radius: 12px; box-shadow: inset 0 0 0 1px #4fe3ff1c;
+  padding: 4px 10px; border-radius: 12px; box-shadow: inset 0 0 0 1px #F0A0201c;
   font: 10px var(--mono); letter-spacing: .12em; text-transform: uppercase;
   color: var(--dim); transition: .16s;
 }
 .job-act + .job-act { margin-left: 0; }
-.job-act:hover { color: var(--ice); box-shadow: inset 0 0 0 1px #4fe3ff44; }
-.job-act.risky:hover { color: var(--rose); box-shadow: inset 0 0 0 1px #ff7a9055; }
-.job-act.add { margin-left: 0; color: var(--ice); box-shadow: inset 0 0 0 1px #4fe3ff44; }
+.job-act:hover { color: var(--ice); box-shadow: inset 0 0 0 1px #F0A02044; }
+.job-act.risky:hover { color: var(--rose); box-shadow: inset 0 0 0 1px #F8717155; }
+.job-act.add { margin-left: 0; color: var(--ice); box-shadow: inset 0 0 0 1px #F0A02044; }
 
 .pane-note {
   margin: 24px 0 0; font-size: 11.5px; line-height: 1.7; color: var(--faint);
-  padding-left: 12px; box-shadow: inset 2px 0 0 #4fe3ff1c;
+  padding-left: 12px; box-shadow: inset 2px 0 0 #F0A0201c;
 }
 
 /* ---------- kompakt satirlar ----------
@@ -2149,7 +2223,7 @@ body.focus #focus.on { color: var(--cyan); }
 }
 .row-dot.bad { background: var(--rose); box-shadow: 0 0 8px var(--rose); }
 .row-dot.off { background: var(--faint); box-shadow: none; }
-.row-dot.live { background: var(--cyan); box-shadow: 0 0 8px #4fe3ff66; }
+.row-dot.live { background: var(--cyan); box-shadow: 0 0 8px #F0A02066; }
 .row-name { flex: 0 0 auto; font: 12.5px var(--mono); color: var(--text); }
 .row-desc {
   flex: 1; min-width: 0; font-size: 11.5px; color: var(--faint);
@@ -2161,20 +2235,36 @@ body.focus #focus.on { color: var(--cyan); }
 }
 .row-acts { flex: 0 0 auto; display: flex; gap: 2px; opacity: 0; transition: opacity .14s; }
 .row:hover .row-acts, .row.open .row-acts { opacity: 1; }
+/* Skills / MCP: eylemler hep görünsün — hover-only dokunmatikte kayboluyordu. */
+.panel .rows .row .row-acts { opacity: 1; }
 .row-act {
   background: none; border: 0; cursor: pointer; padding: 2px 7px;
   font: 10px var(--mono); letter-spacing: .1em; text-transform: uppercase;
   color: var(--dim); border-radius: 9px; transition: .14s;
 }
-.row-act:hover { color: var(--ice); background: #4fe3ff14; }
-.row-act.risky:hover { color: var(--rose); background: #ff7a9014; }
+.row-act:hover { color: var(--ice); background: #F0A02014; }
+.row-act.risky:hover { color: var(--rose); background: #F8717114; }
+.job-act.risky {
+  color: var(--rose); box-shadow: inset 0 0 0 1px rgba(255, 122, 144, .35);
+}
+.job-act.risky:hover { background: rgba(255, 122, 144, .1); }
+.tool-chips {
+  display: flex; flex-wrap: wrap; gap: 6px; margin: 0;
+}
+.tool-chip {
+  font: 11px var(--mono); color: var(--ice);
+  padding: 3px 8px; border-radius: 999px;
+  background: #F0A02014; box-shadow: inset 0 0 0 1px #F0A0202a;
+}
+.row.advanced .row-name { letter-spacing: .04em; text-transform: uppercase; font-size: 10.5px; }
+.panel-foot.save-hidden .save { display: none; }
 /* Ekleme satiri: liste sonunda sessiz bir "+" — bos kart degil. */
 .row.adder { color: var(--faint); }
 .row.adder:hover { color: var(--ice); }
 .row.adder .row-name { color: inherit; font-size: 11.5px; }
 .row-detail {
   margin: 2px 0 8px 26px; padding: 10px 12px; border-radius: 8px;
-  background: var(--raise); box-shadow: inset 0 0 0 1px #4fe3ff12;
+  background: var(--raise); box-shadow: inset 0 0 0 1px #F0A02012;
 }
 .row-detail .input-area { width: 100%; }
 .row-detail .input-text + .input-text { margin-top: 8px; }
@@ -2199,14 +2289,14 @@ body.focus #focus.on { color: var(--cyan); }
   font: 12px var(--font); text-decoration: none; transition: .16s;
 }
 .xfer-btn.out {
-  color: var(--cyan); background: #4fe3ff14; box-shadow: inset 0 0 0 1px #4fe3ff2c;
+  color: var(--cyan); background: #F0A02014; box-shadow: inset 0 0 0 1px #F0A0202c;
 }
-.xfer-btn.out:hover { background: #4fe3ff22; box-shadow: inset 0 0 0 1px #4fe3ff55, 0 0 18px #4fe3ff33; }
+.xfer-btn.out:hover { background: #F0A02022; box-shadow: inset 0 0 0 1px #F0A02055, 0 0 18px #F0A02033; }
 .xfer-btn.out::before { content: "↓"; }
 .xfer-btn.in {
-  color: var(--mint); background: #5ce6a414; box-shadow: inset 0 0 0 1px #5ce6a42a;
+  color: var(--mint); background: #86EFAC14; box-shadow: inset 0 0 0 1px #86EFAC2a;
 }
-.xfer-btn.in:hover { background: #5ce6a422; box-shadow: inset 0 0 0 1px #5ce6a455, 0 0 18px #5ce6a433; }
+.xfer-btn.in:hover { background: #86EFAC22; box-shadow: inset 0 0 0 1px #86EFAC55, 0 0 18px #86EFAC33; }
 .xfer-btn.in::before { content: "↑"; }
 /* Parça seçimi: dışa ve içe aktarma aynı kutulara bakıyor. */
 .xfer-parts { display: flex; flex-wrap: wrap; gap: 6px 18px; margin-top: 14px; }
@@ -2215,8 +2305,8 @@ body.focus #focus.on { color: var(--cyan); }
 .xfer-btn.danger { color: var(--rose); box-shadow: inset 0 0 0 1px rgba(214,59,92,.35); }
 .xfer-btn.danger:hover { background: rgba(214,59,92,.08); box-shadow: inset 0 0 0 1px rgba(214,59,92,.7); }
 .xfer-report { margin: 16px 0 0; font: 11.5px var(--font); color: var(--faint); min-height: 16px; padding-left: 12px; }
-.xfer-report.good { color: var(--mint); box-shadow: inset 2px 0 0 #5ce6a444; }
-.xfer-report.bad { color: var(--amber); box-shadow: inset 2px 0 0 #ffc85744; }
+.xfer-report.good { color: var(--mint); box-shadow: inset 2px 0 0 #86EFAC44; }
+.xfer-report.bad { color: var(--amber); box-shadow: inset 2px 0 0 #F0A02044; }
 
 /* --- dosyalar --- */
 .crumb { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; margin-bottom: 14px; }
@@ -2233,7 +2323,7 @@ body.focus #focus.on { color: var(--cyan); }
   padding: 7px 10px; cursor: pointer; text-align: left;
   background: none; border: 0; border-radius: 6px; transition: .14s;
 }
-.file:hover { background: #4fe3ff0e; }
+.file:hover { background: #F0A0200e; }
 .file-name { flex: 1; font: 12.5px var(--mono); color: var(--text); }
 .file.dir .file-name { color: var(--ice); }
 .file.dir .file-name::before { content: "▸ "; color: var(--faint); }
@@ -2259,7 +2349,7 @@ body.focus #focus.on { color: var(--cyan); }
   font: 10.5px var(--mono); letter-spacing: .18em; text-transform: uppercase;
   color: var(--faint); transition: .2s;
 }
-#eye:hover { color: var(--ice); text-shadow: 0 0 14px #4fe3ff88; }
+#eye:hover { color: var(--ice); text-shadow: 0 0 14px #F0A02088; }
 
 .viewer {
   position: fixed; top: 52px; bottom: 40px; right: 0;
@@ -2268,7 +2358,7 @@ body.focus #focus.on { color: var(--cyan); }
   background: var(--panel-glass);
   backdrop-filter: blur(14px);
   border-radius: 14px 0 0 14px;
-  box-shadow: inset 1px 0 0 #4fe3ff18, -24px 0 70px #000a;
+  box-shadow: inset 1px 0 0 #F0A02018, -24px 0 70px #000a;
   animation: viewer-in .3s cubic-bezier(.2,.8,.3,1);
 }
 @keyframes viewer-in { from { opacity: 0; transform: translateX(28px); } }
@@ -2288,12 +2378,15 @@ body.viewer-resize { cursor: ew-resize; user-select: none; }
 
 /* Panel acikken butun sutun panelin soluna geciyor. Tek degisken
    yetiyor: sohbet, yazma satiri, onizleme ve ekler birlikte kayiyor. */
-body.viewing, body.settling { --gut: calc(var(--viewer-w) + 20px); }
+body.viewing, body.settling {
+  --gut: calc(var(--viewer-w) + 20px);
+  --aside: min(820px, calc(100vw - var(--rail-w) - var(--viewer-w) - 72px));
+}
 
 .viewer-head {
   display: flex; align-items: center; gap: 12px;
   padding: 14px 16px 10px;
-  box-shadow: inset 0 -1px 0 #4fe3ff10;
+  box-shadow: inset 0 -1px 0 #F0A02010;
 }
 .viewer-tag {
   font: 9.5px var(--mono); letter-spacing: .28em; text-transform: uppercase;
@@ -2310,7 +2403,7 @@ body.viewing, body.settling { --gut: calc(var(--viewer-w) + 20px); }
   color: var(--faint); border-radius: 5px; transition: .16s;
 }
 .viewer-modes button:hover { color: var(--ice); }
-.viewer-modes button.on { color: var(--cyan); background: #4fe3ff12; }
+.viewer-modes button.on { color: var(--cyan); background: #F0A02012; }
 .viewer-head .close {
   background: none; border: 0; cursor: pointer;
   font-size: 19px; line-height: 1; color: var(--faint); transition: .2s;
@@ -2319,7 +2412,7 @@ body.viewing, body.settling { --gut: calc(var(--viewer-w) + 20px); }
 
 .viewer-body { flex: 1; overflow: auto; padding: 14px 16px 20px; }
 .viewer-body::-webkit-scrollbar { width: 6px; height: 6px; }
-.viewer-body::-webkit-scrollbar-thumb { background: #4fe3ff22; border-radius: 3px; }
+.viewer-body::-webkit-scrollbar-thumb { background: #F0A02022; border-radius: 3px; }
 
 /* Panelin zemini temaya gore degisir; kaynak her zaman kod kuyusu —
    acik temada krem panel + koyu-tema neon token'lar birbirini yiyordu. */
@@ -2415,7 +2508,7 @@ body.viewing, body.settling { --gut: calc(var(--viewer-w) + 20px); }
   padding: 7px 14px; border-radius: 7px;
   box-shadow: inset 0 0 0 1px var(--edge); transition: .16s;
 }
-.viewer-open:hover { color: var(--ice); box-shadow: inset 0 0 0 1px #4fe3ff55; }
+.viewer-open:hover { color: var(--ice); box-shadow: inset 0 0 0 1px #F0A02055; }
 .viewer-open:focus-visible { outline: 1px solid var(--cyan); outline-offset: 2px; }
 
 .viewer-blank {
@@ -2472,8 +2565,8 @@ body.left-resize { cursor: ew-resize; user-select: none; }
 /* Geçiş durumu / hata satırı (sohbete tıklayınca). */
 .hist-status {
   margin: 0 12px 8px; padding: 7px 11px; border-radius: 7px;
-  font: 11px var(--font); color: var(--amber); background: #ffc85712;
-  box-shadow: inset 2px 0 0 #ffc85744;
+  font: 11px var(--font); color: var(--amber); background: #F0A02012;
+  box-shadow: inset 2px 0 0 #F0A02044;
 }
 
 .hist-new {
@@ -2483,18 +2576,18 @@ body.left-resize { cursor: ew-resize; user-select: none; }
   font: 12.5px var(--font); text-align: left;
   box-shadow: inset 0 0 0 1px var(--card-edge); transition: .14s;
 }
-.hist-new:hover { background: #4fe3ff20; box-shadow: inset 0 0 0 1px #4fe3ff55; }
+.hist-new:hover { background: #F0A02020; box-shadow: inset 0 0 0 1px #F0A02055; }
 .hist-new-plus { color: var(--cyan); font-size: 15px; line-height: 1; }
 .hist-search {
   margin: 0 12px 8px; padding: 8px 11px; border: 0; border-radius: 8px;
   background: var(--field); color: var(--ink); font: 12.5px var(--font);
-  box-shadow: inset 0 0 0 1px #4fe3ff14; outline: none;
+  box-shadow: inset 0 0 0 1px #F0A02014; outline: none;
 }
-.hist-search:focus { box-shadow: inset 0 0 0 1px #4fe3ff44; }
+.hist-search:focus { box-shadow: inset 0 0 0 1px #F0A02044; }
 .hist-search::placeholder { color: var(--faint); }
 .hist-body { flex: 1; overflow: auto; padding: 4px 6px 18px; }
 .hist-body::-webkit-scrollbar { width: 6px; }
-.hist-body::-webkit-scrollbar-thumb { background: #4fe3ff2a; border-radius: 3px; }
+.hist-body::-webkit-scrollbar-thumb { background: #F0A0202a; border-radius: 3px; }
 .hist-blank { margin: 40px 14px; text-align: center; font: 11px var(--font); color: var(--faint); }
 
 .hist-group {
@@ -2507,7 +2600,7 @@ body.left-resize { cursor: ew-resize; user-select: none; }
   padding: 9px 10px 5px; margin-top: 4px; border-radius: 6px;
   transition: background .14s;
 }
-.hist-folder:hover { background: #4fe3ff0a; }
+.hist-folder:hover { background: #F0A0200a; }
 .hist-fold { flex: 0 0 auto; width: 10px; color: var(--cyan); font-size: 10px; opacity: .8; }
 .hist-folder-name {
   flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
@@ -2524,15 +2617,30 @@ body.left-resize { cursor: ew-resize; user-select: none; }
   display: flex; align-items: baseline; gap: 8px; padding: 7px 10px;
   cursor: pointer; border-radius: 6px; transition: background .14s;
 }
-.hist-row:hover { background: #4fe3ff10; }
-.hist-item.current .hist-row { background: #4fe3ff0c; }
-/* Durum noktası: dolu = çalışıyor (mint), boş çember = tamamlandı. */
+.hist-row:hover { background: #F0A02010; }
+.hist-item.current .hist-row { background: #F0A0200c; }
+/* Durum noktası: boş = biten, dolu mint = açık, amber = koşuyor. */
 .hist-dot {
   flex: 0 0 auto; width: 7px; height: 7px; border-radius: 50%;
   box-shadow: inset 0 0 0 1.4px var(--faint); align-self: center;
 }
-.hist-item.current .hist-dot {
+.hist-dot.on, .hist-item.current .hist-dot {
   background: var(--mint); box-shadow: 0 0 8px var(--mint);
+}
+.hist-dot.run, .hist-item.running .hist-dot {
+  background: var(--amber, #F0A020); box-shadow: 0 0 8px #F0A02088;
+}
+.hist-status-filters {
+  display: flex; flex-wrap: wrap; gap: 4px; width: 100%; margin: 0 0 4px;
+}
+.hist-status {
+  background: none; border: 1px solid transparent; cursor: pointer;
+  font: 10.5px var(--mono); letter-spacing: .06em; text-transform: uppercase;
+  color: var(--faint); padding: 3px 8px; border-radius: 999px;
+}
+.hist-status:hover { color: var(--ice); background: #F0A02010; }
+.hist-status.on {
+  color: var(--cyan); border-color: #F0A02044; background: #F0A02014;
 }
 .hist-title {
   flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
@@ -2549,16 +2657,16 @@ body.left-resize { cursor: ew-resize; user-select: none; }
   color: var(--faint); font-size: 12px; padding: 2px 5px; border-radius: 5px;
   transition: color .14s, background .14s;
 }
-.hist-assign:hover { background: #4fe3ff14; }
+.hist-assign:hover { background: #F0A02014; }
 .hist-assign:focus-visible { outline: 1px solid var(--cyan); outline-offset: 1px; }
 .hist-assign:hover { color: var(--cyan); }
 .hist-assign-box { padding: 2px 10px 8px; }
 .hist-assign-input {
   width: 100%; box-sizing: border-box; padding: 6px 9px; border-radius: 6px;
-  background: var(--field); border: 1px solid #4fe3ff33; color: var(--ice);
+  background: var(--field); border: 1px solid #F0A02033; color: var(--ice);
   font: 11.5px var(--font); outline: none;
 }
-.hist-assign-input:focus { border-color: var(--cyan); box-shadow: 0 0 0 2px #4fe3ff22; }
+.hist-assign-input:focus { border-color: var(--cyan); box-shadow: 0 0 0 2px #F0A02022; }
 
 /* ---------- geçmiş: arama şeridi, etiketler, eşleşmeler ----------
    Arama bugüne kadar yalnızca başlığı süzüyordu; aranan söz çoğu zaman
@@ -2588,7 +2696,7 @@ body.left-resize { cursor: ew-resize; user-select: none; }
   padding: 4px 10px; border-radius: 9px; transition: .14s;
 }
 .hist-deep:hover { color: var(--ice); }
-.hist-deep.on { color: var(--cyan); background: #4fe3ff16; box-shadow: inset 0 0 0 1px #4fe3ff33; }
+.hist-deep.on { color: var(--cyan); background: #F0A02016; box-shadow: inset 0 0 0 1px #F0A02033; }
 .hist-deep:focus-visible { outline: 1px solid var(--cyan); outline-offset: 2px; }
 
 /* Etiket: bir konuşma birden çok taşıyabiliyor (proje ise tek). Tıklayınca
@@ -2602,17 +2710,17 @@ body.left-resize { cursor: ew-resize; user-select: none; }
   border: 0; cursor: pointer; padding: 2px 8px; border-radius: 9px;
   box-shadow: inset 0 0 0 1px var(--edge); transition: .14s;
 }
-.hist-label:hover { color: var(--ice); box-shadow: inset 0 0 0 1px #4fe3ff44; }
-.hist-label.on { color: var(--violet); background: #b39cff16; box-shadow: inset 0 0 0 1px #b39cff44; }
+.hist-label:hover { color: var(--ice); box-shadow: inset 0 0 0 1px #F0A02044; }
+.hist-label.on { color: var(--violet); background: #C4B5FD16; box-shadow: inset 0 0 0 1px #C4B5FD44; }
 .hist-label:focus-visible { outline: 1px solid var(--cyan); outline-offset: 2px; }
 
 /* Döküm eşleşmesi: hangi söz nerede geçiyor. */
 .hist-hit {
   display: flex; align-items: baseline; gap: 8px; cursor: pointer;
   margin: 0 10px 3px 26px; padding: 4px 8px; border-radius: 6px;
-  background: var(--raise); box-shadow: inset 2px 0 0 #4fe3ff33;
+  background: var(--raise); box-shadow: inset 2px 0 0 #F0A02033;
 }
-.hist-hit:hover { background: #4fe3ff12; }
+.hist-hit:hover { background: #F0A02012; }
 .hist-hit-who {
   flex: 0 0 auto; font: 8.5px var(--mono); letter-spacing: .14em;
   text-transform: uppercase; color: var(--faint);
@@ -2631,12 +2739,12 @@ body.left-resize { cursor: ew-resize; user-select: none; }
 .hist-live {
   flex: 0 0 auto; align-self: center;
   font: 9px var(--mono); letter-spacing: .06em;
-  color: var(--mint); background: #5ce6a414; padding: 1px 7px; border-radius: 9px;
+  color: var(--mint); background: #86EFAC14; padding: 1px 7px; border-radius: 9px;
 }
 /* Meşgulken başka konuşmaya tıklandı: geçiş tur bitince mümkün. Satır
    birkaç saniye "beklemede" görünüyor — tık sessiz ölmüyor. */
-.hist-item.waiting .hist-row { background: #ffc85714; }
-.hist-item.waiting .hist-title { color: #ffc857; }
+.hist-item.waiting .hist-row { background: #F0A02014; }
+.hist-item.waiting .hist-title { color: #F0A020; }
 
 /* ---------- uygulamalar paneli ----------
    Atolyede uretilen seyler calistirilabilir bir katalog. Sol kenardan
@@ -2674,7 +2782,7 @@ body.left-resize { cursor: ew-resize; user-select: none; }
 
 .apps-body { flex: 1; overflow: auto; padding: 8px 6px 18px; }
 .apps-body::-webkit-scrollbar { width: 6px; }
-.apps-body::-webkit-scrollbar-thumb { background: #4fe3ff2a; border-radius: 3px; }
+.apps-body::-webkit-scrollbar-thumb { background: #F0A0202a; border-radius: 3px; }
 
 .apps-blank {
   margin: 40px 14px; text-align: center; line-height: 1.6;
@@ -2688,7 +2796,7 @@ body.left-resize { cursor: ew-resize; user-select: none; }
   cursor: pointer; transition: background .14s;
   font: 12.5px var(--font); color: var(--dim);
 }
-.apps-row:hover { background: #4fe3ff10; color: var(--ice); }
+.apps-row:hover { background: #F0A02010; color: var(--ice); }
 .apps-glyph { flex: 0 0 auto; width: 14px; text-align: center; color: var(--faint); font-size: 11px; }
 .apps-row.web .apps-glyph { color: var(--cyan); }
 .apps-row.run .apps-glyph { color: var(--mint); }
@@ -2702,8 +2810,8 @@ body.left-resize { cursor: ew-resize; user-select: none; }
   flex: 0 0 auto; font: 8.5px var(--mono); letter-spacing: .14em; text-transform: uppercase;
   color: var(--faint); padding: 2px 6px; border-radius: 4px; background: var(--raise);
 }
-.apps-row.web .apps-kind { color: var(--cyan); background: #4fe3ff14; }
-.apps-row.run .apps-kind { color: var(--mint); background: #5ce6a414; }
+.apps-row.web .apps-kind { color: var(--cyan); background: #F0A02014; }
+.apps-row.run .apps-kind { color: var(--mint); background: #86EFAC14; }
 
 /* Baslatma bildirimi: betigin kendi penceresi var ama "basladi" geri
    bildirimi arayuzde de gorunmeli. */
@@ -2711,7 +2819,7 @@ body.left-resize { cursor: ew-resize; user-select: none; }
   position: fixed; left: 50%; bottom: 74px; transform: translate(-50%, 12px);
   z-index: 40; padding: 9px 16px; border-radius: 8px;
   background: var(--panel-glass); backdrop-filter: blur(10px);
-  box-shadow: inset 0 0 0 1px #4fe3ff22, 0 8px 30px #000a;
+  box-shadow: inset 0 0 0 1px #F0A02022, 0 8px 30px #000a;
   font: 12px var(--font); color: var(--ice);
   opacity: 0; pointer-events: none; transition: opacity .2s, transform .2s;
 }
@@ -2727,7 +2835,7 @@ body.left-resize { cursor: ew-resize; user-select: none; }
   box-shadow: inset 0 0 0 1px transparent; transition: box-shadow .16s;
 }
 .apps-search::placeholder { color: var(--faint); }
-.apps-search:focus { box-shadow: inset 0 0 0 1px #4fe3ff44; }
+.apps-search:focus { box-shadow: inset 0 0 0 1px #F0A02044; }
 .apps-chips { display: flex; gap: 5px; margin-top: 7px; flex-wrap: wrap; }
 .apps-chip {
   font: 9px var(--mono); letter-spacing: .1em; text-transform: uppercase;
@@ -2735,7 +2843,7 @@ body.left-resize { cursor: ew-resize; user-select: none; }
   padding: 4px 10px; border-radius: 9px; cursor: pointer; transition: .16s;
 }
 .apps-chip:hover { color: var(--ice); }
-.apps-chip.on { color: var(--cyan); background: #4fe3ff16; box-shadow: inset 0 0 0 1px #4fe3ff33; }
+.apps-chip.on { color: var(--cyan); background: #F0A02016; box-shadow: inset 0 0 0 1px #F0A02033; }
 
 /* ---------- proje kartları (uygulamalar = projeler) ---------- */
 .proj {
@@ -2743,20 +2851,20 @@ body.left-resize { cursor: ew-resize; user-select: none; }
   overflow: hidden; box-shadow: inset 0 0 0 1px var(--edge);
   transition: box-shadow .16s;
 }
-.proj:hover { box-shadow: inset 0 0 0 1px #4fe3ff2e; }
+.proj:hover { box-shadow: inset 0 0 0 1px #F0A0202e; }
 /* Çalışan projenin kartı: yeşil nokta belirir, kenar nefes alır. */
 .proj-dot {
   flex: 0 0 auto; width: 7px; height: 7px; border-radius: 50%;
   background: var(--mint); display: none;
 }
 .proj.running .proj-dot { display: inline-block; animation: throb 1.5s ease-in-out infinite; }
-.proj.running { box-shadow: inset 0 0 0 1px #5ce6a43a; }
+.proj.running { box-shadow: inset 0 0 0 1px #86EFAC3a; }
 .proj-kind-tag {
   flex: 0 0 auto; font: 8px var(--mono); letter-spacing: .12em; text-transform: uppercase;
   padding: 2px 7px; border-radius: 9px; color: var(--dim); background: #ffffff0a;
 }
-.proj-kind-tag.web { color: var(--cyan); background: #4fe3ff10; }
-.proj-kind-tag.service, .proj-kind-tag.tool { color: var(--mint); background: #5ce6a410; }
+.proj-kind-tag.web { color: var(--cyan); background: #F0A02010; }
+.proj-kind-tag.service, .proj-kind-tag.tool { color: var(--mint); background: #86EFAC10; }
 .proj-run.stop { color: var(--rose); background: rgba(214,59,92,.10); box-shadow: inset 0 0 0 1px rgba(214,59,92,.3); }
 .proj-run.stop:hover { background: rgba(214,59,92,.16); }
 .proj-live {
@@ -2769,7 +2877,7 @@ body.left-resize { cursor: ew-resize; user-select: none; }
   display: flex; align-items: center; gap: 9px; padding: 10px 11px;
   cursor: pointer; transition: background .14s;
 }
-.proj-head:hover { background: #4fe3ff0c; }
+.proj-head:hover { background: #F0A0200c; }
 .proj-glyph { flex: 0 0 auto; width: 16px; text-align: center; color: var(--cyan); font-size: 12px; }
 .proj-head.service .proj-glyph { color: var(--mint); }
 .proj-head.tool .proj-glyph { color: var(--mint); }
@@ -2782,15 +2890,15 @@ body.left-resize { cursor: ew-resize; user-select: none; }
   flex: 0 0 auto; font: 8px var(--mono); letter-spacing: .12em; text-transform: uppercase;
   padding: 2px 7px; border-radius: 9px;
 }
-.proj-scope.inapp { color: var(--cyan); background: #4fe3ff16; }
-.proj-scope.ext { color: var(--amber); background: #ffc85716; }
+.proj-scope.inapp { color: var(--cyan); background: #F0A02016; }
+.proj-scope.ext { color: var(--amber); background: #F0A02016; }
 .proj-scope.unknown { color: var(--dim); background: var(--raise); }
 .proj-run {
   flex: 0 0 auto; font: 10px var(--mono); letter-spacing: .06em;
-  color: var(--mint); background: #5ce6a414; box-shadow: inset 0 0 0 1px #5ce6a42a;
+  color: var(--mint); background: #86EFAC14; box-shadow: inset 0 0 0 1px #86EFAC2a;
   padding: 5px 11px; border-radius: 6px; cursor: pointer; transition: .16s;
 }
-.proj-run:hover { background: #5ce6a422; box-shadow: inset 0 0 0 1px #5ce6a455; }
+.proj-run:hover { background: #86EFAC22; box-shadow: inset 0 0 0 1px #86EFAC55; }
 
 .proj-view { padding: 4px 12px 13px; box-shadow: inset 0 1px 0 var(--edge); }
 .proj-howto-tag {
@@ -2800,10 +2908,10 @@ body.left-resize { cursor: ew-resize; user-select: none; }
 .proj-howto {
   font: 11.5px/1.6 var(--font); color: var(--dim);
   max-height: 240px; overflow-y: auto;
-  scrollbar-width: thin; scrollbar-color: #4fe3ff30 transparent;
+  scrollbar-width: thin; scrollbar-color: #F0A02030 transparent;
 }
 .proj-howto::-webkit-scrollbar { width: 6px; }
-.proj-howto::-webkit-scrollbar-thumb { background: #4fe3ff22; border-radius: 3px; }
+.proj-howto::-webkit-scrollbar-thumb { background: #F0A02022; border-radius: 3px; }
 .proj-howto.empty { color: var(--faint); font-style: italic; }
 .proj-actions { display: flex; gap: 8px; margin-top: 12px; }
 .proj-btn {
@@ -2811,8 +2919,8 @@ body.left-resize { cursor: ew-resize; user-select: none; }
   border: 0; padding: 7px 13px; border-radius: 7px; cursor: pointer; transition: .16s;
 }
 .proj-btn:hover { color: var(--ice); background: #ffffff12; }
-.proj-btn.primary { color: var(--mint); background: #5ce6a416; box-shadow: inset 0 0 0 1px #5ce6a42a; }
-.proj-btn.primary:hover { background: #5ce6a422; }
+.proj-btn.primary { color: var(--mint); background: #86EFAC16; box-shadow: inset 0 0 0 1px #86EFAC2a; }
+.proj-btn.primary:hover { background: #86EFAC22; }
 
 /* "konus": uygulamayi konusmanin baglamina verir. Satirda sonda, sonuk;
    uzerine gelince belirginlesiyor. */
@@ -2823,7 +2931,7 @@ body.left-resize { cursor: ew-resize; user-select: none; }
   padding: 3px 8px; border-radius: 5px; opacity: 0; transition: opacity .14s, color .14s;
 }
 .apps-row:hover .apps-talk { opacity: 1; }
-.apps-talk:hover { color: var(--mint); background: #5ce6a414; }
+.apps-talk:hover { color: var(--mint); background: #86EFAC14; }
 
 /* Calisan uygulamalar bolumu: ajanin baslattigi sunucu/betik canli. */
 .apps-running { margin: 2px 4px 12px; }
@@ -2870,7 +2978,7 @@ body.left-resize { cursor: ew-resize; user-select: none; }
 .apps-proc {
   display: flex; align-items: center; gap: 8px;
   padding: 6px 10px; margin: 2px 0; border-radius: 6px;
-  background: #5ce6a40a; box-shadow: inset 2px 0 0 var(--mint);
+  background: #86EFAC0a; box-shadow: inset 2px 0 0 var(--mint);
   font: 12px var(--font); color: var(--dim);
 }
 .apps-proc-dot {
@@ -2881,10 +2989,10 @@ body.left-resize { cursor: ew-resize; user-select: none; }
 .apps-proc-name { flex: 0 1 auto; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--ice); }
 .apps-proc-addr {
   flex: 1; min-width: 0; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  font: 10.5px var(--mono); color: var(--cyan); background: #4fe3ff10;
+  font: 10.5px var(--mono); color: var(--cyan); background: #F0A02010;
   border: none; cursor: pointer; padding: 3px 7px; border-radius: 5px;
 }
-.apps-proc-addr:hover { background: #4fe3ff1e; text-shadow: 0 0 12px var(--cyan); }
+.apps-proc-addr:hover { background: #F0A0201e; text-shadow: 0 0 12px var(--cyan); }
 .apps-proc-stop {
   flex: 0 0 auto; font: 9px var(--mono); letter-spacing: .1em; text-transform: uppercase;
   color: var(--faint); background: none; border: none; cursor: pointer;
@@ -2930,7 +3038,7 @@ body.left-resize { cursor: ew-resize; user-select: none; }
   border-radius: 8px; padding: 8px 10px; background: var(--raise);
   box-shadow: inset 2px 0 0 var(--faint); transition: box-shadow .2s;
 }
-.orch-ch.run { box-shadow: inset 2px 0 0 var(--cyan); background: #4fe3ff0c; }
+.orch-ch.run { box-shadow: inset 2px 0 0 var(--cyan); background: #F0A0200c; }
 .orch-ch.done { box-shadow: inset 2px 0 0 var(--mint); }
 .orch-ch.fail { box-shadow: inset 2px 0 0 var(--rose); }
 /* Yetim: geçen oturumdan yarım kalan yardımcı — soluk kehribar; koşmuyor,
@@ -2978,7 +3086,7 @@ body.left-resize { cursor: ew-resize; user-select: none; }
 /* Arka planda koşan yardımcı rozeti. */
 .orch-ch-bg {
   flex: 0 0 auto; font: 8px var(--mono); letter-spacing: .12em; text-transform: uppercase;
-  color: var(--cyan); background: #4fe3ff14; border-radius: 5px; padding: 1px 6px;
+  color: var(--cyan); background: #F0A02014; border-radius: 5px; padding: 1px 6px;
 }
 /* Biten kanal tıklanabilir: sonucun özeti açılır. */
 .orch-ch.clickable { cursor: pointer; }
@@ -3007,7 +3115,7 @@ body.left-resize { cursor: ew-resize; user-select: none; }
   display: inline-flex; align-items: center; gap: 7px; min-width: 0;
   padding: 5px 6px 5px 10px; border-radius: 8px;
   background: var(--panel-glass); backdrop-filter: blur(10px);
-  box-shadow: inset 0 0 0 1px #5ce6a42a, 0 6px 22px #0009;
+  box-shadow: inset 0 0 0 1px #86EFAC2a, 0 6px 22px #0009;
   font: 11.5px var(--font); color: var(--ice);
 }
 .ctx-glyph { flex: 0 0 auto; font-size: 11px; color: var(--mint); }
@@ -3028,9 +3136,9 @@ body.left-resize { cursor: ew-resize; user-select: none; }
 /* ---------- dar pencere ----------
    Sutun sabit kalirsa dar bir pencerede hem sahneye hem yaziya yer
    kalmiyor. Burada yazi one geciyor: sahne arkada, altinda kaliyor. */
-@media (max-width: 1020px) {
-  :root { --aside: calc(100vw - 52px); }
-  body.viewing, body.settling { --gut: 26px; }
+@media (max-width: 860px) {
+  body { --aside: calc(100vw - 52px); }
+  body.viewing, body.settling { --gut: 26px; --aside: calc(100vw - 52px); }
   .stream::before {
     inset: auto 0 0 0; width: auto; height: 60vh;
     background: linear-gradient(180deg,
@@ -3057,8 +3165,8 @@ body.left-resize { cursor: ew-resize; user-select: none; }
   cursor: pointer;
   transition: border-color .16s, background .16s;
 }
-.artifact-card:hover { border-color: #4fe3ff55; background: var(--raise); }
-:root[data-theme="light"] .artifact-card:hover { border-color: rgba(10, 122, 156, .45); }
+.artifact-card:hover { border-color: #F0A02055; background: var(--raise); }
+:root[data-theme="light"] .artifact-card:hover { border-color: rgba(180, 112, 10, .45); }
 .artifact-card:focus-visible { outline: 1px solid var(--cyan); outline-offset: 3px; }
 
 /* Yayın/güncelleme anı: kart bir kez nabız atar — göz habere çekilsin. */
@@ -3071,9 +3179,9 @@ body.left-resize { cursor: ew-resize; user-select: none; }
 .art-glyph {
   flex: 0 0 auto; width: 30px; height: 30px;
   display: grid; place-items: center;
-  border-radius: 8px; background: #4fe3ff14; color: var(--cyan);
+  border-radius: 8px; background: #F0A02014; color: var(--cyan);
 }
-:root[data-theme="light"] .art-glyph { background: rgba(10, 122, 156, .1); }
+:root[data-theme="light"] .art-glyph { background: rgba(180, 112, 10, .1); }
 .art-glyph svg { width: 16px; height: 16px; stroke: currentColor; stroke-width: 1.2; fill: none; }
 
 .art-main { flex: 1 1 auto; min-width: 0; }
@@ -3099,17 +3207,17 @@ body.left-resize { cursor: ew-resize; user-select: none; }
   transition: color .16s, background .16s;
 }
 /* Güncellenen kartın rozeti tazelenir: v2'ye çıkan sayaç mint yanar. */
-.art-badge.fresh { color: var(--mint); background: #5ce6a414; box-shadow: inset 0 0 0 1px #5ce6a433; }
+.art-badge.fresh { color: var(--mint); background: #86EFAC14; box-shadow: inset 0 0 0 1px #86EFAC33; }
 :root[data-theme="light"] .art-badge.fresh {
   background: rgba(11, 125, 82, .1); box-shadow: inset 0 0 0 1px rgba(11, 125, 82, .3);
 }
 
 .art-open {
   flex: 0 0 auto; font: 11px var(--font); color: var(--cyan);
-  background: #4fe3ff14; border: 0; padding: 7px 14px; border-radius: 7px;
-  cursor: pointer; box-shadow: inset 0 0 0 1px #4fe3ff2e; transition: .16s;
+  background: #F0A02014; border: 0; padding: 7px 14px; border-radius: 7px;
+  cursor: pointer; box-shadow: inset 0 0 0 1px #F0A0202e; transition: .16s;
 }
-.art-open:hover { background: #4fe3ff22; box-shadow: inset 0 0 0 1px #4fe3ff55; }
+.art-open:hover { background: #F0A02022; box-shadow: inset 0 0 0 1px #F0A02055; }
 .art-open:focus-visible { outline: 1px solid var(--cyan); outline-offset: 2px; }
 .art-export { margin-left: 4px; opacity: .85; font-size: 11px; }
 .viewer-export { display: inline-flex; gap: 4px; align-items: center; }
@@ -3124,10 +3232,10 @@ body.left-resize { cursor: ew-resize; user-select: none; }
 }
 .viewer-act:hover { color: var(--cyan); background: var(--raise); }
 :root[data-theme="light"] .art-open {
-  background: rgba(10, 122, 156, .09); box-shadow: inset 0 0 0 1px rgba(10, 122, 156, .25);
+  background: rgba(180, 112, 10, .09); box-shadow: inset 0 0 0 1px rgba(180, 112, 10, .25);
 }
 :root[data-theme="light"] .art-open:hover {
-  background: rgba(10, 122, 156, .15); box-shadow: inset 0 0 0 1px rgba(10, 122, 156, .45);
+  background: rgba(180, 112, 10, .15); box-shadow: inset 0 0 0 1px rgba(180, 112, 10, .45);
 }
 
 /* --- galeri: Uygulamalar panelindeki Artifact'lar bölümü --- */
@@ -3146,7 +3254,7 @@ body.left-resize { cursor: ew-resize; user-select: none; }
 .arts-glyph {
   flex: 0 0 auto; width: 24px; height: 24px;
   display: grid; place-items: center;
-  border-radius: 6px; background: #b39cff14; color: var(--violet);
+  border-radius: 6px; background: #C4B5FD14; color: var(--violet);
 }
 :root[data-theme="light"] .arts-glyph { background: rgba(91, 63, 196, .1); }
 .arts-glyph svg { width: 13px; height: 13px; stroke: currentColor; stroke-width: 1.2; fill: none; }
@@ -3166,7 +3274,7 @@ body.left-resize { cursor: ew-resize; user-select: none; }
   cursor: pointer; transition: .14s; opacity: 0;
 }
 .arts-row:hover .arts-btn, .arts-row:focus-within .arts-btn { opacity: 1; }
-.arts-btn:hover { color: var(--cyan); background: #4fe3ff14; }
+.arts-btn:hover { color: var(--cyan); background: #F0A02014; }
 .arts-btn:focus-visible { opacity: 1; outline: 1px solid var(--cyan); outline-offset: 2px; }
 .arts-btn.danger:hover { color: var(--rose); background: rgba(214, 59, 92, .1); }
 
@@ -3180,7 +3288,7 @@ body.left-resize { cursor: ew-resize; user-select: none; }
    yanlış komutun çalışması tam olarak böyle olurdu. */
 .compose-pop { min-width: 300px; }
 .compose-pop .pop-row.sel {
-  background: #4fe3ff16; box-shadow: inset 0 0 0 1px #4fe3ff33;
+  background: #F0A02016; box-shadow: inset 0 0 0 1px #F0A02033;
 }
 .compose-pop .pop-row.sel b { color: var(--ice); }
 .compose-pop .pop-row b { flex: 0 0 auto; }
@@ -3197,7 +3305,7 @@ body:has(#mentions:not([hidden])) .drops { bottom: 146px; }
 body.viewing .mentions,
 body.settling .mentions { left: calc((100vw - min(520px, 44vw)) / 2); }
 .chip.mention {
-  background: #b39cff14; box-shadow: inset 0 0 0 1px #b39cff33; color: var(--violet);
+  background: #C4B5FD14; box-shadow: inset 0 0 0 1px #C4B5FD33; color: var(--violet);
 }
 .mention-at { color: var(--violet); opacity: .8; }
 .mention-yol {
@@ -3229,16 +3337,16 @@ body.settling .mentions { left: calc((100vw - min(520px, 44vw)) / 2); }
 .pop-butce-input {
   flex: 1; min-width: 0; padding: 5px 8px; border: 0; border-radius: 6px;
   background: var(--field); color: var(--text); font: 12px var(--mono);
-  outline: none; box-shadow: inset 0 0 0 1px #4fe3ff1a;
+  outline: none; box-shadow: inset 0 0 0 1px #F0A0201a;
 }
-.pop-butce-input:focus { box-shadow: inset 0 0 0 1px #4fe3ff44; }
+.pop-butce-input:focus { box-shadow: inset 0 0 0 1px #F0A02044; }
 .pop-butce-input::placeholder { color: var(--faint); }
 .pop-butce-ok {
   flex: 0 0 auto; font: 10.5px var(--font); color: var(--dim);
   background: var(--raise); border: 0; padding: 5px 10px; border-radius: 6px;
   cursor: pointer; transition: .14s;
 }
-.pop-butce-ok:hover { color: var(--cyan); background: #4fe3ff14; }
+.pop-butce-ok:hover { color: var(--cyan); background: #F0A02014; }
 /* Sınıra ulaşıldı: çip gül rengine döner — sayı okunmadan da fark edilsin. */
 #dock-cost.over { color: var(--rose); }
 #dock-cost.over:hover { color: var(--rose); background: var(--raise); }
@@ -3305,10 +3413,10 @@ body.settling .mentions { left: calc((100vw - min(520px, 44vw)) / 2); }
   border-radius: 999px; padding: 5px 12px; cursor: pointer;
   transition: color .14s, box-shadow .14s;
 }
-.jobs-chip:hover { color: var(--ice); box-shadow: inset 0 0 0 1px #4fe3ff33; }
+.jobs-chip:hover { color: var(--ice); box-shadow: inset 0 0 0 1px #F0A02033; }
 .jobs-chip.on {
-  color: var(--cyan); background: #4fe3ff12;
-  box-shadow: inset 0 0 0 1px #4fe3ff55;
+  color: var(--cyan); background: #F0A02012;
+  box-shadow: inset 0 0 0 1px #F0A02055;
 }
 .jobs-count {
   font: 10px var(--mono); color: var(--faint); letter-spacing: .06em;
@@ -3337,7 +3445,7 @@ body.settling .mentions { left: calc((100vw - min(520px, 44vw)) / 2); }
 .jobs-row:hover { background: var(--raise); }
 .jobs-row.on {
   background: var(--raise);
-  box-shadow: inset 0 0 0 1px #4fe3ff33;
+  box-shadow: inset 0 0 0 1px #F0A02033;
 }
 .jobs-row-top { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
 .jobs-row-dot {
@@ -3347,7 +3455,7 @@ body.settling .mentions { left: calc((100vw - min(520px, 44vw)) / 2); }
 .jobs-row-dot.off { background: var(--faint); box-shadow: none; }
 .jobs-row-dot.bad { background: var(--rose); box-shadow: 0 0 8px var(--rose); }
 .jobs-row-dot.live {
-  background: var(--cyan); box-shadow: 0 0 10px #4fe3ff88;
+  background: var(--cyan); box-shadow: 0 0 10px #F0A02088;
   animation: jobs-pulse 1.6s ease-in-out infinite;
 }
 @keyframes jobs-pulse {
@@ -3366,9 +3474,9 @@ body.settling .mentions { left: calc((100vw - min(520px, 44vw)) / 2); }
 .jobs-badge {
   font: 9px var(--mono); letter-spacing: .08em; text-transform: uppercase;
   color: var(--cyan); padding: 2px 7px; border-radius: 999px;
-  background: #4fe3ff12; box-shadow: inset 0 0 0 1px #4fe3ff22;
+  background: #F0A02012; box-shadow: inset 0 0 0 1px #F0A02022;
 }
-.jobs-badge.auto { color: var(--violet); background: #b39cff14; box-shadow: inset 0 0 0 1px #b39cff33; }
+.jobs-badge.auto { color: var(--violet); background: #C4B5FD14; box-shadow: inset 0 0 0 1px #C4B5FD33; }
 .jobs-row-when { font: 11px var(--font); color: var(--faint); }
 .jobs-row-status {
   display: block; margin-top: 4px; padding-left: 15px;
@@ -3381,12 +3489,12 @@ body.settling .mentions { left: calc((100vw - min(520px, 44vw)) / 2); }
   width: 100%; margin-top: 6px; padding: 9px 10px;
   border-radius: 8px; cursor: pointer;
   color: var(--dim); background: transparent;
-  box-shadow: inset 0 0 0 1px dashed #4fe3ff28;
+  box-shadow: inset 0 0 0 1px dashed #F0A02028;
   font: 12px var(--font); transition: .14s;
 }
 .jobs-row-add:hover {
-  color: var(--cyan); background: #4fe3ff0a;
-  box-shadow: inset 0 0 0 1px #4fe3ff44;
+  color: var(--cyan); background: #F0A0200a;
+  box-shadow: inset 0 0 0 1px #F0A02044;
 }
 
 .jobs-detail {
@@ -3428,7 +3536,7 @@ body.settling .mentions { left: calc((100vw - min(520px, 44vw)) / 2); }
   flex: 1; min-height: 0; overflow: auto; padding: 14px 16px 18px;
 }
 .jobs-detail-body::-webkit-scrollbar { width: 6px; }
-.jobs-detail-body::-webkit-scrollbar-thumb { background: #4fe3ff22; border-radius: 3px; }
+.jobs-detail-body::-webkit-scrollbar-thumb { background: #F0A02022; border-radius: 3px; }
 
 .jobs-run-split {
   display: grid; grid-template-columns: minmax(130px, 168px) minmax(0, 1fr);
@@ -3475,7 +3583,7 @@ body.settling .mentions { left: calc((100vw - min(520px, 44vw)) / 2); }
 }
 .jobs-act-primary {
   margin: 0 0 10px;
-  background: #4fe3ff22 !important;
+  background: #F0A02022 !important;
   color: var(--cyan) !important;
 }
 .jobs-live-run {
@@ -3540,11 +3648,11 @@ body.settling .mentions { left: calc((100vw - min(520px, 44vw)) / 2); }
   font: 13px/1.45 var(--font); color: var(--ink);
   background: var(--field, var(--panel));
   border: 0; border-radius: 8px; padding: 9px 11px;
-  box-shadow: inset 0 0 0 1px #4fe3ff1a;
+  box-shadow: inset 0 0 0 1px #F0A0201a;
   outline: none; transition: box-shadow .14s;
 }
 .jobs-input:focus, .jobs-textarea:focus {
-  box-shadow: inset 0 0 0 1px #4fe3ff55;
+  box-shadow: inset 0 0 0 1px #F0A02055;
 }
 .jobs-textarea { resize: vertical; min-height: 140px; font-family: var(--font); }
 .jobs-input-num { width: 5.5rem; }
@@ -3560,16 +3668,16 @@ body.settling .mentions { left: calc((100vw - min(520px, 44vw)) / 2); }
   font: 11px var(--mono); letter-spacing: .06em; text-transform: uppercase;
   color: var(--dim); background: var(--raise);
   border: 0; border-radius: 999px; padding: 7px 14px; cursor: pointer;
-  box-shadow: inset 0 0 0 1px #4fe3ff22; transition: .14s;
+  box-shadow: inset 0 0 0 1px #F0A02022; transition: .14s;
 }
-.jobs-act:hover { color: var(--ice); box-shadow: inset 0 0 0 1px #4fe3ff55; }
+.jobs-act:hover { color: var(--ice); box-shadow: inset 0 0 0 1px #F0A02055; }
 .jobs-act:disabled { opacity: .5; cursor: wait; }
-.jobs-act-primary { color: var(--cyan); box-shadow: inset 0 0 0 1px #4fe3ff55; }
-.jobs-act-primary:hover { background: #4fe3ff12; color: var(--ice); }
-.jobs-act-stop { color: var(--rose); box-shadow: inset 0 0 0 1px #ff7a9044; }
-.jobs-act-stop:hover { background: #ff7a9014; }
-.jobs-act-risk { color: var(--rose); box-shadow: inset 0 0 0 1px #ff7a9033; }
-.jobs-act-risk:hover { box-shadow: inset 0 0 0 1px #ff7a9066; }
+.jobs-act-primary { color: var(--cyan); box-shadow: inset 0 0 0 1px #F0A02055; }
+.jobs-act-primary:hover { background: #F0A02012; color: var(--ice); }
+.jobs-act-stop { color: var(--rose); box-shadow: inset 0 0 0 1px #F8717144; }
+.jobs-act-stop:hover { background: #F8717114; }
+.jobs-act-risk { color: var(--rose); box-shadow: inset 0 0 0 1px #F8717133; }
+.jobs-act-risk:hover { box-shadow: inset 0 0 0 1px #F8717166; }
 
 .jobs-prompt { white-space: pre-wrap; color: var(--ink); font: 13px/1.5 var(--font); }
 .wf-editor { display: flex; flex-direction: column; gap: 8px; min-height: 320px; }
@@ -3684,7 +3792,7 @@ body.settling .mentions { left: calc((100vw - min(520px, 44vw)) / 2); }
 .wf-inspector .input-text { width: 100%; }
 .plan-card {
   margin: 10px 0; padding: 12px 14px; border-radius: 10px;
-  border: 1px solid #4fe3ff44; background: var(--raise);
+  border: 1px solid #F0A02044; background: var(--raise);
 }
 .plan-head { display: flex; gap: 8px; align-items: baseline; margin-bottom: 8px; }
 .plan-kind { font: 11px var(--font); color: var(--cyan); text-transform: uppercase; }
@@ -3693,10 +3801,19 @@ body.settling .mentions { left: calc((100vw - min(520px, 44vw)) / 2); }
 .plan-steps { margin: 0 0 10px 1.2em; padding: 0; color: var(--ink); font: 13px/1.45 var(--font); }
 .plan-acts { display: flex; flex-wrap: wrap; gap: 6px; }
 .plan-btn {
-  font: 12px var(--font); color: var(--cyan); background: #4fe3ff18;
+  font: 12px var(--font); color: var(--cyan); background: #F0A02018;
   border: 0; border-radius: 6px; padding: 5px 10px; cursor: pointer;
 }
 .plan-btn.muted { color: var(--dim); background: transparent; border: 1px solid var(--edge); }
+.plan-edit { margin: 0 0 10px; display: flex; flex-direction: column; gap: 8px; }
+.plan-edit-area {
+  width: 100%; min-height: 6.5em; resize: vertical; box-sizing: border-box;
+  font: 13px/1.45 var(--mono, var(--font)); color: var(--ink);
+  background: var(--field); border: 1px solid var(--edge); border-radius: 8px;
+  padding: 10px 12px;
+}
+.plan-edit-area:focus { outline: 1px solid var(--cyan); outline-offset: 1px; }
+.plan-edit-acts { display: flex; flex-wrap: wrap; gap: 6px; }
 .tasks-status {
   padding: 0 2px 8px; font: 10.5px var(--mono); color: var(--faint);
   letter-spacing: .06em;
@@ -3707,18 +3824,18 @@ body.settling .mentions { left: calc((100vw - min(520px, 44vw)) / 2); }
   display: flex; flex-direction: column; gap: 7px;
 }
 .tasks-body::-webkit-scrollbar { width: 6px; }
-.tasks-body::-webkit-scrollbar-thumb { background: #4fe3ff2a; border-radius: 3px; }
+.tasks-body::-webkit-scrollbar-thumb { background: #F0A0202a; border-radius: 3px; }
 .tasks-blank { margin: 34px 12px; text-align: center; }
 .tasks-blank p { margin: 0 0 6px; font: 11.5px var(--font); color: var(--dim); }
 .tasks-blank-hint { color: var(--faint); font-size: 11px; }
 
 .task { border-radius: 9px; padding: 8px 10px; background: var(--raise); transition: .14s; }
-.task.kosuyor { box-shadow: inset 2px 0 0 var(--cyan); background: #4fe3ff0c; }
+.task.kosuyor { box-shadow: inset 2px 0 0 var(--cyan); background: #F0A0200c; }
 .task.bitti { box-shadow: inset 2px 0 0 var(--mint); }
 .task.hata { box-shadow: inset 2px 0 0 var(--rose); }
 .task.yetim { box-shadow: inset 2px 0 0 var(--amber); opacity: .75; }
 .task.clickable { cursor: pointer; }
-.task.clickable:hover { background: #4fe3ff12; }
+.task.clickable:hover { background: #F0A02012; }
 .task-top { display: flex; align-items: center; gap: 7px; }
 .task-dot { flex: 0 0 auto; width: 6px; height: 6px; border-radius: 50%; background: var(--faint); }
 .task.kosuyor .task-dot {
@@ -3737,9 +3854,9 @@ body.settling .mentions { left: calc((100vw - min(520px, 44vw)) / 2); }
   text-transform: uppercase; padding: 2px 6px; border-radius: 8px;
   color: var(--faint); background: var(--raise);
 }
-.task-kind.helper { color: var(--violet); background: #b39cff14; }
-.task-kind.job { color: var(--cyan); background: #4fe3ff14; }
-.task-kind.proc { color: var(--mint); background: #5ce6a414; }
+.task-kind.helper { color: var(--violet); background: #C4B5FD14; }
+.task-kind.job { color: var(--cyan); background: #F0A02014; }
+.task-kind.proc { color: var(--mint); background: #86EFAC14; }
 .task-line { display: flex; align-items: baseline; gap: 9px; margin-top: 4px; }
 .task-state { font: 10px var(--mono); color: var(--dim); }
 .task.kosuyor .task-state { color: var(--cyan); }
@@ -3765,18 +3882,18 @@ body.settling .mentions { left: calc((100vw - min(520px, 44vw)) / 2); }
 .task-stop:disabled { color: var(--faint); cursor: default; }
 .task-resume {
   margin-left: 4px; flex: 0 0 auto; font: 10px var(--font); color: var(--cyan);
-  background: rgba(79, 227, 255, .1); border: 0; padding: 3px 9px; border-radius: 6px;
+  background: rgba(240, 160, 32, .1); border: 0; padding: 3px 9px; border-radius: 6px;
   cursor: pointer; transition: .14s;
 }
-.task-resume:hover { background: rgba(79, 227, 255, .18); }
+.task-resume:hover { background: rgba(240, 160, 32, .18); }
 .task-resume:disabled { color: var(--faint); background: transparent; cursor: default; }
 .orch-ch-resume-row { margin-top: 6px; }
 .orch-resume {
   font: 10px var(--font); color: var(--cyan);
-  background: rgba(79, 227, 255, .1); border: 0; padding: 3px 10px; border-radius: 6px;
+  background: rgba(240, 160, 32, .1); border: 0; padding: 3px 10px; border-radius: 6px;
   cursor: pointer; transition: .14s;
 }
-.orch-resume:hover { background: rgba(79, 227, 255, .18); }
+.orch-resume:hover { background: rgba(240, 160, 32, .18); }
 .orch-resume:disabled { color: var(--faint); background: transparent; cursor: default; }
 
 .task-out { margin-top: 8px; padding-top: 7px; box-shadow: inset 0 1px 0 var(--edge); }
@@ -3784,7 +3901,7 @@ body.settling .mentions { left: calc((100vw - min(520px, 44vw)) / 2); }
 .task-cmd { font: 10.5px var(--mono); color: var(--faint); margin-top: 4px; word-break: break-all; }
 .task-steps { margin-top: 6px; max-height: 320px; overflow: auto; }
 .task-steps::-webkit-scrollbar { width: 5px; }
-.task-steps::-webkit-scrollbar-thumb { background: #4fe3ff22; border-radius: 3px; }
+.task-steps::-webkit-scrollbar-thumb { background: #F0A02022; border-radius: 3px; }
 .task-step {
   display: flex; align-items: baseline; gap: 7px; padding: 2px 0;
   font: 10.5px var(--mono); color: var(--faint);
@@ -3797,7 +3914,7 @@ body.settling .mentions { left: calc((100vw - min(520px, 44vw)) / 2); }
 .task-step.say {
   display: block; font: 11px var(--font); color: var(--dim);
   white-space: pre-wrap; padding: 5px 0 5px 15px;
-  box-shadow: inset 2px 0 0 #b39cff33;
+  box-shadow: inset 2px 0 0 #C4B5FD33;
 }
 
 /* Üst bardaki koşan-iş rozeti: sayı küçük ama görünür. */
@@ -3813,10 +3930,10 @@ body.settling .mentions { left: calc((100vw - min(520px, 44vw)) / 2); }
 .task-note {
   display: flex; align-items: baseline; gap: 9px; width: 100%;
   padding: 7px 11px; border-radius: 8px; text-align: left;
-  background: #5ce6a410; box-shadow: inset 0 0 0 1px #5ce6a42c;
+  background: #86EFAC10; box-shadow: inset 0 0 0 1px #86EFAC2c;
   font: 12px var(--font); color: var(--dim); cursor: pointer; transition: .14s;
 }
-.task-note:hover { background: #5ce6a41c; color: var(--ice); }
+.task-note:hover { background: #86EFAC1c; color: var(--ice); }
 .task-note-mark { flex: 0 0 auto; color: var(--mint); }
 .task-note-name {
   flex: 1; min-width: 0; color: var(--ice);
@@ -3894,12 +4011,22 @@ body.settling .mentions { left: calc((100vw - min(520px, 44vw)) / 2); }
 
 /* Mesaj balonu aksiyonları (düzenle / yeniden üret) */
 .line.user, .line.agent { position: relative; }
+/* Aynı turun devam parçası (aralarında kullanıcı mesajı yok): "neo"
+   başlığı tekrar etmez, aralık daralır — sohbet merdiven değil tek akış
+   gibi okunur ("her şeyi satır satır ayırıyor" şikâyeti). */
+.line.agent.cont { margin-top: -12px; }
+.line.agent.cont::before { content: none; }
+/* Mesaj eylemleri (Düzenle · Yeniden gönder · Yeniden üret): yer HEP
+   ayrık, görünürlük opaklıkla. display:none→flex yolu satırı hover'da
+   uzatıyordu; imleç dışarıda kalınca düğme kaybolup satır kısalıyor ve
+   titreme döngüsü doğuyordu ("pır pır ediyor" — canlı şikâyet). */
 .msg-acts {
-  display: none; gap: 4px; margin-top: 4px;
+  display: flex; gap: 4px; margin-top: 3px; height: 20px;
+  opacity: 0; pointer-events: none; transition: opacity .18s;
 }
 .line.user:hover .msg-acts, .line.agent:hover .msg-acts,
 .line.user:focus-within .msg-acts, .line.agent:focus-within .msg-acts {
-  display: flex;
+  opacity: 1; pointer-events: auto;
 }
 .msg-act {
   font: 11px var(--font); color: var(--faint); background: transparent;
@@ -3917,3 +4044,662 @@ body.settling .mentions { left: calc((100vw - min(520px, 44vw)) / 2); }
 /* Sığdırma açıkken yatay kaydırma gereksiz — kaydırma çubuğu görünmesin. */
 .wf-canvas.wf-fit { overflow: hidden; }
 .wf-fit-btn { margin-left: auto; }
+
+
+/* ============================================================
+   Form denetimleri — tarayici varsayilani hicbir temada gorunmez.
+   Element duzeyinde, sinif kurallarinin ALTINDA kalir.
+   ============================================================ */
+select {
+  appearance: none; -webkit-appearance: none;
+  background-color: var(--field); color: var(--ink);
+  border: 1px solid var(--edge); border-radius: 8px;
+  padding: 6px 30px 6px 10px; font: inherit; cursor: pointer;
+  background-image: linear-gradient(45deg, transparent 50%, currentColor 50%),
+                    linear-gradient(135deg, currentColor 50%, transparent 50%);
+  background-position: calc(100% - 15px) 55%, calc(100% - 10px) 55%;
+  background-size: 5px 5px, 5px 5px; background-repeat: no-repeat;
+}
+select:hover { border-color: var(--dim); }
+select:focus-visible { outline: 2px solid var(--cyan); outline-offset: 1px; }
+
+/* .input-check HARİÇ: o, ayar sayfasının kayar ANAHTARI (settings.css) —
+   genel kural onu 16px kutuya çevirip kırıyordu (canlıda görüldü). */
+input[type="checkbox"]:not(.input-check), input[type="radio"] {
+  appearance: none; -webkit-appearance: none;
+  width: 16px; height: 16px; margin: 0 6px 0 0; padding: 0; flex: none;
+  background: var(--field); border: 1px solid var(--edge); border-radius: 4px;
+  display: inline-grid; place-content: center; cursor: pointer;
+  vertical-align: middle;
+}
+input[type="radio"] { border-radius: 50%; }
+input[type="checkbox"]:not(.input-check)::before, input[type="radio"]::before {
+  content: ""; width: 8px; height: 8px; transform: scale(0);
+  transition: transform .1s; background: var(--bg); border-radius: 1.5px;
+}
+input[type="radio"]::before { border-radius: 50%; }
+input[type="checkbox"]:not(.input-check):checked, input[type="radio"]:checked {
+  background: var(--cyan); border-color: var(--cyan);
+}
+input[type="checkbox"]:not(.input-check):checked::before, input[type="radio"]:checked::before { transform: scale(1); }
+input[type="checkbox"]:not(.input-check):focus-visible, input[type="radio"]:focus-visible {
+  outline: 2px solid var(--cyan); outline-offset: 2px;
+}
+
+input[type="range"] {
+  appearance: none; -webkit-appearance: none;
+  background: transparent; height: 18px; padding: 0; border: 0;
+}
+input[type="range"]::-webkit-slider-runnable-track {
+  height: 4px; background: var(--raise); border-radius: 999px;
+  border: 1px solid var(--edge);
+}
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none; width: 14px; height: 14px; margin-top: -6px;
+  background: var(--cyan); border-radius: 50%; border: 0; cursor: pointer;
+}
+input[type="range"]:focus-visible { outline: 2px solid var(--cyan); outline-offset: 2px; }
+
+input:not([type]), input[type="text"], input[type="search"], input[type="password"],
+input[type="number"], input[type="url"], input[type="email"], textarea {
+  accent-color: var(--cyan); caret-color: var(--cyan);
+}
+progress { accent-color: var(--cyan); }
+
+/* Marka isareti (satir-ici SVG) */
+.brand-mark { width: 22px; height: 22px; display: inline-block; vertical-align: -5px; }
+
+
+/* ============================================================
+   Kabuk düzeni: sol rail | orta sohbet | sağ beyin paneli.
+   Cursor planı B: konuşmalar hep erişilebilir, beyin sağda marka
+   katmanı; ikisi de daraltılabilir. Dar pencerede eski düzen geçerli
+   (rail overlay, beyin arkada tam ekran).
+   ============================================================ */
+@media (min-width: 861px) {
+  body.hist-open { --rail-w: var(--left-w); }
+  /* Rail kipi: overlay değil sütun — camsızlık, köşesizlik, alçak z. */
+  body.hist-open .hist-panel {
+    top: 48px; bottom: 0; border-radius: 0; z-index: 4;
+    animation: none; backdrop-filter: none;
+    background: var(--panel);
+    box-shadow: inset -1px 0 0 var(--edge);
+  }
+}
+
+/* Beyin paneli ancak gerçekten geniş ekranda yer kaplar; 861-1020
+   bandında kendi çekilir, rail sütunu kalır. */
+@media (min-width: 1021px) {
+  body.mind-on:not(.mind-off) { --mind-w: var(--mind-w-user, min(340px, 26vw)); }
+}
+
+/* Açık rail'in HUD düğmesi yandığını söylesin. */
+.hud .icon.on { color: var(--cyan); }
+
+/* ---------- beyin paneli ---------- */
+.mind {
+  position: fixed; top: 48px; right: 0; bottom: 0; width: var(--mind-w);
+  z-index: 3; display: flex; flex-direction: column;
+  border-left: 1px solid var(--edge);
+  background: linear-gradient(180deg, rgba(var(--scrim), .35), rgba(var(--scrim), 0) 24%);
+  pointer-events: none;   /* tuval alttaki tıklamaları alsın */
+}
+/* Sol kenardan sürüklenerek genişler — sol rail'in tutamağının aynası. */
+.mind-grip {
+  position: absolute; left: -3px; top: 0; bottom: 0; width: 8px;
+  cursor: ew-resize; z-index: 4; touch-action: none; pointer-events: auto;
+}
+.mind-grip::before {
+  content: ""; position: absolute; left: 3px; top: 0; bottom: 0; width: 2px;
+  background: var(--cyan); opacity: 0; transition: opacity .18s;
+}
+.mind-grip:hover::before, body.mind-resize .mind-grip::before { opacity: .5; }
+body.mind-resize { cursor: ew-resize; user-select: none; }
+
+/* Alt köşe: legend katlama çipi. Legend kocaman yer kaplıyordu; artık
+   istenince açılıyor, yer organlara/beyne kalıyor. */
+.mind-foot {
+  pointer-events: auto; margin-top: auto; padding: 8px 12px 10px;
+  display: flex; justify-content: flex-start;
+}
+.mind-legend-toggle {
+  padding: 3px 10px; border: 0; border-radius: 999px; cursor: pointer;
+  font: 10px var(--mono); letter-spacing: .12em; text-transform: uppercase;
+  color: var(--faint); background: var(--raise); transition: .16s;
+}
+.mind-legend-toggle:hover { color: var(--ice); }
+.mind-legend-toggle.on { color: var(--cyan); background: #F0A02016; box-shadow: inset 0 0 0 1px #F0A02033; }
+.mind-legend-toggle:focus-visible { outline: 2px solid var(--cyan); outline-offset: 1px; }
+
+.mind-head {
+  pointer-events: auto;
+  display: flex; align-items: center; gap: 8px; padding: 10px 12px;
+}
+.mind-tag {
+  flex: 0 0 auto; font: 600 10px var(--mono); letter-spacing: .22em;
+  text-transform: uppercase; color: var(--faint);
+}
+.mind-search {
+  flex: 1; min-width: 0; padding: 5px 11px; border: 0; border-radius: 999px;
+  background: var(--field); color: var(--text); font: 11.5px var(--font);
+  outline: none; box-shadow: inset 0 0 0 1px #F0A02014;
+}
+.mind-search:focus { box-shadow: inset 0 0 0 1px #F0A02044; }
+.mind-search::placeholder { color: var(--faint); }
+.mind-head .reveal {
+  position: static; width: 26px; height: 26px; font-size: 13px;
+  background: none; box-shadow: none; flex: 0 0 auto;
+}
+.mind-hide {
+  flex: 0 0 auto; width: 26px; height: 26px; display: grid; place-items: center;
+  border-radius: 7px; color: var(--faint); font-size: 15px; line-height: 1;
+  transition: .16s;
+}
+.mind-hide:hover { color: var(--ice); background: var(--raise); }
+.mind-hide:focus-visible, .mind-open:focus-visible {
+  outline: 2px solid var(--cyan); outline-offset: 1px;
+}
+/* Beyin geri-açma artık bağlam araçlarının bir üyesi: ctx hapının
+   altında ezilen ayrı yüzer düğme kalktı (canlıda tıklanamıyordu). */
+body:not(.mind-off) .mind-open { display: none; }
+body.mind-off .mind, body.mind-off #scene { display: none; }
+body.focus .mind-open { opacity: 0; pointer-events: none; }
+@media (max-width: 1020px) { .mind, .mind-open { display: none; } }
+
+
+/* ============================================================
+   Tek sol kenar çubuğu: konuşmalar + görevler + uygulamalar.
+   Bölümler katlanır; detay orta alanda açılır.
+   ============================================================ */
+.side-sec {
+  flex: 0 0 auto; display: flex; flex-direction: column; min-height: 0;
+  border-top: 1px solid var(--edge);
+}
+.side-sec-head {
+  display: flex; align-items: center; gap: 7px; width: 100%;
+  padding: 9px 14px; background: none; border: 0; cursor: pointer;
+  font: 600 9.5px var(--mono); letter-spacing: .18em; text-transform: uppercase;
+  color: var(--faint); text-align: left; transition: color .15s;
+}
+.side-sec-head:hover { color: var(--ice); }
+.side-sec-head:focus-visible { outline: 2px solid var(--cyan); outline-offset: -2px; }
+.side-fold { font-style: normal; color: var(--cyan); font-size: 9px; width: 10px; flex: 0 0 auto; }
+.side-count {
+  margin-left: auto; font: 400 9px var(--mono); color: var(--faint);
+  background: var(--raise); padding: 1px 7px; border-radius: 9px;
+}
+.side-list { overflow-y: auto; max-height: 24vh; padding: 0 6px 8px; }
+.side-row {
+  display: flex; align-items: center; gap: 8px; width: 100%;
+  padding: 6px 8px; border: 0; background: none; border-radius: 6px;
+  cursor: pointer; text-align: left; color: var(--dim);
+  transition: background .14s, color .14s;
+}
+.side-row:hover { background: #F0A0200e; color: var(--ink); }
+.side-row:focus-visible { outline: 2px solid var(--cyan); outline-offset: -2px; }
+.side-row-dot { flex: 0 0 auto; width: 6px; height: 6px; border-radius: 50%; background: var(--faint); }
+.side-row-dot.run { background: var(--amber); box-shadow: 0 0 8px #F0A02088; }
+.side-row-dot.on { background: var(--mint); }
+.side-row-dot.bad { background: var(--rose); }
+.side-row-dot.auto { background: var(--violet); }
+.side-row-name {
+  flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis;
+  white-space: nowrap; font: 12px var(--font);
+}
+.side-row-meta { flex: 0 0 auto; font: 9px var(--mono); color: var(--faint); }
+.side-blank { padding: 4px 14px 8px; font: 11px var(--font); color: var(--faint); }
+/* Bölümler konuşmaların HEMEN altında dursun (Claude Code gibi üstten
+   yığılı) — liste kısayken bölümler dibe yapışıp arada boşluk kalıyordu.
+   Liste uzayınca yine kendi içinde kayar; bölümler yerini korur. */
+.hist-panel .hist-body { flex: 0 1 auto; min-height: 64px; }
+
+/* ---- rail cilası: başlık, düğme, satırlar ---- */
+.hist-head { padding: 12px 14px 6px; }
+.hist-tag {
+  font: 600 10px var(--mono); letter-spacing: .2em; text-transform: uppercase;
+  color: var(--faint);
+}
+.hist-new {
+  margin: 4px 12px 10px; padding: 8px 12px; border-radius: 8px;
+  background: #F0A02012; box-shadow: inset 0 0 0 1px #F0A0202e;
+  color: var(--ink); font: 600 12.5px var(--font);
+}
+.hist-new:hover { background: #F0A02020; box-shadow: inset 0 0 0 1px #F0A02052; }
+.hist-search { padding: 7px 11px; font: 12px var(--font); }
+.hist-row { padding: 6px 10px; }
+.hist-title { font: 12.5px/1.35 var(--font); }
+.hist-meta { font: 9.5px var(--mono); font-variant-numeric: tabular-nums; }
+.hist-dot { width: 6px; height: 6px; box-shadow: inset 0 0 0 1.2px var(--faint); }
+.hist-item.current .hist-row { background: #F0A0200e; box-shadow: inset 2px 0 0 var(--cyan); }
+
+/* ---- görevler & uygulamalar: geniş ekranda ORTA yüzey ----
+   Sol overlay'ler rail'in ve birbirinin üstüne biniyordu ("hepsi birbiri
+   üstüne biniyor"). Artık ayarlar gibi rail'in sağında tam alan. */
+@media (min-width: 861px) {
+  .jobs-panel, .apps-panel {
+    top: 48px; left: var(--rail-w); right: 0; bottom: 0; width: auto;
+    border-radius: 0; animation: none; backdrop-filter: none;
+    background: var(--bg);
+    box-shadow: inset 1px 0 0 var(--edge), inset 0 1px 0 var(--edge);
+  }
+  .jobs-panel { z-index: 24; }
+  .apps-panel { z-index: 25; }
+  .jobs-panel .left-grip, .apps-panel .left-grip { display: none; }
+}
+
+
+/* ============================================================
+   Kenar çubuğu cilası 2 — Claude Code dili: sakin sans, az mürekkep,
+   satırda yalnız ad; saat/tur ancak üzerine gelince. (Mono-versal
+   başlıklar ve her satırda meta "kötü olmuş" geri bildirimi.)
+   ============================================================ */
+.hist-tag { font: 600 11.5px var(--font); letter-spacing: .01em; text-transform: none; color: var(--dim); }
+.hist-new {
+  margin: 2px 10px 8px; padding: 6px 10px; border-radius: 8px;
+  background: none; box-shadow: none; color: var(--dim); font: 13px var(--font);
+}
+.hist-new:hover { background: var(--raise); box-shadow: none; color: var(--ink); }
+.hist-search {
+  margin: 0 10px 8px; padding: 6px 10px; background: var(--raise);
+  box-shadow: none; font: 12.5px var(--font);
+}
+.hist-search:focus { box-shadow: inset 0 0 0 1px #F0A02040; }
+.hist-status-filters { gap: 2px; margin: 0 0 2px; }
+#hist-panel .hist-status {
+  font: 11.5px var(--font); letter-spacing: 0; text-transform: none; padding: 2px 9px;
+}
+.hist-deep { font: 11px var(--font); letter-spacing: 0; text-transform: none; padding: 3px 9px; }
+.hist-tools { margin: 0 10px 6px; }
+.hist-group { font: 10px var(--font); letter-spacing: .04em; text-transform: none; }
+.hist-folder-name { font: 11.5px var(--font); letter-spacing: 0; }
+.hist-row { padding: 7px 10px; border-radius: 8px; }
+.hist-title { font: 13px/1.4 var(--font); }
+.hist-dot { width: 5px; height: 5px; box-shadow: inset 0 0 0 1.1px var(--faint); opacity: .55; }
+.hist-dot.on, .hist-dot.run, .hist-item.current .hist-dot, .hist-item.running .hist-dot { opacity: 1; }
+/* Meta (saat · tur) satır gürültüsüydü: ancak üzerine gelince belirir. */
+.hist-meta { opacity: 0; transition: opacity .15s; }
+.hist-row:hover .hist-meta, .hist-item.current .hist-meta { opacity: 1; }
+/* Aktif konuşma: yumuşak dolgu, kalın ad — kenardan çizgi yok. */
+.hist-item.current .hist-row { background: var(--raise); box-shadow: none; }
+.hist-item.current .hist-title { color: var(--ink); font-weight: 600; }
+/* Bölüm başlıkları da cümle düzeninde. */
+.side-sec-head {
+  font: 600 11.5px var(--font); letter-spacing: .01em; text-transform: none;
+  color: var(--dim); padding: 8px 14px;
+}
+.side-fold { font-size: 8px; color: var(--faint); }
+.side-count { font: 400 10px var(--font); }
+.side-row { padding: 6px 10px; border-radius: 8px; }
+.side-row-name { font: 13px var(--font); }
+.side-row-dot { width: 5px; height: 5px; }
+
+
+/* ---- solo detay kipleri: liste solda, orta yalnız seçilenin detayı ---- */
+.jobs-panel.jobs-solo .jobs-list,
+.jobs-panel.jobs-solo .jobs-toolbar { display: none; }
+.jobs-panel.jobs-solo .jobs-layout { grid-template-columns: 1fr; }
+.jobs-panel.jobs-solo .jobs-detail { max-width: 900px; }
+
+.apps-panel.apps-solo .apps-tools,
+.apps-panel.apps-solo .apps-running,
+.apps-panel.apps-solo .apps-arts,
+.apps-panel.apps-solo .apps-sorun { display: none; }
+.apps-panel.apps-solo .apps-catalog { max-width: 760px; }
+.apps-solo-back {
+  display: block; margin: 4px 8px 12px; padding: 4px 10px;
+  background: none; border: 0; border-radius: 7px; cursor: pointer;
+  font: 12px var(--font); color: var(--faint); text-align: left;
+  transition: .15s;
+}
+.apps-solo-back:hover { color: var(--ink); background: var(--raise); }
+
+
+/* ============================================================
+   Sağ taraf gerçek SÜTUNLAR (geniş ekran): görüntüleyici beynin
+   YANINA oturur, üstüne binmez — rail | sohbet | görüntüleyici | beyin.
+   Her sütun kendi tutamağıyla daraltılır, kendi X'iyle kapanır; sohbet
+   kalan boşluğa yeniden ortalanır. Dar ekranda eski overlay davranışı.
+   ============================================================ */
+@media (min-width: 1101px) {
+  body.viewing, body.settling {
+    --gut: calc(var(--right-w) + (100vw - var(--rail-w) - var(--right-w) - var(--aside)) / 2);
+    --right-w: calc(var(--mind-w) + var(--viewer-w) + 10px);
+    --aside: min(820px, calc(100vw - var(--rail-w) - var(--right-w) - 76px));
+  }
+  body.viewing .viewer, body.settling .viewer {
+    top: 48px; bottom: 0; right: var(--mind-w);
+    border-radius: 0; z-index: 21;
+    background: var(--panel);
+    backdrop-filter: none;
+    box-shadow: inset 1px 0 0 var(--edge), inset -1px 0 0 var(--edge), inset 0 1px 0 var(--edge);
+  }
+}
+
+
+/* Orta yüzeyler (görevler, uygulamalar) İÇERİĞİN yerini alır, sağ
+   sütunları KAPATMAZ: beyin — ve açıksa görüntüleyici — yerinde kalır
+   ("iç content'in üstüne geldi, komple kapattı" şikâyeti). Dar bantta
+   --mind-w zaten 0: yüzey yine tam genişlik. */
+@media (min-width: 861px) {
+  .jobs-panel, .apps-panel { right: var(--mind-w); }
+  body.viewing .jobs-panel, body.viewing .apps-panel {
+    right: calc(var(--mind-w) + var(--viewer-w) + 10px);
+  }
+}
+
+
+/* ============================================================
+   Ayarlar: Claude Code masaüstü dili — ortalanmış diyalog, arkası
+   karartılmış. "Önce ayarı yap, sonra dön": sistemle karışmaz.
+   ============================================================ */
+body.settling::after {
+  content: ""; position: fixed; inset: 0; z-index: 39;
+  background: var(--overlay);
+}
+.panel {
+  top: 50%; left: 50%; right: auto; bottom: auto;
+  transform: translate(-50%, -50%);
+  width: min(1020px, calc(100vw - 72px));
+  height: min(760px, calc(100vh - 72px));
+  border-radius: 14px;
+  background: var(--panel);
+  box-shadow: 0 0 0 1px var(--edge), 0 32px 90px rgba(0, 0, 0, .45);
+  z-index: 40;
+}
+@keyframes panel-in { from { opacity: 0; transform: translate(-50%, calc(-50% + 10px)); } }
+/* Dar ekranda diyalog tam yüzeye yayılır. */
+@media (max-width: 860px), (max-height: 560px) {
+  .panel {
+    top: 0; left: 0; transform: none;
+    width: 100vw; height: 100vh; border-radius: 0;
+  }
+  @keyframes panel-in { from { opacity: 0; } }
+}
+
+/* Nav: arama üstte, gruplar sakin, aktif sekme yumuşak dolgu. */
+.tabs { flex: 0 0 224px; padding: 12px 10px 18px; }
+.tabs-search {
+  width: calc(100% - 4px); margin: 2px 2px 10px; padding: 7px 11px;
+  border: 0; border-radius: 8px; background: var(--field);
+  color: var(--text); font: 12.5px var(--font); outline: none;
+  box-shadow: inset 0 0 0 1px var(--edge);
+}
+.tabs-search:focus { box-shadow: inset 0 0 0 1px #F0A02044; }
+.tabs-search::placeholder { color: var(--faint); }
+.tabs button { padding: 7px 12px; border-radius: 8px; font: 13px var(--font); }
+.tabs button.on { background: var(--raise); box-shadow: none; color: var(--ink); font-weight: 600; }
+.tab-group { font: 600 9.5px var(--mono); }
+
+
+/* ============================================================
+   Sağ dock v1: pencereler üst üste DEĞİL — geniş ekranda yan yana
+   sütunlar, orta genişlikte aynı sütunda iki satır; görüntüleyici
+   büyütülüp yerine döndürülebilir. (Claude Code'un sağ paneli.)
+   ============================================================ */
+.viewer-max {
+  background: none; border: 0; cursor: pointer; font-size: 13px;
+  line-height: 1; color: var(--faint); transition: .2s; padding: 2px 4px;
+}
+.viewer-max:hover { color: var(--ice); }
+.viewer-max:focus-visible { outline: 2px solid var(--cyan); outline-offset: 1px; }
+
+/* Orta genişlik: tek sağ sütun, iki satır. Beyin alta küçülür. */
+@media (min-width: 1101px) and (max-width: 1399px) {
+  body.viewing:not(.viewer-max) { --right-w: calc(var(--mind-w) + 10px); }
+  body.viewing:not(.viewer-max) .viewer {
+    right: 0; width: var(--mind-w);
+    top: 48px; bottom: auto; height: calc((100vh - 48px) * .52);
+    box-shadow: inset 1px 0 0 var(--edge), inset 0 -1px 0 var(--edge);
+  }
+  body.viewing:not(.viewer-max) .viewer .viewer-grip { display: none; }
+  body.viewing:not(.viewer-max) .mind { top: calc(48px + (100vh - 48px) * .52); }
+}
+
+/* Büyüt: görüntüleyici sağ bölgenin tamamını alır; beyin geçici çekilir. */
+@media (min-width: 1101px) {
+  body.viewer-max.viewing .viewer {
+    top: 48px; bottom: 0; height: auto;
+    right: 0; width: calc(var(--mind-w) + var(--viewer-w));
+    z-index: 26;
+  }
+  body.viewer-max.viewing .mind,
+  body.viewer-max.viewing .mind-open { display: none; }
+}
+body.viewer-max .viewer-max { color: var(--cyan); }
+
+
+/* Kapsül de İÇERİK alanında yaşar: her şeyin üstünde yüzen kart değil —
+   rail'in sağı, beynin (ve açıksa görüntüleyicinin) solu. Dar ekranda
+   eski tam-yüzey davranışı kalır. */
+@media (min-width: 861px) {
+  .capsule {
+    top: 48px; left: var(--rail-w); right: var(--mind-w); bottom: 0;
+    border: 0; border-radius: 0; z-index: 24;
+    box-shadow: inset 1px 0 0 var(--edge), inset 0 1px 0 var(--edge);
+  }
+  body.viewing .capsule { right: calc(var(--mind-w) + var(--viewer-w) + 10px); }
+}
+/* Dışarıda aç: ikon değil söz — web uygulamasında en çok aranan eylem. */
+#capsule-external { font: 12px var(--font); }
+
+
+/* Uzun kullanıcı mesajı: katlı gelir, istenince açılır. */
+.line.user .msg-clip {
+  max-height: 216px; overflow: hidden; white-space: pre-wrap;
+  mask-image: linear-gradient(180deg, #000 72%, transparent);
+}
+.line.user.open .msg-clip { max-height: none; mask-image: none; }
+.msg-more {
+  display: inline-block; margin-top: 6px; padding: 3px 10px;
+  background: var(--raise); border: 0; border-radius: 999px; cursor: pointer;
+  font: 11.5px var(--font); color: var(--dim); transition: .15s;
+}
+.msg-more:hover { color: var(--ink); background: #F0A02018; }
+.msg-more:focus-visible { outline: 2px solid var(--cyan); outline-offset: 1px; }
+
+/* Durdur artık kompozerde: koşarken gönder ■'a döner. HUD'daki eski
+   durdur kalktı ("durdurma sohbette değil yukarıda, saçma"). */
+#send.stop { background: var(--rose); color: #fff; }
+#send.stop:hover { background: #E85D5D; }
+.hud #stop { display: none; }
+
+
+/* Skill kartı: kod duvarından önce kimlik (Claude Code'un skill kartı). */
+.skill-card { padding: 2px 0 10px; }
+.skill-card-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.skill-card-name { font: 600 13px var(--mono); color: var(--ink); }
+.skill-card-path { font: 10.5px var(--mono); color: var(--faint); word-break: break-all; }
+.skill-card-desc {
+  margin: 8px 0 0; font-size: 12.5px; line-height: 1.6; color: var(--dim);
+  white-space: pre-wrap; max-width: 70ch;
+}
+.skill-card-desc.empty { color: var(--faint); font-style: italic; }
+
+
+/* ---------- orkestra sağ dock'ta ----------
+   Alt ajan güvertesi başka köşede yüzen kart değil: beyin sütununun
+   İKİNCİ SATIRI — açılınca beyin yukarı büzülür, kapanınca yerini geri
+   verir. Dar ekranda ve beyin kapalıyken eski yüzen hal geçerli. */
+@media (min-width: 1101px) {
+  body.orch-open.mind-on:not(.mind-off) .orch-deck {
+    left: auto; right: 0; top: auto; bottom: 0;
+    width: var(--mind-w); max-height: none;
+    height: calc((100vh - 48px) * .44);
+    border-radius: 0; backdrop-filter: none;
+    background: var(--panel); animation: none; z-index: 4;
+    box-shadow: inset 1px 0 0 var(--edge), inset 0 1px 0 var(--edge);
+  }
+  body.orch-open.mind-on:not(.mind-off) .mind {
+    bottom: calc((100vh - 48px) * .44);
+  }
+}
+/* 1101-1399 bandında görüntüleyici zaten beynin altını alıyor: üçü üst
+   üste binmesin — orada orkestra eski yüzen kartında kalır. ≥1400'de
+   görüntüleyici yanda, orkestra beynin altında — üçü birlikte yaşar. */
+@media (min-width: 1101px) and (max-width: 1399px) {
+  body.viewing.orch-open.mind-on:not(.mind-off) .orch-deck {
+    left: 18px; right: auto; top: auto; bottom: 96px;
+    width: min(340px, 40vw); max-height: 56vh; height: auto;
+    border-radius: 10px; background: var(--panel-glass);
+    box-shadow: inset 0 0 0 1px var(--edge), 0 14px 40px -12px rgba(0, 0, 0, .45);
+  }
+  body.viewing.orch-open.mind-on:not(.mind-off) .mind { bottom: 0; }
+}
+
+
+/* ============================================================
+   Kabuk 3. dalga: sade başlık çubuğu + bağlam araçları + kenar
+   çubuğu dibi (Claude Code yerleşimi).
+   ============================================================ */
+/* Bağlam araçları: orta içeriğin sağ üstünde küçük bir hap. */
+body { --right-w: var(--mind-w); }
+.ctx-tools {
+  position: fixed; top: 56px; right: calc(var(--right-w) + 16px); z-index: 6;
+  display: flex; gap: 2px; align-items: center;
+  padding: 3px; border-radius: 10px;
+  background: var(--panel-glass); backdrop-filter: blur(10px);
+  box-shadow: inset 0 0 0 1px var(--edge);
+}
+.more-pop {
+  position: absolute; top: calc(100% + 6px); right: 0; min-width: 200px;
+  display: flex; flex-direction: column; gap: 1px;
+}
+.more-pop .icon {
+  width: 100%; height: auto; display: flex; align-items: center; gap: 10px;
+  padding: 8px 10px; border-radius: 7px; justify-content: flex-start;
+}
+/* Menü satırının etiketi ipucundan gelir — dil çevirisi de bedava. */
+.more-pop .icon::after { content: attr(title); font: 12.5px var(--font); color: var(--dim); }
+.more-pop .icon:hover::after { color: var(--ink); }
+
+/* Kenar çubuğu dibi: yetki · tema · ayarlar + canlı sayaç. */
+.side-foot {
+  position: sticky; bottom: 0; margin-top: auto;
+  display: flex; align-items: center; gap: 2px;
+  padding: 8px 10px; background: var(--panel);
+  box-shadow: inset 0 1px 0 var(--edge);
+}
+.side-foot .meta { margin-left: auto; }
+
+/* Kenar çubuğu TEK kaydırma (iç içe çubuk yok) + sessiz bölüm etiketi. */
+.side-search { display: flex; align-items: center; gap: 4px; margin: 0 10px 6px; }
+.side-search .hist-search { flex: 1; margin: 0; }
+.side-funnel {
+  flex: 0 0 auto; width: 26px; height: 26px; display: grid; place-items: center;
+  border-radius: 7px; color: var(--faint); transition: .15s;
+}
+.side-funnel svg { width: 14px; height: 14px; stroke: currentColor; stroke-width: 1.4; }
+.side-funnel:hover { color: var(--ink); background: var(--raise); }
+.side-funnel.on { color: var(--cyan); background: #F0A02014; }
+.side-label {
+  padding: 8px 14px 4px; font: 600 11px var(--font); color: var(--faint);
+}
+/* Süzgeç şeridi huninin arkasında: varsayılan sade liste. */
+#hist-panel:not(.filters-on) .hist-status-filters,
+#hist-panel:not(.filters-on) .hist-tools { display: none; }
+
+@media (min-width: 861px) {
+  body.hist-open .hist-panel { overflow-y: auto; overflow-x: hidden; }
+  body.hist-open .hist-body { flex: 0 0 auto; min-height: 0; overflow: visible; }
+  body.hist-open .side-list { max-height: none; overflow: visible; }
+}
+
+
+/* ---------- iş listesi aynası (sağ üst kart) ---------- */
+.plan-dock {
+  position: fixed; top: 100px; right: calc(var(--right-w) + 16px);
+  width: 268px; max-height: 44vh; z-index: 5;
+  display: flex; flex-direction: column; overflow: hidden;
+  background: var(--panel-glass); backdrop-filter: blur(10px);
+  border-radius: 10px; box-shadow: inset 0 0 0 1px var(--edge);
+}
+.plan-dock-head {
+  text-align: left; padding: 8px 12px; cursor: pointer;
+  font: 600 11px var(--font); color: var(--dim); transition: color .15s;
+}
+.plan-dock-head:hover { color: var(--ink); }
+.plan-dock-body { overflow-y: auto; padding: 0 8px 8px; }
+.plan-step {
+  display: flex; align-items: baseline; gap: 8px;
+  padding: 4px 6px; border-radius: 6px; font-size: 12px; color: var(--dim);
+}
+.plan-step i { flex: 0 0 12px; font-style: normal; color: var(--faint); }
+.plan-step span {
+  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.plan-step.done { color: var(--faint); }
+.plan-step.done span { text-decoration: line-through; }
+.plan-step.done i { color: var(--mint); }
+.plan-step.dropped { color: var(--faint); }
+.plan-step.now { color: var(--ink); background: #F0A0200c; }
+.plan-step.now i { color: var(--amber); animation: throb 1.4s ease-in-out infinite; }
+.plan-step.more { color: var(--faint); font-size: 11px; }
+@media (max-width: 1100px) { .plan-dock { display: none; } }
+
+
+/* Eklenen görüntü TEK çip: küçük resim + ad + tek çarpı. */
+.drops .chip.img { display: inline-flex; align-items: center; gap: 8px; padding: 4px 8px; }
+.drops .chip.img img {
+  width: 44px; height: 32px; object-fit: cover; border-radius: 5px;
+  box-shadow: 0 0 0 1px var(--edge);
+}
+
+
+/* ---------- sidebar v4: Claude Code dili ---------- */
+.side-nav { display: flex; flex-direction: column; padding: 2px 8px 6px; }
+.side-nav-item {
+  display: flex; align-items: center; gap: 10px; width: 100%;
+  padding: 6px 8px; border: 0; background: none; border-radius: 7px;
+  cursor: pointer; color: var(--dim); font: 13px var(--font); text-align: left;
+  transition: background .14s, color .14s;
+}
+.side-nav-item:hover { background: var(--raise); color: var(--ink); }
+.side-nav-item svg {
+  width: 15px; height: 15px; flex: 0 0 auto;
+  stroke: currentColor; stroke-width: 1.3; opacity: .75;
+}
+.side-nav-item:focus-visible { outline: 2px solid var(--cyan); outline-offset: -2px; }
+
+.hist-more {
+  display: block; width: calc(100% - 20px); margin: 4px 10px 10px;
+  padding: 6px 10px; border: 0; background: none; border-radius: 7px;
+  cursor: pointer; text-align: left; font: 12.5px var(--font); color: var(--faint);
+}
+.hist-more:hover { background: var(--raise); color: var(--ink); }
+
+/* Süzgeçler artık huninin POPUP'ı: liste itilmiyor (çipler hist-tools
+   şeridinin içinde yaşıyor; kutu bir bütün olarak yüzer). */
+#hist-panel.filters-on .hist-tools {
+  display: flex; flex-direction: column; gap: 8px;
+  position: absolute; z-index: 6; top: 112px; left: 10px; right: 10px;
+  background: var(--panel); border-radius: 10px; padding: 10px; margin: 0;
+  box-shadow: 0 0 0 1px var(--edge), 0 14px 40px rgba(0, 0, 0, .25);
+}
+
+/* Sakin tipografi: satırlar yumuşak, meta soluk, klasörler sessiz. */
+.hist-title { color: var(--dim); font-weight: 400; }
+.hist-row:hover .hist-title, .hist-item.current .hist-title { color: var(--ink); }
+.hist-folder-name { color: var(--faint); font-style: normal; }
+.hist-fold { color: var(--faint); }
+.side-label { color: var(--faint); font-weight: 500; }
+
+/* --- görüntüleyici sekmeleri -------------------------------------------
+   İkinci içerik açılınca şerit doğar; tek içerikte hiç yer kaplamaz. */
+.viewer-tabs {
+  display: flex; gap: 4px; padding: 4px 8px 0;
+  overflow-x: auto; flex: none; scrollbar-width: thin;
+}
+.viewer-tabs[hidden] { display: none; }
+.v-tab {
+  display: inline-flex; align-items: center; gap: 6px;
+  max-width: 180px; padding: 3px 8px;
+  border: 1px solid var(--line); border-bottom: none;
+  border-radius: 8px 8px 0 0;
+  background: var(--panel); color: var(--dim);
+  font: 11px/1.5 var(--sans); cursor: pointer; white-space: nowrap;
+}
+.v-tab span { overflow: hidden; text-overflow: ellipsis; }
+.v-tab.on { color: var(--ink); background: var(--raise); }
+.v-tab i { font-style: normal; opacity: .55; padding: 0 1px; }
+.v-tab i:hover { opacity: 1; }
+.v-tab:focus-visible { outline: 1px solid var(--cyan); outline-offset: 1px; }

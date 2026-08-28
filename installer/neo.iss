@@ -181,6 +181,16 @@ Name: "{autodesktop}\{#Ad}"; Filename: "{app}\python\pythonw.exe"; Parameters: "
 
 [Registry]
 Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "{#Ad}"; ValueData: """{app}\python\pythonw.exe"" -m neocp --app -C ""{app}"""; Tasks: autostart; Flags: uninsdeletevalue
+; Explorer sağ tık: Neo ile aç (dosya / klasör / masaüstü arka planı)
+Root: HKCU; Subkey: "Software\Classes\*\shell\NeoOpen"; ValueType: string; ValueName: ""; ValueData: "Neo ile aç"; Flags: uninsdeletekey
+Root: HKCU; Subkey: "Software\Classes\*\shell\NeoOpen"; ValueType: string; ValueName: "Icon"; ValueData: "{app}\src\neocp\assets\neo.ico"
+Root: HKCU; Subkey: "Software\Classes\*\shell\NeoOpen\command"; ValueType: string; ValueName: ""; ValueData: """{app}\python\pythonw.exe"" -m neocp.cli --app -C ""{app}"" --open ""%1"""
+Root: HKCU; Subkey: "Software\Classes\Directory\shell\NeoOpen"; ValueType: string; ValueName: ""; ValueData: "Neo ile aç"; Flags: uninsdeletekey
+Root: HKCU; Subkey: "Software\Classes\Directory\shell\NeoOpen"; ValueType: string; ValueName: "Icon"; ValueData: "{app}\src\neocp\assets\neo.ico"
+Root: HKCU; Subkey: "Software\Classes\Directory\shell\NeoOpen\command"; ValueType: string; ValueName: ""; ValueData: """{app}\python\pythonw.exe"" -m neocp.cli --app -C ""{app}"" --open ""%1"""
+Root: HKCU; Subkey: "Software\Classes\Directory\Background\shell\NeoOpen"; ValueType: string; ValueName: ""; ValueData: "Neo ile aç"; Flags: uninsdeletekey
+Root: HKCU; Subkey: "Software\Classes\Directory\Background\shell\NeoOpen"; ValueType: string; ValueName: "Icon"; ValueData: "{app}\src\neocp\assets\neo.ico"
+Root: HKCU; Subkey: "Software\Classes\Directory\Background\shell\NeoOpen\command"; ValueType: string; ValueName: ""; ValueData: """{app}\python\pythonw.exe"" -m neocp.cli --app -C ""{app}"" --open ""%V"""
 
 [Run]
 Filename: "{app}\python\pythonw.exe"; Parameters: "-m neocp --app -C ""{app}"""; WorkingDir: "{app}"; Description: "{cm:LaunchProgram,{#Ad}}"; Flags: nowait postinstall skipifsilent

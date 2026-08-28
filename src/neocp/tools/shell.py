@@ -71,6 +71,18 @@ def _shell_command(command: str) -> list[str]:
     return [exe, "-lc", command]
 
 
+def _agaci_oldur(proc: Any) -> None:
+    """Süreci ÇOCUKLARIYLA öldürür (Windows'ta kill torunu vurmaz)."""
+    if os.name == "nt":
+        import subprocess as _sp
+        _sp.run(["taskkill", "/PID", str(proc.pid), "/T", "/F"],
+                capture_output=True)
+    try:
+        proc.kill()
+    except ProcessLookupError:
+        pass
+
+
 async def _run_shell(
     command: str, cwd: Path, session_id: str, timeout: float, cancel: asyncio.Event
 ) -> tuple[str, str, int]:
@@ -83,6 +95,11 @@ async def _run_shell(
     proc = await asyncio.create_subprocess_exec(
         *_shell_command(command),
         cwd=str(cwd),
+        # stdin kapalı: çocuk stdin'i miras alırsa `input()` bekleyen bir
+        # program (canlıda ajanın kendi yazdığı araç) turu dakikalarca
+        # asıyor. Kapalı stdin'de input() anında EOFError verir — model
+        # hatayı görür ve düzeltir.
+        stdin=asyncio.subprocess.DEVNULL,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.STDOUT,
         env={**os.environ, "NEOCP_SESSION": session_id},
@@ -96,21 +113,21 @@ async def _run_shell(
             {comm, stop}, timeout=timeout, return_when=asyncio.FIRST_COMPLETED
         )
     except asyncio.CancelledError:
-        proc.kill()
+        _agaci_oldur(proc)
         await proc.wait()
         comm.cancel()
         stop.cancel()
         raise
 
     if stop in done:
-        proc.kill()
+        _agaci_oldur(proc)
         await proc.wait()
         comm.cancel()
         return ("stop", "", -1)
 
     stop.cancel()
     if comm not in done:
-        proc.kill()
+        _agaci_oldur(proc)
         await proc.wait()
         comm.cancel()
         return ("timeout", "", -1)
@@ -145,6 +162,13 @@ daha güvenli ve daha ucuz. Onlar varken kabuktan cat/echo yapma.
 
 Komut kendi kabuğunda çalışır: değişkenler, cd, fonksiyonlar turlar arasında
 korunmaz. Dizin değiştirmen gerekiyorsa `cwd` argümanını kullan.
+
+Bilinen tuzaklar (ölçüldü — hataların çoğu bu üçünden):
+- Tırnak/kaçış: $ ya da iç içe tırnak içeren komutu yazmaya çalışma;
+  betiği write_file ile dosyaya yaz, dosyayı koş.
+- Komut adı: emin değilsen önce sürümle doğrula (`py --version`);
+  bu makinede Python `py` adıyla çağrılır.
+- Yol: boşluklu yolu çift tırnağa al; göreli yol yerine `cwd` ver.
 
 UZUN SÜREN SÜREÇLER — iki ayrı kip, karıştırma:
 - Uzun ama BİTEN iş (derleme, kurulum, test koşusu, indirme): `arka_plan: true`.
@@ -314,8 +338,15 @@ UZUN SÜREN SÜREÇLER — iki ayrı kip, karıştırma:
             )
 
         if code != 0:
+            govde = f"Çıkış kodu {code}\n\n{text or '(çıktı yok)'}"
+            # Öğretici hata (OpenCode kalıbı): bilinen tuzaklarda çıkış yolu
+            # hatanın İÇİNDE yazar — model sonraki turda tahminle değil
+            # tarifle düzeltir. Kıyasta 6 hatalı çağrının tamamı bu üç
+            # kalıptandı.
+            if ipucu := kabuk_ipucu(text or ""):
+                govde += "\n\nİpucu: " + ipucu
             return ToolResult(
-                content=f"Çıkış kodu {code}\n\n{text or '(çıktı yok)'}",
+                content=govde,
                 is_error=True,
                 detail={"exit_code": code, "cwd": str(cwd)},
             )
@@ -324,3 +355,36 @@ UZUN SÜREN SÜREÇLER — iki ayrı kip, karıştırma:
             content=text or "(çıktı yok, komut başarılı)",
             detail={"exit_code": 0, "cwd": str(cwd)},
         )
+
+
+# -- öğretici kabuk hataları ---------------------------------------------
+#
+# Hata metni sonraki turun düzeltme tarifi olmalı (OpenCode'un edit aracı
+# kalıbı). Buradaki üç kalıp kıyas koşusundaki 6 hatalı çağrının tamamını
+# kapsıyor. Kalıp tekrarı ders hafızasına da işlenebilir (yol haritasında);
+# önce hatanın kendisi öğretsin.
+
+_IPUCLARI: list[tuple[tuple[str, ...], str]] = [
+    (("unexpected token", "missing terminator", "parsererror",
+      "was unexpected at this time", "terminator in the string"),
+     "PowerShell tırnak/kaçış kırılgandır: karmaşık komutu write_file ile "
+     "bir betiğe yaz ve dosyayı koş; $ içeren metinlerde tek tırnak kullan."),
+    (("is not recognized as the name of a cmdlet",
+      "is not recognized as an internal or external command",
+      "komut olarak tanınmıyor", "command not found"),
+     "Komut bu makinede bu adla yok. Önce sürüm komutuyla doğrula "
+     "(ör. `py --version` / `python --version`) ve bulunan adı kullan."),
+    (("cannot find path", "no such file or directory", "yol bulunamıyor",
+      "sistem belirtilen yolu bulamıyor"),
+     "Yol bulunamadı: boşluklu yolları çift tırnağa al ve `cwd` ile göreli "
+     "değil, tam yol kullan; önce list_dir ile yolun varlığını doğrula."),
+]
+
+
+def kabuk_ipucu(cikti: str) -> str:
+    """Bilinen hata kalıbına tek satırlık çıkış yolu (yoksa boş)."""
+    kucuk = cikti.lower()
+    for izler, tarif in _IPUCLARI:
+        if any(iz in kucuk for iz in izler):
+            return tarif
+    return ""

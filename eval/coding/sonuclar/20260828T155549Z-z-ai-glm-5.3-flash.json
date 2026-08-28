@@ -1,0 +1,343 @@
+{
+  "zaman": "20260828T155549Z",
+  "model": "z-ai/glm-5.3-flash",
+  "tekrar": 1,
+  "bekle_sn": 900.0,
+  "gorevler": [
+    {
+      "ad": "k2-cli",
+      "baslik": "Node görev listesi CLI",
+      "zorluk": "kolay",
+      "dil": "node",
+      "ozet": {
+        "gorev": "k2-cli",
+        "puan": 100.0,
+        "ham": 85.0,
+        "olculen_tavan": 85,
+        "olculemeyen": [],
+        "bozuk_teslim": false,
+        "eksenler": [
+          {
+            "ad": "calisir",
+            "tavan": 40,
+            "alinan": 40.0,
+            "kanit": [
+              "+ gorev.js var (10p) — gorev.js",
+              "! ajanın bıraktığı gorevler.json ölçümden önce silindi (temiz sayfa)",
+              "+ ekle çalışıyor (10p) — çıkış 0/0",
+              "+ liste çalışıyor (10p) — [ ] 1. süt al [ ] 2. faturayı öde",
+              "+ bilinmeyen komut hata veriyor (10p) — çıkış kodu 1"
+            ],
+            "sebep": "",
+            "harici": false
+          },
+          {
+            "ad": "kapsam",
+            "tavan": 25,
+            "alinan": 25.0,
+            "kanit": [
+              "+ eklenenler listede görünüyor (10p) — «süt al»: True, «faturayı öde»: True",
+              "+ bitir listeyi değiştiriyor (kalan görev duruyor) (8p) — bitir çıkışı 0; liste değişti",
+              "+ gorevler.json'da kalıcı (7p) — gorevler.json, 135 karakter"
+            ],
+            "sebep": "",
+            "harici": false
+          },
+          {
+            "ad": "saglik",
+            "tavan": 20,
+            "alinan": 20.0,
+            "kanit": [
+              "~ sözdizimi temiz (8.0/8p) — 1/1 dosya",
+              "~ boy/karmaşıklık (6.0/6p) — temiz",
+              "~ tekrar yok (6.0/6p) — tekrar eden satır %0, 0 yinelenen blok"
+            ],
+            "sebep": "",
+            "harici": false
+          },
+          {
+            "ad": "test",
+            "tavan": 15,
+            "alinan": 0.0,
+            "kanit": [
+              "- test dosyası yok (0p)"
+            ],
+            "sebep": "",
+            "harici": true
+          }
+        ],
+        "davranis": {
+          "arac_cagrisi": 2,
+          "araclar": {
+            "write_file": 1,
+            "shell": 1
+          },
+          "hatali_arac": 0,
+          "model_turu": 3,
+          "api_hatasi": 0,
+          "dogruladi_mi": false,
+          "dogrulama_izi": [],
+          "calistirma_izi": [
+            "shell: node gorev.js ekle \"süt al\"; node gorev.js ekle \"ekmek al\"; node gorev.js bitir 1; node go"
+          ],
+          "plan_yazdi_mi": false,
+          "plan_kaniti": "",
+          "token_prompt_son": 15689,
+          "token_prompt_toplam": 46696,
+          "token_cikti": 714,
+          "token_cache_okuma": 30336,
+          "model_cagrisi": 3,
+          "maliyet_usd": 0.0037,
+          "sure_sn": 32.5,
+          "degisen_dosya": 2,
+          "kapi_ok": true,
+          "duvar_saati_sn": 34.7
+        },
+        "notlar": [
+          "ölçüm dışı (dokunulmamış tur öncesi dosya): 7"
+        ]
+      },
+      "tum_puanlar": [
+        100.0
+      ],
+      "puan_sapma": null,
+      "bozuk_teslim": 0,
+      "devralindi": ""
+    },
+    {
+      "ad": "o1-rapor",
+      "baslik": "CSV satış raporu + CLI",
+      "zorluk": "orta",
+      "dil": "python",
+      "ozet": {
+        "gorev": "o1-rapor",
+        "puan": 100.0,
+        "ham": 85.0,
+        "olculen_tavan": 85,
+        "olculemeyen": [],
+        "bozuk_teslim": false,
+        "eksenler": [
+          {
+            "ad": "calisir",
+            "tavan": 40,
+            "alinan": 40.0,
+            "kanit": [
+              "+ rapor.py var (8p) — rapor.py",
+              "+ csv ile koşuyor (16p) — çıkış 0; == 2026-01 == Toplam ciro: 47553.25 1. Pompa: 25197.00 2. Sensor: 12159.05 3. PLC: 8249.70 == 2026-02 == Toplam ciro: 33938.45 1. Sensor: 17278.65 2. Pompa: 839",
+              "+ çıktı boş değil (8p) — 292 karakter",
+              "+ --ay koşuyor (8p) — çıkış 0; == 2026-03 == Toplam ciro: 99286.90 1. Pompa: 54593.50 2. PLC: 30248.90 3. Sensor: 12799.00"
+            ],
+            "sebep": "",
+            "harici": false
+          },
+          {
+            "ad": "kapsam",
+            "tavan": 25,
+            "alinan": 25.0,
+            "kanit": [
+              "~ aylık cirolar doğru (10.0/10p) — 3/3 ay tuttu: 2026-01, 2026-02, 2026-03",
+              "+ en çok ciro yapan 3 ürün var (5p) — Pompa, PLC, Sensor",
+              "+ üçü çoktan aza sıralı (5p) — sıra tuttu",
+              "+ --ay 2026-03 doğru ayı veriyor (3p) — beklenen 99286.9",
+              "+ --ay diğer ayları süzüyor (2p) — temiz"
+            ],
+            "sebep": "",
+            "harici": false
+          },
+          {
+            "ad": "saglik",
+            "tavan": 20,
+            "alinan": 20.0,
+            "kanit": [
+              "~ sözdizimi temiz (8.0/8p) — 1/1 dosya",
+              "~ boy/karmaşıklık (6.0/6p) — temiz",
+              "~ tekrar yok (6.0/6p) — tekrar eden satır %0, 0 yinelenen blok"
+            ],
+            "sebep": "",
+            "harici": false
+          },
+          {
+            "ad": "test",
+            "tavan": 15,
+            "alinan": 0.0,
+            "kanit": [
+              "- test dosyası yok (0p)"
+            ],
+            "sebep": "",
+            "harici": true
+          }
+        ],
+        "davranis": {
+          "arac_cagrisi": 9,
+          "araclar": {
+            "shell": 7,
+            "ozet_csv": 1,
+            "write_file": 1
+          },
+          "hatali_arac": 4,
+          "model_turu": 9,
+          "api_hatasi": 0,
+          "dogruladi_mi": true,
+          "dogrulama_izi": [
+            "shell: py -c \"print('ok')\""
+          ],
+          "calistirma_izi": [
+            "shell: py rapor.py satislar.csv",
+            "shell: py rapor.py satislar.csv --ay 2026-03"
+          ],
+          "plan_yazdi_mi": false,
+          "plan_kaniti": "",
+          "token_prompt_son": 16342,
+          "token_prompt_toplam": 143236,
+          "token_cikti": 1124,
+          "token_cache_okuma": 121216,
+          "model_cagrisi": 9,
+          "maliyet_usd": 0.011,
+          "sure_sn": 851.3,
+          "degisen_dosya": 1,
+          "kapi_ok": true,
+          "duvar_saati_sn": 853.1
+        },
+        "notlar": [
+          "ölçüm dışı (dokunulmamış tur öncesi dosya): 8"
+        ]
+      },
+      "tum_puanlar": [
+        100.0
+      ],
+      "puan_sapma": null,
+      "bozuk_teslim": 0,
+      "devralindi": ""
+    },
+    {
+      "ad": "z1-arama",
+      "baslik": "SQLite kalıcılıklı not arama aracı",
+      "zorluk": "zor",
+      "dil": "python",
+      "ozet": {
+        "gorev": "z1-arama",
+        "puan": 82.0,
+        "ham": 82.0,
+        "olculen_tavan": 100,
+        "olculemeyen": [],
+        "bozuk_teslim": false,
+        "eksenler": [
+          {
+            "ad": "calisir",
+            "tavan": 40,
+            "alinan": 40.0,
+            "kanit": [
+              "+ ara.py var (5p) — ara.py",
+              "+ ekle koşuyor (12p) — çıkış 0; Eklendi: 2, guncellendi: 0, degismedi: 0, silindi: 2",
+              "+ SQLite dosyası oluştu (8p) — notlar.db",
+              "+ bul ayrı süreçte koşuyor (15p) — çıkış 0; bakim.txt: Pompa [salmastr] ..."
+            ],
+            "sebep": "",
+            "harici": false
+          },
+          {
+            "ad": "kapsam",
+            "tavan": 25,
+            "alinan": 7.000000000000001,
+            "kanit": [
+              "- tek kelime doğru notu buluyor (8p) — «salmastra» → pompa-katalog bekleniyordu; çıktı: 'bakim.txt: Pompa [salmastr] ...\\n\\n'",
+              "- çok kelimede hepsi geçen not üstte (10p) — «rulman titresim» → kuyu-bakim yeri -1, pompa-katalog yeri -1",
+              "+ olmayan kelimede sonuç uydurmuyor (7p) — «helikopter» → çıktı: \"'helikopter' icin hicbir not bulunamadi.\\n\\n\""
+            ],
+            "sebep": "",
+            "harici": false
+          },
+          {
+            "ad": "saglik",
+            "tavan": 20,
+            "alinan": 20.0,
+            "kanit": [
+              "~ sözdizimi temiz (8.0/8p) — 2/2 dosya",
+              "~ boy/karmaşıklık (6.0/6p) — temiz",
+              "~ tekrar yok (6.0/6p) — tekrar eden satır %0, 0 yinelenen blok"
+            ],
+            "sebep": "",
+            "harici": false
+          },
+          {
+            "ad": "test",
+            "tavan": 15,
+            "alinan": 15.0,
+            "kanit": [
+              "+ testler yeşil (6p) — ....... [100%] 7 passed in 1.17s",
+              "~ test adedi (4.0/4p) — 7 test bulundu",
+              "~ kritik yol kapsanıyor (3.0/3p) — 2/2: ekle, bul",
+              "~ iddialar dolu (2.0/2p) — 11 iddia, 0 tanesi bedava geçiyor"
+            ],
+            "sebep": "",
+            "harici": false
+          }
+        ],
+        "davranis": {
+          "arac_cagrisi": 49,
+          "araclar": {
+            "shell": 23,
+            "edit_file": 11,
+            "read_file": 9,
+            "write_file": 5,
+            "kos": 1
+          },
+          "hatali_arac": 18,
+          "model_turu": 50,
+          "api_hatasi": 0,
+          "dogruladi_mi": true,
+          "dogrulama_izi": [
+            "shell: Get-ChildItem atolye/notlar -ErrorAction SilentlyContinue | Select-Object -First 5 Name; p",
+            "shell: py -m pytest test_ara.py -q 2>&1 | Select-Object -Last 15",
+            "shell: @'\n# -*- coding: utf-8 -*-\nimport io, re\np = \"ara.py\"\nsrc = io.open(p, encoding=\"utf-8\").r",
+            "shell: (Get-Content duzelt.py -Raw) -replace '\\r\\n',\"`n\" | Set-Content duzelt.py -Encoding UTF8 -",
+            "shell: py duzelt.py; if (Test-Path notlar.db) { Remove-Item notlar.db }; py -m pytest test_ara.py",
+            "shell: py -m pytest test_ara.py -q 2>&1 | Select-Object -Last 3; Remove-Item notlar.db,duzelt.py ",
+            "shell: py -c \"import io;p='ara.py';s=io.open(p,encoding='utf-8').read();s=s.replace('import time'",
+            "shell: py -m pytest test_ara.py -q 2>&1 | Select-Object -Last 3; Remove-Item yama.py,test_notlar."
+          ],
+          "calistirma_izi": [
+            "shell: py yama.py; grep -n \"ARA_DB\\|lstrip\" ara.py",
+            "shell: py ara.py ekle notlar; py ara.py bul \"salmastra\"; py ara.py bul \"rulman titresim\"; py ara.",
+            "shell: New-Item -ItemType Directory -Force notlar | Out-Null\n'Pompa salmastra degisimi yapildi, r"
+          ],
+          "plan_yazdi_mi": false,
+          "plan_kaniti": "",
+          "token_prompt_son": 32935,
+          "token_prompt_toplam": 1312166,
+          "token_cikti": 17062,
+          "token_cache_okuma": 1208704,
+          "model_cagrisi": 50,
+          "maliyet_usd": 0.1027,
+          "sure_sn": 732.8,
+          "degisen_dosya": 5,
+          "kapi_ok": true,
+          "duvar_saati_sn": 734.8
+        },
+        "notlar": [
+          "ölçüm dışı (dokunulmamış tur öncesi dosya): 7"
+        ]
+      },
+      "tum_puanlar": [
+        82.0
+      ],
+      "puan_sapma": null,
+      "bozuk_teslim": 0,
+      "devralindi": ""
+    }
+  ],
+  "kosulmayan": [
+    "k1-modul",
+    "k3-tamir",
+    "o2-servis",
+    "o3-ozellik",
+    "z2-panel",
+    "z3-gizli-hata"
+  ],
+  "eksen_tavanlari": {
+    "calisir": 40,
+    "kapsam": 25,
+    "saglik": 20,
+    "test": 15
+  }
+}

@@ -21,33 +21,33 @@
 :root {
   --set-line: rgba(255, 255, 255, .06);        /* alan ayracı */
   --set-line-strong: rgba(255, 255, 255, .11); /* liste/bölüm çerçevesi */
-  --set-ring: rgba(79, 227, 255, .18);         /* kontrol kenarı */
-  --set-ring-hover: rgba(79, 227, 255, .38);
-  --set-accent-soft: rgba(79, 227, 255, .1);   /* seçili zemin */
-  --set-focus: rgba(79, 227, 255, .7);         /* klavye odak hâlesi */
+  --set-ring: rgba(240, 160, 32, .18);         /* kontrol kenarı */
+  --set-ring-hover: rgba(240, 160, 32, .38);
+  --set-accent-soft: rgba(240, 160, 32, .1);   /* seçili zemin */
+  --set-focus: rgba(240, 160, 32, .7);         /* klavye odak hâlesi */
   --set-danger-soft: rgba(255, 122, 144, .07);
   --set-danger-ring: rgba(255, 122, 144, .32);
-  --set-track: #223850;                        /* kapalı anahtar rayı */
-  --set-knob: #dceefc;                         /* anahtar topu */
-  --set-knob-on: #062430;                      /* açık anahtarda top */
-  --set-btn-ink: #052430;                      /* birincil buton mürekkebi */
-  --set-chevron: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'><path d='M2.5 4.5 6 8l3.5-3.5' fill='none' stroke='%237fa0c0' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/></svg>");
+  --set-track: #3A342A;                        /* kapalı anahtar rayı */
+  --set-knob: #EFE8DC;                         /* anahtar topu */
+  --set-knob-on: #241C10;                      /* açık anahtarda top */
+  --set-btn-ink: #241C10;                      /* birincil buton mürekkebi */
+  --set-chevron: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'><path d='M2.5 4.5 6 8l3.5-3.5' fill='none' stroke='%23A89F91' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/></svg>");
 }
 :root[data-theme="light"] {
-  --set-line: rgba(22, 40, 58, .09);
-  --set-line-strong: rgba(22, 40, 58, .15);
-  --set-ring: rgba(10, 122, 156, .22);
-  --set-ring-hover: rgba(10, 122, 156, .42);
-  --set-accent-soft: rgba(10, 122, 156, .09);
-  --set-focus: rgba(10, 122, 156, .55);
+  --set-line: rgba(52, 44, 32, .09);
+  --set-line-strong: rgba(52, 44, 32, .15);
+  --set-ring: rgba(180, 112, 10, .22);
+  --set-ring-hover: rgba(180, 112, 10, .42);
+  --set-accent-soft: rgba(180, 112, 10, .09);
+  --set-focus: rgba(180, 112, 10, .55);
   --set-danger-soft: rgba(196, 45, 78, .06);
   --set-danger-ring: rgba(196, 45, 78, .28);
   /* Ray/top: sayfanın field/bg ailesi — koyu-mavi ray açık temada yabancıydı. */
-  --set-track: #c5d2e0;
+  --set-track: #E0D8C6;
   --set-knob: #ffffff;
-  --set-knob-on: #f4f9fc;
-  --set-btn-ink: #f4f9fc;
-  --set-chevron: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'><path d='M2.5 4.5 6 8l3.5-3.5' fill='none' stroke='%233d5568' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/></svg>");
+  --set-knob-on: #FDFBF6;
+  --set-btn-ink: #FDFBF6;
+  --set-chevron: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'><path d='M2.5 4.5 6 8l3.5-3.5' fill='none' stroke='%236E6656' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/></svg>");
 }
 
 /* Açık temada ayar kabuğu: neon hâle yok, sayfa ile aynı kenar dili. */
@@ -55,21 +55,21 @@
   background: var(--field); color: var(--text);
 }
 :root[data-theme="light"] .panel .input-check::before {
-  box-shadow: 0 1px 2px rgba(22, 40, 58, .22);
+  box-shadow: 0 1px 2px rgba(52, 44, 32, .22);
 }
 :root[data-theme="light"] .panel .input-range::-webkit-slider-thumb {
-  box-shadow: 0 0 0 1px var(--set-ring-hover), 0 1px 3px rgba(22, 40, 58, .25);
+  box-shadow: 0 0 0 1px var(--set-ring-hover), 0 1px 3px rgba(52, 44, 32, .25);
 }
 :root[data-theme="light"] .panel .choice {
   background: var(--raise);
 }
 :root[data-theme="light"] .panel .row-detail {
-  background: #e4ebf3;
+  background: #F1EBDE;
 }
 :root[data-theme="light"] .panel .loaded-row,
 :root[data-theme="light"] .panel .rule,
 :root[data-theme="light"] .panel .surum-deger {
-  background: rgba(22, 40, 58, .04);
+  background: rgba(52, 44, 32, .04);
 }
 :root[data-theme="light"] .panel-note.good::before {
   box-shadow: none;
@@ -80,14 +80,13 @@
 
 /* ---------- kabuk: panel, sekmeler, altlık ---------- */
 
-.panel {
-  width: min(920px, calc(100vw - 48px));
-  max-height: min(88vh, calc(100vh - 84px));
-}
+/* Panelin ölçüsü app.css'te (ortalanmış diyalog, SABİT en/boy). Burada
+   ölçüye dokunulmaz: width:auto kalıntısı diyaloğu içeriğe göre daraltıp
+   genişletiyordu — "modalın boyutu sürekli değişiyor" tam buydu. */
 
 .panel-head { padding: 16px 24px 14px; box-shadow: inset 0 -1px 0 var(--set-line-strong); }
 
-.tabs { flex: 0 0 168px; padding: 12px 10px 18px; box-shadow: inset -1px 0 0 var(--set-line-strong); }
+.tabs { flex: 0 0 208px; padding: 14px 12px 20px; box-shadow: inset -1px 0 0 var(--set-line-strong); }
 .tabs button { padding: 6px 12px; font: 12.5px var(--font); border-radius: 6px; }
 .tab-group { margin: 16px 12px 5px; font-size: 9px; }
 
@@ -372,18 +371,18 @@
   display: flex; flex-direction: column; gap: 1px;
   max-height: 240px; overflow-y: auto;
   border-radius: 7px; background: var(--field);
-  scrollbar-width: thin; scrollbar-color: rgba(79, 227, 255, .25) transparent;
+  scrollbar-width: thin; scrollbar-color: rgba(240, 160, 32, .25) transparent;
 }
 .panel .proj-list::-webkit-scrollbar { width: 6px; }
 .panel .proj-list::-webkit-scrollbar-thumb {
-  background: rgba(79, 227, 255, .22); border-radius: 3px;
+  background: rgba(240, 160, 32, .22); border-radius: 3px;
 }
 .panel .proj-row {
   text-align: left; background: none; border: 0; cursor: pointer;
   padding: 6px 10px; border-radius: 6px;
   font: 12px var(--mono); color: var(--dim); transition: .14s;
 }
-.panel .proj-row:hover { color: var(--ice); background: rgba(79, 227, 255, .09); }
+.panel .proj-row:hover { color: var(--ice); background: rgba(240, 160, 32, .09); }
 
 /* Son projeler: tek tıkla geçiş. */
 .panel .proj-recent { display: flex; flex-wrap: wrap; gap: 6px; }
@@ -394,6 +393,31 @@
 }
 .panel .proj-chip:hover { color: var(--ice); box-shadow: inset 0 0 0 1px var(--set-ring-hover); }
 .panel .proj-chip.on {
-  color: var(--cyan); background: rgba(79, 227, 255, .12);
+  color: var(--cyan); background: rgba(240, 160, 32, .12);
   box-shadow: inset 0 0 0 1px var(--set-ring-hover);
 }
+
+/* --- bağlayıcı dizini (Claude paritesi) -------------------------------- */
+.conn-bar { display: flex; gap: 6px; align-items: center; margin: 0 0 10px; }
+.conn-search { flex: 1; min-width: 0; }
+.conn-chip {
+  border: 1px solid var(--line); border-radius: 999px;
+  background: none; color: var(--dim);
+  font: 11px/1 var(--sans); padding: 5px 10px; cursor: pointer;
+}
+.conn-chip.on { color: var(--ink); background: var(--raise); border-color: var(--ink3, var(--line)); }
+.conn-chip:hover { color: var(--ink); }
+.conn-pop-label { margin: 2px 0 6px; }
+.conn-pop {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 6px; margin: 0 0 12px;
+}
+.panel .conn-pop .conn-card {
+  display: flex; flex-direction: column; gap: 2px; text-align: left;
+  border: 1px solid var(--line); border-radius: 10px;
+  background: var(--raise); padding: 8px 10px; cursor: pointer;
+}
+.conn-card b { font: 600 12px/1.4 var(--sans); color: var(--ink); }
+.conn-card span { font: 11px/1.4 var(--sans); color: var(--dim); }
+.panel .conn-pop .conn-card:hover { background: var(--raise); border-color: var(--ink3, var(--line)); }
+.panel .conn-pop .conn-card:focus-visible { outline: 1px solid var(--cyan); outline-offset: 1px; }

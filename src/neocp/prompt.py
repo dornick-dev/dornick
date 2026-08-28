@@ -306,6 +306,11 @@ Keşfin bitince numaralı, somut bir plan yaz — hangi dosya, hangi değişikli
 hangi sırayla — ve kullanıcının onayını bekleyerek dur. Onay gelmeden
 uygulamaya kendiliğinden geçme; kullanıcı onaylayınca kip değişir ve planı
 o zaman uygularsın.
+
+Teslim kuralları: İstemde somut çalıştırma örnekleri varsa teslimden önce
+onları AYNEN koş; geçiyorsa turu bitir — fazladan doğrulama turu açma.
+Bir plan maddesinin İÇİNDEKİ her alt öğe teslimde ya vardır ya da
+gerekçesiyle ertelendiği yazılıdır; madde sessizce eksik kapanmaz.
 """
 
 # Öteki kiplerin tek satırlık karşılığı. Model hangi kapının arkasında
@@ -448,6 +453,8 @@ def build(config: Config, registry: ToolRegistry, soul: Any = None) -> SystemPro
             TOOL_RULES.strip(),
             MEMORY_RULES.strip() if _has_mind(registry) else "",
             _tool_list(registry),
+            # Küçük aile: kısalık sözleşmesi en sona — kurallar taze kalsın.
+            KISALIK.strip() if kucuk_aile(config.model.name) else "",
         )
     )
     core = "\n\n---\n\n".join(p for p in parts if p)
@@ -464,6 +471,29 @@ def build(config: Config, registry: ToolRegistry, soul: Any = None) -> SystemPro
 # Bu pencerenin altındaki her model "dar" sayılıyor. 16k, sistem promptu +
 # araç şemaları + birkaç tur araç çıktısı için asgari sayılabilecek yer.
 LEAN_BELOW = 16_000
+
+
+# Küçük/hızlı model ailesi: gevezeliğe ve şema şişkinliğine en duyarlı
+# sınıf. Ölçüm (kiyas-opencode-2608): aynı flash model, sıkı istemli
+# harness'ta 5 adımda bitirdi; bizde 16 turda dolandı. Bu aileye kısa
+# araç şeması + sert-kısalık bloğu gidiyor.
+_KUCUK_IZLER = ("flash", "mini", "lite", "small", "haiku", "nano", "tiny",
+                "air", "-7b", "-8b", "-9b", "7b-", "8b-", "9b-")
+
+
+def kucuk_aile(model_adi: str) -> bool:
+    ad = (model_adi or "").lower()
+    return any(iz in ad for iz in _KUCUK_IZLER)
+
+
+# Sert kısalık (OpenCode'un default.txt sözleşmesinden damıtıldı): küçük
+# model ara anlatım turlarıyla ve önsöz/özet gevezeliğiyle token yakıyor.
+KISALIK = """Kısalık sözleşmesi (küçük model):
+- Araç çağrıları arasında anlatı yazma; işi yap, biterken tek özet ver.
+- Cevap 4 satırı geçmesin (kod ve araç çıktısı hariç); önsöz/özet yok.
+- Bağımsız araç çağrılarını AYNI cevapta paralel gönder.
+- Bir komut iki kez üst üste hata verirse üçüncü kez denemeden yaklaşımı
+  değiştir: komutu dosyaya yazıp koş ya da başka yol seç."""
 
 
 def is_lean(config: Config) -> bool:

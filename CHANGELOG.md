@@ -2,6 +2,49 @@
 
 ## Unreleased
 
+* **The model names your sessions.** After the first exchange, an unnamed
+  session gets a short model-written title instead of the first 30
+  characters of your message. A hand-given name is never overwritten.
+* **Per-chat model selection.** The model chip under the composer now opens
+  a searchable picker whose choice applies to *this chat* and takes effect
+  immediately; a new chat inherits the last chat's pinned model, and the
+  global default (Settings → Model) stays untouched — a plumbing bug that
+  silently wrote the per-chat pin over the global default on disk is fixed.
+* **Shell children no longer inherit stdin, and timeouts kill the whole
+  process tree.** Caught live in a benchmark: an agent-written script that
+  read stdin hung the turn for minutes, and the "stopped" wrapper's
+  grandchild lived on for 7½ more. Children now get a closed stdin
+  (`input()` fails instantly with a visible error) and Windows timeouts use
+  `taskkill /T`.
+* **Edit tool tolerates whitespace drift.** When the exact `old` text is
+  not found, the editor tries line-ending normalization, trailing-space
+  tolerance, and a uniform indentation shift (re-indenting `new` by the
+  same amount) — each only when the match is unique; content differences
+  still fail loudly.
+* **Reasoning effort is capped at `medium` for small/fast model families.**
+  Measured on the same model and task: uncapped high-effort thinking blew an
+  11-call task into a 900-second timeout, and a sibling harness burned a
+  full 32k-token reasoning spiral delivering nothing. Quality comes from
+  the delivery gates, not the thinking budget.
+* **Prompt-cache markers pay off on OpenRouter.** Cache hit rates measured
+  at 65–92% across a three-task benchmark; the behavior report now carries
+  a cache-read column.
+* **Viewer tabs.** Opening a second file no longer closes the first — a tab
+  strip appears and either can be closed or revisited.
+* **Connectors directory.** The MCP settings pane now has search,
+  connected/not-connected filters, and a popular-connectors catalog
+  (GitHub, Notion, Linear, Sentry, Stripe, Playwright, filesystem, memory)
+  that pre-fills the add form.
+* **Task-list panel is editable in place** (complete/remove/add/clear), the
+  plan nudge stays silent mid-work instead of proposing a from-scratch plan
+  over a half-built project, and the plan card's confusing "save as
+  automation" button is gone.
+* **Links render as real anchors** — the URL shows in the status bar and
+  right-click → copy works; sidebar, settings-modal sizing, and light-theme
+  panel tones were reworked to match.
+* New seed skill `olcum`: time a command N times, A/B compare, write a
+  small report — for "it's faster now" claims that should be measured.
+
 * **Gemini works again.** Gemini requires every `array` property in a tool
   schema to declare `items`; without it, it rejects **the entire tool list**,
   not just that tool — so one tool's omission made neo unusable on every

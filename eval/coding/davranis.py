@@ -85,6 +85,7 @@ def cikar(gunluk: Path, *, kapi: dict[str, Any] | None = None,
     cikti_token = 0
     son_prompt = 0
     prompt_toplam = 0
+    cache_okunan = 0
     cagri = 0
     api_hatasi = 0
 
@@ -124,6 +125,7 @@ def cikar(gunluk: Path, *, kapi: dict[str, Any] | None = None,
                 son_prompt = int(kullanim.get("prompt_total") or 0)
                 prompt_toplam += son_prompt
                 cikti_token += int(kullanim.get("output") or 0)
+                cache_okunan += int(kullanim.get("cache_read") or 0)
                 cagri += 1
             # Plan: ilk araç çağrısından ÖNCEKİ metinde listeli anlatım.
             if ilk_arac_seq is None and not plan_kaniti:
@@ -149,6 +151,7 @@ def cikar(gunluk: Path, *, kapi: dict[str, Any] | None = None,
         "token_prompt_son": son_prompt or None,
         "token_prompt_toplam": prompt_toplam or None,
         "token_cikti": cikti_token or None,
+        "token_cache_okuma": cache_okunan or None,
         "model_cagrisi": cagri or None,
         "maliyet_usd": maliyet,
     }

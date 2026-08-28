@@ -107,9 +107,9 @@ const Apps = (() => {
   font: 9px/1.5 var(--mono); letter-spacing: .04em; text-transform: uppercase;
   padding: 1px 6px; border-radius: 999px; white-space: nowrap;
 }
-.proj-state.live { color: var(--mint); background: #5ce6a418; box-shadow: inset 0 0 0 1px #5ce6a440; }
+.proj-state.live { color: var(--mint); background: #86EFAC18; box-shadow: inset 0 0 0 1px #86EFAC40; }
 .proj-state.idle { color: var(--dim); background: var(--raise); }
-.proj-state.gap  { color: var(--amber); background: #ffc85718; box-shadow: inset 0 0 0 1px #ffc85740; }
+.proj-state.gap  { color: var(--amber); background: #F0A02018; box-shadow: inset 0 0 0 1px #F0A02040; }
 .proj-why {
   font: 10px/1.5 var(--mono); color: var(--amber); margin: 0 8px 6px 30px;
   overflow-wrap: anywhere;
@@ -127,7 +127,7 @@ const Apps = (() => {
 .apps-sorun { margin: 6px 4px 12px; }
 .apps-sorun-row {
   padding: 7px 9px; margin: 5px 0; border-radius: 7px;
-  background: #ffc8570d; box-shadow: inset 0 0 0 1px #ffc85733;
+  background: #F0A0200d; box-shadow: inset 0 0 0 1px #F0A02033;
 }
 .apps-sorun-name { font: 11px var(--mono); color: var(--amber); }
 .apps-sorun-why { font-size: 11px; color: var(--dim); margin-top: 3px; line-height: 1.5; }
@@ -208,6 +208,26 @@ const Apps = (() => {
     body.querySelectorAll(".apps-catalog").forEach((n) => n.remove());
     const box = el("div", "apps-catalog");
     body.append(box);
+
+    // Solo: yalnız seçilen uygulamanın kartı, detayı AÇIK. Katalog, arama,
+    // çalışanlar ve gruplar yok — liste zaten kenar çubuğunda.
+    panel.classList.toggle("apps-solo", !!solo);
+    if (solo) {
+      const p = all.find((x) => x.name === solo);
+      if (p) {
+        const geri = el("button", "apps-solo-back", "← Tüm uygulamalar");
+        geri.onclick = () => { solo = ""; panel.classList.remove("apps-solo"); render(); };
+        box.append(geri);
+        const kart = projectCard(p);
+        box.append(kart);
+        toggleView(p, kart);   // detay görünümü baştan açık
+        markCards();
+        return;
+      }
+      // Uygulama artık yoksa (arşivlendi?) kataloga düş.
+      solo = "";
+      panel.classList.remove("apps-solo");
+    }
 
     drawSorunlar(box);
 
@@ -868,8 +888,27 @@ const Apps = (() => {
   // --- panel -----------------------------------------------------------
 
   function toggle() {
-    if (panel.hidden) {
-      if (typeof History !== "undefined") History.close();  // iki sol panel çakışmasın
+    if (panel.hidden) open(); else close();
+  }
+
+  // Solo kip: kenar çubuğundan tek uygulama seçildi — katalog değil,
+  // o uygulamanın detay sayfası. HUD düğmesi tam kataloğu açar.
+  let solo = "";
+
+  function show(name) {
+    solo = name || "";
+    open(true);
+  }
+
+  function open(soloKoru) {
+    if (!soloKoru) solo = "";
+    // Geniş ekranda panel ORTA yüzey: rail'e dokunmaz. Dar pencerede
+    // sol overlay'ler çakışır — orada konuşmalar kapanır (eski davranış).
+    if (innerWidth <= 860 && typeof History !== "undefined") History.close();
+    // Orta alanda tek yüzey: görevler açıksa çekilir.
+    if (window.JobsPanel) JobsPanel.close();
+    panel.classList.toggle("apps-solo", !!solo);
+    {
       panel.hidden = false;
       document.body.classList.add("apps-open");
       // HER açılışta yeniden okunuyor. Eskiden ilk açılıştan sonra yalnız
@@ -882,8 +921,6 @@ const Apps = (() => {
       // süreç kendi kendine bitebilir). Kapanınca yoklamayı durduruyoruz.
       clearInterval(pollTimer);
       pollTimer = setInterval(drawRunning, 4000);
-    } else {
-      close();
     }
   }
 
@@ -898,5 +935,5 @@ const Apps = (() => {
   document.getElementById("apps-close").addEventListener("click", close);
   document.getElementById("apps-refresh").addEventListener("click", load);
 
-  return { toggle, close, load };
+  return { toggle, open, close, load, show };
 })();

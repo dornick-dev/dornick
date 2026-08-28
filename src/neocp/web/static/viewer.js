@@ -156,7 +156,7 @@ const Viewer = (() => {
   function close() {
     panel.hidden = true;
     dismissed = true;
-    document.body.classList.remove("viewing");
+    document.body.classList.remove("viewing"); document.body.classList.remove("viewer-max");
   }
 
   function toggle() {
@@ -188,7 +188,64 @@ const Viewer = (() => {
     return (bytes / 1024 / 1024).toFixed(1) + " MB";
   }
 
+  // --- sekmeler ---------------------------------------------------------
+  //
+  // Canlı şikâyet: "birini açınca diğeri kapanıyor". Açılan her içerik bir
+  // sekme; ikincisi gelince şerit görünür ve öncekine tek tıkla dönülür.
+  const tabs = [];              // {key, mode, label} — key: yol ya da "url:…"
+  function noteTab() {
+    if (!current) return;
+    const kayit = {
+      key: current, mode,
+      label: String(current).startsWith("url:")
+        ? (pageLabel || current.slice(4)) : label(current),
+    };
+    const i = tabs.findIndex((s) => s.key === current);
+    if (i >= 0) tabs[i] = kayit;
+    else { tabs.push(kayit); if (tabs.length > 8) tabs.shift(); }
+    drawTabs();
+  }
+  function drawTabs() {
+    const serit = document.getElementById("viewer-tabs");
+    if (!serit) return;
+    serit.textContent = "";
+    serit.hidden = tabs.length < 2;
+    for (const sk of tabs) {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "v-tab" + (sk.key === current ? " on" : "");
+      b.title = String(sk.key).startsWith("url:") ? sk.key.slice(4) : sk.key;
+      const ad = document.createElement("span");
+      ad.textContent = sk.label;
+      const x = document.createElement("i");
+      x.textContent = "×";
+      x.setAttribute("aria-label", t("Sekmeyi kapat"));
+      x.onclick = (ev) => { ev.stopPropagation(); dropTab(sk.key); };
+      b.append(ad, x);
+      b.onclick = () => {
+        if (sk.key === current) return;
+        mode = sk.mode;
+        current = sk.key;
+        if (String(sk.key).startsWith("url:")) pageLabel = sk.label;
+        load(sk.key);
+      };
+      serit.append(b);
+    }
+  }
+  function dropTab(key) {
+    const i = tabs.findIndex((s) => s.key === key);
+    if (i < 0) return;
+    tabs.splice(i, 1);
+    if (key === current) {
+      const nxt = tabs[Math.min(i, tabs.length - 1)];
+      if (nxt) { mode = nxt.mode; current = nxt.key; load(nxt.key); return; }
+      close();
+    }
+    drawTabs();
+  }
+
   async function load(path) {
+    noteTab();
     // Adres kipi: sunucunun servis ettiği sayfa taze çekilip yalıtılmış
     // çerçevede açılıyor. Aynı yarış kuralı: son istek kazanır.
     if (typeof path === "string" && path.startsWith("url:")) {
@@ -632,11 +689,16 @@ const Viewer = (() => {
       document.body.classList.remove("viewer-resize");
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", stop);
+      window.removeEventListener("pointercancel", stop);
+      window.removeEventListener("blur", stop);
     };
 
     grip.addEventListener("pointerdown", (e) => {
       e.preventDefault();
       active = true;
+      try { grip.setPointerCapture(e.pointerId); } catch { /* eski motor */ }
+      window.addEventListener("pointercancel", stop);
+      window.addEventListener("blur", stop);
       // Sürüklemeye başlarken mevcut genişliği piksele sabitle: değişken
       // hâlâ `min(...)` formülündeyse ilk hareket sıçrardı.
       root.style.setProperty("--viewer-w", Math.round(width()) + "px");
@@ -722,9 +784,9 @@ const Viewer = (() => {
 
   function injectScrollCss(html) {
     const css = "<style id=\"neo-scroll-theme\">"
-      + "html{scrollbar-width:thin;scrollbar-color:rgba(79,227,255,.35) transparent}"
+      + "html{scrollbar-width:thin;scrollbar-color:rgba(240,160,32,.35) transparent}"
       + "::-webkit-scrollbar{width:8px;height:8px}"
-      + "::-webkit-scrollbar-thumb{background:rgba(79,227,255,.3);border-radius:4px}"
+      + "::-webkit-scrollbar-thumb{background:rgba(240,160,32,.3);border-radius:4px}"
       + "::-webkit-scrollbar-track{background:transparent}"
       + "</style>";
     const src = String(html || "");
@@ -737,4 +799,15 @@ const Viewer = (() => {
 
   return { present, page, showing, watch, refresh, show, open, close, toggle,
            downloadArtifact, printPage };
+})();
+
+// Büyüt / yerine dön: görüntüleyici sağ bölgenin tamamını kaplar (beyin
+// geçici çekilir); tekrar basınca dock düzenine döner. Sahne kapanışta
+// kendini yeniden ölçüyor (mindRect her karede taze).
+(() => {
+  const dugme = document.getElementById("viewer-max");
+  if (!dugme) return;
+  dugme.addEventListener("click", () => {
+    document.body.classList.toggle("viewer-max");
+  });
 })();

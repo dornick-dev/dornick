@@ -436,8 +436,10 @@ def test_sources_are_drawn_as_readable_rows() -> None:
     assert "function sourceChip" in MD_JS_SRC
     assert "function domainOf" in MD_JS_SRC
     assert "function slugTitle" in MD_JS_SRC
-    # Yeni sekmede ve açan sayfaya erişimsiz.
-    assert MD_JS_SRC.count('"_blank", "noopener,noreferrer"') >= 2
+    # Çip gerçek <a>: URL durum çubuğunda görünür, sağ tık kopyalar.
+    # Yeni sekme + açan sayfaya erişimsiz sözleşmesi sürüyor.
+    assert MD_JS_SRC.count('.target = "_blank"') >= 2
+    assert MD_JS_SRC.count("noopener noreferrer") >= 2
     for selector in (r"^\.md-source \{", r"^\.md-source-host \{", r"^\.md-cite \{",
                      r"^\.md-sources \{"):
         assert re.search(selector, CSS, re.M), selector
@@ -1570,6 +1572,28 @@ def test_main_jobs_panel_and_artifact_export_exist() -> None:
     assert "Gorevler.tazele" in APP_JS
     assert "DOKUM_TTL_MS" in (STATIC / "gorevler.js").read_text(encoding="utf-8")
     assert "function planCard" in APP_JS
+    assert "flushDeferredPlans" in APP_JS
+    assert "enterPlanEdit" in APP_JS
+    assert "prompt(" not in APP_JS.split("function planCard")[1].split("function maybeOfferPlan")[0]
+    assert "plan-edit-area" in (STATIC / "app.css").read_text(encoding="utf-8")
+    assert "_inited" in (STATIC / "scene.js").read_text(encoding="utf-8")
+    # 28.08 kabuk kararı (kullanıcı, Claude Code birebir): HUD sade başlık
+    # çubuğu — kümeler dağıldı. Bağlam araçları orta-sağ üstte (ctx-tools),
+    # sistem ikonları kenar çubuğunun dibinde (side-foot).
+    assert "ctx-tools" in HTML and "side-foot" in HTML
+    assert 'id="hist-new"' in HTML   # yeni konuşma girişi sidebar'da
+    assert "Araçlar" in HTML and "Bağlantılar (MCP)" in HTML
+    settings = (STATIC / "settings.js").read_text(encoding="utf-8")
+    assert "confirmRow" in settings and "syncSaveFoot" in settings
+    assert "fillConnectorForm" in settings or "saveLabel" in settings
+    assert "tool-chips" in (STATIC / "app.css").read_text(encoding="utf-8")
+    hist = (STATIC / "history.js").read_text(encoding="utf-8")
+    assert "statusFilter" in hist and "assignPath" in hist and "assignModel" in hist
+    assert "hist-status-filters" in (STATIC / "app.css").read_text(encoding="utf-8")
+    assert "--open" in (Path(__file__).resolve().parents[1]
+        / "src" / "neocp" / "cli.py").read_text(encoding="utf-8")
+    assert "NeoOpen" in (Path(__file__).resolve().parents[1]
+        / "installer" / "neo.iss").read_text(encoding="utf-8")
     assert "function editTaskForm" in (STATIC / "settings.js").read_text(encoding="utf-8")
 
 

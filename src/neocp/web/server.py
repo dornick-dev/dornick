@@ -898,6 +898,17 @@ class _Handler(BaseHTTPRequestHandler):
             result = self._controller_call("new_session")
             self._json(result if isinstance(result, dict) else {"ok": False})
             return
+        if route == "/api/open":
+            # Windows 'Neo ile aç' / ikinci örnek handoff.
+            path = str((body or {}).get("path") or "").strip()
+            message = str((body or {}).get("message") or "")
+            controller = getattr(self.server, "controller", None)
+            fn = getattr(controller, "open_path", None) if controller else None
+            if not callable(fn):
+                self._json({"ok": False, "error": "açma desteği yok"})
+                return
+            self._json(fn(path, message=message))
+            return
         if route == "/api/session/resume":
             sid = str((body or {}).get("id") or "").strip()
             if not sid or not re.match(r"^[A-Za-z0-9_-]+$", sid):
@@ -933,11 +944,27 @@ class _Handler(BaseHTTPRequestHandler):
             # bir istek adı silmemeli.
             ad = body.get("ad") if isinstance(body, dict) else None
             etiketler = body.get("etiketler") if isinstance(body, dict) else None
+            path = body.get("path") if isinstance(body, dict) else None
+            model = body.get("model") if isinstance(body, dict) else None
+            provider = body.get("provider") if isinstance(body, dict) else None
             kayit = mind.set_session_meta(
                 sid,
                 ad=None if ad is None else str(ad),
                 etiketler=None if not isinstance(etiketler, list) else etiketler,
+                path=None if path is None else str(path),
+                model=None if model is None else str(model),
+                provider=None if provider is None else str(provider),
             )
+            # Sohbet-modeli AKTİF oturumda değiştiyse hemen uygulanır —
+            # "kaydettim ama hâlâ eski modelle konuşuyor" olmasın.
+            if model is not None or provider is not None:
+                controller = getattr(self.server, "controller", None)
+                aktif = str(getattr(mind, "session_id", "") or "")
+                if controller is not None and sid == aktif                         and hasattr(controller, "apply_session_context"):
+                    try:
+                        controller.apply_session_context(sid)
+                    except Exception:
+                        pass
             self._json({"ok": True, "meta": kayit})
             return
         if route == "/api/surum":
@@ -2811,6 +2838,7 @@ class _Handler(BaseHTTPRequestHandler):
         current = getattr(mind, "session_id", "")
         projects = mind.projects() if hasattr(mind, "projects") else {}
         meta = mind.session_meta() if hasattr(mind, "session_meta") else {}
+        busy = bool(getattr(getattr(self.server, "controller", None), "_busy", False))
 
         # `?ara=` verilirse arama DÖKÜMLERİN İÇİNDE de yapılıyor: aranan söz
         # çoğu zaman başlıkta değil konuşmanın ortasında geçiyor.
@@ -2825,6 +2853,7 @@ class _Handler(BaseHTTPRequestHandler):
         out = []
         for ep in mind.sessions():
             kayit = meta.get(ep.session_id) or {}
+            is_current = ep.session_id == current
             out.append({
                 "id": ep.session_id,
                 # Kullanıcının verdiği ad varsa o; yoksa dijestten türetilen.
@@ -2835,8 +2864,14 @@ class _Handler(BaseHTTPRequestHandler):
                 "turns": ep.turns,
                 "tools": ep.tools[:6],
                 "preview": ep.digest[:160],
-                "current": ep.session_id == current,
+                "current": is_current,
+                # açık = şu an seçili; koşuyor = seçili ve tur sürüyor; biten = diğerleri
+                "status": ("koşuyor" if is_current and busy
+                           else ("açık" if is_current else "biten")),
                 "project": projects.get(ep.session_id, ""),
+                "path": kayit.get("path") or "",
+                "model": kayit.get("model") or "",
+                "provider": kayit.get("provider") or "",
                 "hits": icinde.get(ep.session_id, []),
             })
 

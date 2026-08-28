@@ -68,7 +68,7 @@ const Komut = (() => {
   // menü, süzgeç, klavye gezinmesi ve `/yardim` listesi kendiliğinden
   // öğreniyor.
   const DEFTER = [
-    { ad: "yeni", ne: "Yeni konuşma başlat", kos: () => tik("new-chat") },
+    { ad: "yeni", ne: "Yeni konuşma başlat", kos: () => tik("hist-new") },
     { ad: "gecmis", ne: "Geçmiş konuşmalar", kos: () => tik("history") },
     { ad: "model", ne: "Model seç — katalogda ara", kos: () => tik("dock-model") },
     { ad: "yetki", ne: "Yetki kipini değiştir", kos: () => tik("dock-mode") },

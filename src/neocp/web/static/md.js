@@ -374,17 +374,17 @@ const Markdown = (() => {
 
   // Okunur kaynak satırı: başlık + alan adı, tıklanınca tarayıcıda açılır.
   function sourceChip(url, title) {
-    const chip = el("span", "md-source");
+    // Gerçek <a>: üzerine gelince tarayıcı adresi durum çubuğunda gösterir,
+    // sağ tık → "bağlantı adresini kopyala" çalışır. Span'ken URL hiçbir
+    // yerde görünmüyordu — canlı şikâyetti.
+    const chip = el("a", "md-source");
+    chip.href = url;
+    chip.target = "_blank";
+    chip.rel = "noopener noreferrer";
     const name = (title || "").trim() || slugTitle(url);
     if (name) chip.append(el2("span", "md-source-title", name));
     chip.append(el2("span", "md-source-host", domainOf(url)));
-    chip.title = ceviri("Tıkla — tarayıcıda aç") + "\n" + url;
-    chip.tabIndex = 0;
-    const git = () => window.open(url, "_blank", "noopener,noreferrer");
-    chip.addEventListener("click", git);
-    chip.addEventListener("keydown", (ev) => {
-      if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); git(); }
-    });
+    chip.title = url;
     return chip;
   }
 
@@ -398,14 +398,13 @@ const Markdown = (() => {
   function citation(no) {
     const source = sources.get(no);
     const mark = el("sup", "md-cite");
-    mark.textContent = "[" + no + "]";
-    mark.title = (source.title ? source.title + "\n" : "") + source.url;
-    mark.tabIndex = 0;
-    const git = () => window.open(source.url, "_blank", "noopener,noreferrer");
-    mark.addEventListener("click", git);
-    mark.addEventListener("keydown", (ev) => {
-      if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); git(); }
-    });
+    const git = el("a");
+    git.textContent = "[" + no + "]";
+    git.href = source.url;
+    git.target = "_blank";
+    git.rel = "noopener noreferrer";
+    git.title = (source.title ? source.title + "\n" : "") + source.url;
+    mark.append(git);
     return mark;
   }
 

@@ -12,6 +12,12 @@
 // metin Türkçe kalıyor; görüntüleme noktasında t("...") ile çevriliyor.
 Dil.ekle({
   "şu an açık": "open now",
+  "koşuyor": "running",
+  "biten": "done",
+  "Tümü": "All",
+  "Açık": "Open",
+  "Koşuyor": "Running",
+  "Biten": "Done",
   "Geçiliyor…": "Switching…",
   "Tur bitince geçilebilir": "You can switch when the turn ends",
   "Geçilemedi — neo meşgul olabilir, tur bitince dene.":
@@ -27,9 +33,13 @@ Dil.ekle({
   "Yeniden adlandır": "Rename",
   "Etiketle": "Tag",
   "Projeye taşı": "Move to project",
+  "Klasör bağla": "Bind folder",
+  "Model ata": "Set model",
   "Ad (boş = tarihten türet)": "Name (empty = derive from the talk)",
   "Etiketler — virgülle ayır (boş = kaldır)": "Tags — comma separated (empty = clear)",
   "Proje adı (boş = çıkar)": "Project name (empty = remove)",
+  "Çalışma klasörü (boş = kaldır)": "Work folder (empty = clear)",
+  "Model adı (boş = global ayar)": "Model name (empty = global setting)",
   "Etiket süzgeci": "Tag filter",
   "süzgeci kaldır": "clear filter",
   " tur": " turns",
@@ -51,7 +61,12 @@ const History = (() => {
   let deep = false;             // "içinde ara": döküm araması açık mı
   let searching = false;        // sunucu araması sürüyor
   let tagFilter = "";           // seçili etiket süzgeci
+  let statusFilter = "";        // "" | açık | koşuyor | biten
   let deepTimer = null;
+  // Uzun liste kaydırma çubuğuyla değil "Daha fazla göster" ile açılır
+  // (Claude Code'un Show more'u). Arama/filtre varken sınır yok.
+  let hepsi = false;
+  const GOSTER = 16;
   const UNFILED = "— Projesiz —";
 
   const el = (tag, cls, text) => {
@@ -115,6 +130,13 @@ const History = (() => {
             .toLowerCase().includes(q) || (s.hits || []).length)
       : sessions;
     if (tagFilter) shown = shown.filter(s => (s.tags || []).includes(tagFilter));
+    if (statusFilter === "açık") {
+      shown = shown.filter(s => s.current || s.status === "açık" || s.status === "koşuyor");
+    } else if (statusFilter === "koşuyor") {
+      shown = shown.filter(s => s.status === "koşuyor");
+    } else if (statusFilter === "biten") {
+      shown = shown.filter(s => !s.current && s.status !== "koşuyor");
+    }
 
     drawTools();
 
@@ -139,13 +161,26 @@ const History = (() => {
       if (!byProject.has(key)) byProject.set(key, []);
       byProject.get(key).push(s);
     }
+    // Liste sınırı: kırpma proje gruplamasından ÖNCE — en yeni 16.
+    let kirpilan = 0;
+    if (!hepsi && !q && !tagFilter && !statusFilter && shown.length > GOSTER) {
+      kirpilan = shown.length - GOSTER;
+      shown = shown.slice(0, GOSTER);
+      byProject.clear();
+      for (const s of shown) {
+        const key = s.project || UNFILED;
+        if (!byProject.has(key)) byProject.set(key, []);
+        byProject.get(key).push(s);
+      }
+    }
     // Projeler alfabetik, projesiz en sonda.
     const names = [...byProject.keys()].filter(n => n !== UNFILED).sort((a, b) => a.localeCompare(b, "tr"));
     if (byProject.has(UNFILED)) names.push(UNFILED);
 
     for (const name of names) {
       const items = byProject.get(name);
-      items.sort((a, b) => (b.current ? 1 : 0) - (a.current ? 1 : 0));
+      // Aktifi tepeye taşımak listeyi SIÇRATIYORDU ("yerinde durmuyor"):
+      // sıra hep yenilik sırası; aktif yalnız vurguyla belli olur.
       const isOpen = !collapsed.has(name);
       const head = el("div", "hist-folder" + (name === UNFILED ? " unfiled" : ""));
       head.append(el("span", "hist-fold", isOpen ? "▾" : "▸"));
@@ -155,6 +190,7 @@ const History = (() => {
       body.append(head);
       if (isOpen) items.forEach(s => body.append(row(s)));
     }
+    if (kirpilan) body.append(dahaFazla(kirpilan));
   }
 
   // Arama kutusunun altındaki şerit: "içinde ara" anahtarı ve (varsa)
@@ -168,6 +204,21 @@ const History = (() => {
       search.parentElement.insertBefore(strip, search.nextSibling);
     }
     strip.textContent = "";
+
+    const filters = el("div", "hist-status-filters");
+    for (const [id, label] of [
+      ["", "Tümü"],
+      ["açık", "Açık"],
+      ["koşuyor", "Koşuyor"],
+      ["biten", "Biten"],
+    ]) {
+      const chip = el("button", "hist-status" + (statusFilter === id ? " on" : ""));
+      chip.type = "button";
+      chip.textContent = t(label);
+      chip.onclick = () => { statusFilter = id; render(); };
+      filters.append(chip);
+    }
+    strip.append(filters);
 
     const anahtar = el("button", "hist-deep" + (deep ? " on" : ""));
     anahtar.type = "button";
@@ -187,31 +238,36 @@ const History = (() => {
   }
 
   function row(s) {
-    const wrap = el("div", "hist-item" + (s.current ? " current" : ""));
+    const wrap = el("div", "hist-item" + (s.current ? " current" : "")
+      + (s.status === "koşuyor" ? " running" : ""));
     const line = el("div", "hist-row");
-    // Durum noktası: dolu = çalışıyor, boş = tamamlandı.
-    line.append(el("span", "hist-dot"));
+    const dot = el("span", "hist-dot"
+      + (s.status === "koşuyor" ? " run" : (s.current ? " on" : "")));
+    line.append(dot);
     const baslik = el("span", "hist-title" + (s.named ? " named" : ""), s.title);
-    // Kullanıcının verdiği ad ile türetilen başlık ayırt edilebilmeli:
-    // türetilen başlık konuşmanın ilk sözü, ad ise bir karar.
     baslik.title = s.named ? s.title : s.preview || s.title;
     line.append(baslik);
-    // Aktif konuşma yazıyla da işaretli: nokta ve renk tek başına
-    // okunmuyordu — hangi satırın "şu an açık" olduğu sözle söyleniyor.
-    if (s.current) line.append(el("span", "hist-live", t("şu an açık")));
-    const meta = el("span", "hist-meta", _time(s.date) + (s.turns ? " · " + s.turns + t(" tur") : ""));
-    line.append(meta);
-    // Eylemler: yeniden adlandır · etiketle · projeye taşı. Hepsi satır
-    // tıklamasını yutuyor, yoksa düzenlemeye başlarken konuşma değişirdi.
-    // Eylemler AYRI bir katmanda, satırın sağ ucunda: yerinde dursalardı
-    // dar panelde başlığın genişliğini yerlerdi (üç düğme ~54px) ve satırda
-    // yalnız saat görünüyordu — canlıda ölçüldü. Şimdi ancak üzerine
-    // gelince beliriyorlar, başlık her zaman tam genişlikte.
+    if (s.status === "koşuyor") line.append(el("span", "hist-live", t("koşuyor")));
+    else if (s.current) line.append(el("span", "hist-live", t("şu an açık")));
+    const bits = [_time(s.date)];
+    if (s.turns) bits.push(s.turns + t(" tur"));
+    if (s.model) {
+      const short = String(s.model).includes("/")
+        ? String(s.model).split("/").pop() : s.model;
+      bits.push(short);
+    }
+    if (s.path) {
+      const leaf = String(s.path).replace(/\\/g, "/").split("/").filter(Boolean).pop();
+      if (leaf) bits.push("📁 " + leaf);
+    }
+    line.append(el("span", "hist-meta", bits.join(" · ")));
     const acts = el("div", "hist-acts");
     for (const [glif, ipucu, islev] of [
       ["✎", "Yeniden adlandır", editName],
       ["#", "Etiketle", editTags],
       ["⌗", "Projeye taşı", assignProject],
+      ["📁", "Klasör bağla", assignPath],
+      ["◈", "Model ata", assignModel],
     ]) {
       const dugme = el("button", "hist-assign", glif);
       dugme.title = t(ipucu);
@@ -223,7 +279,10 @@ const History = (() => {
     // geçiş çağrısı gerekmediği için neo meşgulken de her zaman çalışır.
     // Başka konuşmada o konuşmaya geçilir (sürdürür); meşgulse resume
     // kullanıcıya söylüyor, tık sessiz ölmüyor.
-    line.onclick = () => { if (s.current) close(); else resume(s, wrap); };
+    line.onclick = () => {
+      if (s.current) { if (innerWidth <= 860) close(); }
+      else resume(s, wrap);
+    };
     wrap.append(line);
 
     // Etiket rozetleri: tıklayınca o etikete süzülüyor. Etiket bir klasör
@@ -250,7 +309,10 @@ const History = (() => {
       const iz = el("div", "hist-hit");
       iz.append(el("span", "hist-hit-who", hit.role === "user" ? "sen" : "neo"));
       iz.append(el("span", "hist-hit-text", hit.text));
-      iz.onclick = () => { if (s.current) close(); else resume(s, wrap); };
+      iz.onclick = () => {
+        if (s.current) { if (innerWidth <= 860) close(); }
+        else resume(s, wrap);
+      };
       wrap.append(iz);
     }
 
@@ -382,6 +444,75 @@ const History = (() => {
     input.select();
   }
 
+  function assignPath(s, wrap) {
+    const existing = wrap.querySelector(".hist-assign-box");
+    if (existing) { existing.remove(); return; }
+    const box = el("div", "hist-assign-box");
+    const input = el("input", "hist-assign-input");
+    input.type = "text";
+    input.placeholder = t("Çalışma klasörü (boş = kaldır)");
+    input.value = s.path || "";
+    const save = async () => {
+      const path = input.value.trim();
+      box.remove();
+      const kayit = await saveMeta(s.id, { path });
+      if (kayit) s.path = kayit.path || "";
+      // Aktif sohbetse hemen uygula (geçişte de uygulanır).
+      if (s.current) {
+        try {
+          await fetch("/api/session/resume", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ id: s.id }),
+          });
+        } catch { /* yut */ }
+      }
+      render();
+    };
+    input.onkeydown = (ev) => {
+      if (ev.key === "Enter") { ev.preventDefault(); save(); }
+      else if (ev.key === "Escape") { box.remove(); }
+    };
+    box.append(input);
+    wrap.append(box);
+    input.focus();
+    input.select();
+  }
+
+  function assignModel(s, wrap) {
+    const existing = wrap.querySelector(".hist-assign-box");
+    if (existing) { existing.remove(); return; }
+    const box = el("div", "hist-assign-box");
+    const input = el("input", "hist-assign-input");
+    input.type = "text";
+    input.placeholder = t("Model adı (boş = global ayar)");
+    input.value = s.model || "";
+    const save = async () => {
+      const model = input.value.trim();
+      box.remove();
+      const kayit = await saveMeta(s.id, { model });
+      if (kayit) s.model = kayit.model || "";
+      if (s.current) {
+        try {
+          await fetch("/api/session/resume", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ id: s.id }),
+          });
+        } catch { /* yut */ }
+      }
+      render();
+    };
+    input.onkeydown = (ev) => {
+      if (ev.key === "Enter") { ev.preventDefault(); save(); }
+      else if (ev.key === "Escape") { box.remove(); }
+    };
+    box.append(input);
+    wrap.append(box);
+    input.focus();
+    input.select();
+  }
+
   // Yeni konuşma: taze bir oturum başlatır. Sunucu desteklemiyorsa (eski
   // süreç) kullanıcıya söylenir — sessizce yutulmaz.
   async function newConversation() {
@@ -393,7 +524,10 @@ const History = (() => {
     }
     const btn = document.getElementById("hist-new");
     if (res && res.ok) {
-      close();
+      // Rail kalıcı: yeni konuşma onu KAPATMAZ (canlı şikâyet). Dar
+      // pencerede overlay çekilir; genişte liste tazelenip yeni oturum
+      // işaretlenir.
+      if (innerWidth <= 860) close(); else { load(); setTimeout(load, 600); }
     } else {
       // Canlı yeni oturum henüz köprüde yok: kırık görünmesin, söyle.
       btn.textContent = "Yeni oturum için yeniden başlat";
@@ -417,7 +551,14 @@ const History = (() => {
         body: JSON.stringify({ id: s.id }),
       })).json();
     } catch { res = { ok: false }; }
-    if (res && res.ok) { close(); return; }
+    if (res && res.ok) {
+      // Geniş ekranda rail kalıcı bir sütun: konuşma değiştirmek onu
+      // KAPATMAZ. Liste tazelenir; sunucu geçişi işlerken yarış olursa
+      // "şu an açık" işareti ilk yüklemeye yetişemeyebiliyor — kısa bir
+      // gecikmeyle ikinci tazeleme işareti oturtur.
+      if (innerWidth > 860) { load(); setTimeout(load, 600); } else close();
+      return;
+    }
     if (res && res.busy) {
       // Meşgulken tık sessiz ölmüyor: kısa geri bildirim + satır görsel
       // olarak "beklemede" işaretleniyor. Tur bitince tekrar tıklanır.
@@ -430,6 +571,14 @@ const History = (() => {
     }
     // Görünür hata: köprü yoksa ya da oturum bulunamadıysa.
     status((res && res.error) ? res.error : t("Geçilemedi — neo meşgul olabilir, tur bitince dene."));
+  }
+
+  // "Daha fazla göster": kırpılan satır sayısıyla, listenin dibinde.
+  function dahaFazla(kirpilan) {
+    const dugme = el("button", "hist-more", t("Daha fazla göster") + " · " + kirpilan);
+    dugme.type = "button";
+    dugme.addEventListener("click", () => { hepsi = true; render(); });
+    return dugme;
   }
 
   // Panelin üstünde kısa bir durum/hata satırı.
@@ -456,26 +605,154 @@ const History = (() => {
     else close();
   }
   function open() {
-    if (typeof Apps !== "undefined") Apps.close();   // iki sol panel çakışmasın
+    userClosed = false;
+    if (innerWidth <= 860 && typeof Apps !== "undefined") Apps.close();   // dar: overlay çakışmasın
     panel.hidden = false;
     document.body.classList.add("hist-open");
+    document.getElementById("history").classList.add("on");
+    try { localStorage.setItem("neo-rail", "acik"); } catch { /* dosya:// */ }
     load();
   }
+  let userClosed = false;   // bu oturumda elle kapatıldı mı
   function close() {
     panel.hidden = true;
+    userClosed = true;
     document.body.classList.remove("hist-open");
+    document.getElementById("history").classList.remove("on");
+    // Bilinçli karar: tercih DİSKE YAZILMAZ. Kenar çubuğu kalıcı bir
+    // yapı (Claude Code gibi "sürekli açık"); X yalnız bu oturumda
+    // gizler, sonraki açılışta yine gelir.
   }
 
   document.getElementById("history").addEventListener("click", toggle_panel);
-  document.getElementById("hist-close").addEventListener("click", close);
+  // Panelin kendi X'i kalktı (Claude Code: ☰ tek anahtar); id bir gün
+  // geri gelirse yine bağlanır.
+  const kapat = document.getElementById("hist-close");
+  if (kapat) kapat.addEventListener("click", close);
+  // Süzgeç hunisi: filtre çipleri istenince görünür — varsayılan sade.
+  const huni = document.getElementById("hist-filter-toggle");
+  if (huni) huni.addEventListener("click", () => {
+    const acik = panel.classList.toggle("filters-on");
+    huni.classList.toggle("on", acik);
+  });
   document.getElementById("hist-new").addEventListener("click", newConversation);
-  // Doğrudan yeni konuşma: HUD'daki düğme geçmiş panelini açmaya gerek
-  // bırakmıyor (kullanıcı "illa sohbetleri açıp oradan yeni demem gerekiyor"
-  // dedi). Başarılıysa session_reset akışı thread'i temizliyor.
-  const newBtn = document.getElementById("new-chat");
-  if (newBtn) newBtn.addEventListener("click", newConversation);
+  // HUD'daki ayrı yeni-konuşma ikonu kalktı: sidebar'daki "+ Yeni
+  // konuşma" tek giriş (kullanıcı: "zaten yazıyor, icon gereksiz").
   // Her tuşta: yerel süzgeç anında, döküm araması gecikmeli.
   search.addEventListener("input", () => { render(); scheduleDeep(); });
 
-  return { open, close, toggle: toggle_panel, newChat: newConversation };
+  // Rail varsayılan AÇIK ve KALICI (Claude Code alışkanlığı: konuşmalar
+  // hep solda). Dar pencerede overlay'i kendiliğinden açmak sohbetin
+  // üstüne binmek olurdu — orada kapalı başlar. Pencere genişleyince
+  // (kullanıcı bu oturumda elle kapatmadıysa) kendiliğinden geri gelir.
+  if (innerWidth > 860) open();
+  window.addEventListener("resize", () => {
+    if (innerWidth > 860 && panel.hidden && !userClosed) open();
+    if (innerWidth <= 860 && !panel.hidden) { close(); userClosed = false; }
+  });
+
+  return { open, close, toggle: toggle_panel, newChat: newConversation,
+           // Sahneden gelen "konuşmaya git": önce panel açılır — geçiş
+           // ve olası hata mesajı GÖRÜNÜR bir yerde yaşasın (kapalı
+           // paneldeki durum satırı sessiz ölüyordu).
+           resumeById: (id) => { open(); resume({ id }); } };
+})();
+
+
+// --- kenar bölümleri: Görevler · Otomasyonlar ve Uygulamalar ------------
+// Rail tek kenar çubuğu: konuşmaların altında katlanır iki bölüm. Satıra
+// tıklamak ilgili DETAYI ORTA alanda açar (JobsPanel.show / Apps.open).
+Dil.ekle({
+  "Henüz görev yok": "No tasks yet",
+  "Uygulama yok": "No apps yet",
+  "otomasyon": "automation",
+  "çalışıyor": "running",
+  "eksik": "incomplete",
+});
+
+(() => {
+  const elx = (tag, cls, text) => {
+    const n = document.createElement(tag);
+    if (cls) n.className = cls;
+    if (text !== undefined) n.textContent = text;
+    return n;
+  };
+
+  async function doldurGorevler(list, say) {
+    let tasks = [];
+    try { tasks = (await (await fetch("/api/jobs")).json()).tasks || []; } catch { /* sunucu yok */ }
+    say.textContent = tasks.length || "";
+    list.textContent = "";
+    if (!tasks.length) { list.append(elx("div", "side-blank", t("Henüz görev yok"))); return; }
+    for (const task of tasks.slice(0, 40)) {
+      const row = elx("button", "side-row");
+      row.type = "button";
+      const durum = task.last_status === "koşuyor" ? " run"
+        : (task.last_status === "hata" || task.last_status === "başlatılamadı") ? " bad"
+        : task.kind_ui === "automation" ? " auto"
+        : task.enabled ? " on" : "";
+      row.append(elx("i", "side-row-dot" + durum),
+                 elx("span", "side-row-name", task.title || task.id));
+      if (task.kind_ui === "automation") row.append(elx("span", "side-row-meta", t("otomasyon")));
+      row.addEventListener("click", () => { if (window.JobsPanel) JobsPanel.show(task.id); });
+      list.append(row);
+    }
+  }
+
+  async function doldurUygulamalar(list, say) {
+    let projeler = [];
+    try { projeler = (await (await fetch("/api/projects")).json()).projects || []; } catch { /* sunucu yok */ }
+    // Kenar çubuğu yalnız GERÇEK uygulamaları gösterir: türü belli ve
+    // eksik olmayanlar. Atölyedeki başıboş dosyalar (rapor.txt, betik.ps1)
+    // katalogda "belirsiz" diye dursun ama burada liste çöplüğü yapmasın.
+    projeler = projeler.filter((p) => p.kind && !p.eksik);
+    say.textContent = projeler.length || "";
+    list.textContent = "";
+    if (!projeler.length) { list.append(elx("div", "side-blank", t("Uygulama yok"))); return; }
+    for (const p of projeler.slice(0, 40)) {
+      const row = elx("button", "side-row");
+      row.type = "button";
+      row.append(elx("i", "side-row-dot" + (p.eksik ? " bad" : "")),
+                 elx("span", "side-row-name", p.name));
+      // Orta alan yalnız SEÇİLENİN detayı: katalog değil, o uygulamanın
+      // sayfası (liste zaten burada, solda).
+      row.addEventListener("click", () => {
+        if (typeof Apps !== "undefined") Apps.show(p.name);
+      });
+      list.append(row);
+    }
+  }
+
+  const BOLUMLER = [
+    ["side-jobs-head", "side-jobs-list", "side-jobs-count", "neo-side-jobs", doldurGorevler],
+    ["side-apps-head", "side-apps-list", "side-apps-count", "neo-side-apps", doldurUygulamalar],
+  ];
+
+  for (const [headId, listId, countId, anahtar, doldur] of BOLUMLER) {
+    const head = document.getElementById(headId);
+    const list = document.getElementById(listId);
+    const say = document.getElementById(countId);
+    if (!head || !list) continue;
+
+    const uygula = (acik) => {
+      list.hidden = !acik;
+      head.querySelector(".side-fold").textContent = acik ? "▾" : "▸";
+      try { localStorage.setItem(anahtar, acik ? "acik" : "kapali"); } catch { /* dosya:// */ }
+      if (acik) doldur(list, say);
+    };
+    head.addEventListener("click", () => uygula(list.hidden));
+
+    let kayit = null;
+    try { kayit = localStorage.getItem(anahtar); } catch { /* dosya:// */ }
+    // Varsayılan açık: kenar çubuğu tek bakışta her şeyi göstersin.
+    uygula(kayit !== "kapali");
+  }
+})();
+
+// --- hızlı gezinti satırları: detay orta alanda -------------------------
+(() => {
+  const g = document.getElementById("side-jobs-nav");
+  if (g) g.addEventListener("click", () => { if (window.JobsPanel) JobsPanel.open(); });
+  const u = document.getElementById("side-apps-nav");
+  if (u) u.addEventListener("click", () => { if (typeof Apps !== "undefined") Apps.open(); });
 })();

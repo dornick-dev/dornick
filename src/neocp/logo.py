@@ -1,8 +1,8 @@
 """neo'nun logosu — tek kaynak.
 
-Minimalist bir işaret: parlayan çekirdek + ince yörünge yayı. Sahnedeki
-holografik çekirdeğin ve üst şeritteki marka noktasının damıtılmış hali;
-pencere simgesi, görev çubuğu, tepsi ve sekme hepsinde AYNI çizim kullanılır.
+Ocak kimliği: koyu kömür yuvarlak kare üstünde "ağdan örülmüş n" — dört
+tebeşir düğüm, kehribar tepe düğümü. Üst şeritteki marka SVG'siyle aynı
+işaret; pencere simgesi, görev çubuğu, tepsi ve sekme hepsinde AYNI çizim.
 
 Vektör dosyası yerine kodla çiziliyor: paketlenmiş uygulamada en sık kırılan
 şey varlık yolu — çizim koddaysa simge asla boş kalmaz. PIL tepsi için zaten
@@ -13,15 +13,21 @@ from __future__ import annotations
 
 from pathlib import Path
 
-# Marka renkleri (app.css'teki --cyan ailesiyle aynı).
-_CORE_IN = (234, 252, 255)     # merkez: buza yakın beyaz
-_CORE_MID = (79, 227, 255)     # cyan
-_CORE_OUT = (18, 116, 156)     # derin petrol — açık zeminde de okunsun
-_RING = (79, 227, 255)
+# Ocak renkleri (app.css'teki token ailesiyle aynı).
+_ZEMIN = (27, 24, 20)          # --panel: koyu kömür
+_KENAR = (62, 55, 44)          # ince kenar — koyu görev çubuğunda da seçilsin
+_CIZGI = (239, 232, 220)       # tebeşir: n'nin ipliği ve alt düğümler
+_TEPE = (240, 160, 32)         # kehribar: tepe düğümü (--cyan)
+
+# İşaretin geometrisi 32'lik ızgarada — index.html'deki SVG ile birebir.
+_N_YOLU = [(8, 26), (8, 13), (16, 8), (24, 13), (24, 26)]
+
+# Çizim değişince paketlerdeki .ico kendini tazelesin: sürüm bekçisi.
+_SURUM = "ocak-1"
 
 
 def draw(size: int):
-    """size×size şeffaf zeminde logo (PIL Image).
+    """size×size logo (PIL Image): koyu yuvarlak kare + örülmüş n.
 
     4× süperörnekleyip küçültüyoruz: 16px'te bile kenarlar temiz kalsın.
     """
@@ -30,28 +36,31 @@ def draw(size: int):
     s = size * 4
     img = Image.new("RGBA", (s, s), (0, 0, 0, 0))
     d = ImageDraw.Draw(img)
-    c = s / 2
+    u = s / 32.0                 # 32'lik ızgara → piksel
 
-    # Yörünge yayı: 300°'lik ince halka, boşluğu sağ üstte — sahnedeki
-    # halkaların "hep dönen, hiç kapanmayan" hissi.
-    ring_r = s * 0.435
-    ring_w = max(2, int(s * 0.055))
-    box = (c - ring_r, c - ring_r, c + ring_r, c + ring_r)
-    d.arc(box, start=-40, end=230, fill=(*_RING, 255), width=ring_w)
+    # Zemin: yuvarlak kare karo. Şeffaf zemin yerine karo: açık görev
+    # çubuğunda da koyu temada da aynı okunur kimlik.
+    pay = s * 0.02
+    d.rounded_rectangle((pay, pay, s - pay, s - pay), radius=s * 0.21,
+                        fill=(*_ZEMIN, 255), outline=(*_KENAR, 255),
+                        width=max(1, int(s * 0.012)))
 
-    # Çekirdek: radyal gradyan disk (eşmerkezli halkalarla).
-    core_r = s * 0.26
-    steps = 120
-    for i in range(steps, 0, -1):
-        t = i / steps            # 1 = dış kenar, 0 = merkez
-        r = core_r * t
-        if t > 0.55:             # dış: cyan → petrol
-            k = (t - 0.55) / 0.45
-            col = tuple(int(_CORE_MID[j] + (_CORE_OUT[j] - _CORE_MID[j]) * k) for j in range(3))
-        else:                    # iç: beyaz → cyan
-            k = t / 0.55
-            col = tuple(int(_CORE_IN[j] + (_CORE_MID[j] - _CORE_IN[j]) * k) for j in range(3))
-        d.ellipse((c - r, c - r, c + r, c + r), fill=(*col, 255))
+    # n ipliği: SVG'deki polyline, yuvarlak uçlu.
+    yol = [(x * u, y * u) for x, y in _N_YOLU]
+    w = max(2, int(3.0 * u))
+    d.line(yol, fill=(*_CIZGI, 255), width=w, joint="curve")
+    # Yuvarlak uçlar: ilk ve son noktaya kapak.
+    for x, y in (yol[0], yol[-1]):
+        r = w / 2
+        d.ellipse((x - r, y - r, x + r, y + r), fill=(*_CIZGI, 255))
+
+    # Düğümler: dört tebeşir, tepede kehribar.
+    for x, y in _N_YOLU:
+        px, py = x * u, y * u
+        tepe = (x, y) == (16, 8)
+        r = (3.4 if tepe else 2.6) * u
+        col = _TEPE if tepe else _CIZGI
+        d.ellipse((px - r, py - r, px + r, py + r), fill=(*col, 255))
 
     return img.resize((size, size), Image.LANCZOS)
 
@@ -60,12 +69,23 @@ def ensure_ico(path: Path) -> bool:
     """Çok boyutlu .ico dosyasını (yoksa) üretir. Başarı durumunu döndürür."""
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
+        # Sürüm bekçisi: çizim değiştiyse (ocak göçü gibi) eski .ico
+        # sessizce kalmasın — yeniden üret. Yan dosya .ico'nun yanında.
+        bekci = path.with_suffix(".ico.surum")
         if path.exists():
-            return True
+            try:
+                if bekci.read_text(encoding="utf-8").strip() == _SURUM:
+                    return True
+            except OSError:
+                pass
         base = draw(256)
         base.save(path, format="ICO",
                   sizes=[(16, 16), (20, 20), (24, 24), (32, 32),
                          (40, 40), (48, 48), (64, 64), (128, 128), (256, 256)])
+        try:
+            bekci.write_text(_SURUM, encoding="utf-8")
+        except OSError:
+            pass
         return True
     except Exception:
         return False
