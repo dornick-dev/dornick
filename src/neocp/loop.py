@@ -1309,7 +1309,7 @@ class Agent:
             from .recall import taban
             query = taban.zenginlestir(user_input, getattr(self.config, "state_dir", None))
             limit = LEAN_PRIME_LIMIT if self.lean else RECALL_PRIME_LIMIT
-            hits = select_prime(self.mind, query, limit=limit)
+            hits = select_prime(self.mind, query, limit=limit, ham=user_input)
         except Exception as exc:  # hatirlama coktuyse konusma yine surmeli
             self.session.log.note("recall_prime_failed", error=str(exc))
             return
@@ -2808,7 +2808,8 @@ def worth_recalling(text: str) -> bool:
     return any(word not in SMALL_TALK for word in words)
 
 
-def select_prime(mind: Any, user_input: str, *, limit: int = RECALL_PRIME_LIMIT) -> list[Any]:
+def select_prime(mind: Any, user_input: str, *, limit: int = RECALL_PRIME_LIMIT,
+                 ham: str | None = None) -> list[Any]:
     """Kendiliğinden önyüklemenin seçim çekirdeği: ara, süz, kuyruğu kes.
 
     Modül fonksiyonu olması bilinçli — ölçek benchmark'ı
@@ -2838,12 +2839,37 @@ def select_prime(mind: Any, user_input: str, *, limit: int = RECALL_PRIME_LIMIT)
     if not direct:
         return []
     stems = _query_stems(query)
+    # Zengin sorguda (>=5 gövde) TEK gövdeyle tutunan kayıt önyüklemeye
+    # giremez: 50 alakasız saha notu "ayın" ↔ "ayında" gibi tek örtüşmeyle
+    # tam bu yoldan sızdı (28.08 hafıza deneyi, C kolu: +%28 token,
+    # +1 çağrı). Kendiliğinden enjeksiyonun çıtası açık aramadan yüksek —
+    # tek-konulu gerçek ihtiyaç için modelin `mind_recall` yolu duruyor.
+    # Kısaltma sorguları (btc, plc) zarar görmez: gövdeleri az, kural uyumaz.
+    # Zenginlik HAM kullanıcı sorgusundan ölçülür: sinonim genişletmesi
+    # (taban.zenginlestir + köprü) sorguyu yapay şişiriyor ve üç kelimelik
+    # meşru bir soru "zengin" sayılıp genç hafızadaki tek-gövdeli gerçek
+    # kaydı kesiyordu (test bunu yakaladı). Çağıran ham metni verir;
+    # vermezse eldeki sorgudan köprüsüz gövdelere düşülür.
+    zengin = len(_query_stems(ham if ham is not None else query,
+                              genislet=False)) >= 5
+    def _gecer(item: Any) -> bool:
+        if not stems:
+            return True
+        text = f"{item.title} {item.content} {' '.join(item.tags)}".casefold()
+        vuranlar = [g for g in stems if g in text]
+        if not vuranlar:
+            return False
+        # Önek kopyaları tek sayılır: "ayı" ve "ayın" aynı kelimenin iki
+        # kesimi — ikisini iki kanıt saymak süzgeci deliyordu.
+        tekil = [g for g in vuranlar
+                 if not any(g != d and d.startswith(g) for d in vuranlar)]
+        return len(tekil) >= 2 if zengin else True
     passed = [
         hit
         for hit in hits
         if hit.item.kind != "episode"
         and hit.item.id in direct
-        and _grounded(hit.item, stems)
+        and _gecer(hit.item)
     ]
     if not passed:
         return []
@@ -2871,7 +2897,7 @@ def prime_note(hits: list[Any]) -> str:
     return "\n".join(lines)
 
 
-def _query_stems(query: str) -> set[str]:
+def _query_stems(query: str, *, genislet: bool = True) -> set[str]:
     """Sorgunun içerik kelimelerinin gövdeleri (ilk 5 harf, küçük harf).
 
     İşlev kelimeleri (ve/bir/için...) atılıyor — onlar her kayıtta var ve
@@ -2885,9 +2911,10 @@ def _query_stems(query: str) -> set[str]:
     from .recall import bridge
     from .recall.vector import STOPWORDS
 
+    metin = bridge.expand(query or "") if genislet else (query or "")
     return {
         w[:5]
-        for w in _WORDS.findall(bridge.expand(query or "").casefold())
+        for w in _WORDS.findall(metin.casefold())
         if len(w) >= 3 and w not in STOPWORDS
     }
 

@@ -1047,3 +1047,55 @@ def test_clearing_session_model_returns_to_global(tmp_path: Path) -> None:
     mind.set_session_meta("s1", model="")
     kopru._apply_session_context("s1")
     assert ajan.config.model.name == "kuresel-model"
+
+
+# -- kendiliğinden hatırlama: kısa-tek-zemin sızıntısı -----------------
+#
+# Ölçülen yara (28.08 hafıza deneyi, C kolu): 50 alakasız saha notu, o1
+# görev istemiyle yalnız "ay" ↔ "ayında" örtüşmesi üzerinden önyüklemeye
+# sızdı (+%28 token, +1 çağrı). Kural: zengin sorguda tek ve ≤3 harflik
+# gövdeyle tutunan kayıt girmez; gerçek anı (çok gövdeli) girmeye devam eder.
+
+
+O1_ISTEMI = ("Atölyede satislar.csv var: tarih, urun, adet, birim_fiyat. "
+             "Rapor çıkaran bir araç istiyorum: her ayın toplam cirosunu "
+             "ve en çok ciro yapan 3 ürünü yazsın. --ay 2026-03 deyince "
+             "sadece o ayı göstersin.")
+
+
+def _hafizali(tmp_path: Path):
+    from neocp.mind import open_mind
+    config = Config.load(tmp_path)
+    config.ensure_dirs()
+    return open_mind(config.mind_dir, config.sessions_dir, "t")
+
+
+def test_prime_rejects_junk_grounded_on_one_short_stem(tmp_path: Path) -> None:
+    from neocp.loop import select_prime
+    mind = _hafizali(tmp_path)
+    for i in range(12):
+        mind.remember(f"Kayseri sahasında {i} numaralı pompa istasyonunun "
+                      f"salmastra bakımı {i % 9 + 1} ayında yapıldı.",
+                      kind="fact", title=f"saha notu {i}")
+
+    hits = select_prime(mind, O1_ISTEMI)
+
+    assert hits == [], [h.item.title for h in hits]
+
+
+def test_prime_still_surfaces_the_truly_relevant_memory(tmp_path: Path) -> None:
+    from neocp.loop import select_prime
+    mind = _hafizali(tmp_path)
+    mind.remember("satislar.csv düzeni: tarih,urun,adet,birim_fiyat "
+                  "sütunları; ürünler Sensor, Kablo, PLC, Pompa.",
+                  kind="fact", title="satislar.csv düzeni")
+    for i in range(12):
+        mind.remember(f"Kayseri sahasında {i} numaralı pompa istasyonunun "
+                      f"salmastra bakımı {i % 9 + 1} ayında yapıldı.",
+                      kind="fact", title=f"saha notu {i}")
+
+    hits = select_prime(mind, O1_ISTEMI)
+
+    basliklar = [h.item.title for h in hits]
+    assert "satislar.csv düzeni" in basliklar, basliklar
+    assert not any("saha notu" in b for b in basliklar), basliklar
