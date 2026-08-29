@@ -1,17 +1,18 @@
-"""Kodlama ölçüm düzeneğinin kendi testleri (`eval/coding/`).
+"""The coding benchmark rig's own tests (`eval/coding/`).
 
-Bir puanlayıcı ölçülmeden kullanılamaz: hatalı bir ölçüt, modelin
-başarısızlığı gibi görünür ve haftalarca yanlış yere bakılır. Buradaki
-testler üç şeyi çiviliyor:
+A grader cannot be used unmeasured: a faulty ruler looks like the model
+failing, and weeks go to the wrong place. These tests pin three things:
 
-  1. **Doğru çözüm yüksek alıyor.** Referans çözümler test içinde
-     üretiliyor (depoya yazılmıyor) ve puanlayıcıdan geçiriliyor.
-  2. **Bozuk/eksik teslim düşük alıyor** ve "bozuk teslim" bayrağı kalkıyor.
-  3. **Ölçemediğini ölçtüm demiyor.** Ölçülemeyen eksen `None` dönüyor,
-     paydadan düşüyor; istenmemiş iş puana katılmıyor.
+  1. **A correct solution scores high.** Reference solutions are generated
+     inside the tests (never committed) and run through the grader.
+  2. **A broken/missing delivery scores low** and raises the
+     broken-delivery flag.
+  3. **It never claims to have measured what it could not.** An
+     unmeasurable axis returns `None` and leaves the denominator;
+     unrequested work is never scored.
 
-Ayrıca davranış çıkarımı sahte bir oturum günlüğüyle sınanıyor: uydurma yok,
-kanıt yoksa "çıkarılamadı".
+Behaviour extraction is exercised with a fake session log: no inventions —
+where there is no evidence, "unextractable".
 """
 
 from __future__ import annotations
@@ -24,409 +25,414 @@ from pathlib import Path
 
 import pytest
 
-KOK = Path(__file__).resolve().parents[1]
-OLCUM = KOK / "eval" / "coding"
-sys.path.insert(0, str(OLCUM))
+ROOT = Path(__file__).resolve().parents[1]
+RIG = ROOT / "eval" / "coding"
+sys.path.insert(0, str(RIG))
 
-import davranis  # noqa: E402
-import puanla  # noqa: E402
+import behavior  # noqa: E402
+import grading  # noqa: E402
 
 
-def olcut(ad: str):
-    """Bir görevin puanlayıcı modülünü yükler."""
-    yol = OLCUM / "gorevler" / ad / "olcut.py"
-    spec = importlib.util.spec_from_file_location(f"olcut_test_{ad}", yol)
+def grader(task_id: str):
+    """Load one task's grader module."""
+    path = RIG / "tasks" / task_id / "grader.py"
+    spec = importlib.util.spec_from_file_location(f"grader_test_{task_id}", path)
     assert spec and spec.loader
-    modul = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(modul)
-    return modul
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
-def tohumla(ad: str, hedef: Path) -> Path:
-    kaynak = OLCUM / "gorevler" / ad / "tohum"
-    hedef.mkdir(parents=True, exist_ok=True)
-    if kaynak.is_dir():
-        shutil.copytree(kaynak, hedef, dirs_exist_ok=True)
-    return hedef
+def seed(task_id: str, target: Path) -> Path:
+    source = RIG / "tasks" / task_id / "seed"
+    target.mkdir(parents=True, exist_ok=True)
+    if source.is_dir():
+        shutil.copytree(source, target, dirs_exist_ok=True)
+    return target
 
 
-# -- düzeneğin bütünlüğü ------------------------------------------------
+# -- rig integrity ------------------------------------------------------
 
 
-def test_dokuz_gorev_uc_zorlukta_ve_uc_dilde() -> None:
-    """Görev seti sözleşmesi: 9 görev, üç zorluk, üç dil, hepsi eksiksiz."""
-    klasorler = sorted(p for p in (OLCUM / "gorevler").iterdir() if p.is_dir())
-    assert len(klasorler) == 9, [p.name for p in klasorler]
+def test_nine_tasks_across_three_difficulties_and_languages() -> None:
+    """Task-set contract: 9 tasks, three difficulties, three languages."""
+    folders = sorted(p for p in (RIG / "tasks").iterdir() if p.is_dir())
+    assert len(folders) == 9, [p.name for p in folders]
 
-    zorluklar: dict[str, int] = {}
-    diller: set[str] = set()
-    for p in klasorler:
-        assert (p / "gorev.md").is_file(), f"{p.name}: ham istem yok"
-        assert (p / "olcut.py").is_file(), f"{p.name}: puanlayıcı yok"
-        m = olcut(p.name)
-        zorluklar[m.ZORLUK] = zorluklar.get(m.ZORLUK, 0) + 1
-        diller.add(m.DIL)
-        assert m.BASLIK and m.ISTEM_YOK is None if hasattr(m, "ISTEM_YOK") else True
-    assert zorluklar == {"kolay": 3, "orta": 3, "zor": 3}, zorluklar
-    assert diller == {"python", "php", "node"}, diller
+    difficulties: dict[str, int] = {}
+    languages: set[str] = set()
+    for p in folders:
+        assert (p / "task.md").is_file(), f"{p.name}: no raw brief"
+        assert (p / "grader.py").is_file(), f"{p.name}: no grader"
+        m = grader(p.name)
+        difficulties[m.DIFFICULTY] = difficulties.get(m.DIFFICULTY, 0) + 1
+        languages.add(m.LANGUAGE)
+        assert m.TITLE
+    assert difficulties == {"easy": 3, "medium": 3, "hard": 3}, difficulties
+    assert languages == {"python", "php", "node"}, languages
 
 
-def test_ham_istemde_disiplin_telkini_yok() -> None:
-    """İstem kullanıcının yazacağı gibi olmalı: "önce test yaz", "doğrula",
-    "adım adım plan çıkar" gibi telkinler ölçümü sahteleştirir — ajanın
-    kendiliğinden yapıp yapmadığını ölçüyoruz."""
-    yasak = ("önce test", "test-driven", "adım adım plan", "doğrulamayı unutma",
-             "kendini doğrula", "checklist", "temiz kod ilkeleri")
-    for p in sorted((OLCUM / "gorevler").iterdir()):
+def test_raw_briefs_carry_no_discipline_coaching() -> None:
+    """The brief must read like a user: "write tests first", "verify",
+    "plan step by step" would fake the measurement — we measure whether
+    the agent does those things unprompted."""
+    banned = ("write tests first", "test-driven", "step by step plan",
+              "don't forget to verify", "verify yourself", "checklist",
+              "clean code principles")
+    for p in sorted((RIG / "tasks").iterdir()):
         if not p.is_dir():
             continue
-        metin = (p / "gorev.md").read_text(encoding="utf-8").casefold()
-        for kalip in yasak:
-            assert kalip not in metin, f"{p.name}: «{kalip}» telkini var"
+        text = (p / "task.md").read_text(encoding="utf-8").casefold()
+        for pattern in banned:
+            assert pattern not in text, f"{p.name}: coaching «{pattern}»"
 
 
-# -- Eksen / Karne dürüstlüğü -------------------------------------------
+# -- Axis / Scorecard honesty -------------------------------------------
 
 
-def test_olculemeyen_eksen_paydadan_dusuyor() -> None:
-    k = puanla.Karne("x", [
-        puanla.Eksen("calisir", 40, 40.0),
-        puanla.Eksen("kapsam", 25, 25.0),
-        puanla.Eksen("saglik", 20, None, sebep="php yok"),
-        puanla.Eksen("test", 15, 15.0),
+def test_unmeasurable_axis_leaves_the_denominator() -> None:
+    card = grading.Scorecard("x", [
+        grading.Axis("works", 40, 40.0),
+        grading.Axis("scope", 25, 25.0),
+        grading.Axis("health", 20, None, reason="no php"),
+        grading.Axis("tests", 15, 15.0),
     ])
-    assert k.olculen_tavan == 80
-    assert k.puan == pytest.approx(100.0)
-    assert k.olculemeyen == ["kod sağlığı"]
+    assert card.measured_ceiling == 80
+    assert card.score == pytest.approx(100.0)
+    assert card.unmeasured == ["code health"]
 
 
-def test_istenmemis_eksen_puana_katilmiyor_ama_raporlaniyor() -> None:
-    e = puanla.Eksen("test", 15, 0.0, harici=True)
-    k = puanla.Karne("x", [puanla.Eksen("calisir", 40, 20.0), e])
-    assert k.olculen_tavan == 40
-    assert k.puan == pytest.approx(50.0)
-    assert "istenmedi" in e.yaz()
+def test_unrequested_axis_reported_but_not_scored() -> None:
+    axis = grading.Axis("tests", 15, 0.0, external=True)
+    card = grading.Scorecard("x", [grading.Axis("works", 40, 20.0), axis])
+    assert card.measured_ceiling == 40
+    assert card.score == pytest.approx(50.0)
+    assert "not requested" in axis.render()
 
 
-def test_calisir_olculemediyse_puan_yok() -> None:
-    """Taşıyıcı eksen ölçülemediyse ortada puan yoktur.
+def test_no_score_when_works_is_unmeasurable() -> None:
+    """No score without the carrier axis.
 
-    Gerçek koşudan gelen kural: ajan kendi `php -S`'ini açık bırakınca ölçüm
-    portu tutulu buldu, çalışır/kapsam "ölçülemedi" oldu, geriye yalnız kod
-    sağlığı 20/20 kaldı ve normalize puan **100.0** çıktı. Çalıştığını hiç
-    göremediğimiz bir teslim tam puan alamaz.
+    A rule from a real run: the agent left its own `php -S` open, the
+    measurement found the port held, works/scope went "unmeasurable",
+    only code health (20/20) remained, and the normalised score came out
+    **100.0**. A delivery we never saw run cannot take full marks.
     """
-    k = puanla.Karne("z2", [
-        puanla.Eksen("calisir", 40, None, sebep="port tutuluydu"),
-        puanla.Eksen("kapsam", 25, None, sebep="port tutuluydu"),
-        puanla.Eksen("saglik", 20, 20.0),
-        puanla.Eksen("test", 15, 0.0, harici=True),
+    card = grading.Scorecard("z2", [
+        grading.Axis("works", 40, None, reason="port was held"),
+        grading.Axis("scope", 25, None, reason="port was held"),
+        grading.Axis("health", 20, 20.0),
+        grading.Axis("tests", 15, 0.0, external=True),
     ])
-    assert k.puan is None
-    assert k.sozluk()["puan"] is None
-    # Çalışır ölçüldüyse, başka bir eksenin ölçülememesi puanı engellemez.
-    saglam = puanla.Karne("x", [
-        puanla.Eksen("calisir", 40, 40.0),
-        puanla.Eksen("saglik", 20, None, sebep="php yok"),
+    assert card.score is None
+    assert card.as_dict()["score"] is None
+    # When works WAS measured, another unmeasurable axis does not block it.
+    fine = grading.Scorecard("x", [
+        grading.Axis("works", 40, 40.0),
+        grading.Axis("health", 20, None, reason="no php"),
     ])
-    assert saglam.puan == pytest.approx(100.0)
+    assert fine.score == pytest.approx(100.0)
 
 
-def test_hicbir_eksen_olculemezse_puan_none() -> None:
-    k = puanla.Karne("x", [puanla.Eksen(ad, tav, None)
-                           for ad, tav in puanla.EKSENLER.items()])
-    assert k.puan is None
-    assert k.sozluk()["puan"] is None
+def test_score_none_when_nothing_measurable() -> None:
+    card = grading.Scorecard("x", [grading.Axis(name, ceiling, None)
+                                   for name, ceiling in grading.AXES.items()])
+    assert card.score is None
+    assert card.as_dict()["score"] is None
 
 
-def test_bozuk_teslim_bayragi_calisir_ekseninden_geliyor() -> None:
-    bozuk = puanla.Karne("x", [puanla.Eksen("calisir", 40, 0.0)])
-    saglam = puanla.Karne("x", [puanla.Eksen("calisir", 40, 1.0)])
-    olculemedi = puanla.Karne("x", [puanla.Eksen("calisir", 40, None)])
-    assert bozuk.bozuk_teslim
-    assert not saglam.bozuk_teslim
-    assert not olculemedi.bozuk_teslim, "ölçülemeyen koşu bozuk sayılmaz"
+def test_broken_delivery_flag_comes_from_the_works_axis() -> None:
+    broken = grading.Scorecard("x", [grading.Axis("works", 40, 0.0)])
+    fine = grading.Scorecard("x", [grading.Axis("works", 40, 1.0)])
+    unmeasured = grading.Scorecard("x", [grading.Axis("works", 40, None)])
+    assert broken.broken_delivery
+    assert not fine.broken_delivery
+    assert not unmeasured.broken_delivery, "unmeasurable is not broken"
 
 
-def test_sayac_atlanan_madde_tavandan_da_dusuyor() -> None:
-    s = puanla.Sayac()
-    s.madde("a", 10, True)
-    s.atla("b", "araç yok")
-    e = s.eksen("calisir", 40)
-    assert e.alinan == pytest.approx(40.0), "atlanan madde puanı seyreltmemeli"
-    assert any("ölçülemedi" in k for k in e.kanit)
+def test_tally_skipped_item_drops_from_ceiling_too() -> None:
+    t = grading.Tally()
+    t.item("a", 10, True)
+    t.skip("b", "no tool")
+    axis = t.axis("works", 40)
+    assert axis.earned == pytest.approx(40.0), "a skip must not dilute"
+    assert any("unmeasurable" in e for e in axis.evidence)
 
 
-def test_sayac_hicbir_madde_olcelemezse_eksen_olculemedi() -> None:
-    s = puanla.Sayac()
-    s.atla("a", "php yok")
-    e = s.eksen("calisir", 40)
-    assert e.alinan is None and e.sebep
+def test_tally_all_skipped_makes_the_axis_unmeasurable() -> None:
+    t = grading.Tally()
+    t.skip("a", "no php")
+    axis = t.axis("works", 40)
+    assert axis.earned is None and axis.reason
 
 
-# -- kod sağlığı --------------------------------------------------------
+# -- code health --------------------------------------------------------
 
 
-def test_saglik_bos_atolyede_olculemedi(tmp_path: Path) -> None:
-    e = puanla.saglik_ekseni(tmp_path)
-    assert e.alinan is None and "kaynak dosya yok" in e.sebep
+def test_health_unmeasurable_in_an_empty_workshop(tmp_path: Path) -> None:
+    axis = grading.health_axis(tmp_path)
+    assert axis.earned is None and "no source files" in axis.reason
 
 
-def test_saglik_bozuk_sozdizimini_yakaliyor(tmp_path: Path) -> None:
-    (tmp_path / "temiz.py").write_text("def f():\n    return 1\n", encoding="utf-8")
-    temiz = puanla.saglik_ekseni(tmp_path)
-    (tmp_path / "bozuk.py").write_text("def f(:\n  ???\n", encoding="utf-8")
-    bozuk = puanla.saglik_ekseni(tmp_path)
-    assert bozuk.alinan is not None and temiz.alinan is not None
-    assert bozuk.alinan < temiz.alinan
+def test_health_catches_broken_syntax(tmp_path: Path) -> None:
+    (tmp_path / "clean.py").write_text("def f():\n    return 1\n",
+                                       encoding="utf-8")
+    clean = grading.health_axis(tmp_path)
+    (tmp_path / "broken.py").write_text("def f(:\n  ???\n", encoding="utf-8")
+    broken = grading.health_axis(tmp_path)
+    assert broken.earned is not None and clean.earned is not None
+    assert broken.earned < clean.earned
 
 
-def test_tekrar_orani_kopyala_yapistiri_goruyor(tmp_path: Path) -> None:
-    blok = "\n".join(f"    x{i} = {i} + 1" for i in range(8))
-    (tmp_path / "a.py").write_text(f"def a():\n{blok}\n", encoding="utf-8")
-    tek, _ = puanla.tekrar_orani([tmp_path / "a.py"])
-    (tmp_path / "b.py").write_text(f"def b():\n{blok}\n", encoding="utf-8")
-    cift, blok_sayisi = puanla.tekrar_orani(
+def test_duplication_sees_copy_paste(tmp_path: Path) -> None:
+    block = "\n".join(f"    x{i} = {i} + 1" for i in range(8))
+    (tmp_path / "a.py").write_text(f"def a():\n{block}\n", encoding="utf-8")
+    single, _ = grading.duplication([tmp_path / "a.py"])
+    (tmp_path / "b.py").write_text(f"def b():\n{block}\n", encoding="utf-8")
+    double, blocks = grading.duplication(
         [tmp_path / "a.py", tmp_path / "b.py"])
-    assert tek == 0.0
-    assert cift > 0.3 and blok_sayisi >= 1
+    assert single == 0.0
+    assert double > 0.3 and blocks >= 1
 
 
-# -- test kalitesi ------------------------------------------------------
+# -- test quality -------------------------------------------------------
 
 
-def test_test_yoksa_gercek_sifir_olculemedi_degil(tmp_path: Path) -> None:
-    (tmp_path / "kod.py").write_text("def f():\n    return 1\n", encoding="utf-8")
-    e = puanla.test_ekseni(tmp_path, kritik=("f",))
-    assert e.alinan == 0.0, "bakıldı ve yoktu — bu ölçülemedi değil"
+def test_no_tests_is_a_real_zero_not_unmeasurable(tmp_path: Path) -> None:
+    (tmp_path / "code.py").write_text("def f():\n    return 1\n",
+                                      encoding="utf-8")
+    axis = grading.tests_axis(tmp_path, critical=("f",))
+    assert axis.earned == 0.0, "we looked and there were none — not unmeasurable"
 
 
-def test_bedava_gecen_iddialar_puani_dusuruyor(tmp_path: Path) -> None:
-    iyi = tmp_path / "iyi"
-    kotu = tmp_path / "kotu"
-    for yer in (iyi, kotu):
-        yer.mkdir()
-        (yer / "kod.py").write_text("def topla(a, b):\n    return a + b\n",
-                                    encoding="utf-8")
-    (iyi / "test_kod.py").write_text(
-        "from kod import topla\n"
-        "def test_bir():\n    assert topla(1, 2) == 3\n"
-        "def test_iki():\n    assert topla(-1, 1) == 0\n",
+def test_freebie_assertions_lower_the_score(tmp_path: Path) -> None:
+    good = tmp_path / "good"
+    bad = tmp_path / "bad"
+    for place in (good, bad):
+        place.mkdir()
+        (place / "code.py").write_text("def add(a, b):\n    return a + b\n",
+                                       encoding="utf-8")
+    (good / "test_code.py").write_text(
+        "from code import add\n"
+        "def test_one():\n    assert add(1, 2) == 3\n"
+        "def test_two():\n    assert add(-1, 1) == 0\n",
         encoding="utf-8")
-    (kotu / "test_kod.py").write_text(
-        "def test_bir():\n    assert True\n"
-        "def test_iki():\n    assert True\n",
+    (bad / "test_code.py").write_text(
+        "def test_one():\n    assert True\n"
+        "def test_two():\n    assert True\n",
         encoding="utf-8")
-    a = puanla.test_ekseni(iyi, kritik=("topla",))
-    b = puanla.test_ekseni(kotu, kritik=("topla",))
-    assert a.alinan is not None and b.alinan is not None
-    assert a.alinan > b.alinan
+    a = grading.tests_axis(good, critical=("add",))
+    b = grading.tests_axis(bad, critical=("add",))
+    assert a.earned is not None and b.earned is not None
+    assert a.earned > b.earned
 
 
-# -- görev puanlayıcıları: doğru çözüm yüksek, bozuk teslim düşük -------
+# -- task graders: correct solutions high, broken deliveries low --------
 
 
-DOGRU_TCKN = (
+CORRECT_TCKN = (
     "def dogrula(no):\n"
     "    if not isinstance(no, str) or len(no) != 11 or not no.isdigit():\n"
     "        return False\n"
     "    d = [int(c) for c in no]\n"
     "    if d[0] == 0:\n"
     "        return False\n"
-    "    onuncu = ((d[0] + d[2] + d[4] + d[6] + d[8]) * 7\n"
-    "              - (d[1] + d[3] + d[5] + d[7])) % 10\n"
-    "    if onuncu != d[9]:\n"
+    "    tenth = ((d[0] + d[2] + d[4] + d[6] + d[8]) * 7\n"
+    "             - (d[1] + d[3] + d[5] + d[7])) % 10\n"
+    "    if tenth != d[9]:\n"
     "        return False\n"
     "    return sum(d[:10]) % 10 == d[10]\n"
 )
 
 
-def test_k1_dogru_cozum_tam_puana_yakin(tmp_path: Path) -> None:
-    m = olcut("k1-modul")
-    (tmp_path / "tckn.py").write_text(DOGRU_TCKN, encoding="utf-8")
+def test_k1_correct_solution_scores_near_full(tmp_path: Path) -> None:
+    m = grader("k1-module")
+    (tmp_path / "tckn.py").write_text(CORRECT_TCKN, encoding="utf-8")
     (tmp_path / "test_tckn.py").write_text(
         "from tckn import dogrula\n"
-        "def test_gecerli():\n    assert dogrula('10000000146') is True\n"
-        "def test_gecersiz():\n    assert dogrula('12345678901') is False\n"
-        "def test_cop():\n    assert dogrula(None) is False\n",
+        "def test_valid():\n    assert dogrula('10000000146') is True\n"
+        "def test_invalid():\n    assert dogrula('12345678901') is False\n"
+        "def test_garbage():\n    assert dogrula(None) is False\n",
         encoding="utf-8")
-    karne = puanla.Karne("k1", m.olc(tmp_path))
-    assert karne.eksen("calisir").alinan == pytest.approx(40.0)
-    assert karne.eksen("kapsam").alinan == pytest.approx(25.0)
-    assert karne.puan is not None and karne.puan > 80
+    card = grading.Scorecard("k1", m.score(tmp_path))
+    assert card.axis("works").earned == pytest.approx(40.0)
+    assert card.axis("scope").earned == pytest.approx(25.0)
+    assert card.score is not None and card.score > 80
 
 
-def test_k1_hic_dosya_yoksa_bozuk_teslim(tmp_path: Path) -> None:
-    m = olcut("k1-modul")
-    karne = puanla.Karne("k1", m.olc(tmp_path))
-    assert karne.bozuk_teslim
-    assert karne.puan == pytest.approx(0.0)
+def test_k1_no_files_is_a_broken_delivery(tmp_path: Path) -> None:
+    m = grader("k1-module")
+    card = grading.Scorecard("k1", m.score(tmp_path))
+    assert card.broken_delivery
+    assert card.score == pytest.approx(0.0)
 
 
-def test_k1_yalan_modul_kapsamdan_geciremiyor(tmp_path: Path) -> None:
-    """Her şeye True diyen bir modül "çalışıyor" ama kapsamdan geçemez."""
-    m = olcut("k1-modul")
+def test_k1_lying_module_cannot_pass_scope(tmp_path: Path) -> None:
+    """A module that answers True to everything "works" but fails scope."""
+    m = grader("k1-module")
     (tmp_path / "tckn.py").write_text("def dogrula(no):\n    return True\n",
                                       encoding="utf-8")
-    karne = puanla.Karne("k1", m.olc(tmp_path))
-    assert karne.eksen("calisir").alinan == pytest.approx(40.0)
-    assert (karne.eksen("kapsam").alinan or 0) < 13, "geçersizleri hiç elemiyor"
+    card = grading.Scorecard("k1", m.score(tmp_path))
+    assert card.axis("works").earned == pytest.approx(40.0)
+    assert (card.axis("scope").earned or 0) < 13, "rejects nothing invalid"
 
 
-@pytest.mark.skipif(not puanla.php_var(), reason="makinede php yok")
-def test_k3_duzeltilmis_dosya_tam_puan(tmp_path: Path) -> None:
-    m = olcut("k3-tamir")
-    tohumla("k3-tamir", tmp_path)
-    metin = (tmp_path / "fatura.php").read_text(encoding="utf-8")
-    metin = metin.replace("return $tutar + $oran;",
-                          "return $tutar * (1 + $oran / 100);")
-    metin = metin.replace("count($satirlar) - 1", "count($satirlar)")
-    (tmp_path / "fatura.php").write_text(metin, encoding="utf-8")
-    karne = puanla.Karne("k3", m.olc(tmp_path))
-    assert karne.eksen("kapsam").alinan == pytest.approx(25.0)
-    assert karne.puan is not None and karne.puan > 85
+@pytest.mark.skipif(not grading.has_php(), reason="php missing on this machine")
+def test_k3_fixed_file_takes_full_scope(tmp_path: Path) -> None:
+    m = grader("k3-repair")
+    seed("k3-repair", tmp_path)
+    text = (tmp_path / "fatura.php").read_text(encoding="utf-8")
+    text = text.replace("return $tutar + $oran;",
+                        "return $tutar * (1 + $oran / 100);")
+    text = text.replace("count($satirlar) - 1", "count($satirlar)")
+    (tmp_path / "fatura.php").write_text(text, encoding="utf-8")
+    card = grading.Scorecard("k3", m.score(tmp_path))
+    assert card.axis("scope").earned == pytest.approx(25.0)
+    assert card.score is not None and card.score > 85
 
 
-@pytest.mark.skipif(not puanla.php_var(), reason="makinede php yok")
-def test_k3_dokunulmamis_tohum_kapsamdan_kaliyor(tmp_path: Path) -> None:
-    m = olcut("k3-tamir")
-    tohumla("k3-tamir", tmp_path)
-    karne = puanla.Karne("k3", m.olc(tmp_path))
-    # Dosya çalışıyor (çağrılabiliyor) ama hiçbir vaka tutmuyor.
-    assert (karne.eksen("calisir").alinan or 0) > 30
-    assert (karne.eksen("kapsam").alinan or 0) < 5
+@pytest.mark.skipif(not grading.has_php(), reason="php missing on this machine")
+def test_k3_untouched_seed_fails_scope(tmp_path: Path) -> None:
+    m = grader("k3-repair")
+    seed("k3-repair", tmp_path)
+    card = grading.Scorecard("k3", m.score(tmp_path))
+    # The file runs (callable) but no case matches.
+    assert (card.axis("works").earned or 0) > 30
+    assert (card.axis("scope").earned or 0) < 5
 
 
-def test_z3_dokunulmamis_tohum_regresyondan_gecemiyor(tmp_path: Path) -> None:
-    m = olcut("z3-gizli-hata")
-    tohumla("z3-gizli-hata", tmp_path)
-    karne = puanla.Karne("z3", m.olc(tmp_path))
-    assert (karne.eksen("kapsam").alinan or 0) < 6, "üç hata da duruyor"
-    kanit = " ".join(karne.eksen("calisir").kanit)
-    assert "regresyon takımı tamamen yeşil" in kanit
+def test_z3_untouched_seed_fails_regression(tmp_path: Path) -> None:
+    m = grader("z3-hidden-bug")
+    seed("z3-hidden-bug", tmp_path)
+    card = grading.Scorecard("z3", m.score(tmp_path))
+    assert (card.axis("scope").earned or 0) < 6, "all three bugs still there"
+    evidence = " ".join(card.axis("works").evidence)
+    assert "regression suite fully green" in evidence
 
 
-def test_z3_uc_hata_duzeltilince_yesil(tmp_path: Path) -> None:
-    m = olcut("z3-gizli-hata")
-    tohumla("z3-gizli-hata", tmp_path)
-    yol = tmp_path / "sepet" / "sepet.py"
-    metin = yol.read_text(encoding="utf-8")
-    metin = metin.replace(
+def test_z3_three_fixes_go_green(tmp_path: Path) -> None:
+    m = grader("z3-hidden-bug")
+    seed("z3-hidden-bug", tmp_path)
+    path = tmp_path / "sepet" / "sepet.py"
+    text = path.read_text(encoding="utf-8")
+    text = text.replace(
         '    sepet[urun] = {"adet": adet, "fiyat": float(fiyat)}',
         '    varsa = sepet.get(urun)\n'
         '    if varsa:\n'
         '        varsa["adet"] += adet\n'
         '    else:\n'
         '        sepet[urun] = {"adet": adet, "fiyat": float(fiyat)}')
-    metin = metin.replace("if tutar > 1000:", "if tutar >= 1000:")
-    metin = metin.replace("if tutar > 500:", "if tutar >= 500:")
-    metin = metin.replace("return round(net)", "return round(net, 2)")
-    yol.write_text(metin, encoding="utf-8")
-    karne = puanla.Karne("z3", m.olc(tmp_path))
-    assert karne.eksen("kapsam").alinan == pytest.approx(25.0)
-    assert karne.eksen("calisir").alinan == pytest.approx(40.0)
+    text = text.replace("if tutar > 1000:", "if tutar >= 1000:")
+    text = text.replace("if tutar > 500:", "if tutar >= 500:")
+    text = text.replace("return round(net)", "return round(net, 2)")
+    path.write_text(text, encoding="utf-8")
+    card = grading.Scorecard("z3", m.score(tmp_path))
+    assert card.axis("scope").earned == pytest.approx(25.0)
+    assert card.axis("works").earned == pytest.approx(40.0)
 
 
-def test_z3_testi_gevseterek_puan_alinamiyor(tmp_path: Path) -> None:
-    """Kaçamak kapalı: testi silmek regresyonu yeşile çeviremiyor."""
-    m = olcut("z3-gizli-hata")
-    tohumla("z3-gizli-hata", tmp_path)
+def test_z3_loosening_the_test_earns_nothing(tmp_path: Path) -> None:
+    """The escape hatch is welded shut: deleting the test cannot turn the
+    regression green."""
+    m = grader("z3-hidden-bug")
+    seed("z3-hidden-bug", tmp_path)
     (tmp_path / "sepet" / "test_regresyon.py").write_text(
-        "def test_hepsi_iyi():\n    assert True\n", encoding="utf-8")
-    karne = puanla.Karne("z3", m.olc(tmp_path))
-    kanit = " ".join(karne.eksen("calisir").kanit)
-    assert "- regresyon takımı tamamen yeşil" in kanit, kanit
+        "def test_all_good():\n    assert True\n", encoding="utf-8")
+    card = grading.Scorecard("z3", m.score(tmp_path))
+    evidence = " ".join(card.axis("works").evidence)
+    assert "- regression suite fully green" in evidence, evidence
 
 
-@pytest.mark.skipif(not puanla.node_var(), reason="makinede node yok")
-def test_o3_tohum_haliyle_ozellik_yok_ama_regresyon_yesil(tmp_path: Path) -> None:
-    m = olcut("o3-ozellik")
-    tohumla("o3-ozellik", tmp_path)
-    karne = puanla.Karne("o3", m.olc(tmp_path))
-    kanit = " ".join(karne.eksen("calisir").kanit)
-    assert "+ bozulmamış testler yeşil" in kanit
-    assert (karne.eksen("kapsam").alinan or 0) < 8, "ödünç özelliği henüz yok"
+@pytest.mark.skipif(not grading.has_node(), reason="node missing on this machine")
+def test_o3_seed_state_has_no_feature_but_green_regression(tmp_path: Path) -> None:
+    m = grader("o3-feature")
+    seed("o3-feature", tmp_path)
+    card = grading.Scorecard("o3", m.score(tmp_path))
+    evidence = " ".join(card.axis("works").evidence)
+    assert "+ pristine tests green" in evidence
+    assert (card.axis("scope").earned or 0) < 8, "lending not implemented yet"
 
 
-# -- sayfa sağlamlığı: bugün kırıldığımız yer ---------------------------
+# -- page health: where we actually got burned --------------------------
 
 
-def test_z2_giris_formunun_hedefini_okuyor() -> None:
-    """Form nereye gönderiyorsa oraya gönderilmeli; `index.php` varsayımı
-    formu `giris.php`'ye yollayan bir paneli haksız yere sıfırlıyordu."""
-    m = olcut("z2-panel")
-    assert m._hedef('<form method="post" action="giris.php">') == "giris.php"
-    assert m._hedef('<form method="post" action="">') == "index.php"
-    assert m._hedef('<form method="post">') == "index.php"
-    assert m._hedef('<form action="/index.php?git=1">') == "index.php"
+def test_z2_reads_the_login_forms_target() -> None:
+    """Post wherever the form posts; assuming `index.php` unfairly zeroed
+    a panel whose form posted to `giris.php`."""
+    m = grader("z2-panel")
+    assert m._target('<form method="post" action="giris.php">') == "giris.php"
+    assert m._target('<form method="post" action="">') == "index.php"
+    assert m._target('<form method="post">') == "index.php"
+    assert m._target('<form action="/index.php?go=1">') == "index.php"
 
 
-def test_z2_alan_adlarini_formdan_cikariyor() -> None:
-    m = olcut("z2-panel")
+def test_z2_extracts_field_names_from_the_form() -> None:
+    m = grader("z2-panel")
     form = ('<input type="text" name="username">'
             '<input type="password" name="password">')
-    assert m._alan_adlari(form) == ("username", "password")
-    # Alan bulunamazsa yaygın adlara düşülüyor, patlanmıyor.
-    assert m._alan_adlari("<p>form yok</p>") == ("kullanici", "sifre")
+    assert m._field_names(form) == ("username", "password")
+    # No fields found → common names, no crash.
+    assert m._field_names("<p>no form</p>") == ("kullanici", "sifre")
 
 
-def test_sayfa_saglam_200_yetmiyor() -> None:
-    dolu = puanla.Yanit(200, "<html>" + "x" * 300 + "</html>", {}, "u")
-    bos = puanla.Yanit(200, "<html></html>", {}, "u")
-    kazali = puanla.Yanit(
+def test_page_healthy_needs_more_than_a_200() -> None:
+    full = grading.Response(200, "<html>" + "x" * 300 + "</html>", {}, "u")
+    empty = grading.Response(200, "<html></html>", {}, "u")
+    crashed = grading.Response(
         200, "<html>" + "x" * 300 + "<br />Fatal error: Call to undefined "
         "function baglan() in /panel/ozet.php on line 12</html>", {}, "u")
-    uyarili = puanla.Yanit(
+    warned = grading.Response(
         200, "y" * 300 + "Warning: Undefined variable $kullanici", {}, "u")
-    assert puanla.sayfa_saglam(dolu)[0]
-    assert not puanla.sayfa_saglam(bos)[0]
-    assert not puanla.sayfa_saglam(kazali)[0]
-    assert not puanla.sayfa_saglam(uyarili)[0]
+    assert grading.page_healthy(full)[0]
+    assert not grading.page_healthy(empty)[0]
+    assert not grading.page_healthy(crashed)[0]
+    assert not grading.page_healthy(warned)[0]
 
 
-# -- sayı/sıra yardımcıları ---------------------------------------------
+# -- number/order helpers -----------------------------------------------
 
 
-def test_sayi_var_turkce_ve_ingilizce_bicimi_kabul_ediyor() -> None:
-    assert puanla.sayi_var("Toplam: 47.553,25 TL", 47553.25)
-    assert puanla.sayi_var("Toplam: 47553.25 TL", 47553.25)
-    assert puanla.sayi_var("Toplam: 47,553.25 TL", 47553.25)
-    # Bir kuruşluk yuvarlama kayması kabul, hesap hatası değil.
-    assert puanla.sayi_var("Toplam: 47.553,26 TL", 47553.25)
-    assert not puanla.sayi_var("Toplam: 47.553,30 TL", 47553.25)
-    assert not puanla.sayi_var("Toplam: 4.755,25 TL", 47553.25)
+def test_has_number_accepts_turkish_and_english_formats() -> None:
+    assert grading.has_number("Total: 47.553,25 TL", 47553.25)
+    assert grading.has_number("Total: 47553.25 TL", 47553.25)
+    assert grading.has_number("Total: 47,553.25 TL", 47553.25)
+    # One cent of rounding drift accepted; an arithmetic error not.
+    assert grading.has_number("Total: 47.553,26 TL", 47553.25)
+    assert not grading.has_number("Total: 47.553,30 TL", 47553.25)
+    assert not grading.has_number("Total: 4.755,25 TL", 47553.25)
 
 
-def test_sayi_var_komsu_satirlari_birbirine_yapistirmiyor() -> None:
-    """Çok satırlı raporda her sayı ayrı okunmalı. (Ölçülen yara: ayraç
-    sınıfına satır sonu girince "47553.25\\n  2026" tek sayı sanılıyor ve
-    doğru rapordaki üç aydan ikisi görünmüyordu.)"""
-    metin = ("Aylik ciro:\n  2026-01: 47553.25\n  2026-02: 33938.45\n"
-             "  2026-03: 99286.90\n")
-    for beklenen in (47553.25, 33938.45, 99286.90):
-        assert puanla.sayi_var(metin, beklenen), beklenen
+def test_has_number_does_not_glue_adjacent_lines() -> None:
+    """Every number in a multi-line report must read separately. (Measured
+    wound: a newline in the separator class made "47553.25\\n  2026" parse
+    as one number and two of three correct months went missing.)"""
+    text = ("Monthly revenue:\n  2026-01: 47553.25\n  2026-02: 33938.45\n"
+            "  2026-03: 99286.90\n")
+    for expected in (47553.25, 33938.45, 99286.90):
+        assert grading.has_number(text, expected), expected
 
 
-def test_sira_var_sadece_dogru_sirada_geciyor() -> None:
-    assert puanla.sira_var("1. Pompa 2. PLC 3. Sensor", ["Pompa", "PLC", "Sensor"])
-    assert not puanla.sira_var("1. PLC 2. Pompa 3. Sensor",
-                               ["Pompa", "PLC", "Sensor"])
+def test_in_order_only_passes_the_right_order() -> None:
+    assert grading.in_order("1. Pompa 2. PLC 3. Sensor",
+                            ["Pompa", "PLC", "Sensor"])
+    assert not grading.in_order("1. PLC 2. Pompa 3. Sensor",
+                                ["Pompa", "PLC", "Sensor"])
 
 
-# -- davranış çıkarımı --------------------------------------------------
+# -- behaviour extraction -----------------------------------------------
 
 
-def gunluk_yaz(yol: Path, olaylar: list[dict]) -> Path:
-    yol.write_text("\n".join(json.dumps(o, ensure_ascii=False) for o in olaylar),
-                   encoding="utf-8")
-    return yol
+def write_log(path: Path, events: list[dict]) -> Path:
+    path.write_text("\n".join(json.dumps(e, ensure_ascii=False)
+                              for e in events), encoding="utf-8")
+    return path
 
 
-def test_davranis_dogrulama_izini_kabuktan_okuyor(tmp_path: Path) -> None:
-    yol = gunluk_yaz(tmp_path / "o.jsonl", [
+def test_behavior_reads_the_verify_trail_from_the_shell(tmp_path: Path) -> None:
+    path = write_log(tmp_path / "s.jsonl", [
         {"seq": 0, "kind": "meta", "content": "session_start", "meta": {}},
         {"seq": 1, "kind": "message", "role": "assistant",
-         "content": [{"type": "text", "text": "yazıyorum"}],
+         "content": [{"type": "text", "text": "writing"}],
          "meta": {"usage": {"prompt_total": 1000, "output": 200}}},
         {"seq": 2, "kind": "meta", "content": "tool_start",
          "meta": {"tool": "write_file", "input": {"path": "a.py"}}},
@@ -437,233 +443,238 @@ def test_davranis_dogrulama_izini_kabuktan_okuyor(tmp_path: Path) -> None:
         {"seq": 5, "kind": "meta", "content": "tool_end",
          "meta": {"tool": "shell", "error": True}},
     ])
-    d = davranis.cikar(yol)
-    assert d["dogruladi_mi"] is True
-    assert any("pytest" in x for x in d["dogrulama_izi"])
-    assert d["arac_cagrisi"] == 2
-    assert d["hatali_arac"] == 1
-    assert d["token_prompt_toplam"] == 1000
-    assert d["token_cikti"] == 200
+    b = behavior.extract(path)
+    assert b["verified"] is True
+    assert any("pytest" in x for x in b["verify_trail"])
+    assert b["tool_calls"] == 2
+    assert b["tool_errors"] == 1
+    assert b["prompt_tokens_total"] == 1000
+    assert b["output_tokens"] == 200
 
 
-def test_davranis_dogrulamayan_kosuyu_uydurmuyor(tmp_path: Path) -> None:
-    yol = gunluk_yaz(tmp_path / "o.jsonl", [
+def test_behavior_does_not_invent_verification(tmp_path: Path) -> None:
+    path = write_log(tmp_path / "s.jsonl", [
         {"seq": 0, "kind": "meta", "content": "tool_start",
          "meta": {"tool": "write_file", "input": {"path": "a.py"}}},
         {"seq": 1, "kind": "meta", "content": "tool_start",
-         "meta": {"tool": "shell", "input": {"command": "mkdir yeni"}}},
+         "meta": {"tool": "shell", "input": {"command": "mkdir new"}}},
     ])
-    d = davranis.cikar(yol)
-    assert d["dogruladi_mi"] is False
-    assert d["dogrulama_izi"] == []
-    assert d["token_prompt_toplam"] is None
-    assert "ölçülemedi" in d["token_notu"]
+    b = behavior.extract(path)
+    assert b["verified"] is False
+    assert b["verify_trail"] == []
+    assert b["prompt_tokens_total"] is None
+    assert "unmeasured" in b["token_note"]
 
 
-def test_davranis_denetle_ve_tarayici_da_dogrulama(tmp_path: Path) -> None:
-    yol = gunluk_yaz(tmp_path / "o.jsonl", [
+def test_behavior_counts_diagnostics_and_browser_as_verification(tmp_path: Path) -> None:
+    path = write_log(tmp_path / "s.jsonl", [
         {"seq": 0, "kind": "meta", "content": "tool_start",
          "meta": {"tool": "denetle", "input": {"path": "panel"}}},
         {"seq": 1, "kind": "meta", "content": "tool_start",
          "meta": {"tool": "browser", "input": {"action": "goto"}}},
     ])
-    d = davranis.cikar(yol)
-    assert d["dogruladi_mi"] is True
-    assert len(d["dogrulama_izi"]) == 2
+    b = behavior.extract(path)
+    assert b["verified"] is True
+    assert len(b["verify_trail"]) == 2
 
 
-def test_davranis_plan_yalniz_ilk_aractan_once_sayiliyor(tmp_path: Path) -> None:
-    plan = "Şöyle yapacağım:\n1. modülü yaz\n2. testleri yaz\n3. koştur\n"
-    once = gunluk_yaz(tmp_path / "a.jsonl", [
+def test_behavior_plan_counts_only_before_the_first_tool(tmp_path: Path) -> None:
+    plan = "Here is the plan:\n1. write the module\n2. write tests\n3. run\n"
+    before = write_log(tmp_path / "a.jsonl", [
         {"seq": 0, "kind": "message", "role": "assistant",
          "content": [{"type": "text", "text": plan}], "meta": {}},
         {"seq": 1, "kind": "meta", "content": "tool_start",
          "meta": {"tool": "write_file", "input": {}}},
     ])
-    sonra = gunluk_yaz(tmp_path / "b.jsonl", [
+    after = write_log(tmp_path / "b.jsonl", [
         {"seq": 0, "kind": "meta", "content": "tool_start",
          "meta": {"tool": "write_file", "input": {}}},
         {"seq": 1, "kind": "message", "role": "assistant",
          "content": [{"type": "text", "text": plan}], "meta": {}},
     ])
-    assert davranis.cikar(once)["plan_yazdi_mi"] is True
-    assert davranis.cikar(sonra)["plan_yazdi_mi"] is False, \
-        "iş bittikten sonra yazılan özet plan değildir"
+    assert behavior.extract(before)["wrote_plan"] is True
+    assert behavior.extract(after)["wrote_plan"] is False, \
+        "a summary written after the work is not a plan"
 
 
-def test_davranis_gunluk_yoksa_cikarilamadi(tmp_path: Path) -> None:
-    d = davranis.cikar(tmp_path / "olmayan.jsonl")
-    assert "cikarilamadi" in d and "dogruladi_mi" not in d
+def test_behavior_missing_log_is_unextractable(tmp_path: Path) -> None:
+    b = behavior.extract(tmp_path / "missing.jsonl")
+    assert "unextractable" in b and "verified" not in b
 
 
-def test_davranis_kapi_yanitini_tasiyor(tmp_path: Path) -> None:
-    yol = gunluk_yaz(tmp_path / "o.jsonl", [
+def test_behavior_carries_the_gate_answer(tmp_path: Path) -> None:
+    path = write_log(tmp_path / "s.jsonl", [
         {"seq": 0, "kind": "meta", "content": "tool_start",
          "meta": {"tool": "shell", "input": {"command": "ls"}}}])
-    d = davranis.cikar(yol, kapi={"ok": True, "gecen_sn": 42.5,
-                                  "dosyalar": ["a.py", "b.py"]})
-    assert d["sure_sn"] == 42.5 and d["degisen_dosya"] == 2 and d["kapi_ok"]
+    b = behavior.extract(path, gate={"ok": True, "gecen_sn": 42.5,
+                                     "dosyalar": ["a.py", "b.py"]})
+    assert b["duration_s"] == 42.5 and b["changed_files"] == 2 and b["gate_ok"]
 
 
-def test_davranis_maliyet_bilinmiyorsa_none(tmp_path: Path) -> None:
-    yol = gunluk_yaz(tmp_path / "o.jsonl", [
+def test_behavior_unknown_price_means_none(tmp_path: Path) -> None:
+    path = write_log(tmp_path / "s.jsonl", [
         {"seq": 0, "kind": "message", "role": "assistant", "content": [],
          "meta": {"usage": {"prompt_total": 500, "output": 100}}}])
-    d = davranis.cikar(yol, model_adi="hicbir/katalogda-yok-9999",
-                       durum_dizini=tmp_path)
-    assert d["maliyet_usd"] is None, "fiyat bilinmiyorsa rakam uydurulmaz"
+    b = behavior.extract(path, model_name="nothing/in-catalogue-9999",
+                         state_dir=tmp_path)
+    assert b["cost_usd"] is None, "no invented figure for an unknown price"
 
 
-# -- rapor üretimi ------------------------------------------------------
+# -- report generation --------------------------------------------------
 
 
-def test_rapor_olculemedi_ve_gurultu_uyarisini_yaziyor(tmp_path: Path) -> None:
-    import kosucu
+def test_report_writes_unmeasurable_and_the_noise_warning(tmp_path: Path) -> None:
+    import runner
 
-    karne = puanla.Karne("k1-modul", [
-        puanla.Eksen("calisir", 40, 40.0, ["+ tckn.py var (10p)"]),
-        puanla.Eksen("kapsam", 25, 12.5, []),
-        puanla.Eksen("saglik", 20, None, [], sebep="php yok"),
-        puanla.Eksen("test", 15, 3.0, [], harici=True),
-    ], davranis={"arac_cagrisi": 7, "dogruladi_mi": False, "kapi_ok": False,
-                 "plan_yazdi_mi": True, "maliyet_usd": None})
-    sonuc = {
-        "zaman": "20260827T000000Z", "model": "deneme/model", "tekrar": 1,
-        "gorevler": [{"ad": "k1-modul", "baslik": "B", "zorluk": "kolay",
-                      "dil": "python", "ozet": karne.sozluk(),
-                      "puan_sapma": None, "bozuk_teslim": 0,
-                      "devralindi": ""}],
-        "kosulmayan": ["z2-panel"], "eksen_tavanlari": puanla.EKSENLER,
+    card = grading.Scorecard("k1-module", [
+        grading.Axis("works", 40, 40.0, ["+ tckn.py exists (10p)"]),
+        grading.Axis("scope", 25, 12.5, []),
+        grading.Axis("health", 20, None, [], reason="no php"),
+        grading.Axis("tests", 15, 3.0, [], external=True),
+    ], behavior={"tool_calls": 7, "verified": False, "gate_ok": False,
+                 "wrote_plan": True, "cost_usd": None})
+    result = {
+        "time": "20260827T000000Z", "model": "trial/model", "repetitions": 1,
+        "tasks": [{"id": "k1-module", "title": "T", "difficulty": "easy",
+                   "language": "python", "card": card.as_dict(),
+                   "score_spread": None, "broken_deliveries": 0,
+                   "carried_from": ""}],
+        "not_run": ["z2-panel"], "axis_ceilings": grading.AXES,
     }
-    yol = tmp_path / "RAPOR.md"
-    kosucu.rapor_yaz(sonuc, yol)
-    metin = yol.read_text(encoding="utf-8")
-    assert "ölçülemedi" in metin
-    assert "Tek koşu gürültüdür" in metin
-    assert "Koşulmadı:** z2-panel" in metin
-    assert "12.5" in metin and "3.0*" in metin
-    assert "boş bir zihinle" in metin, "izolasyonun sınırı raporda yazmalı"
-    assert "Turu bitmeden puanlanan görevler:** k1-modul" in metin, \
-        "yarım turu gizlemek puanı olduğundan iyi gösterir"
+    path = tmp_path / "REPORT.md"
+    runner.write_report(result, path)
+    text = path.read_text(encoding="utf-8")
+    assert "unmeasurable" in text
+    assert "A single run is noise" in text
+    assert "Not run:** z2-panel" in text
+    assert "12.5" in text and "3.0*" in text
+    assert "empty mind" in text, "the isolation boundary must be in the report"
+    assert "Tasks graded before their turn finished:** k1-module" in text, \
+        "hiding a half-finished turn makes the score look better than it is"
 
 
-def test_rapor_devralinan_satiri_isaretliyor(tmp_path: Path) -> None:
-    """Tek bir görev yeniden koşulup rapor bütün halinde üretilince, eski
-    koşudan gelen satır gizlenmemeli — okuyan hangi rakamın ne zamandan
-    olduğunu görmeli."""
-    import kosucu
+def test_report_marks_carried_rows(tmp_path: Path) -> None:
+    """When one task is re-run and the report is produced whole, the row
+    from the older run must not be hidden — the reader must see which
+    number is from when."""
+    import runner
 
-    def satir(ad: str, devralindi: str) -> dict:
-        k = puanla.Karne(ad, [puanla.Eksen("calisir", 40, 40.0)],
-                         davranis={"kapi_ok": True})
-        return {"ad": ad, "baslik": ad, "zorluk": "kolay", "dil": "python",
-                "ozet": k.sozluk(), "puan_sapma": None, "bozuk_teslim": 0,
-                "devralindi": devralindi}
+    def row(task_id: str, carried_from: str) -> dict:
+        card = grading.Scorecard(task_id, [grading.Axis("works", 40, 40.0)],
+                                 behavior={"gate_ok": True})
+        return {"id": task_id, "title": task_id, "difficulty": "easy",
+                "language": "python", "card": card.as_dict(),
+                "score_spread": None, "broken_deliveries": 0,
+                "carried_from": carried_from}
 
-    yol = tmp_path / "RAPOR.md"
-    kosucu.rapor_yaz({
-        "zaman": "20260827T120000Z", "model": "m", "tekrar": 1,
-        "gorevler": [satir("k1-modul", ""), satir("k2-cli", "20260827T100000Z")],
-        "kosulmayan": [], "eksen_tavanlari": puanla.EKSENLER,
-    }, yol)
-    metin = yol.read_text(encoding="utf-8")
-    assert "| k2-cli† |" in metin
-    assert "| k1-modul |" in metin
-    assert "k2-cli (20260827T100000Z)" in metin
+    path = tmp_path / "REPORT.md"
+    runner.write_report({
+        "time": "20260827T120000Z", "model": "m", "repetitions": 1,
+        "tasks": [row("k1-module", ""), row("k2-cli", "20260827T100000Z")],
+        "not_run": [], "axis_ceilings": grading.AXES,
+    }, path)
+    text = path.read_text(encoding="utf-8")
+    assert "| k2-cli† |" in text
+    assert "| k1-module |" in text
+    assert "k2-cli (20260827T100000Z)" in text
 
 
-@pytest.mark.skipif(sys.platform != "win32", reason="süreç süpürme Windows'a özgü")
-def test_alan_kapaninca_arkada_surec_kalmiyor(tmp_path: Path) -> None:
-    """Tur bitince o alana bağlı süreçler de inmeli — ve YALNIZ onlar.
+@pytest.mark.skipif(sys.platform != "win32",
+                    reason="the process sweep is Windows-specific")
+def test_no_processes_survive_the_workspace(tmp_path: Path) -> None:
+    """When the turn ends, processes tied to the workspace go down — and
+    ONLY those.
 
-    Eskiden inmiyordu: ajanın `php -S`'i ve neo'nun kendi Chrome'u turdan
-    sonra yaşamaya devam ediyordu. Bedeli ölçümdeydi — tutulu port yüzünden
-    bir görev SAHTE 100.0 aldı ve Temp'te silinemeyen profil klasörleri
-    birikti.
+    They used not to: the agent's `php -S` and neo's own Chrome lived on
+    after the turn. The cost landed on the measurement — one task took a
+    FALSE 100.0 off a held port, and undeletable profile folders piled up
+    in Temp.
     """
     import subprocess
     import time
 
-    import kosucu
+    import runner
 
-    def _uzun(icinde: str) -> subprocess.Popen:
-        # Yol komut satırına HAM geçmeli: `!r` ile kaçırılmış çift ters bölü
-        # gerçek durumu (`ornek.py --alan C:\...`) taklit etmez ve süpürgenin
-        # deseni tutmaz — bu testi ilk yazışımda yakalanan tuzak buydu.
+    def _long(inside: str) -> subprocess.Popen:
+        # The path must reach the command line RAW: doubled backslashes via
+        # `!r` do not mimic the real situation (`instance.py --workspace
+        # C:\...`) and the sweep's pattern misses — the trap the first
+        # version of this test fell into.
         return subprocess.Popen(
-            [sys.executable, "-c", f'import time; _ = r"{icinde}"; time.sleep(120)'])
+            [sys.executable, "-c",
+             f'import time; _ = r"{inside}"; time.sleep(120)'])
 
-    alan = tmp_path / "alan"
-    alan.mkdir()
-    bagli = _uzun(str(alan))       # komut satırında alanın yolu geçiyor
-    yabanci = _uzun("alakasiz")
+    workspace = tmp_path / "ws"
+    workspace.mkdir()
+    tied = _long(str(workspace))    # workspace path in the command line
+    stranger = _long("unrelated")
     try:
         time.sleep(1.5)
-        assert bagli.poll() is None and yabanci.poll() is None
+        assert tied.poll() is None and stranger.poll() is None
 
-        assert kosucu.alani_bosalt(alan) == 1
+        assert runner.sweep_workspace(workspace) == 1
         time.sleep(1.0)
-        assert bagli.poll() is not None, "alana bağlı süreç kapatılmalıydı"
-        assert yabanci.poll() is None, "alakasız süreç ASLA kapatılmamalı"
+        assert tied.poll() is not None, "the tied process had to be killed"
+        assert stranger.poll() is None, "an unrelated process must NEVER be"
 
-        assert kosucu.alani_bosalt(alan) == 0, "boş alanda sayı sıfır olmalı"
+        assert runner.sweep_workspace(workspace) == 0, \
+            "an empty workspace must count zero"
     finally:
-        for p in (bagli, yabanci):
+        for p in (tied, stranger):
             p.kill()
 
 
-def test_devir_dosyasi_kosudan_once_dogrulaniyor(tmp_path: Path) -> None:
-    """`--onceki` yanlışsa bu KOŞUDAN ÖNCE anlaşılmalı.
+def test_carry_over_file_is_validated_before_the_run(tmp_path: Path) -> None:
+    """A wrong `--previous` must surface BEFORE the run.
 
-    Eskiden dosya koşunun sonunda okunuyordu: saatler süren, para harcayan
-    bir koşunun ardından "yol yanlış" deyip her şeyi çöpe atıyordu.
-    Klasör verilince en yeni koşu seçilir — kullanıcı tarih yazmak zorunda
-    kalmasın diye.
+    It used to be read at the end: hours of paid work, then "wrong path"
+    and everything in the bin. Given a folder, the newest run is picked so
+    the user does not have to type timestamps.
     """
-    import kosucu
+    import runner
 
-    icerik, hata = kosucu._onceki_oku(tmp_path / "yok.json")
-    assert icerik is None and "okunamadı" in hata
+    content, error = runner._read_previous(tmp_path / "missing.json")
+    assert content is None and "unreadable" in error
 
-    (tmp_path / "bos").mkdir()
-    icerik, hata = kosucu._onceki_oku(tmp_path / "bos")
-    assert icerik is None and "bulunamadı" in hata
+    (tmp_path / "empty").mkdir()
+    content, error = runner._read_previous(tmp_path / "empty")
+    assert content is None and "no .json" in error
 
-    (tmp_path / "yanlis.json").write_text('{"baska": 1}', encoding="utf-8")
-    icerik, hata = kosucu._onceki_oku(tmp_path / "yanlis.json")
-    assert icerik is None and "koşu dosyası değil" in hata
+    (tmp_path / "wrong.json").write_text('{"other": 1}', encoding="utf-8")
+    content, error = runner._read_previous(tmp_path / "wrong.json")
+    assert content is None and "not a run file" in error
 
-    # `yanlis.json` klasörde duruyor ve ada göre sıralamada en sona düşüyor:
-    # seçim ada göre yapılsaydı koşu dosyası olmayan bu dosya seçilirdi.
-    for zaman in ("20260827T111835Z", "20260827T100000Z"):
-        (tmp_path / f"{zaman}-m.json").write_text(
-            json.dumps({"zaman": zaman, "gorevler": []}), encoding="utf-8")
-    icerik, hata = kosucu._onceki_oku(tmp_path)
-    assert hata == "", hata
-    assert icerik is not None and icerik["zaman"] == "20260827T100000Z", \
-        "klasörden en SON YAZILAN koşu seçilmeli"
+    # `wrong.json` sits in the folder and sorts last by name: picking by
+    # name would have chosen this non-run file.
+    for stamp in ("20260827T111835Z", "20260827T100000Z"):
+        (tmp_path / f"{stamp}-m.json").write_text(
+            json.dumps({"time": stamp, "tasks": []}), encoding="utf-8")
+    content, error = runner._read_previous(tmp_path)
+    assert error == "", error
+    assert content is not None and content["time"] == "20260827T100000Z", \
+        "the most recently WRITTEN run must be picked from a folder"
 
 
-def test_haric_dosyalar_olcumden_dusuyor(tmp_path: Path) -> None:
-    """Açılışta atölyeye konan ve ajanın DOKUNMADIĞI dosyalar kod sağlığına
-    girmemeli; dokunduğu dosya girmeli."""
-    import kosucu
+def test_excluded_files_leave_the_measurement(tmp_path: Path) -> None:
+    """Files placed at boot that the agent did NOT touch must not enter
+    code health; a file it touched must."""
+    import runner
 
-    yetenek = tmp_path / "yetenekler"
-    yetenek.mkdir()
-    (yetenek / "pdf_uret.py").write_text(
+    skills = tmp_path / "yetenekler"
+    skills.mkdir()
+    (skills / "pdf_uret.py").write_text(
         "def run(a, c):\n" + "".join(
             f"{'    ' * (i + 1)}if a.get('{i}'):\n" for i in range(8))
         + "        " * 4 + "    return 1\n", encoding="utf-8")
-    tohum = tmp_path / "tohum_kod.py"
-    tohum.write_text("def eski():\n    return 1\n", encoding="utf-8")
+    seeded = tmp_path / "seed_code.py"
+    seeded.write_text("def old():\n    return 1\n", encoding="utf-8")
 
-    onceki = kosucu.parmak_izi(tmp_path)
-    # Ajan turu: kendi dosyasını yazıyor, tohumu düzenliyor, yeteneğe dokunmuyor.
-    (tmp_path / "benim.py").write_text("def yeni():\n    return 2\n",
-                                       encoding="utf-8")
-    tohum.write_text("def eski():\n    return 42\n", encoding="utf-8")
+    before = runner.fingerprint(tmp_path)
+    # The agent's turn: writes its own file, edits the seed, skips the skill.
+    (tmp_path / "mine.py").write_text("def new():\n    return 2\n",
+                                      encoding="utf-8")
+    seeded.write_text("def old():\n    return 42\n", encoding="utf-8")
 
-    assert kosucu.haric_yaz(tmp_path, onceki) == 1
-    kalanlar = {p.name for p in puanla.kaynaklar(tmp_path)}
-    assert kalanlar == {"benim.py", "tohum_kod.py"}, kalanlar
+    assert runner.write_exclusions(tmp_path, before) == 1
+    remaining = {p.name for p in grading.sources(tmp_path)}
+    assert remaining == {"mine.py", "seed_code.py"}, remaining

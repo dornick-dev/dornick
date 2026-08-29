@@ -12,23 +12,23 @@ redirects, runs the test suites. Files merely existing scores nothing.
 ## Run it
 
 ```bash
-py eval/coding/kosucu.py --gorev hepsi --model z-ai/glm-5.3-flash --tekrar 2
+py eval/coding/runner.py --task all --model z-ai/glm-5.3-flash --repeat 2
 ```
 
-Useful flags: `--gorev k2-cli,z1-arama` (subset), `--zorluk zor`
-(by difficulty), `--durum <dir>` (config/keys source), `--sakla`
-(keep workspaces), `--onceki <json>` (merge with a previous result and
+Useful flags: `--task k2-cli,z1-search` (subset), `--difficulty hard`,
+`--state <dir>` (config/keys source), `--keep`
+(keep workspaces), `--previous <json>` (merge with a previous result and
 re-run only the selected tasks).
 
 ## Layout
 
 | Path | Purpose |
 |---|---|
-| `kosucu.py` | runner: builds the isolated workspace, boots neo, asks through the gate, grades |
-| `puanla.py` | scoring axes (works / scope / health / tests); executes the delivery |
-| `davranis.py` | behaviour columns from the session log: model calls, tool errors, prompt & cache tokens, cost |
-| `gorevler/<task>/` | one folder per task: `gorev.md` (the brief, exactly what the agent sees) + `olcut.py` (grader) + optional `tohum/` (seed files) |
-| `sonuclar/` | raw per-run JSON cited by the public benchmark report |
+| `runner.py` | runner: builds the isolated workspace, boots neo, asks through the gate, grades |
+| `grading.py` | scoring axes (works / scope / health / tests); executes the delivery |
+| `behavior.py` | behaviour columns from the session log: model calls, tool errors, prompt & cache tokens, cost |
+| `tasks/<task>/` | one folder per task: `task.md` (the brief, exactly what the agent sees) + `grader.py` + optional `seed/` files |
+| `results/` | raw per-run JSON cited by the public benchmark report |
 
 ## Honesty rules baked in
 

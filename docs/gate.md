@@ -71,12 +71,12 @@ LangChain, a Makefile, or a scheduled job. For a benchmark-grade setup
 (fresh home, empty memory, pinned model, own API key per instance), do what
 the rig does: create a temp home with a `config.json` + `keys.json`, start
 neo against it, then speak through the gate — the complete recipe is
-[`eval/coding/kosucu.py`](../eval/coding/kosucu.py) (`alan_kur` + `Ornek`).
+[`eval/coding/runner.py`](../eval/coding/runner.py) (`build_workspace` + `Instance`).
 
 ## Auditing what it did
 
 Every turn is an append-only JSONL event log under `.neocp/sessions/`.
-The behaviour extractor [`eval/coding/davranis.py`](../eval/coding/davranis.py)
+The behaviour extractor [`eval/coding/behavior.py`](../eval/coding/behavior.py)
 turns one into counters — model calls, tool errors, prompt/cache tokens,
 cost — which is exactly how the numbers in the benchmark report were
 produced. Nothing about the gate is special-cased: it is the same agent

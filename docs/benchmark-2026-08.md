@@ -2,7 +2,7 @@
 
 One page, everything measured, nothing mocked. Three harnesses, nine
 coding tasks, one grader that **executes the delivered code**. Raw data:
-[`eval/coding/sonuclar/`](../eval/coding/sonuclar/). Re-run it yourself:
+[`eval/coding/results/`](../eval/coding/results/). Re-run it yourself:
 [`eval/`](../eval/README.md).
 
 ## 1 · Quality
@@ -112,7 +112,7 @@ regression test in [`tests/`](../tests/):
   Flash-class variance is real — treat any single run (including these)
   with suspicion.
 * Every number traces to a JSON in
-  [`eval/coding/sonuclar/`](../eval/coding/sonuclar/) with per-run
+  [`eval/coding/results/`](../eval/coding/results/) with per-run
   behaviour columns (model calls, tool errors, cache tokens, cost).
 
 *Screenshots of the product: [gallery](gallery/README.md) · Drive neo from
