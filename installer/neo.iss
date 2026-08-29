@@ -25,14 +25,14 @@
 ;      başarısızlık kurulumu durdurmaz ama kullanıcıya söylenir.
 ;      /YEDEKDIZIN=<klasör> testte hedefi değiştirir.
 ; Test kancaları: /SADECE_TARA=1 + /SUREC_RAPOR=<dosya> süreç taramasını
-; kanıtlar ve kurulum yapmadan çıkar (installer\test_kurulum.ps1).
+; kanıtlar ve kurulum yapmadan çıkar (installer\test_install.ps1).
 ;
 ; Kaldırıcı .neocp'ye (anılar, anahtarlar, oturumlar) ve egitim\veri'de
 ; sonradan biriken kişisel dosyalara DOKUNMAZ — kullanıcı verisi kalır.
 
 ; Ad, paket yolu ve kimlik /D ile ezilebilir: kurulum mantığının sandbox
 ; testleri gerçek kurulumun kayıt anahtarına ve kısayollarına dokunmadan
-; ayrı bir kimlikle (neo-test) koşuyor — bkz. installer\test_kurulum.ps1.
+; ayrı bir kimlikle (neo-test) koşuyor — bkz. installer\test_install.ps1.
 #ifndef Ad
   #define Ad "neo"
 #endif
@@ -333,7 +333,7 @@ begin
   { Test kancası: /SADECE_TARA=1 açık neo süreçlerini tarar, sonucu
     /SUREC_RAPOR dosyasına yazar ve HİÇBİR ŞEY kurmadan çıkar. Sihirbaz
     sayfaları otomasyonla sürülemediği için tespit mantığı böyle
-    kanıtlanıyor (bkz. installer\test_kurulum.ps1). }
+    kanıtlanıyor (bkz. installer\test_install.ps1). }
   if ExpandConstant('{param:SADECE_TARA|0}') = '1' then
   begin
     Rapor := ExpandConstant('{param:SUREC_RAPOR|}');

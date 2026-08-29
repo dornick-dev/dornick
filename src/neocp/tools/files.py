@@ -456,6 +456,27 @@ bunu açıkça söyler; o durumda içeriği uydurma.
         if offset > 1 or offset - 1 + limit < len(lines):
             footer = f"\n\n[{len(lines)} satırın {offset}-{offset + len(window) - 1} arası]"
 
+        # read_many'nin SONUÇ kanalından duyurusu. Şema + araç açıklaması
+        # yetmedi: 20 koşuda 0 çağrı (29.08 süpürümü). Modelin en dikkatli
+        # okuduğu kanal araç sonucu; klasörde okunmamış kardeş dosyalar
+        # varken bir sonraki keşif turunun adresi buraya, ADLARIYLA yazılır.
+        # Tek tek okumaya devam eden model artık talimatı değil önündeki
+        # somut listeyi yok saymış olur. Yalnız kod/metin uzantıları ve en
+        # az 2 aday: tek dosyalık klasörde gürültü üretmenin alemi yok.
+        try:
+            okunmamis = sorted(
+                k.name for k in path.parent.iterdir()
+                if k.is_file() and k != path and k not in seen
+                and k.suffix.lower() in (".py", ".js", ".mjs", ".php", ".html",
+                                         ".css", ".json", ".md", ".txt"))
+            if len(okunmamis) >= 2:
+                liste = ", ".join(okunmamis[:6])
+                footer += (f"\n\n[Bu klasörde okunmamış {len(okunmamis)} dosya "
+                           f"daha var: {liste}. Hepsine bakacaksan read_many "
+                           f"tek turda okur — tek tek read_file çağırma.]")
+        except OSError:
+            pass
+
         return ToolResult(content=(numbered or "(dosya boş)") + footer)
 
     # Neden ayrı bir araç: "bağımsız okumaları tek turda paralel çağır"

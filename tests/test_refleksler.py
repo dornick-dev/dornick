@@ -1469,3 +1469,24 @@ def test_discovery_downshift_lowers_effort_for_small_family() -> None:
     b2 = OpenAIBackend(m2, client=object())
     assert b2._reasoning(kesif=True) == {'enabled': False}
 
+def test_read_result_advertises_unread_siblings(tmp_path) -> None:
+    # Sema + aciklama yetmedi (20 kosuda 0 read_many cagrisi): duyuru
+    # modelin en dikkatli okudugu kanala, arac SONUCUNA tasindi.
+    import asyncio
+    from neocp.tools.base import ToolRegistry
+    from neocp.tools import files as files_mod
+    ctx = _dosya_ctx(tmp_path)
+    kok = ctx.sandbox.root
+    kok.mkdir(parents=True, exist_ok=True)
+    for ad in ('a.py', 'b.py', 'c.js'):
+        (kok / ad).write_text('x = 1', encoding='utf-8')
+    reg = ToolRegistry()
+    files_mod.register(reg)
+    r = asyncio.run(reg.get('read_file').handler({'path': 'a.py'}, ctx))
+    assert 'read_many' in r.content and 'b.py' in r.content
+    # Kardesler okununca duyuru susar: gurultu birikmez.
+    asyncio.run(reg.get('read_many').handler(
+        {'paths': ['b.py', 'c.js']}, ctx))
+    r2 = asyncio.run(reg.get('read_file').handler({'path': 'a.py'}, ctx))
+    assert 'read_many tek turda' not in r2.content
+

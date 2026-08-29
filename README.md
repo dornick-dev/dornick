@@ -167,7 +167,7 @@ Run it on a schedule, or press **Run** and watch the steps turn from
 
 ### Memory flow
 
-![Memory flow](docs/hafiza-akisi.svg)
+![Memory flow](docs/memory-flow.svg)
 
 A question first passes through the base rewriter, which adds the terms the
 search will actually need (synonyms, expansions, resolved pronouns) — or
@@ -187,7 +187,7 @@ Measured on the project's scale benchmark:
 
 ### Night school
 
-![Night school loop](docs/gece-okulu.svg)
+![Night school loop](docs/night-school.svg)
 
 The nightly personal loop harvests new memories, distills question→term
 pairs from them, fine-tunes the base model at low priority, and then sits
