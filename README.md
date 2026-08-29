@@ -20,7 +20,7 @@ types listed on the left — user, preference, lesson, procedure,
 fact](docs/screenshots/home-memory-web.jpg)
 
 More screenshots — light/dark shells, viewer tabs, the connectors
-directory, a live session with a real model: [the gallery](docs/galeri/README.md).
+directory, a live session with a real model: [the gallery](docs/gallery/README.md).
 
 ## Why it's different
 
@@ -205,31 +205,45 @@ for the pipeline, the frozen data format and the knobs worth turning.
 
 ![Training pipeline](docs/training-pipeline.svg)
 
-## Evaluation
+## Benchmarks
 
-We handed neo three coding tasks (easy / medium / hard) through the external
-gate API and audited everything independently — then ran the same tasks with
-the evaluator itself and with neo's own model bare over the raw API, one-shot.
-neo scored **294/300**, matching its evaluator (289) and beating its own bare
-model (280): same model, +14 points inside the harness and zero broken
-deliveries.
+Nine coding tasks — 3 easy, 3 medium, 3 hard, in Python, Node and PHP —
+graded by a rig that **executes the delivered code** (runs the CLI, probes
+the HTTP endpoints, checks the auth redirects, runs the test suites).
+Scores are out of 100 per task; **higher is better**. The rig, tasks and
+raw per-run data are in this repo — anyone can re-run it.
 
-That grading was done by hand, so it was turned into a rig that lives in the
-repo: [`eval/coding/`](eval/coding/README.md). Nine tasks in Python, Node and
-PHP; each runs in its own temp workspace with an empty mind and its own neo
-instance, and the grader **executes the delivered code** rather than checking
-that files exist.
+Three harnesses took the same nine briefs:
 
-The rig's biggest outing so far: a **three-harness benchmark** (Aug 2026) —
-Claude Code, OpenCode and neo, the latter two on the *same* ~free flash
-model. Result on the 9-task sweep: Claude Code 897.3, **neo 896.7**,
-OpenCode 894.9 (out of 900) — a statistical tie in quality with the
-reference agent, on a model that costs cents, with neo ahead of the
-same-model competitor. The efficiency story (cache rates, reasoning-spiral
-failure modes, what the delivery gates catch) and two measured memory
-experiments are written up with raw data in
-[docs/benchmark-2026-08.md](docs/benchmark-2026-08.md). Earlier hand-graded
-write-up: [docs/evaluation.md](docs/evaluation.md)
+| Harness | Model it ran | Why it's here |
+|---|---|---|
+| **neo** (this repo) | `z-ai/glm-5.3-flash` (~free) | the subject |
+| **OpenCode** 1.2.27 | `z-ai/glm-5.3-flash` (same model) | same-model competitor |
+| **Claude Code** | Anthropic's own frontier model | reference line (cannot run on OpenRouter) |
+
+**Result — total out of 900:**
+
+| | Claude Code | **neo** | OpenCode |
+|---|---|---|---|
+| Total score | 897.3 | **896.7** | 894.9 |
+| Wall time | 316 s | ~690 s | 1428 s |
+| Real cost (9 tasks) | n/a (different meter) | **~$0.05** | $0.10 |
+
+What this means, plainly:
+
+* **Quality: a three-way tie.** 2.4 points out of 900 is smaller than the
+  run-to-run variance of a single hard task. On these tasks, a ~free flash
+  model inside neo's harness delivers the same quality as the frontier
+  reference.
+* **neo beats the same-model competitor** — and did so on OpenCode's best
+  run of the night (its worst run burned a 32,000-token reasoning spiral
+  and scored 0 on a hard task; neo's harness caps that failure mode).
+* **The remaining gap is speed, not correctness** — and that is mostly the
+  model's token rate, not the harness.
+
+Full method, efficiency numbers, memory experiments and honest caveats:
+**[docs/benchmark-2026-08.md](docs/benchmark-2026-08.md)**. Earlier
+hand-graded write-up: [docs/evaluation.md](docs/evaluation.md)
 ([Türkçe](docs/evaluation.tr.md)).
 
 ## Roadmap

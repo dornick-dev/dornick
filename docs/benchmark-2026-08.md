@@ -24,7 +24,10 @@ The task set, grader and per-run behaviour data live in this repo under
   a 32k-token reasoning spiral one day and a clean 97 the next on the same
   task) — single-run numbers deserve suspicion, including these.
 
-## Scores (0–100 per task)
+## Scores
+
+Each task is scored 0–100 by the same grader; **higher is better**. Bold
+marks the best score in the row.
 
 | Task | difficulty | Claude Code | OpenCode | neo (mean of 2) |
 |---|---|---|---|---|
@@ -124,4 +127,4 @@ py eval/coding/kosucu.py --gorev hepsi --model z-ai/glm-5.3-flash --tekrar 2
 
 Raw per-run JSON (scores, behaviour columns, cache rates) is committed
 under [`eval/coding/sonuclar/`](../eval/coding/sonuclar/). Screenshots of
-the product taken during this work: [the gallery](galeri/README.md).
+the product taken during this work: [the gallery](gallery/README.md).
