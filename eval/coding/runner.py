@@ -324,6 +324,15 @@ def run_once(task: Task, source_state: Path, model: str | None,
             state_dir=workspace / ".neocp")
         b["wall_clock_s"] = round(time.time() - started, 1)
 
+        # Sweep BEFORE grading, not only in `finally`: the agent's own
+        # detached service survives the instance and still holds its port,
+        # and the grader then honestly reports "port held — cannot
+        # measure". Measured twice on o2-service (29.08) before the order
+        # was fixed. The `finally` sweep below stays as the safety net.
+        leftovers = sweep_workspace(workspace, workshop, started)
+        if leftovers:
+            notes.append(f"{leftovers} leftover processes killed before grading")
+
         try:
             axes = task.score(workshop)
         except Exception as exc:  # a crashed grader never invents a zero
@@ -343,7 +352,8 @@ def run_once(task: Task, source_state: Path, model: str | None,
             shutil.rmtree(workspace, ignore_errors=True)
 
 
-def sweep_workspace(workspace: Path) -> int:
+def sweep_workspace(workspace: Path, workshop: Path | None = None,
+                    started: float | None = None) -> int:
     """Kill every process still tied to this workspace; return the count.
 
     When the instance closes, neo itself goes down — but what it started
@@ -353,9 +363,19 @@ def sweep_workspace(workspace: Path) -> int:
     FALSE 100.0 because of a held port, and 18 orphan processes piled up
     in Temp because the profile folder could not be deleted.
 
-    The criterion is the workspace path appearing in the command line. The
-    path is a unique temp directory, so the user's own Chrome or server
-    can never match. Outside Windows this quietly does nothing.
+    Two matching passes:
+      1. The workspace path appears in the command line. The path is a
+         unique temp directory, so the user's own Chrome or server can
+         never match.
+      2. (with `workshop` + `started`) a python/node/php process CREATED
+         AFTER this rep began whose command line names a script that
+         exists in the workshop. This catches the relative launch the
+         path filter misses — the agent runs `py servis.py` with cwd in
+         the workshop, and the command line carries no path at all.
+         (Measured: o2-service graded "port held — cannot measure" twice
+         because of exactly this survivor.)
+
+    Outside Windows this quietly does nothing.
     """
     if sys.platform != "win32":
         return 0
@@ -363,9 +383,34 @@ def sweep_workspace(workspace: Path) -> int:
     # `$_.ProcessId -ne $PID`: the PowerShell running the query carries
     # this path in its OWN command line — without the exclusion it would be
     # its own first victim and the count would never print.
+    clauses = [f"($_.CommandLine -like '*{pattern}*')"]
+    if workshop is not None and started is not None:
+        # RECURSIVE: the agent parks its service in a subfolder
+        # (kisa-link/servis.py) — a shallow glob missed the name and the
+        # survivor held the port through grading a third time.
+        names = sorted({p.name for p in workshop.rglob("*")
+                        if p.suffix.lower() in (".py", ".js", ".mjs", ".php")
+                        and not any(d in grading.SKIP_DIRS for d in p.parts)})
+        if names:
+            # Substring match on purpose: quoted launches ("servis.py") and
+            # Start-Process command lines carry no leading space. A false
+            # positive would be a python/node/php process born after this
+            # rep whose command line happens to name a workshop file —
+            # that is the leftover we are hunting, not a bystander.
+            adlar = " -or ".join(
+                f"($_.CommandLine -like '*{n.replace(chr(39), chr(39)*2)}*')"
+                for n in names[:20])
+            # CIM date comparison: only processes born after this rep began.
+            baslangic = time.strftime("%Y%m%d%H%M%S",
+                                      time.localtime(started))
+            clauses.append(
+                "(($_.Name -match '^(python|node|php)') -and "
+                f"({adlar}) -and "
+                "($_.CreationDate -ge [datetime]::ParseExact("
+                f"'{baslangic}','yyyyMMddHHmmss',$null)))")
     script = (
         "$p = Get-CimInstance Win32_Process | Where-Object { "
-        f"$_.CommandLine -like '*{pattern}*' -and $_.ProcessId -ne $PID }}; "
+        f"($_.ProcessId -ne $PID) -and ({' -or '.join(clauses)}) }}; "
         "$p | ForEach-Object { Stop-Process -Id $_.ProcessId -Force "
         "-ErrorAction SilentlyContinue }; "
         "($p | Measure-Object).Count"

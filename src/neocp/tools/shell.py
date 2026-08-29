@@ -236,6 +236,20 @@ UZUN SÜREN SÜREÇLER — iki ayrı kip, karıştırma:
         # istediği yere yazabilir — o sınırı izin motoru tutuyor.
         default = ctx.sandbox.root if ctx.sandbox.enabled else ctx.workspace
         cwd = Path(args.get("cwd") or default).expanduser()
+        if not cwd.is_dir() and not cwd.is_absolute():
+            # Dosya araçlarındaki atölye-önek tuzağının kabuk kopyası
+            # (ölçüldü, 29.08 süpürümü: 3 hatalı çağrının kalıbı "Çalışma
+            # dizini yok: atolye\X"): model sistem promptundaki klasör
+            # adını yola kendisi ekliyor. files._resolve bunu dosyalarda
+            # sessizce düzeltiyordu; kabuk cwd'si aynı düzeltmeyi almalı.
+            kok = default
+            parts = cwd.parts
+            if parts and parts[0] == kok.name:
+                aday = kok / Path(*parts[1:]) if len(parts) > 1 else kok
+            else:
+                aday = kok / cwd
+            if aday.is_dir():
+                cwd = aday
         if not cwd.is_dir():
             return ToolResult.error(f"Çalışma dizini yok: {cwd}")
 

@@ -1393,3 +1393,32 @@ def test_workspace_brief_absent_in_lean_prompt(tmp_path) -> None:
         c.model, context_window=4096))
     assert 'ipucu-dosyasi.py' not in prompt.build(dar, ToolRegistry()).core
 
+def test_cloud_consent_flag_survives_the_toggle_roundtrip(tmp_path) -> None:
+    # Bayrak tanima.json'da yasar; on/off cevrimleri onu SILMEMELI
+    # (config.json'a konmamasinin sebebi tam da settings'in bilinmeyen
+    # anahtari dusurmesiydi — ayni tuzak burada tekrarlanmamali).
+    from neocp import tanima
+    tanima.bulut_onayi_ayarla(tmp_path, True)
+    assert tanima.durum(tmp_path)['learn_cloud_ok'] is True
+    tanima.ayarla(tmp_path, True)
+    tanima.ayarla(tmp_path, False)
+    assert tanima.durum(tmp_path)['learn_cloud_ok'] is True
+    tanima.bulut_onayi_ayarla(tmp_path, False)
+    assert tanima.durum(tmp_path)['learn_cloud_ok'] is False
+
+def test_shell_cwd_strips_the_workshop_prefix(tmp_path) -> None:
+    # Olculdu (29.08 supurumu): 3 hatali cagrinin kalibi 'Calisma dizini
+    # yok: atolye/X' — model klasor adini yola kendisi ekliyor.
+    import asyncio
+    from neocp.tools.base import ToolRegistry
+    from neocp.tools import shell as shell_mod
+    ctx = _dosya_ctx(tmp_path)
+    kok = ctx.sandbox.root
+    (kok / 'gorev').mkdir(parents=True)
+    reg = ToolRegistry()
+    shell_mod.register(reg)
+    r = asyncio.run(reg.get('shell').handler(
+        {'command': 'echo ok', 'cwd': 'atolye/gorev'}, ctx))
+    assert not r.is_error, r.content
+    assert r.detail.get('cwd', '').endswith('gorev')
+

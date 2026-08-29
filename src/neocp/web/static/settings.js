@@ -511,6 +511,11 @@ Dil.ekle({
     "neo's local base model quietly learns from your memories at night: once enough has gathered, a low-priority fine-tune runs in the background; a regressing candidate is discarded at the exam gate. Labeling uses your selected model: with a local model data never leaves the machine; with a hosted model this step is skipped unless you explicitly opt in (opting in sends memory text to that provider)",
   "Tanıma eğitimi açıldı": "Personal training enabled",
   "Tanıma eğitimi kapatıldı": "Personal training disabled",
+  "Bulut modelle etiketlemeye izin ver": "Allow labeling with a hosted model",
+  "Kapalıyken (varsayılan) gece etiketlemesi yalnız yerel modelle çalışır ve anıların makineden çıkmaz. Açarsan anı metinleri etiketleme için seçili bulut sağlayıcısına gönderilir":
+    "When off (default), nightly labeling only runs with a local model and your memories never leave the machine. When on, memory text is sent to your selected hosted provider for labeling",
+  "Bulut etiketleme onayı verildi": "Cloud labeling consent granted",
+  "Bulut etiketleme onayı geri alındı": "Cloud labeling consent withdrawn",
   " · eğitim düzeneği bu makinede kurulu değil": " · the training rig is not installed on this machine",
 
   // bölüm başlıkları (pane-head): sekme adı + tek cümlelik ne-işe-yarar
@@ -2801,8 +2806,29 @@ const Settings = (() => {
       taniAnahtar
     );
     pane.append(taniAlan);
+    // Mahremiyet onayı: bulut modelle gece etiketlemesi. Varsayılan kapalı;
+    // açmak anı metnini seçili sağlayıcıya gönderir — ipucu bunu açıkça der.
+    const bulutAnahtar = toggleBox(false, async (v) => {
+      try {
+        await fetch("/api/tanima", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ learn_cloud_ok: v }),
+        });
+        say(v ? "Bulut etiketleme onayı verildi" : "Bulut etiketleme onayı geri alındı");
+      } catch { say("Kaydedilemedi"); }
+    });
+    const bulutAlan = field(
+      "Bulut modelle etiketlemeye izin ver",
+      "Kapalıyken (varsayılan) gece etiketlemesi yalnız yerel modelle çalışır " +
+      "ve anıların makineden çıkmaz. Açarsan anı metinleri etiketleme için " +
+      "seçili bulut sağlayıcısına gönderilir",
+      bulutAnahtar
+    );
+    pane.append(bulutAlan);
     fetch("/api/tanima").then((r) => r.json()).then((d) => {
       taniAnahtar.checked = !!d.on;
+      bulutAnahtar.checked = !!d.learn_cloud_ok;
       // Düzenek kurulu değilse anahtar boşa çevrilir; ipucuna not düşülüyor.
       if (!d.hazir) {
         const ipucu = taniAlan.querySelector(".field-hint");

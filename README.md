@@ -55,8 +55,9 @@ and turns repeated work into automations you can watch run step by step.
   is discarded. Training runs on your machine; with a local model
   (LM Studio, Ollama) your data never leaves the computer. If your
   selected model is hosted, the nightly labeling step is OFF by
-  default — enabling it (`learn_cloud_ok` in `.neocp/tanima.json`) sends memory text to that
-  provider, and the settings screen says so next to the switch.
+  default — the "Allow labeling with a hosted model" switch in
+  settings turns it on, and its label says memory text will be sent
+  to that provider.
 * **Automations you can watch run.** A repeated job — "every morning, read
   my mail, pick what matters, send it to me on WhatsApp" — becomes a graph of
   steps, not a prompt you retype. Ask the agent and it builds the flow; you

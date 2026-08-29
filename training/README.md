@@ -125,7 +125,8 @@ Personal artifacts (`data/personal_*`) never leave the machine and are
 git-ignored. The labeling step sends memory text to the model you
 selected in neo: with a local endpoint (LM Studio, Ollama) nothing
 leaves the machine; a hosted endpoint is refused unless you opt in
-with `learn_cloud_ok` in `.neocp/tanima.json`.
+via the "Allow labeling with a hosted model" switch in settings
+(`learn_cloud_ok` in `.neocp/tanima.json`).
 
 ## Setup
 

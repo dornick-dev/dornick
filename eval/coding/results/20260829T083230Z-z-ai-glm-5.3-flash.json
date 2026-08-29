@@ -1,0 +1,1038 @@
+{
+  "time": "20260829T083230Z",
+  "model": "z-ai/glm-5.3-flash",
+  "repetitions": 2,
+  "wait_s": 900.0,
+  "tasks": [
+    {
+      "id": "k1-module",
+      "title": "TCKN validation module + tests",
+      "difficulty": "easy",
+      "language": "python",
+      "card": {
+        "task": "k1-module",
+        "score": 100.0,
+        "raw": 100.0,
+        "measured_ceiling": 100,
+        "unmeasured": [],
+        "broken_delivery": false,
+        "axes": [
+          {
+            "name": "works",
+            "ceiling": 40,
+            "earned": 40.0,
+            "evidence": [
+              "+ tckn.py exists (10p) — tckn.py",
+              "+ module imports (15p) — ok",
+              "+ dogrula() is callable (15p) — ok"
+            ],
+            "reason": "",
+            "external": false
+          },
+          {
+            "name": "scope",
+            "ceiling": 25,
+            "earned": 25.0,
+            "evidence": [
+              "~ valid numbers → True (10.0/10p) — 5/5",
+              "~ invalid numbers → False (10.0/10p) — 6/6",
+              "~ survives garbage input (2.0/2p) — 4/4 inputs raised nothing",
+              "~ garbage input → False (3.0/3p) — 4/4"
+            ],
+            "reason": "",
+            "external": false
+          },
+          {
+            "name": "health",
+            "ceiling": 20,
+            "earned": 20.0,
+            "evidence": [
+              "~ clean syntax (8.0/8p) — 2/2 files",
+              "~ size/complexity (6.0/6p) — clean",
+              "~ no duplication (6.0/6p) — repeated lines 0%, 0 recurring blocks"
+            ],
+            "reason": "",
+            "external": false
+          },
+          {
+            "name": "tests",
+            "ceiling": 15,
+            "earned": 15.0,
+            "evidence": [
+              "+ tests green (6p) — ...... [100%] 6 passed in 0.01s",
+              "~ test count (4.0/4p) — 6 tests found",
+              "~ critical path covered (3.0/3p) — 1/1: dogrula",
+              "~ assertions substantive (2.0/2p) — 14 assertions, 0 freebies"
+            ],
+            "reason": "",
+            "external": false
+          }
+        ],
+        "behavior": {
+          "tool_calls": 6,
+          "tools": {
+            "shell": 3,
+            "write_file": 2,
+            "kos": 1
+          },
+          "tool_errors": 1,
+          "model_turns": 6,
+          "api_errors": 0,
+          "verified": true,
+          "verify_trail": [
+            "shell: py -m pytest test_tckn.py -q",
+            "shell: py -m pytest test_tckn.py -q"
+          ],
+          "run_trail": [],
+          "wrote_plan": false,
+          "plan_evidence": "",
+          "prompt_tokens_last": 16774,
+          "prompt_tokens_total": 97409,
+          "output_tokens": 842,
+          "cache_read_tokens": 79232,
+          "model_calls": 6,
+          "cost_usd": 0.0075,
+          "tool_time_s": 2.8,
+          "primes_injected": null,
+          "primes_used": null,
+          "error_kinds": {
+            "Çıkış kodu 1 ERROR: file or directory not found: test_tckn.py": 1
+          },
+          "duration_s": 55.0,
+          "model_time_s": 52.2,
+          "changed_files": 2,
+          "gate_ok": true,
+          "wall_clock_s": 57.1
+        },
+        "notes": [
+          "excluded from grading (untouched pre-turn files): 7"
+        ]
+      },
+      "all_scores": [
+        100.0,
+        99.33333333333331
+      ],
+      "score_spread": 0.3333333333333428,
+      "broken_deliveries": 0,
+      "carried_from": "20260829T074557Z"
+    },
+    {
+      "id": "k2-cli",
+      "title": "Node todo-list CLI",
+      "difficulty": "easy",
+      "language": "node",
+      "card": {
+        "task": "k2-cli",
+        "score": 100.0,
+        "raw": 85.0,
+        "measured_ceiling": 85,
+        "unmeasured": [],
+        "broken_delivery": false,
+        "axes": [
+          {
+            "name": "works",
+            "ceiling": 40,
+            "earned": 40.0,
+            "evidence": [
+              "+ gorev.js exists (10p) — gorev\\gorev.js",
+              "! the agent's leftover gorevler.json was deleted before measuring (clean slate)",
+              "+ ekle works (10p) — exit 0/0",
+              "+ liste works (10p) — 1. [ ] süt al 2. [ ] faturayı öde",
+              "+ unknown command errors (10p) — exit code 1"
+            ],
+            "reason": "",
+            "external": false
+          },
+          {
+            "name": "scope",
+            "ceiling": 25,
+            "earned": 25.0,
+            "evidence": [
+              "+ added items are listed (10p) — «süt al»: True, «faturayı öde»: True",
+              "+ bitir changes the list (the other item stays) (8p) — bitir exit 0; list changed",
+              "+ persists in gorevler.json (7p) — gorevler.json, 109 chars"
+            ],
+            "reason": "",
+            "external": false
+          },
+          {
+            "name": "health",
+            "ceiling": 20,
+            "earned": 20.0,
+            "evidence": [
+              "~ clean syntax (8.0/8p) — 1/1 files",
+              "~ size/complexity (6.0/6p) — clean",
+              "~ no duplication (6.0/6p) — repeated lines 0%, 0 recurring blocks"
+            ],
+            "reason": "",
+            "external": false
+          },
+          {
+            "name": "tests",
+            "ceiling": 15,
+            "earned": 0.0,
+            "evidence": [
+              "- no test file (0p)"
+            ],
+            "reason": "",
+            "external": true
+          }
+        ],
+        "behavior": {
+          "tool_calls": 3,
+          "tools": {
+            "shell": 2,
+            "write_file": 1
+          },
+          "tool_errors": 1,
+          "model_turns": 4,
+          "api_errors": 0,
+          "verified": false,
+          "verify_trail": [],
+          "run_trail": [
+            "shell: node gorev.js ekle \"süt al\"; node gorev.js ekle \"ekmek al\"; node gorev.js bitir 1; node go",
+            "shell: node gorev.js ekle \"süt al\"; node gorev.js ekle \"ekmek al\"; node gorev.js bitir 1; node go"
+          ],
+          "wrote_plan": false,
+          "plan_evidence": "",
+          "prompt_tokens_last": 16061,
+          "prompt_tokens_total": 63194,
+          "output_tokens": 1006,
+          "cache_read_tokens": 57664,
+          "model_calls": 4,
+          "cost_usd": 0.005,
+          "tool_time_s": 0.4,
+          "primes_injected": null,
+          "primes_used": null,
+          "error_kinds": {
+            "Çalışma dizini yok: atolye\\gorev": 1
+          },
+          "duration_s": 47.7,
+          "model_time_s": 47.3,
+          "changed_files": 2,
+          "gate_ok": true,
+          "wall_clock_s": 50.0
+        },
+        "notes": [
+          "excluded from grading (untouched pre-turn files): 7"
+        ]
+      },
+      "all_scores": [
+        100.0,
+        100.0
+      ],
+      "score_spread": 0.0,
+      "broken_deliveries": 0,
+      "carried_from": "20260829T074557Z"
+    },
+    {
+      "id": "k3-repair",
+      "title": "Find and fix the PHP invoice bug",
+      "difficulty": "easy",
+      "language": "php",
+      "card": {
+        "task": "k3-repair",
+        "score": 100.0,
+        "raw": 85.0,
+        "measured_ceiling": 85,
+        "unmeasured": [],
+        "broken_delivery": false,
+        "axes": [
+          {
+            "name": "works",
+            "ceiling": 40,
+            "earned": 40.0,
+            "evidence": [
+              "+ fatura.php still there (10p) — fatura.php",
+              "+ php -l clean (10p) — No syntax errors detected in C:\\Users\\user\\AppData\\Local\\Temp\\neocp-eval-k3-repair-4sg9xot1\\atolye\\fatura.php",
+              "+ function callable from outside (20p) — ok"
+            ],
+            "reason": "",
+            "external": false
+          },
+          {
+            "name": "scope",
+            "ceiling": 25,
+            "earned": 25.0,
+            "evidence": [
+              "+ case: three lines 18% (10p) — expected 82.60, got 82.60",
+              "+ case: single line 20% (7p) — expected 27.00, got 27.00",
+              "+ case: two lines 0% (5p) — expected 50.00, got 50.00",
+              "+ case: empty order (3p) — expected 0.00, got 0.00"
+            ],
+            "reason": "",
+            "external": false
+          },
+          {
+            "name": "health",
+            "ceiling": 20,
+            "earned": 20.0,
+            "evidence": [
+              "~ clean syntax (8.0/8p) — 1/1 files",
+              "~ size/complexity (6.0/6p) — clean",
+              "~ no duplication (6.0/6p) — repeated lines 0%, 0 recurring blocks"
+            ],
+            "reason": "",
+            "external": false
+          },
+          {
+            "name": "tests",
+            "ceiling": 15,
+            "earned": 0.0,
+            "evidence": [
+              "- no test file (0p)"
+            ],
+            "reason": "",
+            "external": true
+          }
+        ],
+        "behavior": {
+          "tool_calls": 7,
+          "tools": {
+            "shell": 4,
+            "read_file": 1,
+            "edit_file": 1,
+            "list_dir": 1
+          },
+          "tool_errors": 2,
+          "model_turns": 8,
+          "api_errors": 0,
+          "verified": false,
+          "verify_trail": [],
+          "run_trail": [
+            "shell: php atolye/fatura.php",
+            "shell: php fatura.php"
+          ],
+          "wrote_plan": false,
+          "plan_evidence": "",
+          "prompt_tokens_last": 16536,
+          "prompt_tokens_total": 129090,
+          "output_tokens": 883,
+          "cache_read_tokens": 108736,
+          "model_calls": 8,
+          "cost_usd": 0.0099,
+          "tool_time_s": 0.9,
+          "primes_injected": null,
+          "primes_used": null,
+          "error_kinds": {
+            "Çıkış kodu 1 Could not open input file: atolye/fatura.php": 1,
+            "Çıkış kodu 1 Could not open input file: fatura.php": 1
+          },
+          "duration_s": 96.1,
+          "model_time_s": 95.2,
+          "changed_files": 1,
+          "gate_ok": true,
+          "wall_clock_s": 98.0
+        },
+        "notes": [
+          "excluded from grading (untouched pre-turn files): 7"
+        ]
+      },
+      "all_scores": [
+        100.0,
+        100.0
+      ],
+      "score_spread": 0.0,
+      "broken_deliveries": 0,
+      "carried_from": "20260829T074557Z"
+    },
+    {
+      "id": "o1-report",
+      "title": "CSV sales report + CLI",
+      "difficulty": "medium",
+      "language": "python",
+      "card": {
+        "task": "o1-report",
+        "score": 100.0,
+        "raw": 85.0,
+        "measured_ceiling": 85,
+        "unmeasured": [],
+        "broken_delivery": false,
+        "axes": [
+          {
+            "name": "works",
+            "ceiling": 40,
+            "earned": 40.0,
+            "evidence": [
+              "+ rapor.py exists (8p) — rapor.py",
+              "+ runs on the csv (16p) — exit 0; 2026-01 | Toplam ciro: 47553.25 Pompa 25197.00 Sensor 12159.05 PLC 8249.70 2026-02 | Toplam ciro: 33938.45 Sensor 17278.65 Pompa 8399.00 PLC 5499.80 2026-03 | T",
+              "+ output not empty (8p) — 316 chars",
+              "+ --ay runs (8p) — exit 0; 2026-03 | Toplam ciro: 99286.90 Pompa 54593.50 PLC 30248.90 Sensor 12799.00"
+            ],
+            "reason": "",
+            "external": false
+          },
+          {
+            "name": "scope",
+            "ceiling": 25,
+            "earned": 25.0,
+            "evidence": [
+              "~ monthly totals right (10.0/10p) — 3/3 months matched: 2026-01, 2026-02, 2026-03",
+              "+ top 3 products present (5p) — Pompa, PLC, Sensor",
+              "+ the three sorted high to low (5p) — order held",
+              "+ --ay 2026-03 gives the right month (3p) — expected 99286.9",
+              "+ --ay filters the other months (2p) — clean"
+            ],
+            "reason": "",
+            "external": false
+          },
+          {
+            "name": "health",
+            "ceiling": 20,
+            "earned": 20.0,
+            "evidence": [
+              "~ clean syntax (8.0/8p) — 1/1 files",
+              "~ size/complexity (6.0/6p) — clean",
+              "~ no duplication (6.0/6p) — repeated lines 0%, 0 recurring blocks"
+            ],
+            "reason": "",
+            "external": false
+          },
+          {
+            "name": "tests",
+            "ceiling": 15,
+            "earned": 0.0,
+            "evidence": [
+              "- no test file (0p)"
+            ],
+            "reason": "",
+            "external": true
+          }
+        ],
+        "behavior": {
+          "tool_calls": 4,
+          "tools": {
+            "shell": 2,
+            "read_file": 1,
+            "write_file": 1
+          },
+          "tool_errors": 1,
+          "model_turns": 5,
+          "api_errors": 0,
+          "verified": false,
+          "verify_trail": [],
+          "run_trail": [
+            "shell: py rapor.py satislar.csv; py rapor.py satislar.csv --ay 2026-03",
+            "shell: py rapor.py satislar.csv; py rapor.py satislar.csv --ay 2026-03"
+          ],
+          "wrote_plan": false,
+          "plan_evidence": "",
+          "prompt_tokens_last": 16416,
+          "prompt_tokens_total": 79722,
+          "output_tokens": 894,
+          "cache_read_tokens": 73600,
+          "model_calls": 5,
+          "cost_usd": 0.0062,
+          "tool_time_s": 0.5,
+          "primes_injected": null,
+          "primes_used": null,
+          "error_kinds": {
+            "Çıkış kodu 1 C:\\Users\\user\\AppData\\Local\\Programs\\Python\\Python": 1
+          },
+          "duration_s": 42.7,
+          "model_time_s": 42.2,
+          "changed_files": 1,
+          "gate_ok": true,
+          "wall_clock_s": 44.9
+        },
+        "notes": [
+          "excluded from grading (untouched pre-turn files): 8"
+        ]
+      },
+      "all_scores": [
+        100.0,
+        100.0
+      ],
+      "score_spread": 0.0,
+      "broken_deliveries": 0,
+      "carried_from": "20260829T074557Z"
+    },
+    {
+      "id": "o2-service",
+      "title": "Short-link HTTP service + tests",
+      "difficulty": "medium",
+      "language": "python",
+      "card": {
+        "task": "o2-service",
+        "score": null,
+        "raw": 33.666666666666664,
+        "measured_ceiling": 35,
+        "unmeasured": [
+          "works",
+          "requested scope"
+        ],
+        "broken_delivery": false,
+        "axes": [
+          {
+            "name": "works",
+            "ceiling": 40,
+            "earned": null,
+            "evidence": [],
+            "reason": "port 8099 is held by someone else — cannot measure",
+            "external": false
+          },
+          {
+            "name": "scope",
+            "ceiling": 25,
+            "earned": null,
+            "evidence": [],
+            "reason": "port 8099 is held by someone else — cannot measure",
+            "external": false
+          },
+          {
+            "name": "health",
+            "ceiling": 20,
+            "earned": 20.0,
+            "evidence": [
+              "~ clean syntax (8.0/8p) — 2/2 files",
+              "~ size/complexity (6.0/6p) — clean",
+              "~ no duplication (6.0/6p) — repeated lines 0%, 0 recurring blocks"
+            ],
+            "reason": "",
+            "external": false
+          },
+          {
+            "name": "tests",
+            "ceiling": 15,
+            "earned": 13.666666666666666,
+            "evidence": [
+              "+ tests green (6p) — .... [100%] 4 passed in 0.53s",
+              "~ test count (2.7/4p) — 4 tests found",
+              "~ critical path covered (3.0/3p) — 2/2: kisalt, saglik",
+              "~ assertions substantive (2.0/2p) — 9 assertions, 0 freebies"
+            ],
+            "reason": "",
+            "external": false
+          }
+        ],
+        "behavior": {
+          "tool_calls": 19,
+          "tools": {
+            "read_file": 7,
+            "shell": 5,
+            "write_file": 3,
+            "edit_file": 3,
+            "kos": 1
+          },
+          "tool_errors": 2,
+          "model_turns": 18,
+          "api_errors": 0,
+          "verified": true,
+          "verify_trail": [
+            "shell: py -m pytest test_servis.py -q",
+            "shell: py -m pytest test_servis.py -q",
+            "shell: py -m pytest test_servis.py -q",
+            "shell: $r = Invoke-WebRequest http://127.0.0.1:8099/saglik -UseBasicParsing; $r.StatusCode; $kod "
+          ],
+          "run_trail": [
+            "shell: py servis.py"
+          ],
+          "wrote_plan": false,
+          "plan_evidence": "",
+          "prompt_tokens_last": 20052,
+          "prompt_tokens_total": 326264,
+          "output_tokens": 2750,
+          "cache_read_tokens": 286144,
+          "model_calls": 18,
+          "cost_usd": 0.0252,
+          "tool_time_s": 6.1,
+          "primes_injected": null,
+          "primes_used": null,
+          "error_kinds": {
+            "Çıkış kodu 1 .F..": 1,
+            "Çıkış kodu 1 =================================== ERRORS =======": 1
+          },
+          "duration_s": 118.5,
+          "model_time_s": 112.4,
+          "changed_files": 3,
+          "gate_ok": true,
+          "wall_clock_s": 121.1
+        },
+        "notes": [
+          "excluded from grading (untouched pre-turn files): 7"
+        ]
+      },
+      "all_scores": [
+        93.33333333333331
+      ],
+      "score_spread": null,
+      "broken_deliveries": 0,
+      "carried_from": ""
+    },
+    {
+      "id": "o3-feature",
+      "title": "Add lending to the library (existing tests must not break)",
+      "difficulty": "medium",
+      "language": "node",
+      "card": {
+        "task": "o3-feature",
+        "score": 100.0,
+        "raw": 85.0,
+        "measured_ceiling": 85,
+        "unmeasured": [],
+        "broken_delivery": false,
+        "axes": [
+          {
+            "name": "works",
+            "ceiling": 40,
+            "earned": 40.0,
+            "evidence": [
+              "+ kitaplik.js still there (8p) — kitaplik.js",
+              "+ node --check clean (6p)",
+              "+ module loads (8p) — ok",
+              "+ pristine tests green (18p) — TAP version 13 # Subtest: kitap eklenebiliyor ok 1 - kitap eklenebiliyor --- duration_ms: 0.5057 type: 'test' ... # Subtest: aynı ISBN iki kez eklenemiyor ok 2 - aynı ISBN iki kez "
+            ],
+            "reason": "",
+            "external": false
+          },
+          {
+            "name": "scope",
+            "ceiling": 25,
+            "earned": 25.0,
+            "evidence": [
+              "+ oduncVer works (6p) — {'ok': True, 'value': {'isbn': '978-1', 'baslik': 'Kuyu', 'yazar': 'Ahmet', 'odunc': 'Mehmet'}}",
+              "+ liste shows who has the book (5p) — [{\"isbn\":\"978-1\",\"baslik\":\"Kuyu\",\"yazar\":\"Ahmet\",\"oduncVerildi\":true,\"kimde\":\"Fatih\"},{\"isbn\":\"978-2\",\"baslik\":\"Zeytin\",\"yazar\":\"Ayse\",\"odun",
+              "+ second lend throws (6p) — {'ok': False, 'error': 'Kitap zaten dışarıda: 978-1 (Fatih)'}",
+              "+ missing ISBN throws (4p) — {'ok': False, 'error': 'Böyle bir kitap yok: no-such'}",
+              "+ iadeAl frees the book (4p) — {'ok': True, 'value': {'isbn': '978-1', 'baslik': 'Kuyu', 'yazar': 'Ahmet', 'odunc': 'Mehmet'}}"
+            ],
+            "reason": "",
+            "external": false
+          },
+          {
+            "name": "health",
+            "ceiling": 20,
+            "earned": 20.0,
+            "evidence": [
+              "~ clean syntax (8.0/8p) — 2/2 files",
+              "~ size/complexity (6.0/6p) — clean",
+              "~ no duplication (6.0/6p) — repeated lines 0%, 0 recurring blocks"
+            ],
+            "reason": "",
+            "external": false
+          },
+          {
+            "name": "tests",
+            "ceiling": 15,
+            "earned": 15.0,
+            "evidence": [
+              "! the seed already ships a test suite — this axis cannot isolate the agent's own contribution, so it is not scored",
+              "+ tests green (6p) — TAP version 13 # Subtest: kitap eklenebiliyor ok 1 - kitap eklenebiliyor --- duration_ms: 0.5747 type: 'test' ... # Subt",
+              "~ test count (4.0/4p) — 10 tests found",
+              "~ critical path covered (3.0/3p) — 2/2: oduncVer, iadeAl",
+              "~ assertions substantive (2.0/2p) — 28 assertions, 0 freebies"
+            ],
+            "reason": "",
+            "external": true
+          }
+        ],
+        "behavior": {
+          "tool_calls": 12,
+          "tools": {
+            "edit_file": 5,
+            "read_file": 3,
+            "shell": 3,
+            "kos": 1
+          },
+          "tool_errors": 3,
+          "model_turns": 12,
+          "api_errors": 0,
+          "verified": true,
+          "verify_trail": [
+            "shell: node --test atolye/kitaplik.test.js",
+            "shell: node --test kitaplik.test.js",
+            "shell: node --test kitaplik.test.js 2>&1 | Select-String -Pattern '# (pass|fail)|not ok'"
+          ],
+          "run_trail": [],
+          "wrote_plan": false,
+          "plan_evidence": "",
+          "prompt_tokens_last": 18774,
+          "prompt_tokens_total": 211525,
+          "output_tokens": 1745,
+          "cache_read_tokens": 200448,
+          "model_calls": 12,
+          "cost_usd": 0.0163,
+          "tool_time_s": 1.0,
+          "primes_injected": null,
+          "primes_used": null,
+          "error_kinds": {
+            "2. madde: Aranan metin dosyada yok. Girintiyi ve satır sonlarını": 1,
+            "Çıkış kodu 1 Could not find 'atolye/kitaplik.test.js'": 1,
+            "Çıkış kodu 1 TAP version 13 # Subtest: kitap eklenebiliyor ok 1": 1
+          },
+          "duration_s": 97.5,
+          "model_time_s": 96.5,
+          "changed_files": 2,
+          "gate_ok": true,
+          "wall_clock_s": 99.8
+        },
+        "notes": [
+          "excluded from grading (untouched pre-turn files): 7"
+        ]
+      },
+      "all_scores": [
+        100.0,
+        100.0
+      ],
+      "score_spread": 0.0,
+      "broken_deliveries": 0,
+      "carried_from": "20260829T074557Z"
+    },
+    {
+      "id": "z1-search",
+      "title": "Note search tool with SQLite persistence",
+      "difficulty": "hard",
+      "language": "python",
+      "card": {
+        "task": "z1-search",
+        "score": 100.0,
+        "raw": 100.0,
+        "measured_ceiling": 100,
+        "unmeasured": [],
+        "broken_delivery": false,
+        "axes": [
+          {
+            "name": "works",
+            "ceiling": 40,
+            "earned": 40.0,
+            "evidence": [
+              "+ ara.py exists (5p) — ara.py",
+              "+ ekle runs (12p) — exit 0; 6 dosya dizine eklendi: C:\\Users\\user\\AppData\\Local\\Temp\\neocp-eval-z1-search-ig2halg1\\atolye\\notlar",
+              "+ SQLite file created (8p) — ara.index.db",
+              "+ bul runs in a separate process (15p) — exit 0; pompa-katalog.txt:4 Yedek parca: rulman, salmastra, motor mili. pompa-katalog.txt:4 Yedek parca: rulman, salmastra, motor mili."
+            ],
+            "reason": "",
+            "external": false
+          },
+          {
+            "name": "scope",
+            "ceiling": 25,
+            "earned": 25.0,
+            "evidence": [
+              "+ single word finds the right note (8p) — «salmastra» → expected pompa-katalog; output: 'pompa-katalog.txt:4\\n  Yedek parca: rulman, salmastra, motor mili.\\npompa-katalog.txt:4\\n  Yedek parca: rulman, salmastra, '",
+              "+ multi-word: full match ranks first (10p) — «rulman titresim» → kuyu-bakim at 0, pompa-katalog at 178",
+              "+ missing word invents nothing (7p) — «helikopter» → output: \"Eşleşme yok: 'helikopter' için hiçbir notta sonuç bulunamadı.\\n\\n\""
+            ],
+            "reason": "",
+            "external": false
+          },
+          {
+            "name": "health",
+            "ceiling": 20,
+            "earned": 20.0,
+            "evidence": [
+              "~ clean syntax (8.0/8p) — 2/2 files",
+              "~ size/complexity (6.0/6p) — clean",
+              "~ no duplication (6.0/6p) — repeated lines 0%, 0 recurring blocks"
+            ],
+            "reason": "",
+            "external": false
+          },
+          {
+            "name": "tests",
+            "ceiling": 15,
+            "earned": 15.0,
+            "evidence": [
+              "+ tests green (6p) — ......... [100%] 9 passed in 0.28s",
+              "~ test count (4.0/4p) — 9 tests found",
+              "~ critical path covered (3.0/3p) — 2/2: ekle, bul",
+              "~ assertions substantive (2.0/2p) — 14 assertions, 0 freebies"
+            ],
+            "reason": "",
+            "external": false
+          }
+        ],
+        "behavior": {
+          "tool_calls": 10,
+          "tools": {
+            "shell": 5,
+            "list_dir": 2,
+            "write_file": 2,
+            "kos": 1
+          },
+          "tool_errors": 1,
+          "model_turns": 11,
+          "api_errors": 0,
+          "verified": true,
+          "verify_trail": [
+            "shell: py -m pytest test_ara.py -q",
+            "shell: py ara.py bul \"titresim\"; echo ---; py -m pytest test_ara.py -q"
+          ],
+          "run_trail": [
+            "shell: py ara.py ekle notlar; py ara.py bul \"salmastra\"; echo ---; py ara.py bul \"rulman titresim"
+          ],
+          "wrote_plan": false,
+          "plan_evidence": "",
+          "prompt_tokens_last": 17254,
+          "prompt_tokens_total": 180890,
+          "output_tokens": 3336,
+          "cache_read_tokens": 138496,
+          "model_calls": 11,
+          "cost_usd": 0.0144,
+          "tool_time_s": 4.3,
+          "primes_injected": null,
+          "primes_used": null,
+          "error_kinds": {
+            "Çıkış kodu 1 Get-Content : Cannot find path 'C:\\Users\\user\\AppD": 1
+          },
+          "duration_s": 134.7,
+          "model_time_s": 130.4,
+          "changed_files": 3,
+          "gate_ok": true,
+          "wall_clock_s": 136.7
+        },
+        "notes": [
+          "excluded from grading (untouched pre-turn files): 13"
+        ]
+      },
+      "all_scores": [
+        100.0,
+        90.0
+      ],
+      "score_spread": 5.0,
+      "broken_deliveries": 0,
+      "carried_from": "20260829T074557Z"
+    },
+    {
+      "id": "z2-panel",
+      "title": "Login-guarded mini admin panel",
+      "difficulty": "hard",
+      "language": "php",
+      "card": {
+        "task": "z2-panel",
+        "score": 100.0,
+        "raw": 85.0,
+        "measured_ceiling": 85,
+        "unmeasured": [],
+        "broken_delivery": false,
+        "axes": [
+          {
+            "name": "works",
+            "ceiling": 40,
+            "earned": 40.0,
+            "evidence": [
+              "+ index.php exists (8p) — admin-panel",
+              "! 8098 was held (the agent may have left its own server running); measured on port 8100",
+              "+ server boots (10p) — port opened",
+              "+ login page renders (10p) — 200, 1123 chars; password field: True",
+              "+ correct password gets in (12p) — login POST → HTTP 200; ozet.php → HTTP 200"
+            ],
+            "reason": "",
+            "external": false
+          },
+          {
+            "name": "scope",
+            "ceiling": 25,
+            "earned": 25.0,
+            "evidence": [
+              "~ unauthenticated access blocked (7.0/7p) — ozet.php: blocked; kullanicilar.php: blocked; ayarlar.php: blocked",
+              "+ wrong password rejected (3p) — after a wrong password ozet.php → HTTP 302",
+              "+ ozet.php works after login (5p) — 200, 1962 chars",
+              "+ kullanicilar.php works after login (5p) — 200, 2199 chars",
+              "+ ayarlar.php works after login (5p) — 200, 1949 chars"
+            ],
+            "reason": "",
+            "external": false
+          },
+          {
+            "name": "health",
+            "ceiling": 20,
+            "earned": 20.0,
+            "evidence": [
+              "~ clean syntax (8.0/8p) — 6/6 files",
+              "~ size/complexity (6.0/6p) — clean",
+              "~ no duplication (6.0/6p) — repeated lines 0%, 0 recurring blocks"
+            ],
+            "reason": "",
+            "external": false
+          },
+          {
+            "name": "tests",
+            "ceiling": 15,
+            "earned": 0.0,
+            "evidence": [
+              "- no test file (0p)"
+            ],
+            "reason": "",
+            "external": true
+          }
+        ],
+        "behavior": {
+          "tool_calls": 36,
+          "tools": {
+            "browser": 19,
+            "shell": 9,
+            "write_file": 7,
+            "list_dir": 1
+          },
+          "tool_errors": 3,
+          "model_turns": 32,
+          "api_errors": 0,
+          "verified": true,
+          "verify_trail": [
+            "browser: ",
+            "shell: try { (Invoke-WebRequest -Uri http://localhost:8090/index.php -MaximumRedirection 0 -Error",
+            "browser: ",
+            "browser: ",
+            "browser: ",
+            "browser: ",
+            "browser: ",
+            "browser: "
+          ],
+          "run_trail": [],
+          "wrote_plan": false,
+          "plan_evidence": "",
+          "prompt_tokens_last": 20572,
+          "prompt_tokens_total": 609754,
+          "output_tokens": 3911,
+          "cache_read_tokens": 575040,
+          "model_calls": 32,
+          "cost_usd": 0.0467,
+          "tool_time_s": 16.0,
+          "primes_injected": null,
+          "primes_used": null,
+          "error_kinds": {
+            "Çıkış kodu 1 Get-Content : Cannot find path 'C:\\Users\\user\\AppD": 1,
+            "Eşleşen alan bulunamadı. Adaylar: name=kullanici; name=sifre": 1,
+            "Eşleşen alan bulunamadı. Adaylar: name=site_adi; name=eposta; Ba": 1
+          },
+          "duration_s": 212.1,
+          "model_time_s": 196.1,
+          "changed_files": 7,
+          "gate_ok": true,
+          "wall_clock_s": 214.2
+        },
+        "notes": [
+          "excluded from grading (untouched pre-turn files): 7"
+        ]
+      },
+      "all_scores": [
+        100.0,
+        100.0
+      ],
+      "score_spread": 0.0,
+      "broken_deliveries": 0,
+      "carried_from": "20260829T074557Z"
+    },
+    {
+      "id": "z3-hidden-bug",
+      "title": "Find and fix the 3 hidden bugs in the cart module",
+      "difficulty": "hard",
+      "language": "python",
+      "card": {
+        "task": "z3-hidden-bug",
+        "score": 100.0,
+        "raw": 85.0,
+        "measured_ceiling": 85,
+        "unmeasured": [],
+        "broken_delivery": false,
+        "axes": [
+          {
+            "name": "works",
+            "ceiling": 40,
+            "earned": 40.0,
+            "evidence": [
+              "+ sepet.py still there (6p) — sepet\\sepet.py",
+              "+ module imports (10p) — ok",
+              "+ pristine regression suite runs (8p) — ........ [100%] 8 passed in 0.01s",
+              "+ regression suite fully green (16p) — ........ [100%] 8 passed in 0.01s"
+            ],
+            "reason": "",
+            "external": false
+          },
+          {
+            "name": "scope",
+            "ceiling": 25,
+            "earned": 25.0,
+            "evidence": [
+              "+ bug 1: re-adding a product accumulates (8p) — expected [7, 21.0], got [7, 21.0]",
+              "+ bug 2: discount boundaries inclusive (8p) — 500→0.05 (0.05), 1000→0.1 (0.10), 499.99→0.0 (0.0)",
+              "+ bug 3: total keeps the cents (6p) — 7 × 14.29 → expected 100.03, got 100.03",
+              "+ hidden case: 1500 → 10%, 500 → 5% (2p) — 1500→1350.0 (1350.0), 500→475.0 (475.0)",
+              "+ existing guard survived (quantity 0 → ValueError) (1p) — {'ok': True, 'value': 'ValueError'}"
+            ],
+            "reason": "",
+            "external": false
+          },
+          {
+            "name": "health",
+            "ceiling": 20,
+            "earned": 20.0,
+            "evidence": [
+              "~ clean syntax (8.0/8p) — 1/1 files",
+              "~ size/complexity (6.0/6p) — clean",
+              "~ no duplication (6.0/6p) — repeated lines 0%, 0 recurring blocks"
+            ],
+            "reason": "",
+            "external": false
+          },
+          {
+            "name": "tests",
+            "ceiling": 15,
+            "earned": 0.0,
+            "evidence": [
+              "! the regression suite ships with the seed — this axis cannot isolate the agent's own contribution, so it is not scored",
+              "- no test file (0p)"
+            ],
+            "reason": "",
+            "external": true
+          }
+        ],
+        "behavior": {
+          "tool_calls": 6,
+          "tools": {
+            "read_file": 2,
+            "shell": 2,
+            "list_dir": 1,
+            "edit_file": 1
+          },
+          "tool_errors": 1,
+          "model_turns": 6,
+          "api_errors": 0,
+          "verified": true,
+          "verify_trail": [
+            "shell: py -m pytest -q",
+            "shell: cd C:\\Users\\user\\AppData\\Local\\Temp\\neocp-eval-z3-hidden-bug-ayv91spf\\atolye\\sepet; py -m "
+          ],
+          "run_trail": [],
+          "wrote_plan": false,
+          "plan_evidence": "",
+          "prompt_tokens_last": 16399,
+          "prompt_tokens_total": 96488,
+          "output_tokens": 596,
+          "cache_read_tokens": 88640,
+          "model_calls": 6,
+          "cost_usd": 0.0074,
+          "tool_time_s": 1.4,
+          "primes_injected": null,
+          "primes_used": null,
+          "error_kinds": {
+            "Çalışma dizini yok: atolye\\sepet": 1
+          },
+          "duration_s": 38.6,
+          "model_time_s": 37.2,
+          "changed_files": 1,
+          "gate_ok": true,
+          "wall_clock_s": 40.9
+        },
+        "notes": [
+          "excluded from grading (untouched pre-turn files): 8"
+        ]
+      },
+      "all_scores": [
+        100.0,
+        100.0
+      ],
+      "score_spread": 0.0,
+      "broken_deliveries": 0,
+      "carried_from": "20260829T074557Z"
+    }
+  ],
+  "not_run": [],
+  "axis_ceilings": {
+    "works": 40,
+    "scope": 25,
+    "health": 20,
+    "tests": 15
+  }
+}

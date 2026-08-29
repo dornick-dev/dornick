@@ -394,6 +394,9 @@ def register(registry: ToolRegistry) -> None:
 Bir dosyayı okur. Metin dosyalarında uzun içerik için `offset` ve `limit`
 ile satır aralığı verilebilir; çıktı satır numaralı gelir.
 
+Birden çok dosyaya bakacaksan tek tek çağırma: `read_many` hepsini tek
+turda okur — keşif için her zaman onu tercih et.
+
 Görsel dosyaları (png, jpg, gif, webp) GERÇEKTEN GÖRÜRSÜN: dosya sana
 görüntü olarak gelir. Ekran görüntüsü, tasarım dosyası, hata fotoğrafı —
 "okuyamıyorum" deme, aç ve bak.

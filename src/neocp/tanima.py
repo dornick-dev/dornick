@@ -90,6 +90,17 @@ def ayarla(state_dir: Path, on: bool) -> None:
     (state_dir / DOSYA).write_text(json.dumps(d, ensure_ascii=False), encoding="utf-8")
 
 
+def bulut_onayi_ayarla(state_dir: Path, ok: bool) -> None:
+    """Bulut modelle gece etiketlemesine açık izin (mahremiyet onayı).
+
+    Gece döngüsü (08_kisisel_dongu / personal_loop) bu bayrağı okur:
+    barındırılan uca anı metni yalnız bu açıkken gider.
+    """
+    d = durum(state_dir)
+    d["learn_cloud_ok"] = bool(ok)
+    (state_dir / DOSYA).write_text(json.dumps(d, ensure_ascii=False), encoding="utf-8")
+
+
 def hazir() -> bool:
     """Eğitim düzeneği bu makinede kurulu mu?"""
     return DONGU_BETIK.exists()

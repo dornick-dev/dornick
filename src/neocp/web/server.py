@@ -684,7 +684,8 @@ class _Handler(BaseHTTPRequestHandler):
             d = (tanima.durum(config.state_dir) if config is not None
                  else {"on": False, "son_kosu": ""})
             self._json({"on": d["on"], "kosuyor": tanima.kosuyor(),
-                        "hazir": tanima.hazir(), "son": d["son_kosu"]})
+                        "hazir": tanima.hazir(), "son": d["son_kosu"],
+                        "learn_cloud_ok": d.get("learn_cloud_ok", False)})
         elif route == "/api/dil":
             # Kurulum sihirbazının seçtiği arayüz dili. localStorage'a
             # kurulumdan yazılamıyor; sihirbaz çalışma alanına setup.json
@@ -1131,6 +1132,15 @@ class _Handler(BaseHTTPRequestHandler):
             return
         hub = getattr(self.server, "hub", None)
 
+        if "learn_cloud_ok" in (body or {}):
+            # Mahremiyet onayı: bulut modelle gece etiketlemesine açık izin.
+            # Ayrı dal — "on" ile birlikte gelmez, ayar sayfasındaki alt
+            # anahtardan tek başına düşer.
+            tanima.bulut_onayi_ayarla(config.state_dir,
+                                      bool(body.get("learn_cloud_ok")))
+            self._json({"ok": True,
+                        "learn_cloud_ok": bool(body.get("learn_cloud_ok"))})
+            return
         if "on" in (body or {}):
             tanima.ayarla(config.state_dir, bool(body.get("on")))
             # Üst bardaki ikon anahtarla birlikte yanıp sönsün: durum

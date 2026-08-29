@@ -147,5 +147,52 @@ regression test in [`tests/`](../tests/):
   One honest gap remains: the Claude lane's token/cost cannot be metered
   (different billing), and its wall time was stopwatch-measured.
 
+## Addendum — 29 Aug harness iteration, measured honestly
+
+After an external review of the speed gap, three levers were built and a
+fresh ×2 sweep was run (same model, same 9 tasks): a `read_many` tool
+(array-schema batch reads), a frozen first-turn workspace briefing, and
+per-call time/prime/error metrics in the behaviour extractor.
+
+| sweep (mean of 2 reps) | 29 Aug morning | 29 Aug after changes |
+|---|---|---|
+| quality (sum, 9 tasks) | 897.3 | **887.2** (best-rep sum 900.0 — first all-100 sweep) |
+| wall time (best reps) | 577 s | 935 s |
+| model calls | 63 | 109 |
+| tools per call | 0.98 | 0.99 |
+| cache hit | 89.8% | 89.9% |
+| cost | $0.083 | $0.149 |
+
+**The honest negative first:** `read_many` was never called — zero uses
+across 20 runs. The schema-beats-instruction bet did not move this flash
+model on its own; a cross-reference hint was added to `read_file` after
+the sweep and remains unmeasured. Calls and wall time went **up**, driven
+by two tasks (z2 spent 19 browser calls on form verification, o2 took
+three reruns — below); flash-class variance still dominates single-sweep
+deltas, so none of this is read as a regression caused by the changes —
+but it is certainly not the hoped ~2.0 tools/call either.
+
+**What the new metrics bought immediately:**
+
+* **Time split:** 833 s of the 935 s wall (89%) is model latency; tool
+  execution is 102 s. The speed lever is round-trips and per-call
+  generation time, not tool speed — now measured, not assumed.
+* **Error patterns:** the top recurring tool error ("working directory
+  does not exist: atolye\X", 3× per sweep) was a workshop-prefix trap in
+  the shell's cwd — fixed and regression-tested the same day.
+* **A grading bug found and killed:** o2-service graded "port held —
+  cannot measure" three times. Root cause chain: the agent's own detached
+  service outlived the instance, the leftover sweep ran *after* grading,
+  matched only absolute paths, and then only top-level filenames. All
+  three links fixed (sweep before grading, relative launches matched,
+  recursive names), each verified live with a planted survivor; o2 then
+  measured 100.0.
+
+The prime-injection gate also changed after the memory review: the
+unconditional-top exemption in spontaneous recall now applies only to
+young minds (<30 records) — the source of the +9% prompt-token cost on
+unrelated work — mirrored in the scale bench with a guard that asserts
+the copy equals the product.
+
 *Screenshots of the product: [gallery](gallery/README.md) · Drive neo from
 your own harness: [the gate](gate.md).*

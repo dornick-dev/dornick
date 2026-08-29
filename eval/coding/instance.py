@@ -34,6 +34,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import os
+import subprocess
 import sys
 import threading
 from pathlib import Path
@@ -80,6 +81,20 @@ def main(argv: list[str] | None = None) -> int:
         """Clean shutdown when stdin closes or receives a line."""
         try:
             sys.stdin.readline()
+        except Exception:
+            pass
+        # Benchmark-only sweep of DETACHED apps the agent started (e.g. a
+        # service under test). In the product they deliberately outlive the
+        # window; here a survivor holds its port and poisons the NEXT
+        # grading pass ("port held by someone else — cannot measure", seen
+        # twice on o2-service, 29.08). Tree-kill via the app ledger.
+        try:
+            from neocp import apps
+            for pid in list(getattr(apps, "_PROCS", {})):
+                subprocess.run(
+                    ["taskkill", "/PID", str(pid), "/T", "/F"],
+                    capture_output=True, timeout=10,
+                ) if sys.platform == "win32" else os.kill(pid, 9)
         except Exception:
             pass
         try:
