@@ -30,7 +30,7 @@ and turns repeated work into automations you can watch run step by step.
 
 | | most assistants | neo |
 |---|---|---|
-| Memory | a text file in the prompt | associative graph, ~constant-time recall at 50k records |
+| Memory | a text file in the prompt | associative graph; recall in ~5 ms at 50k records |
 | Learning | none — the model is fixed | nightly on-device fine-tune, gated by an exam |
 | Repeated work | you re-ask every time | automations: a step graph on a schedule |
 | Where it runs | someone's cloud | your machine; local models supported |
@@ -52,7 +52,11 @@ and turns repeated work into automations you can watch run step by step.
   its base rewriter on *your* memories at night, on your machine, at low
   priority. Every candidate model must pass an exam gate — beat the current
   model on the benchmark, keep silence on trap questions, stay fast — or it
-  is discarded. Your data never leaves the computer.
+  is discarded. Training runs on your machine; with a local model
+  (LM Studio, Ollama) your data never leaves the computer. If your
+  selected model is hosted, the nightly labeling step is OFF by
+  default — enabling it (`learn_cloud_ok` in `.neocp/tanima.json`) sends memory text to that
+  provider, and the settings screen says so next to the switch.
 * **Automations you can watch run.** A repeated job — "every morning, read
   my mail, pick what matters, send it to me on WhatsApp" — becomes a graph of
   steps, not a prompt you retype. Ask the agent and it builds the flow; you
@@ -176,7 +180,9 @@ Measured on the project's scale benchmark:
 * synonym-phrased questions **0.50 → 1.00**
 * full query expansion ~**300 ms** on CPU, once per message; early
   silence (nothing to add) in under 50 ms
-* recall latency ~**0.05 ms** at 1 record *and* at 50,001 records
+* recall latency: the fingerprint scan is linear, but the per-record
+  work is one XOR + popcount — measured ~**3-5 ms** at 50k records,
+  about a thousandth of a single model call
 
 ### Night school
 
@@ -185,7 +191,9 @@ Measured on the project's scale benchmark:
 The nightly personal loop harvests new memories, distills question→term
 pairs from them, fine-tunes the base model at low priority, and then sits
 the candidate down for an exam. Only a candidate that beats the deployed
-model gets deployed. Everything runs locally.
+model gets deployed. Training and the exam run locally; the labeling
+step uses your selected model, and hosted providers require an
+explicit opt-in (see "Learn me" above).
 
 ### Settings
 

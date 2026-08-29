@@ -79,6 +79,11 @@ def extract(log: Path, *, gate: dict[str, Any] | None = None,
 
     tools: Counter[str] = Counter()
     tool_errors = 0
+    tool_ms = 0.0
+    error_kinds: Counter[str] = Counter()
+    primes: list[set[str]] = []      # distinctive traces of each prime block
+    primes_used = 0
+    later_text: list[str] = []       # assistant text + tool input AFTER a prime
     verify_trail: list[str] = []
     run_trail: list[str] = []
     first_tool_seq: int | None = None
@@ -99,6 +104,8 @@ def extract(log: Path, *, gate: dict[str, Any] | None = None,
         if kind == "meta" and content == "tool_start":
             name = str(meta.get("tool") or "")
             tools[name] += 1
+            later_text.append(json.dumps(meta.get("input") or {},
+                                         ensure_ascii=False))
             if first_tool_seq is None:
                 first_tool_seq = int(ev.get("seq") or 0)
             payload = meta.get("input")
@@ -114,13 +121,35 @@ def extract(log: Path, *, gate: dict[str, Any] | None = None,
                     run_trail.append(f"shell: {command[:90]}")
 
         elif kind == "meta" and content == "tool_end":
+            tool_ms += float(meta.get("ms") or 0)
             if meta.get("error"):
                 tool_errors += 1
 
         elif kind == "meta" and content == "api_error":
             api_errors += 1
 
+        elif kind == "message" and ev.get("role") == "user":
+            # Error texts inside tool results: top patterns go to the report.
+            for b in (content if isinstance(content, list) else []):
+                if isinstance(b, dict) and b.get("type") == "tool_result"                         and b.get("is_error"):
+                    ozet = " ".join(str(b.get("content"))[:64].split())
+                    error_kinds[ozet] += 1
+
+        elif kind == "message" and ev.get("role") == "system":
+            # Spontaneous-recall blocks: for every injected record, keep
+            # its distinctive traces (words of >=6 letters) for the
+            # later-usage check.
+            metin = _text(content)
+            if "kendiliginden hatirlandi" in metin:
+                for satir in metin.splitlines():
+                    if satir.startswith("- ["):
+                        izler = {k.casefold() for k in satir.split()
+                                 if len(k) >= 6 and k[0].isalpha()}
+                        if izler:
+                            primes.append(izler)
+
         elif kind == "message" and ev.get("role") == "assistant":
+            later_text.append(_text(content))
             turns += 1
             usage = meta.get("usage")
             if isinstance(usage, dict) and usage.get("prompt_total"):
@@ -134,6 +163,14 @@ def extract(log: Path, *, gate: dict[str, Any] | None = None,
                 body = _text(ev.get("content"))
                 if len(PLAN_LINE.findall(body)) >= 3:
                     plan_evidence = " ".join(body.split())[:120]
+
+    # Injected-but-unused: does a distinctive trace from the prime block
+    # appear in assistant text or tool input AFTER the block?
+    # (A rough measure — the first-class metric the external review asked for.)
+    sonrasi = " ".join(later_text).casefold()
+    for izler in primes:
+        if any(iz in sonrasi for iz in izler):
+            primes_used += 1
 
     cost = _cost(model_name, prompt_total, output_tokens, state_dir)
 
@@ -157,9 +194,20 @@ def extract(log: Path, *, gate: dict[str, Any] | None = None,
         "cache_read_tokens": cache_read or None,
         "model_calls": calls or None,
         "cost_usd": cost,
+        # Time split (the review's prerequisite metric): tool time is the
+        # sum of tool_end.ms; model time = wall - tool (when the gate gave one).
+        "tool_time_s": round(tool_ms / 1000, 1) or None,
+        "primes_injected": len(primes) or None,
+        "primes_used": primes_used if primes else None,
+        "error_kinds": dict(error_kinds.most_common(3)) or None,
     }
     if gate:
         out["duration_s"] = gate.get("gecen_sn")
+        try:
+            out["model_time_s"] = round(float(gate.get("gecen_sn") or 0)
+                                        - tool_ms / 1000, 1)
+        except (TypeError, ValueError):
+            pass
         out["changed_files"] = len(gate.get("dosyalar") or [])
         out["gate_ok"] = bool(gate.get("ok"))
         if not gate.get("ok"):

@@ -46,7 +46,7 @@ Confirmed against the scan — none of the surveyed harnesses have these:
    candidate that regresses. Everyone else's "memory" is an appended
    markdown file.
 2. **A living memory, not a notes file.** FTS + fingerprint recall with
-   spreading activation, ~constant-time at 50k memories, visualized live.
+   spreading activation, ~5 ms recall at 50k memories, visualized live.
 3. **Memory as an MCP server.** Other tools (Claude Code included) can
    mount neo's memory.
 4. **The gate.** Scriptable full-turn access for external evaluators —

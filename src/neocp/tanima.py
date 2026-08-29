@@ -74,8 +74,14 @@ def durum(state_dir: Path) -> dict:
     try:
         d = json.loads((state_dir / DOSYA).read_text(encoding="utf-8"))
     except (OSError, ValueError):
-        return {"on": False, "son_kosu": ""}
-    return {"on": bool(d.get("on")), "son_kosu": str(d.get("son_kosu") or "")}
+        return {"on": False, "son_kosu": "", "learn_cloud_ok": False}
+    return {"on": bool(d.get("on")), "son_kosu": str(d.get("son_kosu") or ""),
+            # Mahremiyet onayı: barındırılan modelle etiketlemeye açık izin.
+            # Burada normalize edilip GERİ YAZILIYOR ki `ayarla` gibi
+            # oku-değiştir-yaz akışları bayrağı silmesin. config.json'a
+            # konmadı: settings._write_config dosyayı dataclass'lardan
+            # yeniden kuruyor ve bilinmeyen anahtarı ilk kayıtta düşürüyor.
+            "learn_cloud_ok": bool(d.get("learn_cloud_ok"))}
 
 
 def ayarla(state_dir: Path, on: bool) -> None:

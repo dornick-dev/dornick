@@ -455,6 +455,66 @@ bunu açıkça söyler; o durumda içeriği uydurma.
 
         return ToolResult(content=(numbered or "(dosya boş)") + footer)
 
+    # Neden ayrı bir araç: "bağımsız okumaları tek turda paralel çağır"
+    # öğüdü ölçümde tutmadı (9-görev koşusunda 0.97 araç/çağrı — altyapı
+    # hazır, küçük model talimatı yok sayıyor). Şema talimattan güçlü:
+    # dizi-argümanlı tek araç, N keşif turunu tek gidiş-dönüşe indiriyor.
+    @registry.tool(
+        name="read_many",
+        description="""
+Birden çok dosyayı TEK çağrıda okur. Bir görevin başında yapıyı anlamak
+için 2-8 dosyaya bakacaksan bunları tek tek read_file ile isteme; hepsini
+buraya ver — her dosya için ayrı bir tur harcamazsın.
+
+Yalnız metin dosyaları içindir; görsel ve PDF için read_file kullan.
+Uzun dosyalar baştan kırpılır — derinlemesine okuma gerekiyorsa o dosyayı
+read_file ile aralık vererek aç.
+        """,
+        input_schema=object_schema(
+            {
+                "paths": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "minItems": 2,
+                    "maxItems": 8,
+                    "description": "Okunacak dosya yolları (2-8 adet).",
+                },
+            },
+            required=["paths"],
+        ),
+    )
+    async def read_many(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
+        raw_paths = args.get("paths") or []
+        if not isinstance(raw_paths, list) or not raw_paths:
+            return ToolResult.error("paths bir dosya yolu listesi olmalı.")
+        raw_paths = [str(p) for p in raw_paths][:8]
+        # Toplam bütçe tek read_file ile aynı; dosya başına payı eşit.
+        pay = max(4_000, MAX_READ_CHARS // len(raw_paths))
+
+        def _tek(raw: str) -> str:
+            path = _resolve(raw, ctx)
+            if not path.exists():
+                return f"== {raw} ==\n(hata: dosya yok)"
+            if path.is_dir():
+                return f"== {raw} ==\n(hata: bu bir dizin — list_dir kullan)"
+            if _gorsel_mu(path) or path.suffix.lower() == ".pdf":
+                return f"== {raw} ==\n(görsel/PDF — read_file ile aç)"
+            try:
+                text = path.read_text(encoding="utf-8", errors="replace")
+                seen[path] = path.stat().st_mtime_ns
+            except OSError as exc:
+                return f"== {raw} ==\n(hata: {exc})"
+            lines = text.splitlines()
+            govde = "\n".join(f"{i + 1:>6}\t{l}" for i, l in enumerate(lines))
+            if len(govde) > pay:
+                govde = govde[:pay] + (
+                    f"\n... kırpıldı ({len(lines)} satır). Devamı için "
+                    f"read_file(path={raw!r}, offset=...) kullan.")
+            return f"== {raw} ==\n{govde or '(dosya boş)'}"
+
+        bloklar = await asyncio.to_thread(lambda: [_tek(p) for p in raw_paths])
+        return ToolResult(content="\n\n".join(bloklar))
+
     @registry.tool(
         name="write_file",
         description="""

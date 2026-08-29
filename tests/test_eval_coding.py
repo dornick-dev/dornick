@@ -706,3 +706,60 @@ def test_unittest_style_assertions_are_counted(tmp_path: Path) -> None:
     evidence = " ".join(axis.evidence)
     assert "0 assertions" not in evidence, evidence
     assert any(f"{n} assertions" in evidence for n in (3, 4)), evidence
+
+def test_behavior_splits_wall_time_into_tool_and_model(tmp_path: Path) -> None:
+    path = write_log(tmp_path / 's.jsonl', [
+        {'seq': 0, 'kind': 'meta', 'content': 'tool_start',
+         'meta': {'tool': 'shell', 'input': {'command': 'ls'}}},
+        {'seq': 1, 'kind': 'meta', 'content': 'tool_end',
+         'meta': {'tool': 'shell', 'error': False, 'ms': 1500}},
+        {'seq': 2, 'kind': 'meta', 'content': 'tool_end',
+         'meta': {'tool': 'shell', 'error': False, 'ms': 500}},
+    ])
+    b = behavior.extract(path, gate={'ok': True, 'gecen_sn': 10.0,
+                                     'dosyalar': []})
+    assert b['tool_time_s'] == 2.0
+    assert b['model_time_s'] == 8.0
+
+
+def test_behavior_counts_injected_and_used_primes(tmp_path: Path) -> None:
+    # Two memories injected; only the report-folder one is acted on later.
+    note = ('Kullanicinin son mesaji zihninde arandi; asagidakiler '
+            'kendiliginden hatirlandi. Ilgiliyse kullan.' + chr(10)
+            + '- [fact] quarterly report lives under reports/final' + chr(10)
+            + '- [fact] deploy password rotates monthly via vault')
+    path = write_log(tmp_path / 's.jsonl', [
+        {'seq': 0, 'kind': 'message', 'role': 'user', 'content': 'find it',
+         'meta': {}},
+        {'seq': 1, 'kind': 'message', 'role': 'system', 'content': note,
+         'meta': {}},
+        {'seq': 2, 'kind': 'meta', 'content': 'tool_start',
+         'meta': {'tool': 'read_file',
+                  'input': {'path': 'reports/final/q3.md'}}},
+    ])
+    b = behavior.extract(path)
+    assert b['primes_injected'] == 2
+    assert b['primes_used'] == 1, 'vault memory was never touched'
+
+
+def test_behavior_no_primes_reports_none_not_zero(tmp_path: Path) -> None:
+    path = write_log(tmp_path / 's.jsonl', [
+        {'seq': 0, 'kind': 'meta', 'content': 'tool_start',
+         'meta': {'tool': 'shell', 'input': {'command': 'ls'}}}])
+    b = behavior.extract(path)
+    assert b['primes_injected'] is None and b['primes_used'] is None
+
+
+def test_behavior_collects_the_top_error_patterns(tmp_path: Path) -> None:
+    err = {'type': 'tool_result', 'is_error': True,
+           'content': 'edit_file: old_string not found in panel.js'}
+    ok = {'type': 'tool_result', 'is_error': False, 'content': 'done'}
+    path = write_log(tmp_path / 's.jsonl', [
+        {'seq': 0, 'kind': 'message', 'role': 'user',
+         'content': [err, err, ok], 'meta': {}},
+    ])
+    b = behavior.extract(path)
+    assert len(b['error_kinds']) == 1
+    (kalip, adet), = b['error_kinds'].items()
+    assert 'old_string' in kalip and adet == 2
+

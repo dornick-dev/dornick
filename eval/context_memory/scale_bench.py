@@ -199,6 +199,16 @@ def parametric(
     if not passed:
         return []
     top = max(passed, key=lambda h: h.score)
+    if top.score < floor:
+        # Product rule (2026-08-29): the unconditional-top exemption only
+        # applies to a YOUNG mind; in a mature one, no record above the
+        # floor means no injection (the +9% unrelated-work leak).
+        try:
+            young = mind.store.count() < 30
+        except Exception:
+            young = True
+        if not young:
+            return []
     kept = [h for h in passed if h is top or h.score >= floor]
     if gap > 0:
         kept = [h for h in kept if h is top or h.score >= gap * top.score]

@@ -210,6 +210,13 @@ class RecallStore:
             ).start()
 
     def _load_index(self) -> vector.Index:
+        # Episode'lar (tur dökümleri) BİLEREK indekste: kendiliğinden
+        # önyükleme ve hasat onları dışlıyor ama model-güdümlü `mind_recall`
+        # bir konuşmayı eşanlamlı kelimelerle de bulabilmeli — imza kanalı
+        # tam da bunu sağlıyor, FTS yalnız birebir kelimeyi yakalar. Bedeli
+        # taramanın büyümesi; ölçüldü: kayıt başına iş tek XOR+popcount,
+        # 50k kayıtta ~3-5 ms — bir model çağrısının binde biri. Episode
+        # sayısı taramayı gerçekten yorana kadar (yüz binler) bu takas doğru.
         with self._lock:
             rows = self._db.execute(
                 "SELECT id, title, body, tags, sig FROM node WHERE deleted=0"

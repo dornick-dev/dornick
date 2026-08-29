@@ -187,9 +187,10 @@ class Index:
     def search(self, query: int, limit: int, *, floor: float = FLOOR) -> list[tuple[str, float]]:
         """En yakin `limit` imzayi dondurur.
 
-        Tarama tam: yaklasik komsu yapilarinin (LSH bantlari, HNSW) aksine
-        hicbir eslesmeyi kacirmiyor. Bu olcekte gerekmiyor da — elli bin
-        kayit ~35 ms, cunku kayit basina is tek bir XOR ve popcount.
+        Tarama tam ve DOGRUSAL: yaklasik komsu yapilarinin (LSH bantlari,
+        HNSW) aksine hicbir eslesmeyi kacirmiyor. Bu olcekte gerekmiyor
+        da — kayit basina is tek bir XOR ve popcount oldugu icin elli bin
+        kayit ~3-5 ms (olculdu, 29.08); bir model cagrisinin binde biri.
 
         `floor` gurultu esigi: altinda kalan her sey "hatirlamadim" demektir.
         Zayif eslesmeyi listeye almak, yayilan aktivasyonun alakasiz bir

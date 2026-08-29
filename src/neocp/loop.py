@@ -3027,6 +3027,19 @@ def select_prime(mind: Any, user_input: str, *, limit: int = RECALL_PRIME_LIMIT,
     if not passed:
         return []
     top = max(passed, key=lambda h: h.score)
+    if top.score < RECALL_PRIME_FLOOR:
+        # Koşulsuz-top istisnası yalnız GENÇ zihinde. İstisnanın yazılma
+        # sebebi genç korpusta bm25'in çökmesiydi (tek belgeli korpusta
+        # kusursuz eşleşme 0.0 — mutlak eşik prime'ı tümden kapatıyordu).
+        # Olgun zihinde aynı istisna düşük-IDF tek kazananı HER turda
+        # bağlama taşıyordu — dış incelemenin bulduğu kök neden: ilgisiz
+        # 9-görev dizisindeki +%9 istem tokeni buradan geliyordu.
+        try:
+            genc = mind.store.count() < 30
+        except Exception:
+            genc = True
+        if not genc:
+            return []
     return [h for h in passed if h is top or h.score >= RECALL_PRIME_FLOOR][:limit]
 
 

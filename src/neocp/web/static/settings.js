@@ -507,8 +507,8 @@ Dil.ekle({
 
   // beni tanı
   "Beni tanı": "Learn me",
-  "neo'nun yerel taban modeli anılarından gece sessizce öğrenir: birikince arka planda, düşük öncelikle ince ayar koşar; gerileyen aday sınav kapısında çöpe gider":
-    "neo's local base model quietly learns from your memories at night: once enough has gathered, a low-priority fine-tune runs in the background; a regressing candidate is discarded at the exam gate",
+  "neo'nun yerel taban modeli anılarından gece sessizce öğrenir: birikince arka planda, düşük öncelikle ince ayar koşar; gerileyen aday sınav kapısında çöpe gider. Etiketleme seçili modelle yapılır: yerel modelde veri makineden çıkmaz; bulut modelde bu adım açık onay vermedikçe atlanır (onay verilirse anı metni o sağlayıcıya gider)":
+    "neo's local base model quietly learns from your memories at night: once enough has gathered, a low-priority fine-tune runs in the background; a regressing candidate is discarded at the exam gate. Labeling uses your selected model: with a local model data never leaves the machine; with a hosted model this step is skipped unless you explicitly opt in (opting in sends memory text to that provider)",
   "Tanıma eğitimi açıldı": "Personal training enabled",
   "Tanıma eğitimi kapatıldı": "Personal training disabled",
   " · eğitim düzeneği bu makinede kurulu değil": " · the training rig is not installed on this machine",
@@ -2795,7 +2795,9 @@ const Settings = (() => {
       "Beni tanı",
       "neo'nun yerel taban modeli anılarından gece sessizce öğrenir: " +
       "birikince arka planda, düşük öncelikle ince ayar koşar; gerileyen " +
-      "aday sınav kapısında çöpe gider",
+      "aday sınav kapısında çöpe gider. Etiketleme seçili modelle yapılır: " +
+      "yerel modelde veri makineden çıkmaz; bulut modelde bu adım açık onay " +
+      "vermedikçe atlanır (onay verilirse anı metni o sağlayıcıya gider)",
       taniAnahtar
     );
     pane.append(taniAlan);

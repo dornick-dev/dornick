@@ -115,8 +115,17 @@ switches on "Learn me" (`src/neocp/tanima.py` finds it at
    prefers that file over the stock model, no restart needed
 
 A regressing candidate is discarded; a bad night cannot break the product.
+The personal gate scores on memories HELD OUT of fine-tuning (a ~20%
+split by source memory, fixed seed) — a small model memorises its
+training pairs, so an in-sample score would measure memorisation, not
+generalisation. An absolute floor against the STOCK model bounds
+cumulative drift across nights.
+
 Personal artifacts (`data/personal_*`) never leave the machine and are
-git-ignored.
+git-ignored. The labeling step sends memory text to the model you
+selected in neo: with a local endpoint (LM Studio, Ollama) nothing
+leaves the machine; a hosted endpoint is refused unless you opt in
+with `learn_cloud_ok` in `.neocp/tanima.json`.
 
 ## Setup
 

@@ -447,6 +447,11 @@ def build(config: Config, registry: ToolRegistry, soul: Any = None) -> SystemPro
             IDENTITY.strip(),
             _environment(config),
             config.open_sandbox().briefing(),
+            # Açılış brifingi: çalışma alanının sığ dökümü. Ölçüldü
+            # (9-görev koşusu): model ilk ~18 çağrısını "hangi dosyalar
+            # var" keşfine harcıyor; liste baştan önündeyse o turlar hiç
+            # doğmuyor. Dar pencerede düşüyor — orada yer konuşmanın.
+            _workspace_brief(config),
             # Duyular: mikrofon, kamera, ses. Dar pencerede düşüyor.
             _body(config),
             # Bağlı cihazlar. Ajanın neye bağlı olduğunu her turda araç
@@ -500,6 +505,65 @@ KISALIK = """Kısalık sözleşmesi (küçük model):
 - Bağımsız araç çağrılarını AYNI cevapta paralel gönder.
 - Bir komut iki kez üst üste hata verirse üçüncü kez denemeden yaklaşımı
   değiştir: komutu dosyaya yazıp koş ya da başka yol seç."""
+
+
+# Oturum boyunca DONUK: sistem promptu önbellek çapası (ilk system mesajı
+# işaretli) ve her dosya yazımında değişen bir liste her istemi önbellek
+# ıskasına çevirirdi (ölçülen %65-92 isabet sıfırlanır). Süreç başına,
+# çalışma alanı başına bir kez çekiliyor ve "açılış anındaki görünüm"
+# olarak etiketleniyor.
+_BRIEF_CACHE: dict[str, str] = {}
+_BRIEF_SKIP = {".git", "__pycache__", "node_modules", ".venv", "venv",
+               ".neocp", "dist", "build"}
+_BRIEF_MAX = 30
+
+
+def _workspace_brief(config: Config) -> str:
+    """Çalışma alanının sığ dökümü (kök + bir seviye), oturum başında bir kez.
+
+    Amaç keşif turlarını kesmek, dosya sistemini promptta yaşatmak değil:
+    derinlik 1, en çok _BRIEF_MAX satır, gürültü klasörleri atlanır. Boş
+    ya da okunamayan alanda bölüm hiç girmez.
+    """
+    root = Path(config.workspace)
+    key = str(root)
+    if key in _BRIEF_CACHE:
+        return _BRIEF_CACHE[key]
+
+    lines: list[str] = []
+    try:
+        tepe = sorted(root.iterdir(), key=lambda p: (p.is_file(), p.name.casefold()))
+    except OSError:
+        _BRIEF_CACHE[key] = ""
+        return ""
+    kalan = 0
+    for entry in tepe:
+        if entry.name.startswith(".") or entry.name in _BRIEF_SKIP:
+            continue
+        if len(lines) >= _BRIEF_MAX:
+            kalan += 1
+            continue
+        if entry.is_dir():
+            try:
+                cocuk = [c.name for c in entry.iterdir()
+                         if not c.name.startswith(".") and c.name not in _BRIEF_SKIP]
+            except OSError:
+                cocuk = []
+            ic = ", ".join(sorted(cocuk)[:8])
+            if len(cocuk) > 8:
+                ic += f", … +{len(cocuk) - 8}"
+            lines.append(f"- {entry.name}/" + (f"  ({ic})" if ic else ""))
+        else:
+            lines.append(f"- {entry.name}")
+    if kalan:
+        lines.append(f"- … +{kalan} girdi daha")
+
+    brief = ""
+    if lines:
+        brief = ("Çalışma alanının açılış anındaki görünümü (sığ, değişmiş "
+                 "olabilir — güncel hâli için list_dir):\n" + "\n".join(lines))
+    _BRIEF_CACHE[key] = brief
+    return brief
 
 
 def is_lean(config: Config) -> bool:

@@ -1265,3 +1265,131 @@ def test_bare_pytest_counts_as_running_the_tests(tmp_path: Path) -> None:
     asyncio.run(agent.run("testleri yaz ve koş"))
 
     assert not [n for n in _harness_notlari(agent) if "KOŞMADIN" in n]
+
+# -- kosulsuz-top istisnasi yalniz genc zihinde -------------------------
+#
+# Dis inceleme kok nedeni: _gecer'i gecen TEK kayit, skoru tabanin
+# altinda olsa bile her turda enjekte ediliyordu — ilgisiz 9-gorev
+# dizisindeki +%9 istem tokeni buradan geliyordu. Istisna, yazilma
+# sebebi olan GENC zihinle sinirlandi.
+
+
+def _sahte_zihin(kayit_sayisi, skor):
+    from types import SimpleNamespace
+    item = SimpleNamespace(id='n1', kind='fact', title='rapor notu',
+                           content='rapor dosyasi hakkinda kisa not',
+                           tags=[])
+    hit = SimpleNamespace(item=item, score=skor)
+    adim = SimpleNamespace(node='n1', hop=0)
+    return SimpleNamespace(
+        recall=lambda q, limit=8: [hit],
+        last_trace=[adim],
+        store=SimpleNamespace(count=lambda: kayit_sayisi))
+
+
+def test_mature_mind_does_not_prime_below_the_floor() -> None:
+    from neocp.loop import select_prime
+    zihin = _sahte_zihin(200, skor=0.05)   # taban 0.12'nin altinda
+    assert select_prime(zihin, 'rapor dosyasina bak') == []
+
+
+def test_young_mind_keeps_the_top_exemption() -> None:
+    from neocp.loop import select_prime
+    zihin = _sahte_zihin(3, skor=0.05)     # genc korpus: bm25 cokuk
+    hits = select_prime(zihin, 'rapor dosyasina bak')
+    assert len(hits) == 1
+
+
+def test_above_floor_still_primes_in_a_mature_mind() -> None:
+    from neocp.loop import select_prime
+    zihin = _sahte_zihin(200, skor=0.9)
+    assert len(select_prime(zihin, 'rapor dosyasina bak')) == 1
+
+def _dosya_ctx(tmp_path):
+    import asyncio
+    from neocp.config import Config
+    from neocp.events import EventLog
+    from neocp.session import Session
+    from neocp.tools.base import ToolContext
+    config = Config(workspace=tmp_path, state_dir=tmp_path)
+    session = Session(EventLog(tmp_path / 'events.jsonl'), 'test')
+    return ToolContext(config=config, session=session,
+                       cancel=asyncio.Event())
+
+
+# -- read_many: dizi-argumanli toplu okuma ------------------------------
+#
+# 9-gorev kosusu 0.97 arac/cagri olctu — paralel altyapi hazirken kucuk
+# model 'bagimsiz okumalari tek turda cagir' ogudunu yok sayiyor. Sema
+# talimattan guclu: N kesif turu tek gidis-donuse iner.
+
+
+def test_read_many_reads_several_files_in_one_call(tmp_path) -> None:
+    import asyncio
+    from neocp.tools.base import ToolRegistry
+    from neocp.tools import files as files_mod
+    ctx = _dosya_ctx(tmp_path)
+    kok = ctx.sandbox.root
+    kok.mkdir(parents=True, exist_ok=True)
+    (kok / 'a.py').write_text('x = 1', encoding='utf-8')
+    (kok / 'b.py').write_text('y = 2', encoding='utf-8')
+    reg = ToolRegistry()
+    files_mod.register(reg)
+    r = asyncio.run(reg.get('read_many').handler(
+        {'paths': ['a.py', 'b.py', 'yok.py']}, ctx))
+    assert not r.is_error
+    assert 'x = 1' in r.content
+    assert 'y = 2' in r.content
+    assert 'dosya yok' in r.content   # yok.py   # eksik dosya cagriyi dusurmez
+
+
+def test_read_many_counts_as_reading_for_the_write_gate(tmp_path) -> None:
+    import asyncio
+    from neocp.tools.base import ToolRegistry
+    from neocp.tools import files as files_mod
+    ctx = _dosya_ctx(tmp_path)
+    kok = ctx.sandbox.root
+    kok.mkdir(parents=True, exist_ok=True)
+    (kok / 'a.py').write_text('x = 1', encoding='utf-8')
+    (kok / 'b.py').write_text('y = 2', encoding='utf-8')
+    reg = ToolRegistry()
+    files_mod.register(reg)
+    asyncio.run(reg.get('read_many').handler(
+        {'paths': ['a.py', 'b.py']}, ctx))
+    r = asyncio.run(reg.get('write_file').handler(
+        {'path': 'a.py', 'content': 'x = 3'}, ctx))
+    assert not r.is_error, 'read_many okumasi yazma kapisini acmali'
+
+# -- acilis brifingi: calisma alaninin sig dokumu ------------------------
+
+
+def test_workspace_brief_lists_shallow_and_freezes(tmp_path) -> None:
+    from neocp.config import Config
+    from neocp import prompt
+    (tmp_path / 'app.py').write_text('x', encoding='utf-8')
+    alt = tmp_path / 'site'
+    alt.mkdir()
+    (alt / 'index.html').write_text('y', encoding='utf-8')
+    (tmp_path / '__pycache__').mkdir()
+    c = Config(workspace=tmp_path, state_dir=tmp_path)
+    b = prompt._workspace_brief(c)
+    assert 'app.py' in b and 'site/' in b and 'index.html' in b
+    assert '__pycache__' not in b
+    # Donukluk: sonradan eklenen dosya briefe girmez (onbellek capasi).
+    (tmp_path / 'yeni.py').write_text('z', encoding='utf-8')
+    assert 'yeni.py' not in prompt._workspace_brief(c)
+
+
+def test_workspace_brief_absent_in_lean_prompt(tmp_path) -> None:
+    from neocp.config import Config
+    from neocp import prompt
+    from neocp.tools.base import ToolRegistry
+    (tmp_path / 'ipucu-dosyasi.py').write_text('x', encoding='utf-8')
+    c = Config(workspace=tmp_path, state_dir=tmp_path)
+    genis = prompt.build(c, ToolRegistry()).core
+    assert 'ipucu-dosyasi.py' in genis
+    import dataclasses
+    dar = dataclasses.replace(c, model=dataclasses.replace(
+        c.model, context_window=4096))
+    assert 'ipucu-dosyasi.py' not in prompt.build(dar, ToolRegistry()).core
+

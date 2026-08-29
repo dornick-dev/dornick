@@ -164,6 +164,35 @@ def parse_labels(text: str) -> list[tuple[str, str]]:
     return [(q, terms) for q in questions if len(q) > 8]
 
 
+def _is_local(url: str) -> bool:
+    """Does this endpoint stay on the user's own machine/LAN?
+
+    The privacy promise ("your data never leaves the computer") is only
+    true when the night teacher is local. Loopback and RFC-1918 hosts
+    count; everything else is a cloud hop.
+    """
+    from urllib.parse import urlparse
+    host = (urlparse(url).hostname or "").casefold()
+    if host in ("localhost", "127.0.0.1", "::1", "0.0.0.0"):
+        return True
+    return (host.startswith("192.168.") or host.startswith("10.")
+            or host.endswith(".local"))
+
+
+def _cloud_consent() -> bool:
+    """Has the user explicitly allowed labeling through a hosted model?
+
+    Off by default. Lives in `.neocp/tanima.json` (the Learn-me state
+    file) as `learn_cloud_ok` — NOT in config.json, which the settings
+    screen rebuilds from known fields and would silently drop the flag.
+    """
+    try:
+        d = json.loads((PRODUCT / ".neocp" / "tanima.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return False
+    return bool(d.get("learn_cloud_ok"))
+
+
 def _product_teacher() -> tuple[str, str, str] | None:
     """neo's SELECTED model: (model name, base_url, key).
 
@@ -171,6 +200,11 @@ def _product_teacher() -> tuple[str, str, str] | None:
     when the user switches models the loop follows automatically, and no
     second model setting rots here. A key is only needed for OpenRouter;
     local endpoints like LM Studio are keyless (no Authorization sent).
+
+    PRIVACY GATE: labeling sends the memory's title and body to this
+    endpoint verbatim. A hosted endpoint is therefore refused unless the
+    user has explicitly opted in (`learn_cloud_ok` in config.json) — the
+    default keeps the README promise that data never leaves the machine.
     """
     try:
         cfg = json.loads((PRODUCT / ".neocp" / "config.json").read_text(encoding="utf-8"))
@@ -180,6 +214,8 @@ def _product_teacher() -> tuple[str, str, str] | None:
     name = str(model.get("name") or "").strip()
     url = str(model.get("base_url") or "").strip()
     if not name or not url:
+        return None
+    if not _is_local(url) and not _cloud_consent():
         return None
     key = ""
     if "openrouter" in url:
@@ -226,14 +262,19 @@ def label(memories: list[dict]) -> list[dict]:
     """
     selected = _product_teacher()
     fallback = None
-    try:
-        import teacher
-        fallback = teacher.ask_teacher
-    except ImportError:
-        pass
+    # The hosted teacher (teacher.py -> OpenRouter) is behind the SAME
+    # privacy gate: without explicit cloud consent no memory text may
+    # leave the machine, not even as a fallback.
+    if _cloud_consent():
+        try:
+            import teacher
+            fallback = teacher.ask_teacher
+        except ImportError:
+            pass
     if selected is None and fallback is None:
-        log("labeling skipped: no selected model and no teacher.py "
-            "(data will be labeled later)")
+        log("labeling skipped: no local model and no cloud consent — "
+            "memories stay on this machine, unlabeled until a local "
+            "model is available (or learn_cloud_ok is set)")
         return []
 
     pairs: list[dict] = []
@@ -274,6 +315,31 @@ def label(memories: list[dict]) -> list[dict]:
             pairs.append({"girdi": question, "cikti": terms,
                           "tur": "kisisel", "kaynak": memory["id"]})
     return pairs
+
+
+def split_by_source(pairs: list[dict]) -> tuple[list[dict], list[dict]]:
+    """Train/holdout split BY SOURCE MEMORY, not by pair.
+
+    A 10.8M-parameter model fine-tuned on a few hundred pairs memorises
+    them, so a gate scored on the training pairs passes automatically —
+    the personal criterion was measuring memorisation, not generalisation.
+    ~20% of the SOURCE memories (all four question styles together) are
+    held out of fine-tuning and the personal gate scores only on them.
+    Splitting at pair level would still leak: S1 of a memory in training
+    teaches the terms its held-out S3 asks for.
+
+    Deterministic (seed 7, sorted sources): the same corpus always splits
+    the same way, so a rejected candidate is retried against the same
+    holdout when new data arrives.
+    """
+    sources = sorted({r.get("kaynak") or "" for r in pairs})
+    if len(sources) < 5:
+        return pairs, pairs   # too small to split; the gate says so in the log
+    rng = random.Random(7)
+    held = set(rng.sample(sources, max(1, len(sources) // 5)))
+    train = [r for r in pairs if (r.get("kaynak") or "") not in held]
+    hold = [r for r in pairs if (r.get("kaynak") or "") in held]
+    return train, hold
 
 
 # -- 3) fine-tuning -----------------------------------------------------------
@@ -421,6 +487,13 @@ def gate_and_deploy(ft_ck: Path, personal: list[dict]) -> bool:
         candidates[f"a{int(alpha * 100)}"] = QueryExpander(npz)
 
     expanders: dict = {"deployed": QueryExpander(deployed_path), **candidates}
+    # Anti-ratchet reference: the margins below compare against DEPLOYED,
+    # which is itself last night's output — a one-way allowance applied
+    # night after night could drift the model downward. The STOCK model
+    # is a fixed point, so an absolute floor against it bounds the total
+    # drift regardless of how many nights pass.
+    if deployed_path != STOCK:
+        expanders["stock"] = QueryExpander(STOCK)
     tr = common.tr_exam(expanders)
     en = {name: common.en_probe(x) for name, x in expanders.items()}
 
@@ -435,15 +508,24 @@ def gate_and_deploy(ft_ck: Path, personal: list[dict]) -> bool:
     # Margins follow probe resolution: the EN probe is 16/6 questions — a
     # margin narrower than half a question mistakes measurement noise for
     # regression. Margin ~= 2 questions.
+    s = "stock" if "stock" in expanders else d
     passing = [
         name for name in candidates
         if tr[name]["recall"] >= tr[d]["recall"] - 0.03
         and tr[name]["silence"] >= tr[d]["silence"] - 0.07
         and en[name]["topic"] >= en[d]["topic"] - 0.13
         and en[name]["silence"] >= en[d]["silence"] - 0.17
+        # Absolute floor vs STOCK (2x the nightly margin, constant over
+        # time): however many nights accumulate, a candidate may never
+        # sit more than this far below the model the product shipped with.
+        and tr[name]["recall"] >= tr[s]["recall"] - 0.06
+        and tr[name]["silence"] >= tr[s]["silence"] - 0.14
+        and en[name]["topic"] >= en[s]["topic"] - 0.26
+        and en[name]["silence"] >= en[s]["silence"] - 0.34
         # Product truth: the candidate must find STRICTLY more correct
         # memories in the user's mind than the deployed model — a tie is
-        # not worth a change.
+        # not worth a change. Scored on HELD-OUT memories the fine-tune
+        # never saw (split_by_source): generalisation, not memorisation.
         and personal_score[name] > personal_score[d]
     ]
     if not passing:
@@ -492,11 +574,18 @@ def main() -> None:
               "— attempt deferred")
         return
 
-    ck = fine_tune(all_pairs)
+    train_pairs, holdout_pairs = split_by_source(all_pairs)
+    if holdout_pairs is all_pairs:
+        log("corpus too small for a holdout split — the personal gate "
+            "measures IN-SAMPLE this run (results overstate generalisation)")
+    else:
+        log(f"split: {len(train_pairs)} train / {len(holdout_pairs)} held-out "
+            "pairs (by source memory, seed 7)")
+    ck = fine_tune(train_pairs)
     if ck is None:
         return
     state["denenen"] = len(all_pairs)
-    if gate_and_deploy(ck, all_pairs):
+    if gate_and_deploy(ck, holdout_pairs):
         state["egitilen"] = len(all_pairs)
     write_state(state)
 
