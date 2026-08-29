@@ -1529,3 +1529,39 @@ def test_switching_sessions_drops_finished_helper_channels() -> None:
     _biten_kanallari_dusur(agent)
     assert sorted(defter) == ['c', 'd']
 
+def test_plan_steps_can_be_ticked_and_the_card_hears_it(tmp_path) -> None:
+    """Canli istek: onayli planda hangi asamalarin bittigi gorunmeli.
+    step eylemi tek adimi isaretler ve plan olayini yayinlar (update
+    olayi da yayinlanir — kartin bayat kalma yarasi buydu)."""
+    import asyncio, json
+    from neocp.tools.base import ToolRegistry
+    from neocp.tools import plan_tool
+    ctx = _dosya_ctx(tmp_path)
+    reg = ToolRegistry()
+    plan_tool.register(reg)
+    r = asyncio.run(reg.get('plan').handler(
+        {'action': 'create', 'title': 'Deneme',
+         'steps': ['oku', 'yaz', 'test et']}, ctx))
+    pid = r.detail['id']
+    r2 = asyncio.run(reg.get('plan').handler(
+        {'action': 'step', 'id': pid, 'step': 2, 'status': 'bitti'}, ctx))
+    assert not r2.is_error and '1/3 bitti' in r2.content
+    # Olay akisina plan notu dustu mu (kartin canli guncellenme yolu)?
+    olaylar = [json.loads(l) for l in
+               (tmp_path / 'events.jsonl').read_text(encoding='utf-8').splitlines()]
+    planlar = [e for e in olaylar if e.get('content') == 'plan']
+    assert len(planlar) >= 2, 'create + step olaylari yayinlanmali'
+    assert planlar[-1]['meta']['steps'][1]['status'] == 'bitti'
+
+
+def test_a_short_paragraph_is_not_a_big_job() -> None:
+    # Olculen yara: 10 satirlik gorev bile plan durtusu yiyordu (esik 180).
+    from neocp.loop import buyuk_is
+    kisa = ('Su CSV dosyasini okuyup satis toplamini hesaplayan bir betik '
+            'yaz; cikti ekrana gelsin ve kurus yuvarlamasina dikkat et. '
+            'Dosya ayraci noktali virgul olabilir, onu da destekle; '
+            'ondalik ayirici da bolgeye gore degisebilir.')
+    assert len(kisa) > 180, 'test anlamli olsun: eski esigi asiyor'
+    assert buyuk_is(kisa) is False
+    assert buyuk_is('Bana bir yonetim paneli yap: kullanici, rol, rapor') is True
+

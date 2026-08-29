@@ -8,18 +8,25 @@ from .. import plans as store
 from .base import ToolContext, ToolRegistry, ToolResult, object_schema
 
 DESCRIPTION = """
-Büyük veya çok adımlı bir iş istendiğinde ÖNCE plan üret: sohbete uzun
-duvar metin / numaralı adım listesi yapıştırma. `plan` aracıyla
-yapılandırılmış Plan oluştur; kullanıcı arayüzde Onayla / Düzenle / İptal
-eder — adımlar kartta görünür.
+Plan YALNIZ gerçekten büyük işte: çok dosyalı/çok aşamalı, geri dönüşü
+zor ya da kullanıcının onayına muhtaç bir kapsam varsa. Küçük ve orta işe
+plan ÇİZME — doğrudan yap; plan turu token ve zaman yakar, kullanıcı
+"hemen yapsana" diye bekler. Kararsızsan yapmaya başla.
 
-create sonrası: en fazla 1–2 kısa cümle (neden bu plan / onay bekle).
-Adımları sohbete tekrar yazma. Plan kartı sohbetin EN SONUNDA durur.
+Plan gerekiyorsa sohbete duvar metin yapıştırma: `plan` aracıyla
+yapılandırılmış Plan oluştur; kullanıcı arayüzde Onayla / Düzenle / İptal
+eder — adımlar kartta görünür. create sonrası en fazla 1–2 kısa cümle.
+
+Onaydan sonra İLERLEMEYİ İŞLE: bir adıma başlarken
+`step` (status=yapiliyor), bitirince `step` (status=bitti). Kart bunları
+canlı gösterir — kullanıcı hangi aşamada olduğunu buradan izler. İş
+bitince planın kendisini `update` (status=bitti) yap.
 
 Eylemler:
-  create  title + steps (metin listesi veya {text} nesneleri)
+  create  title + steps (metin listesi)
   list    bekleyen / son planlar
-  update  id + steps/status/title
+  update  id + steps/status/title (plan geneli)
+  step    id + step (1'den başlayan sıra) + status — TEK adımın durumu
 """
 
 
@@ -31,9 +38,11 @@ def register(registry: ToolRegistry) -> None:
             {
                 "action": {
                     "type": "string",
-                    "enum": ["create", "list", "update"],
+                    "enum": ["create", "list", "update", "step"],
                 },
                 "id": {"type": "string"},
+                "step": {"type": "integer",
+                         "description": "Adım sırası (1'den başlar) — action=step için."},
                 "title": {"type": "string"},
                 # `items` ŞART: Gemini `items`siz bir array gördüğünde
                 # araç listesinin TAMAMINI reddediyor
@@ -49,7 +58,7 @@ def register(registry: ToolRegistry) -> None:
         ),
         mutates=True,
         parallel_safe=False,
-        safe_actions=("create", "list", "update"),
+        safe_actions=("create", "list", "update", "step"),
     )
     async def plan(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
         action = str(args.get("action") or "").strip()
@@ -98,9 +107,46 @@ def register(registry: ToolRegistry) -> None:
                 return ToolResult.error(str(exc))
             if updated is None:
                 return ToolResult.error(f"Plan yok: {pid}")
+            # Olay ŞART: kart canlı güncellenmeli. Eksikliği ölçülen bir
+            # yaraydı — kullanıcı "onaylandı ama kart hâlâ Onayla diyor,
+            # hangi aşamadayız görünmüyor" dedi (29.08).
+            ctx.session.log.note(
+                "plan",
+                id=updated.id, title=updated.title, status=updated.status,
+                steps=updated.steps,
+            )
             return ToolResult(
                 f"Plan güncellendi [{updated.id}] — {updated.status}",
                 detail={"id": updated.id},
+            )
+
+        if action == "step":
+            pid = str(args.get("id") or "").strip()
+            sira = int(args.get("step") or 0)
+            durum = str(args.get("status") or "bitti").strip()
+            if not pid or sira < 1:
+                return ToolResult.error("id ve step (1'den başlar) gerekli")
+            mevcut = store.get(state_dir, pid)
+            if mevcut is None:
+                return ToolResult.error(f"Plan yok: {pid}")
+            if sira > len(mevcut.steps):
+                return ToolResult.error(
+                    f"Plan {len(mevcut.steps)} adımlı; step={sira} yok")
+            adimlar = [dict(s) for s in mevcut.steps]
+            adimlar[sira - 1]["status"] = durum
+            try:
+                updated = store.update(state_dir, pid, steps=adimlar)
+            except store.PlanError as exc:
+                return ToolResult.error(str(exc))
+            ctx.session.log.note(
+                "plan",
+                id=updated.id, title=updated.title, status=updated.status,
+                steps=updated.steps,
+            )
+            biten = sum(1 for s in updated.steps if s.get("status") == "bitti")
+            return ToolResult(
+                f"Adım {sira} → {durum} ({biten}/{len(updated.steps)} bitti)",
+                detail={"id": updated.id, "step": sira},
             )
 
         return ToolResult.error(f"Bilinmeyen işlem: {action}")

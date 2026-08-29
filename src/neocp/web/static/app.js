@@ -21,6 +21,7 @@ Dil.ekle({
   // Durum şeridi ve kipler
   "Hazır": "Ready", "Uyanıyor": "Waking", "Çalışıyor": "Working",
   "Düşünüyor": "Thinking", "Yazıyor": "Writing", "Hatırlıyor": "Recalling",
+  "Akıl yürütüyor": "Reasoning",
   "Konuş…": "Talk…",
   "Model yükleniyor…": "Loading model…",
   "Sunucu yok": "No server",
@@ -791,30 +792,21 @@ const TOOL_ICON = {
 
 // Dönen düşünme kelimeleri. Yapay zekâ yok — sabit listeden birkaç saniyede
 // bir sıradaki; sıfır maliyet ama algılanan "canlılığın" çoğunu bu taşıyor.
-// İlk kelime her turda "Düşünüyor": tanıdık olan önce, oyun sonra. Havuz
-// geniş tutuldu ("üç dört kelime dönüp duruyor" şikâyeti): oyuncul ama
-// zarif — mutfak, atölye ve iz sürme dilinden.
-const MULL = ["Düşünüyor", "Tartıyor", "Evirip çeviriyor", "Kurcalıyor",
-              "Süzüyor", "Demliyor", "Yokluyor", "Harmanlıyor",
-              "Eliyor", "Çözüyor", "Örüyor", "Dokuyor", "Damıtıyor",
-              "Ayıklıyor", "Kazıyor", "Sezinliyor", "Kurguluyor",
-              "Yoğuruyor", "Mayalıyor", "Cilalıyor", "Didikliyor",
-              "İz sürüyor", "Kafa yoruyor", "Ölçüp biçiyor", "Kıyaslıyor",
-              "Derliyor", "Bağdaştırıyor", "Tasarlıyor"];
-let mullTick = 0;
-
-// Turlar arası çeşitlilik tohumu: her turda bir ilerler. Düşünme kelimeleri
-// ve eylem eşanlamlıları buna bakar — aynı tur içinde tutarlı, turdan tura
-// farklı. Rastgelelik bilinçli olarak yok: aynı turda kelime zıplamasın.
-let turnSeed = 0;
+// Durum MODELLENMİŞ, süslenmiş değil (canlı şikâyet: "düşünüyor,
+// kurcalanıyor diye durmadan değişiyor — bunlar gerçek birer meta olmalı").
+// Etiket o an GERÇEKTEN olan şeyden türetilir ve durum değişmeden etiket
+// değişmez: akıl yürütme kanalı akıyorsa "Akıl yürütüyor", cevap metni
+// akıyorsa "Yazıyor", henüz hiçbir şey akmıyorsa "Düşünüyor" (uzarsa
+// waiting() zaten "Model yükleniyor…" der). Araç koşarken etiketi ACTION
+// verir — o da gerçek: aracın kendisi.
+let mullTick = 0;      // eski isim: since() sayacı buna bakıyor
+let lastDelta = "";    // "" | "thinking" | "text" — son akan kanal
+let turnSeed = 0;      // eylem eşanlamlıları kalktı; tur sayacı olarak kalır
 
 function mull() {
-  // Çeviri burada, görüntüleme noktasında: MULL tanımı Türkçe kalıyor.
-  // İlk adım her turda "Düşünüyor"; sonrası turun tohumundan başlayarak
-  // havuzda dolaşıyor — her tur aynı sırayı tekrarlamasın.
-  const step = Math.floor(mullTick / 3);
-  if (step === 0) return t(MULL[0]);
-  return t(MULL[1 + (turnSeed + step - 1) % (MULL.length - 1)]);
+  if (lastDelta === "text") return t("Yazıyor");
+  if (lastDelta === "thinking") return t("Akıl yürütüyor");
+  return t("Düşünüyor");
 }
 
 // Eylem başlığının eşanlamlıları. Tanım ACTION'da (tek gerçek — simge ve
@@ -833,8 +825,10 @@ const ACTION_VARIETY = {
 };
 
 function verbFor(tool) {
+  // Belirlenimci: aynı araç HER ZAMAN aynı fiille görünür — eşanlamlı
+  // rotasyonu kalktı (durumlar süs değil model; bkz. mull üstü not).
   const pool = ACTION_VARIETY[tool];
-  if (pool) return t(pool[turnSeed % pool.length]);
+  if (pool) return t(pool[0]);
   return t(ACTION[tool]) || tool;
 }
 
@@ -967,6 +961,7 @@ function resetStream() {
   // değişsin. (Ara-anlatım güvenlik ağı bayrakları kalktı: model metni
   // artık katlanmıyor, geri getirilecek bir şey yok.)
   turnSeed += 1;
+  lastDelta = "";   // yeni tur: kanal henüz akmadı
 }
 
 // "Yaşıyor" nabzı. Sorunun kökü: token-tabanlı sayaç yalnızca token akarken
@@ -3906,8 +3901,16 @@ function renderPlanSteps(card, e) {
     else card.append(list);
   }
   list.replaceChildren();
+  // Adım durumu görünür (canlı istek): ✓ bitti, ▸ yapılıyor, ○ bekliyor.
+  // Ajan `plan` aracının step eylemiyle işaretledikçe kart canlı ilerler —
+  // onaylanmış planda "hangi aşamadayız" buradan okunur.
   for (const s of e.steps || []) {
-    list.append(el2("li", null, s.text || s.title || String(s)));
+    const st = (s && s.status) || "bekliyor";
+    const li = el2("li", "plan-step " + st);
+    li.append(el2("span", "plan-tick",
+                  st === "bitti" ? "✓" : st === "yapiliyor" ? "▸" : "○"));
+    li.append(el2("span", null, s.text || s.title || String(s)));
+    list.append(li);
   }
 }
 
@@ -3960,6 +3963,7 @@ async function applyPlan() {
 function handle(e) {
   switch (e.type) {
     case "assistant_delta":
+      lastDelta = "text";
       // Şerit kapanmıyor: model araç çağırıp yazıp yine araç çağırıyor ve
       // her seferinde yeni bir şerit açmak merdiveni geri getiriyordu.
       closeThought();
@@ -3976,7 +3980,8 @@ function handle(e) {
       break;
 
     // Düşünme kanalı ayrı: model akıl yürütürken henüz yazmıyor.
-    case "thinking_delta": waiting(false); think(e.text); setMode("thinking", undefined, 2500); break;
+    case "thinking_delta": waiting(false); lastDelta = "thinking";
+      think(e.text); setMode("thinking", undefined, 2500); break;
 
     // Sırada bekleyen mesaj. Meşgulken gönderilen mesaj sessizce kaybolmuyor:
     // "sırada · N" rozetiyle görünüyor, sırası geldiğinde gerçek satıra

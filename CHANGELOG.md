@@ -1,5 +1,33 @@
 # Changelog
 
+## 1.2.0 — 2026-08-29
+
+**Parallel sessions.** Every session now runs on its own lane — its own
+agent, queue and pump. Starting a new chat no longer waits for the running
+turn: the old turn finishes in the background, the sidebar badges every
+running chat, and a notice arrives when a background chat completes.
+Background lane events never leak into the active view (approvals
+excepted); the model client is shared per endpoint so a local server is
+never double-loaded. Session switching also stopped dragging finished
+helper channels into the new chat.
+
+UI feedback batch from live use:
+
+* Code blocks follow the theme — light theme gets a light code well with
+  its own syntax palette (the black-on-cream patch is gone).
+* The status line is modeled, not decorative: "Reasoning" while the
+  reasoning channel streams, "Writing" while the answer streams,
+  "Thinking" before anything flows — labels no longer rotate randomly,
+  and tool verbs are deterministic.
+* Plan cards show live step progress (✓ done / ▸ in progress / ○ waiting)
+  driven by a new `step` action on the plan tool; approved plans keep
+  their place with decision buttons hidden. The plan reflex threshold was
+  raised so small tasks start immediately instead of drawing a plan.
+* File links in chat act by type (download archives, open PDF/media,
+  view code); decided earlier in 1.1.1, now with the plan-card and
+  status fixes on top.
+
+
 ## 1.1.1 — 2026-08-29
 
 Live-complaint fixes from a real research session, plus a behaviour rule.

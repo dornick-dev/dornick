@@ -48,7 +48,7 @@
   --user-ink: #F5EFE4;               /* kullanici mesaji murekkebi */
   --user-glow: rgba(0,0,0,.9);       /* kullanici mesaji golgesi */
   --halo: 0 1px 12px #000c;          /* koyu sahnede yazi okunurlugu */
-  --code-bg: #141210;                /* kod kuyusu — her temada koyu */
+  --code-bg: #141210;                /* kod kuyusu (koyu tema) */
   --code-ink: #E6DFD2;
   --send-off: #2C2820;
   --send-off-ink: #776F63;
@@ -123,8 +123,19 @@
   --user-ink: #221E18;
   --user-glow: transparent;
   --halo: none;
-  --code-bg: #1B1814;
-  --code-ink: #E6DFD2;
+  /* Kod kuyusu AÇIK temada açık (canlı şikâyet: "kod snippet'leri
+     temaya uymuyor" — bembeyaz sayfada simsiyah kuyu yama gibi duruyordu).
+     Sözdizimi paleti de açık zemine göre koyulaştırıldı. */
+  --code-bg: #F1EBDD;
+  --code-ink: #2A2620;
+  --hl-com: #8A8070;
+  --hl-str: #1A7F4B;
+  --hl-num: #B4700A;
+  --hl-key: #6D28D9;
+  --hl-fn: #0369A1;
+  --hl-tag: #B91C1C;
+  --hl-punc: #6E6656;
+  --hl-var: #2A2620;
   --send-off: #E5DDCB;
   --send-off-ink: #776F63;
   --glow: rgba(180, 112, 10, .28);
@@ -167,6 +178,12 @@ html, body { height: 100%; margin: 0; overflow: hidden; }
 /* Seçim rengi temayla: varsayılan mavi vurgu, açık temada metni "şerit
    şerit boyalı" gösteriyordu. */
 ::selection { background: rgba(240, 160, 32, .35); }
+:root[data-theme="light"] .md-code {
+  box-shadow: inset 0 0 0 1px rgba(52, 44, 32, .14);
+}
+:root[data-theme="light"] .md-copy {
+  box-shadow: inset 0 0 0 1px rgba(52, 44, 32, .18);
+}
 :root[data-theme="light"] ::selection { background: rgba(180, 112, 10, .22); }
 
 /* Acik temada koyu-sahne kalintilari: neon hale, siyah yazi golgesi,
@@ -4703,3 +4720,13 @@ body { --right-w: var(--mind-w); }
 .v-tab i { font-style: normal; opacity: .55; padding: 0 1px; }
 .v-tab i:hover { opacity: 1; }
 .v-tab:focus-visible { outline: 1px solid var(--cyan); outline-offset: 1px; }
+
+/* Plan adım ilerlemesi: ✓ bitti (soluk ve üstü çizili değil — yapılan iş
+   okunabilir kalsın), ▸ yapılıyor (vurgulu), ○ bekliyor. */
+.plan-step { display: flex; gap: 8px; align-items: baseline; }
+.plan-tick { flex: 0 0 auto; font-family: var(--mono); }
+.plan-step.bitti .plan-tick { color: var(--mint); }
+.plan-step.bitti { opacity: .75; }
+.plan-step.yapiliyor .plan-tick { color: var(--hl-num); }
+.plan-step.yapiliyor { font-weight: 600; }
+.plan-step.bekliyor .plan-tick { color: var(--faint); }

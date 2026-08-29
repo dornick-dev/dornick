@@ -352,7 +352,12 @@ YETIM_SONUC = (
 # seyrek tetiklenmesi için üç sinyalin BİRLİKTE aranması şart: yapım
 # fiili + (ölçek sözü ya da madde listesi ya da uzun metin).
 
-BUYUK_IS_UZUNLUK = 180      # bu kadar karakterden uzun istek
+BUYUK_IS_UZUNLUK = 350      # bu kadar karakterden uzun istek
+# 180'di; ölçülen yara: 10 satırlık o1-rapor görevi bile "[Plan] Bu iş
+# büyük görünüyor" dürtüsü yedi (kullanıcı: "her şeye plan çizmene
+# gerek yok — kapsam fazlaysa plan, yoksa hemen yap"). Uzun bir
+# paragraf tek başına büyüklük kanıtı değil; ölçek sözü ve madde
+# sayısı sinyalleri duruyor.
 BUYUK_IS_MADDE = 3          # ya da bu kadar madde/teslimat
 
 # "Bir şey ÜRETMEMİ istiyor" fiilleri. Soru sormak, okumak, açmak,

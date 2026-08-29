@@ -674,19 +674,20 @@ def test_reasoning_does_not_stream_into_the_conversation() -> None:
     assert "thought.slice(-" in inner
 
 
-def test_the_thinking_line_shows_it_is_still_going() -> None:
-    """Sabit bir "düşünüyor" satırı uzun bir turda donmuş gibi duruyor.
-
-    İki katman var: geçen süre (since) ilerliyor ve düşünme kelimesi (mull)
-    birkaç saniyede bir dönüyor — "Düşünüyor", "Tartıyor"… Kelime modelden
-    gelmiyor, sabit listeden seçiliyor; sıfır maliyetli canlılık.
+def test_the_status_line_is_modeled_not_decorative() -> None:
+    """Canli sikayet (29.08): "dusunuyor, kurcalaniyor diye durmadan
+    degisiyor — bunlar gercek birer meta olmali". Etiket o an GERCEKTEN
+    olan seyden turetilir: akil yurutme kanali akiyorsa "Akil yurutuyor",
+    cevap metni akiyorsa "Yaziyor", akmiyorsa "Dusunuyor". Suslu havuz ve
+    esanlamli rotasyonu kalkti — ayni durum ayni etiket.
     """
     assert "function since(started)" in APP_JS
     assert re.search(r"mull\(\) \+ since\(", APP_JS)
-    # Kelime listesi "Düşünüyor" ile başlıyor: tur başında tanıdık olan
-    # görünsün, oyun sonra gelsin.
-    assert re.search(r'const MULL = \["Düşünüyor"', APP_JS)
-    assert re.search(r'"\d+ adım"|steps \+ " adım"', APP_JS)
+    assert "const MULL" not in APP_JS, "rastgele kelime havuzu geri gelmis"
+    assert 'lastDelta === "text"' in APP_JS
+    assert 'lastDelta === "thinking"' in APP_JS
+    # Arac fiili belirlenimci: esanlamli rotasyon yok.
+    assert "pool[0]" in APP_JS and "turnSeed % pool.length" not in APP_JS
 
 
 def test_being_interrupted_also_stops_the_voice() -> None:
