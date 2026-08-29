@@ -58,7 +58,7 @@ The claims above are inventory. What the coding work actually *delivers* is
 measured by a rig in this repo ([`eval/coding/`](../eval/coding/README.md)):
 nine tasks, each in its own workspace with an empty mind, graded by executing
 the code. Baseline and the three weaknesses it exposed are in
-[evaluation.md](evaluation.md). Reading that page is the honest version of
+[the benchmark](benchmark-2026-08.md). Reading that page is the honest version of
 reading this one.
 
 ## Deliberately deferred (roadmap)
@@ -80,5 +80,5 @@ Inventory: file:line-referenced sweep of this repository (tools, loop,
 permissions, context, UX). Market scan: official docs and changelogs of
 Claude Code, Claude Agent SDK, opencode, Cursor, Gemini CLI and Codex CLI,
 August 2026. Scores and claims about our own features come from the
-measured benchmarks in [evaluation.md](evaluation.md) and the training
+measured benchmarks in [the benchmark](benchmark-2026-08.md) and the training
 pipeline in [../training/README.md](../training/README.md).
