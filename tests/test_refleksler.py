@@ -1490,3 +1490,14 @@ def test_read_result_advertises_unread_siblings(tmp_path) -> None:
     r2 = asyncio.run(reg.get('read_file').handler({'path': 'a.py'}, ctx))
     assert 'read_many tek turda' not in r2.content
 
+def test_config_tolerates_a_notepad_bom(tmp_path) -> None:
+    # Windows Notepad config.json'u BOM'la kaydeder; 1.1.0 kurulum
+    # dumanli testinde duz utf-8 okuyus programi ACILMAZ yapti.
+    from neocp.config import Config
+    d = tmp_path / '.neocp'
+    d.mkdir()
+    (d / 'config.json').write_text(
+        '{"model": {"name": "bom-model"}}', encoding='utf-8-sig')
+    c = Config.load(tmp_path)
+    assert c.model.name == 'bom-model'
+

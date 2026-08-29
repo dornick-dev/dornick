@@ -322,7 +322,11 @@ def _read_json(path: Path) -> dict[str, Any] | None:
     if not path.exists():
         return None
     try:
-        return json.loads(path.read_text(encoding="utf-8"))
+        # utf-8-sig: Windows'ta Notepad config.json'u BOM'la kaydediyor ve
+        # düz utf-8 okuyuş "Unexpected UTF-8 BOM" ile programı AÇILMAZ
+        # yapıyordu (1.1.0 kurulum dumanlı testinde canlı görüldü).
+        # BOM'suz dosyada davranış birebir aynı.
+        return json.loads(path.read_text(encoding="utf-8-sig"))
     except json.JSONDecodeError as exc:
         raise ValueError(f"{path} okunamadı: {exc}") from exc
 

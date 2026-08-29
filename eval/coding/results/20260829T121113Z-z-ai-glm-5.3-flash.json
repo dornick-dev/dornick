@@ -1,0 +1,364 @@
+{
+  "time": "20260829T121113Z",
+  "model": "z-ai/glm-5.3-flash",
+  "repetitions": 2,
+  "wait_s": 900.0,
+  "tasks": [
+    {
+      "id": "k3-repair",
+      "title": "Find and fix the PHP invoice bug",
+      "difficulty": "easy",
+      "language": "php",
+      "card": {
+        "task": "k3-repair",
+        "score": 100.0,
+        "raw": 85.0,
+        "measured_ceiling": 85,
+        "unmeasured": [],
+        "broken_delivery": false,
+        "axes": [
+          {
+            "name": "works",
+            "ceiling": 40,
+            "earned": 40.0,
+            "evidence": [
+              "+ fatura.php still there (10p) — fatura.php",
+              "+ php -l clean (10p) — No syntax errors detected in C:\\Users\\user\\AppData\\Local\\Temp\\neocp-eval-k3-repair-spbgg_i3\\atolye\\fatura.php",
+              "+ function callable from outside (20p) — ok"
+            ],
+            "reason": "",
+            "external": false
+          },
+          {
+            "name": "scope",
+            "ceiling": 25,
+            "earned": 25.0,
+            "evidence": [
+              "+ case: three lines 18% (10p) — expected 82.60, got 82.60",
+              "+ case: single line 20% (7p) — expected 27.00, got 27.00",
+              "+ case: two lines 0% (5p) — expected 50.00, got 50.00",
+              "+ case: empty order (3p) — expected 0.00, got 0.00"
+            ],
+            "reason": "",
+            "external": false
+          },
+          {
+            "name": "health",
+            "ceiling": 20,
+            "earned": 20.0,
+            "evidence": [
+              "~ clean syntax (8.0/8p) — 1/1 files",
+              "~ size/complexity (6.0/6p) — clean",
+              "~ no duplication (6.0/6p) — repeated lines 0%, 0 recurring blocks"
+            ],
+            "reason": "",
+            "external": false
+          },
+          {
+            "name": "tests",
+            "ceiling": 15,
+            "earned": 0.0,
+            "evidence": [
+              "- no test file (0p)"
+            ],
+            "reason": "",
+            "external": true
+          }
+        ],
+        "behavior": {
+          "tool_calls": 4,
+          "tools": {
+            "shell": 2,
+            "read_file": 1,
+            "edit_file": 1
+          },
+          "tool_errors": 1,
+          "model_turns": 5,
+          "api_errors": 0,
+          "verified": false,
+          "verify_trail": [],
+          "run_trail": [
+            "shell: php atolye/fatura.php",
+            "shell: php fatura.php"
+          ],
+          "wrote_plan": false,
+          "plan_evidence": "",
+          "prompt_tokens_last": 16127,
+          "prompt_tokens_total": 79351,
+          "output_tokens": 906,
+          "cache_read_tokens": 63104,
+          "model_calls": 5,
+          "cost_usd": 0.0062,
+          "tool_time_s": 0.6,
+          "primes_injected": null,
+          "primes_used": null,
+          "error_kinds": {
+            "Çıkış kodu 1 Could not open input file: atolye/fatura.php": 1
+          },
+          "duration_s": 42.9,
+          "model_time_s": 42.3,
+          "changed_files": 1,
+          "gate_ok": true,
+          "wall_clock_s": 45.0
+        },
+        "notes": [
+          "excluded from grading (untouched pre-turn files): 7"
+        ]
+      },
+      "all_scores": [
+        100.0,
+        100.0
+      ],
+      "score_spread": 0.0,
+      "broken_deliveries": 0,
+      "carried_from": ""
+    },
+    {
+      "id": "o3-feature",
+      "title": "Add lending to the library (existing tests must not break)",
+      "difficulty": "medium",
+      "language": "node",
+      "card": {
+        "task": "o3-feature",
+        "score": 100.0,
+        "raw": 85.0,
+        "measured_ceiling": 85,
+        "unmeasured": [],
+        "broken_delivery": false,
+        "axes": [
+          {
+            "name": "works",
+            "ceiling": 40,
+            "earned": 40.0,
+            "evidence": [
+              "+ kitaplik.js still there (8p) — kitaplik.js",
+              "+ node --check clean (6p)",
+              "+ module loads (8p) — ok",
+              "+ pristine tests green (18p) — TAP version 13 # Subtest: kitap eklenebiliyor ok 1 - kitap eklenebiliyor --- duration_ms: 0.9385 type: 'test' ... # Subtest: aynı ISBN iki kez eklenemiyor ok 2 - aynı ISBN iki kez "
+            ],
+            "reason": "",
+            "external": false
+          },
+          {
+            "name": "scope",
+            "ceiling": 25,
+            "earned": 25.0,
+            "evidence": [
+              "+ oduncVer works (6p) — {'ok': True, 'value': {'isbn': '978-1', 'baslik': 'Kuyu', 'yazar': 'Ahmet', 'odunc': 'Mehmet'}}",
+              "+ liste shows who has the book (5p) — [{\"isbn\":\"978-1\",\"baslik\":\"Kuyu\",\"yazar\":\"Ahmet\",\"odunc\":\"Fatih\"},{\"isbn\":\"978-2\",\"baslik\":\"Zeytin\",\"yazar\":\"Ayse\",\"odunc\":null}]",
+              "+ second lend throws (6p) — {'ok': False, 'error': 'Kitap zaten Fatih kişisinde: 978-1'}",
+              "+ missing ISBN throws (4p) — {'ok': False, 'error': 'Bu ISBN kayıtlı değil: no-such'}",
+              "+ iadeAl frees the book (4p) — {'ok': True, 'value': {'isbn': '978-1', 'baslik': 'Kuyu', 'yazar': 'Ahmet', 'odunc': 'Mehmet'}}"
+            ],
+            "reason": "",
+            "external": false
+          },
+          {
+            "name": "health",
+            "ceiling": 20,
+            "earned": 20.0,
+            "evidence": [
+              "~ clean syntax (8.0/8p) — 1/1 files",
+              "~ size/complexity (6.0/6p) — clean",
+              "~ no duplication (6.0/6p) — repeated lines 0%, 0 recurring blocks"
+            ],
+            "reason": "",
+            "external": false
+          },
+          {
+            "name": "tests",
+            "ceiling": 15,
+            "earned": 0.0,
+            "evidence": [
+              "! the seed already ships a test suite — this axis cannot isolate the agent's own contribution, so it is not scored",
+              "- no test file (0p)"
+            ],
+            "reason": "",
+            "external": true
+          }
+        ],
+        "behavior": {
+          "tool_calls": 9,
+          "tools": {
+            "shell": 4,
+            "read_file": 2,
+            "edit_file": 2,
+            "kos": 1
+          },
+          "tool_errors": 1,
+          "model_turns": 8,
+          "api_errors": 0,
+          "verified": true,
+          "verify_trail": [
+            "shell: node --test",
+            "shell: node --test kitaplik.test.js",
+            "shell: node --test .\\kitaplik.test.js",
+            "shell: node -e \"const {Kitaplik}=require('./kitaplik');const k=new Kitaplik();k.ekle('a','A');k.o"
+          ],
+          "run_trail": [],
+          "wrote_plan": false,
+          "plan_evidence": "",
+          "prompt_tokens_last": 17744,
+          "prompt_tokens_total": 134930,
+          "output_tokens": 923,
+          "cache_read_tokens": 123648,
+          "model_calls": 8,
+          "cost_usd": 0.0104,
+          "tool_time_s": 1.1,
+          "primes_injected": null,
+          "primes_used": null,
+          "error_kinds": {
+            "Çıkış kodu 1 Could not find 'kitaplik.test.js'": 1
+          },
+          "duration_s": 60.1,
+          "model_time_s": 59.0,
+          "changed_files": 1,
+          "gate_ok": true,
+          "wall_clock_s": 62.2
+        },
+        "notes": [
+          "excluded from grading (untouched pre-turn files): 8"
+        ]
+      },
+      "all_scores": [
+        100.0,
+        100.0
+      ],
+      "score_spread": 0.0,
+      "broken_deliveries": 0,
+      "carried_from": ""
+    },
+    {
+      "id": "z1-search",
+      "title": "Note search tool with SQLite persistence",
+      "difficulty": "hard",
+      "language": "python",
+      "card": {
+        "task": "z1-search",
+        "score": 100.0,
+        "raw": 100.0,
+        "measured_ceiling": 100,
+        "unmeasured": [],
+        "broken_delivery": false,
+        "axes": [
+          {
+            "name": "works",
+            "ceiling": 40,
+            "earned": 40.0,
+            "evidence": [
+              "+ ara.py exists (5p) — ara.py",
+              "+ ekle runs (12p) — exit 0; İndeks güncel, değişiklik yok.",
+              "+ SQLite file created (8p) — indeks.db",
+              "+ bul runs in a separate process (15p) — exit 0; pompa-katalog.txt (skor 10.7) …m3/saat. Yedek parca: rulman, salmastra, motor mili."
+            ],
+            "reason": "",
+            "external": false
+          },
+          {
+            "name": "scope",
+            "ceiling": 25,
+            "earned": 25.0,
+            "evidence": [
+              "+ single word finds the right note (8p) — «salmastra» → expected pompa-katalog; output: 'pompa-katalog.txt  (skor 10.7)\\n    …m3/saat. Yedek parca: rulman, salmastra, motor mili.\\n\\n'",
+              "+ multi-word: full match ranks first (10p) — «rulman titresim» → kuyu-bakim at 0, pompa-katalog at 155",
+              "+ missing word invents nothing (7p) — «helikopter» → output: 'Eşleşme bulunamadı: \"helikopter\"\\n\\n'"
+            ],
+            "reason": "",
+            "external": false
+          },
+          {
+            "name": "health",
+            "ceiling": 20,
+            "earned": 20.0,
+            "evidence": [
+              "~ clean syntax (8.0/8p) — 2/2 files",
+              "~ size/complexity (6.0/6p) — clean",
+              "~ no duplication (6.0/6p) — repeated lines 0%, 0 recurring blocks"
+            ],
+            "reason": "",
+            "external": false
+          },
+          {
+            "name": "tests",
+            "ceiling": 15,
+            "earned": 15.0,
+            "evidence": [
+              "+ tests green (6p) — ....... [100%] 7 passed in 0.19s",
+              "~ test count (4.0/4p) — 7 tests found",
+              "~ critical path covered (3.0/3p) — 2/2: ekle, bul",
+              "~ assertions substantive (2.0/2p) — 13 assertions, 0 freebies"
+            ],
+            "reason": "",
+            "external": false
+          }
+        ],
+        "behavior": {
+          "tool_calls": 12,
+          "tools": {
+            "read_file": 3,
+            "shell": 3,
+            "write_file": 2,
+            "grep": 2,
+            "kos": 1,
+            "edit_file": 1
+          },
+          "tool_errors": 3,
+          "model_turns": 12,
+          "api_errors": 0,
+          "verified": true,
+          "verify_trail": [
+            "shell: py -m pytest test_ara.py -q",
+            "shell: py -m pytest test_ara.py -q",
+            "shell: py -m pytest test_ara.py -q; if (-not (Test-Path notlar)) { New-Item -ItemType Directory n"
+          ],
+          "run_trail": [],
+          "wrote_plan": false,
+          "plan_evidence": "",
+          "prompt_tokens_last": 18347,
+          "prompt_tokens_total": 206337,
+          "output_tokens": 3489,
+          "cache_read_tokens": 190400,
+          "model_calls": 12,
+          "cost_usd": 0.0163,
+          "tool_time_s": 5.9,
+          "primes_injected": null,
+          "primes_used": null,
+          "error_kinds": {
+            "Çıkış kodu 1 ERROR: file or directory not found: test_ara.py": 1,
+            "Çıkış kodu 1 ......F": 1,
+            "Çıkış kodu 1 .......": 1
+          },
+          "duration_s": 127.6,
+          "model_time_s": 121.7,
+          "changed_files": 3,
+          "gate_ok": true,
+          "wall_clock_s": 129.9
+        },
+        "notes": [
+          "excluded from grading (untouched pre-turn files): 13"
+        ]
+      },
+      "all_scores": [
+        100.0,
+        97.0
+      ],
+      "score_spread": 1.5,
+      "broken_deliveries": 0,
+      "carried_from": ""
+    }
+  ],
+  "not_run": [
+    "k1-module",
+    "k2-cli",
+    "o1-report",
+    "o2-service",
+    "z2-panel",
+    "z3-hidden-bug"
+  ],
+  "axis_ceilings": {
+    "works": 40,
+    "scope": 25,
+    "health": 20,
+    "tests": 15
+  }
+}

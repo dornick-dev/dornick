@@ -22,7 +22,7 @@
 #      tırmanışının gerekçesi).
 #   6. Kaldırma — .neocp kaldırmadan SONRA da yerindedir.
 #
-# Kullanım: powershell -ExecutionPolicy Bypass -File installer\test_kurulum.ps1
+# Kullanım: powershell -ExecutionPolicy Bypass -File installer\test_install.ps1
 
 param(
     # Sandbox kökü. Belgeler'e ve gerçek kuruluma bulaşmaz.
