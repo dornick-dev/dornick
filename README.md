@@ -255,9 +255,7 @@ What this means, plainly:
   model's token rate, not the harness.
 
 Full method, efficiency numbers, memory experiments and honest caveats:
-**[docs/benchmark-2026-08.md](docs/benchmark-2026-08.md)**. Earlier
-hand-graded write-up: [docs/evaluation.md](docs/evaluation.md)
-([Türkçe](docs/evaluation.tr.md)).
+**[docs/benchmark-2026-08.md](docs/benchmark-2026-08.md)**.
 
 ## Roadmap
 

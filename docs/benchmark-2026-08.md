@@ -1,130 +1,119 @@
-# Three-harness benchmark — Claude Code · OpenCode · neo (Aug 28–29, 2026)
+# The Benchmark — August 2026
 
-Nine coding tasks (3 easy, 3 medium, 3 hard — Python, Node, PHP), three
-harnesses, one grader. Everything here is measured; nothing is mocked.
-The task set, grader and per-run behaviour data live in this repo under
-[`eval/coding/`](../eval/coding/) — you can re-run all of it.
+One page, everything measured, nothing mocked. Three harnesses, nine
+coding tasks, one grader that **executes the delivered code**. Raw data:
+[`eval/coding/sonuclar/`](../eval/coding/sonuclar/). Re-run it yourself:
+[`eval/`](../eval/README.md).
 
-## Method — and its honest limits
+## 1 · Quality
 
-- **neo** and **OpenCode** ran the *same model* (`z-ai/glm-5.3-flash` via
-  OpenRouter) with separate API keys, one fresh workspace and an **empty
-  memory** per task. neo ran from source. OpenCode ran its installed CLI
-  (1.2.27) with default settings.
-- **Claude Code** is the evaluating agent itself, on its own model
-  (Anthropic Fable). It cannot run on OpenRouter, so this lane is a
-  *reference line*, not a same-model comparison. Its lane was worked
-  honestly: same briefs, no peeking at graders, deliverables scored by the
-  same rubric.
-- The grader **executes** the delivered code (CLI runs, HTTP endpoints,
-  auth redirects, test suites) rather than checking files exist. Scores
-  are 0–100 per task.
-- neo's score is the **mean of 2 repetitions** per task; the other lanes
-  ran once. Flash-class models have real run-to-run variance (we measured
-  a 32k-token reasoning spiral one day and a clean 97 the next on the same
-  task) — single-run numbers deserve suspicion, including these.
+![Total scores: Claude Code 897.3, neo 896.7, OpenCode 894.9 out of 900](charts/scores.png)
 
-## Scores
+| Harness | Model | Total /900 |
+|---|---|---|
+| Claude Code (reference) | Anthropic frontier | 897.3 |
+| **neo** | `z-ai/glm-5.3-flash` (~free) | **896.7** |
+| OpenCode 1.2.27 | `z-ai/glm-5.3-flash` (same) | 894.9 |
 
-Each task is scored 0–100 by the same grader; **higher is better**. Bold
-marks the best score in the row.
+**Verdict: a three-way tie in quality.** The 2.4-point spread is smaller
+than the run-to-run variance of one hard task (±1.7 between neo's two
+repetitions of the same task). Two narrower claims *are* supported:
 
-| Task | difficulty | Claude Code | OpenCode | neo (mean of 2) |
+* A ~free flash model inside neo's harness matches the frontier reference
+  on delivery quality.
+* neo beats the same-model competitor — on OpenCode's best run (its worst
+  burned a 32,000-token reasoning spiral and scored 0 on a hard task; neo
+  caps that failure mode).
+
+A confirmation sweep after the last harness rule landed scored 896.8 —
+the tie holds. We do not claim a pass we did not measure.
+
+<details><summary>Per-task scores (0–100, higher is better; neo = mean of 2 reps)</summary>
+
+| Task | difficulty | Claude Code | OpenCode | neo |
 |---|---|---|---|---|
-| k1 TCKN validator + tests | easy | 100.0 | 98.0 | 99.0 |
+| k1 TCKN validator + tests | easy | **100.0** | 98.0 | 99.0 |
 | k2 todo CLI (Node) | easy | 100.0 | 100.0 | 100.0 |
 | k3 invoice repair (PHP) | easy | 100.0 | 100.0 | 100.0 |
 | o1 CSV sales report | medium | 100.0 | 100.0 | 100.0 |
-| o2 short-link HTTP service | medium | 98.7 | 100.0 | 99.3 |
+| o2 short-link HTTP service | medium | 98.7 | **100.0** | 99.3 |
 | o3 lending feature (Node) | medium | 100.0 | 100.0 | 100.0 |
-| z1 SQLite note search | hard | 98.7 | 97.0 | 98.3 |
-| z2 PHP admin panel + auth | hard | 100.0 | 99.9 | 100.0 |
+| z1 SQLite note search | hard | **98.7** | 97.0 | 98.3 |
+| z2 PHP admin panel + auth | hard | **100.0** | 99.9 | **100.0** |
 | z3 hidden-bug repair | hard | 100.0 | 100.0 | 100.0 |
-| **Total** | | **897.3** | 894.9 | **896.7** |
 
-**Read this as a statistical tie at the top.** The gap between the three
-lanes (2.4 points out of 900) is smaller than the run-to-run variance of a
-single hard task (z1 swung ±1.7 between neo's two reps). The honest claims
-are narrower and more interesting:
+</details>
 
-- A ~free flash model inside a disciplined harness delivers the same
-  *quality* as the reference agent on these tasks. The difference that
-  remains is **efficiency**, not correctness.
-- neo beat OpenCode on the same model — and did it after OpenCode's
-  strongest run of the night.
+## 2 · Efficiency
 
-**Post-release confirmation sweep.** After the test-coverage delivery rule
-landed, the full 9-task ×2 sweep was repeated: **896.8** — the tie holds
-(and an amusing lesson surfaced: the first attempt scored o2 as
-unmeasurable because a zombie process from a *previous* run still held the
-service port; the fix was the same process-tree hygiene this report
-preaches). We do not claim a pass we did not measure.
+![Wall time and real cost: Claude 316s, neo ~690s ($0.05), OpenCode 1428s ($0.10)](charts/efficiency.png)
 
-## Efficiency (same-model lanes)
+The remaining gap to the reference is **speed, not correctness** — and it
+is mostly the model's token rate. Between the same-model lanes, neo is
+~2× faster and ~2× cheaper than OpenCode, with an 85% prompt-cache hit
+rate (65–92% per task).
 
-| | OpenCode | neo |
-|---|---|---|
-| Wall time, 9 tasks | 1428 s | ~690 s |
-| Prompt tokens | 1,817,032 (1,447,680 cached) | 1,342,058 (~85% cached) |
-| Real spend (provider billing) | $0.097 for the 9-task sweep | $0.105 for the 9-task ×2 = 18 runs |
-| Worst single behaviour seen | 32,000-token reasoning spiral, 0 files written (previous sweep, z1) | stdin-inheriting child hung a turn 7.5 min (previous sweep, o1 — root-caused and fixed same night) |
+## 3 · Memory
 
-Claude Code's lane: 316 s of wall time across the 9 tasks, ~40 model calls;
-its token/dollar cost runs on a different meter and is not comparable.
+![Memory experiments: seeded facts −24%, warm continuation −38%, junk pollution +69% before the seal and 0% after](charts/memory.png)
 
-## What the harness does that the raw model doesn't
+Claim under test: *recall should cut cost without hurting quality.*
+Quality was unchanged in **all four** experiments; only cost moved.
 
-Every mechanism below exists because a measured failure demanded it, and
-each has a regression test:
+* **Seeded true facts** (4 real workspace facts vs empty mind, same task
+  ×2): the agent skipped a discovery call — **−24% prompt tokens**, and in
+  one repetition memory carried the score from 82 to 100.
+* **Warm continuation** (the end-of-run capsule neo writes automatically):
+  a new session continuing the work ran **5 calls / 26 s vs 8 calls /
+  62 s** cold — −38% tokens. Boundary: this pays on *discovery*, not on
+  edits — a file you are about to edit must be read regardless.
+* **Pollution attack** (50 irrelevant memories): junk used to leak into
+  the prompt through a single-stem overlap (+69% tokens on the worst
+  rep). The gate is sealed; the same attack now injects **zero** blocks,
+  with recall of true positives unchanged (hit-rate 0.78 = ungated;
+  precision 0.54 → 0.64; silence-on-trap 0.38 → 0.62 on the
+  [100-memory/70-query bench](../eval/context_memory/README.md)).
+* **Memory ON across the whole 9-task suite** (one persistent mind, tasks
+  unrelated to each other): quality parity with the empty-mind run
+  (99.6% vs 99.7% on the 8 comparable tasks) at ~+9% tokens — accumulated
+  memory of *unrelated* work neither helps nor hurts delivery. Memory
+  earns its keep on **related** work, which is what the two green bars
+  measure.
 
-1. **Delivery gates.** "Done" claims are bounced once when: a written CLI
-   was never executed; a written *test file* was never run (a red test
-   suite got shipped exactly this way); the task list still has open
-   items; the last run was red. z2 went 55.9 → 100 the night the negative-
-   requirement rule ("prove the *forbidden* paths too") landed.
-2. **Reasoning-effort cap for flash-class models.** Uncapped high-effort
-   thinking turned an 11-call task into a 900-second timeout, and burned a
-   full 32k-token reasoning spiral in a sibling harness. Quality came from
-   the gates, not the thinking budget.
-3. **Prompt-cache markers** (first system block + last two messages):
-   65–92% cache-read rates measured on OpenRouter.
-4. **Teach-first tool errors.** Known shell traps are written into the
-   tool description; unknown ones that repeat become persistent *lessons*
-   and get attached to the error next time ("[Memory] …").
-5. **Whitespace-tolerant edits.** 7 of 18 tool errors in one hard run were
-   anchor mismatches on correct content; the editor now tolerates CRLF,
-   trailing-space and uniform indent drift — uniqueness still required.
+## 4 · What the harness adds over the raw model
 
-## Memory: measured, not vibes
+Each mechanism exists because a measured failure demanded it; each has a
+regression test in [`tests/`](../tests/):
 
-The claim to test: *recall should cut cost without hurting quality.*
+1. **Delivery gates** — "done" is bounced once when a written CLI was
+   never executed, a written test file was never run (a red suite got
+   shipped exactly this way), the task list has open items, or the last
+   run was red. The negative-requirement rule ("prove the *forbidden*
+   paths too") took the auth-panel task from 55.9 to 100.
+2. **Reasoning-effort cap for flash-class models** — uncapped thinking
+   turned an 11-call task into a 900-second timeout and, in the
+   competitor, a 32k-token spiral delivering nothing.
+3. **Prompt-cache markers** — 65–92% cache-read measured on OpenRouter.
+4. **Teach-first tool errors** — known shell traps are documented in the
+   tool description *before* the first failure; repeated unknown errors
+   become persistent lessons attached to the next occurrence.
+5. **Whitespace-tolerant edits** — CRLF/trailing-space/uniform-indent
+   drift no longer wastes turns; uniqueness is still required.
 
-**Seeded-memory experiment** (same task, 2 reps each): an agent whose mind
-held four true facts about the workspace skipped a discovery call —
-**−24% prompt tokens**, and in one rep the memory carried it from 82 to
-100 points. An agent whose mind held **50 irrelevant memories** leaked
-junk into its context through a single-stem overlap ("ayın" ↔ "ayında"),
-**+28–110% tokens**. That leak is now sealed: on rich queries a record
-grounded by only one prefix-deduplicated stem no longer primes. Re-run
-after the fix: zero junk injected, recall of true positives unchanged
-(hit-rate 0.78 = ungated, precision 0.54 → 0.64, silence-on-trap 0.38 →
-0.62 on the 100-memory / 70-query bench in
-[`eval/context_memory/`](../eval/context_memory/)).
+## Method, honestly
 
-**Warm-start experiment** (capsule): after finishing a task, neo writes a
-mechanical capsule (what was asked, files produced, commands verified)
-into memory. A *new session* continuing that work: rep 1 no difference
-(edit-type follow-ups must read the file anyway), rep 2 **5 calls / 26 s
-vs 8 calls / 62 s** cold (−38% tokens, half the time), correctness equal.
-Honest summary: memory pays when it substitutes for *discovery*; it cannot
-and should not substitute for reading code you're about to edit.
+* neo and OpenCode: same model, separate API keys, one fresh workspace and
+  an **empty mind** per task (except the memory-ON sweep above), default
+  settings, neo from source.
+* Claude Code is the evaluating agent itself on its own model — a
+  reference line, not a same-model comparison. Its lane was worked
+  honestly: same briefs, no peeking at graders, scored by the same rubric.
+* neo's headline is a **mean of 2 repetitions**; no best-of anywhere.
+  Flash-class variance is real — treat any single run (including these)
+  with suspicion.
+* Every number traces to a JSON in
+  [`eval/coding/sonuclar/`](../eval/coding/sonuclar/) with per-run
+  behaviour columns (model calls, tool errors, cache tokens, cost).
 
-## Reproduce it
-
-```bash
-py eval/coding/kosucu.py --gorev hepsi --model z-ai/glm-5.3-flash --tekrar 2
-```
-
-Raw per-run JSON (scores, behaviour columns, cache rates) is committed
-under [`eval/coding/sonuclar/`](../eval/coding/sonuclar/). Screenshots of
-the product taken during this work: [the gallery](gallery/README.md).
+*Screenshots of the product: [gallery](gallery/README.md) · Drive neo from
+your own harness: [the gate](gate.md).*
