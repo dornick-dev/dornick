@@ -1501,3 +1501,15 @@ def test_config_tolerates_a_notepad_bom(tmp_path) -> None:
     c = Config.load(tmp_path)
     assert c.model.name == 'bom-model'
 
+def test_the_prompt_carries_the_visuals_when_needed_principle() -> None:
+    """Kullanici istegi (29.08): kanit/anlatim icin gorsel uretebilmeli
+    AMA davranis olarak — her konusmada degil, yalniz deger kattiginda.
+    Ilke tarif degil genel kural olarak kimlikte yasar; dar pencerede
+    duser (orada yer konusmanin)."""
+    from neocp.prompt import IDENTITY, LEAN_IDENTITY
+    assert "Görsel ne zaman" in IDENTITY
+    assert "Varsayılan yazıdır" in IDENTITY
+    # Olcut cumlesi: bir bakista / yaziyla verilemeyecek.
+    assert "bir bakışta" in IDENTITY
+    assert "Görsel ne zaman" not in LEAN_IDENTITY
+
