@@ -140,7 +140,7 @@ async def repl(config: Config, resume: bool, web: int | None = None) -> int:
         mind=mind,
     )
 
-    server = _start_web(mind, session, web) if web else None
+    server = _start_web(mind, session, web, config) if web else None
 
     lines = [
         BANNER,
@@ -178,16 +178,22 @@ async def repl(config: Config, resume: bool, web: int | None = None) -> int:
     return 0
 
 
-def _start_web(mind: Any, session: Session, port: int) -> Any:
+def _start_web(mind: Any, session: Session, port: int,
+               config: Any = None) -> Any:
     """Zihin arayüzünü ayrı bir thread'de başlatır.
 
     Arayüz açılamazsa ajan yine de çalışmalı; bu bir gözlem yüzeyi,
     çalışma önkoşulu değil.
+
+    `config` şart: onsuz kurulan sunucuda ayar sayfası, /api/raw ve dosya
+    uçları "Yapılandırma yüklü değil" diye düşüyordu (1.1.1 dumanlı
+    testinde yakalandı) — pencere kipi hep geçiriyordu, terminal --web
+    kipi unutmuştu.
     """
     from .web import MindServer
 
     try:
-        server = MindServer(mind, session.log, port=port)
+        server = MindServer(mind, session.log, port=port, config=config)
         url = server.start()
     except OSError as exc:
         console.print(f"[yellow]zihin arayüzü açılamadı ({exc}); ajan devam ediyor.[/yellow]")
