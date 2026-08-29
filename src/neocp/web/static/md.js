@@ -21,6 +21,7 @@ const Markdown = (() => {
       " satır": " lines",
       "Tıkla — görüntüleyicide aç": "Click — open in the viewer",
       "Tıkla — tarayıcıda aç": "Click — open in the browser",
+      "Tıkla — indir": "Click — download",
       "Kaynaklar": "Sources",
     });
   }
@@ -448,7 +449,10 @@ const Markdown = (() => {
     "md mdx txt csv tsv sql sh bash ps1 psm1 bat cmd " +
     "html htm css scss less php phtml rb go rs java kt swift lua vue svelte " +
     "c h cpp hpp cc cs xml svg " +
-    "png jpg jpeg gif webp pdf log"
+    "png jpg jpeg gif webp pdf log " +
+    // Arşiv ve ofis: görüntüleyici çizemez ama bağ ÖLÜ kalmamalı —
+    // "ZIP arşivini indir" canlı şikâyetti (zip listede değildi).
+    "zip rar 7z tar gz tgz xlsx docx pptx"
   ).split(" ");
 
   // Yol + isteğe bağlı `:satır` (ve `:sütun`). Sürücü harfi, `./`, `~/` ve
@@ -485,6 +489,32 @@ const Markdown = (() => {
     // Ayraçsız ve numarasız tek kelime çok zayıf bir işaret değil ama
     // "1.5" gibi şeyler zaten uzantı listesine takılmıyor.
     return { index: hit.index, raw, path, line: Number(hit[1] || 0) };
+  }
+
+  // Tarayıcının kendisinin çizebildiği türler: yeni sekme yeter, indirme
+  // başlığına gerek yok (oradan da kaydedilebilir).
+  const MEDIA_EXT = /\.(pdf|png|jpe?g|gif|webp|bmp|svg|mp3|wav|ogg|m4a|flac|mp4|webm|mov)$/i;
+  // Bir yola benziyor mu: uzantısı var ya da ayraç taşıyor. Açık bağ
+  // hedefi için yeterli kanıt — bağı yazan zaten "bu bir dosya" dedi.
+  const PATHISH = /^(?:[A-Za-z]:[\\/])?[\w.@ +\-\\/()]+\.[A-Za-z0-9]{1,5}$/;
+
+  // Açık bağ hedefini gerçek bir <a>'ya çevirir: medya yeni sekmede
+  // açılır, tanınmayan tür (zip, arşiv...) attachment olarak iner.
+  function downloadChip(path, label) {
+    const url = "/api/raw?path=" + encodeURIComponent(path);
+    const inline = MEDIA_EXT.test(path);
+    const chip = el("a", "md-file");
+    chip.textContent = label;
+    chip.href = inline ? url : url + "&download=1";
+    if (inline) {
+      chip.target = "_blank";
+      chip.rel = "noopener noreferrer";
+      chip.title = ceviri("Tıkla — tarayıcıda aç") + "\n" + path;
+    } else {
+      chip.setAttribute("download", "");
+      chip.title = ceviri("Tıkla — indir") + "\n" + path;
+    }
+    return chip;
   }
 
   // Tıklanınca görüntüleyiciyi açan dosya bağı.
@@ -594,9 +624,18 @@ const Markdown = (() => {
         if (/^https?:\/\//i.test(hedef)) {
           parent.append(sourceChip(trimUrl(hedef), hit[3] || ""));
         } else {
+          // Açık bağda niyet belli: yazar (model) bir DOSYAYA bağ verdi.
+          // Canlı şikâyet: "[PDF raporu aç](rapor.pdf)" ölü metindi,
+          // "[ZIP arşivini indir](rapor.zip)" hiç tanınmıyordu (zip uzantı
+          // listesinde yok). Tür karar veriyor: metin/kod görüntüleyicide,
+          // tarayıcının çizebildiği (pdf/görsel/medya) yeni sekmede,
+          // gerisi (zip vb.) doğrudan indirme.
           const ref = fileRef(hedef);
-          if (ref && ref.raw === hedef) parent.append(fileChip(ref.path, ref.line, metin));
-          else {
+          if (ref && ref.raw === hedef && !MEDIA_EXT.test(hedef)) {
+            parent.append(fileChip(ref.path, ref.line, metin));
+          } else if (PATHISH.test(hedef) && !HOSTISH.test(hedef)) {
+            parent.append(downloadChip(hedef, metin));
+          } else {
             const node = el("span", "md-link");
             node.textContent = metin;
             node.title = hedef;

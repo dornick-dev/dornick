@@ -3754,12 +3754,28 @@ function flushDeferredPlans() {
 }
 
 function pinPlanCards() {
-  // Açık plan kartları sohbetin en sonunda (plan-apply teklifinin üstünde).
+  // YALNIZ karar bekleyen kartlar sohbetin sonuna taşınır (plan-apply
+  // teklifinin üstüne). Onaylanmış/bitmiş/iptal kart akışta doğduğu yerde
+  // kalır — canlı şikâyet: iş bitmiş, cevap gelmiş, onaylanmış plan kartı
+  // düğmeleriyle cevabın ALTINA yeniden düşüyordu ("ne alaka").
   const offer = planOffer;
   for (const card of [...thread.querySelectorAll(".plan-card")]) {
+    if (!planBekliyor(card)) continue;
     if (offer && offer.parentNode === thread) thread.insertBefore(card, offer);
     else thread.append(card);
   }
+}
+
+function planBekliyor(card) {
+  const durum = (card._plan && card._plan.status) || "bekliyor";
+  return durum === "bekliyor";
+}
+
+function planKarariUygula(card) {
+  // Karar verilmiş kartta karar düğmelerinin işi yok: Onayla/Düzenle/İptal
+  // yalnız "bekliyor" durumunda görünür.
+  const acts = card.querySelector(".plan-acts");
+  if (acts) acts.style.display = planBekliyor(card) ? "" : "none";
 }
 
 function applyPlanData(card, e) {
@@ -3769,6 +3785,7 @@ function applyPlanData(card, e) {
   if (title) title.textContent = e.title || e.id;
   if (status) status.textContent = e.status || "";
   if (!card.querySelector(".plan-edit")) renderPlanSteps(card, e);
+  planKarariUygula(card);
 }
 
 function showPlanCard(e) {
@@ -3821,6 +3838,7 @@ function showPlanCard(e) {
   acts.append(ok, edit, cancel);
   card.append(acts);
   thread.append(card);
+  planKarariUygula(card);
   pinPlanCards();
   scroll();
 }

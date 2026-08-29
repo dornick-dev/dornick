@@ -1742,3 +1742,37 @@ def test_every_toolbar_button_is_translated() -> None:
                 continue        # zaten Türkçeye özgü harf yoksa atla
             assert f'"{eid}"' in dil, (
                 f'index.html#{eid} {nitelik}="{metin}" için çeviri yok')
+
+def test_explicit_file_links_in_chat_are_actionable() -> None:
+    """Canli sikayet (29.08 KPSS raporu): "[PDF raporu ac](rapor.pdf)"
+    olu metindi, "[ZIP arsivini indir](rapor.zip)" hic taninmiyordu.
+    Acik bagda niyet belli — tur karar verir: metin/kod goruntuleyici,
+    tarayicinin cizebildigi yeni sekme, gerisi dogrudan indirme.
+    """
+    assert "function downloadChip" in MD_JS_SRC
+    assert "MEDIA_EXT" in MD_JS_SRC and "PATHISH" in MD_JS_SRC
+    # zip artik uzanti listesinde: bag olu span'a dusmez.
+    assert '"zip rar 7z tar gz tgz xlsx docx pptx"' in MD_JS_SRC
+    # indirme yolu gercek <a> + attachment ucu.
+    assert 'download=1' in MD_JS_SRC
+    assert 'chip.setAttribute("download"' in MD_JS_SRC
+
+
+def test_raw_endpoint_honors_the_download_flag() -> None:
+    from pathlib import Path
+    src = Path('src/neocp/web/server.py').read_text(encoding='utf-8')
+    assert 'Content-Disposition' in src
+    assert 'attachment; filename=' in src
+
+
+def test_decided_plan_cards_stay_in_place_without_buttons() -> None:
+    """Canli sikayet: onaylanmis plan karti, is bitince cevabin ALTINA
+    dugmeleriyle yeniden dusuyordu. Karar verilmis kart akista kalir
+    ve karar dugmeleri gizlenir; yalniz 'bekliyor' kart sona tasinir.
+    """
+    assert "function planBekliyor" in APP_JS
+    assert "function planKarariUygula" in APP_JS
+    assert "if (!planBekliyor(card)) continue;" in APP_JS
+    # applyPlanData her durum degisiminde dugme gorunurlugunu tazeler.
+    assert APP_JS.count("planKarariUygula(card)") >= 2
+

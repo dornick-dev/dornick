@@ -2479,6 +2479,14 @@ class _Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(length))
         self.send_header("Accept-Ranges", "bytes")
         self.send_header("X-Content-Type-Options", "nosniff")
+        if query.get("download", [""])[0]:
+            # Sohbetteki "raporu indir" bağının ucu: attachment başlığı
+            # tarayıcıyı yorumlamak yerine kaydetmeye zorlar. Ad ASCII'ye
+            # inceltiliyor — başlık satırına ham UTF-8 koymak bazı
+            # istemcilerde kırılıyor.
+            temiz = re.sub(r"[^\w.\-]", "_", target.name) or "dosya"
+            self.send_header("Content-Disposition",
+                             f'attachment; filename="{temiz}"')
         if partial:
             self.send_header("Content-Range", f"bytes {start}-{end}/{size}")
         self.send_header("Cache-Control", "no-store")

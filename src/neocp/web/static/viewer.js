@@ -440,6 +440,13 @@ const Viewer = (() => {
 
     const acts = el("div", "viewer-acts");
     acts.append(openButton(rawUrl(data.path), t("Tarayıcıda aç")));
+    // İndirme: octet-stream'i "tarayıcıda aç"maya çalışmak bazı türlerde
+    // boş sekmeyle bitiyordu; attachment başlığı dosyayı doğrudan indirir.
+    const indir = el("a", "viewer-open");
+    indir.textContent = t("İndir");
+    indir.href = rawUrl(data.path) + "&download=1";
+    indir.setAttribute("download", "");
+    acts.append(indir);
 
     // "Nerede bu şey?": dosyayı gezginde seçili açar. Uç atölyeyle sınırlı
     // (apps.reveal); dışarıdaki bir dosyada sebebini kendisi söylüyor.
