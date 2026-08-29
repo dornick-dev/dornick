@@ -1,0 +1,136 @@
+{
+  "time": "20260829T100220Z",
+  "model": "z-ai/glm-5.3-flash",
+  "repetitions": 2,
+  "wait_s": 900.0,
+  "tasks": [
+    {
+      "id": "z1-search",
+      "title": "Note search tool with SQLite persistence",
+      "difficulty": "hard",
+      "language": "python",
+      "card": {
+        "task": "z1-search",
+        "score": 94.0,
+        "raw": 94.0,
+        "measured_ceiling": 100,
+        "unmeasured": [],
+        "broken_delivery": false,
+        "axes": [
+          {
+            "name": "works",
+            "ceiling": 40,
+            "earned": 40.0,
+            "evidence": [
+              "+ ara.py exists (5p) — ara.py",
+              "+ ekle runs (12p) — exit 0; 6 dosya indekslendi (C:\\Users\\user\\AppData\\Local\\Temp\\neocp-eval-z1-search-g98wk2_l\\atolye\\indeks.db).",
+              "+ SQLite file created (8p) — indeks.db",
+              "+ bul runs in a separate process (15p) — exit 0; 1 not eslesti (tum kelimeleri icerenler ustte): pompa-katalog.txt: ...edek parca: rulman, salmastra, motor mili."
+            ],
+            "reason": "",
+            "external": false
+          },
+          {
+            "name": "scope",
+            "ceiling": 25,
+            "earned": 25.0,
+            "evidence": [
+              "+ single word finds the right note (8p) — «salmastra» → expected pompa-katalog; output: '1 not eslesti (tum kelimeleri icerenler ustte):\\n  pompa-katalog.txt: ...edek parca: rulman, salmastra, motor mili.\\n\\n'",
+              "+ multi-word: full match ranks first (10p) — «rulman titresim» → kuyu-bakim at 50, pompa-katalog at -1",
+              "+ missing word invents nothing (7p) — «helikopter» → output: 'Hicbir notta bulunamadi: helikopter\\n\\n'"
+            ],
+            "reason": "",
+            "external": false
+          },
+          {
+            "name": "health",
+            "ceiling": 20,
+            "earned": 20.0,
+            "evidence": [
+              "~ clean syntax (8.0/8p) — 2/2 files",
+              "~ size/complexity (6.0/6p) — clean",
+              "~ no duplication (6.0/6p) — repeated lines 0%, 0 recurring blocks"
+            ],
+            "reason": "",
+            "external": false
+          },
+          {
+            "name": "tests",
+            "ceiling": 15,
+            "earned": 9.0,
+            "evidence": [
+              "- tests green (6p) — F.F... [100%] ================================== FAILURES =================================== _________________________ ",
+              "~ test count (4.0/4p) — 6 tests found",
+              "~ critical path covered (3.0/3p) — 2/2: ekle, bul",
+              "~ assertions substantive (2.0/2p) — 14 assertions, 0 freebies"
+            ],
+            "reason": "",
+            "external": false
+          }
+        ],
+        "behavior": {
+          "tool_calls": 9,
+          "tools": {
+            "list_dir": 2,
+            "read_file": 2,
+            "write_file": 2,
+            "edit_file": 2,
+            "kos": 1
+          },
+          "tool_errors": 0,
+          "model_turns": 8,
+          "api_errors": 0,
+          "verified": false,
+          "verify_trail": [],
+          "run_trail": [],
+          "wrote_plan": false,
+          "plan_evidence": "",
+          "prompt_tokens_last": 17763,
+          "prompt_tokens_total": 131875,
+          "output_tokens": 3316,
+          "cache_read_tokens": 120512,
+          "model_calls": 8,
+          "cost_usd": 0.0107,
+          "tool_time_s": 0.1,
+          "primes_injected": null,
+          "primes_used": null,
+          "error_kinds": null,
+          "duration_s": 900.0,
+          "model_time_s": 899.9,
+          "changed_files": 0,
+          "gate_ok": false,
+          "gate_error": "tur zaman aşımına uğradı",
+          "wall_clock_s": 902.3
+        },
+        "notes": [
+          "gate: tur zaman aşımına uğradı",
+          "excluded from grading (untouched pre-turn files): 13",
+          "1 leftover processes killed before grading"
+        ]
+      },
+      "all_scores": [
+        94.0,
+        98.66666666666669
+      ],
+      "score_spread": 2.333333333333343,
+      "broken_deliveries": 0,
+      "carried_from": ""
+    }
+  ],
+  "not_run": [
+    "k1-module",
+    "k2-cli",
+    "k3-repair",
+    "o1-report",
+    "o2-service",
+    "o3-feature",
+    "z2-panel",
+    "z3-hidden-bug"
+  ],
+  "axis_ceilings": {
+    "works": 40,
+    "scope": 25,
+    "health": 20,
+    "tests": 15
+  }
+}

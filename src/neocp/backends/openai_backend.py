@@ -44,6 +44,40 @@ def _hint() -> str:
 # Yerel sunucular anahtar doğrulamaz ama istemci boş dize kabul etmez.
 PLACEHOLDER_KEY = "local"
 
+# Keşif düşüşünün çıktı tavanı. 4096 token ≈ 300+ satır kod: bu görev
+# sınıfında tek dosyalık yazmaların neredeyse tamamı sığıyor; sığmayan
+# tur tam bütçeyle bir kez yineleniyor (aşağıda, turn içinde).
+KESIF_TAVANI = 4096
+
+# Salt-okur araçlar: sonucu dünyayı değiştirmeyen, ardından tipik olarak
+# ya bir okuma daha ya kısa bir yazma gelen araçlar. Liste bilinçli dar —
+# yanlış üye eklemek (örn. shell) yazma turlarının çabasını kısar. Araç
+# katmanındaki `mutates` bayrağına bağlanmıyor çünkü backend'e araçların
+# yalnız API şeması iniyor; adlar üründe kararlı.
+_SALT_OKUR = frozenset({"read_file", "read_many", "list_dir", "denetle"})
+
+
+def _kesif_turu(messages: list[dict[str, Any]]) -> bool:
+    """Son alışveriş yalnız salt-okur araç sonuçları mı taşıdı?
+
+    Sondan geriye yürünür: kuyruk `tool` sonuçlarıysa, onları çağıran
+    asistan turunun araç adlarına bakılır. Kuyrukta user/system varsa
+    (taze kullanıcı mesajı, hafıza notu) keşif sayılmaz — ilk çağrının ve
+    kullanıcıya dönen turların çabasına dokunulmaz.
+    """
+    gordu_tool = False
+    for m in reversed(messages):
+        role = m.get("role")
+        if role == "tool":
+            gordu_tool = True
+            continue
+        if role == "assistant" and gordu_tool:
+            adlar = [((c.get("function") or {}).get("name") or "")
+                     for c in (m.get("tool_calls") or [])]
+            return bool(adlar) and all(ad in _SALT_OKUR for ad in adlar)
+        return False
+    return False
+
 
 class OpenAIBackend:
     name = "openai"
@@ -82,6 +116,10 @@ class OpenAIBackend:
         # sahte araç çağrısı) tur BİTTİKTEN sonra döngüde anlaşılıyor;
         # cezayı doğru modele yazabilmek için seçim burada saklanıyor.
         self._son_secilen = ""
+        # Son akışın ham finish_reason'ı. `_stream` kırpılmış araç çağrısını
+        # yine "tool_use" diye damgalıyor (çağrı varlığı belirleyici); keşif
+        # tavanına çarpan turu yakalamak için ham değer burada saklanıyor.
+        self._son_finish: str | None = None
 
     async def close(self) -> None:
         await self._client.close()
@@ -127,7 +165,21 @@ class OpenAIBackend:
             extra["ttl"] = self.model.keep_loaded
             extra["keep_alive"] = self.model.keep_loaded
 
-        if (reasoning := self._reasoning()) is not None and not self._no_reasoning:
+        # Keşif düşüşü (B5): küçük ailede, son alışveriş YALNIZ salt-okur
+        # araç sonuçları getirdiyse bu çağrı büyük ihtimalle bir sonraki
+        # okuma ya da kısa bir yazma — duvar süresinin %89'unun model
+        # gecikmesi olduğu ölçüldü (29.08 süpürümü) ve o gecikmenin aslanı
+        # akıl yürütme. Böyle turlarda çaba low'a, çıktı tavanı KESIF_TAVANI'na
+        # iner; tavana çarpan tur (finish=length) tam bütçeyle BİR kez
+        # yinelenir — kalite tavana kurban edilmez, yalnız gecikme kırpılır.
+        kesif = False
+        if tools and not self._oto:
+            from ..prompt import kucuk_aile
+            if kucuk_aile(kwargs["model"]) and _kesif_turu(messages):
+                kesif = True
+                kwargs["max_tokens"] = min(self.model.max_tokens, KESIF_TAVANI)
+
+        if (reasoning := self._reasoning(kesif=kesif)) is not None and not self._no_reasoning:
             extra["reasoning"] = reasoning
 
         # Oto kipi: model ücretsiz havuzun başından seçiliyor, sıradaki
@@ -155,6 +207,16 @@ class OpenAIBackend:
         async with self._gate:
             try:
                 result = await self._stream(kwargs, cancel, callbacks)
+                if kesif and self._son_finish == "length":
+                    # Tavana çarptı: kırpılmış araç argümanı/cevap işe
+                    # yaramaz. Tam bütçe + normal çabayla tek yineleme.
+                    kwargs["max_tokens"] = self.model.max_tokens
+                    body = dict(kwargs.get("extra_body") or {})
+                    if (tam := self._reasoning()) is not None and not self._no_reasoning:
+                        body["reasoning"] = tam
+                    if body:
+                        kwargs["extra_body"] = body
+                    result = await self._stream(kwargs, cancel, callbacks)
             except Exception:
                 # İstek hiç kurulamadı (örn. bağlantı reddi): bu da o
                 # modelin hanesine hata yazılır.
@@ -233,7 +295,7 @@ class OpenAIBackend:
 
         return False
 
-    def _reasoning(self) -> dict[str, Any] | None:
+    def _reasoning(self, kesif: bool = False) -> dict[str, Any] | None:
         """Düşünme ayarının sunucuya gönderilecek hali.
 
         Bu alan şimdiye kadar yalnızca Claude tarafında geçerliydi; qwen3
@@ -265,6 +327,11 @@ class OpenAIBackend:
             from ..prompt import kucuk_aile
             if kucuk_aile(self.model.name):
                 effort = "medium"
+        # Keşif turu: bir okumanın ardından gelen çağrıya orta/yüksek çaba
+        # akıl yürütme, gecikmenin kendisi (B5 ölçümü). Tavana çarpan tur
+        # zaten tam çabayla yineleniyor.
+        if kesif and effort in ("medium", "high"):
+            effort = "low"
         return {"effort": effort} if effort in ("low", "medium", "high") else None
 
     async def _stream(self, kwargs: dict[str, Any], cancel: Any, callbacks: Callbacks) -> TurnResult:
@@ -272,6 +339,7 @@ class OpenAIBackend:
         reasoning: list[str] = []
         calls: dict[int, dict[str, str]] = {}
         finish: str | None = None
+        self._son_finish = None
         usage = SimpleUsage()
         stream = None
 
@@ -315,6 +383,7 @@ class OpenAIBackend:
             # "generator didn't stop after athrow()" hatası verir.
             await _aclose(stream)
 
+        self._son_finish = finish
         joined = "".join(text)
         gathered = [calls[i] for i in sorted(calls)]
 

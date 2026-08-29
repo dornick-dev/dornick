@@ -188,6 +188,20 @@ but it is certainly not the hoped ~2.0 tools/call either.
   recursive names), each verified live with a planted survivor; o2 then
   measured 100.0.
 
+**B5 — discovery downshift, built and measured the same day.** For
+small/fast models, a call that follows a purely read-only tool batch now
+runs at `reasoning: low` with a 4096-token output cap; a call that hits
+the cap (`finish=length`) is retried once at full budget, so quality is
+never traded for the cap. Measured on the two slowest tasks (z1, z2, x2
+reps each, plus a second z1 pair): **per-call model time fell ~28%**
+(z1 11.9 -> 8.5 s/call, z2 6.1 -> 4.4) with quality held (z2 99.9,
+z1 means 92.5/96.4). Total wall time did *not* improve in this sample —
+call counts swung 16/51 in one pair and 8 in the next, and z1 shows a
+pre-existing slow mode (a provider-side call hanging into the 900 s
+ceiling) in both arms. Honest verdict: the per-call gain is real, the
+totals are still owned by flash-class variance; the next lever is a
+per-call (not per-turn) timeout fed by the new time-split metrics.
+
 The prime-injection gate also changed after the memory review: the
 unconditional-top exemption in spontaneous recall now applies only to
 young minds (<30 records) — the source of the +9% prompt-token cost on

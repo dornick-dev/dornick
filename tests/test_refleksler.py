@@ -1422,3 +1422,50 @@ def test_shell_cwd_strips_the_workshop_prefix(tmp_path) -> None:
     assert not r.is_error, r.content
     assert r.detail.get('cwd', '').endswith('gorev')
 
+# -- kesif dususu (B5): salt-okur kuyruktan sonra dusuk caba + tavan -----
+
+
+def _kuyruk(*son_araclar, kuyruk_rolu='tool'):
+    mesajlar = [
+        {'role': 'system', 'content': 'sen neo'},
+        {'role': 'user', 'content': 'raporu yaz'},
+        {'role': 'assistant', 'content': '',
+         'tool_calls': [{'id': f'c{i}', 'type': 'function',
+                         'function': {'name': ad, 'arguments': '{}'}}
+                        for i, ad in enumerate(son_araclar)]},
+    ]
+    for i, _ in enumerate(son_araclar):
+        mesajlar.append({'role': 'tool', 'tool_call_id': f'c{i}',
+                         'content': 'icerik'})
+    if kuyruk_rolu != 'tool':
+        mesajlar.append({'role': kuyruk_rolu, 'content': 'not'})
+    return mesajlar
+
+
+def test_discovery_turn_detected_only_after_pure_read_results() -> None:
+    from neocp.backends.openai_backend import _kesif_turu
+    assert _kesif_turu(_kuyruk('read_file', 'list_dir')) is True
+    assert _kesif_turu(_kuyruk('read_many')) is True
+    # Yazma karisan kuyruk kesif degil: caba kisilmaz.
+    assert _kesif_turu(_kuyruk('read_file', 'write_file')) is False
+    assert _kesif_turu(_kuyruk('shell')) is False
+    # Kuyrukta taze kullanici/sistem mesaji varsa dokunulmaz.
+    assert _kesif_turu(_kuyruk('read_file', kuyruk_rolu='user')) is False
+    assert _kesif_turu(_kuyruk('read_file', kuyruk_rolu='system')) is False
+    assert _kesif_turu([{'role': 'user', 'content': 'selam'}]) is False
+
+
+def test_discovery_downshift_lowers_effort_for_small_family() -> None:
+    from neocp.backends.openai_backend import OpenAIBackend
+    from neocp.config import ModelConfig
+    m = ModelConfig(name='z-ai/glm-5.3-flash', base_url='http://x',
+                    thinking=True, effort='high')
+    b = OpenAIBackend(m, client=object())
+    assert b._reasoning() == {'effort': 'medium'}   # kucuk-aile tavani
+    assert b._reasoning(kesif=True) == {'effort': 'low'}
+    # Dusunmesi kapali modelde kesif bayragi bir sey acmaz.
+    m2 = ModelConfig(name='z-ai/glm-5.3-flash', base_url='http://x',
+                    thinking=False)
+    b2 = OpenAIBackend(m2, client=object())
+    assert b2._reasoning(kesif=True) == {'enabled': False}
+
