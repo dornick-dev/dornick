@@ -15,9 +15,8 @@ It works with **any model**: Anthropic's API, OpenRouter, or a local server —
 LM Studio, Ollama, vLLM, llama.cpp. Your conversations and memories never
 leave the machine unless you point it at a hosted model.
 
-![neo's home screen: a 3D memory network around a brain, with the memory
-types listed on the left — user, preference, lesson, procedure,
-fact](docs/screenshots/home-memory-web.jpg)
+![neo's home screen — English UI, light theme: conversation sidebar, task
+list, and the memory brain on the right](docs/screenshots/home-memory-web.png)
 
 More screenshots — light/dark shells, viewer tabs, the connectors
 directory, a live session with a real model: [the gallery](docs/gallery/README.md).
@@ -91,7 +90,7 @@ and turns repeated work into automations you can watch run step by step.
 * **Turkish and English** interface; the memory layer is built for
   agglutinative Turkish (prefix-matching FTS) and works in English too.
 
-![The memory network: memories as coloured nodes linked to their nearest neighbours](docs/screenshots/home-memory-web.jpg)
+![The memory network: memories as coloured nodes linked to their nearest neighbours](docs/screenshots/home-memory-web.png)
 
 ## Quick start
 
@@ -155,7 +154,6 @@ Each node names its type (`mail_read`, `agent`, `http`, `skill`), the secrets
 it needs, and whether you edited it by hand — a step marked ✎ *manual* is one
 the automatic repair will never touch. The same screen works in both themes:
 
-![The same automation flow in light theme](docs/screenshots/automation-flow-light.jpg)
 
 Run it on a schedule, or press **Run** and watch the steps turn from
 *running* to *done*. Nothing is hidden in a separate log.
@@ -191,7 +189,7 @@ model gets deployed. Everything runs locally.
 
 ### Settings
 
-![neo settings, showing the model, voice, permissions and machine tabs](docs/screenshots/settings.jpg)
+![neo settings, showing the model, voice, permissions and machine tabs](docs/screenshots/settings.png)
 
 ## Training rig
 
@@ -204,6 +202,21 @@ retrain or improve the model; see [`training/README.md`](training/README.md)
 for the pipeline, the frozen data format and the knobs worth turning.
 
 ![Training pipeline](docs/training-pipeline.svg)
+
+## What memory buys you — measured
+
+The memory system is not a vibe; its value and its failure modes are both
+measured (full method in [docs/benchmark-2026-08.md](docs/benchmark-2026-08.md)):
+
+| Experiment | Result |
+|---|---|
+| Mind seeded with 4 true workspace facts vs empty mind, same task ×2 | **−24% prompt tokens** (skipped a discovery call); in one rep memory carried the score from 82 to **100** |
+| Warm continuation (end-of-run capsule in memory) vs cold, same files | **5 calls / 26 s vs 8 calls / 62 s** — −38% tokens at equal correctness |
+| Mind polluted with 50 irrelevant memories | used to leak junk into the prompt (+28–110% tokens); **sealed** — recall of true positives unchanged, precision 0.54 → 0.64, silence-on-trap 0.38 → 0.62 |
+| Repeated tool error | becomes a persistent lesson, attached to the same error next time ("[Memory] …") |
+
+Honest boundary: memory pays when it substitutes for *discovery*. It cannot
+substitute for reading a file you are about to edit — and it doesn't try.
 
 ## Benchmarks
 
