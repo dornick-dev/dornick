@@ -1,0 +1,181 @@
+[
+ {
+  "gorev": "k2-cli",
+  "puan": 100.0,
+  "sure_sn": 39.0,
+  "token_giren": 34514,
+  "token_cache": 22464,
+  "token_cikan": 1155,
+  "maliyet_usd": 0.0016,
+  "hata": "",
+  "alan": "C:\\Users\\user\\AppData\\Local\\Temp\\oc-kiyas-k2-cli-gq4mwpb8",
+  "eksenler": [
+   {
+    "ad": "calisir",
+    "tavan": 40,
+    "alinan": 40.0,
+    "kanit": [
+     "+ gorev.js var (10p) — gorev.js",
+     "! ajanın bıraktığı gorevler.json ölçümden önce silindi (temiz sayfa)",
+     "+ ekle çalışıyor (10p) — çıkış 0/0",
+     "+ liste çalışıyor (10p) — 1. [ ] süt al 2. [ ] faturayı öde",
+     "+ bilinmeyen komut hata veriyor (10p) — çıkış kodu 1"
+    ],
+    "sebep": "",
+    "harici": false
+   },
+   {
+    "ad": "kapsam",
+    "tavan": 25,
+    "alinan": 25.0,
+    "kanit": [
+     "+ eklenenler listede görünüyor (10p) — «süt al»: True, «faturayı öde»: True",
+     "+ bitir listeyi değiştiriyor (kalan görev duruyor) (8p) — bitir çıkışı 0; liste değişti",
+     "+ gorevler.json'da kalıcı (7p) — gorevler.json, 109 karakter"
+    ],
+    "sebep": "",
+    "harici": false
+   },
+   {
+    "ad": "saglik",
+    "tavan": 20,
+    "alinan": 20.0,
+    "kanit": [
+     "~ sözdizimi temiz (8.0/8p) — 1/1 dosya",
+     "~ boy/karmaşıklık (6.0/6p) — temiz",
+     "~ tekrar yok (6.0/6p) — tekrar eden satır %0, 0 yinelenen blok"
+    ],
+    "sebep": "",
+    "harici": false
+   },
+   {
+    "ad": "test",
+    "tavan": 15,
+    "alinan": 0.0,
+    "kanit": [
+     "- test dosyası yok (0p)"
+    ],
+    "sebep": "",
+    "harici": true
+   }
+  ]
+ },
+ {
+  "gorev": "o1-rapor",
+  "puan": 100.0,
+  "sure_sn": 262.3,
+  "token_giren": 238059,
+  "token_cache": 180224,
+  "token_cikan": 13370,
+  "maliyet_usd": 0.0132,
+  "hata": "",
+  "alan": "C:\\Users\\user\\AppData\\Local\\Temp\\oc-kiyas-o1-rapor-laa_a3dg",
+  "eksenler": [
+   {
+    "ad": "calisir",
+    "tavan": 40,
+    "alinan": 40.0,
+    "kanit": [
+     "+ rapor.py var (8p) — rapor.py",
+     "+ csv ile koşuyor (16p) — çıkış 0; === 2026-01 === Toplam ciro: 47553.25 TL 1. Pompa: 25197.00 TL 2. Sensor: 12159.05 TL 3. PLC: 8249.70 TL === 2026-02 === Toplam ciro: 33938.45 TL 1. Sensor: 172",
+     "+ çıktı boş değil (8p) — 334 karakter",
+     "+ --ay koşuyor (8p) — çıkış 0; === 2026-03 === Toplam ciro: 99286.90 TL 1. Pompa: 54593.50 TL 2. PLC: 30248.90 TL 3. Sensor: 12799.00 TL"
+    ],
+    "sebep": "",
+    "harici": false
+   },
+   {
+    "ad": "kapsam",
+    "tavan": 25,
+    "alinan": 25.0,
+    "kanit": [
+     "~ aylık cirolar doğru (10.0/10p) — 3/3 ay tuttu: 2026-01, 2026-02, 2026-03",
+     "+ en çok ciro yapan 3 ürün var (5p) — Pompa, PLC, Sensor",
+     "+ üçü çoktan aza sıralı (5p) — sıra tuttu",
+     "+ --ay 2026-03 doğru ayı veriyor (3p) — beklenen 99286.9",
+     "+ --ay diğer ayları süzüyor (2p) — temiz"
+    ],
+    "sebep": "",
+    "harici": false
+   },
+   {
+    "ad": "saglik",
+    "tavan": 20,
+    "alinan": 20.0,
+    "kanit": [
+     "~ sözdizimi temiz (8.0/8p) — 1/1 dosya",
+     "~ boy/karmaşıklık (6.0/6p) — temiz",
+     "~ tekrar yok (6.0/6p) — tekrar eden satır %0, 0 yinelenen blok"
+    ],
+    "sebep": "",
+    "harici": false
+   },
+   {
+    "ad": "test",
+    "tavan": 15,
+    "alinan": 0.0,
+    "kanit": [
+     "- test dosyası yok (0p)"
+    ],
+    "sebep": "",
+    "harici": true
+   }
+  ]
+ },
+ {
+  "gorev": "z1-arama",
+  "puan": 0.0,
+  "sure_sn": 683.0,
+  "token_giren": 10799,
+  "token_cache": 0,
+  "token_cikan": 32000,
+  "maliyet_usd": 0.0168,
+  "hata": "",
+  "alan": "C:\\Users\\user\\AppData\\Local\\Temp\\oc-kiyas-z1-arama-2o2bpvq6",
+  "eksenler": [
+   {
+    "ad": "calisir",
+    "tavan": 40,
+    "alinan": 0.0,
+    "kanit": [
+     "- ara.py var (5p) — ara.py bulunamadı",
+     "- ekle koşuyor (12p) — ara.py bulunamadı",
+     "- SQLite dosyası oluştu (8p) — ara.py bulunamadı",
+     "- bul ayrı süreçte koşuyor (15p) — ara.py bulunamadı"
+    ],
+    "sebep": "",
+    "harici": false
+   },
+   {
+    "ad": "kapsam",
+    "tavan": 25,
+    "alinan": 0.0,
+    "kanit": [
+     "- tek kelime doğru notu buluyor (8p) — «salmastra» → pompa-katalog bekleniyordu; çıktı: ''",
+     "- çok kelimede hepsi geçen not üstte (10p) — «rulman titresim» → kuyu-bakim yeri -1, pompa-katalog yeri -1",
+     "- olmayan kelimede sonuç uydurmuyor (7p) — «helikopter» → çıktı: ''"
+    ],
+    "sebep": "",
+    "harici": false
+   },
+   {
+    "ad": "saglik",
+    "tavan": 20,
+    "alinan": null,
+    "kanit": [],
+    "sebep": "atölyede hiç kaynak dosya yok",
+    "harici": false
+   },
+   {
+    "ad": "test",
+    "tavan": 15,
+    "alinan": 0.0,
+    "kanit": [
+     "- test dosyası yok (0p)"
+    ],
+    "sebep": "",
+    "harici": false
+   }
+  ]
+ }
+]

@@ -1,0 +1,37 @@
+[
+ {
+  "kol": "C",
+  "puan": 100.0,
+  "eksik": [
+   "test:0/15"
+  ],
+  "sure": 47.4,
+  "arac_cagrisi": 4,
+  "araclar": {
+   "ozet_csv": 1,
+   "write_file": 1,
+   "shell": 1,
+   "read_file": 1
+  },
+  "hatali_arac": 1,
+  "model_turu": 5,
+  "api_hatasi": 0,
+  "dogruladi_mi": false,
+  "dogrulama_izi": [],
+  "calistirma_izi": [
+   "shell: py rapor.py satislar.csv; py rapor.py satislar.csv --ay 2026-03; py rapor.py satislar.csv "
+  ],
+  "plan_yazdi_mi": false,
+  "plan_kaniti": "",
+  "token_prompt_son": 16983,
+  "token_prompt_toplam": 79997,
+  "token_cikti": 1042,
+  "token_cache_okuma": 57792,
+  "model_cagrisi": 5,
+  "maliyet_usd": 0.0063,
+  "sure_sn": 45.1,
+  "degisen_dosya": 1,
+  "kapi_ok": true,
+  "hatirlanan_blok": 0
+ }
+]

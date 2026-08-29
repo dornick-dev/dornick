@@ -1,16 +1,23 @@
-"""Ölçek benchmark'ı: 100 anı + 60 episode altında önyükleme kalitesi ve token maliyeti.
+"""Scale benchmark: priming quality and token cost at 100 memories + 60 episodes.
 
-Soru üç katlı (Fatih'in isteği):
-  1. Yanlış şeyler hatırlıyor muyuz? (hava sorusuna borsa gelmemeli)
-  2. Bağlam tasarrufu yapıyor muyuz? (tur başına kaç token enjekte ediliyor)
-  3. Daha iyi yöntem var mı? (kapıları tek tek oynatıp Pareto'ya bakmak)
+The question has three layers:
+  1. Are we recalling the wrong things? (a weather question must not fetch
+     crypto)
+  2. Are we saving context? (how many tokens get injected per turn)
+  3. Is there a better method? (toggle the gates one by one and look at
+     the Pareto front)
 
-Ölçülen yol ÜRÜNÜN KENDİSİ: `mevcut` yöntemi `neocp.loop.select_prime`'ı
-çağırıyor; varyantlar aynı mantığın parametrik kopyası ve `mevcut` ile
-varsayılan-parametreli kopyanın her sorguda aynı sonucu verdiği doğrulanıyor
-(kopya sessizce ayrışırsa benchmark ürünü ölçmüyor demektir — o an patlar).
+The measured path is THE PRODUCT ITSELF: the `current` method calls
+`neocp.loop.select_prime`; the variants are a parametric copy of the same
+logic, and the copy with default parameters is asserted equal to the
+product on every query (a silently drifted copy would mean the benchmark
+no longer measures the product — it blows up right there instead).
 
-Çalıştır:  py eval/context_memory/scale_bench.py
+Run:  py eval/context_memory/scale_bench.py
+
+Note: the memory corpus and the queries are Turkish by design — this bench
+measures recall for a Turkish-speaking user's memory. The measurement
+machinery around it is what this file is.
 """
 
 from __future__ import annotations
@@ -43,8 +50,8 @@ from neocp.mind import open_mind  # noqa: E402
 
 HERE = Path(__file__).resolve().parent
 
-# Türkçe için kaba token kestirimi: ~4 karakter / token. Mutlak değeri
-# önemli değil — yöntemler AYNI cetvelle kıyaslanıyor.
+# Rough token estimate for Turkish: ~4 chars / token. The absolute value
+# does not matter — all methods are compared with the SAME ruler.
 CHARS_PER_TOKEN = 4.0
 
 
@@ -52,7 +59,7 @@ def tokens_of(text: str) -> float:
     return len(text) / CHARS_PER_TOKEN
 
 
-# -- korpus -------------------------------------------------------------
+# -- corpus -------------------------------------------------------------
 
 
 def load_dataset() -> dict[str, Any]:
@@ -60,7 +67,7 @@ def load_dataset() -> dict[str, Any]:
 
 
 def build_mind(data: dict[str, Any], root: Path) -> tuple[Any, dict[str, str]]:
-    """Anıları ve episode'ları taze bir zihne yazar. slug → node id haritası döner."""
+    """Write the memories and episodes into a fresh mind. Returns slug → node id."""
     mind = open_mind(root / "mind", root / "sessions", "bench")
     allowed = {"fact", "preference", "lesson", "procedure", "user", "voice"}
     ids: dict[str, str] = {}
@@ -77,14 +84,14 @@ def build_mind(data: dict[str, Any], root: Path) -> tuple[Any, dict[str, str]]:
     return mind, ids
 
 
-# -- yöntemler ----------------------------------------------------------
+# -- methods ------------------------------------------------------------
 #
-# Her yöntem (mind, sorgu) → (hits, not-metni). Not metni token cetveline
-# giren şeyin ta kendisi; bazı yöntemler yalnızca metni kısaltıyor.
+# Every method is (mind, query) → (hits, note text). The note text is
+# exactly what enters the token ruler; some methods only shorten the text.
 
 
 def note_text(hits: list[Any], line_cap: int) -> str:
-    """Ürünün prime_note biçimi, satır sınırı ayarlanabilir halde."""
+    """The product's prime_note format, with an adjustable line cap."""
     if not hits:
         return ""
     lines = [RECALL_PRIME_HEADER]
@@ -118,12 +125,12 @@ def parametric(
     weigh: float = 0.0,
     gap: float = 0.0,
 ) -> list[Any]:
-    """select_prime'ın ayarlanabilir kopyası. Varsayılanlar ürünle birebir.
+    """The adjustable copy of select_prime. Defaults mirror the product.
 
-    tiered: ≥2 kanıtlı aday varsa yalnız onlar; yoksa tek-kanıt moduna
-    düşülür ama o modda en fazla TOP-1 gösterilir (tek zayıf çakışmayla
-    beş satır doldurulmaz) ve `lone_score` verildiyse top'un skoru onu
-    aşmak zorundadır.
+    tiered: if candidates with ≥2 pieces of evidence exist, only they
+    survive; otherwise fall back to single-evidence mode, but show at most
+    TOP-1 there (a single weak overlap must not fill five lines), and if
+    `lone_score` is given the top's score must beat it.
     """
     query = _without_numbers(user_input)
     hits = mind.recall(query, limit=limit)
@@ -134,16 +141,17 @@ def parametric(
         return []
     stems = _query_stems(query)
 
-    # Ürün kuralı (28.08): HAM sorgu ≥5 gövdeliyse tek (önek-tekil)
-    # gövdeyle tutunan kayıt önyüklemeye giremez. Kopya birebir taşır.
-    zengin = len(_query_stems(query, genislet=False)) >= 5
+    # Product rule (2026-08-28): when the RAW query has ≥5 stems, a record
+    # grounded by a single (prefix-deduplicated) stem cannot prime. The
+    # copy carries it verbatim.
+    rich = len(_query_stems(query, genislet=False)) >= 5
 
-    def _tekil_vuran(item: Any) -> int:
+    def _distinct_matches(item: Any) -> int:
         text = f"{item.title} {item.content} {' '.join(item.tags)}".casefold()
-        vuranlar = [g for g in stems if g in text]
-        tekil = [g for g in vuranlar
-                 if not any(g != d and d.startswith(g) for d in vuranlar)]
-        return len(tekil)
+        matched = [g for g in stems if g in text]
+        distinct = [g for g in matched
+                    if not any(g != d and d.startswith(g) for d in matched)]
+        return len(distinct)
 
     def need_for(item: Any) -> bool:
         if not stems:
@@ -157,7 +165,7 @@ def parametric(
             return got >= min(ground_min, max(1, len(stems) - 1))
         if not got:
             return False
-        return _tekil_vuran(item) >= 2 if zengin else True
+        return _distinct_matches(item) >= 2 if rich else True
 
     passed = [
         hit
@@ -167,10 +175,11 @@ def parametric(
         and need_for(hit.item)
     ]
     if weigh > 0 and stems:
-        # Skor doyuyor (ölçüldü: altın medyan 0.963, sızıntı 0.874 — ayırmıyor)
-        # ama skor × kanıt-oranı ayırıyor (0.477 vs 0.167). Eşik çarpıma
-        # konuyor; top muafiyeti yalnız kanıtı güçlü top'a (oran ≥ 0.5) —
-        # genç hafızada skor çökse de oran yüksek kalıyor.
+        # Scores saturate (measured: gold median 0.963, leak 0.874 — no
+        # separation) but score × evidence-ratio separates (0.477 vs
+        # 0.167). The threshold sits on the product; the top exemption
+        # only for a top with strong evidence (ratio ≥ 0.5) — in a young
+        # memory the score collapses but the ratio stays high.
         def heft(h: Any) -> float:
             return h.score * (matched_stems(h.item, stems) / len(stems))
 
@@ -197,57 +206,61 @@ def parametric(
 
 
 METHODS: dict[str, tuple[Callable[..., list[Any]], int]] = {
-    # ad → (seçici, satır sınırı)
-    "mevcut": (lambda m, q: select_prime(m, q), 220),
-    # Kapısız hâl: süzgeçlerin ne kurtardığını gösteren ablasyon.
-    "ciplak": (lambda m, q: parametric(m, q, direct_only=False,
-                                       drop_episodes=False, ground_min=0,
-                                       floor=0.0), 220),
-    # Kuyruk kesme: en güçlünün %45'inin altındakiler düşer.
+    # name → (selector, line cap)
+    "current": (lambda m, q: select_prime(m, q), 220),
+    # Gateless: the ablation showing what the filters rescue.
+    "bare": (lambda m, q: parametric(m, q, direct_only=False,
+                                     drop_episodes=False, ground_min=0,
+                                     floor=0.0), 220),
+    # Tail cut: everything below 45% of the strongest drops.
     "gap45": (lambda m, q: parametric(m, q, gap=0.45), 220),
-    # Çift zemin: çok kelimeli sorguda tek kelimelik tesadüf yetmez.
-    "zemin2": (lambda m, q: parametric(m, q, ground_min=2), 220),
-    # Kısa satır: aynı seçim, yarı token.
-    "kisa120": (lambda m, q: select_prime(m, q), 120),
-    # Oransal zemin: sorgu gövdelerinin %40'ı kayıtta geçmeli.
-    "oran40": (lambda m, q: parametric(m, q, ground_ratio=0.4), 220),
-    # Kademeli kanıt: çift kanıtlılar varsa onlar; yoksa tek-kanıtlı top-1.
-    "kademe": (lambda m, q: parametric(m, q, tiered=True), 220),
-    # Kademeli + tek-kanıt modunda skor şartı.
-    "kademe05": (lambda m, q: parametric(m, q, tiered=True, lone_score=0.5), 220),
-    # Skor × kanıt-oranı eşiği (teşhis koşusundan türedi).
-    "carpim16": (lambda m, q: parametric(m, q, weigh=0.16), 220),
-    "carpim20": (lambda m, q: parametric(m, q, weigh=0.20), 220),
-    "carpim24": (lambda m, q: parametric(m, q, weigh=0.24), 220),
-    # Ruhta tam gövdesiyle duran kayıt yeniden enjekte edilmez: model onu
-    # oturum başından beri bağlamında taşıyor. Bilgi kaybı sıfır.
-    "ruhdisi": (lambda m, q: [h for h in select_prime(m, q)
+    # Double grounding: one accidental word is not enough on multi-word queries.
+    "ground2": (lambda m, q: parametric(m, q, ground_min=2), 220),
+    # Short lines: same selection, half the tokens.
+    "short120": (lambda m, q: select_prime(m, q), 120),
+    # Ratio grounding: 40% of the query stems must appear in the record.
+    "ratio40": (lambda m, q: parametric(m, q, ground_ratio=0.4), 220),
+    # Tiered evidence: doubles if any; else single-evidence top-1.
+    "tiered": (lambda m, q: parametric(m, q, tiered=True), 220),
+    # Tiered + a score requirement in single-evidence mode.
+    "tiered05": (lambda m, q: parametric(m, q, tiered=True, lone_score=0.5), 220),
+    # Score × evidence-ratio threshold (born from a diagnostic run).
+    "product16": (lambda m, q: parametric(m, q, weigh=0.16), 220),
+    "product20": (lambda m, q: parametric(m, q, weigh=0.20), 220),
+    "product24": (lambda m, q: parametric(m, q, weigh=0.24), 220),
+    # A record whose full body already sits in the soul is not re-injected:
+    # the model has carried it in context since the session began. Zero
+    # information loss.
+    "nonsoul": (lambda m, q: [h for h in select_prime(m, q)
                               if h.item.id not in SOUL_IDS], 220),
-    # IDF ağırlıklı kanıt eşiği: yaygın kelime tuzak açmasın.
+    # IDF-weighted evidence threshold: a common word must not open a trap.
     "idf16": (lambda m, q: idf_pick(m, q, 0.16), 220),
     "idf24": (lambda m, q: idf_pick(m, q, 0.24), 220),
     "idf32": (lambda m, q: idf_pick(m, q, 0.32), 220),
-    # Sayı-ağırlıklı sorguda sayılar atılmaz. (lambda şart: işlev aşağıda
-    # tanımlanıyor, sözlük kurulurken adı henüz yok.)
-    "sayili": (lambda m, q: keep_numbers_pick(m, q), 220),
-    # Cümle-duyarlı olmayan düz 160 kırpma (token ölçümü için).
-    "kisa160": (lambda m, q: select_prime(m, q), 160),
+    # Numbers are kept on number-heavy queries. (The lambda is required:
+    # the function is defined below, its name does not exist while this
+    # dict is being built.)
+    "numeric": (lambda m, q: keep_numbers_pick(m, q), 220),
+    # Plain 160 truncation, not sentence-aware (for the token ruler).
+    "short160": (lambda m, q: select_prime(m, q), 160),
 }
 
-# Ruhun tam gövdeyle bağlama koyduğu kayıtlar (main'de dolduruluyor).
-# procedure girmiyor: ruhta yalnız başlığı var, gövdesi prime'da hâlâ değerli.
+# Records the soul puts into context with their full body (filled in main).
+# `procedure` is excluded: the soul carries only its title, the body is
+# still valuable in the prime.
 SOUL_IDS: set[str] = set()
 
-# Gövde → korpusta kaç anıda geçtiği (IDF deneyi için; main dolduruyor).
+# Stem → how many corpus records contain it (for the IDF experiment; main fills).
 STEM_DF: dict[str, int] = {}
 CORPUS_N: int = 1
 
 
 def idf_ratio(item: Any, stems: set[str]) -> float:
-    """IDF ağırlıklı kanıt oranı: nadir gövde çok, yaygın gövde az sayılır.
+    """IDF-weighted evidence ratio: rare stems count a lot, common ones little.
 
-    Düz oran "Konya" gibi korpusun her yerinde geçen bir kelimeyle tuzak
-    açıyordu; IDF o kelimenin ağırlığını düşürür. Ağırlık log(1 + N/df).
+    The plain ratio opened traps through a word like "Konya" that appears
+    all over the corpus; IDF lowers that word's weight. Weight is
+    log(1 + N/df).
     """
     import math
 
@@ -264,7 +277,7 @@ def idf_ratio(item: Any, stems: set[str]) -> float:
 
 
 def idf_pick(mind: Any, user_input: str, threshold: float) -> list[Any]:
-    """carpim ailesinin IDF'li hali: eşik skor × IDF-oranına konur."""
+    """The product16 family with IDF: the threshold sits on score × IDF ratio."""
     query = _without_numbers(user_input)
     hits = select_prime(mind, user_input)
     stems = _query_stems(query)
@@ -281,23 +294,23 @@ def idf_pick(mind: Any, user_input: str, threshold: float) -> list[Any]:
 
 
 def keep_numbers_pick(mind: Any, user_input: str) -> list[Any]:
-    """Sayı-koruma: sorgu sayı-ağırlıklıysa sayılar atılmaz.
+    """Number preservation: keep the digits when the query is number-heavy.
 
-    Sayı atma BTC-fiyat sızıntısına karşı kondu; ama "404195 hangi register"
-    gibi sorguda aranan şeyin kendisi sayı — atınca numeric sınıfı 0.75'te
-    takılıyor. Kural: sayısız halde <2 içerik gövdesi kalıyorsa sayılar kalır.
+    Dropping numbers was added against a crypto-price leak; but in a query
+    like "which register is 404195" the number IS the thing being looked
+    up — dropping it pins the numeric class at 0.75. Rule: if fewer than
+    two content stems survive without the numbers, the numbers stay.
     """
     stripped = _without_numbers(user_input)
     if len(_query_stems(stripped)) >= 2:
         return select_prime(mind, user_input)
-    # loop.select_prime her zaman sayı atar; sayılı yol için parametrik
-    # kopyada sorguyu olduğu gibi kullanıyoruz.
+    # loop.select_prime always drops numbers; for the numeric path we use
+    # the query as-is through the parametric copy.
     hits = mind.recall(user_input, limit=RECALL_PRIME_LIMIT)
     trace = getattr(mind, "last_trace", None) or []
     direct = {step.node for step in trace if step.hop == 0}
     if not direct:
         return []
-    stems = _query_stems(user_input)
     passed = [h for h in hits
               if h.item.kind != "episode" and h.item.id in direct]
     if not passed:
@@ -307,7 +320,7 @@ def keep_numbers_pick(mind: Any, user_input: str) -> list[Any]:
             if h is top or h.score >= RECALL_PRIME_FLOOR][:RECALL_PRIME_LIMIT]
 
 
-# -- ölçüm --------------------------------------------------------------
+# -- measurement --------------------------------------------------------
 
 
 def run_method(
@@ -319,11 +332,11 @@ def run_method(
     select, line_cap = METHODS[name]
     slug_of = {node_id: slug for slug, node_id in ids.items()}
 
-    hit_recall = []       # altınlı sorgular: en az bir altın geldi mi
-    coverage = []         # altınların ne kadarı geldi
-    precision = []        # gelenlerin ne kadarı altın
-    silence_ok = []       # altınsız sorgular: sessiz kalındı mı
-    leaks: list[str] = []  # sızıntı örnekleri (rapora)
+    hit_recall = []        # queries with gold: did at least one gold come
+    coverage = []          # how much of the gold came
+    precision = []         # how much of what came is gold
+    silence_ok = []        # goldless queries: did it stay quiet
+    leaks: list[str] = []  # leak samples (for the report)
     wrongs: list[str] = []
     token_costs = []
     times = []
@@ -332,7 +345,8 @@ def run_method(
     for query in data["queries"]:
         gold = {ids[s] for s in query["gold"]}
         started = time.perf_counter()
-        # Ürün akışındaki ilk kapı: değmeyecek mesajda zihin hiç açılmıyor.
+        # The product flow's first gate: the mind never opens on a message
+        # not worth recalling for.
         hits = select(mind, query["q"]) if worth_recalling(query["q"]) else []
         times.append((time.perf_counter() - started) * 1000)
         note = note_text(hits, line_cap)
@@ -342,8 +356,8 @@ def run_method(
         kind = query["type"]
 
         if gold:
-            # Ruhta duran altın zaten bağlamda: hiçbir yöntem onu enjekte
-            # etmek zorunda değil — hepsine adil sayılıyor.
+            # Gold already sitting in the soul is already in context: no
+            # method is obliged to inject it — counted fair for all.
             satisfied = got | (gold & SOUL_IDS)
             ok = 1.0 if satisfied & gold else 0.0
             hit_recall.append(ok)
@@ -351,13 +365,15 @@ def run_method(
             if got:
                 precision.append(len(got & gold) / len(got))
                 for wrong in got - gold:
-                    wrongs.append(f"{kind} «{query['q'][:40]}» → {slug_of.get(wrong, 'EPISODE')}")
+                    wrongs.append(f"{kind} «{query['q'][:40]}» → "
+                                  f"{slug_of.get(wrong, 'EPISODE')}")
             by_type.setdefault(kind, []).append(ok)
         else:
             quiet = 1.0 if not got else 0.0
             silence_ok.append(quiet)
             if got:
-                sample = ", ".join(slug_of.get(g, "EPISODE") for g in list(got)[:3])
+                sample = ", ".join(slug_of.get(g, "EPISODE")
+                                   for g in list(got)[:3])
                 leaks.append(f"{kind} «{query['q'][:40]}» → {sample}")
             by_type.setdefault(kind, []).append(quiet)
 
@@ -371,9 +387,9 @@ def run_method(
         "precision": mean(precision),
         "silence": mean(silence_ok),
         "tokens": tokens_avg,
-        # Verim: 1000 token başına kaç "isabetli sorgu". Amaç min bağlam
-        # max isabet; tek sayıya bunu sıkıştırıyor.
-        "verim": (recall * 1000 / tokens_avg) if tokens_avg else float("inf"),
+        # Yield: "hit queries" per 1000 tokens. The goal is minimum context
+        # for maximum recall; this squeezes it into one number.
+        "yield": (recall * 1000 / tokens_avg) if tokens_avg else float("inf"),
         "p95_ms": sorted(times)[int(len(times) * 0.95) - 1],
         "by_type": {k: mean(v) for k, v in sorted(by_type.items())},
         "leaks": leaks[:10],
@@ -382,11 +398,14 @@ def run_method(
 
 
 def repeat_bench(data: dict[str, Any], mind: Any, ids: dict[str, str]) -> dict[str, float]:
-    """Aynı konuda 12 turluk konuşma: aynı anı kaç kez yeniden enjekte oluyor?
+    """A 12-turn conversation on one topic: how often is the same memory
+    re-injected?
 
-    Tur-içi tekrar ayrı bir israf kanalı: model aynı hatırayı 12 kez okuyor.
+    In-turn repetition is its own waste channel: the model reads the same
+    memory twelve times.
     """
-    talk = [q["q"] for q in data["queries"] if q["type"] in ("exact", "continuation")][:12]
+    talk = [q["q"] for q in data["queries"]
+            if q["type"] in ("exact", "continuation")][:12]
     plain, seen_costs = 0.0, 0.0
     seen: set[str] = set()
     for q in talk:
@@ -395,19 +414,20 @@ def repeat_bench(data: dict[str, Any], mind: Any, ids: dict[str, str]) -> dict[s
         fresh = [h for h in hits if h.item.id not in seen]
         seen.update(h.item.id for h in hits)
         seen_costs += tokens_of(note_text(fresh, 220))
-    return {"tekrarli": plain, "tekrarsiz": seen_costs,
-            "tasarruf": 1 - (seen_costs / plain) if plain else 0.0}
+    return {"repeated": plain, "deduplicated": seen_costs,
+            "saving": 1 - (seen_costs / plain) if plain else 0.0}
 
 
 def main() -> None:
     data = load_dataset()
-    print(f"korpus: {len(data['memories'])} anı + {len(data['episodes'])} episode, "
-          f"{len(data['queries'])} sorgu\n")
+    print(f"corpus: {len(data['memories'])} memories + "
+          f"{len(data['episodes'])} episodes, "
+          f"{len(data['queries'])} queries\n")
 
     with tempfile.TemporaryDirectory() as tmp:
         mind, ids = build_mind(data, Path(tmp))
 
-        # IDF deneyi için korpus gövde-sıklığı (anılar + episode'lar).
+        # Corpus stem frequencies for the IDF experiment (memories + episodes).
         global CORPUS_N
         texts = [f"{m['title']} {m['content']} {' '.join(m.get('tags') or [])}"
                  for m in data["memories"]]
@@ -419,55 +439,60 @@ def main() -> None:
         for stem in seen_stems:
             STEM_DF[stem] = sum(1 for t in texts if stem in t.casefold())
 
-        # Ürünün ruh seçimiyle birebir: tam gövdesi bağlama giren türler.
+        # Mirrors the product's soul selection: kinds whose full body
+        # enters context.
         soul = mind.soul()
         SOUL_IDS.clear()
         SOUL_IDS.update(m.id for group in
                         (soul.user, soul.preferences, soul.lessons, soul.voice)
                         for m in group)
-        print(f"ruhta tam gövdeyle: {len(SOUL_IDS)} kayıt\n")
+        print(f"in the soul with full body: {len(SOUL_IDS)} records\n")
 
-        # Koruma: parametrik kopya varsayılanlarla ürüne eşit mi?
+        # Guard: does the parametric copy with defaults equal the product?
         for query in data["queries"]:
             a = {h.item.id for h in select_prime(mind, query["q"])}
             b = {h.item.id for h in parametric(mind, query["q"])}
-            assert a == b, f"kopya üründen ayrıştı: {query['q']!r} {a} != {b}"
-        print("koruma: parametrik kopya == ürün (tüm sorgular)\n")
+            assert a == b, f"copy drifted from the product: {query['q']!r} {a} != {b}"
+        print("guard: parametric copy == product (all queries)\n")
 
         rows = [run_method(name, data, mind, ids) for name in METHODS]
 
-        head = f"{'yöntem':<10} {'isabet':>7} {'kapsam':>7} {'kesinlik':>9} {'sessizlik':>10} {'tok/sorgu':>10} {'verim':>7} {'p95ms':>6}"
+        head = (f"{'method':<10} {'recall':>7} {'coverage':>9} "
+                f"{'precision':>10} {'silence':>8} {'tok/query':>10} "
+                f"{'yield':>7} {'p95ms':>6}")
         print(head)
         print("-" * len(head))
         for r in rows:
-            print(f"{r['name']:<10} {r['recall']:>7.2f} {r['coverage']:>7.2f} "
-                  f"{r['precision']:>9.2f} {r['silence']:>10.2f} "
-                  f"{r['tokens']:>10.1f} {r['verim']:>7.1f} {r['p95_ms']:>6.2f}")
+            print(f"{r['name']:<10} {r['recall']:>7.2f} {r['coverage']:>9.2f} "
+                  f"{r['precision']:>10.2f} {r['silence']:>8.2f} "
+                  f"{r['tokens']:>10.1f} {r['yield']:>7.1f} {r['p95_ms']:>6.2f}")
 
-        print("\ntür kırılımı (isabet ya da sessizlik):")
+        print("\nby query type (recall or silence):")
         kinds = sorted({k for r in rows for k in r["by_type"]})
-        print(f"{'yöntem':<10} " + " ".join(f"{k:>12}" for k in kinds))
+        print(f"{'method':<10} " + " ".join(f"{k:>12}" for k in kinds))
         for r in rows:
             print(f"{r['name']:<10} " + " ".join(
                 f"{r['by_type'].get(k, float('nan')):>12.2f}" for k in kinds))
 
         for r in rows:
             if r["leaks"] or r["wrongs"]:
-                print(f"\n{r['name']} sızıntıları:")
+                print(f"\n{r['name']} leaks:")
                 for line in r["leaks"] + r["wrongs"]:
                     print("  !", line)
 
         echo = repeat_bench(data, mind, ids)
-        print(f"\n12 turluk konuşmada tekrar: {echo['tekrarli']:.0f} tok → "
-              f"tekrarsız {echo['tekrarsiz']:.0f} tok "
-              f"(tasarruf %{echo['tasarruf'] * 100:.0f})")
+        print(f"\nrepetition in a 12-turn conversation: "
+              f"{echo['repeated']:.0f} tok → deduplicated "
+              f"{echo['deduplicated']:.0f} tok "
+              f"(saving {echo['saving'] * 100:.0f}%)")
 
-        # Karşılaştırma çapası: her şeyi göndermek neye mal olurdu?
+        # The anchor for comparison: what would sending everything cost?
         everything = sum(tokens_of(m["content"]) + tokens_of(m["title"])
-                        for m in data["memories"])
-        print(f"\nçapa: TÜM anıları her turda göndermek ≈ {everything:.0f} tok/sorgu")
+                         for m in data["memories"])
+        print(f"\nanchor: sending ALL memories every turn ≈ "
+              f"{everything:.0f} tok/query")
 
-        # Windows: açık SQLite bağlantısı tmp klasörünün silinmesini engelliyor.
+        # Windows: an open SQLite connection blocks deleting the tmp folder.
         mind.store.close()
 
 

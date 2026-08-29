@@ -1,0 +1,186 @@
+[
+ {
+  "tekrar": 1,
+  "gorev1": {
+   "arac_cagrisi": 3,
+   "araclar": {
+    "ozet_csv": 1,
+    "write_file": 1,
+    "shell": 1
+   },
+   "hatali_arac": 1,
+   "model_turu": 4,
+   "api_hatasi": 0,
+   "dogruladi_mi": false,
+   "dogrulama_izi": [],
+   "calistirma_izi": [
+    "shell: py rapor.py satislar.csv; py rapor.py satislar.csv --ay 2026-03; py rapor.py satislar.csv "
+   ],
+   "plan_yazdi_mi": false,
+   "plan_kaniti": "",
+   "token_prompt_son": 16139,
+   "token_prompt_toplam": 63088,
+   "token_cikti": 1067,
+   "token_cache_okuma": 42240,
+   "model_cagrisi": 4,
+   "maliyet_usd": 0.005,
+   "hatirlanan_blok": 0,
+   "kapsul_izi": 0
+  },
+  "sicak": {
+   "arac_cagrisi": 4,
+   "araclar": {
+    "shell": 2,
+    "read_file": 1,
+    "edit_file": 1
+   },
+   "hatali_arac": 2,
+   "model_turu": 5,
+   "api_hatasi": 0,
+   "dogruladi_mi": false,
+   "dogrulama_izi": [],
+   "calistirma_izi": [
+    "shell: py rapor.py satislar.csv --urun Pompa; \"-----\"; py rapor.py satislar.csv | Select-Object -",
+    "shell: py rapor.py satislar.csv --urun Pompa; \"-----\"; py rapor.py satislar.csv | Select-Object -"
+   ],
+   "plan_yazdi_mi": false,
+   "plan_kaniti": "",
+   "token_prompt_son": 17059,
+   "token_prompt_toplam": 81566,
+   "token_cikti": 1184,
+   "token_cache_okuma": 72576,
+   "model_cagrisi": 5,
+   "maliyet_usd": 0.0064,
+   "hatirlanan_blok": 1,
+   "kapsul_izi": 1,
+   "sure": 43.5,
+   "dogru": true
+  },
+  "soguk": {
+   "arac_cagrisi": 5,
+   "araclar": {
+    "grep": 1,
+    "list_dir": 1,
+    "read_file": 1,
+    "edit_file": 1,
+    "shell": 1
+   },
+   "hatali_arac": 0,
+   "model_turu": 5,
+   "api_hatasi": 0,
+   "dogruladi_mi": false,
+   "dogrulama_izi": [],
+   "calistirma_izi": [
+    "shell: py rapor.py satislar.csv --urun Pompa; echo ---; py rapor.py satislar.csv"
+   ],
+   "plan_yazdi_mi": false,
+   "plan_kaniti": "",
+   "token_prompt_son": 16836,
+   "token_prompt_toplam": 80564,
+   "token_cikti": 904,
+   "token_cache_okuma": 69632,
+   "model_cagrisi": 5,
+   "maliyet_usd": 0.0063,
+   "hatirlanan_blok": 0,
+   "kapsul_izi": 0,
+   "sure": 39.5,
+   "dogru": true
+  },
+  "sicak_alan": "C:\\Users\\user\\AppData\\Local\\Temp\\neocp-eval-o1-rapor-g3k8cgoe",
+  "soguk_alan": "C:\\Users\\user\\AppData\\Local\\Temp\\neocp-eval-o1-rapor-dv258kpa"
+ },
+ {
+  "tekrar": 2,
+  "gorev1": {
+   "arac_cagrisi": 15,
+   "araclar": {
+    "shell": 5,
+    "read_file": 3,
+    "edit_file": 3,
+    "ozet_csv": 2,
+    "list_dir": 1,
+    "write_file": 1
+   },
+   "hatali_arac": 2,
+   "model_turu": 16,
+   "api_hatasi": 0,
+   "dogruladi_mi": false,
+   "dogrulama_izi": [],
+   "calistirma_izi": [
+    "shell: py rapor.py satislar.csv; echo '---'; py rapor.py satislar.csv --ay 2026-03; echo '---'; p",
+    "shell: py rapor.py satislar.csv; echo '---'; py rapor.py satislar.csv --ay 2026-03; echo '---'; p",
+    "shell: py rapor.py satislar.csv --ay 2025-12; echo \"exit=$LASTEXITCODE\"",
+    "shell: py rapor.py satislar.csv --ay 2025-12; echo \"exit=$LASTEXITCODE\"; py rapor.py olmayan.csv",
+    "shell: py rapor.py satislar.csv; echo \"exit=$LASTEXITCODE\"; echo '---'; py rapor.py satislar.csv "
+   ],
+   "plan_yazdi_mi": false,
+   "plan_kaniti": "",
+   "token_prompt_son": 19170,
+   "token_prompt_toplam": 273680,
+   "token_cikti": 2039,
+   "token_cache_okuma": 257408,
+   "model_cagrisi": 16,
+   "maliyet_usd": 0.021,
+   "hatirlanan_blok": 0,
+   "kapsul_izi": 0
+  },
+  "sicak": {
+   "arac_cagrisi": 4,
+   "araclar": {
+    "read_file": 2,
+    "edit_file": 1,
+    "shell": 1
+   },
+   "hatali_arac": 0,
+   "model_turu": 5,
+   "api_hatasi": 0,
+   "dogruladi_mi": false,
+   "dogrulama_izi": [],
+   "calistirma_izi": [],
+   "plan_yazdi_mi": false,
+   "plan_kaniti": "",
+   "token_prompt_son": 16964,
+   "token_prompt_toplam": 81674,
+   "token_cikti": 823,
+   "token_cache_okuma": 72576,
+   "model_cagrisi": 5,
+   "maliyet_usd": 0.0063,
+   "hatirlanan_blok": 1,
+   "kapsul_izi": 1,
+   "sure": 26.2,
+   "dogru": true
+  },
+  "soguk": {
+   "arac_cagrisi": 7,
+   "araclar": {
+    "read_file": 2,
+    "edit_file": 2,
+    "shell": 2,
+    "list_dir": 1
+   },
+   "hatali_arac": 0,
+   "model_turu": 8,
+   "api_hatasi": 0,
+   "dogruladi_mi": false,
+   "dogrulama_izi": [],
+   "calistirma_izi": [
+    "shell: py rapor.py satislar.csv; echo ---; py rapor.py satislar.csv --urun Pompa; echo ---; py ra",
+    "shell: py rapor.py satislar.csv --urun YOK; echo (exit $LASTEXITCODE); py rapor.py satislar.csv"
+   ],
+   "plan_yazdi_mi": false,
+   "plan_kaniti": "",
+   "token_prompt_son": 17601,
+   "token_prompt_toplam": 131472,
+   "token_cikti": 1435,
+   "token_cache_okuma": 119424,
+   "model_cagrisi": 8,
+   "maliyet_usd": 0.0102,
+   "hatirlanan_blok": 0,
+   "kapsul_izi": 0,
+   "sure": 62.0,
+   "dogru": true
+  },
+  "sicak_alan": "C:\\Users\\user\\AppData\\Local\\Temp\\neocp-eval-o1-rapor-eiqf5ehj",
+  "soguk_alan": "C:\\Users\\user\\AppData\\Local\\Temp\\neocp-eval-o1-rapor-8h_x7aka"
+ }
+]

@@ -28,6 +28,31 @@ repetitions of the same task). Two narrower claims *are* supported:
 A confirmation sweep after the last harness rule landed scored 896.8 —
 the tie holds. We do not claim a pass we did not measure.
 
+**Three methodological caveats, before anything else** (raised in external
+review, and correct):
+
+1. **The benchmark is saturated.** All three harnesses score 100 on seven
+   of the nine tasks. A suite this easy cannot rank the harnesses; it can
+   only say all three clear this difficulty. A harder task band
+   (target scores 60–90) is the roadmap's next item.
+2. **neo's number is in-sample.** Several of neo's harness rules
+   (the negative-requirement gate, the reasoning-effort cap) were written
+   while looking at failures *on these very tasks*. OpenCode and Claude
+   Code received no such tuning round. Until a held-out task set exists,
+   896.7 is an in-sample figure and should be read as such.
+3. **~1 point of the 2.4-point spread was a grader artifact.** The
+   assertion counter missed the whole unittest family
+   (`assertTrue`, `assertIn`, …), so unittest-style suites lost test
+   points for style, not quality. The ruler is fixed
+   ([`grading.py`](../eval/coding/grading.py)); published numbers were
+   left as measured, with this note.
+
+Given all that, the sentence this data actually supports is narrower and
+still worth having: **on nine tasks that all three harnesses handle, neo
+delivers the same quality as OpenCode on the same ~free model at half the
+wall time and half the cost, and never burns a run on a reasoning
+spiral.**
+
 <details><summary>Per-task scores (0–100, higher is better; neo = mean of 2 reps)</summary>
 
 | Task | difficulty | Claude Code | OpenCode | neo |
@@ -48,10 +73,10 @@ the tie holds. We do not claim a pass we did not measure.
 
 ![Wall time and real cost: Claude 316s, neo ~690s ($0.05), OpenCode 1428s ($0.10)](charts/efficiency.png)
 
-The remaining gap to the reference is **speed, not correctness** — and it
-is mostly the model's token rate. Between the same-model lanes, neo is
-~2× faster and ~2× cheaper than OpenCode, with an 85% prompt-cache hit
-rate (65–92% per task).
+The only fair speed comparison is between the same-model lanes: **neo is
+~2× faster and ~2× cheaper than OpenCode**, with an 85% prompt-cache hit
+rate (65–92% per task). Claude Code's 316 s is a different model's token
+rate — shown for context, not compared.
 
 ## 3 · Memory
 
@@ -111,9 +136,16 @@ regression test in [`tests/`](../tests/):
 * neo's headline is a **mean of 2 repetitions**; no best-of anywhere.
   Flash-class variance is real — treat any single run (including these)
   with suspicion.
-* Every number traces to a JSON in
+* neo's numbers trace to run JSONs in
   [`eval/coding/results/`](../eval/coding/results/) with per-run
   behaviour columns (model calls, tool errors, cache tokens, cost).
+  The competitor lanes' raw data — OpenCode's own JSON event streams and
+  the Claude-lane deliverables scored by this repo's grader — are in
+  [`results/competitors/`](../eval/coding/results/competitors/), and the
+  memory experiments' raw outputs in
+  [`results/memory-experiments/`](../eval/coding/results/memory-experiments/).
+  One honest gap remains: the Claude lane's token/cost cannot be metered
+  (different billing), and its wall time was stopwatch-measured.
 
 *Screenshots of the product: [gallery](gallery/README.md) · Drive neo from
 your own harness: [the gate](gate.md).*

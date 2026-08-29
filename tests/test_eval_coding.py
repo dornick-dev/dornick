@@ -678,3 +678,31 @@ def test_excluded_files_leave_the_measurement(tmp_path: Path) -> None:
     assert runner.write_exclusions(tmp_path, before) == 1
     remaining = {p.name for p in grading.sources(tmp_path)}
     assert remaining == {"mine.py", "seed_code.py"}, remaining
+
+
+def test_unittest_style_assertions_are_counted(tmp_path: Path) -> None:
+    """Reviewer-caught artifact: assertTrue/assertIn/assertRaises were
+    invisible to the assertion counter - nine green unittest asserts
+    scored 0 assertions and the suite lost points for style."""
+    (tmp_path / "mymod.py").write_text(
+        "def add(a, b):" + chr(10) + "    return a + b" + chr(10),
+        encoding="utf-8")
+    satirlar = [
+        "import unittest",
+        "from mymod import add",
+        "class T(unittest.TestCase):",
+        "    def test_one(self):",
+        "        self.assertEqual(add(1, 2), 3)",
+        "    def test_two(self):",
+        "        self.assertIn(3, [add(1, 2)])",
+        "    def test_three(self):",
+        "        self.assertRaises(TypeError, add, None, 1)",
+        "if __name__ == \"__main__\":",
+        "    unittest.main()",
+    ]
+    (tmp_path / "test_mymod.py").write_text(
+        chr(10).join(satirlar) + chr(10), encoding="utf-8")
+    axis = grading.tests_axis(tmp_path, critical=("add",))
+    evidence = " ".join(axis.evidence)
+    assert "0 assertions" not in evidence, evidence
+    assert any(f"{n} assertions" in evidence for n in (3, 4)), evidence

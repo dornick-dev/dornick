@@ -1,0 +1,169 @@
+[
+ {
+  "gorev": "k2-cli",
+  "puan": 100.0,
+  "sure_sn": 31,
+  "eksenler": [
+   {
+    "ad": "calisir",
+    "tavan": 40,
+    "alinan": 40.0,
+    "kanit": [
+     "+ gorev.js var (10p) — gorev.js",
+     "+ ekle çalışıyor (10p) — çıkış 0/0",
+     "+ liste çalışıyor (10p) — 1. [ ] süt al 2. [ ] faturayı öde",
+     "+ bilinmeyen komut hata veriyor (10p) — çıkış kodu 1"
+    ],
+    "sebep": "",
+    "harici": false
+   },
+   {
+    "ad": "kapsam",
+    "tavan": 25,
+    "alinan": 25.0,
+    "kanit": [
+     "+ eklenenler listede görünüyor (10p) — «süt al»: True, «faturayı öde»: True",
+     "+ bitir listeyi değiştiriyor (kalan görev duruyor) (8p) — bitir çıkışı 0; liste değişti",
+     "+ gorevler.json'da kalıcı (7p) — gorevler.json, 109 karakter"
+    ],
+    "sebep": "",
+    "harici": false
+   },
+   {
+    "ad": "saglik",
+    "tavan": 20,
+    "alinan": 20.0,
+    "kanit": [
+     "~ sözdizimi temiz (8.0/8p) — 1/1 dosya",
+     "~ boy/karmaşıklık (6.0/6p) — temiz",
+     "~ tekrar yok (6.0/6p) — tekrar eden satır %0, 0 yinelenen blok"
+    ],
+    "sebep": "",
+    "harici": false
+   },
+   {
+    "ad": "test",
+    "tavan": 15,
+    "alinan": 0.0,
+    "kanit": [
+     "- test dosyası yok (0p)"
+    ],
+    "sebep": "",
+    "harici": true
+   }
+  ]
+ },
+ {
+  "gorev": "o1-rapor",
+  "puan": 100.0,
+  "sure_sn": 30,
+  "eksenler": [
+   {
+    "ad": "calisir",
+    "tavan": 40,
+    "alinan": 40.0,
+    "kanit": [
+     "+ rapor.py var (8p) — rapor.py",
+     "+ csv ile koşuyor (16p) — çıkış 0; 2026-01 Toplam ciro: 47.553,25 En çok ciro yapan 3 ürün: 1. Pompa: 25.197,00 2. Sensor: 12.159,05 3. PLC: 8.249,70 2026-02 Toplam ciro: 33.938,45 En çok ciro ya",
+     "+ çıktı boş değil (8p) — 392 karakter",
+     "+ --ay koşuyor (8p) — çıkış 0; 2026-03 Toplam ciro: 99.286,90 En çok ciro yapan 3 ürün: 1. Pompa: 54.593,50 2. PLC: 30.248,90 3. Sensor: 12.799,00"
+    ],
+    "sebep": "",
+    "harici": false
+   },
+   {
+    "ad": "kapsam",
+    "tavan": 25,
+    "alinan": 25.0,
+    "kanit": [
+     "~ aylık cirolar doğru (10.0/10p) — 3/3 ay tuttu: 2026-01, 2026-02, 2026-03",
+     "+ en çok ciro yapan 3 ürün var (5p) — Pompa, PLC, Sensor",
+     "+ üçü çoktan aza sıralı (5p) — sıra tuttu",
+     "+ --ay 2026-03 doğru ayı veriyor (3p) — beklenen 99286.9",
+     "+ --ay diğer ayları süzüyor (2p) — temiz"
+    ],
+    "sebep": "",
+    "harici": false
+   },
+   {
+    "ad": "saglik",
+    "tavan": 20,
+    "alinan": 20.0,
+    "kanit": [
+     "~ sözdizimi temiz (8.0/8p) — 1/1 dosya",
+     "~ boy/karmaşıklık (6.0/6p) — temiz",
+     "~ tekrar yok (6.0/6p) — tekrar eden satır %0, 0 yinelenen blok"
+    ],
+    "sebep": "",
+    "harici": false
+   },
+   {
+    "ad": "test",
+    "tavan": 15,
+    "alinan": 0.0,
+    "kanit": [
+     "- test dosyası yok (0p)"
+    ],
+    "sebep": "",
+    "harici": true
+   }
+  ]
+ },
+ {
+  "gorev": "z1-arama",
+  "puan": 98.66666666666669,
+  "sure_sn": 86,
+  "eksenler": [
+   {
+    "ad": "calisir",
+    "tavan": 40,
+    "alinan": 40.0,
+    "kanit": [
+     "+ ara.py var (5p) — ara.py",
+     "+ ekle koşuyor (12p) — çıkış 0; 6 not indekslendi: indeks.db",
+     "+ SQLite dosyası oluştu (8p) — indeks.db",
+     "+ bul ayrı süreçte koşuyor (15p) — çıkış 0; pompa-katalog.txt ...6 bar, debi 12 m3/saat. Yedek parca: rulman, salmastra, motor mili...."
+    ],
+    "sebep": "",
+    "harici": false
+   },
+   {
+    "ad": "kapsam",
+    "tavan": 25,
+    "alinan": 25.0,
+    "kanit": [
+     "+ tek kelime doğru notu buluyor (8p) — «salmastra» → pompa-katalog bekleniyordu; çıktı: 'pompa-katalog.txt\\n  ...6 bar, debi 12 m3/saat. Yedek parca: rulman, salmastra, motor mili....\\n\\n'",
+     "+ çok kelimede hepsi geçen not üstte (10p) — «rulman titresim» → kuyu-bakim yeri 0, pompa-katalog yeri 114",
+     "+ olmayan kelimede sonuç uydurmuyor (7p) — «helikopter» → çıktı: \"Hiçbir not bulunamadı: 'helikopter'\\n\\n\""
+    ],
+    "sebep": "",
+    "harici": false
+   },
+   {
+    "ad": "saglik",
+    "tavan": 20,
+    "alinan": 20.0,
+    "kanit": [
+     "~ sözdizimi temiz (8.0/8p) — 2/2 dosya",
+     "~ boy/karmaşıklık (6.0/6p) — temiz",
+     "~ tekrar yok (6.0/6p) — tekrar eden satır %0, 0 yinelenen blok"
+    ],
+    "sebep": "",
+    "harici": false
+   },
+   {
+    "ad": "test",
+    "tavan": 15,
+    "alinan": 13.666666666666666,
+    "kanit": [
+     "+ testler yeşil (6p) — .... [100%] 4 passed in 0.50s",
+     "~ test adedi (2.7/4p) — 4 test bulundu",
+     "~ kritik yol kapsanıyor (3.0/3p) — 2/2: ekle, bul",
+     "~ iddialar dolu (2.0/2p) — 8 iddia, 0 tanesi bedava geçiyor"
+    ],
+    "sebep": "",
+    "harici": false
+   }
+  ]
+ }
+]

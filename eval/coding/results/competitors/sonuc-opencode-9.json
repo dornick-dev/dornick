@@ -1,0 +1,569 @@
+[
+ {
+  "gorev": "k1-modul",
+  "puan": 98.0,
+  "sure_sn": 119.8,
+  "token_giren": 85777,
+  "token_cache": 60352,
+  "token_cikan": 5461,
+  "maliyet_usd": 0.0053,
+  "hata": "",
+  "alan": "C:\\Users\\user\\AppData\\Local\\Temp\\oc-kiyas-k1-modul-ysl0p_8m",
+  "eksenler": [
+   {
+    "ad": "calisir",
+    "tavan": 40,
+    "alinan": 40.0,
+    "kanit": [
+     "+ tckn.py var (10p) — tckn.py",
+     "+ modül import ediliyor (15p) — tamam",
+     "+ dogrula() çağrılabiliyor (15p) — tamam"
+    ],
+    "sebep": "",
+    "harici": false
+   },
+   {
+    "ad": "kapsam",
+    "tavan": 25,
+    "alinan": 25.0,
+    "kanit": [
+     "~ geçerli numaralara True (10.0/10p) — 5/5",
+     "~ geçersiz numaralara False (10.0/10p) — 6/6",
+     "~ çöp girdide patlamıyor (2.0/2p) — 4/4 girdi istisna atmadı",
+     "~ çöp girdiye False diyor (3.0/3p) — 4/4"
+    ],
+    "sebep": "",
+    "harici": false
+   },
+   {
+    "ad": "saglik",
+    "tavan": 20,
+    "alinan": 20.0,
+    "kanit": [
+     "~ sözdizimi temiz (8.0/8p) — 2/2 dosya",
+     "~ boy/karmaşıklık (6.0/6p) — temiz",
+     "~ tekrar yok (6.0/6p) — tekrar eden satır %0, 0 yinelenen blok"
+    ],
+    "sebep": "",
+    "harici": false
+   },
+   {
+    "ad": "test",
+    "tavan": 15,
+    "alinan": 13.0,
+    "kanit": [
+     "+ testler yeşil (6p) — ........... [100%] 11 passed in 0.01s",
+     "~ test adedi (4.0/4p) — 11 test bulundu",
+     "~ kritik yol kapsanıyor (3.0/3p) — 1/1: dogrula",
+     "~ iddialar dolu (0.0/2p) — 0 iddia, 0 tanesi bedava geçiyor"
+    ],
+    "sebep": "",
+    "harici": false
+   }
+  ]
+ },
+ {
+  "gorev": "k2-cli",
+  "puan": 100.0,
+  "sure_sn": 31.2,
+  "token_giren": 49301,
+  "token_cache": 36224,
+  "token_cikan": 1512,
+  "maliyet_usd": 0.0021,
+  "hata": "",
+  "alan": "C:\\Users\\user\\AppData\\Local\\Temp\\oc-kiyas-k2-cli-nf3wo_sj",
+  "eksenler": [
+   {
+    "ad": "calisir",
+    "tavan": 40,
+    "alinan": 40.0,
+    "kanit": [
+     "+ gorev.js var (10p) — gorev.js",
+     "! ajanın bıraktığı gorevler.json ölçümden önce silindi (temiz sayfa)",
+     "+ ekle çalışıyor (10p) — çıkış 0/0",
+     "+ liste çalışıyor (10p) — 1. [ ] süt al 2. [ ] faturayı öde",
+     "+ bilinmeyen komut hata veriyor (10p) — çıkış kodu 1"
+    ],
+    "sebep": "",
+    "harici": false
+   },
+   {
+    "ad": "kapsam",
+    "tavan": 25,
+    "alinan": 25.0,
+    "kanit": [
+     "+ eklenenler listede görünüyor (10p) — «süt al»: True, «faturayı öde»: True",
+     "+ bitir listeyi değiştiriyor (kalan görev duruyor) (8p) — bitir çıkışı 0; liste değişti",
+     "+ gorevler.json'da kalıcı (7p) — gorevler.json, 111 karakter"
+    ],
+    "sebep": "",
+    "harici": false
+   },
+   {
+    "ad": "saglik",
+    "tavan": 20,
+    "alinan": 20.0,
+    "kanit": [
+     "~ sözdizimi temiz (8.0/8p) — 1/1 dosya",
+     "~ boy/karmaşıklık (6.0/6p) — temiz",
+     "~ tekrar yok (6.0/6p) — tekrar eden satır %0, 0 yinelenen blok"
+    ],
+    "sebep": "",
+    "harici": false
+   },
+   {
+    "ad": "test",
+    "tavan": 15,
+    "alinan": 0.0,
+    "kanit": [
+     "- test dosyası yok (0p)"
+    ],
+    "sebep": "",
+    "harici": true
+   }
+  ]
+ },
+ {
+  "gorev": "k3-tamir",
+  "puan": 100.0,
+  "sure_sn": 49.8,
+  "token_giren": 76105,
+  "token_cache": 61952,
+  "token_cikan": 1502,
+  "maliyet_usd": 0.0026,
+  "hata": "",
+  "alan": "C:\\Users\\user\\AppData\\Local\\Temp\\oc-kiyas-k3-tamir-tb3xcqay",
+  "eksenler": [
+   {
+    "ad": "calisir",
+    "tavan": 40,
+    "alinan": 40.0,
+    "kanit": [
+     "+ fatura.php duruyor (10p) — fatura.php",
+     "+ php -l temiz (10p) — No syntax errors detected in C:\\Users\\user\\AppData\\Local\\Temp\\oc-kiyas-k3-tamir-tb3xcqay\\fatura.php",
+     "+ fonksiyon dışarıdan çağrılabiliyor (20p) — tamam"
+    ],
+    "sebep": "",
+    "harici": false
+   },
+   {
+    "ad": "kapsam",
+    "tavan": 25,
+    "alinan": 25.0,
+    "kanit": [
+     "+ vaka: üç kalem %18 (10p) — beklenen 82.60, çıkan 82.60",
+     "+ vaka: tek kalem %20 (7p) — beklenen 27.00, çıkan 27.00",
+     "+ vaka: iki kalem %0 (5p) — beklenen 50.00, çıkan 50.00",
+     "+ vaka: boş sipariş (3p) — beklenen 0.00, çıkan 0.00"
+    ],
+    "sebep": "",
+    "harici": false
+   },
+   {
+    "ad": "saglik",
+    "tavan": 20,
+    "alinan": 20.0,
+    "kanit": [
+     "~ sözdizimi temiz (8.0/8p) — 1/1 dosya",
+     "~ boy/karmaşıklık (6.0/6p) — temiz",
+     "~ tekrar yok (6.0/6p) — tekrar eden satır %0, 0 yinelenen blok"
+    ],
+    "sebep": "",
+    "harici": false
+   },
+   {
+    "ad": "test",
+    "tavan": 15,
+    "alinan": 0.0,
+    "kanit": [
+     "- test dosyası yok (0p)"
+    ],
+    "sebep": "",
+    "harici": true
+   }
+  ]
+ },
+ {
+  "gorev": "o1-rapor",
+  "puan": 100.0,
+  "sure_sn": 91.8,
+  "token_giren": 151802,
+  "token_cache": 131456,
+  "token_cikan": 4511,
+  "maliyet_usd": 0.0052,
+  "hata": "",
+  "alan": "C:\\Users\\user\\AppData\\Local\\Temp\\oc-kiyas-o1-rapor-8h2_jyd1",
+  "eksenler": [
+   {
+    "ad": "calisir",
+    "tavan": 40,
+    "alinan": 40.0,
+    "kanit": [
+     "+ rapor.py var (8p) — rapor.py",
+     "+ csv ile koşuyor (16p) — çıkış 0; == 2026-01 == Toplam ciro : 47553.25 TL En çok ciro yapan 3 ürün: 1. Pompa 25197.00 TL 2. Sensor 12159.05 TL 3. PLC 8249.70 TL == 2026-02 == Toplam ciro : 33938",
+     "+ çıktı boş değil (8p) — 466 karakter",
+     "+ --ay koşuyor (8p) — çıkış 0; == 2026-03 == Toplam ciro : 99286.90 TL En çok ciro yapan 3 ürün: 1. Pompa 54593.50 TL 2. PLC 30248.90 TL 3. Sensor 1279"
+    ],
+    "sebep": "",
+    "harici": false
+   },
+   {
+    "ad": "kapsam",
+    "tavan": 25,
+    "alinan": 25.0,
+    "kanit": [
+     "~ aylık cirolar doğru (10.0/10p) — 3/3 ay tuttu: 2026-01, 2026-02, 2026-03",
+     "+ en çok ciro yapan 3 ürün var (5p) — Pompa, PLC, Sensor",
+     "+ üçü çoktan aza sıralı (5p) — sıra tuttu",
+     "+ --ay 2026-03 doğru ayı veriyor (3p) — beklenen 99286.9",
+     "+ --ay diğer ayları süzüyor (2p) — temiz"
+    ],
+    "sebep": "",
+    "harici": false
+   },
+   {
+    "ad": "saglik",
+    "tavan": 20,
+    "alinan": 20.0,
+    "kanit": [
+     "~ sözdizimi temiz (8.0/8p) — 1/1 dosya",
+     "~ boy/karmaşıklık (6.0/6p) — temiz",
+     "~ tekrar yok (6.0/6p) — tekrar eden satır %0, 0 yinelenen blok"
+    ],
+    "sebep": "",
+    "harici": false
+   },
+   {
+    "ad": "test",
+    "tavan": 15,
+    "alinan": 0.0,
+    "kanit": [
+     "- test dosyası yok (0p)"
+    ],
+    "sebep": "",
+    "harici": true
+   }
+  ]
+ },
+ {
+  "gorev": "o2-servis",
+  "puan": 100.0,
+  "sure_sn": 139.6,
+  "token_giren": 125046,
+  "token_cache": 100864,
+  "token_cikan": 6251,
+  "maliyet_usd": 0.0058,
+  "hata": "",
+  "alan": "C:\\Users\\user\\AppData\\Local\\Temp\\oc-kiyas-o2-servis-lt_vdnxh",
+  "eksenler": [
+   {
+    "ad": "calisir",
+    "tavan": 40,
+    "alinan": 40.0,
+    "kanit": [
+     "+ servis.py var (8p) — servis.py",
+     "+ süreç ayağa kalkıyor (12p) — ayakta",
+     "+ port açılıyor (10p) — 127.0.0.1:8099 açıldı",
+     "+ /saglik 200 (10p) — HTTP 200"
+    ],
+    "sebep": "",
+    "harici": false
+   },
+   {
+    "ad": "kapsam",
+    "tavan": 25,
+    "alinan": 25.0,
+    "kanit": [
+     "+ POST /kisalt kod dönüyor (10p) — HTTP 200, kod «44pdvi»; gövde '{\"kod\": \"44pdvi\"}'",
+     "+ GET /<kod> 302 yönlendiriyor (10p) — HTTP 302, Location «https://ornek.gov.tr/ihale/2026/sondaj»",
+     "+ olmayan kod 404 (5p) — HTTP 404"
+    ],
+    "sebep": "",
+    "harici": false
+   },
+   {
+    "ad": "saglik",
+    "tavan": 20,
+    "alinan": 20.0,
+    "kanit": [
+     "~ sözdizimi temiz (8.0/8p) — 2/2 dosya",
+     "~ boy/karmaşıklık (6.0/6p) — temiz",
+     "~ tekrar yok (6.0/6p) — tekrar eden satır %0, 0 yinelenen blok"
+    ],
+    "sebep": "",
+    "harici": false
+   },
+   {
+    "ad": "test",
+    "tavan": 15,
+    "alinan": 15.0,
+    "kanit": [
+     "+ testler yeşil (6p) — ...... [100%] 6 passed in 0.53s",
+     "~ test adedi (4.0/4p) — 6 test bulundu",
+     "~ kritik yol kapsanıyor (3.0/3p) — 2/2: kisalt, saglik",
+     "~ iddialar dolu (2.0/2p) — 11 iddia, 0 tanesi bedava geçiyor"
+    ],
+    "sebep": "",
+    "harici": false
+   }
+  ]
+ },
+ {
+  "gorev": "o3-ozellik",
+  "puan": 100.0,
+  "sure_sn": 105.8,
+  "token_giren": 106934,
+  "token_cache": 81920,
+  "token_cikan": 5337,
+  "maliyet_usd": 0.0054,
+  "hata": "",
+  "alan": "C:\\Users\\user\\AppData\\Local\\Temp\\oc-kiyas-o3-ozellik-vevjimga",
+  "eksenler": [
+   {
+    "ad": "calisir",
+    "tavan": 40,
+    "alinan": 40.0,
+    "kanit": [
+     "+ kitaplik.js duruyor (8p) — kitaplik.js",
+     "+ node --check temiz (6p)",
+     "+ modül yükleniyor (8p) — tamam",
+     "+ bozulmamış testler yeşil (18p) — TAP version 13 # Subtest: kitap eklenebiliyor ok 1 - kitap eklenebiliyor --- duration_ms: 0.5128 type: 'test' ... # Subtest: aynı ISBN iki kez eklenemiyor ok 2 - aynı ISBN iki kez "
+    ],
+    "sebep": "",
+    "harici": false
+   },
+   {
+    "ad": "kapsam",
+    "tavan": 25,
+    "alinan": 25.0,
+    "kanit": [
+     "+ oduncVer çalışıyor (6p) — {'ok': True, 'deger': {'isbn': '978-1', 'baslik': 'Kuyu', 'yazar': 'Ahmet', 'oduncte': True, 'kimde': 'Mehmet'}}",
+     "+ liste ödünçteki kişiyi gösteriyor (5p) — [{\"isbn\":\"978-1\",\"baslik\":\"Kuyu\",\"yazar\":\"Ahmet\",\"oduncte\":true,\"kimde\":\"Fatih\"},{\"isbn\":\"978-2\",\"baslik\":\"Zeytin\",\"yazar\":\"Ayse\",\"oduncte\":",
+     "+ ikinci ödünç hata fırlatıyor (6p) — {'ok': False, 'hata': 'Bu kitap zaten ödünçte (Fatih): 978-1'}",
+     "+ olmayan ISBN hata fırlatıyor (4p) — {'ok': False, 'hata': 'Böyle bir ISBN kayıtlı değil: yok-boyle'}",
+     "+ iadeAl kitabı serbest bırakıyor (4p) — {'ok': True, 'deger': {'isbn': '978-1', 'baslik': 'Kuyu', 'yazar': 'Ahmet', 'oduncte': True, 'kimde': 'Mehmet'}}"
+    ],
+    "sebep": "",
+    "harici": false
+   },
+   {
+    "ad": "saglik",
+    "tavan": 20,
+    "alinan": 20.0,
+    "kanit": [
+     "~ sözdizimi temiz (8.0/8p) — 2/2 dosya",
+     "~ boy/karmaşıklık (6.0/6p) — temiz",
+     "~ tekrar yok (6.0/6p) — tekrar eden satır %0, 0 yinelenen blok"
+    ],
+    "sebep": "",
+    "harici": false
+   },
+   {
+    "ad": "test",
+    "tavan": 15,
+    "alinan": 15.0,
+    "kanit": [
+     "! tohumda zaten test takımı var — bu eksen ajanın kendi katkısını ayıramaz, o yüzden puana katılmıyor",
+     "+ testler yeşil (6p) — TAP version 13 # Subtest: kitap eklenebiliyor ok 1 - kitap eklenebiliyor --- duration_ms: 0.6255 type: 'test' ... # Subt",
+     "~ test adedi (4.0/4p) — 11 test bulundu",
+     "~ kritik yol kapsanıyor (3.0/3p) — 2/2: oduncVer, iadeAl",
+     "~ iddialar dolu (2.0/2p) — 33 iddia, 0 tanesi bedava geçiyor"
+    ],
+    "sebep": "",
+    "harici": true
+   }
+  ]
+ },
+ {
+  "gorev": "z1-arama",
+  "puan": 97.0,
+  "sure_sn": 588.3,
+  "token_giren": 772072,
+  "token_cache": 696448,
+  "token_cikan": 27777,
+  "maliyet_usd": 0.0283,
+  "hata": "",
+  "alan": "C:\\Users\\user\\AppData\\Local\\Temp\\oc-kiyas-z1-arama-rg8n51f7",
+  "eksenler": [
+   {
+    "ad": "calisir",
+    "tavan": 40,
+    "alinan": 40.0,
+    "kanit": [
+     "+ ara.py var (5p) — ara.py",
+     "+ ekle koşuyor (12p) — çıkış 0; İndeks güncellendi: 9 yeni, 0 güncellendi, 0 değişmedi, 0 silindi.",
+     "+ SQLite dosyası oluştu (8p) — notlar_indeks.db",
+     "+ bul ayrı süreçte koşuyor (15p) — çıkış 0; 2 not bulundu: pompa-katalog.txt (1/1) …bar, debi 12 m3/saat. Yedek parca: rulman, salmastra, motor mili. salmastra.txt (1/1) Presin salmastrası sızdırıyor. Yed"
+    ],
+    "sebep": "",
+    "harici": false
+   },
+   {
+    "ad": "kapsam",
+    "tavan": 25,
+    "alinan": 25.0,
+    "kanit": [
+     "+ tek kelime doğru notu buluyor (8p) — «salmastra» → pompa-katalog bekleniyordu; çıktı: '2 not bulundu:\\n\\npompa-katalog.txt (1/1)\\n  …bar, debi 12 m3/saat. Yedek parca: rulman, salmastra, motor mili.\\n\\nsalmastra.'",
+     "+ çok kelimede hepsi geçen not üstte (10p) — «rulman titresim» → kuyu-bakim yeri 110, pompa-katalog yeri 231",
+     "+ olmayan kelimede sonuç uydurmuyor (7p) — «helikopter» → çıktı: \"'helikopter' için sonuç bulunamadı.\\n\\n\""
+    ],
+    "sebep": "",
+    "harici": false
+   },
+   {
+    "ad": "saglik",
+    "tavan": 20,
+    "alinan": 17.0,
+    "kanit": [
+     "~ sözdizimi temiz (8.0/8p) — 2/2 dosya",
+     "~ boy/karmaşıklık (3.0/6p) — ara.py:6 kat",
+     "~ tekrar yok (6.0/6p) — tekrar eden satır %0, 0 yinelenen blok"
+    ],
+    "sebep": "",
+    "harici": false
+   },
+   {
+    "ad": "test",
+    "tavan": 15,
+    "alinan": 15.0,
+    "kanit": [
+     "+ testler yeşil (6p) — ............ [100%] 12 passed in 0.19s",
+     "~ test adedi (4.0/4p) — 12 test bulundu",
+     "~ kritik yol kapsanıyor (3.0/3p) — 2/2: ekle, bul",
+     "~ iddialar dolu (2.0/2p) — 22 iddia, 0 tanesi bedava geçiyor"
+    ],
+    "sebep": "",
+    "harici": false
+   }
+  ]
+ },
+ {
+  "gorev": "z2-panel",
+  "puan": 99.93855956309024,
+  "sure_sn": 245.4,
+  "token_giren": 361195,
+  "token_cache": 243712,
+  "token_cikan": 16206,
+  "maliyet_usd": 0.0194,
+  "hata": "",
+  "alan": "C:\\Users\\user\\AppData\\Local\\Temp\\oc-kiyas-z2-panel-e2hh3qcb",
+  "eksenler": [
+   {
+    "ad": "calisir",
+    "tavan": 40,
+    "alinan": 40.0,
+    "kanit": [
+     "+ index.php var (8p) — .",
+     "! 8098 tutuluydu (ajan kendi sunucusunu açık bırakmış olabilir); ölçüm 8099 portunda yapıldı",
+     "+ sunucu ayağa kalkıyor (10p) — port açıldı",
+     "+ giriş sayfası açılıyor (10p) — 200, 711 karakter; şifre alanı: True",
+     "+ doğru şifreyle içeri giriliyor (12p) — giriş POST → HTTP 200; ozet.php → HTTP 200"
+    ],
+    "sebep": "",
+    "harici": false
+   },
+   {
+    "ad": "kapsam",
+    "tavan": 25,
+    "alinan": 25.0,
+    "kanit": [
+     "~ girişsiz erişim engelleniyor (7.0/7p) — ozet.php: engelli; kullanicilar.php: engelli; ayarlar.php: engelli",
+     "+ yanlış şifre reddediliyor (3p) — yanlış şifreden sonra ozet.php → HTTP 302",
+     "+ ozet.php giriş sonrası çalışıyor (5p) — 200, 1467 karakter",
+     "+ kullanicilar.php giriş sonrası çalışıyor (5p) — 200, 2879 karakter",
+     "+ ayarlar.php giriş sonrası çalışıyor (5p) — 200, 1309 karakter"
+    ],
+    "sebep": "",
+    "harici": false
+   },
+   {
+    "ad": "saglik",
+    "tavan": 20,
+    "alinan": 19.947775628626694,
+    "kanit": [
+     "~ sözdizimi temiz (8.0/8p) — 6/6 dosya",
+     "~ boy/karmaşıklık (6.0/6p) — temiz",
+     "~ tekrar yok (5.9/6p) — tekrar eden satır %3, 1 yinelenen blok"
+    ],
+    "sebep": "",
+    "harici": false
+   },
+   {
+    "ad": "test",
+    "tavan": 15,
+    "alinan": 0.0,
+    "kanit": [
+     "- test dosyası yok (0p)"
+    ],
+    "sebep": "",
+    "harici": true
+   }
+  ]
+ },
+ {
+  "gorev": "z3-gizli-hata",
+  "puan": 100.0,
+  "sure_sn": 56.8,
+  "token_giren": 88800,
+  "token_cache": 74752,
+  "token_cikan": 1168,
+  "maliyet_usd": 0.0026,
+  "hata": "",
+  "alan": "C:\\Users\\user\\AppData\\Local\\Temp\\oc-kiyas-z3-gizli-hata-bqokkgun",
+  "eksenler": [
+   {
+    "ad": "calisir",
+    "tavan": 40,
+    "alinan": 40.0,
+    "kanit": [
+     "+ sepet.py duruyor (6p) — sepet\\sepet.py",
+     "+ modül import ediliyor (10p) — tamam",
+     "? bozulmamış regresyon takımı koşuyor — ölçülemedi: regresyon kopyası kurulamadı",
+     "? regresyon takımı tamamen yeşil — ölçülemedi: takım koşturulamadı"
+    ],
+    "sebep": "",
+    "harici": false
+   },
+   {
+    "ad": "kapsam",
+    "tavan": 25,
+    "alinan": 25.0,
+    "kanit": [
+     "+ hata 1: aynı ürün eklenince adet birikiyor (8p) — beklenen [7, 21.0], çıkan [7, 21.0]",
+     "+ hata 2: indirim sınırları dahil (8p) — 500→0.05 (0.05), 1000→0.1 (0.10), 499.99→0.0 (0.0)",
+     "+ hata 3: toplam kuruşu koruyor (6p) — 7 × 14.29 → beklenen 100.03, çıkan 100.03",
+     "+ gizli vaka: 1500 → %10, 500 → %5 (2p) — 1500→1350.0 (1350.0), 500→475.0 (475.0)",
+     "+ var olan koruma sökülmemiş (adet 0 → ValueError) (1p) — {'ok': True, 'deger': 'ValueError'}"
+    ],
+    "sebep": "",
+    "harici": false
+   },
+   {
+    "ad": "saglik",
+    "tavan": 20,
+    "alinan": 20.0,
+    "kanit": [
+     "~ sözdizimi temiz (8.0/8p) — 2/2 dosya",
+     "~ boy/karmaşıklık (6.0/6p) — temiz",
+     "~ tekrar yok (6.0/6p) — tekrar eden satır %0, 0 yinelenen blok"
+    ],
+    "sebep": "",
+    "harici": false
+   },
+   {
+    "ad": "test",
+    "tavan": 15,
+    "alinan": 15.0,
+    "kanit": [
+     "! regresyon takımı tohumla geliyor — bu eksen ajanın kendi katkısını ayıramaz, puana katılmıyor",
+     "+ testler yeşil (6p) — ........ [100%] 8 passed in 0.01s",
+     "~ test adedi (4.0/4p) — 8 test bulundu",
+     "~ kritik yol kapsanıyor (3.0/3p) — 3/3: ekle, indirim_orani, toplam",
+     "~ iddialar dolu (2.0/2p) — 9 iddia, 0 tanesi bedava geçiyor"
+    ],
+    "sebep": "",
+    "harici": true
+   }
+  ]
+ }
+]

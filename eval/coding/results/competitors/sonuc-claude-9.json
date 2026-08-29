@@ -1,0 +1,538 @@
+[
+ {
+  "gorev": "k1-modul",
+  "puan": 100.0,
+  "sure_sn": 26,
+  "eksik": [],
+  "eksenler": [
+   {
+    "ad": "calisir",
+    "tavan": 40,
+    "alinan": 40.0,
+    "kanit": [
+     "+ tckn.py var (10p) — tckn.py",
+     "+ modül import ediliyor (15p) — tamam",
+     "+ dogrula() çağrılabiliyor (15p) — tamam"
+    ],
+    "sebep": "",
+    "harici": false
+   },
+   {
+    "ad": "kapsam",
+    "tavan": 25,
+    "alinan": 25.0,
+    "kanit": [
+     "~ geçerli numaralara True (10.0/10p) — 5/5",
+     "~ geçersiz numaralara False (10.0/10p) — 6/6",
+     "~ çöp girdide patlamıyor (2.0/2p) — 4/4 girdi istisna atmadı",
+     "~ çöp girdiye False diyor (3.0/3p) — 4/4"
+    ],
+    "sebep": "",
+    "harici": false
+   },
+   {
+    "ad": "saglik",
+    "tavan": 20,
+    "alinan": 20.0,
+    "kanit": [
+     "~ sözdizimi temiz (8.0/8p) — 2/2 dosya",
+     "~ boy/karmaşıklık (6.0/6p) — temiz",
+     "~ tekrar yok (6.0/6p) — tekrar eden satır %0, 0 yinelenen blok"
+    ],
+    "sebep": "",
+    "harici": false
+   },
+   {
+    "ad": "test",
+    "tavan": 15,
+    "alinan": 15.0,
+    "kanit": [
+     "+ testler yeşil (6p) — ....... [100%] 7 passed in 0.01s",
+     "~ test adedi (4.0/4p) — 7 test bulundu",
+     "~ kritik yol kapsanıyor (3.0/3p) — 1/1: dogrula",
+     "~ iddialar dolu (2.0/2p) — 9 iddia, 0 tanesi bedava geçiyor"
+    ],
+    "sebep": "",
+    "harici": false
+   }
+  ]
+ },
+ {
+  "gorev": "k2-cli",
+  "puan": 100.0,
+  "sure_sn": 31,
+  "eksik": [
+   "test:0/15"
+  ],
+  "eksenler": [
+   {
+    "ad": "calisir",
+    "tavan": 40,
+    "alinan": 40.0,
+    "kanit": [
+     "+ gorev.js var (10p) — gorev.js",
+     "! ajanın bıraktığı gorevler.json ölçümden önce silindi (temiz sayfa)",
+     "+ ekle çalışıyor (10p) — çıkış 0/0",
+     "+ liste çalışıyor (10p) — 1. [ ] süt al 2. [ ] faturayı öde",
+     "+ bilinmeyen komut hata veriyor (10p) — çıkış kodu 1"
+    ],
+    "sebep": "",
+    "harici": false
+   },
+   {
+    "ad": "kapsam",
+    "tavan": 25,
+    "alinan": 25.0,
+    "kanit": [
+     "+ eklenenler listede görünüyor (10p) — «süt al»: True, «faturayı öde»: True",
+     "+ bitir listeyi değiştiriyor (kalan görev duruyor) (8p) — bitir çıkışı 0; liste değişti",
+     "+ gorevler.json'da kalıcı (7p) — gorevler.json, 109 karakter"
+    ],
+    "sebep": "",
+    "harici": false
+   },
+   {
+    "ad": "saglik",
+    "tavan": 20,
+    "alinan": 20.0,
+    "kanit": [
+     "~ sözdizimi temiz (8.0/8p) — 1/1 dosya",
+     "~ boy/karmaşıklık (6.0/6p) — temiz",
+     "~ tekrar yok (6.0/6p) — tekrar eden satır %0, 0 yinelenen blok"
+    ],
+    "sebep": "",
+    "harici": false
+   },
+   {
+    "ad": "test",
+    "tavan": 15,
+    "alinan": 0.0,
+    "kanit": [
+     "- test dosyası yok (0p)"
+    ],
+    "sebep": "",
+    "harici": true
+   }
+  ]
+ },
+ {
+  "gorev": "k3-tamir",
+  "puan": 100.0,
+  "sure_sn": 20,
+  "eksik": [
+   "test:0/15"
+  ],
+  "eksenler": [
+   {
+    "ad": "calisir",
+    "tavan": 40,
+    "alinan": 40.0,
+    "kanit": [
+     "+ fatura.php duruyor (10p) — fatura.php",
+     "+ php -l temiz (10p) — No syntax errors detected in C:\\Users\\user\\AppData\\Local\\Temp\\cc-kiyas-k3\\fatura.php",
+     "+ fonksiyon dışarıdan çağrılabiliyor (20p) — tamam"
+    ],
+    "sebep": "",
+    "harici": false
+   },
+   {
+    "ad": "kapsam",
+    "tavan": 25,
+    "alinan": 25.0,
+    "kanit": [
+     "+ vaka: üç kalem %18 (10p) — beklenen 82.60, çıkan 82.60",
+     "+ vaka: tek kalem %20 (7p) — beklenen 27.00, çıkan 27.00",
+     "+ vaka: iki kalem %0 (5p) — beklenen 50.00, çıkan 50.00",
+     "+ vaka: boş sipariş (3p) — beklenen 0.00, çıkan 0.00"
+    ],
+    "sebep": "",
+    "harici": false
+   },
+   {
+    "ad": "saglik",
+    "tavan": 20,
+    "alinan": 20.0,
+    "kanit": [
+     "~ sözdizimi temiz (8.0/8p) — 1/1 dosya",
+     "~ boy/karmaşıklık (6.0/6p) — temiz",
+     "~ tekrar yok (6.0/6p) — tekrar eden satır %0, 0 yinelenen blok"
+    ],
+    "sebep": "",
+    "harici": false
+   },
+   {
+    "ad": "test",
+    "tavan": 15,
+    "alinan": 0.0,
+    "kanit": [
+     "- test dosyası yok (0p)"
+    ],
+    "sebep": "",
+    "harici": true
+   }
+  ]
+ },
+ {
+  "gorev": "o1-rapor",
+  "puan": 100.0,
+  "sure_sn": 30,
+  "eksik": [
+   "test:0/15"
+  ],
+  "eksenler": [
+   {
+    "ad": "calisir",
+    "tavan": 40,
+    "alinan": 40.0,
+    "kanit": [
+     "+ rapor.py var (8p) — rapor.py",
+     "+ csv ile koşuyor (16p) — çıkış 0; 2026-01 Toplam ciro: 47.553,25 En çok ciro yapan 3 ürün: 1. Pompa: 25.197,00 2. Sensor: 12.159,05 3. PLC: 8.249,70 2026-02 Toplam ciro: 33.938,45 En çok ciro ya",
+     "+ çıktı boş değil (8p) — 392 karakter",
+     "+ --ay koşuyor (8p) — çıkış 0; 2026-03 Toplam ciro: 99.286,90 En çok ciro yapan 3 ürün: 1. Pompa: 54.593,50 2. PLC: 30.248,90 3. Sensor: 12.799,00"
+    ],
+    "sebep": "",
+    "harici": false
+   },
+   {
+    "ad": "kapsam",
+    "tavan": 25,
+    "alinan": 25.0,
+    "kanit": [
+     "~ aylık cirolar doğru (10.0/10p) — 3/3 ay tuttu: 2026-01, 2026-02, 2026-03",
+     "+ en çok ciro yapan 3 ürün var (5p) — Pompa, PLC, Sensor",
+     "+ üçü çoktan aza sıralı (5p) — sıra tuttu",
+     "+ --ay 2026-03 doğru ayı veriyor (3p) — beklenen 99286.9",
+     "+ --ay diğer ayları süzüyor (2p) — temiz"
+    ],
+    "sebep": "",
+    "harici": false
+   },
+   {
+    "ad": "saglik",
+    "tavan": 20,
+    "alinan": 20.0,
+    "kanit": [
+     "~ sözdizimi temiz (8.0/8p) — 1/1 dosya",
+     "~ boy/karmaşıklık (6.0/6p) — temiz",
+     "~ tekrar yok (6.0/6p) — tekrar eden satır %0, 0 yinelenen blok"
+    ],
+    "sebep": "",
+    "harici": false
+   },
+   {
+    "ad": "test",
+    "tavan": 15,
+    "alinan": 0.0,
+    "kanit": [
+     "- test dosyası yok (0p)"
+    ],
+    "sebep": "",
+    "harici": true
+   }
+  ]
+ },
+ {
+  "gorev": "o2-servis",
+  "puan": 98.66666666666669,
+  "sure_sn": 47,
+  "eksik": [
+   "test:13.7/15"
+  ],
+  "eksenler": [
+   {
+    "ad": "calisir",
+    "tavan": 40,
+    "alinan": 40.0,
+    "kanit": [
+     "+ servis.py var (8p) — servis.py",
+     "+ süreç ayağa kalkıyor (12p) — ayakta",
+     "+ port açılıyor (10p) — 127.0.0.1:8099 açıldı",
+     "+ /saglik 200 (10p) — HTTP 200"
+    ],
+    "sebep": "",
+    "harici": false
+   },
+   {
+    "ad": "kapsam",
+    "tavan": 25,
+    "alinan": 25.0,
+    "kanit": [
+     "+ POST /kisalt kod dönüyor (10p) — HTTP 200, kod «hg1alw»; gövde '{\"kod\": \"hg1alw\"}'",
+     "+ GET /<kod> 302 yönlendiriyor (10p) — HTTP 302, Location «https://ornek.gov.tr/ihale/2026/sondaj»",
+     "+ olmayan kod 404 (5p) — HTTP 404"
+    ],
+    "sebep": "",
+    "harici": false
+   },
+   {
+    "ad": "saglik",
+    "tavan": 20,
+    "alinan": 20.0,
+    "kanit": [
+     "~ sözdizimi temiz (8.0/8p) — 2/2 dosya",
+     "~ boy/karmaşıklık (6.0/6p) — temiz",
+     "~ tekrar yok (6.0/6p) — tekrar eden satır %0, 0 yinelenen blok"
+    ],
+    "sebep": "",
+    "harici": false
+   },
+   {
+    "ad": "test",
+    "tavan": 15,
+    "alinan": 13.666666666666666,
+    "kanit": [
+     "+ testler yeşil (6p) — .... [100%] 4 passed in 2.05s",
+     "~ test adedi (2.7/4p) — 4 test bulundu",
+     "~ kritik yol kapsanıyor (3.0/3p) — 2/2: kisalt, saglik",
+     "~ iddialar dolu (2.0/2p) — 6 iddia, 0 tanesi bedava geçiyor"
+    ],
+    "sebep": "",
+    "harici": false
+   }
+  ]
+ },
+ {
+  "gorev": "o3-ozellik",
+  "puan": 100.0,
+  "sure_sn": 19,
+  "eksik": [
+   "test:11.3/15"
+  ],
+  "eksenler": [
+   {
+    "ad": "calisir",
+    "tavan": 40,
+    "alinan": 40.0,
+    "kanit": [
+     "+ kitaplik.js duruyor (8p) — kitaplik.js",
+     "+ node --check temiz (6p)",
+     "+ modül yükleniyor (8p) — tamam",
+     "+ bozulmamış testler yeşil (18p) — TAP version 13 # Subtest: kitap eklenebiliyor ok 1 - kitap eklenebiliyor --- duration_ms: 0.8538 type: 'test' ... # Subtest: aynı ISBN iki kez eklenemiyor ok 2 - aynı ISBN iki kez "
+    ],
+    "sebep": "",
+    "harici": false
+   },
+   {
+    "ad": "kapsam",
+    "tavan": 25,
+    "alinan": 25.0,
+    "kanit": [
+     "+ oduncVer çalışıyor (6p) — {'ok': True, 'deger': {'isbn': '978-1', 'baslik': 'Kuyu', 'yazar': 'Ahmet', 'oduncte': True, 'kimde': 'Mehmet'}}",
+     "+ liste ödünçteki kişiyi gösteriyor (5p) — [{\"isbn\":\"978-1\",\"baslik\":\"Kuyu\",\"yazar\":\"Ahmet\",\"oduncte\":true,\"kimde\":\"Fatih\"},{\"isbn\":\"978-2\",\"baslik\":\"Zeytin\",\"yazar\":\"Ayse\",\"oduncte\":",
+     "+ ikinci ödünç hata fırlatıyor (6p) — {'ok': False, 'hata': 'Kitap zaten ödünçte (Fatih): 978-1'}",
+     "+ olmayan ISBN hata fırlatıyor (4p) — {'ok': False, 'hata': 'Kayıtlı olmayan ISBN ödünç verilemez: yok-boyle'}",
+     "+ iadeAl kitabı serbest bırakıyor (4p) — {'ok': True, 'deger': {'isbn': '978-1', 'baslik': 'Kuyu', 'yazar': 'Ahmet', 'oduncte': True, 'kimde': 'Mehmet'}}"
+    ],
+    "sebep": "",
+    "harici": false
+   },
+   {
+    "ad": "saglik",
+    "tavan": 20,
+    "alinan": 20.0,
+    "kanit": [
+     "~ sözdizimi temiz (8.0/8p) — 2/2 dosya",
+     "~ boy/karmaşıklık (6.0/6p) — temiz",
+     "~ tekrar yok (6.0/6p) — tekrar eden satır %0, 0 yinelenen blok"
+    ],
+    "sebep": "",
+    "harici": false
+   },
+   {
+    "ad": "test",
+    "tavan": 15,
+    "alinan": 11.333333333333334,
+    "kanit": [
+     "! tohumda zaten test takımı var — bu eksen ajanın kendi katkısını ayıramaz, o yüzden puana katılmıyor",
+     "+ testler yeşil (6p) — TAP version 13 # Subtest: kitap eklenebiliyor ok 1 - kitap eklenebiliyor --- duration_ms: 0.519 type: 'test' ... # Subte",
+     "~ test adedi (3.3/4p) — 5 test bulundu",
+     "~ kritik yol kapsanıyor (0.0/3p) — 0/2: hiçbiri",
+     "~ iddialar dolu (2.0/2p) — 14 iddia, 0 tanesi bedava geçiyor"
+    ],
+    "sebep": "",
+    "harici": true
+   }
+  ]
+ },
+ {
+  "gorev": "z1-arama",
+  "puan": 98.66666666666669,
+  "sure_sn": 86,
+  "eksik": [
+   "test:13.7/15"
+  ],
+  "eksenler": [
+   {
+    "ad": "calisir",
+    "tavan": 40,
+    "alinan": 40.0,
+    "kanit": [
+     "+ ara.py var (5p) — ara.py",
+     "+ ekle koşuyor (12p) — çıkış 0; 6 not indekslendi: indeks.db",
+     "+ SQLite dosyası oluştu (8p) — indeks.db",
+     "+ bul ayrı süreçte koşuyor (15p) — çıkış 0; pompa-katalog.txt ...6 bar, debi 12 m3/saat. Yedek parca: rulman, salmastra, motor mili...."
+    ],
+    "sebep": "",
+    "harici": false
+   },
+   {
+    "ad": "kapsam",
+    "tavan": 25,
+    "alinan": 25.0,
+    "kanit": [
+     "+ tek kelime doğru notu buluyor (8p) — «salmastra» → pompa-katalog bekleniyordu; çıktı: 'pompa-katalog.txt\\n  ...6 bar, debi 12 m3/saat. Yedek parca: rulman, salmastra, motor mili....\\n\\n'",
+     "+ çok kelimede hepsi geçen not üstte (10p) — «rulman titresim» → kuyu-bakim yeri 0, pompa-katalog yeri 114",
+     "+ olmayan kelimede sonuç uydurmuyor (7p) — «helikopter» → çıktı: \"Hiçbir not bulunamadı: 'helikopter'\\n\\n\""
+    ],
+    "sebep": "",
+    "harici": false
+   },
+   {
+    "ad": "saglik",
+    "tavan": 20,
+    "alinan": 20.0,
+    "kanit": [
+     "~ sözdizimi temiz (8.0/8p) — 2/2 dosya",
+     "~ boy/karmaşıklık (6.0/6p) — temiz",
+     "~ tekrar yok (6.0/6p) — tekrar eden satır %0, 0 yinelenen blok"
+    ],
+    "sebep": "",
+    "harici": false
+   },
+   {
+    "ad": "test",
+    "tavan": 15,
+    "alinan": 13.666666666666666,
+    "kanit": [
+     "+ testler yeşil (6p) — .... [100%] 4 passed in 0.54s",
+     "~ test adedi (2.7/4p) — 4 test bulundu",
+     "~ kritik yol kapsanıyor (3.0/3p) — 2/2: ekle, bul",
+     "~ iddialar dolu (2.0/2p) — 8 iddia, 0 tanesi bedava geçiyor"
+    ],
+    "sebep": "",
+    "harici": false
+   }
+  ]
+ },
+ {
+  "gorev": "z2-panel",
+  "puan": 100.0,
+  "sure_sn": 39,
+  "eksik": [
+   "test:0/15"
+  ],
+  "eksenler": [
+   {
+    "ad": "calisir",
+    "tavan": 40,
+    "alinan": 40.0,
+    "kanit": [
+     "+ index.php var (8p) — .",
+     "! 8098 tutuluydu (ajan kendi sunucusunu açık bırakmış olabilir); ölçüm 8099 portunda yapıldı",
+     "+ sunucu ayağa kalkıyor (10p) — port açıldı",
+     "+ giriş sayfası açılıyor (10p) — 200, 366 karakter; şifre alanı: True",
+     "+ doğru şifreyle içeri giriliyor (12p) — giriş POST → HTTP 200; ozet.php → HTTP 200"
+    ],
+    "sebep": "",
+    "harici": false
+   },
+   {
+    "ad": "kapsam",
+    "tavan": 25,
+    "alinan": 25.0,
+    "kanit": [
+     "~ girişsiz erişim engelleniyor (7.0/7p) — ozet.php: engelli; kullanicilar.php: engelli; ayarlar.php: engelli",
+     "+ yanlış şifre reddediliyor (3p) — yanlış şifreden sonra ozet.php → HTTP 302",
+     "+ ozet.php giriş sonrası çalışıyor (5p) — 200, 411 karakter",
+     "+ kullanicilar.php giriş sonrası çalışıyor (5p) — 200, 488 karakter",
+     "+ ayarlar.php giriş sonrası çalışıyor (5p) — 200, 395 karakter"
+    ],
+    "sebep": "",
+    "harici": false
+   },
+   {
+    "ad": "saglik",
+    "tavan": 20,
+    "alinan": 20.0,
+    "kanit": [
+     "~ sözdizimi temiz (8.0/8p) — 5/5 dosya",
+     "~ boy/karmaşıklık (6.0/6p) — temiz",
+     "~ tekrar yok (6.0/6p) — tekrar eden satır %0, 0 yinelenen blok"
+    ],
+    "sebep": "",
+    "harici": false
+   },
+   {
+    "ad": "test",
+    "tavan": 15,
+    "alinan": 0.0,
+    "kanit": [
+     "- test dosyası yok (0p)"
+    ],
+    "sebep": "",
+    "harici": true
+   }
+  ]
+ },
+ {
+  "gorev": "z3-gizli-hata",
+  "puan": 100.0,
+  "sure_sn": 18,
+  "eksik": [],
+  "eksenler": [
+   {
+    "ad": "calisir",
+    "tavan": 40,
+    "alinan": 40.0,
+    "kanit": [
+     "+ sepet.py duruyor (6p) — sepet\\sepet.py",
+     "+ modül import ediliyor (10p) — tamam",
+     "+ bozulmamış regresyon takımı koşuyor (8p) — ........ [100%] 8 passed in 0.01s",
+     "+ regresyon takımı tamamen yeşil (16p) — ........ [100%] 8 passed in 0.01s"
+    ],
+    "sebep": "",
+    "harici": false
+   },
+   {
+    "ad": "kapsam",
+    "tavan": 25,
+    "alinan": 25.0,
+    "kanit": [
+     "+ hata 1: aynı ürün eklenince adet birikiyor (8p) — beklenen [7, 21.0], çıkan [7, 21.0]",
+     "+ hata 2: indirim sınırları dahil (8p) — 500→0.05 (0.05), 1000→0.1 (0.10), 499.99→0.0 (0.0)",
+     "+ hata 3: toplam kuruşu koruyor (6p) — 7 × 14.29 → beklenen 100.03, çıkan 100.03",
+     "+ gizli vaka: 1500 → %10, 500 → %5 (2p) — 1500→1350.0 (1350.0), 500→475.0 (475.0)",
+     "+ var olan koruma sökülmemiş (adet 0 → ValueError) (1p) — {'ok': True, 'deger': 'ValueError'}"
+    ],
+    "sebep": "",
+    "harici": false
+   },
+   {
+    "ad": "saglik",
+    "tavan": 20,
+    "alinan": 20.0,
+    "kanit": [
+     "~ sözdizimi temiz (8.0/8p) — 2/2 dosya",
+     "~ boy/karmaşıklık (6.0/6p) — temiz",
+     "~ tekrar yok (6.0/6p) — tekrar eden satır %0, 0 yinelenen blok"
+    ],
+    "sebep": "",
+    "harici": false
+   },
+   {
+    "ad": "test",
+    "tavan": 15,
+    "alinan": 15.0,
+    "kanit": [
+     "! regresyon takımı tohumla geliyor — bu eksen ajanın kendi katkısını ayıramaz, puana katılmıyor",
+     "+ testler yeşil (6p) — ........ [100%] 8 passed in 0.01s",
+     "~ test adedi (4.0/4p) — 8 test bulundu",
+     "~ kritik yol kapsanıyor (3.0/3p) — 3/3: ekle, indirim_orani, toplam",
+     "~ iddialar dolu (2.0/2p) — 9 iddia, 0 tanesi bedava geçiyor"
+    ],
+    "sebep": "",
+    "harici": true
+   }
+  ]
+ }
+]

@@ -559,8 +559,15 @@ _EMPTY_ASSERT = re.compile(
     r"assert\s+(True|1)\s*$|assertTrue\s*\(\s*true\s*\)|expect\s*\(\s*true\s*\)",
     re.IGNORECASE | re.MULTILINE,
 )
+# Reviewer-caught bug (2026-08-29): the old pattern missed the whole
+# unittest family (assertTrue, assertIn, assertRaises, …) — a suite with
+# nine green unittest assertions scored "0 assertions" and lost points
+# for style, not quality. Roughly one point of the published 2.4-point
+# spread was this artifact; the report carries the note, the ruler is
+# fixed going forward.
 _ASSERT = re.compile(
-    r"\bassert\b|\bassertEquals?\b|\bexpect\s*\(|\bstrictEqual\b|\bdeepEqual\b",
+    r"\bassert\b|\bassert[A-Za-z]+\s*\(|\bexpect\s*\(|"
+    r"\bstrictEqual\b|\bdeepEqual\b",
     re.IGNORECASE,
 )
 

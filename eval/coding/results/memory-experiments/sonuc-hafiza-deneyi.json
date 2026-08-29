@@ -1,0 +1,98 @@
+[
+ {
+  "kol": "A",
+  "puan": 82.3529411764706,
+  "sure": 43.8,
+  "arac_cagrisi": 3,
+  "araclar": {
+   "ozet_csv": 1,
+   "write_file": 1,
+   "shell": 1
+  },
+  "hatali_arac": 0,
+  "model_turu": 4,
+  "api_hatasi": 0,
+  "dogruladi_mi": false,
+  "dogrulama_izi": [],
+  "calistirma_izi": [
+   "shell: py rapor.py satislar.csv; py rapor.py satislar.csv --ay 2026-03; py rapor.py satislar.csv "
+  ],
+  "plan_yazdi_mi": false,
+  "plan_kaniti": "",
+  "token_prompt_son": 16112,
+  "token_prompt_toplam": 63136,
+  "token_cikti": 994,
+  "token_cache_okuma": 46080,
+  "model_cagrisi": 4,
+  "maliyet_usd": 0.005,
+  "sure_sn": 40.0,
+  "degisen_dosya": 1,
+  "kapi_ok": true,
+  "hatirlanan_blok": 0
+ },
+ {
+  "kol": "B",
+  "puan": 100.0,
+  "sure": 43.8,
+  "arac_cagrisi": 3,
+  "araclar": {
+   "write_file": 1,
+   "shell": 1,
+   "read_file": 1
+  },
+  "hatali_arac": 0,
+  "model_turu": 4,
+  "api_hatasi": 0,
+  "dogruladi_mi": false,
+  "dogrulama_izi": [],
+  "calistirma_izi": [
+   "shell: py rapor.py satislar.csv; py rapor.py satislar.csv --ay 2026-03"
+  ],
+  "plan_yazdi_mi": false,
+  "plan_kaniti": "",
+  "token_prompt_son": 16598,
+  "token_prompt_toplam": 63532,
+  "token_cikti": 1026,
+  "token_cache_okuma": 38144,
+  "model_cagrisi": 4,
+  "maliyet_usd": 0.005,
+  "sure_sn": 41.8,
+  "degisen_dosya": 1,
+  "kapi_ok": true,
+  "hatirlanan_blok": 0
+ },
+ {
+  "kol": "C",
+  "puan": 100.0,
+  "sure": 63.6,
+  "arac_cagrisi": 7,
+  "araclar": {
+   "shell": 2,
+   "edit_file": 2,
+   "ozet_csv": 1,
+   "write_file": 1,
+   "read_file": 1
+  },
+  "hatali_arac": 1,
+  "model_turu": 8,
+  "api_hatasi": 0,
+  "dogruladi_mi": false,
+  "dogrulama_izi": [],
+  "calistirma_izi": [
+   "shell: py rapor.py satislar.csv; py rapor.py satislar.csv --ay 2026-03",
+   "shell: py rapor.py satislar.csv --ay 2026-03"
+  ],
+  "plan_yazdi_mi": false,
+  "plan_kaniti": "",
+  "token_prompt_son": 17257,
+  "token_prompt_toplam": 132324,
+  "token_cikti": 1313,
+  "token_cache_okuma": 122432,
+  "model_cagrisi": 8,
+  "maliyet_usd": 0.0103,
+  "sure_sn": 61.3,
+  "degisen_dosya": 1,
+  "kapi_ok": true,
+  "hatirlanan_blok": 0
+ }
+]

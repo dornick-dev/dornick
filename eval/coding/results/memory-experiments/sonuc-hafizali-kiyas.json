@@ -1,0 +1,311 @@
+[
+ {
+  "gorev": "k1-modul",
+  "puan": 98.0,
+  "arac_cagrisi": 8,
+  "araclar": {
+   "write_file": 3,
+   "edit_file": 2,
+   "read_file": 1,
+   "kos": 1,
+   "shell": 1
+  },
+  "hatali_arac": 2,
+  "model_turu": 8,
+  "api_hatasi": 0,
+  "dogruladi_mi": true,
+  "dogrulama_izi": [
+   "shell: py -m pytest test_tckn.py -q"
+  ],
+  "calistirma_izi": [],
+  "plan_yazdi_mi": false,
+  "plan_kaniti": "",
+  "token_prompt_son": 17195,
+  "token_prompt_toplam": 131929,
+  "token_cikti": 1714,
+  "token_cache_okuma": 104768,
+  "model_cagrisi": 8,
+  "maliyet_usd": 0.0103,
+  "sure_sn": 59.9,
+  "degisen_dosya": 2,
+  "kapi_ok": true,
+  "hatirlanan_blok": 0,
+  "duvar_saati_sn": 63.5
+ },
+ {
+  "gorev": "k2-cli",
+  "puan": 100.0,
+  "arac_cagrisi": 2,
+  "araclar": {
+   "write_file": 1,
+   "shell": 1
+  },
+  "hatali_arac": 0,
+  "model_turu": 3,
+  "api_hatasi": 0,
+  "dogruladi_mi": false,
+  "dogrulama_izi": [],
+  "calistirma_izi": [
+   "shell: node gorev.js ekle \"süt al\"; node gorev.js ekle \"ekmek al\"; node gorev.js bitir 2; node go"
+  ],
+  "plan_yazdi_mi": false,
+  "plan_kaniti": "",
+  "token_prompt_son": 15745,
+  "token_prompt_toplam": 46675,
+  "token_cikti": 875,
+  "token_cache_okuma": 41600,
+  "model_cagrisi": 3,
+  "maliyet_usd": 0.0037,
+  "sure_sn": 28.0,
+  "degisen_dosya": 2,
+  "kapi_ok": true,
+  "hatirlanan_blok": 1,
+  "duvar_saati_sn": 30.1
+ },
+ {
+  "gorev": "k3-tamir",
+  "puan": 100.0,
+  "arac_cagrisi": 4,
+  "araclar": {
+   "shell": 2,
+   "read_file": 1,
+   "edit_file": 1
+  },
+  "hatali_arac": 1,
+  "model_turu": 5,
+  "api_hatasi": 0,
+  "dogruladi_mi": false,
+  "dogrulama_izi": [],
+  "calistirma_izi": [
+   "shell: php atolye/fatura.php"
+  ],
+  "plan_yazdi_mi": false,
+  "plan_kaniti": "",
+  "token_prompt_son": 16169,
+  "token_prompt_toplam": 78829,
+  "token_cikti": 746,
+  "token_cache_okuma": 73984,
+  "model_cagrisi": 5,
+  "maliyet_usd": 0.0061,
+  "sure_sn": 28.4,
+  "degisen_dosya": 1,
+  "kapi_ok": true,
+  "hatirlanan_blok": 1,
+  "duvar_saati_sn": 30.8
+ },
+ {
+  "gorev": "o1-rapor",
+  "puan": 100.0,
+  "arac_cagrisi": 4,
+  "araclar": {
+   "shell": 2,
+   "ozet_csv": 1,
+   "write_file": 1
+  },
+  "hatali_arac": 0,
+  "model_turu": 5,
+  "api_hatasi": 0,
+  "dogruladi_mi": true,
+  "dogrulama_izi": [
+   "shell: py -c \"import csv; rows=[r for r in csv.DictReader(open('satislar.csv',encoding='utf-8-sig"
+  ],
+  "calistirma_izi": [
+   "shell: py rapor.py satislar.csv; py rapor.py satislar.csv --ay 2026-03; py rapor.py satislar.csv "
+  ],
+  "plan_yazdi_mi": false,
+  "plan_kaniti": "",
+  "token_prompt_son": 16312,
+  "token_prompt_toplam": 79703,
+  "token_cikti": 1176,
+  "token_cache_okuma": 72704,
+  "model_cagrisi": 5,
+  "maliyet_usd": 0.0063,
+  "sure_sn": 43.2,
+  "degisen_dosya": 1,
+  "kapi_ok": true,
+  "hatirlanan_blok": 1,
+  "duvar_saati_sn": 45.4
+ },
+ {
+  "gorev": "o2-servis",
+  "puan": null,
+  "arac_cagrisi": 11,
+  "araclar": {
+   "shell": 6,
+   "write_file": 2,
+   "kos": 1,
+   "read_file": 1,
+   "edit_file": 1
+  },
+  "hatali_arac": 3,
+  "model_turu": 12,
+  "api_hatasi": 0,
+  "dogruladi_mi": true,
+  "dogrulama_izi": [
+   "shell: py -m unittest test_servis -v",
+   "shell: py -m unittest test_servis -v",
+   "shell: py -m unittest test_servis -v",
+   "shell: Start-Sleep 1; try { $r = Invoke-WebRequest http://127.0.0.1:8099/saglik -UseBasicParsing;"
+  ],
+  "calistirma_izi": [
+   "shell: py servis.py",
+   "shell: py servis.py"
+  ],
+  "plan_yazdi_mi": false,
+  "plan_kaniti": "",
+  "token_prompt_son": 18045,
+  "token_prompt_toplam": 202692,
+  "token_cikti": 2401,
+  "token_cache_okuma": 186816,
+  "model_cagrisi": 12,
+  "maliyet_usd": 0.0158,
+  "sure_sn": 93.1,
+  "degisen_dosya": 2,
+  "kapi_ok": true,
+  "hatirlanan_blok": 1,
+  "duvar_saati_sn": 97.0
+ },
+ {
+  "gorev": "o3-ozellik",
+  "puan": 100.0,
+  "arac_cagrisi": 11,
+  "araclar": {
+   "shell": 6,
+   "read_file": 2,
+   "grep": 1,
+   "edit_file": 1,
+   "kos": 1
+  },
+  "hatali_arac": 2,
+  "model_turu": 12,
+  "api_hatasi": 0,
+  "dogruladi_mi": true,
+  "dogrulama_izi": [
+   "shell: node --test atolye/kitaplik.test.js",
+   "shell: node --test kitaplik.test.js",
+   "shell: node --test kitaplik.test.js",
+   "shell: node -e \"const{Kitaplik}=require('./kitaplik');const k=new Kitaplik();k.ekle('1','A','y');"
+  ],
+  "calistirma_izi": [],
+  "plan_yazdi_mi": false,
+  "plan_kaniti": "",
+  "token_prompt_son": 17615,
+  "token_prompt_toplam": 198143,
+  "token_cikti": 917,
+  "token_cache_okuma": 190144,
+  "model_cagrisi": 12,
+  "maliyet_usd": 0.0151,
+  "sure_sn": 44.4,
+  "degisen_dosya": 1,
+  "kapi_ok": true,
+  "hatirlanan_blok": 0,
+  "duvar_saati_sn": 46.9
+ },
+ {
+  "gorev": "z1-arama",
+  "puan": 98.0,
+  "arac_cagrisi": 6,
+  "araclar": {
+   "shell": 3,
+   "write_file": 2,
+   "kos": 1
+  },
+  "hatali_arac": 1,
+  "model_turu": 8,
+  "api_hatasi": 0,
+  "dogruladi_mi": true,
+  "dogrulama_izi": [
+   "shell: py -m unittest test_ara -v",
+   "shell: py -m unittest discover -s . -p \"test_*.py\" 2>&1 | Select-Object -Last 3; if (Test-Path no",
+   "shell: py -m unittest discover -s . -p \"test_*.py\" -v 2>&1"
+  ],
+  "calistirma_izi": [],
+  "plan_yazdi_mi": false,
+  "plan_kaniti": "",
+  "token_prompt_son": 17030,
+  "token_prompt_toplam": 129790,
+  "token_cikti": 3011,
+  "token_cache_okuma": 118976,
+  "model_cagrisi": 8,
+  "maliyet_usd": 0.0105,
+  "sure_sn": 79.2,
+  "degisen_dosya": 3,
+  "kapi_ok": true,
+  "hatirlanan_blok": 0,
+  "duvar_saati_sn": 83.1
+ },
+ {
+  "gorev": "z2-panel",
+  "puan": 100.0,
+  "arac_cagrisi": 27,
+  "araclar": {
+   "shell": 11,
+   "write_file": 8,
+   "read_file": 3,
+   "edit_file": 3,
+   "browser": 2
+  },
+  "hatali_arac": 3,
+  "model_turu": 22,
+  "api_hatasi": 0,
+  "dogruladi_mi": true,
+  "dogrulama_izi": [
+   "browser: ",
+   "browser: ",
+   "shell: $r = Invoke-WebRequest -Uri \"http://127.0.0.1:8098/ozet.php\" -MaximumRedirection 0 -ErrorA",
+   "shell: $s = New-Object Microsoft.PowerShell.Commands.WebRequestSession; $r = Invoke-WebRequest -U"
+  ],
+  "calistirma_izi": [
+   "shell: py panel\\test_akis.py",
+   "shell: py panel\\test_akis.py",
+   "shell: py panel\\test_akis.py"
+  ],
+  "plan_yazdi_mi": true,
+  "plan_kaniti": "Plan: üç modül, her birinin kabul ölçütü belli. 1. **Kimlik doğrulama** (`index.php` + oturum koruması): admin/1234 ile ",
+  "token_prompt_son": 23565,
+  "token_prompt_toplam": 453163,
+  "token_cikti": 7839,
+  "token_cache_okuma": 413248,
+  "model_cagrisi": 22,
+  "maliyet_usd": 0.0359,
+  "sure_sn": 195.0,
+  "degisen_dosya": 8,
+  "kapi_ok": true,
+  "hatirlanan_blok": 1,
+  "duvar_saati_sn": 200.0
+ },
+ {
+  "gorev": "z3-gizli-hata",
+  "puan": 100.0,
+  "arac_cagrisi": 8,
+  "araclar": {
+   "shell": 3,
+   "read_file": 3,
+   "list_dir": 1,
+   "edit_file": 1
+  },
+  "hatali_arac": 3,
+  "model_turu": 7,
+  "api_hatasi": 0,
+  "dogruladi_mi": true,
+  "dogrulama_izi": [
+   "shell: py -m pytest sepet -x -q",
+   "shell: py -m pytest sepet -q",
+   "shell: py -m pytest sepet -q"
+  ],
+  "calistirma_izi": [],
+  "plan_yazdi_mi": false,
+  "plan_kaniti": "",
+  "token_prompt_son": 16499,
+  "token_prompt_toplam": 111645,
+  "token_cikti": 483,
+  "token_cache_okuma": 103936,
+  "model_cagrisi": 7,
+  "maliyet_usd": 0.0085,
+  "sure_sn": 31.5,
+  "degisen_dosya": 1,
+  "kapi_ok": true,
+  "hatirlanan_blok": 0,
+  "duvar_saati_sn": 34.6
+ }
+]
