@@ -1,5 +1,25 @@
 # Changelog
 
+## 1.1.1 — 2026-08-29
+
+Live-complaint fixes from a real research session, plus a behaviour rule.
+
+* **File links in chat now work.** "[Download the ZIP](report.zip)" was
+  dead text (zip was not a recognised extension) and PDF links depended on
+  the viewer chain. Explicit file links now act by type: archives/office
+  files download directly (`attachment` header, path-traversal guarded),
+  PDF/images/media open in a new tab, text/code opens in the viewer. The
+  viewer's binary screen gained a Download button.
+* **Decided plan cards stay put.** An approved plan card used to be
+  re-pinned below the final answer with its Approve/Edit/Cancel buttons
+  still showing. Only cards awaiting a decision pin to the bottom now;
+  decided ones keep their place in the flow, buttons hidden.
+* **Visuals only when they earn their place.** The agent can produce
+  charts, diagrams, screenshots and pages as evidence — the identity now
+  carries one rule for when: only if the visual shows at a glance what
+  text cannot. Text is the default; no decorative charts.
+
+
 ## 1.1.0 — 2026-08-29
 
 Review hardening. Night-school privacy gate (hosted labeling now behind an
