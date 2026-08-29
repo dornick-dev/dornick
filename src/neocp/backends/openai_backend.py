@@ -18,7 +18,8 @@ from typing import Any
 from .. import otomod
 from ..config import ModelConfig
 from ..context import Prepared
-from .base import Callbacks, Interrupted, SimpleMessage, SimpleUsage, TurnResult, cancellable
+from .base import (Callbacks, Interrupted, SimpleMessage, SimpleUsage,
+                   Stalled, TurnResult, cancellable)
 from .translate import (
     extract_inline_calls,
     map_finish_reason,
@@ -48,6 +49,25 @@ PLACEHOLDER_KEY = "local"
 # sınıfında tek dosyalık yazmaların neredeyse tamamı sığıyor; sığmayan
 # tur tam bütçeyle bir kez yineleniyor (aşağıda, turn içinde).
 KESIF_TAVANI = 4096
+
+# Çağrı-başı sessizlik penceresi (barındırılan uçlar): pencere boyunca tek
+# parça gelmezse çağrı asılı sayılır, bir kez yeniden denenir. Ölçülen yara
+# (29.08, z1): tek bir sağlayıcı çağrısı dakikalarca sustu ve tur ancak
+# 900 sn'lik kapı tavanında koptu. 120 sn cömert bir ilk-token payı:
+# önbelleksiz dev istemde bile barındırılan uç ya bu sürede akıtır ya hiç.
+# Yerel uçlarda pencere YOK — CPU'daki LM Studio ilk token'a meşru olarak
+# dakikalar harcayabilir; sabırsız bir kesim orada özellik değil hata olur.
+CAGRI_SESSIZLIK_SN = 120.0
+
+
+def _sessizlik_penceresi(base_url: str | None) -> float | None:
+    from urllib.parse import urlparse
+    host = (urlparse(str(base_url or "")).hostname or "").casefold()
+    if (host in ("localhost", "127.0.0.1", "::1", "0.0.0.0")
+            or host.startswith("192.168.") or host.startswith("10.")
+            or host.endswith(".local")):
+        return None
+    return CAGRI_SESSIZLIK_SN
 
 # Salt-okur araçlar: sonucu dünyayı değiştirmeyen, ardından tipik olarak
 # ya bir okuma daha ya kısa bir yazma gelen araçlar. Liste bilinçli dar —
@@ -206,7 +226,18 @@ class OpenAIBackend:
 
         async with self._gate:
             try:
-                result = await self._stream(kwargs, cancel, callbacks)
+                try:
+                    result = await self._stream(kwargs, cancel, callbacks)
+                except Stalled:
+                    # Asılı sağlayıcı çağrısı: tur tavanını yemeden bir kez
+                    # taze bağlantıyla yinele. İkincisi de susarsa hata —
+                    # oto kipinde sağlık defterine düşer, model sıraya iner.
+                    try:
+                        result = await self._stream(kwargs, cancel, callbacks)
+                    except Stalled as exc:
+                        result = TurnResult(error=(
+                            f"{kwargs['model']} yanıt akıtmadı: {exc} "
+                            "(iki deneme). Sağlayıcı asılı görünüyor."))
                 if kesif and self._son_finish == "length":
                     # Tavana çarptı: kırpılmış araç argümanı/cevap işe
                     # yaramaz. Tam bütçe + normal çabayla tek yineleme.
@@ -362,7 +393,9 @@ class OpenAIBackend:
             # `cancellable`: kesme yalnız parça gelince değil, parça BEKLERKEN
             # de yoklanıyor. İlk token'dan önceki uzun istem işleme sırasında
             # (önbelleksiz ilk tur) Durdur işlemiyordu — kökü burasıydı.
-            async for chunk in cancellable(stream, cancel):
+            async for chunk in cancellable(
+                    stream, cancel,
+                    stall_s=_sessizlik_penceresi(self.model.base_url)):
                 if raw_usage := getattr(chunk, "usage", None):
                     usage = _usage(raw_usage)
 
@@ -375,6 +408,10 @@ class OpenAIBackend:
 
         except Interrupted:
             return TurnResult(interrupted=True, partial_text="".join(text))
+        except Stalled:
+            # Asılı çağrı çağırana yükselir: turn() bir kez yeniden dener,
+            # ikincisi de susarsa hata TurnResult'a döner.
+            raise
         except Exception as exc:  # openai paketi opsiyonel; tipe bağlanamayız
             return TurnResult(error=_explain(exc, self.model), partial_text="".join(text))
         finally:

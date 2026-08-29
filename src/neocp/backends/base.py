@@ -34,7 +34,19 @@ class Interrupted(Exception):
     """
 
 
-async def cancellable(stream: Any, cancel: Any) -> AsyncIterator[Any]:
+class Stalled(Exception):
+    """Akış sessizliğe gömüldü: pencere boyunca tek parça gelmedi.
+
+    Ölçülen yara (29.08, z1): 8 çağrılık bir tur 900 sn'lik KAPI tavanına
+    asıldı — tek bir sağlayıcı çağrısı dakikalarca hiçbir şey akıtmadan
+    açık kaldı ve zaman aşımı ancak turun tavanında koptu. Doğru kesim
+    yeri tur değil ÇAĞRI: parça akıtan uzun bir çağrı sağlıklıdır (büyük
+    dosya yazımı), pencere boyunca SUSAN çağrı asılıdır.
+    """
+
+
+async def cancellable(stream: Any, cancel: Any,
+                      *, stall_s: float | None = None) -> AsyncIterator[Any]:
     """Akışı, kesme bayrağını DA dinleyerek dolaşır.
 
     `async for` yalnızca parça GELDİĞİNDE kontrol veriyor. İlk token'dan
@@ -48,6 +60,10 @@ async def cancellable(stream: Any, cancel: Any) -> AsyncIterator[Any]:
     gelirse o kazanır. Kesildiğinde `Interrupted` yükselir; akışın
     kapatılması çağıranın sorumluluğunda kalır (openai: _aclose,
     anthropic: context manager).
+
+    `stall_s`: parçalar arası sessizlik penceresi. Pencere dolarsa
+    `Stalled` yükselir — asılı kalan sağlayıcı çağrısı turun tavanını
+    değil kendi penceresini yer. None eski davranış (pencere yok).
     """
     iterator = stream.__aiter__()
     stop = asyncio.ensure_future(cancel.wait())
@@ -56,7 +72,14 @@ async def cancellable(stream: Any, cancel: Any) -> AsyncIterator[Any]:
             if stop.done():
                 raise Interrupted
             step = asyncio.ensure_future(iterator.__anext__())
-            done, _ = await asyncio.wait({step, stop}, return_when=asyncio.FIRST_COMPLETED)
+            done, _ = await asyncio.wait({step, stop}, timeout=stall_s,
+                                         return_when=asyncio.FIRST_COMPLETED)
+            if not done:
+                # Pencere doldu: ne parça ne kesme. Çağrı asılı.
+                step.cancel()
+                with contextlib.suppress(BaseException):
+                    await step
+                raise Stalled(f"akış {stall_s:.0f} sn sessiz kaldı")
             if step not in done:
                 # Kesme kazandı: yarım kalan okuma adımını iptal et.
                 step.cancel()

@@ -147,66 +147,49 @@ regression test in [`tests/`](../tests/):
   One honest gap remains: the Claude lane's token/cost cannot be metered
   (different billing), and its wall time was stopwatch-measured.
 
-## Addendum — 29 Aug harness iteration, measured honestly
+## Addendum — the 29 Aug tuning day, in plain words
 
-After an external review of the speed gap, three levers were built and a
-fresh ×2 sweep was run (same model, same 9 tasks): a `read_many` tool
-(array-schema batch reads), a frozen first-turn workspace briefing, and
-per-call time/prime/error metrics in the behaviour extractor.
+The comparison above is **frozen**: those are the numbers the three
+harnesses scored, and nothing below changes them. After it was published,
+one day was spent tuning neo's own lane. Summary a reader can trust:
 
-| sweep (mean of 2 reps) | 29 Aug morning | 29 Aug after changes |
-|---|---|---|
-| quality (sum, 9 tasks) | 897.3 | **887.2** (best-rep sum 900.0 — first all-100 sweep) |
-| wall time (best reps) | 577 s | 935 s |
-| model calls | 63 | 109 |
-| tools per call | 0.98 | 0.99 |
-| cache hit | 89.8% | 89.9% |
-| cost | $0.083 | $0.149 |
+**Quality did not move.** The post-tuning sweep was the first where every
+task's best repetition scored **100/100** (900/900 best-rep). Task means
+still wobble a few points between any two sweeps of the *same* code —
+that band is noise, not signal, and no quality claim is made either way.
 
-**The honest negative first:** `read_many` was never called — zero uses
-across 20 runs. The schema-beats-instruction bet did not move this flash
-model on its own; a cross-reference hint was added to `read_file` after
-the sweep and remains unmeasured. Calls and wall time went **up**, driven
-by two tasks (z2 spent 19 browser calls on form verification, o2 took
-three reruns — below); flash-class variance still dominates single-sweep
-deltas, so none of this is read as a regression caused by the changes —
-but it is certainly not the hoped ~2.0 tools/call either.
+**The speed levers built that day have not paid off yet — said plainly:**
 
-**What the new metrics bought immediately:**
+* `read_many` (read several files in one call): the flash model simply
+  never called it. Zero uses. A hint now points `read_file` at it;
+  unmeasured so far.
+* The first-turn workspace briefing: no measurable call reduction; calls
+  per task swing 2-3x between identical-code runs, which drowns any
+  effect this small.
+* The **discovery downshift** (low reasoning effort + output cap right
+  after read-only tool batches, with a full-budget retry if the cap is
+  hit): **per-call model time fell ~28%** on the two slowest tasks
+  (z1 11.9 -> 8.5 s/call, z2 6.1 -> 4.4) with quality held. Total wall
+  time did not improve yet, because call *counts* are what swing between
+  runs.
 
-* **Time split:** 833 s of the 935 s wall (89%) is model latency; tool
-  execution is 102 s. The speed lever is round-trips and per-call
-  generation time, not tool speed — now measured, not assumed.
-* **Error patterns:** the top recurring tool error ("working directory
-  does not exist: atolye\X", 3× per sweep) was a workshop-prefix trap in
-  the shell's cwd — fixed and regression-tested the same day.
-* **A grading bug found and killed:** o2-service graded "port held —
-  cannot measure" three times. Root cause chain: the agent's own detached
-  service outlived the instance, the leftover sweep ran *after* grading,
-  matched only absolute paths, and then only top-level filenames. All
-  three links fixed (sweep before grading, relative launches matched,
-  recursive names), each verified live with a planted survivor; o2 then
-  measured 100.0.
+**What the day actually bought is under the hood:**
 
-**B5 — discovery downshift, built and measured the same day.** For
-small/fast models, a call that follows a purely read-only tool batch now
-runs at `reasoning: low` with a 4096-token output cap; a call that hits
-the cap (`finish=length`) is retried once at full budget, so quality is
-never traded for the cap. Measured on the two slowest tasks (z1, z2, x2
-reps each, plus a second z1 pair): **per-call model time fell ~28%**
-(z1 11.9 -> 8.5 s/call, z2 6.1 -> 4.4) with quality held (z2 99.9,
-z1 means 92.5/96.4). Total wall time did *not* improve in this sample —
-call counts swung 16/51 in one pair and 8 in the next, and z1 shows a
-pre-existing slow mode (a provider-side call hanging into the 900 s
-ceiling) in both arms. Honest verdict: the per-call gain is real, the
-totals are still owned by flash-class variance; the next lever is a
-per-call (not per-turn) timeout fed by the new time-split metrics.
-
-The prime-injection gate also changed after the memory review: the
-unconditional-top exemption in spontaneous recall now applies only to
-young minds (<30 records) — the source of the +9% prompt-token cost on
-unrelated work — mirrored in the scale bench with a guard that asserts
-the copy equals the product.
+* New behaviour metrics (time split, injected-vs-used memory, top error
+  patterns). First finding: ~89% of wall time is model latency, not tool
+  execution — so the speed work targets round-trips, correctly.
+* The error-pattern metric found two real harness bugs on day one, both
+  fixed and regression-tested: a working-directory trap in the shell
+  tool, and a grading poisoner where the agent's own leftover service
+  held its port through scoring (one task graded "cannot measure" three
+  times; it now measures 100).
+* A **per-call silence window** (120 s, hosted endpoints only): a
+  provider call that streams nothing for that long is cut and retried
+  once, instead of hanging the whole turn into its 900 s ceiling — the
+  exact failure one z1 repetition hit.
+* From the memory review: the spontaneous-recall exemption is now gated
+  to young minds, and the night school got a privacy gate, a held-out
+  exam split, and a drift floor (see the repo README).
 
 *Screenshots of the product: [gallery](gallery/README.md) · Drive neo from
 your own harness: [the gate](gate.md).*

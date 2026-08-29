@@ -1054,3 +1054,59 @@ def test_cache_markers_only_for_openrouter_base() -> None:
     kaynak = (Path(__file__).parent.parent / "src/neocp/backends/openai_backend.py").read_text(encoding="utf-8")
     assert re.search(r'_cache_isaretli = "openrouter" in', kaynak)
     assert "_cache_isaretle(messages)" in kaynak
+
+# -- cagri-basi sessizlik penceresi -------------------------------------
+#
+# Olculen yara (29.08, z1): tek bir saglayici cagrisi dakikalarca sustu
+# ve tur ancak 900 sn'lik kapi tavaninda koptu. Kesim yeri tur degil
+# CAGRI: parca akitan uzun cagri saglikli, pencere boyunca susan asili.
+
+
+async def test_a_silent_stream_raises_stalled_within_the_window() -> None:
+    from neocp.backends.base import Stalled, cancellable
+    cancel = asyncio.Event()
+    with pytest.raises(Stalled):
+        async for _ in cancellable(_SilentStream(), cancel, stall_s=0.05):
+            raise AssertionError('parca gelmemeliydi')
+
+
+async def test_healthy_chunks_flow_despite_the_window() -> None:
+    from neocp.backends.base import cancellable
+    cancel = asyncio.Event()
+    got = []
+    async for c in cancellable(FakeStream([chunk(content='a'),
+                                           chunk(content='b')]).__aiter__(),
+                               cancel, stall_s=5.0):
+        got.append(c.choices[0].delta.content)
+    assert got == ['a', 'b']
+
+
+async def test_stalled_call_is_retried_once_then_reported() -> None:
+    # Ilk cagri asili, ikincisi sagliklu: tur sonucu normal cikmali.
+    from neocp.backends import openai_backend as ob
+    from types import SimpleNamespace
+    from neocp.config import ModelConfig
+    eski = ob.CAGRI_SESSIZLIK_SN
+    ob.CAGRI_SESSIZLIK_SN = 0.05
+    try:
+        akislar = [_SilentStream(), FakeStream([chunk(content='tamam')])]
+        async def create(**kwargs):
+            return akislar.pop(0)
+        fake = SimpleNamespace(
+            chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
+        model = ModelConfig(name='m', provider='openai',
+                            base_url='https://openrouter.ai/api/v1')
+        b = OpenAIBackend(model, client=fake)
+        r = await b.turn(prepared(), [], cancel=asyncio.Event())
+        assert r.error is None
+        assert r.message.content[0]['text'] == 'tamam'
+    finally:
+        ob.CAGRI_SESSIZLIK_SN = eski
+
+
+async def test_local_endpoints_have_no_silence_window() -> None:
+    from neocp.backends.openai_backend import _sessizlik_penceresi
+    assert _sessizlik_penceresi('http://localhost:1234/v1') is None
+    assert _sessizlik_penceresi('http://192.168.1.7:8080/v1') is None
+    assert _sessizlik_penceresi('https://openrouter.ai/api/v1') == 120.0
+
