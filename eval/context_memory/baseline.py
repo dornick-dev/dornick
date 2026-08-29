@@ -1,15 +1,17 @@
-"""Faz 0 — neocp recall'ının donmuş eval setindeki baseline'ı.
+"""Phase 0 — neocp recall's baseline on the frozen eval set.
 
-Blueprint'in emri: öğrenen hiçbir katman eklemeden önce mevcut sistemin
-sayısını al. Sonraki her katman (entity ipucu, sorgu yeniden yazma, öğrenen
-kapı) bu sayıya göre kıyaslanır. Ölçmeden inşa etmek körlemesine.
+The blueprint's order: before adding any learning layer, take the current
+system's number. Every later layer (entity hints, query rewriting, a
+learned gate) is compared against this number. Building without measuring
+is building blind.
 
-Ölçülen, neocp'nin bugünkü retrieval motoru: `mind.recall` — FTS5 literal +
-256-bit SimHash imza + yayılan aktivasyon. Üretimde bunun üstüne `loop.py`
-ayrıca `_worth_recalling` (selamı atlar) ve `_relevant` (yalnız doğrudan
-eşleşme) uyguluyor; buradaki sayı çıplak motorun sayısı.
+What is measured is neocp's retrieval engine as it is today:
+`mind.recall` — FTS5 literal + 256-bit SimHash signature + spreading
+activation. In production `loop.py` additionally applies
+`_worth_recalling` (skips greetings) and the direct-match filter; the
+number here is the bare engine's number.
 
-Çalıştır:  python eval/context_memory/baseline.py
+Run:  python eval/context_memory/baseline.py
 """
 
 from __future__ import annotations
@@ -23,7 +25,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
 
-# Windows Türkçe konsolu (cp1254) Unicode'u kaldırmıyor; çıktı UTF-8.
+# The Windows Turkish console (cp1254) cannot render Unicode; output UTF-8.
 try:
     sys.stdout.reconfigure(encoding="utf-8")  # type: ignore[union-attr]
 except Exception:
@@ -43,13 +45,14 @@ def _load() -> dict:
 def _seed(mind, memories: list[dict]) -> dict[str, str]:
     slug_to_id: dict[str, str] = {}
     for m in memories:
-        node = mind.remember(m["content"], kind=m["kind"], title=m["title"], tags=m.get("tags", []))
+        node = mind.remember(m["content"], kind=m["kind"], title=m["title"],
+                             tags=m.get("tags", []))
         slug_to_id[m["slug"]] = node.id
     return slug_to_id
 
 
 def _rank_of(hits, want_id: str) -> int:
-    """want_id kaçıncı sırada (1-tabanlı); yoksa 0."""
+    """1-based rank of want_id; 0 when absent."""
     for i, hit in enumerate(hits, 1):
         if hit.item.id == want_id:
             return i
@@ -62,20 +65,22 @@ def run() -> dict:
     mind = open_mind(tmp / "mind", tmp / "sessions", "eval")
     slug_to_id = _seed(mind, data["memories"])
 
-    # Isınma: imza indeksi ilk recall'da kuruluyor, gecikmeye karışmasın.
-    mind.recall("ısınma sorgusu", limit=8)
+    # Warm-up: the signature index is built on the first recall; it must
+    # not contaminate the latency numbers.
+    mind.recall("warmup query", limit=8)
 
-    mem_rows: list[dict] = []   # hafıza gerektiren
-    non_rows: list[dict] = []   # boş dönmesi gereken
+    mem_rows: list[dict] = []   # queries that require a memory
+    non_rows: list[dict] = []   # queries that must return empty
     latencies: list[float] = []
 
-    sigs = mind.store.index._sigs  # id -> imza (RAM)
+    sigs = mind.store.index._sigs  # id -> signature (RAM)
 
     def sig_sim(query: str, hits) -> float:
-        """Dönen adaylar içinde en yüksek SimHash benzerliği (0..1).
+        """Highest SimHash similarity among the returned candidates (0..1).
 
-        `score` sıra-tabanlı aktivasyon; eşik için anlamsız. İmza benzerliği
-        normalize bir sinyal — asıl soru bunun ayırıp ayırmadığı.
+        `score` is rank-based activation; meaningless as a threshold. The
+        signature similarity is a normalised signal — the real question is
+        whether it separates.
         """
         q = vector.signature(query)
         best = 0.0
@@ -111,29 +116,32 @@ def _report(mem_rows, non_rows, latencies) -> dict:
     recall_at_k = sum(0 < r["rank"] <= K for r in mem_rows) / n_mem
     mrr = sum(1.0 / r["rank"] for r in mem_rows if r["rank"]) / n_mem
 
-    # Tür kırılımı: hangi sorgu türü tutuyor, hangisi tutmuyor.
+    # Per-type breakdown: which query types hold, which fail.
     by_type: dict[str, list[int]] = {}
     for r in mem_rows:
         by_type.setdefault(r["type"], []).append(1 if 0 < r["rank"] <= K else 0)
 
-    # Eşik taraması — blueprint'in "en önemli tek satırı". Hangi eşikte
-    # hafıza-gerekmeyenlerin %95'i boş döner, o eşikte recall@K ne olur?
-    # İki aday sinyal karşılaştırılıyor: sıra-tabanlı aktivasyon (score) ve
-    # normalize imza benzerliği (sim). İyi bir eşik, ancak sinyal ikisini
-    # ayırıyorsa mümkün.
+    # Threshold sweep — the blueprint's "single most important line". At
+    # what threshold do 95% of the no-memory queries return empty, and
+    # what is recall@K there? Two candidate signals are compared: the
+    # rank-based activation (score) and the normalised signature
+    # similarity (sim). A good threshold is only possible if the signal
+    # separates the two.
     def _sweep(field: str):
         out = []
         for i in range(0, 101, 2):
             t = i / 100
             empty_acc = sum(r[field] < t for r in non_rows) / len(non_rows)
-            gated = sum(0 < r["rank"] <= K and r[field] >= t for r in mem_rows) / n_mem
+            gated = sum(0 < r["rank"] <= K and r[field] >= t
+                        for r in mem_rows) / n_mem
             out.append({"t": t, "empty_acc": empty_acc, "recall": gated})
         return out
 
     sweep = _sweep("top1")
     sweep_sim = _sweep("sim")
     target = next((s for s in sweep if s["empty_acc"] >= 0.95), sweep[-1])
-    target_sim = next((s for s in sweep_sim if s["empty_acc"] >= 0.95), sweep_sim[-1])
+    target_sim = next((s for s in sweep_sim if s["empty_acc"] >= 0.95),
+                      sweep_sim[-1])
 
     return {
         "n_memory": n_mem,
@@ -165,42 +173,47 @@ def _report(mem_rows, non_rows, latencies) -> dict:
 
 
 def _print(m: dict) -> None:
-    p = lambda label, val: print(f"  {label:<26} {val}")
-    print("\n=== neocp recall — Faz 0 baseline ===")
-    print(f"  {m['n_memory']} hafıza sorgusu · {m['n_none']} boş-dönüş sorgusu\n")
+    p = lambda label, val: print(f"  {label:<28} {val}")
+    print("\n=== neocp recall — Phase 0 baseline ===")
+    print(f"  {m['n_memory']} memory queries · {m['n_none']} empty-return queries\n")
 
-    print("Retrieval (eşiksiz, ham motor):")
+    print("Retrieval (ungated, bare engine):")
     p("Recall@1", f"{m['recall@1']:.2f}")
-    p(f"Recall@{K}", f"{m['recall@%d' % K]:.2f}   (hedef ≥ 0.80)")
+    p(f"Recall@{K}", f"{m['recall@%d' % K]:.2f}   (target ≥ 0.80)")
     p("MRR", f"{m['mrr']:.3f}")
-    print("\n  tür kırılımı (Recall@%d):" % K)
+    print("\n  per-type breakdown (Recall@%d):" % K)
     for t, v in sorted(m["by_type"].items()):
         print(f"    {t:<12} {v:.2f}")
 
-    print("\nGecikme (ms):")
+    print("\nLatency (ms):")
     lat = m["latency_ms"]
-    p("ortalama / p50 / p95", f"{lat['mean']:.2f} / {lat['p50']:.2f} / {lat['p95']:.2f}   (hedef ≤ 200)")
-    p("enjekte token / sorgu", f"{m['avg_injected_tokens']:.0f}   (hedef ≤ 1200)")
+    p("mean / p50 / p95",
+      f"{lat['mean']:.2f} / {lat['p50']:.2f} / {lat['p95']:.2f}   (target ≤ 200)")
+    p("injected tokens / query",
+      f"{m['avg_injected_tokens']:.0f}   (target ≤ 1200)")
 
     sd = m["score_dist"]
-    print("\nSinyal ayrımı — iyi eşik ancak sinyal hafıza/boş'u ayırırsa mümkün:")
-    print("  (yüksek hafıza-ortancası + düşük boş-en-yüksek = temiz ayrım)")
-    p("aktivasyon: hafıza / boş-max", f"{sd['mem_top1_median']:.2f} / {sd['none_top1_max']:.2f}")
-    p("imza-benzerlik: hafıza / boş-max", f"{sd['mem_sim_median']:.2f} / {sd['none_sim_max']:.2f}")
+    print("\nSignal separation — a good threshold needs the signal to "
+          "separate memory from empty:")
+    print("  (high memory-median + low empty-max = clean separation)")
+    p("activation: memory / empty-max",
+      f"{sd['mem_top1_median']:.2f} / {sd['none_top1_max']:.2f}")
+    p("signature-sim: memory / empty-max",
+      f"{sd['mem_sim_median']:.2f} / {sd['none_sim_max']:.2f}")
 
     def cal(tag, c, sweep):
-        print(f"\nEşik kalibrasyonu — {tag} (blueprint adım 3):")
-        p("%95 boş-dönüş eşiği", f"{c['t']:.2f}")
-        p("  o eşikte boş-dönüş", f"{c['empty_acc']:.2f}")
-        p("  o eşikte Recall@%d" % K, f"{c['recall']:.2f}")
+        print(f"\nThreshold calibration — {tag}:")
+        p("95% empty-return threshold", f"{c['t']:.2f}")
+        p("  empty-return there", f"{c['empty_acc']:.2f}")
+        p("  Recall@%d there" % K, f"{c['recall']:.2f}")
         for s in sweep:
             if abs(s["t"] * 100) % 10 == 0:
-                bar = "█" * int(s["recall"] * 18)
-                gap = "░" * int(s["empty_acc"] * 18)
-                print(f"    {s['t']:.2f}  boş[{gap:<18}]  recall[{bar:<18}]")
+                bar = "#" * int(s["recall"] * 18)
+                gap = "." * int(s["empty_acc"] * 18)
+                print(f"    {s['t']:.2f}  empty[{gap:<18}]  recall[{bar:<18}]")
 
-    cal("aktivasyon (mevcut score)", m["calibration"], m["sweep"])
-    cal("imza-benzerlik (SimHash)", m["calibration_sim"], m["sweep_sim"])
+    cal("activation (current score)", m["calibration"], m["sweep"])
+    cal("signature similarity (SimHash)", m["calibration_sim"], m["sweep_sim"])
     print()
 
 
