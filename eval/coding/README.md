@@ -1,68 +1,39 @@
-# Kodlama ölçümü
+# Coding benchmark
 
-neo'nun "vibe coding" tarafını ölçen düzenek. Soru şu değil: *model ne kadar
-akıllı?* Soru şu: **neo'nun içinde koşan bir model, çalışan bir iş teslim
-ediyor mu?**
+The question is not *how smart is the model* — it is **does a model
+running inside neo deliver working software?**
 
-Ölçüm tümüyle otomatik: her görev kendi geçici çalışma alanında, **boş bir
-zihinle**, kendi neo örneğiyle koşuyor. Ajan işi bitirince puanlayıcı
-atölyeye girip yazılan kodu **gerçekten çalıştırıyor** — dosya var mı diye
-bakmakla yetinmiyor.
+Fully automatic: every task runs in its own temp workspace, with an
+**empty mind**, on its own isolated neo instance. When the agent says it
+is done, the grader walks into the workspace and **executes** the
+delivery — runs the CLI, probes the HTTP endpoints, checks the auth
+redirects, runs the test suites. Files merely existing scores nothing.
 
-## Koşmak
+## Run it
 
 ```bash
-py eval/coding/kosucu.py --gorev hepsi --tekrar 1
+py eval/coding/kosucu.py --gorev hepsi --model z-ai/glm-5.3-flash --tekrar 2
 ```
 
-| bayrak | ne yapar |
+Useful flags: `--gorev k2-cli,z1-arama` (subset), `--zorluk zor`
+(by difficulty), `--durum <dir>` (config/keys source), `--sakla`
+(keep workspaces), `--onceki <json>` (merge with a previous result and
+re-run only the selected tasks).
+
+## Layout
+
+| Path | Purpose |
 |---|---|
-| `--gorev` | `hepsi`, ya da virgülle: `k1-modul,z2-panel` |
-| `--zorluk` | `kolay` / `orta` / `zor` süzgeci |
-| `--model` | modeli bu koşu için değiştirir (varsayılan: yapılandırmadaki) |
-| `--tekrar` | aynı görevi N kez koşar — tek koşu gürültüdür, karşılaştırma için 3 |
-| `--bekle` | görev başına azami saniye (varsayılan 900) |
-| `--onceki` | eksik görevleri eski bir koşudan devralır; rapor devralınanı `†` ile işaretler |
-| `--sakla` | çalışma alanını silmez (kanıta elle bakmak için) |
+| `kosucu.py` | runner: builds the isolated workspace, boots neo, asks through the gate, grades |
+| `puanla.py` | scoring axes (works / scope / health / tests); executes the delivery |
+| `davranis.py` | behaviour columns from the session log: model calls, tool errors, prompt & cache tokens, cost |
+| `gorevler/<task>/` | one folder per task: `gorev.md` (the brief, exactly what the agent sees) + `olcut.py` (grader) + optional `tohum/` (seed files) |
+| `sonuclar/` | raw per-run JSON cited by the public benchmark report |
 
-Sonuç `sonuclar/<zaman>-<model>.json` ve okunur haliyle `sonuclar/RAPOR.md`.
+## Honesty rules baked in
 
-## Puan nasıl çıkıyor
-
-Dört eksen: **çalışır mı** 40 · **istenen kapsam** 25 · **kod sağlığı** 20 ·
-**test kalitesi** 15.
-
-İki kural puanı dürüst tutuyor:
-
-- **Ölçülemeyen eksen paydadan da düşer.** Bir eksen hiç ölçülemediyse (araç
-  yok, süreç kalkmadı) o eksen 0 yazılmaz — bölüme hiç girmez. Aksi hâlde
-  "ölçemedim" ile "başarısız" aynı sayıya düşerdi.
-- **`çalışır` ölçülemediyse puan yoktur.** Kodun koşup koşmadığı bilinmiyorsa
-  geri kalanı puanlamak anlamsız; o satır `ölçülemedi` olarak raporlanır.
-  (Bu kural bir hatadan doğdu: bir görev, iki taşıyıcı ekseni hiç ölçülmemişken
-  100.0 almıştı.)
-
-`istenmedi` işareti üçüncü bir durum: istem test yazmayı istemiyorsa test
-ekseni ölçülür, raporlanır, ama puana katılmaz.
-
-## Davranış ölçütleri
-
-Puana katılmayan ama daha çok şey anlatan sütunlar: tur bitti mi, kaç araç
-çağrıldı, kaçı hatalıydı, ajan işini **kendi doğruladı mı**, plan yazdı mı,
-bozuk teslim var mı. Bir düzeltmenin işe yarayıp yaramadığı çoğu zaman
-puanda değil burada görünüyor.
-
-## Dosyalar
-
-| dosya | işi |
-|---|---|
-| `kosucu.py` | koşuyu yönetir: alan hazırlar, neo'yu başlatır, dış kapıdan sorar, puanlatır |
-| `ornek.py` | izole bir neo örneği ayağa kaldırır (kendi `.neocp`'si, kendi portu) |
-| `puanla.py` | eksen/ölçüt altyapısı ve rapor üretimi |
-| `davranis.py` | davranış ölçütlerini olay günlüğünden çıkarır |
-| `gorevler/<ad>/gorev.md` | ajana verilen istem |
-| `gorevler/<ad>/olcut.py` | o görevin ölçütleri — kodu çalıştıran taraf |
-| `gorevler/<ad>/tohum/` | varsa başlangıç dosyaları (onarılacak hata, mevcut testler) |
-
-Yeni görev eklemek: `gorevler/` altına bir klasör, içine `gorev.md` ve
-`olcut.py`. Kosucu klasörü kendi buluyor.
+* The *works* axis is the carrier: if it cannot be measured, the task
+  scores `None`, never a flattering number.
+* A run that leaves a server holding the port is detected and reported
+  instead of silently scoring zero.
+* Scores are per-repetition; the report uses means, never best-of.
