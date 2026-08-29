@@ -1,0 +1,966 @@
+{
+  "zaman": "20260828T230330Z",
+  "model": "z-ai/glm-5.3-flash",
+  "tekrar": 2,
+  "bekle_sn": 900.0,
+  "gorevler": [
+    {
+      "ad": "k1-modul",
+      "baslik": "TCKN doğrulama modülü + testleri",
+      "zorluk": "kolay",
+      "dil": "python",
+      "ozet": {
+        "gorev": "k1-modul",
+        "puan": 98.0,
+        "ham": 98.0,
+        "olculen_tavan": 100,
+        "olculemeyen": [],
+        "bozuk_teslim": false,
+        "eksenler": [
+          {
+            "ad": "calisir",
+            "tavan": 40,
+            "alinan": 40.0,
+            "kanit": [
+              "+ tckn.py var (10p) — tckn.py",
+              "+ modül import ediliyor (15p) — tamam",
+              "+ dogrula() çağrılabiliyor (15p) — tamam"
+            ],
+            "sebep": "",
+            "harici": false
+          },
+          {
+            "ad": "kapsam",
+            "tavan": 25,
+            "alinan": 25.0,
+            "kanit": [
+              "~ geçerli numaralara True (10.0/10p) — 5/5",
+              "~ geçersiz numaralara False (10.0/10p) — 6/6",
+              "~ çöp girdide patlamıyor (2.0/2p) — 4/4 girdi istisna atmadı",
+              "~ çöp girdiye False diyor (3.0/3p) — 4/4"
+            ],
+            "sebep": "",
+            "harici": false
+          },
+          {
+            "ad": "saglik",
+            "tavan": 20,
+            "alinan": 20.0,
+            "kanit": [
+              "~ sözdizimi temiz (8.0/8p) — 2/2 dosya",
+              "~ boy/karmaşıklık (6.0/6p) — temiz",
+              "~ tekrar yok (6.0/6p) — tekrar eden satır %0, 0 yinelenen blok"
+            ],
+            "sebep": "",
+            "harici": false
+          },
+          {
+            "ad": "test",
+            "tavan": 15,
+            "alinan": 13.0,
+            "kanit": [
+              "+ testler yeşil (6p) — ......... [100%] 9 passed in 0.01s",
+              "~ test adedi (4.0/4p) — 9 test bulundu",
+              "~ kritik yol kapsanıyor (3.0/3p) — 1/1: dogrula",
+              "~ iddialar dolu (0.0/2p) — 0 iddia, 0 tanesi bedava geçiyor"
+            ],
+            "sebep": "",
+            "harici": false
+          }
+        ],
+        "davranis": {
+          "arac_cagrisi": 6,
+          "araclar": {
+            "write_file": 2,
+            "shell": 2,
+            "kos": 1,
+            "edit_file": 1
+          },
+          "hatali_arac": 1,
+          "model_turu": 7,
+          "api_hatasi": 0,
+          "dogruladi_mi": true,
+          "dogrulama_izi": [
+            "shell: py -m unittest test_tckn -v",
+            "shell: py -m unittest test_tckn -v"
+          ],
+          "calistirma_izi": [],
+          "plan_yazdi_mi": false,
+          "plan_kaniti": "",
+          "token_prompt_son": 16881,
+          "token_prompt_toplam": 113367,
+          "token_cikti": 1431,
+          "token_cache_okuma": 86528,
+          "model_cagrisi": 7,
+          "maliyet_usd": 0.0089,
+          "sure_sn": 47.3,
+          "degisen_dosya": 2,
+          "kapi_ok": true,
+          "duvar_saati_sn": 49.6
+        },
+        "notlar": [
+          "ölçüm dışı (dokunulmamış tur öncesi dosya): 7"
+        ]
+      },
+      "tum_puanlar": [
+        98.0,
+        100.0
+      ],
+      "puan_sapma": 1.0,
+      "bozuk_teslim": 0,
+      "devralindi": ""
+    },
+    {
+      "ad": "k2-cli",
+      "baslik": "Node görev listesi CLI",
+      "zorluk": "kolay",
+      "dil": "node",
+      "ozet": {
+        "gorev": "k2-cli",
+        "puan": 100.0,
+        "ham": 85.0,
+        "olculen_tavan": 85,
+        "olculemeyen": [],
+        "bozuk_teslim": false,
+        "eksenler": [
+          {
+            "ad": "calisir",
+            "tavan": 40,
+            "alinan": 40.0,
+            "kanit": [
+              "+ gorev.js var (10p) — gorev.js",
+              "+ ekle çalışıyor (10p) — çıkış 0/0",
+              "+ liste çalışıyor (10p) — [ ] 1. süt al [ ] 2. faturayı öde",
+              "+ bilinmeyen komut hata veriyor (10p) — çıkış kodu 1"
+            ],
+            "sebep": "",
+            "harici": false
+          },
+          {
+            "ad": "kapsam",
+            "tavan": 25,
+            "alinan": 25.0,
+            "kanit": [
+              "+ eklenenler listede görünüyor (10p) — «süt al»: True, «faturayı öde»: True",
+              "+ bitir listeyi değiştiriyor (kalan görev duruyor) (8p) — bitir çıkışı 0; liste değişti",
+              "+ gorevler.json'da kalıcı (7p) — gorevler.json, 217 karakter"
+            ],
+            "sebep": "",
+            "harici": false
+          },
+          {
+            "ad": "saglik",
+            "tavan": 20,
+            "alinan": 20.0,
+            "kanit": [
+              "~ sözdizimi temiz (8.0/8p) — 1/1 dosya",
+              "~ boy/karmaşıklık (6.0/6p) — temiz",
+              "~ tekrar yok (6.0/6p) — tekrar eden satır %0, 0 yinelenen blok"
+            ],
+            "sebep": "",
+            "harici": false
+          },
+          {
+            "ad": "test",
+            "tavan": 15,
+            "alinan": 0.0,
+            "kanit": [
+              "- test dosyası yok (0p)"
+            ],
+            "sebep": "",
+            "harici": true
+          }
+        ],
+        "davranis": {
+          "arac_cagrisi": 3,
+          "araclar": {
+            "shell": 2,
+            "write_file": 1
+          },
+          "hatali_arac": 0,
+          "model_turu": 4,
+          "api_hatasi": 0,
+          "dogruladi_mi": false,
+          "dogrulama_izi": [],
+          "calistirma_izi": [
+            "shell: node gorev.js ekle \"süt al\"; node gorev.js ekle \"fatura öde\"; node gorev.js bitir 1; node "
+          ],
+          "plan_yazdi_mi": false,
+          "plan_kaniti": "",
+          "token_prompt_son": 15849,
+          "token_prompt_toplam": 62735,
+          "token_cikti": 929,
+          "token_cache_okuma": 57024,
+          "model_cagrisi": 4,
+          "maliyet_usd": 0.0049,
+          "sure_sn": 29.6,
+          "degisen_dosya": 1,
+          "kapi_ok": true,
+          "duvar_saati_sn": 32.0
+        },
+        "notlar": [
+          "ölçüm dışı (dokunulmamış tur öncesi dosya): 7"
+        ]
+      },
+      "tum_puanlar": [
+        100.0,
+        100.0
+      ],
+      "puan_sapma": 0.0,
+      "bozuk_teslim": 0,
+      "devralindi": ""
+    },
+    {
+      "ad": "k3-tamir",
+      "baslik": "PHP fatura hesabındaki hatayı bul ve düzelt",
+      "zorluk": "kolay",
+      "dil": "php",
+      "ozet": {
+        "gorev": "k3-tamir",
+        "puan": 100.0,
+        "ham": 85.0,
+        "olculen_tavan": 85,
+        "olculemeyen": [],
+        "bozuk_teslim": false,
+        "eksenler": [
+          {
+            "ad": "calisir",
+            "tavan": 40,
+            "alinan": 40.0,
+            "kanit": [
+              "+ fatura.php duruyor (10p) — fatura.php",
+              "+ php -l temiz (10p) — No syntax errors detected in C:\\Users\\user\\AppData\\Local\\Temp\\neocp-eval-k3-tamir-ppn6l09b\\atolye\\fatura.php",
+              "+ fonksiyon dışarıdan çağrılabiliyor (20p) — tamam"
+            ],
+            "sebep": "",
+            "harici": false
+          },
+          {
+            "ad": "kapsam",
+            "tavan": 25,
+            "alinan": 25.0,
+            "kanit": [
+              "+ vaka: üç kalem %18 (10p) — beklenen 82.60, çıkan 82.60",
+              "+ vaka: tek kalem %20 (7p) — beklenen 27.00, çıkan 27.00",
+              "+ vaka: iki kalem %0 (5p) — beklenen 50.00, çıkan 50.00",
+              "+ vaka: boş sipariş (3p) — beklenen 0.00, çıkan 0.00"
+            ],
+            "sebep": "",
+            "harici": false
+          },
+          {
+            "ad": "saglik",
+            "tavan": 20,
+            "alinan": 20.0,
+            "kanit": [
+              "~ sözdizimi temiz (8.0/8p) — 1/1 dosya",
+              "~ boy/karmaşıklık (6.0/6p) — temiz",
+              "~ tekrar yok (6.0/6p) — tekrar eden satır %0, 0 yinelenen blok"
+            ],
+            "sebep": "",
+            "harici": false
+          },
+          {
+            "ad": "test",
+            "tavan": 15,
+            "alinan": 0.0,
+            "kanit": [
+              "- test dosyası yok (0p)"
+            ],
+            "sebep": "",
+            "harici": true
+          }
+        ],
+        "davranis": {
+          "arac_cagrisi": 4,
+          "araclar": {
+            "shell": 2,
+            "read_file": 1,
+            "edit_file": 1
+          },
+          "hatali_arac": 0,
+          "model_turu": 5,
+          "api_hatasi": 0,
+          "dogruladi_mi": false,
+          "dogrulama_izi": [],
+          "calistirma_izi": [
+            "shell: php fatura.php"
+          ],
+          "plan_yazdi_mi": false,
+          "plan_kaniti": "",
+          "token_prompt_son": 16099,
+          "token_prompt_toplam": 78442,
+          "token_cikti": 433,
+          "token_cache_okuma": 69952,
+          "model_cagrisi": 5,
+          "maliyet_usd": 0.006,
+          "sure_sn": 24.2,
+          "degisen_dosya": 1,
+          "kapi_ok": true,
+          "duvar_saati_sn": 26.4
+        },
+        "notlar": [
+          "ölçüm dışı (dokunulmamış tur öncesi dosya): 7"
+        ]
+      },
+      "tum_puanlar": [
+        100.0,
+        100.0
+      ],
+      "puan_sapma": 0.0,
+      "bozuk_teslim": 0,
+      "devralindi": ""
+    },
+    {
+      "ad": "o1-rapor",
+      "baslik": "CSV satış raporu + CLI",
+      "zorluk": "orta",
+      "dil": "python",
+      "ozet": {
+        "gorev": "o1-rapor",
+        "puan": 100.0,
+        "ham": 85.0,
+        "olculen_tavan": 85,
+        "olculemeyen": [],
+        "bozuk_teslim": false,
+        "eksenler": [
+          {
+            "ad": "calisir",
+            "tavan": 40,
+            "alinan": 40.0,
+            "kanit": [
+              "+ rapor.py var (8p) — rapor.py",
+              "+ csv ile koşuyor (16p) — çıkış 0; 2026-01 Toplam ciro: 47553.25 1. Pompa: 25197.00 2. Sensor: 12159.05 3. PLC: 8249.70 2026-02 Toplam ciro: 33938.45 1. Sensor: 17278.65 2. Pompa: 8399.00 3. PLC:",
+              "+ çıktı boş değil (8p) — 275 karakter",
+              "+ --ay koşuyor (8p) — çıkış 0; 2026-03 Toplam ciro: 99286.90 1. Pompa: 54593.50 2. PLC: 30248.90 3. Sensor: 12799.00"
+            ],
+            "sebep": "",
+            "harici": false
+          },
+          {
+            "ad": "kapsam",
+            "tavan": 25,
+            "alinan": 25.0,
+            "kanit": [
+              "~ aylık cirolar doğru (10.0/10p) — 3/3 ay tuttu: 2026-01, 2026-02, 2026-03",
+              "+ en çok ciro yapan 3 ürün var (5p) — Pompa, PLC, Sensor",
+              "+ üçü çoktan aza sıralı (5p) — sıra tuttu",
+              "+ --ay 2026-03 doğru ayı veriyor (3p) — beklenen 99286.9",
+              "+ --ay diğer ayları süzüyor (2p) — temiz"
+            ],
+            "sebep": "",
+            "harici": false
+          },
+          {
+            "ad": "saglik",
+            "tavan": 20,
+            "alinan": 20.0,
+            "kanit": [
+              "~ sözdizimi temiz (8.0/8p) — 1/1 dosya",
+              "~ boy/karmaşıklık (6.0/6p) — temiz",
+              "~ tekrar yok (6.0/6p) — tekrar eden satır %0, 0 yinelenen blok"
+            ],
+            "sebep": "",
+            "harici": false
+          },
+          {
+            "ad": "test",
+            "tavan": 15,
+            "alinan": 0.0,
+            "kanit": [
+              "- test dosyası yok (0p)"
+            ],
+            "sebep": "",
+            "harici": true
+          }
+        ],
+        "davranis": {
+          "arac_cagrisi": 5,
+          "araclar": {
+            "ozet_csv": 1,
+            "write_file": 1,
+            "edit_file": 1,
+            "read_file": 1,
+            "shell": 1
+          },
+          "hatali_arac": 1,
+          "model_turu": 6,
+          "api_hatasi": 0,
+          "dogruladi_mi": false,
+          "dogrulama_izi": [],
+          "calistirma_izi": [
+            "shell: py rapor.py satislar.csv; echo '---'; py rapor.py satislar.csv --ay 2026-03; echo '---'; p"
+          ],
+          "plan_yazdi_mi": false,
+          "plan_kaniti": "",
+          "token_prompt_son": 16487,
+          "token_prompt_toplam": 95803,
+          "token_cikti": 1009,
+          "token_cache_okuma": 88576,
+          "model_cagrisi": 6,
+          "maliyet_usd": 0.0074,
+          "sure_sn": 44.6,
+          "degisen_dosya": 1,
+          "kapi_ok": true,
+          "duvar_saati_sn": 46.8
+        },
+        "notlar": [
+          "ölçüm dışı (dokunulmamış tur öncesi dosya): 8"
+        ]
+      },
+      "tum_puanlar": [
+        100.0,
+        100.0
+      ],
+      "puan_sapma": 0.0,
+      "bozuk_teslim": 0,
+      "devralindi": ""
+    },
+    {
+      "ad": "o2-servis",
+      "baslik": "Kısa-link HTTP servisi + testleri",
+      "zorluk": "orta",
+      "dil": "python",
+      "ozet": {
+        "gorev": "o2-servis",
+        "puan": 99.33333333333331,
+        "ham": 99.33333333333333,
+        "olculen_tavan": 100,
+        "olculemeyen": [],
+        "bozuk_teslim": false,
+        "eksenler": [
+          {
+            "ad": "calisir",
+            "tavan": 40,
+            "alinan": 40.0,
+            "kanit": [
+              "+ servis.py var (8p) — servis.py",
+              "+ süreç ayağa kalkıyor (12p) — ayakta",
+              "+ port açılıyor (10p) — 127.0.0.1:8099 açıldı",
+              "+ /saglik 200 (10p) — HTTP 200"
+            ],
+            "sebep": "",
+            "harici": false
+          },
+          {
+            "ad": "kapsam",
+            "tavan": 25,
+            "alinan": 25.0,
+            "kanit": [
+              "+ POST /kisalt kod dönüyor (10p) — HTTP 200, kod «ysnyxw»; gövde '{\"kod\": \"ysnyxw\"}'",
+              "+ GET /<kod> 302 yönlendiriyor (10p) — HTTP 302, Location «https://ornek.gov.tr/ihale/2026/sondaj»",
+              "+ olmayan kod 404 (5p) — HTTP 404"
+            ],
+            "sebep": "",
+            "harici": false
+          },
+          {
+            "ad": "saglik",
+            "tavan": 20,
+            "alinan": 20.0,
+            "kanit": [
+              "~ sözdizimi temiz (8.0/8p) — 2/2 dosya",
+              "~ boy/karmaşıklık (6.0/6p) — temiz",
+              "~ tekrar yok (6.0/6p) — tekrar eden satır %0, 0 yinelenen blok"
+            ],
+            "sebep": "",
+            "harici": false
+          },
+          {
+            "ad": "test",
+            "tavan": 15,
+            "alinan": 14.333333333333334,
+            "kanit": [
+              "+ testler yeşil (6p) — ..... [100%] 5 passed in 0.52s",
+              "~ test adedi (3.3/4p) — 5 test bulundu",
+              "~ kritik yol kapsanıyor (3.0/3p) — 2/2: kisalt, saglik",
+              "~ iddialar dolu (2.0/2p) — 6 iddia, 0 tanesi bedava geçiyor"
+            ],
+            "sebep": "",
+            "harici": false
+          }
+        ],
+        "davranis": {
+          "arac_cagrisi": 9,
+          "araclar": {
+            "shell": 3,
+            "write_file": 2,
+            "edit_file": 2,
+            "kos": 1,
+            "read_file": 1
+          },
+          "hatali_arac": 2,
+          "model_turu": 9,
+          "api_hatasi": 0,
+          "dogruladi_mi": true,
+          "dogrulama_izi": [
+            "shell: py -m unittest test_servis -v",
+            "shell: py -m unittest test_servis -v",
+            "shell: py -m unittest test_servis -v"
+          ],
+          "calistirma_izi": [],
+          "plan_yazdi_mi": false,
+          "plan_kaniti": "",
+          "token_prompt_son": 17646,
+          "token_prompt_toplam": 152085,
+          "token_cikti": 2249,
+          "token_cache_okuma": 136448,
+          "model_cagrisi": 9,
+          "maliyet_usd": 0.012,
+          "sure_sn": 75.9,
+          "degisen_dosya": 2,
+          "kapi_ok": true,
+          "duvar_saati_sn": 78.1
+        },
+        "notlar": [
+          "ölçüm dışı (dokunulmamış tur öncesi dosya): 7"
+        ]
+      },
+      "tum_puanlar": [
+        99.33333333333331
+      ],
+      "puan_sapma": null,
+      "bozuk_teslim": 0,
+      "devralindi": ""
+    },
+    {
+      "ad": "o3-ozellik",
+      "baslik": "Kitaplığa ödünç verme ekle (mevcut testler kırılmasın)",
+      "zorluk": "orta",
+      "dil": "node",
+      "ozet": {
+        "gorev": "o3-ozellik",
+        "puan": 100.0,
+        "ham": 85.0,
+        "olculen_tavan": 85,
+        "olculemeyen": [],
+        "bozuk_teslim": false,
+        "eksenler": [
+          {
+            "ad": "calisir",
+            "tavan": 40,
+            "alinan": 40.0,
+            "kanit": [
+              "+ kitaplik.js duruyor (8p) — kitaplik.js",
+              "+ node --check temiz (6p)",
+              "+ modül yükleniyor (8p) — tamam",
+              "+ bozulmamış testler yeşil (18p) — TAP version 13 # Subtest: kitap eklenebiliyor ok 1 - kitap eklenebiliyor --- duration_ms: 0.5141 type: 'test' ... # Subtest: aynı ISBN iki kez eklenemiyor ok 2 - aynı ISBN iki kez "
+            ],
+            "sebep": "",
+            "harici": false
+          },
+          {
+            "ad": "kapsam",
+            "tavan": 25,
+            "alinan": 25.0,
+            "kanit": [
+              "+ oduncVer çalışıyor (6p) — {'ok': True, 'deger': {'isbn': '978-1', 'baslik': 'Kuyu', 'yazar': 'Ahmet', 'odunc': {'kisi': 'Mehmet', 'alinma': '2026-",
+              "+ liste ödünçteki kişiyi gösteriyor (5p) — [{\"isbn\":\"978-1\",\"baslik\":\"Kuyu\",\"yazar\":\"Ahmet\",\"odunc\":{\"kisi\":\"Fatih\",\"alinma\":\"2026-08-28T23:15:30.304Z\"}},{\"isbn\":\"978-2\",\"baslik\":\"Zey",
+              "+ ikinci ödünç hata fırlatıyor (6p) — {'ok': False, 'hata': 'Kitap zaten ödünçte: 978-1 (Fatih)'}",
+              "+ olmayan ISBN hata fırlatıyor (4p) — {'ok': False, 'hata': 'Olmayan ISBN: yok-boyle'}",
+              "+ iadeAl kitabı serbest bırakıyor (4p) — {'ok': True, 'deger': {'isbn': '978-1', 'baslik': 'Kuyu', 'yazar': 'Ahmet', 'odunc': {'kisi': 'Mehmet', 'alinma': '2026-"
+            ],
+            "sebep": "",
+            "harici": false
+          },
+          {
+            "ad": "saglik",
+            "tavan": 20,
+            "alinan": 20.0,
+            "kanit": [
+              "~ sözdizimi temiz (8.0/8p) — 1/1 dosya",
+              "~ boy/karmaşıklık (6.0/6p) — temiz",
+              "~ tekrar yok (6.0/6p) — tekrar eden satır %0, 0 yinelenen blok"
+            ],
+            "sebep": "",
+            "harici": false
+          },
+          {
+            "ad": "test",
+            "tavan": 15,
+            "alinan": 0.0,
+            "kanit": [
+              "! tohumda zaten test takımı var — bu eksen ajanın kendi katkısını ayıramaz, o yüzden puana katılmıyor",
+              "- test dosyası yok (0p)"
+            ],
+            "sebep": "",
+            "harici": true
+          }
+        ],
+        "davranis": {
+          "arac_cagrisi": 6,
+          "araclar": {
+            "edit_file": 2,
+            "shell": 2,
+            "read_file": 1,
+            "list_dir": 1
+          },
+          "hatali_arac": 0,
+          "model_turu": 7,
+          "api_hatasi": 0,
+          "dogruladi_mi": true,
+          "dogrulama_izi": [
+            "shell: node --test",
+            "shell: node -e \"const {Kitaplik}=require('./kitaplik'); const k=new Kitaplik(); k.ekle('1','Dune'"
+          ],
+          "calistirma_izi": [],
+          "plan_yazdi_mi": false,
+          "plan_kaniti": "",
+          "token_prompt_son": 16842,
+          "token_prompt_toplam": 112545,
+          "token_cikti": 871,
+          "token_cache_okuma": 106944,
+          "model_cagrisi": 7,
+          "maliyet_usd": 0.0087,
+          "sure_sn": 39.5,
+          "degisen_dosya": 1,
+          "kapi_ok": true,
+          "duvar_saati_sn": 41.7
+        },
+        "notlar": [
+          "ölçüm dışı (dokunulmamış tur öncesi dosya): 8"
+        ]
+      },
+      "tum_puanlar": [
+        100.0,
+        100.0
+      ],
+      "puan_sapma": 0.0,
+      "bozuk_teslim": 0,
+      "devralindi": ""
+    },
+    {
+      "ad": "z1-arama",
+      "baslik": "SQLite kalıcılıklı not arama aracı",
+      "zorluk": "zor",
+      "dil": "python",
+      "ozet": {
+        "gorev": "z1-arama",
+        "puan": 100.0,
+        "ham": 100.0,
+        "olculen_tavan": 100,
+        "olculemeyen": [],
+        "bozuk_teslim": false,
+        "eksenler": [
+          {
+            "ad": "calisir",
+            "tavan": 40,
+            "alinan": 40.0,
+            "kanit": [
+              "+ ara.py var (5p) — ara.py",
+              "+ ekle koşuyor (12p) — çıkış 0; 0 yeni, 0 guncellendi, 6 degisiklik yok.",
+              "+ SQLite dosyası oluştu (8p) — ara.db",
+              "+ bul ayrı süreçte koşuyor (15p) — çıkış 0; a.txt Kuyu bakim notlari Dalgic pompa [salmastra] degistirmesi pompa-katalog.txt ... rulman, [salmastra], motor mili."
+            ],
+            "sebep": "",
+            "harici": false
+          },
+          {
+            "ad": "kapsam",
+            "tavan": 25,
+            "alinan": 25.0,
+            "kanit": [
+              "+ tek kelime doğru notu buluyor (8p) — «salmastra» → pompa-katalog bekleniyordu; çıktı: 'a.txt\\n    Kuyu bakim notlari\\nDalgic pompa [salmastra] degistirmesi\\n\\npompa-katalog.txt\\n     ... rulman, [salmastra], moto'",
+              "+ çok kelimede hepsi geçen not üstte (10p) — «rulman titresim» → kuyu-bakim yeri 60, pompa-katalog yeri 161",
+              "+ olmayan kelimede sonuç uydurmuyor (7p) — «helikopter» → çıktı: \"'helikopter' icin hicbir not bulunamadi.\\n\\n\""
+            ],
+            "sebep": "",
+            "harici": false
+          },
+          {
+            "ad": "saglik",
+            "tavan": 20,
+            "alinan": 20.0,
+            "kanit": [
+              "~ sözdizimi temiz (8.0/8p) — 2/2 dosya",
+              "~ boy/karmaşıklık (6.0/6p) — temiz",
+              "~ tekrar yok (6.0/6p) — tekrar eden satır %0, 0 yinelenen blok"
+            ],
+            "sebep": "",
+            "harici": false
+          },
+          {
+            "ad": "test",
+            "tavan": 15,
+            "alinan": 15.0,
+            "kanit": [
+              "+ testler yeşil (6p) — ...... [100%] 6 passed in 0.76s",
+              "~ test adedi (4.0/4p) — 6 test bulundu",
+              "~ kritik yol kapsanıyor (3.0/3p) — 2/2: ekle, bul",
+              "~ iddialar dolu (2.0/2p) — 10 iddia, 0 tanesi bedava geçiyor"
+            ],
+            "sebep": "",
+            "harici": false
+          }
+        ],
+        "davranis": {
+          "arac_cagrisi": 12,
+          "araclar": {
+            "shell": 5,
+            "read_file": 2,
+            "write_file": 2,
+            "list_dir": 1,
+            "kos": 1,
+            "edit_file": 1
+          },
+          "hatali_arac": 2,
+          "model_turu": 13,
+          "api_hatasi": 0,
+          "dogruladi_mi": true,
+          "dogrulama_izi": [
+            "shell: py -m pytest test_ara.py -v 2>&1; py -m pytest --version 2>&1",
+            "shell: py -m pytest \"$env:TEMP\\neocp-eval-z1-arama-g4_x93o3\\atolye\\test_ara.py\" -v 2>&1",
+            "shell: py -m pytest \"$env:TEMP\\neocp-eval-z1-arama-g4_x93o3\\atolye\\test_ara.py\" -v 2>&1",
+            "shell: $d=\"$env:TEMP\\neocp-eval-z1-arama-g4_x93o3\\atolye\"; (Get-Content \"$d\\test_ara.py\" -Raw) `\n"
+          ],
+          "calistirma_izi": [],
+          "plan_yazdi_mi": false,
+          "plan_kaniti": "",
+          "token_prompt_son": 18543,
+          "token_prompt_toplam": 220659,
+          "token_cikti": 3729,
+          "token_cache_okuma": 171520,
+          "model_cagrisi": 13,
+          "maliyet_usd": 0.0175,
+          "sure_sn": 208.5,
+          "degisen_dosya": 3,
+          "kapi_ok": true,
+          "duvar_saati_sn": 210.9
+        },
+        "notlar": [
+          "ölçüm dışı (dokunulmamış tur öncesi dosya): 13"
+        ]
+      },
+      "tum_puanlar": [
+        100.0,
+        96.66666666666669
+      ],
+      "puan_sapma": 1.6666666666666572,
+      "bozuk_teslim": 0,
+      "devralindi": ""
+    },
+    {
+      "ad": "z2-panel",
+      "baslik": "Giriş korumalı mini yönetim paneli",
+      "zorluk": "zor",
+      "dil": "php",
+      "ozet": {
+        "gorev": "z2-panel",
+        "puan": 100.0,
+        "ham": 85.0,
+        "olculen_tavan": 85,
+        "olculemeyen": [],
+        "bozuk_teslim": false,
+        "eksenler": [
+          {
+            "ad": "calisir",
+            "tavan": 40,
+            "alinan": 40.0,
+            "kanit": [
+              "+ index.php var (8p) — panel",
+              "! 8098 tutuluydu (ajan kendi sunucusunu açık bırakmış olabilir); ölçüm 8100 portunda yapıldı",
+              "+ sunucu ayağa kalkıyor (10p) — port açıldı",
+              "+ giriş sayfası açılıyor (10p) — 200, 1172 karakter; şifre alanı: True",
+              "+ doğru şifreyle içeri giriliyor (12p) — giriş POST → HTTP 200; ozet.php → HTTP 200"
+            ],
+            "sebep": "",
+            "harici": false
+          },
+          {
+            "ad": "kapsam",
+            "tavan": 25,
+            "alinan": 25.0,
+            "kanit": [
+              "~ girişsiz erişim engelleniyor (7.0/7p) — ozet.php: engelli; kullanicilar.php: engelli; ayarlar.php: engelli",
+              "+ yanlış şifre reddediliyor (3p) — yanlış şifreden sonra ozet.php → HTTP 302",
+              "+ ozet.php giriş sonrası çalışıyor (5p) — 200, 2731 karakter",
+              "+ kullanicilar.php giriş sonrası çalışıyor (5p) — 200, 3155 karakter",
+              "+ ayarlar.php giriş sonrası çalışıyor (5p) — 200, 2648 karakter"
+            ],
+            "sebep": "",
+            "harici": false
+          },
+          {
+            "ad": "saglik",
+            "tavan": 20,
+            "alinan": 20.0,
+            "kanit": [
+              "~ sözdizimi temiz (8.0/8p) — 7/7 dosya",
+              "~ boy/karmaşıklık (6.0/6p) — temiz",
+              "~ tekrar yok (6.0/6p) — tekrar eden satır %0, 0 yinelenen blok"
+            ],
+            "sebep": "",
+            "harici": false
+          },
+          {
+            "ad": "test",
+            "tavan": 15,
+            "alinan": 0.0,
+            "kanit": [
+              "- test dosyası yok (0p)"
+            ],
+            "sebep": "",
+            "harici": true
+          }
+        ],
+        "davranis": {
+          "arac_cagrisi": 24,
+          "araclar": {
+            "write_file": 10,
+            "shell": 10,
+            "read_file": 2,
+            "plan": 1,
+            "browser": 1
+          },
+          "hatali_arac": 3,
+          "model_turu": 20,
+          "api_hatasi": 0,
+          "dogruladi_mi": true,
+          "dogrulama_izi": [
+            "browser: ",
+            "shell: $r1 = Invoke-WebRequest -Uri \"http://127.0.0.1:8098/ozet.php\" -MaximumRedirection 0 -Error",
+            "shell: cmd /c \"echo --- giris olmadan korunan sayfa --- & curl.exe -s -o NUL -w %{http_code} %{re",
+            "shell: curl.exe -s -c cj.txt -d \"kullanici=admin&sifre=9999\" http://127.0.0.1:8098/index.php > y1",
+            "shell: del cj.txt; curl.exe -s -c cj.txt -d \"kullanici=admin&sifre=1234\" -o NUL http://127.0.0.1:"
+          ],
+          "calistirma_izi": [],
+          "plan_yazdi_mi": false,
+          "plan_kaniti": "",
+          "token_prompt_son": 22386,
+          "token_prompt_toplam": 394385,
+          "token_cikti": 7049,
+          "token_cache_okuma": 348288,
+          "model_cagrisi": 20,
+          "maliyet_usd": 0.0313,
+          "sure_sn": 174.8,
+          "degisen_dosya": 13,
+          "kapi_ok": true,
+          "duvar_saati_sn": 177.2
+        },
+        "notlar": [
+          "ölçüm dışı (dokunulmamış tur öncesi dosya): 7"
+        ]
+      },
+      "tum_puanlar": [
+        100.0,
+        100.0
+      ],
+      "puan_sapma": 0.0,
+      "bozuk_teslim": 0,
+      "devralindi": ""
+    },
+    {
+      "ad": "z3-gizli-hata",
+      "baslik": "Sepet modülündeki 3 gizli hatayı bul ve düzelt",
+      "zorluk": "zor",
+      "dil": "python",
+      "ozet": {
+        "gorev": "z3-gizli-hata",
+        "puan": 100.0,
+        "ham": 85.0,
+        "olculen_tavan": 85,
+        "olculemeyen": [],
+        "bozuk_teslim": false,
+        "eksenler": [
+          {
+            "ad": "calisir",
+            "tavan": 40,
+            "alinan": 40.0,
+            "kanit": [
+              "+ sepet.py duruyor (6p) — sepet\\sepet.py",
+              "+ modül import ediliyor (10p) — tamam",
+              "+ bozulmamış regresyon takımı koşuyor (8p) — ........ [100%] 8 passed in 0.01s",
+              "+ regresyon takımı tamamen yeşil (16p) — ........ [100%] 8 passed in 0.01s"
+            ],
+            "sebep": "",
+            "harici": false
+          },
+          {
+            "ad": "kapsam",
+            "tavan": 25,
+            "alinan": 25.0,
+            "kanit": [
+              "+ hata 1: aynı ürün eklenince adet birikiyor (8p) — beklenen [7, 21.0], çıkan [7, 21.0]",
+              "+ hata 2: indirim sınırları dahil (8p) — 500→0.05 (0.05), 1000→0.1 (0.10), 499.99→0.0 (0.0)",
+              "+ hata 3: toplam kuruşu koruyor (6p) — 7 × 14.29 → beklenen 100.03, çıkan 100.03",
+              "+ gizli vaka: 1500 → %10, 500 → %5 (2p) — 1500→1350.0 (1350.0), 500→475.0 (475.0)",
+              "+ var olan koruma sökülmemiş (adet 0 → ValueError) (1p) — {'ok': True, 'deger': 'ValueError'}"
+            ],
+            "sebep": "",
+            "harici": false
+          },
+          {
+            "ad": "saglik",
+            "tavan": 20,
+            "alinan": 20.0,
+            "kanit": [
+              "~ sözdizimi temiz (8.0/8p) — 1/1 dosya",
+              "~ boy/karmaşıklık (6.0/6p) — temiz",
+              "~ tekrar yok (6.0/6p) — tekrar eden satır %0, 0 yinelenen blok"
+            ],
+            "sebep": "",
+            "harici": false
+          },
+          {
+            "ad": "test",
+            "tavan": 15,
+            "alinan": 0.0,
+            "kanit": [
+              "! regresyon takımı tohumla geliyor — bu eksen ajanın kendi katkısını ayıramaz, puana katılmıyor",
+              "- test dosyası yok (0p)"
+            ],
+            "sebep": "",
+            "harici": true
+          }
+        ],
+        "davranis": {
+          "arac_cagrisi": 7,
+          "araclar": {
+            "shell": 2,
+            "list_dir": 2,
+            "read_file": 2,
+            "edit_file": 1
+          },
+          "hatali_arac": 1,
+          "model_turu": 7,
+          "api_hatasi": 0,
+          "dogruladi_mi": true,
+          "dogrulama_izi": [
+            "shell: Get-ChildItem atolye/sepet -Recurse | Select-Object FullName; py -m pytest atolye/sepet -x",
+            "shell: cd atolye\\sepet; py -m pytest -q"
+          ],
+          "calistirma_izi": [],
+          "plan_yazdi_mi": false,
+          "plan_kaniti": "",
+          "token_prompt_son": 16738,
+          "token_prompt_toplam": 112037,
+          "token_cikti": 586,
+          "token_cache_okuma": 104320,
+          "model_cagrisi": 7,
+          "maliyet_usd": 0.0085,
+          "sure_sn": 25.6,
+          "degisen_dosya": 1,
+          "kapi_ok": true,
+          "duvar_saati_sn": 27.9
+        },
+        "notlar": [
+          "ölçüm dışı (dokunulmamış tur öncesi dosya): 8"
+        ]
+      },
+      "tum_puanlar": [
+        100.0,
+        100.0
+      ],
+      "puan_sapma": 0.0,
+      "bozuk_teslim": 0,
+      "devralindi": ""
+    }
+  ],
+  "kosulmayan": [],
+  "eksen_tavanlari": {
+    "calisir": 40,
+    "kapsam": 25,
+    "saglik": 20,
+    "test": 15
+  }
+}

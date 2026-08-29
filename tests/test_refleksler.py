@@ -1099,3 +1099,169 @@ def test_prime_still_surfaces_the_truly_relevant_memory(tmp_path: Path) -> None:
     basliklar = [h.item.title for h in hits]
     assert "satislar.csv düzeni" in basliklar, basliklar
     assert not any("saha notu" in b for b in basliklar), basliklar
+
+
+# -- hafıza köprüleri: hata dersi + iş kapsülü -------------------------
+#
+# Kullanıcının önerisi ("araç hatalarını da hafızada tut") + ölçülen kazanç
+# (kapsül = B kolunun −%24 tokeni). İkisi de mekanik: modelden metin
+# istenmez, uydurma riski yok.
+
+
+def _kabuk_hatali_turlar(n: int):
+    turlar = []
+    for i in range(n):
+        turlar.append(tool_turn((f"c{i}", "shell",
+                                 {"command": f"py - <<EOF deneme{i}"})))
+    turlar.append(text_turn("bitti"))
+    return turlar
+
+
+class _HataliKabukKayit(ToolRegistry):
+    pass
+
+
+def test_repeated_error_pattern_becomes_a_lesson(tmp_path: Path) -> None:
+    from neocp.tools.base import ToolResult, object_schema
+
+    registry = ToolRegistry()
+
+    @registry.tool(name="shell", description="d",
+                   input_schema=object_schema({"command": {"type": "string"}}))
+    async def shell(args, ctx):
+        return ToolResult(
+            content=("Çıkış kodu 1" + NL + NL
+                     + "Missing file specification after redirection "
+                     + "operator." + NL
+                     + "İpucu: PowerShell tırnak/kaçış kırılgandır: "
+                     + "karmaşık komutu write_file ile bir betiğe yaz ve "
+                     + "dosyayı koş; $ içeren metinlerde tek tırnak kullan."),
+            is_error=True)
+
+    client = FakeClient(*_kabuk_hatali_turlar(2))
+    agent = _akilli_agent(tmp_path, client, registry, [])
+
+    asyncio.run(agent.run("karmaşık bir betik koştur"))
+
+    dersler = [h.item for h in agent.mind.recall("araç dersi", limit=5)
+               if str(h.item.title).startswith("araç dersi:")]
+    assert len(dersler) == 1, [d.title for d in dersler]
+    assert dersler[0].kind == "lesson"
+
+
+def test_past_lesson_is_attached_to_a_fresh_error(tmp_path: Path) -> None:
+    from neocp.tools.base import ToolResult, object_schema
+
+    registry = ToolRegistry()
+
+    @registry.tool(name="edit_file", description="d",
+                   input_schema=object_schema({"path": {"type": "string"}}))
+    async def edit_file(args, ctx):
+        return ToolResult(content="Aranan metin dosyada yok.", is_error=True)
+
+    client = FakeClient(
+        tool_turn(("c1", "edit_file", {"path": "x.py"})),
+        text_turn("tamam"))
+    agent = _akilli_agent(tmp_path, client, registry, [])
+    # Geçmiş OTURUMDAN ders (farklı session_id ile yazılmış olmalı).
+    agent.mind.store.remember(
+        "edit_file'a old metnini dosyanın GERÇEK halinden kopyala.",
+        kind="lesson", title="araç dersi: edit-anchor", session="eski-oturum")
+
+    asyncio.run(agent.run("dosyayı düzelt"))
+
+    govde = json.dumps(agent.session.messages(), ensure_ascii=False)
+    assert "[Hafıza]" in govde
+
+
+def test_a_run_that_writes_files_leaves_a_capsule(tmp_path: Path) -> None:
+    from neocp.tools.base import ToolResult, object_schema
+
+    registry = ToolRegistry()
+
+    @registry.tool(name="write_file", description="d",
+                   input_schema=object_schema({"path": {"type": "string"}}))
+    async def write_file(args, ctx):
+        return ToolResult(content="yazıldı")
+
+    @registry.tool(name="shell", description="d",
+                   input_schema=object_schema({"command": {"type": "string"}}))
+    async def shell(args, ctx):
+        return ToolResult(content="çıkış 0")
+
+    client = FakeClient(
+        tool_turn(("c1", "write_file", {"path": "rapor.py"})),
+        tool_turn(("c2", "shell", {"command": "py rapor.py satislar.csv"})),
+        text_turn("bitti, rapor.py hazır"))
+    agent = _akilli_agent(tmp_path, client, registry, [])
+
+    asyncio.run(agent.run("bana satislar.csv için rapor aracı yaz"))
+
+    kapsuller = [h.item for h in agent.mind.recall("iş kapsülü satislar", limit=5)
+                 if str(h.item.title).startswith("iş kapsülü:")]
+    assert len(kapsuller) == 1, [k.title for k in kapsuller]
+    assert "rapor.py" in kapsuller[0].content
+    assert "py rapor.py satislar.csv" in kapsuller[0].content
+
+
+def test_a_chat_only_run_leaves_no_capsule(tmp_path: Path) -> None:
+    registry = ToolRegistry()
+    client = FakeClient(text_turn("selam!"))
+    agent = _akilli_agent(tmp_path, client, registry, [])
+
+    asyncio.run(agent.run("merhaba"))
+
+    assert not [h for h in agent.mind.recall("iş kapsülü", limit=5)
+                if str(h.item.title).startswith("iş kapsülü:")]
+
+
+# -- test kapısı: yazılan test koşulmadan tur kapanmaz -----------------
+#
+# Ölçülen yara (28.08 dokuz-görev, o2-servis): test dosyası yazıldı, hiç
+# koşulmadı, KIRMIZI çıktı ve teslim edildi — kırmızı kapısı yalnız
+# koşulan testi görür. Kapı bir kez dürter; pytest/node --test gibi toplu
+# koşucular dosya adı geçmese de koşulmuş sayılır.
+
+
+def _yazan_ve_koan_ajan(tmp_path, turlar):
+    from neocp.tools.base import ToolResult, object_schema
+    registry = ToolRegistry()
+
+    @registry.tool(name="write_file", description="d",
+                   input_schema=object_schema({"path": {"type": "string"}}))
+    async def write_file(args, ctx):
+        return ToolResult(content="yazıldı")
+
+    @registry.tool(name="shell", description="d",
+                   input_schema=object_schema({"command": {"type": "string"}}))
+    async def shell(args, ctx):
+        return ToolResult(content="7 passed")
+
+    client = FakeClient(*turlar)
+    return build_agent(tmp_path, client, registry), client
+
+
+def test_unrun_test_file_blocks_the_done_claim(tmp_path: Path) -> None:
+    agent, client = _yazan_ve_koan_ajan(tmp_path, [
+        tool_turn(("c1", "write_file", {"path": "servis.py"}),
+                  ("c2", "write_file", {"path": "test_servis.py"})),
+        text_turn("Bitti, servis ve testleri hazır."),
+        text_turn("Haklısın — pytest koşuyorum."),
+    ])
+
+    asyncio.run(agent.run("küçük bir servis yaz, testlerini de yaz"))
+
+    notlar = [n for n in _harness_notlari(agent) if "[Doğrulama]" in n and "KOŞMADIN" in n]
+    assert len(notlar) == 1, notlar
+
+
+def test_bare_pytest_counts_as_running_the_tests(tmp_path: Path) -> None:
+    agent, client = _yazan_ve_koan_ajan(tmp_path, [
+        tool_turn(("c1", "write_file", {"path": "test_servis.py"})),
+        tool_turn(("c2", "shell", {"command": "py -m pytest -q"})),
+        text_turn("Bitti — 7 test yeşil."),
+    ])
+
+    asyncio.run(agent.run("testleri yaz ve koş"))
+
+    assert not [n for n in _harness_notlari(agent) if "KOŞMADIN" in n]

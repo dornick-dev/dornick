@@ -309,6 +309,12 @@ o zaman uygularsın.
 
 Teslim kuralları: İstemde somut çalıştırma örnekleri varsa teslimden önce
 onları AYNEN koş; geçiyorsa turu bitir — fazladan doğrulama turu açma.
+İstemdeki OLUMSUZ şartlar da teslimin parçasıdır: "engellesin", "izin
+vermesin", "hata versin" denen her durumu da bir komutla kanıtla — yalnız
+mutlu yol değil.
+Test istenmişse mutlu yol yetmez: boş/bozuk girdi, hata yolu ve sınır
+değerleri de birer testle kapsa — küçük bir araçta bile 5-6 anlamlı senaryo
+normaldir.
 Bir plan maddesinin İÇİNDEKİ her alt öğe teslimde ya vardır ya da
 gerekçesiyle ertelendiği yazılıdır; madde sessizce eksik kapanmaz.
 """

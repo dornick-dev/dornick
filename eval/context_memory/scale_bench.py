@@ -134,6 +134,17 @@ def parametric(
         return []
     stems = _query_stems(query)
 
+    # Ürün kuralı (28.08): HAM sorgu ≥5 gövdeliyse tek (önek-tekil)
+    # gövdeyle tutunan kayıt önyüklemeye giremez. Kopya birebir taşır.
+    zengin = len(_query_stems(query, genislet=False)) >= 5
+
+    def _tekil_vuran(item: Any) -> int:
+        text = f"{item.title} {item.content} {' '.join(item.tags)}".casefold()
+        vuranlar = [g for g in stems if g in text]
+        tekil = [g for g in vuranlar
+                 if not any(g != d and d.startswith(g) for d in vuranlar)]
+        return len(tekil)
+
     def need_for(item: Any) -> bool:
         if not stems:
             return True
@@ -142,8 +153,11 @@ def parametric(
             import math
 
             return got >= max(1, math.ceil(ground_ratio * len(stems)))
-        need = min(ground_min, max(1, len(stems) - 1)) if ground_min > 1 else 1
-        return got >= need
+        if ground_min > 1:
+            return got >= min(ground_min, max(1, len(stems) - 1))
+        if not got:
+            return False
+        return _tekil_vuran(item) >= 2 if zengin else True
 
     passed = [
         hit

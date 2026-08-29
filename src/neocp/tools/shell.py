@@ -366,7 +366,10 @@ UZUN SÜREN SÜREÇLER — iki ayrı kip, karıştırma:
 
 _IPUCLARI: list[tuple[tuple[str, ...], str]] = [
     (("unexpected token", "missing terminator", "parsererror",
-      "was unexpected at this time", "terminator in the string"),
+      "was unexpected at this time", "terminator in the string",
+      # PowerShell'de bash heredoc denemesi (py - <<EOF): z1 koşusunda
+      # ipucusuz kalan gerçek vaka.
+      "missing file specification after redirection"),
      "PowerShell tırnak/kaçış kırılgandır: karmaşık komutu write_file ile "
      "bir betiğe yaz ve dosyayı koş; $ içeren metinlerde tek tırnak kullan."),
     (("is not recognized as the name of a cmdlet",

@@ -1,5 +1,29 @@
 # Changelog
 
+## 1.0.0 — 2026-08-29
+
+The benchmark release. neo's harness now measures as a statistical tie with
+Claude Code in delivery quality on a nine-task suite (897.3 vs **896.7** vs
+OpenCode's 894.9 out of 900) — on a ~free flash model, ahead of the
+same-model competitor. Full method, raw data and honest caveats:
+[docs/benchmark-2026-08.md](docs/benchmark-2026-08.md).
+
+* **Memory that measurably pays.** Seeded true facts cut a task's prompt
+  tokens 24% and rescued a failing rep to 100; a mechanical end-of-run
+  capsule made a warm continuation **twice as fast** (−38% tokens) with
+  equal correctness. A 50-junk-memory pollution attack that leaked into
+  the prompt through a single-stem overlap is sealed — hit-rate unchanged,
+  precision and trap-silence up.
+* **Tool errors become lessons.** A repeated error pattern is written to
+  memory once and attached to the same error in future sessions
+  ("[Memory] …"); known PowerShell traps are taught in the tool
+  description *before* the first failure.
+* **Two new delivery gates.** A written test file that was never run
+  blocks the "done" claim (a red suite got shipped exactly this way), and
+  negative requirements ("must reject", "must redirect") must be proven
+  with a command — the PHP auth panel went 55.9 → 100 on this rule alone.
+* Screenshot gallery: [docs/galeri](docs/galeri/README.md).
+
 ## 0.4.2 — 2026-08-28
 
 Release gate: all five benchmark tasks (easy through hard, including the

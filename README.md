@@ -19,6 +19,9 @@ leave the machine unless you point it at a hosted model.
 types listed on the left — user, preference, lesson, procedure,
 fact](docs/screenshots/home-memory-web.jpg)
 
+More screenshots — light/dark shells, viewer tabs, the connectors
+directory, a live session with a real model: [the gallery](docs/galeri/README.md).
+
 ## Why it's different
 
 Most assistants forget you between sessions, or paste a notes file into the
@@ -32,7 +35,7 @@ and turns repeated work into automations you can watch run step by step.
 | Learning | none — the model is fixed | nightly on-device fine-tune, gated by an exam |
 | Repeated work | you re-ask every time | automations: a step graph on a schedule |
 | Where it runs | someone's cloud | your machine; local models supported |
-| Proof | screenshots | measured benchmarks in this repo |
+| Proof | screenshots | measured benchmarks in this repo ([latest](docs/benchmark-2026-08.md)) |
 
 ## What's inside
 
@@ -134,6 +137,14 @@ neocp --app     # desktop window (WebView2)
 On first launch the mind is empty. It fills itself as you talk; by the
 second session it starts remembering you.
 
+## Driving neo from other agents
+
+neo exposes a single local endpoint — the gate — that lets any other
+harness (Claude Code, OpenCode, a script, CI) hand it a task and collect
+the full result: answer, tools used, files changed, session log. It is how
+the benchmark rig drives isolated instances. One curl to enable, one curl
+to ask: [docs/gate.md](docs/gate.md).
+
 ## Automations
 
 ![The Tasks panel: a list with Simple and Automation badges, and the flow
@@ -207,12 +218,19 @@ That grading was done by hand, so it was turned into a rig that lives in the
 repo: [`eval/coding/`](eval/coding/README.md). Nine tasks in Python, Node and
 PHP; each runs in its own temp workspace with an empty mind and its own neo
 instance, and the grader **executes the delivered code** rather than checking
-that files exist. Current baseline on a mid-tier model: **92.3/100** across all
-nine tasks — and, more usefully, three named weaknesses the behavioural columns
-exposed. The sharpest: one task shipped 14 passing tests, 18 real assertions and
-a CLI that exits 1 on every query, because the tests covered the functions and
-nothing ever ran the command a user would type. Full write-up:
-[docs/evaluation.md](docs/evaluation.md) ([Türkçe](docs/evaluation.tr.md)).
+that files exist.
+
+The rig's biggest outing so far: a **three-harness benchmark** (Aug 2026) —
+Claude Code, OpenCode and neo, the latter two on the *same* ~free flash
+model. Result on the 9-task sweep: Claude Code 897.3, **neo 896.7**,
+OpenCode 894.9 (out of 900) — a statistical tie in quality with the
+reference agent, on a model that costs cents, with neo ahead of the
+same-model competitor. The efficiency story (cache rates, reasoning-spiral
+failure modes, what the delivery gates catch) and two measured memory
+experiments are written up with raw data in
+[docs/benchmark-2026-08.md](docs/benchmark-2026-08.md). Earlier hand-graded
+write-up: [docs/evaluation.md](docs/evaluation.md)
+([Türkçe](docs/evaluation.tr.md)).
 
 ## Roadmap
 

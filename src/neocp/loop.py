@@ -542,6 +542,13 @@ def giris_noktasi_mi(metin: str) -> bool:
     return any(d.search(metin or "") for d in _GIRIS_IZLERI)
 
 
+TEST_NOTU = (
+    "[Doğrulama] Bu turda test dosyası yazdın ({dosya}) ama onu hiç "
+    "KOŞMADIN. Yazılmış ama koşulmamış test, test değildir — kırmızı da "
+    "olabilir. Bitti demeden önce test komutunu çalıştır; kırmızıysa "
+    "düzelt, yeşilse turu kapat."
+)
+
 GIRIS_NOTU = (
     "[Doğrulama] Bu turda {dosya} yazdın ve o dosya kendini komut "
     "satırından çalıştırılmak üzere ilan ediyor — ama onu hiç "
@@ -857,6 +864,7 @@ class TurnStats:
     # ikinci turda yine bitirmek isterse bırakılıyor — sonsuz döngü yok.
     kirmizi_uyarildi: bool = False
     kabul_uyarildi: bool = False
+    test_uyarildi: bool = False
     # Teslim-edileni-çalıştır kapısı bu turda açıldı mı. Aynı sebeple bir kez.
     giris_uyarildi: bool = False
     # Alt ajan: max retry sonrası model hatası metni (park yerine).
@@ -994,6 +1002,9 @@ class Agent:
         # Her kullanıcı turunda sıfırlanıyor (bkz. run).
         self._yazilan: list[str] = []
         self._komutlar: list[str] = []
+        # Hata kalıbı sayacı (koşu başına): aynı kalıba İKİNCİ düşüş derstir.
+        self._hata_kalibi: dict[str, int] = {}
+        self._kapsul_yazildi = False
 
     def _soul_resident(self) -> set[str]:
         """Ruhun tam gövdesiyle prompta koyduğu kayıtların kimlikleri."""
@@ -1102,6 +1113,8 @@ class Agent:
         # çalıştırılmış bir dosya bu turun borcu değil.
         self._yazilan.clear()
         self._komutlar.clear()
+        self._hata_kalibi.clear()
+        self._kapsul_yazildi = False
         stats = await self._drive()
         self._zihin_kapisi(user_input)
         return stats
@@ -1140,6 +1153,44 @@ class Agent:
             for alan in ("command", "cmd", "path", "hedef", "argv"):
                 if (deger := args.get(alan)) is not None:
                     self._komutlar.append(str(deger))
+
+    def _kosulmayan_test(self) -> str:
+        """Yazılıp hiç koşulmamış bir test dosyası varsa adı, yoksa boş.
+
+        Ölçülen yara (28.08 dokuz-görev, o2): test dosyası yazıldı, hiç
+        koşulmadı, KIRMIZI çıktı ve teslim edildi — kırmızı kapısı ancak
+        koşulan testi görür. Test adı herhangi bir komutta geçtiyse (pytest
+        yolu toplu koşturur: `pytest`, `pytest .`) koşulmuş sayılır; çıplak
+        `pytest`/`node --test` çağrısı da tümünü kapsar.
+        """
+        komut_metni = "\n".join(self._komutlar)
+        # Toplu koşucular: çıplak pytest / node --test her test dosyasını
+        # kapsar — dosya adı komutta geçmese de koşulmuş sayılır.
+        toplu = ("pytest" in komut_metni or "node --test" in komut_metni
+                 or "node --run" in komut_metni)
+        for yol in self._yazilan:
+            ad = Path(yol).name
+            if not (ad.startswith("test_") or ad.endswith((".test.js", ".spec.js"))
+                    or ad.endswith("_test.py")):
+                continue
+            if toplu or (ad and ad in komut_metni):
+                continue
+            return ad
+        return ""
+
+    def _test_kapisi(self, stats: TurnStats, blocks: list[dict[str, Any]]) -> bool:
+        """Yazılmış-koşulmamış testle "bitti" denirse bir tur geri verilir."""
+        if stats.test_uyarildi or self.depth:
+            return False
+        if not bitti_iddiasi(_text_of_blocks(blocks)):
+            return False
+        dosya = self._kosulmayan_test()
+        if not dosya:
+            return False
+        stats.test_uyarildi = True
+        self.session.log.note("test_kapisi", dosya=dosya)
+        self.session.add_harness_note(TEST_NOTU.format(dosya=dosya))
+        return True
 
     def _kosulmayan_giris(self) -> str:
         """Yazılıp hiç çalıştırılmamış bir giriş noktası varsa onun yolu.
@@ -1510,6 +1561,9 @@ class Agent:
             # söylenmesi gereken odur.
             if result.stop_reason == "end_turn" and self._giris_kapisi(stats, blocks):
                 continue
+            # Test kapısı: yazılan test dosyası koşulmadan tur kapanmaz.
+            if result.stop_reason == "end_turn" and self._test_kapisi(stats, blocks):
+                continue
             # Kabul kapısı: iş defterinde açık madde dururken "bitti" deniyor
             # — kapılar zincirinin sonuncusu, en genel olanı.
             if result.stop_reason == "end_turn" and self._kabul_kapisi(stats, blocks):
@@ -1536,9 +1590,105 @@ class Agent:
         if self.depth == 0:
             self._parked = False
             clear_park(self.config.state_dir)
+            # Koşunun izi kapsül olarak zihne: bir sonraki oturum keşfi atlar.
+            self._is_kapsulu()
             # İlk alışveriş bittiyse başlığı model koysun (adsız oturumda).
             await self._oturum_basligi()
         return stats
+
+    def _hata_dersi(self, calls: list[Any], blocks: list[dict[str, Any]]) -> None:
+        """Araç hatalarını ders hafızasına köprüler (kullanıcının önerisi).
+
+        İki yön: (1) aynı bilinen kalıba bu koşuda İKİNCİ düşüş kalıcı bir
+        derse dönüşür — bir kez düşmek öğrenme, iki kez düşmek alışkanlıktır;
+        (2) GEÇMİŞ oturumlardan o kalıp için ders varsa hatanın yanına
+        "[Hafıza]" olarak iliştirilir — statik ipucu turu kurtarıyor, ders
+        oturumlar arası taşıyor.
+        """
+        if self.mind is None or self.depth:
+            return
+        from .tools.shell import kabuk_ipucu
+        adlar = {c.id: c.name for c in calls}
+        for b in blocks:
+            if not (isinstance(b, dict) and b.get("is_error")):
+                continue
+            metin = str(b.get("content") or "")
+            arac = adlar.get(str(b.get("tool_use_id") or ""), "")
+            anahtar = tarif = ""
+            if arac == "edit_file" and "Aranan metin" in metin:
+                anahtar = "edit-anchor"
+                tarif = ("edit_file'a old metnini dosyanın GERÇEK halinden "
+                         "kopyala: önce read_file, sonra düzenle; girinti ve "
+                         "satır sonu birebir.")
+            elif ipucu := kabuk_ipucu(metin):
+                anahtar = "kabuk:" + ipucu[:24]
+                tarif = ipucu
+            if not anahtar:
+                continue
+            baslik = "araç dersi: " + anahtar
+            # Geçmiş ders varsa hatanın yanına iliştir (bu koşuda bir kez).
+            if self._hata_kalibi.get(anahtar, 0) == 0:
+                try:
+                    for hit in self.mind.recall(baslik, limit=3):
+                        if hit.item.title == baslik and hit.item.session_id != self.session.id:
+                            b["content"] = (metin + "\n\n[Hafıza] "
+                                            + hit.item.content)
+                            break
+                except Exception:
+                    pass
+            sayi = self._hata_kalibi.get(anahtar, 0) + 1
+            self._hata_kalibi[anahtar] = sayi
+            if sayi != 2:
+                continue   # ilk düşüş: ipucu yeter; üçüncü+: ders zaten var
+            try:
+                if any(h.item.title == baslik
+                       for h in self.mind.recall(baslik, limit=3)):
+                    continue
+                self.mind.remember(
+                    f"{arac or 'araç'} hatası tekrar etti — {tarif}",
+                    kind="lesson", title=baslik)
+                self.session.log.note("hata_dersi", anahtar=anahtar)
+            except Exception:
+                pass
+
+    def _is_kapsulu(self) -> None:
+        """Koşu sonunda mekanik iş kapsülü: ne istendi, ne üretildi, ne koştu.
+
+        Ölçülen kazanç (28.08 hafıza deneyi B kolu): bir sonraki oturumda
+        bu kapsül kendiliğinden hatırlanınca model keşif çağrısını atlıyor
+        (−%24 token). Kapsül modelden değil defterden: uydurma riski yok.
+        """
+        if (self.mind is None or self.depth or self._kapsul_yazildi
+                or not self._yazilan):
+            return
+        ilk = ""
+        for m in self.session.messages():
+            if m.get("role") == "user":
+                g = m.get("content")
+                ilk = g if isinstance(g, str) else _text_of_blocks(g or [])
+                break
+        if not ilk.strip():
+            return
+        dosyalar = []
+        for yol in self._yazilan:
+            ad = Path(yol).name
+            if ad and ad not in dosyalar:
+                dosyalar.append(ad)
+        komutlar = [k.strip()[:80] for k in self._komutlar[-2:] if k.strip()]
+        icerik = (_one_line(ilk)[:200]
+                  + " — üretilen: " + ", ".join(dosyalar[:6])
+                  + ((". çalıştırılan: " + "; ".join(komutlar)) if komutlar else "")
+                  + ".")
+        baslik = "iş kapsülü: " + _one_line(ilk)[:40]
+        try:
+            if any(h.item.title == baslik
+                   for h in self.mind.recall(baslik, limit=3)):
+                return
+            self.mind.remember(icerik, kind="fact", title=baslik)
+            self._kapsul_yazildi = True
+            self.session.log.note("is_kapsulu", dosyalar=dosyalar[:6])
+        except Exception:
+            pass
 
     async def _oturum_basligi(self) -> None:
         """Adsız oturumun ilk alışverişinden kısa bir başlık üretir.
@@ -1610,6 +1760,9 @@ class Agent:
             # olmasını istiyor. Görüntü ayrılıp bir sonraki kullanıcı turuna
             # iliştiriliyor — model o turda gerçekten bakıyor.
             seen = [b.pop("_image") for b in blocks if "_image" in b]
+            # Hafıza köprüsü: bilinen hata kalıbı derse dönüşür; geçmiş
+            # oturumlardan ders varsa hatanın YANINA iliştirilir.
+            self._hata_dersi(calls, blocks)
             self.session.add_tool_results(blocks)
             if seen:
                 # `internal`: kullanıcının yazmadığı bir mesaj sohbette
