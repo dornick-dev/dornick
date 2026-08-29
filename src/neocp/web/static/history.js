@@ -46,6 +46,13 @@ Dil.ekle({
   " eşleşme": " matches",
   "Yeni oturum için yeniden başlat": "Restart for a new session",
   " Yeni konuşma": " New conversation",
+  "Yeni konuşma": "New conversation",
+  "— Projesiz —": "— No project —",
+  "Projesiz": "No project",
+  "Konuşmalarda ara": "Search conversations",
+  "Konuşmalar": "Conversations",
+  "Görevler · Otomasyonlar": "Tasks · Automations",
+  "Uygulamalar": "Apps",
 });
 
 const History = (() => {
@@ -184,7 +191,8 @@ const History = (() => {
       const isOpen = !collapsed.has(name);
       const head = el("div", "hist-folder" + (name === UNFILED ? " unfiled" : ""));
       head.append(el("span", "hist-fold", isOpen ? "▾" : "▸"));
-      head.append(el("span", "hist-folder-name", name));
+      head.append(el("span", "hist-folder-name",
+                     name === UNFILED ? t(UNFILED) : name));
       head.append(el("span", "hist-folder-count", String(items.length)));
       head.onclick = () => { isOpen ? collapsed.add(name) : collapsed.delete(name); render(); };
       body.append(head);
@@ -755,4 +763,21 @@ Dil.ekle({
   if (g) g.addEventListener("click", () => { if (window.JobsPanel) JobsPanel.open(); });
   const u = document.getElementById("side-apps-nav");
   if (u) u.addEventListener("click", () => { if (typeof Apps !== "undefined") Apps.open(); });
+})();
+
+// --- statik kabuk etiketleri çeviriden geçer ---------------------------
+// Sidebar v4 bu metinleri HTML'e gömdü; İngilizce kipte Türkçe kalıyorlardı
+// (vitrin çekiminde yakalandı). Çeviri, metnin doğduğu yerde uygulanır.
+(() => {
+  const yeniBtn = document.getElementById("hist-new");
+  if (yeniBtn && yeniBtn.lastChild && yeniBtn.lastChild.nodeType === 3) {
+    yeniBtn.lastChild.textContent = " " + t("Yeni konuşma");
+  }
+  const ara = document.getElementById("hist-search");
+  if (ara) ara.placeholder = t("Konuşmalarda ara");
+  for (const nav of document.querySelectorAll(".side-nav span")) {
+    nav.textContent = t(nav.textContent.trim());
+  }
+  const etiket = document.querySelector(".side-label");
+  if (etiket) etiket.textContent = t(etiket.textContent.trim());
 })();
