@@ -372,7 +372,8 @@ def test_new_session_swaps_and_rebinds(tmp_path):
     assert agent.mind.session_id == res["id"]     # zihin kimliği de geçti
     assert agent._last_encoded == ""              # encode dedup sıfırlandı
     assert rebinds == [res["id"]]                 # olay akışı yeni günlüğe bağlandı
-    assert emits and emits[-1]["type"] == "session_reset"
+    assert any(e["type"] == "session_reset" for e in emits)   # kanal
+    # anlık görüntüsü session_reset'ten sonra geliyor (orkestra tohumu)
     bridge.loop.close()
 
 
@@ -400,12 +401,22 @@ def test_resume_missing_session_is_reported(tmp_path):
     bridge.loop.close()
 
 
-def test_switch_refused_while_busy(tmp_path):
+def test_switching_away_while_busy_opens_a_parallel_lane(tmp_path):
+    """Eski sözleşme reddetmekti ("neo meşgul; tur bitince dene") —
+    canlı istekle değişti (29.08): koşan şeride dokunulmaz, yeni
+    sohbet AYRI bir şeritte hemen açılır."""
     bridge, agent, rebinds, _ = _bridge_with_session(tmp_path)
+    agent.client = object()          # şerit fabrikası istemciyi paylaşır
+    eski_oturum = agent.session.id
     bridge._busy = True
     res = bridge.new_session()
-    assert not res["ok"] and res.get("busy")
-    assert rebinds == []          # meşgulken hiçbir şey değişmedi
+    assert res["ok"], res
+    # Koşan şerit yerinde: eski ajanın oturumu DEĞİŞMEDİ ve hâlâ meşgul.
+    assert agent.session.id == eski_oturum
+    assert bridge.seritler[eski_oturum].busy is True
+    # Aktif şerit artık yeni oturum; ajanı başka bir ajan.
+    assert bridge.agent is not agent
+    assert res["id"] in bridge.seritler and rebinds[-1] == res["id"]
     bridge.loop.close()
 
 
@@ -468,3 +479,26 @@ def test_openai_models_request_sends_bearer(
     assert names == ["gemini-2.5-flash"]
     assert seen["auth"] == "Bearer sk-test-gemini"
     assert seen["url"].endswith("/v1beta/openai/models")
+
+def test_background_lane_events_do_not_leak_into_the_active_chat(tmp_path):
+    """Paralel şeritlerin görünmez direği: arka şeridin metin/araç
+    olayları aktif sohbete sızmaz; onay istekleri ise HER şeritten
+    geçer (yoksa arka tur sonsuza dek bekler)."""
+    bridge, agent, rebinds, emits = _bridge_with_session(tmp_path)
+    agent.client = object()
+    bridge._busy = True
+    res = bridge.new_session()
+    assert res['ok']
+    eski = bridge.seritler[agent.session.id]
+    yeni = bridge.seritler[res['id']]
+    emits.clear()
+    # Arka şeridin io'su: metin olayı yayına DÜŞMEZ.
+    arka_io = bridge.io(eski)
+    arka_io.on_text('sizmamali')
+    assert emits == []
+    # Aktif şeridin io'su: aynı olay yayına düşer.
+    on_io = bridge.io(yeni)
+    on_io.on_text('gorunmeli')
+    assert any(e.get('type') == 'assistant_delta' for e in emits)
+    bridge.loop.close()
+

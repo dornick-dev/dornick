@@ -253,6 +253,22 @@ def _metin_uzunlugu(content: Any) -> str:
 _KANAL_DURUM = {"kosuyor": "run", "bitti": "done", "yetim": "yetim"}
 
 
+def _biten_kanallari_dusur(agent: Any) -> None:
+    """Oturum geçişinde bitmiş yardımcıları defterden düşürür.
+
+    "O sohbet bittiyse o da bitmiştir" (canlı şikâyet — orkestra eski
+    sohbetlerin bitmiş kayıtlarıyla doluyordu). Koşanlar ve yetimler
+    (sürdürülebilir) kalır; bitmiş/hatalı olanlar yeni sohbete taşınmaz.
+    """
+    try:
+        children = getattr(agent, "_children", None) or {}
+        for cid in [cid for cid, h in children.items()
+                    if h.state not in ("kosuyor", "yetim")]:
+            children.pop(cid, None)
+    except Exception:
+        pass
+
+
 def _live_channels(agent: Any) -> list[dict[str, Any]]:
     """Yardımcı kanallarının arayüz dökümü (orkestra panelinin tohumu).
 
@@ -306,6 +322,25 @@ class Pending:
     args: dict[str, Any]
 
 
+@dataclass(slots=False)
+class Serit:
+    """Bir oturumun bağımsız koşu şeridi: ajan + kuyruk + meşgul bayrağı.
+
+    Paralel oturumların çekirdeği (canlı istek, 29.08): "yeni konuşma
+    dediğimde eskinin bitmesini bekliyor" — tek ajan/tek kuyruk mimarisi
+    oturum geçişini koşan turun bitişine kilitliyordu. Artık her oturumun
+    kendi şeridi var: kendi Agent'ı, kendi kuyruğu, kendi pompası. Aktif
+    şerit arayüze akar; arkadakiler kendi oturum günlüğüne yazar ve
+    kullanıcı dönünce döküm oradan yüklenir.
+    """
+
+    sid: str
+    agent: Any
+    queue: asyncio.Queue
+    busy: bool = False
+    task: Any = None    # pompa görevi (ilk şeritte Controller.pump koşuyor)
+
+
 class Bridge:
     """Arayüz ile ajan arasındaki iki yönlü köprü.
 
@@ -316,14 +351,17 @@ class Bridge:
     def __init__(self, hub: Hub, loop: asyncio.AbstractEventLoop) -> None:
         self.hub = hub
         self.loop = loop
-        self.agent: Agent | None = None
+        # Şeritler: oturum kimliği -> Serit. Aktif şerit arayüzün baktığı
+        # oturum; diğerleri arka planda koşabilir (paralel oturumlar).
+        self.seritler: dict[str, Serit] = {}
+        self._aktif_sid: str | None = None
+        # İlk şeridin kuyruğu — ajan henüz yokken de mesaj sıraya girebilsin
+        # (açılış yarışı). `agent` atandığında şerit bu kuyruğu devralır.
+        self._ilk_kuyruk: asyncio.Queue[tuple[str, str]] = asyncio.Queue()
         # Oturum değiştirmek (yeni/devam) olay akışını yeni günlüğe bağlamayı
         # gerektiriyor; bunu sunucu yapıyor. _boot referansı sonradan veriyor.
         self.server: Any = None
-        # Metin ve (varsa) kamera karesi birlikte kuyruğa giriyor.
-        self.queue: asyncio.Queue[tuple[str, str]] = asyncio.Queue()
         self._pending: dict[str, Pending] = {}
-        self._busy = False
         # Sürekli dinleyen kulak sonradan bağlanıyor: açılış sırasında
         # köprü ondan önce kuruluyor.
         self.ear: Any = None
@@ -368,6 +406,91 @@ class Bridge:
         # fren, aynı satırı turda onlarca kez basmasın.
         self._butce_bildirildi = False
 
+    # -- şerit yüzeyi ---------------------------------------------------
+    #
+    # Eski tek-ajan alanları (`agent`, `queue`, `_busy`) özelliğe döndü:
+    # 30+ çağrı yeri değişmeden aktif şeride bakmaya devam ediyor. Yazma
+    # yolu daralttı — `_busy` artık atanamaz, meşguliyet şeridin kendi
+    # bayrağı (bkz. _serit_durum).
+
+    def _serit_alanlari(self) -> None:
+        # Testler köprüyü `Bridge.__new__` ile init'siz kuruyor; şerit
+        # alanları ilk dokunuşta tembelce tamamlanır.
+        if not hasattr(self, "seritler"):
+            self.seritler = {}
+            self._aktif_sid = None
+        if not hasattr(self, "_ilk_kuyruk"):
+            self._ilk_kuyruk = asyncio.Queue()
+
+    @property
+    def agent(self) -> Any:
+        self._serit_alanlari()
+        s = self.seritler.get(self._aktif_sid or "")
+        return s.agent if s else None
+
+    @agent.setter
+    def agent(self, value: Any) -> None:
+        # _boot uyumu: ilk ajan atanınca ilk şerit kurulur ve açılıştan
+        # beri biriken kuyruğu devralır. None = kurulamadı (modelsiz açılış).
+        self._serit_alanlari()
+        if value is None:
+            return
+        sid = str(getattr(getattr(value, "session", None), "id", "") or "ilk")
+        serit = Serit(sid=sid, agent=value, queue=self._ilk_kuyruk,
+                      busy=bool(getattr(self, "_busy_beklet", False)))
+        self._busy_beklet = False
+        self.seritler[sid] = serit
+        self._aktif_sid = sid
+        # Akış kapıları şeride bağlansın: bu şerit arka plana düşerse
+        # olayları aktif sohbete sızmasın. Yardımcı-bitti işareti de kendi
+        # kuyruğuna düşsün — aktif şeride değil.
+        try:
+            value.io = self.io(serit)
+            value.on_children_settled = (
+                lambda s=serit: self.loop.call_soon_threadsafe(
+                    self._serit_child_done, s))
+        except Exception:
+            pass
+
+    def _serit(self) -> Serit | None:
+        self._serit_alanlari()
+        return self.seritler.get(self._aktif_sid or "")
+
+    @property
+    def queue(self) -> asyncio.Queue:
+        s = self._serit()
+        return s.queue if s else self._ilk_kuyruk
+
+    @property
+    def _busy(self) -> bool:
+        s = self._serit()
+        if s is not None:
+            return bool(s.busy)
+        return bool(getattr(self, "_busy_beklet", False))
+
+    @_busy.setter
+    def _busy(self, value: bool) -> None:
+        # Test uyumu: köprüyü elle kuran testler meşguliyeti doğrudan
+        # atıyor. Üründe bu yol kullanılmıyor (bkz. _serit_durum). Şerit
+        # henüz yoksa bayrak bekletilir; ilk şerit kurulunca devralır.
+        s = self._serit()
+        if s is not None:
+            s.busy = bool(value)
+        else:
+            self._busy_beklet = bool(value)
+
+    def _serit_durum(self, serit: Serit, busy: bool) -> None:
+        """Şeridin meşguliyetini işler ve doğru kanallara duyurur.
+
+        Klasik `status` yalnız AKTİF şerit için yayınlanır (arayüzün tek
+        kompozeri var); `lane` olayı her şerit için gider — kenar çubuğu
+        hangi sohbetlerin koştuğunu rozetle gösterir.
+        """
+        serit.busy = busy
+        if serit.sid == self._aktif_sid:
+            self.hub.emit({"type": "status", "busy": busy})
+        self.hub.emit({"type": "lane", "id": serit.sid, "busy": busy})
+
     # -- HTTP thread'inden çağrılanlar ---------------------------------
 
     def submit(self, text: str, image: str = "", *, siraya: bool = False) -> None:
@@ -406,9 +529,13 @@ class Bridge:
         Kuyruğa iç işaret düşer; sırası gelince (ajan boşken) sürdürme
         turu açılır. Ajan meşgulse işaret turun bitmesini kuyrukta bekler —
         o zamana kadar sonuç zaten tur başındaki notla verilmiş olabilir,
-        `_surdur` boşa model çağırmaz.
+        `_surdur` boşa model çağırmaz. (Geri uyum: aktif şerit. Şeride özel
+        yol `_serit_child_done` — her ajan kendi şeridine bağlanır.)
         """
         self.queue.put_nowait(_CHILD_DONE)
+
+    def _serit_child_done(self, serit: Serit) -> None:
+        serit.queue.put_nowait(_CHILD_DONE)
 
     def run_scheduled(self, task: Any) -> dict[str, Any]:
         """Zamanlanmış görevi sohbete değil Orkestra yardımcısı olarak koşturur.
@@ -583,16 +710,16 @@ class Bridge:
     def _switch(self, sid: str | None) -> dict[str, Any]:
         """Aktif oturumu değiştirir. sid None ise yeni, değilse o oturum.
 
-        Yalnızca boştayken: akan bir turun altından oturumu çekmek cevabı
-        ve bağlamı bozar. Değişiklik hem ajanı (oturum + zihin kimliği) hem
-        de sunucuyu (olay akışını yeni günlüğe bağla) etkiliyor; arayüz
-        `session_reset` ile eski dökümü temizleyip yenisini gösteriyor.
+        Paralel oturumlar (canlı istek, 29.08): geçiş MEŞGULKEN DE çalışır.
+        Aktif şerit boştaysa ucuz yol — aynı ajan yeni oturuma bağlanır
+        (şerit sayısı 1'de kalır). Meşgulse koşan şeride DOKUNULMAZ: hedef
+        için ayrı bir şerit bulunur ya da kurulur; eski tur kendi şeridinde
+        arka planda biter, kenar çubuğu rozeti koştuğunu gösterir.
         """
-        agent = self.agent
+        aktif = self._serit()
+        agent = aktif.agent if aktif else None
         if agent is None or self.server is None:
             return {"ok": False, "error": "henüz hazır değil"}
-        if self._busy:
-            return {"ok": False, "error": "neo meşgul; tur bitince dene", "busy": True}
 
         from pathlib import Path
 
@@ -600,6 +727,11 @@ class Bridge:
         from .session import Session
 
         sessions_dir = agent.config.sessions_dir
+
+        # Hedef zaten bir şeritte mi (arka planda koşuyor ya da bekliyor)?
+        if sid and sid in self.seritler and sid != self._aktif_sid:
+            return self._aktive_et(self.seritler[sid], resumed=True)
+
         if sid:
             path = Path(sessions_dir) / f"{sid}.jsonl"
             if not path.is_file():
@@ -613,30 +745,125 @@ class Bridge:
         onceki_sid = ""
         if agent.session is not None:
             onceki_sid = str(getattr(agent.session, "id", "") or "")
+
+        if aktif.busy:
+            # Koşan şeridin altından oturum çekilmez: hedef için YENİ şerit.
+            try:
+                yeni = self._serit_kur(session)
+            except Exception as exc:
+                return {"ok": False,
+                        "error": f"şerit kurulamadı: {type(exc).__name__}: {exc}"}
+            self._model_devri(agent, onceki_sid, session, resumed)
+            return self._aktive_et(yeni, resumed=resumed)
+
+        # Boş şeritte ucuz yol: aynı ajan yeni oturuma bağlanır.
+        eski_anahtar = aktif.sid
         agent.session = session
         agent.mind.session_id = session.id
         agent._last_encoded = ""      # yeni oturumda anlık-encode tekrarını sıfırla
+        aktif.sid = session.id
+        self.seritler.pop(eski_anahtar, None)
+        self.seritler[session.id] = aktif
+        self._aktif_sid = session.id
         self.server.rebind(session)
-        # Yeni sohbet son sohbetin modelini devralır — yalnız son sohbet bir
-        # model SABİTLEMİŞSE. Sabitlemeyen kullanıcıda akış eskisi gibi:
-        # küresel varsayılan neyse o.
-        if not resumed and onceki_sid and hasattr(agent.mind, "session_meta"):
-            try:
-                eski_kayit = (agent.mind.session_meta() or {}).get(onceki_sid) or {}
-                if eski_kayit.get("model"):
-                    agent.mind.set_session_meta(
-                        session.id,
-                        model=str(eski_kayit["model"]),
-                        provider=str(eski_kayit.get("provider") or ""))
-            except Exception:
-                pass
+        self._model_devri(agent, onceki_sid, session, resumed)
         # Sohbete özel klasör / model — geçişte uygula.
         try:
             self._apply_session_context(session.id)
         except Exception:
             pass
+        _biten_kanallari_dusur(agent)
         self.hub.emit({"type": "session_reset", "id": session.id, "resumed": resumed})
+        self.hub.emit({"type": "channels", "channels": _live_channels(agent)})
         return {"ok": True, "id": session.id, "resumed": resumed}
+
+    def _model_devri(self, agent: Any, onceki_sid: str, session: Any,
+                     resumed: bool) -> None:
+        """Yeni sohbet son sohbetin modelini devralır — yalnız son sohbet
+        bir model SABİTLEMİŞSE. Sabitlemeyen kullanıcıda akış eskisi gibi:
+        küresel varsayılan neyse o."""
+        if resumed or not onceki_sid or not hasattr(agent.mind, "session_meta"):
+            return
+        try:
+            eski_kayit = (agent.mind.session_meta() or {}).get(onceki_sid) or {}
+            if eski_kayit.get("model"):
+                agent.mind.set_session_meta(
+                    session.id,
+                    model=str(eski_kayit["model"]),
+                    provider=str(eski_kayit.get("provider") or ""))
+        except Exception:
+            pass
+
+    def _aktive_et(self, serit: Serit, *, resumed: bool) -> dict[str, Any]:
+        """Var olan bir şeridi arayüzün baktığı şerit yapar.
+
+        Koşan şeride dokunulmaz — yalnız yayın hedefi değişir: sunucu o
+        oturumun günlüğüne bağlanır, arayüz dökümü oradan yeniden yükler,
+        meşguliyet ve kanallar o şeridin gerçeğinden basılır.
+        """
+        self._aktif_sid = serit.sid
+        self.server.rebind(serit.agent.session)
+        try:
+            self._apply_session_context(serit.sid)
+        except Exception:
+            pass
+        self.hub.emit({"type": "session_reset", "id": serit.sid,
+                       "resumed": resumed})
+        self.hub.emit({"type": "status", "busy": serit.busy})
+        self.hub.emit({"type": "channels",
+                       "channels": _live_channels(serit.agent)})
+        return {"ok": True, "id": serit.sid, "resumed": resumed}
+
+    def _serit_kur(self, session: Any) -> Serit:
+        """Yeni bir oturum için bağımsız şerit kurar.
+
+        Ajan sıfırdan: kendi zihni (aynı SQLite, ayrı bağlantı — oturum
+        kimliği karışmasın), kendi kayıt defteri, TEMİZ taban yapılandırma
+        (başka sohbetin sabitlediği model buraya sızmaz; sohbete özel pin
+        aktivasyonda `_apply_session_context` ile gelir). Model istemcisi
+        aynı (ad, adres) için ÖNBELLEKTEN paylaşılır: yerel sunucuda iki
+        istemci modeli iki kez yükletirdi; paylaşılan istemcinin kapısı
+        istekleri zaten sıraya koyar.
+        """
+        ornek = self._serit()
+        if ornek is None or ornek.agent is None:
+            raise RuntimeError("kurulu şerit yok")
+        cfg = settings._from_disk(ornek.agent.config)
+
+        mind = open_mind(cfg.mind_dir, cfg.sessions_dir, session.id)
+        registry = build_registry(mind, subagents=not prompt.is_lean(cfg))
+
+        if not hasattr(self, "_istemciler"):
+            self._istemciler: dict[tuple[str, str], Any] = {}
+            eski_model = ornek.agent.config.model
+            self._istemciler[(eski_model.name, str(eski_model.base_url or ""))] = (
+                ornek.agent.client)
+        anahtar = (cfg.model.name, str(cfg.model.base_url or ""))
+        client = self._istemciler.get(anahtar)
+        if client is None:
+            client = build_client(cfg.model)
+            self._istemciler[anahtar] = client
+
+        serit = Serit(sid=session.id, agent=None, queue=asyncio.Queue())
+        agent = Agent(
+            config=cfg,
+            session=session,
+            registry=registry,
+            client=client,
+            io=self.io(serit),
+            permissions=PermissionEngine.from_config(cfg.permissions),
+            policy=ContextPolicy(cfg.context),
+            schedule=getattr(ornek.agent, "schedule", None),
+            mind=mind,
+        )
+        agent.on_children_settled = (
+            lambda s=serit: self.loop.call_soon_threadsafe(
+                self._serit_child_done, s))
+        agent.on_retry_wait = self._swap_model
+        serit.agent = agent
+        self.seritler[session.id] = serit
+        serit.task = self.loop.create_task(self._pompa(serit))
+        return serit
 
     def compact_now(self) -> dict[str, Any]:
         """Bağlamı ŞİMDİ sıkıştırır (kompozerdeki `/sifirla` komutu).
@@ -648,25 +875,25 @@ class Bridge:
         Yalnız boştayken: akan bir turun altından geçmişi özetleyip
         değiştirmek o cevabı bozar.
         """
-        agent = self.agent
+        serit = self._serit()
+        agent = serit.agent if serit else None
         if agent is None:
             return {"ok": False, "error": "henüz hazır değil"}
-        if self._busy:
+        if serit.busy:
             return {"ok": False, "error": "neo meşgul; tur bitince dene", "busy": True}
 
         async def _kos() -> None:
-            self._busy = True
-            self.hub.emit({"type": "status", "busy": True})
+            self._serit_durum(serit, True)
             try:
                 if not await agent._compact(reason="kullanıcı istedi"):
-                    self.hub.emit({"type": "notice", "text":
+                    self._serit_yayin(serit, {"type": "notice", "text":
                                    "Sıkıştıracak kadar geçmiş yok — bağlam zaten kısa."})
             except Exception as exc:   # sıkıştırma uygulamayı düşürmemeli
-                self.hub.emit({"type": "notice", "text": f"{type(exc).__name__}: {exc}"})
+                self._serit_yayin(serit, {"type": "notice",
+                                          "text": f"{type(exc).__name__}: {exc}"})
             finally:
-                self._busy = False
-                self.hub.emit({"type": "status", "busy": False})
-                self.hub.emit({"type": "turn_end"})
+                self._serit_durum(serit, False)
+                self._serit_yayin(serit, {"type": "turn_end"})
 
         asyncio.run_coroutine_threadsafe(_kos(), self.loop)
         return {"ok": True}
@@ -797,7 +1024,21 @@ class Bridge:
         note = self._swap_note or f"Model değişti: {wanted.name}."
         self._swap_note = ""
         self.hub.emit({"type": "notice", "text": note})
-        self.loop.call_soon_threadsafe(lambda: self.loop.create_task(_retire(old)))
+        # Paylaşımlı istemci önbelleği (paralel şeritler): eski istemciyi
+        # BAŞKA bir şerit hâlâ kullanıyorsa kapatma — altından bağlantı
+        # çekmek koşan turu düşürür. Önbellekten de yalnız kimse
+        # kullanmıyorsa düşülür.
+        kullanan = any(s.agent is not None and s.agent.client is old
+                       for s in self.seritler.values())
+        if not kullanan:
+            for anahtar, istemci in list(getattr(self, "_istemciler", {}).items()):
+                if istemci is old:
+                    self._istemciler.pop(anahtar, None)
+            self.loop.call_soon_threadsafe(
+                lambda: self.loop.create_task(_retire(old)))
+        # Yeni istemci önbelleğe: aynı modele açılacak yeni şerit paylaşsın.
+        if hasattr(self, "_istemciler"):
+            self._istemciler[(wanted.name, str(wanted.base_url or ""))] = fresh
 
     def waking(self, stage: str, *, ready: bool = False) -> None:
         """Açılışın hangi adımında olunduğunu duyurur.
@@ -1377,31 +1618,45 @@ class Bridge:
 
     # -- asyncio thread ------------------------------------------------
 
-    def io(self) -> AgentIO:
+    def io(self, serit: Any = None) -> AgentIO:
+        """Ajanın olay yüzeyi. `serit` verilirse akış olayları YALNIZ o
+        şerit aktifken canlı yayına gider — arka şeridin metni/araçları
+        aktif sohbete karışmaz (paralel oturumların görünmez direği).
+        Onay istekleri kapılanmaz: arka şeridin izni de sorulmalı, yoksa
+        tur sonsuza dek bekler.
+        """
+        def yay(ev: dict[str, Any]) -> None:
+            if serit is None or serit.sid == self._aktif_sid:
+                self.hub.emit(ev)
+
         return AgentIO(
-            on_text=lambda chunk: self.hub.emit({"type": "assistant_delta", "text": chunk}),
-            on_thinking=lambda chunk: self.hub.emit({"type": "thinking_delta", "text": chunk}),
-            on_notice=lambda text: self.hub.emit({"type": "notice", "text": text}),
+            on_text=lambda chunk: yay({"type": "assistant_delta", "text": chunk}),
+            on_thinking=lambda chunk: yay({"type": "thinking_delta", "text": chunk}),
+            on_notice=lambda text: yay({"type": "notice", "text": text}),
             # Model kesintisi: yapısal bekleme olayı. Arayüz bunu çalışma
             # şeridinde TEK canlı satır olarak işler — sohbete hata duvarı
             # basılmaz (bkz. app.js "bekleme").
-            on_wait=lambda payload: self.hub.emit({"type": "bekleme", **payload}),
-            on_usage=self._usage_yay,
+            on_wait=lambda payload: yay({"type": "bekleme", **payload}),
+            # Maliyet çipi aktif sohbeti gösterir: arka şeridin harcaması
+            # çipe karışmaz (kendi oturum günlüğünde zaten duruyor).
+            on_usage=(self._usage_yay if serit is None else
+                      (lambda rapor: self._usage_yay(rapor)
+                       if serit.sid == self._aktif_sid else None)),
             # Bütçe freni: döngü her model çağrısından önce soruyor. Fiyat
             # ve sayaçlar burada olduğu için karar da burada.
             butce_freni=self._butce_freni,
             # Orkestra kanalları: alt ajanlar canlı görünsün (şef modu).
-            on_child_start=lambda title, model, cid, bg=False: self.hub.emit(
+            on_child_start=lambda title, model, cid, bg=False: yay(
                 {"type": "child_start", "title": title, "model": model, "id": cid,
                  "bg": bool(bg)}),
-            on_child_tool=lambda title, tool, phase, hedef="": self.hub.emit(
+            on_child_tool=lambda title, tool, phase, hedef="": yay(
                 {"type": "child_tool", "title": title, "tool": tool,
                  "phase": phase, "hedef": hedef or ""}),
             # `bg`: bu biten kanal arka planda mı koşuyordu. Görevler paneli
             # sohbete "bitti" bildirimini YALNIZ arka plan işleri için
             # düşürüyor — senkron yardımcının sonucu zaten cevabın içinde.
             on_child_end=self._child_end,
-            on_child_wait=lambda payload: self.hub.emit(
+            on_child_wait=lambda payload: yay(
                 {"type": "child_wait", **(payload or {})}),
             approve=self._approve,
         )
@@ -1486,21 +1741,46 @@ class Bridge:
         self._pending.clear()
 
     async def pump(self) -> None:
-        """Arayüzden gelen mesajları sırayla ajana verir."""
+        """İlk şeridin pompası (açılışta kurulur; yeni şeritler kendi
+        pompalarını `_serit_kur` içinde alır)."""
         while True:
-            item = await self.queue.get()
-            if self.agent is None:
+            serit = self._serit()
+            if serit is None:
+                # Ajan henüz kurulmadı: açılış kuyruğundan bekle.
+                item = await self._ilk_kuyruk.get()
+                if self.agent is None:
+                    continue
+                serit = self._serit()
+                if serit is None:
+                    continue
+                await self._pompa_isle(serit, item)
                 continue
-            if item is _CHILD_DONE:
-                await self._surdur()
-                continue
-            if item is _PARK_RESUME:
-                await self._park_surdur()
-                continue
-            text, image = item
-            await self._isle(text, image)
+            await self._pompa(serit)
+            return
 
-    async def _park_surdur(self) -> None:
+    async def _pompa(self, serit: Serit) -> None:
+        """Bir şeridin pompası: kendi kuyruğunu kendi ajanına akıtır.
+
+        Şerit başına bir pompa = şerit başına serilik; şeritler ARASI ise
+        tam paralellik. Kullanıcı yeni sohbete geçtiğinde eski şerit kendi
+        turunu burada sürdürür.
+        """
+        while True:
+            item = await serit.queue.get()
+            if serit.agent is None:
+                continue
+            await self._pompa_isle(serit, item)
+
+    async def _pompa_isle(self, serit: Serit, item: Any) -> None:
+        if item is _CHILD_DONE:
+            await self._surdur(serit)
+        elif item is _PARK_RESUME:
+            await self._park_surdur(serit)
+        else:
+            text, image = item
+            await self._isle(text, image, serit=serit)
+
+    async def _park_surdur(self, serit: Serit | None = None) -> None:
         """Park edilmiş (yarım kalmış) koşuyu kaldığı yerden sürdürür.
 
         Açılışta park kaydı bulunduğunda kuyruğa düşen işaretin karşılığı.
@@ -1508,90 +1788,119 @@ class Bridge:
         yeniden sürer; model hâlâ ulaşılamıyorsa aynı koşu içinde yeniden
         deneme/park zinciri zaten devrede.
         """
-        agent = self.agent
+        serit = serit or self._serit()
+        agent = serit.agent if serit else None
         if agent is None:
             return
-        self._busy = True
-        self.hub.emit({"type": "status", "busy": True})
+        self._serit_durum(serit, True)
         try:
             await agent.resume_after_interrupt()
         except Exception as exc:  # sürdürme uygulamayı düşürmemeli
-            self.hub.emit({"type": "notice", "text": f"{type(exc).__name__}: {exc}"})
+            self._serit_yayin(serit, {"type": "notice",
+                                      "text": f"{type(exc).__name__}: {exc}"})
         finally:
-            self._busy = False
-            if self._wanted_model is not None:
+            self._serit_durum(serit, False)
+            if self._wanted_model is not None and serit.sid == self._aktif_sid:
                 self._swap_model()
-            self.hub.emit({"type": "status", "busy": False})
-            self.hub.emit({"type": "turn_end"})
+            self._serit_yayin(serit, {"type": "turn_end"})
 
-    async def _surdur(self) -> None:
+    async def _surdur(self, serit: Serit | None = None) -> None:
         """Bir yardımcı bitti ve ajan boşta: sonucu değerlendiren tur.
 
         Bildirilecek bir şey kalmadıysa (sonuç koşan turun başında zaten
         verildiyse) model hiç çağrılmaz — sessizce geçilir.
         """
-        agent = self.agent
+        serit = serit or self._serit()
+        agent = serit.agent if serit else None
         if agent is None or not agent.has_unreported_children():
             return
-        self._busy = True
-        self.hub.emit({"type": "status", "busy": True})
+        self._serit_durum(serit, True)
         try:
             await agent.resume_for_children()
         except Exception as exc:  # sürdürme turu uygulamayı düşürmemeli
-            self.hub.emit({"type": "notice", "text": f"{type(exc).__name__}: {exc}"})
+            self._serit_yayin(serit, {"type": "notice",
+                                      "text": f"{type(exc).__name__}: {exc}"})
         finally:
-            self._busy = False
-            if self._wanted_model is not None:
+            self._serit_durum(serit, False)
+            if self._wanted_model is not None and serit.sid == self._aktif_sid:
                 self._swap_model()
-            self.hub.emit({"type": "status", "busy": False})
-            self.hub.emit({"type": "turn_end"})
+            self._serit_yayin(serit, {"type": "turn_end"})
 
-    async def _isle(self, text: str, image: str) -> None:
-        """Tek mesajı işler.
+    def _serit_yayin(self, serit: Serit, ev: dict[str, Any]) -> None:
+        """Şerit olayını YALNIZ aktifken canlı akışa verir.
+
+        Arka şeridin metni kendi oturum günlüğüne zaten yazılıyor; canlı
+        yayına da sızsaydı iki sohbet ekranda birbirine karışırdı. Kullanıcı
+        şeride dönünce döküm günlükten yüklenir — kayıp yok.
+        """
+        if serit.sid == self._aktif_sid:
+            self.hub.emit(ev)
+
+    async def _isle(self, text: str, image: str = "", *,
+                    serit: Serit | None = None) -> None:
+        """Tek mesajı kendi şeridinde işler (varsayılan: aktif şerit).
 
         pump'tan ayrı durması bilinçli: testler bir turu kuyruk ve sonsuz
         döngüye bulaşmadan koşturabiliyor.
         """
-        self._busy = True
+        serit = serit or self._serit()
+        if serit is None or serit.agent is None:
+            return
+        self._serit_durum(serit, True)
+        agent = serit.agent
         # Yeni kullanıcı mesajı = yeni tur: çipin "bu tur" toplamı sıfırdan
         # başlar. Oturum toplamına dokunulmuyor; sürdürme turları
-        # (_surdur, park) aynı işin devamı sayılıp sıfırlamıyor.
-        self._tur_kullanim = {"girdi": 0, "cikti": 0, "cagri": 0}
+        # (_surdur, park) aynı işin devamı sayılıp sıfırlamıyor. Sayaç
+        # yalnız aktif şeritte sıfırlanıyor — çip aktif sohbeti gösteriyor.
+        if serit.sid == self._aktif_sid:
+            self._tur_kullanim = {"girdi": 0, "cikti": 0, "cagri": 0}
         # Yeni mesaj = yeni deneme: sınır hâlâ aşılmışsa fren bir kez daha
         # konuşsun. Yoksa kullanıcı yazıyor ve hiçbir şey olmuyor.
         self._butce_bildirildi = False
-        self.hub.emit({"type": "status", "busy": True})
         try:
             # İlk kurulum: hiçbir sağlayıcı kullanılabilir değilken model
             # HİÇ çağrılmıyor — cevapsız kalan ya da anlaşılmaz bir API
             # hatasıyla biten bir mesaj yerine, sohbete yol gösteren bir
             # asistan mesajı düşüyor. Kullanıcı tekrar yazarsa yeniden
             # hatırlatılıyor; ama bir mesaj bir kez cevaplanıyor.
-            if settings.yapilandirilmamis(self.agent.config.model):
-                self.agent.session.add_user_text(text)
-                self.agent.session.add_assistant(
+            if settings.yapilandirilmamis(agent.config.model):
+                agent.session.add_user_text(text)
+                agent.session.add_assistant(
                     [{"type": "text", "text": settings.KURULUM_YONLENDIRME}]
                 )
-                self.hub.emit(
-                    {"type": "setup_hint", "text": settings.KURULUM_YONLENDIRME}
-                )
+                self._serit_yayin(serit,
+                                  {"type": "setup_hint",
+                                   "text": settings.KURULUM_YONLENDIRME})
                 return
-            await self.agent.run(text, image)
+            await agent.run(text, image)
         except Exception as exc:  # ajan bir istekte patlarsa uygulama ölmemeli
-            self.hub.emit({"type": "notice", "text": f"{type(exc).__name__}: {exc}"})
+            self._serit_yayin(serit, {"type": "notice",
+                                      "text": f"{type(exc).__name__}: {exc}"})
         finally:
-            self._busy = False
+            self._serit_durum(serit, False)
             # Karşılık verildi: sohbet açık. Bu süre boyunca söylenen
             # her şey ona söylenmiş sayılıyor, adını tekrarlamak
             # gerekmiyor — karşındaki insana da her cümlede adıyla
             # başlamıyorsun.
-            if self.ear is not None:
+            if self.ear is not None and serit.sid == self._aktif_sid:
                 self.ear.engage()
             # Tur sırasında model değiştirilmişse şimdi geçiliyor.
-            if self._wanted_model is not None:
+            if self._wanted_model is not None and serit.sid == self._aktif_sid:
                 self._swap_model()
-            self.hub.emit({"type": "status", "busy": False})
-            self.hub.emit({"type": "turn_end"})
+            self._serit_yayin(serit, {"type": "turn_end"})
+            # Arka şerit bitti: kullanıcı başka sohbetteyken haberdar olsun.
+            if serit.sid != self._aktif_sid:
+                baslik = ""
+                try:
+                    meta = (serit.agent.mind.session_meta() or {}).get(serit.sid) or {}
+                    baslik = str(meta.get("ad") or "")
+                except Exception:
+                    pass
+                self.hub.emit({"type": "notice",
+                               "text": (f"Arka plandaki sohbet bitti: {baslik}"
+                                        if baslik else
+                                        "Arka plandaki sohbet cevabını bitirdi — "
+                                        "kenar çubuğundan dönebilirsin.")})
 
 
 @dataclass(slots=True)
@@ -1988,8 +2297,9 @@ async def _boot(config: Config, port: int, resume: bool) -> Runtime:
             mind=mind,
         )
         # Arka plan yardımcısı bitince köprü haber alsın: ajan boştaysa
-        # sonucu değerlendiren bir sürdürme turu açılır.
-        agent.on_children_settled = bridge.child_done
+        # sonucu değerlendiren bir sürdürme turu açılır. (Şeride özel
+        # bağlama `bridge.agent = agent` atamasında kuruluyor; buradaki
+        # geri-uyum satırı onun ÜSTÜNE yazmasın diye kaldırıldı.)
         # Model kesintisinde her yeniden denemeden önce bekleyen ayar/model
         # değişikliği uygulansın: bozuk adres/anahtar düzeltildiğinde parklı
         # koşu yeni istemciyle sürebilsin (normalde değişim tur sonunu

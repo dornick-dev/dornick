@@ -87,6 +87,10 @@ const History = (() => {
 
   // `ara` verilirse sunucu DÖKÜMLERİN içinde de arıyor ve eşleşen satırları
   // (`hits`) gönderiyor. Verilmezse bu yalnızca liste tazelemesi.
+  function panelAcik() {
+    return document.body.classList.contains("hist-open");
+  }
+
   async function load(ara) {
     if (!loaded) { body.textContent = ""; body.append(el("p", "hist-blank", t("Yükleniyor…"))); }
     let data;
@@ -660,6 +664,10 @@ const History = (() => {
   });
 
   return { open, close, toggle: toggle_panel, newChat: newConversation,
+           // Şerit olayı (paralel oturumlar): arka planda koşan/biten
+           // sohbetin rozeti canlı tazelensin — panel açıkken liste
+           // yeniden yüklenir, kapalıyken bir sonraki açılış zaten taze.
+           laneChanged: () => { try { if (panelAcik()) load(); } catch {} },
            // Sahneden gelen "konuşmaya git": önce panel açılır — geçiş
            // ve olası hata mesajı GÖRÜNÜR bir yerde yaşasın (kapalı
            // paneldeki durum satırı sessiz ölüyordu).

@@ -1513,3 +1513,19 @@ def test_the_prompt_carries_the_visuals_when_needed_principle() -> None:
     assert "bir bakışta" in IDENTITY
     assert "Görsel ne zaman" not in LEAN_IDENTITY
 
+def test_switching_sessions_drops_finished_helper_channels() -> None:
+    """Canli sikayet: orkestra eski sohbetlerin bitmis kayitlariyla
+    doluyordu. Gecis biten/hatali kanali dusurur; kosan ve yetim
+    (surdurulebilir) kalir."""
+    from types import SimpleNamespace
+    from neocp.desktop import _biten_kanallari_dusur
+    defter = {
+        'a': SimpleNamespace(state='bitti'),
+        'b': SimpleNamespace(state='hata'),
+        'c': SimpleNamespace(state='kosuyor'),
+        'd': SimpleNamespace(state='yetim'),
+    }
+    agent = SimpleNamespace(_children=defter)
+    _biten_kanallari_dusur(agent)
+    assert sorted(defter) == ['c', 'd']
+

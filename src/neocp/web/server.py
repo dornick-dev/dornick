@@ -2856,7 +2856,17 @@ class _Handler(BaseHTTPRequestHandler):
         current = getattr(mind, "session_id", "")
         projects = mind.projects() if hasattr(mind, "projects") else {}
         meta = mind.session_meta() if hasattr(mind, "session_meta") else {}
-        busy = bool(getattr(getattr(self.server, "controller", None), "_busy", False))
+        controller = getattr(self.server, "controller", None)
+        busy = bool(getattr(controller, "_busy", False))
+        # Paralel şeritler: arka planda koşan HER sohbet listede "koşuyor"
+        # görünmeli — yalnız aktif olan değil. Kenar çubuğu rozeti buradan.
+        kosanlar: set[str] = set()
+        try:
+            for sid, serit in (getattr(controller, "seritler", None) or {}).items():
+                if getattr(serit, "busy", False):
+                    kosanlar.add(sid)
+        except Exception:
+            pass
 
         # `?ara=` verilirse arama DÖKÜMLERİN İÇİNDE de yapılıyor: aranan söz
         # çoğu zaman başlıkta değil konuşmanın ortasında geçiyor.
@@ -2883,8 +2893,10 @@ class _Handler(BaseHTTPRequestHandler):
                 "tools": ep.tools[:6],
                 "preview": ep.digest[:160],
                 "current": is_current,
-                # açık = şu an seçili; koşuyor = seçili ve tur sürüyor; biten = diğerleri
-                "status": ("koşuyor" if is_current and busy
+                # açık = şu an seçili; koşuyor = turu süren HER şerit
+                # (aktif ya da arka plan); biten = diğerleri.
+                "status": ("koşuyor" if ((is_current and busy)
+                                         or ep.session_id in kosanlar)
                            else ("açık" if is_current else "biten")),
                 "project": projects.get(ep.session_id, ""),
                 "path": kayit.get("path") or "",

@@ -4201,6 +4201,11 @@ function handle(e) {
     // panel baştan kurulur — açılış sırasında yüklenen sayfa snapshot'ı
     // ajan hazır olmadan çekmiş olabilir.
     case "channels": orchSeed(e.channels || []); break;
+    case "lane":
+      // Paralel şerit durumu: kenar çubuğu rozetini canlı tutar.
+      if (typeof History !== "undefined" && History.laneChanged)
+        History.laneChanged(e);
+      break;
     // Python tarafındaki kulağın duyduğu seviye: mikrofon simgesi
     // canlanıyor, yani arkada dinlendiği görünüyor.
     case "level": showLevel(e.value); break;
