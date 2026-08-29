@@ -10,7 +10,7 @@ ve hafızası, hedefleri, geçmişi birinci sınıf, sorgulanabilir yapılar ola
 kişisel bir ajan. Senin hakkında öğrendikleri, ekranda büyüdüğünü
 izleyebildiğin bir hafıza ağına yazılır.
 
-![neo ana ekranı: beynin çevresinde 3B hafıza ağı, solda hafıza türleri](docs/screenshots/home-memory-web.jpg)
+![neo ana ekranı: beynin çevresinde 3B hafıza ağı, solda hafıza türleri](docs/screenshots/home-memory-web.png)
 
 ## İçinde ne var
 
@@ -67,7 +67,7 @@ izleyebildiğin bir hafıza ağına yazılır.
 * **Türkçe ve İngilizce** arayüz; hafıza katmanı sondan eklemeli Türkçe
   için kurulmuştur (önek eşleyen FTS) ve İngilizcede de çalışır.
 
-![Hafıza ağı: anılar renkli düğümler olarak en yakın komşularına bağlı](docs/screenshots/home-memory-web.jpg)
+![Hafıza ağı: anılar renkli düğümler olarak en yakın komşularına bağlı](docs/screenshots/home-memory-web.png)
 
 ## Hızlı başlangıç
 
@@ -115,13 +115,13 @@ seni hatırlamaya başlar.
 ## Otomasyonlar
 
 ![Görevler paneli: Basit ve Otomasyon rozetli liste ve günlük posta özetinin
-dört adımlı akış grafiği](docs/screenshots/automation-flow.jpg)
+dört adımlı akış grafiği](docs/screenshots/automation-flow.png)
 
 Her düğüm türünü (`mail_read`, `agent`, `http`, `skill`), ihtiyaç duyduğu
 gizli alanları ve elle düzenlenip düzenlenmediğini yazar — ✎ *manual* işaretli
 bir adıma otomatik onarım asla dokunmaz. Aynı ekran iki temada da çalışır:
 
-![Aynı akış açık temada](docs/screenshots/automation-flow-light.jpg)
+![Aynı akış açık temada](docs/screenshots/automation-flow-light.png)
 
 Zamana bağla, ya da **Run**'a bas ve adımların *koşuyor*dan *bitti*ye
 dönüşünü izle. Hiçbir şey ayrı bir günlüğe saklanmıyor.
@@ -157,7 +157,7 @@ yerelde koşar.
 
 ### Ayarlar
 
-![neo ayarları: model, ses, yetki ve makine sekmeleri](docs/screenshots/settings.jpg)
+![neo ayarları: model, ses, yetki ve makine sekmeleri](docs/screenshots/settings.png)
 
 ## Eğitim düzeneği
 

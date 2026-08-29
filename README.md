@@ -153,7 +153,7 @@ to ask: [docs/gate.md](docs/gate.md).
 
 ![The Tasks panel: a list with Simple and Automation badges, and the flow
 graph of a daily mail digest with four steps — read inbox, pick what matters,
-send to WhatsApp, archive the rest](docs/screenshots/automation-flow.jpg)
+send to WhatsApp, archive the rest](docs/screenshots/automation-flow.png)
 
 Each node names its type (`mail_read`, `agent`, `http`, `skill`), the secrets
 it needs, and whether you edited it by hand — a step marked ✎ *manual* is one
