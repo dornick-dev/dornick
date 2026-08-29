@@ -50,6 +50,13 @@ are narrower and more interesting:
 - neo beat OpenCode on the same model — and did it after OpenCode's
   strongest run of the night.
 
+**Post-release confirmation sweep.** After the test-coverage delivery rule
+landed, the full 9-task ×2 sweep was repeated: **896.8** — the tie holds
+(and an amusing lesson surfaced: the first attempt scored o2 as
+unmeasurable because a zombie process from a *previous* run still held the
+service port; the fix was the same process-tree hygiene this report
+preaches). We do not claim a pass we did not measure.
+
 ## Efficiency (same-model lanes)
 
 | | OpenCode | neo |

@@ -131,3 +131,14 @@ Dürüst dipnotlar:
 | **neo (onarımlar sonrası)** | **300,0** | 270 sn | ~$0,012 |
 | neo (ilk koşu) | 282,0 | 1623 sn | ~$0,037 |
 | OpenCode | 200,0 | 984 sn | $0,025 |
+
+---
+
+## Dokuz görevlik final (29.08 gecesi) — tam rapor yayın deposunda
+
+Üç şerit dokuz görevin tamamında koşturuldu (neo ×2 tekrar ortalaması):
+**Claude Code 897,3 · neo 896,7 · OpenCode 894,9** (900 üzerinden) —
+tepe istatistiksel beraberlik; neo aynı modeldeki rakibinin önünde.
+Test kapısı + olumsuz-şart kuralı z2'yi 55,9→100 taşıdı. Hafıza deneyleri
+(tohumlu −%24, kapsül −%38, kirlilik mühürlü) dahil tam metod ve ham veri:
+yayın deposunda `docs/benchmark-2026-08.md`; ham JSON'lar `sonuclar/`.
