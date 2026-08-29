@@ -19,6 +19,7 @@ import json
 import os
 import queue
 import re
+import sys
 import tempfile
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -582,7 +583,28 @@ class MindServer:
         # günlükten gelen olaylar sessizce kaybolur.
         self.hub = hub or Hub()
         self._unsubscribe = log.subscribe(self.hub.publish)
-        self._httpd = ThreadingHTTPServer((host, port), _Handler)
+        # Port GERÇEKTEN boş mu? Windows'ta ThreadingHTTPServer'ın
+        # varsayılan SO_REUSEADDR'ı dolu portun üstüne sessizce ikinci kez
+        # bağlanmaya izin veriyor — bağlantılar ESKİ sürece gidiyor ve
+        # pencere neo yerine o portu tutan uygulamayı gösteriyordu (canlı,
+        # 29.08: laptopta eski bir atölye paneli 8765'i tutuyordu ve neo
+        # "kendi olmayan" bir sayfayla açıldı). Çözüm iki katlı: gasp izni
+        # kapalı bir sunucu sınıfı + doluysa sıradaki boş porta kayma.
+        # Gerçek adres her zaman `url`'den okunur; pencere de onu kullanır.
+        son_hata: OSError | None = None
+        for aday in range(int(port), int(port) + 20):
+            try:
+                self._httpd = _TekSahipSunucu((host, aday), _Handler)
+                if aday != int(port):
+                    print(f"[neo] {port} portu dolu — arayüz {aday} portunda",
+                          flush=True)
+                break
+            except OSError as exc:
+                son_hata = exc
+        else:
+            raise OSError(
+                f"{port}-{int(port) + 19} arası hiçbir port boş değil"
+            ) from son_hata
         self._httpd.daemon_threads = True
         # Handler'lar server üzerinden erişiyor.
         self._httpd.mind = mind  # type: ignore[attr-defined]
@@ -629,6 +651,18 @@ class MindServer:
         if self._thread.is_alive():
             self._httpd.shutdown()
         self._httpd.server_close()
+
+
+class _TekSahipSunucu(ThreadingHTTPServer):
+    """Portun tek sahibi olan sunucu.
+
+    Windows'ta SO_REUSEADDR başka bir sürecin dinlediği portun üstüne
+    bağlanmayı hata VERMEDEN kabul ediyor ve trafik ilk sahibe akıyor.
+    Kapatınca bağlanma dolu portta dürüstçe patlıyor; üst katman da boş
+    porta kayabiliyor.
+    """
+
+    allow_reuse_address = sys.platform != "win32"
 
 
 class _Handler(BaseHTTPRequestHandler):
