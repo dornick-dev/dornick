@@ -35,7 +35,9 @@ bilgi yalnızca burada duruyor.
   list    cihazlarını göster
   show    bir cihazın bütün ayrıntısı (adresler, notlar)
   save    ekle ya da güncelle
-  remove  sil
+  remove  sil — kaydı kaldırır, ilgili anıları SİLMEZ. Zihinde bu
+          cihaza dair kayıt varsa kullanıcıya sor: dursun mu, sileyim
+          mi? Onay olmadan `mind_memory forget` etme.
 
 Kayıt tek başına bir şey yapmıyor — nereye bağlanılacağını söylüyor. O
 cihazla iş yapmak için ona bir yetenek yaz (`skill action=new`) ve
@@ -83,6 +85,80 @@ def _dump(device: devices.Device) -> str:
     if device.notes:
         lines.append("\nnotlar: " + device.notes)
     lines.append(f"\nekleyen: {device.source}")
+    return "\n".join(lines)
+
+
+def _needles(device: devices.Device) -> list[str]:
+    """Bu cihaza dair anı ararken bakılacak parçalar.
+
+    Kısa ve genel sözler (plc, tcp) her şeye yapışır; kimlik, ad, adres,
+    host yeter. Ölçüm/yükseklik kayıtları genelde cihaz adını taşır.
+    """
+    bits: list[str] = []
+    for raw in (device.id, device.name, device.summary):
+        text = " ".join(str(raw or "").replace("-", " ").split()).casefold()
+        if len(text) >= 3:
+            bits.append(text)
+        for word in text.split():
+            if len(word) >= 4:
+                bits.append(word)
+    for point in device.points:
+        for raw in (point.name, point.address):
+            text = " ".join(str(raw or "").split()).casefold()
+            if len(text) >= 3:
+                bits.append(text)
+    host = str((device.link or {}).get("host") or (device.link or {}).get("url") or "")
+    host = host.strip().casefold()
+    if len(host) >= 4:
+        bits.append(host)
+    # Tekrarları koru sırayı: ilk eşleşme daha özgül (id, ad).
+    seen: set[str] = set()
+    out: list[str] = []
+    for bit in bits:
+        if bit not in seen:
+            seen.add(bit)
+            out.append(bit)
+    return out
+
+
+def related_memories(mind: Any, device: devices.Device, *, limit: int = 8) -> list[Any]:
+    """Cihaz kaydı silindikten sonra zihinde kalan ilgili anılar."""
+    tokens = _needles(device)
+    if mind is None or not tokens:
+        return []
+    try:
+        items = mind.memories()
+    except Exception:
+        return []
+    found: list[Any] = []
+    for mem in items:
+        if getattr(mem, "deleted", False):
+            continue
+        blob = (getattr(mem, "searchable", lambda: "")() or "").casefold()
+        if any(token in blob for token in tokens):
+            found.append(mem)
+            if len(found) >= limit:
+                break
+    return found
+
+
+def _ask_about_memories(device: devices.Device, hits: list[Any]) -> str:
+    if not hits:
+        return (
+            f"{device.id} silindi. Zihinde bu cihaza dair kayıt görünmüyor."
+        )
+    lines = [
+        f"{device.id} kaydı sistemden silindi.",
+        "Zihinde hâlâ buna dair kayıtlar var — onay olmadan silme:",
+    ]
+    for mem in hits:
+        title = (getattr(mem, "title", "") or "").strip() or (getattr(mem, "id", "") or "")
+        ident = getattr(mem, "id", "")
+        lines.append(f"  · {title}  ({ident})")
+    lines.append(
+        "Kullanıcıya sor: bu anılar dursun mu, sileyim mi? "
+        "Evet derse `mind_memory action=forget` ile id'leri sil."
+    )
     return "\n".join(lines)
 
 
@@ -193,6 +269,24 @@ def register(registry: ToolRegistry) -> None:
                     "ayarlar › cihazlar bölümünden silebilir."
                 )
             devices.remove(root, ident)
-            return ToolResult(f"{ident} silindi.")
+            hits: list[Any] = []
+            try:
+                from ..mind import open_mind
+                mind = open_mind(
+                    ctx.config.mind_dir,
+                    ctx.config.sessions_dir,
+                    getattr(ctx.session, "id", "") or "",
+                )
+                hits = related_memories(mind, found)
+            except Exception:
+                hits = []
+            try:
+                ctx.session.log.note("device_removed", id=ident)
+            except Exception:
+                pass
+            return ToolResult(
+                _ask_about_memories(found, hits),
+                detail={"id": ident, "memories": [getattr(m, "id", "") for m in hits]},
+            )
 
         return ToolResult.error(f"Bilinmeyen işlem: {action}")

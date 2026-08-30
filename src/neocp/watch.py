@@ -10,7 +10,9 @@ Bunun yerine iş ikiye bölünüyor:
 
     yerelde   hareket var mı? — küçültülmüş gri kareler arasındaki fark.
               Mikrosaniyeler sürüyor, model hiç uyanmıyor.
-    modelde   hareket varsa **ne** oldu? — kare bir kez soruluyor.
+    GPU'da    hareket varsa **ne** var? — NVIDIA kartı varsa YOLOv8n
+              kareyi metne çevirir; görüntü makineden çıkmaz.
+    modelde   GPU yoksa hareket karesi bir kez soruluyor (cloud_ok kapısı).
 
 Yani model sessizce bekliyor ve yalnızca bir şey değiştiğinde bakıyor. Boş
 bir odada saatlerce hiçbir istek gitmiyor.
@@ -85,6 +87,57 @@ class Camera:
     ask: str = ""
     last_seen: str = ""
     last_note: str = ""
+    # usb = yerel aygıt indeksi; rtsp / http = ağ. Eski kayıtlarda yalnız
+    # `source` dolu — connect_source onu olduğu gibi kullanır.
+    kind: str = "usb"
+    host: str = ""
+    port: int = 0
+    path: str = ""
+    user: str = ""
+    password: str = ""
+    # True: GPU varsa kare yerelde YOLOv8n ile okunur. GPU yok/yetersizse
+    # zaten no-op (CPU'ya düşmez). Kamerayı tek tek kapatmak için False.
+    analyze: bool = True
+
+    def connect_source(self) -> Any:
+        """OpenCV'ye verilecek kaynak: indeks veya kimlikli URL."""
+        from urllib.parse import quote
+
+        if self.host.strip():
+            scheme = "rtsp" if (self.kind or "rtsp") == "rtsp" else "http"
+            if (self.kind or "") in ("http", "mjpeg"):
+                scheme = "http"
+            port = int(self.port or 0) or (554 if scheme == "rtsp" else 80)
+            path = self.path.strip() or "/"
+            if not path.startswith("/"):
+                path = "/" + path
+            auth = ""
+            if self.user:
+                auth = quote(self.user, safe="")
+                if self.password:
+                    auth += ":" + quote(self.password, safe="")
+                auth += "@"
+            return f"{scheme}://{auth}{self.host.strip()}:{port}{path}"
+        src = (self.source or "0").strip() or "0"
+        return int(src) if src.isdigit() else src
+
+    def public_dict(self) -> dict[str, Any]:
+        """API/UI: şifre yok, URL'deki user:pass maskeli."""
+        import re
+
+        d = asdict(self)
+        d["has_password"] = bool(d.pop("password", ""))
+        src = str(d.get("source") or "")
+        d["source"] = re.sub(r"(://)([^/@]+)@", r"\1***@", src)
+        return d
+
+    def is_builtin(self) -> bool:
+        """Dahili webcam: indeks 0, host yok."""
+        if (self.host or "").strip():
+            return False
+        src = (self.source or "0").strip() or "0"
+        kind = (self.kind or "usb").strip() or "usb"
+        return src == "0" and kind == "usb"
 
 
 DEFAULT_ASK = (
@@ -118,8 +171,7 @@ class Eye:
 
         if self._capture is not None:
             return True
-        # Sayı ise yerel kamera indeksi, değilse adres.
-        source: Any = int(self.camera.source) if self.camera.source.isdigit() else self.camera.source
+        source = self.camera.connect_source()
         capture = cv2.VideoCapture(source)
         if not capture.isOpened():
             capture.release()
@@ -133,6 +185,15 @@ class Eye:
             self._capture.release()
             self._capture = None
         self._last = None
+
+    def jpeg(self) -> str:
+        """Açık yakalamadan bir JPEG (data: URL). Yoksa boş."""
+        if self._capture is None:
+            return ""
+        ok, frame = self._capture.read()
+        if not ok:
+            return ""
+        return _encode(frame) or ""
 
     def look(self) -> Sighting | None:
         """Bir kare alır. Değişiklik eşiği aştıysa görüntüyü döndürür."""
@@ -196,6 +257,60 @@ def _encode(frame: Any, max_edge: int = 800, quality: int = 78) -> str:
     return "data:image/jpeg;base64," + base64.b64encode(buffer.tobytes()).decode("ascii")
 
 
+def snapshot(source: str, count: int = 1, gap_s: float = 0.6,
+             warm: int = 3) -> list[str]:
+    """Kameradan anlık kesit(ler): data:image/jpeg;base64 listesi.
+
+    İzleme döngüsünden bağımsız — "sorduğumuzda birkaç kesit alıp modele"
+    yolunun temeli (GPU'suz makinede TEK çalışma kipi bu). Kamera açılır,
+    pozlama otursun diye birkaç kare atlanır, istenen sayıda kare alınır
+    ve kapatılır: arkada açık kamera bırakılmaz.
+    """
+    import cv2  # noqa: F401 — open() zaten ister; hint() için erken kontrol
+
+    eye = Eye(Camera(id="kesit", name="kesit", source=str(source)))
+    if not eye.open():
+        return []
+    try:
+        for _ in range(max(0, warm)):
+            eye._capture.read()
+        frames: list[str] = []
+        for i in range(max(1, min(int(count), 4))):
+            if i:
+                time.sleep(max(0.1, gap_s))
+            ok, frame = eye._capture.read()
+            if not ok:
+                break
+            if encoded := _encode(frame):
+                frames.append(encoded)
+        return frames
+    finally:
+        eye.close()
+
+
+def same_source(a: str, b: str) -> bool:
+    """'0' ve boş string aynı dahili kamera."""
+    x = (str(a or "").strip() or "0")
+    y = (str(b or "").strip() or "0")
+    return x == y
+
+
+def preview_jpeg(source: str, lens: Any = None, warm: int = 0) -> bytes:
+    """Güverte karosu: açık Lens tamponu, yoksa tek kesit.
+
+    Dahili kamera zaten Lens'te açıksa ikinci VideoCapture Windows
+    DirectShow'da 0.5–2 sn kilitler ve açık oturumla yarışır.
+    """
+    src = (source or "0").strip() or "0"
+    if lens is not None and same_source(getattr(lens, "source", "0"), src):
+        getter = getattr(lens, "jpeg_bytes", None)
+        return getter() if callable(getter) else b""
+    frames = snapshot(src, 1, warm=warm)
+    if not frames:
+        return b""
+    return base64.b64decode(frames[0].partition(",")[2])
+
+
 class Watcher:
     """Kameraları arka planda izler.
 
@@ -229,9 +344,20 @@ class Watcher:
         self._snooze_until = (
             time.monotonic() + seconds if seconds > 0 else float("inf")
         )
+        from . import prefs as prefs_mod
+        prefs_mod.tell(getattr(self, "on_snooze", None), True)
 
     def unsnooze(self) -> None:
+        was = self.snoozed
         self._snooze_until = 0.0
+        if was:
+            from . import prefs as prefs_mod
+            prefs_mod.tell(getattr(self, "on_snooze", None), False)
+
+    def peek(self, camera_id: str) -> str:
+        """İzlenen kameradan kare; ikinci kez açmaz."""
+        eye = self._eyes.get(camera_id)
+        return eye.jpeg() if eye is not None else ""
 
     def _loop(self) -> None:
         while not self._stop.is_set():
@@ -268,11 +394,19 @@ def load(state_dir: Any) -> list[Camera]:
         return []
 
     known = set(Camera.__dataclass_fields__)
-    return [
-        Camera(**{k: v for k, v in entry.items() if k in known})
-        for entry in raw
-        if isinstance(entry, dict) and entry.get("id")
-    ]
+    out: list[Camera] = []
+    for entry in raw:
+        if not isinstance(entry, dict) or not entry.get("id"):
+            continue
+        cam = Camera(**{k: v for k, v in entry.items() if k in known})
+        src = (cam.source or "").casefold()
+        if not cam.host and cam.kind == "usb":
+            if src.startswith("rtsp://"):
+                cam.kind = "rtsp"
+            elif src.startswith("http://") or src.startswith("https://"):
+                cam.kind = "http"
+        out.append(cam)
+    return out
 
 
 def save(state_dir: Any, cameras: list[Camera]) -> None:
@@ -289,6 +423,25 @@ def save(state_dir: Any, cameras: list[Camera]) -> None:
     temp.replace(path)
 
 
+def remember(state_dir: Any, camera: Camera, note: str) -> None:
+    """Hareket özetini kayda yazar — model `kamera action=yol` ile okur."""
+    from datetime import datetime
+
+    camera.last_note = (note or "").strip()[:240]
+    camera.last_seen = datetime.now().astimezone().isoformat(timespec="seconds")
+    cameras = load(state_dir)
+    found = False
+    for entry in cameras:
+        if entry.id != camera.id:
+            continue
+        entry.last_note = camera.last_note
+        entry.last_seen = camera.last_seen
+        found = True
+        break
+    if found:
+        save(state_dir, cameras)
+
+
 # -- yerel kamera tamponu ----------------------------------------------
 #
 # Ajanın "gözü". Kamera sürekli açık ve kare alıyor ama **hiçbiri modele
@@ -300,9 +453,9 @@ def save(state_dir: Any, cameras: list[Camera]) -> None:
 # ölçülüyor, yani "son bir dakikada bir şey oldu mu" sorusu modele hiç
 # uğramadan cevaplanıyor.
 
-# Saniyede bu kadar kare. Göz için az ama "az önce ne oldu" sorusuna cevap
-# vermeye yetiyor; daha yükseği işlemciyi boşuna yakıyor.
-LENS_FPS = 2.0
+# Saniyede bu kadar kare. Önizleme akıcı dursun diye 8; YOLO her karede
+# değil, yalnız bakış/harekette çalışır — GPU buradan yanmaz.
+LENS_FPS = 8.0
 
 # Bellekte tutulan hareket geçmişi. 2 fps'te iki dakika.
 HISTORY = 240
@@ -362,9 +515,17 @@ class Lens:
     def start(self) -> bool:
         if not available():
             return False
+        if self.running:
+            return True
+        self._stop = threading.Event()
         self._thread = threading.Thread(target=self._loop, daemon=True, name="neo-lens")
         self._thread.start()
         return True
+
+    @property
+    def running(self) -> bool:
+        t = self._thread
+        return t is not None and t.is_alive()
 
     @property
     def snoozed(self) -> bool:
@@ -373,9 +534,9 @@ class Lens:
     def snooze(self, seconds: float = 0.0) -> None:
         """Gözü kapatır. Süresiz de olabilir; "neo" demek geri açar.
 
-        Kapatmak yalnızca yeni kare almamak değil: eldeki kare de
-        siliniyor. "İzlemiyorum" derken bellekte taze bir kare tutmak,
-        yarım bir kapanma olurdu.
+        Kapatmak yalnızca yeni kare almamak değil: eldeki kare silinir ve
+        aygıt bırakılır (LED söner). "İzlemiyorum" deyip kamerayı açık
+        tutmak yarım bir kapanma olurdu.
         """
         self._snooze_until = (
             time.monotonic() + seconds if seconds > 0 else float("inf")
@@ -384,13 +545,30 @@ class Lens:
             self._frame = None
             self._history.clear()
             self._recent.clear()
+        self._eye.close()
+        from . import prefs as prefs_mod
+        prefs_mod.tell(getattr(self, "on_snooze", None), True)
 
     def unsnooze(self) -> None:
+        was = self.snoozed
         self._snooze_until = 0.0
+        if was:
+            from . import prefs as prefs_mod
+            prefs_mod.tell(getattr(self, "on_snooze", None), False)
 
     def stop(self) -> None:
+        """Tam kapatma: döngü biter, aygıt bırakılır, tampon boşalır."""
         self._stop.set()
         self._eye.close()
+        t = self._thread
+        self._thread = None
+        if t is not None and t.is_alive() and t is not threading.current_thread():
+            t.join(timeout=2.0)
+        self._snooze_until = 0.0
+        with self._lock:
+            self._frame = None
+            self._history.clear()
+            self._recent.clear()
 
     @property
     def live(self) -> bool:
@@ -405,13 +583,14 @@ class Lens:
     def step(self) -> None:
         """Tek bir kare alır ve tamponu tazeler.
 
-        Susturulmuşken kare hiç alınmıyor — aygıt açık kalıyor ama görüntü
-        okunmuyor, tampon boş duruyor.
+        Susturulmuşken kare alınmıyor ve aygıt bırakılıyor (LED söner).
 
         Döngüden ayrı durması bilinçli: bekleme olmadan tek adım
         çalıştırılabiliyor ve davranışı ölçülebiliyor.
         """
         if self.snoozed:
+            if self._eye._capture is not None:
+                self._eye.close()
             return
         import cv2
 
@@ -451,6 +630,11 @@ class Lens:
             self._eye.close()
 
     # -- sorular -------------------------------------------------------
+
+    def jpeg_bytes(self) -> bytes:
+        """Önizleme için son JPEG. Kamerayı yeniden açmaz."""
+        with self._lock:
+            return self._recent[-1][1] if self._recent else b""
 
     def snapshot(self) -> tuple[str, float]:
         """En yeni kare ve kaç saniye önce alındığı."""

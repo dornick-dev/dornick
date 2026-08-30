@@ -391,6 +391,7 @@ WINDOW_FIELDS = (
     "context_window",
     "n_ctx",
     "max_context_length",
+    "max_model_len",
 )
 
 
@@ -440,29 +441,94 @@ def detect_window(config: Config) -> int | None:
     Bulamazsa None döner — uydurmak, yanlış ayarı sessizce sürdürmekten
     daha kötü.
     """
-    payload, _err = _openai_models_payload(config)
-    if not payload:
-        return None
+    caps = detect_caps(config)
+    window = caps.get("max_context")
+    return int(window) if isinstance(window, int) and window > 0 else None
 
-    entries = payload.get("data")
-    if not isinstance(entries, list):
-        return None
 
-    # Önce yüklü modelin kendi kaydı; yoksa listedeki en büyük değer bir
-    # şey söylemiyor, o yüzden eşleşme bulunamazsa None.
-    for entry in entries:
-        if not isinstance(entry, dict) or entry.get("id") != config.model.name:
-            continue
-        if (window := _window_of(entry)) is not None:
-            return window
-    return None
+def detect_caps(config: Config) -> dict[str, Any]:
+    """Seçili modelin katalogdaki yetenekleri. Bilinmeyen alan yok.
+
+    Sağlayıcıya göre şekil değişir: OpenRouter `context_length` +
+    `architecture.input_modalities` + `supported_parameters`; LM Studio
+    `max_context_length` + `capabilities`; Anthropic listede pencere yok,
+    düşünme/görüntü Claude sohbet modellerinde var sayılır; OpenAI resmi
+    listede bu alanlar yok — uydurulmaz.
+    """
+    name = (config.model.name or "").strip()
+    if not name or name.lower() == "oto":
+        return {}
+    caps: dict[str, Any] = {}
+    for entry in scan_models(config):
+        if entry.get("id") == name:
+            caps = {
+                key: entry[key]
+                for key in ("max_context", "vision", "thinking", "tools")
+                if key in entry
+            }
+            break
+    # Ollama `/v1/models` yalnız kimlik verir; pencere/yetenek `/api/show`
+    # ile seçili modele sorulur — katalogda N çağrı yok, yalnız Algıla.
+    if any(key not in caps for key in ("max_context", "vision", "thinking")):
+        for key, value in _ollama_show_caps(config, name).items():
+            caps.setdefault(key, value)
+    return caps
+
+
+def _caps_of(entry: dict[str, Any]) -> dict[str, Any]:
+    """Tek bir `/models` kaydından bilinen yetenekler. Eksik alan eklenmez."""
+    ident = str(entry.get("id") or entry.get("key") or "")
+    out: dict[str, Any] = {"id": ident}
+    shown = entry.get("name") or entry.get("display_name")
+    if shown:
+        out["name"] = str(shown)
+
+    window = _window_of(entry)
+    top = entry.get("top_provider")
+    if window is None and isinstance(top, dict):
+        window = _window_of(top)
+    if window is not None:
+        out["max_context"] = window
+
+    arch = entry.get("architecture")
+    if isinstance(arch, dict):
+        modalities = arch.get("input_modalities")
+        if isinstance(modalities, list):
+            out["vision"] = any(str(m).lower() in ("image", "vision") for m in modalities)
+        elif isinstance(arch.get("modality"), str):
+            out["vision"] = "image" in arch["modality"].lower()
+
+    params = entry.get("supported_parameters")
+    if isinstance(params, list):
+        low = {str(p).lower() for p in params}
+        out["tools"] = "tools" in low or "tool_choice" in low
+        out["thinking"] = bool(
+            low & {"reasoning", "include_reasoning", "reasoning_effort"}
+        )
+
+    skills = entry.get("capabilities")
+    if isinstance(skills, dict):
+        if "vision" in skills and "vision" not in out:
+            out["vision"] = bool(skills["vision"])
+        if "trained_for_tool_use" in skills and "tools" not in out:
+            out["tools"] = bool(skills["trained_for_tool_use"])
+        for key in ("reasoning", "think", "thinking"):
+            if key in skills:
+                out["thinking"] = bool(skills[key])
+                break
+    elif isinstance(skills, list) and "vision" not in out:
+        out["vision"] = any(str(s).lower() in ("vision", "image") for s in skills)
+
+    return out
 
 
 def _window_of(entry: dict[str, Any]) -> int | None:
     for field in WINDOW_FIELDS:
         value = entry.get(field)
-        if isinstance(value, int) and value > 0:
-            return value
+        if isinstance(value, bool):
+            continue
+        if isinstance(value, (int, float)) and value > 0:
+            return int(value)
         if isinstance(value, str) and value.isdigit() and int(value) > 0:
             return int(value)
     return None
@@ -485,30 +551,138 @@ def scan_models_result(config: Config) -> dict[str, Any]:
     if lmstudio.is_local_url(config.model.base_url):
         found = lmstudio.models(config.model.base_url)
         if found:
-            return {
-                "models": [
-                    {
-                        "id": m.key,
-                        "name": m.name,
-                        "max_context": m.max_context,
-                        "vision": m.vision,
-                        "tools": m.tools,
-                        "loaded": [
-                            {"id": i.id, "context": i.context} for i in m.instances
-                        ],
-                    }
-                    for m in found
-                ],
-                "error": None,
-            }
+            models = []
+            for m in found:
+                row: dict[str, Any] = {
+                    "id": m.key,
+                    "name": m.name,
+                    "max_context": m.max_context,
+                    "vision": m.vision,
+                    "tools": m.tools,
+                    "loaded": [
+                        {"id": i.id, "context": i.context} for i in m.instances
+                    ],
+                }
+                if m.thinking is not None:
+                    row["thinking"] = m.thinking
+                models.append(row)
+            return {"models": models, "error": None}
 
-    names, err = available_models_with_error(config)
-    entries: list[dict[str, Any]] = [{"id": name} for name in names]
+    if config.model.provider == "anthropic":
+        entries, err = _anthropic_catalog(config)
+        return {"models": entries, "error": err if not entries else None}
+
+    payload, err = _openai_models_payload(config)
+    raw_list = payload.get("data") if isinstance(payload, dict) else None
+    entries: list[dict[str, Any]] = []
+    if isinstance(raw_list, list):
+        for raw in raw_list:
+            if not isinstance(raw, dict) or not raw.get("id"):
+                continue
+            if raw.get("type") in ("embeddings", "embedding"):
+                continue
+            if "embed" in str(raw.get("id")).lower():
+                continue
+            entries.append(_caps_of(raw))
     if provider_of(config.model) == "openrouter":
         from .config import OTO_MODEL
 
         entries.insert(0, {"id": OTO_MODEL, "name": "Oto — ücretsiz model havuzu"})
     return {"models": entries, "error": err if not entries else None}
+
+
+def _anthropic_catalog(config: Config) -> tuple[list[dict[str, Any]], str | None]:
+    """Claude model listesi. Listede pencere yok; sohbet modelleri görüntü
+    ve düşünme kabul eder — bu, uçtan gelen bir sayı değil, sağlayıcı gerçeği.
+    """
+    import urllib.error
+    import urllib.request
+
+    env = config.model.api_key_env or "ANTHROPIC_API_KEY"
+    key = os.environ.get(env) or os.environ.get("ANTHROPIC_API_KEY")
+    if not key:
+        return [], "anahtar yok"
+    url = (config.model.base_url or "https://api.anthropic.com").rstrip("/")
+    if url.endswith("/v1"):
+        url = url + "/models"
+    else:
+        url = url + "/v1/models"
+    req = urllib.request.Request(
+        url,
+        headers={
+            "x-api-key": key,
+            "anthropic-version": "2023-06-01",
+            "User-Agent": "neocp",
+        },
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=REMOTE_PROBE_TIMEOUT) as response:
+            payload = json.load(response)
+    except urllib.error.HTTPError as exc:
+        return [], f"HTTP {exc.code}"
+    except TimeoutError:
+        return [], "zaman aşımı"
+    except (urllib.error.URLError, OSError, ValueError) as exc:
+        reason = getattr(exc, "reason", None) or exc
+        return [], str(reason)[:80]
+    rows = payload.get("data") if isinstance(payload, dict) else None
+    if not isinstance(rows, list):
+        return [], "liste yok"
+    out: list[dict[str, Any]] = []
+    for raw in rows:
+        if not isinstance(raw, dict) or not raw.get("id"):
+            continue
+        ident = str(raw["id"])
+        if "embed" in ident.lower():
+            continue
+        item = _caps_of(raw)
+        # Claude sohbet modelleri görüntü ve düşünme kabul eder; listede
+        # pencere yok — sayı uydurulmaz.
+        item.setdefault("vision", True)
+        item.setdefault("thinking", True)
+        item.setdefault("tools", True)
+        out.append(item)
+    return out, None
+
+
+def _ollama_show_caps(config: Config, name: str) -> dict[str, Any]:
+    """Ollama `/api/show` — uç söylemezse boş. Katalogda çağrılmaz."""
+    base = config.model.base_url or ""
+    if "11434" not in base and "ollama" not in base.lower():
+        return {}
+    import urllib.error
+    import urllib.request
+
+    root = lmstudio.root_of(base)
+    req = urllib.request.Request(
+        root.rstrip("/") + "/api/show",
+        data=json.dumps({"name": name}).encode("utf-8"),
+        headers={"Content-Type": "application/json", "User-Agent": "neocp"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=PROBE_TIMEOUT) as response:
+            payload = json.load(response)
+    except (urllib.error.URLError, TimeoutError, OSError, ValueError):
+        return {}
+    if not isinstance(payload, dict):
+        return {}
+    out: dict[str, Any] = {}
+    info = payload.get("model_info") or payload.get("modelinfo") or {}
+    if isinstance(info, dict):
+        for key, value in info.items():
+            if not str(key).endswith("context_length"):
+                continue
+            if isinstance(value, (int, float)) and value > 0:
+                out["max_context"] = int(value)
+                break
+    skills = payload.get("capabilities")
+    if isinstance(skills, list):
+        low = {str(s).lower() for s in skills}
+        out["vision"] = "vision" in low or "image" in low
+        out["thinking"] = bool(low & {"thinking", "reasoning"})
+        out["tools"] = "tools" in low
+    return out
 
 
 def available_models(config: Config) -> list[str]:
@@ -747,6 +921,9 @@ def _model_patch(current: ModelConfig, patch: dict[str, Any]) -> ModelConfig:
     for name in ("max_tokens", "context_window"):
         if name in fields and fields[name] is not None:
             fields[name] = int(fields[name])
+    for name in ("vision", "can_think"):
+        if name in fields and fields[name] is not None:
+            fields[name] = bool(fields[name])
 
     # Yerel opt açılınca çift kopyayı engelle — kullanıcı açıkça max_calls
     # yazmadıysa 1'e çek.

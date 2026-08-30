@@ -10,12 +10,13 @@ from __future__ import annotations
 
 import asyncio
 import os
+import re
 import shutil
 import sys
 from pathlib import Path
 from typing import Any
 
-from .base import ToolContext, ToolRegistry, ToolResult, object_schema
+from .base import JobFailed, ToolContext, ToolRegistry, ToolResult, object_schema
 from .. import ortam
 
 MAX_OUTPUT_CHARS = 30_000
@@ -154,11 +155,13 @@ def register(registry: ToolRegistry) -> None:
         description=f"""
 Bir {shell_name} komutu çalıştırır ve stdout+stderr döndürür.
 
-Ne zaman kullan: dosya sistemi keşfi, süreç yönetimi, git, paket yöneticileri,
+Ne zaman kullan: dosya sistemi keşfi, süreç yönetimi, paket yöneticileri,
 sistem sorguları — özel bir aracın kapsamadığı her şey.
 
 Ne zaman kullanma: dosya okuma/yazma için read_file ve write_file araçları
 daha güvenli ve daha ucuz. Onlar varken kabuktan cat/echo yapma.
+git commit / push / GitHub repo için `git` aracını kullan; kabuktan
+`git commit` yapma.
 
 Komut kendi kabuğunda çalışır: değişkenler, cd, fonksiyonlar turlar arasında
 korunmaz. Dizin değiştirmen gerekiyorsa `cwd` argümanını kullan.
@@ -320,11 +323,15 @@ UZUN SÜREN SÜREÇLER — iki ayrı kip, karıştırma:
                 durum, text, code = await _run_shell(
                     command, cwd, session_id, job_timeout, cancel)
                 if durum == "stop":
-                    return "(kesildi — süreç sonlandırıldı)"
+                    raise JobFailed("İş durduruldu — komut sonlandırıldı.")
                 if durum == "timeout":
-                    return f"(zaman aşımı: {job_timeout:.0f} sn — süreç sonlandırıldı)"
+                    raise JobFailed(
+                        f"İş zaman aşımına uğradı ({job_timeout:.0f} sn) "
+                        "ve durduruldu."
+                    )
                 if code != 0:
-                    return f"Çıkış kodu {code}\n\n{text or '(çıktı yok)'}"
+                    raise JobFailed(is_raporu(
+                        command=command, code=code, text=text or ""))
                 return text or "(çıktı yok, komut başarılı)"
 
             handle = ctx.job_bg(f"$ {command[:60]}", runner)
@@ -352,15 +359,8 @@ UZUN SÜREN SÜREÇLER — iki ayrı kip, karıştırma:
             )
 
         if code != 0:
-            govde = f"Çıkış kodu {code}\n\n{text or '(çıktı yok)'}"
-            # Öğretici hata (OpenCode kalıbı): bilinen tuzaklarda çıkış yolu
-            # hatanın İÇİNDE yazar — model sonraki turda tahminle değil
-            # tarifle düzeltir. Kıyasta 6 hatalı çağrının tamamı bu üç
-            # kalıptandı.
-            if ipucu := kabuk_ipucu(text or ""):
-                govde += "\n\nİpucu: " + ipucu
             return ToolResult(
-                content=govde,
+                content=is_raporu(command=command, code=code, text=text or ""),
                 is_error=True,
                 detail={"exit_code": code, "cwd": str(cwd)},
             )
@@ -397,11 +397,131 @@ _IPUCLARI: list[tuple[tuple[str, ...], str]] = [
      "değil, tam yol kullan; önce list_dir ile yolun varlığını doğrula."),
 ]
 
+_MODUL_RE = re.compile(r"No module named ['\"]([^'\"]+)['\"]", re.I)
+_PAKET_RE = re.compile(
+    r"paketi yüklü değil[:\s]*\*?\*?`?([A-Za-z0-9_.-]+)",
+    re.I,
+)
+_PIP_RE = re.compile(r"pip install ([A-Za-z0-9_.-]+)", re.I)
+_HATA_SATIRI = re.compile(
+    r"^[A-Za-z_][\w.]*?(?:Error|Exception|Warning): .+"
+)
+_CIKIS_RE = re.compile(r"^Çıkış kodu (\d+)\s*\n+(.*)$", re.S)
+
+
+def _modul_adi(cikti: str) -> str:
+    ham = cikti or ""
+    for rx in (_MODUL_RE, _PAKET_RE, _PIP_RE):
+        m = rx.search(ham)
+        if m:
+            return m.group(1).strip()
+    return ""
+
+
+def son_hata_satiri(cikti: str) -> str:
+    """Traceback'in son Exception satırı — 'File …' izi değil."""
+    for line in reversed((cikti or "").splitlines()):
+        s = line.strip()
+        if _HATA_SATIRI.match(s):
+            return s
+    return ""
+
 
 def kabuk_ipucu(cikti: str) -> str:
     """Bilinen hata kalıbına tek satırlık çıkış yolu (yoksa boş)."""
+    ad = _modul_adi(cikti)
+    if ad:
+        return (
+            f"Python paketi `{ad}` yüklü değil. "
+            f"`py -m pip install {ad}` ile kur, sonra komutu yeniden koş."
+        )
     kucuk = cikti.lower()
     for izler, tarif in _IPUCLARI:
         if any(iz in kucuk for iz in izler):
             return tarif
     return ""
+
+
+def kabuk_ozet(cikti: str) -> str:
+    """Ham kabuk çıktısından kullanıcının anlayacağı cümle."""
+    ad = _modul_adi(cikti)
+    if ad:
+        return (
+            f"Gerekli Python paketi yüklü değil: **{ad}**. "
+            f"Kurmak için `py -m pip install {ad}` yaz, sonra aynı komutu "
+            "yeniden çalıştır."
+        )
+    if ipucu := kabuk_ipucu(cikti or ""):
+        son = son_hata_satiri(cikti)
+        if son:
+            return f"{son}. {ipucu}"
+        return ipucu
+    return son_hata_satiri(cikti)
+
+
+def is_raporu(*, command: str, code: int, text: str) -> str:
+    """Başarısız kabuk işinin kullanıcı raporu — traceback duvarı değil."""
+    ozet = kabuk_ozet(text)
+    satirlar = [
+        "## Sonuç",
+        "",
+        ozet or "Komut çalışmadı.",
+        "",
+        f"- Komut: `{command}`",
+    ]
+    if not ozet:
+        kuyruk = _kisa_kuyruk(text)
+        if kuyruk:
+            satirlar += ["", "## Çıktı", "", kuyruk]
+    if code and code != 1:
+        satirlar.append(f"- Çıkış kodu: {code}")
+    return "\n".join(satirlar)
+
+
+def _kisa_kuyruk(cikti: str) -> str:
+    """Traceback izini at; son birkaç anlamlı satır."""
+    keep: list[str] = []
+    for line in (cikti or "").splitlines():
+        s = line.strip()
+        if not s or s.startswith("Traceback") or s.startswith("File "):
+            continue
+        keep.append(s)
+    if not keep:
+        return ""
+    return "\n".join(keep[-5:])[:400]
+
+
+def _komut_from_title(title: str) -> str:
+    ad = (title or "").strip()
+    return ad[2:].strip() if ad.startswith("$ ") else ad
+
+
+def insan_is_raporu(metin: str, *, title: str = "") -> str:
+    """Eski ham dökümü (Çıkış kodu + traceback) okunur rapora çevir.
+
+    Yeni işler zaten `is_raporu` yazar; Viewer hâlâ bellekteki eski
+    dökümü gösterebilir.
+    """
+    ham = (metin or "").strip()
+    if not ham:
+        return ham
+    if ham.startswith("## Sonuç"):
+        return ham
+    komut = _komut_from_title(title)
+    m = _CIKIS_RE.match(ham)
+    if m:
+        return is_raporu(command=komut, code=int(m.group(1)), text=m.group(2))
+    if "Traceback (most recent call last)" in ham:
+        return is_raporu(command=komut, code=1, text=ham)
+    return ham
+
+
+def kisa_is_ozeti(metin: str, *, title: str = "") -> str:
+    """Görevler listesi için tek cümle — traceback değil."""
+    rapor = insan_is_raporu(metin, title=title)
+    for line in rapor.splitlines():
+        s = line.strip()
+        if not s or s.startswith("#") or s.startswith("- "):
+            continue
+        return s
+    return rapor[:400]

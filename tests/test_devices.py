@@ -129,3 +129,66 @@ def test_no_devices_means_no_briefing(tmp_path: Path) -> None:
     """Boş bir başlık ("Bağlı cihazlar: yok") her istemde yer kaplıyor
     ve hiçbir şey söylemiyor."""
     assert devices.briefing(tmp_path) == ""
+
+
+def test_related_memories_are_the_ones_about_that_device(tmp_path: Path) -> None:
+    """Cihaz silinince ölçüm/adres anıları sessizce kalıyordu; kullanıcı
+    'hafızadan da sil' demek zorunda kalıyordu. Silme, ilgili anıları
+    gösterir ve sorar — kendiliğinden forget etmez."""
+    from neocp.config import Config
+    from neocp.mind import open_mind
+    from neocp.tools.devices import related_memories
+
+    config = Config.load(tmp_path)
+    config.ensure_dirs()
+    mind = open_mind(config.mind_dir, config.sessions_dir, "t")
+    mind.remember("Depo yüksekliği 4.2 m, birim cm.", title="depo yüksekliği")
+    mind.remember("Bugün hava güneşli.", title="hava")
+    device = devices.parse({
+        "id": "depo-seviye",
+        "name": "Depo seviye ölçer",
+        "kind": "plc",
+        "points": [{"name": "seviye", "address": "404195"}],
+    })
+
+    hits = related_memories(mind, device)
+    titles = {m.title for m in hits}
+    assert "depo yüksekliği" in titles
+    assert "hava" not in titles
+
+
+def test_removing_a_device_asks_before_forgetting_memories(tmp_path: Path) -> None:
+    import asyncio
+
+    from neocp.config import Config
+    from neocp.events import EventLog
+    from neocp.mind import open_mind
+    from neocp.session import Session
+    from neocp.tools import ToolContext, ToolRegistry
+    from neocp.tools import devices as device_tool
+
+    config = Config.load(tmp_path)
+    config.ensure_dirs()
+    ctx = ToolContext(
+        config=config,
+        session=Session(EventLog(tmp_path / "s.jsonl"), "t"),
+        cancel=asyncio.Event(),
+    )
+    devices.save(ctx.sandbox.root, {
+        "id": "depo-seviye", "name": "Depo seviye ölçer", "kind": "plc",
+    })
+    mind = open_mind(config.mind_dir, config.sessions_dir, "t")
+    mind.remember("Depo seviye adresi 404195.", title="depo adresi")
+
+    registry = ToolRegistry()
+    device_tool.register(registry)
+    result = asyncio.run(registry.get("device").handler(
+        {"action": "remove", "id": "depo-seviye"}, ctx))
+
+    assert devices.find(ctx.sandbox.root, "depo-seviye") is None
+    assert "sileyim mi" in result.content
+    assert "depo adresi" in result.content
+    assert "forget" in result.content
+    # Anı duruyor — onay yok.
+    left = [m.title for m in mind.memories() if not m.deleted]
+    assert "depo adresi" in left

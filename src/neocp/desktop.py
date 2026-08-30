@@ -34,6 +34,7 @@ from . import (
     fiyat as fiyatlama,
     lmstudio,
     ortam,
+    prefs,
     prompt,
     schedule as scheduling,
     settings,
@@ -126,6 +127,68 @@ def _is_close(text: str) -> bool:
             rest = plain.replace(phrase, " ").split()
             return all(w in _CLOSE_PAD for w in rest)
     return False
+
+
+# Nezaket / bekleme: modele gitmez. "teşekkürler" → "rica ederim" bir
+# asistan döngüsü; "şimdi bakayım" bir istek değil. "tamam" tek başına
+# yok — ajanın sorduğu şeye evet de olabiliyor.
+_ACK_CORE = frozenset((
+    "teşekkürler", "teşekkür", "tesekkurler", "tesekkur",
+    "sağol", "sagol", "sağolun", "sagolun", "eyvallah",
+    "tamamdır", "thanks", "thx",
+    "bakayım", "bakayim",
+))
+_ACK_PAD = frozenset((
+    "çok", "cok", "ederim", "sağ", "sag", "ol", "tamam", "peki",
+    "şimdi", "simdi", "bir", "dur", "you", "thank", "oldu", "ben",
+))
+
+
+def _is_ack(text: str) -> bool:
+    raw = (text or "").lower().replace("!", "").replace(".", "").replace(",", "")
+    raw = raw.replace("'", "")
+    words = raw.split()
+    if not words or len(words) > 5:
+        return False
+    joined = " ".join(words)
+    if "thank you" in joined:
+        return True
+    glued = joined.replace("sağ ol", "sağol").replace("sag ol", "sağol")
+    words = glued.split()
+    if not any(w in _ACK_CORE for w in words):
+        return False
+    return all(w in _ACK_CORE or w in _ACK_PAD for w in words)
+
+
+def inherit_last_model(mind: Any, session_id: str, sessions_dir: Any) -> str:
+    """Yeni oturuma en son sabitlenmiş sohbet modelini yazar.
+
+    Katalog seçimi sohbet metasındadır; `neocp --app` her açılışta yeni
+    oturum açınca pin kayboluyor ve küresel eski model geri geliyordu.
+    """
+    from pathlib import Path
+
+    sid = str(session_id or "")
+    mapping = (mind.session_meta() or {}) if mind is not None else {}
+    if str((mapping.get(sid) or {}).get("model") or "").strip():
+        return str(mapping[sid]["model"]).strip()
+    files = sorted(
+        Path(sessions_dir).glob("*.jsonl"),
+        key=lambda p: p.stat().st_mtime,
+        reverse=True,
+    )
+    for path in files:
+        other = path.stem
+        if other == sid:
+            continue
+        rec = mapping.get(other) or {}
+        name = str(rec.get("model") or "").strip()
+        if not name:
+            continue
+        mind.set_session_meta(
+            sid, model=name, provider=str(rec.get("provider") or ""))
+        return name
+    return ""
 
 
 async def _retire(client: Any) -> None:
@@ -253,6 +316,59 @@ def _metin_uzunlugu(content: Any) -> str:
 _KANAL_DURUM = {"kosuyor": "run", "bitti": "done", "yetim": "yetim"}
 
 
+def _yerel_uc(base_url: str) -> bool:
+    """Model ucu kullanıcının makinesinde/ağında mı? (loopback + RFC-1918)
+
+    Kamera karesinin buluta çıkıp çıkmayacağının tek ölçütü. Gece
+    okulundaki `_yerel_mi` ile aynı tanım — iki yerde iki farklı "yerel"
+    tanımı olmasın.
+    """
+    from urllib.parse import urlparse
+    host = (urlparse(str(base_url or "")).hostname or "").casefold()
+    if host in ("localhost", "127.0.0.1", "::1", "0.0.0.0"):
+        return True
+    return (host.startswith("192.168.") or host.startswith("10.")
+            or host.endswith(".local"))
+
+
+def _hareket_gonder(bridge: Any, config: Config, hub: Hub,
+                    sighting: watching.Sighting) -> None:
+    """Hareket olayı: GPU varsa yerelde analiz, modele metin.
+
+    GPU analizi başarılıysa kare hiç gitmez — sohbet modeli metni okur.
+    Analiz yoksa eski kapı: yerel model serbest, bulut için cloud_ok.
+    """
+    hub.emit({
+        "type": "notice",
+        "text": f"{sighting.camera.name}: hareket (%{int(sighting.change * 100)})",
+    })
+    from . import sight
+
+    ozet = ""
+    if getattr(sighting.camera, "analyze", True):
+        ozet = sight.analyze_url(sighting.frame)
+    try:
+        watching.remember(config.state_dir, sighting.camera, ozet or "hareket")
+    except Exception:
+        pass
+    baslik = f"[{sighting.camera.name}] {sighting.ask}"
+    if ozet:
+        bridge.submit(f"{baslik}\n\nYerel GPU analizi: {ozet}")
+        return
+    model_url = str(getattr(bridge.agent.config.model, "base_url", "") or "") \
+        if bridge.agent is not None else ""
+    yerel = _yerel_uc(model_url)
+    if not yerel and not config.camera.cloud_ok:
+        hub.emit({
+            "type": "notice",
+            "text": (f"{sighting.camera.name}: kare BULUT modele gönderilmedi "
+                     "(izin kapalı). Yerel model seç ya da Ayarlar › Kamera'dan "
+                     "bulut iznini aç."),
+        })
+        return
+    bridge.submit(baslik, sighting.frame)
+
+
 def _biten_kanallari_dusur(agent: Any) -> None:
     """Oturum geçişinde bitmiş yardımcıları defterden düşürür.
 
@@ -365,6 +481,7 @@ class Bridge:
         # Sürekli dinleyen kulak sonradan bağlanıyor: açılış sırasında
         # köprü ondan önce kuruluyor.
         self.ear: Any = None
+        self.lens: Any = None
         # Turun ortasında istenen model değişikliği. Akan bir istemciyi
         # altından çekmek o cevabı öldürür; tur bitince uygulanıyor. Modelle
         # birlikte sistem promptu da tazelendiği için tüm config saklanıyor.
@@ -508,6 +625,8 @@ class Bridge:
             (system kanalı düz metin); basit tutmak için eski kuyruk.
           * Gelen kutusu dolduysa — araya girme tekil bir jest, sel değil.
         """
+        if not image and _is_ack(text):
+            return
         agent = self.agent
         if (self._busy and not siraya and not image
                 and agent is not None and not agent.inbox_full()):
@@ -940,11 +1059,17 @@ class Bridge:
         istemci tazeleniyor.
 
         Geçmiş yeni modele taşınıyor — kullanıcıya söyleniyor, sessizce
-        yapılmıyor. Turun ortasındaysak değişiklik tur bitene kadar
+        yapılmıyor.         Turun ortasındaysak değişiklik tur bitene kadar
         bekliyor: akan bir istemciyi altından çekmek o cevabı öldürür.
         """
         agent = self.agent
         if agent is None:
+            self.sync_camera(config)
+            self.sync_hearing(config)
+            self.hub.emit({
+                "type": "voice",
+                "enabled": bool(config.voice.enabled),
+            })
             return
 
         was = agent.permissions.mode
@@ -976,6 +1101,229 @@ class Bridge:
             # cihaz eklendi, bağlam politikası değişti. Bunlar bir sonraki
             # tura anında girmeli — yeniden başlatmaya gerek yok.
             agent.reconfigure(config)
+        # Kamera anahtarı anında: ayar kaydı Lens'i start/stop eder, yeniden
+        # başlatmaya gerek yok (LED/GPU oturum ortasında kapanabilmeli).
+        self.sync_camera(config)
+        self.sync_hearing(config)
+        self.hub.emit({
+            "type": "voice",
+            "enabled": bool(config.voice.enabled),
+        })
+
+    def sync_camera(self, config: Config) -> dict[str, Any]:
+        """Kamera anahtarını donanıma uygular: Lens start/stop, LED, YOLO ısısı.
+
+        Ayar kaydı tek başına yetmiyordu — bayrak değişiyor, aygıt açık
+        kalıyordu. HUD ve sohbet aynı kapıyı kullanır.
+        """
+        from . import sight, watch as watching
+
+        want = bool(config.camera.enabled)
+        server = getattr(self, "server", None)
+        httpd = getattr(server, "_httpd", None) if server else None
+        agent = getattr(self, "agent", None)
+        lens = getattr(self, "lens", None)
+        live = False
+        note = ""
+        if want:
+            if not watching.available():
+                note = "opencv yok"
+            else:
+                if lens is None:
+                    lens = watching.Lens()
+                    self.lens = lens
+                if not lens.running:
+                    if lens.start():
+                        live = True
+                        threading.Thread(
+                            target=sight.ensure_warmup, daemon=True,
+                            name="neo-sight-warm").start()
+                    else:
+                        note = "kamera açılamadı"
+                else:
+                    lens.unsnooze()
+                    live = True
+                if agent is not None:
+                    agent.lens = lens
+                if httpd is not None:
+                    httpd.lens = lens
+        else:
+            if lens is not None:
+                lens.stop()
+            if agent is not None:
+                agent.lens = None
+            if httpd is not None:
+                httpd.lens = None
+        if server is not None:
+            server.lens = lens if want else None
+        payload = {
+            "type": "camera",
+            "enabled": want,
+            "live": live,
+            "note": note,
+        }
+        hub = getattr(self, "hub", None)
+        if hub is not None:
+            hub.emit(payload)
+        return payload
+
+    def camera_power(self, on: bool) -> str:
+        """Sohbet/HUD: kamerayı tamamen aç veya kapat (ayarı da yazar)."""
+        from . import settings as settings_mod
+
+        agent = getattr(self, "agent", None)
+        server = getattr(self, "server", None)
+        cfg = agent.config if agent is not None else getattr(server, "config", None)
+        if cfg is None:
+            return "Kamera ayarı yok."
+        updated = settings_mod.apply(cfg, {"camera": {"enabled": bool(on)}})
+        if server is not None:
+            server.config = updated
+        if agent is not None:
+            agent.reconfigure(updated)
+        result = self.sync_camera(updated)
+        if on and result.get("live"):
+            return (
+                "Kamera açık. LED yanıyor. Sorduğunda yerel analiz metin "
+                "olarak gelir; resim kendiliğinden modele gitmez."
+            )
+        if on:
+            return "Kamera açılamadı" + (
+                f": {result['note']}" if result.get("note") else ".")
+        return "Kamera kapalı. Aygıt bırakıldı, LED söner."
+
+    def sync_hearing(self, config: Config) -> dict[str, Any]:
+        """Dinleme anahtarını donanıma uygular: Ear start/stop.
+
+        Ayar kaydı tek başına yetmiyordu — bayrak değişiyor, kulak ancak
+        yeniden başlatınca açılıyordu; o yüzden yalnız bas-konuş duyuluyordu.
+        Uyandırma sözü veya serbest dinleme (`open`) varsa kulak açılır.
+        """
+        from . import listen as recogniser
+
+        want = _hearing_wanted(config)
+        server = getattr(self, "server", None)
+        httpd = getattr(server, "_httpd", None) if server else None
+        agent = getattr(self, "agent", None)
+        ear = getattr(self, "ear", None)
+        live = False
+        note = ""
+
+        def wire(next_ear: Any) -> None:
+            self.ear = next_ear
+            if httpd is not None:
+                httpd.ear = next_ear
+            if agent is not None:
+                agent.ear = next_ear
+
+        if want:
+            if _ear_alive(ear):
+                ear.open = bool(config.listen.open)
+                ear.wake = config.listen.wake
+                ear.unsnooze()
+                live = True
+                wire(ear)
+            else:
+                if ear is not None:
+                    try:
+                        ear.stop()
+                    except Exception:
+                        pass
+                hub = getattr(self, "hub", None)
+                if hub is None:
+                    note = "hub yok"
+                    wire(None)
+                else:
+                    ear = _open_ear(config, self, hub)
+                    if ear is None:
+                        note = "kulak açılamadı"
+                        wire(None)
+                    else:
+                        live = True
+                        wire(ear)
+                        if httpd is not None:
+                            server_module.warm_ear(httpd, config)
+        else:
+            if ear is not None:
+                try:
+                    ear.stop()
+                except Exception:
+                    pass
+            wire(None)
+            if not config.listen.enabled:
+                note = ""
+            elif not hearing.available():
+                note = "mikrofon paketi yok"
+            elif not recogniser.available():
+                note = "tanıma paketi yok"
+            elif not (config.listen.wake.strip() or config.listen.open):
+                note = "uyandırma veya serbest dinleme yok"
+
+        payload = {
+            "type": "hearing",
+            "enabled": bool(config.listen.enabled),
+            "live": live,
+            "open": bool(config.listen.open),
+            "wake": bool(config.listen.wake.strip()),
+            "snoozed": bool(self.ear is not None
+                            and getattr(self.ear, "snoozed", False)),
+            "note": note,
+        }
+        hub = getattr(self, "hub", None)
+        if hub is not None:
+            hub.emit(payload)
+        return payload
+
+    def hearing_power(self, on: bool) -> str:
+        """HUD: dinlemeyi aç veya kapat (ayarı da yazar).
+
+        Açarken serbest dinleme de açılır: uyandırma sözü beklenmeden
+        duyulan cümle ajana gider. Kapatınca mikrofon bırakılır.
+        """
+        from . import settings as settings_mod
+
+        agent = getattr(self, "agent", None)
+        server = getattr(self, "server", None)
+        cfg = agent.config if agent is not None else getattr(server, "config", None)
+        if cfg is None:
+            return "Dinleme ayarı yok."
+        updated = settings_mod.apply(cfg, {
+            "listen": {"enabled": bool(on), "open": bool(on)},
+        })
+        if server is not None:
+            server.config = updated
+        if agent is not None:
+            agent.reconfigure(updated)
+        result = self.sync_hearing(updated)
+        if on and result.get("live"):
+            return (
+                "Dinleme açık. Uyandırma sözü gerekmez — konuşman ajana gider."
+            )
+        if on:
+            return "Kulak açılamadı" + (
+                f": {result['note']}" if result.get("note") else ".")
+        return "Dinleme kapalı. Mikrofon bırakıldı."
+
+    def voice_power(self, on: bool) -> str:
+        """HUD: sesi aç veya kapat (ayarı da yazar)."""
+        from . import settings as settings_mod
+
+        agent = getattr(self, "agent", None)
+        server = getattr(self, "server", None)
+        cfg = agent.config if agent is not None else getattr(server, "config", None)
+        if cfg is None:
+            return "Ses ayarı yok."
+        updated = settings_mod.apply(cfg, {"voice": {"enabled": bool(on)}})
+        if server is not None:
+            server.config = updated
+        if agent is not None:
+            agent.reconfigure(updated)
+        hub = getattr(self, "hub", None)
+        if hub is not None:
+            hub.emit({"type": "voice", "enabled": bool(on)})
+        if on:
+            return "Ses açık."
+        return "Ses kapalı."
 
     def _swap_model(self) -> None:
         """Bekleyen model değişikliğini uygular.
@@ -1110,6 +1458,10 @@ class Bridge:
             "character": float(agent.config.voice.character) if agent else 0.0,
             "listen": bool(agent and agent.config.listen.enabled),
             "wake": bool(agent and agent.config.listen.wake.strip()),
+            "open": bool(agent and agent.config.listen.open),
+            "ear": bool(_ear_alive(self.ear)),
+            "snoozed": bool(self.ear is not None
+                            and getattr(self.ear, "snoozed", False)),
             "camera": bool(agent and agent.config.camera.enabled),
             "tools": len(agent.registry) if agent else 0,
             # Çalışan kopyanın sürümü: üst bar marka ipucu buradan besleniyor.
@@ -1308,7 +1660,11 @@ class Bridge:
         rows: list[dict[str, Any]] = []
 
         children = getattr(self.agent, "_children", None) or {}
+        from .tools.shell import kisa_is_ozeti
         for h in children.values():
+            ozet = ""
+            if h.state != "kosuyor":
+                ozet = kisa_is_ozeti(h.sonuc or "", title=h.title)[:400]
             rows.append({
                 "id": "c:" + h.id,
                 "ad": h.title,
@@ -1318,7 +1674,7 @@ class Bridge:
                 # devralındı): 0 gönderiliyor, arayüz süre çizmiyor.
                 "basladi": 0.0 if h.state == "yetim" else h.baslangic_ts,
                 "bitti": h.bitis_ts,
-                "ozet": "" if h.state == "kosuyor" else (h.sonuc or "")[:400],
+                "ozet": ozet,
                 "model": h.model,
                 "oturum": h.session_id,
                 "arka_plan": bool(h.arka_plan),
@@ -1402,6 +1758,9 @@ class Bridge:
             else:
                 parcalar.append("Araç bekleniyor…")
             metin = "\n".join(parcalar)
+        else:
+            from .tools.shell import insan_is_raporu
+            metin = insan_is_raporu(metin, title=handle.title)
         deliverable = getattr(handle, "deliverable", None)
         if not deliverable and getattr(handle, "schedule_id", ""):
             try:
@@ -1937,6 +2296,29 @@ def _allow_media() -> None:
         os.environ[name] = f"{current} {flag}".strip()
 
 
+def _hearing_wanted(config: Config) -> bool:
+    """Kulak açılsın mı: dinleme açık, aygıt ve tanıma var, uyandırma veya serbest."""
+    from . import listen as recogniser
+
+    return bool(
+        config.listen.enabled
+        and hearing.available()
+        and recogniser.available()
+        and (config.listen.wake.strip() or config.listen.open)
+    )
+
+
+def _ear_alive(ear: Any) -> bool:
+    """Kulak thread'i hâlâ dönüyor mu? stop() sonrası yeniden kurulur."""
+    if ear is None:
+        return False
+    stop = getattr(ear, "_stop", None)
+    if stop is not None and stop.is_set():
+        return False
+    thread = getattr(ear, "_thread", None)
+    return thread is not None and thread.is_alive()
+
+
 def _open_ear(config: Config, bridge: "Bridge", hub: Hub) -> Any:
     """Sürekli dinleyen kulağı açar.
 
@@ -1980,9 +2362,10 @@ def _open_ear(config: Config, bridge: "Bridge", hub: Hub) -> Any:
         hub.emit({"type": "notice", "text": f"Duydum: {said.text}"})
         bridge.wake()
 
-        # "neo ile kes": neo konuşurken uyandırma sözüyle araya girildi —
+        # "neo ile kes" / enerji barge: neo konuşurken araya girildi —
         # önce konuşmayı sustur (arayüz TTS'i durduruyor), sonra komut normal
-        # akışa (kuyruk) giriyor.
+        # akışa (kuyruk) giriyor. Enerji eşiği zaten `on_hush` ile kesmiş
+        # olabilir; ikinci hush zararsız.
         if getattr(said, "barge", False):
             hub.emit({"type": "hush"})
 
@@ -2008,6 +2391,11 @@ def _open_ear(config: Config, bridge: "Bridge", hub: Hub) -> Any:
                       "text": "Sohbet kapandı — adıyla yeniden açılır."})
             return
 
+        if _is_ack(text):
+            # Teşekkür / "tamamdır" / "şimdi bakayım": modele gitmez,
+            # "rica ederim" döngüsü açılmaz. "bakıyorum" klibi de yok.
+            return
+
         # Sözden geriye bir şey kalmadıysa yalnızca adı çağrılmış demektir.
         # Orada susmak duymamakla aynı şey: ekranda "Duydum" yazıyor ve
         # hiçbir şey olmuyordu.
@@ -2028,8 +2416,13 @@ def _open_ear(config: Config, bridge: "Bridge", hub: Hub) -> Any:
         # Seviye arayüze gidiyor: duyup duymadığı görünmeli.
         level=lambda loud: hub.emit({"type": "level", "value": round(loud, 4)}),
     )
+    ear.on_hush = lambda: hub.emit({"type": "hush"})
     if not ear.start():
         return None
+    def _hearing_snooze(off: bool) -> None:
+        hub.emit({"type": "hearing", "snoozed": bool(off)})
+        prefs.patch(config.state_dir, hearing_snoozed=bool(off))
+    ear.on_snooze = _hearing_snooze
     how = "serbest dinleme" if config.listen.open else f"'{config.listen.wake}' ile uyanır"
     print(f"[neo] kulak açık — {how}", flush=True)
     return ear
@@ -2206,6 +2599,12 @@ async def _boot(config: Config, port: int, resume: bool) -> Runtime:
     bridge = Bridge(hub, asyncio.get_running_loop())
 
     mind = open_mind(config.mind_dir, config.sessions_dir, session.id)
+    if not park_session and not resume:
+        inherit_last_model(mind, session.id, config.sessions_dir)
+    pin = str(((mind.session_meta() or {}).get(session.id) or {}).get("model") or "").strip()
+    if pin and pin != config.model.name:
+        from dataclasses import replace as _degistir
+        config = _degistir(config, model=_degistir(config.model, name=pin))
     book = scheduling.Schedule(config.state_dir)
 
     # Hub paylaşılıyor: köprünün yayınladıkları (metin akışı, onay isteği) ile
@@ -2309,20 +2708,11 @@ async def _boot(config: Config, port: int, resume: bool) -> Runtime:
 
     # Sürekli dinleme Python tarafında: tarayıcıda duramıyor çünkü pencere
     # gizlendiğinde Chromium arka plan zamanlayıcılarını dakikaya kısıyor ve
-    # dinleme ölüyor. Burada tepside dururken de çalışıyor.
-    ear = None
-    if config.listen.enabled and config.listen.wake.strip() and hearing.available():
+    # dinleme ölüyor. Burada tepside dururken de çalışıyor. Ayar kaydı
+    # aynı kapıyı kullanır (`sync_hearing`) — yoksa yalnız bas-konuş kalır.
+    if _hearing_wanted(config):
         bridge.waking("kulak açılıyor")
-        ear = _open_ear(config, bridge, hub)
-        # Konuşurken kulağı kapatabilmek için sunucunun ona erişmesi
-        # gerekiyor.
-        server._httpd.ear = ear  # type: ignore[attr-defined]
-        # Tur bitince sohbet penceresini açan taraf köprü.
-        bridge.ear = ear
-        # `hearing` aracı kulağa ajanın içinden erişiyor: kullanıcı "beni
-        # dinleme" dediğinde ajan gerçekten kapatabilmeli.
-        if bridge.agent is not None:
-            bridge.agent.ear = ear
+    bridge.sync_hearing(config)
 
     # Tanıma modeli arka planda ısıtılıyor: ilk sesli isteğin indirmeyi
     # beklemesi bütün arayüzü kilitliyordu.
@@ -2346,8 +2736,17 @@ async def _boot(config: Config, port: int, resume: bool) -> Runtime:
             # diye ayara değil buna bakıyor.
             server._httpd.lens = lens  # type: ignore[attr-defined]
             print("[neo] kamera tamponu açık", flush=True)
+            from . import sight
+            sight.ensure_warmup()
+            lens.on_snooze = lambda off: prefs.patch(
+                config.state_dir, sight_snoozed=bool(off)
+            )
         else:
             lens = None
+
+    bridge.lens = lens
+    if agent is not None:
+        agent.camera_power = bridge.camera_power
 
     if agent is None:
         bridge.waking(
@@ -2425,23 +2824,33 @@ async def _boot(config: Config, port: int, resume: bool) -> Runtime:
 
     # Kameralar arka planda izleniyor. Model her kareye bakmıyor: hareket
     # yerelde ölçülüyor ve yalnızca bir şey değiştiğinde soru soruluyor.
-    # Boş bir odada saatlerce hiçbir istek gitmiyor.
+    # GPU varsa kare yerelde analiz edilir, sohbet modeline METİN gider;
+    # görüntü makineden çıkmaz. GPU yoksa eski kesit kipi (kare + cloud_ok).
     def seen(sighting: watching.Sighting) -> None:
-        hub.emit({
-            "type": "notice",
-            "text": f"{sighting.camera.name}: hareket (%{int(sighting.change * 100)})",
-        })
-        bridge.submit(f"[{sighting.camera.name}] {sighting.ask}", sighting.frame)
+        _hareket_gonder(bridge, config, hub, sighting)
 
     eyes = watching.Watcher(watching.load(config.state_dir), seen)
     # "Beni izleme" ağ kameralarını da kapsıyor; sesleniş hepsini geri
     # açıyor. Kulak, göz ve izleyici tek bir "duyular" bütünü.
     if bridge.agent is not None:
         bridge.agent.watcher = eyes
-    if ear is not None:
-        ear.companions = [s for s in (lens, eyes) if s is not None]
+    if bridge.ear is not None:
+        # "neo" kulağı ve ağ kameralarını geri açar. Dahili kamera
+        # HUD/sohbet anahtarıyla açılır — sesleniş LED'i yeniden yakmaz.
+        bridge.ear.companions = [s for s in (eyes,) if s is not None]
     if eyes.start():
         print(f"[neo] {len(watching.load(config.state_dir))} kamera izleniyor", flush=True)
+    eyes.on_snooze = lambda off: prefs.patch(
+        config.state_dir, sight_snoozed=bool(off)
+    )
+
+    held = prefs.load(config.state_dir)
+    if held.get("hearing_snoozed") and bridge.ear is not None:
+        bridge.ear.snooze(0)
+    if held.get("sight_snoozed"):
+        if lens is not None:
+            lens.snooze(0)
+        eyes.snooze(0)
 
     return Runtime(
         bridge=bridge,
@@ -2455,7 +2864,7 @@ async def _boot(config: Config, port: int, resume: bool) -> Runtime:
         greeter=greeter,
         eyes=eyes,
         lens=lens,
-        ear=ear,
+        ear=bridge.ear,
     )
 
 
@@ -2498,7 +2907,8 @@ def _kill_ghosts() -> None:
         out = subprocess.run(
             ["powershell", "-NoProfile", "-Command",
              "Get-CimInstance Win32_Process -Filter \"Name='python.exe' or "
-             "Name='pythonw.exe'\" | Select-Object ProcessId,CommandLine | "
+             "Name='pythonw.exe' or Name='neo.exe'\" | "
+             "Select-Object ProcessId,CommandLine | "
              "ConvertTo-Json"],
             capture_output=True, text=True, timeout=10, encoding="utf-8",
             errors="replace", **ortam.sessiz_bayraklar(),
@@ -2507,10 +2917,12 @@ def _kill_ghosts() -> None:
         if isinstance(rows, dict):
             rows = [rows]
         me = os.getpid()
+        from . import winicon
+        skip = winicon.skip_pids() | {me}
         for row in rows:
             pid = row.get("ProcessId")
             cmd = (row.get("CommandLine") or "").lower()
-            if not pid or pid == me:
+            if not pid or pid in skip:
                 continue
             if "neocp" in cmd and ("--app" in cmd or "desktop" in cmd):
                 subprocess.run(["taskkill", "/PID", str(pid), "/T", "/F"],
@@ -2527,6 +2939,8 @@ def run(config: Config, *, port: int = 8765, resume: bool = False,
     # Görev çubuğu kimliği: bu ayarlanmazsa Windows pencereyi python.exe'nin
     # grubunda gösteriyor ve simge PYTHON logosu kalıyordu. Kendi kimliğiyle
     # gruplanınca pencerenin kendi simgesi (neo logosu) görünür.
+    # Görev Yöneticisi / WebView2 alt süreçleri ise PE ikonuna bakar —
+    # o yüzden python(w) ise damgalı neo.exe olarak yeniden açılır.
     if sys.platform == "win32":
         try:
             import ctypes
@@ -2544,7 +2958,15 @@ def run(config: Config, *, port: int = 8765, resume: bool = False,
     # "kapattım açtım" dedikçe hayaletler çoğalıyor, hiçbir düzeltme ekrana
     # ulaşmıyordu (üç günlük yaranın gerçek kökü). Yeni örnek açılırken
     # eskileri tek tek kapatır: her açılış temiz, tek örnek.
+    # Damgalı neo.exe yazılabilsin diye relaunch'tan ÖNCE: çalışan neo.exe
+    # kilitli kalırsa kopya basılmaz, Görev Yöneticisi'nde yılan kalır.
     _kill_ghosts()
+    if sys.platform == "win32":
+        try:
+            from . import winicon
+            winicon.relaunch_as_host()
+        except Exception:
+            pass
     # WebView2 mikrofon ve kamera için kendi izin penceresini açar; gömülü
     # bir pencerede o pencere hiç görünmüyor ve istek sessizce reddediliyor
     # — arayüzde yalnızca "mikrofon açılamadı" yazıyordu.
@@ -2621,11 +3043,15 @@ def run(config: Config, *, port: int = 8765, resume: bool = False,
     # Native davranışlar ayrıca ekleniyor: kutu stilleri (snap/animasyon),
     # HTCAPTION sürükleme (Aero snap dahil), WM_SYSCOMMAND büyüt/küçült ve
     # SC_SIZE kenar boyutlandırma — hepsi işletim sisteminin kendi döngüleri.
+    geo = prefs.window_args(prefs.load(config.state_dir))
     window = webview.create_window(
         WINDOW_TITLE,
         runtime.url,
-        width=1360,
-        height=880,
+        width=geo.get("width", 1360),
+        height=geo.get("height", 880),
+        x=geo.get("x"),
+        y=geo.get("y"),
+        maximized=bool(geo.get("maximized")),
         min_size=(900, 600),
         background_color=WINDOW_BACKGROUND,
         frameless=True,
@@ -2702,6 +3128,42 @@ def run(config: Config, *, port: int = 8765, resume: bool = False,
     def is_zoomed() -> bool:
         return _is_zoomed()
 
+    def open_camera_window(cam: str = "") -> str:
+        """Kamera izlemeyi ayrı OS penceresinde açar; varsa öne getirir."""
+        global _CAM_WINDOW
+        import webview
+
+        q = ("?cam=" + str(cam)) if cam else ""
+        url = str(runtime.url).rstrip("/") + "/watch.html" + q
+        existing = _CAM_WINDOW
+        if existing is not None:
+            try:
+                existing.show()
+                return "ok"
+            except Exception:
+                _CAM_WINDOW = None
+        spawned = webview.create_window(
+            "neo · Kamera",
+            url,
+            width=980,
+            height=640,
+            min_size=(480, 320),
+            background_color=WINDOW_BACKGROUND,
+            frameless=False,
+            easy_drag=False,
+        )
+        _CAM_WINDOW = spawned
+
+        def _gone() -> None:
+            global _CAM_WINDOW
+            _CAM_WINDOW = None
+
+        try:
+            spawned.events.closed += _gone
+        except Exception:
+            pass
+        return "ok"
+
     # X = gizle, uygulama TEPSİDE yaşar (Claude Code / masaüstü geleneği):
     # süren iş, zamanlanmış görevler ve duyular pencereyle birlikte ölmez.
     # Eskiden yalnızca kulak açıkken gizleniyordu; ama X'in işi yarıda
@@ -2716,17 +3178,36 @@ def run(config: Config, *, port: int = 8765, resume: bool = False,
     # ediyor". Meşgul olup olmamasından bağımsız — pencere kaybolunca
     # kullanıcı programın kapandığını sanıyor ve asıl öğretilmesi gereken
     # şey bu. Tekrarı `note_once` engelliyor (her gizlenişte balon = dırdır).
+    def _remember_window() -> None:
+        """Pencere kutusu kapanıştaki gibi açılsın."""
+        try:
+            zoomed = _is_zoomed()
+            box: dict[str, Any] = {"maximized": zoomed}
+            if not zoomed:
+                box.update({
+                    "width": int(window.width or 0),
+                    "height": int(window.height or 0),
+                    "x": int(window.x if window.x is not None else 0),
+                    "y": int(window.y if window.y is not None else 0),
+                })
+            prefs.patch(config.state_dir, window=box)
+        except Exception:
+            pass
+
     def _hide_to_tray() -> None:
+        _remember_window()
         window.hide()
         tray.note_once(tray_module.ARKA_PLAN_NOTU)
 
     def close() -> None:
+        _remember_window()
         if hide_on_close:
             _hide_to_tray()
         else:
             window.destroy()
 
-    for fn in (minimize, maximize, drag, resize, close, is_zoomed):
+    for fn in (minimize, maximize, drag, resize, close, is_zoomed,
+               open_camera_window):
         window.expose(fn)
 
     # Native kapatma (X / Alt+F4) programı YOK ETMESİN, tepsiye gizlesin:
@@ -2757,8 +3238,14 @@ def run(config: Config, *, port: int = 8765, resume: bool = False,
         # Pencere/görev çubuğu simgesi: tek kaynak logodan (tepsi ve sekmeyle
         # aynı işaret). pywebview winforms bunu form.Icon yapıyor.
         from . import logo as logo_module
-        webview.start(_titlebar_boot, icon=str(logo_module.ico_path()))
+        webview.start(
+            _titlebar_boot,
+            icon=str(logo_module.ico_path()),
+            private_mode=False,
+            storage_path=str(config.state_dir / "webview"),
+        )
     finally:
+        _remember_window()
         tray.stop()
         _teardown(loop, runtime)
     return 0
@@ -2782,6 +3269,8 @@ def _titlebar_boot() -> None:
 
 # Ana pencere referansı: pencere-kabuk yardımcıları (MaximizedBounds) için.
 _MAIN_WINDOW: Any = None
+# Ayrı kamera izleme penceresi (create_window); kapanınca None.
+_CAM_WINDOW: Any = None
 
 # Kabuk referansları (WndProc callback + eski proc) GC'ye gitmesin.
 _SHELL: dict[int, tuple[Any, int]] = {}

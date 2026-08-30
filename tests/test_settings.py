@@ -502,3 +502,199 @@ def test_background_lane_events_do_not_leak_into_the_active_chat(tmp_path):
     assert any(e.get('type') == 'assistant_delta' for e in emits)
     bridge.loop.close()
 
+
+# -- katalog yetenekleri -----------------------------------------------
+
+
+def _openrouter_entry(**extra: object) -> dict:
+    row = {
+        "id": "acme/sight",
+        "name": "Sight",
+        "context_length": 128_000,
+        "architecture": {"input_modalities": ["text", "image"]},
+        "supported_parameters": ["max_tokens", "tools", "reasoning"],
+        "top_provider": {"context_length": 64_000},
+    }
+    row.update(extra)
+    return row
+
+
+def test_openrouter_catalog_adopts_window_vision_and_thinking(
+    config: Config, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """OpenRouter `/models` bu alanları söylüyor; kimlik-only satır yetmez."""
+    monkeypatch.setattr(settings.lmstudio, "models", lambda _u: [])
+    monkeypatch.setattr(
+        settings, "_openai_models_payload",
+        lambda _c: ({"data": [_openrouter_entry()]}, None),
+    )
+    sight = next(r for r in settings.scan_models(config) if r["id"] == "acme/sight")
+    assert sight["max_context"] == 128_000
+    assert sight["vision"] is True
+    assert sight["thinking"] is True
+    assert sight["tools"] is True
+    assert sight["name"] == "Sight"
+
+
+def test_a_catalog_id_does_not_invent_caps(
+    config: Config, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """OpenAI resmi liste yalnız id verir — pencere/görüntü uydurulmaz."""
+    monkeypatch.setattr(settings.lmstudio, "models", lambda _u: [])
+    monkeypatch.setattr(
+        settings, "_openai_models_payload",
+        lambda _c: ({"data": [{"id": "gpt-4o", "object": "model"}]}, None),
+    )
+    row = next(r for r in settings.scan_models(config) if r["id"] == "gpt-4o")
+    assert "max_context" not in row
+    assert "vision" not in row
+    assert "thinking" not in row
+    assert "tools" not in row
+
+
+def test_detect_caps_returns_catalog_fields_without_inventing(
+    config: Config, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        settings, "scan_models",
+        lambda _c: [{"id": "acme/sight", "max_context": 128_000, "vision": True}],
+    )
+    config.model.name = "acme/sight"
+    caps = settings.detect_caps(config)
+    assert caps == {"max_context": 128_000, "vision": True}
+    assert settings.detect_window(config) == 128_000
+
+
+def test_detect_caps_is_empty_for_oto(config: Config) -> None:
+    """Oto bir havuz; tek modelin penceresi yok."""
+    config.model.name = "oto"
+    assert settings.detect_caps(config) == {}
+    assert settings.detect_window(config) is None
+
+
+def test_apply_does_not_scan_the_catalog(
+    config: Config, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """apply içinde tarama OpenRouter'da 10 sn zaman aşımına yol açardı."""
+    monkeypatch.setattr(
+        settings, "scan_models",
+        lambda _c: (_ for _ in ()).throw(AssertionError("katalog taranmamalı")),
+    )
+    updated = settings.apply(config, {
+        "model": {
+            "name": "acme/sight",
+            "context_window": 128_000,
+            "vision": False,
+            "can_think": False,
+            "thinking": False,
+        },
+    })
+    assert updated.model.vision is False
+    assert updated.model.can_think is False
+    reloaded = Config.load(config.workspace)
+    assert reloaded.model.vision is False
+    assert reloaded.model.can_think is False
+    assert reloaded.model.context_window == 128_000
+
+
+def test_a_model_that_cannot_think_omits_the_anthropic_field() -> None:
+    from neocp.config import ModelConfig
+
+    assert ModelConfig(can_think=False, thinking=True).thinking_param() is None
+    assert ModelConfig(thinking=False).thinking_param() == {"type": "disabled"}
+
+
+def test_anthropic_catalog_does_not_invent_a_window(
+    config: Config, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    config.model.provider = "anthropic"
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
+
+    class _Resp:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def read(self):
+            return b'{"data":[{"id":"claude-opus-4-8","display_name":"Opus"}]}'
+
+    monkeypatch.setattr("urllib.request.urlopen", lambda *a, **k: _Resp())
+    rows = settings.scan_models(config)
+    assert rows[0]["id"] == "claude-opus-4-8"
+    assert rows[0]["name"] == "Opus"
+    assert "max_context" not in rows[0]
+    assert rows[0]["vision"] is True
+    assert rows[0]["thinking"] is True
+
+
+def test_lmstudio_thinking_is_omitted_when_the_server_is_silent(
+    config: Config, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from neocp import lmstudio
+
+    monkeypatch.setattr(settings.lmstudio, "models", lambda _u: [
+        lmstudio.Model(
+            key="q", name="Q", max_context=8000, vision=False, tools=True,
+            instances=[],
+        ),
+        lmstudio.Model(
+            key="r", name="R", max_context=8000, vision=True, tools=True,
+            thinking=True, instances=[],
+        ),
+    ])
+    config.model.base_url = "http://localhost:1234/v1"
+    rows = {r["id"]: r for r in settings.scan_models(config)}
+    assert "thinking" not in rows["q"]
+    assert rows["r"]["thinking"] is True
+    assert rows["q"]["vision"] is False
+
+
+def test_ollama_show_fills_caps_the_catalog_lacks(
+    config: Config, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from neocp.config import ModelConfig
+
+    config.model = ModelConfig(name="llama3", base_url="http://localhost:11434/v1")
+    monkeypatch.setattr(settings, "scan_models", lambda _c: [{"id": "llama3"}])
+
+    class _Resp:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def read(self):
+            return json.dumps({
+                "model_info": {"llama.context_length": 8192},
+                "capabilities": ["completion", "tools"],
+            }).encode()
+
+    monkeypatch.setattr("urllib.request.urlopen", lambda *a, **k: _Resp())
+    caps = settings.detect_caps(config)
+    assert caps["max_context"] == 8192
+    assert caps["vision"] is False
+    assert caps["thinking"] is False
+    assert caps["tools"] is True
+
+
+def test_ollama_show_is_skipped_when_the_catalog_already_knows(
+    config: Config, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from neocp.config import ModelConfig
+
+    config.model = ModelConfig(name="llama3", base_url="http://localhost:11434/v1")
+    monkeypatch.setattr(settings, "scan_models", lambda _c: [{
+        "id": "llama3", "max_context": 4096, "vision": True, "thinking": False,
+    }])
+
+    def _asla(*a, **k):  # pragma: no cover
+        raise AssertionError("/api/show çağrılmamalıydı")
+
+    monkeypatch.setattr("urllib.request.urlopen", _asla)
+    assert settings.detect_caps(config) == {
+        "max_context": 4096, "vision": True, "thinking": False,
+    }
+

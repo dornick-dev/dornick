@@ -33,8 +33,10 @@ bir cümleyi çözmek, o sırada söylenen yeni cümleyi kaçırmaya değmez.
 from __future__ import annotations
 
 import queue
+import re
 import threading
 import time
+from collections import deque
 from dataclasses import dataclass
 from typing import Any, Callable
 
@@ -49,8 +51,9 @@ RATE = 16_000
 BLOCK = 1600           # 0.1 sn
 
 # Konuşma eşiği (RMS, 0..1). Sessiz bir odanın taban gürültüsü genellikle
-# 0.002 altında; normal konuşma 0.02'nin üstünde.
-SPEECH = 0.012
+# 0.002 altında; normal konuşma 0.02'nin üstünde. 0.012 kısık sesi
+# kaçırıyordu: kullanıcı 2–3 kez tekrarlıyor, kuyrukta aynı cümle birikiyor.
+SPEECH = 0.008
 
 # Konuşmadan sonra bu kadar sessizlik olunca cümle bitmiş sayılıyor.
 # Kısası cümleyi ortadan kesiyor (nefes araları), uzunu geç tepki demek.
@@ -67,6 +70,26 @@ MIN_S = 0.35
 # (uyandırma sözü yoksa) bu pencerede tümden atılıyor ve "duymadı" gibi
 # görünüyordu — yankının kuyruğu için 0.25 yetiyor.
 DEAF_TAIL_S = 0.25
+# Serbest dinlemede uyandırma kapısı yok: kuyruk kısa kalırsa hoparlör
+# yankısı yeni bir söz sayılıp ajan kendi kendine cevap veriyor.
+DEAF_TAIL_OPEN_S = 0.7
+# Sustuktan sonra tanıma hâlâ hoparlör cümlesine benzerse düşür (oda yankısı).
+# Pay, yakalama + Whisper gecikmesini de kapsar (~1,5 sn tanıma); 2 sn
+# yetmeyince "Duydum: evet, seni gör" hoparlör cümlesi yeni istek oluyordu.
+ECHO_HOLD_S = 4.0
+# Aynı söz iki kez: kullanıcı "duymadı" sanıp tekrarlıyor, Whisper gecikince
+# ikisi birden düşüyor. Bu pencerede benzer komut tek istek.
+DUP_S = 4.5
+# Enerji barge için yankı tabanı: boşken TTS'in ilk bloğu BARGE_FLOOR'u
+# aşıp kendi sesini "kullanıcı araya girdi" sanıyordu.
+ECHO_PRIME = 6
+
+# Hoparlör yankısı SPEECH eşiğini de aşıyor; kullanıcı mikrofona konuşunca
+# daha yüksek. Yankı tabanının üstüne çıkınca TTS hemen kesilir — "neo"
+# demeden, cümleyi baştan kurmadan.
+BARGE_HOLD_S = 0.22
+BARGE_FLOOR = 0.028
+ECHO_BLOCKS = 12
 
 # Sağırlığın azami süresi. Önceki hal `float("inf")` idi ve "konuşmam
 # bitti" haberinin tarayıcıdan gelmesine bel bağlıyordu. O haber gelmezse
@@ -137,6 +160,48 @@ class Heard:
     barge: bool = False
 
 
+def _words(text: str) -> list[str]:
+    """Noktalama dökülmüş sözcükler. 'gör.' ile 'görüyorum' aynı kök sayılsın."""
+    cleaned = re.sub(r"[^\w\s]", " ", (text or "").casefold(), flags=re.UNICODE)
+    return [w for w in cleaned.split() if w]
+
+
+def _kin(a: str, b: str) -> bool:
+    """Aynı kök / çekim: gör–görüyorum–görürüm. Tam eşitlik şart değil."""
+    if a == b:
+        return True
+    if len(a) >= 3 and len(b) >= 3 and (a.startswith(b) or b.startswith(a) or a in b or b in a):
+        return True
+    n = 0
+    for x, y in zip(a, b):
+        if x != y:
+            break
+        n += 1
+    return n >= 4 and n >= 0.5 * min(len(a), len(b))
+
+
+def echo_of_self(said: str, tts: str) -> bool:
+    """Duyulan, hoparlörde çalan cümlenin yankısı mı?
+
+    Enerji eşiği yanlışlıkla TTS'i keserse tanıma metni burada düşer —
+    ajan kendi sözünü yeni bir istek sanmasın. Whisper cümleyi kısaltır
+    veya çeker ('evet, seni gör' / 'görürüm' ← 'görüyorum'); noktalama
+    ve çekim yüzünden tam cümle eşleşmesi yetmez.
+    """
+    a, b = _words(said), _words(tts)
+    got, src = " ".join(a), " ".join(b)
+    if len(got) < 4 or len(src) < 4:
+        return False
+    if got in src or src in got:
+        return True
+    if not a:
+        return False
+    hits = sum(1 for w in a if any(_kin(w, t) for t in b))
+    if len(a) == 1:
+        return hits == 1 and len(a[0]) >= 6
+    return hits >= 2 and hits / len(a) >= 0.5
+
+
 class Ear:
     """Mikrofonu sürekli açık tutar, yalnızca konuşulanı yazıya çevirir.
 
@@ -200,19 +265,94 @@ class Ear:
         # diyor, hiçbir şey olmuyor ve sebebi hiçbir yerde yazmıyordu.
         self.live = False
         self.failure = ""
+        self._barge_open = False
+        self._tts_text = ""
+        self._tts_until = 0.0
+        self._echo: deque[float] = deque(maxlen=ECHO_BLOCKS)
+        self._last_ask = ""
+        self._last_ask_at = 0.0
+        # En son yakalanan sözün anı: tanıma dakikalarca sürerse eski sonuç
+        # yeni sözle aynı anda düşmesin (kullanıcı "neo" deyince ikisi birden).
+        self._latest_at = 0.0
 
-    def speaking(self, on: bool) -> None:
+    def speaking(self, on: bool, text: str = "") -> None:
         """Ajan konuşurken kulağı kapatır.
 
         Hoparlörden çıkan ses mikrofona geri geliyor. Yankı iptali işletim
         sistemi seviyesinde her zaman çalışmıyor ve çalışmadığında asistan
         kendi cümlesini duyup cevap vermeye kalkıyor.
+
+        Kullanıcı hoparlörün üstünden konuşursa enerji eşiği sağırlığı
+        kırar (`_trip_barge`). O sırada `speaking(False)` gelirse kuyruk
+        payı (`DEAF_TAIL_S`) cümlenin devamını yine sağır bırakırdı —
+        araya giren sözün geri kalanı duyulsun diye kuyruk atlanır.
         """
-        # Konuşma bittiğinde hemen açılmıyor: oda yankısı bir anda kesilmiyor.
-        # Açılırken de sonsuz değil: haberin gelmeme ihtimali kulağı
-        # tümden kaybetmeye değmez.
         now = time.monotonic()
-        self._deaf_until = now + (DEAF_MAX_S if on else DEAF_TAIL_S)
+        if on:
+            already = now < self._deaf_until
+            self._deaf_until = now + DEAF_MAX_S
+            chunk = (text or "").strip()
+            if chunk:
+                if already and self._tts_text:
+                    merged = (self._tts_text + " " + chunk).strip()
+                    self._tts_text = merged[-280:]
+                else:
+                    self._tts_text = chunk
+            self._tts_until = now + DEAF_MAX_S + ECHO_HOLD_S
+            # Ardışık cümleler aynı konuşma: tabanı silmek TTS'in ilk
+            # bloğunu yine BARGE_FLOOR'un üstüne çıkarıp kendi sesini
+            # "araya girme" sanıyordu.
+            if not already:
+                self._barge_open = False
+                self._echo.clear()
+            return
+        if self._barge_open:
+            self._deaf_until = 0.0
+            return
+        tail = DEAF_TAIL_OPEN_S if self.open else DEAF_TAIL_S
+        self._deaf_until = now + tail
+        self._tts_until = now + ECHO_HOLD_S
+
+    def _barge_loud(self, loud: float) -> bool:
+        """Hoparlör yankısının üstünde, kullanıcı mikrofona mı konuşuyor?"""
+        if len(self._echo) < ECHO_PRIME:
+            return False
+        ordered = sorted(self._echo)
+        base = ordered[len(ordered) // 2]
+        return loud >= max(BARGE_FLOOR, base * 1.8 + 0.008)
+
+    def _echoing(self) -> bool:
+        """Hoparlör cümlesi hâlâ havada / tanıma kuyruğunda mı?"""
+        return bool(self._tts_text) and time.monotonic() < self._tts_until
+
+    def _repeat_ask(self, command: str) -> bool:
+        """Az önce işlenen komutun tekrarı mı — kuyrukta biriken aynı söz."""
+        text = (command or "").strip()
+        if not text:
+            return False
+        now = time.monotonic()
+        prev = self._last_ask
+        if prev and now - self._last_ask_at < DUP_S:
+            if (echo_of_self(text, prev) or echo_of_self(prev, text)):
+                return True
+            a, b = " ".join(_words(text)), " ".join(_words(prev))
+            if a and b and (a == b or a in b or b in a):
+                return True
+        self._last_ask = text
+        self._last_ask_at = now
+        return False
+
+    def _trip_barge(self) -> None:
+        """TTS'i hemen kes, kulağı aç — tanımayı bekleme."""
+        self._barge_open = True
+        self._deaf_until = 0.0
+        hush = getattr(self, "on_hush", None)
+        if hush is None:
+            return
+        try:
+            hush()
+        except Exception:
+            pass
 
     @property
     def deaf(self) -> bool:
@@ -233,9 +373,15 @@ class Ear:
             time.monotonic() + seconds if seconds > 0 else float("inf")
         )
         self._engaged_until = 0.0
+        from . import prefs as prefs_mod
+        prefs_mod.tell(getattr(self, "on_snooze", None), True)
 
     def unsnooze(self) -> None:
+        was = self.snoozed
         self._snooze_until = 0.0
+        if was:
+            from . import prefs as prefs_mod
+            prefs_mod.tell(getattr(self, "on_snooze", None), False)
 
     @property
     def engaged(self) -> bool:
@@ -287,6 +433,18 @@ class Ear:
         # Tanıma önce başlıyor: yakalama ilk sözü kuyruğa koyduğunda
         # karşısında çalışan bir işçi bulsun.
         threading.Thread(target=self._recognise, daemon=True, name="neo-ear-asr").start()
+        # Isıtma: model yüklemesi (ilk kurulumda indirme + diskten açma)
+        # İLK SÖZÜN sırtına binmesin — canlı şikâyet (30.08): ilk cümle
+        # 10-20 sn gecikiyordu ve bunun büyük payı yüklemeydi. Arka planda,
+        # açılışı bloke etmeden; çökerse ilk söz eski yoldan yükler.
+        def _isit() -> None:
+            try:
+                self.listener.load()
+                if self.scout is not self.listener:
+                    self.scout.load()
+            except Exception:
+                pass
+        threading.Thread(target=_isit, daemon=True, name="neo-ear-warm").start()
         self._thread = threading.Thread(target=self._loop, daemon=True, name="neo-ear")
         self._thread.start()
         return True
@@ -338,14 +496,45 @@ class Ear:
 
                 now = time.monotonic()
                 deaf = now < self._deaf_until
+                # Neo konuşurken SPEECH eşiği yankıyı da yakalıyor. Kullanıcı
+                # hoparlörün üstünden konuşunca enerji tabanın üstüne çıkar;
+                # o anda TTS kesilir ve aynı tampon dinlemeye devam eder.
+                waiting = deaf and not self._barge_open and not self.snoozed
+
+                if waiting:
+                    if not speech:
+                        self._echo.append(loud)
+                    if self._barge_loud(loud):
+                        if not speech:
+                            speech = [mono.copy()]
+                            started = now
+                            deaf_seg = True
+                        else:
+                            speech.append(mono.copy())
+                        quiet_since = 0.0
+                        if now - started >= BARGE_HOLD_S:
+                            self._trip_barge()
+                    elif speech:
+                        if now - started < BARGE_HOLD_S:
+                            speech, quiet_since, started, deaf_seg = (
+                                [], 0.0, 0.0, False
+                            )
+                        else:
+                            speech.append(mono.copy())
+                            quiet_since = quiet_since or now
+                            if now - quiet_since >= HANG_S or now - started >= MAX_S:
+                                if now - started >= MIN_S:
+                                    self._hand_over(
+                                        np.concatenate(speech), deaf_seg
+                                    )
+                                speech, quiet_since, started = [], 0.0, 0.0
+                    recent = []
+                    continue
 
                 if loud >= SPEECH:
                     if not speech:
                         # Eşik aşıldığında ilk hece çoktan geçmiş oluyor;
-                        # hemen öncesindeki bloklar da alınıyor. Sağırken
-                        # (neo konuşurken) "önceki bloklar" neo'nun kendi
-                        # sesi olabilir; barge yalnızca uyandırma sözüne
-                        # bakacağı için sorun değil.
+                        # hemen öncesindeki bloklar da alınıyor.
                         speech = list(recent)
                         started = now
                         deaf_seg = deaf
@@ -358,14 +547,9 @@ class Ear:
                         # Çok kısa sesler konuşma değil: öksürük, kapı,
                         # klavye. Tanıyıcıyı bunlar için uyandırmıyoruz.
                         if now - started >= MIN_S:
-                            # Sağırken yakalanan segment "barge adayı": tanıma
-                            # aşaması yalnızca uyandırma sözü varsa devam eder,
-                            # yoksa (neo'nun kendi sesi / gürültü) atılır.
                             self._hand_over(np.concatenate(speech), deaf_seg)
                         speech, quiet_since = [], 0.0
                 elif not deaf:
-                    # Sağır değilken konuşma-öncesi bloklar tutuluyor. Sağırken
-                    # tutmuyoruz: o bloklar neo'nun kendi sesi.
                     recent.append(mono.copy())
                     del recent[: -int(PRE_S * RATE / BLOCK) or None]
                 else:
@@ -385,12 +569,19 @@ class Ear:
         sesin düşmesi demek. Kuyruk doluysa en eski söz atılıyor: geç
         kalmış bir cümleyi çözmek, o an söyleneni kaçırmaya değmez.
 
-        `deaf`: segment neo konuşurken (TTS) yakalandı — tanıma aşaması onu
-        yalnızca uyandırma sözü için değerlendirecek (barge-in).
+        `deaf`: segment neo konuşurken (TTS) yakalandı. Enerji eşiği
+        kulağı açtıysa (`_barge_open`) cümlenin tamamı tutulur; yoksa
+        tanıma yalnızca uyandırma sözüne bakar.
+
+        Yankı damgası yakalama anında konur: Whisper 1–2 sn sürer, o
+        sırada ECHO_HOLD bitmiş olsa da hoparlör cümlesi yeni istek olmaz.
         """
+        echo = bool(deaf or self._barge_open or self._echoing())
+        captured = time.monotonic()
+        self._latest_at = captured
         while True:
             try:
-                self._work.put_nowait((audio, deaf))
+                self._work.put_nowait((audio, deaf, echo, captured))
                 return
             except queue.Full:
                 try:
@@ -403,16 +594,29 @@ class Ear:
         """Kuyruktan alıp çözer. Bloklaması serbest: burada kimse beklemiyor."""
         while not self._stop.is_set():
             try:
-                audio, deaf = self._work.get(timeout=0.25)
+                item = self._work.get(timeout=0.25)
             except queue.Empty:
                 continue
+            # Kuyrukta bekleyen eski sözleri at: kullanıcı tekrarladıysa
+            # yalnızca sonuncusu geçerli. Aksi halde Whisper bitince
+            # dakikalar önceki cümle ile "neo" aynı anda düşer.
+            while True:
+                try:
+                    item = self._work.get_nowait()
+                    self._dropped += 1
+                except queue.Empty:
+                    break
+            audio, deaf = item[0], item[1]
+            echo = item[2] if len(item) > 2 else bool(deaf)
+            captured = item[3] if len(item) > 3 else time.monotonic()
             try:
-                self._settle(audio, deaf)
+                self._settle(audio, deaf, echo=echo, captured=captured)
             except Exception:
                 # Tanıyıcıdaki bir hata kulağı sağır bırakmamalı.
                 continue
 
-    def _settle(self, audio: Any, deaf: bool = False) -> None:
+    def _settle(self, audio: Any, deaf: bool = False, *, echo: bool = False,
+                captured: float | None = None) -> None:
         """Bir söyleyiş bitti: uyandırma sözünü ara, geçtiyse cümleyi çöz.
 
         İki aşama, çünkü ikisi farklı işler. "Söz geçti mi" sorusu için
@@ -420,6 +624,13 @@ class Ear:
         anlamsız bir cümle üretiyor. Ölçüm: `base` 0,47 sn, `small` 1,43 sn.
         """
         from . import listen as recogniser
+
+        captured = time.monotonic() if captured is None else captured
+        # Daha yeni bir söz yakalandıysa bunu tanıma — Whisper gecikince
+        # dakikalar önceki cümle ile "neo" aynı anda sohbete düşüyordu.
+        if captured < self._latest_at:
+            self._barge_open = False
+            return
 
         # Gözcü yalnızca işlemcide işe yarıyor. Ölçüm (gerçek Türkçe cümle,
         # bu makine): işlemcide `small` 1,58 sn, `base` 0,42 sn — iki aşama
@@ -448,18 +659,23 @@ class Ear:
         if not scan.strip():
             return
 
+        vocab = str(getattr(getattr(self.listener, "config", None), "vocab", "") or "")
+
         # Sohbet açıkken söz aranmıyor: bir kez konuşmaya başlandıktan
         # sonra her cümlede adını söylemek gerekmiyor.
         woken = recogniser.heard_wake(scan, self.wake)
+        barged = bool(self._barge_open)
 
-        # BARGE-IN ("neo ile kes"): segment neo konuşurken yakalandıysa,
-        # yalnızca uyandırma sözü araya girebilir. Aksi halde bu ses büyük
-        # olasılıkla neo'nun kendi TTS'i (echo iptali yok) — yok sayılıyor.
-        # "neo" duyulursa sağırlık kırılıyor, aşağıda barge işaretiyle devam
-        # ediliyor; köprü önce konuşmayı susturup sonra komutu işliyor.
-        if deaf:
+        # BARGE-IN: neo konuşurken yakalanan ses. Enerji eşiği kulağı
+        # açtıysa (`_barge_open`) uyandırma sözü gerekmez — kullanıcı
+        # hoparlörün üstünden konuşmuştur, cümle tutulur. Aksi halde
+        # yalnızca "neo" araya girebilir; yoksa yankı yok sayılır.
+        if deaf and not barged:
             if not woken:
                 return
+            self._deaf_until = 0.0
+            barged = True
+        elif barged:
             self._deaf_until = 0.0
 
         # Susturulmuşken yalnızca uyandırma sözü geçiyor — ve geçtiği anda
@@ -471,17 +687,23 @@ class Ear:
 
         if woken:
             self._wake_at = time.monotonic()
-            # Sesleniş bütün duyuları geri açıyor: göz de susturulduysa
-            # "neo" demek ikisini birden uyandırıyor.
+            # Sesleniş kulağı (ve companions: ağ kameraları) geri açar.
+            # Dahili kamera HUD/sohbet anahtarıdır; "neo" onu yakmaz.
             for sense in self.companions:
                 try:
                     sense.unsnooze()
                 except Exception:
                     pass
 
-        if not woken and not self.open and not self.engaged:
+        if not woken and not self.open and not self.engaged and not barged:
             # Söz yok ve sohbet kapalı: burada bitiyor. Büyük model hiç
             # uyanmıyor, metin hiçbir yere yazılmıyor, modele gitmiyor.
+            return
+
+        # Öksürük / mırıltı / uydurma adres — büyük modeli de uyandırma.
+        if not woken and (recogniser.chatter(scan)
+                          or recogniser.hallucinated(scan, vocab)):
+            self._barge_open = False
             return
 
         # Şimdi düzgün çöz.
@@ -493,11 +715,28 @@ class Ear:
         except Exception:
             said = scan
 
-        # Gülme ve mırıltı konuşma değil. Serbest dinlemede kullanıcı
-        # güldüğünde ajan her kahkahaya cevap yetiştiriyordu — ona bir şey
-        # söylenmemişken. Sözle çağrıldıysa geçiyor: "neo hahaha" bilinçli.
-        # Pencere de tazelenmiyor: gülmek sohbeti açık tutmaz.
-        if not woken and recogniser.chatter(said):
+        if not (said or "").strip():
+            self._barge_open = False
+            return
+
+        # Gülme, öksürük ve tanıyıcının uydurduğu kelime konuşma değil.
+        # Serbest dinlemede kullanıcı güldüğünde ajan her kahkahaya cevap
+        # yetiştiriyordu — ona bir şey söylenmemişken. Sözle çağrıldıysa
+        # geçiyor: "neo hahaha" bilinçli. Pencere de tazelenmiyor: gülmek
+        # sohbeti açık tutmaz.
+        if not woken and (recogniser.chatter(said)
+                          or recogniser.hallucinated(said, vocab)):
+            self._barge_open = False
+            return
+
+        # Enerji eşiği TTS'i yanlışlıkla kestiysa — ya da serbest
+        # dinlemede hoparlör sustuktan sonra oda yankısı yeni söz olduysa —
+        # tanıma metni hoparlördeki cümleye benzer. Kendi sözü istek değil.
+        if (barged or echo or self._echoing()) and (
+            echo_of_self(said, self._tts_text)
+            or echo_of_self(scan, self._tts_text)
+        ):
+            self._barge_open = False
             return
 
         if woken:
@@ -509,10 +748,17 @@ class Ear:
             # Sohbetin ortası: söylenenin tamamı komut.
             command = said.strip()
 
+        if self._repeat_ask(command or said.strip()):
+            self._barge_open = False
+            return
+
+        if captured < self._latest_at:
+            self._barge_open = False
+            return
+
         # Konuşma sürüyor: pencere tazeleniyor.
         self.engage()
+        self._barge_open = False
 
-        # `barge` yalnızca bu noktada True olabilir: deaf iken woken değilse
-        # yukarıda dönülüyor. Yani neo konuşurken "neo" denince.
         self.heard(Heard(text=said, wake=woken, command=command,
-                         at=time.time(), barge=deaf))
+                         at=time.time(), barge=barged or deaf))

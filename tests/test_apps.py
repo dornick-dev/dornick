@@ -368,6 +368,7 @@ def test_neo_kendi_sureci_taninir() -> None:
     assert apps.neo_sureci_mi("python -m neocp --web 8080")
     assert apps.neo_sureci_mi(
         '"C:\\Py\\python.exe" "C:\\Py\\Scripts\\neocp.exe" --web 8873')
+    assert apps.neo_sureci_mi(r'"C:\neo\python\neo.exe" -m neocp --app')
     # Kullanıcının uygulaması neo değil — yanlış alarm olmamalı.
     assert not apps.neo_sureci_mi("py app.py")
     assert not apps.neo_sureci_mi("python D:\\Projects\\Fatih\\neocp\\atolye\\borsa-ara\\app.py")

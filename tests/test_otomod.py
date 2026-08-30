@@ -464,7 +464,7 @@ def test_the_catalog_opens_with_oto_on_openrouter(
     config: Config, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Ağ yokken bile Oto listede: taze kurulumun varsayılanı bu."""
-    monkeypatch.setattr(settings, "available_models", lambda _c: [])
+    monkeypatch.setattr(settings, "_openai_models_payload", lambda _c: (None, "ağ yok"))
     monkeypatch.setattr(settings.lmstudio, "models", lambda _u: [])
 
     entries = settings.scan_models(config)  # varsayılan: openrouter

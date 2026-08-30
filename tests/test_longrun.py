@@ -216,6 +216,35 @@ async def test_a_background_job_reports_when_done(
     assert "derleme tamam: 0 hata" in history
 
 
+async def test_a_failed_background_job_is_not_reported_as_done(
+    tmp_path: Path, registry: ToolRegistry
+) -> None:
+    """Çıkış kodu 1 ile biten iş 'görev tamamlandı' dememeli."""
+    from neocp.tools.base import JobFailed
+    from neocp.tools.shell import is_raporu
+
+    client = FakeClient(text_turn("gördüm"))
+    agent = build_agent(tmp_path, client, registry)
+    oks: list[bool] = []
+    agent.io.on_child_end = (
+        lambda title, ok, turns, tools, cid, ozet: oks.append(ok)
+    )
+
+    async def runner(cancel: asyncio.Event) -> str:
+        raise JobFailed(is_raporu(
+            command="py tarama_modbus.py",
+            code=1,
+            text="ModuleNotFoundError: No module named 'pymodbus'",
+        ))
+
+    handle = agent._job_bg("$ py tarama_modbus.py", runner)
+    await handle.task
+    assert handle.state == "hata"
+    assert oks == [False]
+    assert "pymodbus" in (handle.sonuc or "")
+    assert "Traceback" not in (handle.sonuc or "")
+
+
 async def test_shell_arka_plan_returns_immediately(tmp_path: Path) -> None:
     from neocp.config import Config
     from neocp.events import EventLog
@@ -248,6 +277,45 @@ async def test_shell_arka_plan_returns_immediately(tmp_path: Path) -> None:
     # Runner gerçekten komutu koşturuyor ve çıktıyı döndürüyor.
     out = await started["runner"](asyncio.Event())
     assert "merhaba-dunya" in out
+
+
+async def test_shell_arka_plan_failure_raises_a_readable_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Arka plan kabuk 1 ile biterse JobFailed — traceback değil, paket adı."""
+    from neocp.config import Config
+    from neocp.events import EventLog
+    from neocp.session import Session
+    from neocp.tools import ToolContext
+    from neocp.tools import shell as shell_tool
+    from neocp.tools.base import JobFailed
+
+    async def fake_run(command, cwd, session_id, timeout, cancel):
+        return ("ok", "ModuleNotFoundError: No module named 'pymodbus'", 1)
+
+    monkeypatch.setattr(shell_tool, "_run_shell", fake_run)
+
+    reg = ToolRegistry()
+    shell_tool.register(reg)
+    config = Config.load(tmp_path)
+    config.ensure_dirs()
+    session = Session(EventLog(tmp_path / "s.jsonl"), "test")
+    started: dict = {}
+
+    def job_bg(title, runner):
+        started["runner"] = runner
+        return SimpleNamespace(id="j1", title=title)
+
+    ctx = ToolContext(config=config, session=session,
+                      cancel=asyncio.Event(), job_bg=job_bg)
+    await reg.get("shell").handler(
+        {"command": "py tarama_modbus.py", "arka_plan": True}, ctx)
+    with pytest.raises(JobFailed) as caught:
+        await started["runner"](asyncio.Event())
+    msg = str(caught.value)
+    assert "pymodbus" in msg
+    assert "pip install pymodbus" in msg
+    assert "Traceback" not in msg
 
 
 async def test_the_executor_honours_a_requested_timeout(tmp_path: Path) -> None:

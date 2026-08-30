@@ -211,6 +211,13 @@ def discover(sandbox_root: Path) -> tuple[list[Skill], list[str]]:
     return found, broken
 
 
+def _clean_name(name: str) -> str:
+    clean = name.strip().lower().replace(" ", "_")
+    if not clean.replace("_", "").isalnum():
+        raise SkillError(f"Geçersiz ad: {name!r}. Harf, rakam ve alt çizgi kullan.")
+    return clean
+
+
 def scaffold(sandbox_root: Path, name: str, description: str) -> Path:
     """Boş bir yetenek dosyası yazar ve yolunu döndürür.
 
@@ -218,13 +225,12 @@ def scaffold(sandbox_root: Path, name: str, description: str) -> Path:
     yanlış alan adıyla yazılmış bir dosya yüklenmiyor ve sebebi ancak
     denendiğinde anlaşılıyor.
     """
-    clean = name.strip().lower().replace(" ", "_")
-    if not clean.replace("_", "").isalnum():
-        raise SkillError(f"Geçersiz ad: {name!r}. Harf, rakam ve alt çizgi kullan.")
-
+    clean = _clean_name(name)
     path = folder(sandbox_root) / f"{clean}.py"
     if path.exists():
-        raise SkillError(f"{path.name} zaten var. Değiştirmek için `edit_file` kullan.")
+        raise SkillError(
+            f"{path.name} zaten var. Değiştirmek için `skill action=write` kullan."
+        )
 
     path.write_text(
         TEMPLATE.format(
@@ -235,6 +241,21 @@ def scaffold(sandbox_root: Path, name: str, description: str) -> Path:
         encoding="utf-8",
     )
     return path
+
+
+def save(sandbox_root: Path, name: str, code: str) -> Skill:
+    """Tam yetenek dosyasını yazar ve doğrular.
+
+    Biçim bozuksa dosya diskte kalır (düzeltilebilsin) ama SkillError
+    yükselir — bozuk kod araç defterine girmez.
+    """
+    clean = _clean_name(name)
+    if not (code or "").strip():
+        raise SkillError("`code` boş olamaz. NAME, DESCRIPTION, SCHEMA ve run(args, ctx) yaz.")
+
+    path = folder(sandbox_root) / f"{clean}.py"
+    path.write_text(code, encoding="utf-8")
+    return load_file(path)
 
 
 def register(registry: Any, skills: list[Skill]) -> tuple[list[str], list[str]]:

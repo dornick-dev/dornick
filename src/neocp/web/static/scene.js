@@ -63,6 +63,12 @@ const Scene = (() => {
     { scale: 2.10, speed: 0.20, parts: 12, gap: 0.55, width: 0.9, alpha: 0.16 },
     { scale: 2.38, speed: -0.04, parts: 2, gap: 0.72, width: 0.9, alpha: 0.12 }
   ];
+  // En dış halka + çentikler (×2.24+9px). Hangisi büyükse o, panel
+  // kenarına değmeden sığmalı — aksi halde silüet sağa/sola/yukarı taşar.
+  const RING_OUTER = RINGS[RINGS.length - 1].scale;
+  const TICK_SCALE = 2.24;
+  const TICK_OUT = 9;
+  const ringReach = (r) => Math.max(r * RING_OUTER, r * TICK_SCALE + TICK_OUT);
 
   // Çekirdeğin halleri. Ajanın ne yaptığı ekranda okunabilir olmalı:
   // "meşgul / boşta" ikilisi her işi aynı gösteriyordu — düşünmekle dosya
@@ -113,6 +119,7 @@ const Scene = (() => {
   let selected = null, hovered = null;
   let raf = null, pointer = { x: 0, y: 0 };
   let pane = null;         // sağ beyin panelinin güncel dikdörtgeni (yoksa null)
+  let hole = null;         // halkaların sığdığı delik (başlık/organ/legend hariç)
   let searchHits = null;   // anı araması: eşleşen düğüm kimlikleri (yoksa null)
 
   const css = (n) => getComputedStyle(document.documentElement).getPropertyValue("--" + n).trim();
@@ -182,6 +189,11 @@ const Scene = (() => {
     // yeniden boyutlanınca) çekirdeğin ortası da kayıyor.
     const aside = document.querySelector(".stream");
     if (aside) watch.observe(aside);
+    // Beyin paneli yükseklik de değiştirir (kamera/orkestra güvertesi):
+    // tuval boyutu aynı kaldığı için yalnız #mind izlenmezse halkalar
+    // küçülen kutunun dışına taşar.
+    const mindEl = document.getElementById("mind");
+    if (mindEl) watch.observe(mindEl);
     canvas.addEventListener("mousemove", onMove);
     canvas.addEventListener("mousedown", onDown);
     // Çift tık: anının OLUŞTUĞU konuşmaya gider (oturum düğümünde
@@ -279,14 +291,51 @@ const Scene = (() => {
     return r.width > 150 && r.height > 220 ? r : null;
   }
 
+  // Başlık ve AÇIKLAMA HTML; organ satırları tuvalde, halkaların altında.
+  // Delik yalnız başlık–dip: organ payını buradan düşmek beyni ortada
+  // pul gibi bırakıyordu (yer ayrılıyor, satırlar yine halkanın dibine
+  // çiziliyordu — alt boş, grafik küçük).
+  function mindHole(box) {
+    const mind = document.getElementById("mind");
+    const head = mind && mind.querySelector(".mind-head");
+    const foot = mind && mind.querySelector(".mind-foot");
+    const headB = head ? head.getBoundingClientRect().bottom : box.top;
+    const footT = foot ? foot.getBoundingClientRect().top : box.bottom;
+    const PAD = 8;
+    const left = box.left + PAD;
+    const right = box.right - PAD;
+    const top = Math.max(box.top + PAD, headB + 6);
+    const bottom = Math.min(box.bottom, footT) - PAD;
+    return {
+      left, right, top,
+      bottom: Math.max(top + 36, bottom),
+      clipTop: headB,
+      clipBottom: footT,
+    };
+  }
+
+  function rForReach(limit) {
+    const byRing = limit / RING_OUTER;
+    const byTick = limit > TICK_OUT ? (limit - TICK_OUT) / TICK_SCALE : byRing;
+    return Math.max(4, Math.min(byRing, byTick));
+  }
+
   function layout() {
     pane = mindRect();
+    hole = null;
     if (pane) {
-      // Panel kipi: beyin üstte; altına durum, organ listesi ve legend
-      // sığmalı. Halkaların en dışı (×2.38) panel kenarını taşmasın.
-      core.x = pane.left + pane.width / 2;
-      core.y = pane.top + Math.min(pane.height * 0.26, 240);
-      core.r = Math.min(pane.width / 4.9, view.h * 0.15, 96);
+      // Genişliği doldur, başlığın altına as. Uzun panelde dikey ortalama
+      // halkaları pul yapıyordu; 96 tavanı geniş paneli de kısır bırakıyordu.
+      hole = mindHole(pane);
+      const hw = (hole.right - hole.left) / 2;
+      const nBr = BRANCHES.filter((b) => limbs.some((l) => branchOf(l) === b)).length;
+      const below = (nBr ? nBr * 22 + 20 : 24) + (legendOn ? 72 : 0);
+      const availH = hole.bottom - hole.top;
+      const reachCap = Math.max(8, Math.min(hw, (availH - below) / 2));
+      core.r = rForReach(reachCap);
+      const reach = ringReach(core.r);
+      core.x = (hole.left + hole.right) / 2;
+      core.y = hole.top + reach;
     } else {
     const free = freeWidth();
     core.x = freeLeft + free / 2;
@@ -662,8 +711,11 @@ const Scene = (() => {
   // Dallar varsayılan KAPALI: beş yetenek + üç duyu + cihazlar açık
   // yelpazeyle sahneyi dolduruyordu ("kocaman alanlarda gözümüze
   // sokuyor"). Kapalıyken yalnız dal göbeği durur: "YETENEKLER · 5".
-  // Açan üç şey: göbeğe tıklama (kalıcı), üzerine gelme (geçici),
-  // ve daldaki bir organın o an kullanılıyor olması (kendiliğinden).
+  // Panel listesinde açan iki şey: göbeğe tıklama (kalıcı) ve daldaki
+  // bir organın o an kullanılıyor olması. Üzerine gelmek açmaz — satırlar
+  // 21px aralıklı, hover açınca alttakiler kayıyor ve fare başka dala
+  // denk gelip aç/kapa titriyordu. Yelpazede (panel yok) üzerine gelme
+  // hâlâ geçici açar: göbekler yerinde durur.
   const openBranches = new Set();
   const branchWake = {};   // dal id → açılma anı (yaprak fade-in'i)
   let hoverBranch = null;
@@ -676,7 +728,8 @@ const Scene = (() => {
       // tazelendiğinde o an süren iş kaybolmamalı.
       return { ...item, doing: old.doing || "", since: old.since || 0, organ: true };
     });
-    place();
+    // Dal sayısı deliğin alt payını değiştirir; yarıçapı yeniden sığdır.
+    layout();
     start();
   }
 
@@ -793,21 +846,22 @@ const Scene = (() => {
   function drawLimbRows(t) {
     const family = getComputedStyle(document.body).fontFamily;
     const left = pane.left + 22;
-    let y = core.y + core.r * 2.55 + 34;
+    let y = core.y + ringReach(core.r) + 16;
 
-    // Legend panelin dibinde (açıksa); liste ona girmesin.
+    // Legend ve AÇIKLAMA panelin dibinde; liste onlara girmesin.
     const kinds = new Set(nodes.map((n) => n.group)).size;
     const limbKinds = new Set(limbs.map((l) => branchOf(l).id)).size;
+    const footTop = hole ? hole.clipBottom : pane.bottom;
     const maxY = legendOn
-      ? pane.bottom - (kinds + limbKinds + 1) * 19 - 34
-      : pane.bottom - 44;
+      ? footTop - (kinds + limbKinds + 1) * 19 - 12
+      : footTop - 12;
 
-    // Hangi dallar açık: tıklanmış, üzerinde durulan ya da o an kullanılan.
+    // Hangi dallar açık: tıklanmış ya da o an kullanılan. Hover açmaz
+    // (satırlar kayar, hit çemberleri örtüşür, aç/kapa titrer).
     const expanded = new Set();
     for (const branch of branches) {
       const busy = branch.own.some((l) => l.since > 0 && t - l.since < USE_HOLD);
-      const hovering = hoverBranch && hoverBranch.id === branch.id;
-      if (openBranches.has(branch.id) || hovering || busy) {
+      if (openBranches.has(branch.id) || busy) {
         expanded.add(branch.id);
         if (!branchWake[branch.id]) branchWake[branch.id] = t;
       } else {
@@ -820,18 +874,20 @@ const Scene = (() => {
     for (const branch of branches) {
       const busy = branch.own.some((l) => l.since > 0 && t - l.since < USE_HOLD);
       const open = expanded.has(branch.id);
+      const hovering = hoverBranch && hoverBranch.id === branch.id;
       const tone = css(branch.tone);
       branch.x = left; branch.y = y;
       branch.branchHub = true;
-      branch._hit = y < maxY ? { x: left + 52, y, r: 38 } : null;
+      // Satır yüksekliği 21px. Çember komşuyu yutmasın: dikdörtgen satır.
+      branch._hit = y < maxY ? { x: left - 10, y, w: 220, h: 20 } : null;
       if (y > maxY) break;
 
-      ctx.globalAlpha = paperAlpha(busy ? 0.95 : 0.55);
+      ctx.globalAlpha = paperAlpha(busy || hovering ? 0.95 : 0.55);
       ctx.fillStyle = tone;
       ctx.beginPath(); ctx.arc(left, y, 3.4, 0, Math.PI * 2); ctx.fill();
       ctx.font = "600 9.5px " + family;
       ctx.fillText(open ? "▾" : "▸", left + 9, y + 0.5);
-      ctx.globalAlpha = paperAlpha(busy ? 0.95 : 0.6);
+      ctx.globalAlpha = paperAlpha(busy || hovering ? 0.95 : 0.6);
       ctx.fillText(Dil.t(branch.label).toUpperCase() + " · " + branch.own.length,
                    left + 20, y + 0.5);
       y += 21;
@@ -902,7 +958,7 @@ const Scene = (() => {
                          lx + 12 + nameW + 8, y + 0.5);
           }
         }
-        limb._hit = { x: lx + 30, y, r: 24 };
+        limb._hit = { x: lx - 10, y, w: 220, h: 18 };
         y += 19;
       }
       y += 5;
@@ -1151,7 +1207,7 @@ const Scene = (() => {
 
   // Legend istenince: panelde kocaman sabit bir blok yerine katlanır.
   let legendOn = false;
-  function legend(on) { legendOn = !!on; start(); }
+  function legend(on) { legendOn = !!on; layout(); start(); }
 
   function drawLegend() {
     if (focusMode) return;
@@ -1252,7 +1308,7 @@ const Scene = (() => {
   // "kendiliğinden" ortalanıyordu. Boş alan her karede yoklanıyor;
   // değiştiyse merkez ve yerleşim ANINDA güncelleniyor — panelin geçiş
   // animasyonu sırasında da düzgün kalıyor.
-  let lastFree = 0;
+  let lastFree = "";
 
   function frame() {
     raf = requestAnimationFrame(frame);
@@ -1260,8 +1316,13 @@ const Scene = (() => {
     if (t - lastPaint >= PAINT_MS) {
       lastPaint = t;
       const mr = mindRect();
-      const free = mr ? -(mr.left * 3 + mr.width) : freeWidth();
-      if (Math.abs(free - lastFree) > 0.5) { lastFree = free; layout(); }
+      // Yükseklik/üst de: kamera güvertesi pane'i kısaltır, genişlik aynı
+      // kalır — yalnız left+width izlenince beyin eski yarıçapıyla taşardı.
+      const free = mr
+        ? [Math.round(mr.left), Math.round(mr.top),
+           Math.round(mr.width), Math.round(mr.height)].join("x")
+        : "f" + Math.round(freeWidth());
+      if (free !== lastFree) { lastFree = free; layout(); }
       paint(t);
     }
   }
@@ -1635,6 +1696,15 @@ const Scene = (() => {
     const beat = (Math.sin(t / look.beat) + 1) / 2;
 
     ctx.save();
+    // Panelde tuval tam ekran: sığmayan bir kare arama kutusunun üstüne
+    // taşmasın diye başlık–dip arasına kırp. Ölçek deliğe göre; bu yedek.
+    if (pane) {
+      const top = hole ? hole.clipTop : pane.top;
+      const bot = hole ? hole.clipBottom : pane.bottom;
+      ctx.beginPath();
+      ctx.rect(pane.left, top, pane.width, Math.max(0, bot - top));
+      ctx.clip();
+    }
     ctx.translate(core.x, core.y);
     ctx.strokeStyle = cyan;
     ctx.shadowColor = cyan;
@@ -1720,8 +1790,15 @@ const Scene = (() => {
 
   // --- etkileşim ------------------------------------------------------
   function at(ev) {
-    const near = (item) => item._hit &&
-      Math.hypot(item._hit.x - ev.clientX, item._hit.y - ev.clientY) <= item._hit.r;
+    const near = (item) => {
+      const h = item._hit;
+      if (!h) return false;
+      if (h.w && h.h) {
+        return ev.clientX >= h.x && ev.clientX <= h.x + h.w
+            && Math.abs(ev.clientY - h.y) <= h.h / 2;
+      }
+      return Math.hypot(h.x - ev.clientX, h.y - ev.clientY) <= h.r;
+    };
     // Organlar önce: küçükler ve üstteler, düğüm onları yutmasın. Dal
     // göbekleri organlardan sonra: açık daldaki yaprak, göbeğe yakın olsa
     // bile kendisi seçilebilsin.
@@ -1737,8 +1814,9 @@ const Scene = (() => {
       if (hovered && !hovered.branchHub) showProbeAt(hovered, ev.clientX, ev.clientY, true);
       else probe.hidden = true;
     }
-    // Dal, üzerindeyken geçici açılır; yaprağın üstündeyken de açık kalır
-    // (göbekten yaprağa giderken yelpaze kapanmasın).
+    // Dal, yelpazede üzerindeyken geçici açılır; yaprağın üstündeyken de
+    // açık kalır (göbekten yaprağa giderken kapanmasın). Panel listesinde
+    // hover açmaz — onMove yine işaretler, satır parlar, yelpaze açılmaz.
     hoverBranch = hovered && hovered.branchHub ? hovered
                 : hovered && hovered.organ ? hovered.stem
                 : null;
@@ -1853,11 +1931,20 @@ const Scene = (() => {
   // saf fonksiyon sıçramıyor.
 
   function drawMode(t) {
+    ctx.save();
+    if (pane) {
+      const top = hole ? hole.clipTop : pane.top;
+      const bot = hole ? hole.clipBottom : pane.bottom;
+      ctx.beginPath();
+      ctx.rect(pane.left, top, pane.width, Math.max(0, bot - top));
+      ctx.clip();
+    }
     if (mode === "waking") wakingPulse(t);
     else if (mode === "thinking") thinkingMotes(t);
     else if (mode === "writing") writingStream(t);
     else if (mode === "recalling") recallSweep(t);
     else if (mode === "working") workingPackets(t);
+    ctx.restore();
   }
 
   // Uyanma: tek bir halka yavaşça dışarı açılıyor. Nabız gibi — henüz

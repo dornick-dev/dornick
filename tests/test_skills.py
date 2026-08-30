@@ -198,7 +198,57 @@ async def test_a_crashing_skill_does_not_kill_the_agent(
 # -- araç --------------------------------------------------------------
 
 
-async def test_the_agent_can_scaffold_and_load(ctx: ToolContext, registry: ToolRegistry) -> None:
+async def test_the_agent_can_write_a_skill_in_one_call(
+    ctx: ToolContext, registry: ToolRegistry
+) -> None:
+    """Üç adım (iskelet + edit + load) modelin yarım bırakmasına yol açıyordu."""
+    result = await call(
+        registry, "skill", ctx, action="write", name="topla", code=GOOD,
+    )
+    assert not result.is_error
+    assert "yüklendi" in result.content
+    assert "topla" in registry
+    assert (await call(registry, "topla", ctx, a=2, b=40)).content == "42"
+
+
+async def test_write_rejects_broken_code_and_does_not_register(
+    ctx: ToolContext, registry: ToolRegistry
+) -> None:
+    result = await call(
+        registry, "skill", ctx, action="write", name="bozuk",
+        code="NAME = 'bozuk'\nbu python degil (((",
+    )
+    assert result.is_error
+    assert "bozuk" not in registry
+
+
+async def test_write_refreshes_an_existing_skill(
+    ctx: ToolContext, registry: ToolRegistry
+) -> None:
+    await call(registry, "skill", ctx, action="write", name="topla", code=GOOD)
+    doubled = GOOD.replace('+ args["b"]', '* args["b"]')
+    result = await call(
+        registry, "skill", ctx, action="write", name="topla", code=doubled,
+    )
+    assert not result.is_error
+    assert "tazelendi" in result.content
+    assert (await call(registry, "topla", ctx, a=2, b=40)).content == "80"
+
+
+async def test_new_with_code_is_write(
+    ctx: ToolContext, registry: ToolRegistry
+) -> None:
+    """code verilmiş new, iskelet değil tam yazma."""
+    result = await call(
+        registry, "skill", ctx, action="new", name="topla", code=GOOD,
+    )
+    assert not result.is_error
+    assert "topla" in registry
+
+
+async def test_the_agent_can_scaffold_and_load(
+    ctx: ToolContext, registry: ToolRegistry
+) -> None:
     """Biçimi hatırlamak modelin işi olmamalı: iskeleti biz veriyoruz."""
     made = await call(registry, "skill", ctx, action="new", name="harita",
                       description="Koordinatlari cizer.")
@@ -217,7 +267,7 @@ async def test_scaffolding_twice_is_refused(ctx: ToolContext, registry: ToolRegi
     again = await call(registry, "skill", ctx, action="new", name="harita")
 
     assert again.is_error
-    assert "edit_file" in again.content
+    assert "write" in again.content
 
 
 async def test_a_bad_name_is_refused(ctx: ToolContext, registry: ToolRegistry) -> None:

@@ -15,7 +15,6 @@ gizli bir şey bırakmıyoruz.
 from __future__ import annotations
 
 import sys
-from pathlib import Path
 
 # Kayıttaki ad. Görev Yöneticisi'nin başlangıç listesinde bu görünüyor.
 NAME = "neo"
@@ -31,14 +30,14 @@ def available() -> bool:
 def command() -> str:
     """Açılışta çalıştırılacak satır.
 
-    `pythonw` seçiliyor: `python` bir konsol penceresi açıyor ve her
-    açılışta ekranın ortasında siyah bir kutu beliriyor. Bulunamazsa
-    normal yorumlayıcıya düşülüyor.
+    Damgalı `neo.exe` (yoksa `pythonw`) seçiliyor: `python` bir konsol
+    penceresi açıyor ve her açılışta ekranın ortasında siyah bir kutu
+    beliriyor. Görev Yöneticisi de ev sahibi PE'nin simgesini gösterdiği
+    için pythonw yerine damgalı kopya gerekir.
     """
-    runner = Path(sys.executable)
-    quiet = runner.with_name("pythonw.exe")
-    if quiet.exists():
-        runner = quiet
+    from .winicon import app_executable
+
+    runner = app_executable()
     return f'"{runner}" -m neocp.cli --app'
 
 

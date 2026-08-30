@@ -9,24 +9,28 @@
   let bound = false;
 
   function bind() {
-    if (bound || !ready()) return false;
-    bound = true;
+    if (!ready()) return false;
     if (chrome) chrome.hidden = false;
+    const api = window.pywebview.api;
+    if (typeof api.minimize !== "function" || typeof api.close !== "function") {
+      return false;
+    }
+    if (bound) return true;
+    bound = true;
 
     const maxBtn = document.getElementById("win-max");
     const acts = {
-      "win-min": () => window.pywebview.api.minimize(),
-      "win-max": () => window.pywebview.api.maximize().then((zoomed) => {
+      "win-min": () => api.minimize(),
+      "win-max": () => api.maximize().then((zoomed) => {
         if (maxBtn) maxBtn.classList.toggle("zoomed", !!zoomed);
       }),
-      "win-close": () => window.pywebview.api.close(),
+      "win-close": () => api.close(),
     };
 
     for (const [id, act] of Object.entries(acts)) {
       const button = document.getElementById(id);
       if (!button) continue;
-      const name = id.replace("win-", "").replace("min", "minimize").replace("max", "maximize");
-      if (typeof window.pywebview.api[name] !== "function") { button.hidden = true; continue; }
+      button.hidden = false;
       button.addEventListener("click", () => {
         if (button.dataset.busy) return;
         button.dataset.busy = "1";

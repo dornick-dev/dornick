@@ -83,6 +83,9 @@
   --left-w: min(340px, 32vw);
   /* Görevler: liste + detay — daha geniş master-detail yüzeyi. */
   --jobs-w: min(920px, calc(100vw - 64px));
+  /* Git çubuğu yüksekliği: 0 gizli. Composer / sohbet / jump bunu kadar
+     yukarı kayar — çubuk dock hover'ına karışmaz. */
+  --git-h: 0px;
 
   --font: "Inter", "Segoe UI Variable Text", "Segoe UI", -apple-system, system-ui, sans-serif;
   /* Ligatürsüz üye önde: Cascadia Code "=>"yu "⇒"ya birleştiriyordu ve PHP
@@ -252,6 +255,7 @@ body {
      body'de değiştiriyor ve var() aynı elemanda çözülüyor. */
   --aside: min(820px, calc(100vw - var(--rail-w) - var(--mind-w) - 96px));
   --gut: calc(var(--mind-w) + (100vw - var(--rail-w) - var(--mind-w) - var(--aside)) / 2);
+  --git-h: 0px;
 }
 
 button { font: inherit; cursor: pointer; border: none; background: none; color: inherit; }
@@ -286,7 +290,7 @@ pre, code, kbd, samp, .input-area, .viewer-code, .diff-row {
 
 /* ---------- üst şerit ---------- */
 .hud {
-  position: fixed; top: 0; left: 0; right: 0; height: 48px; z-index: 5;
+  position: fixed; top: 0; left: 0; right: 0; height: 48px; z-index: 30;
   display: flex; align-items: center; justify-content: space-between;
   padding: 0 12px 0 18px; pointer-events: auto; cursor: default;
   user-select: none;
@@ -297,6 +301,7 @@ pre, code, kbd, samp, .input-area, .viewer-code, .diff-row {
 .hud-left, .hud-right {
   display: flex; align-items: center; gap: 10px;
   position: relative; z-index: 1;
+  flex: 0 0 auto;
 }
 .hud-cluster {
   display: inline-flex; align-items: center; gap: 2px;
@@ -365,8 +370,8 @@ pre, code, kbd, samp, .input-area, .viewer-code, .diff-row {
    yeri aliyor ve kendi icinde kayiyor. */
 .stream-wrap {
   position: fixed; right: var(--gut); left: auto;
-  bottom: 112px; width: var(--aside);
-  max-height: calc(100vh - 196px - var(--goals-h, 0px));
+  bottom: calc(112px + var(--git-h)); width: var(--aside);
+  max-height: calc(100vh - 196px - var(--goals-h, 0px) - var(--git-h));
   display: flex; flex-direction: column; z-index: 4;
   pointer-events: none;   /* bos alan sahneyi engellemesin */
 }
@@ -1170,7 +1175,7 @@ a.md-source { text-decoration: none; color: inherit; }
 
 /* Hizli inme dugmesi: takip koptugunda sag altta "↓ N yeni". */
 .jump {
-  position: fixed; right: calc(var(--gut) + 6px); bottom: 130px; z-index: 7;
+  position: fixed; right: calc(var(--gut) + 6px); bottom: calc(130px + var(--git-h)); z-index: 7;
   padding: 6px 13px; border: 0; border-radius: 15px; cursor: pointer;
   background: var(--field); color: var(--ice); font: 11px var(--mono);
   box-shadow: 0 0 0 1px #F0A0202e, 0 6px 18px #00000066; transition: .16s;
@@ -1181,7 +1186,7 @@ a.md-source { text-decoration: none; color: inherit; }
    Kenarlik yok. Alttaki isik kenarlara dogru soner: sert cizgi degil. */
 .entry {
   position: fixed; right: var(--gut); left: auto;
-  bottom: 40px; width: var(--aside); z-index: 6;
+  bottom: calc(40px + var(--git-h)); width: var(--aside); z-index: 6;
   display: flex; align-items: flex-end; gap: 14px; padding-bottom: 12px;
 }
 .entry::after {
@@ -1193,6 +1198,36 @@ a.md-source { text-decoration: none; color: inherit; }
   background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--cyan) 55%, transparent) 18%, color-mix(in srgb, var(--cyan) 55%, transparent) 82%, transparent);
   box-shadow: none;
 }
+
+/* ---------- git çubuğu ----------
+   Composer'ın üstünde: repo + dal; kirliyken +N −M ve Commit; remote
+   yoksa Yayınla. Dock 10px'te kalır — çubuk hover'ına karışmaz. */
+.git-bar {
+  position: fixed; right: var(--gut); left: auto;
+  bottom: 40px; width: var(--aside); z-index: 6;
+  display: flex; align-items: center; gap: 8px;
+  height: 32px; padding: 0 2px;
+  font: 11px var(--mono); color: var(--dim);
+}
+.git-bar[hidden] { display: none !important; }
+.git-id, .git-stat, .git-act {
+  background: none; border: 0; cursor: pointer; color: inherit;
+  font: inherit; padding: 4px 8px; border-radius: 6px; transition: .12s;
+}
+.git-id { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+.git-id b {
+  font-weight: 600; color: var(--ice); max-width: 180px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.git-id span { color: var(--faint); }
+.git-id:hover, .git-stat:hover { color: var(--ice); background: var(--raise); }
+.git-stat { display: flex; gap: 8px; letter-spacing: .02em; }
+.git-plus { color: var(--diff-add-ink); }
+.git-minus { color: var(--diff-del-ink); }
+.git-grow { flex: 1; min-width: 8px; }
+.git-act { color: var(--cyan); }
+.git-act:hover { background: #F0A02012; }
+.git-act:disabled { color: var(--faint); cursor: default; opacity: .55; }
 
 /* ---------- dock ----------
    Kompozerin altindaki durum seridi: model, dusunme derinligi, yetki kipi,
@@ -1294,7 +1329,7 @@ a.md-source { text-decoration: none; color: inherit; }
   animation: surface .3s ease-out;
 }
 /* Onizleme sutunun ustunde duruyor; sohbet o kadar kisaliyor. */
-body.lensing .stream-wrap { max-height: calc(100vh - 196px - 30vh - var(--goals-h, 0px)); }
+body.lensing .stream-wrap { max-height: calc(100vh - 196px - 30vh - var(--goals-h, 0px) - var(--git-h)); }
 
 .lens video {
   display: block; width: 100%; height: auto;
@@ -1350,7 +1385,7 @@ body.lensing .stream-wrap { max-height: calc(100vh - 196px - 30vh - var(--goals-
    duruyor. Ne gonderdigini gormeden gondermek, kameranin ne yakaladigini
    bilmemek demek. */
 .shot {
-  position: fixed; bottom: 114px; right: var(--gut);
+  position: fixed; bottom: calc(114px + var(--git-h)); right: var(--gut);
   z-index: 7; border-radius: 10px; overflow: hidden;
   box-shadow: 0 0 0 1px #F0A02033, 0 12px 40px #000a;
   animation: surface .26s ease-out;
@@ -1366,8 +1401,8 @@ body.settling .shot { left: calc((100vw - min(520px, 44vw)) / 2); }
 }
 .shot button:hover { background: #F87171; color: #fff; }
 
-#plus, #clip, #cam { color: var(--faint); flex: 0 0 auto; }
-#plus:hover, #clip:hover, #cam:hover { color: var(--ice); }
+#plus, #clip { color: var(--faint); flex: 0 0 auto; }
+#plus:hover, #clip:hover { color: var(--ice); }
 
 /* Surukleme sirasinda tum pencere hedef: kucuk bir kutuya nisan almak
    zorunda kalmak gereksiz. */
@@ -1383,7 +1418,7 @@ body.dropping::after {
 
 /* Eklenen dosyalar yazma satirinin ustunde. */
 .drops {
-  position: fixed; bottom: 112px; right: var(--gut);
+  position: fixed; bottom: calc(112px + var(--git-h)); right: var(--gut);
   z-index: 7; display: flex; gap: 6px; flex-wrap: wrap;
   width: var(--aside);
 }
@@ -1400,7 +1435,6 @@ body.settling .drops { left: calc((100vw - min(520px, 44vw)) / 2); }
   font-size: 14px; line-height: 1; color: var(--faint); transition: .16s;
 }
 .chip button:hover { color: var(--rose); }
-#cam:hover { color: var(--ice); }
 
 /* Mikrofon. Tikla-konus-tikla: kayit sirasinda kirmizi ve nabizli, ve
    cevresindeki halka duyulan sesle buyuyor — "konustum ama hicbir sey
@@ -1436,6 +1470,9 @@ body.settling .drops { left: calc((100vw - min(520px, 44vw)) / 2); }
 }
 #mic.hot { color: var(--mint); }
 #mic.live.hot { color: var(--rose); }
+#mic.mute { opacity: .55; color: var(--faint); }
+#mic .off-line { display: none; }
+#mic.mute .off-line { display: block; stroke: var(--hl-tag); }
 
 .entry textarea {
   flex: 1; background: none; border: none; outline: none; resize: none;
@@ -1572,27 +1609,27 @@ body.focus #focus.on { color: var(--cyan); }
 
 /* ---------- hatirlama yolu ----------
    Ajanin hangi hatiradan hangisine gectigi, sirasiyla. Yol sahnede
-   numarali duruyor; buradan bir adima tiklayinca o dugum one cikiyor. */
-/* İz paneli: köşede BELLİ BELİRSİZ minik bir kutu — sol kenarı kaplamak
-   yasak. Normalde yarı görünmez ve alçak; merak eden üzerine gelince
-   açılıyor (netleşir + uzar), içi kendi içinde kayar. */
+   numarali duruyor; buradan bir adima tiklayinca o dugum one cikiyor.
+   Sohbet sutununun ICINDE, akisin USTUNDE — yuzen kutu degil. Sol rail
+   acikken `left:30px` konusma listesinin ustune biniyordu (kullanici:
+   "iz diye bir sey cikiyor"). Hedef seridiyle ayni kural: yer kaplar,
+   ortmez. Yari gorunmez; uzerine gelince netlesir + uzar. */
 .route {
-  position: fixed; left: 30px; top: 86px; z-index: 5;
-  max-width: 185px; max-height: 20vh;
+  flex: 0 0 auto; margin-bottom: 8px;
+  width: 100%; max-width: none; max-height: 7.5em;
   display: flex; flex-direction: column; gap: 2px;
   overflow-y: auto; overscroll-behavior: contain;
-  padding: 8px 10px; border-radius: 10px;
-  background: var(--panel-glass); border: 1px solid var(--edge);
-  opacity: .38; transition: opacity .2s, max-height .25s ease;
-  animation: surface .3s ease-out;
+  padding: 6px 10px; border-radius: 8px;
+  background: transparent; border: 1px solid var(--edge);
+  opacity: .42; transition: opacity .2s, max-height .25s ease;
 }
-.route:hover { opacity: 1; max-height: 46vh; }
+.route:hover { opacity: 1; max-height: 28vh; }
 .route::-webkit-scrollbar { width: 4px; }
 .route::-webkit-scrollbar-thumb { background: #F0A02022; border-radius: 3px; }
-.route .step { font-size: 11px; padding: 1px 0; }
 .route .head {
-  font: 9.5px var(--mono); letter-spacing: .2em; text-transform: uppercase;
-  color: var(--faint); margin-bottom: 6px;
+  font: 9.5px var(--mono); letter-spacing: .12em; text-transform: uppercase;
+  color: var(--faint); margin-bottom: 4px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .route .step {
   display: flex; align-items: baseline; gap: 8px; cursor: pointer;
@@ -1742,7 +1779,7 @@ body.focus #focus.on { color: var(--cyan); }
 /* ---------- pencere denetimleri ----------
    Çerçevesiz tek şerit: küçült/büyüt/kapat HUD'un sağında, ikonlarla
    aynı satırda. Sürükleme chrome.js → HTCAPTION (easy_drag/app-region yok). */
-.chrome { display: flex; align-items: center; gap: 2px; margin-left: 6px; }
+.chrome { display: flex; align-items: center; gap: 2px; margin-left: 6px; flex-shrink: 0; }
 .chrome button {
   pointer-events: auto;
   width: 40px; height: 32px; padding: 0; cursor: pointer;
@@ -1813,12 +1850,21 @@ body.focus #focus.on { color: var(--cyan); }
 #stop { color: var(--rose); }
 #stop:hover { background: #F8717120; }
 
-/* Ses acikken simge canli, kapaliyken sonuk ve uzeri cizili. */
-#mute { color: var(--preference); }
-#mute .cross { display: none; }
-#mute.off { color: var(--faint); }
+/* Ses / dinleme: kapalıyken üstü çizili (kamera ikonuyla aynı dil). */
+#mute, #hear { color: var(--preference); position: relative; --level: 0; }
+#mute .off-line, #hear .off-line { display: none; }
 #mute.off .wave { display: none; }
-#mute.off .cross { display: block; }
+#mute.off .off-line, #hear.off .off-line { display: block; stroke: var(--hl-tag); }
+#mute.off, #hear.off { opacity: .55; color: var(--faint); }
+#hear:not(.off) { color: var(--mint); }
+#hear.hot::before {
+  content: ""; position: absolute; left: 50%; top: 50%;
+  width: 10px; height: 10px; margin: -5px 0 0 -5px;
+  border-radius: 50%; background: var(--mint); opacity: .22;
+  transform: scale(calc(1 + var(--level, 0) * 5));
+  transition: transform .08s linear;
+  pointer-events: none;
+}
 
 /* Kilit kapaliyken kapali cizilir; tam yetkide acik ve kirmizi —
    her komutun sorulmadan calistigi bir hal saklanmamali. */
@@ -3017,34 +3063,35 @@ body.left-resize { cursor: ew-resize; user-select: none; }
 }
 .apps-proc-stop:hover { color: var(--rose); background: #ff6b8b14; }
 
-/* ---------- orkestra guvertesi (alt ajan kanallari) ----------
-   Sol-altta yuzen kart yigini. Kendisi calisirken aciliyor; sef (ana ajan)
-   kanallar biterken bekliyor ve beklediğini soyluyor. */
+/* ---------- orkestra güvertesi (alt ajan kanalları) ----------
+   Sağ sütundaki mini pencere — sohbetin/rail'in üstüne binen sol modal
+   değil. Şef beklerken açılır; kapanınca yerini beyne geri verir. */
 .orch-deck {
-  position: fixed; left: 18px; bottom: 96px; z-index: 33;
-  width: min(340px, 40vw); max-height: 56vh; display: flex; flex-direction: column;
-  border-radius: 10px; overflow: hidden;
-  background: var(--panel-glass); backdrop-filter: blur(14px);
-  box-shadow: inset 0 0 0 1px var(--edge), 0 14px 40px -12px rgba(0, 0, 0, .45);
-  animation: orch-rise .22s ease;
+  min-height: 140px; display: flex; flex-direction: column;
+  overflow: hidden; background: var(--panel);
+  box-shadow: inset 0 1px 0 var(--edge);
 }
-@keyframes orch-rise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
 .orch-head {
   display: flex; align-items: center; gap: 9px; padding: 10px 12px;
   box-shadow: inset 0 -1px 0 var(--edge);
+  min-width: 0;
 }
 .orch-tag {
   font: 11px/1.2 var(--font); letter-spacing: .04em; text-transform: none;
   color: var(--dim); font-weight: 600;
+  flex: 0 0 auto;
 }
-.orch-status { flex: 1; font: 10.5px var(--font); color: var(--faint); }
+.orch-status {
+  flex: 1; min-width: 0; font: 10.5px/1.35 var(--font); color: var(--faint);
+}
 .orch-status.waiting { color: var(--cyan); }
 .orch-status.waiting::before {
   content: "◍ "; animation: throb 1.3s ease-in-out infinite; display: inline;
 }
 .orch-status.done { color: var(--mint); }
 .orch-status.yetim { color: var(--amber); }
-.orch-head .close { font-size: 17px; }
+.orch-head .close { font-size: 17px; flex: 0 0 auto; }
+#cam-stop { flex: 0 0 auto; font-size: 11px; white-space: nowrap; }
 
 .orch-body { flex: 1; overflow-y: auto; padding: 8px; display: flex; flex-direction: column; gap: 7px; }
 .orch-body::-webkit-scrollbar { width: 5px; }
@@ -3314,7 +3361,7 @@ body.left-resize { cursor: ew-resize; user-select: none; }
    Eklenen dosya ciplerinin (.drops) yerini paylaşıyor; ikisi birden
    varken ekler bir sıra yukarı çıkıyor, üst üste binmesinler. */
 .mentions {
-  position: fixed; bottom: 112px; right: var(--gut);
+  position: fixed; bottom: calc(112px + var(--git-h)); right: var(--gut);
   z-index: 7; display: flex; gap: 6px; flex-wrap: wrap;
   width: var(--aside);
 }
@@ -4026,6 +4073,27 @@ body.settling .mentions { left: calc((100vw - min(520px, 44vw)) / 2); }
 .chg-diff { margin: 6px 0 4px 0; border-radius: 4px; overflow: hidden;
   box-shadow: inset 0 0 0 1px var(--card-edge); }
 
+.git-pane { display: flex; flex-direction: column; min-height: 100%; gap: 10px; }
+.git-pane-list { flex: 1; min-height: 0; }
+.git-pane-foot {
+  position: sticky; bottom: 0; padding: 10px 0 0;
+  background: var(--panel-glass);
+  box-shadow: inset 0 1px 0 #F0A02010;
+  display: flex; flex-direction: column; gap: 8px;
+}
+.git-msg {
+  width: 100%; min-height: 52px; resize: vertical;
+  padding: 8px 10px; border: 0; border-radius: 8px;
+  background: var(--field); color: var(--text); font: 12.5px var(--font);
+  outline: none; box-shadow: inset 0 0 0 1px #F0A0201a;
+}
+.git-msg:focus { box-shadow: inset 0 0 0 1px #F0A02044; }
+.git-pane-acts { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.git-err { font: 11.5px var(--mono); color: var(--rose); }
+.git-open-btn { font: 11px var(--font); color: var(--dim); background: transparent;
+  border: 1px solid transparent; padding: 2px 8px; border-radius: 4px; cursor: pointer; }
+.git-open-btn:hover { color: var(--text); background: var(--raise); }
+
 /* Mesaj balonu aksiyonları (düzenle / yeniden üret) */
 .line.user, .line.agent { position: relative; }
 /* Aynı turun devam parçası (aralarında kullanıcı mesajı yok): "neo"
@@ -4147,21 +4215,36 @@ progress { accent-color: var(--cyan); }
 /* Beyin paneli ancak gerçekten geniş ekranda yer kaplar; 861-1020
    bandında kendi çekilir, rail sütunu kalır. */
 @media (min-width: 1021px) {
-  body.mind-on:not(.mind-off) { --mind-w: var(--mind-w-user, min(340px, 26vw)); }
+  body.mind-on:not(.mind-off),
+  body.orch-open,
+  body.cam-open {
+    --mind-w: var(--mind-w-user, min(340px, 26vw));
+  }
 }
 
 /* Açık rail'in HUD düğmesi yandığını söylesin. */
 .hud .icon.on { color: var(--cyan); }
 
-/* ---------- beyin paneli ---------- */
-.mind {
+/* ---------- sağ sütun: beyin + mini güverteler ---------- */
+.right-col {
   position: fixed; top: 48px; right: 0; bottom: 0; width: var(--mind-w);
-  z-index: 3; display: flex; flex-direction: column;
+  z-index: 4; display: flex; flex-direction: column;
+  pointer-events: none; overflow: hidden; min-width: 0;
   border-left: 1px solid var(--edge);
   background: linear-gradient(180deg, rgba(var(--scrim), .35), rgba(var(--scrim), 0) 24%);
-  pointer-events: none;   /* tuval alttaki tıklamaları alsın */
 }
-/* Sol kenardan sürüklenerek genişler — sol rail'in tutamağının aynası. */
+.right-col .mind-grip,
+.right-col .dock-grip,
+.right-col .cam-deck { pointer-events: auto; }
+.mind {
+  position: relative; flex: 1 1 auto; min-height: 0; width: 100%;
+  z-index: 1; display: flex; flex-direction: column;
+  pointer-events: none;   /* tuval alttaki tıklamaları alsın */
+  border-left: none;
+  background: none;
+}
+body:not(.orch-open) .mind { min-height: 180px; }
+/* Sol kenardan sürüklenerek genişler — yalnız beyin boyu, güverteyi yutmasın. */
 .mind-grip {
   position: absolute; left: -3px; top: 0; bottom: 0; width: 8px;
   cursor: ew-resize; z-index: 4; touch-action: none; pointer-events: auto;
@@ -4172,6 +4255,20 @@ progress { accent-color: var(--cyan); }
 }
 .mind-grip:hover::before, body.mind-resize .mind-grip::before { opacity: .5; }
 body.mind-resize { cursor: ew-resize; user-select: none; }
+
+/* Beyin ↔ kamera/orkestra: yatay tutamak. Yokken ikisi flex ile boğuşup
+   birbirinin üstüne biniyordu; min-height toplamı sütunu aşıyordu. */
+.dock-grip {
+  display: none; flex: 0 0 8px; position: relative; z-index: 3;
+  cursor: ns-resize; touch-action: none; background: transparent;
+}
+body.orch-open:not(.mind-off) .dock-grip { display: block; }
+.dock-grip::before {
+  content: ""; position: absolute; left: 14px; right: 14px; top: 3px; height: 2px;
+  background: var(--cyan); opacity: 0; border-radius: 1px; transition: opacity .18s;
+}
+.dock-grip:hover::before, body.dock-resize .dock-grip::before { opacity: .5; }
+body.dock-resize { cursor: ns-resize; user-select: none; }
 
 /* Alt köşe: legend katlama çipi. Legend kocaman yer kaplıyordu; artık
    istenince açılıyor, yer organlara/beyne kalıyor. */
@@ -4191,6 +4288,7 @@ body.mind-resize { cursor: ew-resize; user-select: none; }
 .mind-head {
   pointer-events: auto;
   display: flex; align-items: center; gap: 8px; padding: 10px 12px;
+  min-width: 0;
 }
 .mind-tag {
   flex: 0 0 auto; font: 600 10px var(--mono); letter-spacing: .22em;
@@ -4216,12 +4314,39 @@ body.mind-resize { cursor: ew-resize; user-select: none; }
 .mind-hide:focus-visible, .mind-open:focus-visible {
   outline: 2px solid var(--cyan); outline-offset: 1px;
 }
+/* Mini güverteler: sağ sütunda satır paylaşır (birden fazlaysa ızgara). */
+.side-dock {
+  pointer-events: auto;
+  flex: 0 0 var(--dock-h-user, 38%);
+  min-height: 120px;
+  min-width: 0;
+  z-index: 2;
+  display: grid;
+  grid-template-columns: 1fr;
+  grid-auto-rows: minmax(140px, 1fr);
+  background: var(--panel);
+  box-shadow: inset 0 1px 0 var(--edge);
+}
+body.mind-off .side-dock { flex: 1 1 auto; min-height: 0; }
+.side-dock:not(:has(> :not([hidden]))) {
+  display: none;
+  flex: 0 0 0;
+  min-height: 0;
+}
+.side-dock > .orch-deck { min-height: 0; max-height: none; width: auto; }
 /* Beyin geri-açma artık bağlam araçlarının bir üyesi: ctx hapının
    altında ezilen ayrı yüzer düğme kalktı (canlıda tıklanamıyordu). */
 body:not(.mind-off) .mind-open { display: none; }
 body.mind-off .mind, body.mind-off #scene { display: none; }
+body.mind-off:not(.orch-open):not(.cam-open) .right-col { display: none; }
 body.focus .mind-open { opacity: 0; pointer-events: none; }
-@media (max-width: 1020px) { .mind, .mind-open { display: none; } }
+@media (max-width: 1020px) {
+  .mind, .mind-open { display: none; }
+  body:not(.orch-open):not(.cam-open) .right-col { display: none; }
+  body.orch-open, body.cam-open {
+    --mind-w: min(340px, calc(100vw - var(--rail-w) - 88px));
+  }
+}
 
 
 /* ============================================================
@@ -4469,7 +4594,9 @@ body.settling::after {
     box-shadow: inset 1px 0 0 var(--edge), inset 0 -1px 0 var(--edge);
   }
   body.viewing:not(.viewer-max) .viewer .viewer-grip { display: none; }
-  body.viewing:not(.viewer-max) .mind { top: calc(48px + (100vh - 48px) * .52); }
+  body.viewing:not(.viewer-max) .right-col {
+    top: calc(48px + (100vh - 48px) * .52);
+  }
 }
 
 /* Büyüt: görüntüleyici sağ bölgenin tamamını alır; beyin geçici çekilir. */
@@ -4480,7 +4607,8 @@ body.settling::after {
     z-index: 26;
   }
   body.viewer-max.viewing .mind,
-  body.viewer-max.viewing .mind-open { display: none; }
+  body.viewer-max.viewing .mind-open,
+  body.viewer-max.viewing .right-col { display: none; }
 }
 body.viewer-max .viewer-max { color: var(--cyan); }
 
@@ -4531,37 +4659,6 @@ body.viewer-max .viewer-max { color: var(--cyan); }
   white-space: pre-wrap; max-width: 70ch;
 }
 .skill-card-desc.empty { color: var(--faint); font-style: italic; }
-
-
-/* ---------- orkestra sağ dock'ta ----------
-   Alt ajan güvertesi başka köşede yüzen kart değil: beyin sütununun
-   İKİNCİ SATIRI — açılınca beyin yukarı büzülür, kapanınca yerini geri
-   verir. Dar ekranda ve beyin kapalıyken eski yüzen hal geçerli. */
-@media (min-width: 1101px) {
-  body.orch-open.mind-on:not(.mind-off) .orch-deck {
-    left: auto; right: 0; top: auto; bottom: 0;
-    width: var(--mind-w); max-height: none;
-    height: calc((100vh - 48px) * .44);
-    border-radius: 0; backdrop-filter: none;
-    background: var(--panel); animation: none; z-index: 4;
-    box-shadow: inset 1px 0 0 var(--edge), inset 0 1px 0 var(--edge);
-  }
-  body.orch-open.mind-on:not(.mind-off) .mind {
-    bottom: calc((100vh - 48px) * .44);
-  }
-}
-/* 1101-1399 bandında görüntüleyici zaten beynin altını alıyor: üçü üst
-   üste binmesin — orada orkestra eski yüzen kartında kalır. ≥1400'de
-   görüntüleyici yanda, orkestra beynin altında — üçü birlikte yaşar. */
-@media (min-width: 1101px) and (max-width: 1399px) {
-  body.viewing.orch-open.mind-on:not(.mind-off) .orch-deck {
-    left: 18px; right: auto; top: auto; bottom: 96px;
-    width: min(340px, 40vw); max-height: 56vh; height: auto;
-    border-radius: 10px; background: var(--panel-glass);
-    box-shadow: inset 0 0 0 1px var(--edge), 0 14px 40px -12px rgba(0, 0, 0, .45);
-  }
-  body.viewing.orch-open.mind-on:not(.mind-off) .mind { bottom: 0; }
-}
 
 
 /* ============================================================
@@ -4730,3 +4827,237 @@ body { --right-w: var(--mind-w); }
 .plan-step.yapiliyor .plan-tick { color: var(--hl-num); }
 .plan-step.yapiliyor { font-weight: 600; }
 .plan-step.bekliyor .plan-tick { color: var(--faint); }
+
+/* Kamera: sağ sütunda kesilmesin — position:fixed yüzen pencere.
+   overflow:hidden ata (right-col) fixed'i kırpıyordu. HUD z-index daha yüksek. */
+.cam-deck {
+  min-height: 220px; min-width: 0; display: none; flex-direction: column;
+  overflow: hidden; background: var(--panel);
+}
+body.cam-open .cam-deck:not([hidden]) {
+  display: flex;
+  position: fixed;
+  z-index: 8;
+  left: var(--cam-x, 48px);
+  top: var(--cam-y, 64px);
+  width: min(380px, calc(100vw - 64px));
+  max-height: calc(100vh - 80px);
+  border-radius: 10px;
+  border: 1px solid var(--edge);
+  box-shadow: 0 10px 32px rgba(15, 14, 12, .22);
+}
+body.cam-open .cam-deck .orch-head { cursor: grab; }
+body.cam-drag .cam-deck .orch-head { cursor: grabbing; }
+body.cam-drag { user-select: none; }
+.cam-deck .orch-head {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px;
+  padding: 8px 10px;
+}
+.cam-deck .orch-tag { flex: 0 0 auto; min-width: 0; }
+.cam-deck .cam-head-acts {
+  margin-left: auto;
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end;
+  gap: 4px; min-width: 0;
+}
+.cam-deck #cam-spec {
+  flex: 1 1 100%;
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2;
+  overflow: hidden; line-height: 1.35;
+}
+.cam-deck #cam-live-wrap {
+  position: relative;
+  flex: 1 1 160px; min-height: 140px; min-width: 0;
+  background: #12110f;
+  display: flex; align-items: center; justify-content: center;
+}
+.cam-deck #cam-live {
+  max-width: 100%; max-height: 220px; width: auto; height: auto;
+  object-fit: contain; display: block;
+}
+.cam-deck #cam-live.dead { opacity: .35; }
+.cam-deck .cam-live-meta {
+  position: absolute; left: 0; right: 0; bottom: 0;
+  display: flex; align-items: center; gap: 6px;
+  padding: 6px 8px;
+  background: linear-gradient(transparent, rgba(0,0,0,.55));
+  color: #fff;
+}
+.cam-deck #cam-stage-title {
+  font: 600 11px var(--font); white-space: nowrap;
+}
+.cam-deck .cam-live-meta .cam-stage-sight {
+  max-width: none; color: rgba(255,255,255,.85); font-size: 11px;
+}
+.cam-deck .cam-live-meta .plan-btn { flex: 0 0 auto; }
+.cam-deck #cam-live-wrap:fullscreen,
+.cam-deck:fullscreen {
+  background: #000; inset: 0; width: 100%; height: 100%; max-height: none;
+  border-radius: 0; left: 0; top: 0;
+}
+.cam-deck:fullscreen #cam-live,
+.cam-deck #cam-live-wrap:fullscreen #cam-live {
+  max-height: 100%; width: 100%; height: 100%; object-fit: contain;
+}
+.cam-deck .cam-strip {
+  flex: 0 0 auto; flex-direction: row; overflow-x: auto; overflow-y: hidden;
+  max-height: none;
+}
+.cam-deck .cam-thumb { flex: 0 0 88px; }
+.cam-deck .cam-thumb img { height: 48px; }
+.cam-body {
+  flex: 1 1 auto; min-height: 0; min-width: 0;
+  overflow-y: auto; padding: 10px; display: grid; gap: 10px;
+  grid-template-columns: minmax(0, 1fr);
+}
+.cam-tile { border: 1px solid var(--edge); border-radius: 10px; overflow: hidden; min-width: 0; }
+.cam-view {
+  display: block; width: 100%; max-width: 100%; aspect-ratio: 16 / 10; object-fit: cover;
+  background: var(--field);
+}
+.cam-view.dead { opacity: .35; }
+.cam-cap {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 6px 8px;
+  font: 12px var(--mono); color: var(--dim); min-width: 0;
+}
+.cam-cap span { flex: 1 1 6rem; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cam-note { padding: 12px; color: var(--faint); font-size: 13px; overflow-wrap: anywhere; }
+.cam-foot {
+  flex: 0 0 auto; display: grid; gap: 6px; padding: 8px 10px;
+  border-top: 1px solid var(--edge); min-width: 0;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+}
+.cam-foot #cam-kind,
+.cam-foot .cam-gpu-lab,
+.cam-foot #cam-add { grid-column: 1 / -1; }
+.cam-in {
+  min-width: 0; width: 100%; box-sizing: border-box;
+  padding: 6px 8px; border-radius: 8px;
+  border: 1px solid var(--edge); background: var(--field); color: var(--ink);
+  font: 12.5px var(--mono);
+}
+.cam-in.wide { grid-column: 1 / -1; }
+.cam-gpu-lab {
+  display: flex; align-items: center; gap: 8px;
+  font: 11px var(--font); color: var(--dim);
+}
+#cam-layer {
+  position: fixed; inset: 0; z-index: 7; pointer-events: none;
+}
+.cam-win {
+  position: absolute; pointer-events: auto; width: 280px;
+  display: flex; flex-direction: column;
+  background: var(--panel); border: 1px solid var(--edge); border-radius: 10px;
+  box-shadow: 0 10px 32px rgba(15, 14, 12, .22); overflow: hidden; min-width: 0;
+}
+.cam-win.on { z-index: 8; }
+.cam-win-head {
+  display: flex; align-items: center; gap: 6px; padding: 6px 8px;
+  cursor: grab; box-shadow: inset 0 -1px 0 var(--edge); min-width: 0;
+}
+.cam-win-title {
+  flex: 1; min-width: 0; font: 600 12px var(--font); color: var(--ink);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.cam-win .cam-view { border-radius: 0; }
+
+/* Kamera durum ikonu: kapalıyken üstü çizili (canlı istek — "açık değilse
+   üstünde çizgi, tıklayınca aktif et"). Çizgi yalnız .cam-off'ta çizilir. */
+#cams .off-line { display: none; }
+#cams.cam-off .off-line { display: block; stroke: var(--hl-tag); }
+#cams.cam-off { opacity: .55; color: var(--faint); }
+#cams.cam-on { color: var(--mint); }
+#cams.on { color: var(--cyan); }
+
+/* İzleme ana pencerede sağ güverte (orkestra gibi). Orta alanı yutan
+   #cam-stage yok — beyin/sohbet kaybolmasın. Ayrı OS penceresi watch.html. */
+.cam-stage-tag {
+  font: 9.5px var(--mono); letter-spacing: .28em; text-transform: uppercase;
+  color: var(--cyan); opacity: .8; white-space: nowrap;
+}
+.cam-stage-sight {
+  font: 11px var(--sans); color: var(--dim);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  max-width: 42%;
+}
+.cam-stage-grow { flex: 1; min-width: 8px; }
+.cam-stage-rail {
+  min-width: 0; border-left: 1px solid var(--edge);
+  background: var(--raise); display: flex; flex-direction: column;
+}
+.cam-strip {
+  flex: 1; min-height: 0; overflow: auto;
+  padding: 8px; display: flex; flex-direction: column; gap: 8px;
+}
+.cam-thumb {
+  position: relative; display: flex; flex-direction: column; gap: 4px;
+  padding: 0; border: 1px solid var(--edge); border-radius: 8px;
+  background: var(--panel); color: var(--ink); cursor: pointer;
+  overflow: hidden; text-align: left;
+}
+.cam-thumb.on { border-color: var(--cyan); box-shadow: 0 0 0 1px var(--cyan); }
+.cam-thumb img {
+  display: block; width: 100%; height: 72px; object-fit: cover; background: #111;
+}
+.cam-thumb span {
+  padding: 0 6px 6px; font: 11px var(--font);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.cam-thumb i {
+  position: absolute; top: 4px; right: 4px;
+  width: 18px; height: 18px; border-radius: 9px;
+  background: rgba(0,0,0,.55); color: #fff;
+  font: 12px/18px var(--sans); text-align: center; font-style: normal;
+}
+
+
+.cam-pop-note {
+  margin: 0 0 4px; max-width: 240px;
+  font: 11px/1.4 var(--sans); color: var(--dim);
+}
+.cam-pop {
+  position: absolute; top: 40px; right: 0; z-index: 70;
+  display: flex; flex-direction: column; gap: 6px; padding: 8px;
+  background: var(--raise); border: 1px solid var(--edge); border-radius: 10px;
+  backdrop-filter: blur(14px);
+}
+
+/* Ayrı kamera penceresi (`watch.html`): ana Neo durur; bu pencere
+   native çerçeveli — taşı, büyüt, ikinci ekran. Tam ekran = OS büyüt. */
+body.watch-win {
+  margin: 0; min-height: 100vh; background: var(--bg); color: var(--ink);
+  overflow: hidden;
+}
+body.watch-win .watch-bar {
+  position: fixed; top: 0; left: 0; right: 0; height: 48px; z-index: 2;
+  display: flex; align-items: center; gap: 12px;
+  padding: 0 16px;
+  background: var(--caption);
+  border-bottom: 1px solid var(--edge);
+}
+body.watch-win .watch-bar .brand { font-size: 16px; }
+body.watch-win .watch-main {
+  position: fixed; top: 48px; left: 0; right: 0; bottom: 0;
+  display: grid; grid-template-columns: minmax(0, 1fr) 168px;
+}
+body.watch-win .watch-live {
+  min-width: 0; min-height: 0; background: #12110f;
+  display: flex; align-items: center; justify-content: center;
+  overflow: hidden;
+}
+body.watch-win #watch-live {
+  width: 100%; height: 100%; object-fit: contain; display: block;
+}
+body.watch-win #watch-live.dead { opacity: .35; }
+body.watch-win #watch-empty {
+  margin: 0; padding: 16px; font: 14px var(--font); color: var(--dim);
+}
+body.watch-win #watch-title {
+  font: 600 13px var(--font); color: var(--ink);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+body.watch-win .cam-stage-sight { max-width: 40%; color: var(--dim); }
+body.watch-win .cam-strip {
+  flex: 1; min-height: 0; overflow: auto;
+  flex-direction: column;
+}
+

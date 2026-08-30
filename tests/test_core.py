@@ -333,6 +333,24 @@ def test_the_prompt_forbids_inventing_a_missing_premise() -> None:
     assert "tek cümlelik bir soru sor" in builder.IDENTITY
 
 
+def test_the_prompt_forbids_the_youre_welcome_loop() -> None:
+    """Teşekkür / tamamdır / bakayım → 'rica ederim' asistan döngüsü."""
+    from neocp import prompt as builder
+
+    assert "Rica ederim" in builder.IDENTITY
+    assert "tamamdır" in builder.IDENTITY
+    assert "cevap yazma" in builder.IDENTITY
+    assert "Rica ederim" in builder.LEAN_IDENTITY
+
+
+def test_the_prompt_asks_before_forgetting_memories_tied_to_a_deleted_device() -> None:
+    """Cihaz silinince anılar sessizce kalıyordu; kullanıcı 'hafızadan da
+    sil' demek zorunda kalıyordu. Sormak kural: dursun mu, sileyim mi?"""
+    from neocp import prompt as builder
+
+    assert "dursun mu, sileyim mi" in builder.IDENTITY
+
+
 def test_big_open_ended_work_must_lead_with_a_visible_plan() -> None:
     """Kanıtlanmış atlama: 55 dakikalık bir işte ilk mesaj plansız geldi.
 

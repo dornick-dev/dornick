@@ -7,6 +7,7 @@ from typing import Any
 from .base import (
     Block,
     Handler,
+    JobFailed,
     ToolContext,
     ToolRegistry,
     ToolResult,
@@ -18,6 +19,7 @@ from .executor import execute
 __all__ = [
     "Block",
     "Handler",
+    "JobFailed",
     "ToolContext",
     "ToolRegistry",
     "ToolResult",
@@ -49,8 +51,10 @@ def build_registry(mind: Any = None, *, subagents: bool = True) -> ToolRegistry:
         devices,
         eyes,
         files,
+        git_tool,
         hands,
         hearing,
+        camera,
         jobs,
         kod,
         kosucu,
@@ -66,6 +70,8 @@ def build_registry(mind: Any = None, *, subagents: bool = True) -> ToolRegistry:
 
     registry = ToolRegistry()
     shell.register(registry)
+    # Git: commit/push/GitHub — kabuğa `git commit` için düşülmesin.
+    git_tool.register(registry)
     # Dosya araçları + `denetle`: yazılan kod, yazıldığı anda dilinin kendi
     # denetleyicisinden geçiyor ve sonuç aracın cevabına giriyor. Ayrı bir
     # kayıt satırı yok — tanı dosya yazmanın parçası, ayrı bir yetenek değil.
@@ -88,6 +94,11 @@ def build_registry(mind: Any = None, *, subagents: bool = True) -> ToolRegistry:
     # Büyük iş planı (onay kapısı).
     plan_tool.register(registry)
     eyes.register(registry)
+    # Kamera kesiti: opencv kuruluysa. Kayıt aracın kendi içinde
+    # da denetleniyor; burada eksik bileşende listeye hiç girmiyor.
+    from .. import watch as watching
+    if watching.available():
+        camera.register(registry)
     # Ekran ve el: yalnızca yakalama gerçekten mümkünse. Olmayan bir eli
     # listede göstermek, modeli boşa tıklatmak demek.
     if hands.available():

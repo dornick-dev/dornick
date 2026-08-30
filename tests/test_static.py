@@ -73,14 +73,67 @@ def test_ids_used_by_script_exist_in_markup() -> None:
     scripts = APP_JS + "".join(
         (STATIC / name).read_text(encoding="utf-8") for name in ("scene.js", "settings.js", "viewer.js", "speech.js",
                      "chrome.js", "listen.js", "camera.js", "drop.js",
-                     "komut.js", "gorevler.js", "degisiklik.js")
+                     "komut.js", "gorevler.js", "degisiklik.js", "git.js")
     )
     used = set(re.findall(r'\$\("([\w-]+)"\)', scripts))
     used |= set(re.findall(r'getElementById\("([\w-]+)"\)', scripts))
 
     assert used, "betikte hiç kimlik kullanımı bulunamadı — desen bayatlamış olabilir"
-    missing = sorted(i for i in used if f'id="{i}"' not in HTML)
+    # Betik içinde YARATILAN kimlikler de var olmuş sayılır (settings.js
+    # model-thinking/model-window gibi alanları çalışma anında kuruyor).
+    created = set(re.findall(r'\.id = "([\w-]+)"', scripts))
+    missing = sorted(i for i in used
+                     if f'id="{i}"' not in HTML and i not in created)
     assert not missing, f"işaretlemede yok: {', '.join(missing)}"
+
+
+def test_composer_has_no_camera_button() -> None:
+    """Yazma satırındaki kamera Lens'le çakışıp 'açılamadı' diyordu.
+    İzleme üst bardaki ikon; kare eklemek ataş / sürükle."""
+    assert 'id="cam"' not in HTML
+    assert 'id="cams"' in HTML
+    assert '$("cam")' not in APP_JS
+    assert '"/api/senses"' in APP_JS
+
+
+def test_camera_toggle_lives_on_the_eyes_pane() -> None:
+    """Kamera aç/kapa Mikrofon'da mikrofon yokken gizleniyordu.
+    Anahtar Kameralar sekmesinin başında; artı menü orayı açar."""
+    src = (STATIC / "settings.js").read_text(encoding="utf-8")
+    hearing = re.search(
+        r"function drawHearing\(\) \{.*?\n  async function loadCameras",
+        src, re.S)
+    cameras = re.search(
+        r"function drawCameras\(data\) \{.*?\n  function newCameraForm",
+        src, re.S)
+    assert hearing and cameras, "drawHearing / drawCameras bulunamadı"
+    assert "camera.enabled" not in hearing.group(0)
+    assert 'set("camera"' not in hearing.group(0)
+    assert "ve kamera girişi" not in hearing.group(0)
+    assert "camera.enabled" in cameras.group(0)
+    assert 'set("camera", "enabled"' in cameras.group(0)
+    assert 'id="pane-eyes"' in HTML
+    assert "async function open(tab)" in src
+    assert 'openTab("eyes")' in APP_JS
+    assert '["Kamera"' in APP_JS
+
+
+def test_git_bar_sits_above_the_composer() -> None:
+    """Claude kalıbı: repo çubuğu composer'ın üstünde, --git-h sohbeti kaydırır."""
+    assert HTML.index('id="git-bar"') < HTML.index('id="composer"')
+    assert re.search(r'id="git-bar"[^>]*\shidden', HTML)
+    assert "--git-h" in CSS
+    assert 'src="/git.js"' in HTML
+    order = re.findall(r'<script src="/([\w.]+)"></script>', HTML)
+    assert order.index("viewer.js") < order.index("git.js")
+    assert order.index("app.js") < order.index("git.js")
+    from neocp.web.server import ASSETS, STREAMED_NOTES
+    assert "/git.js" in ASSETS
+    assert "git" in STREAMED_NOTES
+    assert "function host(" in (STATIC / "viewer.js").read_text(encoding="utf-8")
+    git_js = (STATIC / "git.js").read_text(encoding="utf-8")
+    assert "/api/git" in git_js
+    assert "diffHunk" in git_js
 
 
 # -- sahnenin halleri --------------------------------------------------
@@ -177,7 +230,8 @@ def test_buttons_in_the_hud_take_clicks() -> None:
 # -- bicimlendirme -----------------------------------------------------
 
 SCRIPTS = ("md.js", "app.js", "settings.js", "scene.js", "viewer.js",
-           "chrome.js", "speech.js", "listen.js", "camera.js", "drop.js")
+           "chrome.js", "speech.js", "listen.js", "camera.js", "drop.js",
+           "git.js")
 
 
 def test_model_output_is_never_written_as_markup() -> None:
@@ -536,6 +590,24 @@ def test_the_scene_is_centred_in_the_free_space() -> None:
     assert "freeWidth()" in SCENE_JS
 
 
+def test_the_brain_fits_the_pane_hole() -> None:
+    """Beyin sağa/sola/yukarı taşıyordu; sığdırınca ortada pul kaldı.
+
+    Tuval tam ekran, #mind yalnız hedef kutu. Halkalar başlığın altına asılır
+    ve genişliği doldurur; organ payı yükseklik tavanı (kısa pane / kamera),
+    dikey ortalama değil. 96 tavanı geniş paneli kısır bırakıyordu.
+    """
+    assert "function mindHole(" in SCENE_JS
+    assert "function rForReach(" in SCENE_JS
+    assert "mind-head" in SCENE_JS
+    assert "RING_OUTER" in SCENE_JS
+    assert "mr.height" in SCENE_JS
+    assert "watch.observe(mindEl)" in SCENE_JS
+    assert "pane.width / 4.9" not in SCENE_JS
+    assert "byTick, 96" not in SCENE_JS
+    assert "hole.top + reach" in SCENE_JS
+
+
 def test_everything_that_floats_shares_one_column() -> None:
     """Sohbet, yazma satırı, önizleme ve ekler aynı sütunda.
 
@@ -639,7 +711,7 @@ def test_a_failing_character_layer_still_speaks() -> None:
     """Ses bağlamı açılmadıysa ya da çözümleme patlarsa düz çalmaya
     dönülüyor: sesin hiç çıkmaması, karaktersiz çıkmasından kötü."""
     SPEECH_JS = (STATIC / "speech.js").read_text(encoding="utf-8")
-    assert re.search(r"shaped\(url\)\.catch\(\(\) => plain\(url\)\)", SPEECH_JS)
+    assert re.search(r"shaped\(url, text\)\.catch\(\(\) => plain\(url, text\)\)", SPEECH_JS)
 
 
 def test_the_character_layer_does_not_turn_the_voice_down() -> None:
@@ -762,6 +834,15 @@ def test_playback_always_reports_that_it_finished() -> None:
     assert re.search(r"setTimeout\(finish, \(buffer\.duration", SPEECH_JS)
 
 
+def test_playback_tells_the_ear_which_sentence_is_playing() -> None:
+    """Yankı süzgeci hoparlör metnini bilir; aksi halde barge kendi
+    TTS'ini yeni istek sanır. Kullanıcı hoparlörün üstünden konuşunca
+    aynı cümle tamponda kalır — baştan kurulmaz."""
+    SPEECH_JS = (STATIC / "speech.js").read_text(encoding="utf-8")
+    assert "play(await item.audio, item.text)" in SPEECH_JS
+    assert re.search(r"JSON.stringify\(\{ on, text:", SPEECH_JS)
+
+
 def test_model_text_is_always_visible_never_folded() -> None:
     """EN ÖNEMLİ KURAL. Ayrım "tur ortası mı, tur sonu mu" DEĞİL — KİM YAZDI:
 
@@ -848,6 +929,36 @@ def test_the_route_list_also_separates_used_from_scanned() -> None:
     assert "glanced" in inner
     # Numara yalnızca kullanılanlarda ve kendi arasında sıralı.
     assert "used += 1" in inner
+
+
+def test_deleting_a_device_refreshes_the_organs_list() -> None:
+    """Ajan cihazı silince ayarlar/sahne 30 sn bekliyordu; hâlâ orada
+    görünüyordu. `device_removed` organ listesini ve ayar panelini tazeler."""
+    from neocp.web.server import STREAMED_NOTES
+
+    assert "device_removed" in STREAMED_NOTES
+    assert "git" in STREAMED_NOTES
+    assert 'case "device_removed"' in APP_JS
+    assert 'case "git"' in APP_JS
+    assert "neo:devices" in APP_JS
+    settings = (STATIC / "settings.js").read_text(encoding="utf-8")
+    assert 'addEventListener("neo:devices"' in settings
+
+
+def test_the_recall_trace_does_not_overlay_the_conversation_rail() -> None:
+    """İz paneli `position:fixed; left:30px` ile sol konuşma listesinin
+    üstüne biniyordu. Hedef şeridi gibi `.stream-wrap` içinde akışın
+    kardeşi — overlay değil."""
+    html = open("src/neocp/web/static/index.html", encoding="utf-8").read()
+    wrap_i = html.find('class="stream-wrap"')
+    route_i = html.find('id="route"')
+    thread_i = html.find('id="thread"')
+    assert 0 <= wrap_i < route_i < thread_i
+    rule = re.search(r"^\.route \{(.*?)\}", CSS, re.S | re.M)
+    assert rule, ".route kuralı yok"
+    assert "position: fixed" not in rule.group(1)
+    assert "left: 30px" not in CSS
+    assert "flex: 0 0 auto" in rule.group(1)
 
 
 # -- hedef paneli ------------------------------------------------------
@@ -942,6 +1053,15 @@ def test_drawings_open_in_the_isolated_frame() -> None:
     body = re.search(r"function present\(path\) \{(.*?)\n  \}", VIEWER, re.S)
     assert body and 'mode = "live"' in body.group(1)
     assert "dismissed = false" in body.group(1)
+
+
+def test_viewer_left_grip_resizes_from_the_panel_edge() -> None:
+    """Git/görüntüleyici sol kenarı: innerWidth - x, panel right:0 sanır.
+    Beynin solunda (right: mind-w) tutunca ilk harekette sola kaçıyordu."""
+    src = (STATIC / "viewer.js").read_text(encoding="utf-8")
+    assert "innerWidth - e.clientX" not in src
+    assert "originW + originX - e.clientX" in src
+    assert "right: var(--mind-w)" in CSS
 
 
 # -- maliyet çipi -------------------------------------------------------
@@ -1515,6 +1635,15 @@ def test_a_finished_background_job_knocks_on_the_conversation() -> None:
     assert '"bg": bg' in bridge
 
 
+def test_a_failed_job_report_page_is_not_a_traceback_dump() -> None:
+    """Rapor sayfası komutu h1 yapıp traceback basmasın — 'İş başarısız'."""
+    assert "İş başarısız" in SERVER_SRC
+    assert "def _rapor_kapak" in SERVER_SRC
+    assert 'class="badge err"' in SERVER_SRC
+    # Ham iz rapor değil.
+    assert 's.startswith("Traceback ("' in SERVER_SRC
+
+
 def test_the_running_time_ticks_without_asking_the_server() -> None:
     """Saniyede bir HTTP isteği atmak paneli açık tutmayı pahalı yapardı:
     satır başlangıç damgasını taşıyor, saymayı tarayıcı yapıyor."""
@@ -1531,6 +1660,38 @@ def test_the_live_jobs_ledger_stays_separate_from_orchestra() -> None:
     assert 'id="orch-deck"' in HTML
     assert 'id="tasks-panel"' not in HTML
     assert "openLive" in jobs and "Canlı" in jobs
+
+
+def test_orchestra_lives_in_the_right_sidebar_not_a_left_modal() -> None:
+    """Orkestra sağ sütunda; kamera yüzen pencere (right-col overflow kesmesin)."""
+    assert 'id="right-col"' in HTML
+    assert 'id="side-dock"' in HTML
+    assert HTML.find('id="side-dock"') < HTML.find('id="orch-deck"')
+    assert ".right-col" in CSS
+    assert ".side-dock" in CSS
+    assert "grid-auto-rows" in CSS
+    assert 'id="dock-grip"' in HTML
+    assert "ns-resize" in CSS
+    assert "--dock-h-user" in CSS
+    assert "neo-dock-h" in APP_JS
+    assert "left: 18px" not in CSS.split(".orch-deck")[1][:400]
+    cams = (STATIC / "cameras.js").read_text(encoding="utf-8")
+    assert "cam-open" in cams
+    assert 'id="cam-head"' in HTML
+    assert HTML.find('id="orch-deck"') < HTML.find('id="cam-deck"')
+    assert "open_camera_window" in cams
+    assert "watch.html" in cams
+    assert "requestFullscreen" not in cams
+    assert 'id="cam-layer"' in HTML
+    assert "Bilgisayar kamerası" in cams
+    assert 'id="cam-deck"' in HTML and 'id="cam-live"' in HTML
+    assert HTML.find('id="cam-deck"') < HTML.find('id="cam-live"')
+    assert HTML.find('id="cam-live"') < HTML.find('id="cam-foot"')
+    assert HTML.find('id="right-col"') < HTML.find('id="cam-deck"')
+    assert "classList.add(\"cam-open\", \"cam-stage\")" not in cams
+    assert "body.cam-stage #scene" not in CSS
+    assert "boxes=1" in cams
+    assert 'id="cam-kind"' in HTML and 'id="cam-pass"' in HTML
 
 
 def test_scheduled_tasks_are_editable_and_not_chat_dumps() -> None:
@@ -1776,4 +1937,99 @@ def test_decided_plan_cards_stay_in_place_without_buttons() -> None:
     assert "if (!planBekliyor(card)) continue;" in APP_JS
     # applyPlanData her durum degisiminde dugme gorunurlugunu tazeler.
     assert APP_JS.count("planKarariUygula(card)") >= 2
+
+
+def test_camera_can_open_in_a_separate_window() -> None:
+    """İzleme ana Neo'dan koparılabilir: ayrı OS penceresi, canlı kare."""
+    watch = (STATIC / "watch.html").read_text(encoding="utf-8")
+    js = (STATIC / "watch.js").read_text(encoding="utf-8")
+    desk = (Path(__file__).resolve().parents[1] / "src" / "neocp" / "desktop.py"
+            ).read_text(encoding="utf-8")
+    from neocp.web.server import ASSETS
+    assert "watch-win" in watch
+    assert 'class="brand"' in watch
+    assert "function aktifVar" in js
+    assert "requestFullscreen" not in js
+    assert "/watch.js" in ASSETS
+    assert "def open_camera_window" in desk
+    assert "watch.html" in desk
+    assert "frameless=False" in desk
+    assert "innerHTML" not in js
+
+
+def test_camera_hud_is_a_power_toggle() -> None:
+    """Üst kamera ikonu: kapalıyken açar, açıkken izleme sahnesini açar."""
+    cams = (STATIC / "cameras.js").read_text(encoding="utf-8")
+    html = HTML
+    css = CSS
+    assert 'action: "power"' in cams
+    assert "cam-on" in cams and "cam-off" in cams
+    assert 'id="cam-stop"' in html
+    assert 'id="cam-deck"' in html
+    assert 'id="cam-live"' in html
+    assert HTML.find('id="cam-deck"') < HTML.find('id="cam-live"')
+    assert "Kamera açık — tıkla: pencerede izle" in cams
+    assert "function aktifVar" in cams
+    assert "if (!aktifVar()) kapat()" in cams
+    assert "open_camera_window" in cams
+    assert "watch.html" in cams
+    assert "requestFullscreen" not in cams
+    assert "classList.add(\"cam-open\", \"cam-stage\")" not in cams
+    assert "body.cam-stage #scene" not in css
+    assert "#cams.cam-on" in css
+    assert "cam-head-acts" in css and "position: fixed" in css
+    assert "minmax(0, 1fr)" in css
+    assert "spec.title" in cams
+    assert "#mic.mute .off-line" in css
+    assert 'class="icon cam-off"' in html
+    assert "case \"camera\"" in APP_JS
+    assert "Cameras.baglam" in APP_JS
+    assert "sync_camera" in (
+        Path(__file__).resolve().parents[1] / "src" / "neocp" / "desktop.py"
+    ).read_text(encoding="utf-8")
+
+
+def test_voice_and_hear_hud_start_off_with_slash() -> None:
+    """Ses ve mikrofon HUD: kapalı çizgi + tıkla popup (kamera ile aynı dil)."""
+    html = HTML
+    css = CSS
+    assert 'id="mute"' in html and 'id="hear"' in html
+    assert 'id="mute-pop"' in html and 'id="hear-pop"' in html
+    assert 'hidden' not in html.split('id="mute"', 1)[1].split(">", 1)[0]
+    assert 'class="icon off"' in html.split('id="mute"', 1)[1].split(">", 1)[0]
+    assert 'class="icon off"' in html.split('id="hear"', 1)[1].split(">", 1)[0]
+    assert 'class="off-line"' in html.split('id="mute"', 1)[1].split("</button>", 1)[0]
+    assert 'class="off-line"' in html.split('id="hear"', 1)[1].split("</button>", 1)[0]
+    assert "#mute.off .off-line" in css and "#hear.off .off-line" in css
+    assert "Settings.open(\"voice\")" in APP_JS
+    assert "Settings.open(\"hearing\")" in APP_JS
+    assert 'what: "voice"' in APP_JS and 'what: "hearing"' in APP_JS
+    assert "button.hidden = !enabled" not in APP_JS
+    desk = (
+        Path(__file__).resolve().parents[1] / "src" / "neocp" / "desktop.py"
+    ).read_text(encoding="utf-8")
+    assert "def sync_hearing" in desk
+    assert "def hearing_power" in desk
+    assert "def voice_power" in desk
+
+
+def test_connector_catalog_uses_brand_marks() -> None:
+    """Popüler bağlayıcılar metin kutusu değil — GitHub/Notion vb. logosu."""
+    settings = (STATIC / "settings.js").read_text(encoding="utf-8")
+    css = (STATIC / "settings.css").read_text(encoding="utf-8")
+    assert "CONN_MARKS" in settings and "function connMark" in settings
+    assert ".conn-mark" in css
+    assert "minmax(196px" in css
+    for key in ("github", "notion", "linear", "sentry", "stripe",
+                "playwright", "dosyalar", "bellek", "figma", "slack",
+                "atlassian", "supabase", "vercel", "huggingface"):
+        assert f"{key}:" in settings, key
+    assert "8.205 11.385" in settings  # GitHub octocat
+    assert "mcp.figma.com" in settings and "mcp.slack.com" in settings
+    assert "conn-sec-title" in settings
+    assert "item.circle" in settings
+    assert "Özel bağlantı" in settings
+    assert "connMark(ad)" not in settings
+    assert "connMark(c.id)" in settings
+    assert "connMarkId(server.name" in settings
 

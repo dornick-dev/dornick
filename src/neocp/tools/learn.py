@@ -4,11 +4,13 @@ Her yeni işi elle araç olarak eklemek ölçeklenmiyor. Bir haritaya rota
 çizmek, PLC adresinden değer okumak, USB'den gelen cihazı yoklamak: bunların
 ortak yanı, hepsinin ajanın kendisinin yazabileceği kadar küçük olması.
 
-Akış üç adım:
+Akış:
 
-    skill action=new     iskelet dosya açılır
-    edit_file            gövde yazılır
-    skill action=load    araç haline gelir, o turdan itibaren çağrılabilir
+    skill action=write   tam dosyayı yazar, doğrular, yükler — asıl yol
+    skill action=new     boş iskelet (yalnız ad+açıklama); gövde sonra write
+    skill action=load    klasördekileri yeniden yükle
+    skill action=list    yüklü yetenekler
+    skill action=remove  dosyayı sil
 
 Yetki açısından yeni bir kapı açmıyor: yetenek de `shell` gibi tam Python
 çalıştırıyor. Farkı iş adlandırılmış, şemalı ve tekrar kullanılabilir olması.
@@ -30,10 +32,19 @@ Ne zaman kullan: aynı işi ikinci kez yapıyorsan, ya da kullanıcı bir cihaz 
 biçim / servis tarif ettiyse (PLC adresleri, USB cihazı, harita çizimi, ikinci
 bir kamera). Tek seferlik bir iş için yetenek yazma — `shell` ile yap.
 
-Adımlar:
-  1. `action=new` ile iskeleti aç (name, description ver)
-  2. `edit_file` ile `run(args, ctx)` gövdesini ve `SCHEMA`yı yaz
-  3. `action=load` ile yükle — hata varsa mesajı okuyup düzelt
+Asıl yol `action=write`: `name` + `code` (tam Python dosyası). Doğrulanır
+ve o anda araç olur — `edit_file` + `load` turu yok. Hata varsa mesajı
+okuyup `write` ile düzelt.
+
+Dosya örneği:
+  NAME = "topla"
+  DESCRIPTION = "İki sayıyı toplar."
+  SCHEMA = {"type": "object", "properties": {"a": {"type": "number"}, "b": {"type": "number"}}, "required": ["a", "b"]}
+  def run(args, ctx):
+      return str(args["a"] + args["b"])
+
+NAME, `name` ile aynı olmalı (küçük harf, alt çizgi). `ctx.sandbox.root`
+atölye, dönen metin sana gelir.
 
 Tanımadığın bir dış kaynak için yetenek yazarken — bir servis, bir cihaz,
 bir veri akışı, her ne olursa — tarif bekleme, kaynağı önce kendin keşfet:
@@ -74,16 +85,24 @@ def register(registry: ToolRegistry) -> None:
             {
                 "action": {
                     "type": "string",
-                    "enum": ["new", "load", "list", "remove"],
+                    "enum": ["write", "new", "load", "list", "remove"],
                     "description": (
-                        "new: iskelet dosya aç. load: klasördeki yetenekleri yükle. "
+                        "write: tam dosyayı yaz, doğrula, yükle (asıl yol). "
+                        "new: boş iskelet. load: klasördekileri yükle. "
                         "list: yüklü olanları göster. remove: dosyayı sil."
                     ),
                 },
-                "name": {"type": "string", "description": "Yetenek adı (new, remove)."},
+                "name": {"type": "string", "description": "Yetenek adı (write, new, remove)."},
                 "description": {
                     "type": "string",
                     "description": "Ne yaptığı — bu metin senin araç açıklaman olacak (new).",
+                },
+                "code": {
+                    "type": "string",
+                    "description": (
+                        "Tam Python dosyası (write). NAME, DESCRIPTION, SCHEMA "
+                        "ve run(args, ctx) içermeli."
+                    ),
                 },
             },
             required=["action"],
@@ -94,6 +113,27 @@ def register(registry: ToolRegistry) -> None:
     async def skill(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
         root = ctx.sandbox.root
         action = str(args.get("action") or "")
+
+        if action == "write" or (action == "new" and str(args.get("code") or "").strip()):
+            name = str(args.get("name") or "").strip()
+            if not name:
+                return ToolResult.error("`name` gerekli. Yeteneğe bir ad ver.")
+            try:
+                skill = skills.save(root, name, str(args.get("code") or ""))
+            except skills.SkillError as exc:
+                return ToolResult.error(str(exc))
+            added, updated = skills.register(registry, [skill])
+            loaded = skill.name
+            state = "yazıldı ve yüklendi" if loaded in added else (
+                "yazıldı ve tazelendi" if loaded in updated else "yazıldı"
+            )
+            return ToolResult(
+                content=(
+                    f"{skill.path.name} {state}. "
+                    "Bir sonraki turdan itibaren araç olarak çağırabilirsin."
+                ),
+                detail={"path": str(skill.path), "loaded": added, "updated": updated},
+            )
 
         if action == "new":
             name = str(args.get("name") or "").strip()
@@ -107,8 +147,8 @@ def register(registry: ToolRegistry) -> None:
             return ToolResult(
                 content=(
                     f"İskelet açıldı: {path}\n"
-                    "Şimdi `edit_file` ile SCHEMA'yı ve `run(args, ctx)` gövdesini yaz, "
-                    "sonra `skill action=load` ile yükle."
+                    "Gövdeyi `skill action=write name=" + path.stem + " code=...` "
+                    "ile yaz — doğrulanır ve yüklenir."
                 ),
                 detail={"path": str(path)},
             )
@@ -175,7 +215,7 @@ def register(registry: ToolRegistry) -> None:
                 + (" ve araç defterden düştü." if gone else ".")
             )
 
-        return ToolResult.error("`action` new, load, list ya da remove olmalı.")
+        return ToolResult.error("`action` write, new, load, list ya da remove olmalı.")
 
 
 def _head(text: str, limit: int = 90) -> str:

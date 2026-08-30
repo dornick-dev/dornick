@@ -113,12 +113,12 @@ class OpenAIBackend:
         # Sunucu `reasoning` alanını tanımıyorsa bir kez öğrenip bir daha
         # göndermiyoruz. Her istekte 400 alıp yeniden denemek, her cevaba
         # bir tur gecikme eklerdi.
-        self._no_reasoning = False
+        self._no_reasoning = model.can_think is False
         # Model görüntü kabul etmiyorsa aynı biçimde bir kez öğreniliyor:
         # metin-only bir modele geçildiğinde geçmişteki kareler istekte
         # kalıyor ve sunucu 404 veriyor. İlk hatadan sonra kareler sıyrılıp
-        # bir daha gönderilmiyor.
-        self._no_vision = False
+        # bir daha gönderilmiyor. Katalog False dediyse baştan sıyır.
+        self._no_vision = model.vision is False
         # İstem önbelleği işaretleri yalnız OpenRouter'da: ilk sistem +
         # son iki mesaja ephemeral nokta (OpenCode'un ölçülmüş kalıbı —
         # aynı model, aynı iş: %77 isabet, ~6,7x maliyet farkı). Başka
@@ -345,6 +345,8 @@ class OpenAIBackend:
         koruyor; tümden kapatmak modeli genel geçer kalıplara düşürüyor
         ("Size nasıl yardımcı olabilirim?").
         """
+        if self.model.can_think is False:
+            return None
         if not self.model.thinking:
             return {"enabled": False}
         # OpenRouter "low/medium/high" kabul ediyor; xhigh/max karşılığı yok.

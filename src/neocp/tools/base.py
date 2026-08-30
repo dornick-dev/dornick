@@ -49,6 +49,14 @@ class ToolResult:
         }
 
 
+class JobFailed(Exception):
+    """Arka plan işi bitti ama başarısız.
+
+    Mesajı kullanıcı raporudur — ham traceback değil. `_job_round` bunu
+    `hata` durumuna çevirir; aksi halde koşu 'tamamlandı' görünür.
+    """
+
+
 @dataclass(slots=True)
 class ToolContext:
     config: "Config"
@@ -94,6 +102,9 @@ class ToolContext:
 
     # Ağ kameralarının izleyicisi. "Beni izleme" onları da kapsıyor.
     watcher: Any = None
+
+    # HUD/sohbet kamera anahtarı: True açar, False aygıtı bırakır.
+    camera_power: Callable[[bool], str] | None = None
 
     # Atölye ilk erişimde açılıyor: klasörü oluşturmak bir yan etki ve
     # her ToolContext kurulduğunda değil, gerçekten gerektiğinde olmalı.

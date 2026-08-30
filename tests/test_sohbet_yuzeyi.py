@@ -220,6 +220,47 @@ def test_the_step_log_refuses_a_path_shaped_session_id(
     assert cevap["ok"] is False
 
 
+def test_a_failed_job_report_page_reads_like_a_report_not_a_trace(
+    tmp_path: Path, mind: Mind
+) -> None:
+    """Viewer raporu: 'İş başarısız' + paket adı; traceback ve c:id yok."""
+    from neocp.tools.shell import is_raporu
+
+    class Kopru:
+        def snapshot(self) -> dict:
+            return {"busy": False}
+
+        def gorev_rapor(self, gid: str) -> dict:
+            return {
+                "ok": True,
+                "id": "c:70032d",
+                "title": "$ py tarama_modbus.py",
+                "state": "hata",
+                "metin": is_raporu(
+                    command="py tarama_modbus.py",
+                    code=1,
+                    text="ModuleNotFoundError: No module named 'pymodbus'",
+                ),
+            }
+
+    server, _config, log = _kur(tmp_path, mind, Kopru())
+    try:
+        with urllib.request.urlopen(
+            server.url + "gorev-rapor/70032d/", timeout=8
+        ) as answer:
+            sayfa = answer.read().decode("utf-8")
+    finally:
+        server.stop()
+        log.close()
+
+    assert "İş başarısız" in sayfa
+    assert "pymodbus" in sayfa
+    assert "pip install pymodbus" in sayfa
+    assert "Traceback" not in sayfa
+    assert "c:70032d" not in sayfa
+    assert "<h1>$ py tarama_modbus.py</h1>" not in sayfa
+
+
 # -- "bu turda ne değişti" + geri al ------------------------------------
 
 

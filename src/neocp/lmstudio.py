@@ -57,6 +57,8 @@ class Model:
     instances: list[Instance]
     size_bytes: int = 0
     params_b: float = 0.0
+    # Katalog `capabilities` içinde varsa; yoksa None — uydurulmaz.
+    thinking: bool | None = None
 
     @property
     def loaded(self) -> bool:
@@ -81,15 +83,22 @@ def models(base_url: str | None) -> list[Model]:
         if not isinstance(entry, dict) or entry.get("type") != "llm":
             continue
         skills = entry.get("capabilities") or {}
+        thinking = None
+        if isinstance(skills, dict):
+            for key in ("reasoning", "think", "thinking"):
+                if key in skills:
+                    thinking = bool(skills[key])
+                    break
         out.append(
             Model(
                 key=str(entry.get("key") or ""),
                 name=str(entry.get("display_name") or entry.get("key") or ""),
                 max_context=int(entry.get("max_context_length") or 0),
-                vision=bool(skills.get("vision")),
-                tools=bool(skills.get("trained_for_tool_use")),
+                vision=bool(skills.get("vision")) if isinstance(skills, dict) else False,
+                tools=bool(skills.get("trained_for_tool_use")) if isinstance(skills, dict) else False,
                 size_bytes=int(entry.get("size_bytes") or 0),
                 params_b=_params_b(entry.get("params_string")),
+                thinking=thinking,
                 instances=[
                     Instance(
                         id=str(item.get("id") or ""),

@@ -62,6 +62,21 @@ def test_the_prompt_carries_the_senses(tmp_path: Path) -> None:
     assert "mikrofon" in prompt.core.lower()
 
 
+def test_the_prompt_names_saved_cameras(tmp_path: Path) -> None:
+    """Ajan kayıtlı kamera adını araç çağırmadan bilmeli."""
+    from neocp import watch
+
+    config = Config.load(tmp_path)
+    config.ensure_dirs()
+    watch.save(config.state_dir, [
+        watch.Camera(id="cam_1", name="bahçe", kind="rtsp", host="10.0.0.8"),
+    ])
+    prompt = build_prompt(config, build_registry())
+    assert "bahçe" in prompt.core
+    assert "Bilgisayar kamerası" in prompt.core
+    assert "kamera action=yol" in prompt.core
+
+
 def test_the_prompt_tells_the_model_its_permission_mode(tmp_path: Path) -> None:
     """Kip istemde görünmüyordu ve model plan kipinde reddedilen mutasyonu
     hata sanıp tekrar deniyordu. Varsayılan kip (ask) bile yazılmalı —

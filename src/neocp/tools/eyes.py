@@ -70,21 +70,19 @@ def register(registry: ToolRegistry) -> None:
         # açtırmaya çalışıyor.
         if lens is not None and getattr(lens, "snoozed", False):
             return ToolResult.error(
-                "Göz susturulmuş: kullanıcı izlememeni istedi. Kendiliğinden "
-                "açma; kullanıcı 'neo' deyince ya da izin verince açılır."
+                "Göz kapalı: kullanıcı izlememeni istedi. Kendiliğinden açma; "
+                "üstteki kamera ikonundan veya sohbette 'kamerayı aç' deyince açılır."
             )
         if lens is None or not lens.live:
             # Ayarlardan kapatılmışsa bu bir tercih, bir eksiklik değil —
             # model kullanıcıyı kamerayı açmaya ikna etmeye çalışmamalı.
             if not bool(getattr(getattr(ctx.config, "camera", None), "enabled", False)):
                 return ToolResult.error(
-                    "Kamera kullanıcı tarafından ayarlardan kapatılmış. "
-                    "Kapalıyken bakılmaz ve varmış gibi davranılmaz; kullanıcı "
-                    "isterse Ayarlar › Kamera'dan kendisi açar."
+                    "Kamera kapalı. Bakılmaz ve varmış gibi davranılmaz; "
+                    "üstteki ikondan veya 'kamerayı aç' deyince açılır."
                 )
             return ToolResult.error(
-                "Kamera açık değil. Ayarlar › Kamera bölümünden açılabilir, "
-                "ya da kullanıcıdan açmasını iste."
+                "Kamera açık değil. Üstteki kamera ikonundan açılabilir."
             )
 
         action = str(args.get("action") or "")
@@ -117,9 +115,14 @@ def register(registry: ToolRegistry) -> None:
             # Görüntü araç sonucunda taşınamıyor: OpenAI sözleşmesi role=tool
             # içeriğinin dize olmasını istiyor. Bu yüzden kare `detail` ile
             # döngüye veriliyor ve bir sonraki kullanıcı turuna iliştiriliyor.
+            from .. import sight
+
+            ozet = sight.analyze_url(frame)
+            metin = f"Kare alındı ({age:.0f} saniye önce). Aşağıda görüyorsun."
+            if ozet:
+                metin += f"\nYerel GPU analizi: {ozet}"
             return ToolResult(
-                f"Kare alındı ({age:.0f} saniye önce). Aşağıda görüyorsun.",
-                detail={"image": frame, "age": round(age, 1)},
+                metin, detail={"image": frame, "age": round(age, 1)},
             )
 
         return ToolResult.error("`action` now ya da motion olmalı.")

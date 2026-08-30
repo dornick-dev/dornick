@@ -502,6 +502,13 @@ def test_turning_thinking_off_says_so_explicitly() -> None:
     assert _backend(thinking=False)._reasoning() == {"enabled": False}
 
 
+def test_a_model_that_cannot_think_omits_reasoning() -> None:
+    """Katalog düşünme yok dediyse alanı göndermek 400 + bir tur gecikme."""
+    be = _backend(can_think=False, thinking=True)
+    assert be._reasoning() is None
+    assert be._no_reasoning is True
+
+
 def test_efforts_the_server_does_not_know_are_folded_down() -> None:
     """xhigh/max yalnızca Claude'da var; olduğu gibi göndermek 400 demek."""
     assert _backend(effort="xhigh")._reasoning() == {"effort": "high"}
@@ -591,6 +598,20 @@ async def test_learned_no_vision_strips_before_sending() -> None:
 
     await be.turn(_image_prepared(), [], cancel=asyncio.Event())
 
+    assert "image_url" not in str(fake.seen["messages"])
+
+
+async def test_known_no_vision_strips_on_the_first_turn() -> None:
+    """Katalog görüntü yok dediyse ilk turda 404 beklenmez."""
+    fake = FakeOpenAI([chunk(content="ok", finish="stop")])
+    model = ModelConfig(
+        name="x", provider="openai", base_url="http://x/v1", vision=False,
+    )
+    be = OpenAIBackend(model, client=fake)
+
+    await be.turn(_image_prepared(), [], cancel=asyncio.Event())
+
+    assert be._no_vision
     assert "image_url" not in str(fake.seen["messages"])
 
 

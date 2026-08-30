@@ -159,6 +159,25 @@ const Viewer = (() => {
     document.body.classList.remove("viewing"); document.body.classList.remove("viewer-max");
   }
 
+  function host(label, fill) {
+    dismissed = false;
+    current = "git:pane";
+    pageLabel = label || "Git";
+    mode = "git";
+    panel.hidden = false;
+    document.body.classList.add("viewing");
+    title.textContent = pageLabel;
+    title.title = pageLabel;
+    modes.textContent = "";
+    loading = null;
+    if (typeof fill === "function") fill(body);
+    noteTab();
+  }
+
+  function hosted() {
+    return !panel.hidden && current === "git:pane";
+  }
+
   function toggle() {
     if (panel.hidden) {
       dismissed = false;
@@ -246,6 +265,14 @@ const Viewer = (() => {
 
   async function load(path) {
     noteTab();
+    // Git panosu: gövdeyi GitBar çizer; dosya API'sine gitme.
+    if (path === "git:pane") {
+      title.textContent = pageLabel || "Git";
+      title.title = pageLabel || "Git";
+      modes.textContent = "";
+      if (typeof GitBar !== "undefined") GitBar.paint(body);
+      return;
+    }
     // Adres kipi: sunucunun servis ettiği sayfa taze çekilip yalıtılmış
     // çerçevede açılıyor. Aynı yarış kuralı: son istek kazanır.
     if (typeof path === "string" && path.startsWith("url:")) {
@@ -681,14 +708,19 @@ const Viewer = (() => {
     const MIN = 320;
     const root = document.documentElement;
     let active = false;
+    let originX = 0;
+    let originW = 0;
 
     const width = () => panel.getBoundingClientRect().width;
 
     const move = (e) => {
       if (!active) return;
+      // Sağ kenarı (beyin payı) sabit: sola çekince genişler. innerWidth -
+      // clientX, panel right:0 varsayar; görüntüleyici beynin SOLUNDA
+      // (right: mind-w) durunca tutunca tüm sola kaçıyordu.
       const max = Math.min(window.innerWidth - 200, window.innerWidth * 0.7);
-      const w = Math.max(MIN, Math.min(max, window.innerWidth - e.clientX));
-      root.style.setProperty("--viewer-w", w + "px");
+      const w = Math.max(MIN, Math.min(max, originW + originX - e.clientX));
+      root.style.setProperty("--viewer-w", Math.round(w) + "px");
     };
 
     const stop = () => {
@@ -703,12 +735,14 @@ const Viewer = (() => {
     grip.addEventListener("pointerdown", (e) => {
       e.preventDefault();
       active = true;
+      originX = e.clientX;
+      originW = width();
       try { grip.setPointerCapture(e.pointerId); } catch { /* eski motor */ }
       window.addEventListener("pointercancel", stop);
       window.addEventListener("blur", stop);
       // Sürüklemeye başlarken mevcut genişliği piksele sabitle: değişken
       // hâlâ `min(...)` formülündeyse ilk hareket sıçrardı.
-      root.style.setProperty("--viewer-w", Math.round(width()) + "px");
+      root.style.setProperty("--viewer-w", Math.round(originW) + "px");
       document.body.classList.add("viewer-resize");
       window.addEventListener("pointermove", move);
       window.addEventListener("pointerup", stop);
@@ -805,7 +839,7 @@ const Viewer = (() => {
   }
 
   return { present, page, showing, watch, refresh, show, open, close, toggle,
-           downloadArtifact, printPage };
+           host, hosted, downloadArtifact, printPage };
 })();
 
 // Büyüt / yerine dön: görüntüleyici sağ bölgenin tamamını kaplar (beyin

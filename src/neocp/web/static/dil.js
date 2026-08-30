@@ -80,16 +80,21 @@ const t = Dil.t;
 // --- index.html'in statik metinleri -------------------------------------
 Dil.secici("#welcome h1", "What would you like me to do?");
 Dil.secici("#welcome p", "I work on your computer. What I learn is woven into the web around me.");
+Dil.secici("#cam-stage-ask", "Look at this frame");
+Dil.secici("#cam-stage-pop", "Open in a new window");
+Dil.secici("#cam-stage-full", "Full screen");
+Dil.secici(".cam-stage-tag", "Camera");
+Dil.statik("cam-close", "Hide the panel", "aria-label");
 Dil.statik("input", "Talk…", "placeholder");
 Dil.statik("plus", "Add — file, connector, skill", "title");
 Dil.statik("mic", "Push to talk", "title");
 Dil.statik("clip", "Attach file", "title");
-Dil.statik("cam", "Snap from camera", "title");
 Dil.statik("stop", "Stop", "title");
 Dil.statik("jump", "Jump to latest", "title");
 Dil.statik("goals-head", "Click to fold or unfold", "title");
 Dil.statik("goals-head", "Goals — fold/unfold", "aria-label");
 Dil.statik("mute", "Toggle voice", "title");
+Dil.statik("hear", "Listening is off — click to enable", "title");
 Dil.statik("eye", "Viewer", "title");
 Dil.statik("apps", "Apps", "title");
 Dil.statik("new-chat", "New chat", "title");
@@ -104,6 +109,9 @@ Dil.statik("reveal", "Show every memory in the web", "title");
 Dil.statik("authority", "Permissions", "title");
 Dil.statik("jobs", "Tasks", "title");
 Dil.statik("tanima-ikon", "Learn me", "title");
+Dil.statik("cams", "Camera off — click to turn on", "title");
+Dil.statik("cam-index", "Device index", "title");
+Dil.statik("cam-head", "Drag — keep over the brain", "title");
 
 // aria-label'lar da çevriliyor. Eskiden yalnız `title` eşleniyordu; ekran
 // okuyucu kullanan biri İngilizce arayüzde Türkçe etiket duyuyordu —
@@ -126,9 +134,9 @@ for (const [id, metin] of [
   ["plus", "Add"],
   ["mic", "Microphone"],
   ["clip", "File"],
-  ["cam", "Camera"],
   ["jump", "Jump to latest"],
   ["send", "Send"],
+  ["cams", "Camera watch"],
   ["win-min", "Minimize"],
   ["win-max", "Maximize"],
   ["viewer-grip", "Resize panel"],
@@ -151,6 +159,10 @@ Dil.statik("hist-filter-toggle", "Toggle filters", "aria-label");
 Dil.secici(".side-label", "Chats");
 Dil.statik("mind-grip", "Drag to resize", "title");
 Dil.statik("mind-grip", "Resize panel", "aria-label");
+Dil.statik("dock-grip", "Drag to resize height", "title");
+Dil.statik("dock-grip", "Resize brain and orchestra", "aria-label");
+Dil.statik("cam-head", "Drag — keep on the brain", "title");
+Dil.statik("cam-kind", "Camera type", "aria-label");
 Dil.statik("legend-toggle", "Toggle the colour key", "title");
 Dil.statik("legend-toggle", "Toggle the colour key", "aria-label");
 Dil.statik("mind-close", "Hide the brain panel", "title");

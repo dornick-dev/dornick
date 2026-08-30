@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>neo · Kamera</title>
+<link rel="stylesheet" href="/app.css">
+<link rel="icon" type="image/png" href="/logo.png">
+<script>try{var tema=localStorage.getItem("neo-theme");if(tema!=="dark")document.documentElement.dataset.theme="light";}catch(e){document.documentElement.dataset.theme="light";}</script>
+</head>
+<body class="watch-win">
+  <header class="watch-bar">
+    <span class="brand"><svg class="brand-mark" viewBox="0 0 32 32" role="img" aria-label="neo"><polyline points="8,26 8,13 16,8 24,13 24,26" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/><circle cx="8" cy="26" r="2.6" fill="currentColor"/><circle cx="8" cy="13" r="2.6" fill="currentColor"/><circle cx="24" cy="13" r="2.6" fill="currentColor"/><circle cx="24" cy="26" r="2.6" fill="currentColor"/><circle cx="16" cy="8" r="3.4" fill="var(--cyan)"/></svg>neo</span>
+    <span id="watch-title"></span>
+    <span id="watch-sight" class="cam-stage-sight"></span>
+  </header>
+  <div class="watch-main">
+    <div class="watch-live" id="watch-live-wrap">
+      <img id="watch-live" alt="">
+      <p id="watch-empty" hidden>Aktif kamera yok</p>
+    </div>
+    <aside class="cam-stage-rail">
+      <div id="watch-strip" class="cam-strip"></div>
+    </aside>
+  </div>
+<script src="/dil.js"></script>
+<script src="/watch.js"></script>
+</body>
+</html>

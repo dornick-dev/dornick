@@ -148,33 +148,37 @@ def _mic(config: Any, ear: Any) -> Organ:
     )
 
 
+_LENS_NAME = "Bilgisayar kamerası"
+_LENS_TOOLS = ["look", "kamera"]
+
+
 def _lens(config: Any, lens: Any) -> Organ:
     if lens is not None and getattr(lens, "snoozed", False):
-        return Organ("lens", "Kamera", SENSE,
+        return Organ("lens", _LENS_NAME, SENSE,
                      "kullanıcı istedi diye susturuldu; \"neo\" demek geri açar",
-                     "susturuldu", False, ["look"])
+                     "susturuldu", False, list(_LENS_TOOLS))
 
     # Ayarlardan kapalıysa aygıta HİÇ dokunulmuyor. Yoklama kamerayı kısaca
     # gerçekten açıyor (LED yanıp sönüyor) — kamerayı bilerek kapatan
     # kullanıcı için bu "kapattım ama ışığı yanıyor" demek. Kapatan için
     # kamera yok hükmünde; var mı yok mu sorusu ancak açınca sorulur.
     if lens is None and not bool(getattr(getattr(config, "camera", None), "enabled", False)):
-        return Organ("lens", "Kamera", SENSE,
+        return Organ("lens", _LENS_NAME, SENSE,
                      "kullanıcı ayarlardan kapatmış; o istemedikçe bakılmaz, "
-                     "aygıt yoklanmaz", "kapalı", False, ["look"])
+                     "aygıt yoklanmaz", "kapalı", False, list(_LENS_TOOLS))
 
     live = lens is not None and getattr(lens, "live", False)
     if not live and not has_camera(lens):
-        return Organ("lens", "Kamera", SENSE,
-                     "bu makinede kamera bulunamadı", "yok", False, ["look"])
+        return Organ("lens", _LENS_NAME, SENSE,
+                     "bu makinede kamera bulunamadı", "yok", False, list(_LENS_TOOLS))
 
     return Organ(
-        "lens", "Kamera", SENSE,
-        "sürekli açık tampon; kareler kendiliğinden modele gitmiyor, "
-        "`look` istediğinde alınıyor",
+        "lens", _LENS_NAME, SENSE,
+        _bakis_detay("sürekli açık tampon; kareler kendiliğinden modele "
+                     "gitmiyor, `look` veya `kamera kesit` istediğinde alınıyor"),
         "açık" if live else "kapalı",
         live,
-        ["look"],
+        list(_LENS_TOOLS),
     )
 
 
@@ -192,6 +196,18 @@ def _voice(config: Any) -> Organ:
     )
 
 
+def _bakis_detay(taban: str) -> str:
+    """GPU analizi açıksa ajan bunu bilsin: kare değil metin gidiyor."""
+    try:
+        from . import sight as sight_mod
+        if sight_mod.status().get("ready"):
+            return (taban + "; NVIDIA GPU yerelde nesneleri okuyor, "
+                    "sohbet modeline metin gidiyor")
+    except Exception:
+        pass
+    return taban
+
+
 def _cameras(config: Any) -> list[Organ]:
     """Dışarıdan bağlanan kameralar. Ayarlanmamışsa liste boş."""
     from . import watch as watching
@@ -201,17 +217,24 @@ def _cameras(config: Any) -> list[Organ]:
     except Exception:
         return []
 
-    return [
-        Organ(
-            f"cam:{camera.name}", camera.name, SENSE,
+    organs: list[Organ] = []
+    for camera in cameras:
+        if camera.is_builtin():
+            # Dahili webcam `_lens` organında "Bilgisayar kamerası" — çiftleme.
+            continue
+        detay = _bakis_detay(
             "izlenen kamera; hareket yerelde ölçülüyor, yalnızca bir şey "
-            "değiştiğinde soru soruluyor",
+            "değiştiğinde soru soruluyor")
+        if note := (camera.last_note or "").strip():
+            detay += f"; son: {note[:80]}"
+        organs.append(Organ(
+            f"cam:{camera.id}", camera.name, SENSE,
+            detay,
             "izliyor" if getattr(camera, "enabled", True) else "duruyor",
             bool(getattr(camera, "enabled", True)),
-            [],
-        )
-        for camera in cameras
-    ]
+            ["kamera"],
+        ))
+    return organs
 
 
 def _modules(config: Any) -> list[Organ]:

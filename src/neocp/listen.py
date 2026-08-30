@@ -17,8 +17,8 @@ Küçük model bu iş için yeterli: aranan şey tek kelime.
 from __future__ import annotations
 
 import re
+from collections import Counter
 from dataclasses import dataclass
-import os
 from pathlib import Path
 from typing import Any
 
@@ -110,38 +110,9 @@ def _cuda_ready() -> bool:
     except Exception:
         return False
 
-    if not hasattr(os, "add_dll_directory"):  # Windows dışı: sistem yolu yeter
-        return True
+    from . import gpu as gpu_module
 
-    try:
-        import nvidia
-    except ImportError:
-        # Kart var ama kütüphaneler yok. Sistemde CUDA kurulu olabilir;
-        # denemeye değer.
-        return True
-
-    # İki yol birden gerekiyor. `add_dll_directory` yalnızca arama
-    # bayrağı kullanan yüklemelerde işe yarıyor; ctranslate2 düz
-    # `LoadLibrary` çağırdığı için klasörün PATH'te de olması şart —
-    # tek başına ilki denendiğinde DLL yine bulunamıyordu.
-    found = []
-    for parent in nvidia.__path__:
-        for name in ("cublas", "cudnn"):
-            folder = Path(parent) / name / "bin"
-            if not folder.is_dir():
-                continue
-            found.append(str(folder))
-            try:
-                os.add_dll_directory(str(folder))
-            except OSError:
-                pass
-
-    if found:
-        path = os.environ.get("PATH", "")
-        missing = [f for f in found if f not in path]
-        if missing:
-            os.environ["PATH"] = os.pathsep.join(missing) + os.pathsep + path
-    return True
+    return gpu_module.cuda_libs_on_path()
 
 
 class Listener:
@@ -159,6 +130,12 @@ class Listener:
         # Hangi aygıtta çalıştığı: ayarlar sayfası bunu gösteriyor, çünkü
         # işlemcide çalışan bir tanıyıcı "geç duyuyor" şikâyetinin sebebi.
         self.device = ""
+        # Kendini ölçen boyut düşürme (canlı şikâyet, 30.08: zayıf laptopta
+        # sürekli dinleme 10-20 sn geride kalıyordu). Çözüm süresi ses
+        # süresini üst üste iki kez belirgin aşarsa bir küçük boyuta inilir
+        # — YALNIZ bu oturum için; kullanıcının ayar dosyasına yazılmaz.
+        self._force_size = ""
+        self._slow_hits = 0
 
     @property
     def ready(self) -> bool:
@@ -166,7 +143,8 @@ class Listener:
 
     def load(self) -> Any:
         """Modeli yükler. İlk çağrı indirme yüzünden uzun sürebilir."""
-        if self._model is not None and self._loaded_size == self.config.size:
+        want = self._force_size or self.config.size
+        if self._model is not None and self._loaded_size == want:
             return self._model
 
         try:
@@ -174,10 +152,42 @@ class Listener:
         except ImportError as exc:  # pragma: no cover - kurulum yolu
             raise RuntimeError(hint()) from exc
 
-        size = self.config.size if self.config.size in SIZES else "small"
+        size = want if want in SIZES else "small"
         self._model = self._open(WhisperModel, size)
         self._loaded_size = size
         return self._model
+
+    # Boyut zinciri: yavaş çıkan CPU'da bir kademe inilir. `tiny` bilinçli
+    # yok — Türkçede kalite uçurumu; base hâlâ kullanılabilir doğrulukta.
+    _DOWNSHIFT = {"large": "medium", "medium": "small", "small": "base"}
+
+    def _hiz_karari(self, ses_sn: float, gecen_sn: float) -> str | None:
+        """CPU çözümü yavaşsa inilecek boyutu döndürür; değilse None.
+
+        Ölçüt: çözüm, sesin kendisinden belirgin uzun (ve >2,5 sn) — bir
+        kere değil ÜST ÜSTE iki kere. Tek yavaş çözüm ısınma/başka yük
+        olabilir; ikincisi kalıptır.
+        """
+        if self.device != "cpu":
+            return None
+        if gecen_sn <= max(2.5, 1.3 * max(ses_sn, 0.1)):
+            self._slow_hits = 0
+            return None
+        self._slow_hits += 1
+        if self._slow_hits < 2:
+            return None
+        self._slow_hits = 0
+        return self._DOWNSHIFT.get(self._loaded_size or self.config.size)
+
+    def _belki_dusur(self, ses_sn: float, gecen_sn: float) -> None:
+        kucuk = self._hiz_karari(ses_sn, gecen_sn)
+        if not kucuk:
+            return
+        print(f"[neo] dinleme: işlemci yavaş ({gecen_sn:.1f} sn / "
+              f"{ses_sn:.1f} sn ses) — model {self._loaded_size} → {kucuk} "
+              "(bu oturum için; ayar değişmedi)", flush=True)
+        self._force_size = kucuk
+        self._model = None          # bir sonraki çözümde küçük boyut yüklenir
 
     def _open(self, WhisperModel: Any, size: str) -> Any:
         """Modeli açar; ekran kartı varsa orada.
@@ -231,46 +241,43 @@ class Listener:
 
         Sürekli dinleme için: her söyleyiş için geçici dosya açıp silmek
         hem gereksiz hem de saniyede birkaç kez yapılınca diski yoruyor.
-        faster-whisper doğrudan dizi kabul ediyor.
+        faster-whisper doğrudan dizi kabul ediyor. Çözüm süresi burada
+        ölçülüyor: CPU sesin gerisinde kalıyorsa boyut kendiliğinden düşer.
         """
-        model = self.load()
-        language = self.config.language.strip() or None
-        segments, _info = model.transcribe(
-            samples,
-            language=language,
-            vad_filter=True,
-            beam_size=1,
-            initial_prompt=self._bias(),
-            # Sıfır sıcaklık: tanıyıcı duymadığını bağlamdan uydurmasın.
-            temperature=0.0,
-            # Önceki metne şartlanmak bir yanlışı sonraki sözlere
-            # bulaştırıyor; her söyleyiş temiz başlasın.
-            condition_on_previous_text=False,
-        )
-        return " ".join(segment.text.strip() for segment in segments).strip()
+        import time as _time
+        ses_sn = float(getattr(samples, "shape", [0])[0] or 0) / max(rate, 1)
+        t0 = _time.perf_counter()
+        try:
+            return self._decode(samples)
+        finally:
+            self._belki_dusur(ses_sn, _time.perf_counter() - t0)
 
     def transcribe(self, audio: Path | str) -> str:
         """Ses dosyasını yazıya çevirir."""
+        return self._decode(str(audio))
+
+    def _decode(self, audio: Any) -> str:
         model = self.load()
         language = self.config.language.strip() or None
-        segments, _info = model.transcribe(
-            str(audio),
+        kwargs: dict[str, Any] = dict(
             language=language,
-            # Sessizliği atlamak hem hızlandırıyor hem de sessizlikten
-            # uydurulmuş cümleleri ("Altyazı M.K.") engelliyor.
             vad_filter=True,
             beam_size=1,
-            # Uyandırma sözü tanıyıcıya önceden söyleniyor. "neo" Türkçede
-            # bir kelime değil; bias verilmeden tanıyıcı onu duyduğu en
-            # yakın gerçek kelimeye çeviriyor ve "Neo, dışarısı sıcak mı"
-            # cümlesi "Ne oldu dışarısı sıcak mı" diye çıkıyordu — yani söz
-            # hiç duyulmuyordu.
             initial_prompt=self._bias(),
-            # Dizili yolla aynı: uydurma ve hata bulaşması kapalı.
             temperature=0.0,
             condition_on_previous_text=False,
+            compression_ratio_threshold=2.2,
+            no_speech_threshold=0.55,
+            log_prob_threshold=-0.7,
         )
-        return " ".join(segment.text.strip() for segment in segments).strip()
+        try:
+            segments, _info = model.transcribe(audio, **kwargs)
+        except TypeError:
+            for key in ("compression_ratio_threshold", "no_speech_threshold",
+                        "log_prob_threshold"):
+                kwargs.pop(key, None)
+            segments, _info = model.transcribe(audio, **kwargs)
+        return _join_segments(segments, self.config.vocab)
 
 
 # Söz duyulurken tanıyıcı onu bitiştirebiliyor ya da uzatabiliyor:
@@ -300,6 +307,16 @@ def _windows(words: list[str]) -> list[str]:
 # Gülüşme hecesi: yalnızca bu harflerden oluşan bir kelime, içinde en az
 # iki "h" varsa gülmedir ("ahahah", "ıhıhıh", "hahaha").
 _LAUGH = re.compile(r"^[haeıiouöüj]+$")
+_UNLU = set("aeıiouöüâîû")
+_BARE_URL = re.compile(
+    r"(?:www\.)?[a-z0-9][a-z0-9.-]*\.(com|net|org|io|dev)$",
+    re.I,
+)
+_JUNK = frozenset({
+    "altyazı m.k", "altyazı mk", "altyazı m k", "altyazı mk.",
+    "thanks for watching", "thank you for watching",
+    "izlediğiniz için teşekkürler", "abone ol", "subscribe",
+})
 
 # Tek başına anlam taşımayan kısa sesler: gülme heceleri, onay mırıltısı,
 # düşünme dolgusu. Liste kasten kısa ve yalnızca **bütün** söz bunlardan
@@ -308,16 +325,29 @@ _FILLER = frozenset({
     "ha", "he", "hı", "hi", "ho", "hu",
     "ah", "eh", "ıh", "ih", "oh", "öh", "uh", "üh",
     "hm", "hmm", "hmmm", "ee", "eee", "ıı", "ııı",
+    "öö", "ööö", "aa", "aaa", "uu", "uuu",
 })
 
 
+def _groan(word: str) -> bool:
+    """Öksürük/inleme: aynı ünlünün uzaması (öööö, eeee)."""
+    letters = [c for c in word.lower() if c.isalpha()]
+    if len(letters) < 4:
+        return False
+    top, n = Counter(letters).most_common(1)[0]
+    if n / len(letters) >= 0.7 and top in _UNLU:
+        return True
+    squeezed = re.sub(r"(.)\1+", r"\1", word)
+    return len(word) >= 8 and len(squeezed) / len(word) <= 0.35
+
+
 def chatter(text: str) -> bool:
-    """Söz konuşma mı, yoksa gülme/mırıltı mı?
+    """Söz konuşma mı, yoksa gülme/mırıltı/öksürük mü?
 
     Serbest dinlemede duyulan her şey ajana gidiyordu ve kullanıcı
     güldüğünde ajan her kahkahaya cevap yetiştiriyordu — kullanıcı ona
-    bir şey söylememişken. Gülmek, "hı hı" demek, "hmm" diye düşünmek
-    konuşma değil; ajana hiç gitmiyor, hiçbir yere yazılmıyor.
+    bir şey söylememişken. Gülmek, "hı hı" demek, "hmm" diye düşünmek,
+    öksürünce çıkan "öööö" konuşma değil; ajana hiç gitmiyor.
 
     Ölçüt bilinçli olarak dar: içinde tek bir gerçek kelime olan söz
     ("ahah tamam devam et") olduğu gibi geçiyor.
@@ -331,8 +361,71 @@ def chatter(text: str) -> bool:
             continue
         if _LAUGH.match(word) and word.count("h") >= 2 and len(word) >= 4:
             continue
+        if _groan(word):
+            continue
         return False
     return True
+
+
+def hallucinated(text: str, vocab: str = "") -> bool:
+    """Tanıyıcı anlamayınca uydurduğu şey mi?
+
+    Alan sözlüğü (Modbus, SCADA) `initial_prompt`e yazılıyor; Whisper
+    öksürük/gürültüde o kelimeleri — bazen `modbus.com` diye — basıyor.
+    Tek başına bir sözlük kelimesi veya çıplak bir adres konuşma değil.
+    """
+    raw = (text or "").strip().strip(" .,;:")
+    if not raw:
+        return True
+    flat = " ".join(raw.casefold().split())
+    if flat in _JUNK:
+        return True
+    if _BARE_URL.fullmatch(raw.rstrip(".")):
+        return True
+    tokens = {
+        w.strip(" ,.;").casefold()
+        for w in re.split(r"[,;\n]+", vocab or "")
+        if w.strip()
+    }
+    if not tokens:
+        return False
+    words = _CLEAN.sub(" ", flat).split()
+    if len(words) != 1:
+        return False
+    word = words[0]
+    host = word.split(".")[0]
+    return word in tokens or host in tokens
+
+
+def _keep_segment(segment: Any) -> bool:
+    """Whisper'ın 'emin' olduğu çöp segmenti de düşür.
+
+    Öksürükte compression_ratio yüksek çıkar; konuşma yokken no_speech
+    yükselir. İkisi de metin süzgecinden önce ucuz bir kapı.
+    """
+    cr = float(getattr(segment, "compression_ratio", 0.0) or 0.0)
+    if cr > 2.2:
+        return False
+    nsp = float(getattr(segment, "no_speech_prob", 0.0) or 0.0)
+    lp = float(getattr(segment, "avg_logprob", 0.0) or 0.0)
+    if nsp > 0.55 and lp < -0.5:
+        return False
+    return True
+
+
+def _join_segments(segments: Any, vocab: str = "") -> str:
+    parts: list[str] = []
+    for segment in segments:
+        text = str(getattr(segment, "text", "") or "").strip()
+        if not text or not _keep_segment(segment):
+            continue
+        if chatter(text) or hallucinated(text, vocab):
+            continue
+        parts.append(text)
+    joined = " ".join(parts).strip()
+    if not joined or chatter(joined) or hallucinated(joined, vocab):
+        return ""
+    return joined
 
 
 def heard_wake(text: str, wake: str = DEFAULT_WAKE) -> bool:

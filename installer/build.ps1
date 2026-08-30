@@ -17,7 +17,7 @@
 #   powershell -ExecutionPolicy Bypass -File installer\build.ps1
 #   ... -AtlaTorch    : eğitim bileşenini (torch + düzenek) paketleme
 #   ... -AtlaDinleme  : dinleme bileşenini (faster-whisper + sounddevice) paketleme
-#   ... -AtlaKamera   : kamera bileşenini (opencv-python-headless) paketleme
+#   ... -AtlaKamera   : kamera bileşenini (opencv + onnxruntime-gpu) paketleme
 #   ... -AtlaDerleme  : iscc'yi çağırma, yalnız paketi hazırla
 
 param(
@@ -59,8 +59,8 @@ $PyUrl    = "https://www.python.org/ftp/python/$PySurum/$PyZip"
 #   pratik  : pillow (tepsi/simge/ekran görüntüsü), pystray (tepsi),
 #             edge-tts (ses), openai (LM Studio/Ollama), mcp (bağlayıcılar),
 #             pypdf + reportlab (paketle gelen yetenekler)
-#   dışarıda: faster-whisper/sounddevice (dinleme) ve opencv (kamera) —
-#             ağır; yoklukları özelliği zaten kapatıyor.
+#   dışarıda: faster-whisper/sounddevice (dinleme) ve opencv+onnxruntime-gpu
+#             (kamera) — ağır; yoklukları özelliği zaten kapatıyor.
 $Bagimliliklar = @(
     "anthropic>=0.92", "rich>=13.7", "pywebview>=5.0", "numpy",
     "pillow>=10.0", "pystray>=0.19", "edge-tts>=7.0", "openai>=1.60",
@@ -180,21 +180,28 @@ if (-not $AtlaDinleme) {
 
 # -- 4c) kamera bileşeni (isteğe bağlı) ---------------------------------------
 if (-not $AtlaKamera) {
-    Adim "Kamera bileşeni (opencv-python-headless)"
+    Adim "Kamera bileşeni (opencv-python-headless + onnxruntime-gpu)"
     & $PyExe -m pip install --no-warn-script-location `
-        --target (Join-Path $Paket "watch\site") opencv-python-headless
+        --target (Join-Path $Paket "watch\site") opencv-python-headless onnxruntime-gpu
     if ($LASTEXITCODE -ne 0) { throw "kamera paketi kurulamadı" }
 }
 
 # -- 5) başlatıcı -------------------------------------------------------------
 Adim "Başlatıcı yazılıyor"
-# Kısayollar doğrudan pythonw'yu hedefliyor (konsolsuz); neo.cmd klasörden
-# çift tıkla açmak isteyen için aynı komutun görünür hali.
+# Görev Yöneticisi PE ikonuna bakar: pythonw kopyası neo.exe + ico damgası.
+# neo.cmd klasörden çift tıkla açmak isteyen için aynı komutun görünür hali.
+$PyW = Join-Path $PyDizin "pythonw.exe"
+$NeoExe = Join-Path $PyDizin "neo.exe"
+Copy-Item $PyW $NeoExe -Force
+& $PyExe -c "from neocp.winicon import ensure_host; ensure_host()"
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "simge damgası atlandı — kurulum/ilk açılış dener" -ForegroundColor Yellow
+}
 @'
 @echo off
 rem neo — masaustu penceresini acar (konsol penceresi acilmaz).
 set "KOK=%~dp0"
-start "" "%KOK%python\pythonw.exe" -m neocp --app -C "%KOK%."
+start "" "%KOK%python\neo.exe" -m neocp --app -C "%KOK%."
 '@ | Set-Content -Path (Join-Path $Paket "neo.cmd") -Encoding Ascii
 
 # -- 6) derleme ---------------------------------------------------------------

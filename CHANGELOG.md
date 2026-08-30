@@ -1,5 +1,33 @@
 # Changelog
 
+## 1.3.0 — 2026-08-30
+
+**The camera stage.** Built on a branch, tried live on a laptop, then
+merged — with substantial work contributed directly by the project owner.
+
+* **Camera watch area.** A deck lists the built-in webcam and any IP/RTSP
+  cameras you add; tiles refresh with fresh frames (the camera opens per
+  frame and closes — nothing stays recording). A status icon up top shows
+  the truth at a glance: slashed when the camera master switch is off
+  (click to enable), and the active mode when on.
+* **Local vision (YOLO).** With a capable NVIDIA GPU, a local yolov8n
+  model analyses frames on-device; without one, the LLM takes snapshots
+  on demand. Motion frames never reach a hosted model without an explicit
+  consent switch — same privacy pattern as the night school.
+* **A real `camera` tool** for the model: list cameras, take 1-4
+  snapshots (permission-gated — the model cannot open your camera on its
+  own), see them, answer.
+* **Voice & hearing controls** reworked: power toggles with live status,
+  a hearing sync that follows configuration, echo handling improvements.
+* **Listening latency fixed** (live complaint: 10-20 s behind on a weak
+  laptop): models warm in the background at startup so the first sentence
+  no longer pays the load cost, and a self-measuring downshift drops the
+  recogniser one size (small → base) if CPU decoding repeatedly lags
+  behind the audio — session-only, your setting is untouched.
+* **A `git` tool** (status/commit/push and friends) so the agent stops
+  shelling out for version control.
+
+
 ## 1.2.0 — 2026-08-29
 
 **Parallel sessions.** Every session now runs on its own lane — its own

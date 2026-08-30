@@ -82,12 +82,16 @@ ASSETS = {
     "/capsule.js": "text/javascript; charset=utf-8",
     "/history.js": "text/javascript; charset=utf-8",
     "/orchestra.js": "text/javascript; charset=utf-8",
+    # Kamera güvertesi: izleme alanı (dahili + IP kameralar).
+    "/cameras.js": "text/javascript; charset=utf-8",
+    "/watch.js": "text/javascript; charset=utf-8",
     # Koşan görevler paneli: arka plan işleri, yardımcılar, süreçler.
     "/gorevler.js": "text/javascript; charset=utf-8",
     # Kompozer yüzeyleri: `/` komut defteri ve `@` dosya bahsi.
     "/komut.js": "text/javascript; charset=utf-8",
     # "Bu turda ne değişti" şeridi + geri alma.
     "/degisiklik.js": "text/javascript; charset=utf-8",
+    "/git.js": "text/javascript; charset=utf-8",
     "/chrome.js": "text/javascript; charset=utf-8",
     "/speech.js": "text/javascript; charset=utf-8",
     "/listen.js": "text/javascript; charset=utf-8",
@@ -121,6 +125,10 @@ STREAMED_NOTES = frozenset(
         "artifact",
         # Büyük iş planı: onay kartı.
         "plan",
+        # Cihaz kaydı silindi: sahne organı ve ayarlar listesi bayat kalmasın.
+        "device_removed",
+        # Git commit/push/publish: çubuk ve pane tazelensin.
+        "git",
     }
 )
 
@@ -305,6 +313,9 @@ def _rapor_html(metin: str) -> str:
     in_ul = False
     for ham in (metin or "").replace("\r\n", "\n").split("\n"):
         s = ham.rstrip()
+        # Ham Python izi rapor değil — insan_is_raporu kaçırırsa bile basma.
+        if s.startswith("Traceback (") or s.startswith("File \""):
+            continue
         if s.startswith("### "):
             if in_ul:
                 out.append("</ul>"); in_ul = False
@@ -328,6 +339,37 @@ def _rapor_html(metin: str) -> str:
     if in_ul:
         out.append("</ul>")
     return "\n".join(out) or "<p><i>(boş rapor)</i></p>"
+
+
+def _rapor_kapak(result: dict[str, Any]) -> tuple[str, str, str]:
+    """Rapor sayfasının başlığı: komut h1 olmasın, görev id'si öne çıkmasın.
+
+    Dönen: (sekme başlığı, h1 HTML'siz, meta HTML).
+    """
+    ham = str(result.get("title") or "Rapor").strip()
+    state = str(result.get("state") or "")
+    komut = ham[2:].strip() if ham.startswith("$ ") else ""
+    if state == "hata":
+        h1 = "İş başarısız"
+        badge = '<span class="badge err">Başarısız</span>'
+    elif state == "kosuyor":
+        h1 = "İş sürüyor"
+        badge = '<span class="badge">Sürüyor</span>'
+    elif komut:
+        h1 = "İş tamamlandı"
+        badge = '<span class="badge ok">Tamamlandı</span>'
+    else:
+        h1 = ham or "Rapor"
+        badge = (
+            '<span class="badge ok">Tamamlandı</span>' if state == "bitti"
+            else ""
+        )
+    parcalar = [p for p in (badge,) if p]
+    if komut:
+        parcalar.append(f"<code>{html.escape(komut)}</code>")
+    elif ham and ham != h1:
+        parcalar.append(html.escape(ham))
+    return h1, h1, " · ".join(parcalar)
 
 
 def _inline_md(s: str) -> str:
@@ -429,6 +471,31 @@ def _ear(server: Any, config: Config) -> Any:
         ear = listen.Listener(config.listen)
         server._ear = ear  # type: ignore[attr-defined]
     return ear
+
+
+def ear_gate(ear: Any, action: str) -> dict[str, Any]:
+    """Kompozer mikrofonu: kulağı sustur / aç. Ajan `senses` aracıyla aynı kapı.
+
+    Tarayıcı bas-konuş aynı mikrofona ikinci kez yapışır ve sürekli
+    dinleme durmaz — durdurmak ajan aracına kalıyordu.
+    """
+    if ear is None:
+        return {"ok": True, "ear": False, "snoozed": False}
+    act = (action or "status").strip()
+    if act == "pause":
+        ear.snooze(0)
+    elif act == "resume":
+        ear.unsnooze()
+    elif act == "toggle":
+        if ear.snoozed:
+            ear.unsnooze()
+        else:
+            ear.snooze(0)
+    return {
+        "ok": True,
+        "ear": True,
+        "snoozed": bool(getattr(ear, "snoozed", False)),
+    }
 
 
 def _as_json(raw: bytes) -> dict[str, Any]:
@@ -701,6 +768,8 @@ class _Handler(BaseHTTPRequestHandler):
         route = self.path.split("?", 1)[0]
         if route in ("/", "/index.html"):
             self._file("index.html", "text/html; charset=utf-8")
+        elif route in ("/watch.html", "/watch"):
+            self._file("watch.html", "text/html; charset=utf-8")
         elif route in ASSETS:
             self._file(route.lstrip("/"), ASSETS[route])
         elif route == "/api/graph":
@@ -760,12 +829,16 @@ class _Handler(BaseHTTPRequestHandler):
             self._workflows_list()
         elif route == "/api/plans":
             self._plans_list()
+        elif route == "/api/git":
+            self._git_status()
         elif route.startswith("/gorev-rapor/"):
             self._gorev_rapor_sayfasi(route)
         elif route == "/api/degisiklikler":
             self._degisiklikler()
         elif route == "/api/degisiklikler/fark":
             self._degisiklik_farki()
+        elif route == "/api/camera/frame":
+            self._camera_frame()
         elif route == "/api/raw":
             self._raw_file()
         elif route == "/api/gozat":
@@ -826,6 +899,9 @@ class _Handler(BaseHTTPRequestHandler):
             return
         if route == "/api/plans":
             self._plans_action(body)
+            return
+        if route == "/api/git":
+            self._git_action(body)
             return
         if route == "/api/rules":
             self._rules(body)
@@ -1033,9 +1109,32 @@ class _Handler(BaseHTTPRequestHandler):
             # Ajan konuşurken kulak kapanıyor: hoparlörden çıkan ses
             # mikrofona geri geliyor ve asistan kendi cümlesini duyup
             # cevap vermeye kalkıyordu.
-            if (ear := getattr(self.server, "ear", None)) is not None:
-                ear.speaking(bool(body.get("on")))
+            ear = getattr(self.server, "ear", None) or getattr(
+                getattr(self.server, "controller", None), "ear", None)
+            if ear is not None:
+                ear.speaking(bool(body.get("on")), text=str(body.get("text") or ""))
             self._json({"ok": True})
+            return
+        if route == "/api/senses":
+            action = str((body or {}).get("action") or "status")
+            what = str((body or {}).get("what") or "hearing")
+            ctrl = getattr(self.server, "controller", None)
+            if action in ("on", "off", "power"):
+                on = action == "on" or (
+                    action == "power" and bool((body or {}).get("enabled")))
+                if action == "off":
+                    on = False
+                fn = getattr(ctrl, "voice_power" if what == "voice" else "hearing_power", None)
+                if fn is None:
+                    self._json({"ok": False, "error": "anahtar yok"})
+                    return
+                note = fn(on)
+                self._json({"ok": True, "note": note, "enabled": on})
+                return
+            self._json(ear_gate(
+                getattr(self.server, "ear", None),
+                action,
+            ))
             return
         if route == "/api/wake":
             # Uyandırma sözü tarayıcı tarafında duyuldu (listen.js): pencere
@@ -1250,7 +1349,14 @@ class _Handler(BaseHTTPRequestHandler):
         if config is None:
             self.send_error(503, "Yapılandırma yüklü değil")
             return
-        self._json({"window": settings.detect_window(config)})
+        caps = settings.detect_caps(config)
+        payload: dict[str, Any] = {
+            "window": caps.get("max_context") if isinstance(caps.get("max_context"), int) else None,
+        }
+        for key in ("thinking", "vision", "tools"):
+            if key in caps:
+                payload[key] = caps[key]
+        self._json(payload)
 
     def _loaded(self) -> None:
         """Sunucuda yüklü duran modeller. Aynı modelin birden çok kopyası
@@ -1295,7 +1401,6 @@ class _Handler(BaseHTTPRequestHandler):
         thread'inde dönüyor ve çalışırken kamera eklemek/çıkarmak açık bir
         akışın ortasına girmek demek.
         """
-        from dataclasses import asdict
         from uuid import uuid4
 
         config = getattr(self.server, "config", None)
@@ -1307,15 +1412,50 @@ class _Handler(BaseHTTPRequestHandler):
         action = str(body.get("action") or "list")
         camera_id = str(body.get("id") or "")
 
+        if action == "power":
+            on = bool(body.get("enabled"))
+            ctrl = getattr(self.server, "controller", None)
+            power = getattr(ctrl, "camera_power", None) if ctrl else None
+            if power is None:
+                self._json({"ok": False, "error": "kamera anahtarı yok"})
+                return
+            msg = power(on)
+            lens = (
+                getattr(ctrl, "lens", None)
+                or getattr(self.server, "lens", None)
+                or getattr(getattr(self.server, "_httpd", None), "lens", None)
+            )
+            self._json({
+                "ok": True,
+                "note": msg,
+                "enabled": on,
+                "live": bool(getattr(lens, "running", False)),
+            })
+            return
+
         if action == "add":
+            kind = str(body.get("kind") or "usb").strip() or "usb"
+            source = str(body.get("source") or "").strip()
+            host = str(body.get("host") or "").strip()
+            if kind == "usb":
+                source = source or str(body.get("index") or "0").strip() or "0"
             cameras.append(
                 watch.Camera(
                     id=f"cam_{uuid4().hex[:8]}",
-                    name=str(body.get("name") or "").strip() or "kamera",
-                    source=str(body.get("source") or "0").strip(),
+                    name=str(body.get("name") or "").strip()
+                         or ("Bilgisayar kamerası" if kind == "usb" and source in ("", "0")
+                             else "kamera"),
+                    source=source,
+                    kind=kind,
+                    host=host,
+                    port=int(body.get("port") or 0),
+                    path=str(body.get("path") or "").strip(),
+                    user=str(body.get("user") or "").strip(),
+                    password=str(body.get("password") or ""),
                     sensitivity=float(body.get("sensitivity") or 0.06),
                     cooldown_s=int(body.get("cooldown_s") or 60),
                     ask=str(body.get("ask") or ""),
+                    analyze=bool(body["analyze"]) if "analyze" in body else True,
                 )
             )
         elif action == "update":
@@ -1323,19 +1463,57 @@ class _Handler(BaseHTTPRequestHandler):
             for camera in cameras:
                 if camera.id != camera_id:
                     continue
+                new_pass = body.get("password")
                 for name, value in body.items():
-                    if name in known and name != "id":
+                    if name in known and name not in ("id", "password"):
                         setattr(camera, name, value)
+                if new_pass:
+                    camera.password = str(new_pass)
         elif action == "remove":
             cameras = [c for c in cameras if c.id != camera_id]
 
         if action in ("add", "update", "remove"):
             watch.save(config.state_dir, cameras)
 
+        # Donanım gerçeği görünür (canlı istek): GPU varsa sürekli
+        # izleme/işleme aşamasına aday; yoksa tek kip "sorulunca kesit".
+        # Asgari beklenti de yazıyor — kullanıcı neyin neden kapalı
+        # olduğunu ekrandan okuyabilmeli.
+        try:
+            from .. import gpu as gpu_mod
+            gpus = [{"name": g.name, "total_mb": g.total_mb,
+                     "free_mb": g.free_mb} for g in gpu_mod.nvidia_gpus()]
+        except Exception:
+            gpus = []
+        from .. import sight as sight_mod
+        if config.camera.enabled:
+            sight_mod.ensure_warmup()
+        goz = sight_mod.status()
+        gpu_var = any(g["total_mb"] >= 4096 for g in gpus)
+        if goz.get("ready"):
+            kip = "gpu"
+        elif gpu_var:
+            kip = "izleme"
+        else:
+            kip = "kesit"
         self._json({
             "ok": True,
             "available": watch.available(),
-            "cameras": [asdict(c) for c in cameras],
+            # Yerel kamera kullanımı ana anahtarı (Ayarlar › Kamera):
+            # üstteki durum ikonu buradan besleniyor.
+            "enabled": bool(config.camera.enabled),
+            "live": bool(getattr(getattr(self.server, "lens", None), "running", False)
+                         or getattr(getattr(getattr(self.server, "controller", None), "lens", None), "running", False)),
+            "cloud_ok": bool(getattr(config.camera, "cloud_ok", False)),
+            "cameras": [c.public_dict() for c in cameras],
+            "gpus": gpus,
+            "sight": goz,
+            # gpu: CUDA'da yerel analiz çalışıyor, modele metin gidiyor.
+            # izleme: kart var ama oturum henüz/hiç açılmadı.
+            # kesit: GPU yok — sorulunca kare.
+            "vision_mode": kip,
+            "min_spec": "Sürekli izleme/işleme için ≥4 GB VRAM'li NVIDIA GPU; "
+                        "yoksa sorulduğunda kesit alınır.",
         })
 
     # -- izin kuralları ---------------------------------------------------
@@ -1661,6 +1839,81 @@ class _Handler(BaseHTTPRequestHandler):
         except Exception as exc:
             self._json({"ok": False, "error": f"{type(exc).__name__}: {exc}"})
 
+    def _git_status(self) -> None:
+        from .. import git as gitmod
+
+        config = getattr(self.server, "config", None)
+        if config is None:
+            self._json({"ok": True, "present": False})
+            return
+        self._json(gitmod.snapshot(config))
+
+    def _git_action(self, body: dict[str, Any]) -> None:
+        from .. import git as gitmod
+
+        config = getattr(self.server, "config", None)
+        if config is None:
+            self._json({"ok": False, "error": "yapılandırma yok"})
+            return
+        action = str((body or {}).get("action") or "").strip()
+        root = gitmod.repo_root(config)
+        try:
+            if action == "diff":
+                if root is None:
+                    self._json({"ok": False, "error": "git deposu yok"})
+                    return
+                path = str(body.get("path") or "") or None
+                self._json(gitmod.diff(root, path))
+                return
+            if action in ("commit", "push", "pull", "create_repo", "publish", "init"):
+                result = self._git_mutate(gitmod, config, root, action, body or {})
+                self._json(result)
+                if result.get("ok"):
+                    hub = getattr(self.server, "hub", None)
+                    if hub is not None:
+                        hub.emit({"type": "git", "action": action})
+                return
+            self._json({"ok": False, "error": "bilinmeyen eylem"})
+        except gitmod.GitError as exc:
+            self._json({"ok": False, "error": str(exc)})
+        except Exception as exc:
+            self._json({"ok": False, "error": f"{type(exc).__name__}: {exc}"})
+
+    def _git_mutate(
+        self, gitmod: Any, config: Any, root: Any, action: str, body: dict[str, Any],
+    ) -> dict[str, Any]:
+        box = config.open_sandbox()
+        if root is None:
+            root = box.project or box.root
+        private = body.get("private")
+        if private is None:
+            private = True
+        name = str(body.get("name") or "").strip()
+        if action == "init":
+            return {"ok": True, **gitmod.init(root)}
+        if action == "commit":
+            paths = body.get("paths")
+            if not isinstance(paths, list):
+                paths = None
+            snap = gitmod.commit(root, str(body.get("message") or ""), paths=paths)
+            return {"ok": True, **snap}
+        if action == "push":
+            return {"ok": True, **gitmod.push(root)}
+        if action == "pull":
+            return {"ok": True, **gitmod.pull(root)}
+        if action == "create_repo":
+            created = gitmod.create_repo(
+                name or (root.name if root is not None else ""),
+                private=bool(private),
+                source=root,
+                state_dir=config.state_dir,
+            )
+            return {"ok": True, **created}
+        snap = gitmod.publish(
+            root, name=name, private=bool(private), state_dir=config.state_dir,
+        )
+        return {"ok": True, **snap}
+
     # -- hedef yığını -----------------------------------------------------
 
     def _goals(self, body: dict[str, Any]) -> None:
@@ -1973,16 +2226,8 @@ class _Handler(BaseHTTPRequestHandler):
             return
 
         elif action == "write":
-            code = str(body.get("code") or "")
-            if not name or not code.strip():
-                self._json({"ok": False, "error": "`name` ve `code` gerekli."})
-                return
-            path = authored.folder(root) / f"{name}.py"
-            path.write_text(code, encoding="utf-8")
-            # Yazılan dosya hemen deneniyor: hata varsa kullanıcı kaydettiği
-            # anda görüyor, ajan çağırdığında değil.
             try:
-                authored.load_file(path)
+                authored.save(root, name, str(body.get("code") or ""))
             except authored.SkillError as exc:
                 error = str(exc)
 
@@ -2224,7 +2469,8 @@ class _Handler(BaseHTTPRequestHandler):
         if not isinstance(result, dict) or not result.get("ok"):
             self.send_error(404, str((result or {}).get("error") or "Rapor yok"))
             return
-        title = html.escape(str(result.get("title") or "Rapor"))
+        title_doc, h1, meta = _rapor_kapak(result)
+        title = html.escape(title_doc)
         metin = str(result.get("metin") or "")
         body = _rapor_html(metin)
         deliverable = result.get("deliverable") if isinstance(result.get("deliverable"), dict) else None
@@ -2246,30 +2492,38 @@ class _Handler(BaseHTTPRequestHandler):
             f"<title>{title}</title>"
             "<style>"
             "html,body{margin:0;background:#0b1218;color:#dceefc;"
-            "font:15px/1.6 system-ui,Segoe UI,sans-serif}"
+            "font:16px/1.65 system-ui,Segoe UI,sans-serif}"
             "html{scrollbar-width:thin;scrollbar-color:rgba(79,227,255,.35) transparent}"
             "::-webkit-scrollbar{width:8px;height:8px}"
             "::-webkit-scrollbar-thumb{background:rgba(79,227,255,.3);border-radius:4px}"
-            "main{max-width:960px;margin:0 auto;padding:28px 22px 48px}"
-            "h1{font:600 22px/1.3 system-ui;margin:0 0 8px;color:#eaf6ff}"
-            ".meta{font:12px ui-monospace,Consolas,monospace;color:#7fa0c0;"
-            "margin:0 0 18px}"
+            "main{max-width:640px;margin:0 auto;padding:36px 22px 56px}"
+            "h1{font:600 26px/1.25 system-ui;margin:0 0 10px;color:#eaf6ff}"
+            ".meta{font:13px/1.5 system-ui;color:#8fb0cc;margin:0 0 22px}"
+            ".meta code{font:13px ui-monospace,Consolas,monospace;"
+            "background:#05121d;padding:2px 7px;border-radius:6px;color:#c5e4ff}"
+            ".badge{display:inline-block;padding:2px 9px;border-radius:999px;"
+            "font:600 11px/1.4 system-ui;letter-spacing:.02em;"
+            "background:#1a2a38;color:#8fb0cc;vertical-align:middle}"
+            ".badge.err{background:#ff4d6d22;color:#ff8aa0}"
+            ".badge.ok{background:#3dffa018;color:#8affc1}"
             ".cta{margin:0 0 16px}"
             ".btn{display:inline-block;padding:8px 14px;border-radius:8px;"
             "background:#4fe3ff22;color:#4fe3ff;text-decoration:none;font:600 13px system-ui}"
             ".btn:hover{background:#4fe3ff33}"
             "iframe.live{width:100%;height:min(70vh,720px);border:1px solid #1e3a4c;"
             "border-radius:10px;background:#061018;margin:0 0 22px}"
-            ".rapor{white-space:pre-wrap;word-break:break-word}"
-            ".rapor h2{font:600 17px/1.3 system-ui;margin:1.4em 0 .5em;color:#a8e8ff}"
-            ".rapor h3{font:600 15px/1.3 system-ui;margin:1.2em 0 .4em;color:#a8e8ff}"
-            ".rapor ul{padding-left:1.2em;margin:.4em 0}"
+            ".rapor{word-break:break-word}"
+            ".rapor p{margin:.55em 0}"
+            ".rapor h2{font:600 15px/1.3 system-ui;margin:1.5em 0 .4em;color:#a8e8ff}"
+            ".rapor h3{font:600 14px/1.3 system-ui;margin:1.2em 0 .4em;color:#a8e8ff}"
+            ".rapor ul{padding-left:1.2em;margin:.5em 0}"
+            ".rapor li{margin:.25em 0}"
             ".rapor a{color:#4fe3ff}"
             ".rapor code{font:13px ui-monospace,Consolas,monospace;"
             "background:#05121d;padding:1px 5px;border-radius:4px}"
             "</style></head><body><main>"
-            f"<h1>{title}</h1>"
-            f"<p class=meta>{html.escape(str(result.get('id') or ''))}</p>"
+            f"<h1>{html.escape(h1)}</h1>"
+            f"<p class=meta>{meta}</p>"
             f"{app_block}"
             f"<div class=rapor>{body}</div>"
             "</main></body></html>"
@@ -2446,6 +2700,65 @@ class _Handler(BaseHTTPRequestHandler):
             hub.emit({"type": "notice",
                       "text": f"Geri alındı: {len(yapilan)} değişiklik eski haline döndü."})
         self._json({"ok": True, "yapilan": yapilan})
+
+    def _camera_frame(self) -> None:
+        """Bir kameradan TEK taze kare (JPEG) — izleme alanının önizlemesi.
+
+        Sürekli akış (MJPEG/WebRTC) yok. Dahili kamera zaten Lens
+        tamponunda açıksa o JPEG kullanılır — aynı aygıtı ikinci kez
+        açmak Windows'ta güverteyi kilitler. Ağ kameraları tek kesit.
+        """
+        config = getattr(self.server, "config", None)
+        if config is None:
+            self.send_error(503, "Yapılandırma yüklü değil")
+            return
+        if not watch.available():
+            self.send_error(501, "opencv kurulu değil")
+            return
+        query = parse_qs(urlparse(self.path).query)
+        kaynak = (query.get("source", [""])[0] or "").strip()
+        cid = (query.get("id", [""])[0] or "").strip()
+        cam = None
+        if cid:
+            cam = next((c for c in watch.load(config.state_dir)
+                        if c.id == cid), None)
+            if cam is None:
+                self.send_error(404, "kamera yok")
+                return
+            kaynak = str(cam.connect_source())
+        kaynak = kaynak or "0"
+
+        lens = getattr(self.server, "lens", None)
+        if lens is None:
+            ctrl = getattr(self.server, "controller", None)
+            lens = getattr(ctrl, "lens", None) if ctrl else None
+        payload = watch.preview_jpeg(kaynak, lens=lens)
+        if not payload:
+            if lens is not None and watch.same_source(
+                    getattr(lens, "source", "0"), kaynak):
+                self.send_error(503, "kamera henüz hazır değil")
+                return
+            self.send_error(502, "kamera açılamadı")
+            return
+        ozet = ""
+        want_boxes = (query.get("boxes", ["0"])[0] or "0") not in ("0", "false", "")
+        if cam is None:
+            cam = next((c for c in watch.load(config.state_dir)
+                        if c.is_builtin()), None)
+        analyze = True if cam is None else bool(getattr(cam, "analyze", True))
+        if want_boxes and analyze:
+            from .. import sight as sight_mod
+            payload, ozet = sight_mod.annotate_jpeg(
+                payload, key=cid or kaynak or "0")
+        self.send_response(200)
+        self.send_header("Content-Type", "image/jpeg")
+        self.send_header("Content-Length", str(len(payload)))
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("Access-Control-Expose-Headers", "X-Neo-Sight")
+        if ozet:
+            self.send_header("X-Neo-Sight", quote(ozet, safe=" ,()-"))
+        self.end_headers()
+        self.wfile.write(payload)
 
     def _raw_file(self) -> None:
         """Bir dosyanın HAM baytları: görüntüleyicinin görsel/ses/video/PDF ucu.

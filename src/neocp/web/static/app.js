@@ -80,21 +80,28 @@ Dil.ekle({
   "Tıkla — hatanın ayrıntısını gör": "Click to see the error detail",
   "Tıkla — adımın ayrıntısını gör": "Click to see the step detail",
   // Kamera ve ses
-  "Kamera açılıyor…": "Opening camera…",
-  "Kamera açılamadı. İzin verilmemiş ya da başka bir program kullanıyor olabilir.":
-    "Camera could not be opened. Permission may be missing or another program may be using it.",
   "Bakıyor…": "Looking…",
   "Ses duyuyor": "Hearing sound",
   "Gönderilen görsel": "Attached image",
+  "Tıkla: dinlemeyi durdur": "Click to stop listening",
+  "Tıkla: dinlemeye devam": "Click to keep listening",
   "Elle konuş (arkada zaten dinliyor)": "Push to talk (already listening in the background)",
   "Tıkla ve konuş": "Click and talk",
-  "Sesi kapat": "Mute voice", "Sesi aç": "Unmute voice",
+  "Sesi aç": "Turn voice on",
+  "Sesi kapat": "Turn voice off",
+  "Ses kapalı — tıkla: aç": "Voice off — click to turn on",
+  "Ses açık — tıkla: ayarla": "Voice on — click to adjust",
+  "Dinlemeyi aç": "Turn listening on",
+  "Dinlemeyi kapat": "Turn listening off",
+  "Dinleme kapalı — tıkla: aç": "Listening off — click to turn on",
+  "Dinleme açık — tıkla: ayarla": "Listening on — click to adjust",
+  "Ayarları aç": "Open settings",
   // Kompozer + menüsü ve ekler
   "Dosya ekle": "Add file", "belge, görsel, veri": "document, image, data",
-  "Kameradan kare": "Camera frame", "önizlemeyi aç": "open the preview",
   "Bağlantılar": "Connectors", "MCP sunucuları": "MCP servers",
   "Yetenekler": "Skills", "kendi araçların": "your own tools",
   "Yeni görev": "New task", "zamanlanmış iş": "scheduled job",
+  "Kamera": "Camera", "aç/kapa, izleme": "on/off, watching",
   "Program kapalıyken zamanı geçmiş görevler var.":
     "Some scheduled tasks were due while neo was closed.",
   "Bu seferlik atla": "Skip this time",
@@ -192,6 +199,8 @@ Dil.ekle({
   "Köprü: ": "Bridge: ", "bağlandı": "linked",
   // Hatırlama izi
   "İz · ": "Trace · ", "Hatırlama izi": "Recall trace",
+  "Seçim bu sohbette kalır; yeni sohbet ve sonraki açılış onu devralır. Küresel varsayılan: Ayarlar → Model.":
+    "The pick stays with this chat; new chats and the next launch inherit it. Global default: Settings → Model.",
   "Sorgu": "Query", ". sicrama": ". hop", "Bakildi": "Glanced",
   " kayda daha bakıldı": " more records glanced",
   // Akıllı kaydırma
@@ -390,6 +399,10 @@ Dil.ekle({ "Açıklama ▸": "Key ▸", "Açıklama ▾": "Key ▾" });
   try {
     const w = parseInt(localStorage.getItem("neo-mind-w") || "", 10);
     if (w >= 240) document.documentElement.style.setProperty("--mind-w-user", w + "px");
+    const dh = localStorage.getItem("neo-dock-h");
+    if (dh && /^\d+(\.\d+)?%$/.test(dh)) {
+      document.documentElement.style.setProperty("--dock-h-user", dh);
+    }
   } catch { /* dosya:// */ }
 })();
 
@@ -429,6 +442,58 @@ Dil.ekle({ "Açıklama ▸": "Key ▸", "Açıklama ▾": "Key ▾" });
     window.addEventListener("pointerup", stop);
     window.addEventListener("pointercancel", stop);
     window.addEventListener("blur", stop);
+  });
+})();
+
+// Beyin ↔ kamera/orkestra yüksekliği. Genişlik tutamacı bütün sütunu
+// kaplıyordu; ortadan çekince ikisi birbirinin üstüne biniyordu.
+(() => {
+  const grip = $("dock-grip");
+  const col = $("right-col");
+  if (!grip || !col) return;
+  const root = document.documentElement;
+  const MIN_MIND = 160;
+  const MIN_DOCK = 120;
+  const GRIP = 8;
+  let active = false;
+
+  const apply = (clientY) => {
+    const box = col.getBoundingClientRect();
+    if (box.height < MIN_MIND + MIN_DOCK + GRIP) return;
+    const maxDock = box.height - MIN_MIND - GRIP;
+    const px = Math.max(MIN_DOCK, Math.min(maxDock, box.bottom - clientY));
+    const pct = ((px / box.height) * 100).toFixed(1) + "%";
+    root.style.setProperty("--dock-h-user", pct);
+    return pct;
+  };
+  const onMove = (ev) => { if (active) apply(ev.clientY); };
+  const stop = () => {
+    if (!active) return;
+    active = false;
+    document.body.classList.remove("dock-resize");
+    window.removeEventListener("pointermove", onMove);
+    window.removeEventListener("pointerup", stop);
+    window.removeEventListener("pointercancel", stop);
+    window.removeEventListener("blur", stop);
+    try {
+      const v = getComputedStyle(root).getPropertyValue("--dock-h-user").trim();
+      if (v) localStorage.setItem("neo-dock-h", v);
+    } catch { /* dosya:// */ }
+  };
+  grip.addEventListener("pointerdown", (ev) => {
+    ev.preventDefault();
+    active = true;
+    try { grip.setPointerCapture(ev.pointerId); } catch { /* eski motor */ }
+    document.body.classList.add("dock-resize");
+    apply(ev.clientY);
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", stop);
+    window.addEventListener("pointercancel", stop);
+    window.addEventListener("blur", stop);
+  });
+  grip.addEventListener("dblclick", () => {
+    root.style.removeProperty("--dock-h-user");
+    try { localStorage.removeItem("neo-dock-h"); } catch { /* dosya:// */ }
   });
 })();
 
@@ -777,6 +842,7 @@ const ACTION = {
   task: "Yardımcı çalıştırıyor", schedule: "Zamanlıyor",
   mail_read: "Posta okuyor", mail_send: "Posta gönderiyor", place: "Konuma bakıyor",
   artifact: "Yayınlıyor",
+  git: "Git",
 };
 
 // Araç satırının simgesi. Model seçmiyor, tür sabit eşleniyor: simgenin işi
@@ -787,7 +853,7 @@ const TOOL_ICON = {
   mind_recall: "◍", mind_memory: "◍", mind_goals: "◍",
   screen: "▣", hand: "▣", look: "◉", browser: "⌾", device: "⇄", skill: "✦",
   models: "✦", task: "⑃", schedule: "◔", mail_read: "✉", mail_send: "✉",
-  place: "⌖", artifact: "⬒",
+  place: "⌖", artifact: "⬒", git: "⌥",
 };
 
 // Dönen düşünme kelimeleri. Yapay zekâ yok — sabit listeden birkaç saniyede
@@ -1392,36 +1458,26 @@ function dropFrame() {
   $("shot-image").removeAttribute("src");
 }
 
-// Kamera düğmesi önizlemeyi açıyor, doğrudan kare almıyor: ne gönderdiğini
-// görmeden göndermek, kameranın ne yakaladığını bilmemek demek.
-$("cam").addEventListener("click", async () => {
-  if (Camera.on) { Camera.close(); return; }
-  setStatus("busy", t("Kamera açılıyor…"));
-  const opened = await Camera.open();
-  setStatus(busy ? "busy" : "ready", busy ? t("Çalışıyor") : t("Hazır"));
-  if (!opened) line("alert", t("Kamera açılamadı. İzin verilmemiş ya da başka bir program kullanıyor olabilir."));
-});
+// Kamera düğmesi yazma satırında yok: üstteki izleme ikonu aynı aygıtı
+// zaten açık tutuyor; tarayıcı getUserMedia ikinci kez açınca "açılamadı"
+// diyordu. Kare eklemek için ataş / sürükle.
 
 $("lens-snap").addEventListener("click", () => Camera.snap());
 $("lens-close").addEventListener("click", () => Camera.close());
 
 // --- kompozer + menüsü --------------------------------------------------
 //
-// Ekleme kısayolları tek yerde: dosya, kamera, ve ilgili ayar sekmeleri.
+// Ekleme kısayolları tek yerde: dosya ve ilgili ayar sekmeleri.
 // Claude Code'daki + menüsünün karşılığı — kompozerden çıkmadan.
 $("plus").addEventListener("click", () => {
   const pop = $("plus-pop");
   if (!pop.hidden) { pop.hidden = true; return; }
   pop.textContent = "";
 
-  const openTab = (name) => {
-    $("gear").click();
-    const tab = document.querySelector('[data-tab="' + name + '"]');
-    if (tab) tab.click();
-  };
+  const openTab = (name) => Settings.open(name);
   const items = [
     ["Dosya ekle", "belge, görsel, veri", () => $("file-input").click()],
-    ["Kameradan kare", "önizlemeyi aç", () => $("cam").click(), () => !$("cam").hidden],
+    ["Kamera", "aç/kapa, izleme", () => openTab("eyes")],
     ["Bağlantılar", "MCP sunucuları", () => openTab("connectors")],
     ["Yetenekler", "kendi araçların", () => openTab("skills")],
     ["Yeni görev", "zamanlanmış iş", () => openTab("tasks")],
@@ -1581,15 +1637,23 @@ function chgTurnStart() { if (typeof Degisiklik !== "undefined") Degisiklik.turB
 function chgTurnEnd() { if (typeof Degisiklik !== "undefined") Degisiklik.turBitti(); }
 
 function withContext(text) {
-  if (!appContext) return text;
-  const a = appContext;
-  const kind = KIND_TR[a.type] || a.type;
-  let line = `[Bağlam] Atölyendeki "${a.name}" adlı ${kind} üzerine konuşuyoruz (yol: ${a.path}).`;
-  if (a.address) line += ` Şu an çalışıyor: ${a.address}.`;
-  else if (a.url) line += ` Adres: ${a.url}.`;
-  if (a.title) line += ` Tanım: ${a.title}.`;
-  clearAppContext();
-  return line + (text ? "\n\n" + text : "");
+  const bits = [];
+  if (typeof Cameras !== "undefined" && Cameras.baglam) {
+    const cam = Cameras.baglam();
+    if (cam) bits.push(cam);
+  }
+  if (appContext) {
+    const a = appContext;
+    const kind = KIND_TR[a.type] || a.type;
+    let line = `[Bağlam] Atölyendeki "${a.name}" adlı ${kind} üzerine konuşuyoruz (yol: ${a.path}).`;
+    if (a.address) line += ` Şu an çalışıyor: ${a.address}.`;
+    else if (a.url) line += ` Adres: ${a.url}.`;
+    if (a.title) line += ` Tanım: ${a.title}.`;
+    clearAppContext();
+    bits.push(line);
+  }
+  if (!bits.length) return text;
+  return bits.join("\n") + (text ? "\n\n" + text : "");
 }
 
 stopBtn.addEventListener("click", () => { post("/api/interrupt"); Speech.stop(); });
@@ -1611,6 +1675,7 @@ function toggleFocus() {
     try { Apps.close(); } catch {}
     try { History.close(); } catch {}
     try { if (window.JobsPanel) JobsPanel.close(); else Gorevler.kapat(); } catch {}
+    try { if (typeof Cameras !== "undefined") Cameras.gizle(); } catch {}
     const s = document.getElementById("settings"); if (s) s.hidden = true;
     document.body.classList.remove("viewing", "settling");
   }
@@ -1805,57 +1870,150 @@ Listen.init({
 // Seviye iki yerden gelebiliyor: elle konuşurken tarayıcının ölçeri,
 // arkada dinlerken Python'daki kulak. İkisi de aynı halkayı büyütüyor.
 function showLevel(level) {
-  const mic = $("mic");
-  if (mic.hidden) return;
-  // Python tarafındaki RMS daha küçük ölçekli; ikisi aynı görünsün diye
-  // büyütülüyor.
   const shown = Math.min(1, level * 8);
-  mic.style.setProperty("--level", shown.toFixed(3));
-  mic.classList.toggle("hot", shown > 0.12);
-
-  // Sahnedeki mikrofon organı da duyduğunu göstersin. Eşik düğmenin
-  // eşiğinden yüksek: her nefes sahnede nabız attırmasın.
+  const hear = $("hear");
+  const mic = $("mic");
+  // HUD mikrofonu da nabız atsın: kompozer #mic gizliyse "hiç hareket yok"
+  // sanılıyordu.
+  if (hear && !hear.classList.contains("off")) {
+    hear.style.setProperty("--level", shown.toFixed(3));
+    hear.classList.toggle("hot", shown > 0.12);
+  }
+  if (mic && !mic.hidden && !mic.classList.contains("mute")) {
+    mic.style.setProperty("--level", shown.toFixed(3));
+    mic.classList.toggle("hot", shown > 0.12);
+  }
   if (shown > 0.3) Scene.use("mic", t("Ses duyuyor"));
 }
 
-function setListening(enabled, wake) {
+let kulakAcik = false;
+
+function setListening(enabled, wake, open) {
   $("mic").hidden = !enabled;
-  // Sürekli dinleme artık Python tarafında: tarayıcıda duramıyordu çünkü
+  // Sürekli dinleme Python tarafında: tarayıcıda duramıyordu çünkü
   // pencere gizlendiğinde Chromium arka plan zamanlayıcılarını dakikaya
-  // kısıyor ve dinleme ölüyor. Buradaki mikrofon düğmesi yalnızca elle
-  // konuşmak için — sürekli dinleme onsuz da sürüyor.
-  $("mic").title = wake ? t("Elle konuş (arkada zaten dinliyor)") : t("Tıkla ve konuş");
+  // kısıyor ve dinleme ölüyor. Uyandırma sözü veya serbest dinleme varken
+  // düğme kulağı keser; yoksa bas-konuş.
+  kulakAcik = !!(enabled && (wake || open));
+  setMicDeaf($("mic").classList.contains("mute"));
 }
 
-// Tıkla-konuş-tıkla. Basılı tutmak değildi: kullanıcı düğmeye tıklayıp
-// bırakıyor, o da sıfır saniyelik bir kayıt üretip sessizce atılıyordu.
+function setMicDeaf(off) {
+  const mic = $("mic");
+  mic.classList.toggle("mute", !!off);
+  mic.setAttribute("aria-pressed", off ? "false" : "true");
+  if (off) {
+    mic.classList.remove("live", "hot");
+    mic.style.setProperty("--level", "0");
+  }
+  mic.title = off
+    ? t("Tıkla: dinlemeye devam")
+    : kulakAcik
+      ? t("Tıkla: dinlemeyi durdur")
+      : t("Tıkla ve konuş");
+}
+
+// Tıkla: sürekli dinleme açıksa kulağı kes / aç. Basılı tutmak değildi:
+// kullanıcı düğmeye tıklayıp bırakıyor, o da sıfır saniyelik bir kayıt
+// üretip sessizce atılıyordu. Uyandırma yoksa eski bas-konuş.
 $("mic").addEventListener("click", async () => {
+  if (kulakAcik) {
+    const d = await post("/api/senses", { action: "toggle" });
+    if (d && d.ear) {
+      setMicDeaf(!!d.snoozed);
+      return;
+    }
+  }
   const on = await Listen.toggle();
   $("mic").classList.toggle("live", Listen.mode === "push");
   if (on === false) return;
 });
 
-// --- ses ----------------------------------------------------------------
-// Düğme yalnızca ses açıkken görünüyor: kapalıyken susturma düğmesi
-// göstermek anlamsız. Susturmak ayarı değiştirmiyor, o anki konuşmayı
-// kesiyor.
+// --- ses / dinleme HUD ------------------------------------------------
+// Kamerayla aynı dil: kapalıyken üstü çizili, tıkla → popup.
+
+function paintMute(on) {
+  const button = $("mute");
+  button.hidden = false;
+  button.classList.toggle("off", !on);
+  button.setAttribute("aria-pressed", on ? "true" : "false");
+  button.title = on ? t("Ses açık — tıkla: ayarla") : t("Ses kapalı — tıkla: aç");
+  const go = $("mute-enable");
+  if (go) go.textContent = on ? t("Sesi kapat") : t("Sesi aç");
+}
+
+function paintHear(on) {
+  const button = $("hear");
+  if (!button) return;
+  button.classList.toggle("off", !on);
+  button.setAttribute("aria-pressed", on ? "true" : "false");
+  button.title = on
+    ? t("Dinleme açık — tıkla: ayarla")
+    : t("Dinleme kapalı — tıkla: aç");
+  const go = $("hear-enable");
+  if (go) go.textContent = on ? t("Dinlemeyi kapat") : t("Dinlemeyi aç");
+}
 
 function setVoice(enabled) {
   Speech.enable(enabled);
-  const button = $("mute");
-  button.hidden = !enabled;
-  button.classList.remove("off");
-  button.title = t("Sesi kapat");
+  paintMute(!!enabled);
 }
 
-$("mute").addEventListener("click", () => {
-  const next = !Speech.on;
-  // Kapatmak o an konuşulanı da kesiyor: "sus" dendiğinde cümlenin bitmesini
-  // beklemek istenen şey değil.
-  Speech.enable(next);
-  const button = $("mute");
-  button.classList.toggle("off", !next);
-  button.title = next ? t("Sesi kapat") : t("Sesi aç");
+function kapatDuyuPop(keep) {
+  for (const id of ["mute-pop", "hear-pop", "cam-pop"]) {
+    const el = $(id);
+    if (el && id !== keep) el.hidden = true;
+  }
+}
+
+$("mute").addEventListener("click", (ev) => {
+  ev.stopPropagation();
+  const pop = $("mute-pop");
+  const next = pop.hidden;
+  kapatDuyuPop("mute-pop");
+  pop.hidden = !next;
+});
+$("mute-enable").addEventListener("click", async () => {
+  $("mute-pop").hidden = true;
+  const on = $("mute").classList.contains("off");
+  const d = await post("/api/senses", { action: "power", what: "voice", enabled: on });
+  if (d && d.ok) setVoice(on);
+});
+$("mute-settings").addEventListener("click", () => {
+  $("mute-pop").hidden = true;
+  if (typeof Settings !== "undefined") Settings.open("voice");
+});
+
+$("hear").addEventListener("click", (ev) => {
+  ev.stopPropagation();
+  const pop = $("hear-pop");
+  const next = pop.hidden;
+  kapatDuyuPop("hear-pop");
+  pop.hidden = !next;
+});
+$("hear-enable").addEventListener("click", async () => {
+  $("hear-pop").hidden = true;
+  const on = $("hear").classList.contains("off");
+  const d = await post("/api/senses", { action: "power", what: "hearing", enabled: on });
+  if (d && d.ok) {
+    paintHear(on);
+    setListening(on, on, on);
+  }
+});
+$("hear-settings").addEventListener("click", () => {
+  $("hear-pop").hidden = true;
+  if (typeof Settings !== "undefined") Settings.open("hearing");
+});
+
+document.addEventListener("click", (ev) => {
+  const mutePop = $("mute-pop");
+  const hearPop = $("hear-pop");
+  if (mutePop && !mutePop.hidden
+      && !mutePop.contains(ev.target) && !$("mute").contains(ev.target))
+    mutePop.hidden = true;
+  if (hearPop && !hearPop.hidden
+      && !hearPop.contains(ev.target) && !$("hear").contains(ev.target))
+    hearPop.hidden = true;
 });
 
 // --- yetki --------------------------------------------------------------
@@ -2241,7 +2399,7 @@ async function fillModelPop(pop, note) {
   // Seçim bu sohbet için: her konuşma kendi modelini taşıyabilir, yeni
   // sohbet son sohbetin seçimini devralır. Küresel varsayılan ayarlarda.
   pop.append(mk("div", "pop-note", t(
-    "Seçim bu sohbet için geçerli — yeni sohbet devralır. Küresel varsayılan: Ayarlar → Model.")));
+    "Seçim bu sohbette kalır; yeni sohbet ve sonraki açılış onu devralır. Küresel varsayılan: Ayarlar → Model.")));
   const search = mk("input", "pop-search");
   search.type = "search";
   search.placeholder = catalog.length + " " + t("model içinde ara…");
@@ -2496,7 +2654,7 @@ const HEAD_ARG = 72;
 // Hedefi kod gibi göstermesi gereken araçlar: komut ve dosya yolu.
 const KOD_HEDEFLI = new Set([
   "shell", "bash", "powershell", "read_file", "write_file", "edit_file",
-  "list_dir", "search_files", "checkpoint",
+  "list_dir", "search_files", "checkpoint", "git",
 ]);
 
 // Kabuk sarmalayıcıları: kullanıcının ilgilendiği şey bunların İÇİ.
@@ -4062,6 +4220,7 @@ function handle(e) {
     case "tool_end": {
       closeAct(e);
       Viewer.refresh(e.tool, e.path);
+      if (typeof GitBar !== "undefined") GitBar.touched(e.tool);
       if (busy) setMode("thinking");
       const done = organFor(e.tool);
       // İz hemen silinmiyor: sahnede birkaç saniye daha duruyor ki neyin
@@ -4076,6 +4235,9 @@ function handle(e) {
     // rozetini tazeler (sohbet kopya kartlarla dolmasın).
     case "artifact": artifactCard(e); break;
     case "plan": planCard(e); break;
+    case "git":
+      if (typeof GitBar !== "undefined") GitBar.refresh();
+      break;
 
     // Oturum değişti (yeni ya da devam): thread temizlenir; devam eden bir
     // konuşmaysa geçmiş dökümü yüklenir ki kullanıcı kaldığı yeri görsün.
@@ -4214,6 +4376,17 @@ function handle(e) {
     // Python tarafındaki kulağın duyduğu seviye: mikrofon simgesi
     // canlanıyor, yani arkada dinlendiği görünüyor.
     case "level": showLevel(e.value); break;
+    case "hearing":
+      setMicDeaf(!!e.snoozed);
+      if ("live" in e || "enabled" in e)
+        paintHear(!!(e.live || (e.enabled && (e.open || e.wake) && !e.snoozed)));
+      break;
+    case "voice":
+      setVoice(!!e.enabled);
+      break;
+    case "camera":
+      if (typeof Cameras !== "undefined" && Cameras.durum) Cameras.durum(e);
+      break;
     case "turn_end":
       sealLine(); Speech.flush();
       // Plan kipinde biten tur bir plan bırakmıştır: uygulama teklifi.
@@ -4263,6 +4436,11 @@ function handle(e) {
       Scene.ripple();
       Scene.load(() => Scene.bridge(e.src, e.dst));
       note(t("Köprü: ") + (e.reason || t("bağlandı")));
+      break;
+
+    case "device_removed":
+      loadOrgans();
+      document.dispatchEvent(new CustomEvent("neo:devices"));
       break;
 
     // Beni tanı: kişisel ince ayar arka planda başladı/bitti (ya da ayar
@@ -4364,8 +4542,9 @@ async function loadState() {
     showMeta();
     setVoice(!!s.voice);
     Speech.setCharacter(s.character);
-    setListening(!!s.listen, !!s.wake);
-    $("cam").hidden = !s.camera;
+    setListening(!!s.listen, !!s.wake, !!s.open);
+    setMicDeaf(!!s.snoozed);
+    paintHear(!!s.ear);
     if (s.mode) { previous = s.mode; setAuthority(s.mode); }
     // Aktif hedefler: panel olay akışını kaçırdıysa (yenileme) buradan
     // tohumlanıp kaldığı yerden sürüyor.

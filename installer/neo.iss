@@ -15,7 +15,7 @@
 ; seçer (/YEDEK=0 yedeği kapatır — test/otomasyon için).
 ;
 ; GÜVENLİK AĞLARI (sahada yaşanan üç yaraya karşı):
-;   1. Açık kopya tespiti: "-m neocp" koşan HER python(w) süreci bulunur
+;   1. Açık kopya tespiti: "-m neocp" koşan HER python(w)/neo.exe süreci bulunur
 ;      (kurulum dizini şartı yok), liste gösterilir; [Kapat ve devam]
 ;      nazik taskkill + doğrulama. Sessizde /KAPAT=1 ile kapatılır.
 ;   2. Farklı dizin uyarısı: kayıtta kurulum yeri varken başka dizin
@@ -174,26 +174,30 @@ Source: "{#Paket}\watch\*"; DestDir: "{app}\watch"; Flags: recursesubdirs ignore
 Source: "{#Paket}\eval\*"; DestDir: "{app}\eval"; Flags: recursesubdirs ignoreversion; Components: egitim
 
 [Icons]
-; Konsolsuz açılış: hedef pythonw, pencere webview'ın kendisi. -C "{app}"
+; Konsolsuz açılış: hedef damgalı neo.exe (pythonw kopyası). Görev
+; Yöneticisi PE ikonuna bakar; pythonw hedefi yılanı bırakır. -C "{app}"
 ; evi kuruluma sabitler — .neocp ve atolye hep kurulumun içinde yaşar.
-Name: "{autoprograms}\{#Ad}"; Filename: "{app}\python\pythonw.exe"; Parameters: "-m neocp --app -C ""{app}"""; WorkingDir: "{app}"; IconFilename: "{app}\src\neocp\assets\neo.ico"
-Name: "{autodesktop}\{#Ad}"; Filename: "{app}\python\pythonw.exe"; Parameters: "-m neocp --app -C ""{app}"""; WorkingDir: "{app}"; IconFilename: "{app}\src\neocp\assets\neo.ico"; Tasks: desktopicon
+Name: "{autoprograms}\{#Ad}"; Filename: "{app}\python\neo.exe"; Parameters: "-m neocp --app -C ""{app}"""; WorkingDir: "{app}"; IconFilename: "{app}\src\neocp\assets\neo.ico"
+Name: "{autodesktop}\{#Ad}"; Filename: "{app}\python\neo.exe"; Parameters: "-m neocp --app -C ""{app}"""; WorkingDir: "{app}"; IconFilename: "{app}\src\neocp\assets\neo.ico"; Tasks: desktopicon
 
 [Registry]
-Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "{#Ad}"; ValueData: """{app}\python\pythonw.exe"" -m neocp --app -C ""{app}"""; Tasks: autostart; Flags: uninsdeletevalue
+Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "{#Ad}"; ValueData: """{app}\python\neo.exe"" -m neocp --app -C ""{app}"""; Tasks: autostart; Flags: uninsdeletevalue
 ; Explorer sağ tık: Neo ile aç (dosya / klasör / masaüstü arka planı)
 Root: HKCU; Subkey: "Software\Classes\*\shell\NeoOpen"; ValueType: string; ValueName: ""; ValueData: "Neo ile aç"; Flags: uninsdeletekey
 Root: HKCU; Subkey: "Software\Classes\*\shell\NeoOpen"; ValueType: string; ValueName: "Icon"; ValueData: "{app}\src\neocp\assets\neo.ico"
-Root: HKCU; Subkey: "Software\Classes\*\shell\NeoOpen\command"; ValueType: string; ValueName: ""; ValueData: """{app}\python\pythonw.exe"" -m neocp.cli --app -C ""{app}"" --open ""%1"""
+Root: HKCU; Subkey: "Software\Classes\*\shell\NeoOpen\command"; ValueType: string; ValueName: ""; ValueData: """{app}\python\neo.exe"" -m neocp.cli --app -C ""{app}"" --open ""%1"""
 Root: HKCU; Subkey: "Software\Classes\Directory\shell\NeoOpen"; ValueType: string; ValueName: ""; ValueData: "Neo ile aç"; Flags: uninsdeletekey
 Root: HKCU; Subkey: "Software\Classes\Directory\shell\NeoOpen"; ValueType: string; ValueName: "Icon"; ValueData: "{app}\src\neocp\assets\neo.ico"
-Root: HKCU; Subkey: "Software\Classes\Directory\shell\NeoOpen\command"; ValueType: string; ValueName: ""; ValueData: """{app}\python\pythonw.exe"" -m neocp.cli --app -C ""{app}"" --open ""%1"""
+Root: HKCU; Subkey: "Software\Classes\Directory\shell\NeoOpen\command"; ValueType: string; ValueName: ""; ValueData: """{app}\python\neo.exe"" -m neocp.cli --app -C ""{app}"" --open ""%1"""
 Root: HKCU; Subkey: "Software\Classes\Directory\Background\shell\NeoOpen"; ValueType: string; ValueName: ""; ValueData: "Neo ile aç"; Flags: uninsdeletekey
 Root: HKCU; Subkey: "Software\Classes\Directory\Background\shell\NeoOpen"; ValueType: string; ValueName: "Icon"; ValueData: "{app}\src\neocp\assets\neo.ico"
-Root: HKCU; Subkey: "Software\Classes\Directory\Background\shell\NeoOpen\command"; ValueType: string; ValueName: ""; ValueData: """{app}\python\pythonw.exe"" -m neocp.cli --app -C ""{app}"" --open ""%V"""
+Root: HKCU; Subkey: "Software\Classes\Directory\Background\shell\NeoOpen\command"; ValueType: string; ValueName: ""; ValueData: """{app}\python\neo.exe"" -m neocp.cli --app -C ""{app}"" --open ""%V"""
 
 [Run]
-Filename: "{app}\python\pythonw.exe"; Parameters: "-m neocp --app -C ""{app}"""; WorkingDir: "{app}"; Description: "{cm:LaunchProgram,{#Ad}}"; Flags: nowait postinstall skipifsilent
+; Damga: kısayol neo.exe'yi hedefler; dosya yoksa veya ico sürümü değiştiyse
+; python.exe (kilitli değil) kopyayı yeniler, sonra pencere açılır.
+Filename: "{app}\python\python.exe"; Parameters: "-c ""from neocp.winicon import ensure_host; ensure_host()"""; WorkingDir: "{app}"; Flags: runhidden waituntilterminated
+Filename: "{app}\python\neo.exe"; Parameters: "-m neocp --app -C ""{app}"""; WorkingDir: "{app}"; Description: "{cm:LaunchProgram,{#Ad}}"; Flags: nowait postinstall skipifsilent skipifdoesntexist
 
 [UninstallDelete]
 ; Bizim ürettiğimiz kalıntılar: dil seçimi ve çalışma sırasında oluşan
@@ -228,7 +232,7 @@ begin
   Result := '''' + S + '''';
 end;
 
-{ Komut satırında "-m neocp" geçen TÜM python(w) süreçleri — kurulum
+{ Komut satırında "-m neocp" geçen TÜM python(w)/neo.exe süreçleri — kurulum
   dizinine bakılmaz: sahada dosya-kullanımda hatası tam da "başka"
   kopyalar (geliştirici deposu, ikinci kurulum) açıkken yaşandı.
   Satır biçimi: "pid|çalıştırılabilir-yolu". Exec çıktı veremediği için
@@ -242,7 +246,7 @@ begin
   Result := '';
   Gecici := ExpandConstant('{tmp}\neo-surec-listesi.txt');
   Komut := '/C powershell -NoProfile -Command "Get-CimInstance Win32_Process | ' +
-    'Where-Object { ($_.Name -eq ''python.exe'' -or $_.Name -eq ''pythonw.exe'') ' +
+    'Where-Object { ($_.Name -eq ''python.exe'' -or $_.Name -eq ''pythonw.exe'' -or $_.Name -eq ''neo.exe'') ' +
     '-and $_.CommandLine -match ''-m neocp'' } | ' +
     'ForEach-Object { [string]$_.ProcessId + ''|'' + $_.ExecutablePath }" > "' +
     Gecici + '"';

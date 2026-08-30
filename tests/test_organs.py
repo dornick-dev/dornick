@@ -58,6 +58,24 @@ def test_the_camera_is_used_by_the_look_tool(tmp_path: Path) -> None:
     orada tahmin edilirse yeni bir araç sessizce eşleşmeden kalıyor."""
     lens = next(o for o in organs.inventory(Config.load(tmp_path)) if o["id"] == "lens")
     assert "look" in lens["tools"]
+    assert "kamera" in lens["tools"]
+    assert lens["name"] == "Bilgisayar kamerası"
+
+
+def test_named_cameras_are_organs_the_model_can_call(tmp_path: Path) -> None:
+    from neocp import watch
+
+    config = Config.load(tmp_path)
+    config.ensure_dirs()
+    watch.save(config.state_dir, [
+        watch.Camera(id="cam_1", name="bahçe", kind="rtsp", host="10.0.0.8",
+                     last_note="kişi"),
+    ])
+    body = organs.inventory(config)
+    cam = next(o for o in body if o["id"] == "cam:cam_1")
+    assert cam["name"] == "bahçe"
+    assert "kamera" in cam["tools"]
+    assert "kişi" in cam["detail"]
 
 
 def test_a_deaf_ear_is_not_listening(tmp_path: Path) -> None:

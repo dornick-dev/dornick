@@ -257,9 +257,10 @@ def test_a_backlog_drops_the_oldest_not_the_newest() -> None:
 
     assert listening.backlog == ear.BACKLOG
     assert listening.dropped == 2
-    # Kalanlar en yenileri. Kuyruk artık (audio, deaf) taşıyor: deaf, segmentin
-    # neo konuşurken mi yakalandığı (barge-in için).
-    assert listening._work.get_nowait() == (2, False)
+    # Kalanlar en yenileri. Kuyruk (audio, deaf, echo, captured).
+    item = listening._work.get_nowait()
+    assert item[0] == 2 and item[1] is False and item[2] is False
+    assert isinstance(item[3], float)
 
 
 def test_the_recogniser_runs_on_the_graphics_card_when_it_can() -> None:
@@ -280,12 +281,18 @@ def test_the_cuda_libraries_are_put_on_the_dll_path() -> None:
     """pip ile kurulan `nvidia-*` paketleri DLL'leri site-packages içine
     koyuyor; oradan kendiliğinden bulunmuyorlar. İkisi birden gerekiyor:
     `add_dll_directory` yalnızca arama bayrağı kullanan yüklemelerde işe
-    yarıyor, ctranslate2 düz `LoadLibrary` çağırıyor."""
+    yarıyor, ctranslate2 düz `LoadLibrary` çağırıyor.
+
+    Whisper ve kamera analizi aynı DLL yolunu kullanıyor (`gpu.cuda_libs_on_path`).
+    """
     import inspect
 
-    source = inspect.getsource(listen._cuda_ready)
+    from neocp import gpu
+
+    source = inspect.getsource(gpu.cuda_libs_on_path)
     assert "add_dll_directory" in source
     assert 'os.environ["PATH"]' in source
+    assert "cuda_libs_on_path" in inspect.getsource(listen._cuda_ready)
 
 
 def test_the_wake_word_can_come_last() -> None:
@@ -322,6 +329,28 @@ def test_being_called_by_name_still_gets_an_answer() -> None:
 
     source = inspect.getsource(desktop._open_ear)
     assert "CALLED_ASK" in source
+
+
+def test_settings_reload_starts_the_python_ear() -> None:
+    """Ayar kaydı kulağı açmazsa kullanıcı ne derse desin yalnız bas-konuş
+    duyuluyor — tarayıcı PTT, Python kulağı ayrı."""
+    import inspect
+
+    from neocp import desktop
+
+    reload_src = inspect.getsource(desktop.Bridge.reload)
+    sync = inspect.getsource(desktop.Bridge.sync_hearing)
+    boot = inspect.getsource(desktop._boot)
+    wanted = inspect.getsource(desktop._hearing_wanted)
+    power = inspect.getsource(desktop.Bridge.hearing_power)
+    assert "self.sync_hearing(config)" in reload_src
+    assert "_open_ear" in sync
+    assert "listen.open" in sync
+    assert "sync_hearing" in boot
+    assert "ear=bridge.ear" in boot
+    assert "listen.open" in wanted
+    assert "wake.strip()" in wanted
+    assert '"open": bool(on)' in power
 
 
 def test_speaking_again_queues_instead_of_cancelling() -> None:
@@ -464,6 +493,55 @@ def test_real_speech_is_not_mistaken_for_laughter() -> None:
     "harika" ve "hava" h taşıyor ama gülme değil."""
     for said in ("hava nasıl", "harika oldu", "ahah tamam devam et", "depoya bak"):
         assert not listen.chatter(said), said
+
+
+def test_a_cough_is_not_a_message() -> None:
+    """Öksürük Whisper'da 'öööö' oluyor ve sohbete hayali söz düşüyordu."""
+    groaning = "ö" * 80
+    assert listen.chatter(groaning)
+    assert listen.chatter("eeeeee")
+    assert not listen.chatter("öğretmen geldi")
+
+
+def test_a_prompt_leak_is_not_a_message() -> None:
+    """Anlamayınca sözlükten 'modbus.com' uyduruyordu — o bir komut değil."""
+    vocab = "Modbus, SCADA, PLC, register"
+    assert listen.hallucinated("modbus.com", vocab)
+    assert listen.hallucinated("Modbus", vocab)
+    assert listen.hallucinated("Altyazı M.K.")
+    assert not listen.hallucinated("Modbus cihazını oku", vocab)
+    assert not listen.hallucinated("hava nasıl", vocab)
+
+
+def test_a_cough_never_reaches_the_agent() -> None:
+    from neocp import ear
+
+    caught: list[ear.Heard] = []
+
+    class Hears:
+        def transcribe_array(self, audio, rate):  # noqa: ANN001, ANN202
+            return "ö" * 80
+
+    listening = ear.Ear(Hears(), caught.append, wake="neo", open=True)
+    listening._settle([0.0])
+    assert not caught
+
+
+def test_a_hallucinated_url_never_reaches_the_agent() -> None:
+    from neocp import ear
+    from types import SimpleNamespace
+
+    caught: list[ear.Heard] = []
+
+    class Hears:
+        config = SimpleNamespace(vocab="Modbus, SCADA, PLC")
+
+        def transcribe_array(self, audio, rate):  # noqa: ANN001, ANN202
+            return "modbus.com"
+
+    listening = ear.Ear(Hears(), caught.append, wake="neo", open=True)
+    listening._settle([0.0])
+    assert not caught
 
 
 def test_laughter_never_reaches_the_agent() -> None:
@@ -666,6 +744,34 @@ def test_senses_tool_pauses_hearing_and_sight_together() -> None:
     assert not listening.snoozed and not seeing.snoozed
 
 
+def test_senses_sight_uses_camera_power_when_present() -> None:
+    """HUD ile aynı kapı: sohbet 'kamerayı kapat' deyince aygıt bırakılır."""
+    import asyncio
+
+    from neocp.tools import build_registry
+
+    registry = build_registry(subagents=False)
+    called: list[bool] = []
+
+    class Ctx:
+        ear = None
+        lens = None
+        watcher = None
+
+        @staticmethod
+        def camera_power(on: bool) -> str:
+            called.append(on)
+            return "Kamera kapalı." if not on else "Kamera açık."
+
+    result = asyncio.run(registry.get("senses").handler(
+        {"action": "pause", "what": "sight"}, Ctx()))
+    assert called == [False]
+    assert "Kamera kapalı" in result.content
+    asyncio.run(registry.get("senses").handler(
+        {"action": "resume", "what": "sight"}, Ctx()))
+    assert called == [False, True]
+
+
 def test_the_wake_word_reopens_every_sense() -> None:
     """"Ben gelince seslenirim" tek bir sesleniş demek: "neo" duyunca
     göz de geri açılmalı, kullanıcı duyu duyu saymamalı."""
@@ -685,3 +791,81 @@ def test_the_wake_word_reopens_every_sense() -> None:
 
     assert not listening.snoozed
     assert not seeing.snoozed
+
+
+def test_ear_gate_toggles_without_asking_the_agent() -> None:
+    """Kompozer mikrofonu ajan aracını beklemeden kulağı kesebilmeli."""
+    from neocp.web.server import ear_gate
+
+    class Fake:
+        snoozed = False
+
+        def snooze(self, seconds=0.0):  # noqa: ANN001, ANN202
+            self.snoozed = True
+
+        def unsnooze(self):  # noqa: ANN202
+            self.snoozed = False
+
+    assert ear_gate(None, "toggle") == {"ok": True, "ear": False, "snoozed": False}
+    ear = Fake()
+    assert ear_gate(ear, "toggle")["snoozed"] is True
+    assert ear.snoozed
+    assert ear_gate(ear, "toggle")["snoozed"] is False
+    assert not ear.snoozed
+    ear_gate(ear, "pause")
+    assert ear.snoozed
+    ear_gate(ear, "resume")
+    assert not ear.snoozed
+
+
+def test_snooze_notifies_the_ui() -> None:
+    """Düğme ve ajan aracı aynı kapı: arayüz susturulmayı görmeli."""
+    from neocp import ear as hearing
+
+    seen: list[bool] = []
+    listening = hearing.Ear(listener=None, heard=lambda _h: None)
+    listening.on_snooze = seen.append
+    listening.snooze()
+    listening.unsnooze()
+    assert seen == [True, False]
+
+def test_slow_cpu_downshifts_the_model_after_two_hits() -> None:
+    """Canli sikayet (30.08): zayif laptopta surekli dinleme 10-20 sn
+    geride. Cozum suresi sesi ust uste iki kez belirgin asarsa boyut
+    bir kademe iner (small->base) — yalniz oturum icin, ayar dosyasina
+    yazilmaz. Tek yavas cozum (isinma) dusurmez; GPU hic dusurmez."""
+    from neocp.listen import Listener, ListenConfig
+    l = Listener(ListenConfig(size='small'))
+    l.device = 'cpu'
+    l._loaded_size = 'small'
+    # 2 sn ses, 8 sn cozum: bir kez -> daha inmez
+    assert l._hiz_karari(2.0, 8.0) is None
+    # ikinci kez -> base'e in
+    assert l._hiz_karari(2.0, 9.0) == 'base'
+    # hizli cozum sayaci sifirlar
+    l._slow_hits = 1
+    assert l._hiz_karari(2.0, 1.0) is None
+    assert l._slow_hits == 0
+    # GPU'da asla
+    l.device = 'cuda'
+    assert l._hiz_karari(2.0, 30.0) is None
+    # base'in alti yok (tiny bilincli disarida)
+    l.device = 'cpu'
+    l._loaded_size = 'base'
+    l._slow_hits = 1
+    assert l._hiz_karari(2.0, 9.0) is None
+
+
+def test_downshift_is_session_only_and_reloads_smaller() -> None:
+    from neocp.listen import Listener, ListenConfig
+    cfg = ListenConfig(size='small')
+    l = Listener(cfg)
+    l.device = 'cpu'
+    l._loaded_size = 'small'
+    l._model = object()
+    l._slow_hits = 1
+    l._belki_dusur(2.0, 9.0)
+    assert l._force_size == 'base'
+    assert l._model is None            # sonraki cozum kucugu yukler
+    assert cfg.size == 'small'         # kullanicinin ayari degismedi
+

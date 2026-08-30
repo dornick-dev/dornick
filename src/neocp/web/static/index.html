@@ -16,9 +16,9 @@
 
 <canvas id="scene"></canvas>
 
-<!-- Beyin paneli: sağ sütun. Sahne tuvali tam ekran kalıyor; çekirdek bu
-     panelin ortasına oturuyor. Panel tıklamaları tuvale geçirsin diye
-     pointer-events kapalı; yalnız başlık şeridi etkileşimli. -->
+<!-- Sağ sütun: beyin + mini paneller (orkestra, kameralar). Yüzen sol
+     modal değil — açılan her güverte burada satır/sütun paylaşır. -->
+<div class="right-col" id="right-col">
 <aside class="mind" id="mind" aria-label="Beyin">
   <div class="mind-grip" id="mind-grip" title="Genişliği sürükle" aria-label="Paneli yeniden boyutlandır"></div>
   <div class="mind-head">
@@ -32,6 +32,62 @@
             title="Renk açıklamasını aç/kapat" aria-label="Renk açıklamasını aç/kapat">Açıklama ▸</button>
   </div>
 </aside>
+<div class="dock-grip" id="dock-grip" title="Yüksekliği sürükle" aria-label="Beyin ve orkestra arasında boyutlandır"></div>
+<div class="side-dock" id="side-dock">
+<div class="orch-deck" id="orch-deck" hidden>
+  <div class="orch-head">
+    <span class="orch-tag">Orkestra</span>
+    <span class="orch-status" id="orch-status">Şef hazır</span>
+    <button class="close" id="orch-close" aria-label="Kapat">×</button>
+  </div>
+  <div class="orch-body" id="orch-body"></div>
+  <div class="orch-foot" id="orch-foot"></div>
+</div>
+</div>
+</div>
+
+<div id="cam-layer" hidden></div>
+<div class="cam-deck" id="cam-deck" hidden>
+  <div class="orch-head" id="cam-head" title="Sürükle">
+    <span class="orch-tag">Kameralar</span>
+    <span class="cam-head-acts">
+      <button type="button" class="plan-btn muted" id="cam-stage-pop">Yeni pencerede</button>
+      <button type="button" class="plan-btn muted" id="cam-stage-full">Tam ekran</button>
+      <button class="plan-btn muted" id="cam-stop" type="button">Kamerayı kapat</button>
+      <button class="close" id="cam-close" aria-label="Paneli gizle">×</button>
+    </span>
+    <span class="orch-status" id="cam-spec"></span>
+  </div>
+  <div class="cam-stage-live" id="cam-live-wrap">
+    <img id="cam-live" alt="">
+    <div class="cam-live-meta">
+      <span id="cam-stage-title"></span>
+      <span id="cam-stage-sight" class="cam-stage-sight"></span>
+      <span class="cam-stage-grow"></span>
+      <button type="button" class="plan-btn muted" id="cam-stage-ask">Bu kareye bak</button>
+    </div>
+  </div>
+  <div id="cam-strip" class="cam-strip"></div>
+  <div class="cam-foot" id="cam-foot">
+    <select id="cam-kind" class="cam-in" aria-label="Kamera türü">
+      <option value="usb">Bilgisayar</option>
+      <option value="rtsp">RTSP (IP)</option>
+      <option value="http">HTTP / MJPEG</option>
+    </select>
+    <input id="cam-name" class="cam-in" placeholder="ad">
+    <input id="cam-index" class="cam-in" value="0" placeholder="0" title="Aygıt indeksi">
+    <input id="cam-host" class="cam-in wide" placeholder="192.168.1.10" hidden>
+    <input id="cam-port" class="cam-in" placeholder="554" hidden>
+    <input id="cam-path" class="cam-in wide" placeholder="/stream" hidden>
+    <input id="cam-user" class="cam-in" placeholder="kullanıcı" hidden>
+    <input id="cam-pass" class="cam-in" type="password" placeholder="şifre" hidden>
+    <label class="cam-gpu-lab" id="cam-gpu-lab">
+      <input id="cam-analyze" type="checkbox" checked>
+      GPU tanıma
+    </label>
+    <button id="cam-add" class="plan-btn">Ekle</button>
+  </div>
+</div>
 
 <div class="hud">
   <!-- Gerçek başlık çubuğu (Claude Code): solda kenar çubuğu anahtarı +
@@ -63,13 +119,30 @@
 <!-- Bağlam araçları (Claude Code'un orta-sağ üst ikonları): görüntüleyici,
      orkestra, ses; ⋮ menüsünde görevler · uygulamalar · odak · beni tanı. -->
 <div class="ctx-tools" id="ctx-tools">
-  <button id="mute" class="icon" title="Sesi kapat" aria-label="Ses" hidden>
+  <button id="mute" class="icon off" title="Ses kapalı — tıkla: aç" aria-label="Ses" aria-pressed="false">
     <svg viewBox="0 0 16 16" aria-hidden="true">
       <path d="M7 3 4 6H2v4h2l3 3z"/>
       <path class="wave" d="M10 5.5a3.5 3.5 0 0 1 0 5M12 3.5a6 6 0 0 1 0 9" fill="none"/>
-      <path class="cross" d="M10.5 6 14 9.5M14 6l-3.5 3.5" fill="none"/>
+      <path class="off-line" d="M2 14 14 2" fill="none"/>
     </svg>
   </button>
+  <div class="pop cam-pop" id="mute-pop" hidden>
+    <p class="cam-pop-note">Kapalı gelir. Açınca neo cevapları sesli okur. Ayrıntı Ayarlar › Ses.</p>
+    <button id="mute-enable" class="plan-btn">Sesi aç</button>
+    <button id="mute-settings" class="plan-btn muted">Ayarları aç</button>
+  </div>
+  <button id="hear" class="icon off" title="Dinleme kapalı — tıkla: aç" aria-label="Mikrofon" aria-pressed="false">
+    <svg viewBox="0 0 16 16" aria-hidden="true">
+      <rect x="6" y="2" width="4" height="7.5" rx="2"/>
+      <path d="M3.5 7.5a4.5 4.5 0 0 0 9 0M8 12v2" fill="none"/>
+      <path class="off-line" d="M2 14 14 2" fill="none"/>
+    </svg>
+  </button>
+  <div class="pop cam-pop" id="hear-pop" hidden>
+    <p class="cam-pop-note">Kapalı gelir. Açınca neo seni sürekli dinler (uyandırma sözü gerekmez). Ayrıntı Ayarlar › Mikrofon.</p>
+    <button id="hear-enable" class="plan-btn">Dinlemeyi aç</button>
+    <button id="hear-settings" class="plan-btn muted">Ayarları aç</button>
+  </div>
   <button id="eye" class="icon" title="Görüntüleyici" aria-label="Görüntüleyici">
     <svg viewBox="0 0 16 16" aria-hidden="true">
       <rect x="2" y="3" width="12" height="10" rx="1.4" fill="none"/>
@@ -85,6 +158,18 @@
       <circle cx="12.4" cy="12.4" r="1.5" fill="none"/>
     </svg>
   </button>
+  <button id="cams" class="icon cam-off" title="Kamera kapalı — tıkla: aç" aria-label="Kamera" aria-pressed="false">
+    <svg viewBox="0 0 16 16" aria-hidden="true">
+      <rect x="1.5" y="4" width="9.5" height="8" rx="1.4" fill="none"/>
+      <path d="M11 7l3.5-2v6L11 9z" fill="none"/>
+      <path class="off-line" d="M2 14 14 2" fill="none"/>
+    </svg>
+  </button>
+  <div class="pop cam-pop" id="cam-pop" hidden>
+    <p class="cam-pop-note" id="cam-pop-note">Kamera açılınca LED yanar. NVIDIA GPU varsa nesneler yerelde okunur (~400 MB VRAM); sohbette sorduğunda neo bunu metin olarak kullanır, resim kendiliğinden gitmez. GPU yoksa yalnız önizleme.</p>
+    <button id="cam-enable" class="plan-btn">Kamerayı aç</button>
+    <button id="cam-settings" class="plan-btn muted">Ayarları aç</button>
+  </div>
   <button id="mind-open" class="icon mind-open" title="Beyin panelini aç" aria-label="Beyin panelini aç">◍</button>
   <button id="more-tools" class="icon" title="Diğer araçlar" aria-label="Diğer araçlar">
     <svg viewBox="0 0 16 16" aria-hidden="true">
@@ -145,6 +230,10 @@
             title="Tıkla — katla/aç" aria-label="Hedefler — katla/aç"></button>
     <div class="goals-body" id="goals-body"></div>
   </div>
+  <!-- Hatırlama izi: eskiden sol üstte yüzen kutuydu ve konuşma listesinin
+       üstüne biniyordu. Hedef şeridi gibi akışın kardeşi — yer kaplar,
+       örtmüyor. -->
+  <div class="route" id="route" hidden></div>
   <div class="stream" id="thread">
     <div class="welcome" id="welcome">
       <h1>Ne yapmamı istersin?</h1>
@@ -156,6 +245,20 @@
      yeni içerik sayısını gösterir ve tıklanınca en alta iner. -->
 <button id="jump" class="jump" hidden title="En alta in" aria-label="En alta in">↓</button>
 
+<div class="git-bar" id="git-bar" hidden>
+  <button type="button" class="git-id" id="git-id">
+    <b id="git-name"></b>
+    <span id="git-branch"></span>
+  </button>
+  <button type="button" class="git-stat" id="git-stat" hidden>
+    <span class="git-plus" id="git-plus"></span>
+    <span class="git-minus" id="git-minus"></span>
+  </button>
+  <span class="git-grow"></span>
+  <button type="button" class="git-act" id="git-commit" hidden>Commit</button>
+  <button type="button" class="git-act" id="git-publish" hidden>Yayınla</button>
+</div>
+
 <form class="entry" id="composer">
   <button id="plus" type="button" class="icon" title="Ekle — dosya, bağlantı, yetenek" aria-label="Ekle">
     <svg viewBox="0 0 16 16" aria-hidden="true">
@@ -166,6 +269,7 @@
     <svg viewBox="0 0 16 16" aria-hidden="true">
       <rect x="6" y="2" width="4" height="7.5" rx="2"/>
       <path d="M3.5 7.5a4.5 4.5 0 0 0 9 0M8 12v2" fill="none"/>
+      <path class="off-line" d="M2 14 14 2" fill="none"/>
     </svg>
   </button>
   <button id="clip" type="button" class="icon" title="Dosya ekle" aria-label="Dosya">
@@ -174,12 +278,6 @@
     </svg>
   </button>
   <input id="file-input" type="file" multiple hidden>
-  <button id="cam" type="button" class="icon" title="Kameradan kare al" aria-label="Kamera" hidden>
-    <svg viewBox="0 0 16 16" aria-hidden="true">
-      <path d="M2 5.5h2.2l1-1.5h3.6l1 1.5H13v7H2z" fill="none"/>
-      <circle cx="7.5" cy="9" r="2.2" fill="none"/>
-    </svg>
-  </button>
   <textarea id="input" rows="1" placeholder="Konuş…  ·  / komut  ·  @ dosya"></textarea>
   <button id="send" type="submit" aria-label="Gönder">→</button>
 </form>
@@ -203,7 +301,7 @@
 <div class="pop" id="dock-pop" hidden></div>
 
 <!-- Kompozerdeki + menüsü: ekleme kısayolları. Ayar sayfasını açmadan
-     dosya/kamera eklemek ya da ilgili ayar sekmesine atlamak. -->
+     dosya eklemek ya da ilgili ayar sekmesine atlamak. -->
 <div class="pop" id="plus-pop" hidden></div>
 
 <div class="dock" id="dock">
@@ -243,8 +341,6 @@
 </div>
 
 <div class="probe" id="probe" hidden></div>
-
-<div class="route" id="route" hidden></div>
 
 <div class="veil" id="overlay" hidden>
   <div class="ask">
@@ -402,18 +498,6 @@
   <div class="jobs-body" id="jobs-body"></div>
 </div>
 
-<!-- Orkestra: alt ajan kanalları. Kendisi çalışırken açılıyor; şef (ana
-     ajan) bekler ve beklediğini söyler. Sabitlenip geçmiş koşu da izlenebilir. -->
-<div class="orch-deck" id="orch-deck" hidden>
-  <div class="orch-head">
-    <span class="orch-tag">Orkestra</span>
-    <span class="orch-status" id="orch-status">Şef hazır</span>
-    <button class="close" id="orch-close" aria-label="Kapat">×</button>
-  </div>
-  <div class="orch-body" id="orch-body"></div>
-  <div class="orch-foot" id="orch-foot"></div>
-</div>
-
 <div class="panel" id="settings" hidden>
   <div class="panel-head">
     <span class="panel-title">Ayarlar</span>
@@ -483,11 +567,13 @@
 <script src="/apps.js"></script>
 <script src="/history.js"></script>
 <script src="/orchestra.js"></script>
+<script src="/cameras.js"></script>
 <script src="/gorevler.js"></script>
 <script src="/workflow.js"></script>
 <script src="/jobs.js"></script>
 <script src="/komut.js"></script>
 <script src="/degisiklik.js"></script>
+<script src="/git.js"></script>
 <script src="/chrome.js"></script>
 </body>
 </html>

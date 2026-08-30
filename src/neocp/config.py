@@ -49,6 +49,10 @@ class ModelConfig:
     thinking: bool = True
     # "omitted" varsayılan; kullanıcıya düşünceyi göstereceksek "summarized".
     thinking_display: str = "summarized"
+    # Katalogdan: model görüntü kabul ediyor mu / düşünme alanı var mı.
+    # None = bilinmiyor (dene, reddedilirse öğren). False = hiç gönderme.
+    vision: bool | None = None
+    can_think: bool | None = None
 
     # Asıl model KALICI olarak çalışmazsa (kredi bitti, kimlik geçersiz,
     # model kaldırıldı) turun ölmesi yerine devreye giren model. Boşsa
@@ -91,6 +95,8 @@ class ModelConfig:
         return self.provider == "openai"
 
     def thinking_param(self) -> dict[str, Any] | None:
+        if self.can_think is False:
+            return None
         if not self.thinking:
             return {"type": "disabled"}
         return {"type": "adaptive", "display": self.thinking_display}
@@ -172,14 +178,19 @@ class SandboxConfig:
 class CameraConfig:
     """Kamera.
 
-    Kapalı geliyor ve açıkken bile sürekli değil: kare alınırken açılıp
-    hemen kapanıyor. Arkada açık duran bir kamera kabul edilemez.
+    Kapalı geliyor. Açınca LED yanar ve önizleme akar; kapatınca aygıt
+    bırakılır (yeniden başlatmaya gerek yok). Kareler kendiliğinden sohbet
+    modeline gitmez: NVIDIA GPU varsa nesneler yerelde okunur, modele metin
+    gider; GPU yoksa sorduğunda kesit alınır.
 
-    Modelin görüntü kabul etmesi ayrı bir mesele — yerel modellerin çoğu
-    etmiyor ve o durumda sağlayıcı anlaşılır bir hata döndürüyor.
+    `cloud_ok`: hareket algılayınca kare BULUT modele de gidebilir mi?
+    Varsayılan hayır — ev kamerası karesi, kullanıcı açıkça izin vermeden
+    makineden çıkmaz. Yerel model seçiliyken bu bayrağa bakılmaz. GPU
+    analizi başarılıysa kare zaten gitmez.
     """
 
     enabled: bool = False
+    cloud_ok: bool = False
 
 
 @dataclass(slots=True)

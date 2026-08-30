@@ -517,6 +517,8 @@ def test_the_page_still_calls_the_route_it_needs() -> None:
               / "server.py").read_text(encoding="utf-8")
     assert '"/api/wake"' in app_js
     assert '"/api/wake"' in server
+    assert '"/api/senses"' in app_js
+    assert '"/api/senses"' in server
 
 
 # -- 3) teslim edileni ÇALIŞTIRMA kapısı --------------------------------
@@ -811,6 +813,29 @@ def test_known_shell_traps_teach_the_way_out() -> None:
         "'gh' is not recognized as the name of a cmdlet, function...")
     assert "list_dir" in kabuk_ipucu("Cannot find path 'D:\yok\yer'")
     assert kabuk_ipucu("normal çıktı, sorun yok") == ""
+    assert "pip install pymodbus" in kabuk_ipucu(
+        "ModuleNotFoundError: No module named 'pymodbus'")
+
+
+def test_a_failed_shell_job_is_a_human_report_not_a_traceback() -> None:
+    """Kullanıcı traceback duvarını rapor sanıyordu; çıkış 1 = başarısız."""
+    from neocp.tools.shell import insan_is_raporu, is_raporu, kisa_is_ozeti
+
+    ham = (
+        "Traceback (most recent call last):\n"
+        '  File "C:\\\\atolye\\\\tarama_modbus.py", line 1, in <module>\n'
+        "    from pymodbus.client import ModbusTcpClient\n"
+        "ModuleNotFoundError: No module named 'pymodbus'\n"
+    )
+    rapor = is_raporu(command="py tarama_modbus.py", code=1, text=ham)
+    assert "pymodbus" in rapor
+    assert "pip install pymodbus" in rapor
+    assert "Traceback" not in rapor
+    assert "File " not in rapor
+    eski = "Çıkış kodu 1\n\n" + ham
+    ceviri = insan_is_raporu(eski, title="$ py tarama_modbus.py")
+    assert "Traceback" not in ceviri
+    assert "pymodbus" in kisa_is_ozeti(eski, title="$ py tarama_modbus.py")
 
 
 # -- model oturum başlığı ----------------------------------------------
@@ -1047,6 +1072,43 @@ def test_clearing_session_model_returns_to_global(tmp_path: Path) -> None:
     mind.set_session_meta("s1", model="")
     kopru._apply_session_context("s1")
     assert ajan.config.model.name == "kuresel-model"
+
+
+def test_a_new_session_inherits_the_last_pinned_model(tmp_path: Path) -> None:
+    """Katalog seçimi sohbet pinidir; --app her açılışta yeni oturum
+    açınca pin kaybolmasın — son sabitlenen model yeni sohbete geçer."""
+    from neocp.desktop import inherit_last_model
+    from neocp.mind import open_mind
+
+    sessions = tmp_path / "sessions"
+    sessions.mkdir()
+    (sessions / "eski.jsonl").write_text("{}\n", encoding="utf-8")
+    (sessions / "yeni.jsonl").write_text("{}\n", encoding="utf-8")
+    mind = open_mind(tmp_path / "mind", sessions, "yeni")
+    mind.set_session_meta("eski", model="sohbet-modeli", provider="openai")
+
+    got = inherit_last_model(mind, "yeni", sessions)
+
+    assert got == "sohbet-modeli"
+    assert (mind.session_meta().get("yeni") or {}).get("model") == "sohbet-modeli"
+
+
+def test_inherit_does_not_overwrite_an_existing_pin(tmp_path: Path) -> None:
+    from neocp.desktop import inherit_last_model
+    from neocp.mind import open_mind
+
+    sessions = tmp_path / "sessions"
+    sessions.mkdir()
+    (sessions / "eski.jsonl").write_text("{}\n", encoding="utf-8")
+    (sessions / "yeni.jsonl").write_text("{}\n", encoding="utf-8")
+    mind = open_mind(tmp_path / "mind", sessions, "yeni")
+    mind.set_session_meta("eski", model="eski-model")
+    mind.set_session_meta("yeni", model="bu-sohbet")
+
+    got = inherit_last_model(mind, "yeni", sessions)
+
+    assert got == "bu-sohbet"
+    assert (mind.session_meta().get("yeni") or {}).get("model") == "bu-sohbet"
 
 
 # -- kendiliğinden hatırlama: kısa-tek-zemin sızıntısı -----------------
@@ -1564,4 +1626,91 @@ def test_a_short_paragraph_is_not_a_big_job() -> None:
     assert len(kisa) > 180, 'test anlamli olsun: eski esigi asiyor'
     assert buyuk_is(kisa) is False
     assert buyuk_is('Bana bir yonetim paneli yap: kullanici, rol, rapor') is True
+
+# -- kamera: sorulunca kesit + izleme alani ------------------------------
+
+
+def test_camera_tool_lists_and_snapshots_via_monkeypatch(tmp_path, monkeypatch) -> None:
+    import asyncio
+    from neocp import watch
+    from neocp.tools.base import ToolRegistry
+    from neocp.tools import camera as kamera_mod
+    ctx = _dosya_ctx(tmp_path)
+    monkeypatch.setattr(watch, 'available', lambda: True)
+    monkeypatch.setattr(watch, 'load', lambda sd: [
+        watch.Camera(id='cam_1', name='bahce', source='rtsp://x')])
+    monkeypatch.setattr(watch, 'snapshot',
+                        lambda src, adet=1, **k: ['data:image/jpeg;base64,QUJD'] * adet)
+    from neocp import sight
+    monkeypatch.setattr(sight, 'analyze_url', lambda _u: 'kişi, kupa')
+    reg = ToolRegistry()
+    kamera_mod.register(reg)
+    r = asyncio.run(reg.get('kamera').handler({'action': 'liste'}, ctx))
+    assert 'bahce' in r.content and 'cam_1' in r.content
+    assert 'Bilgisayar kamerası' in r.content
+    r2 = asyncio.run(reg.get('kamera').handler(
+        {'action': 'kesit', 'id': 'cam_1', 'adet': 2}, ctx))
+    assert not r2.is_error
+    assert len(r2.detail['images']) == 2, 'kesitler images listesinde tasinmali'
+    assert 'Yerel GPU analizi' in r2.content
+    assert 'kişi, kupa' in r2.content
+    # İsimle kesit; şifre modele gitmez.
+    bahce = watch.Camera(
+        id='cam_1', name='bahce', kind='rtsp',
+        host='192.168.1.10', port=554, path='/stream',
+        user='admin', password='s3cret')
+    monkeypatch.setattr(watch, 'load', lambda sd: [bahce])
+    seen = []
+
+    def fake_snap(src, adet=1, **k):
+        seen.append(src)
+        return ['data:image/jpeg;base64,QUJD'] * adet
+
+    monkeypatch.setattr(watch, 'snapshot', fake_snap)
+    r3 = asyncio.run(reg.get('kamera').handler(
+        {'action': 'kesit', 'name': 'bahce'}, ctx))
+    assert not r3.is_error
+    assert seen and 's3cret' in str(seen[0])
+    assert 's3cret' not in r3.content
+    r4 = asyncio.run(reg.get('kamera').handler({'action': 'yol', 'name': 'bahce'}, ctx))
+    assert not r4.is_error
+    assert 'images' not in r4.detail
+    assert 'bahce' in r4.content
+
+
+def test_prompt_names_cameras_as_an_ability() -> None:
+    from neocp.prompt import ABILITIES
+    assert any(title == 'Kameralar' and 'kamera' in names
+               for title, _what, names in ABILITIES)
+
+
+def test_multi_frame_tool_images_reach_the_seen_channel() -> None:
+    # executor detail.images listesini _image'a koyar; dongu listeyi acar.
+    blocks = [{'type': 'tool_result', '_image': ['a', 'b']},
+              {'type': 'tool_result', '_image': 'c'},
+              {'type': 'tool_result'}]
+    seen = []
+    for b in blocks:
+        v = b.pop('_image', None)
+        if isinstance(v, list):
+            seen.extend(x for x in v if x)
+        elif v:
+            seen.append(v)
+    assert seen == ['a', 'b', 'c']
+
+def test_motion_frames_do_not_reach_a_cloud_model_without_consent() -> None:
+    """Hareket karesi ev kamerasindan geliyor: bulut model seciliyken
+    acik izin (camera.cloud_ok) olmadan makineden CIKMAZ; yerel modelde
+    kapi yok. GPU analizi varsa kare zaten gitmez (metin gider).
+    Gece okulu mahremiyet kalibinin kardesi."""
+    from neocp.desktop import _yerel_uc
+    assert _yerel_uc('http://127.0.0.1:1234/v1') is True
+    assert _yerel_uc('http://192.168.1.20:8080/v1') is True
+    assert _yerel_uc('https://openrouter.ai/api/v1') is False
+    import inspect
+    from neocp import desktop
+    kaynak = inspect.getsource(desktop._hareket_gonder)
+    assert 'config.camera.cloud_ok' in kaynak
+    assert 'kare BULUT modele g' in kaynak
+    assert 'Yerel GPU analizi' in kaynak
 

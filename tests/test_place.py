@@ -129,8 +129,9 @@ def test_autostart_runs_a_command_that_exists() -> None:
     açılışa yazılan satırın gerçekten bir şey başlatması gerekiyor."""
     line = startup.command()
     assert "neocp.cli" in line and "--app" in line
-    # Konsol penceresi açılmasın: her açılışta ekranda siyah bir kutu.
-    assert "pythonw" in line or "python" in line
+    # Konsol penceresi açılmasın; Görev Yöneticisi damgalı neo.exe ister.
+    low = line.lower()
+    assert "neo.exe" in low or "pythonw" in low or "python" in low
 
 
 def test_autostart_writes_only_for_this_user() -> None:

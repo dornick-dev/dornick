@@ -30,7 +30,7 @@ from .context import ContextPolicy, Prepared, cache_report
 from .permissions import PermissionEngine
 from .session import PendingToolUse, Session, cancelled_result
 from .tools import ToolContext, ToolRegistry, build_registry, execute
-from .tools.base import ToolSpec
+from .tools.base import JobFailed, ToolSpec
 
 # Uzun koşu kontrol noktası aralığı. Eskiden SERT tavandı: 60. turda döngü
 # durur, saatlik bir iş yarıda kalırdı. Artık her 60 turda bir ajan kısa bir
@@ -916,6 +916,7 @@ class Agent:
         self.schedule = schedule
         # Yerel kameranın tamponu; `look` aracı buradan kare alıyor.
         self.lens = lens
+        self.camera_power: Any = None
         # Kulak ve izleyici masaüstü tarafında sonradan bağlanıyor
         # (açılışta ajan onlardan önce kuruluyor); `senses` aracı buradan
         # erişiyor.
@@ -1423,6 +1424,7 @@ class Agent:
             lens=self.lens,
             ear=self.ear,
             watcher=self.watcher,
+            camera_power=getattr(self, "camera_power", None),
         )
         callbacks = Callbacks(
             on_text=self.io.on_text,
@@ -1764,7 +1766,13 @@ class Agent:
             # taşınamıyor: OpenAI sözleşmesi role=tool içeriğinin dize
             # olmasını istiyor. Görüntü ayrılıp bir sonraki kullanıcı turuna
             # iliştiriliyor — model o turda gerçekten bakıyor.
-            seen = [b.pop("_image") for b in blocks if "_image" in b]
+            seen = []
+            for b in blocks:
+                v = b.pop("_image", None)
+                if isinstance(v, list):
+                    seen.extend(x for x in v if x)   # kamera kesitleri
+                elif v:
+                    seen.append(v)
             # Hafıza köprüsü: bilinen hata kalıbı derse dönüşür; geçmiş
             # oturumlardan ders varsa hatanın YANINA iliştirilir.
             self._hata_dersi(calls, blocks)
@@ -2523,6 +2531,10 @@ class Agent:
             # Tam çıktı panellerde/Viewer'da; harness notuna kısaltma ayrı.
             handle.sonuc = await runner(handle.cancel)
             handle.state = "bitti"
+        except JobFailed as exc:
+            # Komut bitti ama başarısız — 'tamamlandı' demeyelim.
+            handle.state = "hata"
+            handle.sonuc = str(exc)
         except Exception as exc:  # işin çökmesi ajanı düşürmemeli
             handle.state = "hata"
             handle.sonuc = f"{type(exc).__name__}: {exc}"

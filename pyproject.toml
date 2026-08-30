@@ -1,6 +1,6 @@
 [project]
 name = "neocp"
-version = "1.2.0"
+version = "1.3.0"
 description = "Bilgisayarı kullanabilen, kendi zihnine erişebilen bir ajan harness'ı"
 requires-python = ">=3.11"
 dependencies = [
@@ -20,9 +20,13 @@ voice = ["edge-tts>=7.0"]
 listen = ["faster-whisper>=1.0", "sounddevice>=0.5"]
 # Sistem tepsisi: pencere kapaninca program kapanmasin.
 tray = ["pystray>=0.19", "pillow>=10.0"]
-# Kamera izleme. Hareket yerelde olculuyor; model yalnizca bir sey
-# degistiginde uyaniyor.
-watch = ["opencv-python-headless>=4.9"]
+# Kamera izleme. Hareket yerelde olculuyor; NVIDIA GPU varsa kare
+# yerelde analiz edilip sohbet modeline metin gidiyor (onnxruntime-gpu).
+# GPU yoksa model yalnizca bir sey degistiginde kare goruyor.
+watch = [
+    "opencv-python-headless>=4.9",
+    "onnxruntime-gpu>=1.18; sys_platform == 'win32' or sys_platform == 'linux'",
+]
 # LM Studio, Ollama, vLLM, llama.cpp — OpenAI-uyumlu her sunucu.
 local = ["openai>=1.60"]
 # Masaüstü penceresi. İşletim sisteminin kendi webview'ını kullanır

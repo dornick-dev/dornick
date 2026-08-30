@@ -142,6 +142,9 @@ Dil.ekle({
   " model": " models",
   "araç kullanır": "uses tools",
   "görüntü okur": "reads images",
+  "görüntü yok": "no vision",
+  "düşünür": "thinks",
+  "düşünmez": "does not think",
   ["Oto modda OpenRouter'ın ücretsiz modelleri kullanılır; kalite ve hız " +
    "düşebilir, model istek sırasında değişebilir. Bazı ücretsiz uçlar " +
    "veriyi eğitimde kullanabilir; istekler 'veri toplama: reddet' " +
@@ -167,6 +170,8 @@ Dil.ekle({
   "Soruluyor…": "Asking…",
   "Sunucu pencere boyutunu bildirmiyor — elle gir":
     "The server does not report a window size — enter it by hand",
+  "Sunucu bu modelin yeteneklerini bildirmiyor — elle gir":
+    "The server does not report this model's capabilities — enter them by hand",
   "Bağlam penceresi (token)": "Context window (tokens)",
   "Modelin gerçek sınırı. Fazla büyük yazmak sıkıştırmayı hiç tetiklememek, yani sunucunun istemin başını atması demek":
     "The model's real limit. Setting it too high means compaction never triggers — the server silently drops the start of the prompt",
@@ -293,10 +298,14 @@ Dil.ekle({
   "Bas-konus sonucu dogrudan gonderilmiyor, yazma satirina dusuyor — tanima her zaman dogru degil ve duzeltme sansin olmali.":
     "Push-to-talk results are not sent directly — they land in the input line. Recognition isn't always right and you should get a chance to fix it.",
   "Kamera": "Camera",
-  "Acinca yazma satirinda kare alma dugmesi cikar. Kamera surekli acik kalmiyor: kare alinirken acilip hemen kapaniyor":
-    "When on, a snap button appears in the input line. The camera doesn't stay open: it opens for the frame and closes right away",
-  "Goruntuyu modelin anlamasi ayri bir mesele: yerel modellerin cogu goruntu kabul etmiyor. Claude ve GPT ediyor.":
-    "Whether the model understands the image is a separate matter: most local models don't accept images. Claude and GPT do.",
+  "Üstteki kamera ikonuyla aynı anahtar. Açınca LED yanar ve önizleme akar; kapatınca aygıt bırakılır.":
+    "Same switch as the top camera icon. On: LED and preview. Off: the device is released.",
+  "NVIDIA GPU varsa karedeki nesneler yerelde okunur (~400 MB VRAM); sohbet modeline resim değil kısa metin gider. GPU yoksa yalnız önizleme — sorduğunda kesit alınır. Bu ağır gelirse ikondan kapat.":
+    "With an NVIDIA GPU, objects are read locally (~400 MB VRAM); the chat model gets short text, not the image. Without a GPU, preview only — a snapshot is taken when you ask. If that is too heavy, turn it off from the icon.",
+  "Acinca ustteki kamera ikonundan izleme alani acilir. Kamera surekli acik tamponda durur; kareler kendiliginden modele gitmez":
+    "When on, the camera icon in the top bar opens the watch area. The camera stays in an open buffer; frames do not go to the model on their own",
+  "Goruntuyu modelin anlamasi ayri bir mesele: yerel modellerin cogu goruntu kabul etmiyor. NVIDIA GPU varsa kare yerelde analiz edilir, sohbet modeline metin gider. GPU yoksa Claude ve GPT kareyi kendisi okur.":
+    "Whether the model understands the image is a separate matter: most local models don't accept images. With an NVIDIA GPU the frame is analyzed locally and the chat model gets text. Without a GPU, Claude and GPT read the frame themselves.",
 
   // izlenen kameralar
   "kameralar okunamadi": "could not load cameras",
@@ -312,6 +321,19 @@ Dil.ekle({
   "Değişiklikler yeniden başlatınca geçerli olur: izleyici kendi thread'inde dönüyor ve çalışırken kamera eklemek açık bir akışın ortasına girmek demek.":
     "Changes take effect after a restart: the watcher spins on its own thread, and adding a camera while it runs means stepping into an open stream.",
   "Yeni kamera": "New camera",
+  "Bilgisayar": "Computer",
+  "Tür": "Type",
+  "Host": "Host",
+  "Port / yol": "Port / path",
+  "Kullanıcı": "User",
+  "Şifre": "Password",
+  "şifre": "password",
+  "Kaynak / indeks": "Source / index",
+  "Bilgisayar kamerası için 0 · ağ için host aşağıda":
+    "0 for the computer camera · host below for a network camera",
+  "IP veya ad (RTSP/HTTP)": "IP or hostname (RTSP/HTTP)",
+  "Yalnız bu makinede cameras.json içinde durur":
+    "Stays on this machine in cameras.json",
   "Giris kapisi": "Front door",
   "Kaynak": "Source",
   "Yerel kamera icin 0, 1 … · ag kamerasi icin tam adres":
@@ -378,6 +400,8 @@ Dil.ekle({
   "ne işe yarar, ne zaman kullanılmalı": "what it does, when to use it",
   "Oluştur": "Create",
   "Yeteneğe bir ad ver": "Give the skill a name",
+  "Python — NAME, DESCRIPTION, SCHEMA, run(args, ctx). Boşsa iskelet açılır.":
+    "Python — NAME, DESCRIPTION, SCHEMA, run(args, ctx). Leave empty for a skeleton.",
   "Kaydedilen yetenek anında araç olarak yüklenir; silinen hem dosyadan hem defterden gider. Standart yetenekler ilk açılışta gelir — silersen geri gelmez. neo da iş sırasında kendine yetenek yazar.":
     "A saved skill loads as a tool instantly; a deleted one is gone from both the file and the ledger. The standard skills arrive on first launch — delete one and it doesn't come back. neo also writes itself skills while working.",
   "Dosya okunamadı": "Could not read the file",
@@ -404,6 +428,42 @@ Dil.ekle({
   "araç bildirmedi": "no tools reported",
   "sebep bilinmiyor": "reason unknown",
   "＋ Yeni bağlantı": "＋ New connection",
+  "Özel bağlantı": "Custom connection",
+  "Hazır dizin veya kendi sunucun. OAuth tarayıcıda açılır; ham JSON ileri seviye.":
+    "Ready-made directory or your own server. OAuth opens in the browser; raw JSON is advanced.",
+  "Dizin": "Directory",
+  "Tek tıkla forma dolar — adres ezberleme.":
+    "One click fills the form — no URLs to memorize.",
+  "İş": "Work",
+  "Tasarım": "Design",
+  "Bulut": "Cloud",
+  "Yerel": "Local",
+  "OAuth": "OAuth",
+  "Token": "Token",
+  "Tarayıcıda giriş — URL yeter": "Browser login — a URL is enough",
+  "Bearer anahtarı, Model → anahtarlar": "Bearer token, stored under Model → keys",
+  "npx / py komutu (stdio)": "npx / py command (stdio)",
+  "depo, PR ve issue": "repos, PRs and issues",
+  "issue ve proje": "issues and projects",
+  "sayfa ve veritabanı": "pages and databases",
+  "Jira ve Confluence": "Jira and Confluence",
+  "kanal ve mesaj": "channels and messages",
+  "görev ve proje": "tasks and projects",
+  "hata ve izleme": "errors and tracing",
+  "ödeme nesneleri": "payment objects",
+  "ödeme ve sipariş": "payments and orders",
+  "tasarım dosyaları": "design files",
+  "veritabanı ve auth": "database and auth",
+  "proje ve dağıtım": "projects and deploys",
+  "model ve dataset": "models and datasets",
+  "Postgres (sunucusuz)": "Postgres (serverless)",
+  "tarayıcı otomasyonu": "browser automation",
+  "yerel klasör": "local folder",
+  "kalıcı bilgi grafiği": "persistent knowledge graph",
+  "status, diff, commit": "status, diff, commit",
+  "kütüphane belgeleri": "library docs",
+  "zincirleme düşünme": "sequential thinking",
+  "URL içeriği çek": "fetch URL content",
   "Uzak — girişli": "Remote — with login",
   "adres yeter; kaydedince tarayıcıda giriş açılır":
     "just an address; saving opens a browser login",
@@ -541,10 +601,10 @@ Dil.ekle({
     "Window size, answer length and the image budget.",
   "neo'nun sesi: açık/kapalı, ton ve karakter.":
     "neo's voice: on/off, tone and character.",
-  "Dinleme, uyandırma sözü ve kamera girişi.":
-    "Listening, the wake word and camera input.",
-  "İzlenen kameralar — hareket görülünce modele soru gider.":
-    "Watched cameras — motion sends the model a question.",
+  "Dinleme ve uyandırma sözü.":
+    "Listening and the wake word.",
+  "Kamera aç/kapa ve izlenen kameralar.":
+    "Camera on/off and watched cameras.",
   "Nerede olduğun ve bilgisayar açılınca başlatma.":
     "Where you are, and starting at boot.",
   "neo'nun tanıdığı cihazlar ve sistemler.":
@@ -641,21 +701,31 @@ const Settings = (() => {
 
   // --- açılış / kapanış -------------------------------------------------
 
-  async function open() {
-    panel.hidden = false;
-    // Sohbet sola kaysin: panelin altinda kalan metin okunmuyor ve
-    // kenarlardan sizan parcalar arayuzu bozuk gosteriyordu.
-    document.body.classList.add("settling");
-    say("Yükleniyor…");
-    try {
-      state = await (await fetch("/api/settings")).json();
-    } catch {
-      say("Ayarlar okunamadı", true);
-      return;
+  async function open(tab) {
+    const already = !panel.hidden;
+    if (!already) {
+      panel.hidden = false;
+      // Sohbet sola kaysin: panelin altinda kalan metin okunmuyor ve
+      // kenarlardan sizan parcalar arayuzu bozuk gosteriyordu.
+      document.body.classList.add("settling");
+      say("Yükleniyor…");
+      try {
+        state = await (await fetch("/api/settings")).json();
+      } catch {
+        say("Ayarlar okunamadı", true);
+        return;
+      }
+      patch = {};
+      say("");
+      draw();
+    } else {
+      panel.hidden = false;
+      document.body.classList.add("settling");
     }
-    patch = {};
-    say("");
-    draw();
+    if (tab) {
+      const button = document.querySelector('#tabs [data-tab="' + tab + '"]');
+      if (button) button.click();
+    }
     const onTab = document.querySelector("#tabs button.on");
     if (onTab && onTab.dataset.tab) syncSaveFoot(onTab.dataset.tab);
   }
@@ -1044,17 +1114,20 @@ const Settings = (() => {
       effort
     ));
 
+    const thinkingBox = toggleBox((patch.model || {}).thinking ?? state.model.thinking,
+                (v) => { set("model", "thinking", v); saveSoon(); });
+    thinkingBox.id = "model-thinking";
     pane.append(field(
       "Düşünme",
       "Kapatmak yerel küçük modellerde daha kararlı sonuç veriyor",
-      toggleBox((patch.model || {}).thinking ?? state.model.thinking,
-                (v) => { set("model", "thinking", v); saveSoon(); })
+      thinkingBox
     ));
 
     // Bağlam — ayrı sekme yok; seçili modelin penceresi burada.
     pane.append(el("h3", "pane-sub", t("Bağlam")));
     const window_ = applyOnChange(number((patch.model || {}).context_window ?? state.model.context_window,
                            (v) => set("model", "context_window", v)));
+    window_.id = "model-window";
     const detect = el("button", "detect", t("Algıla"));
     detect.type = "button";
     detect.addEventListener("click", async () => {
@@ -1064,12 +1137,11 @@ const Settings = (() => {
         answer = await (await fetch("/api/detect-window", { method: "POST" })).json();
       } catch { /* aşağıda */ }
       detect.textContent = t("Algıla");
-      if (answer.window) {
-        window_.value = answer.window;
-        set("model", "context_window", answer.window);
+      const got = adoptAnswer(answer);
+      if (got) {
         saveSoon();
       } else {
-        say("Sunucu pencere boyutunu bildirmiyor — elle gir", true);
+        say("Sunucu bu modelin yeteneklerini bildirmiyor — elle gir", true);
       }
     });
     const winRow = el("div", "with-action");
@@ -1165,6 +1237,9 @@ const Settings = (() => {
     if (!chosen) {
       chosen = found[0].id;
       set("model", "name", chosen);
+      set("model", "can_think", null);
+      set("model", "vision", null);
+      if (chosen !== "oto") adoptCaps(found[0]);
       saveSoon(200);   // sağlayıcı değişiminin ikinci yarısı: ad da gitsin
     }
     // Native <select> yerine ARAMA + TIKLANABİLİR LİSTE. Neden: 400+ modelde
@@ -1194,6 +1269,9 @@ const Settings = (() => {
     function pick(id) {
       selected = id;
       set("model", "name", id);   // seçim beklemedeki yapılandırmaya yazılır
+      set("model", "can_think", null);
+      set("model", "vision", null);
+      if (id !== "oto") adoptCaps(found.find((x) => x.id === id));
       saveSoon();                 // ve ANINDA uygulanır — Kaydet'e inmek yok
       note(id);
       renderList();               // işareti taşı
@@ -1239,7 +1317,7 @@ const Settings = (() => {
     note(selected);
 
     // Modelin ne yapabildiği seçimin altında yazıyor: görüntü kabul etmeyen
-    // bir modelde kamerayı açmanın anlamı yok.
+    // bir modelde kamerayı açmanın anlamı yok. Katalogda yoksa uydurulmaz.
     function note(id) {
       if (!hint) return;
       // Oto: gerçek bir model kimliği değil, ücretsiz havuzla çalışan kip.
@@ -1249,18 +1327,58 @@ const Settings = (() => {
         return;
       }
       const m = found.find((x) => x.id === id);
-      if (!m || m.max_context === undefined) { hint.textContent = found.length + t(" model"); return; }
+      if (!m) { hint.textContent = found.length + t(" model"); return; }
 
       const can = [];
       if (m.tools) can.push(t("araç kullanır"));
-      if (m.vision) can.push(t("görüntü okur"));
-      const loaded = (m.loaded || []).map((i) => i.context.toLocaleString("tr-TR")).join(", ");
-      hint.textContent = [
-        t("En fazla ") + m.max_context.toLocaleString("tr-TR") + t(" token"),
-        can.join(" · "),
-        loaded ? t("şu an yüklü: ") + loaded : t("yüklü değil"),
-      ].filter(Boolean).join(" · ");
+      if (m.vision === true) can.push(t("görüntü okur"));
+      else if (m.vision === false) can.push(t("görüntü yok"));
+      if (m.thinking === true) can.push(t("düşünür"));
+      else if (m.thinking === false) can.push(t("düşünmez"));
+      const parts = [];
+      if (m.max_context !== undefined) {
+        parts.push(t("En fazla ") + m.max_context.toLocaleString("tr-TR") + t(" token"));
+      }
+      if (can.length) parts.push(can.join(" · "));
+      if (Array.isArray(m.loaded)) {
+        const loaded = m.loaded.map((i) => i.context.toLocaleString("tr-TR")).join(", ");
+        parts.push(loaded ? t("şu an yüklü: ") + loaded : t("yüklü değil"));
+      }
+      hint.textContent = parts.length ? parts.join(" · ") : found.length + t(" model");
     }
+  }
+
+  // Katalog ya da Algıla yanıtındaki bilinen yetenekler. Eksik alan
+  // dokunulmaz — sağlayıcı söylemediyse varsayılan uydurulmaz.
+  function adoptCaps(m) {
+    if (!m) return;
+    adoptAnswer({
+      window: m.max_context,
+      thinking: m.thinking,
+      vision: m.vision,
+    });
+  }
+
+  function adoptAnswer(answer) {
+    let got = false;
+    if (typeof answer.window === "number" && answer.window > 0) {
+      set("model", "context_window", answer.window);
+      const win = document.getElementById("model-window");
+      if (win) win.value = answer.window;
+      got = true;
+    }
+    if (answer.thinking !== undefined) {
+      set("model", "can_think", !!answer.thinking);
+      set("model", "thinking", !!answer.thinking);
+      const box = document.getElementById("model-thinking");
+      if (box) box.checked = !!answer.thinking;
+      got = true;
+    }
+    if (answer.vision !== undefined) {
+      set("model", "vision", !!answer.vision);
+      got = true;
+    }
+    return got;
   }
 
   // Anahtarlar / Bağlam ayrı sekme değil: seçili sağlayıcıyla Model'de.
@@ -1682,7 +1800,7 @@ const Settings = (() => {
   function drawHearing() {
     const pane = panes.hearing;
     pane.textContent = "";
-    head(pane, "Mikrofon", "Dinleme, uyandırma sözü ve kamera girişi.");
+    head(pane, "Mikrofon", "Dinleme ve uyandırma sözü.");
 
     if (!state.listen.available) {
       // Kuruluda dogru oneri sihirbazdaki bilesen — pip degil.
@@ -1762,20 +1880,6 @@ const Settings = (() => {
     pane.append(el("p", "pane-note",
       t("Bas-konus sonucu dogrudan gonderilmiyor, yazma satirina dusuyor — " +
       "tanima her zaman dogru degil ve duzeltme sansin olmali.")));
-
-    pane.append(el("hr", "md-rule"));
-
-    pane.append(field(
-      "Kamera",
-      "Acinca yazma satirinda kare alma dugmesi cikar. Kamera surekli acik " +
-      "kalmiyor: kare alinirken acilip hemen kapaniyor",
-      toggleBox((patch.camera || {}).enabled ?? state.camera.enabled,
-                (v) => set("camera", "enabled", v))
-    ));
-
-    pane.append(el("p", "pane-note",
-      t("Goruntuyu modelin anlamasi ayri bir mesele: yerel modellerin cogu " +
-      "goruntu kabul etmiyor. Claude ve GPT ediyor.")));
   }
 
   // --- izlenen kameralar ------------------------------------------------
@@ -1802,7 +1906,16 @@ const Settings = (() => {
   function drawCameras(data) {
     const pane = panes.eyes;
     pane.textContent = "";
-    head(pane, "Kameralar", "İzlenen kameralar — hareket görülünce modele soru gider.");
+    head(pane, "Kameralar", "Kamera aç/kapa ve izlenen kameralar.");
+
+    pane.append(field(
+      "Kamera",
+      "Üstteki kamera ikonuyla aynı anahtar. Açınca LED yanar ve önizleme akar; kapatınca aygıt bırakılır.",
+      toggleBox((patch.camera || {}).enabled ?? state.camera.enabled,
+                (v) => { set("camera", "enabled", v); saveSoon(); })
+    ));
+    pane.append(el("p", "pane-note",
+      t("NVIDIA GPU varsa karedeki nesneler yerelde okunur (~400 MB VRAM); sohbet modeline resim değil kısa metin gider. GPU yoksa yalnız önizleme — sorduğunda kesit alınır. Bu ağır gelirse ikondan kapat.")));
 
     if (!data.available) {
       pane.append(el("p", "pane-note bad", t((state && state.installed)
@@ -1846,13 +1959,34 @@ const Settings = (() => {
   }
 
   function newCameraForm() {
-    // Satir detayinin icine gomuluyor; kendi kart cercevesi tasimiyor.
     const box = el("div");
-    const draft = { action: "add", source: "0", sensitivity: 0.06, cooldown_s: 60 };
+    const draft = {
+      action: "add", kind: "usb", source: "0", host: "", port: 0, path: "",
+      user: "", password: "", sensitivity: 0.06, cooldown_s: 60, analyze: true,
+    };
 
     box.append(field("Yeni kamera", "", text("", (v) => (draft.name = v), t("Giris kapisi"))));
-    box.append(field("Kaynak", "Yerel kamera icin 0, 1 … · ag kamerasi icin tam adres",
-                     text("0", (v) => (draft.source = v), "rtsp://192.168.1.10/stream")));
+    const tur = el("select", "field-input");
+    for (const [v, l] of [["usb", t("Bilgisayar")], ["rtsp", "RTSP (IP)"], ["http", "HTTP / MJPEG"]]) {
+      const o = el("option", null, l); o.value = v; tur.append(o);
+    }
+    tur.addEventListener("change", () => { draft.kind = tur.value; });
+    box.append(field("Tür", "", tur));
+    box.append(field("Kaynak / indeks", "Bilgisayar kamerası için 0 · ağ için host aşağıda",
+                     text("0", (v) => (draft.source = v), "0")));
+    box.append(field("Host", "IP veya ad (RTSP/HTTP)",
+                     text("", (v) => (draft.host = v), "192.168.1.10")));
+    box.append(field("Port / yol", "", text("", (v) => {
+      const p = v.split("/");
+      draft.port = parseInt(p[0], 10) || 0;
+      draft.path = v.includes("/") ? "/" + v.split("/").slice(1).join("/") : "";
+    }, "554/stream")));
+    box.append(field("Kullanıcı", "", text("", (v) => (draft.user = v), "admin")));
+    const sifre = el("input", "field-input");
+    sifre.type = "password";
+    sifre.placeholder = t("şifre");
+    sifre.addEventListener("input", () => { draft.password = sifre.value; });
+    box.append(field("Şifre", "Yalnız bu makinede cameras.json içinde durur", sifre));
     box.append(field("Ne sorsun", "Hareket goruldugunde modele gidecek soru",
                      text("", (v) => (draft.ask = v), t("Kapi acik kalmis mi bak"))));
 
@@ -1944,6 +2078,8 @@ const Settings = (() => {
       "söylüyor. İşi yapan şey ona bağlanan yetenek — neo'ya \"bu varlık için " +
       "bir yetenek yaz\" dediğinde kendisi yazıyor.")));
   }
+
+  document.addEventListener("neo:devices", () => loadDevices());
 
   function deviceRow(device) {
     const where = Object.entries(device.link || {})
@@ -2053,6 +2189,7 @@ const Settings = (() => {
       + (opts.advanced ? " advanced" : "")
       + (opts.stay ? " stay" : ""));
     line.append(el("span", "row-dot" + (opts.state ? " " + opts.state : "")));
+    if (opts.icon) line.append(opts.icon);
     line.append(el("b", "row-name", opts.name));
     line.append(el("span", "row-desc", opts.desc || ""));
     if (opts.meta) line.append(el("span", "row-meta", opts.meta));
@@ -2143,16 +2280,25 @@ const Settings = (() => {
       nameBox.placeholder = t("ad — ör. rapor_ozeti");
       const descBox = el("input", "input-text");
       descBox.placeholder = t("ne işe yarar, ne zaman kullanılmalı");
+      const codeBox = el("textarea", "input-text input-area");
+      codeBox.rows = 8;
+      codeBox.spellcheck = false;
+      codeBox.placeholder = t("Python — NAME, DESCRIPTION, SCHEMA, run(args, ctx). Boşsa iskelet açılır.");
       const make = action(t("Oluştur"), () => {
         if (!nameBox.value.trim()) { say(t("Yeteneğe bir ad ver"), true); return; }
-        loadSkills({
-          action: "new",
-          name: nameBox.value.trim(),
-          description: descBox.value.trim(),
-        });
+        const code = codeBox.value.trim();
+        if (code) {
+          loadSkills({ action: "write", name: nameBox.value.trim(), code: codeBox.value });
+        } else {
+          loadSkills({
+            action: "new",
+            name: nameBox.value.trim(),
+            description: descBox.value.trim(),
+          });
+        }
       });
       make.classList.add("add");
-      box.append(nameBox, descBox, make);
+      box.append(nameBox, descBox, codeBox, make);
       nameBox.focus();
     }));
     list.append(adder);
@@ -2255,19 +2401,234 @@ const Settings = (() => {
     if (typeof loadOrgans === "function") loadOrgans();
   }
 
-  // Popüler katalog (Claude'daki bağlayıcı dizini gibi): bilinen gerçek
-  // uçlar tek tıkla forma dolar — kullanıcı adres/komut ezberlemez.
+  // Dizin: resmi uzak OAuth uçları + bilinen stdio paketleri.
+  // Adres/komut ezberlenmez; kart tıklanınca forma dolar.
   const CONN_KATALOG = [
-    ["github", "GitHub", "oauth", "https://api.githubcopilot.com/mcp/", "", "depo, PR ve issue erişimi"],
-    ["notion", "Notion", "oauth", "https://mcp.notion.com/mcp", "", "sayfa ve veritabanları"],
-    ["linear", "Linear", "oauth", "https://mcp.linear.app/mcp", "", "issue ve proje yönetimi"],
-    ["sentry", "Sentry", "oauth", "https://mcp.sentry.dev/mcp", "", "hata ve izleme verisi"],
-    ["stripe", "Stripe", "oauth", "https://mcp.stripe.com", "", "ödeme nesneleri"],
-    ["playwright", "Playwright", "stdio", "", "npx -y @playwright/mcp@latest", "tarayıcı otomasyonu"],
-    ["dosyalar", "Dosya sistemi", "stdio", "", "npx -y @modelcontextprotocol/server-filesystem .", "yerel klasör erişimi"],
-    ["bellek", "Bellek", "stdio", "", "npx -y @modelcontextprotocol/server-memory", "kalıcı bilgi grafiği"],
+    { id: "github", ad: "GitHub", kind: "oauth", url: "https://api.githubcopilot.com/mcp/", cmd: "", ne: "depo, PR ve issue", cat: "is" },
+    { id: "linear", ad: "Linear", kind: "oauth", url: "https://mcp.linear.app/mcp", cmd: "", ne: "issue ve proje", cat: "is" },
+    { id: "notion", ad: "Notion", kind: "oauth", url: "https://mcp.notion.com/mcp", cmd: "", ne: "sayfa ve veritabanı", cat: "is" },
+    { id: "atlassian", ad: "Atlassian", kind: "oauth", url: "https://mcp.atlassian.com/v1/sse", cmd: "", ne: "Jira ve Confluence", cat: "is" },
+    { id: "slack", ad: "Slack", kind: "oauth", url: "https://mcp.slack.com/mcp", cmd: "", ne: "kanal ve mesaj", cat: "is" },
+    { id: "asana", ad: "Asana", kind: "oauth", url: "https://mcp.asana.com/sse", cmd: "", ne: "görev ve proje", cat: "is" },
+    { id: "sentry", ad: "Sentry", kind: "oauth", url: "https://mcp.sentry.dev/mcp", cmd: "", ne: "hata ve izleme", cat: "is" },
+    { id: "stripe", ad: "Stripe", kind: "oauth", url: "https://mcp.stripe.com", cmd: "", ne: "ödeme nesneleri", cat: "is" },
+    { id: "paypal", ad: "PayPal", kind: "oauth", url: "https://mcp.paypal.com/mcp", cmd: "", ne: "ödeme ve sipariş", cat: "is" },
+    { id: "figma", ad: "Figma", kind: "oauth", url: "https://mcp.figma.com/mcp", cmd: "", ne: "tasarım dosyaları", cat: "tasarim" },
+    { id: "supabase", ad: "Supabase", kind: "oauth", url: "https://mcp.supabase.com/mcp", cmd: "", ne: "veritabanı ve auth", cat: "bulut" },
+    { id: "vercel", ad: "Vercel", kind: "oauth", url: "https://mcp.vercel.com", cmd: "", ne: "proje ve dağıtım", cat: "bulut" },
+    { id: "huggingface", ad: "Hugging Face", kind: "oauth", url: "https://huggingface.co/mcp", cmd: "", ne: "model ve dataset", cat: "bulut" },
+    { id: "neon", ad: "Neon", kind: "oauth", url: "https://mcp.neon.tech/mcp", cmd: "", ne: "Postgres (sunucusuz)", cat: "bulut" },
+    { id: "playwright", ad: "Playwright", kind: "stdio", url: "", cmd: "npx -y @playwright/mcp@latest", ne: "tarayıcı otomasyonu", cat: "yerel" },
+    { id: "dosyalar", ad: "Dosya sistemi", kind: "stdio", url: "", cmd: "npx -y @modelcontextprotocol/server-filesystem .", ne: "yerel klasör", cat: "yerel" },
+    { id: "bellek", ad: "Bellek", kind: "stdio", url: "", cmd: "npx -y @modelcontextprotocol/server-memory", ne: "kalıcı bilgi grafiği", cat: "yerel" },
+    { id: "git", ad: "Git", kind: "stdio", url: "", cmd: "npx -y @modelcontextprotocol/server-git", ne: "status, diff, commit", cat: "yerel" },
+    { id: "context7", ad: "Context7", kind: "stdio", url: "", cmd: "npx -y @upstash/context7-mcp", ne: "kütüphane belgeleri", cat: "yerel" },
+    { id: "dusunme", ad: "Adım adım", kind: "stdio", url: "", cmd: "npx -y @modelcontextprotocol/server-sequential-thinking", ne: "zincirleme düşünme", cat: "yerel" },
+    { id: "fetch", ad: "Fetch", kind: "stdio", url: "", cmd: "npx -y @modelcontextprotocol/server-fetch", ne: "URL içeriği çek", cat: "yerel" },
   ];
-  const connFiltre = { q: "", only: "" };   // only: "" | "ok" | "bad"
+  // Marka renkli kare + çizim: Claude / Cursor dizinindeki gibi tanınsın.
+  // Yollar Simple Icons (CC0) veya aynı okunur sadeleştirme — ağdan logo çekilmez.
+  const CONN_MARKS = {
+    github: {
+      bg: "#181717", fg: "#fff",
+      aka: ["github", "githubcopilot.com"],
+      d: ["M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12"],
+    },
+    notion: {
+      bg: "#000", fg: "#fff",
+      aka: ["notion", "mcp.notion.com"],
+      d: ["M4.459 4.208c.746.606 1.026.56 2.428.466l13.215-.98c.28 0 .047-.37-.038-.515-.197-.322-.51-.237-.51-.237s-3.094 1.83-4.356 2.56c-.28.176-.51.237-.51.98v12.124c0 .56.51.747 1.065.56l1.832-.84c.56-.28.65-.84.65-1.26V6.354s.42-.98 1.682-.84l.28.047c.466.084.42.56.42.56l.047 12.544c0 .237-.092.56-.51.84l-3.75 2.24c-.466.28-1.12.466-1.682.28l-5.622-1.4c-.56-.176-.98-.653-.98-1.213V6.728c0-.56.373-.98.84-1.166.84-.322 2.56-.84 2.56-.84s-1.682.887-2.428 1.26c-.746.373-1.12.56-1.12 1.12v11.2c0 .56-.28 1.026-.84 1.213L3.75 19.96c-.56.176-1.026-.092-1.026-.653V5.748c0-.466.28-.84.746-1.026.84-.28 2.24-.84 2.24-.84s-.933.56-1.25.84z"],
+    },
+    linear: {
+      bg: "#5E6AD2", fg: "#fff",
+      aka: ["linear", "mcp.linear.app"],
+      d: ["M3.4 18.2 16.8 4.8a1.6 1.6 0 0 1 2.3 2.3L5.7 20.5a1.6 1.6 0 1 1-2.3-2.3z"],
+    },
+    sentry: {
+      bg: "#362D59", fg: "#fff",
+      aka: ["sentry", "mcp.sentry.dev"],
+      d: ["M12 2.2 1.2 21.2h5.4l1.7-3h7.4l1.7 3h5.4L12 2.2zm0 6.4 3.1 5.6H8.9L12 8.6z"],
+    },
+    stripe: {
+      bg: "#635BFF", fg: "#fff",
+      aka: ["stripe", "mcp.stripe.com"],
+      d: ["M13.976 9.15c-2.172-.806-3.356-1.426-3.356-2.409 0-.831.683-1.305 1.901-1.305 2.227 0 4.515.858 6.09 1.631l.89-5.494C18.252.975 15.697 0 12.165 0 9.667 0 7.589.759 6.104 2.24c-1.49 1.47-2.27 3.56-2.27 5.873 0 4.002 2.444 6.73 6.378 8.203 2.168.814 3.354 1.428 3.354 2.415 0 .96-.84 1.522-2.354 1.522-1.875 0-4.965-.921-6.99-2.109l-.9 5.555C5.175 22.99 8.385 24 11.714 24c2.641 0 4.843-.624 6.328-1.813 1.664-1.305 2.525-3.236 2.525-5.732 0-4.128-2.524-6.9-6.591-8.305z"],
+    },
+    playwright: {
+      bg: "#2EAD33", fg: "#fff",
+      aka: ["playwright"],
+      d: [
+        "M4.2 7.1c0-1.7 1.8-3.1 4.1-3.1s4.1 1.4 4.1 3.1v7.8c0 1.7-1.8 3.1-4.1 3.1s-4.1-1.4-4.1-3.1V7.1z",
+        { d: "M6.6 9.4a1.15 1.15 0 1 1 0 2.3 1.15 1.15 0 0 1 0-2.3zm3.4 0a1.15 1.15 0 1 1 0 2.3 1.15 1.15 0 0 1 0-2.3z", fill: "#2EAD33" },
+        { d: "M11.6 7.1c0-1.7 1.8-3.1 4.1-3.1s4.1 1.4 4.1 3.1v7.8c0 1.7-1.8 3.1-4.1 3.1s-4.1-1.4-4.1-3.1V7.1z", opacity: ".85" },
+        { d: "M14 9.4a1.15 1.15 0 1 1 0 2.3 1.15 1.15 0 0 1 0-2.3zm3.4 0a1.15 1.15 0 1 1 0 2.3 1.15 1.15 0 0 1 0-2.3z", fill: "#2EAD33" },
+      ],
+    },
+    dosyalar: {
+      bg: "#3E4A3A", fg: "#E8E4D8",
+      aka: ["dosyalar", "filesystem", "server-filesystem"],
+      d: ["M2.4 6.2h6.2l1.6 1.8H21.6v10.6H2.4V6.2z"],
+    },
+    bellek: {
+      bg: "#3D3558", fg: "#E8E4D8",
+      aka: ["bellek", "memory", "server-memory"],
+      d: [
+        "M6 3.8a2.4 2.4 0 1 1 0 4.8 2.4 2.4 0 0 1 0-4.8z",
+        "M18 3.8a2.4 2.4 0 1 1 0 4.8 2.4 2.4 0 0 1 0-4.8z",
+        "M12 15.4a2.4 2.4 0 1 1 0 4.8 2.4 2.4 0 0 1 0-4.8z",
+        { d: "M7.8 8.2 10.4 15.6", stroke: true },
+        { d: "M16.2 8.2 13.6 15.6", stroke: true },
+      ],
+    },
+    figma: {
+      bg: "#1E1E1E", fg: "#fff",
+      aka: ["figma", "mcp.figma.com"],
+      d: [
+        { d: "M8 2.4h4a3 3 0 0 1 0 6H8V2.4z", fill: "#F24E1E" },
+        { d: "M12 2.4a3 3 0 1 1 0 6 3 3 0 0 1 0-6z", fill: "#FF7262" },
+        { d: "M8 8.4h4a3 3 0 1 1 0 6H8V8.4z", fill: "#A259FF" },
+        { d: "M12 8.4a3 3 0 1 1 0 6 3 3 0 0 1 0-6z", fill: "#1ABCFE" },
+        { d: "M8 14.4a3 3 0 1 0 3 3v-3H8z", fill: "#0ACF83" },
+      ],
+    },
+    slack: {
+      bg: "#4A154B", fg: "#fff",
+      aka: ["slack", "mcp.slack.com"],
+      d: [
+        { d: "M5.4 10.2a2.1 2.1 0 1 1 0-4.2h2.1v2.1a2.1 2.1 0 0 1-2.1 2.1z", fill: "#E01E5A" },
+        { d: "M10.2 5.4a2.1 2.1 0 1 1 4.2 0v2.1h-2.1a2.1 2.1 0 0 1-2.1-2.1z", fill: "#36C5F0" },
+        { d: "M18.6 10.2a2.1 2.1 0 1 1 0 4.2h-2.1v-2.1a2.1 2.1 0 0 1 2.1-2.1z", fill: "#2EB67D" },
+        { d: "M13.8 18.6a2.1 2.1 0 1 1-4.2 0v-2.1h2.1a2.1 2.1 0 0 1 2.1 2.1z", fill: "#ECB22E" },
+      ],
+    },
+    atlassian: {
+      bg: "#0052CC", fg: "#fff",
+      aka: ["atlassian", "jira", "confluence", "mcp.atlassian.com"],
+      d: ["M12.2 3 6.4 16.4h4.7L16.9 3h-4.7zM8.2 21 2.4 7.6h4.7L13 21H8.2z"],
+    },
+    asana: {
+      bg: "#F06A6A", fg: "#fff",
+      aka: ["asana", "mcp.asana.com"],
+      d: [
+        { circle: true, cx: 12, cy: 7.2, r: 3.1 },
+        { circle: true, cx: 7.2, cy: 16.2, r: 3.1 },
+        { circle: true, cx: 16.8, cy: 16.2, r: 3.1 },
+      ],
+    },
+    huggingface: {
+      bg: "#FFD21E", fg: "#111",
+      aka: ["huggingface", "hugging", "huggingface.co"],
+      d: [
+        { circle: true, cx: 12, cy: 12, r: 9.2, fill: "#FFD21E" },
+        { circle: true, cx: 8.6, cy: 10.2, r: 1.35, fill: "#111" },
+        { circle: true, cx: 15.4, cy: 10.2, r: 1.35, fill: "#111" },
+        { d: "M8.2 14.4c1.1 1.6 2.4 2.4 3.8 2.4s2.7-.8 3.8-2.4", stroke: true, width: "1.6", fill: "none" },
+      ],
+    },
+    supabase: {
+      bg: "#1C1C1C", fg: "#3ECF8E",
+      aka: ["supabase", "mcp.supabase.com"],
+      d: ["M13.2 2.2 4.6 13.4h6.4L9.2 21.8 19.4 10.6h-6.5L15.1 2.2z"],
+    },
+    vercel: {
+      bg: "#000", fg: "#fff",
+      aka: ["vercel", "mcp.vercel.com"],
+      d: ["M12 3.2 22 20.8H2z"],
+    },
+    neon: {
+      bg: "#00E599", fg: "#0A0A0A",
+      aka: ["neon", "mcp.neon.tech"],
+      d: ["M13.6 2.4 6.2 13.2h5.1L9.8 21.6 18.4 10.4h-5.2L15.4 2.4z"],
+    },
+    paypal: {
+      bg: "#003087", fg: "#fff",
+      aka: ["paypal", "mcp.paypal.com"],
+      d: [
+        "M7.2 4.2h6.4c2.6 0 4.2 1.4 4.2 3.6 0 2.6-1.9 4.2-4.6 4.2H9.6L8.6 19.8H5.4L7.2 4.2z",
+        { d: "M9.4 7.2h4.1c1.2 0 1.9.6 1.9 1.6 0 1.1-.8 1.7-2.1 1.7H10.2L9.4 7.2z", fill: "#009CDE" },
+      ],
+    },
+    git: {
+      bg: "#F05032", fg: "#fff",
+      aka: ["git", "server-git"],
+      d: ["M12.9 2.3a1.2 1.2 0 0 0-1.8 0L2.3 11.1a1.2 1.2 0 0 0 0 1.8l8.8 8.8a1.2 1.2 0 0 0 1.8 0l8.8-8.8a1.2 1.2 0 0 0 0-1.8L12.9 2.3zM12 7.2a1.6 1.6 0 1 1 0 3.2 1.6 1.6 0 0 1 0-3.2zm-2.4 6.2a1.4 1.4 0 1 1 0 2.8 1.4 1.4 0 0 1 0-2.8zm5.6.4a1.2 1.2 0 1 1 0 2.4 1.2 1.2 0 0 1 0-2.4z"],
+    },
+    context7: {
+      bg: "#00DC82", fg: "#052E1C",
+      aka: ["context7", "upstash"],
+      d: ["M5.2 5.2h13.6v2.2H5.2zM5.2 9.4h13.6v9.4H5.2zM8 12.2h8v1.6H8zM8 15.2h5.4v1.6H8z"],
+    },
+    dusunme: {
+      bg: "#4C3D73", fg: "#EDE6FF",
+      aka: ["dusunme", "sequential-thinking", "sequential"],
+      d: [
+        "M7.2 5.2a2.4 2.4 0 1 1 0 4.8 2.4 2.4 0 0 1 0-4.8z",
+        "M16.8 9.2a2.4 2.4 0 1 1 0 4.8 2.4 2.4 0 0 1 0-4.8z",
+        "M9.6 16.2a2.4 2.4 0 1 1 0 4.8 2.4 2.4 0 0 1 0-4.8z",
+        { d: "M9.2 9.4 14.8 11.4", stroke: true },
+        { d: "M15.2 14.4 11.6 16.8", stroke: true },
+      ],
+    },
+    fetch: {
+      bg: "#2B6CB0", fg: "#fff",
+      aka: ["fetch", "server-fetch"],
+      d: [
+        "M12 3.2a8.8 8.8 0 1 1 0 17.6 8.8 8.8 0 0 1 0-17.6zm0 1.8a7 7 0 1 0 0 14 7 7 0 0 0 0-14z",
+        { d: "M4.6 12h14.8M12 4.8c2.4 2.2 3.6 4.6 3.6 7.2s-1.2 5-3.6 7.2C9.6 17 8.4 14.6 8.4 12s1.2-5 3.6-7.2z", stroke: true, width: "1.5" },
+      ],
+    },
+  };
+
+  function connMarkId(name, where) {
+    const hay = ((name || "") + " " + (where || "")).toLowerCase();
+    for (const [id, spec] of Object.entries(CONN_MARKS)) {
+      if (id === (name || "").toLowerCase()) return id;
+      if ((spec.aka || []).some((a) => hay.includes(a))) return id;
+    }
+    return "";
+  }
+
+  function connMark(id) {
+    const spec = CONN_MARKS[id];
+    if (!spec) return null;
+    const wrap = el("span", "conn-mark");
+    wrap.style.setProperty("--conn-bg", spec.bg);
+    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("viewBox", spec.box || "0 0 24 24");
+    svg.setAttribute("aria-hidden", "true");
+    for (const item of spec.d) {
+      if (item && item.circle) {
+        const c = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+        c.setAttribute("cx", item.cx);
+        c.setAttribute("cy", item.cy);
+        c.setAttribute("r", item.r);
+        c.setAttribute("fill", item.fill || spec.fg);
+        svg.append(c);
+        continue;
+      }
+      const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+      if (typeof item === "string") {
+        path.setAttribute("d", item);
+        path.setAttribute("fill", spec.fg);
+      } else {
+        path.setAttribute("d", item.d);
+        if (item.stroke) {
+          path.setAttribute("fill", "none");
+          path.setAttribute("stroke", spec.fg);
+          path.setAttribute("stroke-width", item.width || "1.8");
+          path.setAttribute("stroke-linecap", "round");
+        } else {
+          path.setAttribute("fill", item.fill || spec.fg);
+        }
+        if (item.opacity) path.setAttribute("opacity", item.opacity);
+      }
+      svg.append(path);
+    }
+    wrap.append(svg);
+    return wrap;
+  }
+
+  const connFiltre = { q: "", only: "", cat: "" };   // only: "" | "ok" | "bad"
   let connSonVeri = null;
 
   function drawConnectors(data) {
@@ -2275,7 +2636,7 @@ const Settings = (() => {
     const pane = panes.connectors;
     pane.textContent = "";
     head(pane, t("Bağlayıcılar"),
-      t("Dış araç sunucuları (MCP). Listele → düzenle → bağlan. Ham JSON ileri seviye."));
+      t("Hazır dizin veya kendi sunucun. OAuth tarayıcıda açılır; ham JSON ileri seviye."));
 
     // Arama + durum filtreleri: Claude'daki dizinle aynı okuma düzeni.
     const bar = el("div", "conn-bar");
@@ -2323,11 +2684,11 @@ const Settings = (() => {
 
     const fillConnectorForm = (box, pref) => {
       let kind = pref.kind || "oauth";
-      const kinds = el("div", "choices");
+      const kinds = el("div", "choices conn-kinds");
       const KINDS = [
-        ["oauth", "HTTP — OAuth", "streamable HTTP; url yeter, kaydedince tarayıcıda OAuth girişi açılır"],
-        ["token", "HTTP — Bearer token", "Authorization: Bearer başlığı; token Model → anahtarlara yazılır"],
-        ["stdio", "stdio — yerel komut", "npx / py gibi bir komut başlatılır (Claude Desktop / Cursor'daki stdio)"],
+        ["oauth", "OAuth", "Tarayıcıda giriş — URL yeter"],
+        ["token", "Token", "Bearer anahtarı, Model → anahtarlar"],
+        ["stdio", "Yerel", "npx / py komutu (stdio)"],
       ];
       const nameBox = el("input", "input-text");
       nameBox.placeholder = t("ad — ör. notion");
@@ -2352,6 +2713,7 @@ const Settings = (() => {
       for (const [id, label, hint] of KINDS) {
         const card = el("button", "choice" + (id === kind ? " on" : ""));
         card.type = "button";
+        card.title = t(hint);
         card.append(el("b", null, t(label)));
         card.append(el("span", null, t(hint)));
         card.addEventListener("click", () => {
@@ -2418,28 +2780,54 @@ const Settings = (() => {
       nameBox.focus();
     };
 
-    // Popüler: kurulmamış katalog girdileri tek tıkla forma dolar.
     const kurulu = new Set((data.servers || []).map((s) => s.name));
-    const populer = CONN_KATALOG.filter(([ad, baslik]) => !kurulu.has(ad)
-      && (!connFiltre.q || (ad + " " + baslik).toLowerCase().includes(connFiltre.q)));
+    const populer = CONN_KATALOG.filter((c) => !kurulu.has(c.id)
+      && (!connFiltre.q || (c.id + " " + c.ad + " " + c.ne).toLowerCase().includes(connFiltre.q))
+      && (!connFiltre.cat || c.cat === connFiltre.cat));
     if (populer.length && connFiltre.only !== "ok") {
-      pane.append(el("p", "pane-note conn-pop-label", t("Popüler")));
+      const sec = el("div", "conn-sec");
+      const bas = el("div", "conn-sec-head");
+      const copy = el("div", "conn-sec-copy");
+      copy.append(el("h3", "conn-sec-title", t("Dizin")));
+      copy.append(el("p", "conn-sec-sub", t("Tek tıkla forma dolar — adres ezberleme.")));
+      bas.append(copy);
+      const cats = el("div", "conn-cats");
+      for (const [kod, ad] of [["", "Tümü"], ["is", "İş"], ["tasarim", "Tasarım"],
+                               ["bulut", "Bulut"], ["yerel", "Yerel"]]) {
+        const cip = el("button", "conn-chip" + (connFiltre.cat === kod ? " on" : ""));
+        cip.type = "button";
+        cip.textContent = t(ad);
+        cip.addEventListener("click", () => {
+          connFiltre.cat = kod;
+          drawConnectors(connSonVeri);
+        });
+        cats.append(cip);
+      }
+      bas.append(cats);
+      sec.append(bas);
       const raf = el("div", "conn-pop");
-      for (const [ad, baslik, kind, url, cmd, ne] of populer) {
+      for (const c of populer) {
         const kart = el("button", "conn-card");
         kart.type = "button";
-        kart.append(el("b", null, baslik), el("span", null, t(ne)));
-        kart.title = kind === "stdio" ? cmd : url;
+        const mark = connMark(c.id);
+        if (mark) kart.append(mark);
+        const meta = el("span", "conn-card-meta");
+        meta.append(el("b", null, c.ad), el("span", "conn-card-ne", t(c.ne)));
+        kart.append(meta);
+        kart.append(el("i", "conn-kind", c.kind === "stdio" ? "stdio" : "OAuth"));
+        kart.title = c.kind === "stdio" ? c.cmd : c.url;
         kart.addEventListener("click", () => {
           const adder2 = pane.querySelector(".row.adder");
           if (!adder2) return;
+          adder2.scrollIntoView({ block: "nearest" });
           detail(adder2, (box) => {
-            fillConnectorForm(box, { name: ad, kind, url, cmd });
+            fillConnectorForm(box, { name: c.id, kind: c.kind, url: c.url, cmd: c.cmd });
           }, "add");
         });
         raf.append(kart);
       }
-      pane.append(raf);
+      sec.append(raf);
+      pane.append(sec);
     }
 
     for (const server of data.servers || []) {
@@ -2490,6 +2878,7 @@ const Settings = (() => {
         state: server.ok ? "" : "bad",
         click: true,
         stay: true,
+        icon: connMark(connMarkId(server.name, server.where)),
         acts,
       });
       line.addEventListener("click", () => detail(line, (box) => {
@@ -2508,7 +2897,7 @@ const Settings = (() => {
       list.append(line);
     }
 
-    const adder = row({ name: t("＋ Yeni bağlantı"), state: "off", click: true, adder: true });
+    const adder = row({ name: t("Özel bağlantı"), state: "off", click: true, adder: true });
     adder.classList.add("adder");
     adder.addEventListener("click", () => detail(adder, (box) => {
       fillConnectorForm(box, {});
@@ -2541,8 +2930,6 @@ const Settings = (() => {
     }, "raw"));
     list.append(editRow);
     pane.append(list);
-
-    if (!(data.servers || []).length) adder.click();
   }
 
   // --- konum ve açılış --------------------------------------------------

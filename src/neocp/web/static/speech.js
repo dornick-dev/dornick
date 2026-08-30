@@ -211,7 +211,7 @@ const Speech = (() => {
       const item = queue.shift();
       build();   // boşalan yer bir sonrakini üretmeye başlasın
       try {
-        await play(await item.audio);
+        await play(await item.audio, item.text);
       } catch {
         // Ağ yoksa ses de yok; metin ekranda duruyor, iş durmamalı.
       }
@@ -259,7 +259,7 @@ const Speech = (() => {
   // Ajan konuşurken kulak kapanıyor: hoparlörden çıkan ses mikrofona geri
   // geliyor ve asistan kendi cümlesini duyup cevap vermeye kalkıyordu.
   // Yankı iptali işletim sistemi seviyesinde her zaman çalışmıyor.
-  function deafen(on) {
+  function deafen(on, text) {
     // Sahnedeki hoparlör organı da konuştuğunu göstersin. Bu dosya
     // sahneden önce yükleniyor; `typeof` bile bir const'un tanımlanma
     // anından önce hata veriyor, o yüzden deneyerek geçiliyor.
@@ -269,22 +269,22 @@ const Speech = (() => {
     fetch("/api/speaking", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ on }),
+      body: JSON.stringify({ on, text: on ? String(text || "") : "" }),
     }).catch(() => {});
   }
 
-  function play(url) {
+  function play(url, text) {
     if (!url) return Promise.resolve();
     if (character > 0.01) {
       // Karakter katmanı ham sesi istiyor. Başarısız olursa (bağlam
       // açılmadı, çözümleme patladı) düz çalmaya dönülüyor: sesin hiç
       // çıkmaması, karaktersiz çıkmasından kötü.
-      return shaped(url).catch(() => plain(url));
+      return shaped(url, text).catch(() => plain(url, text));
     }
-    return plain(url);
+    return plain(url, text);
   }
 
-  async function shaped(url) {
+  async function shaped(url, text) {
     const ctx = context();
     const stash = clips.get(url);
     clips.delete(url);
@@ -348,7 +348,7 @@ const Speech = (() => {
       // Susturma bunu çağırıyor: `stop()` hiçbir olay tetiklemiyor.
       current = { pause: () => { try { source.stop(); } catch { /* bitmiş */ } } };
       ending = finish;
-      deafen(true);
+      deafen(true, text);
       source.onended = finish;
       // Emniyet: ses bağlamı askıda kalırsa `onended` hiç tetiklenmiyor ve
       // kulak sonsuza kadar kapalı kalıyordu. Parçanın süresi biliniyor;
@@ -360,11 +360,11 @@ const Speech = (() => {
     });
   }
 
-  function plain(url) {
+  function plain(url, text) {
     return new Promise((done) => {
       const audio = new Audio(url);
       current = audio;
-      deafen(true);
+      deafen(true, text);
       // Nesne adresi bırakılmazsa bellek konuşma boyunca birikiyor.
       clips.delete(url);
       const finish = () => {

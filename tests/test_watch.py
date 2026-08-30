@@ -249,6 +249,19 @@ def test_snooze_also_clears_the_recent_frames() -> None:
     box._recent = [(clock.time(), b"x")]
     box.snooze(10)
     assert box._recent == []
+    assert box._eye._capture is None
+
+
+def test_lens_stop_can_start_again() -> None:
+    """HUD kapat/aç: stop sonrası start yeniden döngü kurabilmeli."""
+    box = watch.Lens()
+    box.stop()
+    assert not box.running
+    if not watch.available():
+        return
+    box.start()
+    box.stop()
+    assert not box.running
 
 
 def test_an_empty_buffer_says_so() -> None:
@@ -292,3 +305,57 @@ def test_motion_ignores_what_fell_out_of_the_window() -> None:
     box._history = [watch.Moment(at=now - 300, change=0.9)]
 
     assert box.motion(60)["frames"] == 0
+
+
+# -- güverte önizlemesi ------------------------------------------------
+
+
+def test_preview_uses_the_lens_buffer_not_a_second_open(
+        monkeypatch: pytest.MonkeyPatch) -> None:
+    """Açık Lens varken dahili kamerayı yeniden açmak Windows'ta kilitler."""
+    monkeypatch.setattr(watch, "snapshot", lambda *_a, **_k: (_ for _ in ()).throw(
+        AssertionError("snapshot should not run while Lens owns the device")
+    ))
+
+    class FakeLens:
+        source = "0"
+
+        def jpeg_bytes(self) -> bytes:
+            return b"\xff\xd8fake"
+
+    assert watch.preview_jpeg("0", lens=FakeLens()) == b"\xff\xd8fake"
+    assert watch.preview_jpeg("", lens=FakeLens()) == b"\xff\xd8fake"
+
+
+def test_preview_does_not_reopen_while_lens_owns_an_empty_buffer(
+        monkeypatch: pytest.MonkeyPatch) -> None:
+    called = []
+    monkeypatch.setattr(watch, "snapshot", lambda *_a, **_k: called.append(1) or [])
+
+    class FakeLens:
+        source = "0"
+
+        def jpeg_bytes(self) -> bytes:
+            return b""
+
+    assert watch.preview_jpeg("0", lens=FakeLens()) == b""
+    assert called == []
+
+
+def test_preview_falls_back_to_snapshot_without_lens(
+        monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        watch, "snapshot",
+        lambda *_a, **_k: ["data:image/jpeg;base64,UEs="],
+    )
+    import base64
+    assert watch.preview_jpeg("rtsp://cam") == base64.b64decode("UEs=")
+
+
+def test_lens_jpeg_bytes_are_the_last_packed_frame(
+        monkeypatch: pytest.MonkeyPatch) -> None:
+    box = lens(monkeypatch, frames(10, 200))
+    box.step()
+    raw = box.jpeg_bytes()
+    assert raw[:2] == b"\xff\xd8"
+    assert raw == box._recent[-1][1]

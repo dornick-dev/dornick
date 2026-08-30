@@ -238,8 +238,10 @@ async def _run_one(
 
     # Araç bir görüntü döndürdüyse blokta taşınamıyor: OpenAI sözleşmesi
     # role=tool içeriğinin dize olmasını istiyor. Döngü bunu görüp bir
-    # sonraki kullanıcı turuna iliştiriyor.
-    if image := result.detail.get("image"):
+    # sonraki kullanıcı turuna iliştiriyor. `images` (liste) kamera
+    # kesitleri için: birkaç kare tek araç sonucundan çıkabiliyor.
+    image = result.detail.get("image") or result.detail.get("images")
+    if image:
         block = result.to_block(call.id)
         block["_image"] = image
         return block
