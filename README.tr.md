@@ -32,7 +32,7 @@ vLLM). Yerel modelde konuşmaların ve anıların makineden çıkmaz.
 ## Hızlı başlangıç
 
 Windows: [Releases](../../releases) sayfasından `neo-setup-<sürüm>.exe`
-indir, kur, Başlat menüsünden aç. Güncelleme/temiz kurulum/veri sıfırlama
+indir, kur, Başlat menüsünden aç. **Windows SmartScreen "bilinmeyen yayıncı" uyarısı verir** — kurulum henüz kod imzalı değil (imza sertifikası planda); *Ek bilgi → Yine de çalıştır* de. Kurulum bu depodaki `installer/` hattından derleniyor, kendin de üretebilirsin. Proje **PyPI'da değil** — `pip install` ile bulunmaz; kaynaktan kurulum için depoyu klonla. Güncelleme/temiz kurulum/veri sıfırlama
 seçeneklerinin üçü de yedek alınarak test edilmiştir; kaldırma verini
 yerinde bırakır.
 

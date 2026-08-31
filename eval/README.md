@@ -14,6 +14,9 @@ Notes:
 * Each coding task runs in its own temp workspace with an **empty mind**
   and its own isolated neo instance — nothing touches your data.
 * Source identifiers are Turkish (the project's working language);
+* Some task **seed data** (e.g. `z1-search/seed/notlar/`) is deliberately
+  Turkish: the task itself is searching Turkish notes, and the files are
+  frozen fixtures — renaming them would invalidate recorded results;
   behaviour columns in the result JSON are documented in
   [`coding/README.md`](coding/README.md).
 * `coding/sonuclar/` holds the raw per-run JSON the report cites.

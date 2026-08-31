@@ -1,5 +1,31 @@
 ﻿# Changelog
 
+## 1.3.9 - 2026-09-01
+
+Public-facing polish for the single current release:
+
+* README: release/license/platform badges; honest notes that the project
+  is **not on PyPI** (install from a clone or the installer) and that the
+  unsigned installer triggers the **Windows SmartScreen "unknown
+  publisher"** warning (expected; auditable/rebuildable from
+  `installer/`); fixed a duplicated screenshot with a wrong caption and a
+  dangling sentence; light-theme automation screenshot wired in. Turkish
+  note added to the eval README explaining the frozen Turkish seed
+  fixtures.
+* A small version badge now sits at the bottom of the sidebar, so the
+  installed version is visible without hunting.
+* **Fixed: helpers spawned on a different model were silently reverted
+  to the parent's model on their first turn.** The pending-model-swap
+  hook (new in the previous commit) runs before every model call; the
+  child-side handler adopted the parent client unconditionally. It now
+  adopts only when the parent's client has actually changed - the task
+  tool's per-helper model routing works again (caught by the test
+  suite once it was re-pointed at this tree).
+* An oversized `max_tokens` is clamped to the window instead of refused,
+  matching the new auto-adopted model caps.
+* All pre-1.3.9 releases and tags were removed at the maintainer's
+  request - this is the single current build.
+
 ## 1.3.8 - 2026-08-31
 
 The final batch of the marathon day - every item a live request:

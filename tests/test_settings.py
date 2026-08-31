@@ -172,7 +172,6 @@ def test_the_shell_wins_over_the_saved_key(
     [
         ({"permissions": {"mode": "sinirsiz"}}, "izin kipi"),
         ({"model": {"max_tokens": 10}}, "çok küçük max_tokens"),
-        ({"model": {"max_tokens": 500_000}}, "pencereden büyük max_tokens"),
         ({"provider": "yok-boyle-bir-sey"}, "bilinmeyen sağlayıcı"),
         ({"model": {"uydurma_alan": 1}}, "bilinmeyen alan"),
     ],
@@ -186,6 +185,18 @@ def test_a_bad_value_is_refused_before_it_reaches_disk(
         settings.apply(config, patch)
 
     assert not (config.state_dir / "config.json").exists(), why
+
+
+def test_an_oversized_max_tokens_is_clamped_not_refused(config: Config) -> None:
+    """01.09 revizyonu (model tavanları otomatik benimseniyor): pencereden
+    büyük max_tokens artık HATA değil — pencere−rezerv tavanına sessizce
+    kısılır. Kullanıcıyı hatayla durdurmak, model değiştirirken tavanı elle
+    hesaplamaya zorluyordu."""
+    updated = settings.apply(config, {"model": {"max_tokens": 500_000}})
+    window = int(updated.model.context_window or 0)
+    if window > 0:
+        assert updated.model.max_tokens < window
+    assert updated.model.max_tokens >= 256
 
 
 def test_a_partial_patch_leaves_the_rest_alone(config: Config) -> None:

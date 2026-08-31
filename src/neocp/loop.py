@@ -2339,12 +2339,20 @@ class Agent:
             # — chat çalışırken görev ölü modelde kilitlenmesin.
             def _child_retry_wait(
                 _agent=agent, _handle=handle, _parent=self,
+                _dogum=self.client,
             ) -> None:
                 if _parent.on_retry_wait is not None:
                     try:
                         _parent.on_retry_wait()
                     except Exception:
                         pass
+                # Yalnız ebeveynin istemcisi GERÇEKTEN değiştiyse benimse.
+                # Kanca artık her model çağrısından önce koşuyor (bekleyen
+                # değişim akışı); koşulsuz benimseme, farklı modelle açılan
+                # çocuğun istemcisini İLK turda ebeveyne çeviriyordu —
+                # task'ın model yönlendirmesi kırılıyordu (kök, 01.09).
+                if _parent.client is _dogum:
+                    return
                 _agent.client = _parent.client
                 _agent.config = _parent.config
                 _handle.model = _parent.config.model.name

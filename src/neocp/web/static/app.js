@@ -5121,6 +5121,10 @@ async function loadState() {
       const marka = document.querySelector(".brand");
       if (marka) marka.title = "neo " + s.surum +
         (s.kurulu ? t(" · kurulum") : t(" · geliştirme"));
+      // Küçük sürüm rozeti kenar çubuğunun dibinde (kullanıcı isteği,
+      // 01.09): hangi sürümün kurulu olduğu aramadan görünsün.
+      const rozet = document.getElementById("side-ver");
+      if (rozet) rozet.textContent = "v" + s.surum;
     }
     modelName = s.model || "";
     oturumId = s.session || oturumId;

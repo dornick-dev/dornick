@@ -210,3 +210,4 @@ Dil.secici('[data-tab="access"]', "Permissions");
 Dil.secici('[data-tab="machine"]', "Machine");
 Dil.secici('[data-tab="files"]', "Files");
 Dil.secici('[data-tab="transfer"]', "Transfer");
+Dil.statik("side-ver", "neo version", "title");

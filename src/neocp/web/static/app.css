@@ -4981,6 +4981,11 @@ body.kontrol-canli::after {
   box-shadow: inset 0 1px 0 var(--edge);
 }
 .side-foot .meta { margin-left: auto; font: 10.5px var(--mono); color: var(--faint); }
+/* Küçük sürüm rozeti: sessiz, mono, dipte (kullanıcı isteği, 01.09). */
+.side-foot .side-ver {
+  margin-left: 6px; font: 10.5px var(--mono); color: var(--faint);
+  letter-spacing: .02em; user-select: none;
+}
 .side-foot .icon {
   width: 34px; height: 34px; border-radius: 9px;
 }

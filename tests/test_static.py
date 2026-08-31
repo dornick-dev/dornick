@@ -2494,3 +2494,11 @@ def test_folder_flows_and_task_mirror_are_wired() -> None:
     assert "on_retry_wait" in loop_src
     assert "_yenile_baglam" in loop_src
     assert "Yeni bir oturum açman gerekiyor" not in loop_src
+
+
+def test_the_version_badge_lives_in_the_sidebar_foot() -> None:
+    """Kullanici istegi (01.09): kurulu surum aramadan gorunsun - kenar
+    cubugunun dibinde kucuk mono rozet."""
+    assert 'id="side-ver"' in HTML
+    assert ".side-foot .side-ver" in CSS
+    assert 'getElementById("side-ver")' in APP_JS

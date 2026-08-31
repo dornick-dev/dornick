@@ -3,6 +3,11 @@
 **Open-source, self-hosted AI assistant for Windows that remembers you,
 uses your computer, and builds its own automations.**
 
+[![Latest release](https://img.shields.io/github/v/release/fatihkutuk/neo?label=release&color=2ea043)](../../releases/latest)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Platform](https://img.shields.io/badge/platform-Windows%2010%2F11-0078d4)](../../releases/latest)
+[![Tests](https://img.shields.io/badge/tests-1678%20passing-2ea043)](tests/)
+
 [Türkçe README](README.tr.md) · [Releases](../../releases) · MIT licensed
 
 neo is not a coding assistant. It is a personal AI agent that runs on *your*
@@ -95,8 +100,6 @@ and turns repeated work into automations you can watch run step by step.
 * **Turkish and English** interface; the memory layer is built for
   agglutinative Turkish (prefix-matching FTS) and works in English too.
 
-![The memory network: memories as coloured nodes linked to their nearest neighbours](docs/screenshots/home-memory-web.png)
-
 ## Quick start
 
 ### From the installer (Windows)
@@ -106,6 +109,13 @@ Download `neo-setup-<version>.exe` from
 The setup page in the app lets you pick a model (local server or API key).
 Optional installer components: know-me training, listening (microphone),
 camera watching.
+
+> **Windows SmartScreen will warn you** ("unknown publisher") because the
+> installer is not code-signed yet — signing certificates are planned, not
+> shipped. This is expected for a young open-source project: click
+> *More info → Run anyway*. The installer is built from this repository by
+> the pipeline in [`installer/`](installer/); you can audit or rebuild it
+> yourself.
 
 **Installing over an existing copy** gives you three choices, and the
 installer is tested against all of them:
@@ -122,6 +132,9 @@ program and leaves your `.neocp` data in place.
 
 ### From source
 
+> **Not on PyPI** — `pip install neocp` will not find this project.
+> Install from a clone (below) or use the Windows installer above.
+>
 > Naming: the product is **neo**; its Python package, CLI and state
 > directory are **`neocp`** (neo core platform) — so the command is
 > `neocp` and your data lives in `.neocp/`. This is deliberate, not a
@@ -164,6 +177,7 @@ Each node names its type (`mail_read`, `agent`, `http`, `skill`), the secrets
 it needs, and whether you edited it by hand — a step marked ✎ *manual* is one
 the automatic repair will never touch. The same screen works in both themes:
 
+![The automation flow in the light theme](docs/screenshots/automation-flow-light.png)
 
 Run it on a schedule, or press **Run** and watch the steps turn from
 *running* to *done*. Nothing is hidden in a separate log.
