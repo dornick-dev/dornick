@@ -210,3 +210,5 @@ Dil.secici('[data-tab="access"]', "Permissions");
 Dil.secici('[data-tab="machine"]', "Machine");
 Dil.secici('[data-tab="files"]', "Files");
 Dil.secici('[data-tab="transfer"]', "Transfer");
+Dil.statik("hist-new-folder", "Start in a folder", "title");
+Dil.statik("hist-new-folder", "Start in a folder", "aria-label");

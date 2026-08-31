@@ -16,6 +16,9 @@ Dil.ekle({
   "git deposu yok": "no git repo",
   "İkili dosya — fark çizilmiyor.": "Binary file — no diff drawn.",
   "Yükleniyor…": "Loading…",
+  "Repo aç": "Create repo",
+  "repo yok": "no repo",
+  "klasörü aç": "open folder",
   "Açılamadı": "Could not open",
   "Fark okunamadı.": "Could not read the diff.",
 });
@@ -61,8 +64,26 @@ const GitBar = (() => {
   function drawBar() {
     if (!bar) return;
     if (!snap || !snap.present) {
-      bar.hidden = true;
-      document.body.style.setProperty("--git-h", "0px");
+      // Depo yok ama çalışma klasörü VAR: çubuk yine görünür — "Repo aç"
+      // (git init) tek tık uzakta ve klasör adı Explorer'ı açar. Eski hal
+      // çubuğu tamamen gizliyordu; kullanıcı repo açmayı arayüzden hiç
+      // yapamıyordu ("create repo diyemiyorum" — canlı istek, 31.08).
+      const yol = snap && snap.root;
+      if (!yol) {
+        bar.hidden = true;
+        document.body.style.setProperty("--git-h", "0px");
+        return;
+      }
+      bar.hidden = false;
+      bar.dataset.root = yol;
+      nameEl.textContent = snap.name || String(yol).split(/[\\/]/).pop();
+      nameEl.title = yol + " — " + t("klasörü aç");
+      branchEl.textContent = t("repo yok");
+      statEl.hidden = true;
+      commitBtn.hidden = true;
+      publishBtn.hidden = false;
+      publishBtn.textContent = t("Repo aç");
+      document.body.style.setProperty("--git-h", bar.offsetHeight + "px");
       return;
     }
     bar.hidden = false;
@@ -257,12 +278,31 @@ const GitBar = (() => {
     refresh();
   }
 
+  // Çalışma klasörünü Explorer'da açar — "sohbetten klasöre gidemiyorum"
+  // (canlı istek, 31.08): çubuktaki ad artık kapı.
+  async function klasoruAc() {
+    const yol = (snap && snap.root) || bar.dataset.root || "";
+    if (!yol) return;
+    try {
+      await fetch("/api/apps/reveal", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ path: yol }),
+      });
+    } catch { /* sessiz: en iyi çaba */ }
+  }
+
   if (bar) {
     document.getElementById("git-id").title = t("Değişiklikler");
     document.getElementById("git-id").addEventListener("click", openPane);
+    nameEl.style.cursor = "pointer";
+    nameEl.addEventListener("click", (ev) => { ev.stopPropagation(); klasoruAc(); });
     statEl.addEventListener("click", openPane);
     commitBtn.addEventListener("click", openPane);
-    publishBtn.addEventListener("click", openPane);
+    publishBtn.addEventListener("click", (ev) => {
+      // Depo yokken "Repo aç": doğrudan git init — panoya gitmeden.
+      if (snap && !snap.present) { ev.stopPropagation(); act("init"); return; }
+      openPane();
+    });
   }
   refresh();
   poll = setInterval(tick, 4000);

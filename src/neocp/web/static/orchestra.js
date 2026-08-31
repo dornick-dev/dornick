@@ -35,6 +35,8 @@ Dil.ekle({
   "Model bekleniyor": "Waiting for model",
   "Model yanıt vermedi": "Model did not respond",
   "Devam et": "Continue",
+  "İptal et": "Cancel",
+  "İptal ediliyor…": "Cancelling…",
   "Sürdürülüyor…": "Resuming…",
 });
 
@@ -290,7 +292,28 @@ const Orchestra = (() => {
           if (s && s.channels) seed(s.channels);
         } catch { render(); }
       });
-      acts.append(devam);
+      // İptal: yarım kalan iş bir daha dirilmesin ("devam et var ama
+      // iptal et yok" — canlı istek, 31.08). Kalıcı: sunucu çocuğun
+      // günlüğüne kapanış yazar; açılış taraması artık atlar.
+      const iptal = el("button", "orch-resume orch-cancel", t("İptal et"));
+      iptal.type = "button";
+      iptal.addEventListener("click", async (ev) => {
+        ev.stopPropagation();
+        iptal.disabled = true;
+        iptal.textContent = t("İptal ediliyor…");
+        try {
+          await fetch("/api/gorevler/iptal", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ id: "c:" + ch.id }),
+          });
+        } catch { /* kanal olayı günceller */ }
+        try {
+          const s = await (await fetch("/api/state")).json();
+          if (s && s.channels) seed(s.channels);
+        } catch { render(); }
+      });
+      acts.append(devam, iptal);
       wrap.append(acts);
     }
 

@@ -1005,6 +1005,12 @@ class _Handler(BaseHTTPRequestHandler):
             self._json(result if isinstance(result, dict)
                        else {"ok": False, "error": "Görev sürdürme desteklenmiyor."})
             return
+        if route == "/api/gorevler/iptal":
+            result = self._controller_call(
+                "gorev_iptal", str((body or {}).get("id") or ""))
+            self._json(result if isinstance(result, dict)
+                       else {"ok": False, "error": "Görev iptali desteklenmiyor."})
+            return
         if route == "/api/degisiklikler/geri":
             self._degisiklik_geri(body)
             return
@@ -1891,7 +1897,17 @@ class _Handler(BaseHTTPRequestHandler):
         if config is None:
             self._json({"ok": True, "present": False})
             return
-        self._json(gitmod.snapshot(config))
+        snap = gitmod.snapshot(config)
+        if not snap.get("present"):
+            # Depo yokken de çalışma klasörü çubukta görünsün: "Repo aç"
+            # ve "klasörü aç" oradan yaşıyor (canlı istek, 31.08).
+            try:
+                box = config.open_sandbox()
+                kok = box.project or box.root
+                snap = {**snap, "root": str(kok), "name": Path(kok).name}
+            except Exception:
+                pass
+        self._json(snap)
 
     def _git_action(self, body: dict[str, Any]) -> None:
         from .. import git as gitmod

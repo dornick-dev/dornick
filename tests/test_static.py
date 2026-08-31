@@ -2411,3 +2411,26 @@ def test_the_strip_sub_line_never_overflows_the_column() -> None:
     beliriyordu. Taban marji dusecek."""
     sub = CSS.split(".acts-head .head-sub {", 1)[1].split("}", 1)[0]
     assert "calc(100% - 16px)" in sub
+
+
+def test_folder_flows_and_task_mirror_are_wired() -> None:
+    """31.08 son parti: klasorde baslat (mini gezgin), git cubugu depo
+    yokken de gorunur ("Repo ac"), klasor adi Explorer acar, is listesi
+    aynasi SAG panelde ve metnin ustunde, orkestrada yarim kalana iptal,
+    sag panel tutamaci 760'a kadar buyur, "Dusundu" tek tiklamada icerige
+    iner."""
+    hist = (STATIC / "history.js").read_text(encoding="utf-8")
+    assert "klasordeBaslat" in hist and "/api/gozat" in hist
+    assert 'id="hist-new-folder"' in HTML
+    git = (STATIC / "git.js").read_text(encoding="utf-8")
+    assert "Repo aç" in git and 'act("init")' in git
+    assert "/api/apps/reveal" in git
+    dock = CSS.split(".plan-dock {", 1)[1].split("}", 1)[0]
+    assert "right: 12px" in dock and "z-index: 60" in dock
+    orch = (STATIC / "orchestra.js").read_text(encoding="utf-8")
+    assert "/api/gorevler/iptal" in orch and "İptal et" in orch
+    assert "def gorev_iptal" in (Path(__file__).resolve().parents[1]
+                                 / "src" / "neocp" / "desktop.py").read_text(encoding="utf-8")
+    assert '"/api/gorevler/iptal"' in SERVER_SRC
+    assert "Math.min(760" in APP_JS
+    assert "sadeceDusunce" in APP_JS

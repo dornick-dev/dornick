@@ -2058,6 +2058,43 @@ class Bridge:
             return {"ok": False, "error": "Sürdürme zaman aşımı."}
         return box if box else {"ok": False, "error": "Sürdürülemedi."}
 
+    def gorev_iptal(self, gid: str) -> dict[str, Any]:
+        """Yetim/bitmiş yardımcıyı defterden VE açılış taramasından düşürür.
+
+        Kalıcılık: çocuğun kendi günlüğüne bir `subagent_end` kapanışı
+        yazılır — `yetim_tara` kapanış gören günlüğü bir daha diriltmez.
+        ("Devam et var ama iptal et yok" — canlı istek, 31.08.)
+        """
+        gid = str(gid or "").strip()
+        cid = gid[2:] if gid.startswith("c:") else gid
+        if not cid or not re.match(r"^[A-Za-z0-9_-]+$", cid):
+            return {"ok": False, "error": "Geçersiz görev kimliği."}
+        agent = self.agent
+        if agent is None:
+            return {"ok": False, "error": "Ajan henüz hazır değil."}
+        children = getattr(agent, "_children", None) or {}
+        handle = children.get(cid)
+        if handle is None:
+            return {"ok": False, "error": "Görev bulunamadı."}
+        if handle.state == "kosuyor":
+            return {"ok": False, "error": "Koşan görev iptal edilmez — önce durdur."}
+        sid = str(getattr(handle, "session_id", "") or "")
+        if sid and re.match(r"^[A-Za-z0-9_-]+$", sid):
+            try:
+                yol = Path(agent.config.sessions_dir) / f"{sid}.jsonl"
+                satir = json.dumps({
+                    "kind": "meta", "role": None, "content": "subagent_end",
+                    "meta": {"session": sid, "title": handle.title,
+                             "summary": "kullanıcı iptal etti"},
+                }, ensure_ascii=False)
+                with yol.open("a", encoding="utf-8") as fh:
+                    fh.write(satir + "\n")
+            except OSError:
+                pass
+        children.pop(cid, None)
+        self.hub.emit({"type": "channels", "channels": _live_channels(agent)})
+        return {"ok": True}
+
     def _fiyat_getir(self) -> None:
         """Seçili modelin fiyatını arka planda bir kez çeker.
 

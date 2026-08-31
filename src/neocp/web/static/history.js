@@ -19,6 +19,11 @@ Dil.ekle({
   "Koşuyor": "Running",
   "Biten": "Done",
   "Geçiliyor…": "Switching…",
+  "Burada başlat": "Start here",
+  "Vazgeç": "Cancel",
+  "Sürücü seç": "Pick a drive",
+  "üst klasör": "parent folder",
+  "Başlatılıyor…": "Starting…",
   "Tur bitince geçilebilir": "You can switch when the turn ends",
   "Geçilemedi — neo meşgul olabilir, tur bitince dene.":
     "Could not switch — neo may be busy; try again after the turn.",
@@ -586,6 +591,70 @@ const History = (() => {
     input.select();
   }
 
+  // Klasörde başlat (canlı istek, 31.08 — "sendeki gibi klasör seçip
+  // konuşma başlatayım"): /api/gozat ile mini gezgin, "Burada başlat" yeni
+  // oturum açar + çalışma klasörünü atar + uygular.
+  function klasordeBaslat() {
+    const eski = document.getElementById("hist-klasor-sec");
+    if (eski) { eski.remove(); return; }
+    const kutu = el("div", "hist-assign-box hist-klasor-kutu");
+    kutu.id = "hist-klasor-sec";
+    const baslik = el("div", "hist-klasor-yol", "");
+    const liste = el("div", "hist-klasor-liste");
+    const alt = el("div", "hist-klasor-alt");
+    const basla = el("button", "plan-btn", t("Burada başlat"));
+    basla.type = "button";
+    const kapat = el("button", "plan-btn muted", t("Vazgeç"));
+    kapat.type = "button";
+    kapat.onclick = () => kutu.remove();
+    alt.append(basla, kapat);
+    kutu.append(baslik, liste, alt);
+    let secili = "";
+    async function gez(yol) {
+      let veri;
+      try {
+        veri = await (await fetch("/api/gozat?yol=" + encodeURIComponent(yol || ""))).json();
+      } catch { return; }
+      secili = veri.yol || "";
+      baslik.textContent = secili || t("Sürücü seç");
+      basla.disabled = !secili;
+      liste.replaceChildren();
+      if (veri.ust !== null && veri.ust !== undefined) {
+        const yukari = el("button", "hist-klasor-satir ust", "‹ " + t("üst klasör"));
+        yukari.type = "button";
+        yukari.onclick = () => gez(veri.ust);
+        liste.append(yukari);
+      }
+      for (const k of (veri.klasorler || [])) {
+        const satir = el("button", "hist-klasor-satir", k.ad || k.yol);
+        satir.type = "button";
+        satir.onclick = () => gez(k.yol);
+        liste.append(satir);
+      }
+    }
+    basla.onclick = async () => {
+      if (!secili) return;
+      basla.disabled = true;
+      basla.textContent = t("Başlatılıyor…");
+      try {
+        const res = await (await fetch("/api/session/new", { method: "POST" })).json();
+        if (res && res.ok && res.id) {
+          await saveMeta(res.id, { path: secili });
+          await fetch("/api/session/resume", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ id: res.id }),
+          });
+        }
+      } catch { /* durum satırı zaten konuşur */ }
+      kutu.remove();
+      if (innerWidth <= 860) close(); else { load(); setTimeout(load, 600); }
+    };
+    const dugme = document.getElementById("hist-new");
+    dugme.after(kutu);
+    gez("");
+  }
+
   // Yeni konuşma: taze bir oturum başlatır. Sunucu desteklemiyorsa (eski
   // süreç) kullanıcıya söylenir — sessizce yutulmaz.
   async function newConversation() {
@@ -709,6 +778,8 @@ const History = (() => {
     huni.classList.toggle("on", acik);
   });
   document.getElementById("hist-new").addEventListener("click", newConversation);
+  const klasorBtn = document.getElementById("hist-new-folder");
+  if (klasorBtn) klasorBtn.addEventListener("click", klasordeBaslat);
   // HUD'daki ayrı yeni-konuşma ikonu kalktı: sidebar'daki "+ Yeni
   // konuşma" tek giriş (kullanıcı: "zaten yazıyor, icon gereksiz").
   // Her tuşta: yerel süzgeç anında, döküm araması gecikmeli.

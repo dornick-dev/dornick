@@ -1,5 +1,30 @@
 ﻿# Changelog
 
+## 1.3.8 - 2026-08-31
+
+The final batch of the marathon day - every item a live request:
+
+* **Panels resize in both directions.** The right column's drag cap was
+  420 px - exactly its default width, so it could only shrink. The cap is
+  now half the window.
+* **Start a conversation in a folder.** A folder button next to "New
+  conversation" opens a mini browser (drives -> folders); "Start here"
+  opens a fresh chat with that working folder applied - like picking a
+  workspace in Claude Code.
+* **The git bar lives even without a repo.** It now shows the working
+  folder with a one-click "Create repo" (git init), and clicking the
+  folder name opens it in Explorer - the missing "go to the project
+  folder from the chat" path.
+* **The task mirror docks to the right panel** (it used to float over
+  the chat column *behind* the text) and sits above every surface.
+* **Half-done orchestra channels can be cancelled** - next to "Continue"
+  there is now "Cancel", persisted so a dismissed orphan never comes
+  back at the next launch.
+* **"Thought" opens in one click.** Clicking the sealed thinking header
+  used to reveal only a collapsed one-line step ("just a line appears");
+  it now expands straight into the full reasoning.
+* pyproject BOM introduced by a PowerShell write in 1.3.7 removed.
+
 ## 1.3.7 - 2026-08-31
 
 * **No more phantom horizontal scrollbar under the chat.** The strip's

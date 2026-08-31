@@ -417,7 +417,15 @@
 
 <div class="hist-panel" id="hist-panel" hidden>
   <div class="left-grip" data-left-grip title="Genişliği sürükle" aria-label="Paneli yeniden boyutlandır"></div>
-  <button class="hist-new" id="hist-new"><span class="hist-new-plus">+</span> Yeni konuşma</button>
+  <div class="hist-new-row">
+    <button class="hist-new" id="hist-new"><span class="hist-new-plus">+</span> Yeni konuşma</button>
+    <button class="hist-new-folder" id="hist-new-folder" title="Klasörde başlat"
+            aria-label="Klasörde başlat">
+      <svg viewBox="0 0 16 16" aria-hidden="true">
+        <path d="M1.5 4.5c0-.8.7-1.5 1.5-1.5h3l1.5 2h6c.8 0 1.5.7 1.5 1.5v5c0 .8-.7 1.5-1.5 1.5H3c-.8 0-1.5-.7-1.5-1.5z" fill="none"/>
+      </svg>
+    </button>
+  </div>
   <div class="side-search">
     <input class="hist-search" id="hist-search" type="search" placeholder="Konuşmalarda ara" aria-label="Ara">
     <button class="side-funnel" id="hist-filter-toggle" type="button"

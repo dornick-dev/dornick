@@ -432,8 +432,8 @@ Dil.ekle({ "Açıklama ▸": "Key ▸", "Açıklama ▾": "Key ▾" });
   // Kayıtlı panel genişliği / masa-beyin oranı açılışta geri gelsin.
   try {
     const w = parseInt(localStorage.getItem("neo-mind-w") || "", 10);
-    // Eski/bozuk kayıt sohbeti ezerse: yok say.
-    if (w >= 240 && w <= 420) {
+    // Eski/bozuk kayıt sohbeti ezerse: yok say. (Tavan tutamaçla aynı: 760.)
+    if (w >= 240 && w <= 760) {
       document.documentElement.style.setProperty("--mind-w-user", w + "px");
     } else if (Number.isFinite(w)) {
       try { localStorage.removeItem("neo-mind-w"); } catch { /* */ }
@@ -473,7 +473,10 @@ Dil.ekle({ "Açıklama ▸": "Key ▸", "Açıklama ▾": "Key ▾" });
   let active = false;
   const onMove = (ev) => {
     if (!active) return;
-    const max = Math.min(420, window.innerWidth * 0.32);
+    // 420 tavanı panoyu hapse çeviriyordu: varsayılan genişlik zaten 420
+    // olduğundan panel YALNIZ küçülebiliyordu ("resize edilemiyor, sadece
+    // küçültülebiliyor" — canlı, 31.08). Tavan yarım ekrana çıktı.
+    const max = Math.min(760, window.innerWidth * 0.55);
     const w = Math.max(240, Math.min(max, window.innerWidth - ev.clientX));
     root.style.setProperty("--mind-w-user", w + "px");
   };
@@ -2869,6 +2872,20 @@ function ensureWork() {
     // gelsin — yalnız başlığı hizalamak, ekranın altındaki gövdeyi görüş
     // dışında bırakıyordu ("açılmıyor, arkada kalıyor" — canlı şikâyet).
     if (!body.hidden) {
+      // TEK tıklama içeriğe iner: gövde yalnız düşünce satırlarından
+      // oluşuyorsa aradaki katlı "✻ Düşündü · N sn" basamağı atlanır ve
+      // muhakeme doğrudan açılır. Eski hal iki katmandı — kullanıcı
+      // "tıklayınca sadece alta bir çizgi geliyor, içeriğine
+      // gidemiyorum" diye defalarca yandı (31.08).
+      const cocuklar = [...body.children];
+      const sadeceDusunce = cocuklar.length > 0
+        && cocuklar.every((c) => c.classList.contains("think"));
+      if (sadeceDusunce) {
+        const son = cocuklar[cocuklar.length - 1];
+        if (son.classList.contains("done") && !son.classList.contains("open")) {
+          son.click();
+        }
+      }
       (body.childElementCount ? body : head)
         .scrollIntoView({ block: "nearest", behavior: "smooth" });
     }
