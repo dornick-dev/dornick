@@ -4362,11 +4362,11 @@ progress { accent-color: var(--cyan); }
 /* Masa KAPALIYKEN: sağ şerit yok — beyin rail'den sağ kenara yayılır (ortada büyük).
    Sohbet üstte yüzer; boş krem orta alan kaybolur. */
 @media (min-width: 1021px) {
-  body.mind-on:not(.mind-off):not(.viewing):not(.orch-open):not(.cam-open) {
+  body.mind-on:not(.mind-off):not(.no-ambient):not(.viewing):not(.orch-open):not(.cam-open) {
     --mind-w: 0px;
     --right-w: 0px;
   }
-  body.mind-on:not(.mind-off):not(.viewing):not(.orch-open):not(.cam-open) .right-col {
+  body.mind-on:not(.mind-off):not(.no-ambient):not(.viewing):not(.orch-open):not(.cam-open) .right-col {
     left: var(--rail-w); width: auto; border-left: none; z-index: 2;
   }
   /* Beyin ORTADAYKEN başlık (BEYİN · Anılarda ara · ›) HİÇ çizilmez:
@@ -5303,4 +5303,42 @@ body.watch-win .cam-strip {
 .side-nav { padding: 2px 8px 10px; }
 .side-label { padding: 12px 14px 6px; font: 500 11.5px var(--font); }
 
+/* ============================================================
+   Dar bant onarımları (canlı ölçüm + ekran görüntüleri, 31.08).
+   ============================================================ */
 
+/* 861-1020: kenar çubuğu + sağ sütun + sohbet tabanı pencereye sığmıyor
+   (toplam ~1056px). Sağ sütun açıkken kenar çubuğu yer AYIRMAZ, üstte
+   çekmece olur — harf sızıntısı ekranının kökü buydu. */
+@media (max-width: 1020px) and (min-width: 861px) {
+  body.hist-open.viewing, body.hist-open.orch-open, body.hist-open.cam-open {
+    --rail-w: 0px;
+  }
+  body.hist-open.viewing .hist-panel,
+  body.hist-open.orch-open .hist-panel,
+  body.hist-open.cam-open .hist-panel {
+    z-index: 60; box-shadow: 12px 0 40px rgba(0, 0, 0, .45);
+  }
+}
+
+/* ≤860: telefon/dar pencere — görüntüleyici sohbeti ezmek yerine TAM
+   yüzey kaplar (ölçüldü: 375px'te sohbete 88px kalıyordu). */
+@media (max-width: 860px) {
+  body.viewing { --mind-w: 0px; }
+  body.viewing .right-col {
+    left: 0; width: 100vw; z-index: 55; pointer-events: auto;
+    background: var(--panel);
+  }
+}
+
+/* ≤620: kompozer neredeyse tam genişlik — 375px ekranda iki yanda 51'er
+   px boşluk giriş satırını 273px'e sıkıştırıyordu. */
+@media (max-width: 620px) {
+  body { --aside: calc(100vw - 20px); }
+  .compose-shell { left: 10px; right: 10px; max-width: none; }
+  .cam-deck { right: 8px; left: 8px; width: auto; }
+}
+
+/* Beyin ortada büyümesin ayarı: sağ paneldeki beyin durur, ambient
+   (orta sahne) kapanır — "yazılar beynin altında kayboluyor" şikâyeti. */
+body.no-ambient #scene { opacity: .35; }

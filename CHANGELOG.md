@@ -1,5 +1,23 @@
 # Changelog
 
+## 1.3.2 — 2026-08-31
+
+Responsive repair, driven by live screenshots and programmatic overflow
+measurement at 375/620/890/1020 px:
+
+* **861-1020 px band**: sidebar + viewer + chat no longer fight over a
+  window they cannot share — with a right panel open the sidebar becomes
+  a floating drawer instead of reserving width (the "leaking letters"
+  screen is gone; measured: zero horizontal overflow).
+* **<= 860 px**: opening the viewer now takes the full surface instead of
+  squeezing the chat (at 375 px the chat was left 88 px wide).
+* **<= 620 px**: the composer stretches nearly full width (273 -> 355 px
+  on a phone); the camera deck follows suit.
+* **New setting — "Brain takes the stage"**: when off, the brain stays in
+  the side panel and the centre scene dims, so text is never covered by
+  the visualisation. Stored per browser; the default keeps today's look.
+
+
 ## 1.3.1 — 2026-08-31
 
 Packaging completeness pass — nothing to install by hand, ever:

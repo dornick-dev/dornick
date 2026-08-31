@@ -393,6 +393,17 @@ Dil.ekle({ "Açıklama ▸": "Key ▸", "Açıklama ▾": "Key ▾" });
   let kayit = null;
   try { kayit = localStorage.getItem("neo-mind"); } catch { /* dosya:// */ }
   uygula(kayit !== "kapali");
+  // Beyin ORTADA büyüsün mü (ambient)? Ayarlardan yönetilir; kapalıyken
+  // beyin sağ panelde kalır, orta sahne sönükleşir — "yazılar beynin
+  // altında kayboluyor" (canlı istek, 31.08).
+  try {
+    if (localStorage.getItem("neo-brain-ambient") === "kapali")
+      document.body.classList.add("no-ambient");
+  } catch { /* dosya:// */ }
+  window.beyinOrtada = (acik) => {
+    document.body.classList.toggle("no-ambient", !acik);
+    try { localStorage.setItem("neo-brain-ambient", acik ? "acik" : "kapali"); } catch {}
+  };
   $("mind-close").addEventListener("click", () => uygula(false));
   // ◍ artık iki yönlü anahtar: ambient kipte yüzen başlık (›) yok, beyni
   // kapatıp açmanın kalıcı yeri burası.
