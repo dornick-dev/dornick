@@ -31,7 +31,7 @@ INSTALL_HINT = "Yerel GPU kamera analizi için: pip install 'neocp[watch]'"
 
 # Ultralytics'in resmî nano ONNX'i. İlk kullanımda bir kez.
 MODEL_URL = (
-    "https://github.com/ultralytics/assets/releases/download/v8.3.0/yolov8n.onnx"
+    "https://github.com/ultralytics/assets/releases/download/v8.4.0/yolov8n.onnx"  # v8.3.0 404 (31.08)
 )
 MODEL_NAME = "yolov8n.onnx"
 INPUT = 640
@@ -436,7 +436,7 @@ def _ensure_model() -> Path | None:
     tmp = path.with_suffix(".tmp")
     for url in (
         MODEL_URL,
-        "https://github.com/ultralytics/assets/releases/download/v8.4.0/yolov8n.onnx",
+        "https://github.com/ultralytics/assets/releases/download/v8.2.0/yolov8n.onnx",
     ):
         try:
             req = urllib.request.Request(

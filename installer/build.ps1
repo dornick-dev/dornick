@@ -190,14 +190,25 @@ if (-not $AtlaKamera) {
     # kendi kurması gerekmesin"). İndirme önbelleklenir; sight._model_path
     # önce bu kopyaya bakar.
     Adim "YOLO modeli (yolov8n.onnx) paketleniyor"
-    $OnnxUrl  = "https://github.com/ultralytics/assets/releases/download/v8.3.0/yolov8n.onnx"
+    # v8.3.0 adresi oldu (404, 31.08); once v8.4.0. Indirilemezse paket
+    # DUSURULMEZ: model ilk kullanimda calisma zamaninda da inebiliyor —
+    # cevrimdisi derleme "kurulum paketi uretemedim" ile bitmemeli.
     $OnnxCache = Join-Path $Indirme "yolov8n.onnx"
     if (-not (Test-Path $OnnxCache)) {
-        Invoke-WebRequest -Uri $OnnxUrl -OutFile $OnnxCache
+        foreach ($u in @(
+            "https://github.com/ultralytics/assets/releases/download/v8.4.0/yolov8n.onnx",
+            "https://github.com/ultralytics/assets/releases/download/v8.2.0/yolov8n.onnx")) {
+            try { Invoke-WebRequest -Uri $u -OutFile $OnnxCache -ErrorAction Stop; break }
+            catch { Write-Host "  indirilemedi: $u" -ForegroundColor Yellow }
+        }
     }
-    $ModelDizin = Join-Path $Paket "watch\models"
-    New-Item -ItemType Directory -Force $ModelDizin | Out-Null
-    Copy-Item $OnnxCache $ModelDizin
+    if (Test-Path $OnnxCache) {
+        $ModelDizin = Join-Path $Paket "watch\models"
+        New-Item -ItemType Directory -Force $ModelDizin | Out-Null
+        Copy-Item $OnnxCache $ModelDizin
+    } else {
+        Write-Host "  ONNX paketlenemedi - ilk kullanimda indirilecek" -ForegroundColor Yellow
+    }
 }
 
 # -- 5) başlatıcı -------------------------------------------------------------
