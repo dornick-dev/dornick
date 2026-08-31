@@ -521,7 +521,12 @@ def _session_title(digest: str) -> str:
     flat = " ".join((digest or "").split())
     if not flat:
         return "(boş konuşma)"
-    words = flat.split(" ")[:8]
+    words = flat.split(" ")
+    # İlk söz tek harflik bir tuş kazasıysa ("e", "b" + Enter) başlık o
+    # harfe kilitleniyordu; kırıntıyı atlayıp ilk gerçek kelimeden başla.
+    while len(words) > 1 and len(words[0]) == 1 and not words[0].isdigit():
+        words = words[1:]
+    words = words[:8]
     title = " ".join(words)
     return title if len(title) <= 60 else title[:60] + "…"
 

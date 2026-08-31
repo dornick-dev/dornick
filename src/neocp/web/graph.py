@@ -127,7 +127,9 @@ def _buckets(mind: Mind, episode_limit: int) -> dict[str, list[dict[str, Any]]]:
         {"id": goal.id, "label": _clip(goal.text), "detail": goal.text,
          "meta": goal.status, "kaynak": goal.session_id,
          "kaynak_var": _kaynak_var(mind, goal.session_id), "ts": goal.ts}
-        for goal in mind.goals()
+        # Beyin grafiği zihnin tamamına bakar: hedefler artık oturuma
+        # süzülü geldiğinden burada bilerek hepsi isteniyor.
+        for goal in mind.goals(all_sessions=True)
     ]
 
     buckets["session"] = [

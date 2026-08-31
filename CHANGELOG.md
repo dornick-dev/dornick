@@ -1,5 +1,36 @@
 # Changelog
 
+## 1.3.4 — 2026-08-31
+
+Session-hygiene batch from a live multi-chat transcript — every item
+reproduced against a running instance before and after the fix:
+
+* **Joining a running chat showed nothing.** After a page reload or a
+  sidebar switch into a busy session, the live work strip was built
+  before the transcript and stranded at the top — the user saw a stop
+  button and "running" but no living indicator. The strip now re-docks
+  to the end of the flow after the transcript loads (verified live: strip
+  visible at the bottom, ticking, honest label).
+* **"Loading model…" lied mid-run.** The waiting banner now appears only
+  while the turn has produced nothing at all, and reads "Waiting for the
+  model…" — once text, thinking, or a tool starts, the real state speaks.
+* **"Regenerate" piled up under every interim note.** The button now
+  lives only under the last assistant bubble, and its label no longer
+  leaks into copied conversations.
+* **Chats bled into each other.** The goal ledger was mind-global: a
+  goal opened in one chat resurfaced in another (the agent would close a
+  PDF task by discussing an unrelated home-automation goal, and the
+  acceptance gate nagged about foreign items). Goals are now scoped to
+  their session everywhere the loop reads them — soul, digest notes,
+  acceptance gate, panel; the brain graph still sees all of them.
+* **Sessions listed as "e" or "b" forever.** Two roots: a stray one-key
+  first message anchored the derived title, and the model-generated
+  title path gave up forever after one failed attempt while accepting
+  single-letter junk as a permanent name. Derived titles now skip
+  one-letter keystrokes, generated titles must be real words (4-60
+  chars), and the generator retries across the first few exchanges.
+
+
 ## 1.3.3 — 2026-08-31
 
 Interface trio from live complaints, each reproduced with hit-testing

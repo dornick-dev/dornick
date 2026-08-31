@@ -215,9 +215,10 @@ def _active_goals(agent: Any) -> list[dict[str, Any]]:
     olaylar kaçmış oluyor; snapshot bu listeyle panele kaldığı yeri veriyor.
     Zihin yoksa ya da okunamıyorsa boş liste — panel görünmez, sohbet düşmez.
 
-    `eski`: madde GEÇMİŞ bir oturumda açılmış. Kullanıcı haklı olarak "bu
-    görevleri kim oluşturuyor" diye soruyordu ve birikmiş listenin çoğu
-    bayat maddeydi; panelde ayırt edilebilmeli.
+    Hedef defteri artık oturuma süzülü (`mind.goals()` varsayılanı):
+    "bu görevleri kim oluşturuyor" şikâyetinin köküydü — başka sohbetlerin
+    maddeleri panele hiç gelmez. `eski` alanı arayüz uyumluluğu için
+    duruyor; süzgeç sayesinde pratikte hep False.
     """
     mind = getattr(agent, "mind", None)
     if mind is None:

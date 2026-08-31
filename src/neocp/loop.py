@@ -506,6 +506,18 @@ BASLIK_ISTEMI = (
     "başlığı yaz: tırnak, nokta, emoji, açıklama yok. Konuşmanın dilinde."
 )
 
+def _baslik_gecerli(baslik: str) -> bool:
+    """Üretilen oturum başlığı kaydedilmeye değer mi?
+
+    Tek harflik çöp ("e", "b") kalıcı ad olarak yapışıyordu ve ad bir kez
+    yazılınca bir daha üretilmiyordu — sohbet solda o harfle listeleniyordu.
+    Anlamlı bir başlık en az birkaç karakterdir ve tek bir noktalama değildir.
+    """
+    if not baslik or len(baslik) < 4 or len(baslik) > 60:
+        return False
+    return any(ch.isalnum() for ch in baslik)
+
+
 KABUL_NOTU = (
     "[Kabul] İş listende hâlâ açık maddeler var: {ozet}. Bitti demeden "
     "önce her birini ya tamamla (mind_goals ile kapat) ya da neden açık "
@@ -1715,8 +1727,13 @@ class Agent:
             if meta.get("ad"):
                 return
             mesajlar = self.session.messages()
-            if sum(1 for m in mesajlar if m.get("role") == "user") > 2:
-                return   # ilk alışveriş çoktan geçmiş: başlığı kurcalama
+            # İlk denemede başlık üretilemeyebiliyor (küçük model boş/çöp
+            # dönebiliyor, çağrı patlayabiliyor). Eski `> 2` kapısı tek bir
+            # aksaklıkta sonsuza dek vazgeçiyordu — sohbet solda hep ilk
+            # sözün kırıntısıyla listeleniyordu ("sohbet ismi oluşmuyor",
+            # canlı şikâyet). Pencere ilk birkaç alışverişe genişledi.
+            if sum(1 for m in mesajlar if m.get("role") == "user") > 6:
+                return   # ilk alışverişler çoktan geçmiş: başlığı kurcalama
             soru = cevap = ""
             for m in mesajlar:
                 govde = m.get("content")
@@ -1733,8 +1750,8 @@ class Agent:
                 betas=[], context_management=None)
             sonuc = await self.client.turn(hazir, [], cancel=asyncio.Event())
             baslik = _one_line(_text_of_blocks(
-                getattr(sonuc.message, "content", None) or [])).strip().strip("\"'.!")
-            if baslik and len(baslik) <= 60:
+                getattr(sonuc.message, "content", None) or [])).strip().strip("\"'.!*# ")
+            if _baslik_gecerli(baslik):
                 self.mind.set_session_meta(self.session.id, ad=baslik)
                 self.session.log.note("baslik", ad=baslik)
         except Exception:

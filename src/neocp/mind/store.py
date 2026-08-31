@@ -347,10 +347,20 @@ class Mind:
         self._goals[goal_id] = updated
         return updated
 
-    def goals(self, *, active_only: bool = True) -> list[Goal]:
+    def goals(self, *, active_only: bool = True, all_sessions: bool = False) -> list[Goal]:
+        """Hedef defteri SOHBETİN defteridir, zihnin değil.
+
+        Canlı yara: PDF sohbetinin sonunda ajan başka sohbette açılmış "ev
+        otomasyonu" hedefini görüp onun muhabbetini yapıyordu — kabul kapısı
+        da alakasız sohbetlerin maddeleriyle "bitti mi" pazarlığına giriyordu.
+        Varsayılan görünüm aktif oturuma süzülür; beyin grafiği gibi zihnin
+        tamamına bakan yerler `all_sessions=True` ister.
+        """
         items = list(self._goals.values())
         if active_only:
             items = [g for g in items if g.status == "active"]
+        if not all_sessions:
+            items = [g for g in items if g.session_id == self.session_id]
         return sorted(items, key=lambda g: g.ts)
 
     def goal_digest(self) -> str:

@@ -2327,3 +2327,32 @@ def test_narrow_band_rules_exist() -> None:
     settings_js = (STATIC / 'settings.js').read_text(encoding='utf-8')
     assert '"Beyin ortada dursun"' in settings_js
 
+
+
+def test_live_strip_survives_joining_a_running_session() -> None:
+    """Canli yara (31.08): kosan oturuma sonradan girilince (yenileme /
+    kenar cubugundan gecis) canli serit dokumun TEPESINDE kaliyordu —
+    kullanici en altta hicbir gosterge gormuyor, "durdu mu calisiyor mu
+    belli degil". Dokum yuklendikten sonra serit akisin sonuna iner."""
+    kaynak = APP_JS.split("async function loadTranscript", 1)[1].split("\nfunction ", 1)[0]
+    assert "dockWork(work)" in kaynak
+    assert "kickWork()" in kaynak
+
+
+def test_waiting_banner_only_before_any_activity() -> None:
+    """"Model yukleniyor" arac kosan uzun bolumlerde yalan soyluyordu:
+    bekleme basligi yalniz turda HICBIR sey olmamisken gorunur ve adi
+    durustur ("Model yaniti bekleniyor")."""
+    assert "if (busy && !turnActivity)" in APP_JS
+    assert "Model yanıtı bekleniyor…" in APP_JS
+    # Uc aktivite kaynagi da bayragi kaldirir: metin, dusunme, arac.
+    assert APP_JS.count("turnActivity = true") >= 3
+
+
+def test_regenerate_only_on_last_agent_bubble() -> None:
+    """Uzun bir kosuda her ara anlatimin altinda "Yeniden uret" birikiyordu
+    (canli dokum). Dugme yalniz SON ajan balonunda; etiketler metin
+    secimine de girmez (kopyalanan konusma temiz)."""
+    assert 'thread.querySelectorAll(".line.agent .msg-acts")' in APP_JS
+    acts = CSS.split(".msg-acts {", 1)[1].split("}", 1)[0]
+    assert "user-select: none" in acts

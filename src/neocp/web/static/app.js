@@ -28,6 +28,7 @@ Dil.ekle({
   "Running": "Running",
   "Konuş…": "Talk…",
   "Model yükleniyor…": "Loading model…",
+  "Model yanıtı bekleniyor…": "Waiting for the model…",
   "Beyni öne al / geri": "Bring brain forward / back",
   "Sunucu yok": "No server",
   "Bağlantı koptu": "Connection lost",
@@ -755,6 +756,13 @@ function attachMsgActs(el, kind) {
     };
     acts.append(edit, resend);
   } else {
+    // "Yeniden üret" yalnız SON ajan balonunda durur. Uzun bir koşuda her
+    // ara anlatımın altında birikmesi gürültüydü ("her mesajda yeniden
+    // üret yazıyor" — canlı döküm); anlamı da zaten "son cevabı yeniden
+    // üret". Yeni ajan balonu doğunca eskilerinki kalkar.
+    for (const eski of thread.querySelectorAll(".line.agent .msg-acts")) {
+      if (eski.parentElement !== el) eski.remove();
+    }
     const regen = document.createElement("button");
     regen.type = "button";
     regen.className = "msg-act";
@@ -855,6 +863,16 @@ async function loadTranscript(id) {
     el.classList.add("done");
   }
   scroll();
+  // Koşan oturuma sonradan girildi (sayfa yenileme / kenar çubuğundan
+  // geçiş): canlı şerit dökümün TEPESİNDE kalmasın — akışın sonuna insin.
+  // Eski hal: kickWork şeridi boş thread'e kuruyor, geçmiş ALTINA
+  // basılıyor ve kullanıcı en altta hiçbir gösterge görmüyordu ("durdu mu
+  // çalışıyor mu belli değil" — canlı şikâyet).
+  if (busy) {
+    if (work) dockWork(work);
+    kickWork();
+    scroll();
+  }
 }
 
 function setStatus(state, label) {
@@ -919,6 +937,10 @@ function paintSend() {
 }
 
 function setBusy(value) {
+  // Tur başlangıcı: henüz hiçbir şey akmadı. waiting() geri sayımı yalnız
+  // bu bayrak düşükken "Model yanıtı bekleniyor…" der — araç koşan uzun
+  // bölümlerde başlığın "yükleniyor" diye yalan söylemesi canlı yaraydı.
+  if (value && !busy) turnActivity = false;
   busy = value;
   stopBtn.hidden = !value;
   paintSend();
@@ -1041,12 +1063,16 @@ let modeTimer = null;
 // satırı bunu söylüyor.
 const WAITING_AFTER = 1500;
 let waitTimer = null;
+// Bu turda herhangi bir şey oldu mu (delta aktı / araç koştu)? Bekleme
+// başlığı yalnız GERÇEKTEN hiçbir şey olmamışken görünür; bir kez iş
+// başladıysa artık "yükleniyor" değil, modelin/aracın kendi durumu konuşur.
+let turnActivity = false;
 
 function waiting(on) {
   clearTimeout(waitTimer);
   if (!on) return;
   waitTimer = setTimeout(() => {
-    if (busy) setStatus("busy", t("Model yükleniyor…"));
+    if (busy && !turnActivity) setStatus("busy", t("Model yanıtı bekleniyor…"));
   }, WAITING_AFTER);
 }
 
@@ -4422,6 +4448,7 @@ function handle(e) {
   switch (e.type) {
     case "assistant_delta":
       lastDelta = "text";
+      turnActivity = true;
       // Şerit kapanmıyor: model araç çağırıp yazıp yine araç çağırıyor ve
       // her seferinde yeni bir şerit açmak merdiveni geri getiriyordu.
       closeThought();
@@ -4438,7 +4465,7 @@ function handle(e) {
       break;
 
     // Düşünme kanalı ayrı: model akıl yürütürken henüz yazmıyor.
-    case "thinking_delta": waiting(false); lastDelta = "thinking";
+    case "thinking_delta": waiting(false); lastDelta = "thinking"; turnActivity = true;
       think(e.text); setMode("thinking", undefined, 2500); break;
 
     // Sırada bekleyen mesaj. Meşgulken gönderilen mesaj sessizce kaybolmuyor:
@@ -4509,6 +4536,7 @@ function handle(e) {
       break;
 
     case "tool_start": {
+      turnActivity = true;
       actLine(e);
       setMode("working", verbFor(e.tool) || t("Çalışıyor"));
       // Aygıt kullanılıyorsa sahnede o organ canlanıyor: soluk duran

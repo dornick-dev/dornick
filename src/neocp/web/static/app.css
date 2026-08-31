@@ -4229,6 +4229,9 @@ body.settling .mentions { /* rail/mind arasinda */ }
 .msg-acts {
   display: flex; gap: 4px; margin-top: 3px; height: 20px;
   opacity: 0; pointer-events: none; transition: opacity .18s;
+  /* Düğme etiketi metin seçimine girmesin: konuşma kopyalanınca her
+     balonun altına "Yeniden üret" yazısı karışıyordu (canlı döküm). */
+  user-select: none; -webkit-user-select: none;
 }
 .line.user:hover .msg-acts, .line.agent:hover .msg-acts,
 .line.user:focus-within .msg-acts, .line.agent:focus-within .msg-acts {

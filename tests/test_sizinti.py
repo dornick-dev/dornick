@@ -556,9 +556,11 @@ def test_the_user_can_add_their_own_item(tmp_path: Path) -> None:
         log.close()
 
 
-def test_goals_from_earlier_sessions_are_marked_old(tmp_path: Path) -> None:
-    """"Bu görevleri kim oluşturuyor" sorusunun yarısı: birikmiş listenin
-    çoğu geçmiş oturumlardan kalma. Panelde ayırt edilebilmeli."""
+def test_goals_from_earlier_sessions_stay_out_of_the_panel(tmp_path: Path) -> None:
+    """"Bu görevleri kim oluşturuyor" sorusunun cevabı: hedef defteri
+    SOHBETİN defteri. Başka oturumun maddesi panele hiç gelmez (canlı yara:
+    PDF sohbetinin sonunda ajan başka sohbetin "ev otomasyonu" hedefini
+    tartışıyordu); zihnin tamamına bakan yerler all_sessions ile ister."""
     from types import SimpleNamespace
 
     from neocp.desktop import _active_goals
@@ -569,10 +571,17 @@ def test_goals_from_earlier_sessions_are_marked_old(tmp_path: Path) -> None:
     mind.session_id = "yeni-oturum"
     taze = mind.push_goal("bu oturumda açıldı")
 
-    dokum = {g["id"]: g["eski"] for g in _active_goals(SimpleNamespace(mind=mind))}
+    dokum = {g["id"] for g in _active_goals(SimpleNamespace(mind=mind))}
+    assert taze.id in dokum
+    assert bayat.id not in dokum
 
-    assert dokum[bayat.id] is True
-    assert dokum[taze.id] is False
+    # Kabul kapısının ve sistem notlarının kaynağı da aynı süzgeçten geçer.
+    assert bayat.text not in mind.goal_digest()
+    assert taze.text in mind.goal_digest()
+
+    # Beyin grafiği zihnin tamamını ister — süzgecin kapısı açık.
+    hepsi = {g.id for g in mind.goals(all_sessions=True)}
+    assert {bayat.id, taze.id} <= hepsi
 
 
 # -- zihin yazma refleksi ------------------------------------------------
@@ -779,3 +788,28 @@ def test_the_ui_has_a_line_for_every_outcome() -> None:
         assert re.search(rf"\b{kod}:", APP_JS), kod
     # Nabız çok kısa koşularda bile görünsün.
     assert re.search(r"const TANIMA_EN_AZ_MS = \d+", APP_JS)
+
+
+def test_derived_session_titles_skip_one_letter_keystrokes() -> None:
+    """Canli yara: ilk mesaj kazara tek harf olunca ("e" + Enter) sohbet
+    solda o harfle listeleniyordu. Turetilmis baslik kirintiyi atlar."""
+    from neocp.web.server import _session_title
+
+    assert _session_title(
+        "e ev otomasyonu yapıyorum mock data ile"
+    ) == "ev otomasyonu yapıyorum mock data ile"
+    assert _session_title("b") == "b"          # tek soz varsa o kalir
+    assert _session_title("2 sayı topla") == "2 sayı topla"  # rakam baslik olabilir
+
+
+def test_generated_titles_reject_single_letter_junk() -> None:
+    """Kucuk model bazen cop donduruyor ("e"); zayif suzgec bunu KALICI ad
+    yapiyordu ve ad bir kez yazilinca bir daha uretilmiyordu."""
+    from neocp.loop import _baslik_gecerli
+
+    assert not _baslik_gecerli("e")
+    assert not _baslik_gecerli("")
+    assert not _baslik_gecerli("----")
+    assert not _baslik_gecerli("x" * 61)
+    assert _baslik_gecerli("Ev otomasyonu simülasyonu")
+    assert _baslik_gecerli("PLC taraması")
