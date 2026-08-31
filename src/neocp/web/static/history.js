@@ -117,7 +117,16 @@ const History = (() => {
     loaded = true;
     searching = false;
     render();
+    // Koşan sohbet varken liste nefes alır: başlık artık koşunun BAŞINDA
+    // üretiliyor (loop._oturum_basligi) ve buradaki yoklama onu birkaç
+    // saniye içinde sola taşır ("ismi bittikten sonra düzeltiyor" —
+    // canlı, 31.08). Koşan yoksa yoklama durur; panel kapaliyken de.
+    clearTimeout(canliTazele);
+    if (!ara && panelAcik() && sessions.some((s) => s.status === "koşuyor")) {
+      canliTazele = setTimeout(() => { if (panelAcik()) load(); }, 5000);
+    }
   }
+  let canliTazele = null;
 
   // Döküm araması sunucuya gidiyor; her tuşta istek atmamak için kısa bir
   // bekleme. Kutu boşalırsa arama iptal ve liste tazeleniyor.

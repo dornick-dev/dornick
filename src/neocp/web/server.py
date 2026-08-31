@@ -93,6 +93,9 @@ ASSETS = {
     "/degisiklik.js": "text/javascript; charset=utf-8",
     "/git.js": "text/javascript; charset=utf-8",
     "/chrome.js": "text/javascript; charset=utf-8",
+    # Sağ tık menüsü (kullanıcının laptop paketi): index.html yüklüyor ama
+    # izin listesine hiç girmemişti — üründe sağ tık sessizce ölüydü (404).
+    "/menu.js": "text/javascript; charset=utf-8",
     "/speech.js": "text/javascript; charset=utf-8",
     "/listen.js": "text/javascript; charset=utf-8",
     "/camera.js": "text/javascript; charset=utf-8",

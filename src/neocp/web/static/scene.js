@@ -869,10 +869,15 @@ const Scene = (() => {
     const left = pane.left + 22;
     let y = core.y + ringReach(core.r) + 16;
 
-    // Legend ve AÇIKLAMA panelin dibinde; liste onlara girmesin.
+    // Legend ve AÇIKLAMA panelin dibinde; liste onlara girmesin. Küçük
+    // pencerede KOMPOZER panelin dibine biniyor ve altında kalan satır
+    // tıklanamıyordu ("duyular üstüne basınca açılmıyor" — canlı, 31.08):
+    // tavan kompozerin üst kenarına da kelepçeli.
     const kinds = new Set(nodes.map((n) => n.group)).size;
     const limbKinds = new Set(limbs.map((l) => branchOf(l).id)).size;
-    const footTop = hole ? hole.clipBottom : pane.bottom;
+    const shell = document.querySelector(".compose-shell");
+    const shellTop = shell ? shell.getBoundingClientRect().top - 10 : Infinity;
+    const footTop = Math.min(hole ? hole.clipBottom : pane.bottom, shellTop);
     const maxY = legendOn
       ? footTop - (kinds + limbKinds + 1) * 19 - 12
       : footTop - 12;
@@ -1035,16 +1040,22 @@ const Scene = (() => {
         ctx.stroke();
       }
 
-      // Dal adı + kapalıyken içindeki sayı: "YETENEKLER · 5". Ayrıntı
-      // istenince açılır; istenmeyince tek satır yer kaplar.
-      ctx.globalAlpha = paperAlpha(busy ? 0.85 : open ? 0.45 : 0.6);
-      ctx.fillStyle = tone;
-      ctx.textAlign = "center";
-      ctx.font = "600 9px " + (getComputedStyle(document.body).fontFamily);
-      // Dil.t: bu kapsamda `t` kare zamanı — küresel çeviriciye tam adla.
-      const tag = open ? Dil.t(branch.label).toUpperCase()
-                       : Dil.t(branch.label).toUpperCase() + " · " + branch.own.length;
-      ctx.fillText(tag, branch.x, branch.y + (branch.below ? 18 : -13));
+      // Dal adı + kapalıyken içindeki sayı: "YETENEKLER · 5". Ortam
+      // kipinde (beyin sohbetin ARKASINDA) ad yazılmaz — sohbet metniyle
+      // çakışıp okunmaz katman üretiyordu ("arkada kalıyor" — canlı
+      // şikâyet, 31.08); ad kullanım anında, hover'da ya da reveal'da gelir.
+      const adiGoster = reveal || busy || open
+        || (hoverBranch && hoverBranch.id === branch.id);
+      if (adiGoster) {
+        ctx.globalAlpha = paperAlpha(busy ? 0.85 : open ? 0.45 : 0.6);
+        ctx.fillStyle = tone;
+        ctx.textAlign = "center";
+        ctx.font = "600 9px " + (getComputedStyle(document.body).fontFamily);
+        // Dil.t: bu kapsamda `t` kare zamanı — küresel çeviriciye tam adla.
+        const tag = open ? Dil.t(branch.label).toUpperCase()
+                         : Dil.t(branch.label).toUpperCase() + " · " + branch.own.length;
+        ctx.fillText(tag, branch.x, branch.y + (branch.below ? 18 : -13));
+      }
 
       branch.branchHub = true;
       branch._hit = { x: branch.x, y: branch.y, r: 14 };
@@ -1233,6 +1244,12 @@ const Scene = (() => {
   function drawLegend() {
     if (focusMode) return;
     if (pane && !legendOn) return;
+    // Ortam kipi (beyin sohbetin ARKASINDA): renk anahtarı çizilmez —
+    // sohbet metniyle çakışıp okunmaz satırlar üretiyordu ("renkleri
+    // gösteren şeyler hep arkada kalıyor" — canlı şikâyet). Lejant beynin
+    // ön yüzey olduğu yerde yaşar (panel/lens) ya da kullanıcı ağı
+    // bilerek açtığında (reveal).
+    if (!pane && !reveal) return;
     const kinds = [...new Set(nodes.map(n => n.group))]
       .sort((a, b) => LEGEND_ORDER.indexOf(a) - LEGEND_ORDER.indexOf(b));
     const rows = kinds.map(g => ({
@@ -1848,9 +1865,16 @@ const Scene = (() => {
     selected = at(ev);
     if (!selected) { probe.hidden = true; return; }
     if (selected.branchHub) {
-      // Göbeğe tıklama: dalı kalıcı açar/kapatır — "istediğimde görürüm".
-      if (openBranches.has(selected.id)) openBranches.delete(selected.id);
-      else openBranches.add(selected.id);
+      // Göbeğe tıklama: dalı açar/kapatır — AKORDEON. İki dal birden
+      // açıkken alt satırlar panel tabanının (legend/AÇIKLAMA) altında
+      // kalıyordu ve "açtım ama bir şey açılmadı" görünüyordu (canlı
+      // şikâyet, 31.08); tek açık dal listeyi hep sığdırır.
+      if (openBranches.has(selected.id)) {
+        openBranches.delete(selected.id);
+      } else {
+        openBranches.clear();
+        openBranches.add(selected.id);
+      }
       probe.hidden = true;
       start();
       return;

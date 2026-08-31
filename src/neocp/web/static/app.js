@@ -648,7 +648,13 @@ function scroll() {
 function paintJump() {
   const button = $("jump");
   button.hidden = follow;
-  if (!follow) button.textContent = fresh ? "↓ " + fresh + t(" yeni") : "↓";
+  // Meşgulken çip canlı fiili de taşır: uzun bir akışta yukarı kaymış
+  // kullanıcı "şu an nerede / ne oluyor"u buradan okur ve tek tıkla canlı
+  // uca döner ("yazıyor diyor ama aşağıda yazıyor, neredeyim bilmiyorum").
+  if (!follow) {
+    const canli = busy ? mull() + " · " : "";
+    button.textContent = canli + (fresh ? "↓ " + fresh + t(" yeni") : "↓");
+  }
 }
 
 function resumeFollow(smooth) {
@@ -1124,11 +1130,12 @@ function write(chunk) {
     // yazılacak bir şey varken doğuyor.
     if (!raw.trim()) return;
     raw = raw.replace(/^\s+/, "");   // baştaki boşluk bloğa girmesin
-    // Cevap akmaya başlıyor: şerit sakinleşir ve yeni metin şeridin HEMEN
-    // altında doğar (restWork şeridi akışın sonuna indirir). Eski hal canlı
-    // "Düşünüyor" başlığını turun tepesinde asılı bırakıyor, cevap onun
-    // çok altına yazıyordu — gösterge içeriği takip etmiyordu.
-    restWork();
+    // Cevap akmaya başlıyor: o ana kadarki adım kümesi KENDİ özet
+    // satırına mühürlenir ve şerit BÖLÜNÜR — sonraki araçlar metnin
+    // altında yeni bir küme açar (Claude Code'un "Ran 2 commands, used
+    // 3 tools ›" ritmi; canlı istek 31.08: "her anlatımın araç detayı
+    // kendi satırından açılmalı, tıklayıp görebilmeliyim").
+    segmentWork();
     agentLine = line("agent", "");
   }
   if (pending) return;
@@ -1333,22 +1340,42 @@ function think(chunk) {
       w.thinkStart = Date.now();
       thought = "";
     }
+    canliDusunceTiklanir(w.thought);
   }
   thought += chunk;
   bumpStream(chunk);
-  // Ekrana yalnızca KUYRUK yazılıyor: akan muhakemenin son birkaç cümlesi.
-  // Tam metni her parçada baştan basmak hem O(n²) hem de şeridi devasa
-  // yapıyordu; tamamı blok kapanınca tek satıra katlanıyor ve tıklayınca
-  // açılıyor (aşağıda closeThought).
-  const tail = thought.length > 600 ? "…" + thought.slice(-600) : thought;
-  w.thought.textContent = tail.trim();
+  // Ekrana varsayılan olarak KUYRUK yazılıyor: akan muhakemenin son birkaç
+  // cümlesi. Tam metni her parçada baştan basmak şeridi devasa yapıyordu.
+  // Kutuya tıklanınca (`open`) tamamı görünür — koşarken de okunabilir
+  // (canlı yara: "detayına tıklıyorum açılmıyor").
+  const acik = w.thought.classList.contains("open");
+  const goster = acik ? thought
+    : (thought.length > 600 ? "…" + thought.slice(-600) : thought);
+  w.thought.textContent = goster.trim();
   if (!paintLive()) workHead(mull(), "", since(w.since) + streamNote());
   paintThinkLine();
-  // Muhakeme kutusu kendi içinde en alta kaysın: en son cümle görünür kalsın
-  // ama sayfa aşağı zıplamasın. Detay açıkken sayfayı itmek, kullanıcının
-  // yukarı çıkıp başlığı kapatmasını imkânsız kılıyordu.
-  w.thought.scrollTop = w.thought.scrollHeight;
+  // Kutu içi kaydırma: kullanıcı DİPTEYSE son cümleyi takip et; yukarı
+  // kaydırıp okuyorsa yerinden oynatma — her parçada dibe çekmek okumayı
+  // imkânsız kılıyordu ("arkada kalıyor" — canlı şikâyet).
+  const dipte = w.thought.scrollHeight - w.thought.scrollTop
+    - w.thought.clientHeight < 40;
+  if (!acik || dipte) w.thought.scrollTop = w.thought.scrollHeight;
   if (w.body.hidden) scroll();   // katlıyken alta bak; açıkken kullanıcıya bırak
+}
+
+// KOŞAN muhakeme kutusu da tıklanabilir: kuyruk görünümü ile tam metin
+// arasında geçiş. Eskiden onclick yalnız bitmiş düşünceye takılıyordu —
+// koşarkenkine tıklamak hiçbir şey yapmıyordu (canlı yara, 31.08).
+function canliDusunceTiklanir(box) {
+  box.title = t("Tıkla — akan muhakemenin tamamını gör");
+  box.onclick = (ev) => {
+    ev.stopPropagation();
+    const acik = box.classList.toggle("open");
+    box.textContent = (acik ? thought
+      : (thought.length > 600 ? "…" + thought.slice(-600) : thought)).trim();
+    if (acik) box.scrollTop = 0;
+    else box.scrollTop = box.scrollHeight;
+  };
 }
 
 // Geçen süre. Sabit bir "düşünüyor" satırı, uzun bir turda donmuş gibi
@@ -1416,6 +1443,8 @@ function closeThought() {
         const label = t("✻ Düşündü") + (secs > 0 ? " · " + secs + " sn" : "")
                     + " · " + words + t(" kelime");
         box.classList.add("done");
+        box.classList.remove("open");   // canlı tam-görünüm izi kalmasın
+        box.title = "";
         box.textContent = label;
         box.title = t("Tıkla — bu turun muhakemesini gör");
         // Birleştirme ve yeniden açma için satırda taşınıyor.
@@ -2798,10 +2827,19 @@ function ensureWork() {
   body.className = "acts-body";
   body.hidden = true;
   head.onclick = () => {
+    // Boş gövdeyi açmak "hiçbir şey olmadı" gibi görünüyordu (adımsız,
+    // düşüncesiz turda başlığa tıklamak ölü kalıyordu) — gövdede içerik
+    // yoksa tıklama sessizce yok sayılır, imleç de bunu söyler (CSS).
+    if (!body.childElementCount) return;
     body.hidden = !body.hidden;
     head.classList.toggle("open", !body.hidden);
-    // Alta fırlatma: kullanıcı şeridi okumak için tıkladı; nearest yeter.
-    if (!body.hidden) head.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    // Kullanıcı şeridi okumak için tıkladı: açılan GÖVDE görünür alana
+    // gelsin — yalnız başlığı hizalamak, ekranın altındaki gövdeyi görüş
+    // dışında bırakıyordu ("açılmıyor, arkada kalıyor" — canlı şikâyet).
+    if (!body.hidden) {
+      (body.childElementCount ? body : head)
+        .scrollIntoView({ block: "nearest", behavior: "smooth" });
+    }
   };
   thread.append(head, body);
   head.classList.add("busy");   // çalışıyor: başlık nabız atıyor
@@ -3106,6 +3144,30 @@ function sealThinkArchive(w) {
     }
   };
   w.body.append(row);
+}
+
+// Anlatım başlarken şerit bölünür: biten küme kendi tıklanır özetine
+// iner ("3 adım · 12 sn" / "2 dosya okuyor, 1 komut"), yeni araçlar
+// metnin ALTINDA taze bir küme açar. Böylece uzun bir koşu Claude
+// Code'daki gibi "metin / araç kümesi / metin" ritmiyle okunur ve her
+// kümenin detayı kendi satırından açılır.
+function segmentWork() {
+  if (!work) return;
+  // Koşan araç ya da bekleme varken bölünmez — canlı satır tek gerçek.
+  if (work.open.size || waitState) { restWork(); return; }
+  closeThought();
+  const empty = !work.steps && !(work.thinkAll && work.thinkAll.length)
+    && !work.body.childElementCount;
+  if (empty) { work.head.remove(); work.body.remove(); work = null; return; }
+  sealThinkArchive(work);
+  const phrase = activityPhrase(work);
+  workHead(phrase || (work.steps ? stepsWord(work.steps) : t("Düşündü")),
+           "", since(work.since));
+  work.head.classList.remove("busy", "wait", "open");
+  work.head.classList.add("done");
+  paintThinkLine();
+  work.body.hidden = true;
+  work = null;
 }
 
 function closeWork() {

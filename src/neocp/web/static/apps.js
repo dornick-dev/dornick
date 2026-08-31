@@ -20,6 +20,7 @@ Dil.ekle({
   "Başlat": "Start",
   "Durdur": "Stop",
   "Klasörü göster": "Show folder",
+  "Durduruluyor…": "Stopping…",
   "Arşivle": "Archive",
   "çalışıyor": "running",
   "durdu": "stopped",
@@ -446,6 +447,7 @@ const Apps = (() => {
       if (p) {
         const kosan = liveOf(p);
         w.querySelectorAll(".proj-btn.act-run").forEach((eylem) => {
+          eylem.disabled = false;   // "Durduruluyor…" kilidi gerçek durumla çözülür
           eylem.textContent = t(kosan ? "Durdur" : "Başlat");
           eylem.classList.toggle("danger", !!kosan);
           eylem.hidden = kosan ? kosan.stoppable === false : !runnable(p);
@@ -917,6 +919,14 @@ const Apps = (() => {
   // Durdur ve SONUCU söyle. Eski hal cevaba bakmadan "durduruldu" diyordu;
   // süreç inmemişse kullanıcı "durdur diyorum durmuyor" yaşıyordu.
   async function stopProc(p) {
+    // İyimser arayüz: düğme ANINDA "Durduruluyor…" der. Süreç ağacının
+    // ölümü işletim sisteminde bir-iki saniye sürebiliyor; eski hal o
+    // arada hâlâ "Durdur" gösteriyordu ("durumlar güncellenmiyor
+    // realtime" — canlı, 31.08). Yoklama patlaması geçişi saniyeler
+    // içinde ekrana taşır; 4 sn'lik olağan yoklama gerisini toparlar.
+    const hedefler = body.querySelectorAll(
+      '.proj[data-path="' + (p.path || "") + '"] .proj-btn.act-run');
+    hedefler.forEach((b) => { b.disabled = true; b.textContent = t("Durduruluyor…"); });
     let res;
     try {
       res = await (await fetch("/api/apps/stop", {
@@ -927,6 +937,7 @@ const Apps = (() => {
     } catch { res = { ok: false, error: "Ulaşılamadı" }; }
     toast(res.ok ? (p.name || "süreç") + " durduruldu"
                  : (res.error || "Durdurulamadı"));
+    for (const ms of [600, 1600, 3200]) setTimeout(drawRunning, ms);
     drawRunning();
   }
 

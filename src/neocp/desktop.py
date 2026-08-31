@@ -2342,6 +2342,18 @@ class Bridge:
                                   {"type": "setup_hint",
                                    "text": settings.KURULUM_YONLENDIRME})
                 return
+            # Başlık koşunun SONUNU beklemez: solda "ilk sözün kırıntısı"
+            # uzun bir koşu boyunca asılı kalıyordu ("ismi bittikten sonra
+            # düzeltiyor" — canlı, 31.08). İlk kullanıcı sözü yeterli
+            # sinyal; küçük çağrı ana akışla paralel koşar, her hatası
+            # yutulur. Koşu sonundaki çağrı yedek (ad hâlâ yoksa, cevapla
+            # birlikte daha isabetli başlık). Tetik BURADA — ürün yolunda:
+            # loop'a konursa test düzeneklerinin senaryolu istemcilerinden
+            # tur çalıyor.
+            basla = getattr(agent, "_oturum_basligi", None)
+            if basla is not None:
+                gorev = asyncio.ensure_future(basla())
+                gorev.add_done_callback(lambda t: t.exception())  # sessiz
             await agent.run(text, image)
         except Exception as exc:  # ajan bir istekte patlarsa uygulama ölmemeli
             self._serit_yayin(serit, {"type": "notice",
@@ -3210,6 +3222,10 @@ def run(config: Config, *, port: int = 8765, resume: bool = False,
         # beyinden / sohbetten tutup pencereyi taşıyordu. Taşıma yalnız üst
         # şeritten (chrome.js → HTCAPTION); snap de o yoldan geliyor.
         easy_drag=False,
+        # pywebview varsayılanı metin SEÇİMİNİ kapatıyor: pakette üretilen
+        # cevaplar kopyalanamıyordu ("kopyala yapıştır çalışmıyor" — canlı,
+        # 31.08; tarayıcı önizlemede görünmez çünkü orada pywebview yok).
+        text_select=True,
     )
     # Kapatma penceresi gizliyor, yok etmiyor: ajanın arka planda durması
     # gereken işleri var (zamanlanmış görevler, kameraları izleyen alt
@@ -3306,6 +3322,7 @@ def run(config: Config, *, port: int = 8765, resume: bool = False,
             background_color=WINDOW_BACKGROUND,
             frameless=True,
             easy_drag=False,
+            text_select=True,
         )
         _CAM_WINDOW = spawned
 

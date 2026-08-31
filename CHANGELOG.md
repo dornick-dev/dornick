@@ -9,6 +9,55 @@
   one-line precedence frame: the ledger is a reminder, the user's last
   word sets the agenda. Reproduced live before the fix and verified
   after: same setup now answers exactly "selam", zero goal chatter.
+* **Context tools moved into the title bar.** The floating icon pill
+  (voice, mic, viewer, orchestra, camera, ⋮) hovered over the chat text;
+  it now lives in the title bar next to the window controls, stays
+  visible in full-screen viewer, and a narrow-window rule keeps the bar
+  from crowding below 700 px.
+* **The ambient brain no longer writes over the chat.** The colour key
+  and branch name labels drew behind the conversation and produced
+  unreadable layered text; in ambient mode they are gone — names appear
+  on hover, while a branch is in use, or in the panel/lens where the
+  brain is the front surface. Panel branch rows are now an accordion, so
+  an opened branch always fits above the panel footer instead of
+  clipping below it.
+* **The running thought box is readable.** Clicking it toggles the full
+  reasoning so far (previously only the finished summary was clickable),
+  and its inner scroll no longer yanks to the bottom while you are
+  reading. Clicking a work-strip header with an empty body is no longer
+  a dead toggle, and opening a strip scrolls the detail into view.
+* **Orientation during long answers.** When you scroll away while the
+  model streams, the jump chip now carries the live state ("Writing ·
+  ↓ 3 new") so one click returns you to the live edge.
+* **Right-click menus were silently dead.** `menu.js` was loaded by the
+  page but missing from the server's static allowlist (404). Added — and
+  a regression test now asserts every script the page references is
+  actually served. A second new test scans the whole tree for provider
+  API-key patterns on every run.
+* **Tool groups now read like a transcript.** When the model narrates
+  between tools, the finished step cluster seals into its own clickable
+  summary line ("1 command · echo alpha · 6 s ›") and later tools open a
+  fresh cluster below the text — the text / tools / text rhythm, each
+  group expanding from its own row. Detail wells grew from ~200 px
+  mini-windows to half-screen panes.
+* **Copy and select work in the app again.** The desktop window was
+  created without `text_select` — pywebview's default silently disables
+  text selection, so generated answers could not be copied in the
+  installed app (invisible in browser preview). Both windows fixed.
+* **Chats are named immediately.** The title call now fires in parallel
+  with the run's start instead of after it ends, and the sidebar polls
+  every 5 s while a chat is running — the name lands within seconds.
+* **App stop is honest.** Stop now flips the button to "Stopping…"
+  instantly and re-polls in a burst, so card, badge and open detail
+  reflect the real process state within a couple of seconds.
+* **Brain panel usability.** Branch rows clamp above the composer (they
+  were sliding beneath it and becoming unclickable in small windows) and
+  behave as an accordion so an opened branch always fits.
+* **Reuse before rebuild.** A new standing principle in the system
+  prompt: read a value through the registered device / running app /
+  existing skill that already carries it instead of writing fresh
+  scripts, and mint a skill unprompted when the same kind of request
+  keeps recurring.
 
 
 ## 1.3.4 — 2026-08-31

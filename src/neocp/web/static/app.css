@@ -878,10 +878,13 @@ a.md-source { text-decoration: none; color: inherit; }
   display: flex; align-items: center; flex-wrap: wrap; gap: 6px 8px;
   margin: 0 0 10px; min-width: 0; max-width: 100%;
   position: relative; top: auto;
-  cursor: pointer; user-select: none;
+  /* Gövdesi boş başlık tıklanır GİBİ durmasın: açacak bir şeyi yokken
+     imleç varsayılan; içerik doğunca (adım/düşünce) işaretçiye döner. */
+  cursor: default; user-select: none;
   font: 12px/1.35 var(--font); letter-spacing: 0; text-transform: none;
   color: var(--dim); transition: color .18s ease, opacity .18s ease;
 }
+.acts-head:has(+ .acts-body > *) { cursor: pointer; }
 .acts-head .head-verb {
   flex: 0 0 auto; color: inherit; font-weight: 500; letter-spacing: 0;
 }
@@ -951,8 +954,9 @@ a.md-source { text-decoration: none; color: inherit; }
 .acts-body {
   margin: -4px 0 14px; padding: 2px 0 2px 12px;
   box-shadow: inset 2px 0 0 var(--card-edge);
-  /* Açılınca sayfayı uzatmasın: Cursor gibi mini pencerede kayar. */
-  max-height: min(36vh, 280px);
+  /* Açılınca sayfayı boğmasın ama İŞ GÖRSÜN: 280px "küçücük alan"
+     şikâyetiyle yarım ekranın üstüne çıkarıldı (31.08). */
+  max-height: min(56vh, 520px);
   overflow-y: auto;
   overscroll-behavior: contain;
   scrollbar-width: thin;
@@ -991,13 +995,22 @@ a.md-source { text-decoration: none; color: inherit; }
   font-style: italic; color: var(--faint);
   box-shadow: inset 2px 0 0 #C4B5FD22;
   /* Canlı düşünme: kutu içinde kayar, sayfayı itmez. */
-  max-height: min(24vh, 200px); overflow-y: auto;
+  /* 200px "mini pencere" işi görmüyordu ("sendeki gibi yeterli olmalı,
+     küçücük alana sığdırmaya çalışıyorsun" — canlı, 31.08): yarım ekran. */
+  max-height: min(52vh, 480px); overflow-y: auto;
   overscroll-behavior: contain;
   scrollbar-width: thin; scrollbar-color: #C4B5FD40 transparent;
 }
 .act.note.think::-webkit-scrollbar { width: 6px; }
 .act.note.think::-webkit-scrollbar-thumb { background: #C4B5FD33; border-radius: 3px; }
 .act.note.think::-webkit-scrollbar-track { background: transparent; }
+/* Koşarken tam görünüm (tıklanınca): kuyruk yerine o ana kadarki tüm
+   muhakeme, aynı mini pencerede kayar — koşan kutu da okunabilir. */
+.act.note.think.open:not(.done) {
+  font-style: normal; padding: 8px 10px; border-radius: 6px;
+  background: var(--card-bg);
+  box-shadow: inset 2px 0 0 #C4B5FD44;
+}
 /* Biten: tek satır özet. Açılınca da AYNI tavan — Devamı gibi sayfa
    uzamaz; metin mini pencerede kayar (Cursor thought paneli). */
 .act.note.think.done {
@@ -1005,7 +1018,7 @@ a.md-source { text-decoration: none; color: inherit; }
   font-style: normal;
 }
 .act.note.think.done.open {
-  max-height: min(24vh, 200px);
+  max-height: min(52vh, 480px);
   overflow-y: auto;
   overscroll-behavior: contain;
   font-style: italic;
@@ -1126,7 +1139,7 @@ a.md-source { text-decoration: none; color: inherit; }
   display: flex; flex-direction: column; gap: 0;
   border-radius: 6px; background: var(--card-bg);
   box-shadow: inset 0 0 0 1px var(--card-edge);
-  max-height: min(42vh, 360px); overflow-y: auto;
+  max-height: min(58vh, 560px); overflow-y: auto;
   font: 12px/1.5 var(--mono); color: var(--dim);
   scrollbar-width: thin; scrollbar-color: rgba(127, 160, 192, .35) transparent;
   cursor: auto; user-select: text;
@@ -4423,8 +4436,9 @@ body.viewer-max.viewing {
   --right-w: calc(100vw - var(--rail-w)) !important;
 }
 /* Tam ekranda sıfır genişliğe sıkışan kompozer/çipler kalıntı bırakmasın. */
+/* ctx-tools artık başlık çubuğunda yaşıyor: tam ekran görüntüleyicide de
+   görünür kalır (başlık çubuğu zaten duruyor). */
 body.viewer-max.viewing .compose-shell,
-body.viewer-max.viewing .ctx-tools,
 body.viewer-max.viewing .plan-dock,
 body.viewer-max.viewing .jump { display: none; }
 
@@ -4806,14 +4820,17 @@ body.viewer-max .viewer-max { color: var(--cyan); }
    Kabuk 3. dalga: sade başlık çubuğu + bağlam araçları + kenar
    çubuğu dibi (Claude Code yerleşimi).
    ============================================================ */
-/* Bağlam araçları: orta içeriğin sağ üstünde küçük bir hap. */
+/* Bağlam araçları: başlık çubuğunda, pencere düğmelerinin solunda.
+   Eski hali sohbetin sağ üstünde yüzen bir haptı ve metnin üstüne
+   biniyordu ("bunlar konuşmanın üstünde olmamalı" — canlı istek, 31.08).
+   Açılır kutuları (cam-pop/more-pop) bu kutuya çapalı kalsın diye
+   position: relative. */
 body { --right-w: var(--mind-w); }
 .ctx-tools {
-  position: fixed; top: 56px; right: calc(var(--right-w) + 16px); z-index: 6;
+  position: relative; z-index: 6;
   display: flex; gap: 2px; align-items: center;
-  padding: 3px; border-radius: 10px;
-  background: var(--panel-glass); backdrop-filter: blur(10px);
-  box-shadow: inset 0 0 0 1px var(--edge);
+  padding: 2px; border-radius: 10px;
+  background: transparent;
 }
 .more-pop {
   position: absolute; top: calc(100% + 6px); right: 0; min-width: 200px;
@@ -4826,6 +4843,15 @@ body { --right-w: var(--mind-w); }
 /* Menü satırının etiketi ipucundan gelir — dil çevirisi de bedava. */
 .more-pop .icon::after { content: attr(title); font: 12.5px var(--font); color: var(--dim); }
 .more-pop .icon:hover::after { color: var(--ink); }
+
+/* Dar pencere: başlık çubuğu sıkışmasın — durum yazısı noktaya iner,
+   araç hapı aralıksız (ctx-tools navbar'a taşındıktan sonra 375-700
+   bandında sol/sağ küme sıfır payla değiyordu; ölçülmüş). */
+@media (max-width: 700px) {
+  .hud-left { gap: 6px; }
+  .status b { display: none; }
+  .ctx-tools { gap: 0; padding: 0; }
+}
 
 /* Kenar çubuğu dibi: yetki · tema · ayarlar + canlı sayaç. */
 .side-foot {

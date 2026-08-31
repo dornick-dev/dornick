@@ -122,6 +122,99 @@
     <span class="status" id="status"><i></i><b>Bağlanıyor</b></span>
   </div>
   <div class="hud-right">
+  <!-- Bağlam araçları: kullanıcı isteğiyle (31.08) başlık çubuğunda —
+       eski hali sohbetin sağ üstünde yüzüyor, metnin üstüne biniyordu. -->
+  <div class="ctx-tools" id="ctx-tools">
+    <button id="mute" class="icon off" title="Ses kapalı — tıkla: aç" aria-label="Ses" aria-pressed="false">
+      <svg viewBox="0 0 16 16" aria-hidden="true">
+        <path d="M7 3 4 6H2v4h2l3 3z"/>
+        <path class="wave" d="M10 5.5a3.5 3.5 0 0 1 0 5M12 3.5a6 6 0 0 1 0 9" fill="none"/>
+        <path class="off-line" d="M2 14 14 2" fill="none"/>
+      </svg>
+    </button>
+    <div class="pop cam-pop" id="mute-pop" hidden>
+      <p class="cam-pop-note">Kapalı gelir. Açınca neo cevapları sesli okur. Ayrıntı Ayarlar › Ses.</p>
+      <button id="mute-enable" class="plan-btn">Sesi aç</button>
+      <button id="mute-settings" class="plan-btn muted">Ayarları aç</button>
+    </div>
+    <button id="hear" class="icon off" title="Dinleme kapalı — tıkla: aç" aria-label="Mikrofon" aria-pressed="false">
+      <svg viewBox="0 0 16 16" aria-hidden="true">
+        <rect x="6" y="2" width="4" height="7.5" rx="2"/>
+        <path d="M3.5 7.5a4.5 4.5 0 0 0 9 0M8 12v2" fill="none"/>
+        <path class="off-line" d="M2 14 14 2" fill="none"/>
+      </svg>
+    </button>
+    <div class="pop cam-pop" id="hear-pop" hidden>
+      <p class="cam-pop-note">Kapalı gelir. Açınca neo seni sürekli dinler (uyandırma sözü gerekmez). Ayrıntı Ayarlar › Mikrofon.</p>
+      <button id="hear-enable" class="plan-btn">Dinlemeyi aç</button>
+      <button id="hear-settings" class="plan-btn muted">Ayarları aç</button>
+    </div>
+    <button id="eye" class="icon" title="Görüntüleyici" aria-label="Görüntüleyici">
+      <svg viewBox="0 0 16 16" aria-hidden="true">
+        <rect x="2" y="3" width="12" height="10" rx="1.4" fill="none"/>
+        <path d="M2 6h12" fill="none"/>
+      </svg>
+    </button>
+    <button id="orchestra" class="icon" title="Alt ajanlar · kanallar" aria-label="Alt ajanlar">
+      <svg viewBox="0 0 16 16" aria-hidden="true">
+        <path d="M5 8h2M7 8 11 4M7 8h4M7 8 11 12" fill="none"/>
+        <circle cx="3.4" cy="8" r="1.5" fill="none"/>
+        <circle cx="12.4" cy="3.6" r="1.5" fill="none"/>
+        <circle cx="12.4" cy="8" r="1.5" fill="none"/>
+        <circle cx="12.4" cy="12.4" r="1.5" fill="none"/>
+      </svg>
+    </button>
+    <button id="cams" class="icon cam-off" title="Kamera kapalı — tıkla: aç" aria-label="Kamera" aria-pressed="false">
+      <svg viewBox="0 0 16 16" aria-hidden="true">
+        <rect x="1.5" y="4" width="9.5" height="8" rx="1.4" fill="none"/>
+        <path d="M11 7l3.5-2v6L11 9z" fill="none"/>
+        <path class="off-line" d="M2 14 14 2" fill="none"/>
+      </svg>
+    </button>
+    <div class="pop cam-pop" id="cam-pop" hidden>
+      <p class="cam-pop-note" id="cam-pop-note">Kamera açılınca LED yanar. NVIDIA GPU varsa nesneler yerelde okunur (~400 MB VRAM); sohbette sorduğunda neo bunu metin olarak kullanır, resim kendiliğinden gitmez. GPU yoksa yalnız önizleme.</p>
+      <button id="cam-enable" class="plan-btn">Kamerayı aç</button>
+      <button id="cam-settings" class="plan-btn muted">Ayarları aç</button>
+    </div>
+    <button id="mind-open" class="icon mind-open" title="Beyni aç/kapat" aria-label="Beyni aç/kapat">◍</button>
+    <button id="more-tools" class="icon" title="Diğer araçlar" aria-label="Diğer araçlar">
+      <svg viewBox="0 0 16 16" aria-hidden="true">
+        <circle cx="8" cy="3.5" r="1.2"/><circle cx="8" cy="8" r="1.2"/><circle cx="8" cy="12.5" r="1.2"/>
+      </svg>
+    </button>
+    <div class="pop more-pop" id="more-pop" hidden>
+      <button id="jobs" class="icon" title="Görevler" aria-label="Görevler">
+        <svg viewBox="0 0 16 16" aria-hidden="true">
+          <rect x="2.5" y="3" width="11" height="11" rx="1.4" fill="none"/>
+          <path d="M2.5 6h11M5.5 2.5v2M10.5 2.5v2" fill="none"/>
+          <path d="M5 9h2.5M5 11.5h6" fill="none"/>
+        </svg>
+        <i class="icon-badge" id="jobs-badge" hidden></i>
+      </button>
+      <button id="apps" class="icon" title="Uygulamalar" aria-label="Uygulamalar">
+        <svg viewBox="0 0 16 16" aria-hidden="true">
+          <rect x="2" y="2" width="5" height="5" rx="1" fill="none"/>
+          <rect x="9" y="2" width="5" height="5" rx="1" fill="none"/>
+          <rect x="2" y="9" width="5" height="5" rx="1" fill="none"/>
+          <rect x="9" y="9" width="5" height="5" rx="1" fill="none"/>
+        </svg>
+      </button>
+      <button id="focus" class="icon" title="Odak modu" aria-label="Odak modu">
+        <svg viewBox="0 0 16 16" aria-hidden="true">
+          <circle cx="8" cy="8" r="6" fill="none"/>
+          <circle cx="8" cy="8" r="1.6"/>
+        </svg>
+      </button>
+      <button id="tanima-ikon" class="icon" title="Beni tanı" aria-label="Beni tanı" hidden>
+        <svg viewBox="0 0 16 16" aria-hidden="true">
+          <path d="M8 14V7" fill="none"/>
+          <path d="M8 9.2C8 6.9 6.4 5.5 4 5.3 4.2 7.8 5.7 9.2 8 9.2z" fill="none"/>
+          <path d="M8 7c0-2.3 1.6-3.7 4-3.9C11.8 5.6 10.3 7 8 7z" fill="none"/>
+          <path d="M12.5 9.8v2.6M11.2 11.1h2.6" fill="none"/>
+        </svg>
+      </button>
+    </div>
+  </div>
     <button id="stop" class="icon" title="Durdur" aria-label="Durdur" hidden>
       <svg viewBox="0 0 16 16" aria-hidden="true"><rect x="4" y="4" width="8" height="8" rx="1"/></svg>
     </button>
@@ -133,99 +226,6 @@
   </div>
 </div>
 
-<!-- Bağlam araçları (Claude Code'un orta-sağ üst ikonları): görüntüleyici,
-     orkestra, ses; ⋮ menüsünde görevler · uygulamalar · odak · beni tanı. -->
-<div class="ctx-tools" id="ctx-tools">
-  <button id="mute" class="icon off" title="Ses kapalı — tıkla: aç" aria-label="Ses" aria-pressed="false">
-    <svg viewBox="0 0 16 16" aria-hidden="true">
-      <path d="M7 3 4 6H2v4h2l3 3z"/>
-      <path class="wave" d="M10 5.5a3.5 3.5 0 0 1 0 5M12 3.5a6 6 0 0 1 0 9" fill="none"/>
-      <path class="off-line" d="M2 14 14 2" fill="none"/>
-    </svg>
-  </button>
-  <div class="pop cam-pop" id="mute-pop" hidden>
-    <p class="cam-pop-note">Kapalı gelir. Açınca neo cevapları sesli okur. Ayrıntı Ayarlar › Ses.</p>
-    <button id="mute-enable" class="plan-btn">Sesi aç</button>
-    <button id="mute-settings" class="plan-btn muted">Ayarları aç</button>
-  </div>
-  <button id="hear" class="icon off" title="Dinleme kapalı — tıkla: aç" aria-label="Mikrofon" aria-pressed="false">
-    <svg viewBox="0 0 16 16" aria-hidden="true">
-      <rect x="6" y="2" width="4" height="7.5" rx="2"/>
-      <path d="M3.5 7.5a4.5 4.5 0 0 0 9 0M8 12v2" fill="none"/>
-      <path class="off-line" d="M2 14 14 2" fill="none"/>
-    </svg>
-  </button>
-  <div class="pop cam-pop" id="hear-pop" hidden>
-    <p class="cam-pop-note">Kapalı gelir. Açınca neo seni sürekli dinler (uyandırma sözü gerekmez). Ayrıntı Ayarlar › Mikrofon.</p>
-    <button id="hear-enable" class="plan-btn">Dinlemeyi aç</button>
-    <button id="hear-settings" class="plan-btn muted">Ayarları aç</button>
-  </div>
-  <button id="eye" class="icon" title="Görüntüleyici" aria-label="Görüntüleyici">
-    <svg viewBox="0 0 16 16" aria-hidden="true">
-      <rect x="2" y="3" width="12" height="10" rx="1.4" fill="none"/>
-      <path d="M2 6h12" fill="none"/>
-    </svg>
-  </button>
-  <button id="orchestra" class="icon" title="Alt ajanlar · kanallar" aria-label="Alt ajanlar">
-    <svg viewBox="0 0 16 16" aria-hidden="true">
-      <path d="M5 8h2M7 8 11 4M7 8h4M7 8 11 12" fill="none"/>
-      <circle cx="3.4" cy="8" r="1.5" fill="none"/>
-      <circle cx="12.4" cy="3.6" r="1.5" fill="none"/>
-      <circle cx="12.4" cy="8" r="1.5" fill="none"/>
-      <circle cx="12.4" cy="12.4" r="1.5" fill="none"/>
-    </svg>
-  </button>
-  <button id="cams" class="icon cam-off" title="Kamera kapalı — tıkla: aç" aria-label="Kamera" aria-pressed="false">
-    <svg viewBox="0 0 16 16" aria-hidden="true">
-      <rect x="1.5" y="4" width="9.5" height="8" rx="1.4" fill="none"/>
-      <path d="M11 7l3.5-2v6L11 9z" fill="none"/>
-      <path class="off-line" d="M2 14 14 2" fill="none"/>
-    </svg>
-  </button>
-  <div class="pop cam-pop" id="cam-pop" hidden>
-    <p class="cam-pop-note" id="cam-pop-note">Kamera açılınca LED yanar. NVIDIA GPU varsa nesneler yerelde okunur (~400 MB VRAM); sohbette sorduğunda neo bunu metin olarak kullanır, resim kendiliğinden gitmez. GPU yoksa yalnız önizleme.</p>
-    <button id="cam-enable" class="plan-btn">Kamerayı aç</button>
-    <button id="cam-settings" class="plan-btn muted">Ayarları aç</button>
-  </div>
-  <button id="mind-open" class="icon mind-open" title="Beyni aç/kapat" aria-label="Beyni aç/kapat">◍</button>
-  <button id="more-tools" class="icon" title="Diğer araçlar" aria-label="Diğer araçlar">
-    <svg viewBox="0 0 16 16" aria-hidden="true">
-      <circle cx="8" cy="3.5" r="1.2"/><circle cx="8" cy="8" r="1.2"/><circle cx="8" cy="12.5" r="1.2"/>
-    </svg>
-  </button>
-  <div class="pop more-pop" id="more-pop" hidden>
-    <button id="jobs" class="icon" title="Görevler" aria-label="Görevler">
-      <svg viewBox="0 0 16 16" aria-hidden="true">
-        <rect x="2.5" y="3" width="11" height="11" rx="1.4" fill="none"/>
-        <path d="M2.5 6h11M5.5 2.5v2M10.5 2.5v2" fill="none"/>
-        <path d="M5 9h2.5M5 11.5h6" fill="none"/>
-      </svg>
-      <i class="icon-badge" id="jobs-badge" hidden></i>
-    </button>
-    <button id="apps" class="icon" title="Uygulamalar" aria-label="Uygulamalar">
-      <svg viewBox="0 0 16 16" aria-hidden="true">
-        <rect x="2" y="2" width="5" height="5" rx="1" fill="none"/>
-        <rect x="9" y="2" width="5" height="5" rx="1" fill="none"/>
-        <rect x="2" y="9" width="5" height="5" rx="1" fill="none"/>
-        <rect x="9" y="9" width="5" height="5" rx="1" fill="none"/>
-      </svg>
-    </button>
-    <button id="focus" class="icon" title="Odak modu" aria-label="Odak modu">
-      <svg viewBox="0 0 16 16" aria-hidden="true">
-        <circle cx="8" cy="8" r="6" fill="none"/>
-        <circle cx="8" cy="8" r="1.6"/>
-      </svg>
-    </button>
-    <button id="tanima-ikon" class="icon" title="Beni tanı" aria-label="Beni tanı" hidden>
-      <svg viewBox="0 0 16 16" aria-hidden="true">
-        <path d="M8 14V7" fill="none"/>
-        <path d="M8 9.2C8 6.9 6.4 5.5 4 5.3 4.2 7.8 5.7 9.2 8 9.2z" fill="none"/>
-        <path d="M8 7c0-2.3 1.6-3.7 4-3.9C11.8 5.6 10.3 7 8 7z" fill="none"/>
-        <path d="M12.5 9.8v2.6M11.2 11.1h2.6" fill="none"/>
-      </svg>
-    </button>
-  </div>
-</div>
 
 <!-- İş listesi aynası: neo çalışırken adımların hâli sağ üstte küçük bir
      kartta akar — ✓ bitti, ● şu an, ○ sırada. Veri sohbet içindeki

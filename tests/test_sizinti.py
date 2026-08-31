@@ -853,3 +853,30 @@ def test_soul_goal_block_carries_the_same_framing(tmp_path: Path) -> None:
     assert "ev otomasyonu simülasyonu" in metin
     assert "talimat değil" in metin
     assert "Önceki oturumlardan" not in metin
+
+
+def test_the_tree_carries_no_provider_keys() -> None:
+    """Tek-klasor duzenine gecis (31.08): eskiden anahtar taramasi yayin
+    esitleme betigindeydi; artik kod dogrudan acik depoda yasadigi icin
+    tarama her test kosusunda calisir. OpenRouter/generic anahtar deseni
+    agacta gorunurse takim kirmizi — sizinti push'a ulasamaz."""
+    kok = Path(__file__).resolve().parents[1]
+    # GERÇEK anahtar uzunluğu: kısa yer tutucular ("sk-ant-...", test
+    # sahteleri) alarm değildir — dokümantasyon ve fixture'lar meşru.
+    desen = re.compile(r"sk-or-v1-[0-9a-f]{60,}|sk-ant-[A-Za-z0-9_-]{60,}")
+    atla = {".git", ".neocp", "atolye", "__pycache__", ".pytest_cache",
+            "node_modules", "dist"}
+    supheliler: list[str] = []
+    for yol in kok.rglob("*"):
+        if not yol.is_file() or yol.stat().st_size > 2_000_000:
+            continue
+        parcalar = set(yol.relative_to(kok).parts)
+        if parcalar & atla:
+            continue
+        try:
+            icerik = yol.read_text(encoding="utf-8", errors="ignore")
+        except OSError:
+            continue
+        if desen.search(icerik):
+            supheliler.append(str(yol.relative_to(kok)))
+    assert not supheliler, f"anahtar deseni tasiyan dosyalar: {supheliler}"

@@ -894,11 +894,15 @@ def test_reasoning_does_not_stream_into_the_conversation() -> None:
     # Başlık kısa bir etiket (dönen düşünme kelimesi); muhakeme metni
     # yalnızca katlanmış şeritte.
     assert "workHead(mull()" in inner
-    # Akarken yalnızca kuyruk çiziliyor (tam metni her parçada basmak hem
-    # O(n²) hem şeridi devasa yapıyordu); tamamı closeThought'ta tek satıra
-    # katlanıp tıklayınca açılıyor.
-    assert "w.thought.textContent = tail" in inner
+    # Akarken varsayılan görünüm KUYRUK (tam metni her parçada basmak
+    # şeridi devasa yapıyordu); 31.08'den beri koşan kutu tıklanabilir —
+    # `open` sınıfı tam metni açar, kutu içi kaydırma yalnız dipteyken
+    # pinlenir ("detayına tıklıyorum açılmıyor, arkada kalıyor").
+    assert "w.thought.textContent = goster" in inner
     assert "thought.slice(-" in inner
+    assert "canliDusunceTiklanir" in inner
+    assert "const dipte" in inner
+    assert "function canliDusunceTiklanir" in APP_JS
 
 
 def test_the_status_line_is_modeled_not_decorative() -> None:
@@ -1047,10 +1051,16 @@ def test_the_live_strip_follows_the_flow() -> None:
     assert think and "foldNarration()" in think.group(1)
     assert "dockWork(w)" in think.group(1)
 
-    # Cevap akmaya başlarken şerit sakinleşir ve akışın sonuna iner — yeni
-    # metin şeridin hemen altında yazılır.
+    # Cevap akmaya başlarken şerit BÖLÜNÜR (31.08, kullanıcı isteği —
+    # Claude Code ritmi): biten adım kümesi kendi tıklanır özetine iner,
+    # sonraki araçlar metnin altında yeni küme açar. Koşan araç varken
+    # bölünmez (segmentWork restWork'e düşer).
     write = re.search(r"function write\(chunk\) \{(.*?)\n\}", APP_JS, re.S)
-    assert write and "restWork()" in write.group(1)
+    assert write and "segmentWork()" in write.group(1)
+    seg = re.search(r"function segmentWork\(\) \{(.*?)\n\}", APP_JS, re.S)
+    assert seg and "restWork()" in seg.group(1)
+    assert "work = null" in seg.group(1)
+    assert 'classList.add("done")' in seg.group(1)
 
 
 def test_the_same_text_is_never_drawn_twice() -> None:
@@ -1999,10 +2009,13 @@ def test_main_jobs_panel_and_artifact_export_exist() -> None:
     assert "prompt(" not in APP_JS.split("function planCard")[1].split("function maybeOfferPlan")[0]
     assert "plan-edit-area" in (STATIC / "app.css").read_text(encoding="utf-8")
     assert "_inited" in (STATIC / "scene.js").read_text(encoding="utf-8")
-    # 28.08 kabuk kararı (kullanıcı, Claude Code birebir): HUD sade başlık
-    # çubuğu — kümeler dağıldı. Bağlam araçları orta-sağ üstte (ctx-tools),
-    # sistem ikonları kenar çubuğunun dibinde (side-foot).
+    # 31.08 revizyon (kullanıcı): bağlam araçları sohbetin üstünde yüzen
+    # hap DEĞİL — başlık çubuğunda, pencere düğmelerinin yanında yaşar
+    # ("bunlar konuşmanın üstünde olmamalı"). Sistem ikonları yine
+    # kenar çubuğunun dibinde (side-foot).
     assert "ctx-tools" in HTML and "side-foot" in HTML
+    assert 'id="ctx-tools"' in HTML.split('class="hud-right"', 1)[1].split('id="win-min"', 1)[0]
+    assert "position: fixed; top: 56px" not in CSS.split(".ctx-tools {", 1)[1].split("}", 1)[0]
     assert 'id="hist-new"' in HTML   # yeni konuşma girişi sidebar'da
     assert "Araçlar" in HTML and "Bağlantılar (MCP)" in HTML
     settings = (STATIC / "settings.js").read_text(encoding="utf-8")
@@ -2356,3 +2369,18 @@ def test_regenerate_only_on_last_agent_bubble() -> None:
     assert 'thread.querySelectorAll(".line.agent .msg-acts")' in APP_JS
     acts = CSS.split(".msg-acts {", 1)[1].split("}", 1)[0]
     assert "user-select: none" in acts
+
+
+def test_every_referenced_static_file_is_served() -> None:
+    """menu.js dersi (31.08): index.html'in yuklediği dosya sunucunun izin
+    listesinde yoksa 404 — ozellik sessizce olu (sag tik menusu oyle
+    bulundu). Sinif kapanir: HTML'in istedigi her yerel js/css dosyasi
+    sunucunun MIME izin listesinde olmali."""
+    watch_html = (STATIC / "watch.html").read_text(encoding="utf-8")
+    istenen = set()
+    for h in (HTML, watch_html):
+        for m in re.finditer(r'(?:src|href)="(/[^"?#]+)', h):
+            istenen.add(m.group(1))
+    sunulan = set(re.findall(r'"(/[^"]+)":\s*"', SERVER_SRC))
+    eksik = {y for y in istenen if y.endswith((".js", ".css")) and y not in sunulan}
+    assert not eksik, f"sunucu izin listesinde eksik: {sorted(eksik)}"
