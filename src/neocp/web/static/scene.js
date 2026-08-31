@@ -398,10 +398,31 @@ const Scene = (() => {
     clearRoute();
     if (!Array.isArray(trace) || !trace.length) { ripple(); return 0; }
 
+    // Grafikte OLMAYAN iz düğümleri animasyonu öldürmesin: graf her kovadan
+    // en yeni 24 kaydı çiziyor; hatırlama eski bir kayda gidince düğüm
+    // ekranda yoktu, iz boşa süzülüyordu ve elektrik yürüyüşü HİÇ
+    // görünmüyordu (canlı yara, 31.08 — "animasyonlar yok artık").
+    // Bilinmeyen kimliğe kalıcı konumlu bir hayalet düğüm açılır: aynı anı
+    // hep aynı yerde yanar; bir sonraki graf yüklemesi hayaleti süpürür.
+    for (const step of trace) {
+      if (!step || !step.node || byId.has(step.node)) continue;
+      const ghost = {
+        id: step.node,
+        label: String(step.label || "anı"),
+        group: step.kind || "fact",
+        size: 7, detail: "", ghost: true,
+        flash: 0, lit: 0, order: 0, from: null,
+      };
+      ghost.p3 = insideBrain(ghost.id);
+      nodes.push(ghost);
+      byId.set(ghost.id, ghost);
+    }
+    place();
+
     // Iz yalnizca kimlik tasiyor; okunabilir liste icin etiketi ekliyoruz.
     route = trace
       .filter(step => byId.has(step.node))
-      .map(step => ({ ...step, label: byId.get(step.node).label }));
+      .map(step => ({ ...step, label: step.label || byId.get(step.node).label }));
 
     // Numaralar yalnızca gerçekten kullanılanlara veriliyor. Taranan her
     // kaydı numaralamak, zihnin hepsini okuduğu izlenimi veriyordu —

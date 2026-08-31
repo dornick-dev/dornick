@@ -57,9 +57,9 @@ SPEECH = 0.008
 
 # Konuşmadan sonra bu kadar sessizlik olunca cümle bitmiş sayılıyor.
 # Kısası cümleyi ortadan kesiyor (nefes araları), uzunu geç tepki demek.
-# 0.7 idi; toplam tepki bütçesinde (hang + tanıma ~2 sn) en ucuz kazanç
-# buradaydı. Nefes arası tipik ~0.3-0.4 sn; 0.55 hâlâ payın üstünde.
-HANG_S = 0.55
+# Tanıma artık ilk sessizlikte başlıyor; bu süre yalnızca "devam ediyor
+# mu" teyidi — CUDA 0,2 sn'de çözünce yarım cümle gitmesin diye.
+HANG_S = 0.40
 
 # Bundan kısa bir ses konuşma sayılmıyor: öksürük, kapı, klavye. Tanıyıcıyı
 # bunlar için uyandırmak hem boşuna hem de sessizlikten cümle uydurtuyor.
@@ -87,7 +87,7 @@ ECHO_PRIME = 6
 # Hoparlör yankısı SPEECH eşiğini de aşıyor; kullanıcı mikrofona konuşunca
 # daha yüksek. Yankı tabanının üstüne çıkınca TTS hemen kesilir — "neo"
 # demeden, cümleyi baştan kurmadan.
-BARGE_HOLD_S = 0.22
+BARGE_HOLD_S = 0.32
 BARGE_FLOOR = 0.028
 ECHO_BLOCKS = 12
 
@@ -199,7 +199,59 @@ def echo_of_self(said: str, tts: str) -> bool:
     hits = sum(1 for w in a if any(_kin(w, t) for t in b))
     if len(a) == 1:
         return hits == 1 and len(a[0]) >= 6
-    return hits >= 2 and hits / len(a) >= 0.5
+    if hits >= 2 and hits / len(a) >= 0.5:
+        return True
+    # Hoparlör cümlesinin kırpıntısı: bir-iki kelime tutmuş, gerisi
+    # 1–3 harflik çöp. Canlı: "Sen nasılsın" → Whisper "sende sos".
+    # En az bir akraba şart — yoksa "ok" her TTS'ten sonra yankı olur.
+    if 1 <= len(a) <= 4 and hits >= 1:
+        leftover = [w for w in a if not any(_kin(w, t) for t in b)]
+        if not leftover or all(len(w) <= 3 for w in leftover):
+            return True
+    return False
+
+
+# Yankı penceresinde tek kelimelik gerçek cevaplar (evet/tamam/aç).
+# Dışındakiler TTS'in "soni" gibi kırpıntısı ya da Whisper uydurması.
+_SHORT_OK = frozenset({
+    "evet", "hayır", "hayir", "yok", "var", "peki", "tamam", "olur", "olmaz",
+    "aç", "ac", "kapat", "dur", "devam", "neden", "nasıl", "nasil", "niye",
+    "iyi", "selam", "ha", "anladım", "anladim",
+})
+_ECHO_FAREWELL = frozenset({
+    "hoşça kal", "hoşça kalın", "hosca kal", "hosca kalin",
+    "görüşürüz", "gorusuruz", "güle güle", "gule gule",
+    "iyi geceler", "iyi günler", "iyi gunler", "sonra konuşuruz",
+})
+
+
+def echo_junk(said: str, wake: str = "") -> bool:
+    """Hoparlör yankısı / sessizlik uydurması mı — hoparlör metnine
+    benzemese bile.
+
+    `echo_of_self` yalnızca TTS cümlesine benzerliği yakalar. Whisper
+    yankıda 'hoşça kalın' basınca (canlı: merhaba'dan sonra veda) ya da
+    'soni' gibi kırpıntı yazınca eşleşme yok, söz yeni istek oluyordu.
+    """
+    from . import listen as recogniser
+
+    if recogniser.heard_wake(said, wake or "neo"):
+        return False
+    if recogniser.hallucinated(said) or recogniser.chatter(said):
+        return True
+    words = _words(said)
+    if not words:
+        return True
+    flat = " ".join(words)
+    if flat in _ECHO_FAREWELL:
+        return True
+    if len(words) <= 3 and any(p in flat for p in _ECHO_FAREWELL):
+        return True
+    # Tek kelimelik kırpıntı ("soni") istek değil. "anladım" / "nasılsın"
+    # gerçek cevap — onları da düşürmek "bazen hiç duymuyor" oluyordu.
+    if len(words) == 1 and words[0] not in _SHORT_OK and len(words[0]) <= 4:
+        return True
+    return False
 
 
 class Ear:
@@ -314,12 +366,33 @@ class Ear:
         self._tts_until = now + ECHO_HOLD_S
 
     def _barge_loud(self, loud: float) -> bool:
-        """Hoparlör yankısının üstünde, kullanıcı mikrofona mı konuşuyor?"""
+        """Hoparlör yankısının üstünde, kullanıcı mikrofona mı konuşuyor?
+
+        Taban oda gürültüsüyse hoparlör henüz mikrofona düşmemiştir —
+        TTS'in ilk bloğu BARGE_FLOOR'u aşıp kendi sesini kesiyordu
+        (canlı: 'soni' + araya girdi, hoparlör kendi cümlesini böldü).
+        """
         if len(self._echo) < ECHO_PRIME:
             return False
         ordered = sorted(self._echo)
         base = ordered[len(ordered) // 2]
+        if base < BARGE_FLOOR:
+            return False
         return loud >= max(BARGE_FLOOR, base * 1.8 + 0.008)
+
+    def _tail_loud(self, loud: float) -> bool:
+        """TTS bitti: bu enerji oda yankısı mı, mikrofon konuşması mı?
+
+        Yankı SPEECH eşiğini (0.008) uzun süre aşıyor; sustuktan sonra her
+        aşım yeni söz olunca Whisper hoparlör kuyruğunu 'sende sos' diye
+        yazıyordu. Kullanıcı mikrofona konuşunca tabanın üstüne çıkar —
+        TTS'i kesmek kadar (1.8x) gerekmez.
+        """
+        if len(self._echo) < ECHO_PRIME:
+            return loud >= SPEECH
+        ordered = sorted(self._echo)
+        base = ordered[len(ordered) // 2]
+        return loud >= max(SPEECH * 2.2, base * 1.35 + 0.006)
 
     def _echoing(self) -> bool:
         """Hoparlör cümlesi hâlâ havada / tanıma kuyruğunda mı?"""
@@ -463,6 +536,7 @@ class Ear:
         quiet_since = 0.0
         started = 0.0
         deaf_seg = False                # o an yakalanan segment TTS sırasında mı
+        handed = False                  # bu söyleyiş tanıma kuyruğuna girdi mi
 
         try:
             stream = sd.InputStream(
@@ -509,6 +583,7 @@ class Ear:
                             speech = [mono.copy()]
                             started = now
                             deaf_seg = True
+                            handed = False
                         else:
                             speech.append(mono.copy())
                         quiet_since = 0.0
@@ -519,17 +594,34 @@ class Ear:
                             speech, quiet_since, started, deaf_seg = (
                                 [], 0.0, 0.0, False
                             )
+                            handed = False
                         else:
                             speech.append(mono.copy())
-                            quiet_since = quiet_since or now
+                            if not quiet_since:
+                                quiet_since = now
+                                if now - started >= MIN_S and not handed:
+                                    self._hand_over(
+                                        np.concatenate(speech), deaf_seg
+                                    )
+                                    handed = True
                             if now - quiet_since >= HANG_S or now - started >= MAX_S:
-                                if now - started >= MIN_S:
+                                if now - started >= MIN_S and not handed:
                                     self._hand_over(
                                         np.concatenate(speech), deaf_seg
                                     )
                                 speech, quiet_since, started = [], 0.0, 0.0
+                                handed = False
                     recent = []
                     continue
+
+                # Hoparlör sustu ama oda hâlâ çınlıyor. SPEECH eşiği
+                # kuyruğu da yakalıyor; Whisper onu yeni söz sanıyor.
+                if (self._echoing() and not self._barge_open
+                        and not self.snoozed and not speech):
+                    self._echo.append(loud)
+                    if not self._tail_loud(loud):
+                        recent = []
+                        continue
 
                 if loud >= SPEECH:
                     if not speech:
@@ -538,17 +630,30 @@ class Ear:
                         speech = list(recent)
                         started = now
                         deaf_seg = deaf
+                        handed = False
+                    elif quiet_since:
+                        # Nefes arası değil, cümle sürüyor — uçuşan tanıma
+                        # yarım cümleyi göndermesin.
+                        self._latest_at = now
+                        handed = False
                     speech.append(mono.copy())
                     quiet_since = 0.0
                 elif speech:
                     speech.append(mono.copy())
-                    quiet_since = quiet_since or now
+                    if not quiet_since:
+                        # İlk sessizlik: tanıma başlasın, cümle bitişi
+                        # teyidi HANG_S boyunca tanımayla örtüşür.
+                        quiet_since = now
+                        if now - started >= MIN_S and not handed:
+                            self._hand_over(np.concatenate(speech), deaf_seg)
+                            handed = True
                     if now - quiet_since >= HANG_S or now - started >= MAX_S:
                         # Çok kısa sesler konuşma değil: öksürük, kapı,
                         # klavye. Tanıyıcıyı bunlar için uyandırmıyoruz.
-                        if now - started >= MIN_S:
+                        if now - started >= MIN_S and not handed:
                             self._hand_over(np.concatenate(speech), deaf_seg)
-                        speech, quiet_since = [], 0.0
+                        speech, quiet_since, started = [], 0.0, 0.0
+                        handed = False
                 elif not deaf:
                     recent.append(mono.copy())
                     del recent[: -int(PRE_S * RATE / BLOCK) or None]
@@ -625,6 +730,7 @@ class Ear:
         """
         from . import listen as recogniser
 
+        given = captured
         captured = time.monotonic() if captured is None else captured
         # Daha yeni bir söz yakalandıysa bunu tanıma — Whisper gecikince
         # dakikalar önceki cümle ile "neo" aynı anda sohbete düşüyordu.
@@ -706,12 +812,12 @@ class Ear:
             self._barge_open = False
             return
 
-        # Şimdi düzgün çöz.
+        # Şimdi düzgün çöz. Kısa sözde ikinci model ~1,4 sn (CPU) ekliyor
+        # ve "merhaba neo" gibi cümlede kazanç yok.
         try:
-            said = (
-                scan if scout is self.listener
-                else self.listener.transcribe_array(audio, RATE)
-            )
+            said = scan
+            if scout is not self.listener and len(scan.split()) > 12:
+                said = self.listener.transcribe_array(audio, RATE)
         except Exception:
             said = scan
 
@@ -732,9 +838,14 @@ class Ear:
         # Enerji eşiği TTS'i yanlışlıkla kestiysa — ya da serbest
         # dinlemede hoparlör sustuktan sonra oda yankısı yeni söz olduysa —
         # tanıma metni hoparlördeki cümleye benzer. Kendi sözü istek değil.
-        if (barged or echo or self._echoing()) and (
+        # Whisper yankıda TTS'e benzemeyen bir şey de basabiliyor
+        # ('hoşça kalın', 'soni') — o da istek değil.
+        echoing = barged or echo or self._echoing()
+        if echoing and (
             echo_of_self(said, self._tts_text)
             or echo_of_self(scan, self._tts_text)
+            or echo_junk(said, self.wake)
+            or echo_junk(scan, self.wake)
         ):
             self._barge_open = False
             return
@@ -755,6 +866,20 @@ class Ear:
         if captured < self._latest_at:
             self._barge_open = False
             return
+
+        # İlk sessizlikte devredildiyse: tanıma HANG ile örtüşür, ama CUDA
+        # 0,2 sn'de bitince nefes arası yarım cümle olmasın diye teyit bekle.
+        if given is not None:
+            hold = given + HANG_S
+            while time.monotonic() < hold:
+                if captured < self._latest_at:
+                    self._barge_open = False
+                    return
+                if self._stop.wait(0.04):
+                    return
+            if captured < self._latest_at:
+                self._barge_open = False
+                return
 
         # Konuşma sürüyor: pencere tazeleniyor.
         self.engage()

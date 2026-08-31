@@ -248,7 +248,7 @@ class Listener:
         ses_sn = float(getattr(samples, "shape", [0])[0] or 0) / max(rate, 1)
         t0 = _time.perf_counter()
         try:
-            return self._decode(samples)
+            return self._decode(samples, endpointed=True)
         finally:
             self._belki_dusur(ses_sn, _time.perf_counter() - t0)
 
@@ -256,12 +256,15 @@ class Listener:
         """Ses dosyasını yazıya çevirir."""
         return self._decode(str(audio))
 
-    def _decode(self, audio: Any) -> str:
+    def _decode(self, audio: Any, *, endpointed: bool = False) -> str:
         model = self.load()
         language = self.config.language.strip() or None
+        # Kulak zaten enerjiyle kesiyor; Whisper VAD'ı üstüne binince hem
+        # gecikiyor hem ilk heceyi yiyor. Dosya (bas-konuş) sessizlik
+        # içerebilir — orada VAD kalsın.
         kwargs: dict[str, Any] = dict(
             language=language,
-            vad_filter=True,
+            vad_filter=not endpointed,
             beam_size=1,
             initial_prompt=self._bias(),
             temperature=0.0,
@@ -269,12 +272,13 @@ class Listener:
             compression_ratio_threshold=2.2,
             no_speech_threshold=0.55,
             log_prob_threshold=-0.7,
+            without_timestamps=True,
         )
         try:
             segments, _info = model.transcribe(audio, **kwargs)
         except TypeError:
             for key in ("compression_ratio_threshold", "no_speech_threshold",
-                        "log_prob_threshold"):
+                        "log_prob_threshold", "without_timestamps"):
                 kwargs.pop(key, None)
             segments, _info = model.transcribe(audio, **kwargs)
         return _join_segments(segments, self.config.vocab)
@@ -316,6 +320,9 @@ _JUNK = frozenset({
     "altyazı m.k", "altyazı mk", "altyazı m k", "altyazı mk.",
     "thanks for watching", "thank you for watching",
     "izlediğiniz için teşekkürler", "abone ol", "subscribe",
+    # Whisper Türkçe sessizlik/yankıda YouTube kapanışını basıyor.
+    # Gerçek veda "hoşça kal" / "görüşürüz".
+    "hoşça kalın", "hosca kalin", "hoşçakalın", "hoscakalin",
 })
 
 # Tek başına anlam taşımayan kısa sesler: gülme heceleri, onay mırıltısı,
@@ -462,6 +469,9 @@ def after_wake(text: str, wake: str = DEFAULT_WAKE) -> str:
     Sözün kendisi komutun parçası değil; modele göndermek "neo" diye bir
     şey aranmasına yol açıyor. Tanıyıcı sözü iki kelimeye bölmüş
     olabileceği için ("ne oldu") ikili pencere de atlanıyor.
+
+    Söz cümlenin ortasındaysa ("nasılsın neo? iyi misin?") her iki taraf
+    da kalır — önceki hal "neo"den sonrasını alınca "nasılsın"ı atıyordu.
     """
     word = _CLEAN.sub(" ", (wake or "").lower()).strip().replace(" ", "")
     if not word:
@@ -480,17 +490,42 @@ def after_wake(text: str, wake: str = DEFAULT_WAKE) -> str:
     return (text or "").strip()
 
 
+def _pre_wake_noise(raw: list[str]) -> bool:
+    """Sözden önceki parça tanıyıcı gürültüsü mü, yoksa gerçek cümle mi?
+
+    "şey ııı neo raporu getir" → gürültü. "nasılsın neo? iyi misin?" → değil.
+    """
+    if not raw:
+        return True
+    if chatter(" ".join(raw)):
+        return True
+    words = [w for w in (_CLEAN.sub("", p.lower()) for p in raw) if w]
+    real = [w for w in words if w not in _FILLER and not _groan(w)]
+    if not real:
+        return True
+    return len(real) == 1 and len(real[0]) <= 3
+
+
 def _without(raw: list[str], start: int, stop: int) -> str:
     """Sözü cümleden çıkarır.
 
-    Sözden **sonra** bir şey varsa söz cümleyi açmıştır ve öncesindeki şey
-    komut değil: tanıyıcı sözün önüne gürültü uyduruyor ("şey ııı neo
-    raporu getir"). Sonrası boşsa öncesi komuttur ("nasılsın neo?").
+    Sözden **sonra** bir şey varsa: öncesi gürültüyse atılır ("şey ııı neo
+    raporu getir"); gerçek cümleyse ikisi de kalır ("nasılsın neo? iyi
+    misin?"). Sonrası boşsa öncesi komuttur ("nasılsın neo?").
     """
     after = raw[stop:]
     if after:
         # Baştaki virgül sözün ayracıydı ("neo, borsayı aç"), cümlenin değil.
-        return " ".join(after).strip(" ,;:")
+        after_text = " ".join(after).strip(" ,;:")
+        before = raw[:start]
+        # Söz cümlenin ORTASINDAYSA ("nasılsın neo? iyi misin?") her iki
+        # taraf da komut. Öncesi yalnızca tanıyıcı gürültüsüyse ("şey ııı
+        # neo …") eskisi gibi atılır.
+        if before and not _pre_wake_noise(before):
+            if mark := _ENDING.search(raw[stop - 1]):
+                before = before[:-1] + [before[-1] + mark.group()]
+            return (" ".join(before) + " " + after_text).strip(" ,;:")
+        return after_text
 
     before = raw[:start]
     # Söz cümleyi bitiriyorsa noktalaması cümleye geri veriliyor.

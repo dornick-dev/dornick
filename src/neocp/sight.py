@@ -1,15 +1,19 @@
 """Yerel GPU görüntü analizi — Whisper'ın kamera kardeşi.
 
 Sohbet modeli her kareye bakmıyor: saniyede yirmi kare, karesi 1.5–4.8k
-token. Bunun yerine NVIDIA kartı varsa küçük bir nesne modeli (YOLOv8n)
-kareyi **metne** çeviriyor; sohbet modeli o metni alıyor. Görüntü
-makineden çıkmıyor.
+token. Bunun yerine NVIDIA kartı varsa küçük bir nesne modeli kareyi
+**metne** çeviriyor; sohbet modeli o metni alıyor. Görüntü makineden
+çıkmıyor.
+
+Kapalı sözlüklü YOLOv8n (COCO-80) sigara ve çakmağı tanımıyor — en yakın
+sınıfa yakıştırıyor (kitap, diş fırçası, kişi). CUDA yolunda önce
+YOLO-World (açık sözlük) deneniyor; olmazsa nano COCO yedeğe düşer.
 
 GPU yoksa / CUDA oturumu açılamazsa bu katman sessizce durur — o zaman
 eski kesit kipi: kare, görüntü kabul eden modele gider.
 
-Model ilk kullanımda indirilir (~12 MB) ve `~/.neocp/models` altında
-kalır. Whisper gibi süreç boyunca bellekte durur.
+Model ilk kullanımda indirilir ve `~/.neocp/models` altında kalır.
+Whisper gibi süreç boyunca bellekte durur.
 """
 
 from __future__ import annotations
@@ -36,7 +40,25 @@ IOU = 0.45
 # Nano model ~200–400 MB VRAM. Bunun altı: yerel LLM kartı doldurmuş,
 # ikinci oturum OOM olur — kesit kipine düş.
 MIN_FREE_MB = 400
+# YOLO-World s bir kademe daha yer ister; yetmezse nano COCO.
+MIN_FREE_MB_WORLD = 650
+CONF_WORLD = 0.25
 
+COCO_EN = (
+    "person", "bicycle", "car", "motorcycle", "airplane", "bus", "train",
+    "truck", "boat", "traffic light", "fire hydrant", "stop sign",
+    "parking meter", "bench", "bird", "cat", "dog", "horse", "sheep", "cow",
+    "elephant", "bear", "zebra", "giraffe", "backpack", "umbrella", "handbag",
+    "tie", "suitcase", "frisbee", "skis", "snowboard", "sports ball", "kite",
+    "baseball bat", "baseball glove", "skateboard", "surfboard",
+    "tennis racket", "bottle", "wine glass", "cup", "fork", "knife", "spoon",
+    "bowl", "banana", "apple", "sandwich", "orange", "broccoli", "carrot",
+    "hot dog", "pizza", "donut", "cake", "chair", "couch", "potted plant",
+    "bed", "dining table", "toilet", "tv", "laptop", "mouse", "remote",
+    "keyboard", "cell phone", "microwave", "oven", "toaster", "sink",
+    "refrigerator", "book", "clock", "vase", "scissors", "teddy bear",
+    "hair drier", "toothbrush",
+)
 COCO_TR = (
     "kişi", "bisiklet", "araba", "motosiklet", "uçak", "otobüs", "tren",
     "kamyon", "tekne", "trafik ışığı", "yangın musluğu", "dur işareti",
@@ -52,6 +74,37 @@ COCO_TR = (
     "buzdolabı", "kitap", "saat", "vazo", "makas", "oyuncak ayı",
     "saç kurutma", "diş fırçası",
 )
+# World'e 80 COCO sınıfı vermek sigara/çakmağı yine kitaba gömüyor.
+# Oda + el nesnesi: CLIP'in ayırt etmesi için kısa sözlük.
+WORLD_EN = (
+    "person",
+    "chair", "couch", "bed", "dining table",
+    "tv", "laptop", "mouse", "remote", "keyboard", "cell phone",
+    "cup", "bottle", "wine glass", "bowl",
+    "book", "clock", "vase", "scissors", "potted plant",
+    "backpack", "handbag",
+    "cat", "dog", "bird",
+    "refrigerator", "microwave", "oven", "sink",
+    "toothbrush",
+    "cigarette",
+    "cigarette pack",
+    "lighter",
+)
+WORLD_EXTRA = (
+    ("cigarette", "sigara"),
+    ("cigarette pack", "sigara paketi"),
+    ("lighter", "çakmak"),
+)
+LABEL_TR = {en: tr for en, tr in zip(COCO_EN, COCO_TR)}
+LABEL_TR.update({en: tr for en, tr in WORLD_EXTRA})
+LABEL_TR["pack of cigarettes"] = "sigara paketi"
+LABEL_TR["cell phone"] = "telefon"
+LABEL_TR["couch"] = "kanepe"
+LABEL_TR["tv"] = "ekran"
+LABEL_TR["potted plant"] = "saksı"
+LABEL_TR["hair drier"] = "saç kurutma"
+
+WORLD_WEIGHTS = ("yolov8s-worldv2.pt", "yolov8s-world.pt")
 
 
 def hint() -> str:
@@ -110,19 +163,73 @@ def _retryable(reason: str) -> bool:
     return r in ("", "yükleniyor") or "indirilemedi" in r
 
 
+def _etiket(idx: int, names: Any = None) -> str:
+    """Sınıf adı: modelin İngilizce ismi → Türkçe etiket."""
+    en = ""
+    if isinstance(names, dict):
+        en = str(names.get(idx, names.get(str(idx), "")) or "")
+    elif isinstance(names, (list, tuple)) and 0 <= idx < len(names):
+        en = str(names[idx])
+    key = en.strip().lower()
+    if key in LABEL_TR:
+        return LABEL_TR[key]
+    if 0 <= idx < len(COCO_TR):
+        return COCO_TR[idx]
+    return en or f"sınıf {idx}"
+
+
+def _vram_free() -> int | None:
+    try:
+        from . import gpu as gpu_module
+
+        return gpu_module.primary_free_mb()
+    except Exception:
+        return None
+
+
+def _load_world() -> tuple[Any, str]:
+    """Açık sözlük: sigara / çakmak COCO'da yok, World metinle arar."""
+    free = _vram_free()
+    if free is not None and free < MIN_FREE_MB_WORLD:
+        return None, ""
+    try:
+        from ultralytics import YOLO
+    except Exception:
+        return None, ""
+    root = Path.home() / ".neocp" / "models"
+    root.mkdir(parents=True, exist_ok=True)
+    for name in WORLD_WEIGHTS:
+        try:
+            cached = root / name
+            model = YOLO(str(cached) if cached.is_file() else name)
+            if not hasattr(model, "set_classes"):
+                continue
+            model.set_classes(list(WORLD_EN))
+            return model, "world"
+        except Exception:
+            continue
+    return None, ""
+
+
 def _open_ultra() -> tuple[Any, str, str, str]:
-    """YOLOv8n on torch CUDA — RTX 50 / CUDA 12.8 bu yolda çalışıyor."""
+    """YOLO-World (açık sözlük) ya da YOLOv8n — torch CUDA."""
     if not _ultra_ok():
         return None, "", "", ""
     try:
         from ultralytics import YOLO
-
-        weights = _model_path().with_suffix(".pt")
-        model = YOLO(str(weights) if weights.is_file() else "yolov8n.pt")
         import numpy as np
 
-        model.predict(np.zeros((32, 32, 3), dtype=np.uint8),
-                      verbose=False, device=0)
+        dummy = np.zeros((160, 160, 3), dtype=np.uint8)
+        model, kind = _load_world()
+        if model is not None:
+            try:
+                model.predict(dummy, verbose=False, device=0)
+                return model, "cuda", "", kind
+            except Exception:
+                pass
+        weights = _model_path().with_suffix(".pt")
+        model = YOLO(str(weights) if weights.is_file() else "yolov8n.pt")
+        model.predict(dummy, verbose=False, device=0)
         return model, "cuda", "", "ultra"
     except Exception as exc:
         return None, "", f"ultralytics CUDA açılamadı: {exc}", ""
@@ -218,8 +325,9 @@ class Seer:
             import numpy as np
 
             arr = np.asarray(frame)
-            if self._kind == "ultra":
-                return _detect_ultra(self._session, arr)
+            if self._kind in ("ultra", "world"):
+                conf = CONF_WORLD if self._kind == "world" else CONF
+                return _detect_ultra(self._session, arr, conf=conf)
             return _detect(self._session, arr)
         except Exception:
             return []
@@ -256,7 +364,10 @@ def status() -> dict[str, Any]:
     return {
         "ready": s.ready,
         "device": s.device,
-        "model": "yolov8n" if s.ready else "",
+        "model": (
+            "yolov8s-world" if s._kind == "world"
+            else ("yolov8n" if s.ready else "")
+        ),
         "kind": s._kind,
         "tried": s._tried,
         "reason": s.reason,
@@ -282,7 +393,7 @@ def warmup() -> dict[str, Any]:
     ok = seer().load()
     st = status()
     if ok:
-        print("[neo] kamera analizi CUDA'da (yolov8n)", flush=True)
+        print(f"[neo] kamera analizi CUDA'da ({st['model']})", flush=True)
     elif st["reason"]:
         print(f"[neo] kamera analizi yok: {st['reason']}", flush=True)
     return st
@@ -358,8 +469,8 @@ def _letterbox(bgr: Any, size: int = INPUT) -> tuple[Any, float, int, int]:
     return canvas, scale, left, top
 
 
-def _detect_ultra(model: Any, bgr: Any) -> list[Hit]:
-    results = model.predict(bgr, verbose=False, device=0, conf=CONF)
+def _detect_ultra(model: Any, bgr: Any, *, conf: float = CONF) -> list[Hit]:
+    results = model.predict(bgr, verbose=False, device=0, conf=conf)
     if not results:
         return []
     boxes = results[0].boxes
@@ -372,10 +483,8 @@ def _detect_ultra(model: Any, bgr: Any) -> list[Hit]:
     confs = boxes.conf.tolist()
     for (x, y, bw, bh), c, p in zip(xywhn, cls, confs):
         idx = int(c)
-        en = names.get(idx, "") if isinstance(names, dict) else ""
-        tr = COCO_TR[idx] if idx < len(COCO_TR) else (en or f"sınıf {idx}")
-        hits.append(Hit(name=tr, conf=float(p), x=float(x), y=float(y),
-                        w=float(bw), h=float(bh)))
+        hits.append(Hit(name=_etiket(idx, names), conf=float(p),
+                        x=float(x), y=float(y), w=float(bw), h=float(bh)))
     return hits
 
 
@@ -425,7 +534,7 @@ def _parse(out: Any, scale: float, pad_x: int, pad_y: int,
     order = _nms(xyxy, conf)
     hits: list[Hit] = []
     for i in order:
-        name = COCO_TR[int(cls[i])] if int(cls[i]) < len(COCO_TR) else f"sınıf {int(cls[i])}"
+        name = _etiket(int(cls[i]))
         cx = float(((xyxy[i, 0] + xyxy[i, 2]) / 2) / max(1, width))
         cy = float(((xyxy[i, 1] + xyxy[i, 3]) / 2) / max(1, height))
         bw = float((xyxy[i, 2] - xyxy[i, 0]) / max(1, width))

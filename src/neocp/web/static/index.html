@@ -4,21 +4,39 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>neo</title>
-<link rel="stylesheet" href="/app.css">
-<link rel="stylesheet" href="/settings.css">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/app.css?v=layout5">
+<link rel="stylesheet" href="/settings.css?v=layout5">
 <link rel="icon" type="image/png" href="/logo.png">
 <!-- Kayıtlı temayı sayfa çizilmeden uygula: yoksa yanlış tema açılıp
-     doğrusuna "sıçrıyor" (flash). Varsayılan AYDINLIK (kullanıcı kararı,
-     28.08); koyu, ancak bilinçli seçilmişse. -->
-<script>try{var tema=localStorage.getItem("neo-theme");if(tema!=="dark")document.documentElement.dataset.theme="light";}catch(e){document.documentElement.dataset.theme="light";}</script>
+     doğrusuna "sıçrıyor" (flash). Varsayılan KOYU (kullanıcı kararı,
+     31.08 — 28.08'deki aydınlık kararını geri aldı); aydınlık, ancak
+     bilinçli seçilmişse. -->
+<script>try{var tema=localStorage.getItem("neo-theme");if(tema==="light")document.documentElement.dataset.theme="light";}catch(e){}</script>
 </head>
 <body>
 
 <canvas id="scene"></canvas>
 
-<!-- Sağ sütun: beyin + mini paneller (orkestra, kameralar). Yüzen sol
-     modal değil — açılan her güverte burada satır/sütun paylaşır. -->
+<!-- Sağ sütun: üstte görüntüleyici (Değişiklikler · Tarayıcı · terminal),
+     altta beyin. Tek kabuk — yan yana iki fixed pencere değil. -->
 <div class="right-col" id="right-col">
+<div class="viewer" id="viewer" hidden>
+  <div class="viewer-grip" id="viewer-grip" title="Genişliği sürükle" aria-label="Paneli yeniden boyutlandır"></div>
+  <div class="viewer-head">
+    <div class="viewer-tabs" id="viewer-tabs"></div>
+    <button class="viewer-add" id="viewer-add" type="button" title="Yeni terminal" aria-label="Yeni terminal">+</button>
+    <span class="viewer-grow"></span>
+    <span class="viewer-path" id="viewer-path" hidden></span>
+    <span class="viewer-modes" id="viewer-modes"></span>
+    <button class="viewer-max" id="viewer-max" title="Büyüt / yerine dön" aria-label="Büyüt / yerine dön">⤢</button>
+    <button class="close" id="viewer-close" aria-label="Kapat">×</button>
+  </div>
+  <div class="viewer-body" id="viewer-body"></div>
+</div>
+<div class="dock-grip" id="dock-grip" title="Yüksekliği sürükle" aria-label="Görüntüleyici ve beyin arasında boyutlandır"></div>
 <aside class="mind" id="mind" aria-label="Beyin">
   <div class="mind-grip" id="mind-grip" title="Genişliği sürükle" aria-label="Paneli yeniden boyutlandır"></div>
   <div class="mind-head">
@@ -32,7 +50,6 @@
             title="Renk açıklamasını aç/kapat" aria-label="Renk açıklamasını aç/kapat">Açıklama ▸</button>
   </div>
 </aside>
-<div class="dock-grip" id="dock-grip" title="Yüksekliği sürükle" aria-label="Beyin ve orkestra arasında boyutlandır"></div>
 <div class="side-dock" id="side-dock">
 <div class="orch-deck" id="orch-deck" hidden>
   <div class="orch-head">
@@ -170,7 +187,7 @@
     <button id="cam-enable" class="plan-btn">Kamerayı aç</button>
     <button id="cam-settings" class="plan-btn muted">Ayarları aç</button>
   </div>
-  <button id="mind-open" class="icon mind-open" title="Beyin panelini aç" aria-label="Beyin panelini aç">◍</button>
+  <button id="mind-open" class="icon mind-open" title="Beyni aç/kapat" aria-label="Beyni aç/kapat">◍</button>
   <button id="more-tools" class="icon" title="Diğer araçlar" aria-label="Diğer araçlar">
     <svg viewBox="0 0 16 16" aria-hidden="true">
       <circle cx="8" cy="3.5" r="1.2"/><circle cx="8" cy="8" r="1.2"/><circle cx="8" cy="12.5" r="1.2"/>
@@ -238,6 +255,7 @@
     <div class="welcome" id="welcome">
       <h1>Ne yapmamı istersin?</h1>
       <p>Bilgisayarında çalışıyorum. Öğrendiklerim etrafımdaki ağa yazılıyor.</p>
+      <p class="wake-note" id="wake-note" hidden></p>
     </div>
   </div>
 </div>
@@ -245,6 +263,7 @@
      yeni içerik sayısını gösterir ve tıklanınca en alta iner. -->
 <button id="jump" class="jump" hidden title="En alta in" aria-label="En alta in">↓</button>
 
+<div class="compose-shell" id="compose-shell">
 <div class="git-bar" id="git-bar" hidden>
   <button type="button" class="git-id" id="git-id">
     <b id="git-name"></b>
@@ -282,6 +301,22 @@
   <button id="send" type="submit" aria-label="Gönder">→</button>
 </form>
 
+<div class="dock" id="dock">
+  <button id="dock-model" type="button" class="dock-chip" title="Model — ayarları açar">model</button>
+  <button id="dock-effort" type="button" class="dock-chip" title="Düşünme derinliği — tıkla: değiştir">—</button>
+  <button id="dock-mode" type="button" class="dock-chip" title="Yetki kipi — tıkla: değiştir">—</button>
+  <!-- Maliyet çipi: bu turun tahmini harcaması (fiyat bilinmiyorsa token).
+       İlk kullanım olayına kadar gizli — boş bir "$0" göstermenin anlamı yok. -->
+  <button id="dock-cost" type="button" class="dock-chip" title="Tahmini harcama — tıkla: kırılım" hidden>—</button>
+  <!-- Beni tanı: kişisel ince ayar arka planda koşurken yanan sessiz çip. -->
+  <span class="dock-tanima" id="dock-tanima" hidden></span>
+  <span class="dock-ctx" id="dock-ctx" title="Bağlam doluluğu">
+    <span class="dock-bar" id="dock-ctx-bar"></span>
+    <b id="dock-ctx-pct"></b>
+  </span>
+</div>
+</div>
+
 <!-- Kompozer yüzeyleri: satır başında `/` komut defterini, `@` çalışma
      alanı dosya seçicisini açıyor. Tek kutu var — hangisi açıksa onun
      içeriğiyle dolup kompozerin ÜSTÜNDE duruyor (dock kutularıyla aynı
@@ -303,21 +338,6 @@
 <!-- Kompozerdeki + menüsü: ekleme kısayolları. Ayar sayfasını açmadan
      dosya eklemek ya da ilgili ayar sekmesine atlamak. -->
 <div class="pop" id="plus-pop" hidden></div>
-
-<div class="dock" id="dock">
-  <button id="dock-model" type="button" class="dock-chip" title="Model — ayarları açar">model</button>
-  <button id="dock-effort" type="button" class="dock-chip" title="Düşünme derinliği — tıkla: değiştir">—</button>
-  <button id="dock-mode" type="button" class="dock-chip" title="Yetki kipi — tıkla: değiştir">—</button>
-  <!-- Maliyet çipi: bu turun tahmini harcaması (fiyat bilinmiyorsa token).
-       İlk kullanım olayına kadar gizli — boş bir "$0" göstermenin anlamı yok. -->
-  <button id="dock-cost" type="button" class="dock-chip" title="Tahmini harcama — tıkla: kırılım" hidden>—</button>
-  <!-- Beni tanı: kişisel ince ayar arka planda koşarken yanan sessiz çip. -->
-  <span class="dock-tanima" id="dock-tanima" hidden></span>
-  <span class="dock-ctx" id="dock-ctx" title="Bağlam doluluğu">
-    <span class="dock-bar"><i id="dock-ctx-fill"></i></span>
-    <b id="dock-ctx-pct"></b>
-  </span>
-</div>
 
 <div class="lens" id="lens" hidden>
   <video id="lens-video" playsinline muted></video>
@@ -369,19 +389,6 @@
   </div>
 </div>
 
-<div class="viewer" id="viewer" hidden>
-  <div class="viewer-grip" id="viewer-grip" title="Genişliği sürükle" aria-label="Paneli yeniden boyutlandır"></div>
-  <div class="viewer-head">
-    <span class="viewer-tag">Görüntüleyici</span>
-    <span class="viewer-path" id="viewer-path"></span>
-    <span class="viewer-modes" id="viewer-modes"></span>
-    <button class="viewer-max" id="viewer-max" title="Büyüt / yerine dön" aria-label="Büyüt / yerine dön">⤢</button>
-    <button class="close" id="viewer-close" aria-label="Kapat">×</button>
-  </div>
-  <div class="viewer-tabs" id="viewer-tabs" hidden></div>
-  <div class="viewer-body" id="viewer-body"></div>
-</div>
-
 <!-- Kapsül: sistem içi bir uygulama neo'nun İÇİNDE açılıyor (dış tarayıcı
      değil). neo arkada süreci çalıştırıp izliyor; üstte canlı adres, durum ve
      çalışma süresi, kontroller (yenile · dışarıda aç · durdur), altta
@@ -418,10 +425,7 @@
       <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 3h12L9.5 8.5V13l-3 1.5V8.5z" fill="none"/></svg>
     </button>
   </div>
-  <div class="side-label">Konuşmalar</div>
-  <div class="hist-body" id="hist-body"></div>
-  <!-- Hızlı gezinti (Claude Code'un New/Artifacts sırası): satıra tık,
-       detay orta alanda. Listelerin kendisi orta yüzeyde yaşar. -->
+  <!-- Hızlı gezinti: Cursor'un sol üst eylemleri gibi listenin üstünde. -->
   <nav class="side-nav">
     <button class="side-nav-item" id="side-jobs-nav" type="button">
       <svg viewBox="0 0 16 16" aria-hidden="true">
@@ -438,6 +442,8 @@
       </svg><span>Uygulamalar</span>
     </button>
   </nav>
+  <div class="side-label">Konuşmalar</div>
+  <div class="hist-body" id="hist-body"></div>
   <!-- Dip: sistem ikonları (Claude Code'un sol-alt köşesi). -->
   <div class="side-foot">
     <button id="authority" class="icon" title="Yetki" aria-label="Yetki">
@@ -552,6 +558,7 @@
 </div>
 
 <script src="/dil.js"></script>
+<script src="/menu.js"></script>
 <script src="/highlight.js"></script>
 <script src="/md.js"></script>
 <script src="/speech.js"></script>

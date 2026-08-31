@@ -52,8 +52,8 @@
         if (b && l) return "bl"; if (b && r) return "br";
         if (l) return "l"; if (r) return "r";
         if (b) return "b";
-        // Üst orta: HUD içindeyse resize etme (sürükleme).
-        if (t && !e.target.closest(".hud")) return "t";
+        // Üst orta: HUD / kamera şeridi içindeyse resize etme (sürükleme).
+        if (t && !e.target.closest(".hud, .watch-bar")) return "t";
         return "";
       };
       const CUR = { l: "ew-resize", r: "ew-resize", t: "ns-resize", b: "ns-resize",
@@ -74,7 +74,7 @@
 
     // Şerit sürükleme → HTCAPTION (Python UI thread'de SendMessage).
     if (typeof window.pywebview.api.drag === "function") {
-      const hud = document.querySelector(".hud");
+      const hud = document.querySelector(".hud") || document.querySelector(".watch-bar");
       const syncZoom = (zoomed) => {
         if (maxBtn) maxBtn.classList.toggle("zoomed", !!zoomed);
       };

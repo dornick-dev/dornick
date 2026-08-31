@@ -135,7 +135,7 @@ def test_one_broken_camera_does_not_stop_the_others(monkeypatch: pytest.MonkeyPa
 
     monkeypatch.setattr(cv2, "VideoCapture", lambda *_a: Boom([]))
     reported: list = []
-    watcher = watch.Watcher([watch.Camera(id="c1", name="bozuk")], reported.append)
+    watcher = watch.Watcher([watch.Camera(id="c1", name="bozuk", source="1")], reported.append)
 
     # Döngünün bir turu: hata yutulmalı, çağrı geri dönmeli.
     watcher._eyes["c1"].camera.every_s = 0.01
@@ -170,10 +170,39 @@ def test_a_corrupt_file_is_survived(tmp_path: Path) -> None:
 
 def test_a_disabled_camera_is_not_watched() -> None:
     watcher = watch.Watcher(
-        [watch.Camera(id="c1", name="a"), watch.Camera(id="c2", name="b", enabled=False)],
+        [watch.Camera(id="c1", name="a", source="1"),
+         watch.Camera(id="c2", name="b", source="2", enabled=False)],
         lambda _s: None,
     )
     assert list(watcher._eyes) == ["c1"]
+
+
+def test_the_builtin_webcam_is_not_watched() -> None:
+    """Dahili kamera Lens'in işi; ikinci OpenCV sohbete hareket basıyordu."""
+    watcher = watch.Watcher(
+        [watch.Camera(id="usb", name="Bilgisayar kamerası", source="0")],
+        lambda _s: None,
+    )
+    assert watcher._eyes == {}
+    assert not watcher.start()
+
+
+def test_watcher_can_start_again_after_stop(monkeypatch: pytest.MonkeyPatch) -> None:
+    """HUD kapatıp açınca izleyici yeniden dönmeli; stop Event'i set kalırdı."""
+    import cv2
+
+    monkeypatch.setattr(cv2, "VideoCapture", lambda *_a: FakeCapture(frames(40, 40, 40)))
+    watcher = watch.Watcher(
+        [watch.Camera(id="c1", name="a", source="1", every_s=0.05)],
+        lambda _s: None,
+    )
+    assert watcher.start()
+    watcher.stop()
+    assert watcher._eyes == {}
+    assert watcher.start()
+    assert watcher._thread is not None and watcher._thread.is_alive()
+    watcher.stop()
+    assert watcher._eyes == {}
 
 
 def test_the_default_question_says_what_matters() -> None:

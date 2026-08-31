@@ -16,6 +16,7 @@ thread'i istiyor ve ikisi aynı thread'i paylaşamıyor.
 
 from __future__ import annotations
 
+import sys
 import threading
 from typing import Any, Callable
 
@@ -41,6 +42,63 @@ def gorev_bildirim_metni(title: str, *, ok: bool) -> str:
     if len(ad) > 80:
         ad = ad[:79] + "…"
     return sablon.format(title=ad)
+
+
+def _xml_esc(text: str) -> str:
+    return (text.replace("&", "&amp;").replace("<", "&lt;")
+            .replace(">", "&gt;").replace('"', "&quot;"))
+
+
+def toast_xml(title: str, body: str, icon_uri: str) -> str:
+    """WinRT toast gövdesi — logo `appLogoOverride` ile solda durur."""
+    return (
+        "<toast><visual><binding template='ToastGeneric'>"
+        f"<text>{_xml_esc(title)}</text>"
+        f"<text>{_xml_esc(body)}</text>"
+        f"<image placement='appLogoOverride' hint-crop='circle' src='{_xml_esc(icon_uri)}'/>"
+        "</binding></visual></toast>"
+    )
+
+
+def _windows_toast(title: str, body: str) -> bool:
+    """WinRT toast. Başarısızsa False — çağıran pystray balonuna düşer."""
+    if sys.platform != "win32":
+        return False
+    try:
+        import subprocess
+        import tempfile
+        from pathlib import Path
+
+        from . import ortam
+        from .logo import png_path
+        from .winicon import AUMID
+
+        png = png_path()
+        if not png.exists():
+            return False
+        xml = toast_xml(title or "neo", body, png.resolve().as_uri())
+        xml_path = Path(tempfile.gettempdir()) / "neo-toast.xml"
+        xml_path.write_text(xml, encoding="utf-8")
+        q = str(xml_path).replace("'", "''")
+        app = AUMID.replace("'", "''")
+        ps = (
+            "[Windows.UI.Notifications.ToastNotificationManager, "
+            "Windows.UI.Notifications, ContentType = WindowsRuntime] | Out-Null; "
+            "[Windows.Data.Xml.Dom.XmlDocument, Windows.Data.Xml.Dom, "
+            "ContentType = WindowsRuntime] | Out-Null; "
+            "$xml = New-Object Windows.Data.Xml.Dom.XmlDocument; "
+            f"$xml.LoadXml([System.IO.File]::ReadAllText('{q}', [System.Text.Encoding]::UTF8)); "
+            "$toast = [Windows.UI.Notifications.ToastNotification]::new($xml); "
+            f"$n = [Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier('{app}'); "
+            "$n.Show($toast)"
+        )
+        done = subprocess.run(
+            ["powershell", "-NoProfile", "-NonInteractive", "-Command", ps],
+            timeout=12, **ortam.sessiz_bayraklar(),
+        )
+        return done.returncode == 0
+    except Exception:
+        return False
 
 # Tepsiden Çıkış seçildi ama ajan meşgul: yarım kalacak işin onayı.
 CIKIS_SORUSU = ("Bir iş sürüyor; çıkarsan yarım kalır (kaldığın yerden "
@@ -191,7 +249,13 @@ class Tray:
         return True
 
     def note(self, text: str) -> None:
-        """Tepsiden bildirim. Desteklenmiyorsa sessizce geçiliyor."""
+        """Tepsiden bildirim. Desteklenmiyorsa sessizce geçiliyor.
+
+        Windows 10/11 toast pystray balonunu Python yılanıyla gösteriyor;
+        WinRT bildirimi logoyu `appLogoOverride` ile basıyor.
+        """
+        if _windows_toast(self.title, text):
+            return
         if self._icon is None:
             return
         try:

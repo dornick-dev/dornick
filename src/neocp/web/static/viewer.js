@@ -18,6 +18,21 @@ const Viewer = (() => {
   const body = document.getElementById("viewer-body");
   const modes = document.getElementById("viewer-modes");
 
+  // Tam yol/adres etikette kırpık durur; tıklayınca TAMAMI panoya gider
+  // ("tam dosya yolu göremiyorum" canlı yarası — başlığın title'ı fareyle
+  // duruyor ama kopyalanamıyordu).
+  if (title) {
+    title.style.cursor = "copy";
+    title.addEventListener("click", async () => {
+      const full = title.title || title.textContent || "";
+      if (!full) return;
+      try {
+        await navigator.clipboard.writeText(full);
+        if (typeof say === "function") say(t("Yol kopyalandı ✓") + " " + full);
+      } catch { /* pano izni yok */ }
+    });
+  }
+
   Dil.ekle({
     "Kaynak": "Source", "Sahne": "Stage",
     "Kopyala": "Copy", "Kopyalandı ✓": "Copied ✓", "Kopyalanamadı": "Copy failed",
@@ -33,9 +48,18 @@ const Viewer = (() => {
     "Dosyanın başı gösteriliyor": "Showing the head of the file",
     "Sayfa yok": "No page",
     "İndir": "Download", "Yazdır / PDF": "Print / PDF",
+    "Gerçek tarayıcıda aç": "Open in your real browser",
+    "İndirildi": "Saved", "Yol kopyalandı ✓": "Path copied ✓",
+    "Tıkla — tam yolu kopyala": "Click — copy full path",
     "İndirilemedi": "Could not download",
     "Yazdırılamadı": "Could not print",
     "Adres yok": "No address",
+    "Değişiklikler": "Changes",
+    "Tarayıcı": "Browser",
+    "Yeni terminal": "New terminal",
+    "Henüz bir sayfa yok. neo bir siteye gidince burada açılır.":
+      "No page yet. When neo visits a site it opens here.",
+    "Sekmeyi kapat": "Close tab",
   });
 
   // Bu araçlar bir dosyaya dokunuyor; hangisinin hangi argümanda olduğu
@@ -53,6 +77,9 @@ const Viewer = (() => {
   let loading = null;
   let sourceText = "";   // kopyala düğmesi için: o an gösterilen ham metin
   let wrap = false;      // uzun satırlar: kaydır (false) / sar (true)
+  let lastUrl = "";
+  const termLines = [];  // {kind: "cmd"|"out"|"err", text}
+  const TERM_CAP = 120;
 
   const el = (tag, cls, text) => {
     const node = document.createElement(tag);
@@ -88,9 +115,11 @@ const Viewer = (() => {
   function page(url, label) {
     if (typeof url !== "string" || !url.trim()) return;
     dismissed = false;
+    rememberDesk(true);
     mode = "live";
     pageLabel = label || url;
     current = "url:" + url.trim();
+    lastUrl = url.trim();
     panel.hidden = false;
     document.body.classList.add("viewing");
     load(current);
@@ -153,14 +182,24 @@ const Viewer = (() => {
     row.scrollIntoView({ block: "center", behavior: "smooth" });
   }
 
+  const DESK = "neo-desk";
+  function rememberDesk(on) {
+    try {
+      if (on) localStorage.removeItem(DESK);
+      else localStorage.setItem(DESK, "off");
+    } catch { /* pywebview / gizli kip */ }
+  }
+
   function close() {
     panel.hidden = true;
     dismissed = true;
+    rememberDesk(false);
     document.body.classList.remove("viewing"); document.body.classList.remove("viewer-max");
   }
 
   function host(label, fill) {
     dismissed = false;
+    rememberDesk(true);
     current = "git:pane";
     pageLabel = label || "Git";
     mode = "git";
@@ -181,6 +220,8 @@ const Viewer = (() => {
   function toggle() {
     if (panel.hidden) {
       dismissed = false;
+      rememberDesk(true);
+      if (!current) { openPin("git:pane"); return; }
       panel.hidden = false;
       document.body.classList.add("viewing");
       load(current);
@@ -209,11 +250,28 @@ const Viewer = (() => {
 
   // --- sekmeler ---------------------------------------------------------
   //
-  // Canlı şikâyet: "birini açınca diğeri kapanıyor". Açılan her içerik bir
-  // sekme; ikincisi gelince şerit görünür ve öncekine tek tıkla dönülür.
-  const tabs = [];              // {key, mode, label} — key: yol ya da "url:…"
+  // Cursor sağ paneli: sabit güverte (Değişiklikler · Tarayıcı ·
+  // powershell) + açılan dosya sekmeleri. Şerit her zaman durur —
+  // tek dosyada da kaybolmaz.
+  const PINNED = [
+    { key: "git:pane", kind: "changes", label: () => t("Değişiklikler") },
+    { key: "desk:browser", kind: "browser", label: () => t("Tarayıcı") },
+    { key: "desk:term", kind: "term", label: () => "powershell" },
+  ];
+  const tabs = [];              // {key, mode, label} — dosya / url sekmeleri
+  function pinOn(key) {
+    if (key === "git:pane") return "git:pane";
+    if (key === "desk:term") return "desk:term";
+    if (key === "desk:browser" || String(key).startsWith("url:")) return "desk:browser";
+    return "";
+  }
   function noteTab() {
     if (!current) return;
+    // Adres, Tarayıcı sekmesinin kendisi: ayrı bir dosya sekmesi açma.
+    if (PINNED.some((p) => p.key === current) || String(current).startsWith("url:")) {
+      drawTabs();
+      return;
+    }
     const kayit = {
       key: current, mode,
       label: String(current).startsWith("url:")
@@ -224,11 +282,46 @@ const Viewer = (() => {
     else { tabs.push(kayit); if (tabs.length > 8) tabs.shift(); }
     drawTabs();
   }
+  function iconFor(kind) {
+    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("viewBox", "0 0 16 16");
+    svg.setAttribute("aria-hidden", "true");
+    const add = (tag, attrs) => {
+      const n = document.createElementNS("http://www.w3.org/2000/svg", tag);
+      for (const [k, v] of Object.entries(attrs)) n.setAttribute(k, v);
+      svg.append(n);
+    };
+    if (kind === "changes") {
+      add("circle", { cx: "5", cy: "4", r: "1.6", fill: "none", stroke: "currentColor", "stroke-width": "1.4" });
+      add("circle", { cx: "5", cy: "12", r: "1.6", fill: "none", stroke: "currentColor", "stroke-width": "1.4" });
+      add("circle", { cx: "12", cy: "8.5", r: "1.6", fill: "none", stroke: "currentColor", "stroke-width": "1.4" });
+      add("path", { d: "M5 5.6v4.8M6.6 4.6c2.2.4 4.2 1.4 5.2 3.2", fill: "none", stroke: "currentColor", "stroke-width": "1.3" });
+    } else if (kind === "browser") {
+      add("circle", { cx: "8", cy: "8", r: "5.5", fill: "none", stroke: "currentColor", "stroke-width": "1.4" });
+      add("path", { d: "M2.5 8h11M8 2.5c1.8 2.2 1.8 8.8 0 11M8 2.5c-1.8 2.2-1.8 8.8 0 11", fill: "none", stroke: "currentColor", "stroke-width": "1.2" });
+    } else if (kind === "term") {
+      add("rect", { x: "2", y: "3", width: "12", height: "10", rx: "1.4", fill: "none", stroke: "currentColor", "stroke-width": "1.4" });
+      add("path", { d: "M5 7.2 7 8.5 5 9.8M8.5 10.4H11", fill: "none", stroke: "currentColor", "stroke-width": "1.3", "stroke-linecap": "round" });
+    }
+    return svg;
+  }
   function drawTabs() {
     const serit = document.getElementById("viewer-tabs");
     if (!serit) return;
     serit.textContent = "";
-    serit.hidden = tabs.length < 2;
+    serit.hidden = false;
+    const activePin = pinOn(current);
+    for (const pin of PINNED) {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "v-tab pin" + (pin.key === current || pin.key === activePin ? " on" : "");
+      b.title = pin.label();
+      const ad = document.createElement("span");
+      ad.textContent = pin.label();
+      b.append(iconFor(pin.kind), ad);
+      b.onclick = () => openPin(pin.key);
+      serit.append(b);
+    }
     for (const sk of tabs) {
       const b = document.createElement("button");
       b.type = "button";
@@ -251,6 +344,87 @@ const Viewer = (() => {
       serit.append(b);
     }
   }
+  function openPin(key) {
+    dismissed = false;
+    rememberDesk(true);
+    if (key === "desk:browser" && lastUrl) {
+      page(lastUrl);
+      return;
+    }
+    if (key === current && !panel.hidden) return;
+    if (key === "git:pane") {
+      host(t("Değişiklikler"), (el) => {
+        if (typeof GitBar !== "undefined") GitBar.paint(el);
+      });
+      return;
+    }
+    current = key;
+    mode = key === "desk:term" ? "term" : "live";
+    panel.hidden = false;
+    document.body.classList.add("viewing");
+    load(key);
+  }
+  function psPrefix() {
+    const bar = document.getElementById("git-bar");
+    const cwd = (bar && bar.dataset && bar.dataset.root) || "";
+    return cwd ? ("PS " + cwd + "> ") : "PS> ";
+  }
+  function paintTerm() {
+    body.textContent = "";
+    const pane = el("div", "desk-term");
+    pane.append(el("div", "desk-term-name", "powershell"));
+    const ps = psPrefix();
+    for (const line of termLines) {
+      const row = el("div", "desk-term-line " + line.kind);
+      if (line.kind === "cmd") {
+        row.append(el("span", "desk-ps", ps), el("span", "", line.text));
+      } else {
+        row.textContent = line.text;
+      }
+      pane.append(row);
+    }
+    const prompt = el("div", "desk-term-line cmd");
+    prompt.append(el("span", "desk-ps", ps), el("span", "desk-cursor", ""));
+    pane.append(prompt);
+    body.append(pane);
+    body.scrollTop = body.scrollHeight;
+  }
+  function paintBrowserEmpty() {
+    body.textContent = "";
+    body.append(el("p", "viewer-blank", t("Henüz bir sayfa yok. neo bir siteye gidince burada açılır.")));
+  }
+  function shellOut(e) {
+    const d = e.detail;
+    if (d && typeof d === "object" && d.output) return String(d.output).trim();
+    if (typeof d === "string" && d.trim()) return d.trim();
+    return String(e.summary || "").trim();
+  }
+  function feed(e) {
+    if (!e) return;
+    if (e.tool === "shell" || e.tool === "kos") {
+      const cmd = (e.input && (e.input.command || e.input.cmd)) || "";
+      const started = e.ms == null && e.summary == null && !e.detail;
+      if (cmd && started) {
+        termLines.push({ kind: "cmd", text: String(cmd).trim() });
+      } else {
+        const trimmed = String(cmd).trim();
+        if (cmd && !termLines.some((l) => l.kind === "cmd" && l.text === trimmed)) {
+          termLines.push({ kind: "cmd", text: trimmed });
+        }
+        const text = shellOut(e);
+        if (text) termLines.push({ kind: e.error ? "err" : "out", text });
+      }
+      while (termLines.length > TERM_CAP) termLines.shift();
+      if (!panel.hidden) {
+        if (started && current !== "desk:term") openPin("desk:term");
+        else if (current === "desk:term") paintTerm();
+      }
+    }
+    if (e.tool === "browser" && e.input && e.input.url) {
+      const act = e.input.action;
+      if (!act || act === "open" || act === "go") lastUrl = String(e.input.url);
+    }
+  }
   function dropTab(key) {
     const i = tabs.findIndex((s) => s.key === key);
     if (i < 0) return;
@@ -258,19 +432,35 @@ const Viewer = (() => {
     if (key === current) {
       const nxt = tabs[Math.min(i, tabs.length - 1)];
       if (nxt) { mode = nxt.mode; current = nxt.key; load(nxt.key); return; }
-      close();
+      openPin("git:pane");
+      return;
     }
     drawTabs();
   }
 
   async function load(path) {
     noteTab();
+    // Yol etiketi: `hidden = true` bir daha hiç açılmıyordu — dosya/adres
+    // başlıkta hiç görünmüyordu ("tam dosya yolu göremiyorum", 31.08).
+    // Sabit güvertelerde (git/terminal) gizli kalır, içerikte görünür.
+    title.hidden = true;
     // Git panosu: gövdeyi GitBar çizer; dosya API'sine gitme.
     if (path === "git:pane") {
-      title.textContent = pageLabel || "Git";
-      title.title = pageLabel || "Git";
+      title.textContent = pageLabel || t("Değişiklikler");
+      title.title = pageLabel || t("Değişiklikler");
       modes.textContent = "";
       if (typeof GitBar !== "undefined") GitBar.paint(body);
+      return;
+    }
+    if (path === "desk:term") {
+      modes.textContent = "";
+      paintTerm();
+      return;
+    }
+    if (path === "desk:browser") {
+      modes.textContent = "";
+      if (lastUrl) { page(lastUrl, pageLabel); return; }
+      paintBrowserEmpty();
       return;
     }
     // Adres kipi: sunucunun servis ettiği sayfa taze çekilip yalıtılmış
@@ -278,7 +468,8 @@ const Viewer = (() => {
     if (typeof path === "string" && path.startsWith("url:")) {
       const url = path.slice(4);
       title.textContent = pageLabel || url;
-      title.title = url;
+      title.title = url.startsWith("/") ? (location.origin + url) : url;
+      title.hidden = false;
       modes.textContent = "";
       const token = {};
       loading = token;
@@ -316,6 +507,7 @@ const Viewer = (() => {
 
     title.textContent = label(path) || "—";
     title.title = path || "";
+    title.hidden = !path;
     if (!path) { blank(t("Henüz bir şeye dokunulmadı")); return; }
 
     // Aynı dosya art arda birkaç kez tetiklenebiliyor; son istek kazanmalı.
@@ -346,10 +538,12 @@ const Viewer = (() => {
     sourceText = data.text || "";
     drawModes(data);
 
-    // Başlıkta ad + boyut; tam yol üstüne gelince (title) duruyor.
+    // Başlıkta ad + boyut; tam yol üstüne gelince (title) duruyor,
+    // tıklayınca panoya kopyalanıyor.
     const size = human(data.size);
     title.textContent = (label(data.path) || "—") + (size ? " · " + size : "");
     title.title = data.path || "";
+    title.hidden = !data.path;
 
     // Medya: "İKİLİ DOSYA" yazmak bir görseli göstermemek demekti. Görsel,
     // ses, video ve PDF ham uçtan (`/api/raw`) gerçekten açılıyor.
@@ -698,29 +892,28 @@ const Viewer = (() => {
   document.getElementById("eye").addEventListener("click", toggle);
   document.getElementById("viewer-close").addEventListener("click", close);
 
-  // Panel kenarından sürükleyip genişletme. Genişlik tek bir CSS
-  // değişkeninde (`--viewer-w`); onu değiştirmek hem paneli hem de sohbet
-  // sütununun kaymasını birlikte güncelliyor. Sınırlar: çok darda başlık
-  // okunmuyor, çok genişte sohbete yer kalmıyor.
+  // Panel kenarından sürükleyip genişletme. Tek sağ sütun genişliği
+  // `--mind-w-user` (beyin tutamacıyla aynı): sohbet `--right-w` ile kayar.
   (() => {
     const grip = document.getElementById("viewer-grip");
     if (!grip) return;
-    const MIN = 320;
+    const MIN = 240;
     const root = document.documentElement;
     let active = false;
     let originX = 0;
     let originW = 0;
 
-    const width = () => panel.getBoundingClientRect().width;
+    const width = () => {
+      const col = document.getElementById("right-col");
+      return (col || panel).getBoundingClientRect().width;
+    };
 
     const move = (e) => {
       if (!active) return;
-      // Sağ kenarı (beyin payı) sabit: sola çekince genişler. innerWidth -
-      // clientX, panel right:0 varsayar; görüntüleyici beynin SOLUNDA
-      // (right: mind-w) durunca tutunca tüm sola kaçıyordu.
-      const max = Math.min(window.innerWidth - 200, window.innerWidth * 0.7);
+      // Sağ kenar sabit: sola çekince sütun genişler (origin delta).
+      const max = Math.min(420, window.innerWidth * 0.32);
       const w = Math.max(MIN, Math.min(max, originW + originX - e.clientX));
-      root.style.setProperty("--viewer-w", Math.round(w) + "px");
+      root.style.setProperty("--mind-w-user", Math.round(w) + "px");
     };
 
     const stop = () => {
@@ -730,6 +923,10 @@ const Viewer = (() => {
       window.removeEventListener("pointerup", stop);
       window.removeEventListener("pointercancel", stop);
       window.removeEventListener("blur", stop);
+      try {
+        const w = parseInt(getComputedStyle(root).getPropertyValue("--mind-w-user"), 10);
+        if (w) localStorage.setItem("neo-mind-w", String(w));
+      } catch { /* dosya:// */ }
     };
 
     grip.addEventListener("pointerdown", (e) => {
@@ -740,19 +937,40 @@ const Viewer = (() => {
       try { grip.setPointerCapture(e.pointerId); } catch { /* eski motor */ }
       window.addEventListener("pointercancel", stop);
       window.addEventListener("blur", stop);
-      // Sürüklemeye başlarken mevcut genişliği piksele sabitle: değişken
-      // hâlâ `min(...)` formülündeyse ilk hareket sıçrardı.
-      root.style.setProperty("--viewer-w", Math.round(originW) + "px");
+      root.style.setProperty("--mind-w-user", Math.round(originW) + "px");
       document.body.classList.add("viewer-resize");
       window.addEventListener("pointermove", move);
       window.addEventListener("pointerup", stop);
     });
   })();
 
-  // Canlı sayfa: indir (blob) + yazdır (popup yok — pywebview dostu).
+  // Uygulama içi bir yolu kullanıcının GERÇEK tarayıcısında açar. Adresi
+  // (gerçek portu) sunucu kurar — ajanın 8765 tahmini canlıda "bağlantı
+  // reddedildi" ile bitmişti; pencere içinde window.open da güvenilmez.
+  async function openOutside(path) {
+    const p = String(path || "");
+    if (!p.startsWith("/")) { window.open(p, "_blank", "noopener"); return; }
+    let out = null;
+    try {
+      out = await (await fetch("/api/disari-ac", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ path: p }),
+      })).json();
+    } catch { /* sunucu cevap vermedi */ }
+    if (!out || !out.ok) {
+      if (typeof say === "function") say(t("Açılamadı") + (out && out.error ? ": " + out.error : ""), true);
+    }
+  }
+
+  // Canlı sayfa: gerçek tarayıcıda aç + indir + yazdır.
   function pageExportActs(url) {
     const wrap = el("span", "viewer-export");
     const base = String(url).split("?")[0];
+    const disari = el("button", "viewer-act", t("Tarayıcıda aç"));
+    disari.type = "button";
+    disari.title = t("Gerçek tarayıcıda aç");
+    disari.addEventListener("click", (ev) => { ev.stopPropagation(); openOutside(base); });
     const dl = el("button", "viewer-act", t("İndir"));
     dl.type = "button";
     dl.title = t("İndir") + " (.html)";
@@ -768,13 +986,32 @@ const Viewer = (() => {
       ev.stopPropagation();
       printPage(base);
     });
-    wrap.append(dl, pr);
+    wrap.append(disari, dl, pr);
     return wrap;
   }
 
   async function downloadArtifact(url) {
     const base = String(url || "").split("?")[0];
     if (!base) throw new Error(t("Adres yok"));
+    // Artifact: dosyayı SUNUCU kaydeder (İndirilenler) ve tam yol söylenir.
+    // Pencere WebView2'de blob + <a download> sessizce ölüyordu; bu yol hem
+    // pencerede hem tarayıcıda aynı ve kullanıcı dosyanın NEREDE olduğunu
+    // görüyor ("indiremiyorum / yolu göremiyorum" canlı yarası).
+    if (/^\/artifact\//.test(base)) {
+      let out = null;
+      try {
+        out = await (await fetch("/api/artifact/indir", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ path: base }),
+        })).json();
+      } catch { /* sunucu cevap vermedi; blob yoluna düş */ }
+      if (out && out.ok && out.path) {
+        if (typeof say === "function") say(t("İndirildi") + ": " + out.path);
+        return;
+      }
+      if (out && out.error) throw new Error(out.error);
+    }
     const res = await fetch(base + (base.includes("?") ? "&" : "?") + "download=1",
                             { cache: "no-store" });
     if (!res.ok) throw new Error(t("İndirilemedi") + " (" + res.status + ")");
@@ -838,8 +1075,23 @@ const Viewer = (() => {
     return css + src;
   }
 
+  function bootDesk() {
+    if (innerWidth < 1021) return;
+    try { if (localStorage.getItem(DESK) === "off") return; } catch { /* */ }
+    openPin("desk:term");
+  }
+  bootDesk();
+  window.addEventListener("resize", () => {
+    if (innerWidth >= 1021 && panel.hidden && !dismissed &&
+        (function wanted() {
+          try { return localStorage.getItem(DESK) !== "off"; } catch { return true; }
+        })()) {
+      openPin("desk:term");
+    }
+  });
+
   return { present, page, showing, watch, refresh, show, open, close, toggle,
-           host, hosted, downloadArtifact, printPage };
+           host, hosted, downloadArtifact, printPage, openOutside, feed, openPin };
 })();
 
 // Büyüt / yerine dön: görüntüleyici sağ bölgenin tamamını kaplar (beyin
@@ -850,5 +1102,15 @@ const Viewer = (() => {
   if (!dugme) return;
   dugme.addEventListener("click", () => {
     document.body.classList.toggle("viewer-max");
+  });
+})();
+
+(() => {
+  const add = document.getElementById("viewer-add");
+  if (!add) return;
+  add.title = t("Yeni terminal");
+  add.setAttribute("aria-label", t("Yeni terminal"));
+  add.addEventListener("click", () => {
+    if (typeof Viewer !== "undefined" && Viewer.openPin) Viewer.openPin("desk:term");
   });
 })();

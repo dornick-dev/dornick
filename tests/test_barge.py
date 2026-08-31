@@ -40,7 +40,7 @@ def test_a_normal_request_is_not_a_stop() -> None:
 def test_closing_words_end_the_conversation() -> None:
     for phrase in (
         "kapat", "görüşürüz", "sonra konuşuruz", "iyi geceler",
-        "tamam görüşürüz", "teşekkürler kapat", "hoşça kal",
+        "tamam görüşürüz", "teşekkürler kapat", "hoşça kal", "hoşça kalın",
     ):
         assert _is_close(phrase), phrase
 
@@ -367,9 +367,9 @@ def test_barge_loud_sits_above_the_echo_floor() -> None:
     from neocp import ear
 
     e = ear.Ear(listener=_FakeListener(""), heard=lambda _h: None)
-    e._echo.extend([0.010] * 12)
-    assert not e._barge_loud(0.020)
-    assert e._barge_loud(0.040)
+    e._echo.extend([0.035] * 12)
+    assert not e._barge_loud(0.040)
+    assert e._barge_loud(0.080)
 
 
 def test_desktop_hushes_as_soon_as_energy_trips() -> None:
@@ -380,3 +380,104 @@ def test_desktop_hushes_as_soon_as_energy_trips() -> None:
     source = inspect.getsource(desktop._open_ear)
     assert "on_hush" in source
     assert '{"type": "hush"}' in source
+
+
+def test_tts_onset_on_a_quiet_floor_is_not_barge() -> None:
+    """Hoparlör henüz duyulmamışken oda tabanı ~0.01, TTS 0.08 —
+    kendi sesini kesiyordu."""
+    from neocp import ear
+
+    e = ear.Ear(listener=_FakeListener(""), heard=lambda _h: None)
+    e._echo.extend([0.006] * ear.ECHO_PRIME)
+    assert not e._barge_loud(0.08)
+
+
+def test_whisper_goodbye_after_tts_is_echo_not_a_request() -> None:
+    """Canlı: merhaba'dan sonra hoparlör sustu, Whisper 'hoşça kalın'
+    bastı, ajan veda etti — kimse veda etmemişti."""
+    from neocp import ear
+
+    heard = []
+    e = ear.Ear(listener=_FakeListener("hoşça kalın."),
+                 heard=lambda h: heard.append(h), open=True)
+    e.speaking(True, "Merhaba Fatih. Ben Neo.")
+    e.speaking(False)
+    e._deaf_until = 0.0
+    e._settle(object(), deaf=False, echo=True)
+    assert heard == []
+
+
+def test_a_garbled_tts_fragment_is_not_a_barge_request() -> None:
+    """Enerji eşiği TTS'i kesince Whisper 'soni' yazıyordu — araya girdi."""
+    from neocp import ear
+
+    heard = []
+    e = ear.Ear(listener=_FakeListener("soni"),
+                heard=lambda h: heard.append(h))
+    e._barge_open = True
+    e._tts_text = "Merhaba Fatih. Ben Neo; kod, SCADA işleri"
+    e._settle(object(), deaf=True)
+
+    assert heard == []
+    assert e._barge_open is False
+
+
+def test_a_real_yes_during_echo_still_lands() -> None:
+    from neocp import ear
+
+    heard = []
+    e = ear.Ear(listener=_FakeListener("evet"),
+                heard=lambda h: heard.append(h), open=True)
+    e.speaking(True, "kamerayı açmamı ister misin")
+    e.speaking(False)
+    e._deaf_until = 0.0
+    e._settle(object(), deaf=False, echo=True)
+    assert len(heard) == 1
+    assert heard[0].command == "evet"
+
+
+def test_garbled_how_are_you_after_tts_is_echo() -> None:
+    """Canlı: hoparlör 'Sen nasılsın; bugün nasıl gidiyor?', Whisper
+    'sende sos' yazdı — iki kelime, bir akraba, gerisi çöp."""
+    from neocp import ear
+
+    tts = "İyiyim, buradayım. Sen nasılsın; bugün nasıl gidiyor?"
+    assert ear.echo_of_self("sende sos", tts)
+    heard = []
+    e = ear.Ear(listener=_FakeListener("sende sos"),
+                heard=lambda h: heard.append(h), open=True)
+    e.speaking(True, tts)
+    e.speaking(False)
+    e._deaf_until = 0.0
+    e._settle(object(), deaf=False, echo=True)
+    assert heard == []
+
+
+def test_a_real_reply_is_not_echo_junk_just_because_it_is_one_word() -> None:
+    """Yankı penceresinde 'anladım' tek kelime diye düşüyordu — duymadı."""
+    from neocp import ear
+
+    heard = []
+    e = ear.Ear(listener=_FakeListener("anladım"),
+                heard=lambda h: heard.append(h), open=True)
+    e.speaking(True, "kamerayı açmamı ister misin")
+    e.speaking(False)
+    e._deaf_until = 0.0
+    e._settle(object(), deaf=False, echo=True)
+    assert len(heard) == 1
+    assert heard[0].command == "anladım"
+
+
+def test_ok_is_not_echo_of_unrelated_tts() -> None:
+    from neocp import ear
+
+    assert not ear.echo_of_self("ok", "merhaba")
+
+
+def test_tail_loud_ignores_decaying_speaker_but_hears_the_mic() -> None:
+    from neocp import ear
+
+    e = ear.Ear(listener=_FakeListener(""), heard=lambda _h: None)
+    e._echo.extend([0.035] * ear.ECHO_PRIME)
+    assert not e._tail_loud(0.012)
+    assert e._tail_loud(0.060)

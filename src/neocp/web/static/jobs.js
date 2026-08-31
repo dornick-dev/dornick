@@ -28,6 +28,7 @@
     "Yükleniyor…": "Loading…",
     "Görev yok": "No tasks",
     "detay": "detail",
+    "Aç": "Open",
     "Kaydet": "Save",
     "Sil": "Delete",
     "Ad": "Name",
@@ -268,6 +269,63 @@
     return task.last_status === "koşuyor" && !!task.last_child_id;
   }
 
+  async function acGorev(task) {
+    selectedId = task.id;
+    tab = "runs";
+    await loadRuns(task.id);
+    if (task.kind_ui === "automation" && task.workflow_id) await loadWorkflow(task.workflow_id);
+    else workflow = null;
+    render();
+  }
+
+  async function kosuDegistir(task) {
+    if (taskRunning(task)) {
+      const cid = task.last_child_id;
+      if (!cid) return;
+      let res = null;
+      try {
+        res = await (await fetch("/api/gorevler/durdur", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id: "c:" + cid }),
+        })).json();
+      } catch { res = null; }
+      if (res && res.ok === false && typeof toast === "function") {
+        toast(res.error || t("Durdurulamadı"));
+      }
+      await loadRuns(task.id);
+    } else {
+      await fetch("/api/jobs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "run", id: task.id }),
+      });
+      await loadRuns(task.id);
+    }
+    await load();
+    document.dispatchEvent(new Event("neo-side-tazele"));
+  }
+
+  async function silGorev(task) {
+    if (!confirm(t("Görevi silmek istediğine emin misin?"))) return;
+    if (await saveTask({ action: "remove", id: task.id })) {
+      selectedId = null;
+      tab = "runs";
+      document.dispatchEvent(new Event("neo-side-tazele"));
+    }
+  }
+
+  function gorevMenu(task, ev) {
+    if (typeof Menu === "undefined") return;
+    const kosuyor = taskRunning(task);
+    Menu.ac(ev, [
+      { ad: "Aç", is: () => { if (panel.hidden) show(task.id); else acGorev(task); } },
+      { ad: kosuyor ? "Durdur" : "Çalıştır", is: () => kosuDegistir(task) },
+      { ayrac: true },
+      { ad: "Sil", risk: true, is: () => silGorev(task) },
+    ]);
+  }
+
   function rowDotClass(task) {
     if (taskRunning(task)) return "live";
     if (!task.enabled) return "off";
@@ -318,14 +376,8 @@
       } else if (!task.enabled) {
         row.append(el("span", "jobs-row-status", t("Durduruldu")));
       }
-      row.onclick = async () => {
-        selectedId = task.id;
-        tab = "runs";
-        await loadRuns(task.id);
-        if (task.kind_ui === "automation" && task.workflow_id) await loadWorkflow(task.workflow_id);
-        else workflow = null;
-        render();
-      };
+      row.onclick = async () => { await acGorev(task); };
+      row.addEventListener("contextmenu", (ev) => gorevMenu(task, ev));
       list.append(row);
     }
     const addRow = el("button", "jobs-row jobs-row-add", t("＋ Yeni görev"));
@@ -378,35 +430,8 @@
     toggle.type = "button";
     toggle.onclick = async () => {
       toggle.disabled = true;
-      if (kosuyor) {
-        toggle.textContent = t("Durduruluyor…");
-        const cid = task.last_child_id;
-        if (!cid) {
-          toggle.disabled = false;
-          toggle.textContent = t("Durdur");
-          return;
-        }
-        let res = null;
-        try {
-          res = await (await fetch("/api/gorevler/durdur", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ id: "c:" + cid }),
-          })).json();
-        } catch { res = null; }
-        if (res && res.ok === false && typeof toast === "function") {
-          toast(res.error || t("Durdurulamadı"));
-        }
-        await loadRuns(task.id);
-      } else {
-        await fetch("/api/jobs", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ action: "run", id: task.id }),
-        });
-        await loadRuns(task.id);
-      }
-      await load();
+      if (kosuyor) toggle.textContent = t("Durduruluyor…");
+      await kosuDegistir(task);
     };
     acts.append(toggle);
     head.append(acts);
@@ -907,13 +932,7 @@
     };
     const del = el("button", "jobs-act jobs-act-risk", t("Sil"));
     del.type = "button";
-    del.onclick = async () => {
-      if (!confirm(t("Görevi silmek istediğine emin misin?"))) return;
-      if (await saveTask({ action: "remove", id: task.id })) {
-        selectedId = null;
-        tab = "runs";
-      }
-    };
+    del.onclick = () => silGorev(task);
     acts.append(save, del);
     box.append(acts);
     return box;
@@ -1033,5 +1052,6 @@
     openInner();
   }
 
-  window.JobsPanel = { open, openLive, close, load, toggle, refreshLive, show };
+  window.JobsPanel = { open, openLive, close, load, toggle, refreshLive, show,
+                       menu: gorevMenu };
 })();

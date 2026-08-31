@@ -192,6 +192,10 @@ async def test_usage_events_carry_turn_and_session_totals(
     assert son["oturum"] == son["tur"]
     # Fiyat bilinmiyor: None — çip token sayısına düşer, uydurma dolar yok.
     assert son["fiyat"] is None
+    # Bağlam kutusunun kalem kalem kırılımı aynı olayda gider.
+    assert {p["id"] for p in son["kirilim"]} == {
+        "sistem", "arac", "ruh", "yetenek", "mcp", "yardimci", "sohbet"}
+    assert sum(p["n"] for p in son["kirilim"]) == 1400
 
 
 async def test_a_new_user_turn_resets_the_turn_total_not_the_session(

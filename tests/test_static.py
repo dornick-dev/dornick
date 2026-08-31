@@ -20,6 +20,83 @@ HTML = (STATIC / "index.html").read_text(encoding="utf-8")
 APP_JS = (STATIC / "app.js").read_text(encoding="utf-8")
 
 
+def test_default_theme_is_dark() -> None:
+    """Varsayılan tema KOYU (kullanıcı kararı, 31.08).
+
+    Aydınlık ancak bilinçli seçilmişse (`neo-theme=light`) uygulanır;
+    kayıt yoksa ya da localStorage patlarsa koyu kalır.
+    """
+    for name in ("index.html", "watch.html"):
+        page = (STATIC / name).read_text(encoding="utf-8")
+        assert 'tema==="light"' in page, name
+        assert 'tema!=="dark"' not in page, name
+
+
+def test_transcript_is_drawn_once_per_session() -> None:
+    """Sürdürülen konuşma İKİ KEZ çizilmesin.
+
+    session_reset hem doğrudan loadTranscript hem loadState üzerinden
+    (snapshot) döküm yüklüyordu; her mesaj ekranda iki kez görünüyordu
+    (canlı yara, 31.08). Oturum başına tek çizim koruması burada.
+    """
+    assert "let transcriptFor" in APP_JS
+    assert re.search(r"if \(id && transcriptFor === id\) return;", APP_JS)
+
+
+def test_recall_animation_survives_missing_graph_nodes() -> None:
+    """Hatırlama yürüyüşü, grafikte OLMAYAN düğümlerde de oynar.
+
+    Graf her kovadan en yeni 24 kaydı çiziyor; eski bir anıya giden iz
+    süzülüp boşalıyor ve elektrik animasyonu hiç görünmüyordu (canlı,
+    31.08). Bilinmeyen kimliğe hayalet düğüm açılır.
+    """
+    scene = (STATIC / "scene.js").read_text(encoding="utf-8")
+    assert "ghost: true" in scene
+    assert "insideBrain(ghost.id)" in scene
+    # Arka uç adım etiketi taşıyor ki hayalet düğüm adıyla yansın.
+    tools_py = (STATIC.parents[1] / "mind" / "tools.py").read_text(encoding="utf-8")
+    assert "_adim_etiket" in tools_py
+
+
+def test_artifact_reaches_real_browser_and_disk() -> None:
+    """Artifact kartı/görüntüleyicisi: gerçek tarayıcıda aç + kaydedilen yol.
+
+    Pencere WebView2'de blob indirmesi sessizce ölüyor, window.open yanlış
+    porta gidiyordu ("indiremiyorum / tarayıcıda açamıyorum", 31.08).
+    Gerçek adresi yalnız sunucu bilir; indirme diske sunucudan yazılır.
+    """
+    viewer = (STATIC / "viewer.js").read_text(encoding="utf-8")
+    assert "/api/disari-ac" in viewer
+    assert "/api/artifact/indir" in viewer
+    assert "Tarayıcıda aç" in APP_JS   # kartta da düğme var
+
+
+def test_viewer_fullscreen_takes_whole_window() -> None:
+    """⤢ gerçek tam ekran: sağ sütun rail hariç pencereyi kaplar (31.08)."""
+    assert re.search(
+        r"body\.viewer-max\.viewing \{[^}]*--mind-w:\s*calc\(100vw - var\(--rail-w\)\)",
+        CSS,
+    )
+
+
+def test_ambient_hides_the_brain_header() -> None:
+    """Beyin ortadayken BEYİN/arama başlığı HİÇ çizilmez.
+
+    Yüzen satır sohbet balonlarının ve ikon hapının üstüne biniyordu
+    ("beyinde arama nerede", "konuşma yapınca burası böyle oluyor" — 31.08).
+    Kullanıcı kararı: arama, beyin sağ panele geldiğinde var. Beyni aç/kapa
+    ikon hapındaki ◍ — her durumda görünür bir anahtar.
+    """
+    ambient = "body.mind-on:not(.mind-off):not(.viewing):not(.orch-open):not(.cam-open)"
+    head = re.search(re.escape(ambient) + r" \.mind-head \{[^}]*display:\s*none", CSS)
+    assert head
+    # ◍ artık beyin açıkken gizlenmiyor (renk değiştiriyor; dar ekranın
+    # beyni tümden gizleyen kuralı ayrı ve yerinde) ve tıklaması iki yönlü.
+    assert not re.search(r"body:not\(\.mind-off\) \.mind-open \{ display: none", CSS)
+    assert re.search(r"body:not\(\.mind-off\) \.mind-open \{ color", CSS)
+    assert 'uygula(document.body.classList.contains("mind-off"))' in APP_JS
+
+
 def test_hidden_attribute_is_forced() -> None:
     """`hidden` her zaman kazanmalı.
 
@@ -49,8 +126,32 @@ def test_no_broken_color_values() -> None:
             assert re.fullmatch(r"[0-9a-fA-F]+", digits), f"onaltılık olmayan: {value}"
 
 
+def test_user_questions_scroll_away_with_the_thread() -> None:
+    """Soru Cursor gibi üste yapışmasın: kaydırınca sohbetle birlikte gider.
+
+    72px'lik üst maske + sticky başlık, alt alta sorularda 'o sorunun
+    cevabına gelince üste o soru çıkıyor' hissini doğuruyordu.
+    """
+    for body in re.findall(r"\.line\.user[^{]*\{([^}]*)\}", CSS):
+        assert "sticky" not in body
+    head = re.search(r"^\.acts-head \{([^}]*)\}", CSS, re.M)
+    assert head and "sticky" not in head.group(1)
+    stream = re.search(r"^\.stream \{([^}]*)\}", CSS, re.M)
+    assert stream, ".stream kuralı yok"
+    mask = re.search(r"mask-image:\s*linear-gradient\(([^)]*)\)", stream.group(1))
+    assert mask and "12px" in mask.group(1)
+    assert "72px" not in mask.group(1)
+
+
 def test_every_referenced_asset_exists() -> None:
+    from neocp.logo import png_path
     for name in re.findall(r'(?:href|src)="/([^"]+)"', HTML):
+        # Önbellek kırıcı sorgu (`app.css?v=...`) dosya adının parçası değil.
+        name = name.split("?", 1)[0]
+        if name == "logo.png":
+            data = png_path().read_bytes()
+            assert data[:8] == b"\x89PNG\r\n\x1a\n"
+            continue
         assert (STATIC / name).exists(), name
 
 
@@ -611,21 +712,75 @@ def test_the_brain_fits_the_pane_hole() -> None:
 def test_everything_that_floats_shares_one_column() -> None:
     """Sohbet, yazma satırı, önizleme ve ekler aynı sütunda.
 
-    Ayrı ayrı konumlandırıldıklarında biri diğerinin üstüne biniyordu:
-    kamera önizlemesi cevabın üzerine oturmuştu ve "hiçbir şey olmuyor"
-    gibi görünüyordu. Sohbet artık `.stream-wrap` içinde; gut/aside orada.
+    Ayrı ayrı konumlandırıldıklarında biri diğerinin üstüne biniyordu.
+    Sütun artık left:rail / right:mind ile sabit; gut kayması sol listeyi
+    ezmesin.
     """
-    wrap = re.search(r"^\.stream-wrap \{(.*?)\n\}", CSS, re.S | re.M)
-    assert wrap and "var(--gut)" in wrap.group(1) and "var(--aside)" in wrap.group(1)
-    for selector in (".entry", ".lens", ".drops", ".shot"):
-        rule = re.search(rf"^{re.escape(selector)} \{{(.*?)\n\}}", CSS, re.S | re.M)
+    css = (STATIC / "app.css").read_text(encoding="utf-8")
+    wrap = re.search(r"^\.stream-wrap \{(.*?)\n\}", css, re.S | re.M)
+    assert wrap and "var(--rail-w)" in wrap.group(1) and "var(--mind-w)" in wrap.group(1)
+    shell = re.search(r"^\.compose-shell \{(.*?)\n\}", css, re.S | re.M)
+    assert shell and "var(--rail-w)" in shell.group(1) and "var(--mind-w)" in shell.group(1)
+    for selector in (".lens", ".drops", ".shot"):
+        rule = re.search(rf"^{re.escape(selector)} \{{(.*?)\n\}}", css, re.S | re.M)
         assert rule, f"{selector} kuralı bulunamadı"
-        assert "var(--gut)" in rule.group(1), selector
+        assert "var(--rail-w)" in rule.group(1), selector
 
 
 def test_the_column_does_not_sit_under_the_viewer() -> None:
     """Görüntüleyici de sağda; ikisi aynı yerde olunca sohbet kayboluyor."""
     assert re.search(r"body\.viewing[^{]*\{\s*--gut:", CSS)
+
+
+def test_the_right_desk_has_cursor_style_workspace_tabs() -> None:
+    """Sağ panel Cursor gibi: Değişiklikler · Tarayıcı · powershell
+    her zaman durur; + yeni terminal, ⤢ büyüt, × kapat."""
+    viewer = (STATIC / "viewer.js").read_text(encoding="utf-8")
+    html = HTML
+    assert 'id="viewer-tabs"' in html
+    assert 'id="viewer-add"' in html
+    assert html.find('id="viewer-tabs"') < html.find('id="viewer-add"')
+    assert html.find("viewer-head") < html.find('id="viewer-tabs"')
+    assert "desk:term" in viewer and "desk:browser" in viewer
+    assert "git:pane" in viewer
+    assert "function paintTerm(" in viewer
+    assert "function feed(" in viewer
+    assert "Viewer.feed" in APP_JS
+    assert "v-tab pin" in viewer
+    assert ".v-tab.pin" in CSS
+    assert ".desk-term" in CSS
+    assert "function shellOut(" in viewer
+    assert "d.output" in viewer
+    assert "bootDesk" in viewer
+    assert 'openPin("desk:term")' in viewer
+    assert "neo-desk" in viewer
+    # Masa + beyin tek sağ sütunda (yan yana iki fixed pencere değil).
+    rc = html.find('id="right-col"')
+    vw = html.find('id="viewer"')
+    mn = html.find('id="mind"')
+    assert 0 <= rc < vw < mn
+    assert "not(.viewing) .right-col" in CSS
+    assert "--viewer-h-user" in CSS
+    assert "min(420px, 32vw, var(--mind-w-user" in CSS
+    assert re.search(r"\.right-col \{[^}]*background:\s*transparent", CSS, re.S)
+    assert re.search(r"\.compose-shell \{[^}]*z-index:\s*25", CSS, re.S)
+
+
+def test_compose_shell_keeps_entry_and_dock_from_overlapping() -> None:
+    """Yazma satırı ile model/yetki çipleri üst üste binmesin.
+
+    Eski düzen entry/dock'u position:fixed bırakıp compose-shell grid'ine
+    de koyuyordu; çipler textarea'nın içine yığılıyordu.
+    """
+    css = CSS
+    assert 'id="compose-shell"' in HTML
+    shell = re.search(r"\.compose-shell \{(.*?)\n\}", css, re.S)
+    assert shell and "flex-direction: column" in shell.group(1)
+    entry = re.search(r"^\.entry \{(.*?)\n\}", css, re.S | re.M)
+    assert entry and "position: fixed" not in entry.group(1)
+    dock = re.search(r"^\.dock \{(.*?)\n\}", css, re.S | re.M)
+    assert dock and "position: fixed" not in dock.group(1)
+    assert "display: flex" in dock.group(1)
 
 
 # -- organlar ----------------------------------------------------------
@@ -754,7 +909,7 @@ def test_the_status_line_is_modeled_not_decorative() -> None:
     esanlamli rotasyonu kalkti — ayni durum ayni etiket.
     """
     assert "function since(started)" in APP_JS
-    assert re.search(r"mull\(\) \+ since\(", APP_JS)
+    assert "workHead(mull()" in APP_JS
     assert "const MULL" not in APP_JS, "rastgele kelime havuzu geri gelmis"
     assert 'lastDelta === "text"' in APP_JS
     assert 'lastDelta === "thinking"' in APP_JS
@@ -841,6 +996,13 @@ def test_playback_tells_the_ear_which_sentence_is_playing() -> None:
     SPEECH_JS = (STATIC / "speech.js").read_text(encoding="utf-8")
     assert "play(await item.audio, item.text)" in SPEECH_JS
     assert re.search(r"JSON.stringify\(\{ on, text:", SPEECH_JS)
+
+
+def test_playback_stays_deaf_between_queued_sentences() -> None:
+    """Cümle bitince kulağı açmak, sıradaki cümle üretilirken yankıyı
+    yeni söz yapıyordu."""
+    SPEECH_JS = (STATIC / "speech.js").read_text(encoding="utf-8")
+    assert SPEECH_JS.count("if (!queue.length) deafen(false)") >= 2
 
 
 def test_model_text_is_always_visible_never_folded() -> None:
@@ -1056,12 +1218,15 @@ def test_drawings_open_in_the_isolated_frame() -> None:
 
 
 def test_viewer_left_grip_resizes_from_the_panel_edge() -> None:
-    """Git/görüntüleyici sol kenarı: innerWidth - x, panel right:0 sanır.
-    Beynin solunda (right: mind-w) tutunca ilk harekette sola kaçıyordu."""
+    """Sol tutamak tek sağ sütun genişliğini yazar (--mind-w-user).
+    Delta ile sürüklenir; innerWidth - x paneli sıfırlar gibi sıçratmasın."""
     src = (STATIC / "viewer.js").read_text(encoding="utf-8")
     assert "innerWidth - e.clientX" not in src
     assert "originW + originX - e.clientX" in src
-    assert "right: var(--mind-w)" in CSS
+    assert '--mind-w-user"' in src or "--mind-w-user" in src
+    assert "--viewer-h-user" in CSS
+    assert "neo-viewer-h" in APP_JS
+    assert "mind-front" in APP_JS and "mind-front" in CSS
 
 
 # -- maliyet çipi -------------------------------------------------------
@@ -1130,6 +1295,40 @@ def test_model_wait_lives_in_the_work_strip_not_the_chat() -> None:
     block = re.search(r'case "bekleme":(.*?)break;', APP_JS, re.S)
     assert block and "bekleme(e)" in block.group(1)
     assert 'line("alert"' not in block.group(1)
+
+
+def test_busy_turn_shows_an_immediate_thinking_row() -> None:
+    """Mesaj gönderince / busy olunca thread boş kalmasın: setBusy anında
+    kickWork → acts-head; WAITING_AFTER kısa; waking welcome altında not."""
+    src = (STATIC / "app.js").read_text(encoding="utf-8")
+    css = (STATIC / "app.css").read_text(encoding="utf-8")
+    html = (STATIC / "index.html").read_text(encoding="utf-8")
+
+    busy = re.search(r"function setBusy\(value\) \{(.*?)\n\}", src, re.S)
+    assert busy and "kickWork()" in busy.group(1)
+
+    kick = re.search(r"function kickWork\(\) \{(.*?)\n\}", src, re.S)
+    assert kick and "ensureWork()" in kick.group(1) and "mull()" in kick.group(1)
+
+    m = re.search(r"const WAITING_AFTER\s*=\s*(\d+)", src)
+    assert m and int(m.group(1)) <= 2000
+
+    wake = re.search(r"function setWaking\(stage, done\) \{(.*?)\n\}", src, re.S)
+    assert wake and "paintWakeNote" in wake.group(1)
+    assert "function paintWakeNote(" in src
+    assert 'id="wake-note"' in html
+    assert ".wake-note" in css
+    assert "busy-glow" in css or re.search(
+        r"\.acts-head\.busy::after \{[^}]*animation:", css, re.S
+    )
+
+    # Kullanıcı satırı busy'den sonra: canlı şerit yeniden açılsın.
+    msg = re.search(r'case "message":(.*?)case "', src, re.S)
+    assert msg and "kickWork()" in msg.group(1)
+
+    # Boş erken şerit hayalet "Düşündü" bırakmasın.
+    close = re.search(r"function closeWork\(\) \{(.*?)\n\}", src, re.S)
+    assert close and "empty" in close.group(1)
 
 
 def test_the_wait_headline_counts_down_in_place() -> None:
@@ -1286,6 +1485,19 @@ def test_a_command_in_the_headline_is_not_shouted() -> None:
     assert band and "text-transform: none" in band.group(1)
 
 
+def test_the_work_headline_reads_like_a_status_line() -> None:
+    """Tek araç fiili ('Okuyor') uzun turda '1 adım'a düşüyordu. Cursor
+    gibi turun özeti görünür: '4 dosya okuyor, 7 arama' / 'Exploring
+    4 files, 7 searches', altında 'Düşünüyor'."""
+    assert "function activityPhrase(" in APP_JS
+    assert "function paintThinkLine(" in APP_JS
+    assert "Exploring " in APP_JS
+    assert "dosya okuyor" in APP_JS
+    assert "head-sub" in APP_JS
+    assert ".acts-head .head-sub" in CSS
+    assert "TALLY_FILES" in APP_JS and "TALLY_SEARCH" in APP_JS
+
+
 def test_the_headline_trims_shell_wrappers() -> None:
     """Sarmalayıcı her komutta aynı ve yer kaplıyor; okunmaya değer olan
     içindeki asıl komut. Kırpma yalnız GÖRÜNTÜDE: tam hâl adım kartında ve
@@ -1336,13 +1548,35 @@ def test_goals_can_be_finished_dropped_and_cleared() -> None:
 def test_a_resumed_session_refills_the_context_gauge() -> None:
     """Kapanıp açılan uygulamada çubuk sıfırdan başlıyordu. Snapshot gerçek
     doluluğu taşıyor; tahminse title'da söyleniyor."""
-    assert "dockContext(Number(s.prompt_total), s.tahmin)" in APP_JS
-    body = re.search(r"function dockContext\(promptTotal, tahmin\) \{(.*?)\n\}",
+    assert "dockContext(Number(s.prompt_total) || 0, s.tahmin, s.kirilim)" in APP_JS
+    body = re.search(r"function dockContext\(promptTotal, tahmin, kirilim\) \{(.*?)\n\}",
                      APP_JS, re.S)
     assert body and 't("Bağlam doluluğu — yaklaşık (geçmişten tahmin)")' in body.group(1)
     # Oturum sürdürülünce durum yeniden çekiliyor (döküm kadar sayaçlar da).
     reset = re.search(r'case "session_reset": \{(.*?)\n    \}', APP_JS, re.S)
     assert reset and "loadState()" in reset.group(1)
+
+
+def test_the_context_popup_lists_prompt_parts_like_cursor() -> None:
+    """Tek bir yüzde yetmiyor: sistem, araç, ruh, konuşma ayrı görünmeli."""
+    assert "function paintCtxBar" in APP_JS
+    assert "pop-ctx-row" in APP_JS
+    assert "pop-ctx-head" in APP_JS
+    assert "pop-ctx-kapat" in APP_JS
+    assert "Sistem istemi" in APP_JS
+    assert "Araç tanımları" in APP_JS
+    assert "Ruh / kurallar" in APP_JS
+    assert "MCP ve dinamik araçlar" in APP_JS
+    assert "Yardımcı tanımları" in APP_JS
+    assert "Konuşma" in APP_JS
+    assert 'id="dock-ctx-bar"' in HTML
+    assert re.search(r"^\.pop-ctx-row \{", CSS, re.M)
+    assert re.search(r"^\.pop-ctx-head \{", CSS, re.M)
+    assert re.search(r"^\.ctx-seg\.sohbet \{", CSS, re.M)
+    assert re.search(r"^\.ctx-seg\.yardimci \{", CSS, re.M)
+    assert "baglam_kirilim" in (
+        Path(__file__).resolve().parents[1] / "src" / "neocp" / "desktop.py"
+    ).read_text(encoding="utf-8")
 
 
 def test_a_turn_of_only_trivial_thinking_still_keeps_a_door() -> None:
@@ -1470,6 +1704,32 @@ def test_the_history_panel_says_what_it_is_doing() -> None:
     assert added, "history.js çeviri eklemiyor"
     for phrase in ("içinde ara", "Yeniden adlandır", "Etiketle", "Aranıyor…"):
         assert phrase in added.group(1), phrase
+
+
+def test_lists_open_a_right_click_menu_for_archive_and_delete() -> None:
+    """Sohbet, görev, uygulama satırlarında sağ tık yoktu: sil/arşiv
+    hover ikonlarına ya da detay ayarlarına gömülüydü. Menü ortak bir
+    betikte; madde metni textContent (model çıktısı gibi güvenilmez)."""
+    menu = (STATIC / "menu.js").read_text(encoding="utf-8")
+    jobs = (STATIC / "jobs.js").read_text(encoding="utf-8")
+    apps = (STATIC / "apps.js").read_text(encoding="utf-8")
+    order = re.findall(r'<script src="/([\w.]+)"></script>', HTML)
+    assert order.index("dil.js") < order.index("menu.js")
+    assert order.index("menu.js") < order.index("history.js")
+    assert order.index("menu.js") < order.index("jobs.js")
+    assert order.index("menu.js") < order.index("apps.js")
+    for name in ("menu.js", "history.js", "jobs.js", "apps.js"):
+        src = (STATIC / name).read_text(encoding="utf-8")
+        assert "innerHTML" not in src, name
+    assert "const Menu" in menu and "ctx-menu" in menu
+    assert "textContent" in menu
+    assert re.search(r"^\.ctx-menu \{", CSS, re.M)
+    assert "contextmenu" in HIST_JS and "function sohbetMenu" in HIST_JS
+    assert '"/api/session/archive"' in HIST_JS
+    assert "contextmenu" in jobs and "function gorevMenu" in jobs
+    assert 'ad: "Sil"' in jobs
+    assert "contextmenu" in apps and "function appMenu" in apps
+    assert 'ad: "Arşivle"' in apps
 
 
 def test_the_settings_page_offers_a_fallback_model() -> None:
@@ -1953,8 +2213,28 @@ def test_camera_can_open_in_a_separate_window() -> None:
     assert "/watch.js" in ASSETS
     assert "def open_camera_window" in desk
     assert "watch.html" in desk
-    assert "frameless=False" in desk
+    cam_fn = re.search(
+        r"def open_camera_window\(.*?(?=\n    # X = gizle)", desk, re.S)
+    assert cam_fn, "open_camera_window bulunamadı"
+    assert "frameless=True" in cam_fn.group(0)
+    assert "easy_drag=False" in cam_fn.group(0)
+    assert 'id="chrome"' in watch
+    assert 'id="win-close"' in watch
+    assert "/chrome.js" in watch
     assert "innerHTML" not in js
+
+
+def test_selected_camera_thumb_is_not_a_broken_image() -> None:
+    """Seçili kameranın şerit karesi src almazsa WebView2 bozuk ikon
+    ve alt metnini basıyor — sağda 'haa' gibi duruyordu."""
+    watch = (STATIC / "watch.js").read_text(encoding="utf-8")
+    cams = (STATIC / "cameras.js").read_text(encoding="utf-8")
+    for src in (watch, cams):
+        assert 'img.alt = ""' in src
+        assert "follow.src" in src
+        assert "if (img.dataset.key === secili) continue" not in src
+    assert ".cam-thumb img.dead" in CSS
+    assert "img:not([src])" in CSS
 
 
 def test_camera_hud_is_a_power_toggle() -> None:

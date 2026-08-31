@@ -39,9 +39,82 @@ def test_tiny_window_is_ignored() -> None:
     assert prefs.window_args({"window": {"width": 200, "height": 200}}) == {}
     args = prefs.window_args({
         "window": {"width": 1200, "height": 800, "x": 40, "y": 50},
-    })
+    }, area=(0, 0, 1920, 1080))
     assert args["width"] == 1200
     assert args["x"] == 40
+
+
+def test_maximized_omits_xy() -> None:
+    """Büyütülmüş kayıt + eski x/y create_window'a konum vermesin."""
+    args = prefs.window_args({
+        "window": {
+            "maximized": True,
+            "width": 1256,
+            "height": 706,
+            "x": 126,
+            "y": 126,
+        },
+    }, area=(0, 0, 1707, 1019))
+    assert args["maximized"] is True
+    assert "x" not in args
+    assert "y" not in args
+    assert args["width"] == 1256
+    assert args["height"] == 706
+
+
+def test_offset_fullscreen_becomes_maximized() -> None:
+    """Tam ekran boyu ama (126,126) — bozuk; büyütülmüş aç."""
+    assert prefs.offset_fullscreen(126, 126, 1707, 1067, (0, 0, 1707, 1019))
+    args = prefs.window_args({
+        "window": {"width": 1707, "height": 1067, "x": 126, "y": 126},
+    }, area=(0, 0, 1707, 1019))
+    assert args == {"maximized": True}
+
+
+def test_window_clamped_into_work_area() -> None:
+    args = prefs.window_args({
+        "window": {"width": 1200, "height": 800, "x": 5000, "y": -40},
+    }, area=(0, 0, 1707, 1019))
+    assert args["x"] == 1707 - 1200
+    assert args["y"] == 0
+
+
+def test_desktop_boot_forces_maximize_after_shell() -> None:
+    from neocp import desktop
+    src = inspect.getsource(desktop._titlebar_boot)
+    assert "want_max" in src
+    assert "_force_maximize" in src
+    assert "_clamp_window_to_work" in inspect.getsource(desktop)
+    run_src = inspect.getsource(desktop.run)
+    assert "maximized=False" in run_src
+    assert "want_max" in run_src
+
+
+def test_desktop_heals_offset_maximize() -> None:
+    """Kaymış büyütme (pencere near-full ama (100,100)'de) kendiliğinden
+    oturmalı — kullanıcı elle küçültüp geri açmak zorunda kalmasın.
+
+    Canlı yara (31.08): açılışta sol/üstten masaüstü sızıyor, içerik solda
+    kırpık geliyordu. Üç bekçi: açılış sonrası nöbet (_geometry_watch),
+    tepsiden/uyandırmadan gösterince bakış ve kabuğun zoom kilidinde
+    kaymışlık koruması.
+    """
+    from neocp import desktop
+
+    boot = inspect.getsource(desktop._titlebar_boot)
+    assert "_geometry_watch" in boot
+    heal = inspect.getsource(desktop._heal_geometry)
+    assert "offset_fullscreen" in heal
+    assert "IsZoomed" in heal
+    assert "_monitor_work_area" in heal
+    # Zoom kilidi yalnız pencere gerçekten work-area'ya oturuyorsa: kaymış
+    # zoom'da ekran koordinatlı kilit içeriği eksiye kaydırıyordu.
+    shell = inspect.getsource(desktop._install_shell_on)
+    assert "rcWork.left) <= 64" in shell
+    # Tepsiden / uyandırmadan görünür olunca da bak.
+    run_src = inspect.getsource(desktop.run)
+    assert "_heal_geometry" in run_src
+    assert "_heal_geometry" in inspect.getsource(desktop._wake)
 
 
 def test_desktop_webview_is_not_private() -> None:

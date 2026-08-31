@@ -63,6 +63,21 @@ def test_installer_shortcuts_target_neo_exe() -> None:
     assert r'{app}\python\neo.exe' in iss
     icons = iss.split("[Icons]", 1)[1].split("[Registry]", 1)[0]
     assert "pythonw.exe" not in icons
+    assert 'AppUserModelID: "fatih.neo.app"' in icons
+
+
+def test_toast_aumid_matches_process_identity() -> None:
+    """Bildirim kimliği süreç AUMID'siyle aynı olmazsa Windows yılan basar."""
+    assert winicon.AUMID == "fatih.neo.app"
+    desktop = (Path(__file__).resolve().parents[1] / "src" / "neocp" / "desktop.py")
+    text = desktop.read_text(encoding="utf-8")
+    assert "ensure_toast_identity" in text
+    assert "SetCurrentProcessExplicitAppUserModelID" in text
+
+
+def test_png_is_a_real_png() -> None:
+    data = logo.png_path().read_bytes()
+    assert data[:8] == b"\x89PNG\r\n\x1a\n"
 
 
 @pytest.mark.skipif(sys.platform != "win32", reason="PE damgası Windows")

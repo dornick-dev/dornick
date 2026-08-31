@@ -7,11 +7,15 @@ Pencere kutusu ve duyu susturması orada değil; `prefs.json` tutuyor.
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 from typing import Any
 
 NAME = "prefs.json"
 MIN_W, MIN_H = 900, 600
+# Neredeyse çalışma alanı boyunda ama köşeden kaymış kutu = bozuk kayıt.
+NEAR_FULL = 0.95
+OFFSET_SLACK = 32
 
 
 def _path(state_dir: Any) -> Path:
@@ -55,24 +59,90 @@ def patch(state_dir: Any, **fields: Any) -> None:
     tmp.replace(path)
 
 
-def window_args(data: dict[str, Any]) -> dict[str, Any]:
-    """`webview.create_window` için kutu. Geçersiz kayıt → boş (varsayılan)."""
+def work_area() -> tuple[int, int, int, int] | None:
+    """Görev çubuğu hariç alan (x, y, genişlik, yükseklik); yoksa None."""
+    if os.name != "nt":
+        return None
+    try:
+        import ctypes
+        from ctypes import wintypes
+
+        rect = wintypes.RECT()
+        if not ctypes.windll.user32.SystemParametersInfoW(
+            0x0030, 0, ctypes.byref(rect), 0
+        ):
+            return None
+        return (rect.left, rect.top, rect.right - rect.left, rect.bottom - rect.top)
+    except Exception:
+        return None
+
+
+def offset_fullscreen(
+    x: int, y: int, w: int, h: int,
+    area: tuple[int, int, int, int] | None = None,
+) -> bool:
+    """Neredeyse tam ekran boyu ama köşeden kaymış — bozuk büyütme kaydı."""
+    area = area if area is not None else work_area()
+    if not area or w < MIN_W or h < MIN_H:
+        return False
+    ax, ay, aw, ah = area
+    if w < aw * NEAR_FULL or h < ah * NEAR_FULL:
+        return False
+    return abs(x - ax) > OFFSET_SLACK or abs(y - ay) > OFFSET_SLACK
+
+
+def window_args(
+    data: dict[str, Any],
+    area: tuple[int, int, int, int] | None = None,
+) -> dict[str, Any]:
+    """`webview.create_window` için kutu. Geçersiz kayıt → boş (varsayılan).
+
+    Büyütülmüş kayıtta x/y VERİLMEZ: çerçevesiz pencerede maximized+offset
+    birlikte gelince HWND (126,126) gibi kayıp açılıyordu; küçült/geri aç
+    düzeltiyordu. Restore boyutu (width/height) kalabilir.
+    """
     win = data.get("window") or {}
     out: dict[str, Any] = {}
     try:
         w, h = int(win.get("width") or 0), int(win.get("height") or 0)
     except (TypeError, ValueError):
         w, h = 0, 0
-    if w >= MIN_W and h >= MIN_H:
-        out["width"], out["height"] = w, h
+    x = y = None
     try:
-        x, y = win.get("x"), win.get("y")
-        if x is not None and y is not None:
-            out["x"], out["y"] = int(x), int(y)
+        raw_x, raw_y = win.get("x"), win.get("y")
+        if raw_x is not None and raw_y is not None:
+            x, y = int(raw_x), int(raw_y)
     except (TypeError, ValueError):
-        pass
-    if win.get("maximized"):
+        x = y = None
+
+    if area is None:
+        area = work_area()
+    want_max = bool(win.get("maximized"))
+    if x is not None and y is not None and offset_fullscreen(x, y, w, h, area):
+        want_max = True
+
+    if want_max:
         out["maximized"] = True
+        if w >= MIN_W and h >= MIN_H and area:
+            ax, ay, aw, ah = area
+            # Restore kutusu tam ekran boyundaysa varsayılana bırak.
+            if w < aw * NEAR_FULL or h < ah * NEAR_FULL:
+                out["width"], out["height"] = w, h
+        elif w >= MIN_W and h >= MIN_H:
+            out["width"], out["height"] = w, h
+        return out
+
+    if w >= MIN_W and h >= MIN_H:
+        if area is not None:
+            ax, ay, aw, ah = area
+            w = min(w, aw)
+            h = min(h, ah)
+            if x is not None and y is not None:
+                x = max(ax, min(x, ax + max(aw - w, 0)))
+                y = max(ay, min(y, ay + max(ah - h, 0)))
+        out["width"], out["height"] = w, h
+        if x is not None and y is not None:
+            out["x"], out["y"] = x, y
     return out
 
 

@@ -1,4 +1,4 @@
-﻿; neo — Windows kurulum sihirbazı (Inno Setup 6).
+; neo — Windows kurulum sihirbazı (Inno Setup 6).
 ;
 ; Önce installer\build.ps1 çalıştırılır: gömülü Python + bağımlılıklar +
 ; kaynak + eğitim düzeneği dist\paket altına dizilir; bu betik yalnız o
@@ -177,8 +177,8 @@ Source: "{#Paket}\eval\*"; DestDir: "{app}\eval"; Flags: recursesubdirs ignoreve
 ; Konsolsuz açılış: hedef damgalı neo.exe (pythonw kopyası). Görev
 ; Yöneticisi PE ikonuna bakar; pythonw hedefi yılanı bırakır. -C "{app}"
 ; evi kuruluma sabitler — .neocp ve atolye hep kurulumun içinde yaşar.
-Name: "{autoprograms}\{#Ad}"; Filename: "{app}\python\neo.exe"; Parameters: "-m neocp --app -C ""{app}"""; WorkingDir: "{app}"; IconFilename: "{app}\src\neocp\assets\neo.ico"
-Name: "{autodesktop}\{#Ad}"; Filename: "{app}\python\neo.exe"; Parameters: "-m neocp --app -C ""{app}"""; WorkingDir: "{app}"; IconFilename: "{app}\src\neocp\assets\neo.ico"; Tasks: desktopicon
+Name: "{autoprograms}\{#Ad}"; Filename: "{app}\python\neo.exe"; Parameters: "-m neocp --app -C ""{app}"""; WorkingDir: "{app}"; IconFilename: "{app}\src\neocp\assets\neo.ico"; AppUserModelID: "fatih.neo.app"
+Name: "{autodesktop}\{#Ad}"; Filename: "{app}\python\neo.exe"; Parameters: "-m neocp --app -C ""{app}"""; WorkingDir: "{app}"; IconFilename: "{app}\src\neocp\assets\neo.ico"; AppUserModelID: "fatih.neo.app"; Tasks: desktopicon
 
 [Registry]
 Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "{#Ad}"; ValueData: """{app}\python\neo.exe"" -m neocp --app -C ""{app}"""; Tasks: autostart; Flags: uninsdeletevalue

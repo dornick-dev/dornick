@@ -96,3 +96,31 @@ def ico_path() -> Path:
     path = Path(__file__).parent / "assets" / "neo.ico"
     ensure_ico(path)
     return path
+
+
+def ensure_png(path: Path, size: int = 256) -> bool:
+    """Windows toast ve sekme için PNG. ICO WinRT src olarak tutulmuyor."""
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        bekci = path.with_suffix(".png.surum")
+        if path.exists():
+            try:
+                if bekci.read_text(encoding="utf-8").strip() == _SURUM:
+                    return True
+            except OSError:
+                pass
+        draw(size).save(path, format="PNG")
+        try:
+            bekci.write_text(_SURUM, encoding="utf-8")
+        except OSError:
+            pass
+        return True
+    except Exception:
+        return False
+
+
+def png_path(size: int = 256) -> Path:
+    """Paket içindeki PNG yolu (gerekiyorsa üretir)."""
+    path = Path(__file__).parent / "assets" / "neo.png"
+    ensure_png(path, size)
+    return path

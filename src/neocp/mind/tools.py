@@ -25,6 +25,20 @@ MAX_RECALL = 20
 RECALL_BODY_CAP = 700
 
 
+def _adim_etiket(mind: Mind, node_id: str) -> str:
+    """İz adımının kısa etiketi — sahne grafikte olmayan düğümü de adıyla
+    yakabilsin (hayalet düğüm; bkz. scene.js activate)."""
+    try:
+        node = mind.store.peek(node_id)
+    except Exception:
+        return ""
+    if node is None:
+        return ""
+    metin = str(getattr(node, "title", "") or getattr(node, "content", "") or "")
+    tek = " ".join(metin.split())
+    return tek if len(tek) <= 34 else tek[:33] + "…"
+
+
 def _bounded(text: str, cap: int = RECALL_BODY_CAP) -> str:
     if len(text) <= cap:
         return text
@@ -100,7 +114,8 @@ Mevcut oturum aramaya dahil değildir; o zaten önündeki bağlamda.
                 ctx.session.log.note(
                     "recall_trace",
                     query=query,
-                    trace=[{**asdict(step), "used": step.node in used}
+                    trace=[{**asdict(step), "used": step.node in used,
+                            "label": _adim_etiket(mind, step.node)}
                            for step in mind.last_trace],
                 )
             sections.append(

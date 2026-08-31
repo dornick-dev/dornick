@@ -342,7 +342,9 @@ const Speech = (() => {
         try { drift.stop(); } catch { /* zaten durmuş */ }
         current = null;
         ending = null;
-        deafen(false);
+        // Sırada cümle varken kulağı açmak cümleler arası boşlukta
+        // hoparlör yankısını yeni söz yapıyordu.
+        if (!queue.length) deafen(false);
         done();
       };
       // Susturma bunu çağırıyor: `stop()` hiçbir olay tetiklemiyor.
@@ -371,7 +373,7 @@ const Speech = (() => {
         URL.revokeObjectURL(url);
         current = null;
         ending = null;
-        deafen(false);
+        if (!queue.length) deafen(false);
         done();
       };
       // Susturma bunu çağırıyor. `pause()` hiçbir olay tetiklemiyor: onsuz

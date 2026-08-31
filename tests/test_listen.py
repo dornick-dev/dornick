@@ -244,6 +244,20 @@ def test_recognition_does_not_block_the_microphone() -> None:
         listening.stop()
 
 
+def test_recognition_starts_on_the_first_silence() -> None:
+    """Cümle bitişini 0,4 sn bekleyip SONRA tanımak, gecikmenin yarısıydı.
+    İlk sessizlikte kuyruğa girer; HANG yalnızca 'devam ediyor mu' teyidi."""
+    import inspect
+
+    from neocp import ear
+
+    loop = inspect.getsource(ear.Ear._loop)
+    settle = inspect.getsource(ear.Ear._settle)
+    assert "if not quiet_since:" in loop
+    assert "handed" in loop
+    assert "given + HANG_S" in settle
+
+
 def test_a_backlog_drops_the_oldest_not_the_newest() -> None:
     """Tanıyıcı yetişemiyorsa biriken kuyruk ajanı dakikalarca geride
     bırakıyor. Geç kalmış bir cümleyi çözmek, o an söyleneni kaçırmaya
@@ -277,6 +291,18 @@ def test_the_recogniser_runs_on_the_graphics_card_when_it_can() -> None:
     assert 'device="cpu"' in source
 
 
+def test_endpointed_clips_skip_whisper_vad() -> None:
+    """Kulak cümleyi zaten kesti; Whisper VAD'ı hem geciktiriyor hem
+    ilk heceyi yiyor. 'Çok geç algılıyor' şikâyetinin bir parçasıydı."""
+    import inspect
+
+    array = inspect.getsource(listen.Listener.transcribe_array)
+    decode = inspect.getsource(listen.Listener._decode)
+    assert "endpointed=True" in array
+    assert "vad_filter=not endpointed" in decode
+    assert "without_timestamps=True" in decode
+
+
 def test_the_cuda_libraries_are_put_on_the_dll_path() -> None:
     """pip ile kurulan `nvidia-*` paketleri DLL'leri site-packages içine
     koyuyor; oradan kendiliğinden bulunmuyorlar. İkisi birden gerekiyor:
@@ -304,6 +330,15 @@ def test_the_wake_word_can_come_last() -> None:
     """
     assert listen.after_wake("nasılsın neo?") == "nasılsın?"
     assert listen.after_wake("kamerada ne görüyorsun neo") == "kamerada ne görüyorsun"
+
+
+def test_a_question_on_both_sides_of_the_name_stays_whole() -> None:
+    """Canlı: "nasılsın neo? iyi misin?" — söz ortada, önceki hal
+    "nasılsın"ı atıp yalnızca "iyi misin?" gönderiyordu."""
+    assert listen.after_wake("nasılsın neo? iyi misin?") == "nasılsın? iyi misin?"
+    assert listen.after_wake("hava nasıl neo bugün ne yapıyoruz") == (
+        "hava nasıl bugün ne yapıyoruz"
+    )
 
 
 def test_a_question_stays_a_question() -> None:
@@ -509,6 +544,9 @@ def test_a_prompt_leak_is_not_a_message() -> None:
     assert listen.hallucinated("modbus.com", vocab)
     assert listen.hallucinated("Modbus", vocab)
     assert listen.hallucinated("Altyazı M.K.")
+    assert listen.hallucinated("hoşça kalın")
+    assert listen.hallucinated("hoşça kalın.")
+    assert not listen.hallucinated("hoşça kal")
     assert not listen.hallucinated("Modbus cihazını oku", vocab)
     assert not listen.hallucinated("hava nasıl", vocab)
 

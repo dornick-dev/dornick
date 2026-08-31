@@ -53,6 +53,15 @@ Dil.ekle({
   "Konuşmalar": "Conversations",
   "Görevler · Otomasyonlar": "Tasks · Automations",
   "Uygulamalar": "Apps",
+  "Aç": "Open",
+  "Arşivle": "Archive",
+  "Bu sohbet arşivlensin mi? Listeden kalkar, geri alınabilir.":
+    "Archive this chat? It leaves the list; you can still get it back.",
+  "Açık sohbet arşivlensin mi? Yeni boş konuşma açılır; bu sohbet listeden kalkar.":
+    "Archive the open chat? A new empty conversation opens; this one leaves the list.",
+  "koşan sohbet arşivlenemez — tur bitince dene":
+    "can't archive a running chat — try after the turn",
+  "Arşivlenemedi": "Could not archive",
 });
 
 const History = (() => {
@@ -297,6 +306,8 @@ const History = (() => {
     };
     wrap.append(line);
 
+    wrap.addEventListener("contextmenu", (ev) => sohbetMenu(s, wrap, ev));
+
     // Etiket rozetleri: tıklayınca o etikete süzülüyor. Etiket bir klasör
     // değil — bir konuşma birden çok etiket taşıyabiliyor, proje ise tek.
     if ((s.tags || []).length) {
@@ -329,6 +340,47 @@ const History = (() => {
     }
 
     return wrap;
+  }
+
+  function sohbetMenu(s, wrap, ev) {
+    if (typeof Menu === "undefined") return;
+    const kosuyor = s.status === "koşuyor";
+    Menu.ac(ev, [
+      { ad: "Aç", is: () => {
+        if (s.current) { if (innerWidth <= 860) close(); }
+        else resume(s, wrap);
+      } },
+      { ad: "Yeniden adlandır", is: () => editName(s, wrap) },
+      { ad: "Etiketle", is: () => editTags(s, wrap) },
+      { ad: "Projeye taşı", is: () => assignProject(s, wrap) },
+      { ad: "Klasör bağla", is: () => assignPath(s, wrap) },
+      { ad: "Model ata", is: () => assignModel(s, wrap) },
+      { ayrac: true },
+      { ad: "Arşivle", risk: true, kapali: kosuyor,
+        ipucu: kosuyor ? "koşan sohbet arşivlenemez — tur bitince dene" : "",
+        is: () => arsivle(s) },
+    ]);
+  }
+
+  async function arsivle(s) {
+    const uyari = s.current
+      ? t("Açık sohbet arşivlensin mi? Yeni boş konuşma açılır; bu sohbet listeden kalkar.")
+      : t("Bu sohbet arşivlensin mi? Listeden kalkar, geri alınabilir.");
+    if (!confirm(uyari)) return;
+    let res;
+    try {
+      res = await (await fetch("/api/session/archive", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: s.id }),
+      })).json();
+    } catch { res = { ok: false }; }
+    if (res && res.ok) {
+      await load();
+      setTimeout(load, 600);
+      return;
+    }
+    status((res && res.error) ? res.error : t("Arşivlenemedi"));
   }
 
   // Yeniden adlandırma: satır içi tek kutu. Boş bırakmak adı kaldırıyor ve
@@ -711,6 +763,9 @@ Dil.ekle({
                  elx("span", "side-row-name", task.title || task.id));
       if (task.kind_ui === "automation") row.append(elx("span", "side-row-meta", t("otomasyon")));
       row.addEventListener("click", () => { if (window.JobsPanel) JobsPanel.show(task.id); });
+      row.addEventListener("contextmenu", (ev) => {
+        if (window.JobsPanel && JobsPanel.menu) JobsPanel.menu(task, ev);
+      });
       list.append(row);
     }
   }
@@ -734,6 +789,9 @@ Dil.ekle({
       // sayfası (liste zaten burada, solda).
       row.addEventListener("click", () => {
         if (typeof Apps !== "undefined") Apps.show(p.name);
+      });
+      row.addEventListener("contextmenu", (ev) => {
+        if (typeof Apps !== "undefined" && Apps.menu) Apps.menu(p, ev);
       });
       list.append(row);
     }
@@ -762,6 +820,9 @@ Dil.ekle({
     try { kayit = localStorage.getItem(anahtar); } catch { /* dosya:// */ }
     // Varsayılan açık: kenar çubuğu tek bakışta her şeyi göstersin.
     uygula(kayit !== "kapali");
+    document.addEventListener("neo-side-tazele", () => {
+      if (!list.hidden) doldur(list, say);
+    });
   }
 })();
 

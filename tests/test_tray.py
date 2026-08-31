@@ -197,6 +197,14 @@ def test_arka_plan_notu_mentions_tasks() -> None:
     assert "görev" in tray.ARKA_PLAN_NOTU.lower() or "otomasyon" in tray.ARKA_PLAN_NOTU.lower()
 
 
+def test_toast_xml_embeds_logo_and_escapes() -> None:
+    xml = tray.toast_xml("neo", 'bit <&> "ok"', "file:///C:/neo.png")
+    assert "appLogoOverride" in xml
+    assert "file:///C:/neo.png" in xml
+    assert "&lt;" in xml and "&amp;" in xml and "&quot;" in xml
+    assert "<bit" not in xml
+
+
 def test_installer_asks_keep_or_wipe_data() -> None:
     """Kurulumda eski veri (görevler dahil) koru / sıfırla seçenekleri durur."""
     from pathlib import Path

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
+import inspect
 import numpy as np
 import pytest
 
@@ -49,6 +50,25 @@ def test_center_object_has_no_side() -> None:
     assert sight._yan(0.5, 0.5) == ""
     assert sight._yan(0.1, 0.5) == "solda"
     assert sight._yan(0.9, 0.1) == "üstte sağda"
+
+
+def test_handheld_objects_are_named_not_guessed() -> None:
+    """COCO'da sigara ve çakmak yok; nano onları kitaba / diş fırçasına
+    yakıştırıyordu. Açık sözlük + Türkçe etiket şart."""
+    assert len(sight.COCO_EN) == len(sight.COCO_TR) == 80
+    assert "cigarette" in sight.WORLD_EN
+    assert "lighter" in sight.WORLD_EN
+    assert "cigarette pack" in sight.WORLD_EN
+    assert sight.LABEL_TR["cigarette"] == "sigara"
+    assert sight.LABEL_TR["lighter"] == "çakmak"
+    assert sight.LABEL_TR["cigarette pack"] == "sigara paketi"
+    assert sight._etiket(0, {0: "cigarette"}) == "sigara"
+    assert sight._etiket(2, {1: "book", 2: "lighter"}) == "çakmak"
+    assert sight._etiket(73, {73: "book"}) == "kitap"
+    src = inspect.getsource(sight._load_world) + inspect.getsource(sight._open_ultra)
+    assert "set_classes" in src
+    assert "yolov8n.pt" in inspect.getsource(sight._open_ultra)
+    assert "world" in inspect.getsource(sight.Seer.hits_bgr)
 
 
 def test_nms_drops_the_weaker_overlap() -> None:
@@ -92,7 +112,7 @@ class _Bridge:
 
 def _sighting() -> Sighting:
     return Sighting(
-        camera=Camera(id="c1", name="bahce", source="0"),
+        camera=Camera(id="c1", name="bahce", source="rtsp://x", kind="rtsp"),
         frame="data:image/jpeg;base64,QUJD",
         change=0.4,
         ask="ne oldu",
@@ -103,7 +123,7 @@ def test_gpu_analysis_sends_text_not_the_frame(monkeypatch: pytest.MonkeyPatch) 
     """Kart çalışıyorsa kare makineden çıkmaz — sohbet modeli metni alır."""
     monkeypatch.setattr(sight, "analyze_url", lambda _u: "kişi (solda), kupa")
     hub, bridge = _Hub(), _Bridge("https://api.openai.com/v1")
-    config = SimpleNamespace(camera=SimpleNamespace(cloud_ok=False))
+    config = SimpleNamespace(camera=SimpleNamespace(enabled=True, cloud_ok=False))
     _hareket_gonder(bridge, config, hub, _sighting())
     assert len(bridge.submitted) == 1
     text, image = bridge.submitted[0]
@@ -115,7 +135,7 @@ def test_without_gpu_a_cloud_model_does_not_get_the_frame(
         monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(sight, "analyze_url", lambda _u: "")
     hub, bridge = _Hub(), _Bridge("https://api.openai.com/v1")
-    config = SimpleNamespace(camera=SimpleNamespace(cloud_ok=False))
+    config = SimpleNamespace(camera=SimpleNamespace(enabled=True, cloud_ok=False))
     _hareket_gonder(bridge, config, hub, _sighting())
     assert bridge.submitted == []
     assert any("BULUT" in (e.get("text") or "") for e in hub.events)
@@ -125,10 +145,85 @@ def test_without_gpu_a_local_model_still_gets_the_frame(
         monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(sight, "analyze_url", lambda _u: "")
     hub, bridge = _Hub(), _Bridge("http://127.0.0.1:1234/v1")
-    config = SimpleNamespace(camera=SimpleNamespace(cloud_ok=False))
+    config = SimpleNamespace(camera=SimpleNamespace(enabled=True, cloud_ok=False))
     _hareket_gonder(bridge, config, hub, _sighting())
     assert len(bridge.submitted) == 1
     assert bridge.submitted[0][1].startswith("data:image/")
+
+
+def test_motion_is_ignored_when_the_camera_is_off(
+        monkeypatch: pytest.MonkeyPatch) -> None:
+    """HUD kapalıyken izleyici bir kare üretse bile sohbet açılmaz."""
+    monkeypatch.setattr(sight, "analyze_url", lambda _u: "kişi (altta)")
+    hub, bridge = _Hub(), _Bridge("https://api.openai.com/v1")
+    config = SimpleNamespace(camera=SimpleNamespace(enabled=False, cloud_ok=False))
+    _hareket_gonder(bridge, config, hub, _sighting())
+    assert bridge.submitted == []
+    assert hub.events == []
+
+
+def test_builtin_webcam_motion_is_ignored_when_the_lens_is_off(
+        monkeypatch: pytest.MonkeyPatch) -> None:
+    """Dahili webcam HUD kapalıyken sohbete 'hareket oldu' basmaz.
+
+    İzleyici kendi OpenCV'siyle kare alıyordu; model `look` ile Lens'i
+    kapalı görüp 'kamerayı göremiyorum' diyordu — kullanıcı oturdukça
+    her dakika aynı mesaj.
+    """
+    monkeypatch.setattr(sight, "analyze_url", lambda _u: "kişi (altta)")
+    hub, bridge = _Hub(), _Bridge("https://api.openai.com/v1")
+    config = SimpleNamespace(camera=SimpleNamespace(enabled=True, cloud_ok=False))
+    seen = Sighting(
+        camera=Camera(id="usb", name="Bilgisayar kamerası", source="0"),
+        frame="data:image/jpeg;base64,QUJD",
+        change=0.07,
+        ask="Bu kamerada bir hareket oldu.",
+    )
+    _hareket_gonder(bridge, config, hub, seen)
+    assert bridge.submitted == []
+    assert hub.events == []
+
+
+def test_sync_camera_stops_the_watcher() -> None:
+    """HUD kamerayı kapatınca arka plan izleyici de durur."""
+    from neocp.desktop import Bridge
+
+    class Eyes:
+        def __init__(self) -> None:
+            self.stopped = 0
+
+        def stop(self) -> None:
+            self.stopped += 1
+
+        def start(self) -> bool:
+            return True
+
+        def load_from(self, cameras: list) -> None:
+            pass
+
+        def unsnooze(self) -> None:
+            pass
+
+    bridge = Bridge.__new__(Bridge)
+    bridge.server = None
+    bridge.agent = None
+    bridge.lens = None
+    bridge.hub = None
+    bridge.eyes = Eyes()
+    cfg = SimpleNamespace(
+        camera=SimpleNamespace(enabled=False),
+        state_dir=".",
+    )
+    Bridge.sync_camera(bridge, cfg)
+    assert bridge.eyes.stopped == 1
+
+
+def test_turning_the_camera_off_stops_the_watcher() -> None:
+    from neocp.desktop import Bridge
+
+    src = inspect.getsource(Bridge.sync_camera)
+    assert "eyes.stop" in src
+    assert "eyes.start" in src
 
 
 def test_cuda_session_is_not_a_cpu_fallback() -> None:

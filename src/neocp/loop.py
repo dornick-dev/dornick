@@ -1388,10 +1388,13 @@ class Agent:
             # şeyi karıştırdı" gibi duruyor — oysa önüne konan yalnızca
             # süzgeçten geçenler.
             used = {hit.item.id for hit in hits}
+            from .mind.tools import _adim_etiket
             self.session.log.note(
                 "recall_trace",
                 query=user_input,
-                trace=[{**asdict(step), "used": step.node in used} for step in trace],
+                trace=[{**asdict(step), "used": step.node in used,
+                        "label": _adim_etiket(self.mind, step.node)}
+                       for step in trace],
             )
 
     def _worth_recalling(self, text: str) -> bool:

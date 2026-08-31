@@ -770,6 +770,8 @@ class _Handler(BaseHTTPRequestHandler):
             self._file("index.html", "text/html; charset=utf-8")
         elif route in ("/watch.html", "/watch"):
             self._file("watch.html", "text/html; charset=utf-8")
+        elif route == "/logo.png":
+            self._logo_png()
         elif route in ASSETS:
             self._file(route.lstrip("/"), ASSETS[route])
         elif route == "/api/graph":
@@ -969,6 +971,12 @@ class _Handler(BaseHTTPRequestHandler):
         if route == "/api/artifacts":
             self._artifacts_edit(body)
             return
+        if route == "/api/disari-ac":
+            self._disari_ac(body)
+            return
+        if route == "/api/artifact/indir":
+            self._artifact_indir(body)
+            return
         if route == "/api/transfer/import":
             self._transfer_import(raw)
             return
@@ -1077,6 +1085,35 @@ class _Handler(BaseHTTPRequestHandler):
                     except Exception:
                         pass
             self._json({"ok": True, "meta": kayit})
+            return
+        if route == "/api/session/archive":
+            # Listeden çıkar, günlüğü sessions/.arsiv'e taşı. Kalıcı silme
+            # yok. Koşan şeridin günlüğü taşınmaz; açık sohbet önce yeni
+            # boş oturuma geçer, sonra eski arşivlenir.
+            mind = getattr(self.server, "mind", None)
+            sid = str((body or {}).get("id") or "").strip()
+            if mind is None or not hasattr(mind, "archive_session"):
+                self._json({"ok": False, "error": "arşiv desteği yok"})
+                return
+            if not sid or not re.match(r"^[A-Za-z0-9_-]+$", sid):
+                self._json({"ok": False, "error": "geçersiz oturum"})
+                return
+            controller = getattr(self.server, "controller", None)
+            seritler = getattr(controller, "seritler", None) or {}
+            serit = seritler.get(sid) if isinstance(seritler, dict) else None
+            if serit is not None and getattr(serit, "busy", False):
+                self._json({"ok": False,
+                            "error": "koşan sohbet arşivlenemez — tur bitince dene"})
+                return
+            current = str(getattr(mind, "session_id", "") or "")
+            if sid == current:
+                result = self._controller_call("new_session")
+                if not isinstance(result, dict) or not result.get("ok"):
+                    self._json(result if isinstance(result, dict) else {
+                        "ok": False, "error": "yeni sohbete geçilemedi",
+                    })
+                    return
+            self._json(mind.archive_session(sid))
             return
         if route == "/api/surum":
             # Güncelleme denetimi YALNIZ elle: Ayarlar › Makine'deki düğme.
@@ -3028,6 +3065,80 @@ class _Handler(BaseHTTPRequestHandler):
             return
         self._json({"ok": True, "artifacts": artifacts.listing(config.state_dir)})
 
+    def _disari_ac(self, body: dict[str, Any]) -> None:
+        """Uygulama içi bir sayfayı kullanıcının GERÇEK tarayıcısında açar.
+
+        Kanıtlanmış yara (31.08): ajan artifact adresini varsayılan 8765
+        portuyla söylüyordu, sunucu kaymış portta koşuyordu ve kullanıcı
+        "bağlantı reddedildi" görüyordu. Gerçek port yalnız burada,
+        sunucunun kendisinde biliniyor — adres istekten değil buradan
+        kurulur. Yol GÖRELİ olmak zorunda: bu uç yalnız BU sunucunun
+        servis ettiği sayfaları açar; dışarıdan gelen bir adresi kullanıcı
+        tarayıcısında açtırmanın kapısı olamaz.
+        """
+        import webbrowser
+
+        path = str((body or {}).get("path") or "").strip()
+        if not path.startswith("/") or path.startswith("//"):
+            self._json({"ok": False, "error": "Yalnız uygulama içi yol açılır"})
+            return
+        host, port = self.server.server_address[:2]
+        url = f"http://{host}:{port}{path}"
+        try:
+            ok = webbrowser.open(url)
+        except Exception as exc:
+            self._json({"ok": False, "error": f"{type(exc).__name__}: {exc}"})
+            return
+        self._json({"ok": bool(ok), "url": url})
+
+    def _artifact_indir(self, body: dict[str, Any]) -> None:
+        """Artifact'ı İndirilenler klasörüne kaydeder; TAM yolu döndürür.
+
+        Pencere WebView2: blob + <a download> tıklaması indirme penceresi
+        açmadan sessizce ölüyordu — kullanıcı "indiremiyorum" yaşıyordu
+        (canlı, 31.08). Diske sunucu kendisi yazar; arayüz dönen yolu
+        gösterir. Var olan dosya ezilmez — sayaçlı yeni ad açılır.
+        """
+        import shutil
+
+        from .. import artifacts
+
+        config = getattr(self.server, "config", None)
+        if config is None:
+            self._json({"ok": False, "error": "Yapılandırma yüklü değil"})
+            return
+        aid = str((body or {}).get("id") or "").strip()
+        if not aid:
+            m = re.match(r"^/artifact/([a-z0-9-]+)/?", str((body or {}).get("path") or ""))
+            if m:
+                aid = m.group(1)
+        page = artifacts.page_path(config.state_dir, aid)
+        if page is None:
+            self._json({"ok": False, "error": "Artifact yok"})
+            return
+        try:
+            meta = artifacts.read_meta(config.state_dir, aid)
+        except artifacts.ArtifactError:
+            meta = {}
+        raw_name = str(meta.get("title") or aid).strip() or aid
+        stem = re.sub(r"[^\w .-]+", "_", raw_name, flags=re.UNICODE).strip(" ._") or aid
+        folder = Path.home() / "Downloads"
+        try:
+            folder.mkdir(parents=True, exist_ok=True)
+        except OSError:
+            folder = config.state_dir
+        target = folder / f"{stem}.html"
+        n = 2
+        while target.exists():
+            target = folder / f"{stem}-{n}.html"
+            n += 1
+        try:
+            shutil.copyfile(page, target)
+        except OSError as exc:
+            self._json({"ok": False, "error": f"Kaydedilemedi: {exc}"})
+            return
+        self._json({"ok": True, "path": str(target)})
+
     def _artifact_page(self, route: str) -> None:
         """Artifact sayfası: /artifact/<id>/ → index.html.
 
@@ -3291,6 +3402,15 @@ class _Handler(BaseHTTPRequestHandler):
         return fn(*args) if callable(fn) else None
 
     # -- yanıt biçimleri -----------------------------------------------
+
+    def _logo_png(self) -> None:
+        from ..logo import png_path
+        try:
+            body = png_path().read_bytes()
+        except OSError:
+            self.send_error(404)
+            return
+        self._send(200, "image/png", body)
 
     def _file(self, name: str, content_type: str) -> None:
         try:

@@ -605,6 +605,52 @@ class Mind:
                 "ad": "", "etiketler": [], "path": "", "model": "", "provider": "",
             })
 
+    def archive_session(self, session_id: str) -> dict[str, Any]:
+        """Oturumu listeden çıkarır; günlüğü sessions/.arsiv'e taşır.
+
+        Kalıcı silme yok — uygulamalar panelindeki .geri-donusum ile aynı
+        fikir: yanlış tık geri alınabilsin. Açık oturum taşınmaz (önce
+        başka sohbete geç); yoksa koşan şeridin günlüğü kaybolur.
+        """
+        sid = str(session_id or "").strip()
+        if not sid:
+            return {"ok": False, "error": "geçersiz oturum"}
+        if sid == self.session_id:
+            return {"ok": False, "error": "açık sohbet arşivlenemez — önce başka birine geç"}
+        src = self.sessions_dir / f"{sid}.jsonl"
+        if not src.is_file():
+            return {"ok": False, "error": "oturum bulunamadı"}
+        with self._lock:
+            dest_dir = self.sessions_dir / ".arsiv"
+            try:
+                dest_dir.mkdir(parents=True, exist_ok=True)
+                dest = dest_dir / f"{sid}.jsonl"
+                if dest.exists():
+                    dest = dest_dir / f"{sid}-{uuid4().hex[:8]}.jsonl"
+                src.replace(dest)
+            except OSError as exc:
+                return {"ok": False, "error": f"taşınamadı: {exc}"}
+            self._episode_cache.pop(sid, None)
+            meta = self.session_meta()
+            if sid in meta:
+                meta.pop(sid, None)
+                try:
+                    self._meta_path().write_text(
+                        json.dumps(meta, ensure_ascii=False, indent=2),
+                        encoding="utf-8")
+                except OSError:
+                    pass
+            projects = self.projects()
+            if sid in projects:
+                projects.pop(sid, None)
+                try:
+                    self._projects_path().write_text(
+                        json.dumps(projects, ensure_ascii=False, indent=2),
+                        encoding="utf-8")
+                except OSError:
+                    pass
+        return {"ok": True, "id": sid}
+
     # -- döküm araması -----------------------------------------------------
 
     def search_transcripts(

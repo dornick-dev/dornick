@@ -386,6 +386,28 @@ def test_a_conversation_can_be_named_and_tagged(tmp_path: Path, mind: Mind) -> N
     assert taze.session_meta()["s1"]["ad"] == "CMS göçü"
 
 
+def test_archive_moves_the_log_out_of_the_list(tmp_path: Path, mind: Mind) -> None:
+    """Arşiv kalıcı silme değil: günlük sessions/.arsiv'e gider, listeden
+    düşer, ad/proje eşlemesi de gider. Açık oturum taşınmaz."""
+    sid = "20260610T090000Z"
+    _oturum_yaz(mind.sessions_dir, sid, [("user", "pompa"), ("assistant", "ok")])
+    mind.set_session_meta(sid, ad="Pompa")
+    mind.set_project(sid, "SCADA")
+    assert any(e.session_id == sid for e in mind.sessions())
+
+    out = mind.archive_session(sid)
+    assert out["ok"] is True
+    assert not (mind.sessions_dir / f"{sid}.jsonl").is_file()
+    assert (mind.sessions_dir / ".arsiv" / f"{sid}.jsonl").is_file()
+    assert sid not in mind.session_meta()
+    assert sid not in mind.projects()
+    assert all(e.session_id != sid for e in mind.sessions())
+
+    (mind.sessions_dir / "cur.jsonl").write_text("{}\n", encoding="utf-8")
+    assert mind.archive_session("cur")["ok"] is False
+    assert mind.archive_session("yok")["ok"] is False
+
+
 def test_touching_one_field_leaves_the_other_alone(tmp_path: Path, mind: Mind) -> None:
     """Yalnız etiket değiştiren bir istek adı silmemeli."""
     mind.set_session_meta("s1", ad="CMS göçü", etiketler=["cms"])

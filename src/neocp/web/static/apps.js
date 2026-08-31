@@ -65,6 +65,8 @@ Dil.ekle({
     "Open this app's folder in the file explorer",
   "Emin misin?": "Are you sure?",
   "Açılacak giriş dosyası bulunamadı": "No entry file to open",
+  "Bu uygulama arşivlensin mi? atolye/.geri-donusum içine taşınır.":
+    "Archive this app? It moves into atolye/.geri-donusum.",
 });
 
 const Apps = (() => {
@@ -331,6 +333,7 @@ const Apps = (() => {
     }
 
     wrap.append(actionRow(p, live, "card"));
+    wrap.addEventListener("contextmenu", (ev) => appMenu(p, ev));
     return wrap;
   }
 
@@ -360,17 +363,7 @@ const Apps = (() => {
     // bulmak kullanıcının işiydi.
     const show = el("button", "proj-btn", "Klasörü göster");
     show.title = t("Bu uygulamanın klasörünü dosya gezgininde aç");
-    show.onclick = async (ev) => {
-      stop(ev);
-      let res;
-      try {
-        res = await (await fetch("/api/apps/reveal", {
-          method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ path: p.path || p.entry }),
-        })).json();
-      } catch { res = { ok: false, error: t("Ulaşılamadı") }; }
-      if (!res.ok) toast(res.error || t("Ulaşılamadı"));
-    };
+    show.onclick = async (ev) => { stop(ev); await revealApp(p); };
     row.append(show);
 
     // Arşivle yalnız kartta (proje görünümünde ayrıntılı "Sil" duruyor):
@@ -441,6 +434,41 @@ const Apps = (() => {
     } else window.open(live.address, "_blank", "noopener");
   }
 
+  async function revealApp(p) {
+    let res;
+    try {
+      res = await (await fetch("/api/apps/reveal", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ path: p.path || p.entry }),
+      })).json();
+    } catch { res = { ok: false, error: t("Ulaşılamadı") }; }
+    if (!res.ok) toast(res.error || t("Ulaşılamadı"));
+  }
+
+  function appMenu(p, ev) {
+    if (typeof Menu === "undefined") return;
+    const live = liveOf(p);
+    const maddeler = [];
+    if ((live && live.address) || p.entry) {
+      maddeler.push({ ad: "Aç", is: () => openApp(p, live) });
+    }
+    if (live && live.stoppable !== false) {
+      maddeler.push({ ad: "Durdur", is: () => stopProc(live) });
+    } else if (!live && runnable(p)) {
+      maddeler.push({ ad: "Başlat", is: () => launchProject(p) });
+    }
+    maddeler.push({ ad: "Klasörü göster", is: () => revealApp(p) });
+    maddeler.push({ ayrac: true });
+    maddeler.push({ ad: "Arşivle", risk: true, is: () => archiveNow(p) });
+    Menu.ac(ev, maddeler);
+  }
+
+  async function archiveNow(p) {
+    if (!confirm(t("Bu uygulama arşivlensin mi? atolye/.geri-donusum içine taşınır."))) return;
+    const fake = { dataset: { armed: "1" } };
+    await archive(p, fake);
+  }
+
   // Arşivle: .geri-donusum'a taşır (kalıcı silmez). İki adımlı onay —
   // yanlış tık bir projeyi götürmesin.
   async function archive(p, btn) {
@@ -460,6 +488,7 @@ const Apps = (() => {
     if (res.ok) {
       toast(p.name + " " + t("arşivlendi (atolye/.geri-donusum içinde — geri alınabilir)"));
       load();
+      document.dispatchEvent(new Event("neo-side-tazele"));
     } else {
       toast(res.error || t("Arşivlenemedi — çalışıyorsa önce durdur"));
     }
@@ -935,5 +964,5 @@ const Apps = (() => {
   document.getElementById("apps-close").addEventListener("click", close);
   document.getElementById("apps-refresh").addEventListener("click", load);
 
-  return { toggle, open, close, load, show };
+  return { toggle, open, close, load, show, menu: appMenu };
 })();

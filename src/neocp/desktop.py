@@ -23,7 +23,7 @@ import os
 import re
 import sys
 import threading
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 from uuid import uuid4
 
@@ -109,8 +109,8 @@ def _is_stop(text: str) -> bool:
 # ederim!" demek kapanan konuşmayı yeniden açmak olurdu; insan da vedaya
 # veda ile cevap verip durmaz. "tamam" tek başına listede yok: ajanın
 # sorduğu bir sorunun cevabı da "tamam" olabiliyor.
-_CLOSE_WORDS = ("kapat", "kapan", "görüşürüz", "hoşça kal", "hoşçakal",
-                "iyi geceler", "sonra konuşuruz")
+_CLOSE_WORDS = ("kapat", "kapan", "görüşürüz", "hoşça kalın", "hoşça kal",
+                "hoşçakal", "iyi geceler", "sonra konuşuruz")
 
 # Kapatma sözünün yanında gelebilecek dolgu: "tamam görüşürüz",
 # "teşekkürler kapat" da kapanış sayılıyor.
@@ -240,6 +240,73 @@ def _active_goals(agent: Any) -> list[dict[str, Any]]:
 TAHMIN_BOLEN = 4
 
 
+def baglam_kirilim(agent: Any, prompt_total: int = 0) -> list[dict[str, Any]]:
+    """İstem penceresinin kalem kalem tahmini — Cursor'un Context Usage'ı.
+
+    Sağlayıcı yalnız TOPLAM veriyor; kırılım karakter/4. Toplam varsa
+    sabitler ondan büyük çıkmasın diye orantılanır, kalan Konuşma'dır.
+    """
+    import json
+
+    def tok(text: str) -> int:
+        return max(0, len(text or "") // TAHMIN_BOLEN)
+
+    sistem = ruh = 0
+    sys = getattr(agent, "_system", None) if agent is not None else None
+    if sys is not None:
+        sistem = tok(getattr(sys, "core", "") or "")
+        ruh = tok(getattr(sys, "identity", "") or "")
+
+    # `task` / `task_say` / `task_status` Cursor'daki "Subagent definitions"
+    # kalemi: yerleşik araçlardan ayrı dursun, yoksa Araç tanımları şişer.
+    _YARDIMCI = {"task", "task_say", "task_status"}
+
+    arac = yetenek = mcp = yardimci = 0
+    registry = getattr(agent, "registry", None) if agent is not None else None
+    if registry is not None and hasattr(registry, "all"):
+        brief = bool(getattr(agent, "kisa_sema", False))
+        for spec in registry.all():
+            try:
+                sema = spec.api_schema()
+                if brief and isinstance(sema, dict):
+                    desc = str(sema.get("description") or "")
+                    sema = {**sema, "description": desc.split("\n\n", 1)[0]}
+                blob = json.dumps(sema, ensure_ascii=False, separators=(",", ":"))
+            except Exception:
+                continue
+            n = tok(blob)
+            src = str(getattr(spec, "source", None) or "")
+            ad = str(getattr(spec, "name", "") or "")
+            if not ad and isinstance(sema, dict):
+                ad = str(sema.get("name") or "")
+            if src.startswith("mcp"):
+                mcp += n
+            elif src == "yetenek":
+                yetenek += n
+            elif ad in _YARDIMCI:
+                yardimci += n
+            else:
+                arac += n
+
+    parcalar: list[tuple[str, str, int]] = [
+        ("sistem", "Sistem istemi", sistem),
+        ("arac", "Araç tanımları", arac),
+        ("ruh", "Ruh / kurallar", ruh),
+        ("yetenek", "Yetenekler", yetenek),
+        ("mcp", "MCP ve dinamik araçlar", mcp),
+        ("yardimci", "Yardımcı tanımları", yardimci),
+    ]
+    sabit = sum(n for _, _, n in parcalar)
+    toplam = max(0, int(prompt_total or 0))
+    if toplam and sabit > toplam:
+        oran = toplam / sabit
+        parcalar = [(k, ad, int(n * oran)) for k, ad, n in parcalar]
+        sabit = sum(n for _, _, n in parcalar)
+    sohbet = max(0, toplam - sabit) if toplam else 0
+    parcalar.append(("sohbet", "Konuşma", sohbet))
+    return [{"id": k, "ad": ad, "n": n} for k, ad, n in parcalar]
+
+
 def _gecmis_kullanim(agent: Any) -> dict[str, Any]:
     """Sürdürülen bir oturumun bağlam/token durumu.
 
@@ -337,7 +404,17 @@ def _hareket_gonder(bridge: Any, config: Config, hub: Hub,
 
     GPU analizi başarılıysa kare hiç gitmez — sohbet modeli metni okur.
     Analiz yoksa eski kapı: yerel model serbest, bulut için cloud_ok.
+    HUD kapalıyken izleyici hâlâ bir kare üretmiş olsa bile sohbet açılmaz.
     """
+    if not bool(getattr(config.camera, "enabled", False)):
+        return
+    cam = sighting.camera
+    if callable(getattr(cam, "is_builtin", None)) and cam.is_builtin():
+        lens = getattr(bridge, "lens", None)
+        if lens is None or not (
+            getattr(lens, "running", False) or getattr(lens, "live", False)
+        ):
+            return
     hub.emit({
         "type": "notice",
         "text": f"{sighting.camera.name}: hareket (%{int(sighting.change * 100)})",
@@ -482,6 +559,7 @@ class Bridge:
         # köprü ondan önce kuruluyor.
         self.ear: Any = None
         self.lens: Any = None
+        self.eyes: Any = None
         # Turun ortasında istenen model değişikliği. Akan bir istemciyi
         # altından çekmek o cevabı öldürür; tur bitince uygulanıyor. Modelle
         # birlikte sistem promptu da tazelendiği için tüm config saklanıyor.
@@ -1110,11 +1188,25 @@ class Bridge:
             "enabled": bool(config.voice.enabled),
         })
 
-    def sync_camera(self, config: Config) -> dict[str, Any]:
-        """Kamera anahtarını donanıma uygular: Lens start/stop, LED, YOLO ısısı.
+    def _on_camera_motion(self, sighting: watching.Sighting) -> None:
+        """İzleyici hareketi: HUD kapalıysa sohbet açılmaz.
 
-        Ayar kaydı tek başına yetmiyordu — bayrak değişiyor, aygıt açık
-        kalıyordu. HUD ve sohbet aynı kapıyı kullanır.
+        Ayar anlık okunur — açılıştaki bayrağa kapanmış bir kapanış olmasın.
+        """
+        agent = getattr(self, "agent", None)
+        cfg = getattr(agent, "config", None) if agent is not None else None
+        if cfg is None:
+            server = getattr(self, "server", None)
+            cfg = getattr(server, "config", None) if server is not None else None
+        if cfg is None or not bool(getattr(cfg.camera, "enabled", False)):
+            return
+        _hareket_gonder(self, cfg, self.hub, sighting)
+
+    def sync_camera(self, config: Config) -> dict[str, Any]:
+        """Kamera anahtarını donanıma uygular: Lens, izleyici, LED, YOLO ısısı.
+
+        HUD yalnız Lens'i kapatıyordu; arka plan izleyici (Watcher) kameraları
+        okumaya devam edip sohbete hareket mesajı basıyordu. İkisi aynı kapı.
         """
         from . import sight, watch as watching
 
@@ -1123,6 +1215,7 @@ class Bridge:
         httpd = getattr(server, "_httpd", None) if server else None
         agent = getattr(self, "agent", None)
         lens = getattr(self, "lens", None)
+        eyes = getattr(self, "eyes", None)
         live = False
         note = ""
         if want:
@@ -1147,11 +1240,23 @@ class Bridge:
                     agent.lens = lens
                 if httpd is not None:
                     httpd.lens = lens
+                if eyes is None:
+                    eyes = watching.Watcher([], self._on_camera_motion)
+                    self.eyes = eyes
+                eyes.load_from(watching.load(config.state_dir))
+                eyes.unsnooze()
+                if eyes.start():
+                    live = True
+                if agent is not None:
+                    agent.watcher = eyes
         else:
             if lens is not None:
                 lens.stop()
+            if eyes is not None:
+                eyes.stop()
             if agent is not None:
                 agent.lens = None
+                agent.watcher = None
             if httpd is not None:
                 httpd.lens = None
         if server is not None:
@@ -1432,6 +1537,9 @@ class Bridge:
             # Rakam sağlayıcının saydığı gerçek değil, kaba bir tahmin mi?
             # Arayüz bunu title'da söylüyor — uydurma kesinlik satılmıyor.
             "tahmin": gecmis["tahmin"],
+            # Bağlam kutusunun kalem kalem kırılımı (sistem / araç / ruh /
+            # yetenek / MCP / konuşma). Toplam yokken de sabitler görünür.
+            "kirilim": baglam_kirilim(agent, gecmis["prompt_total"]),
             # Maliyet çipi: sayfa yenilenince harcama göstergesi sıfırdan
             # değil kaldığı yerden başlasın. Fiyat bilinmiyorsa None —
             # çip token sayısına düşer.
@@ -1570,11 +1678,13 @@ class Bridge:
             hedef["cikti"] += int(report.get("output") or 0)
             hedef["cagri"] += 1
         self._fiyat_getir()
+        kirilim = baglam_kirilim(self.agent, int(report.get("prompt_total") or 0))
         self.hub.emit({
             "type": "usage", **report,
             "tur": dict(self._tur_kullanim),
             "oturum": dict(self._oturum_kullanim),
             "fiyat": self._fiyat,
+            "kirilim": kirilim,
         })
 
     # -- bütçe freni ----------------------------------------------------
@@ -2308,6 +2418,19 @@ def _hearing_wanted(config: Config) -> bool:
     )
 
 
+def duyulari_kapat(config: Config) -> Config:
+    """Açılışta kamera, mikrofon ve sesli yanıt kapalı.
+
+    HUD'dan açılınca ayara yazılır; bir sonraki açılış yine kapalı gelir.
+    """
+    return replace(
+        config,
+        voice=replace(config.voice, enabled=False),
+        listen=replace(config.listen, enabled=False, open=False),
+        camera=replace(config.camera, enabled=False),
+    )
+
+
 def _ear_alive(ear: Any) -> bool:
     """Kulak thread'i hâlâ dönüyor mu? stop() sonrası yeniden kurulur."""
     if ear is None:
@@ -2562,6 +2685,21 @@ async def _boot(config: Config, port: int, resume: bool) -> Runtime:
     kalıyor — hazır olmayan bir ajana yazmak cevapsız kalmak demek.
     """
     config.ensure_dirs()
+    # Kamera, mikrofon ve sesli yanıt kapalı açılır. Kullanıcı HUD'dan
+    # açar; bir sonraki oturum yine kapalı gelir — LED/kulak/hoparlör
+    # kendiliğinden uyanmaz. Diskte "açık" kalırsa başka bir ayar kaydı
+    # oturum ortasında duyuyu geri yakardı.
+    config = duyulari_kapat(config)
+    if (config.state_dir / settings.CONFIG_FILE).exists():
+        try:
+            config = settings.apply(config, {
+                "voice": {"enabled": False},
+                "listen": {"enabled": False, "open": False},
+                "camera": {"enabled": False},
+            })
+        except Exception:
+            pass
+
     # Ayar sayfasindan girilen anahtarlar ortama yukleniyor: backend'ler
     # zaten oradan okuyor, ikinci bir yol acmaya gerek yok.
     settings.export_keys(config.state_dir)
@@ -2816,6 +2954,9 @@ async def _boot(config: Config, port: int, resume: bool) -> Runtime:
     async def greet() -> None:
         while True:
             await asyncio.sleep(2.0)
+            cfg = getattr(bridge.agent, "config", None) if bridge.agent else None
+            if cfg is None or not bool(getattr(cfg.camera, "enabled", False)):
+                continue
             box = getattr(bridge.agent, "lens", None) if bridge.agent else None
             if box is not None and not bridge.busy and box.arrival():
                 bridge.submit(GREET_ASK)
@@ -2827,9 +2968,11 @@ async def _boot(config: Config, port: int, resume: bool) -> Runtime:
     # GPU varsa kare yerelde analiz edilir, sohbet modeline METİN gider;
     # görüntü makineden çıkmaz. GPU yoksa eski kesit kipi (kare + cloud_ok).
     def seen(sighting: watching.Sighting) -> None:
-        _hareket_gonder(bridge, config, hub, sighting)
+        bridge._on_camera_motion(sighting)
 
-    eyes = watching.Watcher(watching.load(config.state_dir), seen)
+    eyes = watching.Watcher(
+        watching.load(config.state_dir) if config.camera.enabled else [], seen)
+    bridge.eyes = eyes
     # "Beni izleme" ağ kameralarını da kapsıyor; sesleniş hepsini geri
     # açıyor. Kulak, göz ve izleyici tek bir "duyular" bütünü.
     if bridge.agent is not None:
@@ -2837,8 +2980,9 @@ async def _boot(config: Config, port: int, resume: bool) -> Runtime:
     if bridge.ear is not None:
         # "neo" kulağı ve ağ kameralarını geri açar. Dahili kamera
         # HUD/sohbet anahtarıyla açılır — sesleniş LED'i yeniden yakmaz.
+        # HUD kapalıyken unsnooze izleyiciyi başlatmaz; start() HUD'a bağlı.
         bridge.ear.companions = [s for s in (eyes,) if s is not None]
-    if eyes.start():
+    if config.camera.enabled and eyes.start():
         print(f"[neo] {len(watching.load(config.state_dir))} kamera izleniyor", flush=True)
     eyes.on_snooze = lambda off: prefs.patch(
         config.state_dir, sight_snoozed=bool(off)
@@ -2944,7 +3088,10 @@ def run(config: Config, *, port: int = 8765, resume: bool = False,
     if sys.platform == "win32":
         try:
             import ctypes
-            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("fatih.neo.app")
+
+            from .winicon import AUMID, ensure_toast_identity
+            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(AUMID)
+            ensure_toast_identity()
         except Exception:
             pass
 
@@ -3044,6 +3191,9 @@ def run(config: Config, *, port: int = 8765, resume: bool = False,
     # HTCAPTION sürükleme (Aero snap dahil), WM_SYSCOMMAND büyüt/küçült ve
     # SC_SIZE kenar boyutlandırma — hepsi işletim sisteminin kendi döngüleri.
     geo = prefs.window_args(prefs.load(config.state_dir))
+    # maximized'ı create_window'a VERME: çerçevesizde konum (101,101) gibi
+    # kayıyor; kabuk + MaximizedBounds sonrası _force_maximize oturtuyor.
+    want_max = bool(geo.get("maximized"))
     window = webview.create_window(
         WINDOW_TITLE,
         runtime.url,
@@ -3051,7 +3201,7 @@ def run(config: Config, *, port: int = 8765, resume: bool = False,
         height=geo.get("height", 880),
         x=geo.get("x"),
         y=geo.get("y"),
-        maximized=bool(geo.get("maximized")),
+        maximized=False,
         min_size=(900, 600),
         background_color=WINDOW_BACKGROUND,
         frameless=True,
@@ -3081,10 +3231,13 @@ def run(config: Config, *, port: int = 8765, resume: bool = False,
         """Tepsiden / uyandırma: pencere gelsin; arka planda biten işler
         Görevler panelinde görünsün (liste tazelensin)."""
         window.show()
+        # Gizliyken kutu bozulmuş olabilir (kaymış büyütme); görünür olunca bak.
+        threading.Timer(0.4, _heal_geometry).start()
         runtime.bridge.hub.emit({"type": "jobs_refresh"})
 
     def _open_jobs_from_tray() -> None:
         window.show()
+        threading.Timer(0.4, _heal_geometry).start()
         runtime.bridge.hub.emit({"type": "open_jobs"})
 
     tray = tray_module.Tray(
@@ -3131,6 +3284,7 @@ def run(config: Config, *, port: int = 8765, resume: bool = False,
     def open_camera_window(cam: str = "") -> str:
         """Kamera izlemeyi ayrı OS penceresinde açar; varsa öne getirir."""
         global _CAM_WINDOW
+        import threading
         import webview
 
         q = ("?cam=" + str(cam)) if cam else ""
@@ -3149,10 +3303,60 @@ def run(config: Config, *, port: int = 8765, resume: bool = False,
             height=640,
             min_size=(480, 320),
             background_color=WINDOW_BACKGROUND,
-            frameless=False,
+            frameless=True,
             easy_drag=False,
         )
         _CAM_WINDOW = spawned
+
+        def minimize() -> None:
+            _win_do("minimize", spawned)
+
+        def maximize() -> bool:
+            _update_max_bounds_for(spawned)
+            return _win_do("maximize", spawned)
+
+        def drag() -> bool:
+            _win_do("drag", spawned)
+            _update_max_bounds_for(spawned)
+            return _is_zoomed(spawned)
+
+        def resize(edge: str) -> None:
+            _win_do("resize:" + str(edge), spawned)
+
+        def close() -> None:
+            try:
+                spawned.destroy()
+            except Exception:
+                pass
+
+        def is_zoomed() -> bool:
+            return _is_zoomed(spawned)
+
+        for fn in (minimize, maximize, drag, resize, close, is_zoomed):
+            try:
+                spawned.expose(fn)
+            except Exception:
+                pass
+
+        def _dress() -> None:
+            hwnd = _hwnd_of(spawned)
+            if not hwnd:
+                return
+            _apply_native_styles_hwnd(hwnd)
+            _install_shell_on(hwnd)
+            _update_max_bounds_for(spawned)
+
+        def _dress_retry(n: int) -> None:
+            _dress()
+            if n > 0 and not _hwnd_of(spawned):
+                threading.Timer(0.12, lambda: _dress_retry(n - 1)).start()
+
+        try:
+            spawned.events.loaded += _dress
+            spawned.events.shown += _dress
+        except Exception:
+            pass
+        _dress_retry(12)
 
         def _gone() -> None:
             global _CAM_WINDOW
@@ -3182,14 +3386,19 @@ def run(config: Config, *, port: int = 8765, resume: bool = False,
         """Pencere kutusu kapanıştaki gibi açılsın."""
         try:
             zoomed = _is_zoomed()
+            w = int(window.width or 0)
+            h = int(window.height or 0)
+            x = int(window.x if window.x is not None else 0)
+            y = int(window.y if window.y is not None else 0)
+            # Offset’li neredeyse-tam-ekran = bozuk büyütme; bir daha yazma.
+            if not zoomed and prefs.offset_fullscreen(x, y, w, h):
+                zoomed = True
+            # Work-area'ya oturan fake maximize da büyütülmüş sayılsın.
+            elif not zoomed and _fills_work_area(x, y, w, h):
+                zoomed = True
             box: dict[str, Any] = {"maximized": zoomed}
             if not zoomed:
-                box.update({
-                    "width": int(window.width or 0),
-                    "height": int(window.height or 0),
-                    "x": int(window.x if window.x is not None else 0),
-                    "y": int(window.y if window.y is not None else 0),
-                })
+                box.update({"width": w, "height": h, "x": x, "y": y})
             prefs.patch(config.state_dir, window=box)
         except Exception:
             pass
@@ -3239,7 +3448,7 @@ def run(config: Config, *, port: int = 8765, resume: bool = False,
         # aynı işaret). pywebview winforms bunu form.Icon yapıyor.
         from . import logo as logo_module
         webview.start(
-            _titlebar_boot,
+            lambda: _titlebar_boot(want_max=want_max),
             icon=str(logo_module.ico_path()),
             private_mode=False,
             storage_path=str(config.state_dir / "webview"),
@@ -3251,11 +3460,15 @@ def run(config: Config, *, port: int = 8765, resume: bool = False,
     return 0
 
 
-def _titlebar_boot() -> None:
+def _titlebar_boot(*, want_max: bool = False) -> None:
     """webview başladıktan sonra çalışır: pencere oluşana dek dener.
 
     Tek şerit: CAPTION+THICKFRAME stilleri yerinde (snap), WM_NCCALCSIZE üst
     payı istemciye (OS şeridi görünmez), WM_NCHITTEST kenar tutamakları.
+
+    `want_max`: prefs büyütülmüş diyorsa MaximizedBounds hazır olduktan
+    sonra zorla büyüt — create_window(maximized)+offset çerçevesizde
+    tutmuyordu; küçült/görev çubuğu açınca düzelirdi.
     """
     import time
     for _ in range(40):
@@ -3263,6 +3476,14 @@ def _titlebar_boot() -> None:
             _install_shell()
             _update_max_bounds()
             paint_titlebar(True)
+            if want_max:
+                _force_maximize()
+            else:
+                _clamp_window_to_work()
+            # Geç bozulmaya karşı nöbet: açılış yerleşiminden sonra kutu
+            # birileri tarafından (100,100)'e kayarsa yakala ve oturt.
+            threading.Thread(target=_geometry_watch, daemon=True,
+                             name="neo-geometry-watch").start()
             return
         time.sleep(0.15)
 
@@ -3331,15 +3552,24 @@ def _install_shell() -> bool:
     """
     if sys.platform != "win32":
         return True
+    targets = _neo_windows()
+    if not targets:
+        return False
+    ok = False
+    for hwnd in targets:
+        if _install_shell_on(hwnd):
+            ok = True
+    return ok
+
+
+def _install_shell_on(hwnd: int) -> bool:
+    if sys.platform != "win32" or not hwnd:
+        return False
     try:
         import ctypes
         from ctypes import wintypes
 
         u = _user32()
-        targets = _neo_windows()
-        if not targets:
-            return False
-        hwnd = targets[0]
         if hwnd in _SHELL:
             return True
 
@@ -3371,13 +3601,20 @@ def _install_shell() -> bool:
                         mi = MonitorInfo()
                         mi.cbSize = ctypes.sizeof(MonitorInfo)
                         mon = u.MonitorFromRect(ctypes.byref(p.rgrc[0]), 2)
-                        if mon and u.GetMonitorInfoW(mon, ctypes.byref(mi)):
+                        if (mon and u.GetMonitorInfoW(mon, ctypes.byref(mi))
+                                and abs(p.rgrc[0].left - mi.rcWork.left) <= 64
+                                and abs(p.rgrc[0].top - mi.rcWork.top) <= 64):
                             p.rgrc[0].left = mi.rcWork.left
                             p.rgrc[0].top = mi.rcWork.top
                             p.rgrc[0].right = mi.rcWork.right
                             p.rgrc[0].bottom = mi.rcWork.bottom
                         else:
-                            # Yedek: klasik 8px içe al.
+                            # Yedek — ve KAYMIŞ zoom: pencere (100,100) gibi
+                            # bozuk bir konumda zoom'lanmışken work-area kilidi
+                            # istemciyi pencereye göre EKSİYE kaydırıyordu
+                            # (canlı: içerik solda/üstte kırpık, masaüstü
+                            # sızıyor). Kaymışsa klasik payla yetin; pencereyi
+                            # yerine oturtmak _heal_geometry'nin işi.
                             p.rgrc[0].left += 8
                             p.rgrc[0].top += 8
                             p.rgrc[0].right -= 8
@@ -3418,7 +3655,28 @@ def _install_shell() -> bool:
         return False
 
 
+def _hwnd_of(window: Any) -> int:
+    """pywebview penceresinin HWND'si; henüz doğmadıysa 0."""
+    if window is None:
+        return 0
+    try:
+        form = getattr(window, "native", None)
+        if form is None:
+            return 0
+        handle = getattr(form, "Handle", None)
+        if handle is None:
+            return 0
+        to64 = getattr(handle, "ToInt64", None)
+        return int(to64()) if callable(to64) else int(handle)
+    except Exception:
+        return 0
+
+
 def _update_max_bounds() -> None:
+    _update_max_bounds_for(_MAIN_WINDOW)
+
+
+def _update_max_bounds_for(window: Any) -> None:
     """Büyütme sınırını o anki monitörün ÇALIŞMA ALANINA ayarlar.
 
     Çerçevesiz bir pencereyi Windows tam ekrana (görev çubuğunun üstüne)
@@ -3428,7 +3686,6 @@ def _update_max_bounds() -> None:
     Pencere hangi monitördeyse onun çalışma alanı; her sürüklemeden sonra
     tazeleniyor ki monitör değişimi doğru kalsın.
     """
-    window = _MAIN_WINDOW
     if window is None or sys.platform != "win32":
         return
     try:
@@ -3471,34 +3728,39 @@ def _apply_native_styles() -> bool:
     if sys.platform != "win32":
         return True
     try:
-        import ctypes
-
-        user32 = ctypes.windll.user32
         targets = _neo_windows()
         if not targets:
             return False
         for hwnd in targets:
-            style = user32.GetWindowLongW(hwnd, _GWL_STYLE)
-            # CAPTION + THICKFRAME: snap önizlemesi ve yerleşim için ikisi de
-            # gerekli (yalnız THICKFRAME yetmiyor — canlı A/B ile kanıtlandı).
-            # Görsel payı kabuk (NCCALCSIZE üst yutma) alıyor; kenarda çizgi yok.
-            style |= (
-                _WS_CAPTION
-                | _WS_THICKFRAME
-                | _WS_MINIMIZEBOX
-                | _WS_MAXIMIZEBOX
-                | _WS_SYSMENU
-            )
-            user32.SetWindowLongW(hwnd, _GWL_STYLE, style)
-            user32.SetWindowPos(hwnd, 0, 0, 0, 0, 0, _SWP_FRAMECHANGED)
-            # Yuvarlak köşe (Win11 22000+): DWMWA_WINDOW_CORNER_PREFERENCE=33,
-            # DWMWCP_ROUND=2. Eski sürüm sessizce yok sayar.
-            try:
-                pref = ctypes.c_int(2)
-                ctypes.windll.dwmapi.DwmSetWindowAttribute(
-                    hwnd, 33, ctypes.byref(pref), ctypes.sizeof(pref))
-            except Exception:
-                pass
+            _apply_native_styles_hwnd(hwnd)
+        return True
+    except Exception:
+        return False
+
+
+def _apply_native_styles_hwnd(hwnd: int) -> bool:
+    if sys.platform != "win32" or not hwnd:
+        return False
+    try:
+        import ctypes
+
+        user32 = ctypes.windll.user32
+        style = user32.GetWindowLongW(hwnd, _GWL_STYLE)
+        style |= (
+            _WS_CAPTION
+            | _WS_THICKFRAME
+            | _WS_MINIMIZEBOX
+            | _WS_MAXIMIZEBOX
+            | _WS_SYSMENU
+        )
+        user32.SetWindowLongW(hwnd, _GWL_STYLE, style)
+        user32.SetWindowPos(hwnd, 0, 0, 0, 0, 0, _SWP_FRAMECHANGED)
+        try:
+            pref = ctypes.c_int(2)
+            ctypes.windll.dwmapi.DwmSetWindowAttribute(
+                hwnd, 33, ctypes.byref(pref), ctypes.sizeof(pref))
+        except Exception:
+            pass
         return True
     except Exception:
         return False
@@ -3524,18 +3786,21 @@ _HT_EDGES = {
 }
 
 
-def _is_zoomed() -> bool:
+def _is_zoomed(window: Any | None = None) -> bool:
     if sys.platform != "win32":
         return False
     try:
         import ctypes
-        targets = _neo_windows()
-        return bool(targets and ctypes.windll.user32.IsZoomed(targets[0]))
+        hwnd = _hwnd_of(window) if window is not None else 0
+        if not hwnd:
+            targets = _neo_windows()
+            hwnd = targets[0] if targets else 0
+        return bool(hwnd and ctypes.windll.user32.IsZoomed(hwnd))
     except Exception:
         return False
 
 
-def _win_do(action: str) -> bool:
+def _win_do(action: str, window: Any | None = None) -> bool:
     """Pencere eylemleri app şeridinden: sürükle / küçült / büyüt / geri al.
 
     Sürükleme WM_NCLBUTTONDOWN + HTCAPTION: OS taşıma döngüsü (Aero snap dahil).
@@ -3554,10 +3819,12 @@ def _win_do(action: str) -> bool:
 
         u = _user32()
         raw = ctypes.windll.user32
-        targets = _neo_windows()
-        if not targets:
-            return False
-        hwnd = targets[0]
+        hwnd = _hwnd_of(window) if window is not None else 0
+        if not hwnd:
+            targets = _neo_windows()
+            if not targets:
+                return False
+            hwnd = targets[0]
 
         def _drag_now() -> None:
             if raw.IsZoomed(hwnd):
@@ -3585,8 +3852,8 @@ def _win_do(action: str) -> bool:
 
         def _on_ui(fn) -> None:
             """Taşıma/boyutlandırma döngüsü UI thread'inde başlamalı."""
-            window = _MAIN_WINDOW
-            form = getattr(window, "native", None) if window is not None else None
+            win = window if window is not None else _MAIN_WINDOW
+            form = getattr(win, "native", None) if win is not None else None
             if form is not None:
                 try:
                     from System import Action  # type: ignore[import-not-found]
@@ -3706,28 +3973,211 @@ def _minimize(window: Any) -> Any:
 
 
 def _work_area() -> tuple[int, int, int, int] | None:
-    """Ekranın görev çubuğu hariç alanı (x, y, genişlik, yükseklik).
+    """Ekranın görev çubuğu hariç alanı (x, y, genişlik, yükseklik)."""
+    return prefs.work_area()
 
-    Windows'ta SPI_GETWORKAREA. Çerçevesiz bir pencereyi `maximize()` ile
-    büyütmek tüm monitörü (görev çubuğu dahil) kaplıyor; onun yerine pencereyi
-    bu alana taşıyıp boyutlandırıyoruz — "senin gibi" normal, görev çubuğuna
-    saygılı bir büyütme.
+
+def _force_maximize() -> None:
+    """Çalışma alanına oturt — native SW_MAXIMIZE çerçevesizde kaydırıyordu.
+
+    create_window(maximized=True) / ShowWindow(SW_MAXIMIZE) IsZoomed=True
+    bırakıp HWND'yi (101,101) gibi bırakıyordu (sol masaüstü boşluğu).
+    Küçült/geri aç düzeltiyordu. Açılışta doğrudan work-area kutusu
+    veriyoruz; prefs `maximized` bayrağı _remember_window ile korunur.
     """
-    if os.name != "nt":
+    if sys.platform != "win32":
+        return
+    try:
+        import ctypes
+        from ctypes import wintypes
+
+        raw = ctypes.windll.user32
+        hwnd = _hwnd_of(_MAIN_WINDOW)
+        if not hwnd:
+            targets = _neo_windows()
+            hwnd = targets[0] if targets else 0
+        if not hwnd:
+            return
+        area = _work_area()
+        if not area:
+            return
+        ax, ay, aw, ah = area
+        _update_max_bounds()
+        # SW_RESTORE: önceki bozuk zoom state'ini bırak.
+        if raw.IsZoomed(hwnd):
+            raw.ShowWindow(hwnd, 9)
+        # SWP_NOZORDER|SWP_SHOWWINDOW
+        raw.SetWindowPos(hwnd, 0, ax, ay, aw, ah, 0x0004 | 0x0040)
+        r = wintypes.RECT()
+        raw.GetWindowRect(hwnd, ctypes.byref(r))
+        if (
+            abs(r.left - ax) > prefs.OFFSET_SLACK
+            or abs(r.top - ay) > prefs.OFFSET_SLACK
+            or abs((r.right - r.left) - aw) > prefs.OFFSET_SLACK * 2
+        ):
+            raw.SetWindowPos(hwnd, 0, ax, ay, aw, ah, 0x0004 | 0x0040)
+    except Exception:
+        pass
+
+
+def _monitor_work_area(hwnd: int) -> tuple[int, int, int, int] | None:
+    """Pencerenin ÜZERİNDE olduğu monitörün çalışma alanı.
+
+    `prefs.work_area` yalnız ANA monitörü bilir; ikinci monitörde büyütülmüş
+    bir pencereyi "kaymış" sanıp ana ekrana çekmek olmaz — kıyas pencerenin
+    kendi monitörüne göre yapılmalı.
+    """
+    if sys.platform != "win32" or not hwnd:
         return None
     try:
         import ctypes
         from ctypes import wintypes
 
-        rect = wintypes.RECT()
-        SPI_GETWORKAREA = 0x0030
-        if not ctypes.windll.user32.SystemParametersInfoW(
-            SPI_GETWORKAREA, 0, ctypes.byref(rect), 0
-        ):
+        class _MI(ctypes.Structure):
+            _fields_ = [
+                ("cbSize", wintypes.DWORD),
+                ("rcMonitor", wintypes.RECT),
+                ("rcWork", wintypes.RECT),
+                ("dwFlags", wintypes.DWORD),
+            ]
+
+        raw = ctypes.windll.user32
+        mon = raw.MonitorFromWindow(hwnd, 2)   # MONITOR_DEFAULTTONEAREST
+        if not mon:
             return None
-        return (rect.left, rect.top, rect.right - rect.left, rect.bottom - rect.top)
+        mi = _MI()
+        mi.cbSize = ctypes.sizeof(_MI)
+        if not raw.GetMonitorInfoW(mon, ctypes.byref(mi)):
+            return None
+        wa = mi.rcWork
+        return (wa.left, wa.top, wa.right - wa.left, wa.bottom - wa.top)
     except Exception:
         return None
+
+
+def _heal_geometry() -> bool:
+    """Kaymış büyütmeyi yakalayıp oturtur — "küçült/geri aç" jestinin kod hali.
+
+    Canlı yara (31.08): açılışta pencere near-full boyutta ama (100,100) gibi
+    kaymış geliyordu — sol/üstten masaüstü sızıyor, zoom'luysa içerik de sola
+    kırpılıyordu; kullanıcı elle küçültüp geri açınca düzeliyordu. Burada aynı
+    jest kodla: kaymış zoom ya da kaymış near-full kutu görülürse restore +
+    pencerenin KENDİ monitörünün çalışma alanına oturt.
+
+    Düzgün pencereye dokunmaz; sürükleme sırasında da karışmaz (sol fare tuşu
+    basılıysa hiçbir şey yapmaz). Döner: bir şey düzeltildi mi.
+    """
+    if sys.platform != "win32":
+        return False
+    try:
+        import ctypes
+        from ctypes import wintypes
+
+        raw = ctypes.windll.user32
+        hwnd = _hwnd_of(_MAIN_WINDOW)
+        if not hwnd:
+            targets = _neo_windows()
+            hwnd = targets[0] if targets else 0
+        if not hwnd or not raw.IsWindowVisible(hwnd) or raw.IsIconic(hwnd):
+            return False
+        if raw.GetAsyncKeyState(0x01) & 0x8000:   # sürükleme olabilir
+            return False
+
+        r = wintypes.RECT()
+        raw.GetWindowRect(hwnd, ctypes.byref(r))
+        x, y = r.left, r.top
+        w, h = r.right - r.left, r.bottom - r.top
+
+        area = _monitor_work_area(hwnd) or _work_area()
+        if not area:
+            return False
+        ax, ay, aw, ah = area
+        kaymis = (abs(x - ax) > prefs.OFFSET_SLACK
+                  or abs(y - ay) > prefs.OFFSET_SLACK)
+        if raw.IsZoomed(hwnd):
+            if not kaymis:
+                return False
+        elif not prefs.offset_fullscreen(x, y, w, h, area):
+            return False
+
+        _update_max_bounds()
+        if raw.IsZoomed(hwnd):
+            raw.ShowWindow(hwnd, 9)   # SW_RESTORE: bozuk zoom durumunu bırak
+        # SWP_NOZORDER | SWP_SHOWWINDOW
+        raw.SetWindowPos(hwnd, 0, ax, ay, aw, ah, 0x0004 | 0x0040)
+        return True
+    except Exception:
+        return False
+
+
+def _geometry_watch(seconds: float = 12.0) -> None:
+    """Açılıştan sonra pencere kutusunu kısa süre kollar.
+
+    Bozuk büyütme `_force_maximize`'dan SONRA da oluşabiliyor (WebView2 /
+    pywebview açılışı konumu geç oynatıyor); tek atış yetmiyordu — kullanıcı
+    pencereyi kesik görüp elle küçültüp açıyordu. Bu nöbet geç bozulmayı
+    yakalayıp düzeltir, sonra kendiliğinden biter.
+    """
+    import time
+    son = time.monotonic() + seconds
+    while time.monotonic() < son:
+        time.sleep(0.6)
+        _heal_geometry()
+
+
+def _fills_work_area(x: int, y: int, w: int, h: int) -> bool:
+    """Pencere çalışma alanını dolduruyor mu (fake maximize)."""
+    area = _work_area()
+    if not area:
+        return False
+    ax, ay, aw, ah = area
+    return (
+        abs(x - ax) <= prefs.OFFSET_SLACK
+        and abs(y - ay) <= prefs.OFFSET_SLACK
+        and w >= aw * prefs.NEAR_FULL
+        and h >= ah * prefs.NEAR_FULL
+    )
+
+
+def _clamp_window_to_work() -> None:
+    """Büyütülmemiş pencere çalışma alanı dışındaysa içeri çek."""
+    if sys.platform != "win32":
+        return
+    try:
+        import ctypes
+        from ctypes import wintypes
+
+        from .prefs import MIN_H, MIN_W
+
+        area = _work_area()
+        if not area:
+            return
+        ax, ay, aw, ah = area
+        hwnd = _hwnd_of(_MAIN_WINDOW)
+        if not hwnd:
+            targets = _neo_windows()
+            hwnd = targets[0] if targets else 0
+        if not hwnd:
+            return
+        raw = ctypes.windll.user32
+        if raw.IsZoomed(hwnd):
+            return
+        r = wintypes.RECT()
+        raw.GetWindowRect(hwnd, ctypes.byref(r))
+        cur_w = r.right - r.left
+        cur_h = r.bottom - r.top
+        x, y = r.left, r.top
+        if prefs.offset_fullscreen(x, y, cur_w, cur_h, area):
+            _force_maximize()
+            return
+        w = min(max(cur_w, MIN_W), aw)
+        h = min(max(cur_h, MIN_H), ah)
+        nx = max(ax, min(x, ax + max(aw - w, 0)))
+        ny = max(ay, min(y, ay + max(ah - h, 0)))
+        if (nx, ny, w, h) != (x, y, cur_w, cur_h):
+            raw.SetWindowPos(hwnd, 0, nx, ny, w, h, 0x0004)  # SWP_NOZORDER
+    except Exception:
+        pass
 
 
 def _maximize(window: Any) -> Any:
@@ -3789,6 +4239,7 @@ def _close(window: Any, *, tray: bool = False) -> Any:
 def _wake(window: Any) -> Any:
     def wake() -> None:
         window.show()
+        threading.Timer(0.4, _heal_geometry).start()
 
     return wake
 

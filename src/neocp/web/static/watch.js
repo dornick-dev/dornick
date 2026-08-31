@@ -26,6 +26,10 @@ const Watch = (() => {
     return src === "0" && (!c.kind || c.kind === "usb");
   }
 
+  function imgKey(img) {
+    return img && img.dataset ? img.dataset.key : "";
+  }
+
   function aktifVar() {
     return !!(acikMi || cams.some((c) => !usb0(c) && c.enabled));
   }
@@ -59,7 +63,7 @@ const Watch = (() => {
     return rows.find((w) => w.key === secili) || rows[0];
   }
 
-  async function kareYukle(img, query, boxes) {
+  async function kareYukle(img, query, boxes, follow) {
     if (!img) return "";
     try {
       const r = await fetch(
@@ -77,6 +81,10 @@ const Watch = (() => {
       img.src = url;
       img.dataset.blob = url;
       img.classList.remove("dead");
+      if (follow) {
+        follow.src = url;
+        follow.classList.remove("dead");
+      }
       if (old) URL.revokeObjectURL(old);
       return seen;
     } catch {
@@ -88,13 +96,24 @@ const Watch = (() => {
   function serit() {
     if (!strip) return;
     const want = adlar();
+    const mevcut = [...strip.querySelectorAll(".cam-thumb")];
+    if (mevcut.length === want.length
+        && want.every((w, i) => mevcut[i] && mevcut[i].dataset.key === w.key)) {
+      want.forEach((w, i) => {
+        mevcut[i].classList.toggle("on", w.key === secili);
+        const cap = mevcut[i].querySelector("span");
+        if (cap) cap.textContent = w.ad;
+      });
+      return;
+    }
     strip.replaceChildren();
     want.forEach((w) => {
       const btn = document.createElement("button");
       btn.type = "button";
       btn.className = "cam-thumb" + (w.key === secili ? " on" : "");
+      btn.dataset.key = w.key;
       const img = document.createElement("img");
-      img.alt = w.ad;
+      img.alt = "";
       img.dataset.q = w.q;
       img.dataset.key = w.key;
       const cap = document.createElement("span");
@@ -130,10 +149,12 @@ const Watch = (() => {
       if (document.hidden || !aktifVar()) return;
       const w = secilen();
       if (!w || !live) return;
-      const seen = await kareYukle(live, w.q, w.analyze !== false);
+      const thumb = strip && [...strip.querySelectorAll("img")]
+        .find((el) => imgKey(el) === w.key);
+      const seen = await kareYukle(live, w.q, w.analyze !== false, thumb);
       if (seen && sightEl) sightEl.textContent = seen;
       for (const img of strip.querySelectorAll("img")) {
-        if (img.dataset.key === secili) continue;
+        if (imgKey(img) === w.key) continue;
         kareYukle(img, img.dataset.q, false);
       }
     };

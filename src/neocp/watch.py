@@ -140,6 +140,16 @@ class Camera:
         return src == "0" and kind == "usb"
 
 
+def _watchable(cameras: list[Camera]) -> list[Camera]:
+    """İzleyiciye düşen kameralar: açık ağ/USB-ek; dahili webcam Lens'in.
+
+    `cameras.json` içindeki "Bilgisayar kamerası" (kaynak 0) ikinci bir
+    OpenCV oturumu açıyordu. HUD kapalıyken bile kare alınıp sohbete
+    "hareket oldu" basılıyordu; model de `look` ile Lens'i kapalı görüyordu.
+    """
+    return [c for c in cameras if c.enabled and not c.is_builtin()]
+
+
 DEFAULT_ASK = (
     "Bu kamerada bir hareket oldu. Kareye bak ve ne olduğunu tek cümleyle "
     "söyle. Sıradan bir şeyse (biri geçti, ışık değişti) kısa geç; dikkat "
@@ -320,21 +330,41 @@ class Watcher:
 
     def __init__(self, cameras: list[Camera], report: Callable[[Sighting], None]) -> None:
         self.report = report
-        self._eyes = {c.id: Eye(camera=c) for c in cameras if c.enabled}
+        self._all = list(cameras)
+        self._eyes = {c.id: Eye(camera=c) for c in _watchable(cameras)}
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
+        self.armed = False
+
+    def load_from(self, cameras: list[Camera]) -> None:
+        """HUD açılınca kayıtlı kameraları yeniden yükler; dönen döngüye dokunmaz."""
+        self._all = list(cameras)
 
     def start(self) -> bool:
-        if not available() or not self._eyes:
+        if not available():
             return False
+        if self._thread is not None and self._thread.is_alive():
+            return True
+        self._eyes = {c.id: Eye(camera=c) for c in _watchable(self._all)}
+        if not self._eyes:
+            return False
+        # stop() Event'i set bırakıyor; yeniden kullanılamaz.
+        self._stop = threading.Event()
+        self.armed = True
         self._thread = threading.Thread(target=self._loop, daemon=True, name="neo-watch")
         self._thread.start()
         return True
 
     def stop(self) -> None:
+        self.armed = False
         self._stop.set()
-        for eye in self._eyes.values():
+        for eye in list(self._eyes.values()):
             eye.close()
+        thread = self._thread
+        self._thread = None
+        if thread is not None and thread.is_alive() and thread is not threading.current_thread():
+            thread.join(timeout=3.0)
+        self._eyes = {}
 
     @property
     def snoozed(self) -> bool:
@@ -363,7 +393,7 @@ class Watcher:
         while not self._stop.is_set():
             # Susturulmuşken hiçbir kameraya bakılmıyor ve hiçbir görüş
             # bildirilmiyor: "izlemiyorum" ağ kameralarını da kapsıyor.
-            if self.snoozed:
+            if self.snoozed or not self.armed:
                 self._stop.wait(1.0)
                 continue
             slowest = 1.0
@@ -371,7 +401,8 @@ class Watcher:
                 slowest = min(slowest, eye.camera.every_s)
                 try:
                     if sighting := eye.look():
-                        self.report(sighting)
+                        if self.armed:
+                            self.report(sighting)
                 except Exception:
                     # Tek bir kameranın hatası ötekileri durdurmamalı.
                     eye.close()

@@ -16,6 +16,9 @@ import sys
 from pathlib import Path
 
 HOST_NAME = "neo.exe"
+# Görev çubuğu + Windows bildirimi aynı kimlik: eşleşmezse toast Python
+# yılanını gösterir, kısayol ikonu da bağlanmaz.
+AUMID = "fatih.neo.app"
 
 # UpdateResource dil kodu: yansız + US English (pythonw 1033 taşır).
 _LANG_NEUTRAL = 0
@@ -251,3 +254,159 @@ def _planes_and_bits(planes: int, bits: int, payload: bytes) -> tuple[int, int]:
         dib_planes, dib_bits = struct.unpack_from("<HH", payload, 12)
         return dib_planes or 1, dib_bits or 32
     return 1, 32
+
+
+def ensure_toast_identity() -> None:
+    """Windows bildiriminin başlığı 'neo', simgesi logo olsun.
+
+    Toast, süreç AUMID'sine bakıyor. Eşleşen bir Başlat kısayolu ve
+    DisplayName olmadan bildirim Python yılanıyla geliyor (ya da hiç
+    gelmiyor). Kısayol ikonu + kayıt, pystray balonundan bağımsız.
+    """
+    if sys.platform != "win32":
+        return
+    from .logo import ico_path, png_path
+
+    png = png_path()
+    ico = ico_path()
+    target = app_executable()
+    programs = Path(os.environ.get("APPDATA", "")) / "Microsoft" / "Windows" / "Start Menu" / "Programs"
+    if not programs.is_dir():
+        return
+    lnk = programs / "neo.lnk"
+    args = " ".join(_argv_tail())
+    _yaz_kisayol(lnk, target, args, ico)
+    _kisayol_aumid_yaz(lnk, AUMID)
+    _yaz_bildirim_kaydi(png)
+
+
+def _yaz_kisayol(lnk: Path, target: Path, args: str, ico: Path) -> None:
+    from . import ortam
+
+    def q(s: str) -> str:
+        return "'" + str(s).replace("'", "''") + "'"
+
+    ps = (
+        "$s = (New-Object -ComObject WScript.Shell).CreateShortcut(%s); "
+        "$s.TargetPath = %s; $s.Arguments = %s; $s.WorkingDirectory = %s; "
+        "$s.IconLocation = %s; $s.Save()"
+        % (q(lnk), q(target), q(args), q(target.parent), q(str(ico) + ",0"))
+    )
+    try:
+        import subprocess
+        subprocess.run(
+            ["powershell", "-NoProfile", "-NonInteractive", "-Command", ps],
+            timeout=12, **ortam.sessiz_bayraklar(),
+        )
+    except Exception:
+        return
+
+
+def _yaz_bildirim_kaydi(png: Path) -> None:
+    try:
+        import winreg
+        key = winreg.CreateKey(
+            winreg.HKEY_CURRENT_USER,
+            rf"Software\Classes\AppUserModelId\{AUMID}",
+        )
+        try:
+            winreg.SetValueEx(key, "DisplayName", 0, winreg.REG_SZ, "neo")
+            winreg.SetValueEx(key, "IconUri", 0, winreg.REG_SZ, png.resolve().as_uri())
+        finally:
+            winreg.CloseKey(key)
+    except OSError:
+        return
+
+
+def _kisayol_aumid_yaz(lnk: Path, aumid: str) -> None:
+    """Kısayola System.AppUserModel.ID yazar.
+
+    WScript.Shell IconLocation yazar; AUMID yazmaz. Toast notifier o
+    kimliği Start Menu kısayolunda arar — yoksa Python yılanı gelir.
+    """
+    if sys.platform != "win32" or not lnk.is_file():
+        return
+    try:
+        import ctypes
+        from ctypes import HRESULT, POINTER, byref, c_uint, c_ulong, c_void_p
+
+        ole32 = ctypes.OleDLL("ole32")
+        shell32 = ctypes.WinDLL("shell32")
+
+        class GUID(ctypes.Structure):
+            _fields_ = [
+                ("Data1", ctypes.c_uint32),
+                ("Data2", ctypes.c_uint16),
+                ("Data3", ctypes.c_uint16),
+                ("Data4", ctypes.c_ubyte * 8),
+            ]
+
+        class PROPERTYKEY(ctypes.Structure):
+            _fields_ = [("fmtid", GUID), ("pid", ctypes.c_uint32)]
+
+        class PROPVARIANT(ctypes.Structure):
+            _fields_ = [
+                ("vt", ctypes.c_ushort),
+                ("wReserved1", ctypes.c_ushort),
+                ("wReserved2", ctypes.c_ushort),
+                ("wReserved3", ctypes.c_ushort),
+                ("pszVal", c_void_p),
+            ]
+
+        class IPropertyStoreVtbl(ctypes.Structure):
+            _fields_ = [
+                ("QueryInterface", c_void_p),
+                ("AddRef", c_void_p),
+                ("Release", c_void_p),
+                ("GetCount", c_void_p),
+                ("GetAt", c_void_p),
+                ("GetValue", c_void_p),
+                ("SetValue", c_void_p),
+                ("Commit", c_void_p),
+            ]
+
+        class IPropertyStore(ctypes.Structure):
+            _fields_ = [("lpVtbl", POINTER(IPropertyStoreVtbl))]
+
+        ole32.CLSIDFromString.argtypes = [ctypes.c_wchar_p, POINTER(GUID)]
+        ole32.CLSIDFromString.restype = HRESULT
+        iid = GUID()
+        if ole32.CLSIDFromString("{886D8EEB-8CF2-4446-8D02-CDBA1DBDCF99}", byref(iid)):
+            return
+        pkey_id = GUID()
+        if ole32.CLSIDFromString("{9F4C285D-9F4C-4D6A-9D38-5D649E7B8B1B}", byref(pkey_id)):
+            return
+        pkey = PROPERTYKEY(pkey_id, 5)
+
+        GPS_READWRITE = 2
+        store = c_void_p()
+        shell32.SHGetPropertyStoreFromParsingName.restype = HRESULT
+        shell32.SHGetPropertyStoreFromParsingName.argtypes = [
+            ctypes.c_wchar_p, c_void_p, c_uint, POINTER(GUID), POINTER(c_void_p),
+        ]
+        if shell32.SHGetPropertyStoreFromParsingName(
+                str(lnk), None, GPS_READWRITE, byref(iid), byref(store)):
+            return
+        if not store.value:
+            return
+
+        obj = ctypes.cast(store, POINTER(IPropertyStore)).contents
+        vtbl = obj.lpVtbl.contents
+        set_value = ctypes.WINFUNCTYPE(
+            HRESULT, c_void_p, POINTER(PROPERTYKEY), POINTER(PROPVARIANT),
+        )(vtbl.SetValue)
+        commit = ctypes.WINFUNCTYPE(HRESULT, c_void_p)(vtbl.Commit)
+        release = ctypes.WINFUNCTYPE(c_ulong, c_void_p)(vtbl.Release)
+
+        buf = ctypes.create_unicode_buffer(aumid)
+        pv = PROPVARIANT()
+        pv.vt = 31  # VT_LPWSTR
+        pv.pszVal = ctypes.cast(buf, c_void_p)
+        try:
+            if set_value(store, byref(pkey), byref(pv)):
+                return
+            commit(store)
+        finally:
+            release(store)
+    except Exception:
+        return

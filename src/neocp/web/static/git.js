@@ -66,6 +66,7 @@ const GitBar = (() => {
       return;
     }
     bar.hidden = false;
+    if (snap.root) bar.dataset.root = snap.root;
     nameEl.textContent = snap.name || "";
     branchEl.textContent = snap.branch || "";
     const dirty = !!snap.dirty;
@@ -78,7 +79,7 @@ const GitBar = (() => {
     publishBtn.hidden = !!snap.remote;
     commitBtn.textContent = t("Commit");
     publishBtn.textContent = t("Yayınla");
-    document.body.style.setProperty("--git-h", bar.offsetHeight + "px");
+    document.body.style.setProperty("--git-h", "0px");
   }
 
   function openPane() {
@@ -169,6 +170,18 @@ const GitBar = (() => {
     const kutu = el("div", "chg-diff");
     kutu.hidden = true;
     satir.append(kutu);
+    satir.addEventListener("contextmenu", (ev) => {
+      if (typeof Menu === "undefined") return;
+      const maddeler = [];
+      if (row.open && typeof Viewer !== "undefined") {
+        maddeler.push({ ad: "Dosyayı aç", is: () => Viewer.open(row.open) });
+      }
+      maddeler.push({
+        ad: kutu.hidden ? "farkı gör" : "farkı gizle",
+        is: () => fark.click(),
+      });
+      Menu.ac(ev, maddeler);
+    });
     let yuklendi = false;
     fark.addEventListener("click", async () => {
       kutu.hidden = !kutu.hidden;

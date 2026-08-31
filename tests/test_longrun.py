@@ -771,7 +771,90 @@ async def test_the_snapshot_carries_the_resumed_context(tmp_path: Path) -> None:
 
     assert state["prompt_total"] == 3000
     assert state["tahmin"] is False
+    # Kalem kalem kırılım: sabitler + kalan konuşma = prompt_total.
+    kirilim = {p["id"]: p["n"] for p in state["kirilim"]}
+    assert set(kirilim) == {
+        "sistem", "arac", "ruh", "yetenek", "mcp", "yardimci", "sohbet"}
+    assert sum(kirilim.values()) == 3000
+    assert kirilim["sohbet"] == 3000 - (
+        kirilim["sistem"] + kirilim["arac"] + kirilim["ruh"]
+        + kirilim["yetenek"] + kirilim["mcp"] + kirilim["yardimci"])
     # Maliyet çipinin oturum toplamı da aynı kaynaktan tohumlandı.
     assert state["kullanim"]["oturum"] == {"girdi": 3000, "cikti": 50, "cagri": 1}
     # İkinci snapshot (sayfa yenilendi) toplamı ŞİŞİRMEZ: tohum bir kez.
     assert bridge.snapshot()["kullanim"]["oturum"]["cagri"] == 1
+
+
+def test_baglam_kirilim_puts_the_remainder_in_conversation() -> None:
+    """Sağlayıcı yalnız toplam veriyor: sabitler karakter/4, kalan konuşma."""
+    import json
+
+    from neocp.desktop import baglam_kirilim
+
+    sema = {"name": "x", "description": "yyyy", "input_schema": {}}
+    yetenek = {"name": "sk", "description": "z" * 20, "input_schema": {}}
+    mcp = {"name": "m", "description": "m" * 16, "input_schema": {}}
+    task = {"name": "task", "description": "y" * 24, "input_schema": {}}
+
+    def tok(obj: dict) -> int:
+        return len(json.dumps(obj, ensure_ascii=False, separators=(",", ":"))) // 4
+
+    agent = SimpleNamespace(
+        _system=SimpleNamespace(core="S" * 40, identity="R" * 20),
+        registry=SimpleNamespace(all=lambda: [
+            SimpleNamespace(name="x", source="", api_schema=lambda: sema),
+            SimpleNamespace(name="sk", source="yetenek", api_schema=lambda: yetenek),
+            SimpleNamespace(name="m", source="mcp:uzak", api_schema=lambda: mcp),
+            SimpleNamespace(name="task", source="", api_schema=lambda: task),
+        ]),
+        kisa_sema=False,
+    )
+    parcalar = baglam_kirilim(agent, 1000)
+    by_n = {p["id"]: p["n"] for p in parcalar}
+    assert by_n["sistem"] == 10
+    assert by_n["ruh"] == 5
+    assert by_n["arac"] == tok(sema)
+    assert by_n["yetenek"] == tok(yetenek)
+    assert by_n["mcp"] == tok(mcp)
+    assert by_n["yardimci"] == tok(task)
+    assert by_n["sohbet"] == 1000 - sum(n for k, n in by_n.items() if k != "sohbet")
+    assert [p["ad"] for p in parcalar] == [
+        "Sistem istemi", "Araç tanımları", "Ruh / kurallar",
+        "Yetenekler", "MCP ve dinamik araçlar", "Yardımcı tanımları", "Konuşma",
+    ]
+
+
+def test_baglam_kirilim_scales_when_static_exceeds_total() -> None:
+    """Sabitler sağlayıcı toplamını aşarsa orantılanır — konuşma sıfır kalır."""
+    from neocp.desktop import baglam_kirilim
+
+    agent = SimpleNamespace(
+        _system=SimpleNamespace(core="x" * 400, identity=""),
+        registry=None,
+    )
+    parts = {p["id"]: p["n"] for p in baglam_kirilim(agent, 40)}
+    assert parts["sistem"] == 40
+    assert parts["sohbet"] == 0
+    assert sum(parts.values()) == 40
+
+
+def test_baglam_kirilim_without_agent_is_all_conversation() -> None:
+    from neocp.desktop import baglam_kirilim
+
+    parts = {p["id"]: p["n"] for p in baglam_kirilim(None, 500)}
+    assert parts["sohbet"] == 500
+    assert parts["sistem"] == parts["arac"] == parts["ruh"] == 0
+    assert parts["yetenek"] == parts["mcp"] == parts["yardimci"] == 0
+
+
+def test_baglam_kirilim_shows_statics_before_the_first_turn() -> None:
+    """İlk turdan önce de sistem/araç görünsün — yüzde sıfır yalanı yok."""
+    from neocp.desktop import baglam_kirilim
+
+    agent = SimpleNamespace(
+        _system=SimpleNamespace(core="x" * 40, identity=""),
+        registry=None,
+    )
+    parts = {p["id"]: p["n"] for p in baglam_kirilim(agent, 0)}
+    assert parts["sistem"] == 10
+    assert parts["sohbet"] == 0

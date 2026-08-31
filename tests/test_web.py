@@ -668,6 +668,40 @@ def test_the_meta_endpoint_refuses_a_path_shaped_id(tmp_path: Path, mind: Mind) 
         log.close()
 
 
+def test_archiving_a_session_drops_it_from_the_listing(
+        tmp_path: Path, mind: Mind) -> None:
+    """Sağ tık Arşivle: günlük .arsiv'e taşınır, liste onu görmez.
+    Kimlik dosya adına dönüşüyor — `..` ile dışarı çıkılamaz."""
+    _oturum_yaz(mind.sessions_dir, "20260101T000000Z",
+                [("user", "pompa bakımı"), ("assistant", "tamam")])
+
+    log = EventLog(tmp_path / "s.jsonl")
+    server = MindServer(mind, log, port=0)
+    server.start()
+    try:
+        istek = urllib.request.Request(
+            server.url + "api/session/archive",
+            data=json.dumps({"id": "20260101T000000Z"}).encode("utf-8"),
+            headers={"Content-Type": "application/json"}, method="POST")
+        with urllib.request.urlopen(istek, timeout=5) as cevap:
+            assert json.loads(cevap.read().decode("utf-8"))["ok"] is True
+
+        with urllib.request.urlopen(server.url + "api/sessions", timeout=5) as cevap:
+            ids = [s["id"] for s in json.loads(cevap.read().decode("utf-8"))["sessions"]]
+        assert "20260101T000000Z" not in ids
+        assert (mind.sessions_dir / ".arsiv" / "20260101T000000Z.jsonl").is_file()
+
+        kotu = urllib.request.Request(
+            server.url + "api/session/archive",
+            data=json.dumps({"id": "../gizli"}).encode("utf-8"),
+            headers={"Content-Type": "application/json"}, method="POST")
+        with urllib.request.urlopen(kotu, timeout=5) as cevap:
+            assert json.loads(cevap.read().decode("utf-8"))["ok"] is False
+    finally:
+        server.stop()
+        log.close()
+
+
 def test_the_listing_searches_inside_transcripts(tmp_path: Path, mind: Mind) -> None:
     """Arama bugüne kadar yalnızca başlığı süzüyordu; söz konuşmanın
     ortasında geçiyorsa liste onu bulamıyordu."""
@@ -778,3 +812,102 @@ def test_the_settings_snapshot_carries_the_project_state(
     assert kutu["project_root"] == str(proje.resolve())
     assert kutu["project_error"] == ""
     assert str(proje) in kutu["recent"]
+
+
+# -- dışa açma ve artifact indirme (31.08 canlı yaraları) ----------------
+
+
+def _post_json(server: MindServer, path: str, payload: dict) -> dict:
+    data = json.dumps(payload).encode("utf-8")
+    istek = urllib.request.Request(
+        server.url.rstrip("/") + path, data=data,
+        headers={"Content-Type": "application/json"},
+    )
+    with urllib.request.urlopen(istek, timeout=5) as cevap:
+        return json.loads(cevap.read().decode("utf-8"))
+
+
+def test_disari_ac_opens_only_local_pages(
+    tmp_path: Path, mind: Mind, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Gerçek tarayıcıya yalnız BU sunucunun sayfası gider — gerçek portla.
+
+    Ajan artifact adresini varsayılan 8765 ile söylüyordu; sunucu kaymış
+    portta koşuyordu ve kullanıcı "bağlantı reddedildi" görüyordu. Adres
+    istekten değil sunucunun kendi bağlandığı yerden kurulur; dış adres
+    bu uçtan hiç açılmaz.
+    """
+    import webbrowser
+
+    from neocp.config import Config
+
+    acilan: list[str] = []
+    monkeypatch.setattr(webbrowser, "open", lambda url: acilan.append(url) or True)
+
+    config = Config.load(tmp_path)
+    config.ensure_dirs()
+    log = EventLog(tmp_path / "s.jsonl")
+    server = MindServer(mind, log, port=0, config=config)
+    server.start()
+    try:
+        assert _post_json(server, "/api/disari-ac", {"path": "https://kotu.example/"})["ok"] is False
+        assert _post_json(server, "/api/disari-ac", {"path": "//kotu.example/x"})["ok"] is False
+        assert acilan == []
+
+        out = _post_json(server, "/api/disari-ac", {"path": "/artifact/x-1a2b/"})
+        assert out["ok"] is True
+        assert acilan == [out["url"]]
+        assert out["url"].startswith("http://127.0.0.1:")
+        assert out["url"].endswith("/artifact/x-1a2b/")
+        # Gerçek port: sunucunun bağlandığı port neyse o.
+        assert out["url"] == server.url.rstrip("/") + "/artifact/x-1a2b/"
+    finally:
+        server.stop()
+        log.close()
+
+
+def test_artifact_indir_saves_to_downloads_with_full_path(
+    tmp_path: Path, mind: Mind, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """İndirme diske SUNUCUDAN yazılır ve tam yol döner.
+
+    Pencere WebView2'de blob + <a download> sessizce ölüyordu; kullanıcı
+    "indiremiyorum, dosya yolunu göremiyorum" yaşıyordu. Var olan dosya
+    ezilmez — sayaçlı ad açılır.
+    """
+    import pathlib
+
+    from neocp import artifacts
+    from neocp.config import Config
+
+    ev = tmp_path / "ev"
+    (ev / "Downloads").mkdir(parents=True)
+    monkeypatch.setattr(pathlib.Path, "home", classmethod(lambda cls: ev))
+
+    config = Config.load(tmp_path)
+    config.ensure_dirs()
+    meta = artifacts.publish(
+        config.state_dir, "Küçük Rapor",
+        "<!doctype html><meta charset='utf-8'><h1>rapor</h1>",
+    )
+    log = EventLog(tmp_path / "s.jsonl")
+    server = MindServer(mind, log, port=0, config=config)
+    server.start()
+    try:
+        adres = f"/artifact/{meta['id']}/"
+        ilk = _post_json(server, "/api/artifact/indir", {"path": adres})
+        assert ilk["ok"] is True
+        yol = Path(ilk["path"])
+        assert yol.is_file() and yol.parent == ev / "Downloads"
+        assert "rapor" in yol.read_text(encoding="utf-8")
+
+        # İkinci indirme ilkini ezmez.
+        ikinci = _post_json(server, "/api/artifact/indir", {"path": adres})
+        assert ikinci["ok"] is True and ikinci["path"] != ilk["path"]
+
+        # Kimlik kaçışı diske dokunmaz.
+        kacak = _post_json(server, "/api/artifact/indir", {"path": "/artifact/../gizli/"})
+        assert kacak["ok"] is False
+    finally:
+        server.stop()
+        log.close()

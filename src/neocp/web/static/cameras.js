@@ -186,8 +186,9 @@ const Cameras = (() => {
       const btn = document.createElement("button");
       btn.type = "button";
       btn.className = "cam-thumb" + (w.key === secili ? " on" : "");
+      btn.dataset.key = w.key;
       const img = document.createElement("img");
-      img.alt = w.ad;
+      img.alt = "";
       img.dataset.q = w.q;
       img.dataset.key = w.key;
       const cap = document.createElement("span");
@@ -226,7 +227,7 @@ const Cameras = (() => {
     tazele();
   }
 
-  async function kareYukle(img, q, boxes) {
+  async function kareYukle(img, q, boxes, follow) {
     if (!img) return "";
     try {
       const r = await fetch(
@@ -245,6 +246,10 @@ const Cameras = (() => {
       img.onerror = () => { img.classList.add("dead"); };
       img.src = url;
       img.dataset.blob = url;
+      if (follow) {
+        follow.src = url;
+        follow.classList.remove("dead");
+      }
       if (old) URL.revokeObjectURL(old);
       return seen;
     } catch {
@@ -260,13 +265,15 @@ const Cameras = (() => {
       if (!asamaAcik() || document.hidden) return;
       const w = secilen();
       if (!w || !live) return;
-      const seen = await kareYukle(live, w.q, w.analyze !== false);
+      const thumb = strip && [...strip.querySelectorAll("img")]
+        .find((el) => el.dataset.key === w.key);
+      const seen = await kareYukle(live, w.q, w.analyze !== false, thumb);
       if (seen) {
         ozet = seen;
         if (sightEl) sightEl.textContent = seen;
       }
       for (const img of strip.querySelectorAll("img")) {
-        if (img.dataset.key === secili) continue;
+        if (img.dataset.key === w.key) continue;
         kareYukle(img, img.dataset.q, false);
       }
     };

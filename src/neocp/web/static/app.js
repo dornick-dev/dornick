@@ -22,8 +22,13 @@ Dil.ekle({
   "Hazır": "Ready", "Uyanıyor": "Waking", "Çalışıyor": "Working",
   "Düşünüyor": "Thinking", "Yazıyor": "Writing", "Hatırlıyor": "Recalling",
   "Akıl yürütüyor": "Reasoning",
+  "Arıyor": "Searching",
+  "Exploring": "Exploring",
+  "Editing": "Editing",
+  "Running": "Running",
   "Konuş…": "Talk…",
   "Model yükleniyor…": "Loading model…",
+  "Beyni öne al / geri": "Bring brain forward / back",
   "Sunucu yok": "No server",
   "Bağlantı koptu": "Connection lost",
   // Dönen düşünme kelimeleri
@@ -133,6 +138,17 @@ Dil.ekle({
   "Son istem: ": "Last prompt: ", " (önbellekten ": " (cached ",
   "Son cevap: ": "Last reply: ", " token": " tokens", " önbellek": " cached",
   "Bu oturumda henüz tur yok.": "No turns in this session yet.",
+  " dolu": " Full",
+  "Sistem istemi": "System prompt",
+  "Araç tanımları": "Tool definitions",
+  "Ruh / kurallar": "Rules",
+  "Yetenekler": "Skills",
+  "MCP ve dinamik araçlar": "MCP & dynamic tools",
+  "Yardımcı tanımları": "Subagent definitions",
+  "Konuşma": "Conversation",
+  "Kapat": "Close",
+  "Kalemler karakter/4 tahmini; toplam sağlayıcıdan.":
+    "Line items are char/4 estimates; the total is from the provider.",
   // Maliyet çipi
   "Bu turun tahmini harcaması — tıkla: kırılım":
     "This turn's estimated spend — click for the breakdown",
@@ -263,6 +279,9 @@ Dil.ekle({
   "yayınlandı": "published", "güncellendi": "updated",
   "Aç": "Open", "Artifact": "Artifact",
   "İndir": "Download", "Yazdır / PDF": "Print / PDF",
+  "Tarayıcıda aç": "Open in browser",
+  "Gerçek tarayıcıda aç": "Open in your real browser",
+  "Adres kopyalandı ✓": "Address copied ✓",
   "Tıkla — sayfayı görüntüleyicide aç": "Click — open page in viewer",
   "Tıkla — sayfayı görüntüleyicide aç": "Click to open the page in the viewer",
   // Hedef paneli
@@ -375,7 +394,10 @@ Dil.ekle({ "Açıklama ▸": "Key ▸", "Açıklama ▾": "Key ▾" });
   try { kayit = localStorage.getItem("neo-mind"); } catch { /* dosya:// */ }
   uygula(kayit !== "kapali");
   $("mind-close").addEventListener("click", () => uygula(false));
-  $("mind-open").addEventListener("click", () => uygula(true));
+  // ◍ artık iki yönlü anahtar: ambient kipte yüzen başlık (›) yok, beyni
+  // kapatıp açmanın kalıcı yeri burası.
+  $("mind-open").addEventListener("click", () =>
+    uygula(document.body.classList.contains("mind-off")));
   // Anı araması: eşleşen düğümler parlar, kalanı söner. Kutu boşalınca
   // sahne normale döner.
   const ara = $("mind-search");
@@ -395,15 +417,39 @@ Dil.ekle({ "Açıklama ▸": "Key ▸", "Açıklama ▾": "Key ▾" });
   cips.addEventListener("click", () =>
     legendUygula(!cips.classList.contains("on")));
 
-  // Kayıtlı panel genişliği açılışta geri gelsin.
+  // Kayıtlı panel genişliği / masa-beyin oranı açılışta geri gelsin.
   try {
     const w = parseInt(localStorage.getItem("neo-mind-w") || "", 10);
-    if (w >= 240) document.documentElement.style.setProperty("--mind-w-user", w + "px");
+    // Eski/bozuk kayıt sohbeti ezerse: yok say.
+    if (w >= 240 && w <= 420) {
+      document.documentElement.style.setProperty("--mind-w-user", w + "px");
+    } else if (Number.isFinite(w)) {
+      try { localStorage.removeItem("neo-mind-w"); } catch { /* */ }
+      document.documentElement.style.removeProperty("--mind-w-user");
+    }
     const dh = localStorage.getItem("neo-dock-h");
     if (dh && /^\d+(\.\d+)?%$/.test(dh)) {
       document.documentElement.style.setProperty("--dock-h-user", dh);
     }
+    const vh = localStorage.getItem("neo-viewer-h");
+    if (vh && /^\d+(\.\d+)?%$/.test(vh)) {
+      document.documentElement.style.setProperty("--viewer-h-user", vh);
+    }
+    if (localStorage.getItem("neo-mind-front") === "1") {
+      document.body.classList.add("mind-front");
+    }
   } catch { /* dosya:// */ }
+
+  // Beyin etiketi: masa açıkken tıklayınca beyin öne / geri.
+  const tag = document.querySelector(".mind-tag");
+  if (tag) {
+    tag.style.cursor = "pointer";
+    tag.title = t("Beyni öne al / geri");
+    tag.addEventListener("click", () => {
+      const on = document.body.classList.toggle("mind-front");
+      try { localStorage.setItem("neo-mind-front", on ? "1" : "0"); } catch { /* dosya:// */ }
+    });
+  }
 })();
 
 // Beyin panelini sol kenarından sürükleyerek boyutlandırma — sol rail
@@ -415,7 +461,7 @@ Dil.ekle({ "Açıklama ▸": "Key ▸", "Açıklama ▾": "Key ▾" });
   let active = false;
   const onMove = (ev) => {
     if (!active) return;
-    const max = Math.min(620, window.innerWidth * 0.42);
+    const max = Math.min(420, window.innerWidth * 0.32);
     const w = Math.max(240, Math.min(max, window.innerWidth - ev.clientX));
     root.style.setProperty("--mind-w-user", w + "px");
   };
@@ -445,23 +491,37 @@ Dil.ekle({ "Açıklama ▸": "Key ▸", "Açıklama ▾": "Key ▾" });
   });
 })();
 
-// Beyin ↔ kamera/orkestra yüksekliği. Genişlik tutamacı bütün sütunu
-// kaplıyordu; ortadan çekince ikisi birbirinin üstüne biniyordu.
+// Masa ↔ beyin (veya beyin ↔ orkestra) dikey tutamak. Genişlik tutamacı
+// bütün sütunu kaplar; bu tutamak yalnızca yüksekliği böler.
 (() => {
   const grip = $("dock-grip");
   const col = $("right-col");
   if (!grip || !col) return;
   const root = document.documentElement;
-  const MIN_MIND = 160;
-  const MIN_DOCK = 120;
+  const MIN_TOP = 120;
+  const MIN_BOT = 140;
   const GRIP = 8;
   let active = false;
 
+  const viewingSplit = () =>
+    document.body.classList.contains("viewing") &&
+    !document.body.classList.contains("mind-off");
+
   const apply = (clientY) => {
     const box = col.getBoundingClientRect();
-    if (box.height < MIN_MIND + MIN_DOCK + GRIP) return;
-    const maxDock = box.height - MIN_MIND - GRIP;
-    const px = Math.max(MIN_DOCK, Math.min(maxDock, box.bottom - clientY));
+    if (box.height < MIN_TOP + MIN_BOT + GRIP) return;
+    if (viewingSplit()) {
+      // Üst = masa: tutamacı aşağı çekince masa büyür.
+      const maxTop = box.height - MIN_BOT - GRIP;
+      const px = Math.max(MIN_TOP, Math.min(maxTop, clientY - box.top));
+      const pct = ((px / box.height) * 100).toFixed(1) + "%";
+      root.style.setProperty("--viewer-h-user", pct);
+      document.body.classList.remove("mind-front");
+      return pct;
+    }
+    // Orkestra: alttan yükseklik (eski davranış).
+    const maxDock = box.height - MIN_BOT - GRIP;
+    const px = Math.max(MIN_TOP, Math.min(maxDock, box.bottom - clientY));
     const pct = ((px / box.height) * 100).toFixed(1) + "%";
     root.style.setProperty("--dock-h-user", pct);
     return pct;
@@ -476,8 +536,14 @@ Dil.ekle({ "Açıklama ▸": "Key ▸", "Açıklama ▾": "Key ▾" });
     window.removeEventListener("pointercancel", stop);
     window.removeEventListener("blur", stop);
     try {
-      const v = getComputedStyle(root).getPropertyValue("--dock-h-user").trim();
-      if (v) localStorage.setItem("neo-dock-h", v);
+      if (viewingSplit()) {
+        const v = getComputedStyle(root).getPropertyValue("--viewer-h-user").trim();
+        if (v) localStorage.setItem("neo-viewer-h", v);
+        localStorage.setItem("neo-mind-front", "0");
+      } else {
+        const v = getComputedStyle(root).getPropertyValue("--dock-h-user").trim();
+        if (v) localStorage.setItem("neo-dock-h", v);
+      }
     } catch { /* dosya:// */ }
   };
   grip.addEventListener("pointerdown", (ev) => {
@@ -492,8 +558,13 @@ Dil.ekle({ "Açıklama ▸": "Key ▸", "Açıklama ▾": "Key ▾" });
     window.addEventListener("blur", stop);
   });
   grip.addEventListener("dblclick", () => {
-    root.style.removeProperty("--dock-h-user");
-    try { localStorage.removeItem("neo-dock-h"); } catch { /* dosya:// */ }
+    if (viewingSplit()) {
+      root.style.removeProperty("--viewer-h-user");
+      try { localStorage.removeItem("neo-viewer-h"); } catch { /* dosya:// */ }
+    } else {
+      root.style.removeProperty("--dock-h-user");
+      try { localStorage.removeItem("neo-dock-h"); } catch { /* dosya:// */ }
+    }
   });
 })();
 
@@ -529,7 +600,11 @@ function showWelcome() {
   h.textContent = t("Ne yapmamı istersin?");
   const p = document.createElement("p");
   p.textContent = t("Bilgisayarında çalışıyorum. Öğrendiklerim etrafımdaki ağa yazılıyor.");
-  w.append(h, p);
+  const note = document.createElement("p");
+  note.className = "wake-note";
+  note.id = "wake-note";
+  note.hidden = true;
+  w.append(h, p, note);
   thread.append(w);
 }
 
@@ -742,10 +817,18 @@ function summarizeAlert(text) {
 
 // Sürdürülen bir konuşmanın geçmiş dökümünü thread'e basar: kullanıcı
 // kaldığı yeri görsün, yeni mesaj oraya eklensin.
+//
+// Aynı oturum için İKİ KEZ çizilmez: session_reset hem doğrudan çağırıyor
+// hem loadState üzerinden (snapshot da sayfa yenileme için çağırıyor) —
+// ikisi birden koşunca her mesaj ekranda iki kez görünüyordu (canlı yara,
+// 31.08: "konuşmayı tekrar açınca aynı yazışmalar iki kez geliyor").
+let transcriptFor = "";
 async function loadTranscript(id) {
+  if (id && transcriptFor === id) return;
+  transcriptFor = id || "";
   let data;
   try { data = await (await fetch("/api/session?id=" + encodeURIComponent(id))).json(); }
-  catch { return; }
+  catch { transcriptFor = ""; return; }
   for (const t of (data.turns || [])) {
     // Eski dökümlerin içinde harness notları duruyor olabilir (süzgeç
     // sonradan kondu): geçmişi yeniden yazmıyoruz, çizmiyoruz.
@@ -780,12 +863,37 @@ function setWaking(stage, done) {
   ready = !!done;
   document.body.classList.toggle("waking", !ready);
   Scene.setMode(ready ? "idle" : "waking");
-  setStatus(ready ? "ready" : "busy", stage || (ready ? t("Hazır") : t("Uyanıyor")));
+  const label = stage || (ready ? t("Hazır") : t("Uyanıyor"));
+  setStatus(ready ? "ready" : "busy", label);
 
   input.disabled = !ready;
-  input.placeholder = ready ? t("Konuş…") : (stage || t("Uyanıyor")) + "…";
+  input.placeholder = ready ? t("Konuş…") : label + "…";
   $("send").disabled = !ready;
+  paintWakeNote(ready ? "" : label);
   if (ready) input.focus();
+}
+
+// Açılışta / model yüklenirken welcome altında canlı satır — yalnız
+// soluk composer değil; kullanıcı "dondu" sanmasın.
+function paintWakeNote(text) {
+  let note = $("wake-note");
+  if (!text) {
+    if (note) { note.hidden = true; note.textContent = ""; }
+    return;
+  }
+  if (!note) {
+    note = document.createElement("p");
+    note.className = "wake-note";
+    note.id = "wake-note";
+    const host = $("welcome");
+    if (host) host.append(note);
+    else {
+      note.classList.add("solo");
+      thread.prepend(note);
+    }
+  }
+  note.hidden = false;
+  note.textContent = text;
 }
 
 // Gönder düğmesi koşarken DURDUR olur (Claude Code): kutu boşken ■,
@@ -811,12 +919,27 @@ function setBusy(value) {
   setMode(value ? "thinking" : "idle");
   waiting(value);
   // Canlı "yaşıyor" sayacı meşgul olduğu sürece ilerlesin, bitince dursun.
-  if (value) startBusyTicker(); else stopBusyTicker();
-  if (!value) {
+  if (value) {
+    startBusyTicker();
+    // Tur anında thread satırı — ilk delta gelene kadar boşluk kalmasın.
+    kickWork();
+  } else {
+    stopBusyTicker();
     sealLine();
     // Plan kartı tur metninin ALTINDA: önce metin mühürlensin, sonra kart.
     flushDeferredPlans();
   }
+}
+
+// Meşgulken şeritte anında "Düşünüyor · N sn". setBusy ve kullanıcı
+// mesajı (busy önce geldiyse sealLine boş şeridi siler) buradan çağırır.
+function kickWork() {
+  if (!busy) return;
+  const w = ensureWork();
+  w.head.classList.add("busy");
+  if (waitState) { paintWait(); return; }
+  if (!paintLive()) workHead(mull(), "", since(w.since) + streamNote());
+  scroll();
 }
 
 // Sahnenin ve durum satırının tek kaynağı. "meşgul/boşta" ikilisi her işi
@@ -832,7 +955,8 @@ const MODE_LABEL = {
 // "Creating / Researching" durumu gibi, renk de kipten geliyor).
 const ACTION = {
   search: "Araştırıyor", fetch: "Araştırıyor", web: "Araştırıyor",
-  read_file: "Okuyor", list_dir: "Bakıyor", write_file: "Oluşturuyor",
+  grep: "Arıyor", semboller: "Arıyor",
+  read_file: "Okuyor", read_many: "Okuyor", list_dir: "Bakıyor", write_file: "Oluşturuyor",
   edit_file: "Düzenliyor", copy_in: "Kopyalıyor", draw: "Çiziyor",
   shell: "Çalıştırıyor",
   mind_recall: "Hatırlıyor", mind_memory: "Aklına yazıyor", mind_goals: "Planlıyor",
@@ -848,8 +972,8 @@ const ACTION = {
 // Araç satırının simgesi. Model seçmiyor, tür sabit eşleniyor: simgenin işi
 // süslemek değil, satırlar taranırken türün bir bakışta ayrılması.
 const TOOL_ICON = {
-  shell: "❯", read_file: "≡", list_dir: "≡", write_file: "✎", edit_file: "✎",
-  copy_in: "✎", draw: "✎", search: "◌", fetch: "◌", web: "◌",
+  shell: "❯", read_file: "≡", read_many: "≡", list_dir: "≡", write_file: "✎", edit_file: "✎",
+  copy_in: "✎", draw: "✎", search: "◌", fetch: "◌", web: "◌", grep: "◌", semboller: "◌",
   mind_recall: "◍", mind_memory: "◍", mind_goals: "◍",
   screen: "▣", hand: "▣", look: "◉", browser: "⌾", device: "⇄", skill: "✦",
   models: "✦", task: "⑃", schedule: "◔", mail_read: "✉", mail_send: "✉",
@@ -904,7 +1028,7 @@ let modeTimer = null;
 // sürebiliyor. O sürede hiçbir şey akmıyor; ekranda "düşünüyor" yazması
 // yanlış — düşünmüyor, yükleniyor. Bir şey akmadan bu süre geçerse durum
 // satırı bunu söylüyor.
-const WAITING_AFTER = 4000;
+const WAITING_AFTER = 1500;
 let waitTimer = null;
 
 function waiting(on) {
@@ -1082,7 +1206,8 @@ function tickBusy() {
     const t = Math.round((Date.now() - (first._start || work.since)) / 1000);
     paintLive(" · " + t + " sn");
   } else if (!agentLine) {
-    workHead(mull() + since(work.since) + streamNote());
+    if (!paintLive()) workHead(mull(), "", since(work.since) + streamNote());
+    paintThinkLine();
   }
 }
 
@@ -1180,7 +1305,8 @@ function think(chunk) {
   // açılıyor (aşağıda closeThought).
   const tail = thought.length > 600 ? "…" + thought.slice(-600) : thought;
   w.thought.textContent = tail.trim();
-  workHead(mull() + since(w.since) + streamNote());
+  if (!paintLive()) workHead(mull(), "", since(w.since) + streamNote());
+  paintThinkLine();
   // Muhakeme kutusu kendi içinde en alta kaysın: en son cümle görünür kalsın
   // ama sayfa aşağı zıplamasın. Detay açıkken sayfayı itmek, kullanıcının
   // yukarı çıkıp başlığı kapatmasını imkânsız kılıyordu.
@@ -2072,6 +2198,7 @@ const MODE_ORDER = ["auto", "ask", "plan", "yolo"];
 
 let dockEffort = "";
 let contextWindow = 0;
+let lastKirilim = [];   // kalem kalem kırılım (snapshot + usage)
 
 function dockRender() {
   $("dock-model").textContent = modelName || "model";
@@ -2085,11 +2212,44 @@ function dockRender() {
 
 // Bağlam doluluğu. Yüzde `usage` olayından: istemin toplamı / pencere.
 // Dolmaya yaklaşınca renk değişiyor — sayı okunmadan da fark edilsin.
-function dockContext(promptTotal, tahmin) {
-  if (!contextWindow || !promptTotal) return;
-  const pct = Math.min(100, Math.round((promptTotal / contextWindow) * 100));
+function ctxKisa(n) {
+  n = Math.max(0, Number(n) || 0);
+  if (n >= 1e6) return (n / 1e6).toFixed(1) + "M";
+  if (n >= 1000) return (n / 1000).toFixed(1) + "K";
+  return String(Math.round(n));
+}
+
+function ctxUsed(promptTotal, kirilim) {
+  const listed = (kirilim || []).reduce((s, p) => s + (Number(p.n) || 0), 0);
+  return Number(promptTotal) || listed;
+}
+
+function paintCtxBar(bar, kirilim, window_, used) {
+  if (!bar) return;
+  bar.replaceChildren();
+  const cap = window_ || used || 1;
+  const parts = (kirilim || []).filter((p) => (p.n || 0) > 0);
+  if (!parts.length && used) {
+    const i = mk("i", "ctx-seg sohbet");
+    i.style.width = Math.min(100, (used / cap) * 100) + "%";
+    bar.append(i);
+    return;
+  }
+  for (const p of parts) {
+    const i = mk("i", "ctx-seg " + (p.id || ""));
+    i.style.width = Math.max(0.4, (p.n / cap) * 100) + "%";
+    i.title = t(p.ad) + " · " + ctxKisa(p.n);
+    bar.append(i);
+  }
+}
+
+function dockContext(promptTotal, tahmin, kirilim) {
+  if (kirilim) lastKirilim = kirilim;
+  const used = ctxUsed(promptTotal, lastKirilim);
+  if (!contextWindow) return;
+  const pct = used ? Math.min(100, Math.round((used / contextWindow) * 100)) : 0;
   $("dock-ctx-pct").textContent = "%" + pct;
-  $("dock-ctx-fill").style.width = pct + "%";
+  paintCtxBar($("dock-ctx-bar"), lastKirilim, contextWindow, used);
   const box = $("dock-ctx");
   box.classList.toggle("warn", pct >= 70 && pct < 90);
   box.classList.toggle("hot", pct >= 90);
@@ -2264,6 +2424,7 @@ function dockPop(anchor) {
   if (popFor === anchor && !pop.hidden) { hidePop(); return null; }
   popFor = anchor;
   pop.textContent = "";
+  pop.className = "pop";
   pop.hidden = false;
   return pop;
 }
@@ -2439,26 +2600,37 @@ async function fillModelPop(pop, note) {
   search.focus();
 }
 
-// Bağlam çipi: yüzdenin arkasındaki sayılar.
+// Bağlam çipi: Cursor'un Context Usage kutusunun aynı düzeni —
+// başlık + kapat, yüzde/toplam, hap çubuk, kalem kalem liste.
 $("dock-ctx").addEventListener("click", () => {
   const pop = dockPop($("dock-ctx"));
   if (!pop) return;
-  pop.append(mk("div", "pop-head", t("Bağlam")));
+  pop.classList.add("pop-ctx");
+  const head = mk("div", "pop-ctx-head");
+  head.append(mk("span", null, t("Bağlam doluluğu")));
+  const kapat = mk("button", "pop-ctx-kapat", "×");
+  kapat.type = "button";
+  kapat.setAttribute("aria-label", t("Kapat"));
+  kapat.addEventListener("click", (ev) => { ev.stopPropagation(); hidePop(); });
+  head.append(kapat);
+  pop.append(head);
   const window_ = contextWindow;
-  const used = lastUsage ? lastUsage.prompt_total : 0;
+  const kirilim = lastKirilim || [];
+  const used = ctxUsed(lastUsage ? lastUsage.prompt_total : 0, kirilim);
   const pct = window_ && used ? Math.min(100, Math.round(used / window_ * 100)) : 0;
-  const bar = mk("div", "pop-bar");
-  bar.append(mk("i"));
-  bar.firstChild.style.width = pct + "%";
+  const ozet = mk("div", "pop-ctx-sum");
+  ozet.append(mk("b", null, pct + "%" + t(" dolu")));
+  ozet.append(mk("span", null, "~" + ctxKisa(used) + " / " + ctxKisa(window_) + t(" token")));
+  pop.append(ozet);
+  const bar = mk("div", "pop-bar pop-bar-seg");
+  paintCtxBar(bar, kirilim, window_, used);
   pop.append(bar);
-  const tr = (n) => (n || 0).toLocaleString("tr-TR");
-  pop.append(mk("div", "pop-note", t("Pencere: ") + tr(window_) + t(" token — dolu: %") + pct));
-  if (lastUsage) {
-    pop.append(mk("div", "pop-note", t("Son istem: ") + tr(lastUsage.prompt_total) +
-      (lastUsage.cache_read ? t(" (önbellekten ") + tr(lastUsage.cache_read) + ")" : "")));
-    pop.append(mk("div", "pop-note", t("Son cevap: ") + tr(lastUsage.output) + t(" token")));
-  } else {
-    pop.append(mk("div", "pop-note", t("Bu oturumda henüz tur yok.")));
+  for (const p of kirilim) {
+    const row = mk("div", "pop-ctx-row");
+    row.append(mk("i", "ctx-dot " + (p.id || "")));
+    row.append(mk("span", "pop-ctx-ad", t(p.ad)));
+    row.append(mk("b", "pop-ctx-n", ctxKisa(p.n)));
+    pop.append(row);
   }
   placePop($("dock-ctx"));
 });
@@ -2627,12 +2799,15 @@ function restWork() {
     // Tur hâlâ sürüyorsa nabzı söndürme: araçlar arası boşlukta
     // "kapandı / açıldı" hissi buradan geliyordu.
     if (busy) {
-      workHead(mull() + since(work.since) + streamNote());
+      if (!paintLive()) workHead(mull(), "", since(work.since) + streamNote());
+      paintThinkLine();
       return;
     }
     work.head.classList.remove("busy");
-    workHead(work.steps ? stepsWord(work.steps) + since(work.since)
-                        : t("Düşündü") + since(work.since));
+    const phrase = activityPhrase(work);
+    workHead(phrase || (work.steps ? stepsWord(work.steps) : t("Düşündü")),
+             "", since(work.since));
+    paintThinkLine();
   }
 }
 
@@ -2653,8 +2828,8 @@ const HEAD_ARG = 72;
 
 // Hedefi kod gibi göstermesi gereken araçlar: komut ve dosya yolu.
 const KOD_HEDEFLI = new Set([
-  "shell", "bash", "powershell", "read_file", "write_file", "edit_file",
-  "list_dir", "search_files", "checkpoint", "git",
+  "shell", "bash", "powershell", "read_file", "read_many", "write_file", "edit_file",
+  "list_dir", "grep", "search_files", "checkpoint", "git",
 ]);
 
 // Kabuk sarmalayıcıları: kullanıcının ilgilendiği şey bunların İÇİ.
@@ -2678,17 +2853,27 @@ function komutOzeti(text) {
 }
 
 // Canlı satırın başlık parçaları. Yoksa null — çağıran kendi yedeğini yazar.
+//
+// Cursor dili: tek araç fiili yerine turun özeti ("4 dosya okuyor, 7 arama"
+// / "Exploring 4 files, 7 searches"). Açık bir adım varsa hedef chip olarak
+// durur; şerit açılmadan da ne tarandığı okunur.
 function liveHead() {
-  if (!work || !work.open.size) return null;
-  const row = [...work.open.values()][0];
-  const what = row.querySelector(".what").textContent;
-  const kod = row.dataset.kod === "1";
-  const target = kod ? komutOzeti(what)
-    : (what.length > HEAD_ARG ? what.slice(0, HEAD_ARG) + "…" : what);
+  if (!work) return null;
+  const phrase = activityPhrase(work);
+  const row = work.open.size ? [...work.open.values()][0] : null;
+  if (!phrase && !row) return null;
+  let target = "";
+  let kod = false;
+  if (row) {
+    const what = row.querySelector(".what").textContent;
+    kod = row.dataset.kod === "1";
+    target = kod ? komutOzeti(what)
+      : (what.length > HEAD_ARG ? what.slice(0, HEAD_ARG) + "…" : what);
+  }
   return {
-    verb: row.querySelector(".who").textContent,
+    verb: phrase || (row && row.querySelector(".who").textContent) || mull(),
     target, kod,
-    tail: stepsWord(work.steps),
+    tail: "",
   };
 }
 
@@ -2697,8 +2882,78 @@ function liveHead() {
 function paintLive(extra) {
   const live = liveHead();
   if (!live) return false;
-  workHead(live.verb, live.target, live.tail + (extra || ""), live.kod);
+  workHead(live.verb, live.target, (live.tail || "") + (extra || ""), live.kod);
+  paintThinkLine();
   return true;
+}
+
+// Turun araç dökümü: Cursor'un "Exploring 4 files, 7 searches" satırı.
+// Fiil tek adıma kilitlenmesin diye sayılır; şerit kapalıyken de okunur.
+const TALLY_FILES = new Set(["read_file", "read_many", "list_dir"]);
+const TALLY_SEARCH = new Set(["grep", "search", "fetch", "web", "semboller"]);
+const TALLY_EDIT = new Set(["edit_file", "write_file"]);
+const TALLY_RUN = new Set(["shell"]);
+
+function tallyWork(w) {
+  const n = { files: 0, searches: 0, edits: 0, runs: 0 };
+  if (!w || !w.body) return n;
+  for (const row of w.body.querySelectorAll(".act")) {
+    if (row.classList.contains("note")) continue;
+    const tool = (row._card && row._card.tool) || "";
+    if (TALLY_FILES.has(tool)) n.files += 1;
+    else if (TALLY_SEARCH.has(tool)) n.searches += 1;
+    else if (TALLY_EDIT.has(tool)) n.edits += 1;
+    else if (TALLY_RUN.has(tool)) n.runs += 1;
+  }
+  return n;
+}
+
+function _count(n, one, many) {
+  return n + " " + (n === 1 ? one : many);
+}
+
+function activityPhrase(w) {
+  const n = tallyWork(w);
+  const en = Dil.mode === "en";
+  if (en) {
+    const bits = [];
+    if (n.files) bits.push(_count(n.files, "file", "files"));
+    if (n.searches) bits.push(_count(n.searches, "search", "searches"));
+    if (n.edits) bits.push(_count(n.edits, "edit", "edits"));
+    if (n.runs) bits.push(_count(n.runs, "command", "commands"));
+    if (!bits.length) return "";
+    if (n.edits && !n.files && !n.searches && !n.runs)
+      return "Editing " + _count(n.edits, "file", "files");
+    if (n.runs && !n.files && !n.searches && !n.edits)
+      return "Running " + _count(n.runs, "command", "commands");
+    return "Exploring " + bits.join(", ");
+  }
+  const bits = [];
+  if (n.files) bits.push(n.files + " dosya okuyor");
+  if (n.searches) bits.push(n.searches + " arama");
+  if (n.edits) bits.push(n.edits + " düzenleme");
+  if (n.runs) bits.push(n.runs + " komut");
+  return bits.join(", ");
+}
+
+// Cevap yazılmıyorken ikinci satır: "Düşünüyor" — Cursor'daki Thinking.
+function paintThinkLine() {
+  if (!work) return;
+  let sub = work.head.querySelector(":scope > .head-sub");
+  const show = !!(busy && lastDelta !== "text" && !work.head.classList.contains("done")
+    && (!work.open.size || lastDelta === "thinking"));
+  if (!show) {
+    if (sub) sub.hidden = true;
+    return;
+  }
+  if (!sub) {
+    sub = document.createElement("span");
+    sub.className = "head-sub";
+    work.head.append(sub);
+  }
+  sub.hidden = false;
+  const label = lastDelta === "thinking" ? t("Akıl yürütüyor") : t("Düşünüyor");
+  if (sub.textContent !== label) sub.textContent = label;
 }
 
 // DOM freni: yüzlerce adımlı bir turda şerit gövdesi sınırsız büyümesin.
@@ -2747,27 +3002,26 @@ function workHead(label, target, tail, kod) {
 
   if (!target) {
     if (box) box.hidden = true;
-    if (meta) meta.hidden = true;
-    return;
-  }
-  if (!box) {
-    box = document.createElement(kod ? "code" : "span");
-    box.className = kod ? "head-target kod" : "head-target";
-    verb.after(box);
   } else {
-    const want = kod ? "CODE" : "SPAN";
-    if (box.tagName !== want) {
-      const next = document.createElement(kod ? "code" : "span");
-      next.className = kod ? "head-target kod" : "head-target";
-      box.replaceWith(next);
-      box = next;
-    } else {
+    if (!box) {
+      box = document.createElement(kod ? "code" : "span");
       box.className = kod ? "head-target kod" : "head-target";
+      verb.after(box);
+    } else {
+      const want = kod ? "CODE" : "SPAN";
+      if (box.tagName !== want) {
+        const next = document.createElement(kod ? "code" : "span");
+        next.className = kod ? "head-target kod" : "head-target";
+        box.replaceWith(next);
+        box = next;
+      } else {
+        box.className = kod ? "head-target kod" : "head-target";
+      }
     }
+    box.hidden = false;
+    if (box.textContent !== target) box.textContent = target;
+    box.title = target;
   }
-  box.hidden = false;
-  if (box.textContent !== target) box.textContent = target;
-  box.title = target;
 
   const metaText = tail ? String(tail).replace(/^\s*·\s*/, "") : "";
   if (!metaText) {
@@ -2777,7 +3031,9 @@ function workHead(label, target, tail, kod) {
   if (!meta) {
     meta = document.createElement("span");
     meta.className = "head-meta";
-    head.append(meta);
+    const sub = head.querySelector(":scope > .head-sub");
+    if (sub) head.insertBefore(meta, sub);
+    else head.append(meta);
   }
   meta.hidden = false;
   if (meta.textContent !== metaText) meta.textContent = metaText;
@@ -2819,11 +3075,23 @@ function closeWork() {
   if (!work) return;
   // Tur beklerken kapandıysa (kesme) bekleme satırı da mühürlenir.
   if (waitState) closeWait(null);
+  // setBusy'nin erken açtığı boş şerit: kullanıcı mesajı gelmeden
+  // mühürlenirse "Düşündü ✓" hayalet satırı bırakma — sessizce kaldır.
+  const empty = !work.steps && !(work.thinkAll && work.thinkAll.length)
+    && !work.body.childElementCount;
+  if (empty) {
+    work.head.remove();
+    work.body.remove();
+    work = null;
+    return;
+  }
   sealThinkArchive(work);
-  workHead(work.steps ? stepsWord(work.steps) + since(work.since)
-                      : t("Düşündü") + since(work.since));
+  const phrase = activityPhrase(work);
+  workHead(phrase || (work.steps ? stepsWord(work.steps) : t("Düşündü")),
+           "", since(work.since));
   work.head.classList.remove("busy", "wait");   // nabız durur
   work.head.classList.add("done");       // bitti: ✓
+  paintThinkLine();
   // Tur bitti: gövde özete katlanır — kullanıcı tur içinde açmış olsa
   // bile. Bitmiş turun adım seli sohbette açık kalınca asıl okunacak şey
   // (cevap) yine kayboluyordu; merak eden başlığa tıklayıp geri açıyor.
@@ -2938,8 +3206,9 @@ function closeAct(e) {
     if (row._cardEl) refreshCard(row);
   }
   if (!paintLive()) {
-    workHead(busy ? mull() + since(work.since) + streamNote()
-                  : stepsWord(work.steps) + since(work.since));
+    workHead(busy ? mull() : (activityPhrase(work) || stepsWord(work.steps)),
+             "", since(work.since) + (busy ? streamNote() : ""));
+    paintThinkLine();
   }
 }
 
@@ -3127,7 +3396,8 @@ function closeWait(e) {
   }
   if (work) {
     work.head.classList.remove("wait");
-    if (!paintLive()) workHead(mull() + since(work.since) + streamNote());
+    if (!paintLive()) workHead(mull(), "", since(work.since) + streamNote());
+    paintThinkLine();
   }
   // Tur sürüyorsa sahne/üst şerit normal düşünme akışına döner.
   if (busy) setMode("thinking");
@@ -3838,7 +4108,18 @@ function artifactCard(e) {
   main.append(el2("div", "art-title", e.title || e.id));
   const meta = el2("div", "art-meta");
   meta.append(el2("span", "art-kind", t("Artifact")));
-  meta.append(el2("span", "art-addr", artifactAddress(e)));
+  const addr = el2("span", "art-addr", artifactAddress(e));
+  // Tam adres fareyle görünür, tıklayınca panoya gider — kart kırpıyor.
+  addr.title = location.origin + artifactAddress(e);
+  addr.style.cursor = "copy";
+  addr.addEventListener("click", async (ev) => {
+    ev.stopPropagation();
+    try {
+      await navigator.clipboard.writeText(location.origin + artifactAddress(card._art));
+      note(t("Adres kopyalandı ✓"));
+    } catch { /* pano izni yok */ }
+  });
+  meta.append(addr);
   main.append(meta);
 
   const badge = el2("span", "art-badge",
@@ -3848,17 +4129,25 @@ function artifactCard(e) {
   open.type = "button";
   open.setAttribute("aria-label", t("Aç") + " — " + (e.title || e.id));
 
+  const dis = el2("button", "art-open art-export", t("Tarayıcıda aç"));
+  dis.type = "button";
+  dis.title = t("Gerçek tarayıcıda aç");
   const dl = el2("button", "art-open art-export", t("İndir"));
   dl.type = "button";
   dl.title = t("İndir") + " (.html)";
   const pr = el2("button", "art-open art-export", t("Yazdır / PDF"));
   pr.type = "button";
 
-  card.append(glyph, main, badge, open, dl, pr);
+  card.append(glyph, main, badge, open, dis, dl, pr);
 
   const go = (ev) => { ev.stopPropagation(); openArtifact(card._art); };
   card.addEventListener("click", go);
   open.addEventListener("click", go);
+  dis.addEventListener("click", (ev) => {
+    ev.stopPropagation();
+    // Gerçek port sunucuda: ajanın URL tahmini canlıda yanlış çıkıyordu.
+    if (Viewer.openOutside) Viewer.openOutside(artifactAddress(card._art));
+  });
   dl.addEventListener("click", (ev) => {
     ev.stopPropagation();
     const url = artifactAddress(card._art);
@@ -4201,6 +4490,9 @@ function handle(e) {
         const row = line("user", e.text);
         const media = pendingMedia.get(e.text);
         if (media) { attachMedia(row, media); pendingMedia.delete(e.text); scroll(); }
+        // Busy status kullanıcı satırından ÖNCE geldiyse sealLine boş
+        // şeridi silmiş olabilir — canlı satırı hemen yeniden aç.
+        if (busy) kickWork();
       }
       else if (e.role === "system") note(e.text);
       break;
@@ -4214,11 +4506,13 @@ function handle(e) {
       if (limb) Scene.use(limb, summarize(e.input));
       // Ajan bir dosyaya dokunduysa panel o dosyaya geçsin:
       // "yazdım" cümlesini okumakla dosyayı görmek aynı şey değil.
+      if (typeof Viewer !== "undefined" && Viewer.feed) Viewer.feed(e);
       Viewer.watch(e.tool, e.input);
       break;
     }
     case "tool_end": {
       closeAct(e);
+      if (typeof Viewer !== "undefined" && Viewer.feed) Viewer.feed(e);
       Viewer.refresh(e.tool, e.path);
       if (typeof GitBar !== "undefined") GitBar.touched(e.tool);
       if (busy) setMode("thinking");
@@ -4453,7 +4747,7 @@ function handle(e) {
         tokenNote = e.prompt_total.toLocaleString("tr-TR") + t(" token")
           + (e.cache_read ? " · " + e.cache_read.toLocaleString("tr-TR") + t(" önbellek") : "");
         showMeta();
-        dockContext(e.prompt_total);
+        dockContext(e.prompt_total, false, e.kirilim);
         lastUsage = e;
       }
       // Maliyet çipi: tur/oturum toplamları ve fiyat etiketi aynı olayda
@@ -4556,12 +4850,14 @@ async function loadState() {
     dockEffort = s.effort || "";
     contextWindow = Number(s.context_window) || 0;
     dockRender();
+    if (s.kirilim) lastKirilim = s.kirilim;
     // Süren oturumun son kullanımı: yenilenen sayfa kaldığı yerden başlasın.
-    if (Number(s.prompt_total)) {
-      // Sürdürülen oturum: çubuk ve sayaç SIFIRDAN başlamaz — sunucu
-      // oturum günlüğünden gerçek (ya da tahmini) doluluğu veriyor.
-      dockContext(Number(s.prompt_total), s.tahmin);
-      if (!lastUsage) lastUsage = { prompt_total: Number(s.prompt_total) };
+    // Sabit kalemler (sistem + araç) ilk turdan önce de görünsün.
+    if (Number(s.prompt_total) || (s.kirilim && s.kirilim.length)) {
+      dockContext(Number(s.prompt_total) || 0, s.tahmin, s.kirilim);
+      if (!lastUsage && Number(s.prompt_total)) {
+        lastUsage = { prompt_total: Number(s.prompt_total), kirilim: s.kirilim };
+      }
     }
     // Maliyet çipi de aynı sebepten buradan tohumlanıyor: yenileme
     // harcama göstergesini sıfırlamamalı.

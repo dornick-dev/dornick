@@ -92,6 +92,37 @@ def test_voice_is_off_until_asked_for(tmp_path: Path) -> None:
     assert not Config.load(tmp_path).voice.enabled
 
 
+def test_senses_open_turned_off(tmp_path: Path) -> None:
+    """Açılışta kamera / mikrofon / ses kapalı — kayıtta açık kalsalar bile."""
+    from dataclasses import replace
+    from neocp.desktop import duyulari_kapat
+
+    config = Config.load(tmp_path)
+    config = replace(
+        config,
+        voice=replace(config.voice, enabled=True),
+        listen=replace(config.listen, enabled=True, open=True),
+        camera=replace(config.camera, enabled=True),
+    )
+    kapali = duyulari_kapat(config)
+    assert not kapali.voice.enabled
+    assert not kapali.listen.enabled
+    assert not kapali.listen.open
+    assert not kapali.camera.enabled
+
+
+def test_boot_closes_senses_before_hardware() -> None:
+    """Donanım açılmadan duyular kapatılır; izleyici kamera anahtarına bağlı."""
+    import inspect
+    from neocp import desktop
+
+    src = inspect.getsource(desktop._boot)
+    assert "duyulari_kapat" in src
+    assert src.index("duyulari_kapat") < src.index("sync_hearing")
+    assert src.index("duyulari_kapat") < src.index("Lens")
+    assert "config.camera.enabled and eyes.start()" in src
+
+
 def test_voice_settings_survive_a_restart(tmp_path: Path) -> None:
     from neocp import settings
 
