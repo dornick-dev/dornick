@@ -1119,6 +1119,8 @@ const REDRAW_MS = 100;
 
 function write(chunk) {
   raw += chunk;
+  lastChunkAt = Date.now();
+  if (agentLine) agentLine.classList.remove("stall");
   bumpStream(chunk);
   if (!agentLine) {
     // BOŞLUK SATIR AÇMAZ. Model araçtan sonra çoğu zaman önce "\n\n"
@@ -1208,6 +1210,10 @@ function resetStream() {
 // görünmez, nerede olduğu ve ne kadar sürdüğü bir bakışta belli.
 let turnStart = 0;
 let busyTicker = null;
+// Son metin parçasının zamanı: imleç yalnız gerçekten akan metinde yanıp
+// söner; duraksamada (araç/uzun düşünme) söner — "çalışıyor mu belli
+// değil" belirsizliği kalksın (bkz. .line.agent.stall).
+let lastChunkAt = 0;
 
 function startBusyTicker() {
   if (busyTicker) return;
@@ -1227,6 +1233,10 @@ function stopBusyTicker() {
 function tickBusy() {
   if (!busy) { stopBusyTicker(); return; }
   mullTick += 1;
+  // Akış duraksadıysa canlı imleç yanıp sönmeyi bırakır (CSS .stall).
+  if (agentLine) {
+    agentLine.classList.toggle("stall", Date.now() - lastChunkAt > 2500);
+  }
   const s = Math.round((Date.now() - turnStart) / 1000);
   busyNote = s + " sn";
   showMeta();

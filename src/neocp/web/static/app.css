@@ -524,6 +524,10 @@ pre, code, kbd, samp, .input-area, .viewer-code, .diff-row {
   content: "▮"; color: var(--cyan); text-shadow: 0 0 12px var(--cyan);
   animation: throb 1s steps(2) infinite; margin-left: 2px;
 }
+/* Akış DURAKSADI (>2,5 sn parça yok): imleç yanıp sönmeyi bırakır ve
+   söner — "çalışıyor mu belli değil" (canlı, 31.08). Yanıp sönme yalnız
+   GERÇEKTEN akan metnin işareti; duraksamada durumun sözcüsü şerit. */
+.line.agent.stall::after { animation: none; opacity: .25; text-shadow: none; }
 .line.agent.done::after { content: none; }
 
 /* Uzun cevabin devami. Sonuc ustte acikta, gerisi tiklayinca. */
