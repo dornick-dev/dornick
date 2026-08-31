@@ -122,6 +122,11 @@ program and leaves your `.neocp` data in place.
 
 ### From source
 
+> Naming: the product is **neo**; its Python package, CLI and state
+> directory are **`neocp`** (neo core platform) — so the command is
+> `neocp` and your data lives in `.neocp/`. This is deliberate, not a
+> mismatch.
+
 ```bash
 git clone https://github.com/fatihkutuk/neo
 cd neo

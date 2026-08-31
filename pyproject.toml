@@ -1,36 +1,35 @@
 [project]
 name = "neocp"
 version = "1.3.1"
-description = "Bilgisayarı kullanabilen, kendi zihnine erişebilen bir ajan harness'ı"
+description = "A local-first personal AI agent with a living memory — it can use the computer and reach its own mind"
 requires-python = ">=3.11"
 dependencies = [
     "anthropic>=0.92",
     "rich>=13.7",
-    # PDF metin cikarma (`read_file`). Kurulu degilse arac dusuruyor degil,
-    # durustce "okuyamiyorum" diyor — ama o zaman kullanici PDF veremiyor.
+    # PDF text extraction (`read_file`). Without it the tool honestly says
+    # "cannot read" instead of failing — but then PDFs are off the table.
     "pypdf>=4.0",
 ]
 
 [project.optional-dependencies]
-# Sinirsel sesler. Isletim sisteminin kendi sentezleyicisi robot gibi
-# konusuyor; bu paket gercek insan tonunda ses uretiyor.
+# Neural voices. The OS synthesiser sounds robotic; this one sounds human.
 voice = ["edge-tts>=7.0"]
-# Yerel konusma tanima. Ses bilgisayardan cikmiyor; model ilk
-# kullanimda indirilip diskte kaliyor.
+# Local speech recognition. Audio never leaves the machine; the model is
+# downloaded once and kept on disk.
 listen = ["faster-whisper>=1.0", "sounddevice>=0.5"]
-# Sistem tepsisi: pencere kapaninca program kapanmasin.
+# System tray: closing the window should not close the program.
 tray = ["pystray>=0.19", "pillow>=10.0"]
-# Kamera izleme. Hareket yerelde olculuyor; NVIDIA GPU varsa kare
-# yerelde analiz edilip sohbet modeline metin gidiyor (onnxruntime-gpu).
-# GPU yoksa model yalnizca bir sey degistiginde kare goruyor.
+# Camera watching. Motion is measured locally; with an NVIDIA GPU frames
+# are analysed on-device and the chat model receives text (onnxruntime-gpu).
+# Without a GPU the model only sees a frame when something changes.
 watch = [
     "opencv-python-headless>=4.9",
     "onnxruntime-gpu>=1.18; sys_platform == 'win32' or sys_platform == 'linux'",
 ]
-# LM Studio, Ollama, vLLM, llama.cpp — OpenAI-uyumlu her sunucu.
+# LM Studio, Ollama, vLLM, llama.cpp — any OpenAI-compatible server.
 local = ["openai>=1.60"]
-# Masaüstü penceresi. İşletim sisteminin kendi webview'ını kullanır
-# (Windows'ta WebView2) — Chromium paketlenmez.
+# Desktop window. Uses the OS's own webview (WebView2 on Windows) —
+# no bundled Chromium.
 app = ["pywebview>=5.0"]
 mcp = ["mcp>=1.2"]
 dev = ["pytest>=8.0", "pytest-asyncio>=0.23", "openai>=1.60", "pywebview>=5.0"]
