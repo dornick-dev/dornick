@@ -2384,3 +2384,22 @@ def test_every_referenced_static_file_is_served() -> None:
     sunulan = set(re.findall(r'"(/[^"]+)":\s*"', SERVER_SRC))
     eksik = {y for y in istenen if y.endswith((".js", ".css")) and y not in sunulan}
     assert not eksik, f"sunucu izin listesinde eksik: {sorted(eksik)}"
+
+
+def test_native_tour_fixes_are_wired() -> None:
+    """Natif tur (31.08, gercek fare/klavye): kompozer odak delegasyonu
+    (kutunun bos yerine tiklayinca odak yoktu, Ctrl+V bosa gidiyordu),
+    pano menusu (pywebview uretimde varsayilan sag tik menusunu kapatiyor
+    — kopru pano_oku/pano_yaz + tarayici fallback) ve kontrol isigi
+    (el/ekran araci kosarken pencere cevresi nabizli yanar)."""
+    assert '.compose-shell").addEventListener("mousedown"' in APP_JS
+    menu = (STATIC / "menu.js").read_text(encoding="utf-8")
+    assert 'addEventListener("contextmenu"' in menu
+    assert "pano_oku" in menu and "pano_yaz" in menu
+    assert "Yapıştır" in menu and "Kopyala" in menu and "Tümünü seç" in menu
+    desktop_src = (Path(__file__).resolve().parents[1] / "src" / "neocp"
+                   / "desktop.py").read_text(encoding="utf-8")
+    assert "def pano_oku" in desktop_src and "def pano_yaz" in desktop_src
+    assert "pano_oku, pano_yaz" in desktop_src   # ana pencerede expose
+    assert "kontrol-canli" in APP_JS
+    assert "body.kontrol-canli::after" in CSS

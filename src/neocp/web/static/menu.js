@@ -80,5 +80,77 @@ const Menu = (() => {
     window.addEventListener("blur", kapatFn);
   }
 
+  // --- pano menüsü ------------------------------------------------------
+  //
+  // WebView2'nin varsayılan sağ tık menüsünü pywebview ÜRETİMDE kapatıyor
+  // (yalnız debug'da açık): kopyala/yapıştır menüsüz kalıyordu (natif tur,
+  // 31.08). Pano erişimi pywebview köprüsünden (pano_oku/pano_yaz) —
+  // tarayıcı izin kapısına takılmaz; köprü yoksa (tarayıcı önizleme)
+  // navigator.clipboard'a düşer.
+
+  function panoYaz(metin) {
+    try {
+      if (window.pywebview && window.pywebview.api.pano_yaz) {
+        window.pywebview.api.pano_yaz(String(metin));
+        return;
+      }
+    } catch { /* köprü yok */ }
+    try { navigator.clipboard.writeText(String(metin)); } catch { /* izin yok */ }
+  }
+
+  async function panoOku() {
+    try {
+      if (window.pywebview && window.pywebview.api.pano_oku) {
+        return String(await window.pywebview.api.pano_oku() || "");
+      }
+    } catch { /* köprü yok */ }
+    try { return String(await navigator.clipboard.readText() || ""); }
+    catch { return ""; }
+  }
+
+  function alanaEkle(hedef, metin) {
+    hedef.focus();
+    const b = hedef.selectionStart ?? hedef.value.length;
+    const e = hedef.selectionEnd ?? b;
+    hedef.value = hedef.value.slice(0, b) + metin + hedef.value.slice(e);
+    hedef.selectionStart = hedef.selectionEnd = b + metin.length;
+    hedef.dispatchEvent(new Event("input", { bubbles: true }));
+  }
+
+  function secimiSil(hedef) {
+    const b = hedef.selectionStart ?? 0, e = hedef.selectionEnd ?? 0;
+    hedef.value = hedef.value.slice(0, b) + hedef.value.slice(e);
+    hedef.selectionStart = hedef.selectionEnd = b;
+    hedef.dispatchEvent(new Event("input", { bubbles: true }));
+  }
+
+  document.addEventListener("contextmenu", (ev) => {
+    // Kendi menüsü olan satırlar (sohbet listesi vb.) kendi yollarını
+    // kullanıyor; onlar stopPropagation ile buraya hiç düşmez.
+    const hedef = ev.target.closest("input, textarea");
+    const yazilabilir = hedef && !hedef.readOnly && !hedef.disabled
+      && hedef.type !== "checkbox" && hedef.type !== "radio";
+    const secim = String(window.getSelection() || "");
+    const alanSecimi = yazilabilir
+      ? String(hedef.value || "").slice(hedef.selectionStart ?? 0, hedef.selectionEnd ?? 0)
+      : "";
+    const kopyalanacak = alanSecimi || secim;
+    if (!yazilabilir && !kopyalanacak) return;   // menülük bir şey yok
+    const maddeler = [];
+    if (kopyalanacak) {
+      maddeler.push({ ad: "Kopyala", is: () => panoYaz(kopyalanacak) });
+    }
+    if (yazilabilir && alanSecimi) {
+      maddeler.push({ ad: "Kes", is: () => { panoYaz(alanSecimi); secimiSil(hedef); } });
+    }
+    if (yazilabilir) {
+      maddeler.push({ ad: "Yapıştır",
+                      is: () => { panoOku().then((m) => { if (m) alanaEkle(hedef, m); }); } });
+      maddeler.push({ ad: "Tümünü seç",
+                      is: () => { hedef.focus(); hedef.select && hedef.select(); } });
+    }
+    ac(ev, maddeler);
+  });
+
   return { ac, kapat };
 })();

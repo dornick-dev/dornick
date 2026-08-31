@@ -964,10 +964,23 @@ function setBusy(value) {
     kickWork();
   } else {
     stopBusyTicker();
+    // Kesmede tool_end kaçabilir: ışık turla birlikte her koşulda söner.
+    kontrolSayaci = 0;
+    document.body.classList.remove("kontrol-canli");
     sealLine();
     // Plan kartı tur metninin ALTINDA: önce metin mühürlensin, sonra kart.
     flushDeferredPlans();
   }
+}
+
+// Kontrol ışıması: neo el/ekran araçlarını kullanırken pencere çevresi
+// nabızlı yanar — "şu an bilgisayarı o kullanıyor" tek bakışta belli
+// (kullanıcı isteği, 31.08: Claude'un ekran çerçevesi gibi). Sayaçlı:
+// iç içe çağrılar sönmeyi erkene almasın; tur bitince her koşulda söner.
+let kontrolSayaci = 0;
+function kontrolIsigi(delta) {
+  kontrolSayaci = Math.max(0, kontrolSayaci + delta);
+  document.body.classList.toggle("kontrol-canli", kontrolSayaci > 0);
 }
 
 // Meşgulken şeritte anında "Düşünüyor · N sn". setBusy ve kullanıcı
@@ -1574,6 +1587,15 @@ $("composer").addEventListener("submit", (ev) => {
   send();
 });
 input.addEventListener("input", paintSend);
+
+// Kompozer kutusunun NERESİNE tıklanırsa tıklansın yazı alanı odaklanır.
+// Natif tur (31.08): kutunun boş alanına tıklayan kullanıcı odak almıyor,
+// ardından Ctrl+V boşa gidiyordu ("yapıştır çalışmıyor"un yarısı buydu).
+document.querySelector(".compose-shell").addEventListener("mousedown", (ev) => {
+  if (ev.target.closest("button, a, input, textarea, select, .dock, .git-bar, .pop")) return;
+  ev.preventDefault();   // odağı çalma — doğrudan biz veriyoruz
+  input.focus();
+});
 
 input.addEventListener("input", () => {
   input.style.height = "auto";
@@ -4609,6 +4631,7 @@ function handle(e) {
 
     case "tool_start": {
       turnActivity = true;
+      if (e.tool === "hand" || e.tool === "screen") kontrolIsigi(+1);
       actLine(e);
       setMode("working", verbFor(e.tool) || t("Çalışıyor"));
       // Aygıt kullanılıyorsa sahnede o organ canlanıyor: soluk duran
@@ -4622,6 +4645,7 @@ function handle(e) {
       break;
     }
     case "tool_end": {
+      if (e.tool === "hand" || e.tool === "screen") kontrolIsigi(-1);
       closeAct(e);
       if (typeof Viewer !== "undefined" && Viewer.feed) Viewer.feed(e);
       Viewer.refresh(e.tool, e.path);

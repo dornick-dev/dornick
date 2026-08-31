@@ -3298,6 +3298,61 @@ def run(config: Config, *, port: int = 8765, resume: bool = False,
     def is_zoomed() -> bool:
         return _is_zoomed()
 
+    def pano_oku() -> str:
+        """Windows panosundan düz metin okur (ctypes; ek bağımlılık yok).
+
+        Sağ tık menüsünün "Yapıştır"ı buradan besleniyor: WebView2'nin
+        varsayılan menüsünü pywebview üretimde kapatıyor ve tarayıcı
+        pano-okuma izni WebView2 içinde sorulamıyor — Python tarafı her
+        zaman okuyabilir (natif tur, 31.08)."""
+        import ctypes
+        CF_UNICODETEXT = 13
+        u32 = ctypes.windll.user32
+        k32 = ctypes.windll.kernel32
+        if not u32.OpenClipboard(0):
+            return ""
+        try:
+            handle = u32.GetClipboardData(CF_UNICODETEXT)
+            if not handle:
+                return ""
+            k32.GlobalLock.restype = ctypes.c_void_p
+            ptr = k32.GlobalLock(ctypes.c_void_p(handle))
+            try:
+                return ctypes.wstring_at(ptr) if ptr else ""
+            finally:
+                k32.GlobalUnlock(ctypes.c_void_p(handle))
+        except Exception:
+            return ""
+        finally:
+            u32.CloseClipboard()
+
+    def pano_yaz(metin: str = "") -> bool:
+        """Windows panosuna düz metin yazar (Kopyala/Kes için)."""
+        import ctypes
+        CF_UNICODETEXT, GMEM_MOVEABLE = 13, 0x0002
+        veri = str(metin or "")
+        u32 = ctypes.windll.user32
+        k32 = ctypes.windll.kernel32
+        if not u32.OpenClipboard(0):
+            return False
+        try:
+            u32.EmptyClipboard()
+            boyut = (len(veri) + 1) * ctypes.sizeof(ctypes.c_wchar)
+            k32.GlobalAlloc.restype = ctypes.c_void_p
+            hglob = k32.GlobalAlloc(GMEM_MOVEABLE, boyut)
+            if not hglob:
+                return False
+            k32.GlobalLock.restype = ctypes.c_void_p
+            ptr = k32.GlobalLock(ctypes.c_void_p(hglob))
+            ctypes.memmove(ptr, ctypes.create_unicode_buffer(veri), boyut)
+            k32.GlobalUnlock(ctypes.c_void_p(hglob))
+            u32.SetClipboardData(CF_UNICODETEXT, ctypes.c_void_p(hglob))
+            return True
+        except Exception:
+            return False
+        finally:
+            u32.CloseClipboard()
+
     def open_camera_window(cam: str = "") -> str:
         """Kamera izlemeyi ayrı OS penceresinde açar; varsa öne getirir."""
         global _CAM_WINDOW
@@ -3434,7 +3489,7 @@ def run(config: Config, *, port: int = 8765, resume: bool = False,
             window.destroy()
 
     for fn in (minimize, maximize, drag, resize, close, is_zoomed,
-               open_camera_window):
+               open_camera_window, pano_oku, pano_yaz):
         window.expose(fn)
 
     # Native kapatma (X / Alt+F4) programı YOK ETMESİN, tepsiye gizlesin:

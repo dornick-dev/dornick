@@ -1,5 +1,23 @@
 # Changelog
 
+## 1.3.6 — 2026-08-31
+
+Findings from the first real mouse-and-keyboard tour of the installed
+package (driven live on a desktop, every click verified):
+
+* **Clicking anywhere in the composer focuses the input.** Clicking the
+  box's empty area gave no focus, so a following Ctrl+V vanished — the
+  missing half of "paste doesn't work".
+* **Right-click clipboard menu.** pywebview disables WebView2's default
+  context menu outside debug mode, so copy/paste had no menu at all.
+  neo now ships its own: Copy / Cut / Paste / Select all on inputs and
+  selected text, with clipboard access over the pywebview bridge (no
+  browser permission wall) and a `navigator.clipboard` fallback.
+* **Control glow.** While neo drives the hand/screen tools the window
+  edge pulses — you can tell at a glance that it is using the computer.
+* Caret honesty from the previous batch (blink only while text actually
+  streams) ships in this installer.
+
 ## 1.3.5 — 2026-08-31
 
 * **The goal ledger no longer hijacks the conversation.** The bare
