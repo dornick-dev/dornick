@@ -2947,7 +2947,14 @@ class Agent:
             return
         self._last_goal_digest = digest
         if digest:
-            self.session.add_system_note(digest)
+            # Çıplak liste küçük modelde TALİMAT gibi okunuyordu: kullanıcı
+            # "selam yaz" derken model defterdeki hedefi tartışmaya
+            # girişiyordu (canlı yara, 31.08). Öncelik tek cümleyle nota
+            # gömülü: gündemi kullanıcının son sözü belirler.
+            self.session.add_system_note(
+                digest + "\n(Hatırlatma, talimat değil: gündemi kullanıcının "
+                "son sözü belirler. Hedefe sırası gelince ya da kullanıcı "
+                "sorunca dönersin; bu notu cevabında tartışmazsın.)")
 
     def _settle_pending(self) -> None:
         pending = self.session.pending_tool_uses()

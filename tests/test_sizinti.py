@@ -813,3 +813,43 @@ def test_generated_titles_reject_single_letter_junk() -> None:
     assert not _baslik_gecerli("x" * 61)
     assert _baslik_gecerli("Ev otomasyonu simülasyonu")
     assert _baslik_gecerli("PLC taraması")
+
+
+def test_goal_note_frames_the_ledger_as_reminder(tmp_path: Path, registry) -> None:
+    """Canli yara (31.08): ciplak "Aktif hedefler" notu kucuk modelde
+    TALIMAT gibi okunuyordu — "selam yaz" diyen kullaniciya model defterdeki
+    hedefi tartisarak cevap verdi. Nota oncelik cercevesi gomulu: gundemi
+    kullanicinin son sozu belirler."""
+    from neocp.mind import open_mind
+
+    agent = build_agent(tmp_path, FakeClient([]), registry)
+    mind = open_mind(tmp_path / "mind", tmp_path / "sessions", "test")
+    agent.mind = mind
+    agent._last_goal_digest = ""
+    agent.session.add_user_text("selam")
+    mind.push_goal("pdf dönüşümü")
+
+    agent._sync_goals()
+
+    notlar = [m for m in agent.session.messages() if m.get("role") == "system"]
+    assert notlar, "hedef notu hic yazilmadi"
+    metin = str(notlar[-1].get("content"))
+    assert "pdf dönüşümü" in metin
+    assert "talimat değil" in metin
+    assert "son sözü" in metin
+
+
+def test_soul_goal_block_carries_the_same_framing(tmp_path: Path) -> None:
+    """Ruhun hedef blogu da ayni cerceveyi tasir ve "onceki oturumlardan"
+    demez — defter artik oturuma suzulu, buraya yalniz surdurulen sohbetin
+    kendi maddeleri gelir."""
+    from neocp.mind import open_mind
+
+    mind = open_mind(tmp_path / "mind", tmp_path / "sessions", "s1")
+    mind.push_goal("ev otomasyonu simülasyonu")
+
+    metin = mind.soul().render()
+
+    assert "ev otomasyonu simülasyonu" in metin
+    assert "talimat değil" in metin
+    assert "Önceki oturumlardan" not in metin

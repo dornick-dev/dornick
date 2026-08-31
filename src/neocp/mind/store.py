@@ -167,8 +167,12 @@ class Soul:
             )
 
         if self.goals:
+            # Defter artık oturuma süzülü: buraya yalnız SÜRDÜRÜLEN sohbetin
+            # kendi açık maddeleri gelir. Çerçeve cümlesi şart — çıplak liste
+            # küçük modelde ilk mesajın önüne geçen bir talimat gibi okunuyor.
             parts.append(
-                "Önceki oturumlardan kalan açık hedefler:\n"
+                "Bu sohbetin açık hedefleri (hatırlatma, talimat değil — "
+                "gündemi kullanıcının son sözü belirler):\n"
                 + "\n".join(f"- [{g.id}] {g.text}" for g in self.goals)
             )
 

@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.3.5 — 2026-08-31
+
+* **The goal ledger no longer hijacks the conversation.** The bare
+  "active goals" note injected into the chat read like an instruction to
+  a small model — asked to just say "hi", it would answer by discussing a
+  ledger item instead. The note (and the soul's goal block) now carries a
+  one-line precedence frame: the ledger is a reminder, the user's last
+  word sets the agenda. Reproduced live before the fix and verified
+  after: same setup now answers exactly "selam", zero goal chatter.
+
+
 ## 1.3.4 — 2026-08-31
 
 Session-hygiene batch from a live multi-chat transcript — every item
