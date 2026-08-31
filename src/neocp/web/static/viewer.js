@@ -120,6 +120,7 @@ const Viewer = (() => {
     pageLabel = label || url;
     current = "url:" + url.trim();
     lastUrl = url.trim();
+    foldSide();
     panel.hidden = false;
     document.body.classList.add("viewing");
     load(current);
@@ -141,9 +142,20 @@ const Viewer = (() => {
     load(current);
   }
 
+
+  // Dar bantta (<=1160) sag yuzey acilirken kenar cubugu KATLANIR: ikisi
+  // birden sigmiyor (olculdu — cekmece kipi cubugu sohbetin ustune
+  // yuzduruyordu ve "Dusunuyor" basligi tiklanamiyordu, 31.08).
+  function foldSide() {
+    if (innerWidth <= 1160 && typeof History !== "undefined" && History.close) {
+      try { History.close(); } catch { /* panel yoksa */ }
+    }
+  }
+
   function show(path) {
     current = path;
     if (dismissed) return;      // kullanıcı kapattı; zorlamıyoruz
+    foldSide();
     panel.hidden = false;
     document.body.classList.add("viewing");
     load(path);
@@ -203,6 +215,7 @@ const Viewer = (() => {
     current = "git:pane";
     pageLabel = label || "Git";
     mode = "git";
+    foldSide();
     panel.hidden = false;
     document.body.classList.add("viewing");
     title.textContent = pageLabel;
@@ -360,6 +373,7 @@ const Viewer = (() => {
     }
     current = key;
     mode = key === "desk:term" ? "term" : "live";
+    foldSide();
     panel.hidden = false;
     document.body.classList.add("viewing");
     load(key);

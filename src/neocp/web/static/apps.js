@@ -349,14 +349,26 @@ const Apps = (() => {
       open.onclick = (ev) => { stop(ev); openApp(p, live); };
       row.append(open);
     }
-    // Başlat / Durdur: aynı yerde tek düğme — durumu ne ise onu sunar.
-    if (live && live.stoppable !== false) {
-      const st = el("button", "proj-btn danger", "Durdur");
-      st.onclick = (ev) => { stop(ev); stopProc(live); };
-      row.append(st);
-    } else if (!live && runnable(p)) {
-      const st = el("button", "proj-btn", "Başlat");
-      st.onclick = (ev) => { stop(ev); launchProject(p); };
+    // Başlat / Durdur: tek DİNAMİK düğme — tıklandığı ANIN durumuna göre
+    // davranır ve 4 sn'lik yoklama etiketini tazeler (canlı şikâyet:
+    // durum sayfa yenilenmeden değişmiyordu; düğme ilk çizimin
+    // fotoğrafında kalıyordu).
+    if (live || runnable(p)) {
+      const st = el("button", "proj-btn act-run", "");
+      const boya = () => {
+        const kosan = liveOf(p) || (live && procs.some((q) => q.pid === live.pid) ? live : null);
+        st.textContent = t(kosan ? "Durdur" : "Başlat");
+        st.classList.toggle("danger", !!kosan);
+        st.hidden = kosan ? kosan.stoppable === false : !runnable(p);
+      };
+      boya();
+      st.onclick = (ev) => {
+        stop(ev);
+        const kosan = liveOf(p);
+        if (kosan && kosan.stoppable !== false) stopProc(kosan);
+        else if (!kosan && runnable(p)) launchProject(p);
+        setTimeout(drawRunning, 800);
+      };
       row.append(st);
     }
     // Klasörü göster: "nerede bu şey?" — kartta yol yazıyordu ama diskte
@@ -403,6 +415,21 @@ const Apps = (() => {
   // Kartlardaki canlı durumu tazeler: yeşil nokta + durum rozeti + eylem.
   // Kartları baştan çizmek yerine yerinde işaretleniyor — açık proje
   // görünümü ve arama odağı bozulmasın.
+  function paintViewLive(view, p) {
+    view.querySelector(".proj-live")?.remove();
+    const r = liveOf(p) || procs.find((q) => q.path === (p.path || ""));
+    if (!r) return;
+    const live = el("div", "proj-live");
+    live.append(el("span", "apps-proc-dot"));
+    live.append(el("span", null, "Çalışıyor" + (r.pid ? " · PID " + r.pid : "")));
+    if (r.address) {
+      const link = el("button", "apps-proc-addr", r.address);
+      link.onclick = () => openLive(p, r);
+      live.append(link);
+    }
+    view.prepend(live);
+  }
+
   function markCards() {
     body.querySelectorAll(".proj").forEach((w) => {
       const p = all.find((q) => (q.path || "") === w.dataset.path);
@@ -413,6 +440,18 @@ const Apps = (() => {
         const st = state(p);
         badge.className = "proj-state " + st.cls;
         badge.textContent = t(st.label);
+      }
+      // Kart + açık detay birlikte nefes alır: canlı satır ve
+      // Başlat/Durdur etiketleri o anki gerçeğe çekilir.
+      if (p) {
+        const kosan = liveOf(p);
+        w.querySelectorAll(".proj-btn.act-run").forEach((eylem) => {
+          eylem.textContent = t(kosan ? "Durdur" : "Başlat");
+          eylem.classList.toggle("danger", !!kosan);
+          eylem.hidden = kosan ? kosan.stoppable === false : !runnable(p);
+        });
+        const view = w.querySelector(".proj-view");
+        if (view) paintViewLive(view, p);
       }
     });
   }
@@ -522,20 +561,13 @@ const Apps = (() => {
     body.querySelectorAll(".proj-view").forEach((n) => n.remove());
 
     const view = el("div", "proj-view");
+    view.dataset.path = p.path || "";
 
     // Canlı durum: çalışıyorsa adresi ve süresi burada da görünsün.
-    const r = liveOf(p);
-    if (r) {
-      const live = el("div", "proj-live");
-      live.append(el("span", "apps-proc-dot"));
-      live.append(el("span", null, "Çalışıyor" + (r.pid ? " · PID " + r.pid : "")));
-      if (r.address) {
-        const link = el("button", "apps-proc-addr", r.address);
-        link.onclick = () => openLive(p, r);
-        live.append(link);
-      }
-      view.append(live);
-    }
+    // Ayrı fonksiyon: 4 sn'lik yoklama AÇIK detayı da tazeler (canlı
+    // şikâyet, 31.08: durum sayfa yenilenmeden gelmiyordu — kartlar
+    // tazeleniyordu ama açık detay ilk anın fotoğrafında kalıyordu).
+    paintViewLive(view, p);
     // Eksik manifestin nedeni burada da: "entry bulunamadı: static/index.html".
     if (p.eksik && p.neden) view.append(el("p", "proj-why", p.neden));
 

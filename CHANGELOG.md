@@ -1,5 +1,24 @@
 # Changelog
 
+## 1.3.3 — 2026-08-31
+
+Interface trio from live complaints, each reproduced with hit-testing
+before the fix and verified clickable after:
+
+* **"Thinking" details would not open on click.** Root cause: the desk
+  auto-opens the viewer at startup, and between 861-1160 px the sidebar +
+  viewer + chat cannot share the window — the work strip slid under the
+  viewer's tab bar and real clicks landed there. The drawer band now
+  covers the full 861-1160 range, and opening a right surface in that
+  band folds the sidebar automatically.
+* **The Tasks panel floated over the page from the left** (even starting
+  off-screen). It now docks to the right edge like the viewer.
+* **App running/stopped state needed a page refresh.** The Start/Stop
+  button is now a single dynamic control that reflects the state at
+  click time, and the open project view refreshes with the existing 4 s
+  poll — start, stop and open-in-browser all reflect without a reload.
+
+
 ## 1.3.2 — 2026-08-31
 
 Responsive repair, driven by live screenshots and programmatic overflow

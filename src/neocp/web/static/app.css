@@ -244,7 +244,7 @@ html, body { height: 100%; margin: 0; overflow: hidden; }
 :root[data-theme="light"] .apps-panel,
 :root[data-theme="light"] .hist-panel,
 :root[data-theme="light"] .jobs-panel {
-  box-shadow: inset -1px 0 0 var(--edge), 18px 0 40px rgba(28, 42, 58, .12);
+  box-shadow: inset 1px 0 0 var(--edge), -18px 0 40px rgba(28, 42, 58, .12);
 }
 
 body {
@@ -3548,15 +3548,18 @@ body.settling .mentions { /* rail/mind arasinda */ }
 
 /* Ana Görevler paneli — geniş master-detail çekmece (tam ekran değil). */
 .jobs-panel {
-  position: fixed; top: 52px; bottom: 40px; left: 0;
-  width: var(--jobs-w); z-index: 32;
+  /* Sag yanasik (canli istek, 31.08): panel sayfanin USTUNE sol taraftan
+     biniyordu; artik goruntuleyici gibi sag kenara oturur. */
+  position: fixed; top: 48px; bottom: 0; right: 0; left: auto;
+  width: min(var(--jobs-w), 94vw); z-index: 32;
   display: flex; flex-direction: column;
   background: var(--panel-glass);
   backdrop-filter: blur(16px);
-  border-radius: 0 12px 12px 0;
-  box-shadow: inset -1px 0 0 var(--edge), 22px 0 48px rgba(0, 0, 0, .38);
-  animation: apps-in .32s cubic-bezier(.2,.8,.3,1);
+  border-radius: 12px 0 0 12px;
+  box-shadow: inset 1px 0 0 var(--edge), -22px 0 48px rgba(0, 0, 0, .38);
+  animation: jobs-in .32s cubic-bezier(.2,.8,.3,1);
 }
+@keyframes jobs-in { from { transform: translateX(28px); opacity: 0; } }
 .jobs-head {
   display: flex; align-items: center; gap: 10px;
   padding: 14px 16px 12px;
@@ -5310,7 +5313,7 @@ body.watch-win .cam-strip {
 /* 861-1020: kenar çubuğu + sağ sütun + sohbet tabanı pencereye sığmıyor
    (toplam ~1056px). Sağ sütun açıkken kenar çubuğu yer AYIRMAZ, üstte
    çekmece olur — harf sızıntısı ekranının kökü buydu. */
-@media (max-width: 1020px) and (min-width: 861px) {
+@media (max-width: 1160px) and (min-width: 861px) {
   body.hist-open.viewing, body.hist-open.orch-open, body.hist-open.cam-open {
     --rail-w: 0px;
   }

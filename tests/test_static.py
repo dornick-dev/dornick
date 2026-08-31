@@ -2318,7 +2318,7 @@ def test_narrow_band_rules_exist() -> None:
     goruntuleyici + sohbet pencereye sigmiyordu (harf sizintisi);
     375px'te goruntuleyici sohbete 88px birakiyordu; kompozer 273px'e
     sikisiyordu. Uc bant kurali da CSS'te yasamali."""
-    assert "@media (max-width: 1020px) and (min-width: 861px)" in CSS
+    assert "@media (max-width: 1160px) and (min-width: 861px)" in CSS  # 1020 idi; 1021-1136 da sigmiyordu
     assert "body.hist-open.viewing" in CSS      # cekmece kurali
     assert "body.viewing .right-col" in CSS     # tam-yuzey goruntuleyici
     assert ".compose-shell { left: 10px; right: 10px; max-width: none; }" in CSS
