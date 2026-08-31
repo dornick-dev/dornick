@@ -476,6 +476,16 @@ def test_a_401_asks_for_login_instead_of_erroring(tmp_path: Path) -> None:
             tmp_path,
         )
         session.open()
+        if not (session.ok is False and "Giriş" in (session.error or "")):
+            # Tam takım yükü altında (Windows soket baskısı) ilk deneme ara
+            # sıra farklı bir ağ hatasıyla dönebiliyor (31.08'de iki tam
+            # koşuda görüldü; izole/dosya koşusunda hiç). Davranış bozuksa
+            # ikinci deneme de kırmızı kalır.
+            session = connectors.Session(
+                connectors.Connector(name="uzak", url=f"http://127.0.0.1:{port}/mcp"),
+                tmp_path,
+            )
+            session.open()
         assert session.ok is False
         assert "Giriş" in session.error
         assert "Giriş yap" in session.error
