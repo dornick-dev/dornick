@@ -95,7 +95,11 @@ def suz(entries: list[Any]) -> list[str]:
             continue
         if "tools" not in (entry.get("supported_parameters") or []):
             continue
-        havuz.append(str(entry["id"]))
+        ident = str(entry["id"])
+        # Batch-only kimlikler canlı sohbette 404 — havuza sokma.
+        if ident.rsplit(":", 1)[-1].lower() == "batch" and ":" in ident:
+            continue
+        havuz.append(ident)
         if len(havuz) >= HAVUZ_BOY:
             break
     return havuz

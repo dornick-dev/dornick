@@ -309,23 +309,30 @@ def baglam_kirilim(agent: Any, prompt_total: int = 0) -> list[dict[str, Any]]:
 
 
 def _gecmis_kullanim(agent: Any) -> dict[str, Any]:
-    """Sürdürülen bir oturumun bağlam/token durumu.
+    """Sürdürülen bir oturumun bağlam + harcama durumu.
 
     Kanıtlanmış yara: uygulama kapanıp açılınca ya da geçmişten bir
-    konuşma sürdürülünce dock'taki bağlam çubuğu ve token sayacı SIFIRDAN
-    başlıyordu. Oysa geçmiş yüklü ve bağlam gerçekten dolu — kullanıcı
-    "ne kadar doluyum" bilgisini kaybediyordu. Bu turda hiç model
-    çağrılmadığı için `_last_usage` boş; doğru kaynak oturum günlüğü.
+    konuşma sürdürülünce dock'taki bağlam çubuğu ve maliyet çipi SIFIRDAN
+    başlıyordu. Oysa geçmiş yüklü — kullanıcı hem doluluğu hem toplam
+    harcamayı kaybediyordu. Bu turda hiç model çağrılmadığı için
+    `_last_usage` boş; doğru kaynak oturum günlüğü.
+
+    İki ayrı rakam:
+      * `prompt_total` — SON turun istemi (bağlam çubuğu: şu an pencere
+        ne kadar dolu).
+      * `girdi` — tüm turların `prompt_total` toplamı (maliyet çipi:
+        canlı `_usage_yay` ile aynı muhafazakâr muhasebe; konuşmayı
+        yeniden açınca sıfırdan değil geçmişin üstünden).
 
     Kaynak sırası:
-      1. Son asistan mesajının `usage` meta'sı — sağlayıcının saydığı
-         gerçek rakam, en doğrusu.
+      1. Asistan mesajlarının `usage` meta'sı — sağlayıcının saydığı
+         gerçek rakam.
       2. Yoksa yüklü mesajlardan kaba tahmin (karakter/4). `tahmin`
          bayrağı arayüze taşınıyor: uydurma bir kesinlik satılmıyor.
 
     Yeni oturumda ikisi de boş çıkar ve sayaç gerçekten sıfırdan başlar.
     """
-    bos = {"prompt_total": 0, "output": 0, "cagri": 0, "tahmin": False}
+    bos = {"prompt_total": 0, "girdi": 0, "output": 0, "cagri": 0, "tahmin": False}
     session = getattr(agent, "session", None)
     if session is None:
         return bos
@@ -336,6 +343,7 @@ def _gecmis_kullanim(agent: Any) -> dict[str, Any]:
 
     cagri = 0
     son: dict[str, Any] | None = None
+    toplam_girdi = 0
     toplam_cikti = 0
     for ev in mesajlar:
         if ev.role != "assistant":
@@ -344,11 +352,13 @@ def _gecmis_kullanim(agent: Any) -> dict[str, Any]:
         if isinstance(kullanim, dict) and kullanim.get("prompt_total"):
             son = kullanim
             cagri += 1
+            toplam_girdi += int(kullanim.get("prompt_total") or 0)
             toplam_cikti += int(kullanim.get("output") or 0)
 
     if son is not None:
         return {
             "prompt_total": int(son.get("prompt_total") or 0),
+            "girdi": toplam_girdi,
             "output": toplam_cikti,
             "cagri": cagri,
             "tahmin": False,
@@ -362,7 +372,8 @@ def _gecmis_kullanim(agent: Any) -> dict[str, Any]:
         harf += len(_metin_uzunlugu(ev.content))
     if not harf:
         return bos
-    return {"prompt_total": harf // TAHMIN_BOLEN, "output": 0,
+    tahmini = harf // TAHMIN_BOLEN
+    return {"prompt_total": tahmini, "girdi": tahmini, "output": 0,
             "cagri": 0, "tahmin": True}
 
 
@@ -866,12 +877,11 @@ class Bridge:
     def _apply_session_context(self, session_id: str) -> None:
         """Oturum metasındaki klasör + modeli canlıya uygular.
 
-        Klasör kalıcı ayardır (settings.apply, diske yazar). Model ise
-        SOHBETE özeldir ve yalnız BELLEKTE uygulanır — eski hal
-        settings.apply'dan geçiyordu ve sohbet pini küresel varsayılanın
-        üzerine diske yazılıyordu; başka sohbete geçince eski model geri
-        gelmiyordu. Şimdi taban her zaman diskteki küresel ayar: pin varsa
-        üstüne biner, pin yoksa (ya da silindiyse) taban geri gelir.
+        İkisi de SOHBETE özeldir ve yalnız BELLEKTE uygulanır — eski hal
+        klasörü settings.apply ile diske yazıyordu; yeni konuşmada path
+        olmasa bile önceki projenin git çubuğu (neocp / dal) kalıyordu.
+        Taban her zaman diskteki küresel ayar: pin varsa üstüne biner,
+        pin yoksa (ya da silindiyse) taban geri gelir.
         """
         agent = self.agent
         if agent is None:
@@ -887,21 +897,45 @@ class Bridge:
 
         from . import settings as saved_settings
 
-        if path:
+        try:
+            disk = saved_settings._from_disk(agent.config)
+        except Exception:
+            disk = agent.config
+
+        # Klasör: sohbet path'i varsa onu, yoksa küresel projeyi uygula.
+        disk_proje = str(disk.sandbox.project or "").strip()
+        hedef_proje = path or disk_proje
+        if hedef_proje != str(agent.config.sandbox.project or "").strip():
             try:
-                self.reload(saved_settings.apply(
-                    agent.config, {"sandbox": {"project": path}}))
+                self.reload(_degistir(
+                    agent.config,
+                    sandbox=_degistir(agent.config.sandbox, project=hedef_proje),
+                ))
             except Exception:
                 pass
 
-        try:
-            taban = saved_settings._from_disk(agent.config).model
-        except Exception:
-            taban = agent.config.model
+        taban = disk.model
+        if model_name and saved_settings.batch_only_model(model_name):
+            model_name = model_name.rsplit(":", 1)[0]
         hedef = _degistir(taban, name=model_name) if model_name else taban
         if hedef != agent.config.model:
             try:
+                # Sohbet pininde de katalog penceresini doldur.
+                if model_name:
+                    try:
+                        hedef = saved_settings.adopt_caps(agent.config, hedef)
+                    except Exception:
+                        pass
                 self.reload(_degistir(agent.config, model=hedef))
+            except Exception:
+                pass
+
+        # Composer git çubuğu canlı config'ten okunur; oturum değişince
+        # yenilenmezse eski repo/dal adı yeni konuşmada asılı kalır.
+        hub = getattr(self, "hub", None)
+        if hub is not None:
+            try:
+                hub.emit({"type": "git"})
             except Exception:
                 pass
 
@@ -971,6 +1005,14 @@ class Bridge:
         except Exception:
             pass
         _biten_kanallari_dusur(agent)
+        # Sayaçlar sohbete özel: önceki konuşmanın harcaması yeni/öteki
+        # sohbette kalmasın; sürdürülen sohbet geçmiş toplamını alsın.
+        self._kullanim_sifirla()
+        if resumed:
+            try:
+                self._oturum_tohumla(_gecmis_kullanim(agent))
+            except Exception:
+                pass
         self.hub.emit({"type": "session_reset", "id": session.id, "resumed": resumed})
         self.hub.emit({"type": "channels", "channels": _live_channels(agent)})
         return {"ok": True, "id": session.id, "resumed": resumed}
@@ -1005,6 +1047,12 @@ class Bridge:
             self._apply_session_context(serit.sid)
         except Exception:
             pass
+        self._kullanim_sifirla()
+        if resumed:
+            try:
+                self._oturum_tohumla(_gecmis_kullanim(serit.agent))
+            except Exception:
+                pass
         self.hub.emit({"type": "session_reset", "id": serit.sid,
                        "resumed": resumed})
         self.hub.emit({"type": "status", "busy": serit.busy})
@@ -1138,8 +1186,8 @@ class Bridge:
         istemci tazeleniyor.
 
         Geçmiş yeni modele taşınıyor — kullanıcıya söyleniyor, sessizce
-        yapılmıyor.         Turun ortasındaysak değişiklik tur bitene kadar
-        bekliyor: akan bir istemciyi altından çekmek o cevabı öldürür.
+        yapılmıyor. Turun ortasındaysak değişiklik bir sonraki model
+        çağrısına (araç turu arası) kadar bekler: akan stream kesilmez.
         """
         agent = self.agent
         if agent is None:
@@ -1165,7 +1213,7 @@ class Bridge:
         model_changed = before != config.model
         if model_changed or force:
             # İstemci (ve onunla birlikte sistem promptu) yeniden kuruluyor;
-            # tur ortasındaysak tur bitene kadar bekliyor.
+            # tur ortasındaysak bir sonraki client.turn öncesi uygulanır.
             self._wanted_model = config.model
             self._wanted_config = config
             self._swap_note = (
@@ -1642,21 +1690,37 @@ class Bridge:
 
     # -- maliyet çipi ---------------------------------------------------
 
+    def _kullanim_sifirla(self) -> None:
+        """Aktif sohbet değişince sayaçlar o sohbete ait olsun.
+
+        Bridge tek sayaç tutuyor; sohbet A'dan B'ye geçince eski toplam
+        ya B'ye yapışıyor ya da `_oturum_tohumlandi` yüzünden B'nin
+        geçmişi hiç yüklenmiyordu — çip her yeniden açılışta sıfır
+        görünüyordu (canlı şikâyet). Sıfırla; tohum bir sonraki
+        snapshot / açık tohum çağrısında doğru günlükten gelir.
+        """
+        self._tur_kullanim = {"girdi": 0, "cikti": 0, "cagri": 0}
+        self._oturum_kullanim = {"girdi": 0, "cikti": 0, "cagri": 0}
+        self._oturum_tohumlandi = False
+
     def _oturum_tohumla(self, gecmis: dict[str, Any]) -> None:
         """Sürdürülen oturumun harcamasını çipe bir kez tohumlar.
 
         Bağlam çubuğuyla aynı yara: yeniden açılan bir konuşmada çip de
-        sıfırdan başlıyordu. Tohum YALNIZCA bir kez ve yalnızca bu süreçte
-        hiç tur koşmamışken konuyor — yoksa her snapshot çağrısı (sayfa
-        her yenilendiğinde) toplamı şişirirdi.
+        sıfırdan başlıyordu. Tohum YALNIZCA bir kez ve yalnızca bu
+        sohbet için hiç tur koşmamışken konuyor — yoksa her snapshot
+        (sayfa yenileme) toplamı şişirirdi. `girdi` tüm turların
+        toplamı; canlı `_usage_yay` muhasebesiyle aynı dil.
         """
         if self._oturum_tohumlandi or self._oturum_kullanim["cagri"]:
             return
         if not gecmis.get("cagri"):
             return
         self._oturum_tohumlandi = True
+        # Eski günlükler yalnız prompt_total taşıyabilir — geriye uyum.
+        girdi = int(gecmis.get("girdi") or gecmis.get("prompt_total") or 0)
         self._oturum_kullanim = {
-            "girdi": int(gecmis.get("prompt_total") or 0),
+            "girdi": girdi,
             "cikti": int(gecmis.get("output") or 0),
             "cagri": int(gecmis.get("cagri") or 0),
         }
@@ -2149,6 +2213,11 @@ class Bridge:
             on_usage=(self._usage_yay if serit is None else
                       (lambda rapor: self._usage_yay(rapor)
                        if serit.sid == self._aktif_sid else None)),
+            # Oturum başlığı: kenar listesi sayfa yenilemeden güncellensin.
+            # Arka şeritte de yayınlanır — başlık sohbet kimliğidir, aktif
+            # ekrana bağlı değildir.
+            on_session_title=lambda sid, ad: self.hub.emit(
+                {"type": "session_title", "id": sid, "title": ad}),
             # Bütçe freni: döngü her model çağrısından önce soruyor. Fiyat
             # ve sayaçlar burada olduğu için karar da burada.
             butce_freni=self._butce_freni,
@@ -2380,16 +2449,14 @@ class Bridge:
                                    "text": settings.KURULUM_YONLENDIRME})
                 return
             # Başlık koşunun SONUNU beklemez: solda "ilk sözün kırıntısı"
-            # uzun bir koşu boyunca asılı kalıyordu ("ismi bittikten sonra
-            # düzeltiyor" — canlı, 31.08). İlk kullanıcı sözü yeterli
-            # sinyal; küçük çağrı ana akışla paralel koşar, her hatası
-            # yutulur. Koşu sonundaki çağrı yedek (ad hâlâ yoksa, cevapla
-            # birlikte daha isabetli başlık). Tetik BURADA — ürün yolunda:
-            # loop'a konursa test düzeneklerinin senaryolu istemcilerinden
-            # tur çalıyor.
+            # uzun bir koşu boyunca asılı kalıyordu. İlk kullanıcı sözü
+            # yeterli sinyal — ama `run` mesajı henüz günlüğe yazmamış
+            # olabilir; metni doğrudan geçiriyoruz (yarış, canlı). Küçük
+            # çağrı ana akışla paralel; her hatası yutulur. Koşu sonundaki
+            # çağrı yedek (ad hâlâ yoksa, cevapla daha isabetli başlık).
             basla = getattr(agent, "_oturum_basligi", None)
             if basla is not None:
-                gorev = asyncio.ensure_future(basla())
+                gorev = asyncio.ensure_future(basla(text))
                 gorev.add_done_callback(lambda t: t.exception())  # sessiz
             await agent.run(text, image)
         except Exception as exc:  # ajan bir istekte patlarsa uygulama ölmemeli

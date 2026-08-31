@@ -838,6 +838,27 @@ def test_a_failed_shell_job_is_a_human_report_not_a_traceback() -> None:
     assert "pymodbus" in kisa_is_ozeti(eski, title="$ py tarama_modbus.py")
 
 
+def test_a_successful_shell_job_is_a_short_report_not_a_log_wall() -> None:
+    """Başarıda da ## Sonuç + komut; uzun stdout ## Çıktı altında."""
+    from neocp.tools.shell import basari_raporu, insan_is_raporu, kisa_is_ozeti
+
+    log = (
+        "Downloading package...\n"
+        "Extracting the archive.\n"
+        "dotnet-sdk-8.0.424-win-x64 installed.\n"
+    )
+    rapor = basari_raporu(command="dotnet-install.ps1 -Channel 8.0", text=log)
+    assert rapor.startswith("## Sonuç")
+    assert "dotnet-sdk-8.0.424" in rapor
+    assert "- Komut:" in rapor
+    assert "## Çıktı" in rapor
+    assert "Downloading" in rapor
+    # Eski ham döküm Viewer'da da yapılandırılır.
+    ceviri = insan_is_raporu(log, title="$ dotnet-install.ps1 -Channel 8.0")
+    assert ceviri.startswith("## Sonuç")
+    assert "installed" in kisa_is_ozeti(log, title="$ dotnet-install.ps1")
+
+
 # -- model oturum başlığı ----------------------------------------------
 #
 # Canlı şikâyet: sohbet listesi kullanıcı cümlesinin ilk 30 karakteriyle
@@ -1072,6 +1093,51 @@ def test_clearing_session_model_returns_to_global(tmp_path: Path) -> None:
     mind.set_session_meta("s1", model="")
     kopru._apply_session_context("s1")
     assert ajan.config.model.name == "kuresel-model"
+
+
+def test_session_path_applies_in_memory_only(tmp_path: Path) -> None:
+    """Klasörde başlat sohbet path'ini diske yazmasın — yeni konuşmada
+    önceki repo adı (git çubuğu) kalmasın."""
+    import json
+    from dataclasses import replace
+
+    kopru, ajan, mind, _uygulanan, disk = _kopru(tmp_path)
+    proje = tmp_path / "kamera-izleme"
+    proje.mkdir()
+    mind.set_session_meta("s1", path=str(proje))
+
+    kopru._apply_session_context("s1")
+
+    assert ajan.config.sandbox.project == str(proje)
+    raw = json.loads(disk.read_text(encoding="utf-8"))
+    assert (raw.get("sandbox") or {}).get("project", "") in ("", None)
+
+
+def test_clearing_session_path_returns_to_global_project(tmp_path: Path) -> None:
+    import json
+    from dataclasses import replace
+
+    kopru, ajan, mind, _uygulanan, disk = _kopru(tmp_path)
+    kuresel = tmp_path / "kuresel-proje"
+    kuresel.mkdir()
+    sohbet = tmp_path / "sohbet-proje"
+    sohbet.mkdir()
+    disk.write_text(json.dumps({
+        "model": {"name": "kuresel-model"},
+        "sandbox": {"project": str(kuresel)},
+    }), encoding="utf-8")
+    ajan.config = replace(
+        ajan.config,
+        sandbox=replace(ajan.config.sandbox, project=str(kuresel)),
+    )
+
+    mind.set_session_meta("s1", path=str(sohbet))
+    kopru._apply_session_context("s1")
+    assert ajan.config.sandbox.project == str(sohbet)
+
+    mind.set_session_meta("s1", path="")
+    kopru._apply_session_context("s1")
+    assert ajan.config.sandbox.project == str(kuresel)
 
 
 def test_a_new_session_inherits_the_last_pinned_model(tmp_path: Path) -> None:
@@ -1525,11 +1591,32 @@ def test_discovery_downshift_lowers_effort_for_small_family() -> None:
     b = OpenAIBackend(m, client=object())
     assert b._reasoning() == {'effort': 'medium'}   # kucuk-aile tavani
     assert b._reasoning(kesif=True) == {'effort': 'low'}
+    # Kodlama turunda tavan kalkar: high serbest.
+    assert b._reasoning(kodlama=True) == {'effort': 'high'}
+    # Keşif kodlamadan üstün: salt-okur kuyruk hâlâ low.
+    assert b._reasoning(kesif=True, kodlama=True) == {'effort': 'low'}
     # Dusunmesi kapali modelde kesif bayragi bir sey acmaz.
     m2 = ModelConfig(name='z-ai/glm-5.3-flash', base_url='http://x',
                     thinking=False)
     b2 = OpenAIBackend(m2, client=object())
     assert b2._reasoning(kesif=True) == {'enabled': False}
+
+
+def test_coding_turn_detected_from_tools_or_user_request() -> None:
+    from neocp.prompt import kodlama_turu
+    assert kodlama_turu(metin="bana c# ile bir scad programı yazar mısın")
+    assert kodlama_turu(metin="selam nasılsın") is False
+    assert kodlama_turu(_kuyruk("write_file")) is True
+    assert kodlama_turu(_kuyruk("read_file", "edit_file")) is True
+    assert kodlama_turu([{"role": "user", "content": "hava nasıl"}]) is False
+
+
+def test_kisalik_exempts_coding_and_tool_rules_nudge_read_many() -> None:
+    from neocp import prompt as p
+    assert "İSTİSNA" in p.KISALIK and "write_file" in p.KISALIK
+    assert "read_many" in p.TOOL_RULES
+    assert "AYNI turda toplu oku" in p.TOOL_RULES
+
 
 def test_read_result_advertises_unread_siblings(tmp_path) -> None:
     # Sema + aciklama yetmedi (20 kosuda 0 read_many cagrisi): duyuru

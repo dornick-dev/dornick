@@ -310,23 +310,47 @@ def _rapor_html(metin: str) -> str:
     """Görev raporunu güvenli HTML'e çevirir (hafif markdown).
 
     Tam markdown motoru yok; başlık / liste / link / kod yeter — rapor
-    sohbete yapışmak yerine Viewer'da okunur.
+    sohbete yapışmak yerine Viewer'da okunur. ## Çıktı varsayılan kapalı
+    <details> — uzun kurulum logları özeti örtmesin.
     """
     out: list[str] = []
     in_ul = False
+    in_log = False
+    log_buf: list[str] = []
+
+    def flush_log() -> None:
+        nonlocal in_log, log_buf
+        if not in_log:
+            return
+        raw = "\n".join(log_buf).strip("\n")
+        out.append(
+            '<details class="log"><summary>Ham çıktı</summary>'
+            f"<pre>{html.escape(raw)}</pre></details>"
+        )
+        in_log = False
+        log_buf = []
+
     for ham in (metin or "").replace("\r\n", "\n").split("\n"):
         s = ham.rstrip()
         # Ham Python izi rapor değil — insan_is_raporu kaçırırsa bile basma.
         if s.startswith("Traceback (") or s.startswith("File \""):
             continue
-        if s.startswith("### "):
+        if s.startswith("## "):
+            flush_log()
+            if in_ul:
+                out.append("</ul>"); in_ul = False
+            baslik = s[3:].strip()
+            if baslik.casefold() in ("çıktı", "cikti", "output"):
+                in_log = True
+                log_buf = []
+                continue
+            out.append("<h2>" + _inline_md(baslik) + "</h2>")
+        elif in_log:
+            log_buf.append(ham)
+        elif s.startswith("### "):
             if in_ul:
                 out.append("</ul>"); in_ul = False
             out.append("<h3>" + _inline_md(s[4:]) + "</h3>")
-        elif s.startswith("## "):
-            if in_ul:
-                out.append("</ul>"); in_ul = False
-            out.append("<h2>" + _inline_md(s[3:]) + "</h2>")
         elif re.match(r"^[-*]\s+", s):
             if not in_ul:
                 out.append("<ul>"); in_ul = True
@@ -341,13 +365,14 @@ def _rapor_html(metin: str) -> str:
             out.append("<p>" + _inline_md(s) + "</p>")
     if in_ul:
         out.append("</ul>")
+    flush_log()
     return "\n".join(out) or "<p><i>(boş rapor)</i></p>"
 
 
-def _rapor_kapak(result: dict[str, Any]) -> tuple[str, str, str]:
+def _rapor_kapak(result: dict[str, Any]) -> tuple[str, str, str, str, str]:
     """Rapor sayfasının başlığı: komut h1 olmasın, görev id'si öne çıkmasın.
 
-    Dönen: (sekme başlığı, h1 HTML'siz, meta HTML).
+    Dönen: (sekme başlığı, h1, badge HTML, özet metin, komut metin).
     """
     ham = str(result.get("title") or "Rapor").strip()
     state = str(result.get("state") or "")
@@ -367,12 +392,18 @@ def _rapor_kapak(result: dict[str, Any]) -> tuple[str, str, str]:
             '<span class="badge ok">Tamamlandı</span>' if state == "bitti"
             else ""
         )
-    parcalar = [p for p in (badge,) if p]
-    if komut:
-        parcalar.append(f"<code>{html.escape(komut)}</code>")
-    elif ham and ham != h1:
-        parcalar.append(html.escape(ham))
-    return h1, h1, " · ".join(parcalar)
+    ozet = ""
+    for line in str(result.get("metin") or "").splitlines():
+        s = line.strip()
+        if not s or s.startswith("#") or s.startswith("- "):
+            continue
+        ozet = s
+        break
+    if not komut and ham and ham != h1:
+        # Komut yoksa eski başlığı meta olarak taşıma — ozet yoksa ham.
+        if not ozet:
+            ozet = ham
+    return h1, h1, badge, ozet, komut
 
 
 def _inline_md(s: str) -> str:
@@ -1080,6 +1111,11 @@ class _Handler(BaseHTTPRequestHandler):
             path = body.get("path") if isinstance(body, dict) else None
             model = body.get("model") if isinstance(body, dict) else None
             provider = body.get("provider") if isinstance(body, dict) else None
+            # `:batch` canlı sohbette 404 — senkron kimliğe indir.
+            if isinstance(model, str) and model.strip():
+                from ..settings import batch_only_model
+                if batch_only_model(model):
+                    model = model.strip().rsplit(":", 1)[0]
             kayit = mind.set_session_meta(
                 sid,
                 ad=None if ad is None else str(ad),
@@ -2530,7 +2566,7 @@ class _Handler(BaseHTTPRequestHandler):
         if not isinstance(result, dict) or not result.get("ok"):
             self.send_error(404, str((result or {}).get("error") or "Rapor yok"))
             return
-        title_doc, h1, meta = _rapor_kapak(result)
+        title_doc, h1, badge, ozet, komut = _rapor_kapak(result)
         title = html.escape(title_doc)
         metin = str(result.get("metin") or "")
         body = _rapor_html(metin)
@@ -2548,6 +2584,18 @@ class _Handler(BaseHTTPRequestHandler):
             app_block = (
                 f'<p class="cta"><a class="btn" href="{art}">Yayınlanan raporu aç</a></p>'
             )
+        meta_bits = []
+        if badge:
+            meta_bits.append(f'<p class="meta">{badge}</p>')
+        if ozet:
+            meta_bits.append(f'<p class="ozet">{html.escape(ozet)}</p>')
+        if komut:
+            goster = komut if len(komut) <= 120 else komut[:117] + "…"
+            meta_bits.append(
+                f'<p class="cmd"><code title="{html.escape(komut)}">'
+                f"{html.escape(goster)}</code></p>"
+            )
+        meta_html = "\n".join(meta_bits)
         page = (
             "<!doctype html><html lang=tr><head><meta charset=utf-8>"
             f"<title>{title}</title>"
@@ -2557,11 +2605,14 @@ class _Handler(BaseHTTPRequestHandler):
             "html{scrollbar-width:thin;scrollbar-color:rgba(79,227,255,.35) transparent}"
             "::-webkit-scrollbar{width:8px;height:8px}"
             "::-webkit-scrollbar-thumb{background:rgba(79,227,255,.3);border-radius:4px}"
-            "main{max-width:640px;margin:0 auto;padding:36px 22px 56px}"
+            "main{max-width:640px;margin:0 auto;padding:36px 28px 56px}"
             "h1{font:600 26px/1.25 system-ui;margin:0 0 10px;color:#eaf6ff}"
-            ".meta{font:13px/1.5 system-ui;color:#8fb0cc;margin:0 0 22px}"
-            ".meta code{font:13px ui-monospace,Consolas,monospace;"
-            "background:#05121d;padding:2px 7px;border-radius:6px;color:#c5e4ff}"
+            ".meta{font:13px/1.5 system-ui;color:#8fb0cc;margin:0 0 10px}"
+            ".ozet{font:15px/1.55 system-ui;color:#dceefc;margin:0 0 12px}"
+            ".cmd{margin:0 0 22px}"
+            ".cmd code,.meta code{font:12.5px/1.45 ui-monospace,Consolas,monospace;"
+            "background:#05121d;padding:4px 9px;border-radius:6px;color:#c5e4ff;"
+            "display:inline-block;max-width:100%;word-break:break-word}"
             ".badge{display:inline-block;padding:2px 9px;border-radius:999px;"
             "font:600 11px/1.4 system-ui;letter-spacing:.02em;"
             "background:#1a2a38;color:#8fb0cc;vertical-align:middle}"
@@ -2582,9 +2633,16 @@ class _Handler(BaseHTTPRequestHandler):
             ".rapor a{color:#4fe3ff}"
             ".rapor code{font:13px ui-monospace,Consolas,monospace;"
             "background:#05121d;padding:1px 5px;border-radius:4px}"
+            ".rapor details.log{margin:1.2em 0;border:1px solid #1e3a4c;"
+            "border-radius:8px;background:#061018;padding:8px 12px}"
+            ".rapor details.log summary{cursor:pointer;color:#8fb0cc;"
+            "font:600 12.5px/1.4 system-ui;user-select:none}"
+            ".rapor details.log pre{margin:10px 0 4px;white-space:pre-wrap;"
+            "word-break:break-word;font:12px/1.5 ui-monospace,Consolas,monospace;"
+            "color:#a8c4d8;max-height:min(50vh,420px);overflow:auto}"
             "</style></head><body><main>"
             f"<h1>{html.escape(h1)}</h1>"
-            f"<p class=meta>{meta}</p>"
+            f"{meta_html}"
             f"{app_block}"
             f"<div class=rapor>{body}</div>"
             "</main></body></html>"
@@ -3361,9 +3419,19 @@ class _Handler(BaseHTTPRequestHandler):
                 icinde = {}   # arama bir kolaylık; patlarsa liste yine gelsin
 
         out = []
+        proje_adlari: set[str] = set(projects.values())
         for ep in mind.sessions():
             kayit = meta.get(ep.session_id) or {}
             is_current = ep.session_id == current
+            yol = kayit.get("path") or ""
+            proje = projects.get(ep.session_id, "")
+            # Klasör bağlı ama proje etiketi yoksa klasör adıyla grupla
+            # (eski kayıtlar / yalnız path atanmış sohbetler).
+            if not proje and yol:
+                leaf = Path(str(yol)).name.strip()
+                if leaf:
+                    proje = leaf
+                    proje_adlari.add(leaf)
             out.append({
                 "id": ep.session_id,
                 # Kullanıcının verdiği ad varsa o; yoksa dijestten türetilen.
@@ -3380,8 +3448,8 @@ class _Handler(BaseHTTPRequestHandler):
                 "status": ("koşuyor" if ((is_current and busy)
                                          or ep.session_id in kosanlar)
                            else ("açık" if is_current else "biten")),
-                "project": projects.get(ep.session_id, ""),
-                "path": kayit.get("path") or "",
+                "project": proje,
+                "path": yol,
                 "model": kayit.get("model") or "",
                 "provider": kayit.get("provider") or "",
                 "hits": icinde.get(ep.session_id, []),
@@ -3390,7 +3458,7 @@ class _Handler(BaseHTTPRequestHandler):
         etiketler = sorted({e for k in meta.values() for e in (k.get("etiketler") or [])})
         self._json({
             "sessions": out,
-            "projects": sorted(set(projects.values())),
+            "projects": sorted(proje_adlari),
             "tags": etiketler,
             "searched": bool(sorgu),
         })

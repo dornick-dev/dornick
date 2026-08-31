@@ -761,10 +761,10 @@ def test_the_right_desk_has_cursor_style_workspace_tabs() -> None:
     assert 0 <= rc < vw < mn
     assert "not(.viewing) .right-col" in CSS
     assert "--viewer-h-user" in CSS
-    assert "min(420px, 32vw, var(--mind-w-user" in CSS
+    assert "min(760px, 55vw, var(--mind-w-user" in CSS
+    assert "min(420px, 32vw, var(--mind-w-user" not in CSS
     assert re.search(r"\.right-col \{[^}]*background:\s*transparent", CSS, re.S)
     assert re.search(r"\.compose-shell \{[^}]*z-index:\s*25", CSS, re.S)
-
 
 def test_compose_shell_keeps_entry_and_dock_from_overlapping() -> None:
     """Yazma satırı ile model/yetki çipleri üst üste binmesin.
@@ -1234,9 +1234,17 @@ def test_viewer_left_grip_resizes_from_the_panel_edge() -> None:
     assert "innerWidth - e.clientX" not in src
     assert "originW + originX - e.clientX" in src
     assert '--mind-w-user"' in src or "--mind-w-user" in src
+    # Tavan mind-grip ile aynı: sola genişleyebilsin.
+    assert "Math.min(760, window.innerWidth * 0.55)" in src
     assert "--viewer-h-user" in CSS
     assert "neo-viewer-h" in APP_JS
     assert "mind-front" in APP_JS and "mind-front" in CSS
+
+
+def test_right_panel_css_cap_matches_grip_so_it_can_grow() -> None:
+    """CSS tavanı varsayılan 420'de kalırsa tutamak sola büyütemez."""
+    assert "min(760px, 55vw, var(--mind-w-user" in CSS
+    assert "Math.min(760, window.innerWidth * 0.55)" in APP_JS
 
 
 # -- maliyet çipi -------------------------------------------------------
@@ -1565,6 +1573,8 @@ def test_a_resumed_session_refills_the_context_gauge() -> None:
     # Oturum sürdürülünce durum yeniden çekiliyor (döküm kadar sayaçlar da).
     reset = re.search(r'case "session_reset": \{(.*?)\n    \}', APP_JS, re.S)
     assert reset and "loadState()" in reset.group(1)
+    # Yeni konuşmada eski repo/dal (git çubuğu) asılı kalmasın.
+    assert reset and "GitBar.refresh()" in reset.group(1)
 
 
 def test_the_context_popup_lists_prompt_parts_like_cursor() -> None:
@@ -1912,6 +1922,32 @@ def test_a_failed_job_report_page_is_not_a_traceback_dump() -> None:
     assert 'class="badge err"' in SERVER_SRC
     # Ham iz rapor değil.
     assert 's.startswith("Traceback ("' in SERVER_SRC
+    # Başarı: özet + katlı ham çıktı (dotnet log duvarı olmasın).
+    assert 'class="ozet"' in SERVER_SRC
+    assert 'details class="log"' in SERVER_SRC
+    assert "Ham çıktı" in SERVER_SRC
+
+
+def test_compose_height_is_measured_not_hardcoded() -> None:
+    """Sohbet alt boşluğu sabit 128px değil — kabuk ölçülür (--compose-h)."""
+    assert "--compose-h" in CSS
+    assert 'bottom: var(--compose-h)' in CSS or "bottom: var(--compose-h);" in CSS
+    assert "ResizeObserver(syncComposeH)" in APP_JS or "new ResizeObserver(syncComposeH)" in APP_JS
+    assert "function revealAboveComposer(" in APP_JS
+    assert "clearFitAboveComposer" in APP_JS
+    assert "style.maxHeight" in APP_JS
+    assert ".acts-body:not([hidden])" in CSS
+    # Eski sihirli sayı sohbet dibinde kalmasın.
+    wrap = re.search(r"^\.stream-wrap \{(.*?)\n\}", CSS, re.S | re.M)
+    assert wrap and "var(--compose-h)" in wrap.group(1)
+    assert "128px + var(--git-h)" not in wrap.group(1)
+
+
+def test_scene_memory_labels_skip_the_chat_column() -> None:
+    """Anı etiketleri şeffaf sohbet sütununun içinden sızmasın."""
+    assert "inChat(" in SCENE_JS
+    assert 'querySelector(".stream")' in SCENE_JS
+    assert "inChat(lx, ly)" in SCENE_JS
 
 
 def test_the_running_time_ticks_without_asking_the_server() -> None:
@@ -2024,6 +2060,9 @@ def test_main_jobs_panel_and_artifact_export_exist() -> None:
     assert "tool-chips" in (STATIC / "app.css").read_text(encoding="utf-8")
     hist = (STATIC / "history.js").read_text(encoding="utf-8")
     assert "statusFilter" in hist and "assignPath" in hist and "assignModel" in hist
+    assert "function klasorAdi(" in hist
+    assert "klasorAdi(s)" in hist
+    # Path bağlı sohbetler proje etiketi olmasa da klasör altında.
     assert "hist-status-filters" in (STATIC / "app.css").read_text(encoding="utf-8")
     assert "--open" in (Path(__file__).resolve().parents[1]
         / "src" / "neocp" / "cli.py").read_text(encoding="utf-8")
@@ -2339,6 +2378,10 @@ def test_narrow_band_rules_exist() -> None:
     assert "no-ambient" in CSS and "no-ambient" in APP_JS
     settings_js = (STATIC / 'settings.js').read_text(encoding='utf-8')
     assert '"Beyin ortada dursun"' in settings_js
+    # Ambient'te AÇIKLAMA sohbet sol kenarına binmesin — sağ alt.
+    assert "not(.no-ambient)" in CSS and "right: 14px" in CSS
+    assert "compose-h" in CSS.split(".mind-foot", 1)[-1] or \
+           "var(--compose-h" in CSS
 
 
 
@@ -2421,12 +2464,24 @@ def test_folder_flows_and_task_mirror_are_wired() -> None:
     iner."""
     hist = (STATIC / "history.js").read_text(encoding="utf-8")
     assert "klasordeBaslat" in hist and "/api/gozat" in hist
-    assert 'id="hist-new-folder"' in HTML
+    # Klasör düğmesi kalktı: yeni konuşma atölyede; klasör isteğe bağlı.
+    assert 'id="hist-new-folder"' not in HTML
+    assert "applyTitle" in hist and "session_title" in APP_JS
+    # Gezgin flex satırının kardeşi olmalı — hist-new.after satırı parçalıyordu.
+    assert 'closest(".hist-new-row")' in hist
+    assert "satir.after(kutu)" in hist
+    assert "dugme.after(kutu)" not in hist
+    assert ".hist-klasor-kutu" in CSS and "margin: 0 12px 10px" in CSS
     git = (STATIC / "git.js").read_text(encoding="utf-8")
     assert "Repo aç" in git and 'act("init")' in git
     assert "/api/apps/reveal" in git
-    dock = CSS.split(".plan-dock {", 1)[1].split("}", 1)[0]
-    assert "right: 12px" in dock and "z-index: 60" in dock
+    # İş listesi yüzen kart değil Viewer sekmesi.
+    assert "plan:goals" in (STATIC / "viewer.js").read_text(encoding="utf-8")
+    assert "hostedGoals" in (STATIC / "viewer.js").read_text(encoding="utf-8")
+    assert "Goals.paint" in APP_JS or "status, paint" in APP_JS
+    assert 'id="plan-dock"' not in HTML
+    assert ".plan-dock {" not in CSS
+    assert ".goals-pane" in CSS
     orch = (STATIC / "orchestra.js").read_text(encoding="utf-8")
     assert "/api/gorevler/iptal" in orch and "İptal et" in orch
     assert "def gorev_iptal" in (Path(__file__).resolve().parents[1]
@@ -2434,3 +2489,8 @@ def test_folder_flows_and_task_mirror_are_wired() -> None:
     assert '"/api/gorevler/iptal"' in SERVER_SRC
     assert "Math.min(760" in APP_JS
     assert "sadeceDusunce" in APP_JS
+    loop_src = (Path(__file__).resolve().parents[1] / "src" / "neocp" / "loop.py").read_text(
+        encoding="utf-8")
+    assert "on_retry_wait" in loop_src
+    assert "_yenile_baglam" in loop_src
+    assert "Yeni bir oturum açman gerekiyor" not in loop_src

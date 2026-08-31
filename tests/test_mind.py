@@ -444,6 +444,26 @@ def test_session_meta_keeps_path_and_model(tmp_path: Path, mind: Mind) -> None:
     assert "s1" in mind.session_meta()
 
 
+def test_binding_a_folder_also_files_the_chat_under_that_project(
+    tmp_path: Path, mind: Mind
+) -> None:
+    """Klasör bağlayınca konuşma o klasör adının altında gruplansın.
+
+    Cursor Repositories gibi: path=...\\neo → proje etiketi 'neo'. Elle
+    verilmiş proje adı varsa üzerine yazılmaz.
+    """
+    mind.set_session_meta("s1", path=r"C:\projeler\Fatih\neo")
+    assert mind.projects().get("s1") == "neo"
+    # İkinci path yazımı: zaten etiket var → dokunma.
+    mind.set_project("s1", "Neo SCADA")
+    mind.set_session_meta("s1", path=r"C:\projeler\Fatih\neocp")
+    assert mind.projects().get("s1") == "Neo SCADA"
+    # Path yokken proje de yoksa boş kalır.
+    mind.set_project("s2", "")
+    mind.set_session_meta("s2", ad="yalnız ad")
+    assert "s2" not in mind.projects()
+
+
 def test_a_corrupt_meta_file_does_not_break_the_panel(tmp_path: Path, mind: Mind) -> None:
     """Elle düzenlenip bozulan bir dosya geçmiş panelini kapatmamalı."""
     (tmp_path / "sessions").mkdir(parents=True, exist_ok=True)

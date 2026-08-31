@@ -265,12 +265,21 @@ def _project_from_folder(folder: Path, root: Path) -> Project:
         scope = _scope(manifest.get("scope"))
         entry_rel = str(manifest.get("entry") or entry or "")
         run_cmd = str(manifest.get("run") or run)
+        # Ajan GUI/.NET uygulamasını sıkça `tool` yazar → UI "betik" der.
+        # Diskteki gerçek WinExe/masüstü sezgisi kazanır.
+        mkind = str(manifest.get("type") or manifest.get("kind") or kind)
+        if kind == "desktop" and mkind in ("tool", "service", "betik", "script"):
+            mkind = "desktop"
+            if not run_cmd.strip() and run:
+                run_cmd = run
+            if not entry_rel and entry:
+                entry_rel = entry
         neden = _dogrula(folder, entry_rel, run_cmd)
         return Project(
             name=str(manifest.get("name") or folder.name),
             path=_rel(folder, root),
             scope=scope,
-            kind=str(manifest.get("type") or manifest.get("kind") or kind),
+            kind=mkind,
             entry=_rel(folder / entry_rel, root) if entry_rel else "",
             run=run_cmd,
             url=str(manifest.get("url") or ""),
@@ -447,45 +456,121 @@ def _scope(value: Any) -> str:
     return ""
 
 
+def _atlanan_yol(path: Path) -> bool:
+    """Derleme/bağımlılık çöplüğü — giriş dosyası buradan seçilmez."""
+    return any(part in KESIF_ATLA or part == "__pycache__" for part in path.parts)
+
+
+def _csproj_masaustu(csproj: Path) -> bool:
+    """WinExe / WinForms / WPF — konsol servisi değil masaüstü uygulama."""
+    try:
+        text = csproj.read_text(encoding="utf-8", errors="ignore")
+    except OSError:
+        return False
+    return any(imza in text for imza in (
+        "WinExe", "UseWindowsForms", "UseWPF",
+        "Microsoft.NET.Sdk.WindowsDesktop",
+    ))
+
+
+def _desktop_exe(folder: Path) -> Path | None:
+    """Klasördeki asıl GUI .exe — bin/obj gürültüsünden değil, tercihen kök.
+
+    NeoScada gibi .NET WinExe projelerde 'Başlat' çoğu zaman yanlış
+    betiğe veya sessiz bir sürece bağlanıyordu; gerçek exe `os.startfile`
+    ile açılmalı.
+    """
+    if not folder.is_dir():
+        return None
+    ad = folder.name
+    dogrudan = folder / f"{ad}.exe"
+    if dogrudan.is_file():
+        return dogrudan
+    adaylar: list[Path] = []
+    try:
+        for path in folder.rglob("*.exe"):
+            if not path.is_file() or _atlanan_yol(path):
+                continue
+            # obj/ ara çıktıları ve vshost gürültüsü.
+            if "obj" in path.parts or ".vshost." in path.name.lower():
+                continue
+            adaylar.append(path)
+    except OSError:
+        return None
+    if not adaylar:
+        return None
+    # Ada uyan > publish > Release > en yeni.
+    def skor(p: Path) -> tuple:
+        parts = {x.lower() for x in p.parts}
+        return (
+            0 if p.stem.lower() == ad.lower() else 1,
+            0 if "publish" in parts else 1,
+            0 if "release" in parts else 1,
+            -p.stat().st_mtime,
+        )
+    adaylar.sort(key=skor)
+    return adaylar[0]
+
+
 def _detect(folder: Path) -> tuple[str, str, str]:
     """Klasörün türünü, giriş dosyasını ve çalıştırma komutunu sezer.
 
-    web  bir index.html varsa (çerçevede açılır)
-    service  bir sunucu betiği varsa (app.py / main.py / server.py, Node
-             sunucusu, package.json betiği, .NET projesi)
-    tool  başka bir çalıştırılabilir betik
+    web       index.html (+ isteğe bağlı sunucu)
+    service   sunucu betiği / Node / API
+    desktop   WinExe / GUI .exe (masaüstü uygulama)
+    tool      konsol betiği
+    doc       belge
 
     Sezgi asgari tutuluyor: ajan daha iyisini biliyorsa `app.json`
-    manifestiyle söylüyor ve manifest her zaman kazanıyor.
+    manifestiyle söylüyor ve manifest her zaman kazanıyor — ama ajanın
+    GUI uygulamayı `tool` yazması yumuşakça düzeltilir (bkz. proje kurucu).
     """
     index = _find(folder, ("index.html", "index.htm"))
     server = _find(folder, ("app.py", "main.py", "server.py", "run.py",
                             "server.js", "app.js", "index.js", "main.js",
                             "index.php"))
     run = _package_run(folder) or (_run_line(server) if server else "")
-    if not run:
-        # .NET projesi: giriş dosyası değil proje dosyası çalıştırılıyor.
-        csproj = _find(folder, None, {".csproj"})
-        if csproj:
-            return "service", _rel(csproj, folder), "dotnet run"
+    csproj = _find(folder, None, {".csproj"})
+    if csproj and _csproj_masaustu(csproj):
+        exe = _desktop_exe(folder)
+        if exe:
+            return "desktop", _rel(exe, folder), ""
+        return "desktop", _rel(csproj, folder), f'dotnet run --project "{csproj.name}"'
+    if not run and csproj:
+        return "service", _rel(csproj, folder), "dotnet run"
     if index and (server or run):
-        # Hem sunucu hem sayfa: web uygulaması, sunucudan besleniyor.
         return "web", _rel(index, folder), run
     if index:
         return "web", _rel(index, folder), ""
     if server or run:
         entry = _rel(server, folder) if server else ""
         return "service", entry, run
+    # GUI exe (csproj yok / publish klasörü): betik değil masaüstü.
+    exe = _desktop_exe(folder)
+    if exe:
+        return "desktop", _rel(exe, folder), ""
     any_run = _find(folder, None, RUN)
     if any_run:
         return "tool", _rel(any_run, folder), _run_line(any_run)
-    # index.html yok ama HTML var: en yenisi giriş. neo sayfaya çoğu zaman
-    # kendi adını veriyor ("kuyu-depo.html") ve klasör girişsiz kalınca
-    # Aç düğmesi sessizce hiçbir şey yapmıyordu.
     page = _newest(folder, WEB)
     if page:
         return "web", _rel(page, folder), ""
     return "doc", "", ""
+
+
+def _find(folder: Path, names: tuple[str, ...] | None, suffixes: set[str] | None = None) -> Path | None:
+    """Klasörde (birkaç düzey) ilk eşleşen dosya — derleme çöplüğü hariç."""
+    try:
+        for path in sorted(folder.rglob("*")):
+            if not path.is_file() or path.name in SKIP or _atlanan_yol(path):
+                continue
+            if names and path.name.lower() in names:
+                return path
+            if suffixes and path.suffix.lower() in suffixes:
+                return path
+    except OSError:
+        return None
+    return None
 
 
 def _package_run(folder: Path) -> str:
@@ -518,7 +603,7 @@ def _newest(folder: Path, suffixes: set[str]) -> Path | None:
     best_t = -1.0
     try:
         for path in folder.rglob("*"):
-            if not path.is_file() or "__pycache__" in path.parts:
+            if not path.is_file() or _atlanan_yol(path):
                 continue
             if path.suffix.lower() not in suffixes:
                 continue
@@ -528,21 +613,6 @@ def _newest(folder: Path, suffixes: set[str]) -> Path | None:
     except OSError:
         return None
     return best
-
-
-def _find(folder: Path, names: tuple[str, ...] | None, suffixes: set[str] | None = None) -> Path | None:
-    """Klasörde (birkaç düzey) ilk eşleşen dosya."""
-    try:
-        for path in sorted(folder.rglob("*")):
-            if not path.is_file() or path.name in SKIP or "__pycache__" in path.parts:
-                continue
-            if names and path.name.lower() in names:
-                return path
-            if suffixes and path.suffix.lower() in suffixes:
-                return path
-    except OSError:
-        return None
-    return None
 
 
 def _read_howto(folder: Path) -> str:
@@ -733,10 +803,9 @@ def launch(sandbox_root: Path, rel_path: str, base: Path | None = None) -> dict[
     onu beklemiyor, başlattığını bildiriyor. İzlenebilenler `_PROCS`'a
     kaydediliyor ki sonradan durum/adres/durdurma mümkün olsun.
 
-    Yol bir KLASÖRSE proje olarak başlar: manifestin (app.json) `run`
-    komutu, yoksa sezilen komut, projenin kendi klasöründe çalıştırılır.
-    Böylece `npm start`, `dotnet run` gibi çok adımlı çalıştırmalar da
-    tek düğmeyle başlıyor — yalnızca Python betikleri değil.
+    Yol bir KLASÖRSE proje olarak başlar: masaüstü .exe varsa `os.startfile`
+    (pencere açılsın); yoksa manifest `run` / sezilen komut. Böylece
+    WinExe .NET uygulaması "başladı" deyip arayüzsüz kalmaz.
     """
     root = sandbox_root.resolve()
     ref = (base or root).resolve()
@@ -744,15 +813,36 @@ def launch(sandbox_root: Path, rel_path: str, base: Path | None = None) -> dict[
     if target != root and root not in target.parents:
         return {"ok": False, "error": "Atölye dışı: yalnızca kendi ürettiğin çalıştırılır."}
 
-    # Aynı şey zaten çalışıyorsa ikincisini başlatma: kullanıcı "Çalıştır"a
-    # iki kez basınca iki sunucunun aynı portu kapışması değil, çalışanın
-    # gösterilmesi bekleniyor.
-    for pid, info in _PROCS.items():
+    klasor = target if target.is_dir() else (target.parent if target.is_file() else None)
+    gui = _desktop_exe(klasor) if klasor is not None else None
+
+    # Aynı şey zaten çalışıyorsa: web/servis için ikincisini başlatma.
+    # Masaüstü GUI'de "already" sessiz başarı yanlış — pencereyi yeniden aç.
+    for pid, info in list(_PROCS.items()):
         if info.get("path") == rel_path and info["proc"].poll() is None:
+            if gui is not None:
+                try:
+                    import os
+                    os.startfile(str(gui))  # type: ignore[attr-defined]
+                except Exception as exc:
+                    return {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
+                return {"ok": True, "pid": pid, "path": rel_path,
+                        "already": True, "note": "Pencere yeniden açıldı."}
             return {"ok": True, "pid": pid, "path": rel_path,
                     "already": True, "note": "Zaten çalışıyor."}
 
     if target.is_dir():
+        # Masaüstü uygulaması: gerçek .exe'yi aç — dotnet/ps1 sarmalayıcısı
+        # CREATE_NO_WINDOW ile daha önce başlatılmış olabilir.
+        if gui is not None:
+            try:
+                import os
+                os.startfile(str(gui))  # type: ignore[attr-defined]
+            except Exception as exc:
+                return {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
+            return {"ok": True, "run": gui.name, "path": rel_path, "pid": None,
+                    "note": "Masaüstü uygulaması açıldı."}
+
         manifest = _manifest_data(target)
         run_cmd = str((manifest or {}).get("run") or "").strip()
         kind, entry, detected = _detect(target)

@@ -15,9 +15,28 @@ const WorkflowView = (() => {
       "Tür": "Type",
       "Başlık": "Title",
       "Prompt / config": "Prompt / config",
+      "Prompt": "Prompt",
+      "Model": "Model",
       "Secrets": "Secrets",
       "gizli alan adları (virgüllü)": "secret names (comma separated)",
       "type (custom, http, skill, …)": "type (custom, http, skill, …)",
+      "Model adımı": "Model step",
+      "Model adımı (agent)": "Model step (agent)",
+      "HTTP isteği": "HTTP request",
+      "Kabuk komutu": "Shell command",
+      "Yetenek / araç": "Skill / tool",
+      "Posta oku": "Read mail",
+      "Yöntem": "Method",
+      "Gövde": "Body",
+      "gövde (JSON, isteğe bağlı)": "body (JSON, optional)",
+      "Komut": "Command",
+      "komut": "command",
+      "Yetenek": "Skill",
+      "yetenek adı": "skill name",
+      "Argümanlar (JSON)": "Arguments (JSON)",
+      "Kaç posta": "How many emails",
+      "Bu adımda modele ne söylensin?": "What should the model do in this step?",
+      "model (boş = varsayılan)": "model (empty = default)",
       "Çıktı": "Output",
       "Çıktıyı aç": "Open output",
       "elle": "manual",
@@ -424,35 +443,152 @@ const WorkflowView = (() => {
     if (!box) return;
     box.replaceChildren();
     box.append(el("h3", null, node.title || node.id));
-    const type = el("input", "input-text");
-    type.value = node.type || "custom";
-    type.placeholder = "type (custom, http, skill, …)";
+
+    const TURLER = [
+      ["custom", "Model adımı"],
+      ["agent", "Model adımı (agent)"],
+      ["http", "HTTP isteği"],
+      ["shell", "Kabuk komutu"],
+      ["skill", "Yetenek / araç"],
+      ["mail_read", "Posta oku"],
+    ];
+    const type = el("select", "input-text wf-type");
+    for (const [id, label] of TURLER) {
+      const o = document.createElement("option");
+      o.value = id;
+      o.textContent = t(label);
+      if ((node.type || "custom") === id) o.selected = true;
+      type.append(o);
+    }
+    // Eski/özel türler listede yoksa seçenek olarak ekle.
+    const bilinen = new Set(TURLER.map((x) => x[0]));
+    if (node.type && !bilinen.has(node.type)) {
+      const o = document.createElement("option");
+      o.value = node.type;
+      o.textContent = node.type;
+      o.selected = true;
+      type.append(o);
+    }
+
     const title = el("input", "input-text");
     title.value = node.title || "";
-    const prompt = el("textarea", "input-text");
-    prompt.rows = 4;
-    prompt.value = (node.config && node.config.prompt) || "";
+    title.placeholder = t("Başlık");
+
+    const alanlar = el("div", "wf-fields");
+    function cizAlanlar() {
+      alanlar.replaceChildren();
+      const kind = (type.value || "custom").toLowerCase();
+      const cfg = node.config || {};
+      if (kind === "http") {
+        const url = el("input", "input-text");
+        url.value = cfg.url || "";
+        url.placeholder = "https://…";
+        const method = el("select", "input-text");
+        for (const m of ["GET", "POST", "PUT", "PATCH", "DELETE"]) {
+          const o = document.createElement("option");
+          o.value = m; o.textContent = m;
+          if ((cfg.method || "GET").toUpperCase() === m) o.selected = true;
+          method.append(o);
+        }
+        const body = el("textarea", "input-text");
+        body.rows = 3;
+        body.value = typeof cfg.body === "string" ? cfg.body
+          : (cfg.body != null ? JSON.stringify(cfg.body, null, 2) : "");
+        body.placeholder = t("gövde (JSON, isteğe bağlı)");
+        alanlar.append(
+          el("label", null, "URL"), url,
+          el("label", null, t("Yöntem")), method,
+          el("label", null, t("Gövde")), body,
+        );
+        alanlar._okuyan = () => {
+          let parsed = body.value.trim();
+          if (parsed) {
+            try { parsed = JSON.parse(parsed); } catch { /* düz metin */ }
+          } else parsed = undefined;
+          return {
+            url: url.value.trim(),
+            method: method.value,
+            ...(parsed !== undefined ? { body: parsed } : {}),
+            ...(cfg.headers ? { headers: cfg.headers } : {}),
+            ...(cfg.timeout ? { timeout: cfg.timeout } : {}),
+          };
+        };
+      } else if (kind === "shell") {
+        const cmd = el("textarea", "input-text");
+        cmd.rows = 3;
+        cmd.value = cfg.command || cfg.cmd || "";
+        cmd.placeholder = t("komut");
+        alanlar.append(el("label", null, t("Komut")), cmd);
+        alanlar._okuyan = () => ({ command: cmd.value });
+      } else if (kind === "skill") {
+        const skill = el("input", "input-text");
+        skill.value = node.skill || cfg.skill || "";
+        skill.placeholder = t("yetenek adı");
+        const args = el("textarea", "input-text");
+        args.rows = 3;
+        args.value = cfg.args ? JSON.stringify(cfg.args, null, 2) : "";
+        args.placeholder = '{"arg": "…"}';
+        alanlar.append(
+          el("label", null, t("Yetenek")), skill,
+          el("label", null, t("Argümanlar (JSON)")), args,
+        );
+        alanlar._okuyan = () => {
+          let a = {};
+          try { a = args.value.trim() ? JSON.parse(args.value) : {}; } catch { a = {}; }
+          return { skill: skill.value.trim(), args: a };
+        };
+        alanlar._skill = () => skill.value.trim();
+      } else if (kind === "mail_read" || kind === "mail") {
+        const limit = el("input", "input-text");
+        limit.type = "number";
+        limit.value = String(cfg.limit || 10);
+        alanlar.append(el("label", null, t("Kaç posta")), limit);
+        alanlar._okuyan = () => ({
+          action: "list", limit: Math.max(1, parseInt(limit.value, 10) || 10),
+        });
+      } else {
+        const prompt = el("textarea", "input-text");
+        prompt.rows = 4;
+        prompt.value = cfg.prompt || cfg.instruction || "";
+        prompt.placeholder = t("Bu adımda modele ne söylensin?");
+        const model = el("input", "input-text");
+        model.value = cfg.model || "";
+        model.placeholder = t("model (boş = varsayılan)");
+        alanlar.append(
+          el("label", null, t("Prompt")), prompt,
+          el("label", null, t("Model")), model,
+        );
+        alanlar._okuyan = () => ({
+          prompt: prompt.value,
+          ...(model.value.trim() ? { model: model.value.trim() } : {}),
+        });
+      }
+    }
+    type.onchange = cizAlanlar;
+    cizAlanlar();
+
     const secrets = el("input", "input-text");
     secrets.value = (node.secrets_needed || []).join(", ");
     secrets.placeholder = t("gizli alan adları (virgüllü)");
+
     const apply = el("button", "jobs-act", t("Uygula"));
     apply.type = "button";
     apply.onclick = () => {
       node.type = type.value.trim() || "custom";
       node.title = title.value.trim() || node.id;
-      node.config = node.config || {};
-      node.config.prompt = prompt.value;
+      const okuyan = alanlar._okuyan;
+      const yeni = okuyan ? okuyan() : {};
+      if (alanlar._skill) node.skill = alanlar._skill();
+      else if (yeni.skill) { node.skill = yeni.skill; delete yeni.skill; }
+      node.config = Object.assign({}, node.config || {}, yeni);
       node.secrets_needed = secrets.value.split(",").map((s) => s.trim()).filter(Boolean);
-      // Elle dokunulan adım işaretleniyor: kendini onarma buna bakıp
-      // uzak duruyor. Modelin, kullanıcının bilerek yazdığı bir adımı
-      // arkasından yeniden yazması düzeltme değil, sessizce geri almadır.
       node.elle = true;
       if (onSave) onSave(wf);
     };
     box.append(
       el("label", null, t("Tür")), type,
       el("label", null, t("Başlık")), title,
-      el("label", null, t("Prompt / config")), prompt,
+      alanlar,
       el("label", null, t("Secrets")), secrets,
       apply,
     );

@@ -233,3 +233,28 @@ async def test_a_failed_summary_leaves_the_window_alone(tmp_path: Path, registry
     assert not await agent._compact(reason="test")
     assert len(agent.session.messages()) == before
     assert agent.session.log.notes("compact_failed")
+
+
+async def test_force_horizon_when_compact_plan_is_empty(tmp_path: Path, registry) -> None:
+    """Sıkıştıracak tur yoksa bile ufuk çekilir — iş durmaz."""
+    client = FakeClient(text_turn("ok"))
+    agent = build_agent(tmp_path, client, registry)
+    agent.session.add_user_text("tek")
+    agent.session.add_assistant([{"type": "text", "text": "yanıt"}])
+    assert agent._force_horizon("test")
+    assert agent.session.log.notes("compacted")
+
+
+async def test_yenile_baglam_tries_tight_keep(tmp_path: Path, registry, monkeypatch) -> None:
+    client = FakeClient(text_turn("özet"))
+    agent = build_agent(tmp_path, client, registry)
+    fill(agent.session, turns=3)
+    seen: list[int | None] = []
+
+    async def fake_compact(*, reason: str, keep: int | None = None):
+        seen.append(keep)
+        return keep == 2
+
+    monkeypatch.setattr(agent, "_compact", fake_compact)
+    assert await agent._yenile_baglam("test")
+    assert None in seen and 2 in seen

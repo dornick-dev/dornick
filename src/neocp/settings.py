@@ -544,6 +544,19 @@ def scan_models(config: Config) -> list[dict[str, Any]]:
     return scan_models_result(config)["models"]
 
 
+def batch_only_model(ident: str) -> bool:
+    """OpenRouter `:batch` varyantı — canlı sohbet değil, Batch API'ye özel.
+
+    Bu modeller `/v1/chat/completions` ile 404 verir; asenkron
+    `/api/beta/batches` uçuna aittir (saatler sürebilir, araçlı tur
+    döngüsüne uymaz). Katalogda ve kayıttta elenir.
+    """
+    text = str(ident or "").strip()
+    if ":" not in text:
+        return False
+    return text.rsplit(":", 1)[-1].lower() == "batch"
+
+
 def scan_models_result(config: Config) -> dict[str, Any]:
     """`{models, error}` — ayar sayfası boş listede nedeni göstersin."""
     # LM Studio yönetimi yalnız localhost — NVIDIA/OpenRouter'a
@@ -581,7 +594,11 @@ def scan_models_result(config: Config) -> dict[str, Any]:
                 continue
             if raw.get("type") in ("embeddings", "embedding"):
                 continue
-            if "embed" in str(raw.get("id")).lower():
+            ident = str(raw.get("id"))
+            if "embed" in ident.lower():
+                continue
+            # `:batch` canlı sohbet değil — seçilirse 404 + Batch API uyarısı.
+            if batch_only_model(ident):
                 continue
             entries.append(_caps_of(raw))
     if provider_of(config.model) == "openrouter":
@@ -709,6 +726,8 @@ def available_models_with_error(config: Config) -> tuple[list[str], str | None]:
         # yol açıyor ve hata ancak ilk mesajda çıkıyor.
         and entry.get("type") not in ("embeddings", "embedding")
         and "embed" not in str(entry.get("id")).lower()
+        # `:batch` yalnız asenkron Batch API — canlı sohbet listesinde yok.
+        and not batch_only_model(str(entry.get("id")))
     ]
     return sorted(dict.fromkeys(names)), None
 
@@ -763,6 +782,54 @@ def loaded_models(config: Config) -> list[dict[str, Any]]:
 # -- yazma -------------------------------------------------------------
 
 
+# Çıktı tavanı bağlamdan taşmasın diye bırakılan pay (istem + araçlar).
+_TOKEN_REZERV = 2048
+
+
+def adopt_caps(config: Config, model: ModelConfig) -> ModelConfig:
+    """Katalog/detect ile model yeteneklerini doldurur. Uydurma yok.
+
+    Pencere/thinking/vision biliniyorsa yazar; bilinmiyorsa dokunmaz.
+    max_tokens pencereden büyükse kısılır.
+    """
+    ad = (model.name or "").strip()
+    if not ad or ad.lower() == "oto":
+        return _clamp_max_tokens(model)
+
+    from dataclasses import replace as _degistir
+
+    probe = _degistir(config, model=model)
+    try:
+        caps = detect_caps(probe)
+    except Exception:
+        return _clamp_max_tokens(model)
+
+    fields: dict[str, Any] = {}
+    window = caps.get("max_context")
+    if isinstance(window, int) and window > 0:
+        fields["context_window"] = window
+    if "thinking" in caps:
+        fields["can_think"] = bool(caps["thinking"])
+        fields["thinking"] = bool(caps["thinking"])
+    if "vision" in caps:
+        fields["vision"] = bool(caps["vision"])
+    if fields:
+        model = _degistir(model, **fields)
+    return _clamp_max_tokens(model)
+
+
+def _clamp_max_tokens(model: ModelConfig) -> ModelConfig:
+    from dataclasses import replace as _degistir
+
+    window = int(model.context_window or 0)
+    if window <= 0:
+        return model
+    tavan = max(256, window - _TOKEN_REZERV)
+    if model.max_tokens <= tavan:
+        return model
+    return _degistir(model, max_tokens=tavan)
+
+
 def apply(config: Config, patch: dict[str, Any]) -> Config:
     """Ayarları diske yazar ve güncellenmiş yapılandırmayı döndürür.
 
@@ -776,6 +843,22 @@ def apply(config: Config, patch: dict[str, Any]) -> Config:
     base = _from_disk(config)
 
     model = _model_patch(base.model, patch)
+    patch_model = patch.get("model") or {}
+    # Model kimliği değiştiyse bağlamı API'den doldur (Algıla şart değil).
+    # Kullanıcı aynı yamada context_window gönderdiyse ona dokunma.
+    kimlik_degisti = (
+        model.name != base.model.name
+        or model.provider != base.model.provider
+        or (model.base_url or "") != (base.model.base_url or "")
+    )
+    if kimlik_degisti and "context_window" not in patch_model:
+        try:
+            model = adopt_caps(base, model)
+        except Exception:
+            model = _clamp_max_tokens(model)
+    else:
+        model = _clamp_max_tokens(model)
+
     context = _section(ContextConfig, base.context, patch.get("context"))
     permissions = _section(PermissionConfig, base.permissions, patch.get("permissions"))
     workshop = _section(SandboxConfig, base.sandbox, patch.get("sandbox"))
@@ -929,6 +1012,12 @@ def _model_patch(current: ModelConfig, patch: dict[str, Any]) -> ModelConfig:
     # yazmadıysa 1'e çek.
     if fields.get("local_optimize") is True and "max_calls" not in fields:
         fields["max_calls"] = 1
+
+    # OpenRouter `:batch` canlı chat completions kabul etmez; aynı modelin
+    # senkron kimliğine düşür (google/…:batch → google/…).
+    if "name" in fields and batch_only_model(str(fields.get("name") or "")):
+        raw = str(fields["name"]).strip()
+        fields["name"] = raw.rsplit(":", 1)[0]
 
     return replace(current, **fields)
 

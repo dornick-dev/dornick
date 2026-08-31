@@ -261,6 +261,56 @@ def test_a_failed_job_report_page_reads_like_a_report_not_a_trace(
     assert "<h1>$ py tarama_modbus.py</h1>" not in sayfa
 
 
+def test_a_successful_job_report_page_leads_with_summary_not_logs(
+    tmp_path: Path, mind: Mind
+) -> None:
+    """Başarı sayfası: özet + komut; ham log details içinde."""
+    from neocp.tools.shell import basari_raporu
+
+    log = (
+        "Downloading package from builds.dotnet.microsoft.com\n"
+        "Extracting the archive.\n"
+        "dotnet-sdk-8.0.424-win-x64 installed.\n"
+    )
+
+    class Kopru:
+        def snapshot(self) -> dict:
+            return {"busy": False}
+
+        def gorev_rapor(self, gid: str) -> dict:
+            return {
+                "ok": True,
+                "id": "c:abc123",
+                "title": "$ $ErrorActionPreference='Stop'; ./dotnet-install.ps1",
+                "state": "bitti",
+                "metin": basari_raporu(
+                    command="$ErrorActionPreference='Stop'; ./dotnet-install.ps1",
+                    text=log,
+                ),
+            }
+
+    server, _config, logf = _kur(tmp_path, mind, Kopru())
+    try:
+        with urllib.request.urlopen(
+            server.url + "gorev-rapor/abc123/", timeout=8
+        ) as answer:
+            sayfa = answer.read().decode("utf-8")
+    finally:
+        server.stop()
+        logf.close()
+
+    assert "İş tamamlandı" in sayfa
+    assert 'class="ozet"' in sayfa
+    assert "dotnet-sdk-8.0.424" in sayfa
+    assert 'class="cmd"' in sayfa
+    assert "dotnet-install" in sayfa
+    assert '<details class="log">' in sayfa
+    assert "Ham çıktı" in sayfa
+    assert "Downloading package" in sayfa
+    # Log özeti örtmesin: details varsayılan kapalı (open yok).
+    assert '<details class="log" open' not in sayfa
+
+
 # -- "bu turda ne değişti" + geri al ------------------------------------
 
 

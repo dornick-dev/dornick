@@ -1399,6 +1399,12 @@ const Scene = (() => {
 
   function drawNodes(t) {
     const family = getComputedStyle(document.body).fontFamily;
+    // Sohbet sütunu şeffaf: etiketler yazının içinden sızmasın.
+    const chat = document.querySelector(".stream");
+    const chatBox = chat ? chat.getBoundingClientRect() : null;
+    const inChat = (x, y) => chatBox
+      && x >= chatBox.left && x <= chatBox.right
+      && y >= chatBox.top && y <= chatBox.bottom;
 
     // Uzaktaki (beynin arkasındaki) anı önce çizilmeli ki öndekiler
     // üstünde kalsın — beyin bulutuyla aynı ressam sıralaması.
@@ -1492,6 +1498,12 @@ const Scene = (() => {
         ctx.globalAlpha = Math.min(1, (heat - 0.3) * 2.6);
         const lx = node.x + outward * (r + 9);
         const ly = node.y + 5;
+        // Sohbet dikdörtgeninin içine düşen etiketleri çizme — orta sütun
+        // ile sol baş üst üste binmesin (canlı, 31.08).
+        if (inChat(lx, ly) || inChat(node.x, node.y)) {
+          node._hit = { x: node.x, y: node.y, r: r + 8 };
+          continue;
+        }
         // Sıra numarası: haritada kaçıncı durak olduğu okunsun.
         let label = node.label;
         if (onPath) {

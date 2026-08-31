@@ -332,7 +332,7 @@ UZUN SÜREN SÜREÇLER — iki ayrı kip, karıştırma:
                 if code != 0:
                     raise JobFailed(is_raporu(
                         command=command, code=code, text=text or ""))
-                return text or "(çıktı yok, komut başarılı)"
+                return basari_raporu(command=command, text=text or "")
 
             handle = ctx.job_bg(f"$ {command[:60]}", runner)
             return ToolResult(
@@ -366,7 +366,7 @@ UZUN SÜREN SÜREÇLER — iki ayrı kip, karıştırma:
             )
 
         return ToolResult(
-            content=text or "(çıktı yok, komut başarılı)",
+            content=basari_raporu(command=command, text=text or ""),
             detail={"exit_code": 0, "cwd": str(cwd)},
         )
 
@@ -478,6 +478,33 @@ def is_raporu(*, command: str, code: int, text: str) -> str:
     return "\n".join(satirlar)
 
 
+def basari_raporu(*, command: str, text: str) -> str:
+    """Başarılı kabuk işinin kullanıcı raporu — ham stdout duvarı değil.
+
+    Viewer'da önce ne bittiği okunsun; uzun log ## Çıktı altında kalsın.
+    """
+    ham = (text or "").strip()
+    bos = not ham or ham == "(çıktı yok, komut başarılı)"
+    ozet = "Komut başarıyla bitti."
+    if not bos:
+        for line in reversed(ham.splitlines()):
+            s = line.strip()
+            if s:
+                ozet = s[:220]
+                break
+    satirlar = [
+        "## Sonuç",
+        "",
+        ozet,
+        "",
+        f"- Komut: `{command}`",
+    ]
+    if not bos and (ham.count("\n") > 0 or len(ham) > len(ozet) + 24):
+        govde = ham if len(ham) <= 12000 else "…\n" + "\n".join(ham.splitlines()[-100:])
+        satirlar += ["", "## Çıktı", "", govde]
+    return "\n".join(satirlar)
+
+
 def _kisa_kuyruk(cikti: str) -> str:
     """Traceback izini at; son birkaç anlamlı satır."""
     keep: list[str] = []
@@ -499,8 +526,8 @@ def _komut_from_title(title: str) -> str:
 def insan_is_raporu(metin: str, *, title: str = "") -> str:
     """Eski ham dökümü (Çıkış kodu + traceback) okunur rapora çevir.
 
-    Yeni işler zaten `is_raporu` yazar; Viewer hâlâ bellekteki eski
-    dökümü gösterebilir.
+    Yeni işler zaten `is_raporu` / `basari_raporu` yazar; Viewer hâlâ
+    bellekteki eski dökümü gösterebilir.
     """
     ham = (metin or "").strip()
     if not ham:
@@ -513,6 +540,9 @@ def insan_is_raporu(metin: str, *, title: str = "") -> str:
         return is_raporu(command=komut, code=int(m.group(1)), text=m.group(2))
     if "Traceback (most recent call last)" in ham:
         return is_raporu(command=komut, code=1, text=ham)
+    # Başarı dökümü: komut başlıklı arka plan işlerinde yapılandır.
+    if komut or (title or "").strip().startswith("$ "):
+        return basari_raporu(command=komut or title, text=ham)
     return ham
 
 

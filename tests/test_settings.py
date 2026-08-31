@@ -536,6 +536,33 @@ def test_openrouter_catalog_adopts_window_vision_and_thinking(
     assert sight["name"] == "Sight"
 
 
+def test_batch_only_models_are_hidden_from_chat_catalog(
+    config: Config, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`:batch` varyantı Batch API'ye özel; seçilirse sohbet 404 verir."""
+    monkeypatch.setattr(settings.lmstudio, "models", lambda _u: [])
+    monkeypatch.setattr(
+        settings, "_openai_models_payload",
+        lambda _c: ({"data": [
+            _openrouter_entry(id="google/gemini-flash"),
+            _openrouter_entry(id="google/gemini-flash:batch", name="Gemini batch"),
+            {"id": "acme/embed-v1", "type": "embeddings"},
+        ]}, None),
+    )
+    ids = [r["id"] for r in settings.scan_models(config)]
+    assert "google/gemini-flash" in ids
+    assert "google/gemini-flash:batch" not in ids
+    assert settings.batch_only_model("google/gemini-flash:batch")
+    assert not settings.batch_only_model("google/gemini-flash:free")
+
+
+def test_apply_strips_batch_suffix_to_sync_model(config: Config) -> None:
+    updated = settings.apply(config, {
+        "model": {"name": "google/gemini-3.7-flash:batch"},
+    })
+    assert updated.model.name == "google/gemini-3.7-flash"
+
+
 def test_a_catalog_id_does_not_invent_caps(
     config: Config, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -595,6 +622,22 @@ def test_apply_does_not_scan_the_catalog(
     assert reloaded.model.vision is False
     assert reloaded.model.can_think is False
     assert reloaded.model.context_window == 128_000
+
+
+def test_apply_adopts_caps_when_model_id_changes(
+    config: Config, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Model seçilince Algıla olmadan pencere/yetenek dolsun."""
+    monkeypatch.setattr(
+        settings, "detect_caps",
+        lambda _c: {"max_context": 99_000, "vision": True, "thinking": False},
+    )
+    updated = settings.apply(config, {"model": {"name": "acme/flash"}})
+    assert updated.model.name == "acme/flash"
+    assert updated.model.context_window == 99_000
+    assert updated.model.vision is True
+    assert updated.model.thinking is False
+    assert updated.model.max_tokens <= 99_000 - settings._TOKEN_REZERV
 
 
 def test_a_model_that_cannot_think_omits_the_anthropic_field() -> None:

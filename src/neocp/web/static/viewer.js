@@ -230,6 +230,10 @@ const Viewer = (() => {
     return !panel.hidden && current === "git:pane";
   }
 
+  function hostedGoals() {
+    return !panel.hidden && current === "plan:goals";
+  }
+
   function toggle() {
     if (panel.hidden) {
       dismissed = false;
@@ -268,12 +272,30 @@ const Viewer = (() => {
   // tek dosyada da kaybolmaz.
   const PINNED = [
     { key: "git:pane", kind: "changes", label: () => t("Değişiklikler") },
+    // İş listesi: yalnız madde varken pin — boşken Cursor'daki gibi yok.
+    { key: "plan:goals", kind: "goals", label: () => t("İş listesi"), when: "goals" },
     { key: "desk:browser", kind: "browser", label: () => t("Tarayıcı") },
     { key: "desk:term", kind: "term", label: () => "powershell" },
   ];
+  let goalsPin = false;
+  function setGoalsPin(on) {
+    const next = !!on;
+    if (goalsPin === next) {
+      if (next && current === "plan:goals") drawTabs();
+      return;
+    }
+    goalsPin = next;
+    if (!next && current === "plan:goals") {
+      // Boşaldı: sabit güverteye dön.
+      openPin("git:pane");
+      return;
+    }
+    drawTabs();
+  }
   const tabs = [];              // {key, mode, label} — dosya / url sekmeleri
   function pinOn(key) {
     if (key === "git:pane") return "git:pane";
+    if (key === "plan:goals") return "plan:goals";
     if (key === "desk:term") return "desk:term";
     if (key === "desk:browser" || String(key).startsWith("url:")) return "desk:browser";
     return "";
@@ -315,6 +337,9 @@ const Viewer = (() => {
     } else if (kind === "term") {
       add("rect", { x: "2", y: "3", width: "12", height: "10", rx: "1.4", fill: "none", stroke: "currentColor", "stroke-width": "1.4" });
       add("path", { d: "M5 7.2 7 8.5 5 9.8M8.5 10.4H11", fill: "none", stroke: "currentColor", "stroke-width": "1.3", "stroke-linecap": "round" });
+    } else if (kind === "goals") {
+      add("path", { d: "M3.5 4.5h9M3.5 8h9M3.5 11.5h6", fill: "none", stroke: "currentColor", "stroke-width": "1.4", "stroke-linecap": "round" });
+      add("circle", { cx: "12.2", cy: "11.5", r: "1.4", fill: "currentColor" });
     }
     return svg;
   }
@@ -325,6 +350,7 @@ const Viewer = (() => {
     serit.hidden = false;
     const activePin = pinOn(current);
     for (const pin of PINNED) {
+      if (pin.when === "goals" && !goalsPin) continue;
       const b = document.createElement("button");
       b.type = "button";
       b.className = "v-tab pin" + (pin.key === current || pin.key === activePin ? " on" : "");
@@ -371,12 +397,36 @@ const Viewer = (() => {
       });
       return;
     }
+    if (key === "plan:goals") {
+      showGoals();
+      return;
+    }
     current = key;
     mode = key === "desk:term" ? "term" : "live";
     foldSide();
     panel.hidden = false;
     document.body.classList.add("viewing");
     load(key);
+  }
+  function showGoals() {
+    dismissed = false;
+    rememberDesk(true);
+    current = "plan:goals";
+    pageLabel = t("İş listesi");
+    mode = "goals";
+    foldSide();
+    panel.hidden = false;
+    document.body.classList.add("viewing");
+    title.textContent = pageLabel;
+    title.title = pageLabel;
+    modes.textContent = "";
+    loading = null;
+    if (typeof Goals !== "undefined" && Goals.paint) Goals.paint(body);
+    else {
+      body.textContent = "";
+      body.append(el("p", "viewer-blank", t("İş listesi yok.")));
+    }
+    noteTab();
   }
   function psPrefix() {
     const bar = document.getElementById("git-bar");
@@ -464,6 +514,17 @@ const Viewer = (() => {
       title.title = pageLabel || t("Değişiklikler");
       modes.textContent = "";
       if (typeof GitBar !== "undefined") GitBar.paint(body);
+      return;
+    }
+    if (path === "plan:goals") {
+      title.textContent = t("İş listesi");
+      title.title = t("İş listesi");
+      modes.textContent = "";
+      if (typeof Goals !== "undefined" && Goals.paint) Goals.paint(body);
+      else {
+        body.textContent = "";
+        body.append(el("p", "viewer-blank", t("İş listesi yok.")));
+      }
       return;
     }
     if (path === "desk:term") {
@@ -925,7 +986,9 @@ const Viewer = (() => {
     const move = (e) => {
       if (!active) return;
       // Sağ kenar sabit: sola çekince sütun genişler (origin delta).
-      const max = Math.min(420, window.innerWidth * 0.32);
+      // Tavan mind-grip / CSS ile aynı — 420/32vw yalnız küçültmeye izin
+      // veriyordu (canlı, 01.09).
+      const max = Math.min(760, window.innerWidth * 0.55);
       const w = Math.max(MIN, Math.min(max, originW + originX - e.clientX));
       root.style.setProperty("--mind-w-user", Math.round(w) + "px");
     };
@@ -1105,7 +1168,8 @@ const Viewer = (() => {
   });
 
   return { present, page, showing, watch, refresh, show, open, close, toggle,
-           host, hosted, downloadArtifact, printPage, openOutside, feed, openPin };
+           host, hosted, hostedGoals, setGoalsPin, downloadArtifact, printPage,
+           openOutside, feed, openPin };
 })();
 
 // Büyüt / yerine dön: görüntüleyici sağ bölgenin tamamını kaplar (beyin

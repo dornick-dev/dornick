@@ -1,7 +1,12 @@
-# OS penceresi yarım açılıyor — geometry
+# Uygulamalar + sohbet geçişi
 
-- [ ] prefs.window_args: maximized iken x/y verme; bozuk offset+full-size sanitize
-- [ ] _titlebar_boot sonrası MaximizedBounds ile maximize/work-area oturt
-- [ ] _remember_window offset’li neredeyse-fullscreen’i maximized kaydetsin
-- [ ] neocp/.neocp/prefs.json window kutusunu temizle
-- [ ] test_prefs + yeniden başlatıp GetWindowRect doğrula
+- [x] WinExe/.NET → `desktop` (betik değil); Başlat gerçek .exe açar
+- [x] Manifest `tool` yumuşak düzeltme → masaüstü
+- [x] Aç = masaüstünde Başlat; süzgeçlere Masaüstü eklendi
+- [x] Sohbet geçişi: batch paint + tek history load (takılma ↓)
+- [x] Geçmişte dosya/görsel önizleme (reviveUserMedia)
+- [x] test_apps 32 geçti
+
+## Review
+
+NeoScada sınıfı artık masaüstü; Başlat `os.startfile` ile pencere açıyor. Sohbet yeniden açılışında medya çipleri ve görseller geri geliyor.

@@ -50,6 +50,12 @@ Dil.ekle({
   " tur": " turns",
   " eşleşme": " matches",
   "Yeni oturum için yeniden başlat": "Restart for a new session",
+  "Dökümde ara": "Search in transcript",
+  "Tüm konuşmalar": "All conversations",
+  "Bitmemiş konuşmalar": "Open conversations",
+  "Şu an çalışan": "Currently running",
+  "Tamamlananlar": "Finished",
+  "sağ tık: klasörde başlat": "right-click: start in a folder",
   " Yeni konuşma": " New conversation",
   "Yeni konuşma": "New conversation",
   "— Projesiz —": "— No project —",
@@ -123,15 +129,27 @@ const History = (() => {
     searching = false;
     render();
     // Koşan sohbet varken liste nefes alır: başlık artık koşunun BAŞINDA
-    // üretiliyor (loop._oturum_basligi) ve buradaki yoklama onu birkaç
-    // saniye içinde sola taşır ("ismi bittikten sonra düzeltiyor" —
-    // canlı, 31.08). Koşan yoksa yoklama durur; panel kapaliyken de.
+    // üretiliyor (loop._oturum_basligi) ve session_title olayı anında
+    // taşır; bu yoklama yedek (olay kaçarsa 2 sn içinde sola gelir).
     clearTimeout(canliTazele);
     if (!ara && panelAcik() && sessions.some((s) => s.status === "koşuyor")) {
-      canliTazele = setTimeout(() => { if (panelAcik()) load(); }, 5000);
+      canliTazele = setTimeout(() => { if (panelAcik()) load(); }, 2000);
     }
   }
   let canliTazele = null;
+
+  function applyTitle(id, title) {
+    if (!id || !title) return;
+    const s = sessions.find((x) => x.id === id);
+    if (s) {
+      s.title = title;
+      s.named = true;
+      render();
+      return;
+    }
+    // Liste henüz yüklenmediyse kısa sonra çek.
+    if (panelAcik()) load();
+  }
 
   // Döküm araması sunucuya gidiyor; her tuşta istek atmamak için kısa bir
   // bekleme. Kutu boşalırsa arama iptal ve liste tazeleniyor.
@@ -160,7 +178,8 @@ const History = (() => {
     // başlıkta değil dökümün ortasında geçiyor olabilir.
     let shown = q
       ? sessions.filter(s =>
-          (s.title + " " + s.preview + " " + (s.project || "") + " " + (s.tags || []).join(" "))
+          (s.title + " " + s.preview + " " + (s.project || "") + " "
+           + (s.path || "") + " " + (s.tags || []).join(" "))
             .toLowerCase().includes(q) || (s.hits || []).length)
       : sessions;
     if (tagFilter) shown = shown.filter(s => (s.tags || []).includes(tagFilter));
@@ -186,12 +205,22 @@ const History = (() => {
       return;
     }
 
-    // Önce PROJEYE göre klasörle (sohbetleri grupla), sonra her klasörün
-    // içinde aktif olan başta. Projesiz olanlar en sonda tek bir kümede.
-    // Bir konuşma bir anı değil — bu yalnızca gezinme düzeni.
+    // Klasör adı: elle proje etiketi, yoksa bağlı path'in son parçası.
+    // Böylece "Klasör bağla" ile path alan sohbetler de neo/neocp altında
+    // görünür (Cursor Repositories düzeni).
+    function klasorAdi(s) {
+      if (s.project) return s.project;
+      const p = String(s.path || "").replace(/\\/g, "/").replace(/\/+$/, "");
+      if (!p) return UNFILED;
+      const parts = p.split("/").filter(Boolean);
+      return parts.length ? parts[parts.length - 1] : UNFILED;
+    }
+
+    // Önce PROJEYE / klasöre göre grupla, sonra her klasörün içinde
+    // yenilik sırası. Projesiz olanlar en sonda tek bir kümede.
     const byProject = new Map();
     for (const s of shown) {
-      const key = s.project || UNFILED;
+      const key = klasorAdi(s);
       if (!byProject.has(key)) byProject.set(key, []);
       byProject.get(key).push(s);
     }
@@ -202,7 +231,7 @@ const History = (() => {
       shown = shown.slice(0, GOSTER);
       byProject.clear();
       for (const s of shown) {
-        const key = s.project || UNFILED;
+        const key = klasorAdi(s);
         if (!byProject.has(key)) byProject.set(key, []);
         byProject.get(key).push(s);
       }
@@ -241,14 +270,16 @@ const History = (() => {
     strip.textContent = "";
 
     const filters = el("div", "hist-status-filters");
-    for (const [id, label] of [
-      ["", "Tümü"],
-      ["açık", "Açık"],
-      ["koşuyor", "Koşuyor"],
-      ["biten", "Biten"],
+    for (const [id, label, tip] of [
+      ["", "Tümü", "Tüm konuşmalar"],
+      ["açık", "Açık", "Bitmemiş konuşmalar"],
+      ["koşuyor", "Koşuyor", "Şu an çalışan"],
+      ["biten", "Biten", "Tamamlananlar"],
     ]) {
       const chip = el("button", "hist-status" + (statusFilter === id ? " on" : ""));
       chip.type = "button";
+      chip.title = t(tip);
+      chip.setAttribute("aria-pressed", statusFilter === id ? "true" : "false");
       chip.textContent = t(label);
       chip.onclick = () => { statusFilter = id; render(); };
       filters.append(chip);
@@ -257,7 +288,22 @@ const History = (() => {
 
     const anahtar = el("button", "hist-deep" + (deep ? " on" : ""));
     anahtar.type = "button";
-    anahtar.textContent = (deep ? "◉ " : "○ ") + t("içinde ara");
+    anahtar.replaceChildren();
+    const ico = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    ico.setAttribute("viewBox", "0 0 16 16");
+    ico.setAttribute("aria-hidden", "true");
+    ico.classList.add("hist-deep-ico");
+    const c = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+    c.setAttribute("cx", "6.5"); c.setAttribute("cy", "6.5"); c.setAttribute("r", "4.2");
+    c.setAttribute("fill", "none"); c.setAttribute("stroke", "currentColor");
+    c.setAttribute("stroke-width", "1.5");
+    const p = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    p.setAttribute("d", "M10.2 10.2 13.5 13.5");
+    p.setAttribute("fill", "none"); p.setAttribute("stroke", "currentColor");
+    p.setAttribute("stroke-width", "1.5");
+    ico.append(c, p);
+    const lbl = el("span", null, t("Dökümde ara"));
+    anahtar.append(ico, lbl);
     anahtar.title = t("Konuşmaların İÇİNDE ara — başlıkta değil, dökümde geçen söz");
     anahtar.onclick = () => { deep = !deep; scheduleDeep(); };
     strip.append(anahtar);
@@ -535,6 +581,11 @@ const History = (() => {
       box.remove();
       const kayit = await saveMeta(s.id, { path });
       if (kayit) s.path = kayit.path || "";
+      // Path → klasör adı: liste hemen gruplasın (sunucu da set_project yazar).
+      if (path) {
+        const leaf = path.replace(/\\/g, "/").replace(/\/+$/, "").split("/").filter(Boolean).pop() || "";
+        if (leaf && !s.project) s.project = leaf;
+      }
       // Aktif sohbetse hemen uygula (geçişte de uygulanır).
       if (s.current) {
         try {
@@ -650,8 +701,12 @@ const History = (() => {
       kutu.remove();
       if (innerWidth <= 860) close(); else { load(); setTimeout(load, 600); }
     };
+    // Satırın İÇİNE değil ALTINA: hist-new.after flex satırını parçalıyor
+    // (Yeni konuşma + Sürücü seç yan yana — canlı, 01.09).
     const dugme = document.getElementById("hist-new");
-    dugme.after(kutu);
+    const satir = (dugme && dugme.closest(".hist-new-row")) || dugme;
+    if (satir) satir.after(kutu);
+    else document.getElementById("hist-panel")?.querySelector(".hist-head")?.after(kutu);
     gez("");
   }
 
@@ -698,7 +753,7 @@ const History = (() => {
       // KAPATMAZ. Liste tazelenir; sunucu geçişi işlerken yarış olursa
       // "şu an açık" işareti ilk yüklemeye yetişemeyebiliyor — kısa bir
       // gecikmeyle ikinci tazeleme işareti oturtur.
-      if (innerWidth > 860) { load(); setTimeout(load, 600); } else close();
+      if (innerWidth > 860) { load(); } else close();
       return;
     }
     if (res && res.busy) {
@@ -778,11 +833,15 @@ const History = (() => {
     huni.classList.toggle("on", acik);
   });
   document.getElementById("hist-new").addEventListener("click", newConversation);
-  const klasorBtn = document.getElementById("hist-new-folder");
-  if (klasorBtn) klasorBtn.addEventListener("click", klasordeBaslat);
-  // HUD'daki ayrı yeni-konuşma ikonu kalktı: sidebar'daki "+ Yeni
-  // konuşma" tek giriş (kullanıcı: "zaten yazıyor, icon gereksiz").
-  // Her tuşta: yerel süzgeç anında, döküm araması gecikmeli.
+  // Klasörde başlat: yan düğme kalktı — sağ tık / uzun basış isteğe bağlı.
+  // Yeni konuşma atölyede açılır; klasör gerekirse neo ilk mesaja göre
+  // açar veya kullanıcı burada seçer.
+  document.getElementById("hist-new").addEventListener("contextmenu", (ev) => {
+    ev.preventDefault();
+    klasordeBaslat();
+  });
+  document.getElementById("hist-new").title =
+    t("Yeni konuşma") + " · " + t("sağ tık: klasörde başlat");
   search.addEventListener("input", () => { render(); scheduleDeep(); });
 
   // Rail varsayılan AÇIK ve KALICI (Claude Code alışkanlığı: konuşmalar
@@ -796,6 +855,7 @@ const History = (() => {
   });
 
   return { open, close, toggle: toggle_panel, newChat: newConversation,
+           applyTitle,
            // Şerit olayı (paralel oturumlar): arka planda koşan/biten
            // sohbetin rozeti canlı tazelensin — panel açıkken liste
            // yeniden yüklenir, kapalıyken bir sonraki açılış zaten taze.

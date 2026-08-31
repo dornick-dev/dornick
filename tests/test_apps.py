@@ -445,3 +445,65 @@ def test_running_prunes_finished_processes(tmp_path: Path) -> None:
     proc = apps._PROCS[pid]["proc"]
     proc.wait(timeout=10)          # bitmesini bekle
     assert all(p["pid"] != pid for p in apps.running())
+
+
+def test_winexe_csproj_is_desktop_not_tool(tmp_path: Path) -> None:
+    """WinExe .NET projesi betik değil masaüstü — NeoScada sınıfı."""
+    proj = tmp_path / "NeoScada"
+    proj.mkdir()
+    (proj / "NeoScada.csproj").write_text(
+        '<Project Sdk="Microsoft.NET.Sdk">\n'
+        "  <PropertyGroup><OutputType>WinExe</OutputType>"
+        "<TargetFramework>net8.0-windows</TargetFramework>"
+        "<UseWindowsForms>true</UseWindowsForms></PropertyGroup>\n"
+        "</Project>\n",
+        encoding="utf-8",
+    )
+    # bin gürültüsü yanlış exe seçmesin diye.
+    junk = proj / "bin" / "Debug" / "net8.0-windows"
+    junk.mkdir(parents=True)
+    (junk / "helper.exe").write_bytes(b"MZ")
+    kind, entry, run = apps._detect(proj)
+    assert kind == "desktop"
+    assert entry.endswith(".csproj") or entry.endswith(".exe")
+    assert "dotnet" in run or entry.endswith(".exe")
+
+
+def test_folder_named_exe_is_desktop(tmp_path: Path) -> None:
+    proj = tmp_path / "NeoScada Studio"
+    proj.mkdir()
+    (proj / "NeoScada Studio.exe").write_bytes(b"MZ")
+    (proj / "readme.txt").write_text("x", encoding="utf-8")
+    kind, entry, _run = apps._detect(proj)
+    assert kind == "desktop"
+    assert entry.endswith("NeoScada Studio.exe")
+
+
+def test_manifest_tool_soft_corrects_to_desktop(tmp_path: Path) -> None:
+    """Ajan type=tool yazsa bile WinExe masaüstü sayılır."""
+    proj = tmp_path / "Studio"
+    proj.mkdir()
+    (proj / "Studio.csproj").write_text(
+        "<Project Sdk=\"Microsoft.NET.Sdk\">"
+        "<PropertyGroup><OutputType>WinExe</OutputType></PropertyGroup>"
+        "</Project>\n",
+        encoding="utf-8",
+    )
+    (proj / "app.json").write_text(
+        '{"name": "Studio", "type": "tool", "scope": "external", "desc": "SCADA"}',
+        encoding="utf-8",
+    )
+    p = apps._project_from_folder(proj, tmp_path)
+    assert p.kind == "desktop"
+
+
+def test_bin_obj_ignored_when_finding_scripts(tmp_path: Path) -> None:
+    """bin/obj içindeki .py/.exe giriş sayılmaz."""
+    proj = tmp_path / "app"
+    proj.mkdir()
+    (proj / "bin").mkdir()
+    (proj / "bin" / "noise.py").write_text("print(1)\n", encoding="utf-8")
+    (proj / "main.py").write_text("print('ok')\n", encoding="utf-8")
+    kind, entry, _ = apps._detect(proj)
+    assert kind == "service"
+    assert entry.endswith("main.py")

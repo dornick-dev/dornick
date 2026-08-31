@@ -394,6 +394,18 @@ async def test_completely_empty_response_is_an_error_not_an_empty_turn() -> None
 
     assert result.message is None
     assert "boş yanıt" in (result.error or "")
+    assert "bağlam sınırına" not in (result.error or "")
+
+
+async def test_empty_length_is_recoverable_not_context_error() -> None:
+    """finish=length + boş içerik bağlam değil — çıktı bütçesi.
+    api_error ile 5 deneme aynı isteği tekrarlar; empty_turn sürdürür."""
+    be, _ = backend([chunk(finish="length")])
+    result = await be.turn(prepared(), [], cancel=asyncio.Event())
+
+    assert result.error is None
+    assert result.stop_reason == "empty_turn"
+    assert "bütçesi" in (result.content[0]["text"] if result.content else "")
 
 
 async def test_stream_is_closed_after_normal_completion() -> None:

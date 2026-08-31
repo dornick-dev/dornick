@@ -615,9 +615,19 @@ class Mind:
                     json.dumps(mapping, ensure_ascii=False, indent=2), encoding="utf-8")
             except OSError:
                 pass
-            return mapping.get(session_id, {
+            sonuc = mapping.get(session_id, {
                 "ad": "", "etiketler": [], "path": "", "model": "", "provider": "",
             })
+        # Kilit dışında: klasör bağlanınca proje klasörü de dolsun (Cursor
+        # Repositories gibi konuşmalar klasör adının altında gruplansın).
+        # Elle verilmiş proje adı varsa üzerine yazma.
+        if path is not None:
+            yol = str(path or "").strip()
+            if yol and not self.projects().get(session_id):
+                leaf = Path(yol).name.strip()[:80]
+                if leaf:
+                    self.set_project(session_id, leaf)
+        return sonuc
 
     def archive_session(self, session_id: str) -> dict[str, Any]:
         """Oturumu listeden çıkarır; günlüğü sessions/.arsiv'e taşır.

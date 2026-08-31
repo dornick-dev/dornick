@@ -36,12 +36,13 @@ NONSTREAM_TOKEN_CEILING = 16_000
 @dataclass(slots=True)
 class ModelConfig:
     name: str = DEFAULT_MODEL
-    max_tokens: int = 32_000
-    # Modelin bağlam penceresi. Sıkıştırma bu değere göre tetikleniyor,
-    # o yüzden gerçeğe yakın olmalı: fazla büyük verilirse pencere
-    # sıkıştırma hiç tetiklenmeden dolar. Yerel modellerde çoğunlukla
-    # çok daha küçük (8k–32k); ayar sayfasından değiştirilebiliyor.
-    context_window: int = 200_000
+    # Tek yanıt çıktı tavanı. 32k birçok flash/küçük uçta aşırı; varsayılan
+    # ajanik iş için yeterli, katalog/detect pencereye göre sıkılır.
+    max_tokens: int = 16_384
+    # Modelin bağlam penceresi. Sıkıştırma buna göre tetiklenir. 200k birçok
+    # modelde yalandı (sıkıştırma geç kalır, sunucu başı atar). Muhafazakâr
+    # taban; seçimde API/katalog gerçek değeri yazar (Algıla şart değil).
+    context_window: int = 65_536
     # low | medium | high | xhigh | max — ajanik iş için en az high.
     # Yalnızca Anthropic; yerel sağlayıcılarda yoksayılır.
     effort: str = "high"

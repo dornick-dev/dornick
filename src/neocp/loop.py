@@ -772,6 +772,8 @@ class AgentIO:
     #            "deneme": int, "toplam": int, "saniye": int, "detay": str}
     on_wait: Callable[[dict[str, Any]], None] | None = None
     on_usage: Callable[[dict[str, int]], None] = lambda _: None
+    # Modelin koyduğu oturum başlığı — kenar listesi anında güncellenir.
+    on_session_title: Callable[[str, str], None] = lambda *_: None  # sid, ad
     # Bütçe freni. Her model çağrısından ÖNCE soruluyor: boş dize "sınır
     # yok ya da aşılmadı", dolu dize ise sohbete basılacak tek satır ve
     # "dur" emri. Fiyat bilgisi harness'ta değil köprüde duruyor (bkz.
@@ -1481,6 +1483,13 @@ class Agent:
             # modelin önüne bu adımda konuyor: tur başında, istek gitmeden.
             self._drain_children()
             self._drain_inbox()
+            # Bekleyen model değişimi: akan stream'i kesmeden, bir sonraki
+            # çağrıdan itibaren yeni istemci (meşgulken de geçiş).
+            if self.on_retry_wait is not None:
+                try:
+                    self.on_retry_wait()
+                except Exception:
+                    pass
             prepared = self.policy.prepare(self._system, self.session.messages())
             try:
                 result = await self.client.turn(
@@ -1712,13 +1721,17 @@ class Agent:
         except Exception:
             pass
 
-    async def _oturum_basligi(self) -> None:
+    async def _oturum_basligi(self, on_izleme: str = "") -> None:
         """Adsız oturumun ilk alışverişinden kısa bir başlık üretir.
 
         Kullanıcı adının ilk 30 karakteri başlık değildir ("bana
         profesonel bir cms yapa ama plan oluştur..." diye listelenmesi
         canlı şikâyetti). Tek küçük çağrı; her hata sessizce yutulur —
         başlık süs, koşunun sonucu değil.
+
+        `on_izleme`: koşu henüz kullanıcı mesajını günlüğe yazmadan
+        paralel başlık üretirken (desktop._isle) metni buradan alır —
+        aksi halde boş günlüğe bakıp sessizce vazgeçiyordu.
         """
         if self.depth or self.mind is None or self.cancel.is_set():
             return
@@ -1742,6 +1755,10 @@ class Agent:
                     soru = metin
                 elif m.get("role") == "assistant" and metin:
                     cevap = metin
+            if not soru and on_izleme:
+                soru = on_izleme
+            if not soru.strip():
+                return
             alinti = ("KULLANICI: " + _one_line(soru)[:400]
                       + "\nASISTAN: " + _one_line(cevap)[:300])
             hazir = Prepared(
@@ -1754,6 +1771,11 @@ class Agent:
             if _baslik_gecerli(baslik):
                 self.mind.set_session_meta(self.session.id, ad=baslik)
                 self.session.log.note("baslik", ad=baslik)
+                # Kenar listesi 5 sn yoklamayı beklemesin — anında taşınsın.
+                try:
+                    self.io.on_session_title(self.session.id, baslik)
+                except Exception:
+                    pass
         except Exception:
             pass   # başlık üretilemedi: türetilmiş başlık zaten var
 
@@ -1842,16 +1864,19 @@ class Agent:
 
         if reason == "model_context_window_exceeded":
             # Sunucu pencereyi bizden once tuketti (tahminimiz sapmis ya da
-            # context_window ayari gercegin ustunde). Burada durmak konusmayi
-            # bitirir; sikistirip devam etmek isi surdurur.
+            # context_window ayari gercegin ustunde). Durmak yerine
+            # sikistir / sikı / son care — is surer.
             self.session.log.note("context_exhausted")
-            if await self._compact(reason="pencere tasti"):
+            if await self._yenile_baglam("pencere tasti"):
                 return True
-            self.io.on_notice(
-                "Bağlam penceresi doldu ve sıkıştırılacak tamamlanmış tur yok. "
-                "Yeni bir oturum açman gerekiyor."
+            # _yenile_baglam False donerse bile durma: hedef ozetiyle
+            # devam notu — kullaniciya "yeni oturum ac" demiyoruz.
+            self.session.add_continuation_note(
+                "Bağlam yenilendi. İş listendeki açık maddelerden kaldığın "
+                "yerden devam et; baştan anlatma."
             )
-            return False
+            self.io.on_notice("Bağlam yenilendi — iş sürüyor.")
+            return True
 
         return False  # end_turn ve bilinmeyenler: sıra kullanıcıda
 
@@ -2793,7 +2818,7 @@ class Agent:
         pressure = compaction.measure(self._last_usage, self.config.model.context_window)
         self._warn_if_window_is_wrong(pressure)
         if pressure.full:
-            await self._compact(reason=f"pencere %{pressure.percent} dolu")
+            await self._yenile_baglam(f"pencere %{pressure.percent} dolu")
 
     def _warn_if_window_is_wrong(self, pressure: compaction.Pressure) -> None:
         """Ayardaki pencere gerçeğin üstündeyse söyler.
@@ -2819,9 +2844,26 @@ class Agent:
             "pencereyi modelin gerçek sınırına çek.".replace(",", ".")
         )
 
-    async def _compact(self, *, reason: str) -> bool:
+    async def _yenile_baglam(self, reason: str) -> bool:
+        """Bağlamı sıkıştırır; olmazsa sıkı / son çare horizon.
+
+        True = pencere yenilendi (iş sürebilir). False = dokunulamadı.
+        """
+        if await self._compact(reason=reason):
+            return True
+        if await self._compact(reason=f"{reason} — sıkı", keep=2):
+            return True
+        return self._force_horizon(reason)
+
+    async def _compact(self, *, reason: str, keep: int | None = None) -> bool:
         """Pencereyi özetleyip daraltır. Sıkıştırılamadıysa False."""
-        plan = self.session.compaction_plan()
+        plan = (
+            self.session.compaction_plan(keep=keep)
+            if keep is not None
+            else self.session.compaction_plan()
+        )
+        if plan is None and keep is None:
+            plan = self.session.compaction_plan(keep=2)
         if plan is None:
             return False
 
@@ -2867,6 +2909,29 @@ class Agent:
                 self.session.log.note("compact_memory_failed", error=str(exc))
 
         self.io.on_notice("Bağlam özetlendi; kalıcı belleğe de yazıldı.")
+        return True
+
+    def _force_horizon(self, reason: str) -> bool:
+        """Özetlenecek tur yoksa ufku son mesaja çek — iş dursun diye değil."""
+        try:
+            events = self.session._live_events()
+        except Exception:
+            return False
+        if len(events) < 2:
+            return False
+        from_seq = events[-1].seq
+        summary = (
+            self._is_durumu(from_seq)
+            or "Bağlam yenilendi; açık iş listesinden devam."
+        )
+        self.session.compact(summary, from_seq)
+        self._last_goal_digest = ""
+        self._last_usage = {}
+        self._primed = self._soul_resident()
+        self.session.log.note(
+            "compacted", from_seq=from_seq, chars=len(summary), force=True, reason=reason
+        )
+        self.io.on_notice("Bağlam yenilendi — iş sürüyor.")
         return True
 
     async def _summarize(self, text: str) -> str:

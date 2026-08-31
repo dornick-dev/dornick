@@ -118,6 +118,7 @@ Dil.ekle({
   "Yetki: ": "Access: ",
   " — hiçbir şey sorulmuyor": " — nothing is asked",
   " · tıkla: tam yetki": " · click: full access",
+  " · tıkla: kip seç": " · click: choose mode",
   "otomatik": "auto", "sorar": "asks", "salt okunur": "read-only",
   "tam yetki": "full access",
   // Dock ve açılır kutuları
@@ -153,6 +154,9 @@ Dil.ekle({
   // Maliyet çipi
   "Bu turun tahmini harcaması — tıkla: kırılım":
     "This turn's estimated spend — click for the breakdown",
+  "Bu oturumun tahmini toplam harcaması — tıkla: kırılım":
+    "Estimated total spend for this chat — click for the breakdown",
+  " · bu tur: ": " · this turn: ",
   " · premium model (çıktı > $20/M)": " · premium model (output > $20/M)",
   "Tahmini harcama": "Estimated spend",
   // Bütçe freni (maliyet çipinin kutusunda)
@@ -251,6 +255,13 @@ Dil.ekle({
   "neo'nun kendine yazdığı iş listesi — tıkla: katla/aç":
     "neo's own task list — click to fold/unfold",
   " iş listesi": " task list", "İş listesi": "Task list",
+  "Aktif madde yok.": "No active items.",
+  "İş listesi yok.": "No task list.",
+  "Aktif madde yok.": "No active items.",
+  "Neo'nun uzun işlerde kendi yazdığı adım listesi (Cursor görev listesi gibi). Sohbet geçmişi değil — madde yoksa sekme de yok. Sen de ekleyip silebilirsin.":
+    "Neo's step list for long jobs (like Cursor's todo list). Not chat history — no items, no tab. You can add or remove items too.",
+  "neo'nun kendine yazdığı adım listesi — tıkla: katla/aç":
+    "Neo's own step list — click to fold/unfold",
   "Bunlar neo'nun kendine yazdığı iş listesi — uzun işlerde ne yaptığını takip etmek için. Sen de ekleyebilir, silebilirsin.":
     "This is neo's own task list — so you can follow what it is doing on long jobs. You can add and remove items too.",
   "＋ kendi maddeni yaz": "＋ add your own item",
@@ -635,11 +646,13 @@ const NEAR_BOTTOM = 120;   // bu kadar piksel yakınsa "en altta" sayılır
 let follow = true;         // otomatik takip açık mı
 let fresh = 0;             // takip kapalıyken gelen yeni blok sayısı
 let seenBlocks = 0;        // sayacın karşılaştırma tabanı
+let transcriptBatch = false;  // geçmiş boyarken scroll yok
 
 const atBottom = () =>
   thread.scrollHeight - thread.scrollTop - thread.clientHeight < NEAR_BOTTOM;
 
 function scroll() {
+  if (transcriptBatch) return;
   const blocks = thread.childElementCount;
   if (follow) { thread.scrollTop = thread.scrollHeight; seenBlocks = blocks; return; }
   // Takip kapalı: inme yok. Yalnızca yeni üst-düzey blokları say — aynı
@@ -677,6 +690,52 @@ thread.addEventListener("scroll", () => {
 });
 
 document.getElementById("jump").addEventListener("click", () => resumeFollow(true));
+
+// Şerit / düşünce açılınca composer (z:25) altından kurtar.
+// Dipte açılınca gövde input'un ARKASINA uzuyor; max-height CSS'i
+// (52vh) görünür boşluktan büyük olunca yalnızca 1-2 px'lik dilim
+// kalıyordu ("açılıyor ama minicik" — canlı, 01.09). Çözüm: yüksekliği
+// composer üstüne sığdır + şerit başlığını görünür alanın tepesine çek.
+function revealAboveComposer(el) {
+  if (!el || !thread.contains(el)) return;
+  const go = () => {
+    const shell = document.getElementById("compose-shell");
+    const shellTop = shell ? shell.getBoundingClientRect().top : window.innerHeight;
+    const streamBox = thread.getBoundingClientRect();
+    const pad = 20;
+    const avail = Math.max(160, Math.floor(shellTop - streamBox.top - pad));
+    // Açık düşünce / şerit gövdesi: tavanı görünür odaya kilitle.
+    if (el.classList.contains("acts-body") || el.classList.contains("think")) {
+      const tav = el.classList.contains("think") ? 480 : 520;
+      el.style.maxHeight = Math.min(avail, tav) + "px";
+    }
+    const head = el.classList.contains("acts-body")
+      && el.previousElementSibling
+      && el.previousElementSibling.classList.contains("acts-head")
+      ? el.previousElementSibling
+      : null;
+    const topEl = head || el;
+    // Başlığı (veya kutuyu) sohbet görünür alanının üstüne yasla —
+    // Cursor thought paneli gibi okunur yükseklik kalsın.
+    const wantTop = streamBox.top + 10;
+    const tr = topEl.getBoundingClientRect();
+    if (Math.abs(tr.top - wantTop) > 4) thread.scrollTop += tr.top - wantTop;
+    const r = el.getBoundingClientRect();
+    if (r.bottom > shellTop - 12) {
+      thread.scrollTop += r.bottom - (shellTop - 12);
+    }
+  };
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      go();
+      requestAnimationFrame(go);
+    });
+  });
+}
+
+function clearFitAboveComposer(el) {
+  if (el && el.style) el.style.maxHeight = "";
+}
 
 function line(kind, text) {
   clearWelcome();
@@ -851,37 +910,82 @@ function summarizeAlert(text) {
 // ikisi birden koşunca her mesaj ekranda iki kez görünüyordu (canlı yara,
 // 31.08: "konuşmayı tekrar açınca aynı yazışmalar iki kez geliyor").
 let transcriptFor = "";
+
 async function loadTranscript(id) {
   if (id && transcriptFor === id) return;
   transcriptFor = id || "";
   let data;
   try { data = await (await fetch("/api/session?id=" + encodeURIComponent(id))).json(); }
   catch { transcriptFor = ""; return; }
-  for (const t of (data.turns || [])) {
-    // Eski dökümlerin içinde harness notları duruyor olabilir (süzgeç
-    // sonradan kondu): geçmişi yeniden yazmıyoruz, çizmiyoruz.
-    if (!cizilir(t.text)) continue;
-    if (t.role === "user") { line("user", t.text); continue; }
-    // Ajan satırları geçmişte de MARKDOWN: düz textContent basmak
-    // "**kalın**" ve backtick'leri çıplak gösteriyordu — canlı akışta
-    // render edilen konuşma, geçmişten yüklenince bozuk görünüyordu.
-    const el = line("agent", "");
-    el._rawText = t.text || "";
-    Markdown.into(el, t.text || "");
-    attachMsgActs(el, "agent");
-    el.classList.add("done");
+  const turns = (data.turns || []).filter((t) => cizilir(t.text));
+  transcriptBatch = true;
+  const oncekiFollow = follow;
+  follow = false;
+  try {
+    for (let i = 0; i < turns.length; i++) {
+      const t = turns[i];
+      if (t.role === "user") {
+        const el = line("user", t.text);
+        reviveUserMedia(el, t.text || "");
+      } else {
+        const el = line("agent", "");
+        el._rawText = t.text || "";
+        Markdown.into(el, t.text || "");
+        attachMsgActs(el, "agent");
+        el.classList.add("done");
+      }
+      if (i > 0 && i % 12 === 0) {
+        await new Promise((r) => requestAnimationFrame(() => r()));
+      }
+    }
+  } finally {
+    transcriptBatch = false;
+    follow = oncekiFollow;
   }
   scroll();
-  // Koşan oturuma sonradan girildi (sayfa yenileme / kenar çubuğundan
-  // geçiş): canlı şerit dökümün TEPESİNDE kalmasın — akışın sonuna insin.
-  // Eski hal: kickWork şeridi boş thread'e kuruyor, geçmiş ALTINA
-  // basılıyor ve kullanıcı en altta hiçbir gösterge görmüyordu ("durdu mu
-  // çalışıyor mu belli değil" — canlı şikâyet).
   if (busy) {
     if (work) dockWork(work);
     kickWork();
     scroll();
   }
+}
+
+// Geçmişte yalnız yollar yazılıydı; canlıdaki gibi çip + görsel önizleme.
+const IMG_EXT = /\.(png|jpe?g|gif|webp|bmp|svg)$/i;
+function reviveUserMedia(row, text) {
+  if (!row || !text) return;
+  const yollar = [];
+  const ek = text.match(/Eklenen dosyalar \(atölyende\):\n((?:[-•]\s+.+\n?)+)/i);
+  if (ek) {
+    for (const satir of ek[1].split("\n")) {
+      const yol = satir.replace(/^[-•]\s+/, "").trim();
+      if (yol) yollar.push(yol);
+    }
+  }
+  for (const m of text.matchAll(/Kullanıcı şu dosyayı işaret etti:\s*(.+)/gi)) {
+    const yol = (m[1] || "").trim();
+    if (yol && !yollar.includes(yol)) yollar.push(yol);
+  }
+  if (!yollar.length) return;
+  const files = [];
+  let frame = "";
+  for (const yol of yollar) {
+    const ad = yol.split(/[\\/]/).pop() || yol;
+    files.push(ad);
+    if (!frame && IMG_EXT.test(yol)) {
+      frame = "/api/raw?path=" + encodeURIComponent(yol.replace(/\\/g, "/"));
+    }
+  }
+  attachMedia(row, { frame, files });
+  row.querySelectorAll(".msg-file").forEach((chip, i) => {
+    const yol = yollar[i];
+    if (!yol) return;
+    chip.style.cursor = "pointer";
+    chip.title = yol;
+    chip.addEventListener("click", () => {
+      if (typeof Viewer !== "undefined" && Viewer.present) Viewer.present(yol);
+    });
+  });
 }
 
 function setStatus(state, label) {
@@ -1399,8 +1503,13 @@ function canliDusunceTiklanir(box) {
     const acik = box.classList.toggle("open");
     box.textContent = (acik ? thought
       : (thought.length > 600 ? "…" + thought.slice(-600) : thought)).trim();
-    if (acik) box.scrollTop = 0;
-    else box.scrollTop = box.scrollHeight;
+    if (acik) {
+      box.scrollTop = 0;
+      revealAboveComposer(box);
+    } else {
+      box.scrollTop = box.scrollHeight;
+      clearFitAboveComposer(box);
+    }
   };
 }
 
@@ -1487,7 +1596,9 @@ function closeThought() {
           // burada yalnızca kutuyu görünür alanda tut.
           if (open) {
             box.scrollTop = 0;
-            box.scrollIntoView({ block: "nearest", behavior: "smooth" });
+            revealAboveComposer(box);
+          } else {
+            clearFitAboveComposer(box);
           }
         };
       }
@@ -1599,6 +1710,21 @@ document.querySelector(".compose-shell").addEventListener("mousedown", (ev) => {
   ev.preventDefault();   // odağı çalma — doğrudan biz veriyoruz
   input.focus();
 });
+
+// Kabuk yüksekliği değişince (textarea, git, dock) sohbet alt boşluğunu
+// ölç — sabit 128px uzun kabukta düşünceyi input altına gömüyordu.
+(() => {
+  const shell = document.getElementById("compose-shell");
+  if (!shell) return;
+  const syncComposeH = () => {
+    const bottom = parseFloat(getComputedStyle(shell).bottom) || 14;
+    const h = Math.ceil(shell.offsetHeight + bottom + 8);
+    document.body.style.setProperty("--compose-h", Math.max(120, h) + "px");
+  };
+  new ResizeObserver(syncComposeH).observe(shell);
+  window.addEventListener("resize", syncComposeH);
+  syncComposeH();
+})();
 
 input.addEventListener("input", () => {
   input.style.height = "auto";
@@ -2272,19 +2398,28 @@ function setAuthority(next) {
   const button = $("authority");
   button.classList.toggle("full", next === "yolo");
   button.title = t("Yetki: ") + (t(AUTHORITY[next]) || next) +
-                 (next === "yolo" ? t(" — hiçbir şey sorulmuyor") : t(" · tıkla: tam yetki"));
+                 (next === "yolo" ? t(" — hiçbir şey sorulmuyor") : t(" · tıkla: kip seç"));
   if (next !== "yolo") previous = next;
   // Kilit ile kompozer altındaki kip çipi aynı gerçeği göstersin.
   dockRender();
 }
 
-$("authority").addEventListener("click", async () => {
-  const next = mode === "yolo" ? previous : "yolo";
-  setAuthority(next);
-  const answer = await post("/api/settings", { permissions: { mode: next } });
-  // Sunucu reddederse ekranı gerçeğe döndür; sessizce yanlış göstermek,
-  // kullanıcının tam yetki sandığı halde soruların gelmesi demek.
-  if (answer && answer.ok === false) setAuthority(mode === "yolo" ? previous : "yolo");
+$("authority").addEventListener("click", (ev) => {
+  // Kilit tek tıkta yalnız yolo↔önceki arasında gidip geliyordu; ne yaptığı
+  // belirsizdi. Dock kip çipiyle aynı menü.
+  ev.preventDefault();
+  const pop = dockPop($("authority"));
+  if (!pop) return;
+  pop.append(mk("div", "pop-head", t("Yetki kipi")));
+  for (const kind of MODE_ORDER) {
+    pop.append(popRow(t(AUTHORITY[kind]), t(MODE_TELL[kind]), kind === mode, async () => {
+      const was = mode;
+      setAuthority(kind);
+      const answer = await post("/api/settings", { permissions: { mode: kind } });
+      if (answer && answer.ok === false) setAuthority(was);
+    }));
+  }
+  placePop($("authority"));
 });
 
 // --- dock: kompozer altındaki durum şeridi ------------------------------
@@ -2364,11 +2499,10 @@ function dockContext(promptTotal, tahmin, kirilim) {
 
 // --- maliyet çipi -------------------------------------------------------
 //
-// Bu turun tahmini harcaması, Claude Code'un /usage ruhuyla: "≈$0.42".
-// Fiyat OpenRouter kataloğundan geliyor (usage/fiyat olayında USD/token);
-// bilinmiyorsa (yerel sunucu, katalog dışı model) çip token sayısına düşer —
-// yanlış bir dolar rakamı basmaktan iyi. Tıklayınca oturum toplamı ve
-// girdi/çıktı kırılımı açılıyor.
+// Oturum toplamı, Claude Code'un /usage ruhuyla: "≈$0.42". Konuşmayı
+// yeniden açınca geçmiş turlar da tohumlanır. Fiyat OpenRouter
+// kataloğundan; bilinmiyorsa çip token sayısına düşer. Tıklayınca bu tur
+// + oturum kırılımı açılır.
 
 let fiyat = null;                              // {girdi, cikti} USD/token | null
 let kullanim = { tur: null, oturum: null };    // usage olayının toplamları
@@ -2396,21 +2530,25 @@ function premiumMu() { return !!(fiyat && fiyat.cikti * 1e6 > PREMIUM_USD_M); }
 function dockCost() {
   const chip = $("dock-cost");
   const tur = kullanim.tur;
-  // Sınır konmuşsa çip ilk turdan önce de görünür: emniyet kemerinin
-  // takılı olduğu görünmeli, harcama sıfırken bile.
-  if ((!tur || !(tur.girdi || tur.cikti)) && !butce) { chip.hidden = true; return; }
+  const oturum = kullanim.oturum;
+  // Çip OTURUM toplamını gösterir — konuşmayı yeniden açınca geçmiş
+  // harcama da buraya tohumlanır. "Bu tur" kırılımda kalır.
+  const varMi = oturum && (oturum.girdi || oturum.cikti || oturum.cagri);
+  if (!varMi && !butce) { chip.hidden = true; return; }
   chip.hidden = false;
   chip.classList.toggle("premium", premiumMu());
-  const harcanan = fiyat && kullanim.oturum ? maliyet(kullanim.oturum) : null;
-  let metin = !tur || !(tur.girdi || tur.cikti) ? "≈$0.00"
-    : fiyat ? "≈" + para(maliyet(tur))
-    : kisaTok(tur.girdi + tur.cikti) + " tok";
+  const harcanan = fiyat && oturum ? maliyet(oturum) : null;
+  let metin = !varMi ? "≈$0.00"
+    : fiyat ? "≈" + para(harcanan)
+    : kisaTok((oturum.girdi || 0) + (oturum.cikti || 0)) + " tok";
   // Sınır varken çip iki sayıyı birden taşıyor: oturumda ne harcandı ve
   // tavan ne. "Ne kadar kaldı" sorusu kutuyu açmadan cevaplansın.
   if (butce) metin += " · " + para(harcanan == null ? 0 : harcanan) + "/" + para(butce);
   chip.textContent = metin;
   chip.classList.toggle("over", !!(butce && harcanan != null && harcanan >= butce));
-  chip.title = t("Bu turun tahmini harcaması — tıkla: kırılım")
+  chip.title = t("Bu oturumun tahmini toplam harcaması — tıkla: kırılım")
+    + (tur && (tur.girdi || tur.cikti) && fiyat
+      ? t(" · bu tur: ") + "≈" + para(maliyet(tur)) : "")
     + (butce ? t(" · oturum sınırı: ") + para(butce) : "")
     + (premiumMu() ? t(" · premium model (çıktı > $20/M)") : "");
 }
@@ -2884,10 +3022,19 @@ function ensureWork() {
         const son = cocuklar[cocuklar.length - 1];
         if (son.classList.contains("done") && !son.classList.contains("open")) {
           son.click();
+        } else if (!son.classList.contains("done") && !son.classList.contains("open")) {
+          // Canlı "Düşünüyor": gövdeyi açmak yetmez — kutuyu da aç.
+          son.classList.add("open");
+          if (thought) {
+            son.textContent = thought.trim();
+            son.scrollTop = 0;
+          }
         }
       }
-      (body.childElementCount ? body : head)
-        .scrollIntoView({ block: "nearest", behavior: "smooth" });
+      revealAboveComposer(body);
+    } else {
+      clearFitAboveComposer(body);
+      for (const c of body.querySelectorAll(".think")) clearFitAboveComposer(c);
     }
   };
   thread.append(head, body);
@@ -3890,7 +4037,8 @@ const GOAL_FOLD_KEY = "neo.goals.folded";
 // Panel ne olduğunu KENDİ anlatıyor. Kullanıcının sorusu buydu: "bu
 // görevleri kim oluşturuyor bilmiyorum". Cevap ekranda dursun.
 const GOAL_ACIKLAMA =
-  "Bunlar neo'nun kendine yazdığı iş listesi — uzun işlerde ne yaptığını takip etmek için. Sen de ekleyebilir, silebilirsin.";
+  "Neo'nun uzun işlerde kendi yazdığı adım listesi (Cursor görev listesi gibi). "
+  + "Sohbet geçmişi değil — madde yoksa sekme de yok. Sen de ekleyip silebilirsin.";
 
 const Goals = (() => {
   const items = new Map();   // id → { text, status, eski } — ekleniş sırasıyla
@@ -3937,92 +4085,97 @@ const Goals = (() => {
     });
   }
 
-  // Sağ üstteki iş listesi aynası: adım durumları tek bakışta.
-  // İlk AKTİF madde "şu an çalışılan" sayılır (neo listeyi yukarıdan
-  // aşağı yürütüyor) — ● ile atar; bitenler ✓, kalanlar ○.
-  let dockFolded = false;
-  try { dockFolded = localStorage.getItem("neo-plan-dock") === "katli"; } catch { /* dosya:// */ }
-
-  function renderDock() {
-    const kart = $("plan-dock");
-    if (!kart) return;
+  // Viewer sekmesi (plan:goals): yüzen kart yok — terminal üstüne binmez.
+  function paint(host) {
+    if (!host) return;
+    host.textContent = "";
+    const pane = document.createElement("div");
+    pane.className = "goals-pane";
     const rows = [...items.entries()];
-    if (!rows.length || innerWidth <= 1100) { kart.hidden = true; return; }
-    kart.hidden = false;
     const done = rows.filter(([, g]) => g.status === "done").length;
-    const head = $("plan-dock-head");
-    head.textContent = (dockFolded ? "▸ " : "▾ ") + t("İş listesi")
-      + " · " + done + "/" + rows.length;
+    const head = document.createElement("div");
+    head.className = "goals-pane-head";
+    head.textContent = t("İş listesi") + (rows.length ? " · " + done + "/" + rows.length : "");
     head.title = t("neo'nun kendine yazdığı iş listesi — tıkla: katla/aç");
-    const body = $("plan-dock-body");
-    body.hidden = dockFolded;
-    body.textContent = "";
-    if (dockFolded) return;
-    let calisan = false;
-    for (const [id, g] of rows.slice(0, 10)) {
-      const row = document.createElement("div");
-      const simdi = g.status === "active" && !calisan;
-      if (simdi) calisan = true;
-      row.className = "plan-step " + g.status + (simdi ? " now" : "");
-      const mark = document.createElement("i");
-      mark.textContent = g.status === "done" ? "✓"
-        : g.status === "dropped" ? "×" : simdi ? "●" : "○";
-      const label = document.createElement("span");
-      label.textContent = g.text;
-      label.title = g.text;
-      row.append(mark, label);
-      // Dock salt ayna değil: madde buradan da kapanır/silinir. Kullanıcı
-      // düzenleme düğmesini panelde arıyordu, bulamıyordu — listeyi asıl
-      // gördüğü yer burası.
-      if (g.status === "active") {
-        row.append(goalBtn("✓", t("Tamamlandı"), () => act(id, "done")),
-                   goalBtn("×", t("Kaldır"), () => act(id, "drop")));
+    pane.append(head);
+    const ne = document.createElement("p");
+    ne.className = "goals-what";
+    ne.textContent = t(GOAL_ACIKLAMA);
+    pane.append(ne);
+    if (!rows.length) {
+      const blank = document.createElement("p");
+      blank.className = "viewer-blank";
+      blank.textContent = t("Aktif madde yok.");
+      pane.append(blank);
+    } else {
+      let calisan = false;
+      for (const [id, g] of rows.slice(0, 40)) {
+        const row = document.createElement("div");
+        const simdi = g.status === "active" && !calisan;
+        if (simdi) calisan = true;
+        row.className = "plan-step " + g.status + (simdi ? " now" : "");
+        const mark = document.createElement("i");
+        mark.textContent = g.status === "done" ? "✓"
+          : g.status === "dropped" ? "×" : simdi ? "●" : "○";
+        const label = document.createElement("span");
+        label.textContent = g.text;
+        label.title = g.text;
+        row.append(mark, label);
+        if (g.status === "active") {
+          row.append(goalBtn("✓", t("Tamamlandı"), () => act(id, "done")),
+                     goalBtn("×", t("Kaldır"), () => act(id, "drop")));
+        }
+        pane.append(row);
       }
-      body.append(row);
+      if (rows.length > 40) {
+        const more = document.createElement("div");
+        more.className = "plan-step more";
+        more.textContent = "…+" + (rows.length - 40);
+        pane.append(more);
+      }
     }
-    if (rows.length > 10) {
-      const more = document.createElement("div");
-      more.className = "plan-step more";
-      more.textContent = "…+" + (rows.length - 10);
-      body.append(more);
+    pane.append(addRow());
+    if (rows.length) {
+      const temiz = document.createElement("button");
+      temiz.type = "button";
+      temiz.className = "goals-clear" + (clearArmed ? " armed" : "");
+      temiz.textContent = clearArmed ? t("Emin misin?") : t("tümünü temizle");
+      temiz.onclick = (ev) => {
+        ev.stopPropagation();
+        if (!clearArmed) { clearArmed = true; paint(host); return; }
+        clearArmed = false;
+        ask("clear").then((res) => { if (res && res.ok) items.clear(); render(); });
+      };
+      pane.append(temiz);
     }
-    // Kendi maddeni ekle + tümünü temizle: goals paneliyle aynı defter.
-    body.append(addRow());
-    const temiz = document.createElement("button");
-    temiz.type = "button";
-    temiz.className = "goals-clear" + (clearArmed ? " armed" : "");
-    temiz.textContent = clearArmed ? t("Emin misin?") : t("tümünü temizle");
-    temiz.onclick = (ev) => {
-      ev.stopPropagation();
-      if (!clearArmed) { clearArmed = true; renderDock(); return; }
-      clearArmed = false;
-      ask("clear").then((res) => { if (res && res.ok) items.clear(); render(); });
-    };
-    body.append(temiz);
+    host.append(pane);
+  }
+
+  function renderViewer() {
+    if (typeof Viewer === "undefined" || !Viewer.hostedGoals || !Viewer.hostedGoals()) return;
+    const el = document.getElementById("viewer-body");
+    if (el) paint(el);
   }
 
   function render() {
-    renderDock();
+    renderViewer();
+    if (typeof Viewer !== "undefined" && Viewer.setGoalsPin)
+      Viewer.setGoalsPin(items.size > 0);
     const box = $("goals");
     if (!box) return;
-    // Boş durumda panel yok: yer de kaplamıyor (artık akışın kardeşi).
     if (!items.size) { box.hidden = true; clearArmed = false; return; }
     box.hidden = false;
     const active = [...items.values()].filter((g) => g.status === "active").length;
-    // Katlıyken TEK SATIR ve ne olduğunu söylüyor: "◷ 3 iş listesi".
-    // "Hedefler · 3" kimseye bir şey anlatmıyordu.
     $("goals-head").textContent = folded
       ? "◷ " + (active || items.size) + t(" iş listesi")
       : t("İş listesi") + (active ? " · " + active : "");
-    $("goals-head").title = t("neo'nun kendine yazdığı iş listesi — tıkla: katla/aç");
+    $("goals-head").title = t("neo'nun kendine yazdığı adım listesi — tıkla: katla/aç");
     box.classList.toggle("folded", folded);
     const body = $("goals-body");
     body.hidden = folded;
-    if (folded) return;   // katlı: gövde hiç kurulmuyor
+    if (folded) return;
     body.textContent = "";
 
-    // Açılınca ilk satır: bu liste nedir, kim yazıyor, kullanıcı ne
-    // yapabilir. Kullanıcının sorusu buydu — cevap ekranda dursun.
     const ne = document.createElement("p");
     ne.className = "goals-what";
     ne.textContent = t(GOAL_ACIKLAMA);
@@ -4036,12 +4189,9 @@ const Goals = (() => {
       mark.textContent = g.status === "done" ? "✓" : g.status === "dropped" ? "×" : "○";
       const label = document.createElement("span");
       label.textContent = g.text;
-      // Kırpılan madde üzerine gelince tam okunur; durum da yanında.
       label.title = g.text + (g.status === "done" ? " — " + t("tamamlandı")
                             : g.status === "dropped" ? " — " + t("bırakıldı") : "");
       row.append(mark, label);
-      // "Kim koydu bunu" sorusunun yarısı: bu madde bu oturumdan değil,
-      // geçmiş bir oturumdan kalmış.
       if (g.eski) {
         const rozet = document.createElement("span");
         rozet.className = "goal-eski";
@@ -4049,9 +4199,6 @@ const Goals = (() => {
         rozet.title = t("Geçen oturumlardan kaldı");
         row.append(rozet);
       }
-      // Yönetim: yalnızca aktif maddede ve yalnızca üzerine gelince.
-      // Panel salt gösterim değil artık — birikmiş hedefi kullanıcı da
-      // kapatabiliyor.
       if (g.status === "active") {
         row.append(goalBtn("✓", t("Tamamlandı"), () => act(id, "done")),
                    goalBtn("×", t("Kaldır"), () => act(id, "drop")));
@@ -4064,8 +4211,6 @@ const Goals = (() => {
       more.textContent = "…+" + (rows.length - GOAL_SHOW);
       body.append(more);
     }
-    // Tümünü temizle: iki adımlı. İlk tık soruyor, ikincisi uyguluyor —
-    // birikmiş bir listeyi tek yanlış tıkla silmek istemezsin.
     const clear = document.createElement("button");
     clear.type = "button";
     clear.className = "goals-clear" + (clearArmed ? " armed" : "");
@@ -4080,9 +4225,6 @@ const Goals = (() => {
       });
     };
     body.append(clear);
-
-    // Kullanıcının kendi maddesi: liste artık iki taraflı. "Kim
-    // oluşturuyor" sorusunun diğer yarısı — sen de oluşturabilirsin.
     body.append(addRow());
   }
 
@@ -4103,7 +4245,7 @@ const Goals = (() => {
       });
     };
     alan.onkeydown = (ev) => {
-      ev.stopPropagation();   // sohbet kısayolları alana karışmasın
+      ev.stopPropagation();
       if (ev.key === "Enter") { ev.preventDefault(); gonder(); }
     };
     alan.onclick = (ev) => ev.stopPropagation();
@@ -4127,19 +4269,13 @@ const Goals = (() => {
     return b;
   }
 
-  // Biten madde hemen kaybolmuyor: üstü çizili hali okunacak kadar durup
-  // listeden düşüyor. Silme id üzerinden — bu arada gelen yeni hedefler
-  // ve yeniden çizimler zamanlayıcıyı şaşırtmıyor.
   function settle(id) {
     setTimeout(() => { items.delete(id); render(); }, GOAL_LINGER);
   }
 
-  // Sayfa açılışı: /api/state'ten gelen aktif hedefler.
   function seed(list) {
     items.clear();
     for (const g of list || []) {
-      // `eski`: madde geçmiş bir oturumda açılmış — panelde rozetle
-      // ayrılıyor ("kim koydu bunu" sorusunun yarısı).
       if (g && g.id) items.set(g.id, { text: g.text || g.id, status: "active", eski: !!g.eski });
     }
     render();
@@ -4153,33 +4289,23 @@ const Goals = (() => {
 
   function status(id, state) {
     const got = items.get(id);
-    if (!got) return;   // bilinmeyen hedef: gösterilecek metin yok, sessiz geç
+    if (!got) return;
     got.status = state === "done" ? "done" : "dropped";
     render();
     settle(id);
   }
 
-  // Başlık gerçek bir düğme: tıklama ve klavye (Enter/Space) katlayıp açar.
-  // Tercih hatırlanıyor — her açılışta aynı kararı vermek yorucu.
   $("goals-head").addEventListener("click", () => {
     folded = !folded;
     rememberFold();
     render();
   });
-  const dockHead = $("plan-dock-head");
-  if (dockHead) dockHead.addEventListener("click", () => {
-    dockFolded = !dockFolded;
-    try { localStorage.setItem("neo-plan-dock", dockFolded ? "katli" : "acik"); } catch { /* dosya:// */ }
-    render();
-  });
-  window.addEventListener("resize", renderDock);
-  // Dar pencerede liste sohbetten yer çalmasın: kendiliğinden katlanıyor.
   window.addEventListener("resize", () => {
     if (window.innerWidth <= GOAL_FOLD_WIDTH && !folded) folded = true;
     render();
   });
 
-  return { seed, push, status };
+  return { seed, push, status, paint };
 })();
 
 // --- artifact kartı -----------------------------------------------------
@@ -4615,7 +4741,7 @@ function handle(e) {
           ? stepsWord(work.steps) + since(work.since)
           : t("İşleniyor") + since(work.since)));
         // Şerit kapalıysa zorla açma — sadece konumu netleştir.
-        work.head.scrollIntoView({ block: "nearest", behavior: "smooth" });
+        revealAboveComposer(work.head);
       }
       break;
     }
@@ -4684,6 +4810,11 @@ function handle(e) {
     case "git":
       if (typeof GitBar !== "undefined") GitBar.refresh();
       break;
+    case "session_title":
+      // Model başlığı koydu: kenar listesi sayfa yenilemeden güncellensin.
+      if (typeof History !== "undefined" && History.applyTitle)
+        History.applyTitle(e.id, e.title);
+      break;
 
     // Oturum değişti (yeni ya da devam): thread temizlenir; devam eden bir
     // konuşmaysa geçmiş dökümü yüklenir ki kullanıcı kaldığı yeri görsün.
@@ -4695,9 +4826,14 @@ function handle(e) {
       planOffer = null;   // düğme thread ile birlikte gitti; referans kalmasın
       deferredPlans.clear();
       resumeFollow(false);   // yeni döküm: takip baştan açık
+      // Sayaçlar sohbete özel: yeni konuşmada eski harcama asılı kalmasın;
+      // sürdürülen sohbette loadState geçmiş toplamı yazar.
+      kullanim = { tur: null, oturum: null };
+      butce = null;
+      dockCost();
       // Sürdürülen oturum: döküm kadar SAYAÇLAR da kaldığı yerden gelmeli.
       // Durum anlık görüntüsü bağlam çubuğunu ve harcama çipini oturum
-      // günlüğünden tohumluyor — yoksa dolu bir konuşma "%0" görünüyordu.
+      // günlüğünden tohumluyor — yoksa dolu bir konuşma "%0" / "$0" görünüyordu.
       if (e.resumed && e.id) { loadTranscript(e.id); loadState(); }
       else showWelcome();   // taze oturum: karşılama geri gelsin (boş ekran değil)
       // Rail kalıcı bir sütun: konuşma değişimi onu KAPATMAZ ("konuşmaya
@@ -4711,6 +4847,9 @@ function handle(e) {
       // defterine göre kurulmalı — önceki konuşmanın kayıtları bu turun
       // özetine karışmasın.
       if (typeof Degisiklik !== "undefined") Degisiklik.tabanAl();
+      // Klasör/git bağlamı sohbete özel: yeni konuşmada eski repo adı
+      // (neocp / dal) composer üstünde asılı kalmasın.
+      if (typeof GitBar !== "undefined") GitBar.refresh();
       break;
     }
     // "neo ile kes": neo konuşurken uyandırma sözüyle araya girildi —

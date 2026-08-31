@@ -1172,8 +1172,9 @@ const Settings = (() => {
 
     pane.append(el("p", "pane-note",
       t("Bu sekmede seçim ANINDA uygulanır — Kaydet yok; konuşma geçmişi " +
-      "yeni modele taşınır. Ajan o sırada çalışıyorsa değişiklik turun " +
-      "bitmesini bekler — akan bir cevabı yarıda kesmemek için.")));
+      "yeni modele taşınır. Ajan çalışıyorsa değişiklik bir sonraki " +
+      "adımda (araç turu arasında) geçer — akan cevabı yarıda kesmez. " +
+      "Bağlam penceresi katalogdan otomatik dolar; Algıla elle yenilemedir.")));
   }
 
   // Yedek model alanının önerileri. Aynı katalog, ama seçim ZORUNLU değil:

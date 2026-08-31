@@ -192,14 +192,19 @@ class OpenAIBackend:
         # akıl yürütme. Böyle turlarda çaba low'a, çıktı tavanı KESIF_TAVANI'na
         # iner; tavana çarpan tur (finish=length) tam bütçeyle BİR kez
         # yinelenir — kalite tavana kurban edilmez, yalnız gecikme kırpılır.
+        # Kodlama turu: flash'ta high→medium tavanı kalkar (yazma kalitesi).
         kesif = False
+        kodlama = False
         if tools and not self._oto:
-            from ..prompt import kucuk_aile
-            if kucuk_aile(kwargs["model"]) and _kesif_turu(messages):
-                kesif = True
-                kwargs["max_tokens"] = min(self.model.max_tokens, KESIF_TAVANI)
+            from ..prompt import kodlama_turu, kucuk_aile
+            if kucuk_aile(kwargs["model"]):
+                if _kesif_turu(messages):
+                    kesif = True
+                    kwargs["max_tokens"] = min(self.model.max_tokens, KESIF_TAVANI)
+                elif kodlama_turu(messages):
+                    kodlama = True
 
-        if (reasoning := self._reasoning(kesif=kesif)) is not None and not self._no_reasoning:
+        if (reasoning := self._reasoning(kesif=kesif, kodlama=kodlama)) is not None and not self._no_reasoning:
             extra["reasoning"] = reasoning
 
         # Oto kipi: model ücretsiz havuzun başından seçiliyor, sıradaki
@@ -238,15 +243,25 @@ class OpenAIBackend:
                         result = TurnResult(error=(
                             f"{kwargs['model']} yanıt akıtmadı: {exc} "
                             "(iki deneme). Sağlayıcı asılı görünüyor."))
-                if kesif and self._son_finish == "length":
-                    # Tavana çarptı: kırpılmış araç argümanı/cevap işe
-                    # yaramaz. Tam bütçe + normal çabayla tek yineleme.
+                if self._son_finish == "length" and (
+                    kesif
+                    or result.error
+                    or not (result.partial_text or "").strip()
+                ):
+                    # Çıktı tavanı doldu ve kullanılabilir içerik yok (ya da
+                    # keşif tavanı kırptı). finish=length ≠ bağlam doldu:
+                    # çoğu zaman akıl yürütme max_tokens'ı yedi. Aynı isteği
+                    # 5 kez denemek boşuna; bir kez tam bütçe + düşük çaba.
                     kwargs["max_tokens"] = self.model.max_tokens
                     body = dict(kwargs.get("extra_body") or {})
-                    if (tam := self._reasoning()) is not None and not self._no_reasoning:
-                        body["reasoning"] = tam
+                    if (yumusak := self._reasoning(kesif=True)) is not None and not self._no_reasoning:
+                        body["reasoning"] = yumusak
+                    elif not self._no_reasoning:
+                        body.pop("reasoning", None)
                     if body:
                         kwargs["extra_body"] = body
+                    elif "extra_body" in kwargs and not body:
+                        kwargs.pop("extra_body", None)
                     result = await self._stream(kwargs, cancel, callbacks)
             except Exception:
                 # İstek hiç kurulamadı (örn. bağlantı reddi): bu da o
@@ -326,7 +341,7 @@ class OpenAIBackend:
 
         return False
 
-    def _reasoning(self, kesif: bool = False) -> dict[str, Any] | None:
+    def _reasoning(self, kesif: bool = False, kodlama: bool = False) -> dict[str, Any] | None:
         """Düşünme ayarının sunucuya gönderilecek hali.
 
         Bu alan şimdiye kadar yalnızca Claude tarafında geçerliydi; qwen3
@@ -351,18 +366,15 @@ class OpenAIBackend:
             return {"enabled": False}
         # OpenRouter "low/medium/high" kabul ediyor; xhigh/max karşılığı yok.
         effort = {"xhigh": "high", "max": "high"}.get(self.model.effort, self.model.effort)
-        # Küçük/hızlı ailede tavan medium: flash sınıfı modelde her araç
-        # çağrısına yüksek-çaba akıl yürütme, 11 çağrılık işi 900 sn
-        # tavanına taşıdı (28.08 kıyası; OpenCode aynı modeli düz koşup
-        # 140 sn'de bitirdi). Kalite kapılardan geliyor, düşünme süresinden
-        # değil — o koşuda iki taraf da 96+ aldı.
+        # Küçük/hızlı ailede sohbet tavanı medium (28.08: her tur high →
+        # 900 sn). Kodlama turunda tavan kalkar — yazma için high serbest.
         if effort == "high":
             from ..prompt import kucuk_aile
-            if kucuk_aile(self.model.name):
+            if kucuk_aile(self.model.name) and not kodlama:
                 effort = "medium"
         # Keşif turu: bir okumanın ardından gelen çağrıya orta/yüksek çaba
         # akıl yürütme, gecikmenin kendisi (B5 ölçümü). Tavana çarpan tur
-        # zaten tam çabayla yineleniyor.
+        # zaten tam çabayla yineleniyor. Keşif kodlama bayrağından üstün.
         if kesif and effort in ("medium", "high"):
             effort = "low"
         return {"effort": effort} if effort in ("low", "medium", "high") else None
@@ -458,14 +470,32 @@ class OpenAIBackend:
                     ),
                     partial_text="",
                 )
-            else:
+            if finish == "length":
+                # Çıktı bütçesi (max_tokens) doldu; içerik yok. Bu bağlam
+                # penceresi değil — akıl yürütme çoğu zaman tüm çıktı
+                # hakkını yiyor. api_error + 5 deneme aynı sonucu verir;
+                # empty_turn ile döngü kısa cevap / araç çağrısı ister.
                 return TurnResult(
-                    error=(
-                        f"{self.model.name} boş yanıt döndürdü "
-                        f"(finish_reason={finish!r}). Model araç kullanımını "
-                        "desteklemiyor olabilir ya da bağlam sınırına çarpmış."
-                    )
+                    message=SimpleMessage(
+                        content=[{
+                            "type": "text",
+                            "text": (
+                                "Çıktı bütçesi doldu; görünür cevap veya "
+                                "araç çağrısı üretemedim."
+                            ),
+                        }],
+                        stop_reason="empty_turn",
+                        usage=usage,
+                    ),
+                    partial_text="",
                 )
+            return TurnResult(
+                error=(
+                    f"{self.model.name} boş yanıt döndürdü "
+                    f"(finish_reason={finish!r}). Sağlayıcı içerik "
+                    "göndermedi; modeli değiştirmek veya yeniden denemek gerekebilir."
+                )
+            )
 
         # Sunucu finish_reason'ı atlarsa araç çağrısının varlığı belirleyicidir;
         # aksi halde döngü tool_use turunu end_turn sanıp erken durur.

@@ -145,6 +145,7 @@ const Apps = (() => {
   const PKIND = {
     web: { glyph: "◈", tag: "web" },
     service: { glyph: "⧉", tag: "servis" },
+    desktop: { glyph: "▣", tag: "masaüstü" },
     tool: { glyph: "▶", tag: "betik" },
     doc: { glyph: "≡", tag: "belge" },
   };
@@ -164,8 +165,8 @@ const Apps = (() => {
     search.addEventListener("input", () => { query = search.value.trim(); render(); });
   }
   if (chips) {
-    const KINDS = [["", "Tümü"], ["web", "Web"], ["service", "Servis"],
-                   ["tool", "Betik"], ["doc", "Belge"]];
+    const KINDS = [["", "Tümü"], ["web", "Web"], ["desktop", "Masaüstü"],
+                   ["service", "Servis"], ["tool", "Betik"], ["doc", "Belge"]];
     for (const [key, label] of KINDS) {
       const chip = el("button", "apps-chip" + (key === "" ? " on" : ""), label);
       chip.dataset.kind = key;
@@ -344,8 +345,8 @@ const Apps = (() => {
     const row = el("div", "proj-actions");
     const stop = (ev) => ev.stopPropagation();
 
-    // Aç: bir adresi varsa canlı uygulamayı, yoksa giriş dosyasını.
-    if ((live && live.address) || p.entry) {
+    // Aç: canlı adres, masaüstü (Başlat), ya da giriş dosyası.
+    if ((live && live.address) || p.entry || p.kind === "desktop") {
       const open = el("button", "proj-btn primary", "Aç");
       open.onclick = (ev) => { stop(ev); openApp(p, live); };
       row.append(open);
@@ -396,7 +397,8 @@ const Apps = (() => {
     return { cls: "idle", label: "durdu" };
   }
 
-  const runnable = (p) => !!(p.run || p.kind === "service" || p.kind === "tool");
+  const runnable = (p) => !!(p.run || p.kind === "service" || p.kind === "tool"
+                             || p.kind === "desktop");
 
   // Bu projenin çalışan bir süreci var mı? İki kaynak: (1) çalışanlar
   // listesi (süreç defteri), (2) sunucunun kartın kendisine iliştirdiği
@@ -411,6 +413,17 @@ const Apps = (() => {
                address: p.address, stoppable: p.stoppable !== false };
     }
     return null;
+  }
+
+  // "Aç": canlı adres → kapsül; masaüstü → Başlat (pencere); yoksa giriş.
+  function openApp(p, live) {
+    if (live && live.address) { openLive(p, live); return; }
+    if (p.kind === "desktop" || (p.entry && /\.exe$/i.test(p.entry || ""))) {
+      launchProject(p);
+      return;
+    }
+    if (typeof Viewer !== "undefined" && p.entry) { Viewer.present(p.entry); close(); return; }
+    toast(p.name + ": " + (p.neden || t("Açılacak giriş dosyası bulunamadı")));
   }
 
   // Kartlardaki canlı durumu tazeler: yeşil nokta + durum rozeti + eylem.
@@ -456,15 +469,6 @@ const Apps = (() => {
         if (view) paintViewLive(view, p);
       }
     });
-  }
-
-  // "Aç": çalışan bir uygulama varsa CANLI adresi (kapsülde), yoksa giriş
-  // dosyası (görüntüleyici). Kullanıcı için ikisi de "aç" — hangi yolun
-  // seçileceği panelin işi.
-  function openApp(p, live) {
-    if (live && live.address) { openLive(p, live); return; }
-    if (typeof Viewer !== "undefined" && p.entry) { Viewer.present(p.entry); close(); return; }
-    toast(p.name + ": " + (p.neden || t("Açılacak giriş dosyası bulunamadı")));
   }
 
   function openLive(p, live) {
@@ -674,22 +678,21 @@ const Apps = (() => {
         })).json();
       } catch { toast(p.name + " başlatılamadı"); return; }
       if (!res.ok) { toast(res.error || "Başlatılamadı"); return; }
-      if (res.already) { toast(p.name + " zaten çalışıyor"); drawRunning(); return; }
+      if (res.already) {
+        toast(res.note || (p.name + " zaten çalışıyor"));
+        drawRunning();
+        return;
+      }
       drawRunning(); setTimeout(drawRunning, 1400);
-      // Kapsül YALNIZCA servis/web projeler için: bir adres bağlamaları
-      // beklenir, kapsül onu gömer. Tek seferlik bir betik (tool) sunucu
-      // değildir — çalışır, işini yapar, çıkar; onu kapsülde "süreç durdu"
-      // diye göstermek yanlıştı. Betik kendi konsolunda çalışır, toast yeter.
+      // Kapsül YALNIZCA servis/web projeler için. Masaüstü kendi penceresinde.
       const servesWeb = p.kind === "service" || p.kind === "web";
       if (servesWeb && p.scope !== "external" && typeof Capsule !== "undefined" && res.pid) {
         toast(p.name + " başlatıldı");
         Capsule.open({ name: p.name, pid: res.pid });
         close();
+      } else if (p.kind === "desktop") {
+        toast(res.note || (p.name + " açıldı — görev çubuğunda penceresini ara"));
       } else {
-        // Betik/dış uygulama: akıbetini söyle. "Kendi penceresinde çalışıyor"
-        // tek başına bilgi vermiyordu — kullanıcı nerede bulacağını
-        // bilmiyordu. Kısa bir süre sonra bak: hâlâ yaşıyorsa Çalışıyor
-        // bölümünü işaret et, bittiyse bittiğini söyle.
         toast(p.name + " başlatıldı…");
         if (res.pid) {
           setTimeout(async () => {

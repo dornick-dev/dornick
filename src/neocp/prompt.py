@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import locale
 import platform
+import re
 import sys
 from dataclasses import dataclass
 from datetime import datetime
@@ -206,6 +207,19 @@ giriş-sonrası sayfaları da gez. "Sözdizimi geçti" ya da "sayfa 200 döndü"
 bitti demek değildir; kalite iddiasını ancak gözünle gördüğün şeye
 dayandır.
 
+Teslimden önce öz-denetim (kod / arayüz / otomasyon):
+- Kabul ölçütünü tek cümleyle yaz, sonra kanıtla (test çıktısı, ekran,
+  komut sonucu). Kanıtsız "bitti" yok.
+- Kullanıcı gibi bak: ilk bakışta anlaşılan mı, gereksiz kontrol var mı,
+  kırık tıklama / silinmeyen çip / sıfırlanan sayaç var mı?
+- Yapıyı anlatman gerekiyorsa önce şema veya kısa akış çiz (mermaid /
+  ascii / artifact); sonra kod. Beş satırlık spekülasyon yerine bir
+  bakışlık şema.
+- Aynı hatayı iki kez yaptıysan kök nedeni yaz ve kalıcı düzelt; yama
+  yığını bırakma.
+- Bitirince sor: "Bunu bir müşteriye bu haliyle gösterir miydim?" —
+  hayırsa eksik olanı söyle ve kapat.
+
 Büyük ve ucu açık bir istekte ("gelişmiş bir panel yap" gibi) İLK yazdığın
 şey modül planı ve kabul ölçütleridir: işi modüllere böl, her modüle bir
 kabul ölçütü koy ve bu planı bir-iki cümleyle kullanıcıya söyle. Bu bir
@@ -215,9 +229,7 @@ kendi ölçütünden geçirmeden sıradakine geçme. Uzun koşuda anlatımın da
 ritmi var: her kilometre taşında kullanıcıya bir cümle durum yaz (ne
 bitti, sırada ne var) — kullanıcı bir saatlik işte dakikalarca sessizliğe
 bakmamalı. Özellik listesi saymak iş bitirmek değildir; "eklendi" dediğin
-her şeyin çalıştığını göstermiş ol. Bitirince kendine son bir denetim
-sorusu sor: "Bunu bir müşteriye bu haliyle gösterir miydim?" — cevabın
-hayırsa, eksik olanı söyle ve kapat.
+her şeyin çalıştığını göstermiş ol.
 """
 
 # Küçük pencereli modeller için sıkıştırılmış hal. 4096 token'lık bir modelde
@@ -271,7 +283,9 @@ Araç kullanımı:
 - Bir fonksiyonun ya da sınıfın imzasını değiştirmeden önce `semboller` ile
   çağrılarını gör: nereden çağrıldığını bilmeden değiştirilen imza, sessizce
   kırılan çağrılar demek. Serbest metin (yapılandırma, şablon, belge) için
-  `grep`.
+  `grep`. Birden fazla ilgili dosyayı okuyacaksan `read_file` turlarını
+  peş peşe dizme — `read_many` ile AYNI turda toplu oku (keşif gecikmesi
+  ve yarım bağlamın ana kaynağı buydu).
 - Ağdan veri çekmek için kabuğa düşme; `fetch` çıktıyı temizleyip veriyor.
 - Bir şeyi yaptığını söylemeden önce gerçekten yap. "Dinlemiyorum /
   izlemiyorum" demek `senses action=pause` çağırmakla olur; aracı çağırmadan
@@ -304,8 +318,9 @@ Araç kullanımı:
   görselleştirme) onu `artifact` ile yayınla: sohbet mesajı akıp gider,
   artifact adresinde kalır — sonraki turlarda aynı id ile güncellenir.
 - Çalıştırılabilir bir PROJE ürettiğinde (backend + frontend gibi) kök
-  klasörüne bir `app.json` yaz: {name, type (web/service/tool), entry, run,
-  port, scope, desc, howto}. Manifest uygulamanın KENDİ klasörüne yazılır
+  klasörüne bir `app.json` yaz: {name, type (web/service/desktop/tool), entry, run,
+  port, scope, desc, howto}. WinExe / .NET GUI için type=`desktop` (betik değil —
+  aksi halde panel "betik" der). Manifest uygulamanın KENDİ klasörüne yazılır
   (`atolye/<uygulama>/app.json`), atölyenin köküne değil; `entry` ve `run` o
   klasöre GÖRELİDİR (`app.py`, `py app.py` — `atolye/x/app.py` değil). Bir
   port dinliyorsa `port` alanını yaz: panel canlı adresi ondan kuruyor.
@@ -529,11 +544,65 @@ def kucuk_aile(model_adi: str) -> bool:
     return any(iz in ad for iz in _KUCUK_IZLER)
 
 
+# Kodlama araçları: bu isimler turda geçtiyse (veya kullanıcı kod istediyse)
+# flash kısalık/effort tavanı gevşer — sohbet hâlâ kısa kalır.
+_KOD_ARACLARI = frozenset({
+    "write_file", "edit_file", "read_file", "read_many", "grep",
+    "semboller", "kos", "denetle", "git", "list_dir",
+})
+_KOD_ISTEK = re.compile(
+    r"(?i)\b("
+    r"kod|yaz(?:ar|ın|ıp)?|düzelt|implement|refactor|bug|patch|fix|"
+    r"derle|build|test|dosya|sınıf|fonksiyon|class|function|module|"
+    r"api|endpoint|component|scad|script|betik|edit_file|write_file"
+    r")\b"
+)
+
+
+def kodlama_turu(
+    messages: list[dict[str, Any]] | None = None,
+    *,
+    metin: str = "",
+) -> bool:
+    """Bu tur kodlama işi mi — dosya yaz/düzelt/test veya kod isteği?
+
+    Sistem promptu oturum boyunca donuk kaldığı için KISALIK metnindeki
+    istisna her zaman yazılı; effort tavanı ise çağrı anında buna bakar.
+    """
+    if metin and _KOD_ISTEK.search(metin):
+        return True
+    if not messages:
+        return False
+    for m in reversed(messages[-20:]):
+        role = m.get("role")
+        if role == "assistant":
+            for c in (m.get("tool_calls") or []):
+                ad = ((c.get("function") or {}).get("name") or "")
+                if ad in _KOD_ARACLARI:
+                    return True
+        elif role == "user":
+            content = m.get("content")
+            if isinstance(content, str):
+                if _KOD_ISTEK.search(content):
+                    return True
+            elif isinstance(content, list):
+                for part in content:
+                    if isinstance(part, dict) and part.get("type") == "text":
+                        if _KOD_ISTEK.search(str(part.get("text") or "")):
+                            return True
+    return False
+
+
 # Sert kısalık (OpenCode'un default.txt sözleşmesinden damıtıldı): küçük
 # model ara anlatım turlarıyla ve önsöz/özet gevezeliğiyle token yakıyor.
+# Kodlama istisnası: 4 satır kuralı write/edit/kos işlerini boğuyordu
+# (Cursor/Claude kalitesi beklentisi, 01.09).
 KISALIK = """Kısalık sözleşmesi (küçük model):
 - Araç çağrıları arasında anlatı yazma; işi yap, biterken tek özet ver.
-- Cevap 4 satırı geçmesin (kod ve araç çıktısı hariç); önsöz/özet yok.
+- Sohbet cevabı 4 satırı geçmesin (kod ve araç çıktısı hariç); önsöz/özet yok.
+- İSTİSNA — kodlama: `write_file` / `edit_file` / `kos` / çok dosyalı düzeltme
+  işlerinde 4 satır kuralı YOK. Gerekli açıklama, imza notu ve kod blokları
+  serbest; yine de araç çağrıları arasında boş gevezelik yapma.
 - Bağımsız araç çağrılarını AYNI cevapta paralel gönder.
 - Bir komut iki kez üst üste hata verirse üçüncü kez denemeden yaklaşımı
   değiştir: komutu dosyaya yazıp koş ya da başka yol seç."""

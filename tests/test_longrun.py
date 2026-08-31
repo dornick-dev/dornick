@@ -705,6 +705,7 @@ def test_a_resumed_session_seeds_the_counters_from_real_usage(tmp_path: Path) ->
     durum = _gecmis_kullanim(agent)
 
     assert durum["prompt_total"] == 5400, "SON turun istemi geçerli olan"
+    assert durum["girdi"] == 6600, "maliyet: tüm turların istemi toplanır"
     assert durum["output"] == 130, "çıktı oturum boyunca toplanır"
     assert durum["cagri"] == 2
     assert durum["tahmin"] is False
@@ -725,6 +726,7 @@ def test_an_old_log_without_usage_falls_back_to_an_estimate(tmp_path: Path) -> N
 
     assert durum["tahmin"] is True
     assert durum["prompt_total"] > 0
+    assert durum["girdi"] == durum["prompt_total"]
     assert durum["cagri"] == 0
 
 
@@ -735,7 +737,7 @@ def test_a_fresh_session_really_starts_at_zero(tmp_path: Path) -> None:
     agent = _oturum(tmp_path, [])
 
     assert _gecmis_kullanim(agent) == {
-        "prompt_total": 0, "output": 0, "cagri": 0, "tahmin": False}
+        "prompt_total": 0, "girdi": 0, "output": 0, "cagri": 0, "tahmin": False}
 
 
 async def test_the_snapshot_carries_the_resumed_context(tmp_path: Path) -> None:
