@@ -2403,3 +2403,11 @@ def test_native_tour_fixes_are_wired() -> None:
     assert "pano_oku, pano_yaz" in desktop_src   # ana pencerede expose
     assert "kontrol-canli" in APP_JS
     assert "body.kontrol-canli::after" in CSS
+
+
+def test_the_strip_sub_line_never_overflows_the_column() -> None:
+    """Natif tur (31.08, derin): head-sub %100 flex-taban + 16px sol marj
+    kutudan tasiyordu — dar sutunda sohbetin altinda yatay kaydirma cubugu
+    beliriyordu. Taban marji dusecek."""
+    sub = CSS.split(".acts-head .head-sub {", 1)[1].split("}", 1)[0]
+    assert "calc(100% - 16px)" in sub

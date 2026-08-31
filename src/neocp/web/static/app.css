@@ -913,7 +913,9 @@ a.md-source { text-decoration: none; color: inherit; }
 }
 /* Cursor'daki Thinking: özet satırın altında sakin ikinci satır. */
 .acts-head .head-sub {
-  flex: 1 0 100%;
+  /* %100 taban + 16px sol marj kutudan taşıyordu: dar sütunda sohbet
+     yatay kaydırma çubuğu doğuruyordu (natif tur, 31.08). */
+  flex: 1 0 calc(100% - 16px);
   margin: 1px 0 0 16px;
   font: 12px/1.4 var(--font); font-style: italic;
   color: var(--faint); letter-spacing: 0;
