@@ -1,5 +1,21 @@
 # Changelog
 
+## 1.3.1 — 2026-08-31
+
+Packaging completeness pass — nothing to install by hand, ever:
+
+* An import sweep with the installer's own embedded Python now proves
+  every third-party package the product touches is bundled (PDF, vision,
+  audio, tray, browser — 19/19; `ultralytics` is deliberately the
+  developer-only CUDA path, the shipped path is ONNX).
+* The YOLO weight (`yolov8n.onnx`) ships inside the camera component:
+  the first camera glance no longer downloads anything and works offline.
+* Plus the owner's laptop batch: consistent launcher environment,
+  AppUserModelID for proper taskbar identity, Windows toast
+  notifications, speech-recognition and audio-decode refinements,
+  PNG logo support, camera-handling optimisations.
+
+
 ## 1.3.0 — 2026-08-30
 
 **The camera stage.** Built on a branch, tried live on a laptop, then

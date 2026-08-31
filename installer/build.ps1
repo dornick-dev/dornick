@@ -184,6 +184,20 @@ if (-not $AtlaKamera) {
     & $PyExe -m pip install --no-warn-script-location `
         --target (Join-Path $Paket "watch\site") opencv-python-headless onnxruntime-gpu
     if ($LASTEXITCODE -ne 0) { throw "kamera paketi kurulamadı" }
+
+    # YOLO ONNX ağırlığı da pakete: kurulu makinede ilk bakış indirme
+    # beklemesin, çevrimdışı da çalışsın (kullanıcı ilkesi: "sonradan
+    # kendi kurması gerekmesin"). İndirme önbelleklenir; sight._model_path
+    # önce bu kopyaya bakar.
+    Adim "YOLO modeli (yolov8n.onnx) paketleniyor"
+    $OnnxUrl  = "https://github.com/ultralytics/assets/releases/download/v8.3.0/yolov8n.onnx"
+    $OnnxCache = Join-Path $Indirme "yolov8n.onnx"
+    if (-not (Test-Path $OnnxCache)) {
+        Invoke-WebRequest -Uri $OnnxUrl -OutFile $OnnxCache
+    }
+    $ModelDizin = Join-Path $Paket "watch\models"
+    New-Item -ItemType Directory -Force $ModelDizin | Out-Null
+    Copy-Item $OnnxCache $ModelDizin
 }
 
 # -- 5) başlatıcı -------------------------------------------------------------

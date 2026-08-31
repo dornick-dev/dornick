@@ -268,3 +268,22 @@ def test_camera_frame_serves_the_lens_buffer() -> None:
     assert "warm=2" not in src
     assert "annotate_jpeg" in src
     assert "boxes" in src
+
+def test_model_path_prefers_the_packaged_copy(tmp_path, monkeypatch) -> None:
+    """Kurulumla gelen ONNX once: kurulu makinede ilk bakis indirme
+    beklemez, cevrimdisi calisir. Paket kopyasi yoksa eski yol."""
+    import sys
+    from neocp import sight
+    sahte_exe = tmp_path / 'python' / 'python.exe'
+    sahte_exe.parent.mkdir(parents=True)
+    sahte_exe.write_bytes(b'x')
+    monkeypatch.setattr(sys, 'executable', str(sahte_exe))
+    # Paket kopyasi yokken ev dizini yolu
+    assert str(sight._model_path()).endswith('yolov8n.onnx')
+    assert '.neocp' in str(sight._model_path())
+    # Paket kopyasi varsa o kazanir
+    m = tmp_path / 'watch' / 'models' / 'yolov8n.onnx'
+    m.parent.mkdir(parents=True)
+    m.write_bytes(b'onnx')
+    assert sight._model_path() == m
+

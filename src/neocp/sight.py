@@ -258,6 +258,17 @@ def _open_ort() -> tuple[Any, str, str, str]:
 
 
 def _model_path() -> Path:
+    """Model ağırlığının yeri: önce KURULUMLA GELEN kopya.
+
+    Kurulum sihirbazı ONNX'i kamera bileşeniyle birlikte paketliyor
+    (watch/models) — kurulu makinede ilk bakış indirme beklemez ve
+    çevrimdışı da çalışır ("kullanıcı sonradan hiçbir şey kurmasın",
+    31.08). Paket kopyası yoksa (kaynaktan koşan geliştirici) eski yol:
+    ~/.neocp/models altına bir kez indirilir.
+    """
+    paketli = Path(sys.executable).resolve().parent.parent / "watch" / "models" / MODEL_NAME
+    if paketli.is_file():
+        return paketli
     return Path.home() / ".neocp" / "models" / MODEL_NAME
 
 
