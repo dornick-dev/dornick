@@ -3309,18 +3309,24 @@ def run(config: Config, *, port: int = 8765, resume: bool = False,
         CF_UNICODETEXT = 13
         u32 = ctypes.windll.user32
         k32 = ctypes.windll.kernel32
+        # 64-bit tuzak: restype bildirilmezse tutamaç 32-bit'e KIRPILIR ve
+        # GlobalLock çöp işaretçiyle patlar (natif turda menü "Yapıştır"ı
+        # sessizce boş dönüyordu, 31.08).
+        u32.GetClipboardData.restype = ctypes.c_void_p
+        k32.GlobalLock.restype = ctypes.c_void_p
+        k32.GlobalLock.argtypes = [ctypes.c_void_p]
+        k32.GlobalUnlock.argtypes = [ctypes.c_void_p]
         if not u32.OpenClipboard(0):
             return ""
         try:
             handle = u32.GetClipboardData(CF_UNICODETEXT)
             if not handle:
                 return ""
-            k32.GlobalLock.restype = ctypes.c_void_p
-            ptr = k32.GlobalLock(ctypes.c_void_p(handle))
+            ptr = k32.GlobalLock(handle)
             try:
                 return ctypes.wstring_at(ptr) if ptr else ""
             finally:
-                k32.GlobalUnlock(ctypes.c_void_p(handle))
+                k32.GlobalUnlock(handle)
         except Exception:
             return ""
         finally:
@@ -3333,20 +3339,25 @@ def run(config: Config, *, port: int = 8765, resume: bool = False,
         veri = str(metin or "")
         u32 = ctypes.windll.user32
         k32 = ctypes.windll.kernel32
+        k32.GlobalAlloc.restype = ctypes.c_void_p
+        k32.GlobalAlloc.argtypes = [ctypes.c_uint, ctypes.c_size_t]
+        k32.GlobalLock.restype = ctypes.c_void_p
+        k32.GlobalLock.argtypes = [ctypes.c_void_p]
+        k32.GlobalUnlock.argtypes = [ctypes.c_void_p]
+        u32.SetClipboardData.restype = ctypes.c_void_p
+        u32.SetClipboardData.argtypes = [ctypes.c_uint, ctypes.c_void_p]
         if not u32.OpenClipboard(0):
             return False
         try:
             u32.EmptyClipboard()
             boyut = (len(veri) + 1) * ctypes.sizeof(ctypes.c_wchar)
-            k32.GlobalAlloc.restype = ctypes.c_void_p
             hglob = k32.GlobalAlloc(GMEM_MOVEABLE, boyut)
             if not hglob:
                 return False
-            k32.GlobalLock.restype = ctypes.c_void_p
-            ptr = k32.GlobalLock(ctypes.c_void_p(hglob))
+            ptr = k32.GlobalLock(hglob)
             ctypes.memmove(ptr, ctypes.create_unicode_buffer(veri), boyut)
-            k32.GlobalUnlock(ctypes.c_void_p(hglob))
-            u32.SetClipboardData(CF_UNICODETEXT, ctypes.c_void_p(hglob))
+            k32.GlobalUnlock(hglob)
+            u32.SetClipboardData(CF_UNICODETEXT, hglob)
             return True
         except Exception:
             return False
