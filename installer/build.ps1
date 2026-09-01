@@ -33,7 +33,8 @@ param(
     # PATLAMIYOR, eğitim bileşenini atlayıp söylüyor — "kurulum paketi
     # üretemedim" demek, kullanıcının istemediği bir bileşen yüzünden
     # orantısız.
-    [string]$TabanDepo = "D:\Projects\ai\dornick-base-model"
+    # HARİCİ depo — diskteki gerçek adı bu (rebrand'de yeniden adlandırılmadı).
+    [string]$TabanDepo = "D:\Projects\ai\neocp-base-model"
 )
 
 $ErrorActionPreference = "Stop"
