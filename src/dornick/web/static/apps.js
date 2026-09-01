@@ -4,7 +4,7 @@
 // Sohbette "bir pano kurdum" cümlesini okumakla o panoyu açıp kullanmak
 // aynı şey değil. Panel projeleri KAPSAMA göre iki grupta çizer —
 //
-//   Sistem içi   dornick'nun içinde (kapsülde) yaşayan uygulamalar
+//   Sistem içi   Dornick'in içinde (kapsülde) yaşayan uygulamalar
 //   Dış          kendi başına çalışan ayrı uygulamalar
 //
 // — üstte de o an çalışanlar. Her kart ne olduğunu (tür rozeti), ne
@@ -41,15 +41,15 @@ Dil.ekle({
   "Dış uygulamalar": "External apps",
   "Belirsiz": "Unsorted",
   "Sorunlu manifestler": "Broken manifests",
-  "dornick'nun içinde çalışır": "runs inside dornick",
+  "Dornick'in içinde çalışır": "runs inside Dornick",
   "kendi başına çalışır": "runs on its own",
-  "kapsamı sorulmadı — dornick'ya sorabilirsin": "scope unknown — you can ask dornick",
+  "kapsamı sorulmadı — Dornick'e sorabilirsin": "scope unknown — you can ask Dornick",
   "yanlış yere yazılmış — uygulama sayılmadı":
     "written in the wrong place — not counted as an app",
   "toplu temizlik: artık kullanmadıklarını Arşivle ile kaldırabilirsin":
     "bulk cleanup: archive the ones you no longer use",
-  "Henüz uygulama yok — dornick bir şey üretince burada belirir.":
-    "No apps yet — anything dornick builds will show up here.",
+  "Henüz uygulama yok — Dornick bir şey üretince burada belirir.":
+    "No apps yet — anything Dornick builds will show up here.",
   "Aramana uyan uygulama yok.": "Nothing matches your search.",
   "Okunamadı": "Could not read",
   "Ulaşılamadı": "Unreachable",
@@ -57,11 +57,11 @@ Dil.ekle({
     "archived (in atolye/.geri-donusum — recoverable)",
   "Arşivlenemedi — çalışıyorsa önce durdur":
     "Could not archive — stop it first if it is running",
-  "dornick (kendisi)": "dornick (itself)",
-  "dornick'nun kendi süreci — panelden durdurulmuyor":
-    "dornick's own process — not stoppable from the panel",
-  "Açıklama yok — dornick'ya sorup app.json'a yazdırabilirsin.":
-    "No description — you can ask dornick to write one into app.json.",
+  "Dornick (kendisi)": "Dornick (itself)",
+  "Dornick'in kendi süreci — panelden durdurulmuyor":
+    "Dornick's own process — not stoppable from the panel",
+  "Açıklama yok — Dornick'e sorup app.json'a yazdırabilirsin.":
+    "No description — you can ask Dornick to write one into app.json.",
   "Bu uygulamanın klasörünü dosya gezgininde aç":
     "Open this app's folder in the file explorer",
   "Emin misin?": "Are you sure?",
@@ -149,7 +149,7 @@ const Apps = (() => {
     tool: { glyph: "▶", tag: "betik" },
     doc: { glyph: "≡", tag: "belge" },
   };
-  // Kapsam rozeti: sistem içi mi (dornick'nun içinde), dış mı (kendi başına).
+  // Kapsam rozeti: sistem içi mi (Dornick'in içinde), dış mı (kendi başına).
   const SCOPE = {
     "in-app": { label: "sistem içi", cls: "inapp" },
     external: { label: "dış", cls: "ext" },
@@ -238,7 +238,7 @@ const Apps = (() => {
     if (!all.length) {
       if (!procs.length && !sorunlar.length) {
         box.append(el("p", "apps-blank",
-          "Henüz uygulama yok — dornick bir şey üretince burada belirir."));
+          "Henüz uygulama yok — Dornick bir şey üretince burada belirir."));
       }
       return;
     }
@@ -247,13 +247,13 @@ const Apps = (() => {
       box.append(el("p", "apps-blank", "Aramana uyan uygulama yok."));
       return;
     }
-    // KAPSAMA göre gruplu: sistem içi olanlar dornick'nun içinde (kapsülde)
+    // KAPSAMA göre gruplu: sistem içi olanlar Dornick'in içinde (kapsülde)
     // yaşar; dış olanlar kendi başına ayrı uygulamalardır; belirsizler
-    // dornick'nun kapsam sorusunu bekler.
+    // Dornick'in kapsam sorusunu bekler.
     const groups = [
-      { key: "in-app", title: "Sistem içi", hint: "dornick'nun içinde çalışır" },
+      { key: "in-app", title: "Sistem içi", hint: "Dornick'in içinde çalışır" },
       { key: "external", title: "Dış uygulamalar", hint: "kendi başına çalışır" },
-      { key: "", title: "Belirsiz", hint: "kapsamı sorulmadı — dornick'ya sorabilirsin" },
+      { key: "", title: "Belirsiz", hint: "kapsamı sorulmadı — Dornick'e sorabilirsin" },
     ];
     for (const g of groups) {
       const items = found.filter((p) => (p.scope || "") === g.key);
@@ -320,7 +320,7 @@ const Apps = (() => {
     // olduğunu bilmiyorum" tam da bu satırın yokluğuydu. app.json'daki
     // `desc`ten, yoksa README/docstring ilk satırından geliyor.
     wrap.append(el("div", "proj-desc" + (p.desc ? "" : " empty"),
-      p.desc || "Açıklama yok — dornick'ya sorup app.json'a yazdırabilirsin."));
+      p.desc || "Açıklama yok — Dornick'e sorup app.json'a yazdırabilirsin."));
     // Eksikse NEDENİ: "entry bulunamadı: static/index.html". Kullanıcı da
     // model de neyin yanlış olduğunu okuyabilsin.
     if (p.eksik && p.neden) wrap.append(el("p", "proj-why", p.neden));
@@ -402,7 +402,7 @@ const Apps = (() => {
 
   // Bu projenin çalışan bir süreci var mı? İki kaynak: (1) çalışanlar
   // listesi (süreç defteri), (2) sunucunun kartın kendisine iliştirdiği
-  // canlı bilgisi — dornick yeniden başlatılmışsa süreç defterde yoktur ama
+  // canlı bilgisi — Dornick yeniden başlatılmışsa süreç defterde yoktur ama
   // uygulama portunu dinlemeye devam eder.
   function liveOf(p) {
     const r = procs.find((q) =>
@@ -584,7 +584,7 @@ const Apps = (() => {
       else how.textContent = p.howto;
       view.append(el("div", "proj-howto-tag", "Nasıl çalıştırılır"), how);
     } else {
-      view.append(el("p", "proj-howto empty", "README yok. dornick'ya sorabilirsin."));
+      view.append(el("p", "proj-howto empty", "README yok. Dornick'e sorabilirsin."));
     }
 
     // Nerede olduğu + neyle çalıştığı: kullanıcı diskte bulabilsin,
@@ -618,9 +618,9 @@ const Apps = (() => {
       };
       row.append(ext);
     }
-    // "dornick'ya sor: nasıl çalıştırırım" — projeyi bağlam olarak verir.
+    // "Dornick'e sor: nasıl çalıştırırım" — projeyi bağlam olarak verir.
     if (typeof setAppContext === "function") {
-      const ask = el("button", "proj-btn", "dornick'ya sor");
+      const ask = el("button", "proj-btn", "Dornick'e sor");
       ask.title = "Bu projeyi konuşmanın bağlamına ver";
       ask.onclick = () => {
         setAppContext({ name: p.name, path: p.path, type: p.kind,
@@ -665,7 +665,7 @@ const Apps = (() => {
   // Projeyi başlat. Klasör projelerde PROJE YOLU gönderiliyor: sunucu
   // manifestin `run` komutunu (npm start, dotnet run...) projenin kendi
   // klasöründe çalıştırıyor — yalnızca Python betikleri değil. SİSTEM İÇİ
-  // servis/web projeler sonucu dornick'nun İÇİNDE bir kapsülde açar; dış proje
+  // servis/web projeler sonucu Dornick'in İÇİNDE bir kapsülde açar; dış proje
   // kendi penceresinde yaşar. Web/belge → görüntüleyici.
   async function launchProject(p) {
     if (runnable(p)) {
@@ -714,7 +714,7 @@ const Apps = (() => {
     if (typeof Viewer !== "undefined" && p.entry) { Viewer.present(p.entry); close(); return; }
     // Giriş dosyası yok: sessiz kalma — kullanıcı "tıklıyorum, hiçbir şey
     // olmuyor" yaşamasın, ne yapabileceğini söyle.
-    toast(p.name + ": açılacak giriş dosyası bulunamadı — \"dornick'ya sor\" ile sorabilirsin");
+    toast(p.name + ": açılacak giriş dosyası bulunamadı — \"Dornick'e sor\" ile sorabilirsin");
   }
 
   // --- artifact'lar ----------------------------------------------------
@@ -742,7 +742,7 @@ const Apps = (() => {
     const head = el("div", "apps-group", "Artifact'lar");
     head.append(el("i", "apps-group-hint", "kalıcı sayfalar"));
     const holder = el("div", "arts-body");
-    holder.append(el("p", "apps-blank", "Yükleniyor…"));
+    holder.append(el("p", "apps-blank dugum-yukleniyor", "Yükleniyor…"));
     sec.append(head, holder);
     // Katalogdan önce, çalışanlardan sonra dursun.
     body.insertBefore(sec, body.querySelector(".apps-catalog"));
@@ -764,7 +764,7 @@ const Apps = (() => {
     if (count) count.remove();
     if (!rows.length) {
       holder.append(el("p", "apps-blank",
-        "Henüz artifact yok. dornick kalıcı bir rapor ya da pano yayınladığında burada belirir."));
+        "Henüz artifact yok. Dornick kalıcı bir rapor ya da pano yayınladığında burada belirir."));
       return;
     }
     holder.parentElement.querySelector(".apps-group")
@@ -881,24 +881,24 @@ const Apps = (() => {
     const sec = el("div", "apps-running");
     sec.append(el("div", "apps-group", "Çalışıyor"));
     for (const p of procs) {
-      // dornick'nun KENDİ kopyası (model `dornick --web ...` çalıştırdıysa):
+      // Dornick'in KENDİ kopyası (model `dornick --web ...` çalıştırdıysa):
       // görünür ama "uygulaman" gibi değil — ayrı ad, sönük nokta,
       // Durdur yok. Gizlemek de yanlış olurdu; kullanıcı orada bir şey
       // çalıştığını bilmeli.
       const r = el("div", "apps-proc" + (p.self ? " self" : ""));
       r.append(el("span", "apps-proc-dot"));
-      const name = el("span", "apps-proc-name", p.self ? t("dornick (kendisi)") : p.name);
+      const name = el("span", "apps-proc-name", p.self ? t("Dornick (kendisi)") : p.name);
       name.title = (p.run || p.path || "") + (p.started ? " · " + mmss(p.started) : "");
       r.append(name);
       r.append(el("span", "apps-proc-time", mmss(p.started)));
       if (p.self) {
         r.append(el("i", "apps-proc-self-note",
-          "dornick'nun kendi süreci — panelden durdurulmuyor"));
+          "Dornick'in kendi süreci — panelden durdurulmuyor"));
         sec.append(r);
         continue;
       }
       if (p.address) {
-        // Canlı sunucu: sistem içinde kapsülde aç (dornick'nun içinde). Kapsülün
+        // Canlı sunucu: sistem içinde kapsülde aç (Dornick'in içinde). Kapsülün
         // kendi "dışarıda aç" düğmesi ayrı sekme isteyene duruyor.
         const link = el("button", "apps-proc-addr", p.address);
         link.title = "Sistem içinde aç (kapsül)";
@@ -987,7 +987,7 @@ const Apps = (() => {
       panel.hidden = false;
       document.body.classList.add("apps-open");
       // HER açılışta yeniden okunuyor. Eskiden ilk açılıştan sonra yalnız
-      // önbellek çiziliyordu: dornick bir uygulamayı panel açıldıktan SONRA
+      // önbellek çiziliyordu: Dornick bir uygulamayı panel açıldıktan SONRA
       // ürettiyse (ya da manifestini sonradan yazdıysa) kullanıcı elle
       // "yenile"ye basana kadar eski listeyi görüyordu — "yaptığı uygulama
       // panelde görünmedi" şikâyetinin doğrudan sebebi buydu.

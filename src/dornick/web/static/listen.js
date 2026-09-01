@@ -5,7 +5,7 @@
 //   bas-konuş     mikrofon düğmesine basılı tut, konuş, bırak. Söylediğin
 //                 yazı alanına düşüyor — göndermeden önce düzeltebilirsin.
 //   uyandırma     sürekli dinleme açıkken kısa parçalar sunucuya gidiyor;
-//                 içinde "dornick" geçen bir parça oturumu açıyor ve sözden
+//                 içinde "Dornick" geçen bir parça oturumu açıyor ve sözden
 //                 sonrası doğrudan gönderiliyor.
 //
 // Tanıma sunucuda ve yerel: ses bilgisayardan çıkmıyor. Tarayıcının kendi

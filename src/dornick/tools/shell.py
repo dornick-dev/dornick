@@ -218,7 +218,7 @@ UZUN SÜREN SÜREÇLER — iki ayrı kip, karıştırma:
             return ToolResult.error("Boş komut. `command` alanını doldur.")
 
         # dornick KENDİNİ başlatmasın. Model kafası karıştığında ("uygulamayı
-        # ayağa kaldırayım") `dornick --web 8873` çalıştırıp dornick'nun ikinci bir
+        # ayağa kaldırayım") `dornick --web 8873` çalıştırıp Dornick'in ikinci bir
         # kopyasını açıyordu; kullanıcı panelde kendi programının klonunu
         # "uygulaman" diye görüyordu. Sessiz reddetmek yerine NEDENİ ve
         # doğrusu söyleniyor — model bir sonraki hamlede kendi uygulamasını
@@ -227,8 +227,8 @@ UZUN SÜREN SÜREÇLER — iki ayrı kip, karıştırma:
 
         if _apps.neo_sureci_mi(command):
             return ToolResult.error(
-                "dornick zaten çalışıyor; kendini yeniden başlatma. Bu komut "
-                "dornick'nun (dornick) ikinci bir kopyasını açardı — kullanıcı "
+                "Dornick zaten çalışıyor; kendini yeniden başlatma. Bu komut "
+                "Dornick'in (dornick) ikinci bir kopyasını açardı — kullanıcı "
                 "panelde kendi programının klonunu görür. Kullanıcının "
                 "uygulamasını KENDİ klasöründe, KENDİ portunda başlat "
                 "(örn. `py app.py`)."

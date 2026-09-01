@@ -1,6 +1,6 @@
 """Kancalar: kullanıcının kendi komutlarını araç yaşam döngüsüne takması.
 
-Neden var: dornick'nun ne yapıp ne yapmayacağı iki yerden belirleniyordu —
+Neden var: Dornick'in ne yapıp ne yapmayacağı iki yerden belirleniyordu —
 sistem promptu (modeli İKNA eder) ve izin motoru (araç adı ve argümanına
 bakar). İkisinin arasında bir boşluk var: "bu depoda `main` dalına asla
 yazma", "her Python dosyası yazıldıktan sonra `black` çalıştır", "üretim
@@ -299,7 +299,7 @@ async def _baslat(komut: str, ortak: dict[str, Any]):
 
     Windows'ta PowerShell açıkça çağrılıyor (`shell` aracının yaptığı gibi):
     `create_subprocess_shell` orada `cmd.exe`ye düşüyor ve kullanıcının
-    kanca dosyasına yazdığı komut, dornick'nun her yerde kullandığı kabuktan
+    kanca dosyasına yazdığı komut, Dornick'in her yerde kullandığı kabuktan
     başka bir kabukta koşuyordu — aynı satır bir yerde çalışıp burada
     çalışmıyordu.
     """

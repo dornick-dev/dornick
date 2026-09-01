@@ -1,4 +1,4 @@
-"""dornick'nun logosu — tek kaynak.
+"""Dornick'in logosu — tek kaynak.
 
 Ocak kimliği: koyu kömür yuvarlak kare üstünde "ağdan örülmüş n" — dört
 tebeşir düğüm, kehribar tepe düğümü. Üst şeritteki marka SVG'siyle aynı

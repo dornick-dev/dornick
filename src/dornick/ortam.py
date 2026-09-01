@@ -50,7 +50,7 @@ def kurulu_mu() -> bool:
 
 
 def _kok() -> Path:
-    """Uygulama ağacının kökü: src/dornick'nin iki üstü.
+    """Uygulama ağacının kökü: src/Dornick'in iki üstü.
 
     Geliştirici deposunda depo kökü, kurulu düzende {app} — ikisi de
     pyproject.toml'u bu seviyede taşır (kuruluda build.ps1 koyar).

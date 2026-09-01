@@ -1,6 +1,6 @@
 """MCP bağlayıcıları — dış araç sunucularının istemci tarafı.
 
-`recall/mcp.py` bu protokolün sunucu tarafı: dornick'nun belleğini dışarı açıyor.
+`recall/mcp.py` bu protokolün sunucu tarafı: Dornick'in belleğini dışarı açıyor.
 Burası tersi — kullanıcı Claude Code / LM Studio'daki `mcpServers` biçimiyle
 sunucu tanımlıyor, dornick bağlanıp sunucunun araçlarını kendi defterine ekliyor.
 Döngü aracın nereden geldiğini bilmiyor; `ToolSpec.source` alanı zaten bunun
@@ -390,7 +390,7 @@ def _catch_code(timeout: float) -> tuple[str, Any]:
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.end_headers()
             self.wfile.write(
-                "<h3>Giriş tamam — bu sekmeyi kapatıp dornick'ya dönebilirsin.</h3>"
+                "<h3>Giriş tamam — bu sekmeyi kapatıp Dornick'e dönebilirsin.</h3>"
                 .encode("utf-8"))
 
         def log_message(self, *args: Any) -> None:  # sessiz

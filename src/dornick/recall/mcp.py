@@ -1,6 +1,6 @@
 """Hatırlama protokolünü MCP sunucusu olarak açar.
 
-Amaç baştan beri şuydu: bu bellek yalnızca dornick'nin içinde değil, modelin
+Amaç baştan beri şuydu: bu bellek yalnızca Dornick'in içinde değil, modelin
 çalıştığı her yerde kullanılabilsin. MCP tam olarak bunun için var — Claude
 Desktop, Claude Code, Cursor ya da MCP konuşan başka bir istemci bu sunucuyu
 tanımlayıp aynı `recall.db` dosyasına bağlanıyor.

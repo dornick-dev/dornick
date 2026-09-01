@@ -109,7 +109,7 @@ Dil.ekle({
   "Yeni görev": "New task", "zamanlanmış iş": "scheduled job",
   "Kamera": "Camera", "aç/kapa, izleme": "on/off, watching",
   "Program kapalıyken zamanı geçmiş görevler var.":
-    "Some scheduled tasks were due while dornick was closed.",
+    "Some scheduled tasks were due while Dornick was closed.",
   "Bu seferlik atla": "Skip this time",
   "Şimdi yap": "Run now",
   "Listeden çıkar": "Remove from list",
@@ -252,18 +252,18 @@ Dil.ekle({
   "Kartta kaydır": "Scroll in card",
   "Bağlam doluluğu": "Context usage",
   // Hedef paneli: yönetim
-  "dornick'nun kendine yazdığı iş listesi — tıkla: katla/aç":
-    "dornick's own task list — click to fold/unfold",
+  "Dornick'in kendine yazdığı iş listesi — tıkla: katla/aç":
+    "Dornick's own task list — click to fold/unfold",
   " iş listesi": " task list", "İş listesi": "Task list",
   "Aktif madde yok.": "No active items.",
   "İş listesi yok.": "No task list.",
   "Aktif madde yok.": "No active items.",
   "Dornick'nun uzun işlerde kendi yazdığı adım listesi (Cursor görev listesi gibi). Sohbet geçmişi değil — madde yoksa sekme de yok. Sen de ekleyip silebilirsin.":
     "Dornick's step list for long jobs (like Cursor's todo list). Not chat history — no items, no tab. You can add or remove items too.",
-  "dornick'nun kendine yazdığı adım listesi — tıkla: katla/aç":
+  "Dornick'in kendine yazdığı adım listesi — tıkla: katla/aç":
     "Dornick's own step list — click to fold/unfold",
-  "Bunlar dornick'nun kendine yazdığı iş listesi — uzun işlerde ne yaptığını takip etmek için. Sen de ekleyebilir, silebilirsin.":
-    "This is dornick's own task list — so you can follow what it is doing on long jobs. You can add and remove items too.",
+  "Bunlar Dornick'in kendine yazdığı iş listesi — uzun işlerde ne yaptığını takip etmek için. Sen de ekleyebilir, silebilirsin.":
+    "This is Dornick's own task list — so you can follow what it is doing on long jobs. You can add and remove items too.",
   "＋ kendi maddeni yaz": "＋ add your own item",
   "Yeni iş maddesi": "New task item", "Ekle": "Add",
   "eski": "old", "Geçen oturumlardan kaldı": "Left over from earlier sessions",
@@ -774,7 +774,7 @@ function line(kind, text) {
   }
 
   // Aynı turda arka arkaya gelen model parçaları TEK mesaj gibi okunsun:
-  // son konuşan yine modelse bu parça "devam"dır — "dornick" başlığı ve koca
+  // son konuşan yine modelse bu parça "devam"dır — "Dornick" başlığı ve koca
   // aralık tekrar etmez. Metin yine SOHBETTE ve görünür (katlama yok);
   // yalnız görsel merdiven kırılıyor.
   if (kind === "agent") {
@@ -1082,7 +1082,7 @@ function setBusy(value) {
   }
 }
 
-// Kontrol ışıması: dornick el/ekran araçlarını kullanırken pencere çevresi
+// Kontrol ışıması: Dornick el/ekran araçlarını kullanırken pencere çevresi
 // nabızlı yanar — "şu an bilgisayarı o kullanıyor" tek bakışta belli
 // (kullanıcı isteği, 31.08: Claude'un ekran çerçevesi gibi). Sayaçlı:
 // iç içe çağrılar sönmeyi erkene almasın; tur bitince her koşulda söner.
@@ -1640,7 +1640,7 @@ function finishAgentLine() {
 // İmleç (yanıp sönen ▮) bir DURUM değil, bir CSS kuralı: `.line.agent`
 // `.done` almadıkça imleç basılıyor. Yani akış biterken `.done` almayan ya
 // da hiç kapanmayan bir blok, ekranda sonsuza kadar yanıp sönen boş bir
-// "DORNICK ▮" olarak kalıyor — kullanıcı dornick hâlâ yazıyor sanıyor.
+// "DORNICK ▮" olarak kalıyor — kullanıcı Dornick hâlâ yazıyor sanıyor.
 //
 // Kanıtlanmış boşluklar: "interrupted" olayı satırı hiç mühürlemiyordu ve
 // "empty_assistant_turn" (model hiçbir şey döndürmedi) arayüzde hiç
@@ -3409,7 +3409,7 @@ function closeWork() {
 //
 // Eski hal araçtan ÖNCE gelen her metni şeride katlıyordu ve `sealLine`da
 // bir "güvenlik ağı" ile geri getirmeye çalışıyordu. Kullanıcı "yarım mı
-// kaldı?" diye sorduğunda dornick cevabı yazdı, cevap şeridin içine katlandı
+// kaldı?" diye sorduğunda Dornick cevabı yazdı, cevap şeridin içine katlandı
 // ve ekranda yalnızca "▸ HARMANLIYOR · 13 SN" kaldı — kullanıcı sorduğu
 // sorunun cevabını görmek için şeridi açmak zorunda kaldı. Yama kalktı,
 // kaynak düzeldi: metin geldiği yerde, normal blok olarak duruyor.
@@ -4098,7 +4098,7 @@ const Goals = (() => {
     const head = document.createElement("div");
     head.className = "goals-pane-head";
     head.textContent = t("İş listesi") + (rows.length ? " · " + done + "/" + rows.length : "");
-    head.title = t("dornick'nun kendine yazdığı iş listesi — tıkla: katla/aç");
+    head.title = t("Dornick'in kendine yazdığı iş listesi — tıkla: katla/aç");
     pane.append(head);
     const ne = document.createElement("p");
     ne.className = "goals-what";
@@ -4171,7 +4171,7 @@ const Goals = (() => {
     $("goals-head").textContent = folded
       ? "◷ " + (active || items.size) + t(" iş listesi")
       : t("İş listesi") + (active ? " · " + active : "");
-    $("goals-head").title = t("dornick'nun kendine yazdığı adım listesi — tıkla: katla/aç");
+    $("goals-head").title = t("Dornick'in kendine yazdığı adım listesi — tıkla: katla/aç");
     box.classList.toggle("folded", folded);
     const body = $("goals-body");
     body.hidden = folded;
@@ -4850,11 +4850,11 @@ function handle(e) {
       // özetine karışmasın.
       if (typeof Degisiklik !== "undefined") Degisiklik.tabanAl();
       // Klasör/git bağlamı sohbete özel: yeni konuşmada eski repo adı
-      // (dornick / dal) composer üstünde asılı kalmasın.
+      // (Dornick / dal) composer üstünde asılı kalmasın.
       if (typeof GitBar !== "undefined") GitBar.refresh();
       break;
     }
-    // "dornick ile kes": dornick konuşurken uyandırma sözüyle araya girildi —
+    // "Dornick ile kes": Dornick konuşurken uyandırma sözüyle araya girildi —
     // TTS anında sussun ki kullanıcı dinlensin (turu kesmiyor, komut sıraya
     // giriyor).
     case "ack":
@@ -5121,7 +5121,7 @@ async function loadState() {
     // getirince cevap burada.
     if (s.surum) {
       const marka = document.querySelector(".brand");
-      if (marka) marka.title = "dornick " + s.surum +
+      if (marka) marka.title = "Dornick " + s.surum +
         (s.kurulu ? t(" · kurulum") : t(" · geliştirme"));
       // Küçük sürüm rozeti kenar çubuğunun dibinde (kullanıcı isteği,
       // 01.09): hangi sürümün kurulu olduğu aramadan görünsün.

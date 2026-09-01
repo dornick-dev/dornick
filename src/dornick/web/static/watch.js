@@ -137,7 +137,7 @@ const Watch = (() => {
     const w = secilen();
     if (titleEl) titleEl.textContent = w ? w.ad : t("Bilgisayar kamerası");
     if (live) live.alt = w ? w.ad : "";
-    document.title = "dornick · " + (w ? w.ad : t("Kamera"));
+    document.title = "Dornick · " + (w ? w.ad : t("Kamera"));
     serit();
     tazele();
   }

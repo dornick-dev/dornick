@@ -1,4 +1,4 @@
-"""Dış kapı: başka ajanların dornick'yu programatik kullanabildiği HTTP ucu.
+"""Dış kapı: başka ajanların Dornick'i programatik kullanabildiği HTTP ucu.
 
 Amaç değerlendirme: harici bir araç (test koşucusu, puanlayıcı ajan, betik)
 sohbete kullanıcı gibi yazar, turun bitmesini bekler ve TÜM çıktıyı alır —

@@ -209,7 +209,7 @@ const GitBar = (() => {
       fark.textContent = kutu.hidden ? t("farkı gör") : t("farkı gizle");
       if (yuklendi || kutu.hidden) return;
       yuklendi = true;
-      kutu.replaceChildren(el("div", "diff-empty", t("Yükleniyor…")));
+      kutu.replaceChildren(el("div", "diff-empty dugum-yukleniyor", t("Yükleniyor…")));
       let veri = null;
       try {
         veri = await (await fetch("/api/git", {

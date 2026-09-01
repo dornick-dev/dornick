@@ -15,7 +15,7 @@ write_file/edit_file/copy_in atölye İÇİNDEKİ bir dosyayı değiştirmeden h
 
 Birikinti: oturum klasörleri süreç başına bir kez, ilk kullanımda süzülür —
 14 günden eski oturumların klasörü sessizce silinir. Transfer paketine bu
-klasör girmez (state_dir atölyenin dışında; transfer._ATLA ayrıca .dornick'yi
+klasör girmez (state_dir atölyenin dışında; transfer._ATLA ayrıca .Dornick'i
 tanır).
 """
 

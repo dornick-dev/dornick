@@ -268,7 +268,7 @@ const Komut = (() => {
     // Bekletirken kutu boş kalmasın.
     if (!durum.liste.length) {
       pop.replaceChildren(el("div", "pop-head", t("Dosya ara")),
-                          el("div", "pop-note", t("Aranıyor…")));
+                          el("div", "pop-note dugum-yukleniyor", t("Aranıyor…")));
       pop.hidden = false;
       yerlestir();
     }

@@ -1,11 +1,11 @@
-// Kapsül: sistem içi bir uygulamayı dornick'nun İÇİNDE, canlı bir çerçevede
+// Kapsül: sistem içi bir uygulamayı Dornick'in İÇİNDE, canlı bir çerçevede
 // çalıştırır ve gösterir.
 //
 // Ayrım kullanıcının niyeti: DIŞ uygulama zaten ayrı bir dış uygulamadır —
-// kendi penceresinde/sekmesinde açılır. SİSTEM İÇİ olan ise dornick'ya bağlı bir
-// kapsüldür: dornick arkada süreci çalıştırır (shell auto-background), kapsül onu
+// kendi penceresinde/sekmesinde açılır. SİSTEM İÇİ olan ise Dornick'e bağlı bir
+// kapsüldür: Dornick arkada süreci çalıştırır (shell auto-background), kapsül onu
 // İZLER (canlı adres, çalışma süresi, canlılık), KONTROL eder (yenile, durdur)
-// ve gösterir. Böylece hem dornick kendi kullanabilir hem kullanıcı arayüz
+// ve gösterir. Böylece hem Dornick kendi kullanabilir hem kullanıcı arayüz
 // üzerinden — bir stok takibi, bir modbus görüntüleyici, bir web panosu
 // sistemin içinde bir sayfa gibi açılır.
 //
@@ -37,7 +37,7 @@ const Capsule = (() => {
     panel.hidden = false;
     document.body.classList.add("capsule-open");
     if (current.address) loadFrame(current.address);
-    else { showWait("dornick uygulamayı başlatıyor…"); findAddress(); }
+    else { showWait("Dornick uygulamayı başlatıyor…"); findAddress(); }
     startPoll();
   }
 
@@ -64,7 +64,7 @@ const Capsule = (() => {
       }
       if (!proc) {
         markDead();
-        showWait("Uygulama kapandı. Sunucu başlamadan çıktıysa dornick'ya " +
+        showWait("Uygulama kapandı. Sunucu başlamadan çıktıysa Dornick'e " +
                  "“" + (current.name || "uygulama") + " neden kapandı?” diye sorabilirsin.");
         return;
       }

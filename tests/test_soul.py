@@ -253,7 +253,7 @@ async def test_soul_stays_byte_identical_within_a_session(tmp_path: Path, mind: 
 
     # Oturum-başlığı çağrısının kendi kısa sistemi araya girer: yalnız
     # ANA istemler kıyaslanır — bayt sözleşmesi onlar için.
-    ana = [s for s in client.seen_system if s and "dornick" in str(s[0].get("text", ""))[:40]]
+    ana = [s for s in client.seen_system if s and "Dornick" in str(s[0].get("text", ""))[:40]]
     assert len(ana) >= 2
     assert ana[0] == ana[1]
     # Yeni hatıra kaybolmadı; sadece bir sonraki açılışta ruha girecek.

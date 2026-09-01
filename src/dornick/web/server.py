@@ -3065,7 +3065,7 @@ class _Handler(BaseHTTPRequestHandler):
     def _projects(self) -> None:
         """Atölyeyi PROJE birimleri olarak verir (dosya ağacı değil).
 
-        Her proje bir iş birimi: dornick'nun ürettiği bir klasör (Modbus web
+        Her proje bir iş birimi: Dornick'in ürettiği bir klasör (Modbus web
         client gibi) ya da tek başına bir dosya. Panel bunları kart olarak
         gösteriyor; tıklanınca nasıl çalıştırılacağı + Çalıştır beliriyor.
         """
@@ -3277,7 +3277,7 @@ class _Handler(BaseHTTPRequestHandler):
         return secim or None
 
     def _transfer_export(self) -> None:
-        """dornick'nun biriktirdiklerini taşınabilir bir paket olarak indirir.
+        """Dornick'in biriktirdiklerini taşınabilir bir paket olarak indirir.
 
         `?parcalar=anilar,tanima,projeler,ayarlar` ile seçmeli: sunucuya
         taşınırken yalnızca gerekenler paketlenir. Parametresiz istek
@@ -3306,7 +3306,7 @@ class _Handler(BaseHTTPRequestHandler):
         self.wfile.write(data)
 
     def _transfer_import(self, raw: bytes) -> None:
-        """Yüklenen bir paketi bu dornick'ya birleştirir.
+        """Yüklenen bir paketi bu Dornick'e birleştirir.
 
         Anılar katılır (üzerine yazılmaz); dosya parçaları geri yüklenirken
         ezilecek mevcut hal önce .dornick/yedek-<tarih>/ altına alınır.

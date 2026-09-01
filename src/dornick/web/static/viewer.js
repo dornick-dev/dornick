@@ -57,8 +57,8 @@ const Viewer = (() => {
     "Değişiklikler": "Changes",
     "Tarayıcı": "Browser",
     "Yeni terminal": "New terminal",
-    "Henüz bir sayfa yok. dornick bir siteye gidince burada açılır.":
-      "No page yet. When dornick visits a site it opens here.",
+    "Henüz bir sayfa yok. Dornick bir siteye gidince burada açılır.":
+      "No page yet. When Dornick visits a site it opens here.",
     "Sekmeyi kapat": "Close tab",
   });
 
@@ -455,7 +455,7 @@ const Viewer = (() => {
   }
   function paintBrowserEmpty() {
     body.textContent = "";
-    body.append(el("p", "viewer-blank", t("Henüz bir sayfa yok. dornick bir siteye gidince burada açılır.")));
+    body.append(el("p", "viewer-blank", t("Henüz bir sayfa yok. Dornick bir siteye gidince burada açılır.")));
   }
   function shellOut(e) {
     const d = e.detail;

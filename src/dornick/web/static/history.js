@@ -25,8 +25,8 @@ Dil.ekle({
   "üst klasör": "parent folder",
   "Başlatılıyor…": "Starting…",
   "Tur bitince geçilebilir": "You can switch when the turn ends",
-  "Geçilemedi — dornick meşgul olabilir, tur bitince dene.":
-    "Could not switch — dornick may be busy; try again after the turn.",
+  "Geçilemedi — Dornick meşgul olabilir, tur bitince dene.":
+    "Could not switch — Dornick may be busy; try again after the turn.",
   "Okunamadı": "Could not load",
   "Eşleşen konuşma yok": "No matching conversation",
   "Henüz konuşma yok": "No conversations yet",
@@ -112,7 +112,7 @@ const History = (() => {
   }
 
   async function load(ara) {
-    if (!loaded) { body.textContent = ""; body.append(el("p", "hist-blank", t("Yükleniyor…"))); }
+    if (!loaded) { body.textContent = ""; body.append(el("p", "hist-blank dugum-yukleniyor", t("Yükleniyor…"))); }
     let data;
     try {
       const url = ara ? "/api/sessions?ara=" + encodeURIComponent(ara) : "/api/sessions";
@@ -194,19 +194,19 @@ const History = (() => {
     drawTools();
 
     if (searching) {
-      body.append(el("p", "hist-blank", t("Aranıyor…")));
+      body.append(el("p", "hist-blank dugum-yukleniyor", t("Aranıyor…")));
       return;
     }
 
     if (!shown.length) {
-      body.append(el("p", "hist-blank",
+      body.append(el("p", "hist-blank" + (loaded ? "" : " dugum-yukleniyor"),
         loaded ? (q || tagFilter ? t("Eşleşen konuşma yok") : t("Henüz konuşma yok"))
                : t("Yükleniyor…")));
       return;
     }
 
     // Klasör adı: elle proje etiketi, yoksa bağlı path'in son parçası.
-    // Böylece "Klasör bağla" ile path alan sohbetler de dornick/dornick altında
+    // Böylece "Klasör bağla" ile path alan sohbetler de Dornick/dornick altında
     // görünür (Cursor Repositories düzeni).
     function klasorAdi(s) {
       if (s.project) return s.project;
@@ -357,7 +357,7 @@ const History = (() => {
     }
     line.append(acts);
     // Satıra tıklamak: AKTİF konuşmada panel kapanır ve süren sohbet görünür —
-    // geçiş çağrısı gerekmediği için dornick meşgulken de her zaman çalışır.
+    // geçiş çağrısı gerekmediği için Dornick meşgulken de her zaman çalışır.
     // Başka konuşmada o konuşmaya geçilir (sürdürür); meşgulse resume
     // kullanıcıya söylüyor, tık sessiz ölmüyor.
     line.onclick = () => {
@@ -390,7 +390,7 @@ const History = (() => {
     // tıklamak yine konuşmayı açıyor.
     for (const hit of (s.hits || [])) {
       const iz = el("div", "hist-hit");
-      iz.append(el("span", "hist-hit-who", hit.role === "user" ? "sen" : "dornick"));
+      iz.append(el("span", "hist-hit-who", hit.role === "user" ? "sen" : "Dornick"));
       iz.append(el("span", "hist-hit-text", hit.text));
       iz.onclick = () => {
         if (s.current) { if (innerWidth <= 860) close(); }
@@ -767,7 +767,7 @@ const History = (() => {
       return;
     }
     // Görünür hata: köprü yoksa ya da oturum bulunamadıysa.
-    status((res && res.error) ? res.error : t("Geçilemedi — dornick meşgul olabilir, tur bitince dene."));
+    status((res && res.error) ? res.error : t("Geçilemedi — Dornick meşgul olabilir, tur bitince dene."));
   }
 
   // "Daha fazla göster": kırpılan satır sayısıyla, listenin dibinde.
@@ -834,7 +834,7 @@ const History = (() => {
   });
   document.getElementById("hist-new").addEventListener("click", newConversation);
   // Klasörde başlat: yan düğme kalktı — sağ tık / uzun basış isteğe bağlı.
-  // Yeni konuşma atölyede açılır; klasör gerekirse dornick ilk mesaja göre
+  // Yeni konuşma atölyede açılır; klasör gerekirse Dornick ilk mesaja göre
   // açar veya kullanıcı burada seçer.
   document.getElementById("hist-new").addEventListener("contextmenu", (ev) => {
     ev.preventDefault();

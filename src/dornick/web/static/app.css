@@ -524,14 +524,26 @@ pre, code, kbd, samp, .input-area, .viewer-code, .diff-row {
 }
 /* Imlec metnin sonuna degil satirin sonuna basiliyor: bicimlendirme
    DOM kurdugu icin ::after son bloktan sonra dusuyor, dogru yer orasi. */
+/* Akış imleci: yanıp sönen blok değil, ÖRÜLEN DÜĞÜM (kullanıcı isteği,
+   01.09 — "loading ikonları düğüm gibi oluşup çözülsün"). SMIL'li data-URI:
+   markanın d-düğümü kendini çizip söküyor. Renk kehribar — iki temada da
+   markanın kendisi. */
 .line.agent::after {
-  content: "▮"; color: var(--cyan); text-shadow: 0 0 12px var(--cyan);
-  animation: throb 1s steps(2) infinite; margin-left: 2px;
+  content: ""; display: inline-block; width: 15px; height: 15px;
+  margin-left: 5px; vertical-align: -2px;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath d='M21.5 7v16.5a2.8 2.8 0 0 1-2.8 2.8h-6.2a2.8 2.8 0 0 1-2.8-2.8v-7.4a2.8 2.8 0 0 1 2.8-2.8h9' fill='none' stroke='%23F0A020' stroke-width='4.4' stroke-linecap='round' stroke-linejoin='round' pathLength='100' stroke-dasharray='58 42'%3E%3Canimate attributeName='stroke-dashoffset' values='0;-100' dur='1.7s' repeatCount='indefinite'/%3E%3C/path%3E%3Ccircle cx='21.5' cy='5.6' r='4.2' fill='%23F0A020'%3E%3Canimate attributeName='opacity' values='.35;1;.35' dur='1.7s' repeatCount='indefinite'/%3E%3C/circle%3E%3C/svg%3E") no-repeat center / contain;
+}
+/* Ortak yükleme düğümü: "Yükleniyor…" gibi bekleme satırları aynı motifi
+   taşır (hist-blank vb.). */
+.dugum-yukleniyor::before {
+  content: ""; display: inline-block; width: 13px; height: 13px;
+  margin-right: 7px; vertical-align: -2px;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath d='M21.5 7v16.5a2.8 2.8 0 0 1-2.8 2.8h-6.2a2.8 2.8 0 0 1-2.8-2.8v-7.4a2.8 2.8 0 0 1 2.8-2.8h9' fill='none' stroke='%23F0A020' stroke-width='4.4' stroke-linecap='round' stroke-linejoin='round' pathLength='100' stroke-dasharray='58 42'%3E%3Canimate attributeName='stroke-dashoffset' values='0;-100' dur='1.7s' repeatCount='indefinite'/%3E%3C/path%3E%3C/svg%3E") no-repeat center / contain;
 }
 /* Akış DURAKSADI (>2,5 sn parça yok): imleç yanıp sönmeyi bırakır ve
    söner — "çalışıyor mu belli değil" (canlı, 31.08). Yanıp sönme yalnız
    GERÇEKTEN akan metnin işareti; duraksamada durumun sözcüsü şerit. */
-.line.agent.stall::after { animation: none; opacity: .25; text-shadow: none; }
+.line.agent.stall::after { opacity: .25; }
 .line.agent.done::after { content: none; }
 
 /* Uzun cevabin devami. Sonuc ustte acikta, gerisi tiklayinca. */

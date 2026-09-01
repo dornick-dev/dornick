@@ -35,7 +35,7 @@ from . import ortam
 
 # Taramada atlanan gürültü. Bunları göstermek katalogu kullanılmaz yapıyor.
 SKIP = {"__pycache__", ".git", ".venv", "node_modules", ".idea", ".vscode"}
-# dornick'nun kendi altyapı klasörleri atölyede duruyor ama PROJE değil: bir "araç
+# Dornick'in kendi altyapı klasörleri atölyede duruyor ama PROJE değil: bir "araç
 # çalıştır" kartı olarak göstermek paneli kirletiyor (kullanıcı: "dosya yığını
 # değil, proje"). yetenekler=beceriler, gelen=posta kutusu, gorseller=görseller,
 # cihazlar=cihaz kayıtları.
@@ -133,7 +133,7 @@ class Project:
     pid: int = 0
     address: str = ""         # "http://127.0.0.1:8090"
     port: int = 0             # tespit edilen/ilan edilen port
-    stoppable: bool = False   # panelden durdurulabilir mi (dornick'nun kendisi değil)
+    stoppable: bool = False   # panelden durdurulabilir mi (Dornick'in kendisi değil)
 
 
 def projects(sandbox_root: Path, base: Path | None = None) -> list[dict[str, Any]]:
@@ -746,7 +746,7 @@ def _docstring(head: str) -> str:
             end = stripped.find(quote, 3)
             body = stripped[3:end if end > 0 else None]
             return _clean(next((ln for ln in body.splitlines() if ln.strip()), ""))
-    # Docstring yoksa ilk anlamlı YORUM satırı: dornick'nun (ve insanların) yazdığı
+    # Docstring yoksa ilk anlamlı YORUM satırı: Dornick'in (ve insanların) yazdığı
     # betikler çoğu zaman "# Şunu yapar" ile başlıyor — kart özeti oradan.
     for line in stripped.splitlines()[:12]:
         line = line.strip()
@@ -871,7 +871,7 @@ def launch(sandbox_root: Path, rel_path: str, base: Path | None = None) -> dict[
         else:
             return {"ok": False,
                     "error": "Çalıştırma komutu bulunamadı: app.json'a "
-                             "bir `run` satırı ekletebilirsin (dornick'ya sor). "
+                             "bir `run` satırı ekletebilirsin (Dornick'e sor). "
                              + MANIFEST_OGRETICI}
 
     if not target.is_file():
@@ -896,8 +896,8 @@ def running(sandbox_root: Path | None = None,
     ile PID → dinlenen port eşleştirilerek bulunuyor; port henüz bağlanmadıysa
     boş döner ve sonraki yoklamada belirir.
 
-    dornick'nun KENDİ süreçleri bu listeden düşüyor. Model kafası karışıp
-    `dornick --web 8873` çalıştırdığında panel dornick'nun bir kopyasını
+    Dornick'in KENDİ süreçleri bu listeden düşüyor. Model kafası karışıp
+    `dornick --web 8873` çalıştırdığında panel Dornick'in bir kopyasını
     "uygulaman" diye listeliyordu; kullanıcının gördüğü şey kendi
     programının klonuydu. Kendi kopyası ayrı bir satır olarak, DURDURULAMAZ
     biçimde görünüyor — gizlemek de yanlış olurdu, kullanıcı orada bir şey
@@ -923,7 +923,7 @@ def running(sandbox_root: Path | None = None,
         out.append({
             "pid": pid,
             "path": info["path"],
-            "name": "dornick (kendisi)" if kendi else info["name"],
+            "name": "Dornick (kendisi)" if kendi else info["name"],
             "address": _address(pid, parents, listen),
             "started": info.get("started", 0),
             "run": info.get("run", ""),
@@ -956,7 +956,7 @@ def _kesfedilen_sunucular(
     """Atölyedeki projelerin ilan ettiği portları DİNLEYEN süreçler.
 
     Kanıt bir soket: proje "8090'da yaşıyorum" diyor, 8090'ı dinleyen bir
-    süreç var ve o süreç dornick'nun kendisi değil → uygulama çalışıyor.
+    süreç var ve o süreç Dornick'in kendisi değil → uygulama çalışıyor.
 
     Yollar `base`'e göre veriliyor (panel proje yollarıyla eşleştiriyor);
     farklı köke göre üretilen iki yol aynı uygulamayı iki kez gösterirdi.
@@ -993,7 +993,7 @@ def _kesfedilen_sunucular(
 def _canli_isaretle(items: list[Project], root: Path, ref: Path) -> None:
     """Projelere canlı durumu işler: pid, adres, durdurulabilirlik.
 
-    İki kaynak birlikte: (1) süreç defteri (`_PROCS`) — dornick'nun kendi
+    İki kaynak birlikte: (1) süreç defteri (`_PROCS`) — Dornick'in kendi
     başlattıkları; (2) ilan edilen portun gerçekten dinleniyor olması —
     dornick yeniden başlatılsa da, uygulamayı kullanıcı elle koşturmuş olsa da
     çalışan şey görünüyor.
@@ -1035,8 +1035,8 @@ def _canli_isaretle(items: list[Project], root: Path, ref: Path) -> None:
                 _KESFEDILEN.add(dinleyen)
 
 
-# dornick'nun kendi süreçleri: komut satırında `dornick` geçen her şey. Model
-# uygulamasını başlatmak yerine dornick'yu başlattığında (`dornick --web 8873`)
+# Dornick'in kendi süreçleri: komut satırında `dornick` geçen her şey. Model
+# uygulamasını başlatmak yerine Dornick'i başlattığında (`dornick --web 8873`)
 # panel onu "uygulaman" diye listeliyordu — kullanıcı kendi programının
 # klonuna bakıyordu. Bu kalıp o kopyayı tanıyor.
 # Dikkat (01.09, ad değişiminde yakalandı): `dornick` artık hem paket hem
@@ -1057,7 +1057,7 @@ _KESFEDILEN: set[int] = set()
 
 
 def neo_sureci_mi(cmdline: str) -> bool:
-    """Bu komut satırı dornick'nun kendisini mi başlatıyor? (dışarıdan da kullanılır)"""
+    """Bu komut satırı Dornick'in kendisini mi başlatıyor? (dışarıdan da kullanılır)"""
     return bool(_NEO_IZI.search(cmdline or ""))
 
 
@@ -1103,7 +1103,7 @@ def stop(pid: int) -> dict[str, Any]:
         if pid not in _KESFEDILEN:
             return {"ok": False, "error": "Bu süreç izlenmiyor ya da zaten bitmiş."}
         if _neo_ailesi(pid, _proc_bilgi()):
-            return {"ok": False, "error": "Bu dornick'nun kendi süreci — panelden durdurulmuyor."}
+            return {"ok": False, "error": "Bu Dornick'in kendi süreci — panelden durdurulmuyor."}
         try:
             if sys.platform == "win32":
                 subprocess.run(["taskkill", "/PID", str(pid), "/T", "/F"],
@@ -1119,7 +1119,7 @@ def stop(pid: int) -> dict[str, Any]:
     # yok): kabuk aracı komutu olduğu gibi yazıyor, `dornick --web 8873` orada
     # görünüyor.
     if neo_sureci_mi(str(info.get("path") or "")) or neo_sureci_mi(str(info.get("run") or "")):
-        return {"ok": False, "error": "Bu dornick'nun kendi süreci — panelden durdurulmuyor."}
+        return {"ok": False, "error": "Bu Dornick'in kendi süreci — panelden durdurulmuyor."}
     try:
         if sys.platform == "win32":
             subprocess.run(["taskkill", "/PID", str(pid), "/T", "/F"],
@@ -1134,7 +1134,7 @@ def stop(pid: int) -> dict[str, Any]:
             info["proc"].wait(timeout=3)
         except subprocess.TimeoutExpired:
             return {"ok": False, "error": "Süreç durdurulamadı — hâlâ çalışıyor. "
-                                          "Tekrar dene ya da dornick'ya söyle."}
+                                          "Tekrar dene ya da Dornick'e söyle."}
     except Exception as exc:
         return {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
     _PROCS.pop(pid, None)
@@ -1261,7 +1261,7 @@ def _proc_parents() -> dict[int, int]:
 def _proc_bilgi() -> dict[int, dict[str, Any]]:
     """pid → {ppid, cmd}. Süreç ağacı VE komut satırları tek sorguda.
 
-    Komut satırı gerekiyor çünkü dornick'nun kendi kopyasını (`dornick --web ...`)
+    Komut satırı gerekiyor çünkü Dornick'in kendi kopyasını (`dornick --web ...`)
     kullanıcının uygulamasından ancak o ayırıyor. Ayrı bir sorgu daha açmak
     4 saniyelik yoklamayı iki katına çıkarırdı; aynı sorguya bir alan
     eklemek bedavaya yakın.
@@ -1442,7 +1442,7 @@ def _runtime(name: str) -> str:
     if not found:
         raise FileNotFoundError(
             f"'{name}' bu makinede kurulu değil ya da PATH'te yok. "
-            f"Kurulumu dornick'dan isteyebilirsin."
+            f"Kurulumu Dornick'ten isteyebilirsin."
         )
     return found
 

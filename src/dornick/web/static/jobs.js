@@ -196,7 +196,7 @@
       return;
     }
     const body = document.getElementById("jobs-body");
-    body.replaceChildren(el("p", "jobs-blank", t("Yükleniyor…")));
+    body.replaceChildren(el("p", "jobs-blank dugum-yukleniyor", t("Yükleniyor…")));
     try {
       const res = await (await fetch("/api/jobs")).json();
       tasks = res.tasks || [];

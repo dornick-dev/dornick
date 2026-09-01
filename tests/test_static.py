@@ -1541,7 +1541,7 @@ def test_the_goals_panel_reserves_its_own_room() -> None:
     goals_i = html.find('id="goals"')
     assert 0 <= wrap_i < goals_i
     assert re.search(r"const GOAL_FOLD_WIDTH = \d+", APP_JS)
-    assert "dornick'nun kendine yazdığı iş listesi" in APP_JS
+    assert "Dornick'in kendine yazdığı iş listesi" in APP_JS
 
 
 def test_goals_can_be_finished_dropped_and_cleared() -> None:
@@ -1650,7 +1650,7 @@ def test_the_panel_explains_itself_and_accepts_user_items() -> None:
     """Kullanıcı "bu görevleri kim oluşturuyor bilmiyorum" dedi: cevap artık
     panelin kendisinde, ve liste iki taraflı — kullanıcı da ekleyebiliyor."""
     assert "GOAL_ACIKLAMA" in APP_JS
-    assert "dornick'nun kendine yazdığı iş listesi" in APP_JS
+    assert "Dornick'in kendine yazdığı iş listesi" in APP_JS
     assert "Sen de ekleyebilir, silebilirsin" in APP_JS
     body = re.search(r"function render\(\) \{(.*?)\n  \}", APP_JS, re.S)
     assert body and "goals-what" in body.group(1)
@@ -2515,3 +2515,25 @@ def test_the_git_bar_never_offers_the_scratch_workspace() -> None:
     durum = SERVER_SRC.split("def _git_status", 1)[1].split("def _git_action", 1)[0]
     assert "box.project is not None" in durum
     assert "box.project or box.root" not in durum
+
+
+def test_the_stream_cursor_is_the_knitting_knot() -> None:
+    """Kullanici istegi (01.09): bekleme isaretleri yanip sonen nokta degil,
+    ORULEN DUGUM - marka kendini cizip sokuyor. Akis imleci SMIL'li data-URI;
+    duraksamada soner, bitince kalkar."""
+    assert "stroke-dashoffset" in CSS and "data:image/svg+xml" in CSS
+    imlec = CSS.split(".line.agent::after", 1)[1].split("}", 1)[0]
+    assert "animate" in imlec and "repeatCount='indefinite'" in imlec
+    assert ".line.agent.stall::after" in CSS
+    assert ".line.agent.done::after" in CSS
+
+
+def test_every_waiting_blank_knits_the_knot() -> None:
+    """"Yukleniyor..." satirlari da ayni motifi tasir: ortak sinif
+    dugum-yukleniyor, tum panellerde (gecmis, uygulamalar, git, gorevler,
+    komut paleti, ayarlar)."""
+    assert ".dugum-yukleniyor::before" in CSS
+    kok = Path(__file__).resolve().parents[1] / "src" / "dornick" / "web" / "static"
+    for dosya in ("history.js", "apps.js", "git.js", "jobs.js", "komut.js", "settings.js"):
+        icerik = (kok / dosya).read_text(encoding="utf-8")
+        assert "dugum-yukleniyor" in icerik, dosya

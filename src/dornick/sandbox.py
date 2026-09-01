@@ -14,7 +14,7 @@ kodunda çalıştırmak istediğinde ("şu projede şunu düzelt") her dosyayı
 atölyeye kopyalamak işi imkânsız kılıyor: proje bir dosya değil bir ağaç,
 kopyası da orijinali olmuyor. O yüzden kullanıcı bir klasörü AÇIKÇA
 seçince orası da yazılabilir oluyor — **seçimin kendisi onaydır**. Atölye
-her koşulda açık kalıyor: dornick'nun kendi işleri oraya yazılmaya devam
+her koşulda açık kalıyor: Dornick'in kendi işleri oraya yazılmaya devam
 ediyor, projeyle karışmıyor.
 
 Kapsamın sınırı dürüstçe söylenmeli: bu katman **dosya araçlarını** bağlıyor.
@@ -126,7 +126,7 @@ def kok_uyarisi(path: Path, *, state_dir: Path | None = None) -> str:
     """Engel değil ama söylenmesi gereken haller. Boş dize = söylenecek yok.
 
     Kendi kaynak ağacını ya da `.dornick` durumunu kapsayan bir seçim
-    ENGELLENMİYOR: kendi kodunu dornick'ya düzelttirmek meşru bir istek ve bu
+    ENGELLENMİYOR: kendi kodunu Dornick'e düzelttirmek meşru bir istek ve bu
     depo tam olarak öyle geliştiriliyor. Ama sessiz de kalınmıyor —
     kullanıcı neyin kapsandığını bilerek seçsin.
     """
@@ -141,8 +141,8 @@ def kok_uyarisi(path: Path, *, state_dir: Path | None = None) -> str:
             durum = state_dir.expanduser().resolve()
             if durum == kok or kok in durum.parents:
                 notlar.append(
-                    "dornick'nun kendi durumu (.dornick: ayarlar, anılar, oturumlar) "
-                    "bu klasörün altında — buraya yazmak dornick'nun hafızasına "
+                    "Dornick'in kendi durumu (.dornick: ayarlar, anılar, oturumlar) "
+                    "bu klasörün altında — buraya yazmak Dornick'in hafızasına "
                     "dokunabilir."
                 )
         except OSError:
@@ -153,7 +153,7 @@ def kok_uyarisi(path: Path, *, state_dir: Path | None = None) -> str:
         kaynak = Path(__file__).resolve().parent
         if kaynak == kok or kok in kaynak.parents:
             notlar.append(
-                "dornick'nun kendi kaynak kodu bu klasörün altında — kendi "
+                "Dornick'in kendi kaynak kodu bu klasörün altında — kendi "
                 "kodunu düzenletmek istiyorsan bu doğru; istemiyorsan daha "
                 "dar bir klasör seç."
             )
@@ -316,7 +316,7 @@ class Sandbox:
             )
 
         # Proje seçiliyken sıra tersine dönüyor: asıl iş projede, atölye
-        # dornick'nun kendi işleri için. Model hangisinin ne olduğunu bilmeli,
+        # Dornick'in kendi işleri için. Model hangisinin ne olduğunu bilmeli,
         # yoksa kullanıcının projesine "kendi denemelerini" bırakır.
         uyari = f"\n- Dikkat: {self.note}" if self.note else ""
         return (
@@ -324,7 +324,7 @@ class Sandbox:
             f"- **Çalışılan proje: {proje}** — kullanıcının klasörü, yazma "
             "serbest. Kullanıcı bu klasörü Ayarlar › Proje'den bilerek seçti; "
             "asıl iş burada. Göreli yollar buraya çözülüyor.\n"
-            f"- dornick'nun kendi atölyesi: {self.root} — kendi işlerin, "
+            f"- Dornick'in kendi atölyesi: {self.root} — kendi işlerin, "
             "denemelerin ve kullanıcının istemediği ara ürünler için. "
             "Projeye ait olmayan şeyleri buraya koy.\n"
             "- Okuma her yerde serbest; yazma yalnızca bu iki klasörde.\n"

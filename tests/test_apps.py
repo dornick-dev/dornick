@@ -394,7 +394,7 @@ def test_neo_kendi_kopyasi_uygulama_gibi_listelenmez(tmp_path: Path) -> None:
         row = next(r for r in apps.running() if r["pid"] == proc.pid)
         assert row["self"] is True
         assert row["stoppable"] is False
-        assert row["name"] == "dornick (kendisi)"
+        assert row["name"] == "Dornick (kendisi)"
         # Panelden durdurulamaz: dornick kendi bacağına sıkmasın.
         red = apps.stop(proc.pid)
         assert not red["ok"] and "kendi süreci" in red["error"]

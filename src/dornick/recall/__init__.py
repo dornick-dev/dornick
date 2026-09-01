@@ -1,6 +1,6 @@
 """Hatırlama protokolü.
 
-Belleğe erişimin tek sözleşmesi. dornick'nin kendisi de, MCP üzerinden
+Belleğe erişimin tek sözleşmesi. Dornick'in kendisi de, MCP üzerinden
 bağlanan başka bir ajan da (Claude Code dahil) aynı yüzeyi kullanır.
 
 Sözleşme kademeli — model her şeyi almaz, gezinir:

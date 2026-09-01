@@ -187,7 +187,7 @@ def sema_onar(sema: Any) -> Any:
         GenerateContentRequest.tools[0].function_declarations[23]
         .parameters.properties[steps].items: missing field
 
-    Yani tek bir aracın eksiği, o modelde dornick'yu tümüyle çalışmaz yapıyor.
+    Yani tek bir aracın eksiği, o modelde Dornick'i tümüyle çalışmaz yapıyor.
     Şemaları elle düzeltmek şart ama yetmez: bir sonraki araç aynı hatayla
     yazıldığında da kırılmamak için burada da yakalanıyor.
     """

@@ -4,7 +4,7 @@ Ekran aracı (`screen`) piksel görüyor, `web` aracı çıplak HTTP indiriyor.
 Bu araç ikisinin arasındaki boşluk: **gerçek bir tarayıcı** — JavaScript
 çalışmış, oturumlar açık, sayfa insanın gördüğü halinde.
 
-Tarayıcı dornick'nun kendi Chrome profiliyle açılıyor. Kullanıcı orada bir
+Tarayıcı Dornick'in kendi Chrome profiliyle açılıyor. Kullanıcı orada bir
 siteye giriş yaparsa o oturum kalıcı: profil `.dornick/chrome/` içinde.
 """
 
@@ -15,7 +15,7 @@ from typing import Any
 from .base import ToolContext, ToolRegistry, ToolResult, object_schema
 
 DESCRIPTION = """
-Gerçek bir tarayıcı sürer (dornick'nun kendi Chrome/Edge profili). Sayfalar
+Gerçek bir tarayıcı sürer (Dornick'in kendi Chrome/Edge profili). Sayfalar
 JavaScript çalışmış, oturumlar açık halde — `web` aracının çıplak
 indirmesinden farkı bu.
 

@@ -26,14 +26,14 @@ Dil.ekle({
     "Once you save, I'll start working here.",
   "Şu an burada çalışıyorum; yazma izni bu klasörde geçerli.":
     "I'm working here now; write access applies to this folder.",
-  "Kendi kodunda çalışmamı istediğin klasör. Seçmek bir ONAYDIR: orası yazılabilir olur. Atölye ayrıca durmaya devam eder — dornick'nun kendi işleri oraya gider. Proje değiştirmek konuşmayı, anıları ve oturum geçmişini ETKİLEMEZ; yalnızca nerede çalışıldığını değiştirir.":
+  "Kendi kodunda çalışmamı istediğin klasör. Seçmek bir ONAYDIR: orası yazılabilir olur. Atölye ayrıca durmaya devam eder — Dornick'in kendi işleri oraya gider. Proje değiştirmek konuşmayı, anıları ve oturum geçmişini ETKİLEMEZ; yalnızca nerede çalışıldığını değiştirir.":
     "The folder where you want me to work on your own code. Choosing it is "
     + "an APPROVAL: that folder becomes writable. The workshop stays as it "
-    + "is — dornick's own work still goes there. Switching projects does NOT "
+    + "is — Dornick's own work still goes there. Switching projects does NOT "
     + "affect the conversation, memories or session history; it only changes "
     + "where the work happens.",
-  "dornick'nun KENDİ alanı — kendi işleri, denemeleri buraya. Şu an: ":
-    "dornick's OWN area — its own work and experiments go here. Now: ",
+  "Dornick'in KENDİ alanı — kendi işleri, denemeleri buraya. Şu an: ":
+    "Dornick's OWN area — its own work and experiments go here. Now: ",
   // yedek model
   "Yedek model": "Fallback model",
   "boş — yedek yok": "empty — no fallback",
@@ -57,8 +57,8 @@ Dil.ekle({
   "Sunucuya ulaşılamadı": "Could not reach the server",
 
   // taşı / yedek
-  "dornick'nun burada biriktirdikleri — anılar, bağlar, hedefler, ruh, yetenekler — tek bir pakette taşınır. İçe alma üzerine yazmaz, katar: aynı anı iki kez girmez, kimliği ezmez.":
-    "Everything dornick has gathered here — memories, links, goals, persona, skills — travels in a single bundle. Importing does not overwrite, it merges: the same memory never enters twice, the identity is never crushed.",
+  "Dornick'in burada biriktirdikleri — anılar, bağlar, hedefler, ruh, yetenekler — tek bir pakette taşınır. İçe alma üzerine yazmaz, katar: aynı anı iki kez girmez, kimliği ezmez.":
+    "Everything Dornick has gathered here — memories, links, goals, persona, skills — travels in a single bundle. Importing does not overwrite, it merges: the same memory never enters twice, the identity is never crushed.",
   "Dışa aktar": "Export",
   "Paketi indir": "Download the bundle",
   "İçe al": "Import",
@@ -237,8 +237,8 @@ Dil.ekle({
   "Gorev metni bos": "Task text is empty",
 
   // ses
-  "Ses paketi kurulu degil. Kurmak icin: pip install \"dornick[voice]\"":
-    "Voice package not installed. To install: pip install \"dornick[voice]\"",
+  "Ses paketi kurulu degil. Kurmak icin: pip install \"Dornick[voice]\"":
+    "Voice package not installed. To install: pip install \"Dornick[voice]\"",
   "Ses paketi bu kurulumda eksik gorunuyor. Kurulum sihirbazini yeniden calistirmak eksigi onarir.":
     "The voice package appears to be missing from this installation. Re-running the setup wizard repairs it.",
   "Sesli konus": "Speak aloud",
@@ -264,8 +264,8 @@ Dil.ekle({
   " ses": " voices",
 
   // mikrofon
-  "Tanima paketi kurulu degil. Kurmak icin: pip install \"dornick[listen]\"":
-    "Recognition package not installed. To install: pip install \"dornick[listen]\"",
+  "Tanima paketi kurulu degil. Kurmak icin: pip install \"Dornick[listen]\"":
+    "Recognition package not installed. To install: pip install \"Dornick[listen]\"",
   "Dinleme bu kuruluma dahil edilmemis. Kurulum sihirbazini yeniden calistirip 'Dinleme (mikrofon)' bilesenini isaretleyerek ekleyebilirsin.":
     "Listening isn't included in this installation. Re-run the setup wizard and tick the 'Listening (microphone)' component to add it.",
   "Mikrofon": "Microphone",
@@ -277,10 +277,10 @@ Dil.ekle({
   "Surekli dinleme acikken aranan kelime. Bos birakirsan yalnizca bas-konus calisir — mikrofon surekli acik kalmaz":
     "The word listened for while always-on listening is active. Leave it empty and only push-to-talk works — the microphone never stays open",
   "Serbest dinleme": "Open listening",
-  "Acikken uyandirma sozu hic gerekmiyor: duyulan her cumle dornick'ya gidiyor. Evde tek basina calisiyorsan dogrusu bu — \"hava nasil?\" derken baska kime soruyor olabilirsin ki. Odada televizyon varsa ya da baskalariyla konusuyorsan kapali birak":
+  "Acikken uyandirma sozu hic gerekmiyor: duyulan her cumle Dornick'e gidiyor. Evde tek basina calisiyorsan dogrusu bu — \"hava nasil?\" derken baska kime soruyor olabilirsin ki. Odada televizyon varsa ya da baskalariyla konusuyorsan kapali birak":
     "When on, no wake word is needed: every sentence heard goes to dornick. Working alone at home this is the right choice — who else would you be asking \"how's the weather?\". If a TV is on or others are talking, leave it off",
-  "Kapaliyken bile her cumlede adini soylemek gerekmiyor: bir kez \"dornick\" deyip baslattiktan sonra karsilik verdigi her seferde sohbet 3 dakika daha acik kaliyor.":
-    "Even when this is off you don't have to say the name in every sentence: once a \"dornick\" starts it, each time it answers the conversation stays open for another 3 minutes.",
+  "Kapaliyken bile her cumlede adini soylemek gerekmiyor: bir kez \"Dornick\" deyip baslattiktan sonra karsilik verdigi her seferde sohbet 3 dakika daha acik kaliyor.":
+    "Even when this is off you don't have to say the name in every sentence: once a \"Dornick\" starts it, each time it answers the conversation stays open for another 3 minutes.",
   "Alan sozlugu": "Domain vocabulary",
   "Tanicinin bilmedigi ozel kelimeler: cihaz adlari, marka, jargon. Virgullu liste. Cihaz ve yetenek adlari kendiliginden ekleniyor; buraya yazdiklarin onlara eklenir":
     "Special words the recognizer doesn't know: device names, brands, jargon. Comma-separated. Device and skill names are added automatically; what you write here is added on top",
@@ -309,8 +309,8 @@ Dil.ekle({
 
   // izlenen kameralar
   "kameralar okunamadi": "could not load cameras",
-  "Goruntu paketi kurulu degil. Kurmak icin: pip install \"dornick[watch]\"":
-    "Vision package not installed. To install: pip install \"dornick[watch]\"",
+  "Goruntu paketi kurulu degil. Kurmak icin: pip install \"Dornick[watch]\"":
+    "Vision package not installed. To install: pip install \"Dornick[watch]\"",
   "Kamera izleme bu kuruluma dahil edilmemis. Kurulum sihirbazini yeniden calistirip 'Kamera izleme' bilesenini isaretleyerek ekleyebilirsin.":
     "Camera watching isn't included in this installation. Re-run the setup wizard and tick the 'Camera watching' component to add it.",
   "genel bakış": "general view",
@@ -352,22 +352,22 @@ Dil.ekle({
   "Örneği kendi varlığına göre değiştir. Bilmediğin bir alanı boş bırak — yanlış bir adres fiziksel bir sonuç doğuruyor.":
     "Adapt the example to your own asset. Leave a field you don't know empty — a wrong address has physical consequences.",
   "Okunamayan dosyalar:\n": "Unreadable files:\n",
-  "Kayıtlı varlık yok. Bir PLC, bir kapı, bir ağ kamerası, başka bir bilgisayar — dornick'nun tanıdığı her şey buraya yazılır. Elle ekleyebilirsin; dornick da bir varlık tarif ettiğinde kendisi kaydediyor.":
-    "No assets recorded. A PLC, a door, a network camera, another computer — everything dornick knows lives here. You can add one by hand; dornick also saves one itself when you describe an asset.",
-  "Varlık kaydı tek başına bir şey yapmıyor: nereye bağlanılacağını söylüyor. İşi yapan şey ona bağlanan yetenek — dornick'ya \"bu varlık için bir yetenek yaz\" dediğinde kendisi yazıyor.":
-    "An asset record does nothing by itself: it says where to connect. The work is done by a skill attached to it — tell dornick \"write a skill for this asset\" and it writes one.",
+  "Kayıtlı varlık yok. Bir PLC, bir kapı, bir ağ kamerası, başka bir bilgisayar — Dornick'in tanıdığı her şey buraya yazılır. Elle ekleyebilirsin; Dornick da bir varlık tarif ettiğinde kendisi kaydediyor.":
+    "No assets recorded. A PLC, a door, a network camera, another computer — everything Dornick knows lives here. You can add one by hand; Dornick also saves one itself when you describe an asset.",
+  "Varlık kaydı tek başına bir şey yapmıyor: nereye bağlanılacağını söylüyor. İşi yapan şey ona bağlanan yetenek — Dornick'e \"bu varlık için bir yetenek yaz\" dediğinde kendisi yazıyor.":
+    "An asset record does nothing by itself: it says where to connect. The work is done by a skill attached to it — tell Dornick \"write a skill for this asset\" and it writes one.",
   " nokta": " points",
   "Düzenle": "Edit",
   "Evet, sil": "Yes, delete",
   "Vazgeç": "Cancel",
   "Yetenekler": "Skills",
   "Dornick'nun araç olarak yüklediği Python betikleri. Satıra tıkla → düzenle.":
-    "Python scripts dornick loads as tools. Click a row to edit.",
+    "Python scripts Dornick loads as tools. Click a row to edit.",
   "Bu yetenek dosyadan ve araç defterinden silinir. Geri gelmez.":
     "This skill is removed from disk and the tool ledger. It will not come back.",
   "Yetenek kaydedilemedi": "Could not save the skill",
   "Dornick'nun araç olarak yüklediği Python betikleri. Satıra tıkla → detay.":
-    "Python scripts dornick loads as tools. Click a row for details.",
+    "Python scripts Dornick loads as tools. Click a row for details.",
   "Kodu göster": "Show code",
   "Kodu gizle": "Hide code",
   "Açıklama yok — dosyanın başındaki docstring buraya düşer.":
@@ -402,8 +402,8 @@ Dil.ekle({
   "Yeteneğe bir ad ver": "Give the skill a name",
   "Python — NAME, DESCRIPTION, SCHEMA, run(args, ctx). Boşsa iskelet açılır.":
     "Python — NAME, DESCRIPTION, SCHEMA, run(args, ctx). Leave empty for a skeleton.",
-  "Kaydedilen yetenek anında araç olarak yüklenir; silinen hem dosyadan hem defterden gider. Standart yetenekler ilk açılışta gelir — silersen geri gelmez. dornick da iş sırasında kendine yetenek yazar.":
-    "A saved skill loads as a tool instantly; a deleted one is gone from both the file and the ledger. The standard skills arrive on first launch — delete one and it doesn't come back. dornick also writes itself skills while working.",
+  "Kaydedilen yetenek anında araç olarak yüklenir; silinen hem dosyadan hem defterden gider. Standart yetenekler ilk açılışta gelir — silersen geri gelmez. Dornick da iş sırasında kendine yetenek yazar.":
+    "A saved skill loads as a tool instantly; a deleted one is gone from both the file and the ledger. The standard skills arrive on first launch — delete one and it doesn't come back. Dornick also writes itself skills while working.",
   "Dosya okunamadı": "Could not read the file",
   "Kaydet ve yükle": "Save & load",
 
@@ -491,19 +491,19 @@ Dil.ekle({
 
   // konum ve açılış
   "Bulunduğun yer": "Where you are",
-  "Yazarsan kesin kaynak bu olur; dornick sorduğunda burayı okur ve bir daha sormaz":
-    "If you type it, this becomes the definitive source; when dornick wonders, it reads this and never asks again",
+  "Yazarsan kesin kaynak bu olur; Dornick sorduğunda burayı okur ve bir daha sormaz":
+    "If you type it, this becomes the definitive source; when Dornick wonders, it reads this and never asks again",
   "IP'den konum bul": "Locate by IP",
-  "Açıkken adresin iki konum servisine gidiyor. Sonuç şehir düzeyinde güvenilmez — ölçümde iki servis iki ayrı şehir söyledi — ve dornick onu kesin değil, teyit edilecek bir ipucu olarak kullanıyor":
-    "When on, your address goes to two location services. The result is unreliable at city level — in one measurement two services named two different cities — and dornick treats it as a hint to verify, not a fact",
-  "Kapalıyken bile ülke biliniyor: makinenin saat diliminden geliyor, ağa çıkmıyor. Şehir gerekiyorsa dornick sana soruyor.":
-    "Even when off, the country is known: it comes from the machine's timezone and never touches the network. If the city matters, dornick asks you.",
+  "Açıkken adresin iki konum servisine gidiyor. Sonuç şehir düzeyinde güvenilmez — ölçümde iki servis iki ayrı şehir söyledi — ve Dornick onu kesin değil, teyit edilecek bir ipucu olarak kullanıyor":
+    "When on, your address goes to two location services. The result is unreliable at city level — in one measurement two services named two different cities — and Dornick treats it as a hint to verify, not a fact",
+  "Kapalıyken bile ülke biliniyor: makinenin saat diliminden geliyor, ağa çıkmıyor. Şehir gerekiyorsa Dornick sana soruyor.":
+    "Even when off, the country is known: it comes from the machine's timezone and never touches the network. If the city matters, Dornick asks you.",
   "Bilgisayar açılınca başlat": "Start when the computer boots",
   "Yalnızca Windows'ta": "Windows only",
   "Yok": "Not available",
   "bilgisayar açılınca başlat": "Start when the computer boots",
-  "Tepside çalışan, \"hey dornick\" ile uyanan bir ajanı her açılışta elle başlatmak gerekmesin":
-    "An agent that sits in the tray and wakes to \"hey dornick\" shouldn't need starting by hand at every boot",
+  "Tepside çalışan, \"hey Dornick\" ile uyanan bir ajanı her açılışta elle başlatmak gerekmesin":
+    "An agent that sits in the tray and wakes to \"hey Dornick\" shouldn't need starting by hand at every boot",
   "Çalıştırılacak satır": "Command that runs",
   "Kayıt: HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run · Görev Yöneticisi › Başlangıç'tan da görebilirsin":
     "Registry: HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run · also visible under Task Manager › Startup",
@@ -522,14 +522,14 @@ Dil.ekle({
   "Model bir turda on araç birden isteyebiliyor; hepsini aynı anda başlatmak zayıf bir makinede belleği tüketiyor":
     "The model can request ten tools in one turn; launching them all at once exhausts memory on a weak machine",
   "Aynı anda alt ajan": "Concurrent subagents",
-  "İşler yoğunken dornick işi yardımcılara dağıtıyor; bu sayıdan fazlası sıraya girer. Yerel sunucuda model tek kopyaysa 1 mantıklı":
-    "When work piles up dornick hands it to helpers; beyond this number they queue. With a single model copy on a local server, 1 makes sense",
+  "İşler yoğunken Dornick işi yardımcılara dağıtıyor; bu sayıdan fazlası sıraya girer. Yerel sunucuda model tek kopyaysa 1 mantıklı":
+    "When work piles up Dornick hands it to helpers; beyond this number they queue. With a single model copy on a local server, 1 makes sense",
   "Modeli yüklü tut (saniye)": "Keep the model loaded (seconds)",
   "0 = sunucunun kendi davranışı. Her istekte yeniden yükleme onlarca saniye sürüyor ve ilk cevabı bekletiyor":
     "0 = the server's own behavior. Reloading on every request takes tens of seconds and delays the first answer",
-  "dornick chrome (tarayıcı)": "dornick chrome (browser)",
-  "dornick kendi Chrome/Edge profiliyle sayfa açar, okur, görüntü alır. Girişleri o pencerede sen yaparsın; oturumlar profilinde kalıcıdır":
-    "dornick opens, reads and screenshots pages with its own Chrome/Edge profile. You do the logins in that window yourself; sessions persist in the profile",
+  "Dornick chrome (tarayıcı)": "Dornick chrome (browser)",
+  "Dornick kendi Chrome/Edge profiliyle sayfa açar, okur, görüntü alır. Girişleri o pencerede sen yaparsın; oturumlar profilinde kalıcıdır":
+    "Dornick opens, reads and screenshots pages with its own Chrome/Edge profile. You do the logins in that window yourself; sessions persist in the profile",
   "Sunucuda yüklü olanlar": "Loaded on the server",
   "Sunucu yüklü model listesi vermiyor": "The server does not list loaded models",
   " — aynı model birden çok kez yüklü. \"Aynı anda model isteği\" 1 olduğunda yenisi oluşmaz; duranları LM Studio'da Eject ile kaldır.":
@@ -572,8 +572,8 @@ Dil.ekle({
     "When on, the brain grows into the centre when no panel is open; when off it stays in the right panel and text is never covered",
   "Beyin ortada büyüyecek": "The brain will take the stage",
   "Beyin sağ panelde kalacak": "The brain will stay in the side panel",
-  "dornick'nun yerel taban modeli anılarından gece sessizce öğrenir: birikince arka planda, düşük öncelikle ince ayar koşar; gerileyen aday sınav kapısında çöpe gider. Etiketleme seçili modelle yapılır: yerel modelde veri makineden çıkmaz; bulut modelde bu adım açık onay vermedikçe atlanır (onay verilirse anı metni o sağlayıcıya gider)":
-    "dornick's local base model quietly learns from your memories at night: once enough has gathered, a low-priority fine-tune runs in the background; a regressing candidate is discarded at the exam gate. Labeling uses your selected model: with a local model data never leaves the machine; with a hosted model this step is skipped unless you explicitly opt in (opting in sends memory text to that provider)",
+  "Dornick'in yerel taban modeli anılarından gece sessizce öğrenir: birikince arka planda, düşük öncelikle ince ayar koşar; gerileyen aday sınav kapısında çöpe gider. Etiketleme seçili modelle yapılır: yerel modelde veri makineden çıkmaz; bulut modelde bu adım açık onay vermedikçe atlanır (onay verilirse anı metni o sağlayıcıya gider)":
+    "Dornick's local base model quietly learns from your memories at night: once enough has gathered, a low-priority fine-tune runs in the background; a regressing candidate is discarded at the exam gate. Labeling uses your selected model: with a local model data never leaves the machine; with a hosted model this step is skipped unless you explicitly opt in (opting in sends memory text to that provider)",
   "Tanıma eğitimi açıldı": "Personal training enabled",
   "Tanıma eğitimi kapatıldı": "Personal training disabled",
   "Bulut modelle etiketlemeye izin ver": "Allow labeling with a hosted model",
@@ -604,18 +604,18 @@ Dil.ekle({
     "Provider keys — written to disk separately, never read back.",
   "Pencere boyutu, yanıt uzunluğu ve görüntü bütçesi.":
     "Window size, answer length and the image budget.",
-  "dornick'nun sesi: açık/kapalı, ton ve karakter.":
-    "dornick's voice: on/off, tone and character.",
+  "Dornick'in sesi: açık/kapalı, ton ve karakter.":
+    "Dornick's voice: on/off, tone and character.",
   "Dinleme ve uyandırma sözü.":
     "Listening and the wake word.",
   "Kamera aç/kapa ve izlenen kameralar.":
     "Camera on/off and watched cameras.",
   "Nerede olduğun ve bilgisayar açılınca başlatma.":
     "Where you are, and starting at boot.",
-  "dornick'nun tanıdığı cihazlar ve sistemler.":
-    "The devices and systems dornick knows.",
-  "dornick'nun araç olarak yüklediği betikler.":
-    "The scripts dornick loads as tools.",
+  "Dornick'in tanıdığı cihazlar ve sistemler.":
+    "The devices and systems Dornick knows.",
+  "Dornick'in araç olarak yüklediği betikler.":
+    "The scripts Dornick loads as tools.",
   "Dış araç sunucuları (MCP).": "External tool servers (MCP).",
   "Posta okuma ve gönderme hesabı.": "The account for reading and sending mail.",
   "Zamanlanmış işler: ne, ne zaman, en son ne oldu.":
@@ -753,8 +753,8 @@ const Settings = (() => {
 
   // --- taşı / yedek -----------------------------------------------------
   //
-  // dornick'nun bu makinede biriktirdikleri (anılar, bağlar, hedefler, ruh,
-  // yetenekler) tek bir taşınabilir pakete konup başka bir dornick'ya
+  // Dornick'in bu makinede biriktirdikleri (anılar, bağlar, hedefler, ruh,
+  // yetenekler) tek bir taşınabilir pakete konup başka bir Dornick'e
   // BİRLEŞTİRİLEBİLİR. İçe alma üzerine yazmıyor — katıyor: aynı anı iki
   // kez girmiyor, kimlik (ruh) ezilmiyor.
 
@@ -765,7 +765,7 @@ const Settings = (() => {
     head(pane, "Taşı", "Paketle taşı, birleştir, sıfırla.");
 
     pane.append(el("p", "pane-note",
-      t("dornick'nun burada biriktirdikleri — anılar, bağlar, hedefler, ruh, " +
+      t("Dornick'in burada biriktirdikleri — anılar, bağlar, hedefler, ruh, " +
       "yetenekler — tek bir pakette taşınır. İçe alma üzerine yazmaz, katar: " +
       "aynı anı iki kez girmez, kimliği ezmez.")));
 
@@ -1689,14 +1689,14 @@ const Settings = (() => {
   function drawVoice() {
     const pane = panes.voice;
     pane.textContent = "";
-    head(pane, "Ses", "dornick'nun sesi: açık/kapalı, ton ve karakter.");
+    head(pane, "Ses", "Dornick'in sesi: açık/kapalı, ton ve karakter.");
 
     if (!state.voice.available) {
       // Kurulu duzende pip onermek anlamsiz: paket kuruluma dahil,
       // yoklugu eksik/bozuk kurulum demek — sihirbaz onarir.
       pane.append(el("p", "pane-note bad", t(state.installed
         ? "Ses paketi bu kurulumda eksik gorunuyor. Kurulum sihirbazini yeniden calistirmak eksigi onarir."
-        : "Ses paketi kurulu degil. Kurmak icin: pip install \"dornick[voice]\"")));
+        : "Ses paketi kurulu degil. Kurmak icin: pip install \"Dornick[voice]\"")));
       return;
     }
 
@@ -1812,7 +1812,7 @@ const Settings = (() => {
       // Kuruluda dogru oneri sihirbazdaki bilesen — pip degil.
       pane.append(el("p", "pane-note bad", t(state.installed
         ? "Dinleme bu kuruluma dahil edilmemis. Kurulum sihirbazini yeniden calistirip 'Dinleme (mikrofon)' bilesenini isaretleyerek ekleyebilirsin."
-        : "Tanima paketi kurulu degil. Kurmak icin: pip install \"dornick[listen]\"")));
+        : "Tanima paketi kurulu degil. Kurmak icin: pip install \"Dornick[listen]\"")));
       return;
     }
 
@@ -1837,12 +1837,12 @@ const Settings = (() => {
       "Surekli dinleme acikken aranan kelime. Bos birakirsan yalnizca " +
       "bas-konus calisir — mikrofon surekli acik kalmaz",
       text((patch.listen || {}).wake ?? state.listen.wake,
-           (v) => set("listen", "wake", v.trim()), "dornick")
+           (v) => set("listen", "wake", v.trim()), "Dornick")
     ));
 
     pane.append(field(
       "Serbest dinleme",
-      "Acikken uyandirma sozu hic gerekmiyor: duyulan her cumle dornick'ya " +
+      "Acikken uyandirma sozu hic gerekmiyor: duyulan her cumle Dornick'e " +
       "gidiyor. Evde tek basina calisiyorsan dogrusu bu — \"hava nasil?\" " +
       "derken baska kime soruyor olabilirsin ki. Odada televizyon varsa ya " +
       "da baskalariyla konusuyorsan kapali birak",
@@ -1852,7 +1852,7 @@ const Settings = (() => {
 
     pane.append(el("p", "pane-note",
       t("Kapaliyken bile her cumlede adini soylemek gerekmiyor: bir kez " +
-      "\"dornick\" deyip baslattiktan sonra karsilik verdigi her seferde " +
+      "\"Dornick\" deyip baslattiktan sonra karsilik verdigi her seferde " +
       "sohbet 3 dakika daha acik kaliyor.")));
 
     pane.append(field(
@@ -1926,7 +1926,7 @@ const Settings = (() => {
     if (!data.available) {
       pane.append(el("p", "pane-note bad", t((state && state.installed)
         ? "Kamera izleme bu kuruluma dahil edilmemis. Kurulum sihirbazini yeniden calistirip 'Kamera izleme' bilesenini isaretleyerek ekleyebilirsin."
-        : "Goruntu paketi kurulu degil. Kurmak icin: pip install \"dornick[watch]\"")));
+        : "Goruntu paketi kurulu degil. Kurmak icin: pip install \"Dornick[watch]\"")));
       return;
     }
 
@@ -2055,7 +2055,7 @@ const Settings = (() => {
   function drawDevices(data) {
     const pane = panes.devices;
     pane.textContent = "";
-    head(pane, "Varlıklar", "dornick'nun tanıdığı cihazlar ve sistemler.");
+    head(pane, "Varlıklar", "Dornick'in tanıdığı cihazlar ve sistemler.");
 
     const list = el("div", "rows");
     for (const device of data.devices || []) list.append(deviceRow(device));
@@ -2076,12 +2076,12 @@ const Settings = (() => {
     if (!(data.devices || []).length) {
       pane.append(el("p", "pane-note",
         t("Kayıtlı varlık yok. Bir PLC, bir kapı, bir ağ kamerası, başka bir " +
-        "bilgisayar — dornick'nun tanıdığı her şey buraya yazılır. Elle " +
-        "ekleyebilirsin; dornick da bir varlık tarif ettiğinde kendisi kaydediyor.")));
+        "bilgisayar — Dornick'in tanıdığı her şey buraya yazılır. Elle " +
+        "ekleyebilirsin; Dornick da bir varlık tarif ettiğinde kendisi kaydediyor.")));
     }
     pane.append(el("p", "pane-note",
       t("Varlık kaydı tek başına bir şey yapmıyor: nereye bağlanılacağını " +
-      "söylüyor. İşi yapan şey ona bağlanan yetenek — dornick'ya \"bu varlık için " +
+      "söylüyor. İşi yapan şey ona bağlanan yetenek — Dornick'e \"bu varlık için " +
       "bir yetenek yaz\" dediğinde kendisi yazıyor.")));
   }
 
@@ -2113,7 +2113,7 @@ const Settings = (() => {
         ((device.skills || []).length
           ? t("Yetenek: ") + device.skills.join(", ")
           : t("Bağlı yetenek yok")) +
-        t("  ·  Ekleyen: ") + (device.source || "dornick") +
+        t("  ·  Ekleyen: ") + (device.source || "Dornick") +
         "  ·  " + device.id));
     }, "info"));
     return line;
@@ -2313,7 +2313,7 @@ const Settings = (() => {
     pane.append(el("p", "pane-note",
       t("Kaydedilen yetenek anında araç olarak yüklenir; silinen hem dosyadan " +
       "hem defterden gider. Standart yetenekler ilk açılışta gelir — silersen " +
-      "geri gelmez. dornick da iş sırasında kendine yetenek yazar.")));
+      "geri gelmez. Dornick da iş sırasında kendine yetenek yazar.")));
   }
 
   // Skill detayı (Claude Code kalıbı): satıra tıklayınca önce KART —
@@ -2378,7 +2378,7 @@ const Settings = (() => {
 
   async function loadConnectors(body) {
     const pane = panes.connectors;
-    if (!pane.childElementCount) pane.append(el("p", "pane-note", t("Yükleniyor…")));
+    if (!pane.childElementCount) pane.append(el("p", "pane-note dugum-yukleniyor", t("Yükleniyor…")));
     if (body) say("Bağlanılıyor…");   // npx ilk seferde paket indirebiliyor
 
     if (body && body.action === "login") {
@@ -2956,7 +2956,7 @@ const Settings = (() => {
 
     pane.append(field(
       "Bulunduğun yer",
-      "Yazarsan kesin kaynak bu olur; dornick sorduğunda burayı okur ve bir " +
+      "Yazarsan kesin kaynak bu olur; Dornick sorduğunda burayı okur ve bir " +
       "daha sormaz",
       text((patch.place || {}).manual ?? state.place.manual,
            (v) => set("place", "manual", v.trim()), "Kayseri")
@@ -2965,7 +2965,7 @@ const Settings = (() => {
     pane.append(field(
       "IP'den konum bul",
       "Açıkken adresin iki konum servisine gidiyor. Sonuç şehir düzeyinde " +
-      "güvenilmez — ölçümde iki servis iki ayrı şehir söyledi — ve dornick onu " +
+      "güvenilmez — ölçümde iki servis iki ayrı şehir söyledi — ve Dornick onu " +
       "kesin değil, teyit edilecek bir ipucu olarak kullanıyor",
       toggleBox((patch.place || {}).enabled ?? state.place.enabled,
                 (v) => set("place", "enabled", v))
@@ -2973,7 +2973,7 @@ const Settings = (() => {
 
     pane.append(el("p", "pane-note",
       t("Kapalıyken bile ülke biliniyor: makinenin saat diliminden geliyor, " +
-      "ağa çıkmıyor. Şehir gerekiyorsa dornick sana soruyor.")));
+      "ağa çıkmıyor. Şehir gerekiyorsa Dornick sana soruyor.")));
 
     // --- açılışta başlat ---
     if (!state.startup.available) {
@@ -2982,7 +2982,7 @@ const Settings = (() => {
     } else {
       pane.append(field(
         "bilgisayar açılınca başlat",
-        "Tepside çalışan, \"hey dornick\" ile uyanan bir ajanı her açılışta elle " +
+        "Tepside çalışan, \"hey Dornick\" ile uyanan bir ajanı her açılışta elle " +
         "başlatmak gerekmesin",
         toggleBox((patch.startup || {}).enabled ?? state.startup.enabled,
                   (v) => set("startup", "enabled", v))
@@ -3117,7 +3117,7 @@ const Settings = (() => {
 
     pane.append(field(
       "Aynı anda alt ajan",
-      "İşler yoğunken dornick işi yardımcılara dağıtıyor; bu sayıdan fazlası " +
+      "İşler yoğunken Dornick işi yardımcılara dağıtıyor; bu sayıdan fazlası " +
       "sıraya girer. Yerel sunucuda model tek kopyaysa 1 mantıklı",
       number((patch.context || {}).max_agents ?? state.context.max_agents ?? 3,
              (v) => set("context", "max_agents", Number(v)))
@@ -3143,11 +3143,11 @@ const Settings = (() => {
     }
     pane.append(field("Arayüz dili / Interface language", "", dilKutu));
 
-    // dornick chrome: DevTools kapısıyla sürülen tarayıcı. Kapalı geliyor —
+    // Dornick chrome: DevTools kapısıyla sürülen tarayıcı. Kapalı geliyor —
     // kendi kendine sayfa açan bir asistan istenerek açılmalı.
     pane.append(field(
-      "dornick chrome (tarayıcı)",
-      "dornick kendi Chrome/Edge profiliyle sayfa açar, okur, görüntü alır. " +
+      "Dornick chrome (tarayıcı)",
+      "Dornick kendi Chrome/Edge profiliyle sayfa açar, okur, görüntü alır. " +
       "Girişleri o pencerede sen yaparsın; oturumlar profilinde kalıcıdır",
       toggleBox((patch.browser || {}).enabled ?? (state.browser || {}).enabled ?? false,
                 (v) => set("browser", "enabled", v))
@@ -3206,7 +3206,7 @@ const Settings = (() => {
     });
     const taniAlan = field(
       "Beni tanı",
-      "dornick'nun yerel taban modeli anılarından gece sessizce öğrenir: " +
+      "Dornick'in yerel taban modeli anılarından gece sessizce öğrenir: " +
       "birikince arka planda, düşük öncelikle ince ayar koşar; gerileyen " +
       "aday sınav kapısında çöpe gider. Etiketleme seçili modelle yapılır: " +
       "yerel modelde veri makineden çıkmaz; bulut modelde bu adım açık onay " +
@@ -3245,7 +3245,7 @@ const Settings = (() => {
     }).catch(() => {});
 
     const slot = el("div", "loaded");
-    slot.append(el("p", "pane-note", t("Yükleniyor…")));
+    slot.append(el("p", "pane-note dugum-yukleniyor", t("Yükleniyor…")));
     pane.append(field("Sunucuda yüklü olanlar", "", slot));
     showLoaded(slot);
   }
@@ -3332,7 +3332,7 @@ const Settings = (() => {
 
     pane.append(field(
       "Atölye klasörü",
-      t("dornick'nun KENDİ alanı — kendi işleri, denemeleri buraya. " +
+      t("Dornick'in KENDİ alanı — kendi işleri, denemeleri buraya. " +
       "Şu an: ") + state.sandbox.root,
       text((patch.sandbox || {}).directory ?? state.sandbox.directory,
            (v) => set("sandbox", "directory", v), "atolye")
@@ -3348,7 +3348,7 @@ const Settings = (() => {
 
   // --- proje -------------------------------------------------------------
   //
-  // "Benim projemde çalışacaksan klasörü seçmem gerekiyor." Atölye dornick'nun
+  // "Benim projemde çalışacaksan klasörü seçmem gerekiyor." Atölye Dornick'in
   // kendi işleri için kalıyor; proje kullanıcının kodu. Seçim bir onaydır:
   // seçilen klasör yazılabilir oluyor.
   //
@@ -3497,7 +3497,7 @@ const Settings = (() => {
     pane.append(field(
       "Çalışılan proje",
       "Kendi kodunda çalışmamı istediğin klasör. Seçmek bir ONAYDIR: " +
-      "orası yazılabilir olur. Atölye ayrıca durmaya devam eder — dornick'nun " +
+      "orası yazılabilir olur. Atölye ayrıca durmaya devam eder — Dornick'in " +
       "kendi işleri oraya gider. Proje değiştirmek konuşmayı, anıları ve " +
       "oturum geçmişini ETKİLEMEZ; yalnızca nerede çalışıldığını değiştirir.",
       kutu

@@ -32,7 +32,7 @@ from .tools.base import ToolSpec
 
 console = Console()
 
-BANNER = "dornick — çıkmak için /exit, komutlar için /help"
+BANNER = "Dornick — çıkmak için /exit, komutlar için /help"
 HELP = """
 /exit            çık
 /tools           kayıtlı araçları listele

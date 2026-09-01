@@ -328,10 +328,10 @@ class RecallStore:
     def merge_from(self, other_path: Path) -> dict[str, int]:
         """Başka bir belleği bu belleğe birleştirir (üzerine yazmadan).
 
-        Taşınabilirlik için: dornick'nun başka bir makinede biriktirdiği anılar
+        Taşınabilirlik için: Dornick'in başka bir makinede biriktirdiği anılar
         ve bağlar buraya katılıyor. `INSERT OR IGNORE` — kimlik birincil
         anahtar olduğundan aynı anı iki kez girmiyor (idempotent); yalnızca
-        yeni olanlar ekleniyor. İki makinenin öğrendikleri tek bir dornick'da
+        yeni olanlar ekleniyor. İki makinenin öğrendikleri tek bir Dornick'te
         toplanabiliyor. FTS trigger'la kendiliğinden güncelleniyor; imza
         indeksi bir sonraki aramada diskten yeniden kuruluyor.
         """

@@ -44,7 +44,7 @@ REQUIRED = ("NAME", "DESCRIPTION", "SCHEMA")
 
 TEMPLATE = '''"""{title}
 
-Bunu dornick kendisi yazdı. Değiştirebilir, silebilirsin.
+Bunu Dornick kendisi yazdı. Değiştirebilir, silebilirsin.
 """
 
 NAME = "{name}"

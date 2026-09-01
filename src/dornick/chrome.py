@@ -5,7 +5,7 @@ ayıklama kapısıyla (`--remote-debugging-port`) başlatıyor ve DevTools
 protokolü (CDP) üzerinden konuşuyor — sekmeleri görüyor, sayfa açıyor,
 metni okuyor, ekran görüntüsü alıyor.
 
-Tarayıcı **dornick'nun kendi profiliyle** açılıyor (`.dornick/chrome/`):
+Tarayıcı **Dornick'in kendi profiliyle** açılıyor (`.dornick/chrome/`):
 kullanıcının gündelik Chrome'una bağlanmak mümkün değil çünkü o kapı
 kapalı açılıyor. Ayrı profil aynı zamanda bir sınır — kullanıcı hangi
 sitelere giriş verdiyse dornick yalnızca onları görüyor ve o oturumlar

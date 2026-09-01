@@ -1,6 +1,6 @@
 // Orkestra: alt ajan kanalları — "şef modu".
 //
-// dornick bir işi böldüğünde alt ajanlar doğuyor (task aracı). Onların araç
+// Dornick bir işi böldüğünde alt ajanlar doğuyor (task aracı). Onların araç
 // çağrıları ana sohbete karışmıyor; bu güverte her kanalı canlı bir kart
 // olarak gösteriyor: başlığı, modeli, o an çalıştırdığı araç, kaç araç
 // çağırdığı ve durumu (çalışıyor · bitti · hata). Arka planda koşan
@@ -14,8 +14,8 @@
 // yardımcılar soluk "yarım kaldı" satırıyla görünüyor.
 
 Dil.ekle({
-  "Şu an alt ajan yok. dornick bir işi böldüğünde kanallar burada belirir.":
-    "No helpers right now. Channels appear here when dornick splits a job.",
+  "Şu an alt ajan yok. Dornick bir işi böldüğünde kanallar burada belirir.":
+    "No helpers right now. Channels appear here when Dornick splits a job.",
   "Şef bekliyor · ": "Conductor waiting · ",
   " kanal çalışıyor": " channel(s) running",
   "Şef sürüyor · tüm kanallar bitti": "Conductor going · all channels done",
@@ -200,7 +200,7 @@ const Orchestra = (() => {
     body.replaceChildren();
     const list = [...channels.values()];
     if (!list.length) {
-      body.append(el("p", "orch-blank", t("Şu an alt ajan yok. dornick bir işi böldüğünde kanallar burada belirir.")));
+      body.append(el("p", "orch-blank", t("Şu an alt ajan yok. Dornick bir işi böldüğünde kanallar burada belirir.")));
     }
     for (const ch of list) body.append(card(ch));
 

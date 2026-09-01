@@ -1,14 +1,14 @@
-"""Taşınabilirlik: dornick'nun bir makinede biriktirdiklerini başka yere taşımak.
+"""Taşınabilirlik: Dornick'in bir makinede biriktirdiklerini başka yere taşımak.
 
 dornick bir bilgisayarda yaşadıkça anılar biriktiriyor, bağlar örüyor, hedefler
 tutuyor, kendine yetenekler yazıyor. Bunların hepsi diskte — ama bir
 makineye mahkûm olmamalı. Bu modül hepsini tek bir taşınabilir pakete
-(`.neobundle`, düz bir zip) koyuyor ve başka bir dornick'ya **birleştiriyor**.
+(`.neobundle`, düz bir zip) koyuyor ve başka bir Dornick'e **birleştiriyor**.
 
 İlke birleştirme, üzerine yazma değil: aynı kimlikli anı iki kez girmiyor
 (idempotent), yalnızca yeni olanlar ekleniyor. Böylece iki makinenin
-öğrendikleri tek bir dornick'da toplanabiliyor — biri diğerini silmeden. Ruh
-(persona) korunuyor: hedef dornick'nun bir kimliği varsa gelen paket onu
+öğrendikleri tek bir Dornick'te toplanabiliyor — biri diğerini silmeden. Ruh
+(persona) korunuyor: hedef Dornick'in bir kimliği varsa gelen paket onu
 ezmiyor; yalnızca boşsa dolduruyor.
 
 Paket içeriği (parçaya göre — bkz. PARCALAR):
@@ -161,7 +161,7 @@ def _export_tanima(config: Any, zf: zipfile.ZipFile) -> int:
 
 
 def _export_projeler(config: Any, zf: zipfile.ZipFile) -> int:
-    """Atölyenin kendisi: dornick'nun ürettiği projeler ve dosyalar."""
+    """Atölyenin kendisi: Dornick'in ürettiği projeler ve dosyalar."""
     try:
         kok = Path(config.open_sandbox().root)
     except Exception:
@@ -205,7 +205,7 @@ def _export_ayarlar(config: Any, zf: zipfile.ZipFile) -> int:
 
 def import_bundle(config: Any, mind: Any, data: bytes,
                   parcalar: Sequence[str] | None = None) -> dict[str, Any]:
-    """Bir paketi bu dornick'ya birleştirir. Anılar katılır, üzerine yazılmaz;
+    """Bir paketi bu Dornick'e birleştirir. Anılar katılır, üzerine yazılmaz;
     dosya parçaları (tanima/projeler/ayarlar) üzerine yazmadan önce mevcut
     hali .dornick/yedek-<tarih>/ altına alır.
 
@@ -301,7 +301,7 @@ def _import_tanima(config: Any, zf: zipfile.ZipFile, names: set[str],
                    yedek: list[Path]) -> int:
     """Kişisel model + kişisel eğitim dosyalarını geri koyar.
 
-    taban.npz her koşulda .dornick'ye iner (ürünün okuduğu yer orası) ve
+    taban.npz her koşulda .Dornick'e iner (ürünün okuduğu yer orası) ve
     taban önbelleği düşürülür ki 5 dakikalık yenilemeyi beklemeden devreye
     girsin. Korpus/filigran eğitim düzeneği kuruluysa yerine, değilse
     .dornick/tanima_yedek/ altına — düzeneksiz makinede kaybolmasınlar.

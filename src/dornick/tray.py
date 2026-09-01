@@ -27,7 +27,7 @@ INSTALL_HINT = "Sistem tepsisi için: pip install 'dornick[tray]'"
 
 # X'e basılınca iş sürüyorsa gösterilen balon. Yalnızca İLK seferde —
 # her gizlenişte bildirim basmak rahatsız eder, bir kez öğretmek yeter.
-ARKA_PLAN_NOTU = ("dornick arka planda — zamanlanmış görevler ve otomasyonlar "
+ARKA_PLAN_NOTU = ("Dornick arka planda — zamanlanmış görevler ve otomasyonlar "
                   "çalışmaya devam eder; tepsiden açabilirsin")
 
 # Zamanlanmış / otomasyon işi bittiğinde Windows tepsi bildirimi.
@@ -76,7 +76,7 @@ def _windows_toast(title: str, body: str) -> bool:
         png = png_path()
         if not png.exists():
             return False
-        xml = toast_xml(title or "dornick", body, png.resolve().as_uri())
+        xml = toast_xml(title or "Dornick", body, png.resolve().as_uri())
         xml_path = Path(tempfile.gettempdir()) / "dornick-toast.xml"
         xml_path.write_text(xml, encoding="utf-8")
         q = str(xml_path).replace("'", "''")
@@ -199,7 +199,7 @@ class Tray:
         show: Callable[[], None],
         hide: Callable[[], None],
         quit: Callable[[], None],
-        title: str = "dornick",
+        title: str = "Dornick",
         busy: Callable[[], bool] | None = None,
         confirm: Callable[[str], bool] | None = None,
         jobs: Callable[[], None] | None = None,

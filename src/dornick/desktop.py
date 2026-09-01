@@ -62,7 +62,7 @@ from .tools.base import ToolSpec
 from .web import server as server_module
 from .web.server import Hub, MindServer
 
-WINDOW_TITLE = "dornick"
+WINDOW_TITLE = "Dornick"
 WINDOW_BACKGROUND = "#0b0e14"
 
 # Uyandirma taramasi icin kullanilan model. Kucuk ve hizli olmasi
@@ -1126,7 +1126,7 @@ class Bridge:
         if agent is None:
             return {"ok": False, "error": "henüz hazır değil"}
         if serit.busy:
-            return {"ok": False, "error": "dornick meşgul; tur bitince dene", "busy": True}
+            return {"ok": False, "error": "Dornick meşgul; tur bitince dene", "busy": True}
 
         async def _kos() -> None:
             self._serit_durum(serit, True)
@@ -1877,7 +1877,7 @@ class Bridge:
                 str(info.get("run") or ""))
             rows.append({
                 "id": "p:" + str(pid),
-                "ad": "dornick (kendisi)" if kendi else str(info.get("name") or komut or pid),
+                "ad": "Dornick (kendisi)" if kendi else str(info.get("name") or komut or pid),
                 "tur": "süreç",
                 "durum": "bitti" if biten else "kosuyor",
                 "basladi": float(info.get("started") or 0.0),
@@ -3484,7 +3484,7 @@ def run(config: Config, *, port: int = 8765, resume: bool = False,
             except Exception:
                 _CAM_WINDOW = None
         spawned = webview.create_window(
-            "dornick · Kamera",
+            "Dornick · Kamera",
             url,
             width=980,
             height=640,

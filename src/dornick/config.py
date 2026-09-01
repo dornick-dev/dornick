@@ -199,7 +199,7 @@ class BrowserConfig:
     """dornick chrome — DevTools kapısıyla sürülen tarayıcı.
 
     Kapalı geliyor: kendi kendine sayfa açan bir asistan, kendi kendine
-    konuşandan daha rahatsız edici. Açıldığında tarayıcı dornick'nun ayrı
+    konuşandan daha rahatsız edici. Açıldığında tarayıcı Dornick'in ayrı
     profiliyle çalışıyor (`.dornick/chrome/`) — kullanıcının gündelik
     tarayıcısına dokunulmuyor.
     """
@@ -280,7 +280,7 @@ class Config:
 # dornick başka bir dizinden (ör. bir üst klasörden) açılınca `.dornick` ve `atolye`'yi
 # ORAYA kuruyor, verisini bulunduğu yere saçıyordu — kullanıcı: "kendine
 # belirlediğimiz yerin dışına çıkmamalı". Artık ev bir kez belirlenince
-# SABİTLENİYOR: dornick'yu nereden açarsan aç aynı evi kullanır.
+# SABİTLENİYOR: Dornick'i nereden açarsan aç aynı evi kullanır.
 #
 # Öncelik: açık argüman (test/çağıran; sabitlemez) > DORNICK_WORKSPACE (sabitler)
 # > sabitlenmiş ev işaretçisi > cwd'den yukarı var olan bir .dornick (git'in .git
