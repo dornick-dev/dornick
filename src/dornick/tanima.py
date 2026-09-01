@@ -1,6 +1,6 @@
 """Beni tanı: kişisel ince ayar döngüsünün ürün içinden zamanlanması.
 
-Eğitim düzeneği ayrı bir depoda yaşıyor (dornick-base-model); gece döngüsü
+Eğitim düzeneği ayrı bir depoda yaşıyor (neocp-base-model); gece döngüsü
 (hasat → etiket → ince ayar → sınav kapısı → .dornick/taban.npz) orada.
 Burası yalnızca **ne zaman** koşacağına karar veriyor: özellik ayarlardan
 açılır, bekçi thread'i on beş dakikada bir yoklar ve ya yeterli yeni anı
@@ -36,7 +36,7 @@ DOSYA = "tanima.json"
 # pasif: ayar sayfası anahtarın yanında "kurulu değil" notu gösteriyor.
 _KURULUM_BETIK = (Path(__file__).resolve().parents[2]
                   / "egitim" / "betikler" / "08_kisisel_dongu.py")
-_GELISTIRICI_BETIK = (Path("D:/Projects/ai/dornick-base-model")
+_GELISTIRICI_BETIK = (Path("D:/Projects/ai/neocp-base-model")
                       / "betikler" / "08_kisisel_dongu.py")
 DONGU_BETIK = _KURULUM_BETIK if _KURULUM_BETIK.exists() else _GELISTIRICI_BETIK
 

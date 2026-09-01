@@ -14,7 +14,7 @@ vizyonu), yoksa ürünle gelen assets/taban.npz. İkisi de yoksa ya da numpy
 yüklü değilse katman sessizce devre dışı kalır ve sorgu olduğu gibi geçer:
 hatırlama bu model OLMADAN da çalışır, model yalnızca iyileştirir.
 
-Eğitim düzeneği ayrı depoda: D:\\Projects\\ai\\dornick-base-model
+Eğitim düzeneği ayrı depoda: D:\\Projects\\ai\\neocp-base-model
 (öğretmen-öğrenci damıtma, gemini flash-lite etiketli 138k örnek).
 """
 
