@@ -140,8 +140,16 @@ jobs:
           path: installer/dist/dornick-setup-${{ steps.ver.outputs.surum }}.exe
           if-no-files-found: error
 
-      - name: Attach installer to the GitHub release
-        if: github.event_name == 'release'
+      # Yayına YALNIZ imzalanmışsa yükle.
+      #
+      # İmzalama yapılandırılmadan çalışan bir CI derlemesi, elde derlenmiş
+      # ve yayına elle eklenmiş tam paketi `--clobber` ile ezebiliyordu:
+      # CI'da harici eğitim düzeneği bulunmadığı için ürettiği kurulum
+      # bileşen bakımından DAHA DAR oluyor. İmzasız çıktı yine iş
+      # artifact'ı olarak duruyor (yukarıdaki adım) — indirilebilir, ama
+      # yayındaki dosyanın yerine geçmez.
+      - name: Attach installer to the GitHub release (signed builds only)
+        if: github.event_name == 'release' && env.SIGN == 'true'
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
