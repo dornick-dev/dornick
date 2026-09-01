@@ -5,7 +5,7 @@ OpenCV yokken de çalışır — URL kurulumu GPU/önizlemeden bağımsız.
 
 from __future__ import annotations
 
-from neocp.watch import Camera
+from dornick.watch import Camera
 
 
 def test_usb_connect_source_is_an_index() -> None:
@@ -40,7 +40,7 @@ def test_builtin_is_index_zero_without_host() -> None:
 
 
 def test_remember_writes_last_note(tmp_path) -> None:
-    from neocp import watch
+    from dornick import watch
 
     cam = Camera(id="b", name="bahçe", kind="rtsp", host="10.0.0.1")
     watch.save(tmp_path, [cam])

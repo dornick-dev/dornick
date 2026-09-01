@@ -233,7 +233,7 @@
             "alinan": 40.0,
             "kanit": [
               "+ fatura.php duruyor (10p) — fatura.php",
-              "+ php -l temiz (10p) — No syntax errors detected in C:\\Users\\user\\AppData\\Local\\Temp\\neocp-eval-k3-tamir-s7a47tf7\\atolye\\fatura.php",
+              "+ php -l temiz (10p) — No syntax errors detected in C:\\Users\\user\\AppData\\Local\\Temp\\dornick-eval-k3-tamir-s7a47tf7\\atolye\\fatura.php",
               "+ fonksiyon dışarıdan çağrılabiliyor (20p) — tamam"
             ],
             "sebep": "",
@@ -653,7 +653,7 @@
               "+ ara.py var (5p) — ara.py",
               "+ ekle koşuyor (12p) — çıkış 0; İndeks tamam: 6 yeni, 0 güncellendi.",
               "+ SQLite dosyası oluştu (8p) — ara_index.db",
-              "+ bul ayrı süreçte koşuyor (15p) — çıkış 0; 2 not bulundu: [1] notlar\\pompa-katalog.txt …rulman, >>salmastra<<, motor mili. [2] C:\\Users\\user\\AppData\\Local\\Temp\\neocp-eval-z1-arama-259gb30c\\atolye\\notlar\\"
+              "+ bul ayrı süreçte koşuyor (15p) — çıkış 0; 2 not bulundu: [1] notlar\\pompa-katalog.txt …rulman, >>salmastra<<, motor mili. [2] C:\\Users\\user\\AppData\\Local\\Temp\\dornick-eval-z1-arama-259gb30c\\atolye\\notlar\\"
             ],
             "sebep": "",
             "harici": false

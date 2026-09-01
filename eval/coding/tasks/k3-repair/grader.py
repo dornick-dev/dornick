@@ -68,7 +68,7 @@ def _run_cases(file: Path) -> list[float | None] | None:
         "file": json.dumps(str(file)),
         "cases": json.dumps(json.dumps(cases)),
     }
-    with tempfile.TemporaryDirectory(prefix="neocp-k3-") as tmp:
+    with tempfile.TemporaryDirectory(prefix="dornick-k3-") as tmp:
         path = Path(tmp) / "probe.php"
         path.write_text(script, encoding="utf-8")
         run = grading.shell(["php", str(path)], cwd=tmp, timeout=60)

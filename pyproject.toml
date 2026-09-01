@@ -1,6 +1,6 @@
 [project]
-name = "neocp"
-version = "1.3.9"
+name = "dornick"
+version = "1.4.0"
 description = "A local-first personal AI agent with a living memory â€” it can use the computer and reach its own mind"
 requires-python = ">=3.11"
 dependencies = [
@@ -35,14 +35,14 @@ mcp = ["mcp>=1.2"]
 dev = ["pytest>=8.0", "pytest-asyncio>=0.23", "openai>=1.60", "pywebview>=5.0"]
 
 [project.scripts]
-neocp = "neocp.cli:main"
+dornick = "dornick.cli:main"
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/neocp"]
+packages = ["src/dornick"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

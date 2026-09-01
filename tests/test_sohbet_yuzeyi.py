@@ -15,11 +15,11 @@ from types import SimpleNamespace
 
 import pytest
 
-from neocp.config import Config
-from neocp.events import EventLog
-from neocp.mind import Mind, open_mind
-from neocp.tools.checkpoint import KLASOR, Defter
-from neocp.web import MindServer
+from dornick.config import Config
+from dornick.events import EventLog
+from dornick.mind import Mind, open_mind
+from dornick.tools.checkpoint import KLASOR, Defter
+from dornick.web import MindServer
 
 
 @pytest.fixture()
@@ -224,7 +224,7 @@ def test_a_failed_job_report_page_reads_like_a_report_not_a_trace(
     tmp_path: Path, mind: Mind
 ) -> None:
     """Viewer raporu: 'İş başarısız' + paket adı; traceback ve c:id yok."""
-    from neocp.tools.shell import is_raporu
+    from dornick.tools.shell import is_raporu
 
     class Kopru:
         def snapshot(self) -> dict:
@@ -265,7 +265,7 @@ def test_a_successful_job_report_page_leads_with_summary_not_logs(
     tmp_path: Path, mind: Mind
 ) -> None:
     """Başarı sayfası: özet + komut; ham log details içinde."""
-    from neocp.tools.shell import basari_raporu
+    from dornick.tools.shell import basari_raporu
 
     log = (
         "Downloading package from builds.dotnet.microsoft.com\n"
@@ -433,7 +433,7 @@ class SahteFiyatliKoprü:
     "dur" demek ya da dememek.
     """
 
-    from neocp.desktop import Bridge
+    from dornick.desktop import Bridge
 
     butce = Bridge.butce
     _harcanan = Bridge._harcanan
@@ -490,7 +490,7 @@ def test_the_turn_stops_when_the_brake_speaks(tmp_path: Path) -> None:
     """Sahte kullanım: sınır aşılınca model BİR KEZ BİLE çağrılmıyor ve
     kullanıcı mesajı geçmişte duruyor — yarım iş kaybolmuyor."""
     from tests.test_loop import FakeClient, build_agent, text_turn
-    from neocp.tools import ToolRegistry
+    from dornick.tools import ToolRegistry
 
     client = FakeClient(text_turn("koşmamalıydım"))
     agent = build_agent(tmp_path, client, ToolRegistry())
@@ -510,7 +510,7 @@ def test_the_turn_stops_when_the_brake_speaks(tmp_path: Path) -> None:
 
 def test_the_turn_runs_normally_when_there_is_no_cap(tmp_path: Path) -> None:
     from tests.test_loop import FakeClient, build_agent, text_turn
-    from neocp.tools import ToolRegistry
+    from dornick.tools import ToolRegistry
 
     client = FakeClient(text_turn("tamamdır"))
     agent = build_agent(tmp_path, client, ToolRegistry())

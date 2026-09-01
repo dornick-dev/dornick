@@ -22,19 +22,19 @@ from typing import Any
 
 import pytest
 
-from neocp.config import Config
-from neocp.events import EventLog
-from neocp.loop import (
+from dornick.config import Config
+from dornick.events import EventLog
+from dornick.loop import (
     KIRMIZI_NOTU,
     PLAN_NOTU,
     bitti_iddiasi,
     buyuk_is,
     kirmizi_iz,
 )
-from neocp.mind import Mind, open_mind
-from neocp.prompt import build as build_prompt
-from neocp.tools import ToolRegistry, build_registry
-from neocp.web import MindServer
+from dornick.mind import Mind, open_mind
+from dornick.prompt import build as build_prompt
+from dornick.tools import ToolRegistry, build_registry
+from dornick.web import MindServer
 
 from .test_loop import FakeClient, build_agent, text_turn, tool_turn
 
@@ -231,7 +231,7 @@ def test_the_done_claim_is_recognised_but_an_honest_report_is_not(
 
 def _kirmizi_kos_araci(registry: ToolRegistry) -> None:
     """Her zaman kırmızı dönen sahte bir `kos`."""
-    from neocp.tools import ToolResult, object_schema
+    from dornick.tools import ToolResult, object_schema
 
     @registry.tool(name="kos", description="test koşucusu (sahte)",
                    input_schema=object_schema({"kok": {"type": "string"}}))
@@ -241,7 +241,7 @@ def _kirmizi_kos_araci(registry: ToolRegistry) -> None:
 
 
 def _yesil_kos_araci(registry: ToolRegistry) -> None:
-    from neocp.tools import ToolResult, object_schema
+    from dornick.tools import ToolResult, object_schema
 
     @registry.tool(name="kos", description="test koşucusu (sahte)",
                    input_schema=object_schema({"kok": {"type": "string"}}))
@@ -289,7 +289,7 @@ def test_a_green_run_closes_the_turn_normally(tmp_path: Path) -> None:
 def test_fixing_the_red_and_rerunning_green_reopens_the_door(tmp_path: Path) -> None:
     """Yeşile dönen koşum kaydı siliyor: düzeltip yeniden koşturan model
     kapıya çarpmamalı."""
-    from neocp.tools import ToolResult, object_schema
+    from dornick.tools import ToolResult, object_schema
 
     registry = ToolRegistry()
     sayac = {"n": 0}
@@ -441,7 +441,7 @@ def test_the_prompt_forbids_restarting_neo(core: str) -> None:
     """Model kafası karışıp kendi programını yeniden başlatınca kullanıcı
     kendi uygulamasının klonuyla karşılaşıyor."""
     assert "asla yeniden başlatma" in core
-    assert "neocp" in core
+    assert "dornick" in core
 
 
 # -- 4) uyandırma rotası -------------------------------------------------
@@ -511,9 +511,9 @@ def test_a_bridge_that_cannot_wake_says_so(tmp_path: Path, mind: Mind) -> None:
 
 def test_the_page_still_calls_the_route_it_needs() -> None:
     """Çağrı ile rota birlikte yaşamalı: biri kalkarsa öteki ölü kod."""
-    static = Path(__file__).resolve().parents[1] / "src" / "neocp" / "web" / "static"
+    static = Path(__file__).resolve().parents[1] / "src" / "dornick" / "web" / "static"
     app_js = (static / "app.js").read_text(encoding="utf-8")
-    server = (Path(__file__).resolve().parents[1] / "src" / "neocp" / "web"
+    server = (Path(__file__).resolve().parents[1] / "src" / "dornick" / "web"
               / "server.py").read_text(encoding="utf-8")
     assert '"/api/wake"' in app_js
     assert '"/api/wake"' in server
@@ -531,7 +531,7 @@ def test_the_page_still_calls_the_route_it_needs() -> None:
 
 def _yazan_arac(registry: ToolRegistry, kok: Path) -> None:
     """Gerçekten dosya yazan sahte bir `write_file`."""
-    from neocp.tools import ToolResult, object_schema
+    from dornick.tools import ToolResult, object_schema
 
     @registry.tool(name="write_file", description="yaz",
                    input_schema=object_schema({"path": {"type": "string"},
@@ -545,7 +545,7 @@ def _yazan_arac(registry: ToolRegistry, kok: Path) -> None:
 
 
 def _kabuk_araci(registry: ToolRegistry) -> None:
-    from neocp.tools import ToolResult, object_schema
+    from dornick.tools import ToolResult, object_schema
 
     @registry.tool(name="shell", description="koş",
                    input_schema=object_schema({"command": {"type": "string"}}),
@@ -657,7 +657,7 @@ def test_an_honest_report_about_an_unrun_entry_point_is_left_alone(
     ("{\n  \"ad\": \"deneme\"\n}\n", False),
 ])
 def test_which_files_declare_an_entry_point(kaynak: str, giris: bool) -> None:
-    from neocp.loop import giris_noktasi_mi
+    from dornick.loop import giris_noktasi_mi
 
     assert giris_noktasi_mi(kaynak) is giris
 
@@ -672,10 +672,10 @@ def test_which_files_declare_an_entry_point(kaynak: str, giris: bool) -> None:
 
 def _akilli_agent(tmp_path: Path, client: Any, registry: ToolRegistry, hedefler: list[str]):
     """Zihinli ajan: defterine hedef yazılmış halde."""
-    from neocp.mind import open_mind
-    from neocp.loop import Agent, AgentIO
-    from neocp.permissions import PermissionEngine
-    from neocp.session import Session
+    from dornick.mind import open_mind
+    from dornick.loop import Agent, AgentIO
+    from dornick.permissions import PermissionEngine
+    from dornick.session import Session
     from .test_loop import _always_yes
 
     config = Config.load(tmp_path)
@@ -758,7 +758,7 @@ def test_an_honest_open_items_report_is_not_a_done_claim(tmp_path: Path) -> None
 
 
 def test_small_family_is_recognised_and_briefed() -> None:
-    from neocp import prompt as p
+    from dornick import prompt as p
 
     assert p.kucuk_aile("z-ai/glm-5.3-flash")
     assert p.kucuk_aile("gemini-2.5-flash-lite")
@@ -768,7 +768,7 @@ def test_small_family_is_recognised_and_briefed() -> None:
 
 def test_small_family_gets_the_brevity_block_and_brief_schemas(tmp_path: Path) -> None:
     from dataclasses import replace
-    from neocp import prompt as p
+    from dornick import prompt as p
 
     config = Config.load(tmp_path)
     config.ensure_dirs()
@@ -786,9 +786,9 @@ def test_small_family_gets_the_brevity_block_and_brief_schemas(tmp_path: Path) -
 
 
 def build_agent_with_config(tmp_path: Path, client: Any, registry: ToolRegistry, config):
-    from neocp.loop import Agent, AgentIO
-    from neocp.permissions import PermissionEngine
-    from neocp.session import Session
+    from dornick.loop import Agent, AgentIO
+    from dornick.permissions import PermissionEngine
+    from dornick.session import Session
     from .test_loop import _always_yes
 
     session = Session(EventLog(tmp_path / "s2.jsonl"), "test")
@@ -806,7 +806,7 @@ def build_agent_with_config(tmp_path: Path, client: Any, registry: ToolRegistry,
 
 
 def test_known_shell_traps_teach_the_way_out() -> None:
-    from neocp.tools.shell import kabuk_ipucu
+    from dornick.tools.shell import kabuk_ipucu
 
     assert "betiğe yaz" in kabuk_ipucu("At line:1 char:9 ... Unexpected token '|' in expression")
     assert "sürüm komutuyla" in kabuk_ipucu(
@@ -819,7 +819,7 @@ def test_known_shell_traps_teach_the_way_out() -> None:
 
 def test_a_failed_shell_job_is_a_human_report_not_a_traceback() -> None:
     """Kullanıcı traceback duvarını rapor sanıyordu; çıkış 1 = başarısız."""
-    from neocp.tools.shell import insan_is_raporu, is_raporu, kisa_is_ozeti
+    from dornick.tools.shell import insan_is_raporu, is_raporu, kisa_is_ozeti
 
     ham = (
         "Traceback (most recent call last):\n"
@@ -840,7 +840,7 @@ def test_a_failed_shell_job_is_a_human_report_not_a_traceback() -> None:
 
 def test_a_successful_shell_job_is_a_short_report_not_a_log_wall() -> None:
     """Başarıda da ## Sonuç + komut; uzun stdout ## Çıktı altında."""
-    from neocp.tools.shell import basari_raporu, insan_is_raporu, kisa_is_ozeti
+    from dornick.tools.shell import basari_raporu, insan_is_raporu, kisa_is_ozeti
 
     log = (
         "Downloading package...\n"
@@ -952,7 +952,7 @@ def test_plan_nudge_is_silent_mid_conversation(tmp_path: Path) -> None:
 
 def test_shell_child_gets_no_stdin(tmp_path: Path) -> None:
     import time
-    from neocp.tools.shell import _run_shell
+    from dornick.tools.shell import _run_shell
 
     async def kos():
         t0 = time.monotonic()
@@ -967,7 +967,7 @@ def test_shell_child_gets_no_stdin(tmp_path: Path) -> None:
 
 def test_shell_timeout_kills_the_process_tree(tmp_path: Path) -> None:
     import time
-    from neocp.tools.shell import _run_shell
+    from dornick.tools.shell import _run_shell
 
     async def kos():
         t0 = time.monotonic()
@@ -988,7 +988,7 @@ def test_shell_timeout_kills_the_process_tree(tmp_path: Path) -> None:
 # tek-tip girinti kayması — hepsinde eşleşme TEK olmak şartıyla.
 
 
-from neocp.tools.files import _esnek_esle
+from dornick.tools.files import _esnek_esle
 
 NL = chr(10)
 CRLF = chr(13) + NL
@@ -1044,12 +1044,12 @@ def test_esnek_esle_icerik_farki_hosgorulmez() -> None:
 
 def _kopru(tmp_path: Path):
     import json
-    from neocp.desktop import Bridge
-    from neocp.mind import open_mind
+    from dornick.desktop import Bridge
+    from dornick.mind import open_mind
 
     config = Config.load(tmp_path)
     config.ensure_dirs()
-    (tmp_path / ".neocp" / "config.json").write_text(
+    (tmp_path / ".dornick" / "config.json").write_text(
         json.dumps({"model": {"name": "kuresel-model"}}), encoding="utf-8")
     from dataclasses import replace
     config = replace(config, model=replace(config.model, name="kuresel-model"))
@@ -1069,7 +1069,7 @@ def _kopru(tmp_path: Path):
         ajan.config = updated
         uygulananlar.append(updated.model.name)
     kopru.reload = _reload
-    return kopru, ajan, mind, uygulananlar, tmp_path / ".neocp" / "config.json"
+    return kopru, ajan, mind, uygulananlar, tmp_path / ".dornick" / "config.json"
 
 
 def test_session_model_pin_applies_in_memory_only(tmp_path: Path) -> None:
@@ -1143,8 +1143,8 @@ def test_clearing_session_path_returns_to_global_project(tmp_path: Path) -> None
 def test_a_new_session_inherits_the_last_pinned_model(tmp_path: Path) -> None:
     """Katalog seçimi sohbet pinidir; --app her açılışta yeni oturum
     açınca pin kaybolmasın — son sabitlenen model yeni sohbete geçer."""
-    from neocp.desktop import inherit_last_model
-    from neocp.mind import open_mind
+    from dornick.desktop import inherit_last_model
+    from dornick.mind import open_mind
 
     sessions = tmp_path / "sessions"
     sessions.mkdir()
@@ -1160,8 +1160,8 @@ def test_a_new_session_inherits_the_last_pinned_model(tmp_path: Path) -> None:
 
 
 def test_inherit_does_not_overwrite_an_existing_pin(tmp_path: Path) -> None:
-    from neocp.desktop import inherit_last_model
-    from neocp.mind import open_mind
+    from dornick.desktop import inherit_last_model
+    from dornick.mind import open_mind
 
     sessions = tmp_path / "sessions"
     sessions.mkdir()
@@ -1192,14 +1192,14 @@ O1_ISTEMI = ("Atölyede satislar.csv var: tarih, urun, adet, birim_fiyat. "
 
 
 def _hafizali(tmp_path: Path):
-    from neocp.mind import open_mind
+    from dornick.mind import open_mind
     config = Config.load(tmp_path)
     config.ensure_dirs()
     return open_mind(config.mind_dir, config.sessions_dir, "t")
 
 
 def test_prime_rejects_junk_grounded_on_one_short_stem(tmp_path: Path) -> None:
-    from neocp.loop import select_prime
+    from dornick.loop import select_prime
     mind = _hafizali(tmp_path)
     for i in range(12):
         mind.remember(f"Kayseri sahasında {i} numaralı pompa istasyonunun "
@@ -1212,7 +1212,7 @@ def test_prime_rejects_junk_grounded_on_one_short_stem(tmp_path: Path) -> None:
 
 
 def test_prime_still_surfaces_the_truly_relevant_memory(tmp_path: Path) -> None:
-    from neocp.loop import select_prime
+    from dornick.loop import select_prime
     mind = _hafizali(tmp_path)
     mind.remember("satislar.csv düzeni: tarih,urun,adet,birim_fiyat "
                   "sütunları; ürünler Sensor, Kablo, PLC, Pompa.",
@@ -1250,7 +1250,7 @@ class _HataliKabukKayit(ToolRegistry):
 
 
 def test_repeated_error_pattern_becomes_a_lesson(tmp_path: Path) -> None:
-    from neocp.tools.base import ToolResult, object_schema
+    from dornick.tools.base import ToolResult, object_schema
 
     registry = ToolRegistry()
 
@@ -1278,7 +1278,7 @@ def test_repeated_error_pattern_becomes_a_lesson(tmp_path: Path) -> None:
 
 
 def test_past_lesson_is_attached_to_a_fresh_error(tmp_path: Path) -> None:
-    from neocp.tools.base import ToolResult, object_schema
+    from dornick.tools.base import ToolResult, object_schema
 
     registry = ToolRegistry()
 
@@ -1303,7 +1303,7 @@ def test_past_lesson_is_attached_to_a_fresh_error(tmp_path: Path) -> None:
 
 
 def test_a_run_that_writes_files_leaves_a_capsule(tmp_path: Path) -> None:
-    from neocp.tools.base import ToolResult, object_schema
+    from dornick.tools.base import ToolResult, object_schema
 
     registry = ToolRegistry()
 
@@ -1352,7 +1352,7 @@ def test_a_chat_only_run_leaves_no_capsule(tmp_path: Path) -> None:
 
 
 def _yazan_ve_koan_ajan(tmp_path, turlar):
-    from neocp.tools.base import ToolResult, object_schema
+    from dornick.tools.base import ToolResult, object_schema
     registry = ToolRegistry()
 
     @registry.tool(name="write_file", description="d",
@@ -1416,29 +1416,29 @@ def _sahte_zihin(kayit_sayisi, skor):
 
 
 def test_mature_mind_does_not_prime_below_the_floor() -> None:
-    from neocp.loop import select_prime
+    from dornick.loop import select_prime
     zihin = _sahte_zihin(200, skor=0.05)   # taban 0.12'nin altinda
     assert select_prime(zihin, 'rapor dosyasina bak') == []
 
 
 def test_young_mind_keeps_the_top_exemption() -> None:
-    from neocp.loop import select_prime
+    from dornick.loop import select_prime
     zihin = _sahte_zihin(3, skor=0.05)     # genc korpus: bm25 cokuk
     hits = select_prime(zihin, 'rapor dosyasina bak')
     assert len(hits) == 1
 
 
 def test_above_floor_still_primes_in_a_mature_mind() -> None:
-    from neocp.loop import select_prime
+    from dornick.loop import select_prime
     zihin = _sahte_zihin(200, skor=0.9)
     assert len(select_prime(zihin, 'rapor dosyasina bak')) == 1
 
 def _dosya_ctx(tmp_path):
     import asyncio
-    from neocp.config import Config
-    from neocp.events import EventLog
-    from neocp.session import Session
-    from neocp.tools.base import ToolContext
+    from dornick.config import Config
+    from dornick.events import EventLog
+    from dornick.session import Session
+    from dornick.tools.base import ToolContext
     config = Config(workspace=tmp_path, state_dir=tmp_path)
     session = Session(EventLog(tmp_path / 'events.jsonl'), 'test')
     return ToolContext(config=config, session=session,
@@ -1454,8 +1454,8 @@ def _dosya_ctx(tmp_path):
 
 def test_read_many_reads_several_files_in_one_call(tmp_path) -> None:
     import asyncio
-    from neocp.tools.base import ToolRegistry
-    from neocp.tools import files as files_mod
+    from dornick.tools.base import ToolRegistry
+    from dornick.tools import files as files_mod
     ctx = _dosya_ctx(tmp_path)
     kok = ctx.sandbox.root
     kok.mkdir(parents=True, exist_ok=True)
@@ -1473,8 +1473,8 @@ def test_read_many_reads_several_files_in_one_call(tmp_path) -> None:
 
 def test_read_many_counts_as_reading_for_the_write_gate(tmp_path) -> None:
     import asyncio
-    from neocp.tools.base import ToolRegistry
-    from neocp.tools import files as files_mod
+    from dornick.tools.base import ToolRegistry
+    from dornick.tools import files as files_mod
     ctx = _dosya_ctx(tmp_path)
     kok = ctx.sandbox.root
     kok.mkdir(parents=True, exist_ok=True)
@@ -1492,8 +1492,8 @@ def test_read_many_counts_as_reading_for_the_write_gate(tmp_path) -> None:
 
 
 def test_workspace_brief_lists_shallow_and_freezes(tmp_path) -> None:
-    from neocp.config import Config
-    from neocp import prompt
+    from dornick.config import Config
+    from dornick import prompt
     (tmp_path / 'app.py').write_text('x', encoding='utf-8')
     alt = tmp_path / 'site'
     alt.mkdir()
@@ -1509,9 +1509,9 @@ def test_workspace_brief_lists_shallow_and_freezes(tmp_path) -> None:
 
 
 def test_workspace_brief_absent_in_lean_prompt(tmp_path) -> None:
-    from neocp.config import Config
-    from neocp import prompt
-    from neocp.tools.base import ToolRegistry
+    from dornick.config import Config
+    from dornick import prompt
+    from dornick.tools.base import ToolRegistry
     (tmp_path / 'ipucu-dosyasi.py').write_text('x', encoding='utf-8')
     c = Config(workspace=tmp_path, state_dir=tmp_path)
     genis = prompt.build(c, ToolRegistry()).core
@@ -1525,7 +1525,7 @@ def test_cloud_consent_flag_survives_the_toggle_roundtrip(tmp_path) -> None:
     # Bayrak tanima.json'da yasar; on/off cevrimleri onu SILMEMELI
     # (config.json'a konmamasinin sebebi tam da settings'in bilinmeyen
     # anahtari dusurmesiydi — ayni tuzak burada tekrarlanmamali).
-    from neocp import tanima
+    from dornick import tanima
     tanima.bulut_onayi_ayarla(tmp_path, True)
     assert tanima.durum(tmp_path)['learn_cloud_ok'] is True
     tanima.ayarla(tmp_path, True)
@@ -1538,8 +1538,8 @@ def test_shell_cwd_strips_the_workshop_prefix(tmp_path) -> None:
     # Olculdu (29.08 supurumu): 3 hatali cagrinin kalibi 'Calisma dizini
     # yok: atolye/X' — model klasor adini yola kendisi ekliyor.
     import asyncio
-    from neocp.tools.base import ToolRegistry
-    from neocp.tools import shell as shell_mod
+    from dornick.tools.base import ToolRegistry
+    from dornick.tools import shell as shell_mod
     ctx = _dosya_ctx(tmp_path)
     kok = ctx.sandbox.root
     (kok / 'gorev').mkdir(parents=True)
@@ -1555,7 +1555,7 @@ def test_shell_cwd_strips_the_workshop_prefix(tmp_path) -> None:
 
 def _kuyruk(*son_araclar, kuyruk_rolu='tool'):
     mesajlar = [
-        {'role': 'system', 'content': 'sen neo'},
+        {'role': 'system', 'content': 'sen dornick'},
         {'role': 'user', 'content': 'raporu yaz'},
         {'role': 'assistant', 'content': '',
          'tool_calls': [{'id': f'c{i}', 'type': 'function',
@@ -1571,7 +1571,7 @@ def _kuyruk(*son_araclar, kuyruk_rolu='tool'):
 
 
 def test_discovery_turn_detected_only_after_pure_read_results() -> None:
-    from neocp.backends.openai_backend import _kesif_turu
+    from dornick.backends.openai_backend import _kesif_turu
     assert _kesif_turu(_kuyruk('read_file', 'list_dir')) is True
     assert _kesif_turu(_kuyruk('read_many')) is True
     # Yazma karisan kuyruk kesif degil: caba kisilmaz.
@@ -1584,8 +1584,8 @@ def test_discovery_turn_detected_only_after_pure_read_results() -> None:
 
 
 def test_discovery_downshift_lowers_effort_for_small_family() -> None:
-    from neocp.backends.openai_backend import OpenAIBackend
-    from neocp.config import ModelConfig
+    from dornick.backends.openai_backend import OpenAIBackend
+    from dornick.config import ModelConfig
     m = ModelConfig(name='z-ai/glm-5.3-flash', base_url='http://x',
                     thinking=True, effort='high')
     b = OpenAIBackend(m, client=object())
@@ -1603,7 +1603,7 @@ def test_discovery_downshift_lowers_effort_for_small_family() -> None:
 
 
 def test_coding_turn_detected_from_tools_or_user_request() -> None:
-    from neocp.prompt import kodlama_turu
+    from dornick.prompt import kodlama_turu
     assert kodlama_turu(metin="bana c# ile bir scad programı yazar mısın")
     assert kodlama_turu(metin="selam nasılsın") is False
     assert kodlama_turu(_kuyruk("write_file")) is True
@@ -1612,7 +1612,7 @@ def test_coding_turn_detected_from_tools_or_user_request() -> None:
 
 
 def test_kisalik_exempts_coding_and_tool_rules_nudge_read_many() -> None:
-    from neocp import prompt as p
+    from dornick import prompt as p
     assert "İSTİSNA" in p.KISALIK and "write_file" in p.KISALIK
     assert "read_many" in p.TOOL_RULES
     assert "AYNI turda toplu oku" in p.TOOL_RULES
@@ -1622,8 +1622,8 @@ def test_read_result_advertises_unread_siblings(tmp_path) -> None:
     # Sema + aciklama yetmedi (20 kosuda 0 read_many cagrisi): duyuru
     # modelin en dikkatli okudugu kanala, arac SONUCUNA tasindi.
     import asyncio
-    from neocp.tools.base import ToolRegistry
-    from neocp.tools import files as files_mod
+    from dornick.tools.base import ToolRegistry
+    from dornick.tools import files as files_mod
     ctx = _dosya_ctx(tmp_path)
     kok = ctx.sandbox.root
     kok.mkdir(parents=True, exist_ok=True)
@@ -1642,8 +1642,8 @@ def test_read_result_advertises_unread_siblings(tmp_path) -> None:
 def test_config_tolerates_a_notepad_bom(tmp_path) -> None:
     # Windows Notepad config.json'u BOM'la kaydeder; 1.1.0 kurulum
     # dumanli testinde duz utf-8 okuyus programi ACILMAZ yapti.
-    from neocp.config import Config
-    d = tmp_path / '.neocp'
+    from dornick.config import Config
+    d = tmp_path / '.dornick'
     d.mkdir()
     (d / 'config.json').write_text(
         '{"model": {"name": "bom-model"}}', encoding='utf-8-sig')
@@ -1655,7 +1655,7 @@ def test_the_prompt_carries_the_visuals_when_needed_principle() -> None:
     AMA davranis olarak — her konusmada degil, yalniz deger kattiginda.
     Ilke tarif degil genel kural olarak kimlikte yasar; dar pencerede
     duser (orada yer konusmanin)."""
-    from neocp.prompt import IDENTITY, LEAN_IDENTITY
+    from dornick.prompt import IDENTITY, LEAN_IDENTITY
     assert "Görsel ne zaman" in IDENTITY
     assert "Varsayılan yazıdır" in IDENTITY
     # Olcut cumlesi: bir bakista / yaziyla verilemeyecek.
@@ -1667,7 +1667,7 @@ def test_switching_sessions_drops_finished_helper_channels() -> None:
     doluyordu. Gecis biten/hatali kanali dusurur; kosan ve yetim
     (surdurulebilir) kalir."""
     from types import SimpleNamespace
-    from neocp.desktop import _biten_kanallari_dusur
+    from dornick.desktop import _biten_kanallari_dusur
     defter = {
         'a': SimpleNamespace(state='bitti'),
         'b': SimpleNamespace(state='hata'),
@@ -1683,8 +1683,8 @@ def test_plan_steps_can_be_ticked_and_the_card_hears_it(tmp_path) -> None:
     step eylemi tek adimi isaretler ve plan olayini yayinlar (update
     olayi da yayinlanir — kartin bayat kalma yarasi buydu)."""
     import asyncio, json
-    from neocp.tools.base import ToolRegistry
-    from neocp.tools import plan_tool
+    from dornick.tools.base import ToolRegistry
+    from dornick.tools import plan_tool
     ctx = _dosya_ctx(tmp_path)
     reg = ToolRegistry()
     plan_tool.register(reg)
@@ -1705,7 +1705,7 @@ def test_plan_steps_can_be_ticked_and_the_card_hears_it(tmp_path) -> None:
 
 def test_a_short_paragraph_is_not_a_big_job() -> None:
     # Olculen yara: 10 satirlik gorev bile plan durtusu yiyordu (esik 180).
-    from neocp.loop import buyuk_is
+    from dornick.loop import buyuk_is
     kisa = ('Su CSV dosyasini okuyup satis toplamini hesaplayan bir betik '
             'yaz; cikti ekrana gelsin ve kurus yuvarlamasina dikkat et. '
             'Dosya ayraci noktali virgul olabilir, onu da destekle; '
@@ -1719,16 +1719,16 @@ def test_a_short_paragraph_is_not_a_big_job() -> None:
 
 def test_camera_tool_lists_and_snapshots_via_monkeypatch(tmp_path, monkeypatch) -> None:
     import asyncio
-    from neocp import watch
-    from neocp.tools.base import ToolRegistry
-    from neocp.tools import camera as kamera_mod
+    from dornick import watch
+    from dornick.tools.base import ToolRegistry
+    from dornick.tools import camera as kamera_mod
     ctx = _dosya_ctx(tmp_path)
     monkeypatch.setattr(watch, 'available', lambda: True)
     monkeypatch.setattr(watch, 'load', lambda sd: [
         watch.Camera(id='cam_1', name='bahce', source='rtsp://x')])
     monkeypatch.setattr(watch, 'snapshot',
                         lambda src, adet=1, **k: ['data:image/jpeg;base64,QUJD'] * adet)
-    from neocp import sight
+    from dornick import sight
     monkeypatch.setattr(sight, 'analyze_url', lambda _u: 'kişi, kupa')
     reg = ToolRegistry()
     kamera_mod.register(reg)
@@ -1766,7 +1766,7 @@ def test_camera_tool_lists_and_snapshots_via_monkeypatch(tmp_path, monkeypatch) 
 
 
 def test_prompt_names_cameras_as_an_ability() -> None:
-    from neocp.prompt import ABILITIES
+    from dornick.prompt import ABILITIES
     assert any(title == 'Kameralar' and 'kamera' in names
                for title, _what, names in ABILITIES)
 
@@ -1790,12 +1790,12 @@ def test_motion_frames_do_not_reach_a_cloud_model_without_consent() -> None:
     acik izin (camera.cloud_ok) olmadan makineden CIKMAZ; yerel modelde
     kapi yok. GPU analizi varsa kare zaten gitmez (metin gider).
     Gece okulu mahremiyet kalibinin kardesi."""
-    from neocp.desktop import _yerel_uc
+    from dornick.desktop import _yerel_uc
     assert _yerel_uc('http://127.0.0.1:1234/v1') is True
     assert _yerel_uc('http://192.168.1.20:8080/v1') is True
     assert _yerel_uc('https://openrouter.ai/api/v1') is False
     import inspect
-    from neocp import desktop
+    from dornick import desktop
     kaynak = inspect.getsource(desktop._hareket_gonder)
     assert 'config.camera.cloud_ok' in kaynak
     assert 'kare BULUT modele g' in kaynak

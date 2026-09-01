@@ -1,6 +1,6 @@
 """Kancalar: kullanıcının kendi komutlarını araç yaşam döngüsüne takması.
 
-Sınanan vaat: `.neocp/kancalar.json` dosyasına yazılan bir komut aracın
+Sınanan vaat: `.dornick/kancalar.json` dosyasına yazılan bir komut aracın
 önünde ya da arkasında koşmalı; `arac_oncesi` sıfırdan farklı bir kodla
 dönerse araç HİÇ çalışmamalı ve gerekçe modele gitmeli.
 
@@ -19,13 +19,13 @@ from pathlib import Path
 
 import pytest
 
-from neocp import kancalar
-from neocp.config import Config
-from neocp.events import EventLog
-from neocp.permissions import PermissionEngine
-from neocp.session import PendingToolUse, Session
-from neocp.tools import ToolContext, ToolRegistry, ToolResult, execute, object_schema
-from neocp.tools import files as file_tools
+from dornick import kancalar
+from dornick.config import Config
+from dornick.events import EventLog
+from dornick.permissions import PermissionEngine
+from dornick.session import PendingToolUse, Session
+from dornick.tools import ToolContext, ToolRegistry, ToolResult, execute, object_schema
+from dornick.tools import files as file_tools
 
 PY = sys.executable
 
@@ -225,10 +225,10 @@ async def test_the_hook_receives_its_context_in_the_environment(tmp_path: Path) 
     kanca_py.write_text(
         "import json, os, pathlib\n"
         "pathlib.Path(r'''" + str(hedef) + "''').write_text(json.dumps({\n"
-        "    'arac': os.environ.get('NEOCP_ARAC'),\n"
-        "    'args': os.environ.get('NEOCP_ARGS'),\n"
-        "    'yol': os.environ.get('NEOCP_YOL'),\n"
-        "    'oturum': os.environ.get('NEOCP_OTURUM'),\n"
+        "    'arac': os.environ.get('DORNICK_ARAC'),\n"
+        "    'args': os.environ.get('DORNICK_ARGS'),\n"
+        "    'yol': os.environ.get('DORNICK_YOL'),\n"
+        "    'oturum': os.environ.get('DORNICK_OTURUM'),\n"
         "}), encoding='utf-8')\n",
         encoding="utf-8")
     yaz(tmp_path, [{"olay": "arac_oncesi", "arac": "*",
@@ -248,13 +248,13 @@ async def test_the_hook_receives_its_context_in_the_environment(tmp_path: Path) 
 
 
 async def test_a_pathless_call_still_defines_the_variable(tmp_path: Path) -> None:
-    """`$NEOCP_YOL` tanımsız olursa kullanıcının kancası patlardı."""
+    """`$DORNICK_YOL` tanımsız olursa kullanıcının kancası patlardı."""
     hedef = tmp_path / "yol.txt"
     kanca_py = tmp_path / "yoku.py"
     kanca_py.write_text(
         "import os, pathlib\n"
         "pathlib.Path(r'''" + str(hedef) + "''').write_text("
-        "repr(os.environ.get('NEOCP_YOL')))\n",
+        "repr(os.environ.get('DORNICK_YOL')))\n",
         encoding="utf-8")
     yaz(tmp_path, [{"olay": "arac_oncesi", "arac": "*",
                     "komut": f'& "{PY}" "{kanca_py}"'}])
@@ -315,11 +315,11 @@ async def test_post_hook_timeout_is_reported_not_fatal(tmp_path: Path) -> None:
 
 
 @pytest.mark.parametrize("yol,korunuyor", [
-    (".neocp/kancalar.json", True),
-    (".neocp/KANCALAR.JSON", True),
-    ("proje/.neocp/kancalar.json", True),       # başka projenin dosyası da
-    (".neocp/ayarlar.json", False),
-    ("kancalar.json", False),                   # .neocp altında değil
+    (".dornick/kancalar.json", True),
+    (".dornick/KANCALAR.JSON", True),
+    ("proje/.dornick/kancalar.json", True),       # başka projenin dosyası da
+    (".dornick/ayarlar.json", False),
+    ("kancalar.json", False),                   # .dornick altında değil
     ("src/kancalar.json", False),
 ])
 def test_which_paths_are_protected(yol: str, korunuyor: bool) -> None:
@@ -332,7 +332,7 @@ def ctx(tmp_path: Path) -> ToolContext:
     config.ensure_dirs()
     return ToolContext(
         config=config,
-        session=Session(EventLog(tmp_path / ".neocp" / "s.jsonl"), "test-kanca"),
+        session=Session(EventLog(tmp_path / ".dornick" / "s.jsonl"), "test-kanca"),
         cancel=asyncio.Event(),
     )
 
@@ -399,14 +399,14 @@ async def test_the_model_cannot_reach_the_hook_file_through_the_shell(
 ) -> None:
     """Yazma araçlarının kapısı kabuğu kapsamıyordu — asıl delik buydu.
 
-    `write_file` engelleniyordu ama `Set-Content .neocp/kancalar.json`
+    `write_file` engelleniyordu ama `Set-Content .dornick/kancalar.json`
     hiçbir kapıdan geçmiyordu; model kendisini durduran çiti kabukla
     sökebilirdi.
     """
     registry, izler = _kabuk_kaydi()
     bloklar = await execute(
         [PendingToolUse(id="c1", name="shell", input={
-            "command": "Set-Content .neocp/kancalar.json '[]'"})],
+            "command": "Set-Content .dornick/kancalar.json '[]'"})],
         registry=registry,
         permissions=PermissionEngine("yolo", [], []),
         ctx=ctx,
@@ -440,14 +440,14 @@ async def test_a_read_only_tool_may_still_name_the_hook_file(
     registry, izler = _kabuk_kaydi()
     bloklar = await execute(
         [PendingToolUse(id="c1", name="list_dir",
-                        input={"path": ".neocp/kancalar.json"})],
+                        input={"path": ".dornick/kancalar.json"})],
         registry=registry,
         permissions=PermissionEngine("yolo", [], []),
         ctx=ctx,
         approve=lambda *_: asyncio.sleep(0, result=True),
     )
     assert not bloklar[0]["is_error"]
-    assert izler == [".neocp/kancalar.json"]
+    assert izler == [".dornick/kancalar.json"]
 
 
 async def test_the_model_can_still_read_the_hook_file(

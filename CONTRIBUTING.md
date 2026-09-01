@@ -1,6 +1,6 @@
 # Contributing
 
-Thanks for your interest in neo.
+Thanks for your interest in dornick.
 
 ## Branches
 

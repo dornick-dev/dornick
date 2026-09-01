@@ -15,14 +15,14 @@ from pathlib import Path
 
 import pytest
 
-from neocp import artifacts
-from neocp.config import Config
-from neocp.events import EventLog
-from neocp.mind import Mind, open_mind
-from neocp.session import Session
-from neocp.tools import ToolContext, ToolRegistry
-from neocp.tools import artifacts as artifact_tools
-from neocp.web import MindServer
+from dornick import artifacts
+from dornick.config import Config
+from dornick.events import EventLog
+from dornick.mind import Mind, open_mind
+from dornick.session import Session
+from dornick.tools import ToolContext, ToolRegistry
+from dornick.tools import artifacts as artifact_tools
+from dornick.web import MindServer
 
 
 # -- depo --------------------------------------------------------------
@@ -144,7 +144,7 @@ def ctx(tmp_path: Path) -> ToolContext:
     config.ensure_dirs()
     return ToolContext(
         config=config,
-        session=Session(EventLog(tmp_path / ".neocp" / "s.jsonl"), "test"),
+        session=Session(EventLog(tmp_path / ".dornick" / "s.jsonl"), "test"),
         cancel=asyncio.Event(),
     )
 
@@ -308,8 +308,8 @@ def test_gallery_endpoints_list_and_remove(tmp_path: Path, mind: Mind) -> None:
 
 def test_artifact_notes_reach_the_stream(tmp_path: Path) -> None:
     """Kart olayı SSE'ye taşınmalı: not günlüğe düşer, hub yayınlar."""
-    from neocp.events import Event, utcnow
-    from neocp.web.server import _payload
+    from dornick.events import Event, utcnow
+    from dornick.web.server import _payload
 
     note = Event(seq=0, ts=utcnow(), kind="meta", content="artifact",
                  meta={"id": "pano-1a2b", "title": "Pano", "surum": 2,

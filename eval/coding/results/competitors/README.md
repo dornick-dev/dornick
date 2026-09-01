@@ -1,6 +1,6 @@
 # Competitor lanes — raw data
 
-The three-harness benchmark's non-neo columns, so the comparison is
+The three-harness benchmark's non-dornick columns, so the comparison is
 auditable rather than taken on faith.
 
 | File | Lane | What it is |

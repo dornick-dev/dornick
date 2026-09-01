@@ -12,9 +12,9 @@ from pathlib import Path
 
 import pytest
 
-from neocp.cli import _has_model
-from neocp.config import Config
-from neocp.setup import Provider, discover, write_config
+from dornick.cli import _has_model
+from dornick.config import Config
+from dornick.setup import Provider, discover, write_config
 
 
 class Quiet:
@@ -69,23 +69,23 @@ def test_other_settings_are_preserved(config: Config) -> None:
 def test_discovery_survives_a_dead_server(monkeypatch: pytest.MonkeyPatch) -> None:
     """Kapalı bir sunucu kurulumu düşürmemeli, sadece listede olmamalı."""
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
-    monkeypatch.setattr("neocp.setup.CANDIDATES", (("Yok", "http://127.0.0.1:9/v1"),))
+    monkeypatch.setattr("dornick.setup.CANDIDATES", (("Yok", "http://127.0.0.1:9/v1"),))
     assert discover() == []
 
 
 def test_embedding_models_are_not_offered(monkeypatch: pytest.MonkeyPatch) -> None:
     """Gömme modeli sohbet edemez; listeye girerse kullanıcı yanılır."""
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
-    monkeypatch.setattr("neocp.setup.CANDIDATES", (("Sahte", "http://x/v1"),))
+    monkeypatch.setattr("dornick.setup.CANDIDATES", (("Sahte", "http://x/v1"),))
     monkeypatch.setattr(
-        "neocp.setup._models", lambda _url: ["qwen/q3", "text-embedding-nomic"]
+        "dornick.setup._models", lambda _url: ["qwen/q3", "text-embedding-nomic"]
     )
 
     assert [p.model for p in discover()] == ["qwen/q3"]
 
 
 def test_anthropic_is_offered_only_with_a_key(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("neocp.setup.CANDIDATES", ())
+    monkeypatch.setattr("dornick.setup.CANDIDATES", ())
     monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test")
     assert [p.provider for p in discover()] == ["anthropic"]
 

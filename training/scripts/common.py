@@ -17,7 +17,7 @@ ROOT = Path(__file__).resolve().parents[1]          # training/
 # Product root: the rig lives inside the product repo (training/ at the
 # repo root), so the parent directory is the product. The installed layout
 # is identical (<app>/training next to <app>/src). personal_loop.py can
-# still override this with --neocp.
+# still override this with --dornick.
 PRODUCT = ROOT.parent
 sys.path.insert(0, str(ROOT))
 
@@ -168,7 +168,7 @@ def tr_exam(expanders: dict[str, QueryExpander | None]) -> dict[str, dict]:
     sys.path.insert(0, str(PRODUCT / "src"))
     sys.path.insert(0, str(PRODUCT / "eval" / "context_memory"))
     import scale_bench as sb
-    from neocp.loop import select_prime
+    from dornick.loop import select_prime
 
     def method(x):
         if x is None:

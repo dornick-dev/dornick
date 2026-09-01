@@ -14,7 +14,7 @@ from pathlib import Path
 
 import pytest
 
-STATIC = Path(__file__).resolve().parents[1] / "src" / "neocp" / "web" / "static"
+STATIC = Path(__file__).resolve().parents[1] / "src" / "dornick" / "web" / "static"
 CSS = (STATIC / "app.css").read_text(encoding="utf-8")
 HTML = (STATIC / "index.html").read_text(encoding="utf-8")
 APP_JS = (STATIC / "app.js").read_text(encoding="utf-8")
@@ -23,7 +23,7 @@ APP_JS = (STATIC / "app.js").read_text(encoding="utf-8")
 def test_default_theme_is_dark() -> None:
     """Varsayılan tema KOYU (kullanıcı kararı, 31.08).
 
-    Aydınlık ancak bilinçli seçilmişse (`neo-theme=light`) uygulanır;
+    Aydınlık ancak bilinçli seçilmişse (`dornick-theme=light`) uygulanır;
     kayıt yoksa ya da localStorage patlarsa koyu kalır.
     """
     for name in ("index.html", "watch.html"):
@@ -144,7 +144,7 @@ def test_user_questions_scroll_away_with_the_thread() -> None:
 
 
 def test_every_referenced_asset_exists() -> None:
-    from neocp.logo import png_path
+    from dornick.logo import png_path
     for name in re.findall(r'(?:href|src)="/([^"]+)"', HTML):
         # Önbellek kırıcı sorgu (`app.css?v=...`) dosya adının parçası değil.
         name = name.split("?", 1)[0]
@@ -228,7 +228,7 @@ def test_git_bar_sits_above_the_composer() -> None:
     order = re.findall(r'<script src="/([\w.]+)"></script>', HTML)
     assert order.index("viewer.js") < order.index("git.js")
     assert order.index("app.js") < order.index("git.js")
-    from neocp.web.server import ASSETS, STREAMED_NOTES
+    from dornick.web.server import ASSETS, STREAMED_NOTES
     assert "/git.js" in ASSETS
     assert "git" in STREAMED_NOTES
     assert "function host(" in (STATIC / "viewer.js").read_text(encoding="utf-8")
@@ -485,7 +485,7 @@ def test_the_raw_endpoint_guards_the_workspace_and_the_content_type() -> None:
     açığının klasik yolu. Tür de uzantıdan ve KISA bir listeden veriliyor —
     tarayıcının içeriğe bakıp tür tahmin etmesi (sniffing) çalışma
     alanındaki bir metin dosyasını HTML sayıp çalıştırabilirdi."""
-    SERVER = (Path(__file__).resolve().parents[1] / "src" / "neocp" / "web" / "server.py"
+    SERVER = (Path(__file__).resolve().parents[1] / "src" / "dornick" / "web" / "server.py"
               ).read_text(encoding="utf-8")
     body = re.search(r"def _raw_file\(self\) -> None:(.*?)\n    def ", SERVER, re.S)
     assert body, "_raw_file bulunamadı — desen bayatlamış olabilir"
@@ -523,7 +523,7 @@ MD_JS_SRC = (STATIC / "md.js").read_text(encoding="utf-8")
 
 
 def test_file_paths_in_the_answer_are_links() -> None:
-    """`src/neocp/loop.py:42` düz metin kalıyordu: kullanıcı yolu okuyup
+    """`src/dornick/loop.py:42` düz metin kalıyordu: kullanıcı yolu okuyup
     paneli elle açıp satırı elle arıyordu."""
     assert "const FILE_REF" in MD_JS_SRC
     assert "function fileChip" in MD_JS_SRC
@@ -753,7 +753,7 @@ def test_the_right_desk_has_cursor_style_workspace_tabs() -> None:
     assert "d.output" in viewer
     assert "bootDesk" in viewer
     assert 'openPin("desk:term")' in viewer
-    assert "neo-desk" in viewer
+    assert "dornick-desk" in viewer
     # Masa + beyin tek sağ sütunda (yan yana iki fixed pencere değil).
     rc = html.find('id="right-col"')
     vw = html.find('id="viewer"')
@@ -795,7 +795,7 @@ def test_every_organ_kind_is_drawable() -> None:
     Karşılığı olmayan tür sessizce yedek renge düşüyor: ekranda hata yok,
     yalnızca kamera ile PLC aynı renkte görünüyor.
     """
-    from neocp import organs
+    from dornick import organs
 
     table = re.search(r"const LIMB_COLOR = \{(.*?)\};", SCENE_JS, re.S)
     assert table, "LIMB_COLOR tablosu bulunamadı — desen bayatlamış olabilir"
@@ -831,7 +831,7 @@ def test_using_an_organ_shows_what_it_is_doing() -> None:
 def test_the_device_kinds_match_between_python_and_the_page() -> None:
     """Ayarlar sayfasındaki örnek, kabul edilmeyen bir tür yazarsa
     kullanıcı "kaydet"e bastığında hata alıyor ve sebebini bilmiyor."""
-    from neocp import devices
+    from dornick import devices
 
     SETTINGS_JS = (STATIC / "settings.js").read_text(encoding="utf-8")
     template = re.search(r"const DEVICE_TEMPLATE = \{(.*?)\n  \};", SETTINGS_JS, re.S)
@@ -1016,7 +1016,7 @@ def test_model_text_is_always_visible_never_folded() -> None:
                    yazılmış olsa bile)
         harness -> şeritte ya da gizli (araç adımları, iç notlar)
 
-    Kanıtlanmış yara: kullanıcı "yarım mı kaldı?" diye sordu, neo cevabı
+    Kanıtlanmış yara: kullanıcı "yarım mı kaldı?" diye sordu, dornick cevabı
     yazdı, cevap ŞERİDE KATLANDI ve ekranda yalnızca "▸ HARMANLIYOR · 13 SN"
     kaldı — kullanıcı sorduğu sorunun cevabını görmek için şeridi açmak
     zorunda kaldı.
@@ -1084,7 +1084,7 @@ def test_the_scene_separates_what_was_used_from_what_was_scanned() -> None:
     assert "step.used" in SCENE_JS
     assert "function order(index)" in SCENE_JS
     # Sunucu tarafı da işareti göndermeli, yoksa sahnede ayıracak bir şey yok.
-    LOOP = (Path(__file__).resolve().parents[1] / "src" / "neocp" / "loop.py").read_text(
+    LOOP = (Path(__file__).resolve().parents[1] / "src" / "dornick" / "loop.py").read_text(
         encoding="utf-8"
     )
     assert '"used": step.node in used' in LOOP
@@ -1106,22 +1106,22 @@ def test_the_route_list_also_separates_used_from_scanned() -> None:
 def test_deleting_a_device_refreshes_the_organs_list() -> None:
     """Ajan cihazı silince ayarlar/sahne 30 sn bekliyordu; hâlâ orada
     görünüyordu. `device_removed` organ listesini ve ayar panelini tazeler."""
-    from neocp.web.server import STREAMED_NOTES
+    from dornick.web.server import STREAMED_NOTES
 
     assert "device_removed" in STREAMED_NOTES
     assert "git" in STREAMED_NOTES
     assert 'case "device_removed"' in APP_JS
     assert 'case "git"' in APP_JS
-    assert "neo:devices" in APP_JS
+    assert "dornick:devices" in APP_JS
     settings = (STATIC / "settings.js").read_text(encoding="utf-8")
-    assert 'addEventListener("neo:devices"' in settings
+    assert 'addEventListener("dornick:devices"' in settings
 
 
 def test_the_recall_trace_does_not_overlay_the_conversation_rail() -> None:
     """İz paneli `position:fixed; left:30px` ile sol konuşma listesinin
     üstüne biniyordu. Hedef şeridi gibi `.stream-wrap` içinde akışın
     kardeşi — overlay değil."""
-    html = open("src/neocp/web/static/index.html", encoding="utf-8").read()
+    html = open("src/dornick/web/static/index.html", encoding="utf-8").read()
     wrap_i = html.find('class="stream-wrap"')
     route_i = html.find('id="route"')
     thread_i = html.find('id="thread"')
@@ -1237,7 +1237,7 @@ def test_viewer_left_grip_resizes_from_the_panel_edge() -> None:
     # Tavan mind-grip ile aynı: sola genişleyebilsin.
     assert "Math.min(760, window.innerWidth * 0.55)" in src
     assert "--viewer-h-user" in CSS
-    assert "neo-viewer-h" in APP_JS
+    assert "dornick-viewer-h" in APP_JS
     assert "mind-front" in APP_JS and "mind-front" in CSS
 
 
@@ -1297,7 +1297,7 @@ def test_usage_events_feed_the_chip_and_the_snapshot_seeds_it() -> None:
     assert "s.kullanim" in APP_JS and "s.fiyat" in APP_JS
     # Sunucu tarafı sözleşme gerçekten yayında: desktop._usage_yay
     # tur/oturum/fiyat alanlarını basıyor.
-    DESKTOP = (Path(__file__).resolve().parents[1] / "src" / "neocp" / "desktop.py").read_text(
+    DESKTOP = (Path(__file__).resolve().parents[1] / "src" / "dornick" / "desktop.py").read_text(
         encoding="utf-8")
     assert '"tur": dict(self._tur_kullanim)' in DESKTOP
     assert '"oturum": dict(self._oturum_kullanim)' in DESKTOP
@@ -1448,7 +1448,7 @@ def test_the_streaming_cursor_never_hangs() -> None:
 def test_an_empty_block_is_never_born() -> None:
     """Asıl çözüm süpürge değil: blok GERÇEK metin gelene kadar hiç
     doğmuyor. Model araçtan sonra çoğu zaman önce boş satır akıtıyordu ve
-    ekranda boş bir "NEO" bloğu saniyelerce yanıp sönüyordu."""
+    ekranda boş bir "DORNICK" bloğu saniyelerce yanıp sönüyordu."""
     body = re.search(r"function write\(chunk\) \{(.*?)\n\}", APP_JS, re.S)
     assert body and "if (!raw.trim()) return;" in body.group(1)
     # Metin beklenirken şerit canlı kalıyor: donuk değil, süre sayan gösterge.
@@ -1536,12 +1536,12 @@ def test_the_headline_trims_shell_wrappers() -> None:
 def test_the_goals_panel_reserves_its_own_room() -> None:
     """Panel sohbetin ÜSTÜNE biniyordu. Artık `.stream-wrap` içinde akışın
     kardeşi — flex sütunda kendi yerini kaplar, overlay değil."""
-    html = open("src/neocp/web/static/index.html", encoding="utf-8").read()
+    html = open("src/dornick/web/static/index.html", encoding="utf-8").read()
     wrap_i = html.find('class="stream-wrap"')
     goals_i = html.find('id="goals"')
     assert 0 <= wrap_i < goals_i
     assert re.search(r"const GOAL_FOLD_WIDTH = \d+", APP_JS)
-    assert "neo'nun kendine yazdığı iş listesi" in APP_JS
+    assert "dornick'nun kendine yazdığı iş listesi" in APP_JS
 
 
 def test_goals_can_be_finished_dropped_and_cleared() -> None:
@@ -1595,7 +1595,7 @@ def test_the_context_popup_lists_prompt_parts_like_cursor() -> None:
     assert re.search(r"^\.ctx-seg\.sohbet \{", CSS, re.M)
     assert re.search(r"^\.ctx-seg\.yardimci \{", CSS, re.M)
     assert "baglam_kirilim" in (
-        Path(__file__).resolve().parents[1] / "src" / "neocp" / "desktop.py"
+        Path(__file__).resolve().parents[1] / "src" / "dornick" / "desktop.py"
     ).read_text(encoding="utf-8")
 
 
@@ -1650,7 +1650,7 @@ def test_the_panel_explains_itself_and_accepts_user_items() -> None:
     """Kullanıcı "bu görevleri kim oluşturuyor bilmiyorum" dedi: cevap artık
     panelin kendisinde, ve liste iki taraflı — kullanıcı da ekleyebiliyor."""
     assert "GOAL_ACIKLAMA" in APP_JS
-    assert "neo'nun kendine yazdığı iş listesi" in APP_JS
+    assert "dornick'nun kendine yazdığı iş listesi" in APP_JS
     assert "Sen de ekleyebilir, silebilirsin" in APP_JS
     body = re.search(r"function render\(\) \{(.*?)\n  \}", APP_JS, re.S)
     assert body and "goals-what" in body.group(1)
@@ -1776,7 +1776,7 @@ KOMUT_JS = (STATIC / "komut.js").read_text(encoding="utf-8")
 GOREV_JS = (STATIC / "gorevler.js").read_text(encoding="utf-8")
 CHG_JS = (STATIC / "degisiklik.js").read_text(encoding="utf-8")
 SERVER_SRC = (Path(__file__).resolve().parents[1]
-              / "src" / "neocp" / "web" / "server.py").read_text(encoding="utf-8")
+              / "src" / "dornick" / "web" / "server.py").read_text(encoding="utf-8")
 
 
 def _defter() -> list[tuple[str, str]]:
@@ -1878,7 +1878,7 @@ def test_the_task_panel_speaks_the_same_shape_the_server_sends() -> None:
     Bir alan adı değişince panel sessizce boş satır çiziyor: "koşuyor" ama
     süresi yok, adı yok. Sözleşme iki tarafta da yazılı olmalı.
     """
-    bridge = (Path(__file__).resolve().parents[1] / "src" / "neocp"
+    bridge = (Path(__file__).resolve().parents[1] / "src" / "dornick"
               / "desktop.py").read_text(encoding="utf-8")
     gorevler = re.search(r"def gorevler\(self\).*?return \{\"gorevler\"", bridge, re.S)
     assert gorevler, "Bridge.gorevler() bulunamadı"
@@ -1894,7 +1894,7 @@ def test_the_task_panel_can_stop_one_job_and_only_a_stoppable_one() -> None:
     assert '"/api/gorevler/durdur"' in GOREV_JS
     assert '"/api/gorevler/durdur"' in SERVER_SRC
     assert "if (g.durdurulabilir)" in GOREV_JS
-    bridge = (Path(__file__).resolve().parents[1] / "src" / "neocp"
+    bridge = (Path(__file__).resolve().parents[1] / "src" / "dornick"
               / "desktop.py").read_text(encoding="utf-8")
     assert '"durdurulabilir": (not biten) and not kendi' in bridge
 
@@ -1908,7 +1908,7 @@ def test_a_finished_background_job_knocks_on_the_conversation() -> None:
     assert "if (!ev || !ev.bg) return;" in bitti.group(1)
     assert "task-note" in bitti.group(1)
     # Köprü `bg` alanını gerçekten yayıyor (_child_end içinde).
-    bridge = (Path(__file__).resolve().parents[1] / "src" / "neocp"
+    bridge = (Path(__file__).resolve().parents[1] / "src" / "dornick"
               / "desktop.py").read_text(encoding="utf-8")
     assert "def _child_end" in bridge
     assert "bg = self._cocuk_arka_plan(cid)" in bridge
@@ -1979,7 +1979,7 @@ def test_orchestra_lives_in_the_right_sidebar_not_a_left_modal() -> None:
     assert 'id="dock-grip"' in HTML
     assert "ns-resize" in CSS
     assert "--dock-h-user" in CSS
-    assert "neo-dock-h" in APP_JS
+    assert "dornick-dock-h" in APP_JS
     assert "left: 18px" not in CSS.split(".orch-deck")[1][:400]
     cams = (STATIC / "cameras.js").read_text(encoding="utf-8")
     assert "cam-open" in cams
@@ -2008,11 +2008,11 @@ def test_scheduled_tasks_are_editable_and_not_chat_dumps() -> None:
     assert 'action: "update"' in settings
     assert "Raporu aç" in settings
     assert "spawn_scheduled" in (Path(__file__).resolve().parents[1]
-        / "src" / "neocp" / "loop.py").read_text(encoding="utf-8")
+        / "src" / "dornick" / "loop.py").read_text(encoding="utf-8")
     assert "run_scheduled" in (Path(__file__).resolve().parents[1]
-        / "src" / "neocp" / "desktop.py").read_text(encoding="utf-8")
+        / "src" / "dornick" / "desktop.py").read_text(encoding="utf-8")
     assert "sessiz" in (Path(__file__).resolve().parents[1]
-        / "src" / "neocp" / "loop.py").read_text(encoding="utf-8")
+        / "src" / "dornick" / "loop.py").read_text(encoding="utf-8")
 
 
 def test_main_jobs_panel_and_artifact_export_exist() -> None:
@@ -2031,7 +2031,7 @@ def test_main_jobs_panel_and_artifact_export_exist() -> None:
     assert "fmtDuration" in jobs
     assert "renderLiveRun" in jobs and "Canlı adımlar" in jobs
     assert "refreshLive" in jobs
-    assert "download=1" in (Path("src/neocp/web/server.py").read_text(encoding="utf-8"))
+    assert "download=1" in (Path("src/dornick/web/server.py").read_text(encoding="utf-8"))
     assert "downloadArtifact" in viewer and "injectScrollCss" in viewer
     assert "function wait(" in orch or "wait(ev)" in orch
     assert "ch.hedef" in orch or "ev.hedef" in orch
@@ -2065,9 +2065,9 @@ def test_main_jobs_panel_and_artifact_export_exist() -> None:
     # Path bağlı sohbetler proje etiketi olmasa da klasör altında.
     assert "hist-status-filters" in (STATIC / "app.css").read_text(encoding="utf-8")
     assert "--open" in (Path(__file__).resolve().parents[1]
-        / "src" / "neocp" / "cli.py").read_text(encoding="utf-8")
+        / "src" / "dornick" / "cli.py").read_text(encoding="utf-8")
     assert "NeoOpen" in (Path(__file__).resolve().parents[1]
-        / "installer" / "neo.iss").read_text(encoding="utf-8")
+        / "installer" / "dornick.iss").read_text(encoding="utf-8")
     assert "function editTaskForm" in (STATIC / "settings.js").read_text(encoding="utf-8")
 
 
@@ -2234,7 +2234,7 @@ def test_explicit_file_links_in_chat_are_actionable() -> None:
 
 def test_raw_endpoint_honors_the_download_flag() -> None:
     from pathlib import Path
-    src = Path('src/neocp/web/server.py').read_text(encoding='utf-8')
+    src = Path('src/dornick/web/server.py').read_text(encoding='utf-8')
     assert 'Content-Disposition' in src
     assert 'attachment; filename=' in src
 
@@ -2252,12 +2252,12 @@ def test_decided_plan_cards_stay_in_place_without_buttons() -> None:
 
 
 def test_camera_can_open_in_a_separate_window() -> None:
-    """İzleme ana Neo'dan koparılabilir: ayrı OS penceresi, canlı kare."""
+    """İzleme ana Dornick'dan koparılabilir: ayrı OS penceresi, canlı kare."""
     watch = (STATIC / "watch.html").read_text(encoding="utf-8")
     js = (STATIC / "watch.js").read_text(encoding="utf-8")
-    desk = (Path(__file__).resolve().parents[1] / "src" / "neocp" / "desktop.py"
+    desk = (Path(__file__).resolve().parents[1] / "src" / "dornick" / "desktop.py"
             ).read_text(encoding="utf-8")
-    from neocp.web.server import ASSETS
+    from dornick.web.server import ASSETS
     assert "watch-win" in watch
     assert 'class="brand"' in watch
     assert "function aktifVar" in js
@@ -2317,7 +2317,7 @@ def test_camera_hud_is_a_power_toggle() -> None:
     assert "case \"camera\"" in APP_JS
     assert "Cameras.baglam" in APP_JS
     assert "sync_camera" in (
-        Path(__file__).resolve().parents[1] / "src" / "neocp" / "desktop.py"
+        Path(__file__).resolve().parents[1] / "src" / "dornick" / "desktop.py"
     ).read_text(encoding="utf-8")
 
 
@@ -2338,7 +2338,7 @@ def test_voice_and_hear_hud_start_off_with_slash() -> None:
     assert 'what: "voice"' in APP_JS and 'what: "hearing"' in APP_JS
     assert "button.hidden = !enabled" not in APP_JS
     desk = (
-        Path(__file__).resolve().parents[1] / "src" / "neocp" / "desktop.py"
+        Path(__file__).resolve().parents[1] / "src" / "dornick" / "desktop.py"
     ).read_text(encoding="utf-8")
     assert "def sync_hearing" in desk
     assert "def hearing_power" in desk
@@ -2440,7 +2440,7 @@ def test_native_tour_fixes_are_wired() -> None:
     assert 'addEventListener("contextmenu"' in menu
     assert "pano_oku" in menu and "pano_yaz" in menu
     assert "Yapıştır" in menu and "Kopyala" in menu and "Tümünü seç" in menu
-    desktop_src = (Path(__file__).resolve().parents[1] / "src" / "neocp"
+    desktop_src = (Path(__file__).resolve().parents[1] / "src" / "dornick"
                    / "desktop.py").read_text(encoding="utf-8")
     assert "def pano_oku" in desktop_src and "def pano_yaz" in desktop_src
     assert "pano_oku, pano_yaz" in desktop_src   # ana pencerede expose
@@ -2485,11 +2485,11 @@ def test_folder_flows_and_task_mirror_are_wired() -> None:
     orch = (STATIC / "orchestra.js").read_text(encoding="utf-8")
     assert "/api/gorevler/iptal" in orch and "İptal et" in orch
     assert "def gorev_iptal" in (Path(__file__).resolve().parents[1]
-                                 / "src" / "neocp" / "desktop.py").read_text(encoding="utf-8")
+                                 / "src" / "dornick" / "desktop.py").read_text(encoding="utf-8")
     assert '"/api/gorevler/iptal"' in SERVER_SRC
     assert "Math.min(760" in APP_JS
     assert "sadeceDusunce" in APP_JS
-    loop_src = (Path(__file__).resolve().parents[1] / "src" / "neocp" / "loop.py").read_text(
+    loop_src = (Path(__file__).resolve().parents[1] / "src" / "dornick" / "loop.py").read_text(
         encoding="utf-8")
     assert "on_retry_wait" in loop_src
     assert "_yenile_baglam" in loop_src
@@ -2502,3 +2502,16 @@ def test_the_version_badge_lives_in_the_sidebar_foot() -> None:
     assert 'id="side-ver"' in HTML
     assert ".side-foot .side-ver" in CSS
     assert 'getElementById("side-ver")' in APP_JS
+
+
+def test_the_git_bar_never_offers_the_scratch_workspace() -> None:
+    """Atolye ajanin karalama alanidir: cubuk onu repo sanip "+407 Commit
+    Yayinla" teklif ediyordu (canli, 01.09). repo_root yalniz atanmis
+    projede arar; reposuz kok da yalniz projeden gelir."""
+    git_src = (Path(__file__).resolve().parents[1] / "src" / "dornick"
+               / "git.py").read_text(encoding="utf-8")
+    govde = git_src.split("def repo_root", 1)[1].split("\ndef ", 1)[0]
+    assert "scratch_ok" in govde and "return None" in govde
+    durum = SERVER_SRC.split("def _git_status", 1)[1].split("def _git_action", 1)[0]
+    assert "box.project is not None" in durum
+    assert "box.project or box.root" not in durum

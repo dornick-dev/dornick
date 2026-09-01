@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from neocp import lmstudio
+from dornick import lmstudio
 
 
 def test_suggest_context_caps_to_max_without_vram() -> None:
@@ -72,11 +72,11 @@ def test_unload_others_keeps_selected(monkeypatch) -> None:
 
 
 def test_local_optimize_forces_max_calls(tmp_path, monkeypatch) -> None:
-    from neocp import settings
-    from neocp.config import Config
+    from dornick import settings
+    from dornick.config import Config
 
-    monkeypatch.setattr("neocp.otomod.dogrula_anahtar", lambda _a: "ok")
-    cfg = Config(workspace=tmp_path, state_dir=tmp_path / ".neocp")
+    monkeypatch.setattr("dornick.otomod.dogrula_anahtar", lambda _a: "ok")
+    cfg = Config(workspace=tmp_path, state_dir=tmp_path / ".dornick")
     cfg.ensure_dirs()
     updated = settings.apply(cfg, {
         "provider": "lmstudio",

@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-from neocp import watch
+from dornick import watch
 
 pytestmark = pytest.mark.skipif(not watch.available(), reason="görüntü paketi kurulu değil")
 

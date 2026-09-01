@@ -227,7 +227,7 @@
             "alinan": 40.0,
             "kanit": [
               "+ fatura.php duruyor (10p) — fatura.php",
-              "+ php -l temiz (10p) — No syntax errors detected in C:\\Users\\user\\AppData\\Local\\Temp\\neocp-eval-k3-tamir-jyhev1u5\\atolye\\fatura.php",
+              "+ php -l temiz (10p) — No syntax errors detected in C:\\Users\\user\\AppData\\Local\\Temp\\dornick-eval-k3-tamir-jyhev1u5\\atolye\\fatura.php",
               "+ fonksiyon dışarıdan çağrılabiliyor (20p) — tamam"
             ],
             "sebep": "",
@@ -596,7 +596,7 @@
           "dogruladi_mi": true,
           "dogrulama_izi": [
             "shell: node -e \"const {Kitaplik}=require('./atolye/kitaplik.js');const k=new Kitaplik();k.ekle('1",
-            "shell: node -e \"const {Kitaplik}=require('C:/Users/user/AppData/Local/Temp/neocp-eval-o3-ozellik-"
+            "shell: node -e \"const {Kitaplik}=require('C:/Users/user/AppData/Local/Temp/dornick-eval-o3-ozellik-"
           ],
           "calistirma_izi": [],
           "plan_yazdi_mi": false,

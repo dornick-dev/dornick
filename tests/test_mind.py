@@ -13,13 +13,13 @@ from pathlib import Path
 
 import pytest
 
-from neocp.config import Config
-from neocp.events import EventLog
-from neocp.mind import Mind, open_mind
-from neocp.mind.search import rank, tokenize
-from neocp.session import PendingToolUse, Session
-from neocp.tools import ToolContext, build_registry, execute
-from neocp.permissions import PermissionEngine
+from dornick.config import Config
+from dornick.events import EventLog
+from dornick.mind import Mind, open_mind
+from dornick.mind.search import rank, tokenize
+from dornick.session import PendingToolUse, Session
+from dornick.tools import ToolContext, build_registry, execute
+from dornick.permissions import PermissionEngine
 
 
 @pytest.fixture()
@@ -131,7 +131,7 @@ def test_snapshot_lists_only_active_goals(mind: Mind) -> None:
     döküm yalnız aktifleri taşımalı — id, metin ve maddenin geçmiş bir
     oturumdan kalıp kalmadığı (`eski`). Zihinsiz ajan (ya da patlayan
     okuma) boş liste demek — sohbet düşmemeli."""
-    from neocp.desktop import _active_goals
+    from dornick.desktop import _active_goals
 
     keep = mind.push_goal("kalan iş")
     done = mind.push_goal("biten iş")
@@ -269,8 +269,8 @@ async def test_goal_tool_updates_digest(ctx: ToolContext, mind: Mind) -> None:
 def test_sessions_lists_past_conversations_newest_first(tmp_path):
     """Sohbet listesi: geçmiş oturumlar, en yeniden eskiye. Bu bir anı
     listesi değil — ham konuşmaların kendisi."""
-    from neocp.events import EventLog
-    from neocp.mind import open_mind
+    from dornick.events import EventLog
+    from dornick.mind import open_mind
 
     sessions = tmp_path / "sessions"
     sessions.mkdir(parents=True)
@@ -291,8 +291,8 @@ def test_sessions_lists_past_conversations_newest_first(tmp_path):
 
 def test_transcript_returns_only_spoken_turns(tmp_path):
     """Döküm yalnızca metin turları — araç çağrısı ve düşünme dışarıda."""
-    from neocp.events import EventLog
-    from neocp.mind import open_mind
+    from dornick.events import EventLog
+    from dornick.mind import open_mind
 
     sessions = tmp_path / "sessions"
     sessions.mkdir(parents=True)
@@ -315,7 +315,7 @@ def test_transcript_returns_only_spoken_turns(tmp_path):
 def test_projects_assign_and_clear(tmp_path):
     """Bir konuşma bir projeye bağlanıp çözülebiliyor; kalıcı ve boş ad
     bağlamayı kaldırıyor. Bir konuşma bir anı değil — bu yalnızca klasör."""
-    from neocp.mind import open_mind
+    from dornick.mind import open_mind
 
     sessions = tmp_path / "sessions"
     sessions.mkdir(parents=True)
@@ -342,7 +342,7 @@ def test_recall_answers_are_body_capped(tmp_path):
     tek isabette binlerce token yiyip gerçek eşleşmeyi boğuyordu. Kırpılan
     kayıp değil — model sorguyu daraltıp yeniden arayabilir ve cevap bunu
     söylüyor."""
-    from neocp.mind.tools import RECALL_BODY_CAP, _bounded
+    from dornick.mind.tools import RECALL_BODY_CAP, _bounded
 
     short = "kısa kayıt"
     assert _bounded(short) == short
@@ -449,15 +449,15 @@ def test_binding_a_folder_also_files_the_chat_under_that_project(
 ) -> None:
     """Klasör bağlayınca konuşma o klasör adının altında gruplansın.
 
-    Cursor Repositories gibi: path=...\\neo → proje etiketi 'neo'. Elle
+    Cursor Repositories gibi: path=...\\dornick → proje etiketi 'dornick'. Elle
     verilmiş proje adı varsa üzerine yazılmaz.
     """
-    mind.set_session_meta("s1", path=r"C:\projeler\Fatih\neo")
-    assert mind.projects().get("s1") == "neo"
+    mind.set_session_meta("s1", path=r"C:\projeler\Fatih\dornick")
+    assert mind.projects().get("s1") == "dornick"
     # İkinci path yazımı: zaten etiket var → dokunma.
-    mind.set_project("s1", "Neo SCADA")
-    mind.set_session_meta("s1", path=r"C:\projeler\Fatih\neocp")
-    assert mind.projects().get("s1") == "Neo SCADA"
+    mind.set_project("s1", "Dornick SCADA")
+    mind.set_session_meta("s1", path=r"C:\projeler\Fatih\dornick")
+    assert mind.projects().get("s1") == "Dornick SCADA"
     # Path yokken proje de yoksa boş kalır.
     mind.set_project("s2", "")
     mind.set_session_meta("s2", ad="yalnız ad")

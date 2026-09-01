@@ -12,8 +12,8 @@ from pathlib import Path
 
 import pytest
 
-from neocp import settings
-from neocp.config import Config
+from dornick import settings
+from dornick.config import Config
 
 
 @pytest.fixture()
@@ -24,8 +24,8 @@ def config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Config:
             monkeypatch.delenv(entry["env"], raising=False)
     # Anahtar doğrulama ağa çıkmasın: testte OpenRouter yok, sahte anahtar
     # canlı uca gidip 401 alırdı.
-    monkeypatch.setattr("neocp.otomod.dogrula_anahtar", lambda _aday: "ok")
-    cfg = Config(workspace=tmp_path, state_dir=tmp_path / ".neocp")
+    monkeypatch.setattr("dornick.otomod.dogrula_anahtar", lambda _aday: "ok")
+    cfg = Config(workspace=tmp_path, state_dir=tmp_path / ".dornick")
     cfg.ensure_dirs()
     return cfg
 
@@ -221,7 +221,7 @@ class _FakeAgent:
     def __init__(self, config) -> None:  # noqa: ANN001
         self.config = config
         self.client = object()
-        from neocp.permissions import PermissionEngine
+        from dornick.permissions import PermissionEngine
 
         self.permissions = PermissionEngine.from_config(config.permissions)
         self.policy = None
@@ -241,7 +241,7 @@ def _bridge(config):  # noqa: ANN001
     import asyncio
     from dataclasses import replace
 
-    from neocp.desktop import Bridge
+    from dornick.desktop import Bridge
 
     bridge = Bridge.__new__(Bridge)
     bridge.agent = _FakeAgent(config)
@@ -259,7 +259,7 @@ def _bridge(config):  # noqa: ANN001
 def test_changing_the_model_takes_effect_without_a_restart(tmp_path: Path) -> None:
     from dataclasses import replace
 
-    from neocp.config import Config
+    from dornick.config import Config
 
     config = Config.load(tmp_path)
     bridge, _ = _bridge(config)
@@ -276,7 +276,7 @@ def test_a_change_mid_turn_waits_for_the_turn(tmp_path: Path) -> None:
     """Akan bir istemciyi altından çekmek o cevabı öldürür."""
     from dataclasses import replace
 
-    from neocp.config import Config
+    from dornick.config import Config
 
     config = Config.load(tmp_path)
     bridge, _ = _bridge(config)
@@ -301,7 +301,7 @@ def test_a_mode_change_reaches_the_page_as_an_event(tmp_path: Path) -> None:
     başka sekme — değişen kip de dahil)."""
     from dataclasses import replace
 
-    from neocp.config import Config
+    from dornick.config import Config
 
     config = Config.load(tmp_path)
     bridge, _ = _bridge(config)
@@ -317,7 +317,7 @@ def test_settings_that_do_not_touch_the_model_leave_it_alone(tmp_path: Path) -> 
     tazelemek demek."""
     from dataclasses import replace
 
-    from neocp.config import Config
+    from dornick.config import Config
 
     config = Config.load(tmp_path)
     bridge, _ = _bridge(config)
@@ -339,12 +339,12 @@ def test_settings_that_do_not_touch_the_model_leave_it_alone(tmp_path: Path) -> 
 def _bridge_with_session(tmp_path):
     """Gerçek config/mind/session ile bir köprü; oturum değiştirmeyi sınar."""
     import asyncio
-    from neocp.config import Config
-    from neocp.desktop import Bridge
-    from neocp.events import EventLog
-    from neocp.mind import open_mind
-    from neocp.permissions import PermissionEngine
-    from neocp.session import Session
+    from dornick.config import Config
+    from dornick.desktop import Bridge
+    from dornick.events import EventLog
+    from dornick.mind import open_mind
+    from dornick.permissions import PermissionEngine
+    from dornick.session import Session
 
     config = Config.load(tmp_path)
     config.ensure_dirs()
@@ -389,7 +389,7 @@ def test_new_session_swaps_and_rebinds(tmp_path):
 
 
 def test_resume_session_loads_existing(tmp_path):
-    from neocp.events import EventLog
+    from dornick.events import EventLog
     bridge, agent, rebinds, emits = _bridge_with_session(tmp_path)
     # var olan bir oturum günlüğü
     log = EventLog(agent.config.sessions_dir / "20260610T090000Z.jsonl")
@@ -413,7 +413,7 @@ def test_resume_missing_session_is_reported(tmp_path):
 
 
 def test_switching_away_while_busy_opens_a_parallel_lane(tmp_path):
-    """Eski sözleşme reddetmekti ("neo meşgul; tur bitince dene") —
+    """Eski sözleşme reddetmekti ("dornick meşgul; tur bitince dene") —
     canlı istekle değişti (29.08): koşan şeride dokunulmaz, yeni
     sohbet AYRI bir şeritte hemen açılır."""
     bridge, agent, rebinds, _ = _bridge_with_session(tmp_path)
@@ -437,7 +437,7 @@ def test_snapshot_surumu_tasir(config: Config) -> None:
     Sahada hangi sürümün kurulu olduğu görünmüyordu; alan pyproject'teki
     gerçek sürümle birebir aynı olmalı — ikinci bir sürüm kaynağı yok.
     """
-    from neocp import ortam
+    from dornick import ortam
 
     kar = settings.snapshot(config)
     assert kar["surum"] == ortam.surum()
@@ -652,7 +652,7 @@ def test_apply_adopts_caps_when_model_id_changes(
 
 
 def test_a_model_that_cannot_think_omits_the_anthropic_field() -> None:
-    from neocp.config import ModelConfig
+    from dornick.config import ModelConfig
 
     assert ModelConfig(can_think=False, thinking=True).thinking_param() is None
     assert ModelConfig(thinking=False).thinking_param() == {"type": "disabled"}
@@ -686,7 +686,7 @@ def test_anthropic_catalog_does_not_invent_a_window(
 def test_lmstudio_thinking_is_omitted_when_the_server_is_silent(
     config: Config, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from neocp import lmstudio
+    from dornick import lmstudio
 
     monkeypatch.setattr(settings.lmstudio, "models", lambda _u: [
         lmstudio.Model(
@@ -708,7 +708,7 @@ def test_lmstudio_thinking_is_omitted_when_the_server_is_silent(
 def test_ollama_show_fills_caps_the_catalog_lacks(
     config: Config, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from neocp.config import ModelConfig
+    from dornick.config import ModelConfig
 
     config.model = ModelConfig(name="llama3", base_url="http://localhost:11434/v1")
     monkeypatch.setattr(settings, "scan_models", lambda _c: [{"id": "llama3"}])
@@ -737,7 +737,7 @@ def test_ollama_show_fills_caps_the_catalog_lacks(
 def test_ollama_show_is_skipped_when_the_catalog_already_knows(
     config: Config, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from neocp.config import ModelConfig
+    from dornick.config import ModelConfig
 
     config.model = ModelConfig(name="llama3", base_url="http://localhost:11434/v1")
     monkeypatch.setattr(settings, "scan_models", lambda _c: [{

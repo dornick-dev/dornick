@@ -1,6 +1,6 @@
 """Kabuk aracı: arka plan (sunucu) ve kesme (durdur).
 
-İki gerçek dünya hatası: (1) neo bir sunucuyu (`python app.py`) normal kipte
+İki gerçek dünya hatası: (1) dornick bir sunucuyu (`python app.py`) normal kipte
 çalıştırınca komut hiç bitmediği için tur takılıp kalıyordu — `background`
 bunu detached başlatıp hemen dönüyor. (2) Uzun bir komutta "durdur" işe
 yaramıyordu — kabuk `communicate()`'i beklerken kesmeyi görmüyordu; artık
@@ -17,13 +17,13 @@ from pathlib import Path
 
 import pytest
 
-from neocp import apps
-from neocp.config import Config
-from neocp.events import EventLog
-from neocp.permissions import PermissionEngine
-from neocp.session import PendingToolUse, Session
-from neocp.tools import ToolContext, ToolRegistry, execute
-from neocp.tools.shell import register
+from dornick import apps
+from dornick.config import Config
+from dornick.events import EventLog
+from dornick.permissions import PermissionEngine
+from dornick.session import PendingToolUse, Session
+from dornick.tools import ToolContext, ToolRegistry, execute
+from dornick.tools.shell import register
 
 pytestmark = pytest.mark.skipif(sys.platform != "win32", reason="PowerShell Start-Sleep")
 

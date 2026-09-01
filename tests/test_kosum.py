@@ -27,12 +27,12 @@ from pathlib import Path
 
 import pytest
 
-from neocp import kosum
-from neocp.config import Config
-from neocp.events import EventLog
-from neocp.session import Session
-from neocp.tools import ToolContext, ToolRegistry
-from neocp.tools import kosucu as kos_tools
+from dornick import kosum
+from dornick.config import Config
+from dornick.events import EventLog
+from dornick.session import Session
+from dornick.tools import ToolContext, ToolRegistry
+from dornick.tools import kosucu as kos_tools
 
 
 @pytest.fixture()
@@ -41,7 +41,7 @@ def ctx(tmp_path: Path) -> ToolContext:
     config.ensure_dirs()
     return ToolContext(
         config=config,
-        session=Session(EventLog(tmp_path / ".neocp" / "s.jsonl"), "test-kos"),
+        session=Session(EventLog(tmp_path / ".dornick" / "s.jsonl"), "test-kos"),
         cancel=asyncio.Event(),
     )
 
@@ -766,7 +766,7 @@ def test_reminder_marks_a_health_command_as_such(tmp_path: Path) -> None:
 
 
 def test_tool_is_registered_in_the_real_registry() -> None:
-    from neocp.tools import build_registry
+    from dornick.tools import build_registry
 
     assert "kos" in build_registry(subagents=False)
 
@@ -780,7 +780,7 @@ def test_tool_is_gated(registry: ToolRegistry) -> None:
 
 def test_manual_command_is_the_permission_subject() -> None:
     """Elle verilen komut kapıya `path` olarak görünmemeli."""
-    from neocp.permissions import describe
+    from dornick.permissions import describe
 
     assert describe({"path": "C:/proje", "komut": "npm test"}) == "npm test"
     assert describe({"path": "C:/proje"}) == "C:/proje"

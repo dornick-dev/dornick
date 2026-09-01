@@ -51,7 +51,7 @@ console.log('###' + JSON.stringify(report));
 
 def _probe(module: Path) -> dict | None:
     script = _PROBE % {"module": json.dumps(str(module).replace("\\", "/"))}
-    with tempfile.TemporaryDirectory(prefix="neocp-o3-") as tmp:
+    with tempfile.TemporaryDirectory(prefix="dornick-o3-") as tmp:
         path = Path(tmp) / "probe.js"
         path.write_text(script, encoding="utf-8")
         run = grading.shell(["node", str(path)], cwd=tmp, timeout=60)
@@ -66,7 +66,7 @@ def _probe(module: Path) -> dict | None:
 
 def _regression(root: Path) -> grading.Run | None:
     """Run the seed's PRISTINE test suite in a copy of the workshop."""
-    with tempfile.TemporaryDirectory(prefix="neocp-o3-reg-") as tmp:
+    with tempfile.TemporaryDirectory(prefix="dornick-o3-reg-") as tmp:
         target = Path(tmp) / "workshop"
         try:
             shutil.copytree(root, target,

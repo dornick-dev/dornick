@@ -55,7 +55,7 @@ class BaseModel(nn.Module):
     # `konum` (positions), `bloklar` (blocks), `son` (final norm), `bas`
     # (head). These Turkish names are a FROZEN wire format: existing
     # checkpoints (checkpoints/base.pt) and the .npz files consumed by the
-    # shipped product inference (src/neocp/recall/taban.py) use them.
+    # shipped product inference (src/dornick/recall/taban.py) use them.
     # Renaming them would break every deployed model.
     def __init__(self, cfg: Config | None = None) -> None:
         super().__init__()

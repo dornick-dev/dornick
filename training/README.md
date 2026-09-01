@@ -1,11 +1,11 @@
 # training — the base rewriter and how to train your own
 
-This directory is the complete training rig for neo's **base rewriter**
+This directory is the complete training rig for dornick's **base rewriter**
 (`QueryExpander`): a 10.8M-parameter byte-level model that looks at a user
 message and emits the extra search terms the memory engine will need —
 synonyms, abbreviations, pronoun resolutions — or nothing at all when the
 message has no topic. The product ships a trained copy as
-`src/neocp/assets/taban.npz` and runs it in pure numpy on CPU, in
+`src/dornick/assets/taban.npz` and runs it in pure numpy on CPU, in
 milliseconds, fully offline.
 
 Everything needed to reproduce or improve the model is here, **including
@@ -29,7 +29,7 @@ scripts/01_generate_questions.py  teacher LLM writes user questions (3 classes)
 scripts/02_label.py               teacher labels each question with search terms
 scripts/03_train.py               train from scratch (GPU, bf16, ~20k steps)
 scripts/04_export.py              checkpoint → fp16 npz + torch↔numpy parity gate
-scripts/05_exam.py                acceptance exam on neo's scale benchmark
+scripts/05_exam.py                acceptance exam on dornick's scale benchmark
 scripts/06_en_probe.py            hand-labeled English probe (no API needed)
 scripts/try_it.py                 interactive demo: type a question, see terms
 scripts/personal_loop.py          the nightly on-device personal loop (see below)
@@ -74,7 +74,7 @@ py scripts/04_export.py            # → checkpoints/base.npz
 
 Export packs the weights as fp16 into a single `.npz` whose key names
 (`gomme`, `konum`, `b0.att.in_w`, …) are a **frozen wire format** — the
-product's own numpy decoder (`src/neocp/recall/taban.py`) and every
+product's own numpy decoder (`src/dornick/recall/taban.py`) and every
 deployed model read them. Export refuses to finish unless torch and numpy
 produce the same logits (max diff < 0.25, fp16 packing margin).
 
@@ -96,11 +96,11 @@ stay silent costs under 50 ms.
 ### 5. The nightly personal loop
 
 `scripts/personal_loop.py` is what the product schedules when the user
-switches on "Learn me" (`src/neocp/tanima.py` finds it at
+switches on "Learn me" (`src/dornick/tanima.py` finds it at
 `<root>/training/scripts/personal_loop.py` and runs it low-priority):
 
 1. **harvest** — new memories since the watermark, read-only, episodes excluded
-2. **label** — neo's own configured model writes 4 question styles + topic
+2. **label** — dornick's own configured model writes 4 question styles + topic
    terms per memory (falls back to the hosted teacher if configured)
 3. **fine-tune** — from `checkpoints/base.pt`, on CPU, with a replay
    buffer of base-corpus examples (6:1, silence share protected) against
@@ -111,7 +111,7 @@ switches on "Learn me" (`src/neocp/tanima.py` finds it at
    (TR bench + EN probe + a product-truth personal probe over a copy of
    the user's own mind); a candidate must not regress anywhere and must
    find strictly more of the user's memories
-6. **hot deploy** — the winner is copied to `.neocp/taban.npz`; the product
+6. **hot deploy** — the winner is copied to `.dornick/taban.npz`; the product
    prefers that file over the stock model, no restart needed
 
 A regressing candidate is discarded; a bad night cannot break the product.
@@ -123,10 +123,10 @@ cumulative drift across nights.
 
 Personal artifacts (`data/personal_*`) never leave the machine and are
 git-ignored. The labeling step sends memory text to the model you
-selected in neo: with a local endpoint (LM Studio, Ollama) nothing
+selected in dornick: with a local endpoint (LM Studio, Ollama) nothing
 leaves the machine; a hosted endpoint is refused unless you opt in
 via the "Allow labeling with a hosted model" switch in settings
-(`learn_cloud_ok` in `.neocp/tanima.json`).
+(`learn_cloud_ok` in `.dornick/tanima.json`).
 
 ## Setup
 

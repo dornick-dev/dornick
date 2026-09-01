@@ -1,4 +1,4 @@
-"""neo chrome — CDP istemcisi.
+"""dornick chrome — CDP istemcisi.
 
 Gerçek tarayıcı testte yok; olmaması testin değerini düşürmüyor çünkü
 kırılgan olan kısım protokol: WebSocket çerçeveleri (maske, 16/64 bitlik
@@ -18,7 +18,7 @@ from typing import Any, Callable
 
 import pytest
 
-from neocp import chrome
+from dornick import chrome
 
 GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 
@@ -184,9 +184,9 @@ def cdp_answer(body: bytes) -> bytes:
         # click/focus yardımcıları uzun IIFE; eşleşen metni geri döndür.
         if "hit.click()" in source:
             value = "Giriş"
-        elif "// neo:fill" in source:
+        elif "// dornick:fill" in source:
             value = dict(FILL_OUTCOME)
-        elif "// neo:submit" in source:
+        elif "// dornick:submit" in source:
             value = dict(SUBMIT_OUTCOME)
         elif "pick.focus()" in source:
             value = "e-posta"
@@ -318,7 +318,7 @@ def test_fill_carries_the_target_and_the_events_to_the_page(tmp_path) -> None:
         where = box.fill(tab, "ali@ornek.com", label="E-posta")
         assert where == "E-posta / name=email"
 
-        source = next(s for s in EXPRESSIONS if "// neo:fill" in s)
+        source = next(s for s in EXPRESSIONS if "// dornick:fill" in s)
         # Hedef ölçütleri sayfaya gitmiş olmalı.
         assert '"E-posta"' in source and '"ali@ornek.com"' in source
         # Etiket, name ve placeholder eşlemesi sayfa betiğinde.
@@ -373,7 +373,7 @@ def test_submit_finds_the_form_and_reports_the_button(tmp_path) -> None:
         tab = box.tabs()[0]
 
         assert box.submit(tab) == "Giriş Yap"
-        source = next(s for s in EXPRESSIONS if "// neo:submit" in s)
+        source = next(s for s in EXPRESSIONS if "// dornick:submit" in s)
         # İki gönderim yolu da sayfa betiğinde: düğme tıklama + requestSubmit.
         assert "btn.click()" in source and "requestSubmit" in source
 
@@ -423,7 +423,7 @@ def test_every_registry_shares_one_browser(tmp_path) -> None:
 
 def test_the_browser_tool_is_in_the_subagent_registry() -> None:
     """"Alt ajanlar da görsün": browser yerleşik, alt ajan defterinde de var."""
-    from neocp.tools import build_registry
+    from dornick.tools import build_registry
 
     if not chrome.available():
         import pytest as _p
@@ -432,10 +432,10 @@ def test_the_browser_tool_is_in_the_subagent_registry() -> None:
 
 
 def test_the_tool_offers_fill_and_submit() -> None:
-    """Form doldurma araç yüzeyinde olmalı: neo, ürettiği uygulamada giriş
+    """Form doldurma araç yüzeyinde olmalı: dornick, ürettiği uygulamada giriş
     yapamazsa giriş-sonrası sayfaları hiç doğrulayamıyor."""
-    from neocp.tools import ToolRegistry
-    from neocp.tools import browser as surf
+    from dornick.tools import ToolRegistry
+    from dornick.tools import browser as surf
 
     registry = ToolRegistry()
     surf.register(registry)
@@ -452,11 +452,11 @@ def test_the_tool_stays_shut_until_the_user_opens_it(tmp_path) -> None:
     ve kendiliğinden açmamalı."""
     import asyncio
 
-    from neocp.config import Config
-    from neocp.events import EventLog
-    from neocp.session import Session
-    from neocp.tools import ToolContext, ToolRegistry
-    from neocp.tools import browser as surf
+    from dornick.config import Config
+    from dornick.events import EventLog
+    from dornick.session import Session
+    from dornick.tools import ToolContext, ToolRegistry
+    from dornick.tools import browser as surf
 
     registry = ToolRegistry()
     surf.register(registry)

@@ -12,13 +12,13 @@ from pathlib import Path
 
 import pytest
 
-from neocp.config import Config
-from neocp.context import place_breakpoints, prune_images
-from neocp.events import EventLog
-from neocp.permissions import Decision, PermissionEngine
-from neocp.session import Session, cancelled_result
-from neocp.tools import ToolContext, ToolRegistry, ToolResult, execute, object_schema
-from neocp.tools.base import ToolSpec
+from dornick.config import Config
+from dornick.context import place_breakpoints, prune_images
+from dornick.events import EventLog
+from dornick.permissions import Decision, PermissionEngine
+from dornick.session import Session, cancelled_result
+from dornick.tools import ToolContext, ToolRegistry, ToolResult, execute, object_schema
+from dornick.tools.base import ToolSpec
 
 
 # -- olay günlüğü ------------------------------------------------------
@@ -229,7 +229,7 @@ def ctx(tmp_path: Path) -> ToolContext:
 
 async def test_every_call_gets_a_result_even_when_unknown_or_denied(ctx: ToolContext) -> None:
     """Eksik bir tool_result bir sonraki isteği 400 ile düşürür."""
-    from neocp.session import PendingToolUse
+    from dornick.session import PendingToolUse
 
     registry = ToolRegistry()
 
@@ -265,7 +265,7 @@ async def test_every_call_gets_a_result_even_when_unknown_or_denied(ctx: ToolCon
 
 
 async def test_handler_exception_does_not_kill_the_loop(ctx: ToolContext) -> None:
-    from neocp.session import PendingToolUse
+    from dornick.session import PendingToolUse
 
     registry = ToolRegistry()
 
@@ -296,7 +296,7 @@ def test_the_prompt_says_what_day_it_is(tmp_path: Path) -> None:
     hiçbir yerden öğrenemiyordu."""
     from datetime import datetime
 
-    from neocp import prompt as builder
+    from dornick import prompt as builder
 
     text = builder._environment(Config.load(tmp_path))
     today = datetime.now().astimezone()
@@ -308,7 +308,7 @@ def test_the_prompt_says_what_day_it_is(tmp_path: Path) -> None:
 def test_the_prompt_says_where_the_machine_is(tmp_path: Path) -> None:
     """Saat dilimi ülkeyi söylüyor — şehri değil. Ayrım kasıtlı: makinenin
     bildiği kadarı veriliyor, gerisi soruluyor."""
-    from neocp import prompt as builder
+    from dornick import prompt as builder
 
     text = builder._environment(Config.load(tmp_path))
     assert "Saat dilimi:" in text and "UTC" in text
@@ -317,7 +317,7 @@ def test_the_prompt_says_where_the_machine_is(tmp_path: Path) -> None:
 def test_the_day_name_is_turkish_whatever_the_system_language(tmp_path: Path) -> None:
     """`strftime("%A")` sistemin diline bağlı ve İngilizce dönebiliyor;
     istemde karışık dil istemiyoruz."""
-    from neocp import prompt as builder
+    from dornick import prompt as builder
 
     assert builder.DAYS[0] == "Pazartesi"
     assert all(day.isalpha() for day in builder.DAYS)
@@ -325,7 +325,7 @@ def test_the_day_name_is_turkish_whatever_the_system_language(tmp_path: Path) ->
 
 def test_the_prompt_forbids_inventing_a_missing_premise() -> None:
     """Her soru için ayrı kural yazmak ölçeklenmiyor; tek bir ilke var."""
-    from neocp import prompt as builder
+    from dornick import prompt as builder
 
     assert "Eksik öncül" in builder.IDENTITY
     # Üç basamak: zihnine bak, kendin bul, soramıyorsan sor.
@@ -335,7 +335,7 @@ def test_the_prompt_forbids_inventing_a_missing_premise() -> None:
 
 def test_the_prompt_forbids_the_youre_welcome_loop() -> None:
     """Teşekkür / tamamdır / bakayım → 'rica ederim' asistan döngüsü."""
-    from neocp import prompt as builder
+    from dornick import prompt as builder
 
     assert "Rica ederim" in builder.IDENTITY
     assert "tamamdır" in builder.IDENTITY
@@ -346,7 +346,7 @@ def test_the_prompt_forbids_the_youre_welcome_loop() -> None:
 def test_the_prompt_asks_before_forgetting_memories_tied_to_a_deleted_device() -> None:
     """Cihaz silinince anılar sessizce kalıyordu; kullanıcı 'hafızadan da
     sil' demek zorunda kalıyordu. Sormak kural: dursun mu, sileyim mi?"""
-    from neocp import prompt as builder
+    from dornick import prompt as builder
 
     assert "dursun mu, sileyim mi" in builder.IDENTITY
 
@@ -358,7 +358,7 @@ def test_big_open_ended_work_must_lead_with_a_visible_plan() -> None:
     kabul ölçütleri; "kafandaki plan sayılmaz". Uzun koşuda anlatım ritmi
     de bağlayıcı — her kilometre taşında kullanıcıya bir cümle durum.
     """
-    from neocp import prompt as builder
+    from dornick import prompt as builder
 
     duz = " ".join(builder.IDENTITY.split())   # satır kırılımından bağımsız
     assert "İLK yazdığın şey modül planı ve kabul ölçütleridir" in duz
@@ -370,7 +370,7 @@ def test_big_open_ended_work_must_lead_with_a_visible_plan() -> None:
 
 def test_the_long_run_checkpoint_also_addresses_the_user() -> None:
     """Kontrol noktası kullanıcıya konuşur ve kabul edilince end_turn serbest."""
-    from neocp.loop import CHECKPOINT_NOTE
+    from dornick.loop import CHECKPOINT_NOTE
 
     assert "kullanıcıya da yaz" in CHECKPOINT_NOTE
     assert "end_turn" in CHECKPOINT_NOTE
@@ -400,7 +400,7 @@ def test_old_tool_payloads_are_trimmed_but_the_tail_is_not() -> None:
     """Ölçülen yara: HTML'in tamamı write_file argümanında geçmişe girip
     SONRAKİ HER istekle yeniden gidiyordu (51.6k'lık istemin ~12-14k'sı).
     Dosya diskte; geçmişte iz yeter — gerekirse read_file ile açılır."""
-    from neocp.context import TRIM_TOOL_CHARS, prune_tool_payloads
+    from dornick.context import TRIM_TOOL_CHARS, prune_tool_payloads
 
     big = "x" * 10_000
     messages = _talk(2, big)
@@ -429,7 +429,7 @@ def test_trimming_is_deterministic_for_the_cache() -> None:
     istekten isteğe tutmaya devam etsin."""
     import json
 
-    from neocp.context import prune_tool_payloads
+    from dornick.context import prune_tool_payloads
 
     big = "y" * 8_000
     a, b = _talk(4, big), _talk(4, big)
@@ -440,7 +440,7 @@ def test_trimming_is_deterministic_for_the_cache() -> None:
 
 def test_browser_dumps_are_trimmed_more_aggressively() -> None:
     """Browser HTML dump'ları keep=2 dışında agresif kısaltılır."""
-    from neocp.context import TRIM_BROWSER_CHARS, prune_tool_payloads
+    from dornick.context import TRIM_BROWSER_CHARS, prune_tool_payloads
 
     html = "<html>" + ("z" * 5_000) + "</html>"
     messages = [
@@ -461,9 +461,9 @@ def test_browser_dumps_are_trimmed_more_aggressively() -> None:
 def test_trimming_flows_through_prepare() -> None:
     """Politika hattına gerçekten bağlı: prepare edilen istek küçülür,
     ham günlük değişmez."""
-    from neocp.config import ContextConfig
-    from neocp.context import ContextPolicy
-    from neocp.prompt import SystemPrompt
+    from dornick.config import ContextConfig
+    from dornick.context import ContextPolicy
+    from dornick.prompt import SystemPrompt
 
     big = "z" * 20_000
     messages = _talk(2, big)

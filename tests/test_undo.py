@@ -17,12 +17,12 @@ from pathlib import Path
 
 import pytest
 
-from neocp.config import Config
-from neocp.events import EventLog
-from neocp.session import Session
-from neocp.tools import ToolContext, ToolRegistry
-from neocp.tools import checkpoint
-from neocp.tools import files as file_tools
+from dornick.config import Config
+from dornick.events import EventLog
+from dornick.session import Session
+from dornick.tools import ToolContext, ToolRegistry
+from dornick.tools import checkpoint
+from dornick.tools import files as file_tools
 
 
 @pytest.fixture()
@@ -31,7 +31,7 @@ def ctx(tmp_path: Path) -> ToolContext:
     config.ensure_dirs()
     return ToolContext(
         config=config,
-        session=Session(EventLog(tmp_path / ".neocp" / "s.jsonl"), "test-undo"),
+        session=Session(EventLog(tmp_path / ".dornick" / "s.jsonl"), "test-undo"),
         cancel=asyncio.Event(),
     )
 
@@ -311,8 +311,8 @@ async def test_old_session_folders_are_swept(
 
 
 def test_the_ledger_never_travels(tmp_path: Path) -> None:
-    """Transfer paketi .neocp'yi (dolayısıyla değişiklik görüntülerini)
+    """Transfer paketi .dornick'yi (dolayısıyla değişiklik görüntülerini)
     hiçbir koşulda taşımaz."""
-    from neocp import transfer
+    from dornick import transfer
 
-    assert ".neocp" in transfer._ATLA
+    assert ".dornick" in transfer._ATLA

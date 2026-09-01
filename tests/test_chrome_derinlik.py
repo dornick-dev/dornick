@@ -1,6 +1,6 @@
 """Tarayıcı derinliği: sayfa "açıldı" mı, yoksa gerçekten ÇALIŞIYOR mu?
 
-Kanıtlanmış yara: neo bir web uygulaması yapıyor, sayfayı açıyor, metnini
+Kanıtlanmış yara: dornick bir web uygulaması yapıyor, sayfayı açıyor, metnini
 okuyor ve "çalışıyor" diyor. Oysa konsolda kırmızı bir TypeError, ağda 404
 dönen bir istek olabilir. İkisi de `document.body.innerText`te GÖRÜNMEZ —
 sayfa yarım çizilmiş ama sessizdir. Kullanıcı tarayıcıyı açınca öğreniyor.
@@ -25,8 +25,8 @@ from typing import Any
 
 import pytest
 
-from neocp import chrome
-from neocp.tools import browser as surf
+from dornick import chrome
+from dornick.tools import browser as surf
 
 from tests.test_chrome import FakeCdpHttp, _read_frame, _send_text, _accept_key
 
@@ -442,7 +442,7 @@ def test_an_ordinary_page_has_no_error_layer() -> None:
 
 
 def test_the_tool_offers_the_new_actions() -> None:
-    from neocp.tools import ToolRegistry
+    from dornick.tools import ToolRegistry
 
     registry = ToolRegistry()
     surf.register(registry)
@@ -456,7 +456,7 @@ def test_the_tool_offers_the_new_actions() -> None:
 
 def test_the_description_forbids_fixing_the_ui_with_js() -> None:
     """`js` bir teşhis aracı; sayfaya betikle yama atmak kalıcı değil."""
-    from neocp.tools import ToolRegistry
+    from dornick.tools import ToolRegistry
 
     registry = ToolRegistry()
     surf.register(registry)

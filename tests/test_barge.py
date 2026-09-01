@@ -8,7 +8,7 @@ sözü ("dur", "yeter", "kes") süreni durdurur. Böylece "bir işlem yaparken b
 
 from __future__ import annotations
 
-from neocp.desktop import _is_close, _is_stop, _is_ack
+from dornick.desktop import _is_close, _is_stop, _is_ack
 
 
 def test_explicit_stop_words_are_recognized() -> None:
@@ -88,7 +88,7 @@ def test_thanks_and_hold_on_are_acks_not_requests() -> None:
         assert not _is_ack(phrase), phrase
 
 
-# -- "neo ile kes" barge-in (neo konuşurken araya girme) -------------------
+# -- "dornick ile kes" barge-in (dornick konuşurken araya girme) -------------------
 
 
 class _FakeListener:
@@ -103,9 +103,9 @@ class _FakeListener:
 
 
 def test_speaking_ignores_own_voice_without_the_wake_word() -> None:
-    """neo konuşurken (deaf) yakalanan ses uyandırma sözü taşımıyorsa yok
-    sayılıyor — echo iptali olmadan neo'nun kendi sesini "duymuyor"."""
-    from neocp import ear
+    """dornick konuşurken (deaf) yakalanan ses uyandırma sözü taşımıyorsa yok
+    sayılıyor — echo iptali olmadan dornick'nun kendi sesini "duymuyor"."""
+    from dornick import ear
 
     heard = []
     e = ear.Ear(listener=_FakeListener("hava bugün çok güzel"),
@@ -118,7 +118,7 @@ def test_speaking_ignores_own_voice_without_the_wake_word() -> None:
 
 def test_open_mode_is_also_deaf_while_tts_plays() -> None:
     """Serbest dinleme uyandırma kapısını kaldırır; TTS sırasında hâlâ sağır."""
-    from neocp import ear
+    from dornick import ear
 
     heard = []
     e = ear.Ear(listener=_FakeListener("hava bugün çok güzel"),
@@ -129,12 +129,12 @@ def test_open_mode_is_also_deaf_while_tts_plays() -> None:
 
 
 def test_the_wake_word_barges_in_while_speaking() -> None:
-    """neo konuşurken "neo ..." denince: sağırlık kırılıyor, barge işaretli
+    """dornick konuşurken "dornick ..." denince: sağırlık kırılıyor, barge işaretli
     bir Heard geliyor (köprü önce TTS'i susturup komutu sıraya koyacak)."""
-    from neocp import ear
+    from dornick import ear
 
     heard = []
-    e = ear.Ear(listener=_FakeListener("neo raporu oku"),
+    e = ear.Ear(listener=_FakeListener("dornick raporu oku"),
                 heard=lambda h: heard.append(h))
     e._deaf_until = float("inf")
     e._settle(object(), deaf=True)
@@ -147,9 +147,9 @@ def test_the_wake_word_barges_in_while_speaking() -> None:
 
 
 def test_energy_barge_keeps_the_sentence_without_the_wake_word() -> None:
-    """Hoparlörün üstünden konuşunca cümle tutulur — 'neo' demeden,
+    """Hoparlörün üstünden konuşunca cümle tutulur — 'dornick' demeden,
     baştan kurmadan. Enerji eşiği kulağı açmış sayılır (`_barge_open`)."""
-    from neocp import ear
+    from dornick import ear
 
     heard = []
     e = ear.Ear(listener=_FakeListener("kamerayı aç"),
@@ -168,8 +168,8 @@ def test_energy_barge_keeps_the_sentence_without_the_wake_word() -> None:
 
 def test_energy_barge_without_an_open_chat_still_hears() -> None:
     """TTS sürerken sohbet penceresi kapanmış olsa da araya giren söz
-    Neo'ya söylenmiş sayılır."""
-    from neocp import ear
+    Dornick'ya söylenmiş sayılır."""
+    from dornick import ear
 
     heard = []
     e = ear.Ear(listener=_FakeListener("ışıkları kapat"),
@@ -185,7 +185,7 @@ def test_energy_barge_without_an_open_chat_still_hears() -> None:
 def test_tts_echo_transcript_is_dropped_even_after_energy_barge() -> None:
     """Enerji eşiği TTS'i yanlış kestiğinde tanıma hoparlör metnine
     benzer — kendi sözü yeni istek olmasın."""
-    from neocp import ear
+    from dornick import ear
 
     heard = []
     e = ear.Ear(listener=_FakeListener("hava bugün çok güzel"),
@@ -201,7 +201,7 @@ def test_tts_echo_transcript_is_dropped_even_after_energy_barge() -> None:
 def test_open_mode_drops_own_voice_after_the_tts_tail() -> None:
     """Serbest dinlemede hoparlör sustuktan sonra oda yankısı uyandırma
     kapısından geçip ajanın kendi cümlesini yeni istek yapıyordu."""
-    from neocp import ear
+    from dornick import ear
 
     heard = []
     e = ear.Ear(listener=_FakeListener("hava bugün çok güzel"),
@@ -215,7 +215,7 @@ def test_open_mode_drops_own_voice_after_the_tts_tail() -> None:
 
 
 def test_open_mode_still_hears_a_new_request_after_tts() -> None:
-    from neocp import ear
+    from dornick import ear
 
     heard = []
     e = ear.Ear(listener=_FakeListener("kamerayı aç"),
@@ -232,7 +232,7 @@ def test_open_mode_still_hears_a_new_request_after_tts() -> None:
 def test_energy_barge_waits_until_echo_is_primed() -> None:
     """TTS'in ilk bloğu boş tabanda BARGE_FLOOR'u aşıp kendi sesini
     araya girme sanıyordu."""
-    from neocp import ear
+    from dornick import ear
 
     e = ear.Ear(listener=_FakeListener(""), heard=lambda _h: None)
     assert not e._barge_loud(0.08)
@@ -243,7 +243,7 @@ def test_energy_barge_waits_until_echo_is_primed() -> None:
 
 
 def test_consecutive_tts_sentences_keep_the_echo_baseline() -> None:
-    from neocp import ear
+    from dornick import ear
 
     e = ear.Ear(listener=_FakeListener(""), heard=lambda _h: None)
     e.speaking(True, "birinci cümle")
@@ -254,7 +254,7 @@ def test_consecutive_tts_sentences_keep_the_echo_baseline() -> None:
 
 
 def test_echo_of_self_matches_overlap_not_unrelated_speech() -> None:
-    from neocp import ear
+    from dornick import ear
 
     assert ear.echo_of_self("hava bugün güzel", "hava bugün çok güzel görünüyor")
     assert not ear.echo_of_self("kamerayı aç", "hava bugün çok güzel")
@@ -264,7 +264,7 @@ def test_echo_of_self_matches_overlap_not_unrelated_speech() -> None:
 def test_whisper_shortens_and_inflects_tts_and_that_is_still_echo() -> None:
     """Canlı: 'Evet, seni görüyorum…' hoparlörde, Whisper 'evet, seni gör'
     / 'görürüm' yazıyor — tam cümle eşleşmez, yine yankı."""
-    from neocp import ear
+    from dornick import ear
 
     tts = "Evet, seni görüyorum. Kameraya bakıyorsun; gözlük ve sakalın kadrajda."
     assert ear.echo_of_self("evet, seni gör.", tts)
@@ -275,7 +275,7 @@ def test_whisper_shortens_and_inflects_tts_and_that_is_still_echo() -> None:
 def test_a_repeated_utterance_is_one_prompt() -> None:
     """Kısık ses kaçınca kullanıcı 2–3 kez söylüyor; Whisper gecikince
     aynı cümle iki kez sohbete düşüyordu."""
-    from neocp import ear
+    from dornick import ear
 
     heard = []
     e = ear.Ear(listener=_FakeListener("kamerayı aç"),
@@ -288,7 +288,7 @@ def test_a_repeated_utterance_is_one_prompt() -> None:
 
 def test_a_new_request_after_the_repeat_window_still_lands() -> None:
     import time
-    from neocp import ear
+    from dornick import ear
 
     heard = []
     e = ear.Ear(listener=_FakeListener("kamerayı aç"),
@@ -300,10 +300,10 @@ def test_a_new_request_after_the_repeat_window_still_lands() -> None:
 
 
 def test_a_late_transcript_yields_to_a_newer_utterance() -> None:
-    """Tanıma 1–2 dk sürerse kullanıcı 'neo' der; eski cümle ile ad
+    """Tanıma 1–2 dk sürerse kullanıcı 'dornick' der; eski cümle ile ad
     aynı anda düşmesin — son söz kazanır."""
     import time
-    from neocp import ear
+    from dornick import ear
 
     heard = []
     e = ear.Ear(listener=_FakeListener("günaydın elimde ne tutuyorum"),
@@ -316,7 +316,7 @@ def test_a_late_transcript_yields_to_a_newer_utterance() -> None:
 
 def test_echo_stamp_at_capture_survives_slow_asr() -> None:
     """Whisper bitene kadar ECHO_HOLD dolmuş olsa da damgalı segment düşer."""
-    from neocp import ear
+    from dornick import ear
 
     heard = []
     e = ear.Ear(listener=_FakeListener("evet, seni gör."),
@@ -329,7 +329,7 @@ def test_echo_stamp_at_capture_survives_slow_asr() -> None:
 
 def test_speaking_false_skips_the_echo_tail_during_barge() -> None:
     """Hush sonrası DEAF_TAIL cümlenin devamını yine sağır bırakırdı."""
-    from neocp import ear
+    from dornick import ear
 
     e = ear.Ear(listener=_FakeListener(""), heard=lambda _h: None)
     e.speaking(True, "merhaba nasılsın")
@@ -341,7 +341,7 @@ def test_speaking_false_skips_the_echo_tail_during_barge() -> None:
 
 
 def test_speaking_false_keeps_the_echo_tail_without_barge() -> None:
-    from neocp import ear
+    from dornick import ear
 
     e = ear.Ear(listener=_FakeListener(""), heard=lambda _h: None)
     e.speaking(True, "merhaba")
@@ -350,7 +350,7 @@ def test_speaking_false_keeps_the_echo_tail_without_barge() -> None:
 
 
 def test_trip_barge_hushes_immediately() -> None:
-    from neocp import ear
+    from dornick import ear
 
     calls: list[int] = []
     e = ear.Ear(listener=_FakeListener(""), heard=lambda _h: None)
@@ -364,7 +364,7 @@ def test_trip_barge_hushes_immediately() -> None:
 
 
 def test_barge_loud_sits_above_the_echo_floor() -> None:
-    from neocp import ear
+    from dornick import ear
 
     e = ear.Ear(listener=_FakeListener(""), heard=lambda _h: None)
     e._echo.extend([0.035] * 12)
@@ -375,7 +375,7 @@ def test_barge_loud_sits_above_the_echo_floor() -> None:
 def test_desktop_hushes_as_soon_as_energy_trips() -> None:
     import inspect
 
-    from neocp import desktop
+    from dornick import desktop
 
     source = inspect.getsource(desktop._open_ear)
     assert "on_hush" in source
@@ -385,7 +385,7 @@ def test_desktop_hushes_as_soon_as_energy_trips() -> None:
 def test_tts_onset_on_a_quiet_floor_is_not_barge() -> None:
     """Hoparlör henüz duyulmamışken oda tabanı ~0.01, TTS 0.08 —
     kendi sesini kesiyordu."""
-    from neocp import ear
+    from dornick import ear
 
     e = ear.Ear(listener=_FakeListener(""), heard=lambda _h: None)
     e._echo.extend([0.006] * ear.ECHO_PRIME)
@@ -395,12 +395,12 @@ def test_tts_onset_on_a_quiet_floor_is_not_barge() -> None:
 def test_whisper_goodbye_after_tts_is_echo_not_a_request() -> None:
     """Canlı: merhaba'dan sonra hoparlör sustu, Whisper 'hoşça kalın'
     bastı, ajan veda etti — kimse veda etmemişti."""
-    from neocp import ear
+    from dornick import ear
 
     heard = []
     e = ear.Ear(listener=_FakeListener("hoşça kalın."),
                  heard=lambda h: heard.append(h), open=True)
-    e.speaking(True, "Merhaba Fatih. Ben Neo.")
+    e.speaking(True, "Merhaba Fatih. Ben Dornick.")
     e.speaking(False)
     e._deaf_until = 0.0
     e._settle(object(), deaf=False, echo=True)
@@ -409,13 +409,13 @@ def test_whisper_goodbye_after_tts_is_echo_not_a_request() -> None:
 
 def test_a_garbled_tts_fragment_is_not_a_barge_request() -> None:
     """Enerji eşiği TTS'i kesince Whisper 'soni' yazıyordu — araya girdi."""
-    from neocp import ear
+    from dornick import ear
 
     heard = []
     e = ear.Ear(listener=_FakeListener("soni"),
                 heard=lambda h: heard.append(h))
     e._barge_open = True
-    e._tts_text = "Merhaba Fatih. Ben Neo; kod, SCADA işleri"
+    e._tts_text = "Merhaba Fatih. Ben Dornick; kod, SCADA işleri"
     e._settle(object(), deaf=True)
 
     assert heard == []
@@ -423,7 +423,7 @@ def test_a_garbled_tts_fragment_is_not_a_barge_request() -> None:
 
 
 def test_a_real_yes_during_echo_still_lands() -> None:
-    from neocp import ear
+    from dornick import ear
 
     heard = []
     e = ear.Ear(listener=_FakeListener("evet"),
@@ -439,7 +439,7 @@ def test_a_real_yes_during_echo_still_lands() -> None:
 def test_garbled_how_are_you_after_tts_is_echo() -> None:
     """Canlı: hoparlör 'Sen nasılsın; bugün nasıl gidiyor?', Whisper
     'sende sos' yazdı — iki kelime, bir akraba, gerisi çöp."""
-    from neocp import ear
+    from dornick import ear
 
     tts = "İyiyim, buradayım. Sen nasılsın; bugün nasıl gidiyor?"
     assert ear.echo_of_self("sende sos", tts)
@@ -455,7 +455,7 @@ def test_garbled_how_are_you_after_tts_is_echo() -> None:
 
 def test_a_real_reply_is_not_echo_junk_just_because_it_is_one_word() -> None:
     """Yankı penceresinde 'anladım' tek kelime diye düşüyordu — duymadı."""
-    from neocp import ear
+    from dornick import ear
 
     heard = []
     e = ear.Ear(listener=_FakeListener("anladım"),
@@ -469,13 +469,13 @@ def test_a_real_reply_is_not_echo_junk_just_because_it_is_one_word() -> None:
 
 
 def test_ok_is_not_echo_of_unrelated_tts() -> None:
-    from neocp import ear
+    from dornick import ear
 
     assert not ear.echo_of_self("ok", "merhaba")
 
 
 def test_tail_loud_ignores_decaying_speaker_but_hears_the_mic() -> None:
-    from neocp import ear
+    from dornick import ear
 
     e = ear.Ear(listener=_FakeListener(""), heard=lambda _h: None)
     e._echo.extend([0.035] * ear.ECHO_PRIME)

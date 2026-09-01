@@ -11,8 +11,8 @@ from pathlib import Path
 
 import pytest
 
-from neocp import voice
-from neocp.config import Config
+from dornick import voice
+from dornick.config import Config
 
 
 def test_code_blocks_are_not_read_aloud() -> None:
@@ -95,7 +95,7 @@ def test_voice_is_off_until_asked_for(tmp_path: Path) -> None:
 def test_senses_open_turned_off(tmp_path: Path) -> None:
     """Açılışta kamera / mikrofon / ses kapalı — kayıtta açık kalsalar bile."""
     from dataclasses import replace
-    from neocp.desktop import duyulari_kapat
+    from dornick.desktop import duyulari_kapat
 
     config = Config.load(tmp_path)
     config = replace(
@@ -114,7 +114,7 @@ def test_senses_open_turned_off(tmp_path: Path) -> None:
 def test_boot_closes_senses_before_hardware() -> None:
     """Donanım açılmadan duyular kapatılır; izleyici kamera anahtarına bağlı."""
     import inspect
-    from neocp import desktop
+    from dornick import desktop
 
     src = inspect.getsource(desktop._boot)
     assert "duyulari_kapat" in src
@@ -124,7 +124,7 @@ def test_boot_closes_senses_before_hardware() -> None:
 
 
 def test_voice_settings_survive_a_restart(tmp_path: Path) -> None:
-    from neocp import settings
+    from dornick import settings
 
     config = Config.load(tmp_path)
     config.ensure_dirs()
@@ -139,7 +139,7 @@ def test_voice_settings_survive_a_restart(tmp_path: Path) -> None:
 def test_the_settings_page_knows_whether_the_package_is_installed(tmp_path: Path) -> None:
     """Kurulu değilken ses ayarlarını göstermek, çalışmayan bir düğme
     göstermek demek."""
-    from neocp import settings
+    from dornick import settings
 
     config = Config.load(tmp_path)
     config.ensure_dirs()
@@ -220,7 +220,7 @@ def test_the_voice_is_neither_a_recording_nor_a_person(tmp_path: Path) -> None:
 
 
 def test_the_character_survives_a_restart(tmp_path: Path) -> None:
-    from neocp import settings
+    from dornick import settings
 
     config = Config.load(tmp_path)
     config.ensure_dirs()

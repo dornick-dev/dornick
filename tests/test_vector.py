@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import time
 
-from neocp.recall.vector import BITS, FLOOR, Index, from_blob, signature, similarity, to_blob
+from dornick.recall.vector import BITS, FLOOR, Index, from_blob, signature, similarity, to_blob
 
 
 def test_same_text_gives_the_same_signature() -> None:

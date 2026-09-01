@@ -199,7 +199,7 @@
             "shell: Start-Process -FilePath php -ArgumentList '-S','127.0.0.1:8088','-t','atolye/panel' -Windo",
             "shell: php -S 127.0.0.1:8091 -t atolye/panel > sunucu.log 2>&1 &\nsleep 2\ncurl -s -o /dev/null -w ",
             "shell: $doc = \"$PWD\\atolye\\panel\"; Test-Path $doc; Start-Process php -ArgumentList '-S',\"127.0.0.",
-            "shell: $doc = \"C:\\Users\\user\\AppData\\Local\\Temp\\neocp-eval-z2-panel-fbce4kvk\\atolye\\panel\"; Start",
+            "shell: $doc = \"C:\\Users\\user\\AppData\\Local\\Temp\\dornick-eval-z2-panel-fbce4kvk\\atolye\\panel\"; Start",
             "browser: ",
             "browser: "
           ],

@@ -27,11 +27,11 @@ from pathlib import Path
 
 import pytest
 
-from neocp.mind.store import Mind
-from neocp.permissions import PermissionEngine
-from neocp.tools import ToolContext, ToolRegistry, ToolResult, execute, object_schema
-from neocp.tools.base import ToolSpec, sema_ihlali
-from neocp.session import PendingToolUse
+from dornick.mind.store import Mind
+from dornick.permissions import PermissionEngine
+from dornick.tools import ToolContext, ToolRegistry, ToolResult, execute, object_schema
+from dornick.tools.base import ToolSpec, sema_ihlali
+from dornick.session import PendingToolUse
 from types import SimpleNamespace
 
 from tests.test_loop import (  # noqa: F401  (fixture + yardımcılar)
@@ -166,9 +166,9 @@ async def test_the_executor_gates_every_tool_from_one_place(tmp_path: Path) -> N
     """Şema kapısı yürütücüde: her araç için aynı güvence, tek tek araçlara
     yama yok. Handler HİÇ çağrılmıyor — eksik alanla çalıştırmak zaten
     patlardı."""
-    from neocp.config import Config
-    from neocp.events import EventLog
-    from neocp.session import Session
+    from dornick.config import Config
+    from dornick.events import EventLog
+    from dornick.session import Session
 
     config = Config.load(tmp_path)
     config.ensure_dirs()
@@ -204,9 +204,9 @@ async def test_a_handler_exception_is_wrapped_with_guidance(tmp_path: Path) -> N
     """Handler içinden sızan istisna da ham gitmiyor: tip + mesaj DURUYOR
     (teşhis lazım) ama yanında ne yapılacağı yazıyor. Model "araç bozuk"
     diye okumasın."""
-    from neocp.config import Config
-    from neocp.events import EventLog
-    from neocp.session import Session
+    from dornick.config import Config
+    from dornick.events import EventLog
+    from dornick.session import Session
 
     config = Config.load(tmp_path)
     config.ensure_dirs()
@@ -244,7 +244,7 @@ async def test_a_handler_exception_is_wrapped_with_guidance(tmp_path: Path) -> N
     "<invoke name=\"shell\">",
 ])
 def test_tool_call_xml_in_text_is_recognised(metin: str) -> None:
-    from neocp.loop import sahte_arac_cagrisi
+    from dornick.loop import sahte_arac_cagrisi
 
     assert sahte_arac_cagrisi(metin) is True
 
@@ -257,7 +257,7 @@ def test_tool_call_xml_in_text_is_recognised(metin: str) -> None:
 def test_ordinary_text_is_not_mistaken_for_a_tool_call(metin: str) -> None:
     """Kalıp DAR olmalı: sıradan bir cevapta geçen etiketler yüzünden
     kullanıcının cevabı yutulursa savunma yaranın kendisi olur."""
-    from neocp.loop import sahte_arac_cagrisi
+    from dornick.loop import sahte_arac_cagrisi
 
     assert sahte_arac_cagrisi(metin) is False
 
@@ -317,7 +317,7 @@ async def test_a_hopeless_model_stops_holding_the_turn(
     """Mutlak sigorta: düzelmeyen model turu sonsuza kadar meşgul etmesin.
     Tavanda tur kendi akışına bırakılıyor ve kullanıcıya durum söyleniyor —
     çözüm onun elinde (model değiştirmek)."""
-    import neocp.loop as loop_module
+    import dornick.loop as loop_module
     from tests.test_loop import FakeClient, build_agent, text_turn
 
     monkeypatch.setattr(loop_module, "SAHTE_CAGRI_TAVANI", 2)
@@ -338,7 +338,7 @@ async def test_a_real_tool_call_is_never_hijacked(
 ) -> None:
     """Metinde XML geçse bile GERÇEK bir araç çağrısı varsa karışılmaz:
     iş yürüyor demektir."""
-    from neocp.backends import TurnResult
+    from dornick.backends import TurnResult
     from tests.test_loop import FakeClient, build_agent, message, text_turn
 
     karma = TurnResult(message=message([
@@ -362,8 +362,8 @@ async def test_a_real_tool_call_is_never_hijacked(
 
 
 def _oto_backend():
-    from neocp.backends.openai_backend import OpenAIBackend
-    from neocp.config import OPENROUTER_URL, OTO_MODEL, ModelConfig
+    from dornick.backends.openai_backend import OpenAIBackend
+    from dornick.config import OPENROUTER_URL, OTO_MODEL, ModelConfig
 
     return OpenAIBackend(ModelConfig(
         provider="openai", name=OTO_MODEL, base_url=OPENROUTER_URL))
@@ -372,7 +372,7 @@ def _oto_backend():
 def test_content_faults_penalise_the_auto_pool() -> None:
     """Şema ihlali ve sahte çağrı sağlık defterine başarısızlık yazar;
     eşiği aşan model havuzun sonuna iner."""
-    from neocp import otomod
+    from dornick import otomod
 
     backend = _oto_backend()
     backend._son_secilen = "ucuz/model"
@@ -387,8 +387,8 @@ def test_content_faults_penalise_the_auto_pool() -> None:
 def test_a_chosen_model_is_never_punished_behind_the_users_back() -> None:
     """Oto kipi DIŞINDA karşılığı yok: kullanıcı modeli kendi seçti, onu
     arkasından sıralamaya sokmak bize düşmez."""
-    from neocp.backends.openai_backend import OpenAIBackend
-    from neocp.config import ModelConfig
+    from dornick.backends.openai_backend import OpenAIBackend
+    from dornick.config import ModelConfig
 
     backend = OpenAIBackend(ModelConfig(
         provider="openai", name="anthropic/claude", base_url="https://x"))
@@ -439,10 +439,10 @@ async def test_the_loop_reports_content_faults_to_the_backend(
 def _goals_server(tmp_path: Path):
     import urllib.request
 
-    from neocp.config import Config
-    from neocp.events import EventLog
-    from neocp.mind import open_mind
-    from neocp.web import MindServer
+    from dornick.config import Config
+    from dornick.events import EventLog
+    from dornick.mind import open_mind
+    from dornick.web import MindServer
 
     config = Config.load(tmp_path)
     config.ensure_dirs()
@@ -563,8 +563,8 @@ def test_goals_from_earlier_sessions_stay_out_of_the_panel(tmp_path: Path) -> No
     tartışıyordu); zihnin tamamına bakan yerler all_sessions ile ister."""
     from types import SimpleNamespace
 
-    from neocp.desktop import _active_goals
-    from neocp.mind import open_mind
+    from dornick.desktop import _active_goals
+    from dornick.mind import open_mind
 
     mind = open_mind(tmp_path / "mind", tmp_path / "sessions", "eski-oturum")
     bayat = mind.push_goal("geçen oturumdan kalan")
@@ -683,7 +683,7 @@ async def test_the_nudge_does_not_repeat_for_the_same_sentence(
 
 def test_the_scent_reads_both_languages() -> None:
     """Kullanıcı iki dilde de yazıyor; sinyal listesi ikisini de tanımalı."""
-    from neocp.loop import kalici_koku
+    from dornick.loop import kalici_koku
 
     assert kalici_koku("bundan sonra raporları hep tablo yaz")
     assert kalici_koku("benim adım Fatih")
@@ -703,8 +703,8 @@ def test_writing_to_its_own_mind_needs_no_approval() -> None:
     """ASIL KÖK: `mind_memory save` mutasyon sayılıyordu — her hatıra bir
     onay penceresi, plan kipinde ise düpedüz RET. Zihin bu yüzden sustu.
     Kendi defterine yazmak onay istemiyor; SİLMEK hâlâ istiyor."""
-    from neocp.permissions import Decision, PermissionEngine
-    from neocp.tools.base import ToolSpec, object_schema
+    from dornick.permissions import Decision, PermissionEngine
+    from dornick.tools.base import ToolSpec, object_schema
 
     spec = ToolSpec(
         name="mind_memory", description="", handler=lambda *_: None,  # type: ignore[arg-type]
@@ -726,8 +726,8 @@ def test_writing_to_its_own_mind_needs_no_approval() -> None:
 
 def test_the_real_mind_tools_declare_their_safe_actions(tmp_path: Path) -> None:
     """Bayrak gerçekten kayıtlı araçlarda: kalıp bir yerde kalmasın."""
-    from neocp.mind import open_mind
-    from neocp.mind.tools import register as register_mind
+    from dornick.mind import open_mind
+    from dornick.mind.tools import register as register_mind
 
     reg = ToolRegistry()
     register_mind(reg, open_mind(tmp_path / "mind", tmp_path / "sessions", "s"))
@@ -741,7 +741,7 @@ def test_the_real_mind_tools_declare_their_safe_actions(tmp_path: Path) -> None:
 
 def test_the_guide_asks_for_writing_in_the_moment() -> None:
     """Rehber genel kural olarak yazıyor: reçete değil, ilke."""
-    from neocp import prompt as builder
+    from dornick import prompt as builder
 
     duz = " ".join(builder.MEMORY_RULES.split())
     assert "sen sormasan da" in duz
@@ -759,7 +759,7 @@ def test_the_guide_asks_for_writing_in_the_moment() -> None:
 def test_train_now_reports_why_it_did_not_start(tmp_path: Path) -> None:
     """Kapalı özellik, eksik düzenek ve veri yokluğu ayrı ayrı adlandırılıyor
     — hepsi sessiz bir "hiçbir şey olmadı" değil."""
-    from neocp import tanima
+    from dornick import tanima
 
     class _Hub:
         def emit(self, payload: dict) -> None:
@@ -782,7 +782,7 @@ def test_the_ui_has_a_line_for_every_outcome() -> None:
     """Her sebep kodunun bir karşılığı var: kullanıcı "neden olmadı"yı
     okuyabilmeli. Sessiz düşen bir kod kalmamalı."""
     APP_JS = (Path(__file__).resolve().parents[1]
-              / "src" / "neocp" / "web" / "static" / "app.js").read_text(encoding="utf-8")
+              / "src" / "dornick" / "web" / "static" / "app.js").read_text(encoding="utf-8")
     for kod in ("basladi", "veri_yok", "kosuyor", "duzenek_yok",
                 "kapali", "ara_yok", "baslatilamadi"):
         assert re.search(rf"\b{kod}:", APP_JS), kod
@@ -793,7 +793,7 @@ def test_the_ui_has_a_line_for_every_outcome() -> None:
 def test_derived_session_titles_skip_one_letter_keystrokes() -> None:
     """Canli yara: ilk mesaj kazara tek harf olunca ("e" + Enter) sohbet
     solda o harfle listeleniyordu. Turetilmis baslik kirintiyi atlar."""
-    from neocp.web.server import _session_title
+    from dornick.web.server import _session_title
 
     assert _session_title(
         "e ev otomasyonu yapıyorum mock data ile"
@@ -805,7 +805,7 @@ def test_derived_session_titles_skip_one_letter_keystrokes() -> None:
 def test_generated_titles_reject_single_letter_junk() -> None:
     """Kucuk model bazen cop donduruyor ("e"); zayif suzgec bunu KALICI ad
     yapiyordu ve ad bir kez yazilinca bir daha uretilmiyordu."""
-    from neocp.loop import _baslik_gecerli
+    from dornick.loop import _baslik_gecerli
 
     assert not _baslik_gecerli("e")
     assert not _baslik_gecerli("")
@@ -820,7 +820,7 @@ def test_goal_note_frames_the_ledger_as_reminder(tmp_path: Path, registry) -> No
     TALIMAT gibi okunuyordu — "selam yaz" diyen kullaniciya model defterdeki
     hedefi tartisarak cevap verdi. Nota oncelik cercevesi gomulu: gundemi
     kullanicinin son sozu belirler."""
-    from neocp.mind import open_mind
+    from dornick.mind import open_mind
 
     agent = build_agent(tmp_path, FakeClient([]), registry)
     mind = open_mind(tmp_path / "mind", tmp_path / "sessions", "test")
@@ -843,7 +843,7 @@ def test_soul_goal_block_carries_the_same_framing(tmp_path: Path) -> None:
     """Ruhun hedef blogu da ayni cerceveyi tasir ve "onceki oturumlardan"
     demez — defter artik oturuma suzulu, buraya yalniz surdurulen sohbetin
     kendi maddeleri gelir."""
-    from neocp.mind import open_mind
+    from dornick.mind import open_mind
 
     mind = open_mind(tmp_path / "mind", tmp_path / "sessions", "s1")
     mind.push_goal("ev otomasyonu simülasyonu")
@@ -864,7 +864,7 @@ def test_the_tree_carries_no_provider_keys() -> None:
     # GERÇEK anahtar uzunluğu: kısa yer tutucular ("sk-ant-...", test
     # sahteleri) alarm değildir — dokümantasyon ve fixture'lar meşru.
     desen = re.compile(r"sk-or-v1-[0-9a-f]{60,}|sk-ant-[A-Za-z0-9_-]{60,}")
-    atla = {".git", ".neocp", "atolye", "__pycache__", ".pytest_cache",
+    atla = {".git", ".dornick", "atolye", "__pycache__", ".pytest_cache",
             "node_modules", "dist"}
     supheliler: list[str] = []
     for yol in kok.rglob("*"):

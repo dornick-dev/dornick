@@ -11,11 +11,11 @@ from __future__ import annotations
 from pathlib import Path
 from types import SimpleNamespace
 
-from neocp import compaction
-from neocp.backends import TurnResult
-from neocp.events import EventLog
-from neocp.mind import open_mind
-from neocp.session import Session
+from dornick import compaction
+from dornick.backends import TurnResult
+from dornick.events import EventLog
+from dornick.mind import open_mind
+from dornick.session import Session
 from tests.test_loop import FakeClient, build_agent, registry, text_turn  # noqa: F401
 
 

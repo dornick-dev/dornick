@@ -7,22 +7,22 @@ coding tasks, one grader that **executes the delivered code**. Raw data:
 
 ## 1 · Quality
 
-![Total scores: Claude Code 897.3, neo 896.7, OpenCode 894.9 out of 900](charts/scores.png)
+![Total scores: Claude Code 897.3, dornick 896.7, OpenCode 894.9 out of 900](charts/scores.png)
 
 | Harness | Model | Total /900 |
 |---|---|---|
 | Claude Code (reference) | Anthropic frontier | 897.3 |
-| **neo** | `z-ai/glm-5.3-flash` (~free) | **896.7** |
+| **dornick** | `z-ai/glm-5.3-flash` (~free) | **896.7** |
 | OpenCode 1.2.27 | `z-ai/glm-5.3-flash` (same) | 894.9 |
 
 **Verdict: a three-way tie in quality.** The 2.4-point spread is smaller
-than the run-to-run variance of one hard task (±1.7 between neo's two
+than the run-to-run variance of one hard task (±1.7 between dornick's two
 repetitions of the same task). Two narrower claims *are* supported:
 
-* A ~free flash model inside neo's harness matches the frontier reference
+* A ~free flash model inside dornick's harness matches the frontier reference
   on delivery quality.
-* neo beats the same-model competitor — on OpenCode's best run (its worst
-  burned a 32,000-token reasoning spiral and scored 0 on a hard task; neo
+* dornick beats the same-model competitor — on OpenCode's best run (its worst
+  burned a 32,000-token reasoning spiral and scored 0 on a hard task; dornick
   caps that failure mode).
 
 A confirmation sweep after the last harness rule landed scored 896.8 —
@@ -35,7 +35,7 @@ review, and correct):
    of the nine tasks. A suite this easy cannot rank the harnesses; it can
    only say all three clear this difficulty. A harder task band
    (target scores 60–90) is the roadmap's next item.
-2. **neo's number is in-sample.** Several of neo's harness rules
+2. **dornick's number is in-sample.** Several of dornick's harness rules
    (the negative-requirement gate, the reasoning-effort cap) were written
    while looking at failures *on these very tasks*. OpenCode and Claude
    Code received no such tuning round. Until a held-out task set exists,
@@ -48,14 +48,14 @@ review, and correct):
    left as measured, with this note.
 
 Given all that, the sentence this data actually supports is narrower and
-still worth having: **on nine tasks that all three harnesses handle, neo
+still worth having: **on nine tasks that all three harnesses handle, dornick
 delivers the same quality as OpenCode on the same ~free model at half the
 wall time and half the cost, and never burns a run on a reasoning
 spiral.**
 
-<details><summary>Per-task scores (0–100, higher is better; neo = mean of 2 reps)</summary>
+<details><summary>Per-task scores (0–100, higher is better; dornick = mean of 2 reps)</summary>
 
-| Task | difficulty | Claude Code | OpenCode | neo |
+| Task | difficulty | Claude Code | OpenCode | dornick |
 |---|---|---|---|---|
 | k1 TCKN validator + tests | easy | **100.0** | 98.0 | 99.0 |
 | k2 todo CLI (Node) | easy | 100.0 | 100.0 | 100.0 |
@@ -71,9 +71,9 @@ spiral.**
 
 ## 2 · Efficiency
 
-![Wall time and real cost: Claude 316s, neo ~690s ($0.05), OpenCode 1428s ($0.10)](charts/efficiency.png)
+![Wall time and real cost: Claude 316s, dornick ~690s ($0.05), OpenCode 1428s ($0.10)](charts/efficiency.png)
 
-The only fair speed comparison is between the same-model lanes: **neo is
+The only fair speed comparison is between the same-model lanes: **dornick is
 ~2× faster and ~2× cheaper than OpenCode**, with an 85% prompt-cache hit
 rate (65–92% per task). Claude Code's 316 s is a different model's token
 rate — shown for context, not compared.
@@ -88,7 +88,7 @@ Quality was unchanged in **all four** experiments; only cost moved.
 * **Seeded true facts** (4 real workspace facts vs empty mind, same task
   ×2): the agent skipped a discovery call — **−24% prompt tokens**, and in
   one repetition memory carried the score from 82 to 100.
-* **Warm continuation** (the end-of-run capsule neo writes automatically):
+* **Warm continuation** (the end-of-run capsule dornick writes automatically):
   a new session continuing the work ran **5 calls / 26 s vs 8 calls /
   62 s** cold — −38% tokens. Boundary: this pays on *discovery*, not on
   edits — a file you are about to edit must be read regardless.
@@ -127,16 +127,16 @@ regression test in [`tests/`](../tests/):
 
 ## Method, honestly
 
-* neo and OpenCode: same model, separate API keys, one fresh workspace and
+* dornick and OpenCode: same model, separate API keys, one fresh workspace and
   an **empty mind** per task (except the memory-ON sweep above), default
-  settings, neo from source.
+  settings, dornick from source.
 * Claude Code is the evaluating agent itself on its own model — a
   reference line, not a same-model comparison. Its lane was worked
   honestly: same briefs, no peeking at graders, scored by the same rubric.
-* neo's headline is a **mean of 2 repetitions**; no best-of anywhere.
+* dornick's headline is a **mean of 2 repetitions**; no best-of anywhere.
   Flash-class variance is real — treat any single run (including these)
   with suspicion.
-* neo's numbers trace to run JSONs in
+* dornick's numbers trace to run JSONs in
   [`eval/coding/results/`](../eval/coding/results/) with per-run
   behaviour columns (model calls, tool errors, cache tokens, cost).
   The competitor lanes' raw data — OpenCode's own JSON event streams and
@@ -151,7 +151,7 @@ regression test in [`tests/`](../tests/):
 
 The comparison above is **frozen**: those are the numbers the three
 harnesses scored, and nothing below changes them. After it was published,
-one day was spent tuning neo's own lane. Summary a reader can trust:
+one day was spent tuning dornick's own lane. Summary a reader can trust:
 
 **Quality did not move.** The post-tuning sweep was the first where every
 task's best repetition scored **100/100** (900/900 best-rep). Task means
@@ -191,5 +191,5 @@ that band is noise, not signal, and no quality claim is made either way.
   to young minds, and the night school got a privacy gate, a held-out
   exam split, and a drift floor (see the repo README).
 
-*Screenshots of the product: [gallery](gallery/README.md) · Drive neo from
+*Screenshots of the product: [gallery](gallery/README.md) · Drive dornick from
 your own harness: [the gate](gate.md).*

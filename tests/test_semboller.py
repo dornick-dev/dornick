@@ -17,12 +17,12 @@ from pathlib import Path
 
 import pytest
 
-from neocp import semboller
-from neocp.config import Config
-from neocp.events import EventLog
-from neocp.session import Session
-from neocp.tools import ToolContext, ToolRegistry
-from neocp.tools import kod as kod_tools
+from dornick import semboller
+from dornick.config import Config
+from dornick.events import EventLog
+from dornick.session import Session
+from dornick.tools import ToolContext, ToolRegistry
+from dornick.tools import kod as kod_tools
 
 PY_KAYNAK = '''\
 """Örnek modül — kaydet burada da geçiyor ama bu bir dize."""
@@ -317,7 +317,7 @@ def ctx(tmp_path: Path) -> ToolContext:
     config.ensure_dirs()
     return ToolContext(
         config=config,
-        session=Session(EventLog(tmp_path / ".neocp" / "s.jsonl"), "test-sembol"),
+        session=Session(EventLog(tmp_path / ".dornick" / "s.jsonl"), "test-sembol"),
         cancel=asyncio.Event(),
     )
 
@@ -334,7 +334,7 @@ async def call(registry: ToolRegistry, ctx: ToolContext, **args):
 
 
 def test_the_tool_is_registered_and_read_only() -> None:
-    from neocp.tools import build_registry
+    from dornick.tools import build_registry
 
     registry = build_registry(subagents=False)
     spec = registry.get("semboller")

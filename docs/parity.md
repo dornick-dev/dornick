@@ -1,13 +1,13 @@
 # Agentic parity map (2026-08-27)
 
-How neo's agentic surface compares to the current harness landscape
+How dornick's agentic surface compares to the current harness landscape
 (Claude Code, Agent SDK, opencode, Cursor, Codex CLI), what was closed in
 the overnight parity push, and what is deliberately deferred. Compiled from
 a file-referenced inventory of this codebase plus a sourced market scan.
 
 ## At parity (or equivalent)
 
-| Capability | neo's shape |
+| Capability | dornick's shape |
 |---|---|
 | Core file tools | read / write (staleness-guarded) / edit — now with **atomic multi-edit** |
 | Code search | **`grep` tool** (pure-Python content search: regex, glob, context lines) + glob listing |
@@ -27,11 +27,11 @@ a file-referenced inventory of this codebase plus a sourced market scan.
 | Scheduled work | in-app scheduler (every/daily) + nightly personal-training loop |
 | Artifacts | local artifact pages: publish/update-in-place/gallery, chat cards |
 | External automation | the gate API — outside agents drive a full turn and receive the complete output |
-| **Working in your own repo** | project mode: point neo at any folder and it works there, not in a sandbox `atolye` (dangerous roots refused, recents remembered) |
+| **Working in your own repo** | project mode: point dornick at any folder and it works there, not in a sandbox `atolye` (dangerous roots refused, recents remembered) |
 | **Post-write diagnostics** | every write is compiled/linted in its own language before the model moves on (`compile()`, `php -l`, `node --check`, `tsc`, ruff) — with an honest coverage table for what is *not* checked |
 | **Running the tests** | the `kos` tool detects the project's real test command from evidence (never invents one) and runs it |
 | **Symbols** | `semboller` — definitions and usages across Python (`ast`) and PHP/JS/TS |
-| **Hooks** | `.neocp/kancalar.json` — user shell commands before/after tool use; a non-zero exit **vetoes** the tool. Deliberately outside the permission engine (your own rule shouldn't ask your permission), and the hook file is closed to the model on two paths — write tools refuse it by path, other mutating calls that name it are refused before the permission gate — so it cannot disarm its own fence by casually reaching for the shell |
+| **Hooks** | `.dornick/kancalar.json` — user shell commands before/after tool use; a non-zero exit **vetoes** the tool. Deliberately outside the permission engine (your own rule shouldn't ask your permission), and the hook file is closed to the model on two paths — write tools refuse it by path, other mutating calls that name it are refused before the permission gate — so it cannot disarm its own fence by casually reaching for the shell |
 | **Eyes on files** | `read_file` on a PNG/JPG returns an actual image to the model; on a PDF, page text with an explicit "these pages carry no text layer — do not guess" when scanned |
 | **Chat surface** | `/` command book, `@` file mentions, running-tasks ledger with stop and drill-in, "what changed this turn" with undo, budget brake |
 | **Deeper browser** | console reads, network errors, form fill/submit, error-page detection — not just clicking text |
@@ -48,7 +48,7 @@ Confirmed against the scan — none of the surveyed harnesses have these:
 2. **A living memory, not a notes file.** FTS + fingerprint recall with
    spreading activation, ~5 ms recall at 50k memories, visualized live.
 3. **Memory as an MCP server.** Other tools (Claude Code included) can
-   mount neo's memory.
+   mount dornick's memory.
 4. **The gate.** Scriptable full-turn access for external evaluators —
    this repo's own benchmark used it.
 

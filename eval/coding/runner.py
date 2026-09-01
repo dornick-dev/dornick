@@ -2,12 +2,12 @@
 
 Flow (per task, in order):
 
-    build temp workspace → copy seed → start ISOLATED neo instance
+    build temp workspace → copy seed → start ISOLATED dornick instance
     → give the raw brief through the external gate (POST /api/gate)
     → wait for the turn to finish → shut the instance down
     → grade the workshop → extract behaviour from the session log
 
-Every task runs in its own temp workspace on its own neo instance (see
+Every task runs in its own temp workspace on its own dornick instance (see
 `instance.py`): the user's mind, workshop and open app are untouched, and
 tasks never see each other's leftovers.
 
@@ -72,7 +72,7 @@ RESULTS_DIR = HERE / "results"
 BOOT_S = 180.0
 DEFAULT_WAIT = 900.0
 
-# Must not collide with the user's open neo (8765) or its browser port (9222).
+# Must not collide with the user's open dornick (8765) or its browser port (9222).
 PORT_BASE = 8791
 BROWSER_PORT_BASE = 9333
 
@@ -135,9 +135,9 @@ def free_port(base: int) -> int:
 
 def build_workspace(task: Task, source_state: Path, model: str | None,
                     browser_port: int) -> Path:
-    """Temp workspace: its own `.neocp`, its own workshop, its own config."""
-    workspace = Path(tempfile.mkdtemp(prefix=f"neocp-eval-{task.id}-"))
-    state = workspace / ".neocp"
+    """Temp workspace: its own `.dornick`, its own workshop, its own config."""
+    workspace = Path(tempfile.mkdtemp(prefix=f"dornick-eval-{task.id}-"))
+    state = workspace / ".dornick"
     state.mkdir(parents=True, exist_ok=True)
     workshop = workspace / "atolye"
     workshop.mkdir(parents=True, exist_ok=True)
@@ -184,7 +184,7 @@ def build_workspace(task: Task, source_state: Path, model: str | None,
 
 
 class Instance:
-    """Isolated neo instance (subprocess). Exits cleanly with the `with` block."""
+    """Isolated dornick instance (subprocess). Exits cleanly with the `with` block."""
 
     def __init__(self, workspace: Path, port: int) -> None:
         self.workspace = workspace
@@ -200,8 +200,8 @@ class Instance:
         argv = [sys.executable, str(HERE / "instance.py"),
                 "--workspace", str(self.workspace), "--port", str(self.port)]
         env = dict(os.environ, PYTHONIOENCODING="utf-8", PYTHONUTF8="1")
-        env.pop("NEOCP_WORKSPACE", None)
-        env["NEOCP_STATE_DIR"] = str(self.workspace / ".neocp")
+        env.pop("DORNICK_WORKSPACE", None)
+        env["DORNICK_STATE_DIR"] = str(self.workspace / ".dornick")
         self.process = subprocess.Popen(
             argv, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT, text=True, encoding="utf-8",
@@ -235,7 +235,7 @@ class Instance:
         """Keep draining the child's stdout after boot.
 
         Without draining, the child BLOCKS on `print` once the pipe fills
-        and the turn silently freezes — neo prints `[neo] ...` lines
+        and the turn silently freezes — dornick prints `[dornick] ...` lines
         throughout a turn, and a fifteen-minute turn fills a 64 KB pipe
         easily.
         """
@@ -251,7 +251,7 @@ class Instance:
                 pass
 
         self._drainer = threading.Thread(target=loop, daemon=True,
-                                         name="neo-eval-log")
+                                         name="dornick-eval-log")
         self._drainer.start()
 
     def ask(self, text: str, wait_s: float) -> dict[str, Any]:
@@ -317,11 +317,11 @@ def run_once(task: Task, source_state: Path, model: str | None,
         if count:
             notes.append(f"excluded from grading (untouched pre-turn files): {count}")
 
-        log_path = workspace / ".neocp" / "sessions" / f"{session_id}.jsonl"
+        log_path = workspace / ".dornick" / "sessions" / f"{session_id}.jsonl"
         b = behavior.extract(
             log_path, gate=gate,
             model_name=(model or _model_name(source_state)),
-            state_dir=workspace / ".neocp")
+            state_dir=workspace / ".dornick")
         b["wall_clock_s"] = round(time.time() - started, 1)
 
         # Sweep BEFORE grading, not only in `finally`: the agent's own
@@ -356,8 +356,8 @@ def sweep_workspace(workspace: Path, workshop: Path | None = None,
                     started: float | None = None) -> int:
     """Kill every process still tied to this workspace; return the count.
 
-    When the instance closes, neo itself goes down — but what it started
-    did not: the agent's `php -S`, `node`, and neo's own Chrome (`close()`
+    When the instance closes, dornick itself goes down — but what it started
+    did not: the agent's `php -S`, `node`, and dornick's own Chrome (`close()`
     only drops the DevTools connection, deliberately, so user sessions
     stay warm). In a measurement this had two costs: one task scored a
     FALSE 100.0 because of a held port, and 18 orphan processes piled up
@@ -446,7 +446,7 @@ def fingerprint(root: Path) -> dict[str, str]:
 def write_exclusions(root: Path, before: dict[str, str]) -> int:
     """Exclude pre-turn files the agent did NOT touch from grading.
 
-    The workshop is not empty when the turn starts: neo copies its seed
+    The workshop is not empty when the turn starts: dornick copies its seed
     skills at boot, and the task has its own seed files. Those are not the
     agent's work and they polluted the code-health score (measured: the
     entire complexity penalty of one early run came from a seed skill).
@@ -588,7 +588,7 @@ def write_report(result: dict[str, Any], path: Path) -> None:
                  "Differences smaller than the spread are not improvements.")
     s.append("")
     s.append("Isolation: every run happened in its own temp workspace, with an "
-             "**empty mind**, on its own neo instance. The user's memories do "
+             "**empty mind**, on its own dornick instance. The user's memories do "
              "not ride along — this rig measures the coding pipeline, not "
              "memory's contribution to coding.")
     s.append("")
@@ -662,14 +662,14 @@ def main(argv: list[str] | None = None) -> int:
     a.add_argument("--wait", type=float, default=DEFAULT_WAIT)
     a.add_argument("--keep", action="store_true")
     a.add_argument("--state", default="",
-                   help="config/keys source (default: the repo's .neocp)")
+                   help="config/keys source (default: the repo's .dornick)")
     a.add_argument("--previous", default="",
                    help="a previous result JSON (or a results folder: newest "
                         "is picked): tasks not re-run are carried over — for "
                         "re-running one task while producing a complete report")
     args = a.parse_args(argv)
 
-    source_state = Path(args.state) if args.state else (ROOT / ".neocp")
+    source_state = Path(args.state) if args.state else (ROOT / ".dornick")
     if not (source_state / "config.json").is_file():
         print(f"config not found: {source_state / 'config.json'}")
         return 2

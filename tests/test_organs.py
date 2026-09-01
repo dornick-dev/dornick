@@ -9,8 +9,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from neocp import organs, skills
-from neocp.config import Config
+from dornick import organs, skills
+from dornick.config import Config
 
 
 def test_the_senses_are_always_listed(tmp_path: Path) -> None:
@@ -63,7 +63,7 @@ def test_the_camera_is_used_by_the_look_tool(tmp_path: Path) -> None:
 
 
 def test_named_cameras_are_organs_the_model_can_call(tmp_path: Path) -> None:
-    from neocp import watch
+    from dornick import watch
 
     config = Config.load(tmp_path)
     config.ensure_dirs()

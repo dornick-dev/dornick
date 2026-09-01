@@ -1,4 +1,4 @@
-"""Taşınabilirlik: neo'nun biriktirdiklerini bir makineden diğerine taşımak.
+"""Taşınabilirlik: dornick'nun biriktirdiklerini bir makineden diğerine taşımak.
 
 İki sözleşme: (1) dışa aktar→içe al gidiş-dönüşü anıları, bağları,
 hedefleri, yetenekleri kaybetmeden taşıyor; (2) içe alma BİRLEŞTİRME —
@@ -14,9 +14,9 @@ import sqlite3
 import zipfile
 from pathlib import Path
 
-from neocp import tanima, transfer
-from neocp.config import Config
-from neocp.mind import open_mind
+from dornick import tanima, transfer
+from dornick.config import Config
+from dornick.mind import open_mind
 
 
 def _mind(root: Path):
@@ -260,7 +260,7 @@ def test_reset_memories_backs_up_then_clears(tmp_path: Path) -> None:
 
 def test_tanima_reset_moves_files_and_falls_back(tmp_path: Path, monkeypatch) -> None:
     """Beni tanı sıfırlama: kişisel dosyalar yedeğe, önbellek düşer."""
-    from neocp.recall import taban
+    from dornick.recall import taban
 
     veri = _sahte_duzenek(monkeypatch, tmp_path)
     (veri / "kisisel_korpus.jsonl").write_text('{"girdi": "soru"}\n', encoding="utf-8")
@@ -286,7 +286,7 @@ def test_tanima_reset_moves_files_and_falls_back(tmp_path: Path, monkeypatch) ->
 
 
 def test_blank_target_adopts_persona(tmp_path: Path) -> None:
-    """Hedefin ruhu boşsa gelen ruh benimseniyor — yeni bir neo'ya taşınırken."""
+    """Hedefin ruhu boşsa gelen ruh benimseniyor — yeni bir dornick'ya taşınırken."""
     cfg_a, mind_a = _mind(tmp_path / "A")
     mind_a.remember("bir anı", kind="fact")
     persona_a = Path(cfg_a.workspace) / "persona.md"

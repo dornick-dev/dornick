@@ -14,8 +14,8 @@ from pathlib import Path
 
 import pytest
 
-from neocp import connectors
-from neocp.tools.base import ToolRegistry, ToolSpec
+from dornick import connectors
+from dornick.tools.base import ToolRegistry, ToolSpec
 
 
 # -- yapılandırma -------------------------------------------------------

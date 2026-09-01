@@ -585,7 +585,7 @@ def test_no_processes_survive_the_workspace(tmp_path: Path) -> None:
     """When the turn ends, processes tied to the workspace go down — and
     ONLY those.
 
-    They used not to: the agent's `php -S` and neo's own Chrome lived on
+    They used not to: the agent's `php -S` and dornick's own Chrome lived on
     after the turn. The cost landed on the measurement — one task took a
     FALSE 100.0 off a held port, and undeletable profile folders piled up
     in Temp.

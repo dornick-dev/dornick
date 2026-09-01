@@ -13,13 +13,13 @@ from types import SimpleNamespace
 
 import pytest
 
-from neocp.backends import TurnResult
-from neocp.config import Config
-from neocp.events import EventLog
-from neocp.loop import Agent, AgentIO
-from neocp.permissions import PermissionEngine
-from neocp.session import Session
-from neocp.tools import ToolRegistry, ToolResult, object_schema
+from dornick.backends import TurnResult
+from dornick.config import Config
+from dornick.events import EventLog
+from dornick.loop import Agent, AgentIO
+from dornick.permissions import PermissionEngine
+from dornick.session import Session
+from dornick.tools import ToolRegistry, ToolResult, object_schema
 
 
 def message(content: list[dict], stop_reason: str) -> SimpleNamespace:
@@ -234,7 +234,7 @@ async def test_truncated_answer_is_continued_not_abandoned(
     assert roles == ["user", "assistant", "user", "assistant"]
 
     # Ama kullanicinin yazmadigi bir mesaj sohbette gorunmemeli.
-    from neocp.web.server import _payload
+    from dornick.web.server import _payload
 
     nudge = [e for e in agent.session.log.messages() if e.meta.get("continuation")]
     assert len(nudge) == 1
@@ -247,7 +247,7 @@ async def test_continuation_has_a_ceiling(tmp_path: Path, registry: ToolRegistry
     Tavana carpinca bir kapanis turu daha veriliyor: ajan is yapmis olabilir
     ve kullanicinin eline hicbir sey gecmemesi, yarim bir cevaptan kotu.
     """
-    from neocp.loop import MAX_CONTINUATIONS
+    from dornick.loop import MAX_CONTINUATIONS
 
     client = FakeClient(*[truncated("devam...") for _ in range(MAX_CONTINUATIONS + 4)])
     agent = build_agent(tmp_path, client, registry)
@@ -263,7 +263,7 @@ async def test_continuation_has_a_ceiling(tmp_path: Path, registry: ToolRegistry
 async def test_the_closing_turn_gets_no_tools(tmp_path: Path, registry: ToolRegistry) -> None:
     """Kapanis turunda tekrar arac cagirabilmek, kilitlenen dongunun bir
     turunu daha calistirmak demek."""
-    from neocp.loop import MAX_CONTINUATIONS
+    from dornick.loop import MAX_CONTINUATIONS
 
     client = FakeClient(*[truncated("devam...") for _ in range(MAX_CONTINUATIONS + 4)])
     agent = build_agent(tmp_path, client, registry)
@@ -279,7 +279,7 @@ async def test_the_closing_turn_asks_for_what_it_has(
 ) -> None:
     """Kullaniciya "istegi daha kucuk parcalara bol" demek, yapilan isi de
     sorusunu da kaybetmek demekti."""
-    from neocp.loop import CLOSING_NOTE, MAX_CONTINUATIONS
+    from dornick.loop import CLOSING_NOTE, MAX_CONTINUATIONS
 
     client = FakeClient(*[truncated("devam...") for _ in range(MAX_CONTINUATIONS + 4)])
     agent = build_agent(tmp_path, client, registry)
@@ -332,7 +332,7 @@ async def test_tool_calls_cut_off_mid_stream_are_settled(
 
 
 def test_spawning_a_subagent_emits_channel_events(tmp_path: Path) -> None:
-    from neocp.tools import build_registry
+    from dornick.tools import build_registry
 
     events: list[tuple] = []
     io = AgentIO(
@@ -389,7 +389,7 @@ async def test_relevant_memories_arrive_before_the_model_asks(
     zaman fark etmiyor ve zaten bildigi bir seyi bilmiyormus gibi
     cevapliyordu. Burada tersi: hatirlama sorulmadan calisiyor.
     """
-    from neocp.mind import open_mind
+    from dornick.mind import open_mind
 
     mind = open_mind(tmp_path / "mind", tmp_path / "sessions", "test")
     mind.remember("Postgres yedegi her gece 03:00te aliniyor", kind="procedure")
@@ -414,7 +414,7 @@ async def test_a_primed_memory_is_not_injected_twice(
     """Eski not geçmişte zaten duruyor (mesajlar her istekte baştan
     oynatılıyor); aynı hatırayı ikinci turda yeniden enjekte etmek modele
     yeni bilgi vermez, yalnızca token yakar."""
-    from neocp.mind import open_mind
+    from dornick.mind import open_mind
 
     mind = open_mind(tmp_path / "mind", tmp_path / "sessions", "test")
     mind.remember("Postgres yedegi her gece 03:00te aliniyor", kind="procedure")
@@ -441,7 +441,7 @@ async def test_soul_resident_memories_are_never_primed(
     """Ruhun tam gövdesiyle prompta koyduğu kayıt (tercih, kullanıcı, ders)
     zaten bağlamda — yeniden enjekte etmek bilgi katmaz, token yakar.
     Ölçüldü (scale_bench): aynı isabet, ~%9 daha az token."""
-    from neocp.mind import open_mind
+    from dornick.mind import open_mind
 
     mind = open_mind(tmp_path / "mind", tmp_path / "sessions", "test")
     mind.remember("Fatih kahve degil cay icer, demli olacak", kind="preference")
@@ -469,8 +469,8 @@ async def test_the_prime_line_says_the_kind_once(
 ) -> None:
     """Önceki biçim `- [fact] (fact) ...` diye türü iki kez basıyordu —
     beş satırlık notta on gereksiz kelime."""
-    from neocp.loop import prime_note
-    from neocp.mind import open_mind
+    from dornick.loop import prime_note
+    from dornick.mind import open_mind
 
     mind = open_mind(tmp_path / "mind", tmp_path / "sessions", "test")
     mind.remember("Koru1000 klor alarmi 0.2 altinda calar", kind="fact",
@@ -488,7 +488,7 @@ async def test_the_prime_is_marked_as_not_coming_from_the_user(
     tmp_path: Path, registry: ToolRegistry
 ) -> None:
     """Model bunlari kullanicinin yazdigini sanmamali."""
-    from neocp.mind import open_mind
+    from dornick.mind import open_mind
 
     mind = open_mind(tmp_path / "mind", tmp_path / "sessions", "test")
     mind.remember("Fatih SCADA tarafinda calisiyor", kind="user")
@@ -504,7 +504,7 @@ async def test_the_prime_is_marked_as_not_coming_from_the_user(
 async def test_nothing_is_injected_when_nothing_is_recalled(
     tmp_path: Path, registry: ToolRegistry
 ) -> None:
-    from neocp.mind import open_mind
+    from dornick.mind import open_mind
 
     agent = build_agent(tmp_path, FakeClient(text_turn("tamam")), registry)
     agent.mind = open_mind(tmp_path / "mind", tmp_path / "sessions", "test")
@@ -549,7 +549,7 @@ async def test_associations_do_not_leak_into_the_prime(
     "SCADA" kaydi onune konunca model "SCADA projeniz mi var?" diye cevap
     verdi. Sicrayarak gelenler modelin kendi `mind_recall` cagrisina kalmali.
     """
-    from neocp.mind import open_mind
+    from dornick.mind import open_mind
 
     mind = open_mind(tmp_path / "mind", tmp_path / "sessions", "test")
     mind.remember("Fatih SCADA ve su yonetimi tarafinda calisiyor", kind="user")
@@ -569,7 +569,7 @@ async def test_nothing_is_primed_when_only_neighbours_match(
     tmp_path: Path, registry: ToolRegistry
 ) -> None:
     """Hicbir kayit dogrudan tutmuyorsa hic eklenmemeli."""
-    from neocp.mind import open_mind
+    from dornick.mind import open_mind
 
     mind = open_mind(tmp_path / "mind", tmp_path / "sessions", "test")
     mind.remember("Kahve makinesi mutfakta", kind="fact")
@@ -591,7 +591,7 @@ async def test_small_talk_does_not_open_the_mind(
     model gecmis oturum ozetiyle karsilasti ve sohbet etmek yerine "ne yapmak
     istersin" diye sordu.
     """
-    from neocp.mind import open_mind
+    from dornick.mind import open_mind
 
     mind = open_mind(tmp_path / "mind", tmp_path / "sessions", "test")
     mind.remember("Fatih SCADA tarafinda calisiyor", kind="user")
@@ -607,7 +607,7 @@ async def test_a_greeting_with_a_question_still_opens_it(
     tmp_path: Path, registry: ToolRegistry
 ) -> None:
     """Selam ile baslayan gercek bir soru zihne bakmali."""
-    from neocp.mind import open_mind
+    from dornick.mind import open_mind
 
     mind = open_mind(tmp_path / "mind", tmp_path / "sessions", "test")
     mind.remember("Postgres yedegi her gece 03:00te aliniyor", kind="procedure")
@@ -624,7 +624,7 @@ async def test_session_summaries_stay_out_of_the_prime(
 ) -> None:
     """Ozetler uzun metinler ve neredeyse her sorguyla eslesiyorlar; gercek
     eslesmeyi boguyorlar. Onlar modelin kendi `mind_recall` cagrisina kaliyor."""
-    from neocp.mind import open_mind
+    from dornick.mind import open_mind
 
     mind = open_mind(tmp_path / "mind", tmp_path / "sessions", "test")
     mind.remember("Oturum ozeti: kullanici merhaba dedi, borsa konusuldu, "
@@ -644,7 +644,7 @@ async def test_session_summaries_stay_out_of_the_prime(
 async def test_user_turn_is_encoded_instantly(tmp_path: Path, registry: ToolRegistry) -> None:
     """Kullanıcının söylediği o an aranabilir belleğe geçmeli — gece değil,
     turun içinde, senkron."""
-    from neocp.mind import open_mind
+    from dornick.mind import open_mind
 
     mind = open_mind(tmp_path / "mind", tmp_path / "sessions", "test")
     client = FakeClient(text_turn("tamam"))
@@ -659,7 +659,7 @@ async def test_user_turn_is_encoded_instantly(tmp_path: Path, registry: ToolRegi
 
 async def test_assistant_turn_is_encoded(tmp_path: Path, registry: ToolRegistry) -> None:
     """Asistanın söylediği (bir ölçüm, bir açıklama) da anlık belleğe geçmeli."""
-    from neocp.mind import open_mind
+    from dornick.mind import open_mind
 
     mind = open_mind(tmp_path / "mind", tmp_path / "sessions", "test")
     client = FakeClient(text_turn("Depo seviyesi 2,77 metre; doluluk yüzde 79 olarak ölçüldü."))
@@ -674,7 +674,7 @@ async def test_assistant_turn_is_encoded(tmp_path: Path, registry: ToolRegistry)
 
 async def test_short_and_smalltalk_turns_are_not_encoded(tmp_path: Path, registry: ToolRegistry) -> None:
     """'tamam', 'merhaba' gibi turlar gürültü; belleğe yazılmaz."""
-    from neocp.mind import open_mind
+    from dornick.mind import open_mind
 
     mind = open_mind(tmp_path / "mind", tmp_path / "sessions", "test")
     client = FakeClient(text_turn("selam"))
@@ -688,7 +688,7 @@ async def test_short_and_smalltalk_turns_are_not_encoded(tmp_path: Path, registr
 
 async def test_same_turn_is_not_encoded_twice(tmp_path: Path, registry: ToolRegistry) -> None:
     """Peş peşe aynı metin bir kez yazılır."""
-    from neocp.mind import open_mind
+    from dornick.mind import open_mind
 
     mind = open_mind(tmp_path / "mind", tmp_path / "sessions", "test")
     agent = build_agent(tmp_path, FakeClient(text_turn("a"), text_turn("b")), mind and registry)
@@ -703,7 +703,7 @@ async def test_same_turn_is_not_encoded_twice(tmp_path: Path, registry: ToolRegi
 
 
 def test_infer_deliverable_prefers_app_root_over_api_path() -> None:
-    from neocp.loop import _infer_deliverable
+    from dornick.loop import _infer_deliverable
 
     d = _infer_deliverable("POST http://127.0.0.1:8090/api/refresh sonra bak")
     assert d == {"kind": "app", "url": "http://127.0.0.1:8090/"}

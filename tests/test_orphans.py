@@ -15,8 +15,8 @@ from pathlib import Path
 
 import pytest
 
-from neocp.events import EventLog
-from neocp.loop import ChildHandle, yetim_isaretle, yetim_tara
+from dornick.events import EventLog
+from dornick.loop import ChildHandle, yetim_isaretle, yetim_tara
 from tests.test_loop import (  # noqa: F401
     FakeClient,
     build_agent,
@@ -204,7 +204,7 @@ async def test_bridge_gorev_devam_resumes_orphan(tmp_path: Path, registry) -> No
     """UI 'Devam et' → Bridge.gorev_devam → _child_say (HTTP thread güvenli)."""
     import asyncio
 
-    from neocp.desktop import Bridge
+    from dornick.desktop import Bridge
 
     class _Hub:
         def emit(self, *_a, **_k):
@@ -242,7 +242,7 @@ def test_gorevler_marks_orphans_as_resumable(tmp_path: Path, registry) -> None:
     """Canlı liste surdurulebilir bayrağını yetim satırına koyar."""
     import asyncio
 
-    from neocp.desktop import Bridge
+    from dornick.desktop import Bridge
 
     class _Hub:
         def emit(self, *_a, **_k):
@@ -273,7 +273,7 @@ def test_gorevler_marks_orphans_as_resumable(tmp_path: Path, registry) -> None:
 def test_snapshot_channels_mirror_the_ledger(tmp_path: Path, registry) -> None:
     """Panel açılışta bu listeyle kurulur: koşan 'run', biten 'done',
     yetim 'yetim', hata 'fail' — snapshot'ta olmayan kanal çizilmez."""
-    from neocp.desktop import _live_channels
+    from dornick.desktop import _live_channels
 
     agent = build_agent(tmp_path, FakeClient(), registry)
     agent._children["a1"] = ChildHandle(id="a1", title="koşan", model="m",
@@ -300,7 +300,7 @@ def test_snapshot_channels_mirror_the_ledger(tmp_path: Path, registry) -> None:
 def test_the_bridge_snapshot_carries_the_channel_list(tmp_path: Path, registry) -> None:
     import asyncio
 
-    from neocp.desktop import Bridge
+    from dornick.desktop import Bridge
 
     class _Hub:
         def __init__(self) -> None:
@@ -326,7 +326,7 @@ def test_the_bridge_snapshot_carries_the_channel_list(tmp_path: Path, registry) 
 
 # -- arayüz sözleşmesi ----------------------------------------------------
 
-STATIC = Path(__file__).resolve().parents[1] / "src" / "neocp" / "web" / "static"
+STATIC = Path(__file__).resolve().parents[1] / "src" / "dornick" / "web" / "static"
 
 
 def test_the_deck_seeds_from_the_snapshot() -> None:
@@ -352,10 +352,10 @@ def test_the_deck_seeds_from_the_snapshot() -> None:
     assert "surdurulebilir" in gorev_js or 'durum === "yetim"' in gorev_js
 
     server = (Path(__file__).resolve().parents[1]
-              / "src" / "neocp" / "web" / "server.py").read_text(encoding="utf-8")
+              / "src" / "dornick" / "web" / "server.py").read_text(encoding="utf-8")
     assert "/api/gorevler/devam" in server
     assert "gorev_devam" in (
-        Path(__file__).resolve().parents[1] / "src" / "neocp" / "desktop.py"
+        Path(__file__).resolve().parents[1] / "src" / "dornick" / "desktop.py"
     ).read_text(encoding="utf-8")
 
     css = (STATIC / "app.css").read_text(encoding="utf-8")

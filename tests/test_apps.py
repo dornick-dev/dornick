@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from neocp import apps
+from dornick import apps
 
 
 def _tree(root: Path) -> dict:
@@ -151,7 +151,7 @@ def test_projects_are_units_not_loose_files(tmp_path: Path) -> None:
     assert mb["entry"].endswith("index.html")
     assert "app.py" in mb["run"]                   # sunucudan besleniyor
     assert "pip install" in mb["howto"]            # README yakalandı
-    assert mb["scope"] == ""                       # manifest yok → neo sormalı
+    assert mb["scope"] == ""                       # manifest yok → dornick sormalı
 
     pano = items["pano.html"]
     assert pano["kind"] == "web" and pano["single"] is True
@@ -290,7 +290,7 @@ def test_saglam_manifest_eksik_sayilmaz(tmp_path: Path) -> None:
 def test_calisan_surec_uygulamaya_eslesir(tmp_path: Path) -> None:
     """Uygulamanın portu gerçekten dinleniyorsa kart CANLI olur.
 
-    Kullanıcının halinin birebir kopyası: sunucu neo'nun süreç defterinde
+    Kullanıcının halinin birebir kopyası: sunucu dornick'nun süreç defterinde
     YOK (kendi başına, ayrı bir süreç olarak koşuyor) ama uygulamanın kartı
     yine de canlı görünmeli. Kanıt bir soket, tahmin değil.
     """
@@ -308,7 +308,7 @@ def test_calisan_surec_uygulamaya_eslesir(tmp_path: Path) -> None:
     port = probe.getsockname()[1]
     probe.close()
 
-    # Ayrı bir süreç: pytest'in KENDİ süreci "neo'nun kendisi" sayılıyor
+    # Ayrı bir süreç: pytest'in KENDİ süreci "dornick'nun kendisi" sayılıyor
     # (ve doğru olarak canlı rozeti almıyor) — sunucu dışarıda olmalı.
     sunucu = subprocess.Popen(
         [sys.executable, "-c",
@@ -363,22 +363,22 @@ def test_bos_atolye(tmp_path: Path) -> None:
 
 
 def test_neo_kendi_sureci_taninir() -> None:
-    """Model kafası karışıp neo'yu başlatırsa bu tanınmalı."""
-    assert apps.neo_sureci_mi("neocp --web 8873 -C D:\\Projects\\Fatih\\neocp")
-    assert apps.neo_sureci_mi("python -m neocp --web 8080")
+    """Model kafası karışıp dornick'yu başlatırsa bu tanınmalı."""
+    assert apps.neo_sureci_mi("dornick --web 8873 -C D:\\Projects\\Fatih\\dornick")
+    assert apps.neo_sureci_mi("python -m dornick --web 8080")
     assert apps.neo_sureci_mi(
-        '"C:\\Py\\python.exe" "C:\\Py\\Scripts\\neocp.exe" --web 8873')
-    assert apps.neo_sureci_mi(r'"C:\neo\python\neo.exe" -m neocp --app')
-    # Kullanıcının uygulaması neo değil — yanlış alarm olmamalı.
+        '"C:\\Py\\python.exe" "C:\\Py\\Scripts\\dornick.exe" --web 8873')
+    assert apps.neo_sureci_mi(r'"C:\dornick\python\dornick.exe" -m dornick --app')
+    # Kullanıcının uygulaması dornick değil — yanlış alarm olmamalı.
     assert not apps.neo_sureci_mi("py app.py")
-    assert not apps.neo_sureci_mi("python D:\\Projects\\Fatih\\neocp\\atolye\\borsa-ara\\app.py")
+    assert not apps.neo_sureci_mi("python D:\\Projects\\Fatih\\dornick\\atolye\\borsa-ara\\app.py")
 
 
 def test_neo_kendi_kopyasi_uygulama_gibi_listelenmez(tmp_path: Path) -> None:
-    """Model neo'yu başlatırsa panel onu "uygulaman" diye göstermemeli.
+    """Model dornick'yu başlatırsa panel onu "uygulaman" diye göstermemeli.
 
-    Kullanıcının yaşadığı hal: model `neocp --web 8873` çalıştırdı, kabuk
-    aracı bunu süreç defterine yazdı, panel de neo'nun bir kopyasını
+    Kullanıcının yaşadığı hal: model `dornick --web 8873` çalıştırdı, kabuk
+    aracı bunu süreç defterine yazdı, panel de dornick'nun bir kopyasını
     uygulama olarak listeledi ("ne saçmaladı").
     """
     import subprocess
@@ -387,15 +387,15 @@ def test_neo_kendi_kopyasi_uygulama_gibi_listelenmez(tmp_path: Path) -> None:
 
     proc = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(20)"])
     apps._PROCS[proc.pid] = {
-        "proc": proc, "path": "neocp --web 8873 -C D:\\Projects\\Fatih\\neocp",
-        "name": "neocp", "started": time.time(),
+        "proc": proc, "path": "dornick --web 8873 -C D:\\Projects\\Fatih\\dornick",
+        "name": "dornick", "started": time.time(),
     }
     try:
         row = next(r for r in apps.running() if r["pid"] == proc.pid)
         assert row["self"] is True
         assert row["stoppable"] is False
-        assert row["name"] == "neo (kendisi)"
-        # Panelden durdurulamaz: neo kendi bacağına sıkmasın.
+        assert row["name"] == "dornick (kendisi)"
+        # Panelden durdurulamaz: dornick kendi bacağına sıkmasın.
         red = apps.stop(proc.pid)
         assert not red["ok"] and "kendi süreci" in red["error"]
     finally:
@@ -405,14 +405,14 @@ def test_neo_kendi_kopyasi_uygulama_gibi_listelenmez(tmp_path: Path) -> None:
 
 
 async def test_shell_neo_yu_yeniden_baslatmayi_reddeder(tmp_path: Path) -> None:
-    """Kabuk aracı `neocp` başlatma girişimini NEDENİYLE geri çevirir."""
+    """Kabuk aracı `dornick` başlatma girişimini NEDENİYLE geri çevirir."""
     import asyncio
 
-    from neocp.config import Config
-    from neocp.events import EventLog
-    from neocp.session import Session
-    from neocp.tools import ToolContext, ToolRegistry
-    from neocp.tools import shell as shell_tool
+    from dornick.config import Config
+    from dornick.events import EventLog
+    from dornick.session import Session
+    from dornick.tools import ToolContext, ToolRegistry
+    from dornick.tools import shell as shell_tool
 
     reg = ToolRegistry()
     shell_tool.register(reg)
@@ -421,7 +421,7 @@ async def test_shell_neo_yu_yeniden_baslatmayi_reddeder(tmp_path: Path) -> None:
     ctx = ToolContext(config=config, session=Session(EventLog(tmp_path / "s.jsonl"), "t"),
                       cancel=asyncio.Event())
 
-    res = await reg.get("shell").handler({"command": "neocp --web 8873"}, ctx)
+    res = await reg.get("shell").handler({"command": "dornick --web 8873"}, ctx)
     assert res.is_error
     assert "kendini yeniden başlatma" in res.content
     # Kullanıcının kendi uygulaması engellenmiyor.

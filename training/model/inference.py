@@ -1,13 +1,13 @@
 # -*- coding: utf-8 -*-
 """Pure-numpy inference — the side the product actually ships.
 
-NO torch here: neo's zero-install principle. Weights load from a single
+NO torch here: dornick's zero-install principle. Weights load from a single
 .npz file; greedy decoding produces at most 64 bytes of search terms.
 At ~10.8M parameters a single query takes ~10-40 ms on CPU.
 
 The .npz key names ("gomme", "konum", "son.w", "b{i}.att.in_w", ...) are a
 FROZEN wire format shared with the product's own copy of this decoder
-(src/neocp/recall/taban.py) and with every already-deployed model file.
+(src/dornick/recall/taban.py) and with every already-deployed model file.
 Do not rename them.
 """
 

@@ -15,7 +15,7 @@ from pathlib import Path
 
 import pytest
 
-from neocp import devices
+from dornick import devices
 
 
 def test_a_device_needs_an_id_a_name_and_a_known_kind() -> None:
@@ -135,9 +135,9 @@ def test_related_memories_are_the_ones_about_that_device(tmp_path: Path) -> None
     """Cihaz silinince ölçüm/adres anıları sessizce kalıyordu; kullanıcı
     'hafızadan da sil' demek zorunda kalıyordu. Silme, ilgili anıları
     gösterir ve sorar — kendiliğinden forget etmez."""
-    from neocp.config import Config
-    from neocp.mind import open_mind
-    from neocp.tools.devices import related_memories
+    from dornick.config import Config
+    from dornick.mind import open_mind
+    from dornick.tools.devices import related_memories
 
     config = Config.load(tmp_path)
     config.ensure_dirs()
@@ -160,12 +160,12 @@ def test_related_memories_are_the_ones_about_that_device(tmp_path: Path) -> None
 def test_removing_a_device_asks_before_forgetting_memories(tmp_path: Path) -> None:
     import asyncio
 
-    from neocp.config import Config
-    from neocp.events import EventLog
-    from neocp.mind import open_mind
-    from neocp.session import Session
-    from neocp.tools import ToolContext, ToolRegistry
-    from neocp.tools import devices as device_tool
+    from dornick.config import Config
+    from dornick.events import EventLog
+    from dornick.mind import open_mind
+    from dornick.session import Session
+    from dornick.tools import ToolContext, ToolRegistry
+    from dornick.tools import devices as device_tool
 
     config = Config.load(tmp_path)
     config.ensure_dirs()

@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import pytest
 
-from neocp.tools import hands
+from dornick.tools import hands
 
 
 def test_to_screen_maps_image_pixel_to_real_coordinate() -> None:

@@ -8,9 +8,9 @@ from types import SimpleNamespace
 
 import pytest
 
-from neocp.desktop import Bridge
-from neocp.loop import ChildHandle
-from neocp.schedule import Schedule, Task
+from dornick.desktop import Bridge
+from dornick.loop import ChildHandle
+from dornick.schedule import Schedule, Task
 from tests.test_loop import FakeClient, build_agent, registry, text_turn  # noqa: F401
 
 
@@ -50,7 +50,7 @@ async def test_gorev_durdur_archives_meter_on_stop(
     tmp_path: Path, registry,
 ) -> None:
     """Durdur: Son koşu'ya süre/token/araç diskte kalsın."""
-    from neocp import task_runs
+    from dornick import task_runs
 
     book = Schedule(tmp_path)
     task = Task(

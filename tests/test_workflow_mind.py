@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from neocp import workflow_mind, workflows
+from dornick import workflow_mind, workflows
 
 
 def _akis(tmp_path: Path) -> workflows.Workflow:

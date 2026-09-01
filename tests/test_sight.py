@@ -13,9 +13,9 @@ import inspect
 import numpy as np
 import pytest
 
-from neocp import sight
-from neocp.desktop import _hareket_gonder, _yerel_uc
-from neocp.watch import Camera, Sighting
+from dornick import sight
+from dornick.desktop import _hareket_gonder, _yerel_uc
+from dornick.watch import Camera, Sighting
 
 
 def test_paint_jpeg_draws_a_box_without_gpu() -> None:
@@ -186,7 +186,7 @@ def test_builtin_webcam_motion_is_ignored_when_the_lens_is_off(
 
 def test_sync_camera_stops_the_watcher() -> None:
     """HUD kamerayı kapatınca arka plan izleyici de durur."""
-    from neocp.desktop import Bridge
+    from dornick.desktop import Bridge
 
     class Eyes:
         def __init__(self) -> None:
@@ -219,7 +219,7 @@ def test_sync_camera_stops_the_watcher() -> None:
 
 
 def test_turning_the_camera_off_stops_the_watcher() -> None:
-    from neocp.desktop import Bridge
+    from dornick.desktop import Bridge
 
     src = inspect.getsource(Bridge.sync_camera)
     assert "eyes.stop" in src
@@ -242,7 +242,7 @@ def test_local_url_helper_still_matches_the_privacy_gate() -> None:
 
 def test_the_camera_is_off_until_asked_for(tmp_path: Path) -> None:
     """Kamerayı kendiliğinden açan bir program kabul edilemez."""
-    from neocp.config import Config
+    from dornick.config import Config
 
     assert not Config.load(tmp_path).camera.enabled
 
@@ -251,7 +251,7 @@ def test_cameras_list_does_not_warmup_when_camera_is_off() -> None:
     """Sayfa yüklenince /api/cameras listeleniyor; kapalı kamerada YOLO
     yüklemek UI'yi ve VRAM'i boşuna dolduruyordu."""
     import inspect
-    from neocp.web.server import _Handler
+    from dornick.web.server import _Handler
     src = inspect.getsource(_Handler._cameras)
     assert "config.camera.enabled" in src
     assert "ensure_warmup" in src
@@ -262,7 +262,7 @@ def test_cameras_list_does_not_warmup_when_camera_is_off() -> None:
 def test_camera_frame_serves_the_lens_buffer() -> None:
     """Güverte karesi snapshot(warm=2) ile kamerayı yeniden açmasın."""
     import inspect
-    from neocp.web.server import _Handler
+    from dornick.web.server import _Handler
     src = inspect.getsource(_Handler._camera_frame)
     assert "preview_jpeg" in src
     assert "warm=2" not in src
@@ -273,14 +273,14 @@ def test_model_path_prefers_the_packaged_copy(tmp_path, monkeypatch) -> None:
     """Kurulumla gelen ONNX once: kurulu makinede ilk bakis indirme
     beklemez, cevrimdisi calisir. Paket kopyasi yoksa eski yol."""
     import sys
-    from neocp import sight
+    from dornick import sight
     sahte_exe = tmp_path / 'python' / 'python.exe'
     sahte_exe.parent.mkdir(parents=True)
     sahte_exe.write_bytes(b'x')
     monkeypatch.setattr(sys, 'executable', str(sahte_exe))
     # Paket kopyasi yokken ev dizini yolu
     assert str(sight._model_path()).endswith('yolov8n.onnx')
-    assert '.neocp' in str(sight._model_path())
+    assert '.dornick' in str(sight._model_path())
     # Paket kopyasi varsa o kazanir
     m = tmp_path / 'watch' / 'models' / 'yolov8n.onnx'
     m.parent.mkdir(parents=True)

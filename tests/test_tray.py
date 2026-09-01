@@ -8,7 +8,7 @@ kararlar aynı sonucu vermeli.
 
 from __future__ import annotations
 
-from neocp import tray
+from dornick import tray
 
 
 # -- X davranışı: gizle mi kapat mı --------------------------------------
@@ -198,9 +198,9 @@ def test_arka_plan_notu_mentions_tasks() -> None:
 
 
 def test_toast_xml_embeds_logo_and_escapes() -> None:
-    xml = tray.toast_xml("neo", 'bit <&> "ok"', "file:///C:/neo.png")
+    xml = tray.toast_xml("dornick", 'bit <&> "ok"', "file:///C:/dornick.png")
     assert "appLogoOverride" in xml
-    assert "file:///C:/neo.png" in xml
+    assert "file:///C:/dornick.png" in xml
     assert "&lt;" in xml and "&amp;" in xml and "&quot;" in xml
     assert "<bit" not in xml
 
@@ -208,7 +208,7 @@ def test_toast_xml_embeds_logo_and_escapes() -> None:
 def test_installer_asks_keep_or_wipe_data() -> None:
     """Kurulumda eski veri (görevler dahil) koru / sıfırla seçenekleri durur."""
     from pathlib import Path
-    iss = Path(__file__).resolve().parents[1] / "installer" / "neo.iss"
+    iss = Path(__file__).resolve().parents[1] / "installer" / "dornick.iss"
     text = iss.read_text(encoding="utf-8-sig")
     assert "görevler" in text.lower() or "tasks" in text.lower()
     assert "SecVeri" in text and "SecGuncelle" in text

@@ -15,14 +15,14 @@ from pathlib import Path
 
 import pytest
 
-from neocp import git as gitmod
-from neocp import ortam
-from neocp.config import Config
-from neocp.events import EventLog
-from neocp.permissions import Decision, PermissionEngine
-from neocp.session import Session
-from neocp.tools import ToolContext, ToolRegistry, build_registry
-from neocp.tools import git_tool
+from dornick import git as gitmod
+from dornick import ortam
+from dornick.config import Config
+from dornick.events import EventLog
+from dornick.permissions import Decision, PermissionEngine
+from dornick.session import Session
+from dornick.tools import ToolContext, ToolRegistry, build_registry
+from dornick.tools import git_tool
 
 pytestmark = pytest.mark.skipif(not shutil.which("git"), reason="git yok")
 
@@ -37,8 +37,8 @@ def _run(cwd: Path, *args: str) -> None:
 def _repo(path: Path) -> Path:
     path.mkdir(parents=True, exist_ok=True)
     _run(path, "init")
-    _run(path, "config", "user.email", "neo@test")
-    _run(path, "config", "user.name", "neo")
+    _run(path, "config", "user.email", "dornick@test")
+    _run(path, "config", "user.name", "dornick")
     return path
 
 
@@ -47,7 +47,7 @@ def _ctx(tmp_path: Path) -> ToolContext:
     config.ensure_dirs()
     return ToolContext(
         config=config,
-        session=Session(EventLog(tmp_path / ".neocp" / "s.jsonl"), "test"),
+        session=Session(EventLog(tmp_path / ".dornick" / "s.jsonl"), "test"),
         cancel=asyncio.Event(),
     )
 
@@ -117,6 +117,9 @@ def test_snapshot_finds_git_above_the_workshop(tmp_path: Path) -> None:
     (tmp_path / "not.txt").write_text("x\n", encoding="utf-8")
     config = Config.load(tmp_path)
     config.ensure_dirs()
+    # 01.09 sözleşmesi: çubuk yalnız ATANMIŞ projede repo görür — atölye
+    # karalama alanı ("atölye için repo açmaması lazım", canlı).
+    config.sandbox.project = str(tmp_path)
     snap = gitmod.snapshot(config)
     assert snap["present"] and snap["ok"]
     assert snap["dirty"]
@@ -126,7 +129,7 @@ def test_snapshot_finds_git_above_the_workshop(tmp_path: Path) -> None:
 
 
 def test_prompt_names_git_as_an_ability() -> None:
-    from neocp.prompt import ABILITIES
+    from dornick.prompt import ABILITIES
     assert any(title == "Git" and "git" in names for title, _what, names in ABILITIES)
 
 
@@ -175,13 +178,14 @@ def test_tool_empty_commit_message_is_an_error(tmp_path: Path) -> None:
 
 
 def test_http_git_get_and_commit(tmp_path: Path) -> None:
-    from neocp.mind import open_mind
-    from neocp.web import MindServer
+    from dornick.mind import open_mind
+    from dornick.web import MindServer
 
     _repo(tmp_path)
     (tmp_path / "a.txt").write_text("x\n", encoding="utf-8")
     config = Config.load(tmp_path)
     config.ensure_dirs()
+    config.sandbox.project = str(tmp_path)   # çubuk yalnız projede (01.09)
     mind = open_mind(tmp_path / "mind", tmp_path / "sessions", "cur")
     log = EventLog(tmp_path / "s.jsonl")
     server = MindServer(mind, log, port=0, config=config)
@@ -202,3 +206,16 @@ def test_http_git_get_and_commit(tmp_path: Path) -> None:
     finally:
         server.stop()
         log.close()
+
+
+def test_the_bar_ignores_a_repo_in_the_scratch_workshop(tmp_path: Path) -> None:
+    """Atölye reposu çubuğa ÇIKMAZ: "+407 Commit · Yayınla" yarası (01.09).
+    Ajanın aracı ise scratch_ok=True ile atölyede çalışmayı sürdürür."""
+    _repo(tmp_path)
+    (tmp_path / "x.txt").write_text("x\n", encoding="utf-8")
+    config = Config.load(tmp_path)
+    config.ensure_dirs()
+
+    assert gitmod.repo_root(config) is None
+    assert gitmod.snapshot(config) == {"ok": True, "present": False}
+    assert gitmod.repo_root(config, scratch_ok=True) is not None

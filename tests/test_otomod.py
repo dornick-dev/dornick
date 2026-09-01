@@ -15,9 +15,9 @@ from types import SimpleNamespace
 
 import pytest
 
-from neocp import otomod, settings
-from neocp.config import OPENROUTER_URL, Config, ModelConfig
-from neocp.context import Prepared
+from dornick import otomod, settings
+from dornick.config import OPENROUTER_URL, Config, ModelConfig
+from dornick.context import Prepared
 
 # ---------------------------------------------------------------------
 # sahte OpenRouter /models kayıtları
@@ -179,7 +179,7 @@ class _FakeOpenAI:
 
 
 def _backend(model: ModelConfig, fake: _FakeOpenAI):
-    from neocp.backends.openai_backend import OpenAIBackend
+    from dornick.backends.openai_backend import OpenAIBackend
 
     return OpenAIBackend(model, client=fake)
 
@@ -324,9 +324,9 @@ async def test_an_unconfigured_setup_guides_instead_of_calling_the_model(
 ) -> None:
     """Anahtarsız kurulumda submit → model çağrısı YOK, sohbete yönlendirme
     düşüyor ve tur normal kapanıyor (gate turn_end bekliyor)."""
-    from neocp.desktop import Bridge
-    from neocp.events import EventLog
-    from neocp.session import Session
+    from dornick.desktop import Bridge
+    from dornick.events import EventLog
+    from dornick.session import Session
 
     _anahtarsiz(monkeypatch)
     hub = _Hub()
@@ -364,9 +364,9 @@ async def test_an_unconfigured_setup_guides_instead_of_calling_the_model(
 async def test_a_configured_setup_runs_the_model(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from neocp.desktop import Bridge
-    from neocp.events import EventLog
-    from neocp.session import Session
+    from dornick.desktop import Bridge
+    from dornick.events import EventLog
+    from dornick.session import Session
 
     _anahtarsiz(monkeypatch)
     monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-test")
@@ -409,7 +409,7 @@ def test_unconfigured_definition_covers_key_and_name(
 @pytest.fixture()
 def config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Config:
     _anahtarsiz(monkeypatch)
-    cfg = Config(workspace=tmp_path, state_dir=tmp_path / ".neocp")
+    cfg = Config(workspace=tmp_path, state_dir=tmp_path / ".dornick")
     cfg.ensure_dirs()
     return cfg
 

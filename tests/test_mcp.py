@@ -1,6 +1,6 @@
 """Hatırlama protokolünün MCP yüzeyi.
 
-Amaç baştan beri buydu: bu bellek yalnızca neocp'nin içinde değil, modelin
+Amaç baştan beri buydu: bu bellek yalnızca dornick'nin içinde değil, modelin
 çalıştığı her yerde kullanılabilsin. Protokol hataları sinsi — istemci
 "sunucu yanıt vermiyor" der ve sebebini söylemez — o yüzden çerçevenin
 kendisi de test ediliyor, yalnızca araçlar değil.
@@ -14,8 +14,8 @@ from pathlib import Path
 
 import pytest
 
-from neocp.recall.mcp import PROTOCOL, SUPPORTED, Server, serve, tool_specs
-from neocp.recall.store import RecallStore
+from dornick.recall.mcp import PROTOCOL, SUPPORTED, Server, serve, tool_specs
+from dornick.recall.store import RecallStore
 
 
 @pytest.fixture()

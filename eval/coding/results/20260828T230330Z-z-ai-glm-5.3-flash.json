@@ -229,7 +229,7 @@
             "alinan": 40.0,
             "kanit": [
               "+ fatura.php duruyor (10p) — fatura.php",
-              "+ php -l temiz (10p) — No syntax errors detected in C:\\Users\\user\\AppData\\Local\\Temp\\neocp-eval-k3-tamir-ppn6l09b\\atolye\\fatura.php",
+              "+ php -l temiz (10p) — No syntax errors detected in C:\\Users\\user\\AppData\\Local\\Temp\\dornick-eval-k3-tamir-ppn6l09b\\atolye\\fatura.php",
               "+ fonksiyon dışarıdan çağrılabiliyor (20p) — tamam"
             ],
             "sebep": "",
@@ -709,9 +709,9 @@
           "dogruladi_mi": true,
           "dogrulama_izi": [
             "shell: py -m pytest test_ara.py -v 2>&1; py -m pytest --version 2>&1",
-            "shell: py -m pytest \"$env:TEMP\\neocp-eval-z1-arama-g4_x93o3\\atolye\\test_ara.py\" -v 2>&1",
-            "shell: py -m pytest \"$env:TEMP\\neocp-eval-z1-arama-g4_x93o3\\atolye\\test_ara.py\" -v 2>&1",
-            "shell: $d=\"$env:TEMP\\neocp-eval-z1-arama-g4_x93o3\\atolye\"; (Get-Content \"$d\\test_ara.py\" -Raw) `\n"
+            "shell: py -m pytest \"$env:TEMP\\dornick-eval-z1-arama-g4_x93o3\\atolye\\test_ara.py\" -v 2>&1",
+            "shell: py -m pytest \"$env:TEMP\\dornick-eval-z1-arama-g4_x93o3\\atolye\\test_ara.py\" -v 2>&1",
+            "shell: $d=\"$env:TEMP\\dornick-eval-z1-arama-g4_x93o3\\atolye\"; (Get-Content \"$d\\test_ara.py\" -Raw) `\n"
           ],
           "calistirma_izi": [],
           "plan_yazdi_mi": false,

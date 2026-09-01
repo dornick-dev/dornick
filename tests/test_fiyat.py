@@ -18,8 +18,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from neocp import fiyat
-from neocp.config import OPENROUTER_URL, Config, ModelConfig
+from dornick import fiyat
+from dornick.config import OPENROUTER_URL, Config, ModelConfig
 
 pytestmark = []
 
@@ -154,8 +154,8 @@ def _rapor(prompt_total: int, output: int) -> dict:
 
 def _bridge(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     """Sahte ajanla köprü: model çağrısı yok, fiyat için ağ yok."""
-    from neocp import desktop as desktop_module
-    from neocp.desktop import Bridge
+    from dornick import desktop as desktop_module
+    from dornick.desktop import Bridge
 
     # Arka plan fiyat thread'i ağa çıkmasın; test etiketi kendisi verir.
     monkeypatch.setattr(desktop_module.fiyatlama, "etiket",
@@ -208,7 +208,7 @@ async def test_a_new_user_turn_resets_the_turn_total_not_the_session(
 
     bridge.agent.run = _kos
     monkeypatch.setattr(
-        "neocp.settings.yapilandirilmamis", lambda model: False)
+        "dornick.settings.yapilandirilmamis", lambda model: False)
 
     await bridge._isle("ilk iş", "")
     await bridge._isle("ikinci iş", "")
@@ -225,7 +225,7 @@ async def test_the_price_label_arrives_in_the_background(
 ) -> None:
     """Etiket bulunduğunda `fiyat` olayı yayınlanır ve sonraki usage
     olayları etiketi taşır; ağa oturumda EN FAZLA bir kez çıkılır."""
-    from neocp import desktop as desktop_module
+    from dornick import desktop as desktop_module
 
     bridge, hub = _bridge(tmp_path, monkeypatch)
     sayac = []

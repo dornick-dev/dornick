@@ -4,9 +4,9 @@
 Flow (every stage is safe on its own; an interrupted run continues the
 next night):
 
-  1. HARVEST — memories added since the last run are pulled from neo's
+  1. HARVEST — memories added since the last run are pulled from dornick's
      mind (recall.db, READ-ONLY; episodes excluded: those are transcripts).
-  2. LABEL — neo's own main model (config.json model + keys.json key)
+  2. LABEL — dornick's own main model (config.json model + keys.json key)
      produces 3 question styles + topic terms per memory. The "night
      teacher": brain by day, labeler by night.
   3. FINE-TUNE — once enough untrained personal pairs accumulate, training
@@ -15,15 +15,15 @@ next night):
   4. EXAM GATE — candidates race the deployed model in the SAME run:
      TR scale bench + EN probe + personal probe. A regressing candidate is
      DISCARDED; the deployed model stays.
-  5. DEPLOY — a passing candidate is written to .neocp/taban.npz; the
-     product prefers that file over the stock model (src/neocp/recall/taban.py).
+  5. DEPLOY — a passing candidate is written to .dornick/taban.npz; the
+     product prefers that file over the stock model (src/dornick/recall/taban.py).
 
 Why nightly and not hourly: an hour of new data is a handful of examples —
 weak signal, real forgetting risk, and fan noise. Accumulation threshold
 plus the overnight gap is the right balance.
 
-Called by the product (src/neocp/tanima.py) as:
-  personal_loop.py --neocp <product-root> [--aygit cpu|cuda]
+Called by the product (src/dornick/tanima.py) as:
+  personal_loop.py --dornick <product-root> [--aygit cpu|cuda]
 """
 
 from __future__ import annotations
@@ -37,12 +37,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-# Product root: .neocp state, src and eval are derived from it. The rig
+# Product root: .dornick state, src and eval are derived from it. The rig
 # normally lives inside the product tree (training/ next to src/); the
-# product passes its own root explicitly with `--neocp <path>`.
+# product passes its own root explicitly with `--dornick <path>`.
 PRODUCT = ROOT.parent
-if "--neocp" in sys.argv:
-    PRODUCT = Path(sys.argv[sys.argv.index("--neocp") + 1]).resolve()
+if "--dornick" in sys.argv:
+    PRODUCT = Path(sys.argv[sys.argv.index("--dornick") + 1]).resolve()
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "scripts"))
 try:
@@ -62,9 +62,9 @@ CHECKPOINTS = ROOT / "checkpoints"
 STATE = DATA / "personal_state.json"
 PERSONAL_CORPUS = DATA / "personal_corpus.jsonl"
 LOG = DATA / "personal_log.md"
-DB = PRODUCT / ".neocp" / "mind" / "recall.db"
-DEPLOYED = PRODUCT / ".neocp" / "taban.npz"       # the personal model goes here
-STOCK = PRODUCT / "src" / "neocp" / "assets" / "taban.npz"
+DB = PRODUCT / ".dornick" / "mind" / "recall.db"
+DEPLOYED = PRODUCT / ".dornick" / "taban.npz"       # the personal model goes here
+STOCK = PRODUCT / "src" / "dornick" / "assets" / "taban.npz"
 
 
 def _base_checkpoint() -> Path:
@@ -182,19 +182,19 @@ def _is_local(url: str) -> bool:
 def _cloud_consent() -> bool:
     """Has the user explicitly allowed labeling through a hosted model?
 
-    Off by default. Lives in `.neocp/tanima.json` (the Learn-me state
+    Off by default. Lives in `.dornick/tanima.json` (the Learn-me state
     file) as `learn_cloud_ok` — NOT in config.json, which the settings
     screen rebuilds from known fields and would silently drop the flag.
     """
     try:
-        d = json.loads((PRODUCT / ".neocp" / "tanima.json").read_text(encoding="utf-8"))
+        d = json.loads((PRODUCT / ".dornick" / "tanima.json").read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return False
     return bool(d.get("learn_cloud_ok"))
 
 
 def _product_teacher() -> tuple[str, str, str] | None:
-    """neo's SELECTED model: (model name, base_url, key).
+    """dornick's SELECTED model: (model name, base_url, key).
 
     Whatever model the product talks to, the night teacher is the same one:
     when the user switches models the loop follows automatically, and no
@@ -207,7 +207,7 @@ def _product_teacher() -> tuple[str, str, str] | None:
     default keeps the README promise that data never leaves the machine.
     """
     try:
-        cfg = json.loads((PRODUCT / ".neocp" / "config.json").read_text(encoding="utf-8"))
+        cfg = json.loads((PRODUCT / ".dornick" / "config.json").read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return None
     model = cfg.get("model") or {}
@@ -220,7 +220,7 @@ def _product_teacher() -> tuple[str, str, str] | None:
     key = ""
     if "openrouter" in url:
         try:
-            keys = json.loads((PRODUCT / ".neocp" / "keys.json").read_text(encoding="utf-8"))
+            keys = json.loads((PRODUCT / ".dornick" / "keys.json").read_text(encoding="utf-8"))
             key = str(keys.get("OPENROUTER_API_KEY") or "")
         except (OSError, ValueError):
             return None
@@ -252,7 +252,7 @@ def _ask_selected(name: str, url: str, key: str, prompt: str) -> str:
 
 
 def label(memories: list[dict]) -> list[dict]:
-    """Teacher = neo's selected model; falls back to the hosted teacher
+    """Teacher = dornick's selected model; falls back to the hosted teacher
     (teacher.py) if that fails.
 
     If the selected model returns empty/unparseable content or errors 3
@@ -442,8 +442,8 @@ def product_personal_score(expanders: dict, personal: list[dict]) -> dict[str, f
     import tempfile
 
     sys.path.insert(0, str(PRODUCT / "src"))
-    from neocp.loop import select_prime
-    from neocp.mind.store import Mind
+    from dornick.loop import select_prime
+    from dornick.mind.store import Mind
 
     samples = random.Random(7).sample(personal, min(60, len(personal)))
     result: dict[str, float] = {}

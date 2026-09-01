@@ -6,8 +6,8 @@ from pathlib import Path
 
 import pytest
 
-from neocp import plans, workflows
-from neocp.workflow_run import _next_node
+from dornick import plans, workflows
+from dornick.workflow_run import _next_node
 
 
 def test_plan_create_and_approve_flow(tmp_path: Path) -> None:

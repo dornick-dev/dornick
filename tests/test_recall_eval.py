@@ -17,8 +17,8 @@ from pathlib import Path
 
 import pytest
 
-from neocp.events import EventLog
-from neocp.mind import open_mind
+from dornick.events import EventLog
+from dornick.mind import open_mind
 
 ROOT = Path(__file__).resolve().parents[1]
 BASELINE = ROOT / "eval" / "context_memory" / "baseline.py"

@@ -9,8 +9,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from neocp import place, startup
-from neocp.config import Config
+from dornick import place, startup
+from dornick.config import Config
 
 
 # -- kaynaklar ---------------------------------------------------------
@@ -125,13 +125,13 @@ def test_autostart_reads_without_writing() -> None:
 
 
 def test_autostart_runs_a_command_that_exists() -> None:
-    """`python -m neocp` çalışmıyor (paket doğrudan çalıştırılamıyor);
+    """`python -m dornick` çalışmıyor (paket doğrudan çalıştırılamıyor);
     açılışa yazılan satırın gerçekten bir şey başlatması gerekiyor."""
     line = startup.command()
-    assert "neocp.cli" in line and "--app" in line
-    # Konsol penceresi açılmasın; Görev Yöneticisi damgalı neo.exe ister.
+    assert "dornick.cli" in line and "--app" in line
+    # Konsol penceresi açılmasın; Görev Yöneticisi damgalı dornick.exe ister.
     low = line.lower()
-    assert "neo.exe" in low or "pythonw" in low or "python" in low
+    assert "dornick.exe" in low or "pythonw" in low or "python" in low
 
 
 def test_autostart_writes_only_for_this_user() -> None:

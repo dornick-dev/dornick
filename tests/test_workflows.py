@@ -10,12 +10,12 @@ from pathlib import Path
 
 import pytest
 
-from neocp import workflows
-from neocp.config import Config
-from neocp.events import EventLog
-from neocp.session import Session
-from neocp.tools import ToolContext, ToolRegistry
-from neocp.tools import workflow as workflow_tool
+from dornick import workflows
+from dornick.config import Config
+from dornick.events import EventLog
+from dornick.session import Session
+from dornick.tools import ToolContext, ToolRegistry
+from dornick.tools import workflow as workflow_tool
 
 
 def _sample(**changes) -> dict:
@@ -191,7 +191,7 @@ async def test_progress_is_reported_when_a_node_STARTS(tmp_path: Path) -> None:
     hiçbir şey göstermiyordu: önceki düğüm yeşil, sonraki henüz yok — akış
     şeması tam izlenmek istenen anda ölü duruyordu.
     """
-    from neocp.workflow_run import execute_workflow
+    from dornick.workflow_run import execute_workflow
 
     wf = workflows.save(tmp_path, {
         "id": "canli", "title": "Canlı akış",
@@ -222,7 +222,7 @@ async def test_progress_is_reported_when_a_node_STARTS(tmp_path: Path) -> None:
 
 async def test_a_broken_progress_listener_never_kills_the_run(tmp_path: Path) -> None:
     """İzlemek koşmaktan önemli değil: dinleyici patlarsa akış sürmeli."""
-    from neocp.workflow_run import execute_workflow
+    from dornick.workflow_run import execute_workflow
 
     wf = workflows.save(tmp_path, {
         "id": "saglam", "title": "Sağlam",
@@ -271,7 +271,7 @@ def _bozuk_akis(tmp_path: Path, *, elle: bool = False):
 
 async def test_a_failing_step_is_repaired_and_retried(tmp_path: Path) -> None:
     """Onarım gerçekten çalışıyor: config düzeliyor ve adım yeniden koşuyor."""
-    from neocp.workflow_run import execute_workflow
+    from dornick.workflow_run import execute_workflow
 
     wf = _bozuk_akis(tmp_path)
     ajan = _OnaranAjan(tmp_path, '{"command": "echo duzeldi"}')
@@ -291,7 +291,7 @@ async def test_a_hand_edited_step_is_never_rewritten(tmp_path: Path) -> None:
 
     Bu bir düzeltme değil, sessizce geri alma olurdu.
     """
-    from neocp.workflow_run import execute_workflow
+    from dornick.workflow_run import execute_workflow
 
     wf = _bozuk_akis(tmp_path, elle=True)
     ajan = _OnaranAjan(tmp_path, '{"command": "echo duzeldi"}')
@@ -307,7 +307,7 @@ async def test_a_hand_edited_step_is_never_rewritten(tmp_path: Path) -> None:
 
 async def test_repair_is_attempted_once_per_step(tmp_path: Path) -> None:
     """Onarım da tutmazsa adım hata veriyor; ikinci kez denenmiyor."""
-    from neocp.workflow_run import execute_workflow
+    from dornick.workflow_run import execute_workflow
 
     wf = _bozuk_akis(tmp_path)
     ajan = _OnaranAjan(tmp_path, '{"command": "yine-olmayan-komut-xyz"}')
@@ -321,7 +321,7 @@ async def test_repair_is_attempted_once_per_step(tmp_path: Path) -> None:
 
 async def test_an_unusable_repair_answer_changes_nothing(tmp_path: Path) -> None:
     """Model JSON yerine laf ederse hiçbir şey değişmemeli — tahmin yok."""
-    from neocp.workflow_run import execute_workflow
+    from dornick.workflow_run import execute_workflow
 
     wf = _bozuk_akis(tmp_path)
     ajan = _OnaranAjan(tmp_path, "bilmiyorum, belki yolu kontrol et")

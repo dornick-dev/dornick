@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from neocp.schedule import MIN_INTERVAL_S, Schedule, Task, next_after, run_forever, validate
+from dornick.schedule import MIN_INTERVAL_S, Schedule, Task, next_after, run_forever, validate
 
 
 def task(**changes) -> Task:
@@ -292,11 +292,11 @@ async def test_ticker_waits_while_paused(book: Schedule) -> None:
 
 
 async def test_the_agent_can_set_up_an_automation(tmp_path: Path, book: Schedule) -> None:
-    from neocp.config import Config
-    from neocp.events import EventLog
-    from neocp.session import Session
-    from neocp.tools import ToolContext, ToolRegistry
-    from neocp.tools import jobs
+    from dornick.config import Config
+    from dornick.events import EventLog
+    from dornick.session import Session
+    from dornick.tools import ToolContext, ToolRegistry
+    from dornick.tools import jobs
 
     registry = ToolRegistry()
     jobs.register(registry)
@@ -333,11 +333,11 @@ async def test_the_agent_can_bind_a_workflow_to_a_schedule(
     YAZABİLEN hiçbir yol yoktu: ne araç, ne API. Sonuç, kimsenin
     kuramadığı bir özellik ve hiç girilmeyen bir dal.
     """
-    from neocp.config import Config
-    from neocp.events import EventLog
-    from neocp.session import Session
-    from neocp.tools import ToolContext, ToolRegistry
-    from neocp.tools import jobs
+    from dornick.config import Config
+    from dornick.events import EventLog
+    from dornick.session import Session
+    from dornick.tools import ToolContext, ToolRegistry
+    from dornick.tools import jobs
 
     registry = ToolRegistry()
     jobs.register(registry)
@@ -383,11 +383,11 @@ def test_an_automation_without_a_flow_is_refused() -> None:
 
 
 async def test_the_tool_says_so_when_there_is_no_scheduler(tmp_path: Path) -> None:
-    from neocp.config import Config
-    from neocp.events import EventLog
-    from neocp.session import Session
-    from neocp.tools import ToolContext, ToolRegistry
-    from neocp.tools import jobs
+    from dornick.config import Config
+    from dornick.events import EventLog
+    from dornick.session import Session
+    from dornick.tools import ToolContext, ToolRegistry
+    from dornick.tools import jobs
 
     registry = ToolRegistry()
     jobs.register(registry)

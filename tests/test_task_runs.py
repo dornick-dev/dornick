@@ -10,8 +10,8 @@ from pathlib import Path
 
 import pytest
 
-from neocp import task_runs
-from neocp.schedule import Schedule, Task
+from dornick import task_runs
+from dornick.schedule import Schedule, Task
 
 
 def test_start_and_get_run(tmp_path: Path) -> None:

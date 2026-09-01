@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from neocp import canvas
+from dornick import canvas
 
 
 def test_the_page_cannot_reach_the_network(tmp_path: Path) -> None:

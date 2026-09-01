@@ -15,10 +15,10 @@ from pathlib import Path
 
 import pytest
 
-from neocp.events import EventLog
-from neocp.mind import Mind, open_mind
-from neocp.web import MindServer, build_graph
-from neocp.web.server import Hub, _payload, _summarize
+from dornick.events import EventLog
+from dornick.mind import Mind, open_mind
+from dornick.web import MindServer, build_graph
+from dornick.web.server import Hub, _payload, _summarize
 
 
 @pytest.fixture()
@@ -100,7 +100,7 @@ def test_only_interesting_notes_are_streamed() -> None:
 
 def test_tool_result_turns_are_not_shown_as_user_messages() -> None:
     """Araç sonucu teknik olarak kullanıcı turudur; sohbette öyle görünmemeli."""
-    from neocp.events import Event, utcnow
+    from dornick.events import Event, utcnow
 
     event = Event(
         seq=0,
@@ -196,7 +196,7 @@ def test_server_serves_page_and_graph(tmp_path: Path, mind: Mind) -> None:
 
     try:
         page = fetch("")
-        assert "neo" in page
+        assert "dornick" in page
         # Sayfa varlıklara referans veriyorsa o varlıklar da servis edilmeli;
         # biri eksikse arayüz sessizce boş açılır.
         for asset in ("app.css", "app.js", "scene.js"):
@@ -221,7 +221,7 @@ def test_install_language_is_served_from_setup_json(tmp_path: Path, mind: Mind) 
     seçimini kaybettirmemeli. Dosya yoksa boş dönmeli — arayüz
     Türkçe'ye düşer.
     """
-    from neocp.config import Config
+    from dornick.config import Config
 
     config = Config.load(tmp_path)
     config.ensure_dirs()
@@ -279,7 +279,7 @@ def test_server_binds_loopback_only(tmp_path: Path, mind: Mind) -> None:
 
 
 def _note(kind: str, **meta: object):
-    from neocp.events import Event, utcnow
+    from dornick.events import Event, utcnow
 
     return Event(seq=0, ts=utcnow(), kind="meta", content=kind, meta=meta)
 
@@ -326,7 +326,7 @@ def test_a_raw_body_is_not_consumed_twice(tmp_path: Path, mind: Mind) -> None:
     """
     import http.client
 
-    from neocp.config import Config
+    from dornick.config import Config
 
     config = Config.load(tmp_path)
     config.ensure_dirs()
@@ -366,7 +366,7 @@ def test_turkish_error_messages_do_not_kill_the_connection(
     """
     import http.client
 
-    from neocp.config import Config
+    from dornick.config import Config
 
     config = Config.load(tmp_path)
     config.ensure_dirs()
@@ -400,7 +400,7 @@ def test_turkish_error_messages_do_not_kill_the_connection(
 def test_the_body_is_served_even_before_anything_is_open(tmp_path: Path, mind: Mind) -> None:
     """Sahne organları buradan okuyor. Uç nokta cevap vermezse ekranda
     hiçbir aygıt görünmüyor — ajan gövdesiz duruyor."""
-    from neocp.config import Config
+    from dornick.config import Config
 
     log = EventLog(tmp_path / "s.jsonl")
     config = Config.load(tmp_path)
@@ -447,8 +447,8 @@ def test_bridge_snapshot_surumu_tasir() -> None:
     """
     import asyncio
 
-    from neocp import ortam
-    from neocp.desktop import Bridge
+    from dornick import ortam
+    from dornick.desktop import Bridge
 
     loop = asyncio.new_event_loop()
     try:
@@ -463,7 +463,7 @@ def test_surum_denetimi_ucu_agsiz_calisir(
     tmp_path: Path, mind: Mind, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """POST /api/surum sunucu tarafında denetler; test ağa hiç çıkmaz."""
-    from neocp.web import server as server_module
+    from dornick.web import server as server_module
 
     monkeypatch.setattr(
         server_module.ortam, "guncelleme_denetle",
@@ -502,7 +502,7 @@ TINY_PNG = bytes.fromhex(
 
 def test_raw_serves_real_bytes_with_a_declared_type(tmp_path: Path, mind: Mind) -> None:
     """Görüntüleyicinin bir görseli GERÇEKTEN açabilmesi buna bağlı."""
-    from neocp.config import Config
+    from dornick.config import Config
 
     config = Config.load(tmp_path)
     config.ensure_dirs()
@@ -526,7 +526,7 @@ def test_raw_serves_real_bytes_with_a_declared_type(tmp_path: Path, mind: Mind) 
 def test_raw_refuses_to_leave_the_workspace(tmp_path: Path, mind: Mind) -> None:
     """Yolu istekten türetmek dizin dışına çıkma açığının klasik yolu:
     `..` ile yukarı çıkan bir istek dosyayı ALMAMALI."""
-    from neocp.config import Config
+    from dornick.config import Config
 
     workspace = tmp_path / "ws"
     workspace.mkdir()
@@ -554,7 +554,7 @@ def test_raw_never_serves_a_workspace_file_as_html(tmp_path: Path, mind: Mind) -
     """Ajanın yazdığı bir sayfayı ANA kökte html olarak servis etmek, o
     sayfaya programın DOM'unu ve `/api` uçlarını açardı. Bilinmeyen tür
     indirilir, yorumlanmaz."""
-    from neocp.config import Config
+    from dornick.config import Config
 
     config = Config.load(tmp_path)
     config.ensure_dirs()
@@ -575,7 +575,7 @@ def test_raw_supports_ranges_so_media_can_seek(tmp_path: Path, mind: Mind) -> No
     """Ses/video oynatıcıları ileri sarmak için menzil istiyor."""
     import http.client
 
-    from neocp.config import Config
+    from dornick.config import Config
 
     config = Config.load(tmp_path)
     config.ensure_dirs()
@@ -798,8 +798,8 @@ def test_the_settings_snapshot_carries_the_project_state(
 ) -> None:
     """Ayar sayfası projeyi çizebilmeli: seçili yol, çözülmüş kök, son
     projeler ve (varsa) sebep."""
-    from neocp import settings as settings_module
-    from neocp.config import Config
+    from dornick import settings as settings_module
+    from dornick.config import Config
 
     proje = tmp_path / "musteri"
     proje.mkdir()
@@ -839,7 +839,7 @@ def test_disari_ac_opens_only_local_pages(
     """
     import webbrowser
 
-    from neocp.config import Config
+    from dornick.config import Config
 
     acilan: list[str] = []
     monkeypatch.setattr(webbrowser, "open", lambda url: acilan.append(url) or True)
@@ -877,8 +877,8 @@ def test_artifact_indir_saves_to_downloads_with_full_path(
     """
     import pathlib
 
-    from neocp import artifacts
-    from neocp.config import Config
+    from dornick import artifacts
+    from dornick.config import Config
 
     ev = tmp_path / "ev"
     (ev / "Downloads").mkdir(parents=True)

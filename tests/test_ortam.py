@@ -12,7 +12,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from neocp import listen, ortam, voice, watch
+from dornick import listen, ortam, voice, watch
 
 
 def test_gelistirici_deposu_kurulu_sayilmaz(tmp_path: Path, monkeypatch) -> None:
@@ -97,7 +97,7 @@ def test_surum_sahte_kokten_okunur(tmp_path: Path, monkeypatch) -> None:
     """Kök nereye taşınırsa taşınsın (kurulu düzen dahil) oradaki
     pyproject okunur — yol varsayımı değil, dosyanın kendisi konuşur."""
     (tmp_path / "pyproject.toml").write_text(
-        '[project]\nname = "neocp"\nversion = "9.9.9"\n', encoding="utf-8")
+        '[project]\nname = "dornick"\nversion = "9.9.9"\n', encoding="utf-8")
     monkeypatch.setattr(ortam, "_kok", lambda: tmp_path)
     ortam.surum.cache_clear()
     try:

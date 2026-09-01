@@ -15,7 +15,7 @@
   "dogruladi_mi": true,
   "dogrulama_izi": [
    "shell: py -m pytest test_tckn.py -v",
-   "shell: py -m pytest \"C:\\Users\\user\\AppData\\Local\\Temp\\neocp-eval-k1-modul-21g777l9\\atolye\\test_tc"
+   "shell: py -m pytest \"C:\\Users\\user\\AppData\\Local\\Temp\\dornick-eval-k1-modul-21g777l9\\atolye\\test_tc"
   ],
   "calistirma_izi": [],
   "plan_yazdi_mi": false,

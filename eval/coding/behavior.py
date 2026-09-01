@@ -11,7 +11,7 @@ record in the session log. A metric with no evidence returns `None`
 ("could not be extracted"), never 0 — "did not verify" and "could not
 read it from the log" are different things.
 
-Log format (neocp.events.EventLog, JSONL):
+Log format (dornick.events.EventLog, JSONL):
   {"kind":"meta","content":"tool_start","meta":{"tool":"shell","input":{...}}}
   {"kind":"meta","content":"tool_end","meta":{"tool":"...","error":bool,"ms":int}}
   {"kind":"message","role":"assistant","content":[...],"meta":{"usage":{...}}}
@@ -228,8 +228,8 @@ def _cost(model_name: str, prompt_tokens: int, output_tokens: int,
     if not model_name or not prompt_tokens:
         return None
     try:
-        from neocp.config import ModelConfig, OPENROUTER_URL
-        from neocp import fiyat as price_module
+        from dornick.config import ModelConfig, OPENROUTER_URL
+        from dornick import fiyat as price_module
     except Exception:
         return None
     try:

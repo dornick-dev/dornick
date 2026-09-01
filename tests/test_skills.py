@@ -12,11 +12,11 @@ from pathlib import Path
 
 import pytest
 
-from neocp import skills
-from neocp.config import Config
-from neocp.events import EventLog
-from neocp.session import Session
-from neocp.tools import ToolContext, ToolRegistry, build_registry
+from dornick import skills
+from dornick.config import Config
+from dornick.events import EventLog
+from dornick.session import Session
+from dornick.tools import ToolContext, ToolRegistry, build_registry
 
 GOOD = '''NAME = "topla"
 DESCRIPTION = "Iki sayiyi toplar."

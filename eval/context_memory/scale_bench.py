@@ -8,7 +8,7 @@ The question has three layers:
      the Pareto front)
 
 The measured path is THE PRODUCT ITSELF: the `current` method calls
-`neocp.loop.select_prime`; the variants are a parametric copy of the same
+`dornick.loop.select_prime`; the variants are a parametric copy of the same
 logic, and the copy with default parameters is asserted equal to the
 product on every query (a silently drifted copy would mean the benchmark
 no longer measures the product — it blows up right there instead).
@@ -36,7 +36,7 @@ try:
 except Exception:
     pass
 
-from neocp.loop import (  # noqa: E402
+from dornick.loop import (  # noqa: E402
     RECALL_PRIME_FLOOR,
     RECALL_PRIME_HEADER,
     RECALL_PRIME_LIMIT,
@@ -46,7 +46,7 @@ from neocp.loop import (  # noqa: E402
     select_prime,
     worth_recalling,
 )
-from neocp.mind import open_mind  # noqa: E402
+from dornick.mind import open_mind  # noqa: E402
 
 HERE = Path(__file__).resolve().parent
 

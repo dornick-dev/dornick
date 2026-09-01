@@ -244,7 +244,7 @@
             "earned": 40.0,
             "evidence": [
               "+ fatura.php still there (10p) — fatura.php",
-              "+ php -l clean (10p) — No syntax errors detected in C:\\Users\\user\\AppData\\Local\\Temp\\neocp-eval-k3-repair-4sg9xot1\\atolye\\fatura.php",
+              "+ php -l clean (10p) — No syntax errors detected in C:\\Users\\user\\AppData\\Local\\Temp\\dornick-eval-k3-repair-4sg9xot1\\atolye\\fatura.php",
               "+ function callable from outside (20p) — ok"
             ],
             "reason": "",
@@ -701,7 +701,7 @@
             "earned": 40.0,
             "evidence": [
               "+ ara.py exists (5p) — ara.py",
-              "+ ekle runs (12p) — exit 0; 6 dosya dizine eklendi: C:\\Users\\user\\AppData\\Local\\Temp\\neocp-eval-z1-search-ig2halg1\\atolye\\notlar",
+              "+ ekle runs (12p) — exit 0; 6 dosya dizine eklendi: C:\\Users\\user\\AppData\\Local\\Temp\\dornick-eval-z1-search-ig2halg1\\atolye\\notlar",
               "+ SQLite file created (8p) — ara.index.db",
               "+ bul runs in a separate process (15p) — exit 0; pompa-katalog.txt:4 Yedek parca: rulman, salmastra, motor mili. pompa-katalog.txt:4 Yedek parca: rulman, salmastra, motor mili."
             ],
@@ -996,7 +996,7 @@
           "verified": true,
           "verify_trail": [
             "shell: py -m pytest -q",
-            "shell: cd C:\\Users\\user\\AppData\\Local\\Temp\\neocp-eval-z3-hidden-bug-ayv91spf\\atolye\\sepet; py -m "
+            "shell: cd C:\\Users\\user\\AppData\\Local\\Temp\\dornick-eval-z3-hidden-bug-ayv91spf\\atolye\\sepet; py -m "
           ],
           "run_trail": [],
           "wrote_plan": false,

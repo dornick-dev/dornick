@@ -1,5 +1,5 @@
 {
-  "_note": "Donmuş eval seti — bir kere kur, bir daha dokunma. Bu sürüm alan-gerçekçi ama SENTETİK: neocp recall'ının bu tür veride nasıl davrandığını ölçer. Gerçek kalibrasyon için kendi etiketli loglarınla değiştir/genişlet (blueprint hedefi 60 hafıza + 40 boş).",
+  "_note": "Donmuş eval seti — bir kere kur, bir daha dokunma. Bu sürüm alan-gerçekçi ama SENTETİK: dornick recall'ının bu tür veride nasıl davrandığını ölçer. Gerçek kalibrasyon için kendi etiketli loglarınla değiştir/genişlet (blueprint hedefi 60 hafıza + 40 boş).",
   "memories": [
     {"slug": "fatih", "kind": "user", "title": "kullanıcı", "content": "Fatih, SCADA sistemleri üzerine çalışan bir mühendis; Koru1000 izleme sistemini geliştiriyor.", "tags": ["fatih", "scada"]},
     {"slug": "pref-turkce", "kind": "preference", "title": "dil tercihi", "content": "Türkçe, kısa ve teknik cevap tercih ediyor; genel geçer özet yerine sayı ister.", "tags": ["dil"]},
@@ -12,7 +12,7 @@
     {"slug": "btc-fiyat", "kind": "fact", "title": "BTC fiyatı", "content": "BTC 3.715.633 TL civarında (24 Ağustos ölçümü).", "tags": ["btc", "fiyat", "kripto"]},
     {"slug": "postgres-yedek", "kind": "procedure", "title": "postgres yedeği", "content": "Postgres yedeği pg_dump -Fc ile alınıyor; gecelik 02:00, 7 gün saklama.", "tags": ["postgres", "yedek", "veritabani"]},
     {"slug": "lmstudio", "kind": "fact", "title": "yerel model", "content": "Yerel model LM Studio'da 1234 portunda qwen3.5 olarak çalışıyor.", "tags": ["lmstudio", "model", "yerel"]},
-    {"slug": "neocp-hedef", "kind": "fact", "title": "neocp amacı", "content": "neocp bir kod asistanı değil; bilgisayarı kullanabilen genel bir ajan.", "tags": ["neocp"]},
+    {"slug": "dornick-hedef", "kind": "fact", "title": "dornick amacı", "content": "dornick bir kod asistanı değil; bilgisayarı kullanabilen genel bir ajan.", "tags": ["dornick"]},
     {"slug": "izin-motoru", "kind": "lesson", "title": "izin motoru kararı", "content": "Kullanıcı yol hapsi eklemek istemedi; izin motoru yeterli sayıldı.", "tags": ["izin", "guvenlik"]},
     {"slug": "voice", "kind": "voice", "title": "konuşma biçimi", "content": "Bu kullanıcıyla teklifsiz, kısa ve doğrudan konuşuyorum.", "tags": ["uslup"]},
     {"slug": "mcp-plan", "kind": "fact", "title": "MCP planı", "content": "Hatırlama protokolünü bir MCP sunucusu olarak dışarı açma planı var.", "tags": ["mcp", "plan"]},

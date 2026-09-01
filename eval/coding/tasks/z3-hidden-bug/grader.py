@@ -93,7 +93,7 @@ def _hidden(folder: Path) -> dict | None:
 
 def _regression(root: Path) -> grading.Run | None:
     """Run the seed's PRISTINE regression suite in a copy of the workshop."""
-    with tempfile.TemporaryDirectory(prefix="neocp-z3-reg-") as tmp:
+    with tempfile.TemporaryDirectory(prefix="dornick-z3-reg-") as tmp:
         target = Path(tmp) / "workshop"
         try:
             shutil.copytree(root, target,

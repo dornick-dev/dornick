@@ -13,17 +13,17 @@ from types import SimpleNamespace
 
 import pytest
 
-from neocp.backends import build_client
-from neocp.backends.openai_backend import OpenAIBackend
-from neocp.backends.translate import (
+from dornick.backends import build_client
+from dornick.backends.openai_backend import OpenAIBackend
+from dornick.backends.translate import (
     map_finish_reason,
     parse_arguments,
     to_anthropic_blocks,
     to_openai_messages,
     to_openai_tools,
 )
-from neocp.config import ModelConfig
-from neocp.context import Prepared
+from dornick.config import ModelConfig
+from dornick.context import Prepared
 
 SYSTEM = [{"type": "text", "text": "çekirdek"}, {"type": "text", "text": "ruh"}]
 
@@ -328,8 +328,8 @@ async def test_usage_is_carried_over() -> None:
 
 async def test_usage_maps_cached_tokens_from_prompt_details() -> None:
     """OpenRouter/OpenAI prompt_tokens_details.cached_tokens → cache_read."""
-    from neocp.backends.openai_backend import _usage
-    from neocp.context import cache_report
+    from dornick.backends.openai_backend import _usage
+    from dornick.context import cache_report
 
     raw = SimpleNamespace(
         prompt_tokens=5000,
@@ -364,7 +364,7 @@ async def test_reasoning_only_turn_is_marked_incomplete_not_answered() -> None:
     Akıl yürütme geçmişe girmeli (model kendi planını görsün) ama cevap
     sayılmamalı; döngü `empty_turn` görünce turu sürdürüyor.
     """
-    from neocp.backends import Callbacks
+    from dornick.backends import Callbacks
 
     shown: list[str] = []
     be, _ = backend([chunk(reasoning="Şimdi şunu yapmalıyım:", finish="stop")])
@@ -438,7 +438,7 @@ def test_inline_tool_call_in_text_is_executed_not_shown() -> None:
     Ayristirilmazsa cagri hic calismaz ve ham XML kullaniciya cevap gibi
     gorunur — gercek bir kosuda tam olarak bu oldu.
     """
-    from neocp.backends.translate import extract_inline_calls
+    from dornick.backends.translate import extract_inline_calls
 
     raw = (
         "Tamam, kaydediyorum.\n"
@@ -458,7 +458,7 @@ def test_inline_tool_call_in_text_is_executed_not_shown() -> None:
 
 
 def test_inline_json_form_is_parsed() -> None:
-    from neocp.backends.translate import extract_inline_calls
+    from dornick.backends.translate import extract_inline_calls
 
     text, calls = extract_inline_calls(
         'Bak: <tool_call>{"name": "shell", "arguments": {"command": "ls"}}</tool_call>'
@@ -468,7 +468,7 @@ def test_inline_json_form_is_parsed() -> None:
 
 
 def test_plain_text_is_left_alone() -> None:
-    from neocp.backends.translate import extract_inline_calls
+    from dornick.backends.translate import extract_inline_calls
 
     assert extract_inline_calls("sadece bir cevap") == ("sadece bir cevap", [])
 
@@ -498,8 +498,8 @@ async def test_backend_turns_inline_calls_into_tool_use() -> None:
 
 
 def _backend(**fields):
-    from neocp.backends.openai_backend import OpenAIBackend
-    from neocp.config import ModelConfig
+    from dornick.backends.openai_backend import OpenAIBackend
+    from dornick.config import ModelConfig
 
     return OpenAIBackend(ModelConfig(**{"name": "qwen", **fields}), client=object())
 
@@ -531,7 +531,7 @@ def test_efforts_the_server_does_not_know_are_folded_down() -> None:
 def test_a_server_that_rejects_the_field_is_recognised() -> None:
     """Alanı tanımayan sunucu 400 dönüyor; bir kez alan atılıp yeniden
     deneniyor ve bir daha gönderilmiyor."""
-    from neocp.backends.openai_backend import _rejects_reasoning
+    from dornick.backends.openai_backend import _rejects_reasoning
 
     assert _rejects_reasoning(Exception("400: unknown field 'reasoning'"))
     assert _rejects_reasoning(Exception("Unrecognized request argument: extra_body"))
@@ -652,7 +652,7 @@ class _SilentStream:
 
 
 async def test_cancellable_fires_while_waiting_for_the_first_chunk() -> None:
-    from neocp.backends.base import Interrupted, cancellable
+    from dornick.backends.base import Interrupted, cancellable
 
     cancel = asyncio.Event()
 
@@ -669,7 +669,7 @@ async def test_cancellable_fires_while_waiting_for_the_first_chunk() -> None:
 
 
 async def test_cancellable_passes_chunks_through_untouched() -> None:
-    from neocp.backends.base import cancellable
+    from dornick.backends.base import cancellable
 
     cancel = asyncio.Event()
     got = []
@@ -714,7 +714,7 @@ async def test_interrupt_before_first_token_returns_interrupted() -> None:
 def test_tur_ortasi_sistem_notu_user_notuna_cevrilir():
     """Anthropic ailesi system'i yalnız dizi başında kabul ediyor; tur ortası
     notlar user-notu olarak gitmeli — yoksa Claude modelleri 400 döndürüyor."""
-    from neocp.backends.translate import to_openai_messages
+    from dornick.backends.translate import to_openai_messages
 
     mesajlar = [
         {"role": "user", "content": [{"type": "text", "text": "merhaba"}]},
@@ -733,8 +733,8 @@ def test_tur_ortasi_sistem_notu_user_notuna_cevrilir():
 # yaramıyor ve saatlerdir süren iş yarıda kalıyor. Yedek model tanımlıysa
 # tur ölmek yerine orada sürüyor.
 
-from neocp.backends.base import Callbacks, TurnResult      # noqa: E402
-from neocp.backends.fallback import FallbackBackend, is_permanent   # noqa: E402
+from dornick.backends.base import Callbacks, TurnResult      # noqa: E402
+from dornick.backends.fallback import FallbackBackend, is_permanent   # noqa: E402
 
 
 class _SahteBackend:
@@ -887,8 +887,8 @@ def test_closing_releases_both_clients() -> None:
 def test_the_fallback_field_survives_a_settings_round_trip(tmp_path) -> None:
     """Alan config.json'a yazılıp geri okunmazsa ayar sayfası çalışıyor
     görünür ama hiçbir şey değişmez."""
-    from neocp import settings
-    from neocp.config import Config
+    from dornick import settings
+    from dornick.config import Config
 
     config = Config.load(tmp_path)
     config.ensure_dirs()
@@ -900,7 +900,7 @@ def test_the_fallback_field_survives_a_settings_round_trip(tmp_path) -> None:
 # -- sağlayıcıya özel alanların gidiş-dönüşü ----------------------------
 #
 # Gemini düşünen modellerde her araç çağrısına bir `thought_signature`
-# iliştiriyor ve SONRAKİ turda onu geri göndermeni ŞART koşuyor. neo bir tur
+# iliştiriyor ve SONRAKİ turda onu geri göndermeni ŞART koşuyor. dornick bir tur
 # içinde aracı çağırıp cevabı geri yolladığı için bu tam da bizim yolumuza
 # düşüyordu ve alan çeviride kayboluyordu:
 #
@@ -911,7 +911,7 @@ def test_the_fallback_field_survives_a_settings_round_trip(tmp_path) -> None:
 
 
 def test_provider_fields_survive_the_round_trip() -> None:
-    from neocp.backends.translate import to_anthropic_blocks, to_openai_messages
+    from dornick.backends.translate import to_anthropic_blocks, to_openai_messages
 
     bloklar = to_anthropic_blocks("", [{
         "id": "call_1", "name": "mind_memory", "arguments": '{"kind": "fact"}',
@@ -931,7 +931,7 @@ def test_provider_fields_survive_the_round_trip() -> None:
 
 def test_a_call_without_provider_fields_is_unchanged() -> None:
     """Alanı olmayan sağlayıcıda çıktı bir harf bile değişmemeli."""
-    from neocp.backends.translate import to_anthropic_blocks, to_openai_messages
+    from dornick.backends.translate import to_anthropic_blocks, to_openai_messages
 
     bloklar = to_anthropic_blocks("", [
         {"id": "c1", "name": "shell", "arguments": '{"command": "ls"}'}])
@@ -943,7 +943,7 @@ def test_a_call_without_provider_fields_is_unchanged() -> None:
 def test_provider_fields_never_reach_anthropic() -> None:
     """Anthropic tanımadığı alanı reddediyor; aynı konuşma iki sağlayıcı
     arasında taşınabildiği için (yedek model, model değiştirme) ayıklama şart."""
-    from neocp.context import saglayici_alanlarini_at
+    from dornick.context import saglayici_alanlarini_at
 
     mesajlar = [
         {"role": "user", "content": [{"type": "text", "text": "selam"}]},
@@ -963,7 +963,7 @@ def test_provider_fields_never_reach_anthropic() -> None:
 
 def test_stripping_does_not_copy_when_there_is_nothing_to_strip() -> None:
     """Alan yoksa liste olduğu gibi dönüyor — her istekte derin kopya değil."""
-    from neocp.context import saglayici_alanlarini_at
+    from dornick.context import saglayici_alanlarini_at
 
     mesajlar = [{"role": "user", "content": [{"type": "text", "text": "selam"}]}]
     assert saglayici_alanlarini_at(mesajlar) is mesajlar
@@ -971,7 +971,7 @@ def test_stripping_does_not_copy_when_there_is_nothing_to_strip() -> None:
 
 def test_every_array_in_a_tool_schema_declares_items() -> None:
     """Gemini `items`siz bir array görünce ARACIN değil, araç listesinin
-    TAMAMINI reddediyor — yani tek bir aracın eksiği neo'yu o modelde
+    TAMAMINI reddediyor — yani tek bir aracın eksiği dornick'yu o modelde
     tümüyle çalışmaz yapıyor. Canlıda birebir bu oldu:
 
         function_declarations[23].parameters.properties[steps].items: missing
@@ -980,8 +980,8 @@ def test_every_array_in_a_tool_schema_declares_items() -> None:
     import pathlib
     import tempfile
 
-    from neocp.config import Config
-    from neocp.tools import build_registry
+    from dornick.config import Config
+    from dornick.tools import build_registry
 
     cfg = Config.load(pathlib.Path(tempfile.mkdtemp()))
     cfg.ensure_dirs()
@@ -1006,7 +1006,7 @@ def test_every_array_in_a_tool_schema_declares_items() -> None:
 def test_the_converter_repairs_a_schema_that_slipped_through() -> None:
     """Şemaları elle düzeltmek şart ama yetmez: bir sonraki araç aynı
     hatayla yazıldığında da sağlayıcıya bozuk şema gitmemeli."""
-    from neocp.backends.translate import to_openai_tools
+    from dornick.backends.translate import to_openai_tools
 
     (arac,) = to_openai_tools([{
         "name": "deneme",
@@ -1035,7 +1035,7 @@ def test_the_converter_repairs_a_schema_that_slipped_through() -> None:
 
 
 def test_cache_markers_land_on_system_and_last_two() -> None:
-    from neocp.backends.openai_backend import _cache_isaretle
+    from dornick.backends.openai_backend import _cache_isaretle
 
     messages = [
         {"role": "system", "content": "sistem istemi"},
@@ -1065,7 +1065,7 @@ def test_cache_markers_land_on_system_and_last_two() -> None:
 
 
 def test_cache_markers_can_be_stripped_after_rejection() -> None:
-    from neocp.backends.openai_backend import _cache_isaretle, _cache_sok
+    from dornick.backends.openai_backend import _cache_isaretle, _cache_sok
 
     messages = [
         {"role": "system", "content": "s"},
@@ -1084,7 +1084,7 @@ def test_cache_markers_only_for_openrouter_base() -> None:
     import re
     from pathlib import Path
 
-    kaynak = (Path(__file__).parent.parent / "src/neocp/backends/openai_backend.py").read_text(encoding="utf-8")
+    kaynak = (Path(__file__).parent.parent / "src/dornick/backends/openai_backend.py").read_text(encoding="utf-8")
     assert re.search(r'_cache_isaretli = "openrouter" in', kaynak)
     assert "_cache_isaretle(messages)" in kaynak
 
@@ -1096,7 +1096,7 @@ def test_cache_markers_only_for_openrouter_base() -> None:
 
 
 async def test_a_silent_stream_raises_stalled_within_the_window() -> None:
-    from neocp.backends.base import Stalled, cancellable
+    from dornick.backends.base import Stalled, cancellable
     cancel = asyncio.Event()
     with pytest.raises(Stalled):
         async for _ in cancellable(_SilentStream(), cancel, stall_s=0.05):
@@ -1104,7 +1104,7 @@ async def test_a_silent_stream_raises_stalled_within_the_window() -> None:
 
 
 async def test_healthy_chunks_flow_despite_the_window() -> None:
-    from neocp.backends.base import cancellable
+    from dornick.backends.base import cancellable
     cancel = asyncio.Event()
     got = []
     async for c in cancellable(FakeStream([chunk(content='a'),
@@ -1116,9 +1116,9 @@ async def test_healthy_chunks_flow_despite_the_window() -> None:
 
 async def test_stalled_call_is_retried_once_then_reported() -> None:
     # Ilk cagri asili, ikincisi sagliklu: tur sonucu normal cikmali.
-    from neocp.backends import openai_backend as ob
+    from dornick.backends import openai_backend as ob
     from types import SimpleNamespace
-    from neocp.config import ModelConfig
+    from dornick.config import ModelConfig
     eski = ob.CAGRI_SESSIZLIK_SN
     ob.CAGRI_SESSIZLIK_SN = 0.05
     try:
@@ -1138,7 +1138,7 @@ async def test_stalled_call_is_retried_once_then_reported() -> None:
 
 
 async def test_local_endpoints_have_no_silence_window() -> None:
-    from neocp.backends.openai_backend import _sessizlik_penceresi
+    from dornick.backends.openai_backend import _sessizlik_penceresi
     assert _sessizlik_penceresi('http://localhost:1234/v1') is None
     assert _sessizlik_penceresi('http://192.168.1.7:8080/v1') is None
     assert _sessizlik_penceresi('https://openrouter.ai/api/v1') == 120.0

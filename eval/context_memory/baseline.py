@@ -1,11 +1,11 @@
-"""Phase 0 — neocp recall's baseline on the frozen eval set.
+"""Phase 0 — dornick recall's baseline on the frozen eval set.
 
 The blueprint's order: before adding any learning layer, take the current
 system's number. Every later layer (entity hints, query rewriting, a
 learned gate) is compared against this number. Building without measuring
 is building blind.
 
-What is measured is neocp's retrieval engine as it is today:
+What is measured is dornick's retrieval engine as it is today:
 `mind.recall` — FTS5 literal + 256-bit SimHash signature + spreading
 activation. In production `loop.py` additionally applies
 `_worth_recalling` (skips greetings) and the direct-match filter; the
@@ -31,8 +31,8 @@ try:
 except Exception:
     pass
 
-from neocp.mind import open_mind  # noqa: E402
-from neocp.recall import vector  # noqa: E402
+from dornick.mind import open_mind  # noqa: E402
+from dornick.recall import vector  # noqa: E402
 
 HERE = Path(__file__).resolve().parent
 K = 3  # Recall@K
@@ -174,7 +174,7 @@ def _report(mem_rows, non_rows, latencies) -> dict:
 
 def _print(m: dict) -> None:
     p = lambda label, val: print(f"  {label:<28} {val}")
-    print("\n=== neocp recall — Phase 0 baseline ===")
+    print("\n=== dornick recall — Phase 0 baseline ===")
     print(f"  {m['n_memory']} memory queries · {m['n_none']} empty-return queries\n")
 
     print("Retrieval (ungated, bare engine):")

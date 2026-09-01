@@ -8,7 +8,7 @@ Mühürlü holdout'ta tek atış ölçüldü: recall@3 0.840 → 0.920.
 
 from __future__ import annotations
 
-from neocp.recall import bridge
+from dornick.recall import bridge
 
 
 def test_a_word_calls_its_synonyms() -> None:
@@ -49,8 +49,8 @@ def test_expand_does_not_repeat_terms_already_present() -> None:
 def test_the_bridge_reaches_a_record_with_no_shared_words(tmp_path) -> None:
     """Asıl iddia: sorgu ile kayıt hiç ortak kelime taşımasa da köprü
     kuruluyor — ve önyüklemenin zemin kapısı köprüyü tanıyor."""
-    from neocp.loop import select_prime
-    from neocp.mind import open_mind
+    from dornick.loop import select_prime
+    from dornick.mind import open_mind
 
     mind = open_mind(tmp_path / "mind", tmp_path / "sessions", "test")
     mind.remember("BTC portföyün yüzde onunu geçmesin", kind="lesson",

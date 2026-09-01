@@ -1,10 +1,10 @@
 # Coding benchmark
 
 The question is not *how smart is the model* — it is **does a model
-running inside neo deliver working software?**
+running inside dornick deliver working software?**
 
 Fully automatic: every task runs in its own temp workspace, with an
-**empty mind**, on its own isolated neo instance. When the agent says it
+**empty mind**, on its own isolated dornick instance. When the agent says it
 is done, the grader walks into the workspace and **executes** the
 delivery — runs the CLI, probes the HTTP endpoints, checks the auth
 redirects, runs the test suites. Files merely existing scores nothing.
@@ -24,7 +24,7 @@ re-run only the selected tasks).
 
 | Path | Purpose |
 |---|---|
-| `runner.py` | runner: builds the isolated workspace, boots neo, asks through the gate, grades |
+| `runner.py` | runner: builds the isolated workspace, boots dornick, asks through the gate, grades |
 | `grading.py` | scoring axes (works / scope / health / tests); executes the delivery |
 | `behavior.py` | behaviour columns from the session log: model calls, tool errors, prompt & cache tokens, cost |
 | `tasks/<task>/` | one folder per task: `task.md` (the brief, exactly what the agent sees) + `grader.py` + optional `seed/` files |

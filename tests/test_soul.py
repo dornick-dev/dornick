@@ -11,14 +11,14 @@ from pathlib import Path
 
 import pytest
 
-from neocp.config import Config
-from neocp.context import ContextPolicy
-from neocp.events import EventLog
-from neocp.loop import Agent, AgentIO
-from neocp.mind import Mind, open_mind
-from neocp.prompt import build as build_prompt
-from neocp.session import Session
-from neocp.tools import build_registry
+from dornick.config import Config
+from dornick.context import ContextPolicy
+from dornick.events import EventLog
+from dornick.loop import Agent, AgentIO
+from dornick.mind import Mind, open_mind
+from dornick.prompt import build as build_prompt
+from dornick.session import Session
+from dornick.tools import build_registry
 
 from .test_loop import FakeClient, text_turn
 
@@ -64,7 +64,7 @@ def test_the_prompt_carries_the_senses(tmp_path: Path) -> None:
 
 def test_the_prompt_names_saved_cameras(tmp_path: Path) -> None:
     """Ajan kayıtlı kamera adını araç çağırmadan bilmeli."""
-    from neocp import watch
+    from dornick import watch
 
     config = Config.load(tmp_path)
     config.ensure_dirs()
@@ -157,7 +157,7 @@ def test_soul_reports_shared_history(tmp_path: Path) -> None:
 
 
 def test_persona_file_is_folded_into_the_soul(tmp_path: Path) -> None:
-    state = tmp_path / ".neocp"
+    state = tmp_path / ".dornick"
     state.mkdir(parents=True)
     (state / "persona.md").write_text("Kısa ve teknik konuş.", encoding="utf-8")
 
@@ -253,7 +253,7 @@ async def test_soul_stays_byte_identical_within_a_session(tmp_path: Path, mind: 
 
     # Oturum-başlığı çağrısının kendi kısa sistemi araya girer: yalnız
     # ANA istemler kıyaslanır — bayt sözleşmesi onlar için.
-    ana = [s for s in client.seen_system if s and "neo" in str(s[0].get("text", ""))[:40]]
+    ana = [s for s in client.seen_system if s and "dornick" in str(s[0].get("text", ""))[:40]]
     assert len(ana) >= 2
     assert ana[0] == ana[1]
     # Yeni hatıra kaybolmadı; sadece bir sonraki açılışta ruha girecek.

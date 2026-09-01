@@ -1,16 +1,21 @@
-# neo — a local-first personal AI agent with a living memory
+# dornick — a local-first personal AI agent with a living memory
 
 **Open-source, self-hosted AI assistant for Windows that remembers you,
 uses your computer, and builds its own automations.**
 
-[![Latest release](https://img.shields.io/github/v/release/fatihkutuk/neo?label=release&color=2ea043)](../../releases/latest)
+[![Latest release](https://img.shields.io/github/v/release/fatihkutuk/dornick?label=release&color=2ea043)](../../releases/latest)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Windows%2010%2F11-0078d4)](../../releases/latest)
 [![Tests](https://img.shields.io/badge/tests-1678%20passing-2ea043)](tests/)
 
 [Türkçe README](README.tr.md) · [Releases](../../releases) · MIT licensed
 
-neo is not a coding assistant. It is a personal AI agent that runs on *your*
+> Formerly **neo** — renamed to Dornick in v1.4.0 (after Gaal Dornick,
+> the mathematician whose eyes open Asimov's *Foundation*). Existing
+> installs keep their data: a legacy `.neocp` state directory is adopted
+> automatically on first launch.
+
+dornick is not a coding assistant. It is a personal AI agent that runs on *your*
 machine, uses the computer the way you do — screen, mouse, keyboard, browser,
 files — and keeps its memory, goals and history as first-class, queryable
 structures instead of an appended notes file. What it learns about you is
@@ -20,7 +25,7 @@ It works with **any model**: Anthropic's API, OpenRouter, or a local server —
 LM Studio, Ollama, vLLM, llama.cpp. Your conversations and memories never
 leave the machine unless you point it at a hosted model.
 
-![neo's home screen — English UI, light theme: conversation sidebar, task
+![dornick's home screen — English UI, light theme: conversation sidebar, task
 list, and the memory brain on the right](docs/screenshots/home-memory-web.png)
 
 More screenshots — light/dark shells, viewer tabs, the connectors
@@ -29,11 +34,11 @@ directory, a live session with a real model: [the gallery](docs/gallery/README.m
 ## Why it's different
 
 Most assistants forget you between sessions, or paste a notes file into the
-prompt and call it memory. neo keeps an actual associative network, ships a
+prompt and call it memory. dornick keeps an actual associative network, ships a
 small model of its own that learns *your* vocabulary overnight on your CPU,
 and turns repeated work into automations you can watch run step by step.
 
-| | most assistants | neo |
+| | most assistants | dornick |
 |---|---|---|
 | Memory | a text file in the prompt | associative graph; recall in ~5 ms at 50k records |
 | Learning | none — the model is fixed | nightly on-device fine-tune, gated by an exam |
@@ -52,8 +57,8 @@ and turns repeated work into automations you can watch run step by step.
   *base rewriter*) expands your question with synonyms, abbreviations and
   pronoun resolutions before the memory search. It runs in pure numpy on
   CPU, in milliseconds, fully offline. It ships with the repo
-  (`src/neocp/assets/taban.npz`, ~20 MB).
-* **"Learn me" night school.** With the switch on, neo quietly fine-tunes
+  (`src/dornick/assets/taban.npz`, ~20 MB).
+* **"Learn me" night school.** With the switch on, dornick quietly fine-tunes
   its base rewriter on *your* memories at night, on your machine, at low
   priority. Every candidate model must pass an exam gate — beat the current
   model on the benchmark, keep silence on trap questions, stay fast — or it
@@ -68,19 +73,19 @@ and turns repeated work into automations you can watch run step by step.
   steps, not a prompt you retype. Ask the agent and it builds the flow; you
   can open any step and edit it by hand. Steps light up as they run, so you
   see where it is, and the output stays on the same screen. If a step breaks,
-  neo repairs it once and retries — but it never rewrites a step you edited
+  dornick repairs it once and retries — but it never rewrites a step you edited
   yourself, and it always says what it changed.
 * **Computer use.** Screen capture, mouse/keyboard control, window
   management, and a real browser driven over the DevTools protocol
-  (`neo chrome`) — sessions and logins persist in its own profile, forms get
-  filled, and neo reads the console and network log to tell "the page opened"
+  (`dornick chrome`) — sessions and logins persist in its own profile, forms get
+  filled, and dornick reads the console and network log to tell "the page opened"
   apart from "the page works".
-* **Work in your own repo.** Point neo at a project folder and it works
+* **Work in your own repo.** Point dornick at a project folder and it works
   *there* — not in a sandbox corner. Every file it writes is compiled or
   linted on the spot (`compile()`, `php -l`, `node --check`, `tsc`, ruff), and
   the `kos` tool finds the project's real test command from evidence and runs
   it. It never invents a test command it cannot justify.
-* **Your rules, enforced.** `.neocp/kancalar.json` lets you run your own shell
+* **Your rules, enforced.** `.dornick/kancalar.json` lets you run your own shell
   command before or after any tool; a non-zero exit **vetoes** the tool.
   Deliberately outside the permission prompt — your own rule shouldn't ask
   your permission — and the hook file is closed to the model: the write tools
@@ -89,11 +94,11 @@ and turns repeated work into automations you can watch run step by step.
   the model should know the rules it works under. Honest boundary: this stops
   a model that decides a hook is in its way, not one deliberately hiding the
   filename — against that, the fence is the permission engine.
-* **External gate (API).** Other agents and tools can talk to neo
+* **External gate (API).** Other agents and tools can talk to dornick
   programmatically: `POST /api/gate` on `127.0.0.1` with
   `{"text": "..."}` returns the full answer. Off by default.
 * **MCP connectors and skills.** Connect Model Context Protocol servers
-  from the settings page; neo also writes and keeps its own skills
+  from the settings page; dornick also writes and keeps its own skills
   (small scripts it learns to reuse).
 * **Model-agnostic.** Anthropic API or any OpenAI-compatible server —
   LM Studio, Ollama, vLLM, llama.cpp, OpenRouter.
@@ -104,8 +109,8 @@ and turns repeated work into automations you can watch run step by step.
 
 ### From the installer (Windows)
 
-Download `neo-setup-<version>.exe` from
-[Releases](../../releases), run it, and launch **neo** from the Start menu.
+Download `dornick-setup-<version>.exe` from
+[Releases](../../releases), run it, and launch **dornick** from the Start menu.
 The setup page in the app lets you pick a model (local server or API key).
 Optional installer components: know-me training, listening (microphone),
 camera watching.
@@ -128,40 +133,40 @@ installer is tested against all of them:
 
 A backup zip is taken before anything is removed; if the backup fails,
 nothing is deleted. The last five backups are kept. Uninstalling removes the
-program and leaves your `.neocp` data in place.
+program and leaves your `.dornick` data in place.
 
 ### From source
 
-> **Not on PyPI** — `pip install neocp` will not find this project.
+> **Not on PyPI** — `pip install dornick` will not find this project.
 > Install from a clone (below) or use the Windows installer above.
 >
-> Naming: the product is **neo**; its Python package, CLI and state
-> directory are **`neocp`** (neo core platform) — so the command is
-> `neocp` and your data lives in `.neocp/`. This is deliberate, not a
+> Naming: the product is **dornick**; its Python package, CLI and state
+> directory are **`dornick`** (dornick core platform) — so the command is
+> `dornick` and your data lives in `.dornick/`. This is deliberate, not a
 > mismatch.
 
 ```bash
-git clone https://github.com/fatihkutuk/neo
-cd neo
+git clone https://github.com/fatihkutuk/dornick
+cd dornick
 pip install -e ".[app,local]"
-neocp setup     # probes LM Studio / Ollama / vLLM / API keys
-neocp --app     # desktop window (WebView2)
+dornick setup     # probes LM Studio / Ollama / vLLM / API keys
+dornick --app     # desktop window (WebView2)
 ```
 
 | command | what it does |
 |---|---|
-| `neocp --app` | desktop window |
-| `neocp` | terminal REPL |
-| `neocp --web` | browser UI at `127.0.0.1:8765` |
-| `neocp --resume` | continue the last session |
-| `neocp --mode plan` | read-only mode |
+| `dornick --app` | desktop window |
+| `dornick` | terminal REPL |
+| `dornick --web` | browser UI at `127.0.0.1:8765` |
+| `dornick --resume` | continue the last session |
+| `dornick --mode plan` | read-only mode |
 
 On first launch the mind is empty. It fills itself as you talk; by the
 second session it starts remembering you.
 
-## Driving neo from other agents
+## Driving dornick from other agents
 
-neo exposes a single local endpoint — the gate — that lets any other
+dornick exposes a single local endpoint — the gate — that lets any other
 harness (Claude Code, OpenCode, a script, CI) hand it a task and collect
 the full result: answer, tools used, files changed, session log. It is how
 the benchmark rig drives isolated instances. One curl to enable, one curl
@@ -217,7 +222,7 @@ explicit opt-in (see "Learn me" above).
 
 ### Settings
 
-![neo settings, showing the model, voice, permissions and machine tabs](docs/screenshots/settings.png)
+![dornick settings, showing the model, voice, permissions and machine tabs](docs/screenshots/settings.png)
 
 ## Training rig
 
@@ -258,13 +263,13 @@ Three harnesses took the same nine briefs:
 
 | Harness | Model it ran | Why it's here |
 |---|---|---|
-| **neo** (this repo) | `z-ai/glm-5.3-flash` (~free) | the subject |
+| **dornick** (this repo) | `z-ai/glm-5.3-flash` (~free) | the subject |
 | **OpenCode** 1.2.27 | `z-ai/glm-5.3-flash` (same model) | same-model competitor |
 | **Claude Code** | Anthropic's own frontier model | reference line (cannot run on OpenRouter) |
 
 **Result — total out of 900:**
 
-| | Claude Code | **neo** | OpenCode |
+| | Claude Code | **dornick** | OpenCode |
 |---|---|---|---|
 | Total score | 897.3 | **896.7** | 894.9 |
 | Wall time | 316 s | ~690 s | 1428 s |
@@ -274,11 +279,11 @@ What this means, plainly:
 
 * **Quality: a three-way tie.** 2.4 points out of 900 is smaller than the
   run-to-run variance of a single hard task. On these tasks, a ~free flash
-  model inside neo's harness delivers the same quality as the frontier
+  model inside dornick's harness delivers the same quality as the frontier
   reference.
-* **neo beats the same-model competitor** — and did so on OpenCode's best
+* **dornick beats the same-model competitor** — and did so on OpenCode's best
   run of the night (its worst run burned a 32,000-token reasoning spiral
-  and scored 0 on a hard task; neo's harness caps that failure mode).
+  and scored 0 on a hard task; dornick's harness caps that failure mode).
 * **The remaining gap is speed, not correctness** — and that is mostly the
   model's token rate, not the harness.
 
@@ -288,7 +293,7 @@ Full method, efficiency numbers, memory experiments and honest caveats:
 ## Roadmap
 
 See [docs/parity.md](docs/parity.md) for the full agentic parity map —
-what matches the current harness landscape, where neo is ahead (the
+what matches the current harness landscape, where dornick is ahead (the
 user-learning model, the living memory, memory-as-MCP, the gate), and
 what is deliberately deferred:
 
@@ -306,7 +311,7 @@ are in Turkish** by project convention.
 
 ## Credits
 
-neo is developed jointly by **Fatih Kütük** and **Claude (Anthropic)** —
+dornick is developed jointly by **Fatih Kütük** and **Claude (Anthropic)** —
 the architecture, the code and the ideas in this repository grew out of
 that collaboration.
 

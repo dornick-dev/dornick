@@ -14,7 +14,7 @@
     {"q": "raporlarda yüzdeleri nasıl göstereyim", "expect": "rapor-format", "type": "paraphrase"},
     {"q": "etiketleri hangi düzende isimlendiriyoruz", "expect": "tag-adlandirma", "type": "paraphrase"},
     {"q": "çıkış suyunun asitliği ne durumdaydı", "expect": "ph-olcum", "type": "paraphrase"},
-    {"q": "sen yalnızca kod mu yazıyorsun", "expect": "neocp-hedef", "type": "paraphrase"},
+    {"q": "sen yalnızca kod mu yazıyorsun", "expect": "dornick-hedef", "type": "paraphrase"},
     {"q": "günde ne kadar su çıkıyordu", "expect": "su-uretim", "type": "paraphrase"},
 
     {"q": "çorum terfi2 alarmı kaç bardı", "expect": "corum-alarm", "type": "exact"},

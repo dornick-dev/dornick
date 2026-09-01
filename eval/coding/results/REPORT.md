@@ -30,7 +30,7 @@ The score has four axes: **works** 40 · **requested scope** 25 · **code health
 
 Every task ran 2 times; the ± in the score column is the between-run spread (half of min–max). Differences smaller than the spread are not improvements.
 
-Isolation: every run happened in its own temp workspace, with an **empty mind**, on its own neo instance. The user's memories do not ride along — this rig measures the coding pipeline, not memory's contribution to coding.
+Isolation: every run happened in its own temp workspace, with an **empty mind**, on its own dornick instance. The user's memories do not ride along — this rig measures the coding pipeline, not memory's contribution to coding.
 
 ## Evidence
 
@@ -38,7 +38,7 @@ Isolation: every run happened in its own temp workspace, with an **empty mind**,
 
 - **works: 40.0/40**
   - `+ fatura.php still there (10p) — fatura.php`
-  - `+ php -l clean (10p) — No syntax errors detected in C:\Users\user\AppData\Local\Temp\neocp-eval-k3-repair-spbgg_i3\atolye\fatura.php`
+  - `+ php -l clean (10p) — No syntax errors detected in C:\Users\user\AppData\Local\Temp\dornick-eval-k3-repair-spbgg_i3\atolye\fatura.php`
   - `+ function callable from outside (20p) — ok`
 - **requested scope: 25.0/25**
   - `+ case: three lines 18% (10p) — expected 82.60, got 82.60`

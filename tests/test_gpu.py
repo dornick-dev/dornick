@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from neocp import gpu, ortam
+from dornick import gpu, ortam
 
 
 @pytest.fixture(autouse=True)

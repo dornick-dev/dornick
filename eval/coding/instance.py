@@ -1,6 +1,6 @@
-"""Isolated neo instance: no window, just the server.
+"""Isolated dornick instance: no window, just the server.
 
-The runner gives every task its OWN neo. The reason fits in one sentence:
+The runner gives every task its OWN dornick. The reason fits in one sentence:
 a measurement must not pollute the user's real mind, workshop or sessions,
 and tasks must not pollute each other. If the `servis.py` written in one
 task is still sitting in the next task's workshop, what we measure is not
@@ -9,18 +9,18 @@ the agent — it is leftover files.
 The isolation pattern (using the product's own boot path):
 
   * `desktop._boot` is called directly — NOT `desktop.run`. `run` opens a
-    pywebview window and used `_kill_ghosts` to kill other neo instances
+    pywebview window and used `_kill_ghosts` to kill other dornick instances
     on the machine; a measurement must never close the user's open app.
   * The workspace is passed to `Config.load` as an EXPLICIT argument. The
-    `NEOCP_WORKSPACE` environment variable is not used: that variable
-    would pin the user's HOME pointer (`~/.neocp/home`) to a temp folder
-    via `config._pin_home` — after the measurement, neo's home would be a
+    `DORNICK_WORKSPACE` environment variable is not used: that variable
+    would pin the user's HOME pointer (`~/.dornick/home`) to a temp folder
+    via `config._pin_home` — after the measurement, dornick's home would be a
     deleted tmp directory.
-  * `NEOCP_STATE_DIR` is set only in this process's environment; it does
+  * `DORNICK_STATE_DIR` is set only in this process's environment; it does
     not touch the home pointer but pulls shared caches (auto-model list,
     price table) into the temp folder too.
   * The port differs per run, and the browser port is shifted so it never
-    collides with the user's open neo.
+    collides with the user's open dornick.
 
 Shutdown: one line on stdin (or EOF) triggers `_teardown` — no MCP
 subprocesses or open files left behind.
@@ -43,26 +43,26 @@ READY_PREFIX = "READY "
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="isolated neo instance")
+    parser = argparse.ArgumentParser(description="isolated dornick instance")
     parser.add_argument("--workspace", required=True,
                         help="workspace (home) directory")
     parser.add_argument("--port", type=int, required=True)
     args = parser.parse_args(argv)
 
     workspace = Path(args.workspace).resolve()
-    state = workspace / ".neocp"
+    state = workspace / ".dornick"
     state.mkdir(parents=True, exist_ok=True)
 
     # Shared caches go to the temp folder too. The home pointer is NOT touched.
-    os.environ["NEOCP_STATE_DIR"] = str(state)
-    os.environ.pop("NEOCP_WORKSPACE", None)
+    os.environ["DORNICK_STATE_DIR"] = str(state)
+    os.environ.pop("DORNICK_WORKSPACE", None)
 
     source = Path(__file__).resolve().parents[2] / "src"
     if source.is_dir():
         sys.path.insert(0, str(source))
 
-    from neocp import desktop
-    from neocp.config import Config
+    from dornick import desktop
+    from dornick.config import Config
 
     # Explicit argument: `_resolve_workspace` does NOT pin it (see config.py).
     config = Config.load(workspace)
@@ -89,7 +89,7 @@ def main(argv: list[str] | None = None) -> int:
         # grading pass ("port held by someone else — cannot measure", seen
         # twice on o2-service, 29.08). Tree-kill via the app ledger.
         try:
-            from neocp import apps
+            from dornick import apps
             for pid in list(getattr(apps, "_PROCS", {})):
                 subprocess.run(
                     ["taskkill", "/PID", str(pid), "/T", "/F"],
@@ -105,7 +105,7 @@ def main(argv: list[str] | None = None) -> int:
         # anyway, the process must still exit.
         threading.Timer(8.0, lambda: os._exit(0)).start()
 
-    threading.Thread(target=watchdog, daemon=True, name="neo-eval-watchdog").start()
+    threading.Thread(target=watchdog, daemon=True, name="dornick-eval-watchdog").start()
 
     try:
         loop.run_forever()

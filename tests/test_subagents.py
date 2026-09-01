@@ -11,8 +11,8 @@ from pathlib import Path
 
 import pytest
 
-from neocp.loop import MAX_DEPTH
-from neocp.tools import build_registry
+from dornick.loop import MAX_DEPTH
+from dornick.tools import build_registry
 from tests.test_loop import (  # noqa: F401
     FakeClient,
     build_agent,
@@ -39,7 +39,7 @@ def _agsiz_katalog(monkeypatch):
     atlanır ve model aynen geçer. Doğrulamayı sınayan testler kataloğu
     kendileri sabitliyor.
     """
-    from neocp import settings
+    from dornick import settings
 
     monkeypatch.setattr(settings, "scan_models", lambda _config: [])
 
@@ -118,7 +118,7 @@ def test_the_child_registry_inherits_dynamic_tools(tmp_path: Path, full) -> None
     ekleniyordu; alt ajan bir cihaz yeteneğini ya da bağlı bir MCP sunucusunu
     göremiyordu. Artık `source`u dolu araçlar ana defterden alt ajana iniyor.
     """
-    from neocp.tools.base import ToolSpec
+    from dornick.tools.base import ToolSpec
 
     def handler(args, ctx):
         return None
@@ -208,7 +208,7 @@ async def test_interrupting_the_parent_stops_the_child(tmp_path: Path, full) -> 
     original = agent._spawn
 
     async def watched(title: str, instruction: str, model: str = "") -> str:
-        import neocp.loop as loop_module
+        import dornick.loop as loop_module
 
         made: list = []
         real_agent = loop_module.Agent
@@ -237,7 +237,7 @@ async def test_interrupting_the_parent_stops_the_child(tmp_path: Path, full) -> 
     assert agent.cancel.is_set()
     # Bitmiş çocuğun bayrağına dokunulmaz; koşan çocuk için kurulduğunu
     # ayrı bir sahte handle ile doğrula.
-    from neocp.loop import ChildHandle
+    from dornick.loop import ChildHandle
 
     running = ChildHandle(id="abc123", title="koşan", model="m")
     agent._children[running.id] = running
@@ -305,7 +305,7 @@ async def test_resume_for_children_opens_a_continuation_turn(
 ) -> None:
     """Ana ajan boştayken biten yardımcı: sürdürme turu continuation
     notuyla açılıyor (kullanıcı mesajı değil) ve sonucu değerlendiriyor."""
-    from neocp.loop import ChildHandle
+    from dornick.loop import ChildHandle
 
     client = FakeClient(text_turn("başlat"), text_turn("sonucu aktardım"))
     agent = build_agent(tmp_path, client, full)
@@ -335,7 +335,7 @@ async def test_interrupt_stops_a_background_helper(tmp_path: Path, full) -> None
     class WaitsForCancel(FakeClient):
         async def turn(self, prepared, tools, *, cancel, callbacks=None):
             await cancel.wait()
-            from neocp.backends import TurnResult
+            from dornick.backends import TurnResult
 
             return TurnResult(interrupted=True)
 
@@ -360,7 +360,7 @@ async def test_interrupt_stops_a_background_helper(tmp_path: Path, full) -> None
 async def test_a_mid_turn_note_lands_in_the_same_turn(tmp_path: Path) -> None:
     """Koşan tur sürerken düşen not, AYNI koşunun bir sonraki isteğine
     harness notu olarak giriyor."""
-    from neocp.tools import ToolRegistry, ToolResult, object_schema
+    from dornick.tools import ToolRegistry, ToolResult, object_schema
 
     reg = ToolRegistry()
     holder: dict = {}
@@ -387,7 +387,7 @@ async def test_a_note_after_the_final_answer_gets_one_more_step(
 ) -> None:
     """Model son cevabını verirken kullanıcı araya yazdıysa mesaj
     kaybolmuyor: aynı tur içinde bir adım daha veriliyor."""
-    from neocp.tools import ToolRegistry
+    from dornick.tools import ToolRegistry
 
     class InterjectedClient(FakeClient):
         """İlk turun ORTASINDA (model cevap üretirken) not düşer."""
@@ -419,9 +419,9 @@ def test_the_inbox_note_is_invisible_in_the_chat(tmp_path: Path) -> None:
     """Harness notu arayüzde mesaj gibi görünmemeli (balon zaten `araya`
     olayıyla çizildi); system kanalı uygun değilse user kanalından girer
     ama yine `internal` işaretli."""
-    from neocp.events import EventLog
-    from neocp.session import Session
-    from neocp.web.server import _payload
+    from dornick.events import EventLog
+    from dornick.session import Session
+    from dornick.web.server import _payload
 
     session = Session(EventLog(tmp_path / "n.jsonl"), "test")
     session.add_user_text("merhaba")
@@ -440,7 +440,7 @@ def test_the_inbox_note_is_invisible_in_the_chat(tmp_path: Path) -> None:
 
 
 async def test_task_say_reaches_a_running_child(tmp_path: Path, full) -> None:
-    from neocp.loop import ChildHandle
+    from dornick.loop import ChildHandle
 
     client = FakeClient(
         tool_turn(("c1", "task_say", {"id": "abc123", "message": "kapsamı daralt"})),
@@ -498,7 +498,7 @@ async def test_task_say_resumes_a_finished_child(tmp_path: Path, full) -> None:
 
 
 async def test_task_status_reports_the_ledger(tmp_path: Path, full) -> None:
-    from neocp.loop import ChildHandle
+    from dornick.loop import ChildHandle
 
     client = FakeClient(
         tool_turn(("c1", "task_status", {})),
@@ -518,7 +518,7 @@ async def test_task_status_reports_the_ledger(tmp_path: Path, full) -> None:
 
 
 def test_the_ledger_keeps_at_most_eight_finished_children(tmp_path: Path, full) -> None:
-    from neocp.loop import MAX_CHILDREN, ChildHandle
+    from dornick.loop import MAX_CHILDREN, ChildHandle
 
     client = FakeClient(text_turn("tamam"))
     agent = build_agent(tmp_path, client, full)
@@ -550,7 +550,7 @@ async def test_submitting_while_busy_interjects_into_the_running_turn(
     giriyor; arayüze `araya` olayı basılıyor (queued değil)."""
     import asyncio
 
-    from neocp.desktop import Bridge
+    from dornick.desktop import Bridge
 
     hub = _Hub()
     bridge = Bridge(hub, asyncio.get_running_loop())
@@ -581,7 +581,7 @@ async def test_scheduled_and_gate_messages_still_queue(tmp_path: Path) -> None:
     """`siraya=True` (zamanlanmış görev, dış kapı): eski kuyruk davranışı."""
     import asyncio
 
-    from neocp.desktop import Bridge
+    from dornick.desktop import Bridge
 
     hub = _Hub()
     bridge = Bridge(hub, asyncio.get_running_loop())
@@ -600,7 +600,7 @@ async def test_child_done_opens_a_resume_turn_when_idle(tmp_path: Path) -> None:
     sürdürme turu koşuluyor ve turn_end yayılıyor."""
     import asyncio
 
-    from neocp.desktop import _CHILD_DONE, Bridge
+    from dornick.desktop import _CHILD_DONE, Bridge
 
     hub = _Hub()
     bridge = Bridge(hub, asyncio.get_running_loop())
@@ -629,7 +629,7 @@ async def test_child_done_opens_a_resume_turn_when_idle(tmp_path: Path) -> None:
 async def test_a_resume_with_nothing_to_report_is_silent(tmp_path: Path) -> None:
     import asyncio
 
-    from neocp.desktop import Bridge
+    from dornick.desktop import Bridge
 
     hub = _Hub()
     bridge = Bridge(hub, asyncio.get_running_loop())
@@ -651,8 +651,8 @@ async def test_an_approval_from_a_helper_carries_its_channel(tmp_path: Path) -> 
     başlığı approval_request olayında."""
     import asyncio
 
-    from neocp.desktop import Bridge
-    from neocp.tools.base import ToolSpec
+    from dornick.desktop import Bridge
+    from dornick.tools.base import ToolSpec
 
     hub = _Hub()
     bridge = Bridge(hub, asyncio.get_running_loop())
@@ -688,7 +688,7 @@ async def test_an_approval_from_a_helper_carries_its_channel(tmp_path: Path) -> 
 async def test_child_sessions_stay_out_of_the_chat_list(tmp_path: Path, full) -> None:
     """Yardımcı oturumları /api/sessions listesine (mind.sessions) girmiyor;
     günlükleri diskte duruyor ve arşiv taramasında hâlâ bulunuyorlar."""
-    from neocp.mind import open_mind
+    from dornick.mind import open_mind
 
     client = FakeClient(
         tool_turn(("c1", "task", {"task": "bir şey yap"})),
@@ -741,10 +741,10 @@ def kayit(tmp_path: Path):
     """Aracı doğrudan çağırmak için bağlam + çağrı yardımcısı."""
     import asyncio
 
-    from neocp.config import Config
-    from neocp.events import EventLog
-    from neocp.session import Session
-    from neocp.tools.base import ToolContext
+    from dornick.config import Config
+    from dornick.events import EventLog
+    from dornick.session import Session
+    from dornick.tools.base import ToolContext
 
     config = Config.load(tmp_path)
     config.ensure_dirs()
@@ -766,7 +766,7 @@ def kayit(tmp_path: Path):
 
 def _katalog(monkeypatch, ids: list[str]) -> None:
     """Sağlayıcının model kataloğunu sabitler; boş liste = ağ yok."""
-    from neocp import settings
+    from dornick import settings
 
     monkeypatch.setattr(settings, "scan_models", lambda _config: [{"id": i} for i in ids])
 
@@ -813,7 +813,7 @@ async def test_a_catalogue_lookup_that_explodes_does_not_kill_the_task(
     kayit, monkeypatch
 ) -> None:
     """Doğrulama bir kolaylık; patlarsa işin kendisi durmamalı."""
-    from neocp import settings
+    from dornick import settings
 
     tool, ctx, spawned = kayit
 
@@ -841,7 +841,7 @@ async def test_only_the_letter_case_is_corrected_silently(kayit, monkeypatch) ->
 async def test_no_model_asked_means_no_catalogue_lookup(kayit, monkeypatch) -> None:
     """Alan boşsa ana model kullanılıyor; katalog için ağa çıkmanın anlamı
     yok — her `task` çağrısına bir istek eklemek pahalı."""
-    from neocp import settings
+    from dornick import settings
 
     tool, ctx, spawned = kayit
     monkeypatch.setattr(

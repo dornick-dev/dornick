@@ -23,7 +23,7 @@
             "earned": 40.0,
             "evidence": [
               "+ ara.py exists (5p) — ara.py",
-              "+ ekle runs (12p) — exit 0; 6 dosya indekslendi (C:\\Users\\user\\AppData\\Local\\Temp\\neocp-eval-z1-search-g98wk2_l\\atolye\\indeks.db).",
+              "+ ekle runs (12p) — exit 0; 6 dosya indekslendi (C:\\Users\\user\\AppData\\Local\\Temp\\dornick-eval-z1-search-g98wk2_l\\atolye\\indeks.db).",
               "+ SQLite file created (8p) — indeks.db",
               "+ bul runs in a separate process (15p) — exit 0; 1 not eslesti (tum kelimeleri icerenler ustte): pompa-katalog.txt: ...edek parca: rulman, salmastra, motor mili."
             ],

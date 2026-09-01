@@ -17,12 +17,12 @@ from pathlib import Path
 
 import pytest
 
-from neocp import tanilar
-from neocp.config import Config
-from neocp.events import EventLog
-from neocp.session import Session
-from neocp.tools import ToolContext, ToolRegistry
-from neocp.tools import files as file_tools
+from dornick import tanilar
+from dornick.config import Config
+from dornick.events import EventLog
+from dornick.session import Session
+from dornick.tools import ToolContext, ToolRegistry
+from dornick.tools import files as file_tools
 
 PHP = tanilar.denetleyici_yolu("php")
 NODE = tanilar.denetleyici_yolu("node")
@@ -37,7 +37,7 @@ def ctx(tmp_path: Path) -> ToolContext:
     config.ensure_dirs()
     return ToolContext(
         config=config,
-        session=Session(EventLog(tmp_path / ".neocp" / "s.jsonl"), "test-tani"),
+        session=Session(EventLog(tmp_path / ".dornick" / "s.jsonl"), "test-tani"),
         cancel=asyncio.Event(),
     )
 

@@ -5,7 +5,7 @@ from __future__ import annotations
 import inspect
 from pathlib import Path
 
-from neocp import prefs
+from dornick import prefs
 
 
 def test_prefs_roundtrip(tmp_path: Path) -> None:
@@ -80,7 +80,7 @@ def test_window_clamped_into_work_area() -> None:
 
 
 def test_desktop_boot_forces_maximize_after_shell() -> None:
-    from neocp import desktop
+    from dornick import desktop
     src = inspect.getsource(desktop._titlebar_boot)
     assert "want_max" in src
     assert "_force_maximize" in src
@@ -99,7 +99,7 @@ def test_desktop_heals_offset_maximize() -> None:
     tepsiden/uyandırmadan gösterince bakış ve kabuğun zoom kilidinde
     kaymışlık koruması.
     """
-    from neocp import desktop
+    from dornick import desktop
 
     boot = inspect.getsource(desktop._titlebar_boot)
     assert "_geometry_watch" in boot
@@ -119,7 +119,7 @@ def test_desktop_heals_offset_maximize() -> None:
 
 def test_desktop_webview_is_not_private() -> None:
     """pywebview varsayılanı gizli kip: tema/dil her açılışta sıfırlanıyordu."""
-    from neocp import desktop
+    from dornick import desktop
     src = inspect.getsource(desktop.run)
     assert "private_mode=False" in src
     assert "storage_path" in src
@@ -127,7 +127,7 @@ def test_desktop_webview_is_not_private() -> None:
 
 def test_ear_snooze_is_restored_from_prefs() -> None:
     """Mikrofon tıklaması kapanıştan sonra da susturulmuş kalsın."""
-    from neocp import desktop
+    from dornick import desktop
     src = inspect.getsource(desktop._boot)
     assert "hearing_snoozed" in src
     assert "sight_snoozed" in src

@@ -13,12 +13,12 @@ from pathlib import Path
 
 import pytest
 
-from neocp.config import Config
-from neocp.events import EventLog
-from neocp.sandbox import OutsideSandbox, Sandbox
-from neocp.session import Session
-from neocp.tools import ToolContext, ToolRegistry
-from neocp.tools import files as file_tools
+from dornick.config import Config
+from dornick.events import EventLog
+from dornick.sandbox import OutsideSandbox, Sandbox
+from dornick.session import Session
+from dornick.tools import ToolContext, ToolRegistry
+from dornick.tools import files as file_tools
 
 
 @pytest.fixture()
@@ -31,7 +31,7 @@ def workspace(tmp_path: Path) -> Path:
 def ctx(workspace: Path) -> ToolContext:
     config = Config.load(workspace)
     config.ensure_dirs()
-    session = Session(EventLog(workspace / ".neocp" / "s.jsonl"), "test")
+    session = Session(EventLog(workspace / ".dornick" / "s.jsonl"), "test")
     return ToolContext(config=config, session=session, cancel=asyncio.Event())
 
 
@@ -278,7 +278,7 @@ def test_the_briefing_says_relative_paths_land_here(tmp_path: Path) -> None:
 # olmuyor. Kullanıcı klasörü açıkça seçince orası da yazılabilir oluyor —
 # seçimin kendisi onaydır. Atölye her koşulda açık kalıyor.
 
-from neocp import sandbox as sandbox_module   # noqa: E402
+from dornick import sandbox as sandbox_module   # noqa: E402
 
 
 def test_a_chosen_project_becomes_writable(tmp_path: Path) -> None:
@@ -288,7 +288,7 @@ def test_a_chosen_project_becomes_writable(tmp_path: Path) -> None:
 
     assert box.contains(proje / "src" / "yeni.py")     # henüz olmayan dosya da
     assert box.check(proje / "app.py") is not None
-    # Atölye kaybolmuyor: neo'nun kendi işleri oraya gitmeye devam ediyor.
+    # Atölye kaybolmuyor: dornick'nun kendi işleri oraya gitmeye devam ediyor.
     assert box.contains(box.root / "deneme.txt")
     assert box.project == proje.resolve()
     assert box.roots[0] == box.root                     # atölye her zaman ilk
@@ -351,9 +351,9 @@ def test_an_invalid_project_falls_back_instead_of_breaking(tmp_path: Path) -> No
 
 
 def test_covering_neos_own_state_warns_but_does_not_block(tmp_path: Path) -> None:
-    """Kendi kodunu neo'ya düzelttirmek meşru bir istek — bu depo tam
+    """Kendi kodunu dornick'ya düzelttirmek meşru bir istek — bu depo tam
     olarak öyle geliştiriliyor. Engelleme değil, uyarı."""
-    durum = tmp_path / ".neocp"
+    durum = tmp_path / ".dornick"
     durum.mkdir()
     box = Sandbox.open(tmp_path / "ws", "atolye", project=str(tmp_path),
                        state_dir=durum)
@@ -389,7 +389,7 @@ def test_relative_paths_resolve_against_the_nearest_open_root(tmp_path: Path) ->
 
 def test_recent_projects_are_remembered_in_order(tmp_path: Path) -> None:
     """Son projeler tek tıkla geçiş için; en son seçilen başta."""
-    durum = tmp_path / ".neocp"
+    durum = tmp_path / ".dornick"
     assert sandbox_module.son_projeler(durum) == []
 
     sandbox_module.proje_hatirla(durum, "C:/a")
@@ -407,14 +407,14 @@ def test_recent_projects_are_remembered_in_order(tmp_path: Path) -> None:
 
 
 def test_a_corrupt_recent_file_does_not_break_settings(tmp_path: Path) -> None:
-    durum = tmp_path / ".neocp"
+    durum = tmp_path / ".dornick"
     durum.mkdir()
     (durum / sandbox_module.PROJECTS_FILE).write_text("{bozuk", encoding="utf-8")
     assert sandbox_module.son_projeler(durum) == []
 
 
 def test_the_project_survives_a_settings_round_trip(tmp_path: Path) -> None:
-    from neocp import settings
+    from dornick import settings
 
     proje = tmp_path / "musteri"
     proje.mkdir()
@@ -433,7 +433,7 @@ def test_the_project_survives_a_settings_round_trip(tmp_path: Path) -> None:
 def test_settings_refuses_a_dangerous_project_with_a_reason(tmp_path: Path) -> None:
     """Doğrulama arayüzde değil burada: geçersiz bir kök ancak ajan oraya
     yazmaya çalışınca patlardı ve o çok geç."""
-    from neocp import settings
+    from dornick import settings
 
     config = Config.load(tmp_path)
     config.ensure_dirs()

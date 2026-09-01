@@ -12,11 +12,11 @@ from pathlib import Path
 
 import pytest
 
-from neocp.config import Config
-from neocp.events import EventLog
-from neocp.session import Session
-from neocp.tools import ToolContext, ToolRegistry
-from neocp.tools import search as search_tools
+from dornick.config import Config
+from dornick.events import EventLog
+from dornick.session import Session
+from dornick.tools import ToolContext, ToolRegistry
+from dornick.tools import search as search_tools
 
 
 @pytest.fixture()
@@ -25,7 +25,7 @@ def ctx(tmp_path: Path) -> ToolContext:
     config.ensure_dirs()
     return ToolContext(
         config=config,
-        session=Session(EventLog(tmp_path / ".neocp" / "s.jsonl"), "test"),
+        session=Session(EventLog(tmp_path / ".dornick" / "s.jsonl"), "test"),
         cancel=asyncio.Event(),
     )
 

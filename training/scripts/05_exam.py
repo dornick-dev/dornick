@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Acceptance exam: the base model competes on neo's scale benchmark.
+"""Acceptance exam: the base model competes on dornick's scale benchmark.
 
 Gates (must hold to ship with the product): recall >= the current system,
 no regression on trap/empty silence, CPU inference fast enough. The
@@ -31,7 +31,7 @@ except Exception:
 
 import scale_bench as sb  # noqa: E402
 from model.inference import QueryExpander  # noqa: E402
-from neocp.loop import select_prime  # noqa: E402
+from dornick.loop import select_prime  # noqa: E402
 
 NPZ = Path(sys.argv[1]) if len(sys.argv) > 1 else ROOT / "checkpoints" / "base.npz"
 expander = QueryExpander(NPZ)

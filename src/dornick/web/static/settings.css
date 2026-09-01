@@ -1,0 +1,494 @@
+/* Ayarlar sayfasının görsel dili.
+ *
+ * app.css'ten SONRA yüklenir ve yalnızca ayar panelini (.panel) kapsar.
+ * Amaç yekparelik: her girdi türü — metin, sayı, select, anahtar, buton —
+ * aynı yükseklik ritmi, aynı köşe, aynı odak hâlesiyle TEK sistem gibi
+ * dursun. Önceki hal her bölümde başka bir kalıp kullanıyordu: çıplak
+ * checkbox, üç ayrı buton stili, hizasız etiketler.
+ *
+ * Kalıp (Claude Code ayarlarından ilham):
+ *   - her alan bir SATIR: üstte etiket, altında kontrol, altında ipucu;
+ *     anahtarlı (toggle) alanlarda etiket+ipucu solda, anahtar sağda.
+ *   - satırlar ince bir ayraç çizgisiyle ayrılır — kart/kutu kalabalığı yok.
+ *   - listeler (görevler, yetenekler, bağlantılar) tek çerçeveli akordeon.
+ *   - tek vurgu rengi (--cyan); tehlike ayrık ve kırmızı; odak her yerde
+ *     aynı hâle.
+ *
+ * Tema: yeni renkler DEĞİŞKEN olarak burada tanımlı; koyu varsayılan,
+ * açık tema app.css ile aynı mekanizmayla (:root[data-theme="light"]) gelir.
+ */
+
+:root {
+  --set-line: rgba(255, 255, 255, .06);        /* alan ayracı */
+  --set-line-strong: rgba(255, 255, 255, .11); /* liste/bölüm çerçevesi */
+  --set-ring: rgba(240, 160, 32, .18);         /* kontrol kenarı */
+  --set-ring-hover: rgba(240, 160, 32, .38);
+  --set-accent-soft: rgba(240, 160, 32, .1);   /* seçili zemin */
+  --set-focus: rgba(240, 160, 32, .7);         /* klavye odak hâlesi */
+  --set-danger-soft: rgba(255, 122, 144, .07);
+  --set-danger-ring: rgba(255, 122, 144, .32);
+  --set-track: #3A342A;                        /* kapalı anahtar rayı */
+  --set-knob: #EFE8DC;                         /* anahtar topu */
+  --set-knob-on: #241C10;                      /* açık anahtarda top */
+  --set-btn-ink: #241C10;                      /* birincil buton mürekkebi */
+  --set-chevron: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'><path d='M2.5 4.5 6 8l3.5-3.5' fill='none' stroke='%23A89F91' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/></svg>");
+}
+:root[data-theme="light"] {
+  --set-line: rgba(52, 44, 32, .09);
+  --set-line-strong: rgba(52, 44, 32, .15);
+  --set-ring: rgba(180, 112, 10, .22);
+  --set-ring-hover: rgba(180, 112, 10, .42);
+  --set-accent-soft: rgba(180, 112, 10, .09);
+  --set-focus: rgba(180, 112, 10, .55);
+  --set-danger-soft: rgba(196, 45, 78, .06);
+  --set-danger-ring: rgba(196, 45, 78, .28);
+  /* Ray/top: sayfanın field/bg ailesi — koyu-mavi ray açık temada yabancıydı. */
+  --set-track: #E0D8C6;
+  --set-knob: #ffffff;
+  --set-knob-on: #FDFBF6;
+  --set-btn-ink: #FDFBF6;
+  --set-chevron: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'><path d='M2.5 4.5 6 8l3.5-3.5' fill='none' stroke='%236E6656' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/></svg>");
+}
+
+/* Açık temada ayar kabuğu: neon hâle yok, sayfa ile aynı kenar dili. */
+:root[data-theme="light"] .panel .input-text {
+  background: var(--field); color: var(--text);
+}
+:root[data-theme="light"] .panel .input-check::before {
+  box-shadow: 0 1px 2px rgba(52, 44, 32, .22);
+}
+:root[data-theme="light"] .panel .input-range::-webkit-slider-thumb {
+  box-shadow: 0 0 0 1px var(--set-ring-hover), 0 1px 3px rgba(52, 44, 32, .25);
+}
+:root[data-theme="light"] .panel .choice {
+  background: var(--raise);
+}
+:root[data-theme="light"] .panel .row-detail {
+  background: #F1EBDE;
+}
+:root[data-theme="light"] .panel .loaded-row,
+:root[data-theme="light"] .panel .rule,
+:root[data-theme="light"] .panel .surum-deger {
+  background: rgba(52, 44, 32, .04);
+}
+:root[data-theme="light"] .panel-note.good::before {
+  box-shadow: none;
+}
+:root[data-theme="light"] .panel-note.bad::before {
+  box-shadow: none;
+}
+
+/* ---------- kabuk: panel, sekmeler, altlık ---------- */
+
+/* Panelin ölçüsü app.css'te (ortalanmış diyalog, SABİT en/boy). Burada
+   ölçüye dokunulmaz: width:auto kalıntısı diyaloğu içeriğe göre daraltıp
+   genişletiyordu — "modalın boyutu sürekli değişiyor" tam buydu. */
+
+.panel-head { padding: 16px 24px 14px; box-shadow: inset 0 -1px 0 var(--set-line-strong); }
+
+.tabs { flex: 0 0 208px; padding: 14px 12px 20px; box-shadow: inset -1px 0 0 var(--set-line-strong); }
+.tabs button { padding: 6px 12px; font: 12.5px var(--font); border-radius: 6px; }
+.tab-group { margin: 16px 12px 5px; font-size: 9px; }
+
+/* Başlık şeridi, gövde ve altlık aynı sol hizada. */
+.panel-body { padding: 20px 24px 10px; }
+.panel-foot { padding: 12px 24px 16px; box-shadow: inset 0 1px 0 var(--set-line-strong); }
+
+/* ---------- bölüm başlığı ---------- */
+
+.pane-head {
+  margin: 0 0 6px; padding: 0 0 14px;
+  border-bottom: 1px solid var(--set-line-strong);
+}
+.pane-title { margin: 0; font: 600 16px/1.3 var(--font); color: var(--text); letter-spacing: .01em; }
+.pane-desc { margin: 4px 0 0; font: 11.5px/1.5 var(--font); color: var(--dim); }
+.pane-sub {
+  margin: 22px 0 8px; padding-top: 14px;
+  font: 600 12px/1.3 var(--font); color: var(--cyan);
+  letter-spacing: .06em; text-transform: uppercase;
+  box-shadow: inset 0 1px 0 var(--edge);
+}
+
+/* ---------- alan satırları ---------- */
+
+.panel .field {
+  display: grid; grid-template-columns: 1fr;
+  margin: 0; padding: 16px 0;
+  border-bottom: 1px solid var(--set-line);
+}
+.panel section > .field:last-child { border-bottom: 0; }
+
+.panel .field > .field-label {
+  margin: 0 0 8px;
+  font: 600 12.5px var(--font); letter-spacing: .01em; text-transform: none;
+  color: var(--text);
+}
+.panel .field > .field-hint { margin: 8px 0 0; font-size: 11.5px; line-height: 1.55; color: var(--faint); }
+
+/* Anahtarlı satır: etiket+ipucu solda, anahtar sağda ortalı —
+   ayar sayfalarının klasik ve taranabilir kalıbı. */
+.panel .field:has(> .input-check) { grid-template-columns: 1fr auto; column-gap: 18px; align-items: center; }
+.panel .field:has(> .input-check) > .field-label { grid-column: 1; grid-row: 1; margin: 0; }
+.panel .field:has(> .input-check) > .field-hint { grid-column: 1; grid-row: 2; margin: 4px 0 0; }
+.panel .field:has(> .input-check) > .input-check { grid-column: 2; grid-row: 1 / span 2; align-self: center; }
+
+/* Bölüm içi ayraç (mikrofon→kamera, kurallar→atölye). */
+.panel-body hr.md-rule {
+  border: 0; height: 1px; background: var(--set-line-strong);
+  margin: 24px 0 8px; box-shadow: none;
+}
+
+/* Dip notları: sol vurgu çubuğu kalıyor ama sakinliyor. */
+.panel .pane-note { margin: 20px 0 0; box-shadow: inset 2px 0 0 var(--set-ring); }
+.panel .pane-note.bad { box-shadow: inset 2px 0 0 var(--set-danger-ring); }
+
+/* ---------- girdiler: tek boy, tek köşe, tek odak ---------- */
+
+.panel .input-text {
+  padding: 8px 12px; border-radius: 8px;
+  box-shadow: inset 0 0 0 1px var(--set-ring);
+  font: 13px var(--font); transition: box-shadow .15s;
+}
+.panel .input-text:hover { box-shadow: inset 0 0 0 1px var(--set-ring-hover); }
+.panel .input-text:focus { box-shadow: inset 0 0 0 1px var(--cyan), 0 0 0 3px var(--set-accent-soft); }
+.panel .input-text::placeholder { color: var(--faint); opacity: .75; }
+.panel .input-text:disabled { opacity: .45; cursor: not-allowed; }
+.panel .input-num { width: 150px; }
+.panel .input-area { border-radius: 8px; font: 12px/1.6 var(--mono); }
+
+/* select: ok ikonlu tutarlı kutu. Tam genişlik yerine içeriğe göre —
+   üç kelimelik bir seçim için ekran boyu kutu amatör duruyordu. */
+.panel select.input-text {
+  -webkit-appearance: none; appearance: none;
+  width: auto; min-width: 220px; max-width: 100%;
+  padding-right: 32px; cursor: pointer;
+  background-image: var(--set-chevron);
+  background-repeat: no-repeat; background-position: right 11px center; background-size: 12px;
+}
+
+/* Anahtar (toggle): gerçek kayar toplu şalter — çıplak checkbox değil. */
+.panel .input-check {
+  -webkit-appearance: none; appearance: none;
+  width: 36px; height: 20px; flex: 0 0 auto; margin: 0;
+  border-radius: 10px; background: var(--set-track);
+  box-shadow: inset 0 0 0 1px var(--set-line-strong);
+  position: relative; cursor: pointer; transition: background .18s, box-shadow .18s;
+}
+.panel .input-check::before {
+  content: ""; position: absolute; top: 3px; left: 3px;
+  width: 14px; height: 14px; border-radius: 50%;
+  background: var(--set-knob); box-shadow: 0 1px 3px rgba(0, 0, 0, .35);
+  transition: transform .18s cubic-bezier(.2, .8, .3, 1), background .18s;
+}
+.panel .input-check:hover { box-shadow: inset 0 0 0 1px var(--set-ring-hover); }
+.panel .input-check:checked { background: var(--cyan); box-shadow: none; }
+.panel .input-check:checked::before { transform: translateX(16px); background: var(--set-knob-on); }
+.panel .input-check:disabled { opacity: .35; cursor: not-allowed; }
+
+/* Taşı sekmesindeki parça seçimi: burada anahtar değil ufak onay kutusu —
+   dörtlü bir liste rayları yan yana dizince şalter panosuna dönüyordu. */
+.panel .xfer-part .input-check { width: 16px; height: 16px; border-radius: 5px; }
+.panel .xfer-part .input-check::before {
+  content: "✓"; width: auto; height: auto; border-radius: 0; background: none;
+  top: 50%; left: 50%; transform: translate(-50%, -50%) scale(0);
+  font: 700 11px/1 var(--font); color: var(--set-btn-ink); box-shadow: none;
+}
+.panel .xfer-part .input-check:checked::before { transform: translate(-50%, -50%) scale(1); background: none; }
+
+/* Kaydırak: topu anahtar topuyla aynı dilden. */
+.panel .input-range::-webkit-slider-thumb {
+  background: var(--set-knob); box-shadow: 0 0 0 1px var(--set-ring-hover), 0 1px 4px rgba(0, 0, 0, .4);
+}
+
+/* ---------- butonlar: ikincil sakin, birincil tek vurgu ---------- */
+
+/* İkincil: kenarlıklı, sessiz. (Algıla, Ekle, Çalıştır, Kimliği elle yaz…) */
+.panel .detect, .panel .rule-go, .panel .job-act, .panel .model-manual, .panel .xfer-btn {
+  background: none; border: 0; cursor: pointer;
+  padding: 6px 13px; border-radius: 8px;
+  box-shadow: inset 0 0 0 1px var(--set-ring);
+  font: 500 11.5px var(--font); letter-spacing: .02em; text-transform: none;
+  color: var(--dim); transition: .16s;
+}
+.panel :is(.detect, .rule-go, .job-act, .model-manual):hover {
+  color: var(--text); box-shadow: inset 0 0 0 1px var(--set-ring-hover); background: var(--set-accent-soft);
+}
+
+/* Birincil eylem (Kur, Kaydet ve yükle, Ekle ve bağlan): vurgu rengi. */
+.panel .job-act.add {
+  color: var(--set-btn-ink); background: var(--cyan);
+  box-shadow: none; font-weight: 600;
+}
+.panel .job-act.add:hover { color: var(--set-btn-ink); background: var(--ice); box-shadow: 0 0 16px var(--set-accent-soft); }
+
+/* Tehlikeli ikincil (Sil): kırmızı yalnız niyet belli olunca. */
+.panel :is(.job-act, .row-act).risky:hover {
+  color: var(--rose); background: var(--set-danger-soft);
+  box-shadow: inset 0 0 0 1px var(--set-danger-ring);
+}
+
+/* Altlıktaki Kaydet: sayfanın TEK dolgun butonu. */
+.panel-foot .save {
+  padding: 8px 22px; border-radius: 8px;
+  background: var(--cyan); color: var(--set-btn-ink);
+  font: 600 12px var(--font); letter-spacing: .04em; text-transform: none;
+}
+.panel-foot .save:hover { background: var(--ice); box-shadow: 0 0 18px var(--set-accent-soft); }
+
+/* ---------- durum satırı (say) ---------- */
+
+.panel-note {
+  display: flex; align-items: center; gap: 8px; min-height: 16px;
+  font: 11.5px var(--font); color: var(--dim); transition: color .2s;
+}
+.panel-note::before {
+  content: ""; width: 7px; height: 7px; border-radius: 50%; flex: 0 0 auto;
+  background: var(--faint); display: none;
+}
+#settings-note:not(:empty)::before { display: block; }
+.panel-note.bad { color: var(--rose); }
+.panel-note.bad::before { background: var(--rose); box-shadow: 0 0 8px var(--set-danger-ring); }
+.panel-note.good { color: var(--mint); }
+.panel-note.good::before { background: var(--mint); box-shadow: 0 0 8px var(--mint); }
+
+/* ---------- seçim kartları (sağlayıcı, izin kipi, bağlantı türü) ---------- */
+
+.panel .choice {
+  padding: 11px 13px; border-radius: 9px; gap: 4px;
+  box-shadow: inset 0 0 0 1px var(--set-line-strong);
+}
+.panel .choice:hover { box-shadow: inset 0 0 0 1px var(--set-ring-hover); }
+.panel .choice.on { background: var(--set-accent-soft); box-shadow: inset 0 0 0 1px var(--cyan); }
+.panel .choice.risky.on { background: var(--set-danger-soft); box-shadow: inset 0 0 0 1px var(--rose); }
+.panel .choice span { word-break: break-word; }
+
+/* ---------- listeler: tek çerçeveli akordeon ---------- */
+
+.panel .rows {
+  margin: 14px 0; border: 1px solid var(--set-line-strong);
+  border-radius: 10px; overflow: hidden;
+}
+.panel .row { border-radius: 0; padding: 9px 12px; }
+.panel .rows > * + * { border-top: 1px solid var(--set-line); margin-top: 0; }
+.panel .row-detail {
+  margin: 0; border-radius: 0; padding: 12px 14px 14px;
+  background: var(--field); box-shadow: none;
+}
+.panel .row-detail .field { padding: 8px 0; border-bottom: 0; }
+.panel .row-act { border-radius: 6px; padding: 3px 9px; }
+.panel .row-act:hover { color: var(--text); background: var(--set-accent-soft); }
+
+/* Model kataloğu: liste zaten çerçeveli — sistemle aynı köşe/kenar. */
+.panel .model-list { border-color: var(--set-line-strong); border-radius: 8px; }
+.panel .model-row.on { background: var(--set-accent-soft); border-color: var(--set-ring-hover); }
+
+/* Yüklü model ve kural satırları: aynı satır dili. */
+.panel .loaded-row, .panel .rule {
+  background: var(--raise); border-radius: 7px;
+  box-shadow: inset 0 0 0 1px var(--set-line);
+}
+.panel .rule-add .input-text { padding: 6px 10px; }
+
+/* ---------- makine: sürüm satırı ---------- */
+
+/* Salt-okunur sürüm değeri: giriş kutusu değil, sakin bir rozet. */
+.panel .surum-deger {
+  padding: 6px 12px; border-radius: 7px;
+  background: var(--raise); box-shadow: inset 0 0 0 1px var(--set-line);
+  font: 600 12px var(--mono, var(--font)); color: var(--text);
+  letter-spacing: .03em; white-space: nowrap;
+}
+.panel .surum-sonuc { font: 500 11.5px var(--font); color: var(--dim); }
+.panel .surum-sonuc.bad { color: var(--rose); }
+.panel .surum-yeni { color: var(--cyan); text-decoration: none; cursor: pointer; }
+.panel .surum-yeni:hover { text-decoration: underline; }
+
+/* ---------- dosyalar ---------- */
+
+.panel .files { border: 1px solid var(--set-line-strong); border-radius: 10px; overflow: hidden; }
+.panel .file { border-radius: 0; }
+.panel .file + .file { border-top: 1px solid var(--set-line); }
+.panel .crumb { margin: 10px 0 12px; }
+.panel .crumb-link { border-radius: 5px; padding: 2px 6px; }
+.panel .crumb-link:hover { background: var(--set-accent-soft); }
+
+/* ---------- taşı / tehlike bölgesi ---------- */
+
+.panel .xfer-row { margin-top: 16px; }
+.panel .xfer-parts { margin-top: 16px; }
+.panel .xfer-btn.out { color: var(--cyan); background: var(--set-accent-soft); box-shadow: inset 0 0 0 1px var(--set-ring); }
+.panel .xfer-btn.out:hover { box-shadow: inset 0 0 0 1px var(--set-ring-hover); }
+.panel .xfer-btn.in:hover { box-shadow: inset 0 0 0 1px rgba(92, 230, 164, .5); }
+
+/* Sıfırlamalar ayrık bir tehlike bölgesinde: yanlışlıkla değil, bilerek. */
+.panel .xfer-row.danger-zone {
+  margin-top: 28px; padding: 14px 16px;
+  border: 1px solid var(--set-danger-ring); border-radius: 10px;
+  background: var(--set-danger-soft);
+}
+.panel .danger-zone .xfer-lead { color: var(--rose); }
+.panel .xfer-btn.danger { border-radius: 8px; font: 500 11.5px var(--font); padding: 6px 13px; }
+
+/* ---------- klavye odağı: her kontrolde aynı hâle ---------- */
+
+.panel :is(button, select, a, .input-check, .input-range):focus-visible {
+  outline: 2px solid var(--set-focus); outline-offset: 2px;
+}
+.panel :is(input[type="text"], input[type="password"], input[type="search"], input[type="number"], textarea):focus-visible {
+  outline: none; /* metin girdilerinde odak zaten iç halkayla gösteriliyor */
+}
+
+/* ============================================================
+   PROJE SEÇİMİ
+   "Benim projemde çalışacaksan klasörü seçmem gerekiyor." Atölye dornick'nun
+   kendi işleri için kalıyor; proje kullanıcının kodu. Native bir klasör
+   diyaloğu kullanılamadığı için seçici sayfanın kendi içinde yaşıyor.
+   ============================================================ */
+
+.panel .proj-pick { display: flex; flex-direction: column; gap: 8px; }
+
+/* Durum satırı: seçili mi, kaydedilmiş mi, bir engel/uyarı var mı.
+   Kullanıcı KAYDETMEDEN önce ne olacağını okumalı. */
+.panel .proj-state { display: flex; flex-direction: column; gap: 4px; }
+.panel .proj-state .pane-note { margin: 0; padding-left: 10px; }
+.panel .pane-note.good {
+  color: var(--mint); box-shadow: inset 2px 0 0 rgba(92, 230, 164, .45);
+  word-break: break-all;
+}
+
+/* Gezgin: yukarı çık · neredeyim · seç · alt klasörler. */
+.panel .proj-browse {
+  display: flex; flex-direction: column; gap: 8px;
+  padding: 12px; border-radius: 9px;
+  background: var(--raise); box-shadow: inset 0 0 0 1px var(--set-ring);
+}
+.panel .proj-crumb { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.panel .proj-here {
+  flex: 1; min-width: 0; font: 11.5px var(--mono); color: var(--ice);
+  word-break: break-all;
+}
+.panel .proj-list {
+  display: flex; flex-direction: column; gap: 1px;
+  max-height: 240px; overflow-y: auto;
+  border-radius: 7px; background: var(--field);
+  scrollbar-width: thin; scrollbar-color: rgba(240, 160, 32, .25) transparent;
+}
+.panel .proj-list::-webkit-scrollbar { width: 6px; }
+.panel .proj-list::-webkit-scrollbar-thumb {
+  background: rgba(240, 160, 32, .22); border-radius: 3px;
+}
+.panel .proj-row {
+  text-align: left; background: none; border: 0; cursor: pointer;
+  padding: 6px 10px; border-radius: 6px;
+  font: 12px var(--mono); color: var(--dim); transition: .14s;
+}
+.panel .proj-row:hover { color: var(--ice); background: rgba(240, 160, 32, .09); }
+
+/* Son projeler: tek tıkla geçiş. */
+.panel .proj-recent { display: flex; flex-wrap: wrap; gap: 6px; }
+.panel .proj-chip {
+  font: 11px var(--font); color: var(--dim); background: var(--raise);
+  border: 0; cursor: pointer; padding: 4px 11px; border-radius: 999px;
+  box-shadow: inset 0 0 0 1px var(--set-ring); transition: .14s;
+}
+.panel .proj-chip:hover { color: var(--ice); box-shadow: inset 0 0 0 1px var(--set-ring-hover); }
+.panel .proj-chip.on {
+  color: var(--cyan); background: rgba(240, 160, 32, .12);
+  box-shadow: inset 0 0 0 1px var(--set-ring-hover);
+}
+
+/* --- bağlayıcı dizini -------------------------------------------------- */
+.conn-bar {
+  display: flex; flex-wrap: wrap; gap: 6px; align-items: center;
+  margin: 0 0 16px; padding: 5px;
+  border-radius: 12px; background: var(--field);
+  box-shadow: inset 0 0 0 1px var(--set-ring);
+}
+.conn-search {
+  flex: 1 1 160px; min-width: 0; background: transparent;
+  box-shadow: none; padding: 8px 12px;
+}
+.panel .conn-search:hover,
+.panel .conn-search:focus { background: transparent; box-shadow: none; }
+.conn-chip {
+  border: 0; border-radius: 999px;
+  background: none; color: var(--dim);
+  font: 11.5px/1 var(--font); padding: 7px 12px; cursor: pointer;
+  flex: 0 0 auto;
+}
+.conn-chip.on { color: var(--ink); background: var(--raise); box-shadow: inset 0 0 0 1px var(--set-ring); }
+.conn-chip:hover { color: var(--ink); }
+.conn-sec { margin: 0 0 20px; min-width: 0; }
+.conn-sec-head { margin: 0 0 12px; }
+.conn-sec-title {
+  margin: 0; font: 600 13px/1.3 var(--font); color: var(--text);
+  letter-spacing: .01em;
+}
+.conn-sec-sub { margin: 3px 0 0; font: 12px/1.4 var(--font); color: var(--dim); }
+.conn-cats { display: flex; flex-wrap: wrap; gap: 4px; margin: 10px 0 0; }
+.conn-pop {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(196px, 1fr));
+  gap: 8px;
+}
+.panel .conn-pop .conn-card {
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr) auto;
+  grid-template-rows: auto auto;
+  column-gap: 10px; row-gap: 2px;
+  align-items: start; text-align: left;
+  border: 1px solid var(--set-line-strong); border-radius: 12px;
+  background: var(--raise); padding: 11px 12px; cursor: pointer;
+  min-width: 0; min-height: 64px;
+  transition: border-color .14s, transform .14s, box-shadow .14s;
+}
+.conn-card .conn-mark { grid-row: 1 / span 2; align-self: center; }
+.conn-card-meta { grid-column: 2; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.conn-card b { font: 600 12.5px/1.3 var(--font); color: var(--ink); }
+.conn-card-ne {
+  font: 11px/1.35 var(--font); color: var(--dim);
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2;
+  overflow: hidden;
+}
+.conn-kind {
+  grid-column: 3; grid-row: 1;
+  font: 9px/1 var(--mono, var(--font)); font-style: normal;
+  letter-spacing: .04em; text-transform: uppercase;
+  color: var(--faint); white-space: nowrap; padding-top: 3px;
+}
+.panel .conn-pop .conn-card:hover {
+  border-color: var(--set-ring-hover);
+  transform: translateY(-1px);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, .06);
+}
+.panel .conn-pop .conn-card:focus-visible { outline: 2px solid var(--cyan); outline-offset: 1px; }
+.conn-mark {
+  width: 36px; height: 36px; border-radius: 10px; flex: 0 0 auto;
+  display: grid; place-items: center;
+  background: var(--conn-bg, #444);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .12);
+}
+.conn-mark svg { width: 20px; height: 20px; display: block; }
+.row > .conn-mark { width: 22px; height: 22px; border-radius: 6px; }
+.row > .conn-mark svg { width: 13px; height: 13px; }
+:root[data-theme="light"] .conn-mark {
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .08);
+}
+:root[data-theme="light"] .panel .conn-pop .conn-card:hover {
+  box-shadow: 0 8px 18px rgba(52, 44, 32, .08);
+}
+.panel .conn-kinds {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin: 0 0 12px;
+}
+.panel .conn-kinds .choice span {
+  word-break: normal; overflow-wrap: anywhere;
+  font: 11px/1.35 var(--font); color: var(--dim);
+}
+.panel .conn-kinds .choice b { font: 600 12.5px/1.3 var(--font); }
+@media (max-width: 640px) {
+  .conn-bar { flex-direction: column; align-items: stretch; }
+  .conn-chip { text-align: center; }
+  .panel .conn-kinds { grid-template-columns: 1fr; }
+  .panel .conn-pop .conn-card { grid-template-columns: 36px minmax(0, 1fr); }
+  .conn-kind { grid-column: 2; grid-row: 3; justify-self: start; padding-top: 0; }
+}

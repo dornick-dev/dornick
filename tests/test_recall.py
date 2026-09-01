@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from neocp.recall import RecallStore, open_store
+from dornick.recall import RecallStore, open_store
 
 
 @pytest.fixture()
@@ -202,7 +202,7 @@ def test_numbers_do_not_drag_in_unrelated_memories() -> None:
     sayılar imza katmanında birbirine benziyor. Kullanıcının gördüğü şey
     "modbus cihazı ekle" derken kripto ölçümlerinin taranmasıydı.
     """
-    from neocp.loop import _without_numbers
+    from dornick.loop import _without_numbers
 
     clean = _without_numbers(
         "5.11.239.227 bu ip adresinde 5004 portunda bir modbus tcp cihazım "
@@ -216,7 +216,7 @@ def test_numbers_do_not_drag_in_unrelated_memories() -> None:
 
 def test_words_glued_to_numbers_survive() -> None:
     """Sayıyı atarken kelimeyi de atmak, sorguyu anlamsız bırakır."""
-    from neocp.loop import _without_numbers
+    from dornick.loop import _without_numbers
 
     assert "port" in _without_numbers("port 502 açık")
     assert "v1" in _without_numbers("api v1 uçları")

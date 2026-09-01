@@ -20,11 +20,11 @@ from pathlib import Path
 
 import pytest
 
-from neocp.config import Config
-from neocp.events import EventLog
-from neocp.session import Session
-from neocp.tools import ToolContext, ToolRegistry
-from neocp.tools import files as file_tools
+from dornick.config import Config
+from dornick.events import EventLog
+from dornick.session import Session
+from dornick.tools import ToolContext, ToolRegistry
+from dornick.tools import files as file_tools
 
 
 # -- küçük ama GERÇEK dosyalar -----------------------------------------
@@ -102,7 +102,7 @@ def ctx(tmp_path: Path) -> ToolContext:
     config.ensure_dirs()
     return ToolContext(
         config=config,
-        session=Session(EventLog(tmp_path / ".neocp" / "s.jsonl"), "test-oku"),
+        session=Session(EventLog(tmp_path / ".dornick" / "s.jsonl"), "test-oku"),
         cancel=asyncio.Event(),
     )
 
@@ -143,9 +143,9 @@ async def test_the_image_reaches_the_model_through_the_executor(
     """Taşıma yolu hazırdı ve kullanılmıyordu: yürütücü `detail["image"]`ı
     bloğa `_image` olarak iliştiriyor, döngü de onu görüntü bloğuna
     çeviriyor. Bağlantının gerçekten kurulduğunu burada doğruluyoruz."""
-    from neocp.permissions import PermissionEngine
-    from neocp.session import PendingToolUse
-    from neocp.tools import execute
+    from dornick.permissions import PermissionEngine
+    from dornick.session import PendingToolUse
+    from dornick.tools import execute
 
     registry = ToolRegistry()
     file_tools.register(registry)

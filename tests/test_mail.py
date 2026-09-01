@@ -15,11 +15,11 @@ from pathlib import Path
 
 import pytest
 
-from neocp.config import Config
-from neocp.events import EventLog
-from neocp.session import Session
-from neocp.tools import ToolContext, ToolRegistry
-from neocp.tools import mail
+from dornick.config import Config
+from dornick.events import EventLog
+from dornick.session import Session
+from dornick.tools import ToolContext, ToolRegistry
+from dornick.tools import mail
 
 
 @pytest.fixture(autouse=True)
@@ -213,14 +213,14 @@ def test_sending_goes_through_the_permission_gate(registry: ToolRegistry) -> Non
 def test_the_tools_are_hidden_without_an_account(monkeypatch: pytest.MonkeyPatch) -> None:
     """Tanımsız bir aracı listede göstermek modeli olmayan bir yeteneğe
     yönlendiriyor."""
-    from neocp.tools import build_registry
+    from dornick.tools import build_registry
 
     monkeypatch.delenv(mail.USER, raising=False)
     assert "mail_read" not in build_registry()
 
 
 def test_the_tools_appear_once_the_account_is_set() -> None:
-    from neocp.tools import build_registry
+    from dornick.tools import build_registry
 
     assert "mail_read" in build_registry()
     assert "mail_send" in build_registry()

@@ -72,7 +72,7 @@ AXIS_TITLES = {
 SKIP_DIRS = frozenset({
     ".git", "__pycache__", "node_modules", ".venv", "venv", "vendor",
     ".pytest_cache", ".ruff_cache", ".geri-donusum", "dist", "build",
-    ".neocp", ".idea", ".vscode",
+    ".dornick", ".idea", ".vscode",
 })
 
 SOURCE_EXT = {".py": "python", ".php": "php", ".js": "node", ".mjs": "node"}
@@ -81,7 +81,7 @@ SOURCE_EXT = {".py": "python", ".php": "php", ".js": "node", ".mjs": "node"}
 # root, JSON array). The runner writes it: files that were in the workshop
 # BEFORE the turn and never CHANGED during it. Two sources, neither the
 # agent's work:
-#   * the standard skills neo copies into the workshop at boot,
+#   * the standard skills dornick copies into the workshop at boot,
 #   * the task's seed files.
 # The code-health score suffered for exactly this in an early run: the
 # whole complexity penalty came from the product's own skill files. A seed
@@ -699,7 +699,7 @@ class Browser:
         follow: bool = True,
         timeout: float = 15.0,
     ) -> Response:
-        headers = {"User-Agent": "neocp-eval/1.0"}
+        headers = {"User-Agent": "dornick-eval/1.0"}
         if json_body is not None:
             data = json.dumps(json_body).encode("utf-8")
             headers["Content-Type"] = "application/json"

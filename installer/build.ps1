@@ -4,14 +4,14 @@
 #   1. python.org'un gömülü (embeddable) Python 3.11'ini indirir ve açar —
 #      hedef makinede Python kurulu olması gerekmez.
 #   2. get-pip ile pip kurar, uygulamanın bağımlılıklarını O python'a yükler.
-#   3. src/neocp kaynağını ve (eğitim bileşeni için) neocp-base-model
-#      düzeneğini çıktı klasörüne kopyalar. .neocp'deki anahtar/veri ASLA
+#   3. src/dornick kaynağını ve (eğitim bileşeni için) dornick-base-model
+#      düzeneğini çıktı klasörüne kopyalar. .dornick'deki anahtar/veri ASLA
 #      pakete girmez — yalnız kod, varlıklar ve eğitim dosyaları.
 #   4. Torch'un CPU tekerleğini eğitim bileşeninin kendi site klasörüne
 #      (egitim\sitepaket) kurar: bileşen seçilmezse klasör hedefe hiç
 #      gitmez ve python311._pth'teki yol sessizce boş kalır — kurulum
 #      sırasında pip koşturmaya gerek kalmıyor.
-#   5. Inno Setup (iscc) bulunursa neo.iss'i derler.
+#   5. Inno Setup (iscc) bulunursa dornick.iss'i derler.
 #
 # Kullanım:
 #   powershell -ExecutionPolicy Bypass -File installer\build.ps1
@@ -33,13 +33,13 @@ param(
     # PATLAMIYOR, eğitim bileşenini atlayıp söylüyor — "kurulum paketi
     # üretemedim" demek, kullanıcının istemediği bir bileşen yüzünden
     # orantısız.
-    [string]$TabanDepo = "D:\Projects\ai\neocp-base-model"
+    [string]$TabanDepo = "D:\Projects\ai\dornick-base-model"
 )
 
 $ErrorActionPreference = "Stop"
 
 # -- yollar -------------------------------------------------------------------
-$Kok      = Split-Path -Parent $PSScriptRoot          # neocp deposu
+$Kok      = Split-Path -Parent $PSScriptRoot          # dornick deposu
 $Cikti    = Join-Path $PSScriptRoot "dist"
 $Indirme  = Join-Path $Cikti "indirme"                # arşivler burada önbelleklenir
 $Paket    = Join-Path $Cikti "paket"                  # kurulacak ağacın birebir kopyası
@@ -54,7 +54,7 @@ $PySurum  = "3.11.9"
 $PyZip    = "python-$PySurum-embed-amd64.zip"
 $PyUrl    = "https://www.python.org/ftp/python/$PySurum/$PyZip"
 
-# Uygulamanın gerçekten kullandığı üçüncü partiler (src/neocp import taraması):
+# Uygulamanın gerçekten kullandığı üçüncü partiler (src/dornick import taraması):
 #   zorunlu : anthropic, rich, numpy (taban.npz çıkarımı), pywebview (pencere)
 #   pratik  : pillow (tepsi/simge/ekran görüntüsü), pystray (tepsi),
 #             edge-tts (ses), openai (LM Studio/Ollama), mcp (bağlayıcılar),
@@ -122,8 +122,8 @@ Adim "Bağımlılıklar kuruluyor"
 if ($LASTEXITCODE -ne 0) { throw "pip install başarısız" }
 
 # -- 3) uygulama kaynağı ------------------------------------------------------
-Adim "Kaynak kopyalanıyor (src/neocp + varlıklar)"
-Kopyala (Join-Path $Kok "src\neocp") (Join-Path $Paket "src\neocp") @("__pycache__")
+Adim "Kaynak kopyalanıyor (src/dornick + varlıklar)"
+Kopyala (Join-Path $Kok "src\dornick") (Join-Path $Paket "src\dornick") @("__pycache__")
 # Sürümün tek gerçek kaynağı pyproject.toml; ortam.surum() çalışma zamanında
 # paket kökünden okur — kurulu ağaç da depo gibi kökünde taşımalı.
 Copy-Item (Join-Path $Kok "pyproject.toml") $Paket
@@ -213,21 +213,21 @@ if (-not $AtlaKamera) {
 
 # -- 5) başlatıcı -------------------------------------------------------------
 Adim "Başlatıcı yazılıyor"
-# Görev Yöneticisi PE ikonuna bakar: pythonw kopyası neo.exe + ico damgası.
-# neo.cmd klasörden çift tıkla açmak isteyen için aynı komutun görünür hali.
+# Görev Yöneticisi PE ikonuna bakar: pythonw kopyası dornick.exe + ico damgası.
+# dornick.cmd klasörden çift tıkla açmak isteyen için aynı komutun görünür hali.
 $PyW = Join-Path $PyDizin "pythonw.exe"
-$NeoExe = Join-Path $PyDizin "neo.exe"
+$NeoExe = Join-Path $PyDizin "dornick.exe"
 Copy-Item $PyW $NeoExe -Force
-& $PyExe -c "from neocp.winicon import ensure_host; ensure_host()"
+& $PyExe -c "from dornick.winicon import ensure_host; ensure_host()"
 if ($LASTEXITCODE -ne 0) {
     Write-Host "simge damgası atlandı — kurulum/ilk açılış dener" -ForegroundColor Yellow
 }
 @'
 @echo off
-rem neo — masaustu penceresini acar (konsol penceresi acilmaz).
+rem dornick — masaustu penceresini acar (konsol penceresi acilmaz).
 set "KOK=%~dp0"
-start "" "%KOK%python\neo.exe" -m neocp --app -C "%KOK%."
-'@ | Set-Content -Path (Join-Path $Paket "neo.cmd") -Encoding Ascii
+start "" "%KOK%python\dornick.exe" -m dornick --app -C "%KOK%."
+'@ | Set-Content -Path (Join-Path $Paket "dornick.cmd") -Encoding Ascii
 
 # -- 6) derleme ---------------------------------------------------------------
 if ($AtlaDerleme) {
@@ -258,12 +258,12 @@ if (-not $iscc) {
 }
 if (-not $iscc) {
     Write-Host "`nISCC bulunamadı. Paket hazır: $Paket" -ForegroundColor Yellow
-    Write-Host "Inno Setup kurunca: iscc installer\neo.iss"
+    Write-Host "Inno Setup kurunca: iscc installer\dornick.iss"
     exit 2
 }
 
 Adim "Sihirbaz derleniyor ($iscc, sürüm $Surum)"
-& $iscc "/DSurum=$Surum" (Join-Path $PSScriptRoot "neo.iss")
+& $iscc "/DSurum=$Surum" (Join-Path $PSScriptRoot "dornick.iss")
 if ($LASTEXITCODE -ne 0) { throw "iscc başarısız" }
 
 $exe = Get-ChildItem (Join-Path $Cikti "*.exe") | Sort-Object LastWriteTime | Select-Object -Last 1

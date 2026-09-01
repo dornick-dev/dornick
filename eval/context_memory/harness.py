@@ -30,7 +30,7 @@ try:
 except Exception:
     pass
 
-from neocp.mind import open_mind  # noqa: E402
+from dornick.mind import open_mind  # noqa: E402
 
 HERE = Path(__file__).resolve().parent
 K = 3
@@ -188,7 +188,7 @@ def evaluate(verbose: bool = True):
         hold_rows = run_set(_queries(hold_path))
         hold_m = metrics(hold_rows, t)
     if verbose:
-        print("=== neocp recall — win-condition measurement ===")
+        print("=== dornick recall — win-condition measurement ===")
         report(t, dev_m, hold_m)
         print()
     return {"threshold": t, "dev": dev_m, "holdout": hold_m}

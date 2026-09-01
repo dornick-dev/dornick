@@ -15,11 +15,11 @@ from types import SimpleNamespace
 
 import pytest
 
-import neocp.loop as loop_module
-from neocp.backends import TurnResult
-from neocp.loop import Agent, clear_park, read_park, write_park
-from neocp.session import PendingToolUse
-from neocp.tools import ToolRegistry, ToolResult, object_schema
+import dornick.loop as loop_module
+from dornick.backends import TurnResult
+from dornick.loop import Agent, clear_park, read_park, write_park
+from dornick.session import PendingToolUse
+from dornick.tools import ToolRegistry, ToolResult, object_schema
 from tests.test_loop import (  # noqa: F401
     FakeClient,
     build_agent,
@@ -100,7 +100,7 @@ async def test_tool_progress_refreshes_the_continuation_budget(
 def test_work_cut_finds_an_assistant_boundary() -> None:
     """Tek koşuda gerçek kullanıcı turu yalnız başta: cut_point 0 döner,
     work_cut asistan sınırından güvenli kesim bulur."""
-    from neocp.compaction import cut_point, work_cut
+    from dornick.compaction import cut_point, work_cut
 
     def a() -> dict:
         return {"role": "assistant", "content": [{"type": "tool_use", "id": "x",
@@ -220,8 +220,8 @@ async def test_a_failed_background_job_is_not_reported_as_done(
     tmp_path: Path, registry: ToolRegistry
 ) -> None:
     """Çıkış kodu 1 ile biten iş 'görev tamamlandı' dememeli."""
-    from neocp.tools.base import JobFailed
-    from neocp.tools.shell import is_raporu
+    from dornick.tools.base import JobFailed
+    from dornick.tools.shell import is_raporu
 
     client = FakeClient(text_turn("gördüm"))
     agent = build_agent(tmp_path, client, registry)
@@ -246,11 +246,11 @@ async def test_a_failed_background_job_is_not_reported_as_done(
 
 
 async def test_shell_arka_plan_returns_immediately(tmp_path: Path) -> None:
-    from neocp.config import Config
-    from neocp.events import EventLog
-    from neocp.session import Session
-    from neocp.tools import ToolContext
-    from neocp.tools import shell as shell_tool
+    from dornick.config import Config
+    from dornick.events import EventLog
+    from dornick.session import Session
+    from dornick.tools import ToolContext
+    from dornick.tools import shell as shell_tool
 
     reg = ToolRegistry()
     shell_tool.register(reg)
@@ -283,12 +283,12 @@ async def test_shell_arka_plan_failure_raises_a_readable_error(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Arka plan kabuk 1 ile biterse JobFailed — traceback değil, paket adı."""
-    from neocp.config import Config
-    from neocp.events import EventLog
-    from neocp.session import Session
-    from neocp.tools import ToolContext
-    from neocp.tools import shell as shell_tool
-    from neocp.tools.base import JobFailed
+    from dornick.config import Config
+    from dornick.events import EventLog
+    from dornick.session import Session
+    from dornick.tools import ToolContext
+    from dornick.tools import shell as shell_tool
+    from dornick.tools.base import JobFailed
 
     async def fake_run(command, cwd, session_id, timeout, cancel):
         return ("ok", "ModuleNotFoundError: No module named 'pymodbus'", 1)
@@ -321,12 +321,12 @@ async def test_shell_arka_plan_failure_raises_a_readable_error(
 async def test_the_executor_honours_a_requested_timeout(tmp_path: Path) -> None:
     """Araç açıkça süre istediyse (shell'e timeout: 600 gibi) yürütücünün
     genel sınırı onu 180 sn'de öldürmemeli."""
-    from neocp.config import Config
-    from neocp.events import EventLog
-    from neocp.permissions import PermissionEngine
-    from neocp.session import Session
-    from neocp.tools import ToolContext
-    from neocp.tools.executor import execute
+    from dornick.config import Config
+    from dornick.events import EventLog
+    from dornick.permissions import PermissionEngine
+    from dornick.session import Session
+    from dornick.tools import ToolContext
+    from dornick.tools.executor import execute
 
     reg = ToolRegistry()
 
@@ -597,7 +597,7 @@ async def test_interrupting_a_wait_emits_the_cancel_event(
 async def test_the_bridge_publishes_wait_events_to_the_hub(tmp_path: Path) -> None:
     """Köprü sözleşmesi: on_wait yükü hub'a "bekleme" tipiyle, alanlar
     olduğu gibi taşınarak düşer — app.js tek canlı satırı bununla çizer."""
-    from neocp.desktop import Bridge
+    from dornick.desktop import Bridge
 
     class _Hub:
         def __init__(self) -> None:
@@ -621,7 +621,7 @@ async def test_the_bridge_publishes_wait_events_to_the_hub(tmp_path: Path) -> No
 def test_outage_rotates_the_auto_pool() -> None:
     """Oto kipinde kesinti hata sayılır: cezalı model havuzun sonuna düşer,
     bir sonraki deneme başka modelle gider."""
-    from neocp import otomod
+    from dornick import otomod
 
     saglik = otomod.Saglik()
     for _ in range(otomod.HATA_ESIGI):
@@ -643,7 +643,7 @@ def test_park_records_round_trip(tmp_path: Path) -> None:
 async def test_the_bridge_resumes_a_parked_run(tmp_path: Path) -> None:
     """Açılışta bulunan park kaydının karşılığı: pump işareti görünce
     koşuyu kaldığı yerden sürdürür."""
-    from neocp.desktop import _PARK_RESUME, Bridge
+    from dornick.desktop import _PARK_RESUME, Bridge
 
     class _Hub:
         def __init__(self) -> None:
@@ -681,8 +681,8 @@ async def test_the_bridge_resumes_a_parked_run(tmp_path: Path) -> None:
 
 def _oturum(tmp_path: Path, satirlar: list[tuple[str, str, dict]]):
     """Verilen mesajlarla bir oturum kurar ve onu taşıyan sahte ajanı döner."""
-    from neocp.events import EventLog
-    from neocp.session import Session
+    from dornick.events import EventLog
+    from dornick.session import Session
 
     session = Session(EventLog(tmp_path / "s.jsonl"), "s")
     for role, text, meta in satirlar:
@@ -693,7 +693,7 @@ def _oturum(tmp_path: Path, satirlar: list[tuple[str, str, dict]]):
 def test_a_resumed_session_seeds_the_counters_from_real_usage(tmp_path: Path) -> None:
     """En doğru kaynak: son asistan turunun `usage` meta'sı — sağlayıcının
     saydığı gerçek rakam. Tahmin bayrağı DÜŞÜK: uydurma yok."""
-    from neocp.desktop import _gecmis_kullanim
+    from dornick.desktop import _gecmis_kullanim
 
     agent = _oturum(tmp_path, [
         ("user", "merhaba", {}),
@@ -715,7 +715,7 @@ def test_an_old_log_without_usage_falls_back_to_an_estimate(tmp_path: Path) -> N
     """Usage yoksa (eski günlük ya da sayaç vermeyen sağlayıcı) sıfır
     göstermektense yaklaşık göstermek doğru — yeter ki tahmin olduğu
     söylensin. `tahmin` bayrağı arayüzde title'a dönüşüyor."""
-    from neocp.desktop import _gecmis_kullanim
+    from dornick.desktop import _gecmis_kullanim
 
     agent = _oturum(tmp_path, [
         ("user", "a" * 400, {}),
@@ -732,7 +732,7 @@ def test_an_old_log_without_usage_falls_back_to_an_estimate(tmp_path: Path) -> N
 
 def test_a_fresh_session_really_starts_at_zero(tmp_path: Path) -> None:
     """Yeni konuşmada tohum YOK: sayaç gerçekten sıfırdan başlamalı."""
-    from neocp.desktop import _gecmis_kullanim
+    from dornick.desktop import _gecmis_kullanim
 
     agent = _oturum(tmp_path, [])
 
@@ -744,7 +744,7 @@ async def test_the_snapshot_carries_the_resumed_context(tmp_path: Path) -> None:
     """Köprü sözleşmesi: snapshot bağlam doluluğunu ve harcama toplamını
     taşıyor — app.js açılışta bunlarla tohumlanıyor (goals/channels
     tohumlama kalıbının aynısı)."""
-    from neocp.desktop import Bridge
+    from dornick.desktop import Bridge
 
     class _Hub:
         def emit(self, payload: dict) -> None:
@@ -756,8 +756,8 @@ async def test_the_snapshot_carries_the_resumed_context(tmp_path: Path) -> None:
         ("assistant", "selam", {"usage": {"prompt_total": 3000, "output": 50}}),
     ])
     # snapshot ajanın ayarlarına da bakıyor; gerçek bir Config yeterli.
-    from neocp.config import Config
-    from neocp.permissions import PermissionEngine
+    from dornick.config import Config
+    from dornick.permissions import PermissionEngine
 
     config = Config.load(tmp_path)
     config.ensure_dirs()
@@ -791,7 +791,7 @@ def test_baglam_kirilim_puts_the_remainder_in_conversation() -> None:
     """Sağlayıcı yalnız toplam veriyor: sabitler karakter/4, kalan konuşma."""
     import json
 
-    from neocp.desktop import baglam_kirilim
+    from dornick.desktop import baglam_kirilim
 
     sema = {"name": "x", "description": "yyyy", "input_schema": {}}
     yetenek = {"name": "sk", "description": "z" * 20, "input_schema": {}}
@@ -828,7 +828,7 @@ def test_baglam_kirilim_puts_the_remainder_in_conversation() -> None:
 
 def test_baglam_kirilim_scales_when_static_exceeds_total() -> None:
     """Sabitler sağlayıcı toplamını aşarsa orantılanır — konuşma sıfır kalır."""
-    from neocp.desktop import baglam_kirilim
+    from dornick.desktop import baglam_kirilim
 
     agent = SimpleNamespace(
         _system=SimpleNamespace(core="x" * 400, identity=""),
@@ -841,7 +841,7 @@ def test_baglam_kirilim_scales_when_static_exceeds_total() -> None:
 
 
 def test_baglam_kirilim_without_agent_is_all_conversation() -> None:
-    from neocp.desktop import baglam_kirilim
+    from dornick.desktop import baglam_kirilim
 
     parts = {p["id"]: p["n"] for p in baglam_kirilim(None, 500)}
     assert parts["sohbet"] == 500
@@ -851,7 +851,7 @@ def test_baglam_kirilim_without_agent_is_all_conversation() -> None:
 
 def test_baglam_kirilim_shows_statics_before_the_first_turn() -> None:
     """İlk turdan önce de sistem/araç görünsün — yüzde sıfır yalanı yok."""
-    from neocp.desktop import baglam_kirilim
+    from dornick.desktop import baglam_kirilim
 
     agent = SimpleNamespace(
         _system=SimpleNamespace(core="x" * 40, identity=""),

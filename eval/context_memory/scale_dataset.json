@@ -482,19 +482,19 @@
       "domain": "borsa"
     },
     {
-      "slug": "neocp-hafiza-katmanlari",
+      "slug": "dornick-hafiza-katmanlari",
       "kind": "fact",
       "title": "Hafıza katmanları",
-      "content": "neocp hafızası üç katmandan oluşuyor: warm (aktif bağlam), scatter (dağınık kısa notlar) ve legend (kalıcı damıtılmış bilgi).",
+      "content": "dornick hafızası üç katmandan oluşuyor: warm (aktif bağlam), scatter (dağınık kısa notlar) ve legend (kalıcı damıtılmış bilgi).",
       "tags": [
         "hafiza",
         "mimari",
         "katman"
       ],
-      "domain": "neocp"
+      "domain": "dornick"
     },
     {
-      "slug": "neocp-embedding-yasagi",
+      "slug": "dornick-embedding-yasagi",
       "kind": "fact",
       "title": "Embedding kullanmama kararı",
       "content": "Recall tarafında embedding kullanmama kararı kesin; sadece FTS ve kalibre edilmiş sözlüksel birleşim skoru kullanılacak.",
@@ -503,10 +503,10 @@
         "embedding",
         "karar"
       ],
-      "domain": "neocp"
+      "domain": "dornick"
     },
     {
-      "slug": "neocp-episode-kirliligi",
+      "slug": "dornick-episode-kirliligi",
       "kind": "lesson",
       "title": "Episode kirliliği",
       "content": "Recall kalitesini asıl bozan şey episode kirliliği; konuşma turları anı gibi indekslenince taklit sonuçlar öne geçiyor. _relevant süzgeci bu yüzden şart.",
@@ -515,10 +515,10 @@
         "kirlilik",
         "recall"
       ],
-      "domain": "neocp"
+      "domain": "dornick"
     },
     {
-      "slug": "neocp-fts-stopword-dersi",
+      "slug": "dornick-fts-stopword-dersi",
       "kind": "lesson",
       "title": "FTS stopword yarası",
       "content": "FTS sorgusundaki tüm kelimeler stopword olunca arama boş dönüyordu; kalibre birleşim ile bu yara kapandı ve skor 0.55'ten 0.85'e çıktı.",
@@ -527,34 +527,34 @@
         "stopword",
         "skor"
       ],
-      "domain": "neocp"
+      "domain": "dornick"
     },
     {
-      "slug": "neocp-tts-tercihi",
+      "slug": "dornick-tts-tercihi",
       "kind": "preference",
       "title": "Ses çıkışı tercihi",
-      "content": "neocp'nin sesi için Edge TTS'in tr-TR-EmelNeural sesini kullanıyorum; ilk cümle gecikmesini azaltmak için akış modunda çalışıyor.",
+      "content": "dornick'nin sesi için Edge TTS'in tr-TR-EmelNeural sesini kullanıyorum; ilk cümle gecikmesini azaltmak için akış modunda çalışıyor.",
       "tags": [
         "tts",
         "ses",
         "tercih"
       ],
-      "domain": "neocp"
+      "domain": "dornick"
     },
     {
-      "slug": "neocp-commit-kurali",
+      "slug": "dornick-commit-kurali",
       "kind": "procedure",
       "title": "Commit kuralları",
-      "content": "neocp commit mesajları Türkçe yazılır, küçük harfle başlar ve tek satır özet içerir; gerekirse gövdeye madde işaretli detay eklenir.",
+      "content": "dornick commit mesajları Türkçe yazılır, küçük harfle başlar ve tek satır özet içerir; gerekirse gövdeye madde işaretli detay eklenir.",
       "tags": [
         "commit",
         "kural",
         "git"
       ],
-      "domain": "neocp"
+      "domain": "dornick"
     },
     {
-      "slug": "neocp-test-aliskanligi",
+      "slug": "dornick-test-aliskanligi",
       "kind": "procedure",
       "title": "Recall testi alışkanlığı",
       "content": "Her recall değişikliğinden sonra benchmark korpusu koşulur; skor düşerse commit atılmaz.",
@@ -563,46 +563,46 @@
         "benchmark",
         "recall"
       ],
-      "domain": "neocp"
+      "domain": "dornick"
     },
     {
-      "slug": "neocp-mcp-baglayicilar",
+      "slug": "dornick-mcp-baglayicilar",
       "kind": "fact",
       "title": "MCP bağlayıcı durumu",
-      "content": "neocp'ye MCP bağlayıcıları ayarlar panelinden ekleniyor; OAuth bilerek yok, token elle giriliyor.",
+      "content": "dornick'ye MCP bağlayıcıları ayarlar panelinden ekleniyor; OAuth bilerek yok, token elle giriliyor.",
       "tags": [
         "mcp",
         "baglayici",
         "ayar"
       ],
-      "domain": "neocp"
+      "domain": "dornick"
     },
     {
-      "slug": "neocp-sqlite",
+      "slug": "dornick-sqlite",
       "kind": "fact",
       "title": "Hafıza depolama",
-      "content": "neocp hafızası tek SQLite dosyasında; FTS5 sanal tablosu ile anı meta tablosu aynı veritabanında duruyor.",
+      "content": "dornick hafızası tek SQLite dosyasında; FTS5 sanal tablosu ile anı meta tablosu aynı veritabanında duruyor.",
       "tags": [
         "sqlite",
         "fts5",
         "depolama"
       ],
-      "domain": "neocp"
+      "domain": "dornick"
     },
     {
-      "slug": "neocp-super-ajan-vizyonu",
+      "slug": "dornick-super-ajan-vizyonu",
       "kind": "goal",
       "title": "Süper ajan vizyonu",
-      "content": "Hedef: neocp bilgisayarı ekran ve el araçlarıyla kendisi kullanabilsin; ayar ve model değişimi yeniden başlatma gerektirmesin.",
+      "content": "Hedef: dornick bilgisayarı ekran ve el araçlarıyla kendisi kullanabilsin; ayar ve model değişimi yeniden başlatma gerektirmesin.",
       "tags": [
         "vizyon",
         "ekran",
         "hedef"
       ],
-      "domain": "neocp"
+      "domain": "dornick"
     },
     {
-      "slug": "neocp-ilke-kurali",
+      "slug": "dornick-ilke-kurali",
       "kind": "preference",
       "title": "Genel kural ilkesi",
       "content": "Promptlara protokol bazlı reçete yazmıyorum; ajan dış kaynağı kendisi keşfetsin, ilk açılışta tanışmayı kendisi başlatsın.",
@@ -611,10 +611,10 @@
         "prompt",
         "kesif"
       ],
-      "domain": "neocp"
+      "domain": "dornick"
     },
     {
-      "slug": "neocp-recall-esigi",
+      "slug": "dornick-recall-esigi",
       "kind": "fact",
       "title": "Otomatik hatırlatma eşiği",
       "content": "Otomatik hatırlatmada skor eşiği 0.30; eşik altında kalan anılar sessizce elenir, boş sonuçta hiç blok basılmaz.",
@@ -623,10 +623,10 @@
         "esik",
         "skor"
       ],
-      "domain": "neocp"
+      "domain": "dornick"
     },
     {
-      "slug": "neocp-sinonim-tavani",
+      "slug": "dornick-sinonim-tavani",
       "kind": "lesson",
       "title": "Sinonim tavanı",
       "content": "Sinonim sorgularında skor tavanı 0.88 civarında; embedding yasak olduğu için sinonim sınıfı bilinen zayıf noktamız.",
@@ -635,22 +635,22 @@
         "tavan",
         "recall"
       ],
-      "domain": "neocp"
+      "domain": "dornick"
     },
     {
-      "slug": "neocp-atolye-dersi",
+      "slug": "dornick-atolye-dersi",
       "kind": "lesson",
       "title": "Dağılmış ev dersi",
-      "content": "Üst klasörden launch edilince parent dizinde ikinci bir .neocp/atolye oluştu; ev dizini bu yüzden neocp köküne sabitlendi.",
+      "content": "Üst klasörden launch edilince parent dizinde ikinci bir .dornick/atolye oluştu; ev dizini bu yüzden dornick köküne sabitlendi.",
       "tags": [
         "atolye",
         "ev",
         "dizin"
       ],
-      "domain": "neocp"
+      "domain": "dornick"
     },
     {
-      "slug": "neocp-benchmark-hedefi",
+      "slug": "dornick-benchmark-hedefi",
       "kind": "goal",
       "title": "Benchmark hedefi",
       "content": "Benchmark hedefi: exact sınıfında 0.90 üzeri skor, trap sınıfında sıfır yanlış hatırlatma.",
@@ -659,7 +659,7 @@
         "hedef",
         "skor"
       ],
-      "domain": "neocp"
+      "domain": "dornick"
     },
     {
       "slug": "es-bilgisi",
@@ -1249,7 +1249,7 @@
     },
     {
       "title": "kullanıcı: benchmark sonucu",
-      "content": "neocp'de recall testini koştum: exact 0.91, paraphrase 0.83 ama synonym hâlâ 0.71'de sürünüyor."
+      "content": "dornick'de recall testini koştum: exact 0.91, paraphrase 0.83 ama synonym hâlâ 0.71'de sürünüyor."
     },
     {
       "title": "asistan: sinonim yorumu",
@@ -1336,8 +1336,8 @@
       "content": "600 km sınırına yaklaşmışsın; indirim dönemini bekleyip şimdiden modeline bakmaya başlayabilirsin."
     },
     {
-      "title": "kullanıcı: neocp arayüz fikri",
-      "content": "neocp'nin dock'una hafıza sayacını koydum, bağlam doluluğu artık her an görünüyor. Fena olmadı."
+      "title": "kullanıcı: dornick arayüz fikri",
+      "content": "dornick'nin dock'una hafıza sayacını koydum, bağlam doluluğu artık her an görünüyor. Fena olmadı."
     },
     {
       "title": "asistan: sayaç yorumu",
@@ -1514,28 +1514,28 @@
       "domain": "borsa"
     },
     {
-      "q": "neocp hafızasının üç katmanı nelerdi?",
+      "q": "dornick hafızasının üç katmanı nelerdi?",
       "type": "exact",
       "gold": [
-        "neocp-hafiza-katmanlari"
+        "dornick-hafiza-katmanlari"
       ],
-      "domain": "neocp"
+      "domain": "dornick"
     },
     {
       "q": "Otomatik hatırlatmada skor eşiği kaçtı?",
       "type": "exact",
       "gold": [
-        "neocp-recall-esigi"
+        "dornick-recall-esigi"
       ],
-      "domain": "neocp"
+      "domain": "dornick"
     },
     {
-      "q": "neocp commit mesajı kurallarımız neydi?",
+      "q": "dornick commit mesajı kurallarımız neydi?",
       "type": "exact",
       "gold": [
-        "neocp-commit-kurali"
+        "dornick-commit-kurali"
       ],
-      "domain": "neocp"
+      "domain": "dornick"
     },
     {
       "q": "Zeynep'in doğum günü ne zamandı?",
@@ -1670,17 +1670,17 @@
       "q": "Konuşma kayıtlarının hatırlatma sonuçlarına karışması sorununu nasıl değerlendirmiştik?",
       "type": "paraphrase",
       "gold": [
-        "neocp-episode-kirliligi"
+        "dornick-episode-kirliligi"
       ],
-      "domain": "neocp"
+      "domain": "dornick"
     },
     {
       "q": "Ajanın sesli konuşabilmesi için hangi çözümü seçmiştim?",
       "type": "paraphrase",
       "gold": [
-        "neocp-tts-tercihi"
+        "dornick-tts-tercihi"
       ],
-      "domain": "neocp"
+      "domain": "dornick"
     },
     {
       "q": "Yatmadan önce ne yapmayı severim?",
@@ -1853,13 +1853,13 @@
       "domain": "websitesi"
     },
     {
-      "q": "neocp benchmark çalışmasını sürdürelim.",
+      "q": "dornick benchmark çalışmasını sürdürelim.",
       "type": "continuation",
       "gold": [
-        "neocp-benchmark-hedefi",
-        "neocp-test-aliskanligi"
+        "dornick-benchmark-hedefi",
+        "dornick-test-aliskanligi"
       ],
-      "domain": "neocp"
+      "domain": "dornick"
     },
     {
       "q": "P5 istasyonundaki arıza konusuna geri dönelim.",
@@ -1908,9 +1908,9 @@
       "q": "Hafıza katmanları işini kaldığımız yerden sürdürelim.",
       "type": "continuation",
       "gold": [
-        "neocp-hafiza-katmanlari"
+        "dornick-hafiza-katmanlari"
       ],
-      "domain": "neocp"
+      "domain": "dornick"
     },
     {
       "q": "5.11.42.17 adresine ping atamıyorum, bu cihaz neydi?",
@@ -1972,9 +1972,9 @@
       "q": "Metinden sese çözümü olarak neyi seçmiştik?",
       "type": "synonym",
       "gold": [
-        "neocp-tts-tercihi"
+        "dornick-tts-tercihi"
       ],
-      "domain": "neocp"
+      "domain": "dornick"
     }
   ]
 }

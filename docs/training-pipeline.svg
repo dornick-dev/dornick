@@ -72,7 +72,7 @@
 
   <path class="acizgi" d="M755 250 V 285 H 200"/>
   <rect class="kutu vurgu" x="30" y="262" width="165" height="50" rx="8"/>
-  <text class="baslik" x="112" y="283" text-anchor="middle">ships with neo</text>
+  <text class="baslik" x="112" y="283" text-anchor="middle">ships with dornick</text>
   <text class="not" x="112" y="299" text-anchor="middle">assets/taban.npz</text>
   <text class="amber" x="480" y="277" text-anchor="middle">passed every gate</text>
 </svg>
