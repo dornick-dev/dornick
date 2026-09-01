@@ -1,5 +1,43 @@
 ﻿# Changelog
 
+## 1.4.1 - 2026-09-02
+
+Usability pass driven by a live first-run session — every item below is
+something that actually tripped the user up.
+
+* **Fixed: a chat could not be deleted or archived.** Switching chats never
+  closed the old session's log file, so Windows refused to move it
+  ("WinError 32 — the file is in use"). The log is closed on switch now,
+  archiving retries once against a race, and the error message says what
+  to do. Verified live on the case that failed.
+* **You can see which provider you're talking to.** The composer shows the
+  provider next to the model, and it shows the *real* one: the internal
+  backend type is "openai" for half a dozen services, so a chat running on
+  OpenRouter used to look like OpenAI. Missing key turns the chip red.
+* **Settings › Model now reads in setup order**: provider → API key →
+  address → model. The model list comes *from* the provider, so asking for
+  it first was backwards. A local server says "no key needed" instead of
+  showing an empty key box.
+* **First-run guidance actually appears.** The setup card was gated on "is
+  a model name set", and the app ships with a default one — so with no API
+  key the screen just sat there silently. It's now gated on whether the
+  agent can really authenticate, and lists the three steps.
+* **Files the agent produces are reachable.** A written report used to be
+  just a path in the transcript. Every produced file now carries "open"
+  and "show in folder" actions, the viewer's PDF pane gained open /
+  download / show-in-folder, and there is a general "open in the default
+  app" endpoint (previously only web pages could be opened). All of it
+  works for a bound project folder, not just the workshop.
+* **The chat says where it is working** — workshop or a bound folder — in
+  a strip above the composer, with "Choose folder" and "New folder" next
+  to it. The folder picker browses anywhere on disk and can create and
+  name a new directory, then bind the chat to it.
+* **Update notice.** When a newer release exists, a dismissible toast
+  appears at most once a day (the sidebar badge still offers the update
+  any time).
+* **The default UI language is English**, and Turkish on a Turkish
+  machine, instead of Turkish everywhere.
+
 ## 1.4.0 - 2026-09-01
 
 Stability release: every fix below corresponds to a freeze, hang, or

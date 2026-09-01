@@ -1025,6 +1025,70 @@ const Settings = (() => {
 
     pane.append(field("Sağlayıcı", "", picker));
 
+    // SIRA BİLİNÇLİ: sağlayıcı → anahtar → adres → model. Kurulum sırası
+    // budur; model listesi zaten sağlayıcıdan/anahtardan geliyor. Eski
+    // düzende model üstteydi ve kullanıcı anahtarı bulamadan model seçmeye
+    // çalışıyordu ("provider'ı seçene kadar canım çıktı" — canlı yara, 02.09).
+
+    // API anahtarı: yalnız seçili sağlayıcı (ayrı Anahtarlar sayfası yok).
+    const pMeta = chosenProvider();
+    const authKey = el("input", "input-text");
+    authKey.type = "password";
+    authKey.autocomplete = "off";
+    const keyVar = (patch.model || {}).api_key_env ?? state.model.api_key_env
+      ?? (pMeta && pMeta.env) ?? null;
+    const keyKnown = !!(pMeta && pMeta.has_key);
+    authKey.placeholder = keyKnown
+      ? t("Kayıtlı — değiştirmek için yaz")
+      : t("Yapıştır");
+    authKey.addEventListener("input", () => {
+      const v = authKey.value;
+      const env = keyVar || "OPENAI_API_KEY";
+      patch.keys = patch.keys || {};
+      // Boş = silme isteği (keys.json'dan düşer).
+      patch.keys[env] = v;
+      if (!((patch.model || {}).api_key_env ?? state.model.api_key_env)) {
+        set("model", "api_key_env", env);
+      }
+      say("Uygulanacak — yazım bitince");
+    });
+    authKey.addEventListener("change", () => saveSoon(150));
+    const keyLabel = pMeta && pMeta.label
+      ? (pMeta.label + (keyKnown ? " ✓" : ""))
+      : t("API anahtarı");
+    // Yerel sunucuda anahtar gerekmiyor: alanı göstermek yerine bunu SÖYLE.
+    if (isLocalBase() && !(pMeta && pMeta.env)) {
+      pane.append(field(t("API anahtarı"),
+        "Yerel sunucuda anahtar gerekmiyor.",
+        el("div", "field-note", t("Gerekmiyor — yerel sunucu"))));
+    } else {
+      pane.append(field(keyLabel, apiKeyHintKey(), authKey));
+      if (pMeta && pMeta.env && !isLocalBase()) {
+        const note = authKey.parentElement && authKey.parentElement.querySelector(".field-hint");
+        if (note) {
+          const kabuk = pMeta.from_env
+            ? (" · " + t("Kabuk ortamından geliyor"))
+            : "";
+          note.textContent = t(apiKeyHintKey())
+            + " · " + (pMeta.hint || "") + " · " + pMeta.env + kabuk;
+        }
+      } else if (pMeta && pMeta.from_env) {
+        const note = authKey.parentElement && authKey.parentElement.querySelector(".field-hint");
+        if (note) {
+          note.textContent = t("Kabuk ortamından geliyor") + " (" + pMeta.env + ")";
+        }
+      }
+    }
+
+    // Adres (base URL): preset yalnızca başlangıç. Özel bir port, uzak bir
+    // sunucu ya da başka bir OpenAI-uyumlu uç için elle düzenlenebilir.
+    const url = applyOnChange(text((patch.model || {}).base_url ?? state.model.base_url ?? "",
+                     (v) => set("model", "base_url", v.trim())));
+    url.placeholder = isLocalBase()
+      ? t("http://localhost:1234/v1")
+      : t("https://…");
+    pane.append(field("Adres (base URL)", baseUrlHint(), url));
+
     // Kimliği elle yazdırmak hataya davetiye: "qwen3.5-9b" ile
     // "qwen/qwen3.5-9b" arasındaki fark 404 demek ve hata ancak ilk
     // mesajda görünüyor. Sunucu listeyi veriyorsa seçtiriyoruz.
@@ -1058,58 +1122,6 @@ const Settings = (() => {
     yedekAlan.append(yedekListe);
     pane.append(yedekAlan);
     fillFallback(yedekListe);
-
-    // Adres (base URL): preset yalnızca başlangıç. Özel bir port, uzak bir
-    // sunucu ya da başka bir OpenAI-uyumlu uç için elle düzenlenebilir.
-    const url = applyOnChange(text((patch.model || {}).base_url ?? state.model.base_url ?? "",
-                     (v) => set("model", "base_url", v.trim())));
-    url.placeholder = isLocalBase()
-      ? t("http://localhost:1234/v1")
-      : t("https://…");
-    pane.append(field("Adres (base URL)", baseUrlHint(), url));
-
-    // API anahtarı: yalnız seçili sağlayıcı (ayrı Anahtarlar sayfası yok).
-    const pMeta = chosenProvider();
-    const authKey = el("input", "input-text");
-    authKey.type = "password";
-    authKey.autocomplete = "off";
-    const keyVar = (patch.model || {}).api_key_env ?? state.model.api_key_env
-      ?? (pMeta && pMeta.env) ?? null;
-    const keyKnown = !!(pMeta && pMeta.has_key);
-    authKey.placeholder = keyKnown
-      ? t("Kayıtlı — değiştirmek için yaz")
-      : t("Yapıştır");
-    authKey.addEventListener("input", () => {
-      const v = authKey.value;
-      const env = keyVar || "OPENAI_API_KEY";
-      patch.keys = patch.keys || {};
-      // Boş = silme isteği (keys.json'dan düşer).
-      patch.keys[env] = v;
-      if (!((patch.model || {}).api_key_env ?? state.model.api_key_env)) {
-        set("model", "api_key_env", env);
-      }
-      say("Uygulanacak — yazım bitince");
-    });
-    authKey.addEventListener("change", () => saveSoon(150));
-    const keyLabel = pMeta && pMeta.label
-      ? (pMeta.label + (keyKnown ? " ✓" : ""))
-      : t("API anahtarı");
-    pane.append(field(keyLabel, apiKeyHintKey(), authKey));
-    if (pMeta && pMeta.env && !isLocalBase()) {
-      const note = authKey.parentElement && authKey.parentElement.querySelector(".field-hint");
-      if (note) {
-        const kabuk = pMeta.from_env
-          ? (" · " + t("Kabuk ortamından geliyor"))
-          : "";
-        note.textContent = t(apiKeyHintKey())
-          + " · " + (pMeta.hint || "") + " · " + pMeta.env + kabuk;
-      }
-    } else if (pMeta && pMeta.from_env) {
-      const note = authKey.parentElement && authKey.parentElement.querySelector(".field-hint");
-      if (note) {
-        note.textContent = t("Kabuk ortamından geliyor") + " (" + pMeta.env + ")";
-      }
-    }
 
     const effort = el("select", "input-text");
     for (const level of ["low", "medium", "high", "xhigh", "max"]) {

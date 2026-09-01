@@ -703,9 +703,20 @@ class Mind:
                 dest = dest_dir / f"{sid}.jsonl"
                 if dest.exists():
                     dest = dest_dir / f"{sid}-{uuid4().hex[:8]}.jsonl"
-                src.replace(dest)
+                try:
+                    src.replace(dest)
+                except PermissionError:
+                    # Windows açık dosyayı taşıtmıyor. Asıl sebep kapatılmayan
+                    # günlüktü ve kökten düzeltildi (bkz. desktop._switch);
+                    # burada bir de yarışa karşı tek yeniden deneme var:
+                    # kapatma bir an geç kalmışsa kullanıcı hata görmesin.
+                    import time
+                    time.sleep(0.4)
+                    src.replace(dest)
             except OSError as exc:
-                return {"ok": False, "error": f"taşınamadı: {exc}"}
+                return {"ok": False, "error": (
+                    f"taşınamadı: {exc}. Dosya hâlâ açıksa sohbeti kapatıp "
+                    "(başka bir sohbete geçip) yeniden dene.")}
             self._episode_cache.pop(sid, None)
             self._transcript_cache.pop(sid, None)
             meta = self.session_meta()

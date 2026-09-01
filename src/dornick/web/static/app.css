@@ -4938,6 +4938,97 @@ body.viewer-max .viewer-max { color: var(--cyan); }
 /* Kırpılan geçmişin kapısı: dökümün en üstünde, kendi satırında. */
 .transcript-older { display: block; margin: 4px auto 10px; }
 
+/* ---------- çalışma klasörü şeridi ---------- */
+/* Composer'ın hemen üstünde ince bir şerit: nerede çalışıyoruz? */
+.workdir-bar {
+  display: flex; align-items: center; gap: 8px;
+  padding: 4px 10px; margin-bottom: 4px;
+  border: 1px solid var(--line); border-radius: 10px;
+  background: var(--raise); font: 500 11.5px var(--font);
+}
+.workdir-id {
+  display: inline-flex; align-items: center; gap: 6px;
+  border: 0; background: transparent; color: var(--ink);
+  font: inherit; cursor: pointer; padding: 2px 4px; border-radius: 6px;
+  max-width: 60%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.workdir-id:hover { background: #F0A02018; }
+.workdir-kind { color: var(--dim); font-weight: 400; }
+.workdir-bar.bound .workdir-kind { color: var(--cyan); }
+.workdir-act {
+  border: 1px solid var(--line); background: transparent; color: var(--dim);
+  font: 500 11px var(--font); padding: 3px 9px; border-radius: 999px; cursor: pointer;
+}
+.workdir-act:hover { color: var(--ink); border-color: var(--cyan); }
+
+/* Seçici panel: şeridin üstünde açılır. */
+.workdir-panel {
+  border: 1px solid var(--line); border-radius: 12px; background: var(--bg-2, var(--raise));
+  margin-bottom: 6px; overflow: hidden; box-shadow: 0 8px 24px #0006;
+}
+.workdir-panel-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 8px 12px; border-bottom: 1px solid var(--line);
+  font: 600 12px var(--font); color: var(--ink);
+}
+.workdir-close { border: 0; background: transparent; color: var(--dim); cursor: pointer; font-size: 13px; }
+.workdir-body { padding: 10px 12px; max-height: 320px; overflow: auto; }
+.workdir-crumb { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.workdir-crumb code {
+  font: 11px var(--mono, monospace); color: var(--dim);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1;
+}
+.workdir-up, .workdir-plain {
+  border: 1px solid var(--line); background: transparent; color: var(--dim);
+  font: 500 11px var(--font); padding: 3px 9px; border-radius: 999px; cursor: pointer;
+}
+.workdir-list { display: flex; flex-direction: column; gap: 2px; margin-bottom: 10px; }
+.workdir-row {
+  text-align: left; border: 0; background: transparent; color: var(--ink);
+  font: 12px var(--font); padding: 5px 8px; border-radius: 7px; cursor: pointer;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.workdir-row:hover { background: #F0A02018; }
+.workdir-empty { color: var(--faint); font: 11.5px var(--font); padding: 4px 8px; }
+.workdir-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.workdir-actions .input-text { flex: 1; min-width: 140px; }
+.workdir-go {
+  border: 0; background: #F0A020; color: #1A1206;
+  font: 600 12px var(--font); padding: 5px 14px; border-radius: 999px; cursor: pointer;
+}
+.workdir-go:disabled { background: var(--line); color: var(--faint); cursor: default; }
+.workdir-warn { color: var(--rose, #E5484D); font: 11.5px var(--font); margin: 6px 0; }
+
+/* Üretilen dosyanın yanındaki küçük eylemler (aç · klasörde göster). */
+.file-acts { display: inline-flex; gap: 4px; margin-left: 8px; }
+.file-act {
+  border: 1px solid var(--line); background: transparent; color: var(--dim);
+  border-radius: 6px; cursor: pointer; font-size: 11px; line-height: 1;
+  padding: 2px 6px;
+}
+.file-act:hover { color: var(--ink); border-color: var(--cyan); }
+.file-act.bad { color: var(--rose, #E5484D); border-color: var(--rose, #E5484D); }
+
+/* ---------- güncelleme bildirimi ---------- */
+/* Sağ üstte, kapatılabilir; günde bir kez (bkz. app.js updateBanner). */
+.update-toast {
+  position: fixed; top: 54px; right: 18px; z-index: 60;
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 12px; max-width: 320px;
+  border: 1px solid #F0A02066; border-radius: 12px;
+  background: var(--raise); box-shadow: 0 10px 30px #0007;
+  font: 12px var(--font); color: var(--ink);
+}
+.update-toast b { font-weight: 600; }
+.update-toast .u-txt { flex: 1; line-height: 1.4; }
+.update-toast .u-go {
+  border: 0; background: #F0A020; color: #1A1206; cursor: pointer;
+  font: 600 11.5px var(--font); padding: 4px 12px; border-radius: 999px;
+}
+.update-toast .u-x {
+  border: 0; background: transparent; color: var(--dim); cursor: pointer; font-size: 14px;
+}
+
 /* Durdur artık kompozerde: koşarken gönder ■'a döner. HUD'daki eski
    durdur kalktı ("durdurma sohbette değil yukarıda, saçma"). */
 #send.stop { background: var(--rose); color: #fff; }

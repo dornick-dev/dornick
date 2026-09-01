@@ -92,6 +92,7 @@ ASSETS = {
     # "Bu turda ne değişti" şeridi + geri alma.
     "/degisiklik.js": "text/javascript; charset=utf-8",
     "/git.js": "text/javascript; charset=utf-8",
+    "/workdir.js": "text/javascript; charset=utf-8",
     "/chrome.js": "text/javascript; charset=utf-8",
     # Sağ tık menüsü (kullanıcının laptop paketi): index.html yüklüyor ama
     # izin listesine hiç girmemişti — üründe sağ tık sessizce ölüydü (404).
@@ -192,6 +193,32 @@ class Hub:
             except queue.Full:
                 # Yavaş sekme ajanı yavaşlatmasın; o sekme birkaç olay kaçırır.
                 pass
+
+
+def _makine_dili() -> str:
+    """Makinenin diline göre varsayılan arayüz dili: "tr" ya da "en".
+
+    Türkçe bir Windows'ta (ya da bölge Türkiye ise) Türkçe; diğer her
+    yerde İngilizce. Okunamazsa İngilizce — ürünün varsayılanı budur.
+    """
+    try:
+        import locale
+        etiket = ""
+        try:
+            etiket = (locale.getdefaultlocale()[0] or "")
+        except (ValueError, TypeError):
+            etiket = ""
+        if not etiket:
+            try:
+                etiket = (locale.getlocale()[0] or "")
+            except (ValueError, TypeError):
+                etiket = ""
+        etiket = etiket.lower().replace("-", "_")
+        if etiket.startswith("tr") or etiket.endswith("_tr") or "turkish" in etiket:
+            return "tr"
+    except Exception:
+        pass
+    return "en"
 
 
 def _payload(event: Event) -> dict[str, Any] | None:
@@ -843,7 +870,11 @@ class _Handler(BaseHTTPRequestHandler):
             # bırakıyor, ilk açılışta dil.js buradan okuyup kendine yazıyor.
             # Eski sürümler aynı dosyayı kurulum.json adıyla bırakmıştı;
             # setup.json yoksa ona da bakılır — mevcut kurulumlar kırılmaz.
-            # Hiçbiri yoksa boş dönülüyor — dil.js Türkçe'ye düşer.
+            # Sihirbaz bir dil bırakmadıysa MAKİNENİN diline bakılır:
+            # Türkiye/Türkçe ise Türkçe, değilse İngilizce. Varsayılanın
+            # Türkçe olması ürünü dünyaya kapalı gösteriyordu (kullanıcı
+            # isteği, 02.09) — kaynak metinler Türkçe kalıyor, yalnızca
+            # varsayılan görüntü dili değişiyor.
             config = getattr(self.server, "config", None)
             dil = ""
             if config is not None:
@@ -856,7 +887,7 @@ class _Handler(BaseHTTPRequestHandler):
                         dil = ""
                     if dil:
                         break
-            self._json({"dil": dil})
+            self._json({"dil": dil or _makine_dili()})
         elif route == "/api/settings":
             self._settings()
         elif route == "/api/files":
@@ -1011,7 +1042,19 @@ class _Handler(BaseHTTPRequestHandler):
                 self._json({"ok": False, "error": "`path` gerekli"})
                 return
             self._json(catalog.open_path(config.open_sandbox().root, path,
-                                         base=Path(config.workspace)))
+                                         base=self._acilis_tabani(config)))
+            return
+        if route == "/api/apps/file-open":
+            # Dosyayı sistemin VARSAYILAN uygulamasında aç (PDF, docx, png…).
+            # Ajanın ürettiği rapora ulaşmanın kısa yolu (canlı yara, 02.09).
+            from .. import apps as catalog
+            config = getattr(self.server, "config", None)
+            path = str((body or {}).get("path") or "").strip()
+            if config is None or not path:
+                self._json({"ok": False, "error": "`path` gerekli"})
+                return
+            self._json(catalog.sistemde_ac(config.open_sandbox().root, path,
+                                           base=self._acilis_tabani(config)))
             return
         if route == "/api/apps/reveal":
             # "Klasörü göster": uygulamanın diskteki yerini dosya gezgininde
@@ -1023,7 +1066,7 @@ class _Handler(BaseHTTPRequestHandler):
                 self._json({"ok": False, "error": "`path` gerekli"})
                 return
             self._json(catalog.reveal(config.open_sandbox().root, path,
-                                      base=Path(config.workspace)))
+                                      base=self._acilis_tabani(config)))
             return
         if route == "/api/artifacts":
             self._artifacts_edit(body)
@@ -1191,6 +1234,9 @@ class _Handler(BaseHTTPRequestHandler):
             return
         if route == "/api/guncelle":
             self._guncelle()
+            return
+        if route == "/api/klasor/olustur":
+            self._klasor_olustur(body)
             return
         if route == "/api/gate":
             self._gate(body)
@@ -3569,6 +3615,70 @@ class _Handler(BaseHTTPRequestHandler):
     def _json(self, payload: Any) -> None:
         body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
         self._send(200, "application/json; charset=utf-8", body)
+
+    def _acilis_tabani(self, config: Any) -> Path:
+        """Göreli yolların çözüleceği taban: bağlı proje varsa O, yoksa
+        çalışma alanı.
+
+        Ajan bağlı bir klasöre yazdığında kart "atolye/…" değil o klasöre
+        göreli bir yol taşıyor; taban çalışma alanına sabitlenince
+        "Klasörde göster" dosyayı bulamıyordu (canlı yara, 02.09).
+        """
+        try:
+            proje = str(getattr(config.sandbox, "project", "") or "").strip()
+            if proje:
+                yol = Path(proje).expanduser()
+                if yol.is_dir():
+                    return yol
+        except Exception:
+            pass
+        return Path(config.workspace)
+
+    def _klasor_olustur(self, body: dict[str, Any] | None) -> None:
+        """Yeni bir çalışma klasörü oluşturur (ve yolunu döndürür).
+
+        Sohbet ekranındaki "Yeni klasör" akışı: kullanıcı bir üst dizin
+        seçip ad veriyor, klasör burada açılıyor. Atölye DIŞI da olabilir —
+        seçim kullanıcının rızasıdır (sandbox'ın kuralı da bu). Yine de
+        `kok_engeli` süzgeci var: sürücü kökü, Windows/Program Files gibi
+        sistem dizinleri ve ev dizininin kendisi reddedilir.
+        """
+        from .. import sandbox as kum
+
+        ust = str((body or {}).get("ust") or "").strip()
+        ad = str((body or {}).get("ad") or "").strip()
+        if not ust or not ad:
+            self._json({"ok": False, "hata": "üst klasör ve ad gerekli"})
+            return
+        # Ad tek parça olmalı: yol ayracı ya da `..` ile üst dizine çıkılmasın.
+        if any(sep in ad for sep in ("/", "\\")) or ad in (".", ".."):
+            self._json({"ok": False, "hata": "Klasör adı yol içeremez"})
+            return
+        try:
+            kok = Path(ust).expanduser().resolve()
+            hedef = (kok / ad).resolve()
+        except OSError:
+            self._json({"ok": False, "hata": "Yol çözümlenemedi"})
+            return
+        if kok != hedef.parent:
+            self._json({"ok": False, "hata": "Klasör seçilen dizinin altında olmalı"})
+            return
+        if not kok.is_dir():
+            self._json({"ok": False, "hata": f"Üst klasör yok: {kok}"})
+            return
+        # Denetim ÜST dizine: hedef henüz yok ve `kok_engeli` var olmayan
+        # yolu "böyle bir klasör yok" diye reddediyor. Asıl soru zaten
+        # "bu klasörü açmak güvenli bir yerde mi?" — cevabı üst dizin verir.
+        if (engel := kum.kok_engeli(kok)) is not None:
+            self._json({"ok": False, "hata": engel})
+            return
+        try:
+            hedef.mkdir(parents=True, exist_ok=True)
+        except OSError as exc:
+            self._json({"ok": False, "hata": f"oluşturulamadı: {exc}"})
+            return
+        self._json({"ok": True, "yol": str(hedef),
+                    "uyari": kum.kok_uyarisi(hedef) or ""})
 
     def _guncelle(self) -> None:
         """Yeni sürümü indirir ve kurulum sihirbazını başlatır.

@@ -218,8 +218,8 @@ def test_install_language_is_served_from_setup_json(tmp_path: Path, mind: Mind) 
     localStorage'a kurulumdan yazılamaz; sihirbaz çalışma alanına
     setup.json bırakır ve dil.js ilk açılışta buradan okur. Eski
     sürümlerin bıraktığı kurulum.json da tanınır — güncelleme dil
-    seçimini kaybettirmemeli. Dosya yoksa boş dönmeli — arayüz
-    Türkçe'ye düşer.
+    seçimini kaybettirmemeli. Dosya yoksa MAKİNENİN diline düşülür
+    (varsayılan İngilizce, Türkçe makinede Türkçe — 02.09).
     """
     from dornick.config import Config
 
@@ -234,7 +234,9 @@ def test_install_language_is_served_from_setup_json(tmp_path: Path, mind: Mind) 
             return json.loads(response.read().decode("utf-8"))
 
     try:
-        assert fetch() == {"dil": ""}
+        # Sihirbaz dosyası yok: makine dili (bu makinede ne ise) dönmeli —
+        # boş DEĞİL, çünkü arayüzün bir varsayılana ihtiyacı var.
+        assert fetch()["dil"] in ("tr", "en")
         # Eski ad tek başına: geriye uyumluluk (mevcut kurulumlar).
         (tmp_path / "kurulum.json").write_text('{"dil": "en"}', encoding="utf-8")
         assert fetch() == {"dil": "en"}
@@ -244,9 +246,9 @@ def test_install_language_is_served_from_setup_json(tmp_path: Path, mind: Mind) 
         # Bozuk yeni dosya sunucuyu düşürmemeli; eski ada düşülür.
         (tmp_path / "setup.json").write_text("{bozuk", encoding="utf-8")
         assert fetch() == {"dil": "en"}
-        # Tek başına bozuk dosya: sessizce Türkçe'ye dönülür.
+        # Tek başına bozuk dosya: sessizce makine diline dönülür.
         (tmp_path / "kurulum.json").unlink()
-        assert fetch() == {"dil": ""}
+        assert fetch()["dil"] in ("tr", "en")
     finally:
         server.stop()
         log.close()
@@ -942,6 +944,73 @@ def test_guncelle_yeni_surum_yoksa_kibar_reddeder(
     finally:
         server.stop()
         log.close()
+
+
+def test_klasor_olustur_creates_and_refuses_bad_targets(
+    tmp_path: Path, mind: Mind
+) -> None:
+    """Sohbet ekranındaki "Yeni klasör": adı verilen klasör açılır; yol
+    içeren ad ve tehlikeli kökler reddedilir (kullanıcı isteği, 02.09)."""
+    log = EventLog(tmp_path / "s.jsonl")
+    server = MindServer(mind, log, port=0)
+    server.start()
+    try:
+        ust = tmp_path / "projeler"
+        ust.mkdir()
+        c = _post_json(server, "/api/klasor/olustur",
+                       {"ust": str(ust), "ad": "yeni-is"})
+        assert c["ok"] is True
+        assert (ust / "yeni-is").is_dir()
+        assert c["yol"].endswith("yeni-is")
+
+        # Ad yol içeremez: üst dizine kaçış girişimi.
+        kotu = _post_json(server, "/api/klasor/olustur",
+                          {"ust": str(ust), "ad": "../disari"})
+        assert kotu["ok"] is False
+        assert not (tmp_path / "disari").exists()
+
+        # Eksik alan.
+        assert _post_json(server, "/api/klasor/olustur", {"ust": str(ust)})["ok"] is False
+    finally:
+        server.stop()
+        log.close()
+
+
+def test_dil_ucu_makine_diline_duser(
+    tmp_path: Path, mind: Mind, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Sihirbaz dil bırakmadıysa makinenin diline bakılır: Türkçe makinede
+    "tr", diğer her yerde "en" (varsayılan İngilizce — kullanıcı isteği)."""
+    from dornick.web import server as server_module
+
+    monkeypatch.setattr(server_module, "_makine_dili", lambda: "en")
+    log = EventLog(tmp_path / "s.jsonl")
+    server = MindServer(mind, log, port=0)
+    server.start()
+    try:
+        with urllib.request.urlopen(server.url + "api/dil", timeout=5) as cevap:
+            assert json.loads(cevap.read().decode("utf-8"))["dil"] == "en"
+    finally:
+        server.stop()
+        log.close()
+
+
+def test_makine_dili_turkce_lokalde_tr(monkeypatch: pytest.MonkeyPatch) -> None:
+    """tr_TR yerelinde Türkçe, başka yerelde İngilizce."""
+    import locale
+
+    from dornick.web import server as server_module
+
+    monkeypatch.setattr(locale, "getdefaultlocale", lambda: ("tr_TR", "cp1254"))
+    assert server_module._makine_dili() == "tr"
+    monkeypatch.setattr(locale, "getdefaultlocale", lambda: ("en_US", "utf-8"))
+    assert server_module._makine_dili() == "en"
+    # Okunamazsa İngilizce.
+    def patlar():
+        raise ValueError("yok")
+    monkeypatch.setattr(locale, "getdefaultlocale", patlar)
+    monkeypatch.setattr(locale, "getlocale", patlar)
+    assert server_module._makine_dili() == "en"
 
 
 def test_foreign_origin_post_is_rejected(tmp_path: Path, mind: Mind) -> None:

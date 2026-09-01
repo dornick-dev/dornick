@@ -298,6 +298,27 @@ Dil.ekle({
   "yeni — indir": "new — download",
   "yeni — güncelle": "new — update",
   "hata": "error",
+  "sürümü yayınlandı.": "is available.",
+  "İndir ve kur": "Download & install",
+  "İndir": "Download",
+  "Kapat": "Dismiss",
+  "Sağlayıcı: ": "Provider: ",
+  "Sağlayıcı seçilmedi": "No provider selected",
+  "anahtar yok": "no API key",
+  "tıkla: ayarları aç": "click: open settings",
+  "Başlamak için iki adım": "Two steps to start",
+  "Dornick henüz bir modele bağlanamıyor. Sohbet başlamadan önce bir sağlayıcı seçip anahtarını girmen gerekiyor.":
+    "Dornick can't reach a model yet. Pick a provider and enter its API key before chatting.",
+  "Sağlayıcıyı seç — OpenRouter, OpenAI, Anthropic ya da LM Studio gibi yerel bir sunucu":
+    "Pick a provider — OpenRouter, OpenAI, Anthropic, or a local server like LM Studio",
+  "API anahtarını gir ve kaydet (yerel sunucuda anahtar gerekmez)":
+    "Enter and save the API key (a local server needs none)",
+  "Modeli seç — liste sağlayıcıdan otomatik gelir":
+    "Choose the model — the list loads from the provider",
+  "Sağlayıcı ve anahtar ayarla": "Set provider and key",
+  "Varsayılan uygulamada aç": "Open in the default app",
+  "Klasörde göster": "Show in folder",
+  "Açılamadı": "Could not open",
   "Yeni sürüm yayınlandı — indirmek için tıkla":
     "A new release is out — click to download",
   "Yeni sürüm yayınlandı — indirip kurmak için tıkla":
@@ -650,8 +671,8 @@ function showWelcome() {
   note.hidden = true;
   w.append(h, p, note);
   thread.append(w);
-  // Model hâlâ bağlı değilse kurulum kartı karşılamayla birlikte geri gelsin.
-  if (typeof modelName !== "undefined" && modelKnown && !modelName) showSetupGuide();
+  // Ajan hâlâ çalışamıyorsa (anahtar yok) kurulum kartı karşılamayla gelsin.
+  if (modelKnown && !canRun) showSetupGuide();
 }
 
 // --- ilk kurulum yönlendirmesi ------------------------------------------
@@ -661,25 +682,44 @@ function showWelcome() {
 // tamamlanır — tek tıkla Ayarlar › Model açılıyor.
 let modelKnown = false;
 
+// Adım adım kurulum kartı: kullanıcı ne yapacağını SIRAYLA görsün.
+// Eskiden yalnız "model adı boş mu" bakılıyordu; uygulama varsayılan bir
+// model ("oto") ile geldiği için kart hiç çıkmıyordu ve anahtarsız bir
+// kurulumda ekran sessiz kalıyordu — kullanıcı mesaj yazana kadar hiçbir
+// şey anlamıyordu (canlı yara, 02.09). Artık kapı `can_run`: anahtar
+// gerçekten var mı?
 function showSetupGuide() {
   if ($("setup-guide")) return;
   const kart = document.createElement("div");
   kart.className = "setup-guide";
   kart.id = "setup-guide";
   const baslik = document.createElement("h2");
-  baslik.textContent = t("Önce bir sağlayıcı bağla");
+  baslik.textContent = t("Başlamak için iki adım");
   const metin = document.createElement("p");
   metin.textContent = t(
-    "Henüz bir model bağlı değil. Bir sağlayıcı seç (OpenRouter, OpenAI, "
-    + "Anthropic ya da LM Studio gibi yerel bir sunucu), API anahtarını gir "
-    + "ve kaydet; ardından Dornick'i kapatıp yeniden aç — sohbet ondan "
-    + "sonra başlar.");
+    "Dornick henüz bir modele bağlanamıyor. Sohbet başlamadan önce bir "
+    + "sağlayıcı seçip anahtarını girmen gerekiyor.");
+
+  // Numaralı adımlar: sıra belli olsun (önce sağlayıcı+anahtar, sonra model).
+  const adimlar = document.createElement("ol");
+  adimlar.className = "setup-steps";
+  for (const [n, s] of [
+    ["1", t("Sağlayıcıyı seç — OpenRouter, OpenAI, Anthropic ya da LM Studio gibi yerel bir sunucu")],
+    ["2", t("API anahtarını gir ve kaydet (yerel sunucuda anahtar gerekmez)")],
+    ["3", t("Modeli seç — liste sağlayıcıdan otomatik gelir")],
+  ]) {
+    const li = document.createElement("li");
+    li.textContent = s;
+    li.dataset.n = n;
+    adimlar.append(li);
+  }
+
   const dugme = document.createElement("button");
   dugme.type = "button";
   dugme.className = "setup-guide-btn";
-  dugme.textContent = t("Sağlayıcı ve model seç");
+  dugme.textContent = t("Sağlayıcı ve anahtar ayarla");
   dugme.onclick = () => { if (typeof Settings !== "undefined") Settings.open("model"); };
-  kart.append(baslik, metin, dugme);
+  kart.append(baslik, metin, adimlar, dugme);
   const w = $("welcome");
   if (w) w.append(kart); else thread.append(kart);
 }
@@ -687,6 +727,12 @@ function showSetupGuide() {
 function hideSetupGuide() {
   const kart = $("setup-guide");
   if (kart) kart.remove();
+}
+
+// Çalışma klasörü şeridi (workdir.js) için ince köprü: loadState buradan
+// çağırıyor, çizimi modül yapıyor.
+function setWorkdir(proje, workspace) {
+  if (typeof WorkDir !== "undefined") WorkDir.ciz(proje, workspace);
 }
 
 // --- akıllı kaydırma ----------------------------------------------------
@@ -2607,10 +2653,21 @@ const EFFORTS = ["low", "medium", "high", "xhigh", "max"];
 const MODE_ORDER = ["auto", "ask", "plan", "yolo"];
 
 let dockEffort = "";
+let providerName = "";      // openrouter / ollama / anthropic …
+let canRun = true;          // anahtar var mı (yoksa kurulum kartı çıkar)
 let contextWindow = 0;
 let lastKirilim = [];   // kalem kalem kırılım (snapshot + usage)
 
 function dockRender() {
+  // Sağlayıcı çipi: anahtar yoksa uyarı rengiyle ve "anahtar yok" diyerek.
+  const sag = $("dock-provider");
+  if (sag) {
+    sag.textContent = providerName || "—";
+    sag.classList.toggle("bad", !!providerName && !canRun);
+    sag.title = (providerName ? t("Sağlayıcı: ") + providerName : t("Sağlayıcı seçilmedi"))
+      + (canRun ? "" : " · " + t("anahtar yok"))
+      + " · " + t("tıkla: ayarları aç");
+  }
   $("dock-model").textContent = modelName || "model";
   $("dock-effort").textContent = dockEffort || "—";
   $("dock-mode").textContent = t(AUTHORITY[mode]) || mode || "—";
@@ -3717,7 +3774,47 @@ function fileChangeTrace(card, e) {
   } else if (e.summary) {
     line.append(document.createTextNode(" · " + e.summary));
   }
+  // Üretilen dosyaya ULAŞMA yolu: aç · klasörde göster. Ajan bir rapor
+  // yazdığında kullanıcı onu ne açabiliyor ne bulabiliyordu — yalnız yol
+  // yazıyordu (canlı yara, 02.09).
+  if (path && !e.error) line.append(fileActions(path));
   return line;
+}
+
+// Dosya satırının sağındaki küçük eylemler. Tıklama satırın kendi
+// açma/kapama davranışını tetiklemesin diye olay durduruluyor.
+function fileActions(path) {
+  const kutu = document.createElement("span");
+  kutu.className = "file-acts";
+  const yap = (etiket, ipucu, uc) => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "file-act";
+    b.textContent = etiket;
+    b.title = t(ipucu);
+    b.onclick = async (ev) => {
+      ev.stopPropagation();
+      let c = null;
+      try {
+        c = await (await fetch(uc, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ path }),
+        })).json();
+      } catch { /* sunucu sessiz */ }
+      if (!c || c.ok === false) {
+        b.classList.add("bad");
+        b.title = (c && c.error) || t("Açılamadı");
+        setTimeout(() => b.classList.remove("bad"), 4000);
+      }
+    };
+    return b;
+  };
+  kutu.append(
+    yap("↗", "Varsayılan uygulamada aç", "/api/apps/file-open"),
+    yap("🗂", "Klasörde göster", "/api/apps/reveal"),
+  );
+  return kutu;
 }
 
 function diffStats(card) {
@@ -5332,11 +5429,14 @@ async function loadState() {
       if (rozet) rozet.textContent = "v" + s.surum;
     }
     modelName = s.model || "";
+    providerName = s.provider || "";
+    canRun = s.can_run !== false;
     modelKnown = true;
-    // İlk kurulum: sağlayıcı/model yoksa kullanıcı yönlendirilir; model
-    // bağlanınca (ayar kaydı + yeniden başlatma sonrası) kart kendiliğinden
-    // gider.
-    if (!modelName) showSetupGuide(); else hideSetupGuide();
+    // İlk kurulum: ajan gerçekten çalışabiliyor mu (anahtar var mı)?
+    // Model adı dolu olsa bile ("oto") anahtar yoksa iş yapılamaz.
+    if (!canRun) showSetupGuide(); else hideSetupGuide();
+    // Çalışma klasörü göstergesi: atölyede miyiz, bağlı bir klasörde mi?
+    setWorkdir(s.project || "", s.workspace || "");
     oturumId = s.session || oturumId;
     showMeta();
     setVoice(!!s.voice);
@@ -5417,9 +5517,61 @@ setTimeout(async () => {
         url: cevap.url || "", indirme: cevap.indirme || "",
       }));
     } catch { /* localStorage kapalı olabilir */ }
-    if (cevap.yeni) surumRozetiYenile(cevap);
+    if (cevap.yeni) { surumRozetiYenile(cevap); updateToast(cevap); }
   } catch { /* ağ yok — sessiz geç */ }
 }, 8000);
+
+// Güncelleme bildirimi: sağ üstte, günde EN ÇOK BİR KEZ ve kapatılabilir
+// (kullanıcı isteği, 02.09). Kapatınca o sürüm için bir daha gösterilmez —
+// rozet yerinde kalır, isteyen oradan güncellerken bildirim rahatsız etmez.
+function updateToast(cevap) {
+  if (!cevap || !cevap.yeni || document.getElementById("update-toast")) return;
+  const ANAHTAR = "dornickGuncellemeBildirim";
+  try {
+    const k = JSON.parse(localStorage.getItem(ANAHTAR) || "{}");
+    if (k.kapatilan === cevap.yeni) return;                    // bu sürümü elledi
+    if (k.zaman && Date.now() - k.zaman < 24 * 60 * 60 * 1000) return;  // günde bir
+  } catch { /* bozuk kayıt — göster */ }
+  try {
+    localStorage.setItem(ANAHTAR, JSON.stringify({ zaman: Date.now(), surum: cevap.yeni }));
+  } catch { /* localStorage kapalı */ }
+
+  const kutu = document.createElement("div");
+  kutu.className = "update-toast";
+  kutu.id = "update-toast";
+  const yazi = document.createElement("span");
+  yazi.className = "u-txt";
+  const kalin = document.createElement("b");
+  kalin.textContent = "v" + cevap.yeni;
+  yazi.append(kalin, document.createTextNode(" " + t("sürümü yayınlandı.")));
+  const git = document.createElement("button");
+  git.type = "button";
+  git.className = "u-go";
+  git.textContent = t(cevap.indirme ? "İndir ve kur" : "İndir");
+  git.onclick = async () => {
+    if (!cevap.indirme) {
+      if (cevap.url) window.open(cevap.url, "_blank", "noopener");
+      return;
+    }
+    git.disabled = true;
+    git.textContent = t("İndiriliyor");
+    try { await fetch("/api/guncelle", { method: "POST" }); } catch { /* olay akışı söyler */ }
+  };
+  const kapat = document.createElement("button");
+  kapat.type = "button";
+  kapat.className = "u-x";
+  kapat.textContent = "✕";
+  kapat.title = t("Kapat");
+  kapat.onclick = () => {
+    try {
+      localStorage.setItem(ANAHTAR, JSON.stringify({
+        zaman: Date.now(), surum: cevap.yeni, kapatilan: cevap.yeni }));
+    } catch { /* localStorage kapalı */ }
+    kutu.remove();
+  };
+  kutu.append(yazi, git, kapat);
+  document.body.append(kutu);
+}
 
 function surumRozetiYenile(cevap) {
   const rozet = document.getElementById("side-ver");

@@ -308,6 +308,51 @@ def baglam_kirilim(agent: Any, prompt_total: int = 0) -> list[dict[str, Any]]:
     return [{"id": k, "ad": ad, "n": n} for k, ad, n in parcalar]
 
 
+def _saglayici_adi(agent: Any) -> str:
+    """Arayüzde gösterilecek sağlayıcı kimliği (openrouter, ollama, …).
+
+    `model.provider` backend tipidir ("openai") ve altında altı farklı
+    sunucu var; kullanıcıya "openai" demek OpenRouter'a bağlıyken yanlış
+    bilgi olurdu. Adrese bakan eşleştirme `settings.provider_of`'ta.
+    """
+    if agent is None:
+        return ""
+    try:
+        from . import settings
+        return settings.provider_of(agent.config.model)
+    except Exception:
+        return str(getattr(getattr(agent, "config", None), "model", None)
+                   and agent.config.model.provider or "")
+
+
+def _calisabilir(agent: Any) -> bool:
+    """Ajan gerçekten kimlik doğrulayabiliyor mu?
+
+    Model "oto"/varsayılan gelse bile anahtar yoksa hiçbir iş yapılamaz;
+    arayüz ilk-kurulum yönlendirmesini buna göre gösteriyor. Yerel sunucu
+    (localhost/LM Studio) anahtar istemez — o durumda çalışabilir sayılır.
+    """
+    if agent is None:
+        return False
+    model = getattr(agent, "config", None)
+    model = getattr(model, "model", None)
+    if model is None:
+        return False
+    base = (getattr(model, "base_url", "") or "").lower()
+    if any(h in base for h in ("localhost", "127.0.0.1", "0.0.0.0", "::1")):
+        return True
+    env = getattr(model, "api_key_env", "") or ""
+    if not env:
+        return True   # anahtar istemeyen sağlayıcı
+    if os.environ.get(env):
+        return True
+    try:
+        from . import settings
+        return bool(settings.load_keys(agent.config.state_dir).get(env))
+    except Exception:
+        return False
+
+
 def _gecmis_kullanim(agent: Any) -> dict[str, Any]:
     """Sürdürülen bir oturumun bağlam + harcama durumu.
 
@@ -1013,6 +1058,7 @@ class Bridge:
 
         # Boş şeritte ucuz yol: aynı ajan yeni oturuma bağlanır.
         eski_anahtar = aktif.sid
+        eski_oturum = agent.session      # günlüğü aşağıda kapatılacak
         agent.session = session
         agent.mind.session_id = session.id
         agent._last_encoded = ""      # yeni oturumda anlık-encode tekrarını sıfırla
@@ -1021,6 +1067,19 @@ class Bridge:
         self.seritler[session.id] = aktif
         self._aktif_sid = session.id
         self.server.rebind(session)
+        # Eski oturumun günlük dosyasını KAPAT. Windows açık bir dosyayı
+        # taşıtmıyor: kapatılmayınca kullanıcı o sohbeti silmek/arşivlemek
+        # istediğinde "WinError 32 — dosya başka bir işlem tarafından
+        # kullanılıyor" hatası alıyordu (canlı yara, 02.09; hem bende hem
+        # kullanıcıda görüldü). Başka bir şerit aynı oturumu tutuyorsa
+        # dokunulmuyor.
+        try:
+            if (eski_oturum is not None and eski_oturum is not session
+                    and not any(getattr(s.agent, "session", None) is eski_oturum
+                                for s in self.seritler.values())):
+                eski_oturum.close()
+        except Exception:
+            pass
         self._model_devri(agent, onceki_sid, session, resumed)
         # Sohbete özel klasör / model — geçişte uygula.
         try:
@@ -1617,7 +1676,10 @@ class Bridge:
             "stage": self.stage,
             "session": agent.session.id if agent else "",
             "model": agent.config.model.name if agent else "",
-            "provider": agent.config.model.provider if agent else "",
+            # Sağlayıcı ADI arayüz için: `model.provider` backend TİPİdir
+            # ("openai") ve OpenRouter'a bağlıyken "openai" yazmak yanıltıcı.
+            # Ayarlardaki gerçek sağlayıcı kimliği adrese bakarak bulunuyor.
+            "provider": _saglayici_adi(agent),
             # Kompozer altındaki şerit için: düşünme derinliği ve bağlam
             # penceresi. Pencere olmadan kullanım yüzdesi hesaplanamıyor.
             "effort": agent.config.model.effort if agent else "",
@@ -1669,6 +1731,15 @@ class Bridge:
             # Sahada "hangi sürüm açık?" sorusu cevapsız kalmasın.
             "surum": ortam.surum(),
             "kurulu": ortam.kurulu_mu(),
+            # Ajan gerçekten kimlik doğrulayabiliyor mu (anahtar var ya da
+            # yerel sunucu)? Arayüz ilk-kurulum yönlendirmesini buna göre
+            # gösteriyor — model "oto" gelse bile anahtar yoksa iş yapılamaz.
+            "can_run": _calisabilir(agent),
+            # Çalışma dizini: sohbet ekranı atölyede mi yoksa bağlı bir
+            # klasörde mi olduğunu göstersin. project boşsa atölyedeyiz.
+            "workspace": str(agent.config.workspace) if agent else "",
+            "project": (str(getattr(agent.config.sandbox, "project", "") or "")
+                        if agent else ""),
             # Program kapalıyken zamanı geçmiş görevler (açılış sorusu).
             "missed_tasks": self._missed_tasks_payload(),
         }

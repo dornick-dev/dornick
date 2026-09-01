@@ -44,6 +44,7 @@ const Viewer = (() => {
     "Tıkla — sığdır": "Click — fit",
     "Tarayıcıda aç": "Open in browser", "Klasörde göster": "Show in folder",
     "Açılamadı": "Could not open",
+    "Aç": "Open", "Varsayılan uygulamada aç": "Open in the default app",
     "Okunamadı": "Could not read", "Henüz bir şeye dokunulmadı": "Nothing touched yet",
     "Dosyanın başı gösteriliyor": "Showing the head of the file",
     "Sayfa yok": "No page",
@@ -722,8 +723,55 @@ const Viewer = (() => {
     holder.src = url;
     holder.setAttribute("referrerpolicy", "no-referrer");
     box.append(holder);
-    box.append(openButton(url, t("Tarayıcıda aç")));
+    // Gömülü görüntüleyici açılmasa bile kullanıcı dosyaya ULAŞABİLMELİ:
+    // aç / indir / klasörde göster. Eskiden yalnız "Tarayıcıda aç" vardı ve
+    // bir rapor üretildiğinde kullanıcı onu ne açabiliyor ne bulabiliyordu
+    // (canlı yara, 02.09: "rapor yazdı, okuyamadım diyor").
+    box.append(dosyaEylemleri(data.path, url));
     return box;
+  }
+
+  // Bir disk dosyası için ortak eylem şeridi: sistemde aç · tarayıcıda aç ·
+  // indir · klasörde göster. PDF ve tanınmayan ikili aynı şeridi kullanıyor.
+  function dosyaEylemleri(path, url) {
+    const acts = el("div", "viewer-acts");
+
+    const sistem = el("button", "viewer-open", t("Aç"));
+    sistem.type = "button";
+    sistem.title = t("Varsayılan uygulamada aç");
+    sistem.addEventListener("click", () => gonder("/api/apps/file-open", path, acts));
+    acts.append(sistem);
+
+    acts.append(openButton(url, t("Tarayıcıda aç")));
+
+    const indir = el("a", "viewer-open");
+    indir.textContent = t("İndir");
+    indir.href = url + "&download=1";
+    indir.setAttribute("download", "");
+    acts.append(indir);
+
+    const show = el("button", "viewer-open", t("Klasörde göster"));
+    show.type = "button";
+    show.addEventListener("click", () => gonder("/api/apps/reveal", path, acts));
+    acts.append(show);
+    return acts;
+  }
+
+  // Ortak POST + hata gösterimi: sessiz başarısızlık en kötü hâl.
+  async function gonder(uc, path, acts) {
+    let answer = null;
+    try {
+      answer = await (await fetch(uc, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ path }),
+      })).json();
+    } catch { /* sunucu cevap vermedi */ }
+    if (!answer || answer.ok === false) {
+      const why = el("p", "viewer-note bad", (answer && answer.error) || t("Açılamadı"));
+      acts.after(why);
+      setTimeout(() => why.remove(), 6000);
+    }
   }
 
   // Gerçekten ikili ve tanınmayan tür: gösterilecek bir şey yok ama ölü bir
@@ -734,37 +782,8 @@ const Viewer = (() => {
     const size = human(data.size);
     if (size) box.append(el("p", "viewer-note", size));
 
-    const acts = el("div", "viewer-acts");
-    acts.append(openButton(rawUrl(data.path), t("Tarayıcıda aç")));
-    // İndirme: octet-stream'i "tarayıcıda aç"maya çalışmak bazı türlerde
-    // boş sekmeyle bitiyordu; attachment başlığı dosyayı doğrudan indirir.
-    const indir = el("a", "viewer-open");
-    indir.textContent = t("İndir");
-    indir.href = rawUrl(data.path) + "&download=1";
-    indir.setAttribute("download", "");
-    acts.append(indir);
-
-    // "Nerede bu şey?": dosyayı gezginde seçili açar. Uç atölyeyle sınırlı
-    // (apps.reveal); dışarıdaki bir dosyada sebebini kendisi söylüyor.
-    const show = el("button", "viewer-open", t("Klasörde göster"));
-    show.type = "button";
-    show.addEventListener("click", async () => {
-      let answer = null;
-      try {
-        answer = await (await fetch("/api/apps/reveal", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ path: data.path }),
-        })).json();
-      } catch { /* sunucu cevap vermedi */ }
-      if (!answer || answer.ok === false) {
-        const why = el("p", "viewer-note bad", (answer && answer.error) || t("Açılamadı"));
-        acts.after(why);
-        setTimeout(() => why.remove(), 6000);
-      }
-    });
-    acts.append(show);
-    box.append(acts);
+    // Aynı eylem şeridi (aç · tarayıcıda aç · indir · klasörde göster).
+    box.append(dosyaEylemleri(data.path, rawUrl(data.path)));
     return box;
   }
 

@@ -84,6 +84,77 @@ def test_setup_guide_appears_without_a_model() -> None:
     assert ".setup-guide" in CSS
 
 
+def test_setup_guide_is_gated_on_can_run() -> None:
+    """Kurulum kartı MODEL ADINA değil, gerçekten çalışabilirliğe bakar:
+    uygulama varsayılan bir modelle geliyor ("oto") ve anahtar yokken kart
+    hiç çıkmıyordu (canlı yara, 02.09)."""
+    assert "canRun" in APP_JS
+    assert re.search(r"if \(!canRun\) showSetupGuide\(\)", APP_JS)
+    desktop_py = (STATIC.parents[1] / "desktop.py").read_text(encoding="utf-8")
+    assert '"can_run": _calisabilir(agent)' in desktop_py
+
+
+def test_provider_chip_shows_the_real_provider() -> None:
+    """Composer'da sağlayıcı görünür ve BACKEND TİPİ değil gerçek sağlayıcı
+    adıdır (OpenRouter'a bağlıyken "openai" yazmak yanıltıcıydı)."""
+    assert 'id="dock-provider"' in HTML
+    assert "providerName" in APP_JS
+    desktop_py = (STATIC.parents[1] / "desktop.py").read_text(encoding="utf-8")
+    assert "_saglayici_adi" in desktop_py and "provider_of" in desktop_py
+
+
+def test_model_settings_put_key_before_model() -> None:
+    """Ayar sırası: sağlayıcı → anahtar → adres → model (kullanıcı isteği)."""
+    settings_js = (STATIC / "settings.js").read_text(encoding="utf-8")
+    # Ölçüm drawModel GÖVDESİNDE: dosyanın başındaki çeviri sözlüğünde de
+    # aynı metinler geçiyor ve ham `find` yanlış yeri buluyordu.
+    govde = settings_js[settings_js.find("function drawModel"):]
+    assert govde, "drawModel bulunamadı"
+    key_at = govde.find("field(keyLabel, apiKeyHintKey(), authKey)")
+    model_at = govde.find('"Yüklü modeller soruluyor…"')
+    assert key_at > 0 and model_at > 0
+    assert key_at < model_at, "API anahtarı model seçiminden ÖNCE gelmeli"
+
+
+def test_workdir_bar_and_folder_picker_exist() -> None:
+    """Sohbet ekranı nerede çalışıldığını söyler ve klasör seç/oluştur sunar."""
+    assert 'id="workdir-bar"' in HTML and 'id="workdir-new"' in HTML
+    assert '/workdir.js' in HTML
+    workdir = (STATIC / "workdir.js").read_text(encoding="utf-8")
+    assert "/api/klasor/olustur" in workdir and "/api/gozat" in workdir
+    server_py = (STATIC.parents[0] / "server.py").read_text(encoding="utf-8")
+    assert 'route == "/api/klasor/olustur"' in server_py
+    assert '"/workdir.js"' in server_py, "statik dosya listesine eklenmeli"
+
+
+def test_produced_files_have_open_actions() -> None:
+    """Üretilen dosya açılabilir/bulunabilir olmalı — yalnız yol yazmak
+    kullanıcıyı dosyasına ulaştırmıyordu (canlı yara, 02.09)."""
+    assert "fileActions" in APP_JS and "/api/apps/file-open" in APP_JS
+    viewer = (STATIC / "viewer.js").read_text(encoding="utf-8")
+    assert "dosyaEylemleri" in viewer and "/api/apps/file-open" in viewer
+    apps_py = (STATIC.parents[1] / "apps.py").read_text(encoding="utf-8")
+    assert "def sistemde_ac" in apps_py
+    # Bağlı proje klasörü de açılabilir olmalı (yalnız atölye değil).
+    assert "_izinli_kokler" in apps_py
+
+
+def test_update_toast_is_daily_and_dismissible() -> None:
+    """Güncelleme bildirimi günde bir kez ve kapatılabilir (kullanıcı isteği)."""
+    assert "updateToast" in APP_JS
+    assert "dornickGuncellemeBildirim" in APP_JS
+    assert "kapatilan" in APP_JS
+    assert ".update-toast" in CSS
+
+
+def test_default_language_is_english_outside_turkey() -> None:
+    """Varsayılan dil İngilizce; yalnız "tr" gelirse Türkçe."""
+    dil = (STATIC / "dil.js").read_text(encoding="utf-8")
+    assert '=== "tr") ? "tr" : "en"' in dil
+    server_py = (STATIC.parents[0] / "server.py").read_text(encoding="utf-8")
+    assert "_makine_dili" in server_py
+
+
 def test_in_app_update_is_wired() -> None:
     """Uygulama içi güncelleme: SSE 'guncelleme' olayı işleniyor, ilerleme
     çiziliyor ve /api/guncelle çağrılıyor (kullanıcı isteği, 02.09)."""

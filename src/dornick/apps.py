@@ -1149,20 +1149,74 @@ def open_path(sandbox_root: Path, rel_path: str, base: Path | None = None) -> di
     tam çalışır. Sunucu isteyen uygulamanın adresi ise zaten Çalışıyor
     bölümünden/kapsülden açılıyor — bu yol statikler için.
     """
-    root = sandbox_root.resolve()
-    ref = (base or root).resolve()
-    target = (ref / rel_path).resolve()
-    if target != root and root not in target.parents:
-        return {"ok": False, "error": "Atölye dışı: yalnızca atölyedekiler açılır."}
-    if not target.exists():
-        return {"ok": False, "error": f"Yok: {rel_path}"}
+    izin = _acilabilir_mi(sandbox_root, rel_path, base)
+    if isinstance(izin, dict):
+        return izin
+    target = izin
     # Yalnızca tarayıcının işi olanlar: bir .docx'i "tarayıcıda aç" diye
     # Word'e fırlatmak yanlış beklenti kurar — o dosyalar zaten kendi
-    # uygulamasında açılmak isteniyorsa ayrı bir yol.
+    # uygulamasında açılmak isteniyorsa `sistemde_ac` var.
     if target.suffix.lower() not in {".html", ".htm", ".svg"}:
         return {"ok": False, "error": "Bu bir web sayfası değil; tarayıcıda açılmaz."}
     try:
         os.startfile(str(target))  # type: ignore[attr-defined]
+    except Exception as exc:
+        return {"ok": False, "error": f"Açılamadı: {type(exc).__name__}: {exc}"}
+    return {"ok": True, "opened": str(target)}
+
+
+# Açılabilir alan: atölye + kullanıcının BAĞLADIĞI proje klasörü.
+#
+# Eski hal yalnız atölyeydi ve ajan bağlı bir klasöre rapor yazdığında
+# "Klasörde göster"/"Aç" düğmeleri "Atölye dışı" diye reddediyordu —
+# kullanıcı ürettiği dosyaya ulaşamıyordu (canlı yara, 02.09). Proje
+# klasörünü kullanıcı kendi seçiyor; orası da onun alanı.
+def _izinli_kokler(sandbox_root: Path, base: Path | None = None) -> list[Path]:
+    kokler = [sandbox_root.resolve()]
+    if base is not None:
+        try:
+            kokler.append(base.resolve())
+        except OSError:
+            pass
+    return kokler
+
+
+def _acilabilir_mi(sandbox_root: Path, rel_path: str,
+                   base: Path | None = None) -> Any:
+    """Hedefi çözer ve izinli mi diye bakar. Path ya da hata sözlüğü döner."""
+    kokler = _izinli_kokler(sandbox_root, base)
+    ref = (base or sandbox_root).resolve()
+    try:
+        target = (ref / rel_path).resolve() if rel_path else ref
+    except OSError:
+        return {"ok": False, "error": f"Yol çözümlenemedi: {rel_path}"}
+    if not any(target == k or k in target.parents for k in kokler):
+        return {"ok": False,
+                "error": "Çalışma alanı dışı: yalnızca atölyedeki ya da "
+                         "bağlı klasördeki dosyalar açılır."}
+    if not target.exists():
+        return {"ok": False, "error": f"Yok: {rel_path}"}
+    return target
+
+
+def sistemde_ac(sandbox_root: Path, rel_path: str,
+                base: Path | None = None) -> dict[str, Any]:
+    """Dosyayı işletim sisteminin VARSAYILAN uygulamasında açar.
+
+    PDF, docx, xlsx, png… — ajanın ürettiği her dosya için "aç" düğmesinin
+    arkasındaki uç. `open_path` yalnız web sayfası açıyordu; bir raporu
+    okumak isteyen kullanıcıya "bu bir web sayfası değil" demek cevap
+    değildi (canlı yara, 02.09).
+    """
+    izin = _acilabilir_mi(sandbox_root, rel_path, base)
+    if isinstance(izin, dict):
+        return izin
+    target = izin
+    try:
+        if sys.platform == "win32":
+            os.startfile(str(target))  # type: ignore[attr-defined]
+        else:  # pragma: no cover - Windows dışı yol
+            subprocess.Popen(["xdg-open", str(target)])
     except Exception as exc:
         return {"ok": False, "error": f"Açılamadı: {type(exc).__name__}: {exc}"}
     return {"ok": True, "opened": str(target)}
@@ -1176,12 +1230,10 @@ def reveal(sandbox_root: Path, rel_path: str, base: Path | None = None) -> dict[
     klasörü açılıyor (dosya seçili).
     """
     root = sandbox_root.resolve()
-    ref = (base or root).resolve()
-    target = (ref / rel_path).resolve() if rel_path else root
-    if target != root and root not in target.parents:
-        return {"ok": False, "error": "Atölye dışı: yalnızca atölyedekiler gösterilir."}
-    if not target.exists():
-        return {"ok": False, "error": f"Yok: {rel_path}"}
+    izin = _acilabilir_mi(sandbox_root, rel_path, base)
+    if isinstance(izin, dict):
+        return izin
+    target = izin
     try:
         if sys.platform == "win32":
             if target.is_dir():

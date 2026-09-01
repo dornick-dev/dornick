@@ -23,8 +23,15 @@ const Dil = (() => {
       const istek = new XMLHttpRequest();
       istek.open("GET", "/api/dil", false);
       istek.send();
-      mode = (JSON.parse(istek.responseText).dil === "en") ? "en" : "tr";
-    } catch { mode = "tr"; /* dosya:// ya da sunucusuz önizleme */ }
+      // Sunucu ya sihirbazın seçtiği dili ya da makinenin dilini söyler.
+      // VARSAYILAN İNGİLİZCE: yalnız "tr" gelirse Türkçe (kullanıcı isteği,
+      // 02.09 — ürün dünyaya İngilizce açılır, Türkiye'de Türkçe gelir).
+      mode = (JSON.parse(istek.responseText).dil === "tr") ? "tr" : "en";
+    } catch {
+      // Sunucusuz önizleme: tarayıcının diline bak, yoksa İngilizce.
+      const nav = (navigator.language || "").toLowerCase();
+      mode = nav.startsWith("tr") ? "tr" : "en";
+    }
     try { localStorage.setItem("dornick-dil", mode); } catch { /* dosya:// */ }
   }
 
@@ -211,3 +218,8 @@ Dil.secici('[data-tab="machine"]', "Machine");
 Dil.secici('[data-tab="files"]', "Files");
 Dil.secici('[data-tab="transfer"]', "Transfer");
 Dil.statik("side-ver", "Dornick version", "title");
+// Çalışma klasörü şeridi ve sağlayıcı çipi (02.09).
+Dil.statik("workdir-id", "Working folder — click to change", "title");
+Dil.statik("dock-provider", "Provider — click: open settings", "title");
+Dil.secici("#workdir-pick", "Choose folder");
+Dil.secici("#workdir-new", "New folder");

@@ -258,6 +258,19 @@
 <button id="jump" class="jump" hidden title="En alta in" aria-label="En alta in">↓</button>
 
 <div class="compose-shell" id="compose-shell">
+<!-- Çalışma klasörü şeridi: atölyede mi, bağlı bir klasörde mi? Eskiden
+     hiçbir yerde yazmıyordu ve kullanıcı nerede çalıştığını bilmiyordu
+     (canlı yara, 02.09). Tıklanınca klasör seç/oluştur açılır. -->
+<div class="workdir-bar" id="workdir-bar" hidden>
+  <button type="button" class="workdir-id" id="workdir-id" title="Çalışma klasörü — tıkla: değiştir">
+    <span class="workdir-icon" id="workdir-icon">🗂</span>
+    <b id="workdir-name"></b>
+    <span class="workdir-kind" id="workdir-kind"></span>
+  </button>
+  <span class="git-grow"></span>
+  <button type="button" class="workdir-act" id="workdir-pick">Klasör seç</button>
+  <button type="button" class="workdir-act" id="workdir-new">Yeni klasör</button>
+</div>
 <div class="git-bar" id="git-bar" hidden>
   <button type="button" class="git-id" id="git-id">
     <b id="git-name"></b>
@@ -296,6 +309,10 @@
 </form>
 
 <div class="dock" id="dock">
+  <!-- Sağlayıcı: hangi servise bağlıyız (openrouter/ollama/…). Model adı
+       tek başına bunu söylemiyordu ve kullanıcı yanlışlıkla seçtiği
+       sağlayıcıyı fark edemiyordu (canlı yara, 02.09). -->
+  <button id="dock-provider" type="button" class="dock-chip" title="Sağlayıcı — tıkla: ayarları aç">—</button>
   <button id="dock-model" type="button" class="dock-chip" title="Model — ayarları açar">model</button>
   <button id="dock-effort" type="button" class="dock-chip" title="Düşünme derinliği — tıkla: değiştir">—</button>
   <button id="dock-mode" type="button" class="dock-chip" title="Yetki kipi — tıkla: değiştir">—</button>
@@ -578,6 +595,7 @@
 <script src="/komut.js"></script>
 <script src="/degisiklik.js"></script>
 <script src="/git.js"></script>
+<script src="/workdir.js"></script>
 <script src="/chrome.js"></script>
 </body>
 </html>
