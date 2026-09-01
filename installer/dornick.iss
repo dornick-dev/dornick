@@ -45,7 +45,7 @@
   #define Paket "dist\paket"
 #endif
 #ifndef KimlikGuid
-  #define KimlikGuid "7E2F4B7A-9C1D-4E5B-A9D3-1F2E3D4C5B6A"
+  #define KimlikGuid "17DD852A-5114-4A29-B628-75754DFA4500"  ; rebrand 01.09: taze kimlik — eski neo kurulumunun yerine gecmesin
 #endif
 
 [Setup]
