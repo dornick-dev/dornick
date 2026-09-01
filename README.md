@@ -3,7 +3,7 @@
 **Open-source, self-hosted AI assistant for Windows that remembers you,
 uses your computer, and builds its own automations.**
 
-[![Latest release](https://img.shields.io/github/v/release/fatihkutuk/dornick?label=release&color=2ea043)](../../releases/latest)
+[![Latest release](https://img.shields.io/github/v/release/dornick-dev/dornick?label=release&color=2ea043)](../../releases/latest)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Windows%2010%2F11-0078d4)](../../releases/latest)
 [![Tests](https://img.shields.io/badge/tests-1678%20passing-2ea043)](tests/)
@@ -146,7 +146,7 @@ program and leaves your `.dornick` data in place.
 > mismatch.
 
 ```bash
-git clone https://github.com/fatihkutuk/dornick
+git clone https://github.com/dornick-dev/dornick
 cd dornick
 pip install -e ".[app,local]"
 dornick setup     # probes LM Studio / Ollama / vLLM / API keys

@@ -39,7 +39,7 @@ yerinde bırakır.
 Kaynaktan:
 
 ```bash
-git clone https://github.com/fatihkutuk/dornick
+git clone https://github.com/dornick-dev/dornick
 cd dornick
 pip install -e ".[app,local]"
 dornick setup

@@ -84,7 +84,7 @@ def surum() -> str:
 
 # Güncelleme denetimi ELLE tetiklenir (Ayarlar › Makine); arka planda
 # kendiliğinden ağa çıkan bir denetim bilerek yok — gizlilik ve sadelik.
-GUNCELLEME_API = "https://api.github.com/repos/fatihkutuk/dornick/releases/latest"
+GUNCELLEME_API = "https://api.github.com/repos/dornick-dev/dornick/releases/latest"
 GUNCELLEME_ZAMANASIMI = 6.0
 
 
