@@ -476,7 +476,7 @@ def _csproj_masaustu(csproj: Path) -> bool:
 def _desktop_exe(folder: Path) -> Path | None:
     """Klasördeki asıl GUI .exe — bin/obj gürültüsünden değil, tercihen kök.
 
-    NeoScada gibi .NET WinExe projelerde 'Başlat' çoğu zaman yanlış
+    ScadaStudio gibi .NET WinExe projelerde 'Başlat' çoğu zaman yanlış
     betiğe veya sessiz bir sürece bağlanıyordu; gerçek exe `os.startfile`
     ile açılmalı.
     """
@@ -917,9 +917,9 @@ def running(sandbox_root: Path | None = None,
             continue
         # Kaydın kendi metni en güvenilir işaret (kabuk aracı komutu olduğu
         # gibi yazıyor); ağaç taraması yedek.
-        kendi = (neo_sureci_mi(str(info.get("path") or ""))
-                 or neo_sureci_mi(str(info.get("run") or ""))
-                 or _neo_ailesi(pid, bilgi))
+        kendi = (dornick_sureci_mi(str(info.get("path") or ""))
+                 or dornick_sureci_mi(str(info.get("run") or ""))
+                 or _dornick_ailesi(pid, bilgi))
         out.append({
             "pid": pid,
             "path": info["path"],
@@ -973,7 +973,7 @@ def _kesfedilen_sunucular(
     for p in items:
         port = int(p.get("port") or 0)
         pid = sahip.get(port, 0)
-        if not port or not pid or _neo_ailesi(pid, bilgi):
+        if not port or not pid or _dornick_ailesi(pid, bilgi):
             continue
         _KESFEDILEN.add(pid)
         out.append({
@@ -1025,10 +1025,10 @@ def _canli_isaretle(items: list[Project], root: Path, ref: Path) -> None:
         if pid:
             p.pid = pid
             p.address = _address(pid, parents, listen)
-            p.stoppable = not _neo_ailesi(pid, bilgi)
+            p.stoppable = not _dornick_ailesi(pid, bilgi)
         if p.port and not p.address:
             dinleyen = sahip.get(p.port, 0)
-            if dinleyen and not _neo_ailesi(dinleyen, bilgi):
+            if dinleyen and not _dornick_ailesi(dinleyen, bilgi):
                 p.pid = p.pid or dinleyen
                 p.address = f"http://127.0.0.1:{p.port}"
                 p.stoppable = True
@@ -1044,7 +1044,7 @@ def _canli_isaretle(items: list[Project], root: Path, ref: Path) -> None:
 # kabuğun altındaki süreçler "kendisi" sayılıyordu. İz yalnız GERÇEK
 # çalıştırma imzalarını tanır: `-m dornick`, `dornick.exe/.cmd`, ya da
 # komut satırının başındaki çıplak `dornick`.
-_NEO_IZI = re.compile(
+_DORNICK_IZI = re.compile(
     r"(-m\s+dornick(?=[\s\"']|$))"
     r"|((^|[\\/\s\"'])dornick\.(exe|cmd)(?=[\s\"']|$))"
     r"|(^\s*\"?dornick\"?(?=[\s\"']|$))",
@@ -1056,12 +1056,12 @@ _NEO_IZI = re.compile(
 _KESFEDILEN: set[int] = set()
 
 
-def neo_sureci_mi(cmdline: str) -> bool:
+def dornick_sureci_mi(cmdline: str) -> bool:
     """Bu komut satırı Dornick'in kendisini mi başlatıyor? (dışarıdan da kullanılır)"""
-    return bool(_NEO_IZI.search(cmdline or ""))
+    return bool(_DORNICK_IZI.search(cmdline or ""))
 
 
-def _neo_ailesi(pid: int, bilgi: dict[int, dict[str, Any]]) -> bool:
+def _dornick_ailesi(pid: int, bilgi: dict[int, dict[str, Any]]) -> bool:
     """pid ya da ATALARINDAN biri dornick mu?
 
     Sarmalayıcıya bakmak yetmiyor: `powershell -Command "dornick --web 8873"`
@@ -1076,12 +1076,12 @@ def _neo_ailesi(pid: int, bilgi: dict[int, dict[str, Any]]) -> bool:
         kayit = bilgi.get(cur)
         if kayit is None:
             break
-        if neo_sureci_mi(str(kayit.get("cmd") or "")):
+        if dornick_sureci_mi(str(kayit.get("cmd") or "")):
             return True
         cur = int(kayit.get("ppid") or 0)
     # Torunlarda dornick var mı (sarmalayıcı pid defterde, dornick çocuğunda)
     for cocuk, kayit in bilgi.items():
-        if kayit.get("ppid") == pid and neo_sureci_mi(str(kayit.get("cmd") or "")):
+        if kayit.get("ppid") == pid and dornick_sureci_mi(str(kayit.get("cmd") or "")):
             return True
     return False
 
@@ -1102,7 +1102,7 @@ def stop(pid: int) -> dict[str, Any]:
         # tarafından bir kez görülmüş pid'ler kabul ediliyor.
         if pid not in _KESFEDILEN:
             return {"ok": False, "error": "Bu süreç izlenmiyor ya da zaten bitmiş."}
-        if _neo_ailesi(pid, _proc_bilgi()):
+        if _dornick_ailesi(pid, _proc_bilgi()):
             return {"ok": False, "error": "Bu Dornick'in kendi süreci — panelden durdurulmuyor."}
         try:
             if sys.platform == "win32":
@@ -1118,7 +1118,7 @@ def stop(pid: int) -> dict[str, Any]:
     # Defterdeki kaydın kendi metni yetiyor (süreç ağacını sorgulamaya gerek
     # yok): kabuk aracı komutu olduğu gibi yazıyor, `dornick --web 8873` orada
     # görünüyor.
-    if neo_sureci_mi(str(info.get("path") or "")) or neo_sureci_mi(str(info.get("run") or "")):
+    if dornick_sureci_mi(str(info.get("path") or "")) or dornick_sureci_mi(str(info.get("run") or "")):
         return {"ok": False, "error": "Bu Dornick'in kendi süreci — panelden durdurulmuyor."}
     try:
         if sys.platform == "win32":

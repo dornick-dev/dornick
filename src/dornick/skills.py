@@ -29,6 +29,8 @@ oluyor. Yazma yeri atölyenin içinde kalıyor.
 
 from __future__ import annotations
 
+import hashlib
+import json
 import sys
 import traceback
 import types
@@ -38,6 +40,53 @@ from typing import Any
 
 # Atölye içinde yeteneklerin durduğu klasör.
 FOLDER = "yetenekler"
+
+# Onaylı yetenek manifesti (.dornick içinde): {dosya_adı: sha256}. Yalnız
+# BURADAKİ karma ile eşleşen dosyalar AÇILIŞTA kendiliğinden exec edilir.
+# Bir yetenek dosyası tam Python'la aynı süreçte koşuyor; atölyeye
+# `write_file` ile düşürülen (ör. injection) rastgele bir .py'nin her
+# açılışta sessizce çalışması kabul edilemezdi (güvenlik denetimi, 01.09).
+# Manifest .dornick'te ve korumalar.py onu araç yazımına kapıyor — yoksa
+# aynı injection dosyayı da karmayı da yazıp korumayı aşardı.
+MANIFEST = "skills_onayli.json"
+
+
+def _manifest_path(state_dir: Path | str) -> Path:
+    return Path(state_dir) / MANIFEST
+
+
+def _oku_manifest(state_dir: Path | str) -> dict[str, str] | None:
+    """Onaylı karma haritası; dosya hiç yoksa None (göç sinyali)."""
+    path = _manifest_path(state_dir)
+    if not path.is_file():
+        return None
+    try:
+        veri = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return {str(k): str(v) for k, v in veri.items()} if isinstance(veri, dict) else {}
+
+
+def _yaz_manifest(state_dir: Path | str, harita: dict[str, str]) -> None:
+    try:
+        _manifest_path(state_dir).write_text(
+            json.dumps(harita, ensure_ascii=False, indent=2), encoding="utf-8")
+    except OSError:
+        pass
+
+
+def _karma(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _onayla(state_dir: Path | str, path: Path) -> None:
+    """Bir dosyayı onaylı manifeste ekler (güvenilir oluşturma/yükleme)."""
+    harita = _oku_manifest(state_dir) or {}
+    try:
+        harita[path.name] = _karma(path)
+    except OSError:
+        return
+    _yaz_manifest(state_dir, harita)
 
 # Bir yetenek dosyasında aranan alanlar.
 REQUIRED = ("NAME", "DESCRIPTION", "SCHEMA")
@@ -94,7 +143,7 @@ def folder(sandbox_root: Path) -> Path:
 SEEDED = ".tohumlar"
 
 
-def seed(sandbox_root: Path) -> list[str]:
+def seed(sandbox_root: Path, state_dir: Path | str | None = None) -> list[str]:
     """Paketle gelen standart yetenekleri atölyeye kopyalar — bir kez.
 
     Kopyalanan dosya artık kullanıcının: düzenlenir, silinir, geri gelmez.
@@ -119,6 +168,10 @@ def seed(sandbox_root: Path) -> list[str]:
         if not target.exists():
             target.write_text(packed.read_text(encoding="utf-8"), encoding="utf-8")
             planted.append(packed.stem)
+            # Paketle gelen yetenek güvenilir: onaylı manifeste kaydet ki
+            # açılışta yüklenebilsin (aksi halde "onaylanmadı" derdi).
+            if state_dir is not None:
+                _onayla(state_dir, target)
         already.add(packed.name)
 
     marker.write_text("\n".join(sorted(already)) + "\n", encoding="utf-8")
@@ -191,23 +244,68 @@ def load_file(path: Path) -> Skill:
     )
 
 
-def discover(sandbox_root: Path) -> tuple[list[Skill], list[str]]:
-    """Klasördeki tüm yetenekleri yükler. (yüklenenler, hatalar)
+def discover(sandbox_root: Path, state_dir: Path | str | None = None,
+             *, onayla: bool = False) -> tuple[list[Skill], list[str]]:
+    """Klasördeki yetenekleri yükler. (yüklenenler, hatalar)
 
     Bozuk bir dosya diğerlerini engellemiyor: hata listeye giriyor ve
     program çalışmaya devam ediyor. Aksi halde tek bir yazım hatası ajanı
     tüm yeteneklerinden ediyor.
+
+    Güvenlik (state_dir verilirse): yalnız onaylı manifestteki (karma
+    eşleşen) dosyalar yüklenir. Manifest hiç yoksa İLK ÇALIŞTIRMA göçü —
+    mevcut dosyalar güvenilir sayılıp kaydedilir (yükseltmede kimsenin
+    kurulumu bozulmaz). `onayla=True` ise (araçla açık `write`/`load`,
+    izin kapısından geçmiş insan eylemi) bulunan geçerli dosyalar
+    manifeste yazılır; açılışta (onayla=False) onaysız dosya yüklenmez,
+    "onaylanmadı" diye raporlanır.
+
+    state_dir=None: eski davranış — hepsi yüklenir (testler ve salt-gözlem
+    çağıranları için).
     """
     found: list[Skill] = []
     broken: list[str] = []
+    files = [p for p in sorted(folder(sandbox_root).glob("*.py"))
+             if not p.name.startswith("_")]
 
-    for path in sorted(folder(sandbox_root).glob("*.py")):
-        if path.name.startswith("_"):
-            continue
+    manifest: dict[str, str] | None = None
+    goc = False
+    if state_dir is not None:
+        manifest = _oku_manifest(state_dir)
+        if manifest is None:
+            # İlk çalıştırma: mevcut dosyalar güvenilir. Kaydet ve yükle.
+            manifest = {}
+            for p in files:
+                try:
+                    manifest[p.name] = _karma(p)
+                except OSError:
+                    pass
+            _yaz_manifest(state_dir, manifest)
+            goc = True
+
+    for path in files:
+        if manifest is not None and not goc:
+            try:
+                simdi = _karma(path)
+            except OSError:
+                continue
+            if not onayla and manifest.get(path.name) != simdi:
+                broken.append(
+                    f"{path.name}: onaylanmadı — bu dosya `skill` aracıyla "
+                    "yazılmadı ya da elle değişti; güvenlik gereği açılışta "
+                    "kendiliğinden yüklenmedi. Onaylamak için içeriğini "
+                    "`skill action=write` ile yeniden yaz ya da `skill "
+                    "action=load` de (ikisi de izin kapısından geçer)."
+                )
+                continue
         try:
-            found.append(load_file(path))
+            skill = load_file(path)
         except SkillError as exc:
             broken.append(str(exc))
+            continue
+        found.append(skill)
+        if onayla and state_dir is not None:
+            _onayla(state_dir, path)
     return found, broken
 
 
@@ -243,11 +341,16 @@ def scaffold(sandbox_root: Path, name: str, description: str) -> Path:
     return path
 
 
-def save(sandbox_root: Path, name: str, code: str) -> Skill:
+def save(sandbox_root: Path, name: str, code: str,
+         state_dir: Path | str | None = None) -> Skill:
     """Tam yetenek dosyasını yazar ve doğrular.
 
     Biçim bozuksa dosya diskte kalır (düzeltilebilsin) ama SkillError
     yükselir — bozuk kod araç defterine girmez.
+
+    `state_dir` verilirse dosya onaylı manifeste kaydedilir: bu, izin
+    kapısından geçmiş `skill action=write` yolu — güvenilir oluşturma.
+    Doğrulama başarısızsa manifeste GİRMEZ (bozuk kod onaylı sayılmasın).
     """
     clean = _clean_name(name)
     if not (code or "").strip():
@@ -255,7 +358,10 @@ def save(sandbox_root: Path, name: str, code: str) -> Skill:
 
     path = folder(sandbox_root) / f"{clean}.py"
     path.write_text(code, encoding="utf-8")
-    return load_file(path)
+    skill = load_file(path)   # doğrulama önce; patlarsa manifeste yazılmaz
+    if state_dir is not None:
+        _onayla(state_dir, path)
+    return skill
 
 
 def register(registry: Any, skills: list[Skill]) -> tuple[list[str], list[str]]:

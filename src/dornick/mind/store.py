@@ -214,6 +214,10 @@ class Mind:
 
         self._goals: dict[str, Goal] = {}
         self._episode_cache: dict[str, tuple[int, Episode]] = {}
+        # Döküm önbelleği (mtime anahtarlı): derin arama 40 oturumu her
+        # yazışta baştan ayrıştırıyordu; koşan sohbetin dökümü de her
+        # geçişte yeniden okunuyordu. Dosya değişmediyse sonuç aynen döner.
+        self._transcript_cache: dict[str, tuple[int, list[dict[str, Any]]]] = {}
         self._lock = threading.Lock()
 
         # Hatıralar indeksli depoda: arama tarama değil, indeks araması.
@@ -449,13 +453,19 @@ class Mind:
         eps.sort(key=lambda e: e.started, reverse=True)
         return eps[:limit]
 
-    def transcript(self, session_id: str) -> list[dict[str, str]]:
-        """Bir oturumun konuşma dökümü: yalnızca metin turları.
+    def transcript(self, session_id: str) -> list[dict[str, Any]]:
+        """Bir oturumun konuşma dökümü: turlar + turun İZİ.
 
-        Araç çağrıları ve düşünme dışarıda — geçmiş bir sohbete bakan
-        kullanıcı ne söylendiğini okumak istiyor, araç argümanlarını değil.
+        Metin turlarının yanında düşünme blokları ve araç adımları da
+        dönüyor — canlı sohbette görünen şerit ("✻ Düşündü", adım satırları)
+        yeniden açılışta yok olmasın (canlı yara, 01.09: "dosyalar,
+        düşünmeler, adımlar vs gelmiyor"). Asistan turu şu alanları taşır:
 
-        Harness'ın kendi notları da dışarıda. Bu, kanıtlanmış bir sızıntının
+          text     söylenen söz (boş olabilir: tur araçla kesildiyse)
+          dusunme  o turun muhakemesi (varsa; tek metin)
+          adimlar  araç adımları [{tool, ozet}] (varsa)
+
+        Harness'ın kendi notları dışarıda. Bu, kanıtlanmış bir sızıntının
         kökü: canlı akışta hub süzüyordu (`_payload`), ama DÖKÜM süzmüyordu —
         oturum sürdürülünce ya da geçmişten açılınca "Planını yazdın ama
         uygulamadın…" gibi iç dürtüler sohbete KULLANICI MESAJI gibi
@@ -465,7 +475,32 @@ class Mind:
         path = self.sessions_dir / f"{session_id}.jsonl"
         if not path.is_file():
             return []
-        out: list[dict[str, str]] = []
+        try:
+            mtime = path.stat().st_mtime_ns
+        except OSError:
+            mtime = 0
+        if mtime:
+            onbellek = self._transcript_cache.get(session_id)
+            if onbellek and onbellek[0] == mtime:
+                return onbellek[1]
+        out: list[dict[str, Any]] = []
+        dusunmeler: list[str] = []
+        adimlar: list[dict[str, str]] = []
+
+        def _tur_kapat(text: str = "") -> None:
+            """Biriken izi (düşünme + adımlar) bir asistan turuna bağlar."""
+            nonlocal dusunmeler, adimlar
+            if not (text or dusunmeler or adimlar):
+                return
+            tur: dict[str, Any] = {"role": "assistant", "text": text}
+            if dusunmeler:
+                tur["dusunme"] = "\n\n———\n\n".join(dusunmeler)[:20000]
+            if adimlar:
+                tur["adimlar"] = adimlar[:200]
+            out.append(tur)
+            dusunmeler = []
+            adimlar = []
+
         try:
             with path.open(encoding="utf-8") as fh:
                 for line in fh:
@@ -480,11 +515,28 @@ class Mind:
                         continue
                     if _harness_notu(event):
                         continue
-                    text = "\n".join(_plain_text(event.get("content"))).strip()
+                    content = event.get("content")
+                    if role == "assistant":
+                        dusunmeler.extend(_dusunme_bloklari(content))
+                        adimlar.extend(_adim_ozetleri(content))
+                        text = "\n".join(_plain_text(content)).strip()
+                        if text:
+                            _tur_kapat(text)
+                        continue
+                    text = "\n".join(_plain_text(content)).strip()
                     if text:
-                        out.append({"role": role, "text": text})
+                        # Yeni kullanıcı sözünden önce sahipsiz iz varsa
+                        # (tur kesilmiş) metinsiz bir asistan turuna bağlanır.
+                        _tur_kapat()
+                        out.append({"role": "user", "text": text})
         except OSError:
             return []
+        _tur_kapat()
+        if mtime:
+            self._transcript_cache[session_id] = (mtime, out)
+            # Sınırsız büyümesin: en eski girdiler atılır (arama 40 tutuyor).
+            while len(self._transcript_cache) > 64:
+                self._transcript_cache.pop(next(iter(self._transcript_cache)))
         return out
 
     # -- projeler (sohbet klasörleri) --------------------------------------
@@ -655,6 +707,7 @@ class Mind:
             except OSError as exc:
                 return {"ok": False, "error": f"taşınamadı: {exc}"}
             self._episode_cache.pop(sid, None)
+            self._transcript_cache.pop(sid, None)
             meta = self.session_meta()
             if sid in meta:
                 meta.pop(sid, None)
@@ -904,6 +957,55 @@ def _plain_text(content: Any) -> list[str]:
         return []
     return [str(b.get("text", "")) for b in content
             if isinstance(b, dict) and b.get("type") == "text"]
+
+
+def _dusunme_bloklari(content: Any) -> list[str]:
+    """Asistan içeriğindeki düşünme blokları — döküm şeridi için.
+
+    Anthropic biçimi `{"type": "thinking", "thinking": ...}`; çevirmen
+    katmanı `text` alanına da yazabiliyor, ikisine de bakılıyor.
+    """
+    if not isinstance(content, list):
+        return []
+    out: list[str] = []
+    for b in content:
+        if isinstance(b, dict) and b.get("type") == "thinking":
+            metin = str(b.get("thinking") or b.get("text") or "").strip()
+            if metin:
+                out.append(metin)
+    return out
+
+
+# Adım özetinde aranan girdi alanları, anlamlılık sırasıyla: komut ve yol
+# insana en çok şey söyleyen ikili.
+_ADIM_ALANLARI = ("command", "path", "query", "url", "action", "name", "text")
+
+
+def _adim_ozetleri(content: Any) -> list[dict[str, str]]:
+    """Asistan içeriğindeki araç çağrıları — döküm şeridinin adım satırları.
+
+    Girdinin tamamı DEĞİL, tek satırlık özet dönüyor: dökümde `write_file`
+    çağrısının koca içeriğini taşımak sayfayı MB'larca şişirirdi; canlı
+    şeritteki gibi "ne yapıldı" okunabilsin yeter.
+    """
+    if not isinstance(content, list):
+        return []
+    out: list[dict[str, str]] = []
+    for b in content:
+        if not isinstance(b, dict) or b.get("type") != "tool_use":
+            continue
+        girdi = b.get("input")
+        ozet = ""
+        if isinstance(girdi, dict):
+            for alan in _ADIM_ALANLARI:
+                deger = girdi.get(alan)
+                if isinstance(deger, str) and deger.strip():
+                    ozet = " ".join(deger.split())
+                    break
+        if len(ozet) > 160:
+            ozet = ozet[:160].rstrip() + "…"
+        out.append({"tool": str(b.get("name") or ""), "ozet": ozet})
+    return out
 
 
 def _text_of(content: Any) -> list[str]:

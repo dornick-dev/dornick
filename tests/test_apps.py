@@ -364,14 +364,14 @@ def test_bos_atolye(tmp_path: Path) -> None:
 
 def test_neo_kendi_sureci_taninir() -> None:
     """Model kafası karışıp dornick'yu başlatırsa bu tanınmalı."""
-    assert apps.neo_sureci_mi("dornick --web 8873 -C D:\\Projects\\Fatih\\dornick")
-    assert apps.neo_sureci_mi("python -m dornick --web 8080")
-    assert apps.neo_sureci_mi(
+    assert apps.dornick_sureci_mi("dornick --web 8873 -C D:\\Projects\\Fatih\\dornick")
+    assert apps.dornick_sureci_mi("python -m dornick --web 8080")
+    assert apps.dornick_sureci_mi(
         '"C:\\Py\\python.exe" "C:\\Py\\Scripts\\dornick.exe" --web 8873')
-    assert apps.neo_sureci_mi(r'"C:\dornick\python\dornick.exe" -m dornick --app')
+    assert apps.dornick_sureci_mi(r'"C:\dornick\python\dornick.exe" -m dornick --app')
     # Kullanıcının uygulaması dornick değil — yanlış alarm olmamalı.
-    assert not apps.neo_sureci_mi("py app.py")
-    assert not apps.neo_sureci_mi("python D:\\Projects\\Fatih\\dornick\\atolye\\borsa-ara\\app.py")
+    assert not apps.dornick_sureci_mi("py app.py")
+    assert not apps.dornick_sureci_mi("python D:\\Projects\\Fatih\\dornick\\atolye\\borsa-ara\\app.py")
 
 
 def test_neo_kendi_kopyasi_uygulama_gibi_listelenmez(tmp_path: Path) -> None:
@@ -448,10 +448,10 @@ def test_running_prunes_finished_processes(tmp_path: Path) -> None:
 
 
 def test_winexe_csproj_is_desktop_not_tool(tmp_path: Path) -> None:
-    """WinExe .NET projesi betik değil masaüstü — NeoScada sınıfı."""
-    proj = tmp_path / "NeoScada"
+    """WinExe .NET projesi betik değil masaüstü — ScadaStudio sınıfı."""
+    proj = tmp_path / "ScadaStudio"
     proj.mkdir()
-    (proj / "NeoScada.csproj").write_text(
+    (proj / "ScadaStudio.csproj").write_text(
         '<Project Sdk="Microsoft.NET.Sdk">\n'
         "  <PropertyGroup><OutputType>WinExe</OutputType>"
         "<TargetFramework>net8.0-windows</TargetFramework>"
@@ -470,13 +470,13 @@ def test_winexe_csproj_is_desktop_not_tool(tmp_path: Path) -> None:
 
 
 def test_folder_named_exe_is_desktop(tmp_path: Path) -> None:
-    proj = tmp_path / "NeoScada Studio"
+    proj = tmp_path / "ScadaStudio Studio"
     proj.mkdir()
-    (proj / "NeoScada Studio.exe").write_bytes(b"MZ")
+    (proj / "ScadaStudio Studio.exe").write_bytes(b"MZ")
     (proj / "readme.txt").write_text("x", encoding="utf-8")
     kind, entry, _run = apps._detect(proj)
     assert kind == "desktop"
-    assert entry.endswith("NeoScada Studio.exe")
+    assert entry.endswith("ScadaStudio Studio.exe")
 
 
 def test_manifest_tool_soft_corrects_to_desktop(tmp_path: Path) -> None:

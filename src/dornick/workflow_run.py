@@ -186,40 +186,38 @@ async def _run_node(node: WorkflowNode, ctx: dict[str, Any], agent: Any) -> str:
         return await _call_tool(agent, name, dict(cfg.get("args") or {}), last)
 
     if kind == "http":
-        import urllib.request
+        # http düğümü keyfi metot/gövde/başlık taşıyabiliyor — yani dışarı
+        # veri gönderen (POST/PUT…) ya da yerel API'yi (127.0.0.1) döven bir
+        # yüzey. Eskiden doğrudan urlopen ile koşuyordu: izin kapısı da
+        # kancalar da devre dışıydı. Artık `shell` gibi kapıdan geçiyor —
+        # okuma dışı her http çağrısı için onay sorulur (güvenlik denetimi,
+        # 01.09). Salt-okuma (GET/HEAD, yerel olmayan) `fetch` aracına düşer.
         url = str(cfg.get("url") or "")
         if not url:
             raise RuntimeError("http düğümü için url gerekli")
         method = str(cfg.get("method") or "GET").upper()
-        data = cfg.get("body")
-        body = None if data is None else (
-            data if isinstance(data, (bytes, bytearray))
-            else json.dumps(data).encode("utf-8"))
-        req = urllib.request.Request(url, data=body, method=method)
-        for hk, hv in (cfg.get("headers") or {}).items():
-            req.add_header(str(hk), str(hv))
-        with urllib.request.urlopen(req, timeout=float(cfg.get("timeout") or 30)) as resp:
-            return resp.read()[:8000].decode("utf-8", errors="replace")
+        yerel = _yerel_adres(url)
+        if method in ("GET", "HEAD") and not yerel and not cfg.get("headers") \
+                and cfg.get("body") is None:
+            return await _gecir(agent, "fetch", {"url": url}, last)
+        # Mutasyon/gizli yüzey: izin kapısına sok. Kayıtlı bir araç değil,
+        # o yüzden sentetik bir onay isteği kuruluyor.
+        onay = await _http_onay(agent, node, url, method, yerel)
+        if not onay:
+            raise RuntimeError(
+                "http düğümü kullanıcı tarafından onaylanmadı "
+                f"({method} {url}).")
+        return await _http_ham(cfg, url, method)
 
     if kind == "shell":
-        import asyncio
         cmd = str(cfg.get("command") or cfg.get("cmd") or "")
         if not cmd:
             raise RuntimeError("shell düğümü için command gerekli")
-        # Penceresiz: otomasyon her tetiklendiğinde ekranda cmd parlıyordu
-        # ("arasıra cmd açıp kapatıyor" — canlı şikâyet). Çıktı zaten boruda.
-        from . import ortam
-        proc = await asyncio.create_subprocess_shell(
-            cmd,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.STDOUT,
-            **ortam.sessiz_bayraklar(),
-        )
-        out, _ = await proc.communicate()
-        text = (out or b"").decode("utf-8", errors="replace")[:8000]
-        if proc.returncode:
-            raise RuntimeError(text or f"exit {proc.returncode}")
-        return text
+        # İzin motoru + kancalar üzerinden: eskiden doğrudan
+        # create_subprocess_shell çağrılıyordu ve hiçbir kapıya değmiyordu
+        # (güvenlik denetimi, 01.09). Artık gerçek `shell` aracı gibi
+        # onaydan ve kancadan geçiyor.
+        return await _gecir(agent, "shell", {"command": cmd}, last)
 
     if kind in ("mail_read", "mail"):
         args = dict(cfg.get("args") or {
@@ -237,23 +235,100 @@ async def _run_node(node: WorkflowNode, ctx: dict[str, Any], agent: Any) -> str:
     return await agent._spawn(node.title or node.id, prompt, "")
 
 
-async def _call_tool(agent: Any, name: str, args: dict[str, Any], last: str) -> str:
-    import asyncio
+def _yerel_adres(url: str) -> bool:
+    """URL yerel/özel bir ağı mı hedefliyor (127.0.0.1, localhost, RFC1918,
+    link-local)? Yerel API'yi dövmek en tehlikeli http yüzeyi."""
+    import ipaddress
+    import urllib.parse
 
+    host = (urllib.parse.urlparse(url).hostname or "").lower()
+    if host in ("localhost", "127.0.0.1", "::1", ""):
+        return True
+    try:
+        ip = ipaddress.ip_address(host)
+        return ip.is_private or ip.is_loopback or ip.is_link_local
+    except ValueError:
+        return False
+
+
+async def _http_onay(agent: Any, node: WorkflowNode, url: str, method: str,
+                     yerel: bool) -> bool:
+    """http düğümü için onay iste. Kayıtlı araç yok; sentetik spec ile
+    izin yüzeyine (io.approve) sokuluyor — kullanıcı ne gönderildiğini görsün."""
+    from .tools.base import object_schema, ToolSpec
+
+    async def _bos(_a: dict[str, Any], _c: Any) -> Any:  # pragma: no cover
+        return None
+
+    spec = ToolSpec(
+        name="workflow_http", description="Otomasyon http düğümü",
+        input_schema=object_schema({}), handler=_bos, mutates=True)
+    etiket = f"{method} {url}" + (" (YEREL AĞ)" if yerel else "")
+    try:
+        return bool(await agent.io.approve(spec, {"istek": etiket, "düğüm": node.id}))
+    except Exception:
+        return False
+
+
+async def _http_ham(cfg: dict[str, Any], url: str, method: str) -> str:
+    """Onaylanmış http çağrısını gerçekten yapar."""
+    import urllib.request
+
+    data = cfg.get("body")
+    body = None if data is None else (
+        data if isinstance(data, (bytes, bytearray))
+        else json.dumps(data).encode("utf-8"))
+    req = urllib.request.Request(url, data=body, method=method)
+    for hk, hv in (cfg.get("headers") or {}).items():
+        req.add_header(str(hk), str(hv))
+    with urllib.request.urlopen(req, timeout=float(cfg.get("timeout") or 30)) as resp:
+        return resp.read()[:8000].decode("utf-8", errors="replace")
+
+
+async def _call_tool(agent: Any, name: str, args: dict[str, Any], last: str) -> str:
+    if last and "input" not in args:
+        args = {**args, "input": last}
+    return await _gecir(agent, name, args, last, birlestir=False)
+
+
+async def _gecir(agent: Any, name: str, args: dict[str, Any], last: str,
+                 *, birlestir: bool = True) -> str:
+    """Bir aracı ajanın GERÇEK izin kapısından ve kancalarından geçirerek
+    koşturur.
+
+    Eski `_call_tool` doğrudan `spec.handler`'ı çağırıyordu; şema kapısı,
+    izin motoru ve iki kanca aşaması es geçiliyordu. Artık asıl turun
+    kullandığı `executor.execute` yoluyla — onay, kanca ve şema aynı
+    (güvenlik denetimi, 01.09).
+    """
+    from .session import PendingToolUse
     from .tools.base import ToolContext
+    from .tools.executor import execute
 
     spec = agent.registry.get(name)
     if spec is None:
         raise RuntimeError(f"Araç yok: {name}")
-    if last and "input" not in args:
+    if birlestir and last and "input" not in args:
         args = {**args, "input": last}
+
     tctx = ToolContext(
         config=agent.config, session=agent.session,
-        cancel=asyncio.Event(), schedule=agent.schedule)
-    result = await spec.handler(args, tctx)
-    if getattr(result, "error", False):
-        raise RuntimeError(str(result.content))
-    return str(result.content)
+        cancel=getattr(agent, "cancel", None) or __import__("asyncio").Event(),
+        schedule=agent.schedule)
+    blocks = await execute(
+        [PendingToolUse(id="wf", name=name, input=dict(args))],
+        registry=agent.registry,
+        permissions=agent.permissions,
+        ctx=tctx,
+        approve=agent.io.approve,
+        observe=getattr(agent, "_observe", lambda *_: None),
+    )
+    blok = blocks[0] if blocks else {}
+    icerik = blok.get("content", "")
+    metin = icerik if isinstance(icerik, str) else json.dumps(icerik, ensure_ascii=False)
+    if blok.get("is_error"):
+        raise RuntimeError(metin or "araç hata verdi")
+    return metin
 
 
 async def _try_heal_lesson(agent: Any, node: WorkflowNode, exc: BaseException,

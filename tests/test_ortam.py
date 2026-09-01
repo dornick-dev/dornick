@@ -158,6 +158,32 @@ def test_guncelleme_yeni_surum_varsa_soyler(monkeypatch) -> None:
     assert cevap["mevcut"] == "0.2.2"
 
 
+def test_guncelleme_kurulum_varligini_bulur(monkeypatch) -> None:
+    """Yayına eklenmiş kurulum .exe'si doğrudan indirme bağlantısı olarak
+    dönüyor; birden çok exe varsa adında setup/kurulum geçen yeğleniyor."""
+    monkeypatch.setattr(ortam, "surum", lambda: "0.2.2")
+    cevap = ortam.guncelleme_denetle(
+        _ac=lambda *a, **k: _SahteCevap({
+            "tag_name": "v0.9.0", "html_url": "https://ornek/yayin",
+            "assets": [
+                {"name": "araclar.exe",
+                 "browser_download_url": "https://ornek/araclar.exe"},
+                {"name": "dornick-setup-0.9.0.exe",
+                 "browser_download_url": "https://ornek/setup.exe"},
+            ]}))
+    assert cevap["yeni"] == "0.9.0"
+    assert cevap["indirme"] == "https://ornek/setup.exe"
+
+
+def test_guncelleme_varliksiz_yayinda_indirme_bos(monkeypatch) -> None:
+    """Yayında exe yoksa indirme boş kalır — arayüz yayın sayfasına düşer."""
+    monkeypatch.setattr(ortam, "surum", lambda: "0.2.2")
+    cevap = ortam.guncelleme_denetle(
+        _ac=lambda *a, **k: _SahteCevap(
+            {"tag_name": "v0.9.0", "html_url": "https://ornek/yayin"}))
+    assert cevap["yeni"] == "0.9.0" and cevap["indirme"] == ""
+
+
 def test_guncelleme_ayni_surumde_sessiz(monkeypatch) -> None:
     monkeypatch.setattr(ortam, "surum", lambda: "0.2.2")
     cevap = ortam.guncelleme_denetle(
@@ -190,3 +216,80 @@ def test_guncelleme_yayin_yoksa_dogru_soyler(monkeypatch) -> None:
     cevap = ortam.guncelleme_denetle(_ac=yok)
     assert not cevap["ok"]
     assert "sürüm" in cevap["hata"].lower() or "yayın" in cevap["hata"].lower()
+
+
+# -- uygulama içi güncelleme indirmesi (güvenlik) ----------------------
+#
+# İndirme+çalıştırma tehlikeli bir eylem: adres YALNIZ resmî GitHub yayın
+# altyapısından olmalı (host süzgeci) ve nihai (yönlendirme sonrası) adres
+# de aynı süzgeçten geçmeli. Kesik/küçük indirme çalıştırılmamalı.
+
+
+class _SahteIndirme:
+    def __init__(self, govde: bytes, nihai: str) -> None:
+        self._govde = govde
+        self._nihai = nihai
+        self.headers = {"Content-Length": str(len(govde))}
+        self._okundu = False
+
+    def geturl(self) -> str:
+        return self._nihai
+
+    def read(self, n: int = -1) -> bytes:
+        if self._okundu:
+            return b""
+        self._okundu = True
+        return self._govde
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a) -> None:
+        pass
+
+
+def test_indirme_yalniz_guvenilir_adresten(tmp_path: Path) -> None:
+    """github.com / *.githubusercontent.com dışına indirme REDDEDİLİR."""
+    import pytest
+
+    with pytest.raises(ValueError, match="[Gg]üvenil"):
+        ortam.guncelleme_indir("https://evil.example/setup.exe", tmp_path,
+                               _ac=lambda *a, **k: _SahteIndirme(b"x" * (2 * 1024 * 1024), "https://evil.example/setup.exe"))
+
+
+def test_indirme_yonlendirme_guvenilmezse_reddeder(tmp_path: Path) -> None:
+    """İlk adres github olsa da NİHAİ adres güvenilmezse indirme durur."""
+    import pytest
+
+    govde = b"MZ" + b"0" * (2 * 1024 * 1024)
+    ac = lambda *a, **k: _SahteIndirme(govde, "https://evil.example/gizli.exe")
+    with pytest.raises(ValueError, match="[Yy]önlendirme"):
+        ortam.guncelleme_indir(
+            "https://github.com/dornick-dev/dornick/releases/download/v9/dornick-setup-9.exe",
+            tmp_path, ad="dornick-setup-9.exe", _ac=ac)
+
+
+def test_indirme_basarili_dosya_yazar(tmp_path: Path) -> None:
+    """Güvenilir adres + yeterli boyut: dosya diske iner ve yolu döner."""
+    govde = b"MZ" + b"0" * (2 * 1024 * 1024)
+    nihai = "https://objects.githubusercontent.com/gh/abc"
+    ac = lambda *a, **k: _SahteIndirme(govde, nihai)
+    yuzdeler: list[int] = []
+    yol = ortam.guncelleme_indir(
+        "https://github.com/dornick-dev/dornick/releases/download/v9/dornick-setup-9.exe",
+        tmp_path, ad="dornick-setup-9.exe", beklenen_boyut=len(govde),
+        ilerleme=lambda a, t: yuzdeler.append(a), _ac=ac)
+    assert yol.is_file() and yol.name == "dornick-setup-9.exe"
+    assert yol.read_bytes() == govde
+    assert yuzdeler  # ilerleme çağrıldı
+
+
+def test_indirme_cok_kucukse_reddeder(tmp_path: Path) -> None:
+    """1 MB altı bir 'kurulum' olamaz — çalıştırılacak dosya inmez."""
+    import pytest
+
+    ac = lambda *a, **k: _SahteIndirme(b"kucuk", "https://github.com/x/y/z.exe")
+    with pytest.raises(ValueError, match="küçük"):
+        ortam.guncelleme_indir(
+            "https://github.com/dornick-dev/dornick/releases/download/v9/z.exe",
+            tmp_path, ad="z.exe", _ac=ac)

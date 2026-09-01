@@ -633,6 +633,14 @@ Dil.ekle({
   "Denetim yalnız bu düğmeyle yapılır — arka planda kendiliğinden ağa çıkılmaz":
     "Checks run only with this button — nothing phones home in the background",
   " mevcut — indir": " available — download",
+  " mevcut — indir ve kur": " available — download and install",
+  "yayın notları": "release notes",
+  "Güncelleme hazırlanıyor…": "Preparing update…",
+  "Güncelleme başlatılamadı": "Could not start the update",
+  "İndiriliyor": "Downloading",
+  "Kurulum açılıyor…": "Opening the installer…",
+  "Kurulum açıldı — yönergeleri izle (Dornick kapatılacak)":
+    "Installer opened — follow the prompts (Dornick will close)",
   "Güncel — daha yeni sürüm yok": "Up to date — no newer release",
   "Ağa ulaşılamadı — internet bağlantısını denetle":
     "Could not reach the network — check your internet connection",
@@ -3051,15 +3059,54 @@ const Settings = (() => {
       if (eski) eski.remove();
       const sonuc = el("span", "surum-sonuc");
       if (cevap.yeni) {
-        const uc = el("a", "surum-yeni",
-          "v" + cevap.yeni + t(" mevcut — indir"));
-        uc.href = cevap.url || "#";
-        // pywebview penceresinde dış bağlantı sistem tarayıcısına gider.
-        uc.addEventListener("click", (e) => {
-          e.preventDefault();
-          if (cevap.url) window.open(cevap.url, "_blank", "noopener");
-        });
-        sonuc.append(uc);
+        // Kurulum dosyası varsa UYGULAMA İÇİNDEN indir+kur; yoksa yayın
+        // sayfasını tarayıcıda aç (elle indirme).
+        if (cevap.indirme) {
+          const kur = el("button", "surum-yeni");
+          kur.type = "button";
+          kur.textContent = "v" + cevap.yeni + t(" mevcut — indir ve kur");
+          const durum = el("span", "surum-ilerleme");
+          durum.hidden = true;
+          kur.addEventListener("click", async () => {
+            kur.disabled = true;
+            durum.hidden = false;
+            durum.textContent = t("Güncelleme hazırlanıyor…");
+            // İlerleme SSE "guncelleme" olayıyla akıyor (app.js → burası).
+            window.dispatchEvent(new CustomEvent("dornick:guncelle-baslat",
+              { detail: { durum } }));
+            try {
+              const c = await (await fetch("/api/guncelle", { method: "POST" })).json();
+              if (c && c.ok === false) {
+                durum.className = "surum-ilerleme bad";
+                durum.textContent = c.hata ? t(c.hata) : t("Güncelleme başlatılamadı");
+                kur.disabled = false;
+              }
+            } catch {
+              durum.className = "surum-ilerleme bad";
+              durum.textContent = t("Güncelleme başlatılamadı");
+              kur.disabled = false;
+            }
+          });
+          sonuc.append(kur, durum);
+        } else {
+          const hedef = cevap.url || "#";
+          const uc = el("a", "surum-yeni", "v" + cevap.yeni + t(" mevcut — indir"));
+          uc.href = hedef;
+          uc.addEventListener("click", (e) => {
+            e.preventDefault();
+            if (cevap.url) window.open(cevap.url, "_blank", "noopener");
+          });
+          sonuc.append(uc);
+        }
+        if (cevap.indirme && cevap.url) {
+          const notlar = el("a", "surum-notlar", t("yayın notları"));
+          notlar.href = cevap.url;
+          notlar.addEventListener("click", (e) => {
+            e.preventDefault();
+            window.open(cevap.url, "_blank", "noopener");
+          });
+          sonuc.append(" · ", notlar);
+        }
       } else if (cevap.ok) {
         sonuc.textContent = t("Güncel — daha yeni sürüm yok");
       } else {

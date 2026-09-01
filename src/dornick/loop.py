@@ -1765,7 +1765,13 @@ class Agent:
                 system=[{"type": "text", "text": BASLIK_ISTEMI}],
                 messages=[{"role": "user", "content": alinti}],
                 betas=[], context_management=None)
-            sonuc = await self.client.turn(hazir, [], cancel=asyncio.Event())
+            # Başlık çağrısı GERÇEK kesme olayını taşıyor ve süreyle sınırlı:
+            # eski hali (taze Event + sınırsız bekleme) tek kanallı API
+            # kapısını iptal edilemez biçimde tutabiliyordu — asıl tur ve
+            # Durdur dahil her şey arkasında bekliyordu (canlı yara, 01.09:
+            # "10 dakika durdu, olduğu yerde devam etmedi").
+            sonuc = await asyncio.wait_for(
+                self.client.turn(hazir, [], cancel=self.cancel), timeout=60)
             baslik = _one_line(_text_of_blocks(
                 getattr(sonuc.message, "content", None) or [])).strip().strip("\"'.!*# ")
             if _baslik_gecerli(baslik):

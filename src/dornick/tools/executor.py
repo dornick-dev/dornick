@@ -125,16 +125,40 @@ async def _run_one(
     observe("permission", {"tool": spec.name, "decision": decision.value, "rule": rule})
 
     if decision is Decision.DENY:
+        # Sabit koruma gerekçesini olduğu gibi göster (kip-bağımsız ret);
+        # jenerik "izin iste" mesajı yanıltıcı olurdu — bu kapı izinle açılmaz.
+        if rule.startswith("sabit:koruma:"):
+            return ToolResult.error(rule[len("sabit:koruma:"):]).to_block(call.id)
         return ToolResult.error(
             f"'{spec.name}' politika gereği engellendi ({rule}). "
             "Farklı bir yaklaşım dene ya da kullanıcıdan izin iste."
         ).to_block(call.id)
 
     if decision is Decision.ASK:
+        # Onay bekleyişi kullanıcı kesmesiyle YARIŞTIRILIYOR: izin kartı
+        # açıkken Durdur'a basılırsa tur bekleyişte asılı kalmamalı. Eski
+        # hal yalnız future'ı bekliyordu — kart cevapsız kaldığında Durdur
+        # dahil hiçbir şey turu kurtaramıyordu (canlı yara, 01.09: "sohbeti
+        # durdur dediğimde durmuyor").
+        soru = asyncio.ensure_future(approve(spec, call.input))
+        kesme = asyncio.ensure_future(ctx.cancel.wait())
         try:
-            granted = await approve(spec, call.input)
+            await asyncio.wait({soru, kesme}, return_when=asyncio.FIRST_COMPLETED)
+        except asyncio.CancelledError:
+            soru.cancel()
+            kesme.cancel()
+            return cancelled_result(call.id)
+        kesme.cancel()
+        if not soru.done():
+            soru.cancel()
+            observe("tool_cancelled", {"tool": spec.name, "id": call.id})
+            return cancelled_result(call.id)
+        try:
+            granted = soru.result()
         except asyncio.CancelledError:
             return cancelled_result(call.id)
+        except Exception:
+            granted = False
         if not granted:
             return ToolResult.error(
                 f"Kullanıcı '{spec.name}' çağrısını reddetti. Bu yolu tekrar deneme; "

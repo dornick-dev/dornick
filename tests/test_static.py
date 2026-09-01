@@ -43,6 +43,61 @@ def test_transcript_is_drawn_once_per_session() -> None:
     assert re.search(r"if \(id && transcriptFor === id\) return;", APP_JS)
 
 
+def test_foreign_session_events_are_dropped() -> None:
+    """Başka sohbetin olayı açık ekrana ÇİZİLMEZ (canlı yara, 01.09:
+    "bir önceki sohbetle karıştığı bile oluyor").
+
+    Sunucu sohbet-içeriği olaylarını `sid` ile damgalar; handle() kimliği
+    uyuşmayanı atar. Döküm yükleyici de bekleyiş sonrası kimliği yeniden
+    denetler — iki hızlı geçişte eski döküm yeni ekrana akmasın.
+    """
+    assert "SOHBETE_OZEL" in APP_JS
+    assert re.search(r"e\.sid && oturumId && e\.sid !== oturumId", APP_JS)
+    # fetch sonrası yarış denetimi
+    assert re.search(r"if \(transcriptFor !== id\) return;", APP_JS)
+    # Sohbete özel kalıntılar geçişte temizlenir.
+    assert "pendingMedia.clear()" in APP_JS
+
+
+def test_reopened_chat_rebuilds_the_trace() -> None:
+    """Yeniden açılan sohbet düşünme ve araç adımlarını da gösterir
+    (canlı yara, 01.09: "dosyalar, düşünmeler, adımlar vs gelmiyor")."""
+    assert "function historyStrip" in APP_JS
+    assert "dusunme" in APP_JS and "adimlar" in APP_JS
+    # Sunucu tarafı: döküm izleri üretir.
+    store_py = (STATIC.parents[1] / "mind" / "store.py").read_text(encoding="utf-8")
+    assert "_dusunme_bloklari" in store_py and "_adim_ozetleri" in store_py
+
+
+def test_big_transcripts_render_capped_with_a_gate() -> None:
+    """Koca sohbet tek hamlede çizilmez: son turlar + "Daha eskiyi göster"
+    kapısı (canlı yara, 01.09: sohbet geçişinde donma)."""
+    assert "TRANSCRIPT_SON" in APP_JS
+    assert "transcriptOlderButton" in APP_JS
+
+
+def test_setup_guide_appears_without_a_model() -> None:
+    """Model bağlı değilken ilk kurulum kartı: ne eksik + tek tıkla
+    Ayarlar › Model (kullanıcı isteği, 01.09)."""
+    assert "showSetupGuide" in APP_JS
+    assert 'Settings.open("model")' in APP_JS
+    assert ".setup-guide" in CSS
+
+
+def test_in_app_update_is_wired() -> None:
+    """Uygulama içi güncelleme: SSE 'guncelleme' olayı işleniyor, ilerleme
+    çiziliyor ve /api/guncelle çağrılıyor (kullanıcı isteği, 02.09)."""
+    assert 'case "guncelleme":' in APP_JS
+    assert "guncellemeDurumu" in APP_JS
+    settings_js = (STATIC / "settings.js").read_text(encoding="utf-8")
+    assert "/api/guncelle" in settings_js
+    # Sunucu ucu + güvenli indirme sunucu tarafında.
+    server_py = (STATIC.parents[0] / "server.py").read_text(encoding="utf-8")
+    assert 'route == "/api/guncelle"' in server_py and "_guncelle" in server_py
+    ortam_py = (STATIC.parents[1] / "ortam.py").read_text(encoding="utf-8")
+    assert "_guvenilir_indirme" in ortam_py and "guncellemeyi_baslat" in ortam_py
+
+
 def test_recall_animation_survives_missing_graph_nodes() -> None:
     """Hatırlama yürüyüşü, grafikte OLMAYAN düğümlerde de oynar.
 
@@ -2066,7 +2121,7 @@ def test_main_jobs_panel_and_artifact_export_exist() -> None:
     assert "hist-status-filters" in (STATIC / "app.css").read_text(encoding="utf-8")
     assert "--open" in (Path(__file__).resolve().parents[1]
         / "src" / "dornick" / "cli.py").read_text(encoding="utf-8")
-    assert "NeoOpen" in (Path(__file__).resolve().parents[1]
+    assert "DornickOpen" in (Path(__file__).resolve().parents[1]
         / "installer" / "dornick.iss").read_text(encoding="utf-8")
     assert "function editTaskForm" in (STATIC / "settings.js").read_text(encoding="utf-8")
 

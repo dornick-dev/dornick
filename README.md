@@ -315,6 +315,28 @@ dornick is developed jointly by **Fatih Kütük** and **Claude (Anthropic)** —
 the architecture, the code and the ideas in this repository grew out of
 that collaboration.
 
+## Code signing policy
+
+Free code signing provided by [SignPath.io](https://signpath.io), certificate by
+[SignPath Foundation](https://signpath.org).
+
+The Windows installer and executables are signed so Windows SmartScreen and
+Smart App Control can verify the publisher. Signing is requested only for
+binaries **built from this repository's own source**.
+
+**Roles** (this is a single-maintainer project):
+
+| Role | Who |
+|---|---|
+| Author (direct commit access) | Fatih Kütük |
+| Reviewer (approves external contributions) | Fatih Kütük |
+| Approver (authorizes signing requests) | Fatih Kütük |
+
+**Privacy.** dornick is local-first: it will not transfer any information to
+other networked systems unless specifically requested by the user (for example,
+choosing a cloud model provider, fetching a web page, or sending mail). See the
+project description above for what runs where.
+
 ## License
 
 [MIT](LICENSE) © 2026 Fatih Kütük

@@ -26,6 +26,7 @@ import re
 import subprocess
 import sys
 import urllib.error
+import urllib.parse
 import urllib.request
 from functools import lru_cache
 from pathlib import Path
@@ -98,11 +99,14 @@ def guncelleme_denetle(*, _ac=urllib.request.urlopen) -> dict:
     """GitHub'daki son yayını sorar ve mevcutla karşılaştırır.
 
     Dönen sözlük arayüzün çizdiği her şey:
-      ok     istek yerine ulaştı mı
-      mevcut çalışan sürüm
-      yeni   daha yeni bir yayın varsa onun sürümü, yoksa ""
-      url    yeni sürümün indirme sayfası (tarayıcıda açılır)
-      hata   kibar, insan diliyle hata metni (ok=False iken)
+      ok      istek yerine ulaştı mı
+      mevcut  çalışan sürüm
+      yeni    daha yeni bir yayın varsa onun sürümü, yoksa ""
+      url     yeni sürümün yayın sayfası (tarayıcıda açılır)
+      indirme yayına eklenmiş kurulum dosyasının (.exe) doğrudan bağlantısı;
+              yayında kurulum dosyası yoksa "" — arayüz o zaman yayın
+              sayfasına düşer
+      hata    kibar, insan diliyle hata metni (ok=False iken)
     """
     mevcut = surum()
     istek = urllib.request.Request(
@@ -115,19 +119,145 @@ def guncelleme_denetle(*, _ac=urllib.request.urlopen) -> dict:
         if exc.code == 404:
             # Depo/yayın görünmüyor: yayın hiç yapılmamış olabilir.
             return {"ok": False, "mevcut": mevcut, "yeni": "", "url": "",
-                    "hata": "Yayınlanmış sürüm bulunamadı"}
+                    "indirme": "", "hata": "Yayınlanmış sürüm bulunamadı"}
         return {"ok": False, "mevcut": mevcut, "yeni": "", "url": "",
+                "indirme": "",
                 "hata": f"Sürüm servisi cevap vermedi (HTTP {exc.code})"}
     except Exception:
         return {"ok": False, "mevcut": mevcut, "yeni": "", "url": "",
+                "indirme": "",
                 "hata": "Ağa ulaşılamadı — internet bağlantısını denetle"}
 
     uzak = str(veri.get("tag_name") or veri.get("name") or "").strip()
     url = str(veri.get("html_url") or "")
     if _surum_parcala(uzak) > _surum_parcala(mevcut):
-        return {"ok": True, "mevcut": mevcut,
-                "yeni": uzak.lstrip("vV"), "url": url, "hata": ""}
-    return {"ok": True, "mevcut": mevcut, "yeni": "", "url": "", "hata": ""}
+        indirme, boyut, ad = _kurulum_varligi(veri)
+        return {"ok": True, "mevcut": mevcut, "yeni": uzak.lstrip("vV"),
+                "url": url, "indirme": indirme, "boyut": boyut, "ad": ad,
+                "hata": ""}
+    return {"ok": True, "mevcut": mevcut, "yeni": "", "url": "",
+            "indirme": "", "boyut": 0, "ad": "", "hata": ""}
+
+
+def _kurulum_varligi(veri: dict) -> tuple[str, int, str]:
+    """Yayın varlıkları içinden kurulum dosyası: (indirme_url, boyut, ad).
+
+    GitHub yayınına eklenen .exe (kurulum sihirbazı) aranır; birden çok
+    .exe varsa adında "setup"/"kurulum" geçen yeğlenir. Bulunamazsa
+    ("", 0, "") — arayüz yayın sayfası bağlantısına düşer, hiçbir şey
+    kırılmaz. Boyut, indirme sırasında ilerleme çubuğu ve bütünlük
+    denetimi için taşınıyor.
+    """
+    varliklar = veri.get("assets") or []
+    if not isinstance(varliklar, list):
+        return ("", 0, "")
+    exeler = []
+    for v in varliklar:
+        if not isinstance(v, dict):
+            continue
+        ad = str(v.get("name") or "")
+        indirme = str(v.get("browser_download_url") or "")
+        boyut = int(v.get("size") or 0)
+        if ad.lower().endswith(".exe") and indirme:
+            exeler.append((ad, indirme, boyut))
+    for ad, indirme, boyut in exeler:
+        if "setup" in ad.lower() or "kurulum" in ad.lower():
+            return (indirme, boyut, ad)
+    if exeler:
+        return (exeler[0][1], exeler[0][2], exeler[0][0])
+    return ("", 0, "")
+
+
+# İndirmenin çıkabileceği TEK yer: resmî GitHub yayın altyapısı. Adres
+# sunucunun API cevabından geliyor (istemci vermiyor) ve ayrıca burada
+# host süzgecinden geçiyor — zehirlenmiş bir adres indirilip çalıştırılamaz.
+def _guvenilir_indirme(url: str) -> bool:
+    try:
+        host = (urllib.parse.urlparse(url).hostname or "").lower()
+    except ValueError:
+        return False
+    if urllib.parse.urlparse(url).scheme != "https":
+        return False
+    return host == "github.com" or host.endswith(".githubusercontent.com")
+
+
+def guncelleme_indir(url: str, hedef_dizin, *, beklenen_boyut: int = 0,
+                     ad: str = "", ilerleme=None,
+                     _ac=urllib.request.urlopen):
+    """Kurulum dosyasını güvenilir GitHub adresinden indirir.
+
+    Dönüş: indirilen dosyanın Path'i. Güvenlik:
+      * adres https ve github.com / *.githubusercontent.com olmalı
+      * yönlendirme sonrası NİHAİ adres de aynı süzgeçten geçer
+      * dosya .exe olmalı; boyut biliniyorsa kabaca tutmalı
+    `ilerleme(indirilen, toplam)` her parçada çağrılır (arayüz çubuğu).
+    """
+    import shutil
+    import urllib.parse
+    from pathlib import Path
+
+    if not _guvenilir_indirme(url):
+        raise ValueError(f"Güvenilmeyen indirme adresi: {url!r}")
+
+    dosya_adi = ad or Path(urllib.parse.urlparse(url).path).name or "dornick-setup.exe"
+    if not dosya_adi.lower().endswith(".exe"):
+        raise ValueError("Kurulum dosyası .exe olmalı")
+    hedef = Path(hedef_dizin)
+    hedef.mkdir(parents=True, exist_ok=True)
+    yol = hedef / dosya_adi
+
+    istek = urllib.request.Request(
+        url, headers={"User-Agent": f"dornick/{surum()}",
+                      "Accept": "application/octet-stream"})
+    with _ac(istek, timeout=60) as cevap:
+        # Yönlendirme sonrası nihai adres de güvenilir olmalı.
+        nihai = getattr(cevap, "url", None) or cevap.geturl()
+        if not _guvenilir_indirme(nihai):
+            raise ValueError(f"Yönlendirme güvenilmeyen adrese gitti: {nihai!r}")
+        toplam = int(cevap.headers.get("Content-Length") or beklenen_boyut or 0)
+        indirilen = 0
+        gecici = yol.with_suffix(yol.suffix + ".indiriliyor")
+        with open(gecici, "wb") as f:
+            while True:
+                parca = cevap.read(1024 * 256)
+                if not parca:
+                    break
+                f.write(parca)
+                indirilen += len(parca)
+                if ilerleme is not None:
+                    try:
+                        ilerleme(indirilen, toplam)
+                    except Exception:
+                        pass
+    # Bütünlük: boyut biliniyorsa kabaca tutmalı (kesik indirme çalıştırılmasın).
+    if beklenen_boyut and abs(indirilen - beklenen_boyut) > max(1024, beklenen_boyut // 100):
+        gecici.unlink(missing_ok=True)
+        raise ValueError(
+            f"İndirme eksik: {indirilen} bayt geldi, {beklenen_boyut} bekleniyordu")
+    if indirilen < 1024 * 1024:   # 1 MB altı bir kurulum sihirbazı olamaz
+        gecici.unlink(missing_ok=True)
+        raise ValueError(f"İndirilen dosya fazla küçük ({indirilen} bayt)")
+    shutil.move(str(gecici), str(yol))
+    return yol
+
+
+def guncellemeyi_baslat(yol) -> None:
+    """İndirilen kurulum sihirbazını başlatır (Windows).
+
+    Kurulum, çalışan uygulamayı kendisi kapatıp dosyaları değiştirir
+    (dornick.iss `CloseApplications`). Burada yalnız sihirbazı açıyoruz;
+    uygulamanın kapanışını çağıran taraf (arayüz → tepsi) yönetiyor.
+    """
+    import os
+    from pathlib import Path
+
+    yol = Path(yol)
+    if not yol.is_file():
+        raise FileNotFoundError(str(yol))
+    if sys.platform == "win32":
+        os.startfile(str(yol))  # type: ignore[attr-defined]
+    else:  # pragma: no cover - kurulum sihirbazı yalnız Windows
+        subprocess.Popen([str(yol)])
 
 
 def sessiz_bayraklar() -> dict:

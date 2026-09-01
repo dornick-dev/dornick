@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import sys
 
-NAME = "NeoOpen"
+NAME = "DornickOpen"
 LABEL = "Dornick ile aç"
 
 # Directory / * / Directory\Background

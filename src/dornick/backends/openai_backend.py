@@ -229,7 +229,13 @@ class OpenAIBackend:
         if extra:
             kwargs["extra_body"] = extra
 
+        # Kapı beklerken kesme yoklanır: kapıyı tutan çağrı uzun sürerse
+        # (tek kanal varsayılan) sıradaki tur Durdur'a sağır kalıyordu.
+        if cancel.is_set():
+            return TurnResult(interrupted=True, partial_text="")
         async with self._gate:
+            if cancel.is_set():
+                return TurnResult(interrupted=True, partial_text="")
             try:
                 try:
                     result = await self._stream(kwargs, cancel, callbacks)
@@ -394,6 +400,11 @@ class OpenAIBackend:
         # denemeler bir döngüde: her hatada bir şey iyileştir, tekrar dene.
         stream = None
         for _ in range(3):
+            # Kesme burada da yoklanıyor: istek KURULUŞU (SDK kendi içinde
+            # 2 kez daha deniyor) dakikalarca sürebiliyor ve Durdur ancak
+            # akış başlayınca işleniyordu.
+            if cancel.is_set():
+                return TurnResult(interrupted=True, partial_text="")
             try:
                 stream = await self._client.chat.completions.create(**kwargs)
                 break

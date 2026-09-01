@@ -24,6 +24,10 @@ class AnthropicBackend:
         kwargs: dict[str, Any] = {}
         if model.base_url:
             kwargs["base_url"] = model.base_url
+        # SDK varsayılanı 10 dakikalık zaman aşımı: ölü bir bağlantı turu
+        # dakikalarca asıyordu (OpenAI backend'iyle aynı sınırlar).
+        kwargs.setdefault("timeout", 90.0)
+        kwargs.setdefault("max_retries", 2)
         self._client = client or anthropic.AsyncAnthropic(**kwargs)
 
     async def close(self) -> None:

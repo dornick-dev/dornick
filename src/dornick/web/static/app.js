@@ -63,6 +63,12 @@ Dil.ekle({
   "Konuma bakıyor": "Checking location",
   // İş şeridi
   "Düşündü": "Thought", "✻ Düşündü": "✻ Thought", " kelime": " words",
+  "Daha eskiyi göster": "Show older", " tur": " turns",
+  // İlk kurulum kartı
+  "Önce bir sağlayıcı bağla": "Connect a provider first",
+  "Henüz bir model bağlı değil. Bir sağlayıcı seç (OpenRouter, OpenAI, Anthropic ya da LM Studio gibi yerel bir sunucu), API anahtarını gir ve kaydet; ardından Dornick'i kapatıp yeniden aç — sohbet ondan sonra başlar.":
+    "No model is connected yet. Pick a provider (OpenRouter, OpenAI, Anthropic, or a local server like LM Studio), enter your API key and save; then close and reopen Dornick — chat starts after that.",
+  "Sağlayıcı ve model seç": "Choose provider and model",
   "Tıkla — bu turun muhakemesini gör": "Click to see this turn's reasoning",
   " kez": " times",
   "Tıkla — tamamını gör": "Click to see all",
@@ -289,6 +295,18 @@ Dil.ekle({
   // Artifact kartı
   "Yayınlıyor": "Publishing",
   "yayınlandı": "published", "güncellendi": "updated",
+  "yeni — indir": "new — download",
+  "yeni — güncelle": "new — update",
+  "hata": "error",
+  "Yeni sürüm yayınlandı — indirmek için tıkla":
+    "A new release is out — click to download",
+  "Yeni sürüm yayınlandı — indirip kurmak için tıkla":
+    "A new release is out — click to download and install",
+  "İndiriliyor": "Downloading",
+  "Kurulum açılıyor…": "Opening the installer…",
+  "Kurulum açıldı — yönergeleri izle (Dornick kapatılacak)":
+    "Installer opened — follow the prompts (Dornick will close)",
+  "Güncelleme başlatılamadı": "Could not start the update",
   "Aç": "Open", "Artifact": "Artifact",
   "İndir": "Download", "Yazdır / PDF": "Print / PDF",
   "Tarayıcıda aç": "Open in browser",
@@ -632,6 +650,43 @@ function showWelcome() {
   note.hidden = true;
   w.append(h, p, note);
   thread.append(w);
+  // Model hâlâ bağlı değilse kurulum kartı karşılamayla birlikte geri gelsin.
+  if (typeof modelName !== "undefined" && modelKnown && !modelName) showSetupGuide();
+}
+
+// --- ilk kurulum yönlendirmesi ------------------------------------------
+// Hiç sağlayıcı/model bağlı değilken ekran sessiz kalıyordu: kullanıcı ne
+// yazacağını yazıyor, cevap gelmiyor, neden anlaşılmıyordu (kullanıcı
+// isteği, 01.09). Artık karşılamada net bir kart var: ne eksik, nereden
+// tamamlanır — tek tıkla Ayarlar › Model açılıyor.
+let modelKnown = false;
+
+function showSetupGuide() {
+  if ($("setup-guide")) return;
+  const kart = document.createElement("div");
+  kart.className = "setup-guide";
+  kart.id = "setup-guide";
+  const baslik = document.createElement("h2");
+  baslik.textContent = t("Önce bir sağlayıcı bağla");
+  const metin = document.createElement("p");
+  metin.textContent = t(
+    "Henüz bir model bağlı değil. Bir sağlayıcı seç (OpenRouter, OpenAI, "
+    + "Anthropic ya da LM Studio gibi yerel bir sunucu), API anahtarını gir "
+    + "ve kaydet; ardından Dornick'i kapatıp yeniden aç — sohbet ondan "
+    + "sonra başlar.");
+  const dugme = document.createElement("button");
+  dugme.type = "button";
+  dugme.className = "setup-guide-btn";
+  dugme.textContent = t("Sağlayıcı ve model seç");
+  dugme.onclick = () => { if (typeof Settings !== "undefined") Settings.open("model"); };
+  kart.append(baslik, metin, dugme);
+  const w = $("welcome");
+  if (w) w.append(kart); else thread.append(kart);
+}
+
+function hideSetupGuide() {
+  const kart = $("setup-guide");
+  if (kart) kart.remove();
 }
 
 // --- akıllı kaydırma ----------------------------------------------------
@@ -778,9 +833,14 @@ function line(kind, text) {
   // aralık tekrar etmez. Metin yine SOHBETTE ve görünür (katlama yok);
   // yalnız görsel merdiven kırılıyor.
   if (kind === "agent") {
-    const konusan = [...thread.children].reverse().find((n) =>
-      n.classList && n.classList.contains("line")
-      && (n.classList.contains("agent") || n.classList.contains("user")));
+    // Sondan geriye yürüyüş: eski hal her satırda tüm listeyi kopyalıyordu
+    // ([...children].reverse()) — koca bir döküm yüklenirken O(n²) olup
+    // geçişi donduran kalemlerden biriydi.
+    let konusan = thread.lastElementChild;
+    while (konusan && !(konusan.classList && konusan.classList.contains("line")
+      && (konusan.classList.contains("agent") || konusan.classList.contains("user")))) {
+      konusan = konusan.previousElementSibling;
+    }
     if (konusan && konusan.classList.contains("agent")) el.classList.add("cont");
   }
   if (text) el.textContent = text;
@@ -911,30 +971,33 @@ function summarizeAlert(text) {
 // 31.08: "konuşmayı tekrar açınca aynı yazışmalar iki kez geliyor").
 let transcriptFor = "";
 
+// Açılışta çizilen en fazla tur: koca bir sohbeti tek hamlede markdown'a
+// basmak ekranı saniyelerce kilitliyordu (canlı yara, 01.09: "diğer sohbeti
+// açtığımda donuyor"). Eskisi "Daha eskiyi göster" ile istenince gelir.
+const TRANSCRIPT_SON = 80;
+
 async function loadTranscript(id) {
   if (id && transcriptFor === id) return;
   transcriptFor = id || "";
   let data;
   try { data = await (await fetch("/api/session?id=" + encodeURIComponent(id))).json(); }
   catch { transcriptFor = ""; return; }
-  const turns = (data.turns || []).filter((t) => cizilir(t.text));
+  // Bekleyiş sırasında sohbet DEĞİŞMİŞ olabilir: iki hızlı tıklamada eski
+  // dökümün cevabı yeni ekranın üstüne akıyordu (karışma yarışı). Kimlik
+  // artık her adımda denetleniyor; uymuyorsa çizim sessizce bırakılır.
+  if (transcriptFor !== id) return;
+  const turns = (data.turns || []).filter(
+    (t) => cizilir(t.text) || (t.adimlar && t.adimlar.length) || t.dusunme);
+  const bastan = Math.max(0, turns.length - TRANSCRIPT_SON);
   transcriptBatch = true;
   const oncekiFollow = follow;
   follow = false;
   try {
-    for (let i = 0; i < turns.length; i++) {
-      const t = turns[i];
-      if (t.role === "user") {
-        const el = line("user", t.text);
-        reviveUserMedia(el, t.text || "");
-      } else {
-        const el = line("agent", "");
-        el._rawText = t.text || "";
-        Markdown.into(el, t.text || "");
-        attachMsgActs(el, "agent");
-        el.classList.add("done");
-      }
-      if (i > 0 && i % 12 === 0) {
+    if (bastan > 0) transcriptOlderButton(id, turns, bastan);
+    for (let i = bastan; i < turns.length; i++) {
+      if (transcriptFor !== id) return;   // geçiş oldu: kalanı çizme
+      transcriptTurn(turns[i]);
+      if (i > bastan && (i - bastan) % 6 === 0) {
         await new Promise((r) => requestAnimationFrame(() => r()));
       }
     }
@@ -948,6 +1011,115 @@ async function loadTranscript(id) {
     kickWork();
     scroll();
   }
+}
+
+// Tek turu thread'e basar — canlı çizimle aynı parçalar: kullanıcı balonu
+// (medya çipleriyle), asistan turunda önce iz şeridi (düşünme + adımlar),
+// sonra markdown gövde. `once` verilirse yeni düğümler o düğümün ÖNÜNE
+// taşınır ("daha eskiyi göster" mevcut dökümün üstüne ekler).
+function transcriptTurn(tur, once) {
+  const son = thread.lastElementChild;
+  if (tur.role === "user") {
+    const el = line("user", tur.text);
+    reviveUserMedia(el, tur.text || "");
+  } else {
+    if (tur.dusunme || (tur.adimlar && tur.adimlar.length)) historyStrip(tur);
+    if (cizilir(tur.text)) {
+      const el = line("agent", "");
+      el._rawText = tur.text || "";
+      Markdown.into(el, tur.text || "");
+      attachMsgActs(el, "agent");
+      el.classList.add("done");
+    }
+  }
+  if (once) {
+    let n = son ? son.nextElementSibling : thread.firstElementChild;
+    while (n) { const sirada = n.nextElementSibling; thread.insertBefore(n, once); n = sirada; }
+  }
+}
+
+// "Daha eskiyi göster": kırpılan baş kısım tek tıkla, yine partiler halinde
+// çizilir — mevcut dökümün ÜSTÜNE eklenir.
+function transcriptOlderButton(id, turns, kadar) {
+  const dugme = document.createElement("button");
+  dugme.type = "button";
+  dugme.className = "msg-more transcript-older";
+  dugme.textContent = t("Daha eskiyi göster") + " · " + kadar + t(" tur");
+  dugme.onclick = async () => {
+    dugme.disabled = true;
+    transcriptBatch = true;
+    try {
+      for (let i = 0; i < kadar; i++) {
+        if (transcriptFor !== id) return;
+        transcriptTurn(turns[i], dugme);
+        if (i > 0 && i % 6 === 0) {
+          await new Promise((r) => requestAnimationFrame(() => r()));
+        }
+      }
+    } finally {
+      transcriptBatch = false;
+    }
+    dugme.remove();
+  };
+  thread.append(dugme);
+}
+
+// Geçmiş turun iz şeridi: canlı şeritle aynı sınıflar (acts-head/acts-body),
+// ama statik — nabız yok, canlı sayaç yok. Başlık "N adım"; tıklanınca gövde
+// açılır: katlı düşünme satırı + adım satırları.
+function historyStrip(tur) {
+  const head = document.createElement("div");
+  head.className = "acts-head";
+  const body = document.createElement("div");
+  body.className = "acts-body";
+  body.hidden = true;
+
+  const verb = document.createElement("span");
+  verb.className = "head-verb";
+  const adimSayi = (tur.adimlar || []).length;
+  verb.textContent = adimSayi ? stepsWord(adimSayi) : t("Düşündü");
+  head.append(verb);
+  head.onclick = () => {
+    if (!body.childElementCount) return;
+    body.hidden = !body.hidden;
+    head.classList.toggle("open", !body.hidden);
+  };
+
+  if (tur.dusunme) {
+    const think = document.createElement("div");
+    think.className = "act note think done";
+    const kelime = tur.dusunme.split(/\s+/).length;
+    const etiket = t("✻ Düşündü") + " · " + kelime + t(" kelime");
+    think.textContent = etiket;
+    think.title = t("Tıkla — bu turun muhakemesini gör");
+    let acik = false;
+    think.onclick = (ev) => {
+      ev.stopPropagation();
+      acik = !acik;
+      think.textContent = acik ? tur.dusunme : etiket;
+      think.classList.toggle("open", acik);
+    };
+    body.append(think);
+  }
+  for (const adim of (tur.adimlar || [])) {
+    const row = document.createElement("div");
+    row.className = "act ok";
+    const spark = document.createElement("span");
+    spark.className = "spark";
+    spark.textContent = TOOL_ICON[adim.tool] || "·";
+    const who = document.createElement("span");
+    who.className = "who";
+    who.textContent = verbFor(adim.tool) || adim.tool;
+    who.title = adim.tool;
+    const what = document.createElement("span");
+    what.className = "what";
+    what.textContent = adim.ozet || "";
+    what.title = adim.ozet || "";
+    if (KOD_HEDEFLI.has(adim.tool)) { row.dataset.kod = "1"; what.classList.add("kod"); }
+    row.append(spark, who, what);
+    body.append(row);
+  }
+  thread.append(head, body);
 }
 
 // Geçmişte yalnız yollar yazılıydı; canlıdaki gibi çip + görsel önizleme.
@@ -4683,7 +4855,23 @@ async function applyPlan() {
 }
 
 // --- olay akışı -------------------------------------------------------
+// Sohbet İÇERİĞİ taşıyan olay türleri: bunlar yalnız kendi oturumunun
+// ekranına çizilir. Sunucu her içeriği oturum kimliğiyle (sid) damgalıyor;
+// kimlik açık ekranla uyuşmuyorsa olay ATILIR — hızlı sohbet geçişinde
+// kuyruğda bekleyen eski parçalar yeni sohbete karışıyordu (canlı yara,
+// 01.09: "bir önceki sohbetle karıştığı bile oluyor"). Onay istekleri
+// bilerek listede değil: arka şeridin izni de sorulmalı.
+const SOHBETE_OZEL = new Set([
+  "assistant_delta", "thinking_delta", "message", "tool_start", "tool_end",
+  "tool_cancelled", "queued", "araya", "artifact", "plan", "bekleme",
+  "child_start", "child_tool", "child_wait", "turn_end", "recall_trace",
+  "api_error", "interrupted", "empty_assistant_turn", "turn_limit", "refusal",
+]);
+
 function handle(e) {
+  if (SOHBETE_OZEL.has(e.type) && e.sid && oturumId && e.sid !== oturumId) {
+    return;   // başka sohbetin parçası — bu ekrana çizilmez
+  }
   switch (e.type) {
     case "assistant_delta":
       lastDelta = "text";
@@ -4818,6 +5006,12 @@ function handle(e) {
         History.applyTitle(e.id, e.title);
       break;
 
+    // Uygulama içi güncelleme: indirme ilerlemesi + kurulum başlangıcı.
+    // Ayarlar açıksa oradaki durum satırını, her hâlde kenar rozetini boyar.
+    case "guncelleme":
+      guncellemeDurumu(e);
+      break;
+
     // Oturum değişti (yeni ya da devam): thread temizlenir; devam eden bir
     // konuşmaysa geçmiş dökümü yüklenir ki kullanıcı kaldığı yeri görsün.
     case "session_reset": {
@@ -4827,6 +5021,15 @@ function handle(e) {
       work = null; agentLine = null; raw = ""; waitState = null;
       planOffer = null;   // düğme thread ile birlikte gitti; referans kalmasın
       deferredPlans.clear();
+      // Sohbete özel kalıntılar da gitsin: bekleyen medya eşlemesi metinle
+      // anahtarlı — A'da kuyruklanan görsel, B'de aynı sözcüklerle yazılan
+      // mesaja yapışıyordu. Yarım kalan düşünme tamponu da eski sohbetin.
+      pendingMedia.clear();
+      thought = "";
+      // Döküm bekçisi sıfırlanıyor: aynı kimliğe ikinci reset geldiğinde
+      // (ekran az önce temizlendi) yükleme "zaten çizili" sanıp boş ekran
+      // bırakmasın.
+      transcriptFor = "";
       resumeFollow(false);   // yeni döküm: takip baştan açık
       // Sayaçlar sohbete özel: yeni konuşmada eski harcama asılı kalmasın;
       // sürdürülen sohbette loadState geçmiş toplamı yazar.
@@ -5129,6 +5332,11 @@ async function loadState() {
       if (rozet) rozet.textContent = "v" + s.surum;
     }
     modelName = s.model || "";
+    modelKnown = true;
+    // İlk kurulum: sağlayıcı/model yoksa kullanıcı yönlendirilir; model
+    // bağlanınca (ayar kaydı + yeniden başlatma sonrası) kart kendiliğinden
+    // gider.
+    if (!modelName) showSetupGuide(); else hideSetupGuide();
     oturumId = s.session || oturumId;
     showMeta();
     setVoice(!!s.voice);
@@ -5186,6 +5394,97 @@ fetch("/api/speaking", {
 loadState();
 connect();
 setInterval(() => { Scene.load(); loadOrgans(); }, 30000);
+
+// Açılışta sessiz sürüm denetimi (kullanıcı isteği, 01.09): topluluk
+// projelerindeki gibi — günde en çok bir kez GitHub yayınlarına bakılır,
+// yeni sürüm varsa kenar çubuğundaki rozet indirme bağlantısına dönüşür.
+// Denetim gecikmeli başlar ki açılış trafiğiyle yarışmasın; ağ yoksa
+// sessizce vazgeçilir, bir sonraki güne bırakılır.
+setTimeout(async () => {
+  const DENETIM_ANAHTARI = "dornickSurumDenetim";
+  try {
+    const kayit = JSON.parse(localStorage.getItem(DENETIM_ANAHTARI) || "{}");
+    if (kayit.zaman && Date.now() - kayit.zaman < 24 * 60 * 60 * 1000) {
+      if (kayit.yeni) surumRozetiYenile(kayit);
+      return;
+    }
+  } catch { /* bozuk kayıt — denetime devam */ }
+  try {
+    const cevap = await (await fetch("/api/surum", { method: "POST" })).json();
+    try {
+      localStorage.setItem(DENETIM_ANAHTARI, JSON.stringify({
+        zaman: Date.now(), yeni: cevap.yeni || "",
+        url: cevap.url || "", indirme: cevap.indirme || "",
+      }));
+    } catch { /* localStorage kapalı olabilir */ }
+    if (cevap.yeni) surumRozetiYenile(cevap);
+  } catch { /* ağ yok — sessiz geç */ }
+}, 8000);
+
+function surumRozetiYenile(cevap) {
+  const rozet = document.getElementById("side-ver");
+  if (!rozet || !cevap.yeni) return;
+  rozet.textContent = "";
+  const uc = document.createElement("a");
+  uc.className = "surum-yeni";
+  uc.href = "#";
+  if (cevap.indirme) {
+    // Uygulama içinden indir+kur. Adres istemciden gitmiyor; sunucu
+    // güvenilir GitHub bağlantısını kendisi buluyor (/api/guncelle).
+    uc.textContent = "v" + cevap.yeni + " " + t("yeni — güncelle");
+    uc.title = t("Yeni sürüm yayınlandı — indirip kurmak için tıkla");
+    uc.addEventListener("click", async (e) => {
+      e.preventDefault();
+      uc.textContent = "v" + cevap.yeni + " · " + t("İndiriliyor");
+      try {
+        const c = await (await fetch("/api/guncelle", { method: "POST" })).json();
+        if (c && c.ok === false) uc.textContent = "v" + cevap.yeni + " · " + t("hata");
+      } catch { uc.textContent = "v" + cevap.yeni + " · " + t("hata"); }
+    });
+  } else {
+    const hedef = cevap.url || "#";
+    uc.textContent = "v" + cevap.yeni + " " + t("yeni — indir");
+    uc.title = t("Yeni sürüm yayınlandı — indirmek için tıkla");
+    uc.href = hedef;
+    uc.addEventListener("click", (e) => {
+      e.preventDefault();
+      if (cevap.url) window.open(cevap.url, "_blank", "noopener");
+    });
+  }
+  rozet.append(uc);
+}
+
+// "guncelleme" SSE olayını hem ayarlardaki durum satırına (varsa) hem
+// kenar rozetine yansıtır. İlerleme yüzdesi indirme sırasında akar;
+// "kuruluyor/acildi" kurulum sihirbazının açıldığını söyler; "hata"
+// dürüstçe raporlanır.
+function guncellemeDurumu(e) {
+  const rozet = document.getElementById("side-ver");
+  const durum = document.querySelector(".surum-ilerleme");
+  let metin = "";
+  let kotu = false;
+  if (e.asama === "indiriliyor") {
+    const y = Number(e.yuzde) || 0;
+    metin = t("İndiriliyor") + " %" + y;
+    if (rozet) rozet.setAttribute("data-guncelleme", "%" + y);
+  } else if (e.asama === "kuruluyor") {
+    metin = t("Kurulum açılıyor…");
+  } else if (e.asama === "acildi") {
+    metin = t("Kurulum açıldı — yönergeleri izle (Dornick kapatılacak)");
+  } else if (e.asama === "hata") {
+    metin = e.hata || t("Güncelleme başlatılamadı");
+    kotu = true;
+  }
+  if (durum && metin) {
+    durum.className = "surum-ilerleme" + (kotu ? " bad" : "");
+    durum.textContent = metin;
+  }
+  // Rozet: kısa özet (uzun metin kenar çubuğunu bozmasın).
+  if (rozet && (e.asama === "kuruluyor" || e.asama === "acildi")) {
+    const uc = rozet.querySelector("a");
+    if (uc) uc.textContent = t("Kurulum açılıyor…");
+  }
+}
 
 // speech.js ses uretemediginde bir kez haber verir; satir sohbete duser.
 document.addEventListener("dornick:voice-trouble", () => {

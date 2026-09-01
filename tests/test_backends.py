@@ -416,12 +416,25 @@ async def test_stream_is_closed_after_normal_completion() -> None:
 
 
 async def test_stream_is_closed_when_cancelled() -> None:
+    """Akış SIRASINDA kesme: açık akış kapatılır. İstekten ÖNCE kesme:
+    istek hiç kurulmaz — boşa bağlantı açıp kapatmak yerine Durdur anında
+    işlenir (canlı yara, 01.09: Durdur ancak akış başlayınca işleniyordu)."""
+    # 1) Akış sırasında: ilk parça geldiğinde kesilir, akış kapanır.
     cancel = asyncio.Event()
-    cancel.set()
-    be, fake = backend([chunk(content="x", finish="stop")])
-
-    await be.turn(prepared(), [], cancel=cancel)
+    be, fake = backend([chunk(content="x"), chunk(content="y", finish="stop")])
+    sonuc = await be.turn(
+        prepared(), [], cancel=cancel,
+        callbacks=Callbacks(on_text=lambda _t: cancel.set()))
+    assert sonuc.interrupted is True
     assert fake.stream.closed is True
+
+    # 2) İstekten önce: hiç istek gitmez.
+    once = asyncio.Event()
+    once.set()
+    be2, fake2 = backend([chunk(content="x", finish="stop")])
+    sonuc2 = await be2.turn(prepared(), [], cancel=once)
+    assert sonuc2.interrupted is True
+    assert fake2.seen == {}, "kesilmiş turda istek kurulmamalı"
 
 
 def test_unknown_provider_fails_loudly() -> None:

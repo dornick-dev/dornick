@@ -367,9 +367,19 @@ def _gecmis_kullanim(agent: Any) -> dict[str, Any]:
     # Usage yok (eski günlük ya da sayaç vermeyen sağlayıcı): kaba tahmin.
     # Sıfır göstermektense yaklaşık göstermek doğru — yeter ki tahmin
     # olduğu söylensin.
+    #
+    # Tahmin PENCEREDEN yapılıyor, ham günlükten değil: günlük hiç
+    # kısaltılmıyor ve sıkıştırılmış (ufkun gerisinde kalan) turları da
+    # saymak, küçük bir sohbete "182k token" yazdırıyordu — sağlayıcı
+    # panelinde hiç görünmeyen bir rakam (canlı yara, 01.09). `messages()`
+    # bir SONRAKİ isteğin gerçekten taşıyacağı projeksiyondur; doğru taban o.
+    try:
+        pencere = session.messages()
+    except Exception:
+        pencere = [{"role": e.role, "content": e.content} for e in mesajlar]
     harf = 0
-    for ev in mesajlar:
-        harf += len(_metin_uzunlugu(ev.content))
+    for mesaj in pencere:
+        harf += len(_metin_uzunlugu(mesaj.get("content")))
     if not harf:
         return bos
     tahmini = harf // TAHMIN_BOLEN
@@ -378,15 +388,28 @@ def _gecmis_kullanim(agent: Any) -> dict[str, Any]:
 
 
 def _metin_uzunlugu(content: Any) -> str:
-    """Bir mesajın metin gövdesi (tahmin için). Görüntüler sayılmıyor."""
+    """Bir mesajın metin gövdesi (tahmin için). Görüntüler sayılmıyor.
+
+    tool_result blokları da sayılıyor: içerikleri düz dize ya da blok
+    listesi olabiliyor ve istekte gerçekten taşınıyorlar — eski hal onları
+    atlayıp tahmini sistemsiz biçimde düşük gösteriyordu.
+    """
     if isinstance(content, str):
         return content
     if not isinstance(content, list):
         return ""
     parcalar = []
     for blok in content:
-        if isinstance(blok, dict) and isinstance(blok.get("text"), str):
+        if not isinstance(blok, dict):
+            continue
+        if isinstance(blok.get("text"), str):
             parcalar.append(blok["text"])
+        elif blok.get("type") == "tool_result":
+            ic = blok.get("content")
+            if isinstance(ic, str):
+                parcalar.append(ic)
+            elif isinstance(ic, list):
+                parcalar.append(_metin_uzunlugu(ic))
     return "\n".join(parcalar)
 
 
@@ -1203,6 +1226,27 @@ class Bridge:
         before = agent.config.model
         agent.permissions = PermissionEngine.from_config(config.permissions)
 
+        # Bekleyen izin kartları yeni kiple YENİDEN değerlendiriliyor: tam
+        # yetkiye geçen kullanıcı açık kartın kendiliğinden onaylanmasını
+        # bekliyor. Eski hal kartı asılı bırakıyordu — tur sonsuza dek izin
+        # bekliyor, Durdur bile işlemiyordu (canlı yara, 01.09: "yolo izin
+        # verdim, tam yetki dedim, sonra öyle kaldı").
+        from .permissions import Decision as _Karar
+        # getattr: önizleme/test köprüleri __new__ ile kurulabiliyor.
+        for bekleyen in tuple(getattr(self, "_pending", {}).values()):
+            if bekleyen.future.done():
+                continue
+            try:
+                karar, _kural = agent.permissions.evaluate(
+                    bekleyen.spec, bekleyen.args)
+            except Exception:
+                continue
+            if karar is _Karar.ALLOW or karar is _Karar.DENY:
+                deger = karar is _Karar.ALLOW
+                fut = bekleyen.future
+                self.loop.call_soon_threadsafe(
+                    lambda f=fut, d=deger: None if f.done() else f.set_result(d))
+
         if was != config.permissions.mode:
             self.hub.emit({"type": "notice", "text": f"İzin kipi: {config.permissions.mode}"})
             # Dock çipi ve plan-onay düğmesi gerçek kipi göstersin: ayar
@@ -1873,7 +1917,7 @@ class Bridge:
                 continue
             biten = proc.poll() is not None
             komut = str(info.get("path") or "")
-            kendi = katalog.neo_sureci_mi(komut) or katalog.neo_sureci_mi(
+            kendi = katalog.dornick_sureci_mi(komut) or katalog.dornick_sureci_mi(
                 str(info.get("run") or ""))
             rows.append({
                 "id": "p:" + str(pid),
@@ -2198,6 +2242,15 @@ class Bridge:
         """
         def yay(ev: dict[str, Any]) -> None:
             if serit is None or serit.sid == self._aktif_sid:
+                # Olay OTURUM KİMLİĞİYLE damgalanıyor: kapı (aktif şerit
+                # karşılaştırması) anlıktır ve geçiş sırasında yarışabilir —
+                # kuyrukta bekleyen ya da tam geçiş anında sızan bir parça,
+                # kimliksizken yeni açılan sohbetin ekranına akıyordu
+                # (canlı yara, 01.09: "bir önceki sohbetle karıştığı bile
+                # oluyor"). Arayüz artık kimliği tutmayan olayı ÇİZMİYOR.
+                sid = serit.sid if serit is not None else self._aktif_sid or ""
+                if sid:
+                    ev.setdefault("sid", sid)
                 self.hub.emit(ev)
 
         return AgentIO(
@@ -2410,6 +2463,7 @@ class Bridge:
         şeride dönünce döküm günlükten yüklenir — kayıp yok.
         """
         if serit.sid == self._aktif_sid:
+            ev.setdefault("sid", serit.sid)   # bkz. io().yay: geçiş yarışı
             self.hub.emit(ev)
 
     async def _isle(self, text: str, image: str = "", *,
@@ -2891,8 +2945,10 @@ async def _boot(config: Config, port: int, resume: bool) -> Runtime:
     # tüm yeteneklerinden etmemeli.
     # Paketle gelen standart yetenekler ilk açılışta atölyeye kopyalanıyor;
     # sonrası kullanıcının: düzenler, siler, yeniden eklemeyiz.
-    skills.seed(config.open_sandbox().root)
-    learned, broken = skills.discover(config.open_sandbox().root)
+    skills.seed(config.open_sandbox().root, config.state_dir)
+    # Açılış: insan yok — yalnız onaylı manifestteki yetenekler yüklenir.
+    # Atölyeye düşürülmüş rastgele bir .py kendiliğinden çalışmaz.
+    learned, broken = skills.discover(config.open_sandbox().root, config.state_dir)
     added, _updated = skills.register(registry, learned)
     if added:
         print(f"[dornick] yetenekler yüklendi: {', '.join(added)}", flush=True)
@@ -3368,6 +3424,9 @@ def run(config: Config, *, port: int = 8765, resume: bool = False,
         busy=lambda: runtime.bridge.busy,
         confirm=_confirm_quit,
         jobs=_open_jobs_from_tray,
+        # Onaylı Çıkış her koşulda süreçle biter: GUI katmanı kilitliyse
+        # 12 sn sonra kesin iniş (canlı yara, 01.09).
+        bekci=tray_module.cikis_bekcisi_kur,
     )
     live = tray.start()
     runtime.bridge.tray = tray
@@ -3740,7 +3799,7 @@ def _install_shell() -> bool:
     """
     if sys.platform != "win32":
         return True
-    targets = _neo_windows()
+    targets = _dornick_windows()
     if not targets:
         return False
     ok = False
@@ -3916,7 +3975,7 @@ def _apply_native_styles() -> bool:
     if sys.platform != "win32":
         return True
     try:
-        targets = _neo_windows()
+        targets = _dornick_windows()
         if not targets:
             return False
         for hwnd in targets:
@@ -3981,7 +4040,7 @@ def _is_zoomed(window: Any | None = None) -> bool:
         import ctypes
         hwnd = _hwnd_of(window) if window is not None else 0
         if not hwnd:
-            targets = _neo_windows()
+            targets = _dornick_windows()
             hwnd = targets[0] if targets else 0
         return bool(hwnd and ctypes.windll.user32.IsZoomed(hwnd))
     except Exception:
@@ -4009,7 +4068,7 @@ def _win_do(action: str, window: Any | None = None) -> bool:
         raw = ctypes.windll.user32
         hwnd = _hwnd_of(window) if window is not None else 0
         if not hwnd:
-            targets = _neo_windows()
+            targets = _dornick_windows()
             if not targets:
                 return False
             hwnd = targets[0]
@@ -4070,7 +4129,7 @@ def _win_do(action: str, window: Any | None = None) -> bool:
         return False
 
 
-def _neo_windows(*, gizli_de: bool = False) -> list[int]:
+def _dornick_windows(*, gizli_de: bool = False) -> list[int]:
     """Bu süreçte 'dornick' başlıklı görünür top-level pencerelerin HWND'leri.
 
     FindWindowW(None, title) tek bir eşleşme döndürüyor ve bazı kurulumlarda
@@ -4129,7 +4188,7 @@ def paint_titlebar(dark: bool = True) -> bool:
 
         user32 = ctypes.windll.user32
         dwm = ctypes.windll.dwmapi
-        targets = _neo_windows()
+        targets = _dornick_windows()
         if not targets:
             return False   # pencere henüz oluşmadı — çağıran tekrar denesin
 
@@ -4182,7 +4241,7 @@ def _force_maximize() -> None:
         raw = ctypes.windll.user32
         hwnd = _hwnd_of(_MAIN_WINDOW)
         if not hwnd:
-            targets = _neo_windows()
+            targets = _dornick_windows()
             hwnd = targets[0] if targets else 0
         if not hwnd:
             return
@@ -4264,7 +4323,7 @@ def _heal_geometry() -> bool:
         raw = ctypes.windll.user32
         hwnd = _hwnd_of(_MAIN_WINDOW)
         if not hwnd:
-            targets = _neo_windows()
+            targets = _dornick_windows()
             hwnd = targets[0] if targets else 0
         if not hwnd or not raw.IsWindowVisible(hwnd) or raw.IsIconic(hwnd):
             return False
@@ -4343,7 +4402,7 @@ def _clamp_window_to_work() -> None:
         ax, ay, aw, ah = area
         hwnd = _hwnd_of(_MAIN_WINDOW)
         if not hwnd:
-            targets = _neo_windows()
+            targets = _dornick_windows()
             hwnd = targets[0] if targets else 0
         if not hwnd:
             return
@@ -4457,7 +4516,7 @@ def _confirm_quit(question: str) -> bool:
         MB_SETFOREGROUND = 0x00010000
         IDYES = 6
         try:
-            sahipler = _neo_windows(gizli_de=True)
+            sahipler = _dornick_windows(gizli_de=True)
         except Exception:
             sahipler = []
         answer = ctypes.windll.user32.MessageBoxW(

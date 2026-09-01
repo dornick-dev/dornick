@@ -56,6 +56,27 @@ token, ısıtılmış devam −%38. Yöntem, ham veri ve dürüst uyarılar tek
 sayfada: [docs/benchmark-2026-08.md](docs/benchmark-2026-08.md) ·
 Ekran görüntüleri: [galeri](docs/gallery/README.md).
 
+## Kod imzalama politikası
+
+Ücretsiz kod imzalama [SignPath.io](https://signpath.io) tarafından sağlanır,
+sertifika [SignPath Foundation](https://signpath.org) adınadır.
+
+Windows kurulum dosyası ve yürütülebilirler imzalanır; böylece SmartScreen ve
+Akıllı Uygulama Denetimi yayıncıyı doğrulayabilir. İmzalama yalnız **bu deponun
+kendi kaynağından** derlenen dosyalar için istenir.
+
+**Roller** (tek bakımcılı proje):
+
+| Rol | Kim |
+|---|---|
+| Author (doğrudan commit yetkisi) | Fatih Kütük |
+| Reviewer (dış katkıları onaylar) | Fatih Kütük |
+| Approver (imzalama isteklerini yetkilendirir) | Fatih Kütük |
+
+**Gizlilik.** dornick yerel önceliklidir: kullanıcı açıkça istemedikçe (bulut
+model sağlayıcısı seçmek, web sayfası getirmek, posta göndermek gibi) hiçbir
+bilgiyi ağdaki başka sistemlere aktarmaz.
+
 ## Lisans
 
 [MIT](LICENSE)

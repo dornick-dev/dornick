@@ -29,8 +29,8 @@ _RT_GROUP_ICON = 14
 _CREATE_NEW_PROCESS_GROUP = 0x00000200
 _CREATE_BREAKAWAY_FROM_JOB = 0x01000000
 
-_SKIP_ENV = "NEO_KEEP_INTERPRETER"
-_SKIP_PIDS_ENV = "NEO_REEXEC_SKIP"
+_SKIP_ENV = "DORNICK_KEEP_INTERPRETER"
+_SKIP_PIDS_ENV = "DORNICK_REEXEC_SKIP"
 
 
 def app_executable() -> Path:
@@ -101,7 +101,7 @@ def ensure_host() -> Path | None:
 def relaunch_as_host() -> None:
     """python(w) ise damgalı dornick.exe olarak yeniden açılıp bu süreç biter.
 
-    NEO_KEEP_INTERPRETER=1 geliştirme konsolunu korur. Program Files altındaki
+    DORNICK_KEEP_INTERPRETER=1 geliştirme konsolunu korur. Program Files altındaki
     sistem Python'u yazılamazsa sessizce mevcut yorumlayıcıyla devam eder.
     """
     if sys.platform != "win32":

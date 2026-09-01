@@ -6,6 +6,7 @@ aracın işi. Okuma (status/diff/log) onaysız; yazma kapıdan geçer.
 
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 from typing import Any
 
@@ -83,7 +84,10 @@ def register(registry: ToolRegistry) -> None:
                 f"Bilinmeyen eylem: {action!r}. Geçerli: {', '.join(ACTIONS)}."
             )
         try:
-            result = _run(action, args, ctx)
+            # _run senkron subprocess/ağ (git push 30 sn, gh 60 sn) içeriyor;
+            # doğrudan çağrılınca ajan döngüsünün tamamını kilitliyordu —
+            # bütün sohbetler ve Durdur dahil (canlı yara, 01.09).
+            result = await asyncio.to_thread(_run, action, args, ctx)
         except store.GitError as exc:
             return ToolResult.error(str(exc))
         if action in MUTATING:

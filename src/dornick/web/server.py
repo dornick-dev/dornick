@@ -175,8 +175,10 @@ class Hub:
             if channel in self._clients:
                 self._clients.remove(channel)
 
-    def publish(self, event: Event) -> None:
+    def publish(self, event: Event, sid: str = "") -> None:
         if (payload := _payload(event)) is not None:
+            if sid:
+                payload.setdefault("sid", sid)
             self.emit(payload)
 
     def emit(self, payload: dict[str, Any]) -> None:
@@ -736,7 +738,12 @@ class MindServer:
             self._unsubscribe()
         except Exception:
             pass
-        self._unsubscribe = session.log.subscribe(self.hub.publish)
+        # Günlük olayları da oturum kimliğiyle damgalanıyor: abonelik
+        # değişimi geçiş anında yarışabilir ve eski günlüğün kuyruktaki
+        # olayı yeni ekrana düşebilirdi — arayüz kimliği tutmayanı çizmiyor.
+        sid = str(getattr(session, "id", "") or "")
+        self._unsubscribe = session.log.subscribe(
+            lambda ev, _sid=sid: self.hub.publish(ev, sid=_sid))
         self.mind.session_id = session.id
         self._httpd.mind = self.mind  # type: ignore[attr-defined]
 
@@ -914,6 +921,17 @@ class _Handler(BaseHTTPRequestHandler):
         # tarayıcının bağlantı kotası doluyor ve **her şey** kilitleniyordu.
         raw = self._raw()
         body = _as_json(raw)
+
+        # Çapraz-köken koruması: kullanıcının BAŞKA bir tarayıcı sekmesindeki
+        # yabancı bir sayfa 127.0.0.1'e durum değiştiren bir POST atarsa
+        # (drive-by CSRF) reddedilir. Kendi arayüzümüz aynı-köken → geçer;
+        # Origin/Referer hiç yoksa (curl, testler, benchmark, yerel otomasyon)
+        # geçer — HTTP katmanında yerel süreç arayüzden ayırt edilemez, o yol
+        # zaten kabuk izin kapısıyla korunuyor. Kapatılan gerçek ve önlenebilir
+        # tehdit yabancı KÖKEN (güvenlik denetimi, 01.09).
+        if self._capraz_koken_mi():
+            self.send_error(403, "Capraz koken istegi reddedildi")
+            return
 
         # Ayarlar ajandan bağımsız: model yanlış yapılandırıldığı için ajan
         # hiç açılmamış olabilir ve düzeltmenin yeri tam olarak burası.
@@ -1170,6 +1188,9 @@ class _Handler(BaseHTTPRequestHandler):
             # Arka planda kendiliğinden ağa çıkan denetim bilerek yok.
             # POST: ağa çıkan bir eylem — GET'le yanlışlıkla tetiklenmesin.
             self._json(ortam.guncelleme_denetle())
+            return
+        if route == "/api/guncelle":
+            self._guncelle()
             return
         if route == "/api/gate":
             self._gate(body)
@@ -3488,6 +3509,36 @@ class _Handler(BaseHTTPRequestHandler):
         length = int(self.headers.get("Content-Length") or 0)
         return self.rfile.read(length) if length else b''
 
+    def _capraz_koken_mi(self) -> bool:
+        """İstek YABANCI bir kökenden mi geliyor?
+
+        True yalnızca Origin (yoksa Referer) BAŞLIĞI VARSA ve kökeni bizim
+        host:port'umuzla uyuşmuyorsa. Başlık hiç yoksa False döner: kabuk,
+        test, benchmark ve yerel otomasyon Origin göndermez ve bunları
+        arayüzden ayırt etmek HTTP katmanında zaten mümkün değil. Kapatılan
+        şey çapraz-köken tarayıcı POST'u (drive-by CSRF).
+        """
+        koken = self.headers.get("Origin") or ""
+        if not koken:
+            ref = self.headers.get("Referer") or ""
+            if not ref:
+                return False
+            koken = ref
+        try:
+            from urllib.parse import urlparse
+            ayr = urlparse(koken)
+        except ValueError:
+            return True  # ayrıştırılamayan köken: güvenli tarafta reddet
+        host = (ayr.hostname or "").lower()
+        if host not in ("127.0.0.1", "localhost", "::1"):
+            return True
+        try:
+            bizim_port = int(self.server.server_address[1])
+        except (AttributeError, IndexError, TypeError, ValueError):
+            return False  # portu bilemiyorsak host eşleşmesi yeter
+        # Köken portu belirtmişse eşleşmeli; belirtmemişse (nadiren) host yeter.
+        return ayr.port is not None and int(ayr.port) != bizim_port
+
     def _controller_call(self, name: str, *args: Any) -> Any:
         controller = getattr(self.server, "controller", None)
         fn = getattr(controller, name, None) if controller else None
@@ -3518,6 +3569,57 @@ class _Handler(BaseHTTPRequestHandler):
     def _json(self, payload: Any) -> None:
         body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
         self._send(200, "application/json; charset=utf-8", body)
+
+    def _guncelle(self) -> None:
+        """Yeni sürümü indirir ve kurulum sihirbazını başlatır.
+
+        Adres İSTEMCİDEN GELMEZ: sunucu GitHub yayın API'sini yeniden
+        sorup güvenilir indirme bağlantısını oradan alır (zehirlenmiş bir
+        URL enjekte edilemez). İndirme arka planda; ilerleme SSE ile
+        ("guncelleme" olayı) arayüze akar. Bitince sihirbaz açılır; çalışan
+        uygulamayı kapatmayı sihirbazın kendisi (PrepareToInstall → "Kapat
+        ve devam") üstlenir.
+        """
+        import tempfile
+        import threading
+
+        bilgi = ortam.guncelleme_denetle()
+        if not bilgi.get("yeni") or not bilgi.get("indirme"):
+            self._json({"ok": False,
+                        "hata": bilgi.get("hata") or "İndirilecek güncelleme yok"})
+            return
+
+        hub = getattr(self.server, "hub", None)
+
+        def duyur(ev: dict) -> None:
+            if hub is not None:
+                try:
+                    hub.emit({"type": "guncelleme", **ev})
+                except Exception:
+                    pass
+
+        def kos() -> None:
+            try:
+                duyur({"asama": "indiriliyor", "yuzde": 0, "yeni": bilgi["yeni"]})
+                dizin = Path(tempfile.gettempdir()) / "dornick-guncelleme"
+
+                def ilerleme(indirilen: int, toplam: int) -> None:
+                    yuzde = int(indirilen * 100 / toplam) if toplam else 0
+                    duyur({"asama": "indiriliyor", "yuzde": yuzde,
+                           "indirilen": indirilen, "toplam": toplam})
+
+                yol = ortam.guncelleme_indir(
+                    bilgi["indirme"], dizin,
+                    beklenen_boyut=int(bilgi.get("boyut") or 0),
+                    ad=str(bilgi.get("ad") or ""), ilerleme=ilerleme)
+                duyur({"asama": "kuruluyor", "yeni": bilgi["yeni"]})
+                ortam.guncellemeyi_baslat(yol)
+                duyur({"asama": "acildi", "yeni": bilgi["yeni"]})
+            except Exception as exc:  # ağ/doğrulama/başlatma — arayüze dürüst hata
+                duyur({"asama": "hata", "hata": f"{type(exc).__name__}: {exc}"})
+
+        threading.Thread(target=kos, name="dornick-guncelle", daemon=True).start()
+        self._json({"ok": True, "yeni": bilgi["yeni"]})
 
     def _send(self, status: int, content_type: str, body: bytes,
               headers: dict[str, str] | None = None) -> None:

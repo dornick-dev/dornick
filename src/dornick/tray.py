@@ -203,6 +203,7 @@ class Tray:
         busy: Callable[[], bool] | None = None,
         confirm: Callable[[str], bool] | None = None,
         jobs: Callable[[], None] | None = None,
+        bekci: Callable[[], None] | None = None,
     ) -> None:
         self.show = show
         self.hide = hide
@@ -215,6 +216,10 @@ class Tray:
         self.confirm = confirm
         # Tepsiden Görevler: pencereyi açıp HUD Görevler panelini getirir.
         self.jobs = jobs
+        # Çıkış bekçisi kancası: kullanıcı Çıkış'ı onayladıktan sonra
+        # kurulur (bkz. cikis_bekcisi_kur). İsteğe bağlı — testler ve eski
+        # çağıranlar vermez, süreç öldüren bir yan etkiyle karşılaşmaz.
+        self.bekci = bekci
         self._icon: Any = None
         self._thread: threading.Thread | None = None
         # Bir kez gösterilmiş balonlar. "Arka planda çalışmaya devam
@@ -310,8 +315,33 @@ class Tray:
                 mesgul = False
         if not cikis_karari(mesgul, self.confirm):
             return
+        # Bekçi: kullanıcı Çıkış'ı ONAYLADI — bu jest her koşulda süreçle
+        # bitmeli (canlı yara, 01.09: "traydan çık dedim, tamam dedim, onu
+        # bile yapamıyor" — görev yöneticisine mecbur kaldı). Kanca uygulama
+        # tarafından verilir; testlerde/eski çağıranlarda yoktur.
+        if self.bekci is not None:
+            _safely(self.bekci)
         self.stop()
         _safely(self.quit)
+
+
+def cikis_bekcisi_kur(sure_sn: float = 12.0) -> None:
+    """Onaylanmış Çıkış'ın süreçle bitmesini garanti eden bekçi.
+
+    Pencere katmanı (pywebview/GUI thread'i) kilitliyse `destroy()` sessizce
+    asılı kalabiliyor. Zarif kapanışa `sure_sn` tanınır; süre dolduğunda
+    süreç kesin olarak indirilir. Thread daemon: zarif yol kazanırsa süreç
+    zaten biter, bekçi onu tutmaz. YALNIZ gerçek uygulama kurar — pytest
+    gibi paylaşılan bir süreçte kurulursa koşuyu ortasından öldürür.
+    """
+    def _indir() -> None:
+        import os
+        import time
+        time.sleep(sure_sn)
+        os._exit(0)
+
+    threading.Thread(target=_indir, name="dornick-cikis-bekci",
+                     daemon=True).start()
 
 
 def _safely(fn: Callable[[], None]) -> None:

@@ -38,7 +38,7 @@ def test_ico_has_multiple_sizes() -> None:
 
 
 def test_skip_pids_from_env(monkeypatch) -> None:
-    monkeypatch.setenv("NEO_REEXEC_SKIP", "12, 34,x")
+    monkeypatch.setenv("DORNICK_REEXEC_SKIP", "12, 34,x")
     assert winicon.skip_pids() == {12, 34}
 
 

@@ -827,6 +827,145 @@ def _post_json(server: MindServer, path: str, payload: dict) -> dict:
         return json.loads(cevap.read().decode("utf-8"))
 
 
+# -- çapraz-köken koruması (güvenlik denetimi, 01.09) ------------------
+#
+# Kullanıcının BAŞKA bir tarayıcı sekmesindeki yabancı bir sayfa
+# 127.0.0.1'e durum değiştiren POST atarsa (drive-by CSRF) reddedilir.
+# Kendi arayüzümüz (aynı köken) ve Origin göndermeyen yerel çağıranlar
+# (curl, test, benchmark) geçer — bunları HTTP katmanında ayırt etmek
+# mümkün değil, o yol zaten kabuk izin kapısıyla korunuyor.
+
+
+def _post_ham(server: MindServer, path: str, headers: dict) -> int:
+    """Ham POST; HTTP durum kodunu döndürür (403 dahil)."""
+    data = b"{}"
+    h = {"Content-Type": "application/json", **headers}
+    istek = urllib.request.Request(
+        server.url.rstrip("/") + path, data=data, headers=h)
+    try:
+        with urllib.request.urlopen(istek, timeout=5) as cevap:
+            return cevap.status
+    except urllib.error.HTTPError as exc:
+        return exc.code
+
+
+def test_guncelle_ucu_indirir_ilerler_ve_baslatir(
+    tmp_path: Path, mind: Mind, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Uygulama içi güncelleme uçtan uca: /api/guncelle sürümü algılar,
+    indirir (ilerleme SSE ile akar) ve kurulum sihirbazını başlatır.
+
+    Gerçekten .exe çalıştırılmaz — `guncellemeyi_baslat` mock'lanır; adres
+    de sunucunun kendi denetiminden gelir (istemci vermez)."""
+    import threading
+
+    from dornick.web import server as server_module
+
+    monkeypatch.setattr(
+        server_module.ortam, "guncelleme_denetle",
+        lambda: {"ok": True, "mevcut": "1.0.0", "yeni": "9.9.9",
+                 "url": "https://github.com/dornick-dev/dornick/releases/tag/v9.9.9",
+                 "indirme": "https://github.com/dornick-dev/dornick/releases/download/v9.9.9/dornick-setup-9.9.9.exe",
+                 "boyut": 2 * 1024 * 1024, "ad": "dornick-setup-9.9.9.exe",
+                 "hata": ""})
+
+    inen = tmp_path / "dornick-setup-9.9.9.exe"
+
+    def sahte_indir(url, dizin, *, beklenen_boyut=0, ad="", ilerleme=None):
+        assert "github.com" in url          # adres sunucudan, güvenilir
+        if ilerleme:
+            ilerleme(beklenen_boyut // 2, beklenen_boyut)
+            ilerleme(beklenen_boyut, beklenen_boyut)
+        inen.write_bytes(b"MZ" + b"0" * 1024)
+        return inen
+
+    monkeypatch.setattr(server_module.ortam, "guncelleme_indir", sahte_indir)
+
+    baslatildi: dict = {}
+    bitti = threading.Event()
+
+    def sahte_baslat(yol):
+        baslatildi["yol"] = str(yol)
+        bitti.set()
+
+    monkeypatch.setattr(server_module.ortam, "guncellemeyi_baslat", sahte_baslat)
+
+    log = EventLog(tmp_path / "s.jsonl")
+    server = MindServer(mind, log, port=0)
+    kanal = server.hub.register()   # SSE dinleyicisi: ilerleme olayları
+    server.start()
+    try:
+        cevap = _post_json(server, "/api/guncelle", {})
+        assert cevap["ok"] is True and cevap["yeni"] == "9.9.9"
+        assert bitti.wait(5), "indirme/başlatma thread'i zamanında bitmedi"
+        assert baslatildi["yol"].endswith("dornick-setup-9.9.9.exe")
+
+        # SSE olayları: en az bir "indiriliyor" yüzdesi ve bir kurulum aşaması.
+        olaylar = []
+        import queue as _q
+        try:
+            while True:
+                olaylar.append(json.loads(kanal.get_nowait()))
+        except _q.Empty:
+            pass
+        asamalar = [o.get("asama") for o in olaylar if o.get("type") == "guncelleme"]
+        assert "indiriliyor" in asamalar
+        assert "kuruluyor" in asamalar and "acildi" in asamalar
+    finally:
+        server.stop()
+        log.close()
+
+
+def test_guncelle_yeni_surum_yoksa_kibar_reddeder(
+    tmp_path: Path, mind: Mind, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """İndirilecek güncelleme yoksa /api/guncelle ok:false döner, indirme
+    ya da başlatma HİÇ denenmez."""
+    from dornick.web import server as server_module
+
+    monkeypatch.setattr(
+        server_module.ortam, "guncelleme_denetle",
+        lambda: {"ok": True, "mevcut": "1.0.0", "yeni": "", "url": "",
+                 "indirme": "", "boyut": 0, "ad": "", "hata": ""})
+
+    def patlar(*a, **k):  # çağrılırsa test kırılır
+        raise AssertionError("güncelleme yokken indirme denenmemeli")
+
+    monkeypatch.setattr(server_module.ortam, "guncelleme_indir", patlar)
+
+    log = EventLog(tmp_path / "s.jsonl")
+    server = MindServer(mind, log, port=0)
+    server.start()
+    try:
+        cevap = _post_json(server, "/api/guncelle", {})
+        assert cevap["ok"] is False
+    finally:
+        server.stop()
+        log.close()
+
+
+def test_foreign_origin_post_is_rejected(tmp_path: Path, mind: Mind) -> None:
+    """Yabancı köken → 403; aynı köken ve kökensiz istek → geçer."""
+    log = EventLog(tmp_path / "s.jsonl")
+    server = MindServer(mind, log, port=0)
+    server.start()
+    try:
+        bizim = server.url.rstrip("/")   # http://127.0.0.1:PORT
+        # Yabancı köken: reddedilmeli.
+        assert _post_ham(server, "/api/surum",
+                         {"Origin": "https://evil.example"}) == 403
+        # Aynı köken (arayüzün kendisi): geçmeli.
+        assert _post_ham(server, "/api/surum", {"Origin": bizim}) == 200
+        # Köken hiç yok (curl/test/benchmark): geçmeli.
+        assert _post_ham(server, "/api/surum", {}) == 200
+        # Referer yabancı olsa da reddedilir.
+        assert _post_ham(server, "/api/surum",
+                         {"Referer": "https://evil.example/x"}) == 403
+    finally:
+        server.stop()
+        log.close()
+
+
 def test_disari_ac_opens_only_local_pages(
     tmp_path: Path, mind: Mind, monkeypatch: pytest.MonkeyPatch
 ) -> None:

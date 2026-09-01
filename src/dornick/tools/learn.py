@@ -18,6 +18,7 @@ Yetki açısından yeni bir kapı açmıyor: yetenek de `shell` gibi tam Python
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 
 from .. import skills
@@ -119,7 +120,8 @@ def register(registry: ToolRegistry) -> None:
             if not name:
                 return ToolResult.error("`name` gerekli. Yeteneğe bir ad ver.")
             try:
-                skill = skills.save(root, name, str(args.get("code") or ""))
+                skill = skills.save(root, name, str(args.get("code") or ""),
+                                    ctx.config.state_dir)
             except skills.SkillError as exc:
                 return ToolResult.error(str(exc))
             added, updated = skills.register(registry, [skill])
@@ -154,7 +156,10 @@ def register(registry: ToolRegistry) -> None:
             )
 
         if action == "load":
-            found, broken = skills.discover(root)
+            # Açık, izin-kapılı yükleme = onay: bulunan geçerli dosyalar
+            # onaylı manifeste yazılır (insan bu turu onayladı).
+            found, broken = skills.discover(
+                root, ctx.config.state_dir, onayla=True)
             added, updated = skills.register(registry, found)
 
             lines: list[str] = []
@@ -189,7 +194,7 @@ def register(registry: ToolRegistry) -> None:
                               detail={"loaded": added, "updated": updated})
 
         if action == "list":
-            found, broken = skills.discover(root)
+            found, broken = skills.discover(root, ctx.config.state_dir)
             if not found and not broken:
                 return ToolResult("Henüz bir yeteneğin yok.")
 
@@ -242,7 +247,9 @@ def register_models(registry: ToolRegistry) -> None:
     async def models(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
         from .. import settings
 
-        found = settings.scan_models(ctx.config)
+        # scan_models senkron ağ sondaları (urlopen, 2-10 sn) içeriyor;
+        # döngüde koşarsa bütün sohbetleri kilitliyor — iş parçacığına.
+        found = await asyncio.to_thread(settings.scan_models, ctx.config)
         if not found:
             return ToolResult(
                 "Sunucu model listesi vermiyor. Kendi modelinle çalışmaya devam et."

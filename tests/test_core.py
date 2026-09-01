@@ -284,6 +284,48 @@ async def test_handler_exception_does_not_kill_the_loop(ctx: ToolContext) -> Non
     assert "ValueError" in blocks[0]["content"]
 
 
+async def test_stop_cancels_a_pending_approval(ctx: ToolContext) -> None:
+    """İzin kartı açıkken Durdur: tur onay bekleyişinde asılı kalmıyor.
+
+    Canlı yara (01.09): kart cevapsız kaldığında Durdur dahil hiçbir şey
+    turu kurtaramıyordu — bekleyiş artık kesme olayıyla yarıştırılıyor.
+    """
+    from dornick.session import PendingToolUse
+
+    registry = ToolRegistry()
+    kostu = False
+
+    @registry.tool("sorulan", "sorar", object_schema({}), mutates=True)
+    async def _sorulan(args, _ctx):
+        nonlocal kostu
+        kostu = True
+        return ToolResult("olmamalıydı")
+
+    async def cevapsiz_kart(spec, args):
+        await asyncio.sleep(3600)
+        return True
+
+    async def durdur():
+        await asyncio.sleep(0.05)
+        ctx.cancel.set()
+
+    stop = asyncio.ensure_future(durdur())
+    blocks = await asyncio.wait_for(
+        execute(
+            [PendingToolUse("1", "sorulan", {})],
+            registry=registry,
+            permissions=PermissionEngine("ask", allow=[], deny=[]),
+            ctx=ctx,
+            approve=cevapsiz_kart,
+        ),
+        timeout=5,
+    )
+    await stop
+    assert not kostu, "onaysız çağrı çalışmamalı"
+    assert blocks[0]["tool_use_id"] == "1"
+    assert blocks[0]["is_error"] is True
+
+
 # -- eksik öncül -------------------------------------------------------
 #
 # "Yarın hava nasıl?" sorusuna model İstanbul'u varsayıp cevap vermişti.

@@ -1,0 +1,150 @@
+# Dornick kurulum sihirbazını CI'da derler ve (SignPath yapılandırılmışsa)
+# imzalar; sonucu GitHub yayınına asset olarak ekler.
+#
+# NEDEN: Akıllı Uygulama Denetimi (SAC) / SmartScreen imzasız exe'yi engelliyor.
+# İki dosya imzalanmalı: (1) paketin içindeki `dornick.exe` (pythonw kopyası —
+# uygulamanın çalışan süreci; SAC'nin asıl engellediği bu), (2) son kurulum
+# sihirbazı `dornick-setup-<sürüm>.exe`.
+#
+# ────────────────────────────────────────────────────────────────────────
+# KURULUM (SignPath onayı geldikten SONRA — repo Settings → Secrets/Variables):
+#
+#   Secret:
+#     SIGNPATH_API_TOKEN         SignPath kullanıcı API token'ı
+#   Variables (Settings → Variables → Actions):
+#     SIGNPATH_ORGANIZATION_ID   SignPath organizasyon GUID'i
+#     SIGNPATH_PROJECT_SLUG      örn. "dornick"
+#     SIGNPATH_POLICY_SLUG       örn. "release-signing" (test için "test-signing")
+#     SIGNPATH_EXE_CONFIG        iç exe için artifact configuration slug'ı (örn. "exe")
+#     SIGNPATH_INSTALLER_CONFIG  installer için artifact configuration slug'ı (örn. "installer")
+#
+# SignPath tarafında iki "artifact configuration" tanımla: biri tek bir
+# `dornick.exe` imzalar, biri tek bir `dornick-setup-*.exe` imzalar.
+#
+# Secret YOKKEN: workflow yine derler ve İMZASIZ installer'ı iş artifact'ı
+# olarak yükler (imzalama adımları atlanır) — onaydan önce de kullanışlı.
+# ────────────────────────────────────────────────────────────────────────
+
+name: Build & sign installer
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: write   # yayına asset yüklemek için
+
+jobs:
+  build-sign:
+    runs-on: windows-latest
+    env:
+      # Secret varsa imzalama açık. (secrets `if` içinde doğrudan
+      # kullanılamaz; env'e alıp öyle kontrol ediyoruz.)
+      SIGN: ${{ secrets.SIGNPATH_API_TOKEN != '' }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Inno Setup
+        run: choco install innosetup -y --no-progress
+
+      - name: Read version from pyproject.toml
+        id: ver
+        shell: pwsh
+        run: |
+          $m = Select-String -Path pyproject.toml -Pattern '^version\s*=\s*"([^"]+)"'
+          if (-not $m) { throw "pyproject.toml içinde version yok" }
+          $v = $m.Matches[0].Groups[1].Value
+          "surum=$v" >> $env:GITHUB_OUTPUT
+          Write-Host "Sürüm: $v"
+
+      # Paketi hazırla ama iscc'yi çağırma: iç dornick.exe'yi imzalamak için
+      # araya girmemiz gerek. Bu adım pythonw → dornick.exe kopyasını ve ico
+      # damgasını da yapar (build.ps1 -AtlaDerleme, satır 219-235).
+      - name: Prepare package (no installer yet)
+        shell: pwsh
+        run: powershell -ExecutionPolicy Bypass -File installer\build.ps1 -AtlaDerleme
+
+      # ── iç exe imzalama ───────────────────────────────────────────────
+      - name: Upload inner exe for signing
+        if: env.SIGN == 'true'
+        id: up_exe
+        uses: actions/upload-artifact@v4
+        with:
+          name: dornick-exe-unsigned
+          path: installer/dist/paket/python/dornick.exe
+          if-no-files-found: error
+
+      - name: Sign inner dornick.exe (SignPath)
+        if: env.SIGN == 'true'
+        uses: signpath/github-action-submit-signing-request@v1
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG }}
+          signing-policy-slug: ${{ vars.SIGNPATH_POLICY_SLUG }}
+          artifact-configuration-slug: ${{ vars.SIGNPATH_EXE_CONFIG }}
+          github-artifact-id: ${{ steps.up_exe.outputs.artifact-id }}
+          wait-for-completion: true
+          output-artifact-directory: signed-exe
+
+      - name: Put signed exe back into the package
+        if: env.SIGN == 'true'
+        shell: pwsh
+        run: Copy-Item signed-exe\dornick.exe installer\dist\paket\python\dornick.exe -Force
+
+      # ── installer derleme ─────────────────────────────────────────────
+      - name: Compile installer (iscc)
+        shell: pwsh
+        run: |
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) { $iscc = "$env:ProgramFiles\Inno Setup 6\ISCC.exe" }
+          & $iscc "/DSurum=${{ steps.ver.outputs.surum }}" installer\dornick.iss
+          if ($LASTEXITCODE -ne 0) { throw "iscc başarısız" }
+
+      # ── installer imzalama ────────────────────────────────────────────
+      - name: Upload installer for signing
+        if: env.SIGN == 'true'
+        id: up_setup
+        uses: actions/upload-artifact@v4
+        with:
+          name: dornick-setup-unsigned
+          path: installer/dist/dornick-setup-${{ steps.ver.outputs.surum }}.exe
+          if-no-files-found: error
+
+      - name: Sign installer (SignPath)
+        if: env.SIGN == 'true'
+        uses: signpath/github-action-submit-signing-request@v1
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG }}
+          signing-policy-slug: ${{ vars.SIGNPATH_POLICY_SLUG }}
+          artifact-configuration-slug: ${{ vars.SIGNPATH_INSTALLER_CONFIG }}
+          github-artifact-id: ${{ steps.up_setup.outputs.artifact-id }}
+          wait-for-completion: true
+          output-artifact-directory: signed-setup
+
+      - name: Put signed installer back
+        if: env.SIGN == 'true'
+        shell: pwsh
+        run: Copy-Item "signed-setup\dornick-setup-${{ steps.ver.outputs.surum }}.exe" "installer\dist\dornick-setup-${{ steps.ver.outputs.surum }}.exe" -Force
+
+      # ── çıktı: her hâlde iş artifact'ı; yayınsa asset olarak ekle ──────
+      - name: Upload installer as workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dornick-setup-${{ steps.ver.outputs.surum }}
+          path: installer/dist/dornick-setup-${{ steps.ver.outputs.surum }}.exe
+          if-no-files-found: error
+
+      - name: Attach installer to the GitHub release
+        if: github.event_name == 'release'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release upload "${{ github.event.release.tag_name }}" `
+            "installer\dist\dornick-setup-${{ steps.ver.outputs.surum }}.exe" --clobber

@@ -302,6 +302,14 @@
 .panel .surum-sonuc.bad { color: var(--rose); }
 .panel .surum-yeni { color: var(--cyan); text-decoration: none; cursor: pointer; }
 .panel .surum-yeni:hover { text-decoration: underline; }
+/* İndir+kur düğmesi bir <button>: bağlantı gibi görünsün ama tıklanır kalsın. */
+.panel button.surum-yeni {
+  border: 0; background: transparent; padding: 0; font: inherit;
+  color: var(--cyan); cursor: pointer;
+}
+.panel button.surum-yeni:disabled { color: var(--dim); cursor: default; text-decoration: none; }
+.panel .surum-ilerleme { display: block; margin-top: 4px; font: 500 11.5px var(--font); color: var(--dim); }
+.panel .surum-ilerleme.bad { color: var(--rose); }
 
 /* ---------- dosyalar ---------- */
 

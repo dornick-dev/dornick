@@ -618,6 +618,55 @@ async def test_the_bridge_publishes_wait_events_to_the_hub(tmp_path: Path) -> No
                            "toplam": 5, "saniye": 30, "detay": "APIStatusError 402"}]
 
 
+async def test_full_authority_resolves_pending_approval_cards(tmp_path: Path) -> None:
+    """Tam yetkiye geçiş açık izin kartlarını KENDİLİĞİNDEN onaylar.
+
+    Canlı yara (01.09): kart açıkken kullanıcı "tam yetki" seçiyor, kart
+    asılı kalıyor, tur sonsuza dek izin bekliyordu. Kip değişince bekleyen
+    istekler yeni motorla yeniden değerlendirilir.
+    """
+    from types import SimpleNamespace
+
+    from dornick.config import Config
+    from dornick.desktop import Bridge, Pending
+    from dornick.permissions import PermissionEngine
+    from dornick.tools.base import ToolSpec, object_schema
+
+    class _Hub:
+        def __init__(self) -> None:
+            self.events: list[dict] = []
+
+        def emit(self, payload: dict) -> None:
+            self.events.append(payload)
+
+    config = Config.load(tmp_path)
+    config.ensure_dirs()
+
+    bridge = Bridge(_Hub(), asyncio.get_running_loop())
+    agent = SimpleNamespace(
+        session=SimpleNamespace(id="s1"),
+        permissions=PermissionEngine("ask", allow=[], deny=[]),
+        config=config,
+        reconfigure=lambda cfg: None,
+    )
+    bridge.agent = agent
+
+    async def _handler(args, ctx):  # pragma: no cover - hiç koşmaz
+        return None
+
+    spec = ToolSpec(name="shell", description="", input_schema=object_schema({}),
+                    handler=_handler, mutates=True)
+    fut: asyncio.Future[bool] = asyncio.get_running_loop().create_future()
+    bridge._pending["kart1"] = Pending(future=fut, spec=spec,
+                                       args={"command": "ls"})
+
+    config.permissions.mode = "yolo"
+    bridge.reload(config)
+    await asyncio.sleep(0)   # call_soon_threadsafe çözümü işlesin
+
+    assert fut.done() and fut.result() is True
+
+
 def test_outage_rotates_the_auto_pool() -> None:
     """Oto kipinde kesinti hata sayılır: cezalı model havuzun sonuna düşer,
     bir sonraki deneme başka modelle gider."""

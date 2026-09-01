@@ -7,6 +7,6 @@ cd /d "%~dp0"
 rem Her zaman bu depodaki src — site-packages'taki eski kopya layout'u bozmasin.
 set "PYTHONPATH=%~dp0src"
 rem pywebview su an 3.13'te; varsayilan `py` 3.14 olunca pencere acilmiyor.
-set "NEO_KEEP_INTERPRETER=1"
+set "DORNICK_KEEP_INTERPRETER=1"
 py -3.13 -m dornick --app %*
 if errorlevel 1 python -m dornick --app %*

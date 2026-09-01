@@ -72,16 +72,11 @@ def _shell_command(command: str) -> list[str]:
     return [exe, "-lc", command]
 
 
-def _agaci_oldur(proc: Any) -> None:
-    """Süreci ÇOCUKLARIYLA öldürür (Windows'ta kill torunu vurmaz)."""
-    if os.name == "nt":
-        import subprocess as _sp
-        _sp.run(["taskkill", "/PID", str(proc.pid), "/T", "/F"],
-                capture_output=True)
-    try:
-        proc.kill()
-    except ProcessLookupError:
-        pass
+# Süreç ağacını öldürme işi ortam.agaci_oldur'da: tamamen async, her
+# bekleyişi sınırlı. Buradaki eski senkron ikiz (subprocess.run ile
+# zaman aşımsız taskkill) ajan döngüsünün TAMAMINI kilitleyebiliyordu —
+# kullanıcı Durdur'a basıyor, taskkill takılıyor, bütün sohbetler ve
+# Durdur'un kendisi donuyordu (canlı yara, 01.09).
 
 
 async def _run_shell(
@@ -114,22 +109,19 @@ async def _run_shell(
             {comm, stop}, timeout=timeout, return_when=asyncio.FIRST_COMPLETED
         )
     except asyncio.CancelledError:
-        _agaci_oldur(proc)
-        await proc.wait()
+        await ortam.agaci_oldur(proc)
         comm.cancel()
         stop.cancel()
         raise
 
     if stop in done:
-        _agaci_oldur(proc)
-        await proc.wait()
+        await ortam.agaci_oldur(proc)
         comm.cancel()
         return ("stop", "", -1)
 
     stop.cancel()
     if comm not in done:
-        _agaci_oldur(proc)
-        await proc.wait()
+        await ortam.agaci_oldur(proc)
         comm.cancel()
         return ("timeout", "", -1)
 
@@ -225,7 +217,7 @@ UZUN SÜREN SÜREÇLER — iki ayrı kip, karıştırma:
         # kendi portunda başlatabilsin.
         from .. import apps as _apps
 
-        if _apps.neo_sureci_mi(command):
+        if _apps.dornick_sureci_mi(command):
             return ToolResult.error(
                 "Dornick zaten çalışıyor; kendini yeniden başlatma. Bu komut "
                 "Dornick'in (dornick) ikinci bir kopyasını açardı — kullanıcı "

@@ -289,8 +289,10 @@ def test_sessions_lists_past_conversations_newest_first(tmp_path):
     assert got[0].session_id == "20260612T140000Z"  # en yeni başta
 
 
-def test_transcript_returns_only_spoken_turns(tmp_path):
-    """Döküm yalnızca metin turları — araç çağrısı ve düşünme dışarıda."""
+def test_transcript_returns_spoken_turns_with_trace(tmp_path):
+    """Döküm metin turlarını VE turun izini taşıyor: araç çağrıları tek
+    satırlık özet (ham argüman değil), düşünme ayrı alanda — yeniden açılan
+    sohbette şerit yeniden kurulabilsin (canlı yara, 01.09)."""
     from dornick.events import EventLog
     from dornick.mind import open_mind
 
@@ -299,6 +301,7 @@ def test_transcript_returns_only_spoken_turns(tmp_path):
     log = EventLog(sessions / "20260610T090000Z.jsonl")
     log.append("message", role="user", content="kuyu seviyesi ne kadar")
     log.append("message", role="assistant", content=[
+        {"type": "thinking", "thinking": "Önce dosyaya bakayım."},
         {"type": "text", "text": "Seviye 2,77 m."},
         {"type": "tool_use", "name": "shell", "input": {"command": "cat x"}},
     ])
@@ -308,8 +311,55 @@ def test_transcript_returns_only_spoken_turns(tmp_path):
     turns = mind.transcript("20260610T090000Z")
     assert turns == [
         {"role": "user", "text": "kuyu seviyesi ne kadar"},
-        {"role": "assistant", "text": "Seviye 2,77 m."},
+        {"role": "assistant", "text": "Seviye 2,77 m.",
+         "dusunme": "Önce dosyaya bakayım.",
+         "adimlar": [{"tool": "shell", "ozet": "cat x"}]},
     ]
+
+
+def test_transcript_orphan_trace_attaches_to_empty_turn(tmp_path):
+    """Metinsiz kesilen turun izi kaybolmuyor: sonraki kullanıcı sözünden
+    önce metinsiz bir asistan turuna bağlanıyor."""
+    from dornick.events import EventLog
+    from dornick.mind import open_mind
+
+    sessions = tmp_path / "sessions"
+    sessions.mkdir(parents=True)
+    log = EventLog(sessions / "20260610T100000Z.jsonl")
+    log.append("message", role="user", content="dosyayı düzelt")
+    log.append("message", role="assistant", content=[
+        {"type": "tool_use", "name": "edit_file", "input": {"path": "a.py"}},
+    ])
+    log.append("message", role="user", content="dur, vazgeçtim")
+    log.close()
+
+    mind = open_mind(tmp_path / "mind", sessions, "cur")
+    turns = mind.transcript("20260610T100000Z")
+    assert turns == [
+        {"role": "user", "text": "dosyayı düzelt"},
+        {"role": "assistant", "text": "",
+         "adimlar": [{"tool": "edit_file", "ozet": "a.py"}]},
+        {"role": "user", "text": "dur, vazgeçtim"},
+    ]
+
+
+def test_transcript_cache_serves_unchanged_file(tmp_path):
+    """Değişmeyen dosyanın dökümü önbellekten dönüyor (derin arama 40
+    oturumu her yazışta baştan ayrıştırıyordu)."""
+    from dornick.events import EventLog
+    from dornick.mind import open_mind
+
+    sessions = tmp_path / "sessions"
+    sessions.mkdir(parents=True)
+    log = EventLog(sessions / "20260610T110000Z.jsonl")
+    log.append("message", role="user", content="merhaba")
+    log.close()
+
+    mind = open_mind(tmp_path / "mind", sessions, "cur")
+    ilk = mind.transcript("20260610T110000Z")
+    assert ilk and ilk[0]["text"] == "merhaba"
+    # Aynı nesne dönmeli: dosya değişmedi, ayrıştırma tekrarlanmadı.
+    assert mind.transcript("20260610T110000Z") is ilk
 
 
 def test_projects_assign_and_clear(tmp_path):

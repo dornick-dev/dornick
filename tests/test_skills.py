@@ -126,6 +126,71 @@ def test_underscore_files_are_skipped(ctx: ToolContext) -> None:
     assert not found and not broken
 
 
+# -- onaylı manifest: açılışta rastgele .py exec edilmez ---------------
+#
+# Güvenlik denetimi (01.09): atölyeye `write_file` ile düşürülmüş bir .py
+# (ör. injection) her açılışta sessizce çalışıyordu. state_dir verilince
+# yalnız onaylı manifestteki dosyalar açılışta yüklenir.
+
+
+def test_startup_discover_skips_an_unapproved_file(ctx: ToolContext) -> None:
+    """state_dir + kurulu manifest: onaysız (elle düşürülmüş) dosya açılışta
+    YÜKLENMEZ, "onaylanmadı" diye raporlanır."""
+    sd = ctx.config.state_dir
+    # Manifesti kur (boş = hiçbir şey onaylı değil); göç tetiklenmesin.
+    skills._yaz_manifest(sd, {})
+
+    write(ctx, "kacak", GOOD)   # doğrudan diske düşürülmüş, araçtan geçmemiş
+    found, broken = skills.discover(ctx.sandbox.root, sd)
+
+    assert [s.name for s in found] == []
+    assert any("onaylanmadı" in b for b in broken)
+
+
+def test_save_approves_and_then_startup_loads_it(ctx: ToolContext) -> None:
+    """`skill action=write` (save state_dir'li) onaylar; sonraki açılış yükler."""
+    sd = ctx.config.state_dir
+    skills._yaz_manifest(sd, {})
+    skills.save(ctx.sandbox.root, "topla", GOOD, sd)
+
+    found, broken = skills.discover(ctx.sandbox.root, sd)
+    assert [s.name for s in found] == ["topla"]
+    assert not broken
+
+
+def test_first_run_migration_trusts_existing_files(ctx: ToolContext) -> None:
+    """Manifest hiç yokken (yükseltme) mevcut dosyalar güvenilir sayılır —
+    kimsenin çalışan kurulumu bozulmaz."""
+    write(ctx, "topla", GOOD)
+    sd = ctx.config.state_dir
+    assert not skills._manifest_path(sd).is_file()   # henüz yok
+
+    found, broken = skills.discover(ctx.sandbox.root, sd)
+    assert [s.name for s in found] == ["topla"]
+    assert not broken
+    assert skills._manifest_path(sd).is_file()        # göç kaydı yazıldı
+
+
+def test_load_action_approves(ctx: ToolContext) -> None:
+    """Açık, izin-kapılı `load` (onayla=True) dosyayı manifeste yazar."""
+    sd = ctx.config.state_dir
+    skills._yaz_manifest(sd, {})
+    write(ctx, "topla", GOOD)
+
+    found, _ = skills.discover(ctx.sandbox.root, sd, onayla=True)
+    assert [s.name for s in found] == ["topla"]
+    # Artık açılışta da yüklenir.
+    found2, broken2 = skills.discover(ctx.sandbox.root, sd)
+    assert [s.name for s in found2] == ["topla"] and not broken2
+
+
+def test_no_state_dir_keeps_old_behaviour(ctx: ToolContext) -> None:
+    """state_dir=None: eski davranış — manifest yok, hepsi yüklenir."""
+    write(ctx, "topla", GOOD)
+    found, broken = skills.discover(ctx.sandbox.root)
+    assert [s.name for s in found] == ["topla"] and not broken
+
+
 # -- kayıt -------------------------------------------------------------
 
 

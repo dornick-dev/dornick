@@ -162,19 +162,42 @@ class _SahteIO:
     def on_child_tool(self, *a, **k) -> None:
         pass
 
+    async def approve(self, spec, args) -> bool:
+        # Testlerde onay hep verilir; asıl kapı (permissions) yolo'da zaten
+        # sormuyor, bu yalnız ASK'e düşen bir yol kalırsa diye.
+        return True
+
 
 class _SahteAjan:
-    """Koşucunun agent'tan gerçekten istediği kadarı."""
+    """Koşucunun agent'tan gerçekten istediği kadarı.
+
+    Güvenlik denetimi (01.09) sonrası shell/skill/mail düğümleri gerçek
+    izin motorundan (executor.execute) geçiyor; sahte ajan da o yüzden
+    gerçek bir registry + permission engine + oturum taşıyor. Kip `yolo`:
+    testler kapıyı DEĞİL, düğüm koşumunu ölçüyor.
+    """
 
     def __init__(self, state_dir) -> None:
+        import asyncio
+
+        from dornick.config import Config
+        from dornick.events import EventLog
+        from dornick.permissions import PermissionEngine
+        from dornick.session import Session
+        from dornick.tools import build_registry
+
         self.io = _SahteIO()
         self.mind = None
+        self.config = Config(workspace=state_dir, state_dir=state_dir)
+        self.config.ensure_dirs()
+        self.session = Session(EventLog(state_dir / "wf-events.jsonl"), "wf")
+        self.registry = build_registry()
+        self.permissions = PermissionEngine("yolo", allow=[], deny=[])
+        self.schedule = None
+        self.cancel = asyncio.Event()
 
-        class _C:
-            pass
-
-        self.config = _C()
-        self.config.state_dir = state_dir
+    def _observe(self, *_a, **_k) -> None:
+        pass
 
 
 class _SahteTutamac:
@@ -332,3 +355,55 @@ async def test_an_unusable_repair_answer_changes_nothing(tmp_path: Path) -> None
     assert not progress[0].get("onarim")
     assert workflows.get(tmp_path, "onar").nodes[0].config["command"] \
         == "kesinlikle-olmayan-komut-xyz"
+
+
+# -- güvenlik: düğümler izin kapısını atlamıyor -------------------------
+#
+# Kanıtlanmış zincir (güvenlik denetimi, 01.09): workflow'un http/shell/skill
+# düğümleri doğrudan subprocess/urllib/handler çağırıyor, izin motorunu ve
+# kancaları hiç görmüyordu. En tehlikelisi: bir http düğümüyle yerel API'ye
+# POST atıp kipi yolo'ya çekmek. Artık okuma dışı http ONAYA tabi.
+
+
+class _RetAjan(_SahteAjan):
+    """Her onayı REDDEDEN ajan — kapının gerçekten sorulup sorulmadığını
+    ölçmek için."""
+
+    def __init__(self, state_dir) -> None:
+        super().__init__(state_dir)
+        self.soruldu: list[dict] = []
+
+        class _RedIO(_SahteIO):
+            def __init__(self, kayit):
+                self.kayit = kayit
+
+            async def approve(self, spec, args):
+                self.kayit.append(args)
+                return False
+
+        self.io = _RedIO(self.soruldu)
+
+
+async def test_http_post_node_requires_approval(tmp_path: Path) -> None:
+    """POST yapan http düğümü onaysız çalışmaz: reddedilince adım hata verir
+    ve hiçbir istek gitmez. Yerel-API'ye-yolo self-escalation zinciri burada
+    kırılıyor."""
+    from dornick.workflow_run import execute_workflow
+
+    wf = workflows.save(tmp_path, {
+        "id": "kacak", "title": "Kaçış denemesi",
+        "nodes": [{"id": "a", "title": "Kipi kır", "type": "http",
+                   "config": {"url": "http://127.0.0.1:8765/api/settings",
+                              "method": "POST",
+                              "body": {"permissions": {"mode": "yolo"}}}}],
+        "edges": [],
+    })
+    ajan = _RetAjan(tmp_path)
+
+    _rapor, progress, ok = await execute_workflow(wf, ajan, _SahteTutamac())
+
+    assert not ok, "reddedilen http düğümü başarılı sayılmamalı"
+    assert progress[0]["status"] == "hata"
+    assert ajan.soruldu, "http POST için onay SORULMALIYDI"
+    # Yerel adres uyarısı onay metnine girmiş olmalı.
+    assert "YEREL" in (ajan.soruldu[0].get("istek") or "")

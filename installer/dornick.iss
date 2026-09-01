@@ -183,15 +183,15 @@ Name: "{autodesktop}\{#Ad}"; Filename: "{app}\python\dornick.exe"; Parameters: "
 [Registry]
 Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "{#Ad}"; ValueData: """{app}\python\dornick.exe"" -m dornick --app -C ""{app}"""; Tasks: autostart; Flags: uninsdeletevalue
 ; Explorer sağ tık: Dornick ile aç (dosya / klasör / masaüstü arka planı)
-Root: HKCU; Subkey: "Software\Classes\*\shell\NeoOpen"; ValueType: string; ValueName: ""; ValueData: "Dornick ile aç"; Flags: uninsdeletekey
-Root: HKCU; Subkey: "Software\Classes\*\shell\NeoOpen"; ValueType: string; ValueName: "Icon"; ValueData: "{app}\src\dornick\assets\dornick.ico"
-Root: HKCU; Subkey: "Software\Classes\*\shell\NeoOpen\command"; ValueType: string; ValueName: ""; ValueData: """{app}\python\dornick.exe"" -m dornick.cli --app -C ""{app}"" --open ""%1"""
-Root: HKCU; Subkey: "Software\Classes\Directory\shell\NeoOpen"; ValueType: string; ValueName: ""; ValueData: "Dornick ile aç"; Flags: uninsdeletekey
-Root: HKCU; Subkey: "Software\Classes\Directory\shell\NeoOpen"; ValueType: string; ValueName: "Icon"; ValueData: "{app}\src\dornick\assets\dornick.ico"
-Root: HKCU; Subkey: "Software\Classes\Directory\shell\NeoOpen\command"; ValueType: string; ValueName: ""; ValueData: """{app}\python\dornick.exe"" -m dornick.cli --app -C ""{app}"" --open ""%1"""
-Root: HKCU; Subkey: "Software\Classes\Directory\Background\shell\NeoOpen"; ValueType: string; ValueName: ""; ValueData: "Dornick ile aç"; Flags: uninsdeletekey
-Root: HKCU; Subkey: "Software\Classes\Directory\Background\shell\NeoOpen"; ValueType: string; ValueName: "Icon"; ValueData: "{app}\src\dornick\assets\dornick.ico"
-Root: HKCU; Subkey: "Software\Classes\Directory\Background\shell\NeoOpen\command"; ValueType: string; ValueName: ""; ValueData: """{app}\python\dornick.exe"" -m dornick.cli --app -C ""{app}"" --open ""%V"""
+Root: HKCU; Subkey: "Software\Classes\*\shell\DornickOpen"; ValueType: string; ValueName: ""; ValueData: "Dornick ile aç"; Flags: uninsdeletekey
+Root: HKCU; Subkey: "Software\Classes\*\shell\DornickOpen"; ValueType: string; ValueName: "Icon"; ValueData: "{app}\src\dornick\assets\dornick.ico"
+Root: HKCU; Subkey: "Software\Classes\*\shell\DornickOpen\command"; ValueType: string; ValueName: ""; ValueData: """{app}\python\dornick.exe"" -m dornick.cli --app -C ""{app}"" --open ""%1"""
+Root: HKCU; Subkey: "Software\Classes\Directory\shell\DornickOpen"; ValueType: string; ValueName: ""; ValueData: "Dornick ile aç"; Flags: uninsdeletekey
+Root: HKCU; Subkey: "Software\Classes\Directory\shell\DornickOpen"; ValueType: string; ValueName: "Icon"; ValueData: "{app}\src\dornick\assets\dornick.ico"
+Root: HKCU; Subkey: "Software\Classes\Directory\shell\DornickOpen\command"; ValueType: string; ValueName: ""; ValueData: """{app}\python\dornick.exe"" -m dornick.cli --app -C ""{app}"" --open ""%1"""
+Root: HKCU; Subkey: "Software\Classes\Directory\Background\shell\DornickOpen"; ValueType: string; ValueName: ""; ValueData: "Dornick ile aç"; Flags: uninsdeletekey
+Root: HKCU; Subkey: "Software\Classes\Directory\Background\shell\DornickOpen"; ValueType: string; ValueName: "Icon"; ValueData: "{app}\src\dornick\assets\dornick.ico"
+Root: HKCU; Subkey: "Software\Classes\Directory\Background\shell\DornickOpen\command"; ValueType: string; ValueName: ""; ValueData: """{app}\python\dornick.exe"" -m dornick.cli --app -C ""{app}"" --open ""%V"""
 
 [Run]
 ; Damga: kısayol dornick.exe'yi hedefler; dosya yoksa veya ico sürümü değiştiyse
