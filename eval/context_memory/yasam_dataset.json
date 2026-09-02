@@ -4084,6 +4084,21 @@
   },
   {
    "gun": 30,
+   "saat": 9,
+   "oturum": "o_o01_k_30",
+   "sira": 1,
+   "tur": "kaydet",
+   "kume": "O",
+   "slug": "o01_kontrol",
+   "kind": "fact",
+   "baslik": "Kontrol",
+   "icerik": "Öğleden sonra kahvesi ofiste içildi. (kontrol)",
+   "etiketler": [
+    "gunluk"
+   ]
+  },
+  {
+   "gun": 30,
    "saat": 10,
    "oturum": "h_h06_30",
    "sira": 3,
@@ -4111,7 +4126,16 @@
    "sira": 3,
    "tur": "sonuc",
    "kume": "O",
-   "sonuc": "basarisiz"
+   "sonuc": "basarili"
+  },
+  {
+   "gun": 30,
+   "saat": 10,
+   "oturum": "o_o01_k_30",
+   "sira": 2,
+   "tur": "sonuc",
+   "kume": "O",
+   "sonuc": "basarili"
   },
   {
    "gun": 30,
@@ -4240,21 +4264,6 @@
   {
    "gun": 31,
    "saat": 9,
-   "oturum": "o_o01_k_31",
-   "sira": 1,
-   "tur": "kaydet",
-   "kume": "O",
-   "slug": "o01_kontrol",
-   "kind": "fact",
-   "baslik": "Kontrol",
-   "icerik": "Öğleden sonra kahvesi ofiste içildi. (kontrol)",
-   "etiketler": [
-    "gunluk"
-   ]
-  },
-  {
-   "gun": 31,
-   "saat": 9,
    "oturum": "sabah_31",
    "sira": 2,
    "tur": "kaydet",
@@ -4296,15 +4305,6 @@
    "etiketler": [
     "zincir"
    ]
-  },
-  {
-   "gun": 31,
-   "saat": 10,
-   "oturum": "o_o01_k_31",
-   "sira": 2,
-   "tur": "sonuc",
-   "kume": "O",
-   "sonuc": "basarili"
   },
   {
    "gun": 31,
@@ -4468,12 +4468,36 @@
   },
   {
    "gun": 32,
+   "saat": 9,
+   "oturum": "o_o02_k_32",
+   "sira": 1,
+   "tur": "kaydet",
+   "kume": "O",
+   "slug": "o02_kontrol",
+   "kind": "fact",
+   "baslik": "Kontrol",
+   "icerik": "Yeni kalem kutusu masaya kondu. (kontrol)",
+   "etiketler": [
+    "gunluk"
+   ]
+  },
+  {
+   "gun": 32,
    "saat": 10,
    "oturum": "o_o02_32",
    "sira": 3,
    "tur": "sonuc",
    "kume": "O",
-   "sonuc": "basarisiz"
+   "sonuc": "basarili"
+  },
+  {
+   "gun": 32,
+   "saat": 10,
+   "oturum": "o_o02_k_32",
+   "sira": 2,
+   "tur": "sonuc",
+   "kume": "O",
+   "sonuc": "basarili"
   },
   {
    "gun": 32,
@@ -4578,21 +4602,6 @@
   {
    "gun": 33,
    "saat": 9,
-   "oturum": "o_o02_k_33",
-   "sira": 1,
-   "tur": "kaydet",
-   "kume": "O",
-   "slug": "o02_kontrol",
-   "kind": "fact",
-   "baslik": "Kontrol",
-   "icerik": "Yeni kalem kutusu masaya kondu. (kontrol)",
-   "etiketler": [
-    "gunluk"
-   ]
-  },
-  {
-   "gun": 33,
-   "saat": 9,
    "oturum": "o_o03_33",
    "sira": 1,
    "tur": "kaydet",
@@ -4622,6 +4631,21 @@
   },
   {
    "gun": 33,
+   "saat": 9,
+   "oturum": "o_o03_k_33",
+   "sira": 1,
+   "tur": "kaydet",
+   "kume": "O",
+   "slug": "o03_kontrol",
+   "kind": "fact",
+   "baslik": "Kontrol",
+   "icerik": "Toplantı notu deftere yazıldı. (kontrol)",
+   "etiketler": [
+    "gunluk"
+   ]
+  },
+  {
+   "gun": 33,
    "saat": 10,
    "oturum": "h_h07_33",
    "sira": 3,
@@ -4645,8 +4669,8 @@
   {
    "gun": 33,
    "saat": 10,
-   "oturum": "o_o02_k_33",
-   "sira": 2,
+   "oturum": "o_o03_33",
+   "sira": 3,
    "tur": "sonuc",
    "kume": "O",
    "sonuc": "basarili"
@@ -4654,11 +4678,11 @@
   {
    "gun": 33,
    "saat": 10,
-   "oturum": "o_o03_33",
-   "sira": 3,
+   "oturum": "o_o03_k_33",
+   "sira": 2,
    "tur": "sonuc",
    "kume": "O",
-   "sonuc": "basarisiz"
+   "sonuc": "basarili"
   },
   {
    "gun": 33,
@@ -4999,21 +5023,6 @@
   {
    "gun": 36,
    "saat": 9,
-   "oturum": "o_o03_k_36",
-   "sira": 1,
-   "tur": "kaydet",
-   "kume": "O",
-   "slug": "o03_kontrol",
-   "kind": "fact",
-   "baslik": "Kontrol",
-   "icerik": "Toplantı notu deftere yazıldı. (kontrol)",
-   "etiketler": [
-    "gunluk"
-   ]
-  },
-  {
-   "gun": 36,
-   "saat": 9,
    "oturum": "o_o04_36",
    "sira": 1,
    "tur": "kaydet",
@@ -5039,6 +5048,21 @@
    "icerik": "SCADA sunucusu çöktü; operatör ekranları karardı.",
    "etiketler": [
     "olay"
+   ]
+  },
+  {
+   "gun": 36,
+   "saat": 9,
+   "oturum": "o_o04_k_36",
+   "sira": 1,
+   "tur": "kaydet",
+   "kume": "O",
+   "slug": "o04_kontrol",
+   "kind": "fact",
+   "baslik": "Kontrol",
+   "icerik": "Klasör etiketi yenilendi. (kontrol)",
+   "etiketler": [
+    "gunluk"
    ]
   },
   {
@@ -5074,8 +5098,8 @@
   {
    "gun": 36,
    "saat": 10,
-   "oturum": "o_o03_k_36",
-   "sira": 2,
+   "oturum": "o_o04_36",
+   "sira": 3,
    "tur": "sonuc",
    "kume": "O",
    "sonuc": "basarili"
@@ -5083,11 +5107,11 @@
   {
    "gun": 36,
    "saat": 10,
-   "oturum": "o_o04_36",
-   "sira": 3,
+   "oturum": "o_o04_k_36",
+   "sira": 2,
    "tur": "sonuc",
    "kume": "O",
-   "sonuc": "basarisiz"
+   "sonuc": "basarili"
   },
   {
    "gun": 36,
@@ -5217,30 +5241,6 @@
    "sira": 7,
    "tur": "sonuc",
    "kume": "",
-   "sonuc": "basarili"
-  },
-  {
-   "gun": 37,
-   "saat": 9,
-   "oturum": "o_o04_k_37",
-   "sira": 1,
-   "tur": "kaydet",
-   "kume": "O",
-   "slug": "o04_kontrol",
-   "kind": "fact",
-   "baslik": "Kontrol",
-   "icerik": "Klasör etiketi yenilendi. (kontrol)",
-   "etiketler": [
-    "gunluk"
-   ]
-  },
-  {
-   "gun": 37,
-   "saat": 10,
-   "oturum": "o_o04_k_37",
-   "sira": 2,
-   "tur": "sonuc",
-   "kume": "O",
    "sonuc": "basarili"
   },
   {
@@ -5387,6 +5387,21 @@
   },
   {
    "gun": 38,
+   "saat": 9,
+   "oturum": "o_o05_k_38",
+   "sira": 1,
+   "tur": "kaydet",
+   "kume": "O",
+   "slug": "o05_kontrol",
+   "kind": "fact",
+   "baslik": "Kontrol",
+   "icerik": "Masa lambası değiştirildi. (kontrol)",
+   "etiketler": [
+    "gunluk"
+   ]
+  },
+  {
+   "gun": 38,
    "saat": 10,
    "oturum": "h_h08_38",
    "sira": 3,
@@ -5414,7 +5429,16 @@
    "sira": 3,
    "tur": "sonuc",
    "kume": "O",
-   "sonuc": "basarisiz"
+   "sonuc": "basarili"
+  },
+  {
+   "gun": 38,
+   "saat": 10,
+   "oturum": "o_o05_k_38",
+   "sira": 2,
+   "tur": "sonuc",
+   "kume": "O",
+   "sonuc": "basarili"
   },
   {
    "gun": 38,
@@ -5586,21 +5610,6 @@
   {
    "gun": 39,
    "saat": 9,
-   "oturum": "o_o05_k_39",
-   "sira": 1,
-   "tur": "kaydet",
-   "kume": "O",
-   "slug": "o05_kontrol",
-   "kind": "fact",
-   "baslik": "Kontrol",
-   "icerik": "Masa lambası değiştirildi. (kontrol)",
-   "etiketler": [
-    "gunluk"
-   ]
-  },
-  {
-   "gun": 39,
-   "saat": 9,
    "oturum": "sabah_39",
    "sira": 1,
    "tur": "kaydet",
@@ -5642,15 +5651,6 @@
    "etiketler": [
     "zincir"
    ]
-  },
-  {
-   "gun": 39,
-   "saat": 10,
-   "oturum": "o_o05_k_39",
-   "sira": 2,
-   "tur": "sonuc",
-   "kume": "O",
-   "sonuc": "basarili"
   },
   {
    "gun": 39,
@@ -5889,7 +5889,7 @@
    "sira": 3,
    "tur": "sonuc",
    "kume": "O",
-   "sonuc": "basarisiz"
+   "sonuc": "basarili"
   },
   {
    "gun": 40,
@@ -6137,7 +6137,7 @@
    "sira": 3,
    "tur": "sonuc",
    "kume": "O",
-   "sonuc": "basarisiz"
+   "sonuc": "basarili"
   },
   {
    "gun": 43,
@@ -6482,6 +6482,21 @@
   {
    "gun": 44,
    "saat": 9,
+   "oturum": "o_o08_k_44",
+   "sira": 1,
+   "tur": "kaydet",
+   "kume": "O",
+   "slug": "o08_kontrol",
+   "kind": "fact",
+   "baslik": "Kontrol",
+   "icerik": "Su sebili boşaldı. (kontrol)",
+   "etiketler": [
+    "gunluk"
+   ]
+  },
+  {
+   "gun": 44,
+   "saat": 9,
    "oturum": "sabah_44",
    "sira": 1,
    "tur": "duzelt",
@@ -6502,7 +6517,16 @@
    "sira": 3,
    "tur": "sonuc",
    "kume": "O",
-   "sonuc": "basarisiz"
+   "sonuc": "basarili"
+  },
+  {
+   "gun": 44,
+   "saat": 10,
+   "oturum": "o_o08_k_44",
+   "sira": 2,
+   "tur": "sonuc",
+   "kume": "O",
+   "sonuc": "basarili"
   },
   {
    "gun": 44,
@@ -6599,21 +6623,6 @@
   {
    "gun": 45,
    "saat": 9,
-   "oturum": "o_o08_k_45",
-   "sira": 1,
-   "tur": "kaydet",
-   "kume": "O",
-   "slug": "o08_kontrol",
-   "kind": "fact",
-   "baslik": "Kontrol",
-   "icerik": "Su sebili boşaldı. (kontrol)",
-   "etiketler": [
-    "gunluk"
-   ]
-  },
-  {
-   "gun": 45,
-   "saat": 9,
    "oturum": "sabah_45",
    "sira": 1,
    "tur": "duzelt",
@@ -6671,15 +6680,6 @@
    "etiketler": [
     "zincir"
    ]
-  },
-  {
-   "gun": 45,
-   "saat": 10,
-   "oturum": "o_o08_k_45",
-   "sira": 2,
-   "tur": "sonuc",
-   "kume": "O",
-   "sonuc": "basarili"
   },
   {
    "gun": 45,

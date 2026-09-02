@@ -77,10 +77,11 @@ def test_ayni_senaryo_ayni_sonucu_verir(bench, holdout) -> None:
     """Rastgelelik yok: iki koşu birebir aynı metrikleri vermeli."""
     ilk = bench.kosu(holdout)
     ikinci = bench.kosu(holdout)
-    # Gecikme duvar saati ölçümü — tek dalgalanan sayı, karşılaştırmadan
-    # çıkarılıyor. Kalan her metrik birebir aynı olmalı.
+    # Süre ölçümleri duvar saatinden geliyor — tek dalgalanan sayılar,
+    # karşılaştırmadan çıkarılıyor. Kalan her metrik birebir aynı olmalı.
     for sonuc in (ilk, ikinci):
         sonuc["metrikler"].pop("gecikme_p95")
+        sonuc["metrikler"].pop("gece_suresi")
     assert ilk["metrikler"] == ikinci["metrikler"]
     assert ilk["kume"] == ikinci["kume"]
     assert ilk["sayim"] == ikinci["sayim"]

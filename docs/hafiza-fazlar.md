@@ -289,8 +289,98 @@ seçici yerine başka bir kötü aday koyuyorsa precision'ı hareket ettirmez.
 Precision'ın asıl darboğazı eşik ve bağlam (Faz 5); bu satır oraya not
 düşüldü.
 
-## Faz 3 (Adım 1-5) — Gece: öncelik, tekrar, dikiş, örgü · sırada
-## Faz 3.12 — Uyanık tekrar, mikro-uyku, yerel uyku · bekliyor
+---
+
+## Faz 3 (Adım 1-5) — Gece: tekrar, sorumluluk, dikiş, örgü ⚠️ kabul edilmedi (2 kriter)
+
+| Dosya | Ne |
+|---|---|
+| `src/dornick/recall/orgu.py` | `gece_gecisi` — öncelik, ileri tekrar, şema tazelemesi, yakalama, ters tekrar, dikiş, yeniden örgü, küçültme |
+| `recall/store.py` | `baglan` (birikimli/yalnız-yeni), `kenarlari_kucult` |
+| `session.py` | `Session.sonuc()` — oturum nasıl bitti; kapanışta günlüğe yazılıyor |
+| `loop.py` | önyüklenen kayıtlar `prime` notu olarak günlüğe düşüyor |
+| `mind/tools.py` | `mind_recall` artık `open()` çağırıyor (üretimde pekiştirme hiç olmuyordu) ve `[3 başarı / 1 hata]` sicilini gösteriyor |
+| `tests/test_orgu.py` | 24 test: beş adımın her biri, bütçe/devretme, filigran, damıtma kapısı, ablation |
+
+Atomik birim tek oturumun tekrarı; bütçe biterse kalanlar **devrediyor**,
+atlanmıyor. Filigran oturum bazında — tamamlanmış oturum ikinci kez pay
+dağıtmıyor (çift sayım testi var).
+
+### Kalibrasyon
+
+* **`BASARI_PAYI` / `HATA_PAYI` = 1.0 / −0.8** — yol haritasının önerdiği
+  (0.5, −0.3) çifti `sorumluluk_dogrulugu`'nu 0.75'te bırakıyor: tek bir
+  başarı/hata payı, kaydın kendi tazeliğinin altında kalıp sıralamayı
+  çeviremiyor. (0.7,−0.5) ve (0.5,−0.6) de yetmedi; (1.0,−0.8) hedefi
+  geçti (**1.00**). Diğer metrikler bu aralıkta duyarsız.
+* **`YAKALAMA_ESIK` kalibre EDİLEMEDİ.** 0.35–0.70 arası tarandı, `yakalama`
+  hiç oynamadı (−0.108 sabit). Sebep ölçüldü: 500 düğümlük bir bellekte
+  "sabah kahvesi içildi"nin sürprizi **0.389**, "ana pano yandı, saha
+  elektriksiz kaldı"nınki **0.422**. Sürpriz vekili (1 − en yakın komşu
+  skoru) bu ölçekte sıradan ile felaketi ayırt edemiyor; ayıramayan bir
+  sinyalin eşiği de ayarlanamaz. **Faz 4'ün kodlama gücü aynı vekile
+  dayanıyor; aynı duvara çarpması beklenmeli.**
+* `MIN_ACTIVATION` 0.02 → 0.0005 tarandı; `komsuluk_recall` hiç oynamadı.
+  Yani eşik değil, sıralama sorunu (aşağıda).
+
+### Ölçüm — `docs/charts/yasam-f3.md`
+
+| Kriter | Faz 2 | Faz 3 | Ablation | Kabul | |
+|---|---|---|---|---|---|
+| `sorumluluk_dogrulugu` | 0.625 | **1.000** | 0.625 | ≥ 0.85 | ✅ |
+| `sema_tazeleme` | −0.000 | **0.514** | −0.000 | > 0 | ✅ |
+| `gomulme_recall` | 1.00 | **1.00** | 1.00 | ≥ 0.90 | ✅ |
+| `geri_donus_recall` | 1.00 | **1.00** | 1.00 | ≥ 0.70 | ✅ |
+| `gece_suresi` | yok | **0.068 sn** | — | ≤ 300 sn | ✅ |
+| `prime_precision` | 0.2765 | **0.2781** | 0.2765 | düşmez | ✅ |
+| `tuzak_sessizlik` | 0.45 | **0.45** | 0.45 | düşmez | ✅ |
+| `komsuluk_recall` | 0 | **0** | 0 | ≥ 0.75 | ❌ |
+| `dikis_recall` | 0 | **0** | 0 | ≥ 0.60 | ❌ |
+| `yakalama` | −0.981 | **−0.108** | −0.001 | > 0 | ❌ |
+| `ders_gecikmesi` | 79.4 | **59.8** | 79.4 | ≤ 1 | ❌ (Faz 3.12'nin işi) |
+| `taze_ruh` | 0.942 | **0.797** | 0.942 | ≥ 0.80 | ⚠️ sınırın altında |
+| `ruh_token` | 304.0 | **330.4** | 304.0 | ≤ taban (325) | ⚠️ |
+
+Bir gecede: 236 oturum tekrar edildi, 1609 zaman komşuluğu kenarı, 14 dikiş,
+2412 örgü kenarı, 7170 şema dokunuşu, 12 ders yazıldı, 195.768 kenar
+küçültüldü. Ablation kapalıyken hepsi Faz 2'ye dönüyor.
+
+`scale_bench`: precision 0.64, tok/query 71.3 — gerileme yok.
+
+### Neden `komsuluk_recall` ve `dikis_recall` sıfır — ölçülmüş kök neden
+
+Kenarlar **var**: H çiftinin arasında `birlikte kullanıldı (h_h01_19)`
+gerekçeli, ağırlığı 0.471 bir kenar duruyor. Sorun yayılmanın sıralamaya
+girememesi. Tek bir sorgunun izi:
+
+```
+hop 0 (tohum):  0.733  0.620  0.594  0.573  0.499  0.482  0.474  0.463  0.455
+hop 1 (komşu):  0.084   ← zaman komşuluğu kenarının taşıdığı en yüksek değer
+```
+
+`_seed` yirmi aday döndürüyor ve hepsi 0.45–0.73 aralığında. Bir hop-1
+düğümün üste çıkabilmesi için `kaynak_skor × kenar × HOP_DECAY ×
+aktivasyon_carpani` çarpımının beşinci tohumu geçmesi gerekiyor; çarpanların
+tavanı bunu **yapısal olarak imkânsız** kılıyor (0.73 × 0.47 × 0.45 × 0.14 ≈
+0.02). Eşik düşürmek işe yaramıyor (yukarıdaki tarama), çünkü sorun kesme
+değil sıralama.
+
+Kök neden Faz 0 taban çizgisinin de söylediği şey: **tohum doygunluğu**.
+Ortak tek bir kelimeyi paylaşan yirmi kayıt 0.5 üstü skor alıyor; bu hem
+`prime_precision`'ı 0.28'de tutuyor hem de çağrışıma yer bırakmıyor. Yol
+haritası bu duvarı iki yerde adlandırıyor: bağlam bonusu (Faz 5) ve
+`vector.py` için opsiyonel IDF. İkisi de bu fazın kapsamı dışında; sonuç
+buraya yazıldı, Faz 5'te yeniden ölçülecek.
+
+### Yan etki: ruh şişti
+
+Gece `lesson`, `procedure` ve `goal` yazıyor; bunlar ruha giriyor ve hem
+`ruh_token`'ı (304 → 330) hem de `taze_ruh`'u (0.942 → 0.797) bozuyor.
+Gecenin yazdığı ders gerçek bir kazanç ama ruhun sekiz yuvası için taze
+düzeltmeyle yarışıyor. Damıtma (Adım 6) ve sıcak/soğuk ayrımı (3.11) bu
+baskıyı azaltmalı; ikisi de sonraki PR'lar.
+
+## Faz 3.12 — Uyanık tekrar, mikro-uyku, yerel uyku · sırada
 ## Faz 3 (Adım 6) — Damıtma · bekliyor
 ## Faz 3.10 — Uyku dinamiği · bekliyor (`ESIK_UST` hazır)
 ## Faz 3.11 — Sıcak/soğuk indeks · bekliyor

@@ -1439,6 +1439,10 @@ class Agent:
             return
         self._primed.update(h.item.id for h in hits)
         self.session.add_system_note(prime_note(hits))
+        # Gece tekrarı (recall/orgu.py) bu notu okuyor: önüne konan kayıt
+        # da "dokunulmuş" sayılır — model onu gördü, o turda kullandı.
+        self.session.log.note("prime", ids=[h.item.id for h in hits],
+                              query=_one_line(user_input, 120))
 
         # Arayuz bu gezinmeyi de canlandirabilmeli: kullanici modelin neyi
         # nereden hatirladigini adim adim izliyor. Aracla yapilan

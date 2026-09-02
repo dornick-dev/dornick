@@ -260,8 +260,35 @@ class Session:
         return bool(msgs) and msgs[-1].role == "user"
 
     def close(self) -> None:
+        self.log.note("sonuc", sonuc=self.sonuc())
         self.log.note("session_end")
         self.log.close()
+
+    def sonuc(self) -> str:
+        """Oturum nasıl bitti? Gece tekrarının önceliklendirmesi buna bakıyor.
+
+        Dört değer var ve hepsi günlükte zaten duran izlerden çıkıyor:
+
+            basarisiz   son doğrulama aracı kırıldı ya da araç hata verdi
+            duzeltildi  kullanıcı düzeltti — `lesson` yazıldı ya da bir kayıt
+                        supersede edildi
+            acik        hedef açık kaldı
+            basarili    hiçbiri değilse
+
+        `basarisiz` ve `duzeltildi` en çok öğreten oturumlardır (Mattar-Daw:
+        kazanç × ihtiyaç); gece onları önce tekrar eder.
+        """
+        son_hata = False
+        for olay in self.log.notes("tool_end"):
+            son_hata = bool(olay.meta.get("error"))
+        if son_hata:
+            return "basarisiz"
+        for olay in self.log.notes("mind_write"):
+            if olay.meta.get("kind") == "lesson" or olay.meta.get("supersedes"):
+                return "duzeltildi"
+        acik = {o.meta.get("goal_id") for o in self.log.notes("goal_push")}
+        acik -= {o.meta.get("goal_id") for o in self.log.notes("goal_status")}
+        return "acik" if acik else "basarili"
 
 
 def blocks_to_dicts(content: Iterable[Any]) -> list[Block]:

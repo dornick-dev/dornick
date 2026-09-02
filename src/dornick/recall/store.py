@@ -559,6 +559,47 @@ class RecallStore:
                 self._link(node.id, other, round(0.8 - position * 0.15, 3), "benzer icerik")
             self._db.commit()
 
+    def baglan(self, src: str, dst: str, *, weight: float = 1.0, reason: str = "",
+               birikimli: bool = False, yalniz_yeni: bool = False) -> bool:
+        """Bağ kurar; kenarın gerçekten değişip değişmediğini döndürür.
+
+        `birikimli`: aynı gerekçeli bağ tekrar geldiğinde ağırlık MAX'ta
+        donmasın, birikerek 1.0'a yaklaşsın. Sıkça birlikte kullanılan iki
+        şey güçlü bağlanmalı — beş oturumda peş peşe gelen bir çift, tek
+        seferlikle aynı ağırlıkta kalmamalı.
+
+        `yalniz_yeni`: kenar zaten varsa dokunma. Dikiş (Adım 4) böyle
+        çalışıyor — yaşanmış bir bağın üstüne varsayım yazılmaz.
+        """
+        if src == dst or not src or not dst:
+            return False
+        with self._lock:
+            mevcut = self._db.execute(
+                "SELECT weight FROM link WHERE src=? AND dst=?", (src, dst)
+            ).fetchone()
+            if mevcut is not None and yalniz_yeni:
+                return False
+            if birikimli and mevcut is not None:
+                weight = min(1.0, float(mevcut["weight"]) + weight * 0.5)
+            self._link(src, dst, weight, reason)
+            self._db.commit()
+        return True
+
+    def kenarlari_kucult(self, epsilon: float, taban: float) -> tuple[int, int]:
+        """Bütün kenarları orantılı küçültür, tabanın altındakini siler.
+
+        Sinaptik homeostaz (Tononi-Cirelli): gündüz güçlenen her şey gece
+        orantılı küçülür. Güçlü olan güçlü kalır, zayıf olan gürültü altına
+        iner ve budanır. Tek SQL — 300k kenarda bir saniyenin altında.
+        """
+        with self._lock:
+            kucult = self._db.execute(
+                "UPDATE link SET weight = weight * ?", (1.0 - epsilon,)).rowcount
+            silinen = self._db.execute(
+                "DELETE FROM link WHERE weight < ?", (taban,)).rowcount
+            self._db.commit()
+        return int(kucult), int(silinen)
+
     def link(self, src: str, dst: str, *, weight: float = 1.0, reason: str = "") -> None:
         """İki hatırayı birbirine bağlar. Çağrışım bu bağların üstünden yürür."""
         with self._lock:

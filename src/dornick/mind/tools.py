@@ -39,6 +39,19 @@ def _adim_etiket(mind: Mind, node_id: str) -> str:
     return tek if len(tek) <= 34 else tek[:33] + "…"
 
 
+def _sicil_notu(mind: Mind, node_id: str) -> str:
+    """`[3 başarı / 1 hata]` — modelin "bu bazen yanıltıyor" bilgisi.
+
+    Gece ters tekrarı bu sicili yazıyor (recall/orgu.py); burada yalnız
+    görünür kılınıyor. Sicili olmayan kayıtta hiçbir şey eklenmiyor.
+    """
+    try:
+        basari, hata = mind.store.sicil(node_id)
+    except Exception:
+        return ""
+    return f"\n[{basari} başarı / {hata} hata]" if (basari or hata) else ""
+
+
 def _one_satir(text: str, cap: int = 80) -> str:
     tek = " ".join((text or "").split())
     return tek if len(tek) <= cap else tek[:cap - 1] + "…"
@@ -123,11 +136,19 @@ Mevcut oturum aramaya dahil değildir; o zaten önündeki bağlamda.
                             "label": _adim_etiket(mind, step.node)}
                            for step in mind.last_trace],
                 )
+            # Okunan hatıra kullanılmış hatıradır: iz güçleniyor ve olay
+            # günlüğüne düşüyor. Önceki hal hiçbir yerde `open()` çağırmıyordu
+            # — yani üretimde pekiştirme diye bir şey hiç olmuyordu.
+            for h in hits:
+                mind.store.open(h.item.id)
+                ctx.session.log.note("mind_open", memory_id=h.item.id,
+                                     kind=h.item.kind)
             sections.append(
                 _section(
                     "Bellek",
                     [
                         f"[{h.item.id}] {_bounded(h.item.render())}"
+                        + _sicil_notu(mind, h.item.id)
                         for h in hits
                     ],
                 )
