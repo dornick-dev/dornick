@@ -154,6 +154,9 @@ class GeceRaporu:
     yazilan_ders: int = 0
     yazilan_yordam: int = 0
     yazilan_hedef: int = 0
+    damitik: int = 0
+    celiski: int = 0
+    geri_alinan: int = 0
     dikis: int = 0
     orgu_kenari: int = 0
     kuculen_kenar: int = 0
@@ -176,6 +179,10 @@ def gece_gecisi(
     filigran: Path | None = None,
     model: Callable[[str], str] | None = None,
     butce_sn: float = 300.0,
+    yerel_model: bool = True,
+    bulut_onayi: bool = False,
+    state_dir: Path | None = None,
+    sinav: Callable[[], dict[str, Any]] | None = None,
 ) -> GeceRaporu:
     """Gecenin altı adımı. İlk beşi model gerektirmez.
 
@@ -214,9 +221,21 @@ def gece_gecisi(
     _yeniden_orgu(store, dict.fromkeys(dokunulanlar), rapor)
     _kucultme(store, rapor)
 
-    # Adım 6 (damıtma) ayrı bir PR; kapısı burada duruyor. Gizlilik ilkesi:
-    # yerel model yoksa hiçbir hatıra metni bir yere gitmez.
-    rapor.damitma = _damitma(store, islenen, model, rapor)
+    # Adım 6 — damıtma. Tek model gerektiren adım, tek geri alınabilen adım:
+    # ilk beşi yaşananın kaydı, bu bir çıkarım. Gizlilik kapısı distil.gate'te.
+    from . import distil
+
+    onceki_sinav = sinav() if sinav is not None else None
+    damitma = distil.distil(store, dokunulanlar, model=model, saat=saat,
+                            local_model=yerel_model, cloud_ok=bulut_onayi,
+                            state_dir=state_dir)
+    rapor.damitik = damitma.written
+    rapor.celiski = damitma.contradictions
+    if damitma.node_ids and sinav is not None:
+        # Sınav kapısı: geçiş önyükleme kalitesini düşürdüyse damıtık
+        # düğümler mezar taşına gider. Tekrar ve sorumluluk geri alınmaz.
+        rapor.geri_alinan = distil.exam(store, damitma, onceki_sinav, sinav())
+    rapor.damitma = damitma.status
 
     durum["son_kosu"] = _damga(saat)
     _filigran_yaz(filigran, durum)
@@ -508,21 +527,6 @@ def _kucultme(store: Any, rapor: GeceRaporu) -> None:
     """
     rapor.kuculen_kenar, rapor.silinen_kenar = store.kenarlari_kucult(
         EPSILON, KENAR_TABAN)
-
-
-# -- Adım 6: damıtma (kapı burada, mekanik ayrı PR) --------------------
-
-
-def _damitma(store: Any, oturumlar: list[Oturum],
-             model: Callable[[str], str] | None, rapor: GeceRaporu) -> str:
-    if not anahtar.AKTIF.damitma:
-        return "atlandı: damıtma kapalı"
-    if model is None:
-        # Gizlilik ilkesi: yerel model yoksa hiçbir hatıra metni bir yere
-        # gitmez. Barındırılan uca veri göndermek `bulut_onayi` kapısının
-        # arkasında ve bu adım onu hiç açmıyor.
-        return "atlandı: yerel model yok"
-    return "atlandı: damıtma bu sürümde yok"
 
 
 # -- oturum günlüğü ----------------------------------------------------

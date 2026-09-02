@@ -93,7 +93,12 @@ BASARI = "basari"
 HATA = "hata"
 SEMA = "sema"
 YAKALANDI = "yakalandi"
-ETIKETLER = (YAZILDI, ACILDI, BASARI, HATA, SEMA, YAKALANDI)
+# Damıtma kaynağı: özü kısa bir `fact`a taşındı, kendisi arka plana çekildi.
+# Kendi etiketi olmalı — `sema` sayılsaydı şema tazelemesinin ölçümü
+# damıtmanın geri çekmesiyle karışırdı (ölçüldü: `sema_tazeleme` eksiye
+# düşüyordu).
+DAMITILDI = "damitildi"
+ETIKETLER = (YAZILDI, ACILDI, BASARI, HATA, SEMA, YAKALANDI, DAMITILDI)
 
 
 @dataclass(frozen=True, slots=True)

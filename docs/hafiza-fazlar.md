@@ -432,8 +432,69 @@ Yani "uykusuzluk ağı şişirir" hipotezi bu mimaride yanlış; uykusuzluğun
 maliyeti şişme değil **yoksunluk**. Hedef sağlandı ama beklenen mekanizmayla
 değil, ve bu fark rapora yazıldı.
 
-## Faz 3 (Adım 6) — Damıtma · sırada
-## Faz 3.10 — Uyku dinamiği · bekliyor (`ESIK_UST` hazır)
+---
+
+## Faz 3 (Adım 6) — Damıtma ⚠️ kabul edilmedi (1 kriter) — ama beklenmedik kazanç
+
+| Dosya | Ne |
+|---|---|
+| `src/dornick/recall/distil.py` | kümeleme, damıtma, çelişki kaydı, kenar gerekçesi, **sınav kapısı** |
+| `recall/orgu.py` | Adım 6 gece geçişine bağlandı; `sinav` geri çağrısı ile geri alma |
+| `recall/store.py` | `kenar_guncelle` — kenarı zayıflatabilen tek yol (damıtmanın "ilişkisiz" kararı) |
+| `tests/test_distil.py` | 17 test: gizlilik kapısı, kaynaklı yazım, çelişki, sınav geri alma |
+
+**Gizlilik kapısı koddadır, talimatta değil.** Model yoksa adım atlanıyor ve
+raporda o kelimelerle yazıyor. Barındırılan model + onay kapalıysa **tek bir
+istem bile çıkmıyor** (test bunu modelin çağrılmadığını sayarak doğruluyor).
+İlk beş adım her hâlükârda koşuyor: modelsiz makine özet kaybeder,
+konsolidasyon kaybetmez.
+
+**Sınav kapısı yalnız tahmini geri alıyor.** Tekrar, sorumluluk ve şema
+dokunuşları yaşananın kaydı; kötü bir özet günü yaşanmamış yapmaz. Test bunu
+ayrıca zorluyor: geri alma sonrası sicil ve zaman komşuluğu kenarı yerinde.
+
+### Ölçüm — damıtma açık / kapalı
+
+| Metrik | Damıtma kapalı | Damıtma açık | Kabul | |
+|---|---|---|---|---|
+| `prime_precision` | 0.2781 | **0.4564** | düşmez | ✅ **+%64** |
+| `prime_recall` | 0.99 | 0.89 | — | ⚠️ −0.10 |
+| `yasak_sizinti` | 29 | **26** | — | ✅ |
+| `prime_token` | 83.37 | **91.43** | ≤ 0.85 × taban | ❌ +%10 |
+| `tuzak_sessizlik` | 0.45 | 0.45 | düşmez | ✅ |
+| `ders_gecikmesi` | 1.0 | 1.0 | ≤ 1 | ✅ |
+| `gece_suresi` | 0.066 sn | 0.112 sn | ≤ 300 sn | ✅ |
+
+`scale_bench`: precision 0.63, tok/query 71.8 — gerileme yok.
+
+### Geçmeyen kriter: `prime_token` — Faz 0'da öngörülmüştü
+
+Yol haritası "`prime_token` ≥ %15 azalma (episode yerine damıtık fact
+giriyor)" diyor. Bu üründe **episode zaten prime'a girmiyor** (`select_prime`
+onları açıkça eliyor), dolayısıyla damıtığın yerini alacağı bir şey yok:
+damıtma korpusa kayıt EKLİYOR, çıkarmıyor. Token ancak artabilirdi ve %10
+arttı. Bu, Faz 0 defterine yazılan öngörünün ölçülmüş hâli.
+
+Buna karşılık ölçüm, kriterin sormadığı bir yerde büyük bir kazanç gösterdi:
+**precision 0.278 → 0.456**. Sebebi mekanizmanın kendisi — kısa, konuya
+özgü damıtık `fact`lar önyükleme yuvalarına girip gürültüyü dışarı itiyor.
+Faz 3'te "tohum doygunluğu" diye adlandırılan duvara ilk gerçek darbe bu.
+Bedeli recall'da 0.10: damıtık kayıt bazen beklenen kaydın yerini alıyor.
+
+**Ölçüm dürüstlüğü:** bench'in damıtma kolu gerçek bir model kullanmıyor.
+Kümedeki en uzun gövdelerin ilk cümlesini kaynak kimliğiyle geri veren,
+tamamen deterministik bir çıkarımcı. Ölçtüğü şey damıtmanın **mekaniği** —
+kısa bir `fact`ın önyüklemeye girmesi — modelin özet kalitesi değil. Gerçek
+model kalitesi ayrı bir deneyin konusu; bu bench onu ölçemez ve ölçtüğünü
+iddia etmiyor.
+
+**Yan bulgu:** damıtma açıkken `sema_tazeleme` +0.376'dan −0.105'e düşüyor.
+Yeni damıtık kayıtlar `_weave` komşuluklarını değiştiriyor ve N kümesinin
+kontrol kolu artık deney koluyla kıyaslanabilir olmaktan çıkıyor. Metrik
+bozuluyor, mekanik değil — ama bu, damıtma açıkken N ölçümüne
+güvenilemeyeceği anlamına geliyor.
+
+## Faz 3.10 — Uyku dinamiği · sırada (`ESIK_UST` hazır)
 ## Faz 3.11 — Sıcak/soğuk indeks · bekliyor
 ## Faz 4 — Kodlama gücü · bekliyor
 ## Faz 5 — Bağlam bonusu · bekliyor

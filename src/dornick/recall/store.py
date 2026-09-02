@@ -636,6 +636,36 @@ class RecallStore:
             self._db.commit()
         return int(kucult), int(silinen)
 
+    def kenar_guncelle(self, src: str, dst: str, *, weight: float | None = None,
+                       reason: str | None = None) -> bool:
+        """Var olan bir kenarın ağırlığını ya da gerekçesini ÜSTÜNE yazar.
+
+        `baglan` bilinçli olarak yalnız güçlendiriyor (max/birikim); bu ise
+        bilerek zayıflatabiliyor. Tek kullanıcısı damıtmanın kenar gerekçesi
+        adımı: model "bu ikili ilişkisiz" dediğinde bağ kesilmiyor ama
+        ağırlığı düşüyor, ve "neden ilişkili" cümlesi kenarda duruyor —
+        SimHash'in eşanlam bilmemesini embedding'siz telafi eden tek yer.
+        """
+        if src == dst or not src or not dst:
+            return False
+        with self._lock:
+            degisti = 0
+            for a, b in ((src, dst), (dst, src)):
+                if weight is not None and reason is not None:
+                    degisti += self._db.execute(
+                        "UPDATE link SET weight=?, reason=? WHERE src=? AND dst=?",
+                        (weight, reason, a, b)).rowcount
+                elif weight is not None:
+                    degisti += self._db.execute(
+                        "UPDATE link SET weight=? WHERE src=? AND dst=?",
+                        (weight, a, b)).rowcount
+                elif reason is not None:
+                    degisti += self._db.execute(
+                        "UPDATE link SET reason=? WHERE src=? AND dst=?",
+                        (reason, a, b)).rowcount
+            self._db.commit()
+        return bool(degisti)
+
     def kenarlari_kucult(self, epsilon: float, taban: float) -> tuple[int, int]:
         """Bütün kenarları orantılı küçültür, tabanın altındakini siler.
 

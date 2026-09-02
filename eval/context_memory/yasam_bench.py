@@ -248,8 +248,10 @@ class Olcum:
 
 
 def kosu(veri: dict[str, Any], *, kapali: tuple[str, ...] = (),
-         kok: Path | None = None) -> dict[str, Any]:
+         kok: Path | None = None, damitma: bool = False) -> dict[str, Any]:
     """Senaryoyu gün gün oynatır ve metrikleri döndürür."""
+    global DAMITMA_MODELI
+    DAMITMA_MODELI = _cikarimci_model if damitma else None    # noqa: PLW0603
     if anahtar is not None:
         anahtar.sifirla()
         if kapali:
@@ -270,6 +272,7 @@ def kosu(veri: dict[str, Any], *, kapali: tuple[str, ...] = (),
         mind = _zihin_ac(kok, saat)
         return _oyna(mind, veri, saat, kok / "sessions")
     finally:
+        DAMITMA_MODELI = None
         if anahtar is not None:
             anahtar.sifirla()
         if gecici is not None:
@@ -440,16 +443,42 @@ def _uyanik_sonuc(mind: Any, ot: "Oturum", sonuc: str,
         o.uyanik_gecikmeler.append((time.perf_counter() - basla) * 1000.0)
 
 
+# Damıtma kolunda kullanılan model. Gerçek bir model DEĞİL: kümedeki en uzun
+# gövdelerin ilk cümlesini kaynak kimliğiyle geri veren, tamamen deterministik
+# bir çıkarımcı. Ölçtüğü şey damıtmanın MEKANİĞİ — kısa bir `fact`ın uzun bir
+# `episode` yerine önyüklemeye girmesi — modelin özet kalitesi değil. Gerçek
+# model kalitesi ayrı bir deneyin konusu ve bu bench onu ölçemez.
+def _cikarimci_model(istem: str) -> str:
+    satirlar = []
+    for satir in istem.splitlines():
+        if satir.startswith("[") and "] (" in satir:
+            kimlik = satir[1:satir.index("]")]
+            govde = satir.split(": ", 1)[-1]
+            ilk = govde.split(".")[0].strip()
+            if len(ilk) >= 12:
+                satirlar.append((len(govde), f"{ilk}. [{kimlik}]"))
+    satirlar.sort(key=lambda x: -x[0])
+    return "\n".join(metin for _uzunluk, metin in satirlar[:3])
+
+
+DAMITMA_MODELI: Any = None
+
+
 def _gece_gecisi(mind: Any, sessions_dir: Path, saat: SanalSaat) -> float | None:
     """Gece geçişini çağırır. Faz 3'ten önce modül yok — no-op."""
     try:
         from dornick.recall import orgu                       # type: ignore
     except ImportError:
         return None
-    basla = time.perf_counter()                               # pragma: no cover
-    orgu.gece_gecisi(mind.store, sessions_dir, saat=saat,     # pragma: no cover
-                     filigran=sessions_dir.parent / "filigran.json")
-    return time.perf_counter() - basla                        # pragma: no cover
+    basla = time.perf_counter()
+    try:
+        orgu.gece_gecisi(mind.store, sessions_dir, saat=saat,
+                         filigran=sessions_dir.parent / "filigran.json",
+                         model=DAMITMA_MODELI, state_dir=sessions_dir.parent)
+    except TypeError:       # Faz 3 Adım 6'dan önceki imza
+        orgu.gece_gecisi(mind.store, sessions_dir, saat=saat,
+                         filigran=sessions_dir.parent / "filigran.json")
+    return time.perf_counter() - basla
 
 
 def _uyandir(olay: dict[str, Any]) -> None:
@@ -1162,6 +1191,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--hizli", action="store_true", help="ölçek gecikme ölçümünü atla")
     ap.add_argument("--olcek", type=int, default=OLCEK_DUGUM)
     ap.add_argument("--buyume", action="store_true", help="P kümesi (200k/20k) — uzun")
+    ap.add_argument("--damitma", action="store_true",
+                    help="gece damıtmasını deterministik çıkarımcı modelle koştur")
     ap.add_argument("--uykusuz", action="store_true",
                     help="R ve S kolları (uykusuz makine, aktif bölge)")
     ap.add_argument("--celiski-esik", action="store_true", dest="celiski",
@@ -1205,9 +1236,10 @@ def main(argv: list[str] | None = None) -> int:
             print(f"Bilinmeyen mekanik: {', '.join(sorted(bilinmeyen))}", file=sys.stderr)
             return 2
         basla = time.perf_counter()
-        sonuc = kosu(veri, kapali=kapali)
+        sonuc = kosu(veri, kapali=kapali, damitma=args.damitma)
         sonuc["veri"] = veri["ad"]
         sonuc["kapali"] = list(kapali)
+        sonuc["damitma"] = bool(args.damitma)
         sonuc["kaynak"] = "hafiza-eski" if ESKI_SURUM else "calisma-agaci"
         sonuc["sure_sn"] = round(time.perf_counter() - basla, 1)
         if not args.hizli:
