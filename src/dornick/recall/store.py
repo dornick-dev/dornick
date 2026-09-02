@@ -34,7 +34,12 @@ from uuid import uuid4
 from . import aktivasyon, anahtar, vector
 from .saat import Saat, coz, damga, duvar_saati
 
-KINDS = ("fact", "preference", "lesson", "procedure", "user", "voice", "goal", "episode")
+# Üç özne (Faz 7): kullanıcı ne SÖYLEDİ (`user`/`preference`/`voice`),
+# ajan ne GÖRDÜ (`world`, kaynağıyla birlikte), sonuçlar ne gösterdi
+# (`self`, yalnız gece ters tekrarı yazar). Köken kuralı konuya değil
+# kaynağa bakıyor: bir gözlem tercih değildir.
+KINDS = ("fact", "preference", "lesson", "procedure", "user", "voice",
+         "goal", "episode", "world", "self")
 
 # Varsayılan RAM bütçesi. Kullanıcı artırabilir; dolunca en az kullanılan
 # sayfalar düşer, kayıt diskte kalır.

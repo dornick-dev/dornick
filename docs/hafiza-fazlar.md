@@ -728,6 +728,57 @@ Zengin-sorgu kuralını kaldırmak tuzak sessizliğini üçte bir düşürüyor 
 token'ı %11 artırıyor. **Kod borcu bu fazda ödenemedi**; ikisi de hâlâ
 gerçek iş yapıyor ve yerinde kaldı.
 
-## Faz 7 — Ödül, mizaç, üç özne, karakter · sırada
+---
+
+## Faz 7 — Ödül, mizaç, üç özne, karakter ✅ mekanikler kuruldu
+
+| Dosya | Ne |
+|---|---|
+| `recall/reward.py` | tek skaler ödül: sonuç tahmin hatası + bilgi kazancı + sosyal (tavanlı) |
+| `recall/temperament.py` | beş eksen; taban ölçülür, hedef öğrenilir, kaldıraç harness parametrelerine biner |
+| `recall/subjects.py` | üç özne: `user` (söylenen), `world` (gözlenen, kaynaklı, bozunan), `self` (sonuçlardan, sıfatsız) |
+| `recall/curiosity.py` | öğrenme ilerlemesi × alaka, entropi tabanı, web kapalı |
+| `recall/identity.py` | kanıtlı cümle, gecede bir değişim, sıfat yasağı, kullanıcı itirazı |
+| `tests/test_character.py` | 41 test |
+
+**Bir iddia yerine bir sayım.** Bu fazın tamamı tek bir ayrımın üstüne
+kurulu: sistemin bir karakteri olabilir, karakterini **ilan etmesi**
+olamaz. Her mekanik iddiayı sayıma çeviriyor.
+
+* **Ödül bir tahmin hatası.** Yirmi kez geçmiş bir testin yine geçmesi
+  neredeyse hiçbir şey öğretmiyor (ölçüldü: 0.05); dokuz kez kırılmış bir
+  yordamın geçmesi çok şey öğretiyor (0.85).
+* **Sosyal tavan sabit, mizaç ekseni değil.** Yalakalık, ödülü kısa yoldan
+  üretme politikasıdır; `sosyal ≤ 0.3` mutlak ve düzeltme (−1.0) her zaman
+  teşekkürden ağır basıyor. Test: `sosyal=1.0` mizaçlı bir modelde bile
+  yirmi teşekkür tavanı aşamıyor.
+* **`self` kodda korunuyor, promptta değil.** `mind_memory save kind=self`
+  reddediliyor (`SelfWriteRefused`); sicil yalnız sonuç olaylarından
+  türetiliyor ve `model_id` taşıyor — model değişince eski sicil ruha
+  girmiyor. "Dikkatliyim" reddediliyor, "41 görevin 33'ünde önce test
+  yazdım" kabul ediliyor; kural kendi çıktımıza da uygulanıyor (`SelfRecord.
+  line()` "başarılı" diyemiyor, çünkü o da yasak listede).
+* **Model değişimi bir beyin nakli.** Taban yeniden ölçülüyor, **hedef
+  kalıyor**, kaldıraç yeniden hesaplanıyor. Test: çekingen modelden atak
+  modele geçince kaldıraç yön değiştiriyor, hedef kıpırdamıyor.
+* **Merak kullanıcının dünyasından çıkmıyor.** Alaka sıfırsa bütçe sıfır;
+  entropi tabanı tek alana çökmeyi engelliyor; web kapalı ve izin verilen
+  eylemlerin hiçbiri dosya İÇERİĞİ okumuyor — meraklı bir ajan sızıntı yolu
+  olmamalı.
+* **Kimlik belgesi kanıtsız cümle kabul etmiyor**, gecede bir cümle
+  değiştiriyor, sıfat yasaklı, ve talimat ("hep katıl") belgeye giremiyor:
+  düzeltme evet, itaat hayır. Bellek sıfırlanınca anlatı gidiyor, mizaç
+  kalıyor.
+
+Kapsam: `curiosity` %100, `temperament` %100, `subjects` %96, `reward` %94,
+`identity` %92.
+
+**Ölçülemeyen kısım, açıkça:** `tutarlilik_baglam` / `tutarlilik_zaman` /
+`tutarlilik_model` ve `sosyal_ulasilan` gerçek model çağrıları gerektiriyor
+(30 kararlık set × iki model × üç tekrar). Bu koşu bir API bütçesi ve iki
+farklı modelin kurulu olmasını istiyor; mekanikler ve kapıları burada
+kuruldu ve testlendi, **karakter tutarlılığı sayıları ölçülmedi**. Bu
+satır, sayı gelene kadar bir eksiklik olarak durmalı.
+
+## Faz 6 — Beyin görünümü · sırada
 ## Faz 7 — Ödül, mizaç, üç özne, karakter · bekliyor
-## Faz 6 — Beyin görünümü · bekliyor

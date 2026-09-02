@@ -33,7 +33,8 @@ from .search import Scored, excerpt, rank
 # "episode" digerlerinden farkli: onu ajan elle yazmiyor, baglam
 # sikistirmasi yaziyor. Ruha girmiyor (soul() turleri tek tek seciyor)
 # ama cagrisimla geri gelebiliyor — sikistirmanin kalici olma sebebi bu.
-MEMORY_KINDS = ("fact", "preference", "lesson", "procedure", "user", "voice", "episode")
+MEMORY_KINDS = ("fact", "preference", "lesson", "procedure", "user", "voice",
+                "episode", "world", "self")
 GOAL_STATES = ("active", "done", "dropped")
 
 # Ruh özetine girecek azami kayıt sayısı (tür başına). Ruh sistem promptunun
@@ -273,6 +274,7 @@ class Mind:
         title: str = "",
         tags: Iterable[str] = (),
         baglam: dict | None = None,
+        gece: bool = False,
     ) -> Memory:
         """Hatırayı yazar; bağlamı harness ekler, model değil.
 
@@ -282,6 +284,11 @@ class Mind:
         """
         if kind not in MEMORY_KINDS:
             raise ValueError(f"Bilinmeyen bellek türü: {kind}")
+        # `self` yalnız sonuç olaylarından türetilir; modelin kendi
+        # hakkındaki beyanı kaydedilmez (bkz. recall/subjects.py).
+        from ..recall.subjects import guard_model_write
+
+        guard_model_write(kind, from_night=gece)
         node = self.store.remember(
             content,
             kind=kind,
