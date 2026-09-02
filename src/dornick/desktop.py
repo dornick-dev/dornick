@@ -3479,12 +3479,14 @@ def run(config: Config, *, port: int = 8765, resume: bool = False,
         """Tepsiden / uyandırma: pencere gelsin; arka planda biten işler
         Görevler panelinde görünsün (liste tazelensin)."""
         window.show()
+        _ensure_native_chrome()
         # Gizliyken kutu bozulmuş olabilir (kaymış büyütme); görünür olunca bak.
         threading.Timer(0.4, _heal_geometry).start()
         runtime.bridge.hub.emit({"type": "jobs_refresh"})
 
     def _open_jobs_from_tray() -> None:
         window.show()
+        _ensure_native_chrome()
         threading.Timer(0.4, _heal_geometry).start()
         runtime.bridge.hub.emit({"type": "open_jobs"})
 
@@ -3778,6 +3780,23 @@ def run(config: Config, *, port: int = 8765, resume: bool = False,
     return 0
 
 
+def _ensure_native_chrome() -> None:
+    """Tek şeridi garanti eder: stiller + kabuk kurulu değilse kurar.
+
+    Açılışta pencere gizliyse `_titlebar_boot` boşa dönebiliyor; pencere
+    sonradan (tepsi, uyandırma) gösterildiğinde OS başlık çubuğu uygulama
+    şeridinin üstünde kalıyordu. Kurulumlar bağışık (idempotent): zaten
+    kuruluysa maliyeti yok.
+    """
+    try:
+        if _apply_native_styles():
+            _install_shell()
+            _update_max_bounds()
+            paint_titlebar(True)
+    except Exception:
+        pass
+
+
 def _titlebar_boot(*, want_max: bool = False) -> None:
     """webview başladıktan sonra çalışır: pencere oluşana dek dener.
 
@@ -3870,7 +3889,7 @@ def _install_shell() -> bool:
     """
     if sys.platform != "win32":
         return True
-    targets = _dornick_windows()
+    targets = _dornick_windows(gizli_de=True)   # bkz. _apply_native_styles
     if not targets:
         return False
     ok = False
@@ -4046,7 +4065,13 @@ def _apply_native_styles() -> bool:
     if sys.platform != "win32":
         return True
     try:
-        targets = _dornick_windows()
+        # GİZLİ pencere de hedef: uygulama tepsiye açıldığında (pencere
+        # gizli doğar) görünürlük süzgeci hiçbir şey bulamıyordu ve
+        # `_titlebar_boot` altı saniye deneyip vazgeçiyordu — kabuk hiç
+        # kurulmuyor, pencere sonradan gösterilince Windows'un kendi
+        # başlık çubuğu uygulamanın şeridinin ÜSTÜNDE kalıyordu
+        # (canlı yara, 02.09: "üstte iki şerit").
+        targets = _dornick_windows(gizli_de=True)
         if not targets:
             return False
         for hwnd in targets:

@@ -1117,6 +1117,12 @@ class Agent:
             self.session.add_user_blocks(_with_image(user_input, image))
         else:
             self.session.add_user_text(user_input)
+        # Cevap dili: kullanıcının BU mesajının dili. Kimlik bloğundaki
+        # kural tek başına yetmiyordu — sistem promptunun tamamı, anıların
+        # çoğu ve geçmiş turlar Türkçe olduğu için model İngilizce yazana
+        # bile Türkçe cevap veriyordu (canlı yara, 02.09). Hatırlatma tur
+        # başına, modelin EN SON okuduğu yerde: yakınlık kuralı kazandırıyor.
+        self._dil_notu(user_input)
         # Kullanıcının söylediği o an belleğe geçiyor: gece değil, şimdi.
         self._encode_turn("kullanıcı", user_input)
         self._prime_recall(user_input)
@@ -1358,6 +1364,47 @@ class Agent:
         except Exception as exc:  # bellek yazımı konuşmayı düşürmemeli
             self.session.log.note("encode_turn_failed", error=str(exc))
 
+    # Türkçeye özgü harfler: kaba ama yeterli bir ayrım. Amaç dili
+    # "tespit etmek" değil, modele hangi dilde yazıldığını hatırlatmak.
+    _TR_HARF = set("çğıöşüÇĞİÖŞÜ")
+
+    def _dil_notu(self, user_input: str) -> None:
+        """Bu turun cevap dili hatırlatmasını hazırlar.
+
+        Oturum günlüğüne YAZILMIYOR — yalnız bu turun isteğine iliştiriliyor
+        (bkz. `_dil_hatirlatmasini_ekle`). Günlüğe yazmak iki şeyi bozuyordu:
+        "tur başına tek sistem notu" kotasını yiyip HATIRLAMA notunu
+        (`_prime_recall`) engelliyor, ve kullanıcının dökümüne her turda
+        teknik bir satır bırakıyordu.
+        """
+        metin = (user_input or "").strip()
+        if len(metin) < 8:
+            self._dil_hatirlatma = ""   # tek sözcükte dil çıkarımı anlamsız
+            return
+        if self._TR_HARF & set(metin):
+            self._dil_hatirlatma = (
+                "Bu turda kullanıcı TÜRKÇE yazdı — cevabın, ara anlatımların "
+                "ve ürettiğin dosyaların içeriği Türkçe olsun.")
+        else:
+            self._dil_hatirlatma = (
+                "This turn the user wrote in a language other than Turkish "
+                "(most likely English). Reply in the SAME language they used — "
+                "your answer, your progress notes and the contents of any file "
+                "you produce. Do not switch to Turkish just because your "
+                "instructions are written in Turkish.")
+
+    def _dil_hatirlatmasini_ekle(self, prepared: Any) -> None:
+        """Dil hatırlatmasını isteğin SONUNA geçici bir sistem mesajı olarak
+        koyar. Önbellek kırılmıyor: son breakpoint'ten sonra duruyor."""
+        not_ = getattr(self, "_dil_hatirlatma", "")
+        if not not_:
+            return
+        try:
+            prepared.messages.append(
+                {"role": "system", "content": [{"type": "text", "text": not_}]})
+        except Exception:
+            pass
+
     def _prime_recall(self, user_input: str) -> None:
         """Kullanicinin mesajini zihinde arar ve bulduklarini onune koyar.
 
@@ -1491,6 +1538,7 @@ class Agent:
                 except Exception:
                     pass
             prepared = self.policy.prepare(self._system, self.session.messages())
+            self._dil_hatirlatmasini_ekle(prepared)
             try:
                 result = await self.client.turn(
                     prepared,

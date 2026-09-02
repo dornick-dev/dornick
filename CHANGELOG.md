@@ -1,5 +1,27 @@
 ﻿# Changelog
 
+## 1.4.2 - 2026-09-02
+
+Two fixes found while recording the demo clips.
+
+* **Fixed: two title bars stacked at the top of the window.** The OS caption
+  is meant to stay as a style flag (Aero snap needs it) while the shell
+  swallows the top inset — but both the style pass and the shell install
+  only looked at *visible* windows. When the app opens straight to the tray
+  the window is born hidden, the six-second boot retry found nothing, and
+  the strip was never removed; showing the window later left Windows' own
+  title bar sitting above the app's. Installation now targets hidden
+  windows too, and every show path re-asserts it.
+* **Fixed: the agent answered in Turkish no matter what language you wrote
+  in.** The whole system prompt is Turkish, so the model followed it instead
+  of the user. There is now a language rule at the top of the identity block
+  and, decisively, a per-turn reminder appended to the request: reply in the
+  language of *this* message — answer, progress notes and the contents of
+  any file produced. The reminder is transient (request only). It is
+  deliberately not written to the session log: that would consume the
+  one-system-note-per-turn budget the memory prime needs, which the test
+  suite caught as a real regression.
+
 ## 1.4.1 - 2026-09-02
 
 Usability pass driven by a live first-run session — every item below is

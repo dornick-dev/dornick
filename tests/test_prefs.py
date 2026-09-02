@@ -117,6 +117,29 @@ def test_desktop_heals_offset_maximize() -> None:
     assert "_heal_geometry" in inspect.getsource(desktop._wake)
 
 
+def test_single_strip_survives_a_hidden_start() -> None:
+    """Tek şerit, pencere GİZLİ doğsa da kurulur.
+
+    Canlı yara (02.09): uygulama tepsiye açıldığında pencere gizli doğuyor;
+    `_dornick_windows()` yalnız GÖRÜNÜR pencereleri saydığı için stiller de
+    kabuk da hiç kurulmuyordu ve pencere sonradan gösterildiğinde Windows'un
+    kendi başlık çubuğu uygulamanın şeridinin ÜSTÜNDE kalıyordu — üst üste
+    iki şerit. İki savunma: kurulum gizli pencereyi de hedefler, ve gösterme
+    yolları kurulumu garanti eder.
+    """
+    from dornick import desktop
+
+    # Kurulumlar gizli pencereyi de hedefliyor.
+    assert "gizli_de=True" in inspect.getsource(desktop._apply_native_styles)
+    assert "gizli_de=True" in inspect.getsource(desktop._install_shell)
+
+    # Gösterildiğinde garanti: hem tepsi/uyandırma yolu hem yardımcı.
+    run_src = inspect.getsource(desktop.run)
+    assert "_ensure_native_chrome" in run_src
+    garanti = inspect.getsource(desktop._ensure_native_chrome)
+    assert "_apply_native_styles" in garanti and "_install_shell" in garanti
+
+
 def test_desktop_webview_is_not_private() -> None:
     """pywebview varsayılanı gizli kip: tema/dil her açılışta sıfırlanıyordu."""
     from dornick import desktop

@@ -518,3 +518,66 @@ def test_trimming_flows_through_prepare() -> None:
     assert after < before * 0.4               # ciddi küçülme
     # Ham geçmiş (olay günlüğünün gerçeği) el sürülmemiş.
     assert messages[0]["content"][0]["input"]["content"] == big
+
+
+def test_prompt_tells_the_model_to_match_the_user_language() -> None:
+    """Yönergeler Türkçe yazıldı diye model Türkçe cevaplamamalı.
+
+    Canlı yara (02.09): arayüz dili İngilizceyken ve kullanıcı İngilizce
+    yazarken ajan Türkçe cevap veriyordu — sistem promptunun tamamı Türkçe
+    olduğu için. Kural üslubun parçası: kimlik bloğunda, "nasıl konuşursun"
+    başlığının ilk maddesi.
+    """
+    from dornick import prompt as builder
+
+    kimlik = builder.IDENTITY
+    assert "KULLANICININ YAZDIĞI DİLDE" in kimlik
+    # Kuralın yeri önemli: üslup bölümünün başında olmalı ki ağırlığı olsun.
+    nasil = kimlik.find("Nasıl konuşursun:")
+    dil = kimlik.find("KULLANICININ YAZDIĞI DİLDE")
+    gercek = kimlik.find("Gerçek biri gibi")
+    assert nasil < dil < gercek, "dil kuralı üslup bölümünün başında olmalı"
+    # Ara anlatımlar ve üretilen dosyalar da aynı dilde.
+    assert "ara anlatım" in kimlik and "dosyaların içeriği" in kimlik
+
+
+def test_turn_carries_a_language_reminder(tmp_path: Path) -> None:
+    """Cevap dili hatırlatması BU TURUN İSTEĞİNE gider, oturum günlüğüne değil.
+
+    Canlı yara (02.09): sistem promptunun tamamı ve anıların çoğu Türkçe
+    olduğu için model İngilizce yazana da Türkçe cevap veriyordu. Hatırlatma
+    modelin en son okuduğu yere konuyor. Günlüğe YAZILMAMASI şart: "tur
+    başına tek sistem notu" kotası hatırlama notunun (`_prime_recall`)
+    hakkı — testler bunu bir regresyonda yakaladı.
+    """
+    from types import SimpleNamespace
+
+    from dornick.loop import Agent
+
+    session = _session(tmp_path)
+    session.add_user_text("baslangic")
+
+    ajan = Agent.__new__(Agent)
+    ajan.session = session
+
+    # İngilizce girdi → İngilizce hatırlatma, günlüğe dokunulmadan.
+    onceki = len(session.messages())
+    ajan._dil_notu("Please write a short report about solar batteries.")
+    assert len(session.messages()) == onceki, "günlüğe yazılmamalı"
+
+    hazir = SimpleNamespace(messages=[])
+    ajan._dil_hatirlatmasini_ekle(hazir)
+    assert hazir.messages and hazir.messages[-1]["role"] == "system"
+    assert "SAME language" in str(hazir.messages[-1]["content"])
+
+    # Türkçe girdi → Türkçe hatırlatma.
+    ajan._dil_notu("Bana güneş pilleri hakkında kısa bir rapor yazar mısın?")
+    hazir2 = SimpleNamespace(messages=[])
+    ajan._dil_hatirlatmasini_ekle(hazir2)
+    assert "TÜRKÇE" in str(hazir2.messages[-1]["content"])
+
+    # Çok kısa girdide çıkarım yok: hiçbir şey eklenmiyor.
+    ajan._dil_notu("ok")
+    hazir3 = SimpleNamespace(messages=[])
+    ajan._dil_hatirlatmasini_ekle(hazir3)
+    assert hazir3.messages == []
