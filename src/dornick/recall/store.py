@@ -26,12 +26,12 @@ import re
 import sqlite3
 import threading
 from dataclasses import asdict, dataclass, field
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable, Sequence
 from uuid import uuid4
 
 from . import vector
+from .saat import Saat, damga, duvar_saati
 
 KINDS = ("fact", "preference", "lesson", "procedure", "user", "voice", "goal", "episode")
 
@@ -102,10 +102,6 @@ END;
 """
 
 
-def _now() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="milliseconds")
-
-
 def _new_id() -> str:
     return f"n_{uuid4().hex[:10]}"
 
@@ -153,8 +149,18 @@ class Recollection:
 
 
 class RecallStore:
-    def __init__(self, path: Path, *, cache_bytes: int = DEFAULT_CACHE_BYTES) -> None:
+    def __init__(
+        self,
+        path: Path,
+        *,
+        cache_bytes: int = DEFAULT_CACHE_BYTES,
+        saat: Saat | None = None,
+    ) -> None:
         self.path = path
+        # Zaman tek bir yerden okunuyor (bkz. saat.py): ürün duvar saatini
+        # kullanır, benchmark sanal takvimi verir. Doğrudan datetime.now()
+        # çağrısı "otuz gün sonra ne olur" sorusunu ölçülemez yapardı.
+        self._saat: Saat = saat or duvar_saati
         path.parent.mkdir(parents=True, exist_ok=True)
         self._lock = threading.Lock()
         self._db = sqlite3.connect(path, check_same_thread=False)
@@ -174,6 +180,10 @@ class RecallStore:
         # Oturum acan surec `warm()` ile arka planda erkenden RAM'e alabilir.
         self._index: vector.Index | None = None
         self._index_lock = threading.Lock()
+
+    def _simdi(self) -> str:
+        """Diske yazılacak "şu an" damgası."""
+        return damga(self._saat)
 
     def _add_missing_columns(self) -> None:
         """Once acilmis bir belleği yeni sutunla surdurur.
@@ -269,7 +279,7 @@ class RecallStore:
             body=body,
             tags=[t.strip() for t in tags if t.strip()],
             session=session,
-            created=_now(),
+            created=self._simdi(),
         )
         tag_text = " ".join(node.tags)
         sign = vector.signature(f"{node.title} {node.body} {tag_text}")
@@ -431,7 +441,8 @@ class RecallStore:
             if row is None:
                 return None
             self._db.execute(
-                "UPDATE node SET uses=uses+1, last_used=? WHERE id=?", (_now(), node_id)
+                "UPDATE node SET uses=uses+1, last_used=? WHERE id=?",
+                (self._simdi(), node_id),
             )
             self._db.commit()
         return _to_node(row)

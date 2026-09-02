@@ -11,11 +11,20 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from ..recall.saat import Saat
 from .store import Episode, Goal, Memory, Mind
 from .tools import register
 
 __all__ = ["Episode", "Goal", "Memory", "Mind", "open_mind", "register"]
 
 
-def open_mind(mind_dir: Path, sessions_dir: Path, session_id: str = "") -> Mind:
-    return Mind(mind_dir=mind_dir, sessions_dir=sessions_dir, session_id=session_id)
+def open_mind(
+    mind_dir: Path,
+    sessions_dir: Path,
+    session_id: str = "",
+    *,
+    saat: Saat | None = None,
+) -> Mind:
+    """Zihni açar. `saat` verilmezse duvar saati (bkz. recall/saat.py)."""
+    return Mind(mind_dir=mind_dir, sessions_dir=sessions_dir,
+                session_id=session_id, saat=saat)

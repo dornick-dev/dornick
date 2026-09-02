@@ -21,6 +21,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from .saat import Saat, duvar_saati
 from .store import (
     DEFAULT_CACHE_BYTES,
     KINDS,
@@ -32,6 +33,8 @@ from .store import (
 
 __all__ = [
     "DEFAULT_CACHE_BYTES",
+    "Saat",
+    "duvar_saati",
     "KINDS",
     "Node",
     "RecallStore",
@@ -41,5 +44,11 @@ __all__ = [
 ]
 
 
-def open_store(directory: Path, *, cache_bytes: int = DEFAULT_CACHE_BYTES) -> RecallStore:
-    return RecallStore(directory / "recall.db", cache_bytes=cache_bytes)
+def open_store(
+    directory: Path,
+    *,
+    cache_bytes: int = DEFAULT_CACHE_BYTES,
+    saat: Saat | None = None,
+) -> RecallStore:
+    """Belleği açar. `saat` verilmezse duvar saati (bkz. saat.py)."""
+    return RecallStore(directory / "recall.db", cache_bytes=cache_bytes, saat=saat)

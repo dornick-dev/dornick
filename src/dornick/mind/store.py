@@ -22,12 +22,12 @@ import json
 import os
 import threading
 from dataclasses import asdict, dataclass, field
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable
 from uuid import uuid4
 
 from ..recall import Step, open_store
+from ..recall.saat import Saat, damga, duvar_saati
 from .search import Scored, excerpt, rank
 
 # "episode" digerlerinden farkli: onu ajan elle yazmiyor, baglam
@@ -43,12 +43,6 @@ SOUL_LIMIT = 8
 # Epizodik aramada taranacak azami oturum sayısı. Günlükler büyüdükçe
 # burası bir indeksle değiştirilir.
 MAX_SCANNED_SESSIONS = 60
-
-
-def _now() -> str:
-    # Milisaniye çözünürlük: aynı saniye içinde yazılan iki kaydın sırası
-    # kaybolmasın (tazelik sıralaması buna bakıyor).
-    return datetime.now(timezone.utc).isoformat(timespec="milliseconds")
 
 
 def _new_id(prefix: str) -> str:
@@ -206,8 +200,19 @@ class Episode:
 
 
 class Mind:
-    def __init__(self, mind_dir: Path, sessions_dir: Path, session_id: str = "") -> None:
+    def __init__(
+        self,
+        mind_dir: Path,
+        sessions_dir: Path,
+        session_id: str = "",
+        *,
+        saat: Saat | None = None,
+    ) -> None:
         self.dir = mind_dir
+        # Zihin ve hatırlama deposu AYNI saati görmeli: hedef defteriyle
+        # düğüm damgaları farklı takvimlerden gelirse tazelik sıralaması
+        # sessizce bozulur (bkz. recall/saat.py).
+        self._saat: Saat = saat or duvar_saati
         self.sessions_dir = sessions_dir
         self.session_id = session_id
         self.dir.mkdir(parents=True, exist_ok=True)
@@ -222,7 +227,7 @@ class Mind:
 
         # Hatıralar indeksli depoda: arama tarama değil, indeks araması.
         # Hedefler JSONL kalıyor — sayıları sınırlı, taramanın maliyeti yok.
-        self.store = open_store(self.dir)
+        self.store = open_store(self.dir, saat=self._saat)
         self.last_trace: list[Step] = []
         self._migrate_jsonl()
         # Diskteki imzalar daha ilk mesaj gelmeden arka planda RAM'e
@@ -230,6 +235,10 @@ class Mind:
         self.store.warm()
 
         _load(self.dir / "goals.jsonl", Goal, self._goals)
+
+    def _simdi(self) -> str:
+        """Diske yazılacak "şu an" damgası — depoyla aynı saatten."""
+        return damga(self._saat)
 
     def _migrate_jsonl(self) -> None:
         """Eski memories.jsonl kayıtlarını bir kez indeksli depoya taşır."""
@@ -339,7 +348,7 @@ class Mind:
     # -- çalışma belleği ----------------------------------------------
 
     def push_goal(self, text: str) -> Goal:
-        goal = Goal(id=_new_id("goal"), ts=_now(), text=text.strip(), session_id=self.session_id)
+        goal = Goal(id=_new_id("goal"), ts=self._simdi(), text=text.strip(), session_id=self.session_id)
         self._write("goals.jsonl", goal)
         self._goals[goal.id] = goal
         return goal
@@ -350,7 +359,7 @@ class Mind:
         goal = self._goals.get(goal_id)
         if goal is None:
             return None
-        updated = Goal(**{**asdict(goal), "status": status, "ts": _now(), "note": note})
+        updated = Goal(**{**asdict(goal), "status": status, "ts": self._simdi(), "note": note})
         self._write("goals.jsonl", updated)
         self._goals[goal_id] = updated
         return updated
