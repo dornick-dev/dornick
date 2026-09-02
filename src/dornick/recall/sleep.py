@@ -372,23 +372,46 @@ def phase_of(cycle: int, *, debt_phase: str = "") -> Phase:
 class Sleeper:
     """Runs the night in cycles and can be woken between atomic units."""
 
+    rhythm: Rhythm
+
     def __init__(self, store: Any, sessions_dir: Path, *,
                  saat: Saat | None = None, filigran: Path | None = None,
                  state_dir: Path | None = None,
+                 rhythm: Rhythm | None = None,
                  events: Callable[[str, dict[str, Any]], None] | None = None) -> None:
         self.store = store
+        self.rhythm = rhythm or Rhythm()
         self.sessions_dir = Path(sessions_dir)
         self.saat = saat or duvar_saati
         self.filigran = filigran
         self.state_dir = state_dir
-        self.events = events or (lambda _kind, _data: None)
+        # Olaylar dondurulmuş şemadan geçiyor (night_events.SCHEMA): arayüz
+        # yalnız o sözlüğe güveniyor ve `recall.db`'ye hiç bakmıyor.
+        self.events = events or self._varsayilan_olay
         self._wake: str = ""
         self._wake_at: float = 0.0
+
+    def _varsayilan_olay(self, tur: str, veri: dict[str, Any]) -> None:
+        if self.state_dir is None:
+            return
+        from . import night_events
+
+        gun = self.saat().date().isoformat()
+        try:
+            night_events.NightLog(
+                night_events.night_path(self.state_dir, gun),
+                lambda: self.saat()).emit(tur, **veri)
+        except Exception:
+            pass        # gece, günlüğü yazılamadıysa da yaşandı
 
     def wake(self, reason: str = "kullanici") -> None:
         """Ask the night to stop. The running unit finishes; none starts."""
         self._wake = reason
         self._wake_at = time.perf_counter()
+
+    def rhythm_arrival(self) -> str:
+        """Kullanıcının ne zaman geleceği tahmini — gece ona göre bitiyor."""
+        return self.rhythm.next_arrival(self.saat()).isoformat(timespec="minutes")
 
     def run(self, *, model: Callable[[str], str] | None = None,
             max_cycles: int = 6, budget_sn: float = 300.0,
@@ -399,7 +422,10 @@ class Sleeper:
             return report
         started = time.perf_counter()
         debt = _debt_read(self.state_dir)
-        self.events("uyku.basladi", {"borc": debt})
+        self.events("uyku.basladi", {
+            "basinc": round(debt.get("devreden", 0) / max(DEBT_FULL, 1), 4),
+            "tahmini_uyanma": self.rhythm_arrival(),
+            "dongu_sayisi": max_cycles})
 
         for cycle in range(1, max_cycles + 1):
             if self._wake:
@@ -431,9 +457,10 @@ class Sleeper:
             # A cluster whose model call was in flight is dropped, not half
             # written: an interrupted guess is a wrong guess, not a small one.
             report.discarded_clusters = 0
-            self.events("uyku.uyandi", {"sebep": self._wake,
-                                        "tamamlanan": report.replayed,
-                                        "devreden": report.carried})
+            self.events("uyku.uyandi", {
+                "sebep": self._wake, "dongu": report.cycles,
+                "tamamlanan": report.replayed, "devreden": report.carried,
+                "borc": debt})
         else:
             self.events("uyku.bitti", {"sebep": "basinc", "rapor": report.as_dict()})
 

@@ -853,6 +853,12 @@ class _Handler(BaseHTTPRequestHandler):
             self._organs()
         elif route == "/api/state":
             self._json(self._controller_call("snapshot") or {"busy": False})
+        elif route == "/api/uyku":
+            self._uyku_durumu()
+        elif route == "/api/gece":
+            self._gece_listesi()
+        elif route.startswith("/api/gece/"):
+            self._gece_oynat(route[len("/api/gece/"):])
         elif route == "/api/gate":
             config = getattr(self.server, "config", None)
             on = gate.durum(config.state_dir) if config is not None else False
@@ -1404,6 +1410,57 @@ class _Handler(BaseHTTPRequestHandler):
             self._json({"ok": False, "error": f"{type(exc).__name__}: {exc}"})
 
     # -- beni tanı ------------------------------------------------------
+
+    def _uyku_durumu(self) -> None:
+        """Talamus halkasının okuduğu şey: basınç, borç, ritim, durum.
+
+        Arayüz `recall.db`'ye doğrudan BAKMIYOR. Gece yazarken okuyan bir
+        arayüz yarı konsolide bir grafiği doğruymuş gibi gösterirdi; bu uç
+        ve olay akışı o yarışın olmadığı tek yol.
+        """
+        config = getattr(self.server, "config", None)
+        mind = getattr(self.server, "mind", None)
+        if config is None or mind is None:
+            self._json({"durum": "bilinmiyor"})
+            return
+        try:
+            from ..recall import awake, sleep
+
+            basinc = sleep.pressure(mind.store, config.sessions_dir,
+                                    filigran=config.state_dir / "filigran.json")
+            saat, bekleyen = awake.sleep_debt(
+                config.sessions_dir,
+                filigran=config.state_dir / "filigran.json")
+            self._json({
+                "basinc": basinc.as_dict(),
+                "esik": {"ust": sleep.ESIK_UST, "alt": sleep.ESIK_ALT},
+                "borc": {"saat": round(saat, 2), "oturum": bekleyen},
+                "sicak_oran": mind.store.sicak_oran(),
+            })
+        except Exception as hata:
+            self._json({"durum": "okunamadı", "hata": str(hata)})
+
+    def _gece_listesi(self) -> None:
+        config = getattr(self.server, "config", None)
+        if config is None:
+            self._json({"geceler": []})
+            return
+        from ..recall import night_events
+
+        self._json({"geceler": night_events.nights(config.state_dir)})
+
+    def _gece_oynat(self, tarih: str) -> None:
+        """Bir gecenin olayları, yaşandığı sırayla. Yeniden oynatma budur."""
+        config = getattr(self.server, "config", None)
+        if config is None:
+            self._json({"olaylar": [], "ozet": {}})
+            return
+        from ..recall import night_events
+
+        yol = night_events.night_path(config.state_dir, tarih)
+        olaylar = list(night_events.replay(yol))
+        self._json({"tarih": yol.stem, "olaylar": olaylar,
+                    "ozet": night_events.summary(olaylar)})
 
     def _tanima(self, body: dict[str, Any]) -> None:
         """Beni tanı: aç/kapa ya da hemen başlat.

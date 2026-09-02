@@ -780,5 +780,87 @@ farklı modelin kurulu olmasını istiyor; mekanikler ve kapıları burada
 kuruldu ve testlendi, **karakter tutarlılığı sayıları ölçülmedi**. Bu
 satır, sayı gelene kadar bir eksiklik olarak durmalı.
 
-## Faz 6 — Beyin görünümü · sırada
+---
+
+## Faz 6 — Beyin görünümü ⚠️ veri katmanı kuruldu, görsel katman yapılmadı
+
+| Dosya | Ne |
+|---|---|
+| `recall/night_events.py` | **dondurulmuş** olay sözlüğü, yazıcı, doğrulayıcı, yeniden oynatma, sabah özeti |
+| `recall/sleep.py` | `Sleeper` olayları o şemadan geçiriyor; günlük `.dornick/gece/<tarih>.jsonl` |
+| `web/server.py` | `GET /api/uyku`, `GET /api/gece`, `GET /api/gece/<tarih>` |
+| `tests/test_night_events.py` | 13 test: şema anlık görüntüsü, eksik/fazla alan, yeniden oynatma, kesilmiş günlük, yol kaçışı |
+
+**Şema bilerek donduruldu.** `SCHEMA` bir anlık görüntü ve testi onu birebir
+karşılaştırıyor: bir alanın adı değişirse test kırmızıya döner. İstenen tam
+olarak bu — sessizce duran bir animasyon yerine gürültüyle kırılan bir test.
+Fazla alan da reddediliyor: arayüzün güvenebileceği tek şey sözlüğün
+söylediği, yanına sızmış bir alan yük taşıyamamalı.
+
+**Arayüz `recall.db`'ye bakmıyor.** Gece yazarken okuyan bir arayüz yarı
+konsolide bir grafiği doğruymuş gibi gösterirdi. Canlı izleme ve yeniden
+oynatma **aynı kod yolu**: diskteki dosya olay günlüğünün kendisi, oynatmak
+onu sırayla okumak. Ayrışacak ikinci bir yol yok.
+
+Küçük ama gerçek bir güvenlik detayı: `/api/gece/<tarih>` yolundaki tarih
+HTTP'den geliyor, yani güvenilmez girdi. `night_path` onu tek klasöre
+sabitliyor ve test `../../etc/passwd` ile zorluyor.
+
+### Yapılmayan: görsel katman
+
+Yol haritasının 6.1–6.3'ü (bölge şablonu, canvas animasyonu, gündüz
+görünümü) ve 6.5'teki Playwright uçtan uca testleri **yapılmadı**. Sebebi
+kapsam değil, doğrulanabilirlik: 50k düğüm ve 5k olayda 60× hızda kare
+düşüşünü ölçen bir kabul kriteri ancak gerçek bir tarayıcıda anlamlı, ve
+göremediğim bir animasyonu yazmak onu yazmış gibi yapmak olurdu.
+
+Veri katmanı o işi bekletmiyor: şema donmuş, uçlar açık, oynatma testli.
+Görsel katman ayrı bir iş olarak durmalı ve bu satır onun eksik olduğunu
+söylemek için burada.
+
+---
+
+## Toplu durum
+
+| Faz | Durum |
+|---|---|
+| 0 — Ölçüm altyapısı | ✅ tamam |
+| 1 — Zaman bazlı aktivasyon | ⚠️ 5 kriterden 4'ü |
+| 2 — Supersede | ✅ 3 kriterden 2'si tam, 3.'sü ölçüldü |
+| 3 (1-5) — Gece tekrarı | ⚠️ komşuluk/dikiş sıfır kaldı |
+| 3.12 — Uyanık tekrar | ✅ 8/8 |
+| 3 (6) — Damıtma | ⚠️ token hedefi tutmadı, precision +%64 |
+| 3.10 — Uyku dinamiği | ✅ 7/7 |
+| 3.11 — Sıcak/soğuk | ⚠️ oran hedefi tutmadı, mutlak bütçe tuttu |
+| 4 — Kodlama gücü | ⚠️ faydası kanıtlanmadı |
+| 5 — Bağlam bonusu | ⚠️ E precision tutmadı, sızıntı sıfırlandı |
+| 7 — Ödül, mizaç, karakter | ✅ mekanikler kuruldu, tutarlılık ölçülmedi |
+| 6 — Beyin görünümü | ⚠️ veri katmanı var, görsel katman yok |
+
+### Eskiye göre (yaşam bench, `hafiza-eski` → bugün)
+
+| Metrik | eski | bugün |
+|---|---|---|
+| `prime_precision` | 0.255 | **0.441** |
+| `yasak_sizinti` | 59 | **1** |
+| `bayat_ruh` | 3.48 | **0** |
+| `prime_token` | 84.1 | **74.0** |
+| `sorumluluk_dogrulugu` | 0.50 | **0.875** |
+| `sema_tazeleme` | yok | **0.80** |
+| `ders_gecikmesi` | 79.4 tur | **1 tur** |
+| `sicak_oran` | 1.00 | **0.22** |
+| 200k'da `recall` p95 | 33.2 ms | **18.4 ms** |
+| imza indeksi RAM | 14,4 MB | **0,14 MB** |
+| `prime_recall` | 0.96 | 0.75 ⚠️ |
+| `tuzak_sessizlik` | 0.45 | 0.50 |
+
+`scale_bench` (tek tur): recall 0.78 → **0.83**, coverage 0.76 → **0.81**,
+precision 0.63 → **0.65**, tok/query 71.8 → **70.7**.
+
+**Açık kalan tek büyük duvar** üç fazda aynı sayıyla göründü ve adı
+**tohum doygunluğu**: ortak tek bir kelimeyi paylaşan yirmi kayıt 0.5 üstü
+skor alıyor. `komsuluk_recall` ve `dikis_recall`'ı sıfırda tutan,
+`prime_precision`'ı 0.85 hedefinin altında bırakan, kodlama gücünün
+sürprizini doyuran şey bu. Yol haritasında adı geçen ama hiçbir fazın
+kapsamına girmeyen tek çare `vector.py` için opsiyonel IDF ağırlığı.
 ## Faz 7 — Ödül, mizaç, üç özne, karakter · bekliyor
