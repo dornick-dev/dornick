@@ -67,9 +67,15 @@ CREATE TABLE IF NOT EXISTS node (
     uses      INTEGER NOT NULL DEFAULT 0,
     deleted   INTEGER NOT NULL DEFAULT 0,
     sig       BLOB,
-    -- Kullanım geçmişi: son 20 kullanımın ISO damgası, JSON dizi. Yazım anı
-    -- ilk kullanımdır. `uses`/`last_used` korunuyor (arayüz okuyor) ama
-    -- aktivasyon bu sütundan hesaplanıyor — sayaç zamanı bilmiyor.
+    -- Kullanım geçmişi: son 30 kullanım, JSON dizi.
+    --   [{"t": "<ISO>", "w": 1.0, "etiket": "acildi"}, ...]
+    -- Yazım anı ilk kullanımdır (w = 1.0; Faz 4 bunu sürprizle değiştirir).
+    -- w negatif olabilir (Faz 3 ters tekrar): hataya götüren kullanım izi
+    -- zayıflatır. etiket: yazildi | acildi | basari | hata | sema | yakalandi.
+    -- Faz 1'de yalnız ilk ikisi yazılır; alan baştan bu biçimde açılıyor ki
+    -- sonraki fazlar şema değiştirmesin.
+    -- `uses`/`last_used` korunuyor (arayüz okuyor) ama aktivasyon bu
+    -- sütundan hesaplanıyor — sayaç zamanı bilmiyor.
     kullanimlar TEXT NOT NULL DEFAULT '[]'
 );
 CREATE INDEX IF NOT EXISTS node_kind ON node(kind) WHERE deleted = 0;
@@ -217,8 +223,6 @@ class RecallStore:
         bütün hatıralar "hiç kullanılmamış" sayılır ve bellek tek bir sürüm
         yükseltmesinde sıfırlanmış gibi davranırdı.
         """
-        import json as _json
-
         satirlar = []
         for row in self._db.execute(
                 "SELECT id, created, last_used, uses FROM node"
@@ -228,13 +232,39 @@ class RecallStore:
                 uses=int(row["uses"] or 0))
             if not gecmis:
                 continue
-            satirlar.append((
-                _json.dumps([an.isoformat(timespec="milliseconds") for an in gecmis],
-                            ensure_ascii=False),
-                row["id"]))
+            satirlar.append((aktivasyon.kodla(gecmis), row["id"]))
         if satirlar:
             self._db.executemany(
                 "UPDATE node SET kullanimlar=? WHERE id=?", satirlar)
+
+    def kullanim_ekle(self, node_id: str, *, w: float = 1.0,
+                      etiket: str = aktivasyon.ACILDI) -> bool:
+        """İze bir kullanım işler — sayaç artırmadan.
+
+        `open()` modelin kaydı okumasıdır; bu ise sistemin ona bir pay
+        vermesidir: gece tekrarı başarıya götüren düğüme artı, hataya
+        götürene eksi ağırlık yazıyor. `uses` dokunulmuyor çünkü kayıt
+        gerçekten "kullanılmadı" — sorumluluğu dağıtıldı.
+        """
+        with self._lock:
+            row = self._db.execute(
+                "SELECT created, last_used, uses, kullanimlar FROM node"
+                " WHERE id=? AND deleted=0", (node_id,)).fetchone()
+            if row is None:
+                return False
+            gecmis = aktivasyon.coz_kullanimlar(
+                row["kullanimlar"], created=row["created"],
+                last_used=row["last_used"], uses=int(row["uses"] or 0))
+            self._db.execute(
+                "UPDATE node SET kullanimlar=? WHERE id=?",
+                (aktivasyon.ekle(gecmis, self._saat(), w=w, etiket=etiket), node_id))
+            self._db.commit()
+        return True
+
+    def sicil(self, node_id: str) -> tuple[int, int]:
+        """Bir hatıranın (başarı, hata) sicili. Model bunu görürse
+        "bu bazen yanıltıyor" bilgisini de görür."""
+        return aktivasyon.sicil(self.kullanimlar(node_id))
 
     def _dugum(self, row: sqlite3.Row) -> Node:
         """Satırı düğüme çevirir ve o anki aktivasyonunu hesaplar."""
@@ -520,7 +550,8 @@ class RecallStore:
                 last_used=row["last_used"], uses=int(row["uses"] or 0))
             self._db.execute(
                 "UPDATE node SET uses=uses+1, last_used=?, kullanimlar=? WHERE id=?",
-                (simdi, aktivasyon.damgala(gecmis, simdi), node_id),
+                (simdi, aktivasyon.ekle(gecmis, self._saat(),
+                                        etiket=aktivasyon.ACILDI), node_id),
             )
             self._db.commit()
         return self._dugum(row)

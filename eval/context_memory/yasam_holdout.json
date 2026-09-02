@@ -1,6 +1,6 @@
 {
  "ad": "yasam-holdout-30",
- "surum": 1,
+ "surum": 2,
  "baslangic": "2025-04-07T00:00:00+00:00",
  "gun_sayisi": 30,
  "aciklama": "Ayrı tutulan 30 günlük yaşam senaryosu. Kalibrasyon ana sette yapılır; kabul kararı burada verilir.",
@@ -8,6 +8,8 @@
   {
    "gun": 1,
    "saat": 9,
+   "oturum": "sabah_1",
+   "sira": 1,
    "tur": "kaydet",
    "kume": "A",
    "slug": "h_esi",
@@ -21,6 +23,8 @@
   {
    "gun": 1,
    "saat": 9,
+   "oturum": "sabah_1",
+   "sira": 2,
    "tur": "kaydet",
    "kume": "A",
    "slug": "h_dogum",
@@ -32,8 +36,19 @@
    ]
   },
   {
+   "gun": 1,
+   "saat": 18,
+   "oturum": "sabah_1",
+   "sira": 3,
+   "tur": "sonuc",
+   "kume": "",
+   "sonuc": "basarili"
+  },
+  {
    "gun": 2,
    "saat": 9,
+   "oturum": "sabah_2",
+   "sira": 1,
    "tur": "kaydet",
    "kume": "A",
    "slug": "h_alerji",
@@ -47,6 +62,8 @@
   {
    "gun": 2,
    "saat": 9,
+   "oturum": "sabah_2",
+   "sira": 2,
    "tur": "kaydet",
    "kume": "A",
    "slug": "h_ehliyet",
@@ -60,6 +77,8 @@
   {
    "gun": 2,
    "saat": 9,
+   "oturum": "sabah_2",
+   "sira": 6,
    "tur": "kaydet",
    "kume": "G",
    "slug": "h_g_sayac",
@@ -73,6 +92,8 @@
   {
    "gun": 2,
    "saat": 15,
+   "oturum": "sabah_2",
+   "sira": 3,
    "tur": "kaydet",
    "kume": "C",
    "slug": "h_c01",
@@ -86,6 +107,8 @@
   {
    "gun": 2,
    "saat": 15,
+   "oturum": "sabah_2",
+   "sira": 4,
    "tur": "kaydet",
    "kume": "C",
    "slug": "h_c02",
@@ -99,6 +122,8 @@
   {
    "gun": 2,
    "saat": 15,
+   "oturum": "sabah_2",
+   "sira": 5,
    "tur": "kaydet",
    "kume": "C",
    "slug": "h_c03",
@@ -110,8 +135,19 @@
    ]
   },
   {
+   "gun": 2,
+   "saat": 18,
+   "oturum": "sabah_2",
+   "sira": 7,
+   "tur": "sonuc",
+   "kume": "",
+   "sonuc": "basarili"
+  },
+  {
    "gun": 3,
    "saat": 9,
+   "oturum": "sabah_3",
+   "sira": 1,
    "tur": "kaydet",
    "kume": "A",
    "slug": "h_kan",
@@ -125,6 +161,8 @@
   {
    "gun": 3,
    "saat": 9,
+   "oturum": "sabah_3",
+   "sira": 2,
    "tur": "kaydet",
    "kume": "A",
    "slug": "h_beden",
@@ -138,6 +176,8 @@
   {
    "gun": 3,
    "saat": 9,
+   "oturum": "sabah_3",
+   "sira": 4,
    "tur": "kaydet",
    "kume": "G",
    "slug": "h_g_jenerator",
@@ -151,15 +191,26 @@
   {
    "gun": 3,
    "saat": 16,
+   "oturum": "sabah_3",
+   "sira": 3,
    "tur": "sor",
    "kume": "F",
-   "icerik": "Tekne motorunun bakımı ne zamandı?",
-   "beklenen": [],
-   "yasak": []
+   "icerik": "Tekne motorunun bakımı ne zamandı?"
+  },
+  {
+   "gun": 3,
+   "saat": 18,
+   "oturum": "sabah_3",
+   "sira": 5,
+   "tur": "sonuc",
+   "kume": "",
+   "sonuc": "basarili"
   },
   {
    "gun": 4,
    "saat": 9,
+   "oturum": "sabah_4",
+   "sira": 1,
    "tur": "kaydet",
    "kume": "B",
    "slug": "h_kahvalti_1",
@@ -171,34 +222,37 @@
    ]
   },
   {
-   "gun": 5,
-   "saat": 9,
-   "tur": "kaydet",
-   "kume": "B",
-   "slug": "h_spor_1",
-   "kind": "preference",
-   "baslik": "Spor programı",
-   "icerik": "Haftada iki gün akşam koşuya çıkıyor.",
-   "etiketler": [
-    "spor"
-   ]
+   "gun": 4,
+   "saat": 18,
+   "oturum": "sabah_4",
+   "sira": 2,
+   "tur": "sonuc",
+   "kume": "",
+   "sonuc": "basarili"
   },
   {
    "gun": 5,
    "saat": 9,
+   "oturum": "kobyte_5",
+   "sira": 1,
    "tur": "kaydet",
-   "kume": "D",
-   "slug": "h_d_pasaport",
-   "kind": "procedure",
-   "baslik": "Pasaport yenileme",
-   "icerik": "Pasaport yenilemek için önce randevu alınır, biyometrik fotoğraf çektirilir, harç yatırılır, en son nüfus müdürlüğüne gidilir.",
+   "kume": "E",
+   "slug": "h_e_vardiya_kobyte",
+   "kind": "fact",
+   "baslik": "Vardiya",
+   "icerik": "Vardiya yok; nöbet sırayla haftalık tutuluyor.",
    "etiketler": [
-    "yordam"
-   ]
+    "proje"
+   ],
+   "baglam": {
+    "proje": "kobyte"
+   }
   },
   {
    "gun": 5,
    "saat": 9,
+   "oturum": "koru_5",
+   "sira": 1,
    "tur": "kaydet",
    "kume": "E",
    "slug": "h_e_vardiya_koru",
@@ -215,33 +269,50 @@
   {
    "gun": 5,
    "saat": 9,
+   "oturum": "sabah_5",
+   "sira": 2,
    "tur": "kaydet",
-   "kume": "E",
-   "slug": "h_e_vardiya_kobyte",
-   "kind": "fact",
-   "baslik": "Vardiya",
-   "icerik": "Vardiya yok; nöbet sırayla haftalık tutuluyor.",
+   "kume": "B",
+   "slug": "h_spor_1",
+   "kind": "preference",
+   "baslik": "Spor programı",
+   "icerik": "Haftada iki gün akşam koşuya çıkıyor.",
    "etiketler": [
-    "proje"
-   ],
-   "baglam": {
-    "proje": "kobyte"
-   }
+    "spor"
+   ]
+  },
+  {
+   "gun": 5,
+   "saat": 9,
+   "oturum": "sabah_5",
+   "sira": 6,
+   "tur": "kaydet",
+   "kume": "D",
+   "slug": "h_d_pasaport",
+   "kind": "procedure",
+   "baslik": "Pasaport yenileme",
+   "icerik": "Pasaport yenilemek için önce randevu alınır, biyometrik fotoğraf çektirilir, harç yatırılır, en son nüfus müdürlüğüne gidilir.",
+   "etiketler": [
+    "yordam"
+   ]
   },
   {
    "gun": 5,
    "saat": 11,
+   "oturum": "sabah_5",
+   "sira": 1,
    "tur": "sor",
    "kume": "A",
    "icerik": "Selin ne iş yapıyor?",
    "beklenen": [
     "h_esi"
-   ],
-   "yasak": []
+   ]
   },
   {
    "gun": 5,
    "saat": 15,
+   "oturum": "sabah_5",
+   "sira": 3,
    "tur": "kaydet",
    "kume": "C",
    "slug": "h_c04",
@@ -255,6 +326,8 @@
   {
    "gun": 5,
    "saat": 15,
+   "oturum": "sabah_5",
+   "sira": 4,
    "tur": "kaydet",
    "kume": "C",
    "slug": "h_c05",
@@ -268,6 +341,8 @@
   {
    "gun": 5,
    "saat": 15,
+   "oturum": "sabah_5",
+   "sira": 5,
    "tur": "kaydet",
    "kume": "C",
    "slug": "h_c06",
@@ -281,40 +356,78 @@
   {
    "gun": 5,
    "saat": 16,
+   "oturum": "sabah_5",
+   "sira": 7,
    "tur": "sor",
    "kume": "F",
-   "icerik": "Yeğenin okul kaydı yapıldı mı?",
-   "beklenen": [],
-   "yasak": []
+   "icerik": "Yeğenin okul kaydı yapıldı mı?"
+  },
+  {
+   "gun": 5,
+   "saat": 18,
+   "oturum": "kobyte_5",
+   "sira": 2,
+   "tur": "sonuc",
+   "kume": "",
+   "sonuc": "basarili"
+  },
+  {
+   "gun": 5,
+   "saat": 18,
+   "oturum": "koru_5",
+   "sira": 2,
+   "tur": "sonuc",
+   "kume": "",
+   "sonuc": "basarili"
+  },
+  {
+   "gun": 5,
+   "saat": 18,
+   "oturum": "sabah_5",
+   "sira": 8,
+   "tur": "sonuc",
+   "kume": "",
+   "sonuc": "basarili"
   },
   {
    "gun": 6,
    "saat": 9,
+   "oturum": "bos_6",
+   "sira": 1,
    "tur": "sessiz",
    "kume": ""
   },
   {
    "gun": 7,
    "saat": 9,
+   "oturum": "bos_7",
+   "sira": 1,
    "tur": "sessiz",
    "kume": ""
   },
   {
    "gun": 8,
    "saat": 9,
+   "oturum": "kobyte_8",
+   "sira": 1,
    "tur": "kaydet",
-   "kume": "D",
-   "slug": "h_d_kaza",
-   "kind": "procedure",
-   "baslik": "Kaza sonrası yordam",
-   "icerik": "Kaza olursa önce fotoğraf çekilir, sonra tutanak doldurulur, en son sigortaya bildirilir.",
+   "kume": "E",
+   "slug": "h_e_egitim_kobyte",
+   "kind": "fact",
+   "baslik": "Eğitim",
+   "icerik": "Eğitim uzaktan, kayıtlı video üzerinden veriliyor.",
    "etiketler": [
-    "yordam"
-   ]
+    "proje"
+   ],
+   "baglam": {
+    "proje": "kobyte"
+   }
   },
   {
    "gun": 8,
    "saat": 9,
+   "oturum": "koru_8",
+   "sira": 1,
    "tur": "kaydet",
    "kume": "E",
    "slug": "h_e_egitim_koru",
@@ -331,33 +444,35 @@
   {
    "gun": 8,
    "saat": 9,
+   "oturum": "sabah_8",
+   "sira": 5,
    "tur": "kaydet",
-   "kume": "E",
-   "slug": "h_e_egitim_kobyte",
-   "kind": "fact",
-   "baslik": "Eğitim",
-   "icerik": "Eğitim uzaktan, kayıtlı video üzerinden veriliyor.",
+   "kume": "D",
+   "slug": "h_d_kaza",
+   "kind": "procedure",
+   "baslik": "Kaza sonrası yordam",
+   "icerik": "Kaza olursa önce fotoğraf çekilir, sonra tutanak doldurulur, en son sigortaya bildirilir.",
    "etiketler": [
-    "proje"
-   ],
-   "baglam": {
-    "proje": "kobyte"
-   }
+    "yordam"
+   ]
   },
   {
    "gun": 8,
    "saat": 11,
+   "oturum": "sabah_8",
+   "sira": 1,
    "tur": "sor",
    "kume": "A",
    "icerik": "Trabzon'la bağı neydi?",
    "beklenen": [
     "h_dogum"
-   ],
-   "yasak": []
+   ]
   },
   {
    "gun": 8,
    "saat": 15,
+   "oturum": "sabah_8",
+   "sira": 2,
    "tur": "kaydet",
    "kume": "C",
    "slug": "h_c07",
@@ -371,6 +486,8 @@
   {
    "gun": 8,
    "saat": 15,
+   "oturum": "sabah_8",
+   "sira": 3,
    "tur": "kaydet",
    "kume": "C",
    "slug": "h_c08",
@@ -384,6 +501,8 @@
   {
    "gun": 8,
    "saat": 15,
+   "oturum": "sabah_8",
+   "sira": 4,
    "tur": "kaydet",
    "kume": "C",
    "slug": "h_c09",
@@ -397,42 +516,65 @@
   {
    "gun": 8,
    "saat": 16,
+   "oturum": "sabah_8",
+   "sira": 6,
    "tur": "sor",
    "kume": "F",
-   "icerik": "Şarap mahzeninin sıcaklığı kaçtı?",
-   "beklenen": [],
-   "yasak": []
+   "icerik": "Şarap mahzeninin sıcaklığı kaçtı?"
   },
   {
    "gun": 8,
    "saat": 17,
+   "oturum": "aksam_8",
+   "sira": 1,
    "tur": "kaydet",
-   "kume": "H",
+   "kume": "H0",
    "slug": "h_h1",
    "kind": "episode",
    "baslik": "Kahvaltı düzeni konuşması",
-   "icerik": "Sabahları evde kahvaltı zaman alıyordu. Ofiste yapmayı denedi, trafik öncesi çıkmak kolaylaştı.",
-   "etiketler": []
+   "icerik": "Sabahları evde kahvaltı zaman alıyordu. Ofiste yapmayı denedi, trafik öncesi çıkmak kolaylaştı."
+  },
+  {
+   "gun": 8,
+   "saat": 18,
+   "oturum": "aksam_8",
+   "sira": 2,
+   "tur": "sonuc",
+   "kume": "",
+   "sonuc": "basarili"
+  },
+  {
+   "gun": 8,
+   "saat": 18,
+   "oturum": "kobyte_8",
+   "sira": 2,
+   "tur": "sonuc",
+   "kume": "",
+   "sonuc": "basarili"
+  },
+  {
+   "gun": 8,
+   "saat": 18,
+   "oturum": "koru_8",
+   "sira": 2,
+   "tur": "sonuc",
+   "kume": "",
+   "sonuc": "basarili"
+  },
+  {
+   "gun": 8,
+   "saat": 18,
+   "oturum": "sabah_8",
+   "sira": 7,
+   "tur": "sonuc",
+   "kume": "",
+   "sonuc": "basarili"
   },
   {
    "gun": 9,
    "saat": 9,
-   "tur": "kaydet",
-   "kume": "E",
-   "slug": "h_e_onay_koru",
-   "kind": "fact",
-   "baslik": "Onayı",
-   "icerik": "Onayı vardiya amiri ıslak imzayla veriyor.",
-   "etiketler": [
-    "proje"
-   ],
-   "baglam": {
-    "proje": "koru1000"
-   }
-  },
-  {
-   "gun": 9,
-   "saat": 9,
+   "oturum": "kobyte_9",
+   "sira": 1,
    "tur": "kaydet",
    "kume": "E",
    "slug": "h_e_onay_kobyte",
@@ -448,27 +590,84 @@
   },
   {
    "gun": 9,
+   "saat": 9,
+   "oturum": "koru_9",
+   "sira": 1,
+   "tur": "kaydet",
+   "kume": "E",
+   "slug": "h_e_onay_koru",
+   "kind": "fact",
+   "baslik": "Onayı",
+   "icerik": "Onayı vardiya amiri ıslak imzayla veriyor.",
+   "etiketler": [
+    "proje"
+   ],
+   "baglam": {
+    "proje": "koru1000"
+   }
+  },
+  {
+   "gun": 9,
    "saat": 16,
+   "oturum": "sabah_9",
+   "sira": 1,
    "tur": "sor",
    "kume": "F",
-   "icerik": "Halk oyunları kursu hangi gün?",
-   "beklenen": [],
-   "yasak": []
+   "icerik": "Halk oyunları kursu hangi gün?"
+  },
+  {
+   "gun": 9,
+   "saat": 18,
+   "oturum": "kobyte_9",
+   "sira": 2,
+   "tur": "sonuc",
+   "kume": "",
+   "sonuc": "basarili"
+  },
+  {
+   "gun": 9,
+   "saat": 18,
+   "oturum": "koru_9",
+   "sira": 2,
+   "tur": "sonuc",
+   "kume": "",
+   "sonuc": "basarili"
+  },
+  {
+   "gun": 9,
+   "saat": 18,
+   "oturum": "sabah_9",
+   "sira": 2,
+   "tur": "sonuc",
+   "kume": "",
+   "sonuc": "basarili"
   },
   {
    "gun": 10,
    "saat": 11,
+   "oturum": "sabah_10",
+   "sira": 1,
    "tur": "sor",
    "kume": "A",
    "icerik": "Fıstık alerjisi var mıydı?",
    "beklenen": [
     "h_alerji"
-   ],
-   "yasak": []
+   ]
+  },
+  {
+   "gun": 10,
+   "saat": 18,
+   "oturum": "sabah_10",
+   "sira": 2,
+   "tur": "sonuc",
+   "kume": "",
+   "sonuc": "basarili"
   },
   {
    "gun": 11,
    "saat": 12,
+   "oturum": "oglen_11",
+   "sira": 1,
    "tur": "kullan",
    "kume": "D",
    "hedef": [
@@ -478,6 +677,8 @@
   {
    "gun": 11,
    "saat": 15,
+   "oturum": "sabah_11",
+   "sira": 1,
    "tur": "kaydet",
    "kume": "C",
    "slug": "h_c10",
@@ -491,6 +692,8 @@
   {
    "gun": 11,
    "saat": 15,
+   "oturum": "sabah_11",
+   "sira": 2,
    "tur": "kaydet",
    "kume": "C",
    "slug": "h_c11",
@@ -504,6 +707,8 @@
   {
    "gun": 11,
    "saat": 15,
+   "oturum": "sabah_11",
+   "sira": 3,
    "tur": "kaydet",
    "kume": "C",
    "slug": "h_c12",
@@ -517,15 +722,35 @@
   {
    "gun": 11,
    "saat": 16,
+   "oturum": "sabah_11",
+   "sira": 4,
    "tur": "sor",
    "kume": "F",
-   "icerik": "Traktör ehliyeti alınmış mıydı?",
-   "beklenen": [],
-   "yasak": []
+   "icerik": "Traktör ehliyeti alınmış mıydı?"
+  },
+  {
+   "gun": 11,
+   "saat": 18,
+   "oturum": "oglen_11",
+   "sira": 2,
+   "tur": "sonuc",
+   "kume": "",
+   "sonuc": "basarili"
+  },
+  {
+   "gun": 11,
+   "saat": 18,
+   "oturum": "sabah_11",
+   "sira": 5,
+   "tur": "sonuc",
+   "kume": "",
+   "sonuc": "basarili"
   },
   {
    "gun": 12,
    "saat": 9,
+   "oturum": "sabah_12",
+   "sira": 2,
    "tur": "duzelt",
    "kume": "B",
    "slug": "h_kahvalti_2",
@@ -540,17 +765,20 @@
   {
    "gun": 12,
    "saat": 11,
+   "oturum": "sabah_12",
+   "sira": 1,
    "tur": "sor",
    "kume": "A",
    "icerik": "Ehliyet sınıfı neydi?",
    "beklenen": [
     "h_ehliyet"
-   ],
-   "yasak": []
+   ]
   },
   {
    "gun": 12,
    "saat": 11,
+   "oturum": "sabah_12",
+   "sira": 3,
    "tur": "sor",
    "kume": "E",
    "icerik": "Vardiya düzeni nasıl?",
@@ -567,6 +795,8 @@
   {
    "gun": 12,
    "saat": 12,
+   "oturum": "oglen_12",
+   "sira": 1,
    "tur": "kullan",
    "kume": "D",
    "hedef": [
@@ -576,38 +806,72 @@
   {
    "gun": 12,
    "saat": 16,
+   "oturum": "sabah_12",
+   "sira": 4,
    "tur": "sor",
    "kume": "F",
-   "icerik": "Arıcılık kursu ücreti neydi?",
-   "beklenen": [],
-   "yasak": []
+   "icerik": "Arıcılık kursu ücreti neydi?"
   },
   {
    "gun": 12,
    "saat": 17,
+   "oturum": "aksam_12",
+   "sira": 1,
    "tur": "kaydet",
-   "kume": "H",
+   "kume": "H0",
    "slug": "h_h2",
    "kind": "episode",
    "baslik": "Koşu sakatlığı",
-   "icerik": "Koşarken diz ağrısı başladı. Fizyoterapist yüzmeyi önerdi, ağrı azaldı.",
-   "etiketler": []
+   "icerik": "Koşarken diz ağrısı başladı. Fizyoterapist yüzmeyi önerdi, ağrı azaldı."
+  },
+  {
+   "gun": 12,
+   "saat": 18,
+   "oturum": "aksam_12",
+   "sira": 2,
+   "tur": "sonuc",
+   "kume": "",
+   "sonuc": "basarili"
+  },
+  {
+   "gun": 12,
+   "saat": 18,
+   "oturum": "oglen_12",
+   "sira": 2,
+   "tur": "sonuc",
+   "kume": "",
+   "sonuc": "basarili"
+  },
+  {
+   "gun": 12,
+   "saat": 18,
+   "oturum": "sabah_12",
+   "sira": 5,
+   "tur": "sonuc",
+   "kume": "",
+   "sonuc": "duzeltildi"
   },
   {
    "gun": 13,
    "saat": 9,
+   "oturum": "bos_13",
+   "sira": 1,
    "tur": "sessiz",
    "kume": ""
   },
   {
    "gun": 14,
    "saat": 9,
+   "oturum": "bos_14",
+   "sira": 1,
    "tur": "sessiz",
    "kume": ""
   },
   {
    "gun": 15,
    "saat": 9,
+   "oturum": "sabah_15",
+   "sira": 2,
    "tur": "duzelt",
    "kume": "B",
    "slug": "h_spor_2",
@@ -622,6 +886,8 @@
   {
    "gun": 15,
    "saat": 11,
+   "oturum": "sabah_15",
+   "sira": 1,
    "tur": "sor",
    "kume": "B",
    "icerik": "Kahvaltıyı nerede yapıyorum?",
@@ -635,6 +901,8 @@
   {
    "gun": 15,
    "saat": 11,
+   "oturum": "sabah_15",
+   "sira": 6,
    "tur": "sor",
    "kume": "E",
    "icerik": "Eğitim nasıl veriliyor?",
@@ -651,6 +919,8 @@
   {
    "gun": 15,
    "saat": 15,
+   "oturum": "sabah_15",
+   "sira": 3,
    "tur": "kaydet",
    "kume": "C",
    "slug": "h_c13",
@@ -664,6 +934,8 @@
   {
    "gun": 15,
    "saat": 15,
+   "oturum": "sabah_15",
+   "sira": 4,
    "tur": "kaydet",
    "kume": "C",
    "slug": "h_c14",
@@ -677,6 +949,8 @@
   {
    "gun": 15,
    "saat": 15,
+   "oturum": "sabah_15",
+   "sira": 5,
    "tur": "kaydet",
    "kume": "C",
    "slug": "h_c15",
@@ -688,28 +962,49 @@
    ]
   },
   {
+   "gun": 15,
+   "saat": 18,
+   "oturum": "sabah_15",
+   "sira": 7,
+   "tur": "sonuc",
+   "kume": "",
+   "sonuc": "duzeltildi"
+  },
+  {
    "gun": 16,
    "saat": 11,
+   "oturum": "sabah_16",
+   "sira": 1,
    "tur": "sor",
    "kume": "A",
    "icerik": "Kan grubu neydi?",
    "beklenen": [
     "h_kan"
-   ],
-   "yasak": []
+   ]
   },
   {
    "gun": 16,
    "saat": 16,
+   "oturum": "sabah_16",
+   "sira": 2,
    "tur": "sor",
    "kume": "F",
-   "icerik": "Tarla sınırı ölçüldü mü?",
-   "beklenen": [],
-   "yasak": []
+   "icerik": "Tarla sınırı ölçüldü mü?"
+  },
+  {
+   "gun": 16,
+   "saat": 18,
+   "oturum": "sabah_16",
+   "sira": 3,
+   "tur": "sonuc",
+   "kume": "",
+   "sonuc": "basarili"
   },
   {
    "gun": 17,
    "saat": 11,
+   "oturum": "sabah_17",
+   "sira": 1,
    "tur": "sor",
    "kume": "B",
    "icerik": "Spor olarak ne yapıyorum?",
@@ -723,6 +1018,8 @@
   {
    "gun": 17,
    "saat": 11,
+   "oturum": "sabah_17",
+   "sira": 5,
    "tur": "sor",
    "kume": "E",
    "icerik": "Onay süreci nasıl işliyor?",
@@ -739,6 +1036,8 @@
   {
    "gun": 17,
    "saat": 15,
+   "oturum": "sabah_17",
+   "sira": 2,
    "tur": "kaydet",
    "kume": "C",
    "slug": "h_c16",
@@ -752,6 +1051,8 @@
   {
    "gun": 17,
    "saat": 15,
+   "oturum": "sabah_17",
+   "sira": 3,
    "tur": "kaydet",
    "kume": "C",
    "slug": "h_c17",
@@ -765,6 +1066,8 @@
   {
    "gun": 17,
    "saat": 15,
+   "oturum": "sabah_17",
+   "sira": 4,
    "tur": "kaydet",
    "kume": "C",
    "slug": "h_c18",
@@ -778,28 +1081,50 @@
   {
    "gun": 17,
    "saat": 17,
+   "oturum": "aksam_17",
+   "sira": 1,
    "tur": "kaydet",
-   "kume": "H",
+   "kume": "H0",
    "slug": "h_h3",
    "kind": "episode",
    "baslik": "Pasaport randevusu",
-   "icerik": "Randevu sistemi hata verdi, telefonla alındı. Biyometrik fotoğraf eski olduğu için yenilendi.",
-   "etiketler": []
+   "icerik": "Randevu sistemi hata verdi, telefonla alındı. Biyometrik fotoğraf eski olduğu için yenilendi."
+  },
+  {
+   "gun": 17,
+   "saat": 18,
+   "oturum": "aksam_17",
+   "sira": 2,
+   "tur": "sonuc",
+   "kume": "",
+   "sonuc": "basarili"
+  },
+  {
+   "gun": 17,
+   "saat": 18,
+   "oturum": "sabah_17",
+   "sira": 6,
+   "tur": "sonuc",
+   "kume": "",
+   "sonuc": "basarili"
   },
   {
    "gun": 18,
    "saat": 11,
+   "oturum": "sabah_18",
+   "sira": 3,
    "tur": "sor",
    "kume": "D",
    "icerik": "Pasaport yenilerken sıra neydi?",
    "beklenen": [
     "h_d_pasaport"
-   ],
-   "yasak": []
+   ]
   },
   {
    "gun": 18,
    "saat": 12,
+   "oturum": "oglen_18",
+   "sira": 1,
    "tur": "kullan",
    "kume": "D",
    "hedef": [
@@ -809,6 +1134,8 @@
   {
    "gun": 18,
    "saat": 15,
+   "oturum": "sabah_18",
+   "sira": 1,
    "tur": "kaydet",
    "kume": "C",
    "slug": "h_c19",
@@ -822,6 +1149,8 @@
   {
    "gun": 18,
    "saat": 15,
+   "oturum": "sabah_18",
+   "sira": 2,
    "tur": "kaydet",
    "kume": "C",
    "slug": "h_c20",
@@ -835,42 +1164,68 @@
   {
    "gun": 18,
    "saat": 16,
+   "oturum": "sabah_18",
+   "sira": 4,
    "tur": "sor",
    "kume": "F",
-   "icerik": "Bağdaki üzüm ne zaman toplanıyor?",
-   "beklenen": [],
-   "yasak": []
+   "icerik": "Bağdaki üzüm ne zaman toplanıyor?"
   },
   {
    "gun": 18,
    "saat": 16,
+   "oturum": "sabah_18",
+   "sira": 5,
    "tur": "sor",
    "kume": "F",
-   "icerik": "Kayınpederin ilaçları hangi eczaneden?",
-   "beklenen": [],
-   "yasak": []
+   "icerik": "Kayınpederin ilaçları hangi eczaneden?"
+  },
+  {
+   "gun": 18,
+   "saat": 18,
+   "oturum": "oglen_18",
+   "sira": 2,
+   "tur": "sonuc",
+   "kume": "",
+   "sonuc": "basarili"
+  },
+  {
+   "gun": 18,
+   "saat": 18,
+   "oturum": "sabah_18",
+   "sira": 6,
+   "tur": "sonuc",
+   "kume": "",
+   "sonuc": "basarili"
   },
   {
    "gun": 19,
    "saat": 9,
+   "oturum": "bos_19",
+   "sira": 1,
    "tur": "sessiz",
    "kume": ""
   },
   {
    "gun": 20,
    "saat": 9,
+   "oturum": "bos_20",
+   "sira": 1,
    "tur": "sessiz",
    "kume": ""
   },
   {
    "gun": 21,
    "saat": 9,
+   "oturum": "bos_21",
+   "sira": 1,
    "tur": "sessiz",
    "kume": ""
   },
   {
    "gun": 22,
    "saat": 12,
+   "oturum": "oglen_22",
+   "sira": 1,
    "tur": "kullan",
    "kume": "D",
    "hedef": [
@@ -880,6 +1235,8 @@
   {
    "gun": 22,
    "saat": 14,
+   "oturum": "sabah_22",
+   "sira": 1,
    "tur": "sor",
    "kume": "E",
    "icerik": "Vardiya düzeni nasıl?",
@@ -896,15 +1253,35 @@
   {
    "gun": 22,
    "saat": 16,
+   "oturum": "sabah_22",
+   "sira": 2,
    "tur": "sor",
    "kume": "F",
-   "icerik": "Sera naylonu değişti mi?",
-   "beklenen": [],
-   "yasak": []
+   "icerik": "Sera naylonu değişti mi?"
+  },
+  {
+   "gun": 22,
+   "saat": 18,
+   "oturum": "oglen_22",
+   "sira": 2,
+   "tur": "sonuc",
+   "kume": "",
+   "sonuc": "basarili"
+  },
+  {
+   "gun": 22,
+   "saat": 18,
+   "oturum": "sabah_22",
+   "sira": 3,
+   "tur": "sonuc",
+   "kume": "",
+   "sonuc": "basarili"
   },
   {
    "gun": 23,
    "saat": 9,
+   "oturum": "sabah_23",
+   "sira": 1,
    "tur": "duzelt",
    "kume": "B",
    "slug": "h_kahvalti_3",
@@ -919,6 +1296,8 @@
   {
    "gun": 23,
    "saat": 14,
+   "oturum": "sabah_23",
+   "sira": 2,
    "tur": "sor",
    "kume": "E",
    "icerik": "Eğitim nasıl veriliyor?",
@@ -935,37 +1314,68 @@
   {
    "gun": 23,
    "saat": 17,
+   "oturum": "aksam_23",
+   "sira": 1,
    "tur": "kaydet",
-   "kume": "H",
+   "kume": "H0",
    "slug": "h_h4",
    "kind": "episode",
    "baslik": "Vardiya tartışması",
-   "icerik": "Üç vardiya ekibi yordu. Nöbet düzenine geçilmesi konuşuldu ama saha için uygun bulunmadı.",
-   "etiketler": []
+   "icerik": "Üç vardiya ekibi yordu. Nöbet düzenine geçilmesi konuşuldu ama saha için uygun bulunmadı."
+  },
+  {
+   "gun": 23,
+   "saat": 18,
+   "oturum": "aksam_23",
+   "sira": 2,
+   "tur": "sonuc",
+   "kume": "",
+   "sonuc": "basarili"
+  },
+  {
+   "gun": 23,
+   "saat": 18,
+   "oturum": "sabah_23",
+   "sira": 3,
+   "tur": "sonuc",
+   "kume": "",
+   "sonuc": "duzeltildi"
   },
   {
    "gun": 24,
    "saat": 11,
+   "oturum": "sabah_24",
+   "sira": 1,
    "tur": "sor",
    "kume": "A",
    "icerik": "Gömlek rengi tercihi neydi?",
    "beklenen": [
     "h_beden"
-   ],
-   "yasak": []
+   ]
   },
   {
    "gun": 24,
    "saat": 16,
+   "oturum": "sabah_24",
+   "sira": 2,
    "tur": "sor",
    "kume": "F",
-   "icerik": "Köpüklü şarap markası neydi?",
-   "beklenen": [],
-   "yasak": []
+   "icerik": "Köpüklü şarap markası neydi?"
+  },
+  {
+   "gun": 24,
+   "saat": 18,
+   "oturum": "sabah_24",
+   "sira": 3,
+   "tur": "sonuc",
+   "kume": "",
+   "sonuc": "basarili"
   },
   {
    "gun": 25,
    "saat": 9,
+   "oturum": "sabah_25",
+   "sira": 1,
    "tur": "duzelt",
    "kume": "B",
    "slug": "h_spor_3",
@@ -980,6 +1390,8 @@
   {
    "gun": 25,
    "saat": 14,
+   "oturum": "sabah_25",
+   "sira": 2,
    "tur": "sor",
    "kume": "E",
    "icerik": "Onay süreci nasıl işliyor?",
@@ -994,19 +1406,31 @@
    }
   },
   {
+   "gun": 25,
+   "saat": 18,
+   "oturum": "sabah_25",
+   "sira": 3,
+   "tur": "sonuc",
+   "kume": "",
+   "sonuc": "duzeltildi"
+  },
+  {
    "gun": 26,
    "saat": 11,
+   "oturum": "sabah_26",
+   "sira": 1,
    "tur": "sor",
    "kume": "A",
    "icerik": "Selin hangi okulda?",
    "beklenen": [
     "h_esi"
-   ],
-   "yasak": []
+   ]
   },
   {
    "gun": 26,
    "saat": 12,
+   "oturum": "oglen_26",
+   "sira": 1,
    "tur": "kullan",
    "kume": "D",
    "hedef": [
@@ -1016,49 +1440,75 @@
   {
    "gun": 26,
    "saat": 13,
+   "oturum": "sabah_26",
+   "sira": 3,
    "tur": "sor",
    "kume": "G",
    "icerik": "Su sayacı nerede duruyor?",
-   "beklenen": [
+   "acik": [
     "h_g_sayac"
-   ],
-   "yasak": []
+   ]
   },
   {
    "gun": 26,
    "saat": 16,
+   "oturum": "sabah_26",
+   "sira": 2,
    "tur": "sor",
    "kume": "F",
-   "icerik": "Dağ evinin sobası yandı mı?",
-   "beklenen": [],
-   "yasak": []
+   "icerik": "Dağ evinin sobası yandı mı?"
+  },
+  {
+   "gun": 26,
+   "saat": 18,
+   "oturum": "oglen_26",
+   "sira": 2,
+   "tur": "sonuc",
+   "kume": "",
+   "sonuc": "basarili"
+  },
+  {
+   "gun": 26,
+   "saat": 18,
+   "oturum": "sabah_26",
+   "sira": 4,
+   "tur": "sonuc",
+   "kume": "",
+   "sonuc": "basarili"
   },
   {
    "gun": 27,
    "saat": 9,
+   "oturum": "bos_27",
+   "sira": 1,
    "tur": "sessiz",
    "kume": ""
   },
   {
    "gun": 28,
    "saat": 9,
+   "oturum": "bos_28",
+   "sira": 1,
    "tur": "sessiz",
    "kume": ""
   },
   {
    "gun": 29,
    "saat": 11,
+   "oturum": "sabah_29",
+   "sira": 1,
    "tur": "sor",
    "kume": "A",
    "icerik": "A Rh pozitif miydi?",
    "beklenen": [
     "h_kan"
-   ],
-   "yasak": []
+   ]
   },
   {
    "gun": 29,
    "saat": 11,
+   "oturum": "sabah_29",
+   "sira": 2,
    "tur": "sor",
    "kume": "B",
    "icerik": "Kahvaltıyı nerede yapıyorum?",
@@ -1073,17 +1523,20 @@
   {
    "gun": 29,
    "saat": 11,
+   "oturum": "sabah_29",
+   "sira": 3,
    "tur": "sor",
    "kume": "D",
    "icerik": "Kaza sonrası ne yapılıyordu?",
    "beklenen": [
     "h_d_kaza"
-   ],
-   "yasak": []
+   ]
   },
   {
    "gun": 29,
    "saat": 12,
+   "oturum": "oglen_29",
+   "sira": 1,
    "tur": "kullan",
    "kume": "D",
    "hedef": [
@@ -1093,17 +1546,47 @@
   {
    "gun": 29,
    "saat": 17,
+   "oturum": "aksam_29",
+   "sira": 1,
    "tur": "kaydet",
-   "kume": "H",
+   "kume": "H0",
    "slug": "h_h5",
    "kind": "episode",
    "baslik": "Kaza tutanağı",
-   "icerik": "Küçük bir kaza oldu. Fotoğraf çekildi, tutanak dolduruldu, sigortaya aynı gün bildirildi.",
-   "etiketler": []
+   "icerik": "Küçük bir kaza oldu. Fotoğraf çekildi, tutanak dolduruldu, sigortaya aynı gün bildirildi."
+  },
+  {
+   "gun": 29,
+   "saat": 18,
+   "oturum": "aksam_29",
+   "sira": 2,
+   "tur": "sonuc",
+   "kume": "",
+   "sonuc": "basarili"
+  },
+  {
+   "gun": 29,
+   "saat": 18,
+   "oturum": "oglen_29",
+   "sira": 2,
+   "tur": "sonuc",
+   "kume": "",
+   "sonuc": "basarili"
+  },
+  {
+   "gun": 29,
+   "saat": 18,
+   "oturum": "sabah_29",
+   "sira": 4,
+   "tur": "sonuc",
+   "kume": "",
+   "sonuc": "basarili"
   },
   {
    "gun": 30,
    "saat": 11,
+   "oturum": "sabah_30",
+   "sira": 1,
    "tur": "sor",
    "kume": "B",
    "icerik": "Spor olarak ne yapıyorum?",
@@ -1118,13 +1601,23 @@
   {
    "gun": 30,
    "saat": 13,
+   "oturum": "sabah_30",
+   "sira": 2,
    "tur": "sor",
    "kume": "G",
    "icerik": "Jeneratör motorini ne sıklıkla tazeleniyor?",
-   "beklenen": [
+   "acik": [
     "h_g_jenerator"
-   ],
-   "yasak": []
+   ]
+  },
+  {
+   "gun": 30,
+   "saat": 18,
+   "oturum": "sabah_30",
+   "sira": 3,
+   "tur": "sonuc",
+   "kume": "",
+   "sonuc": "basarili"
   }
  ]
 }

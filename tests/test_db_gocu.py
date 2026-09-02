@@ -85,6 +85,19 @@ def test_imzalar_geriye_donuk_uretilir(eski_db: Path) -> None:
         store.close()
 
 
+def test_goc_sonrasi_veritabani_tutarli(eski_db: Path) -> None:
+    """`PRAGMA integrity_check`: göç yarıda kalmış bir dosya bırakmamalı."""
+    store = RecallStore(eski_db)
+    try:
+        store.recall("scada")
+        store.remember("göçten sonra yazılan kayıt", kind="fact")
+        with store._lock:               # noqa: SLF001 — göç doğrulaması
+            durum = store._db.execute("PRAGMA integrity_check").fetchone()[0]
+    finally:
+        store.close()
+    assert durum == "ok"
+
+
 def test_eski_bellege_yazilabilir(eski_db: Path) -> None:
     """Göçten sonra bellek salt okunur bir kalıntı değil, çalışan bir bellek."""
     store = RecallStore(eski_db)

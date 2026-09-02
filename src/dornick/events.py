@@ -33,6 +33,13 @@ def utcnow() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="milliseconds")
 
 
+# Zaman tek bir yerden okunuyor (bkz. recall/saat.py). Gece geçişi oturum
+# günlüğündeki damgalara bakıyor — hangi düğüm hangisinden sonra dokunuldu,
+# sürprizli olayın ±60 dakikası neresi — ve o damgalar duvar saatinden
+# gelseydi doksan günlük bir senaryo ölçülemezdi.
+Saat = Callable[[], str]
+
+
 @dataclass(slots=True)
 class Event:
     seq: int
@@ -57,8 +64,9 @@ class Event:
 class EventLog:
     """Sürecin ömrü boyunca açık kalan, satır-tamponlu JSONL yazıcı."""
 
-    def __init__(self, path: Path) -> None:
+    def __init__(self, path: Path, *, saat: Saat | None = None) -> None:
         self.path = path
+        self._saat: Saat = saat or utcnow
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self._events: list[Event] = list(_read(path)) if path.exists() else []
         self._seq = self._events[-1].seq + 1 if self._events else 0
@@ -96,7 +104,7 @@ class EventLog:
         with self._lock:
             ev = Event(
                 seq=self._seq,
-                ts=utcnow(),
+                ts=self._saat(),
                 kind=kind,
                 role=role,
                 content=content,

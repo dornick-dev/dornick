@@ -137,3 +137,20 @@ def test_dogrudan_datetime_now_cagrisi_kalmadi() -> None:
             f"{goreli}: doğrudan datetime.now() çağrısı var. "
             "Zamanı `self._simdi()` üzerinden oku (bkz. recall/saat.py)."
         )
+
+
+# -- damga çözme -------------------------------------------------------
+
+
+def test_bozuk_damga_hata_yerine_none_doner() -> None:
+    """Elle düzenlenmiş ya da bozulmuş bir db açılabilir kalmalı."""
+    assert coz(None) is None
+    assert coz("") is None
+    assert coz("dün akşam") is None
+
+
+def test_zaman_dilimsiz_damga_utc_sayilir() -> None:
+    """Naif ve bilinçli damgayı karşılaştırmak TypeError'la patlardı."""
+    an = coz("2025-01-06T09:00:00.000")
+    assert an is not None and an.tzinfo is timezone.utc
+    assert an == datetime(2025, 1, 6, 9, 0, tzinfo=timezone.utc)

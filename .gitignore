@@ -26,3 +26,10 @@ training/data/*
 training/checkpoints/*
 !training/checkpoints/base.pt
 training/site/
+
+# Eski sürümün ayrı checkout'u (yasam_bench --eski): git worktree, depoya girmez.
+eval/eski/
+
+# Kapsam ölçümü çıktısı
+.coverage
+htmlcov/

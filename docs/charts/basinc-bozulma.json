@@ -1,0 +1,363 @@
+{
+ "egri": [
+  {
+   "gun": 1,
+   "s": 0.8667,
+   "precision": null,
+   "komsu_dogruluk": 1.0
+  },
+  {
+   "gun": 2,
+   "s": 0.62,
+   "precision": null,
+   "komsu_dogruluk": 1.0
+  },
+  {
+   "gun": 3,
+   "s": 0.8267,
+   "precision": null,
+   "komsu_dogruluk": 0.2
+  },
+  {
+   "gun": 4,
+   "s": 0.815,
+   "precision": null,
+   "komsu_dogruluk": 0.3333
+  },
+  {
+   "gun": 5,
+   "s": 1.0091,
+   "precision": null,
+   "komsu_dogruluk": 0.2143
+  },
+  {
+   "gun": 8,
+   "s": 1.1952,
+   "precision": null,
+   "komsu_dogruluk": 0.25
+  },
+  {
+   "gun": 9,
+   "s": 1.2622,
+   "precision": 0.5,
+   "komsu_dogruluk": 0.5
+  },
+  {
+   "gun": 10,
+   "s": 1.4472,
+   "precision": null,
+   "komsu_dogruluk": 0.3684
+  },
+  {
+   "gun": 11,
+   "s": 1.569,
+   "precision": null,
+   "komsu_dogruluk": 0.1429
+  },
+  {
+   "gun": 12,
+   "s": 1.6444,
+   "precision": 1.0,
+   "komsu_dogruluk": 0.1667
+  },
+  {
+   "gun": 15,
+   "s": 1.7114,
+   "precision": 0.2,
+   "komsu_dogruluk": 0.3333
+  },
+  {
+   "gun": 16,
+   "s": 1.7644,
+   "precision": null,
+   "komsu_dogruluk": 0.3333
+  },
+  {
+   "gun": 17,
+   "s": 1.7973,
+   "precision": 1.0,
+   "komsu_dogruluk": 0.0
+  },
+  {
+   "gun": 18,
+   "s": 1.8793,
+   "precision": null,
+   "komsu_dogruluk": 0.2105
+  },
+  {
+   "gun": 19,
+   "s": 1.9789,
+   "precision": 1.0,
+   "komsu_dogruluk": 0.125
+  },
+  {
+   "gun": 22,
+   "s": 2.1056,
+   "precision": 0.5,
+   "komsu_dogruluk": 0.1739
+  },
+  {
+   "gun": 23,
+   "s": 2.1678,
+   "precision": 1.0,
+   "komsu_dogruluk": 0.0833
+  },
+  {
+   "gun": 24,
+   "s": 2.1943,
+   "precision": null,
+   "komsu_dogruluk": 0.15
+  },
+  {
+   "gun": 25,
+   "s": 2.207,
+   "precision": 0.3,
+   "komsu_dogruluk": 0.0833
+  },
+  {
+   "gun": 26,
+   "s": 2.2783,
+   "precision": 0.3333,
+   "komsu_dogruluk": 0.1628
+  },
+  {
+   "gun": 29,
+   "s": 2.3122,
+   "precision": 0.2,
+   "komsu_dogruluk": 0.1176
+  },
+  {
+   "gun": 30,
+   "s": 2.3374,
+   "precision": 0.2222,
+   "komsu_dogruluk": 0.15
+  },
+  {
+   "gun": 31,
+   "s": 2.3533,
+   "precision": 0.2,
+   "komsu_dogruluk": 0.1667
+  },
+  {
+   "gun": 32,
+   "s": 2.3609,
+   "precision": 0.3333,
+   "komsu_dogruluk": 0.0
+  },
+  {
+   "gun": 33,
+   "s": 2.3898,
+   "precision": 0.3571,
+   "komsu_dogruluk": 0.125
+  },
+  {
+   "gun": 36,
+   "s": 2.4098,
+   "precision": 0.3333,
+   "komsu_dogruluk": 0.1111
+  },
+  {
+   "gun": 37,
+   "s": 2.413,
+   "precision": 0.2,
+   "komsu_dogruluk": 0.3333
+  },
+  {
+   "gun": 38,
+   "s": 2.4346,
+   "precision": 0.4,
+   "komsu_dogruluk": 0.1429
+  },
+  {
+   "gun": 39,
+   "s": 2.449,
+   "precision": 0.2,
+   "komsu_dogruluk": 0.0667
+  },
+  {
+   "gun": 40,
+   "s": 2.4653,
+   "precision": 0.3,
+   "komsu_dogruluk": 0.2222
+  },
+  {
+   "gun": 43,
+   "s": 2.4882,
+   "precision": 0.25,
+   "komsu_dogruluk": 0.2222
+  },
+  {
+   "gun": 44,
+   "s": 2.4953,
+   "precision": 0.3333,
+   "komsu_dogruluk": 0.2222
+  },
+  {
+   "gun": 45,
+   "s": 2.5068,
+   "precision": null,
+   "komsu_dogruluk": 0.2667
+  },
+  {
+   "gun": 46,
+   "s": 2.5124,
+   "precision": 0.2,
+   "komsu_dogruluk": 0.1875
+  },
+  {
+   "gun": 47,
+   "s": 2.521,
+   "precision": 0.0,
+   "komsu_dogruluk": 0.4167
+  },
+  {
+   "gun": 50,
+   "s": 2.5322,
+   "precision": 0.3077,
+   "komsu_dogruluk": 0.25
+  },
+  {
+   "gun": 51,
+   "s": 2.5322,
+   "precision": 0.25,
+   "komsu_dogruluk": null
+  },
+  {
+   "gun": 52,
+   "s": 2.5342,
+   "precision": 0.2,
+   "komsu_dogruluk": 0.6667
+  },
+  {
+   "gun": 53,
+   "s": 2.54,
+   "precision": null,
+   "komsu_dogruluk": 0.1111
+  },
+  {
+   "gun": 54,
+   "s": 2.5464,
+   "precision": 0.2432,
+   "komsu_dogruluk": 0.1852
+  },
+  {
+   "gun": 64,
+   "s": 2.5535,
+   "precision": 0.4444,
+   "komsu_dogruluk": 0.25
+  },
+  {
+   "gun": 65,
+   "s": 2.5535,
+   "precision": 0.4,
+   "komsu_dogruluk": null
+  },
+  {
+   "gun": 66,
+   "s": 2.5655,
+   "precision": null,
+   "komsu_dogruluk": 0.2857
+  },
+  {
+   "gun": 67,
+   "s": 2.5655,
+   "precision": 1.0,
+   "komsu_dogruluk": null
+  },
+  {
+   "gun": 68,
+   "s": 2.5688,
+   "precision": 0.25,
+   "komsu_dogruluk": 0.1667
+  },
+  {
+   "gun": 71,
+   "s": 2.58,
+   "precision": 0.2222,
+   "komsu_dogruluk": 0.0952
+  },
+  {
+   "gun": 72,
+   "s": 2.5815,
+   "precision": 1.0,
+   "komsu_dogruluk": 1.0
+  },
+  {
+   "gun": 73,
+   "s": 2.5831,
+   "precision": null,
+   "komsu_dogruluk": 1.0
+  },
+  {
+   "gun": 74,
+   "s": 2.5906,
+   "precision": 1.0,
+   "komsu_dogruluk": 0.4667
+  },
+  {
+   "gun": 75,
+   "s": 2.5935,
+   "precision": null,
+   "komsu_dogruluk": 1.0
+  },
+  {
+   "gun": 78,
+   "s": 2.5901,
+   "precision": 0.2,
+   "komsu_dogruluk": 0.5
+  },
+  {
+   "gun": 79,
+   "s": 2.5916,
+   "precision": 0.3333,
+   "komsu_dogruluk": 0.0
+  },
+  {
+   "gun": 80,
+   "s": 2.5916,
+   "precision": 0.25,
+   "komsu_dogruluk": null
+  },
+  {
+   "gun": 81,
+   "s": 2.5916,
+   "precision": 0.25,
+   "komsu_dogruluk": null
+  },
+  {
+   "gun": 82,
+   "s": 2.593,
+   "precision": 0.25,
+   "komsu_dogruluk": 0.0
+  },
+  {
+   "gun": 85,
+   "s": 2.593,
+   "precision": 0.1667,
+   "komsu_dogruluk": null
+  },
+  {
+   "gun": 86,
+   "s": 2.5944,
+   "precision": 0.25,
+   "komsu_dogruluk": 0.0
+  },
+  {
+   "gun": 88,
+   "s": 2.5944,
+   "precision": 0.1622,
+   "komsu_dogruluk": null
+  },
+  {
+   "gun": 89,
+   "s": 2.5958,
+   "precision": 0.1515,
+   "komsu_dogruluk": 0.3333
+  }
+ ],
+ "esik": {
+  "ESIK_UST": 2.3374,
+  "ESIK_ALT": 0.7791,
+  "taban_precision": 0.6033
+ }
+}

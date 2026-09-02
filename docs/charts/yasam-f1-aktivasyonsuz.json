@@ -1,44 +1,74 @@
 {
  "metrikler": {
-  "prime_precision": 0.2881,
-  "prime_recall": 0.9444,
-  "yasak_sizinti": 50.0,
-  "tuzak_sessizlik": 0.5,
-  "bayat_ruh": 5.5667,
+  "prime_precision": 0.2574,
+  "prime_recall": 0.96,
+  "yasak_sizinti": 60.0,
+  "tuzak_sessizlik": 0.45,
+  "bayat_ruh": 3.4778,
   "taze_ruh": 1.0,
-  "ruh_token": 248.6,
-  "prime_token": 78.5,
+  "ruh_token": 324.9722,
+  "prime_token": 81.8181,
   "geri_donus_recall": 1.0,
-  "gecikme_p95": 3.31
+  "komsuluk_recall": 0.0,
+  "sorumluluk_dogrulugu": 0.625,
+  "dikis_recall": 0.0,
+  "gomulme_recall": 1.0,
+  "sema_tazeleme": -0.0,
+  "yakalama": -0.9809,
+  "ders_gecikmesi": 79.4,
+  "sicak_oran": 1.0,
+  "gece_suresi": null,
+  "kesinti_kaybi": null,
+  "kesinti_gecikmesi": null,
+  "yarim_damitma": null,
+  "ritim_isabeti": null,
+  "atalet": null,
+  "buyume_p95": null,
+  "buyume_ram": null,
+  "gecikme_p95": 5.43
  },
  "kume": {
   "A": {
-   "precision": 0.4688,
+   "precision": 0.3659,
    "recall": 1.0
   },
   "B": {
-   "precision": 0.1846,
+   "precision": 0.1739,
    "recall": 0.75
   },
   "D": {
-   "precision": 0.4,
+   "precision": 0.3529,
    "recall": 1.0
   },
   "E": {
-   "precision": 0.2174,
+   "precision": 0.2083,
+   "recall": 1.0
+  },
+  "H": {
+   "precision": 0.4444,
+   "recall": 1.0
+  },
+  "J": {
+   "precision": 0.4286,
+   "recall": 1.0
+  },
+  "K": {
+   "precision": 0.1471,
    "recall": 1.0
   }
  },
  "sayim": {
-  "soru": 117,
-  "dugum": 156,
-  "tuzak": 40
+  "soru": 191,
+  "dugum": 288,
+  "tuzak": 40,
+  "uyan": 9
  },
  "veri": "yasam-90",
  "kapali": [
   "aktivasyon"
  ],
+ "kaynak": "calisma-agaci",
+ "sure_sn": 4.3,
  "etiket": "f1-aktivasyonsuz",
- "sira": 90,
- "sure_sn": 0.6
+ "sira": 91
 }

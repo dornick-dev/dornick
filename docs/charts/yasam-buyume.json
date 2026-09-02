@@ -23,9 +23,9 @@
   "yarim_damitma": null,
   "ritim_isabeti": null,
   "atalet": null,
-  "buyume_p95": null,
-  "buyume_ram": null,
-  "gecikme_p95": 9.31
+  "buyume_p95": 6.78,
+  "buyume_ram": 10.0,
+  "gecikme_p95": 2.12
  },
  "kume": {
   "A": {
@@ -67,13 +67,24 @@
  "kapali": [],
  "kaynak": "calisma-agaci",
  "sure_sn": 3.8,
- "olcek": {
-  "dugum": 50000,
-  "indeks": 50000,
-  "ram_bayt": 3600000,
-  "gecikme_p50": 7.24,
-  "gecikme_p95": 9.31
+ "buyume": {
+  "buyuk": {
+   "dugum": 200000,
+   "indeks": 200000,
+   "ram_bayt": 14400000,
+   "gecikme_p50": 25.32,
+   "gecikme_p95": 33.22
+  },
+  "kucuk": {
+   "dugum": 20000,
+   "indeks": 20000,
+   "ram_bayt": 1440000,
+   "gecikme_p50": 3.59,
+   "gecikme_p95": 4.9
+  },
+  "buyume_p95": 6.78,
+  "buyume_ram": 10.0
  },
- "etiket": "f1",
- "sira": 1
+ "etiket": "buyume",
+ "sira": 95
 }
