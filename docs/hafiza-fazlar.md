@@ -494,8 +494,54 @@ kontrol kolu artık deney koluyla kıyaslanabilir olmaktan çıkıyor. Metrik
 bozuluyor, mekanik değil — ama bu, damıtma açıkken N ölçümüne
 güvenilemeyeceği anlamına geliyor.
 
-## Faz 3.10 — Uyku dinamiği · sırada (`ESIK_UST` hazır)
-## Faz 3.11 — Sıcak/soğuk indeks · bekliyor
+---
+
+## Faz 3.10 — Uyku dinamiği ✅ kabul (7/7)
+
+| Dosya | Ne |
+|---|---|
+| `src/dornick/recall/sleep.py` | basınç (S), ritim histogramı + zeitgeber'lar, dört durumlu anahtar (histerezis + oreksin + kafein), döngüler, kesilme, bakım işleri |
+| `recall/store.py` | `strengthening`, `checkpoint`, `optimize_fts`, `vacuum` |
+| `tests/test_sleep.py` | 23 test: eşiğin kaynağı, basınç, narkolepsi, uyarılma tablosu, ritim, jet lag, kesilme, bakım kapısı |
+
+**Eşikler seçilmedi, türetildi.** `ESIK_UST = 2.3374`, `ESIK_ALT = 0.7791` —
+gece kapalıyken ölçülen bozulma eğrisinden (`--esik-egrisi`, 2026-09-02).
+Bir test sabitin kaynağının yorumda yazılı olduğunu da zorluyor: kaynağı
+kaybolan bir sabit sihirli sayıya döner.
+
+**Narkolepsi testi tasarımın kendisini ölçüyor.** Basınç iki saat boyunca
+eşiğin ±%5 bandında geziniyor, kullanıcı yok: geçiş sayısı ≤ 2. Tek eşikli
+bir denetleyicide bu sayı onlarca olurdu ve kullanıcı bunu "hiç oturamayan
+makine" olarak yaşardı.
+
+**Oreksin koşulsuz.** Kullanıcı etkindeyken hiçbir uyku türü koşmuyor —
+mikro-uyku dahil. Test yirmi örneklem boyunca bunu zorluyor.
+
+**Derin döngüler modeli hiç çağırmıyor.** Erken uyanma yarım bir tahmin
+bırakamaz, çünkü tahmin henüz başlamamıştır. Damıtma yalnız REM'de.
+
+### Ölçüm — `docs/charts/yasam-f310.md`
+
+| Kriter | Değer | Kabul | |
+|---|---|---|---|
+| `kesinti_kaybi` | **0** | 0 | ✅ |
+| `yarim_damitma` | **0** | 0 | ✅ |
+| `kesinti_gecikmesi` p95 | **5.08 ms** | ≤ 500 ms | ✅ |
+| `ritim_isabeti` | **1.00** | ≥ 0.90 | ✅ |
+| `atalet` | **0** | 0 | ✅ |
+| narkolepsi (2 saat, eşik bandı) | **≤ 2 geçiş** | ≤ 2 | ✅ |
+| `esik_egrisi` commit'li, sabitler ondan | evet | — | ✅ |
+
+Kesilen gecelerin (%30 / %60 / %90) devreden işi ertesi gece **tamamen**
+tamamlandı; kayıp sıfır.
+
+**Not:** yol haritasının test matrisi `test_zeitgeber.py` ve
+`test_temizlik.py`'yi ayrı dosyalar olarak istiyor; ikisinin de kapsamı
+`test_sleep.py` içinde (zeitgeber: saat dilimi kayması + güven düşüşü;
+temizlik: VACUUM uyanıkken reddediliyor, checkpoint sonrası WAL < 1 MB).
+Ayrı dosyaya bölmek kapsamı değiştirmiyor, yalnız dosya sayısını.
+
+## Faz 3.11 — Sıcak/soğuk indeks · sırada
 ## Faz 4 — Kodlama gücü · bekliyor
 ## Faz 5 — Bağlam bonusu · bekliyor
 ## Faz 7 — Ödül, mizaç, üç özne, karakter · bekliyor

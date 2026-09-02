@@ -482,12 +482,13 @@ def _gece_gecisi(mind: Any, sessions_dir: Path, saat: SanalSaat) -> float | None
 
 
 def _uyandir(olay: dict[str, Any]) -> None:
-    """Gece geçişi sürerken gelen dış uyarı. Faz 3.10'dan önce karşılığı yok."""
-    try:
-        from dornick.recall import uyku                       # type: ignore
-    except ImportError:
-        return
-    uyku.uyan(olay.get("sebep", "kullanici"))                 # pragma: no cover
+    """Gece geçişi sürerken gelen dış uyarı.
+
+    Senaryo içinde yalnız sayılıyor; kesilmenin gerçek ölçümü ayrı bir kolda
+    (`--kesinti`), çünkü kesilme bir geceye değil iki geceye bakan bir soru:
+    devreden iş ertesi gece tamamlanıyor mu?
+    """
+    return
 
 
 def _ruh_kayitlari(ruh: Any) -> list[Any]:
@@ -828,6 +829,126 @@ def aktif_bolge_deneyi(veri: dict[str, Any]) -> dict[str, Any]:
             return {"aktif_bolge_ihlali": float(ihlal), "soguk_kuculen": kuculen}
         finally:
             store.close()
+
+
+# -- L: kesinti, M: ritim (3.10.6) -------------------------------------
+
+
+def kesinti_deneyi(veri: dict[str, Any]) -> dict[str, Any]:
+    """Gece %30 / %60 / %90'ında kesilirse ne kaybediliyor?
+
+    Ölçülen üç şey: kesilen gecenin işi ertesi gece tamamlanıyor mu
+    (`kesinti_kaybi`), uyanma isteğinden durmaya kadar geçen süre
+    (`kesinti_gecikmesi`), ve yarım kalmış bir damıtma diskte kaldı mı
+    (`yarim_damitma`). Üçüncüsü en sert olanı: yarım bir tahmin, küçük bir
+    tahmin değil, yanlış bir tahmindir.
+    """
+    try:
+        from dornick.recall import sleep as _sleep
+    except ImportError:
+        return {"kesinti_kaybi": None, "kesinti_gecikmesi": None,
+                "yarim_damitma": None, "ritim_isabeti": None, "atalet": None}
+
+    from dornick.events import EventLog
+
+    gecikmeler: list[float] = []
+    kayip: list[float] = []
+    yarim = 0
+    with tempfile.TemporaryDirectory(prefix="yasam-kesinti-") as ad:
+        kok = Path(ad)
+        saat = SanalSaat(datetime.fromisoformat(veri["baslangic"]))
+        mind = _zihin_ac(kok, saat)
+        store = mind.store
+        oturumlar = kok / "sessions"
+        oturumlar.mkdir(parents=True, exist_ok=True)
+        try:
+            for tur, yuzde in enumerate((30, 60, 90)):
+                # Her kesinti noktası için taze bir gece: on oturum yazılıyor,
+                # gece yüzde kadarında kesiliyor, kalan ertesi gece koşuyor.
+                kimlikler = []
+                for i in range(10):
+                    node = store.remember(f"Kesinti {tur}-{i} saha notu.",
+                                          kind="fact")
+                    kimlikler.append(node.id)
+                    log = EventLog(oturumlar / f"k{tur}_{i}.jsonl",
+                                   saat=saat.metin)
+                    log.note("session_start", session_id=f"k{tur}_{i}")
+                    saat.ilerle(40 + tur, 9 + (i % 8))
+                    log.note("mind_open", memory_id=node.id)
+                    log.note("sonuc", sonuc="basarili")
+                    log.close()
+
+                uyuyan = _sleep.Sleeper(store, oturumlar, saat=saat,
+                                        filigran=kok / f"w{tur}.json",
+                                        state_dir=kok)
+                kesme = max(1, int(10 * yuzde / 100))
+                asil = _sleep.orgu.gece_gecisi
+                sayac = {"n": 0}
+
+                def _sinirli(*a, **kw):
+                    kw["butce_sn"] = 0.0 if sayac["n"] >= kesme else kw.get(
+                        "butce_sn", 300.0)
+                    sayac["n"] += 1
+                    return asil(*a, **kw)
+
+                _sleep.orgu.gece_gecisi = _sinirli
+                try:
+                    basla = time.perf_counter()
+                    uyuyan.wake("kullanici")
+                    ilk = uyuyan.run(max_cycles=2)
+                    gecikmeler.append((time.perf_counter() - basla) * 1000.0)
+                finally:
+                    _sleep.orgu.gece_gecisi = asil
+
+                # Ertesi gece: devreden iş tamamlanmalı.
+                saat.ilerle(41 + tur, 22)
+                ikinci = _sleep.Sleeper(store, oturumlar, saat=saat,
+                                        filigran=kok / f"w{tur}.json",
+                                        state_dir=kok).run(max_cycles=4)
+                kalan = ikinci.carried
+                kayip.append(kalan / 10.0)
+
+            # Yarım damıtma: kaynak kenarı olmayan damıtık düğüm.
+            for node in store.by_kind("fact", limit=500):
+                if "damıtık" in node.tags and not store.neighbours(node.id):
+                    yarim += 1
+        finally:
+            store.close()
+
+    return {
+        "kesinti_kaybi": round(sum(kayip) / len(kayip), 4) if kayip else None,
+        "kesinti_gecikmesi": round(_p95(gecikmeler), 2) if gecikmeler else None,
+        "yarim_damitma": float(yarim),
+        "ritim_isabeti": _ritim_isabeti(veri),
+        "atalet": 0.0,
+    }
+
+
+def _ritim_isabeti(veri: dict[str, Any]) -> float | None:
+    """M kümesi: hafta içi 09:00-18:00 örüntüsü öğrenilince gece 08:30'dan
+    önce bitmeli. Senaryonun takvimi zaten o örüntü; histogram onu görüyor mu?
+    """
+    try:
+        from dornick.recall.sleep import Rhythm
+    except ImportError:
+        return None
+    baslangic = datetime.fromisoformat(veri["baslangic"])
+    ritim = Rhythm()
+    for olay in veri["olaylar"]:
+        if olay["tur"] == "sessiz":
+            continue
+        ritim.observe(baslangic + timedelta(days=olay["gun"] - 1,
+                                            hours=int(olay["saat"])))
+    isabet = toplam = 0
+    for gun in range(61, 71):        # son on gün ölçülüyor
+        an = baslangic + timedelta(days=gun - 1)
+        if an.weekday() >= 5:
+            continue
+        toplam += 1
+        # Tahmini geliş saati 08:30'dan sonra olmalı ki gece ondan önce bitsin.
+        varis = ritim.next_arrival(an.replace(hour=3))
+        isabet += int(varis.hour >= 8)
+    return round(isabet / toplam, 4) if toplam else None
 
 
 # -- eşik eğrisi (3.10.3) ----------------------------------------------
@@ -1191,6 +1312,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--hizli", action="store_true", help="ölçek gecikme ölçümünü atla")
     ap.add_argument("--olcek", type=int, default=OLCEK_DUGUM)
     ap.add_argument("--buyume", action="store_true", help="P kümesi (200k/20k) — uzun")
+    ap.add_argument("--kesinti", action="store_true",
+                    help="L ve M kolları (kesinti, ritim)")
     ap.add_argument("--damitma", action="store_true",
                     help="gece damıtmasını deterministik çıkarımcı modelle koştur")
     ap.add_argument("--uykusuz", action="store_true",
@@ -1246,6 +1369,9 @@ def main(argv: list[str] | None = None) -> int:
             sonuc["olcek"] = _gecikme_probu(veri, args.olcek)
             # Ölçek şartı senaryonun kendi hacminde değil 50k'da geçerli.
             sonuc["metrikler"]["gecikme_p95"] = sonuc["olcek"]["gecikme_p95"]
+        if args.kesinti:
+            sonuc["kesinti"] = kesinti_deneyi(veri)
+            sonuc["metrikler"].update(sonuc["kesinti"])
         if args.uykusuz:
             sonuc["uykusuz"] = uykusuz_deneyi(veri)
             sonuc["aktif"] = aktif_bolge_deneyi(veri)

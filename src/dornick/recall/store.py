@@ -636,6 +636,44 @@ class RecallStore:
             self._db.commit()
         return int(kucult), int(silinen)
 
+    def strengthening(self) -> float:
+        """Küçültülmemiş güçlenme: toplam kenar ağırlığı / düğüm.
+
+        Uyku basıncının ana terimi (SHY). Eşik bu büyüklüğe karşı ölçüldü
+        (bkz. docs/charts/basinc-bozulma.md); aynı büyüklük olmasaydı eşik
+        başka bir şeyin eşiği olurdu.
+        """
+        with self._lock:
+            toplam = self._db.execute(
+                "SELECT COALESCE(SUM(weight), 0) FROM link").fetchone()[0]
+            dugum = self._db.execute(
+                "SELECT COUNT(*) FROM node WHERE deleted=0").fetchone()[0]
+        return round(float(toplam) / max(int(dugum), 1), 4)
+
+    def checkpoint(self) -> int:
+        """WAL'ı tam kapatır. Yazar yokken yapılır — yani yalnız uykuda."""
+        with self._lock:
+            self._db.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+            self._db.commit()
+        try:
+            return (self.path.parent / f"{self.path.name}-wal").stat().st_size
+        except OSError:
+            return 0
+
+    def optimize_fts(self) -> bool:
+        """FTS b-tree birleştirme: I/O yoğun, uyanıkken yapılmamalı."""
+        with self._lock:
+            self._db.execute(
+                "INSERT INTO node_fts(node_fts) VALUES('optimize')")
+            self._db.commit()
+        return True
+
+    def vacuum(self) -> bool:
+        """Özel kilit ister; canlı bir oturumun altında imkânsız."""
+        with self._lock:
+            self._db.execute("VACUUM")
+        return True
+
     def kenar_guncelle(self, src: str, dst: str, *, weight: float | None = None,
                        reason: str | None = None) -> bool:
         """Var olan bir kenarın ağırlığını ya da gerekçesini ÜSTÜNE yazar.
