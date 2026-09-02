@@ -323,11 +323,32 @@ class Mind:
         return _from_node(node, deleted=True)
 
     def memories(self, kind: str | None = None) -> list[Memory]:
+        """Kayıtlar, en yeniden eskiye. Listeleme ve arayüz için.
+
+        Ruh bu sırayı KULLANMIYOR (bkz. `_canli`): bir liste kullanıcıya
+        kronolojik gösterilir, ama sistem promptuna hangi sekiz kaydın
+        gireceği tazelikle değil canlılıkla seçilir.
+        """
         kinds = [kind] if kind else list(MEMORY_KINDS)
         out: list[Memory] = []
         for k in kinds:
             out.extend(_from_node(n) for n in self.store.by_kind(k, limit=200))
         return sorted(out, key=lambda m: m.ts, reverse=True)
+
+    def _canli(self, kind: str, limit: int) -> list[Memory]:
+        """Bir türün en canlı kayıtları — ruhun seçtiği sıra.
+
+        `by_kind` artık aktivasyona göre sıralıyor; buradaki tek iş o sırayı
+        BOZMAMAK. Eski hal `memories()` üzerinden geçiyordu ve o, listeleme
+        için tazeliğe göre yeniden sıralıyordu — sonuçta ruh, ne kadar
+        kullanıldığına bakmaksızın en son yazılan sekiz kaydı taşıyordu.
+        """
+        from ..recall import anahtar
+
+        if not anahtar.AKTIF.aktivasyon:
+            # Ablation: Faz 1 öncesi yol — listeleme sırası (tazelik).
+            return self.memories(kind)[:limit]
+        return [_from_node(n) for n in self.store.by_kind(kind, limit=limit)]
 
     def recall(self, query: str, *, kind: str | None = None, limit: int = 8) -> list[Scored]:
         """İndeksten tohumlanır, bağlar üzerinden yayılır.
@@ -402,11 +423,11 @@ class Mind:
         """
         return Soul(
             persona=persona.strip(),
-            user=self.memories("user")[:limit],
-            preferences=self.memories("preference")[:limit],
-            lessons=self.memories("lesson")[:limit],
-            voice=self.memories("voice")[:limit],
-            procedures=self.memories("procedure")[:limit],
+            user=self._canli("user", limit),
+            preferences=self._canli("preference", limit),
+            lessons=self._canli("lesson", limit),
+            voice=self._canli("voice", limit),
+            procedures=self._canli("procedure", limit),
             goals=self.goals(),
             sessions=self._session_count(),
             first_seen=self._first_seen(),

@@ -30,8 +30,8 @@ from pathlib import Path
 from typing import Any, Iterable, Sequence
 from uuid import uuid4
 
-from . import vector
-from .saat import Saat, damga, duvar_saati
+from . import aktivasyon, anahtar, vector
+from .saat import Saat, coz, damga, duvar_saati
 
 KINDS = ("fact", "preference", "lesson", "procedure", "user", "voice", "goal", "episode")
 
@@ -66,7 +66,11 @@ CREATE TABLE IF NOT EXISTS node (
     last_used TEXT,
     uses      INTEGER NOT NULL DEFAULT 0,
     deleted   INTEGER NOT NULL DEFAULT 0,
-    sig       BLOB
+    sig       BLOB,
+    -- Kullanım geçmişi: son 20 kullanımın ISO damgası, JSON dizi. Yazım anı
+    -- ilk kullanımdır. `uses`/`last_used` korunuyor (arayüz okuyor) ama
+    -- aktivasyon bu sütundan hesaplanıyor — sayaç zamanı bilmiyor.
+    kullanimlar TEXT NOT NULL DEFAULT '[]'
 );
 CREATE INDEX IF NOT EXISTS node_kind ON node(kind) WHERE deleted = 0;
 
@@ -117,6 +121,10 @@ class Node:
     created: str = ""
     last_used: str | None = None
     uses: int = 0
+    # Taban seviyesi aktivasyon (ACT-R B). Okuma anında hesaplanıyor: bir
+    # izin "şu an ne kadar canlı" olduğu diskte durabilecek bir sayı değil,
+    # zamanın fonksiyonu.
+    aktivasyon: float = aktivasyon.TABAN_YOK
 
     def headline(self) -> str:
         """Modele önce bu gider: kimlik ve tek satır. Gövde açılınca gelir."""
@@ -194,6 +202,65 @@ class RecallStore:
         have = {row["name"] for row in self._db.execute("PRAGMA table_info(node)")}
         if "sig" not in have:
             self._db.execute("ALTER TABLE node ADD COLUMN sig BLOB")
+        if "kullanimlar" not in have:
+            self._db.execute(
+                "ALTER TABLE node ADD COLUMN kullanimlar TEXT NOT NULL DEFAULT '[]'")
+            # Sütun boş kalsa da okuma tarafı created/last_used/uses'tan
+            # geriye dönük üretiyor (aktivasyon.coz_kullanimlar); burada bir
+            # kez diske yazmak o hesabı her okumadan kaldırıyor.
+            self._kullanimlari_doldur()
+
+    def _kullanimlari_doldur(self) -> None:
+        """`kullanimlar` sütunu yokken yazılmış kayıtları kabaca doldurur.
+
+        Bu olmadan sütun eklendiği anda kullanıcının yıllarca biriktirdiği
+        bütün hatıralar "hiç kullanılmamış" sayılır ve bellek tek bir sürüm
+        yükseltmesinde sıfırlanmış gibi davranırdı.
+        """
+        import json as _json
+
+        satirlar = []
+        for row in self._db.execute(
+                "SELECT id, created, last_used, uses FROM node"
+                " WHERE kullanimlar IN ('', '[]')"):
+            gecmis = aktivasyon.coz_kullanimlar(
+                "", created=row["created"], last_used=row["last_used"],
+                uses=int(row["uses"] or 0))
+            if not gecmis:
+                continue
+            satirlar.append((
+                _json.dumps([an.isoformat(timespec="milliseconds") for an in gecmis],
+                            ensure_ascii=False),
+                row["id"]))
+        if satirlar:
+            self._db.executemany(
+                "UPDATE node SET kullanimlar=? WHERE id=?", satirlar)
+
+    def _dugum(self, row: sqlite3.Row) -> Node:
+        """Satırı düğüme çevirir ve o anki aktivasyonunu hesaplar."""
+        return _to_node(row, seviye=self._taban_seviyesi(row))
+
+    def _taban_seviyesi(self, row: sqlite3.Row) -> float:
+        gecmis = aktivasyon.coz_kullanimlar(
+            _alan(row, "kullanimlar"),
+            created=_alan(row, "created"),
+            last_used=_alan(row, "last_used"),
+            uses=int(_alan(row, "uses") or 0),
+        )
+        return aktivasyon.taban_aktivasyon(gecmis, self._saat())
+
+    def kullanimlar(self, node_id: str) -> list:
+        """Bir kaydın kullanım geçmişi. İçgözlem ve ölçüm için."""
+        with self._lock:
+            row = self._db.execute(
+                "SELECT created, last_used, uses, kullanimlar FROM node WHERE id=?",
+                (node_id,),
+            ).fetchone()
+        if row is None:
+            return []
+        return aktivasyon.coz_kullanimlar(
+            row["kullanimlar"], created=row["created"],
+            last_used=row["last_used"], uses=int(row["uses"] or 0))
 
     @property
     def index(self) -> vector.Index:
@@ -285,10 +352,11 @@ class RecallStore:
         sign = vector.signature(f"{node.title} {node.body} {tag_text}")
         with self._lock:
             self._db.execute(
-                "INSERT INTO node(id, kind, title, body, tags, session, created, sig)"
-                " VALUES (?,?,?,?,?,?,?,?)",
+                "INSERT INTO node(id, kind, title, body, tags, session, created,"
+                " sig, kullanimlar) VALUES (?,?,?,?,?,?,?,?,?)",
                 (node.id, node.kind, node.title, node.body,
-                 tag_text, node.session, node.created, vector.to_blob(sign)),
+                 tag_text, node.session, node.created, vector.to_blob(sign),
+                 aktivasyon.ilk_damga(node.created)),
             )
             for other in links:
                 self._link(node.id, other, 1.0, "birlikte kaydedildi")
@@ -356,7 +424,8 @@ class RecallStore:
             try:
                 cols = [r["name"] for r in self._db.execute("PRAGMA incoming.table_info(node)")]
                 known = ["id", "kind", "title", "body", "tags", "session",
-                         "created", "last_used", "uses", "deleted", "sig"]
+                         "created", "last_used", "uses", "deleted", "sig",
+                         "kullanimlar"]
                 common = ",".join(c for c in known if c in cols)
                 if common:
                     self._db.execute(
@@ -433,6 +502,11 @@ class RecallStore:
 
         Kullanılan hatıra güçlenir; kullanılmayan geride kalır. Sıralama
         buna bakıyor.
+
+        Üç alan birlikte güncelleniyor: `uses` ve `last_used` arayüz için
+        (ve eski belleklerin geriye dönük doldurulması için), `kullanimlar`
+        aktivasyon için. Sayaç kaç kez olduğunu bilir, damga ne zaman
+        olduğunu — hatırlamanın ihtiyacı ikincisi.
         """
         with self._lock:
             row = self._db.execute(
@@ -440,12 +514,16 @@ class RecallStore:
             ).fetchone()
             if row is None:
                 return None
+            simdi = self._simdi()
+            gecmis = aktivasyon.coz_kullanimlar(
+                _alan(row, "kullanimlar"), created=row["created"],
+                last_used=row["last_used"], uses=int(row["uses"] or 0))
             self._db.execute(
-                "UPDATE node SET uses=uses+1, last_used=? WHERE id=?",
-                (self._simdi(), node_id),
+                "UPDATE node SET uses=uses+1, last_used=?, kullanimlar=? WHERE id=?",
+                (simdi, aktivasyon.damgala(gecmis, simdi), node_id),
             )
             self._db.commit()
-        return _to_node(row)
+        return self._dugum(row)
 
     def peek(self, node_id: str) -> Node | None:
         """Güçlendirmeden bakar. İç işleyiş için; kullanım sayılmaz."""
@@ -453,7 +531,7 @@ class RecallStore:
             row = self._db.execute(
                 "SELECT * FROM node WHERE id=? AND deleted=0", (node_id,)
             ).fetchone()
-        return _to_node(row) if row else None
+        return self._dugum(row) if row else None
 
     def neighbours(self, node_id: str) -> list[tuple[Node, float]]:
         with self._lock:
@@ -462,7 +540,7 @@ class RecallStore:
                 " WHERE l.src=? AND n.deleted=0 ORDER BY l.weight DESC",
                 (node_id,),
             ).fetchall()
-        return [(_to_node(r), float(r["weight"])) for r in rows]
+        return [(self._dugum(r), float(r["weight"])) for r in rows]
 
     def links(self, limit: int = 4000) -> list[tuple[str, str, float]]:
         """Tum baglar. Arayuz agi bununla ciziyor.
@@ -495,7 +573,7 @@ class RecallStore:
                 "SELECT * FROM node WHERE deleted=0 ORDER BY created DESC, rowid DESC LIMIT ?",
                 (limit,),
             ).fetchall()
-        return [_to_node(r) for r in rows]
+        return [self._dugum(r) for r in rows]
 
     def by_kind_any(self, limit: int = 500) -> list[Node]:
         """Silinmemiş kayıtlar, en yeniden eskiye. Etiket taraması için."""
@@ -504,16 +582,44 @@ class RecallStore:
                 "SELECT * FROM node WHERE deleted=0 ORDER BY created DESC LIMIT ?",
                 (limit,),
             ).fetchall()
-        return [_to_node(r) for r in rows]
+        return [self._dugum(r) for r in rows]
 
     def by_kind(self, kind: str, limit: int = 50) -> list[Node]:
+        """Bir türün kayıtları, en canlı izden en soluğuna.
+
+        Sıralama SQL'de yapılamıyor: aktivasyon zamanın fonksiyonu, diskte
+        duran bir sayı değil. Bu yüzden aday kümesi SQL'de daraltılıp
+        (kullanım ve tazelik, ikisi de aktivasyonla aynı yöne bakar)
+        sıralama Python'da yapılıyor. Aday kümesi istenenin katı kadar
+        geniş tutuluyor ki ön eleme gerçekten canlı bir izi düşürmesin.
+
+        Eski hal `ORDER BY uses DESC` idi ve zamanı bilmiyordu: yıllar önce
+        çok kullanılmış bir kayıt, dünkü düzeltmeyi ruhun dışında
+        tutabiliyordu.
+        """
+        if not anahtar.AKTIF.aktivasyon:
+            # Ablation: mekanik kapalıyken eski SQL sırası (kullanım, sonra
+            # tazelik) olduğu gibi dönüyor.
+            with self._lock:
+                rows = self._db.execute(
+                    "SELECT * FROM node WHERE deleted=0 AND kind=?"
+                    " ORDER BY uses DESC, created DESC LIMIT ?",
+                    (kind, limit),
+                ).fetchall()
+            return [self._dugum(r) for r in rows]
+
+        aday = max(limit * 4, 50)
         with self._lock:
             rows = self._db.execute(
                 "SELECT * FROM node WHERE deleted=0 AND kind=?"
                 " ORDER BY uses DESC, created DESC LIMIT ?",
-                (kind, limit),
+                (kind, aday),
             ).fetchall()
-        return [_to_node(r) for r in rows]
+        dugumler = [self._dugum(r) for r in rows]
+        # Kararlı sıralama: eşit aktivasyonda SQL'in verdiği sıra (kullanım,
+        # sonra tazelik) korunuyor.
+        dugumler.sort(key=lambda n: -n.aktivasyon)
+        return dugumler[:limit]
 
     # -- hatırlama -----------------------------------------------------
 
@@ -554,7 +660,11 @@ class RecallStore:
             nxt: list[tuple[str, float, str]] = []
             for node_id, strength, _kind in frontier:
                 for neighbour, weight in self.neighbours(node_id):
-                    spread = strength * weight * HOP_DECAY
+                    # Unutulmuş düğüm çağrışım yolunu iletmez: aktivasyonu
+                    # sönmüş bir kaydın üzerinden geçen yol, konudan
+                    # uzaklaşmanın en sessiz yoluydu.
+                    spread = (strength * weight * HOP_DECAY
+                              * aktivasyon.yayilma_carpani(neighbour.aktivasyon))
                     if spread < MIN_ACTIVATION or spread <= activation.get(neighbour.id, 0.0):
                         continue
                     activation[neighbour.id] = spread
@@ -621,7 +731,8 @@ class RecallStore:
             return []
         with self._lock:
             rows = self._db.execute(
-                "SELECT n.id, n.kind, n.uses, bm25(node_fts) AS rank"
+                "SELECT n.id, n.kind, n.uses, n.created, n.last_used,"
+                " n.kullanimlar, bm25(node_fts) AS rank"
                 " FROM node_fts JOIN node n ON n.rowid = node_fts.rowid"
                 " WHERE node_fts MATCH ? AND n.deleted=0"
                 " ORDER BY rank LIMIT ?",
@@ -638,10 +749,13 @@ class RecallStore:
             # gücü ne olursa olsun — ve top1 boş/hafıza ayrımını yapamıyordu.
             strength = max(0.0, -float(row["rank"]))
             conf = strength / (1.0 + strength)
-            # Sık kullanılan iz biraz daha kolay uyanır (üretimde; eval'de
-            # uses=0 olduğundan etkisiz).
-            familiarity = min(0.15, 0.03 * int(row["uses"]))
-            out.append((row["id"], round(min(1.0, conf + familiarity), 4), row["kind"]))
+            # Canlı iz daha kolay uyanır. Eski hal `min(0.15, 0.03*uses)`
+            # idi: zamanı bilmeyen, doyan ve yalnızca EKLEYEN bir aşinalık
+            # payı. Yerine aktivasyon çarpanı geçti — en unutulmuş kayıt
+            # bile skorunun yarısını koruyor (bkz. aktivasyon.TOHUM_TABANI),
+            # yani geride kalıyor ama aramadan düşmüyor.
+            carpan = aktivasyon.tohum_carpani(self._taban_seviyesi(row))
+            out.append((row["id"], round(min(1.0, conf * carpan), 4), row["kind"]))
         return out
 
     def _seed_signature(self, query: str, limit: int) -> list[tuple[str, float]]:
@@ -649,7 +763,28 @@ class RecallStore:
         # Indeks ozelligi kendi kilidini aliyor; kilit yeniden girilebilir
         # degil, bu yuzden buraya kilit disinda dokunulmali.
         index = self.index
-        return index.search(vector.signature(query), limit) if len(index) else []
+        if not len(index):
+            return []
+        bulunan = index.search(vector.signature(query), limit)
+        if not bulunan:
+            return []
+        # İmza kanalı yalnız kimlik ve benzerlik döndürüyor; aktivasyon için
+        # tek bir toplu sorgu yetiyor (aday sayısı `limit` kadar, onlarca).
+        seviye = self._taban_seviyeleri([n for n, _ in bulunan])
+        return [(n, round(p * aktivasyon.tohum_carpani(seviye.get(n, aktivasyon.TABAN_YOK)), 4))
+                for n, p in bulunan]
+
+    def _taban_seviyeleri(self, node_ids: Sequence[str]) -> dict[str, float]:
+        if not node_ids:
+            return {}
+        placeholders = ",".join("?" * len(node_ids))
+        with self._lock:
+            rows = self._db.execute(
+                "SELECT id, created, last_used, uses, kullanimlar FROM node"
+                f" WHERE id IN ({placeholders}) AND deleted=0",
+                tuple(node_ids),
+            ).fetchall()
+        return {row["id"]: self._taban_seviyesi(row) for row in rows}
 
     def _kinds_of(self, node_ids: Sequence[str]) -> dict[str, str]:
         placeholders = ",".join("?" * len(node_ids))
@@ -701,8 +836,21 @@ def _first_line(text: str) -> str:
     return next((line.strip() for line in text.splitlines() if line.strip()), "(başlıksız)")
 
 
-def _to_node(row: sqlite3.Row) -> Node:
+def _alan(row: sqlite3.Row, ad: str):
+    """Satırda olmayabilecek bir sütunu okur.
+
+    Eski bir bellek göç edilmeden okunabilir ya da bir sorgu sütunu
+    seçmemiş olabilir; yokluk hata değil, bilgi eksikliği.
+    """
+    try:
+        return row[ad]
+    except (IndexError, KeyError):
+        return None
+
+
+def _to_node(row: sqlite3.Row, *, seviye: float = aktivasyon.TABAN_YOK) -> Node:
     return Node(
+        aktivasyon=seviye,
         id=row["id"],
         kind=row["kind"],
         title=row["title"],

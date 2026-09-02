@@ -93,12 +93,80 @@ Her faz bu satırı da koşuyor; tek-tur kalitesi bozulmamalı.
 
 ---
 
-## Faz 1 — Zaman bazlı aktivasyon · sırada
+## Faz 1 — Zaman bazlı aktivasyon ⚠️ kısmen kabul (1/5 kriter kaldı)
 
-Kabul: `bayat_ruh` ≥ %50 azalma (→ ≤ 2.78), `taze_ruh` ≥ 0.8,
-`prime_precision` düşmez, `tuzak_sessizlik` düşmez, `gecikme_p95` bütçede.
+**Ne geldi**
 
-## Faz 2 — Supersede · bekliyor
+| Dosya | Ne |
+|---|---|
+| `src/dornick/recall/aktivasyon.py` | ACT-R taban seviyesi: `B = ln(Σ t_k^-d)` |
+| `recall/store.py` | `kullanimlar` sütunu, `Node.aktivasyon`, tohumlama ve yayılma çarpanı, aktivasyona göre `by_kind` |
+| `mind/store.py` | `Mind._canli` — ruh artık tazelik değil canlılık sırası kullanıyor |
+| `tests/test_aktivasyon.py` | formül + depoya bağlanışı + göç + ablation |
+
+Şema: `ALTER TABLE node ADD COLUMN kullanimlar TEXT NOT NULL DEFAULT '[]'`.
+Göç, sütun eklendiği anda `created` + `last_used`×`uses` ile kabaca
+dolduruyor; okuma tarafı sütun boş olsa da aynı hesabı yapıyor, yani
+`merge_from` ile gelen yabancı satırlar da sıfırdan başlamıyor.
+
+`_seed_literal`'daki `familiarity = min(0.15, 0.03*uses)` **kaldırıldı** —
+zamanı bilmeyen, doyan ve yalnızca ekleyen bir aşinalık payıydı. Yerine
+`conf × tohum_carpani(B)` geçti; en unutulmuş kayıt bile skorunun yarısını
+koruyor (`TOHUM_TABANI = 0.5`), yani geride kalıyor ama aramadan düşmüyor.
+
+### Kalibrasyon (sihirli sayı yok)
+
+`OLCEK` ∈ {0.75, 1.0, 1.5, 2.0, 3.0, 5.0} ve `BOZUNMA` ∈ {0.3, 0.5, 0.7}
+yaşam bench'inde tarandı. Sonuç: **metrikler bu aralıkta neredeyse hiç
+oynamıyor** (precision 0.295–0.300, recall 0.958–0.972, kalan metrikler
+birebir aynı). Uç değerler (0.75 ve 5.0) hafifçe kötü; ortadaki plato
+1.0–3.0. Seçim `OLCEK = 2.0`, `BOZUNMA = 0.5` (ACT-R literatürünün standart
+bozunma üssü, bu depoya göre ayarlanmadı). Kalibrasyonun kendi bulgusu şu:
+**sonuçlar bu iki sabite karşı duyarsız**; mekaniğin faydası sıralamanın
+zamanı bilmesinden geliyor, sigmoidin dikliğinden değil.
+
+### Ölçüm (`docs/charts/yasam-f1.md`)
+
+| Metrik | Taban | Faz 1 | Ablation (kapalı) | Kabul | Durum |
+|---|---|---|---|---|---|
+| `bayat_ruh` | 5.567 | **3.333** | 5.567 | ≤ 2.78 (−%50) | ❌ −%40.1 |
+| `taze_ruh` | 1.000 | 0.988 | 1.000 | ≥ 0.80 | ✅ |
+| `prime_precision` | 0.287 | **0.300** | 0.288 | düşmez | ✅ |
+| `tuzak_sessizlik` | 0.500 | 0.500 | 0.500 | düşmez | ✅ |
+| `gecikme_p95` (50k) | 10.32 ms | 10.65 ms | — | ≤ 20 ms | ✅ |
+| `prime_recall` | 0.944 | 0.972 | 0.944 | — | ✅ |
+| `yasak_sizinti` | 50 | 48 | 50 | — | ✅ |
+
+Ablation sütunu mekaniğin gerçekten iş yaptığını gösteriyor: kapatıldığında
+her metrik tabana **birebir** dönüyor.
+
+`scale_bench.py` gerileme kapısı: `current` recall 0.78 → 0.78,
+precision 0.63 → **0.64**, silence 0.62 → 0.62, tok/query 71.8 → **71.2**.
+Tek-tur kalitesi bozulmadı, hafifçe iyileşti.
+
+### Neden `bayat_ruh` hedefi tutmadı — ve neden bu bir parametre sorunu değil
+
+İki tur ayar harcandı (parametre taraması + ablation'ın sadık hale
+getirilmesi). Kalan bayatlığın **tamamı `preference` türünde**:
+
+* `procedure` tarafında bayatlık **sıfıra indi** — D yordamları düzenli
+  kullanıldığı için aktivasyonları yüksek, ruhun sekiz yuvasını onlar
+  dolduruyor ve zincirlerin ara sürümleri dışarıda kalıyor. Mekanik burada
+  tam olarak vaat ettiği işi yapıyor.
+* `preference` tarafında hiç pekiştirme sinyali yok: kullanıcı tercihini
+  söylüyor, kimse o kaydı açmıyor. Pekiştirme yoksa aktivasyon sırası
+  tazelik sırasına eşitleniyor ve bir zincirin 3. sürümü ile geçerli 4.
+  sürümü **birbirinden ayırt edilemez hale geliyor** — ikisi de yeni, ikisi
+  de kullanılmamış. Aradaki farkı bilen tek şey "bu kayıt şunun yerini
+  aldı" bilgisi, yani supersede.
+
+Yani kalan %10, Faz 1'in erişemeyeceği bir yerde duruyor; Faz 2'nin kabul
+kriteri zaten `bayat_ruh = 0`. Bu bir başarısızlık değil, iş bölümünün
+ölçülmüş hali — ama kriter kriterdir ve **geçilmedi**: kararı kullanıcı
+verecek.
+
+## Faz 2 — Supersede · Faz 1 kararı bekleniyor
+
 ## Faz 3 — Gece konsolidasyonu · bekliyor
 ## Faz 4 — Kodlama gücü · bekliyor
 ## Faz 5 — Bağlam bonusu · bekliyor
