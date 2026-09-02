@@ -241,14 +241,41 @@ def ekle(kullanimlar: Iterable[Kullanim], an: datetime, *, w: float = 1.0,
     return kodla([*kullanimlar, Kullanim(an, float(w), etiket)])
 
 
-def ilk_damga(created: str) -> str:
+# Faz 4 — kodlama gücü. Her kayıt aynı ağırlıkla doğuyordu: "aynı şeyi beş
+# kez kaydettim" dendiğinde beşinci kayıt da tam güçteydi. Güç artık
+# sürprizden geliyor — bilinene benzeyen zayıf, yeni olan güçlü kodlanıyor.
+# Taban asla sıfır değil: bilinen bir şeyi tekrar duymak da bir bilgidir.
+KODLAMA_TABANI = 0.4
+KODLAMA_ARALIGI = 0.6
+# Hatadan öğrenme ağır basar: aynı gövde `lesson` olarak daha güçlü kodlanır.
+DERS_CARPANI = 1.5
+
+
+def kodlama_gucu(surpriz: float, *, kind: str = "fact",
+                 supersedes: str = "") -> float:
+    """Yeni bir kaydın doğum ağırlığı.
+
+    `supersedes` tam güç: bir düzeltme, düzelttiği şeye ne kadar benzerse
+    benzesin zayıf kodlanmamalı — zaten benzediği için düzeltmedir.
+    """
+    if not anahtar.AKTIF.kodlama:
+        return 1.0
+    if supersedes:
+        return 1.0
+    guc = KODLAMA_TABANI + KODLAMA_ARALIGI * max(0.0, min(1.0, surpriz))
+    if kind == "lesson":
+        guc = min(1.0, guc * DERS_CARPANI)
+    return round(guc, 4)
+
+
+def ilk_damga(created: str, guc: float = 1.0) -> str:
     """Yeni kaydın kullanım geçmişi: yazım anı ilk kullanımdır.
 
-    Ağırlık 1.0 — Faz 4 bunu sürprizle (kodlama gücü) değiştirecek; alan
-    baştan o biçimde açılıyor ki o faz şema değiştirmesin.
+    Ağırlık kodlama gücü (Faz 4): `taban_aktivasyon` zaten ağırlıklı toplam
+    alıyor, o yüzden şema değişmiyor — yalnız ilk girdinin `w`si değişiyor.
     """
-    return json.dumps([{"t": created, "w": 1.0, "etiket": YAZILDI}],
-                      ensure_ascii=False)
+    return json.dumps([{"t": created, "w": round(float(guc), 4),
+                        "etiket": YAZILDI}], ensure_ascii=False)
 
 
 def sicil(kullanimlar: Sequence[Kullanim]) -> tuple[int, int]:

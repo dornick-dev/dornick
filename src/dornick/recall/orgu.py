@@ -318,9 +318,10 @@ def surpriz(store: Any, body: str, *, haric: str = "") -> float:
     `haric`: kaydın kendisi. Yazıldıktan sonra en yakın komşu kendisi olur
     ve her kayıt "hiç sürprizli değil" görünürdü — sessizce yanlış bir sıfır.
 
-    Faz 4 aynı hesabı yazım anında yapıp kodlama gücü olarak saklayacak;
-    gece o zaman saklanana bakacak. Şimdilik burada hesaplanıyor ki yakalama
-    mekaniği Faz 4'ü beklemesin.
+    Faz 4 aynı hesabı YAZIM ANINDA yapıp kodlama gücü olarak saklıyor
+    (`aktivasyon.kodlama_gucu`). Buradaki hesap o anın değil ŞU ANIN
+    sürprizi: gece, bugünün belleğine göre neyin sıradan olduğuna bakıyor.
+    İkisi bilerek ayrı.
     """
     try:
         komsular = store._seed(body[:400], 4)          # noqa: SLF001

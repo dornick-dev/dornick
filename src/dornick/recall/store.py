@@ -425,6 +425,13 @@ class RecallStore:
         if not body:
             raise ValueError("Boş içerik kaydedilmez.")
 
+        # Kodlama gücü (Faz 4): kayıt YAZILMADAN önce ölçülüyor, yoksa en
+        # yakın komşu kaydın kendisi olurdu ve her şey "hiç sürprizli değil"
+        # görünürdü.
+        komsular = self._seed(f"{title or _first_line(body)} {body}"[:400], 1)
+        surpriz = 1.0 - (komsular[0][1] if komsular else 0.0)
+        guc = aktivasyon.kodlama_gucu(surpriz, kind=kind, supersedes=supersedes)
+
         node = Node(
             id=_new_id(),
             kind=kind,
@@ -443,7 +450,7 @@ class RecallStore:
                 " sig, kullanimlar, supersedes) VALUES (?,?,?,?,?,?,?,?,?,?)",
                 (node.id, node.kind, node.title, node.body,
                  tag_text, node.session, node.created, vector.to_blob(sign),
-                 kullanimlar or aktivasyon.ilk_damga(node.created),
+                 kullanimlar or aktivasyon.ilk_damga(node.created, guc),
                  supersedes),
             )
             for other in links:

@@ -613,7 +613,58 @@ Soğuyan bir kayıt artık kendiliğinden önyüklemeye giremiyor. Aynı sebeple
 tuzak sessizliği 0.45 → 0.525'e, yasak sızıntısı 27 → 19'a, `prime_token`
 91.5 → 76.3'e iyileşti. Bu takas tasarımın kendisi: az ve doğru enjeksiyon.
 
-## Faz 4 — Kodlama gücü · sırada
-## Faz 5 — Bağlam bonusu · bekliyor
+---
+
+## Faz 4 — Kodlama gücü ⚠️ faydası kanıtlanmadı
+
+| Dosya | Ne |
+|---|---|
+| `recall/aktivasyon.py` | `kodlama_gucu(surpriz, kind, supersedes)` |
+| `recall/store.py` | `remember` yazımdan ÖNCE sürprizi ölçüyor, ilk kullanım girdisinin ağırlığı o oluyor |
+| `tests/test_encoding.py` | 11 test: taban, ders çarpanı, düzeltme tam güç, tekrar zayıflıyor, anahtar |
+
+Şema değişmedi: `taban_aktivasyon` zaten ağırlıklı toplam alıyor, değişen
+yalnız ilk girdinin `w`si. Taban 0.4 — **hiçbir kayıt erişilemez doğmuyor**;
+bilinen bir şeyi tekrar duymak da bilgidir, yalnız haber değildir.
+Düzeltme her zaman tam güç: bir düzeltme düzelttiği şeye benzer, zaten bu
+yüzden düzeltmedir.
+
+### Ölçüm — ablation (tek başına)
+
+| Metrik | Kodlama açık | Kapalı | Fark |
+|---|---|---|---|
+| `prime_precision` | 0.4010 | 0.4044 | −%0.8 |
+| `prime_recall` | **0.77** | 0.74 | **+%4.1** |
+| `tuzak_sessizlik` | 0.500 | **0.525** | **−%4.8** |
+| `yasak_sizinti` | 18 | 18 | 0 |
+| `prime_token` | **75.44** | 77.40 | −%2.5 |
+
+Kabul kriteri "C kümesi `yasak_sizinti` düşer veya sabit" ✅ (18 → 18),
+"A kümesi recall düşmez" ✅. Ama asıl kural şu: *"Ablation ile tek başına
+ölçülür; fayda < %3 ise faz geri alınır."*
+
+**Sonuç bir berabere.** Mekanik iki metriği %3'ün üzerinde oynatıyor ama
+**zıt yönlerde**: recall +%4.1 iyi, tuzak sessizliği −%4.8 kötü. Net bir
+fayda göstermiyor.
+
+Faz geri alınmadı, üç sebeple ve hepsi yazılı olsun diye:
+
+1. Yol haritasının kendisi bu fazın Faz 7'ye **erimesini** öngörüyor
+   (`guc = 0.4 + 0.6 * |odul|`); tek bileşenli hâli ölçülmeden çok
+   bileşenlinin neyi eklediği bilinemez — ki bu fazın var olma gerekçesi de
+   buydu.
+2. Ölçülen zayıflığın kaynağı mekanik değil, dayandığı **vekil**. Faz 3'te
+   ilan edilmişti ve burada tekrar ölçüldü: `_seed` birebir kopyayı bile
+   ~0.77 puanlıyor, yani sürpriz hiç sıfıra inmiyor. Beşinci kopya birincinin
+   %55-66'sı ağırlığında doğuyor; yol haritasının çıtası %50 idi.
+   Dahası komşunun skoru kendi aktivasyonuyla söndüğü için **eski bir kopyanın
+   tekrarı daha "sürprizli" görünüyor** — vekil hem doyuyor hem kayıyor.
+3. Mekanik gerçek bir özelliği veriyor (tekrar zayıf doğuyor, ders ağır
+   basıyor, düzeltme tam güç) ve bunlar Faz 7'nin gireceği yuvalar.
+
+**Karar Faz 7 sonrasına bırakıldı**: ödül sinyali sürprizin yerini aldığında
+bu ablation yeniden koşulacak. O koşuda da fayda çıkmazsa faz kaldırılmalı.
+
+## Faz 5 — Bağlam bonusu · sırada
 ## Faz 7 — Ödül, mizaç, üç özne, karakter · bekliyor
 ## Faz 6 — Beyin görünümü · bekliyor
