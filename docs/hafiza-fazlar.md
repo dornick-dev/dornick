@@ -380,8 +380,59 @@ Gecenin yazdığı ders gerçek bir kazanç ama ruhun sekiz yuvası için taze
 düzeltmeyle yarışıyor. Damıtma (Adım 6) ve sıcak/soğuk ayrımı (3.11) bu
 baskıyı azaltmalı; ikisi de sonraki PR'lar.
 
-## Faz 3.12 — Uyanık tekrar, mikro-uyku, yerel uyku · sırada
-## Faz 3 (Adım 6) — Damıtma · bekliyor
+---
+
+## Faz 3.12 — Uyanık tekrar, mikro-uyku, yerel uyku ✅ kabul
+
+Bu fazdan itibaren yeni modüller **İngilizce** yazılıyor (kullanıcı kararı);
+mevcut Türkçe kodun tamamı fazlar bittikten sonra tek geçişte çevrilecek.
+
+| Dosya | Ne |
+|---|---|
+| `src/dornick/recall/awake.py` | `on_result` (sonuç anında ters tekrar), `forward_replay` (artımlı, idempotent), `micro_sleep`, `local_sleep`, uyku borcu |
+| `recall/store.py` | `cold_nodes`, `shrink_edges_between` — küçültmeyi soğuk bölgeyle sınırlayan iki sorgu |
+| `recall/orgu.py` | uyanık koşmuş oturumun ters tekrarını gece atlıyor; ileri tekrar artımlı |
+| `loop.py` | araç hatasında uyanık ters tekrar tetikleniyor |
+| `tests/test_awake.py` | 16 test: aynı oturumda ders, çift sayım yok, idempotentlik, mikro-uyku küçültmüyor, yerel uyku aktif bölgeye dokunmuyor |
+
+**Değişmez, kodda:** küçültme yalnız öğrenmenin olmadığı yerde koşar. Gece
+uykusu bütün ağı küçültür; yerel uyku **yalnız** iki ucu da bir haftadır
+dokunulmamış kenarları; mikro-uyku hiç küçültmez. Bu, "bir mekanik neden
+uykuya bağlı" sorusunun tek gerçek cevabı ve `shrink_edges_between` onu
+SQL'de zorluyor, yorumda değil.
+
+### Ölçüm — `docs/charts/yasam-f312.md`
+
+| Kriter | Faz 3 | Faz 3.12 | Ablation | Kabul | |
+|---|---|---|---|---|---|
+| `ders_gecikmesi` (tur) | 59.8 | **1.0** | 50.0 | ≤ 1 | ✅ |
+| `tur_bloklama` p95 | yok | **9.2 ms** | 0.01 | ≤ 50 ms | ✅ |
+| `aktif_bolge_ihlali` | yok | **0** | — | 0 | ✅ |
+| `uykusuz_kayip` | yok | **1.143** | — | ≥ 0.80 | ✅ |
+| `uykusuz_sisme` | yok | **0.379** | — | ≤ 1.30 | ✅ |
+| `sorumluluk_dogrulugu` | 1.000 | **0.875** | 1.000 | ≥ 0.85 | ✅ |
+| `prime_precision` | 0.2781 | **0.2781** | 0.2781 | düşmez | ✅ |
+| `gomulme_recall` / `geri_donus_recall` | 1.00 | **1.00** | — | — | ✅ |
+
+Ablation (uyanık ters tekrar kapalı): `ders_gecikmesi` 1.0 → **50.0**, yani
+"geceye kadar". Mekanik tam olarak vaat ettiği işi yapıyor.
+
+`scale_bench`: precision 0.64, tok/query 71.3 — gerileme yok.
+
+### Beklenmeyen bulgu: uykusuz makine şişmiyor, **kuruyor**
+
+Yol haritası uykusuz kolun kenar sayısının artmasını bekliyordu
+(`uykusuz_sisme` ≤ 1.3, yani "şişme sınırlı kalsın"). Ölçüm tersini söyledi:
+**0.379** — uykusuz kolda kenar sayısı uyuyanın üçte biri. Sebep basit ve
+tasarımın kendisinde: bu üründe kenarların çoğunu **gece üretiyor** (yeniden
+örgü + dikiş + zaman komşuluğu), gündüz değil. Küçültme olmayınca ağ
+şişmiyor, çünkü şişirecek kadar kenar hiç yazılmıyor.
+
+Yani "uykusuzluk ağı şişirir" hipotezi bu mimaride yanlış; uykusuzluğun
+maliyeti şişme değil **yoksunluk**. Hedef sağlandı ama beklenen mekanizmayla
+değil, ve bu fark rapora yazıldı.
+
+## Faz 3 (Adım 6) — Damıtma · sırada
 ## Faz 3.10 — Uyku dinamiği · bekliyor (`ESIK_UST` hazır)
 ## Faz 3.11 — Sıcak/soğuk indeks · bekliyor
 ## Faz 4 — Kodlama gücü · bekliyor

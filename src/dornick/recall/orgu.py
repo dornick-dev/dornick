@@ -119,6 +119,12 @@ class Oturum:
     turlar: int = 0
     bitis: datetime | None = None
     oncelik: float = 0.0
+    # Uyanık tekrar (recall/awake.py) bu oturumun sorumluluğunu sonuç anında
+    # dağıttıysa gece onu bir daha dağıtmaz: bir başarı iki `basari` girdisi
+    # bırakmamalı. İleri tekrar ve dikiş yine koşar — ikisi de birikimli
+    # değil, tekrarı zararsız.
+    ters_tekrar_kostu: bool = False
+    ileri_tekrar_indeksi: int = 0
 
     @property
     def kapali(self) -> bool:
@@ -196,7 +202,8 @@ def gece_gecisi(
         _ileri_tekrar(store, oturum, rapor)
         _sema_tazelemesi(store, oturum, rapor)
         _yakalama(store, oturum, rapor, saat)
-        ters_tekrar(store, oturum, rapor=rapor)
+        if not oturum.ters_tekrar_kostu:
+            ters_tekrar(store, oturum, rapor=rapor)
         dokunulanlar.extend(oturum.dizi)
         islenen.append(oturum)
         durum.setdefault("islenen", {})[oturum.id] = _damga(saat)
@@ -299,7 +306,8 @@ def _surpriz_ortalamasi(store: Any, dizi: Iterable[str]) -> float:
 # -- Adım 2: ileri tekrar ----------------------------------------------
 
 
-def _ileri_tekrar(store: Any, oturum: Oturum, rapor: GeceRaporu) -> None:
+def _ileri_tekrar(store: Any, oturum: Oturum, rapor: GeceRaporu, *,
+                  bastan: int = 0) -> None:
     """Oturum dizisindeki komşuları "birlikte kullanıldı" ile bağlar.
 
     Bu kenarlar `recall()` yayılmasında içerik kenarlarıyla aynı yoldan
@@ -309,6 +317,8 @@ def _ileri_tekrar(store: Any, oturum: Oturum, rapor: GeceRaporu) -> None:
     dizi = list(dict.fromkeys(oturum.dizi))
     for i, a in enumerate(dizi):
         for j in range(i + 1, min(i + PENCERE, len(dizi))):
+            if j < bastan:
+                continue        # bu çift daha önce yazıldı (artımlı koşum)
             agirlik = round(KOMSULUK_AGIRLIK * KOMSULUK_SONUMU ** (j - i - 1), 3)
             if store.baglan(a, dizi[j], weight=agirlik,
                             reason=f"birlikte kullanıldı ({oturum.id})",
@@ -564,6 +574,11 @@ def _oturum_oku(yol: Path) -> Oturum | None:
             oturum.hedef_acik = True
         elif tur == "goal_status":
             oturum.hedef_acik = False
+        elif tur == "ters_tekrar_kostu":
+            oturum.ters_tekrar_kostu = True
+        elif tur == "ileri_tekrar_kostu":
+            oturum.ileri_tekrar_indeksi = max(oturum.ileri_tekrar_indeksi,
+                                              int(meta.get("n") or 0))
         elif tur == "sonuc":
             oturum.sonuc = str(meta.get("sonuc") or "")
             oturum.bitis = an

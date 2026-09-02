@@ -80,8 +80,8 @@ def test_ayni_senaryo_ayni_sonucu_verir(bench, holdout) -> None:
     # Süre ölçümleri duvar saatinden geliyor — tek dalgalanan sayılar,
     # karşılaştırmadan çıkarılıyor. Kalan her metrik birebir aynı olmalı.
     for sonuc in (ilk, ikinci):
-        sonuc["metrikler"].pop("gecikme_p95")
-        sonuc["metrikler"].pop("gece_suresi")
+        for sure in ("gecikme_p95", "gece_suresi", "tur_bloklama"):
+            sonuc["metrikler"].pop(sure)
     assert ilk["metrikler"] == ikinci["metrikler"]
     assert ilk["kume"] == ikinci["kume"]
     assert ilk["sayim"] == ikinci["sayim"]

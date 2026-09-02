@@ -1413,9 +1413,20 @@
   },
   {
    "gun": 15,
-   "saat": 13,
+   "saat": 12,
    "oturum": "q_q01_15",
    "sira": 1,
+   "tur": "kullan",
+   "kume": "Q",
+   "hedef": [
+    "d_hata"
+   ]
+  },
+  {
+   "gun": 15,
+   "saat": 13,
+   "oturum": "q_q01_15",
+   "sira": 2,
    "tur": "arac",
    "kume": "Q",
    "icerik": "kos: pytest tests/test_gate.py → ImportError: yaml",
@@ -1426,7 +1437,7 @@
    "gun": 15,
    "saat": 14,
    "oturum": "q_q01_15",
-   "sira": 2,
+   "sira": 3,
    "tur": "sor",
    "kume": "Q",
    "icerik": "Gate testinde ne patlamıştı?",
@@ -1484,7 +1495,7 @@
    "gun": 15,
    "saat": 15,
    "oturum": "q_q01_15",
-   "sira": 3,
+   "sira": 4,
    "tur": "sonuc",
    "kume": "Q",
    "sonuc": "basarisiz"
@@ -2017,6 +2028,17 @@
   },
   {
    "gun": 19,
+   "saat": 12,
+   "oturum": "q_q02_19",
+   "sira": 1,
+   "tur": "kullan",
+   "kume": "Q",
+   "hedef": [
+    "d_plc"
+   ]
+  },
+  {
+   "gun": 19,
    "saat": 13,
    "oturum": "oglen_19",
    "sira": 1,
@@ -2041,7 +2063,7 @@
    "gun": 19,
    "saat": 13,
    "oturum": "q_q02_19",
-   "sira": 1,
+   "sira": 2,
    "tur": "arac",
    "kume": "Q",
    "icerik": "kabuk: npm run build → node sürümü uyumsuz",
@@ -2052,7 +2074,7 @@
    "gun": 19,
    "saat": 14,
    "oturum": "q_q02_19",
-   "sira": 2,
+   "sira": 3,
    "tur": "sor",
    "kume": "Q",
    "icerik": "Derleme neden başarısız oldu?",
@@ -2065,7 +2087,7 @@
    "gun": 19,
    "saat": 15,
    "oturum": "q_q02_19",
-   "sira": 3,
+   "sira": 4,
    "tur": "sonuc",
    "kume": "Q",
    "sonuc": "basarisiz"
@@ -2879,6 +2901,17 @@
   },
   {
    "gun": 24,
+   "saat": 12,
+   "oturum": "q_q03_24",
+   "sira": 1,
+   "tur": "kullan",
+   "kume": "Q",
+   "hedef": [
+    "d_yayin"
+   ]
+  },
+  {
+   "gun": 24,
    "saat": 13,
    "oturum": "oglen_24",
    "sira": 1,
@@ -2892,7 +2925,7 @@
    "gun": 24,
    "saat": 13,
    "oturum": "q_q03_24",
-   "sira": 1,
+   "sira": 2,
    "tur": "arac",
    "kume": "Q",
    "icerik": "kos: pytest -k modbus → ConnectionRefusedError",
@@ -2903,7 +2936,7 @@
    "gun": 24,
    "saat": 14,
    "oturum": "q_q03_24",
-   "sira": 2,
+   "sira": 3,
    "tur": "sor",
    "kume": "Q",
    "icerik": "Modbus testi neden bağlanamadı?",
@@ -2916,7 +2949,7 @@
    "gun": 24,
    "saat": 15,
    "oturum": "q_q03_24",
-   "sira": 3,
+   "sira": 4,
    "tur": "sonuc",
    "kume": "Q",
    "sonuc": "basarisiz"
@@ -3894,6 +3927,17 @@
   },
   {
    "gun": 29,
+   "saat": 12,
+   "oturum": "q_q04_29",
+   "sira": 1,
+   "tur": "kullan",
+   "kume": "Q",
+   "hedef": [
+    "d_hata"
+   ]
+  },
+  {
+   "gun": 29,
    "saat": 13,
    "oturum": "i_i02_hata_29",
    "sira": 1,
@@ -3907,7 +3951,7 @@
    "gun": 29,
    "saat": 13,
    "oturum": "q_q04_29",
-   "sira": 1,
+   "sira": 2,
    "tur": "arac",
    "kume": "Q",
    "icerik": "dosya_yaz: izin reddedildi: C:/Program Files",
@@ -3929,7 +3973,7 @@
    "gun": 29,
    "saat": 14,
    "oturum": "q_q04_29",
-   "sira": 2,
+   "sira": 3,
    "tur": "sor",
    "kume": "Q",
    "icerik": "Dosya yazarken hangi izin sorunu vardı?",
@@ -3951,7 +3995,7 @@
    "gun": 29,
    "saat": 15,
    "oturum": "q_q04_29",
-   "sira": 3,
+   "sira": 4,
    "tur": "sonuc",
    "kume": "Q",
    "sonuc": "basarisiz"
@@ -4796,6 +4840,17 @@
   },
   {
    "gun": 33,
+   "saat": 12,
+   "oturum": "q_q05_33",
+   "sira": 1,
+   "tur": "kullan",
+   "kume": "Q",
+   "hedef": [
+    "d_plc"
+   ]
+  },
+  {
+   "gun": 33,
    "saat": 13,
    "oturum": "i_i03_hata_33",
    "sira": 1,
@@ -4853,7 +4908,7 @@
    "gun": 33,
    "saat": 13,
    "oturum": "q_q05_33",
-   "sira": 1,
+   "sira": 2,
    "tur": "arac",
    "kume": "Q",
    "icerik": "kabuk: git push → non-fast-forward",
@@ -4884,7 +4939,7 @@
    "gun": 33,
    "saat": 14,
    "oturum": "q_q05_33",
-   "sira": 2,
+   "sira": 3,
    "tur": "sor",
    "kume": "Q",
    "icerik": "Push neden reddedildi?",
@@ -4951,7 +5006,7 @@
    "gun": 33,
    "saat": 15,
    "oturum": "q_q05_33",
-   "sira": 3,
+   "sira": 4,
    "tur": "sonuc",
    "kume": "Q",
    "sonuc": "basarisiz"
@@ -5504,9 +5559,20 @@
   },
   {
    "gun": 38,
-   "saat": 13,
+   "saat": 12,
    "oturum": "q_q06_38",
    "sira": 1,
+   "tur": "kullan",
+   "kume": "Q",
+   "hedef": [
+    "d_yayin"
+   ]
+  },
+  {
+   "gun": 38,
+   "saat": 13,
+   "oturum": "q_q06_38",
+   "sira": 2,
    "tur": "arac",
    "kume": "Q",
    "icerik": "kos: pytest tests → sqlite database is locked",
@@ -5517,7 +5583,7 @@
    "gun": 38,
    "saat": 14,
    "oturum": "q_q06_38",
-   "sira": 2,
+   "sira": 3,
    "tur": "sor",
    "kume": "Q",
    "icerik": "Veritabanı kilidi hatası neydi?",
@@ -5575,7 +5641,7 @@
    "gun": 38,
    "saat": 15,
    "oturum": "q_q06_38",
-   "sira": 3,
+   "sira": 4,
    "tur": "sonuc",
    "kume": "Q",
    "sonuc": "basarisiz"
@@ -6205,6 +6271,17 @@
   },
   {
    "gun": 43,
+   "saat": 12,
+   "oturum": "q_q07_43",
+   "sira": 1,
+   "tur": "kullan",
+   "kume": "Q",
+   "hedef": [
+    "d_hata"
+   ]
+  },
+  {
+   "gun": 43,
    "saat": 13,
    "oturum": "i_i05_ok_43",
    "sira": 1,
@@ -6262,7 +6339,7 @@
    "gun": 43,
    "saat": 13,
    "oturum": "q_q07_43",
-   "sira": 1,
+   "sira": 2,
    "tur": "arac",
    "kume": "Q",
    "icerik": "kabuk: docker build → disk alanı yetersiz",
@@ -6311,7 +6388,7 @@
    "gun": 43,
    "saat": 14,
    "oturum": "q_q07_43",
-   "sira": 2,
+   "sira": 3,
    "tur": "sor",
    "kume": "Q",
    "icerik": "Derleme sırasında disk sorunu neydi?",
@@ -6378,7 +6455,7 @@
    "gun": 43,
    "saat": 15,
    "oturum": "q_q07_43",
-   "sira": 3,
+   "sira": 4,
    "tur": "sonuc",
    "kume": "Q",
    "sonuc": "basarisiz"
@@ -7011,6 +7088,17 @@
   },
   {
    "gun": 47,
+   "saat": 12,
+   "oturum": "q_q08_47",
+   "sira": 1,
+   "tur": "kullan",
+   "kume": "Q",
+   "hedef": [
+    "d_plc"
+   ]
+  },
+  {
+   "gun": 47,
    "saat": 13,
    "oturum": "j_j04_2_47",
    "sira": 1,
@@ -7046,7 +7134,7 @@
    "gun": 47,
    "saat": 13,
    "oturum": "q_q08_47",
-   "sira": 1,
+   "sira": 2,
    "tur": "arac",
    "kume": "Q",
    "icerik": "dosya_oku: kodlama hatası: utf-8 baytları çözülemedi",
@@ -7084,7 +7172,7 @@
    "gun": 47,
    "saat": 14,
    "oturum": "q_q08_47",
-   "sira": 2,
+   "sira": 3,
    "tur": "sor",
    "kume": "Q",
    "icerik": "Dosya okurken hangi kodlama hatası çıktı?",
@@ -7097,7 +7185,7 @@
    "gun": 47,
    "saat": 15,
    "oturum": "q_q08_47",
-   "sira": 3,
+   "sira": 4,
    "tur": "sonuc",
    "kume": "Q",
    "sonuc": "basarisiz"
@@ -8853,9 +8941,20 @@
   },
   {
    "gun": 65,
-   "saat": 13,
+   "saat": 12,
    "oturum": "q_q09_65",
    "sira": 1,
+   "tur": "kullan",
+   "kume": "Q",
+   "hedef": [
+    "d_yayin"
+   ]
+  },
+  {
+   "gun": 65,
+   "saat": 13,
+   "oturum": "q_q09_65",
+   "sira": 2,
    "tur": "arac",
    "kume": "Q",
    "icerik": "kos: pytest -q → fixture bulunamadı",
@@ -8866,7 +8965,7 @@
    "gun": 65,
    "saat": 14,
    "oturum": "q_q09_65",
-   "sira": 2,
+   "sira": 3,
    "tur": "sor",
    "kume": "Q",
    "icerik": "Fikstür hatası neydi?",
@@ -8879,7 +8978,7 @@
    "gun": 65,
    "saat": 15,
    "oturum": "q_q09_65",
-   "sira": 3,
+   "sira": 4,
    "tur": "sonuc",
    "kume": "Q",
    "sonuc": "basarisiz"
@@ -9794,6 +9893,17 @@
   },
   {
    "gun": 75,
+   "saat": 12,
+   "oturum": "q_q10_75",
+   "sira": 1,
+   "tur": "kullan",
+   "kume": "Q",
+   "hedef": [
+    "d_hata"
+   ]
+  },
+  {
+   "gun": 75,
    "saat": 13,
    "oturum": "oglen_75",
    "sira": 1,
@@ -9807,7 +9917,7 @@
    "gun": 75,
    "saat": 13,
    "oturum": "q_q10_75",
-   "sira": 1,
+   "sira": 2,
    "tur": "arac",
    "kume": "Q",
    "icerik": "kabuk: pip install → sertifika doğrulanamadı",
@@ -9818,7 +9928,7 @@
    "gun": 75,
    "saat": 14,
    "oturum": "q_q10_75",
-   "sira": 2,
+   "sira": 3,
    "tur": "sor",
    "kume": "Q",
    "icerik": "Paket kurulumunda sertifika sorunu neydi?",
@@ -9831,7 +9941,7 @@
    "gun": 75,
    "saat": 15,
    "oturum": "q_q10_75",
-   "sira": 3,
+   "sira": 4,
    "tur": "sonuc",
    "kume": "Q",
    "sonuc": "basarisiz"

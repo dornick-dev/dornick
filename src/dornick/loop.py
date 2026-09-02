@@ -1462,6 +1462,23 @@ class Agent:
                        for step in trace],
             )
 
+    def _uyanik_ters_tekrar(self, sonuc: str) -> None:
+        """Sonuç anında sorumluluğu dağıtır ve dersi hemen yazar.
+
+        Arka planda değil, tur içinde: tek oturumun tekrarı iki yüz düğümde
+        elli milisaniyenin altında (ölçüldü, tests/test_awake.py). Bir hata
+        olursa sohbet yine sürmeli — hafıza bakımı konuşmayı düşürmez.
+        """
+        if self.mind is None:
+            return
+        try:
+            from .recall import awake
+
+            awake.on_result(self.mind.store, self.session.log.path, sonuc,
+                            log=self.session.log)
+        except Exception as exc:
+            self.session.log.note("uyanik_tekrar_failed", error=str(exc))
+
     def _worth_recalling(self, text: str) -> bool:
         return worth_recalling(text)
 
@@ -3113,6 +3130,12 @@ class Agent:
                 else:
                     self._kirmizi.pop(tool, None)
             self.io.on_tool_end(tool, not data["error"], data["ms"])
+            if data["error"]:
+                # Uyanık ters tekrar (yol haritası 3.12.1): sorumluluk sonuç
+                # belli olduğu an dağıtılıyor, geceyi beklemeden. Dersi
+                # sabaha bırakmak, aynı hatayı aynı oturumda tekrar etmeye
+                # izin vermek demekti.
+                self._uyanik_ters_tekrar("basarisiz")
         elif event == "sema_ihlali":
             # Şemaya uymayan çağrı da boşa giden bir tur: oto havuzunda
             # sağlık sinyali sayılıyor (bkz. _kusurlu). Araç hiç çalışmadı,

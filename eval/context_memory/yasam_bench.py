@@ -89,6 +89,10 @@ try:
     from dornick.recall import vector
 except ImportError:                     # pragma: no cover
     vector = None
+try:                                    # Faz 3.12'den itibaren var.
+    from dornick.recall import awake
+except ImportError:                     # pragma: no cover
+    awake = None
 
 ESKI_SURUM = os.environ.get("DORNICK_ESKI") == "1"
 
@@ -139,6 +143,10 @@ HEDEFLER: dict[str, tuple[str, str, float | None]] = {
     "ders_gecikmesi":       ("↓", "<=", 1.0),
     "sicak_oran":           ("·", "aralik", None),
     "gece_suresi":          ("↓", "<=", 300.0),
+    "uykusuz_kayip":        ("↑", ">=", 0.80),
+    "uykusuz_sisme":        ("↓", "<=", 1.30),
+    "aktif_bolge_ihlali":   ("↓", "<=", 0.0),
+    "tur_bloklama":         ("↓", "<=", 50.0),
     "kesinti_kaybi":        ("↓", "<=", 0.0),
     "kesinti_gecikmesi":    ("↓", "<=", 500.0),
     "yarim_damitma":        ("↓", "<=", 0.0),
@@ -236,6 +244,7 @@ class Olcum:
         self.ders_turleri: list[float] = []
         self.gece_sureleri: list[float] = []
         self.uyan_olaylari = 0
+        self.uyanik_gecikmeler: list[float] = []
 
 
 def kosu(veri: dict[str, Any], *, kapali: tuple[str, ...] = (),
@@ -373,9 +382,15 @@ def _oyna(mind: Any, veri: dict[str, Any], saat: SanalSaat,
                 ot.log.note("tool_end", tool=olay.get("arac", ""),
                             error=bool(olay.get("hata")), ms=120,
                             ozet=olay["icerik"])
+                if olay.get("hata"):
+                    # Uyanık ters tekrar (3.12.1): sonuç belli olduğu an,
+                    # oturumun içinde. Dersi geceye bırakmak, aynı hatayı
+                    # aynı oturumda tekrar etmeye izin vermek demekti.
+                    _uyanik_sonuc(mind, ot, "basarisiz", o)
 
             elif tur == "sonuc":
                 ot.kapat(olay["sonuc"])
+                _uyanik_sonuc(mind, ot, olay["sonuc"], o)
 
             elif tur == "uyan":
                 o.uyan_olaylari += 1
@@ -405,6 +420,24 @@ def _oyna(mind: Any, veri: dict[str, Any], saat: SanalSaat,
         except Exception:
             pass
     return _rapor(o, mind)
+
+
+def _uyanik_sonuc(mind: Any, ot: "Oturum", sonuc: str,
+                  o: "Olcum | None" = None) -> None:
+    """Sonuç anında ters tekrar. Faz 3.12'den önce karşılığı yok.
+
+    Süresi ölçülüyor: bu iş turun içinde koşuyor, yani gecikmesi doğrudan
+    kullanıcının beklediği süreye biniyor (`tur_bloklama`).
+    """
+    if awake is None:
+        return
+    basla = time.perf_counter()
+    try:
+        awake.on_result(mind.store, ot.log.path, sonuc, saat=None, log=ot.log)
+    except Exception:
+        pass        # ölçüm koşusu bir mekanik hatası yüzünden durmamalı
+    if o is not None:
+        o.uyanik_gecikmeler.append((time.perf_counter() - basla) * 1000.0)
 
 
 def _gece_gecisi(mind: Any, sessions_dir: Path, saat: SanalSaat) -> float | None:
@@ -565,6 +598,12 @@ def _rapor(o: Olcum, mind: Any) -> dict[str, Any]:
         "ders_gecikmesi": ort(o.ders_turleri),
         "sicak_oran": _sicak_oran(mind),
         "gece_suresi": ort(o.gece_sureleri),
+        # R, S ve tur bloklama ayrı kollarda ölçülüyor (`--uykusuz`).
+        "uykusuz_kayip": None,
+        "uykusuz_sisme": None,
+        "aktif_bolge_ihlali": None,
+        "tur_bloklama": (round(_p95(o.uyanik_gecikmeler), 2)
+                         if o.uyanik_gecikmeler else None),
         # Uyku katmanı (3.10) gelmeden bu metriklerin karşılığı yok.
         "kesinti_kaybi": 0.0 if uyku_var else None,
         "kesinti_gecikmesi": None,
@@ -585,7 +624,8 @@ def _rapor(o: Olcum, mind: Any) -> dict[str, Any]:
         "metrikler": metrikler,
         "kume": kume_detay,
         "sayim": {"soru": o.soru_sayisi, "dugum": mind.store.count(),
-                  "tuzak": o.tuzak_toplam, "uyan": o.uyan_olaylari},
+                  "tuzak": o.tuzak_toplam, "uyan": o.uyan_olaylari,
+                  "kenar": len(mind.store.links(limit=200000))},
     }
 
 
@@ -680,6 +720,85 @@ def buyume_deneyi(veri: dict[str, Any]) -> dict[str, Any]:
         "buyume_p95": round(buyuk["gecikme_p95"] / max(kucuk["gecikme_p95"], 1e-6), 3),
         "buyume_ram": round(buyuk["ram_bayt"] / max(kucuk["ram_bayt"], 1), 3),
     }
+
+
+# -- R: uykusuz makine, S: aktif bölge dokunulmazlığı (3.12.6) ---------
+
+
+def uykusuz_deneyi(veri: dict[str, Any]) -> dict[str, Any]:
+    """İki kol, aynı senaryo: biri her gece uyuyor, diğeri hiç uyumuyor.
+
+    Uykusuz kolda gece geçişi hiç koşmuyor (boşta pencere yok, `uyan`
+    sürekli); yerine yalnız uyanık tekrar var. Ölçülen iki şey: hafızanın
+    işlevi ne kadar korunuyor (`uykusuz_kayip`) ve ağ ne kadar şişiyor
+    (`uykusuz_sisme`) — gündüz güçlenen hiçbir şey küçülmüyor çünkü.
+    """
+    import dornick.recall.orgu as _orgu
+
+    def _kol(gece_var: bool) -> dict[str, Any]:
+        asil = _orgu.gece_gecisi
+        if not gece_var:
+            _orgu.gece_gecisi = lambda *a, **k: _orgu.GeceRaporu()
+        try:
+            return kosu(veri)
+        finally:
+            _orgu.gece_gecisi = asil
+
+    uyuyan = _kol(True)
+    uykusuz = _kol(False)
+
+    def _islev(rapor: dict[str, Any]) -> float:
+        # H ve I: gecenin asıl ürünü. İkisinin ortalaması "hafıza hâlâ
+        # çalışıyor mu" sorusunun tek sayılık cevabı.
+        return sum([rapor["metrikler"].get("komsuluk_recall") or 0.0,
+                    rapor["metrikler"].get("sorumluluk_dogrulugu") or 0.0]) / 2
+
+    islev = _islev(uyuyan)
+    return {
+        "uyuyan": uyuyan["metrikler"], "uykusuz": uykusuz["metrikler"],
+        "uykusuz_kayip": round(_islev(uykusuz) / islev, 3) if islev else None,
+        "uykusuz_sisme": round((uykusuz["sayim"].get("kenar") or 0)
+                               / max(uyuyan["sayim"].get("kenar") or 1, 1), 3),
+    }
+
+
+def aktif_bolge_deneyi(veri: dict[str, Any]) -> dict[str, Any]:
+    """S kümesi: yerel uyku sırasında aktif bölgedeki kenar küçülmemeli.
+
+    Yerel uykunun var olma gerekçesi bu sınır. Sınır tutmuyorsa mekanik
+    "öğrenme sürerken küçültme yasağı"nı çiğniyor demektir ve kaldırılmalı.
+    """
+    if awake is None:
+        return {"aktif_bolge_ihlali": None}
+    with tempfile.TemporaryDirectory(prefix="yasam-aktif-") as ad:
+        kok = Path(ad)
+        saat = SanalSaat(datetime.fromisoformat(veri["baslangic"]))
+        mind = _zihin_ac(kok, saat)
+        store = mind.store
+        try:
+            soguk = [store.remember(f"Eski saha notu {i}.", kind="fact")
+                     for i in range(10)]
+            for i in range(len(soguk) - 1):
+                store.link(soguk[i].id, soguk[i + 1].id, weight=0.9, reason="eski")
+            saat.ilerle(40, 9)
+            sicak = [store.remember(f"Bugünün notu {i}.", kind="fact")
+                     for i in range(10)]
+            for i in range(len(sicak) - 1):
+                store.link(sicak[i].id, sicak[i + 1].id, weight=0.9, reason="bugün")
+            once = {(a, b): w for a, b, w in store.links(limit=5000)}
+            awake.local_sleep(store, saat=saat)
+            sonra = {(a, b): w for a, b, w in store.links(limit=5000)}
+            sicak_kimlik = {n.id for n in sicak}
+            soguk_kimlik = {n.id for n in soguk}
+            ihlal = sum(1 for (a, b), w in once.items()
+                        if a in sicak_kimlik and b in sicak_kimlik
+                        and sonra.get((a, b), w) < w - 1e-9)
+            kuculen = sum(1 for (a, b), w in once.items()
+                          if a in soguk_kimlik and b in soguk_kimlik
+                          and sonra.get((a, b), w) < w - 1e-9)
+            return {"aktif_bolge_ihlali": float(ihlal), "soguk_kuculen": kuculen}
+        finally:
+            store.close()
 
 
 # -- eşik eğrisi (3.10.3) ----------------------------------------------
@@ -1043,6 +1162,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--hizli", action="store_true", help="ölçek gecikme ölçümünü atla")
     ap.add_argument("--olcek", type=int, default=OLCEK_DUGUM)
     ap.add_argument("--buyume", action="store_true", help="P kümesi (200k/20k) — uzun")
+    ap.add_argument("--uykusuz", action="store_true",
+                    help="R ve S kolları (uykusuz makine, aktif bölge)")
     ap.add_argument("--celiski-esik", action="store_true", dest="celiski",
                     help="CELISKI_ESIK kalibrasyonu (Faz 2.4)")
     ap.add_argument("--esik-egrisi", action="store_true", dest="esik",
@@ -1093,6 +1214,13 @@ def main(argv: list[str] | None = None) -> int:
             sonuc["olcek"] = _gecikme_probu(veri, args.olcek)
             # Ölçek şartı senaryonun kendi hacminde değil 50k'da geçerli.
             sonuc["metrikler"]["gecikme_p95"] = sonuc["olcek"]["gecikme_p95"]
+        if args.uykusuz:
+            sonuc["uykusuz"] = uykusuz_deneyi(veri)
+            sonuc["aktif"] = aktif_bolge_deneyi(veri)
+            m = sonuc["metrikler"]
+            m["uykusuz_kayip"] = sonuc["uykusuz"]["uykusuz_kayip"]
+            m["uykusuz_sisme"] = sonuc["uykusuz"]["uykusuz_sisme"]
+            m["aktif_bolge_ihlali"] = sonuc["aktif"]["aktif_bolge_ihlali"]
         if args.buyume:
             sonuc["buyume"] = buyume_deneyi(veri)
             sonuc["metrikler"]["buyume_p95"] = sonuc["buyume"]["buyume_p95"]

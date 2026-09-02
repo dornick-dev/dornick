@@ -1,0 +1,156 @@
+{
+ "metrikler": {
+  "prime_precision": 0.2781,
+  "prime_recall": 0.99,
+  "yasak_sizinti": 29.0,
+  "tuzak_sessizlik": 0.45,
+  "bayat_ruh": 0.0,
+  "taze_ruh": 0.7934,
+  "ruh_token": 343.9167,
+  "prime_token": 83.3665,
+  "geri_donus_recall": 1.0,
+  "komsuluk_recall": 0.0,
+  "sorumluluk_dogrulugu": 0.875,
+  "dikis_recall": 0.0,
+  "gomulme_recall": 1.0,
+  "sema_tazeleme": 0.376,
+  "yakalama": -0.0897,
+  "ders_gecikmesi": 1.0,
+  "sicak_oran": 1.0,
+  "gece_suresi": 0.0656,
+  "uykusuz_kayip": 1.143,
+  "uykusuz_sisme": 0.379,
+  "aktif_bolge_ihlali": 0.0,
+  "tur_bloklama": 9.2,
+  "kesinti_kaybi": null,
+  "kesinti_gecikmesi": null,
+  "yarim_damitma": null,
+  "ritim_isabeti": null,
+  "atalet": null,
+  "buyume_p95": null,
+  "buyume_ram": null,
+  "gecikme_p95": 16.65
+ },
+ "kume": {
+  "A": {
+   "precision": 0.375,
+   "recall": 1.0,
+   "sizinti": 0.0
+  },
+  "B": {
+   "precision": 0.2759,
+   "recall": 1.0,
+   "sizinti": 0.0
+  },
+  "D": {
+   "precision": 0.4,
+   "recall": 1.0,
+   "sizinti": 0.0
+  },
+  "E": {
+   "precision": 0.2021,
+   "recall": 0.95,
+   "sizinti": 19.0
+  },
+  "H": {
+   "precision": 0.4615,
+   "recall": 1.0,
+   "sizinti": 0.0
+  },
+  "J": {
+   "precision": 0.4286,
+   "recall": 1.0,
+   "sizinti": 0.0
+  },
+  "K": {
+   "precision": 0.1449,
+   "recall": 1.0,
+   "sizinti": 10.0
+  }
+ },
+ "sayim": {
+  "soru": 191,
+  "dugum": 282,
+  "tuzak": 40,
+  "uyan": 9,
+  "kenar": 2131
+ },
+ "veri": "yasam-90",
+ "kapali": [],
+ "kaynak": "calisma-agaci",
+ "sure_sn": 13.3,
+ "uykusuz": {
+  "uyuyan": {
+   "prime_precision": 0.2781,
+   "prime_recall": 0.99,
+   "yasak_sizinti": 29.0,
+   "tuzak_sessizlik": 0.45,
+   "bayat_ruh": 0.0,
+   "taze_ruh": 0.7934,
+   "ruh_token": 344.1083,
+   "prime_token": 83.2762,
+   "geri_donus_recall": 1.0,
+   "komsuluk_recall": 0.0,
+   "sorumluluk_dogrulugu": 0.875,
+   "dikis_recall": 0.0,
+   "gomulme_recall": 1.0,
+   "sema_tazeleme": 0.3771,
+   "yakalama": -0.0897,
+   "ders_gecikmesi": 1.0,
+   "sicak_oran": 1.0,
+   "gece_suresi": 0.0667,
+   "uykusuz_kayip": null,
+   "uykusuz_sisme": null,
+   "aktif_bolge_ihlali": null,
+   "tur_bloklama": 9.07,
+   "kesinti_kaybi": null,
+   "kesinti_gecikmesi": null,
+   "yarim_damitma": null,
+   "ritim_isabeti": null,
+   "atalet": null,
+   "buyume_p95": null,
+   "buyume_ram": null,
+   "gecikme_p95": 17.67
+  },
+  "uykusuz": {
+   "prime_precision": 0.2768,
+   "prime_recall": 0.98,
+   "yasak_sizinti": 29.0,
+   "tuzak_sessizlik": 0.45,
+   "bayat_ruh": 0.0,
+   "taze_ruh": 0.827,
+   "ruh_token": 334.2417,
+   "prime_token": 83.6361,
+   "geri_donus_recall": 1.0,
+   "komsuluk_recall": 0.0,
+   "sorumluluk_dogrulugu": 1.0,
+   "dikis_recall": 0.0,
+   "gomulme_recall": 1.0,
+   "sema_tazeleme": -0.1326,
+   "yakalama": -0.107,
+   "ders_gecikmesi": 1.0,
+   "sicak_oran": 1.0,
+   "gece_suresi": 0.0,
+   "uykusuz_kayip": null,
+   "uykusuz_sisme": null,
+   "aktif_bolge_ihlali": null,
+   "tur_bloklama": 8.61,
+   "kesinti_kaybi": null,
+   "kesinti_gecikmesi": null,
+   "yarim_damitma": null,
+   "ritim_isabeti": null,
+   "atalet": null,
+   "buyume_p95": null,
+   "buyume_ram": null,
+   "gecikme_p95": 3.4
+  },
+  "uykusuz_kayip": 1.143,
+  "uykusuz_sisme": 0.379
+ },
+ "aktif": {
+  "aktif_bolge_ihlali": 0.0,
+  "soguk_kuculen": 30
+ },
+ "etiket": "f312",
+ "sira": 4
+}

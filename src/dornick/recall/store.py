@@ -27,6 +27,7 @@ import sqlite3
 import threading
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
+from datetime import datetime
 from typing import Any, Iterable, Sequence
 from uuid import uuid4
 
@@ -584,6 +585,56 @@ class RecallStore:
             self._link(src, dst, weight, reason)
             self._db.commit()
         return True
+
+    def cold_nodes(self, cutoff: datetime) -> tuple[list[str], int]:
+        """Nodes nothing has touched since `cutoff`, and how many were skipped.
+
+        "Touched" means the last usage stamp, not the write time: a record
+        written a year ago but opened yesterday is warm. Local sleep uses
+        this to stay out of the region that is currently being learned.
+        """
+        with self._lock:
+            rows = self._db.execute(
+                "SELECT id, created, last_used, uses, kullanimlar FROM node"
+                " WHERE deleted=0" + self._gecmis_suzgeci()).fetchall()
+        soguk: list[str] = []
+        sicak = 0
+        for row in rows:
+            gecmis = aktivasyon.coz_kullanimlar(
+                row["kullanimlar"], created=row["created"],
+                last_used=row["last_used"], uses=int(row["uses"] or 0))
+            son = max((k.t for k in gecmis), default=None)
+            if son is not None and son >= cutoff:
+                sicak += 1
+            else:
+                soguk.append(row["id"])
+        return soguk, sicak
+
+    def shrink_edges_between(self, node_ids: Sequence[str], epsilon: float,
+                             taban: float) -> tuple[int, int]:
+        """Shrink only the edges whose BOTH ends are in `node_ids`.
+
+        An edge with one end in the active region is left alone: shrinking it
+        would touch a trace that is still being strengthened, which is the
+        single thing downscaling must never do while learning is in progress.
+        """
+        if not node_ids:
+            return 0, 0
+        kucult = silinen = 0
+        with self._lock:
+            for i in range(0, len(node_ids), 400):
+                parca = list(node_ids[i:i + 400])
+                yer = ",".join("?" * len(parca))
+                kucult += self._db.execute(
+                    f"UPDATE link SET weight = weight * ?"
+                    f" WHERE src IN ({yer}) AND dst IN ({yer})",
+                    (1.0 - epsilon, *parca, *parca)).rowcount
+                silinen += self._db.execute(
+                    f"DELETE FROM link WHERE weight < ?"
+                    f" AND src IN ({yer}) AND dst IN ({yer})",
+                    (taban, *parca, *parca)).rowcount
+            self._db.commit()
+        return int(kucult), int(silinen)
 
     def kenarlari_kucult(self, epsilon: float, taban: float) -> tuple[int, int]:
         """Bütün kenarları orantılı küçültür, tabanın altındakini siler.
