@@ -39,6 +39,11 @@ def _adim_etiket(mind: Mind, node_id: str) -> str:
     return tek if len(tek) <= 34 else tek[:33] + "…"
 
 
+def _one_satir(text: str, cap: int = 80) -> str:
+    tek = " ".join((text or "").split())
+    return tek if len(tek) <= cap else tek[:cap - 1] + "…"
+
+
 def _bounded(text: str, cap: int = RECALL_BODY_CAP) -> str:
     if len(text) <= cap:
         return text
@@ -171,8 +176,13 @@ bilmeyeceği şeydir: kullanıcı aynı şeyi ikinci kez anlatmak zorunda kalır
 Ne zaman kaydetme: repoda zaten yazılı olanı, konuşma bitince değeri
 kalmayacak şeyleri, doğrulamadığın tahminleri.
 
-Aynı konuda kayıt varsa yenisini eklemek yerine eskisini sil ve güncelini
-yaz — çelişen iki hatıra hiç hatıra olmamasından kötüdür.
+Aynı konuda kayıt varsa `supersedes` ile güncelle: eski kaydın kimliğini
+ver, yenisi onun yerini alsın. Hiçbir şey silinmiyor — eski sürüm `series`
+ile hâlâ görülebiliyor, ama aramaya ve ruha artık yenisi giriyor. Çelişen
+iki hatıra hiç hatıra olmamasından kötüdür; silmek de öyle.
+
+Kimliği hatırlamıyorsan yine de kaydet: benzer bir kayıt varsa araç sana
+onun kimliğini söyler, sen ikinci bir çağrıyla birleştirirsin.
 
 Zihnin bir liste değil, bir ağ. Kayıtlar kendiliğinden birbirine benzeyene
 bağlanıyor ama asıl bağları sen kuruyorsun: `link` ile iki kaydı bağlarken
@@ -214,6 +224,13 @@ hatırlamalar o yoldan yürüyor.
                     ),
                 },
                 "id": {"type": "string", "description": "Kaydın kimliği (forget, link)."},
+                "supersedes": {
+                    "type": "string",
+                    "description": (
+                        "save ile birlikte: bu kayıt hangi kaydın yerini "
+                        "alıyor. Eski kayıt silinmez, geçmişe düşer."
+                    ),
+                },
                 "to": {"type": "string", "description": "Bağlanacak ikinci kaydın kimliği (link)."},
                 "link_to": {
                     "type": "string",
@@ -250,15 +267,44 @@ hatırlamalar o yoldan yürüyor.
             content = (args.get("content") or "").strip()
             if not content:
                 return ToolResult.error("`content` boş. Ne hatırlaman gerektiğini yaz.")
-            memory = mind.remember(
-                content,
-                kind=args.get("kind") or "fact",
-                title=args.get("title") or "",
-                tags=args.get("tags") or [],
-            )
-            ctx.session.log.note("mind_write", memory_id=memory.id, kind=memory.kind)
-
-            note = f"Kaydedildi [{memory.id}] ({memory.kind}) {memory.title}"
+            kind = args.get("kind") or "fact"
+            eskisi = (args.get("supersedes") or "").strip()
+            if eskisi:
+                try:
+                    memory = mind.guncelle(
+                        eskisi, content, kind=kind,
+                        title=args.get("title") or "",
+                        tags=args.get("tags") or [])
+                except ValueError as hata:
+                    return ToolResult.error(
+                        f"{hata} Kimlikleri mind_recall ya da action=list ile bul.")
+                ctx.session.log.note("mind_write", memory_id=memory.id,
+                                     kind=memory.kind, supersedes=eskisi)
+                note = (f"Güncellendi [{eskisi}] → [{memory.id}] "
+                        f"({memory.kind}) {memory.title}\n"
+                        "Eski sürüm silinmedi; `series` ile hâlâ görülebilir.")
+            else:
+                # Aday YAZMADAN ÖNCE aranıyor: yazdıktan sonra en yakın
+                # komşu kaydın kendisi olurdu.
+                aday = mind.celiski_adayi(content, kind)
+                memory = mind.remember(
+                    content, kind=kind,
+                    title=args.get("title") or "",
+                    tags=args.get("tags") or [],
+                )
+                ctx.session.log.note("mind_write", memory_id=memory.id,
+                                     kind=memory.kind)
+                note = f"Kaydedildi [{memory.id}] ({memory.kind}) {memory.title}"
+                # Model `supersedes` vermeyi unutmuş olabilir. Kayıt yine de
+                # yazıldı — kaçırmamak temiz olmaktan önemli — ama aynı
+                # konuda bir kayıt varsa kimliği söyleniyor; birleştirme
+                # kararı modelin.
+                if aday is not None and aday.id != memory.id:
+                    note += (
+                        f"\nBenzer kayıt var [{aday.id}]: "
+                        f"'{_one_satir(aday.content)}'. Bunu güncelliyorsan "
+                        f"supersedes={aday.id} ile tekrar çağır; farklı bir "
+                        "şeyse olduğu gibi kaydedildi.")
 
             # Kaydetmekle bağlamak tek çağrıda: ayrı adım bırakıldığında
             # model çoğu zaman ikincisini atlıyor ve "bağladım" diyor.

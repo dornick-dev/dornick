@@ -1,0 +1,82 @@
+{
+ "tablo": [
+  {
+   "esik": 0.5,
+   "yakalama": 0.7917,
+   "yanlis_alarm": 0.4444,
+   "yanlis_sayi": 24
+  },
+  {
+   "esik": 0.55,
+   "yakalama": 0.75,
+   "yanlis_alarm": 0.0926,
+   "yanlis_sayi": 5
+  },
+  {
+   "esik": 0.6,
+   "yakalama": 0.25,
+   "yanlis_alarm": 0.037,
+   "yanlis_sayi": 2
+  },
+  {
+   "esik": 0.65,
+   "yakalama": 0.0417,
+   "yanlis_alarm": 0.0185,
+   "yanlis_sayi": 1
+  },
+  {
+   "esik": 0.7,
+   "yakalama": 0.0,
+   "yanlis_alarm": 0.0185,
+   "yanlis_sayi": 1
+  },
+  {
+   "esik": 0.75,
+   "yakalama": 0.0,
+   "yanlis_alarm": 0.0185,
+   "yanlis_sayi": 1
+  },
+  {
+   "esik": 0.8,
+   "yakalama": 0.0,
+   "yanlis_alarm": 0.0185,
+   "yanlis_sayi": 1
+  },
+  {
+   "esik": 0.85,
+   "yakalama": 0.0,
+   "yanlis_alarm": 0.0,
+   "yanlis_sayi": 0
+  },
+  {
+   "esik": 0.9,
+   "yakalama": 0.0,
+   "yanlis_alarm": 0.0,
+   "yanlis_sayi": 0
+  }
+ ],
+ "duzeltme": 24,
+ "gurultu_aday": 53,
+ "dogru_skorlar": [
+  0.498,
+  0.527,
+  0.553,
+  0.563,
+  0.569,
+  0.577,
+  0.578,
+  0.585,
+  0.586,
+  0.588,
+  0.589,
+  0.589,
+  0.596,
+  0.598,
+  0.603,
+  0.604,
+  0.616,
+  0.618,
+  0.623,
+  0.655
+ ]
+}

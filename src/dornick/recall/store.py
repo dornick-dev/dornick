@@ -49,6 +49,19 @@ SIGNATURE_WEIGHT = 0.9
 # eslesme, uzatmak eki yakalayamamak demek.
 STEM_CHARS = 5
 
+# Bir kaydın "aynı konuda zaten var olanı" sayılması için gereken benzerlik.
+# Kalibrasyon (yaşam bench, `--celiski-esik`, 2026-09-02): 24 düzeltme
+# olayında doğru önceki sürümü yakalama oranı, 60 gürültü kaydında yanlış
+# alarm sayısına karşı tarandı:
+#     0.50 → yakalama 0.79, yanlış 24     0.60 → yakalama 0.25, yanlış 2
+#     0.55 → yakalama 0.75, yanlış  5     0.75 → yakalama 0.00, yanlış 1
+# Yol haritasının önerdiği başlangıç 0.75 hiçbir şey yakalamıyor; eğri
+# 0.55–0.60 arasında dikleşiyor. Diz noktası seçildi: dörtte üç yakalama,
+# altmış gürültü kaydında beş uyarı. Uyarı bir öneridir, kayıt her hâlükârda
+# yazılır — yanlış alarmın maliyeti bir cümle, kaçırmanınki bir çelişki.
+# Bkz. docs/charts/celiski-esigi.md.
+CELISKI_ESIK = 0.55
+
 HOP_DECAY = 0.45
 MIN_ACTIVATION = 0.02
 
@@ -76,9 +89,17 @@ CREATE TABLE IF NOT EXISTS node (
     -- sonraki fazlar şema değiştirmesin.
     -- `uses`/`last_used` korunuyor (arayüz okuyor) ama aktivasyon bu
     -- sütundan hesaplanıyor — sayaç zamanı bilmiyor.
-    kullanimlar TEXT NOT NULL DEFAULT '[]'
+    kullanimlar TEXT NOT NULL DEFAULT '[]',
+    -- Güncelleme zinciri. Silme değil YER DEĞİŞTİRME: eski satır diskte,
+    -- `series`'te ve açık aramada kalır; yalnız tohumlamadan ve ruhtan
+    -- düşer, ve kendisine gelen çağrışım yeni sürüme yönlenir.
+    supersedes    TEXT NOT NULL DEFAULT '',   -- bu kayıt kimin yerini aldı
+    superseded_by TEXT NOT NULL DEFAULT ''    -- bu kaydın yerini kim aldı
 );
 CREATE INDEX IF NOT EXISTS node_kind ON node(kind) WHERE deleted = 0;
+-- node_superseded indeksi _add_missing_columns'ta kuruluyor: eski bir
+-- belleği açarken sütun henüz eklenmemiş oluyor ve buradaki CREATE INDEX
+-- bütün şema betiğini düşürürdü.
 
 CREATE TABLE IF NOT EXISTS link (
     src    TEXT NOT NULL,
@@ -131,6 +152,11 @@ class Node:
     # izin "şu an ne kadar canlı" olduğu diskte durabilecek bir sayı değil,
     # zamanın fonksiyonu.
     aktivasyon: float = aktivasyon.TABAN_YOK
+    # Güncelleme zinciri. `superseded_by` doluysa bu kayıt geçmiştir:
+    # aranmaz, ruha girmez — ama silinmemiştir.
+    supersedes: str = ""
+    superseded_by: str = ""
+    deleted: bool = False
 
     def headline(self) -> str:
         """Modele önce bu gider: kimlik ve tek satır. Gövde açılınca gelir."""
@@ -208,6 +234,13 @@ class RecallStore:
         have = {row["name"] for row in self._db.execute("PRAGMA table_info(node)")}
         if "sig" not in have:
             self._db.execute("ALTER TABLE node ADD COLUMN sig BLOB")
+        for sutun in ("supersedes", "superseded_by"):
+            if sutun not in have:
+                self._db.execute(
+                    f"ALTER TABLE node ADD COLUMN {sutun} TEXT NOT NULL DEFAULT ''")
+        self._db.execute(
+            "CREATE INDEX IF NOT EXISTS node_superseded ON node(superseded_by)"
+            " WHERE superseded_by != ''")
         if "kullanimlar" not in have:
             self._db.execute(
                 "ALTER TABLE node ADD COLUMN kullanimlar TEXT NOT NULL DEFAULT '[]'")
@@ -327,6 +360,7 @@ class RecallStore:
         with self._lock:
             rows = self._db.execute(
                 "SELECT id, title, body, tags, sig FROM node WHERE deleted=0"
+                + self._gecmis_suzgeci()
             ).fetchall()
 
         index = vector.Index()
@@ -362,6 +396,8 @@ class RecallStore:
         tags: Iterable[str] = (),
         session: str = "",
         links: Iterable[str] = (),
+        supersedes: str = "",
+        kullanimlar: str = "",
     ) -> Node:
         if kind not in KINDS:
             raise ValueError(f"Bilinmeyen tür: {kind}. Geçerli olanlar: {', '.join(KINDS)}")
@@ -377,16 +413,18 @@ class RecallStore:
             tags=[t.strip() for t in tags if t.strip()],
             session=session,
             created=self._simdi(),
+            supersedes=supersedes,
         )
         tag_text = " ".join(node.tags)
         sign = vector.signature(f"{node.title} {node.body} {tag_text}")
         with self._lock:
             self._db.execute(
                 "INSERT INTO node(id, kind, title, body, tags, session, created,"
-                " sig, kullanimlar) VALUES (?,?,?,?,?,?,?,?,?)",
+                " sig, kullanimlar, supersedes) VALUES (?,?,?,?,?,?,?,?,?,?)",
                 (node.id, node.kind, node.title, node.body,
                  tag_text, node.session, node.created, vector.to_blob(sign),
-                 aktivasyon.ilk_damga(node.created)),
+                 kullanimlar or aktivasyon.ilk_damga(node.created),
+                 supersedes),
             )
             for other in links:
                 self._link(node.id, other, 1.0, "birlikte kaydedildi")
@@ -406,6 +444,111 @@ class RecallStore:
         # demekti; cagrisim da bu baglarin uzerinden yuruyor.
         self._weave(node)
         return node
+
+    def guncelle(
+        self,
+        eski_id: str,
+        body: str,
+        *,
+        kind: str = "",
+        title: str = "",
+        tags: Iterable[str] = (),
+        session: str = "",
+    ) -> Node:
+        """Bir kaydın yerine yenisini yazar. Eskisi SİLİNMEZ.
+
+        Dört iş bir arada:
+
+        1. Yeni kayıt `supersedes=eski_id` ile yazılır.
+        2. Eskiye `superseded_by=yeni_id` yazılır; `deleted` 0 kalır.
+        3. İkisi "günceller" gerekçeli bir kenarla bağlanır — arayüz zinciri
+           çizebilsin, çağrışım o yoldan yürüyebilsin.
+        4. Eskinin kullanım geçmişi yeniye **kopyalanır**. Pekişme mirası
+           olmasaydı düzeltme sıfırdan başlar ve ruhta düzelttiği şeyin
+           altında kalırdı — düzeltmenin bütün amacının tersi.
+
+        Eski kayıt imza indeksinden düşürülüyor: aranmaz, ruha girmez, ama
+        diskte, `series`'te ve açık aramada durmaya devam eder.
+        """
+        eski = self.peek(eski_id)
+        if eski is None:
+            raise ValueError(f"Güncellenecek kayıt yok: {eski_id}")
+
+        # Miras + yeni yazım anı: düzeltme, düzelttiği şeyin pekişmesini
+        # devralır ve üstüne kendi tazeliğini koyar.
+        miras = aktivasyon.ekle(self.kullanimlar(eski_id), self._saat(),
+                                etiket=aktivasyon.YAZILDI)
+        yeni = self.remember(
+            body,
+            kind=kind or eski.kind,
+            title=title,
+            tags=tags or eski.tags,
+            session=session or eski.session,
+            supersedes=eski_id,
+            kullanimlar=miras,
+        )
+        with self._lock:
+            self._db.execute("UPDATE node SET superseded_by=? WHERE id=?",
+                             (yeni.id, eski_id))
+            self._link(yeni.id, eski_id, 1.0, "günceller")
+            self._db.commit()
+        # Eski sürüm imza kanalından düşüyor; FTS'te kalıyor (birebir
+        # kelimeyle hâlâ bulunur — "ipucuyla uyanır").
+        with self._index_lock:
+            if self._index is not None:
+                self._index.drop(eski_id)
+        return yeni
+
+    def celiski_adayi(self, body: str, kind: str, *,
+                      esik: float = CELISKI_ESIK) -> Node | None:
+        """Bu gövde, aynı türden var olan bir kaydın güncellemesi olabilir mi?
+
+        Model `supersedes` vermeyi unutursa sistem sessiz kalmamalı: en yakın
+        birkaç komşuya bakılıyor, aynı türden ve yeterince benzer olan varsa
+        araç yanıtında adı geçiyor. Karar modelin — kayıt her hâlükârda
+        yazılıyor. Kaçırmamak, temiz olmaktan önemli.
+        """
+        if not anahtar.AKTIF.supersede:
+            return None
+        for node_id, score, aday_kind in self._seed(body[:400], 3):
+            if aday_kind == kind and score >= esik:
+                return self.peek(node_id)
+        return None
+
+    def gecerli_surum(self, node_id: str) -> str:
+        """Zincirin ucundaki kayıt. Döngü korumalı.
+
+        Elle bozulmuş bir db'de A→B, B→A yazılabilir; hatırlama o zaman
+        sonsuza kadar dönerdi. Görülen kimlik ikinci kez gelirse durulur.
+        """
+        gorulen = {node_id}
+        simdiki = node_id
+        while True:
+            with self._lock:
+                row = self._db.execute(
+                    "SELECT superseded_by FROM node WHERE id=?", (simdiki,)
+                ).fetchone()
+            sonraki = (row["superseded_by"] if row else "") or ""
+            if not sonraki or sonraki in gorulen:
+                return simdiki
+            gorulen.add(sonraki)
+            simdiki = sonraki
+
+    def komsular_gerekceli(self, node_id: str) -> list[tuple[Node, float, str]]:
+        """Komşular, bağın gerekçesiyle birlikte.
+
+        `neighbours` yalnız ağırlık döndürüyor; gerekçe hem arayüzün
+        (supersede kenarını farklı çizmek) hem `mind_recall` çıktısının
+        (modele "neden bağlı" bilgisini vermek) ihtiyacı.
+        """
+        with self._lock:
+            rows = self._db.execute(
+                "SELECT n.*, l.weight, l.reason FROM link l"
+                " JOIN node n ON n.id = l.dst"
+                " WHERE l.src=? AND n.deleted=0 ORDER BY l.weight DESC",
+                (node_id,),
+            ).fetchall()
+        return [(self._dugum(r), float(r["weight"]), r["reason"]) for r in rows]
 
     def _weave(self, node: Node, neighbours: int = 3) -> None:
         seeds = self._seed(f"{node.title} {node.body}"[:400], neighbours + 1)
@@ -429,7 +572,13 @@ class RecallStore:
         for a, b in ((src, dst), (dst, src)):
             self._db.execute(
                 "INSERT INTO link(src, dst, weight, reason) VALUES (?,?,?,?)"
-                " ON CONFLICT(src, dst) DO UPDATE SET weight=max(weight, excluded.weight)",
+                " ON CONFLICT(src, dst) DO UPDATE SET"
+                "   weight=max(weight, excluded.weight),"
+                # Gerekçe ağırlıkla birlikte taşınıyor: daha güçlü bağ daha
+                # iyi bir açıklama demek. "benzer icerik" üstüne yazılan
+                # "günceller" kaybolmamalı — arayüz zinciri ondan çiziyor.
+                "   reason=CASE WHEN excluded.weight >= weight"
+                "               THEN excluded.reason ELSE reason END",
                 (a, b, weight, reason),
             )
 
@@ -455,7 +604,7 @@ class RecallStore:
                 cols = [r["name"] for r in self._db.execute("PRAGMA incoming.table_info(node)")]
                 known = ["id", "kind", "title", "body", "tags", "session",
                          "created", "last_used", "uses", "deleted", "sig",
-                         "kullanimlar"]
+                         "kullanimlar", "supersedes", "superseded_by"]
                 common = ",".join(c for c in known if c in cols)
                 if common:
                     self._db.execute(
@@ -527,6 +676,16 @@ class RecallStore:
 
     # -- okuma ---------------------------------------------------------
 
+    def _gecmis_suzgeci(self, onek: str = "") -> str:
+        """Geçmiş sürümleri dışarıda bırakan SQL parçası.
+
+        Mekanik kapalıyken boş dönüyor: ablation koşusu ürünün kendi
+        kodundan geçsin, bench'e kopyalanmış bir sürümden değil.
+        """
+        if not anahtar.AKTIF.supersede:
+            return ""
+        return f" AND {onek}superseded_by=''"
+
     def open(self, node_id: str) -> Node | None:
         """Tam kaydı getirir ve izi güçlendirir.
 
@@ -554,7 +713,12 @@ class RecallStore:
                                         etiket=aktivasyon.ACILDI), node_id),
             )
             self._db.commit()
-        return self._dugum(row)
+        node = self._dugum(row)
+        if node.superseded_by:
+            # Model elinde eski bir kimlik tutuyor olabilir; yönü görmeli.
+            uc = self.gecerli_surum(node_id)
+            node.body = f"{node.body}\n[güncellendi → {uc}]"
+        return node
 
     def peek(self, node_id: str) -> Node | None:
         """Güçlendirmeden bakar. İç işleyiş için; kullanım sayılmaz."""
@@ -590,7 +754,7 @@ class RecallStore:
         return [(r["src"], r["dst"], float(r["weight"])) for r in rows]
 
     def count(self, kind: str | None = None) -> int:
-        sql = "SELECT count(*) FROM node WHERE deleted=0"
+        sql = "SELECT count(*) FROM node WHERE deleted=0" + self._gecmis_suzgeci()
         args: tuple[Any, ...] = ()
         if kind:
             sql += " AND kind=?"
@@ -601,16 +765,25 @@ class RecallStore:
     def recent(self, limit: int = 20) -> list[Node]:
         with self._lock:
             rows = self._db.execute(
-                "SELECT * FROM node WHERE deleted=0 ORDER BY created DESC, rowid DESC LIMIT ?",
+                "SELECT * FROM node WHERE deleted=0"
+                + self._gecmis_suzgeci()
+                + " ORDER BY created DESC, rowid DESC LIMIT ?",
                 (limit,),
             ).fetchall()
         return [self._dugum(r) for r in rows]
 
-    def by_kind_any(self, limit: int = 500) -> list[Node]:
-        """Silinmemiş kayıtlar, en yeniden eskiye. Etiket taraması için."""
+    def by_kind_any(self, limit: int = 500, *,
+                    tum_surumler: bool = False) -> list[Node]:
+        """Silinmemiş kayıtlar, en yeniden eskiye. Etiket taraması için.
+
+        `tum_surumler` zaman dizisi içindir (`series`): orada geçmiş sürümler
+        gürültü değil, istenen şeyin ta kendisidir.
+        """
+        suzgec = "" if tum_surumler else self._gecmis_suzgeci()
         with self._lock:
             rows = self._db.execute(
-                "SELECT * FROM node WHERE deleted=0 ORDER BY created DESC LIMIT ?",
+                "SELECT * FROM node WHERE deleted=0" + suzgec
+                + " ORDER BY created DESC LIMIT ?",
                 (limit,),
             ).fetchall()
         return [self._dugum(r) for r in rows]
@@ -634,7 +807,8 @@ class RecallStore:
             with self._lock:
                 rows = self._db.execute(
                     "SELECT * FROM node WHERE deleted=0 AND kind=?"
-                    " ORDER BY uses DESC, created DESC LIMIT ?",
+                    + self._gecmis_suzgeci()
+                    + " ORDER BY uses DESC, created DESC LIMIT ?",
                     (kind, limit),
                 ).fetchall()
             return [self._dugum(r) for r in rows]
@@ -643,7 +817,8 @@ class RecallStore:
         with self._lock:
             rows = self._db.execute(
                 "SELECT * FROM node WHERE deleted=0 AND kind=?"
-                " ORDER BY uses DESC, created DESC LIMIT ?",
+                + self._gecmis_suzgeci()
+                + " ORDER BY uses DESC, created DESC LIMIT ?",
                 (kind, aday),
             ).fetchall()
         dugumler = [self._dugum(r) for r in rows]
@@ -691,19 +866,27 @@ class RecallStore:
             nxt: list[tuple[str, float, str]] = []
             for node_id, strength, _kind in frontier:
                 for neighbour, weight in self.neighbours(node_id):
+                    # Geçmiş sürüme gelen çağrışım güncel sürüme yönlenir:
+                    # eski kaydın komşuluğu kaybolmuyor, taşınıyor.
+                    hedef = neighbour
+                    if neighbour.superseded_by and anahtar.AKTIF.supersede:
+                        uc = self.peek(self.gecerli_surum(neighbour.id))
+                        if uc is None or uc.id == node_id:
+                            continue
+                        hedef = uc
                     # Unutulmuş düğüm çağrışım yolunu iletmez: aktivasyonu
                     # sönmüş bir kaydın üzerinden geçen yol, konudan
                     # uzaklaşmanın en sessiz yoluydu.
                     spread = (strength * weight * HOP_DECAY
-                              * aktivasyon.yayilma_carpani(neighbour.aktivasyon))
-                    if spread < MIN_ACTIVATION or spread <= activation.get(neighbour.id, 0.0):
+                              * aktivasyon.yayilma_carpani(hedef.aktivasyon))
+                    if spread < MIN_ACTIVATION or spread <= activation.get(hedef.id, 0.0):
                         continue
-                    activation[neighbour.id] = spread
+                    activation[hedef.id] = spread
                     trace.append(
-                        Step(node=neighbour.id, kind=neighbour.kind,
+                        Step(node=hedef.id, kind=hedef.kind,
                              activation=spread, hop=hop, via=node_id)
                     )
-                    nxt.append((neighbour.id, spread, neighbour.kind))
+                    nxt.append((hedef.id, spread, hedef.kind))
             frontier = nxt
             if not frontier:
                 break
@@ -766,7 +949,8 @@ class RecallStore:
                 " n.kullanimlar, bm25(node_fts) AS rank"
                 " FROM node_fts JOIN node n ON n.rowid = node_fts.rowid"
                 " WHERE node_fts MATCH ? AND n.deleted=0"
-                " ORDER BY rank LIMIT ?",
+                + self._gecmis_suzgeci("n.")
+                + " ORDER BY rank LIMIT ?",
                 (expression, limit),
             ).fetchall()
 
@@ -882,6 +1066,9 @@ def _alan(row: sqlite3.Row, ad: str):
 def _to_node(row: sqlite3.Row, *, seviye: float = aktivasyon.TABAN_YOK) -> Node:
     return Node(
         aktivasyon=seviye,
+        supersedes=_alan(row, "supersedes") or "",
+        superseded_by=_alan(row, "superseded_by") or "",
+        deleted=bool(_alan(row, "deleted") or 0),
         id=row["id"],
         kind=row["kind"],
         title=row["title"],

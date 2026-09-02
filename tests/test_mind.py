@@ -574,3 +574,13 @@ def test_search_only_scans_the_most_recent_sessions(tmp_path: Path, mind: Mind) 
         _oturum_yaz(sessions, f"2026010{i}T000000Z", [("user", "ANAHTAR")])
 
     assert len(mind.search_transcripts("anahtar", limit=2)) == 2
+
+
+def _arac_ortami(tmp_path: Path):
+    """Araç kaydı + bağlam + zihin — başka test dosyaları da kullanıyor."""
+    zihin = open_mind(tmp_path / "mind", tmp_path / "sessions", "cur")
+    config = Config.load(tmp_path)
+    config.ensure_dirs()
+    session = Session(EventLog(tmp_path / "s.jsonl"), "cur")
+    baglam = ToolContext(config=config, session=session, cancel=asyncio.Event())
+    return build_registry(zihin), baglam, zihin

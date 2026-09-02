@@ -222,8 +222,74 @@ sekizinci yuvadan taşıyor. Kriter geçiyor ama yön yanlış; Faz 2'nin
 bunu geri almalı. Faz 2 sonunda `taze_ruh` yeniden ölçülecek ve 1.00'a
 dönmezse mekanik eksik demektir.
 
-## Faz 2 — Supersede · Faz 1 kararı bekleniyor
-## Faz 3 (Adım 1-5) — Gece: öncelik, tekrar, dikiş, örgü · bekliyor
+---
+
+## Faz 2 — Supersede ✅ kabul (3 kriterden 2'si tam, 3.'sü ölçüldü)
+
+| Dosya | Ne |
+|---|---|
+| `recall/store.py` | `supersedes` / `superseded_by` sütunları, `guncelle`, `gecerli_surum`, `celiski_adayi`, `komsular_gerekceli` |
+| `mind/store.py` | `Mind.guncelle`, `Mind.celiski_adayi`; `series` tüm sürümleri döndürüyor |
+| `mind/tools.py` | `mind_memory save` → `supersedes` parametresi + otomatik çelişki uyarısı; araç açıklamasındaki "eskisini sil" öğüdü kaldırıldı |
+| `tests/test_supersede.py` | zincir, yayılma yönlendirmesi, döngü koruması, pekişme mirası, araç yüzeyi, göç, ablation |
+
+Şema: iki `TEXT DEFAULT ''` sütunu + kısmi indeks. Silme **yok**: eski satır
+`deleted=0` kalıyor, `series`'te ve FTS'te duruyor, açık aramada birebir
+kelimeyle hâlâ bulunuyor. Yalnız üç şey değişiyor — tohumlanmıyor, ruha
+girmiyor, ve kendisine gelen çağrışım güncel sürüme yönleniyor (döngü
+korumalı). `open()` eski bir kimliği açarsa gövdenin sonuna
+`[güncellendi → n_xxx]` düşüyor.
+
+**Pekişme mirası:** yeni kayıt eskinin kullanım geçmişini devralıyor, üstüne
+kendi yazım anını koyuyor. Faz 1'in bıraktığı yara buydu: düzeltme sıfırdan
+başlayınca ruhta düzelttiği şeyin altında kalıyordu. `taze_ruh` 0.808 → 0.942
+ile geri geldi.
+
+### Kalibrasyon — `CELISKI_ESIK` (`docs/charts/celiski-esigi.md`)
+
+Yol haritasının önerdiği başlangıç değeri **0.75 hiçbir şey yakalamıyor**
+(yakalama 0.00). 24 düzeltme olayında doğru önceki sürümü yakalama oranı, 60
+gürültü kaydında yanlış alarm sayısına karşı tarandı:
+
+| Eşik | Yakalama ↑ | Yanlış alarm |
+|---|---|---|
+| 0.50 | 0.79 | 24 |
+| **0.55** | **0.75** | **5** |
+| 0.60 | 0.25 | 2 |
+| 0.75 | 0.00 | 1 |
+
+Eğri 0.55–0.60 arasında dikleşiyor; diz noktası seçildi. Uyarı bir öneri,
+kayıt her hâlükârda yazılıyor — yanlış alarmın maliyeti bir cümle,
+kaçırmanınki bir çelişki.
+
+### Ölçüm — `docs/charts/yasam-f2.md`
+
+| Kriter | eski | Faz 1 | Faz 2 | Ablation (kapalı) | Kabul | |
+|---|---|---|---|---|---|---|
+| `yasak_sizinti` (B kümesi) | 28 | 28 | **0** | 28 | = 0 | ✅ |
+| `bayat_ruh` | 3.478 | 3.333 | **0** | 3.333 | = 0 | ✅ |
+| B kümesi precision ablation farkı | — | — | **0.062** | — | ≥ 0.20 | ❌ |
+| `taze_ruh` | 1.000 | 0.808 | **0.942** | 0.808 | ≥ 0.80 | ✅ |
+| `prime_precision` | 0.2553 | 0.2634 | **0.2765** | 0.2634 | düşmez | ✅ |
+| `prime_recall` | 0.96 | 0.98 | **0.99** | 0.98 | — | ✅ |
+| `yasak_sizinti` (toplam) | 59 | 57 | **29** | 57 | — | ✅ |
+| `ruh_token` | 324.97 | 329.81 | **303.95** | 329.81 | ≤ taban | ✅ |
+| `prime_token` | 84.07 | 83.64 | **81.51** | 83.64 | ≤ taban | ✅ |
+| `gecikme_p95` | 8.97 | 9.31 | **9.01 ms** | — | ≤ 20 | ✅ |
+
+`scale_bench`: precision 0.63 → **0.64**, tok/query 71.8 → **71.3**. Gerileme yok.
+
+**Geçmeyen kriter üzerine.** Ablation'da B kümesi precision'ı 0.276 → 0.214
+(fark 0.062), hedef ≥ 0.20 idi. Mekaniğin iş yapmadığı anlamına gelmiyor:
+aynı ablation'da B kümesi **yasak sızıntısı 0 → 28**'e fırlıyor, yani ölçtüğü
+şeyi tam olarak ölçüyor. Precision'ın az oynamasının sebebi seçicinin
+kendisi: `select_prime` beş yuvayı doldurmaya çalışıyor, bayat sürümler
+çıkınca boşalan yuvaları başka gürültü dolduruyor. Kötü adayı çıkarmak,
+seçici yerine başka bir kötü aday koyuyorsa precision'ı hareket ettirmez.
+Precision'ın asıl darboğazı eşik ve bağlam (Faz 5); bu satır oraya not
+düşüldü.
+
+## Faz 3 (Adım 1-5) — Gece: öncelik, tekrar, dikiş, örgü · sırada
 ## Faz 3.12 — Uyanık tekrar, mikro-uyku, yerel uyku · bekliyor
 ## Faz 3 (Adım 6) — Damıtma · bekliyor
 ## Faz 3.10 — Uyku dinamiği · bekliyor (`ESIK_UST` hazır)

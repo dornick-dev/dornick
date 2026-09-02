@@ -229,6 +229,7 @@ class Olcum:
         self.kume_kesisim: dict[str, int] = {}
         self.kume_beklenen: dict[str, int] = {}
         self.kume_prime: dict[str, int] = {}
+        self.kume_sizinti: dict[str, int] = {}
         self.acik: dict[str, list[float]] = {}
         self.sorumluluk: list[float] = []
         self.olcumler: dict[str, list[float]] = {"N": [], "O": []}
@@ -448,7 +449,9 @@ def _sorgu(mind: Any, olay: dict[str, Any], o: Olcum, slug_of: dict[str, str],
     prime_slug.discard("")
     o.prime_tokenlar.append(token(prime_note(isabetler)) if isabetler else 0.0)
     o.soru_sayisi += 1
-    o.sizinti += len(prime_slug & yasak)
+    sizan = len(prime_slug & yasak)
+    o.sizinti += sizan
+    o.kume_sizinti[kume] = o.kume_sizinti.get(kume, 0) + sizan
     ot.tur += 1
     ot.log.note("prime", ids=[h.item.id for h in isabetler], query=soru)
 
@@ -574,7 +577,8 @@ def _rapor(o: Olcum, mind: Any) -> dict[str, Any]:
     }
     kume_detay = {
         k: {"precision": oran(o.kume_kesisim.get(k, 0), o.kume_prime.get(k, 0)),
-            "recall": oran(o.kume_kesisim.get(k, 0), o.kume_beklenen.get(k, 0))}
+            "recall": oran(o.kume_kesisim.get(k, 0), o.kume_beklenen.get(k, 0)),
+            "sizinti": float(o.kume_sizinti.get(k, 0))}
         for k in ADIL_KUMELER
     }
     return {
@@ -776,7 +780,104 @@ def _esikleri_tureti(egri: list[dict[str, Any]]) -> dict[str, float | None]:
     return {"ESIK_UST": None, "ESIK_ALT": None, "taban_precision": round(taban, 4)}
 
 
+# -- çelişki eşiği (Faz 2.4) -------------------------------------------
+
+
+def celiski_esigi(veri: dict[str, Any]) -> dict[str, Any]:
+    """`CELISKI_ESIK` kalibrasyonu: yakalama oranına karşı yanlış alarm.
+
+    Model `supersedes` vermeyi unuttuğunda sistem "bu aynı konudaki bir
+    öncekinin güncellemesi olabilir" diyebilmeli. Eşik çok düşükse her
+    gürültü notu için uyarı basar ve model uyarıya bakmayı bırakır; çok
+    yüksekse hiç uyarmaz. İkisinin arasını veri seti söylüyor:
+
+    * **doğru** = bir `duzelt` olayında en yakın aynı-tür komşu, gerçekten
+      o zincirin bir önceki sürümü,
+    * **yanlış** = bir `kaydet` olayında (C gürültü kümesi) eşiği geçen bir
+      komşu bulunması — orada güncellenecek bir şey yok.
+    """
+    baslangic = datetime.fromisoformat(veri["baslangic"])
+    if baslangic.tzinfo is None:
+        baslangic = baslangic.replace(tzinfo=timezone.utc)
+    saat = SanalSaat(baslangic)
+    dogru: list[float] = []     # düzeltmelerde bulunan doğru adayın skoru
+    kacan = 0                   # düzeltme ama aday hiç bulunamadı
+    yanlis: list[float] = []    # gürültüde bulunan adayın skoru
+
+    with tempfile.TemporaryDirectory(prefix="yasam-celiski-") as ad:
+        kok = Path(ad)
+        mind = _zihin_ac(kok, saat)
+        store = mind.store
+        try:
+            kimlik: dict[str, str] = {}
+            for olay in sorted(veri["olaylar"],
+                               key=lambda e: (e["gun"], e["saat"], e.get("sira", 0))):
+                if olay["tur"] not in ("kaydet", "duzelt"):
+                    continue
+                saat.ilerle(olay["gun"], int(olay["saat"]))
+                aday = _en_yakin_ayni_tur(store, olay["icerik"], olay["kind"])
+                if olay["tur"] == "duzelt":
+                    hedef = kimlik.get(olay["eskisi"], "")
+                    if aday and aday[0] == hedef:
+                        dogru.append(aday[1])
+                    else:
+                        kacan += 1
+                elif olay["kume"] == "C" and aday:
+                    yanlis.append(aday[1])
+                m = mind.remember(olay["icerik"], kind=olay["kind"],
+                                  title=olay.get("baslik") or "",
+                                  tags=olay.get("etiketler") or [])
+                kimlik[olay["slug"]] = m.id
+        finally:
+            store.close()
+
+    toplam_duzelt = len(dogru) + kacan
+    tablo = []
+    for esik in (0.50, 0.55, 0.60, 0.65, 0.70, 0.75, 0.80, 0.85, 0.90):
+        yakalanan = sum(1 for x in dogru if x >= esik)
+        alarm = sum(1 for x in yanlis if x >= esik)
+        tablo.append({
+            "esik": esik,
+            "yakalama": round(yakalanan / toplam_duzelt, 4) if toplam_duzelt else None,
+            "yanlis_alarm": round(alarm / max(len(yanlis) + 1, 1), 4),
+            "yanlis_sayi": alarm,
+        })
+    return {"tablo": tablo, "duzeltme": toplam_duzelt, "gurultu_aday": len(yanlis),
+            "dogru_skorlar": sorted(round(x, 3) for x in dogru)}
+
+
+def _en_yakin_ayni_tur(store: Any, body: str, kind: str) -> tuple[str, float] | None:
+    """`celiski_adayi`nın eşiksiz hâli — kalibrasyon için ham skor."""
+    for node_id, score, aday_kind in store._seed(body[:400], 3):   # noqa: SLF001
+        if aday_kind == kind:
+            return node_id, score
+    return None
+
+
+def _celiski_raporu(rapor: dict[str, Any]) -> Path:
+    satirlar = [
+        "# Çelişki eşiği (`CELISKI_ESIK`) kalibrasyonu",
+        "",
+        f"{rapor['duzeltme']} düzeltme olayı, {rapor['gurultu_aday']} gürültü "
+        "kaydında aday bulundu. **Yakalama** = düzeltmede doğru önceki sürümün "
+        "eşiği geçme oranı. **Yanlış alarm** = gürültü kaydında eşiği geçen "
+        "aday oranı — orada güncellenecek bir şey yok.",
+        "",
+        "| Eşik | Yakalama ↑ | Yanlış alarm ↓ | Yanlış sayı |",
+        "|---|---|---|---|",
+    ]
+    for satir in rapor["tablo"]:
+        satirlar.append(f"| {satir['esik']:.2f} | {_bicim(satir['yakalama'])} "
+                        f"| {_bicim(satir['yanlis_alarm'])} | {satir['yanlis_sayi']} |")
+    yol = CHARTS() / "celiski-esigi.md"
+    yol.write_text("\n".join(satirlar) + "\n", encoding="utf-8")
+    (CHARTS() / "celiski-esigi.json").write_text(
+        json.dumps(rapor, ensure_ascii=False, indent=1), encoding="utf-8")
+    return yol
+
+
 # -- rapor -------------------------------------------------------------
+
 
 
 def CHARTS() -> Path:
@@ -820,13 +921,14 @@ def markdown_yaz(etiket: str, sonuc: dict[str, Any], eski: dict[str, Any] | None
             f"| {_hedef_metin(ad)} |")
 
     satirlar += ["", "## Küme kırılımı (prime precision / recall)", "",
-                 "| Küme | Ne ölçer | Precision | Recall |", "|---|---|---|---|"]
+                 "| Küme | Ne ölçer | Precision | Recall | Yasak sızıntı |",
+                 "|---|---|---|---|---|"]
     ACIKLAMA = {"A": "sabit gerçekler", "B": "düzeltme zincirleri",
                 "D": "tekrar kullanılan yordamlar", "E": "bağlam çakışması",
                 "H": "zaman komşuluğu", "J": "dikiş", "K": "gömülme"}
     for k, d in sonuc["kume"].items():
         satirlar.append(f"| {k} | {ACIKLAMA[k]} | {_bicim(d['precision'])} "
-                        f"| {_bicim(d['recall'])} |")
+                        f"| {_bicim(d['recall'])} | {_bicim(d.get('sizinti'))} |")
 
     if olcek := sonuc.get("olcek"):
         satirlar += ["", "## Ölçekte gecikme", "",
@@ -941,6 +1043,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--hizli", action="store_true", help="ölçek gecikme ölçümünü atla")
     ap.add_argument("--olcek", type=int, default=OLCEK_DUGUM)
     ap.add_argument("--buyume", action="store_true", help="P kümesi (200k/20k) — uzun")
+    ap.add_argument("--celiski-esik", action="store_true", dest="celiski",
+                    help="CELISKI_ESIK kalibrasyonu (Faz 2.4)")
     ap.add_argument("--esik-egrisi", action="store_true", dest="esik",
                     help="gece kapalıyken bozulma eğrisi; ESIK_UST buradan")
     ap.add_argument("--json", action="store_true", help="yalnız JSON bas")
@@ -952,6 +1056,14 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     veri = veri_yukle(args.veri)
+
+    if args.celiski:
+        rapor = celiski_esigi(veri)
+        print(_celiski_raporu(rapor))
+        for satir in rapor["tablo"]:
+            print(f"  esik={satir['esik']:.2f}  yakalama={_bicim(satir['yakalama'])}"
+                  f"  yanlis={satir['yanlis_sayi']}")
+        return 0
 
     if args.esik:
         rapor = esik_egrisi(veri)

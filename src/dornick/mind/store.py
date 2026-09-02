@@ -280,6 +280,32 @@ class Mind:
         )
         return _from_node(node)
 
+    def guncelle(
+        self,
+        eski_id: str,
+        content: str,
+        *,
+        kind: str = "",
+        title: str = "",
+        tags: Iterable[str] = (),
+    ) -> Memory:
+        """Bir kaydın yerine yenisini yazar; eskisi geçmişe düşer, silinmez.
+
+        Araç açıklamasındaki "eskisini sil ve güncelini yaz" öğüdünün
+        yerini alan mekanik. Silmek geri dönüşsüzdü ve onay kapısının
+        arkasındaydı; bu değil — hiçbir şey kaybolmuyor.
+        """
+        if kind and kind not in MEMORY_KINDS:
+            raise ValueError(f"Bilinmeyen bellek türü: {kind}")
+        node = self.store.guncelle(eski_id, content, kind=kind, title=title,
+                                   tags=tags, session=self.session_id)
+        return _from_node(node)
+
+    def celiski_adayi(self, content: str, kind: str) -> Memory | None:
+        """Bu kayıt aynı konudaki bir öncekini güncelliyor olabilir mi?"""
+        node = self.store.celiski_adayi(content, kind)
+        return _from_node(node) if node is not None else None
+
     def bridge(self, src: str, dst: str, reason: str = "") -> tuple[Memory, Memory] | None:
         """İki hatırayı bilinçli olarak birbirine bağlar.
 
@@ -310,7 +336,9 @@ class Mind:
             return []
         found = [
             _from_node(node)
-            for node in self.store.by_kind_any(limit=500)
+            # Zaman dizisi geçmişi istiyor: supersede edilmiş sürümler de
+            # gelir. "Dünden bugüne ne oldu" sorusunun cevabı budur.
+            for node in self.store.by_kind_any(limit=500, tum_surumler=True)
             if wanted in [t.lower() for t in node.tags]
         ]
         found.sort(key=lambda m: m.ts)
