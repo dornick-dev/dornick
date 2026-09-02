@@ -3220,8 +3220,12 @@ def select_prime(mind: Any, user_input: str, *, limit: int = RECALL_PRIME_LIMIT,
         for hit in hits
         if hit.item.kind != "episode"
         and hit.item.id in direct
+        and getattr(hit.item, "sicak", True)
         and _gecer(hit.item)
     ]
+    # Soğuk kayıt önyüklemeye giremez. Skoru aktivasyon çarpanıyla zaten
+    # düşük ama kural açık olmalı: genç-hafıza istisnası (aşağıda) onu
+    # koşulsuz-top olarak geçirebilirdi.
     if not passed:
         return []
     top = max(passed, key=lambda h: h.score)

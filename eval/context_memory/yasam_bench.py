@@ -118,6 +118,9 @@ GECIKME_BUTCE_MS = 20.0
 # Büyüme deneyi (P kümesi): 200k'nin 20k'ye oranı.
 BUYUME_BUYUK = 200_000
 BUYUME_KUCUK = 20_000
+# Aktif kümenin büyüklüğü — iki hafızada da aynı. Sıcak/soğuk ayrımının
+# bütün iddiası bu: maliyet toplam hafızayla değil aktif kümeyle büyür.
+SICAK_DOLGU = 2_000
 
 # Q kümesinde ders oturum içinde hiç görünmediyse yazılan ceza: "geceye kadar".
 DERS_GECEYE_KADAR = 99
@@ -698,12 +701,25 @@ def _doldur(store: Any, hedef: int, govdeler: list[str]) -> None:
     for i in range(hedef):
         govde = f"{govdeler[i % len(govdeler)]} (dolgu {i})"
         imza = vector.signature(f"{govde[:60]} {govde} dolgu")
+        # Aktif küme SABİT tutuluyor, toplamın yüzdesi olarak değil. Ölçülen
+        # iddia tam olarak bu: kullanıcı arşivi on kat büyüdü diye günde on
+        # kat fazla hatıra kullanmıyor. Sıcak küme kullanımla tanımlı, hacimle
+        # değil — sabit bir oran yazmak, sınırlamanın hiç olmadığı bir
+        # dünyayı ölçmek olurdu.
         satirlar.append((f"n_dolgu{i:07d}", "fact", govde[:60], govde, "dolgu", "",
-                         "2025-01-06T00:00:00.000+00:00", vector.to_blob(imza)))
+                         "2025-01-06T00:00:00.000+00:00", vector.to_blob(imza),
+                         1 if i < SICAK_DOLGU else 0))
     with store._lock:                                   # noqa: SLF001 — fikstür
-        store._db.executemany(
-            "INSERT OR IGNORE INTO node(id, kind, title, body, tags, session,"
-            " created, sig) VALUES (?,?,?,?,?,?,?,?)", satirlar)
+        try:
+            store._db.executemany(
+                "INSERT OR IGNORE INTO node(id, kind, title, body, tags,"
+                " session, created, sig, sicak) VALUES (?,?,?,?,?,?,?,?,?)",
+                satirlar)
+        except Exception:       # Faz 3.11'den önceki şema: sicak sütunu yok
+            store._db.executemany(
+                "INSERT OR IGNORE INTO node(id, kind, title, body, tags,"
+                " session, created, sig) VALUES (?,?,?,?,?,?,?,?)",
+                [satir[:8] for satir in satirlar])
         store._db.commit()
     store._index = None
 

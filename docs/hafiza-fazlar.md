@@ -541,8 +541,79 @@ tamamlandı; kayıp sıfır.
 temizlik: VACUUM uyanıkken reddediliyor, checkpoint sonrası WAL < 1 MB).
 Ayrı dosyaya bölmek kapsamı değiştirmiyor, yalnız dosya sayısını.
 
-## Faz 3.11 — Sıcak/soğuk indeks · sırada
-## Faz 4 — Kodlama gücü · bekliyor
+---
+
+## Faz 3.11 — Sıcak/soğuk indeks ⚠️ kabul edilmedi (1 kriter) — bütçe tutuyor
+
+| Dosya | Ne |
+|---|---|
+| `recall/store.py` | `sicak` sütunu, `isi_guncelle`, `sicak_oran`; imza indeksi yalnız sıcakları yüklüyor |
+| `recall/orgu.py` | gece sonunda aktif küme yeniden hesaplanıyor |
+| `recall/vector.py` | `Index.ids()` |
+| `loop.py` | soğuk kayıt önyüklemeye giremiyor (genç-hafıza istisnası dahil) |
+| `mind/tools.py` | `mind_recall` çıktısında `(soğuk)` işareti |
+| `tests/test_hot_cold.py` | 13 test: kim soğur, soğuk ne kaybeder, ısınma, damıtılmış episode, oran, göç |
+
+Cevap arşivi küçültmek değil. Hiçbir şey silinmiyor, mezar taşı almıyor,
+`series`'ten düşmüyor. Değişen tek şey **erişilebilirlik**: sıcak düğüm imza
+indeksinde, kendiliğinden gelebilir; soğuk düğüm yalnız FTS'te, yani birebir
+kelimeyle — bir ipucuyla — uyanır ama çağrılmadan gelmez. Açılınca ertesi
+gece ısınır.
+
+### Kalibrasyon — `SOGUK_ESIK = -5.0`
+
+Hedef yol haritasında sayı değil **oran**: doksan günlük senaryoda sıcak oran
+%10-30. Tarama (2026-09-03):
+
+| `SOGUK_ESIK` | sıcak oran | precision | recall | tuzak sessizliği |
+|---|---|---|---|---|
+| −2.0 | %2.9 | 0.343 | 0.23 | 0.80 |
+| −3.0 | %4.5 | 0.333 | 0.25 | 0.80 |
+| −4.0 | %6.5 | 0.444 | 0.52 | 0.725 |
+| **−5.0** | **%25.2** | 0.429 | 0.75 | 0.525 |
+| −6.0 | %69 | 0.444 | 0.88 | 0.45 |
+| −7.0 | %98.5 | 0.459 | 0.90 | 0.45 |
+
+Banda düşen tek değer −5.0.
+
+### Ölçüm — `docs/charts/yasam-f311.md`
+
+| Kriter | Faz 3.10 | Faz 3.11 | Kabul | |
+|---|---|---|---|---|
+| `sicak_oran` | 1.00 | **0.238** | 0.10–0.30 | ✅ |
+| `buyume_ram` | 10.0 | **1.00** | ≤ 2 | ✅ |
+| `buyume_p95` | 6.78 | **6.10** | ≤ 1.5 | ❌ |
+| `gomulme_recall` | 1.00 | **1.00** | ≥ 0.90 | ✅ |
+| `sema_tazeleme` | −0.060 | **0.521** | > 0 | ✅ |
+| `yakalama` | −0.098 | −0.098 | > 0 | ❌ (Faz 3'teki sebep) |
+| `prime_token` | 91.48 | **76.34** | ≤ 0.85×taban (71.5) | ⚠️ −%9 |
+| `tuzak_sessizlik` | 0.45 | **0.525** | düşmez | ✅ |
+| `yasak_sizinti` | 27 | **19** | — | ✅ |
+| `prime_recall` | 0.90 | 0.76 | — | ⚠️ mekaniğin sonucu |
+
+**Mutlak sayılar hedefi tutuyor, oran tutmuyor.** 200k düğümlük bellekte:
+
+| | önce | sonra |
+|---|---|---|
+| imza indeksi | 200.000 kayıt | **2.000** |
+| imza RAM | 14,4 MB | **0,14 MB** |
+| `recall()` p95 | 33,2 ms | **18,4 ms** (bütçe 20) |
+
+Yani kullanıcıya verilen söz — 200k'da 20 ms altında kalmak — **tutuyor**;
+tutmayan şey 20k'ya oranı (6.1, hedef 1.5). Kalan ölçeklenme imza tarafından
+değil FTS tarafından geliyor: indeks iki hafızada da aynı boyutta, ama FTS
+200k satırın hepsini kapsıyor ve dolgu metni yalnızca ~900 farklı cümlenin
+tekrarı olduğu için her sorgu binlerce belgeyle eşleşiyor. Gerçek bir arşivde
+kayıtlar birbirinden farklıdır; bu dolgu FTS için en kötü hâli temsil ediyor.
+Sayı olduğu gibi bırakıldı — dolguyu "daha kolay" yapmak ölçümü değil, ölçüm
+hakkındaki hikâyeyi düzeltmek olurdu.
+
+**Yan etki, mekaniğin amacının doğrudan sonucu:** `prime_recall` 0.90 → 0.76.
+Soğuyan bir kayıt artık kendiliğinden önyüklemeye giremiyor. Aynı sebeple
+tuzak sessizliği 0.45 → 0.525'e, yasak sızıntısı 27 → 19'a, `prime_token`
+91.5 → 76.3'e iyileşti. Bu takas tasarımın kendisi: az ve doğru enjeksiyon.
+
+## Faz 4 — Kodlama gücü · sırada
 ## Faz 5 — Bağlam bonusu · bekliyor
 ## Faz 7 — Ödül, mizaç, üç özne, karakter · bekliyor
 ## Faz 6 — Beyin görünümü · bekliyor

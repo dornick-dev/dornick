@@ -95,7 +95,13 @@ CREATE TABLE IF NOT EXISTS node (
     -- `series`'te ve açık aramada kalır; yalnız tohumlamadan ve ruhtan
     -- düşer, ve kendisine gelen çağrışım yeni sürüme yönlenir.
     supersedes    TEXT NOT NULL DEFAULT '',   -- bu kayıt kimin yerini aldı
-    superseded_by TEXT NOT NULL DEFAULT ''    -- bu kaydın yerini kim aldı
+    superseded_by TEXT NOT NULL DEFAULT '',   -- bu kaydın yerini kim aldı
+    -- Aktif küme. Hafıza büyüdükçe imza taraması ve RAM doğrusal büyüyordu;
+    -- beynin cevabı arşivi küçültmek değil, aktif kümeyi sınırlı tutmak.
+    -- Sıcak düğüm imza indeksinde: kendiliğinden gelir. Soğuk düğüm yalnız
+    -- FTS'te: ipucuyla (birebir kelimeyle) uyanır, kendiliğinden gelmez.
+    -- Silinmez, mezar taşı almaz, `series`'ten düşmez.
+    sicak         INTEGER NOT NULL DEFAULT 1
 );
 CREATE INDEX IF NOT EXISTS node_kind ON node(kind) WHERE deleted = 0;
 -- node_superseded indeksi _add_missing_columns'ta kuruluyor: eski bir
@@ -158,6 +164,10 @@ class Node:
     supersedes: str = ""
     superseded_by: str = ""
     deleted: bool = False
+    # Aktif kümede mi? Soğuk kayıt silinmiş değil: FTS'te duruyor, birebir
+    # kelimeyle bulunuyor, `series`'te görünüyor — yalnız kendiliğinden
+    # gelmiyor ve önyüklemeye giremiyor.
+    sicak: bool = True
 
     def headline(self) -> str:
         """Modele önce bu gider: kimlik ve tek satır. Gövde açılınca gelir."""
@@ -239,6 +249,11 @@ class RecallStore:
             if sutun not in have:
                 self._db.execute(
                     f"ALTER TABLE node ADD COLUMN {sutun} TEXT NOT NULL DEFAULT ''")
+        if "sicak" not in have:
+            # Varsayılan 1: göç anında hiçbir kayıt kaybolmuyor. İlk gece
+            # geçişi hangilerinin soğuduğuna karar veriyor.
+            self._db.execute(
+                "ALTER TABLE node ADD COLUMN sicak INTEGER NOT NULL DEFAULT 1")
         self._db.execute(
             "CREATE INDEX IF NOT EXISTS node_superseded ON node(superseded_by)"
             " WHERE superseded_by != ''")
@@ -359,9 +374,13 @@ class RecallStore:
         # 50k kayıtta ~3-5 ms — bir model çağrısının binde biri. Episode
         # sayısı taramayı gerçekten yorana kadar (yüz binler) bu takas doğru.
         with self._lock:
+            # İmza indeksi YALNIZ sıcak düğümleri tutuyor. Tarama maliyeti
+            # artık aktif hafızayla büyüyor, toplamla değil. FTS her şeyi
+            # kapsamaya devam ediyor: soğuk kayıt birebir kelimeyle bulunur.
             rows = self._db.execute(
                 "SELECT id, title, body, tags, sig FROM node WHERE deleted=0"
                 + self._gecmis_suzgeci()
+                + (" AND sicak=1" if anahtar.AKTIF.orgu else "")
             ).fetchall()
 
         index = vector.Index()
@@ -636,6 +655,64 @@ class RecallStore:
             self._db.commit()
         return int(kucult), int(silinen)
 
+    def isi_guncelle(self, esik: float, taze_gun: int = 7,
+                     damitik_gun: int = 14) -> tuple[int, int]:
+        """Sıcak kümeyi yeniden hesaplar. Gece sonunda koşar.
+
+        Üç kural, sırayla:
+
+        * yeni kayıt her zaman sıcak (yazıldıktan sonraki ilk `taze_gun`),
+        * aktivasyonu eşiğin üstünde olan sıcak,
+        * damıtılmış bir `episode` `damitik_gun` sonra **koşulsuz** soğur —
+          ayrıntı diskte, özet sıcakta yaşar (sistemler konsolidasyonu).
+
+        Döner: (ısınan, soğuyan). İmza indeksi de aynı anda güncelleniyor.
+        """
+        simdi = self._saat()
+        with self._lock:
+            rows = self._db.execute(
+                "SELECT id, kind, created, last_used, uses, kullanimlar, sicak,"
+                " superseded_by FROM node WHERE deleted=0").fetchall()
+        isinan: list[str] = []
+        soguyan: list[str] = []
+        for row in rows:
+            gecmis = aktivasyon.coz_kullanimlar(
+                row["kullanimlar"], created=row["created"],
+                last_used=row["last_used"], uses=int(row["uses"] or 0))
+            b = aktivasyon.taban_aktivasyon(gecmis, simdi)
+            yazim = coz(row["created"])
+            yeni = (yazim is not None
+                    and (simdi - yazim).days < taze_gun
+                    and not (row["superseded_by"] or ""))
+            damitik = any(k.etiket == aktivasyon.DAMITILDI for k in gecmis)
+            eskiyen = damitik and gecmis and (
+                simdi - max(k.t for k in gecmis
+                            if k.etiket == aktivasyon.DAMITILDI)).days >= damitik_gun
+            sicak = bool((yeni or b >= esik) and not eskiyen)
+            if sicak and not row["sicak"]:
+                isinan.append(row["id"])
+            elif not sicak and row["sicak"]:
+                soguyan.append(row["id"])
+        if isinan or soguyan:
+            with self._lock:
+                self._db.executemany("UPDATE node SET sicak=1 WHERE id=?",
+                                     [(i,) for i in isinan])
+                self._db.executemany("UPDATE node SET sicak=0 WHERE id=?",
+                                     [(i,) for i in soguyan])
+                self._db.commit()
+            with self._index_lock:
+                self._index = None      # indeks bir sonraki aramada kurulur
+        return len(isinan), len(soguyan)
+
+    def sicak_oran(self) -> float:
+        """Sıcak düğümlerin toplama oranı. Hedef %10-30 (yol haritası 3.11)."""
+        with self._lock:
+            toplam = self._db.execute(
+                "SELECT COUNT(*) FROM node WHERE deleted=0").fetchone()[0]
+            sicak = self._db.execute(
+                "SELECT COUNT(*) FROM node WHERE deleted=0 AND sicak=1").fetchone()[0]
+        return round(float(sicak) / max(int(toplam), 1), 4)
+
     def strengthening(self) -> float:
         """Küçültülmemiş güçlenme: toplam kenar ağırlığı / düğüm.
 
@@ -764,7 +841,7 @@ class RecallStore:
                 cols = [r["name"] for r in self._db.execute("PRAGMA incoming.table_info(node)")]
                 known = ["id", "kind", "title", "body", "tags", "session",
                          "created", "last_used", "uses", "deleted", "sig",
-                         "kullanimlar", "supersedes", "superseded_by"]
+                         "kullanimlar", "supersedes", "superseded_by", "sicak"]
                 common = ",".join(c for c in known if c in cols)
                 if common:
                     self._db.execute(
@@ -1229,6 +1306,7 @@ def _to_node(row: sqlite3.Row, *, seviye: float = aktivasyon.TABAN_YOK) -> Node:
         supersedes=_alan(row, "supersedes") or "",
         superseded_by=_alan(row, "superseded_by") or "",
         deleted=bool(_alan(row, "deleted") or 0),
+        sicak=bool(1 if _alan(row, "sicak") is None else _alan(row, "sicak")),
         id=row["id"],
         kind=row["kind"],
         title=row["title"],

@@ -59,6 +59,8 @@ class Memory:
     tags: list[str] = field(default_factory=list)
     session_id: str = ""
     deleted: bool = False
+    # Aktif kümede mi? Soğuk kayıt aramada bulunur, önyüklemeye girmez.
+    sicak: bool = True
 
     def searchable(self) -> str:
         return f"{self.title}\n{self.content}\n{' '.join(self.tags)}"
@@ -907,6 +909,7 @@ def _from_node(node, *, deleted: bool = False) -> Memory:
         tags=list(node.tags),
         session_id=node.session,
         deleted=deleted,
+        sicak=bool(getattr(node, "sicak", True)),
     )
 
 def _stem_to_date(stem: str) -> str:

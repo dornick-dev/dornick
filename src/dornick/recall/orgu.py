@@ -103,6 +103,19 @@ ORGU_BAGLANTI = 3
 EPSILON = 0.02
 KENAR_TABAN = 0.05
 
+# Faz 3.11 — sıcak/soğuk sınırı. Bu aktivasyonun altındaki (ve yedi günden
+# eski) kayıt imza indeksinden düşüyor: kendiliğinden gelmiyor ama birebir
+# kelimeyle hâlâ bulunuyor.
+#
+# Kalibrasyon hedefi yol haritasında sayı olarak değil ORAN olarak veriliyor:
+# doksan günlük senaryoda sıcak oran %10-30 arasında kalmalı. Tarama
+# (2026-09-03): -2.0 → %2.9 · -3.0 → %4.5 · -4.0 → %6.5 · **-5.0 → %25.2** ·
+# -6.0 → %69 · -7.0 → %98.5. Banda düşen tek değer -5.0.
+# Yan etki ölçüldü ve beklenendir: soğuk kayıt önyüklemeye giremediği için
+# tuzak sessizliği 0.45 → 0.525'e çıkıyor, prime recall 0.99 → 0.75'e
+# düşüyor. İkincisi mekaniğin amacının doğrudan sonucu, kusuru değil.
+SOGUK_ESIK = -5.0
+
 
 @dataclass(slots=True)
 class Oturum:
@@ -155,6 +168,8 @@ class GeceRaporu:
     yazilan_yordam: int = 0
     yazilan_hedef: int = 0
     damitik: int = 0
+    isinan: int = 0
+    soguyan: int = 0
     celiski: int = 0
     geri_alinan: int = 0
     dikis: int = 0
@@ -236,6 +251,11 @@ def gece_gecisi(
         # düğümler mezar taşına gider. Tekrar ve sorumluluk geri alınmaz.
         rapor.geri_alinan = distil.exam(store, damitma, onceki_sinav, sinav())
     rapor.damitma = damitma.status
+
+    # Adım 7 — sıcak/soğuk. Gece sonunda, her şey yerine oturduktan sonra:
+    # aktif küme sınırlı tutulmazsa imza taraması ve RAM toplam hafızayla
+    # doğrusal büyür (ölçüldü: 200k'da p95 33 ms, bütçe 20).
+    rapor.isinan, rapor.soguyan = store.isi_guncelle(SOGUK_ESIK)
 
     durum["son_kosu"] = _damga(saat)
     _filigran_yaz(filigran, durum)

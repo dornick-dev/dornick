@@ -148,6 +148,7 @@ Mevcut oturum aramaya dahil değildir; o zaten önündeki bağlamda.
                     "Bellek",
                     [
                         f"[{h.item.id}] {_bounded(h.item.render())}"
+                        + ("" if getattr(h.item, "sicak", True) else " (soğuk)")
                         + _sicil_notu(mind, h.item.id)
                         for h in hits
                     ],

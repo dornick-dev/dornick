@@ -180,6 +180,10 @@ class Index:
             self._sigs[node_id] = value
             self._flat = None
 
+    def ids(self) -> list[str]:
+        """İndekste duran kimlikler. Sıcak kümenin ta kendisi (Faz 3.11)."""
+        return list(self._sigs)
+
     def drop(self, node_id: str) -> None:
         if self._sigs.pop(node_id, None) is not None:
             self._flat = None
