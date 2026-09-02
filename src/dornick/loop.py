@@ -3160,7 +3160,7 @@ def worth_recalling(text: str) -> bool:
 
 
 def select_prime(mind: Any, user_input: str, *, limit: int = RECALL_PRIME_LIMIT,
-                 ham: str | None = None) -> list[Any]:
+                 ham: str | None = None, baglam: dict | None = None) -> list[Any]:
     """Kendiliğinden önyüklemenin seçim çekirdeği: ara, süz, kuyruğu kes.
 
     Modül fonksiyonu olması bilinçli — ölçek benchmark'ı
@@ -3183,7 +3183,12 @@ def select_prime(mind: Any, user_input: str, *, limit: int = RECALL_PRIME_LIMIT,
       eşik yalnızca kuyruğu keser.
     """
     query = _without_numbers(user_input)
-    hits = mind.recall(query, limit=limit)
+    try:
+        hits = mind.recall(query, limit=limit, baglam=baglam)
+    except TypeError:
+        # Bağlamı bilmeyen bir zihin (eski sürüm ya da testteki sahte):
+        # bağlam bir iyileştirme, ön şart değil.
+        hits = mind.recall(query, limit=limit)
 
     trace = getattr(mind, "last_trace", None) or []
     direct = {step.node for step in trace if step.hop == 0}

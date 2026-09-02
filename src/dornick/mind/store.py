@@ -61,6 +61,7 @@ class Memory:
     deleted: bool = False
     # Aktif kümede mi? Soğuk kayıt aramada bulunur, önyüklemeye girmez.
     sicak: bool = True
+    baglam: dict = field(default_factory=dict)
 
     def searchable(self) -> str:
         return f"{self.title}\n{self.content}\n{' '.join(self.tags)}"
@@ -219,6 +220,7 @@ class Mind:
         self.session_id = session_id
         self.dir.mkdir(parents=True, exist_ok=True)
 
+        self._baglam: dict = {}
         self._goals: dict[str, Goal] = {}
         self._episode_cache: dict[str, tuple[int, Episode]] = {}
         # Döküm önbelleği (mtime anahtarlı): derin arama 40 oturumu her
@@ -270,7 +272,14 @@ class Mind:
         kind: str = "fact",
         title: str = "",
         tags: Iterable[str] = (),
+        baglam: dict | None = None,
     ) -> Memory:
+        """Hatırayı yazar; bağlamı harness ekler, model değil.
+
+        Bağlam modelin beyanı olsaydı "hangi projedeydik" sorusunun cevabı da
+        bir tahmin olurdu. Oysa o an hangi projede olunduğu harness'ın kesin
+        bildiği tek şeylerden biri.
+        """
         if kind not in MEMORY_KINDS:
             raise ValueError(f"Bilinmeyen bellek türü: {kind}")
         node = self.store.remember(
@@ -279,8 +288,16 @@ class Mind:
             title=title,
             tags=tags,
             session=self.session_id,
+            baglam=baglam if baglam is not None else self.baglam(),
         )
         return _from_node(node)
+
+    def baglam(self) -> dict:
+        """Şu anki oturumun bağlamı. `set_baglam` ile dışarıdan konuyor."""
+        return dict(self._baglam)
+
+    def set_baglam(self, baglam: dict | None) -> None:
+        self._baglam = dict(baglam or {})
 
     def guncelle(
         self,
@@ -380,13 +397,17 @@ class Mind:
             return self.memories(kind)[:limit]
         return [_from_node(n) for n in self.store.by_kind(kind, limit=limit)]
 
-    def recall(self, query: str, *, kind: str | None = None, limit: int = 8) -> list[Scored]:
+    def recall(self, query: str, *, kind: str | None = None, limit: int = 8,
+               baglam: dict | None = None) -> list[Scored]:
         """İndeksten tohumlanır, bağlar üzerinden yayılır.
 
         Aktivasyonun uğradığı yol `last_trace` içinde kalıyor; araç katmanı
         onu olay günlüğüne yazınca arayüz hatırlamayı canlandırabiliyor.
         """
-        recollection = self.store.recall(query, limit=limit * 2)
+        # Açık arama bağlamla SÜZÜLMÜYOR: bağlam yalnız kendiliğinden
+        # önyüklemenin işi. Model "kobyte'ta ne yapmıştık" diye sorabilmeli,
+        # koru1000 oturumundayken bile. Çağıran isterse bağlamı verir.
+        recollection = self.store.recall(query, limit=limit * 2, baglam=baglam)
         self.last_trace = recollection.trace
 
         hits = [n for n in recollection.hits if not kind or n.kind == kind][:limit]
@@ -910,6 +931,7 @@ def _from_node(node, *, deleted: bool = False) -> Memory:
         session_id=node.session,
         deleted=deleted,
         sicak=bool(getattr(node, "sicak", True)),
+        baglam=dict(getattr(node, "baglam", {}) or {}),
     )
 
 def _stem_to_date(stem: str) -> str:

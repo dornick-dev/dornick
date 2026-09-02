@@ -665,6 +665,69 @@ Faz geri alınmadı, üç sebeple ve hepsi yazılı olsun diye:
 **Karar Faz 7 sonrasına bırakıldı**: ödül sinyali sürprizin yerini aldığında
 bu ablation yeniden koşulacak. O koşuda da fayda çıkmazsa faz kaldırılmalı.
 
-## Faz 5 — Bağlam bonusu · sırada
+---
+
+## Faz 5 — Bağlam bonusu ⚠️ kabul edilmedi (1 kriter) — sızıntı sıfırlandı
+
+| Dosya | Ne |
+|---|---|
+| `recall/store.py` | `baglam` sütunu, `_baglam_bonusu` (bonus + **çatışma cezası**), `_seed(..., baglam=)` |
+| `mind/store.py` | `Mind.set_baglam` / `baglam()`; yazım anında damgalanıyor; açık arama süzülmüyor |
+| `loop.py` | `select_prime(..., baglam=)` |
+| `tests/test_context.py` | 12 test: alan, bonus, çatışma, boş bağlam, açık arama, göç, bozuk veri |
+
+`session` alanı vardı ve arama onu hiç okumuyordu. Sızıntı bugüne kadar iki
+sonradan takma süzgeçle bastırılıyordu: sorgudan sayı silmek ve zengin
+sorguda tek gövdeyle tutunan kaydı elemek. İkisi de gerçek süzgeç ama
+ikisi de o hatıraları asıl ayıran şeyle ilgili değil.
+
+**Bonus tek başına yetmedi ve sebebi ölçüldü.** `BAGLAM_BONUS`u 0.15'ten
+3.0'a çıkarmak E kümesi sızıntısını 18'den hiç indirmedi: `select_prime`
+beş yuvayı doldurmaya çalışıyor, doğruyu yukarı itmek yanlışı dışarı atmıyor
+— Faz 2'de bulunan aynı yapısal duvar. Bu yüzden **çatışma cezası** eklendi:
+aynı alanda BAŞKA bir değer taşıyan kayıt (koru1000 oturumundayken kobyte'ın
+raporu) payını kaybediyor. Boş bağlam hâlâ nötr; çatışma cezası bir tabanla
+sınırlı (`BAGLAM_TABAN = 0.15`) ve **açık arama hiç süzülmüyor** — "kobyte'ta
+ne yapmıştık" koru1000 oturumundayken de cevaplanabilmeli.
+
+### Kalibrasyon
+
+| `BAGLAM_CEZA` | E precision | E sızıntı | genel precision | toplam yasak sızıntı |
+|---|---|---|---|---|
+| 0.0 (yalnız bonus) | 0.317 | 18 | 0.393 | 19 |
+| 0.7 | 0.415 | 1 | 0.434 | 2 |
+| **1.0** | **0.400** | **0** | **0.433** | **1** |
+
+### Ölçüm — `docs/charts/yasam-f5.md`
+
+| Kriter | Faz 3.11 | Faz 5 | Kabul | |
+|---|---|---|---|---|
+| E kümesi precision | 0.202 | **0.395** | ≥ 0.85 | ❌ |
+| E kümesi yasak sızıntı | 19 | **0** | — | ✅ |
+| `yasak_sizinti` (toplam) | 19 | **1** | 0 | ✅ neredeyse |
+| `prime_precision` | 0.420 | **0.44** | — | ✅ |
+| küme precision: D / H / J | 0.40 / 0.46 / 0.43 | **0.67 / 0.63 / 0.75** | — | ✅ |
+
+`scale_bench` (eski tabana karşı): recall 0.78 → **0.83**, coverage
+0.76 → **0.81**, precision 0.63 → **0.65**, tok/query 71.8 → **70.7**.
+
+### İkinci kabul kriteri: hileler sadeleştirilemedi
+
+Yol haritası "bonus açıkken `_without_numbers` ve zengin-sorgu ≥2-gövde
+kuralı kapatılıp bench koşulur; sonuç eşit ya da daha iyiyse o hileler
+sadeleştirilir" diyor. Ölçüldü ve **desteklenmedi**:
+
+| Kol | precision | tuzak sessizliği | prime_token | E precision |
+|---|---|---|---|---|
+| ikisi de açık | **0.441** | **0.500** | **74.8** | **0.415** |
+| sayı-silme kapalı | 0.433 | 0.500 | 74.6 | 0.400 |
+| zengin-sorgu kuralı kapalı | 0.405 | 0.325 | 83.3 | 0.386 |
+| ikisi de kapalı | 0.407 | 0.325 | 83.4 | 0.395 |
+
+Zengin-sorgu kuralını kaldırmak tuzak sessizliğini üçte bir düşürüyor ve
+token'ı %11 artırıyor. **Kod borcu bu fazda ödenemedi**; ikisi de hâlâ
+gerçek iş yapıyor ve yerinde kaldı.
+
+## Faz 7 — Ödül, mizaç, üç özne, karakter · sırada
 ## Faz 7 — Ödül, mizaç, üç özne, karakter · bekliyor
 ## Faz 6 — Beyin görünümü · bekliyor

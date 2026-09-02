@@ -338,7 +338,8 @@ def _oyna(mind: Any, veri: dict[str, Any], saat: SanalSaat,
     def yaz(olay: dict[str, Any]) -> str:
         hafiza = mind.remember(
             olay["icerik"], kind=olay["kind"], title=olay.get("baslik") or "",
-            tags=olay.get("etiketler") or [])
+            tags=olay.get("etiketler") or [],
+            baglam=olay.get("baglam") or {})
         kimlik[olay["slug"]] = hafiza.id
         slug_of[hafiza.id] = olay["slug"]
         return hafiza.id

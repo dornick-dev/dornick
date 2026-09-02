@@ -63,6 +63,20 @@ STEM_CHARS = 5
 # Bkz. docs/charts/celiski-esigi.md.
 CELISKI_ESIK = 0.55
 
+# Aynı bağlamda yazılmış kaydın aldığı pay. Üç alan (proje, dizin, saat
+# dilimi) tam örtüşürse çarpan (1 + BAGLAM_BONUS). Kalibrasyon:
+# docs/hafiza-fazlar.md "Faz 5".
+BAGLAM_BONUS = 0.15
+# Aynı alanda ÇATIŞAN değer taşıyan kaydın kaybettiği pay. Bonus tek başına
+# yetmiyordu ve sebebi ölçüldü: `select_prime` beş yuvayı doldurmaya
+# çalışıyor, doğruyu yukarı itmek yanlışı dışarı atmıyor. Boş bağlam hâlâ
+# nötr — ceza yalnız çatışmaya.
+BAGLAM_CEZA = 1.0
+# Çatışan bağlamın koruduğu asgari pay. Sıfıra indirmek "başka projedeyken
+# o kaydı ASLA bulma" demekti; mezar taşı felsefesinin arama tarafındaki
+# karşılığı bu tabandır.
+BAGLAM_TABAN = 0.15
+
 HOP_DECAY = 0.45
 MIN_ACTIVATION = 0.02
 
@@ -101,7 +115,11 @@ CREATE TABLE IF NOT EXISTS node (
     -- Sıcak düğüm imza indeksinde: kendiliğinden gelir. Soğuk düğüm yalnız
     -- FTS'te: ipucuyla (birebir kelimeyle) uyanır, kendiliğinden gelmez.
     -- Silinmez, mezar taşı almaz, `series`'ten düşmez.
-    sicak         INTEGER NOT NULL DEFAULT 1
+    sicak         INTEGER NOT NULL DEFAULT 1,
+    -- Yazım anındaki bağlam: {"proje": "koru1000", "dizin_kok": "...",
+    -- "saat_dilimi": "sabah"}. Model doldurmuyor, harness yazıyor —
+    -- modelin beyanı değil, olayın kendisi.
+    baglam        TEXT NOT NULL DEFAULT '{}'
 );
 CREATE INDEX IF NOT EXISTS node_kind ON node(kind) WHERE deleted = 0;
 -- node_superseded indeksi _add_missing_columns'ta kuruluyor: eski bir
@@ -168,6 +186,10 @@ class Node:
     # kelimeyle bulunuyor, `series`'te görünüyor — yalnız kendiliğinden
     # gelmiyor ve önyüklemeye giremiyor.
     sicak: bool = True
+    # Yazıldığı andaki bağlam. Arama tarafı bunu okuyup aynı bağlamdaki
+    # kaydı öne alıyor; bağlamı boş olan eski kayıtlar bonus almıyor ama
+    # ceza da almıyor.
+    baglam: dict = field(default_factory=dict)
 
     def headline(self) -> str:
         """Modele önce bu gider: kimlik ve tek satır. Gövde açılınca gelir."""
@@ -249,6 +271,9 @@ class RecallStore:
             if sutun not in have:
                 self._db.execute(
                     f"ALTER TABLE node ADD COLUMN {sutun} TEXT NOT NULL DEFAULT ''")
+        if "baglam" not in have:
+            self._db.execute(
+                "ALTER TABLE node ADD COLUMN baglam TEXT NOT NULL DEFAULT '{}'")
         if "sicak" not in have:
             # Varsayılan 1: göç anında hiçbir kayıt kaybolmuyor. İlk gece
             # geçişi hangilerinin soğuduğuna karar veriyor.
@@ -418,6 +443,7 @@ class RecallStore:
         links: Iterable[str] = (),
         supersedes: str = "",
         kullanimlar: str = "",
+        baglam: dict | None = None,
     ) -> Node:
         if kind not in KINDS:
             raise ValueError(f"Bilinmeyen tür: {kind}. Geçerli olanlar: {', '.join(KINDS)}")
@@ -441,17 +467,20 @@ class RecallStore:
             session=session,
             created=self._simdi(),
             supersedes=supersedes,
+            baglam=dict(baglam or {}),
         )
         tag_text = " ".join(node.tags)
         sign = vector.signature(f"{node.title} {node.body} {tag_text}")
         with self._lock:
             self._db.execute(
                 "INSERT INTO node(id, kind, title, body, tags, session, created,"
-                " sig, kullanimlar, supersedes) VALUES (?,?,?,?,?,?,?,?,?,?)",
+                " sig, kullanimlar, supersedes, baglam)"
+                " VALUES (?,?,?,?,?,?,?,?,?,?,?)",
                 (node.id, node.kind, node.title, node.body,
                  tag_text, node.session, node.created, vector.to_blob(sign),
                  kullanimlar or aktivasyon.ilk_damga(node.created, guc),
-                 supersedes),
+                 supersedes,
+                 json.dumps(node.baglam, ensure_ascii=False)),
             )
             for other in links:
                 self._link(node.id, other, 1.0, "birlikte kaydedildi")
@@ -513,6 +542,7 @@ class RecallStore:
             session=session or eski.session,
             supersedes=eski_id,
             kullanimlar=miras,
+            baglam=eski.baglam,
         )
         with self._lock:
             self._db.execute("UPDATE node SET superseded_by=? WHERE id=?",
@@ -848,7 +878,8 @@ class RecallStore:
                 cols = [r["name"] for r in self._db.execute("PRAGMA incoming.table_info(node)")]
                 known = ["id", "kind", "title", "body", "tags", "session",
                          "created", "last_used", "uses", "deleted", "sig",
-                         "kullanimlar", "supersedes", "superseded_by", "sicak"]
+                         "kullanimlar", "supersedes", "superseded_by", "sicak",
+                         "baglam"]
                 common = ",".join(c for c in known if c in cols)
                 if common:
                     self._db.execute(
@@ -1073,7 +1104,8 @@ class RecallStore:
 
     # -- hatırlama -----------------------------------------------------
 
-    def recall(self, query: str, *, limit: int = 8, hops: int = 2) -> Recollection:
+    def recall(self, query: str, *, limit: int = 8, hops: int = 2,
+               baglam: dict | None = None) -> Recollection:
         """Sorgudan tohumlanır, bağlar üzerinden yayılır.
 
         Dönen `trace`, aktivasyonun uğradığı yerleri sırayla taşır: arayüz
@@ -1096,7 +1128,7 @@ class RecallStore:
                        for n in recent],
             )
 
-        seeds = self._seed(query, limit * 2)
+        seeds = self._seed(query, limit * 2, baglam=baglam)
         activation: dict[str, float] = {}
         trace: list[Step] = []
 
@@ -1139,7 +1171,8 @@ class RecallStore:
         hits = [node for node in (self.peek(nid) for nid, _ in ranked) if node]
         return Recollection(query=query, hits=hits, trace=trace)
 
-    def _seed(self, query: str, limit: int) -> list[tuple[str, float, str]]:
+    def _seed(self, query: str, limit: int,
+              *, baglam: dict | None = None) -> list[tuple[str, float, str]]:
         """Sorgunun ilk temas ettigi kayitlar.
 
         Iki kanal birlikte calisiyor cunku ikisi de tek basina eksik:
@@ -1179,8 +1212,52 @@ class RecallStore:
         if missing := [n for n in scores if n not in kinds]:
             kinds.update(self._kinds_of(missing))
 
+        if baglam:
+            scores = self._baglam_bonusu(scores, baglam)
+
         ranked = sorted(scores.items(), key=lambda kv: -kv[1])[:limit]
         return [(node_id, score, kinds.get(node_id, "fact")) for node_id, score in ranked]
+
+    def _baglam_bonusu(self, scores: dict[str, float],
+                       baglam: dict) -> dict[str, float]:
+        """Aynı bağlamda yazılmış kayıtları öne alır.
+
+        "SCADA'dayken borsa notu" sızıntısı bugüne kadar sayı-silme ve
+        gövde-sayma hileleriyle bastırılıyordu; ikisi de aramanın kendisine
+        ait olmayan, sonradan takılmış süzgeçlerdi. Bağlam alanı zaten
+        yazılıyordu, arama okumuyordu.
+
+        Bağlamı boş olan eski kayıtlar bonus almaz ama **ceza da almaz**:
+        göç, kullanıcının yıllarca biriktirdiğini geri plana itmemeli.
+        """
+        if not anahtar.AKTIF.baglam or not scores:
+            return scores
+        kimlikler = list(scores)
+        yerler = ",".join("?" * len(kimlikler))
+        with self._lock:
+            rows = self._db.execute(
+                f"SELECT id, baglam FROM node WHERE id IN ({yerler})",
+                tuple(kimlikler)).fetchall()
+        for row in rows:
+            kayit = _baglam_coz(row["baglam"])
+            if not kayit:
+                continue
+            ortak = sum(1 for alan, deger in baglam.items()
+                        if alan in kayit and kayit[alan] == deger)
+            catisan = sum(1 for alan, deger in baglam.items()
+                          if alan in kayit and kayit[alan] != deger)
+            if ortak:
+                scores[row["id"]] = round(
+                    min(1.0, scores[row["id"]] * (1 + BAGLAM_BONUS * ortak / 3)), 4)
+            elif catisan:
+                # Aynı alanda BAŞKA bir değer taşıyan kayıt: koru1000
+                # oturumundayken kobyte'ın raporu. Boş bağlamla aynı şey
+                # değil — boşluk bilgi eksikliği, çatışma bilginin kendisi.
+                # Silinmiyor, öne geçmesi zorlaşıyor.
+                scores[row["id"]] = round(
+                    scores[row["id"]]
+                    * max(BAGLAM_TABAN, 1 - BAGLAM_CEZA * catisan / 3), 4)
+        return scores
 
     def _seed_literal(self, query: str, limit: int) -> list[tuple[str, float, str]]:
         """FTS ile birebir temas. Tarama yok: indeks terimden kayda gidiyor."""
@@ -1291,6 +1368,17 @@ def _match_expression(query: str) -> str:
     return " OR ".join(dict.fromkeys(parts))
 
 
+def _baglam_coz(ham) -> dict:
+    """Diskteki bağlam alanı. Bozuksa boş — ceza değil, bilgi eksikliği."""
+    if not ham:
+        return {}
+    try:
+        deger = json.loads(ham) if isinstance(ham, str) else ham
+    except ValueError:
+        return {}
+    return deger if isinstance(deger, dict) else {}
+
+
 def _first_line(text: str) -> str:
     return next((line.strip() for line in text.splitlines() if line.strip()), "(başlıksız)")
 
@@ -1314,6 +1402,7 @@ def _to_node(row: sqlite3.Row, *, seviye: float = aktivasyon.TABAN_YOK) -> Node:
         superseded_by=_alan(row, "superseded_by") or "",
         deleted=bool(_alan(row, "deleted") or 0),
         sicak=bool(1 if _alan(row, "sicak") is None else _alan(row, "sicak")),
+        baglam=_baglam_coz(_alan(row, "baglam")),
         id=row["id"],
         kind=row["kind"],
         title=row["title"],
