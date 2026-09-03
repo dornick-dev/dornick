@@ -60,7 +60,7 @@ PARK_PROBE_S = 180.0
 
 # Park kaydı: uygulama kapansa bile yarım işin izi diskte durur; açılışta
 # görülürse koşu otomatik sürdürülür.
-PARK_DOSYASI = "park.json"
+PARK_FILE = "park.json"
 
 # Alt ajan yuvalanma sınırı. 1 demek: ana ajan yardımcı çıkarabilir,
 # yardımcı çıkaramaz. Sınırsız bırakmak tek bir isteği ağaç gibi açar ve
@@ -213,7 +213,7 @@ SAHTE_CAGRI_DESENI = re.compile(
     r"<\s*/?\s*(function_calls|invoke\b|parameter\b|antml:)", re.IGNORECASE)
 
 
-def sahte_arac_cagrisi(text: str) -> bool:
+def fake_tool_call(text: str) -> bool:
     """Metin, araç çağrısı XML'i taşıyor mu?
 
     Model araç kanalını kullanamadığını sandığında (ör. ham bir istisna
@@ -259,7 +259,7 @@ KALICI_SINYALLER = (
 _KALICI = re.compile("|".join(KALICI_SINYALLER), re.IGNORECASE)
 
 
-def kalici_koku(text: str) -> bool:
+def persistent_root(text: str) -> bool:
     """Bu mesajda kalıcı olabilecek bir şey geçti mi?
 
     Kesinlik iddiası yok — bir koku. Kararı model veriyor; buradaki tek iş
@@ -426,7 +426,7 @@ PLAN_NOTU = (
 #
 # Yalnız bu üçü sayılıyor: başarısız bir `read_file` kırmızı bir koşu değil.
 
-DOGRULAMA_ARACLARI = frozenset({"kos", "denetle", "browser"})
+VERIFICATION_TOOLS = frozenset({"kos", "denetle", "browser"})
 
 _DENETIM_HATASI = re.compile(r",\s*\d+\s+hata:")
 _KONSOL_HATASI = re.compile(r"\((\d+)\s+hata\)")
@@ -441,7 +441,7 @@ def kirmizi_iz(tool: str, note: dict[str, Any]) -> str:
     `note` executor'ın `tool_end` gözlem yükü: {tool, error, summary,
     detail: {output, exit_code, …}}.
     """
-    if tool not in DOGRULAMA_ARACLARI:
+    if tool not in VERIFICATION_TOOLS:
         return ""
     ozet = _HACIM_EKI.sub("", str(note.get("summary") or "").strip())
     govde = ozet + "\n" + str((note.get("detail") or {}).get("output") or "")
@@ -477,7 +477,7 @@ _KIRMIZI_ITIRAFI = re.compile(
 )
 
 
-def bitti_iddiasi(text: str) -> bool:
+def done_claim(text: str) -> bool:
     """Araçsız kapanan bu cevap işi bitmiş ilan ediyor mu?
 
     Kırmızıyı zaten söyleyen bir cevap "bitti" dese de dürüsttür —
@@ -506,7 +506,7 @@ BASLIK_ISTEMI = (
     "başlığı yaz: tırnak, nokta, emoji, açıklama yok. Konuşmanın dilinde."
 )
 
-def _baslik_gecerli(baslik: str) -> bool:
+def _title_valid(baslik: str) -> bool:
     """Üretilen oturum başlığı kaydedilmeye değer mi?
 
     Tek harflik çöp ("e", "b") kalıcı ad olarak yapışıyordu ve ad bir kez
@@ -518,7 +518,7 @@ def _baslik_gecerli(baslik: str) -> bool:
     return any(ch.isalnum() for ch in baslik)
 
 
-KABUL_NOTU = (
+ACCEPTANCE_NOTE = (
     "[Kabul] İş listende hâlâ açık maddeler var: {ozet}. Bitti demeden "
     "önce her birini ya tamamla (mind_goals ile kapat) ya da neden açık "
     "kaldığını tek cümleyle söyle — plan maddesi sessizce düşmez."
@@ -554,7 +554,7 @@ _GIRIS_IZLERI = (
 _KOSULABILIR_UZANTI = frozenset({".py", ".js", ".mjs", ".cjs", ".ts", ".php", ".sh", ".ps1"})
 
 
-def giris_noktasi_mi(metin: str) -> bool:
+def is_entry_point(metin: str) -> bool:
     """Bu dosya kendini komut satırından çalıştırılmak üzere ilan ediyor mu?"""
     return any(d.search(metin or "") for d in _GIRIS_IZLERI)
 
@@ -597,14 +597,14 @@ CHECKPOINT_NOTE = (
 
 def read_park(state_dir: Path) -> dict[str, Any] | None:
     try:
-        raw = json.loads((state_dir / PARK_DOSYASI).read_text(encoding="utf-8"))
+        raw = json.loads((state_dir / PARK_FILE).read_text(encoding="utf-8"))
         return raw if isinstance(raw, dict) and raw.get("session") else None
     except (OSError, ValueError):
         return None
 
 
 def write_park(state_dir: Path, session_id: str, reason: str) -> None:
-    (state_dir / PARK_DOSYASI).write_text(
+    (state_dir / PARK_FILE).write_text(
         json.dumps({"session": session_id, "ts": time.time(),
                     "reason": (reason or "")[:300]}, ensure_ascii=False),
         encoding="utf-8")
@@ -612,7 +612,7 @@ def write_park(state_dir: Path, session_id: str, reason: str) -> None:
 
 def clear_park(state_dir: Path) -> None:
     try:
-        (state_dir / PARK_DOSYASI).unlink(missing_ok=True)
+        (state_dir / PARK_FILE).unlink(missing_ok=True)
     except OSError:
         pass
 
@@ -724,7 +724,7 @@ def yetim_tara(sessions_dir: Path | str) -> list[dict[str, str]]:
         return []
 
 
-def yetim_isaretle(sessions_dir: Path | str, yetimler: list[dict[str, str]]) -> None:
+def mark_orphan(sessions_dir: Path | str, yetimler: list[dict[str, str]]) -> None:
     """Yetimlerin çocuk günlüğüne subagent_end(orphaned=True) düşer.
 
     İşaret bir mezar taşı: bir sonraki açılış aynı yardımcıyı yeniden
@@ -961,7 +961,7 @@ class Agent:
         # Küçük aile: tam şema (~11k token) yerine kısa şema (~6k). Dar
         # pencere zaten kısaydı; flash sınıfı geniş pencerede de kısayı
         # hak ediyor — kıyasta tur başına taşınan yükün ana kalemi buydu.
-        self.kisa_sema = self.lean or prompt.kucuk_aile(config.model.name)
+        self.brief_schema = self.lean or prompt.kucuk_aile(config.model.name)
         # Yanlış pencere ayarı bir kez söylenip bırakılıyor: her turda
         # tekrarlamak uyarıyı gürültüye çeviriyor.
         self._window_warned = False
@@ -1060,7 +1060,7 @@ class Agent:
         self.config = config
         self.policy = ContextPolicy(config.context)
         self.lean = prompt.is_lean(config)
-        self.kisa_sema = self.lean or prompt.kucuk_aile(config.model.name)
+        self.brief_schema = self.lean or prompt.kucuk_aile(config.model.name)
         self._system = prompt.build(config, self.registry, soul=self.soul)
 
     def interrupt(self) -> None:
@@ -1122,7 +1122,7 @@ class Agent:
         # çoğu ve geçmiş turlar Türkçe olduğu için model İngilizce yazana
         # bile Türkçe cevap veriyordu (canlı yara, 02.09). Hatırlatma tur
         # başına, modelin EN SON okuduğu yerde: yakınlık kuralı kazandırıyor.
-        self._dil_notu(user_input)
+        self._language_note(user_input)
         # Kullanıcının söylediği o an belleğe geçiyor: gece değil, şimdi.
         self._encode_turn("kullanıcı", user_input)
         self._prime_recall(user_input)
@@ -1208,7 +1208,7 @@ class Agent:
         """Yazılmış-koşulmamış testle "bitti" denirse bir tur geri verilir."""
         if stats.test_uyarildi or self.depth:
             return False
-        if not bitti_iddiasi(_text_of_blocks(blocks)):
+        if not done_claim(_text_of_blocks(blocks)):
             return False
         dosya = self._kosulmayan_test()
         if not dosya:
@@ -1237,7 +1237,7 @@ class Agent:
                 metin = p.read_text(encoding="utf-8", errors="ignore")
             except OSError:
                 continue
-            if giris_noktasi_mi(metin):
+            if is_entry_point(metin):
                 return p.name
         return ""
 
@@ -1253,7 +1253,7 @@ class Agent:
         """
         if stats.giris_uyarildi or not self._yazilan:
             return False
-        if not bitti_iddiasi(_text_of_blocks(blocks)):
+        if not done_claim(_text_of_blocks(blocks)):
             return False
         dosya = self._kosulmayan_giris()
         if not dosya:
@@ -1276,7 +1276,7 @@ class Agent:
         """
         if stats.kirmizi_uyarildi or not self._kirmizi:
             return False
-        if not bitti_iddiasi(_text_of_blocks(blocks)):
+        if not done_claim(_text_of_blocks(blocks)):
             return False
         stats.kirmizi_uyarildi = True
         ozet = "; ".join(self._kirmizi.values())[:200]
@@ -1293,7 +1293,7 @@ class Agent:
         """
         if stats.kabul_uyarildi or self.depth or self.mind is None:
             return False
-        if not bitti_iddiasi(_text_of_blocks(blocks)):
+        if not done_claim(_text_of_blocks(blocks)):
             return False
         try:
             acik = [g.text for g in self.mind.goals(active_only=True)]
@@ -1306,7 +1306,7 @@ class Agent:
         if len(acik) > 5:
             ozet += f"; (+{len(acik) - 5})"
         self.session.log.note("kabul_kapisi", acik=len(acik))
-        self.session.add_harness_note(KABUL_NOTU.format(ozet=ozet))
+        self.session.add_harness_note(ACCEPTANCE_NOTE.format(ozet=ozet))
         return True
 
     def _zihin_kapisi(self, user_input: str) -> None:
@@ -1322,7 +1322,7 @@ class Agent:
         """
         if self.depth or self.mind is None or self._zihin_yazildi:
             return
-        if not kalici_koku(user_input):
+        if not persistent_root(user_input):
             return
         alinti = _one_line(user_input)[:DURTU_ALINTI]
         if alinti == self._son_durtu:
@@ -1368,7 +1368,7 @@ class Agent:
     # "tespit etmek" değil, modele hangi dilde yazıldığını hatırlatmak.
     _TR_HARF = set("çğıöşüÇĞİÖŞÜ")
 
-    def _dil_notu(self, user_input: str) -> None:
+    def _language_note(self, user_input: str) -> None:
         """Bu turun cevap dili hatırlatmasını hazırlar.
 
         Oturum günlüğüne YAZILMIYOR — yalnız bu turun isteğine iliştiriliyor
@@ -1393,7 +1393,7 @@ class Agent:
                 "you produce. Do not switch to Turkish just because your "
                 "instructions are written in Turkish.")
 
-    def _dil_hatirlatmasini_ekle(self, prepared: Any) -> None:
+    def _add_language_reminder(self, prepared: Any) -> None:
         """Dil hatırlatmasını isteğin SONUNA geçici bir sistem mesajı olarak
         koyar. Önbellek kırılmıyor: son breakpoint'ten sonra duruyor."""
         not_ = getattr(self, "_dil_hatirlatma", "")
@@ -1424,8 +1424,8 @@ class Agent:
             # Taban yazıcı: sorgu aramadan önce yerel küçük modelle eşanlamlı
             # terimlere açılır (eşanlam sınıfı 0.50→1.00, isabet 0.87→0.93 —
             # scale_bench). Model yoksa zenginlestir sorguyu aynen döndürür.
-            from .recall import taban
-            query = taban.zenginlestir(user_input, getattr(self.config, "state_dir", None))
+            from .recall import writer
+            query = writer.zenginlestir(user_input, getattr(self.config, "state_dir", None))
             limit = LEAN_PRIME_LIMIT if self.lean else RECALL_PRIME_LIMIT
             hits = select_prime(self.mind, query, limit=limit, ham=user_input)
         except Exception as exc:  # hatirlama coktuyse konusma yine surmeli
@@ -1453,16 +1453,16 @@ class Agent:
             # şeyi karıştırdı" gibi duruyor — oysa önüne konan yalnızca
             # süzgeçten geçenler.
             used = {hit.item.id for hit in hits}
-            from .mind.tools import _adim_etiket
+            from .mind.tools import _step_label
             self.session.log.note(
                 "recall_trace",
                 query=user_input,
                 trace=[{**asdict(step), "used": step.node in used,
-                        "label": _adim_etiket(self.mind, step.node)}
+                        "label": _step_label(self.mind, step.node)}
                        for step in trace],
             )
 
-    def _uyanik_ters_tekrar(self, sonuc: str) -> None:
+    def _awake_reverse_replay(self, sonuc: str) -> None:
         """Sonuç anında sorumluluğu dağıtır ve dersi hemen yazar.
 
         Arka planda değil, tur içinde: tek oturumun tekrarı iki yüz düğümde
@@ -1559,13 +1559,13 @@ class Agent:
                 except Exception:
                     pass
             prepared = self.policy.prepare(self._system, self.session.messages())
-            self._dil_hatirlatmasini_ekle(prepared)
+            self._add_language_reminder(prepared)
             try:
                 result = await self.client.turn(
                     prepared,
                     # Kapanis turu araçsız: tekrar araç çağırmasına izin vermek,
                     # kilitlenen döngünün bir turunu daha çalıştırmak demek.
-                    [] if stats.closing else self.registry.api_schemas(brief=self.kisa_sema),
+                    [] if stats.closing else self.registry.api_schemas(brief=self.brief_schema),
                     cancel=self.cancel,
                     callbacks=callbacks,
                 )
@@ -1622,7 +1622,7 @@ class Agent:
             # oturum sürdürülünce ham XML ajan mesajı olarak geri gelirdi.
             sahte_metin = bool(
                 result.content and result.stop_reason == "end_turn"
-                and sahte_arac_cagrisi(_text_of_blocks(result.content)))
+                and fake_tool_call(_text_of_blocks(result.content)))
 
             if blocks := result.content:
                 # `empty_turn`: model turu YALNIZCA akıl yürüterek bitirdi ve
@@ -1693,7 +1693,7 @@ class Agent:
             # Koşunun izi kapsül olarak zihne: bir sonraki oturum keşfi atlar.
             self._is_kapsulu()
             # İlk alışveriş bittiyse başlığı model koysun (adsız oturumda).
-            await self._oturum_basligi()
+            await self._session_title()
         return stats
 
     def _hata_dersi(self, calls: list[Any], blocks: list[dict[str, Any]]) -> None:
@@ -1707,27 +1707,27 @@ class Agent:
         """
         if self.mind is None or self.depth:
             return
-        from .tools.shell import kabuk_ipucu
+        from .tools.shell import shell_hint
         adlar = {c.id: c.name for c in calls}
         for b in blocks:
             if not (isinstance(b, dict) and b.get("is_error")):
                 continue
             metin = str(b.get("content") or "")
             arac = adlar.get(str(b.get("tool_use_id") or ""), "")
-            anahtar = tarif = ""
+            switches = tarif = ""
             if arac == "edit_file" and "Aranan metin" in metin:
-                anahtar = "edit-anchor"
+                switches = "edit-anchor"
                 tarif = ("edit_file'a old metnini dosyanın GERÇEK halinden "
                          "kopyala: önce read_file, sonra düzenle; girinti ve "
                          "satır sonu birebir.")
-            elif ipucu := kabuk_ipucu(metin):
-                anahtar = "kabuk:" + ipucu[:24]
+            elif ipucu := shell_hint(metin):
+                switches = "kabuk:" + ipucu[:24]
                 tarif = ipucu
-            if not anahtar:
+            if not switches:
                 continue
-            baslik = "araç dersi: " + anahtar
+            baslik = "araç dersi: " + switches
             # Geçmiş ders varsa hatanın yanına iliştir (bu koşuda bir kez).
-            if self._hata_kalibi.get(anahtar, 0) == 0:
+            if self._hata_kalibi.get(switches, 0) == 0:
                 try:
                     for hit in self.mind.recall(baslik, limit=3):
                         if hit.item.title == baslik and hit.item.session_id != self.session.id:
@@ -1736,8 +1736,8 @@ class Agent:
                             break
                 except Exception:
                     pass
-            sayi = self._hata_kalibi.get(anahtar, 0) + 1
-            self._hata_kalibi[anahtar] = sayi
+            sayi = self._hata_kalibi.get(switches, 0) + 1
+            self._hata_kalibi[switches] = sayi
             if sayi != 2:
                 continue   # ilk düşüş: ipucu yeter; üçüncü+: ders zaten var
             try:
@@ -1747,7 +1747,7 @@ class Agent:
                 self.mind.remember(
                     f"{arac or 'araç'} hatası tekrar etti — {tarif}",
                     kind="lesson", title=baslik)
-                self.session.log.note("hata_dersi", anahtar=anahtar)
+                self.session.log.note("hata_dersi", anahtar=switches)
             except Exception:
                 pass
 
@@ -1769,14 +1769,14 @@ class Agent:
                 break
         if not ilk.strip():
             return
-        dosyalar = []
+        files = []
         for yol in self._yazilan:
             ad = Path(yol).name
-            if ad and ad not in dosyalar:
-                dosyalar.append(ad)
+            if ad and ad not in files:
+                files.append(ad)
         komutlar = [k.strip()[:80] for k in self._komutlar[-2:] if k.strip()]
         icerik = (_one_line(ilk)[:200]
-                  + " — üretilen: " + ", ".join(dosyalar[:6])
+                  + " — üretilen: " + ", ".join(files[:6])
                   + ((". çalıştırılan: " + "; ".join(komutlar)) if komutlar else "")
                   + ".")
         baslik = "iş kapsülü: " + _one_line(ilk)[:40]
@@ -1786,11 +1786,11 @@ class Agent:
                 return
             self.mind.remember(icerik, kind="fact", title=baslik)
             self._kapsul_yazildi = True
-            self.session.log.note("is_kapsulu", dosyalar=dosyalar[:6])
+            self.session.log.note("is_kapsulu", dosyalar=files[:6])
         except Exception:
             pass
 
-    async def _oturum_basligi(self, on_izleme: str = "") -> None:
+    async def _session_title(self, on_izleme: str = "") -> None:
         """Adsız oturumun ilk alışverişinden kısa bir başlık üretir.
 
         Kullanıcı adının ilk 30 karakteri başlık değildir ("bana
@@ -1843,7 +1843,7 @@ class Agent:
                 self.client.turn(hazir, [], cancel=self.cancel), timeout=60)
             baslik = _one_line(_text_of_blocks(
                 getattr(sonuc.message, "content", None) or [])).strip().strip("\"'.!*# ")
-            if _baslik_gecerli(baslik):
+            if _title_valid(baslik):
                 self.mind.set_session_meta(self.session.id, ad=baslik)
                 self.session.log.note("baslik", ad=baslik)
                 # Kenar listesi 5 sn yoklamayı beklemesin — anında taşınsın.
@@ -1942,7 +1942,7 @@ class Agent:
             # context_window ayari gercegin ustunde). Durmak yerine
             # sikistir / sikı / son care — is surer.
             self.session.log.note("context_exhausted")
-            if await self._yenile_baglam("pencere tasti"):
+            if await self._refresh_context("pencere tasti"):
                 return True
             # _yenile_baglam False donerse bile durma: hedef ozetiyle
             # devam notu — kullaniciya "yeni oturum ac" demiyoruz.
@@ -2061,7 +2061,7 @@ class Agent:
         bir tur daha veriliyor. Burada durmak kullanıcıyı ham XML'le (ya
         da arayüz onu çizmediği için hiçbir şeyle) baş başa bırakırdı.
         """
-        if not sahte_arac_cagrisi(_text_of_blocks(blocks)):
+        if not fake_tool_call(_text_of_blocks(blocks)):
             return False
 
         stats.sahte_cagri += 1
@@ -2092,11 +2092,11 @@ class Agent:
         ve ücretsiz havuzda araç çağıramayan uç kendiliğinden eleniyor.
         Başka sağlayıcıda karşılığı yok — sessizce geçiliyor.
         """
-        kaydet = getattr(self.client, "kusurlu", None)
-        if kaydet is None:
+        save = getattr(self.client, "kusurlu", None)
+        if save is None:
             return
         try:
-            kaydet(sebep)
+            save(sebep)
         except Exception:
             pass   # sağlık defteri koşuyu düşürmemeli
 
@@ -2328,9 +2328,9 @@ class Agent:
             handle.bildirildi = True
         if handle.schedule_id and self.schedule is not None:
             try:
-                durum = ("bitti" if handle.state == "bitti"
+                status = ("bitti" if handle.state == "bitti"
                          else f"hata: {_clip(handle.sonuc, 80)}")
-                self.schedule.note_run(handle.schedule_id, durum)
+                self.schedule.note_run(handle.schedule_id, status)
             except Exception:
                 pass
         if handle.schedule_id and handle.run_id:
@@ -2901,7 +2901,7 @@ class Agent:
         pressure = compaction.measure(self._last_usage, self.config.model.context_window)
         self._warn_if_window_is_wrong(pressure)
         if pressure.full:
-            await self._yenile_baglam(f"pencere %{pressure.percent} dolu")
+            await self._refresh_context(f"pencere %{pressure.percent} dolu")
 
     def _warn_if_window_is_wrong(self, pressure: compaction.Pressure) -> None:
         """Ayardaki pencere gerçeğin üstündeyse söyler.
@@ -2927,7 +2927,7 @@ class Agent:
             "pencereyi modelin gerçek sınırına çek.".replace(",", ".")
         )
 
-    async def _yenile_baglam(self, reason: str) -> bool:
+    async def _refresh_context(self, reason: str) -> bool:
         """Bağlamı sıkıştırır; olmazsa sıkı / son çare horizon.
 
         True = pencere yenilendi (iş sürebilir). False = dokunulamadı.
@@ -3124,7 +3124,7 @@ class Agent:
             # Yeşile dönen bir koşum kaydı SİLİYOR — model düzeltip yeniden
             # koşturduysa kapı açılmamalı.
             tool = data["tool"]
-            if tool in DOGRULAMA_ARACLARI:
+            if tool in VERIFICATION_TOOLS:
                 if iz := kirmizi_iz(tool, data):
                     self._kirmizi[tool] = iz
                 else:
@@ -3135,7 +3135,7 @@ class Agent:
                 # belli olduğu an dağıtılıyor, geceyi beklemeden. Dersi
                 # sabaha bırakmak, aynı hatayı aynı oturumda tekrar etmeye
                 # izin vermek demekti.
-                self._uyanik_ters_tekrar("basarisiz")
+                self._awake_reverse_replay("basarisiz")
         elif event == "sema_ihlali":
             # Şemaya uymayan çağrı da boşa giden bir tur: oto havuzunda
             # sağlık sinyali sayılıyor (bkz. _kusurlu). Araç hiç çalışmadı,
@@ -3160,7 +3160,7 @@ def worth_recalling(text: str) -> bool:
 
 
 def select_prime(mind: Any, user_input: str, *, limit: int = RECALL_PRIME_LIMIT,
-                 ham: str | None = None, baglam: dict | None = None) -> list[Any]:
+                 ham: str | None = None, context: dict | None = None) -> list[Any]:
     """Kendiliğinden önyüklemenin seçim çekirdeği: ara, süz, kuyruğu kes.
 
     Modül fonksiyonu olması bilinçli — ölçek benchmark'ı
@@ -3184,7 +3184,7 @@ def select_prime(mind: Any, user_input: str, *, limit: int = RECALL_PRIME_LIMIT,
     """
     query = _without_numbers(user_input)
     try:
-        hits = mind.recall(query, limit=limit, baglam=baglam)
+        hits = mind.recall(query, limit=limit, context=context)
     except TypeError:
         # Bağlamı bilmeyen bir zihin (eski sürüm ya da testteki sahte):
         # bağlam bir iyileştirme, ön şart değil.
@@ -3225,7 +3225,7 @@ def select_prime(mind: Any, user_input: str, *, limit: int = RECALL_PRIME_LIMIT,
         for hit in hits
         if hit.item.kind != "episode"
         and hit.item.id in direct
-        and getattr(hit.item, "sicak", True)
+        and getattr(hit.item, "hot", True)
         and _gecer(hit.item)
     ]
     # Soğuk kayıt önyüklemeye giremez. Skoru aktivasyon çarpanıyla zaten
@@ -3366,7 +3366,7 @@ def _run_meter(handle: ChildHandle, config: Any) -> dict[str, Any]:
     """Koşum ölçümü: model + token + süre + araç + tahmini USD."""
     from dataclasses import replace
 
-    from . import fiyat
+    from . import pricing
 
     usage = {
         "girdi": int((handle.usage or {}).get("girdi") or 0),
@@ -3384,7 +3384,7 @@ def _run_meter(handle: ChildHandle, config: Any) -> dict[str, Any]:
             pass
     if model_cfg is not None and state_dir is not None:
         try:
-            tag = fiyat.etiket(model_cfg, state_dir)
+            tag = pricing.etiket(model_cfg, state_dir)
         except Exception:
             tag = None
         if tag and (usage["girdi"] or usage["cikti"]):

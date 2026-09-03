@@ -20,7 +20,7 @@ from enum import Enum
 from fnmatch import fnmatch
 from typing import Any, TYPE_CHECKING
 
-from . import korumalar
+from . import guards
 
 if TYPE_CHECKING:  # pragma: no cover
     from .tools.base import ToolSpec
@@ -58,7 +58,7 @@ class PermissionEngine:
         # bile bunları açamaz. Sır dosyaları, kip/kapı dosyalarına yazma ve
         # açılış kalıcılığı — açılması güvenlik modelini çökertir.
         mutasyon = bool(spec.mutates) and not _safe_action(spec, args)
-        if (gerekce := korumalar.sabit_ret(spec.name, mutasyon, args)) is not None:
+        if (gerekce := guards.sabit_ret(spec.name, mutasyon, args)) is not None:
             # Gerekçe kural dizesinde taşınıyor (sentinel önekiyle): executor
             # bunu jenerik "politika gereği engellendi" yerine olduğu gibi
             # modele gösterir — model neyi neden yapamadığını bilsin.

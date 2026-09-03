@@ -19,8 +19,8 @@ from pathlib import Path
 
 import pytest
 
-from dornick.recall import aktivasyon as A
-from dornick.recall import open_store, orgu
+from dornick.recall import activation as A
+from dornick.recall import open_store, weave
 
 NOW = datetime(2025, 6, 2, 9, 0, tzinfo=timezone.utc)
 
@@ -43,13 +43,13 @@ def clock() -> Clock:
 
 @pytest.fixture()
 def store(tmp_path: Path, clock: Clock):
-    s = open_store(tmp_path / "memory", saat=clock)
+    s = open_store(tmp_path / "memory", clock=clock)
     yield s
     s.close()
 
 
 def _cool(store, clock: Clock) -> tuple[int, int]:
-    return store.isi_guncelle(orgu.SOGUK_ESIK)
+    return store.update_heat(weave.COLD_THRESHOLD)
 
 
 # -- who goes cold -----------------------------------------------------
@@ -59,7 +59,7 @@ def test_a_new_record_is_always_hot(store, clock) -> None:
     """The first week is unconditional: a fresh memory must be reachable."""
     node = store.remember("Bugün yazılan bir kayıt.", kind="fact")
     _cool(store, clock)
-    assert store.peek(node.id).sicak is True
+    assert store.peek(node.id).hot is True
 
 
 def test_an_untouched_record_goes_cold(store, clock) -> None:
@@ -67,7 +67,7 @@ def test_an_untouched_record_goes_cold(store, clock) -> None:
     clock.advance(days=60)
     warmed, cooled = _cool(store, clock)
     assert cooled == 1 and warmed == 0
-    assert store.peek(node.id).sicak is False
+    assert store.peek(node.id).hot is False
 
 
 def test_a_regularly_used_record_stays_hot(store, clock) -> None:
@@ -76,7 +76,7 @@ def test_a_regularly_used_record_stays_hot(store, clock) -> None:
         clock.advance(days=3)
         store.open(node.id)
     _cool(store, clock)
-    assert store.peek(node.id).sicak is True
+    assert store.peek(node.id).hot is True
 
 
 def test_nothing_is_deleted_when_it_cools(store, clock) -> None:
@@ -101,7 +101,7 @@ def test_a_cold_record_still_wakes_to_an_exact_word(store, clock) -> None:
         kind="fact")
     clock.advance(days=200)
     _cool(store, clock)
-    assert store.peek(node.id).sicak is False
+    assert store.peek(node.id).hot is False
 
     hits = {n.id for n in store.recall("debimetre kalibrasyonu", limit=8).hits}
     assert node.id in hits
@@ -129,7 +129,7 @@ def test_a_cold_record_cannot_enter_the_prime(store, tmp_path, clock) -> None:
     clock.advance(days=200)
     _cool(store, clock)
 
-    mind = open_mind(store.path.parent, tmp_path / "sessions", "t", saat=clock)
+    mind = open_mind(store.path.parent, tmp_path / "sessions", "t", clock=clock)
     try:
         hits = select_prime(mind, "Sac büküm kalıpları nerede duruyor?", limit=5)
         assert node.id not in {h.item.id for h in hits}
@@ -145,12 +145,12 @@ def test_opening_a_cold_record_warms_it_by_the_next_night(store, clock) -> None:
     node = store.remember("Atölye vinci iki tonluk.", kind="fact")
     clock.advance(days=200)
     _cool(store, clock)
-    assert store.peek(node.id).sicak is False
+    assert store.peek(node.id).hot is False
 
     store.open(node.id)
     warmed, _cooled = _cool(store, clock)
     assert warmed == 1
-    assert store.peek(node.id).sicak is True
+    assert store.peek(node.id).hot is True
     assert node.id in set(store.index.ids())
 
 
@@ -162,21 +162,21 @@ def test_a_distilled_episode_cools_unconditionally_after_two_weeks(
     """Detail on disk, summary in the active set. The episode is not deleted."""
     episode = store.remember("Uzun bir konuşma dökümü, rapor tartışması.",
                              kind="episode")
-    store.kullanim_ekle(episode.id, w=-0.2, etiket=A.DAMITILDI)
+    store.add_use(episode.id, w=-0.2, etiket=A.DISTILLED)
 
     # Kullanılmaya devam ediyor: normal kurala göre sıcak kalması gerekirdi.
     for _ in range(10):
         clock.advance(days=1)
         store.open(episode.id)
     _cool(store, clock)
-    assert store.peek(episode.id).sicak is True       # window not over yet
+    assert store.peek(episode.id).hot is True       # window not over yet
 
     for _ in range(5):
         clock.advance(days=1)
         store.open(episode.id)
     _cool(store, clock)
     # Koşulsuz: hâlâ kullanılıyor ama özü artık kısa bir `fact`ta yaşıyor.
-    assert store.peek(episode.id).sicak is False
+    assert store.peek(episode.id).hot is False
     assert store.peek(episode.id) is not None         # and still there
 
 
@@ -186,7 +186,7 @@ def test_an_undistilled_episode_follows_the_normal_rule(store, clock) -> None:
         clock.advance(days=1)
         store.open(episode.id)
     _cool(store, clock)
-    assert store.peek(episode.id).sicak is True       # used, so still hot
+    assert store.peek(episode.id).hot is True       # used, so still hot
 
 
 # -- the share ---------------------------------------------------------
@@ -206,7 +206,7 @@ def test_the_hot_share_lands_in_the_target_band(store, clock) -> None:
     clock.advance(days=20)
     _cool(store, clock)
 
-    share = store.sicak_oran()
+    share = store.hot_share()
     assert 0.05 <= share <= 0.35, f"sıcak oran {share}"
 
 
@@ -226,17 +226,17 @@ def test_the_night_recomputes_the_active_set(store, tmp_path, clock) -> None:
         store.remember(metin, kind="fact")
     clock.advance(days=90)
     fresh = store.remember("Bugünkü vardiya raporu hazırlandı.", kind="fact")
-    assert old.id not in {n.id for n, _w, _r in store.komsular_gerekceli(fresh.id)}
+    assert old.id not in {n.id for n, _w, _r in store.neighbours_with_reasons(fresh.id)}
     log = EventLog(sessions / "s1.jsonl",
-                   saat=lambda: clock().isoformat(timespec="milliseconds"))
+                   clock=lambda: clock().isoformat(timespec="milliseconds"))
     log.note("mind_open", memory_id=fresh.id)
     log.note("sonuc", sonuc="basarili")
 
-    report = orgu.gece_gecisi(store, sessions, saat=clock,
-                              filigran=tmp_path / "w.json")
+    report = weave.night_pass(store, sessions, clock=clock,
+                              watermark=tmp_path / "w.json")
     assert report.soguyan >= 1
-    assert store.peek(old.id).sicak is False
-    assert store.peek(fresh.id).sicak is True
+    assert store.peek(old.id).hot is False
+    assert store.peek(fresh.id).hot is True
 
 
 # -- migration ---------------------------------------------------------
@@ -253,7 +253,7 @@ def test_an_old_memory_opens_with_everything_hot(tmp_path: Path) -> None:
     shutil.copy2(fixture, target)
     store = RecallStore(target)
     try:
-        assert store.sicak_oran() == 1.0
-        assert store.peek("n_v1scada").sicak is True
+        assert store.hot_share() == 1.0
+        assert store.peek("n_v1scada").hot is True
     finally:
         store.close()

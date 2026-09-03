@@ -44,7 +44,7 @@ from pathlib import Path
 from typing import Any, Sequence
 
 from . import skills as skills_mod
-from . import tanima as tanima_mod
+from . import recognition as tanima_mod
 
 BUNDLE_VERSION = 1
 
@@ -62,7 +62,7 @@ _PROJECTS = "projects.json"
 _SKILLS = "skills/"
 _TANIMA = "tanima/"
 _PROJELER = "projeler/"
-_AYARLAR = "ayarlar/"
+_SETTINGS = "ayarlar/"
 
 # Atölye taramasında atlanan dizinler: araç artıkları, sürüm kontrolü,
 # çöp kutusu (server.py'deki SKIPPED / gate._ATLA ile aynı akıl).
@@ -121,13 +121,13 @@ def export_bundle(config: Any, mind: Any,
                         counts["skills"] += 1
 
         if "tanima" in secim:
-            counts["tanima"] = _export_tanima(config, zf)
+            counts["tanima"] = _export_recognition(config, zf)
 
         if "projeler" in secim:
             counts["projeler"] = _export_projeler(config, zf)
 
         if "ayarlar" in secim:
-            counts["ayarlar"] = _export_ayarlar(config, zf)
+            counts["ayarlar"] = _export_settings(config, zf)
 
         manifest = {
             "kind": "neobundle",
@@ -141,7 +141,7 @@ def export_bundle(config: Any, mind: Any,
     return buf.getvalue()
 
 
-def _export_tanima(config: Any, zf: zipfile.ZipFile) -> int:
+def _export_recognition(config: Any, zf: zipfile.ZipFile) -> int:
     """Kişisel model + eğitim düzeneğinin kişisel dosyaları (varsa).
 
     Hepsi "varsa": henüz hiç eğitilmemiş bir makinede parça sessizce boş
@@ -151,7 +151,7 @@ def _export_tanima(config: Any, zf: zipfile.ZipFile) -> int:
     kaynaklar = [
         (Path(config.state_dir) / "taban.npz", "taban.npz"),
         (tanima_mod.KORPUS, "kisisel_korpus.jsonl"),
-        (tanima_mod.FILIGRAN, "kisisel_durum.json"),
+        (tanima_mod.WATERMARK, "kisisel_durum.json"),
     ]
     for kaynak, ad in kaynaklar:
         if kaynak.is_file():
@@ -181,7 +181,7 @@ def _export_projeler(config: Any, zf: zipfile.ZipFile) -> int:
     return yazilan
 
 
-def _export_ayarlar(config: Any, zf: zipfile.ZipFile) -> int:
+def _export_settings(config: Any, zf: zipfile.ZipFile) -> int:
     """config.json — anahtarsız.
 
     keys.json HİÇBİR parçada yok; config'ten de anahtara işaret eden alan
@@ -198,7 +198,7 @@ def _export_ayarlar(config: Any, zf: zipfile.ZipFile) -> int:
         return 0
     if isinstance(veri.get("model"), dict):
         veri["model"].pop("api_key_env", None)
-    zf.writestr(_AYARLAR + "config.json",
+    zf.writestr(_SETTINGS + "config.json",
                 json.dumps(veri, ensure_ascii=False, indent=2))
     return 1
 
@@ -265,13 +265,13 @@ def import_bundle(config: Any, mind: Any, data: bytes,
         summary["skills"] = _merge_skills(config, zf, names)
 
     if "tanima" in istenen:
-        summary["tanima"] = _import_tanima(config, zf, names, yedek)
+        summary["tanima"] = _import_recognition(config, zf, names, yedek)
 
     if "projeler" in istenen:
         summary["projeler"] = _import_projeler(config, zf, names, yedek)
 
     if "ayarlar" in istenen:
-        summary["ayarlar"] = _import_ayarlar(config, zf, names, yedek)
+        summary["ayarlar"] = _import_settings(config, zf, names, yedek)
 
     if yedek:
         summary["yedek"] = str(yedek[0])
@@ -297,7 +297,7 @@ def _yedekle(hedef: Path, state_dir: Path, yedek: list[Path], etiket: str) -> No
     shutil.copy2(hedef, kopya)
 
 
-def _import_tanima(config: Any, zf: zipfile.ZipFile, names: set[str],
+def _import_recognition(config: Any, zf: zipfile.ZipFile, names: set[str],
                    yedek: list[Path]) -> int:
     """Kişisel model + kişisel eğitim dosyalarını geri koyar.
 
@@ -313,7 +313,7 @@ def _import_tanima(config: Any, zf: zipfile.ZipFile, names: set[str],
         "taban.npz": state_dir / "taban.npz",
         "kisisel_korpus.jsonl": (tanima_mod.KORPUS if duzenek_var
                                  else state_dir / "tanima_yedek" / "kisisel_korpus.jsonl"),
-        "kisisel_durum.json": (tanima_mod.FILIGRAN if duzenek_var
+        "kisisel_durum.json": (tanima_mod.WATERMARK if duzenek_var
                                else state_dir / "tanima_yedek" / "kisisel_durum.json"),
     }
     for ad, hedef in hedefler.items():
@@ -325,8 +325,8 @@ def _import_tanima(config: Any, zf: zipfile.ZipFile, names: set[str],
         yazilan += 1
     if yazilan:
         # Gelen kişisel model hemen konuşsun; eskisinin önbelleği düşer.
-        from .recall import taban
-        taban.sifirla()
+        from .recall import writer
+        writer.reset()
     return yazilan
 
 
@@ -355,7 +355,7 @@ def _import_projeler(config: Any, zf: zipfile.ZipFile, names: set[str],
     return yazilan
 
 
-def _import_ayarlar(config: Any, zf: zipfile.ZipFile, names: set[str],
+def _import_settings(config: Any, zf: zipfile.ZipFile, names: set[str],
                     yedek: list[Path]) -> int:
     """config.json'u geri koyar (yeniden başlatınca geçerli olur).
 
@@ -363,7 +363,7 @@ def _import_ayarlar(config: Any, zf: zipfile.ZipFile, names: set[str],
     ele alınmıyor. Dışa aktarımda düşürülen api_key_env, base_url'den
     yeniden türetiliyor — yoksa sağlayıcı anahtarsız kalırdı.
     """
-    ad = _AYARLAR + "config.json"
+    ad = _SETTINGS + "config.json"
     if ad not in names:
         return 0
     try:

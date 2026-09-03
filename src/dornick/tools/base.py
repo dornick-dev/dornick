@@ -314,7 +314,7 @@ def _sema_ozeti(schema: dict[str, Any], limit: int = 6) -> str:
     return ", ".join(parcalar)
 
 
-def sema_ihlali(spec: ToolSpec, args: dict[str, Any]) -> str | None:
+def schema_violation(spec: ToolSpec, args: dict[str, Any]) -> str | None:
     """Çağrı şemaya uyuyor mu? Uyuyorsa None, uymuyorsa öğretici mesaj.
 
     Yalnızca modelin gerçekten düzeltebileceği üç ihlale bakılıyor: eksik

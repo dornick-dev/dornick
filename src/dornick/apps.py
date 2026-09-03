@@ -31,7 +31,7 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
-from . import ortam
+from . import environment
 
 # Taramada atlanan gürültü. Bunları göstermek katalogu kullanılmaz yapıyor.
 SKIP = {"__pycache__", ".git", ".venv", "node_modules", ".idea", ".vscode"}
@@ -917,8 +917,8 @@ def running(sandbox_root: Path | None = None,
             continue
         # Kaydın kendi metni en güvenilir işaret (kabuk aracı komutu olduğu
         # gibi yazıyor); ağaç taraması yedek.
-        kendi = (dornick_sureci_mi(str(info.get("path") or ""))
-                 or dornick_sureci_mi(str(info.get("run") or ""))
+        kendi = (is_dornick_process(str(info.get("path") or ""))
+                 or is_dornick_process(str(info.get("run") or ""))
                  or _dornick_ailesi(pid, bilgi))
         out.append({
             "pid": pid,
@@ -1056,7 +1056,7 @@ _DORNICK_IZI = re.compile(
 _KESFEDILEN: set[int] = set()
 
 
-def dornick_sureci_mi(cmdline: str) -> bool:
+def is_dornick_process(cmdline: str) -> bool:
     """Bu komut satırı Dornick'in kendisini mi başlatıyor? (dışarıdan da kullanılır)"""
     return bool(_DORNICK_IZI.search(cmdline or ""))
 
@@ -1076,12 +1076,12 @@ def _dornick_ailesi(pid: int, bilgi: dict[int, dict[str, Any]]) -> bool:
         kayit = bilgi.get(cur)
         if kayit is None:
             break
-        if dornick_sureci_mi(str(kayit.get("cmd") or "")):
+        if is_dornick_process(str(kayit.get("cmd") or "")):
             return True
         cur = int(kayit.get("ppid") or 0)
     # Torunlarda dornick var mı (sarmalayıcı pid defterde, dornick çocuğunda)
     for cocuk, kayit in bilgi.items():
-        if kayit.get("ppid") == pid and dornick_sureci_mi(str(kayit.get("cmd") or "")):
+        if kayit.get("ppid") == pid and is_dornick_process(str(kayit.get("cmd") or "")):
             return True
     return False
 
@@ -1108,7 +1108,7 @@ def stop(pid: int) -> dict[str, Any]:
             if sys.platform == "win32":
                 subprocess.run(["taskkill", "/PID", str(pid), "/T", "/F"],
                                capture_output=True, timeout=10,
-                               **ortam.sessiz_bayraklar())
+                               **environment.quiet_flags())
             else:
                 os.kill(pid, 15)
         except Exception as exc:
@@ -1118,13 +1118,13 @@ def stop(pid: int) -> dict[str, Any]:
     # Defterdeki kaydın kendi metni yetiyor (süreç ağacını sorgulamaya gerek
     # yok): kabuk aracı komutu olduğu gibi yazıyor, `dornick --web 8873` orada
     # görünüyor.
-    if dornick_sureci_mi(str(info.get("path") or "")) or dornick_sureci_mi(str(info.get("run") or "")):
+    if is_dornick_process(str(info.get("path") or "")) or is_dornick_process(str(info.get("run") or "")):
         return {"ok": False, "error": "Bu Dornick'in kendi süreci — panelden durdurulmuyor."}
     try:
         if sys.platform == "win32":
             subprocess.run(["taskkill", "/PID", str(pid), "/T", "/F"],
                            capture_output=True, timeout=10,
-                           **ortam.sessiz_bayraklar())
+                           **environment.quiet_flags())
         else:
             info["proc"].terminate()
         # Öldü mü gerçekten? "Durdurdum" deyip çalışır bırakmak, kullanıcının
@@ -1332,7 +1332,7 @@ def _proc_bilgi() -> dict[int, dict[str, Any]]:
                 # çözemediği baytlar olabiliyor (çökme değil, bozuk karakter
                 # kabul edilir — aradığımız iz `dornick` zaten ASCII).
                 capture_output=True, text=True, errors="replace", timeout=8,
-                **ortam.sessiz_bayraklar(),
+                **environment.quiet_flags(),
             )
             for line in res.stdout.splitlines():
                 parts = line.split("|", 2)
@@ -1384,7 +1384,7 @@ def _listening_ports() -> dict[int, list[int]]:
             ["netstat", "-ano", "-p", "TCP"] if sys.platform == "win32"
             else ["netstat", "-tlnp"],
             capture_output=True, text=True, errors="replace", timeout=3,
-            **ortam.sessiz_bayraklar(),
+            **environment.quiet_flags(),
         )
     except Exception:
         return out

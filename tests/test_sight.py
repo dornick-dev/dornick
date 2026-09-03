@@ -14,7 +14,7 @@ import numpy as np
 import pytest
 
 from dornick import sight
-from dornick.desktop import _hareket_gonder, _yerel_uc
+from dornick.desktop import _send_motion, _local_endpoint
 from dornick.watch import Camera, Sighting
 
 
@@ -124,7 +124,7 @@ def test_gpu_analysis_sends_text_not_the_frame(monkeypatch: pytest.MonkeyPatch) 
     monkeypatch.setattr(sight, "analyze_url", lambda _u: "kişi (solda), kupa")
     hub, bridge = _Hub(), _Bridge("https://api.openai.com/v1")
     config = SimpleNamespace(camera=SimpleNamespace(enabled=True, cloud_ok=False))
-    _hareket_gonder(bridge, config, hub, _sighting())
+    _send_motion(bridge, config, hub, _sighting())
     assert len(bridge.submitted) == 1
     text, image = bridge.submitted[0]
     assert "Yerel GPU analizi: kişi (solda), kupa" in text
@@ -136,7 +136,7 @@ def test_without_gpu_a_cloud_model_does_not_get_the_frame(
     monkeypatch.setattr(sight, "analyze_url", lambda _u: "")
     hub, bridge = _Hub(), _Bridge("https://api.openai.com/v1")
     config = SimpleNamespace(camera=SimpleNamespace(enabled=True, cloud_ok=False))
-    _hareket_gonder(bridge, config, hub, _sighting())
+    _send_motion(bridge, config, hub, _sighting())
     assert bridge.submitted == []
     assert any("BULUT" in (e.get("text") or "") for e in hub.events)
 
@@ -146,7 +146,7 @@ def test_without_gpu_a_local_model_still_gets_the_frame(
     monkeypatch.setattr(sight, "analyze_url", lambda _u: "")
     hub, bridge = _Hub(), _Bridge("http://127.0.0.1:1234/v1")
     config = SimpleNamespace(camera=SimpleNamespace(enabled=True, cloud_ok=False))
-    _hareket_gonder(bridge, config, hub, _sighting())
+    _send_motion(bridge, config, hub, _sighting())
     assert len(bridge.submitted) == 1
     assert bridge.submitted[0][1].startswith("data:image/")
 
@@ -157,7 +157,7 @@ def test_motion_is_ignored_when_the_camera_is_off(
     monkeypatch.setattr(sight, "analyze_url", lambda _u: "kişi (altta)")
     hub, bridge = _Hub(), _Bridge("https://api.openai.com/v1")
     config = SimpleNamespace(camera=SimpleNamespace(enabled=False, cloud_ok=False))
-    _hareket_gonder(bridge, config, hub, _sighting())
+    _send_motion(bridge, config, hub, _sighting())
     assert bridge.submitted == []
     assert hub.events == []
 
@@ -179,7 +179,7 @@ def test_builtin_webcam_motion_is_ignored_when_the_lens_is_off(
         change=0.07,
         ask="Bu kamerada bir hareket oldu.",
     )
-    _hareket_gonder(bridge, config, hub, seen)
+    _send_motion(bridge, config, hub, seen)
     assert bridge.submitted == []
     assert hub.events == []
 
@@ -236,8 +236,8 @@ def test_cuda_session_is_not_a_cpu_fallback() -> None:
 
 
 def test_local_url_helper_still_matches_the_privacy_gate() -> None:
-    assert _yerel_uc("http://127.0.0.1:1234/v1") is True
-    assert _yerel_uc("https://openrouter.ai/api/v1") is False
+    assert _local_endpoint("http://127.0.0.1:1234/v1") is True
+    assert _local_endpoint("https://openrouter.ai/api/v1") is False
 
 
 def test_the_camera_is_off_until_asked_for(tmp_path: Path) -> None:

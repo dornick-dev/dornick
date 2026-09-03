@@ -75,7 +75,7 @@ def test_local_optimize_forces_max_calls(tmp_path, monkeypatch) -> None:
     from dornick import settings
     from dornick.config import Config
 
-    monkeypatch.setattr("dornick.otomod.dogrula_anahtar", lambda _a: "ok")
+    monkeypatch.setattr("dornick.automode.verify_key", lambda _a: "ok")
     cfg = Config(workspace=tmp_path, state_dir=tmp_path / ".dornick")
     cfg.ensure_dirs()
     updated = settings.apply(cfg, {

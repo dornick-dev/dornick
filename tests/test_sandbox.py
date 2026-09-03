@@ -319,27 +319,27 @@ def test_dangerous_roots_are_refused_with_a_reason(tmp_path: Path) -> None:
     r"""Kullanıcı seçse bile bazı kökler kabul edilemez: `C:\` seçmek
     "her yere yazabilirsin" demenin uzun yoludur."""
     kok = Path(tmp_path.anchor or "/")
-    assert sandbox_module.kok_engeli(kok) is not None
+    assert sandbox_module.root_block(kok) is not None
 
     ev = Path.home()
-    assert sandbox_module.kok_engeli(ev) is not None, "kullanıcı klasörü fazla geniş"
+    assert sandbox_module.root_block(ev) is not None, "kullanıcı klasörü fazla geniş"
     # Ev DİZİNİNİN ALTI serbest: asıl projeler orada duruyor.
     alt = tmp_path / "kod" / "proje"
     alt.mkdir(parents=True)
-    assert sandbox_module.kok_engeli(alt) is None
+    assert sandbox_module.root_block(alt) is None
 
     # Olmayan ve klasör olmayan yollar da sebebiyle reddediliyor.
-    assert sandbox_module.kok_engeli(tmp_path / "yok") is not None
+    assert sandbox_module.root_block(tmp_path / "yok") is not None
     dosya = tmp_path / "dosya.txt"
     dosya.write_text("x", encoding="utf-8")
-    assert sandbox_module.kok_engeli(dosya) is not None
+    assert sandbox_module.root_block(dosya) is not None
 
 
 def test_system_folders_are_refused(tmp_path: Path) -> None:
     """İşletim sistemi klasörleri: adı yeterli kanıt, var olmaları şart değil."""
     sahte = tmp_path / "Windows"
     sahte.mkdir()
-    assert "işletim sistemi" in (sandbox_module.kok_engeli(sahte) or "")
+    assert "işletim sistemi" in (sandbox_module.root_block(sahte) or "")
 
 
 def test_an_invalid_project_falls_back_instead_of_breaking(tmp_path: Path) -> None:
@@ -353,10 +353,10 @@ def test_an_invalid_project_falls_back_instead_of_breaking(tmp_path: Path) -> No
 def test_covering_neos_own_state_warns_but_does_not_block(tmp_path: Path) -> None:
     """Kendi kodunu dornick'ya düzelttirmek meşru bir istek — bu depo tam
     olarak öyle geliştiriliyor. Engelleme değil, uyarı."""
-    durum = tmp_path / ".dornick"
-    durum.mkdir()
+    status = tmp_path / ".dornick"
+    status.mkdir()
     box = Sandbox.open(tmp_path / "ws", "atolye", project=str(tmp_path),
-                       state_dir=durum)
+                       state_dir=status)
     assert box.project == tmp_path.resolve()      # engellenmedi
     assert "hafızasına" in box.note               # ama söylendi
 
@@ -389,28 +389,28 @@ def test_relative_paths_resolve_against_the_nearest_open_root(tmp_path: Path) ->
 
 def test_recent_projects_are_remembered_in_order(tmp_path: Path) -> None:
     """Son projeler tek tıkla geçiş için; en son seçilen başta."""
-    durum = tmp_path / ".dornick"
-    assert sandbox_module.son_projeler(durum) == []
+    status = tmp_path / ".dornick"
+    assert sandbox_module.son_projeler(status) == []
 
-    sandbox_module.proje_hatirla(durum, "C:/a")
-    sandbox_module.proje_hatirla(durum, "C:/b")
-    assert sandbox_module.son_projeler(durum) == ["C:/b", "C:/a"]
+    sandbox_module.proje_hatirla(status, "C:/a")
+    sandbox_module.proje_hatirla(status, "C:/b")
+    assert sandbox_module.son_projeler(status) == ["C:/b", "C:/a"]
 
     # Aynı proje iki kez listelenmiyor, başa geçiyor.
-    sandbox_module.proje_hatirla(durum, "C:/a")
-    assert sandbox_module.son_projeler(durum) == ["C:/a", "C:/b"]
+    sandbox_module.proje_hatirla(status, "C:/a")
+    assert sandbox_module.son_projeler(status) == ["C:/a", "C:/b"]
 
     # Defter sınırlı: liste sonsuza kadar uzamıyor.
     for i in range(20):
-        sandbox_module.proje_hatirla(durum, f"C:/p{i}")
-    assert len(sandbox_module.son_projeler(durum)) == sandbox_module.MAX_RECENT
+        sandbox_module.proje_hatirla(status, f"C:/p{i}")
+    assert len(sandbox_module.son_projeler(status)) == sandbox_module.MAX_RECENT
 
 
 def test_a_corrupt_recent_file_does_not_break_settings(tmp_path: Path) -> None:
-    durum = tmp_path / ".dornick"
-    durum.mkdir()
-    (durum / sandbox_module.PROJECTS_FILE).write_text("{bozuk", encoding="utf-8")
-    assert sandbox_module.son_projeler(durum) == []
+    status = tmp_path / ".dornick"
+    status.mkdir()
+    (status / sandbox_module.PROJECTS_FILE).write_text("{bozuk", encoding="utf-8")
+    assert sandbox_module.son_projeler(status) == []
 
 
 def test_the_project_survives_a_settings_round_trip(tmp_path: Path) -> None:

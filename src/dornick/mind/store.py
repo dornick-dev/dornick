@@ -27,7 +27,7 @@ from typing import Any, Iterable
 from uuid import uuid4
 
 from ..recall import Step, open_store
-from ..recall.saat import Saat, damga, duvar_saati
+from ..recall.clock import Clock, stamp, wall_clock
 from .search import Scored, excerpt, rank
 
 # "episode" digerlerinden farkli: onu ajan elle yazmiyor, baglam
@@ -47,7 +47,7 @@ SOUL_LIMIT = 8
 # sıradan bir hatıra değil: ruhun sistem promptunda durmasının sebebi
 # ajanın eskimiş bir kurala göre davranmaması. Ayrılan yer yarıyı geçmiyor
 # — ruh bir düzeltme listesi değil.
-TAZE_DUZELTME_GUN = 7
+FRESH_CORRECTION_DAYS = 7
 
 # Epizodik aramada taranacak azami oturum sayısı. Günlükler büyüdükçe
 # burası bir indeksle değiştirilir.
@@ -69,11 +69,11 @@ class Memory:
     session_id: str = ""
     deleted: bool = False
     # Aktif kümede mi? Soğuk kayıt aramada bulunur, önyüklemeye girmez.
-    sicak: bool = True
+    hot: bool = True
     # Hangi kaydın yerini aldı. Ruh, bu hafta yapılmış bir düzeltmeye yer
     # ayırıyor: düzeltme sıradan bir hatıra değil, bir DEĞİŞİKLİK.
     supersedes: str = ""
-    baglam: dict = field(default_factory=dict)
+    context: dict = field(default_factory=dict)
 
     def searchable(self) -> str:
         return f"{self.title}\n{self.content}\n{' '.join(self.tags)}"
@@ -221,18 +221,18 @@ class Mind:
         sessions_dir: Path,
         session_id: str = "",
         *,
-        saat: Saat | None = None,
+        clock: Clock | None = None,
     ) -> None:
         self.dir = mind_dir
         # Zihin ve hatırlama deposu AYNI saati görmeli: hedef defteriyle
         # düğüm damgaları farklı takvimlerden gelirse tazelik sıralaması
         # sessizce bozulur (bkz. recall/saat.py).
-        self._saat: Saat = saat or duvar_saati
+        self._clock: Clock = clock or wall_clock
         self.sessions_dir = sessions_dir
         self.session_id = session_id
         self.dir.mkdir(parents=True, exist_ok=True)
 
-        self._baglam: dict = {}
+        self._context: dict = {}
         self._goals: dict[str, Goal] = {}
         self._episode_cache: dict[str, tuple[int, Episode]] = {}
         # Döküm önbelleği (mtime anahtarlı): derin arama 40 oturumu her
@@ -243,7 +243,7 @@ class Mind:
 
         # Hatıralar indeksli depoda: arama tarama değil, indeks araması.
         # Hedefler JSONL kalıyor — sayıları sınırlı, taramanın maliyeti yok.
-        self.store = open_store(self.dir, saat=self._saat)
+        self.store = open_store(self.dir, clock=self._clock)
         self.last_trace: list[Step] = []
         self._migrate_jsonl()
         # Diskteki imzalar daha ilk mesaj gelmeden arka planda RAM'e
@@ -252,9 +252,9 @@ class Mind:
 
         _load(self.dir / "goals.jsonl", Goal, self._goals)
 
-    def _simdi(self) -> str:
+    def _now(self) -> str:
         """Diske yazılacak "şu an" damgası — depoyla aynı saatten."""
-        return damga(self._saat)
+        return stamp(self._clock)
 
     def _migrate_jsonl(self) -> None:
         """Eski memories.jsonl kayıtlarını bir kez indeksli depoya taşır."""
@@ -284,7 +284,7 @@ class Mind:
         kind: str = "fact",
         title: str = "",
         tags: Iterable[str] = (),
-        baglam: dict | None = None,
+        context: dict | None = None,
         gece: bool = False,
     ) -> Memory:
         """Hatırayı yazar; bağlamı harness ekler, model değil.
@@ -306,18 +306,18 @@ class Mind:
             title=title,
             tags=tags,
             session=self.session_id,
-            baglam=baglam if baglam is not None else self.baglam(),
+            context=context if context is not None else self.context(),
         )
         return _from_node(node)
 
-    def baglam(self) -> dict:
+    def context(self) -> dict:
         """Şu anki oturumun bağlamı. `set_baglam` ile dışarıdan konuyor."""
-        return dict(self._baglam)
+        return dict(self._context)
 
-    def set_baglam(self, baglam: dict | None) -> None:
-        self._baglam = dict(baglam or {})
+    def set_context(self, context: dict | None) -> None:
+        self._context = dict(context or {})
 
-    def guncelle(
+    def update(
         self,
         eski_id: str,
         content: str,
@@ -334,13 +334,13 @@ class Mind:
         """
         if kind and kind not in MEMORY_KINDS:
             raise ValueError(f"Bilinmeyen bellek türü: {kind}")
-        node = self.store.guncelle(eski_id, content, kind=kind, title=title,
+        node = self.store.update(eski_id, content, kind=kind, title=title,
                                    tags=tags, session=self.session_id)
         return _from_node(node)
 
-    def celiski_adayi(self, content: str, kind: str) -> Memory | None:
+    def conflict_candidate(self, content: str, kind: str) -> Memory | None:
         """Bu kayıt aynı konudaki bir öncekini güncelliyor olabilir mi?"""
-        node = self.store.celiski_adayi(content, kind)
+        node = self.store.conflict_candidate(content, kind)
         return _from_node(node) if node is not None else None
 
     def bridge(self, src: str, dst: str, reason: str = "") -> tuple[Memory, Memory] | None:
@@ -375,7 +375,7 @@ class Mind:
             _from_node(node)
             # Zaman dizisi geçmişi istiyor: supersede edilmiş sürümler de
             # gelir. "Dünden bugüne ne oldu" sorusunun cevabı budur.
-            for node in self.store.by_kind_any(limit=500, tum_surumler=True)
+            for node in self.store.by_kind_any(limit=500, all_versions=True)
             if wanted in [t.lower() for t in node.tags]
         ]
         found.sort(key=lambda m: m.ts)
@@ -400,7 +400,7 @@ class Mind:
             out.extend(_from_node(n) for n in self.store.by_kind(k, limit=200))
         return sorted(out, key=lambda m: m.ts, reverse=True)
 
-    def _canli(self, kind: str, limit: int) -> list[Memory]:
+    def _live(self, kind: str, limit: int) -> list[Memory]:
         """Bir türün en canlı kayıtları — ruhun seçtiği sıra.
 
         `by_kind` artık aktivasyona göre sıralıyor; buradaki tek iş o sırayı
@@ -408,22 +408,22 @@ class Mind:
         için tazeliğe göre yeniden sıralıyordu — sonuçta ruh, ne kadar
         kullanıldığına bakmaksızın en son yazılan sekiz kaydı taşıyordu.
         """
-        from ..recall import anahtar
-        from ..recall.saat import coz
+        from ..recall import switches
+        from ..recall.clock import parse
 
-        if not anahtar.AKTIF.aktivasyon:
+        if not switches.ACTIVE.activation:
             # Ablation: Faz 1 öncesi yol — listeleme sırası (tazelik).
             return self.memories(kind)[:limit]
 
         adaylar = [_from_node(n) for n in self.store.by_kind(kind, limit=limit * 3)]
-        simdi = self._saat()
+        simdi = self._clock()
         ayrilan = limit // 2
 
         def _taze_duzeltme(m: Memory) -> bool:
             if not m.supersedes:
                 return False
-            an = coz(m.ts)
-            return an is not None and (simdi - an).days < TAZE_DUZELTME_GUN
+            an = parse(m.ts)
+            return an is not None and (simdi - an).days < FRESH_CORRECTION_DAYS
 
         taze = [m for m in adaylar if _taze_duzeltme(m)][:ayrilan]
         kimlikler = {m.id for m in taze}
@@ -441,7 +441,7 @@ class Mind:
         return secilen
 
     def recall(self, query: str, *, kind: str | None = None, limit: int = 8,
-               baglam: dict | None = None) -> list[Scored]:
+               context: dict | None = None) -> list[Scored]:
         """İndeksten tohumlanır, bağlar üzerinden yayılır.
 
         Aktivasyonun uğradığı yol `last_trace` içinde kalıyor; araç katmanı
@@ -450,7 +450,7 @@ class Mind:
         # Açık arama bağlamla SÜZÜLMÜYOR: bağlam yalnız kendiliğinden
         # önyüklemenin işi. Model "kobyte'ta ne yapmıştık" diye sorabilmeli,
         # koru1000 oturumundayken bile. Çağıran isterse bağlamı verir.
-        recollection = self.store.recall(query, limit=limit * 2, baglam=baglam)
+        recollection = self.store.recall(query, limit=limit * 2, context=context)
         self.last_trace = recollection.trace
 
         hits = [n for n in recollection.hits if not kind or n.kind == kind][:limit]
@@ -463,7 +463,7 @@ class Mind:
     # -- çalışma belleği ----------------------------------------------
 
     def push_goal(self, text: str) -> Goal:
-        goal = Goal(id=_new_id("goal"), ts=self._simdi(), text=text.strip(), session_id=self.session_id)
+        goal = Goal(id=_new_id("goal"), ts=self._now(), text=text.strip(), session_id=self.session_id)
         self._write("goals.jsonl", goal)
         self._goals[goal.id] = goal
         return goal
@@ -474,7 +474,7 @@ class Mind:
         goal = self._goals.get(goal_id)
         if goal is None:
             return None
-        updated = Goal(**{**asdict(goal), "status": status, "ts": self._simdi(), "note": note})
+        updated = Goal(**{**asdict(goal), "status": status, "ts": self._now(), "note": note})
         self._write("goals.jsonl", updated)
         self._goals[goal_id] = updated
         return updated
@@ -517,11 +517,11 @@ class Mind:
         """
         return Soul(
             persona=persona.strip(),
-            user=self._canli("user", limit),
-            preferences=self._canli("preference", limit),
-            lessons=self._canli("lesson", limit),
-            voice=self._canli("voice", limit),
-            procedures=self._canli("procedure", limit),
+            user=self._live("user", limit),
+            preferences=self._live("preference", limit),
+            lessons=self._live("lesson", limit),
+            voice=self._live("voice", limit),
+            procedures=self._live("procedure", limit),
             goals=self.goals(),
             sessions=self._session_count(),
             first_seen=self._first_seen(),
@@ -642,7 +642,7 @@ class Mind:
                     content = event.get("content")
                     if role == "assistant":
                         dusunmeler.extend(_dusunme_bloklari(content))
-                        adimlar.extend(_adim_ozetleri(content))
+                        adimlar.extend(_step_summaries(content))
                         text = "\n".join(_plain_text(content)).strip()
                         if text:
                             _tur_kapat(text)
@@ -973,8 +973,8 @@ def _from_node(node, *, deleted: bool = False) -> Memory:
         tags=list(node.tags),
         session_id=node.session,
         deleted=deleted,
-        sicak=bool(getattr(node, "sicak", True)),
-        baglam=dict(getattr(node, "baglam", {}) or {}),
+        hot=bool(getattr(node, "hot", True)),
+        context=dict(getattr(node, "context", {}) or {}),
         supersedes=str(getattr(node, "supersedes", "") or ""),
     )
 
@@ -1116,10 +1116,10 @@ def _dusunme_bloklari(content: Any) -> list[str]:
 
 # Adım özetinde aranan girdi alanları, anlamlılık sırasıyla: komut ve yol
 # insana en çok şey söyleyen ikili.
-_ADIM_ALANLARI = ("command", "path", "query", "url", "action", "name", "text")
+_STEP_FIELDS = ("command", "path", "query", "url", "action", "name", "text")
 
 
-def _adim_ozetleri(content: Any) -> list[dict[str, str]]:
+def _step_summaries(content: Any) -> list[dict[str, str]]:
     """Asistan içeriğindeki araç çağrıları — döküm şeridinin adım satırları.
 
     Girdinin tamamı DEĞİL, tek satırlık özet dönüyor: dökümde `write_file`
@@ -1135,7 +1135,7 @@ def _adim_ozetleri(content: Any) -> list[dict[str, str]]:
         girdi = b.get("input")
         ozet = ""
         if isinstance(girdi, dict):
-            for alan in _ADIM_ALANLARI:
+            for alan in _STEP_FIELDS:
                 deger = girdi.get(alan)
                 if isinstance(deger, str) and deger.strip():
                     ozet = " ".join(deger.split())

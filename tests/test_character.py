@@ -46,7 +46,7 @@ def test_praise_is_capped_and_correction_is_not() -> None:
     """Sycophancy is a policy that maximises social reward. The cap is the
     countermeasure, and it is a constant rather than a temperament axis."""
     for _ in range(20):
-        assert reward.social("tesekkur") <= reward.SOSYAL_TAVAN
+        assert reward.social("tesekkur") <= reward.SOCIAL_CAP
     assert reward.social("duzeltme") == -1.0
     assert abs(reward.social("duzeltme")) > reward.social("tesekkur") * 3
 
@@ -54,8 +54,8 @@ def test_praise_is_capped_and_correction_is_not() -> None:
 def test_the_social_ceiling_survives_any_temperament() -> None:
     yalaka = Temperament(sosyal=1.0)
     r = reward.reward(reaction="tesekkur")
-    assert r.sosyal <= reward.SOSYAL_TAVAN
-    assert r.total(yalaka) <= reward.SOSYAL_TAVAN
+    assert r.sosyal <= reward.SOCIAL_CAP
+    assert r.total(yalaka) <= reward.SOCIAL_CAP
 
 
 def test_temperament_weights_the_same_event_differently() -> None:
@@ -150,8 +150,8 @@ def test_world_confidence_halves_every_two_weeks() -> None:
     now = datetime(2025, 6, 30, tzinfo=timezone.utc)
     taze = (now - timedelta(days=0)).isoformat()
     iki_hafta = (now - timedelta(days=14)).isoformat()
-    assert subjects.confidence(taze, saat=lambda: now) == pytest.approx(1.0)
-    assert subjects.confidence(iki_hafta, saat=lambda: now) == pytest.approx(0.5,
+    assert subjects.confidence(taze, clock=lambda: now) == pytest.approx(1.0)
+    assert subjects.confidence(iki_hafta, clock=lambda: now) == pytest.approx(0.5,
                                                                             abs=0.01)
 
 
@@ -160,9 +160,9 @@ def test_a_stale_world_fact_is_marked_not_deleted() -> None:
 
     now = datetime(2025, 6, 30, tzinfo=timezone.utc)
     eski = (now - timedelta(days=40)).isoformat()
-    assert subjects.is_stale(eski, saat=lambda: now)
-    assert "doğrulanmadı" in subjects.world_label(eski, saat=lambda: now)
-    assert subjects.confidence(eski, saat=lambda: now) > 0.0    # still there
+    assert subjects.is_stale(eski, clock=lambda: now)
+    assert "doğrulanmadı" in subjects.world_label(eski, clock=lambda: now)
+    assert subjects.confidence(eski, clock=lambda: now) > 0.0    # still there
 
 
 def test_the_model_may_not_write_about_itself() -> None:
@@ -331,8 +331,8 @@ def test_the_world_label_is_quiet_on_the_day_it_was_verified() -> None:
 
     now = datetime(2025, 6, 30, 12, tzinfo=timezone.utc)
     kayit = subjects.world_record("Testler pytest ile koşuluyor.",
-                                  kaynak="pyproject.toml", saat=lambda: now)
-    assert subjects.world_label(kayit["dogrulama"], saat=lambda: now) == ""
+                                  kaynak="pyproject.toml", clock=lambda: now)
+    assert subjects.world_label(kayit["dogrulama"], clock=lambda: now) == ""
 
 
 def test_a_self_record_renders_as_a_count(tmp_path: Path) -> None:

@@ -25,7 +25,7 @@ import pytest
 
 from dornick.events import EventLog
 from dornick.mind import open_mind
-from dornick.recall import orgu
+from dornick.recall import weave
 
 NOW = datetime(2025, 6, 2, 9, 0, tzinfo=timezone.utc)
 
@@ -51,7 +51,7 @@ def clock() -> Clock:
 
 @pytest.fixture()
 def mind(tmp_path: Path, clock: Clock):
-    m = open_mind(tmp_path / "mind", tmp_path / "sessions", "t", saat=clock)
+    m = open_mind(tmp_path / "mind", tmp_path / "sessions", "t", clock=clock)
     yield m
     m.store.close()
 
@@ -59,7 +59,7 @@ def mind(tmp_path: Path, clock: Clock):
 def _session(sessions: Path, name: str, node_ids, clock: Clock,
              *, outcome: str, tool: str = "kos", error: str = "") -> None:
     sessions.mkdir(parents=True, exist_ok=True)
-    log = EventLog(sessions / f"{name}.jsonl", saat=clock.text)
+    log = EventLog(sessions / f"{name}.jsonl", clock=clock.text)
     log.note("session_start", session_id=name)
     for node_id in node_ids:
         clock.advance(minutes=1)
@@ -85,7 +85,7 @@ def test_bu_hafta_duzeltilen_kayit_ruha_giriyor(mind, clock) -> None:
     eski = mind.remember("Testler pytest ile kök dizinden koşuluyor.",
                          kind="procedure")
     clock.advance(days=30)
-    yeni = mind.guncelle(eski.id, "Testler py -m pytest tests ile koşuluyor.",
+    yeni = mind.update(eski.id, "Testler py -m pytest tests ile koşuluyor.",
                          kind="procedure")
     clock.advance(days=2)
 
@@ -107,7 +107,7 @@ def test_taze_duzeltme_ruhu_ele_gecirmiyor(mind, clock) -> None:
     for i in range(8):
         eski = mind.remember(f"Eski kural {i}: elle yapılıyor.", kind="procedure")
         clock.advance(hours=1)
-        mind.guncelle(eski.id, f"Yeni kural {i}: otomatik yapılıyor.",
+        mind.update(eski.id, f"Yeni kural {i}: otomatik yapılıyor.",
                       kind="procedure")
 
     ruh = mind.soul()
@@ -127,7 +127,7 @@ def test_eski_duzeltme_ayricalik_kaybediyor(mind, clock) -> None:
 
     eski = mind.remember("Testler pytest ile koşuluyor.", kind="procedure")
     clock.advance(hours=1)
-    yeni = mind.guncelle(eski.id, "Testler py -m pytest ile koşuluyor.",
+    yeni = mind.update(eski.id, "Testler py -m pytest ile koşuluyor.",
                          kind="procedure")
     clock.advance(days=40)                    # düzeltme artık taze değil
 
@@ -145,8 +145,8 @@ def test_ayni_hata_ikinci_kez_ders_yazmiyor(mind, tmp_path, clock) -> None:
         clock.advance(days=1)
         _session(sessions, f"hata{i}", [kaynak.id], clock,
                  outcome="basarisiz", error="sqlite database is locked")
-        orgu.gece_gecisi(mind.store, sessions, saat=clock,
-                         filigran=tmp_path / "w.json")
+        weave.night_pass(mind.store, sessions, clock=clock,
+                         watermark=tmp_path / "w.json")
 
     dersler = mind.store.by_kind("lesson", limit=20)
     assert len(dersler) == 1, [d.body[:40] for d in dersler]
@@ -159,17 +159,17 @@ def test_tekrarlanan_ders_pekisiyor(mind, tmp_path, clock) -> None:
     sessions = tmp_path / "sessions"
     _session(sessions, "h1", [kaynak.id], clock, outcome="basarisiz",
              error="göç yarıda kaldı")
-    orgu.gece_gecisi(mind.store, sessions, saat=clock, filigran=tmp_path / "w.json")
+    weave.night_pass(mind.store, sessions, clock=clock, watermark=tmp_path / "w.json")
     ders = mind.store.by_kind("lesson", limit=5)[0]
-    ilk = len(mind.store.kullanimlar(ders.id))
+    ilk = len(mind.store.use_log(ders.id))
 
     clock.advance(days=1)
     _session(sessions, "h2", [kaynak.id], clock, outcome="basarisiz",
              error="göç yarıda kaldı")
-    orgu.gece_gecisi(mind.store, sessions, saat=clock, filigran=tmp_path / "w.json")
+    weave.night_pass(mind.store, sessions, clock=clock, watermark=tmp_path / "w.json")
 
     assert len(mind.store.by_kind("lesson", limit=5)) == 1
-    assert len(mind.store.kullanimlar(ders.id)) > ilk
+    assert len(mind.store.use_log(ders.id)) > ilk
 
 
 def test_farkli_hata_yeni_ders_yaziyor(mind, tmp_path, clock) -> None:
@@ -181,8 +181,8 @@ def test_farkli_hata_yeni_ders_yaziyor(mind, tmp_path, clock) -> None:
         clock.advance(days=1)
         _session(sessions, f"h{i}", [kaynak.id], clock, outcome="basarisiz",
                  error=hata)
-        orgu.gece_gecisi(mind.store, sessions, saat=clock,
-                         filigran=tmp_path / "w.json")
+        weave.night_pass(mind.store, sessions, clock=clock,
+                         watermark=tmp_path / "w.json")
 
     assert len(mind.store.by_kind("lesson", limit=10)) == 2
 
@@ -194,7 +194,7 @@ def test_ayni_yordam_ikinci_kez_yazilmiyor(mind, tmp_path, clock) -> None:
     sessions = tmp_path / "sessions"
     for i in range(3):
         clock.advance(days=1)
-        log = EventLog(sessions / f"ok{i}.jsonl", saat=clock.text)
+        log = EventLog(sessions / f"ok{i}.jsonl", clock=clock.text)
         sessions.mkdir(parents=True, exist_ok=True)
         for m in dugumler:
             clock.advance(minutes=1)
@@ -203,8 +203,8 @@ def test_ayni_yordam_ikinci_kez_yazilmiyor(mind, tmp_path, clock) -> None:
         log.note("tool_end", tool="dosya_yaz", error=False, ms=10)
         log.note("sonuc", sonuc="basarili")
         log.close()
-        orgu.gece_gecisi(mind.store, sessions, saat=clock,
-                         filigran=tmp_path / "w.json")
+        weave.night_pass(mind.store, sessions, clock=clock,
+                         watermark=tmp_path / "w.json")
 
     gece_yordamlari = [n for n in mind.store.by_kind("procedure", limit=20)
                        if "gece" in n.tags]

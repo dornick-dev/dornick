@@ -37,7 +37,7 @@ def utcnow() -> str:
 # günlüğündeki damgalara bakıyor — hangi düğüm hangisinden sonra dokunuldu,
 # sürprizli olayın ±60 dakikası neresi — ve o damgalar duvar saatinden
 # gelseydi doksan günlük bir senaryo ölçülemezdi.
-Saat = Callable[[], str]
+Clock = Callable[[], str]
 
 
 @dataclass(slots=True)
@@ -64,9 +64,9 @@ class Event:
 class EventLog:
     """Sürecin ömrü boyunca açık kalan, satır-tamponlu JSONL yazıcı."""
 
-    def __init__(self, path: Path, *, saat: Saat | None = None) -> None:
+    def __init__(self, path: Path, *, clock: Clock | None = None) -> None:
         self.path = path
-        self._saat: Saat = saat or utcnow
+        self._clock: Clock = clock or utcnow
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self._events: list[Event] = list(_read(path)) if path.exists() else []
         self._seq = self._events[-1].seq + 1 if self._events else 0
@@ -104,7 +104,7 @@ class EventLog:
         with self._lock:
             ev = Event(
                 seq=self._seq,
-                ts=self._saat(),
+                ts=self._clock(),
                 kind=kind,
                 role=role,
                 content=content,

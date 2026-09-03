@@ -32,15 +32,15 @@ from typing import Any
 
 # The social ceiling. Not tunable, not a temperament axis: an agent that can
 # earn unbounded reward by agreeing will learn to agree.
-SOSYAL_TAVAN = 0.3
+SOCIAL_CAP = 0.3
 
 # A correction is worth more than a thank-you, deliberately. Being told you
 # are wrong is rarer and more informative than being told you are right.
-DUZELTME_AGIRLIGI = -1.0
+CORRECTION_WEIGHT = -1.0
 
 # With no track record, assume a coin flip. Laplace, so a single success
 # does not make the next one unsurprising.
-ONSEL_BASARI = 0.5
+PRIOR_SUCCESS = 0.5
 
 
 @dataclass(frozen=True, slots=True)
@@ -75,16 +75,16 @@ def outcome_error(succeeded: bool, *, basari: int = 0, hata: int = 0) -> float:
     A routine success barely registers; an unexpected one lands hard. This
     is the whole reason the signal is an *error* and not a score.
     """
-    beklenen = expected_success(basari, hata) if (basari or hata) else ONSEL_BASARI
+    beklenen = expected_success(basari, hata) if (basari or hata) else PRIOR_SUCCESS
     return round((1.0 if succeeded else 0.0) - beklenen, 4)
 
 
 def social(reaction: str) -> float:
     """The user's reaction, with the ceiling applied here and only here."""
     if reaction in ("tesekkur", "thanks", "onay"):
-        return SOSYAL_TAVAN
+        return SOCIAL_CAP
     if reaction in ("duzeltme", "correction", "itiraz"):
-        return DUZELTME_AGIRLIGI
+        return CORRECTION_WEIGHT
     return 0.0
 
 
@@ -112,6 +112,6 @@ def encoding_strength(value: float) -> float:
     surprising success — arguably deeper, which is what the `lesson`
     multiplier already says.
     """
-    from .aktivasyon import KODLAMA_ARALIGI, KODLAMA_TABANI
+    from .activation import ENCODING_RANGE, ENCODING_FLOOR
 
-    return round(KODLAMA_TABANI + KODLAMA_ARALIGI * min(1.0, abs(value)), 4)
+    return round(ENCODING_FLOOR + ENCODING_RANGE * min(1.0, abs(value)), 4)

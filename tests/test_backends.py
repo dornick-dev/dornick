@@ -956,7 +956,7 @@ def test_a_call_without_provider_fields_is_unchanged() -> None:
 def test_provider_fields_never_reach_anthropic() -> None:
     """Anthropic tanımadığı alanı reddediyor; aynı konuşma iki sağlayıcı
     arasında taşınabildiği için (yedek model, model değiştirme) ayıklama şart."""
-    from dornick.context import saglayici_alanlarini_at
+    from dornick.context import drop_provider_fields
 
     mesajlar = [
         {"role": "user", "content": [{"type": "text", "text": "selam"}]},
@@ -966,7 +966,7 @@ def test_provider_fields_never_reach_anthropic() -> None:
              "saglayici": {"thought_signature": "ABC123"}},
         ]},
     ]
-    temiz = saglayici_alanlarini_at(mesajlar)
+    temiz = drop_provider_fields(mesajlar)
     arac = temiz[1]["content"][1]
     assert "saglayici" not in arac
     assert arac["id"] == "c1" and arac["input"] == {"command": "ls"}
@@ -976,10 +976,10 @@ def test_provider_fields_never_reach_anthropic() -> None:
 
 def test_stripping_does_not_copy_when_there_is_nothing_to_strip() -> None:
     """Alan yoksa liste olduğu gibi dönüyor — her istekte derin kopya değil."""
-    from dornick.context import saglayici_alanlarini_at
+    from dornick.context import drop_provider_fields
 
     mesajlar = [{"role": "user", "content": [{"type": "text", "text": "selam"}]}]
-    assert saglayici_alanlarini_at(mesajlar) is mesajlar
+    assert drop_provider_fields(mesajlar) is mesajlar
 
 
 def test_every_array_in_a_tool_schema_declares_items() -> None:
@@ -1048,7 +1048,7 @@ def test_the_converter_repairs_a_schema_that_slipped_through() -> None:
 
 
 def test_cache_markers_land_on_system_and_last_two() -> None:
-    from dornick.backends.openai_backend import _cache_isaretle
+    from dornick.backends.openai_backend import _mark_cache
 
     messages = [
         {"role": "system", "content": "sistem istemi"},
@@ -1056,7 +1056,7 @@ def test_cache_markers_land_on_system_and_last_two() -> None:
         {"role": "assistant", "content": "cevap"},
         {"role": "tool", "content": "araç çıktısı", "tool_call_id": "t1"},
     ]
-    _cache_isaretle(messages)
+    _mark_cache(messages)
 
     # Sistem: düz metin tek parçaya sarılıp işaretlenir.
     sistem = messages[0]["content"]
@@ -1078,13 +1078,13 @@ def test_cache_markers_land_on_system_and_last_two() -> None:
 
 
 def test_cache_markers_can_be_stripped_after_rejection() -> None:
-    from dornick.backends.openai_backend import _cache_isaretle, _cache_sok
+    from dornick.backends.openai_backend import _mark_cache, _cache_sok
 
     messages = [
         {"role": "system", "content": "s"},
         {"role": "user", "content": "u"},
     ]
-    _cache_isaretle(messages)
+    _mark_cache(messages)
     _cache_sok(messages)
     for m in messages:
         icerik = m.get("content")
@@ -1099,7 +1099,7 @@ def test_cache_markers_only_for_openrouter_base() -> None:
 
     kaynak = (Path(__file__).parent.parent / "src/dornick/backends/openai_backend.py").read_text(encoding="utf-8")
     assert re.search(r'_cache_isaretli = "openrouter" in', kaynak)
-    assert "_cache_isaretle(messages)" in kaynak
+    assert "_mark_cache(messages)" in kaynak
 
 # -- cagri-basi sessizlik penceresi -------------------------------------
 #
@@ -1151,8 +1151,8 @@ async def test_stalled_call_is_retried_once_then_reported() -> None:
 
 
 async def test_local_endpoints_have_no_silence_window() -> None:
-    from dornick.backends.openai_backend import _sessizlik_penceresi
-    assert _sessizlik_penceresi('http://localhost:1234/v1') is None
-    assert _sessizlik_penceresi('http://192.168.1.7:8080/v1') is None
-    assert _sessizlik_penceresi('https://openrouter.ai/api/v1') == 120.0
+    from dornick.backends.openai_backend import _silence_window
+    assert _silence_window('http://localhost:1234/v1') is None
+    assert _silence_window('http://192.168.1.7:8080/v1') is None
+    assert _silence_window('https://openrouter.ai/api/v1') == 120.0
 

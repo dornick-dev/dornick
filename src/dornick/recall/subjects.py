@@ -28,17 +28,17 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from .saat import Saat, coz, duvar_saati
+from .clock import Clock, parse, wall_clock
 
 # A world fact halves in confidence every two weeks; at 30 days it is marked
 # unverified and can no longer be injected automatically.
-GUVEN_YARILANMA_GUN = 14.0
-BAYAT_GUN = 30
+CONFIDENCE_HALF_LIFE_DAYS = 14.0
+STALE_DAYS = 30
 
 # Evaluative adjectives may not appear in a `self` record. "Careful" is a
 # claim; "wrote tests first in 33 of 41 tasks" is a count. Only the second
 # can be checked, and only the second survives a model change.
-YASAK_SIFATLAR = (
+BANNED_ADJECTIVES = (
     "dikkatli", "meraklı", "meraklı", "iyi", "kötü", "başarılı", "zeki",
     "yaratıcı", "sabırlı", "titiz", "özenli", "yetenekli", "usta",
     "careful", "curious", "good", "smart", "creative", "patient",
@@ -54,40 +54,40 @@ class SelfWriteRefused(PermissionError):
 # -- world -------------------------------------------------------------
 
 
-def world_record(body: str, *, kaynak: str, saat: Saat | None = None) -> dict[str, Any]:
+def world_record(body: str, *, kaynak: str, clock: Clock | None = None) -> dict[str, Any]:
     """A world fact needs a source. Without one it is a rumour, not an
     observation, and rumours do not get to age gracefully."""
     if not kaynak or not kaynak.strip():
         raise ValueError("`world` kaydı kaynaksız yazılamaz (yol, URL ya da komut)")
-    saat = saat or duvar_saati
+    clock = clock or wall_clock
     return {"body": body, "kaynak": kaynak.strip(),
-            "dogrulama": saat().isoformat(timespec="milliseconds")}
+            "dogrulama": clock().isoformat(timespec="milliseconds")}
 
 
-def confidence(dogrulama: str | None, *, saat: Saat | None = None) -> float:
+def confidence(dogrulama: str | None, *, clock: Clock | None = None) -> float:
     """0.5 ** (days / 14). The world moves; a fact about it decays."""
-    saat = saat or duvar_saati
-    an = coz(dogrulama)
+    clock = clock or wall_clock
+    an = parse(dogrulama)
     if an is None:
         return 0.0
-    gun = max(0.0, (saat() - an).total_seconds() / 86400.0)
-    return round(0.5 ** (gun / GUVEN_YARILANMA_GUN), 4)
+    gun = max(0.0, (clock() - an).total_seconds() / 86400.0)
+    return round(0.5 ** (gun / CONFIDENCE_HALF_LIFE_DAYS), 4)
 
 
-def is_stale(dogrulama: str | None, *, saat: Saat | None = None) -> bool:
+def is_stale(dogrulama: str | None, *, clock: Clock | None = None) -> bool:
     """Older than 30 days unverified: still searchable, no longer injected."""
-    saat = saat or duvar_saati
-    an = coz(dogrulama)
-    return an is None or (saat() - an).days >= BAYAT_GUN
+    clock = clock or wall_clock
+    an = parse(dogrulama)
+    return an is None or (clock() - an).days >= STALE_DAYS
 
 
-def world_label(dogrulama: str | None, *, saat: Saat | None = None) -> str:
+def world_label(dogrulama: str | None, *, clock: Clock | None = None) -> str:
     """What `mind_recall` shows next to it, so the model can decide to check."""
-    saat = saat or duvar_saati
-    an = coz(dogrulama)
+    clock = clock or wall_clock
+    an = parse(dogrulama)
     if an is None:
         return " (doğrulanmadı)"
-    gun = (saat() - an).days
+    gun = (clock() - an).days
     return f" ({gun} gündür doğrulanmadı)" if gun >= 1 else ""
 
 
@@ -132,7 +132,7 @@ def check_self_line(line: str) -> str:
     three.
     """
     dusuk = line.casefold()
-    for sifat in YASAK_SIFATLAR:
+    for sifat in BANNED_ADJECTIVES:
         if re.search(rf"\b{re.escape(sifat)}\b", dusuk):
             raise ValueError(
                 f"`self` satırında değerlendirici sıfat: '{sifat}'. "

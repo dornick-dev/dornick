@@ -1,0 +1,321 @@
+"""Çalışma ortamı: kurulu düzen mi, geliştirici deposu mu?
+
+Kurulum sihirbazıyla kurulan ağaçta Python gömülüdür (<kök>\\python\\...)
+ve sihirbaz köke setup.json (eski adıyla kurulum.json) bırakır. Geliştirici
+deposunda ise pip ile kurulmuş sıradan bir Python vardır.
+
+Bu ayrım kullanıcıya görünen metinleri değiştirir: eksik bir özellik için
+geliştiriciye "pip install ..." demek doğru, kurulum sihirbazından geçmiş
+birine demekse anlamsız — ona sihirbazı yeniden çalıştırması söylenir.
+
+Bir de konsol meselesi var: kurulu uygulama pythonw altında (konsolsuz)
+koşar. Konsolsuz bir süreçten bayraksız başlatılan her konsol alt süreci
+(powershell, netstat, taskkill...) ekranda bir cmd penceresi parlatır.
+`sessiz_bayraklar()` bu pencereyi bastıran subprocess anahtarlarını verir.
+
+Sürüm de buranın işi: hangi kopyanın çalıştığı sahada görünmüyordu.
+Tek gerçek kaynak pyproject.toml — kurulu ağaç depo düzenini birebir
+taklit ettiği ve build.ps1 pyproject'i paket köküne koyduğu için iki
+düzende de aynı yerden okunur.
+"""
+
+from __future__ import annotations
+
+import json
+import re
+import subprocess
+import sys
+import urllib.error
+import urllib.parse
+import urllib.request
+from functools import lru_cache
+from pathlib import Path
+
+
+@lru_cache(maxsize=1)
+def kurulu_mu() -> bool:
+    """Kurulum sihirbazıyla kurulan düzende miyiz?
+
+    İki bağımsız iz yeter: gömülü Python'un ._pth dosyası (sihirbaz paketi
+    hep onunla kurar) ve sihirbazın kuruluma bıraktığı setup.json /
+    kurulum.json. Geliştirici deposunda ikisi de yoktur.
+    """
+    try:
+        exe = Path(sys.executable).resolve()
+    except OSError:  # pragma: no cover - bozuk sys.executable
+        return False
+    if next(exe.parent.glob("python3*._pth"), None) is not None:
+        return True
+    kok = exe.parent.parent
+    return (kok / "setup.json").exists() or (kok / "kurulum.json").exists()
+
+
+def _root() -> Path:
+    """Uygulama ağacının kökü: src/Dornick'in iki üstü.
+
+    Geliştirici deposunda depo kökü, kurulu düzende {app} — ikisi de
+    pyproject.toml'u bu seviyede taşır (kuruluda build.ps1 koyar).
+    """
+    return Path(__file__).resolve().parents[2]
+
+
+@lru_cache(maxsize=1)
+def version() -> str:
+    """Çalışan kopyanın sürümü — tek gerçek kaynak pyproject.toml.
+
+    pyproject okunamıyorsa (elle bozulmuş bir ağaç) pip metadata'sına
+    düşülür; o da yoksa "0.0.0" — arayüz hiç değilse boş kalmaz.
+    """
+    try:
+        import tomllib
+
+        with open(_root() / "pyproject.toml", "rb") as f:
+            deger = tomllib.load(f).get("project", {}).get("version")
+        if deger:
+            return str(deger)
+    except (OSError, ValueError):
+        pass
+    try:
+        from importlib.metadata import PackageNotFoundError, version
+
+        return version("dornick")
+    except Exception:  # pragma: no cover - metadata da yoksa
+        return "0.0.0"
+
+
+# Güncelleme denetimi ELLE tetiklenir (Ayarlar › Makine); arka planda
+# kendiliğinden ağa çıkan bir denetim bilerek yok — gizlilik ve sadelik.
+UPDATE_API = "https://api.github.com/repos/dornick-dev/dornick/releases/latest"
+UPDATE_TIMEOUT = 6.0
+
+
+def _parse_version(metin: str) -> tuple[int, ...]:
+    """"v0.2.10" → (0, 2, 10). Sayı bulunamazsa boş demet — karşılaştırma
+    yeni-sürüm-yok tarafına düşer, asla patlamaz."""
+    return tuple(int(p) for p in re.findall(r"\d+", metin)[:4])
+
+
+def check_update(*, _ac=urllib.request.urlopen) -> dict:
+    """GitHub'daki son yayını sorar ve mevcutla karşılaştırır.
+
+    Dönen sözlük arayüzün çizdiği her şey:
+      ok      istek yerine ulaştı mı
+      mevcut  çalışan sürüm
+      yeni    daha yeni bir yayın varsa onun sürümü, yoksa ""
+      url     yeni sürümün yayın sayfası (tarayıcıda açılır)
+      indirme yayına eklenmiş kurulum dosyasının (.exe) doğrudan bağlantısı;
+              yayında kurulum dosyası yoksa "" — arayüz o zaman yayın
+              sayfasına düşer
+      hata    kibar, insan diliyle hata metni (ok=False iken)
+    """
+    mevcut = version()
+    istek = urllib.request.Request(
+        UPDATE_API, headers={"Accept": "application/vnd.github+json",
+                                 "User-Agent": f"dornick/{mevcut}"})
+    try:
+        with _ac(istek, timeout=UPDATE_TIMEOUT) as cevap:
+            veri = json.loads(cevap.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        if exc.code == 404:
+            # Depo/yayın görünmüyor: yayın hiç yapılmamış olabilir.
+            return {"ok": False, "mevcut": mevcut, "yeni": "", "url": "",
+                    "indirme": "", "hata": "Yayınlanmış sürüm bulunamadı"}
+        return {"ok": False, "mevcut": mevcut, "yeni": "", "url": "",
+                "indirme": "",
+                "hata": f"Sürüm servisi cevap vermedi (HTTP {exc.code})"}
+    except Exception:
+        return {"ok": False, "mevcut": mevcut, "yeni": "", "url": "",
+                "indirme": "",
+                "hata": "Ağa ulaşılamadı — internet bağlantısını denetle"}
+
+    uzak = str(veri.get("tag_name") or veri.get("name") or "").strip()
+    url = str(veri.get("html_url") or "")
+    if _parse_version(uzak) > _parse_version(mevcut):
+        indirme, boyut, ad = _kurulum_varligi(veri)
+        return {"ok": True, "mevcut": mevcut, "yeni": uzak.lstrip("vV"),
+                "url": url, "indirme": indirme, "boyut": boyut, "ad": ad,
+                "hata": ""}
+    return {"ok": True, "mevcut": mevcut, "yeni": "", "url": "",
+            "indirme": "", "boyut": 0, "ad": "", "hata": ""}
+
+
+def _kurulum_varligi(veri: dict) -> tuple[str, int, str]:
+    """Yayın varlıkları içinden kurulum dosyası: (indirme_url, boyut, ad).
+
+    GitHub yayınına eklenen .exe (kurulum sihirbazı) aranır; birden çok
+    .exe varsa adında "setup"/"kurulum" geçen yeğlenir. Bulunamazsa
+    ("", 0, "") — arayüz yayın sayfası bağlantısına düşer, hiçbir şey
+    kırılmaz. Boyut, indirme sırasında ilerleme çubuğu ve bütünlük
+    denetimi için taşınıyor.
+    """
+    varliklar = veri.get("assets") or []
+    if not isinstance(varliklar, list):
+        return ("", 0, "")
+    exeler = []
+    for v in varliklar:
+        if not isinstance(v, dict):
+            continue
+        ad = str(v.get("name") or "")
+        indirme = str(v.get("browser_download_url") or "")
+        boyut = int(v.get("size") or 0)
+        if ad.lower().endswith(".exe") and indirme:
+            exeler.append((ad, indirme, boyut))
+    for ad, indirme, boyut in exeler:
+        if "setup" in ad.lower() or "kurulum" in ad.lower():
+            return (indirme, boyut, ad)
+    if exeler:
+        return (exeler[0][1], exeler[0][2], exeler[0][0])
+    return ("", 0, "")
+
+
+# İndirmenin çıkabileceği TEK yer: resmî GitHub yayın altyapısı. Adres
+# sunucunun API cevabından geliyor (istemci vermiyor) ve ayrıca burada
+# host süzgecinden geçiyor — zehirlenmiş bir adres indirilip çalıştırılamaz.
+def _guvenilir_indirme(url: str) -> bool:
+    try:
+        host = (urllib.parse.urlparse(url).hostname or "").lower()
+    except ValueError:
+        return False
+    if urllib.parse.urlparse(url).scheme != "https":
+        return False
+    return host == "github.com" or host.endswith(".githubusercontent.com")
+
+
+def download_update(url: str, hedef_dizin, *, beklenen_boyut: int = 0,
+                     ad: str = "", progress=None,
+                     _ac=urllib.request.urlopen):
+    """Kurulum dosyasını güvenilir GitHub adresinden indirir.
+
+    Dönüş: indirilen dosyanın Path'i. Güvenlik:
+      * adres https ve github.com / *.githubusercontent.com olmalı
+      * yönlendirme sonrası NİHAİ adres de aynı süzgeçten geçer
+      * dosya .exe olmalı; boyut biliniyorsa kabaca tutmalı
+    `ilerleme(indirilen, toplam)` her parçada çağrılır (arayüz çubuğu).
+    """
+    import shutil
+    import urllib.parse
+    from pathlib import Path
+
+    if not _guvenilir_indirme(url):
+        raise ValueError(f"Güvenilmeyen indirme adresi: {url!r}")
+
+    dosya_adi = ad or Path(urllib.parse.urlparse(url).path).name or "dornick-setup.exe"
+    if not dosya_adi.lower().endswith(".exe"):
+        raise ValueError("Kurulum dosyası .exe olmalı")
+    hedef = Path(hedef_dizin)
+    hedef.mkdir(parents=True, exist_ok=True)
+    yol = hedef / dosya_adi
+
+    istek = urllib.request.Request(
+        url, headers={"User-Agent": f"dornick/{version()}",
+                      "Accept": "application/octet-stream"})
+    with _ac(istek, timeout=60) as cevap:
+        # Yönlendirme sonrası nihai adres de güvenilir olmalı.
+        nihai = getattr(cevap, "url", None) or cevap.geturl()
+        if not _guvenilir_indirme(nihai):
+            raise ValueError(f"Yönlendirme güvenilmeyen adrese gitti: {nihai!r}")
+        toplam = int(cevap.headers.get("Content-Length") or beklenen_boyut or 0)
+        indirilen = 0
+        gecici = yol.with_suffix(yol.suffix + ".indiriliyor")
+        with open(gecici, "wb") as f:
+            while True:
+                parca = cevap.read(1024 * 256)
+                if not parca:
+                    break
+                f.write(parca)
+                indirilen += len(parca)
+                if progress is not None:
+                    try:
+                        progress(indirilen, toplam)
+                    except Exception:
+                        pass
+    # Bütünlük: boyut biliniyorsa kabaca tutmalı (kesik indirme çalıştırılmasın).
+    if beklenen_boyut and abs(indirilen - beklenen_boyut) > max(1024, beklenen_boyut // 100):
+        gecici.unlink(missing_ok=True)
+        raise ValueError(
+            f"İndirme eksik: {indirilen} bayt geldi, {beklenen_boyut} bekleniyordu")
+    if indirilen < 1024 * 1024:   # 1 MB altı bir kurulum sihirbazı olamaz
+        gecici.unlink(missing_ok=True)
+        raise ValueError(f"İndirilen dosya fazla küçük ({indirilen} bayt)")
+    shutil.move(str(gecici), str(yol))
+    return yol
+
+
+def start_update(yol) -> None:
+    """İndirilen kurulum sihirbazını başlatır (Windows).
+
+    Kurulum, çalışan uygulamayı kendisi kapatıp dosyaları değiştirir
+    (dornick.iss `CloseApplications`). Burada yalnız sihirbazı açıyoruz;
+    uygulamanın kapanışını çağıran taraf (arayüz → tepsi) yönetiyor.
+    """
+    import os
+    from pathlib import Path
+
+    yol = Path(yol)
+    if not yol.is_file():
+        raise FileNotFoundError(str(yol))
+    if sys.platform == "win32":
+        os.startfile(str(yol))  # type: ignore[attr-defined]
+    else:  # pragma: no cover - kurulum sihirbazı yalnız Windows
+        subprocess.Popen([str(yol)])
+
+
+def quiet_flags() -> dict:
+    """Windows'ta konsol penceresi açtırmayan subprocess anahtarları.
+
+    Çıktısı borulanan ya da hiç gösterilmeyen her konsol alt süreci bu
+    bayrakla açılmalı; aksi halde pythonw altında her çağrı ekranda bir
+    cmd penceresi parlatıyor. Kendi penceresi İSTENEN başlatmalar
+    (kullanıcının uygulamasını yeni konsolda açmak gibi) bilinçli olarak
+    CREATE_NEW_CONSOLE kullanır — onlara dokunma.
+    """
+    if sys.platform == "win32":
+        return {"creationflags": subprocess.CREATE_NO_WINDOW}
+    return {}
+
+
+async def kill_tree(proc) -> None:
+    """Bir alt süreci ve ONUN ALTINDAKİLERİ sonlandırır.
+
+    Yalnızca `proc.kill()` demek yetmiyor ve bu iki ayrı yerde ölçülerek
+    görüldü (test koşucusu ve kancalar). Kabuk üzerinden başlatılan bir
+    komutta `proc` powershell/cmd/bash'tir; asıl iş onun ÇOCUĞUdur.
+    Kabuğu öldürmek gerçek süreci (npm, pytest, kullanıcının kancası)
+    makinede çalışır halde bırakıyor — üstelik boruları da açık tuttuğu
+    için çağıran taraf onun bitmesini beklemeye devam ediyor. Ölçüm:
+    2 saniyelik bir zaman aşımı, 60 saniyelik bir bekleyişe dönüştü.
+
+    Windows'ta süreç grubu yok; ağacın tamamı `taskkill /T` ile
+    iniliyor. POSIX'te çağıran taraf süreci kendi oturumunda başlatıyor
+    (`start_new_session`) ve grup tek sinyalle düşüyor.
+    """
+    import asyncio
+
+    if proc.returncode is not None:
+        return
+    if sys.platform == "win32":
+        try:
+            agac = await asyncio.create_subprocess_exec(
+                "taskkill", "/T", "/F", "/PID", str(proc.pid),
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                **quiet_flags(),
+            )
+            await asyncio.wait_for(agac.wait(), 10)
+        except (OSError, ValueError, asyncio.TimeoutError):  # pragma: no cover
+            pass
+    else:  # pragma: no cover - POSIX yolu Windows'ta koşmuyor
+        import os
+        import signal
+
+        try:
+            os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+        except (OSError, ProcessLookupError):
+            pass
+    try:
+        proc.kill()
+    except (ProcessLookupError, OSError):
+        pass
+    try:
+        await asyncio.wait_for(proc.wait(), 10)
+    except (asyncio.TimeoutError, ProcessLookupError):  # pragma: no cover
+        pass

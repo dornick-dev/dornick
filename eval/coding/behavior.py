@@ -229,7 +229,7 @@ def _cost(model_name: str, prompt_tokens: int, output_tokens: int,
         return None
     try:
         from dornick.config import ModelConfig, OPENROUTER_URL
-        from dornick import fiyat as price_module
+        from dornick import pricing as price_module
     except Exception:
         return None
     try:

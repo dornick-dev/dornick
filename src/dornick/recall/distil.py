@@ -30,8 +30,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Iterable, Sequence
 
-from . import aktivasyon, anahtar
-from .saat import Saat, duvar_saati
+from . import activation, switches
+from .clock import Clock, wall_clock
 
 # A cluster smaller than this has nothing to summarise; larger than this and
 # the model starts inventing connective tissue.
@@ -101,7 +101,7 @@ def gate(model: Callable[[str], str] | None, *, local_model: bool,
     still gets the first five steps of the night; it loses summaries, not
     consolidation.
     """
-    if not anahtar.AKTIF.damitma:
+    if not switches.ACTIVE.distillation:
         return "atlandı: damıtma kapalı"
     if model is None:
         return "atlandı: yerel model yok"
@@ -157,13 +157,13 @@ def distil(
     seeds: Sequence[str],
     *,
     model: Callable[[str], str] | None,
-    saat: Saat | None = None,
+    clock: Clock | None = None,
     local_model: bool = True,
     cloud_ok: bool = False,
     state_dir: Path | None = None,
 ) -> DistilReport:
     """Turn clusters of memories into a few short, sourced facts."""
-    saat = saat or duvar_saati
+    clock = clock or wall_clock
     report = DistilReport()
     if reason := gate(model, local_model=local_model, cloud_ok=cloud_ok):
         report.status = reason
@@ -180,7 +180,7 @@ def distil(
         except Exception as exc:
             report.status = f"kısmi: model hatası ({exc})"
             continue
-        _apply(store, nodes, answer, report, saat, state_dir)
+        _apply(store, nodes, answer, report, clock, state_dir)
     report.status = report.status or f"{report.written} damıtık kayıt"
     return report
 
@@ -190,7 +190,7 @@ def _render(nodes: Sequence[Any]) -> str:
 
 
 def _apply(store: Any, nodes: Sequence[Any], answer: str, report: DistilReport,
-           saat: Saat, state_dir: Path | None) -> None:
+           clock: Clock, state_dir: Path | None) -> None:
     ids = {n.id for n in nodes}
     tags = sorted({t for n in nodes for t in n.tags})
     written = 0
@@ -203,7 +203,7 @@ def _apply(store: Any, nodes: Sequence[Any], answer: str, report: DistilReport,
             # The system does not resolve contradictions on its own. It
             # records them and shows them; superseding on a model's opinion
             # would let a guess overwrite something the user said.
-            _record_contradiction(state_dir, hit.group(1), hit.group(2), saat)
+            _record_contradiction(state_dir, hit.group(1), hit.group(2), clock)
             report.contradictions += 1
             continue
 
@@ -214,10 +214,10 @@ def _apply(store: Any, nodes: Sequence[Any], answer: str, report: DistilReport,
                     # Kesilmiyor, zayıflatılıyor: bir görüş üzerine yol
                     # atılmaz. Sonradan birlikte kullanılırsa Adım 2 geri
                     # güçlendirir.
-                    store.kenar_guncelle(a, b, weight=UNRELATED_WEIGHT,
+                    store.update_edge(a, b, weight=UNRELATED_WEIGHT,
                                          reason="ilişkisiz (damıtma)")
-                elif not store.kenar_guncelle(a, b, reason=reason[:200]):
-                    store.baglan(a, b, weight=CLUSTER_EDGE, reason=reason[:200])
+                elif not store.update_edge(a, b, reason=reason[:200]):
+                    store.connect(a, b, weight=CLUSTER_EDGE, reason=reason[:200])
                 report.relations += 1
             continue
 
@@ -235,8 +235,8 @@ def _apply(store: Any, nodes: Sequence[Any], answer: str, report: DistilReport,
     if written:
         for node in nodes:
             if node.kind == "episode":
-                store.kullanim_ekle(node.id, w=SOURCE_PENALTY,
-                                    etiket=aktivasyon.DAMITILDI)
+                store.add_use(node.id, w=SOURCE_PENALTY,
+                                    etiket=activation.DISTILLED)
                 report.cooled_sources += 1
 
 
@@ -249,7 +249,7 @@ def _split_sources(line: str, ids: set[str]) -> tuple[str, list[str]]:
 
 
 def _record_contradiction(state_dir: Path | None, first: str, second: str,
-                          saat: Saat) -> None:
+                          clock: Clock) -> None:
     """Written to disk for the user, not acted on by the system."""
     if state_dir is None:
         return
@@ -258,7 +258,7 @@ def _record_contradiction(state_dir: Path | None, first: str, second: str,
         path.parent.mkdir(parents=True, exist_ok=True)
         with path.open("a", encoding="utf-8") as fh:
             fh.write(json.dumps(
-                {"ts": saat().isoformat(timespec="milliseconds"),
+                {"ts": clock().isoformat(timespec="milliseconds"),
                  "a": first, "b": second}, ensure_ascii=False) + "\n")
     except OSError:
         pass

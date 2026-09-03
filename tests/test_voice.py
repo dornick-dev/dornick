@@ -95,7 +95,7 @@ def test_voice_is_off_until_asked_for(tmp_path: Path) -> None:
 def test_senses_open_turned_off(tmp_path: Path) -> None:
     """Açılışta kamera / mikrofon / ses kapalı — kayıtta açık kalsalar bile."""
     from dataclasses import replace
-    from dornick.desktop import duyulari_kapat
+    from dornick.desktop import close_senses
 
     config = Config.load(tmp_path)
     config = replace(
@@ -104,11 +104,11 @@ def test_senses_open_turned_off(tmp_path: Path) -> None:
         listen=replace(config.listen, enabled=True, open=True),
         camera=replace(config.camera, enabled=True),
     )
-    kapali = duyulari_kapat(config)
-    assert not kapali.voice.enabled
-    assert not kapali.listen.enabled
-    assert not kapali.listen.open
-    assert not kapali.camera.enabled
+    disabled = close_senses(config)
+    assert not disabled.voice.enabled
+    assert not disabled.listen.enabled
+    assert not disabled.listen.open
+    assert not disabled.camera.enabled
 
 
 def test_boot_closes_senses_before_hardware() -> None:
@@ -117,9 +117,9 @@ def test_boot_closes_senses_before_hardware() -> None:
     from dornick import desktop
 
     src = inspect.getsource(desktop._boot)
-    assert "duyulari_kapat" in src
-    assert src.index("duyulari_kapat") < src.index("sync_hearing")
-    assert src.index("duyulari_kapat") < src.index("Lens")
+    assert "close_senses" in src
+    assert src.index("close_senses") < src.index("sync_hearing")
+    assert src.index("close_senses") < src.index("Lens")
     assert "config.camera.enabled and eyes.start()" in src
 
 

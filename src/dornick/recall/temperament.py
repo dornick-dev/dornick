@@ -34,13 +34,13 @@ EKSENLER = ("yenilik", "sonuc", "sosyal", "sebat", "temkin")
 
 # Plasticity decays but never reaches zero: the hundredth session moves the
 # needle half as far as the first, the thousandth still moves it.
-ETA_TABAN = 0.02
+ETA_FLOOR = 0.02
 ETA_YARILANMA = 100.0
 
 # Leverage is bounded. A harness that can multiply a threshold without limit
 # would turn one measurement error into a broken product.
-KALDIRAC_ALT = 0.25
-KALDIRAC_UST = 4.0
+LEVERAGE_LOW = 0.25
+LEVERAGE_HIGH = 4.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -70,14 +70,14 @@ def leverage(taban: Temperament, hedef: Temperament) -> dict[str, float]:
     out: dict[str, float] = {}
     for eksen in EKSENLER:
         alt = max(0.05, getattr(taban, eksen))
-        out[eksen] = round(max(KALDIRAC_ALT,
-                               min(KALDIRAC_UST, getattr(hedef, eksen) / alt)), 4)
+        out[eksen] = round(max(LEVERAGE_LOW,
+                               min(LEVERAGE_HIGH, getattr(hedef, eksen) / alt)), 4)
     return out
 
 
 def eta(session_count: int) -> float:
     """How far one correction moves the target. Decays, never dies."""
-    return round(ETA_TABAN / (1 + max(0, session_count) / ETA_YARILANMA), 6)
+    return round(ETA_FLOOR / (1 + max(0, session_count) / ETA_YARILANMA), 6)
 
 
 def correct(hedef: Temperament, eksen: str, direction: int,

@@ -221,7 +221,7 @@ async def test_a_failed_background_job_is_not_reported_as_done(
 ) -> None:
     """Çıkış kodu 1 ile biten iş 'görev tamamlandı' dememeli."""
     from dornick.tools.base import JobFailed
-    from dornick.tools.shell import is_raporu
+    from dornick.tools.shell import job_report
 
     client = FakeClient(text_turn("gördüm"))
     agent = build_agent(tmp_path, client, registry)
@@ -231,7 +231,7 @@ async def test_a_failed_background_job_is_not_reported_as_done(
     )
 
     async def runner(cancel: asyncio.Event) -> str:
-        raise JobFailed(is_raporu(
+        raise JobFailed(job_report(
             command="py tarama_modbus.py",
             code=1,
             text="ModuleNotFoundError: No module named 'pymodbus'",
@@ -670,14 +670,14 @@ async def test_full_authority_resolves_pending_approval_cards(tmp_path: Path) ->
 def test_outage_rotates_the_auto_pool() -> None:
     """Oto kipinde kesinti hata sayılır: cezalı model havuzun sonuna düşer,
     bir sonraki deneme başka modelle gider."""
-    from dornick import otomod
+    from dornick import automode
 
-    saglik = otomod.Saglik()
-    for _ in range(otomod.HATA_ESIGI):
-        saglik.kaydet("a/model", False)
+    saglik = automode.Saglik()
+    for _ in range(automode.ERROR_THRESHOLD):
+        saglik.save("a/model", False)
 
     assert saglik.cezali("a/model")
-    assert saglik.sirala(["a/model", "b/model"]) == ["b/model", "a/model"]
+    assert saglik.rank(["a/model", "b/model"]) == ["b/model", "a/model"]
 
 
 def test_park_records_round_trip(tmp_path: Path) -> None:
@@ -742,7 +742,7 @@ def _oturum(tmp_path: Path, satirlar: list[tuple[str, str, dict]]):
 def test_a_resumed_session_seeds_the_counters_from_real_usage(tmp_path: Path) -> None:
     """En doğru kaynak: son asistan turunun `usage` meta'sı — sağlayıcının
     saydığı gerçek rakam. Tahmin bayrağı DÜŞÜK: uydurma yok."""
-    from dornick.desktop import _gecmis_kullanim
+    from dornick.desktop import _past_usage
 
     agent = _oturum(tmp_path, [
         ("user", "merhaba", {}),
@@ -751,41 +751,41 @@ def test_a_resumed_session_seeds_the_counters_from_real_usage(tmp_path: Path) ->
         ("assistant", "tamam", {"usage": {"prompt_total": 5400, "output": 90}}),
     ])
 
-    durum = _gecmis_kullanim(agent)
+    status = _past_usage(agent)
 
-    assert durum["prompt_total"] == 5400, "SON turun istemi geçerli olan"
-    assert durum["girdi"] == 6600, "maliyet: tüm turların istemi toplanır"
-    assert durum["output"] == 130, "çıktı oturum boyunca toplanır"
-    assert durum["cagri"] == 2
-    assert durum["tahmin"] is False
+    assert status["prompt_total"] == 5400, "SON turun istemi geçerli olan"
+    assert status["girdi"] == 6600, "maliyet: tüm turların istemi toplanır"
+    assert status["output"] == 130, "çıktı oturum boyunca toplanır"
+    assert status["cagri"] == 2
+    assert status["tahmin"] is False
 
 
 def test_an_old_log_without_usage_falls_back_to_an_estimate(tmp_path: Path) -> None:
     """Usage yoksa (eski günlük ya da sayaç vermeyen sağlayıcı) sıfır
     göstermektense yaklaşık göstermek doğru — yeter ki tahmin olduğu
     söylensin. `tahmin` bayrağı arayüzde title'a dönüşüyor."""
-    from dornick.desktop import _gecmis_kullanim
+    from dornick.desktop import _past_usage
 
     agent = _oturum(tmp_path, [
         ("user", "a" * 400, {}),
         ("assistant", "b" * 400, {}),
     ])
 
-    durum = _gecmis_kullanim(agent)
+    status = _past_usage(agent)
 
-    assert durum["tahmin"] is True
-    assert durum["prompt_total"] > 0
-    assert durum["girdi"] == durum["prompt_total"]
-    assert durum["cagri"] == 0
+    assert status["tahmin"] is True
+    assert status["prompt_total"] > 0
+    assert status["girdi"] == status["prompt_total"]
+    assert status["cagri"] == 0
 
 
 def test_a_fresh_session_really_starts_at_zero(tmp_path: Path) -> None:
     """Yeni konuşmada tohum YOK: sayaç gerçekten sıfırdan başlamalı."""
-    from dornick.desktop import _gecmis_kullanim
+    from dornick.desktop import _past_usage
 
     agent = _oturum(tmp_path, [])
 
-    assert _gecmis_kullanim(agent) == {
+    assert _past_usage(agent) == {
         "prompt_total": 0, "girdi": 0, "output": 0, "cagri": 0, "tahmin": False}
 
 
@@ -840,7 +840,7 @@ def test_baglam_kirilim_puts_the_remainder_in_conversation() -> None:
     """Sağlayıcı yalnız toplam veriyor: sabitler karakter/4, kalan konuşma."""
     import json
 
-    from dornick.desktop import baglam_kirilim
+    from dornick.desktop import context_breakdown
 
     sema = {"name": "x", "description": "yyyy", "input_schema": {}}
     yetenek = {"name": "sk", "description": "z" * 20, "input_schema": {}}
@@ -858,9 +858,9 @@ def test_baglam_kirilim_puts_the_remainder_in_conversation() -> None:
             SimpleNamespace(name="m", source="mcp:uzak", api_schema=lambda: mcp),
             SimpleNamespace(name="task", source="", api_schema=lambda: task),
         ]),
-        kisa_sema=False,
+        brief_schema=False,
     )
-    parcalar = baglam_kirilim(agent, 1000)
+    parcalar = context_breakdown(agent, 1000)
     by_n = {p["id"]: p["n"] for p in parcalar}
     assert by_n["sistem"] == 10
     assert by_n["ruh"] == 5
@@ -877,22 +877,22 @@ def test_baglam_kirilim_puts_the_remainder_in_conversation() -> None:
 
 def test_baglam_kirilim_scales_when_static_exceeds_total() -> None:
     """Sabitler sağlayıcı toplamını aşarsa orantılanır — konuşma sıfır kalır."""
-    from dornick.desktop import baglam_kirilim
+    from dornick.desktop import context_breakdown
 
     agent = SimpleNamespace(
         _system=SimpleNamespace(core="x" * 400, identity=""),
         registry=None,
     )
-    parts = {p["id"]: p["n"] for p in baglam_kirilim(agent, 40)}
+    parts = {p["id"]: p["n"] for p in context_breakdown(agent, 40)}
     assert parts["sistem"] == 40
     assert parts["sohbet"] == 0
     assert sum(parts.values()) == 40
 
 
 def test_baglam_kirilim_without_agent_is_all_conversation() -> None:
-    from dornick.desktop import baglam_kirilim
+    from dornick.desktop import context_breakdown
 
-    parts = {p["id"]: p["n"] for p in baglam_kirilim(None, 500)}
+    parts = {p["id"]: p["n"] for p in context_breakdown(None, 500)}
     assert parts["sohbet"] == 500
     assert parts["sistem"] == parts["arac"] == parts["ruh"] == 0
     assert parts["yetenek"] == parts["mcp"] == parts["yardimci"] == 0
@@ -900,12 +900,12 @@ def test_baglam_kirilim_without_agent_is_all_conversation() -> None:
 
 def test_baglam_kirilim_shows_statics_before_the_first_turn() -> None:
     """İlk turdan önce de sistem/araç görünsün — yüzde sıfır yalanı yok."""
-    from dornick.desktop import baglam_kirilim
+    from dornick.desktop import context_breakdown
 
     agent = SimpleNamespace(
         _system=SimpleNamespace(core="x" * 40, identity=""),
         registry=None,
     )
-    parts = {p["id"]: p["n"] for p in baglam_kirilim(agent, 0)}
+    parts = {p["id"]: p["n"] for p in context_breakdown(agent, 0)}
     assert parts["sistem"] == 10
     assert parts["sohbet"] == 0

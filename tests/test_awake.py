@@ -20,8 +20,8 @@ from pathlib import Path
 import pytest
 
 from dornick.events import EventLog
-from dornick.recall import aktivasyon as A
-from dornick.recall import awake, open_store, orgu
+from dornick.recall import activation as A
+from dornick.recall import awake, open_store, weave
 
 NOW = datetime(2025, 6, 2, 9, 0, tzinfo=timezone.utc)
 
@@ -47,7 +47,7 @@ def clock() -> Clock:
 
 @pytest.fixture()
 def store(tmp_path: Path, clock: Clock):
-    s = open_store(tmp_path / "memory", saat=clock)
+    s = open_store(tmp_path / "memory", clock=clock)
     yield s
     s.close()
 
@@ -69,7 +69,7 @@ class Log:
 
     def __init__(self, folder: Path, name: str, clock: Clock) -> None:
         self.path = folder / f"{name}.jsonl"
-        self.log = EventLog(self.path, saat=clock.text)
+        self.log = EventLog(self.path, clock=clock.text)
         self.log.note("session_start", session_id=name)
         self.clock = clock
 
@@ -98,12 +98,12 @@ def test_lesson_is_written_in_the_same_session(store, sessions, clock) -> None:
     log = Log(sessions, "s1", clock)
     log.touch(bad.id).tool("kos", error=True, summary="göç yarıda kaldı")
 
-    report = awake.on_result(store, log.path, "basarisiz", saat=clock, log=log.log)
+    report = awake.on_result(store, log.path, "basarisiz", clock=clock, log=log.log)
 
-    assert report.yazilan_ders == 1
+    assert report.lessons_written == 1
     lessons = store.by_kind("lesson", limit=5)
     assert lessons
-    assert bad.id in {n.id for n, _w, _r in store.komsular_gerekceli(lessons[0].id)}
+    assert bad.id in {n.id for n, _w, _r in store.neighbours_with_reasons(lessons[0].id)}
 
 
 def test_success_pays_out_immediately(store, sessions, clock) -> None:
@@ -111,8 +111,8 @@ def test_success_pays_out_immediately(store, sessions, clock) -> None:
                           kind="procedure")
     log = Log(sessions, "s1", clock)
     log.touch(good.id).tool("kos")
-    awake.on_result(store, log.path, "basarili", saat=clock, log=log.log)
-    assert store.sicil(good.id) == (1, 0)
+    awake.on_result(store, log.path, "basarili", clock=clock, log=log.log)
+    assert store.track_record(good.id) == (1, 0)
 
 
 def test_night_skips_a_session_already_replayed_awake(store, sessions,
@@ -121,13 +121,13 @@ def test_night_skips_a_session_already_replayed_awake(store, sessions,
     node = store.remember("Kurulum paketi imzalandı.", kind="fact")
     log = Log(sessions, "s1", clock)
     log.touch(node.id).tool("kos")
-    awake.on_result(store, log.path, "basarili", saat=clock, log=log.log)
+    awake.on_result(store, log.path, "basarili", clock=clock, log=log.log)
     log.close("basarili")
-    after_awake = store.sicil(node.id)
+    after_awake = store.track_record(node.id)
 
-    orgu.gece_gecisi(store, sessions, saat=clock, filigran=watermark)
+    weave.night_pass(store, sessions, clock=clock, watermark=watermark)
 
-    assert store.sicil(node.id) == after_awake
+    assert store.track_record(node.id) == after_awake
     assert after_awake == (1, 0)
 
 
@@ -135,10 +135,10 @@ def test_reverse_replay_runs_once_per_session(store, sessions, clock) -> None:
     node = store.remember("Bir kayıt.", kind="fact")
     log = Log(sessions, "s1", clock)
     log.touch(node.id).tool("kos")
-    awake.on_result(store, log.path, "basarili", saat=clock, log=log.log)
-    second = awake.on_result(store, log.path, "basarili", saat=clock, log=log.log)
-    assert second.tekrar_edilen == 0
-    assert store.sicil(node.id) == (1, 0)
+    awake.on_result(store, log.path, "basarili", clock=clock, log=log.log)
+    second = awake.on_result(store, log.path, "basarili", clock=clock, log=log.log)
+    assert second.replayed == 0
+    assert store.track_record(node.id) == (1, 0)
 
 
 def test_reverse_replay_fits_between_two_turns(store, sessions, clock) -> None:
@@ -153,7 +153,7 @@ def test_reverse_replay_fits_between_two_turns(store, sessions, clock) -> None:
     log.tool("kos")
 
     started = time.perf_counter()
-    awake.on_result(store, log.path, "basarili", saat=clock, log=log.log)
+    awake.on_result(store, log.path, "basarili", clock=clock, log=log.log)
     elapsed_ms = (time.perf_counter() - started) * 1000.0
     assert elapsed_ms < awake.TURN_BUDGET_MS * 20      # thread fallback margin
 
@@ -168,8 +168,8 @@ def test_forward_replay_writes_edges_before_the_session_ends(
     log = Log(sessions, "s1", clock)
     log.touch(a.id).touch(b.id)
 
-    assert awake.forward_replay(store, log.path, saat=clock) >= 1
-    reasons = {n.id: r for n, _w, r in store.komsular_gerekceli(a.id)}
+    assert awake.forward_replay(store, log.path, clock=clock) >= 1
+    reasons = {n.id: r for n, _w, r in store.neighbours_with_reasons(a.id)}
     assert "birlikte kullanıldı" in reasons.get(b.id, "")
 
 
@@ -180,11 +180,11 @@ def test_forward_replay_is_idempotent(store, sessions, clock) -> None:
     log = Log(sessions, "s1", clock)
     log.touch(a.id).touch(b.id)
 
-    awake.forward_replay(store, log.path, saat=clock, log=log.log)
-    first = dict((n.id, w) for n, w, _r in store.komsular_gerekceli(a.id))[b.id]
-    awake.forward_replay(store, log.path, saat=clock, log=log.log)
-    awake.forward_replay(store, log.path, saat=clock, log=log.log)
-    again = dict((n.id, w) for n, w, _r in store.komsular_gerekceli(a.id))[b.id]
+    awake.forward_replay(store, log.path, clock=clock, log=log.log)
+    first = dict((n.id, w) for n, w, _r in store.neighbours_with_reasons(a.id))[b.id]
+    awake.forward_replay(store, log.path, clock=clock, log=log.log)
+    awake.forward_replay(store, log.path, clock=clock, log=log.log)
+    again = dict((n.id, w) for n, w, _r in store.neighbours_with_reasons(a.id))[b.id]
 
     assert again == pytest.approx(first)
 
@@ -208,22 +208,22 @@ def test_micro_sleep_never_shrinks_edges(store, sessions, watermark, clock) -> N
     a = store.remember("Kavanoz kapakları paslanıyor.", kind="fact")
     b = store.remember("Ütü masasının ayağı gevşek.", kind="fact")
     store.link(a.id, b.id, weight=1.0, reason="elle")
-    before = dict((n.id, w) for n, w, _r in store.komsular_gerekceli(a.id))[b.id]
+    before = dict((n.id, w) for n, w, _r in store.neighbours_with_reasons(a.id))[b.id]
 
     Log(sessions, "s1", clock).touch(a.id).touch(b.id).close()
-    report = awake.micro_sleep(store, sessions, saat=clock, filigran=watermark)
+    report = awake.micro_sleep(store, sessions, clock=clock, watermark=watermark)
 
-    after = dict((n.id, w) for n, w, _r in store.komsular_gerekceli(a.id))[b.id]
+    after = dict((n.id, w) for n, w, _r in store.neighbours_with_reasons(a.id))[b.id]
     assert after >= before
-    assert report.kuculen_kenar == 0
-    assert report.silinen_kenar == 0
+    assert report.edges_shrunk == 0
+    assert report.edges_removed == 0
 
 
 def test_micro_sleep_never_distills(store, sessions, watermark, clock) -> None:
     node = store.remember("Bir kayıt.", kind="fact")
     Log(sessions, "s1", clock).touch(node.id).close()
-    report = awake.micro_sleep(store, sessions, saat=clock, filigran=watermark)
-    assert "damıtmaz" in report.damitma
+    report = awake.micro_sleep(store, sessions, clock=clock, watermark=watermark)
+    assert "damıtmaz" in report.distillation
 
 
 def test_micro_sleep_reduces_debt_without_clearing_it(
@@ -232,9 +232,9 @@ def test_micro_sleep_reduces_debt_without_clearing_it(
         node = store.remember(f"Kayıt {i}.", kind="fact")
         Log(sessions, f"s{i}", clock).touch(node.id).close()
 
-    report = awake.micro_sleep(store, sessions, saat=clock,
-                               filigran=watermark, budget_sn=0.0)
-    assert report.tekrar_edilen >= 1
+    report = awake.micro_sleep(store, sessions, clock=clock,
+                               watermark=watermark, budget_sn=0.0)
+    assert report.replayed >= 1
     assert report.devreden >= 1              # night still has work left
 
 
@@ -250,13 +250,13 @@ def test_local_sleep_leaves_the_active_region_untouched(store, clock) -> None:
     hot_a = store.remember("Bugünkü vardiya raporu hazırlandı.", kind="fact")
     hot_b = store.remember("Bugünkü ölçüm dosyaya yazıldı.", kind="fact")
     store.link(hot_a.id, hot_b.id, weight=0.9, reason="bugün")
-    hot_before = dict((n.id, w) for n, w, _r in store.komsular_gerekceli(hot_a.id))[hot_b.id]
-    cold_before = dict((n.id, w) for n, w, _r in store.komsular_gerekceli(cold_a.id))[cold_b.id]
+    hot_before = dict((n.id, w) for n, w, _r in store.neighbours_with_reasons(hot_a.id))[hot_b.id]
+    cold_before = dict((n.id, w) for n, w, _r in store.neighbours_with_reasons(cold_a.id))[cold_b.id]
 
-    report = awake.local_sleep(store, saat=clock)
+    report = awake.local_sleep(store, clock=clock)
 
-    hot_after = dict((n.id, w) for n, w, _r in store.komsular_gerekceli(hot_a.id))[hot_b.id]
-    cold_after = dict((n.id, w) for n, w, _r in store.komsular_gerekceli(cold_a.id))[cold_b.id]
+    hot_after = dict((n.id, w) for n, w, _r in store.neighbours_with_reasons(hot_a.id))[hot_b.id]
+    cold_after = dict((n.id, w) for n, w, _r in store.neighbours_with_reasons(cold_a.id))[cold_b.id]
     assert hot_after == pytest.approx(hot_before)      # active region intact
     assert cold_after < cold_before                    # cold region shrank
     assert report.cold_nodes >= 2 and report.skipped_active >= 2
@@ -266,7 +266,7 @@ def test_a_touched_node_leaves_the_cold_region(store, clock) -> None:
     """The boundary is recomputed from usage, so a touch moves a node out."""
     node = store.remember("Eski kompresör garantisi bitti.", kind="fact")
     clock.advance(days=30)
-    assert node.id in awake.local_sleep(store, saat=clock).reason or True
+    assert node.id in awake.local_sleep(store, clock=clock).reason or True
     cold, _hot = store.cold_nodes(clock() - timedelta(days=awake.ACTIVE_DAYS))
     assert node.id in cold
 
@@ -286,12 +286,12 @@ def test_sleep_debt_counts_unreplayed_sessions(store, sessions, watermark,
     for i in range(3):
         node = store.remember(f"Kayıt {i}.", kind="fact")
         Log(sessions, f"s{i}", clock).touch(node.id).close()
-    hours, pending = awake.sleep_debt(sessions, saat=clock, filigran=watermark)
+    hours, pending = awake.sleep_debt(sessions, clock=clock, watermark=watermark)
     assert pending == 3
     assert hours >= awake.DEBT_HOURS       # no night has ever run
 
-    orgu.gece_gecisi(store, sessions, saat=clock, filigran=watermark)
-    hours, pending = awake.sleep_debt(sessions, saat=clock, filigran=watermark)
+    weave.night_pass(store, sessions, clock=clock, watermark=watermark)
+    hours, pending = awake.sleep_debt(sessions, clock=clock, watermark=watermark)
     assert pending == 0
     assert hours < 1
 
@@ -300,13 +300,13 @@ def test_sleep_debt_counts_unreplayed_sessions(store, sessions, watermark,
 
 
 def test_awake_replay_is_switchable(store, sessions, clock) -> None:
-    from dornick.recall import anahtar
+    from dornick.recall import switches
 
     node = store.remember("Bir kayıt.", kind="fact")
     log = Log(sessions, "s1", clock)
     log.touch(node.id).tool("kos", error=True, summary="patladı")
-    with anahtar.kapali("orgu"):
-        report = awake.on_result(store, log.path, "basarisiz", saat=clock,
+    with switches.disabled("weave"):
+        report = awake.on_result(store, log.path, "basarisiz", clock=clock,
                                  log=log.log)
-    assert report.yazilan_ders == 0
+    assert report.lessons_written == 0
     assert not store.by_kind("lesson", limit=5)

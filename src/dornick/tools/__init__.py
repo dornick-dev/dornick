@@ -57,7 +57,7 @@ def build_registry(mind: Any = None, *, subagents: bool = True) -> ToolRegistry:
         camera,
         jobs,
         kod,
-        kosucu,
+        runner,
         learn,
         mail,
         place,
@@ -86,7 +86,7 @@ def build_registry(mind: Any = None, *, subagents: bool = True) -> ToolRegistry:
     checkpoint.register(registry)
     # Test koşucusu: `denetle` sözdizimine bakar, `kos` kodu ÇALIŞTIRIR.
     # Tip/davranış hatalarını yakalayan tek şey bu.
-    kosucu.register(registry)
+    runner.register(registry)
     web.register(registry)
     jobs.register(registry)
     # İş akışı grafikleri: schedule tek prompt; workflow düğüm/kenar.

@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from ..recall.saat import Saat
+from ..recall.clock import Clock
 from .store import Episode, Goal, Memory, Mind
 from .tools import register
 
@@ -23,8 +23,8 @@ def open_mind(
     sessions_dir: Path,
     session_id: str = "",
     *,
-    saat: Saat | None = None,
+    clock: Clock | None = None,
 ) -> Mind:
     """Zihni açar. `saat` verilmezse duvar saati (bkz. recall/saat.py)."""
     return Mind(mind_dir=mind_dir, sessions_dir=sessions_dir,
-                session_id=session_id, saat=saat)
+                session_id=session_id, clock=clock)

@@ -73,17 +73,17 @@ def test_a_big_graph_does_not_flood_the_memory(tmp_path: Path) -> None:
 def test_the_lesson_shape_is_stable(tmp_path: Path) -> None:
     """Aynı olay her seferinde aynı kalıpla — ince ayarın görebilmesi için."""
     wf = _akis(tmp_path)
-    bir = workflow_mind.ders_metni(wf.id, wf.nodes[0], RuntimeError("bağlanamadı"))
-    iki = workflow_mind.ders_metni(wf.id, wf.nodes[0], RuntimeError("bağlanamadı"))
+    bir = workflow_mind.lesson_text(wf.id, wf.nodes[0], RuntimeError("bağlanamadı"))
+    iki = workflow_mind.lesson_text(wf.id, wf.nodes[0], RuntimeError("bağlanamadı"))
     assert bir == iki
     assert bir.startswith("Otomasyon [posta] adımı hata verdi")
     assert "RuntimeError: bağlanamadı" in bir
 
     zihin = _SahteZihin()
-    workflow_mind.dersi_hatirla(zihin, wf.id, wf.nodes[0], RuntimeError("bağlanamadı"))
+    workflow_mind.recall_lesson(zihin, wf.id, wf.nodes[0], RuntimeError("bağlanamadı"))
     (kayit,) = zihin.kayitlar
     assert kayit["kind"] == "lesson"
-    assert workflow_mind.DERS_ETIKETI in kayit["tags"]
+    assert workflow_mind.LESSON_TAG in kayit["tags"]
     # Akış etiketi de var: bir akışın bütün dersleri birlikte bulunabilsin.
     assert f"{workflow_mind.ETIKET}:posta" in kayit["tags"]
 
@@ -91,7 +91,7 @@ def test_the_lesson_shape_is_stable(tmp_path: Path) -> None:
 def test_no_mind_is_silent_not_fatal() -> None:
     """Hafıza yoksa otomasyon yine çalışmalı — kayıt ikincil."""
     assert workflow_mind.akisi_hatirla(None, None) is False
-    assert workflow_mind.dersi_hatirla(None, "x", None, RuntimeError("y")) is False
+    assert workflow_mind.recall_lesson(None, "x", None, RuntimeError("y")) is False
     assert workflow_mind.akislari_ara(None, "posta") == []
 
 

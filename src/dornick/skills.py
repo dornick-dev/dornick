@@ -67,7 +67,7 @@ def _oku_manifest(state_dir: Path | str) -> dict[str, str] | None:
     return {str(k): str(v) for k, v in veri.items()} if isinstance(veri, dict) else {}
 
 
-def _yaz_manifest(state_dir: Path | str, harita: dict[str, str]) -> None:
+def _write_manifest(state_dir: Path | str, harita: dict[str, str]) -> None:
     try:
         _manifest_path(state_dir).write_text(
             json.dumps(harita, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -86,7 +86,7 @@ def _onayla(state_dir: Path | str, path: Path) -> None:
         harita[path.name] = _karma(path)
     except OSError:
         return
-    _yaz_manifest(state_dir, harita)
+    _write_manifest(state_dir, harita)
 
 # Bir yetenek dosyasında aranan alanlar.
 REQUIRED = ("NAME", "DESCRIPTION", "SCHEMA")
@@ -280,7 +280,7 @@ def discover(sandbox_root: Path, state_dir: Path | str | None = None,
                     manifest[p.name] = _karma(p)
                 except OSError:
                     pass
-            _yaz_manifest(state_dir, manifest)
+            _write_manifest(state_dir, manifest)
             goc = True
 
     for path in files:

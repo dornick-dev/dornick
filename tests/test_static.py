@@ -66,7 +66,7 @@ def test_reopened_chat_rebuilds_the_trace() -> None:
     assert "dusunme" in APP_JS and "adimlar" in APP_JS
     # Sunucu tarafı: döküm izleri üretir.
     store_py = (STATIC.parents[1] / "mind" / "store.py").read_text(encoding="utf-8")
-    assert "_dusunme_bloklari" in store_py and "_adim_ozetleri" in store_py
+    assert "_dusunme_bloklari" in store_py and "_step_summaries" in store_py
 
 
 def test_big_transcripts_render_capped_with_a_gate() -> None:
@@ -152,7 +152,7 @@ def test_default_language_is_english_outside_turkey() -> None:
     dil = (STATIC / "dil.js").read_text(encoding="utf-8")
     assert '=== "tr") ? "tr" : "en"' in dil
     server_py = (STATIC.parents[0] / "server.py").read_text(encoding="utf-8")
-    assert "_makine_dili" in server_py
+    assert "_machine_language" in server_py
 
 
 def test_in_app_update_is_wired() -> None:
@@ -165,8 +165,8 @@ def test_in_app_update_is_wired() -> None:
     # Sunucu ucu + güvenli indirme sunucu tarafında.
     server_py = (STATIC.parents[0] / "server.py").read_text(encoding="utf-8")
     assert 'route == "/api/guncelle"' in server_py and "_guncelle" in server_py
-    ortam_py = (STATIC.parents[1] / "ortam.py").read_text(encoding="utf-8")
-    assert "_guvenilir_indirme" in ortam_py and "guncellemeyi_baslat" in ortam_py
+    ortam_py = (STATIC.parents[1] / "environment.py").read_text(encoding="utf-8")
+    assert "_guvenilir_indirme" in ortam_py and "start_update" in ortam_py
 
 
 def test_recall_animation_survives_missing_graph_nodes() -> None:
@@ -181,7 +181,7 @@ def test_recall_animation_survives_missing_graph_nodes() -> None:
     assert "insideBrain(ghost.id)" in scene
     # Arka uç adım etiketi taşıyor ki hayalet düğüm adıyla yansın.
     tools_py = (STATIC.parents[1] / "mind" / "tools.py").read_text(encoding="utf-8")
-    assert "_adim_etiket" in tools_py
+    assert "_step_label" in tools_py
 
 
 def test_artifact_reaches_real_browser_and_disk() -> None:
@@ -1426,7 +1426,7 @@ def test_usage_events_feed_the_chip_and_the_snapshot_seeds_it() -> None:
     DESKTOP = (Path(__file__).resolve().parents[1] / "src" / "dornick" / "desktop.py").read_text(
         encoding="utf-8")
     assert '"tur": dict(self._tur_kullanim)' in DESKTOP
-    assert '"oturum": dict(self._oturum_kullanim)' in DESKTOP
+    assert '"oturum": dict(self._session_usage)' in DESKTOP
     assert '"fiyat": self._fiyat' in DESKTOP
 
 
@@ -1720,7 +1720,7 @@ def test_the_context_popup_lists_prompt_parts_like_cursor() -> None:
     assert re.search(r"^\.pop-ctx-head \{", CSS, re.M)
     assert re.search(r"^\.ctx-seg\.sohbet \{", CSS, re.M)
     assert re.search(r"^\.ctx-seg\.yardimci \{", CSS, re.M)
-    assert "baglam_kirilim" in (
+    assert "context_breakdown" in (
         Path(__file__).resolve().parents[1] / "src" / "dornick" / "desktop.py"
     ).read_text(encoding="utf-8")
 
@@ -2006,9 +2006,9 @@ def test_the_task_panel_speaks_the_same_shape_the_server_sends() -> None:
     """
     bridge = (Path(__file__).resolve().parents[1] / "src" / "dornick"
               / "desktop.py").read_text(encoding="utf-8")
-    gorevler = re.search(r"def gorevler\(self\).*?return \{\"gorevler\"", bridge, re.S)
-    assert gorevler, "Bridge.gorevler() bulunamadı"
-    yazilan = set(re.findall(r'"(\w+)":', gorevler.group(0)))
+    tasks = re.search(r"def tasks\(self\).*?return \{\"gorevler\"", bridge, re.S)
+    assert tasks, "Bridge.tasks() bulunamadı"
+    yazilan = set(re.findall(r'"(\w+)":', tasks.group(0)))
     for alan in ("id", "ad", "tur", "durum", "basladi", "bitti", "ozet",
                  "oturum", "durdurulabilir"):
         assert alan in yazilan, f"sunucu {alan} yazmıyor"
@@ -2206,9 +2206,9 @@ def test_the_turn_summary_reads_the_agents_own_ledger() -> None:
     assert "/api/degisiklikler" in CHG_JS
     assert "checkpoint import KLASOR, Defter" in SERVER_SRC
     # Geri alma: tur (n), dosya (sira/siralar) veya path.
-    assert "defter.geri_al(n)" in SERVER_SRC
-    assert "geri_al_sira" in SERVER_SRC
-    assert "geri_al_dosya" in SERVER_SRC
+    assert "defter.undo(n)" in SERVER_SRC
+    assert "undo_sequence" in SERVER_SRC
+    assert "undo_file" in SERVER_SRC
     assert "kartUndoDosya" in CHG_JS
     assert "hepsini kabul et" in CHG_JS
     assert "diff-btn keep" in APP_JS
@@ -2638,9 +2638,9 @@ def test_the_git_bar_never_offers_the_scratch_workspace() -> None:
                / "git.py").read_text(encoding="utf-8")
     govde = git_src.split("def repo_root", 1)[1].split("\ndef ", 1)[0]
     assert "scratch_ok" in govde and "return None" in govde
-    durum = SERVER_SRC.split("def _git_status", 1)[1].split("def _git_action", 1)[0]
-    assert "box.project is not None" in durum
-    assert "box.project or box.root" not in durum
+    status = SERVER_SRC.split("def _git_status", 1)[1].split("def _git_action", 1)[0]
+    assert "box.project is not None" in status
+    assert "box.project or box.root" not in status
 
 
 def test_the_stream_cursor_is_the_knitting_knot() -> None:

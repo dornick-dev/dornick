@@ -260,11 +260,11 @@ class Session:
         return bool(msgs) and msgs[-1].role == "user"
 
     def close(self) -> None:
-        self.log.note("sonuc", sonuc=self.sonuc())
+        self.log.note("sonuc", sonuc=self.outcome())
         self.log.note("session_end")
         self.log.close()
 
-    def sonuc(self) -> str:
+    def outcome(self) -> str:
         """Oturum nasıl bitti? Gece tekrarının önceliklendirmesi buna bakıyor.
 
         Dört değer var ve hepsi günlükte zaten duran izlerden çıkıyor:

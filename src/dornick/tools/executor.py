@@ -16,10 +16,10 @@ import asyncio
 import time
 from typing import Any, Awaitable, Callable, Sequence
 
-from .. import kancalar
+from .. import hooks
 from ..permissions import Decision, PermissionEngine
 from ..session import PendingToolUse, cancelled_result
-from .base import Block, ToolContext, ToolRegistry, ToolResult, ToolSpec, sema_ihlali
+from .base import Block, ToolContext, ToolRegistry, ToolResult, ToolSpec, schema_violation
 
 DEFAULT_TIMEOUT_S = 180.0
 
@@ -101,7 +101,7 @@ async def _run_one(
     # Şema kapısı izin kapısından ÖNCE: bozuk bir çağrı için kullanıcıya
     # onay sorulmamalı ("write_file çalıştırılsın mı?" diye sorup sonra
     # eksik alandan patlamak, kullanıcının vaktini boşa harcamak olur).
-    if (uyari := sema_ihlali(spec, call.input)) is not None:
+    if (uyari := schema_violation(spec, call.input)) is not None:
         observe("sema_ihlali", {"tool": spec.name, "id": call.id, "detail": uyari})
         return ToolResult.error(uyari).to_block(call.id)
 
@@ -109,7 +109,7 @@ async def _run_one(
     # (kullanıcıya zaten reddedeceğimiz bir şey için onay sorulmamalı).
     # `tools/files.py` yazma araçlarının yolunu kapatıyordu ama kabuk bir yazma
     # aracı değil — `Set-Content .dornick/kancalar.json` o kapıdan geçmiyordu.
-    if spec.mutates and kancalar.cagri_kancaya_dokunuyor_mu(spec.name, call.input):
+    if spec.mutates and hooks.call_touches_hook(spec.name, call.input):
         observe("kanca_ret", {"tool": spec.name, "id": call.id,
                               "detail": "kanca dosyası"})
         return ToolResult.error(
@@ -177,11 +177,11 @@ async def _run_one(
     # değiştiren araçlar (kabuk) yukarıdaki `cagri_kancaya_dokunuyor_mu`.
     kanca_notlari: list[str] = []
     try:
-        karar = await kancalar.arac_oncesi(
+        karar = await hooks.before_tool(
             ctx.config.state_dir, spec.name, call.input,
             oturum=ctx.session.id, cwd=_kanca_dizini(ctx))
     except Exception as exc:  # pragma: no cover - kanca katmanı aracı öldürmesin
-        karar = kancalar.Karar(notlar=[
+        karar = hooks.Karar(notlar=[
             f"kanca katmanı çalışmadı ({type(exc).__name__}: {exc})"])
     kanca_notlari.extend(karar.notlar)
 
@@ -227,7 +227,7 @@ async def _run_one(
     # oldu. Çıktıları araç sonucuna tek satır olarak ekleniyor ki model
     # `black` çalıştığını, dosyanın biçimlendirildiğini görsün.
     try:
-        kanca_notlari.extend(await kancalar.arac_sonrasi(
+        kanca_notlari.extend(await hooks.after_tool(
             ctx.config.state_dir, spec.name, call.input,
             oturum=ctx.session.id, cwd=_kanca_dizini(ctx)))
     except Exception as exc:  # pragma: no cover

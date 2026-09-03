@@ -582,5 +582,5 @@ def _arac_ortami(tmp_path: Path):
     config = Config.load(tmp_path)
     config.ensure_dirs()
     session = Session(EventLog(tmp_path / "s.jsonl"), "cur")
-    baglam = ToolContext(config=config, session=session, cancel=asyncio.Event())
-    return build_registry(zihin), baglam, zihin
+    context = ToolContext(config=config, session=session, cancel=asyncio.Event())
+    return build_registry(zihin), context, zihin

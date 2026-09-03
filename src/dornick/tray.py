@@ -27,7 +27,7 @@ INSTALL_HINT = "Sistem tepsisi için: pip install 'dornick[tray]'"
 
 # X'e basılınca iş sürüyorsa gösterilen balon. Yalnızca İLK seferde —
 # her gizlenişte bildirim basmak rahatsız eder, bir kez öğretmek yeter.
-ARKA_PLAN_NOTU = ("Dornick arka planda — zamanlanmış görevler ve otomasyonlar "
+BACKGROUND_NOTE = ("Dornick arka planda — zamanlanmış görevler ve otomasyonlar "
                   "çalışmaya devam eder; tepsiden açabilirsin")
 
 # Zamanlanmış / otomasyon işi bittiğinde Windows tepsi bildirimi.
@@ -35,7 +35,7 @@ GOREV_BITTI = "Görev tamamlandı: {title}"
 GOREV_HATA = "Görev hata verdi: {title}"
 
 
-def gorev_bildirim_metni(title: str, *, ok: bool) -> str:
+def task_notification_text(title: str, *, ok: bool) -> str:
     """Koşu bitiş balonu metni — test edilebilir, UI'dan bağımsız."""
     sablon = GOREV_BITTI if ok else GOREV_HATA
     ad = (title or "görev").strip() or "görev"
@@ -69,7 +69,7 @@ def _windows_toast(title: str, body: str) -> bool:
         import tempfile
         from pathlib import Path
 
-        from . import ortam
+        from . import environment
         from .logo import png_path
         from .winicon import AUMID
 
@@ -94,25 +94,25 @@ def _windows_toast(title: str, body: str) -> bool:
         )
         done = subprocess.run(
             ["powershell", "-NoProfile", "-NonInteractive", "-Command", ps],
-            timeout=12, **ortam.sessiz_bayraklar(),
+            timeout=12, **environment.quiet_flags(),
         )
         return done.returncode == 0
     except Exception:
         return False
 
 # Tepsiden Çıkış seçildi ama ajan meşgul: yarım kalacak işin onayı.
-CIKIS_SORUSU = ("Bir iş sürüyor; çıkarsan yarım kalır (kaldığın yerden "
+EXIT_QUESTION = ("Bir iş sürüyor; çıkarsan yarım kalır (kaldığın yerden "
                 "sürdürülebilir).\n\nYine de çık?")
 
 
-def kapatma_karari(tepsi_acik: bool) -> str:
+def close_decision(tepsi_acik: bool) -> str:
     """X'e basılınca ne olur: tepsi yaşıyorsa pencere GİZLENİR, uygulama
     tepside sürer (Claude Code / masaüstü geleneği). Tepsi yoksa gizlemek
     programı kapanmaz hale getirirdi — gerçekten kapatılır."""
     return "gizle" if tepsi_acik else "kapat"
 
 
-def cikis_karari(mesgul: bool, onayla: Callable[[str], bool] | None) -> bool:
+def exit_decision(mesgul: bool, onayla: Callable[[str], bool] | None) -> bool:
     """Tepsiden Çıkış seçildi: çıkılsın mı?
 
     Ajan meşgulse kullanıcıya sorulur — yarım kalacak işten haberi olsun.
@@ -125,12 +125,12 @@ def cikis_karari(mesgul: bool, onayla: Callable[[str], bool] | None) -> bool:
     if onayla is None:
         return True
     try:
-        return bool(onayla(CIKIS_SORUSU))
+        return bool(onayla(EXIT_QUESTION))
     except Exception:
         return True
 
 
-class Kapanis:
+class Shutdown:
     """X ile "Çıkış"ı ayıran bayrak.
 
     İkisi de pencere katmanının AYNI olayına (pywebview `closing`) düşüyor:
@@ -313,7 +313,7 @@ class Tray:
                 mesgul = bool(self.busy())
             except Exception:
                 mesgul = False
-        if not cikis_karari(mesgul, self.confirm):
+        if not exit_decision(mesgul, self.confirm):
             return
         # Bekçi: kullanıcı Çıkış'ı ONAYLADI — bu jest her koşulda süreçle
         # bitmeli (canlı yara, 01.09: "traydan çık dedim, tamam dedim, onu
@@ -325,7 +325,7 @@ class Tray:
         _safely(self.quit)
 
 
-def cikis_bekcisi_kur(sure_sn: float = 12.0) -> None:
+def install_exit_guard(sure_sn: float = 12.0) -> None:
     """Onaylanmış Çıkış'ın süreçle bitmesini garanti eden bekçi.
 
     Pencere katmanı (pywebview/GUI thread'i) kilitliyse `destroy()` sessizce

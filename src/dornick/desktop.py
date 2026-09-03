@@ -31,15 +31,15 @@ from .backends import build_client
 from . import (
     connectors as linking,
     ear as hearing,
-    fiyat as fiyatlama,
+    pricing as fiyatlama,
     lmstudio,
-    ortam,
+    environment,
     prefs,
     prompt,
     schedule as scheduling,
     settings,
     skills,
-    tanima,
+    recognition,
     tray as tray_module,
     watch as watching,
 )
@@ -51,7 +51,7 @@ from .loop import (
     BARGE_NOTE,
     clear_park,
     read_park,
-    yetim_isaretle,
+    mark_orphan,
     yetim_tara,
 )
 from .mind import open_mind
@@ -241,7 +241,7 @@ def _active_goals(agent: Any) -> list[dict[str, Any]]:
 TAHMIN_BOLEN = 4
 
 
-def baglam_kirilim(agent: Any, prompt_total: int = 0) -> list[dict[str, Any]]:
+def context_breakdown(agent: Any, prompt_total: int = 0) -> list[dict[str, Any]]:
     """İstem penceresinin kalem kalem tahmini — Cursor'un Context Usage'ı.
 
     Sağlayıcı yalnız TOPLAM veriyor; kırılım karakter/4. Toplam varsa
@@ -265,7 +265,7 @@ def baglam_kirilim(agent: Any, prompt_total: int = 0) -> list[dict[str, Any]]:
     arac = yetenek = mcp = yardimci = 0
     registry = getattr(agent, "registry", None) if agent is not None else None
     if registry is not None and hasattr(registry, "all"):
-        brief = bool(getattr(agent, "kisa_sema", False))
+        brief = bool(getattr(agent, "brief_schema", False))
         for spec in registry.all():
             try:
                 sema = spec.api_schema()
@@ -353,7 +353,7 @@ def _calisabilir(agent: Any) -> bool:
         return False
 
 
-def _gecmis_kullanim(agent: Any) -> dict[str, Any]:
+def _past_usage(agent: Any) -> dict[str, Any]:
     """Sürdürülen bir oturumun bağlam + harcama durumu.
 
     Kanıtlanmış yara: uygulama kapanıp açılınca ya da geçmişten bir
@@ -463,7 +463,7 @@ def _metin_uzunlugu(content: Any) -> str:
 _KANAL_DURUM = {"kosuyor": "run", "bitti": "done", "yetim": "yetim"}
 
 
-def _yerel_uc(base_url: str) -> bool:
+def _local_endpoint(base_url: str) -> bool:
     """Model ucu kullanıcının makinesinde/ağında mı? (loopback + RFC-1918)
 
     Kamera karesinin buluta çıkıp çıkmayacağının tek ölçütü. Gece
@@ -478,7 +478,7 @@ def _yerel_uc(base_url: str) -> bool:
             or host.endswith(".local"))
 
 
-def _hareket_gonder(bridge: Any, config: Config, hub: Hub,
+def _send_motion(bridge: Any, config: Config, hub: Hub,
                     sighting: watching.Sighting) -> None:
     """Hareket olayı: GPU varsa yerelde analiz, modele metin.
 
@@ -514,7 +514,7 @@ def _hareket_gonder(bridge: Any, config: Config, hub: Hub,
         return
     model_url = str(getattr(bridge.agent.config.model, "base_url", "") or "") \
         if bridge.agent is not None else ""
-    yerel = _yerel_uc(model_url)
+    yerel = _local_endpoint(model_url)
     if not yerel and not config.camera.cloud_ok:
         hub.emit({
             "type": "notice",
@@ -526,7 +526,7 @@ def _hareket_gonder(bridge: Any, config: Config, hub: Hub,
     bridge.submit(baslik, sighting.frame)
 
 
-def _biten_kanallari_dusur(agent: Any) -> None:
+def _drop_finished_channels(agent: Any) -> None:
     """Oturum geçişinde bitmiş yardımcıları defterden düşürür.
 
     "O sohbet bittiyse o da bitmiştir" (canlı şikâyet — orkestra eski
@@ -668,7 +668,7 @@ class Bridge:
         self._fiyat: dict[str, float] | None = None
         self._fiyat_bakildi = False
         self._tur_kullanim = {"girdi": 0, "cikti": 0, "cagri": 0}
-        self._oturum_kullanim = {"girdi": 0, "cikti": 0, "cagri": 0}
+        self._session_usage = {"girdi": 0, "cikti": 0, "cagri": 0}
         # Sürdürülen oturumun geçmiş harcaması bir kez tohumlanır; bkz.
         # _oturum_tohumla. Yeni oturumda tohum yok — sayaç gerçekten sıfır.
         self._oturum_tohumlandi = False
@@ -676,10 +676,10 @@ class Bridge:
         # Ayar sayfasında değil, maliyet çipinin açılır kutusunda duruyor —
         # rakamın yanında. Sınıra ulaşılınca koşan tur duruyor (bkz.
         # _butce_freni ve loop.Agent._drive).
-        self._butce_usd: float | None = None
+        self._budget_usd: float | None = None
         # Sınır bir kez bildirildi mi: her model çağrısından önce sorulan
         # fren, aynı satırı turda onlarca kez basmasın.
-        self._butce_bildirildi = False
+        self._budget_reported = False
 
     # -- şerit yüzeyi ---------------------------------------------------
     #
@@ -1086,13 +1086,13 @@ class Bridge:
             self._apply_session_context(session.id)
         except Exception:
             pass
-        _biten_kanallari_dusur(agent)
+        _drop_finished_channels(agent)
         # Sayaçlar sohbete özel: önceki konuşmanın harcaması yeni/öteki
         # sohbette kalmasın; sürdürülen sohbet geçmiş toplamını alsın.
         self._kullanim_sifirla()
         if resumed:
             try:
-                self._oturum_tohumla(_gecmis_kullanim(agent))
+                self._oturum_tohumla(_past_usage(agent))
             except Exception:
                 pass
         self.hub.emit({"type": "session_reset", "id": session.id, "resumed": resumed})
@@ -1132,7 +1132,7 @@ class Bridge:
         self._kullanim_sifirla()
         if resumed:
             try:
-                self._oturum_tohumla(_gecmis_kullanim(serit.agent))
+                self._oturum_tohumla(_past_usage(serit.agent))
             except Exception:
                 pass
         self.hub.emit({"type": "session_reset", "id": serit.sid,
@@ -1166,11 +1166,11 @@ class Bridge:
             eski_model = ornek.agent.config.model
             self._istemciler[(eski_model.name, str(eski_model.base_url or ""))] = (
                 ornek.agent.client)
-        anahtar = (cfg.model.name, str(cfg.model.base_url or ""))
-        client = self._istemciler.get(anahtar)
+        switches = (cfg.model.name, str(cfg.model.base_url or ""))
+        client = self._istemciler.get(switches)
         if client is None:
             client = build_client(cfg.model)
-            self._istemciler[anahtar] = client
+            self._istemciler[switches] = client
 
         serit = Serit(sid=session.id, agent=None, queue=asyncio.Queue())
         agent = Agent(
@@ -1352,7 +1352,7 @@ class Bridge:
             cfg = getattr(server, "config", None) if server is not None else None
         if cfg is None or not bool(getattr(cfg.camera, "enabled", False)):
             return
-        _hareket_gonder(self, cfg, self.hub, sighting)
+        _send_motion(self, cfg, self.hub, sighting)
 
     def sync_camera(self, config: Config) -> dict[str, Any]:
         """Kamera anahtarını donanıma uygular: Lens, izleyici, LED, YOLO ısısı.
@@ -1636,9 +1636,9 @@ class Bridge:
         kullanan = any(s.agent is not None and s.agent.client is old
                        for s in self.seritler.values())
         if not kullanan:
-            for anahtar, istemci in list(getattr(self, "_istemciler", {}).items()):
+            for switches, istemci in list(getattr(self, "_istemciler", {}).items()):
                 if istemci is old:
-                    self._istemciler.pop(anahtar, None)
+                    self._istemciler.pop(switches, None)
             self.loop.call_soon_threadsafe(
                 lambda: self.loop.create_task(_retire(old)))
         # Yeni istemci önbelleğe: aynı modele açılacak yeni şerit paylaşsın.
@@ -1665,7 +1665,7 @@ class Bridge:
         # (sürdürülen oturum, taze açılış) gerçek durum oturum günlüğünde.
         canli = int((getattr(agent, "_last_usage", None) or {}).get("prompt_total") or 0)
         gecmis = ({"prompt_total": canli, "output": 0, "cagri": 0, "tahmin": False}
-                  if canli else _gecmis_kullanim(agent) if agent
+                  if canli else _past_usage(agent) if agent
                   else {"prompt_total": 0, "output": 0, "cagri": 0, "tahmin": False})
         # Maliyet çipinin oturum toplamı da aynı kaynaktan tohumlanıyor:
         # yeni turlar bunun ÜSTÜNE ekleniyor (bkz. _usage_yay).
@@ -1694,18 +1694,18 @@ class Bridge:
             "tahmin": gecmis["tahmin"],
             # Bağlam kutusunun kalem kalem kırılımı (sistem / araç / ruh /
             # yetenek / MCP / konuşma). Toplam yokken de sabitler görünür.
-            "kirilim": baglam_kirilim(agent, gecmis["prompt_total"]),
+            "kirilim": context_breakdown(agent, gecmis["prompt_total"]),
             # Maliyet çipi: sayfa yenilenince harcama göstergesi sıfırdan
             # değil kaldığı yerden başlasın. Fiyat bilinmiyorsa None —
             # çip token sayısına düşer.
             "fiyat": self._fiyat,
             "kullanim": {
                 "tur": dict(self._tur_kullanim),
-                "oturum": dict(self._oturum_kullanim),
+                "oturum": dict(self._session_usage),
             },
             # Bu oturum için konmuş harcama sınırı (USD) — None = sınırsız.
             # Sayfa yenilenince maliyet çipi sınırı unutmasın.
-            "butce": self._butce_usd,
+            "butce": self._budget_usd,
             "mode": agent.permissions.mode if agent else "",
             # Aktif hedefler: sayfa yenilenince hedef paneli olay akışını
             # kaçırmış oluyor; panel bu listeyle tohumlanıp kaldığı yerden
@@ -1729,8 +1729,8 @@ class Bridge:
             "tools": len(agent.registry) if agent else 0,
             # Çalışan kopyanın sürümü: üst bar marka ipucu buradan besleniyor.
             # Sahada "hangi sürüm açık?" sorusu cevapsız kalmasın.
-            "surum": ortam.surum(),
-            "kurulu": ortam.kurulu_mu(),
+            "surum": environment.version(),
+            "kurulu": environment.kurulu_mu(),
             # Ajan gerçekten kimlik doğrulayabiliyor mu (anahtar var ya da
             # yerel sunucu)? Arayüz ilk-kurulum yönlendirmesini buna göre
             # gösteriyor — model "oto" gelse bile anahtar yoksa iş yapılamaz.
@@ -1815,7 +1815,7 @@ class Bridge:
         snapshot / açık tohum çağrısında doğru günlükten gelir.
         """
         self._tur_kullanim = {"girdi": 0, "cikti": 0, "cagri": 0}
-        self._oturum_kullanim = {"girdi": 0, "cikti": 0, "cagri": 0}
+        self._session_usage = {"girdi": 0, "cikti": 0, "cagri": 0}
         self._oturum_tohumlandi = False
 
     def _oturum_tohumla(self, gecmis: dict[str, Any]) -> None:
@@ -1827,14 +1827,14 @@ class Bridge:
         (sayfa yenileme) toplamı şişirirdi. `girdi` tüm turların
         toplamı; canlı `_usage_yay` muhasebesiyle aynı dil.
         """
-        if self._oturum_tohumlandi or self._oturum_kullanim["cagri"]:
+        if self._oturum_tohumlandi or self._session_usage["cagri"]:
             return
         if not gecmis.get("cagri"):
             return
         self._oturum_tohumlandi = True
         # Eski günlükler yalnız prompt_total taşıyabilir — geriye uyum.
         girdi = int(gecmis.get("girdi") or gecmis.get("prompt_total") or 0)
-        self._oturum_kullanim = {
+        self._session_usage = {
             "girdi": girdi,
             "cikti": int(gecmis.get("output") or 0),
             "cagri": int(gecmis.get("cagri") or 0),
@@ -1853,23 +1853,23 @@ class Bridge:
         kasıtlı olarak muhafazakâr, önbellek indirimi sayılmıyor. Fiyat
         None ise çip token sayısı gösterir.
         """
-        for hedef in (self._tur_kullanim, self._oturum_kullanim):
+        for hedef in (self._tur_kullanim, self._session_usage):
             hedef["girdi"] += int(report.get("prompt_total") or 0)
             hedef["cikti"] += int(report.get("output") or 0)
             hedef["cagri"] += 1
         self._fiyat_getir()
-        kirilim = baglam_kirilim(self.agent, int(report.get("prompt_total") or 0))
+        kirilim = context_breakdown(self.agent, int(report.get("prompt_total") or 0))
         self.hub.emit({
             "type": "usage", **report,
             "tur": dict(self._tur_kullanim),
-            "oturum": dict(self._oturum_kullanim),
+            "oturum": dict(self._session_usage),
             "fiyat": self._fiyat,
             "kirilim": kirilim,
         })
 
     # -- bütçe freni ----------------------------------------------------
 
-    def butce(self, usd: Any = None) -> dict[str, Any]:
+    def budget(self, usd: Any = None) -> dict[str, Any]:
         """Bu oturumun harcama üst sınırını okur ya da kurar (HTTP thread).
 
         `usd` None/boş ise sınır KALKAR (sınırsız). Sıfır ya da negatif de
@@ -1881,27 +1881,27 @@ class Bridge:
         sınırla sessizce durmamalı.
         """
         if usd is None or usd == "":
-            self._butce_usd = None
+            self._budget_usd = None
         else:
             try:
                 deger = float(usd)
             except (TypeError, ValueError):
                 return {"ok": False, "error": "Sayı bekleniyordu.",
-                        "butce": self._butce_usd}
-            self._butce_usd = deger if deger > 0 else None
+                        "butce": self._budget_usd}
+            self._budget_usd = deger if deger > 0 else None
         # Sınır değişti: "ulaşıldı" satırı bir kez daha basılabilsin.
-        self._butce_bildirildi = False
-        return {"ok": True, "butce": self._butce_usd,
-                "harcanan": self._harcanan()}
+        self._budget_reported = False
+        return {"ok": True, "butce": self._budget_usd,
+                "harcanan": self._spent()}
 
-    def _harcanan(self) -> float | None:
+    def _spent(self) -> float | None:
         """Bu oturumun tahmini harcaması (USD). Fiyat bilinmiyorsa None."""
         if not self._fiyat:
             return None
-        o = self._oturum_kullanim
+        o = self._session_usage
         return o["girdi"] * self._fiyat["girdi"] + o["cikti"] * self._fiyat["cikti"]
 
-    def _butce_freni(self) -> str:
+    def _budget_brake(self) -> str:
         """Sınıra ulaşıldı mı? Ulaşıldıysa sohbete basılacak tek satır.
 
         Ajan döngüsü her model çağrısından ÖNCE soruyor (bkz.
@@ -1912,13 +1912,13 @@ class Bridge:
         Uydurma bir dolar rakamıyla kullanıcının işini durdurmak, sınırı hiç
         koymamaktan kötü olurdu.
         """
-        sinir = self._butce_usd
-        if not sinir or self._butce_bildirildi:
+        sinir = self._budget_usd
+        if not sinir or self._budget_reported:
             return ""
-        harcanan = self._harcanan()
+        harcanan = self._spent()
         if harcanan is None or harcanan < sinir:
             return ""
-        self._butce_bildirildi = True
+        self._budget_reported = True
         return (f"Bütçe sınırına ulaşıldı (${sinir:.2f}) — "
                 "devam etmek için sınırı yükselt.")
 
@@ -1930,7 +1930,7 @@ class Bridge:
         handle = children.get(cid)
         return bool(handle is not None and handle.arka_plan)
 
-    def gorevler(self) -> dict[str, Any]:
+    def tasks(self) -> dict[str, Any]:
         """Koşan (ve yakın zamanda bitmiş) her işin tek listesi (HTTP thread).
 
         İki kaynak birleşiyor, çünkü kullanıcı için ikisi de "arkada koşan
@@ -1950,11 +1950,11 @@ class Bridge:
         rows: list[dict[str, Any]] = []
 
         children = getattr(self.agent, "_children", None) or {}
-        from .tools.shell import kisa_is_ozeti
+        from .tools.shell import short_job_summary
         for h in children.values():
             ozet = ""
             if h.state != "kosuyor":
-                ozet = kisa_is_ozeti(h.sonuc or "", title=h.title)[:400]
+                ozet = short_job_summary(h.sonuc or "", title=h.title)[:400]
             rows.append({
                 "id": "c:" + h.id,
                 "ad": h.title,
@@ -1988,7 +1988,7 @@ class Bridge:
                 continue
             biten = proc.poll() is not None
             komut = str(info.get("path") or "")
-            kendi = katalog.dornick_sureci_mi(komut) or katalog.dornick_sureci_mi(
+            kendi = katalog.is_dornick_process(komut) or katalog.is_dornick_process(
                 str(info.get("run") or ""))
             rows.append({
                 "id": "p:" + str(pid),
@@ -2014,7 +2014,7 @@ class Bridge:
         return {"gorevler": rows,
                 "kosan": sum(1 for r in rows if r["durum"] == "kosuyor")}
 
-    def gorev_rapor(self, gid: str) -> dict[str, Any]:
+    def task_report(self, gid: str) -> dict[str, Any]:
         """Tam yardımcı/iş metni — Orkestra/Görevler tıklanınca Viewer'a.
 
         Sohbete yapıştırılan uzun bültenlerin yerine: panelde kısa satır,
@@ -2049,8 +2049,8 @@ class Bridge:
                 parcalar.append("Araç bekleniyor…")
             metin = "\n".join(parcalar)
         else:
-            from .tools.shell import insan_is_raporu
-            metin = insan_is_raporu(metin, title=handle.title)
+            from .tools.shell import human_job_report
+            metin = human_job_report(metin, title=handle.title)
         deliverable = getattr(handle, "deliverable", None)
         if not deliverable and getattr(handle, "schedule_id", ""):
             try:
@@ -2072,7 +2072,7 @@ class Bridge:
             "deliverable": deliverable,
         }
 
-    def gorev_durdur(self, gid: str) -> dict[str, Any]:
+    def stop_task(self, gid: str) -> dict[str, Any]:
         """Tek bir görevi durdurur. `gid` gorevler() satırındaki kimlik.
 
         Canlı yardımcıya cancel yollar; planlanmış 'koşuyor' hayaletini de
@@ -2190,7 +2190,7 @@ class Bridge:
                 pass
         return cleared
 
-    def gorev_devam(self, gid: str, message: str = "") -> dict[str, Any]:
+    def resume_task(self, gid: str, message: str = "") -> dict[str, Any]:
         """Yetim / bitmiş yardımcıyı disk oturumundan sürdürür.
 
         `task_say` / `_child_say` yolunun HTTP sarmalayıcısı — ajan döngüsünde
@@ -2344,7 +2344,7 @@ class Bridge:
                 {"type": "session_title", "id": sid, "title": ad}),
             # Bütçe freni: döngü her model çağrısından önce soruyor. Fiyat
             # ve sayaçlar burada olduğu için karar da burada.
-            butce_freni=self._butce_freni,
+            butce_freni=self._budget_brake,
             # Orkestra kanalları: alt ajanlar canlı görünsün (şef modu).
             on_child_start=lambda title, model, cid, bg=False: yay(
                 {"type": "child_start", "title": title, "model": model, "id": cid,
@@ -2394,7 +2394,7 @@ class Bridge:
         if t is None:
             return
         try:
-            t.note(tray_module.gorev_bildirim_metni(title, ok=bool(ok)))
+            t.note(tray_module.task_notification_text(title, ok=bool(ok)))
         except Exception:
             pass
 
@@ -2557,7 +2557,7 @@ class Bridge:
             self._tur_kullanim = {"girdi": 0, "cikti": 0, "cagri": 0}
         # Yeni mesaj = yeni deneme: sınır hâlâ aşılmışsa fren bir kez daha
         # konuşsun. Yoksa kullanıcı yazıyor ve hiçbir şey olmuyor.
-        self._butce_bildirildi = False
+        self._budget_reported = False
         try:
             # İlk kurulum: hiçbir sağlayıcı kullanılabilir değilken model
             # HİÇ çağrılmıyor — cevapsız kalan ya da anlaşılmaz bir API
@@ -2579,7 +2579,7 @@ class Bridge:
             # olabilir; metni doğrudan geçiriyoruz (yarış, canlı). Küçük
             # çağrı ana akışla paralel; her hatası yutulur. Koşu sonundaki
             # çağrı yedek (ad hâlâ yoksa, cevapla daha isabetli başlık).
-            basla = getattr(agent, "_oturum_basligi", None)
+            basla = getattr(agent, "_session_title", None)
             if basla is not None:
                 gorev = asyncio.ensure_future(basla(text))
                 gorev.add_done_callback(lambda t: t.exception())  # sessiz
@@ -2660,7 +2660,7 @@ def _hearing_wanted(config: Config) -> bool:
     )
 
 
-def duyulari_kapat(config: Config) -> Config:
+def close_senses(config: Config) -> Config:
     """Açılışta kamera, mikrofon ve sesli yanıt kapalı.
 
     HUD'dan açılınca ayara yazılır; bir sonraki açılış yine kapalı gelir.
@@ -2931,7 +2931,7 @@ async def _boot(config: Config, port: int, resume: bool) -> Runtime:
     # açar; bir sonraki oturum yine kapalı gelir — LED/kulak/hoparlör
     # kendiliğinden uyanmaz. Diskte "açık" kalırsa başka bir ayar kaydı
     # oturum ortasında duyuyu geri yakardı.
-    config = duyulari_kapat(config)
+    config = close_senses(config)
     if (config.state_dir / settings.CONFIG_FILE).exists():
         try:
             config = settings.apply(config, {
@@ -2970,7 +2970,7 @@ async def _boot(config: Config, port: int, resume: bool) -> Runtime:
     # kurulunca) hem kullanıcıya hem modele veriliyor.
     yetimler = yetim_tara(config.sessions_dir)
     if yetimler:
-        yetim_isaretle(config.sessions_dir, yetimler)
+        mark_orphan(config.sessions_dir, yetimler)
 
     session = park_session or (
         Session.latest(config.sessions_dir) if resume else None
@@ -3103,7 +3103,7 @@ async def _boot(config: Config, port: int, resume: bool) -> Runtime:
     # Beni tanı: kişisel ince ayar döngüsünün bekçisi. Zamanlama üründe —
     # schtasks yok; bekçi on beş dakikada bir bakar, sırası geldiyse
     # döngüyü düşük öncelikli başlatır. Özellik kapalıysa hiç kımıldamaz.
-    tanima.gozcu_baslat(config.state_dir, hub)
+    recognition.start_watcher(config.state_dir, hub)
 
     # Yerel kameranın sürekli açık tamponu. Kareler bellekte duruyor ve
     # kendiliğinden modele gitmiyor; `look` aracı istediğinde alınıyor.
@@ -3290,7 +3290,7 @@ def _kill_ghosts() -> None:
         import json
         import subprocess
 
-        from . import ortam
+        from . import environment
 
         out = subprocess.run(
             ["powershell", "-NoProfile", "-Command",
@@ -3299,7 +3299,7 @@ def _kill_ghosts() -> None:
              "Select-Object ProcessId,CommandLine | "
              "ConvertTo-Json"],
             capture_output=True, text=True, timeout=10, encoding="utf-8",
-            errors="replace", **ortam.sessiz_bayraklar(),
+            errors="replace", **environment.quiet_flags(),
         ).stdout
         rows = json.loads(out or "[]")
         if isinstance(rows, dict):
@@ -3315,7 +3315,7 @@ def _kill_ghosts() -> None:
             if "dornick" in cmd and ("--app" in cmd or "desktop" in cmd):
                 subprocess.run(["taskkill", "/PID", str(pid), "/T", "/F"],
                                capture_output=True,
-                               **ortam.sessiz_bayraklar())
+                               **environment.quiet_flags())
                 print(f"[dornick] eski örnek kapatıldı (PID {pid})", flush=True)
     except Exception:
         pass
@@ -3370,11 +3370,11 @@ def run(config: Config, *, port: int = 8765, resume: bool = False,
     try:
         import webview
     except ImportError:
-        from . import ortam
+        from . import environment
         raise SystemExit(
             "Bu kurulum eksik görünüyor (pencere paketi yok). Kurulum "
             "sihirbazını yeniden çalıştırmak eksiği onarır."
-            if ortam.kurulu_mu() else
+            if environment.kurulu_mu() else
             "Masaüstü penceresi için pywebview gerekli: pip install 'dornick[app]'"
         ) from None
 
@@ -3470,7 +3470,7 @@ def run(config: Config, *, port: int = 8765, resume: bool = False,
     # X ile Çıkış aynı `closing` olayına düşüyor; ayrımı `Kapanis` tutuyor.
     # `gizle` aşağıda tanımlanan `_hide_to_tray`e bağlanıyor (balon dahil),
     # ama o daha ilerideki satırlarda doğduğu için buradan geç bağlanıyor.
-    kapanis = tray_module.Kapanis(
+    kapanis = tray_module.Shutdown(
         gizle=lambda: _hide_to_tray(),
         yok_et=lambda: window.destroy(),
     )
@@ -3499,7 +3499,7 @@ def run(config: Config, *, port: int = 8765, resume: bool = False,
         jobs=_open_jobs_from_tray,
         # Onaylı Çıkış her koşulda süreçle biter: GUI katmanı kilitliyse
         # 12 sn sonra kesin iniş (canlı yara, 01.09).
-        bekci=tray_module.cikis_bekcisi_kur,
+        bekci=tray_module.install_exit_guard,
     )
     live = tray.start()
     runtime.bridge.tray = tray
@@ -3726,7 +3726,7 @@ def run(config: Config, *, port: int = 8765, resume: bool = False,
     def _hide_to_tray() -> None:
         _remember_window()
         window.hide()
-        tray.note_once(tray_module.ARKA_PLAN_NOTU)
+        tray.note_once(tray_module.BACKGROUND_NOTE)
 
     def close() -> None:
         _remember_window()

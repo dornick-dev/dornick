@@ -34,8 +34,8 @@ from .base import ToolContext, ToolRegistry, ToolResult, object_schema
 
 KLASOR = "degisiklikler"
 GORUNTU_TAVANI = 2 * 1024 * 1024   # bundan büyük dosyada görüntü atlanır
-TEMIZLIK_GUN = 14
-LISTE_TAVANI = 20
+CLEANUP_DAYS = 14
+LIST_CAP = 20
 
 _GUVENSIZ = re.compile(r"[^\w.\-]+")
 
@@ -59,7 +59,7 @@ class Defter:
 
     # -- kayıt ---------------------------------------------------------
 
-    def kaydet(self, path: Path, arac: str) -> None:
+    def save(self, path: Path, arac: str) -> None:
         """Dosya değişmeden HEMEN ÖNCE çağrılır; mevcut hali saklar.
 
         Henüz olmayan dosyada "yoktu" kaydı düşer — geri alma o dosyayı siler.
@@ -93,11 +93,11 @@ class Defter:
 
     # -- geri alma -----------------------------------------------------
 
-    def listele(self, tavan: int = LISTE_TAVANI) -> list[dict[str, Any]]:
+    def list_entries(self, tavan: int = LIST_CAP) -> list[dict[str, Any]]:
         """Son kayıtlar, en yenisi önce."""
         return list(reversed(self._oku()[-tavan:]))
 
-    def geri_al(self, n: int) -> tuple[list[str], str | None]:
+    def undo(self, n: int) -> tuple[list[str], str | None]:
         """Son n değişikliği tersine uygular; (yapılanlar, hata) döner.
 
         Önce HEPSİ denetlenir: görüntüsüz (atlanmış) bir kayıt varsa hiçbir
@@ -128,7 +128,7 @@ class Defter:
                 return yapilan, mesaj
         return yapilan, None
 
-    def geri_al_sira(self, sira: int) -> tuple[list[str], str | None]:
+    def undo_sequence(self, sira: int) -> tuple[list[str], str | None]:
         """Tek bir kayıt sırasını geri alır (dosya bazlı Keep/Undo).
 
         Tur şeridindeki bir satırın Undo'su buraya düşer: diğer dosyalara
@@ -148,7 +148,7 @@ class Defter:
         ok, mesaj = self._tek_geri(k)
         return ([mesaj], None if ok else mesaj)
 
-    def geri_al_dosya(self, dosya: str) -> tuple[list[str], str | None]:
+    def undo_file(self, dosya: str) -> tuple[list[str], str | None]:
         """Bu yol için en son kaydı geri alır (diff kartı Undo)."""
         hedef = Path(dosya)
         try:
@@ -167,13 +167,13 @@ class Defter:
             except OSError:
                 key = ham
             if key.replace("\\", "/").lower() == hedef_norm:
-                return self.geri_al_sira(int(k["sira"]))
+                return self.undo_sequence(int(k["sira"]))
         return [], f"Bu oturumda {dosya!r} için kayıt yok."
 
     def _tek_geri(self, k: dict[str, Any]) -> tuple[bool, str]:
         """Tek kaydı uygular; (ok, mesaj). Redo için önce kaydet çağırır."""
         hedef = Path(k["dosya"])
-        self.kaydet(hedef, "undo")
+        self.save(hedef, "undo")
         try:
             if k["yoktu"]:
                 hedef.unlink(missing_ok=True)
@@ -190,7 +190,7 @@ class Defter:
         self.dizin.mkdir(parents=True, exist_ok=True)
         if self.kok not in _temizlenen:
             _temizlenen.add(self.kok)
-            _temizle(self.kok, koru=self.dizin)
+            _clean(self.kok, koru=self.dizin)
 
     def _oku(self) -> list[dict[str, Any]]:
         try:
@@ -206,9 +206,9 @@ class Defter:
         return kayitlar
 
 
-def _temizle(kok: Path, koru: Path) -> None:
+def _clean(kok: Path, koru: Path) -> None:
     """14 günden eski oturum klasörlerini sessizce siler."""
-    esik = time.time() - TEMIZLIK_GUN * 86400
+    esik = time.time() - CLEANUP_DAYS * 86400
     try:
         cocuklar = list(kok.iterdir())
     except OSError:
@@ -257,7 +257,7 @@ ile ileri dönebilirsin (redo).
         action = str(args.get("action") or "")
 
         if action == "list":
-            kayitlar = await asyncio.to_thread(d.listele)
+            kayitlar = await asyncio.to_thread(d.list_entries)
             if not kayitlar:
                 return ToolResult(content="Bu oturumda kayıtlı değişiklik yok.")
             satirlar = [f"Son {len(kayitlar)} değişiklik (en yenisi önce):", ""]
@@ -272,7 +272,7 @@ ile ileri dönebilirsin (redo).
 
         if action == "restore":
             n = max(1, int(args.get("n") or 1))
-            yapilan, hata = await asyncio.to_thread(d.geri_al, n)
+            yapilan, hata = await asyncio.to_thread(d.undo, n)
             if hata:
                 govde = "\n".join(yapilan + [hata])
                 return ToolResult.error(govde)

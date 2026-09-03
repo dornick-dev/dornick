@@ -25,7 +25,7 @@ from typing import Any
 
 from . import listen as listen_module
 from . import lmstudio
-from . import organs, ortam, sandbox, shell_assoc, startup
+from . import organs, environment, sandbox, shell_assoc, startup
 from . import voice as voice_module
 from .config import (
     BrowserConfig,
@@ -283,7 +283,7 @@ def _sandbox_snapshot(config: Config) -> dict[str, Any]:
     # Ayarda duran yol geçersizleşmiş olabilir (klasör silinmiş, elle
     # düzenlenmiş): sandbox onu sessizce düşürüyor, kullanıcı SEBEBİNİ
     # burada görüyor.
-    engel = sandbox.kok_engeli(Path(secilen).expanduser()) if secilen else None
+    engel = sandbox.root_block(Path(secilen).expanduser()) if secilen else None
     return {
         **asdict(config.sandbox),
         # Ayarda göreli bir ad durabiliyor; kullanıcının görmesi
@@ -313,10 +313,10 @@ def snapshot(config: Config) -> dict[str, Any]:
         # göstermek, çalışmayan bir düğmeye tıklatmak demek.
         # Kurulu düzen mi (sihirbazla)? Arayüz eksik-özellik metnini buna
         # göre seçiyor: kuruluda pip önerilmez, sihirbaz önerilir.
-        "installed": ortam.kurulu_mu(),
+        "installed": environment.kurulu_mu(),
         # Sahada "hangi sürüm kurulu?" sorusu cevapsızdı: Makine sekmesi
         # salt-okunur gösteriyor, kurulu/geliştirme ayrımı installed'dan.
-        "surum": ortam.surum(),
+        "surum": environment.version(),
         "hardware": {
             "microphone": organs.has_microphone(),
             "camera": organs.has_camera(),
@@ -892,7 +892,7 @@ def apply(config: Config, patch: dict[str, Any]) -> Config:
     # değil. Geçersiz bir kök (sürücü kökü, sistem klasörü) ancak ajan
     # oraya yazmaya çalışınca patlardı ve o çok geç.
     if (proje := workshop.project.strip()):
-        if (engel := sandbox.kok_engeli(Path(proje).expanduser())) is not None:
+        if (engel := sandbox.root_block(Path(proje).expanduser())) is not None:
             raise ValueError(engel)
 
     updated = replace(
@@ -941,15 +941,15 @@ def _dogrula_openrouter_anahtari(keys: dict[str, Any]) -> None:
     if not aday or aday == MASK:
         return
 
-    from . import otomod
+    from . import automode
 
-    durum = otomod.dogrula_anahtar(aday)
-    if durum == "gecersiz":
+    status = automode.verify_key(aday)
+    if status == "gecersiz":
         raise ValueError(
             "OpenRouter anahtarı geçersiz (401) — kaydedilmedi. "
             "openrouter.ai/keys sayfasından anahtarı kontrol et."
         )
-    if durum == "belirsiz":
+    if status == "belirsiz":
         print(
             "[dornick] OpenRouter anahtarı doğrulanamadı (ağ yok?) — "
             "doğrulama atlandı, anahtar kaydedildi.",

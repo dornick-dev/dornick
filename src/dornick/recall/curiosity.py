@@ -31,14 +31,14 @@ from typing import Any, Iterable
 
 # 80% of the budget follows the score, 20% is spread evenly over the lowest
 # scoring areas. Without that floor the distribution collapses.
-ENTROPI_TABANI = 0.2
+ENTROPY_FLOOR = 0.2
 
 # The curiosity slice of a REM cycle.
-MERAK_DK = 3
+CURIOSITY_MINUTES = 3
 
 # Web access during the curiosity window. Off, and it is not a preference:
 # the window runs unattended.
-WEB_ACIK = False
+WEB_OPEN = False
 
 
 @dataclass(slots=True)
@@ -51,7 +51,7 @@ class Area:
     dokunma: int = 0              # how often the user went there, last 30 days
 
     @property
-    def ilerleme(self) -> float:
+    def progress(self) -> float:
         """Learning progress: error going down is the signal, not error size."""
         return round(self.onceki_hata - self.son_hata, 4)
 
@@ -69,12 +69,12 @@ def scores(areas: Iterable[Area], *, yenilik: float = 0.5) -> dict[str, float]:
     """`mizac.yenilik × max(ilerleme, 0) × alaka`."""
     alanlar = list(areas)
     alaka = relevance(alanlar)
-    return {a.ad: round(yenilik * max(a.ilerleme, 0.0) * alaka[a.ad], 6)
+    return {a.ad: round(yenilik * max(a.progress, 0.0) * alaka[a.ad], 6)
             for a in alanlar}
 
 
 def distribution(areas: Iterable[Area], *, yenilik: float = 0.5,
-                 taban: float = ENTROPI_TABANI) -> dict[str, float]:
+                 taban: float = ENTROPY_FLOOR) -> dict[str, float]:
     """Softmax over the scores, with an entropy floor on the weakest areas.
 
     An area the user never touches stays at zero even after the floor: the
@@ -112,7 +112,7 @@ def entropy(dist: dict[str, float]) -> float:
     return round(h / math.log(len(paylar)), 4)
 
 
-def allowed_actions(*, has_model: bool, web: bool = WEB_ACIK) -> list[str]:
+def allowed_actions(*, has_model: bool, web: bool = WEB_OPEN) -> list[str]:
     """What the curiosity window may do. The list is short on purpose.
 
     Nothing here reads file contents into memory: a `world` record gets the

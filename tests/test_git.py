@@ -16,7 +16,7 @@ from pathlib import Path
 import pytest
 
 from dornick import git as gitmod
-from dornick import ortam
+from dornick import environment
 from dornick.config import Config
 from dornick.events import EventLog
 from dornick.permissions import Decision, PermissionEngine
@@ -30,7 +30,7 @@ pytestmark = pytest.mark.skipif(not shutil.which("git"), reason="git yok")
 def _run(cwd: Path, *args: str) -> None:
     subprocess.run(
         ["git", *args], cwd=cwd, check=True, capture_output=True,
-        **ortam.sessiz_bayraklar(),
+        **environment.quiet_flags(),
     )
 
 

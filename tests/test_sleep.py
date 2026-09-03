@@ -47,7 +47,7 @@ def clock() -> Clock:
 
 @pytest.fixture()
 def store(tmp_path: Path, clock: Clock):
-    s = open_store(tmp_path / "memory", saat=clock)
+    s = open_store(tmp_path / "memory", clock=clock)
     yield s
     s.close()
 
@@ -61,7 +61,7 @@ def sessions(tmp_path: Path) -> Path:
 
 def _session(sessions: Path, name: str, node_ids, clock: Clock,
              outcome: str = "basarili") -> None:
-    log = EventLog(sessions / f"{name}.jsonl", saat=clock.text)
+    log = EventLog(sessions / f"{name}.jsonl", clock=clock.text)
     log.note("session_start", session_id=name)
     for node_id in node_ids:
         clock.advance(minutes=1)
@@ -75,8 +75,8 @@ def _session(sessions: Path, name: str, node_ids, clock: Clock,
 
 def test_thresholds_are_the_measured_ones() -> None:
     """Not chosen: derived from the degradation curve with the night off."""
-    assert sleep.ESIK_UST == pytest.approx(2.3374)
-    assert sleep.ESIK_ALT == pytest.approx(sleep.ESIK_UST / 3, rel=1e-3)
+    assert sleep.UPPER_THRESHOLD == pytest.approx(2.3374)
+    assert sleep.LOWER_THRESHOLD == pytest.approx(sleep.UPPER_THRESHOLD / 3, rel=1e-3)
 
     kaynak = (Path(__file__).resolve().parents[1]
               / "src" / "dornick" / "recall" / "sleep.py").read_text("utf-8")
@@ -88,21 +88,21 @@ def test_thresholds_are_the_measured_ones() -> None:
 
 def test_pressure_rises_as_edges_pile_up_unshrunk(store, sessions, clock) -> None:
     """S is a count, not a mood: unshrunk strengthening per node."""
-    first = sleep.pressure(store, sessions, saat=clock)
+    first = sleep.pressure(store, sessions, clock=clock)
     nodes = [store.remember(f"Saha notu {i}.", kind="fact") for i in range(12)]
     for i in range(len(nodes) - 1):
         store.link(nodes[i].id, nodes[i + 1].id, weight=1.0, reason="elle")
-    later = sleep.pressure(store, sessions, saat=clock)
+    later = sleep.pressure(store, sessions, clock=clock)
     assert later.strengthening > first.strengthening
     assert later.total > first.total
 
 
 def test_debt_counts_toward_pressure(store, sessions, clock) -> None:
     node = store.remember("Bir kayıt.", kind="fact")
-    without = sleep.pressure(store, sessions, saat=clock).debt
+    without = sleep.pressure(store, sessions, clock=clock).debt
     for i in range(10):
         _session(sessions, f"s{i}", [node.id], clock)
-    with_debt = sleep.pressure(store, sessions, saat=clock).debt
+    with_debt = sleep.pressure(store, sessions, clock=clock).debt
     assert with_debt > without
 
 
@@ -111,35 +111,35 @@ def test_debt_counts_toward_pressure(store, sessions, clock) -> None:
 
 def test_user_activity_pins_it_awake(clock) -> None:
     """Orexin = 1 means no kind of sleep runs. No exceptions, no micro-sleep."""
-    switch = SleepSwitch(saat=clock)
+    switch = SleepSwitch(clock=clock)
     switch.user_active(False)
-    switch.step(sleep.ESIK_UST * 5, idle_minutes=30)
+    switch.step(sleep.UPPER_THRESHOLD * 5, idle_minutes=30)
     assert switch.state is State.SLEEPY
 
     switch.user_active(True)
     assert switch.state is State.AWAKE
     for _ in range(20):
         clock.advance(minutes=5)
-        assert switch.step(sleep.ESIK_UST * 5, idle_minutes=30) is State.AWAKE
+        assert switch.step(sleep.UPPER_THRESHOLD * 5, idle_minutes=30) is State.AWAKE
 
 
 def test_it_falls_asleep_only_after_settling(clock) -> None:
-    switch = SleepSwitch(saat=clock)
+    switch = SleepSwitch(clock=clock)
     switch.user_active(False)
-    assert switch.step(sleep.ESIK_UST * 3, idle_minutes=30) is State.SLEEPY
-    assert switch.step(sleep.ESIK_UST * 3, idle_minutes=30) is State.SLEEPY
+    assert switch.step(sleep.UPPER_THRESHOLD * 3, idle_minutes=30) is State.SLEEPY
+    assert switch.step(sleep.UPPER_THRESHOLD * 3, idle_minutes=30) is State.SLEEPY
     clock.advance(minutes=sleep.SLEEPY_MINUTES + 1)
-    assert switch.step(sleep.ESIK_UST * 3, idle_minutes=30) is State.ASLEEP
+    assert switch.step(sleep.UPPER_THRESHOLD * 3, idle_minutes=30) is State.ASLEEP
 
 
 def test_it_wakes_when_pressure_falls_below_the_lower_threshold(clock) -> None:
-    switch = SleepSwitch(saat=clock)
+    switch = SleepSwitch(clock=clock)
     switch.user_active(False)
-    switch.step(sleep.ESIK_UST * 3, idle_minutes=30)
+    switch.step(sleep.UPPER_THRESHOLD * 3, idle_minutes=30)
     clock.advance(minutes=sleep.SLEEPY_MINUTES + 1)
-    switch.step(sleep.ESIK_UST * 3, idle_minutes=30)
+    switch.step(sleep.UPPER_THRESHOLD * 3, idle_minutes=30)
     assert switch.state is State.ASLEEP
-    assert switch.step(sleep.ESIK_ALT / 2) is State.WAKING
+    assert switch.step(sleep.LOWER_THRESHOLD / 2) is State.WAKING
 
 
 def test_narcolepsy_two_hours_around_the_threshold(clock) -> None:
@@ -148,25 +148,25 @@ def test_narcolepsy_two_hours_around_the_threshold(clock) -> None:
     Pressure wanders inside ±5% of the upper threshold for two hours with no
     user around. A single-threshold controller flips state dozens of times.
     """
-    switch = SleepSwitch(saat=clock)
+    switch = SleepSwitch(clock=clock)
     switch.user_active(False)
     # Deterministic wander: no randomness, so the number is reproducible.
     band = [1.0, -1.0, 1.0, -1.0, 0.5, -0.5] * 20
     for i, direction in enumerate(band):
         clock.advance(minutes=1)
-        switch.step(sleep.ESIK_UST * (1 + 0.05 * direction), idle_minutes=30)
+        switch.step(sleep.UPPER_THRESHOLD * (1 + 0.05 * direction), idle_minutes=30)
     assert len(switch.transitions) <= 2, [t.new for t in switch.transitions]
 
 
 def test_caffeine_delays_without_erasing_the_pressure(clock) -> None:
     """"Don't sleep now" raises the bar; it does not make the debt go away."""
-    switch = SleepSwitch(saat=clock)
+    switch = SleepSwitch(clock=clock)
     switch.user_active(False)
     switch.caffeine(hours=4)
-    assert switch.step(sleep.ESIK_UST * 1.5, idle_minutes=30) is State.AWAKE
+    assert switch.step(sleep.UPPER_THRESHOLD * 1.5, idle_minutes=30) is State.AWAKE
 
     clock.advance(hours=5)
-    assert switch.step(sleep.ESIK_UST * 1.5, idle_minutes=30) is State.SLEEPY
+    assert switch.step(sleep.UPPER_THRESHOLD * 1.5, idle_minutes=30) is State.SLEEPY
 
 
 def test_the_predicted_window_makes_falling_asleep_easier(clock) -> None:
@@ -175,11 +175,11 @@ def test_the_predicted_window_makes_falling_asleep_easier(clock) -> None:
     for day in range(30):
         for hour in range(9, 18):
             rhythm.observe(MONDAY + timedelta(days=day, hours=hour - 9))
-    switch = SleepSwitch(saat=clock, rhythm=rhythm)
+    switch = SleepSwitch(clock=clock, rhythm=rhythm)
     normal = switch.upper_threshold()
 
     # Just before a predicted active window the threshold must not ease.
-    assert normal <= sleep.ESIK_UST
+    assert normal <= sleep.UPPER_THRESHOLD
 
 
 # -- arousal thresholds ------------------------------------------------
@@ -196,11 +196,11 @@ def test_only_the_right_stimuli_wake_it() -> None:
 
 
 def test_a_stimulus_below_threshold_does_not_interrupt(clock) -> None:
-    switch = SleepSwitch(saat=clock)
+    switch = SleepSwitch(clock=clock)
     switch.user_active(False)
-    switch.step(sleep.ESIK_UST * 3, idle_minutes=30)
+    switch.step(sleep.UPPER_THRESHOLD * 3, idle_minutes=30)
     clock.advance(minutes=sleep.SLEEPY_MINUTES + 1)
-    switch.step(sleep.ESIK_UST * 3, idle_minutes=30)
+    switch.step(sleep.UPPER_THRESHOLD * 3, idle_minutes=30)
 
     assert switch.stimulus("otomasyon") is False
     assert switch.state is State.ASLEEP
@@ -274,8 +274,8 @@ def test_waking_stops_the_night_and_carries_the_rest(store, sessions,
     for i, node in enumerate(nodes):
         _session(sessions, f"s{i}", [node.id], clock)
 
-    sleeper = Sleeper(store, sessions, saat=clock,
-                      filigran=tmp_path / "w.json", state_dir=tmp_path)
+    sleeper = Sleeper(store, sessions, clock=clock,
+                      watermark=tmp_path / "w.json", state_dir=tmp_path)
     sleeper.wake("kullanici")
     report = sleeper.run(max_cycles=4)
 
@@ -291,7 +291,7 @@ def test_an_uninterrupted_night_finishes_and_reports(store, sessions,
         _session(sessions, f"s{i}", [node.id], clock)
 
     olaylar: list[str] = []
-    sleeper = Sleeper(store, sessions, saat=clock, filigran=tmp_path / "w.json",
+    sleeper = Sleeper(store, sessions, clock=clock, watermark=tmp_path / "w.json",
                       state_dir=tmp_path,
                       events=lambda kind, _data: olaylar.append(kind))
     report = sleeper.run(max_cycles=3)
@@ -308,7 +308,7 @@ def test_deep_cycles_never_call_the_model(store, sessions, tmp_path,
     node = store.remember("Bir kayıt.", kind="fact")
     _session(sessions, "s1", [node.id], clock)
 
-    sleeper = Sleeper(store, sessions, saat=clock, filigran=tmp_path / "w.json",
+    sleeper = Sleeper(store, sessions, clock=clock, watermark=tmp_path / "w.json",
                       state_dir=tmp_path)
     sleeper.run(max_cycles=2, model=lambda p: calls.append(p) or "")
     assert calls == []                       # cycles 1-2 are deep
@@ -318,7 +318,7 @@ def test_the_debt_file_records_what_was_missed(store, sessions, tmp_path,
                                                clock) -> None:
     node = store.remember("Bir kayıt.", kind="fact")
     _session(sessions, "s1", [node.id], clock)
-    Sleeper(store, sessions, saat=clock, filigran=tmp_path / "w.json",
+    Sleeper(store, sessions, clock=clock, watermark=tmp_path / "w.json",
             state_dir=tmp_path).run(max_cycles=1)
     debt = json.loads((tmp_path / "uyku_borcu.json").read_text("utf-8"))
     assert "devreden" in debt and "ts" in debt

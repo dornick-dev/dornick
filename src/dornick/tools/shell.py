@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import Any
 
 from .base import JobFailed, ToolContext, ToolRegistry, ToolResult, object_schema
-from .. import ortam
+from .. import environment
 
 MAX_OUTPUT_CHARS = 30_000
 DEFAULT_TIMEOUT_S = 120
@@ -99,7 +99,7 @@ async def _run_shell(
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.STDOUT,
         env={**os.environ, "DORNICK_SESSION": session_id},
-        **ortam.sessiz_bayraklar(),
+        **environment.quiet_flags(),
     )
 
     comm = asyncio.ensure_future(proc.communicate())
@@ -109,19 +109,19 @@ async def _run_shell(
             {comm, stop}, timeout=timeout, return_when=asyncio.FIRST_COMPLETED
         )
     except asyncio.CancelledError:
-        await ortam.agaci_oldur(proc)
+        await environment.kill_tree(proc)
         comm.cancel()
         stop.cancel()
         raise
 
     if stop in done:
-        await ortam.agaci_oldur(proc)
+        await environment.kill_tree(proc)
         comm.cancel()
         return ("stop", "", -1)
 
     stop.cancel()
     if comm not in done:
-        await ortam.agaci_oldur(proc)
+        await environment.kill_tree(proc)
         comm.cancel()
         return ("timeout", "", -1)
 
@@ -217,7 +217,7 @@ UZUN SÜREN SÜREÇLER — iki ayrı kip, karıştırma:
         # kendi portunda başlatabilsin.
         from .. import apps as _apps
 
-        if _apps.dornick_sureci_mi(command):
+        if _apps.is_dornick_process(command):
             return ToolResult.error(
                 "Dornick zaten çalışıyor; kendini yeniden başlatma. Bu komut "
                 "Dornick'in (dornick) ikinci bir kopyasını açardı — kullanıcı "
@@ -265,7 +265,7 @@ UZUN SÜREN SÜREÇLER — iki ayrı kip, karıştırma:
             import subprocess
             import time as _time
 
-            from .. import apps, ortam
+            from .. import apps, environment
 
             log_dir = ctx.config.state_dir / "surec-loglari"
             try:
@@ -280,7 +280,7 @@ UZUN SÜREN SÜREÇLER — iki ayrı kip, karıştırma:
                     cwd=str(cwd),
                     env={**os.environ, "DORNICK_SESSION": ctx.session.id},
                     stdout=log, stderr=subprocess.STDOUT,
-                    **ortam.sessiz_bayraklar(),
+                    **environment.quiet_flags(),
                 )
             except Exception as exc:
                 return ToolResult.error(f"Arka planda başlatılamadı: {type(exc).__name__}: {exc}")
@@ -312,19 +312,19 @@ UZUN SÜREN SÜREÇLER — iki ayrı kip, karıştırma:
             job_timeout = float(args.get("timeout") or JOB_TIMEOUT_S)
 
             async def runner(cancel: asyncio.Event) -> str:
-                durum, text, code = await _run_shell(
+                status, text, code = await _run_shell(
                     command, cwd, session_id, job_timeout, cancel)
-                if durum == "stop":
+                if status == "stop":
                     raise JobFailed("İş durduruldu — komut sonlandırıldı.")
-                if durum == "timeout":
+                if status == "timeout":
                     raise JobFailed(
                         f"İş zaman aşımına uğradı ({job_timeout:.0f} sn) "
                         "ve durduruldu."
                     )
                 if code != 0:
-                    raise JobFailed(is_raporu(
+                    raise JobFailed(job_report(
                         command=command, code=code, text=text or ""))
-                return basari_raporu(command=command, text=text or "")
+                return success_report(command=command, text=text or "")
 
             handle = ctx.job_bg(f"$ {command[:60]}", runner)
             return ToolResult(
@@ -335,14 +335,14 @@ UZUN SÜREN SÜREÇLER — iki ayrı kip, karıştırma:
 
         timeout = int(args.get("timeout") or DEFAULT_TIMEOUT_S)
 
-        durum, text, code = await _run_shell(
+        status, text, code = await _run_shell(
             command, cwd, ctx.session.id, timeout, ctx.cancel)
 
-        if durum == "stop":
+        if status == "stop":
             # Kullanıcı durdurdu.
             return ToolResult.error("Durduruldu — çalışan komut sonlandırıldı.")
 
-        if durum == "timeout":
+        if status == "timeout":
             return ToolResult.error(
                 f"Komut {timeout} saniyede bitmedi ve durduruldu. "
                 "Uzun ama biten bir işse (derleme, kurulum) `arka_plan: true` "
@@ -352,13 +352,13 @@ UZUN SÜREN SÜREÇLER — iki ayrı kip, karıştırma:
 
         if code != 0:
             return ToolResult(
-                content=is_raporu(command=command, code=code, text=text or ""),
+                content=job_report(command=command, code=code, text=text or ""),
                 is_error=True,
                 detail={"exit_code": code, "cwd": str(cwd)},
             )
 
         return ToolResult(
-            content=basari_raporu(command=command, text=text or ""),
+            content=success_report(command=command, text=text or ""),
             detail={"exit_code": 0, "cwd": str(cwd)},
         )
 
@@ -389,21 +389,21 @@ _IPUCLARI: list[tuple[tuple[str, ...], str]] = [
      "değil, tam yol kullan; önce list_dir ile yolun varlığını doğrula."),
 ]
 
-_MODUL_RE = re.compile(r"No module named ['\"]([^'\"]+)['\"]", re.I)
+_MODULE_RE = re.compile(r"No module named ['\"]([^'\"]+)['\"]", re.I)
 _PAKET_RE = re.compile(
     r"paketi yüklü değil[:\s]*\*?\*?`?([A-Za-z0-9_.-]+)",
     re.I,
 )
 _PIP_RE = re.compile(r"pip install ([A-Za-z0-9_.-]+)", re.I)
-_HATA_SATIRI = re.compile(
+_ERROR_LINE = re.compile(
     r"^[A-Za-z_][\w.]*?(?:Error|Exception|Warning): .+"
 )
 _CIKIS_RE = re.compile(r"^Çıkış kodu (\d+)\s*\n+(.*)$", re.S)
 
 
-def _modul_adi(cikti: str) -> str:
+def _module_name(cikti: str) -> str:
     ham = cikti or ""
-    for rx in (_MODUL_RE, _PAKET_RE, _PIP_RE):
+    for rx in (_MODULE_RE, _PAKET_RE, _PIP_RE):
         m = rx.search(ham)
         if m:
             return m.group(1).strip()
@@ -414,14 +414,14 @@ def son_hata_satiri(cikti: str) -> str:
     """Traceback'in son Exception satırı — 'File …' izi değil."""
     for line in reversed((cikti or "").splitlines()):
         s = line.strip()
-        if _HATA_SATIRI.match(s):
+        if _ERROR_LINE.match(s):
             return s
     return ""
 
 
-def kabuk_ipucu(cikti: str) -> str:
+def shell_hint(cikti: str) -> str:
     """Bilinen hata kalıbına tek satırlık çıkış yolu (yoksa boş)."""
-    ad = _modul_adi(cikti)
+    ad = _module_name(cikti)
     if ad:
         return (
             f"Python paketi `{ad}` yüklü değil. "
@@ -436,14 +436,14 @@ def kabuk_ipucu(cikti: str) -> str:
 
 def kabuk_ozet(cikti: str) -> str:
     """Ham kabuk çıktısından kullanıcının anlayacağı cümle."""
-    ad = _modul_adi(cikti)
+    ad = _module_name(cikti)
     if ad:
         return (
             f"Gerekli Python paketi yüklü değil: **{ad}**. "
             f"Kurmak için `py -m pip install {ad}` yaz, sonra aynı komutu "
             "yeniden çalıştır."
         )
-    if ipucu := kabuk_ipucu(cikti or ""):
+    if ipucu := shell_hint(cikti or ""):
         son = son_hata_satiri(cikti)
         if son:
             return f"{son}. {ipucu}"
@@ -451,7 +451,7 @@ def kabuk_ozet(cikti: str) -> str:
     return son_hata_satiri(cikti)
 
 
-def is_raporu(*, command: str, code: int, text: str) -> str:
+def job_report(*, command: str, code: int, text: str) -> str:
     """Başarısız kabuk işinin kullanıcı raporu — traceback duvarı değil."""
     ozet = kabuk_ozet(text)
     satirlar = [
@@ -470,7 +470,7 @@ def is_raporu(*, command: str, code: int, text: str) -> str:
     return "\n".join(satirlar)
 
 
-def basari_raporu(*, command: str, text: str) -> str:
+def success_report(*, command: str, text: str) -> str:
     """Başarılı kabuk işinin kullanıcı raporu — ham stdout duvarı değil.
 
     Viewer'da önce ne bittiği okunsun; uzun log ## Çıktı altında kalsın.
@@ -515,7 +515,7 @@ def _komut_from_title(title: str) -> str:
     return ad[2:].strip() if ad.startswith("$ ") else ad
 
 
-def insan_is_raporu(metin: str, *, title: str = "") -> str:
+def human_job_report(metin: str, *, title: str = "") -> str:
     """Eski ham dökümü (Çıkış kodu + traceback) okunur rapora çevir.
 
     Yeni işler zaten `is_raporu` / `basari_raporu` yazar; Viewer hâlâ
@@ -529,18 +529,18 @@ def insan_is_raporu(metin: str, *, title: str = "") -> str:
     komut = _komut_from_title(title)
     m = _CIKIS_RE.match(ham)
     if m:
-        return is_raporu(command=komut, code=int(m.group(1)), text=m.group(2))
+        return job_report(command=komut, code=int(m.group(1)), text=m.group(2))
     if "Traceback (most recent call last)" in ham:
-        return is_raporu(command=komut, code=1, text=ham)
+        return job_report(command=komut, code=1, text=ham)
     # Başarı dökümü: komut başlıklı arka plan işlerinde yapılandır.
     if komut or (title or "").strip().startswith("$ "):
-        return basari_raporu(command=komut or title, text=ham)
+        return success_report(command=komut or title, text=ham)
     return ham
 
 
-def kisa_is_ozeti(metin: str, *, title: str = "") -> str:
+def short_job_summary(metin: str, *, title: str = "") -> str:
     """Görevler listesi için tek cümle — traceback değil."""
-    rapor = insan_is_raporu(metin, title=title)
+    rapor = human_job_report(metin, title=title)
     for line in rapor.splitlines():
         s = line.strip()
         if not s or s.startswith("#") or s.startswith("- "):

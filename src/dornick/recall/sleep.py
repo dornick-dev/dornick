@@ -33,16 +33,16 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, Callable, Iterable
 
-from . import anahtar, orgu
-from .saat import Saat, coz, duvar_saati
+from . import switches, weave
+from .clock import Clock, parse, wall_clock
 
 # Derived, not chosen. `yasam_bench.py --esik-egrisi` runs the 90-day
 # scenario with the night switched off and records prime precision against S
 # (unshrunk strengthening: total edge weight / node). Baseline precision was
 # 0.6033; the 5% drop starts at S = 2.3374. Run of 2026-09-02, curve in
 # docs/charts/basinc-bozulma.md. ESIK_ALT is a third of it (roadmap 3.10.3).
-ESIK_UST = 2.3374
-ESIK_ALT = 0.7791
+UPPER_THRESHOLD = 2.3374
+LOWER_THRESHOLD = 0.7791
 
 # Pressure weights. Strengthening is the SHY term and dominates; debt and
 # heat are corrections. Calibration note in docs/hafiza-fazlar.md.
@@ -131,8 +131,8 @@ def pressure(
     store: Any,
     sessions_dir: Path | None = None,
     *,
-    filigran: Path | None = None,
-    saat: Saat | None = None,
+    watermark: Path | None = None,
+    clock: Clock | None = None,
 ) -> Pressure:
     """Measure S. Nothing here is a feeling; every term is counted.
 
@@ -140,7 +140,7 @@ def pressure(
     quantity the threshold curve was derived against. `debt` is un-replayed
     sessions. `heat` is how far the hot set has drifted past its target.
     """
-    saat = saat or duvar_saati
+    clock = clock or wall_clock
     out = Pressure()
     try:
         out.strengthening = store.strengthening()
@@ -149,7 +149,7 @@ def pressure(
     if sessions_dir is not None:
         from .awake import sleep_debt
 
-        _hours, pending = sleep_debt(sessions_dir, saat=saat, filigran=filigran)
+        _hours, pending = sleep_debt(sessions_dir, clock=clock, watermark=watermark)
         out.debt = min(1.0, pending / DEBT_FULL)
     try:
         total = store.count()
@@ -253,9 +253,9 @@ class SleepSwitch:
     thresholds) plus orexin (user activity pins AWAKE) is what prevents it.
     """
 
-    def __init__(self, *, saat: Saat | None = None,
+    def __init__(self, *, clock: Clock | None = None,
                  rhythm: Rhythm | None = None) -> None:
-        self.saat = saat or duvar_saati
+        self.clock = clock or wall_clock
         self.rhythm = rhythm or Rhythm()
         self.state = State.AWAKE
         self.orexin = 1.0
@@ -273,7 +273,7 @@ class SleepSwitch:
 
     def caffeine(self, hours: float = CAFFEINE_HOURS) -> None:
         """"Don't sleep now." Raises the threshold; does not touch S."""
-        self.caffeine_until = self.saat() + timedelta(hours=hours)
+        self.caffeine_until = self.clock() + timedelta(hours=hours)
 
     def stimulus(self, reason: str, *, writes: bool = False) -> bool:
         """An external signal. Returns whether it woke us."""
@@ -285,8 +285,8 @@ class SleepSwitch:
     # -- the step ------------------------------------------------------
 
     def upper_threshold(self) -> float:
-        limit = ESIK_UST
-        now = self.saat()
+        limit = UPPER_THRESHOLD
+        now = self.clock()
         if self.caffeine_until and now < self.caffeine_until:
             return limit * 2.0          # deliberately out of reach
         window = self.rhythm.next_arrival(now)
@@ -296,7 +296,7 @@ class SleepSwitch:
 
     def step(self, s: float, *, idle_minutes: float = 0.0) -> State:
         """Advance the state machine one sample (the watchman calls this)."""
-        now = self.saat()
+        now = self.clock()
         if self.orexin >= 1.0:
             if self.state is not State.AWAKE:
                 self._go(State.AWAKE, "oreksin")
@@ -312,7 +312,7 @@ class SleepSwitch:
             if waited >= SLEEPY_MINUTES:
                 self._go(State.ASLEEP, "hazir")
         elif self.state is State.ASLEEP:
-            if s <= ESIK_ALT:
+            if s <= LOWER_THRESHOLD:
                 self._go(State.WAKING, "basinc dustu")
             elif self.rhythm.probability(now + timedelta(minutes=EARLY_MINUTES)) >= 0.5:
                 self._go(State.WAKING, "ritim")
@@ -324,9 +324,9 @@ class SleepSwitch:
         if new is self.state:
             return
         self.transitions.append(
-            Transition(self.saat(), self.state, new, reason, 0.0))
+            Transition(self.clock(), self.state, new, reason, 0.0))
         self.state = new
-        self.sleepy_since = self.saat() if new is State.SLEEPY else None
+        self.sleepy_since = self.clock() if new is State.SLEEPY else None
 
 
 # -- the night, in cycles ----------------------------------------------
@@ -375,32 +375,32 @@ class Sleeper:
     rhythm: Rhythm
 
     def __init__(self, store: Any, sessions_dir: Path, *,
-                 saat: Saat | None = None, filigran: Path | None = None,
+                 clock: Clock | None = None, watermark: Path | None = None,
                  state_dir: Path | None = None,
                  rhythm: Rhythm | None = None,
                  events: Callable[[str, dict[str, Any]], None] | None = None) -> None:
         self.store = store
         self.rhythm = rhythm or Rhythm()
         self.sessions_dir = Path(sessions_dir)
-        self.saat = saat or duvar_saati
-        self.filigran = filigran
+        self.clock = clock or wall_clock
+        self.watermark = watermark
         self.state_dir = state_dir
         # Olaylar dondurulmuş şemadan geçiyor (night_events.SCHEMA): arayüz
         # yalnız o sözlüğe güveniyor ve `recall.db`'ye hiç bakmıyor.
-        self.events = events or self._varsayilan_olay
+        self.events = events or self._default_event
         self._wake: str = ""
         self._wake_at: float = 0.0
 
-    def _varsayilan_olay(self, tur: str, veri: dict[str, Any]) -> None:
+    def _default_event(self, tur: str, veri: dict[str, Any]) -> None:
         if self.state_dir is None:
             return
         from . import night_events
 
-        gun = self.saat().date().isoformat()
+        gun = self.clock().date().isoformat()
         try:
             night_events.NightLog(
                 night_events.night_path(self.state_dir, gun),
-                lambda: self.saat()).emit(tur, **veri)
+                lambda: self.clock()).emit(tur, **veri)
         except Exception:
             pass        # gece, günlüğü yazılamadıysa da yaşandı
 
@@ -411,13 +411,13 @@ class Sleeper:
 
     def rhythm_arrival(self) -> str:
         """Kullanıcının ne zaman geleceği tahmini — gece ona göre bitiyor."""
-        return self.rhythm.next_arrival(self.saat()).isoformat(timespec="minutes")
+        return self.rhythm.next_arrival(self.clock()).isoformat(timespec="minutes")
 
     def run(self, *, model: Callable[[str], str] | None = None,
             max_cycles: int = 6, budget_sn: float = 300.0,
             cycle_budget_sn: float = CYCLE_MINUTES * 60.0) -> NightReport:
         report = NightReport()
-        if not anahtar.AKTIF.orgu:
+        if not switches.ACTIVE.weave:
             report.woke_reason = "orgu kapali"
             return report
         started = time.perf_counter()
@@ -436,18 +436,18 @@ class Sleeper:
             kalan = min(cycle_budget_sn, budget_sn - (time.perf_counter() - started))
             if kalan <= 0:
                 break
-            night = orgu.gece_gecisi(
-                self.store, self.sessions_dir, saat=self.saat,
-                filigran=self.filigran,
+            night = weave.night_pass(
+                self.store, self.sessions_dir, clock=self.clock,
+                watermark=self.watermark,
                 # REM is where distillation lives; deep cycles never call the
                 # model, so an early wake cannot leave half a guess behind.
                 model=model if phase is Phase.REM else None,
-                butce_sn=kalan, state_dir=self.state_dir)
+                budget_s=kalan, state_dir=self.state_dir)
             report.cycles = cycle
-            report.replayed += night.tekrar_edilen
+            report.replayed += night.replayed
             report.carried = night.devreden
             report.distilled += night.damitik
-            if night.tekrar_edilen == 0 and phase is not Phase.REM:
+            if night.replayed == 0 and phase is not Phase.REM:
                 break               # nothing left to replay
         report.seconds = time.perf_counter() - started
 
@@ -467,7 +467,7 @@ class Sleeper:
         _debt_write(self.state_dir, {
             "faz": Phase.REM.value if report.distilled == 0 else "",
             "devreden": report.carried,
-            "ts": self.saat().isoformat(timespec="milliseconds")})
+            "ts": self.clock().isoformat(timespec="milliseconds")})
         return report
 
 

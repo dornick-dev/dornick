@@ -23,7 +23,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Iterable, Iterator
 
-from .saat import Saat, duvar_saati
+from .clock import Clock, wall_clock
 
 # Frozen event vocabulary (roadmap 3.10.5). Each entry lists the fields the
 # view may rely on. A snapshot test compares this dict; editing it is a
@@ -58,7 +58,7 @@ class NightLog:
     """Writes the night's events, one JSON object per line."""
 
     path: Path
-    saat: Saat = duvar_saati
+    clock: Clock = wall_clock
     listeners: list[Callable[[dict[str, Any]], None]] = None  # type: ignore[assignment]
 
     def __post_init__(self) -> None:
@@ -67,7 +67,7 @@ class NightLog:
         self.path.parent.mkdir(parents=True, exist_ok=True)
 
     def emit(self, tur: str, **fields: Any) -> dict[str, Any]:
-        event = build(tur, self.saat, **fields)
+        event = build(tur, self.clock, **fields)
         try:
             with self.path.open("a", encoding="utf-8") as fh:
                 fh.write(json.dumps(event, ensure_ascii=False) + "\n")
@@ -81,7 +81,7 @@ class NightLog:
         return event
 
 
-def build(tur: str, saat: Saat = duvar_saati, **fields: Any) -> dict[str, Any]:
+def build(tur: str, clock: Clock = wall_clock, **fields: Any) -> dict[str, Any]:
     """One event, validated against the frozen schema before it exists."""
     if tur not in SCHEMA:
         raise SchemaError(f"şemada olmayan olay: {tur}")
@@ -91,7 +91,7 @@ def build(tur: str, saat: Saat = duvar_saati, **fields: Any) -> dict[str, Any]:
     fazla = [ad for ad in fields if ad not in SCHEMA[tur]]
     if fazla:
         raise SchemaError(f"{tur}: şemada olmayan alan {', '.join(fazla)}")
-    return {"ts": saat().isoformat(timespec="milliseconds"), "tur": tur, **fields}
+    return {"ts": clock().isoformat(timespec="milliseconds"), "tur": tur, **fields}
 
 
 def validate(event: dict[str, Any]) -> dict[str, Any]:

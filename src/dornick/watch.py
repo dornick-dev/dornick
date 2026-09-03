@@ -40,9 +40,9 @@ INSTALL_HINT = "Kamera izleme için: pip install 'dornick[watch]'"
 
 def hint() -> str:
     """Eksik-özellik mesajı: kurulu düzende bileşen önerilir, pip değil."""
-    from . import ortam
+    from . import environment
 
-    if ortam.kurulu_mu():
+    if environment.kurulu_mu():
         return ("Kamera izleme bu kuruluma dahil edilmemiş. Kurulum "
                 "sihirbazını yeniden çalıştırıp 'Kamera izleme' "
                 "bileşenini işaretleyerek ekleyebilirsin.")

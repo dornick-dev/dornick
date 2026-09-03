@@ -16,12 +16,12 @@ from dornick import tray
 
 def test_close_hides_when_the_tray_is_alive() -> None:
     """Tepsi yaşıyorsa X = gizle: iş, duyular ve zamanlanmış görevler sürer."""
-    assert tray.kapatma_karari(tepsi_acik=True) == "gizle"
+    assert tray.close_decision(tepsi_acik=True) == "gizle"
 
 
 def test_close_really_closes_without_a_tray() -> None:
     """Tepsi yoksa gizlemek programı kapanmaz hale getirirdi: X = kapat."""
-    assert tray.kapatma_karari(tepsi_acik=False) == "kapat"
+    assert tray.close_decision(tepsi_acik=False) == "kapat"
 
 
 # -- Çıkış bekçisi: meşgulken onay ---------------------------------------
@@ -35,7 +35,7 @@ def test_quit_asks_nothing_when_idle() -> None:
         asked.append(q)
         return False
 
-    assert tray.cikis_karari(mesgul=False, onayla=confirm) is True
+    assert tray.exit_decision(mesgul=False, onayla=confirm) is True
     assert asked == []
 
 
@@ -47,24 +47,24 @@ def test_quit_while_busy_asks_and_respects_no() -> None:
         asked.append(q)
         return False
 
-    assert tray.cikis_karari(mesgul=True, onayla=hayir) is False
-    assert asked == [tray.CIKIS_SORUSU]
-    assert "yarım kalır" in tray.CIKIS_SORUSU   # kullanıcı neyi göze aldığını okur
+    assert tray.exit_decision(mesgul=True, onayla=hayir) is False
+    assert asked == [tray.EXIT_QUESTION]
+    assert "yarım kalır" in tray.EXIT_QUESTION   # kullanıcı neyi göze aldığını okur
 
 
 def test_quit_while_busy_respects_yes() -> None:
-    assert tray.cikis_karari(mesgul=True, onayla=lambda _q: True) is True
+    assert tray.exit_decision(mesgul=True, onayla=lambda _q: True) is True
 
 
 def test_quit_never_traps_the_user() -> None:
     """Onay sorulamıyorsa (diyalog yok/patladı) açık Çıkış jesti kazanır:
     "çıkamıyorum" tuzağı, yarım işten daha kötü."""
-    assert tray.cikis_karari(mesgul=True, onayla=None) is True
+    assert tray.exit_decision(mesgul=True, onayla=None) is True
 
     def patlar(_q: str) -> bool:
         raise RuntimeError("diyalog kurulamadı")
 
-    assert tray.cikis_karari(mesgul=True, onayla=patlar) is True
+    assert tray.exit_decision(mesgul=True, onayla=patlar) is True
 
 
 # -- Tray._quit: bekçi menüye gerçekten bağlı ----------------------------
@@ -124,15 +124,15 @@ def test_tray_without_guards_keeps_the_old_behaviour() -> None:
 # bayrak yapıyor; bayrak olmayınca Çıkış sessizce gizlemeye düşüyordu.
 
 
-def _kapanis() -> tuple[tray.Kapanis, list[str]]:
+def _shutdown() -> tuple[tray.Shutdown, list[str]]:
     iz: list[str] = []
-    k = tray.Kapanis(gizle=lambda: iz.append("gizle"),
+    k = tray.Shutdown(gizle=lambda: iz.append("gizle"),
                      yok_et=lambda: iz.append("yok et"))
     return k, iz
 
 
 def test_x_hides_and_cancels_the_close() -> None:
-    k, iz = _kapanis()
+    k, iz = _shutdown()
     assert k.kapanabilir_mi() is False, "X kapanışı İPTAL etmeli"
     assert iz == ["gizle"]
 
@@ -141,7 +141,7 @@ def test_quit_from_the_tray_actually_closes() -> None:
     """Canlıda kırılan tam bu zincirdi: kullanıcı Evet diyor, pencere
     yok edilmeye çalışılıyor, `closing` kancası bunu bir X sanıp iptal
     ediyor ve program kapanmıyordu."""
-    k, iz = _kapanis()
+    k, iz = _shutdown()
     k.cik()
     assert iz == ["yok et"], "Çıkış gizlemeye DÜŞMEMELİ"
     assert k.kapanabilir_mi() is True, "kapanış artık iptal edilmemeli"
@@ -150,7 +150,7 @@ def test_quit_from_the_tray_actually_closes() -> None:
 
 def test_the_flag_only_lifts_for_a_real_quit() -> None:
     """Bayrak kendiliğinden kalkmıyor: birkaç X üst üste hep gizler."""
-    k, iz = _kapanis()
+    k, iz = _shutdown()
     for _ in range(3):
         assert k.kapanabilir_mi() is False
     assert iz == ["gizle"] * 3
@@ -163,13 +163,13 @@ def test_the_flag_only_lifts_for_a_real_quit() -> None:
 
 
 def test_gorev_bildirim_ok_and_fail() -> None:
-    assert tray.gorev_bildirim_metni("Rapor", ok=True) == "Görev tamamlandı: Rapor"
-    assert tray.gorev_bildirim_metni("Rapor", ok=False) == "Görev hata verdi: Rapor"
+    assert tray.task_notification_text("Rapor", ok=True) == "Görev tamamlandı: Rapor"
+    assert tray.task_notification_text("Rapor", ok=False) == "Görev hata verdi: Rapor"
 
 
 def test_gorev_bildirim_trims_long_title() -> None:
     uzun = "x" * 100
-    metin = tray.gorev_bildirim_metni(uzun, ok=True)
+    metin = tray.task_notification_text(uzun, ok=True)
     assert metin.startswith("Görev tamamlandı: ")
     assert metin.endswith("…")
     assert len(metin) < 120
@@ -194,7 +194,7 @@ def test_tray_jobs_menu_calls_jobs_or_falls_back_to_show() -> None:
 
 
 def test_arka_plan_notu_mentions_tasks() -> None:
-    assert "görev" in tray.ARKA_PLAN_NOTU.lower() or "otomasyon" in tray.ARKA_PLAN_NOTU.lower()
+    assert "görev" in tray.BACKGROUND_NOTE.lower() or "otomasyon" in tray.BACKGROUND_NOTE.lower()
 
 
 def test_toast_xml_embeds_logo_and_escapes() -> None:

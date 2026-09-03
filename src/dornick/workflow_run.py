@@ -341,7 +341,7 @@ async def _try_heal_lesson(agent: Any, node: WorkflowNode, exc: BaseException,
     """
     from . import workflow_mind
 
-    workflow_mind.dersi_hatirla(getattr(agent, "mind", None), wf_id, node, exc)
+    workflow_mind.recall_lesson(getattr(agent, "mind", None), wf_id, node, exc)
 
 
 async def _onarmayi_dene(

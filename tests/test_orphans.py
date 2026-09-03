@@ -16,7 +16,7 @@ from pathlib import Path
 import pytest
 
 from dornick.events import EventLog
-from dornick.loop import ChildHandle, yetim_isaretle, yetim_tara
+from dornick.loop import ChildHandle, mark_orphan, yetim_tara
 from tests.test_loop import (  # noqa: F401
     FakeClient,
     build_agent,
@@ -129,7 +129,7 @@ def test_marking_prevents_a_second_report(tmp_path: Path) -> None:
     yetimler = yetim_tara(sessions)
     assert len(yetimler) == 1
 
-    yetim_isaretle(sessions, yetimler)
+    mark_orphan(sessions, yetimler)
     # İşaret çocuk günlüğünde ve orphaned taşıyor.
     text = (sessions / "c1.jsonl").read_text(encoding="utf-8")
     assert "subagent_end" in text and '"orphaned":true' in text.replace(" ", "")
@@ -151,7 +151,7 @@ def test_a_torn_last_line_does_not_break_the_scan(tmp_path: Path) -> None:
     yetimler = yetim_tara(sessions)
     assert len(yetimler) == 1
 
-    yetim_isaretle(sessions, yetimler)
+    mark_orphan(sessions, yetimler)
     assert yetim_tara(sessions) == []
 
 
@@ -200,8 +200,8 @@ async def test_task_say_resumes_an_adopted_orphan(tmp_path: Path, registry) -> N
     assert "session_resume" in text
 
 
-async def test_bridge_gorev_devam_resumes_orphan(tmp_path: Path, registry) -> None:
-    """UI 'Devam et' → Bridge.gorev_devam → _child_say (HTTP thread güvenli)."""
+async def test_bridge_resume_task_resumes_orphan(tmp_path: Path, registry) -> None:
+    """UI 'Devam et' → Bridge.resume_task → _child_say (HTTP thread güvenli)."""
     import asyncio
 
     from dornick.desktop import Bridge
@@ -219,20 +219,20 @@ async def test_bridge_gorev_devam_resumes_orphan(tmp_path: Path, registry) -> No
     bridge = Bridge(_Hub(), asyncio.get_running_loop())
     bridge.agent = agent
 
-    # gorev_devam call_soon + wait kullanır — döngü thread'inde çağırma.
-    result = await asyncio.to_thread(bridge.gorev_devam, "c:" + handle.id)
+    # resume_task call_soon + wait kullanır — döngü thread'inde çağırma.
+    result = await asyncio.to_thread(bridge.resume_task, "c:" + handle.id)
     assert result.get("ok"), result
     await handle.task
     assert handle.state == "bitti"
     assert "sürdürüldü" in handle.sonuc
 
-    missing = await asyncio.to_thread(bridge.gorev_devam, "c:yokid")
+    missing = await asyncio.to_thread(bridge.resume_task, "c:yokid")
     assert missing.get("ok") is False
 
     running = ChildHandle(id="run1", title="koşan", model="m",
                           session_id="x", state="kosuyor")
     agent._children["run1"] = running
-    busy = await asyncio.to_thread(bridge.gorev_devam, "c:run1")
+    busy = await asyncio.to_thread(bridge.resume_task, "c:run1")
     assert busy.get("ok") is False
     assert "koşuyor" in (busy.get("error") or "").lower() or "zaten" in (
         busy.get("error") or "").lower()
@@ -258,7 +258,7 @@ def test_gorevler_marks_orphans_as_resumable(tmp_path: Path, registry) -> None:
             state="kosuyor", session_id="sess2")
         bridge = Bridge(_Hub(), asyncio.get_running_loop())
         bridge.agent = agent
-        return bridge.gorevler()
+        return bridge.tasks()
 
     payload = asyncio.run(scenario())
     by_id = {r["id"]: r for r in payload["gorevler"]}
@@ -354,7 +354,7 @@ def test_the_deck_seeds_from_the_snapshot() -> None:
     server = (Path(__file__).resolve().parents[1]
               / "src" / "dornick" / "web" / "server.py").read_text(encoding="utf-8")
     assert "/api/gorevler/devam" in server
-    assert "gorev_devam" in (
+    assert "resume_task" in (
         Path(__file__).resolve().parents[1] / "src" / "dornick" / "desktop.py"
     ).read_text(encoding="utf-8")
 

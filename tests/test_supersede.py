@@ -18,8 +18,8 @@ from pathlib import Path
 
 import pytest
 
-from dornick.recall import RecallStore, anahtar, open_store
-from dornick.recall.aktivasyon import TABAN_YOK
+from dornick.recall import RecallStore, switches, open_store
+from dornick.recall.activation import NO_BASE
 
 SIMDI = datetime(2025, 6, 1, 9, 0, tzinfo=timezone.utc)
 
@@ -42,7 +42,7 @@ def takvim() -> Takvim:
 
 @pytest.fixture()
 def store(tmp_path: Path, takvim: Takvim):
-    s = open_store(tmp_path, saat=takvim)
+    s = open_store(tmp_path, clock=takvim)
     yield s
     s.close()
 
@@ -52,10 +52,10 @@ def _zincir(store: RecallStore, takvim: Takvim) -> tuple[str, str, str]:
     a = store.remember("Raporları PDF olarak istiyorum.", kind="preference",
                        tags=["rapor-format"])
     takvim.ilerle(days=10)
-    b = store.guncelle(a.id, "Raporları artık xlsx istiyorum.",
+    b = store.update(a.id, "Raporları artık xlsx istiyorum.",
                        kind="preference", tags=["rapor-format"])
     takvim.ilerle(days=10)
-    c = store.guncelle(b.id, "Rapor formatı csv olsun.",
+    c = store.update(b.id, "Rapor formatı csv olsun.",
                        kind="preference", tags=["rapor-format"])
     return a.id, b.id, c.id
 
@@ -92,7 +92,7 @@ def test_supersede_zinciri_iki_yonlu_yaziliyor(store, takvim) -> None:
 def test_guncelleyen_kayit_eskisine_bagli(store, takvim) -> None:
     """Zincir bir kenar olarak da duruyor: arayüz onu çizebilmeli."""
     a, b, _c = _zincir(store, takvim)
-    gerekceler = {n.id: r for n, _w, r in store.komsular_gerekceli(b)}
+    gerekceler = {n.id: r for n, _w, r in store.neighbours_with_reasons(b)}
     assert gerekceler.get(a) == "günceller"
 
 
@@ -106,7 +106,7 @@ def test_ruh_ve_liste_yalniz_gecerli_surumu_goruyor(store, takvim) -> None:
 def test_seri_butun_surumleri_donduruyor(store, takvim) -> None:
     """Zaman dizisi zaten geçmişi istiyor: `series` süzmez."""
     a, b, c = _zincir(store, takvim)
-    kimlikler = [n.id for n in store.by_kind_any(limit=50, tum_surumler=True)]
+    kimlikler = [n.id for n in store.by_kind_any(limit=50, all_versions=True)]
     assert {a, b, c} <= set(kimlikler)
 
 
@@ -119,7 +119,7 @@ def test_eski_dugume_gelen_cagrisim_yeniye_yonleniyor(store, takvim) -> None:
     eski = store.remember("Raporları PDF olarak istiyorum.", kind="preference")
     store.link(kaynak.id, eski.id, weight=1.0, reason="aynı iş")
     takvim.ilerle(days=5)
-    yeni = store.guncelle(eski.id, "Raporları xlsx istiyorum.", kind="preference")
+    yeni = store.update(eski.id, "Raporları xlsx istiyorum.", kind="preference")
 
     sonuc = store.recall("Vardiya defteri kasada", limit=8)
     dokunulan = {s.node for s in sonuc.trace}
@@ -130,7 +130,7 @@ def test_eski_dugume_gelen_cagrisim_yeniye_yonleniyor(store, takvim) -> None:
 def test_supersede_dongusu_sonsuz_donguye_girmez(store, takvim) -> None:
     """A → B, B → A elle yazılırsa hatırlama yine de bitmeli."""
     a = store.remember("birinci sürüm", kind="fact")
-    b = store.guncelle(a.id, "ikinci sürüm", kind="fact")
+    b = store.update(a.id, "ikinci sürüm", kind="fact")
     with store._lock:                      # noqa: SLF001 — bilerek bozuk veri
         store._db.execute("UPDATE node SET superseded_by=? WHERE id=?", (a.id, b.id))
         store._db.commit()
@@ -140,9 +140,9 @@ def test_supersede_dongusu_sonsuz_donguye_girmez(store, takvim) -> None:
 
 def test_gecerli_surum_kendini_gosteriyor(store, takvim) -> None:
     a, b, c = _zincir(store, takvim)
-    assert store.gecerli_surum(a) == c
-    assert store.gecerli_surum(c) == c
-    assert store.gecerli_surum("n_yok") == "n_yok"
+    assert store.current_version(a) == c
+    assert store.current_version(c) == c
+    assert store.current_version("n_yok") == "n_yok"
 
 
 # -- pekişme mirası ----------------------------------------------------
@@ -154,14 +154,14 @@ def test_duzeltme_eskinin_aktivasyonunu_devraliyor(store, takvim) -> None:
     for _ in range(10):
         takvim.ilerle(days=3)
         store.open(eski.id)
-    onceki_b = store.peek(eski.id).aktivasyon
+    onceki_b = store.peek(eski.id).activation
 
     takvim.ilerle(hours=1)
-    yeni = store.guncelle(eski.id, "Testler py -m pytest ile koşuluyor.",
+    yeni = store.update(eski.id, "Testler py -m pytest ile koşuluyor.",
                           kind="procedure")
-    assert store.peek(yeni.id).aktivasyon >= onceki_b
+    assert store.peek(yeni.id).activation >= onceki_b
     # Miras gerçekten kopyalandı, uydurulmadı:
-    assert len(store.kullanimlar(yeni.id)) > 1
+    assert len(store.use_log(yeni.id)) > 1
 
 
 def test_miras_devralan_kayit_taze_bir_kayitin_ustunde(store, takvim) -> None:
@@ -172,7 +172,7 @@ def test_miras_devralan_kayit_taze_bir_kayitin_ustunde(store, takvim) -> None:
     takvim.ilerle(days=1)
     rakip = store.remember("Sahaya seri kablo götürülüyor.", kind="procedure")
     takvim.ilerle(hours=2)
-    yeni = store.guncelle(eski.id, "Yedekler NAS'a alınıyor.", kind="procedure")
+    yeni = store.update(eski.id, "Yedekler NAS'a alınıyor.", kind="procedure")
 
     sirali = [n.id for n in store.by_kind("procedure", limit=5)]
     assert sirali.index(yeni.id) < sirali.index(rakip.id)
@@ -180,7 +180,7 @@ def test_miras_devralan_kayit_taze_bir_kayitin_ustunde(store, takvim) -> None:
 
 def test_supersede_edilen_kayit_aktivasyon_hesabini_bozmaz(store, takvim) -> None:
     a, b, c = _zincir(store, takvim)
-    assert store.peek(a).aktivasyon > TABAN_YOK      # hâlâ hesaplanıyor
+    assert store.peek(a).activation > NO_BASE      # hâlâ hesaplanıyor
 
 
 # -- açık arama --------------------------------------------------------
@@ -205,7 +205,7 @@ def test_guncel_kayit_acilinca_not_dusmuyor(store, takvim) -> None:
 def test_mekanik_kapaliyken_eski_surum_yine_tohumlaniyor(store, takvim) -> None:
     """`--kapat supersede`: ölçüm mekaniği tek tek kapatabilmeli."""
     a, b, c = _zincir(store, takvim)
-    with anahtar.kapali("supersede"):
+    with switches.disabled("supersede"):
         hits = {n.id for n in store.recall("rapor formatı", limit=8).hits}
         assert a in hits or b in hits
         assert [n.id for n in store.by_kind("preference", limit=10)] != [c]
@@ -225,7 +225,7 @@ def test_eski_bellek_supersede_sutunlariyla_aciliyor(tmp_path: Path) -> None:
         node = store.peek("n_v1rapor")
         assert node is not None
         assert node.superseded_by == "" and node.supersedes == ""
-        yeni = store.guncelle("n_v1rapor", "Raporları xlsx istiyorum.",
+        yeni = store.update("n_v1rapor", "Raporları xlsx istiyorum.",
                               kind="preference")
         assert store.peek("n_v1rapor").superseded_by == yeni.id
     finally:

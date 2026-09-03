@@ -92,11 +92,11 @@ kendiliğinden atlanır.
         if not kok.exists():
             return ToolResult.error(f"Yol yok: {kok}")
 
-        baglam = max(0, min(int(args.get("context") or 0), 3))
+        context = max(0, min(int(args.get("context") or 0), 3))
         tavan = max(1, min(int(args.get("max_results") or VARSAYILAN_SONUC), SONUC_TAVANI))
 
         def _tara() -> tuple[list[str], int, int, bool]:
-            return _search(kok, rx, args.get("glob"), baglam, tavan, ctx.cancel)
+            return _search(kok, rx, args.get("glob"), context, tavan, ctx.cancel)
 
         try:
             bloklar, eslesme, dosya_sayisi, kirpildi = await asyncio.to_thread(_tara)
@@ -128,7 +128,7 @@ def _search(
     kok: Path,
     rx: re.Pattern[str],
     glob: str | None,
-    baglam: int,
+    context: int,
     tavan: int,
     cancel: asyncio.Event,
 ) -> tuple[list[str], int, int, bool]:
@@ -159,13 +159,13 @@ def _search(
                 kirpildi = True
                 toplam -= 1  # kırpılan eşleşme sayılmaz
                 break
-            if baglam:
-                bas = max(0, no - 1 - baglam)
+            if context:
+                bas = max(0, no - 1 - context)
                 for i in range(bas, no - 1):
                     blok.append(f"{rel}-{i + 1}- {satirlar[i].rstrip()}")
             blok.append(f"{rel}:{no}: {satir.rstrip()}")
-            if baglam:
-                son = min(len(satirlar), no + baglam)
+            if context:
+                son = min(len(satirlar), no + context)
                 for i in range(no, son):
                     blok.append(f"{rel}-{i + 1}- {satirlar[i].rstrip()}")
             if toplam >= tavan:

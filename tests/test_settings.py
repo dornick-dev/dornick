@@ -24,7 +24,7 @@ def config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Config:
             monkeypatch.delenv(entry["env"], raising=False)
     # Anahtar doğrulama ağa çıkmasın: testte OpenRouter yok, sahte anahtar
     # canlı uca gidip 401 alırdı.
-    monkeypatch.setattr("dornick.otomod.dogrula_anahtar", lambda _aday: "ok")
+    monkeypatch.setattr("dornick.automode.verify_key", lambda _aday: "ok")
     cfg = Config(workspace=tmp_path, state_dir=tmp_path / ".dornick")
     cfg.ensure_dirs()
     return cfg
@@ -437,10 +437,10 @@ def test_snapshot_surumu_tasir(config: Config) -> None:
     Sahada hangi sürümün kurulu olduğu görünmüyordu; alan pyproject'teki
     gerçek sürümle birebir aynı olmalı — ikinci bir sürüm kaynağı yok.
     """
-    from dornick import ortam
+    from dornick import environment
 
     kar = settings.snapshot(config)
-    assert kar["surum"] == ortam.surum()
+    assert kar["surum"] == environment.version()
     assert kar["surum"] not in ("", "0.0.0")
 
 

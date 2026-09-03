@@ -170,7 +170,7 @@ def register(registry: ToolRegistry) -> None:
                 seen = box.read(made)
                 return ToolResult(
                     f"Açıldı [{made.get('id')}] {seen['title']} — {seen['url']}"
-                    + _hata_eki(seen) + f"\n\n{seen['text']}" + _uyari_eki(box, made)
+                    + _error_suffix(seen) + f"\n\n{seen['text']}" + _warning_suffix(box, made)
                 )
 
             tab = _pick(box, str(args.get("tab") or ""))
@@ -180,8 +180,8 @@ def register(registry: ToolRegistry) -> None:
             if action == "read":
                 seen = box.read(tab)
                 return ToolResult(
-                    f"{seen['title']} — {seen['url']}" + _hata_eki(seen)
-                    + f"\n\n{seen['text']}" + _uyari_eki(box, tab)
+                    f"{seen['title']} — {seen['url']}" + _error_suffix(seen)
+                    + f"\n\n{seen['text']}" + _warning_suffix(box, tab)
                 )
 
             if action == "konsol":
@@ -232,8 +232,8 @@ def register(registry: ToolRegistry) -> None:
                     return ToolResult.error("`url` http(s):// ile başlamalı.")
                 seen = box.navigate(tab, spot)
                 return ToolResult(
-                    f"Gidildi: {seen['title']} — {seen['url']}" + _hata_eki(seen)
-                    + f"\n\n{seen['text']}" + _uyari_eki(box, tab)
+                    f"Gidildi: {seen['title']} — {seen['url']}" + _error_suffix(seen)
+                    + f"\n\n{seen['text']}" + _warning_suffix(box, tab)
                 )
 
             if action == "click":
@@ -292,7 +292,7 @@ def register(registry: ToolRegistry) -> None:
 # modelin görebileceği yerde tutmak zorunda.
 
 
-def _hata_eki(seen: dict[str, Any]) -> str:
+def _error_suffix(seen: dict[str, Any]) -> str:
     """Çerçeve hata sayfası bulunduysa metnin BAŞINA konan uyarı.
 
     Sayfanın altına değil üstüne: uzun bir yığın izinin sonunda duran bir
@@ -313,7 +313,7 @@ def _hata_eki(seen: dict[str, Any]) -> str:
     return "\n".join(satirlar)
 
 
-def _uyari_eki(box: Any, tab: dict[str, Any]) -> str:
+def _warning_suffix(box: Any, tab: dict[str, Any]) -> str:
     """Okuma sonrası uyarı: üst hataları satır içi ver (ayrı konsol+ağ ritüeli yok).
 
     Değişiklik başına tek doğrulama turu yeterli; her `read` sonrası modeli
@@ -327,7 +327,7 @@ def _uyari_eki(box: Any, tab: dict[str, Any]) -> str:
         return ("\n\n(konsol/ağ dinleyicisi kurulamadı — bu sayfada JS hatası "
                 "olup olmadığını göremiyorum.)")
     hatalar = [k for k in getattr(kayit, "konsol", ()) if k.seviye == "hata"]
-    kotuler = [i for i in getattr(kayit, "istekler", ()) if i.basarisiz]
+    kotuler = [i for i in getattr(kayit, "istekler", ()) if i.failed]
     if not hatalar and not kotuler:
         return ""
     parcalar = [f"\n\n!! {len(hatalar)} konsol hatası, {len(kotuler)} başarısız istek."]
@@ -360,7 +360,7 @@ def _konsol_metni(kayit: Any, seviye: str, n: Any) -> str:
                 "\nBu sayfada JS hatası olup olmadığını göremiyorum — "
                 "uydurma yorum yapma, kullanıcıya bildir.")
 
-    kac = max(1, min(int(n or chrome.VARSAYILAN_N), chrome.TAMPON))
+    kac = max(1, min(int(n or chrome.DEFAULT_N), chrome.TAMPON))
     hepsi = list(kayit.konsol)
     süz = {"hata": {"hata"}, "uyari": {"uyari", "hata"}}.get(seviye)
     secili = [k for k in hepsi if k.seviye in süz] if süz else hepsi
@@ -378,7 +378,7 @@ def _konsol_metni(kayit: Any, seviye: str, n: Any) -> str:
     govde_basligi = (f"{len(secili)} konsol kaydı ({hatalar} hata) — son "
               f"{min(kac, len(secili))} tanesi:")
     satirlar = [govde_basligi]
-    satirlar += [f"  {k.bicim()}" for k in secili[-kac:]]
+    satirlar += [f"  {k.format()}" for k in secili[-kac:]]
     if hatalar:
         satirlar.append("")
         satirlar.append("Bu hatalar sayfa çalışırken oluştu. Kaynak koddaki "
@@ -393,27 +393,27 @@ def _ag_metni(kayit: Any, n: Any) -> str:
         return ("Ağ dinleyicisi kurulamadı: " + str(kayit.hata) +
                 "\nBu sayfanın isteklerini göremiyorum.")
 
-    kac = max(1, min(int(n or chrome.VARSAYILAN_N), chrome.TAMPON))
+    kac = max(1, min(int(n or chrome.DEFAULT_N), chrome.TAMPON))
     hepsi = list(kayit.istekler)
     if not hepsi:
         return ("Kayıtlı ağ isteği yok. Sayfa dinleyici bağlanmadan önce "
                 "yüklenmiş olabilir; `go` ile yeniden git." + _eksik_notu(kayit))
 
-    kotu = [i for i in hepsi if i.basarisiz]
-    iyi = [i for i in hepsi if not i.basarisiz]
+    kotu = [i for i in hepsi if i.failed]
+    iyi = [i for i in hepsi if not i.failed]
 
     satirlar = [f"{len(hepsi)} istek · {len(kotu)} başarısız."]
     if kotu:
         satirlar.append("")
         satirlar.append("Başarısız olanlar (önce bunlar):")
-        satirlar += [f"  {i.bicim()}" for i in kotu[:kac]]
+        satirlar += [f"  {i.format()}" for i in kotu[:kac]]
         if len(kotu) > kac:
             satirlar.append(f"  ... {len(kotu) - kac} başarısız istek daha.")
     if iyi:
         kalan = max(1, kac - min(len(kotu), kac))
         satirlar.append("")
         satirlar.append(f"Başarılı olanlardan son {min(kalan, len(iyi))}:")
-        satirlar += [f"  {i.bicim()}" for i in iyi[-kalan:]]
+        satirlar += [f"  {i.format()}" for i in iyi[-kalan:]]
     if kotu:
         satirlar.append("")
         satirlar.append("4xx eksik bir yol, 5xx sunucu tarafında patlayan bir "

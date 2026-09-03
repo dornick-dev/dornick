@@ -15,8 +15,8 @@ from pathlib import Path
 
 import pytest
 
-from dornick.recall import aktivasyon as A
-from dornick.recall import anahtar, distil, open_store, orgu
+from dornick.recall import activation as A
+from dornick.recall import switches, distil, open_store, weave
 
 NOW = datetime(2025, 6, 2, 9, 0, tzinfo=timezone.utc)
 
@@ -39,7 +39,7 @@ def clock() -> Clock:
 
 @pytest.fixture()
 def store(tmp_path: Path, clock: Clock):
-    s = open_store(tmp_path / "memory", saat=clock)
+    s = open_store(tmp_path / "memory", clock=clock)
     yield s
     s.close()
 
@@ -67,7 +67,7 @@ def _episodes(store, n: int = 5) -> list[str]:
     ][:n]
     ids = [store.remember(b, kind="episode", tags=["rapor"]).id for b in bodies]
     for i in range(len(ids) - 1):
-        store.baglan(ids[i], ids[i + 1], weight=0.8, reason="aynı konu")
+        store.connect(ids[i], ids[i + 1], weight=0.8, reason="aynı konu")
     return ids
 
 
@@ -76,7 +76,7 @@ def _episodes(store, n: int = 5) -> list[str]:
 
 def test_no_model_means_the_step_is_skipped_and_says_so(store, clock) -> None:
     ids = _episodes(store)
-    report = distil.distil(store, ids, model=None, saat=clock)
+    report = distil.distil(store, ids, model=None, clock=clock)
     assert report.status == "atlandı: yerel model yok"
     assert report.written == 0
 
@@ -85,7 +85,7 @@ def test_hosted_model_without_consent_never_runs(store, clock) -> None:
     """Memory text reaches a hosted endpoint only if the user turned it on."""
     model = fake_model("Raporlar xlsx olarak üretiliyor. [x]")
     ids = _episodes(store)
-    report = distil.distil(store, ids, model=model, saat=clock,
+    report = distil.distil(store, ids, model=model, clock=clock,
                            local_model=False, cloud_ok=False)
     assert "bulut onayı kapalı" in report.status
     assert model.calls == []                  # not a single prompt left the box
@@ -95,7 +95,7 @@ def test_hosted_model_without_consent_never_runs(store, clock) -> None:
 def test_hosted_model_with_consent_runs(store, clock) -> None:
     ids = _episodes(store)
     model = fake_model(f"Raporlar artık xlsx üretiliyor. [{ids[0]}]")
-    report = distil.distil(store, ids, model=model, saat=clock,
+    report = distil.distil(store, ids, model=model, clock=clock,
                            local_model=False, cloud_ok=True)
     assert model.calls
     assert report.written >= 1
@@ -104,8 +104,8 @@ def test_hosted_model_with_consent_runs(store, clock) -> None:
 def test_the_switch_turns_it_off(store, clock) -> None:
     ids = _episodes(store)
     model = fake_model("Bir şey. [x]")
-    with anahtar.kapali("damitma"):
-        report = distil.distil(store, ids, model=model, saat=clock)
+    with switches.disabled("distillation"):
+        report = distil.distil(store, ids, model=model, clock=clock)
     assert "damıtma kapalı" in report.status
     assert model.calls == []
 
@@ -120,16 +120,16 @@ def test_the_night_runs_its_first_five_steps_without_a_model(
     a = store.remember("Vardiya defteri kasada duruyor.", kind="fact")
     b = store.remember("Modem PIN kodu kırmızı defterde.", kind="fact")
     log = EventLog(sessions / "s1.jsonl",
-                   saat=lambda: clock().isoformat(timespec="milliseconds"))
+                   clock=lambda: clock().isoformat(timespec="milliseconds"))
     for node in (a, b):
         log.note("mind_open", memory_id=node.id)
     log.note("sonuc", sonuc="basarili")
 
-    report = orgu.gece_gecisi(store, sessions, saat=clock,
-                              filigran=tmp_path / "w.json", model=None)
-    assert "yerel model yok" in report.damitma
-    assert report.tekrar_edilen == 1
-    assert report.yeni_kenar >= 1
+    report = weave.night_pass(store, sessions, clock=clock,
+                              watermark=tmp_path / "w.json", model=None)
+    assert "yerel model yok" in report.distillation
+    assert report.replayed == 1
+    assert report.new_edges >= 1
 
 
 # -- what distillation writes ------------------------------------------
@@ -142,13 +142,13 @@ def test_five_episodes_become_at_most_three_sourced_facts(store, clock) -> None:
         f"Rapor şablonu üç sayfalı. [{ids[3]}]\n"
         f"Rapor teslimi vardiya sonunda. [{ids[4]}]\n"
         f"Fazladan bir satır daha. [{ids[1]}]\n")
-    report = distil.distil(store, ids, model=model, saat=clock)
+    report = distil.distil(store, ids, model=model, clock=clock)
 
     assert report.written <= distil.MAX_KEEPERS
     facts = [n for n in store.by_kind("fact", limit=20) if "damıtık" in n.tags]
     assert len(facts) == report.written
     for fact in facts:
-        sources = {n.id for n, _w, _r in store.komsular_gerekceli(fact.id)}
+        sources = {n.id for n, _w, _r in store.neighbours_with_reasons(fact.id)}
         assert sources & set(ids), "damıtık kayıt kaynaksız"
 
 
@@ -160,9 +160,9 @@ def test_distilled_fact_can_enter_the_prime_but_the_episode_cannot(
 
     ids = _episodes(store, 5)
     model = fake_model(f"Raporlar xlsx olarak üretiliyor, PDF kullanılmıyor. [{ids[0]}]")
-    distil.distil(store, ids, model=model, saat=clock)
+    distil.distil(store, ids, model=model, clock=clock)
 
-    mind = open_mind(store.path.parent, tmp_path / "sessions", "t", saat=clock)
+    mind = open_mind(store.path.parent, tmp_path / "sessions", "t", clock=clock)
     try:
         hits = select_prime(mind, "Raporlar hangi formatta üretiliyor?", limit=5)
         kinds = {h.item.kind for h in hits}
@@ -174,20 +174,20 @@ def test_distilled_fact_can_enter_the_prime_but_the_episode_cannot(
 
 def test_source_episodes_are_pushed_back_not_deleted(store, clock) -> None:
     ids = _episodes(store, 5)
-    before = store.peek(ids[0]).aktivasyon
+    before = store.peek(ids[0]).activation
     model = fake_model(f"Raporlar xlsx üretiliyor. [{ids[0]}]")
-    distil.distil(store, ids, model=model, saat=clock)
+    distil.distil(store, ids, model=model, clock=clock)
 
     after = store.peek(ids[0])
     assert after is not None and after.deleted is False    # still there
-    assert after.aktivasyon < before                        # but backgrounded
+    assert after.activation < before                        # but backgrounded
 
 
 def test_contradictions_are_reported_never_resolved(store, tmp_path, clock) -> None:
     """A model's opinion must not overwrite something the user said."""
     ids = _episodes(store, 5)
     model = fake_model(f"ÇELİŞKİ: {ids[0]} vs {ids[2]}")
-    report = distil.distil(store, ids, model=model, saat=clock,
+    report = distil.distil(store, ids, model=model, clock=clock,
                            state_dir=tmp_path)
 
     assert report.contradictions == 1
@@ -200,9 +200,9 @@ def test_contradictions_are_reported_never_resolved(store, tmp_path, clock) -> N
 def test_an_unrelated_pair_is_weakened_not_cut(store, clock) -> None:
     ids = _episodes(store, 5)
     model = fake_model(f"İLİŞKİ: {ids[0]} {ids[1]} - ilişkisiz")
-    distil.distil(store, ids, model=model, saat=clock)
+    distil.distil(store, ids, model=model, clock=clock)
 
-    weights = {n.id: w for n, w, _r in store.komsular_gerekceli(ids[0])}
+    weights = {n.id: w for n, w, _r in store.neighbours_with_reasons(ids[0])}
     assert weights[ids[1]] == pytest.approx(distil.UNRELATED_WEIGHT)
 
 
@@ -210,9 +210,9 @@ def test_a_relation_reason_lands_on_the_edge(store, clock) -> None:
     """SimHash cannot know synonyms; this is the embedding-free substitute."""
     ids = _episodes(store, 5)
     model = fake_model(f"İLİŞKİ: {ids[0]} {ids[1]} - ikisi de aynı raporun aşaması")
-    distil.distil(store, ids, model=model, saat=clock)
+    distil.distil(store, ids, model=model, clock=clock)
 
-    reasons = {n.id: r for n, _w, r in store.komsular_gerekceli(ids[0])}
+    reasons = {n.id: r for n, _w, r in store.neighbours_with_reasons(ids[0])}
     assert "aynı raporun aşaması" in reasons[ids[1]]
 
 
@@ -221,7 +221,7 @@ def test_a_model_that_crashes_does_not_take_the_night_with_it(store, clock) -> N
         raise RuntimeError("model çöktü")
 
     ids = _episodes(store, 5)
-    report = distil.distil(store, ids, model=boom, saat=clock)
+    report = distil.distil(store, ids, model=boom, clock=clock)
     assert "model hatası" in report.status
     assert report.written == 0
 
@@ -249,7 +249,7 @@ def test_distilled_nodes_are_rolled_back_when_retrieval_gets_worse(
         store, clock) -> None:
     ids = _episodes(store, 5)
     model = fake_model(f"Raporlar xlsx üretiliyor. [{ids[0]}]")
-    report = distil.distil(store, ids, model=model, saat=clock)
+    report = distil.distil(store, ids, model=model, clock=clock)
     assert report.written >= 1
 
     undone = distil.exam(store, report,
@@ -267,7 +267,7 @@ def test_distilled_nodes_are_rolled_back_when_retrieval_gets_worse(
 def test_a_night_that_helps_is_kept(store, clock) -> None:
     ids = _episodes(store, 5)
     model = fake_model(f"Raporlar xlsx üretiliyor. [{ids[0]}]")
-    report = distil.distil(store, ids, model=model, saat=clock)
+    report = distil.distil(store, ids, model=model, clock=clock)
 
     undone = distil.exam(store, report,
                          {"prime_precision": 0.42, "tuzak_sessizlik": 0.90},
@@ -288,18 +288,18 @@ def test_the_exam_never_undoes_what_actually_happened(store, tmp_path,
     b = store.remember("Modem PIN kodu kırmızı defterde.", kind="fact")
     ids = _episodes(store, 5)
     log = EventLog(sessions / "s1.jsonl",
-                   saat=lambda: clock().isoformat(timespec="milliseconds"))
+                   clock=lambda: clock().isoformat(timespec="milliseconds"))
     for node_id in (a.id, b.id, *ids):
         log.note("mind_open", memory_id=node_id)
     log.note("sonuc", sonuc="basarili")
 
     model = fake_model(f"Raporlar xlsx üretiliyor. [{ids[0]}]")
-    sinav = iter([{"prime_precision": 0.60, "tuzak_sessizlik": 0.90},
+    exam = iter([{"prime_precision": 0.60, "tuzak_sessizlik": 0.90},
                   {"prime_precision": 0.30, "tuzak_sessizlik": 0.90}])
-    report = orgu.gece_gecisi(store, sessions, saat=clock,
-                              filigran=tmp_path / "w.json", model=model,
-                              state_dir=tmp_path, sinav=lambda: next(sinav))
+    report = weave.night_pass(store, sessions, clock=clock,
+                              watermark=tmp_path / "w.json", model=model,
+                              state_dir=tmp_path, exam=lambda: next(exam))
 
-    assert report.geri_alinan >= 1
-    assert store.sicil(a.id) == (1, 0)              # credit survived
-    assert b.id in {n.id for n, _w, _r in store.komsular_gerekceli(a.id)}
+    assert report.rolled_back >= 1
+    assert store.track_record(a.id) == (1, 0)              # credit survived
+    assert b.id in {n.id for n, _w, _r in store.neighbours_with_reasons(a.id)}

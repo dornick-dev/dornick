@@ -256,5 +256,5 @@ async def test_yenile_baglam_tries_tight_keep(tmp_path: Path, registry, monkeypa
         return keep == 2
 
     monkeypatch.setattr(agent, "_compact", fake_compact)
-    assert await agent._yenile_baglam("test")
+    assert await agent._refresh_context("test")
     assert None in seen and 2 in seen

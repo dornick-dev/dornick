@@ -301,11 +301,11 @@ async def test_old_session_folders_are_swept(
     eski = kok / "bayat-oturum"
     eski.mkdir(parents=True)
     (eski / "kayit.jsonl").write_text("{}", encoding="utf-8")
-    bayat = time.time() - (checkpoint.TEMIZLIK_GUN + 1) * 86400
+    bayat = time.time() - (checkpoint.CLEANUP_DAYS + 1) * 86400
     os.utime(eski, (bayat, bayat))
     checkpoint._temizlenen.discard(kok)  # süreç bayrağını bu kök için sıfırla
 
-    checkpoint.defter(ctx).kaydet(ctx.sandbox.root / "olmayan.txt", "write_file")
+    checkpoint.defter(ctx).save(ctx.sandbox.root / "olmayan.txt", "write_file")
 
     assert not eski.exists()
 

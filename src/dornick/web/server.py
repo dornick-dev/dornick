@@ -27,8 +27,8 @@ from pathlib import Path
 from urllib.parse import parse_qs, quote, urlparse
 from typing import Any, Protocol
 
-from .. import (listen, ortam, sandbox, schedule as scheduling, settings,
-                tanima, voice, watch)
+from .. import (listen, environment, sandbox, schedule as scheduling, settings,
+                recognition, voice, watch)
 from ..config import Config
 from ..events import Event, EventLog
 from ..mind.store import Mind
@@ -195,7 +195,7 @@ class Hub:
                 pass
 
 
-def _makine_dili() -> str:
+def _machine_language() -> str:
     """Makinenin diline göre varsayılan arayüz dili: "tr" ya da "en".
 
     Türkçe bir Windows'ta (ya da bölge Türkiye ise) Türkçe; diğer her
@@ -636,9 +636,9 @@ def _proje_turu(kok: Path) -> str:
     indirgeniyor. Bulunamazsa boş dize — uydurma etiket yok.
     """
     try:
-        from .. import kosum
+        from .. import testrun
 
-        duzenek = kosum.tespit(kok)
+        duzenek = testrun.tespit(kok)
     except Exception:  # pragma: no cover - tespit bir kolaylık, patlarsa sus
         return ""
     return duzenek.etiket if duzenek is not None else ""
@@ -861,14 +861,14 @@ class _Handler(BaseHTTPRequestHandler):
             self._gece_oynat(route[len("/api/gece/"):])
         elif route == "/api/gate":
             config = getattr(self.server, "config", None)
-            on = gate.durum(config.state_dir) if config is not None else False
+            on = gate.status(config.state_dir) if config is not None else False
             self._json({"on": on})
         elif route == "/api/tanima":
             config = getattr(self.server, "config", None)
-            d = (tanima.durum(config.state_dir) if config is not None
+            d = (recognition.status(config.state_dir) if config is not None
                  else {"on": False, "son_kosu": ""})
-            self._json({"on": d["on"], "kosuyor": tanima.kosuyor(),
-                        "hazir": tanima.hazir(), "son": d["son_kosu"],
+            self._json({"on": d["on"], "kosuyor": recognition.running(),
+                        "hazir": recognition.hazir(), "son": d["son_kosu"],
                         "learn_cloud_ok": d.get("learn_cloud_ok", False)})
         elif route == "/api/dil":
             # Kurulum sihirbazının seçtiği arayüz dili. localStorage'a
@@ -893,7 +893,7 @@ class _Handler(BaseHTTPRequestHandler):
                         dil = ""
                     if dil:
                         break
-            self._json({"dil": dil or _makine_dili()})
+            self._json({"dil": dil or _machine_language()})
         elif route == "/api/settings":
             self._settings()
         elif route == "/api/files":
@@ -901,7 +901,7 @@ class _Handler(BaseHTTPRequestHandler):
         elif route == "/api/files/search":
             self._files_search()
         elif route == "/api/gorevler":
-            self._json(self._controller_call("gorevler") or {"gorevler": [], "kosan": 0})
+            self._json(self._controller_call("tasks") or {"gorevler": [], "kosan": 0})
         elif route == "/api/gorevler/dokum":
             self._gorev_dokumu()
         elif route == "/api/gorevler/rapor":
@@ -1048,7 +1048,7 @@ class _Handler(BaseHTTPRequestHandler):
                 self._json({"ok": False, "error": "`path` gerekli"})
                 return
             self._json(catalog.open_path(config.open_sandbox().root, path,
-                                         base=self._acilis_tabani(config)))
+                                         base=self._opening_base(config)))
             return
         if route == "/api/apps/file-open":
             # Dosyayı sistemin VARSAYILAN uygulamasında aç (PDF, docx, png…).
@@ -1060,7 +1060,7 @@ class _Handler(BaseHTTPRequestHandler):
                 self._json({"ok": False, "error": "`path` gerekli"})
                 return
             self._json(catalog.sistemde_ac(config.open_sandbox().root, path,
-                                           base=self._acilis_tabani(config)))
+                                           base=self._opening_base(config)))
             return
         if route == "/api/apps/reveal":
             # "Klasörü göster": uygulamanın diskteki yerini dosya gezgininde
@@ -1072,7 +1072,7 @@ class _Handler(BaseHTTPRequestHandler):
                 self._json({"ok": False, "error": "`path` gerekli"})
                 return
             self._json(catalog.reveal(config.open_sandbox().root, path,
-                                      base=self._acilis_tabani(config)))
+                                      base=self._opening_base(config)))
             return
         if route == "/api/artifacts":
             self._artifacts_edit(body)
@@ -1090,13 +1090,13 @@ class _Handler(BaseHTTPRequestHandler):
             self._reset(body)
             return
         if route == "/api/gorevler/durdur":
-            result = self._controller_call("gorev_durdur", str((body or {}).get("id") or ""))
+            result = self._controller_call("stop_task", str((body or {}).get("id") or ""))
             self._json(result if isinstance(result, dict)
                        else {"ok": False, "error": "Görev durdurma desteklenmiyor."})
             return
         if route == "/api/gorevler/devam":
             result = self._controller_call(
-                "gorev_devam",
+                "resume_task",
                 str((body or {}).get("id") or ""),
                 str((body or {}).get("message") or ""),
             )
@@ -1236,7 +1236,7 @@ class _Handler(BaseHTTPRequestHandler):
             # Güncelleme denetimi YALNIZ elle: Ayarlar › Makine'deki düğme.
             # Arka planda kendiliğinden ağa çıkan denetim bilerek yok.
             # POST: ağa çıkan bir eylem — GET'le yanlışlıkla tetiklenmesin.
-            self._json(ortam.guncelleme_denetle())
+            self._json(environment.check_update())
             return
         if route == "/api/guncelle":
             self._guncelle()
@@ -1369,11 +1369,11 @@ class _Handler(BaseHTTPRequestHandler):
             return
 
         if "on" in (body or {}):
-            gate.ayarla(config.state_dir, bool(body.get("on")))
-            self._json({"ok": True, "on": gate.durum(config.state_dir)})
+            gate.configure(config.state_dir, bool(body.get("on")))
+            self._json({"ok": True, "on": gate.status(config.state_dir)})
             return
 
-        if not gate.durum(config.state_dir):
+        if not gate.status(config.state_dir):
             self._json({"ok": False, "error": "dış kapı kapalı — ayarlar › makine'den açılır"})
             return
 
@@ -1392,11 +1392,11 @@ class _Handler(BaseHTTPRequestHandler):
         except Exception:
             root = None
         try:
-            bekle = float(body.get("bekle_sn") or gate.VARSAYILAN_BEKLE_SN)
+            bekle = float(body.get("bekle_sn") or gate.DEFAULT_WAIT_S)
         except (TypeError, ValueError):
-            bekle = gate.VARSAYILAN_BEKLE_SN
+            bekle = gate.DEFAULT_WAIT_S
         try:
-            self._json(gate.sor(
+            self._json(gate.ask(
                 controller=controller,
                 hub=hub,
                 text=text,
@@ -1427,15 +1427,15 @@ class _Handler(BaseHTTPRequestHandler):
             from ..recall import awake, sleep
 
             basinc = sleep.pressure(mind.store, config.sessions_dir,
-                                    filigran=config.state_dir / "filigran.json")
-            saat, bekleyen = awake.sleep_debt(
+                                    watermark=config.state_dir / "filigran.json")
+            clock, bekleyen = awake.sleep_debt(
                 config.sessions_dir,
-                filigran=config.state_dir / "filigran.json")
+                watermark=config.state_dir / "filigran.json")
             self._json({
                 "basinc": basinc.as_dict(),
-                "esik": {"ust": sleep.ESIK_UST, "alt": sleep.ESIK_ALT},
-                "borc": {"saat": round(saat, 2), "oturum": bekleyen},
-                "sicak_oran": mind.store.sicak_oran(),
+                "esik": {"ust": sleep.UPPER_THRESHOLD, "alt": sleep.LOWER_THRESHOLD},
+                "borc": {"saat": round(clock, 2), "oturum": bekleyen},
+                "sicak_oran": mind.store.hot_share(),
             })
         except Exception as hata:
             self._json({"durum": "okunamadı", "hata": str(hata)})
@@ -1480,13 +1480,13 @@ class _Handler(BaseHTTPRequestHandler):
             # Mahremiyet onayı: bulut modelle gece etiketlemesine açık izin.
             # Ayrı dal — "on" ile birlikte gelmez, ayar sayfasındaki alt
             # anahtardan tek başına düşer.
-            tanima.bulut_onayi_ayarla(config.state_dir,
+            recognition.set_cloud_consent(config.state_dir,
                                       bool(body.get("learn_cloud_ok")))
             self._json({"ok": True,
                         "learn_cloud_ok": bool(body.get("learn_cloud_ok"))})
             return
         if "on" in (body or {}):
-            tanima.ayarla(config.state_dir, bool(body.get("on")))
+            recognition.configure(config.state_dir, bool(body.get("on")))
             # Üst bardaki ikon anahtarla birlikte yanıp sönsün: durum
             # değişikliği de SSE'den duyuruluyor — ayar sayfası ve sohbet
             # sekmesi ayrı istemciler, biri diğerini göremiyor.
@@ -1494,22 +1494,22 @@ class _Handler(BaseHTTPRequestHandler):
                 hub.emit({"type": "tanima",
                           "state": "acik" if body.get("on") else "kapali"})
             if body.get("on") and hub is not None:
-                tanima.belki_baslat(config.state_dir, hub)
+                recognition.maybe_start(config.state_dir, hub)
         elif (body or {}).get("simdi"):
             # "Şimdi eğit" SESSİZ KALMASIN: sonuç kullanıcıya dönüyor.
             # Eski hal düğmeye basınca hiçbir şey göstermiyordu — oysa
             # döngü başlayıp bir saniyede "yeni veri az" deyip çıkıyordu.
             sebep = ("duzenek_yok" if hub is None
-                     else tanima.belki_baslat(config.state_dir, hub, zorla=True))
-            d = tanima.durum(config.state_dir)
+                     else recognition.maybe_start(config.state_dir, hub, zorla=True))
+            d = recognition.status(config.state_dir)
             self._json({"ok": sebep == "basladi", "sebep": sebep,
-                        "on": d["on"], "kosuyor": tanima.kosuyor(),
-                        "hazir": tanima.hazir(), "son": d["son_kosu"]})
+                        "on": d["on"], "kosuyor": recognition.running(),
+                        "hazir": recognition.hazir(), "son": d["son_kosu"]})
             return
 
-        d = tanima.durum(config.state_dir)
-        self._json({"ok": True, "on": d["on"], "kosuyor": tanima.kosuyor(),
-                    "hazir": tanima.hazir(), "son": d["son_kosu"]})
+        d = recognition.status(config.state_dir)
+        self._json({"ok": True, "on": d["on"], "kosuyor": recognition.running(),
+                    "hazir": recognition.hazir(), "son": d["son_kosu"]})
 
     # -- ayarlar --------------------------------------------------------
 
@@ -2679,7 +2679,7 @@ class _Handler(BaseHTTPRequestHandler):
     def _gorev_raporu(self) -> None:
         """Tam yardımcı/iş metni: `?id=c:<cid>` — paneller Viewer'a açar."""
         result = self._controller_call(
-            "gorev_rapor",
+            "task_report",
             parse_qs(urlparse(self.path).query).get("id", [""])[0],
         )
         self._json(result if isinstance(result, dict)
@@ -2689,7 +2689,7 @@ class _Handler(BaseHTTPRequestHandler):
         """Artifact benzeri sayfa: /gorev-rapor/<cid>/ → HTML rapor."""
         cid = route[len("/gorev-rapor/"):].strip("/")
         # URL'de yalnız ham id; API tarafı c: öneki de kabul eder.
-        result = self._controller_call("gorev_rapor", cid)
+        result = self._controller_call("task_report", cid)
         if not isinstance(result, dict) or not result.get("ok"):
             self.send_error(404, str((result or {}).get("error") or "Rapor yok"))
             return
@@ -2815,7 +2815,7 @@ class _Handler(BaseHTTPRequestHandler):
             since = int(parse_qs(urlparse(self.path).query).get("since", ["0"])[0])
         except ValueError:
             since = 0
-        kayitlar = defter.listele(tavan=200)      # en yenisi önce
+        kayitlar = defter.list_entries(tavan=200)      # en yenisi önce
         son = kayitlar[0]["sira"] if kayitlar else 0
         out = []
         for k in kayitlar:
@@ -2851,7 +2851,7 @@ class _Handler(BaseHTTPRequestHandler):
             sira = int(parse_qs(urlparse(self.path).query).get("sira", ["0"])[0])
         except ValueError:
             sira = 0
-        kayit = next((k for k in defter.listele(tavan=200) if k["sira"] == sira), None)
+        kayit = next((k for k in defter.list_entries(tavan=200) if k["sira"] == sira), None)
         if kayit is None:
             self._json({"ok": False, "error": "Kayıt bulunamadı."})
             return
@@ -2924,20 +2924,20 @@ class _Handler(BaseHTTPRequestHandler):
                     return
             # En yeniden eskiye: aynı dosyada üst üste kayıt varsa doğru sıra.
             for sira in sorted(siralar, reverse=True):
-                parca, err = defter.geri_al_sira(sira)
+                parca, err = defter.undo_sequence(sira)
                 yapilan.extend(parca)
                 if err:
                     hata = err
                     break
         elif body.get("dosya"):
-            yapilan, hata = defter.geri_al_dosya(str(body.get("dosya") or ""))
+            yapilan, hata = defter.undo_file(str(body.get("dosya") or ""))
         else:
             try:
                 n = int(body.get("n") or 1)
             except (TypeError, ValueError):
                 n = 1
             n = max(1, min(n, 200))
-            yapilan, hata = defter.geri_al(n)
+            yapilan, hata = defter.undo(n)
 
         if hata:
             self._json({"ok": False, "error": hata, "yapilan": yapilan})
@@ -3152,7 +3152,7 @@ class _Handler(BaseHTTPRequestHandler):
             return
 
         config = getattr(self.server, "config", None)
-        durum = config.state_dir if config is not None else None
+        status = config.state_dir if config is not None else None
         self._json({
             "yol": str(hedef),
             "ust": str(hedef.parent) if hedef.parent != hedef else None,
@@ -3160,8 +3160,8 @@ class _Handler(BaseHTTPRequestHandler):
             "dosya": dosya,
             # Seçilebilir mi ve seçilirse ne söylenmeli: kullanıcı KAYDETMEDEN
             # önce görsün.
-            "engel": sandbox.kok_engeli(hedef) or "",
-            "uyari": sandbox.kok_uyarisi(hedef, state_dir=durum),
+            "engel": sandbox.root_block(hedef) or "",
+            "uyari": sandbox.root_warning(hedef, state_dir=status),
             "tur": _proje_turu(hedef),
         })
 
@@ -3480,7 +3480,7 @@ class _Handler(BaseHTTPRequestHandler):
                           "text": f"Anılar sıfırlandı ({result['silinen']} kayıt) — "
                                   f"yedek: {result['yedek']}"})
         elif hedef == "tanima":
-            result = tanima.sifirla(config.state_dir)
+            result = recognition.reset(config.state_dir)
             if result.get("ok") and hub is not None:
                 metin = ("Beni tanı sıfırlandı — taban modele dönüldü"
                          + (f" · yedek: {result['yedek']}" if result.get("yedek") else ""))
@@ -3673,7 +3673,7 @@ class _Handler(BaseHTTPRequestHandler):
         body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
         self._send(200, "application/json; charset=utf-8", body)
 
-    def _acilis_tabani(self, config: Any) -> Path:
+    def _opening_base(self, config: Any) -> Path:
         """Göreli yolların çözüleceği taban: bağlı proje varsa O, yoksa
         çalışma alanı.
 
@@ -3726,7 +3726,7 @@ class _Handler(BaseHTTPRequestHandler):
         # Denetim ÜST dizine: hedef henüz yok ve `kok_engeli` var olmayan
         # yolu "böyle bir klasör yok" diye reddediyor. Asıl soru zaten
         # "bu klasörü açmak güvenli bir yerde mi?" — cevabı üst dizin verir.
-        if (engel := kum.kok_engeli(kok)) is not None:
+        if (engel := kum.root_block(kok)) is not None:
             self._json({"ok": False, "hata": engel})
             return
         try:
@@ -3735,7 +3735,7 @@ class _Handler(BaseHTTPRequestHandler):
             self._json({"ok": False, "hata": f"oluşturulamadı: {exc}"})
             return
         self._json({"ok": True, "yol": str(hedef),
-                    "uyari": kum.kok_uyarisi(hedef) or ""})
+                    "uyari": kum.root_warning(hedef) or ""})
 
     def _guncelle(self) -> None:
         """Yeni sürümü indirir ve kurulum sihirbazını başlatır.
@@ -3750,7 +3750,7 @@ class _Handler(BaseHTTPRequestHandler):
         import tempfile
         import threading
 
-        bilgi = ortam.guncelleme_denetle()
+        bilgi = environment.check_update()
         if not bilgi.get("yeni") or not bilgi.get("indirme"):
             self._json({"ok": False,
                         "hata": bilgi.get("hata") or "İndirilecek güncelleme yok"})
@@ -3770,17 +3770,17 @@ class _Handler(BaseHTTPRequestHandler):
                 duyur({"asama": "indiriliyor", "yuzde": 0, "yeni": bilgi["yeni"]})
                 dizin = Path(tempfile.gettempdir()) / "dornick-guncelleme"
 
-                def ilerleme(indirilen: int, toplam: int) -> None:
+                def progress(indirilen: int, toplam: int) -> None:
                     yuzde = int(indirilen * 100 / toplam) if toplam else 0
                     duyur({"asama": "indiriliyor", "yuzde": yuzde,
                            "indirilen": indirilen, "toplam": toplam})
 
-                yol = ortam.guncelleme_indir(
+                yol = environment.download_update(
                     bilgi["indirme"], dizin,
                     beklenen_boyut=int(bilgi.get("boyut") or 0),
-                    ad=str(bilgi.get("ad") or ""), ilerleme=ilerleme)
+                    ad=str(bilgi.get("ad") or ""), progress=progress)
                 duyur({"asama": "kuruluyor", "yeni": bilgi["yeni"]})
-                ortam.guncellemeyi_baslat(yol)
+                environment.start_update(yol)
                 duyur({"asama": "acildi", "yeni": bilgi["yeni"]})
             except Exception as exc:  # ağ/doğrulama/başlatma — arayüze dürüst hata
                 duyur({"asama": "hata", "hata": f"{type(exc).__name__}: {exc}"})

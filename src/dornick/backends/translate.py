@@ -99,9 +99,9 @@ def _assistant_message(content: list[Block]) -> Message:
             }
             # Sağlayıcının kendi alanları geri konuyor (bkz. to_anthropic_blocks).
             # Bilinen alanların üstüne yazmıyor: kimlik ve argüman bizim.
-            for anahtar, deger in (block.get("saglayici") or {}).items():
-                if anahtar not in cagri:
-                    cagri[anahtar] = deger
+            for switches, deger in (block.get("saglayici") or {}).items():
+                if switches not in cagri:
+                    cagri[switches] = deger
             tool_calls.append(cagri)
 
     message: Message = {"role": "assistant", "content": "\n".join(t for t in texts if t) or None}

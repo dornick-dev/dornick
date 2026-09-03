@@ -18,8 +18,8 @@ from pathlib import Path
 
 import pytest
 
-from dornick.recall import aktivasyon as A
-from dornick.recall import anahtar, open_store
+from dornick.recall import activation as A
+from dornick.recall import switches, open_store
 
 NOW = datetime(2025, 6, 2, 9, 0, tzinfo=timezone.utc)
 
@@ -42,14 +42,14 @@ def clock() -> Clock:
 
 @pytest.fixture()
 def store(tmp_path: Path, clock: Clock):
-    s = open_store(tmp_path / "memory", saat=clock)
+    s = open_store(tmp_path / "memory", clock=clock)
     yield s
     s.close()
 
 
 def _birth_weight(store, node_id: str) -> float:
-    entries = store.kullanimlar(node_id)
-    assert entries and entries[0].etiket == A.YAZILDI
+    entries = store.use_log(node_id)
+    assert entries and entries[0].etiket == A.WRITTEN
     return entries[0].w
 
 
@@ -57,30 +57,30 @@ def _birth_weight(store, node_id: str) -> float:
 
 
 def test_a_known_body_is_encoded_weakly_a_new_one_strongly() -> None:
-    assert A.kodlama_gucu(0.0) == pytest.approx(A.KODLAMA_TABANI)
-    assert A.kodlama_gucu(1.0) == pytest.approx(1.0)
-    assert A.kodlama_gucu(0.5) > A.kodlama_gucu(0.1)
+    assert A.encoding_strength(0.0) == pytest.approx(A.ENCODING_FLOOR)
+    assert A.encoding_strength(1.0) == pytest.approx(1.0)
+    assert A.encoding_strength(0.5) > A.encoding_strength(0.1)
 
 
 def test_nothing_is_born_unreachable() -> None:
     """The floor is the design: a repeated fact is dull, not worthless."""
-    assert A.kodlama_gucu(0.0) >= A.KODLAMA_TABANI > 0.0
+    assert A.encoding_strength(0.0) >= A.ENCODING_FLOOR > 0.0
 
 
 def test_a_lesson_outweighs_a_fact_with_the_same_body() -> None:
     """Learning from a mistake carries more than noticing a thing."""
-    assert A.kodlama_gucu(0.3, kind="lesson") > A.kodlama_gucu(0.3, kind="fact")
+    assert A.encoding_strength(0.3, kind="lesson") > A.encoding_strength(0.3, kind="fact")
 
 
 def test_a_correction_is_always_full_strength() -> None:
     """A correction resembles what it corrects — that is why it is one."""
-    assert A.kodlama_gucu(0.0, supersedes="n_x") == pytest.approx(1.0)
+    assert A.encoding_strength(0.0, supersedes="n_x") == pytest.approx(1.0)
 
 
 def test_the_switch_turns_it_off() -> None:
-    with anahtar.kapali("kodlama"):
-        assert A.kodlama_gucu(0.0) == 1.0
-        assert A.kodlama_gucu(0.9, kind="lesson") == 1.0
+    with switches.disabled("encoding"):
+        assert A.encoding_strength(0.0) == 1.0
+        assert A.encoding_strength(0.9, kind="lesson") == 1.0
 
 
 # -- in the store ------------------------------------------------------
@@ -124,7 +124,7 @@ def test_a_lesson_is_written_stronger_than_the_same_body_as_a_fact(
     body = "Şema göçü yedek alınmadan koşulmamalı."
     agirliklar = {}
     for kind in ("fact", "lesson"):
-        st = open_store(tmp_path / kind, saat=clock)
+        st = open_store(tmp_path / kind, clock=clock)
         try:
             # Yakın bir komşu şart: sürpriz 1.0'a dayanırsa iki kol da
             # tavana çarpar ve `lesson` çarpanı görünmez olur.
@@ -139,10 +139,10 @@ def test_a_lesson_is_written_stronger_than_the_same_body_as_a_fact(
 def test_a_correction_inherits_and_is_born_at_full_strength(store, clock) -> None:
     first = store.remember("Raporları PDF istiyorum.", kind="preference")
     clock.advance(days=2)
-    second = store.guncelle(first.id, "Raporları xlsx istiyorum.",
+    second = store.update(first.id, "Raporları xlsx istiyorum.",
                             kind="preference")
-    entries = store.kullanimlar(second.id)
-    assert entries[-1].etiket == A.YAZILDI
+    entries = store.use_log(second.id)
+    assert entries[-1].etiket == A.WRITTEN
     assert entries[-1].w == pytest.approx(1.0)
     assert len(entries) > 1                    # miras da duruyor
 
@@ -158,13 +158,13 @@ def test_a_weakly_encoded_record_starts_lower_but_is_still_findable(
     fifth = store.remember(body, kind="fact")
 
     assert _birth_weight(store, fifth.id) < 1.0
-    assert store.peek(fifth.id).aktivasyon > A.TABAN_YOK
+    assert store.peek(fifth.id).activation > A.NO_BASE
     assert fifth.id in {n.id for n in store.recall("kırtasiye siparişi", limit=8).hits}
 
 
 def test_the_switch_restores_equal_weights(store, clock) -> None:
     body = "Aynı gövde, tekrar tekrar yazılıyor."
-    with anahtar.kapali("kodlama"):
+    with switches.disabled("encoding"):
         first = store.remember(body, kind="fact")
         clock.advance(hours=1)
         fifth = store.remember(body, kind="fact")

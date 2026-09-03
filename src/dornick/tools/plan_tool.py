@@ -123,7 +123,7 @@ def register(registry: ToolRegistry) -> None:
         if action == "step":
             pid = str(args.get("id") or "").strip()
             sira = int(args.get("step") or 0)
-            durum = str(args.get("status") or "bitti").strip()
+            status = str(args.get("status") or "bitti").strip()
             if not pid or sira < 1:
                 return ToolResult.error("id ve step (1'den başlar) gerekli")
             mevcut = store.get(state_dir, pid)
@@ -133,7 +133,7 @@ def register(registry: ToolRegistry) -> None:
                 return ToolResult.error(
                     f"Plan {len(mevcut.steps)} adımlı; step={sira} yok")
             adimlar = [dict(s) for s in mevcut.steps]
-            adimlar[sira - 1]["status"] = durum
+            adimlar[sira - 1]["status"] = status
             try:
                 updated = store.update(state_dir, pid, steps=adimlar)
             except store.PlanError as exc:
@@ -145,7 +145,7 @@ def register(registry: ToolRegistry) -> None:
             )
             biten = sum(1 for s in updated.steps if s.get("status") == "bitti")
             return ToolResult(
-                f"Adım {sira} → {durum} ({biten}/{len(updated.steps)} bitti)",
+                f"Adım {sira} → {status} ({biten}/{len(updated.steps)} bitti)",
                 detail={"id": updated.id, "step": sira},
             )
 

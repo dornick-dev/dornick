@@ -17,7 +17,7 @@ import urllib.request
 from pathlib import Path
 from typing import Any
 
-from . import ortam
+from . import environment
 from . import settings
 
 DIFF_CAP = 200_000
@@ -273,7 +273,7 @@ def _gh_ready() -> bool:
         r = subprocess.run(
             ["gh", "auth", "status"],
             capture_output=True, text=True, encoding="utf-8", errors="replace",
-            timeout=8, **ortam.sessiz_bayraklar(),
+            timeout=8, **environment.quiet_flags(),
         )
     except (OSError, subprocess.TimeoutExpired):
         return False
@@ -290,7 +290,7 @@ def _git(
         r = subprocess.run(
             ["git", "-C", str(root), *args],
             capture_output=True, text=True, encoding="utf-8", errors="replace",
-            timeout=timeout, **ortam.sessiz_bayraklar(),
+            timeout=timeout, **environment.quiet_flags(),
         )
     except subprocess.TimeoutExpired as exc:
         raise GitError(f"git {' '.join(args)} zaman aşımı ({timeout}s)") from exc
@@ -478,7 +478,7 @@ def _create_via_gh(name: str, *, private: bool, source: Path | None) -> dict[str
     try:
         r = subprocess.run(
             cmd, capture_output=True, text=True, encoding="utf-8", errors="replace",
-            timeout=60, **ortam.sessiz_bayraklar(),
+            timeout=60, **environment.quiet_flags(),
         )
     except (OSError, subprocess.TimeoutExpired) as exc:
         raise GitError(f"gh çalışmadı: {exc}") from exc

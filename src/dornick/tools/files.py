@@ -13,7 +13,7 @@ import shutil
 from pathlib import Path
 from typing import Any
 
-from .. import kancalar, kosum, tanilar
+from .. import hooks, testrun, diagnostics
 from ..sandbox import OutsideSandbox
 from . import checkpoint
 from .base import ToolContext, ToolRegistry, ToolResult, object_schema
@@ -23,7 +23,7 @@ MAX_LIST_ENTRIES = 400
 
 # Elle denetimde tek turda bakılacak en fazla dosya. Bir klasörü denetlemek
 # istenen şey; bütün depoyu taramak değil.
-MAX_DENETIM_DOSYA = 60
+MAX_AUDIT_FILES = 60
 
 
 def _resolve(raw: str, ctx: ToolContext) -> Path:
@@ -64,7 +64,7 @@ def _guard(path: Path, ctx: ToolContext) -> ToolResult | None:
     # halde kendisini engelleyen kancayı silerek ya da oraya kendi komutunu
     # yazarak izin kapısını tümüyle atlardı. Kural tek yerde ve tüm yazma
     # araçları buradan geçiyor.
-    if kancalar.korunan_mu(path):
+    if hooks.korunan_mu(path):
         return ToolResult.error(
             f"{path} kanca dosyasıdır ve yazmaya kapalıdır. Kancalar "
             "kullanıcının senin üzerinde kurduğu kurallardır; onay "
@@ -88,7 +88,7 @@ def _gozle(path: Path, ctx: ToolContext, arac: str) -> None:
     """
     try:
         if ctx.sandbox.contains(path):
-            checkpoint.defter(ctx).kaydet(path, arac)
+            checkpoint.defter(ctx).save(path, arac)
     except OSError:
         pass
 
@@ -102,7 +102,7 @@ def _gozle(path: Path, ctx: ToolContext, arac: str) -> None:
 
 # API'nin kabul ettiği görüntü türleri. Başkasını göndermek 400 döner;
 # o yüzden listede olmayan bir uzantı görüntü yoluna hiç girmiyor.
-GORSEL_TURLERI = {
+IMAGE_TYPES = {
     ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
     ".gif": "image/gif", ".webp": "image/webp",
 }
@@ -113,13 +113,13 @@ MAX_GORSEL = 3_500_000
 
 # PDF'te tek turda çıkarılan varsayılan ve en fazla sayfa. Bir sözleşmenin
 # tamamını bağlama boşaltmak, aranan paragrafı bulmayı kolaylaştırmıyor.
-PDF_SAYFA = 10
-PDF_MAX_SAYFA = 40
+PDF_PAGE = 10
+PDF_MAX_PAGES = 40
 MAX_PDF_KARAKTER = 40_000
 
 
-def _gorsel_mu(path: Path) -> bool:
-    return path.suffix.lower() in GORSEL_TURLERI
+def _is_image(path: Path) -> bool:
+    return path.suffix.lower() in IMAGE_TYPES
 
 
 def _boyut(sayi: int) -> str:
@@ -129,7 +129,7 @@ def _boyut(sayi: int) -> str:
     return f"{sayi / 1024:.0f} KB" if sayi >= 1024 else f"{sayi} bayt"
 
 
-def _gorsel_oku(path: Path) -> ToolResult:
+def _read_image(path: Path) -> ToolResult:
     """Görseli modele GÖRÜNTÜ olarak verir.
 
     Taşıma yolu hazırdı ve kullanılmıyordu: araç sonucu bir görüntü
@@ -160,7 +160,7 @@ def _gorsel_oku(path: Path) -> ToolResult:
     except OSError as exc:
         return ToolResult.error(f"Okunamadı: {exc}")
 
-    tur = GORSEL_TURLERI[path.suffix.lower()]
+    tur = IMAGE_TYPES[path.suffix.lower()]
     veri = base64.b64encode(ham).decode("ascii")
     return ToolResult(
         content=f"{path.name} ({tur}, {_boyut(boyut)}) açıldı. Aşağıda görüyorsun.",
@@ -203,7 +203,7 @@ def _pdf_oku(path: Path, offset: Any, limit: Any) -> ToolResult:
         return ToolResult(f"{path.name} sayfa içermiyor.", is_error=True)
 
     bas = max(1, int(offset or 1))
-    kac = max(1, min(int(limit or PDF_SAYFA), PDF_MAX_SAYFA))
+    kac = max(1, min(int(limit or PDF_PAGE), PDF_MAX_PAGES))
     son = min(toplam, bas + kac - 1)
     if bas > toplam:
         return ToolResult.error(
@@ -246,7 +246,7 @@ def _pdf_oku(path: Path, offset: Any, limit: Any) -> ToolResult:
     )
 
 
-async def _kosum_eki(path: Path, yazim: int) -> str:
+async def _testrun_suffix(path: Path, yazim: int) -> str:
     """Yazma sonrası tek satırlık koşum hatırlatması (yoksa boş dize).
 
     Tanı bir adım attı ama tavanı sözdizimi: `php -l` bildirilen dönüş
@@ -260,7 +260,7 @@ async def _kosum_eki(path: Path, yazim: int) -> str:
     Bilgi bedava, koşum pahalı, karar modelin.
     """
     try:
-        return await asyncio.to_thread(kosum.hatirlatma, path, yazim=yazim)
+        return await asyncio.to_thread(testrun.hatirlatma, path, yazim=yazim)
     except Exception:  # pragma: no cover - hatırlatma hiçbir zaman engel olmaz
         return ""
 
@@ -279,7 +279,7 @@ async def _tani_eki(path: Path) -> tuple[str, dict[str, Any]]:
     tanının kendi arızası, çalışan bir aracı bozmamalı.
     """
     try:
-        tani = await asyncio.to_thread(tanilar.denetle, path)
+        tani = await asyncio.to_thread(diagnostics.denetle, path)
     except Exception:  # pragma: no cover - tanı katmanı hiçbir zaman engel olmaz
         return "", {}
     if tani is None:
@@ -423,8 +423,8 @@ bunu açıkça söyler; o durumda içeriği uydurma.
         # Metin olmayan biçimler kendi yollarından: bir PNG'yi utf-8 diye
         # okumak modele bir ekran dolusu çöp gönderiyordu ("��…"),
         # ve model o çöpe bakıp dosyanın bozuk olduğunu sanıyordu.
-        if _gorsel_mu(path):
-            return await asyncio.to_thread(_gorsel_oku, path)
+        if _is_image(path):
+            return await asyncio.to_thread(_read_image, path)
         if path.suffix.lower() == ".pdf":
             return await asyncio.to_thread(
                 _pdf_oku, path, args.get("offset"), args.get("limit"))
@@ -521,7 +521,7 @@ read_file ile aralık vererek aç.
                 return f"== {raw} ==\n(hata: dosya yok)"
             if path.is_dir():
                 return f"== {raw} ==\n(hata: bu bir dizin — list_dir kullan)"
-            if _gorsel_mu(path) or path.suffix.lower() == ".pdf":
+            if _is_image(path) or path.suffix.lower() == ".pdf":
                 return f"== {raw} ==\n(görsel/PDF — read_file ile aç)"
             try:
                 text = path.read_text(encoding="utf-8", errors="replace")
@@ -589,9 +589,9 @@ Küçük değişiklikler için write_file yerine edit_file kullan.
 
         son_yazilan[:] = [path]
         yazim_sayaci[path] = yazim_sayaci.get(path, 0) + 1
-        kosum.dokunuldu(path)
+        testrun.touched(path)
         tani_metni, tani_detay = await _tani_eki(path)
-        kosum_metni = await _kosum_eki(path, yazim_sayaci[path])
+        kosum_metni = await _testrun_suffix(path, yazim_sayaci[path])
         return ToolResult(
             content=f"{path} yazıldı ({len(content.splitlines())} satır)."
                     + tani_metni + (f"\n{kosum_metni}" if kosum_metni else ""),
@@ -738,9 +738,9 @@ Dosyayı önce read_file ile okumuş olman gerekir.
             mesaj += " (" + "; ".join(notlar) + ")"
         son_yazilan[:] = [path]
         yazim_sayaci[path] = yazim_sayaci.get(path, 0) + 1
-        kosum.dokunuldu(path)
+        testrun.touched(path)
         tani_metni, tani_detay = await _tani_eki(path)
-        kosum_metni = await _kosum_eki(path, yazim_sayaci[path])
+        kosum_metni = await _testrun_suffix(path, yazim_sayaci[path])
         return ToolResult(
             content=mesaj + tani_metni + (f"\n{kosum_metni}" if kosum_metni else ""),
             detail={"path": str(path), "line": line, **tani_detay},
@@ -904,7 +904,7 @@ cevapta yazar.
         desen = args.get("pattern") or None
         if hedef.is_dir():
             yollar = await asyncio.to_thread(
-                tanilar.toplu_yollar, hedef, desen=desen, tavan=MAX_DENETIM_DOSYA
+                diagnostics.batch_paths, hedef, desen=desen, tavan=MAX_AUDIT_FILES
             )
             kok: Path | None = hedef
         else:
@@ -913,10 +913,10 @@ cevapta yazar.
         if not yollar:
             return ToolResult(
                 content=f"{hedef} altında denetlenebilir dosya yok. "
-                        "Tanınan uzantılar: " + ", ".join(sorted(tanilar.UZANTILAR)) + "."
+                        "Tanınan uzantılar: " + ", ".join(sorted(diagnostics.UZANTILAR)) + "."
             )
 
-        taniler = await asyncio.to_thread(tanilar.denetle_coklu, yollar)
+        taniler = await asyncio.to_thread(diagnostics.denetle_coklu, yollar)
         if not taniler:
             # Tek dosya ve uzantısı tanınmıyor: uydurma yapma, dürüstçe söyle.
             return ToolResult(
@@ -924,12 +924,12 @@ cevapta yazar.
                         f"({hedef.suffix or 'uzantısız'}). Kontrol edilmedi."
             )
 
-        hatali = sum(1 for t in taniler if t.durum == "hata")
+        faulty = sum(1 for t in taniler if t.status == "hata")
         return ToolResult(
-            content=tanilar.ozet(taniler, kok=kok),
+            content=diagnostics.ozet(taniler, kok=kok),
             detail={
                 "path": str(hedef),
-                "hatali": hatali,
+                "hatali": faulty,
                 "taniler": [t.detay() for t in taniler],
             },
         )

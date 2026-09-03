@@ -15,7 +15,7 @@ import asyncio
 from pathlib import Path
 from typing import Any
 
-from .. import semboller
+from .. import symbols
 from .base import ToolContext, ToolRegistry, ToolResult, object_schema
 
 
@@ -83,7 +83,7 @@ bağımlılık klasörlerine (node_modules, vendor, .venv) hiç girmez.
                 "fonksiyon/sınıf adı arar; serbest metin için `grep` kullan."
             )
 
-        kok = _kok(args, ctx)
+        kok = _root(args, ctx)
         if not kok.is_dir():
             return ToolResult.error(f"Klasör yok: {kok}")
 
@@ -91,21 +91,21 @@ bağımlılık klasörlerine (node_modules, vendor, .venv) hiç girmez.
         dil = str(args.get("dil") or "") or None
 
         sonuc = await asyncio.to_thread(
-            semboller.ara, kok, sorgu, tur=tur, dil=dil)
+            symbols.ara, kok, sorgu, tur=tur, dil=dil)
         return ToolResult(
             content=sonuc.metin(tur=tur),
             detail={
                 "sorgu": sorgu,
                 "kok": str(kok),
                 "tanim": len(sonuc.tanimlar),
-                "kullanim": len(sonuc.kullanimlar),
+                "kullanim": len(sonuc.use_log),
                 "taranan": sonuc.taranan,
                 "kesin": sonuc.kesin,
             },
         )
 
 
-def _kok(args: dict[str, Any], ctx: ToolContext) -> Path:
+def _root(args: dict[str, Any], ctx: ToolContext) -> Path:
     """Taranacak klasör: verilen yol (dosyaysa klasörü), yoksa atölye."""
     ham = str(args.get("path") or "").strip()
     if not ham:

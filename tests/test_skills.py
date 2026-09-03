@@ -138,7 +138,7 @@ def test_startup_discover_skips_an_unapproved_file(ctx: ToolContext) -> None:
     YÜKLENMEZ, "onaylanmadı" diye raporlanır."""
     sd = ctx.config.state_dir
     # Manifesti kur (boş = hiçbir şey onaylı değil); göç tetiklenmesin.
-    skills._yaz_manifest(sd, {})
+    skills._write_manifest(sd, {})
 
     write(ctx, "kacak", GOOD)   # doğrudan diske düşürülmüş, araçtan geçmemiş
     found, broken = skills.discover(ctx.sandbox.root, sd)
@@ -150,7 +150,7 @@ def test_startup_discover_skips_an_unapproved_file(ctx: ToolContext) -> None:
 def test_save_approves_and_then_startup_loads_it(ctx: ToolContext) -> None:
     """`skill action=write` (save state_dir'li) onaylar; sonraki açılış yükler."""
     sd = ctx.config.state_dir
-    skills._yaz_manifest(sd, {})
+    skills._write_manifest(sd, {})
     skills.save(ctx.sandbox.root, "topla", GOOD, sd)
 
     found, broken = skills.discover(ctx.sandbox.root, sd)
@@ -174,7 +174,7 @@ def test_first_run_migration_trusts_existing_files(ctx: ToolContext) -> None:
 def test_load_action_approves(ctx: ToolContext) -> None:
     """Açık, izin-kapılı `load` (onayla=True) dosyayı manifeste yazar."""
     sd = ctx.config.state_dir
-    skills._yaz_manifest(sd, {})
+    skills._write_manifest(sd, {})
     write(ctx, "topla", GOOD)
 
     found, _ = skills.discover(ctx.sandbox.root, sd, onayla=True)

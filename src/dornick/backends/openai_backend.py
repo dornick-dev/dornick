@@ -15,7 +15,7 @@ import os
 import re
 from typing import Any
 
-from .. import otomod
+from .. import automode
 from ..config import ModelConfig
 from ..context import Prepared
 from .base import (Callbacks, Interrupted, SimpleMessage, SimpleUsage,
@@ -35,9 +35,9 @@ INSTALL_HINT = (
 
 def _hint() -> str:
     """openai paketi kuruluma dahil; kuruluda yokluğu onarım gerektirir."""
-    from .. import ortam
+    from .. import environment
 
-    if ortam.kurulu_mu():
+    if environment.kurulu_mu():
         return ("openai paketi bu kurulumda eksik görünüyor. Kurulum "
                 "sihirbazını yeniden çalıştırmak eksiği onarır.")
     return INSTALL_HINT
@@ -60,7 +60,7 @@ KESIF_TAVANI = 4096
 CAGRI_SESSIZLIK_SN = 120.0
 
 
-def _sessizlik_penceresi(base_url: str | None) -> float | None:
+def _silence_window(base_url: str | None) -> float | None:
     from urllib.parse import urlparse
     host = (urlparse(str(base_url or "")).hostname or "").casefold()
     if (host in ("localhost", "127.0.0.1", "::1", "0.0.0.0")
@@ -74,10 +74,10 @@ def _sessizlik_penceresi(base_url: str | None) -> float | None:
 # yanlış üye eklemek (örn. shell) yazma turlarının çabasını kısar. Araç
 # katmanındaki `mutates` bayrağına bağlanmıyor çünkü backend'e araçların
 # yalnız API şeması iniyor; adlar üründe kararlı.
-_SALT_OKUR = frozenset({"read_file", "read_many", "list_dir", "denetle"})
+_READ_ONLY = frozenset({"read_file", "read_many", "list_dir", "denetle"})
 
 
-def _kesif_turu(messages: list[dict[str, Any]]) -> bool:
+def _discovery_turn(messages: list[dict[str, Any]]) -> bool:
     """Son alışveriş yalnız salt-okur araç sonuçları mı taşıdı?
 
     Sondan geriye yürünür: kuyruk `tool` sonuçlarıysa, onları çağıran
@@ -94,7 +94,7 @@ def _kesif_turu(messages: list[dict[str, Any]]) -> bool:
         if role == "assistant" and gordu_tool:
             adlar = [((c.get("function") or {}).get("name") or "")
                      for c in (m.get("tool_calls") or [])]
-            return bool(adlar) and all(ad in _SALT_OKUR for ad in adlar)
+            return bool(adlar) and all(ad in _READ_ONLY for ad in adlar)
         return False
     return False
 
@@ -125,17 +125,17 @@ class OpenAIBackend:
         # uçlara gönderilmiyor; OpenRouter'da bile reddeden olursa bir
         # kez öğrenilip kapatılıyor.
         self._cache_isaretli = "openrouter" in str(model.base_url or "").lower()
-        self._cache_kapali = False
+        self._cache_off = False
         # Oto kipi: adres OpenRouter ve ad "oto" ise istekler ücretsiz
         # havuzdan atılıyor (bkz. otomod). Başka sağlayıcı/model
         # isteklerine DOKUNULMUYOR. Sağlık defteri bellek-içi: arka arkaya
         # hata veren model bir süre havuzun sonuna itiliyor.
-        self._oto = otomod.oto_mu(model)
-        self._saglik = otomod.Saglik()
+        self._oto = automode.oto_mu(model)
+        self._saglik = automode.Saglik()
         # Oto kipinde en son hangi ucu seçtik. İçerik kusuru (şema ihlali,
         # sahte araç çağrısı) tur BİTTİKTEN sonra döngüde anlaşılıyor;
         # cezayı doğru modele yazabilmek için seçim burada saklanıyor.
-        self._son_secilen = ""
+        self._last_selected = ""
         # Son akışın ham finish_reason'ı. `_stream` kırpılmış araç çağrısını
         # yine "tool_use" diye damgalıyor (çağrı varlığı belirleyici); keşif
         # tavanına çarpan turu yakalamak için ham değer burada saklanıyor.
@@ -160,8 +160,8 @@ class OpenAIBackend:
         # ilk turda öğrenildi, sonraki turlar boşa 404 yememeli.
         if self._no_vision:
             _strip_images(messages)
-        if self._cache_isaretli and not self._cache_kapali:
-            _cache_isaretle(messages)
+        if self._cache_isaretli and not self._cache_off:
+            _mark_cache(messages)
 
         kwargs: dict[str, Any] = {
             "model": self.model.name,
@@ -194,17 +194,17 @@ class OpenAIBackend:
         # yinelenir — kalite tavana kurban edilmez, yalnız gecikme kırpılır.
         # Kodlama turu: flash'ta high→medium tavanı kalkar (yazma kalitesi).
         kesif = False
-        kodlama = False
+        encoding = False
         if tools and not self._oto:
-            from ..prompt import kodlama_turu, kucuk_aile
+            from ..prompt import coding_turn, kucuk_aile
             if kucuk_aile(kwargs["model"]):
-                if _kesif_turu(messages):
+                if _discovery_turn(messages):
                     kesif = True
                     kwargs["max_tokens"] = min(self.model.max_tokens, KESIF_TAVANI)
-                elif kodlama_turu(messages):
-                    kodlama = True
+                elif coding_turn(messages):
+                    encoding = True
 
-        if (reasoning := self._reasoning(kesif=kesif, kodlama=kodlama)) is not None and not self._no_reasoning:
+        if (reasoning := self._reasoning(kesif=kesif, encoding=encoding)) is not None and not self._no_reasoning:
             extra["reasoning"] = reasoning
 
         # Oto kipi: model ücretsiz havuzun başından seçiliyor, sıradaki
@@ -223,7 +223,7 @@ class OpenAIBackend:
                     )
                 )
             kwargs["model"] = secilen
-            self._son_secilen = secilen
+            self._last_selected = secilen
             extra.update(oto_ek)
 
         if extra:
@@ -273,13 +273,13 @@ class OpenAIBackend:
                 # İstek hiç kurulamadı (örn. bağlantı reddi): bu da o
                 # modelin hanesine hata yazılır.
                 if self._oto and secilen:
-                    self._saglik.kaydet(secilen, False)
+                    self._saglik.save(secilen, False)
                 raise
 
         # Zaman aşımı, boş yanıt ve hata aynı kefede: çağrı başarısız.
         # Kesme kullanıcının kararı, modelin suçu değil — sayılmıyor.
         if self._oto and secilen and not result.interrupted:
-            self._saglik.kaydet(secilen, ok=not result.error)
+            self._saglik.save(secilen, ok=not result.error)
         return result
 
     def kusurlu(self, sebep: str = "") -> None:
@@ -295,8 +295,8 @@ class OpenAIBackend:
         Oto kipi dışında karşılığı yok: kullanıcı modeli kendi seçti,
         onu arkasından sıralamaya sokmak bize düşmez.
         """
-        if self._oto and self._son_secilen:
-            self._saglik.kaydet(self._son_secilen, False)
+        if self._oto and self._last_selected:
+            self._saglik.save(self._last_selected, False)
 
     def _oto_hazirla(self) -> tuple[str, dict[str, Any]]:
         """Oto kipinin istek parçaları: seçilen model + ek gövde alanları.
@@ -305,7 +305,7 @@ class OpenAIBackend:
         seçim teşhis için önbellek dosyasına not ediliyor — "hangi modelle
         konuştum" sorusunun cevabı orada.
         """
-        pool = self._saglik.sirala(otomod.havuz())
+        pool = self._saglik.rank(automode.havuz())
         if not pool:
             return "", {}
         ek: dict[str, Any] = {
@@ -313,7 +313,7 @@ class OpenAIBackend:
         }
         if yedekler := pool[1:4]:
             ek["models"] = yedekler
-        otomod.son_yaz(pool[0])
+        automode.write_last(pool[0])
         return pool[0], ek
 
     def _heal(self, kwargs: dict[str, Any], exc: Exception) -> bool:
@@ -339,15 +339,15 @@ class OpenAIBackend:
             return True
 
         # Önbellek işaretini tanımayan uç: işareti söküp bir daha gönderme.
-        if (self._cache_isaretli and not self._cache_kapali
+        if (self._cache_isaretli and not self._cache_off
                 and "cache_control" in str(exc).lower()):
-            self._cache_kapali = True
+            self._cache_off = True
             _cache_sok(kwargs["messages"])
             return True
 
         return False
 
-    def _reasoning(self, kesif: bool = False, kodlama: bool = False) -> dict[str, Any] | None:
+    def _reasoning(self, kesif: bool = False, encoding: bool = False) -> dict[str, Any] | None:
         """Düşünme ayarının sunucuya gönderilecek hali.
 
         Bu alan şimdiye kadar yalnızca Claude tarafında geçerliydi; qwen3
@@ -376,7 +376,7 @@ class OpenAIBackend:
         # 900 sn). Kodlama turunda tavan kalkar — yazma için high serbest.
         if effort == "high":
             from ..prompt import kucuk_aile
-            if kucuk_aile(self.model.name) and not kodlama:
+            if kucuk_aile(self.model.name) and not encoding:
                 effort = "medium"
         # Keşif turu: bir okumanın ardından gelen çağrıya orta/yüksek çaba
         # akıl yürütme, gecikmenin kendisi (B5 ölçümü). Tavana çarpan tur
@@ -420,7 +420,7 @@ class OpenAIBackend:
             # (önbelleksiz ilk tur) Durdur işlemiyordu — kökü burasıydı.
             async for chunk in cancellable(
                     stream, cancel,
-                    stall_s=_sessizlik_penceresi(self.model.base_url)):
+                    stall_s=_silence_window(self.model.base_url)):
                 if raw_usage := getattr(chunk, "usage", None):
                     usage = _usage(raw_usage)
 
@@ -629,16 +629,16 @@ def _ek_topla(kutu: dict[str, Any], nesne: Any) -> None:
         fazla = getattr(nesne, "model_extra", None) or {}
     except Exception:
         return
-    for anahtar, deger in fazla.items():
-        if anahtar in _EK_ATLA or deger is None:
+    for switches, deger in fazla.items():
+        if switches in _EK_ATLA or deger is None:
             continue
         # Akış parça parça geliyor; metin alanları ekleniyor, ötekiler
         # son gelen kazanıyor (imza tek parça geliyor).
-        if isinstance(deger, str) and isinstance(kutu.get(anahtar), str):
-            if not kutu[anahtar].endswith(deger):
-                kutu[anahtar] += deger
+        if isinstance(deger, str) and isinstance(kutu.get(switches), str):
+            if not kutu[switches].endswith(deger):
+                kutu[switches] += deger
         else:
-            kutu[anahtar] = deger
+            kutu[switches] = deger
 
 
 # Alanı tanımayan bir sunucunun reddi. Sunucudan sunucuya metin değişiyor,
@@ -678,7 +678,7 @@ def _rejects_image(exc: Exception) -> bool:
 _IMAGE_PLACEHOLDER = "[görüntü — bu model göremiyor]"
 
 
-def _cache_isaretle(messages: list[dict[str, Any]]) -> None:
+def _mark_cache(messages: list[dict[str, Any]]) -> None:
     """OpenRouter istem önbelleği: ilk sistem + son iki mesaja ephemeral.
 
     İşaret bir içerik PARÇASININ üstünde yaşar; düz metin içerik tek

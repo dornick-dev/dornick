@@ -13,6 +13,6 @@ Katmanlar:
 
 # Tek gerçek kaynak pyproject.toml — buraya elle sürüm yazılmaz (yazılan
 # unutulur: 0.1.0 kalıntısı öyle doğmuştu). ortam.surum() okur, önbellekler.
-from .ortam import surum as _surum
+from .environment import version as _surum
 
 __version__ = _surum()

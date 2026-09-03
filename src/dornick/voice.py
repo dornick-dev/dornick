@@ -30,9 +30,9 @@ def hint() -> str:
     edge-tts kurulum paketine dahil; kuruluda yokluğu eksik/bozuk bir
     kurulum demek — sihirbazı yeniden çalıştırmak onarır.
     """
-    from . import ortam
+    from . import environment
 
-    if ortam.kurulu_mu():
+    if environment.kurulu_mu():
         return ("Ses paketi bu kurulumda eksik görünüyor. Kurulum "
                 "sihirbazını yeniden çalıştırmak eksiği onarır.")
     return INSTALL_HINT

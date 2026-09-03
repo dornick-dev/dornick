@@ -35,7 +35,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from . import ortam
+from . import environment
 
 DEFAULT_PORT = 9222
 
@@ -232,7 +232,7 @@ class Wire:
 TAMPON = 300
 
 # Modele varsayılan olarak gösterilen kayıt sayısı.
-VARSAYILAN_N = 20
+DEFAULT_N = 20
 
 # CDP seviyelerinin ortak adları. "warning" ve "warn" aynı şey.
 _SEVIYE = {
@@ -243,7 +243,7 @@ _SEVIYE = {
 
 
 @dataclass(slots=True)
-class KonsolSatiri:
+class ConsoleLine:
     """Tek bir konsol mesajı ya da yakalanmamış istisna."""
 
     seviye: str            # log | info | debug | uyari | hata
@@ -251,29 +251,29 @@ class KonsolSatiri:
     yer: str = ""          # dosya:satır
     kaynak: str = "konsol"  # konsol | istisna | tarayici
 
-    def bicim(self) -> str:
+    def format(self) -> str:
         etiket = {"hata": "HATA", "uyari": "UYARI"}.get(self.seviye, self.seviye)
         kuyruk = f"  ({self.yer})" if self.yer else ""
         return f"[{etiket}] {self.metin}{kuyruk}"
 
 
 @dataclass(slots=True)
-class Istek:
+class Request:
     """Tek bir ağ isteği: yol, yöntem, durum, süre."""
 
     url: str
     yontem: str = "GET"
-    durum: int = 0
+    status: int = 0
     tur: str = ""
     sure_ms: float = 0.0
     hata: str = ""
     _t0: float = 0.0
 
     @property
-    def basarisiz(self) -> bool:
-        return bool(self.hata) or self.durum >= 400
+    def failed(self) -> bool:
+        return bool(self.hata) or self.status >= 400
 
-    def bicim(self) -> str:
+    def format(self) -> str:
         from urllib.parse import urlsplit
 
         parca = urlsplit(self.url)
@@ -282,9 +282,9 @@ class Istek:
             kisa = kisa[:77] + "…"
         if self.hata:
             return f"{self.yontem} {kisa} — BAŞARISIZ: {self.hata}"
-        durum = self.durum or "?"
+        status = self.status or "?"
         sure = f"{self.sure_ms:.0f} ms" if self.sure_ms else "—"
-        return f"{self.yontem} {kisa} → {durum} · {sure}"
+        return f"{self.yontem} {kisa} → {status} · {sure}"
 
 
 def _arg_metni(arg: dict[str, Any]) -> str:
@@ -301,9 +301,9 @@ def _arg_metni(arg: dict[str, Any]) -> str:
             except (TypeError, ValueError):  # pragma: no cover
                 return str(deger)[:400]
         return str(deger)
-    for anahtar in ("description", "unserializableValue", "className"):
-        if arg.get(anahtar):
-            return str(arg[anahtar])
+    for switches in ("description", "unserializableValue", "className"):
+        if arg.get(switches):
+            return str(arg[switches])
     return str(arg.get("type") or "?")
 
 
@@ -320,7 +320,7 @@ def _yer(url: Any, satir: Any) -> str:
     return f"{kisa}:{n + 1}"
 
 
-class Kayit:
+class Record:
     """Bir sekmeye kalıcı bağlı dinleyici: konsol ve ağ tamponu.
 
     Kendi WebSocket bağlantısını tutuyor ve arka planda okuyor. `Browser`in
@@ -334,14 +334,14 @@ class Kayit:
     def __init__(self, ws_url: str, *, limit: int = TAMPON) -> None:
         import threading
 
-        self.konsol: deque[KonsolSatiri] = deque(maxlen=limit)
-        self.istekler: deque[Istek] = deque(maxlen=limit)
+        self.konsol: deque[ConsoleLine] = deque(maxlen=limit)
+        self.istekler: deque[Request] = deque(maxlen=limit)
         self.hata = ""
         # Dinleyici sayfa yüklendikten sonra bağlandıysa: baştaki mesajlar
         # kaçtı. Model bunu bilmeli.
         self.eksik = False
         self.baslangic = time.monotonic()
-        self._acik: dict[str, Istek] = {}
+        self._acik: dict[str, Request] = {}
         self._kapali = False
         self._wire: Wire | None = None
         self._sira = 1000
@@ -371,7 +371,7 @@ class Kayit:
     def calisiyor(self) -> bool:
         return self._wire is not None and not self._kapali
 
-    def temizle(self) -> None:
+    def clear(self) -> None:
         """Yeni sayfaya geçildi: eski sayfanın kayıtları gürültü."""
         self.konsol.clear()
         self.istekler.clear()
@@ -414,7 +414,7 @@ class Kayit:
                              if isinstance(a, dict))
             kareler = ((p.get("stackTrace") or {}).get("callFrames") or [])
             ilk = kareler[0] if kareler else {}
-            self.konsol.append(KonsolSatiri(
+            self.konsol.append(ConsoleLine(
                 seviye, metin.strip() or "(boş mesaj)",
                 _yer(ilk.get("url"), ilk.get("lineNumber")), "konsol"))
 
@@ -424,7 +424,7 @@ class Kayit:
             # `description` yığın izini de taşıyor; yoksa `text` kalıyor.
             metin = str(nesne.get("description") or ayrinti.get("text")
                         or "yakalanmamış istisna")
-            self.konsol.append(KonsolSatiri(
+            self.konsol.append(ConsoleLine(
                 "hata", metin.strip(),
                 _yer(ayrinti.get("url"), ayrinti.get("lineNumber")), "istisna"))
 
@@ -434,13 +434,13 @@ class Kayit:
             # görünen ama `console.*` çağrısı OLMAYAN satırlar burada.
             giris = p.get("entry") or {}
             seviye = _SEVIYE.get(str(giris.get("level") or "info"), "log")
-            self.konsol.append(KonsolSatiri(
+            self.konsol.append(ConsoleLine(
                 seviye, str(giris.get("text") or "").strip() or "(boş kayıt)",
                 _yer(giris.get("url"), giris.get("lineNumber")), "tarayici"))
 
         elif yontem == "Network.requestWillBeSent":
             istek = p.get("request") or {}
-            kayit = Istek(
+            kayit = Request(
                 url=str(istek.get("url") or ""),
                 yontem=str(istek.get("method") or "GET"),
                 tur=str(p.get("type") or ""),
@@ -455,7 +455,7 @@ class Kayit:
             if (kayit := self._acik.get(str(p.get("requestId") or ""))) is None:
                 return
             cevap = p.get("response") or {}
-            kayit.durum = int(cevap.get("status") or 0)
+            kayit.status = int(cevap.get("status") or 0)
             if tur := str(p.get("type") or ""):
                 kayit.tur = tur
 
@@ -507,7 +507,7 @@ class Browser:
         # başlatma tek seferde olsun.
         self._boot_lock = threading.Lock()
         # Sekme kimliği → dinleyici. Sekme başına tek dinleyici yeter.
-        self._kayitlar: dict[str, Kayit] = {}
+        self._kayitlar: dict[str, Record] = {}
 
     # -- http yüzü -----------------------------------------------------
 
@@ -557,7 +557,7 @@ class Browser:
             stderr=subprocess.DEVNULL,
             # Chrome/Edge zaten pencereli (GUI) süreç; bayrak konsollu
             # bir sarmalayıcıdan başlatılsa bile cmd parlatmamayı garantiler.
-            **ortam.sessiz_bayraklar(),
+            **environment.quiet_flags(),
         )
         deadline = time.monotonic() + BOOT_WAIT_S
         while time.monotonic() < deadline:
@@ -616,7 +616,7 @@ class Browser:
 
     # -- dinleyici -----------------------------------------------------
 
-    def dinle(self, tab: dict[str, Any], *, taze: bool = False) -> Kayit:
+    def dinle(self, tab: dict[str, Any], *, taze: bool = False) -> Record:
         """Sekmeye kalıcı dinleyici bağlar; zaten varsa mevcut olanı verir.
 
         `taze=True` yeni bir sayfaya geçildiğini bildiriyor: eski sayfanın
@@ -630,14 +630,14 @@ class Browser:
         kayit = self._kayitlar.get(kimlik)
         if kayit is not None and kayit.calisiyor:
             if taze:
-                kayit.temizle()
+                kayit.clear()
             return kayit
         if kayit is not None:
             kayit.kapat()
 
         spot = str(tab.get("webSocketDebuggerUrl") or "")
         if not spot:
-            kayit = Kayit.__new__(Kayit)   # bağlantısız kabuk
+            kayit = Record.__new__(Record)   # bağlantısız kabuk
             kayit.konsol, kayit.istekler = deque(), deque()
             kayit.hata = "sekmenin hata ayıklama adresi yok"
             kayit.eksik = True
@@ -646,14 +646,14 @@ class Browser:
             self._kayitlar[kimlik] = kayit
             return kayit
 
-        kayit = Kayit(spot)
+        kayit = Record(spot)
         # Taze değilse sayfa çoktan yüklenmiş olabilir: baştaki mesajlar
         # kaçtı ve bunu saklamıyoruz.
         kayit.eksik = not taze
         self._kayitlar[kimlik] = kayit
         return kayit
 
-    def kayit(self, tab: dict[str, Any]) -> Kayit:
+    def kayit(self, tab: dict[str, Any]) -> Record:
         """Sekmenin dinleyicisi; yoksa şimdi kurulur (geç kalmış olarak)."""
         return self.dinle(tab)
 
@@ -733,7 +733,7 @@ class Browser:
         "hata sayfası" diye yaftalamak, olmayan bir hatayı rapor etmektir.
         """
         try:
-            bulgu = self.eval(tab, _HATA_JS)
+            bulgu = self.eval(tab, _ERROR_JS)
         except BrowseError:  # pragma: no cover - sayfa okunamıyorsa sus
             return None
         return bulgu if isinstance(bulgu, dict) and bulgu.get("tur") else None
@@ -1082,7 +1082,7 @@ _JS_SARGI = """(function () { // dornick:js
 # ürettiği sayfada bulunan bir işaret; genel bir "sayfada 'error' geçiyor
 # mu" taraması bilerek YOK — o, sıradan bir blog yazısını hata sayfası
 # ilan ederdi.
-_HATA_JS = """(() => { // dornick:hata
+_ERROR_JS = """(() => { // dornick:hata
   const kes = (s, n) => (s || "").trim().replace(/\\s+/g, " ").slice(0, n || 300);
   const q = (s) => document.querySelector(s);
   const baslik = document.title || "";

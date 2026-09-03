@@ -364,14 +364,14 @@ def test_bos_atolye(tmp_path: Path) -> None:
 
 def test_neo_kendi_sureci_taninir() -> None:
     """Model kafası karışıp dornick'yu başlatırsa bu tanınmalı."""
-    assert apps.dornick_sureci_mi("dornick --web 8873 -C D:\\Projects\\Fatih\\dornick")
-    assert apps.dornick_sureci_mi("python -m dornick --web 8080")
-    assert apps.dornick_sureci_mi(
+    assert apps.is_dornick_process("dornick --web 8873 -C D:\\Projects\\Fatih\\dornick")
+    assert apps.is_dornick_process("python -m dornick --web 8080")
+    assert apps.is_dornick_process(
         '"C:\\Py\\python.exe" "C:\\Py\\Scripts\\dornick.exe" --web 8873')
-    assert apps.dornick_sureci_mi(r'"C:\dornick\python\dornick.exe" -m dornick --app')
+    assert apps.is_dornick_process(r'"C:\dornick\python\dornick.exe" -m dornick --app')
     # Kullanıcının uygulaması dornick değil — yanlış alarm olmamalı.
-    assert not apps.dornick_sureci_mi("py app.py")
-    assert not apps.dornick_sureci_mi("python D:\\Projects\\Fatih\\dornick\\atolye\\borsa-ara\\app.py")
+    assert not apps.is_dornick_process("py app.py")
+    assert not apps.is_dornick_process("python D:\\Projects\\Fatih\\dornick\\atolye\\borsa-ara\\app.py")
 
 
 def test_neo_kendi_kopyasi_uygulama_gibi_listelenmez(tmp_path: Path) -> None:

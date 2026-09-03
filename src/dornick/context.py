@@ -72,7 +72,7 @@ class Prepared:
             "model": model.name,
             "max_tokens": model.max_tokens,
             "system": self.system,
-            "messages": saglayici_alanlarini_at(self.messages),
+            "messages": drop_provider_fields(self.messages),
             "tools": tools,
             "output_config": {"effort": model.effort},
         }
@@ -124,7 +124,7 @@ class ContextPolicy:
         )
 
 
-def saglayici_alanlarini_at(messages: list[Message]) -> list[Message]:
+def drop_provider_fields(messages: list[Message]) -> list[Message]:
     """Anthropic'e giderken sağlayıcıya özel alanları ayıklar.
 
     `tool_use` bloklarında OpenAI-uyumlu sağlayıcıların kendi alanları

@@ -562,22 +562,22 @@ def test_turn_carries_a_language_reminder(tmp_path: Path) -> None:
 
     # İngilizce girdi → İngilizce hatırlatma, günlüğe dokunulmadan.
     onceki = len(session.messages())
-    ajan._dil_notu("Please write a short report about solar batteries.")
+    ajan._language_note("Please write a short report about solar batteries.")
     assert len(session.messages()) == onceki, "günlüğe yazılmamalı"
 
     hazir = SimpleNamespace(messages=[])
-    ajan._dil_hatirlatmasini_ekle(hazir)
+    ajan._add_language_reminder(hazir)
     assert hazir.messages and hazir.messages[-1]["role"] == "system"
     assert "SAME language" in str(hazir.messages[-1]["content"])
 
     # Türkçe girdi → Türkçe hatırlatma.
-    ajan._dil_notu("Bana güneş pilleri hakkında kısa bir rapor yazar mısın?")
+    ajan._language_note("Bana güneş pilleri hakkında kısa bir rapor yazar mısın?")
     hazir2 = SimpleNamespace(messages=[])
-    ajan._dil_hatirlatmasini_ekle(hazir2)
+    ajan._add_language_reminder(hazir2)
     assert "TÜRKÇE" in str(hazir2.messages[-1]["content"])
 
     # Çok kısa girdide çıkarım yok: hiçbir şey eklenmiyor.
-    ajan._dil_notu("ok")
+    ajan._language_note("ok")
     hazir3 = SimpleNamespace(messages=[])
-    ajan._dil_hatirlatmasini_ekle(hazir3)
+    ajan._add_language_reminder(hazir3)
     assert hazir3.messages == []

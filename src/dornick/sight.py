@@ -108,9 +108,9 @@ WORLD_WEIGHTS = ("yolov8s-worldv2.pt", "yolov8s-world.pt")
 
 
 def hint() -> str:
-    from . import ortam
+    from . import environment
 
-    if ortam.kurulu_mu():
+    if environment.kurulu_mu():
         return ("Yerel GPU kamera analizi bu kuruluma dahil edilmemiş. "
                 "Kurulum sihirbazını yeniden çalıştırıp 'Kamera izleme' "
                 "bileşenini işaretleyerek ekleyebilirsin.")

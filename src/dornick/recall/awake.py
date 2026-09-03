@@ -30,8 +30,8 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
-from . import anahtar, orgu
-from .saat import Saat, duvar_saati
+from . import switches, weave
+from .clock import Clock, wall_clock
 
 # 3.12.2 — the user has stopped typing for this long, so the turn gap is a
 # safe place for incremental work.
@@ -97,9 +97,9 @@ def on_result(
     log_path: Path,
     outcome: str,
     *,
-    saat: Saat | None = None,
+    clock: Clock | None = None,
     log: Any = None,
-) -> orgu.GeceRaporu:
+) -> weave.NightReport:
     """Assign credit the moment the outcome is known, not next night.
 
     Triggers: a test run came back, a tool failed, the user corrected
@@ -111,17 +111,17 @@ def on_result(
     every payout twice, and the record would carry two `basari` entries for
     one success.
     """
-    saat = saat or duvar_saati
-    report = orgu.GeceRaporu()
-    if not anahtar.AKTIF.orgu:
+    clock = clock or wall_clock
+    report = weave.NightReport()
+    if not switches.ACTIVE.weave:
         return report
 
-    session = orgu._oturum_oku(Path(log_path))      # noqa: SLF001 - same module family
+    session = weave._read_session(Path(log_path))      # noqa: SLF001 - same module family
     if session is None or not session.dizi or _already_replayed(Path(log_path)):
         return report
     session.sonuc = outcome
-    orgu.ters_tekrar(store, session, rapor=report)
-    report.tekrar_edilen = 1
+    weave.reverse_replay(store, session, rapor=report)
+    report.replayed = 1
     if log is not None:
         log.note(REVERSE_DONE, oturum=session.id, sonuc=outcome)
     return report
@@ -138,7 +138,7 @@ def _already_replayed(log_path: Path) -> bool:
 # -- 3.12.2 awake forward replay ---------------------------------------
 
 
-def forward_replay(store: Any, log_path: Path, *, saat: Saat | None = None,
+def forward_replay(store: Any, log_path: Path, *, clock: Clock | None = None,
                    log: Any = None) -> int:
     """Write this session's temporal edges incrementally, between turns.
 
@@ -151,20 +151,20 @@ def forward_replay(store: Any, log_path: Path, *, saat: Saat | None = None,
     downscaling and distillation. None of those may run while the user is
     still working.
     """
-    if not anahtar.AKTIF.orgu:
+    if not switches.ACTIVE.weave:
         return 0
-    session = orgu._oturum_oku(Path(log_path))      # noqa: SLF001
+    session = weave._read_session(Path(log_path))      # noqa: SLF001
     if session is None or len(session.dizi) < 2:
         return 0
     uzunluk = len(dict.fromkeys(session.dizi))
     if session.ileri_tekrar_indeksi >= uzunluk:
         return 0                                    # nothing new since last run
-    report = orgu.GeceRaporu()
-    orgu._ileri_tekrar(store, session, report,      # noqa: SLF001
+    report = weave.NightReport()
+    weave._forward_replay(store, session, report,      # noqa: SLF001
                        bastan=session.ileri_tekrar_indeksi)
     if log is not None:
         log.note(FORWARD_MARK, oturum=session.id, n=uzunluk)
-    return report.yeni_kenar
+    return report.new_edges
 
 
 # -- 3.12.3 micro-sleep ------------------------------------------------
@@ -191,40 +191,40 @@ def micro_sleep(
     store: Any,
     sessions_dir: Path,
     *,
-    saat: Saat | None = None,
-    filigran: Path | None = None,
+    clock: Clock | None = None,
+    watermark: Path | None = None,
     budget_sn: float = MICRO_BUDGET_SECONDS,
-) -> orgu.GeceRaporu:
+) -> weave.NightReport:
     """One deep cycle, capped. Catches up on replay; never downscales.
 
     Reduces debt, does not clear it — the night still comes. Distillation and
     downscaling are excluded by construction, not by configuration: this
     function does not call them.
     """
-    saat = saat or duvar_saati
-    report = orgu.GeceRaporu()
-    if not anahtar.AKTIF.orgu:
+    clock = clock or wall_clock
+    report = weave.NightReport()
+    if not switches.ACTIVE.weave:
         return report
     started = time.perf_counter()
-    state = orgu._filigran_oku(filigran)            # noqa: SLF001
-    sessions = orgu.oncelikli_oturumlar(store, sessions_dir, saat=saat,
-                                        durum=state)
-    report.oturum_sayisi = len(sessions)
-    replayed: list[orgu.Oturum] = []
+    state = weave._read_watermark(watermark)            # noqa: SLF001
+    sessions = weave.prioritised_sessions(store, sessions_dir, clock=clock,
+                                        status=state)
+    report.session_count = len(sessions)
+    replayed: list[weave.ReplaySession] = []
     for session in sessions:
         if replayed and time.perf_counter() - started > budget_sn:
             break
-        orgu._ileri_tekrar(store, session, report)          # noqa: SLF001
-        orgu._sema_tazelemesi(store, session, report)       # noqa: SLF001
+        weave._forward_replay(store, session, report)          # noqa: SLF001
+        weave._schema_refresh(store, session, report)       # noqa: SLF001
         if not _already_replayed(sessions_dir / f"{session.id}.jsonl"):
-            orgu.ters_tekrar(store, session, rapor=report)
+            weave.reverse_replay(store, session, rapor=report)
         replayed.append(session)
-        state.setdefault("islenen", {})[session.id] = orgu._damga(saat)  # noqa: SLF001
-        report.tekrar_edilen += 1
-    orgu._dikis(store, replayed, report)                    # noqa: SLF001
+        state.setdefault("islenen", {})[session.id] = weave._stamp(clock)  # noqa: SLF001
+        report.replayed += 1
+    weave._stitch(store, replayed, report)                    # noqa: SLF001
     report.devreden = len(sessions) - len(replayed)
-    orgu._filigran_yaz(filigran, state)                     # noqa: SLF001
-    report.damitma = "atlandı: mikro-uyku damıtmaz"
+    weave._write_watermark(watermark, state)                     # noqa: SLF001
+    report.distillation = "atlandı: mikro-uyku damıtmaz"
     report.sure_sn = round(time.perf_counter() - started, 3)
     return report
 
@@ -235,20 +235,20 @@ def micro_sleep(
 def sleep_debt(
     sessions_dir: Path,
     *,
-    saat: Saat | None = None,
-    filigran: Path | None = None,
+    clock: Clock | None = None,
+    watermark: Path | None = None,
 ) -> tuple[float, int]:
     """(hours since the last night, number of un-replayed sessions)."""
-    saat = saat or duvar_saati
-    state = orgu._filigran_oku(filigran)             # noqa: SLF001
+    clock = clock or wall_clock
+    state = weave._read_watermark(watermark)             # noqa: SLF001
     done = set((state.get("islenen") or {}).keys())
     pending = sum(1 for p in Path(sessions_dir).glob("*.jsonl")
                   if p.stem not in done)
     last = state.get("son_kosu")
-    from .saat import coz
+    from .clock import parse
 
-    moment = coz(last) if last else None
-    hours = ((saat() - moment).total_seconds() / 3600.0
+    moment = parse(last) if last else None
+    hours = ((clock() - moment).total_seconds() / 3600.0
              if moment is not None else float(DEBT_HOURS))
     return hours, pending
 
@@ -261,7 +261,7 @@ def should_local_sleep(hours_since_night: float, pending_sessions: int) -> bool:
 def local_sleep(
     store: Any,
     *,
-    saat: Saat | None = None,
+    clock: Clock | None = None,
     active_days: int = ACTIVE_DAYS,
 ) -> LocalSleepReport:
     """Downscale the cold region while the machine stays awake.
@@ -274,19 +274,19 @@ def local_sleep(
     Not done here: replay, schema refresh, stitching, distillation. All of
     those need the active region, and the active region is off limits.
     """
-    saat = saat or duvar_saati
+    clock = clock or wall_clock
     report = LocalSleepReport()
-    if not anahtar.AKTIF.orgu:
+    if not switches.ACTIVE.weave:
         report.reason = "weave disabled"
         return report
     started = time.perf_counter()
-    cutoff = saat() - timedelta(days=active_days)
+    cutoff = clock() - timedelta(days=active_days)
     cold, skipped = store.cold_nodes(cutoff)
     report.cold_nodes = len(cold)
     report.skipped_active = skipped
     if cold:
         report.shrunk_edges, report.deleted_edges = store.shrink_edges_between(
-            cold, orgu.EPSILON, orgu.KENAR_TABAN)
+            cold, weave.EPSILON, weave.EDGE_FLOOR)
     report.seconds = round(time.perf_counter() - started, 3)
     report.reason = "cold region only; active region untouched"
     return report
@@ -296,14 +296,14 @@ def local_sleep(
 
 
 def write_report(state_dir: Path, kind: str, payload: dict[str, Any],
-                 *, saat: Saat | None = None) -> None:
+                 *, clock: Clock | None = None) -> None:
     """Append one line to `.dornick/gece.jsonl`. The UI reads it."""
-    saat = saat or duvar_saati
+    clock = clock or wall_clock
     try:
         path = Path(state_dir) / "gece.jsonl"
         path.parent.mkdir(parents=True, exist_ok=True)
         with path.open("a", encoding="utf-8") as fh:
-            fh.write(json.dumps({"ts": saat().isoformat(timespec="milliseconds"),
+            fh.write(json.dumps({"ts": clock().isoformat(timespec="milliseconds"),
                                  "kind": kind, **payload},
                                 ensure_ascii=False) + "\n")
     except OSError:

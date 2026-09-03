@@ -25,7 +25,7 @@ from .workflows import Workflow
 
 # Etiketler tek yerde: geri bulmanın anahtarı bunlar.
 ETIKET = "otomasyon"
-DERS_ETIKETI = "otomasyon-ders"
+LESSON_TAG = "otomasyon-ders"
 
 # Kayıtta taşınacak azami adım sayısı — elli düğümlük bir grafiği hafızaya
 # olduğu gibi dökmek, çağrışımı kendi gürültüsüyle boğar.
@@ -57,7 +57,7 @@ def akis_metni(wf: Workflow) -> str:
     return "\n".join(satirlar)
 
 
-def ders_metni(wf_id: str, node: Any, exc: BaseException) -> str:
+def lesson_text(wf_id: str, node: Any, exc: BaseException) -> str:
     """Bir adım hatasının hafızaya yazılan hâli. Kalıp sabit."""
     ad = (getattr(node, "title", "") or getattr(node, "id", "")).strip()
     return (
@@ -82,16 +82,16 @@ def akisi_hatirla(mind: Any, wf: Workflow) -> bool:
         return False
 
 
-def dersi_hatirla(mind: Any, wf_id: str, node: Any, exc: BaseException) -> bool:
+def recall_lesson(mind: Any, wf_id: str, node: Any, exc: BaseException) -> bool:
     """Adım hatasını ders olarak yaz. Yazıldıysa True."""
     if mind is None or not hasattr(mind, "remember"):
         return False
     try:
         mind.remember(
-            ders_metni(wf_id, node, exc),
+            lesson_text(wf_id, node, exc),
             kind="lesson",
             title=f"otomasyon-hata:{wf_id}:{getattr(node, 'id', '?')}",
-            tags=(DERS_ETIKETI, f"{ETIKET}:{wf_id}"),
+            tags=(LESSON_TAG, f"{ETIKET}:{wf_id}"),
         )
         return True
     except Exception:

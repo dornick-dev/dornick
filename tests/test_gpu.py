@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from dornick import gpu, ortam
+from dornick import gpu, environment
 
 
 @pytest.fixture(autouse=True)
@@ -27,7 +27,7 @@ def test_nvidia_gpus_uses_create_no_window(monkeypatch: pytest.MonkeyPatch) -> N
     rows = gpu.nvidia_gpus()
     assert len(rows) == 1
     assert rows[0].name == "GPU"
-    for key, val in ortam.sessiz_bayraklar().items():
+    for key, val in environment.quiet_flags().items():
         assert seen.get(key) == val
 
 

@@ -281,7 +281,7 @@ def ensure_toast_identity() -> None:
 
 
 def _yaz_kisayol(lnk: Path, target: Path, args: str, ico: Path) -> None:
-    from . import ortam
+    from . import environment
 
     def q(s: str) -> str:
         return "'" + str(s).replace("'", "''") + "'"
@@ -296,7 +296,7 @@ def _yaz_kisayol(lnk: Path, target: Path, args: str, ico: Path) -> None:
         import subprocess
         subprocess.run(
             ["powershell", "-NoProfile", "-NonInteractive", "-Command", ps],
-            timeout=12, **ortam.sessiz_bayraklar(),
+            timeout=12, **environment.quiet_flags(),
         )
     except Exception:
         return

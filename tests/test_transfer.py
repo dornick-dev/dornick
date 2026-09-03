@@ -14,7 +14,7 @@ import sqlite3
 import zipfile
 from pathlib import Path
 
-from dornick import tanima, transfer
+from dornick import recognition, transfer
 from dornick.config import Config
 from dornick.mind import open_mind
 
@@ -115,8 +115,8 @@ def _sahte_duzenek(monkeypatch, root: Path) -> Path:
     """
     veri = root / "duzenek" / "veri"
     veri.mkdir(parents=True, exist_ok=True)
-    monkeypatch.setattr(tanima, "KORPUS", veri / "kisisel_korpus.jsonl")
-    monkeypatch.setattr(tanima, "FILIGRAN", veri / "kisisel_durum.json")
+    monkeypatch.setattr(recognition, "KORPUS", veri / "kisisel_korpus.jsonl")
+    monkeypatch.setattr(recognition, "WATERMARK", veri / "kisisel_durum.json")
     return veri
 
 
@@ -191,8 +191,8 @@ def test_import_tanima_without_rig_keeps_personal_files(
     bundle = transfer.export_bundle(cfg_a, mind_a, ["tanima"])
 
     # Hedefte düzenek "kurulu değil": yol var olmayan bir klasörü gösteriyor.
-    monkeypatch.setattr(tanima, "KORPUS", tmp_path / "yok" / "kisisel_korpus.jsonl")
-    monkeypatch.setattr(tanima, "FILIGRAN", tmp_path / "yok" / "kisisel_durum.json")
+    monkeypatch.setattr(recognition, "KORPUS", tmp_path / "yok" / "kisisel_korpus.jsonl")
+    monkeypatch.setattr(recognition, "WATERMARK", tmp_path / "yok" / "kisisel_durum.json")
     cfg_b, mind_b = _mind(tmp_path / "B")
     result = transfer.import_bundle(cfg_b, mind_b, bundle, ["tanima"])
     assert result["ok"] and result["tanima"] == 3
@@ -260,7 +260,7 @@ def test_reset_memories_backs_up_then_clears(tmp_path: Path) -> None:
 
 def test_tanima_reset_moves_files_and_falls_back(tmp_path: Path, monkeypatch) -> None:
     """Beni tanı sıfırlama: kişisel dosyalar yedeğe, önbellek düşer."""
-    from dornick.recall import taban
+    from dornick.recall import writer
 
     veri = _sahte_duzenek(monkeypatch, tmp_path)
     (veri / "kisisel_korpus.jsonl").write_text('{"girdi": "soru"}\n', encoding="utf-8")
@@ -269,7 +269,7 @@ def test_tanima_reset_moves_files_and_falls_back(tmp_path: Path, monkeypatch) ->
     state.mkdir()
     (state / "taban.npz").write_bytes(b"KISISEL")
 
-    result = tanima.sifirla(state)
+    result = recognition.reset(state)
     assert result["ok"] and sorted(result["tasinan"]) == [
         "kisisel_durum.json", "kisisel_korpus.jsonl", "taban.npz"]
     assert not (state / "taban.npz").exists()
@@ -278,10 +278,10 @@ def test_tanima_reset_moves_files_and_falls_back(tmp_path: Path, monkeypatch) ->
     assert (yedek / "taban.npz").read_bytes() == b"KISISEL"
     assert (yedek / "kisisel_korpus.jsonl").is_file()
     # Önbellek düştü: bir sonraki zenginleştirme diski yeniden yoklayacak.
-    assert taban._yazici is None and taban._denendi is False
+    assert writer._writer is None and writer._denendi is False
 
     # İkinci sıfırlama: taşınacak bir şey yok, yedek klasörü açılmaz.
-    tekrar = tanima.sifirla(state)
+    tekrar = recognition.reset(state)
     assert tekrar["ok"] and tekrar["tasinan"] == [] and tekrar["yedek"] == ""
 
 

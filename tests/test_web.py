@@ -449,14 +449,14 @@ def test_bridge_snapshot_surumu_tasir() -> None:
     """
     import asyncio
 
-    from dornick import ortam
+    from dornick import environment
     from dornick.desktop import Bridge
 
     loop = asyncio.new_event_loop()
     try:
-        durum = Bridge(Hub(), loop).snapshot()
-        assert durum["surum"] == ortam.surum()
-        assert isinstance(durum["kurulu"], bool)
+        status = Bridge(Hub(), loop).snapshot()
+        assert status["surum"] == environment.version()
+        assert isinstance(status["kurulu"], bool)
     finally:
         loop.close()
 
@@ -468,7 +468,7 @@ def test_surum_denetimi_ucu_agsiz_calisir(
     from dornick.web import server as server_module
 
     monkeypatch.setattr(
-        server_module.ortam, "guncelleme_denetle",
+        server_module.environment, "check_update",
         lambda: {"ok": True, "mevcut": "0.2.2", "yeni": "0.3.0",
                  "url": "https://ornek/yayin", "hata": ""})
 
@@ -864,7 +864,7 @@ def test_guncelle_ucu_indirir_ilerler_ve_baslatir(
     from dornick.web import server as server_module
 
     monkeypatch.setattr(
-        server_module.ortam, "guncelleme_denetle",
+        server_module.environment, "check_update",
         lambda: {"ok": True, "mevcut": "1.0.0", "yeni": "9.9.9",
                  "url": "https://github.com/dornick-dev/dornick/releases/tag/v9.9.9",
                  "indirme": "https://github.com/dornick-dev/dornick/releases/download/v9.9.9/dornick-setup-9.9.9.exe",
@@ -873,15 +873,15 @@ def test_guncelle_ucu_indirir_ilerler_ve_baslatir(
 
     inen = tmp_path / "dornick-setup-9.9.9.exe"
 
-    def sahte_indir(url, dizin, *, beklenen_boyut=0, ad="", ilerleme=None):
+    def sahte_indir(url, dizin, *, beklenen_boyut=0, ad="", progress=None):
         assert "github.com" in url          # adres sunucudan, güvenilir
-        if ilerleme:
-            ilerleme(beklenen_boyut // 2, beklenen_boyut)
-            ilerleme(beklenen_boyut, beklenen_boyut)
+        if progress:
+            progress(beklenen_boyut // 2, beklenen_boyut)
+            progress(beklenen_boyut, beklenen_boyut)
         inen.write_bytes(b"MZ" + b"0" * 1024)
         return inen
 
-    monkeypatch.setattr(server_module.ortam, "guncelleme_indir", sahte_indir)
+    monkeypatch.setattr(server_module.environment, "download_update", sahte_indir)
 
     baslatildi: dict = {}
     bitti = threading.Event()
@@ -890,7 +890,7 @@ def test_guncelle_ucu_indirir_ilerler_ve_baslatir(
         baslatildi["yol"] = str(yol)
         bitti.set()
 
-    monkeypatch.setattr(server_module.ortam, "guncellemeyi_baslat", sahte_baslat)
+    monkeypatch.setattr(server_module.environment, "start_update", sahte_baslat)
 
     log = EventLog(tmp_path / "s.jsonl")
     server = MindServer(mind, log, port=0)
@@ -926,14 +926,14 @@ def test_guncelle_yeni_surum_yoksa_kibar_reddeder(
     from dornick.web import server as server_module
 
     monkeypatch.setattr(
-        server_module.ortam, "guncelleme_denetle",
+        server_module.environment, "check_update",
         lambda: {"ok": True, "mevcut": "1.0.0", "yeni": "", "url": "",
                  "indirme": "", "boyut": 0, "ad": "", "hata": ""})
 
     def patlar(*a, **k):  # çağrılırsa test kırılır
         raise AssertionError("güncelleme yokken indirme denenmemeli")
 
-    monkeypatch.setattr(server_module.ortam, "guncelleme_indir", patlar)
+    monkeypatch.setattr(server_module.environment, "download_update", patlar)
 
     log = EventLog(tmp_path / "s.jsonl")
     server = MindServer(mind, log, port=0)
@@ -983,7 +983,7 @@ def test_dil_ucu_makine_diline_duser(
     "tr", diğer her yerde "en" (varsayılan İngilizce — kullanıcı isteği)."""
     from dornick.web import server as server_module
 
-    monkeypatch.setattr(server_module, "_makine_dili", lambda: "en")
+    monkeypatch.setattr(server_module, "_machine_language", lambda: "en")
     log = EventLog(tmp_path / "s.jsonl")
     server = MindServer(mind, log, port=0)
     server.start()
@@ -1002,15 +1002,15 @@ def test_makine_dili_turkce_lokalde_tr(monkeypatch: pytest.MonkeyPatch) -> None:
     from dornick.web import server as server_module
 
     monkeypatch.setattr(locale, "getdefaultlocale", lambda: ("tr_TR", "cp1254"))
-    assert server_module._makine_dili() == "tr"
+    assert server_module._machine_language() == "tr"
     monkeypatch.setattr(locale, "getdefaultlocale", lambda: ("en_US", "utf-8"))
-    assert server_module._makine_dili() == "en"
+    assert server_module._machine_language() == "en"
     # Okunamazsa İngilizce.
     def patlar():
         raise ValueError("yok")
     monkeypatch.setattr(locale, "getdefaultlocale", patlar)
     monkeypatch.setattr(locale, "getlocale", patlar)
-    assert server_module._makine_dili() == "en"
+    assert server_module._machine_language() == "en"
 
 
 def test_foreign_origin_post_is_rejected(tmp_path: Path, mind: Mind) -> None:

@@ -30,32 +30,32 @@ import time
 from pathlib import Path
 from typing import Any
 
-DOSYA = "gate.json"
+FILE = "gate.json"
 
 # Değişen-dosya taramasında atlanan dizinler: araç artıkları, sürüm kontrolü.
 _ATLA = frozenset({".git", "__pycache__", "node_modules", ".venv", ".geri-donusum"})
 
 # Bir turun bekleneceği azami süre. Uzun araştırma turları dakikalar sürer;
 # ama sonsuz bekleyen bir HTTP isteği de thread sızdırır.
-VARSAYILAN_BEKLE_SN = 600.0
-AZAMI_BEKLE_SN = 1800.0
+DEFAULT_WAIT_S = 600.0
+MAX_WAIT_S = 1800.0
 
 # Yanıttaki dosya listesi tavanı: bir derleme çıktısını sayıp dökmenin alemi yok.
-DOSYA_TAVANI = 200
+FILE_CAP = 200
 
 
-def durum(state_dir: Path) -> bool:
+def status(state_dir: Path) -> bool:
     try:
-        return bool(json.loads((state_dir / DOSYA).read_text(encoding="utf-8")).get("on"))
+        return bool(json.loads((state_dir / FILE).read_text(encoding="utf-8")).get("on"))
     except (OSError, ValueError):
         return False
 
 
-def ayarla(state_dir: Path, on: bool) -> None:
-    (state_dir / DOSYA).write_text(json.dumps({"on": bool(on)}), encoding="utf-8")
+def configure(state_dir: Path, on: bool) -> None:
+    (state_dir / FILE).write_text(json.dumps({"on": bool(on)}), encoding="utf-8")
 
 
-def _metinler(content: Any) -> str:
+def _texts(content: Any) -> str:
     if isinstance(content, str):
         return content
     if not isinstance(content, list):
@@ -66,7 +66,7 @@ def _metinler(content: Any) -> str:
     )
 
 
-def _degisen_dosyalar(kok: Path, esik: float) -> list[str]:
+def _changed_files(kok: Path, esik: float) -> list[str]:
     """Turdan beri atölyede yazılan dosyalar (göreli yol, en yeni önce)."""
     bulunan: list[tuple[float, str]] = []
     try:
@@ -80,7 +80,7 @@ def _degisen_dosyalar(kok: Path, esik: float) -> list[str]:
                     continue
                 if mt >= esik:
                     bulunan.append((mt, yol.relative_to(kok).as_posix()))
-                    if len(bulunan) >= DOSYA_TAVANI:
+                    if len(bulunan) >= FILE_CAP:
                         raise StopIteration
     except StopIteration:
         pass
@@ -88,13 +88,13 @@ def _degisen_dosyalar(kok: Path, esik: float) -> list[str]:
     return [yol for _, yol in bulunan]
 
 
-def sor(
+def ask(
     *,
     controller: Any,
     hub: Any,
     text: str,
     image: str = "",
-    bekle_sn: float = VARSAYILAN_BEKLE_SN,
+    bekle_sn: float = DEFAULT_WAIT_S,
     sandbox_root: Path | None = None,
 ) -> dict[str, Any]:
     """Mesajı ajana verir, turun bitmesini bekler, tüm çıktıyı döndürür.
@@ -107,7 +107,7 @@ def sor(
     if log is None:
         return {"ok": False, "error": "ajan hazır değil"}
 
-    bekle_sn = max(5.0, min(float(bekle_sn or VARSAYILAN_BEKLE_SN), AZAMI_BEKLE_SN))
+    bekle_sn = max(5.0, min(float(bekle_sn or DEFAULT_WAIT_S), MAX_WAIT_S))
     baslangic = time.time()
     # `busy` desktop'ta property, başka bir controller'da metot olabilir.
     mesgul = getattr(controller, "busy", False)
@@ -126,7 +126,7 @@ def sor(
                 and not ev.meta.get("tool_results")
                 and not ev.meta.get("continuation")
                 and not ev.meta.get("internal")
-                and _metinler(ev.content).strip() == text.strip()
+                and _texts(ev.content).strip() == text.strip()
             ):
                 mesaj_gorüldu.set()
             return
@@ -180,15 +180,15 @@ def sor(
             sebep += " — bir araç izni onay bekliyor (yetki kipini gevşetin ya da onaylayın)"
         return {"ok": False, "error": sebep, "gecen_sn": round(time.time() - baslangic, 1)}
 
-    dosyalar: list[str] = []
+    files: list[str] = []
     if sandbox_root is not None:
-        dosyalar = _degisen_dosyalar(Path(sandbox_root), baslangic)
+        files = _changed_files(Path(sandbox_root), baslangic)
 
     return {
         "ok": True,
         "yanit": "\n\n".join(parcalar).strip(),
         "araclar": araclar,
-        "dosyalar": dosyalar,
+        "dosyalar": files,
         "kuyrukta_bekledi": kuyruktaydi,
         "gecen_sn": round(time.time() - baslangic, 1),
         "oturum": getattr(getattr(agent, "session", None), "id", ""),

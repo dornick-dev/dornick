@@ -25,7 +25,7 @@ MAX_RECALL = 20
 RECALL_BODY_CAP = 700
 
 
-def _adim_etiket(mind: Mind, node_id: str) -> str:
+def _step_label(mind: Mind, node_id: str) -> str:
     """İz adımının kısa etiketi — sahne grafikte olmayan düğümü de adıyla
     yakabilsin (hayalet düğüm; bkz. scene.js activate)."""
     try:
@@ -46,7 +46,7 @@ def _sicil_notu(mind: Mind, node_id: str) -> str:
     görünür kılınıyor. Sicili olmayan kayıtta hiçbir şey eklenmiyor.
     """
     try:
-        basari, hata = mind.store.sicil(node_id)
+        basari, hata = mind.store.track_record(node_id)
     except Exception:
         return ""
     return f"\n[{basari} başarı / {hata} hata]" if (basari or hata) else ""
@@ -133,7 +133,7 @@ Mevcut oturum aramaya dahil değildir; o zaten önündeki bağlamda.
                     "recall_trace",
                     query=query,
                     trace=[{**asdict(step), "used": step.node in used,
-                            "label": _adim_etiket(mind, step.node)}
+                            "label": _step_label(mind, step.node)}
                            for step in mind.last_trace],
                 )
             # Okunan hatıra kullanılmış hatıradır: iz güçleniyor ve olay
@@ -148,7 +148,7 @@ Mevcut oturum aramaya dahil değildir; o zaten önündeki bağlamda.
                     "Bellek",
                     [
                         f"[{h.item.id}] {_bounded(h.item.render())}"
-                        + ("" if getattr(h.item, "sicak", True) else " (soğuk)")
+                        + ("" if getattr(h.item, "hot", True) else " (soğuk)")
                         + _sicil_notu(mind, h.item.id)
                         for h in hits
                     ],
@@ -293,7 +293,7 @@ hatırlamalar o yoldan yürüyor.
             eskisi = (args.get("supersedes") or "").strip()
             if eskisi:
                 try:
-                    memory = mind.guncelle(
+                    memory = mind.update(
                         eskisi, content, kind=kind,
                         title=args.get("title") or "",
                         tags=args.get("tags") or [])
@@ -308,7 +308,7 @@ hatırlamalar o yoldan yürüyor.
             else:
                 # Aday YAZMADAN ÖNCE aranıyor: yazdıktan sonra en yakın
                 # komşu kaydın kendisi olurdu.
-                aday = mind.celiski_adayi(content, kind)
+                aday = mind.conflict_candidate(content, kind)
                 memory = mind.remember(
                     content, kind=kind,
                     title=args.get("title") or "",
@@ -452,7 +452,7 @@ Tek adımlık işler için kullanma; kayıt tutmanın maliyeti getirisinden fazl
                 return ToolResult.error(
                     f"'{args.get('id')}' diye bir hedef yok. action=list ile aktifleri gör."
                 )
-            ctx.session.log.note("goal_status", goal_id=goal.id, status=status)
+            ctx.session.log.note("goal_status", goal_id=goal.id, durum=status)
             digest = mind.goal_digest() or "Aktif hedef kalmadı."
             return ToolResult(content=f"[{goal.id}] {status}\n\n{digest}")
 

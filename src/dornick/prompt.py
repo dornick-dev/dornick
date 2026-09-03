@@ -538,7 +538,7 @@ def build(config: Config, registry: ToolRegistry, soul: Any = None) -> SystemPro
             MEMORY_RULES.strip() if _has_mind(registry) else "",
             _tool_list(registry),
             # Küçük aile: kısalık sözleşmesi en sona — kurallar taze kalsın.
-            KISALIK.strip() if kucuk_aile(config.model.name) else "",
+            BREVITY.strip() if kucuk_aile(config.model.name) else "",
         )
     )
     core = "\n\n---\n\n".join(p for p in parts if p)
@@ -585,7 +585,7 @@ _KOD_ISTEK = re.compile(
 )
 
 
-def kodlama_turu(
+def coding_turn(
     messages: list[dict[str, Any]] | None = None,
     *,
     metin: str = "",
@@ -623,7 +623,7 @@ def kodlama_turu(
 # model ara anlatım turlarıyla ve önsöz/özet gevezeliğiyle token yakıyor.
 # Kodlama istisnası: 4 satır kuralı write/edit/kos işlerini boğuyordu
 # (Cursor/Claude kalitesi beklentisi, 01.09).
-KISALIK = """Kısalık sözleşmesi (küçük model):
+BREVITY = """Kısalık sözleşmesi (küçük model):
 - Araç çağrıları arasında anlatı yazma; işi yap, biterken tek özet ver.
 - Sohbet cevabı 4 satırı geçmesin (kod ve araç çıktısı hariç); önsöz/özet yok.
 - İSTİSNA — kodlama: `write_file` / `edit_file` / `kos` / çok dosyalı düzeltme
@@ -815,12 +815,12 @@ def _wsl_distros() -> str:
         import shutil
         import subprocess
 
-        from . import ortam
+        from . import environment
 
         if shutil.which("wsl"):
             try:
                 res = subprocess.run(["wsl", "-l", "-q"], capture_output=True,
-                                     timeout=5, **ortam.sessiz_bayraklar())
+                                     timeout=5, **environment.quiet_flags())
                 # wsl.exe UTF-16 konuşuyor; utf-8 çözmek NUL'lu çöp veriyor.
                 names = [n.strip() for n in
                          res.stdout.decode("utf-16-le", errors="ignore").splitlines()

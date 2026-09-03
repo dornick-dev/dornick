@@ -32,9 +32,9 @@ def hint() -> str:
     geçmiş birine pip önermek anlamsız — ona sihirbazı yeniden
     çalıştırması söylenir (bileşen: Dinleme).
     """
-    from . import ortam
+    from . import environment
 
-    if ortam.kurulu_mu():
+    if environment.kurulu_mu():
         return ("Dinleme özelliği bu kuruluma dahil edilmemiş. Kurulum "
                 "sihirbazını yeniden çalıştırıp 'Dinleme (mikrofon)' "
                 "bileşenini işaretleyerek ekleyebilirsin.")

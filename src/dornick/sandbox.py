@@ -72,7 +72,7 @@ _TEHLIKELI_ADLAR = (
 )
 
 
-def kok_engeli(path: Path) -> str | None:
+def root_block(path: Path) -> str | None:
     """Bu klasör proje kökü olabilir mi? Olamıyorsa sebebini söyler.
 
     Dönen metin doğrudan kullanıcıya gösteriliyor: "geçersiz" demek
@@ -122,7 +122,7 @@ def _ev_dizini() -> Path | None:
         return None
 
 
-def kok_uyarisi(path: Path, *, state_dir: Path | None = None) -> str:
+def root_warning(path: Path, *, state_dir: Path | None = None) -> str:
     """Engel değil ama söylenmesi gereken haller. Boş dize = söylenecek yok.
 
     Kendi kaynak ağacını ya da `.dornick` durumunu kapsayan bir seçim
@@ -138,8 +138,8 @@ def kok_uyarisi(path: Path, *, state_dir: Path | None = None) -> str:
     notlar: list[str] = []
     if state_dir is not None:
         try:
-            durum = state_dir.expanduser().resolve()
-            if durum == kok or kok in durum.parents:
+            status = state_dir.expanduser().resolve()
+            if status == kok or kok in status.parents:
                 notlar.append(
                     "Dornick'in kendi durumu (.dornick: ayarlar, anılar, oturumlar) "
                     "bu klasörün altında — buraya yazmak Dornick'in hafızasına "
@@ -229,9 +229,9 @@ class Sandbox:
             # Geçersiz bir proje yolu programı AÇILMAZ yapmamalı: ayar
             # dosyası elle düzenlenmiş ya da klasör silinmiş olabilir.
             # Sessizce atölyeye dönülüyor; ayar sayfası sebebi söylüyor.
-            if kok_engeli(aday) is None:
+            if root_block(aday) is None:
                 acik.append(aday.resolve())
-                note = kok_uyarisi(aday, state_dir=state_dir)
+                note = root_warning(aday, state_dir=state_dir)
 
         sandbox = cls(root=root.resolve(), enabled=enabled,
                       open_roots=tuple(acik), note=note)

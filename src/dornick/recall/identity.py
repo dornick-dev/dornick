@@ -26,14 +26,14 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Iterable
 
-from .subjects import YASAK_SIFATLAR
+from .subjects import BANNED_ADJECTIVES
 
 # The document is part of every system prompt, so its length is a per-session
 # tax. Short enough that nobody skims it.
 AZAMI_KELIME = 300
 
 # Personality does not turn over in a night.
-GECEDE_DEGISEN = 1
+CHANGED_PER_NIGHT = 1
 
 _KANIT = re.compile(r"\[([^\]]+)\]\s*$")
 
@@ -88,7 +88,7 @@ def check(sentence: str, evidence: Iterable[str]) -> tuple[str, list[str]]:
         raise IdentityRefused(
             "kanıtsız cümle: tıklanıp gidilemeyen bir kimlik, bir hikâyedir")
     dusuk = metin.casefold()
-    for sifat in YASAK_SIFATLAR:
+    for sifat in BANNED_ADJECTIVES:
         if re.search(rf"\b{re.escape(sifat)}\b", dusuk):
             raise IdentityRefused(f"değerlendirici sıfat: '{sifat}'")
     for kalip in TALIMAT_KALIPLARI:
@@ -99,7 +99,7 @@ def check(sentence: str, evidence: Iterable[str]) -> tuple[str, list[str]]:
 
 
 def apply(current: Identity, proposals: list[tuple[str, list[str]]],
-          *, limit: int = GECEDE_DEGISEN) -> tuple[Identity, list[str]]:
+          *, limit: int = CHANGED_PER_NIGHT) -> tuple[Identity, list[str]]:
     """Take at most `limit` accepted changes. Returns (document, refusals)."""
     out = Identity(list(current.sentences))
     refusals: list[str] = []
