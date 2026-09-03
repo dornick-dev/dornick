@@ -890,17 +890,19 @@ açık aramada hepsi bulunuyor (`gomulme_recall` ve `geri_donus_recall` 1.00).
 
 | Metrik | eski | bugün |
 |---|---|---|
-| `prime_precision` | 0.255 | **0.441** |
+| `prime_precision` | 0.255 | **0.447** |
 | `yasak_sizinti` | 59 | **1** |
 | `bayat_ruh` | 3.48 | **0** |
-| `prime_token` | 84.1 | **74.0** |
+| `prime_token` | 84.1 | **74.7** |
+| `ruh_token` | 325.0 | **309.9** |
+| `taze_ruh` | 1.00 | **1.00** |
 | `sorumluluk_dogrulugu` | 0.50 | **0.875** |
 | `sema_tazeleme` | yok | **0.80** |
 | `ders_gecikmesi` | 79.4 tur | **1 tur** |
 | `sicak_oran` | 1.00 | **0.22** |
 | 200k'da `recall` p95 | 33.2 ms | **18.4 ms** |
 | imza indeksi RAM | 14,4 MB | **0,14 MB** |
-| `prime_recall` | 0.96 | 0.75 ⚠️ |
+| `prime_recall` | 0.96 | 0.76 ⚠️ |
 | `tuzak_sessizlik` | 0.45 | 0.50 |
 
 `scale_bench` (tek tur): recall 0.78 → **0.83**, coverage 0.76 → **0.81**,
@@ -913,3 +915,47 @@ skor alıyor. `komsuluk_recall` ve `dikis_recall`'ı sıfırda tutan,
 sürprizini doyuran şey bu. Yol haritasında adı geçen ama hiçbir fazın
 kapsamına girmeyen tek çare `vector.py` için opsiyonel IDF ağırlığı.
 ## Faz 7 — Ödül, mizaç, üç özne, karakter · bekliyor
+
+---
+
+## Holdout — kalibrasyon ana sete mi uydu? · 2026-09-03
+
+Bütün sabitler (`BOZUNMA`, `OLCEK`, `CELISKI_ESIK`, `BASARI_PAYI`,
+`SOGUK_ESIK`, `BAGLAM_CEZA`, `ESIK_UST/ALT`) ana veri setine bakılarak
+seçildi. Bu, sonuçların o setin şekline uydurulmuş olma ihtimalini doğurur ve
+tek panzehiri hiç bakılmamış bir sette ölçmek. `yasam_holdout.json` Faz 0'da
+üretilip bir kez bile koşulmamıştı — bu bir eksiklikti, kapatıldı.
+
+Holdout 30 günlük, 43 düğümlük, 34 soruluk ayrı bir senaryo; gece olayı
+içermediği için yalnız **gündüz yolunu** ölçer (aktivasyon, supersede,
+bağlam, sıcak/soğuk, ruh). H–S kümelerinin metrikleri bu sette "yok".
+
+| Metrik | eski (holdout) | yeni (holdout) | ana sette yeni |
+|---|---|---|---|
+| `prime_precision` | 0.3846 | **0.4750** | 0.447 |
+| `prime_recall` | 1.00 | 0.95 | 0.76 |
+| `yasak_sizinti` | 12 | **5** | 1 |
+| `tuzak_sessizlik` | 0.75 | 0.75 | 0.50 |
+| `bayat_ruh` | 1.63 | **0** | 0 |
+| `taze_ruh` | 1.00 | **1.00** | 1.00 |
+| `ruh_token` | 130.0 | **113.8** | 309.9 |
+| `prime_token` | 56.3 | **50.4** | 74.7 |
+| `sicak_oran` | 1.00 | **0.884** | 0.22 |
+
+**Sonuç:** kalibrasyon ana sete uymamış. Hiç görülmemiş bir sette de yön
+aynı — precision yukarı, sızıntı ve token aşağı, bayat ruh sıfır. İki
+sayı ana setten daha iyi çıkıyor (`prime_recall` 0.95, `tuzak_sessizlik`
+0.75); sebebi holdout'un küçüklüğü: 43 düğümde soğuma da bağlam çatışması
+da az, yani ana setteki `prime_recall` düşüşünün gerçekten o iki
+mekanizmadan geldiğini doğruluyor.
+
+**Yan bulgu — kırık ölçüm aleti.** `--eski` kolu Faz 5'ten beri
+çalışmıyordu: bench `Mind.remember(..., baglam=)` çağırıyor, `hafiza-eski`
+o parametreyi bilmiyor, koşu `TypeError` ile ölüyordu. Faz 5'ten sonraki
+"eskiye göre" satırlarının hepsi donmuş `yasam-taban.json`'dan okunmuştu —
+sayılar doğru ama alet bozuktu ve bunu ancak holdout'u koşmaya çalışınca
+gördük. `yaz()` artık `TypeError`'da bağlamı düşürüp devam ediyor
+(`loop.select_prime`'daki aynı desen). İkinci kusur: "eski" sütunu hangi
+veri setinde olursa olsun ana setin tabanını gösteriyordu — holdout
+koşusunda iki farklı senaryoyu aynı satırda karşılaştırmak olurdu. Taban
+etiketi artık veri setine bağlı (`yasam-holdout-taban`).

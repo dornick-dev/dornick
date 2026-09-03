@@ -336,10 +336,16 @@ def _oyna(mind: Any, veri: dict[str, Any], saat: SanalSaat,
         return oturumlar[ad]
 
     def yaz(olay: dict[str, Any]) -> str:
-        hafiza = mind.remember(
-            olay["icerik"], kind=olay["kind"], title=olay.get("baslik") or "",
-            tags=olay.get("etiketler") or [],
-            baglam=olay.get("baglam") or {})
+        ortak = dict(kind=olay["kind"], title=olay.get("baslik") or "",
+                     tags=olay.get("etiketler") or [])
+        try:
+            hafiza = mind.remember(olay["icerik"], **ortak,
+                                   baglam=olay.get("baglam") or {})
+        except TypeError:
+            # Eski surum (`hafiza-eski`) baglami hic bilmiyor. Bench iki surumu
+            # de ayni veriyle kosturmak zorunda; alani dusurup devam ediyoruz,
+            # cunku "eski surum bunu hic yapmiyordu" olculecek bir sonuc.
+            hafiza = mind.remember(olay["icerik"], **ortak)
         kimlik[olay["slug"]] = hafiza.id
         slug_of[hafiza.id] = olay["slug"]
         return hafiza.id
@@ -1408,7 +1414,12 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps(sonuc, ensure_ascii=False, indent=1))
         return 0
 
-    eski_rapor = _rapor_oku("taban") if args.etiket != "taban" else None
+    # "eski" sutunu AYNI veri setinin taban kosusundan gelmeli. Holdout
+    # kosusunda ana setin tabanini gostermek iki farkli senaryoyu ayni
+    # satirda karsilastirmak olurdu; sayilar dogru ama kiyas yanlis.
+    taban_etiket = "taban" if args.veri == "ana" else f"{args.veri}-taban"
+    eski_rapor = (None if args.etiket == taban_etiket
+                  else _rapor_oku(taban_etiket))
     onceki_rapor = _rapor_oku(args.onceki) if args.onceki else None
     if args.etiket:
         (CHARTS() / f"yasam-{args.etiket}.json").write_text(
