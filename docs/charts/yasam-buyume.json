@@ -1,90 +1,110 @@
 {
  "metrikler": {
-  "prime_precision": 0.2634,
-  "prime_recall": 0.98,
-  "yasak_sizinti": 57.0,
-  "tuzak_sessizlik": 0.45,
-  "bayat_ruh": 3.3333,
-  "taze_ruh": 0.8082,
-  "ruh_token": 329.8111,
-  "prime_token": 83.6387,
+  "prime_precision": 0.2741,
+  "prime_recall": 0.88,
+  "yasak_sizinti": 6.0,
+  "tuzak_sessizlik": 0.475,
+  "bayat_ruh": 0.0,
+  "taze_ruh": 1.0,
+  "ruh_token": 310.7556,
+  "prime_token": 78.3639,
   "geri_donus_recall": 1.0,
-  "komsuluk_recall": 0.0,
-  "sorumluluk_dogrulugu": 0.625,
+  "komsuluk_recall": 0.0833,
+  "sorumluluk_dogrulugu": 1.0,
   "dikis_recall": 0.0,
   "gomulme_recall": 1.0,
-  "sema_tazeleme": -0.0,
-  "yakalama": -0.9809,
-  "ders_gecikmesi": 79.4,
-  "sicak_oran": 1.0,
-  "gece_suresi": null,
+  "sema_tazeleme": 0.6841,
+  "yakalama": 0.0114,
+  "ders_gecikmesi": 1.0,
+  "sicak_oran": 0.7745,
+  "gece_suresi": 0.0617,
+  "uykusuz_kayip": null,
+  "uykusuz_sisme": null,
+  "aktif_bolge_ihlali": null,
+  "tur_bloklama": 7.14,
   "kesinti_kaybi": null,
   "kesinti_gecikmesi": null,
   "yarim_damitma": null,
   "ritim_isabeti": null,
   "atalet": null,
-  "buyume_p95": 6.78,
-  "buyume_ram": 10.0,
-  "gecikme_p95": 2.12
+  "buyume_p95": 6.088,
+  "buyume_ram": 1.0,
+  "gecikme_p95": 5.25
  },
  "kume": {
   "A": {
-   "precision": 0.3659,
-   "recall": 1.0
+   "precision": 0.2958,
+   "recall": 0.7,
+   "sizinti": 0.0
   },
   "B": {
-   "precision": 0.2143,
-   "recall": 0.9375
+   "precision": 0.2759,
+   "recall": 1.0,
+   "sizinti": 0.0
   },
   "D": {
-   "precision": 0.375,
-   "recall": 1.0
+   "precision": 0.4615,
+   "recall": 1.0,
+   "sizinti": 0.0
   },
   "E": {
-   "precision": 0.2021,
-   "recall": 0.95
+   "precision": 0.2159,
+   "recall": 0.95,
+   "sizinti": 3.0
   },
   "H": {
-   "precision": 0.4615,
-   "recall": 1.0
+   "precision": 0.4583,
+   "recall": 0.9167,
+   "sizinti": 0.0
   },
   "J": {
    "precision": 0.4286,
-   "recall": 1.0
+   "recall": 1.0,
+   "sizinti": 0.0
   },
   "K": {
-   "precision": 0.1429,
-   "recall": 1.0
+   "precision": 0.1698,
+   "recall": 0.9,
+   "sizinti": 3.0
   }
  },
  "sayim": {
   "soru": 191,
-  "dugum": 288,
+  "dugum": 275,
   "tuzak": 40,
-  "uyan": 9
+  "uyan": 9,
+  "kenar": 2031
  },
  "veri": "yasam-90",
  "kapali": [],
+ "damitma": false,
  "kaynak": "calisma-agaci",
- "sure_sn": 3.8,
+ "sure_sn": 12.5,
+ "olcek": {
+  "dugum": 50000,
+  "indeks": 2000,
+  "ram_bayt": 144000,
+  "gecikme_p50": 3.22,
+  "gecikme_p95": 5.25
+ },
  "buyume": {
   "buyuk": {
    "dugum": 200000,
-   "indeks": 200000,
-   "ram_bayt": 14400000,
-   "gecikme_p50": 25.32,
-   "gecikme_p95": 33.22
+   "indeks": 2000,
+   "ram_bayt": 144000,
+   "gecikme_p50": 10.41,
+   "gecikme_p95": 17.96
   },
   "kucuk": {
    "dugum": 20000,
-   "indeks": 20000,
-   "ram_bayt": 1440000,
-   "gecikme_p50": 3.59,
-   "gecikme_p95": 4.9
+   "indeks": 2000,
+   "ram_bayt": 144000,
+   "gecikme_p50": 2.04,
+   "gecikme_p95": 2.95
   },
-  "buyume_p95": 6.78,
-  "buyume_ram": 10.0
+  "buyume_p95": 6.088,
+  "buyume_ram": 1.0
  },
  "etiket": "buyume",
- "sira": 95
+ "sira": 99
 }

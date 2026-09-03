@@ -886,27 +886,31 @@ açık aramada hepsi bulunuyor (`gomulme_recall` ve `geri_donus_recall` 1.00).
 | 7 — Ödül, mizaç, karakter | ✅ mekanikler kuruldu, tutarlılık ölçülmedi |
 | 6 — Beyin görünümü | ⚠️ veri katmanı var, görsel katman yok |
 
-### Eskiye göre (yaşam bench, `hafiza-eski` → bugün)
+### Eskiye göre (yaşam bench, `hafiza-eski` → bugün) · 2026-09-04 düzeltmesi
 
-| Metrik | eski | bugün |
-|---|---|---|
-| `prime_precision` | 0.255 | **0.447** |
-| `yasak_sizinti` | 59 | **1** |
-| `bayat_ruh` | 3.48 | **0** |
-| `prime_token` | 84.1 | **74.7** |
-| `ruh_token` | 325.0 | **309.9** |
-| `taze_ruh` | 1.00 | **1.00** |
-| `sorumluluk_dogrulugu` | 0.50 | **0.875** |
-| `sema_tazeleme` | yok | **0.80** |
-| `ders_gecikmesi` | 79.4 tur | **1 tur** |
-| `sicak_oran` | 1.00 | **0.22** |
-| 200k'da `recall` p95 | 33.2 ms | **18.4 ms** |
-| imza indeksi RAM | 14,4 MB | **0,14 MB** |
-| `prime_recall` | 0.96 | 0.76 ⚠️ |
-| `tuzak_sessizlik` | 0.45 | 0.50 |
+> Bu tablonun eski sürümü ölçüm aletindeki bir sızıntıyla üretilmişti:
+> `mind/search.py` gerçek takvim gününü okuyordu, kimlikler rastgeleydi,
+> tohum sabitlenmemişti. Alet onarıldı (bkz. "Determinizm" bölümü); iki
+> sayı gerçekte olduğundan iyi görünüyormuş. Aşağısı iki ayrı süreçte birebir
+> tekrarlanabilen dürüst hâl.
 
-`scale_bench` (tek tur): recall 0.78 → **0.83**, coverage 0.76 → **0.81**,
-precision 0.63 → **0.65**, tok/query 71.8 → **70.7**.
+| Metrik | eski | yeni | not |
+|---|---|---|---|
+| `ders_gecikmesi` | 79.4 tur | **1 tur** | ✅ |
+| `sorumluluk_dogrulugu` | 0.50 | **1.00** | ✅ |
+| `yasak_sizinti` | 59 | **6** | −%90, hedef 0 değil |
+| `bayat_ruh` | 3.48 | **0** | ✅ |
+| `prime_token` | 84.5 | **78.4** | ✅ |
+| `ruh_token` | 325.0 | **310.8** | ✅ |
+| `sema_tazeleme` | yok | **0.68** | ✅ |
+| `taze_ruh` | 1.00 | **1.00** | ✅ |
+| `prime_precision` | 0.255 | 0.274 | önceki rapor 0.447 diyordu — sızıntı |
+| `sicak_oran` | 1.00 | 0.77 | önceki rapor 0.22 diyordu — sızıntı; hedef %10–30 tutmuyor |
+| `prime_recall` | 0.96 | 0.88 ⚠️ | tasarım (soğuk/çatışan enjekte edilmiyor) |
+| `tuzak_sessizlik` | 0.45 | 0.475 | neredeyse yerinde |
+| `gecikme_p95` | 8.43 ms | **5.21 ms** | ✅ |
+
+`scale_bench` (tek tur) gerilemedi.
 
 **Açık kalan tek büyük duvar** üç fazda aynı sayıyla göründü ve adı
 **tohum doygunluğu**: ortak tek bir kelimeyi paylaşan yirmi kayıt 0.5 üstü
@@ -959,3 +963,35 @@ gördük. `yaz()` artık `TypeError`'da bağlamı düşürüp devam ediyor
 veri setinde olursa olsun ana setin tabanını gösteriyordu — holdout
 koşusunda iki farklı senaryoyu aynı satırda karşılaştırmak olurdu. Taban
 etiketi artık veri setine bağlı (`yasam-holdout-taban`).
+
+---
+
+## Determinizm — bench'i gerçekten tekrarlanabilir yap · 2026-09-04
+
+Yol haritası "aynı veri, aynı takvim, aynı sonuç" diyor. Bu iddia süreç
+İÇİNDE tutuyordu (iki `bench.run()` aynı sonucu veriyordu) ama süreçler
+ARASINDA tutmuyordu — ve sabitlenmiş çizelgeler bugün hiçbir sürümle yeniden
+üretilemiyordu. Üç sızıntı vardı:
+
+1. **Gerçek saat sızıntısı.** `mind/search.py._freshness`, geçmiş oturumları
+   sıralarken `datetime.now()` çağırıyordu. Saat denetim testi yalnız
+   `store.py` ile `mind/store.py`'yi gözlüyordu, `search.py`'yi değil — bu
+   yüzden bir yıl boyunca görünmedi. Ölçüm hangi GÜN koşulduğuna bağlıydı;
+   `sicak_oran` ve `prime_precision` bundan besleniyordu. Saat artık enjekte
+   ediliyor; denetim tüm recall+mind yüzeyine genişletildi ve "enjekte
+   edilebilir varsayılan" kalıbına (`now or datetime.now()`) izin veriyor.
+2. **Rastgele kimlik sızıntısı.** Düğüm kimlikleri `n_<rastgele>`; eşit skorlu
+   iki kayıt arasındaki küme sıralaması bu kimliklere bağlıydı, süreçten
+   sürece değişiyordu. Bench artık deterministik (sayaç) kimlik enjekte
+   ediyor — üründe sıfır değişiklik, kimliklerin rastgeleliği ürüne zaten
+   fark etmiyor.
+3. **Bütçe ve tohum.** Gerçek saniye bütçeleri nötrlendi (sanal takvimde
+   makine hızı içeriğe karışmasın) ve `PYTHONHASHSEED` sabitlendi.
+
+Yeni test `test_two_processes_give_the_same_result` iki AYRI süreci koşup
+her içerik metriğinin birebir eştiğini zorluyor. `--old` kolunun kırık prime
+fallback'i (`select_prime(raw=)` eski üründe yok) katmanlı hale getirildi.
+
+**Kazanılan ders:** ölçüm aleti de üründür ve onun da regresyon testi olmalı.
+Sızıntı, iyi görünen iki sayıyı üretiyordu; onarım onları düşürdü ama
+gerçek kıldı.
