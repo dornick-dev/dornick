@@ -443,11 +443,14 @@ def ters_tekrar(store: Any, oturum: Oturum, *,
                                 etiket=aktivasyon.BASARI)
             rapor.basari_payi += 1
         if len(dizi) >= 3 and len(oturum.araclar) >= 2:
-            store.remember(
-                "Bu yordam işe yaradı: " + " → ".join(oturum.araclar[:6]),
-                kind="procedure", tags=["gece", "yordam"],
-                links=dizi[-3:], session=oturum.id)
-            rapor.yazilan_yordam += 1
+            baslik = "yordam: " + " → ".join(oturum.araclar[:6])
+            if not _pekistir(store, "procedure", baslik, aktivasyon.BASARI):
+                store.remember("Bu yordam işe yaradı: "
+                               + " → ".join(oturum.araclar[:6]),
+                               kind="procedure", title=baslik,
+                               tags=["gece", "yordam"],
+                               links=dizi[-3:], session=oturum.id)
+                rapor.yazilan_yordam += 1
 
     elif oturum.sonuc in ("basarisiz", "duzeltildi"):
         for k, node_id in enumerate(reversed(dizi)):
@@ -456,11 +459,27 @@ def ters_tekrar(store: Any, oturum: Oturum, *,
             rapor.hata_payi += 1
         kaynak = dizi[-1]
         if oturum.hata_metni:
-            store.remember(
-                f"{oturum.hata_metni} — bu yolda {kaynak} kullanılmıştı",
-                kind="lesson", tags=["gece", "hata"], links=[kaynak],
-                session=oturum.id)
-            rapor.yazilan_ders += 1
+            # Aynı ders ikinci kez ÖĞRENİLMEZ, pekişir. Gece her başarısız
+            # oturum için yeni bir ders yazsaydı, beş kez olan bir hata beş
+            # ayrı ders olur ve hepsi ruhun sekiz yuvası için yarışırdı.
+            # Benzerlik kaydın KİMLİĞİYLE değil hata METNİYLE ölçülüyor:
+            # kimlik her oturumda başka, hata aynı.
+            baslik = f"hata: {oturum.hata_metni}"[:140]
+            mevcut = store.baslikla_bul("lesson", baslik)
+            if mevcut is not None:
+                store.kullanim_ekle(mevcut.id, w=0.5, etiket=aktivasyon.HATA)
+                store.baglan(mevcut.id, kaynak, weight=0.6,
+                             reason="bu hatıra hataya götürdü")
+            else:
+                # Kaydın kimliği gövdeye YAZILMIYOR: zaten kenarda
+                # duruyor ("bu hatıra hataya götürdü") ve `mind_recall`
+                # kenar gerekçelerini gösteriyor. Ham bir kimlik modele
+                # bilgi vermiyor, yalnız ruhun her oturumdaki bedelini
+                # artırıyordu.
+                store.remember(
+                    oturum.hata_metni, kind="lesson", title=baslik,
+                    tags=["gece", "hata"], links=[kaynak], session=oturum.id)
+                rapor.yazilan_ders += 1
 
     elif oturum.sonuc == "acik":
         # Açık hedefe dokunulmuyor — Faz 1 bozunması işini yapsın. Ama
@@ -470,6 +489,20 @@ def ters_tekrar(store: Any, oturum: Oturum, *,
             kind="goal", tags=["acik"], links=dizi[-2:], session=oturum.id)
         rapor.yazilan_hedef += 1
     return rapor
+
+
+def _pekistir(store: Any, kind: str, baslik: str, etiket: str) -> bool:
+    """Aynı şey zaten yazılmışsa onu güçlendir, yenisini yazma.
+
+    Yol haritasının yordamlar için koyduğu kural ("aynı başlıklı varsa
+    supersede değil, kullanım ekle") asıl derslerde gerekiyordu: hafızayı
+    dolduran şey, aynı hatanın her tekrarında yazılan yeni bir ders.
+    """
+    mevcut = store.baslikla_bul(kind, baslik)
+    if mevcut is None:
+        return False
+    store.kullanim_ekle(mevcut.id, w=0.5, etiket=etiket)
+    return True
 
 
 # -- Adım 4: dikiş -----------------------------------------------------

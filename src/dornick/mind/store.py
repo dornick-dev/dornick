@@ -41,6 +41,14 @@ GOAL_STATES = ("active", "done", "dropped")
 # parçası; sınırsız büyürse her oturum daha pahalı başlar.
 SOUL_LIMIT = 8
 
+# Bu kadar gün içinde yapılmış bir düzeltme ruhta yer garantiliyor.
+# Aktivasyona göre sıralamak doğru olanı yapıyor — düzenli kullanılan bir
+# yordam, bir haftalık düzeltmeden gerçekten daha canlı. Ama düzeltme
+# sıradan bir hatıra değil: ruhun sistem promptunda durmasının sebebi
+# ajanın eskimiş bir kurala göre davranmaması. Ayrılan yer yarıyı geçmiyor
+# — ruh bir düzeltme listesi değil.
+TAZE_DUZELTME_GUN = 7
+
 # Epizodik aramada taranacak azami oturum sayısı. Günlükler büyüdükçe
 # burası bir indeksle değiştirilir.
 MAX_SCANNED_SESSIONS = 60
@@ -62,6 +70,9 @@ class Memory:
     deleted: bool = False
     # Aktif kümede mi? Soğuk kayıt aramada bulunur, önyüklemeye girmez.
     sicak: bool = True
+    # Hangi kaydın yerini aldı. Ruh, bu hafta yapılmış bir düzeltmeye yer
+    # ayırıyor: düzeltme sıradan bir hatıra değil, bir DEĞİŞİKLİK.
+    supersedes: str = ""
     baglam: dict = field(default_factory=dict)
 
     def searchable(self) -> str:
@@ -398,11 +409,36 @@ class Mind:
         kullanıldığına bakmaksızın en son yazılan sekiz kaydı taşıyordu.
         """
         from ..recall import anahtar
+        from ..recall.saat import coz
 
         if not anahtar.AKTIF.aktivasyon:
             # Ablation: Faz 1 öncesi yol — listeleme sırası (tazelik).
             return self.memories(kind)[:limit]
-        return [_from_node(n) for n in self.store.by_kind(kind, limit=limit)]
+
+        adaylar = [_from_node(n) for n in self.store.by_kind(kind, limit=limit * 3)]
+        simdi = self._saat()
+        ayrilan = limit // 2
+
+        def _taze_duzeltme(m: Memory) -> bool:
+            if not m.supersedes:
+                return False
+            an = coz(m.ts)
+            return an is not None and (simdi - an).days < TAZE_DUZELTME_GUN
+
+        taze = [m for m in adaylar if _taze_duzeltme(m)][:ayrilan]
+        kimlikler = {m.id for m in taze}
+        # Tavan iki yönlü: düzeltmeye yer AYIRIYOR ve yerin yarısından
+        # fazlasını ALMASINI da engelliyor. Sekiz düzeltmelik bir hafta
+        # ruhu bir değişiklik listesine çevirmemeli — kim olduğunun kaydı
+        # neyin değiştiğinin kaydından daha uzun ömürlü.
+        kalan = [m for m in adaylar
+                 if m.id not in kimlikler and not _taze_duzeltme(m)]
+        artan = [m for m in adaylar
+                 if m.id not in kimlikler and _taze_duzeltme(m)]
+        secilen = (taze + kalan)[:limit]
+        if len(secilen) < limit:
+            secilen += artan[:limit - len(secilen)]
+        return secilen
 
     def recall(self, query: str, *, kind: str | None = None, limit: int = 8,
                baglam: dict | None = None) -> list[Scored]:
@@ -939,6 +975,7 @@ def _from_node(node, *, deleted: bool = False) -> Memory:
         deleted=deleted,
         sicak=bool(getattr(node, "sicak", True)),
         baglam=dict(getattr(node, "baglam", {}) or {}),
+        supersedes=str(getattr(node, "supersedes", "") or ""),
     )
 
 def _stem_to_date(stem: str) -> str:

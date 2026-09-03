@@ -561,6 +561,37 @@ class RecallStore:
                 self._index.drop(eski_id)
         return yeni
 
+    def baslikla_bul(self, kind: str, title: str) -> Node | None:
+        """Aynı başlıklı kayıt. Benzerlik değil KESİN eşleme.
+
+        Gecenin yazdığı ders ve yordamların tekilliği bir eşiğe
+        bırakılamaz: aynı hata metni aynı başlığı verir, ve "aynı ders mi"
+        sorusunun cevabı 0.55 gibi bir sayıya değil eşitliğe bakmalı.
+        """
+        if not title:
+            return None
+        with self._lock:
+            row = self._db.execute(
+                "SELECT * FROM node WHERE deleted=0 AND kind=? AND title=?"
+                + self._gecmis_suzgeci()
+                + " ORDER BY created DESC LIMIT 1",
+                (kind, title[:140])).fetchone()
+        return self._dugum(row) if row else None
+
+    def benzer_kayit(self, body: str, kind: str, *,
+                     esik: float = CELISKI_ESIK) -> Node | None:
+        """Aynı türden, yeterince benzer bir kayıt var mı?
+
+        İki ayrı işin ortak sorusu: model `supersedes` vermeyi unuttu mu
+        (`celiski_adayi`), ve gece aynı dersi ikinci kez mi yazıyor
+        (`orgu.ters_tekrar`). İkincisi supersede anahtarına bağlı değil —
+        mekanik kapalıyken de aynı ders iki kez yazılmamalı.
+        """
+        for node_id, score, aday_kind in self._seed(body[:400], 3):
+            if aday_kind == kind and score >= esik:
+                return self.peek(node_id)
+        return None
+
     def celiski_adayi(self, body: str, kind: str, *,
                       esik: float = CELISKI_ESIK) -> Node | None:
         """Bu gövde, aynı türden var olan bir kaydın güncellemesi olabilir mi?
@@ -572,10 +603,7 @@ class RecallStore:
         """
         if not anahtar.AKTIF.supersede:
             return None
-        for node_id, score, aday_kind in self._seed(body[:400], 3):
-            if aday_kind == kind and score >= esik:
-                return self.peek(node_id)
-        return None
+        return self.benzer_kayit(body, kind, esik=esik)
 
     def gecerli_surum(self, node_id: str) -> str:
         """Zincirin ucundaki kayıt. Döngü korumalı.

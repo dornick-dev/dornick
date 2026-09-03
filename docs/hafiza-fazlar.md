@@ -820,6 +820,55 @@ söylemek için burada.
 
 ---
 
+## Düzeltme — ruhun bileşimi (Faz 3 ve 3.11'in bıraktığı gerileme)
+
+Eskiye karşı ölçümde iki metrik geriliyordu ve ikisi de tasarım değil kusurdu:
+`taze_ruh` 1.00 → 0.70, `ruh_token` 325 → 348.
+
+**Kök neden ölçüldü**, tahmin edilmedi. 90. günde ruhun yordam yuvalarının
+sekizi de düzenli **kullanılan** yordamlardaydı; B zincirlerinin bu haftaki
+düzeltmeleri (test/dağıtım/yedek) dışarıda kalmıştı. Ders yuvalarının altısı
+gecenin yazdığı, içinde ham düğüm kimliği taşıyan uzun derslerdi.
+
+**Üç değişiklik:**
+
+1. **Taze düzeltmeye ayrılmış yer.** Aktivasyona göre sıralamak doğru olanı
+   yapıyor — düzenli kullanılan bir yordam bir haftalık düzeltmeden gerçekten
+   daha canlı. Ama düzeltme sıradan bir hatıra değil, bir **değişiklik**:
+   ruhun sistem promptunda durmasının sebebi ajanın eskimiş bir kurala göre
+   davranmaması. Son yedi günde yapılmış düzeltmeler yuvaların yarısını
+   garantiliyor. Tavan iki yönlü: yer ayırıyor **ve** yerin yarısından
+   fazlasını almasını engelliyor — sekiz düzeltmelik bir hafta ruhu bir
+   değişiklik listesine çevirmemeli.
+2. **Aynı ders ikinci kez öğrenilmiyor, pekişiyor.** Gece her başarısız
+   oturum için yeni bir ders yazıyordu; aynı hata beş kez olduğunda beş ayrı
+   ders oluyordu. Yol haritasının yordamlar için koyduğu kural ("aynı
+   başlıklı varsa supersede değil, kullanım ekle") asıl burada gerekiyormuş.
+   Tekillik bir benzerlik eşiğine değil **başlık eşitliğine** bağlandı:
+   "aynı ders mi" sorusunun cevabı 0.55 gibi bir sayıya bakmamalı.
+3. **Ham düğüm kimliği ders gövdesinden çıktı.** Kimlik zaten kenarda
+   duruyor ("bu hatıra hataya götürdü") ve `mind_recall` kenar gerekçelerini
+   gösteriyor. Modele bilgi vermeyen, yalnız her oturumun bedelini artıran
+   bir dizgiydi.
+
+| Metrik | eski | düzeltmeden önce | sonra | |
+|---|---|---|---|---|
+| `taze_ruh` | 1.00 | 0.70 | **1.00** | ✅ geri geldi |
+| `ruh_token` | 325.0 | 348.3 | **309.9** | ✅ tabanın altında |
+| `prime_precision` | 0.255 | 0.444 | **0.447** | ✅ |
+| `prime_token` | 84.07 | 74.08 | **74.74** | ✅ |
+| `sorumluluk_dogrulugu` | 0.50 | 0.875 | **0.875** | ✅ |
+
+`tests/test_soul_freshness.py` (7 test) bu üçünü de zorluyor. 2001 test
+geçiyor; `scale_bench` gerilemedi (precision 0.65, tok 70.7).
+
+Geriye kalan tek gerileme `prime_recall` 0.96 → 0.76 ve o **tasarımın
+sonucu**: soğuyan ve bağlamı çatışan kayıt artık kendiliğinden enjekte
+edilmiyor. Aynı değişiklik sızıntıyı 59'dan 1'e, token'ı %11 aşağı indirdi;
+açık aramada hepsi bulunuyor (`gomulme_recall` ve `geri_donus_recall` 1.00).
+
+---
+
 ## Toplu durum
 
 | Faz | Durum |
