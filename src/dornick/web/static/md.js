@@ -11,11 +11,11 @@
 // not an error. An unclosed fence is shown as "a code block being written".
 
 const Markdown = (() => {
-  // Translation bridge: dil.js normally loads first, but this file must also
+  // Translation bridge: lang.js normally loads first, but this file must also
   // work standalone (preview, stale cache) — Turkish remains in that case.
   const translate = (s) => (typeof t === "function" ? t(s) : s);
-  if (typeof Dil !== "undefined") {
-    Dil.ekle({
+  if (typeof Lang !== "undefined") {
+    Lang.add({
       "Kopyala": "Copy", "Kopyalandı ✓": "Copied ✓", "Kopyalanamadı": "Copy failed",
       "tümünü göster": "show all", "kısalt": "collapse",
       " satır": " lines",

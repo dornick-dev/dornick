@@ -3,7 +3,7 @@
 
 // English translations of the texts this file shows the user. The source
 // text stays Turkish; it is translated at display time with t("...").
-Dil.ekle({
+Lang.add({
   "Ses su an uretilemiyor — ses servisine ulasilamiyor olabilir (internet gerekli). Metin ekranda; ses duzelince kendiliginden devam eder.":
     "Speech is unavailable right now — the voice service may be unreachable (internet required). The text stays on screen; audio resumes once the service is back.",
   // Version suffix in the brand tooltip
@@ -175,7 +175,7 @@ Dil.ekle({
   "Fiyat bilinmiyor (yerel sunucu ya da katalog dışı model) — fren çalışmaz.":
     "Price unknown (local server or model outside the catalogue) — the brake cannot work.",
   "Sınır kaydedilemedi.": "Could not save the cap.",
-  "Premium model: çıktı fiyatı $20/M üstünde.":
+  "Premium model: çıktı priceı $20/M üstünde.":
     "Premium model: output price above $20/M.",
   "Bu tur: ": "This turn: ", "oturum: ": "session: ",
   "Girdi: ": "Input: ", "Çıktı: ": "Output: ",
@@ -382,7 +382,7 @@ let lastQuery = "";
 // internal notes. A broad pattern (e.g. every square bracket) would swallow
 // the user's own sentence.
 
-const IC_NOT_KALIPLARI = [
+const INTERNAL_NOTE_PATTERNS = [
   /^\s*\[(Harness notu|Yardımcı|Arka plan işi|Kullanıcı bu arada yazdı|Ana ajandan|Uzun koşu kontrol noktası)/,
   /^\s*Planını yazdın ama uygulamadın/,
   /^\s*Önceki yanıtın uzunluk sınırında kesildi/,
@@ -394,20 +394,20 @@ const IC_NOT_KALIPLARI = [
 
 // Tool-call XML: appearing anywhere in the text is enough — the model
 // usually writes a sentence or two first and only then slides into XML.
-const SAHTE_CAGRI_KALIBI = /<\/?(function_calls|invoke\b|parameter\b|antml:)/i;
+const FAKE_CALL_PATTERN = /<\/?(function_calls|invoke\b|parameter\b|antml:)/i;
 
 function isInternalNote(text) {
   const s = String(text || "");
-  return IC_NOT_KALIPLARI.some((k) => k.test(s));
+  return INTERNAL_NOTE_PATTERNS.some((k) => k.test(s));
 }
 
-function sahteCagri(text) {
-  return SAHTE_CAGRI_KALIBI.test(String(text || ""));
+function fakeCall(text) {
+  return FAKE_CALL_PATTERN.test(String(text || ""));
 }
 
 // Should the user line be drawn? Not if it is an internal note — swallowed silently.
-function cizilir(text) {
-  return !isInternalNote(text) && !sahteCagri(text);
+function drawable(text) {
+  return !isInternalNote(text) && !fakeCall(text);
 }
 
 Scene.init({
@@ -420,7 +420,7 @@ Scene.init({
 });
 Scene.load();
 
-Dil.ekle({ "Açıklama ▸": "Key ▸", "Açıklama ▾": "Key ▾" });
+Lang.add({ "Açıklama ▸": "Key ▸", "Açıklama ▾": "Key ▾" });
 
 // --- context tools ⋮ menu ------------------------------------------------
 (() => {
@@ -455,7 +455,7 @@ Dil.ekle({ "Açıklama ▸": "Key ▸", "Açıklama ▾": "Key ▾" });
     if (localStorage.getItem("dornick-brain-ambient") === "kapali")
       document.body.classList.add("no-ambient");
   } catch { /* file:// */ }
-  window.beyinOrtada = (on) => {
+  window.brainCentered = (on) => {
     document.body.classList.toggle("no-ambient", !on);
     try { localStorage.setItem("dornick-brain-ambient", on ? "acik" : "kapali"); } catch {}
   };
@@ -737,7 +737,7 @@ function hideSetupGuide() {
 // Thin bridge for the working-folder strip (workdir.js): loadState calls
 // from here, the module does the drawing.
 function setWorkdir(project, workspace) {
-  if (typeof WorkDir !== "undefined") WorkDir.ciz(project, workspace);
+  if (typeof WorkDir !== "undefined") WorkDir.draw(project, workspace);
 }
 
 // --- smart scrolling ----------------------------------------------------
@@ -1027,7 +1027,7 @@ let transcriptFor = "";
 // Max turns drawn on open: printing a huge chat to markdown in one go locked
 // the screen for seconds (live wound, 01.09: "it freezes when I open the
 // other chat"). Older turns come on demand via "Daha eskiyi göster".
-const TRANSCRIPT_SON = 80;
+const TRANSCRIPT_LAST = 80;
 
 async function loadTranscript(id) {
   if (id && transcriptFor === id) return;
@@ -1040,8 +1040,8 @@ async function loadTranscript(id) {
   // id is now checked at every step; on mismatch drawing is silently dropped.
   if (transcriptFor !== id) return;
   const turns = (data.turns || []).filter(
-    (t) => cizilir(t.text) || (t.adimlar && t.adimlar.length) || t.dusunme);
-  const start = Math.max(0, turns.length - TRANSCRIPT_SON);
+    (t) => drawable(t.text) || (t.adimlar && t.adimlar.length) || t.dusunme);
+  const start = Math.max(0, turns.length - TRANSCRIPT_LAST);
   transcriptBatch = true;
   const prevFollow = follow;
   follow = false;
@@ -1078,7 +1078,7 @@ function transcriptTurn(turn, before) {
     reviveUserMedia(el, turn.text || "");
   } else {
     if (turn.dusunme || (turn.adimlar && turn.adimlar.length)) historyStrip(turn);
-    if (cizilir(turn.text)) {
+    if (drawable(turn.text)) {
       const el = line("agent", "");
       el._rawText = turn.text || "";
       Markdown.into(el, turn.text || "");
@@ -1169,7 +1169,7 @@ function historyStrip(turn) {
     what.className = "what";
     what.textContent = step.ozet || "";
     what.title = step.ozet || "";
-    if (KOD_HEDEFLI.has(step.tool)) { row.dataset.kod = "1"; what.classList.add("kod"); }
+    if (CODE_TOOLS.has(step.tool)) { row.dataset.kod = "1"; what.classList.add("kod"); }
     row.append(spark, who, what);
     body.append(row);
   }
@@ -1281,7 +1281,7 @@ function setBusy(value) {
   // "loading" through long tool-running stretches was a live wound.
   if (value && !busy) turnActivity = false;
   busy = value;
-  // The brand node knits and unknits while work runs (CSS dugum-orgu).
+  // The brand node knits and unknits while work runs (CSS knot-knit).
   document.body.classList.toggle("mesgul", value);
   stopBtn.hidden = !value;
   paintSend();
@@ -1498,7 +1498,7 @@ function write(chunk) {
     // the DOM (the cursor goes with it). The model side is corrected in the
     // loop: a "you wrote your tool call as text" note goes out and the turn
     // continues.
-    if (sahteCagri(raw)) { agentLine.remove(); return; }
+    if (fakeCall(raw)) { agentLine.remove(); return; }
     Markdown.into(agentLine, raw);
     scroll();
   }, REDRAW_MS);
@@ -1518,7 +1518,7 @@ let thought = "";
 // the first `usage` event erased the model name — after a model switch the
 // new name never appeared on screen.
 let modelName = "";
-let oturumId = "";   // active chat — the per-chat model choice writes here
+let sessionId = "";   // active chat — the per-chat model choice writes here
 let tokenNote = "";
 let busyNote = "";   // the "alive" note ticking second by second while busy
 
@@ -1706,7 +1706,7 @@ function think(chunk) {
       w.thinkStart = Date.now();
       thought = "";
     }
-    canliDusunceTiklanir(w.thought);
+    liveThoughtClickable(w.thought);
   }
   thought += chunk;
   bumpStream(chunk);
@@ -1715,25 +1715,25 @@ function think(chunk) {
   // strip enormous. Clicking the box (`open`) shows all of it — readable
   // while running too (live wound: "I click the detail, nothing opens").
   const open = w.thought.classList.contains("open");
-  const goster = open ? thought
+  const shown = open ? thought
     : (thought.length > 600 ? "…" + thought.slice(-600) : thought);
-  w.thought.textContent = goster.trim();
+  w.thought.textContent = shown.trim();
   if (!paintLive()) workHead(mull(), "", since(w.since) + streamNote());
   paintThinkLine();
   // In-box scrolling: if the user is AT THE BOTTOM, follow the last
   // sentence; if they scrolled up to read, do not move them — pulling to the
   // bottom on every chunk made reading impossible ("it drifts behind" —
   // live complaint).
-  const dipte = w.thought.scrollHeight - w.thought.scrollTop
+  const atBottom = w.thought.scrollHeight - w.thought.scrollTop
     - w.thought.clientHeight < 40;
-  if (!open || dipte) w.thought.scrollTop = w.thought.scrollHeight;
+  if (!open || atBottom) w.thought.scrollTop = w.thought.scrollHeight;
   if (w.body.hidden) scroll();   // folded: peek below; open: leave it to the user
 }
 
 // The RUNNING reasoning box is clickable too: toggles between the tail view
 // and the full text. onclick used to attach only to finished thoughts —
 // clicking the running one did nothing (live wound, 31.08).
-function canliDusunceTiklanir(box) {
+function liveThoughtClickable(box) {
   box.title = t("Tıkla — akan muhakemenin tamamını gör");
   box.onclick = (ev) => {
     ev.stopPropagation();
@@ -1824,12 +1824,12 @@ function closeThought() {
         // Carried on the row for merging and reopening.
         box._full = full;
         box._secs = secs;
-        const arsiv = work.thinkAll;   // same array: later-swallowed ones show too
+        const archive = work.thinkAll;   // same array: later-swallowed ones show too
         let open = false;
         box.onclick = (ev) => {
           ev.stopPropagation();
           open = !open;
-          box.textContent = open ? arsiv.join("\n\n———\n\n") : label;
+          box.textContent = open ? archive.join("\n\n———\n\n") : label;
           box.classList.toggle("open", open);
           // CSS max-height + inner scroll so the page does not stretch when
           // opened; here only keep the box in the visible area.
@@ -1860,8 +1860,8 @@ function finishAgentLine() {
 
   // The model often streams whitespace before calling a tool; that left a
   // completely empty line. A fake tool call is in the same basket: raw XML
-  // does not stay in the chat (see sahteCagri).
-  if (!raw.trim() || sahteCagri(raw)) agentLine.remove();
+  // does not stay in the chat (see fakeCall).
+  if (!raw.trim() || fakeCall(raw)) agentLine.remove();
   else {
     Markdown.into(agentLine, raw);
     agentLine._rawText = raw;
@@ -2210,9 +2210,9 @@ function el2(tag, cls, text) {
 }
 
 // Files pointed at with `@` are written into the message explicitly (see
-// komut.js). Without the module the text passes through untouched.
+// command.js). Without the module the text passes through untouched.
 function withMentions(text) {
-  return (typeof Komut !== "undefined" && Komut.bahisEkle) ? Komut.bahisEkle(text) : text;
+  return (typeof Command !== "undefined" && Command.addHint) ? Command.addHint(text) : text;
 }
 
 // Bridge to the orchestra deck: if the module is absent (not loaded), skip silently.
@@ -2223,17 +2223,17 @@ function orchSeed(list) { if (typeof Orchestra !== "undefined" && Orchestra.seed
 
 // Bridge to the running-tasks panel: same pattern. Refreshed even while the
 // panel is closed — the top-bar badge must tell the truth.
-function tasksRefresh() { if (typeof Gorevler !== "undefined") Gorevler.tazele(); }
-function tasksDone(e) { if (typeof Gorevler !== "undefined") Gorevler.bitti(e); }
+function tasksRefresh() { if (typeof Tasks !== "undefined") Tasks.refresh(); }
+function tasksDone(e) { if (typeof Tasks !== "undefined") Tasks.done(e); }
 
 // Change-ledger bridge: turn boundaries.
-function chgTurnStart() { if (typeof Degisiklik !== "undefined") Degisiklik.turBasladi(); }
-function chgTurnEnd() { if (typeof Degisiklik !== "undefined") Degisiklik.turBitti(); }
+function chgTurnStart() { if (typeof Changes !== "undefined") Changes.turnStarted(); }
+function chgTurnEnd() { if (typeof Changes !== "undefined") Changes.turnEnded(); }
 
 function withContext(text) {
   const bits = [];
-  if (typeof Cameras !== "undefined" && Cameras.baglam) {
-    const cam = Cameras.baglam();
+  if (typeof Cameras !== "undefined" && Cameras.context) {
+    const cam = Cameras.context();
     if (cam) bits.push(cam);
   }
   if (appContext) {
@@ -2268,8 +2268,8 @@ function toggleFocus() {
     try { Viewer.close(); } catch {}
     try { Apps.close(); } catch {}
     try { History.close(); } catch {}
-    try { if (window.JobsPanel) JobsPanel.close(); else Gorevler.kapat(); } catch {}
-    try { if (typeof Cameras !== "undefined") Cameras.gizle(); } catch {}
+    try { if (window.JobsPanel) JobsPanel.close(); else Tasks.close(); } catch {}
+    try { if (typeof Cameras !== "undefined") Cameras.hide(); } catch {}
     const s = document.getElementById("settings"); if (s) s.hidden = true;
     document.body.classList.remove("viewing", "settling");
   }
@@ -2737,8 +2737,8 @@ function paintCtxBar(bar, breakdown, window_, used) {
   }
 }
 
-function dockContext(promptTotal, tahmin, kirilim) {
-  if (kirilim) lastBreakdown = kirilim;
+function dockContext(promptTotal, estimate, breakdown) {
+  if (breakdown) lastBreakdown = breakdown;
   const used = ctxUsed(promptTotal, lastBreakdown);
   if (!contextWindow) return;
   const pct = used ? Math.min(100, Math.round((used / contextWindow) * 100)) : 0;
@@ -2750,8 +2750,8 @@ function dockContext(promptTotal, tahmin, kirilim) {
   // In a resumed session the figure may not be the provider's real count
   // (old logs carry no usage): it is declared a rough estimate. Saying
   // "approximate" is honest; selling made-up precision is not.
-  box.classList.toggle("tahmin", !!tahmin);
-  box.title = tahmin ? t("Bağlam doluluğu — yaklaşık (geçmişten tahmin)")
+  box.classList.toggle("tahmin", !!estimate);
+  box.title = estimate ? t("Bağlam doluluğu — yaklaşık (geçmişten tahmin)")
                      : t("Bağlam doluluğu");
 }
 
@@ -2762,12 +2762,12 @@ function dockContext(promptTotal, tahmin, kirilim) {
 // unknown, the chip falls back to token counts. Clicking opens the
 // this-turn + session breakdown.
 
-let fiyat = null;                              // {girdi, cikti} USD/token | null
-let kullanim = { tur: null, oturum: null };    // totals from the usage event
+let price = null;                              // {girdi, cikti} USD/token | null
+let usage = { tur: null, oturum: null };    // totals from the usage event
 // Spend cap for this session (USD); null = unlimited. The real brake is on
 // the server (see desktop.Bridge._butce_freni): the counter there stops the
 // turn loop. The copy here only displays and pre-fills the box.
-let butce = null;
+let budget = null;
 
 // With the output price $/M above this threshold the model is "premium":
 // the chip turns amber and the title gets a note — warns without shouting.
@@ -2779,36 +2779,36 @@ function money(n) {
   return "$" + (n >= 0.01 || n === 0 ? n.toFixed(2) : n.toFixed(3));
 }
 
-function costOf(k) { return k.girdi * fiyat.girdi + k.cikti * fiyat.cikti; }
+function costOf(k) { return k.girdi * price.girdi + k.cikti * price.cikti; }
 
 function shortTok(n) { return (n >= 1000 ? (n / 1000).toFixed(1) + "k" : String(n)); }
 
-function isPremium() { return !!(fiyat && fiyat.cikti * 1e6 > PREMIUM_USD_M); }
+function isPremium() { return !!(price && price.cikti * 1e6 > PREMIUM_USD_M); }
 
 function dockCost() {
   const chip = $("dock-cost");
-  const turn = kullanim.tur;
-  const session = kullanim.oturum;
+  const turn = usage.tur;
+  const session = usage.oturum;
   // The chip shows the SESSION total — reopening a conversation seeds past
   // spend here too. "This turn" stays in the breakdown.
   const hasAny = session && (session.girdi || session.cikti || session.cagri);
-  if (!hasAny && !butce) { chip.hidden = true; return; }
+  if (!hasAny && !budget) { chip.hidden = true; return; }
   chip.hidden = false;
   chip.classList.toggle("premium", isPremium());
-  const spent = fiyat && session ? costOf(session) : null;
+  const spent = price && session ? costOf(session) : null;
   let text = !hasAny ? "≈$0.00"
-    : fiyat ? "≈" + money(spent)
+    : price ? "≈" + money(spent)
     : shortTok((session.girdi || 0) + (session.cikti || 0)) + " tok";
   // With a cap the chip carries two numbers at once: what the session spent
   // and what the ceiling is. "How much is left" gets answered without
   // opening the box.
-  if (butce) text += " · " + money(spent == null ? 0 : spent) + "/" + money(butce);
+  if (budget) text += " · " + money(spent == null ? 0 : spent) + "/" + money(budget);
   chip.textContent = text;
-  chip.classList.toggle("over", !!(butce && spent != null && spent >= butce));
+  chip.classList.toggle("over", !!(budget && spent != null && spent >= budget));
   chip.title = t("Bu oturumun tahmini toplam harcaması — tıkla: kırılım")
-    + (turn && (turn.girdi || turn.cikti) && fiyat
+    + (turn && (turn.girdi || turn.cikti) && price
       ? t(" · bu tur: ") + "≈" + money(costOf(turn)) : "")
-    + (butce ? t(" · oturum sınırı: ") + money(butce) : "")
+    + (budget ? t(" · oturum sınırı: ") + money(budget) : "")
     + (isPremium() ? t(" · premium model (çıktı > $20/M)") : "");
 }
 
@@ -2819,24 +2819,24 @@ $("dock-cost").addEventListener("click", () => {
   pop.append(mk("div", "pop-head", t("Tahmini harcama")));
   const tr = (n) => (n || 0).toLocaleString("tr-TR");
   const row = (text) => pop.append(mk("div", "pop-note", text));
-  const turn = kullanim.tur, session = kullanim.oturum;
+  const turn = usage.tur, session = usage.oturum;
   if (!session || !session.cagri) {
     row(t("Bu oturumda henüz tur yok."));
-  } else if (fiyat) {
-    if (isPremium()) row(t("Premium model: çıktı fiyatı $20/M üstünde."));
+  } else if (price) {
+    if (isPremium()) row(t("Premium model: çıktı priceı $20/M üstünde."));
     row(t("Bu tur: ") + "≈" + money(turn ? costOf(turn) : 0)
       + " · " + t("oturum: ") + "≈" + money(costOf(session)));
     row(t("Girdi: ") + tr(session.girdi) + t(" token") + " × $"
-      + (fiyat.girdi * 1e6).toFixed(2) + "/M = " + money(session.girdi * fiyat.girdi));
+      + (price.girdi * 1e6).toFixed(2) + "/M = " + money(session.girdi * price.girdi));
     row(t("Çıktı: ") + tr(session.cikti) + t(" token") + " × $"
-      + (fiyat.cikti * 1e6).toFixed(2) + "/M = " + money(session.cikti * fiyat.cikti));
+      + (price.cikti * 1e6).toFixed(2) + "/M = " + money(session.cikti * price.cikti));
     row(t("Tahmin — önbellek indirimi hesaba katılmaz."));
   } else {
     row(t("Fiyat bilinmiyor — yalnız token sayısı."));
     row(t("Girdi: ") + tr(session.girdi) + t(" token")
       + " · " + t("Çıktı: ") + tr(session.cikti) + t(" token"));
   }
-  pop.append(butceAlani());
+  pop.append(budgetField());
   placePop($("dock-cost"));
 });
 
@@ -2844,7 +2844,7 @@ $("dock-cost").addEventListener("click", () => {
 // cap belongs to this session — tomorrow's conversation must not silently
 // stop on yesterday's cap. Leaving it empty means unlimited. With an unknown
 // price the brake cannot work, and we say so instead of hiding it.
-function butceAlani() {
+function budgetField() {
   const box = mk("div", "pop-butce");
   box.append(mk("div", "pop-head", t("Bu oturum için üst sınır")));
   const row = mk("div", "pop-butce-row");
@@ -2853,21 +2853,21 @@ function butceAlani() {
   field.type = "text";
   field.inputMode = "decimal";
   field.placeholder = t("sınırsız");
-  field.value = butce ? String(butce) : "";
+  field.value = budget ? String(budget) : "";
   const save = mk("button", "pop-butce-ok", t("Uygula"));
   save.type = "button";
-  const hint = mk("div", "pop-note", fiyat
+  const hint = mk("div", "pop-note", price
     ? t("Sınıra ulaşılınca koşan tur durur; yükseltince kaldığı yerden sürer.")
     : t("Fiyat bilinmiyor (yerel sunucu ya da katalog dışı model) — fren çalışmaz."));
 
   const apply = async () => {
-    const ham = field.value.trim().replace(",", ".");
-    const answer = await post("/api/butce", { usd: ham === "" ? null : ham });
+    const raw = field.value.trim().replace(",", ".");
+    const answer = await post("/api/butce", { usd: raw === "" ? null : raw });
     if (!answer || answer.ok === false) {
       hint.textContent = (answer && answer.error) || t("Sınır kaydedilemedi.");
       return;
     }
-    butce = answer.butce == null ? null : Number(answer.butce);
+    budget = answer.butce == null ? null : Number(answer.butce);
     dockCost();
     hidePop();
   };
@@ -3019,7 +3019,7 @@ $("dock-model").addEventListener("click", () => {
 
 // The UI note for auto mode. Shown ONLY with OpenRouter + "oto" selected;
 // on another provider/model this warning has no business.
-const OTO_NOTU =
+const AUTO_MODE_NOTE =
   "Oto modda OpenRouter'ın ücretsiz modelleri kullanılır; kalite ve hız " +
   "düşebilir, model istek sırasında değişebilir. Bazı ücretsiz uçlar " +
   "veriyi eğitimde kullanabilir; istekler 'veri toplama: reddet' " +
@@ -3042,7 +3042,7 @@ async function fillModelPop(pop, note) {
 
   // With auto selected, what it means is written at the top of the box.
   if (provider === "openrouter" && modelName === "oto") {
-    pop.insertBefore(mk("div", "pop-note", t(OTO_NOTU)), note);
+    pop.insertBefore(mk("div", "pop-note", t(AUTO_MODE_NOTE)), note);
   }
 
   if (!catalog.length) {
@@ -3080,16 +3080,16 @@ async function fillModelPop(pop, note) {
         // Written to the chat (meta) and the server applies it to the active
         // session INSTANTLY; without a session id (old flow) falls back to
         // the global setting.
-        const answer = oturumId
-          ? await post("/api/session/meta", { id: oturumId, model: item.id })
+        const answer = sessionId
+          ? await post("/api/session/meta", { id: sessionId, model: item.id })
           : await post("/api/settings", { model: { name: item.id } });
         if (answer && answer.ok === false) { modelName = was; showMeta(); dockRender(); }
       }));
     }
     if (!shown) list.append(mk("div", "pop-note", t("Eşleşen yok.")));
-    if (oturumId && !search.value.trim()) {
+    if (sessionId && !search.value.trim()) {
       list.append(popRow(t("↺ Küresel varsayılana dön"), "", false, async () => {
-        await post("/api/session/meta", { id: oturumId, model: "" });
+        await post("/api/session/meta", { id: sessionId, model: "" });
         loadState();   // let the real model come from the server
       }));
     }
@@ -3278,9 +3278,9 @@ function ensureWork() {
       // the user burned repeatedly on "clicking just adds a line below, I
       // can't get to the content" (31.08).
       const kids = [...body.children];
-      const sadeceDusunce = kids.length > 0
+      const thinkingOnly = kids.length > 0
         && kids.every((c) => c.classList.contains("think"));
-      if (sadeceDusunce) {
+      if (thinkingOnly) {
         const last = kids[kids.length - 1];
         if (last.classList.contains("done") && !last.classList.contains("open")) {
           last.click();
@@ -3360,7 +3360,7 @@ const HEAD_ARG = 72;
 // narrow column; target ellipsized, meta fixed on the right.
 
 // Tools whose target must render as code: command and file path.
-const KOD_HEDEFLI = new Set([
+const CODE_TOOLS = new Set([
   "shell", "bash", "powershell", "read_file", "read_many", "write_file", "edit_file",
   "list_dir", "grep", "search_files", "checkpoint", "git",
 ]);
@@ -3368,12 +3368,12 @@ const KOD_HEDEFLI = new Set([
 // Shell wrappers: what the user cares about is what is INSIDE them. In
 // "powershell -NoProfile -Command "netstat -ano"" the part worth reading is
 // `netstat -ano`; the wrapper is the same in every command and eats space.
-const SARMALAYICILAR =
+const WRAPPERS =
   /^\s*(?:(?:pwsh|powershell(?:\.exe)?|cmd(?:\.exe)?|bash|sh|zsh)\b(?:\s+-[\w-]+)*\s*(?:-Command|-c|\/c)\s*)/i;
 
-function komutOzeti(text) {
+function commandSummary(text) {
   let s = String(text || "").trim();
-  const inner = s.replace(SARMALAYICILAR, "");
+  const inner = s.replace(WRAPPERS, "");
   if (inner !== s) {
     s = inner.trim();
     // The wrapper quotes the command; the quotes belonged to the wrapper.
@@ -3398,16 +3398,16 @@ function liveHead() {
   const row = work.open.size ? [...work.open.values()][0] : null;
   if (!phrase && !row) return null;
   let target = "";
-  let kod = false;
+  let code = false;
   if (row) {
     const what = row.querySelector(".what").textContent;
-    kod = row.dataset.kod === "1";
-    target = kod ? komutOzeti(what)
+    code = row.dataset.kod === "1";
+    target = code ? commandSummary(what)
       : (what.length > HEAD_ARG ? what.slice(0, HEAD_ARG) + "…" : what);
   }
   return {
     verb: phrase || (row && row.querySelector(".who").textContent) || mull(),
-    target, kod,
+    target, code,
     tail: "",
   };
 }
@@ -3418,7 +3418,7 @@ function liveHead() {
 function paintLive(extra) {
   const live = liveHead();
   if (!live) return false;
-  workHead(live.verb, live.target, (live.tail || "") + (extra || ""), live.kod);
+  workHead(live.verb, live.target, (live.tail || "") + (extra || ""), live.code);
   paintThinkLine();
   return true;
 }
@@ -3451,7 +3451,7 @@ function _count(n, one, many) {
 
 function activityPhrase(w) {
   const n = tallyWork(w);
-  const en = Dil.mode === "en";
+  const en = Lang.mode === "en";
   if (en) {
     const bits = [];
     if (n.files) bits.push(_count(n.files, "file", "files"));
@@ -3514,7 +3514,7 @@ function trimSteps(w) {
     if (first.querySelector && first.querySelector(".who")) w.trimmed += 1;
     first.remove();
   }
-  w.gone.textContent = Dil.mode === "en"
+  w.gone.textContent = Lang.mode === "en"
     ? "… first " + w.trimmed + " steps folded"
     : "… ilk " + w.trimmed + " adım katlandı";
 }
@@ -3525,7 +3525,7 @@ function trimSteps(w) {
 // Rebuilding the DOM every second (replaceChildren) made the command chip
 // vanish and reappear — the user thought "the CLI keeps opening and
 // closing". The three children are fixed; only text/class update.
-function workHead(label, target, tail, kod) {
+function workHead(label, target, tail, code) {
   if (!work) return;
   const head = work.head;
   let verb = head.querySelector(":scope > .head-verb");
@@ -3542,18 +3542,18 @@ function workHead(label, target, tail, kod) {
     if (box) box.hidden = true;
   } else {
     if (!box) {
-      box = document.createElement(kod ? "code" : "span");
-      box.className = kod ? "head-target kod" : "head-target";
+      box = document.createElement(code ? "code" : "span");
+      box.className = code ? "head-target kod" : "head-target";
       verb.after(box);
     } else {
-      const want = kod ? "CODE" : "SPAN";
+      const want = code ? "CODE" : "SPAN";
       if (box.tagName !== want) {
-        const next = document.createElement(kod ? "code" : "span");
-        next.className = kod ? "head-target kod" : "head-target";
+        const next = document.createElement(code ? "code" : "span");
+        next.className = code ? "head-target kod" : "head-target";
         box.replaceWith(next);
         box = next;
       } else {
-        box.className = kod ? "head-target kod" : "head-target";
+        box.className = code ? "head-target kod" : "head-target";
       }
     }
     box.hidden = false;
@@ -3579,7 +3579,7 @@ function workHead(label, target, tail, kod) {
 
 // The "N steps" summary. The test greps the raw source (steps + " adım") —
 // the unit expression lives here, and the English variant comes from here too.
-const stepsWord = (steps) => Dil.mode === "en" ? steps + " steps" : steps + " adım";
+const stepsWord = (steps) => Lang.mode === "en" ? steps + " steps" : steps + " adım";
 
 // If all of the turn's thinking stayed under the threshold there is not a
 // single thinking line in the strip — and then no door into the archive
@@ -3594,12 +3594,12 @@ function sealThinkArchive(w) {
   const label = t("✻ Düşündü") + " · " + times + t(" kez");
   row.textContent = label;
   row.title = t("Tıkla — bu turun muhakemesini gör");
-  const arsiv = w.thinkAll;
+  const archive = w.thinkAll;
   let open = false;
   row.onclick = (ev) => {
     ev.stopPropagation();
     open = !open;
-    row.textContent = open ? arsiv.join("\n\n———\n\n") : label;
+    row.textContent = open ? archive.join("\n\n———\n\n") : label;
     row.classList.toggle("open", open);
     if (open) {
       row.scrollTop = 0;
@@ -3718,7 +3718,7 @@ function actLine(e) {
   // Steps whose target is CODE (command, file path) get marked: the strip
   // header must draw it mono and as-is, without uppercasing. Clipping is
   // DISPLAY-only — the full command sits in the step card (row._card).
-  if (KOD_HEDEFLI.has(e.tool)) { row.dataset.kod = "1"; what.classList.add("kod"); }
+  if (CODE_TOOLS.has(e.tool)) { row.dataset.kod = "1"; what.classList.add("kod"); }
   const took = document.createElement("span"); took.className = "took";
   row.append(spark, who, what, took);
 
@@ -3921,7 +3921,7 @@ function paintWait() {
   if (waitState) workHead(waitHead());
 }
 
-function bekleme(e) {
+function onWaiting(e) {
   if (e.kip === "bitti" || e.kip === "iptal") { closeWait(e); return; }
 
   const w = ensureWork();
@@ -4120,8 +4120,8 @@ function diffBlock(card) {
       undo.disabled = true;
       keep.disabled = true;
       let answer = null;
-      if (typeof Degisiklik !== "undefined" && Degisiklik.kartUndoDosya) {
-        answer = await Degisiklik.kartUndoDosya(path);
+      if (typeof Changes !== "undefined" && Changes.cardUndoFile) {
+        answer = await Changes.cardUndoFile(path);
       }
       if (!answer || answer.ok === false) {
         line("alert", (answer && answer.error) || t("Fark okunamadı."));
@@ -4352,7 +4352,7 @@ const GOAL_FOLD_KEY = "dornick.goals.folded";
 
 // The panel explains ITSELF. This was the user's question: "I don't know
 // who creates these tasks". The answer should stay on screen.
-const GOAL_ACIKLAMA =
+const GOAL_DESCRIPTION =
   "Dornick'nun uzun işlerde kendi yazdığı adım listesi (Cursor görev listesi gibi). "
   + "Sohbet geçmişi değil — madde yoksa sekme de yok. Sen de ekleyip silebilirsin.";
 
@@ -4416,7 +4416,7 @@ const Goals = (() => {
     pane.append(head);
     const what = document.createElement("p");
     what.className = "goals-what";
-    what.textContent = t(GOAL_ACIKLAMA);
+    what.textContent = t(GOAL_DESCRIPTION);
     pane.append(what);
     if (!rows.length) {
       const blank = document.createElement("p");
@@ -4494,7 +4494,7 @@ const Goals = (() => {
 
     const what = document.createElement("p");
     what.className = "goals-what";
-    what.textContent = t(GOAL_ACIKLAMA);
+    what.textContent = t(GOAL_DESCRIPTION);
     body.append(what);
 
     const rows = [...items.entries()];
@@ -4796,22 +4796,22 @@ function pinPlanCards() {
   // ("what does that have to do with anything").
   const offer = planOffer;
   for (const card of [...thread.querySelectorAll(".plan-card")]) {
-    if (!planBekliyor(card)) continue;
+    if (!planPending(card)) continue;
     if (offer && offer.parentNode === thread) thread.insertBefore(card, offer);
     else thread.append(card);
   }
 }
 
-function planBekliyor(card) {
+function planPending(card) {
   const status = (card._plan && card._plan.status) || "bekliyor";
   return status === "bekliyor";
 }
 
-function planKarariUygula(card) {
+function applyPlanDecision(card) {
   // Decision buttons have no business on a decided card: Approve/Edit/Cancel
   // only show in the "bekliyor" state.
   const acts = card.querySelector(".plan-acts");
-  if (acts) acts.style.display = planBekliyor(card) ? "" : "none";
+  if (acts) acts.style.display = planPending(card) ? "" : "none";
 }
 
 function applyPlanData(card, e) {
@@ -4821,7 +4821,7 @@ function applyPlanData(card, e) {
   if (title) title.textContent = e.title || e.id;
   if (status) status.textContent = e.status || "";
   if (!card.querySelector(".plan-edit")) renderPlanSteps(card, e);
-  planKarariUygula(card);
+  applyPlanDecision(card);
 }
 
 function showPlanCard(e) {
@@ -4874,7 +4874,7 @@ function showPlanCard(e) {
   acts.append(ok, edit, cancel);
   card.append(acts);
   thread.append(card);
-  planKarariUygula(card);
+  applyPlanDecision(card);
   pinPlanCards();
   scroll();
 }
@@ -5010,7 +5010,7 @@ async function applyPlan() {
 // into the new chat (live wound, 01.09: "it even blends with the previous
 // conversation"). Approval requests are deliberately not on the list: a
 // background lane's permission must be asked too.
-const SOHBETE_OZEL = new Set([
+const CHAT_ONLY = new Set([
   "assistant_delta", "thinking_delta", "message", "tool_start", "tool_end",
   "tool_cancelled", "queued", "araya", "artifact", "plan", "bekleme",
   "child_start", "child_tool", "child_wait", "turn_end", "recall_trace",
@@ -5018,7 +5018,7 @@ const SOHBETE_OZEL = new Set([
 ]);
 
 function handle(e) {
-  if (SOHBETE_OZEL.has(e.type) && e.sid && oturumId && e.sid !== oturumId) {
+  if (CHAT_ONLY.has(e.type) && e.sid && sessionId && e.sid !== sessionId) {
     return;   // a piece of another chat — never drawn on this screen
   }
   switch (e.type) {
@@ -5085,11 +5085,11 @@ function handle(e) {
     }
 
     case "message":
-      // The second defence (`cizilir`): if the server filter ever misses, an
+      // The second defence (`drawable`): if the server filter ever misses, an
       // internal note — a harness nudge — is NOT drawn as a user bubble. The
       // server side already filters via the `internal`/`continuation` marks;
       // this is the safety behind that filter.
-      if (e.role === "user" && cizilir(e.text)) {
+      if (e.role === "user" && drawable(e.text)) {
         // Its turn came: the waiting row is replaced with the real one.
         const at = waitingLines.findIndex((w) => w.text === e.text);
         if (at >= 0) { waitingLines[at].row.remove(); waitingLines.splice(at, 1); renumberQueue(); }
@@ -5157,14 +5157,14 @@ function handle(e) {
     // In-app update: download progress + install start. Paints the status
     // line in Settings if open, and the sidebar badge in any case.
     case "guncelleme":
-      guncellemeDurumu(e);
+      updateStatus(e);
       break;
 
     // The session changed (new or resumed): the thread is cleared; for a
     // resumed conversation the past transcript loads so the user sees where
     // they left off.
     case "session_reset": {
-      oturumId = e.id || "";
+      sessionId = e.id || "";
       thread.replaceChildren();
       waitingLines.length = 0;
       work = null; agentLine = null; raw = ""; waitState = null;
@@ -5182,8 +5182,8 @@ function handle(e) {
       resumeFollow(false);   // fresh transcript: follow on from the start
       // The counters are per-chat: old spend must not dangle in a new
       // conversation; in a resumed chat loadState writes the past total.
-      kullanim = { tur: null, oturum: null };
-      butce = null;
+      usage = { tur: null, oturum: null };
+      budget = null;
       dockCost();
       // A resumed session: the COUNTERS must resume just like the transcript.
       // The state snapshot seeds the context bar and the spend chip from the
@@ -5201,7 +5201,7 @@ function handle(e) {
       // The session changed: the change ledger's boundary must be set to the
       // new session's ledger too — the previous conversation's records must
       // not blend into this turn's summary.
-      if (typeof Degisiklik !== "undefined") Degisiklik.tabanAl();
+      if (typeof Changes !== "undefined") Changes.takeBase();
       // The folder/git context is per-chat: in a new conversation the old
       // repo name (Dornick / branch) must not dangle above the composer.
       if (typeof GitBar !== "undefined") GitBar.refresh();
@@ -5228,7 +5228,7 @@ function handle(e) {
     case "notice": clearWelcome(); line("alert", e.text); break;
     // Model outage: NO line lands in the chat — the work strip's live header
     // turns into the state; the detail lives in the strip's step row.
-    case "bekleme": bekleme(e); break;
+    case "bekleme": onWaiting(e); break;
     // The api_error note in the log is NOT printed into the chat: a
     // transient error lives in the strip's wait row (raw detail on click)
     // and a fatal one already arrives as a notice. This event used to dump a
@@ -5269,7 +5269,7 @@ function handle(e) {
     // main chat; they are watched live on the orchestra deck.
     case "child_start": orchStart(e); tasksRefresh(); break;
     case "child_tool": orchTool(e);
-      if (typeof Gorevler !== "undefined" && Gorevler.tazele) Gorevler.tazele();
+      if (typeof Tasks !== "undefined" && Tasks.refresh) Tasks.refresh();
       if (window.JobsPanel && JobsPanel.refreshLive) JobsPanel.refreshLive();
       break;
     // A finished channel goes two places: the orchestra stage (the card
@@ -5287,7 +5287,7 @@ function handle(e) {
       }
       break;
     case "child_wait":
-      if (typeof Gorevler !== "undefined" && Gorevler.tazele) Gorevler.tazele();
+      if (typeof Tasks !== "undefined" && Tasks.refresh) Tasks.refresh();
       if (typeof Orchestra !== "undefined" && Orchestra.wait) Orchestra.wait(e);
       if (window.JobsPanel && JobsPanel.refreshLive) JobsPanel.refreshLive();
       break;
@@ -5326,7 +5326,7 @@ function handle(e) {
       setVoice(!!e.enabled);
       break;
     case "camera":
-      if (typeof Cameras !== "undefined" && Cameras.durum) Cameras.durum(e);
+      if (typeof Cameras !== "undefined" && Cameras.status) Cameras.status(e);
       break;
     case "turn_end":
       sealLine(); Speech.flush();
@@ -5399,15 +5399,15 @@ function handle(e) {
       }
       // Cost chip: turn/session totals and the price tag arrive in the same
       // event (see the desktop._usage_yay contract).
-      if (e.tur) kullanim = { tur: e.tur, oturum: e.oturum || kullanim.oturum };
-      if (e.fiyat !== undefined && e.fiyat !== null) fiyat = e.fiyat;
+      if (e.tur) usage = { tur: e.tur, oturum: e.oturum || usage.oturum };
+      if (e.fiyat !== undefined && e.fiyat !== null) price = e.fiyat;
       dockCost();
       break;
 
     // The price tag arrived later in the background: the chip turns from
     // token counts to dollars — without waiting for the next turn.
     case "fiyat":
-      fiyat = e.fiyat || null;
+      price = e.fiyat || null;
       dockCost();
       break;
   }
@@ -5491,7 +5491,7 @@ async function loadState() {
     if (!canRun) showSetupGuide(); else hideSetupGuide();
     // The working-folder gauge: are we in the workshop or a connected folder?
     setWorkdir(s.project || "", s.workspace || "");
-    oturumId = s.session || oturumId;
+    sessionId = s.session || sessionId;
     showMeta();
     setVoice(!!s.voice);
     Speech.setCharacter(s.character);
@@ -5509,7 +5509,7 @@ async function loadState() {
     dockEffort = s.effort || "";
     contextWindow = Number(s.context_window) || 0;
     dockRender();
-    if (s.kirilim) lastKirilim = s.kirilim;
+    if (s.kirilim) lastBreakdownSeed = s.kirilim;
     // The running session's last usage: a refreshed page resumes where it
     // was. The fixed items (system + tools) show before the first turn too.
     if (Number(s.prompt_total) || (s.kirilim && s.kirilim.length)) {
@@ -5520,10 +5520,10 @@ async function loadState() {
     }
     // The cost chip is seeded from here for the same reason: a refresh must
     // not zero the spend gauge.
-    if (s.fiyat) fiyat = s.fiyat;
-    if (s.kullanim && s.kullanim.oturum && s.kullanim.oturum.cagri) kullanim = s.kullanim;
+    if (s.fiyat) price = s.fiyat;
+    if (s.kullanim && s.kullanim.oturum && s.kullanim.oturum.cagri) usage = s.kullanim;
     // The budget cap comes from the seed too: a refreshed page must not forget the seatbelt.
-    butce = s.butce == null ? null : Number(s.butce);
+    budget = s.butce == null ? null : Number(s.butce);
     dockCost();
     // A refresh does not end the session: whatever the reason for the reload
     // (language change, F5) the running conversation's transcript must come
@@ -5667,7 +5667,7 @@ function refreshVersionBadge(info) {
 // (if present) and the sidebar badge. The progress percentage streams during
 // the download; "kuruluyor/acildi" says the installer opened; "hata" is
 // reported honestly.
-function guncellemeDurumu(e) {
+function updateStatus(e) {
   const badge = document.getElementById("side-ver");
   const progress = document.querySelector(".surum-ilerleme");
   let text = "";

@@ -7,9 +7,9 @@
 // API keys never come here — the server only says "present or not". A key
 // you enter travels once and can never be read back.
 
-// TR→EN translations (dil.js): the source text stays Turkish and is
+// TR→EN translations (lang.js): the source text stays Turkish and is
 // rendered in English at display time.
-Dil.ekle({
+Lang.add({
   // project mode
   "Çalışılan proje": "Working project",
   "boş — yalnızca atölye": "empty — workshop only",
@@ -3212,14 +3212,14 @@ const Settings = (() => {
     ));
 
     // Interface language: the source is Turkish, translated at display time
-    // in English (dil.js). Switching reloads the page — a half-translated
+    // in English (lang.js). Switching reloads the page — a half-translated
     // live switch confuses.
     const langBox = el("div", "choices");
     for (const [code, label] of [["tr", "Türkçe"], ["en", "English"]]) {
-      const choice = el("button", "choice" + (Dil.mode === code ? " on" : ""));
+      const choice = el("button", "choice" + (Lang.mode === code ? " on" : ""));
       choice.type = "button";
       choice.append(el("b", null, label));
-      choice.addEventListener("click", () => { if (Dil.mode !== code) Dil.sec(code); });
+      choice.addEventListener("click", () => { if (Lang.mode !== code) Lang.pick(code); });
       langBox.append(choice);
     }
     pane.append(field("Arayüz dili / Interface language", "", langBox));
@@ -3264,7 +3264,7 @@ const Settings = (() => {
     let brainOn = true;
     try { brainOn = localStorage.getItem("dornick-brain-ambient") !== "kapali"; } catch {}
     const brainSwitch = toggleBox(brainOn, (v) => {
-      if (window.beyinOrtada) window.beyinOrtada(v);
+      if (window.brainCentered) window.brainCentered(v);
       say(v ? "Beyin ortada büyüyecek" : "Beyin sağ panelde kalacak");
     });
     pane.append(field(
@@ -3492,13 +3492,13 @@ const Settings = (() => {
     box.append(openBtn);
     box.append(browserBox);
 
-    // The parameter stays named `yol`: tests pin the exact fetch line.
-    async function browseTree(yol) {
+    // The query param stays `yol` (wire); the JS parameter is English.
+    async function browseTree(path) {
       browserBox.textContent = "";
       browserBox.append(el("p", "pane-note", t("Yukleniyor…")));
       let data;
       try {
-        data = await (await fetch("/api/gozat?yol=" + encodeURIComponent(yol))).json();
+        data = await (await fetch("/api/gozat?yol=" + encodeURIComponent(path))).json();
       } catch {
         browserBox.textContent = "";
         browserBox.append(el("p", "pane-note bad", t("Sunucuya ulaşılamadı")));

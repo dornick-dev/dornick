@@ -571,6 +571,7 @@ class Mind:
             text_of=lambda e: e.searchable(),
             time_of=lambda e: e.started,
             limit=limit,
+            now=self._clock(),
         )
 
     def episode(self, session_id: str) -> Episode | None:

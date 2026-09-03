@@ -3,7 +3,7 @@
 // Source: the tools/checkpoint.py ledger. Keep is UI only (the file is
 // already written). Undo: /api/degisiklikler/geri {sira} or {n} / {siralar}.
 
-Dil.ekle({
+Lang.add({
   " dosya değişti": " file(s) changed",
   "göster": "show",
   "gizle": "hide",
@@ -20,13 +20,13 @@ Dil.ekle({
   "kabul edildi": "accepted",
   "geri alındı": "undone",
   "Fark okunamadı.": "Could not read the diff.",
-  "İkili ya da okunamayan dosya — diffBtn çizilmiyor.":
+  "İkili ya da okunamayan dosya — fark çizilmiyor.":
     "Binary or unreadable file — no diff drawn.",
 });
 
-const Degisiklik = (() => {
+const Changes = (() => {
   let base = 0;
-  let turBasi = 0;
+  let turnBase = 0;
 
   const el = (tag, cls, text) => {
     const n = document.createElement(tag);
@@ -42,7 +42,7 @@ const Degisiklik = (() => {
     } catch { return null; }
   }
 
-  async function tabanAl() {
+  async function takeBase() {
     const data = await ledger(0);
     base = (data && data.son) || 0;
     return base;
@@ -58,28 +58,28 @@ const Degisiklik = (() => {
     } catch { return null; }
   }
 
-  function turBasladi() {
-    turBasi = base;
-    tabanAl().then((last) => { turBasi = last; });
+  function turnStarted() {
+    turnBase = base;
+    takeBase().then((last) => { turnBase = last; });
   }
 
-  async function turBitti() {
-    const data = await ledger(turBasi);
+  async function turnEnded() {
+    const data = await ledger(turnBase);
     if (!data) return;
     base = data.son || base;
-    const kayitlar = data.kayitlar || [];
-    turBasi = base;
-    if (!kayitlar.length) return;
-    serit(kayitlar);
+    const records = data.kayitlar || [];
+    turnBase = base;
+    if (!records.length) return;
+    strip(records);
   }
 
-  function serit(kayitlar) {
+  function strip(records) {
     const row = line("changed");
     row.replaceChildren();
 
     const head = el("button", "chg-head");
     head.type = "button";
-    const countEl = el("b", null, kayitlar.length + t(" dosya değişti"));
+    const countEl = el("b", null, records.length + t(" dosya değişti"));
     const action = el("span", "chg-more", t("göster"));
     head.append(countEl, action);
     row.append(head);
@@ -89,8 +89,8 @@ const Degisiklik = (() => {
     row.append(body);
 
     // Oldest to newest (review order).
-    const ordered = [...kayitlar].sort((a, b) => (a.sira || 0) - (b.sira || 0));
-    const durum = new Map(); // sira → kept|undone
+    const ordered = [...records].sort((a, b) => (a.sira || 0) - (b.sira || 0));
+    const states = new Map(); // sira → kept|undone
 
     let built = false;
     head.addEventListener("click", () => {
@@ -98,8 +98,8 @@ const Degisiklik = (() => {
       action.textContent = body.hidden ? t("göster") : t("gizle");
       if (!built) {
         built = true;
-        buildBody(body, ordered, durum, () => {
-          const remaining = ordered.filter((k) => !durum.has(k.sira)).length;
+        buildBody(body, ordered, states, () => {
+          const remaining = ordered.filter((k) => !states.has(k.sira)).length;
           countEl.textContent = (remaining || ordered.length) + t(" dosya değişti");
           if (!remaining) action.textContent = t("gizle");
         });
@@ -110,21 +110,21 @@ const Degisiklik = (() => {
     return row;
   }
 
-  function buildBody(body, kayitlar, durum, onChange) {
+  function buildBody(body, records, states, onChange) {
     const bar = el("div", "chg-undo");
-    bar.append(acceptAllButton(kayitlar, durum, onChange));
-    bar.append(geriAlDugmesi(kayitlar, durum, onChange));
+    bar.append(acceptAllButton(records, states, onChange));
+    bar.append(undoButton(records, states, onChange));
     body.append(bar);
-    for (const k of kayitlar) body.append(fileRow(k, durum, onChange));
+    for (const k of records) body.append(fileRow(k, states, onChange));
   }
 
-  function acceptAllButton(kayitlar, durum, onChange) {
+  function acceptAllButton(records, states, onChange) {
     const btn = el("button", "chg-accept-btn", t("hepsini kabul et"));
     btn.type = "button";
     btn.addEventListener("click", () => {
-      for (const k of kayitlar) {
-        if (durum.has(k.sira)) continue;
-        durum.set(k.sira, "kept");
+      for (const k of records) {
+        if (states.has(k.sira)) continue;
+        states.set(k.sira, "kept");
         const row = rowFor(k.sira);
         if (row) mark(row, "kept");
       }
@@ -146,23 +146,23 @@ const Degisiklik = (() => {
       kind === "kept" ? t("kabul edildi") : t("geri alındı")));
   }
 
-  function geriAlDugmesi(kayitlar, durum, onChange) {
+  function undoButton(records, states, onChange) {
     const btn = el("button", "chg-undo-btn", t("bu turu geri al"));
     btn.type = "button";
-    let onay = false;
+    let confirmed = false;
     let timer = null;
     btn.addEventListener("click", async () => {
-      const active = kayitlar.filter((k) => !durum.has(k.sira) && k.gerialinabilir);
+      const active = records.filter((k) => !states.has(k.sira) && k.gerialinabilir);
       if (!active.length) {
         btn.disabled = true;
         return;
       }
-      if (!onay) {
-        onay = true;
+      if (!confirmed) {
+        confirmed = true;
         btn.classList.add("warn");
         btn.textContent = t("Emin misin? Bir daha tıkla");
         timer = setTimeout(() => {
-          onay = false;
+          confirmed = false;
           btn.classList.remove("warn");
           btn.textContent = t("bu turu geri al");
         }, 5000);
@@ -177,23 +177,23 @@ const Degisiklik = (() => {
         btn.disabled = false;
         btn.classList.remove("warn");
         btn.textContent = t("bu turu geri al");
-        onay = false;
+        confirmed = false;
         return;
       }
       for (const k of active) {
-        durum.set(k.sira, "undone");
+        states.set(k.sira, "undone");
         const row = rowFor(k.sira);
         if (row) mark(row, "undone");
       }
       btn.replaceWith(el("span", "chg-undone",
         (answer.yapilan || []).join("\n") || t("geri alındı")));
-      tabanAl();
+      takeBase();
       onChange();
     });
     return btn;
   }
 
-  function fileRow(k, durum, onChange) {
+  function fileRow(k, states, onChange) {
     const row = el("div", "chg-row");
     row.dataset.sira = String(k.sira);
     const head = el("div", "chg-row-head");
@@ -214,7 +214,7 @@ const Degisiklik = (() => {
       const keep = el("button", "chg-keep-btn", t("Keep"));
       keep.type = "button";
       keep.addEventListener("click", () => {
-        durum.set(k.sira, "kept");
+        states.set(k.sira, "kept");
         mark(row, "kept");
         onChange();
       });
@@ -230,9 +230,9 @@ const Degisiklik = (() => {
           undo.disabled = false;
           return;
         }
-        durum.set(k.sira, "undone");
+        states.set(k.sira, "undone");
         mark(row, "undone");
-        tabanAl();
+        takeBase();
         onChange();
       });
       acts.append(undo);
@@ -260,32 +260,32 @@ const Degisiklik = (() => {
     return row;
   }
 
-  function diffBox(veri) {
-    if (!veri || !veri.ok) {
-      return el("div", "diff-empty", (veri && veri.error) || t("Fark okunamadı."));
+  function diffBox(data) {
+    if (!data || !data.ok) {
+      return el("div", "diff-empty", (data && data.error) || t("Fark okunamadı."));
     }
-    if (!veri.metin) {
-      return el("div", "diff-empty", t("İkili ya da okunamayan dosya — diffBtn çizilmiyor."));
+    if (!data.metin) {
+      return el("div", "diff-empty", t("İkili ya da okunamayan dosya — fark çizilmiyor."));
     }
-    return diffHunk(veri.eski, veri.yeni, 1);
+    return diffHunk(data.eski, data.yeni, 1);
   }
 
   // Card Keep/Undo — called by app.js diffBlock.
-  async function kartUndo(sira) {
+  async function cardUndo(sira) {
     if (!sira) return { ok: false, error: "sira yok" };
     const answer = await undoRequest({ sira });
-    if (answer && answer.ok) tabanAl();
+    if (answer && answer.ok) takeBase();
     return answer || { ok: false };
   }
 
-  async function kartUndoDosya(dosya) {
+  async function cardUndoFile(dosya) {
     if (!dosya) return { ok: false, error: "dosya yok" };
     const answer = await undoRequest({ dosya });
-    if (answer && answer.ok) tabanAl();
+    if (answer && answer.ok) takeBase();
     return answer || { ok: false };
   }
 
-  tabanAl();
+  takeBase();
 
-  return { turBasladi, turBitti, tabanAl, serit, kartUndo, kartUndoDosya };
+  return { turnStarted, turnEnded, takeBase, strip, cardUndo, cardUndoFile };
 })();

@@ -124,7 +124,20 @@ def test_no_direct_datetime_now_call_remains() -> None:
     reach that call. The rule is enforced by grep; the single exception is
     `recall/clock.py`, the one place where time is read.
     """
-    for relative in ("src/dornick/recall/store.py", "src/dornick/mind/store.py"):
+    # The whole recall + mind surface, not just store.py: mind/search.py
+    # read the wall clock in `_freshness` for a year, invisible to this guard
+    # because the guard only listed store.py — and it made the life benchmark
+    # depend on the real date it ran. Every module that ranks or ages a record
+    # must read time through an injected clock.
+    guarded = [
+        "src/dornick/recall/store.py",
+        "src/dornick/recall/weave.py",
+        "src/dornick/recall/awake.py",
+        "src/dornick/recall/activation.py",
+        "src/dornick/mind/store.py",
+        "src/dornick/mind/search.py",
+    ]
+    for relative in guarded:
         # Comment lines are filtered out: a comment DESCRIBING the rule must
         # not count as breaking it.
         lines = [
@@ -132,10 +145,18 @@ def test_no_direct_datetime_now_call_remains() -> None:
             for line in (ROOT / relative).read_text(encoding="utf-8").splitlines()
             if not line.lstrip().startswith("#")
         ]
-        found = re.findall(r"datetime\.now\(", " ".join(lines))
-        assert not found, (
-            f"{relative}: direct datetime.now() call present. "
-            "Read time through `self._now()` (see recall/clock.py)."
+        # `datetime.now()` is allowed in exactly one shape: an injectable
+        # fallback, `now = now or datetime.now(...)`, where a caller can pass
+        # a virtual clock and only the default reads real time. A bare direct
+        # call in a computation is what the benchmark cannot reach.
+        offenders = [
+            line for line in lines
+            if "datetime.now(" in line and " or datetime.now(" not in line
+        ]
+        assert not offenders, (
+            f"{relative}: direct datetime.now() call present. Read time "
+            "through an injected clock (self._now(), or a `now` parameter "
+            "defaulting to `now or datetime.now(...)`)."
         )
 
 

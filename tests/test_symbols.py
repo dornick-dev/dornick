@@ -22,7 +22,7 @@ from dornick.config import Config
 from dornick.events import EventLog
 from dornick.session import Session
 from dornick.tools import ToolContext, ToolRegistry
-from dornick.tools import kod as code_tools
+from dornick.tools import code as code_tools
 
 PY_SOURCE = '''\
 """Örnek modül — kaydet burada da geçiyor ama bu bir dize."""

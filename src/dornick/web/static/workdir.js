@@ -10,7 +10,7 @@
 // rejects the genuinely dangerous roots (drive root, Windows/Program Files,
 // the home directory itself).
 
-Dil.ekle({
+Lang.add({
   "Çalışma klasörü": "Working folder",
   "Atölye": "Workshop",
   "atölye (varsayılan)": "workshop (default)",
@@ -49,45 +49,45 @@ const WorkDir = (() => {
 
   // Paint the strip: "Workshop" when in the workshop, otherwise the folder
   // name plus a full-path tooltip.
-  function ciz(project, workspace) {
+  function draw(project, workspace) {
     if (!bar) return;
     boundPath = String(project || "");
     workshop = String(workspace || "");
     bar.hidden = false;
     if (boundPath) {
       nameEl.textContent = shortName(boundPath);
-      kindEl.textContent = Dil.t("bağlı klasör");
+      kindEl.textContent = Lang.t("bağlı klasör");
       iconEl.textContent = "📁";
       idBtn.title = boundPath;
       bar.classList.add("bound");
     } else {
-      nameEl.textContent = Dil.t("Atölye");
-      kindEl.textContent = Dil.t("atölye (varsayılan)");
+      nameEl.textContent = Lang.t("Atölye");
+      kindEl.textContent = Lang.t("atölye (varsayılan)");
       iconEl.textContent = "🗂";
-      idBtn.title = workshop || Dil.t("Atölye");
+      idBtn.title = workshop || Lang.t("Atölye");
       bar.classList.remove("bound");
     }
   }
 
   // --- picker panel ----------------------------------------------------
 
-  function kapat() {
+  function close() {
     if (panel) { panel.remove(); panel = null; }
   }
 
   function openPicker(mode) {
-    kapat();
+    close();
     panel = document.createElement("div");
     panel.className = "workdir-panel";
     const head = document.createElement("div");
     head.className = "workdir-panel-head";
-    head.textContent = Dil.t(mode === "new" ? "Yeni klasör" : "Klasör seç");
+    head.textContent = Lang.t(mode === "new" ? "Yeni klasör" : "Klasör seç");
     const closeBtn = document.createElement("button");
     closeBtn.type = "button";
     closeBtn.className = "workdir-close";
     closeBtn.textContent = "✕";
-    closeBtn.title = Dil.t("Kapat");
-    closeBtn.onclick = kapat;
+    closeBtn.title = Lang.t("Kapat");
+    closeBtn.onclick = close;
     head.append(closeBtn);
     panel.append(head);
 
@@ -102,12 +102,12 @@ const WorkDir = (() => {
   // the desktop layer is a separate process; this in-browser explorer is
   // deliberate).
   async function browse(path, bodyEl, mode) {
-    bodyEl.textContent = Dil.t("Yükleniyor…");
+    bodyEl.textContent = Lang.t("Yükleniyor…");
     let data;
     try {
       data = await (await fetch("/api/gozat?yol=" + encodeURIComponent(path || ""))).json();
     } catch {
-      bodyEl.textContent = Dil.t("Bu klasör seçilemez");
+      bodyEl.textContent = Lang.t("Bu klasör seçilemez");
       return;
     }
     browsing = data.yol || "";
@@ -117,13 +117,13 @@ const WorkDir = (() => {
     const crumb = document.createElement("div");
     crumb.className = "workdir-crumb";
     const pathCode = document.createElement("code");
-    pathCode.textContent = data.yol || Dil.t("Buradasın");
+    pathCode.textContent = data.yol || Lang.t("Buradasın");
     crumb.append(pathCode);
     if (data.ust) {
       const upBtn = document.createElement("button");
       upBtn.type = "button";
       upBtn.className = "workdir-up";
-      upBtn.textContent = "↑ " + Dil.t("Üst klasör");
+      upBtn.textContent = "↑ " + Lang.t("Üst klasör");
       upBtn.onclick = () => browse(data.ust, bodyEl, mode);
       crumb.append(upBtn);
     }
@@ -168,11 +168,11 @@ const WorkDir = (() => {
       const nameInput = document.createElement("input");
       nameInput.type = "text";
       nameInput.className = "input-text";
-      nameInput.placeholder = Dil.t("Yeni klasörün adı");
+      nameInput.placeholder = Lang.t("Yeni klasörün adı");
       const createBtn = document.createElement("button");
       createBtn.type = "button";
       createBtn.className = "workdir-go";
-      createBtn.textContent = Dil.t("Oluştur ve çalış");
+      createBtn.textContent = Lang.t("Oluştur ve çalış");
       createBtn.onclick = async () => {
         const name = nameInput.value.trim();
         if (!name) { nameInput.focus(); return; }
@@ -188,7 +188,7 @@ const WorkDir = (() => {
         if (!c || !c.ok) {
           const h = document.createElement("div");
           h.className = "workdir-warn";
-          h.textContent = (c && c.hata) || Dil.t("Klasör oluşturulamadı");
+          h.textContent = (c && c.hata) || Lang.t("Klasör oluşturulamadı");
           actions.append(h);
           return;
         }
@@ -199,7 +199,7 @@ const WorkDir = (() => {
       const chooseBtn = document.createElement("button");
       chooseBtn.type = "button";
       chooseBtn.className = "workdir-go";
-      chooseBtn.textContent = Dil.t("Bu klasörde çalış");
+      chooseBtn.textContent = Lang.t("Bu klasörde çalış");
       chooseBtn.disabled = !!data.engel || !data.yol;
       if (data.engel) chooseBtn.title = data.engel;
       chooseBtn.onclick = () => bind(data.yol);
@@ -208,7 +208,7 @@ const WorkDir = (() => {
         const backBtn = document.createElement("button");
         backBtn.type = "button";
         backBtn.className = "workdir-plain";
-        backBtn.textContent = Dil.t("Atölyeye dön");
+        backBtn.textContent = Lang.t("Atölyeye dön");
         backBtn.onclick = () => bind("");
         actions.append(backBtn);
       }
@@ -219,24 +219,24 @@ const WorkDir = (() => {
   // Bind the folder to THIS CONVERSATION (session meta; the global setting
   // does not change).
   async function bind(path) {
-    const sid = (typeof oturumId !== "undefined" && oturumId) ? oturumId : "";
-    if (!sid) { kapat(); return; }
+    const sid = (typeof sessionId !== "undefined" && sessionId) ? sessionId : "";
+    if (!sid) { close(); return; }
     try {
       await fetch("/api/session/meta", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id: sid, path: String(path || "") }),
       });
     } catch { /* the state is refreshed again below */ }
-    kapat();
-    ciz(path, workshop);
+    close();
+    draw(path, workshop);
     // Read the truth back once the server side applied it to the live agent.
     setTimeout(() => { if (typeof loadState === "function") loadState(); }, 250);
     if (typeof GitBar !== "undefined" && GitBar.refresh) GitBar.refresh();
   }
 
-  if (idBtn) idBtn.onclick = () => (panel ? kapat() : openPicker("pick"));
+  if (idBtn) idBtn.onclick = () => (panel ? close() : openPicker("pick"));
   if (pickBtn) pickBtn.onclick = () => openPicker("pick");
   if (newBtn) newBtn.onclick = () => openPicker("new");
 
-  return { ciz, kapat };
+  return { draw, close };
 })();

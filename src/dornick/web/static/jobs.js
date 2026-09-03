@@ -6,7 +6,7 @@
   const panel = document.getElementById("jobs-panel");
   if (!panel) return;
 
-  Dil.ekle({
+  Lang.add({
     "Görevler": "Tasks",
     "Basit": "Simple",
     "Otomasyon": "Automation",
@@ -81,7 +81,7 @@
     "Önce bir akış gerekli": "A flow is required first",
   });
 
-  const t = (s) => (typeof Dil !== "undefined" && Dil.t ? Dil.t(s) : s);
+  const t = (s) => (typeof Lang !== "undefined" && Lang.t ? Lang.t(s) : s);
 
   // The repeat description arrives from the server in Turkish
   // (`Task.describe()`); translating all backend texts is a separate job,
@@ -90,7 +90,7 @@
   // Turkish than mistranslated.
   function describeRepeat(text) {
     const raw = String(text || "");
-    if (typeof Dil === "undefined" || Dil.mode !== "en") return raw;
+    if (typeof Lang === "undefined" || Lang.mode !== "en") return raw;
     let m = raw.match(/^her gün (\d{1,2}:\d{2})$/);
     if (m) return `daily at ${m[1]}`;
     m = raw.match(/^her (\d+) saatte$/);
@@ -126,11 +126,11 @@
         if (view === key) return;
         view = key;
         if (view === "live") {
-          if (typeof Gorevler !== "undefined") Gorevler.setVisible(false);
+          if (typeof Tasks !== "undefined") Tasks.setVisible(false);
           renderLive();
-          if (typeof Gorevler !== "undefined") Gorevler.setVisible(true);
+          if (typeof Tasks !== "undefined") Tasks.setVisible(true);
         } else {
-          if (typeof Gorevler !== "undefined") Gorevler.setVisible(false);
+          if (typeof Tasks !== "undefined") Tasks.setVisible(false);
           load();
         }
       };
@@ -147,7 +147,7 @@
     body.append(toolbar);
     const host = el("div", "jobs-live-host");
     body.append(host);
-    if (typeof Gorevler !== "undefined") Gorevler.mount(host);
+    if (typeof Tasks !== "undefined") Tasks.mount(host);
   }
 
   // Solo mode: entered from the sidebar — no list in the center, only the
@@ -169,9 +169,9 @@
     document.body.classList.add("jobs-open");
     if (view === "live") {
       renderLive();
-      if (typeof Gorevler !== "undefined") Gorevler.setVisible(true);
+      if (typeof Tasks !== "undefined") Tasks.setVisible(true);
     } else {
-      if (typeof Gorevler !== "undefined") Gorevler.setVisible(false);
+      if (typeof Tasks !== "undefined") Tasks.setVisible(false);
       load();
     }
   }
@@ -186,7 +186,7 @@
     document.body.classList.remove("jobs-open");
     stopLivePoll();
     stopFlowPoll();   // a closed panel must not keep polling in the background
-    if (typeof Gorevler !== "undefined") Gorevler.setVisible(false);
+    if (typeof Tasks !== "undefined") Tasks.setVisible(false);
   }
   function toggle() {
     if (panel.hidden) open(); else close();
@@ -195,7 +195,7 @@
   async function load() {
     // In the live view do not draw the task list — it would wipe the ledger.
     if (view === "live") {
-      if (typeof Gorevler !== "undefined" && Gorevler.tazele) Gorevler.tazele();
+      if (typeof Tasks !== "undefined" && Tasks.refresh) Tasks.refresh();
       return;
     }
     const body = document.getElementById("jobs-body");
@@ -318,14 +318,14 @@
     }
   }
 
-  function gorevMenu(task, ev) {
+  function taskMenu(task, ev) {
     if (typeof Menu === "undefined") return;
     const running = taskRunning(task);
-    Menu.ac(ev, [
-      { ad: "Aç", is: () => { if (panel.hidden) show(task.id); else openTask(task); } },
-      { ad: running ? "Durdur" : "Çalıştır", is: () => toggleRun(task) },
-      { ayrac: true },
-      { ad: "Sil", risk: true, is: () => deleteTask(task) },
+    Menu.open(ev, [
+      { label: "Aç", action: () => { if (panel.hidden) show(task.id); else openTask(task); } },
+      { label: running ? "Durdur" : "Çalıştır", action: () => toggleRun(task) },
+      { sep: true },
+      { label: "Sil", risk: true, action: () => deleteTask(task) },
     ]);
   }
 
@@ -380,7 +380,7 @@
         row.append(el("span", "jobs-row-status", t("Durduruldu")));
       }
       row.onclick = async () => { await openTask(task); };
-      row.addEventListener("contextmenu", (ev) => gorevMenu(task, ev));
+      row.addEventListener("contextmenu", (ev) => taskMenu(task, ev));
       list.append(row);
     }
     const addRow = el("button", "jobs-row jobs-row-add", t("＋ Yeni görev"));
@@ -1043,7 +1043,7 @@
   document.getElementById("jobs")?.addEventListener("click", toggle);
   document.getElementById("jobs-close")?.addEventListener("click", close);
   document.getElementById("jobs-refresh")?.addEventListener("click", () => {
-    if (view === "live" && typeof Gorevler !== "undefined") Gorevler.tazele();
+    if (view === "live" && typeof Tasks !== "undefined") Tasks.refresh();
     else load();
   });
 
@@ -1056,5 +1056,5 @@
   }
 
   window.JobsPanel = { open, openLive, close, load, toggle, refreshLive, show,
-                       menu: gorevMenu };
+                       menu: taskMenu };
 })();

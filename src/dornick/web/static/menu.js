@@ -7,7 +7,7 @@ const Menu = (() => {
   let openBox = null;
   let closeFn = null;
 
-  function kapat() {
+  function close() {
     if (openBox) openBox.remove();
     openBox = null;
     if (closeFn) {
@@ -18,12 +18,12 @@ const Menu = (() => {
     }
   }
 
-  function ac(ev, items) {
+  function open(ev, items) {
     if (ev) {
       ev.preventDefault();
       ev.stopPropagation();
     }
-    kapat();
+    close();
     const rows = (items || []).filter(Boolean);
     if (!rows.length) return;
 
@@ -32,7 +32,7 @@ const Menu = (() => {
     box.setAttribute("role", "menu");
 
     for (const m of rows) {
-      if (m.ayrac) {
+      if (m.sep) {
         const line = document.createElement("div");
         line.className = "ctx-sep";
         line.setAttribute("role", "separator");
@@ -43,16 +43,16 @@ const Menu = (() => {
       btn.type = "button";
       btn.setAttribute("role", "menuitem");
       btn.className = "ctx-item" + (m.risk ? " risk" : "");
-      btn.textContent = t(m.ad);
-      if (m.ipucu) btn.title = t(m.ipucu);
-      if (m.kapali) {
+      btn.textContent = t(m.label);
+      if (m.hint) btn.title = t(m.hint);
+      if (m.disabled) {
         btn.disabled = true;
         btn.classList.add("off");
       }
       btn.addEventListener("click", (e) => {
         e.stopPropagation();
-        kapat();
-        if (typeof m.is === "function") m.is();
+        close();
+        if (typeof m.action === "function") m.action();
       });
       box.append(btn);
     }
@@ -73,7 +73,7 @@ const Menu = (() => {
     closeFn = (e) => {
       if (e.type === "keydown" && e.key !== "Escape") return;
       if (e.type === "mousedown" && box.contains(e.target)) return;
-      kapat();
+      close();
     };
     document.addEventListener("mousedown", closeFn, true);
     document.addEventListener("keydown", closeFn, true);
@@ -138,19 +138,19 @@ const Menu = (() => {
     if (!editable && !toCopy) return;   // nothing worth a menu
     const items = [];
     if (toCopy) {
-      items.push({ ad: "Kopyala", is: () => clipWrite(toCopy) });
+      items.push({ label: "Kopyala", action: () => clipWrite(toCopy) });
     }
     if (editable && fieldSelection) {
-      items.push({ ad: "Kes", is: () => { clipWrite(fieldSelection); cutSelection(target); } });
+      items.push({ label: "Kes", action: () => { clipWrite(fieldSelection); cutSelection(target); } });
     }
     if (editable) {
-      items.push({ ad: "Yapıştır",
-                      is: () => { clipRead().then((m) => { if (m) insertText(target, m); }); } });
-      items.push({ ad: "Tümünü seç",
-                      is: () => { target.focus(); target.select && target.select(); } });
+      items.push({ label: "Yapıştır",
+                      action: () => { clipRead().then((m) => { if (m) insertText(target, m); }); } });
+      items.push({ label: "Tümünü seç",
+                      action: () => { target.focus(); target.select && target.select(); } });
     }
-    ac(ev, items);
+    open(ev, items);
   });
 
-  return { ac, kapat };
+  return { open, close };
 })();

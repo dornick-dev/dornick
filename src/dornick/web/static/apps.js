@@ -18,7 +18,7 @@
 
 // English translations of the texts this file shows the user. The source
 // text stays Turkish; it is translated at display time with t("...").
-Dil.ekle({
+Lang.add({
   "Aç": "Open",
   "Başlat": "Start",
   "Durdur": "Stop",
@@ -500,17 +500,17 @@ const Apps = (() => {
     const live = liveOf(p);
     const items = [];
     if ((live && live.address) || p.entry) {
-      items.push({ ad: "Aç", is: () => openApp(p, live) });
+      items.push({ label: "Aç", action: () => openApp(p, live) });
     }
     if (live && live.stoppable !== false) {
-      items.push({ ad: "Durdur", is: () => stopProc(live) });
+      items.push({ label: "Durdur", action: () => stopProc(live) });
     } else if (!live && runnable(p)) {
-      items.push({ ad: "Başlat", is: () => launchProject(p) });
+      items.push({ label: "Başlat", action: () => launchProject(p) });
     }
-    items.push({ ad: "Klasörü göster", is: () => revealApp(p) });
-    items.push({ ayrac: true });
-    items.push({ ad: "Arşivle", risk: true, is: () => archiveNow(p) });
-    Menu.ac(ev, items);
+    items.push({ label: "Klasörü göster", action: () => revealApp(p) });
+    items.push({ sep: true });
+    items.push({ label: "Arşivle", risk: true, action: () => archiveNow(p) });
+    Menu.open(ev, items);
   }
 
   async function archiveNow(p) {

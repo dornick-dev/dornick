@@ -7,8 +7,8 @@
 // done only half its job. Without a status the editor behaves as before.
 
 const WorkflowView = (() => {
-  if (typeof Dil !== "undefined" && Dil.ekle) {
-    Dil.ekle({
+  if (typeof Lang !== "undefined" && Lang.add) {
+    Lang.add({
       "+ Düğüm": "+ Node",
       "Kaydet": "Save",
       "Uygula": "Apply",
@@ -53,7 +53,7 @@ const WorkflowView = (() => {
         "No flow yet — the agent can create one, or start with Save.",
     });
   }
-  const t = (s) => (typeof Dil !== "undefined" && Dil.t ? Dil.t(s) : s);
+  const t = (s) => (typeof Lang !== "undefined" && Lang.t ? Lang.t(s) : s);
   const el = (tag, cls, text) => {
     const n = document.createElement(tag);
     if (cls) n.className = cls;
@@ -88,7 +88,7 @@ const WorkflowView = (() => {
   const BRANCH_LABEL = { hata: "on error", fail: "on error", ok: "on ok" };
   function branchLabel(on) {
     const raw = String(on || "");
-    if (typeof Dil === "undefined" || Dil.mode !== "en") return raw;
+    if (typeof Lang === "undefined" || Lang.mode !== "en") return raw;
     return BRANCH_LABEL[raw.toLowerCase()] || raw;
   }
 

@@ -5,7 +5,7 @@
 // (`?boxes=1`).
 
 const Cameras = (() => {
-  Dil.ekle({
+  Lang.add({
     "Kameralar": "Cameras",
     "Bilgisayar kamerası": "Computer camera",
     "dahili kamera": "built-in camera",
@@ -28,7 +28,7 @@ const Cameras = (() => {
     "Konuş…": "Talk…",
   });
 
-  Dil.ekle({
+  Lang.add({
     "Kamerayı aç": "Turn camera on",
     "Kamerayı kapat": "Turn camera off",
     "Ayarları aç": "Open settings",
@@ -72,11 +72,11 @@ const Cameras = (() => {
   const thumbUrls = new Map();
 
   function refreshIcon() {
-    icon.classList.toggle("cam-off", !aktifVar());
-    icon.classList.toggle("cam-on", aktifVar());
-    icon.classList.toggle("on", aktifVar());
+    icon.classList.toggle("cam-off", !anyActive());
+    icon.classList.toggle("cam-on", anyActive());
+    icon.classList.toggle("on", anyActive());
     icon.setAttribute("aria-pressed", isOpen ? "true" : "false");
-    icon.title = aktifVar()
+    icon.title = anyActive()
       ? t("Kamera açık — tıkla: pencerede izle")
       : t("Kamera kapalı — tıkla: aç");
   }
@@ -94,7 +94,7 @@ const Cameras = (() => {
     return cams.some((c) => !usb0(c) && c.enabled);
   }
 
-  function aktifVar() {
+  function anyActive() {
     return !!(isOpen || netLive());
   }
 
@@ -170,7 +170,7 @@ const Cameras = (() => {
       if (hasGpu) box.checked = true;
     }
     refreshIcon();
-    if (!aktifVar() && stageOpen()) kapat();
+    if (!anyActive() && stageOpen()) close();
     if (redraw && stageOpen()) paint();
     const sight = d.sight || {};
     if (mode === "izleme" && !sight.ready
@@ -285,13 +285,13 @@ const Cameras = (() => {
   function placeholderSync() {
     const input = document.getElementById("input");
     if (!input) return;
-    input.placeholder = aktifVar()
+    input.placeholder = anyActive()
       ? t("Kamerada ne görüyorsun? Sesli veya yazılı sor…")
       : t("Konuş…");
   }
 
-  async function ac() {
-    if (!aktifVar() || !ready) return;
+  async function open() {
+    if (!anyActive() || !ready) return;
     if (deck) deck.hidden = true;
     if (layer) layer.hidden = true;
     const w = selectedRow();
@@ -310,7 +310,7 @@ const Cameras = (() => {
     refreshIcon();
   }
 
-  function gizle() {
+  function hide() {
     if (deck) deck.hidden = true;
     if (layer) layer.hidden = true;
     document.body.classList.remove("cam-stage", "cam-open");
@@ -319,8 +319,8 @@ const Cameras = (() => {
     refreshIcon();
   }
 
-  function kapat() {
-    gizle();
+  function close() {
+    hide();
     document.body.classList.remove("cam-open");
   }
 
@@ -334,21 +334,21 @@ const Cameras = (() => {
       isOpen = !!(d && d.enabled && (on ? d.live : false));
       if (d && d.enabled === false) isOpen = false;
       refreshIcon();
-      if (!aktifVar()) kapat();
-      else if (on) ac();
+      if (!anyActive()) close();
+      else if (on) open();
       load({ redraw: stageOpen() });
     } catch { /* */ }
   }
 
-  function durum(e) {
+  function status(e) {
     isOpen = !!(e && e.enabled && e.live);
     if (e && e.enabled && !e.live && e.note) isOpen = false;
     refreshIcon();
-    if (!aktifVar()) kapat();
+    if (!anyActive()) close();
   }
 
-  function baglam() {
-    if (!aktifVar()) return "";
+  function context() {
+    if (!anyActive()) return "";
     const w = selectedRow();
     const camName = (w && w.name) || t("Bilgisayar kamerası");
     const seen = summary || t("kare alınamadı");
@@ -372,12 +372,12 @@ const Cameras = (() => {
   }
 
   icon.addEventListener("click", () => {
-    if (!aktifVar()) {
+    if (!anyActive()) {
       pop.hidden = !pop.hidden;
       return;
     }
     pop.hidden = true;
-    ac();
+    open();
   });
   document.getElementById("cam-enable").addEventListener("click", async () => {
     pop.hidden = true;
@@ -394,11 +394,11 @@ const Cameras = (() => {
   });
   load({ redraw: false });
   const camClose = document.getElementById("cam-close");
-  if (camClose) camClose.addEventListener("click", gizle);
+  if (camClose) camClose.addEventListener("click", hide);
   const stopBtn = document.getElementById("cam-stop");
   if (stopBtn) stopBtn.addEventListener("click", () => power(false));
   const popWin = document.getElementById("cam-stage-pop");
-  if (popWin) popWin.addEventListener("click", ac);
+  if (popWin) popWin.addEventListener("click", open);
   const kindEl = document.getElementById("cam-kind");
   if (kindEl) kindEl.addEventListener("change", kindFields);
   kindFields();
@@ -434,5 +434,5 @@ const Cameras = (() => {
     else if (stageOpen()) refresh();
   });
 
-  return { ac, kapat, gizle, durum, baglam, get ozet() { return summary; } };
+  return { open, close, hide, status, context, get summary() { return summary; } };
 })();

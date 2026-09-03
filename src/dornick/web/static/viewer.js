@@ -35,7 +35,7 @@ const Viewer = (() => {
     });
   }
 
-  Dil.ekle({
+  Lang.add({
     "Kaynak": "Source", "Sahne": "Stage",
     "Kopyala": "Copy", "Kopyalandı ✓": "Copied ✓", "Kopyalanamadı": "Copy failed",
     "Sar": "Wrap", "Uzun satırları sar / tek satırda kaydır": "Wrap long lines / scroll instead",
@@ -740,14 +740,14 @@ const Viewer = (() => {
     // "Tarayıcıda aç", and when a report was produced the user could
     // neither open nor find it (live wound, 02.09: "it wrote a report, says
     // I couldn't read it").
-    box.append(dosyaEylemleri(data.path, url));
+    box.append(fileActions(data.path, url));
     return box;
   }
 
   // The shared action strip for a disk file: open in system · open in
   // browser · download · show in folder. PDF and unknown binaries use the
   // same strip.
-  function dosyaEylemleri(path, url) {
+  function fileActions(path, url) {
     const acts = el("div", "viewer-acts");
 
     const sysBtn = el("button", "viewer-open", t("Aç"));
@@ -798,7 +798,7 @@ const Viewer = (() => {
 
     // The same action strip (open · open in browser · download · show in
     // folder).
-    box.append(dosyaEylemleri(data.path, rawUrl(data.path)));
+    box.append(fileActions(data.path, rawUrl(data.path)));
     return box;
   }
 

@@ -1,9 +1,9 @@
 // Separate camera window — the main Dornick stays as chat/brain.
 // With no live camera at all: empty state; the stage does not open (sibling of
-// the `aktifVar` rule in the main window).
+// the `anyActive` rule in the main window).
 
 const Watch = (() => {
-  Dil.ekle({
+  Lang.add({
     "Bilgisayar kamerası": "Computer camera",
     "Aktif kamera yok": "No live camera",
     "sil": "remove",
@@ -30,7 +30,7 @@ const Watch = (() => {
     return img && img.dataset ? img.dataset.key : "";
   }
 
-  function aktifVar() {
+  function anyActive() {
     return !!(isOpen || cams.some((c) => !usb0(c) && c.enabled));
   }
 
@@ -125,7 +125,7 @@ const Watch = (() => {
   }
 
   function paint() {
-    const blank = !aktifVar();
+    const blank = !anyActive();
     if (empty) empty.hidden = !blank;
     if (live) live.hidden = blank;
     if (blank) {
@@ -144,9 +144,9 @@ const Watch = (() => {
 
   function refresh() {
     clearInterval(timer);
-    if (document.hidden || !aktifVar()) return;
+    if (document.hidden || !anyActive()) return;
     const tick = async () => {
-      if (document.hidden || !aktifVar()) return;
+      if (document.hidden || !anyActive()) return;
       const w = selectedRow();
       if (!w || !live) return;
       const thumb = strip && [...strip.querySelectorAll("img")]
@@ -177,7 +177,7 @@ const Watch = (() => {
 
   document.addEventListener("visibilitychange", () => {
     if (document.hidden) clearInterval(timer);
-    else if (aktifVar()) refresh();
+    else if (anyActive()) refresh();
   });
   load();
   setInterval(load, 4000);

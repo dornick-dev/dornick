@@ -351,7 +351,7 @@ def test_the_deck_seeds_from_the_snapshot() -> None:
     assert "/api/gorevler/devam" in orch_js
     assert "Devam et" in orch_js
 
-    tasks_js = (STATIC / "gorevler.js").read_text(encoding="utf-8")
+    tasks_js = (STATIC / "tasks.js").read_text(encoding="utf-8")
     assert "/api/gorevler/devam" in tasks_js
     assert "surdurulebilir" in tasks_js or 'durum === "yetim"' in tasks_js
 

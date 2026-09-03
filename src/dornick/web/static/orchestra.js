@@ -13,7 +13,7 @@
 // /api/state (seed): no ghost "running" card is left over, and helpers left
 // unfinished by the previous session show as a faded "yarım kaldı" row.
 
-Dil.ekle({
+Lang.add({
   "Şu an alt ajan yok. Dornick bir işi böldüğünde kanallar burada belirir.":
     "No helpers right now. Channels appear here when Dornick splits a job.",
   "Şef bekliyor · ": "Conductor waiting · ",

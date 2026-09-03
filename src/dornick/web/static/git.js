@@ -4,7 +4,7 @@
 // dirty; Publish when there is no remote. Clicking opens the existing
 // Viewer (no new shell).
 
-Dil.ekle({
+Lang.add({
   "Değişiklikler": "Changes",
   "Commit": "Commit",
   "Push": "Push",
@@ -197,13 +197,13 @@ const GitBar = (() => {
       if (typeof Menu === "undefined") return;
       const items = [];
       if (row.open && typeof Viewer !== "undefined") {
-        items.push({ ad: "Dosyayı aç", is: () => Viewer.open(row.open) });
+        items.push({ label: "Dosyayı aç", action: () => Viewer.open(row.open) });
       }
       items.push({
-        ad: box.hidden ? "farkı gör" : "farkı gizle",
-        is: () => diffBtn.click(),
+        label: box.hidden ? "farkı gör" : "farkı gizle",
+        action: () => diffBtn.click(),
       });
-      Menu.ac(ev, items);
+      Menu.open(ev, items);
     });
     let loaded = false;
     diffBtn.addEventListener("click", async () => {

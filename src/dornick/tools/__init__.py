@@ -57,7 +57,7 @@ def build_registry(mind: Any = None, *, subagents: bool = True) -> ToolRegistry:
         hearing,
         camera,
         jobs,
-        kod,
+        code,
         runner,
         learn,
         mail,
@@ -84,7 +84,7 @@ def build_registry(mind: Any = None, *, subagents: bool = True) -> ToolRegistry:
     # Structural search: `grep` sees text, `semboller` separates definition
     # from use — to see the calls of the function whose signature you are
     # about to change.
-    kod.register(registry)
+    code.register(registry)
     # Change ledger: lists and reverts the snapshots the file tools take
     # (undo/redo).
     checkpoint.register(registry)

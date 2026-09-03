@@ -217,7 +217,17 @@ def _open_mind(root: Path, clock: VirtualClock) -> Any:
     measurement.
     """
     if "clock" in inspect.signature(open_mind).parameters:
-        return open_mind(root / "mind", root / "sessions", "bench", clock=clock)
+        mind = open_mind(root / "mind", root / "sessions", "bench", clock=clock)
+        # Warm the signature index SYNCHRONOUSLY. The product warms it on a
+        # background thread; where that build lands relative to the virtual
+        # events would otherwise vary run to run. Touch it once while the
+        # store is still empty so every later record is indexed in event
+        # order, identical on every run.
+        try:
+            _ = mind.store.index
+        except AttributeError:                      # pragma: no cover - old tree
+            pass
+        return mind
 
     import dornick.mind.store as _ms                       # pragma: no cover
     import dornick.recall.store as _rs                     # pragma: no cover
@@ -265,6 +275,8 @@ def run(data: dict[str, Any], *, disabled: tuple[str, ...] = (),
     """Plays the scenario day by day and returns the metrics."""
     global DISTIL_MODEL
     DISTIL_MODEL = _extractor_model if distillation else None    # noqa: PLW0603
+    _neutralise_budgets()
+    _deterministic_ids()
     if switches is not None:
         switches.reset()
         if disabled:
@@ -412,11 +424,11 @@ def _play(mind: Any, data: dict[str, Any], clock: VirtualClock,
                     # is known, inside the session. Leaving the lesson to
                     # the night meant allowing the same mistake to be
                     # repeated in the same session.
-                    _awake_outcome(mind, ses, "basarisiz", t)
+                    _awake_outcome(mind, ses, "basarisiz", t, clock=clock)
 
             elif kind == "sonuc":
                 ses.close(event["sonuc"])
-                _awake_outcome(mind, ses, event["sonuc"], t)
+                _awake_outcome(mind, ses, event["sonuc"], t, clock=clock)
 
             elif kind == "uyan":
                 t.wake_events += 1
@@ -449,7 +461,7 @@ def _play(mind: Any, data: dict[str, Any], clock: VirtualClock,
 
 
 def _awake_outcome(mind: Any, ses: "Session", outcome: str,
-                   t: "Tally | None" = None) -> None:
+                   t: "Tally | None" = None, clock: Any = None) -> None:
     """Reverse replay at the moment of the outcome. No counterpart before
     Phase 3.12.
 
@@ -460,7 +472,10 @@ def _awake_outcome(mind: Any, ses: "Session", outcome: str,
         return
     started = time.perf_counter()
     try:
-        awake.on_result(mind.store, ses.log.path, outcome, clock=None, log=ses.log)
+        # clock=None once let awake stamp WALL time into the virtual
+        # calendar: real seconds passed between runs, so activations drifted.
+        awake.on_result(mind.store, ses.log.path, outcome, clock=clock,
+                        log=ses.log)
     except Exception:
         pass        # a measurement run must not stop because of a mechanism error
     if t is not None:
@@ -489,6 +504,43 @@ def _extractor_model(prompt: str) -> str:
 DISTIL_MODEL: Any = None
 
 
+# Real-second budgets exist for the product (a night must not block a
+# returning user) but leak the WALL clock into a virtual-calendar
+# measurement: under machine load the awake/micro/night budgets cut deeper,
+# fewer sessions replay while awake and every heat/lesson metric moves.
+# Timing metrics stay measured; only the CONTENT must not depend on speed.
+BUDGET_OFF = 1e9
+
+
+def _neutralise_budgets() -> None:
+    try:
+        from dornick.recall import awake as _awake             # type: ignore
+        _awake.MICRO_BUDGET_SECONDS = BUDGET_OFF
+    except (ImportError, AttributeError):
+        pass
+
+
+def _deterministic_ids() -> None:
+    """Creation-order ids instead of random UUIDs.
+
+    The product's `n_<random>` ids never matter to it (ties in ranking are
+    arbitrary), but set/dict iteration over random ids makes tie-breaks
+    differ from one process to the next. Counter ids are content-stable, so
+    the report's 'same data, same result' holds across processes too.
+    """
+    try:
+        from dornick.recall import store as _store             # type: ignore
+    except ImportError:
+        return
+    counter = {'n': 0}
+
+    def _seq_id() -> str:
+        counter['n'] += 1
+        return f"n_{counter['n']:08d}"
+
+    _store._new_id = _seq_id
+
+
 def _night_pass(mind: Any, sessions_dir: Path, clock: VirtualClock) -> float | None:
     """Calls the night pass. Before Phase 3 the module does not exist — no-op."""
     try:
@@ -499,7 +551,8 @@ def _night_pass(mind: Any, sessions_dir: Path, clock: VirtualClock) -> float | N
     try:
         weave.night_pass(mind.store, sessions_dir, clock=clock,
                          watermark=sessions_dir.parent / "filigran.json",
-                         model=DISTIL_MODEL, state_dir=sessions_dir.parent)
+                         model=DISTIL_MODEL, state_dir=sessions_dir.parent,
+                         budget_s=BUDGET_OFF)
     except TypeError:       # signature before Phase 3 Step 6
         weave.night_pass(mind.store, sessions_dir, clock=clock,
                          watermark=sessions_dir.parent / "filigran.json")
@@ -580,14 +633,24 @@ def _query(mind: Any, event: dict[str, Any], t: Tally, slug_of: dict[str, str],
 
 
 def _prime(mind: Any, question: str, context: dict | None) -> list[Any]:
-    """The product's prime selection. The context parameter arrives in Phase 5."""
+    """The product's prime selection.
+
+    The signature grew over the phases and the `--old` arm runs a version
+    that predates both `context` (Phase 5) and the `raw`/`ham` argument, so
+    the modern call is tried first and each unknown keyword is dropped in
+    turn until the old signature accepts it.
+    """
+    attempts = []
     if context:
+        attempts.append({"raw": question, "context": context})
+    attempts.append({"raw": question})
+    attempts.append({})
+    for extra in attempts:
         try:
-            return select_prime(mind, question, limit=RECALL_PRIME_LIMIT, raw=question,
-                                context=context)
+            return select_prime(mind, question, limit=RECALL_PRIME_LIMIT, **extra)
         except TypeError:
-            pass
-    return select_prime(mind, question, limit=RECALL_PRIME_LIMIT, raw=question)
+            continue
+    return select_prime(mind, question, limit=RECALL_PRIME_LIMIT)
 
 
 def _ranking(mind: Any, question: str, slug_of: dict[str, str],
@@ -1357,7 +1420,24 @@ def old_run(argv: list[str]) -> dict[str, Any]:
 # -- entry -------------------------------------------------------------
 
 
+def _pin_hash_seed() -> None:
+    """Re-run once under a fixed PYTHONHASHSEED so two invocations agree.
+
+    Set-iteration order depends on the per-process hash seed; without
+    pinning it, two separate processes rank tied scores differently. Not
+    execv (on Windows it detaches and a shell redirect reads an empty
+    file): a synchronous child keeps 'the command is done when it returns'.
+    """
+    import subprocess
+    if os.environ.get("PYTHONHASHSEED") == "0":
+        return
+    env = dict(os.environ, PYTHONHASHSEED="0")
+    raise SystemExit(subprocess.run([sys.executable, *sys.argv], env=env).returncode)
+
+
 def main(argv: list[str] | None = None) -> int:
+    if argv is None:
+        _pin_hash_seed()
     ap = argparse.ArgumentParser(description="Life benchmark")
     ap.add_argument("--data", default="ana", help="ana | holdout | file name")
     ap.add_argument("--label", default="", help="report name (docs/charts/yasam-<label>)")

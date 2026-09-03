@@ -17,7 +17,7 @@
 //     chip: "Kullanıcı şu dosyayı işaret etti: <path>". The user can read
 //     what they are sending.
 
-Dil.ekle({
+Lang.add({
   "Yeni konuşma başlat": "Start a new conversation",
   "Geçmiş konuşmalar": "Past conversations",
   "Model seç — katalogda ara": "Pick a model — search the catalogue",
@@ -40,12 +40,12 @@ Dil.ekle({
   "Kısayollar": "Shortcuts",
   "Enter — gönder · Shift+Enter — alt satır": "Enter — send · Shift+Enter — new line",
   "/ — komut defteri · @ — dosya işaret et": "/ — command book · @ — mention a file",
-  "Escape — açık kutuyu closePop": "Escape — close the open box",
+  "Escape — açık kutuyu kapat": "Escape — close the open box",
   "Bağlam sıkıştırılamadı.": "Could not compact the context.",
   "işaret edilen dosya": "mentioned file",
 });
 
-const Komut = (() => {
+const Command = (() => {
   const input = document.getElementById("input");
   const pop = document.getElementById("compose-pop");
   const chipBox = document.getElementById("mentions");
@@ -57,7 +57,7 @@ const Komut = (() => {
     return n;
   };
 
-  const tik = (id) => { const b = document.getElementById(id); if (b) b.click(); };
+  const press = (id) => { const b = document.getElementById(id); if (b) b.click(); };
 
   const post = (path, payload) => fetch(path, {
     method: "POST",
@@ -70,25 +70,25 @@ const Komut = (() => {
   // The single source of truth. Adding a command is one line here; the
   // menu, the filter, the keyboard navigation and the `/yardim` listing
   // learn it by themselves.
-  const DEFTER = [
-    { ad: "yeni", ne: "Yeni konuşma başlat", kos: () => tik("hist-new") },
-    { ad: "gecmis", ne: "Geçmiş konuşmalar", kos: () => tik("history") },
-    { ad: "model", ne: "Model seç — katalogda ara", kos: () => tik("dock-model") },
-    { ad: "yetki", ne: "Yetki kipini değiştir", kos: () => tik("dock-mode") },
-    { ad: "gorevler", ne: "Koşan görevler — arka plan işleri ve yardımcılar",
-      kos: () => {
+  const BOOK = [
+    { name: "yeni", what: "Yeni konuşma başlat", run: () => press("hist-new") },
+    { name: "gecmis", what: "Geçmiş konuşmalar", run: () => press("history") },
+    { name: "model", what: "Model seç — katalogda ara", run: () => press("dock-model") },
+    { name: "yetki", what: "Yetki kipini değiştir", run: () => press("dock-mode") },
+    { name: "gorevler", what: "Koşan görevler — arka plan işleri ve yardımcılar",
+      run: () => {
         if (window.JobsPanel && JobsPanel.openLive) JobsPanel.openLive();
-        else tik("jobs");
+        else press("jobs");
       } },
-    { ad: "uygulamalar", ne: "Atölyedeki uygulamalar", kos: () => tik("apps") },
-    { ad: "artifact", ne: "Yayınlanan artifact'lar — Uygulamalar panelinde",
-      kos: () => tik("apps") },
-    { ad: "ayarlar", ne: "Ayar sayfasını aç", kos: () => tik("gear") },
-    { ad: "sifirla", ne: "Bağlamı sıkıştır — konuşma kesilmez", kos: compactContext },
+    { name: "uygulamalar", what: "Atölyedeki uygulamalar", run: () => press("apps") },
+    { name: "artifact", what: "Yayınlanan artifact'lar — Uygulamalar panelinde",
+      run: () => press("apps") },
+    { name: "ayarlar", what: "Ayar sayfasını aç", run: () => press("gear") },
+    { name: "sifirla", what: "Bağlamı sıkıştır — konuşma kesilmez", run: compactContext },
     // Stopping goes through its own button: opening a second interrupt
     // path means one changes some day and the other stays behind.
-    { ad: "durdur", ne: "Koşan turu durdur", kos: () => tik("stop") },
-    { ad: "yardim", ne: "Komutlar ve kısayollar", kos: showHelp },
+    { name: "durdur", what: "Koşan turu durdur", run: () => press("stop") },
+    { name: "yardim", what: "Komutlar ve kısayollar", run: showHelp },
   ];
 
   async function compactContext() {
@@ -106,16 +106,16 @@ const Komut = (() => {
     const card = line("help");
     card.replaceChildren();
     card.append(el("div", "help-head", t("Komutlar")));
-    for (const k of DEFTER) {
+    for (const k of BOOK) {
       const row = el("div", "help-row");
-      row.append(el("b", null, "/" + k.ad));
-      row.append(el("span", null, t(k.ne)));
+      row.append(el("b", null, "/" + k.name));
+      row.append(el("span", null, t(k.what)));
       card.append(row);
     }
     card.append(el("div", "help-head", t("Kısayollar")));
     for (const s of ["Enter — gönder · Shift+Enter — alt satır",
                      "/ — komut defteri · @ — dosya işaret et",
-                     "Escape — açık kutuyu closePop"]) {
+                     "Escape — açık kutuyu kapat"]) {
       card.append(el("div", "help-row hint", t(s)));
     }
     scroll();
@@ -130,17 +130,17 @@ const Komut = (() => {
 
   // `/` is a command ONLY at the start of a line: a slash mid-sentence
   // (a path, a fraction) must not open the menu.
-  const KOMUT_KALIBI = /(?:^|\n)\/([\wğüşıöçĞÜŞİÖÇ.-]*)$/;
+  const COMMAND_PATTERN = /(?:^|\n)\/([\wğüşıöçĞÜŞİÖÇ.-]*)$/;
   // `@` after whitespace or at line start. Everything without whitespace
   // or a second `@` inside is the query.
-  const DOSYA_KALIBI = /(?:^|\s)@([^\s@]*)$/;
+  const FILE_PATTERN = /(?:^|\s)@([^\s@]*)$/;
 
   function check() {
     const caret = input.selectionStart;
     const before = input.value.slice(0, caret);
-    let m = KOMUT_KALIBI.exec(before);
+    let m = COMMAND_PATTERN.exec(before);
     if (m) return openPop("komut", m[1], caret - m[1].length - 1);
-    m = DOSYA_KALIBI.exec(before);
+    m = FILE_PATTERN.exec(before);
     if (m) return openPop("dosya", m[1], caret - m[1].length - 1);
     closePop();
   }
@@ -152,7 +152,7 @@ const Komut = (() => {
     state.at = at;
     if (modeChanged) state.selected = 0;
     if (mode === "komut") drawCommands();
-    else dosyalariAra();
+    else searchFiles();
   }
 
   function closePop() {
@@ -162,14 +162,14 @@ const Komut = (() => {
     pop.hidden = true;
   }
 
-  const acikMi = () => !pop.hidden && state.mode !== "";
+  const isOpen = () => !pop.hidden && state.mode !== "";
 
   // Keyboard: with the box open, arrow keys navigate, Enter selects,
   // Escape closes. The listener is on the DOCUMENT and in the capture
   // phase: app.js's Enter → send listener sits above the composer and the
   // message must not go out while the box is open.
-  function tus(ev) {
-    if (!acikMi() || ev.target !== input) return;
+  function onKey(ev) {
+    if (!isOpen() || ev.target !== input) return;
     if (ev.key === "Escape") { ev.preventDefault(); ev.stopPropagation(); closePop(); return; }
     if (ev.key === "ArrowDown" || ev.key === "ArrowUp") {
       if (!state.items.length) return;
@@ -192,7 +192,7 @@ const Komut = (() => {
     const mode = state.mode;
     trimTrigger();
     closePop();
-    if (mode === "komut") item.kos();
+    if (mode === "komut") item.run();
     else addMentionPath(item.path);
     input.focus();
   }
@@ -211,7 +211,7 @@ const Komut = (() => {
 
   function drawCommands() {
     const want = state.query.toLowerCase();
-    state.items = DEFTER.filter(k => !want || k.ad.includes(want));
+    state.items = BOOK.filter(k => !want || k.name.includes(want));
     if (state.selected >= state.items.length) state.selected = 0;
     draw(t("Komutlar"));
   }
@@ -229,8 +229,8 @@ const Komut = (() => {
     }
     state.items.forEach((item, i) => {
       const row = el("div", "pop-row" + (i === state.selected ? " sel" : ""));
-      row.append(el("b", null, state.mode === "komut" ? "/" + item.ad : item.name));
-      row.append(el("span", null, state.mode === "komut" ? t(item.ne) : item.path));
+      row.append(el("b", null, state.mode === "komut" ? "/" + item.name : item.name));
+      row.append(el("span", null, state.mode === "komut" ? t(item.what) : item.path));
       // Mouse selection goes the same way: no two separate selection logics.
       row.addEventListener("mousedown", (ev) => { ev.preventDefault(); select(i); });
       pop.append(row);
@@ -251,20 +251,20 @@ const Komut = (() => {
   // A stale answer arriving late must NOT clobber the new query's list —
   // the list jumping back to the previous one while typing happened exactly
   // like that.
-  let aramaTimer = null;
-  let jeton = 0;
+  let searchTimer = null;
+  let token = 0;
 
-  function dosyalariAra() {
-    clearTimeout(aramaTimer);
-    const benim = ++jeton;
+  function searchFiles() {
+    clearTimeout(searchTimer);
+    const mine = ++token;
     const q = state.query;
-    aramaTimer = setTimeout(async () => {
+    searchTimer = setTimeout(async () => {
       let found = [];
       try {
         const answer = await (await fetch("/api/files/search?q=" + encodeURIComponent(q))).json();
         found = (answer && answer.files) || [];
       } catch { found = []; }
-      if (benim !== jeton || state.mode !== "dosya") return;
+      if (mine !== token || state.mode !== "dosya") return;
       state.items = found;
       if (state.selected >= state.items.length) state.selected = 0;
       draw(t("Dosya ara"));
@@ -280,18 +280,18 @@ const Komut = (() => {
 
   // --- mentions --------------------------------------------------------
 
-  let bahis = [];
+  let mentions = [];
 
   function addMentionPath(path) {
-    if (!path || bahis.includes(path)) return;
-    bahis.push(path);
+    if (!path || mentions.includes(path)) return;
+    mentions.push(path);
     drawMentions();
   }
 
   function drawMentions() {
     chipBox.replaceChildren();
-    chipBox.hidden = !bahis.length;
-    for (const path of bahis) {
+    chipBox.hidden = !mentions.length;
+    for (const path of mentions) {
       const chip = el("span", "chip mention");
       chip.append(el("span", "mention-at", "@"));
       chip.append(el("span", "mention-yol", path));
@@ -299,7 +299,7 @@ const Komut = (() => {
       const x = el("button", null, "×");
       x.type = "button";
       x.title = t("Bahisten çıkar");
-      x.onclick = () => { bahis = bahis.filter(p => p !== path); drawMentions(); };
+      x.onclick = () => { mentions = mentions.filter(p => p !== path); drawMentions(); };
       chip.append(x);
       chipBox.append(chip);
     }
@@ -307,10 +307,10 @@ const Komut = (() => {
 
   // The sentence that enters the message. No hidden injection: what is
   // written is exactly what the chip shows, and it stays in the sent text.
-  function bahisEkle(text) {
-    if (!bahis.length) return text;
-    const lines = bahis.map(p => "Kullanıcı şu dosyayı işaret etti: " + p).join("\n");
-    bahis = [];
+  function addHint(text) {
+    if (!mentions.length) return text;
+    const lines = mentions.map(p => "Kullanıcı şu dosyayı işaret etti: " + p).join("\n");
+    mentions = [];
     drawMentions();
     return (text ? text + "\n\n" : "") + lines;
   }
@@ -323,7 +323,7 @@ const Komut = (() => {
     if (ev.key === "ArrowLeft" || ev.key === "ArrowRight") check();
   });
   input.addEventListener("blur", () => setTimeout(closePop, 120));
-  document.addEventListener("keydown", tus, true);
+  document.addEventListener("keydown", onKey, true);
 
-  return { DEFTER, state, openPop, closePop, tus, select, acikMi, bahisEkle, bahisler: () => bahis.slice() };
+  return { BOOK, state, openPop, closePop, onKey, select, isOpen, addHint, hints: () => mentions.slice() };
 })();

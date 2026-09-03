@@ -1,27 +1,27 @@
 {
  "metrikler": {
-  "prime_precision": 0.4471,
-  "prime_recall": 0.76,
-  "yasak_sizinti": 1.0,
-  "tuzak_sessizlik": 0.5,
+  "prime_precision": 0.2741,
+  "prime_recall": 0.88,
+  "yasak_sizinti": 6.0,
+  "tuzak_sessizlik": 0.475,
   "bayat_ruh": 0.0,
   "taze_ruh": 1.0,
-  "ruh_token": 309.9194,
-  "prime_token": 74.7356,
+  "ruh_token": 310.7556,
+  "prime_token": 78.3639,
   "geri_donus_recall": 1.0,
-  "komsuluk_recall": 0.0,
-  "sorumluluk_dogrulugu": 0.875,
+  "komsuluk_recall": 0.0833,
+  "sorumluluk_dogrulugu": 1.0,
   "dikis_recall": 0.0,
   "gomulme_recall": 1.0,
-  "sema_tazeleme": 0.7997,
-  "yakalama": 0.0061,
+  "sema_tazeleme": 0.6841,
+  "yakalama": 0.0114,
   "ders_gecikmesi": 1.0,
-  "sicak_oran": 0.2214,
-  "gece_suresi": 0.1188,
+  "sicak_oran": 0.7745,
+  "gece_suresi": 0.0596,
   "uykusuz_kayip": null,
   "uykusuz_sisme": null,
   "aktif_bolge_ihlali": null,
-  "tur_bloklama": 9.42,
+  "tur_bloklama": 7.01,
   "kesinti_kaybi": null,
   "kesinti_gecikmesi": null,
   "yarim_damitma": null,
@@ -29,64 +29,64 @@
   "atalet": null,
   "buyume_p95": null,
   "buyume_ram": null,
-  "gecikme_p95": 5.39
+  "gecikme_p95": 5.21
  },
  "kume": {
   "A": {
-   "precision": 0.3571,
-   "recall": 0.5,
+   "precision": 0.2958,
+   "recall": 0.7,
    "sizinti": 0.0
   },
   "B": {
-   "precision": 0.375,
-   "recall": 0.75,
+   "precision": 0.2759,
+   "recall": 1.0,
    "sizinti": 0.0
   },
   "D": {
-   "precision": 0.75,
+   "precision": 0.4615,
    "recall": 1.0,
    "sizinti": 0.0
   },
   "E": {
-   "precision": 0.4146,
-   "recall": 0.85,
-   "sizinti": 0.0
+   "precision": 0.2159,
+   "recall": 0.95,
+   "sizinti": 3.0
   },
   "H": {
-   "precision": 0.6316,
-   "recall": 1.0,
+   "precision": 0.4583,
+   "recall": 0.9167,
    "sizinti": 0.0
   },
   "J": {
-   "precision": 0.75,
+   "precision": 0.4286,
    "recall": 1.0,
    "sizinti": 0.0
   },
   "K": {
-   "precision": 0.4,
-   "recall": 0.8,
-   "sizinti": 1.0
+   "precision": 0.1698,
+   "recall": 0.9,
+   "sizinti": 3.0
   }
  },
  "sayim": {
   "soru": 191,
-  "dugum": 1283,
+  "dugum": 275,
   "tuzak": 40,
   "uyan": 9,
-  "kenar": 5587
+  "kenar": 2031
  },
  "veri": "yasam-90",
  "kapali": [],
- "damitma": true,
+ "damitma": false,
  "kaynak": "calisma-agaci",
- "sure_sn": 17.6,
+ "sure_sn": 12.1,
  "olcek": {
   "dugum": 50000,
   "indeks": 2000,
   "ram_bayt": 144000,
-  "gecikme_p50": 3.35,
-  "gecikme_p95": 5.39
+  "gecikme_p50": 3.27,
+  "gecikme_p95": 5.21
  },
  "etiket": "taze",
- "sira": 11
+ "sira": 99
 }

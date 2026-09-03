@@ -11,7 +11,7 @@
 
 // English translations of the texts this file shows the user. The source
 // text stays Turkish; it is translated at display time with t("...").
-Dil.ekle({
+Lang.add({
   "şu an açık": "open now",
   "koşuyor": "running",
   "biten": "done",
@@ -113,11 +113,11 @@ const History = (() => {
     return document.body.classList.contains("hist-open");
   }
 
-  async function load(ara) {
+  async function load(query) {
     if (!loaded) { body.textContent = ""; body.append(el("p", "hist-blank dugum-yukleniyor", t("Yükleniyor…"))); }
     let data;
     try {
-      const url = ara ? "/api/sessions?ara=" + encodeURIComponent(ara) : "/api/sessions";
+      const url = query ? "/api/sessions?ara=" + encodeURIComponent(query) : "/api/sessions";
       data = await (await fetch(url)).json();
     } catch {
       body.textContent = "";
@@ -135,7 +135,7 @@ const History = (() => {
     // event carries it instantly; this poll is the backup (a missed event
     // reaches the left side within 2 s).
     clearTimeout(liveRefresh);
-    if (!ara && panelOpen() && sessions.some((s) => s.status === "koşuyor")) {
+    if (!query && panelOpen() && sessions.some((s) => s.status === "koşuyor")) {
       liveRefresh = setTimeout(() => { if (panelOpen()) load(); }, 2000);
     }
   }
@@ -212,7 +212,7 @@ const History = (() => {
     // Folder name: the manual project label, else the last segment of the
     // bound path. So chats given a path via "Klasör bağla" also show under
     // Dornick/dornick (the Cursor Repositories layout).
-    function klasorAdi(s) {
+    function folderName(s) {
       if (s.project) return s.project;
       const p = String(s.path || "").replace(/\\/g, "/").replace(/\/+$/, "");
       if (!p) return UNFILED;
@@ -224,7 +224,7 @@ const History = (() => {
     // The unfiled ones sit in a single cluster at the end.
     const byProject = new Map();
     for (const s of shown) {
-      const key = klasorAdi(s);
+      const key = folderName(s);
       if (!byProject.has(key)) byProject.set(key, []);
       byProject.get(key).push(s);
     }
@@ -235,7 +235,7 @@ const History = (() => {
       shown = shown.slice(0, SHOW_CAP);
       byProject.clear();
       for (const s of shown) {
-        const key = klasorAdi(s);
+        const key = folderName(s);
         if (!byProject.has(key)) byProject.set(key, []);
         byProject.get(key).push(s);
       }
@@ -372,19 +372,19 @@ const History = (() => {
     };
     wrap.append(line);
 
-    wrap.addEventListener("contextmenu", (ev) => sohbetMenu(s, wrap, ev));
+    wrap.addEventListener("contextmenu", (ev) => chatMenu(s, wrap, ev));
 
     // Tag badges: clicking filters to that tag. A tag is not a folder — a
     // conversation can carry several tags, a project only one.
     if ((s.tags || []).length) {
       const tagStrip = el("div", "hist-tags");
-      for (const etiket of s.tags) {
-        const chip = el("button", "hist-label" + (etiket === tagFilter ? " on" : ""));
+      for (const tag of s.tags) {
+        const chip = el("button", "hist-label" + (tag === tagFilter ? " on" : ""));
         chip.type = "button";
-        chip.textContent = "#" + etiket;
+        chip.textContent = "#" + tag;
         chip.onclick = (ev) => {
           ev.stopPropagation();
-          tagFilter = (tagFilter === etiket) ? "" : etiket;
+          tagFilter = (tagFilter === tag) ? "" : tag;
           render();
         };
         tagStrip.append(chip);
@@ -408,23 +408,23 @@ const History = (() => {
     return wrap;
   }
 
-  function sohbetMenu(s, wrap, ev) {
+  function chatMenu(s, wrap, ev) {
     if (typeof Menu === "undefined") return;
     const running = s.status === "koşuyor";
-    Menu.ac(ev, [
-      { ad: "Aç", is: () => {
+    Menu.open(ev, [
+      { label: "Aç", action: () => {
         if (s.current) { if (innerWidth <= 860) close(); }
         else resume(s, wrap);
       } },
-      { ad: "Yeniden adlandır", is: () => editName(s, wrap) },
-      { ad: "Etiketle", is: () => editTags(s, wrap) },
-      { ad: "Projeye taşı", is: () => assignProject(s, wrap) },
-      { ad: "Klasör bağla", is: () => assignPath(s, wrap) },
-      { ad: "Model ata", is: () => assignModel(s, wrap) },
-      { ayrac: true },
-      { ad: "Arşivle", risk: true, kapali: running,
-        ipucu: running ? "koşan sohbet arşivlenemez — tur bitince dene" : "",
-        is: () => archiveChat(s) },
+      { label: "Yeniden adlandır", action: () => editName(s, wrap) },
+      { label: "Etiketle", action: () => editTags(s, wrap) },
+      { label: "Projeye taşı", action: () => assignProject(s, wrap) },
+      { label: "Klasör bağla", action: () => assignPath(s, wrap) },
+      { label: "Model ata", action: () => assignModel(s, wrap) },
+      { sep: true },
+      { label: "Arşivle", risk: true, disabled: running,
+        hint: running ? "koşan sohbet arşivlenemez — tur bitince dene" : "",
+        action: () => archiveChat(s) },
     ]);
   }
 
@@ -655,11 +655,11 @@ const History = (() => {
   // start a conversation like yours"): a mini explorer via /api/gozat;
   // "Burada başlat" opens a new session + assigns the work folder +
   // applies it.
-  function klasordeBaslat() {
+  function startInFolder() {
     const existing = document.getElementById("hist-klasor-sec");
     if (existing) { existing.remove(); return; }
-    const kutu = el("div", "hist-assign-box hist-klasor-kutu");
-    kutu.id = "hist-klasor-sec";
+    const box = el("div", "hist-assign-box hist-klasor-box");
+    box.id = "hist-klasor-sec";
     const titleEl = el("div", "hist-klasor-yol", "");
     const listEl = el("div", "hist-klasor-liste");
     const foot = el("div", "hist-klasor-alt");
@@ -667,9 +667,9 @@ const History = (() => {
     startBtn.type = "button";
     const closeBtn = el("button", "plan-btn muted", t("Vazgeç"));
     closeBtn.type = "button";
-    closeBtn.onclick = () => kutu.remove();
+    closeBtn.onclick = () => box.remove();
     foot.append(startBtn, closeBtn);
-    kutu.append(titleEl, listEl, foot);
+    box.append(titleEl, listEl, foot);
     let selected = "";
     async function browse(dirPath) {
       let data;
@@ -687,10 +687,10 @@ const History = (() => {
         listEl.append(upBtn);
       }
       for (const k of (data.klasorler || [])) {
-        const satir = el("button", "hist-klasor-satir", k.ad || k.yol);
-        satir.type = "button";
-        satir.onclick = () => browse(k.yol);
-        listEl.append(satir);
+        const row = el("button", "hist-klasor-satir", k.ad || k.yol);
+        row.type = "button";
+        row.onclick = () => browse(k.yol);
+        listEl.append(row);
       }
     }
     startBtn.onclick = async () => {
@@ -708,15 +708,15 @@ const History = (() => {
           });
         }
       } catch { /* the status row already speaks */ }
-      kutu.remove();
+      box.remove();
       if (innerWidth <= 860) close(); else { load(); setTimeout(load, 600); }
     };
     // BELOW the row, not INSIDE it: hist-new.after shattered the flex row
     // (Yeni konuşma + Sürücü seç side by side — live, 01.09).
     const btn = document.getElementById("hist-new");
-    const satir = (btn && btn.closest(".hist-new-row")) || btn;
-    if (satir) satir.after(kutu);
-    else document.getElementById("hist-panel")?.querySelector(".hist-head")?.after(kutu);
+    const row = (btn && btn.closest(".hist-new-row")) || btn;
+    if (row) row.after(box);
+    else document.getElementById("hist-panel")?.querySelector(".hist-head")?.after(box);
     browse("");
   }
 
@@ -852,7 +852,7 @@ const History = (() => {
   // here.
   document.getElementById("hist-new").addEventListener("contextmenu", (ev) => {
     ev.preventDefault();
-    klasordeBaslat();
+    startInFolder();
   });
   document.getElementById("hist-new").title =
     t("Yeni konuşma") + " · " + t("sağ tık: klasörde başlat");
@@ -887,7 +887,7 @@ const History = (() => {
 // The rail is the single sidebar: two collapsible sections under the
 // conversations. Clicking a row opens the DETAIL in the CENTRE area
 // (JobsPanel.show / Apps.open).
-Dil.ekle({
+Lang.add({
   "Henüz görev yok": "No tasks yet",
   "Uygulama yok": "No apps yet",
   "otomasyon": "automation",

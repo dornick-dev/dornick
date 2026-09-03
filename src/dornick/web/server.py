@@ -70,8 +70,8 @@ ASSETS = {
     "/settings.css": "text/css; charset=utf-8",
     "/logo.png": "image/png",
     "/app.js": "text/javascript; charset=utf-8",
-    # Language layer: loaded BEFORE the other scripts (t() and Dil.ekle live in them).
-    "/dil.js": "text/javascript; charset=utf-8",
+    # Language layer: loaded BEFORE the other scripts (t() and Lang.add live in them).
+    "/lang.js": "text/javascript; charset=utf-8",
     "/scene.js": "text/javascript; charset=utf-8",
     # Real brain geometry: a decimated point cloud, 42 KB.
     "/brain.js": "text/javascript; charset=utf-8",
@@ -87,11 +87,11 @@ ASSETS = {
     "/cameras.js": "text/javascript; charset=utf-8",
     "/watch.js": "text/javascript; charset=utf-8",
     # Running-tasks panel: background jobs, helpers, processes.
-    "/gorevler.js": "text/javascript; charset=utf-8",
+    "/tasks.js": "text/javascript; charset=utf-8",
     # Composer surfaces: the `/` command book and the `@` file mention.
-    "/komut.js": "text/javascript; charset=utf-8",
+    "/command.js": "text/javascript; charset=utf-8",
     # "What changed this turn" strip + undo.
-    "/degisiklik.js": "text/javascript; charset=utf-8",
+    "/changes.js": "text/javascript; charset=utf-8",
     "/git.js": "text/javascript; charset=utf-8",
     "/workdir.js": "text/javascript; charset=utf-8",
     "/chrome.js": "text/javascript; charset=utf-8",
@@ -884,7 +884,7 @@ class _Handler(BaseHTTPRequestHandler):
         elif route == "/api/dil":
             # The UI language the setup wizard chose. localStorage cannot be
             # written from the installer; the wizard drops setup.json into
-            # the workspace and dil.js reads it from here on first launch
+            # the workspace and lang.js reads it from here on first launch
             # and writes it to itself. Older versions left the same file
             # under the name kurulum.json; if setup.json is missing that one
             # is consulted too — existing installs do not break. If the

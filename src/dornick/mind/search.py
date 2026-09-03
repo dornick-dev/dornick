@@ -74,6 +74,7 @@ def rank(
     time_of=None,
     limit: int = 10,
     half_life_days: float = 30.0,
+    now: datetime | None = None,
 ) -> list[Scored]:
     """Ranks by the query. If the query is empty the newest come back.
 
@@ -84,11 +85,19 @@ def rank(
     if not items:
         return []
 
+    # The clock is injected so a virtual-calendar benchmark does not read the
+    # real date; the product passes nothing and gets wall time. (The freshness
+    # tilt below used datetime.now() directly, which quietly made episode
+    # ranking depend on when the process ran — invisible to the store's own
+    # datetime.now guard, which only covers store.py.)
+    now = now or datetime.now(timezone.utc)
+
     docs = [tokenize(text_of(item)) for item in items]
     vocabularies = [set(d) for d in docs]
 
     if not (terms := set(tokenize(query))):
-        scored = [Scored(item, _freshness(item, time_of, half_life_days), []) for item in items]
+        scored = [Scored(item, _freshness(item, time_of, half_life_days, now), [])
+                  for item in items]
         return sorted(scored, key=lambda s: -s.score)[:limit]
 
     idf = _idf(vocabularies, terms)
@@ -116,7 +125,8 @@ def rank(
             continue
 
         coverage = hit_terms / len(terms)
-        score = raw * (0.5 + 0.5 * coverage) * _freshness(item, time_of, half_life_days)
+        score = raw * (0.5 + 0.5 * coverage) * _freshness(
+            item, time_of, half_life_days, now)
         out.append(Scored(item, score, sorted(surface)))
 
     return sorted(out, key=lambda s: -s.score)[:limit]
@@ -130,7 +140,8 @@ def _idf(vocabularies: list[set[str]], terms: Iterable[str]) -> dict[str, float]
     }
 
 
-def _freshness(item: Any, time_of, half_life_days: float) -> float:
+def _freshness(item: Any, time_of, half_life_days: float,
+               now: datetime) -> float:
     """A multiplier between 0.5 and 1.0. Freshness must not crush relevance, only tilt it."""
     if time_of is None:
         return 1.0
@@ -143,7 +154,7 @@ def _freshness(item: Any, time_of, half_life_days: float) -> float:
         return 0.75
     if when.tzinfo is None:
         when = when.replace(tzinfo=timezone.utc)
-    age_days = max(0.0, (datetime.now(timezone.utc) - when).total_seconds() / 86_400)
+    age_days = max(0.0, (now - when).total_seconds() / 86_400)
     return 0.5 + 0.5 * math.pow(0.5, age_days / half_life_days)
 
 

@@ -13,7 +13,7 @@
 
 // English translations of the texts this file shows the user. The source
 // text stays Turkish; it is translated at display time with t("...").
-Dil.ekle({
+Lang.add({
   // Memory kinds (probe + legend)
   "Ben": "Me", "Kullanıcı": "User", "Tercih": "Preference", "Ders": "Lesson",
   "Yordam": "Procedure", "Bilgi": "Fact", "Hedef": "Goal", "Oturum": "Session",
@@ -936,7 +936,7 @@ const Scene = (() => {
       ctx.font = "600 9.5px " + family;
       ctx.fillText(open ? "▾" : "▸", left + 9, y + 0.5);
       ctx.globalAlpha = paperAlpha(busy || hovering ? 0.95 : 0.6);
-      ctx.fillText(Dil.t(branch.label).toUpperCase() + " · " + branch.own.length,
+      ctx.fillText(Lang.t(branch.label).toUpperCase() + " · " + branch.own.length,
                    left + 20, y + 0.5);
       y += 21;
 
@@ -1077,10 +1077,10 @@ const Scene = (() => {
         ctx.fillStyle = tone;
         ctx.textAlign = "center";
         ctx.font = "600 9px " + (getComputedStyle(document.body).fontFamily);
-        // Dil.t: in this scope `t` is the frame time — the global
+        // Lang.t: in this scope `t` is the frame time — the global
         // translator by its full name.
-        const tag = open ? Dil.t(branch.label).toUpperCase()
-                         : Dil.t(branch.label).toUpperCase() + " · " + branch.own.length;
+        const tag = open ? Lang.t(branch.label).toUpperCase()
+                         : Lang.t(branch.label).toUpperCase() + " · " + branch.own.length;
         ctx.fillText(tag, branch.x, branch.y + (branch.below ? 18 : -13));
       }
 

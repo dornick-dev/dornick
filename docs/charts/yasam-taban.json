@@ -7,7 +7,7 @@
   "bayat_ruh": 3.4778,
   "taze_ruh": 1.0,
   "ruh_token": 324.9722,
-  "prime_token": 84.0668,
+  "prime_token": 84.4791,
   "geri_donus_recall": 1.0,
   "komsuluk_recall": 0.0,
   "sorumluluk_dogrulugu": 0.5,
@@ -18,6 +18,10 @@
   "ders_gecikmesi": 79.4,
   "sicak_oran": 1.0,
   "gece_suresi": null,
+  "uykusuz_kayip": null,
+  "uykusuz_sisme": null,
+  "aktif_bolge_ihlali": null,
+  "tur_bloklama": null,
   "kesinti_kaybi": null,
   "kesinti_gecikmesi": null,
   "yarim_damitma": null,
@@ -25,55 +29,64 @@
   "atalet": null,
   "buyume_p95": null,
   "buyume_ram": null,
-  "gecikme_p95": 8.97
+  "gecikme_p95": 8.43
  },
  "kume": {
   "A": {
    "precision": 0.3659,
-   "recall": 1.0
+   "recall": 1.0,
+   "sizinti": 0.0
   },
   "B": {
    "precision": 0.1739,
-   "recall": 0.75
+   "recall": 0.75,
+   "sizinti": 29.0
   },
   "D": {
    "precision": 0.3333,
-   "recall": 1.0
+   "recall": 1.0,
+   "sizinti": 0.0
   },
   "E": {
    "precision": 0.2083,
-   "recall": 1.0
+   "recall": 1.0,
+   "sizinti": 20.0
   },
   "H": {
    "precision": 0.4444,
-   "recall": 1.0
+   "recall": 1.0,
+   "sizinti": 0.0
   },
   "J": {
    "precision": 0.4286,
-   "recall": 1.0
+   "recall": 1.0,
+   "sizinti": 0.0
   },
   "K": {
    "precision": 0.1429,
-   "recall": 1.0
+   "recall": 1.0,
+   "sizinti": 10.0
   }
  },
  "sayim": {
   "soru": 191,
   "dugum": 288,
   "tuzak": 40,
-  "uyan": 9
+  "uyan": 9,
+  "kenar": 733
  },
  "veri": "yasam-90",
  "kapali": [],
+ "damitma": false,
  "kaynak": "hafiza-eski",
  "sure_sn": 3.9,
  "olcek": {
   "dugum": 50000,
   "indeks": 50000,
   "ram_bayt": 3600000,
-  "gecikme_p50": 6.71,
-  "gecikme_p95": 8.97
+  "gecikme_p50": 6.43,
+  "gecikme_p95": 8.43
  },
  "etiket": "taban",
- "sira": 0
+ "sira": 99
 }

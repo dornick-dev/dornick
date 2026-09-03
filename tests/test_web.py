@@ -216,7 +216,7 @@ def test_install_language_is_served_from_setup_json(tmp_path: Path, mind: Mind) 
     """The setup wizard's language choice is read from /api/dil.
 
     localStorage cannot be written from the installer; the wizard drops
-    setup.json into the workspace and dil.js reads it from here on first
+    setup.json into the workspace and lang.js reads it from here on first
     launch. The kurulum.json left by older versions is recognised too — an
     update must not lose the language choice. Without the file it falls
     back to the MACHINE's language (default English, Turkish on a Turkish

@@ -90,6 +90,36 @@ def test_same_scenario_gives_same_result(bench, holdout) -> None:
     assert first["sayim"] == second["sayim"]
 
 
+def test_two_processes_give_the_same_result(tmp_path) -> None:
+    """Reproducibility must hold ACROSS processes, not only within one.
+
+    Within one process two runs already agreed; across processes they did
+    not, because set-iteration order over random node ids and the real wall
+    clock both leaked in. The report claims "same data, same calendar, same
+    result" — this pins that claim to a fresh interpreter each time.
+
+    Timing metrics (wall-clock durations) are dropped; every content metric
+    must match to the digit.
+    """
+    import json
+    import subprocess
+    import sys
+
+    root = Path(__file__).resolve().parent.parent
+    script = root / "eval" / "context_memory" / "life_bench.py"
+    drop = {"gecikme_p95", "gecikme_p50", "gece_suresi", "tur_bloklama", "sure_sn"}
+
+    def one() -> dict:
+        out = subprocess.run(
+            [sys.executable, str(script), "--data", "holdout", "--json"],
+            cwd=root, capture_output=True, text=True, timeout=600)
+        assert out.returncode == 0, out.stderr[-2000:]
+        metrics = json.loads(out.stdout)["metrikler"]
+        return {k: v for k, v in metrics.items() if k not in drop}
+
+    assert one() == one()
+
+
 def test_every_metric_is_number_or_none(bench, holdout) -> None:
     """`None` = "that version lacked the mechanism"; any other type is
     meaningless in the report."""

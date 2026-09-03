@@ -35,28 +35,28 @@
      The scene reads these values via getComputedStyle; both the dark and
      the light palette must be correct. Dark values match the previously
      embedded colours. */
-  --bg: #0F0E0C;            /* body/sahne zemini */
-  --panel: #1B1814;         /* opak panel govdesi (settings/apps/history/viewer) */
-  --panel-glass: rgba(27,24,20,.88);  /* cam panel (blur'lu) */
-  --edge: rgba(239,232,220,.09);     /* ince ayrac/cizgi */
-  --raise: rgba(239,232,220,.05);    /* hafif yukseltilmis yuzey (kart) */
-  --field: #161310;         /* input zemini */
-  --overlay: rgba(10,9,7,.72);       /* modal arkasi karartma */
-  --scrim: 15, 14, 12;                /* sohbet alt/yan solum gradyani (RGB) */
+  --bg: #0F0E0C;            /* body/scene ground */
+  --panel: #1B1814;         /* opaque panel body (settings/apps/history/viewer) */
+  --panel-glass: rgba(27,24,20,.88);  /* glass panel (blurred) */
+  --edge: rgba(239,232,220,.09);     /* thin separator/line */
+  --raise: rgba(239,232,220,.05);    /* slightly raised surface (card) */
+  --field: #161310;         /* input ground */
+  --overlay: rgba(10,9,7,.72);       /* dimming behind a modal */
+  --scrim: 15, 14, 12;                /* chat bottom/side fade gradient (RGB) */
   --caption: #131110;                /* single title strip (same as DWM dark) */
-  --h1-hi: #ffffff;                  /* karsilama basligi gradyan uclari */
+  --h1-hi: #ffffff;                  /* welcome heading gradient endpoints */
   --h1-lo: #E8A33D;
-  --user-ink: #F5EFE4;               /* kullanici mesaji murekkebi */
-  --user-glow: rgba(0,0,0,.9);       /* kullanici mesaji golgesi */
-  --halo: 0 1px 12px #000c;          /* koyu sahnede yazi okunurlugu */
-  --code-bg: #141210;                /* kod kuyusu (koyu tema) */
+  --user-ink: #F5EFE4;               /* user message ink */
+  --user-glow: rgba(0,0,0,.9);       /* user message shadow */
+  --halo: 0 1px 12px #000c;          /* text legibility on the dark scene */
+  --code-bg: #141210;                /* code well (dark theme) */
   --code-ink: #E6DFD2;
   --send-off: #2C2820;
   --send-off-ink: #776F63;
   --glow: #F0A02088;
-  /* Sozdizimi: arayuz accent'inden AYRI. Acik temada --mint koyuluyor;
-     ayni token kodda kullanilinca koyu-yesil-ustune-koyu-kuyu oluyordu.
-     Kod her temada ayni neon paleti tasiyor. */
+  /* Syntax: SEPARATE from the UI accent. In the light theme --mint darkens;
+     using the same token in code produced dark-green-on-a-dark-well.
+     Code carries the same neon palette in every theme. */
   --hl-com: #7A7264;
   --hl-str: #86EFAC;
   --hl-num: #F0A020;
@@ -70,8 +70,8 @@
      core; the text was pulled aside so the flow of thought stays visible.
      Managed from one place: chat, composer, preview and attachments share
      the same column. */
-  --rail-w: 0px;              /* sol rail kapali */
-  --mind-w: 0px;              /* sag sutun kapali */
+  --rail-w: 0px;              /* left rail closed */
+  --mind-w: 0px;              /* right column closed */
   /* CAREFUL: the --aside/--gut formulas live on body. var() resolves on the
      element where the declaration is made; had the formula stayed on :root
      it would never see the --rail-w that body.hist-open changes (seen
@@ -111,11 +111,11 @@
   --review-undo: #E89AA0;
 }
 
-/* ---------- acik (gunduz) tema ----------
-   Hastane grisi + soluk murekkep degil: ayni cyan kimlik, kagit uzerinde
-   okunur. Onceki palet --faint'i zemine yaklastiriyordu (sol kolon, iz,
-   dusunce satirlari kayboluyordu); paneller saf beyaz, kod ise koyu-tema
-   acik-maviyle beyaza basiliyordu. */
+/* ---------- light (daytime) theme ----------
+   Not hospital grey + pale ink: the same cyan identity, readable on
+   paper. The previous palette pushed --faint towards the ground (the left
+   column, the trail and the thinking lines vanished); panels are pure
+   white, and code was printed on white in the dark theme's light blue. */
 :root[data-theme="light"] {
   --bg: #FBF8F2;
   /* Panel = the page's own cool paper family (cream #f7f4ee sat outside the
@@ -156,7 +156,7 @@
   --faint: #6E6656;
   --ink: var(--text);
 
-  /* accent: ayni aile, kagitta WCAG'e yakin derinlikte */
+  /* accent: same family, near-WCAG depth on paper */
   --cyan: #B4700A;
   --ice: #8A5B10;
   --violet: #7C3AED;
@@ -197,8 +197,8 @@ html, body { height: 100%; margin: 0; overflow: hidden; }
 }
 :root[data-theme="light"] ::selection { background: rgba(180, 112, 10, .22); }
 
-/* Acik temada koyu-sahne kalintilari: neon hale, siyah yazi golgesi,
-   soluk perde. Token'lar yetmeyince burasi tamamlar. */
+/* Dark-scene leftovers in the light theme: neon halo, black text shadow,
+   pale scrim. Where the tokens fall short, this section completes them. */
 :root[data-theme="light"] .brand-mark { filter: none; }
 :root[data-theme="light"] .stream::before {
   background: linear-gradient(90deg,
@@ -579,7 +579,7 @@ pre, code, kbd, samp, .input-area, .viewer-code, .diff-row {
 .line.agent.stall::after { opacity: .25; }
 .line.agent.done::after { content: none; }
 
-/* Uzun cevabin devami. Sonuc ustte acikta, gerisi tiklayinca. */
+/* The rest of a long answer. The conclusion stays open on top; the rest opens on click. */
 .fold {
   margin: 4px 0 0; cursor: pointer; user-select: none; display: inline-block;
   font: 10.5px var(--mono); letter-spacing: .16em; text-transform: uppercase;
@@ -626,7 +626,7 @@ pre, code, kbd, samp, .input-area, .viewer-code, .diff-row {
   position: relative; margin: 0 0 14px; padding: 14px 16px;
   background: var(--code-bg); border-radius: 8px;
   box-shadow: inset 0 0 0 1px #F0A02014, 0 6px 26px #0008;
-  /* Uzun satir sayfayi yatay kaydirmamali; blok kendi icinde kaysin. */
+  /* A long line must not scroll the page horizontally; the block scrolls within itself. */
   overflow-x: auto;
 }
 .md-code code {
@@ -836,9 +836,10 @@ a.md-source { text-decoration: none; color: inherit; }
 .md-list li.md-task.done::before { content: "☑ "; color: var(--preference); }
 .md-list li.md-task.done { color: var(--faint); }
 
-/* ---------- dusunme ----------
-   Akil yurutme cevap degil: tek satirda soluk akiyor, cevap gelince
-   "dusundu" diye katlaniyor. Amac ne dusundugunu izlemek, okumak degil. */
+/* ---------- thinking ----------
+   Reasoning is not the answer: it flows pale on a single line and folds
+   into "thought" once the answer arrives. The aim is to watch what it is
+   thinking, not to read it all. */
 .line.thought {
   color: var(--faint); font-size: 12.5px; font-style: italic;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
@@ -949,7 +950,7 @@ a.md-source { text-decoration: none; color: inherit; }
 .acts-head .head-verb {
   flex: 0 0 auto; color: inherit; font-weight: 500; letter-spacing: 0;
 }
-/* Baslikta HEDEF: komut/yol — buyuk harfe cevrilmez, tek satir, ellipsis. */
+/* The TARGET in the headline: command/path — never uppercased, one line, ellipsis. */
 .acts-head .head-target {
   flex: 1 1 auto; min-width: 0;
   text-transform: none; letter-spacing: 0;
@@ -1102,7 +1103,7 @@ a.md-source { text-decoration: none; color: inherit; }
   box-shadow: inset 2px 0 0 #C4B5FD44;
 }
 .act.note.think.done:hover { color: var(--dim); }
-/* Kirpilmis ara-anlatim: ilk satir + tiklayinca tamami. */
+/* Trimmed interim narration: the first line + the whole on click. */
 .act.note[title] { cursor: pointer; }
 .act.note.open { color: var(--dim); }
 /* Spontaneous recalls: a separate purple-mint trace, clickable. */
@@ -1253,7 +1254,7 @@ a.md-source { text-decoration: none; color: inherit; }
 .card-grow:hover, .card-copy:hover { color: var(--cyan); }
 .card-copy { margin-left: auto; }
 .card-grow { margin-left: 2px; }
-/* Komut / cikti: terminal kuyusu, tek blok, yatay kaydirma iceride. */
+/* Command / output: a terminal well, one block, horizontal scrolling inside. */
 .card-code, .card-out {
   margin: 0; padding: 8px 10px; border-radius: 0;
   background: var(--code-bg); border: 0; border-top: 1px solid var(--card-edge);
@@ -1269,7 +1270,7 @@ a.md-source { text-decoration: none; color: inherit; }
 .card-code.shell-cmd code::before {
   content: "❯ "; color: var(--cyan); opacity: .55;
 }
-/* Diff: eski satirlar kirmizimsi, yeniler yesilimsi; numaralar gercek. */
+/* Diff: old lines reddish, new ones greenish; the line numbers are real. */
 .card-diff { margin: 0; overflow-x: auto; padding: 4px 0; }
 .diff-row { display: flex; gap: 8px; font: 12px/1.55 var(--mono); padding: 0 8px; }
 .diff-row .diff-no {
@@ -1287,10 +1288,10 @@ a.md-source { text-decoration: none; color: inherit; }
 .arg-row { display: flex; gap: 10px; margin: 0 0 3px; font: 11.5px/1.5 var(--mono); }
 .arg-row b { flex: 0 0 auto; min-width: 64px; color: var(--ice); font-weight: 600; }
 .arg-row span { flex: 1; min-width: 0; color: var(--dim); word-break: break-word; }
-/* 200+ adimda eskilerin indigi tek ozet satir. */
+/* The single summary line the older steps sink into past 200+ steps. */
 .act.note.gone { color: var(--faint); box-shadow: inset 2px 0 0 #7f9ec033; }
 
-/* Hizli inme dugmesi: takip koptugunda sag altta "↓ N yeni". */
+/* Quick jump-down button: "↓ N yeni" at bottom right when follow is lost. */
 .jump {
   position: fixed; right: calc(var(--mind-w) + 12px); bottom: calc(var(--compose-h) + 12px); z-index: 7;
   padding: 6px 13px; border: 0; border-radius: 15px; cursor: pointer;
@@ -1336,8 +1337,9 @@ a.md-source { text-decoration: none; color: inherit; }
 .git-act:disabled { color: var(--faint); cursor: default; opacity: .55; }
 
 /* ---------- dock ----------
-   Kompozerin altindaki durum seridi: model, dusunme derinligi, yetki kipi,
-   baglam dolulugu. Tek satir; tasarsa yatay kayar, ust uste binmez. */
+   The status strip under the composer: model, thinking depth, permission
+   mode, context usage. One line; on overflow it scrolls horizontally and
+   never stacks. */
 .dock {
   display: flex; align-items: center; gap: 4px;
   width: 100%; min-width: 0; min-height: 28px;
@@ -1393,9 +1395,9 @@ a.md-source { text-decoration: none; color: inherit; }
 .dock-ctx.warn b { color: var(--amber); }
 .dock-ctx.hot b { color: var(--rose); }
 
-/* ---------- dock acilir kutusu ----------
-   Cipe tiklayinca ustunde acilan kucuk secim kutusu — ayar sayfasina
-   gitmeden model/derinlik/kip secimi, baglam detayi. */
+/* ---------- dock popup ----------
+   The small picker that opens above a clicked chip — model/depth/mode
+   choice and context detail without visiting the settings page. */
 .pop {
   position: fixed; z-index: 40; min-width: 250px; max-width: 340px;
   background: var(--panel); border-radius: 10px; padding: 8px;
@@ -1496,7 +1498,7 @@ a.md-source { text-decoration: none; color: inherit; }
   box-shadow: 0 0 0 1px #F0A02033, 0 18px 60px #000c;
   animation: surface .3s ease-out;
 }
-/* Onizleme sutunun ustunde duruyor; sohbet o kadar kisaliyor. */
+/* The preview sits on top of the column; the chat shortens by that much. */
 body.lensing .stream-wrap { max-height: calc(100vh - 68px - 30vh - var(--goals-h, 0px) - var(--compose-h)); }
 
 .lens video {
@@ -1508,7 +1510,7 @@ body.lensing .stream-wrap { max-height: calc(100vh - 68px - 30vh - var(--goals-h
 }
 
 .lens-frame { position: absolute; inset: 0; pointer-events: none; }
-/* Bulucu yoksa ortada sabit nisangah. */
+/* Without a detector: a fixed reticle in the centre. */
 .lens-frame:empty::after {
   content: ""; position: absolute; left: 28%; top: 14%; width: 44%; height: 62%;
   border: 2px dashed #F0A020; border-radius: 3px; opacity: .75;
@@ -1550,9 +1552,9 @@ body.lensing .stream-wrap { max-height: calc(100vh - 68px - 30vh - var(--goals-h
 #lens-close { box-shadow: none; font-size: 16px; padding: 2px 8px; }
 #lens-close:hover { color: var(--rose); box-shadow: none; }
 
-/* Kameradan alinan kare: gonderilmeden once yazma satirinin ustunde
-   duruyor. Ne gonderdigini gormeden gondermek, kameranin ne yakaladigini
-   bilmemek demek. */
+/* A frame taken from the camera sits above the input line before it is
+   sent. Sending without seeing it means not knowing what the camera
+   actually caught. */
 .shot {
   position: fixed; bottom: var(--compose-h);
   left: var(--rail-w); right: var(--mind-w);
@@ -1563,7 +1565,7 @@ body.lensing .stream-wrap { max-height: calc(100vh - 68px - 30vh - var(--goals-h
   pointer-events: auto;
 }
 body.viewing .shot,
-body.settling .shot { /* rail/mind arasinda kalir */ }
+body.settling .shot { /* stays between rail and mind */ }
 .shot img { display: block; max-width: 220px; max-height: 150px; }
 .shot button {
   position: absolute; top: 4px; right: 4px;
@@ -1600,7 +1602,7 @@ body.dropping::after {
 }
 .drops .chip { pointer-events: auto; }
 body.viewing .drops,
-body.settling .drops { /* rail/mind arasinda */ }
+body.settling .drops { /* between rail and mind */ }
 .chip {
   display: inline-flex; align-items: center; gap: 6px;
   padding: 4px 8px 4px 11px; border-radius: 14px;
@@ -1706,7 +1708,7 @@ body.waking .entry textarea { cursor: not-allowed; }
 .probe-git:hover { background: #F0A02030; }
 .probe-git:focus-visible { outline: 2px solid var(--cyan); outline-offset: 1px; }
 
-/* ---------- onay ---------- */
+/* ---------- approval ---------- */
 .veil {
   position: fixed; inset: 0; z-index: 30;
   background: var(--overlay);
@@ -1876,7 +1878,7 @@ body.focus #focus.on { color: var(--cyan); }
   padding: 0 4px; border-radius: 4px; transition: .14s;
 }
 .goals-add button:hover { color: var(--cyan); background: var(--raise); }
-/* Eski oturumlardan kalan madde: "kim koydu bunu" sorusunun cevabi. */
+/* An item left over from earlier sessions: the answer to "who put this here". */
 .goal-item .goal-eski {
   flex: 0 0 auto; font: 9px var(--mono); color: var(--faint);
   opacity: .8; letter-spacing: .08em; text-transform: uppercase;
@@ -1890,7 +1892,7 @@ body.focus #focus.on { color: var(--cyan); }
 .goals-head:hover { color: var(--dim); }
 .goals-head:focus-visible { outline: 1px solid var(--cyan); outline-offset: 3px; border-radius: 3px; }
 .goals:not(.folded) .goals-head { margin-bottom: 6px; }
-/* Uzun liste sohbeti kapatmasin: govde kendi icinde kayar. */
+/* A long list must not swallow the chat: the body scrolls within itself. */
 .goals-body {
   display: flex; flex-direction: column; gap: 2px;
   max-height: 28vh; overflow-y: auto; overscroll-behavior: contain;
@@ -1998,7 +2000,7 @@ body.focus #focus.on { color: var(--cyan); }
    snagged. What they are shows on hover. */
 
 .icon {
-  /* Ust serit tiklamayi gecirmiyor; her dugme bunu tek tek geri aciyor. */
+  /* The top strip does not pass clicks; every button re-enables them one by one. */
   pointer-events: auto;
   width: 28px; height: 28px; padding: 0; cursor: pointer;
   background: none; border: 0; border-radius: 8px;
@@ -2013,8 +2015,8 @@ body.focus #focus.on { color: var(--cyan); }
 /* Learn-me icon: a soft pulse while training runs; with reduced motion, no
    animation, only the colour accent remains. */
 #tanima-ikon.kosuyor { color: var(--cyan); }
-#tanima-ikon.kosuyor svg { animation: tanima-nabiz 2s ease-in-out infinite; }
-@keyframes tanima-nabiz {
+#tanima-ikon.kosuyor svg { animation: tanima-pulse 2s ease-in-out infinite; }
+@keyframes tanima-pulse {
   0%, 100% { opacity: .55; transform: scale(1); }
   50% { opacity: 1; transform: scale(1.12); }
 }
@@ -2075,16 +2077,16 @@ body.focus #focus.on { color: var(--cyan); }
   color: var(--faint); transition: .18s;
 }
 #authority:hover { color: var(--ice); box-shadow: inset 0 0 0 1px #F0A02044; }
-/* Tam yetki aciklen bunu saklamiyoruz: her komut sorulmadan calisiyor. */
+/* Full authority on is not hidden: every command runs without asking. */
 #authority.full {
   color: var(--rose); box-shadow: inset 0 0 0 1px #F8717155;
   background: #F8717114; text-shadow: 0 0 14px #F8717166;
 }
 
 #gear {
-  /* Ust serit tiklamayi gecirmiyor (.hud pointer-events: none) — arkadaki
-     sahne surukleneblisin diye. Tiklanabilir her ogenin bunu tek tek geri
-     acmasi gerekiyor; unutulunca dugme sessizce olu kaliyor. */
+  /* The top strip does not pass clicks (.hud pointer-events: none) — so
+     the scene behind stays draggable. Every clickable element has to
+     re-enable them individually; forgotten, the button dies silently. */
   pointer-events: auto;
   background: none; border: 0; cursor: pointer;
   font: 10.5px var(--mono); letter-spacing: .18em; text-transform: uppercase;
@@ -2122,7 +2124,7 @@ body.focus #focus.on { color: var(--cyan); }
 
 .panel-main { flex: 1; display: flex; min-height: 0; }
 
-/* Sol dikey sekme kolonu, gruplu. */
+/* Left vertical tab column, grouped. */
 .tabs {
   flex: 0 0 208px; display: flex; flex-direction: column; gap: 1px;
   padding: 14px 10px 18px; overflow-y: auto;
@@ -2175,7 +2177,7 @@ body.focus #focus.on { color: var(--cyan); }
 }
 .panel-note { flex: 1; font: 11px var(--mono); color: var(--faint); }
 .panel-note.bad { color: var(--rose); }
-/* Aciliisa yazilan satir: kullanici neyin eklendigini gorebilmeli. */
+/* The line written to startup: the user must be able to see what was added. */
 .pane-note.mono { font: 11px var(--mono); word-break: break-all; }
 .panel-foot .save {
   padding: 8px 20px; border: 0; border-radius: 20px; cursor: pointer;
@@ -2185,7 +2187,7 @@ body.focus #focus.on { color: var(--cyan); }
 }
 .panel-foot .save:hover { background: #F0A02030; box-shadow: 0 0 22px #F0A02040; }
 
-/* --- alanlar --- */
+/* --- fields --- */
 .field { display: block; margin: 0 0 22px; }
 .field-label {
   display: block; margin-bottom: 7px;
@@ -2208,7 +2210,7 @@ body.focus #focus.on { color: var(--cyan); }
    "it exists, you don't have it". */
 .input-check:disabled { opacity: .3; cursor: not-allowed; }
 
-/* Model arama kutusu secim kutusunun ustunde durur. */
+/* The model search box sits above the picker box. */
 .model-pick { display: flex; flex-direction: column; gap: 6px; }
 .model-pick input[type="search"] { font: 12px var(--mono); }
 
@@ -2341,7 +2343,7 @@ body.focus #focus.on { color: var(--cyan); }
 .detect:hover { color: var(--ice); box-shadow: inset 0 0 0 1px #F0A02055; }
 .input-check { width: 16px; height: 16px; accent-color: var(--cyan); }
 
-/* --- secim kartlari --- */
+/* --- choice cards --- */
 .choices { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
 .choice {
   display: flex; flex-direction: column; gap: 3px; align-items: flex-start;
@@ -2374,7 +2376,7 @@ body.focus #focus.on { color: var(--cyan); }
 
 .pane-note.bad { color: var(--amber); box-shadow: inset 2px 0 0 #F0A02044; }
 
-/* --- izin kurallari --- */
+/* --- permission rules --- */
 .rules { display: flex; flex-direction: column; gap: 4px; }
 .rules-title {
   margin-top: 10px; font: 10px var(--mono); letter-spacing: .16em;
@@ -2406,7 +2408,7 @@ body.focus #focus.on { color: var(--cyan); }
 }
 .rule-go:hover { color: var(--ice); box-shadow: inset 0 0 0 1px #F0A02055; }
 
-/* --- zamanlanmis gorevler --- */
+/* --- scheduled tasks --- */
 .job {
   margin: 0 0 12px; padding: 12px 14px; border-radius: 9px;
   background: var(--raise); box-shadow: inset 0 0 0 1px #F0A02012;
@@ -2559,7 +2561,7 @@ body.focus #focus.on { color: var(--cyan); }
 .xfer-report.good { color: var(--mint); box-shadow: inset 2px 0 0 #86EFAC44; }
 .xfer-report.bad { color: var(--amber); box-shadow: inset 2px 0 0 #F0A02044; }
 
-/* --- dosyalar --- */
+/* --- files --- */
 .crumb { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; margin-bottom: 14px; }
 .crumb .sep { color: var(--faint); }
 .crumb-link {
@@ -2595,7 +2597,7 @@ body.focus #focus.on { color: var(--cyan); }
    overlapping made both unreadable. */
 
 #eye {
-  /* Ust serit tiklamayi gecirmiyor; her dugme bunu tek tek geri aciyor. */
+  /* The top strip does not pass clicks; every button re-enables them one by one. */
   pointer-events: auto;
   background: none; border: 0; cursor: pointer;
   font: 10.5px var(--mono); letter-spacing: .18em; text-transform: uppercase;
@@ -2678,8 +2680,8 @@ body.cam-open {
 .viewer-body::-webkit-scrollbar { width: 6px; height: 6px; }
 .viewer-body::-webkit-scrollbar-thumb { background: #F0A02022; border-radius: 3px; }
 
-/* Panelin zemini temaya gore degisir; kaynak her zaman kod kuyusu —
-   acik temada krem panel + koyu-tema neon token'lar birbirini yiyordu. */
+/* The panel ground follows the theme; the source is always the code well —
+   in the light theme a cream panel + dark-theme neon tokens ate each other. */
 .viewer-source {
   min-height: 100%; padding: 4px 8px 16px; border-radius: 8px;
   background: var(--code-bg);
@@ -2698,11 +2700,11 @@ body.cam-open {
   min-height: 100%; border-radius: 8px; background: var(--code-bg);
   font: 12.5px/1.65 var(--mono); color: var(--code-ink);
   padding: 10px 0 16px; overflow-x: auto;
-  counter-reset: satir;
+  counter-reset: line;
 }
-.viewer-code .vl { display: flex; align-items: flex-start; counter-increment: satir; }
+.viewer-code .vl { display: flex; align-items: flex-start; counter-increment: line; }
 .viewer-code .vl::before {
-  content: counter(satir);
+  content: counter(line);
   position: sticky; left: 0; flex: 0 0 var(--gutter, 5ch);
   text-align: right; padding: 0 12px 0 8px;
   color: var(--faint); background: var(--code-bg);
@@ -3242,8 +3244,8 @@ body.left-resize { cursor: ew-resize; user-select: none; }
 .proj-btn.primary { color: var(--mint); background: #86EFAC16; box-shadow: inset 0 0 0 1px #86EFAC2a; }
 .proj-btn.primary:hover { background: #86EFAC22; }
 
-/* "konus": uygulamayi konusmanin baglamina verir. Satirda sonda, sonuk;
-   uzerine gelince belirginlesiyor. */
+/* "konus": hands the app to the conversation's context. At the end of the
+   row, faded; it sharpens on hover. */
 .apps-talk {
   flex: 0 0 auto; margin-left: 2px;
   font: 9px var(--mono); letter-spacing: .12em; text-transform: uppercase;
@@ -3253,7 +3255,7 @@ body.left-resize { cursor: ew-resize; user-select: none; }
 .apps-row:hover .apps-talk { opacity: 1; }
 .apps-talk:hover { color: var(--mint); background: #86EFAC14; }
 
-/* Calisan uygulamalar bolumu: ajanin baslattigi sunucu/betik canli. */
+/* Running apps section: the servers/scripts the agent started, live. */
 .apps-running { margin: 2px 4px 12px; }
 .apps-group {
   font: 8.5px var(--mono); letter-spacing: .22em; text-transform: uppercase;
@@ -3631,7 +3633,7 @@ body.left-resize { cursor: ew-resize; user-select: none; }
 .mentions .chip { pointer-events: auto; }
 body:has(#mentions:not([hidden])) .drops { bottom: calc(var(--compose-h) + 34px); }
 body.viewing .mentions,
-body.settling .mentions { /* rail/mind arasinda */ }
+body.settling .mentions { /* between rail and mind */ }
 .chip.mention {
   background: #C4B5FD14; box-shadow: inset 0 0 0 1px #C4B5FD33; color: var(--violet);
 }
@@ -4037,9 +4039,9 @@ body.settling .mentions { /* rail/mind arasinda */ }
 .wf-edge-fail { stroke: var(--rose); opacity: .75; stroke-dasharray: 6 4; }
 .wf-edge-live {
   stroke: var(--cyan); stroke-width: 2.4; opacity: 1;
-  stroke-dasharray: 6 5; animation: wf-akis 900ms linear infinite;
+  stroke-dasharray: 6 5; animation: wf-flow 900ms linear infinite;
 }
-@keyframes wf-akis { to { stroke-dashoffset: -22; } }
+@keyframes wf-flow { to { stroke-dashoffset: -22; } }
 @media (prefers-reduced-motion: reduce) { .wf-edge-live { animation: none; } }
 
 .wf-arrow { fill: var(--dim); }
@@ -4057,7 +4059,7 @@ body.settling .mentions { /* rail/mind arasinda */ }
   position: absolute; width: 168px; box-sizing: border-box;
   padding: 9px 11px 9px 13px; border-radius: 10px;
   background: var(--panel); border: 1px solid var(--edge);
-  border-left: 3px solid var(--tur-renk, var(--dim));
+  border-left: 3px solid var(--type-color, var(--dim));
   box-shadow: 0 1px 3px rgba(0,0,0,.18);
   cursor: grab; transition: box-shadow .12s ease, border-color .12s ease;
 }
@@ -4069,18 +4071,18 @@ body.settling .mentions { /* rail/mind arasinda */ }
    outside, touch the system and ask the model must separate at a glance. */
 .wf-node-type {
   display: block; font: 10px/1.3 ui-monospace, Consolas, monospace;
-  color: var(--tur-renk, var(--dim)); letter-spacing: .02em;
+  color: var(--type-color, var(--dim)); letter-spacing: .02em;
 }
-.wf-node [data-tur="gelen"]   { --tur-renk: var(--violet); }
-.wf-node [data-tur="ag"]      { --tur-renk: var(--cyan); }
-.wf-node [data-tur="sistem"]  { --tur-renk: var(--amber); }
-.wf-node [data-tur="yetenek"] { --tur-renk: var(--mint); }
-.wf-node [data-tur="model"]   { --tur-renk: var(--ice); }
-.wf-node:has([data-tur="gelen"])   { --tur-renk: var(--violet); }
-.wf-node:has([data-tur="ag"])      { --tur-renk: var(--cyan); }
-.wf-node:has([data-tur="sistem"])  { --tur-renk: var(--amber); }
-.wf-node:has([data-tur="yetenek"]) { --tur-renk: var(--mint); }
-.wf-node:has([data-tur="model"])   { --tur-renk: var(--ice); }
+.wf-node [data-tur="gelen"]   { --type-color: var(--violet); }
+.wf-node [data-tur="ag"]      { --type-color: var(--cyan); }
+.wf-node [data-tur="sistem"]  { --type-color: var(--amber); }
+.wf-node [data-tur="yetenek"] { --type-color: var(--mint); }
+.wf-node [data-tur="model"]   { --type-color: var(--ice); }
+.wf-node:has([data-tur="gelen"])   { --type-color: var(--violet); }
+.wf-node:has([data-tur="ag"])      { --type-color: var(--cyan); }
+.wf-node:has([data-tur="sistem"])  { --type-color: var(--amber); }
+.wf-node:has([data-tur="yetenek"]) { --type-color: var(--mint); }
+.wf-node:has([data-tur="model"])   { --type-color: var(--ice); }
 
 .wf-node-title {
   display: block; margin-top: 3px; font: 600 12px/1.35 var(--font);
@@ -4454,8 +4456,8 @@ body.settling .mentions { /* rail/mind arasinda */ }
 
 
 /* ============================================================
-   Form denetimleri — tarayici varsayilani hicbir temada gorunmez.
-   Element duzeyinde, sinif kurallarinin ALTINDA kalir.
+   Form controls — the browser default shows in no theme.
+   Element-level, staying BELOW the class rules.
    ============================================================ */
 select {
   appearance: none; -webkit-appearance: none;
@@ -4514,7 +4516,7 @@ input[type="number"], input[type="url"], input[type="email"], textarea {
 }
 progress { accent-color: var(--cyan); }
 
-/* Marka isareti (satir-ici SVG) */
+/* Brand mark (inline SVG) */
 .brand-mark { width: 22px; height: 22px; display: inline-block; vertical-align: -5px; }
 
 
@@ -4669,7 +4671,7 @@ body.viewer-max.viewing .jump { display: none; }
 .mind-grip:hover::before, body.mind-resize .mind-grip::before { opacity: .5; }
 body.mind-resize { cursor: ew-resize; user-select: none; }
 
-/* Masa ↔ beyin dikey tutamak. */
+/* Desk ↔ brain vertical grip. */
 .dock-grip {
   display: none; flex: 0 0 8px; position: relative; z-index: 3;
   cursor: ns-resize; touch-action: none; background: transparent;
@@ -5173,9 +5175,9 @@ body { --right-w: var(--mind-w); }
 body.kontrol-canli::after {
   content: ""; position: fixed; inset: 0; pointer-events: none; z-index: 96;
   box-shadow: inset 0 0 0 2px var(--cyan), inset 0 0 46px rgba(127, 208, 255, .16);
-  animation: kontrol-nabiz 1.8s ease-in-out infinite;
+  animation: kontrol-pulse 1.8s ease-in-out infinite;
 }
-@keyframes kontrol-nabiz {
+@keyframes kontrol-pulse {
   0%, 100% { opacity: .55; }
   50% { opacity: 1; }
 }
@@ -5730,17 +5732,17 @@ body.no-ambient #scene { opacity: .35; }
    ============================================================ */
 body.mesgul .brand-mark .knot {
   stroke-dasharray: 64 36;
-  animation: dugum-orgu 2.4s ease-in-out infinite;
+  animation: knot-knit 2.4s ease-in-out infinite;
 }
 body.mesgul .brand-mark .knot-node {
-  animation: dugum-nabiz 2.4s ease-in-out infinite;
+  animation: knot-pulse 2.4s ease-in-out infinite;
 }
-@keyframes dugum-orgu {
+@keyframes knot-knit {
   0%   { stroke-dashoffset: 0; }
   50%  { stroke-dashoffset: -64; }
   100% { stroke-dashoffset: -100; }
 }
-@keyframes dugum-nabiz {
+@keyframes knot-pulse {
   0%, 100% { opacity: .5; transform: scale(.92); transform-origin: 21.5px 5.6px; }
   50%      { opacity: 1; transform: scale(1.08); transform-origin: 21.5px 5.6px; }
 }

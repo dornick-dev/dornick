@@ -19,7 +19,7 @@
 // carries the `basladi` stamp and the browser does the counting. The network
 // is hit only on a status change or every few seconds.
 
-Dil.ekle({
+Lang.add({
   "Koşan görevler": "Running tasks",
   "Şu an arkada koşan bir iş yok.": "Nothing is running in the background.",
   "Bir işi arka plana aldığında ya da bir yardımcı doğurduğunda burada belirir.":
@@ -49,7 +49,7 @@ Dil.ekle({
   "Canlı uygulamayı aç": "Open live app",
 });
 
-const Gorevler = (() => {
+const Tasks = (() => {
   const badge = document.getElementById("jobs-badge");
 
   const el = (tag, cls, text) => {
@@ -77,14 +77,14 @@ const Gorevler = (() => {
 
   // --- data ------------------------------------------------------------
 
-  async function tazele() {
+  async function refresh() {
     let data;
     try { data = await (await fetch("/api/gorevler")).json(); }
     catch { return; }
     rows = (data && data.gorevler) || [];
     drawBadge(data && data.kosan);
     if (visible && body) {
-      ciz();
+      draw();
       // Refresh the log of expanded running cards with the TTL.
       for (const g of rows) {
         if (openSet.has(g.id) && g.oturum && g.durum === "kosuyor") {
@@ -110,11 +110,11 @@ const Gorevler = (() => {
     body = el("div", "tasks-body");
     host.append(statusLine, body);
     parent.replaceChildren(host);
-    if (visible) ciz();
+    if (visible) draw();
     return host;
   }
 
-  function ciz() {
+  function draw() {
     if (!body) return;
     body.replaceChildren();
     if (!rows.length) {
@@ -183,7 +183,7 @@ const Gorevler = (() => {
           stopBtn.disabled = false;
           stopBtn.textContent = t("Durdur");
         }
-        tazele();
+        refresh();
       });
       line.append(stopBtn);
     }
@@ -199,7 +199,7 @@ const Gorevler = (() => {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ id: g.id }),
         }).catch(() => {});
-        tazele();
+        refresh();
       });
       line.append(resumeBtn);
     }
@@ -222,7 +222,7 @@ const Gorevler = (() => {
         }
         if (openSet.has(g.id)) openSet.delete(g.id);
         else { openSet.add(g.id); if (g.oturum) fetchLog(g); }
-        ciz();
+        draw();
       });
     }
     if (openSet.has(g.id)) wrap.append(output(g));
@@ -285,7 +285,7 @@ const Gorevler = (() => {
     logCache.set(g.id, data && data.ok
       ? { steps: data.adimlar || [], ts: Date.now() }
       : null);
-    if (visible && body) ciz();
+    if (visible && body) draw();
   }
 
   // --- duration --------------------------------------------------------
@@ -295,10 +295,10 @@ const Gorevler = (() => {
     if (!started) return "";
     const ended = Number(node.dataset.bitti) || 0;
     const last = node.dataset.kosuyor ? Date.now() / 1000 : (ended || started);
-    return kisaSure(Math.max(0, last - started));
+    return shortDuration(Math.max(0, last - started));
   }
 
-  function kisaSure(secs) {
+  function shortDuration(secs) {
     if (secs < 60) return Math.round(secs) + " sn";
     const mins = Math.floor(secs / 60);
     if (mins < 60) return mins + " dk " + Math.round(secs % 60) + " sn";
@@ -320,27 +320,27 @@ const Gorevler = (() => {
   function setVisible(on) {
     visible = !!on;
     if (visible) {
-      tazele();
+      refresh();
       startPolling();
     } else {
       stopPolling();
     }
   }
 
-  function ac() {
+  function open() {
     if (window.JobsPanel && JobsPanel.openLive) JobsPanel.openLive();
     else if (window.JobsPanel) JobsPanel.open();
   }
 
-  function kapat() {
+  function close() {
     if (window.JobsPanel) JobsPanel.close();
   }
 
-  function toggle() { ac(); }
+  function toggle() { open(); }
 
   function startPolling() {
     stopPolling();
-    pollTimer = setInterval(tazele, 4000);
+    pollTimer = setInterval(refresh, 4000);
     tickTimer = setInterval(() => {
       if (!body) return;
       for (const node of body.querySelectorAll(".task-time")) {
@@ -360,8 +360,8 @@ const Gorevler = (() => {
   // A single clickable row drops into the conversation: clicking it opens
   // the panel with that job's output expanded. Only for BACKGROUND jobs —
   // a synchronous helper's result is already inside the answer.
-  function bitti(ev) {
-    tazele();
+  function done(ev) {
+    refresh();
     if (!ev || !ev.bg) return;
     const row = line("alert task-done");
     row.replaceChildren();
@@ -378,14 +378,14 @@ const Gorevler = (() => {
         return;
       }
       if (cid) openSet.add("c:" + cid);
-      ac();
+      open();
     });
     row.append(btn);
     scroll();
   }
 
   // Once on startup: let the badge tell the truth (even with the panel closed).
-  tazele();
+  refresh();
 
-  return { ac, kapat, toggle, tazele, bitti, kisaSure, mount, setVisible, ciz };
+  return { open, close, toggle, refresh, done, shortDuration, mount, setVisible, draw };
 })();
