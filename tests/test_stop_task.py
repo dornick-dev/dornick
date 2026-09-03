@@ -1,4 +1,4 @@
-"""Görev Durdur: hayalet koşuyor + ajan kapısında beklerken kesme."""
+"""Stop task: a ghost 'running' entry + cutting a helper waiting at the agent gate."""
 
 from __future__ import annotations
 
@@ -23,10 +23,10 @@ class _Hub:
 
 
 @pytest.mark.asyncio
-async def test_gorev_durdur_clears_ghost_running_schedule(
+async def test_stop_task_clears_ghost_running_schedule(
     tmp_path: Path, registry,
 ) -> None:
-    """last_status=koşuyor ama çocuk yok → Durdur kaydı temizler."""
+    """last_status=koşuyor but no child → Stop clears the record."""
     book = Schedule(tmp_path)
     task = Task(
         id="job_ml", title="Market Lens", prompt="tara",
@@ -46,10 +46,10 @@ async def test_gorev_durdur_clears_ghost_running_schedule(
 
 
 @pytest.mark.asyncio
-async def test_gorev_durdur_archives_meter_on_stop(
+async def test_stop_task_archives_meter_on_stop(
     tmp_path: Path, registry,
 ) -> None:
-    """Durdur: Son koşu'ya süre/token/araç diskte kalsın."""
+    """Stop: duration/tokens/tools stay on disk for 'Last run'."""
     from dornick import task_runs
 
     book = Schedule(tmp_path)
@@ -96,9 +96,9 @@ async def test_gorev_durdur_archives_meter_on_stop(
 async def test_child_waiting_at_agent_gate_can_be_stopped(
     tmp_path: Path, registry,
 ) -> None:
-    """Kapı doluyken sıradaki yardımcı Durdur ile bitsin."""
+    """While the gate is full, the queued helper should end via Stop."""
     agent = build_agent(tmp_path, FakeClient(text_turn("ok")), registry)
-    # Kapıyı kilitle: semafor 0.
+    # Lock the gate: semaphore 0.
     agent._agent_gate = asyncio.Semaphore(0)
 
     handle = ChildHandle(

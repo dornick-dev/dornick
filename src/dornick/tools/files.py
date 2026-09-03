@@ -1,9 +1,9 @@
-"""Dosya araçları.
+"""File tools.
 
-Kabuktan `cat`/`echo` yerine bunları terfi ettirmenin sebebi: harness'a
-tipli argümanlar verirler. Böylece yazma öncesi bayatlık kontrolü yapılabilir,
-izin kuralları yola göre yazılabilir, arayüz diff gösterebilir. Opak bir
-kabuk dizesinde bunların hiçbiri mümkün değil.
+The reason to promote these over `cat`/`echo` from the shell: they give
+the harness typed arguments. So a staleness check can be made before a
+write, permission rules can be written per path, the UI can show a diff.
+None of that is possible in an opaque shell string.
 """
 
 from __future__ import annotations
@@ -21,18 +21,18 @@ from .base import ToolContext, ToolRegistry, ToolResult, object_schema
 MAX_READ_CHARS = 60_000
 MAX_LIST_ENTRIES = 400
 
-# Elle denetimde tek turda bakılacak en fazla dosya. Bir klasörü denetlemek
-# istenen şey; bütün depoyu taramak değil.
+# The most files looked at in one turn of a manual audit. Auditing a folder
+# is what is wanted; not scanning the whole repository.
 MAX_AUDIT_FILES = 60
 
 
 def _resolve(raw: str, ctx: ToolContext) -> Path:
-    """Göreli yolları atölyeye, mutlak yolları olduğu gibi çözer.
+    """Resolves relative paths against the workshop, absolute paths as they are.
 
-    Göreli yolun atölyeye düşmesi bilinçli: ajan çoğu zaman kendi işini
-    yapıyor ve "site/index.html" yazdığında bunun kendi klasöründe olmasını
-    bekliyor. Dışarıdaki bir dosyaya mutlak yolla erişiliyor — okumak zaten
-    her yerde serbest.
+    A relative path landing in the workshop is deliberate: most of the time
+    the agent is doing its own work and when it writes "site/index.html" it
+    expects that to be in its own folder. A file outside is reached with an
+    absolute path — reading is free everywhere anyway.
     """
     path = Path(raw).expanduser()
     if path.is_absolute():
@@ -41,10 +41,11 @@ def _resolve(raw: str, ctx: ToolContext) -> Path:
         return ctx.workspace / path
 
     root = ctx.sandbox.root
-    # Model atölyenin adını yola kendisi ekliyor ("atolye/site/index.html"):
-    # sistem promptunda klasörün tam yolu yazıyor ve oradan çıkarım yapıyor.
-    # Olduğu gibi birleştirmek `atolye/atolye/...` üretiyordu — dosya doğru
-    # yere değil bir alt klasöre düşüyor ve kullanıcı aradığını bulamıyor.
+    # The model adds the workshop's name to the path itself
+    # ("atolye/site/index.html"): the full path of the folder is in the
+    # system prompt and it infers from there. Joining as-is produced
+    # `atolye/atolye/...` — the file lands in a subfolder rather than the
+    # right place and the user cannot find what they are looking for.
     parts = path.parts
     if parts and parts[0] == root.name:
         path = Path(*parts[1:]) if len(parts) > 1 else Path()
@@ -52,18 +53,19 @@ def _resolve(raw: str, ctx: ToolContext) -> Path:
 
 
 def _guard(path: Path, ctx: ToolContext) -> ToolResult | None:
-    """Yazma sınırı. İhlal varsa hatayı döndürür, yoksa None.
+    """The write boundary. Returns the error if violated, else None.
 
-    Hata metni ne yapılacağını da söylüyor: modelin bir sonraki turda
-    `copy_in`e yönelmesi için "izin yok" demek yetmiyor.
+    The error text also says what to do: for the model to turn to
+    `copy_in` on the next turn, "no permission" is not enough.
     """
-    # Kanca dosyası her şeyden önce: atölyenin içinde bile olsa yazılamaz.
+    # The hook file before everything: even inside the workshop it cannot
+    # be written.
     #
-    # Kancalar izin motorunun DIŞINDA çalışan, kullanıcının kendi
-    # komutlarıdır. Bu ancak model o dosyaya dokunamıyorsa güvenli: aksi
-    # halde kendisini engelleyen kancayı silerek ya da oraya kendi komutunu
-    # yazarak izin kapısını tümüyle atlardı. Kural tek yerde ve tüm yazma
-    # araçları buradan geçiyor.
+    # Hooks are the user's own commands running OUTSIDE the permission
+    # engine. That is only safe if the model cannot touch that file:
+    # otherwise it would bypass the permission gate entirely by deleting
+    # the hook that blocks it or writing its own command there. The rule is
+    # in one place and every write tool passes through here.
     if hooks.korunan_mu(path):
         return ToolResult.error(
             f"{path} kanca dosyasıdır ve yazmaya kapalıdır. Kancalar "
@@ -79,105 +81,106 @@ def _guard(path: Path, ctx: ToolContext) -> ToolResult | None:
     return None
 
 
-def _gozle(path: Path, ctx: ToolContext, arac: str) -> None:
-    """Atölye içindeki dosya için değişiklik öncesi anlık görüntü.
+def _snapshot(path: Path, ctx: ToolContext, tool: str) -> None:
+    """Pre-change snapshot for a file inside the workshop.
 
-    Görüntü alınamaması yazmayı DURDURMAZ: emniyet kemeri takılamıyor diye
-    arabayı durdurmak modeli kilitler. `undo` görüntüsüz kaydı dürüstçe
-    "geri alınamaz" diye raporlar.
+    Failing to take the snapshot does NOT stop the write: stopping the car
+    because the seat belt would not buckle locks the model up. `undo`
+    honestly reports a record without a snapshot as "cannot be reverted".
     """
     try:
         if ctx.sandbox.contains(path):
-            checkpoint.defter(ctx).save(path, arac)
+            checkpoint.defter(ctx).save(path, tool)
     except OSError:
         pass
 
 
-# -- metin olmayan dosyalar ---------------------------------------------
+# -- non-text files ----------------------------------------------------
 #
-# Kanıtlanmış yara: bir PNG'yi `read_file` ile açmak, modele bir ekran
-# dolusu "��" gönderiyordu. Model bunu "dosya bozuk" diye okuyup
-# kullanıcıya öyle söylüyordu — oysa dosya sapasağlamdı, biz yanlış
-# gözle bakıyorduk.
+# Proven wound: opening a PNG with `read_file` sent the model a screenful
+# of "��". The model read that as "the file is corrupt" and told the user
+# so — yet the file was perfectly fine, we were looking with the wrong
+# eye.
 
-# API'nin kabul ettiği görüntü türleri. Başkasını göndermek 400 döner;
-# o yüzden listede olmayan bir uzantı görüntü yoluna hiç girmiyor.
+# The image types the API accepts. Sending anything else returns 400; so
+# an extension not in the list never enters the image path.
 IMAGE_TYPES = {
     ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
     ".gif": "image/gif", ".webp": "image/webp",
 }
 
-# Görüntü tavanı. API base64 gövdesinde ~5 MB'ı reddediyor; base64 ham
-# boyutu 4/3'e çıkardığı için ham tavan bunun dörtte üçünden biraz altta.
-MAX_GORSEL = 3_500_000
+# Image cap. The API rejects ~5 MB in the base64 body; since base64 grows
+# the raw size by 4/3, the raw cap is a bit under three quarters of that.
+MAX_IMAGE_BYTES = 3_500_000
 
-# PDF'te tek turda çıkarılan varsayılan ve en fazla sayfa. Bir sözleşmenin
-# tamamını bağlama boşaltmak, aranan paragrafı bulmayı kolaylaştırmıyor.
+# Default and maximum pages extracted from a PDF in one turn. Dumping a
+# whole contract into the context does not make the wanted paragraph
+# easier to find.
 PDF_PAGE = 10
 PDF_MAX_PAGES = 40
-MAX_PDF_KARAKTER = 40_000
+MAX_PDF_CHARS = 40_000
 
 
 def _is_image(path: Path) -> bool:
     return path.suffix.lower() in IMAGE_TYPES
 
 
-def _boyut(sayi: int) -> str:
-    if sayi >= 1_048_576:
-        return f"{sayi / 1_048_576:.1f} MB"
-    # Küçük dosyalarda "0 KB" yazmak yanlış bilgi: dosya boş değil.
-    return f"{sayi / 1024:.0f} KB" if sayi >= 1024 else f"{sayi} bayt"
+def _size(count: int) -> str:
+    if count >= 1_048_576:
+        return f"{count / 1_048_576:.1f} MB"
+    # Writing "0 KB" for small files is wrong information: the file is not empty.
+    return f"{count / 1024:.0f} KB" if count >= 1024 else f"{count} bayt"
 
 
 def _read_image(path: Path) -> ToolResult:
-    """Görseli modele GÖRÜNTÜ olarak verir.
+    """Hands the image to the model as an IMAGE.
 
-    Taşıma yolu hazırdı ve kullanılmıyordu: araç sonucu bir görüntü
-    taşıyamıyor (API `tool_result` içeriğinin dize olmasını istiyor), ama
-    yürütücü `detail["image"]`ı görüp bloğa `_image` olarak iliştiriyor ve
-    döngü onu bir sonraki kullanıcı turuna görüntü bloğu olarak koyuyor —
-    `look`/`screen` araçlarının yıllardır kullandığı yol. Buraya
-    bağlanması bir satırlık iş; eksik olan yalnızca bağlantıydı.
+    The transport was ready and unused: a tool result cannot carry an
+    image (the API wants `tool_result` content to be a string), but the
+    executor sees `detail["image"]` and attaches it to the block as
+    `_image`, and the loop puts it into the next user turn as an image
+    block — the path the `look`/`screen` tools have used for years. Wiring
+    it here is a one-line job; only the connection was missing.
     """
     import base64
 
     try:
-        boyut = path.stat().st_size
+        size = path.stat().st_size
     except OSError as exc:
         return ToolResult.error(f"Okunamadı: {exc}")
 
-    if boyut > MAX_GORSEL:
-        # Uydurma yok: görüntüyü gönderemiyorsak bunu söylüyoruz.
+    if size > MAX_IMAGE_BYTES:
+        # No invention: if we cannot send the image we say so.
         return ToolResult(
-            f"{path.name} bir görsel ({_boyut(boyut)}) ama modele "
-            f"gönderilemeyecek kadar büyük (tavan {_boyut(MAX_GORSEL)}). "
+            f"{path.name} bir görsel ({_size(size)}) ama modele "
+            f"gönderilemeyecek kadar büyük (tavan {_size(MAX_IMAGE_BYTES)}). "
             "İçeriğini göremiyorum; küçültülmüş bir kopyası verilirse "
             "bakabilirim.",
             is_error=True,
         )
     try:
-        ham = path.read_bytes()
+        raw = path.read_bytes()
     except OSError as exc:
         return ToolResult.error(f"Okunamadı: {exc}")
 
-    tur = IMAGE_TYPES[path.suffix.lower()]
-    veri = base64.b64encode(ham).decode("ascii")
+    kind = IMAGE_TYPES[path.suffix.lower()]
+    data = base64.b64encode(raw).decode("ascii")
     return ToolResult(
-        content=f"{path.name} ({tur}, {_boyut(boyut)}) açıldı. Aşağıda görüyorsun.",
-        detail={"path": str(path), "image": f"data:{tur};base64,{veri}"},
+        content=f"{path.name} ({kind}, {_size(size)}) açıldı. Aşağıda görüyorsun.",
+        detail={"path": str(path), "image": f"data:{kind};base64,{data}"},
     )
 
 
-def _pdf_oku(path: Path, offset: Any, limit: Any) -> ToolResult:
-    """PDF'in ilk sayfalarının METNİNİ çıkarır.
+def _read_pdf(path: Path, offset: Any, limit: Any) -> ToolResult:
+    """Extracts the TEXT of the PDF's first pages.
 
-    İki dürüstlük kuralı:
-      * Metinsiz (taranmış) PDF'te "boş" demiyoruz — sayfaların görüntü
-        olduğunu ve metin katmanı taşımadığını söylüyoruz. "Boş" demek,
-        modelin dosyayı içeriksiz sanmasına yol açardı.
-      * Kaç sayfanın okunduğu ve kaç sayfa olduğu her zaman yazılıyor;
-        model 3. sayfayı okuyup 200 sayfalık raporu özetlediğini
-        sanmasın.
+    Two honesty rules:
+      * For a text-less (scanned) PDF we do not say "empty" — we say the
+        pages are images and carry no text layer. Saying "empty" would
+        make the model think the file has no content.
+      * How many pages were read and how many there are is always
+        written; the model must not read page 3 and think it summarised a
+        200-page report.
     """
     try:
         from pypdf import PdfReader
@@ -190,8 +193,8 @@ def _pdf_oku(path: Path, offset: Any, limit: Any) -> ToolResult:
         )
 
     try:
-        okuyucu = PdfReader(str(path))
-        toplam = len(okuyucu.pages)
+        reader = PdfReader(str(path))
+        total = len(reader.pages)
     except Exception as exc:
         return ToolResult(
             f"{path.name} açılamadı ({type(exc).__name__}: {exc}). Dosya "
@@ -199,114 +202,120 @@ def _pdf_oku(path: Path, offset: Any, limit: Any) -> ToolResult:
             is_error=True,
         )
 
-    if toplam == 0:
+    if total == 0:
         return ToolResult(f"{path.name} sayfa içermiyor.", is_error=True)
 
-    bas = max(1, int(offset or 1))
-    kac = max(1, min(int(limit or PDF_PAGE), PDF_MAX_PAGES))
-    son = min(toplam, bas + kac - 1)
-    if bas > toplam:
+    first = max(1, int(offset or 1))
+    count = max(1, min(int(limit or PDF_PAGE), PDF_MAX_PAGES))
+    last = min(total, first + count - 1)
+    if first > total:
         return ToolResult.error(
-            f"{path.name} {toplam} sayfa; {bas}. sayfa yok. `offset` değerini "
-            f"1 ile {toplam} arasında ver."
+            f"{path.name} {total} sayfa; {first}. sayfa yok. `offset` değerini "
+            f"1 ile {total} arasında ver."
         )
 
-    parcalar: list[str] = []
-    dolu = 0
-    for no in range(bas, son + 1):
+    parts: list[str] = []
+    filled = 0
+    for no in range(first, last + 1):
         try:
-            metin = (okuyucu.pages[no - 1].extract_text() or "").strip()
-        except Exception:  # tek bozuk sayfa dosyanın tamamını düşürmesin
-            metin = ""
-        if metin:
-            dolu += 1
-        parcalar.append(f"--- sayfa {no} ---\n{metin or '(bu sayfada metin yok)'}")
+            text = (reader.pages[no - 1].extract_text() or "").strip()
+        except Exception:  # one broken page must not bring the whole file down
+            text = ""
+        if text:
+            filled += 1
+        parts.append(f"--- sayfa {no} ---\n{text or '(bu sayfada metin yok)'}")
 
-    govde = "\n\n".join(parcalar)
-    if len(govde) > MAX_PDF_KARAKTER:
-        govde = govde[:MAX_PDF_KARAKTER] + "\n… (kırpıldı)"
+    body = "\n\n".join(parts)
+    if len(body) > MAX_PDF_CHARS:
+        body = body[:MAX_PDF_CHARS] + "\n… (kırpıldı)"
 
-    basli = f"{path.name} — {toplam} sayfa, {bas}-{son} arası okundu."
-    if dolu == 0:
+    heading = f"{path.name} — {total} sayfa, {first}-{last} arası okundu."
+    if filled == 0:
         return ToolResult(
-            f"{basli}\n\nBu sayfalar METİN KATMANI TAŞIMIYOR — büyük "
+            f"{heading}\n\nBu sayfalar METİN KATMANI TAŞIMIYOR — büyük "
             "olasılıkla taranmış görüntüler. İçeriğini okuyamadım; ne "
             "yazdığını uydurma. Sayfayı görsel olarak incelemek gerekirse "
             "kullanıcıdan bir ekran görüntüsü iste.",
-            detail={"path": str(path), "sayfa": toplam, "metinsiz": True},
+            detail={"path": str(path), "sayfa": total, "metinsiz": True},
         )
 
-    kuyruk = ""
-    if son < toplam:
-        kuyruk = (f"\n\n[{toplam} sayfanın {bas}-{son} arası. Devamı için "
-                  f"offset={son + 1}.]")
+    tail = ""
+    if last < total:
+        tail = (f"\n\n[{total} sayfanın {first}-{last} arası. Devamı için "
+                f"offset={last + 1}.]")
     return ToolResult(
-        content=f"{basli}\n\n{govde}{kuyruk}",
-        detail={"path": str(path), "sayfa": toplam, "okunan": [bas, son]},
+        content=f"{heading}\n\n{body}{tail}",
+        detail={"path": str(path), "sayfa": total, "okunan": [first, last]},
     )
 
 
-async def _testrun_suffix(path: Path, yazim: int) -> str:
-    """Yazma sonrası tek satırlık koşum hatırlatması (yoksa boş dize).
+async def _testrun_suffix(path: Path, writes: int) -> str:
+    """One-line test-run reminder after a write (empty string if none).
 
-    Tanı bir adım attı ama tavanı sözdizimi: `php -l` bildirilen dönüş
-    tipiyle uyuşmayan bir `return`u görmez, tip hatası ancak kod koşunca
-    patlar. Bunu gören tek şey testi ÇALIŞTIRMAK — ve çoğu projede o
-    düzenek zaten var, ajan onu bilmiyordu.
+    Diagnosis took a step but its ceiling is syntax: `php -l` does not see
+    a `return` that disagrees with the declared return type; a type error
+    only blows up when the code runs. The only thing that sees it is
+    RUNNING the tests — and in most projects that harness already exists,
+    the agent did not know about it.
 
-    Testi burada kendiliğinden koşturmuyoruz: koşum saniyeler, bazen
-    dakikalar sürer ve ajan aynı dosyaya arka arkaya yazar — aradaki her
-    koşum boşa giderdi. Onun yerine düzeneğin VARLIĞINI bildiriyoruz.
-    Bilgi bedava, koşum pahalı, karar modelin.
+    We do not run the tests here on our own: a run takes seconds,
+    sometimes minutes, and the agent writes the same file back to back —
+    every run in between would be wasted. Instead we report that the
+    harness EXISTS. Information is free, the run is expensive, the
+    decision is the model's.
     """
     try:
-        return await asyncio.to_thread(testrun.hatirlatma, path, yazim=yazim)
-    except Exception:  # pragma: no cover - hatırlatma hiçbir zaman engel olmaz
+        return await asyncio.to_thread(testrun.hatirlatma, path, yazim=writes)
+    except Exception:  # pragma: no cover - the reminder never gets in the way
         return ""
 
 
-async def _tani_eki(path: Path) -> tuple[str, dict[str, Any]]:
-    """Yazılan dosyanın tanısı: (araç sonucuna eklenecek metin, detay).
+async def _diagnosis_suffix(path: Path) -> tuple[str, dict[str, Any]]:
+    """The written file's diagnosis: (text to append to the tool result, detail).
 
-    Bu, modülün en önemli yeri. Ajanın en pahalı hata sınıfı "yazdım,
-    çalıştırmadım, bitti dedim" — hata dosyada durur, tur kapanır, kullanıcı
-    sayfayı açınca patlar. Dilin kendi denetleyicisini yazma biter bitmez
-    koşturup sonucu ARACIN CEVABINA koymak bu zinciri kırıyor: model bir
-    sonraki turda hatayı görür ve daha kimse fark etmeden düzeltir.
+    This is the most important place in the module. The agent's most
+    expensive error class is "I wrote it, didn't run it, said done" — the
+    error sits in the file, the turn closes, the user opens the page and
+    it blows up. Running the language's own checker the moment the write
+    ends and putting the result INTO THE TOOL'S REPLY breaks that chain:
+    the model sees the error on the next turn and fixes it before anyone
+    notices.
 
-    Tanı asla yazmayı geçersiz kılmaz: dosya diskte, sonuç başarılı. Tanı
-    yalnızca bir NOT ekler. Denetleyici çöktüyse hiçbir şey eklenmez —
-    tanının kendi arızası, çalışan bir aracı bozmamalı.
+    Diagnosis never overrides the write: the file is on disk, the result
+    is a success. Diagnosis only adds a NOTE. If the checker crashed
+    nothing is added — the diagnosis's own failure must not break a
+    working tool.
     """
     try:
-        tani = await asyncio.to_thread(diagnostics.denetle, path)
-    except Exception:  # pragma: no cover - tanı katmanı hiçbir zaman engel olmaz
+        diagnosis = await asyncio.to_thread(diagnostics.denetle, path)
+    except Exception:  # pragma: no cover - the diagnosis layer never gets in the way
         return "", {}
-    if tani is None:
+    if diagnosis is None:
         return "", {}
-    return "\n\n" + tani.metin(), {"tani": tani.detay()}
+    return "\n\n" + diagnosis.metin(), {"tani": diagnosis.detay()}
 
 
 def _esnek_esle(text: str, old: str, new: str):
-    """Tam eşleşme yoksa toleranslı arama. (start, end, new, not) ya da
-    ("coklu", N) ya da None.
+    """Tolerant search when there is no exact match. (start, end, new, note)
+    or ("coklu", N) or None.
 
-    Ölçülen yara (28.08 üçlü kıyası, z1): 18 hatalı aracın 7'si "aranan
-    metin dosyada yok"tu ve hepsi boşluk/girinti/satır-sonu farkıydı —
-    içerik doğruydu. Model dosyayı yeniden okuyup turu yakıyordu. Sıra:
-    satır-sonu normalizasyonu → kuyruk boşluğu → tek-tip girinti kayması.
-    Her adımda eşleşme TEK olmalı; birden fazlaysa belirsizlik hatası
-    (yanlış yeri sessizce değiştirmekten her zaman iyidir).
+    Measured wound (28.08 three-way benchmark, z1): 7 of 18 failed tool
+    calls were "the searched text is not in the file" and all of them were
+    whitespace/indent/line-ending differences — the content was right. The
+    model re-read the file and burned the turn. Order: line-ending
+    normalisation → trailing whitespace → uniform indent shift. At every
+    step the match must be UNIQUE; more than one is an ambiguity error
+    (always better than silently changing the wrong place).
     """
     o2 = old.replace("\r\n", "\n").replace("\r", "\n")
     n2 = new.replace("\r\n", "\n").replace("\r", "\n")
     if o2 != old:
-        say = text.count(o2)
-        if say == 1:
+        count = text.count(o2)
+        if count == 1:
             i = text.index(o2)
             return i, i + len(o2), n2, "satır sonları normalize edildi"
-        if say > 1:
-            return ("coklu", say)
+        if count > 1:
+            return ("coklu", count)
 
     old_lines = o2.split("\n")
     fl = text.split("\n")
@@ -317,76 +326,79 @@ def _esnek_esle(text: str, old: str, new: str):
     for ln in fl[:-1]:
         offs.append(offs[-1] + len(ln) + 1)
 
-    def aralik(i):
+    def span(i):
         return offs[i], offs[i + n - 1] + len(fl[i + n - 1])
 
-    # Kuyruk boşlukları: satır içeriği aynı, satır sonundaki boşluk farklı.
-    hedef = [l.rstrip() for l in old_lines]
-    adaylar = [i for i in range(len(fl) - n + 1)
-               if [l.rstrip() for l in fl[i:i + n]] == hedef]
-    if len(adaylar) == 1:
-        b, e = aralik(adaylar[0])
+    # Trailing whitespace: the line content is the same, the whitespace at
+    # the end of the line differs.
+    target = [l.rstrip() for l in old_lines]
+    candidates = [i for i in range(len(fl) - n + 1)
+                  if [l.rstrip() for l in fl[i:i + n]] == target]
+    if len(candidates) == 1:
+        b, e = span(candidates[0])
         return b, e, n2, "kuyruk boşlukları göz ardı edildi"
-    if len(adaylar) > 1:
-        return ("coklu", len(adaylar))
+    if len(candidates) > 1:
+        return ("coklu", len(candidates))
 
-    # Tek-tip girinti kayması: içerik aynı, tüm dolu satırlarda girinti
-    # farkı SABİT. `new` de aynı kaymayla yeniden girintilenir — modelin
-    # old'u yanlış girintiliyse new'i de aynı biçimde yanlıştır.
-    icerik = [l.strip() for l in old_lines]
+    # Uniform indent shift: the content is the same, the indent difference
+    # is CONSTANT across all non-empty lines. `new` is re-indented by the
+    # same shift — if the model's old is mis-indented, its new is
+    # mis-indented the same way.
+    content = [l.strip() for l in old_lines]
 
-    def girinti(l):
+    def indent(l):
         return l[: len(l) - len(l.lstrip())]
 
-    uyanlar = []
+    matches = []
     for i in range(len(fl) - n + 1):
-        pencere = fl[i:i + n]
-        if [l.strip() for l in pencere] != icerik:
+        window = fl[i:i + n]
+        if [l.strip() for l in window] != content:
             continue
-        fark = None
-        ek = ""
-        uydu = True
-        for a, b in zip(old_lines, pencere):
+        delta = None
+        extra = ""
+        fits = True
+        for a, b in zip(old_lines, window):
             if not a.strip():
                 continue
-            d = len(girinti(b)) - len(girinti(a))
-            if fark is None:
-                fark = d
+            d = len(indent(b)) - len(indent(a))
+            if delta is None:
+                delta = d
                 if d > 0:
-                    ek = girinti(b)[: d]
-            elif d != fark:
-                uydu = False
+                    extra = indent(b)[: d]
+            elif d != delta:
+                fits = False
                 break
-        if uydu and fark is not None and fark != 0:
-            uyanlar.append((i, fark, ek))
-    if len(uyanlar) > 1:
-        return ("coklu", len(uyanlar))
-    if len(uyanlar) == 1:
-        i, fark, ek = uyanlar[0]
-        b, e = aralik(i)
-        yeni_satirlar = []
+        if fits and delta is not None and delta != 0:
+            matches.append((i, delta, extra))
+    if len(matches) > 1:
+        return ("coklu", len(matches))
+    if len(matches) == 1:
+        i, delta, extra = matches[0]
+        b, e = span(i)
+        new_lines = []
         for l in n2.split("\n"):
             if not l.strip():
-                yeni_satirlar.append(l)
-            elif fark > 0:
-                yeni_satirlar.append(ek + l)
+                new_lines.append(l)
+            elif delta > 0:
+                new_lines.append(extra + l)
             else:
-                kes = min(-fark, len(girinti(l)))
-                yeni_satirlar.append(l[kes:])
-        return b, e, "\n".join(yeni_satirlar), f"girinti {fark:+d} kaydırılarak eşleşti"
+                cut = min(-delta, len(indent(l)))
+                new_lines.append(l[cut:])
+        return b, e, "\n".join(new_lines), f"girinti {delta:+d} kaydırılarak eşleşti"
     return None
 
 
 def register(registry: ToolRegistry) -> None:
-    # Yazma öncesi bayatlık kontrolü için: yol -> son okunduğundaki mtime_ns.
+    # For the pre-write staleness check: path -> mtime_ns at last read.
     seen: dict[Path, int] = {}
-    # Bu oturumda en son değiştirilen dosya: `denetle` yolsuz çağrılırsa
-    # bakacağı yer. Model "kodu yazdım, bir kontrol edeyim" diyebilsin.
-    son_yazilan: list[Path] = []
-    # Dosya başına yazım sayısı. Aynı dosyaya üçüncü kez yazmak "gözle
-    # düzeltmeye çalışıyorum ve göremiyorum" demek; koşum hatırlatması
-    # orada sertleşiyor.
-    yazim_sayaci: dict[Path, int] = {}
+    # The file most recently changed in this session: where `denetle`
+    # looks when called without a path. So the model can say "I wrote the
+    # code, let me check it".
+    last_written: list[Path] = []
+    # Write count per file. Writing the same file a third time means "I'm
+    # trying to fix it by eye and cannot see"; the test-run reminder gets
+    # firmer there.
+    write_counter: dict[Path, int] = {}
 
     @registry.tool(
         name="read_file",
@@ -420,14 +432,14 @@ bunu açıkça söyler; o durumda içeriği uydurma.
         if path.is_dir():
             return ToolResult.error(f"{path} bir dizin. İçeriği için list_dir kullan.")
 
-        # Metin olmayan biçimler kendi yollarından: bir PNG'yi utf-8 diye
-        # okumak modele bir ekran dolusu çöp gönderiyordu ("��…"),
-        # ve model o çöpe bakıp dosyanın bozuk olduğunu sanıyordu.
+        # Non-text formats take their own paths: reading a PNG as utf-8
+        # sent the model a screenful of junk ("��…"), and the model looked
+        # at that junk and thought the file was corrupt.
         if _is_image(path):
             return await asyncio.to_thread(_read_image, path)
         if path.suffix.lower() == ".pdf":
             return await asyncio.to_thread(
-                _pdf_oku, path, args.get("offset"), args.get("limit"))
+                _read_pdf, path, args.get("offset"), args.get("limit"))
 
         def _read() -> tuple[str, int]:
             data = path.read_text(encoding="utf-8", errors="replace")
@@ -456,33 +468,36 @@ bunu açıkça söyler; o durumda içeriği uydurma.
         if offset > 1 or offset - 1 + limit < len(lines):
             footer = f"\n\n[{len(lines)} satırın {offset}-{offset + len(window) - 1} arası]"
 
-        # read_many'nin SONUÇ kanalından duyurusu. Şema + araç açıklaması
-        # yetmedi: 20 koşuda 0 çağrı (29.08 süpürümü). Modelin en dikkatli
-        # okuduğu kanal araç sonucu; klasörde okunmamış kardeş dosyalar
-        # varken bir sonraki keşif turunun adresi buraya, ADLARIYLA yazılır.
-        # Tek tek okumaya devam eden model artık talimatı değil önündeki
-        # somut listeyi yok saymış olur. Yalnız kod/metin uzantıları ve en
-        # az 2 aday: tek dosyalık klasörde gürültü üretmenin alemi yok.
+        # read_many's announcement through the RESULT channel. Schema +
+        # tool description were not enough: 0 calls in 20 runs (29.08
+        # sweep). The channel the model reads most carefully is the tool
+        # result; while there are unread sibling files in the folder, the
+        # address of the next exploration turn is written here, BY NAME. A
+        # model that keeps reading one by one is now ignoring not an
+        # instruction but the concrete list in front of it. Only code/text
+        # extensions and at least 2 candidates: no point producing noise in
+        # a one-file folder.
         try:
-            okunmamis = sorted(
+            unread = sorted(
                 k.name for k in path.parent.iterdir()
                 if k.is_file() and k != path and k not in seen
                 and k.suffix.lower() in (".py", ".js", ".mjs", ".php", ".html",
                                          ".css", ".json", ".md", ".txt"))
-            if len(okunmamis) >= 2:
-                liste = ", ".join(okunmamis[:6])
-                footer += (f"\n\n[Bu klasörde okunmamış {len(okunmamis)} dosya "
-                           f"daha var: {liste}. Hepsine bakacaksan read_many "
+            if len(unread) >= 2:
+                listing = ", ".join(unread[:6])
+                footer += (f"\n\n[Bu klasörde okunmamış {len(unread)} dosya "
+                           f"daha var: {listing}. Hepsine bakacaksan read_many "
                            f"tek turda okur — tek tek read_file çağırma.]")
         except OSError:
             pass
 
         return ToolResult(content=(numbered or "(dosya boş)") + footer)
 
-    # Neden ayrı bir araç: "bağımsız okumaları tek turda paralel çağır"
-    # öğüdü ölçümde tutmadı (9-görev koşusunda 0.97 araç/çağrı — altyapı
-    # hazır, küçük model talimatı yok sayıyor). Şema talimattan güçlü:
-    # dizi-argümanlı tek araç, N keşif turunu tek gidiş-dönüşe indiriyor.
+    # Why a separate tool: the advice "call independent reads in parallel
+    # in one turn" did not hold in measurement (0.97 tools/call in the
+    # 9-task run — the infrastructure is ready, the small model ignores the
+    # instruction). Schema is stronger than instruction: a single tool with
+    # an array argument reduces N exploration turns to one round trip.
     @registry.tool(
         name="read_many",
         description="""
@@ -512,10 +527,10 @@ read_file ile aralık vererek aç.
         if not isinstance(raw_paths, list) or not raw_paths:
             return ToolResult.error("paths bir dosya yolu listesi olmalı.")
         raw_paths = [str(p) for p in raw_paths][:8]
-        # Toplam bütçe tek read_file ile aynı; dosya başına payı eşit.
-        pay = max(4_000, MAX_READ_CHARS // len(raw_paths))
+        # The total budget is the same as one read_file; the share per file is equal.
+        share = max(4_000, MAX_READ_CHARS // len(raw_paths))
 
-        def _tek(raw: str) -> str:
+        def _one(raw: str) -> str:
             path = _resolve(raw, ctx)
             if not path.exists():
                 return f"== {raw} ==\n(hata: dosya yok)"
@@ -529,15 +544,15 @@ read_file ile aralık vererek aç.
             except OSError as exc:
                 return f"== {raw} ==\n(hata: {exc})"
             lines = text.splitlines()
-            govde = "\n".join(f"{i + 1:>6}\t{l}" for i, l in enumerate(lines))
-            if len(govde) > pay:
-                govde = govde[:pay] + (
+            body = "\n".join(f"{i + 1:>6}\t{l}" for i, l in enumerate(lines))
+            if len(body) > share:
+                body = body[:share] + (
                     f"\n... kırpıldı ({len(lines)} satır). Devamı için "
                     f"read_file(path={raw!r}, offset=...) kullan.")
-            return f"== {raw} ==\n{govde or '(dosya boş)'}"
+            return f"== {raw} ==\n{body or '(dosya boş)'}"
 
-        bloklar = await asyncio.to_thread(lambda: [_tek(p) for p in raw_paths])
-        return ToolResult(content="\n\n".join(bloklar))
+        blocks = await asyncio.to_thread(lambda: [_one(p) for p in raw_paths])
+        return ToolResult(content="\n\n".join(blocks))
 
     @registry.tool(
         name="write_file",
@@ -576,8 +591,8 @@ Küçük değişiklikler için write_file yerine edit_file kullan.
                 )
 
         def _write() -> int:
-            # Yazmadan hemen önce anlık görüntü: `undo` ancak böyle mümkün.
-            _gozle(path, ctx, "write_file")
+            # Snapshot right before writing: `undo` is only possible this way.
+            _snapshot(path, ctx, "write_file")
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(content, encoding="utf-8")
             return path.stat().st_mtime_ns
@@ -587,16 +602,16 @@ Küçük değişiklikler için write_file yerine edit_file kullan.
         except OSError as exc:
             return ToolResult.error(f"Yazılamadı: {exc}")
 
-        son_yazilan[:] = [path]
-        yazim_sayaci[path] = yazim_sayaci.get(path, 0) + 1
+        last_written[:] = [path]
+        write_counter[path] = write_counter.get(path, 0) + 1
         testrun.touched(path)
-        tani_metni, tani_detay = await _tani_eki(path)
-        kosum_metni = await _testrun_suffix(path, yazim_sayaci[path])
+        diagnosis_text, diagnosis_detail = await _diagnosis_suffix(path)
+        testrun_text = await _testrun_suffix(path, write_counter[path])
         return ToolResult(
             content=f"{path} yazıldı ({len(content.splitlines())} satır)."
-                    + tani_metni + (f"\n{kosum_metni}" if kosum_metni else ""),
+                    + diagnosis_text + (f"\n{testrun_text}" if testrun_text else ""),
             detail={"path": str(path), "bytes": len(content.encode("utf-8")),
-                    **tani_detay},
+                    **diagnosis_detail},
         )
 
     @registry.tool(
@@ -662,48 +677,49 @@ Dosyayı önce read_file ile okumuş olman gerekir.
 
         text = await asyncio.to_thread(path.read_text, encoding="utf-8")
 
-        # Önce HEPSİ doğrulanır; hata metni maddeyi numarasıyla gösterir ki
-        # model neyi düzelteceğini bilsin. Hiçbir şey henüz yazılmadı.
-        spans: list[tuple[int, int, str, int]] = []  # (baş, son, yeni, madde no)
-        notlar: list[str] = []   # toleransla eşleşenlerin izahı — mesaja girer
-        coklu = len(pairs) > 1
+        # ALL are validated first; the error text shows the item with its
+        # number so the model knows what to fix. Nothing has been written yet.
+        spans: list[tuple[int, int, str, int]] = []  # (start, end, new, item no)
+        notes: list[str] = []   # explanation of tolerant matches — goes into the message
+        multiple = len(pairs) > 1
         for no, (old, new) in enumerate(pairs, 1):
-            hangi = f"{no}. madde: " if coklu else ""
-            hicbiri = " Hiçbir değişiklik uygulanmadı." if coklu else ""
+            which = f"{no}. madde: " if multiple else ""
+            nothing = " Hiçbir değişiklik uygulanmadı." if multiple else ""
             if not isinstance(old, str) or not isinstance(new, str) or not old:
                 return ToolResult.error(
-                    f"{hangi}`old` ve `new` dolu birer metin olmalı.{hicbiri}"
+                    f"{which}`old` ve `new` dolu birer metin olmalı.{nothing}"
                 )
             count = text.count(old)
             if count == 0:
-                # Boşluk/girinti/satır-sonu toleransı: içerik doğruysa tur
-                # yakılmaz. Eşleşme yine TEK olmak zorunda.
-                esnek = _esnek_esle(text, old, new)
-                if isinstance(esnek, tuple) and esnek and esnek[0] == "coklu":
+                # Whitespace/indent/line-ending tolerance: if the content is
+                # right the turn is not burned. The match must still be UNIQUE.
+                loose = _esnek_esle(text, old, new)
+                if isinstance(loose, tuple) and loose and loose[0] == "coklu":
                     return ToolResult.error(
-                        f"{hangi}Aranan metin (boşluk toleransıyla) {esnek[1]} kez "
+                        f"{which}Aranan metin (boşluk toleransıyla) {loose[1]} kez "
                         f"geçiyor, hangisi olduğu belirsiz. Bağlam ekleyerek "
-                        f"benzersizleştir.{hicbiri}"
+                        f"benzersizleştir.{nothing}"
                     )
-                if esnek is None:
+                if loose is None:
                     return ToolResult.error(
-                        f"{hangi}Aranan metin dosyada yok. Girintiyi ve satır sonlarını "
-                        f"birebir eşleştir; emin değilsen dosyayı tekrar oku.{hicbiri}"
+                        f"{which}Aranan metin dosyada yok. Girintiyi ve satır sonlarını "
+                        f"birebir eşleştir; emin değilsen dosyayı tekrar oku.{nothing}"
                     )
-                b, e, yeni_metin, notu = esnek
-                spans.append((b, e, yeni_metin, no))
-                notlar.append(f"{hangi}{notu}")
+                b, e, new_text, note = loose
+                spans.append((b, e, new_text, no))
+                notes.append(f"{which}{note}")
                 continue
             if count > 1:
                 return ToolResult.error(
-                    f"{hangi}Aranan metin {count} kez geçiyor, hangisi olduğu belirsiz. "
-                    f"Öncesinden/sonrasından bağlam ekleyerek benzersizleştir.{hicbiri}"
+                    f"{which}Aranan metin {count} kez geçiyor, hangisi olduğu belirsiz. "
+                    f"Öncesinden/sonrasından bağlam ekleyerek benzersizleştir.{nothing}"
                 )
             start = text.index(old)
             spans.append((start, start + len(old), new, no))
 
-        # Sıra bağımsız çakışma kontrolü: iki madde aynı bölgeye dokunuyorsa
-        # sonuç maddelerin sırasına bağlı olurdu — bu bir belirsizlik, hata.
+        # Order-independent overlap check: if two items touch the same
+        # region the result would depend on the items' order — that is an
+        # ambiguity, an error.
         spans.sort()
         for (b1, s1, _, n1), (b2, _, _, n2) in zip(spans, spans[1:]):
             if b2 < s1:
@@ -713,37 +729,38 @@ Dosyayı önce read_file ile okumuş olman gerekir.
                 )
 
         def _apply() -> int:
-            # Yazmadan hemen önce anlık görüntü: `undo` ancak böyle mümkün.
-            _gozle(path, ctx, "edit_file")
-            yeni = text
-            # Sondan başa: önceki değişimler sonrakilerin konumunu kaydırmasın.
+            # Snapshot right before writing: `undo` is only possible this way.
+            _snapshot(path, ctx, "edit_file")
+            updated = text
+            # From the end to the start: earlier replacements must not
+            # shift the positions of later ones.
             for start, end, new, _ in reversed(spans):
-                yeni = yeni[:start] + new + yeni[end:]
-            path.write_text(yeni, encoding="utf-8")
+                updated = updated[:start] + new + updated[end:]
+            path.write_text(updated, encoding="utf-8")
             return path.stat().st_mtime_ns
 
         seen[path] = await asyncio.to_thread(_apply)
-        # Değişikliğin başladığı satır: arayüzdeki adım kartı diff'i gerçek
-        # satır numaralarıyla çizebilsin. Çoklu değişiklikte İLK değişikliğin
-        # satırı (arayüz sözleşmesi).
+        # The line where the change starts: so the step card in the UI can
+        # draw the diff with real line numbers. For multiple edits the line
+        # of the FIRST change (UI contract).
         line = text[: spans[0][0]].count("\n") + 1
-        mesaj = (
+        message = (
             f"{path} güncellendi ({len(spans)} değişiklik)."
             if len(spans) > 1
             else f"{path} güncellendi."
         )
-        if notlar:
-            # Tolerans devreye girdiyse model bilsin: bir dahaki old'u
-            # dosyadaki gerçek biçimden alması gerektiğinin işareti.
-            mesaj += " (" + "; ".join(notlar) + ")"
-        son_yazilan[:] = [path]
-        yazim_sayaci[path] = yazim_sayaci.get(path, 0) + 1
+        if notes:
+            # If tolerance kicked in the model should know: a sign that it
+            # should take the next old from the real form in the file.
+            message += " (" + "; ".join(notes) + ")"
+        last_written[:] = [path]
+        write_counter[path] = write_counter.get(path, 0) + 1
         testrun.touched(path)
-        tani_metni, tani_detay = await _tani_eki(path)
-        kosum_metni = await _testrun_suffix(path, yazim_sayaci[path])
+        diagnosis_text, diagnosis_detail = await _diagnosis_suffix(path)
+        testrun_text = await _testrun_suffix(path, write_counter[path])
         return ToolResult(
-            content=mesaj + tani_metni + (f"\n{kosum_metni}" if kosum_metni else ""),
-            detail={"path": str(path), "line": line, **tani_detay},
+            content=message + diagnosis_text + (f"\n{testrun_text}" if testrun_text else ""),
+            detail={"path": str(path), "line": line, **diagnosis_detail},
         )
 
     @registry.tool(
@@ -787,13 +804,15 @@ dosya varsa yolu budur.
         def _copy() -> int:
             target.parent.mkdir(parents=True, exist_ok=True)
             if source.is_dir():
-                # Dizin kopyası defterde tutulmuyor: onlarca dosyayı tek
-                # "yoktu" kaydına sığdırmak geri almayı yalancı yapardı.
+                # A directory copy is not kept in the ledger: squeezing
+                # dozens of files into one "yoktu" record would make undo
+                # a liar.
                 shutil.copytree(source, target)
                 return sum(1 for _ in target.rglob("*") if _.is_file())
-            # Hedef henüz yok ("yoktu" kaydı düşer); günün birinde üzerine
-            # yazma serbest kalırsa aynı çağrı mevcut hali de saklar.
-            _gozle(target, ctx, "copy_in")
+            # The target does not exist yet (a "yoktu" record is written);
+            # if overwriting is ever allowed the same call also stores the
+            # current state.
+            _snapshot(target, ctx, "copy_in")
             shutil.copy2(source, target)
             return 1
 
@@ -802,8 +821,9 @@ dosya varsa yolu budur.
         except OSError as exc:
             return ToolResult.error(f"Kopyalanamadı: {exc}")
 
-        # Kopya okunmuş sayılıyor: az önce bu süreç yazdı, bayatlık kontrolü
-        # burada modeli gereksiz bir read_file turuna zorlardı.
+        # The copy counts as read: this process wrote it a moment ago, the
+        # staleness check would force the model into a needless read_file
+        # turn here.
         if target.is_file():
             seen[target] = target.stat().st_mtime_ns
 
@@ -887,49 +907,50 @@ cevapta yazar.
         ),
     )
     async def denetle(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
-        ham = (args.get("path") or "").strip()
-        if ham:
-            hedef = _resolve(ham, ctx)
-        elif son_yazilan:
-            hedef = son_yazilan[0]
+        raw = (args.get("path") or "").strip()
+        if raw:
+            target = _resolve(raw, ctx)
+        elif last_written:
+            target = last_written[0]
         else:
             return ToolResult.error(
                 "Bu oturumda henüz bir dosya yazmadın, denetlenecek bir şey yok. "
                 "Denetlemek istediğin dosyayı `path` ile ver."
             )
 
-        if not hedef.exists():
-            return ToolResult.error(f"Yol yok: {hedef}")
+        if not target.exists():
+            return ToolResult.error(f"Yol yok: {target}")
 
-        desen = args.get("pattern") or None
-        if hedef.is_dir():
-            yollar = await asyncio.to_thread(
-                diagnostics.batch_paths, hedef, desen=desen, tavan=MAX_AUDIT_FILES
+        pattern = args.get("pattern") or None
+        if target.is_dir():
+            paths = await asyncio.to_thread(
+                diagnostics.batch_paths, target, desen=pattern, tavan=MAX_AUDIT_FILES
             )
-            kok: Path | None = hedef
+            root: Path | None = target
         else:
-            yollar, kok = [hedef], hedef.parent
+            paths, root = [target], target.parent
 
-        if not yollar:
+        if not paths:
             return ToolResult(
-                content=f"{hedef} altında denetlenebilir dosya yok. "
+                content=f"{target} altında denetlenebilir dosya yok. "
                         "Tanınan uzantılar: " + ", ".join(sorted(diagnostics.UZANTILAR)) + "."
             )
 
-        taniler = await asyncio.to_thread(diagnostics.denetle_coklu, yollar)
-        if not taniler:
-            # Tek dosya ve uzantısı tanınmıyor: uydurma yapma, dürüstçe söyle.
+        diagnoses = await asyncio.to_thread(diagnostics.denetle_coklu, paths)
+        if not diagnoses:
+            # A single file with an unrecognised extension: no invention,
+            # say so honestly.
             return ToolResult(
-                content=f"{hedef} için bir denetleyici tanımıyorum "
-                        f"({hedef.suffix or 'uzantısız'}). Kontrol edilmedi."
+                content=f"{target} için bir denetleyici tanımıyorum "
+                        f"({target.suffix or 'uzantısız'}). Kontrol edilmedi."
             )
 
-        faulty = sum(1 for t in taniler if t.status == "hata")
+        faulty = sum(1 for t in diagnoses if t.status == "hata")
         return ToolResult(
-            content=diagnostics.ozet(taniler, kok=kok),
+            content=diagnostics.ozet(diagnoses, kok=root),
             detail={
-                "path": str(hedef),
+                "path": str(target),
                 "hatali": faulty,
-                "taniler": [t.detay() for t in taniler],
+                "taniler": [t.detay() for t in diagnoses],
             },
         )

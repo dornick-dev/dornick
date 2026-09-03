@@ -1,20 +1,20 @@
-"""Hatırlama protokolünü MCP sunucusu olarak açar.
+"""Exposes the recall protocol as an MCP server.
 
-Amaç baştan beri şuydu: bu bellek yalnızca Dornick'in içinde değil, modelin
-çalıştığı her yerde kullanılabilsin. MCP tam olarak bunun için var — Claude
-Desktop, Claude Code, Cursor ya da MCP konuşan başka bir istemci bu sunucuyu
-tanımlayıp aynı `recall.db` dosyasına bağlanıyor.
+The aim from the start was this: this memory should be usable not only
+inside Dornick but wherever the model runs. MCP exists for exactly that —
+Claude Desktop, Claude Code, Cursor or any other MCP-speaking client
+registers this server and connects to the same `recall.db` file.
 
-Taşıma stdio: istemci süreci başlatıyor, satır başına bir JSON-RPC mesajı
-gidip geliyor. Ek bağımlılık yok, ağ yok, port yok.
+Transport is stdio: the client starts the process, one JSON-RPC message per
+line goes back and forth. No extra dependency, no network, no port.
 
-    stdin   istekler
-    stdout  YALNIZCA protokol. Buraya kaçan tek bir `print` istemciyi bozar.
-    stderr  günlük
+    stdin   requests
+    stdout  protocol ONLY. A single stray `print` here breaks the client.
+    stderr  log
 
-WAL açık olduğu için aynı veritabanına ajan da bu sunucu da aynı anda
-bağlanabiliyor: ajanın oturumda yazdığı bir şey Claude Desktop'ta anında
-hatırlanabiliyor.
+Because WAL is on, both the agent and this server can be connected to the
+same database at the same time: something the agent writes in a session can
+be recalled in Claude Desktop instantly.
 """
 
 from __future__ import annotations
@@ -26,14 +26,14 @@ from typing import Any, Callable
 
 from .store import KINDS, RecallStore
 
-# İstemcinin istediği sürüm desteklenenlerdeyse o kabul ediliyor; değilse
-# bizimki söyleniyor ve pazarlığı istemci bitiriyor.
+# If the version the client asks for is among the supported ones it is
+# accepted; otherwise ours is stated and the client finishes the negotiation.
 PROTOCOL = "2025-06-18"
 SUPPORTED = frozenset({"2025-06-18", "2025-03-26", "2024-11-05"})
 
 SERVER = {"name": "dornick-recall", "version": "1.0.0"}
 
-# JSON-RPC hata kodları.
+# JSON-RPC error codes.
 PARSE_ERROR = -32700
 INVALID_REQUEST = -32600
 METHOD_NOT_FOUND = -32601
@@ -42,10 +42,11 @@ INTERNAL_ERROR = -32603
 
 
 def tool_specs() -> list[dict[str, Any]]:
-    """İstemciye açılan araçlar.
+    """The tools exposed to the client.
 
-    Açıklamalar modelin okuyacağı tek belge: ne zaman kullanılacağı burada
-    yazmazsa araç ya hiç çağrılmıyor ya da her mesajda çağrılıyor.
+    The descriptions are the only document the model will read: if when to
+    use a tool is not written here, it is either never called or called on
+    every message.
     """
     return [
         {
@@ -118,7 +119,7 @@ def tool_specs() -> list[dict[str, Any]]:
 
 
 class Server:
-    """MCP isteklerini `RecallStore` çağrılarına çevirir."""
+    """Turns MCP requests into `RecallStore` calls."""
 
     def __init__(self, store: RecallStore) -> None:
         self.store = store
@@ -129,15 +130,16 @@ class Server:
             "forget": self._forget,
         }
 
-    # -- protokol ------------------------------------------------------
+    # -- protocol ------------------------------------------------------
 
     def handle(self, message: dict[str, Any]) -> dict[str, Any] | None:
-        """Bir mesajı işler. Bildirim ise None döner — cevap yazılmamalı."""
+        """Handles one message. Returns None for a notification — no reply
+        must be written."""
         method = message.get("method")
         request_id = message.get("id")
 
-        # Bildirimlerin id'si yok ve cevap beklemiyorlar; cevap yazmak
-        # istemciyi "eşleşmeyen yanıt" hatasına düşürür.
+        # Notifications have no id and expect no reply; writing one drops
+        # the client into an "unmatched response" error.
         if request_id is None:
             return None
 
@@ -169,15 +171,16 @@ class Server:
         try:
             text = handler(params.get("arguments") or {})
         except (ValueError, KeyError) as exc:
-            # Araç hatası protokol hatası değil: model hatayı okuyup
-            # düzeltebilmeli, istemcinin bağlantısı kopmamalı.
+            # A tool error is not a protocol error: the model should be able
+            # to read the error and correct itself, the client's connection
+            # must not drop.
             return _ok(request_id, _content(str(exc), error=True))
-        except Exception as exc:  # beklenmeyen; yine de bağlantı sürsün
+        except Exception as exc:  # unexpected; still keep the connection alive
             return _ok(request_id, _content(f"{type(exc).__name__}: {exc}", error=True))
 
         return _ok(request_id, _content(text))
 
-    # -- araçlar -------------------------------------------------------
+    # -- tools ---------------------------------------------------------
 
     def _recall(self, args: dict[str, Any]) -> str:
         query = str(args.get("query") or "").strip()
@@ -232,7 +235,7 @@ class Server:
         return f"[{node_id}] unutuldu."
 
 
-# -- JSON-RPC kabuğu ---------------------------------------------------
+# -- JSON-RPC shell ----------------------------------------------------
 
 
 def _ok(request_id: Any, result: Any) -> dict[str, Any]:
@@ -251,11 +254,11 @@ def _content(text: str, *, error: bool = False) -> dict[str, Any]:
 
 
 def serve(store: RecallStore, stdin: Any = None, stdout: Any = None) -> None:
-    """Satır satır okur, satır satır cevaplar.
+    """Reads line by line, answers line by line.
 
-    Akış kapanana kadar sürüyor. Tek bir bozuk satır sunucuyu düşürmemeli:
-    istemci uzun süre açık kalıyor ve bir hata yüzünden bağlantıyı yeniden
-    kurmak zorunda bırakmak gereksiz.
+    Runs until the stream closes. A single broken line must not bring the
+    server down: the client stays open for a long time, and forcing it to
+    re-establish the connection because of one error is unnecessary.
     """
     source = stdin or sys.stdin
     sink = stdout or sys.stdout
@@ -278,7 +281,7 @@ def serve(store: RecallStore, stdin: Any = None, stdout: Any = None) -> None:
 
         try:
             answer = server.handle(message)
-        except Exception as exc:  # protokol katmanı çökmemeli
+        except Exception as exc:  # the protocol layer must not crash
             answer = _fail(message.get("id"), INTERNAL_ERROR, f"{type(exc).__name__}: {exc}")
 
         if answer is not None:
@@ -291,11 +294,12 @@ def _write(sink: Any, payload: dict[str, Any]) -> None:
 
 
 def main(argv: list[str] | None = None) -> int:
-    """`dornick recall-mcp [bellek-yolu]`.
+    """`dornick recall-mcp [memory-path]`.
 
-    Yol verilmezse ortam değişkenine, o da yoksa kullanıcının ev dizinindeki
-    ortak belleğe düşüyor: MCP istemcisi başka bir dizinde çalışıyor olabilir
-    ve belleğin yerinin buna bağlı olmaması gerekiyor.
+    If no path is given it falls back to the environment variable, and
+    failing that to the shared memory in the user's home directory: the MCP
+    client may be running in another directory, and the memory's location
+    must not depend on that.
     """
     import os
 

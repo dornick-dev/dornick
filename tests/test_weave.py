@@ -1,18 +1,19 @@
-"""Gece geçişi — tekrar, sorumluluk, dikiş, örgü, küçültme.
+"""Night pass — replay, credit, stitching, reweaving, downscaling.
 
-Night school bugüne kadar *eğitim* yapıyordu; *tekrar* yapmıyordu. Beynin
-gece yaptığı asıl iş günün dizilerini yeniden oynatmak, ve bundan çıkan
-şeylerin hiçbiri dornick'te yoktu:
+Until now night school did *training*; it did no *replay*. The real work
+the brain does at night is replaying the day's sequences, and none of what
+falls out of that existed in dornick:
 
-* kenarların tamamı "benzer içerik" — **birlikte yaşandı** bağı yok;
-* `uses` sayacı yanlış cevaba götüren hatıraya da doğru cevaba götürene de
-  aynı puanı veriyor — sorumluluk atama yok;
-* `_weave` yazım anında donuyor, ağ sıraya bağımlı;
-* gündüz güçlenen hiçbir şey küçülmüyor, kenarlar şişiyor.
+* every edge was "similar content" — there was no **experienced together**
+  bond;
+* the `uses` counter gave the memory that led to the wrong answer the same
+  point as the one that led to the right answer — no credit assignment;
+* `_weave` froze at write time, the graph depended on order;
+* nothing that strengthened by day ever shrank, edges bloated.
 
-Buradaki testler bu beş adımın her birini ayrı ayrı zorluyor. Adım 6
-(damıtma) ayrı PR; burada yalnız **kapısı** test ediliyor: model yoksa
-atlanıyor ve ilk beş adım yine koşuyor.
+The tests here push on each of these five steps separately. Step 6
+(distillation) is a separate PR; only its **gate** is tested here: without
+a model it is skipped and the first five steps still run.
 """
 
 from __future__ import annotations
@@ -27,40 +28,40 @@ from dornick.events import EventLog
 from dornick.recall import activation as A
 from dornick.recall import open_store, weave
 
-SIMDI = datetime(2025, 6, 2, 9, 0, tzinfo=timezone.utc)   # pazartesi
+NOW = datetime(2025, 6, 2, 9, 0, tzinfo=timezone.utc)   # a Monday
 
 
-class Takvim:
-    def __init__(self, an: datetime) -> None:
-        self.an = an
+class Calendar:
+    def __init__(self, moment: datetime) -> None:
+        self.moment = moment
 
     def __call__(self) -> datetime:
-        return self.an
+        return self.moment
 
-    def ilerle(self, **delta) -> None:
-        self.an += timedelta(**delta)
+    def advance(self, **delta) -> None:
+        self.moment += timedelta(**delta)
 
-    def metin(self) -> str:
-        return self.an.isoformat(timespec="milliseconds")
-
-
-@pytest.fixture()
-def takvim() -> Takvim:
-    return Takvim(SIMDI)
+    def text(self) -> str:
+        return self.moment.isoformat(timespec="milliseconds")
 
 
 @pytest.fixture()
-def store(tmp_path: Path, takvim: Takvim):
-    s = open_store(tmp_path / "bellek", clock=takvim)
+def calendar() -> Calendar:
+    return Calendar(NOW)
+
+
+@pytest.fixture()
+def store(tmp_path: Path, calendar: Calendar):
+    s = open_store(tmp_path / "memory", clock=calendar)
     yield s
     s.close()
 
 
 @pytest.fixture()
-def oturumlar(tmp_path: Path) -> Path:
-    yol = tmp_path / "sessions"
-    yol.mkdir(parents=True, exist_ok=True)
-    return yol
+def sessions(tmp_path: Path) -> Path:
+    path = tmp_path / "sessions"
+    path.mkdir(parents=True, exist_ok=True)
+    return path
 
 
 @pytest.fixture()
@@ -68,438 +69,438 @@ def watermark(tmp_path: Path) -> Path:
     return tmp_path / "filigran.json"
 
 
-class Gunluk:
-    """Bir oturumun olay günlüğünü yazan yardımcı — ürünün kendi EventLog'u."""
+class Log:
+    """A helper that writes one session's event log — the product's own EventLog."""
 
-    def __init__(self, dizin: Path, oturum: str, takvim: Takvim) -> None:
-        self.log = EventLog(dizin / f"{oturum}.jsonl", clock=takvim.metin)
-        self.log.note("session_start", session_id=oturum)
-        self.takvim = takvim
+    def __init__(self, folder: Path, session: str, calendar: Calendar) -> None:
+        self.log = EventLog(folder / f"{session}.jsonl", clock=calendar.text)
+        self.log.note("session_start", session_id=session)
+        self.calendar = calendar
 
-    def dokun(self, node_id: str, olay: str = "mind_open", **meta) -> Gunluk:
-        self.takvim.ilerle(minutes=1)
-        self.log.note(olay, memory_id=node_id, **meta)
+    def touch(self, node_id: str, event: str = "mind_open", **meta) -> Log:
+        self.calendar.advance(minutes=1)
+        self.log.note(event, memory_id=node_id, **meta)
         return self
 
-    def arac(self, ad: str, *, hata: bool = False, ozet: str = "") -> Gunluk:
-        self.takvim.ilerle(minutes=1)
-        self.log.note("tool_start", tool=ad, input={})
-        self.log.note("tool_end", tool=ad, error=hata, ms=10, ozet=ozet)
+    def tool(self, name: str, *, error: bool = False, summary: str = "") -> Log:
+        self.calendar.advance(minutes=1)
+        self.log.note("tool_start", tool=name, input={})
+        self.log.note("tool_end", tool=name, error=error, ms=10, ozet=summary)
         return self
 
-    def kapat(self, sonuc: str = "basarili") -> Gunluk:
-        self.takvim.ilerle(minutes=1)
-        self.log.note("sonuc", sonuc=sonuc)
+    def close(self, outcome: str = "basarili") -> Log:
+        self.calendar.advance(minutes=1)
+        self.log.note("sonuc", sonuc=outcome)
         self.log.close()
         return self
 
 
-def _gece(store, oturumlar, watermark, takvim, **kw):
-    return weave.night_pass(store, oturumlar, clock=takvim, watermark=watermark, **kw)
+def _night(store, sessions, watermark, calendar, **kw):
+    return weave.night_pass(store, sessions, clock=calendar, watermark=watermark, **kw)
 
 
-# -- Adım 2: zaman komşuluğu -------------------------------------------
+# -- Step 2: temporal adjacency ----------------------------------------
 
 
-def test_ayni_oturumda_pes_pese_kullanilan_ikili_baglaniyor(
-        store, oturumlar, watermark, takvim) -> None:
-    """"O raporu yaparken kullandığım şey neydi" içerik aramasıyla bulunamaz."""
+def test_pair_used_back_to_back_in_one_session_is_linked(
+        store, sessions, watermark, calendar) -> None:
+    """"What was the thing I used while doing that report" is not findable by content."""
     a = store.remember("Vardiya raporu şablonu üç sayfalı bir Excel dosyası.",
                        kind="fact")
     b = store.remember("Kırmızı defterin arkasında modem PIN kodu yazıyor.",
                        kind="fact")
-    Gunluk(oturumlar, "s1", takvim).dokun(a.id).dokun(b.id).kapat()
+    Log(sessions, "s1", calendar).touch(a.id).touch(b.id).close()
 
-    rapor = _gece(store, oturumlar, watermark, takvim)
-    assert rapor.new_edges >= 1
+    report = _night(store, sessions, watermark, calendar)
+    assert report.new_edges >= 1
 
-    komsular = {n.id: r for n, _w, r in store.neighbours_with_reasons(a.id)}
-    assert b.id in komsular
-    assert "birlikte kullanıldı" in komsular[b.id]
+    neighbours = {n.id: r for n, _w, r in store.neighbours_with_reasons(a.id)}
+    assert b.id in neighbours
+    assert "birlikte kullanıldı" in neighbours[b.id]
 
 
-def test_zaman_komsulugu_prime_a_sizmiyor(store, oturumlar, watermark, takvim) -> None:
-    """Kenar açık aramayı zenginleştirir, otomatik enjeksiyonu kirletmez."""
+def test_temporal_adjacency_does_not_leak_into_the_prime(store, sessions, watermark, calendar) -> None:
+    """The edge enriches explicit search, it does not pollute automatic injection."""
     from dornick.loop import select_prime
     from dornick.mind import open_mind
 
     a = store.remember("Vardiya raporu şablonu üç sayfalı Excel dosyası.", kind="fact")
     b = store.remember("Kırmızı defterin arkasında modem PIN kodu yazıyor.", kind="fact")
-    Gunluk(oturumlar, "s1", takvim).dokun(a.id).dokun(b.id).kapat()
-    _gece(store, oturumlar, watermark, takvim)
+    Log(sessions, "s1", calendar).touch(a.id).touch(b.id).close()
+    _night(store, sessions, watermark, calendar)
 
-    mind = open_mind(store.path.parent, oturumlar, "t", clock=takvim)
+    mind = open_mind(store.path.parent, sessions, "t", clock=calendar)
     try:
         hits = select_prime(mind, "Vardiya raporu şablonu kaç sayfaydı?", limit=5)
         assert b.id not in {h.item.id for h in hits}
-        acik = {h.item.id for h in mind.recall("Vardiya raporu şablonu", limit=5)}
-        assert b.id in acik
+        explicit = {h.item.id for h in mind.recall("Vardiya raporu şablonu", limit=5)}
+        assert b.id in explicit
     finally:
         mind.store.close()
 
 
-def test_tekrarlanan_birliktelik_kenari_guclendiriyor(
-        store, oturumlar, watermark, takvim) -> None:
-    """Sıkça birlikte kullanılan şeyler güçlü bağlanmalı; max'ta donmamalı."""
+def test_repeated_co_use_strengthens_the_edge(
+        store, sessions, watermark, calendar) -> None:
+    """Things often used together must bond strongly; not freeze at the max."""
     a = store.remember("Terfi istasyonu yolu yağmurda çamur oluyor.", kind="fact")
-    orta = store.remember("Kırtasiye siparişi perşembe verilir.", kind="fact")
+    middle = store.remember("Kırtasiye siparişi perşembe verilir.", kind="fact")
     b = store.remember("Faturalar muhasebeye ayın yirmisinde gönderiliyor.",
                        kind="fact")
 
-    def _agirlik() -> float:
+    def _weight() -> float:
         return dict((n.id, w) for n, w, _r in store.neighbours_with_reasons(a.id))[b.id]
 
-    # Uzaklığı iki olan çift ölçülüyor: bitişik çift 0.6'dan başlıyor ve
-    # ağırlık tavanı 1.0 — "iki katı" orada matematiksel olarak imkânsız.
-    Gunluk(oturumlar, "tek", takvim).dokun(a.id).dokun(orta.id).dokun(b.id).kapat()
-    _gece(store, oturumlar, watermark, takvim)
-    tek_seferlik = _agirlik()
+    # The pair at distance two is measured: the adjacent pair starts at 0.6
+    # and the weight ceiling is 1.0 — "double" is mathematically impossible there.
+    Log(sessions, "once", calendar).touch(a.id).touch(middle.id).touch(b.id).close()
+    _night(store, sessions, watermark, calendar)
+    single = _weight()
 
     for i in range(4):
-        takvim.ilerle(days=1)
-        (Gunluk(oturumlar, f"tekrar{i}", takvim)
-         .dokun(a.id).dokun(orta.id).dokun(b.id).kapat())
-        _gece(store, oturumlar, watermark, takvim)
+        calendar.advance(days=1)
+        (Log(sessions, f"repeat{i}", calendar)
+         .touch(a.id).touch(middle.id).touch(b.id).close())
+        _night(store, sessions, watermark, calendar)
 
-    assert _agirlik() > tek_seferlik * 2
-
-
-# -- Adım 2b: şema tazelemesi ------------------------------------------
+    assert _weight() > single * 2
 
 
-def test_kullanilanin_komsusu_tazeleniyor(store, oturumlar, watermark, takvim) -> None:
-    """Eskinin pekişmesi taramayla değil, şemaya bağlı olmakla geliyor."""
+# -- Step 2b: schema refresh -------------------------------------------
+
+
+def test_neighbour_of_what_was_used_is_refreshed(store, sessions, watermark, calendar) -> None:
+    """The old consolidates not by scanning but by being linked to a schema."""
     x = store.remember("Terfi hattı basınç sınırı altı bar.", kind="fact")
     y = store.remember("Terfi hattı basıncı manometreden okunuyor.", kind="fact")
     w = store.remember("Kapı kilidi silindirli.", kind="fact")
     store.link(x.id, y.id, weight=0.8, reason="benzer icerik")
 
-    takvim.ilerle(days=30)
-    Gunluk(oturumlar, "s1", takvim).dokun(y.id).kapat()
-    _gece(store, oturumlar, watermark, takvim)
+    calendar.advance(days=30)
+    Log(sessions, "s1", calendar).touch(y.id).close()
+    _night(store, sessions, watermark, calendar)
 
     assert any(k.etiket == A.SCHEMA for k in store.use_log(x.id))
     assert not any(k.etiket == A.SCHEMA for k in store.use_log(w.id))
 
 
-def test_sema_tazelemesi_aktivasyonu_yukseltiyor(
-        store, oturumlar, watermark, takvim) -> None:
+def test_schema_refresh_raises_activation(
+        store, sessions, watermark, calendar) -> None:
     x = store.remember("Dozaj tankı kapasitesi bin litre.", kind="fact")
     y = store.remember("Dozaj tankı seviyesi haftalık kontrol ediliyor.", kind="fact")
-    kontrol = store.remember("Merdiven korkuluğu galvanizli.", kind="fact")
+    control = store.remember("Merdiven korkuluğu galvanizli.", kind="fact")
     store.link(x.id, y.id, weight=0.8, reason="benzer icerik")
 
-    takvim.ilerle(days=30)
-    Gunluk(oturumlar, "s1", takvim).dokun(y.id).kapat()
-    _gece(store, oturumlar, watermark, takvim)
+    calendar.advance(days=30)
+    Log(sessions, "s1", calendar).touch(y.id).close()
+    _night(store, sessions, watermark, calendar)
 
-    assert store.peek(x.id).activation > store.peek(kontrol.id).activation
-
-
-# -- Adım 3: ters tekrar -----------------------------------------------
+    assert store.peek(x.id).activation > store.peek(control.id).activation
 
 
-def test_basariya_goturen_hatira_hataya_goturenin_ustunde(
-        store, oturumlar, watermark, takvim) -> None:
-    iyi = store.remember("Gate servisi yeniden başlatılırken kuyruk boşaltılıyor.",
-                         kind="procedure")
-    kotu = store.remember("Gate servisi doğrudan kill ile durduruluyor.",
+# -- Step 3: reverse replay --------------------------------------------
+
+
+def test_memory_that_led_to_success_ranks_above_the_one_that_led_to_failure(
+        store, sessions, watermark, calendar) -> None:
+    good = store.remember("Gate servisi yeniden başlatılırken kuyruk boşaltılıyor.",
                           kind="procedure")
-    Gunluk(oturumlar, "ok", takvim).dokun(iyi.id).arac("kos").kapat("basarili")
-    takvim.ilerle(days=1)
-    Gunluk(oturumlar, "hata", takvim).dokun(kotu.id).arac(
-        "kos", hata=True, ozet="3 test kırıldı").kapat("basarisiz")
+    bad = store.remember("Gate servisi doğrudan kill ile durduruluyor.",
+                         kind="procedure")
+    Log(sessions, "ok", calendar).touch(good.id).tool("kos").close("basarili")
+    calendar.advance(days=1)
+    Log(sessions, "hata", calendar).touch(bad.id).tool(
+        "kos", error=True, summary="3 test kırıldı").close("basarisiz")
 
-    _gece(store, oturumlar, watermark, takvim)
+    _night(store, sessions, watermark, calendar)
 
-    sonuc = store.recall("Gate servisi yeniden başlatma", limit=8)
-    sirali = [n.id for n in sonuc.hits]
-    assert sirali.index(iyi.id) < sirali.index(kotu.id)
-    assert store.track_record(iyi.id) == (1, 0)
-    assert store.track_record(kotu.id) == (0, 1)
-
-
-def test_hataya_goturen_yolun_yaninda_ders_duruyor(
-        store, oturumlar, watermark, takvim) -> None:
-    kotu = store.remember("Şema göçü doğrudan üretimde koşuluyor.", kind="procedure")
-    Gunluk(oturumlar, "hata", takvim).dokun(kotu.id).arac(
-        "kos", hata=True, ozet="göç yarıda kaldı").kapat("basarisiz")
-    rapor = _gece(store, oturumlar, watermark, takvim)
-
-    assert rapor.lessons_written >= 1
-    dersler = [n for n in store.by_kind("lesson", limit=10)]
-    assert dersler
-    assert kotu.id in {n.id for n, _w, _r in store.neighbours_with_reasons(dersler[0].id)}
+    result = store.recall("Gate servisi yeniden başlatma", limit=8)
+    ranked = [n.id for n in result.hits]
+    assert ranked.index(good.id) < ranked.index(bad.id)
+    assert store.track_record(good.id) == (1, 0)
+    assert store.track_record(bad.id) == (0, 1)
 
 
-def test_basarili_dizi_yordam_yaziyor(store, oturumlar, watermark, takvim) -> None:
-    ucu = [store.remember(f"Adım {i}: saha kontrolü {i}.", kind="fact")
-           for i in range(3)]
-    g = Gunluk(oturumlar, "ok", takvim)
-    for n in ucu:
-        g.dokun(n.id)
-    g.arac("kos").arac("dosya_yaz").kapat("basarili")
+def test_a_lesson_sits_next_to_the_path_that_led_to_failure(
+        store, sessions, watermark, calendar) -> None:
+    bad = store.remember("Şema göçü doğrudan üretimde koşuluyor.", kind="procedure")
+    Log(sessions, "hata", calendar).touch(bad.id).tool(
+        "kos", error=True, summary="göç yarıda kaldı").close("basarisiz")
+    report = _night(store, sessions, watermark, calendar)
 
-    rapor = _gece(store, oturumlar, watermark, takvim)
-    assert rapor.procedures_written >= 1
+    assert report.lessons_written >= 1
+    lessons = [n for n in store.by_kind("lesson", limit=10)]
+    assert lessons
+    assert bad.id in {n.id for n, _w, _r in store.neighbours_with_reasons(lessons[0].id)}
 
 
-def test_karisik_sicil_hic_dokunulmamistan_guclu(
-        store, oturumlar, watermark, takvim) -> None:
-    kayit = store.remember("Bellek sızıntısı tracemalloc ile bulunuyor.",
-                           kind="procedure")
-    bakir = store.remember("Priz grubu topraklı tip.", kind="fact")
+def test_successful_sequence_writes_a_procedure(store, sessions, watermark, calendar) -> None:
+    three = [store.remember(f"Adım {i}: saha kontrolü {i}.", kind="fact")
+             for i in range(3)]
+    g = Log(sessions, "ok", calendar)
+    for n in three:
+        g.touch(n.id)
+    g.tool("kos").tool("dosya_yaz").close("basarili")
+
+    report = _night(store, sessions, watermark, calendar)
+    assert report.procedures_written >= 1
+
+
+def test_mixed_record_beats_never_touched(
+        store, sessions, watermark, calendar) -> None:
+    record = store.remember("Bellek sızıntısı tracemalloc ile bulunuyor.",
+                            kind="procedure")
+    untouched = store.remember("Priz grubu topraklı tip.", kind="fact")
     for i in range(3):
-        takvim.ilerle(days=1)
-        Gunluk(oturumlar, f"ok{i}", takvim).dokun(kayit.id).kapat("basarili")
-    takvim.ilerle(days=1)
-    Gunluk(oturumlar, "hata", takvim).dokun(kayit.id).arac(
-        "kos", hata=True, ozet="patladı").kapat("basarisiz")
-    _gece(store, oturumlar, watermark, takvim)
+        calendar.advance(days=1)
+        Log(sessions, f"ok{i}", calendar).touch(record.id).close("basarili")
+    calendar.advance(days=1)
+    Log(sessions, "hata", calendar).touch(record.id).tool(
+        "kos", error=True, summary="patladı").close("basarisiz")
+    _night(store, sessions, watermark, calendar)
 
-    assert store.track_record(kayit.id) == (3, 1)
-    assert store.peek(kayit.id).activation > store.peek(bakir.id).activation
+    assert store.track_record(record.id) == (3, 1)
+    assert store.peek(record.id).activation > store.peek(untouched.id).activation
 
 
-def test_acik_hedef_kaldigin_yeri_yaziyor(store, oturumlar, watermark, takvim) -> None:
+def test_open_goal_writes_where_you_left_off(store, sessions, watermark, calendar) -> None:
     a = store.remember("Kurulum paketi imzalanacak.", kind="fact")
-    Gunluk(oturumlar, "acik", takvim).dokun(a.id).kapat("acik")
-    _gece(store, oturumlar, watermark, takvim)
+    Log(sessions, "acik", calendar).touch(a.id).close("acik")
+    _night(store, sessions, watermark, calendar)
     assert store.by_kind("goal", limit=5)
 
 
-# -- Adım 4: dikiş -----------------------------------------------------
+# -- Step 4: stitching -------------------------------------------------
 
 
-def test_hic_yasanmamis_dizi_dikiliyor(store, oturumlar, watermark, takvim) -> None:
-    """Pazartesi A→B, perşembe B→C. A ile C hiç birlikte yaşanmadı."""
-    # Dolgu: küçük bir bellekte `_weave` her şeyi birbirine bağlar ve
-    # dikilecek bir boşluk kalmaz. Gerçek bir bellekte durum bu değildir.
-    for metin in ("Kırtasiye siparişi perşembe veriliyor.",
-                  "Ofis bitkileri haftada iki kez sulanıyor.",
-                  "Kapı zilinin pili bitmek üzere.",
-                  "Yemek kartı her ayın ilk günü yükleniyor.",
-                  "Asansör bakımı her çeyrekte yapılıyor.",
-                  "Yazıcı kartuşu uyumlu marka alınıyor."):
-        store.remember(metin, kind="fact")
+def test_a_sequence_never_experienced_is_stitched(store, sessions, watermark, calendar) -> None:
+    """Monday A→B, Thursday B→C. A and C were never experienced together."""
+    # Filler: in a small memory `_weave` links everything to everything and
+    # no gap is left to stitch. That is not the case in a real memory.
+    for text in ("Kırtasiye siparişi perşembe veriliyor.",
+                 "Ofis bitkileri haftada iki kez sulanıyor.",
+                 "Kapı zilinin pili bitmek üzere.",
+                 "Yemek kartı her ayın ilk günü yükleniyor.",
+                 "Asansör bakımı her çeyrekte yapılıyor.",
+                 "Yazıcı kartuşu uyumlu marka alınıyor."):
+        store.remember(text, kind="fact")
     a = store.remember("Karatay deposu seviye ölçümü saatte bir alınıyor.", kind="fact")
     b = store.remember("Ölçüm verisi gece yarısı özetleniyor.", kind="fact")
     c = store.remember("Bordro dosyası muhasebeye kapalı zarfla veriliyor.",
                        kind="fact")
     assert c.id not in {n.id for n, _w, _r in store.neighbours_with_reasons(a.id)}
-    Gunluk(oturumlar, "pzt", takvim).dokun(a.id).dokun(b.id).kapat()
-    takvim.ilerle(days=1)
-    Gunluk(oturumlar, "prs", takvim).dokun(b.id).dokun(c.id).kapat()
+    Log(sessions, "pzt", calendar).touch(a.id).touch(b.id).close()
+    calendar.advance(days=1)
+    Log(sessions, "prs", calendar).touch(b.id).touch(c.id).close()
 
-    rapor = _gece(store, oturumlar, watermark, takvim)
-    assert rapor.dikis >= 1
+    report = _night(store, sessions, watermark, calendar)
+    assert report.stitched >= 1
 
-    gerekceler = {n.id: r for n, _w, r in store.neighbours_with_reasons(a.id)}
-    assert c.id in gerekceler
-    assert b.id in gerekceler[c.id]          # üzerinden dikilen düğüm yazılı
-
-
-# -- Adım 5: örgü ve küçültme ------------------------------------------
+    reasons = {n.id: r for n, _w, r in store.neighbours_with_reasons(a.id)}
+    assert c.id in reasons
+    assert b.id in reasons[c.id]          # the node stitched through is named
 
 
-def test_dokunulmayan_kenar_her_gece_eriyor(store, oturumlar, watermark, takvim) -> None:
+# -- Step 5: reweaving and downscaling ---------------------------------
+
+
+def test_untouched_edge_melts_every_night(store, sessions, watermark, calendar) -> None:
     a = store.remember("Kavanoz kapakları paslanıyor.", kind="fact")
     b = store.remember("Ütü masasının ayağı gevşek.", kind="fact")
     store.link(a.id, b.id, weight=1.0, reason="elle")
-    onceki = dict((n.id, w) for n, w, _r in store.neighbours_with_reasons(a.id))[b.id]
+    before = dict((n.id, w) for n, w, _r in store.neighbours_with_reasons(a.id))[b.id]
 
     for i in range(20):
-        takvim.ilerle(days=1)
-        _gece(store, oturumlar, watermark, takvim)
-    sonraki = dict((n.id, w) for n, w, _r in store.neighbours_with_reasons(a.id))[b.id]
+        calendar.advance(days=1)
+        _night(store, sessions, watermark, calendar)
+    after = dict((n.id, w) for n, w, _r in store.neighbours_with_reasons(a.id))[b.id]
 
-    beklenen = onceki * (1 - weave.EPSILON) ** 20
-    assert sonraki == pytest.approx(beklenen, rel=0.05)
+    expected = before * (1 - weave.EPSILON) ** 20
+    assert after == pytest.approx(expected, rel=0.05)
 
 
-def test_taban_altina_inen_kenar_siliniyor(store, oturumlar, watermark, takvim) -> None:
-    """Kenar silinebilir, düğüm silinemez: kenar bilgi değil yol."""
+def test_edge_below_the_floor_is_deleted(store, sessions, watermark, calendar) -> None:
+    """An edge may be deleted, a node may not: an edge is a road, not knowledge."""
     a = store.remember("Semt pazarı perşembe kuruluyor.", kind="fact")
     b = store.remember("Sokak lambası akşamları geç yanıyor.", kind="fact")
     store.link(a.id, b.id, weight=weave.EDGE_FLOOR + 0.001, reason="zayıf")
-    takvim.ilerle(days=1)
-    rapor = _gece(store, oturumlar, watermark, takvim)
+    calendar.advance(days=1)
+    report = _night(store, sessions, watermark, calendar)
 
-    assert rapor.edges_removed >= 1
+    assert report.edges_removed >= 1
     assert b.id not in {n.id for n, _w, _r in store.neighbours_with_reasons(a.id)}
     assert store.peek(a.id) is not None and store.peek(b.id) is not None
 
 
-def test_her_gece_dokunulan_kenar_tabanin_ustunde_kaliyor(
-        store, oturumlar, watermark, takvim) -> None:
+def test_edge_touched_every_night_stays_above_the_floor(
+        store, sessions, watermark, calendar) -> None:
     a = store.remember("Jeneratör otomatiği el konumunda bırakılmamalı.", kind="fact")
     b = store.remember("Toplantı odası projektörü HDMI ile çalışıyor.", kind="fact")
     for i in range(20):
-        takvim.ilerle(days=1)
-        Gunluk(oturumlar, f"g{i}", takvim).dokun(a.id).dokun(b.id).kapat()
-        _gece(store, oturumlar, watermark, takvim)
-    agirlik = dict((n.id, w) for n, w, _r in store.neighbours_with_reasons(a.id))[b.id]
-    assert agirlik > weave.EDGE_FLOOR * 3
+        calendar.advance(days=1)
+        Log(sessions, f"g{i}", calendar).touch(a.id).touch(b.id).close()
+        _night(store, sessions, watermark, calendar)
+    weight = dict((n.id, w) for n, w, _r in store.neighbours_with_reasons(a.id))[b.id]
+    assert weight > weave.EDGE_FLOOR * 3
 
 
-def test_yeniden_orgu_sira_bagimliligini_kiriyor(tmp_path: Path) -> None:
-    """Aynı yüz düğüm ters sırada yazılınca da benzer bir ağ çıkmalı."""
-    govdeler = [f"Saha notu {i}: pompa {i} bakım kaydı ve ölçüm sonucu." % ()
-                for i in range(40)]
+def test_reweaving_breaks_order_dependence(tmp_path: Path) -> None:
+    """The same hundred nodes written in reverse order should yield a similar graph."""
+    bodies = [f"Saha notu {i}: pompa {i} bakım kaydı ve ölçüm sonucu." % ()
+              for i in range(40)]
 
-    def _ag(sira: list[str], ad: str) -> set[tuple[str, str]]:
-        takvim = Takvim(SIMDI)
-        st = open_store(tmp_path / ad, clock=takvim)
-        oturum_dizin = tmp_path / f"{ad}-oturum"
-        oturum_dizin.mkdir(parents=True, exist_ok=True)
+    def _graph(order: list[str], name: str) -> set[tuple[str, str]]:
+        calendar = Calendar(NOW)
+        st = open_store(tmp_path / name, clock=calendar)
+        session_dir = tmp_path / f"{name}-sessions"
+        session_dir.mkdir(parents=True, exist_ok=True)
         try:
-            kimlik = {}
-            for govde in sira:
-                kimlik[govde] = st.remember(govde, kind="fact").id
+            ids = {}
+            for body in order:
+                ids[body] = st.remember(body, kind="fact").id
             for i in range(5):
-                takvim.ilerle(days=1)
-                g = Gunluk(oturum_dizin, f"g{i}", takvim)
-                for govde in sira[i * 8:(i + 1) * 8]:
-                    g.dokun(kimlik[govde])
-                g.kapat()
-                weave.night_pass(st, oturum_dizin, clock=takvim,
-                                 watermark=tmp_path / f"{ad}.json")
-            ters = {v: k for k, v in kimlik.items()}
-            return {tuple(sorted((ters[a], ters[b])))
+                calendar.advance(days=1)
+                g = Log(session_dir, f"g{i}", calendar)
+                for body in order[i * 8:(i + 1) * 8]:
+                    g.touch(ids[body])
+                g.close()
+                weave.night_pass(st, session_dir, clock=calendar,
+                                 watermark=tmp_path / f"{name}.json")
+            inverse = {v: k for k, v in ids.items()}
+            return {tuple(sorted((inverse[a], inverse[b])))
                     for a, b, _w in st.links(limit=5000)}
         finally:
             st.close()
 
-    duz = _ag(govdeler, "duz")
-    ters = _ag(list(reversed(govdeler)), "ters")
-    ortusme = len(duz & ters) / max(len(duz | ters), 1)
-    assert ortusme >= 0.5, f"örtüşme {ortusme:.2f}"
+    forward = _graph(bodies, "forward")
+    backward = _graph(list(reversed(bodies)), "backward")
+    overlap = len(forward & backward) / max(len(forward | backward), 1)
+    assert overlap >= 0.5, f"overlap {overlap:.2f}"
 
 
-# -- öncelik, bütçe, filigran ------------------------------------------
+# -- priority, budget, watermark ---------------------------------------
 
 
-def test_basarisiz_oturum_rutinden_once_tekrar_ediliyor(
-        store, oturumlar, watermark, takvim) -> None:
+def test_failed_session_is_replayed_before_routine(
+        store, sessions, watermark, calendar) -> None:
     a = store.remember("Rutin saha notu.", kind="fact")
     b = store.remember("Göç sırasında veri kayboldu.", kind="fact")
-    Gunluk(oturumlar, "rutin", takvim).dokun(a.id).kapat("basarili")
-    Gunluk(oturumlar, "kotu", takvim).dokun(b.id).arac(
-        "kos", hata=True, ozet="kırıldı").kapat("basarisiz")
+    Log(sessions, "rutin", calendar).touch(a.id).close("basarili")
+    Log(sessions, "kotu", calendar).touch(b.id).tool(
+        "kos", error=True, summary="kırıldı").close("basarisiz")
 
-    sirali = weave.prioritised_sessions(store, oturumlar, clock=takvim, watermark=watermark)
-    assert sirali[0].id == "kotu"
+    ranked = weave.prioritised_sessions(store, sessions, clock=calendar, watermark=watermark)
+    assert ranked[0].id == "kotu"
 
 
-def test_butce_bitince_kalan_oturumlar_devrediyor(
-        store, oturumlar, watermark, takvim) -> None:
-    """Kalanlar atlanmıyor, bir sonraki geceye geçiyor."""
+def test_remaining_sessions_carry_over_when_the_budget_runs_out(
+        store, sessions, watermark, calendar) -> None:
+    """The remainder is not skipped, it moves to the next night."""
     for i in range(6):
         n = store.remember(f"Saha kaydı {i}.", kind="fact")
-        Gunluk(oturumlar, f"s{i}", takvim).dokun(n.id).kapat()
+        Log(sessions, f"s{i}", calendar).touch(n.id).close()
 
-    rapor = _gece(store, oturumlar, watermark, takvim, budget_s=0.0)
-    assert rapor.devreden > 0
-    assert rapor.replayed <= 1          # ilk birim yine de tamamlanır
+    report = _night(store, sessions, watermark, calendar, budget_s=0.0)
+    assert report.devreden > 0
+    assert report.replayed <= 1          # the first unit still completes
 
-    ikinci = _gece(store, oturumlar, watermark, takvim, budget_s=300.0)
-    assert ikinci.replayed >= rapor.devreden - 1
+    second = _night(store, sessions, watermark, calendar, budget_s=300.0)
+    assert second.replayed >= report.devreden - 1
 
 
-def test_islenen_oturum_ikinci_gece_tekrar_edilmiyor(
-        store, oturumlar, watermark, takvim) -> None:
-    """Çift sayım yok: aynı oturum iki kez pay dağıtmamalı."""
+def test_processed_session_is_not_replayed_the_second_night(
+        store, sessions, watermark, calendar) -> None:
+    """No double counting: the same session must not pay out twice."""
     n = store.remember("Kurulum paketi imzalandı.", kind="fact")
-    Gunluk(oturumlar, "s1", takvim).dokun(n.id).kapat("basarili")
-    _gece(store, oturumlar, watermark, takvim)
-    ilk_sicil = store.track_record(n.id)
+    Log(sessions, "s1", calendar).touch(n.id).close("basarili")
+    _night(store, sessions, watermark, calendar)
+    first_record = store.track_record(n.id)
 
-    takvim.ilerle(days=1)
-    ikinci = _gece(store, oturumlar, watermark, takvim)
-    assert ikinci.replayed == 0
-    assert store.track_record(n.id) == ilk_sicil
+    calendar.advance(days=1)
+    second = _night(store, sessions, watermark, calendar)
+    assert second.replayed == 0
+    assert store.track_record(n.id) == first_record
 
 
-def test_filigran_diske_yaziliyor(store, oturumlar, watermark, takvim) -> None:
+def test_watermark_is_written_to_disk(store, sessions, watermark, calendar) -> None:
     n = store.remember("Bir kayıt.", kind="fact")
-    Gunluk(oturumlar, "s1", takvim).dokun(n.id).kapat()
-    _gece(store, oturumlar, watermark, takvim)
+    Log(sessions, "s1", calendar).touch(n.id).close()
+    _night(store, sessions, watermark, calendar)
     status = json.loads(watermark.read_text(encoding="utf-8"))
     assert "s1" in status["islenen"]
 
 
-def test_kapanmamis_oturum_tekrar_edilmiyor(store, oturumlar, watermark, takvim) -> None:
-    """Sonucu olmayan oturum kaynak değil: hâlâ sürüyor olabilir."""
+def test_unclosed_session_is_not_replayed(store, sessions, watermark, calendar) -> None:
+    """A session without an outcome is not a source: it may still be running."""
     n = store.remember("Yarım kalan iş.", kind="fact")
-    Gunluk(oturumlar, "acik", takvim).dokun(n.id)      # kapat() yok
-    rapor = _gece(store, oturumlar, watermark, takvim)
-    assert rapor.replayed == 0
+    Log(sessions, "acik", calendar).touch(n.id)      # no close()
+    report = _night(store, sessions, watermark, calendar)
+    assert report.replayed == 0
 
 
-# -- geriye dönük yakalama ---------------------------------------------
+# -- retroactive capture -----------------------------------------------
 
 
-def test_surprizli_olayin_yanindaki_sakin_kayit_yakalaniyor(
-        store, oturumlar, watermark, takvim) -> None:
-    # Sıradan olmak bir bağlam işi: benzerleri olmayan kayıt sürprizlidir.
-    for metin in ("Sabah kahvesi mutfakta içildi.",
-                  "Sabah kahvesi bahçede içildi.",
-                  "Sabah kahvesi toplantıda içildi."):
-        store.remember(metin, kind="fact")
-    sakin = store.remember("Sabah kahvesi ofiste içildi.", kind="fact")
-    takvim.ilerle(minutes=10)
-    surprizli = store.remember(
+def test_calm_record_next_to_a_surprising_event_is_captured(
+        store, sessions, watermark, calendar) -> None:
+    # Being ordinary is a matter of context: a record with no look-alikes is surprising.
+    for text in ("Sabah kahvesi mutfakta içildi.",
+                 "Sabah kahvesi bahçede içildi.",
+                 "Sabah kahvesi toplantıda içildi."):
+        store.remember(text, kind="fact")
+    calm = store.remember("Sabah kahvesi ofiste içildi.", kind="fact")
+    calendar.advance(minutes=10)
+    surprising = store.remember(
         "Ana pano yandı; bütün saha elektriksiz kaldı ve üretim durdu.",
         kind="lesson")
-    g = Gunluk(oturumlar, "s1", takvim)
-    g.dokun(sakin.id).dokun(surprizli.id).kapat("basarisiz")
-    _gece(store, oturumlar, watermark, takvim)
+    g = Log(sessions, "s1", calendar)
+    g.touch(calm.id).touch(surprising.id).close("basarisiz")
+    _night(store, sessions, watermark, calendar)
 
-    assert any(k.etiket == A.CAPTURED for k in store.use_log(sakin.id))
+    assert any(k.etiket == A.CAPTURED for k in store.use_log(calm.id))
 
 
-def test_uzaktaki_kayit_yakalanmiyor(store, oturumlar, watermark, takvim) -> None:
-    """±60 dakika bir sınır, bir slogan değil."""
-    for metin in ("Yeni kalem kutusu rafa kondu.", "Yeni kalem kutusu çekmeceye kondu.",
-                  "Yeni kalem kutusu dolaba kondu."):
-        store.remember(metin, kind="fact")
-    uzak = store.remember("Yeni kalem kutusu masaya kondu.", kind="fact")
-    takvim.ilerle(minutes=200)
-    surprizli = store.remember(
+def test_distant_record_is_not_captured(store, sessions, watermark, calendar) -> None:
+    """±60 minutes is a boundary, not a slogan."""
+    for text in ("Yeni kalem kutusu rafa kondu.", "Yeni kalem kutusu çekmeceye kondu.",
+                 "Yeni kalem kutusu dolaba kondu."):
+        store.remember(text, kind="fact")
+    distant = store.remember("Yeni kalem kutusu masaya kondu.", kind="fact")
+    calendar.advance(minutes=200)
+    surprising = store.remember(
         "Veritabanı bozuldu; son iki günün ölçümü kayboldu.", kind="lesson")
-    g = Gunluk(oturumlar, "s1", takvim)
-    g.dokun(uzak.id)
-    takvim.ilerle(minutes=200)
-    g.dokun(surprizli.id).kapat("basarisiz")
-    _gece(store, oturumlar, watermark, takvim)
+    g = Log(sessions, "s1", calendar)
+    g.touch(distant.id)
+    calendar.advance(minutes=200)
+    g.touch(surprising.id).close("basarisiz")
+    _night(store, sessions, watermark, calendar)
 
-    assert not any(k.etiket == A.CAPTURED for k in store.use_log(uzak.id))
-
-
-# -- damıtma kapısı (Adım 6 ayrı PR) -----------------------------------
+    assert not any(k.etiket == A.CAPTURED for k in store.use_log(distant.id))
 
 
-def test_model_yoksa_damitma_atlaniyor_ama_gece_kosuyor(
-        store, oturumlar, watermark, takvim) -> None:
+# -- distillation gate (Step 6 is a separate PR) -----------------------
+
+
+def test_without_a_model_distillation_is_skipped_but_the_night_runs(
+        store, sessions, watermark, calendar) -> None:
     a = store.remember("Bir kayıt.", kind="fact")
     b = store.remember("Başka bir kayıt.", kind="fact")
-    Gunluk(oturumlar, "s1", takvim).dokun(a.id).dokun(b.id).kapat()
-    rapor = _gece(store, oturumlar, watermark, takvim, model=None)
-    assert "atlandı" in rapor.distillation
-    assert rapor.replayed == 1          # ilk beş adım yine koştu
+    Log(sessions, "s1", calendar).touch(a.id).touch(b.id).close()
+    report = _night(store, sessions, watermark, calendar, model=None)
+    assert "atlandı" in report.distillation
+    assert report.replayed == 1          # the first five steps still ran
 
 
 # -- ablation ----------------------------------------------------------
 
 
-def test_orgu_kapaliyken_gece_hicbir_kenar_yazmiyor(
-        store, oturumlar, watermark, takvim) -> None:
+def test_night_writes_no_edge_while_weave_is_off(
+        store, sessions, watermark, calendar) -> None:
     from dornick.recall import switches
 
     a = store.remember("Pano etiketleri Brother ile basılıyor.", kind="fact")
     b = store.remember("Ofis bitkileri haftada iki kez sulanıyor.", kind="fact")
-    Gunluk(oturumlar, "s1", takvim).dokun(a.id).dokun(b.id).kapat()
+    Log(sessions, "s1", calendar).touch(a.id).touch(b.id).close()
     with switches.disabled("weave"):
-        rapor = _gece(store, oturumlar, watermark, takvim)
-    assert rapor.replayed == 0
+        report = _night(store, sessions, watermark, calendar)
+    assert report.replayed == 0
     assert b.id not in {n.id for n, _w, _r in store.neighbours_with_reasons(a.id)}

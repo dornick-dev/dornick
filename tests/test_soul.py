@@ -1,8 +1,8 @@
-"""Ruh ve sistem promptu testleri.
+"""Soul and system prompt tests.
 
-En kritik olanı `test_soul_stays_byte_identical_within_a_session`: ruh
-sistem promptunun parçası, oturum ortasında değişirse ondan sonraki tüm
-önbellek düşer. Bu sessizce olur — sadece fatura büyür.
+The most critical one is `test_soul_stays_byte_identical_within_a_session`:
+the soul is part of the system prompt; if it changes mid-session every cache
+after it drops. This happens silently — only the bill grows.
 """
 
 from __future__ import annotations
@@ -28,42 +28,43 @@ def mind(tmp_path: Path) -> Mind:
     return open_mind(tmp_path / "mind", tmp_path / "sessions", "cur")
 
 
-# -- ruhun içeriği -----------------------------------------------------
+# -- the soul's content ------------------------------------------------
 
 
 def test_blank_soul_says_it_is_the_first_meeting(mind: Mind) -> None:
     rendered = mind.soul().render()
     assert "ilk kez" in rendered
-    # Boş zihinde bile ne yapması gerektiğini söylemeli.
+    # Even with a blank mind it must say what to do.
     assert "mind_memory" in rendered
 
 
 def test_blank_soul_wants_to_meet_the_user(mind: Mind) -> None:
-    """İlk karşılaşma kısa ve kendinden emin: tek doğal soru (ad — o da
-    verilmemişse), donanım envanteri ve "nasıl hitap edeyim" gibi meta
-    sorular yok. Bu yönerge ruhta duruyor ki zihin dolunca düşsün."""
+    """The first meeting is short and confident: a single natural question
+    (the name — and only if not given), no hardware inventory and no meta
+    questions like "how should I address you". This directive lives in the
+    soul so it drops out once the mind fills up."""
     rendered = mind.soul().render()
     assert "tanış" in rendered.lower()
-    # Ad tek doğal soru — ama konuşmada zaten verilmişse sorulmaz.
+    # The name is the one natural question — but not asked if already given in the conversation.
     assert "adını" in rendered and "söylemediyse" in rendered
-    # Eksik donanım tanışmada sayılmaz; hitap kalıbı sorulmaz.
+    # Missing hardware is not listed at the first meeting; the form of address is not asked.
     assert "envanteri sayma" in rendered
     assert "hitap kalıbı sorulmaz" in rendered
 
 
 def test_the_prompt_carries_the_senses(tmp_path: Path) -> None:
-    """Ajan mikrofonu, kamerası, sesi olup olmadığını araç çağırmadan
-    bilmeli — sahne çiziyor ama ajan sahneyi görmüyor."""
+    """The agent must know whether it has a microphone, camera, voice without
+    calling a tool — it draws the scene but does not see the scene."""
     config = Config.load(tmp_path)
     config.ensure_dirs()
     prompt = build_prompt(config, build_registry())
     assert "Duyuların:" in prompt.core
-    # Organ etiketi Cümle düzeninde ("Mikrofon"); büyük/küçük harften bağımsız.
+    # The organ label is in sentence case ("Mikrofon"); case-insensitive check.
     assert "mikrofon" in prompt.core.lower()
 
 
 def test_the_prompt_names_saved_cameras(tmp_path: Path) -> None:
-    """Ajan kayıtlı kamera adını araç çağırmadan bilmeli."""
+    """The agent must know the saved camera's name without calling a tool."""
     from dornick import watch
 
     config = Config.load(tmp_path)
@@ -78,9 +79,9 @@ def test_the_prompt_names_saved_cameras(tmp_path: Path) -> None:
 
 
 def test_the_prompt_tells_the_model_its_permission_mode(tmp_path: Path) -> None:
-    """Kip istemde görünmüyordu ve model plan kipinde reddedilen mutasyonu
-    hata sanıp tekrar deniyordu. Varsayılan kip (ask) bile yazılmalı —
-    model hangi kapının arkasında çalıştığını bilmeli."""
+    """The mode did not show in the prompt and the model took a mutation
+    denied in plan mode for an error and retried. Even the default mode (ask)
+    must be written — the model must know which gate it works behind."""
     config = Config.load(tmp_path)
     config.ensure_dirs()
     prompt = build_prompt(config, build_registry())
@@ -88,8 +89,8 @@ def test_the_prompt_tells_the_model_its_permission_mode(tmp_path: Path) -> None:
 
 
 def test_plan_mode_carries_the_planning_contract(tmp_path: Path) -> None:
-    """Plan kipi yalnız bir kapı değil bir çalışma biçimi: keşfet, numaralı
-    bir plan yaz, onayı bekle — kendiliğinden uygulamaya geçme."""
+    """Plan mode is not just a gate but a way of working: explore, write a
+    numbered plan, wait for approval — do not move to execution on your own."""
     config = Config.load(tmp_path)
     config.ensure_dirs()
     config.permissions.mode = "plan"
@@ -99,8 +100,8 @@ def test_plan_mode_carries_the_planning_contract(tmp_path: Path) -> None:
     assert "onayını bekleyerek dur" in prompt.core
     assert "kendiliğinden geçme" in prompt.core
 
-    # Dar pencerede de kip düşmüyor: plan kipinde ne yapacağını bilmeyen
-    # küçük model, kapıya çarpa çarpa turu tüketiyor.
+    # The mode does not drop in the narrow window either: a small model that
+    # does not know what to do in plan mode burns the turn bumping into the gate.
     config.model.context_window = 4096
     lean = build_prompt(config, build_registry())
     assert "PLANLAMAKTIR" in lean.core
@@ -119,7 +120,7 @@ def test_soul_carries_what_it_knows_about_the_user(mind: Mind) -> None:
 
 
 def test_procedures_expose_titles_only(mind: Mind) -> None:
-    """Kademeli açığa çıkarma: detay prompta değil, mind_recall'a."""
+    """Progressive disclosure: the detail goes to mind_recall, not the prompt."""
     mind.remember(
         "Adım adım çok uzun bir yordam metni burada duruyor.",
         kind="procedure",
@@ -170,8 +171,9 @@ def test_persona_file_is_folded_into_the_soul(tmp_path: Path) -> None:
 
 
 def test_reconfigure_swaps_the_window_but_keeps_the_soul(tmp_path: Path, mind: Mind) -> None:
-    """Model değişince (büyük → dar pencere) çekirdek lean'e dönmeli ama
-    ruh aynı kalmalı: oturum ortasında öğrenilen kimlik kaybolmamalı."""
+    """When the model changes (large → narrow window) the core must switch to
+    lean but the soul must stay the same: identity learned mid-session must
+    not be lost."""
     import dataclasses
 
     mind.remember("Kullanıcının adı Fatih.", kind="user")
@@ -185,12 +187,12 @@ def test_reconfigure_swaps_the_window_but_keeps_the_soul(tmp_path: Path, mind: M
     agent.reconfigure(dataclasses.replace(agent.config, model=lean_model))
 
     assert agent.lean
-    # Ruh birebir aynı: kimlik bloğu ve içindeki kullanıcı adı korunuyor.
+    # The soul is byte-identical: the identity block and the user's name inside it are preserved.
     assert agent._system.identity == identity_before
     assert "Fatih" in agent._system.identity
 
 
-# -- sistem promptunun önbellek yapısı ---------------------------------
+# -- the system prompt's cache structure -------------------------------
 
 
 def _agent(tmp_path: Path, mind: Mind, client: FakeClient) -> Agent:
@@ -215,9 +217,9 @@ async def test_system_is_split_into_two_cached_blocks(tmp_path: Path, mind: Mind
     await agent.run("selam")
 
     system = client.seen_system[0]
-    assert len(system) == 2, "core ve identity ayrı bloklar olmalı"
-    assert all(b.get("cache_control") for b in system), "iki blok da önbelleklenmeli"
-    # Ruh core'un ARKASINDA olmalı: önek eşleşmesinde değişen parça sonda durur.
+    assert len(system) == 2, "core and identity must be separate blocks"
+    assert all(b.get("cache_control") for b in system), "both blocks must be cached"
+    # The soul must sit BEHIND the core: in prefix matching the changing part stays at the end.
     assert "Kullanıcı hakkında bir gözlem." in system[1]["text"]
 
 
@@ -239,10 +241,10 @@ async def test_single_block_when_mind_is_absent(tmp_path: Path) -> None:
 
 
 async def test_soul_stays_byte_identical_within_a_session(tmp_path: Path, mind: Mind) -> None:
-    """Oturum ortasında kaydedilen hatıra sistem promptunu DEĞİŞTİRMEMELİ.
+    """A memory saved mid-session must NOT CHANGE the system prompt.
 
-    Değiştirseydi her yeni hatıra o noktadan sonraki tüm önbelleği düşürürdü
-    ve bu hiçbir hata vermeden, sadece fatura olarak görünürdü.
+    If it did, every new memory would drop the whole cache from that point
+    on, and this would show up not as an error but only as a bill.
     """
     client = FakeClient(text_turn("bir"), text_turn("iki"))
     agent = _agent(tmp_path, mind, client)
@@ -251,10 +253,10 @@ async def test_soul_stays_byte_identical_within_a_session(tmp_path: Path, mind: 
     mind.remember("Oturum ortasında öğrenilen yeni bir şey.", kind="user")
     await agent.run("ikinci istek")
 
-    # Oturum-başlığı çağrısının kendi kısa sistemi araya girer: yalnız
-    # ANA istemler kıyaslanır — bayt sözleşmesi onlar için.
-    ana = [s for s in client.seen_system if s and "Dornick" in str(s[0].get("text", ""))[:40]]
-    assert len(ana) >= 2
-    assert ana[0] == ana[1]
-    # Yeni hatıra kaybolmadı; sadece bir sonraki açılışta ruha girecek.
+    # The session-title call's own short system slips in between: only the
+    # MAIN prompts are compared — the byte contract is for them.
+    main = [s for s in client.seen_system if s and "Dornick" in str(s[0].get("text", ""))[:40]]
+    assert len(main) >= 2
+    assert main[0] == main[1]
+    # The new memory is not lost; it just enters the soul at the next open.
     assert "Oturum ortasında" in mind.soul().render()

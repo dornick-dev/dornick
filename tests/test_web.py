@@ -1,8 +1,8 @@
-"""Zihin arayüzü testleri.
+"""Mind interface tests.
 
-Sunucu ayrı bir thread'de dönüyor ve ajanın asyncio döngüsüne dokunmuyor;
-aradaki tek köprü olay günlüğünün abonelik kancası. Buradaki testler o
-köprünün ve graf modelinin doğruluğunu tutuyor.
+The server runs in its own thread and does not touch the agent's asyncio
+loop; the only bridge between them is the event log's subscription hook.
+The tests here hold the correctness of that bridge and of the graph model.
 """
 
 from __future__ import annotations
@@ -26,7 +26,7 @@ def mind(tmp_path: Path) -> Mind:
     return open_mind(tmp_path / "mind", tmp_path / "sessions", "cur")
 
 
-# -- graf modeli -------------------------------------------------------
+# -- graph model -------------------------------------------------------
 
 
 def test_empty_mind_is_just_the_self_node(mind: Mind) -> None:
@@ -36,7 +36,7 @@ def test_empty_mind_is_just_the_self_node(mind: Mind) -> None:
 
 
 def test_graph_is_two_levels_deep(mind: Mind) -> None:
-    """Yüzlerce hatırayı doğrudan merkeze bağlamak yıldız değil yumak üretir."""
+    """Wiring hundreds of memories straight to the centre produces a tangle, not a star."""
     mind.remember("Fatih SCADA tarafında çalışıyor.", kind="user")
     mind.remember("Türkçe konuşuyor.", kind="preference")
 
@@ -46,7 +46,7 @@ def test_graph_is_two_levels_deep(mind: Mind) -> None:
 
     assert "hub:user" in ids and "hub:preference" in ids
     assert ("self", "hub:user") in edges
-    # Yaprak doğrudan merkeze bağlanmamalı.
+    # A leaf must not attach directly to the centre.
     assert not any(s == "self" and not t.startswith("hub:") for s, t in edges)
 
 
@@ -88,18 +88,18 @@ def test_stats_reflect_the_mind(mind: Mind) -> None:
     assert stats["goals"] == 1
 
 
-# -- olay yayını -------------------------------------------------------
+# -- event broadcast ---------------------------------------------------
 
 
 def test_only_interesting_notes_are_streamed() -> None:
-    log = EventLog(Path("/dev/null")) if False else None  # tip ipucu için
+    log = EventLog(Path("/dev/null")) if False else None  # for the type hint
     assert _payload(_note("tool_start", tool="shell")) is not None
-    # Oturum başlangıcı arayüzü kalabalıklaştırmaktan başka işe yaramaz.
+    # A session start does nothing but clutter the UI.
     assert _payload(_note("session_start")) is None
 
 
 def test_tool_result_turns_are_not_shown_as_user_messages() -> None:
-    """Araç sonucu teknik olarak kullanıcı turudur; sohbette öyle görünmemeli."""
+    """A tool result is technically a user turn; it must not look like one in the chat."""
     from dornick.events import Event, utcnow
 
     event = Event(
@@ -138,11 +138,11 @@ def test_unregistered_client_stops_receiving() -> None:
 
 
 def test_shared_hub_receives_log_events(tmp_path: Path, mind: Mind) -> None:
-    """Dışarıdan verilen hub günlüğe de abone olmalı.
+    """An injected hub must subscribe to the log as well.
 
-    Sunucu kendi hub'ını kurup sonradan değiştirdiğinde abonelik eski hub'da
-    kalıyordu: asistan metni geliyor, kullanıcı mesajı ve araç olayları
-    sessizce kayboluyordu. Hiçbir hata vermiyordu.
+    When the server built its own hub and swapped it later, the
+    subscription stayed on the old hub: the assistant text arrived, the
+    user message and the tool events silently vanished. No error at all.
     """
     hub = Hub()
     channel = hub.register()
@@ -159,7 +159,7 @@ def test_shared_hub_receives_log_events(tmp_path: Path, mind: Mind) -> None:
 
 
 def test_listener_failure_does_not_break_the_log(tmp_path: Path) -> None:
-    """Arayüz çökerse ajan çalışmaya devam etmeli."""
+    """If the UI crashes the agent must keep working."""
     log = EventLog(tmp_path / "s.jsonl")
     log.subscribe(lambda _: (_ for _ in ()).throw(RuntimeError("arayüz öldü")))
 
@@ -181,7 +181,7 @@ def test_unsubscribe_detaches(tmp_path: Path) -> None:
     log.close()
 
 
-# -- uçtan uca ---------------------------------------------------------
+# -- end to end --------------------------------------------------------
 
 
 def test_server_serves_page_and_graph(tmp_path: Path, mind: Mind) -> None:
@@ -197,8 +197,8 @@ def test_server_serves_page_and_graph(tmp_path: Path, mind: Mind) -> None:
     try:
         page = fetch("")
         assert "dornick" in page
-        # Sayfa varlıklara referans veriyorsa o varlıklar da servis edilmeli;
-        # biri eksikse arayüz sessizce boş açılır.
+        # If the page references assets those assets must be served too;
+        # with one missing the UI silently opens empty.
         for asset in ("app.css", "app.js", "scene.js"):
             assert asset in page
             assert fetch(asset)
@@ -213,13 +213,14 @@ def test_server_serves_page_and_graph(tmp_path: Path, mind: Mind) -> None:
 
 
 def test_install_language_is_served_from_setup_json(tmp_path: Path, mind: Mind) -> None:
-    """Kurulum sihirbazının dil seçimi /api/dil'den okunuyor.
+    """The setup wizard's language choice is read from /api/dil.
 
-    localStorage'a kurulumdan yazılamaz; sihirbaz çalışma alanına
-    setup.json bırakır ve dil.js ilk açılışta buradan okur. Eski
-    sürümlerin bıraktığı kurulum.json da tanınır — güncelleme dil
-    seçimini kaybettirmemeli. Dosya yoksa MAKİNENİN diline düşülür
-    (varsayılan İngilizce, Türkçe makinede Türkçe — 02.09).
+    localStorage cannot be written from the installer; the wizard drops
+    setup.json into the workspace and dil.js reads it from here on first
+    launch. The kurulum.json left by older versions is recognised too — an
+    update must not lose the language choice. Without the file it falls
+    back to the MACHINE's language (default English, Turkish on a Turkish
+    machine — 02.09).
     """
     from dornick.config import Config
 
@@ -234,19 +235,19 @@ def test_install_language_is_served_from_setup_json(tmp_path: Path, mind: Mind) 
             return json.loads(response.read().decode("utf-8"))
 
     try:
-        # Sihirbaz dosyası yok: makine dili (bu makinede ne ise) dönmeli —
-        # boş DEĞİL, çünkü arayüzün bir varsayılana ihtiyacı var.
+        # No wizard file: the machine language (whatever it is on this
+        # machine) must come back — NOT empty, because the UI needs a default.
         assert fetch()["dil"] in ("tr", "en")
-        # Eski ad tek başına: geriye uyumluluk (mevcut kurulumlar).
+        # The old name on its own: backwards compatibility (existing installs).
         (tmp_path / "kurulum.json").write_text('{"dil": "en"}', encoding="utf-8")
         assert fetch() == {"dil": "en"}
-        # Yeni ad öncelikli.
+        # The new name takes precedence.
         (tmp_path / "setup.json").write_text('{"dil": "tr"}', encoding="utf-8")
         assert fetch() == {"dil": "tr"}
-        # Bozuk yeni dosya sunucuyu düşürmemeli; eski ada düşülür.
+        # A broken new file must not bring the server down; falls back to the old name.
         (tmp_path / "setup.json").write_text("{bozuk", encoding="utf-8")
         assert fetch() == {"dil": "en"}
-        # Tek başına bozuk dosya: sessizce makine diline dönülür.
+        # A broken file on its own: silently back to the machine language.
         (tmp_path / "kurulum.json").unlink()
         assert fetch()["dil"] in ("tr", "en")
     finally:
@@ -255,7 +256,7 @@ def test_install_language_is_served_from_setup_json(tmp_path: Path, mind: Mind) 
 
 
 def test_unlisted_paths_are_not_served(tmp_path: Path, mind: Mind) -> None:
-    """Yolu istekten türetmek dizin dışına çıkma açığının klasik yolu."""
+    """Deriving the path from the request is the classic road to a directory-traversal hole."""
     log = EventLog(tmp_path / "s.jsonl")
     server = MindServer(mind, log, port=0)
     server.start()
@@ -270,7 +271,7 @@ def test_unlisted_paths_are_not_served(tmp_path: Path, mind: Mind) -> None:
 
 
 def test_server_binds_loopback_only(tmp_path: Path, mind: Mind) -> None:
-    """Burada ajanın belleği var; dışarı açılacak bir yüzey değil."""
+    """The agent's memory lives here; not a surface to expose outward."""
     log = EventLog(tmp_path / "s.jsonl")
     server = MindServer(mind, log, port=0)
     try:
@@ -287,10 +288,10 @@ def _note(kind: str, **meta: object):
 
 
 def test_event_stream_is_framed_so_it_is_not_buffered(tmp_path: Path, mind: Mind) -> None:
-    """HTTP/1.1'de govdenin sonu Content-Length, chunked ya da baglantinin
-    kapanmasiyla belirlenir. Uzunluk bilinmedigi icin "keep-alive" demek
-    govdeyi cercevesiz birakiyordu: tarayici akisi tampona aliyor ve cevap
-    toptan geliyordu.
+    """In HTTP/1.1 the end of the body is determined by Content-Length,
+    chunked, or the connection closing. Since the length is unknown, saying
+    "keep-alive" left the body unframed: the browser buffered the stream and
+    the reply arrived in bulk.
     """
     import http.client
 
@@ -308,7 +309,7 @@ def test_event_stream_is_framed_so_it_is_not_buffered(tmp_path: Path, mind: Mind
         assert response.getheader("Connection") == "close"
         assert response.getheader("Content-Length") is None
 
-        # Olay yayinlandiginda hemen okunabilmeli.
+        # When an event is published it must be readable at once.
         log.note("tool_start", tool="shell")
         assert b"tool_start" in response.readline() + response.readline()
         conn.close()
@@ -318,13 +319,13 @@ def test_event_stream_is_framed_so_it_is_not_buffered(tmp_path: Path, mind: Mind
 
 
 def test_a_raw_body_is_not_consumed_twice(tmp_path: Path, mind: Mind) -> None:
-    """Gövde bir kez okunuyor.
+    """The body is read once.
 
-    Önce JSON diye ayrıştırıp sonra ham hali tekrar okumaya kalkmak istekleri
-    sonsuza kadar askıda bırakıyordu: ses isteğinin gövdesi JSON değil ham
-    ses ve ikinci okuma hiç gelmeyecek baytları bekliyor. O istek bir
-    thread'i tutunca tarayıcının bağlantı kotası doluyor ve mikrofon,
-    ayarlar, sohbet — hepsi kilitleniyordu.
+    Parsing it as JSON first and then trying to read the raw form again
+    left requests hanging forever: the audio request's body is raw audio,
+    not JSON, and the second read waits for bytes that will never come.
+    Once that request held a thread the browser's connection quota filled
+    and the microphone, settings, chat — everything locked up.
     """
     import http.client
 
@@ -339,15 +340,15 @@ def test_a_raw_body_is_not_consumed_twice(tmp_path: Path, mind: Mind) -> None:
 
     try:
         conn = http.client.HTTPConnection(host, int(port), timeout=8)
-        # JSON olmayan bir gövde: ses isteğinin taşıdığı şeyin aynısı.
+        # A non-JSON body: the same thing the audio request carries.
         conn.request("POST", "/api/hear", body=b"\x1aE\xdf\xa3 ham ses",
                      headers={"Content-Type": "audio/webm"})
-        # Askıda kalırsa burada timeout patlar; hangi durum kodu döndüğü
-        # önemli değil, **döndüğü** önemli.
+        # If it hangs the timeout blows here; which status code comes back
+        # does not matter, that it **comes back** does.
         assert conn.getresponse().status in (409, 400, 501, 503)
         conn.close()
 
-        # Sunucu hâlâ ayakta: takılan bir istek ötekileri de düşürüyordu.
+        # The server is still up: a stuck request used to bring the others down too.
         conn = http.client.HTTPConnection(host, int(port), timeout=8)
         conn.request("GET", "/api/graph")
         assert conn.getresponse().status == 200
@@ -360,11 +361,12 @@ def test_a_raw_body_is_not_consumed_twice(tmp_path: Path, mind: Mind) -> None:
 def test_turkish_error_messages_do_not_kill_the_connection(
     tmp_path: Path, mind: Mind
 ) -> None:
-    """HTTP durum satırı latin-1 olmak zorunda.
+    """The HTTP status line must be latin-1.
 
-    "Sesli komut kapalı" gönderince stdlib UnicodeEncodeError atıyor,
-    handler ölüyor ve bağlantı **cevapsız** kapanıyordu. İstemci tarafında
-    bu "hiçbir şey olmuyor" gibi görünüyor — hata mesajı bile gelmiyor.
+    Sending "Sesli komut kapalı" made the stdlib raise UnicodeEncodeError,
+    the handler died and the connection closed **without a reply**. On the
+    client side this looks like "nothing happens" — not even an error
+    message arrives.
     """
     import http.client
 
@@ -379,17 +381,17 @@ def test_turkish_error_messages_do_not_kill_the_connection(
 
     try:
         conn = http.client.HTTPConnection(host, int(port), timeout=8)
-        # Sesli komut kapalı: Türkçe bir hata mesajı dönmeli.
+        # Voice command off: a Turkish error message must come back.
         conn.request("POST", "/api/hear", body=b"ham ses",
                      headers={"Content-Type": "audio/webm"})
         answer = conn.getresponse()
 
         assert answer.status == 409
-        # Gerçek metin gövdede: durum satırına sığmıyor.
+        # The real text is in the body: it does not fit on the status line.
         assert "kapalı" in answer.read().decode("utf-8", "replace")
         conn.close()
 
-        # Sunucu ayakta kaldı: çöken bir handler bağlantıyı düşürüyordu.
+        # The server stayed up: a crashing handler used to drop the connection.
         conn = http.client.HTTPConnection(host, int(port), timeout=8)
         conn.request("GET", "/api/graph")
         assert conn.getresponse().status == 200
@@ -400,8 +402,8 @@ def test_turkish_error_messages_do_not_kill_the_connection(
 
 
 def test_the_body_is_served_even_before_anything_is_open(tmp_path: Path, mind: Mind) -> None:
-    """Sahne organları buradan okuyor. Uç nokta cevap vermezse ekranda
-    hiçbir aygıt görünmüyor — ajan gövdesiz duruyor."""
+    """The scene organs read from here. If the endpoint does not answer, no
+    device shows on screen — the agent stands bodiless."""
     from dornick.config import Config
 
     log = EventLog(tmp_path / "s.jsonl")
@@ -422,8 +424,8 @@ def test_the_body_is_served_even_before_anything_is_open(tmp_path: Path, mind: M
 
 
 def test_the_body_survives_a_server_without_settings(tmp_path: Path, mind: Mind) -> None:
-    """Ayarsız çalışan bir önizlemede sayfa yine açılmalı: eksik yapı
-    hata değil boş liste."""
+    """In a preview running without settings the page must still open: a
+    missing structure is an empty list, not an error."""
     log = EventLog(tmp_path / "s.jsonl")
     server = MindServer(mind, log, port=0)
     server.start()
@@ -438,14 +440,14 @@ def test_the_body_survives_a_server_without_settings(tmp_path: Path, mind: Mind)
     assert body == {"organs": []}
 
 
-# -- sürüm görünürlüğü -------------------------------------------------
+# -- version visibility ------------------------------------------------
 
 
-def test_bridge_snapshot_surumu_tasir() -> None:
-    """/api/state'in "surum" alanı: üst bardaki marka ipucu buradan.
+def test_bridge_snapshot_carries_the_version() -> None:
+    """/api/state's "surum" field: the brand hint in the top bar comes from here.
 
-    Ajan hiç açılmamışken bile sürüm görünmeli — sahada "hangi kopya
-    açık?" sorusu tam da bozuk açılışlarda soruluyor.
+    The version must be visible even when the agent never started — in the
+    field, "which copy is open?" is asked exactly on broken launches.
     """
     import asyncio
 
@@ -461,10 +463,10 @@ def test_bridge_snapshot_surumu_tasir() -> None:
         loop.close()
 
 
-def test_surum_denetimi_ucu_agsiz_calisir(
+def test_the_version_check_endpoint_works_without_network(
     tmp_path: Path, mind: Mind, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """POST /api/surum sunucu tarafında denetler; test ağa hiç çıkmaz."""
+    """POST /api/surum checks on the server side; the test never goes to the network."""
     from dornick.web import server as server_module
 
     monkeypatch.setattr(
@@ -476,25 +478,25 @@ def test_surum_denetimi_ucu_agsiz_calisir(
     server = MindServer(mind, log, port=0)
     server.start()
     try:
-        istek = urllib.request.Request(
+        request = urllib.request.Request(
             server.url + "api/surum", data=b"{}",
             headers={"Content-Type": "application/json"}, method="POST")
-        with urllib.request.urlopen(istek, timeout=5) as cevap:
-            veri = json.loads(cevap.read().decode("utf-8"))
-        assert veri["yeni"] == "0.3.0" and veri["url"] == "https://ornek/yayin"
+        with urllib.request.urlopen(request, timeout=5) as response:
+            data = json.loads(response.read().decode("utf-8"))
+        assert data["yeni"] == "0.3.0" and data["url"] == "https://ornek/yayin"
     finally:
         server.stop()
         log.close()
 
 
-# -- ham dosya ucu (/api/raw) ------------------------------------------
+# -- raw file endpoint (/api/raw) --------------------------------------
 #
-# `/api/files` metin döndürüyor: bir PNG oradan yalnızca "ikili dosya"
-# olarak geliyordu ve görüntüleyici görseli gösteremiyordu. Bu uç ham
-# baytları veriyor — ama aynı kapıdan: yol doğrulanıyor, tür uzantıdan
-# ve kısa bir listeden veriliyor.
+# `/api/files` returns text: a PNG came from there only as a "binary file"
+# and the viewer could not show the image. This endpoint gives the raw
+# bytes — but through the same gate: the path is verified, the type is
+# given by extension and from a short list.
 
-# 1x1 saydam PNG (gerçek bayt, sahte değil): tür ve uzunluk sınanabilsin.
+# 1x1 transparent PNG (real bytes, not fake): so type and length can be tested.
 TINY_PNG = bytes.fromhex(
     "89504e470d0a1a0a0000000d494844520000000100000001080600000"
     "01f15c4890000000a49444154789c6300010000050001"
@@ -503,7 +505,7 @@ TINY_PNG = bytes.fromhex(
 
 
 def test_raw_serves_real_bytes_with_a_declared_type(tmp_path: Path, mind: Mind) -> None:
-    """Görüntüleyicinin bir görseli GERÇEKTEN açabilmesi buna bağlı."""
+    """Whether the viewer can REALLY open an image depends on this."""
     from dornick.config import Config
 
     config = Config.load(tmp_path)
@@ -514,20 +516,20 @@ def test_raw_serves_real_bytes_with_a_declared_type(tmp_path: Path, mind: Mind) 
     server = MindServer(mind, log, port=0, config=config)
     server.start()
     try:
-        with urllib.request.urlopen(server.url + "api/raw?path=kare.png", timeout=5) as cevap:
-            gövde = cevap.read()
-            assert cevap.headers["Content-Type"] == "image/png"
-            # Tarayıcı içeriğe bakıp kendi türünü uydurmasın.
-            assert cevap.headers["X-Content-Type-Options"] == "nosniff"
-        assert gövde == TINY_PNG
+        with urllib.request.urlopen(server.url + "api/raw?path=kare.png", timeout=5) as response:
+            body = response.read()
+            assert response.headers["Content-Type"] == "image/png"
+            # The browser must not look at the content and invent its own type.
+            assert response.headers["X-Content-Type-Options"] == "nosniff"
+        assert body == TINY_PNG
     finally:
         server.stop()
         log.close()
 
 
 def test_raw_refuses_to_leave_the_workspace(tmp_path: Path, mind: Mind) -> None:
-    """Yolu istekten türetmek dizin dışına çıkma açığının klasik yolu:
-    `..` ile yukarı çıkan bir istek dosyayı ALMAMALI."""
+    """Deriving the path from the request is the classic road to a
+    directory-traversal hole: a request climbing up with `..` must NOT get the file."""
     from dornick.config import Config
 
     workspace = tmp_path / "ws"
@@ -543,7 +545,7 @@ def test_raw_refuses_to_leave_the_workspace(tmp_path: Path, mind: Mind) -> None:
         with pytest.raises(urllib.error.HTTPError) as caught:
             urllib.request.urlopen(server.url + "api/raw?path=../sir.txt", timeout=5)
         assert caught.value.code == 403
-        # Olmayan dosya 404: "yok" ile "yasak" ayrı cevaplar.
+        # A missing file is 404: "absent" and "forbidden" are separate answers.
         with pytest.raises(urllib.error.HTTPError) as missing:
             urllib.request.urlopen(server.url + "api/raw?path=yok.png", timeout=5)
         assert missing.value.code == 404
@@ -553,9 +555,9 @@ def test_raw_refuses_to_leave_the_workspace(tmp_path: Path, mind: Mind) -> None:
 
 
 def test_raw_never_serves_a_workspace_file_as_html(tmp_path: Path, mind: Mind) -> None:
-    """Ajanın yazdığı bir sayfayı ANA kökte html olarak servis etmek, o
-    sayfaya programın DOM'unu ve `/api` uçlarını açardı. Bilinmeyen tür
-    indirilir, yorumlanmaz."""
+    """Serving a page the agent wrote as html on the MAIN origin would expose
+    the program's DOM and the `/api` endpoints to that page. An unknown
+    type is downloaded, not interpreted."""
     from dornick.config import Config
 
     config = Config.load(tmp_path)
@@ -566,15 +568,15 @@ def test_raw_never_serves_a_workspace_file_as_html(tmp_path: Path, mind: Mind) -
     server = MindServer(mind, log, port=0, config=config)
     server.start()
     try:
-        with urllib.request.urlopen(server.url + "api/raw?path=sayfa.html", timeout=5) as cevap:
-            assert cevap.headers["Content-Type"] == "application/octet-stream"
+        with urllib.request.urlopen(server.url + "api/raw?path=sayfa.html", timeout=5) as response:
+            assert response.headers["Content-Type"] == "application/octet-stream"
     finally:
         server.stop()
         log.close()
 
 
 def test_raw_supports_ranges_so_media_can_seek(tmp_path: Path, mind: Mind) -> None:
-    """Ses/video oynatıcıları ileri sarmak için menzil istiyor."""
+    """Audio/video players ask for a range in order to seek."""
     import http.client
 
     from dornick.config import Config
@@ -590,24 +592,24 @@ def test_raw_supports_ranges_so_media_can_seek(tmp_path: Path, mind: Mind) -> No
         host, port = server.url.split("//")[1].rstrip("/").split(":")
         conn = http.client.HTTPConnection(host, int(port), timeout=5)
         conn.request("GET", "/api/raw?path=ses.mp3", headers={"Range": "bytes=10-19"})
-        cevap = conn.getresponse()
-        gövde = cevap.read()
-        assert cevap.status == 206
-        assert cevap.getheader("Content-Range") == "bytes 10-19/256"
-        assert gövde == bytes(range(10, 20))
+        response = conn.getresponse()
+        body = response.read()
+        assert response.status == 206
+        assert response.getheader("Content-Range") == "bytes 10-19/256"
+        assert body == bytes(range(10, 20))
         conn.close()
     finally:
         server.stop()
         log.close()
 
 
-# -- oturum kimliği ve döküm araması (uçlar) ---------------------------
+# -- session identity and transcript search (endpoints) ----------------
 
 
-def _oturum_yaz(sessions_dir: Path, sid: str, turlar: list[tuple[str, str]]) -> None:
+def _write_session(sessions_dir: Path, sid: str, turns: list[tuple[str, str]]) -> None:
     sessions_dir.mkdir(parents=True, exist_ok=True)
     lines = [json.dumps({"kind": "note", "name": "session_start"})]
-    for role, text in turlar:
+    for role, text in turns:
         lines.append(json.dumps({
             "kind": "message", "role": role,
             "content": [{"type": "text", "text": text}],
@@ -616,55 +618,55 @@ def _oturum_yaz(sessions_dir: Path, sid: str, turlar: list[tuple[str, str]]) -> 
 
 
 def test_naming_a_session_reaches_the_listing(tmp_path: Path, mind: Mind) -> None:
-    """Ad verilmiş konuşma listede o adla görünmeli; verilmemişse başlık
-    yine konuşmanın ilk sözünden türetiliyor."""
-    _oturum_yaz(mind.sessions_dir, "20260101T000000Z",
-                [("user", "Kayseri OSB için SCADA teklifi hazırla")])
+    """A named conversation must show in the list under that name; unnamed,
+    the title is still derived from the conversation's first utterance."""
+    _write_session(mind.sessions_dir, "20260101T000000Z",
+                   [("user", "Kayseri OSB için SCADA teklifi hazırla")])
 
     log = EventLog(tmp_path / "s.jsonl")
     server = MindServer(mind, log, port=0)
     server.start()
     try:
-        def liste() -> dict:
-            with urllib.request.urlopen(server.url + "api/sessions", timeout=5) as cevap:
-                return json.loads(cevap.read().decode("utf-8"))
+        def listing() -> dict:
+            with urllib.request.urlopen(server.url + "api/sessions", timeout=5) as response:
+                return json.loads(response.read().decode("utf-8"))
 
-        ilk = liste()["sessions"][0]
-        assert not ilk["named"] and "SCADA" in ilk["title"]
+        first = listing()["sessions"][0]
+        assert not first["named"] and "SCADA" in first["title"]
 
-        istek = urllib.request.Request(
+        request = urllib.request.Request(
             server.url + "api/session/meta",
             data=json.dumps({"id": "20260101T000000Z", "ad": "Kayseri teklifi",
                              "etiketler": ["scada", "teklif"]}).encode("utf-8"),
             headers={"Content-Type": "application/json"}, method="POST")
-        with urllib.request.urlopen(istek, timeout=5) as cevap:
-            assert json.loads(cevap.read().decode("utf-8"))["ok"] is True
+        with urllib.request.urlopen(request, timeout=5) as response:
+            assert json.loads(response.read().decode("utf-8"))["ok"] is True
 
-        veri = liste()
-        satir = veri["sessions"][0]
-        assert satir["title"] == "Kayseri teklifi" and satir["named"]
-        assert satir["tags"] == ["scada", "teklif"]
-        # Panelin süzgeç listesi: var olan etiketler.
-        assert veri["tags"] == ["scada", "teklif"]
+        data = listing()
+        row = data["sessions"][0]
+        assert row["title"] == "Kayseri teklifi" and row["named"]
+        assert row["tags"] == ["scada", "teklif"]
+        # The panel's filter list: the existing tags.
+        assert data["tags"] == ["scada", "teklif"]
     finally:
         server.stop()
         log.close()
 
 
 def test_the_meta_endpoint_refuses_a_path_shaped_id(tmp_path: Path, mind: Mind) -> None:
-    """Kimlik dosya adına dönüşüyor: `..` ile yukarı çıkan bir istek
-    dizin dışına yazamamalı."""
+    """The id turns into a file name: a request climbing up with `..` must
+    not be able to write outside the directory."""
     log = EventLog(tmp_path / "s.jsonl")
     server = MindServer(mind, log, port=0)
     server.start()
     try:
-        istek = urllib.request.Request(
+        request = urllib.request.Request(
             server.url + "api/session/meta",
             data=json.dumps({"id": "../gizli", "ad": "x"}).encode("utf-8"),
             headers={"Content-Type": "application/json"}, method="POST")
-        with urllib.request.urlopen(istek, timeout=5) as cevap:
-            veri = json.loads(cevap.read().decode("utf-8"))
-        assert veri["ok"] is False
+        with urllib.request.urlopen(request, timeout=5) as response:
+            data = json.loads(response.read().decode("utf-8"))
+        assert data["ok"] is False
     finally:
         server.stop()
         log.close()
@@ -672,96 +674,96 @@ def test_the_meta_endpoint_refuses_a_path_shaped_id(tmp_path: Path, mind: Mind) 
 
 def test_archiving_a_session_drops_it_from_the_listing(
         tmp_path: Path, mind: Mind) -> None:
-    """Sağ tık Arşivle: günlük .arsiv'e taşınır, liste onu görmez.
-    Kimlik dosya adına dönüşüyor — `..` ile dışarı çıkılamaz."""
-    _oturum_yaz(mind.sessions_dir, "20260101T000000Z",
-                [("user", "pompa bakımı"), ("assistant", "tamam")])
+    """Right-click Archive: the log moves to .arsiv, the list no longer sees
+    it. The id turns into a file name — no escaping with `..`."""
+    _write_session(mind.sessions_dir, "20260101T000000Z",
+                   [("user", "pompa bakımı"), ("assistant", "tamam")])
 
     log = EventLog(tmp_path / "s.jsonl")
     server = MindServer(mind, log, port=0)
     server.start()
     try:
-        istek = urllib.request.Request(
+        request = urllib.request.Request(
             server.url + "api/session/archive",
             data=json.dumps({"id": "20260101T000000Z"}).encode("utf-8"),
             headers={"Content-Type": "application/json"}, method="POST")
-        with urllib.request.urlopen(istek, timeout=5) as cevap:
-            assert json.loads(cevap.read().decode("utf-8"))["ok"] is True
+        with urllib.request.urlopen(request, timeout=5) as response:
+            assert json.loads(response.read().decode("utf-8"))["ok"] is True
 
-        with urllib.request.urlopen(server.url + "api/sessions", timeout=5) as cevap:
-            ids = [s["id"] for s in json.loads(cevap.read().decode("utf-8"))["sessions"]]
+        with urllib.request.urlopen(server.url + "api/sessions", timeout=5) as response:
+            ids = [s["id"] for s in json.loads(response.read().decode("utf-8"))["sessions"]]
         assert "20260101T000000Z" not in ids
         assert (mind.sessions_dir / ".arsiv" / "20260101T000000Z.jsonl").is_file()
 
-        kotu = urllib.request.Request(
+        bad = urllib.request.Request(
             server.url + "api/session/archive",
             data=json.dumps({"id": "../gizli"}).encode("utf-8"),
             headers={"Content-Type": "application/json"}, method="POST")
-        with urllib.request.urlopen(kotu, timeout=5) as cevap:
-            assert json.loads(cevap.read().decode("utf-8"))["ok"] is False
+        with urllib.request.urlopen(bad, timeout=5) as response:
+            assert json.loads(response.read().decode("utf-8"))["ok"] is False
     finally:
         server.stop()
         log.close()
 
 
 def test_the_listing_searches_inside_transcripts(tmp_path: Path, mind: Mind) -> None:
-    """Arama bugüne kadar yalnızca başlığı süzüyordu; söz konuşmanın
-    ortasında geçiyorsa liste onu bulamıyordu."""
-    _oturum_yaz(mind.sessions_dir, "20260101T000000Z",
-                [("user", "selam"), ("assistant", "Modbus kayıtlarını okudum.")])
-    _oturum_yaz(mind.sessions_dir, "20260102T000000Z", [("user", "hava nasıl")])
+    """Search used to filter only the title; if the word occurred in the
+    middle of the conversation the list could not find it."""
+    _write_session(mind.sessions_dir, "20260101T000000Z",
+                   [("user", "selam"), ("assistant", "Modbus kayıtlarını okudum.")])
+    _write_session(mind.sessions_dir, "20260102T000000Z", [("user", "hava nasıl")])
 
     log = EventLog(tmp_path / "s.jsonl")
     server = MindServer(mind, log, port=0)
     server.start()
     try:
-        with urllib.request.urlopen(server.url + "api/sessions?ara=modbus", timeout=5) as cevap:
-            veri = json.loads(cevap.read().decode("utf-8"))
-        assert veri["searched"] is True
-        eslesen = {s["id"]: s["hits"] for s in veri["sessions"] if s["hits"]}
-        assert set(eslesen) == {"20260101T000000Z"}
-        assert "Modbus" in eslesen["20260101T000000Z"][0]["text"]
+        with urllib.request.urlopen(server.url + "api/sessions?ara=modbus", timeout=5) as response:
+            data = json.loads(response.read().decode("utf-8"))
+        assert data["searched"] is True
+        matched = {s["id"]: s["hits"] for s in data["sessions"] if s["hits"]}
+        assert set(matched) == {"20260101T000000Z"}
+        assert "Modbus" in matched["20260101T000000Z"][0]["text"]
 
-        # Aramasız istek eskisi gibi: eşleşme alanı boş, liste tam.
-        with urllib.request.urlopen(server.url + "api/sessions", timeout=5) as cevap:
-            duz = json.loads(cevap.read().decode("utf-8"))
-        assert duz["searched"] is False
-        assert all(not s["hits"] for s in duz["sessions"])
-        assert len(duz["sessions"]) == 2
+        # A request without a search behaves as before: the hits field is empty, the list is full.
+        with urllib.request.urlopen(server.url + "api/sessions", timeout=5) as response:
+            plain = json.loads(response.read().decode("utf-8"))
+        assert plain["searched"] is False
+        assert all(not s["hits"] for s in plain["sessions"])
+        assert len(plain["sessions"]) == 2
     finally:
         server.stop()
         log.close()
 
 
-# -- klasör gezgini (proje seçimi) -------------------------------------
+# -- folder explorer (project selection) -------------------------------
 #
-# `/api/files` çalışma alanının içinde kalıyor; proje tam olarak onun
-# DIŞINDA bir yer ve native bir klasör diyaloğu kullanılamıyor.
+# `/api/files` stays inside the workspace; the project is exactly a place
+# OUTSIDE it and a native folder dialog cannot be used.
 
 
 def test_the_browser_lists_folders_anywhere_but_only_folders(
     tmp_path: Path, mind: Mind
 ) -> None:
-    kok = tmp_path / "kod"
-    (kok / "proje" / "src").mkdir(parents=True)
-    (kok / ".gizli").mkdir()
-    (kok / "not.txt").write_text("x", encoding="utf-8")
+    root = tmp_path / "kod"
+    (root / "proje" / "src").mkdir(parents=True)
+    (root / ".gizli").mkdir()
+    (root / "not.txt").write_text("x", encoding="utf-8")
 
     log = EventLog(tmp_path / "s.jsonl")
     server = MindServer(mind, log, port=0)
     server.start()
     try:
-        adres = server.url + "api/gozat?yol=" + urllib.parse.quote(str(kok))
-        with urllib.request.urlopen(adres, timeout=5) as cevap:
-            veri = json.loads(cevap.read().decode("utf-8"))
+        address = server.url + "api/gozat?yol=" + urllib.parse.quote(str(root))
+        with urllib.request.urlopen(address, timeout=5) as response:
+            data = json.loads(response.read().decode("utf-8"))
 
-        adlar = [k["ad"] for k in veri["klasorler"]]
-        assert adlar == ["proje"]          # yalnız klasörler, gizliler elenmiş
-        assert veri["dosya"] == 1          # dosyalar yalnızca SAYI olarak
-        assert veri["ust"] == str(tmp_path)
-        assert veri["engel"] == ""         # seçilebilir
-        # Dosya adları ya da içerikleri hiç dönmüyor.
-        assert "not.txt" not in json.dumps(veri)
+        names = [k["ad"] for k in data["klasorler"]]
+        assert names == ["proje"]          # folders only, hidden ones weeded out
+        assert data["dosya"] == 1          # files only as a COUNT
+        assert data["ust"] == str(tmp_path)
+        assert data["engel"] == ""         # selectable
+        # File names or contents never come back.
+        assert "not.txt" not in json.dumps(data)
     finally:
         server.stop()
         log.close()
@@ -770,26 +772,26 @@ def test_the_browser_lists_folders_anywhere_but_only_folders(
 def test_the_browser_says_when_a_folder_cannot_be_a_project(
     tmp_path: Path, mind: Mind
 ) -> None:
-    """Kullanıcı KAYDETMEDEN önce görmeli: seçim ekranında engel yazıyor."""
+    """The user must see it BEFORE SAVING: the block is written on the selection screen."""
     log = EventLog(tmp_path / "s.jsonl")
     server = MindServer(mind, log, port=0)
     server.start()
     try:
-        kok = Path(tmp_path.anchor or "/")
-        adres = server.url + "api/gozat?yol=" + urllib.parse.quote(str(kok))
-        with urllib.request.urlopen(adres, timeout=5) as cevap:
-            veri = json.loads(cevap.read().decode("utf-8"))
-        assert veri["engel"]
+        root = Path(tmp_path.anchor or "/")
+        address = server.url + "api/gozat?yol=" + urllib.parse.quote(str(root))
+        with urllib.request.urlopen(address, timeout=5) as response:
+            data = json.loads(response.read().decode("utf-8"))
+        assert data["engel"]
 
-        # Olmayan klasör: hata, çökme değil.
-        yok = server.url + "api/gozat?yol=" + urllib.parse.quote(str(tmp_path / "yok"))
-        with urllib.request.urlopen(yok, timeout=5) as cevap:
-            assert json.loads(cevap.read().decode("utf-8"))["hata"]
+        # A missing folder: an error, not a crash.
+        missing = server.url + "api/gozat?yol=" + urllib.parse.quote(str(tmp_path / "yok"))
+        with urllib.request.urlopen(missing, timeout=5) as response:
+            assert json.loads(response.read().decode("utf-8"))["hata"]
 
-        # Yolsuz istek: başlangıç yerleri (sürücüler / ev).
-        with urllib.request.urlopen(server.url + "api/gozat", timeout=5) as cevap:
-            bas = json.loads(cevap.read().decode("utf-8"))
-        assert bas["klasorler"] and bas["ust"] is None
+        # A request without a path: the starting places (drives / home).
+        with urllib.request.urlopen(server.url + "api/gozat", timeout=5) as response:
+            start = json.loads(response.read().decode("utf-8"))
+        assert start["klasorler"] and start["ust"] is None
     finally:
         server.stop()
         log.close()
@@ -798,67 +800,67 @@ def test_the_browser_says_when_a_folder_cannot_be_a_project(
 def test_the_settings_snapshot_carries_the_project_state(
     tmp_path: Path, mind: Mind
 ) -> None:
-    """Ayar sayfası projeyi çizebilmeli: seçili yol, çözülmüş kök, son
-    projeler ve (varsa) sebep."""
+    """The settings page must be able to draw the project: the chosen path,
+    the resolved root, recent projects and (if any) the reason."""
     from dornick import settings as settings_module
     from dornick.config import Config
 
-    proje = tmp_path / "musteri"
-    proje.mkdir()
+    project = tmp_path / "musteri"
+    project.mkdir()
     config = Config.load(tmp_path)
     config.ensure_dirs()
-    updated = settings_module.apply(config, {"sandbox": {"project": str(proje)}})
+    updated = settings_module.apply(config, {"sandbox": {"project": str(project)}})
 
-    kutu = settings_module.snapshot(updated)["sandbox"]
-    assert kutu["project"] == str(proje)
-    assert kutu["project_root"] == str(proje.resolve())
-    assert kutu["project_error"] == ""
-    assert str(proje) in kutu["recent"]
+    box = settings_module.snapshot(updated)["sandbox"]
+    assert box["project"] == str(project)
+    assert box["project_root"] == str(project.resolve())
+    assert box["project_error"] == ""
+    assert str(project) in box["recent"]
 
 
-# -- dışa açma ve artifact indirme (31.08 canlı yaraları) ----------------
+# -- opening outside and artifact download (31.08 live wounds) ----------
 
 
 def _post_json(server: MindServer, path: str, payload: dict) -> dict:
     data = json.dumps(payload).encode("utf-8")
-    istek = urllib.request.Request(
+    request = urllib.request.Request(
         server.url.rstrip("/") + path, data=data,
         headers={"Content-Type": "application/json"},
     )
-    with urllib.request.urlopen(istek, timeout=5) as cevap:
-        return json.loads(cevap.read().decode("utf-8"))
+    with urllib.request.urlopen(request, timeout=5) as response:
+        return json.loads(response.read().decode("utf-8"))
 
 
-# -- çapraz-köken koruması (güvenlik denetimi, 01.09) ------------------
+# -- cross-origin protection (security audit, 01.09) -------------------
 #
-# Kullanıcının BAŞKA bir tarayıcı sekmesindeki yabancı bir sayfa
-# 127.0.0.1'e durum değiştiren POST atarsa (drive-by CSRF) reddedilir.
-# Kendi arayüzümüz (aynı köken) ve Origin göndermeyen yerel çağıranlar
-# (curl, test, benchmark) geçer — bunları HTTP katmanında ayırt etmek
-# mümkün değil, o yol zaten kabuk izin kapısıyla korunuyor.
+# If a foreign page in ANOTHER browser tab of the user's fires a
+# state-changing POST at 127.0.0.1 (drive-by CSRF) it is rejected. Our own
+# UI (same origin) and local callers that send no Origin (curl, test,
+# benchmark) pass — telling them apart at the HTTP layer is impossible, and
+# that road is already guarded by the shell permission gate.
 
 
-def _post_ham(server: MindServer, path: str, headers: dict) -> int:
-    """Ham POST; HTTP durum kodunu döndürür (403 dahil)."""
+def _post_raw(server: MindServer, path: str, headers: dict) -> int:
+    """Raw POST; returns the HTTP status code (403 included)."""
     data = b"{}"
     h = {"Content-Type": "application/json", **headers}
-    istek = urllib.request.Request(
+    request = urllib.request.Request(
         server.url.rstrip("/") + path, data=data, headers=h)
     try:
-        with urllib.request.urlopen(istek, timeout=5) as cevap:
-            return cevap.status
+        with urllib.request.urlopen(request, timeout=5) as response:
+            return response.status
     except urllib.error.HTTPError as exc:
         return exc.code
 
 
-def test_guncelle_ucu_indirir_ilerler_ve_baslatir(
+def test_the_update_endpoint_downloads_reports_progress_and_launches(
     tmp_path: Path, mind: Mind, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Uygulama içi güncelleme uçtan uca: /api/guncelle sürümü algılar,
-    indirir (ilerleme SSE ile akar) ve kurulum sihirbazını başlatır.
+    """In-app update end to end: /api/guncelle detects the version,
+    downloads it (progress flows over SSE) and launches the setup wizard.
 
-    Gerçekten .exe çalıştırılmaz — `guncellemeyi_baslat` mock'lanır; adres
-    de sunucunun kendi denetiminden gelir (istemci vermez)."""
+    No .exe is really run — `start_update` is mocked; the address comes
+    from the server's own check as well (the client does not supply it)."""
     import threading
 
     from dornick.web import server as server_module
@@ -871,58 +873,58 @@ def test_guncelle_ucu_indirir_ilerler_ve_baslatir(
                  "boyut": 2 * 1024 * 1024, "ad": "dornick-setup-9.9.9.exe",
                  "hata": ""})
 
-    inen = tmp_path / "dornick-setup-9.9.9.exe"
+    downloaded = tmp_path / "dornick-setup-9.9.9.exe"
 
-    def sahte_indir(url, dizin, *, beklenen_boyut=0, ad="", progress=None):
-        assert "github.com" in url          # adres sunucudan, güvenilir
+    def fake_download(url, folder, *, beklenen_boyut=0, ad="", progress=None):
+        assert "github.com" in url          # address from the server, trusted
         if progress:
             progress(beklenen_boyut // 2, beklenen_boyut)
             progress(beklenen_boyut, beklenen_boyut)
-        inen.write_bytes(b"MZ" + b"0" * 1024)
-        return inen
+        downloaded.write_bytes(b"MZ" + b"0" * 1024)
+        return downloaded
 
-    monkeypatch.setattr(server_module.environment, "download_update", sahte_indir)
+    monkeypatch.setattr(server_module.environment, "download_update", fake_download)
 
-    baslatildi: dict = {}
-    bitti = threading.Event()
+    launched: dict = {}
+    finished = threading.Event()
 
-    def sahte_baslat(yol):
-        baslatildi["yol"] = str(yol)
-        bitti.set()
+    def fake_launch(path):
+        launched["path"] = str(path)
+        finished.set()
 
-    monkeypatch.setattr(server_module.environment, "start_update", sahte_baslat)
+    monkeypatch.setattr(server_module.environment, "start_update", fake_launch)
 
     log = EventLog(tmp_path / "s.jsonl")
     server = MindServer(mind, log, port=0)
-    kanal = server.hub.register()   # SSE dinleyicisi: ilerleme olayları
+    channel = server.hub.register()   # SSE listener: progress events
     server.start()
     try:
-        cevap = _post_json(server, "/api/guncelle", {})
-        assert cevap["ok"] is True and cevap["yeni"] == "9.9.9"
-        assert bitti.wait(5), "indirme/başlatma thread'i zamanında bitmedi"
-        assert baslatildi["yol"].endswith("dornick-setup-9.9.9.exe")
+        response = _post_json(server, "/api/guncelle", {})
+        assert response["ok"] is True and response["yeni"] == "9.9.9"
+        assert finished.wait(5), "download/launch thread did not finish in time"
+        assert launched["path"].endswith("dornick-setup-9.9.9.exe")
 
-        # SSE olayları: en az bir "indiriliyor" yüzdesi ve bir kurulum aşaması.
-        olaylar = []
+        # SSE events: at least one "indiriliyor" percentage and one install stage.
+        events = []
         import queue as _q
         try:
             while True:
-                olaylar.append(json.loads(kanal.get_nowait()))
+                events.append(json.loads(channel.get_nowait()))
         except _q.Empty:
             pass
-        asamalar = [o.get("asama") for o in olaylar if o.get("type") == "guncelleme"]
-        assert "indiriliyor" in asamalar
-        assert "kuruluyor" in asamalar and "acildi" in asamalar
+        stages = [o.get("asama") for o in events if o.get("type") == "guncelleme"]
+        assert "indiriliyor" in stages
+        assert "kuruluyor" in stages and "acildi" in stages
     finally:
         server.stop()
         log.close()
 
 
-def test_guncelle_yeni_surum_yoksa_kibar_reddeder(
+def test_the_update_endpoint_politely_refuses_without_a_new_version(
     tmp_path: Path, mind: Mind, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """İndirilecek güncelleme yoksa /api/guncelle ok:false döner, indirme
-    ya da başlatma HİÇ denenmez."""
+    """With no update to download /api/guncelle returns ok:false; download
+    or launch is NEVER attempted."""
     from dornick.web import server as server_module
 
     monkeypatch.setattr(
@@ -930,57 +932,57 @@ def test_guncelle_yeni_surum_yoksa_kibar_reddeder(
         lambda: {"ok": True, "mevcut": "1.0.0", "yeni": "", "url": "",
                  "indirme": "", "boyut": 0, "ad": "", "hata": ""})
 
-    def patlar(*a, **k):  # çağrılırsa test kırılır
+    def boom(*a, **k):  # if called the test breaks
         raise AssertionError("güncelleme yokken indirme denenmemeli")
 
-    monkeypatch.setattr(server_module.environment, "download_update", patlar)
+    monkeypatch.setattr(server_module.environment, "download_update", boom)
 
     log = EventLog(tmp_path / "s.jsonl")
     server = MindServer(mind, log, port=0)
     server.start()
     try:
-        cevap = _post_json(server, "/api/guncelle", {})
-        assert cevap["ok"] is False
+        response = _post_json(server, "/api/guncelle", {})
+        assert response["ok"] is False
     finally:
         server.stop()
         log.close()
 
 
-def test_klasor_olustur_creates_and_refuses_bad_targets(
+def test_create_folder_creates_and_refuses_bad_targets(
     tmp_path: Path, mind: Mind
 ) -> None:
-    """Sohbet ekranındaki "Yeni klasör": adı verilen klasör açılır; yol
-    içeren ad ve tehlikeli kökler reddedilir (kullanıcı isteği, 02.09)."""
+    """"New folder" on the chat screen: the named folder is opened; a name
+    containing a path and dangerous roots are refused (user request, 02.09)."""
     log = EventLog(tmp_path / "s.jsonl")
     server = MindServer(mind, log, port=0)
     server.start()
     try:
-        ust = tmp_path / "projeler"
-        ust.mkdir()
+        parent = tmp_path / "projeler"
+        parent.mkdir()
         c = _post_json(server, "/api/klasor/olustur",
-                       {"ust": str(ust), "ad": "yeni-is"})
+                       {"ust": str(parent), "ad": "yeni-is"})
         assert c["ok"] is True
-        assert (ust / "yeni-is").is_dir()
+        assert (parent / "yeni-is").is_dir()
         assert c["yol"].endswith("yeni-is")
 
-        # Ad yol içeremez: üst dizine kaçış girişimi.
-        kotu = _post_json(server, "/api/klasor/olustur",
-                          {"ust": str(ust), "ad": "../disari"})
-        assert kotu["ok"] is False
+        # The name cannot contain a path: an attempt to escape to the parent directory.
+        bad = _post_json(server, "/api/klasor/olustur",
+                         {"ust": str(parent), "ad": "../disari"})
+        assert bad["ok"] is False
         assert not (tmp_path / "disari").exists()
 
-        # Eksik alan.
-        assert _post_json(server, "/api/klasor/olustur", {"ust": str(ust)})["ok"] is False
+        # Missing field.
+        assert _post_json(server, "/api/klasor/olustur", {"ust": str(parent)})["ok"] is False
     finally:
         server.stop()
         log.close()
 
 
-def test_dil_ucu_makine_diline_duser(
+def test_the_language_endpoint_falls_back_to_the_machine_language(
     tmp_path: Path, mind: Mind, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Sihirbaz dil bırakmadıysa makinenin diline bakılır: Türkçe makinede
-    "tr", diğer her yerde "en" (varsayılan İngilizce — kullanıcı isteği)."""
+    """If the wizard left no language the machine's language is consulted:
+    "tr" on a Turkish machine, "en" everywhere else (default English — user request)."""
     from dornick.web import server as server_module
 
     monkeypatch.setattr(server_module, "_machine_language", lambda: "en")
@@ -988,15 +990,15 @@ def test_dil_ucu_makine_diline_duser(
     server = MindServer(mind, log, port=0)
     server.start()
     try:
-        with urllib.request.urlopen(server.url + "api/dil", timeout=5) as cevap:
-            assert json.loads(cevap.read().decode("utf-8"))["dil"] == "en"
+        with urllib.request.urlopen(server.url + "api/dil", timeout=5) as response:
+            assert json.loads(response.read().decode("utf-8"))["dil"] == "en"
     finally:
         server.stop()
         log.close()
 
 
-def test_makine_dili_turkce_lokalde_tr(monkeypatch: pytest.MonkeyPatch) -> None:
-    """tr_TR yerelinde Türkçe, başka yerelde İngilizce."""
+def test_machine_language_is_tr_on_a_turkish_locale(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Turkish on the tr_TR locale, English on any other locale."""
     import locale
 
     from dornick.web import server as server_module
@@ -1005,52 +1007,52 @@ def test_makine_dili_turkce_lokalde_tr(monkeypatch: pytest.MonkeyPatch) -> None:
     assert server_module._machine_language() == "tr"
     monkeypatch.setattr(locale, "getdefaultlocale", lambda: ("en_US", "utf-8"))
     assert server_module._machine_language() == "en"
-    # Okunamazsa İngilizce.
-    def patlar():
+    # Unreadable → English.
+    def boom():
         raise ValueError("yok")
-    monkeypatch.setattr(locale, "getdefaultlocale", patlar)
-    monkeypatch.setattr(locale, "getlocale", patlar)
+    monkeypatch.setattr(locale, "getdefaultlocale", boom)
+    monkeypatch.setattr(locale, "getlocale", boom)
     assert server_module._machine_language() == "en"
 
 
 def test_foreign_origin_post_is_rejected(tmp_path: Path, mind: Mind) -> None:
-    """Yabancı köken → 403; aynı köken ve kökensiz istek → geçer."""
+    """Foreign origin → 403; same origin and origin-less request → pass."""
     log = EventLog(tmp_path / "s.jsonl")
     server = MindServer(mind, log, port=0)
     server.start()
     try:
-        bizim = server.url.rstrip("/")   # http://127.0.0.1:PORT
-        # Yabancı köken: reddedilmeli.
-        assert _post_ham(server, "/api/surum",
+        ours = server.url.rstrip("/")   # http://127.0.0.1:PORT
+        # Foreign origin: must be rejected.
+        assert _post_raw(server, "/api/surum",
                          {"Origin": "https://evil.example"}) == 403
-        # Aynı köken (arayüzün kendisi): geçmeli.
-        assert _post_ham(server, "/api/surum", {"Origin": bizim}) == 200
-        # Köken hiç yok (curl/test/benchmark): geçmeli.
-        assert _post_ham(server, "/api/surum", {}) == 200
-        # Referer yabancı olsa da reddedilir.
-        assert _post_ham(server, "/api/surum",
+        # Same origin (the UI itself): must pass.
+        assert _post_raw(server, "/api/surum", {"Origin": ours}) == 200
+        # No origin at all (curl/test/benchmark): must pass.
+        assert _post_raw(server, "/api/surum", {}) == 200
+        # Rejected even when only the Referer is foreign.
+        assert _post_raw(server, "/api/surum",
                          {"Referer": "https://evil.example/x"}) == 403
     finally:
         server.stop()
         log.close()
 
 
-def test_disari_ac_opens_only_local_pages(
+def test_open_outside_opens_only_local_pages(
     tmp_path: Path, mind: Mind, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Gerçek tarayıcıya yalnız BU sunucunun sayfası gider — gerçek portla.
+    """Only THIS server's page goes to the real browser — with the real port.
 
-    Ajan artifact adresini varsayılan 8765 ile söylüyordu; sunucu kaymış
-    portta koşuyordu ve kullanıcı "bağlantı reddedildi" görüyordu. Adres
-    istekten değil sunucunun kendi bağlandığı yerden kurulur; dış adres
-    bu uçtan hiç açılmaz.
+    The agent stated the artifact address with the default 8765; the server
+    was running on a shifted port and the user saw "connection refused".
+    The address is built from where the server itself bound, not from the
+    request; an outside address is never opened from this endpoint.
     """
     import webbrowser
 
     from dornick.config import Config
 
-    acilan: list[str] = []
-    monkeypatch.setattr(webbrowser, "open", lambda url: acilan.append(url) or True)
+    opened: list[str] = []
+    monkeypatch.setattr(webbrowser, "open", lambda url: opened.append(url) or True)
 
     config = Config.load(tmp_path)
     config.ensure_dirs()
@@ -1060,37 +1062,37 @@ def test_disari_ac_opens_only_local_pages(
     try:
         assert _post_json(server, "/api/disari-ac", {"path": "https://kotu.example/"})["ok"] is False
         assert _post_json(server, "/api/disari-ac", {"path": "//kotu.example/x"})["ok"] is False
-        assert acilan == []
+        assert opened == []
 
         out = _post_json(server, "/api/disari-ac", {"path": "/artifact/x-1a2b/"})
         assert out["ok"] is True
-        assert acilan == [out["url"]]
+        assert opened == [out["url"]]
         assert out["url"].startswith("http://127.0.0.1:")
         assert out["url"].endswith("/artifact/x-1a2b/")
-        # Gerçek port: sunucunun bağlandığı port neyse o.
+        # The real port: whatever port the server bound to.
         assert out["url"] == server.url.rstrip("/") + "/artifact/x-1a2b/"
     finally:
         server.stop()
         log.close()
 
 
-def test_artifact_indir_saves_to_downloads_with_full_path(
+def test_artifact_download_saves_to_downloads_with_full_path(
     tmp_path: Path, mind: Mind, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """İndirme diske SUNUCUDAN yazılır ve tam yol döner.
+    """The download is written to disk BY THE SERVER and the full path is returned.
 
-    Pencere WebView2'de blob + <a download> sessizce ölüyordu; kullanıcı
-    "indiremiyorum, dosya yolunu göremiyorum" yaşıyordu. Var olan dosya
-    ezilmez — sayaçlı ad açılır.
+    In the WebView2 window blob + <a download> died silently; the user lived
+    "I can't download, I can't see the file path". An existing file is not
+    overwritten — a counter-suffixed name is opened.
     """
     import pathlib
 
     from dornick import artifacts
     from dornick.config import Config
 
-    ev = tmp_path / "ev"
-    (ev / "Downloads").mkdir(parents=True)
-    monkeypatch.setattr(pathlib.Path, "home", classmethod(lambda cls: ev))
+    home = tmp_path / "ev"
+    (home / "Downloads").mkdir(parents=True)
+    monkeypatch.setattr(pathlib.Path, "home", classmethod(lambda cls: home))
 
     config = Config.load(tmp_path)
     config.ensure_dirs()
@@ -1102,20 +1104,20 @@ def test_artifact_indir_saves_to_downloads_with_full_path(
     server = MindServer(mind, log, port=0, config=config)
     server.start()
     try:
-        adres = f"/artifact/{meta['id']}/"
-        ilk = _post_json(server, "/api/artifact/indir", {"path": adres})
-        assert ilk["ok"] is True
-        yol = Path(ilk["path"])
-        assert yol.is_file() and yol.parent == ev / "Downloads"
-        assert "rapor" in yol.read_text(encoding="utf-8")
+        address = f"/artifact/{meta['id']}/"
+        first = _post_json(server, "/api/artifact/indir", {"path": address})
+        assert first["ok"] is True
+        path = Path(first["path"])
+        assert path.is_file() and path.parent == home / "Downloads"
+        assert "rapor" in path.read_text(encoding="utf-8")
 
-        # İkinci indirme ilkini ezmez.
-        ikinci = _post_json(server, "/api/artifact/indir", {"path": adres})
-        assert ikinci["ok"] is True and ikinci["path"] != ilk["path"]
+        # A second download does not crush the first.
+        second = _post_json(server, "/api/artifact/indir", {"path": address})
+        assert second["ok"] is True and second["path"] != first["path"]
 
-        # Kimlik kaçışı diske dokunmaz.
-        kacak = _post_json(server, "/api/artifact/indir", {"path": "/artifact/../gizli/"})
-        assert kacak["ok"] is False
+        # An id escape does not touch the disk.
+        escape = _post_json(server, "/api/artifact/indir", {"path": "/artifact/../gizli/"})
+        assert escape["ok"] is False
     finally:
         server.stop()
         log.close()

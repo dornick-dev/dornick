@@ -7,12 +7,12 @@ Bu dosya koşum defteri: hangi faz bitti, kabul kriterini geçti mi, geçmediyse
 ne öğrenildi. Negatif sonuç da rapordur ve burada durur.
 
 ```
-Taban çizgisi   py eval/context_memory/yasam_bench.py --etiket taban --eski
-Faz ölçümü      py eval/context_memory/yasam_bench.py --etiket f1 --onceki taban
-Ablation        py eval/context_memory/yasam_bench.py --kapat aktivasyon --etiket f1-ablasyon
-Eşik eğrisi     py eval/context_memory/yasam_bench.py --esik-egrisi
-Büyüme (P)      py eval/context_memory/yasam_bench.py --buyume
-Özet tablo      py eval/context_memory/yasam_bench.py --tablo
+Taban çizgisi   py eval/context_memory/life_bench.py --label taban --old
+Faz ölçümü      py eval/context_memory/life_bench.py --label f1 --previous taban
+Ablation        py eval/context_memory/life_bench.py --disable activation --label f1-ablasyon
+Eşik eğrisi     py eval/context_memory/life_bench.py --threshold-curve
+Büyüme (P)      py eval/context_memory/life_bench.py --growth
+Özet tablo      py eval/context_memory/life_bench.py --table
 Gerileme kapısı py eval/context_memory/scale_bench.py
 ```
 
@@ -31,9 +31,9 @@ Hiçbir mekanik değişmedi. Değişen tek şey ölçülebilirlik.
 | `src/dornick/recall/anahtar.py` | mekanik açma/kapama anahtarları (ablation yüzeyi) |
 | `eval/context_memory/yasam_dataset.json` | 90 sanal gün, 895 olay, 286 oturum, A–S kümeleri (dondurulmuş) |
 | `eval/context_memory/yasam_holdout.json` | ayrı 30 günlük senaryo; kalibrasyon ana sette, karar burada |
-| `eval/context_memory/yasam_bench.py` | senaryoyu sanal saatle oynatan bench + `--eski` + `--esik-egrisi` + `--buyume` |
+| `eval/context_memory/life_bench.py` | senaryoyu sanal saatle oynatan bench + `--old` + `--threshold-curve` + `--growth` |
 | `tests/test_saat.py` | saatin her damgaya ulaştığı + doğrudan `datetime.now()` yasağı |
-| `tests/test_yasam_bench.py` | bench determinizmi, A–S asgarileri, kümelerin vaadi |
+| `tests/test_life_bench.py` | bench determinizmi, A–S asgarileri, kümelerin vaadi |
 | `tests/fixtures/recall-v1.db` + `tests/test_db_gocu.py` | eski şemalı bellek her fazda açılıyor, `PRAGMA integrity_check` |
 
 `RecallStore`, `Mind`, `open_store`, `open_mind` ve `EventLog` artık `saat=`
@@ -51,7 +51,7 @@ görecek.
 ### Eski sürümle karşılaştırma altyapısı
 
 `main` (`2c3fd3a`) `hafiza-eski` etiketiyle donduruldu.
-`yasam_bench.py --eski` o etiketi `eval/eski/` worktree'sine alıp **ayrı bir
+`life_bench.py --old` o etiketi `eval/eski/` worktree'sine alıp **ayrı bir
 süreçte** koşturuyor (iki `dornick` paketi aynı yorumlayıcıda yan yana
 duramaz). Eski kodda saat enjeksiyonu yok; modül düzeyindeki `_now`
 yamalanıyor — eski kaynağa dokunulmadan iki sürüm **aynı sanal takvimi**
@@ -505,7 +505,7 @@ güvenilemeyeceği anlamına geliyor.
 | `tests/test_sleep.py` | 23 test: eşiğin kaynağı, basınç, narkolepsi, uyarılma tablosu, ritim, jet lag, kesilme, bakım kapısı |
 
 **Eşikler seçilmedi, türetildi.** `ESIK_UST = 2.3374`, `ESIK_ALT = 0.7791` —
-gece kapalıyken ölçülen bozulma eğrisinden (`--esik-egrisi`, 2026-09-02).
+gece kapalıyken ölçülen bozulma eğrisinden (`--threshold-curve`, 2026-09-02).
 Bir test sabitin kaynağının yorumda yazılı olduğunu da zorluyor: kaynağı
 kaybolan bir sabit sihirli sayıya döner.
 
@@ -949,7 +949,7 @@ sayı ana setten daha iyi çıkıyor (`prime_recall` 0.95, `tuzak_sessizlik`
 da az, yani ana setteki `prime_recall` düşüşünün gerçekten o iki
 mekanizmadan geldiğini doğruluyor.
 
-**Yan bulgu — kırık ölçüm aleti.** `--eski` kolu Faz 5'ten beri
+**Yan bulgu — kırık ölçüm aleti.** `--old` kolu Faz 5'ten beri
 çalışmıyordu: bench `Mind.remember(..., baglam=)` çağırıyor, `hafiza-eski`
 o parametreyi bilmiyor, koşu `TypeError` ile ölüyordu. Faz 5'ten sonraki
 "eskiye göre" satırlarının hepsi donmuş `yasam-taban.json`'dan okunmuştu —

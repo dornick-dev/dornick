@@ -1,8 +1,8 @@
-"""Oto model kipi: havuz süzme, istek şekli, sağlık puanı, ilk kurulum.
+"""Auto model mode: pool filtering, request shape, health score, first setup.
 
-Buradaki her şey ağsız koşuyor: OpenRouter yanıtları sahte, saat enjekte.
-Canlı davranış (gerçek /models yanıtı, gerçek anahtar doğrulama) ayrıca
-elle doğrulandı — testin işi sözleşmeyi sabitlemek.
+Everything here runs offline: OpenRouter responses are fake, the clock is
+injected. Live behaviour (the real /models response, real key verification)
+was verified by hand separately — the test's job is to pin the contract.
 """
 
 from __future__ import annotations
@@ -20,7 +20,7 @@ from dornick.config import OPENROUTER_URL, Config, ModelConfig
 from dornick.context import Prepared
 
 # ---------------------------------------------------------------------
-# sahte OpenRouter /models kayıtları
+# fake OpenRouter /models records
 
 
 def _model(id: str, *, prompt: str = "0", completion: str = "0", tools: bool = True) -> dict:
@@ -34,7 +34,7 @@ def _model(id: str, *, prompt: str = "0", completion: str = "0", tools: bool = T
     }
 
 
-# -- (a) havuz süzme ----------------------------------------------------
+# -- (a) pool filtering -------------------------------------------------
 
 
 def test_paid_models_are_filtered_out() -> None:
@@ -44,31 +44,31 @@ def test_paid_models_are_filtered_out() -> None:
         _model("ucretli/c", completion="0.000002"),
         _model("bedava/d"),
     ]
-    assert automode.suz(entries) == ["bedava/a", "bedava/d"]
+    assert automode.sift(entries) == ["bedava/a", "bedava/d"]
 
 
 def test_models_without_tool_support_are_filtered_out() -> None:
-    """Araçsız bir modelle bu harness'ın yapabileceği bir şey yok."""
+    """There is nothing this harness can do with a tool-less model."""
     entries = [_model("a/tools"), _model("b/naked", tools=False), _model("c/tools")]
-    assert automode.suz(entries) == ["a/tools", "c/tools"]
+    assert automode.sift(entries) == ["a/tools", "c/tools"]
 
 
 def test_the_pool_keeps_only_the_first_six_in_listed_order() -> None:
     entries = [_model(f"m/{i}") for i in range(9)]
-    assert automode.suz(entries) == [f"m/{i}" for i in range(6)]
+    assert automode.sift(entries) == [f"m/{i}" for i in range(6)]
 
 
 def test_garbage_entries_do_not_crash_the_filter() -> None:
     entries = [None, "metin", {"id": ""}, {"id": "x", "pricing": {"prompt": "bozuk"}},
                _model("saglam/a")]
-    assert automode.suz(entries) == ["saglam/a"]
+    assert automode.sift(entries) == ["saglam/a"]
 
 
-# -- havuz önbelleği ----------------------------------------------------
+# -- pool cache ---------------------------------------------------------
 
 
 def _fake_urlopen(payload: dict):
-    class _Yanit:
+    class _Response:
         def __enter__(self):
             return self
 
@@ -78,10 +78,10 @@ def _fake_urlopen(payload: dict):
         def read(self):
             return json.dumps(payload).encode("utf-8")
 
-    def _ac(url, timeout=0):
-        return _Yanit()
+    def _open(url, timeout=0):
+        return _Response()
 
-    return _ac
+    return _open
 
 
 def test_the_pool_is_cached_on_disk_and_survives_offline(
@@ -89,53 +89,53 @@ def test_the_pool_is_cached_on_disk_and_survives_offline(
 ) -> None:
     payload = {"data": [_model("a/1"), _model("b/2")]}
     monkeypatch.setattr("urllib.request.urlopen", _fake_urlopen(payload))
-    automode._BELLEK.clear()
+    automode._MEMORY.clear()
 
     clock = [1_000.0]
-    assert automode.havuz(tmp_path, simdi=lambda: clock[0]) == ["a/1", "b/2"]
+    assert automode.havuz(tmp_path, now=lambda: clock[0]) == ["a/1", "b/2"]
     cache = json.loads((tmp_path / automode.POOL_FILE).read_text(encoding="utf-8"))
     assert cache["havuz"] == ["a/1", "b/2"]
 
-    # Ağ öldü, önbellek taze: liste diskteki.
-    def _patlat(url, timeout=0):
+    # The network died, the cache is fresh: the list is the on-disk one.
+    def _explode(url, timeout=0):
         raise urllib.error.URLError("ağ yok")
 
-    monkeypatch.setattr("urllib.request.urlopen", _patlat)
-    automode._BELLEK.clear()
-    assert automode.havuz(tmp_path, simdi=lambda: clock[0] + 3600) == ["a/1", "b/2"]
+    monkeypatch.setattr("urllib.request.urlopen", _explode)
+    automode._MEMORY.clear()
+    assert automode.havuz(tmp_path, now=lambda: clock[0] + 3600) == ["a/1", "b/2"]
 
-    # 24 saat geçti, ağ hâlâ yok: bayat önbellek hiç yoktan iyi.
-    automode._BELLEK.clear()
-    assert automode.havuz(tmp_path, simdi=lambda: clock[0] + automode.FRESHNESS_S + 5) == ["a/1", "b/2"]
+    # 24 hours passed, still no network: a stale cache beats nothing.
+    automode._MEMORY.clear()
+    assert automode.havuz(tmp_path, now=lambda: clock[0] + automode.FRESHNESS_S + 5) == ["a/1", "b/2"]
 
 
 def test_no_network_and_no_cache_means_an_empty_pool(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    def _patlat(url, timeout=0):
+    def _explode(url, timeout=0):
         raise urllib.error.URLError("ağ yok")
 
-    monkeypatch.setattr("urllib.request.urlopen", _patlat)
-    automode._BELLEK.clear()
+    monkeypatch.setattr("urllib.request.urlopen", _explode)
+    automode._MEMORY.clear()
     assert automode.havuz(tmp_path) == []
 
 
-# -- oto kipi tanımı ----------------------------------------------------
+# -- auto mode definition -----------------------------------------------
 
 
 def test_oto_mode_needs_both_openrouter_and_the_oto_name() -> None:
-    assert automode.oto_mu(ModelConfig())  # taze kurulumun varsayılanı
+    assert automode.oto_mu(ModelConfig())  # the fresh-install default
     assert automode.oto_mu(ModelConfig(name="Oto", base_url=OPENROUTER_URL + "/"))
-    # Başka sağlayıcıda "oto" gerçek bir model adı olabilir; dokunulmaz.
+    # On another provider "oto" may be a real model name; left alone.
     assert not automode.oto_mu(
         ModelConfig(name="oto", base_url="http://localhost:1234/v1")
     )
     assert not automode.oto_mu(ModelConfig(name="qwen/qwen3", base_url=OPENROUTER_URL))
 
 
-# -- (b) istek gövdesi --------------------------------------------------
+# -- (b) request body ---------------------------------------------------
 
-HAVUZ = ["h/1", "h/2", "h/3", "h/4", "h/5", "h/6"]
+POOL = ["h/1", "h/2", "h/3", "h/4", "h/5", "h/6"]
 
 
 def _chunk(content=None, finish=None):
@@ -162,15 +162,15 @@ class _FakeStream:
 
 
 class _FakeOpenAI:
-    def __init__(self, chunks=None, *, patla=False):
+    def __init__(self, chunks=None, *, explode=False):
         self.seen: dict = {}
-        self.patla = patla
+        self.explode = explode
         self.stream = _FakeStream(chunks or [_chunk("tamam", "stop")])
         self.chat = SimpleNamespace(completions=SimpleNamespace(create=self._create))
 
     async def _create(self, **kwargs):
         self.seen = kwargs
-        if self.patla:
+        if self.explode:
             raise ConnectionError("uç kapalı")
         return self.stream
 
@@ -194,17 +194,17 @@ def _prepared() -> Prepared:
 
 
 @pytest.fixture()
-def sabit_havuz(monkeypatch: pytest.MonkeyPatch) -> list[str]:
-    monkeypatch.setattr(automode, "havuz", lambda *a, **k: list(HAVUZ))
+def fixed_pool(monkeypatch: pytest.MonkeyPatch) -> list[str]:
+    monkeypatch.setattr(automode, "havuz", lambda *a, **k: list(POOL))
     monkeypatch.setattr(automode, "write_last", lambda *a, **k: None)
-    return HAVUZ
+    return POOL
 
 
-async def test_oto_request_carries_pool_fallbacks_and_privacy(sabit_havuz) -> None:
-    """oto + openrouter: model havuzun başı, `models` yerel yedek zinciri,
-    `provider` veri toplamayı reddediyor."""
+async def test_oto_request_carries_pool_fallbacks_and_privacy(fixed_pool) -> None:
+    """oto + openrouter: the model is the head of the pool, `models` the
+    local fallback chain, `provider` refuses data collection."""
     fake = _FakeOpenAI()
-    be = _backend(ModelConfig(), fake)  # varsayılan: openrouter + oto
+    be = _backend(ModelConfig(), fake)  # default: openrouter + oto
 
     result = await be.turn(_prepared(), [], cancel=asyncio.Event())
 
@@ -215,8 +215,8 @@ async def test_oto_request_carries_pool_fallbacks_and_privacy(sabit_havuz) -> No
     assert extra["provider"] == {"data_collection": "deny", "require_parameters": True}
 
 
-async def test_other_providers_are_left_untouched(sabit_havuz) -> None:
-    """Başka sağlayıcının isteğine models/provider alanı SIZMAMALI."""
+async def test_other_providers_are_left_untouched(fixed_pool) -> None:
+    """The models/provider fields must NOT LEAK into another provider's request."""
     fake = _FakeOpenAI()
     be = _backend(
         ModelConfig(name="qwen/q3", base_url="http://localhost:1234/v1"), fake
@@ -228,8 +228,8 @@ async def test_other_providers_are_left_untouched(sabit_havuz) -> None:
     assert "models" not in extra and "provider" not in extra
 
 
-async def test_a_named_openrouter_model_is_left_untouched(sabit_havuz) -> None:
-    """OpenRouter'da belirli bir model seçiliyse oto alanları eklenmez."""
+async def test_a_named_openrouter_model_is_left_untouched(fixed_pool) -> None:
+    """With a specific model selected on OpenRouter the oto fields are not added."""
     fake = _FakeOpenAI()
     be = _backend(ModelConfig(name="qwen/qwen3", base_url=OPENROUTER_URL), fake)
     await be.turn(_prepared(), [], cancel=asyncio.Event())
@@ -247,16 +247,17 @@ async def test_an_empty_pool_fails_with_words_not_a_404(monkeypatch) -> None:
     result = await be.turn(_prepared(), [], cancel=asyncio.Event())
 
     assert result.error and "havuz" in result.error.lower()
-    assert not fake.seen, "havuzsuz istek atılmamalı"
+    assert not fake.seen, "no request should be sent without a pool"
 
 
-async def test_failures_are_recorded_and_the_pool_rotates(sabit_havuz) -> None:
-    """İki hata modeli havuzun sonuna itiyor; sıradaki istek h/2 ile çıkıyor.
+async def test_failures_are_recorded_and_the_pool_rotates(fixed_pool) -> None:
+    """Two errors push the model to the end of the pool; the next request goes out with h/2.
 
-    İstek hiç kurulamadığında (bağlantı reddi) hata yukarı fırlar — mevcut
-    davranış; sağlık defteri yine de işlenmiş olmalı.
+    When the request cannot be set up at all (connection refused) the error
+    propagates — existing behaviour; the health ledger must still have
+    been updated.
     """
-    fake = _FakeOpenAI(patla=True)
+    fake = _FakeOpenAI(explode=True)
     be = _backend(ModelConfig(), fake)
 
     for _ in range(automode.ERROR_THRESHOLD):
@@ -264,45 +265,45 @@ async def test_failures_are_recorded_and_the_pool_rotates(sabit_havuz) -> None:
             await be.turn(_prepared(), [], cancel=asyncio.Event())
 
     assert be._saglik.cezali("h/1")
-    fake.patla = False
+    fake.explode = False
     await be.turn(_prepared(), [], cancel=asyncio.Event())
     assert fake.seen["model"] == "h/2"
 
 
-# -- (c) sağlık puanı ---------------------------------------------------
+# -- (c) health score ---------------------------------------------------
 
 
 def test_two_failures_bench_a_model_for_fifteen_minutes() -> None:
     clock = [0.0]
-    saglik = automode.Saglik(clock=lambda: clock[0])
+    health = automode.Saglik(clock=lambda: clock[0])
 
-    saglik.save("m/1", ok=True)
-    saglik.save("m/1", ok=False)
-    assert saglik.rank(["m/1", "m/2"]) == ["m/1", "m/2"], "tek hata ceza değil"
+    health.save("m/1", ok=True)
+    health.save("m/1", ok=False)
+    assert health.rank(["m/1", "m/2"]) == ["m/1", "m/2"], "a single error is no penalty"
 
-    saglik.save("m/1", ok=False)
-    assert saglik.rank(["m/1", "m/2"]) == ["m/2", "m/1"], "iki hata → sona"
+    health.save("m/1", ok=False)
+    assert health.rank(["m/1", "m/2"]) == ["m/2", "m/1"], "two errors → to the end"
 
-    # 15 dakika dolmadan dönmüyor…
-    clock[0] = automode.CEZA_SN - 1
-    assert saglik.rank(["m/1", "m/2"]) == ["m/2", "m/1"]
-    # …dolunca temiz sayfayla dönüyor.
-    clock[0] = automode.CEZA_SN + 1
-    assert saglik.rank(["m/1", "m/2"]) == ["m/1", "m/2"]
-    assert not saglik.cezali("m/1")
+    # Does not return before the 15 minutes are up…
+    clock[0] = automode.PENALTY_S - 1
+    assert health.rank(["m/1", "m/2"]) == ["m/2", "m/1"]
+    # …and returns with a clean slate once they are.
+    clock[0] = automode.PENALTY_S + 1
+    assert health.rank(["m/1", "m/2"]) == ["m/1", "m/2"]
+    assert not health.cezali("m/1")
 
 
 def test_the_window_slides_old_failures_out() -> None:
-    """Pencere 5 çağrı: eski hatalar sonsuza dek sırtında kalmıyor."""
-    saglik = automode.Saglik(clock=lambda: 0.0)
-    saglik.save("m", ok=False)
+    """The window is 5 calls: old errors do not stay on its back forever."""
+    health = automode.Saglik(clock=lambda: 0.0)
+    health.save("m", ok=False)
     for _ in range(automode.WINDOW):
-        saglik.save("m", ok=True)
-    saglik.save("m", ok=False)
-    assert not saglik.cezali("m"), "pencereden çıkan hata sayılmamalı"
+        health.save("m", ok=True)
+    health.save("m", ok=False)
+    assert not health.cezali("m"), "an error that left the window must not count"
 
 
-# -- (d) ilk kurulum yönlendirmesi -------------------------------------
+# -- (d) first-setup guidance -------------------------------------------
 
 
 class _Hub:
@@ -313,7 +314,7 @@ class _Hub:
         self.events.append(payload)
 
 
-def _anahtarsiz(monkeypatch: pytest.MonkeyPatch) -> None:
+def _keyless(monkeypatch: pytest.MonkeyPatch) -> None:
     for entry in settings.PROVIDERS:
         if entry["env"]:
             monkeypatch.delenv(entry["env"], raising=False)
@@ -322,40 +323,40 @@ def _anahtarsiz(monkeypatch: pytest.MonkeyPatch) -> None:
 async def test_an_unconfigured_setup_guides_instead_of_calling_the_model(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Anahtarsız kurulumda submit → model çağrısı YOK, sohbete yönlendirme
-    düşüyor ve tur normal kapanıyor (gate turn_end bekliyor)."""
+    """On a keyless setup submit → NO model call, the guidance lands in the
+    chat and the turn closes normally (the gate waits for turn_end)."""
     from dornick.desktop import Bridge
     from dornick.events import EventLog
     from dornick.session import Session
 
-    _anahtarsiz(monkeypatch)
+    _keyless(monkeypatch)
     hub = _Hub()
     bridge = Bridge(hub, asyncio.get_running_loop())
 
-    cagrildi = []
+    called = []
 
-    async def _asla(*a, **k):
-        cagrildi.append(True)
+    async def _never(*a, **k):
+        called.append(True)
 
     session = Session(EventLog(tmp_path / "s.jsonl"), "test")
-    config = Config.load(tmp_path)  # taze: openrouter + oto, anahtar yok
-    bridge.agent = SimpleNamespace(config=config, session=session, run=_asla)
+    config = Config.load(tmp_path)  # fresh: openrouter + oto, no key
+    bridge.agent = SimpleNamespace(config=config, session=session, run=_never)
 
     await bridge._isle("merhaba", "")
 
-    assert not cagrildi, "model çağrılmamalıydı"
+    assert not called, "the model should not have been called"
     hints = [e for e in hub.events if e.get("type") == "setup_hint"]
-    assert len(hints) == 1, "yönlendirme tam bir kez basılmalı"
+    assert len(hints) == 1, "the guidance must be printed exactly once"
     assert "OpenRouter" in hints[0]["text"]
     assert hub.events[-1]["type"] == "turn_end"
 
-    # Yönlendirme oturuma asistan mesajı olarak da düşüyor: dış kapı ve
-    # geçmiş dökümü oradan okuyor.
-    roller = [(e.role, e.content) for e in session.log.messages()]
-    assert roller[0][0] == "user"
-    assert roller[1][0] == "assistant"
+    # The guidance also lands in the session as an assistant message: the
+    # outer gate and the history transcript read it from there.
+    roles = [(e.role, e.content) for e in session.log.messages()]
+    assert roles[0][0] == "user"
+    assert roles[1][0] == "assistant"
 
-    # Kullanıcı tekrar yazarsa yeniden hatırlatılıyor (her mesajda bir kez).
+    # If the user writes again it is reminded again (once per message).
     await bridge._isle("hâlâ orda mısın", "")
     hints = [e for e in hub.events if e.get("type") == "setup_hint"]
     assert len(hints) == 2
@@ -368,47 +369,47 @@ async def test_a_configured_setup_runs_the_model(
     from dornick.events import EventLog
     from dornick.session import Session
 
-    _anahtarsiz(monkeypatch)
+    _keyless(monkeypatch)
     monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-test")
     hub = _Hub()
     bridge = Bridge(hub, asyncio.get_running_loop())
 
-    kosuldu = []
+    ran = []
 
-    async def _kos(text, image):
-        kosuldu.append(text)
+    async def _run(text, image):
+        ran.append(text)
 
     session = Session(EventLog(tmp_path / "s.jsonl"), "test")
-    bridge.agent = SimpleNamespace(config=Config.load(tmp_path), session=session, run=_kos)
+    bridge.agent = SimpleNamespace(config=Config.load(tmp_path), session=session, run=_run)
 
     await bridge._isle("merhaba", "")
 
-    assert kosuldu == ["merhaba"]
+    assert ran == ["merhaba"]
     assert not [e for e in hub.events if e.get("type") == "setup_hint"]
 
 
 def test_unconfigured_definition_covers_key_and_name(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    _anahtarsiz(monkeypatch)
-    assert settings.yapilandirilmamis(ModelConfig())          # anahtar yok
-    assert settings.yapilandirilmamis(ModelConfig(name=" "))  # ad boş
+    _keyless(monkeypatch)
+    assert settings.yapilandirilmamis(ModelConfig())          # no key
+    assert settings.yapilandirilmamis(ModelConfig(name=" "))  # name empty
 
     monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-test")
     assert not settings.yapilandirilmamis(ModelConfig())
 
-    # Yerel sunucu anahtar istemiyor: adı olan yapılandırılmış sayılır.
-    yerel = ModelConfig(name="qwen/q3", base_url="http://localhost:1234/v1",
+    # A local server wants no key: one with a name counts as configured.
+    local = ModelConfig(name="qwen/q3", base_url="http://localhost:1234/v1",
                         api_key_env=None)
-    assert not settings.yapilandirilmamis(yerel)
+    assert not settings.yapilandirilmamis(local)
 
 
-# -- (e) anahtar doğrulama ---------------------------------------------
+# -- (e) key verification -----------------------------------------------
 
 
 @pytest.fixture()
 def config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Config:
-    _anahtarsiz(monkeypatch)
+    _keyless(monkeypatch)
     cfg = Config(workspace=tmp_path, state_dir=tmp_path / ".dornick")
     cfg.ensure_dirs()
     return cfg
@@ -417,10 +418,10 @@ def config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Config:
 def test_a_401_key_is_rejected_and_nothing_is_written(
     config: Config, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    def _reddet(istek, timeout=0):
-        raise urllib.error.HTTPError(istek.full_url, 401, "Unauthorized", {}, None)
+    def _reject(request, timeout=0):
+        raise urllib.error.HTTPError(request.full_url, 401, "Unauthorized", {}, None)
 
-    monkeypatch.setattr("urllib.request.urlopen", _reddet)
+    monkeypatch.setattr("urllib.request.urlopen", _reject)
 
     with pytest.raises(ValueError, match="geçersiz"):
         settings.apply(config, {"keys": {"OPENROUTER_API_KEY": "sk-or-bozuk"}})
@@ -431,12 +432,12 @@ def test_a_401_key_is_rejected_and_nothing_is_written(
 def test_no_network_saves_the_key_anyway(
     config: Config, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Çevrimdışı kurulum kilitlenmemeli: doğrulama atlanır, anahtar yazılır."""
+    """An offline setup must not lock up: verification is skipped, the key is written."""
 
-    def _agsiz(istek, timeout=0):
+    def _offline(request, timeout=0):
         raise urllib.error.URLError("ağ yok")
 
-    monkeypatch.setattr("urllib.request.urlopen", _agsiz)
+    monkeypatch.setattr("urllib.request.urlopen", _offline)
 
     settings.apply(config, {"keys": {"OPENROUTER_API_KEY": "sk-or-cevrimdisi"}})
     keys = settings.load_keys(config.state_dir)
@@ -446,30 +447,30 @@ def test_no_network_saves_the_key_anyway(
 def test_a_masked_or_foreign_key_skips_validation(
     config: Config, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Maske "değiştirilmedi" demek; başka sağlayıcının anahtarı da
-    OpenRouter'a sorulmaz."""
+    """The mask means "unchanged"; another provider's key is not asked of
+    OpenRouter either."""
 
-    def _asla(*a, **k):  # pragma: no cover - çağrılmamalı
-        raise AssertionError("doğrulama çağrılmamalıydı")
+    def _never(*a, **k):  # pragma: no cover - must not be called
+        raise AssertionError("verification should not have been called")
 
-    monkeypatch.setattr("urllib.request.urlopen", _asla)
+    monkeypatch.setattr("urllib.request.urlopen", _never)
     settings.apply(config, {"keys": {"OPENROUTER_API_KEY": settings.MASK,
                                      "OPENAI_API_KEY": "sk-baska"}})
 
 
-# -- katalog -----------------------------------------------------------
+# -- catalogue ----------------------------------------------------------
 
 
 def test_the_catalog_opens_with_oto_on_openrouter(
     config: Config, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Ağ yokken bile Oto listede: taze kurulumun varsayılanı bu."""
+    """Oto is on the list even without network: this is the fresh-install default."""
     monkeypatch.setattr(settings, "_openai_models_payload", lambda _c: (None, "ağ yok"))
     monkeypatch.setattr(settings.lmstudio, "models", lambda _u: [])
 
-    entries = settings.scan_models(config)  # varsayılan: openrouter
+    entries = settings.scan_models(config)  # default: openrouter
     assert entries and entries[0]["id"] == "oto"
 
-    yerel = Config(workspace=config.workspace, state_dir=config.state_dir)
-    yerel.model = ModelConfig(name="q", base_url="http://localhost:1234/v1")
-    assert all(e["id"] != "oto" for e in settings.scan_models(yerel))
+    local = Config(workspace=config.workspace, state_dir=config.state_dir)
+    local.model = ModelConfig(name="q", base_url="http://localhost:1234/v1")
+    assert all(e["id"] != "oto" for e in settings.scan_models(local))

@@ -29,7 +29,7 @@
   "atalet": null,
   "buyume_p95": null,
   "buyume_ram": null,
-  "gecikme_p95": 11.19
+  "gecikme_p95": 13.9
  },
  "kume": {
   "A": {
@@ -79,13 +79,13 @@
  "kapali": [],
  "damitma": false,
  "kaynak": "hafiza-eski",
- "sure_sn": 0.5,
+ "sure_sn": 0.6,
  "olcek": {
   "dugum": 50000,
   "indeks": 50000,
   "ram_bayt": 3600000,
-  "gecikme_p50": 7.87,
-  "gecikme_p95": 11.19
+  "gecikme_p50": 8.23,
+  "gecikme_p95": 13.9
  },
  "etiket": "holdout-taban",
  "sira": 99

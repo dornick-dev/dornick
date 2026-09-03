@@ -1,8 +1,8 @@
-"""Ayarların okunması ve yazılması.
+"""Reading and writing settings.
 
-İki şey burada sessizce bozulabiliyor: API anahtarının tarayıcıya sızması
-ve bozuk bir değerin diske yazılıp programı bir daha açılmaz hale
-getirmesi. İkisi de test edilmezse fark edilmiyor.
+Two things can silently break here: the API key leaking to the browser and
+a broken value being written to disk making the program unable to open
+again. Neither gets noticed unless tested.
 """
 
 from __future__ import annotations
@@ -18,28 +18,28 @@ from dornick.config import Config
 
 @pytest.fixture()
 def config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Config:
-    # Kabuk ortamındaki gerçek anahtarlar testi kirletmesin.
+    # Real keys in the shell environment must not pollute the test.
     for entry in settings.PROVIDERS:
         if entry["env"]:
             monkeypatch.delenv(entry["env"], raising=False)
-    # Anahtar doğrulama ağa çıkmasın: testte OpenRouter yok, sahte anahtar
-    # canlı uca gidip 401 alırdı.
-    monkeypatch.setattr("dornick.automode.verify_key", lambda _aday: "ok")
+    # Key verification must not go to the network: no OpenRouter in the
+    # test, a fake key would hit the live endpoint and get a 401.
+    monkeypatch.setattr("dornick.automode.verify_key", lambda _candidate: "ok")
     cfg = Config(workspace=tmp_path, state_dir=tmp_path / ".dornick")
     cfg.ensure_dirs()
     return cfg
 
 
-# -- görüntü -----------------------------------------------------------
+# -- snapshot ----------------------------------------------------------
 
 
 def test_snapshot_never_carries_a_key(config: Config) -> None:
-    """Ayar sayfası gerçek anahtarı hiç görmemeli."""
+    """The settings page must never see the real key."""
     settings.apply(config, {"keys": {"ANTHROPIC_API_KEY": "sk-gizli-deger"}})
 
     payload = json.dumps(settings.snapshot(config), ensure_ascii=False)
     assert "sk-gizli-deger" not in payload
-    # Ama "var" bilgisi görünmeli, yoksa kullanıcı tekrar tekrar giriyor.
+    # But the "present" information must show, otherwise the user enters it again and again.
     entry = next(p for p in settings.snapshot(config)["providers"] if p["id"] == "anthropic")
     assert entry["has_key"]
 
@@ -47,7 +47,7 @@ def test_snapshot_never_carries_a_key(config: Config) -> None:
 def test_a_key_from_the_shell_counts_as_present(
     config: Config, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Kullanıcı anahtarı kabuğunda vermişse sayfa 'eksik' dememeli."""
+    """If the user gave the key in their shell the page must not say 'missing'."""
     monkeypatch.setenv("OPENAI_API_KEY", "sk-kabuktan")
     entry = next(p for p in settings.snapshot(config)["providers"] if p["id"] == "openai")
 
@@ -55,8 +55,8 @@ def test_a_key_from_the_shell_counts_as_present(
 
 
 def test_provider_is_recognized_from_the_address(config: Config) -> None:
-    """Birçok sağlayıcı 'openai' protokolünü konuşuyor; hangisinin seçili
-    olduğu yalnızca adresten anlaşılıyor."""
+    """Many providers speak the 'openai' protocol; which one is selected
+    can only be told from the address."""
     updated = settings.apply(config, {"provider": "lmstudio"})
     assert settings.snapshot(updated)["provider"] == "lmstudio"
 
@@ -69,11 +69,11 @@ def test_provider_is_recognized_from_the_address(config: Config) -> None:
     assert updated.model.api_key_env == "GEMINI_API_KEY"
 
 
-# -- yazma -------------------------------------------------------------
+# -- writing -----------------------------------------------------------
 
 
 def test_choosing_a_provider_sets_address_and_key_variable(config: Config) -> None:
-    """Üçünü elle tutarlı tutmayı kullanıcıya bırakmak hataya davetiye."""
+    """Leaving the user to keep all three consistent by hand is an invitation to error."""
     updated = settings.apply(config, {"provider": "lmstudio"})
 
     assert updated.model.provider == "openai"
@@ -102,8 +102,8 @@ def test_settings_survive_a_restart(config: Config) -> None:
 
 
 def test_keys_are_stored_apart_from_the_config(config: Config) -> None:
-    """config.json bir projeye girip sürüm kontrolüne düşebilir; anahtar
-    oraya yazılmamalı."""
+    """config.json can end up in a project and fall into version control;
+    the key must not be written there."""
     settings.apply(config, {"keys": {"ANTHROPIC_API_KEY": "sk-gizli"}})
 
     assert "sk-gizli" not in (config.state_dir / "config.json").read_text(encoding="utf-8")
@@ -111,8 +111,8 @@ def test_keys_are_stored_apart_from_the_config(config: Config) -> None:
 
 
 def test_the_mask_means_unchanged(config: Config) -> None:
-    """Sayfa gerçek değeri görmediği için geri de gönderemiyor; maskeli
-    gelen alanı boş sayıp anahtarı silmek veri kaybı olurdu."""
+    """The page never sees the real value so it cannot send it back either;
+    treating a masked field as empty and deleting the key would be data loss."""
     settings.apply(config, {"keys": {"ANTHROPIC_API_KEY": "sk-gizli"}})
     settings.apply(config, {"keys": {"ANTHROPIC_API_KEY": settings.MASK}})
 
@@ -129,7 +129,7 @@ def test_an_empty_value_deletes_the_key(config: Config) -> None:
 def test_saved_keys_reach_the_environment(
     config: Config, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Backend'ler anahtarı ortamdan okuyor; ikinci bir yol açmaya gerek yok."""
+    """The backends read the key from the environment; no need to open a second path."""
     settings.apply(config, {"keys": {"OPENROUTER_API_KEY": "sk-or-1"}})
     monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
 
@@ -142,9 +142,9 @@ def test_saved_keys_reach_the_environment(
 def test_changing_a_key_reaches_the_environment_immediately(
     config: Config, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Kullanıcı ayarlardan anahtarı DEĞİŞTİRİNCE çalışan sürecin ortamına
-    hemen ulaşmalı — eski bir değer set'li olsa bile. Aksi halde yeni anahtar
-    yalnızca programı yeniden başlatınca etkili oluyordu (bu bir hataydı)."""
+    """When the user CHANGES the key from settings it must reach the running
+    process's environment immediately — even if an old value is set. Otherwise
+    the new key only took effect after restarting the program (that was a bug)."""
     import os
 
     monkeypatch.setenv("OPENROUTER_API_KEY", "sk-eski")
@@ -164,23 +164,23 @@ def test_the_shell_wins_over_the_saved_key(
     assert os.environ["OPENROUTER_API_KEY"] == "sk-kabuktan"
 
 
-# -- doğrulama ---------------------------------------------------------
+# -- validation --------------------------------------------------------
 
 
 @pytest.mark.parametrize(
     ("patch", "why"),
     [
-        ({"permissions": {"mode": "sinirsiz"}}, "izin kipi"),
-        ({"model": {"max_tokens": 10}}, "çok küçük max_tokens"),
-        ({"provider": "yok-boyle-bir-sey"}, "bilinmeyen sağlayıcı"),
-        ({"model": {"uydurma_alan": 1}}, "bilinmeyen alan"),
+        ({"permissions": {"mode": "sinirsiz"}}, "permission mode"),
+        ({"model": {"max_tokens": 10}}, "too-small max_tokens"),
+        ({"provider": "yok-boyle-bir-sey"}, "unknown provider"),
+        ({"model": {"uydurma_alan": 1}}, "unknown field"),
     ],
 )
 def test_a_bad_value_is_refused_before_it_reaches_disk(
     config: Config, patch: dict, why: str
 ) -> None:
-    """Bozuk bir ayar açılmayan bir programa dönüşüyor; doğrulama arayüzde
-    değil burada, çünkü dosya elle de düzenlenebiliyor."""
+    """A broken setting turns into a program that does not open; validation
+    is here, not in the UI, because the file can be hand-edited too."""
     with pytest.raises(ValueError):
         settings.apply(config, patch)
 
@@ -188,10 +188,10 @@ def test_a_bad_value_is_refused_before_it_reaches_disk(
 
 
 def test_an_oversized_max_tokens_is_clamped_not_refused(config: Config) -> None:
-    """01.09 revizyonu (model tavanları otomatik benimseniyor): pencereden
-    büyük max_tokens artık HATA değil — pencere−rezerv tavanına sessizce
-    kısılır. Kullanıcıyı hatayla durdurmak, model değiştirirken tavanı elle
-    hesaplamaya zorluyordu."""
+    """01.09 revision (model ceilings adopted automatically): a max_tokens
+    larger than the window is no longer an ERROR — it is silently clamped
+    to the window−reserve ceiling. Stopping the user with an error forced
+    them to compute the ceiling by hand when switching models."""
     updated = settings.apply(config, {"model": {"max_tokens": 500_000}})
     window = int(updated.model.context_window or 0)
     if window > 0:
@@ -200,9 +200,9 @@ def test_an_oversized_max_tokens_is_clamped_not_refused(config: Config) -> None:
 
 
 def test_a_partial_patch_leaves_the_rest_alone(config: Config) -> None:
-    """Ayar sayfası kısmi yama gönderiyor ("yalnızca izin kipini
-    değiştirdim"); ikinci çağrı elinde bayat bir Config tutsa bile
-    dokunulmayan alanlar eski değerlerine dönmemeli — taban disk."""
+    """The settings page sends partial patches ("I only changed the
+    permission mode"); even if the second call holds a stale Config the
+    untouched fields must not revert to their old values — the base is the disk."""
     settings.apply(config, {"model": {"name": "ilk-model"}, "permissions": {"mode": "yolo"}})
     updated = settings.apply(config, {"permissions": {"mode": "ask"}})
 
@@ -211,10 +211,10 @@ def test_a_partial_patch_leaves_the_rest_alone(config: Config) -> None:
     assert Config.load(config.workspace).model.name == "ilk-model"
 
 
-# -- canlı model değişikliği -------------------------------------------
+# -- live model change -------------------------------------------------
 #
-# "Kaydet"e basıp hiçbir şeyin değişmediğini görmek, sonra programı kapatıp
-# açmak gerektiğini keşfetmek iyi bir ayar sayfası değil.
+# Pressing "Save" and seeing nothing change, then discovering the program
+# has to be closed and reopened, is not a good settings page.
 
 
 class _FakeAgent:
@@ -229,15 +229,15 @@ class _FakeAgent:
         self.reconfigured = 0
 
     def reconfigure(self, config) -> None:  # noqa: ANN001
-        # Gerçek Agent.reconfigure'ın gözlemlenebilir sözleşmesi: config
-        # güncellenir, çekirdek yeniden kurulur. Testte kaç kez çağrıldığını
-        # da sayıyoruz — modelsiz kaydetmede de anında uygulanmalı.
+        # The observable contract of the real Agent.reconfigure: config is
+        # updated, the core is rebuilt. In the test we also count how many
+        # times it was called — a model-less save must apply immediately too.
         self.config = config
         self.reconfigured += 1
 
 
 def _bridge(config):  # noqa: ANN001
-    """Köprüyü döngüsüz kurar: burada bakılan şey karar, eşyordam değil."""
+    """Builds the bridge without a loop: what is checked here is the decision, not the coroutine."""
     import asyncio
     from dataclasses import replace
 
@@ -273,7 +273,7 @@ def test_changing_the_model_takes_effect_without_a_restart(tmp_path: Path) -> No
 
 
 def test_a_change_mid_turn_waits_for_the_turn(tmp_path: Path) -> None:
-    """Akan bir istemciyi altından çekmek o cevabı öldürür."""
+    """Pulling a streaming client out from under kills that answer."""
     from dataclasses import replace
 
     from dornick.config import Config
@@ -285,8 +285,8 @@ def test_a_change_mid_turn_waits_for_the_turn(tmp_path: Path) -> None:
 
     bridge.reload(replace(config, model=replace(config.model, name="başka/model")))
 
-    assert bridge.agent.client is before      # henüz değişmedi
-    assert bridge._wanted_model is not None   # ama bekliyor
+    assert bridge.agent.client is before      # not changed yet
+    assert bridge._wanted_model is not None   # but waiting
 
     bridge._busy = False
     bridge._swap_model()
@@ -295,10 +295,10 @@ def test_a_change_mid_turn_waits_for_the_turn(tmp_path: Path) -> None:
 
 
 def test_a_mode_change_reaches_the_page_as_an_event(tmp_path: Path) -> None:
-    """Kip değişimi yalnız notice metniyle duyuruluyordu — metin makine
-    okunur değil. Dock çipi ve plan-onay düğmesi gerçek kipi ancak ayrı
-    bir `mode` olayıyla izleyebiliyor (ayar sayfası dışından — dış kapı,
-    başka sekme — değişen kip de dahil)."""
+    """The mode change was announced only with the notice text — text is
+    not machine-readable. The dock chip and the plan-approve button can
+    only track the real mode via a separate `mode` event (including a mode
+    changed from outside the settings page — the outer gate, another tab)."""
     from dataclasses import replace
 
     from dornick.config import Config
@@ -313,8 +313,7 @@ def test_a_mode_change_reaches_the_page_as_an_event(tmp_path: Path) -> None:
 
 
 def test_settings_that_do_not_touch_the_model_leave_it_alone(tmp_path: Path) -> None:
-    """Her kaydetmede istemciyi yeniden kurmak, bağlantıyı boşuna
-    tazelemek demek."""
+    """Rebuilding the client on every save means refreshing the connection for nothing."""
     from dataclasses import replace
 
     from dornick.config import Config
@@ -326,18 +325,18 @@ def test_settings_that_do_not_touch_the_model_leave_it_alone(tmp_path: Path) -> 
     bridge.reload(replace(config, voice=replace(config.voice, enabled=True)))
 
     assert bridge.agent.client is before
-    # İstemci tazelenmedi ama çekirdek yine de yeniden kuruldu: ses açıldı,
-    # duyu değişti — bunlar yeniden başlatmadan bir sonraki tura girmeli.
+    # The client was not refreshed but the core was still rebuilt: the voice
+    # was switched on, a sense changed — these must enter the next turn without a restart.
     assert bridge.agent.reconfigured == 1
     assert bridge.agent.config.voice.enabled
     bridge.loop.close()
 
 
-# -- oturum değiştirme: yeni / devam (canlı) ---------------------------
+# -- session switching: new / resume (live) ----------------------------
 
 
 def _bridge_with_session(tmp_path):
-    """Gerçek config/mind/session ile bir köprü; oturum değiştirmeyi sınar."""
+    """A bridge with real config/mind/session; exercises session switching."""
     import asyncio
     from dornick.config import Config
     from dornick.desktop import Bridge
@@ -380,18 +379,18 @@ def test_new_session_swaps_and_rebinds(tmp_path):
 
     assert res["ok"] and res["id"] != old_id and not res["resumed"]
     assert agent.session.id == res["id"]
-    assert agent.mind.session_id == res["id"]     # zihin kimliği de geçti
-    assert agent._last_encoded == ""              # encode dedup sıfırlandı
-    assert rebinds == [res["id"]]                 # olay akışı yeni günlüğe bağlandı
-    assert any(e["type"] == "session_reset" for e in emits)   # kanal
-    # anlık görüntüsü session_reset'ten sonra geliyor (orkestra tohumu)
+    assert agent.mind.session_id == res["id"]     # the mind's id moved too
+    assert agent._last_encoded == ""              # encode dedup reset
+    assert rebinds == [res["id"]]                 # the event stream was bound to the new log
+    assert any(e["type"] == "session_reset" for e in emits)   # the channel
+    # snapshot comes after session_reset (the orchestra seed)
     bridge.loop.close()
 
 
 def test_resume_session_loads_existing(tmp_path):
     from dornick.events import EventLog
     bridge, agent, rebinds, emits = _bridge_with_session(tmp_path)
-    # var olan bir oturum günlüğü
+    # an existing session log
     log = EventLog(agent.config.sessions_dir / "20260610T090000Z.jsonl")
     log.append("message", role="user", content="çorum pompa verimi")
     log.close()
@@ -413,39 +412,40 @@ def test_resume_missing_session_is_reported(tmp_path):
 
 
 def test_switching_away_while_busy_opens_a_parallel_lane(tmp_path):
-    """Eski sözleşme reddetmekti ("dornick meşgul; tur bitince dene") —
-    canlı istekle değişti (29.08): koşan şeride dokunulmaz, yeni
-    sohbet AYRI bir şeritte hemen açılır."""
+    """The old contract was to refuse ("dornick is busy; try when the turn
+    ends") — changed by a live request (29.08): the running lane is left
+    alone, the new chat opens immediately in a SEPARATE lane."""
     bridge, agent, rebinds, _ = _bridge_with_session(tmp_path)
-    agent.client = object()          # şerit fabrikası istemciyi paylaşır
-    eski_oturum = agent.session.id
+    agent.client = object()          # the lane factory shares the client
+    old_session = agent.session.id
     bridge._busy = True
     res = bridge.new_session()
     assert res["ok"], res
-    # Koşan şerit yerinde: eski ajanın oturumu DEĞİŞMEDİ ve hâlâ meşgul.
-    assert agent.session.id == eski_oturum
-    assert bridge.seritler[eski_oturum].busy is True
-    # Aktif şerit artık yeni oturum; ajanı başka bir ajan.
+    # The running lane is in place: the old agent's session did NOT change and is still busy.
+    assert agent.session.id == old_session
+    assert bridge.seritler[old_session].busy is True
+    # The active lane is now the new session; its agent is another agent.
     assert bridge.agent is not agent
     assert res["id"] in bridge.seritler and rebinds[-1] == res["id"]
     bridge.loop.close()
 
 
-def test_snapshot_surumu_tasir(config: Config) -> None:
-    """Ayarlar › Makine'deki salt-okunur sürüm satırı buradan besleniyor.
+def test_snapshot_carries_the_version(config: Config) -> None:
+    """The read-only version line in Settings › Machine is fed from here.
 
-    Sahada hangi sürümün kurulu olduğu görünmüyordu; alan pyproject'teki
-    gerçek sürümle birebir aynı olmalı — ikinci bir sürüm kaynağı yok.
+    Which version was installed was invisible in the field; the field must
+    match the real version in pyproject exactly — there is no second
+    version source.
     """
     from dornick import environment
 
-    kar = settings.snapshot(config)
-    assert kar["surum"] == environment.version()
-    assert kar["surum"] not in ("", "0.0.0")
+    snap = settings.snapshot(config)
+    assert snap["surum"] == environment.version()
+    assert snap["surum"] not in ("", "0.0.0")
 
 
 def test_catalog_providers_have_unique_ids_and_openai_urls() -> None:
-    """Önayarlar çakışmasın; openai protokolü gerçek uç kalıbında olsun."""
+    """Presets must not collide; the openai protocol must be in the real endpoint pattern."""
     ids = [e["id"] for e in settings.PROVIDERS]
     assert len(ids) == len(set(ids))
     assert {"gemini", "nvidia", "deepseek", "groq", "mistral", "qwen"} <= set(ids)
@@ -465,7 +465,7 @@ def test_catalog_providers_have_unique_ids_and_openai_urls() -> None:
 def test_openai_models_request_sends_bearer(
     config: Config, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Gemini / Groq gibi uçlar anahtarsız 401/404 verir; Bearer şart."""
+    """Endpoints like Gemini / Groq give 401/404 without a key; Bearer is required."""
     seen: dict[str, str] = {}
 
     class _Resp:
@@ -492,29 +492,29 @@ def test_openai_models_request_sends_bearer(
     assert seen["url"].endswith("/v1beta/openai/models")
 
 def test_background_lane_events_do_not_leak_into_the_active_chat(tmp_path):
-    """Paralel şeritlerin görünmez direği: arka şeridin metin/araç
-    olayları aktif sohbete sızmaz; onay istekleri ise HER şeritten
-    geçer (yoksa arka tur sonsuza dek bekler)."""
+    """The invisible pillar of parallel lanes: the background lane's
+    text/tool events do not leak into the active chat; approval requests
+    pass through from EVERY lane (otherwise the background turn waits forever)."""
     bridge, agent, rebinds, emits = _bridge_with_session(tmp_path)
     agent.client = object()
     bridge._busy = True
     res = bridge.new_session()
     assert res['ok']
-    eski = bridge.seritler[agent.session.id]
-    yeni = bridge.seritler[res['id']]
+    old = bridge.seritler[agent.session.id]
+    new = bridge.seritler[res['id']]
     emits.clear()
-    # Arka şeridin io'su: metin olayı yayına DÜŞMEZ.
-    arka_io = bridge.io(eski)
-    arka_io.on_text('sizmamali')
+    # The background lane's io: the text event does NOT reach the broadcast.
+    background_io = bridge.io(old)
+    background_io.on_text('sizmamali')
     assert emits == []
-    # Aktif şeridin io'su: aynı olay yayına düşer.
-    on_io = bridge.io(yeni)
-    on_io.on_text('gorunmeli')
+    # The active lane's io: the same event reaches the broadcast.
+    front_io = bridge.io(new)
+    front_io.on_text('gorunmeli')
     assert any(e.get('type') == 'assistant_delta' for e in emits)
     bridge.loop.close()
 
 
-# -- katalog yetenekleri -----------------------------------------------
+# -- catalogue capabilities --------------------------------------------
 
 
 def _openrouter_entry(**extra: object) -> dict:
@@ -533,7 +533,7 @@ def _openrouter_entry(**extra: object) -> dict:
 def test_openrouter_catalog_adopts_window_vision_and_thinking(
     config: Config, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """OpenRouter `/models` bu alanları söylüyor; kimlik-only satır yetmez."""
+    """OpenRouter `/models` tells these fields; an id-only row is not enough."""
     monkeypatch.setattr(settings.lmstudio, "models", lambda _u: [])
     monkeypatch.setattr(
         settings, "_openai_models_payload",
@@ -550,7 +550,7 @@ def test_openrouter_catalog_adopts_window_vision_and_thinking(
 def test_batch_only_models_are_hidden_from_chat_catalog(
     config: Config, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """`:batch` varyantı Batch API'ye özel; seçilirse sohbet 404 verir."""
+    """The `:batch` variant is specific to the Batch API; if selected chat gives 404."""
     monkeypatch.setattr(settings.lmstudio, "models", lambda _u: [])
     monkeypatch.setattr(
         settings, "_openai_models_payload",
@@ -577,7 +577,7 @@ def test_apply_strips_batch_suffix_to_sync_model(config: Config) -> None:
 def test_a_catalog_id_does_not_invent_caps(
     config: Config, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """OpenAI resmi liste yalnız id verir — pencere/görüntü uydurulmaz."""
+    """The official OpenAI list gives only ids — window/vision are not invented."""
     monkeypatch.setattr(settings.lmstudio, "models", lambda _u: [])
     monkeypatch.setattr(
         settings, "_openai_models_payload",
@@ -604,7 +604,7 @@ def test_detect_caps_returns_catalog_fields_without_inventing(
 
 
 def test_detect_caps_is_empty_for_oto(config: Config) -> None:
-    """Oto bir havuz; tek modelin penceresi yok."""
+    """Oto is a pool; a single model has no window."""
     config.model.name = "oto"
     assert settings.detect_caps(config) == {}
     assert settings.detect_window(config) is None
@@ -613,10 +613,10 @@ def test_detect_caps_is_empty_for_oto(config: Config) -> None:
 def test_apply_does_not_scan_the_catalog(
     config: Config, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """apply içinde tarama OpenRouter'da 10 sn zaman aşımına yol açardı."""
+    """A scan inside apply led to a 10 s timeout on OpenRouter."""
     monkeypatch.setattr(
         settings, "scan_models",
-        lambda _c: (_ for _ in ()).throw(AssertionError("katalog taranmamalı")),
+        lambda _c: (_ for _ in ()).throw(AssertionError("the catalogue must not be scanned")),
     )
     updated = settings.apply(config, {
         "model": {
@@ -638,7 +638,7 @@ def test_apply_does_not_scan_the_catalog(
 def test_apply_adopts_caps_when_model_id_changes(
     config: Config, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Model seçilince Algıla olmadan pencere/yetenek dolsun."""
+    """When a model is selected window/capabilities fill in without Detect."""
     monkeypatch.setattr(
         settings, "detect_caps",
         lambda _c: {"max_context": 99_000, "vision": True, "thinking": False},
@@ -648,7 +648,7 @@ def test_apply_adopts_caps_when_model_id_changes(
     assert updated.model.context_window == 99_000
     assert updated.model.vision is True
     assert updated.model.thinking is False
-    assert updated.model.max_tokens <= 99_000 - settings._TOKEN_REZERV
+    assert updated.model.max_tokens <= 99_000 - settings._TOKEN_RESERVE
 
 
 def test_a_model_that_cannot_think_omits_the_anthropic_field() -> None:
@@ -744,11 +744,10 @@ def test_ollama_show_is_skipped_when_the_catalog_already_knows(
         "id": "llama3", "max_context": 4096, "vision": True, "thinking": False,
     }])
 
-    def _asla(*a, **k):  # pragma: no cover
-        raise AssertionError("/api/show çağrılmamalıydı")
+    def _never(*a, **k):  # pragma: no cover
+        raise AssertionError("/api/show should not have been called")
 
-    monkeypatch.setattr("urllib.request.urlopen", _asla)
+    monkeypatch.setattr("urllib.request.urlopen", _never)
     assert settings.detect_caps(config) == {
         "max_context": 4096, "vision": True, "thinking": False,
     }
-

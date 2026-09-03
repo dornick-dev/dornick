@@ -1,11 +1,11 @@
-"""Zihni gezinilebilir bir grafa çevirir.
+"""Turns the mind into a navigable graph.
 
-Merkezde ajan, etrafında kategoriler, onların ucunda tek tek kayıtlar.
-İki seviyeli olmasının sebebi okunabilirlik: yüzlerce hatırayı doğrudan
-merkeze bağlamak yıldız değil, yumak üretir.
+The agent sits at the centre, categories around it, individual records at
+their tips. It is two levels deep for readability: wiring hundreds of
+memories straight to the centre produces a tangle, not a star.
 
-Bu modül saf: Mind okur, sözlük döndürür. Sunucu ve arayüzden bağımsız
-test edilebilir.
+This module is pure: it reads a Mind and returns a dict. It can be tested
+independently of the server and the UI.
 """
 
 from __future__ import annotations
@@ -14,8 +14,8 @@ from typing import Any
 
 from ..mind.store import MEMORY_KINDS, Mind
 
-# Kategori başlıkları ve çizim sırası. Sıra sabit olmalı, yoksa graf her
-# yenilemede yeniden diziliyormuş gibi görünür.
+# Category titles and drawing order. The order must be fixed, otherwise the
+# graph looks as if it re-arranges itself on every refresh.
 HUBS: tuple[tuple[str, str], ...] = (
     ("user", "kullanıcı"),
     ("preference", "tercihler"),
@@ -35,10 +35,10 @@ def build_graph(mind: Mind, *, episode_limit: int = 8) -> dict[str, Any]:
         {"id": "self", "label": "dornick", "group": "self", "size": 26, "detail": ""}
     ]
 
-    # "Konuşmaya git" ancak kaynak oturum DOSYASI hâlâ duruyorsa vaat
-    # edilebilir: taşınmış/birleştirilmiş anıların oturumları çoğu zaman
-    # bu makinede yok ve düğme sessizce ölüyordu (canlıda görüldü).
-    def _kaynak_var(session_id: str) -> bool:
+    # "Go to the conversation" can only be promised if the source session
+    # FILE is still around: the sessions of migrated/merged memories are
+    # usually not on this machine and the button died silently (seen live).
+    def _source_exists(session_id: str) -> bool:
         if not session_id:
             return False
         try:
@@ -71,8 +71,8 @@ def build_graph(mind: Mind, *, episode_limit: int = 8) -> dict[str, Any]:
             nodes.append({**item, "group": group, "size": 8})
             edges.append({"source": hub_id, "target": item["id"]})
 
-    # Hatiralar arasi gercek cagrisim baglari. Merkez-yaprak kenarlarindan
-    # ayri isaretleniyor: arayuz agi bunlarla oruyor, hiyerarsiyle degil.
+    # Real association links between memories. Marked separately from the
+    # hub-leaf edges: the UI weaves its net with these, not with the hierarchy.
     known = {n["id"] for n in nodes}
     synapses = [
         {"source": src, "target": dst, "weight": weight, "synapse": True}
@@ -87,10 +87,10 @@ def build_graph(mind: Mind, *, episode_limit: int = 8) -> dict[str, Any]:
     }
 
 
-# "Konuşmaya git" ancak kaynak oturum DOSYASI hâlâ duruyorsa vaat
-# edilebilir: taşınmış/birleştirilmiş anıların oturumları çoğu zaman bu
-# makinede yok ve düğme sessizce ölüyordu (canlıda görüldü).
-def _kaynak_var(mind: Mind, session_id: str) -> bool:
+# "Go to the conversation" can only be promised if the source session FILE
+# is still around: the sessions of migrated/merged memories are usually not
+# on this machine and the button died silently (seen live).
+def _source_exists(mind: Mind, session_id: str) -> bool:
     if not session_id:
         return False
     try:
@@ -114,10 +114,10 @@ def _buckets(mind: Mind, episode_limit: int) -> dict[str, list[dict[str, Any]]]:
                 "label": _clip(memory.title or memory.content),
                 "detail": memory.content,
                 "meta": ", ".join(memory.tags),
-                # "Nasıl öğrendim": hangi konuşmada, ne zaman. Arayüz çift
-                # tıkla kaynağa gidiyor — kimlik olmadan gidilemezdi.
+                # "How I learned it": in which conversation, when. The UI
+                # double-click goes to the source — impossible without the id.
                 "kaynak": memory.session_id,
-                "kaynak_var": _kaynak_var(mind, memory.session_id),
+                "kaynak_var": _source_exists(mind, memory.session_id),
                 "ts": memory.ts,
             }
             for memory in mind.memories(kind)
@@ -126,17 +126,17 @@ def _buckets(mind: Mind, episode_limit: int) -> dict[str, list[dict[str, Any]]]:
     buckets["goal"] = [
         {"id": goal.id, "label": _clip(goal.text), "detail": goal.text,
          "meta": goal.status, "kaynak": goal.session_id,
-         "kaynak_var": _kaynak_var(mind, goal.session_id), "ts": goal.ts}
-        # Beyin grafiği zihnin tamamına bakar: hedefler artık oturuma
-        # süzülü geldiğinden burada bilerek hepsi isteniyor.
+         "kaynak_var": _source_exists(mind, goal.session_id), "ts": goal.ts}
+        # The brain graph looks at the whole mind: since goals now arrive
+        # filtered by session, all of them are deliberately requested here.
         for goal in mind.goals(all_sessions=True)
     ]
 
     buckets["session"] = [
         {
             "id": hit.item.session_id,
-            # Ham damga ("20260823T173004Z") ekranda hiçbir şey söylemiyor
-            # ve grafta yan yana duran beş tanesi okunmuyor.
+            # The raw stamp ("20260823T173004Z") says nothing on screen and
+            # five of them side by side in the graph are unreadable.
             "label": _when(hit.item.session_id),
             "detail": _clip(hit.item.digest, 400),
             "meta": f"{hit.item.turns} tur"
@@ -159,10 +159,10 @@ def _stats(mind: Mind, buckets: dict[str, list[dict[str, Any]]]) -> dict[str, An
 
 
 def _when(session_id: str) -> str:
-    """Oturum kimliğini okunur bir tarihe çevirir.
+    """Turns a session id into a readable date.
 
-    Kimlik `20260823T173004Z` biçiminde; çözülemezse olduğu gibi kalıyor —
-    elle kopyalanmış bir oturum dosyası başka bir ad taşıyor olabilir.
+    The id is shaped like `20260823T173004Z`; if it cannot be parsed it is
+    left as is — a hand-copied session file may carry another name.
     """
     from datetime import datetime
 

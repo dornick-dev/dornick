@@ -1,12 +1,13 @@
-"""Araç tipleri ve kayıt defteri.
+"""Tool types and the registry.
 
-Araç şeması modelin gördüğü tek dokümantasyondur. İki tasarım kuralı:
+The tool schema is the only documentation the model ever sees. Two design
+rules:
 
-  1. Az sayıda, güçlü araç. Onlarca düz araç modeli boğar; ilgili eylemleri
-     bir `action` enum'u altında topla.
-  2. Hatalar öğretici olsun. "element bulunamadı" değil, "element bulunamadı —
-     ekran değişmiş olabilir, yeni bir görüntü al" de. Model bir sonraki turda
-     kendini düzeltir; sen bir tur kazanırsın.
+  1. Few, powerful tools. Dozens of flat tools drown the model; group
+     related actions under a single `action` enum.
+  2. Errors must teach. Not "element not found" but "element not found —
+     the screen may have changed, take a fresh capture". The model corrects
+     itself on the next turn; you win a turn.
 """
 
 from __future__ import annotations
@@ -25,15 +26,16 @@ Block = dict[str, Any]
 
 @dataclass(slots=True)
 class ToolResult:
-    """Bir araç çağrısının sonucu.
+    """The result of one tool call.
 
-    content düz metin ya da blok listesi olabilir (görüntü döndüren araçlar
-    için blok listesi şart).
+    content may be plain text or a list of blocks (a block list is required
+    for tools that return images).
     """
 
     content: str | list[Block]
     is_error: bool = False
-    # Modele gitmeyen, günlüğe ve zihin arayüzüne giden ek bilgi.
+    # Extra information that does not go to the model — it goes to the log
+    # and to the mind UI.
     detail: dict[str, Any] = field(default_factory=dict)
 
     @classmethod
@@ -50,10 +52,11 @@ class ToolResult:
 
 
 class JobFailed(Exception):
-    """Arka plan işi bitti ama başarısız.
+    """A background job finished but failed.
 
-    Mesajı kullanıcı raporudur — ham traceback değil. `_job_round` bunu
-    `hata` durumuna çevirir; aksi halde koşu 'tamamlandı' görünür.
+    The message is the user report — not a raw traceback. `_job_round`
+    turns this into the `hata` status; otherwise the run would look
+    'completed'.
     """
 
 
@@ -61,53 +64,58 @@ class JobFailed(Exception):
 class ToolContext:
     config: "Config"
     session: "Session"
-    # Kullanıcı kesmesi. Uzun süren araçlar bunu periyodik yoklamalı.
+    # User interrupt. Long-running tools should poll this periodically.
     cancel: asyncio.Event
 
-    # Alt ajan başlatıcı. Döngü kuruyor; araç katmanı `Agent`i tanımıyor
-    # (tanısaydı içe aktarma çemberi olurdu) ve None ise `task` aracı hiç
-    # kaydedilmiyor.
+    # Sub-agent launcher. The loop wires it; the tool layer does not know
+    # `Agent` (knowing it would be an import cycle) and when None the `task`
+    # tool is not registered at all.
     spawn: Callable[[str, str, str], Awaitable[str]] | None = None
 
-    # Arka plan yardımcı başlatıcı: hemen defter kaydını (handle) döndürür,
-    # iş arkada koşar ve bitince ana ajana bildirilir. None ise `task`
-    # aracının `arka_plan` seçeneği çalışmaz.
+    # Background helper launcher: returns the ledger record (handle) right
+    # away, the job runs in the background and the main agent is notified
+    # when it finishes. When None the `task` tool's `arka_plan` option does
+    # not work.
     spawn_bg: Callable[[str, str, str], Any] | None = None
 
-    # Koşan ya da bitmiş bir yardımcıya sonradan mesaj (task_say) ve
-    # yardımcıların durum özeti (task_status). Döngü veriyor; alt ajanda None.
+    # Late message to a running or finished helper (task_say) and the
+    # helpers' status summary (task_status). The loop provides them; None
+    # inside a sub-agent.
     child_say: Callable[[str, str], tuple[bool, str]] | None = None
     child_status: Callable[[str], str] | None = None
 
-    # Uzun ama BİTEN bir işi (derleme, kurulum, test koşusu) arka plana
-    # alır: kayıt defterine yazar, bitince çıktısı harness notuyla ajana
-    # bildirilir. `shell` gibi araçların `arka_plan` seçeneği bunu kullanır.
-    # Runner kendi kesme bayrağını alır; ana interrupt hepsini kurar.
+    # Moves a long but FINITE job (build, install, test run) to the
+    # background: writes it to the ledger, and when it finishes its output
+    # is reported to the agent with a harness note. Tools like `shell` use
+    # this for their `arka_plan` option. The runner receives its own cancel
+    # flag; the main interrupt sets all of them.
     job_bg: Callable[[str, Callable[[asyncio.Event], Awaitable[str]]], Any] | None = None
 
-    # Zamanlanmış görev defteri. Döngü veriyor; None ise `schedule`
-    # aracı kendini kullanılamaz ilan ediyor.
+    # Scheduled task ledger. The loop provides it; when None the `schedule`
+    # tool declares itself unavailable.
     schedule: Any = None
 
-    # Otomasyon grafiği koşturucu (workflow run). None ise araç stub döner.
+    # Automation graph runner (workflow run). When None the tool returns a stub.
     run_workflow: Callable[[str], Awaitable[Any]] | None = None
 
-    # Yerel kameranın sürekli açık tamponu. Kareler burada duruyor ve
-    # kendiliğinden modele gitmiyor; `look` aracı istediğinde alınıyor.
+    # The local camera's always-open buffer. Frames sit here and do not go
+    # to the model on their own; the `look` tool fetches them on request.
     lens: Any = None
 
-    # Sürekli dinleyen kulak. `senses` aracı bununla susturuyor — kulağı
-    # kapatamayan bir ajan, "kapalıyım" deyip dinlemeye devam ediyordu.
+    # The always-listening ear. The `senses` tool mutes through this — an
+    # agent that could not close its ear kept listening while saying "I'm
+    # off".
     ear: Any = None
 
-    # Ağ kameralarının izleyicisi. "Beni izleme" onları da kapsıyor.
+    # Watcher of the network cameras. "Don't watch me" covers them too.
     watcher: Any = None
 
-    # HUD/sohbet kamera anahtarı: True açar, False aygıtı bırakır.
+    # HUD/chat camera switch: True turns it on, False releases the device.
     camera_power: Callable[[bool], str] | None = None
 
-    # Atölye ilk erişimde açılıyor: klasörü oluşturmak bir yan etki ve
-    # her ToolContext kurulduğunda değil, gerçekten gerektiğinde olmalı.
+    # The workshop opens on first access: creating the folder is a side
+    # effect and should happen when it is really needed, not every time a
+    # ToolContext is built.
     _sandbox: Any = None
 
     @property
@@ -116,7 +124,7 @@ class ToolContext:
 
     @property
     def sandbox(self) -> Any:
-        """Ajanın kendi klasörü. Yazma yalnızca burada serbest."""
+        """The agent's own folder. Writing is free only here."""
         if self._sandbox is None:
             self._sandbox = self.config.open_sandbox()
         return self._sandbox
@@ -131,20 +139,21 @@ class ToolSpec:
     description: str
     input_schema: dict[str, Any]
     handler: Handler
-    # Sistem durumunu değiştiriyor mu? İzin motoru buna bakar.
+    # Does it change system state? The permission engine looks at this.
     mutates: bool = False
-    # `mutates` olsa bile onay GEREKTİRMEYEN eylemler (`action` alanı).
+    # Actions (the `action` field) that do NOT require approval even when
+    # `mutates` is set.
     #
-    # Kanıtlanmış yara: ajanın KENDİ defterine yazması (`mind_memory
-    # save`) mutasyon sayılıyordu. Sonuç: her hatıra için kullanıcıya onay
-    # penceresi, plan kipinde ise düpedüz RET. Zihin iki gün boyunca
-    # hiçbir tercih/ders/olgu kaydetmedi — konuşma dökümü akmaya devam
-    # ederken kalıcı bellek durdu. Kendi not defterine yazmak bir sistem
-    # mutasyonu değil; SİLMEK (forget) hâlâ öyle ve gated kalıyor.
+    # Proven wound: the agent writing to its OWN notebook (`mind_memory
+    # save`) counted as a mutation. Result: an approval prompt to the user
+    # for every memory, and in plan mode an outright DENY. For two days the
+    # mind recorded no preference/lesson/fact — the conversation transcript
+    # kept flowing while durable memory stopped. Writing to your own notebook
+    # is not a system mutation; DELETING (forget) still is and stays gated.
     safe_actions: tuple[str, ...] = ()
-    # Aynı turda diğer araçlarla eşzamanlı çalışabilir mi?
+    # Can it run concurrently with other tools in the same turn?
     parallel_safe: bool = True
-    # Hangi MCP sunucusundan geldi (yerel araçlar için None).
+    # Which MCP server it came from (None for local tools).
     source: str | None = None
 
     def api_schema(self) -> dict[str, Any]:
@@ -166,13 +175,13 @@ class ToolRegistry:
         return spec
 
     def replace(self, spec: ToolSpec) -> ToolSpec:
-        """Var olan bir yeteneğin üstüne taze halini koyar.
+        """Puts the fresh version of an existing skill on top of the old one.
 
-        Yalnızca yetenekler: ajan kendi yazdığı dosyayı düzeltip yeniden
-        yüklediğinde bellekteki eski hali çalışmaya devam ediyordu — ajan
-        bunu fark edip "cache'li hal eski kodu kullanıyor" diyerek her
-        seferinde kabuğa düşüyordu. Yerleşik bir aracın üzerine yazmaksa
-        yasak: `shell` adında bir yetenek, izin kapısını değiştirirdi.
+        Skills only: when the agent fixed a file it had written and reloaded
+        it, the old in-memory version kept running — the agent noticed,
+        said "the cached version uses the old code" and dropped to the shell
+        every time. Overwriting a built-in tool, however, is forbidden: a
+        skill named `shell` would replace the permission gate.
         """
         current = self._tools.get(spec.name)
         if current is not None and current.source != spec.source:
@@ -181,7 +190,7 @@ class ToolRegistry:
         return spec
 
     def unregister(self, name: str) -> bool:
-        """Yeteneği defterden düşürür. Yerleşik araçlar düşürülemez."""
+        """Drops a skill from the registry. Built-in tools cannot be dropped."""
         spec = self._tools.get(name)
         if spec is None or spec.source is None:
             return False
@@ -224,19 +233,20 @@ class ToolRegistry:
         return len(self._tools)
 
     def all(self) -> list[ToolSpec]:
-        """Ada göre sıralı. Sıra deterministik olmalı.
+        """Sorted by name. The order must be deterministic.
 
-        Araçlar istekte 0. pozisyonda render edilir; sıraları değişirse
-        önbelleğin tamamı geçersiz olur.
+        Tools are rendered at position 0 of the request; if their order
+        changes the whole cache is invalidated.
         """
         return [self._tools[k] for k in sorted(self._tools)]
 
     def api_schemas(self, *, brief: bool = False) -> list[dict[str, Any]]:
-        """Araçların API şeması.
+        """The tools' API schema.
 
-        `brief` küçük pencereli modeller için: açıklamanın yalnızca ilk
-        paragrafı gönderiliyor. 4096 token'lık bir modelde araç açıklamaları
-        tek başına pencerenin dörtte birini yiyor ve konuşmaya yer kalmıyor.
+        `brief` is for small-window models: only the first paragraph of the
+        description is sent. On a 4096-token model the tool descriptions
+        alone eat a quarter of the window and leave no room for the
+        conversation.
         """
         schemas = [t.api_schema() for t in self.all()]
         if not brief:
@@ -258,22 +268,23 @@ def object_schema(
     }
 
 
-# -- şema doğrulaması ---------------------------------------------------
+# -- schema validation --------------------------------------------------
 #
-# Kanıtlanmış zincir: model `write_file`'ı `path` olmadan çağırdı → araç
-# içinde `args["path"]` patladı → modele HAM `KeyError: 'path'` gitti →
-# model bunu "araç bozuk" sanıp gerçek çağrı yerine çağrı XML'ini düz metin
-# yazdı → kullanıcı ekranında ham XML.
+# Proven chain: the model called `write_file` without `path` → `args["path"]`
+# blew up inside the tool → the model received a RAW `KeyError: 'path'` →
+# the model took it as "the tool is broken" and wrote the call XML as plain
+# text instead of a real call → raw XML on the user's screen.
 #
-# Zincirin ilk halkası burada kırılıyor: handler ÇAĞRILMADAN önce çağrı
-# şemaya vuruluyor ve uymuyorsa modele istisna değil YÖNERGE dönüyor —
-# hangi alan eksik, ne verdin, şema ne. Tek merkezden: her araç için aynı
-# güvence, tek tek araçlara yama gerekmiyor.
+# The first link of the chain is broken here: BEFORE the handler is called
+# the call is checked against the schema and, if it does not fit, the model
+# gets INSTRUCTIONS rather than an exception — which field is missing, what
+# you gave, what the schema is. From one place: the same guarantee for every
+# tool, no per-tool patches needed.
 
-# JSON Schema tipleri → Python karşılıkları. `number` int'i de kabul eder
-# (JSON'da 1 hem integer hem number); `bool` int'in alt sınıfı olduğu için
-# sayı kontrollerinde ayrıca eleniyor.
-_JSON_TIPLERI: dict[str, tuple[type, ...]] = {
+# JSON Schema types → Python counterparts. `number` accepts int too (in JSON
+# 1 is both integer and number); since `bool` is a subclass of int it is
+# filtered out separately in the numeric checks.
+_JSON_TYPES: dict[str, tuple[type, ...]] = {
     "string": (str,),
     "number": (int, float),
     "integer": (int,),
@@ -283,87 +294,88 @@ _JSON_TIPLERI: dict[str, tuple[type, ...]] = {
 }
 
 
-def _tip_uyar(deger: Any, tip: str) -> bool:
-    beklenen = _JSON_TIPLERI.get(tip)
-    if beklenen is None:
-        return True   # tanımadığımız tip: karışma
-    if tip in ("number", "integer") and isinstance(deger, bool):
-        return False  # True bir sayı değil; model karıştırdıysa söylensin
-    return isinstance(deger, beklenen)
+def _type_matches(value: Any, kind: str) -> bool:
+    expected = _JSON_TYPES.get(kind)
+    if expected is None:
+        return True   # a type we don't know: stay out of it
+    if kind in ("number", "integer") and isinstance(value, bool):
+        return False  # True is not a number; if the model mixed them up, say so
+    return isinstance(value, expected)
 
 
-def _sema_ozeti(schema: dict[str, Any], limit: int = 6) -> str:
-    """Şemanın tek satırlık hali: "path (string, zorunlu), text (string)".
+def _schema_summary(schema: dict[str, Any], limit: int = 6) -> str:
+    """The schema on one line: "path (string, zorunlu), text (string)".
 
-    Modelin şemayı zaten görmüş olması yetmiyor — hatanın yanında tekrar
-    görmek düzeltmeyi aynı turda mümkün kılıyor.
+    The model having already seen the schema is not enough — seeing it
+    again next to the error makes the fix possible in the same turn.
     """
     props = schema.get("properties")
     if not isinstance(props, dict):
         return ""
-    zorunlu = set(schema.get("required") or [])
-    parcalar: list[str] = []
-    for ad, tanim in list(props.items())[:limit]:
-        tip = (tanim or {}).get("type", "any") if isinstance(tanim, dict) else "any"
-        etiket = f"{ad} ({tip}"
-        if ad in zorunlu:
-            etiket += ", zorunlu"
-        parcalar.append(etiket + ")")
+    required = set(schema.get("required") or [])
+    parts: list[str] = []
+    for name, definition in list(props.items())[:limit]:
+        kind = (definition or {}).get("type", "any") if isinstance(definition, dict) else "any"
+        label = f"{name} ({kind}"
+        if name in required:
+            label += ", zorunlu"
+        parts.append(label + ")")
     if len(props) > limit:
-        parcalar.append("…")
-    return ", ".join(parcalar)
+        parts.append("…")
+    return ", ".join(parts)
 
 
 def schema_violation(spec: ToolSpec, args: dict[str, Any]) -> str | None:
-    """Çağrı şemaya uyuyor mu? Uyuyorsa None, uymuyorsa öğretici mesaj.
+    """Does the call fit the schema? None if it does, a teaching message if not.
 
-    Yalnızca modelin gerçekten düzeltebileceği üç ihlale bakılıyor: eksik
-    zorunlu alan, yanlış tip, enum dışı değer. Fazladan alan hata değil —
-    bir çağrıyı fazladan alan yüzünden reddetmek, çalışan aracı bozardı.
+    Only the three violations the model can actually fix are checked:
+    missing required field, wrong type, value outside the enum. Extra
+    fields are not an error — rejecting a call for an extra field would
+    break a working tool.
     """
     schema = spec.input_schema or {}
     props = schema.get("properties")
     if not isinstance(props, dict):
         return None
-    ozet = _sema_ozeti(schema)
-    kuyruk = f" Şema: {ozet}." if ozet else ""
-    verilen = ", ".join(args) or "hiçbiri"
+    summary = _schema_summary(schema)
+    tail = f" Şema: {summary}." if summary else ""
+    given = ", ".join(args) or "hiçbiri"
 
-    eksik = [ad for ad in (schema.get("required") or []) if ad not in args]
-    if eksik:
-        alanlar = ", ".join(f"`{ad}`" for ad in eksik)
-        cogul = "alanları zorunlu" if len(eksik) > 1 else "alanı zorunlu"
+    missing = [name for name in (schema.get("required") or []) if name not in args]
+    if missing:
+        fields = ", ".join(f"`{name}`" for name in missing)
+        plural = "alanları zorunlu" if len(missing) > 1 else "alanı zorunlu"
         return (
-            f"'{spec.name}' çağrın eksik: {alanlar} {cogul}. "
-            f"Verdiğin alanlar: {verilen}.{kuyruk} "
+            f"'{spec.name}' çağrın eksik: {fields} {plural}. "
+            f"Verdiğin alanlar: {given}.{tail} "
             "Aracı bu alanları ekleyerek yeniden çağır."
         )
 
-    for ad, deger in args.items():
-        tanim = props.get(ad)
-        if not isinstance(tanim, dict):
+    for name, value in args.items():
+        definition = props.get(name)
+        if not isinstance(definition, dict):
             continue
-        if (secenekler := tanim.get("enum")) and deger not in secenekler:
-            gecerli = ", ".join(str(s) for s in secenekler)
+        if (options := definition.get("enum")) and value not in options:
+            valid = ", ".join(str(s) for s in options)
             return (
-                f"'{spec.name}' çağrısında `{ad}` için geçerli değerler: "
-                f"{gecerli}. Sen {deger!r} verdin. Birini seçip yeniden çağır."
+                f"'{spec.name}' çağrısında `{name}` için geçerli değerler: "
+                f"{valid}. Sen {value!r} verdin. Birini seçip yeniden çağır."
             )
-        tip = tanim.get("type")
-        if isinstance(tip, str) and not _tip_uyar(deger, tip):
+        kind = definition.get("type")
+        if isinstance(kind, str) and not _type_matches(value, kind):
             return (
-                f"'{spec.name}' çağrısında `{ad}` alanı {tip} olmalı; sen "
-                f"{type(deger).__name__} verdin.{kuyruk} "
+                f"'{spec.name}' çağrısında `{name}` alanı {kind} olmalı; sen "
+                f"{type(value).__name__} verdin.{tail} "
                 "Değeri doğru tipte verip yeniden çağır."
             )
     return None
 
 
 def _first_paragraph(text: str, limit: int = 220) -> str:
-    """Açıklamanın özü: ilk boş satıra kadarı.
+    """The essence of a description: up to the first blank line.
 
-    Aracın ne yaptığı ilk paragrafta yazıyor; gerisi ne zaman kullanılacağı
-    ve örnekler. Yer darken ilki kalmalı.
+    What the tool does is in the first paragraph; the rest is when to use
+    it and examples. When space is tight the first one must survive.
     """
     head = (text or "").strip().split("\n\n", 1)[0]
     head = " ".join(head.split())

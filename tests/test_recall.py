@@ -1,7 +1,7 @@
-"""Hatırlama protokolü testleri.
+"""Recall protocol tests.
 
-Odak noktası tek bir vaat: bellek büyüdükçe yavaşlamamalı ve hatırlarken
-gezdiği yol görülebilmeli.
+The focus is a single promise: memory must not slow down as it grows, and
+the path it travelled while recalling must be visible.
 """
 
 from __future__ import annotations
@@ -21,7 +21,7 @@ def store(tmp_path: Path) -> RecallStore:
     s.close()
 
 
-# -- kalıcılık ---------------------------------------------------------
+# -- persistence -------------------------------------------------------
 
 
 def test_memory_survives_restart(tmp_path: Path) -> None:
@@ -37,8 +37,9 @@ def test_memory_survives_restart(tmp_path: Path) -> None:
 
 
 def test_two_processes_see_the_same_store(tmp_path: Path) -> None:
-    """Önceki hal belleği açılışta RAM'e okuyordu: bir süreç yazınca
-    diğerinin haberi olmuyordu. Arayüz ve ajan aynı belleği görmeli."""
+    """The previous version read the memory into RAM at startup: when one
+    process wrote, the other did not know. The UI and the agent must see the
+    same memory."""
     writer = open_store(tmp_path)
     reader = open_store(tmp_path)
     try:
@@ -53,10 +54,10 @@ def test_forget_leaves_a_tombstone(store: RecallStore) -> None:
     node = store.remember("yanlış bir bilgi")
     assert store.forget(node.id) is True
     assert store.peek(node.id) is None
-    assert store.forget(node.id) is False       # iki kez silinmez
+    assert store.forget(node.id) is False       # cannot be deleted twice
 
 
-# -- arama -------------------------------------------------------------
+# -- search ------------------------------------------------------------
 
 
 def test_turkish_suffixes_match_the_stem(store: RecallStore) -> None:
@@ -86,21 +87,22 @@ def test_unknown_kind_is_rejected(store: RecallStore) -> None:
         store.remember("x", kind="hayal")
 
 
-# -- çağrışım ----------------------------------------------------------
+# -- association -------------------------------------------------------
 
 
 def test_activation_spreads_to_linked_memories(store: RecallStore) -> None:
-    """Sorguda geçmeyen ama bağlı olan hatıra da uyanmalı — sinaps budur."""
+    """A memory not in the query but linked to it must wake too — that is
+    the synapse."""
     seed = store.remember("Koru1000 SCADA sistemi", kind="fact")
     linked = store.remember("Kuyu debisi sayaçtan okunur", kind="fact", links=[seed.id])
 
     found = {n.id for n in store.recall("Koru1000").hits}
     assert seed.id in found
-    assert linked.id in found, "bağlı hatıra çağrışımla gelmedi"
+    assert linked.id in found, "linked memory did not arrive by association"
 
 
 def test_trace_records_the_path_it_travelled(store: RecallStore) -> None:
-    """Arayüz bu izi canlandırıyor: hangi düğüm hangisinden uyandı."""
+    """The UI animates this trace: which node woke from which."""
     seed = store.remember("postgres yedeği", kind="procedure")
     linked = store.remember("yedekler haftalık alınır", kind="fact", links=[seed.id])
 
@@ -141,7 +143,7 @@ def test_links_are_bidirectional(store: RecallStore) -> None:
     assert {n.id for n, _ in store.neighbours(b.id)} == {a.id}
 
 
-# -- kullanım izi ------------------------------------------------------
+# -- usage trace -------------------------------------------------------
 
 
 def test_opening_strengthens_the_trace(store: RecallStore) -> None:
@@ -160,7 +162,8 @@ def test_peek_does_not_count_as_use(store: RecallStore) -> None:
 
 
 def test_headline_hides_the_body(store: RecallStore) -> None:
-    """Model önce başlığı görür; gövdeyi açmaya karar verirse alır."""
+    """The model sees the title first; it gets the body if it decides to
+    open it."""
     node = store.remember("çok uzun bir gövde " * 40, kind="fact", title="kısa başlık")
     headline = node.headline()
 
@@ -168,11 +171,12 @@ def test_headline_hides_the_body(store: RecallStore) -> None:
     assert "çok uzun bir gövde" not in headline
 
 
-# -- ölçek -------------------------------------------------------------
+# -- scale -------------------------------------------------------------
 
 
 def test_recall_does_not_slow_down_as_memory_grows(store: RecallStore) -> None:
-    """Asıl vaat bu. Tarama olsaydı süre hacimle doğru orantılı artardı."""
+    """This is the real promise. With a scan, time would grow in proportion
+    to volume."""
     store.remember("aranan nadir terim: zeplin", kind="fact")
 
     def elapsed() -> float:
@@ -187,20 +191,20 @@ def test_recall_does_not_slow_down_as_memory_grows(store: RecallStore) -> None:
     large = elapsed()
 
     assert store.count() > 3000
-    # Doğrusal tarama 3000 kat yavaşlardı. Ölçüm gürültüsüne pay bırakıyoruz.
-    assert large < small * 12 + 0.05, f"küçük {small:.4f}s, büyük {large:.4f}s"
+    # A linear scan would be 3000 times slower. We leave room for measurement noise.
+    assert large < small * 12 + 0.05, f"small {small:.4f}s, large {large:.4f}s"
 
 
-# -- önyükleme gürültüsü -----------------------------------------------
+# -- priming noise -----------------------------------------------------
 
 
 def test_numbers_do_not_drag_in_unrelated_memories() -> None:
-    """Bir cihaz eklemek isteyen mesaj IP, port ve register adresi taşıyor.
+    """A message wanting to add a device carries an IP, a port and a register address.
 
-    Ölçüldü: "5.11.239.227 ... 5004 portunda ... 404195 adresinde depo
-    seviye" sorgusu üç BTC fiyat kaydını getiriyordu (BTC 3.715.633 TL) —
-    sayılar imza katmanında birbirine benziyor. Kullanıcının gördüğü şey
-    "modbus cihazı ekle" derken kripto ölçümlerinin taranmasıydı.
+    Measured: the query "5.11.239.227 ... 5004 portunda ... 404195 adresinde
+    depo seviye" brought up three BTC price records (BTC 3.715.633 TL) —
+    numbers look alike in the signature layer. What the user saw was crypto
+    measurements being scanned while saying "add a modbus device".
     """
     from dornick.loop import _without_numbers
 
@@ -215,7 +219,7 @@ def test_numbers_do_not_drag_in_unrelated_memories() -> None:
 
 
 def test_words_glued_to_numbers_survive() -> None:
-    """Sayıyı atarken kelimeyi de atmak, sorguyu anlamsız bırakır."""
+    """Dropping the word along with the number leaves the query meaningless."""
     from dornick.loop import _without_numbers
 
     assert "port" in _without_numbers("port 502 açık")

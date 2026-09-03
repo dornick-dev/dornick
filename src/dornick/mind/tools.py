@@ -1,9 +1,9 @@
-"""Zihni ajana araç olarak açar.
+"""Exposes the mind to the agent as tools.
 
-Dört araç, hepsi `action`/`aspect` enum'lu — otuz düz araç yerine dört
-gezinilebilir yüzey. Açıklamalar bilinçli olarak *ne zaman çağrılacağını*
-söyler; sadece ne yaptığını anlatan açıklamalar modeli tetiklemekte belirgin
-şekilde daha zayıf.
+Four tools, all with `action`/`aspect` enums — four navigable surfaces
+instead of thirty flat tools. The descriptions deliberately say *when to
+call*; descriptions that only say what a tool does are markedly weaker at
+triggering the model.
 """
 
 from __future__ import annotations
@@ -18,43 +18,44 @@ from .store import MEMORY_KINDS, Mind
 
 MAX_RECALL = 20
 
-# Tek bir bellek isabetinin cevaba taşıyabileceği azami gövde. Sınırsızdı ve
-# bir episode kaydı (sıkıştırma özeti 8.000 harfe kadar) tek başına binlerce
-# token yiyebiliyordu — altı isabetlik bir cevapta gerçek eşleşme boğuluyordu.
-# Kırpılan kayıt kaybolmuş değil: model sorguyu daraltıp yeniden arayabilir.
+# Maximum body a single memory hit may carry into the answer. It was
+# unbounded and one episode record (a compaction digest of up to 8,000
+# characters) could eat thousands of tokens by itself — in a six-hit answer
+# the real match was drowned. A clipped record is not lost: the model can
+# narrow the query and search again.
 RECALL_BODY_CAP = 700
 
 
 def _step_label(mind: Mind, node_id: str) -> str:
-    """İz adımının kısa etiketi — sahne grafikte olmayan düğümü de adıyla
-    yakabilsin (hayalet düğüm; bkz. scene.js activate)."""
+    """Short label of a trace step — so the scene can light up by name a node
+    that is not in the graph (ghost node; see scene.js activate)."""
     try:
         node = mind.store.peek(node_id)
     except Exception:
         return ""
     if node is None:
         return ""
-    metin = str(getattr(node, "title", "") or getattr(node, "content", "") or "")
-    tek = " ".join(metin.split())
-    return tek if len(tek) <= 34 else tek[:33] + "…"
+    text = str(getattr(node, "title", "") or getattr(node, "content", "") or "")
+    flat = " ".join(text.split())
+    return flat if len(flat) <= 34 else flat[:33] + "…"
 
 
-def _sicil_notu(mind: Mind, node_id: str) -> str:
-    """`[3 başarı / 1 hata]` — modelin "bu bazen yanıltıyor" bilgisi.
+def _track_record_note(mind: Mind, node_id: str) -> str:
+    """`[3 başarı / 1 hata]` — the model's "this sometimes misleads" knowledge.
 
-    Gece ters tekrarı bu sicili yazıyor (recall/orgu.py); burada yalnız
-    görünür kılınıyor. Sicili olmayan kayıtta hiçbir şey eklenmiyor.
+    The night reverse replay writes this record (recall/weave.py); here it is
+    only made visible. Nothing is added to a record without a track record.
     """
     try:
-        basari, hata = mind.store.track_record(node_id)
+        successes, failures = mind.store.track_record(node_id)
     except Exception:
         return ""
-    return f"\n[{basari} başarı / {hata} hata]" if (basari or hata) else ""
+    return f"\n[{successes} başarı / {failures} hata]" if (successes or failures) else ""
 
 
-def _one_satir(text: str, cap: int = 80) -> str:
-    tek = " ".join((text or "").split())
-    return tek if len(tek) <= cap else tek[:cap - 1] + "…"
+def _one_line(text: str, cap: int = 80) -> str:
+    flat = " ".join((text or "").split())
+    return flat if len(flat) <= cap else flat[:cap - 1] + "…"
 
 
 def _bounded(text: str, cap: int = RECALL_BODY_CAP) -> str:
@@ -70,7 +71,7 @@ def register(registry: ToolRegistry, mind: Mind) -> None:
     _introspect(registry, mind)
 
 
-# -- arama -------------------------------------------------------------
+# -- search ------------------------------------------------------------
 
 
 def _recall(registry: ToolRegistry, mind: Mind) -> None:
@@ -120,13 +121,14 @@ Mevcut oturum aramaya dahil değildir; o zaten önündeki bağlamda.
 
         if scope in ("all", "memory"):
             hits = mind.recall(query, kind=args.get("kind"), limit=limit)
-            # Aktivasyonun uğradığı yol arayüze gidiyor: hatırlarken hangi
-            # düğümden hangisine geçtiği canlandırılabilsin. `used` işareti
-            # ŞART: bu yol işaretsiz yayınlayınca arayüz "eski kayıt" sanıp
-            # dokunulan HER kaydı numaralıyordu — 28 kayıtlık bir sorguda
-            # BTC fiyatı bile "kullanıldı" görünüyordu; oysa modelin önüne
-            # yalnız süzülen ilk birkaçı konur (loop.py'deki otomatik yol
-            # bu işareti zaten koyuyordu, araç yolu unutulmuştu).
+            # The path the activation travelled goes to the UI: so which node
+            # it moved to from which can be animated while recalling. The
+            # `used` mark is ESSENTIAL: when this path was published without
+            # the mark the UI took it for an "old record" and numbered EVERY
+            # touched record — in a 28-record query even the BTC price showed
+            # as "used"; yet only the filtered first few are put in front of
+            # the model (the automatic path in loop.py already set this mark,
+            # the tool path had been forgotten).
             if mind.last_trace:
                 used = {h.item.id for h in hits}
                 ctx.session.log.note(
@@ -136,9 +138,10 @@ Mevcut oturum aramaya dahil değildir; o zaten önündeki bağlamda.
                             "label": _step_label(mind, step.node)}
                            for step in mind.last_trace],
                 )
-            # Okunan hatıra kullanılmış hatıradır: iz güçleniyor ve olay
-            # günlüğüne düşüyor. Önceki hal hiçbir yerde `open()` çağırmıyordu
-            # — yani üretimde pekiştirme diye bir şey hiç olmuyordu.
+            # A read memory is a used memory: the trace strengthens and it
+            # lands in the event log. The previous version called `open()`
+            # nowhere — meaning in production reinforcement never happened
+            # at all.
             for h in hits:
                 mind.store.open(h.item.id)
                 ctx.session.log.note("mind_open", memory_id=h.item.id,
@@ -149,7 +152,7 @@ Mevcut oturum aramaya dahil değildir; o zaten önündeki bağlamda.
                     [
                         f"[{h.item.id}] {_bounded(h.item.render())}"
                         + ("" if getattr(h.item, "hot", True) else " (soğuk)")
-                        + _sicil_notu(mind, h.item.id)
+                        + _track_record_note(mind, h.item.id)
                         for h in hits
                     ],
                 )
@@ -177,7 +180,7 @@ Mevcut oturum aramaya dahil değildir; o zaten önündeki bağlamda.
         return ToolResult(content=body)
 
 
-# -- yazma / silme -----------------------------------------------------
+# -- write / delete ----------------------------------------------------
 
 
 def _memory(registry: ToolRegistry, mind: Mind) -> None:
@@ -276,9 +279,10 @@ hatırlamalar o yoldan yürüyor.
             required=["action"],
         ),
         mutates=True,
-        # Kendi defterine yazmak sistem mutasyonu değil: onay penceresi
-        # arkasında kalınca zihin iki gün boyunca hiçbir tercih/ders
-        # kaydetmedi. `forget` (kalıcı silme) listede YOK — o gated kalıyor.
+        # Writing to one's own notebook is not a system mutation: while it sat
+        # behind the approval window the mind recorded no preference/lesson
+        # for two days. `forget` (permanent deletion) is NOT in the list — it
+        # stays gated.
         safe_actions=("save", "list", "link", "series"),
         parallel_safe=False,
     )
@@ -290,25 +294,25 @@ hatırlamalar o yoldan yürüyor.
             if not content:
                 return ToolResult.error("`content` boş. Ne hatırlaman gerektiğini yaz.")
             kind = args.get("kind") or "fact"
-            eskisi = (args.get("supersedes") or "").strip()
-            if eskisi:
+            old_id = (args.get("supersedes") or "").strip()
+            if old_id:
                 try:
                     memory = mind.update(
-                        eskisi, content, kind=kind,
+                        old_id, content, kind=kind,
                         title=args.get("title") or "",
                         tags=args.get("tags") or [])
-                except ValueError as hata:
+                except ValueError as exc:
                     return ToolResult.error(
-                        f"{hata} Kimlikleri mind_recall ya da action=list ile bul.")
+                        f"{exc} Kimlikleri mind_recall ya da action=list ile bul.")
                 ctx.session.log.note("mind_write", memory_id=memory.id,
-                                     kind=memory.kind, supersedes=eskisi)
-                note = (f"Güncellendi [{eskisi}] → [{memory.id}] "
+                                     kind=memory.kind, supersedes=old_id)
+                note = (f"Güncellendi [{old_id}] → [{memory.id}] "
                         f"({memory.kind}) {memory.title}\n"
                         "Eski sürüm silinmedi; `series` ile hâlâ görülebilir.")
             else:
-                # Aday YAZMADAN ÖNCE aranıyor: yazdıktan sonra en yakın
-                # komşu kaydın kendisi olurdu.
-                aday = mind.conflict_candidate(content, kind)
+                # The candidate is looked up BEFORE writing: after the write
+                # the nearest neighbour would be the record itself.
+                candidate = mind.conflict_candidate(content, kind)
                 memory = mind.remember(
                     content, kind=kind,
                     title=args.get("title") or "",
@@ -317,19 +321,19 @@ hatırlamalar o yoldan yürüyor.
                 ctx.session.log.note("mind_write", memory_id=memory.id,
                                      kind=memory.kind)
                 note = f"Kaydedildi [{memory.id}] ({memory.kind}) {memory.title}"
-                # Model `supersedes` vermeyi unutmuş olabilir. Kayıt yine de
-                # yazıldı — kaçırmamak temiz olmaktan önemli — ama aynı
-                # konuda bir kayıt varsa kimliği söyleniyor; birleştirme
-                # kararı modelin.
-                if aday is not None and aday.id != memory.id:
+                # The model may have forgotten to give `supersedes`. The record
+                # is written anyway — not missing it matters more than being
+                # tidy — but if there is a record on the same topic its id is
+                # reported; the merge decision is the model's.
+                if candidate is not None and candidate.id != memory.id:
                     note += (
-                        f"\nBenzer kayıt var [{aday.id}]: "
-                        f"'{_one_satir(aday.content)}'. Bunu güncelliyorsan "
-                        f"supersedes={aday.id} ile tekrar çağır; farklı bir "
+                        f"\nBenzer kayıt var [{candidate.id}]: "
+                        f"'{_one_line(candidate.content)}'. Bunu güncelliyorsan "
+                        f"supersedes={candidate.id} ile tekrar çağır; farklı bir "
                         "şeyse olduğu gibi kaydedildi.")
 
-            # Kaydetmekle bağlamak tek çağrıda: ayrı adım bırakıldığında
-            # model çoğu zaman ikincisini atlıyor ve "bağladım" diyor.
+            # Saving and linking in a single call: when left as a separate
+            # step the model mostly skips the second one and says "linked".
             if target := (args.get("link_to") or "").strip():
                 reason = args.get("reason") or ""
                 if mind.bridge(memory.id, target, reason) is None:
@@ -400,7 +404,7 @@ hatırlamalar o yoldan yürüyor.
         )
 
 
-# -- hedefler ----------------------------------------------------------
+# -- goals -------------------------------------------------------------
 
 
 def _goals(registry: ToolRegistry, mind: Mind) -> None:
@@ -429,8 +433,8 @@ Tek adımlık işler için kullanma; kayıt tutmanın maliyeti getirisinden fazl
             required=["action"],
         ),
         mutates=True,
-        # İş listesi de ajanın kendi defteri: her hedef için onay sormak
-        # uzun bir işi soru yağmuruna çeviriyordu.
+        # The task list is the agent's own notebook too: asking approval for
+        # every goal turned a long job into a hail of questions.
         safe_actions=("push", "done", "drop", "list"),
         parallel_safe=False,
     )
@@ -462,7 +466,7 @@ Tek adımlık işler için kullanma; kayıt tutmanın maliyeti getirisinden fazl
         return ToolResult.error("`action` push, done, drop ya da list olmalı.")
 
 
-# -- içgözlem ----------------------------------------------------------
+# -- introspection -----------------------------------------------------
 
 
 def _introspect(registry: ToolRegistry, mind: Mind) -> None:
@@ -527,7 +531,8 @@ def _session_report(ctx: ToolContext) -> str:
         lines.append("son başarısız araçlar:")
         lines.extend(recent)
 
-    # Aynı komutu tekrar tekrar denemek en sık takılma biçimi.
+    # Retrying the same command over and over is the most common way of
+    # getting stuck.
     commands = [
         json.dumps(e.meta.get("input"), ensure_ascii=False, sort_keys=True) for e in starts
     ]

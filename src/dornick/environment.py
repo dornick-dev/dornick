@@ -1,22 +1,25 @@
-"""Çalışma ortamı: kurulu düzen mi, geliştirici deposu mu?
+"""Runtime environment: installed layout or developer repo?
 
-Kurulum sihirbazıyla kurulan ağaçta Python gömülüdür (<kök>\\python\\...)
-ve sihirbaz köke setup.json (eski adıyla kurulum.json) bırakır. Geliştirici
-deposunda ise pip ile kurulmuş sıradan bir Python vardır.
+In the tree set up by the installer wizard Python is embedded
+(<root>\\python\\...) and the wizard drops setup.json (formerly
+kurulum.json) at the root. In the developer repo there is an ordinary
+pip-installed Python.
 
-Bu ayrım kullanıcıya görünen metinleri değiştirir: eksik bir özellik için
-geliştiriciye "pip install ..." demek doğru, kurulum sihirbazından geçmiş
-birine demekse anlamsız — ona sihirbazı yeniden çalıştırması söylenir.
+This distinction changes user-visible texts: telling a developer
+"pip install ..." for a missing feature is right, telling someone who came
+through the installer wizard is meaningless — they are told to re-run the
+wizard.
 
-Bir de konsol meselesi var: kurulu uygulama pythonw altında (konsolsuz)
-koşar. Konsolsuz bir süreçten bayraksız başlatılan her konsol alt süreci
-(powershell, netstat, taskkill...) ekranda bir cmd penceresi parlatır.
-`sessiz_bayraklar()` bu pencereyi bastıran subprocess anahtarlarını verir.
+Then there is the console matter: the installed app runs under pythonw
+(no console). Every console child process started without flags from a
+console-less process (powershell, netstat, taskkill...) flashes a cmd
+window on screen. `quiet_flags()` gives the subprocess switches that
+suppress that window.
 
-Sürüm de buranın işi: hangi kopyanın çalıştığı sahada görünmüyordu.
-Tek gerçek kaynak pyproject.toml — kurulu ağaç depo düzenini birebir
-taklit ettiği ve build.ps1 pyproject'i paket köküne koyduğu için iki
-düzende de aynı yerden okunur.
+Version is this module's job too: which copy is running was invisible in
+the field. The single source of truth is pyproject.toml — since the
+installed tree mirrors the repo layout exactly and build.ps1 puts
+pyproject at the package root, it is read from the same place in both layouts.
 """
 
 from __future__ import annotations
@@ -34,143 +37,146 @@ from pathlib import Path
 
 @lru_cache(maxsize=1)
 def kurulu_mu() -> bool:
-    """Kurulum sihirbazıyla kurulan düzende miyiz?
+    """Are we in the layout set up by the installer wizard?
 
-    İki bağımsız iz yeter: gömülü Python'un ._pth dosyası (sihirbaz paketi
-    hep onunla kurar) ve sihirbazın kuruluma bıraktığı setup.json /
-    kurulum.json. Geliştirici deposunda ikisi de yoktur.
+    Two independent traces suffice: the embedded Python's ._pth file (the
+    wizard package always installs with it) and the setup.json /
+    kurulum.json the wizard leaves in the install. Neither exists in the
+    developer repo.
     """
     try:
         exe = Path(sys.executable).resolve()
-    except OSError:  # pragma: no cover - bozuk sys.executable
+    except OSError:  # pragma: no cover - broken sys.executable
         return False
     if next(exe.parent.glob("python3*._pth"), None) is not None:
         return True
-    kok = exe.parent.parent
-    return (kok / "setup.json").exists() or (kok / "kurulum.json").exists()
+    root = exe.parent.parent
+    return (root / "setup.json").exists() or (root / "kurulum.json").exists()
 
 
 def _root() -> Path:
-    """Uygulama ağacının kökü: src/Dornick'in iki üstü.
+    """Root of the application tree: two levels above src/Dornick.
 
-    Geliştirici deposunda depo kökü, kurulu düzende {app} — ikisi de
-    pyproject.toml'u bu seviyede taşır (kuruluda build.ps1 koyar).
+    The repo root in the developer repo, {app} in the installed layout —
+    both carry pyproject.toml at this level (build.ps1 puts it there when installed).
     """
     return Path(__file__).resolve().parents[2]
 
 
 @lru_cache(maxsize=1)
 def version() -> str:
-    """Çalışan kopyanın sürümü — tek gerçek kaynak pyproject.toml.
+    """Version of the running copy — single source of truth pyproject.toml.
 
-    pyproject okunamıyorsa (elle bozulmuş bir ağaç) pip metadata'sına
-    düşülür; o da yoksa "0.0.0" — arayüz hiç değilse boş kalmaz.
+    If pyproject cannot be read (a hand-broken tree) we fall back to pip
+    metadata; if that is missing too, "0.0.0" — at least the UI is not blank.
     """
     try:
         import tomllib
 
         with open(_root() / "pyproject.toml", "rb") as f:
-            deger = tomllib.load(f).get("project", {}).get("version")
-        if deger:
-            return str(deger)
+            value = tomllib.load(f).get("project", {}).get("version")
+        if value:
+            return str(value)
     except (OSError, ValueError):
         pass
     try:
         from importlib.metadata import PackageNotFoundError, version
 
         return version("dornick")
-    except Exception:  # pragma: no cover - metadata da yoksa
+    except Exception:  # pragma: no cover - no metadata either
         return "0.0.0"
 
 
-# Güncelleme denetimi ELLE tetiklenir (Ayarlar › Makine); arka planda
-# kendiliğinden ağa çıkan bir denetim bilerek yok — gizlilik ve sadelik.
+# The update check is triggered MANUALLY (Settings › Machine); there is
+# deliberately no check that goes to the network on its own in the
+# background — privacy and simplicity.
 UPDATE_API = "https://api.github.com/repos/dornick-dev/dornick/releases/latest"
 UPDATE_TIMEOUT = 6.0
 
 
-def _parse_version(metin: str) -> tuple[int, ...]:
-    """"v0.2.10" → (0, 2, 10). Sayı bulunamazsa boş demet — karşılaştırma
-    yeni-sürüm-yok tarafına düşer, asla patlamaz."""
-    return tuple(int(p) for p in re.findall(r"\d+", metin)[:4])
+def _parse_version(text: str) -> tuple[int, ...]:
+    """"v0.2.10" → (0, 2, 10). If no number is found, an empty tuple — the
+    comparison falls to the no-new-version side, never blows up."""
+    return tuple(int(p) for p in re.findall(r"\d+", text)[:4])
 
 
 def check_update(*, _ac=urllib.request.urlopen) -> dict:
-    """GitHub'daki son yayını sorar ve mevcutla karşılaştırır.
+    """Asks GitHub for the latest release and compares it with the current one.
 
-    Dönen sözlük arayüzün çizdiği her şey:
-      ok      istek yerine ulaştı mı
-      mevcut  çalışan sürüm
-      yeni    daha yeni bir yayın varsa onun sürümü, yoksa ""
-      url     yeni sürümün yayın sayfası (tarayıcıda açılır)
-      indirme yayına eklenmiş kurulum dosyasının (.exe) doğrudan bağlantısı;
-              yayında kurulum dosyası yoksa "" — arayüz o zaman yayın
-              sayfasına düşer
-      hata    kibar, insan diliyle hata metni (ok=False iken)
+    The returned dict is everything the UI draws:
+      ok      did the request reach its destination
+      mevcut  the running version
+      yeni    if a newer release exists its version, otherwise ""
+      url     the new version's release page (opened in the browser)
+      indirme direct link to the installer file (.exe) attached to the release;
+              "" if the release has no installer — the UI then falls back
+              to the release page
+      hata    polite, human-language error text (while ok=False)
     """
-    mevcut = version()
-    istek = urllib.request.Request(
+    current = version()
+    request = urllib.request.Request(
         UPDATE_API, headers={"Accept": "application/vnd.github+json",
-                                 "User-Agent": f"dornick/{mevcut}"})
+                                 "User-Agent": f"dornick/{current}"})
     try:
-        with _ac(istek, timeout=UPDATE_TIMEOUT) as cevap:
-            veri = json.loads(cevap.read().decode("utf-8"))
+        with _ac(request, timeout=UPDATE_TIMEOUT) as response:
+            data = json.loads(response.read().decode("utf-8"))
     except urllib.error.HTTPError as exc:
         if exc.code == 404:
-            # Depo/yayın görünmüyor: yayın hiç yapılmamış olabilir.
-            return {"ok": False, "mevcut": mevcut, "yeni": "", "url": "",
+            # Repo/release not visible: no release may have been published yet.
+            return {"ok": False, "mevcut": current, "yeni": "", "url": "",
                     "indirme": "", "hata": "Yayınlanmış sürüm bulunamadı"}
-        return {"ok": False, "mevcut": mevcut, "yeni": "", "url": "",
+        return {"ok": False, "mevcut": current, "yeni": "", "url": "",
                 "indirme": "",
                 "hata": f"Sürüm servisi cevap vermedi (HTTP {exc.code})"}
     except Exception:
-        return {"ok": False, "mevcut": mevcut, "yeni": "", "url": "",
+        return {"ok": False, "mevcut": current, "yeni": "", "url": "",
                 "indirme": "",
                 "hata": "Ağa ulaşılamadı — internet bağlantısını denetle"}
 
-    uzak = str(veri.get("tag_name") or veri.get("name") or "").strip()
-    url = str(veri.get("html_url") or "")
-    if _parse_version(uzak) > _parse_version(mevcut):
-        indirme, boyut, ad = _kurulum_varligi(veri)
-        return {"ok": True, "mevcut": mevcut, "yeni": uzak.lstrip("vV"),
-                "url": url, "indirme": indirme, "boyut": boyut, "ad": ad,
+    remote = str(data.get("tag_name") or data.get("name") or "").strip()
+    url = str(data.get("html_url") or "")
+    if _parse_version(remote) > _parse_version(current):
+        download, size, name = _installer_asset(data)
+        return {"ok": True, "mevcut": current, "yeni": remote.lstrip("vV"),
+                "url": url, "indirme": download, "boyut": size, "ad": name,
                 "hata": ""}
-    return {"ok": True, "mevcut": mevcut, "yeni": "", "url": "",
+    return {"ok": True, "mevcut": current, "yeni": "", "url": "",
             "indirme": "", "boyut": 0, "ad": "", "hata": ""}
 
 
-def _kurulum_varligi(veri: dict) -> tuple[str, int, str]:
-    """Yayın varlıkları içinden kurulum dosyası: (indirme_url, boyut, ad).
+def _installer_asset(data: dict) -> tuple[str, int, str]:
+    """The installer file among the release assets: (download_url, size, name).
 
-    GitHub yayınına eklenen .exe (kurulum sihirbazı) aranır; birden çok
-    .exe varsa adında "setup"/"kurulum" geçen yeğlenir. Bulunamazsa
-    ("", 0, "") — arayüz yayın sayfası bağlantısına düşer, hiçbir şey
-    kırılmaz. Boyut, indirme sırasında ilerleme çubuğu ve bütünlük
-    denetimi için taşınıyor.
+    The .exe (installer wizard) attached to the GitHub release is looked
+    for; with several .exes the one with "setup"/"kurulum" in its name is
+    preferred. If none is found ("", 0, "") — the UI falls back to the
+    release-page link, nothing breaks. The size travels along for the
+    progress bar and the integrity check during download.
     """
-    varliklar = veri.get("assets") or []
-    if not isinstance(varliklar, list):
+    assets = data.get("assets") or []
+    if not isinstance(assets, list):
         return ("", 0, "")
-    exeler = []
-    for v in varliklar:
+    exes = []
+    for v in assets:
         if not isinstance(v, dict):
             continue
-        ad = str(v.get("name") or "")
-        indirme = str(v.get("browser_download_url") or "")
-        boyut = int(v.get("size") or 0)
-        if ad.lower().endswith(".exe") and indirme:
-            exeler.append((ad, indirme, boyut))
-    for ad, indirme, boyut in exeler:
-        if "setup" in ad.lower() or "kurulum" in ad.lower():
-            return (indirme, boyut, ad)
-    if exeler:
-        return (exeler[0][1], exeler[0][2], exeler[0][0])
+        name = str(v.get("name") or "")
+        download = str(v.get("browser_download_url") or "")
+        size = int(v.get("size") or 0)
+        if name.lower().endswith(".exe") and download:
+            exes.append((name, download, size))
+    for name, download, size in exes:
+        if "setup" in name.lower() or "kurulum" in name.lower():
+            return (download, size, name)
+    if exes:
+        return (exes[0][1], exes[0][2], exes[0][0])
     return ("", 0, "")
 
 
-# İndirmenin çıkabileceği TEK yer: resmî GitHub yayın altyapısı. Adres
-# sunucunun API cevabından geliyor (istemci vermiyor) ve ayrıca burada
-# host süzgecinden geçiyor — zehirlenmiş bir adres indirilip çalıştırılamaz.
+# The ONLY place a download may come from: the official GitHub release
+# infrastructure. The address comes from the server's API response (the
+# client does not supply it) and additionally passes the host filter here
+# — a poisoned address cannot be downloaded and executed.
 def _guvenilir_indirme(url: str) -> bool:
     try:
         host = (urllib.parse.urlparse(url).hostname or "").lower()
@@ -181,16 +187,16 @@ def _guvenilir_indirme(url: str) -> bool:
     return host == "github.com" or host.endswith(".githubusercontent.com")
 
 
-def download_update(url: str, hedef_dizin, *, beklenen_boyut: int = 0,
+def download_update(url: str, target_dir, *, beklenen_boyut: int = 0,
                      ad: str = "", progress=None,
                      _ac=urllib.request.urlopen):
-    """Kurulum dosyasını güvenilir GitHub adresinden indirir.
+    """Downloads the installer file from the trusted GitHub address.
 
-    Dönüş: indirilen dosyanın Path'i. Güvenlik:
-      * adres https ve github.com / *.githubusercontent.com olmalı
-      * yönlendirme sonrası NİHAİ adres de aynı süzgeçten geçer
-      * dosya .exe olmalı; boyut biliniyorsa kabaca tutmalı
-    `ilerleme(indirilen, toplam)` her parçada çağrılır (arayüz çubuğu).
+    Returns: the Path of the downloaded file. Security:
+      * the address must be https and github.com / *.githubusercontent.com
+      * the FINAL address after redirects passes the same filter
+      * the file must be an .exe; if the size is known it must roughly match
+    `progress(downloaded, total)` is called on every chunk (the UI bar).
     """
     import shutil
     import urllib.parse
@@ -199,75 +205,75 @@ def download_update(url: str, hedef_dizin, *, beklenen_boyut: int = 0,
     if not _guvenilir_indirme(url):
         raise ValueError(f"Güvenilmeyen indirme adresi: {url!r}")
 
-    dosya_adi = ad or Path(urllib.parse.urlparse(url).path).name or "dornick-setup.exe"
-    if not dosya_adi.lower().endswith(".exe"):
+    file_name = ad or Path(urllib.parse.urlparse(url).path).name or "dornick-setup.exe"
+    if not file_name.lower().endswith(".exe"):
         raise ValueError("Kurulum dosyası .exe olmalı")
-    hedef = Path(hedef_dizin)
-    hedef.mkdir(parents=True, exist_ok=True)
-    yol = hedef / dosya_adi
+    target = Path(target_dir)
+    target.mkdir(parents=True, exist_ok=True)
+    path = target / file_name
 
-    istek = urllib.request.Request(
+    request = urllib.request.Request(
         url, headers={"User-Agent": f"dornick/{version()}",
                       "Accept": "application/octet-stream"})
-    with _ac(istek, timeout=60) as cevap:
-        # Yönlendirme sonrası nihai adres de güvenilir olmalı.
-        nihai = getattr(cevap, "url", None) or cevap.geturl()
-        if not _guvenilir_indirme(nihai):
-            raise ValueError(f"Yönlendirme güvenilmeyen adrese gitti: {nihai!r}")
-        toplam = int(cevap.headers.get("Content-Length") or beklenen_boyut or 0)
-        indirilen = 0
-        gecici = yol.with_suffix(yol.suffix + ".indiriliyor")
-        with open(gecici, "wb") as f:
+    with _ac(request, timeout=60) as response:
+        # The final address after redirects must be trusted too.
+        final = getattr(response, "url", None) or response.geturl()
+        if not _guvenilir_indirme(final):
+            raise ValueError(f"Yönlendirme güvenilmeyen adrese gitti: {final!r}")
+        total = int(response.headers.get("Content-Length") or beklenen_boyut or 0)
+        downloaded = 0
+        temp = path.with_suffix(path.suffix + ".indiriliyor")
+        with open(temp, "wb") as f:
             while True:
-                parca = cevap.read(1024 * 256)
-                if not parca:
+                chunk = response.read(1024 * 256)
+                if not chunk:
                     break
-                f.write(parca)
-                indirilen += len(parca)
+                f.write(chunk)
+                downloaded += len(chunk)
                 if progress is not None:
                     try:
-                        progress(indirilen, toplam)
+                        progress(downloaded, total)
                     except Exception:
                         pass
-    # Bütünlük: boyut biliniyorsa kabaca tutmalı (kesik indirme çalıştırılmasın).
-    if beklenen_boyut and abs(indirilen - beklenen_boyut) > max(1024, beklenen_boyut // 100):
-        gecici.unlink(missing_ok=True)
+    # Integrity: if the size is known it must roughly match (a truncated download must not run).
+    if beklenen_boyut and abs(downloaded - beklenen_boyut) > max(1024, beklenen_boyut // 100):
+        temp.unlink(missing_ok=True)
         raise ValueError(
-            f"İndirme eksik: {indirilen} bayt geldi, {beklenen_boyut} bekleniyordu")
-    if indirilen < 1024 * 1024:   # 1 MB altı bir kurulum sihirbazı olamaz
-        gecici.unlink(missing_ok=True)
-        raise ValueError(f"İndirilen dosya fazla küçük ({indirilen} bayt)")
-    shutil.move(str(gecici), str(yol))
-    return yol
+            f"İndirme eksik: {downloaded} bayt geldi, {beklenen_boyut} bekleniyordu")
+    if downloaded < 1024 * 1024:   # under 1 MB cannot be an installer wizard
+        temp.unlink(missing_ok=True)
+        raise ValueError(f"İndirilen dosya fazla küçük ({downloaded} bayt)")
+    shutil.move(str(temp), str(path))
+    return path
 
 
-def start_update(yol) -> None:
-    """İndirilen kurulum sihirbazını başlatır (Windows).
+def start_update(path) -> None:
+    """Starts the downloaded installer wizard (Windows).
 
-    Kurulum, çalışan uygulamayı kendisi kapatıp dosyaları değiştirir
-    (dornick.iss `CloseApplications`). Burada yalnız sihirbazı açıyoruz;
-    uygulamanın kapanışını çağıran taraf (arayüz → tepsi) yönetiyor.
+    The installer closes the running app itself and replaces the files
+    (dornick.iss `CloseApplications`). Here we only open the wizard; the
+    caller (UI → tray) manages the app's shutdown.
     """
     import os
     from pathlib import Path
 
-    yol = Path(yol)
-    if not yol.is_file():
-        raise FileNotFoundError(str(yol))
+    path = Path(path)
+    if not path.is_file():
+        raise FileNotFoundError(str(path))
     if sys.platform == "win32":
-        os.startfile(str(yol))  # type: ignore[attr-defined]
-    else:  # pragma: no cover - kurulum sihirbazı yalnız Windows
-        subprocess.Popen([str(yol)])
+        os.startfile(str(path))  # type: ignore[attr-defined]
+    else:  # pragma: no cover - the installer wizard is Windows only
+        subprocess.Popen([str(path)])
 
 
 def quiet_flags() -> dict:
-    """Windows'ta konsol penceresi açtırmayan subprocess anahtarları.
+    """subprocess switches that do not open a console window on Windows.
 
-    Çıktısı borulanan ya da hiç gösterilmeyen her konsol alt süreci bu
-    bayrakla açılmalı; aksi halde pythonw altında her çağrı ekranda bir
-    cmd penceresi parlatıyor. Kendi penceresi İSTENEN başlatmalar
-    (kullanıcının uygulamasını yeni konsolda açmak gibi) bilinçli olarak
-    CREATE_NEW_CONSOLE kullanır — onlara dokunma.
+    Every console child process whose output is piped or never shown must
+    be opened with this flag; otherwise under pythonw each call flashes a
+    cmd window on screen. Launches that WANT their own window (opening the
+    user's app in a new console, say) deliberately use CREATE_NEW_CONSOLE
+    — leave those alone.
     """
     if sys.platform == "win32":
         return {"creationflags": subprocess.CREATE_NO_WINDOW}
@@ -275,19 +281,19 @@ def quiet_flags() -> dict:
 
 
 async def kill_tree(proc) -> None:
-    """Bir alt süreci ve ONUN ALTINDAKİLERİ sonlandırır.
+    """Terminates a child process and THOSE BENEATH IT.
 
-    Yalnızca `proc.kill()` demek yetmiyor ve bu iki ayrı yerde ölçülerek
-    görüldü (test koşucusu ve kancalar). Kabuk üzerinden başlatılan bir
-    komutta `proc` powershell/cmd/bash'tir; asıl iş onun ÇOCUĞUdur.
-    Kabuğu öldürmek gerçek süreci (npm, pytest, kullanıcının kancası)
-    makinede çalışır halde bırakıyor — üstelik boruları da açık tuttuğu
-    için çağıran taraf onun bitmesini beklemeye devam ediyor. Ölçüm:
-    2 saniyelik bir zaman aşımı, 60 saniyelik bir bekleyişe dönüştü.
+    Just saying `proc.kill()` is not enough, and this was seen by
+    measurement in two separate places (the test runner and hooks). For a
+    command started through the shell `proc` is powershell/cmd/bash; the
+    real work is its CHILD. Killing the shell leaves the real process
+    (npm, pytest, the user's hook) running on the machine — and since it
+    keeps the pipes open, the caller keeps waiting for it to finish.
+    Measurement: a 2-second timeout turned into a 60-second wait.
 
-    Windows'ta süreç grubu yok; ağacın tamamı `taskkill /T` ile
-    iniliyor. POSIX'te çağıran taraf süreci kendi oturumunda başlatıyor
-    (`start_new_session`) ve grup tek sinyalle düşüyor.
+    There are no process groups on Windows; the whole tree is brought down
+    with `taskkill /T`. On POSIX the caller starts the process in its own
+    session (`start_new_session`) and the group falls with a single signal.
     """
     import asyncio
 
@@ -295,15 +301,15 @@ async def kill_tree(proc) -> None:
         return
     if sys.platform == "win32":
         try:
-            agac = await asyncio.create_subprocess_exec(
+            tree = await asyncio.create_subprocess_exec(
                 "taskkill", "/T", "/F", "/PID", str(proc.pid),
                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                 **quiet_flags(),
             )
-            await asyncio.wait_for(agac.wait(), 10)
+            await asyncio.wait_for(tree.wait(), 10)
         except (OSError, ValueError, asyncio.TimeoutError):  # pragma: no cover
             pass
-    else:  # pragma: no cover - POSIX yolu Windows'ta koşmuyor
+    else:  # pragma: no cover - the POSIX path does not run on Windows
         import os
         import signal
 

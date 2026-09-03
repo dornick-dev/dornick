@@ -22,7 +22,7 @@ olmayan bir şeye ihtiyaç duyarsan önce sor.
 3. **Önce test.** Her fazın ilk commit'i belgenin 9. bölümündeki test dosyalarıdır;
    kırmızı görülmeden mekanik yazılmaz. Testi olmayan fonksiyon merge edilmez.
    Kapsam: yeni modüller ≥ %90, değişen satırlar ≥ %90. Mevcut 1678 test kırılmaz.
-4. **Bench her PR'da koşar:** `eval/context_memory/yasam_bench.py` (holdout) ve mevcut
+4. **Bench her PR'da koşar:** `eval/context_memory/life_bench.py` (holdout) ve mevcut
    `scale_bench.py`. İkisinden biri gerilerse PR açılmaz. Ölçülen yol ürünün kendisidir
    (`select_prime`, `RecallStore.recall`, `orgu.gece_gecisi`); kopya mantık yasak.
    **Her tabloda üç sütun:** `eski` (`hafiza-eski` etiketi, belge bölüm 10) · önceki faz ·
@@ -55,11 +55,11 @@ Faz 0'ı aç:
 - `RecallStore` ve `Mind`'a saat enjeksiyonu,
 - `eval/context_memory/yasam_dataset.json` (90 gün, A–S kümeleri, asgari olay sayıları
   belgede) — el yazımı, Türkçe, `holdout` ayrı,
-- `yasam_bench.py` (tüm metrikler, ablation bayrakları, gece geçişi çağrısı — henüz
+- `life_bench.py` (tüm metrikler, ablation bayrakları, gece geçişi çağrısı — henüz
   yokken no-op),
 - `esik_egrisi` deneyi (gece kapalı, S'ye karşı bozulma),
 - `tests/fixtures/recall-v1.db` üretimi,
-- `main`'i `hafiza-eski` olarak etiketle; `yasam_bench.py --eski` o etiketi ayrı
+- `main`'i `hafiza-eski` olarak etiketle; `life_bench.py --old` o etiketi ayrı
   checkout'ta koşturur,
 - `docs/charts/yasam-taban.md`: **eski sistemin** bench sonucu — bu dosya bir daha
   değişmez.

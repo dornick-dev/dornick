@@ -1,7 +1,7 @@
-"""Yapılandırma.
+"""Configuration.
 
-Öncelik sırası: açık argüman > ortam değişkeni > config dosyası > varsayılan.
-Config dosyası: <workspace>/.dornick/config.json
+Precedence: explicit argument > environment variable > config file > default.
+Config file: <workspace>/.dornick/config.json
 """
 
 from __future__ import annotations
@@ -17,78 +17,79 @@ from .listen import ListenConfig
 from .place import PlaceConfig
 from .voice import VoiceConfig
 
-# Model kimlikleri tahmin edilmez. Bkz. platform.claude.com/docs -> models.
+# Model ids are not guessed. See platform.claude.com/docs -> models.
 DEFAULT_ANTHROPIC_MODEL = "claude-opus-4-8"
 
-# Taze kurulumun varsayılanı OpenRouter + "oto": tek anahtarla çok sağlayıcı
-# ve anahtar girilir girilmez ücretsiz modellerle çalışan bir kurulum
-# (bkz. otomod.py). Mevcut kullanıcılar etkilenmez — ayar sayfası model
-# bölümünü TÜM alanlarıyla yazıyor, dosyadaki değerler bu varsayılanları
-# eziyor.
+# The fresh-install default is OpenRouter + "oto": many providers with a
+# single key and a setup that runs on free models the moment the key is
+# entered (see automode.py). Existing users are unaffected — the settings
+# page writes the model section with ALL its fields, and the values in the
+# file override these defaults.
 OPENROUTER_URL = "https://openrouter.ai/api/v1"
 OTO_MODEL = "oto"
 DEFAULT_MODEL = OTO_MODEL
 
-# Streaming olmadan bu değerin üstü SDK'da HTTP timeout riski taşır.
+# Above this value without streaming there is an HTTP-timeout risk in the SDK.
 NONSTREAM_TOKEN_CEILING = 16_000
 
 
 @dataclass(slots=True)
 class ModelConfig:
     name: str = DEFAULT_MODEL
-    # Tek yanıt çıktı tavanı. 32k birçok flash/küçük uçta aşırı; varsayılan
-    # ajanik iş için yeterli, katalog/detect pencereye göre sıkılır.
+    # Output ceiling for a single reply. 32k is excessive on many flash/small
+    # endpoints; the default is enough for agentic work, catalogue/detect
+    # tightens it to the window.
     max_tokens: int = 16_384
-    # Modelin bağlam penceresi. Sıkıştırma buna göre tetiklenir. 200k birçok
-    # modelde yalandı (sıkıştırma geç kalır, sunucu başı atar). Muhafazakâr
-    # taban; seçimde API/katalog gerçek değeri yazar (Algıla şart değil).
+    # The model's context window. Compaction triggers against this. 200k was
+    # a lie on many models (compaction comes late, the server drops the
+    # head). Conservative base; on selection the API/catalogue writes the
+    # real value (Detect is not required).
     context_window: int = 65_536
-    # low | medium | high | xhigh | max — ajanik iş için en az high.
-    # Yalnızca Anthropic; yerel sağlayıcılarda yoksayılır.
+    # low | medium | high | xhigh | max — at least high for agentic work.
+    # Anthropic only; ignored on local providers.
     effort: str = "high"
-    # Adaptif düşünme. budget_tokens Opus 4.7+ üzerinde kaldırıldı, 400 döner.
+    # Adaptive thinking. budget_tokens was removed on Opus 4.7+, returns 400.
     thinking: bool = True
-    # "omitted" varsayılan; kullanıcıya düşünceyi göstereceksek "summarized".
+    # "omitted" is the default; "summarized" if we are going to show thinking to the user.
     thinking_display: str = "summarized"
-    # Katalogdan: model görüntü kabul ediyor mu / düşünme alanı var mı.
-    # None = bilinmiyor (dene, reddedilirse öğren). False = hiç gönderme.
+    # From the catalogue: does the model accept images / does it have a thinking field.
+    # None = unknown (try, learn if rejected). False = never send.
     vision: bool | None = None
     can_think: bool | None = None
 
-    # Asıl model KALICI olarak çalışmazsa (kredi bitti, kimlik geçersiz,
-    # model kaldırıldı) turun ölmesi yerine devreye giren model. Boşsa
-    # bugünkü davranış: hata olduğu gibi yüzeye çıkar. Geçici hatalar
-    # (bağlantı, 429, 5xx) buraya hiç uğramaz — onlar zaten yeniden
-    # deneniyor ve yedeğe düşmek onları gizlerdi.
+    # The model that steps in when the primary model PERMANENTLY fails
+    # (credit ran out, credentials invalid, model removed) instead of the
+    # turn dying. If empty, today's behaviour: the error surfaces as-is.
+    # Transient errors (connection, 429, 5xx) never come here — they are
+    # already retried and falling back would hide them.
     fallback_model: str = ""
 
     # anthropic | openai
-    # "openai" OpenAI-uyumlu her sunucuyu kapsar: LM Studio, Ollama, vLLM,
-    # llama.cpp server, OpenRouter, OpenAI'nin kendisi.
+    # "openai" covers every OpenAI-compatible server: LM Studio, Ollama, vLLM,
+    # llama.cpp server, OpenRouter, OpenAI itself.
     provider: str = "openai"
     # LM Studio: http://localhost:1234/v1 · Ollama: http://localhost:11434/v1
     base_url: str | None = OPENROUTER_URL
-    # API anahtarının okunacağı ortam değişkeni. Yerel sunucular anahtar
-    # istemez ama istemci bir değer bekler.
+    # The environment variable the API key is read from. Local servers do
+    # not want a key but the client expects a value.
     api_key_env: str | None = "OPENROUTER_API_KEY"
-    # Yerel modellerde işe yarar; Anthropic 4.7+ üzerinde 400 döndüğü için
-    # yalnızca openai sağlayıcısında gönderilir.
+    # Useful on local models; sent only on the openai provider because
+    # Anthropic 4.7+ returns 400.
     temperature: float | None = None
-    # Modelin sunucuda yüklü kalacağı süre (saniye). LM Studio `ttl`,
-    # Ollama `keep_alive` adıyla anlıyor; ikisi de gönderiliyor ve
-    # tanımadığı alanı yok sayıyorlar. 0 = dokunma, sunucunun kendi
-    # davranışı geçerli. Her istekte yeniden yükleme onlarca saniye
-    # sürüyor ve ilk cevabı bekletiyor.
+    # How long the model stays loaded on the server (seconds). LM Studio
+    # understands it as `ttl`, Ollama as `keep_alive`; both are sent and each
+    # ignores the field it does not know. 0 = do not touch, the server's own
+    # behaviour applies. Reloading on every request takes tens of seconds
+    # and makes the first answer wait.
     keep_loaded: int = 0
-    # Aynı anda sunucuya gidebilecek azami istek. Yerel sunucularda 1
-    # olmalı: LM Studio meşgul bir modele ikinci istek gelince modelin
-    # **ikinci bir kopyasını** yüklüyor. Üç alt ajan üç kopya demek —
-    # 6.5 GB'lık bir modelde 20 GB. Resmî API'lerde böyle bir sorun yok,
-    # orada yükseltilebilir.
+    # Maximum concurrent requests to the server. Must be 1 on local servers:
+    # when a second request hits a busy model LM Studio loads a **second
+    # copy** of the model. Three sub-agents mean three copies — 20 GB on a
+    # 6.5 GB model. Official APIs have no such problem, it can be raised there.
     max_calls: int = 1
-    # Yerel LLM optimizasyonu (opt-in). Açıkken: diğer modelleri boşalt,
-    # tek kopya tut, VRAM/model boyutuna göre bağlamı düşür. Kapalıysa
-    # bugünkü davranış — kullanıcı ne yazdıysa o.
+    # Local LLM optimisation (opt-in). When on: unload the other models,
+    # keep a single copy, lower the context to VRAM/model size. When off,
+    # today's behaviour — whatever the user wrote.
     local_optimize: bool = False
 
     @property
@@ -105,18 +106,18 @@ class ModelConfig:
 
 @dataclass(slots=True)
 class ContextConfig:
-    """Bağlam ve önbellek politikası.
+    """Context and cache policy.
 
-    cache_message_breakpoints: mesaj listesine konacak breakpoint sayısı.
-        Toplam sınır 4; biri sistem promptuna gider, kalanı buraya.
-    lookback_blocks: iki breakpoint arasındaki azami içerik bloğu sayısı.
-        API geriye doğru en fazla 20 blok tarar; 20'yi aşarsak önbellek
-        sessizce ıskalar. Güvenli pay bırakmak için 15.
-    keep_recent_images: geçmişte tutulacak son N görüntü. Öncekiler metin
-        yer tutucusuyla değiştirilir (ekran görüntüsü ağır: ~1.5-4.8k token).
-    clear_tool_uses: sunucu tarafı bağlam düzenleme (beta). Eski tool_result
-        bloklarını temizler. Öneki değiştirdiği için önbelleği o noktadan
-        sonra düşürür — seyrek ve öngörülebilir tetikle.
+    cache_message_breakpoints: number of breakpoints placed in the message list.
+        The total limit is 4; one goes to the system prompt, the rest here.
+    lookback_blocks: maximum number of content blocks between two breakpoints.
+        The API scans backwards at most 20 blocks; exceed 20 and the cache
+        silently misses. 15 to leave a safety margin.
+    keep_recent_images: the last N images kept in history. Earlier ones are
+        replaced with a text placeholder (screenshots are heavy: ~1.5-4.8k tokens).
+    clear_tool_uses: server-side context editing (beta). Clears old tool_result
+        blocks. Because it changes the prefix it drops the cache from that
+        point on — trigger it rarely and predictably.
     """
 
     cache_message_breakpoints: int = 3
@@ -124,31 +125,32 @@ class ContextConfig:
     keep_recent_images: int = 3
     clear_tool_uses: bool = False
     compact: bool = False
-    # Aynı anda koşabilecek azami araç. Model bir turda on araç birden
-    # isteyebiliyor; hepsini aynı anda başlatmak zayıf bir makinede
-    # belleği ve işlemciyi tüketiyor. Alt ajanlar da bu sınırın içinde.
+    # Maximum tools that may run concurrently. The model can ask for ten
+    # tools in one turn; starting them all at once exhausts memory and CPU
+    # on a weak machine. Sub-agents are inside this limit too.
     max_parallel: int = 4
-    # Aynı anda koşabilecek azami ALT AJAN. Araç sınırından ayrı: bir alt
-    # ajan tek araçtan çok daha ağır (kendi model çağrıları, kendi araçları).
-    # Sınıra takılan spawn beklemeye giriyor, reddedilmiyor — iş sıraya
-    # giriyor. Yerel sunucuda model tek kopyaysa 1 mantıklı.
+    # Maximum SUB-AGENTS that may run concurrently. Separate from the tool
+    # limit: a sub-agent is far heavier than a single tool (its own model
+    # calls, its own tools). A spawn hitting the limit waits, it is not
+    # refused — the work queues. 1 makes sense on a local server with a
+    # single model copy.
     max_agents: int = 3
 
 
 @dataclass(slots=True)
 class PermissionConfig:
-    """İzin politikası.
+    """Permission policy.
 
     mode:
-        auto  — mutasyon yapmayan her şey serbest, mutasyon yapanlar sorulur
-        ask   — her araç sorulur (allow listesindekiler hariç)
-        plan  — mutasyon yapan hiçbir araç çalışmaz (salt okunur keşif)
-        yolo  — hiçbir şey sorulmaz. Kendi riskin.
+        auto  — everything non-mutating is free, mutating ones are asked
+        ask   — every tool is asked (except those on the allow list)
+        plan  — no mutating tool runs (read-only exploration)
+        yolo  — nothing is asked. Your own risk.
 
-    Kurallar "araç_adı:argüman-deseni" biçiminde fnmatch desenleri:
-        "shell:git *"      -> git komutlarına izin
-        "write_file:*"     -> tüm yazmalara izin
-        "shell:*"          -> tüm kabuk komutları
+    Rules are fnmatch patterns in the form "tool_name:argument-pattern":
+        "shell:git *"      -> allow git commands
+        "write_file:*"     -> allow all writes
+        "shell:*"          -> all shell commands
     """
 
     mode: str = "ask"
@@ -158,36 +160,38 @@ class PermissionConfig:
 
 @dataclass(slots=True)
 class SandboxConfig:
-    """Ajanın kendi klasörü.
+    """The agent's own folder.
 
-    enabled: kapatılırsa yazma kısıtı kalkar ve ajan her yere yazabilir.
-        Kapatmak bilinçli bir karar olmalı — açık hali varsayılan.
-    directory: çalışma alanına göre ya da mutlak yol.
+    enabled: if switched off the write restriction lifts and the agent can
+        write anywhere. Switching it off must be a conscious decision — on
+        is the default.
+    directory: relative to the workspace or an absolute path.
     """
 
     enabled: bool = True
     directory: str = sandbox.DEFAULT_DIR
-    # Kullanıcının seçtiği proje klasörü. Boşsa yalnızca atölye yazılabilir
-    # (bugüne kadarki davranış). Doluysa orası da yazılabilir oluyor:
-    # seçimin kendisi onaydır — kullanıcı "burada çalış" demiş demektir.
-    # Proje bir OTURUM değil: değiştirmek zihni, anıları ya da konuşma
-    # geçmişini etkilemiyor, yalnızca nerede çalışıldığını değiştiriyor.
+    # The project folder the user picked. If empty only the workshop is
+    # writable (the behaviour so far). If set, that place becomes writable
+    # too: the selection itself is the consent — the user has said "work
+    # here". A project is not a SESSION: changing it does not affect the
+    # mind, memories or conversation history, only where the work happens.
     project: str = ""
 
 
 @dataclass(slots=True)
 class CameraConfig:
-    """Kamera.
+    """Camera.
 
-    Kapalı geliyor. Açınca LED yanar ve önizleme akar; kapatınca aygıt
-    bırakılır (yeniden başlatmaya gerek yok). Kareler kendiliğinden sohbet
-    modeline gitmez: NVIDIA GPU varsa nesneler yerelde okunur, modele metin
-    gider; GPU yoksa sorduğunda kesit alınır.
+    Ships off. Switching it on lights the LED and streams the preview;
+    switching it off releases the device (no restart needed). Frames do not
+    go to the chat model on their own: with an NVIDIA GPU objects are read
+    locally and text goes to the model; without a GPU a snapshot is taken
+    when you ask.
 
-    `cloud_ok`: hareket algılayınca kare BULUT modele de gidebilir mi?
-    Varsayılan hayır — ev kamerası karesi, kullanıcı açıkça izin vermeden
-    makineden çıkmaz. Yerel model seçiliyken bu bayrağa bakılmaz. GPU
-    analizi başarılıysa kare zaten gitmez.
+    `cloud_ok`: on motion detection, may the frame also go to the CLOUD
+    model? Default no — a home-camera frame does not leave the machine
+    without the user's explicit consent. Ignored while a local model is
+    selected. If GPU analysis succeeds the frame does not go anyway.
     """
 
     enabled: bool = False
@@ -196,12 +200,12 @@ class CameraConfig:
 
 @dataclass(slots=True)
 class BrowserConfig:
-    """dornick chrome — DevTools kapısıyla sürülen tarayıcı.
+    """dornick chrome — the browser driven through the DevTools port.
 
-    Kapalı geliyor: kendi kendine sayfa açan bir asistan, kendi kendine
-    konuşandan daha rahatsız edici. Açıldığında tarayıcı Dornick'in ayrı
-    profiliyle çalışıyor (`.dornick/chrome/`) — kullanıcının gündelik
-    tarayıcısına dokunulmuyor.
+    Ships off: an assistant that opens pages on its own is more unsettling
+    than one that talks on its own. When on, the browser runs with
+    Dornick's separate profile (`.dornick/chrome/`) — the user's everyday
+    browser is not touched.
     """
 
     enabled: bool = False
@@ -217,12 +221,12 @@ class Config:
     permissions: PermissionConfig = field(default_factory=PermissionConfig)
     sandbox: SandboxConfig = field(default_factory=SandboxConfig)
     voice: VoiceConfig = field(default_factory=VoiceConfig)
-    # Konum: "yarın hava nasıl?" sorusunun cevabı buna bağlı.
+    # Location: the answer to "what's the weather tomorrow?" depends on it.
     place: PlaceConfig = field(default_factory=PlaceConfig)
     listen: ListenConfig = field(default_factory=ListenConfig)
     camera: CameraConfig = field(default_factory=CameraConfig)
     browser: BrowserConfig = field(default_factory=BrowserConfig)
-    # Ek sistem promptu parçası (kişilik / kalıcı yönerge).
+    # Extra system-prompt piece (personality / standing directive).
     persona_path: Path | None = None
 
     @property
@@ -256,7 +260,7 @@ class Config:
         if raw:
             cfg = _merge(cfg, raw)
 
-        # Ortam değişkenleri dosyayı ezer.
+        # Environment variables override the file.
         if model := os.getenv("DORNICK_MODEL"):
             cfg.model = replace(cfg.model, name=model)
         if effort := os.getenv("DORNICK_EFFORT"):
@@ -276,31 +280,32 @@ class Config:
         return cfg
 
 
-# Çalışma alanı (ev) çözümü. Sorun: ev `Path.cwd()`'den türetiliyordu, o yüzden
-# dornick başka bir dizinden (ör. bir üst klasörden) açılınca `.dornick` ve `atolye`'yi
-# ORAYA kuruyor, verisini bulunduğu yere saçıyordu — kullanıcı: "kendine
-# belirlediğimiz yerin dışına çıkmamalı". Artık ev bir kez belirlenince
-# SABİTLENİYOR: Dornick'i nereden açarsan aç aynı evi kullanır.
+# Workspace (home) resolution. The problem: the home was derived from
+# `Path.cwd()`, so when dornick was launched from another directory (e.g. a
+# parent folder) it set up `.dornick` and `atolye` THERE, scattering its data
+# wherever it happened to be — the user: "it must not step outside the place
+# we assigned it". Now once the home is determined it is PINNED: wherever
+# you launch Dornick from, it uses the same home.
 #
-# Öncelik: açık argüman (test/çağıran; sabitlemez) > DORNICK_WORKSPACE (sabitler)
-# > sabitlenmiş ev işaretçisi > cwd'den yukarı var olan bir .dornick (git'in .git
-# bulması gibi; sabitler) > cwd (sabitler).
+# Precedence: explicit argument (test/caller; does not pin) > DORNICK_WORKSPACE
+# (pins) > pinned home pointer > an existing .dornick upwards from cwd (like
+# git finding .git; pins) > cwd (pins).
 def _home_pointer() -> Path:
     return Path.home() / ".dornick" / "home"
 
 
-# neo→Dornick geçişi (01.09.2026): eski kurulumların verisi kaybolmasın.
-# Yeni işaretçi yoksa eskisi okunur; çalışma alanında .dornick yoksa ama
-# .neocp varsa klasör olduğu gibi devralınır (kopya değil — yeniden
-# adlandırma; beyin/oturum/ayarlar aynen taşınır).
-_ESKI_ISARETCI = Path.home() / ".neocp" / "home"
-_ESKI_DURUM_ADI = ".neocp"
+# neo→Dornick transition (01.09.2026): old installs' data must not be lost.
+# If the new pointer is missing the old one is read; if the workspace has
+# no .dornick but has .neocp the folder is adopted as-is (not a copy — a
+# rename; brain/sessions/settings move over unchanged).
+_LEGACY_POINTER = Path.home() / ".neocp" / "home"
+_LEGACY_STATE_NAME = ".neocp"
 
 
 def _read_home() -> Path | None:
-    for aday in (_home_pointer(), _ESKI_ISARETCI):
+    for candidate in (_home_pointer(), _LEGACY_POINTER):
         try:
-            txt = aday.read_text(encoding="utf-8").strip()
+            txt = candidate.read_text(encoding="utf-8").strip()
             if txt:
                 return Path(txt).expanduser().resolve()
         except Exception:
@@ -309,16 +314,16 @@ def _read_home() -> Path | None:
 
 
 def _adopt_legacy_state(ws: Path, state: Path) -> None:
-    """Eski `.neocp` durum klasörünü yeni ada devralır (tek sefer)."""
+    """Adopts the old `.neocp` state folder under the new name (one time)."""
     if state.exists():
         return
-    eski = ws / _ESKI_DURUM_ADI
-    if not eski.is_dir():
+    legacy = ws / _LEGACY_STATE_NAME
+    if not legacy.is_dir():
         return
     try:
-        eski.rename(state)
+        legacy.rename(state)
     except OSError:
-        pass   # kilitliyse dokunma; yeni klasör sıfırdan kurulur
+        pass   # if locked, leave it; the new folder is set up from scratch
 
 
 def _pin_home(ws: Path) -> None:
@@ -331,27 +336,27 @@ def _pin_home(ws: Path) -> None:
 
 
 def _resolve_workspace(explicit: Path | str | None) -> Path:
-    # 1. Açık argüman: kesin ve SABİTLEMEZ (testler tmp_path geçiyor; ev
-    #    işaretçisini bir teste kurban etmemeli).
+    # 1. Explicit argument: definitive and does NOT pin (tests pass tmp_path;
+    #    the home pointer must not be sacrificed to a test).
     if explicit:
         return Path(explicit).expanduser().resolve()
-    # 2. DORNICK_WORKSPACE: kullanıcının bilinçli seçimi — sabitler.
+    # 2. DORNICK_WORKSPACE: the user's conscious choice — pins.
     env = os.getenv("DORNICK_WORKSPACE")
     if env:
         ws = Path(env).expanduser().resolve()
         _pin_home(ws)
         return ws
-    # 3. Sabitlenmiş ev: nereden açılırsa açılsın aynı ev.
+    # 3. Pinned home: the same home wherever it is launched from.
     pinned = _read_home()
     if pinned and pinned.is_dir():
         return pinned
-    # 4. cwd'den yukarı var olan bir ev ara, bulunca sabitle.
+    # 4. Look upwards from cwd for an existing home, pin it when found.
     cur = Path.cwd().resolve()
     for cand in [cur, *cur.parents]:
         if (cand / ".dornick").is_dir():
             _pin_home(cand)
             return cand
-    # 5. Hiçbiri yok: cwd ev olur ve sabitlenir.
+    # 5. None of them: cwd becomes the home and is pinned.
     _pin_home(cur)
     return cur
 
@@ -360,10 +365,10 @@ def _read_json(path: Path) -> dict[str, Any] | None:
     if not path.exists():
         return None
     try:
-        # utf-8-sig: Windows'ta Notepad config.json'u BOM'la kaydediyor ve
-        # düz utf-8 okuyuş "Unexpected UTF-8 BOM" ile programı AÇILMAZ
-        # yapıyordu (1.1.0 kurulum dumanlı testinde canlı görüldü).
-        # BOM'suz dosyada davranış birebir aynı.
+        # utf-8-sig: on Windows Notepad saves config.json with a BOM and a
+        # plain utf-8 read made the program UNABLE TO START with "Unexpected
+        # UTF-8 BOM" (seen live in the 1.1.0 install smoke test). On a
+        # BOM-less file the behaviour is byte-identical.
         return json.loads(path.read_text(encoding="utf-8-sig"))
     except json.JSONDecodeError as exc:
         raise ValueError(f"{path} okunamadı: {exc}") from exc

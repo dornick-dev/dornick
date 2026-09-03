@@ -1,21 +1,21 @@
-"""Model fiyat etiketi — OpenRouter kataloğundan.
+"""Model price tag — from the OpenRouter catalogue.
 
-Maliyet çipi için: seçili modelin girdi/çıktı fiyatı (USD/token).
-OpenRouter'ın /models yanıtı her modelin `pricing` alanını veriyor;
-katalog isteği pahalı (yüzlerce model + ağ), o yüzden otomod havuz
-önbelleği kalıbıyla hem belleğe hem diske önbellekleniyor (24 saat
-taze; ağ yokken bayat tablo hiç yoktan iyi).
+For the cost chip: the selected model's input/output price (USD/token).
+OpenRouter's /models response carries each model's `pricing` field; the
+catalogue request is expensive (hundreds of models + network), so it is
+cached both in memory and on disk following the automode pool-cache
+pattern (24 hours fresh; a stale table beats nothing when offline).
 
-İki kural tur hızını koruyor:
+Two rules protect turn speed:
 
-  * `etiket(ag=False)` ASLA ağa çıkmaz — bellek + disk. Turun içinde
-    çağrılabilir.
-  * Ağa çıkan tek yol `etiket(ag=True)`; köprü onu arka plan
-    thread'inde, oturumda bir kez çağırıyor.
+  * `etiket(ag=False)` NEVER goes to the network — memory + disk. It may
+    be called from inside a turn.
+  * The only path to the network is `etiket(ag=True)`; the bridge calls
+    it on a background thread, once per session.
 
-Fiyat bilinemiyorsa (başka sağlayıcı, katalogda olmayan model, ağ yok)
-None dönüyor: arayüz çipi dolar yerine token sayısı gösterir — yanlış
-bir rakam basmaktan iyi.
+If the price cannot be known (another provider, a model missing from the
+catalogue, no network) None is returned: the UI chip shows a token count
+instead of dollars — better than printing a wrong figure.
 """
 
 from __future__ import annotations
@@ -29,42 +29,42 @@ from pathlib import Path
 from typing import Any, Callable
 
 from .config import OPENROUTER_URL, OTO_MODEL, ModelConfig
-from .automode import LIST_TIMEOUT, FRESHNESS_S, _oku, _state_dir, _yaz
+from .automode import LIST_TIMEOUT, FRESHNESS_S, _read, _state_dir, _write
 
-# Fiyat tablosu önbelleği: .dornick/fiyat.json
+# Price table cache: .dornick/fiyat.json
 PRICE_FILE = "fiyat.json"
 
-# Süreç içinde ikinci kez diske gitmemek için; anahtar dosya yolu
-# (testler ayrı state_dir veriyor ve birbirine karışmamalı).
-_KILIT = threading.Lock()
-_BELLEK: dict[str, tuple[float, dict[str, dict[str, float]]]] = {}
+# So we do not hit the disk a second time within the process; keyed by file
+# path (tests pass separate state_dirs and they must not bleed into each other).
+_LOCK = threading.Lock()
+_MEMORY: dict[str, tuple[float, dict[str, dict[str, float]]]] = {}
 
 
-def suz(entries: list[Any]) -> dict[str, dict[str, float]]:
-    """Model listesinden fiyat tablosu: {id: {"girdi": $, "cikti": $}}.
+def sift(entries: list[Any]) -> dict[str, dict[str, float]]:
+    """Price table from the model list: {id: {"girdi": $, "cikti": $}}.
 
-    Fiyatlar USD/token; OpenRouter dize döndürüyor ("0.000003") ve
-    sayıya çevrilemeyen kayıt sessizce atlanıyor — tek bozuk giriş
-    tabloyu düşürmemeli.
+    Prices are USD/token; OpenRouter returns strings ("0.000003") and any
+    entry that cannot be parsed to a number is skipped silently — a single
+    broken entry must not bring the table down.
     """
-    tablo: dict[str, dict[str, float]] = {}
+    table: dict[str, dict[str, float]] = {}
     for entry in entries:
         if not isinstance(entry, dict) or not entry.get("id"):
             continue
         pricing = entry.get("pricing") or {}
         try:
-            girdi = float(pricing.get("prompt"))
-            cikti = float(pricing.get("completion"))
+            prompt_price = float(pricing.get("prompt"))
+            completion_price = float(pricing.get("completion"))
         except (TypeError, ValueError):
             continue
-        if girdi < 0 or cikti < 0:
-            continue   # negatif fiyat: bozuk kayıt
-        tablo[str(entry["id"])] = {"girdi": girdi, "cikti": cikti}
-    return tablo
+        if prompt_price < 0 or completion_price < 0:
+            continue   # negative price: broken entry
+        table[str(entry["id"])] = {"girdi": prompt_price, "cikti": completion_price}
+    return table
 
 
-def _indir() -> dict[str, dict[str, float]]:
-    """Canlı katalogdan fiyat tablosu. Ağ yoksa boş sözlük."""
+def _download() -> dict[str, dict[str, float]]:
+    """Price table from the live catalogue. Empty dict when offline."""
     try:
         with urllib.request.urlopen(
             OPENROUTER_URL + "/models", timeout=LIST_TIMEOUT
@@ -73,44 +73,44 @@ def _indir() -> dict[str, dict[str, float]]:
     except (urllib.error.URLError, OSError, ValueError, TimeoutError):
         return {}
     data = payload.get("data") if isinstance(payload, dict) else None
-    return suz(data) if isinstance(data, list) else {}
+    return sift(data) if isinstance(data, list) else {}
 
 
-def tablo(
+def table(
     state_dir: Path | str | None = None,
     *,
     ag: bool = False,
-    simdi: Callable[[], float] = time.time,
+    now: Callable[[], float] = time.time,
 ) -> dict[str, dict[str, float]]:
-    """Fiyat tablosu. Sıra: bellek (taze) > disk (taze) > [ağ] > bayat disk.
+    """Price table. Order: memory (fresh) > disk (fresh) > [network] > stale disk.
 
-    `ag=False` hiç ağa çıkmaz — turun içinden güvenle çağrılır.
+    `ag=False` never touches the network — safe to call from inside a turn.
     """
-    yer = Path(state_dir) if state_dir else _state_dir()
-    dosya = yer / PRICE_FILE
+    home = Path(state_dir) if state_dir else _state_dir()
+    file = home / PRICE_FILE
 
-    with _KILIT:
-        ts, eldeki = _BELLEK.get(str(dosya), (0.0, {}))
-    if eldeki and simdi() - ts < FRESHNESS_S:
-        return dict(eldeki)
+    with _LOCK:
+        ts, held = _MEMORY.get(str(file), (0.0, {}))
+    if held and now() - ts < FRESHNESS_S:
+        return dict(held)
 
-    kayit = _oku(dosya)
-    if kayit.get("fiyatlar") and simdi() - float(kayit.get("ts") or 0) < FRESHNESS_S:
-        with _KILIT:
-            _BELLEK[str(dosya)] = (float(kayit["ts"]), dict(kayit["fiyatlar"]))
-        return dict(kayit["fiyatlar"])
+    record = _read(file)
+    if record.get("fiyatlar") and now() - float(record.get("ts") or 0) < FRESHNESS_S:
+        with _LOCK:
+            _MEMORY[str(file)] = (float(record["ts"]), dict(record["fiyatlar"]))
+        return dict(record["fiyatlar"])
 
     if ag:
-        taze = _indir()
-        if taze:
-            kayit.update({"ts": simdi(), "fiyatlar": taze})
-            _yaz(dosya, kayit)
-            with _KILIT:
-                _BELLEK[str(dosya)] = (simdi(), dict(taze))
-            return taze
+        fresh = _download()
+        if fresh:
+            record.update({"ts": now(), "fiyatlar": fresh})
+            _write(file, record)
+            with _LOCK:
+                _MEMORY[str(file)] = (now(), dict(fresh))
+            return fresh
 
-    # Ağ yok ya da yasak: bayat tablo, hiç yoktan iyi.
-    return dict(kayit.get("fiyatlar") or {})
+    # No network, or network forbidden: a stale table beats nothing.
+    return dict(record.get("fiyatlar") or {})
 
 
 def etiket(
@@ -118,18 +118,18 @@ def etiket(
     state_dir: Path | str | None = None,
     *,
     ag: bool = False,
-    simdi: Callable[[], float] = time.time,
+    now: Callable[[], float] = time.time,
 ) -> dict[str, float] | None:
-    """Seçili modelin fiyat etiketi: {"girdi": USD/token, "cikti": USD/token}.
+    """The selected model's price tag: {"girdi": USD/token, "cikti": USD/token}.
 
-    Yalnız OpenRouter'da anlamlı: başka sağlayıcının (yerel sunucu,
-    Anthropic) fiyatı bu katalogda yok → None. "Oto" kipi ücretsiz
-    havuzla çalışıyor → sıfır fiyat (gerçek: tek kuruş gitmiyor).
-    Katalogda olmayan model → None; çip token sayısına düşer.
+    Only meaningful on OpenRouter: another provider's (local server,
+    Anthropic) price is not in this catalogue → None. "Oto" mode runs on
+    the free pool → zero price (true: not a cent is spent). A model missing
+    from the catalogue → None; the chip falls back to the token count.
     """
     if (model.base_url or "").rstrip("/") != OPENROUTER_URL:
         return None
-    ad = (model.name or "").strip()
-    if ad.lower() == OTO_MODEL:
+    name = (model.name or "").strip()
+    if name.lower() == OTO_MODEL:
         return {"girdi": 0.0, "cikti": 0.0}
-    return tablo(state_dir, ag=ag, simdi=simdi).get(ad)
+    return table(state_dir, ag=ag, now=now).get(name)

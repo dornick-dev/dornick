@@ -17,11 +17,11 @@
   "yakalama": null,
   "ders_gecikmesi": null,
   "sicak_oran": 0.8837,
-  "gece_suresi": 0.0165,
+  "gece_suresi": 0.0163,
   "uykusuz_kayip": null,
   "uykusuz_sisme": null,
   "aktif_bolge_ihlali": null,
-  "tur_bloklama": 7.47,
+  "tur_bloklama": 7.85,
   "kesinti_kaybi": null,
   "kesinti_gecikmesi": null,
   "yarim_damitma": null,
@@ -29,7 +29,7 @@
   "atalet": null,
   "buyume_p95": null,
   "buyume_ram": null,
-  "gecikme_p95": 7.84
+  "gecikme_p95": 8.04
  },
  "kume": {
   "A": {
@@ -84,8 +84,8 @@
   "dugum": 50000,
   "indeks": 2000,
   "ram_bayt": 144000,
-  "gecikme_p50": 4.37,
-  "gecikme_p95": 7.84
+  "gecikme_p50": 4.43,
+  "gecikme_p95": 8.04
  },
  "etiket": "holdout",
  "sira": 99

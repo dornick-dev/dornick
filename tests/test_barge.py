@@ -1,9 +1,10 @@
-"""Sesli araya girme (barge-in) davranışı.
+"""Voice barge-in behaviour.
 
-Kural (kullanıcı koydu): süren bir turda yeni bir söz duyulunca tur İPTAL
-EDİLMEZ — sıraya girer, tıpkı yazılan mesaj gibi. Yalnızca AÇIK bir durdurma
-sözü ("dur", "yeter", "kes") süreni durdurur. Böylece "bir işlem yaparken bir
-şey daha söyleyince eskiyi iptal ediyor" sorunu ortadan kalkıyor.
+Rule (set by the user): when a new utterance is heard during a running
+turn the turn is NOT CANCELLED — it queues, just like a typed message. Only
+an EXPLICIT stop word ("dur", "yeter", "kes") stops the running one. That
+removes the problem "when I say one more thing while it is doing something
+it cancels the old one".
 """
 
 from __future__ import annotations
@@ -14,13 +15,13 @@ from dornick.desktop import _is_close, _is_stop, _is_ack
 def test_explicit_stop_words_are_recognized() -> None:
     for word in ("dur", "durdur", "yeter", "kes", "iptal", "vazgeç", "stop", "sus"):
         assert _is_stop(word), word
-    # Kısa birleşik de durdurma sayılıyor.
+    # A short compound counts as a stop too.
     assert _is_stop("yeter dur")
     assert _is_stop("dur!")
 
 
 def test_a_normal_request_is_not_a_stop() -> None:
-    # İçinde "dur" geçen ama iş isteyen cümleler iptal DEĞİL — sıraya girmeli.
+    # Sentences containing "dur" but asking for work are NOT a cancel — they must queue.
     for phrase in (
         "durumu anlat",
         "çorum durumu ne",
@@ -31,10 +32,11 @@ def test_a_normal_request_is_not_a_stop() -> None:
         assert not _is_stop(phrase), phrase
 
 
-# -- kapatma sözleri -------------------------------------------------------
+# -- closing words ---------------------------------------------------------
 #
-# Kapanış cevap almaz: "görüşürüz" diyene "rica ederim!" demek kapanan
-# konuşmayı yeniden açmak olurdu. Pencere kapanır ve susulur.
+# A closing gets no reply: saying "rica ederim!" to someone who said
+# "görüşürüz" would reopen the closing conversation. The window closes and
+# it stays quiet.
 
 
 def test_closing_words_end_the_conversation() -> None:
@@ -46,8 +48,8 @@ def test_closing_words_end_the_conversation() -> None:
 
 
 def test_ordinary_speech_is_not_a_close() -> None:
-    # "tamam" tek başına kapanış DEĞİL: ajanın sorduğu bir sorunun cevabı
-    # da "tamam" olabiliyor. "kapat" geçen iş cümleleri de öyle.
+    # "tamam" alone is NOT a closing: the answer to a question the agent
+    # asked can be "tamam" too. Work sentences containing "kapat" likewise.
     for phrase in (
         "tamam",
         "teşekkürler",
@@ -60,8 +62,8 @@ def test_ordinary_speech_is_not_a_close() -> None:
 
 
 def test_thanks_and_hold_on_are_acks_not_requests() -> None:
-    """'teşekkürler' / 'tamamdır' / 'şimdi bakayım' modele gitmez —
-    'rica ederim' döngüsü. 'tamam' tek başına evet de olabilir."""
+    """'teşekkürler' / 'tamamdır' / 'şimdi bakayım' do not go to the model —
+    the 'rica ederim' loop. 'tamam' alone can be a yes too."""
     for phrase in (
         "teşekkürler",
         "çok teşekkürler",
@@ -88,11 +90,11 @@ def test_thanks_and_hold_on_are_acks_not_requests() -> None:
         assert not _is_ack(phrase), phrase
 
 
-# -- "dornick ile kes" barge-in (dornick konuşurken araya girme) -------------------
+# -- "cut with dornick" barge-in (interrupting while dornick talks) ----------
 
 
 class _FakeListener:
-    """transcribe_array'i sabit bir metin döndüren sahte tanıyıcı."""
+    """Fake recogniser whose transcribe_array returns a fixed text."""
     device = "cpu"
 
     def __init__(self, text: str) -> None:
@@ -103,21 +105,22 @@ class _FakeListener:
 
 
 def test_speaking_ignores_own_voice_without_the_wake_word() -> None:
-    """dornick konuşurken (deaf) yakalanan ses uyandırma sözü taşımıyorsa yok
-    sayılıyor — echo iptali olmadan dornick'nun kendi sesini "duymuyor"."""
+    """Sound captured while dornick talks (deaf) is ignored if it does not
+    carry the wake word — without echo cancellation dornick "does not hear"
+    its own voice."""
     from dornick import ear
 
     heard = []
     e = ear.Ear(listener=_FakeListener("hava bugün çok güzel"),
                 heard=lambda h: heard.append(h))
-    e._deaf_until = float("inf")   # TTS sürüyor (sağır)
+    e._deaf_until = float("inf")   # TTS in progress (deaf)
     e._settle(object(), deaf=True)
 
-    assert heard == []             # barge yok
+    assert heard == []             # no barge
 
 
 def test_open_mode_is_also_deaf_while_tts_plays() -> None:
-    """Serbest dinleme uyandırma kapısını kaldırır; TTS sırasında hâlâ sağır."""
+    """Free listening removes the wake gate; still deaf during TTS."""
     from dornick import ear
 
     heard = []
@@ -129,8 +132,9 @@ def test_open_mode_is_also_deaf_while_tts_plays() -> None:
 
 
 def test_the_wake_word_barges_in_while_speaking() -> None:
-    """dornick konuşurken "dornick ..." denince: sağırlık kırılıyor, barge işaretli
-    bir Heard geliyor (köprü önce TTS'i susturup komutu sıraya koyacak)."""
+    """When "dornick ..." is said while dornick talks: the deafness breaks,
+    a Heard marked barge arrives (the bridge will first hush TTS and queue
+    the command)."""
     from dornick import ear
 
     heard = []
@@ -143,12 +147,13 @@ def test_the_wake_word_barges_in_while_speaking() -> None:
     assert heard[0].wake is True
     assert heard[0].barge is True
     assert "rapor" in heard[0].command
-    assert e._deaf_until == 0.0     # sağırlık kırıldı
+    assert e._deaf_until == 0.0     # deafness broken
 
 
 def test_energy_barge_keeps_the_sentence_without_the_wake_word() -> None:
-    """Hoparlörün üstünden konuşunca cümle tutulur — 'dornick' demeden,
-    baştan kurmadan. Enerji eşiği kulağı açmış sayılır (`_barge_open`)."""
+    """Talking over the speaker keeps the sentence — without saying
+    'dornick', without restarting. The energy threshold counts as having
+    opened the ear (`_barge_open`)."""
     from dornick import ear
 
     heard = []
@@ -167,8 +172,8 @@ def test_energy_barge_keeps_the_sentence_without_the_wake_word() -> None:
 
 
 def test_energy_barge_without_an_open_chat_still_hears() -> None:
-    """TTS sürerken sohbet penceresi kapanmış olsa da araya giren söz
-    Dornick'ya söylenmiş sayılır."""
+    """Even if the conversation window has closed while TTS runs, the
+    interrupting utterance counts as said to Dornick."""
     from dornick import ear
 
     heard = []
@@ -183,8 +188,8 @@ def test_energy_barge_without_an_open_chat_still_hears() -> None:
 
 
 def test_tts_echo_transcript_is_dropped_even_after_energy_barge() -> None:
-    """Enerji eşiği TTS'i yanlış kestiğinde tanıma hoparlör metnine
-    benzer — kendi sözü yeni istek olmasın."""
+    """When the energy threshold cuts TTS wrongly the transcript resembles
+    the speaker text — its own words must not become a new request."""
     from dornick import ear
 
     heard = []
@@ -199,8 +204,8 @@ def test_tts_echo_transcript_is_dropped_even_after_energy_barge() -> None:
 
 
 def test_open_mode_drops_own_voice_after_the_tts_tail() -> None:
-    """Serbest dinlemede hoparlör sustuktan sonra oda yankısı uyandırma
-    kapısından geçip ajanın kendi cümlesini yeni istek yapıyordu."""
+    """In free listening the room echo after the speaker went quiet passed
+    the wake gate and made the agent's own sentence a new request."""
     from dornick import ear
 
     heard = []
@@ -230,8 +235,8 @@ def test_open_mode_still_hears_a_new_request_after_tts() -> None:
 
 
 def test_energy_barge_waits_until_echo_is_primed() -> None:
-    """TTS'in ilk bloğu boş tabanda BARGE_FLOOR'u aşıp kendi sesini
-    araya girme sanıyordu."""
+    """The first TTS block exceeded BARGE_FLOOR on an empty baseline and
+    took its own voice for a barge-in."""
     from dornick import ear
 
     e = ear.Ear(listener=_FakeListener(""), heard=lambda _h: None)
@@ -262,8 +267,8 @@ def test_echo_of_self_matches_overlap_not_unrelated_speech() -> None:
 
 
 def test_whisper_shortens_and_inflects_tts_and_that_is_still_echo() -> None:
-    """Canlı: 'Evet, seni görüyorum…' hoparlörde, Whisper 'evet, seni gör'
-    / 'görürüm' yazıyor — tam cümle eşleşmez, yine yankı."""
+    """Live: 'Evet, seni görüyorum…' on the speaker, Whisper writes 'evet,
+    seni gör' / 'görürüm' — the whole sentence does not match, still echo."""
     from dornick import ear
 
     tts = "Evet, seni görüyorum. Kameraya bakıyorsun; gözlük ve sakalın kadrajda."
@@ -273,8 +278,8 @@ def test_whisper_shortens_and_inflects_tts_and_that_is_still_echo() -> None:
 
 
 def test_a_repeated_utterance_is_one_prompt() -> None:
-    """Kısık ses kaçınca kullanıcı 2–3 kez söylüyor; Whisper gecikince
-    aynı cümle iki kez sohbete düşüyordu."""
+    """When a low voice is missed the user says it 2–3 times; when Whisper
+    lagged the same sentence landed in the chat twice."""
     from dornick import ear
 
     heard = []
@@ -300,8 +305,8 @@ def test_a_new_request_after_the_repeat_window_still_lands() -> None:
 
 
 def test_a_late_transcript_yields_to_a_newer_utterance() -> None:
-    """Tanıma 1–2 dk sürerse kullanıcı 'dornick' der; eski cümle ile ad
-    aynı anda düşmesin — son söz kazanır."""
+    """If recognition takes 1–2 min the user says 'dornick'; the old
+    sentence and the name must not land at once — the last word wins."""
     import time
     from dornick import ear
 
@@ -315,7 +320,7 @@ def test_a_late_transcript_yields_to_a_newer_utterance() -> None:
 
 
 def test_echo_stamp_at_capture_survives_slow_asr() -> None:
-    """Whisper bitene kadar ECHO_HOLD dolmuş olsa da damgalı segment düşer."""
+    """Even if ECHO_HOLD has expired by the time Whisper finishes, the stamped segment drops."""
     from dornick import ear
 
     heard = []
@@ -328,7 +333,7 @@ def test_echo_stamp_at_capture_survives_slow_asr() -> None:
 
 
 def test_speaking_false_skips_the_echo_tail_during_barge() -> None:
-    """Hush sonrası DEAF_TAIL cümlenin devamını yine sağır bırakırdı."""
+    """After a hush, DEAF_TAIL would leave the rest of the sentence deaf again."""
     from dornick import ear
 
     e = ear.Ear(listener=_FakeListener(""), heard=lambda _h: None)
@@ -383,8 +388,8 @@ def test_desktop_hushes_as_soon_as_energy_trips() -> None:
 
 
 def test_tts_onset_on_a_quiet_floor_is_not_barge() -> None:
-    """Hoparlör henüz duyulmamışken oda tabanı ~0.01, TTS 0.08 —
-    kendi sesini kesiyordu."""
+    """While the speaker is not yet heard the room floor is ~0.01, TTS
+    0.08 — it was cutting its own voice."""
     from dornick import ear
 
     e = ear.Ear(listener=_FakeListener(""), heard=lambda _h: None)
@@ -393,8 +398,8 @@ def test_tts_onset_on_a_quiet_floor_is_not_barge() -> None:
 
 
 def test_whisper_goodbye_after_tts_is_echo_not_a_request() -> None:
-    """Canlı: merhaba'dan sonra hoparlör sustu, Whisper 'hoşça kalın'
-    bastı, ajan veda etti — kimse veda etmemişti."""
+    """Live: after merhaba the speaker went quiet, Whisper printed 'hoşça
+    kalın', the agent said goodbye — nobody had said goodbye."""
     from dornick import ear
 
     heard = []
@@ -408,7 +413,7 @@ def test_whisper_goodbye_after_tts_is_echo_not_a_request() -> None:
 
 
 def test_a_garbled_tts_fragment_is_not_a_barge_request() -> None:
-    """Enerji eşiği TTS'i kesince Whisper 'soni' yazıyordu — araya girdi."""
+    """When the energy threshold cut TTS, Whisper wrote 'soni' — barged in."""
     from dornick import ear
 
     heard = []
@@ -437,8 +442,8 @@ def test_a_real_yes_during_echo_still_lands() -> None:
 
 
 def test_garbled_how_are_you_after_tts_is_echo() -> None:
-    """Canlı: hoparlör 'Sen nasılsın; bugün nasıl gidiyor?', Whisper
-    'sende sos' yazdı — iki kelime, bir akraba, gerisi çöp."""
+    """Live: the speaker said 'Sen nasılsın; bugün nasıl gidiyor?', Whisper
+    wrote 'sende sos' — two words, one kin, the rest junk."""
     from dornick import ear
 
     tts = "İyiyim, buradayım. Sen nasılsın; bugün nasıl gidiyor?"
@@ -454,7 +459,7 @@ def test_garbled_how_are_you_after_tts_is_echo() -> None:
 
 
 def test_a_real_reply_is_not_echo_junk_just_because_it_is_one_word() -> None:
-    """Yankı penceresinde 'anladım' tek kelime diye düşüyordu — duymadı."""
+    """In the echo window 'anladım' dropped for being one word — it did not hear."""
     from dornick import ear
 
     heard = []

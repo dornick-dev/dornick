@@ -1,33 +1,37 @@
-"""Sürekli dinleyen kulak.
+"""The always-listening ear.
 
-Dinleme tarayıcıda duruyordu ve orada duramaz: pencere gizlendiğinde
-Chromium arka plan zamanlayıcılarını dakikaya kısıyor, yani üç saniyelik
-parça döngüsü ölüyor. "Program kapalıyken 'hey dornick' de, uyansın" isteğinin
-karşılığı tarayıcıda yok — burada var.
+Listening used to live in the browser and it cannot stay there: when the
+window is hidden Chromium throttles background timers to once a minute, so
+the three-second chunk loop dies. The request "say 'hey dornick' while the
+program is closed and let it wake up" has no answer in the browser — it
+has one here.
 
-Kamerada olduğu gibi iş ikiye bölünüyor:
+As with the camera the work is split in two:
 
-    yerelde   ses var mı? — RMS enerjisi. Mikrosaniyeler sürüyor, tanıyıcı
-              hiç uyanmıyor. Sessiz bir odada saatlerce hiçbir şey olmuyor.
-    tanıyıcı  konuşma bittiğinde o parça bir kez yazıya çevriliyor.
+    locally     is there sound? — RMS energy. Takes microseconds, the
+                recogniser never wakes. In a quiet room nothing happens
+                for hours.
+    recogniser  when speech ends that chunk is transcribed once.
 
-Sonra da uyandırma sözü aranıyor. Söz yoksa metin atılıyor — kimse dinlemiş
-olmuyor, hiçbir yere yazılmıyor, modele gitmiyor.
+Then the wake word is looked for. No word, the text is thrown away —
+nobody has listened, nothing is written anywhere, nothing goes to the
+model.
 
-Ses hiçbir zaman bilgisayardan çıkmıyor: yakalama burada, tanıma burada.
+Audio never leaves the computer: capture is here, recognition is here.
 
-İki ayrı thread var ve bu şart. Tanıma bloklayan bir iş — ölçüm: `small`
-modeli işlemcide iki saniyelik bir sözü 1,58 saniyede çözüyor. Aynı
-thread'de yapılınca o süre boyunca mikrofondan hiç okuma yapılmıyor,
-aygıtın tamponu doluyor ve **konuşmanın devamı düşüyor**. Kullanıcı
-tarafında görünen şey tam olarak buydu: bir cümle söyleniyor, hemen
-ardından söylenen ikinci cümle hiç duyulmuyor.
+There are two separate threads and that is mandatory. Recognition is a
+blocking job — measurement: the `small` model on the CPU decodes a
+two-second utterance in 1.58 seconds. Done on the same thread, nothing is
+read from the microphone during that time, the device buffer fills and
+**the rest of the speech drops**. What the user saw was exactly that: a
+sentence is said, the second sentence said right after is never heard.
 
-    yakalama thread'i  yalnızca okuyor ve enerji ölçüyor — mikrosaniyeler
-    tanıma thread'i    kuyruktan alıp çözüyor — saniyeler
+    capture thread      only reads and measures energy — microseconds
+    recognition thread  takes from the queue and decodes — seconds
 
-Kuyruk sınırlı. Tanıyıcı yetişemiyorsa **en eskisi düşüyor**: geç kalmış
-bir cümleyi çözmek, o sırada söylenen yeni cümleyi kaçırmaya değmez.
+The queue is bounded. If the recogniser cannot keep up **the oldest
+drops**: decoding a late sentence is not worth missing the new one being
+said right then.
 """
 
 from __future__ import annotations
@@ -42,102 +46,108 @@ from typing import Any, Callable
 
 INSTALL_HINT = "Sürekli dinleme için: pip install 'dornick[listen]'"
 
-# Tanıyıcının beklediği örnekleme hızı. Aygıt başka bir hızda çalışsa da
-# sounddevice bu hıza indiriyor.
+# Sample rate the recogniser expects. Even if the device runs at another
+# rate, sounddevice brings it down to this.
 RATE = 16_000
 
-# Blok uzunluğu. Kısa olması gerekiyor: konuşmanın başlangıcı bir bloğun
-# ortasına denk gelirse ilk hece kesiliyor.
-BLOCK = 1600           # 0.1 sn
+# Block length. It must be short: if the start of speech lands in the
+# middle of a block the first syllable is cut.
+BLOCK = 1600           # 0.1 s
 
-# Konuşma eşiği (RMS, 0..1). Sessiz bir odanın taban gürültüsü genellikle
-# 0.002 altında; normal konuşma 0.02'nin üstünde. 0.012 kısık sesi
-# kaçırıyordu: kullanıcı 2–3 kez tekrarlıyor, kuyrukta aynı cümle birikiyor.
+# Speech threshold (RMS, 0..1). The noise floor of a quiet room is usually
+# under 0.002; normal speech above 0.02. 0.012 missed a low voice: the user
+# repeats 2–3 times, the same sentence piles up in the queue.
 SPEECH = 0.008
 
-# Konuşmadan sonra bu kadar sessizlik olunca cümle bitmiş sayılıyor.
-# Kısası cümleyi ortadan kesiyor (nefes araları), uzunu geç tepki demek.
-# Tanıma artık ilk sessizlikte başlıyor; bu süre yalnızca "devam ediyor
-# mu" teyidi — CUDA 0,2 sn'de çözünce yarım cümle gitmesin diye.
+# After speech, this much silence means the sentence is over. Shorter cuts
+# the sentence in the middle (breath pauses), longer means late reaction.
+# Recognition now starts on the first silence; this span is only the
+# "is it continuing" confirmation — so that half a sentence does not go
+# when CUDA decodes in 0.2 s.
 HANG_S = 0.40
 
-# Bundan kısa bir ses konuşma sayılmıyor: öksürük, kapı, klavye. Tanıyıcıyı
-# bunlar için uyandırmak hem boşuna hem de sessizlikten cümle uydurtuyor.
+# A sound shorter than this does not count as speech: cough, door,
+# keyboard. Waking the recogniser for those is both wasted and makes it
+# invent sentences out of silence.
 MIN_S = 0.35
 
-# Kendi sesini duymayı bırakması için hoparlör sustuktan sonra beklenen pay.
-# Oda yankısı bir anda kesilmiyor. 0.5 idi: ajan susar susmaz verilen cevap
-# (uyandırma sözü yoksa) bu pencerede tümden atılıyor ve "duymadı" gibi
-# görünüyordu — yankının kuyruğu için 0.25 yetiyor.
+# Margin waited after the speaker goes quiet so it stops hearing its own
+# voice. Room echo does not cut off at once. It was 0.5: the reply given
+# the moment the agent stopped (without a wake word) was dropped entirely
+# in this window and looked like "it didn't hear" — 0.25 is enough for the
+# echo tail.
 DEAF_TAIL_S = 0.25
-# Serbest dinlemede uyandırma kapısı yok: kuyruk kısa kalırsa hoparlör
-# yankısı yeni bir söz sayılıp ajan kendi kendine cevap veriyor.
+# In free listening there is no wake gate: if the tail stays short the
+# speaker echo counts as a new utterance and the agent answers itself.
 DEAF_TAIL_OPEN_S = 0.7
-# Sustuktan sonra tanıma hâlâ hoparlör cümlesine benzerse düşür (oda yankısı).
-# Pay, yakalama + Whisper gecikmesini de kapsar (~1,5 sn tanıma); 2 sn
-# yetmeyince "Duydum: evet, seni gör" hoparlör cümlesi yeni istek oluyordu.
+# After going quiet, if the transcript still resembles the speaker sentence,
+# drop it (room echo). The margin also covers capture + Whisper latency
+# (~1.5 s recognition); when 2 s was not enough the speaker sentence
+# "Duydum: evet, seni gör" became a new request.
 ECHO_HOLD_S = 4.0
-# Aynı söz iki kez: kullanıcı "duymadı" sanıp tekrarlıyor, Whisper gecikince
-# ikisi birden düşüyor. Bu pencerede benzer komut tek istek.
+# The same utterance twice: the user thinks "it didn't hear" and repeats,
+# Whisper lags and both land. Within this window a similar command is one
+# request.
 DUP_S = 4.5
-# Enerji barge için yankı tabanı: boşken TTS'in ilk bloğu BARGE_FLOOR'u
-# aşıp kendi sesini "kullanıcı araya girdi" sanıyordu.
+# Echo baseline for energy barge: on an empty baseline the first TTS block
+# exceeded BARGE_FLOOR and mistook its own voice for "the user barged in".
 ECHO_PRIME = 6
 
-# Hoparlör yankısı SPEECH eşiğini de aşıyor; kullanıcı mikrofona konuşunca
-# daha yüksek. Yankı tabanının üstüne çıkınca TTS hemen kesilir — "dornick"
-# demeden, cümleyi baştan kurmadan.
+# Speaker echo exceeds the SPEECH threshold too; the user speaking into the
+# microphone is louder. Rising above the echo baseline cuts TTS at once —
+# without saying "dornick", without restarting the sentence.
 BARGE_HOLD_S = 0.32
 BARGE_FLOOR = 0.028
 ECHO_BLOCKS = 12
 
-# Sağırlığın azami süresi. Önceki hal `float("inf")` idi ve "konuşmam
-# bitti" haberinin tarayıcıdan gelmesine bel bağlıyordu. O haber gelmezse
-# — sekme yenilenirse, ses bağlamı askıda kalıp `onended` hiç tetiklenmezse
-# — kulak sonsuza kadar kapalı kalıyordu. Ekranda seviye çubuğu hâlâ
-# oynuyor (o ölçüm sağırlıktan önce yapılıyor), yani dışarıdan "duyuyor
-# ama umursamıyor" gibi görünüyordu.
+# Maximum duration of deafness. The previous state was `float("inf")` and
+# relied on the "I finished speaking" news coming from the browser. If that
+# news never came — the tab is refreshed, the audio context hangs and
+# `onended` never fires — the ear stayed shut forever. The level bar on
+# screen kept moving (that measurement is made before deafness), so from
+# outside it looked like "hears but doesn't care".
 #
-# Artık her sağırlık kendiliğinden bitiyor. Cümleler kısa; hoparlör
-# konuşmaya devam ediyorsa tarayıcı her cümlede yeniden haber veriyor ve
-# süre tazeleniyor.
+# Now every deafness ends on its own. Sentences are short; if the speaker
+# keeps talking the browser reports again on every sentence and the span
+# is refreshed.
 DEAF_MAX_S = 20.0
 
-# Tek bir söyleyişin azami uzunluğu. Uzun bir monolog tanıyıcıyı bekletiyor
-# ve uyandırma sözü zaten başta geçiyor.
+# Maximum length of a single utterance. A long monologue keeps the
+# recogniser waiting and the wake word is at the start anyway.
 MAX_S = 12.0
 
-# Konuşmanın başından geriye alınan pay: eşik aşıldığında ilk hece çoktan
-# geçmiş oluyor.
+# Margin taken back from the start of speech: when the threshold is crossed
+# the first syllable has already passed.
 PRE_S = 0.4
 
-# Konuşma penceresi. Bir kez konuşmaya başlandıktan sonra her cümlede adını
-# söylemek gerekmiyor: karşındaki insana da "Ahmet" diye başlamıyorsun,
-# sohbet sürerken devam ediyorsun.
+# Conversation window. Once talking has started there is no need to say the
+# name in every sentence: you do not start every sentence to a person with
+# "Ahmet" either, you carry on while the conversation lasts.
 #
-# Uyandırma sözü sohbeti **başlatmak** için gerekli. Başladıktan sonra bu
-# süre boyunca söylenen her şey ona söylenmiş sayılıyor ve her karşılıkta
-# süre tazeleniyor. Süre dolduğunda söz yine gerekiyor — yoksa odadaki her
-# konuşma modele gitmeye başlar.
+# The wake word is required to **start** the conversation. After it starts,
+# everything said during this span counts as said to it, and the span is
+# refreshed on every reply. When it expires the word is required again —
+# otherwise every conversation in the room starts going to the model.
 #
-# Süre kasıtlı olarak uzun: konuşmanın ortasında düşünmek, bakmak, bir şey
-# yazmak için verilen aralar kırk beş saniyeyi rahatça geçiyordu ve pencere
-# tam da konuşmanın ortasında kapanıyordu.
+# The span is deliberately long: pauses in the middle of a conversation to
+# think, look, write something easily exceeded forty-five seconds and the
+# window closed right in the middle of the conversation.
 ENGAGED_S = 180.0
 
-# Sohbetin tek uyandırmayla açık kalabileceği azami süre.
+# Maximum time the conversation can stay open on a single wake.
 #
-# Sınırsızdı ve pencere kendi kendini besliyordu: duyulan her söz ve ajanın
-# her cevabı süreyi tazeliyor, kullanıcı oyunda takım arkadaşlarına
-# konuşurken her "merhaba" modele gidiyor, cevap pencereyi yine açıyordu.
-# Gerçek kayıtta bu döngü yarım saat sürdü. Artık son "dornick"dan bu kadar
-# süre sonra pencere ne olursa olsun kapanıyor; devamı için adı yine
-# söylemek gerekiyor.
+# It was unbounded and the window fed itself: every utterance heard and
+# every reply of the agent refreshed the span; while the user talked to
+# teammates in a game every "merhaba" went to the model and the reply
+# reopened the window. In a real log this loop lasted half an hour. Now,
+# this long after the last "dornick", the window closes no matter what;
+# to continue the name must be said again.
 ENGAGED_MAX_S = 600.0
 
-# Tanınmayı bekleyen söz sayısı. Küçük olması kasıtlı: tanıyıcı yetişemiyorsa
-# biriken kuyruk ajanı dakikalarca geride bırakıyor. Sınıra gelindiğinde en
-# eski söz düşüyor — geç kalmış bir cümle, o an söylenen cümleden değersiz.
+# Number of utterances waiting for recognition. Small on purpose: if the
+# recogniser cannot keep up, the accumulating queue leaves the agent
+# minutes behind. At the limit the oldest utterance drops — a late
+# sentence is worth less than the one being said right now.
 BACKLOG = 3
 
 
@@ -155,19 +165,19 @@ class Heard:
     wake: bool
     command: str
     at: float
-    # dornick konuşurken (TTS) uyandırma sözüyle araya girildi: "dornick ile kes".
-    # Köprü bunu görünce önce konuşmayı susturuyor, sonra komutu işliyor.
+    # Barged in with the wake word while dornick was talking (TTS): "cut with dornick".
+    # On seeing this the bridge first hushes the speech, then handles the command.
     barge: bool = False
 
 
 def _words(text: str) -> list[str]:
-    """Noktalama dökülmüş sözcükler. 'gör.' ile 'görüyorum' aynı kök sayılsın."""
+    """Words with punctuation stripped. 'gör.' and 'görüyorum' count as the same stem."""
     cleaned = re.sub(r"[^\w\s]", " ", (text or "").casefold(), flags=re.UNICODE)
     return [w for w in cleaned.split() if w]
 
 
 def _kin(a: str, b: str) -> bool:
-    """Aynı kök / çekim: gör–görüyorum–görürüm. Tam eşitlik şart değil."""
+    """Same stem / inflection: gör–görüyorum–görürüm. Exact equality not required."""
     if a == b:
         return True
     if len(a) >= 3 and len(b) >= 3 and (a.startswith(b) or b.startswith(a) or a in b or b in a):
@@ -181,12 +191,13 @@ def _kin(a: str, b: str) -> bool:
 
 
 def echo_of_self(said: str, tts: str) -> bool:
-    """Duyulan, hoparlörde çalan cümlenin yankısı mı?
+    """Is what was heard the echo of the sentence playing on the speaker?
 
-    Enerji eşiği yanlışlıkla TTS'i keserse tanıma metni burada düşer —
-    ajan kendi sözünü yeni bir istek sanmasın. Whisper cümleyi kısaltır
-    veya çeker ('evet, seni gör' / 'görürüm' ← 'görüyorum'); noktalama
-    ve çekim yüzünden tam cümle eşleşmesi yetmez.
+    If the energy threshold cuts TTS by mistake, the transcript drops here —
+    so the agent does not take its own words for a new request. Whisper
+    shortens or inflects the sentence ('evet, seni gör' / 'görürüm' ←
+    'görüyorum'); because of punctuation and inflection a whole-sentence
+    match is not enough.
     """
     a, b = _words(said), _words(tts)
     got, src = " ".join(a), " ".join(b)
@@ -201,9 +212,9 @@ def echo_of_self(said: str, tts: str) -> bool:
         return hits == 1 and len(a[0]) >= 6
     if hits >= 2 and hits / len(a) >= 0.5:
         return True
-    # Hoparlör cümlesinin kırpıntısı: bir-iki kelime tutmuş, gerisi
-    # 1–3 harflik çöp. Canlı: "Sen nasılsın" → Whisper "sende sos".
-    # En az bir akraba şart — yoksa "ok" her TTS'ten sonra yankı olur.
+    # A fragment of the speaker sentence: one or two words matched, the rest
+    # is 1–3 letter junk. Live: "Sen nasılsın" → Whisper "sende sos".
+    # At least one kin is required — otherwise "ok" is echo after every TTS.
     if 1 <= len(a) <= 4 and hits >= 1:
         leftover = [w for w in a if not any(_kin(w, t) for t in b)]
         if not leftover or all(len(w) <= 3 for w in leftover):
@@ -211,8 +222,8 @@ def echo_of_self(said: str, tts: str) -> bool:
     return False
 
 
-# Yankı penceresinde tek kelimelik gerçek cevaplar (evet/tamam/aç).
-# Dışındakiler TTS'in "soni" gibi kırpıntısı ya da Whisper uydurması.
+# Real one-word replies in the echo window (evet/tamam/aç).
+# Anything else is a TTS fragment like "soni" or a Whisper invention.
 _SHORT_OK = frozenset({
     "evet", "hayır", "hayir", "yok", "var", "peki", "tamam", "olur", "olmaz",
     "aç", "ac", "kapat", "dur", "devam", "neden", "nasıl", "nasil", "niye",
@@ -226,12 +237,13 @@ _ECHO_FAREWELL = frozenset({
 
 
 def echo_junk(said: str, wake: str = "") -> bool:
-    """Hoparlör yankısı / sessizlik uydurması mı — hoparlör metnine
-    benzemese bile.
+    """Speaker echo / silence invention — even when it does not resemble
+    the speaker text.
 
-    `echo_of_self` yalnızca TTS cümlesine benzerliği yakalar. Whisper
-    yankıda 'hoşça kalın' basınca (canlı: merhaba'dan sonra veda) ya da
-    'soni' gibi kırpıntı yazınca eşleşme yok, söz yeni istek oluyordu.
+    `echo_of_self` only catches resemblance to the TTS sentence. When
+    Whisper printed 'hoşça kalın' on echo (live: a farewell after merhaba)
+    or wrote a fragment like 'soni', there was no match and the utterance
+    became a new request.
     """
     from . import listen as recogniser
 
@@ -247,18 +259,18 @@ def echo_junk(said: str, wake: str = "") -> bool:
         return True
     if len(words) <= 3 and any(p in flat for p in _ECHO_FAREWELL):
         return True
-    # Tek kelimelik kırpıntı ("soni") istek değil. "anladım" / "nasılsın"
-    # gerçek cevap — onları da düşürmek "bazen hiç duymuyor" oluyordu.
+    # A one-word fragment ("soni") is not a request. "anladım" / "nasılsın"
+    # are real replies — dropping those too became "sometimes it never hears".
     if len(words) == 1 and words[0] not in _SHORT_OK and len(words[0]) <= 4:
         return True
     return False
 
 
 class Ear:
-    """Mikrofonu sürekli açık tutar, yalnızca konuşulanı yazıya çevirir.
+    """Keeps the microphone always open, transcribes only what is spoken.
 
-    Kendi thread'inde dönüyor ve tanıma da orada yapılıyor: ikisi de
-    bloklayan işler ve ajanın döngüsüne dokunmamaları gerekiyor.
+    Runs on its own thread and recognition happens there too: both are
+    blocking jobs and must not touch the agent's loop.
     """
 
     def __init__(
@@ -272,49 +284,53 @@ class Ear:
         open: bool = False,
     ) -> None:
         self.listener = listener
-        # Serbest dinleme: uyandırma sözü hiç aranmıyor. Evde tek başına
-        # çalışan biri için doğru olan bu — "hava nasıl?" derken başka
-        # kime soruyor olabilir ki.
+        # Free listening: the wake word is never looked for. Right for
+        # someone working alone at home — who else could they be asking when
+        # they say "hava nasıl?".
         self.open = open
-        # Uyandırma taraması için küçük ve hızlı model. Ölçüm: `base` 0,47
-        # saniyede sözü yakalıyor, `small` 1,43 saniyede doğru çözüyor.
-        # İkisini birlikte kullanmak hem çabuk hem doğru: önce küçüğü
-        # "söz geçti mi" diye bakıyor, geçtiyse büyüğü cümleyi çözüyor.
+        # Small, fast model for the wake scan. Measurement: `base` catches
+        # the word in 0.47 seconds, `small` decodes correctly in 1.43
+        # seconds. Using both together is both quick and accurate: first
+        # the small one checks "did the word occur", if so the big one
+        # decodes the sentence.
         self.scout = scout or listener
         self.heard = heard
         self.wake = wake
         self.level = level
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
-        # Yakalama ile tanıma arasındaki tek bağ. Tanıma bloklayan bir iş
-        # ve yakalama thread'inde yapılamaz: o süre boyunca mikrofondan
-        # okunmuyor ve konuşmanın devamı düşüyor.
+        # The only link between capture and recognition. Recognition is a
+        # blocking job and cannot be done on the capture thread: during that
+        # time nothing is read from the microphone and the rest of the
+        # speech drops.
         self._work: queue.Queue[Any] = queue.Queue(maxsize=BACKLOG)
         self._dropped = 0
         self._loud = 0.0
-        # Kendi sesi. Hoparlörden çıkan konuşmayı mikrofon duyuyor ve
-        # "biri konuşuyor" sanıyordu — sürekli açık bir mikrofonda bu
-        # kendi kendine konuşan bir asistan demek.
+        # Its own voice. The microphone heard the speech coming out of the
+        # speaker and thought "someone is talking" — with an always-open
+        # microphone that means an assistant talking to itself.
         self._deaf_until = 0.0
-        # Sohbetin açık olduğu ana kadar. Bu süre içinde uyandırma sözü
-        # aranmıyor.
+        # Until when the conversation is open. Within this span the wake
+        # word is not looked for.
         self._engaged_until = 0.0
-        # Son uyandırmanın anı: pencere bunun ENGAGED_MAX_S ötesine
-        # tazelenemiyor.
+        # Moment of the last wake: the window cannot be refreshed beyond
+        # ENGAGED_MAX_S past this.
         self._wake_at = 0.0
-        # Uyandırıldığında birlikte açılacak öteki duyular (göz gibi).
-        # "Ben gelince seslenirim" tek bir sesleniş demek: "dornick" hepsini
-        # geri açıyor, kullanıcı duyu duyu saymak zorunda kalmıyor.
+        # The other senses (like the eye) to open along with a wake.
+        # "I'll call when I'm back" means a single call: "dornick" reopens
+        # them all, the user does not have to name sense by sense.
         self.companions: list[Any] = []
-        # Susturma. Kullanıcı "beni dinleme" dediğinde ajan `hearing`
-        # aracıyla bunu açıyor. Önceki halde böyle bir kapı yoktu ve ajan
-        # "kapalıyım" deyip dinlemeye devam ediyordu — yapamadığı bir şeyi
-        # yaptım demek, en kötü tür yalan. Uyandırma sözü susturmayı deler:
-        # kullanıcı "dornick" diyerek her zaman geri çağırabilir.
+        # Snooze. When the user says "don't listen to me" the agent turns
+        # this on with the `hearing` tool. Before there was no such gate and
+        # the agent said "I'm off" and kept listening — claiming to have
+        # done something it could not do, the worst kind of lie. The wake
+        # word pierces the snooze: the user can always call it back by
+        # saying "dornick".
         self._snooze_until = 0.0
-        # Mikrofonun gerçek hali. Akış açılamadığında thread sessizce
-        # ölüyordu ve organ hâlâ "dinliyor" diyordu: kullanıcı "uyan dornick"
-        # diyor, hiçbir şey olmuyor ve sebebi hiçbir yerde yazmıyordu.
+        # The microphone's real state. When the stream could not be opened
+        # the thread died silently and the organ still said "dinliyor": the
+        # user says "uyan dornick", nothing happens and the reason was
+        # written nowhere.
         self.live = False
         self.failure = ""
         self._barge_open = False
@@ -323,21 +339,23 @@ class Ear:
         self._echo: deque[float] = deque(maxlen=ECHO_BLOCKS)
         self._last_ask = ""
         self._last_ask_at = 0.0
-        # En son yakalanan sözün anı: tanıma dakikalarca sürerse eski sonuç
-        # yeni sözle aynı anda düşmesin (kullanıcı "dornick" deyince ikisi birden).
+        # Moment of the most recently captured utterance: if recognition
+        # takes minutes the old result must not land together with the new
+        # utterance (both at once when the user says "dornick").
         self._latest_at = 0.0
 
     def speaking(self, on: bool, text: str = "") -> None:
-        """Ajan konuşurken kulağı kapatır.
+        """Closes the ear while the agent talks.
 
-        Hoparlörden çıkan ses mikrofona geri geliyor. Yankı iptali işletim
-        sistemi seviyesinde her zaman çalışmıyor ve çalışmadığında asistan
-        kendi cümlesini duyup cevap vermeye kalkıyor.
+        The sound coming out of the speaker comes back into the microphone.
+        Echo cancellation at the OS level does not always work, and when it
+        does not the assistant hears its own sentence and tries to reply.
 
-        Kullanıcı hoparlörün üstünden konuşursa enerji eşiği sağırlığı
-        kırar (`_trip_barge`). O sırada `speaking(False)` gelirse kuyruk
-        payı (`DEAF_TAIL_S`) cümlenin devamını yine sağır bırakırdı —
-        araya giren sözün geri kalanı duyulsun diye kuyruk atlanır.
+        If the user talks over the speaker the energy threshold breaks the
+        deafness (`_trip_barge`). If `speaking(False)` arrives at that
+        moment the tail margin (`DEAF_TAIL_S`) would leave the rest of the
+        sentence deaf again — the tail is skipped so the rest of the
+        interrupting utterance is heard.
         """
         now = time.monotonic()
         if on:
@@ -351,9 +369,9 @@ class Ear:
                 else:
                     self._tts_text = chunk
             self._tts_until = now + DEAF_MAX_S + ECHO_HOLD_S
-            # Ardışık cümleler aynı konuşma: tabanı silmek TTS'in ilk
-            # bloğunu yine BARGE_FLOOR'un üstüne çıkarıp kendi sesini
-            # "araya girme" sanıyordu.
+            # Consecutive sentences are the same speech: wiping the baseline
+            # pushed the first TTS block above BARGE_FLOOR again and its own
+            # voice was taken for a "barge-in".
             if not already:
                 self._barge_open = False
                 self._echo.clear()
@@ -366,11 +384,12 @@ class Ear:
         self._tts_until = now + ECHO_HOLD_S
 
     def _barge_loud(self, loud: float) -> bool:
-        """Hoparlör yankısının üstünde, kullanıcı mikrofona mı konuşuyor?
+        """Above the speaker echo, is the user talking into the microphone?
 
-        Taban oda gürültüsüyse hoparlör henüz mikrofona düşmemiştir —
-        TTS'in ilk bloğu BARGE_FLOOR'u aşıp kendi sesini kesiyordu
-        (canlı: 'soni' + araya girdi, hoparlör kendi cümlesini böldü).
+        If the baseline is room noise the speaker has not yet reached the
+        microphone — the first TTS block exceeded BARGE_FLOOR and cut its
+        own voice (live: 'soni' + barged in, the speaker split its own
+        sentence).
         """
         if len(self._echo) < ECHO_PRIME:
             return False
@@ -381,12 +400,13 @@ class Ear:
         return loud >= max(BARGE_FLOOR, base * 1.8 + 0.008)
 
     def _tail_loud(self, loud: float) -> bool:
-        """TTS bitti: bu enerji oda yankısı mı, mikrofon konuşması mı?
+        """TTS is over: is this energy room echo or microphone speech?
 
-        Yankı SPEECH eşiğini (0.008) uzun süre aşıyor; sustuktan sonra her
-        aşım yeni söz olunca Whisper hoparlör kuyruğunu 'sende sos' diye
-        yazıyordu. Kullanıcı mikrofona konuşunca tabanın üstüne çıkar —
-        TTS'i kesmek kadar (1.8x) gerekmez.
+        Echo exceeds the SPEECH threshold (0.008) for a long time; when
+        every excess after going quiet became a new utterance, Whisper
+        wrote the speaker tail as 'sende sos'. The user talking into the
+        microphone rises above the baseline — not as much as cutting TTS
+        (1.8x) requires.
         """
         if len(self._echo) < ECHO_PRIME:
             return loud >= SPEECH
@@ -395,11 +415,11 @@ class Ear:
         return loud >= max(SPEECH * 2.2, base * 1.35 + 0.006)
 
     def _echoing(self) -> bool:
-        """Hoparlör cümlesi hâlâ havada / tanıma kuyruğunda mı?"""
+        """Is the speaker sentence still in the air / in the recognition queue?"""
         return bool(self._tts_text) and time.monotonic() < self._tts_until
 
     def _repeat_ask(self, command: str) -> bool:
-        """Az önce işlenen komutun tekrarı mı — kuyrukta biriken aynı söz."""
+        """Is it a repeat of the command just handled — the same utterance piled in the queue."""
         text = (command or "").strip()
         if not text:
             return False
@@ -416,7 +436,7 @@ class Ear:
         return False
 
     def _trip_barge(self) -> None:
-        """TTS'i hemen kes, kulağı aç — tanımayı bekleme."""
+        """Cut TTS at once, open the ear — do not wait for recognition."""
         self._barge_open = True
         self._deaf_until = 0.0
         hush = getattr(self, "on_hush", None)
@@ -433,14 +453,14 @@ class Ear:
 
     @property
     def snoozed(self) -> bool:
-        """Susturulmuş mu — yalnızca uyandırma sözü geçer."""
+        """Snoozed — only the wake word passes."""
         return time.monotonic() < self._snooze_until
 
     def snooze(self, seconds: float = 0.0) -> None:
-        """Kulağı susturur. Süresiz de olabilir; "dornick" demek her zaman açar.
+        """Silences the ear. Can be indefinite; saying "dornick" always opens it.
 
-        Süresiz hali sonsuz bir bekleme değil: çıkışı belirsiz bir olaya
-        değil, uyandırma sözüne ya da `resume` çağrısına bağlı.
+        The indefinite form is not an endless wait: its exit is tied not to
+        an uncertain event but to the wake word or a `resume` call.
         """
         self._snooze_until = (
             time.monotonic() + seconds if seconds > 0 else float("inf")
@@ -458,22 +478,23 @@ class Ear:
 
     @property
     def engaged(self) -> bool:
-        """Sohbet açık mı — bu sürede uyandırma sözü gerekmiyor."""
+        """Is the conversation open — no wake word needed during this span."""
         if self.snoozed:
             return False
         return self.open or time.monotonic() < self._engaged_until
 
     def engage(self, seconds: float = ENGAGED_S) -> None:
-        """Sohbeti açar ya da süresini tazeler.
+        """Opens the conversation or refreshes its span.
 
-        Ajan bir karşılık verdiğinde çağrılıyor: konuşma başlamış demektir
-        ve devamında adının söylenmesini beklemek, her cümlede "Ahmet" diye
-        başlamayı beklemek gibi.
+        Called when the agent gives a reply: the conversation has started,
+        and expecting the name afterwards is like expecting every sentence
+        to start with "Ahmet".
 
-        İki sınır var. Susturulmuşken hiç açılmıyor. Ve tazeleme son
-        uyandırmanın ENGAGED_MAX_S ötesine geçemiyor: geçebilseydi duyulan
-        her söz ve verilen her cevap pencereyi ileri itiyor, oda konuşması
-        modele sonsuza kadar akıyordu — gerçek kayıtta yarım saat sürdü.
+        Two limits. Never opens while snoozed. And the refresh cannot go
+        beyond ENGAGED_MAX_S past the last wake: if it could, every
+        utterance heard and every reply given pushed the window forward and
+        room talk flowed to the model forever — in a real log it lasted
+        half an hour.
         """
         if self.snoozed:
             return
@@ -487,37 +508,38 @@ class Ear:
 
     @property
     def loudness(self) -> float:
-        """Son ölçülen ses seviyesi. Arayüz bunu gösteriyor."""
+        """Last measured sound level. The UI shows this."""
         return self._loud
 
     @property
     def backlog(self) -> int:
-        """Tanınmayı bekleyen söz sayısı. Sıfır değilse ajan geride."""
+        """Number of utterances waiting for recognition. Non-zero means the agent is behind."""
         return self._work.qsize()
 
     @property
     def dropped(self) -> int:
-        """Tanıyıcı yetişemediği için düşürülen söz sayısı."""
+        """Number of utterances dropped because the recogniser could not keep up."""
         return self._dropped
 
     def start(self) -> bool:
         if not available():
             return False
-        # Tanıma önce başlıyor: yakalama ilk sözü kuyruğa koyduğunda
-        # karşısında çalışan bir işçi bulsun.
+        # Recognition starts first: when capture puts the first utterance in
+        # the queue it should find a running worker opposite.
         threading.Thread(target=self._recognise, daemon=True, name="dornick-ear-asr").start()
-        # Isıtma: model yüklemesi (ilk kurulumda indirme + diskten açma)
-        # İLK SÖZÜN sırtına binmesin — canlı şikâyet (30.08): ilk cümle
-        # 10-20 sn gecikiyordu ve bunun büyük payı yüklemeydi. Arka planda,
-        # açılışı bloke etmeden; çökerse ilk söz eski yoldan yükler.
-        def _isit() -> None:
+        # Warm-up: model loading (download on first setup + opening from
+        # disk) must not ride on the back of the FIRST UTTERANCE — live
+        # complaint (30.08): the first sentence lagged 10-20 s and most of
+        # that was loading. In the background, without blocking startup; if
+        # it crashes the first utterance loads the old way.
+        def _warm() -> None:
             try:
                 self.listener.load()
                 if self.scout is not self.listener:
                     self.scout.load()
             except Exception:
                 pass
-        threading.Thread(target=_isit, daemon=True, name="dornick-ear-warm").start()
+        threading.Thread(target=_warm, daemon=True, name="dornick-ear-warm").start()
         self._thread = threading.Thread(target=self._loop, daemon=True, name="dornick-ear")
         self._thread.start()
         return True
@@ -525,18 +547,18 @@ class Ear:
     def stop(self) -> None:
         self._stop.set()
 
-    # -- döngü ---------------------------------------------------------
+    # -- loop ----------------------------------------------------------
 
     def _loop(self) -> None:
         import numpy as np
         import sounddevice as sd
 
         speech: list[Any] = []
-        recent: list[Any] = []          # konuşmadan hemen önceki bloklar
+        recent: list[Any] = []          # the blocks right before speech
         quiet_since = 0.0
         started = 0.0
-        deaf_seg = False                # o an yakalanan segment TTS sırasında mı
-        handed = False                  # bu söyleyiş tanıma kuyruğuna girdi mi
+        deaf_seg = False                # is the segment being captured during TTS
+        handed = False                  # has this utterance entered the recognition queue
 
         try:
             stream = sd.InputStream(
@@ -544,9 +566,9 @@ class Ear:
             )
             stream.start()
         except Exception as exc:
-            # Mikrofon yok ya da başka bir program tutmuş. Program çalışmaya
-            # devam ediyor ama sebep artık kayıtlı: önceki hal sessizce
-            # dönüyordu ve organ "dinliyor" demeye devam ediyordu.
+            # No microphone or another program holds it. The program keeps
+            # running but the reason is now recorded: the previous state
+            # returned silently and the organ kept saying "dinliyor".
             self.failure = f"{type(exc).__name__}: {exc}"
             self.live = False
             return
@@ -570,9 +592,10 @@ class Ear:
 
                 now = time.monotonic()
                 deaf = now < self._deaf_until
-                # Dornick konuşurken SPEECH eşiği yankıyı da yakalıyor. Kullanıcı
-                # hoparlörün üstünden konuşunca enerji tabanın üstüne çıkar;
-                # o anda TTS kesilir ve aynı tampon dinlemeye devam eder.
+                # While Dornick talks the SPEECH threshold catches the echo
+                # too. When the user talks over the speaker the energy rises
+                # above the baseline; at that moment TTS is cut and the same
+                # buffer keeps listening.
                 waiting = deaf and not self._barge_open and not self.snoozed
 
                 if waiting:
@@ -614,8 +637,9 @@ class Ear:
                     recent = []
                     continue
 
-                # Hoparlör sustu ama oda hâlâ çınlıyor. SPEECH eşiği
-                # kuyruğu da yakalıyor; Whisper onu yeni söz sanıyor.
+                # The speaker went quiet but the room still rings. The SPEECH
+                # threshold catches the tail too; Whisper takes it for a new
+                # utterance.
                 if (self._echoing() and not self._barge_open
                         and not self.snoozed and not speech):
                     self._echo.append(loud)
@@ -625,15 +649,16 @@ class Ear:
 
                 if loud >= SPEECH:
                     if not speech:
-                        # Eşik aşıldığında ilk hece çoktan geçmiş oluyor;
-                        # hemen öncesindeki bloklar da alınıyor.
+                        # When the threshold is crossed the first syllable
+                        # has already passed; the blocks right before are
+                        # taken too.
                         speech = list(recent)
                         started = now
                         deaf_seg = deaf
                         handed = False
                     elif quiet_since:
-                        # Nefes arası değil, cümle sürüyor — uçuşan tanıma
-                        # yarım cümleyi göndermesin.
+                        # Not a breath pause, the sentence continues — the
+                        # in-flight recognition must not send half a sentence.
                         self._latest_at = now
                         handed = False
                     speech.append(mono.copy())
@@ -641,15 +666,16 @@ class Ear:
                 elif speech:
                     speech.append(mono.copy())
                     if not quiet_since:
-                        # İlk sessizlik: tanıma başlasın, cümle bitişi
-                        # teyidi HANG_S boyunca tanımayla örtüşür.
+                        # First silence: let recognition start, the
+                        # end-of-sentence confirmation overlaps recognition
+                        # for HANG_S.
                         quiet_since = now
                         if now - started >= MIN_S and not handed:
                             self._hand_over(np.concatenate(speech), deaf_seg)
                             handed = True
                     if now - quiet_since >= HANG_S or now - started >= MAX_S:
-                        # Çok kısa sesler konuşma değil: öksürük, kapı,
-                        # klavye. Tanıyıcıyı bunlar için uyandırmıyoruz.
+                        # Very short sounds are not speech: cough, door,
+                        # keyboard. We do not wake the recogniser for those.
                         if now - started >= MIN_S and not handed:
                             self._hand_over(np.concatenate(speech), deaf_seg)
                         speech, quiet_since, started = [], 0.0, 0.0
@@ -668,18 +694,20 @@ class Ear:
                 pass
 
     def _hand_over(self, audio: Any, deaf: bool = False) -> None:
-        """Sözü tanıma thread'ine devreder. Asla beklemez.
+        """Hands the utterance to the recognition thread. Never waits.
 
-        Yakalama thread'inde bir milisaniye bile beklemek, o sürede gelen
-        sesin düşmesi demek. Kuyruk doluysa en eski söz atılıyor: geç
-        kalmış bir cümleyi çözmek, o an söyleneni kaçırmaya değmez.
+        Waiting even a millisecond on the capture thread means the sound
+        arriving in that time drops. If the queue is full the oldest
+        utterance is thrown away: decoding a late sentence is not worth
+        missing the one being said right now.
 
-        `deaf`: segment dornick konuşurken (TTS) yakalandı. Enerji eşiği
-        kulağı açtıysa (`_barge_open`) cümlenin tamamı tutulur; yoksa
-        tanıma yalnızca uyandırma sözüne bakar.
+        `deaf`: the segment was captured while dornick was talking (TTS). If
+        the energy threshold opened the ear (`_barge_open`) the whole
+        sentence is kept; otherwise recognition only looks for the wake word.
 
-        Yankı damgası yakalama anında konur: Whisper 1–2 sn sürer, o
-        sırada ECHO_HOLD bitmiş olsa da hoparlör cümlesi yeni istek olmaz.
+        The echo stamp is set at capture time: Whisper takes 1–2 s, and even
+        if ECHO_HOLD has expired by then the speaker sentence does not
+        become a new request.
         """
         echo = bool(deaf or self._barge_open or self._echoing())
         captured = time.monotonic()
@@ -696,15 +724,16 @@ class Ear:
                     return
 
     def _recognise(self) -> None:
-        """Kuyruktan alıp çözer. Bloklaması serbest: burada kimse beklemiyor."""
+        """Takes from the queue and decodes. Free to block: nobody waits here."""
         while not self._stop.is_set():
             try:
                 item = self._work.get(timeout=0.25)
             except queue.Empty:
                 continue
-            # Kuyrukta bekleyen eski sözleri at: kullanıcı tekrarladıysa
-            # yalnızca sonuncusu geçerli. Aksi halde Whisper bitince
-            # dakikalar önceki cümle ile "dornick" aynı anda düşer.
+            # Throw away old utterances waiting in the queue: if the user
+            # repeated, only the last one counts. Otherwise when Whisper
+            # finishes, the sentence from minutes ago and "dornick" land at
+            # the same time.
             while True:
                 try:
                     item = self._work.get_nowait()
@@ -717,41 +746,45 @@ class Ear:
             try:
                 self._settle(audio, deaf, echo=echo, captured=captured)
             except Exception:
-                # Tanıyıcıdaki bir hata kulağı sağır bırakmamalı.
+                # An error in the recogniser must not leave the ear deaf.
                 continue
 
     def _settle(self, audio: Any, deaf: bool = False, *, echo: bool = False,
                 captured: float | None = None) -> None:
-        """Bir söyleyiş bitti: uyandırma sözünü ara, geçtiyse cümleyi çöz.
+        """An utterance ended: look for the wake word, if it occurred decode the sentence.
 
-        İki aşama, çünkü ikisi farklı işler. "Söz geçti mi" sorusu için
-        küçük model yeter ve dört kat hızlı; ama komutu ona çözdürmek
-        anlamsız bir cümle üretiyor. Ölçüm: `base` 0,47 sn, `small` 1,43 sn.
+        Two stages, because they are different jobs. For the "did the word
+        occur" question the small model is enough and four times faster;
+        but having it decode the command produces a meaningless sentence.
+        Measurement: `base` 0.47 s, `small` 1.43 s.
         """
         from . import listen as recogniser
 
         given = captured
         captured = time.monotonic() if captured is None else captured
-        # Daha yeni bir söz yakalandıysa bunu tanıma — Whisper gecikince
-        # dakikalar önceki cümle ile "dornick" aynı anda sohbete düşüyordu.
+        # If a newer utterance was captured, do not recognise this one —
+        # when Whisper lagged, the sentence from minutes ago and "dornick"
+        # landed in the chat at the same time.
         if captured < self._latest_at:
             self._barge_open = False
             return
 
-        # Gözcü yalnızca işlemcide işe yarıyor. Ölçüm (gerçek Türkçe cümle,
-        # bu makine): işlemcide `small` 1,58 sn, `base` 0,42 sn — iki aşama
-        # toplamda 2 sn ve kazanç büyük. Ekran kartında `small` 0,18 sn,
-        # `base` 0,12 sn: ikisini çalıştırmak 0,30 sn ediyor, yani gözcü
-        # **yavaşlatıyor**.
+        # The scout is only useful on the CPU. Measurement (real Turkish
+        # sentence, this machine): on the CPU `small` 1.58 s, `base` 0.42 s
+        # — two stages total 2 s and the gain is large. On the graphics card
+        # `small` 0.18 s, `base` 0.12 s: running both makes 0.30 s, so the
+        # scout **slows things down**.
         #
-        # Karar burada veriliyor çünkü hangi aygıtta çalışıldığı ancak model
-        # yüklendikten sonra belli oluyor ve yüklemeyi açılışta yapmak
-        # pencereyi bir indirme boyunca kapalı tutuyordu.
+        # The decision is made here because which device is in use only
+        # becomes known after the model loads, and loading at startup kept
+        # the window shut for the length of a download.
         #
-        # Gözcünün işi KAPI: söz geçti mi, echo mu, susturulmuş muyuz. Sohbet
-        # zaten açıkken (open/engaged) kapı yok — her söz nasılsa büyük modele
-        # gidiyor ve gözcü yalnızca 0,42 sn ek bekleme oluyordu. O durumda
-        # doğrudan büyük modelle tek geçiş: cümle başı ~2,0 sn yerine ~1,6 sn.
+        # The scout's job is the GATE: did the word occur, is it echo, are
+        # we snoozed. When the conversation is already open (open/engaged)
+        # there is no gate — every utterance goes to the big model anyway
+        # and the scout was only 0.42 s of extra waiting. In that case a
+        # single pass straight with the big model: ~1.6 s per sentence
+        # instead of ~2.0 s.
         gate_needed = deaf or self.snoozed or not (self.open or self.engaged)
         scout = self.scout if gate_needed else self.listener
         if scout is not self.listener and getattr(self.listener, "device", "") == "cuda":
@@ -767,15 +800,16 @@ class Ear:
 
         vocab = str(getattr(getattr(self.listener, "config", None), "vocab", "") or "")
 
-        # Sohbet açıkken söz aranmıyor: bir kez konuşmaya başlandıktan
-        # sonra her cümlede adını söylemek gerekmiyor.
+        # While the conversation is open the word is not looked for: once
+        # talking has started there is no need to say the name in every
+        # sentence.
         woken = recogniser.heard_wake(scan, self.wake)
         barged = bool(self._barge_open)
 
-        # BARGE-IN: dornick konuşurken yakalanan ses. Enerji eşiği kulağı
-        # açtıysa (`_barge_open`) uyandırma sözü gerekmez — kullanıcı
-        # hoparlörün üstünden konuşmuştur, cümle tutulur. Aksi halde
-        # yalnızca "dornick" araya girebilir; yoksa yankı yok sayılır.
+        # BARGE-IN: sound captured while dornick talks. If the energy
+        # threshold opened the ear (`_barge_open`) no wake word is needed —
+        # the user spoke over the speaker, the sentence is kept. Otherwise
+        # only "dornick" can barge in; without it the echo is ignored.
         if deaf and not barged:
             if not woken:
                 return
@@ -784,8 +818,8 @@ class Ear:
         elif barged:
             self._deaf_until = 0.0
 
-        # Susturulmuşken yalnızca uyandırma sözü geçiyor — ve geçtiği anda
-        # susturma kalkıyor: "dornick" demek geri çağırmaktır.
+        # While snoozed only the wake word passes — and the moment it does
+        # the snooze lifts: saying "dornick" is calling it back.
         if self.snoozed:
             if not woken:
                 return
@@ -793,8 +827,8 @@ class Ear:
 
         if woken:
             self._wake_at = time.monotonic()
-            # Sesleniş kulağı (ve companions: ağ kameraları) geri açar.
-            # Dahili kamera HUD/sohbet anahtarıdır; "dornick" onu yakmaz.
+            # The call reopens the ear (and companions: network cameras).
+            # The built-in camera is the HUD/chat switch; "dornick" does not light it.
             for sense in self.companions:
                 try:
                     sense.unsnooze()
@@ -802,18 +836,19 @@ class Ear:
                     pass
 
         if not woken and not self.open and not self.engaged and not barged:
-            # Söz yok ve sohbet kapalı: burada bitiyor. Büyük model hiç
-            # uyanmıyor, metin hiçbir yere yazılmıyor, modele gitmiyor.
+            # No word and the conversation is closed: it ends here. The big
+            # model never wakes, the text is written nowhere, nothing goes
+            # to the model.
             return
 
-        # Öksürük / mırıltı / uydurma adres — büyük modeli de uyandırma.
+        # Cough / mumble / invented address — do not wake the big model either.
         if not woken and (recogniser.chatter(scan)
                           or recogniser.hallucinated(scan, vocab)):
             self._barge_open = False
             return
 
-        # Şimdi düzgün çöz. Kısa sözde ikinci model ~1,4 sn (CPU) ekliyor
-        # ve "merhaba dornick" gibi cümlede kazanç yok.
+        # Now decode properly. On a short utterance the second model adds
+        # ~1.4 s (CPU) and there is no gain on a sentence like "merhaba dornick".
         try:
             said = scan
             if scout is not self.listener and len(scan.split()) > 12:
@@ -825,21 +860,23 @@ class Ear:
             self._barge_open = False
             return
 
-        # Gülme, öksürük ve tanıyıcının uydurduğu kelime konuşma değil.
-        # Serbest dinlemede kullanıcı güldüğünde ajan her kahkahaya cevap
-        # yetiştiriyordu — ona bir şey söylenmemişken. Sözle çağrıldıysa
-        # geçiyor: "dornick hahaha" bilinçli. Pencere de tazelenmiyor: gülmek
-        # sohbeti açık tutmaz.
+        # Laughter, coughing and a word the recogniser invented are not
+        # speech. In free listening, when the user laughed the agent
+        # produced a reply to every laugh — while nothing had been said to
+        # it. If called by the word it passes: "dornick hahaha" is
+        # deliberate. The window is not refreshed either: laughing does not
+        # keep the conversation open.
         if not woken and (recogniser.chatter(said)
                           or recogniser.hallucinated(said, vocab)):
             self._barge_open = False
             return
 
-        # Enerji eşiği TTS'i yanlışlıkla kestiysa — ya da serbest
-        # dinlemede hoparlör sustuktan sonra oda yankısı yeni söz olduysa —
-        # tanıma metni hoparlördeki cümleye benzer. Kendi sözü istek değil.
-        # Whisper yankıda TTS'e benzemeyen bir şey de basabiliyor
-        # ('hoşça kalın', 'soni') — o da istek değil.
+        # If the energy threshold cut TTS by mistake — or in free listening
+        # the room echo after the speaker went quiet became a new utterance
+        # — the transcript resembles the sentence on the speaker. Its own
+        # words are not a request. Whisper can also print something on echo
+        # that does not resemble the TTS ('hoşça kalın', 'soni') — that is
+        # not a request either.
         echoing = barged or echo or self._echoing()
         if echoing and (
             echo_of_self(said, self._tts_text)
@@ -851,12 +888,12 @@ class Ear:
             return
 
         if woken:
-            # Büyük model sözü başka türlü yazmış olabilir; ikisinde de
-            # aranıyor ki komut kaybolmasın.
+            # The big model may have written the word differently; both are
+            # searched so the command is not lost.
             command = (recogniser.after_wake(said, self.wake) or
                        recogniser.after_wake(scan, self.wake))
         else:
-            # Sohbetin ortası: söylenenin tamamı komut.
+            # Middle of the conversation: everything said is the command.
             command = said.strip()
 
         if self._repeat_ask(command or said.strip()):
@@ -867,8 +904,9 @@ class Ear:
             self._barge_open = False
             return
 
-        # İlk sessizlikte devredildiyse: tanıma HANG ile örtüşür, ama CUDA
-        # 0,2 sn'de bitince nefes arası yarım cümle olmasın diye teyit bekle.
+        # If handed over at the first silence: recognition overlaps HANG,
+        # but when CUDA finishes in 0.2 s wait for confirmation so a breath
+        # pause does not become half a sentence.
         if given is not None:
             hold = given + HANG_S
             while time.monotonic() < hold:
@@ -881,7 +919,7 @@ class Ear:
                 self._barge_open = False
                 return
 
-        # Konuşma sürüyor: pencere tazeleniyor.
+        # The conversation continues: the window is refreshed.
         self.engage()
         self._barge_open = False
 

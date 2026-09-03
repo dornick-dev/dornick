@@ -30,16 +30,16 @@ from .subjects import BANNED_ADJECTIVES
 
 # The document is part of every system prompt, so its length is a per-session
 # tax. Short enough that nobody skims it.
-AZAMI_KELIME = 300
+MAX_WORDS = 300
 
 # Personality does not turn over in a night.
 CHANGED_PER_NIGHT = 1
 
-_KANIT = re.compile(r"\[([^\]]+)\]\s*$")
+_EVIDENCE = re.compile(r"\[([^\]]+)\]\s*$")
 
 # Instructions about what to believe or how to please. Taken as feedback,
-# never written down as identity.
-TALIMAT_KALIPLARI = (
+# never written down as identity. (Turkish phrases: the document is Turkish.)
+INSTRUCTION_PATTERNS = (
     "hep katıl", "asla eleştirme", "her zaman haklı", "itiraz etme",
     "beni onayla", "hep evet", "sorgulama",
 )
@@ -56,46 +56,46 @@ class Identity:
     sentences: list[tuple[str, list[str]]] = field(default_factory=list)
 
     def render(self) -> str:
-        return "\n".join(f"{metin} [{', '.join(kanit)}]"
-                         for metin, kanit in self.sentences)
+        return "\n".join(f"{text} [{', '.join(evidence)}]"
+                         for text, evidence in self.sentences)
 
     def words(self) -> int:
-        return sum(len(metin.split()) for metin, _k in self.sentences)
+        return sum(len(text.split()) for text, _e in self.sentences)
 
 
 def parse(text: str) -> Identity:
     """Read the document back. A line without evidence is dropped, not fixed."""
     out = Identity()
-    for satir in (text or "").splitlines():
-        satir = satir.strip()
-        if not satir:
+    for line in (text or "").splitlines():
+        line = line.strip()
+        if not line:
             continue
-        hit = _KANIT.search(satir)
+        hit = _EVIDENCE.search(line)
         if not hit:
             continue
-        kanit = [k.strip() for k in hit.group(1).replace(",", " ").split() if k.strip()]
-        out.sentences.append((satir[:hit.start()].strip(), kanit))
+        evidence = [k.strip() for k in hit.group(1).replace(",", " ").split() if k.strip()]
+        out.sentences.append((line[:hit.start()].strip(), evidence))
     return out
 
 
 def check(sentence: str, evidence: Iterable[str]) -> tuple[str, list[str]]:
     """The four rules, applied to one sentence, before it can be written."""
-    metin = " ".join((sentence or "").split())
-    kanit = [k for k in evidence if k]
-    if not metin:
+    text = " ".join((sentence or "").split())
+    ids = [k for k in evidence if k]
+    if not text:
         raise IdentityRefused("boş cümle")
-    if not kanit:
+    if not ids:
         raise IdentityRefused(
             "kanıtsız cümle: tıklanıp gidilemeyen bir kimlik, bir hikâyedir")
-    dusuk = metin.casefold()
-    for sifat in BANNED_ADJECTIVES:
-        if re.search(rf"\b{re.escape(sifat)}\b", dusuk):
-            raise IdentityRefused(f"değerlendirici sıfat: '{sifat}'")
-    for kalip in TALIMAT_KALIPLARI:
-        if kalip in dusuk:
+    lowered = text.casefold()
+    for adjective in BANNED_ADJECTIVES:
+        if re.search(rf"\b{re.escape(adjective)}\b", lowered):
+            raise IdentityRefused(f"değerlendirici sıfat: '{adjective}'")
+    for pattern in INSTRUCTION_PATTERNS:
+        if pattern in lowered:
             raise IdentityRefused(
-                f"talimat kimliğe giremez: '{kalip}'. Düzeltme evet, itaat hayır.")
-    return metin, kanit
+                f"talimat kimliğe giremez: '{pattern}'. Düzeltme evet, itaat hayır.")
+    return text, ids
 
 
 def apply(current: Identity, proposals: list[tuple[str, list[str]]],
@@ -104,22 +104,22 @@ def apply(current: Identity, proposals: list[tuple[str, list[str]]],
     out = Identity(list(current.sentences))
     refusals: list[str] = []
     changed = 0
-    mevcut = {metin for metin, _k in out.sentences}
+    present = {text for text, _e in out.sentences}
     for sentence, evidence in proposals:
         if changed >= limit:
             refusals.append(f"gecede en fazla {limit} cümle: '{sentence[:40]}…'")
             continue
         try:
-            metin, kanit = check(sentence, evidence)
-        except IdentityRefused as hata:
-            refusals.append(str(hata))
+            text, ids = check(sentence, evidence)
+        except IdentityRefused as err:
+            refusals.append(str(err))
             continue
-        if metin in mevcut:
+        if text in present:
             continue
-        out.sentences.append((metin, kanit))
-        mevcut.add(metin)
+        out.sentences.append((text, ids))
+        present.add(text)
         changed += 1
-    while out.words() > AZAMI_KELIME and len(out.sentences) > 1:
+    while out.words() > MAX_WORDS and len(out.sentences) > 1:
         out.sentences.pop(0)        # oldest goes first
     return out, refusals
 
@@ -130,15 +130,15 @@ def object_to(current: Identity, sentence_prefix: str) -> tuple[Identity, list[s
     Returns the document and the evidence ids of what was removed, so a
     `lesson` can be attached to them: the objection is itself a datum.
     """
-    kalan: list[tuple[str, list[str]]] = []
-    dusen: list[str] = []
-    onek = sentence_prefix.strip().casefold()[:40]
-    for metin, kanit in current.sentences:
-        if onek and metin.casefold().startswith(onek):
-            dusen.extend(kanit)
+    kept: list[tuple[str, list[str]]] = []
+    dropped: list[str] = []
+    prefix = sentence_prefix.strip().casefold()[:40]
+    for text, evidence in current.sentences:
+        if prefix and text.casefold().startswith(prefix):
+            dropped.extend(evidence)
         else:
-            kalan.append((metin, kanit))
-    return Identity(kalan), dusen
+            kept.append((text, evidence))
+    return Identity(kept), dropped
 
 
 # -- disk --------------------------------------------------------------

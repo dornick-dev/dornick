@@ -1,8 +1,8 @@
-"""Ajanın bedeni: duyuları ve kendine taktığı modüller.
+"""The agent's body: its senses and the modules it attached to itself.
 
-Buradaki tek kural, listedeki her şeyin gerçekten var olması. Sahnede
-soluk da olsa duran bir kamera "bu bende var" demek; olmayan bir aygıtı
-çizmek ekranda çalışıyormuş gibi duran bir yalan olur.
+The only rule here is that everything in the list really exists. A camera
+standing on the stage, even faint, says "I have this"; drawing a device
+that does not exist would be a lie that looks like it is working on screen.
 """
 
 from __future__ import annotations
@@ -14,8 +14,8 @@ from dornick.config import Config
 
 
 def test_the_senses_are_always_listed(tmp_path: Path) -> None:
-    """Kapalı olsalar da görünüyorlar: neye sahip olduğu, neyin kapalı
-    olduğu kadar önemli. Boş bir sahne "hiçbir şeyim yok" demek."""
+    """They show even when off: what it has matters as much as what is
+    off. An empty stage says "I have nothing"."""
     body = organs.inventory(Config.load(tmp_path))
     ids = {organ["id"] for organ in body}
 
@@ -23,15 +23,16 @@ def test_the_senses_are_always_listed(tmp_path: Path) -> None:
 
 
 def test_the_hand_is_part_of_the_body(tmp_path: Path) -> None:
-    """Ekran ve el bir organ: makine desteklemese de 'yok' olarak görünmeli,
-    'hiç yok' değil. Ajan ne yapabileceğini bedeninde görüyor."""
+    """Screen and hand are an organ: even if the machine does not support
+    it, it must show as 'yok', not be absent entirely. The agent sees what
+    it can do in its body."""
     hand = next(o for o in organs.inventory(Config.load(tmp_path)) if o["id"] == "hand")
     assert "screen" in hand["tools"] and "hand" in hand["tools"]
 
 
 def test_a_closed_camera_says_so(tmp_path: Path, monkeypatch) -> None:
-    # Kamerasız bir geliştirme makinesinde de geçmeli: yoklama sabitleniyor,
-    # test aygıtı değil "var ama kapalı" halinin sözünü sınıyor.
+    # Must pass on a camera-less dev machine too: the probe is pinned, the
+    # test checks the wording of the "present but off" state, not the device.
     monkeypatch.setattr(organs, "has_camera", lambda lens=None: True)
     config = Config.load(tmp_path)
     lens = next(o for o in organs.inventory(config) if o["id"] == "lens")
@@ -41,8 +42,8 @@ def test_a_closed_camera_says_so(tmp_path: Path, monkeypatch) -> None:
 
 
 def test_an_open_camera_is_live(tmp_path: Path) -> None:
-    """Ayar değil, gerçek durum. Ayarda açık görünen bir kamera
-    açılmamış olabiliyor ve ekranda çalışıyormuş gibi duruyordu."""
+    """The real state, not the setting. A camera that looked on in the
+    settings could be unopened and appeared to be working on screen."""
 
     class Open:
         live = True
@@ -54,8 +55,8 @@ def test_an_open_camera_is_live(tmp_path: Path) -> None:
 
 
 def test_the_camera_is_used_by_the_look_tool(tmp_path: Path) -> None:
-    """Arayüz hangi aracın hangi organa dokunduğunu buradan öğreniyor;
-    orada tahmin edilirse yeni bir araç sessizce eşleşmeden kalıyor."""
+    """The UI learns from here which tool touches which organ; if it were
+    guessed there, a new tool would silently stay unmatched."""
     lens = next(o for o in organs.inventory(Config.load(tmp_path)) if o["id"] == "lens")
     assert "look" in lens["tools"]
     assert "kamera" in lens["tools"]
@@ -79,8 +80,8 @@ def test_named_cameras_are_organs_the_model_can_call(tmp_path: Path) -> None:
 
 
 def test_a_deaf_ear_is_not_listening(tmp_path: Path) -> None:
-    """Ajan konuşurken kulak kapalı. Sahnede o an "dinliyor" yazması,
-    kendi sesini duyuyormuş gibi görünmek olurdu."""
+    """While the agent speaks the ear is closed. Showing "dinliyor" on the
+    stage at that moment would look like it hears its own voice."""
 
     class Deafened:
         deaf = True
@@ -93,9 +94,9 @@ def test_a_deaf_ear_is_not_listening(tmp_path: Path) -> None:
 
 
 def test_self_written_modules_become_organs(tmp_path: Path) -> None:
-    """Ajanın kendine yazdığı yetenek — harita, PLC, USB, ne yazdıysa —
-    bedeninin bir parçası. Elle tutulan bir liste değil: atölyedeki
-    dosyalardan okunuyor."""
+    """A skill the agent wrote for itself — map, PLC, USB, whatever it
+    wrote — is part of its body. Not a hand-kept list: read from the files
+    in the workshop."""
     config = Config.load(tmp_path)
     config.ensure_dirs()
     root = config.open_sandbox().root
@@ -111,9 +112,9 @@ def test_self_written_modules_become_organs(tmp_path: Path) -> None:
 
 
 def test_a_broken_module_does_not_empty_the_body(tmp_path: Path) -> None:
-    """Yarım bırakılmış bir yetenek dosyası bütün organ listesini
-    düşürmemeli: mikrofonun görünmemesi, bozuk bir dosyadan çok daha
-    kötü bir hata."""
+    """A half-finished skill file must not bring down the whole organ
+    list: the microphone not showing is a far worse failure than one broken
+    file."""
     config = Config.load(tmp_path)
     config.ensure_dirs()
     root = config.open_sandbox().root
@@ -126,10 +127,10 @@ def test_a_broken_module_does_not_empty_the_body(tmp_path: Path) -> None:
 
 
 def test_the_workshop_is_the_only_place_modules_live(tmp_path: Path) -> None:
-    """Atölyenin dışına yazılmış bir Python dosyası yetenek sayılmıyor.
+    """A Python file written outside the workshop does not count as a skill.
 
-    Ajanın kendine yazdığı her şey kendi klasöründe kalmalı; oradan
-    çıkan bir dosya hem sahnede görünmüyor hem de hiç yüklenmiyor.
+    Everything the agent writes for itself must stay in its own folder; a
+    file that leaves it neither shows on the stage nor is ever loaded.
     """
     config = Config.load(tmp_path)
     config.ensure_dirs()

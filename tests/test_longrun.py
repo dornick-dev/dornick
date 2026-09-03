@@ -1,10 +1,10 @@
-"""Saatlerce süren işler: tur bütçesi, iş ortası sıkıştırma, arka plan
-işleri ve model kesintisi dayanıklılığı.
+"""Jobs that run for hours: turn budget, mid-run compaction, background
+jobs and model-outage resilience.
 
-Uzun bir agentik işi bugüne kadar dört şey öldürüyordu: 60 turluk sert
-tavan, 180 sn'lik araç zaman aşımı, tek koşuda kesim noktası bulamayan
-sıkıştırma ve tek model hatasında biten döngü. Buradaki testler dördünün
-de kapandığını kanıtlıyor.
+Until now four things killed a long agentic job: the hard 60-turn ceiling,
+the 180 s tool timeout, compaction that could not find a cut point within a
+single run, and the loop ending on a single model error. The tests here
+prove that all four are closed.
 """
 
 from __future__ import annotations
@@ -30,14 +30,14 @@ from tests.test_loop import (  # noqa: F401
 )
 
 
-# -- tur bütçesi: sert tavan → kontrol noktası ---------------------------
+# -- turn budget: hard ceiling → checkpoint ------------------------------
 
 
 async def test_a_long_run_survives_past_sixty_turns(
     tmp_path: Path, registry: ToolRegistry
 ) -> None:
-    """Eski kod 60. turda `turn_limit` ile ölürdü; artık kontrol noktasıyla
-    ilerleme notu istenip iş sürüyor."""
+    """The old code died at turn 60 with `turn_limit`; now a progress note is
+    requested at the checkpoint and the work goes on."""
     script = [tool_turn((f"t{i}", "echo", {"text": str(i)})) for i in range(80)]
     script.append(text_turn("80 adımlık iş bitti"))
     client = FakeClient(*script)
@@ -45,19 +45,19 @@ async def test_a_long_run_survives_past_sixty_turns(
 
     stats = await agent.run("uzun bir iş yap")
 
-    assert stats.turns == 81, "koşu 60 turda kesilmemeliydi"
+    assert stats.turns == 81, "the run should not have been cut at 60 turns"
     assert stats.stop_reason == "end_turn"
-    assert not agent.session.log.notes("turn_limit"), "sigortaya çarpmamalıydı"
+    assert not agent.session.log.notes("turn_limit"), "should not have hit the fuse"
     marks = agent.session.log.notes("turn_checkpoint")
     assert marks and marks[0].meta["turns"] == 60
-    # Kontrol noktası dürtüsü modele gerçekten gitti.
+    # The checkpoint nudge really went to the model.
     assert "kontrol noktası" in str(client.seen_messages[-1])
 
 
 async def test_the_hard_limit_still_guards(
     tmp_path: Path, registry: ToolRegistry, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Mutlak sigorta duruyor: kaçak döngü sonsuza kadar koşamaz."""
+    """The absolute fuse stays: a runaway loop cannot run forever."""
     monkeypatch.setattr(loop_module, "HARD_TURN_LIMIT", 5)
     client = FakeClient(*[tool_turn((f"t{i}", "echo", {})) for i in range(10)])
     agent = build_agent(tmp_path, client, registry)
@@ -72,8 +72,9 @@ async def test_the_hard_limit_still_guards(
 async def test_tool_progress_refreshes_the_continuation_budget(
     tmp_path: Path, registry: ToolRegistry
 ) -> None:
-    """Uzun koşuda arada bir max_tokens tavanına çarpmak, işi kapanış
-    turuna sürüklememeli: araç çağıran tur sayacı tazeler."""
+    """Occasionally hitting the max_tokens ceiling in a long run must not
+    drag the job into the closing turn: a turn that calls a tool refreshes
+    the counter."""
 
     def truncated(text: str) -> TurnResult:
         return TurnResult(message=message([{"type": "text", "text": text}], "max_tokens"))
@@ -90,16 +91,16 @@ async def test_tool_progress_refreshes_the_continuation_budget(
 
     stats = await agent.run("upuzun bir iş")
 
-    assert stats.closing is False, "kapanış turuna sürüklenmemeliydi"
+    assert stats.closing is False, "should not have been dragged into the closing turn"
     assert stats.stop_reason == "end_turn"
 
 
-# -- iş ortası sıkıştırma ------------------------------------------------
+# -- mid-run compaction -------------------------------------------------
 
 
 def test_work_cut_finds_an_assistant_boundary() -> None:
-    """Tek koşuda gerçek kullanıcı turu yalnız başta: cut_point 0 döner,
-    work_cut asistan sınırından güvenli kesim bulur."""
+    """In a single run the only real user turn is at the start: cut_point
+    returns 0, work_cut finds a safe cut at an assistant boundary."""
     from dornick.compaction import cut_point, work_cut
 
     def a() -> dict:
@@ -112,11 +113,11 @@ def test_work_cut_finds_an_assistant_boundary() -> None:
 
     msgs = [{"role": "user", "content": [{"type": "text", "text": "başla"}]},
             a(), tr(), a(), tr(), a(), tr(), a(), tr()]
-    assert cut_point(msgs) == 0, "gerçek kullanıcı turu yok; eski yol kesemez"
+    assert cut_point(msgs) == 0, "no real user turn; the old path cannot cut"
     cut = work_cut(msgs)
     assert cut == 3
-    assert msgs[cut]["role"] == "assistant", "kesim asistan sınırında olmalı"
-    # Kesimden sonraki pencere karşılıksız tool_result ile başlamıyor.
+    assert msgs[cut]["role"] == "assistant", "the cut must be at an assistant boundary"
+    # The window after the cut does not start with an unanswered tool_result.
     first = msgs[cut]["content"][0]
     assert first.get("type") != "tool_result"
 
@@ -124,21 +125,22 @@ def test_work_cut_finds_an_assistant_boundary() -> None:
 async def test_mid_run_compaction_keeps_the_run_alive(
     tmp_path: Path, registry: ToolRegistry
 ) -> None:
-    """Pencere tek koşunun ortasında dolunca: sıkıştır, iş durumunu özetin
-    başına sabitle, koşu kaldığı yerden sürsün."""
+    """When the window fills in the middle of a single run: compact, pin the
+    job status to the head of the summary, let the run carry on where it
+    left off."""
     client = FakeClient(
         tool_turn(("t1", "echo", {"text": "a"})),
         tool_turn(("t2", "echo", {"text": "b"})),
-        # 3. turun BAŞINDA pencere dolu ve artık kesim noktası var:
-        # sıkıştırma tetiklenir ve bu metni özetleyici tüketir.
+        # At the START of turn 3 the window is full and there is now a cut
+        # point: compaction triggers and the summariser consumes this text.
         text_turn("ÖZET: beş modüllü proje kuruluyordu; iki modül tamam."),
         tool_turn(("t3", "echo", {"text": "c"})),
-        # Sahte pencere hep dolu göründüğü için bir sıkıştırma daha olur.
+        # Because the fake window always looks full, one more compaction happens.
         text_turn("ÖZET 2: üçüncü modül de bitti."),
         text_turn("iş tamamlandı"),
     )
     agent = build_agent(tmp_path, client, registry)
-    # Her tur "pencere dolu" görünsün: FakeClient 10 token bildiriyor.
+    # Let every turn look like "window full": FakeClient reports 10 tokens.
     agent.config.model.context_window = 10
 
     class GoalMind:
@@ -158,45 +160,46 @@ async def test_mid_run_compaction_keeps_the_run_alive(
 
     agent.mind = GoalMind()
 
-    # Katlanacak bölgede modelin kendi ilerleme anlatımı dursun.
+    # Let the model's own progress narrative sit in the region to be folded.
     agent.session.add_user_text("projeye başla")
     agent.session.add_assistant(
         [{"type": "text", "text": "Plan hazır: beş modül kuracağım, ikisi bitti."}])
 
     stats = await agent.run("kaldığın yerden devam et")
 
-    # Sıkıştırma koşunun ORTASINDA oldu ve koşu tamamlandı.
+    # Compaction happened in the MIDDLE of the run and the run completed.
     resets = agent.session.log.notes("context_reset")
-    assert resets, "sıkıştırma hiç tetiklenmedi"
+    assert resets, "compaction never triggered"
     assert agent.session.log.notes("compacted")
     assert stats.stop_reason == "end_turn"
     assert "iş tamamlandı" in str(agent.session.messages())
 
-    # Özetin başında iş durumu: hedefler + son ilerleme + özet gövdesi.
+    # Job status at the head of the summary: goals + last progress + summary body.
     carried = str(resets[0].meta.get("summary"))
     assert "[İŞ DURUMU]" in carried
     assert "küçük projeyi bitir" in carried
     assert "beş modül kuracağım" in carried
     assert "ÖZET:" in carried
 
-    # Sıkıştırmadan SONRA araç çağrısı sürdü (t3 cevabı geçmişte).
+    # The tool call continued AFTER compaction (the t3 answer is in the history).
     assert "echo: c" in str(agent.session.log.messages())
 
-    # Hedef dijesti sıfırlandı: canlı hedefler sıkıştırma sonrası yeniden
-    # enjekte edildi (eski not + taze not — ikincisi sıfırlamanın kanıtı).
+    # The goal digest was reset: the live goals were re-injected after
+    # compaction (old note + fresh note — the second is the proof of the reset).
     fresh = [e for e in agent.session.log.messages()
              if e.role == "system" and "küçük projeyi bitir" in str(e.content)]
-    assert len(fresh) >= 2, "hedefler sıkıştırma sonrası bağlama geri dönmedi"
+    assert len(fresh) >= 2, "goals did not come back into the context after compaction"
 
 
-# -- arka plan işleri (uzun süreçler) ------------------------------------
+# -- background jobs (long processes) ------------------------------------
 
 
 async def test_a_background_job_reports_when_done(
     tmp_path: Path, registry: ToolRegistry
 ) -> None:
-    """Uzun iş defterde koşar; bitince çıktısı bir sonraki turun başında
-    harness notuyla düşer — yardımcı bildirimiyle aynı yol."""
+    """The long job runs in the ledger; when finished its output lands with
+    a harness note at the start of the next turn — the same path as the
+    helper notification."""
     client = FakeClient(text_turn("başlattım"), text_turn("çıktıyı gördüm"))
     agent = build_agent(tmp_path, client, registry)
 
@@ -219,7 +222,7 @@ async def test_a_background_job_reports_when_done(
 async def test_a_failed_background_job_is_not_reported_as_done(
     tmp_path: Path, registry: ToolRegistry
 ) -> None:
-    """Çıkış kodu 1 ile biten iş 'görev tamamlandı' dememeli."""
+    """A job that ends with exit code 1 must not say 'task completed'."""
     from dornick.tools.base import JobFailed
     from dornick.tools.shell import job_report
 
@@ -227,7 +230,7 @@ async def test_a_failed_background_job_is_not_reported_as_done(
     agent = build_agent(tmp_path, client, registry)
     oks: list[bool] = []
     agent.io.on_child_end = (
-        lambda title, ok, turns, tools, cid, ozet: oks.append(ok)
+        lambda title, ok, turns, tools, cid, summary: oks.append(ok)
     )
 
     async def runner(cancel: asyncio.Event) -> str:
@@ -245,7 +248,7 @@ async def test_a_failed_background_job_is_not_reported_as_done(
     assert "Traceback" not in (handle.sonuc or "")
 
 
-async def test_shell_arka_plan_returns_immediately(tmp_path: Path) -> None:
+async def test_shell_background_returns_immediately(tmp_path: Path) -> None:
     from dornick.config import Config
     from dornick.events import EventLog
     from dornick.session import Session
@@ -273,16 +276,16 @@ async def test_shell_arka_plan_returns_immediately(tmp_path: Path) -> None:
         {"command": "echo merhaba-dunya", "arka_plan": True}, ctx)
 
     assert not result.is_error
-    assert "id=j1" in result.content, "araç beklemeden dönmeli"
-    # Runner gerçekten komutu koşturuyor ve çıktıyı döndürüyor.
+    assert "id=j1" in result.content, "the tool must return without waiting"
+    # The runner really runs the command and returns the output.
     out = await started["runner"](asyncio.Event())
     assert "merhaba-dunya" in out
 
 
-async def test_shell_arka_plan_failure_raises_a_readable_error(
+async def test_shell_background_failure_raises_a_readable_error(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Arka plan kabuk 1 ile biterse JobFailed — traceback değil, paket adı."""
+    """If the background shell ends with 1: JobFailed — the package name, not a traceback."""
     from dornick.config import Config
     from dornick.events import EventLog
     from dornick.session import Session
@@ -319,8 +322,8 @@ async def test_shell_arka_plan_failure_raises_a_readable_error(
 
 
 async def test_the_executor_honours_a_requested_timeout(tmp_path: Path) -> None:
-    """Araç açıkça süre istediyse (shell'e timeout: 600 gibi) yürütücünün
-    genel sınırı onu 180 sn'de öldürmemeli."""
+    """If the tool explicitly asked for time (like timeout: 600 to shell) the
+    executor's general limit must not kill it at 180 s."""
     from dornick.config import Config
     from dornick.events import EventLog
     from dornick.permissions import PermissionEngine
@@ -347,19 +350,19 @@ async def test_the_executor_honours_a_requested_timeout(tmp_path: Path) -> None:
     blocks = await execute(
         [PendingToolUse(id="a", name="slowish", input={"timeout": 600})],
         registry=reg, permissions=PermissionEngine("yolo", allow=[], deny=[]),
-        ctx=ctx, approve=yes, timeout_s=0.05)   # genel sınır kasıtlı küçük
+        ctx=ctx, approve=yes, timeout_s=0.05)   # the general limit is deliberately small
 
-    assert blocks[0]["is_error"] is False, "istenen süre genel sınırı aşmalıydı"
+    assert blocks[0]["is_error"] is False, "the requested time should have exceeded the general limit"
 
 
-# -- model kesintisi dayanıklılığı ---------------------------------------
+# -- model-outage resilience ---------------------------------------------
 
 
 async def test_transient_model_errors_are_retried(
     tmp_path: Path, registry: ToolRegistry, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Bağlantı/5xx hatası koşuyu öldürmez: geri çekilip yeniden dener.
-    (Eski davranış: TEK hata turu bitiriyordu.)"""
+    """A connection/5xx error does not kill the run: it backs off and retries.
+    (Old behaviour: a SINGLE error ended the turn.)"""
     monkeypatch.setattr(loop_module, "RETRY_DELAYS", (0.01, 0.01, 0.01))
     client = FakeClient(
         TurnResult(error="Bağlantı kurulamadı: connection refused"),
@@ -373,13 +376,13 @@ async def test_transient_model_errors_are_retried(
     assert stats.stop_reason == "end_turn"
     assert len(agent.session.log.notes("api_error")) == 2
     assert "kesinti atlatıldı" in str(agent.session.messages())
-    assert stats.turns == 1, "başarısız denemeler tur sigortasını yememeli"
+    assert stats.turns == 1, "failed attempts must not eat the turn fuse"
 
 
 async def test_a_malformed_request_still_stops(
     tmp_path: Path, registry: ToolRegistry
 ) -> None:
-    """Bozuk istek (400) yeniden denemekle düzelmez: eski davranış korunur."""
+    """A malformed request (400) is not fixed by retrying: the old behaviour is kept."""
     client = FakeClient(
         TurnResult(error="API 400: her tool_use için bir tool_result dönmeli"),
         text_turn("buraya gelinmemeli"),
@@ -389,14 +392,15 @@ async def test_a_malformed_request_still_stops(
     await agent.run("bir şey")
 
     assert len(agent.session.log.notes("api_error")) == 1
-    assert client.script, "ikinci tur hiç denenmemeliydi"
+    assert client.script, "the second turn should never have been attempted"
 
 
 async def test_a_long_outage_parks_then_resumes(
     tmp_path: Path, registry: ToolRegistry, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Denemeler tükenince iş ölmez, PARK edilir; model dönünce kaldığı
-    yerden sürer ve park kaydı temizlenir."""
+    """When the retries run out the job does not die, it is PARKED; when the
+    model comes back it carries on where it left off and the park record is
+    cleared."""
     monkeypatch.setattr(loop_module, "RETRY_DELAYS", (0.01, 0.01))
     monkeypatch.setattr(loop_module, "PARK_PROBE_S", 0.01)
     client = FakeClient(
@@ -411,9 +415,9 @@ async def test_a_long_outage_parks_then_resumes(
     stats = await agent.run("saatlik iş")
 
     assert stats.stop_reason == "end_turn"
-    assert agent.session.log.notes("parked"), "park kaydı düşülmeliydi"
+    assert agent.session.log.notes("parked"), "the park record should have been written"
     assert agent.session.log.notes("unparked")
-    assert read_park(agent.config.state_dir) is None, "iş bitince kayıt silinmeli"
+    assert read_park(agent.config.state_dir) is None, "the record must be deleted when the job ends"
     assert any("bekletiliyor" in n for n in notices)
     assert any("geri geldi" in n for n in notices)
     assert "iş bitti" in str(agent.session.messages())
@@ -422,10 +426,10 @@ async def test_a_long_outage_parks_then_resumes(
 async def test_child_agent_fails_instead_of_parking_forever(
     tmp_path: Path, registry: ToolRegistry, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Alt ajan (görev/orkestra) max retry sonrası park ETMEZ — hata ile biter.
+    """A subagent (task/orchestra) does NOT park after max retries — it ends with an error.
 
-    Ana sohbet çalışırken Market Lens'in 'Model bekleniyor (5/5) · 300s'
-    kilidinde kalmasının kök nedeni buydu.
+    This was the root cause of Market Lens staying stuck at 'Model
+    bekleniyor (5/5) · 300s' while the main chat worked.
     """
     monkeypatch.setattr(loop_module, "RETRY_DELAYS", (0.01, 0.01))
     monkeypatch.setattr(loop_module, "PARK_PROBE_S", 30.0)
@@ -443,18 +447,18 @@ async def test_child_agent_fails_instead_of_parking_forever(
 
     assert stats.interrupted is True
     assert stats.fail_reason
-    assert not agent.session.log.notes("parked"), "alt ajan park etmemeli"
+    assert not agent.session.log.notes("parked"), "a subagent must not park"
     assert read_park(agent.config.state_dir) is None
     assert any(w.get("kip") == "hata" for w in waits)
-    assert client.script, "başarılı tur hiç denenmemeliydi"
+    assert client.script, "the successful turn should never have been attempted"
 
 
 async def test_interrupt_during_backoff_stops_and_unparks(
     tmp_path: Path, registry: ToolRegistry, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Bekleme kesilebilir: kullanıcı 'dur' derse park kaydı da düşer."""
+    """The wait is interruptible: if the user says 'stop' the park record goes too."""
     monkeypatch.setattr(loop_module, "RETRY_DELAYS", (0.01,))
-    monkeypatch.setattr(loop_module, "PARK_PROBE_S", 30.0)   # parkta bekleyecek
+    monkeypatch.setattr(loop_module, "PARK_PROBE_S", 30.0)   # will wait in park
     client = FakeClient(*[TurnResult(error="Bağlantı kurulamadı") for _ in range(9)])
     agent = build_agent(tmp_path, client, registry)
 
@@ -473,8 +477,9 @@ async def test_interrupt_during_backoff_stops_and_unparks(
 async def test_retry_wait_applies_a_pending_model_swap(
     tmp_path: Path, registry: ToolRegistry, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Kesinti sırasında düzeltilen ayar (yeni adres/anahtar) bir sonraki
-    denemede devreye girer — parklı tur bitmediği için tur sonu bekleyemez."""
+    """A setting fixed during the outage (new address/key) takes effect on
+    the next attempt — since the parked turn never ends it cannot wait for
+    the end of the turn."""
     monkeypatch.setattr(loop_module, "RETRY_DELAYS", (0.01, 0.01))
     client = FakeClient(
         TurnResult(error="Bağlantı kurulamadı"),
@@ -487,16 +492,17 @@ async def test_retry_wait_applies_a_pending_model_swap(
     stats = await agent.run("iş")
 
     assert stats.stop_reason == "end_turn"
-    assert swaps, "yeniden denemeden önce bekleyen değişiklik uygulanmalıydı"
+    assert swaps, "the pending change should have been applied before retrying"
 
 
 async def test_wait_events_carry_the_structured_fields(
     tmp_path: Path, registry: ToolRegistry, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Bekleme-durumu olay sözleşmesi: yapısal kanal (on_wait) bağlıyken her
-    deneme kip/deneme/toplam/saniye/detay alanlarıyla gider, toparlanma tek
-    bir "bitti" olayıdır ve sohbet kanalına (on_notice) HAM HATA DÜŞMEZ —
-    arayüz bunu çalışma şeridinde tek canlı satır olarak çizer."""
+    """The waiting-state event contract: with the structured channel
+    (on_wait) attached every attempt goes with the kip/deneme/toplam/saniye/
+    detay fields, the recovery is a single "bitti" event and NO RAW ERROR
+    LANDS in the chat channel (on_notice) — the UI draws this as a single
+    live line in the work strip."""
     monkeypatch.setattr(loop_module, "RETRY_DELAYS", (0.01, 0.01, 0.01))
     client = FakeClient(
         TurnResult(error="APIStatusError 402: {'detail': 'insufficient credits'}"),
@@ -516,10 +522,10 @@ async def test_wait_events_carry_the_structured_fields(
     assert [e["kip"] for e in events] == ["deneme", "deneme", "bitti"]
     first = events[0]
     assert first["deneme"] == 1 and first["toplam"] == len(loop_module.RETRY_DELAYS)
-    assert first["saniye"] == 0          # int(0.01) — alan var ve sayısal
+    assert first["saniye"] == 0          # int(0.01) — the field exists and is numeric
     assert "402" in first["detay"]
-    assert events[-1]["deneme"] == 2, "bitti olayı kaç deneme sürdüğünü taşımalı"
-    # Sohbet temiz: ne ham hata duvarı ne de ayrı "geri geldi" satırı.
+    assert events[-1]["deneme"] == 2, "the bitti event must carry how many attempts it took"
+    # The chat is clean: neither a raw error wall nor a separate "geri geldi" line.
     assert not any("402" in n for n in notices)
     assert not any("geri geldi" in n for n in notices)
 
@@ -527,8 +533,9 @@ async def test_wait_events_carry_the_structured_fields(
 async def test_wait_events_fall_back_to_notices_without_the_channel(
     tmp_path: Path, registry: ToolRegistry, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """on_wait bağlı değilse (CLI, testler) eski düz-metin davranışı aynen
-    durur: deneme bildirimi ve "geri geldi" satırı on_notice'tan akar."""
+    """If on_wait is not attached (CLI, tests) the old plain-text behaviour
+    stays as it is: the attempt notice and the "geri geldi" line flow from
+    on_notice."""
     monkeypatch.setattr(loop_module, "RETRY_DELAYS", (0.01,))
     client = FakeClient(
         TurnResult(error="openrouter 503: overloaded"),
@@ -547,9 +554,9 @@ async def test_wait_events_fall_back_to_notices_without_the_channel(
 async def test_parked_wait_emits_park_events_but_keeps_the_notice(
     tmp_path: Path, registry: ToolRegistry, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Park uç durum: şerit "park" olayını alır (canlı satır), sohbetteki tek
-    park bildirimi de durur — kullanıcının aksiyon alabileceği (Oto kipi
-    ipucu) tek yer orası."""
+    """The park edge case: the strip gets the "park" event (live line), and
+    the single park notice in the chat stays too — it is the only place
+    where the user can take action (the Oto mode hint)."""
     monkeypatch.setattr(loop_module, "RETRY_DELAYS", (0.01,))
     monkeypatch.setattr(loop_module, "PARK_PROBE_S", 0.01)
     client = FakeClient(
@@ -565,18 +572,18 @@ async def test_parked_wait_emits_park_events_but_keeps_the_notice(
     stats = await agent.run("saatlik iş")
 
     assert stats.stop_reason == "end_turn"
-    kips = [e["kip"] for e in events]
-    assert kips[0] == "deneme" and "park" in kips and kips[-1] == "bitti"
+    modes = [e["kip"] for e in events]
+    assert modes[0] == "deneme" and "park" in modes and modes[-1] == "bitti"
     park = next(e for e in events if e["kip"] == "park")
     assert park["saniye"] == int(0.01) and "Bağlantı" in park["detay"]
-    assert any("bekletiliyor" in n for n in notices), "park bildirimi sohbette kalır"
+    assert any("bekletiliyor" in n for n in notices), "the park notice stays in the chat"
 
 
 async def test_interrupting_a_wait_emits_the_cancel_event(
     tmp_path: Path, registry: ToolRegistry, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Beklerken "dur": şeritteki canlı satır "iptal" olayıyla kapanır."""
-    monkeypatch.setattr(loop_module, "RETRY_DELAYS", (30.0,))   # beklerken kesilecek
+    """"Stop" while waiting: the live line in the strip closes with the "iptal" event."""
+    monkeypatch.setattr(loop_module, "RETRY_DELAYS", (30.0,))   # will be interrupted while waiting
     client = FakeClient(*[TurnResult(error="Bağlantı kurulamadı") for _ in range(3)])
     agent = build_agent(tmp_path, client, registry)
     events: list[dict] = []
@@ -595,8 +602,9 @@ async def test_interrupting_a_wait_emits_the_cancel_event(
 
 
 async def test_the_bridge_publishes_wait_events_to_the_hub(tmp_path: Path) -> None:
-    """Köprü sözleşmesi: on_wait yükü hub'a "bekleme" tipiyle, alanlar
-    olduğu gibi taşınarak düşer — app.js tek canlı satırı bununla çizer."""
+    """Bridge contract: the on_wait payload lands in the hub with the
+    "bekleme" type, fields carried as they are — app.js draws the single
+    live line with this."""
     from dornick.desktop import Bridge
 
     class _Hub:
@@ -610,7 +618,7 @@ async def test_the_bridge_publishes_wait_events_to_the_hub(tmp_path: Path) -> No
     bridge = Bridge(hub, asyncio.get_running_loop())
     io = bridge.io()
 
-    assert io.on_wait is not None, "masaüstü köprüsü yapısal kanalı bağlamalı"
+    assert io.on_wait is not None, "the desktop bridge must attach the structured channel"
     io.on_wait({"kip": "deneme", "deneme": 2, "toplam": 5,
                 "saniye": 30, "detay": "APIStatusError 402"})
 
@@ -619,11 +627,11 @@ async def test_the_bridge_publishes_wait_events_to_the_hub(tmp_path: Path) -> No
 
 
 async def test_full_authority_resolves_pending_approval_cards(tmp_path: Path) -> None:
-    """Tam yetkiye geçiş açık izin kartlarını KENDİLİĞİNDEN onaylar.
+    """Switching to full authority approves open permission cards BY ITSELF.
 
-    Canlı yara (01.09): kart açıkken kullanıcı "tam yetki" seçiyor, kart
-    asılı kalıyor, tur sonsuza dek izin bekliyordu. Kip değişince bekleyen
-    istekler yeni motorla yeniden değerlendirilir.
+    Live wound (01.09): with a card open the user picks "tam yetki", the
+    card stays hanging, the turn waits for permission forever. When the
+    mode changes the pending requests are re-evaluated with the new engine.
     """
     from types import SimpleNamespace
 
@@ -651,7 +659,7 @@ async def test_full_authority_resolves_pending_approval_cards(tmp_path: Path) ->
     )
     bridge.agent = agent
 
-    async def _handler(args, ctx):  # pragma: no cover - hiç koşmaz
+    async def _handler(args, ctx):  # pragma: no cover - never runs
         return None
 
     spec = ToolSpec(name="shell", description="", input_schema=object_schema({}),
@@ -662,36 +670,36 @@ async def test_full_authority_resolves_pending_approval_cards(tmp_path: Path) ->
 
     config.permissions.mode = "yolo"
     bridge.reload(config)
-    await asyncio.sleep(0)   # call_soon_threadsafe çözümü işlesin
+    await asyncio.sleep(0)   # let the call_soon_threadsafe resolution run
 
     assert fut.done() and fut.result() is True
 
 
 def test_outage_rotates_the_auto_pool() -> None:
-    """Oto kipinde kesinti hata sayılır: cezalı model havuzun sonuna düşer,
-    bir sonraki deneme başka modelle gider."""
+    """In auto mode an outage counts as an error: the penalised model drops
+    to the end of the pool, the next attempt goes with another model."""
     from dornick import automode
 
-    saglik = automode.Saglik()
+    health = automode.Saglik()
     for _ in range(automode.ERROR_THRESHOLD):
-        saglik.save("a/model", False)
+        health.save("a/model", False)
 
-    assert saglik.cezali("a/model")
-    assert saglik.rank(["a/model", "b/model"]) == ["b/model", "a/model"]
+    assert health.cezali("a/model")
+    assert health.rank(["a/model", "b/model"]) == ["b/model", "a/model"]
 
 
 def test_park_records_round_trip(tmp_path: Path) -> None:
     write_park(tmp_path, "20260826T000000Z", "bağlantı yok")
-    kayit = read_park(tmp_path)
-    assert kayit and kayit["session"] == "20260826T000000Z"
+    record = read_park(tmp_path)
+    assert record and record["session"] == "20260826T000000Z"
     clear_park(tmp_path)
     assert read_park(tmp_path) is None
-    clear_park(tmp_path)   # ikinci silme patlamaz
+    clear_park(tmp_path)   # a second delete does not blow up
 
 
 async def test_the_bridge_resumes_a_parked_run(tmp_path: Path) -> None:
-    """Açılışta bulunan park kaydının karşılığı: pump işareti görünce
-    koşuyu kaldığı yerden sürdürür."""
+    """The counterpart of the park record found at startup: on seeing the
+    pump marker it resumes the run where it left off."""
     from dornick.desktop import _PARK_RESUME, Bridge
 
     class _Hub:
@@ -720,31 +728,33 @@ async def test_the_bridge_resumes_a_parked_run(tmp_path: Path) -> None:
     assert [e["type"] for e in hub.events][-1] == "turn_end"
 
 
-# -- sürdürülen oturumun sayaçları --------------------------------------
+# -- counters of a resumed session --------------------------------------
 #
-# Kanıtlanmış yara: uygulama kapanıp açılınca ya da geçmişten bir konuşma
-# sürdürülünce dock'taki bağlam çubuğu ve token sayacı SIFIRDAN başlıyordu.
-# Geçmiş yüklüydü, bağlam gerçekten doluydu — kullanıcı "ne kadar doluyum"
-# bilgisini kaybediyordu. Doğru kaynak oturum günlüğü.
+# Proven wound: when the app closed and reopened, or a conversation from
+# the history was resumed, the context bar and the token counter in the
+# dock started from ZERO. The history was loaded, the context really was
+# full — the user lost the "how full am I" information. The right source
+# is the session log.
 
 
-def _oturum(tmp_path: Path, satirlar: list[tuple[str, str, dict]]):
-    """Verilen mesajlarla bir oturum kurar ve onu taşıyan sahte ajanı döner."""
+def _session_with(tmp_path: Path, rows: list[tuple[str, str, dict]]):
+    """Builds a session with the given messages and returns the fake agent carrying it."""
     from dornick.events import EventLog
     from dornick.session import Session
 
     session = Session(EventLog(tmp_path / "s.jsonl"), "s")
-    for role, text, meta in satirlar:
+    for role, text, meta in rows:
         session.log.message(role, [{"type": "text", "text": text}], **meta)
     return SimpleNamespace(session=session)
 
 
 def test_a_resumed_session_seeds_the_counters_from_real_usage(tmp_path: Path) -> None:
-    """En doğru kaynak: son asistan turunun `usage` meta'sı — sağlayıcının
-    saydığı gerçek rakam. Tahmin bayrağı DÜŞÜK: uydurma yok."""
+    """The most accurate source: the `usage` meta of the last assistant turn
+    — the real figure the provider counted. The estimate flag is DOWN: no
+    making things up."""
     from dornick.desktop import _past_usage
 
-    agent = _oturum(tmp_path, [
+    agent = _session_with(tmp_path, [
         ("user", "merhaba", {}),
         ("assistant", "selam", {"usage": {"prompt_total": 1200, "output": 40}}),
         ("user", "devam", {}),
@@ -753,20 +763,20 @@ def test_a_resumed_session_seeds_the_counters_from_real_usage(tmp_path: Path) ->
 
     status = _past_usage(agent)
 
-    assert status["prompt_total"] == 5400, "SON turun istemi geçerli olan"
-    assert status["girdi"] == 6600, "maliyet: tüm turların istemi toplanır"
-    assert status["output"] == 130, "çıktı oturum boyunca toplanır"
+    assert status["prompt_total"] == 5400, "the LAST turn's prompt is the valid one"
+    assert status["girdi"] == 6600, "cost: the prompts of all turns are summed"
+    assert status["output"] == 130, "output is summed over the session"
     assert status["cagri"] == 2
     assert status["tahmin"] is False
 
 
 def test_an_old_log_without_usage_falls_back_to_an_estimate(tmp_path: Path) -> None:
-    """Usage yoksa (eski günlük ya da sayaç vermeyen sağlayıcı) sıfır
-    göstermektense yaklaşık göstermek doğru — yeter ki tahmin olduğu
-    söylensin. `tahmin` bayrağı arayüzde title'a dönüşüyor."""
+    """Without usage (an old log or a provider that gives no counter)
+    showing an approximation is better than showing zero — as long as it is
+    said to be an estimate. The `tahmin` flag becomes a title in the UI."""
     from dornick.desktop import _past_usage
 
-    agent = _oturum(tmp_path, [
+    agent = _session_with(tmp_path, [
         ("user", "a" * 400, {}),
         ("assistant", "b" * 400, {}),
     ])
@@ -780,19 +790,19 @@ def test_an_old_log_without_usage_falls_back_to_an_estimate(tmp_path: Path) -> N
 
 
 def test_a_fresh_session_really_starts_at_zero(tmp_path: Path) -> None:
-    """Yeni konuşmada tohum YOK: sayaç gerçekten sıfırdan başlamalı."""
+    """NO seed in a new conversation: the counter must really start from zero."""
     from dornick.desktop import _past_usage
 
-    agent = _oturum(tmp_path, [])
+    agent = _session_with(tmp_path, [])
 
     assert _past_usage(agent) == {
         "prompt_total": 0, "girdi": 0, "output": 0, "cagri": 0, "tahmin": False}
 
 
 async def test_the_snapshot_carries_the_resumed_context(tmp_path: Path) -> None:
-    """Köprü sözleşmesi: snapshot bağlam doluluğunu ve harcama toplamını
-    taşıyor — app.js açılışta bunlarla tohumlanıyor (goals/channels
-    tohumlama kalıbının aynısı)."""
+    """Bridge contract: the snapshot carries the context fullness and the
+    spend total — app.js is seeded with these at startup (the same pattern
+    as the goals/channels seeding)."""
     from dornick.desktop import Bridge
 
     class _Hub:
@@ -800,11 +810,11 @@ async def test_the_snapshot_carries_the_resumed_context(tmp_path: Path) -> None:
             pass
 
     bridge = Bridge(_Hub(), asyncio.get_running_loop())
-    agent = _oturum(tmp_path, [
+    agent = _session_with(tmp_path, [
         ("user", "merhaba", {}),
         ("assistant", "selam", {"usage": {"prompt_total": 3000, "output": 50}}),
     ])
-    # snapshot ajanın ayarlarına da bakıyor; gerçek bir Config yeterli.
+    # The snapshot also looks at the agent's settings; a real Config suffices.
     from dornick.config import Config
     from dornick.permissions import PermissionEngine
 
@@ -822,28 +832,28 @@ async def test_the_snapshot_carries_the_resumed_context(tmp_path: Path) -> None:
 
     assert state["prompt_total"] == 3000
     assert state["tahmin"] is False
-    # Kalem kalem kırılım: sabitler + kalan konuşma = prompt_total.
-    kirilim = {p["id"]: p["n"] for p in state["kirilim"]}
-    assert set(kirilim) == {
+    # Item-by-item breakdown: statics + the remaining conversation = prompt_total.
+    breakdown = {p["id"]: p["n"] for p in state["kirilim"]}
+    assert set(breakdown) == {
         "sistem", "arac", "ruh", "yetenek", "mcp", "yardimci", "sohbet"}
-    assert sum(kirilim.values()) == 3000
-    assert kirilim["sohbet"] == 3000 - (
-        kirilim["sistem"] + kirilim["arac"] + kirilim["ruh"]
-        + kirilim["yetenek"] + kirilim["mcp"] + kirilim["yardimci"])
-    # Maliyet çipinin oturum toplamı da aynı kaynaktan tohumlandı.
+    assert sum(breakdown.values()) == 3000
+    assert breakdown["sohbet"] == 3000 - (
+        breakdown["sistem"] + breakdown["arac"] + breakdown["ruh"]
+        + breakdown["yetenek"] + breakdown["mcp"] + breakdown["yardimci"])
+    # The cost chip's session total was seeded from the same source too.
     assert state["kullanim"]["oturum"] == {"girdi": 3000, "cikti": 50, "cagri": 1}
-    # İkinci snapshot (sayfa yenilendi) toplamı ŞİŞİRMEZ: tohum bir kez.
+    # A second snapshot (page reloaded) does NOT INFLATE the total: seeded once.
     assert bridge.snapshot()["kullanim"]["oturum"]["cagri"] == 1
 
 
-def test_baglam_kirilim_puts_the_remainder_in_conversation() -> None:
-    """Sağlayıcı yalnız toplam veriyor: sabitler karakter/4, kalan konuşma."""
+def test_context_breakdown_puts_the_remainder_in_conversation() -> None:
+    """The provider gives only the total: statics are characters/4, the rest is conversation."""
     import json
 
     from dornick.desktop import context_breakdown
 
-    sema = {"name": "x", "description": "yyyy", "input_schema": {}}
-    yetenek = {"name": "sk", "description": "z" * 20, "input_schema": {}}
+    schema = {"name": "x", "description": "yyyy", "input_schema": {}}
+    skill = {"name": "sk", "description": "z" * 20, "input_schema": {}}
     mcp = {"name": "m", "description": "m" * 16, "input_schema": {}}
     task = {"name": "task", "description": "y" * 24, "input_schema": {}}
 
@@ -853,30 +863,30 @@ def test_baglam_kirilim_puts_the_remainder_in_conversation() -> None:
     agent = SimpleNamespace(
         _system=SimpleNamespace(core="S" * 40, identity="R" * 20),
         registry=SimpleNamespace(all=lambda: [
-            SimpleNamespace(name="x", source="", api_schema=lambda: sema),
-            SimpleNamespace(name="sk", source="yetenek", api_schema=lambda: yetenek),
+            SimpleNamespace(name="x", source="", api_schema=lambda: schema),
+            SimpleNamespace(name="sk", source="yetenek", api_schema=lambda: skill),
             SimpleNamespace(name="m", source="mcp:uzak", api_schema=lambda: mcp),
             SimpleNamespace(name="task", source="", api_schema=lambda: task),
         ]),
         brief_schema=False,
     )
-    parcalar = context_breakdown(agent, 1000)
-    by_n = {p["id"]: p["n"] for p in parcalar}
+    parts = context_breakdown(agent, 1000)
+    by_n = {p["id"]: p["n"] for p in parts}
     assert by_n["sistem"] == 10
     assert by_n["ruh"] == 5
-    assert by_n["arac"] == tok(sema)
-    assert by_n["yetenek"] == tok(yetenek)
+    assert by_n["arac"] == tok(schema)
+    assert by_n["yetenek"] == tok(skill)
     assert by_n["mcp"] == tok(mcp)
     assert by_n["yardimci"] == tok(task)
     assert by_n["sohbet"] == 1000 - sum(n for k, n in by_n.items() if k != "sohbet")
-    assert [p["ad"] for p in parcalar] == [
+    assert [p["ad"] for p in parts] == [
         "Sistem istemi", "Araç tanımları", "Ruh / kurallar",
         "Yetenekler", "MCP ve dinamik araçlar", "Yardımcı tanımları", "Konuşma",
     ]
 
 
-def test_baglam_kirilim_scales_when_static_exceeds_total() -> None:
-    """Sabitler sağlayıcı toplamını aşarsa orantılanır — konuşma sıfır kalır."""
+def test_context_breakdown_scales_when_static_exceeds_total() -> None:
+    """If the statics exceed the provider total they are scaled — conversation stays zero."""
     from dornick.desktop import context_breakdown
 
     agent = SimpleNamespace(
@@ -889,7 +899,7 @@ def test_baglam_kirilim_scales_when_static_exceeds_total() -> None:
     assert sum(parts.values()) == 40
 
 
-def test_baglam_kirilim_without_agent_is_all_conversation() -> None:
+def test_context_breakdown_without_agent_is_all_conversation() -> None:
     from dornick.desktop import context_breakdown
 
     parts = {p["id"]: p["n"] for p in context_breakdown(None, 500)}
@@ -898,8 +908,8 @@ def test_baglam_kirilim_without_agent_is_all_conversation() -> None:
     assert parts["yetenek"] == parts["mcp"] == parts["yardimci"] == 0
 
 
-def test_baglam_kirilim_shows_statics_before_the_first_turn() -> None:
-    """İlk turdan önce de sistem/araç görünsün — yüzde sıfır yalanı yok."""
+def test_context_breakdown_shows_statics_before_the_first_turn() -> None:
+    """System/tools must show before the first turn too — no zero-percent lie."""
     from dornick.desktop import context_breakdown
 
     agent = SimpleNamespace(

@@ -1,22 +1,24 @@
-"""Değişiklik defteri: yazma öncesi anlık görüntü + `undo` aracı.
+"""Change ledger: a snapshot before every write + the `undo` tool.
 
-write_file/edit_file/copy_in atölye İÇİNDEKİ bir dosyayı değiştirmeden hemen
-önce buraya uğrar: dosyanın o anki hali
-`.dornick/degisiklikler/<oturum>/<sıra>-<ad>` altına kopyalanır, kayıt
-`kayit.jsonl`e düşer. `undo` aracı bu kayıtları listeler ve tersine uygular.
+Right before write_file/edit_file/copy_in change a file INSIDE the
+workshop they stop here: the file's current state is copied under
+`.dornick/degisiklikler/<session>/<seq>-<name>`, the record lands in
+`kayit.jsonl`. The `undo` tool lists those records and applies them in
+reverse.
 
-İki bilinçli karar:
+Two deliberate decisions:
 
-  * Geri alma da kendini kaydeder. Böylece yanlış bir `restore` bir kez daha
-    `restore` ile ileri alınabilir (redo) — tek yönlü bir merdiven değil.
-  * Görüntü alınamaması yazmayı DURDURMAZ. 2 MB üstü dosyada kopya atlanır
-    ve kayda not düşülür; undo o kaydı geri alamayacağını dürüstçe söyler.
-    Emniyet kemeri takılamıyor diye arabayı durdurmak modeli kilitliyordu.
+  * Undo records itself too. So a wrong `restore` can be moved forward
+    again with one more `restore` (redo) — not a one-way ladder.
+  * Failing to take a snapshot does NOT stop the write. For files above
+    2 MB the copy is skipped and a note is put in the record; undo honestly
+    says it cannot revert that record. Stopping the car because the seat
+    belt would not buckle was locking the model up.
 
-Birikinti: oturum klasörleri süreç başına bir kez, ilk kullanımda süzülür —
-14 günden eski oturumların klasörü sessizce silinir. Transfer paketine bu
-klasör girmez (state_dir atölyenin dışında; transfer._ATLA ayrıca .Dornick'i
-tanır).
+Accumulation: the session folders are filtered once per process, on first
+use — folders of sessions older than 14 days are silently deleted. This
+folder never enters the transfer package (state_dir is outside the
+workshop; transfer._ATLA also recognises .Dornick).
 """
 
 from __future__ import annotations
@@ -33,14 +35,14 @@ from typing import Any
 from .base import ToolContext, ToolRegistry, ToolResult, object_schema
 
 KLASOR = "degisiklikler"
-GORUNTU_TAVANI = 2 * 1024 * 1024   # bundan büyük dosyada görüntü atlanır
+GORUNTU_TAVANI = 2 * 1024 * 1024   # files larger than this get no snapshot
 CLEANUP_DAYS = 14
 LIST_CAP = 20
 
-_GUVENSIZ = re.compile(r"[^\w.\-]+")
+_UNSAFE = re.compile(r"[^\w.\-]+")
 
-# Süreç başına bir kez temizlenen kökler ("açılışta" demenin pratik hali:
-# ilk dosya yazımı geldiğinde, o kökte bir kez).
+# Roots cleaned once per process (the practical form of "at start-up":
+# when the first file write arrives, once for that root).
 _temizlenen: set[Path] = set()
 
 
@@ -49,28 +51,30 @@ def defter(ctx: ToolContext) -> "Defter":
 
 
 class Defter:
-    """Bir oturumun değişiklik kayıtları. Gerçek kaynak diskteki kayit.jsonl —
-    süreç yeniden başlasa da, araç katmanı yeniden kurulsa da kayıp yok."""
+    """One session's change records. The real source is kayit.jsonl on
+    disk — nothing is lost if the process restarts or the tool layer is
+    rebuilt."""
 
-    def __init__(self, kok: Path, oturum: str) -> None:
-        self.kok = kok
-        self.dizin = kok / (_GUVENSIZ.sub("_", oturum or "oturum") or "oturum")
-        self.kayit_yolu = self.dizin / "kayit.jsonl"
+    def __init__(self, root: Path, session: str) -> None:
+        self.root = root
+        self.dizin = root / (_UNSAFE.sub("_", session or "oturum") or "oturum")
+        self.log_path = self.dizin / "kayit.jsonl"
 
-    # -- kayıt ---------------------------------------------------------
+    # -- recording -----------------------------------------------------
 
-    def save(self, path: Path, arac: str) -> None:
-        """Dosya değişmeden HEMEN ÖNCE çağrılır; mevcut hali saklar.
+    def save(self, path: Path, tool: str) -> None:
+        """Called RIGHT BEFORE the file changes; stores its current state.
 
-        Henüz olmayan dosyada "yoktu" kaydı düşer — geri alma o dosyayı siler.
+        For a file that does not exist yet a "yoktu" (did not exist) record
+        is written — undo deletes that file.
         """
-        self._hazirla()
-        kayitlar = self._oku()
-        sira = (kayitlar[-1]["sira"] + 1) if kayitlar else 1
-        kayit: dict[str, Any] = {
-            "sira": sira,
+        self._prepare()
+        records = self._read_records()
+        seq = (records[-1]["sira"] + 1) if records else 1
+        record: dict[str, Any] = {
+            "sira": seq,
             "dosya": str(path),
-            "arac": arac,
+            "arac": tool,
             "zaman": datetime.now(timezone.utc).isoformat(timespec="seconds"),
             "goruntu": None,
             "yoktu": False,
@@ -78,66 +82,68 @@ class Defter:
         }
         try:
             if not path.exists():
-                kayit["yoktu"] = True
+                record["yoktu"] = True
             elif path.stat().st_size > GORUNTU_TAVANI:
-                kayit["atlandi"] = "2 MB üstü, görüntü alınmadı"
+                record["atlandi"] = "2 MB üstü, görüntü alınmadı"
             else:
-                ad = f"{sira:04d}-{(_GUVENSIZ.sub('_', path.name) or 'dosya')[:80]}"
-                shutil.copy2(path, self.dizin / ad)
-                kayit["goruntu"] = ad
+                name = f"{seq:04d}-{(_UNSAFE.sub('_', path.name) or 'dosya')[:80]}"
+                shutil.copy2(path, self.dizin / name)
+                record["goruntu"] = name
         except OSError as exc:
-            kayit["goruntu"] = None
-            kayit["atlandi"] = f"görüntü alınamadı: {exc}"
-        with self.kayit_yolu.open("a", encoding="utf-8") as f:
-            f.write(json.dumps(kayit, ensure_ascii=False) + "\n")
+            record["goruntu"] = None
+            record["atlandi"] = f"görüntü alınamadı: {exc}"
+        with self.log_path.open("a", encoding="utf-8") as f:
+            f.write(json.dumps(record, ensure_ascii=False) + "\n")
 
-    # -- geri alma -----------------------------------------------------
+    # -- undo ----------------------------------------------------------
 
     def list_entries(self, tavan: int = LIST_CAP) -> list[dict[str, Any]]:
-        """Son kayıtlar, en yenisi önce."""
-        return list(reversed(self._oku()[-tavan:]))
+        """The latest records, newest first."""
+        return list(reversed(self._read_records()[-tavan:]))
 
     def undo(self, n: int) -> tuple[list[str], str | None]:
-        """Son n değişikliği tersine uygular; (yapılanlar, hata) döner.
+        """Applies the last n changes in reverse; returns (done, error).
 
-        Önce HEPSİ denetlenir: görüntüsüz (atlanmış) bir kayıt varsa hiçbir
-        şey yapılmaz — yarım geri alma, hiç geri almamaktan kötü.
+        ALL of them are checked first: if there is a record without a
+        snapshot (skipped), nothing is done — a half undo is worse than no
+        undo.
         """
-        kayitlar = self._oku()
-        if not kayitlar:
+        records = self._read_records()
+        if not records:
             return [], "Bu oturumda kayıtlı değişiklik yok."
-        if n > len(kayitlar):
+        if n > len(records):
             return [], (
-                f"Bu oturumda {len(kayitlar)} değişiklik var, {n} geri alınamaz. "
+                f"Bu oturumda {len(records)} değişiklik var, {n} geri alınamaz. "
                 "Önce `undo` ile action=list yap."
             )
 
-        secilen = kayitlar[-n:]
-        for k in secilen:
+        chosen = records[-n:]
+        for k in chosen:
             if k["goruntu"] is None and not k["yoktu"]:
                 return [], (
                     f"{k['sira']}. kayıt geri alınamaz ({k['dosya']}): "
                     f"{k['atlandi'] or 'görüntü yok'}. Hiçbir şey geri alınmadı."
                 )
 
-        yapilan: list[str] = []
-        for k in reversed(secilen):  # en yeniden en eskiye
-            ok, mesaj = self._tek_geri(k)
-            yapilan.append(mesaj)
+        done: list[str] = []
+        for k in reversed(chosen):  # newest to oldest
+            ok, message = self._undo_one(k)
+            done.append(message)
             if not ok:
-                return yapilan, mesaj
-        return yapilan, None
+                return done, message
+        return done, None
 
     def undo_sequence(self, sira: int) -> tuple[list[str], str | None]:
-        """Tek bir kayıt sırasını geri alır (dosya bazlı Keep/Undo).
+        """Reverts a single record sequence (per-file Keep/Undo).
 
-        Tur şeridindeki bir satırın Undo'su buraya düşer: diğer dosyalara
-        dokunulmaz. Kayıt yoksa veya görüntüsüzse hiçbir şey yazılmaz.
+        The Undo of one row in the turn strip lands here: other files are
+        untouched. If the record is missing or has no snapshot nothing is
+        written.
         """
-        kayitlar = self._oku()
-        if not kayitlar:
+        records = self._read_records()
+        if not records:
             return [], "Bu oturumda kayıtlı değişiklik yok."
-        k = next((x for x in kayitlar if int(x.get("sira") or 0) == int(sira)), None)
+        k = next((x for x in records if int(x.get("sira") or 0) == int(sira)), None)
         if k is None:
             return [], f"{sira}. kayıt bulunamadı."
         if k["goruntu"] is None and not k["yoktu"]:
@@ -145,83 +151,83 @@ class Defter:
                 f"{k['sira']}. kayıt geri alınamaz ({k['dosya']}): "
                 f"{k['atlandi'] or 'görüntü yok'}."
             )
-        ok, mesaj = self._tek_geri(k)
-        return ([mesaj], None if ok else mesaj)
+        ok, message = self._undo_one(k)
+        return ([message], None if ok else message)
 
     def undo_file(self, dosya: str) -> tuple[list[str], str | None]:
-        """Bu yol için en son kaydı geri alır (diff kartı Undo)."""
-        hedef = Path(dosya)
+        """Reverts the latest record for this path (diff card Undo)."""
+        target = Path(dosya)
         try:
-            hedef_key = str(hedef.resolve()) if hedef.exists() else str(hedef)
+            target_key = str(target.resolve()) if target.exists() else str(target)
         except OSError:
-            hedef_key = str(hedef)
-        hedef_norm = hedef_key.replace("\\", "/").lower()
-        kayitlar = self._oku()
-        for k in reversed(kayitlar):
-            ham = str(k.get("dosya") or "")
-            if not ham:
+            target_key = str(target)
+        target_norm = target_key.replace("\\", "/").lower()
+        records = self._read_records()
+        for k in reversed(records):
+            raw = str(k.get("dosya") or "")
+            if not raw:
                 continue
-            p = Path(ham)
+            p = Path(raw)
             try:
-                key = str(p.resolve()) if p.exists() else ham
+                key = str(p.resolve()) if p.exists() else raw
             except OSError:
-                key = ham
-            if key.replace("\\", "/").lower() == hedef_norm:
+                key = raw
+            if key.replace("\\", "/").lower() == target_norm:
                 return self.undo_sequence(int(k["sira"]))
         return [], f"Bu oturumda {dosya!r} için kayıt yok."
 
-    def _tek_geri(self, k: dict[str, Any]) -> tuple[bool, str]:
-        """Tek kaydı uygular; (ok, mesaj). Redo için önce kaydet çağırır."""
-        hedef = Path(k["dosya"])
-        self.save(hedef, "undo")
+    def _undo_one(self, k: dict[str, Any]) -> tuple[bool, str]:
+        """Applies one record; (ok, message). Calls save first, for redo."""
+        target = Path(k["dosya"])
+        self.save(target, "undo")
         try:
             if k["yoktu"]:
-                hedef.unlink(missing_ok=True)
-                return True, f"{k['sira']}. kayıt: {hedef} silindi (oluşturma geri alındı)."
-            hedef.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(self.dizin / k["goruntu"], hedef)
-            return True, f"{k['sira']}. kayıt: {hedef} eski haline döndü."
+                target.unlink(missing_ok=True)
+                return True, f"{k['sira']}. kayıt: {target} silindi (oluşturma geri alındı)."
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(self.dizin / k["goruntu"], target)
+            return True, f"{k['sira']}. kayıt: {target} eski haline döndü."
         except OSError as exc:
             return False, f"{k['sira']}. kayıt geri alınamadı: {exc}"
 
-    # -- iç işler ------------------------------------------------------
+    # -- internals -----------------------------------------------------
 
-    def _hazirla(self) -> None:
+    def _prepare(self) -> None:
         self.dizin.mkdir(parents=True, exist_ok=True)
-        if self.kok not in _temizlenen:
-            _temizlenen.add(self.kok)
-            _clean(self.kok, koru=self.dizin)
+        if self.root not in _temizlenen:
+            _temizlenen.add(self.root)
+            _clean(self.root, keep=self.dizin)
 
-    def _oku(self) -> list[dict[str, Any]]:
+    def _read_records(self) -> list[dict[str, Any]]:
         try:
-            metin = self.kayit_yolu.read_text(encoding="utf-8")
+            text = self.log_path.read_text(encoding="utf-8")
         except OSError:
             return []
-        kayitlar = []
-        for satir in metin.splitlines():
+        records = []
+        for line in text.splitlines():
             try:
-                kayitlar.append(json.loads(satir))
+                records.append(json.loads(line))
             except ValueError:
-                continue  # yarım yazılmış satır defteri düşürmesin
-        return kayitlar
+                continue  # a half-written line must not bring the ledger down
+        return records
 
 
-def _clean(kok: Path, koru: Path) -> None:
-    """14 günden eski oturum klasörlerini sessizce siler."""
-    esik = time.time() - CLEANUP_DAYS * 86400
+def _clean(root: Path, keep: Path) -> None:
+    """Silently deletes session folders older than 14 days."""
+    threshold = time.time() - CLEANUP_DAYS * 86400
     try:
-        cocuklar = list(kok.iterdir())
+        children = list(root.iterdir())
     except OSError:
         return
-    for cocuk in cocuklar:
+    for child in children:
         try:
-            if cocuk.is_dir() and cocuk != koru and cocuk.stat().st_mtime < esik:
-                shutil.rmtree(cocuk, ignore_errors=True)
+            if child.is_dir() and child != keep and child.stat().st_mtime < threshold:
+                shutil.rmtree(child, ignore_errors=True)
         except OSError:
             continue
 
 
-# -- araç --------------------------------------------------------------
+# -- tool --------------------------------------------------------------
 
 
 def register(registry: ToolRegistry) -> None:
@@ -257,28 +263,28 @@ ile ileri dönebilirsin (redo).
         action = str(args.get("action") or "")
 
         if action == "list":
-            kayitlar = await asyncio.to_thread(d.list_entries)
-            if not kayitlar:
+            records = await asyncio.to_thread(d.list_entries)
+            if not records:
                 return ToolResult(content="Bu oturumda kayıtlı değişiklik yok.")
-            satirlar = [f"Son {len(kayitlar)} değişiklik (en yenisi önce):", ""]
-            for k in kayitlar:
-                iz = f"{k['sira']:>4}. {k['dosya']} — {k['arac']} ({k['zaman']})"
+            lines = [f"Son {len(records)} değişiklik (en yenisi önce):", ""]
+            for k in records:
+                trace = f"{k['sira']:>4}. {k['dosya']} — {k['arac']} ({k['zaman']})"
                 if k["yoktu"]:
-                    iz += " [dosya yoktu, yeni oluşturuldu]"
+                    trace += " [dosya yoktu, yeni oluşturuldu]"
                 elif k["atlandi"]:
-                    iz += f" [{k['atlandi']}]"
-                satirlar.append(iz)
-            return ToolResult(content="\n".join(satirlar), detail={"count": len(kayitlar)})
+                    trace += f" [{k['atlandi']}]"
+                lines.append(trace)
+            return ToolResult(content="\n".join(lines), detail={"count": len(records)})
 
         if action == "restore":
             n = max(1, int(args.get("n") or 1))
-            yapilan, hata = await asyncio.to_thread(d.undo, n)
-            if hata:
-                govde = "\n".join(yapilan + [hata])
-                return ToolResult.error(govde)
+            done, error = await asyncio.to_thread(d.undo, n)
+            if error:
+                body = "\n".join(done + [error])
+                return ToolResult.error(body)
             return ToolResult(
-                content="\n".join(yapilan),
-                detail={"restored": len(yapilan)},
+                content="\n".join(done),
+                detail={"restored": len(done)},
             )
 
         return ToolResult.error(

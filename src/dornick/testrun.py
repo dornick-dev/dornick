@@ -1,38 +1,40 @@
-"""Proje test koşucusu: yazılan kodu gerçekten ÇALIŞTIR.
+"""Project test runner: actually RUN the code that was written.
 
-Neden var: `tanilar` bir adım attı — yazılan dosya, yazıldığı anda dilinin
-kendi denetleyicisinden geçiyor. Ama denetleyicilerin tavanı sözdizimi.
-Kanıtlanmış yara şu satırdı:
+Why it exists: `diagnostics` took one step — a written file goes through its
+language's own checker the moment it is written. But the ceiling of the
+checkers is syntax. The proven wound was this line:
 
     public function index(): string { return redirect(); }
 
-`php -l` bunu sapasağlam bulur; tarayıcıda TypeError olur. Sözdizimi doğru,
-davranış yanlış. Bu sınıfı görmenin tek yolu kodu koşturmak — ve çoğu
-projede koşturma düzeneği ZATEN var: pytest, phpunit, npm test, go test.
-Ajan onu bulup kullanmıyordu.
+`php -l` finds it perfectly sound; in the browser it is a TypeError. Syntax
+right, behaviour wrong. The only way to see this class is to run the code —
+and most projects ALREADY have the machinery for running: pytest, phpunit,
+npm test, go test. The agent was not finding and using it.
 
-Bu modül üç iş yapar ve üçünde de aynı ilkeye bağlıdır — **kanıt olmadan
-komut üretme**:
+This module does three jobs and follows the same principle in all three —
+**no command without evidence**:
 
-  1. TESPİT: bir klasöre bakar, orada gerçekten bulunan dosyalardan test
-     komutunu çıkarır. `pytest.ini` yoksa pytest önerilmez; `package.json`
-     içinde `scripts.test` yoksa `npm test` uydurulmaz. Hiçbir kanıt yoksa
-     cevap "test düzeneği bulunamadı" — tahmin edilmiş bir komut, olmayan
-     bir güvenceden beterdir: model onu koşturur, patlar, ve neden
-     patladığını sanır.
-  2. NORMALLEŞTİRME: her koşucunun çıktısı başka bir dilde konuşuyor.
-     Ortak bir çerçeveye indiriyoruz: geçen / kalan / atlanan, ilk beş
-     başarısızın adı + mesajı + dosya:satır, çıkış kodu, süre. Ham çıktı
-     baş+son kırpılıyor — ortadaki yığın izleri modele bir şey öğretmiyor.
-  3. DÜRÜSTLÜK: sonuç metni asla "her şey çalışıyor" demez. "12 test geçti,
-     0 kaldı — bu, koşulan testlerin kapsadığı kadarını doğrular" der. Test
-     yoksa "test yok; doğrulama için uygulamayı gerçekten çalıştır" der.
+  1. DETECTION: look at a folder and derive the test command from files that
+     are really there. No `pytest.ini`, no pytest suggestion; no
+     `scripts.test` in `package.json`, no invented `npm test`. With no
+     evidence at all the answer is "no test setup found" — a guessed command
+     is worse than a missing guarantee: the model runs it, it blows up, and
+     the model believes it knows why.
+  2. NORMALISATION: every runner's output speaks a different language. We
+     reduce them to a common frame: passed / failed / skipped, the first five
+     failures' name + message + file:line, exit code, duration. The raw
+     output is trimmed head+tail — the stack traces in the middle teach the
+     model nothing.
+  3. HONESTY: the result text never says "everything works". It says "12
+     tests passed, 0 failed — this verifies as much as the tests that ran
+     cover". With no tests it says "no tests; to verify, actually run the
+     application".
 
-Ayrıca `hatirlatma()`: dosya yazıldıktan sonra tek satırlık bir not. Test
-koşmak PAHALI (saniyeler, bazen dakikalar) — her yazımda kendiliğinden
-koşturmak turu dondurur ve kullanıcıyı bekletir. Onun yerine modele
-düzeneğin VARLIĞI bildiriliyor; koşturup koşturmamaya o karar veriyor.
-Bilgi bedava, koşum pahalı.
+Also `hatirlatma()`: a one-line note after a file is written. Running tests is
+EXPENSIVE (seconds, sometimes minutes) — running them automatically on every
+write would freeze the turn and keep the user waiting. Instead the model is
+told that the setup EXISTS; whether to run it is the model's decision.
+Information is free, a run is expensive.
 """
 
 from __future__ import annotations
@@ -49,50 +51,51 @@ from pathlib import Path
 
 from . import environment, diagnostics
 
-# Test koşumuna verilen varsayılan süre. Bir tanı 20 saniyeyle sınırlıydı;
-# test takımı ondan uzun sürer ama sonsuz da değildir. Model `zaman_asimi`
-# ile değiştirebilir, tavan bellidir: hiç bitmeyen bir komut turu dondurur.
+# Default time budget for a test run. A diagnostic was capped at 20 seconds;
+# a test suite takes longer than that, but not forever either. The model can
+# change it via `zaman_asimi`; the ceiling is fixed: a command that never ends
+# freezes the turn.
 DEFAULT_TIMEOUT = 300.0
 MAX_TIMEOUT = 1800.0
 
-# Modele giden ham çıktının tavanı. Baş ve son korunuyor: koşucular başta
-# ne koştuklarını, sonda özeti yazar; ortadaki yığın izleri düzeltmeye
-# yaramıyor.
-MAX_HAM = 4000
+# Ceiling on the raw output sent to the model. Head and tail are kept: runners
+# print what they ran at the start and the summary at the end; the stack
+# traces in the middle do not help with fixing.
+MAX_RAW = 4000
 
-# Sonuçta adı geçen en fazla başarısız test. Gerisi sayıyla özetlenir —
-# ilki düzeltilince çoğu zaman kalanlar da düşer.
+# At most this many failing tests are named in the result. The rest is
+# summarised as a count — once the first is fixed the others usually fall too.
 MAX_FAILURES = 5
 
-# Proje kökü ararken yukarı doğru en fazla kaç kat çıkılır. Dipsiz bir
-# tarama, kullanıcının ev klasörünü "proje" ilan edebilirdi.
-MAX_YUKARI = 8
+# How many levels to climb at most while looking for the project root. A
+# bottomless scan could declare the user's home folder a "project".
+MAX_UPWARD = 8
 
 
-# -- veri tipleri -------------------------------------------------------
+# -- data types ---------------------------------------------------------
 
 
 @dataclass(slots=True)
-class Duzenek:
-    """Bir klasörde BULUNAN test/çalıştırma düzeneği.
+class Harness:
+    """The test/run setup FOUND in a folder.
 
-    `argv` mantıksal adlarla kurulur ("py", "php", "npm"); gerçek yol
-    koşum anında çözülür. Böylece tespit saf kalır ve makinede o araç
-    kurulu olmasa da sınanabilir.
+    `argv` is built with logical names ("py", "php", "npm"); the real path is
+    resolved at run time. That keeps detection pure and testable even on a
+    machine where the tool is not installed.
     """
 
     ekosistem: str          # python | node | php | go | rust | dotnet
-    tur: str                # "test" (gerçek takım) | "saglik" (ucuz denetim)
-    etiket: str             # insan/model okur hali: "py -m pytest -q"
+    tur: str                # "test" (a real suite) | "saglik" (cheap check)
+    etiket: str             # human/model-readable form: "py -m pytest -q"
     argv: list[str]
     kok: Path
-    kanit: str              # hangi dosya bunu kanıtladı
-    # 2 = açık test yapılandırması, 1 = zayıf kanıt (yalnız tests/ klasörü,
-    # sağlık komutu). Sıralamada kullanılıyor.
+    kanit: str              # which file proved this
+    # 2 = explicit test configuration, 1 = weak evidence (only a tests/
+    # folder, a health command). Used for ordering.
     guven: int = 2
     notlar: list[str] = field(default_factory=list)
-    # Boş değilse: düzenek var ama koşulamaz (bağımlılık kurulu değil gibi).
-    # Kurulum ÖNERMİYORUZ; yalnızca durumu bildiriyoruz.
+    # If non-empty: the setup exists but cannot run (dependencies not
+    # installed, for instance). We do NOT suggest installing; we only report.
     engel: str = ""
 
     @property
@@ -102,23 +105,23 @@ class Duzenek:
 
 @dataclass(slots=True)
 class Failure:
-    """Tek bir başarısız test: adı, mesajı, yeri."""
+    """A single failing test: its name, message, location."""
 
-    ad: str
-    mesaj: str = ""
-    yer: str = ""   # "dosya:satır" — çıkarılabildiyse
+    name: str
+    message: str = ""
+    location: str = ""   # "file:line" — when it could be extracted
 
-    def metin(self) -> str:
-        parcalar = [self.ad]
-        if self.yer:
-            parcalar.append(f"({self.yer})")
-        satir = " ".join(parcalar)
-        return f"{satir}: {self.mesaj}" if self.mesaj else satir
+    def text(self) -> str:
+        parts = [self.name]
+        if self.location:
+            parts.append(f"({self.location})")
+        line = " ".join(parts)
+        return f"{line}: {self.message}" if self.message else line
 
 
 @dataclass(slots=True)
 class Count:
-    """Koşucudan okunan sayılar. `okundu` False ise hiçbiri güvenilir değil."""
+    """Numbers read from the runner. If `okundu` is False none is reliable."""
 
     gecen: int = 0
     kalan: int = 0
@@ -129,7 +132,7 @@ class Count:
 
 @dataclass(slots=True)
 class Result:
-    """Bir koşumun normalleştirilmiş sonucu."""
+    """The normalised result of one run."""
 
     ekosistem: str
     etiket: str
@@ -148,10 +151,10 @@ class Result:
         return self.status == "kostu" and self.cikis_kodu == 0
 
     def metin(self) -> str:
-        """Modele giden metin.
+        """The text that goes to the model.
 
-        Üç kural: (1) sayılar varsa önce onlar, (2) başarısızlar adıyla
-        sanıyla, (3) kapanış cümlesi asla "her şey çalışıyor" demez.
+        Three rules: (1) if there are numbers they come first, (2) failures
+        by name, (3) the closing sentence never says "everything works".
         """
         if self.status == "kesildi":
             return (
@@ -170,48 +173,48 @@ class Result:
         if self.status == "baslatilamadi":
             return f"{self.etiket} başlatılamadı — {self.ham}"
 
-        basliklar = [f"{self.etiket} koştu · çıkış kodu {self.cikis_kodu} · "
-                     f"{self.sure:.1f} sn"]
-        s = self.sayim
-        if s.okundu:
-            parcalar = [f"{s.gecen} geçti", f"{s.kalan} kaldı"]
-            if s.atlanan:
-                parcalar.append(f"{s.atlanan} atlandı")
-            basliklar.append(", ".join(parcalar) + ".")
+        headline = [f"{self.etiket} koştu · çıkış kodu {self.cikis_kodu} · "
+                    f"{self.sure:.1f} sn"]
+        c = self.sayim
+        if c.okundu:
+            parts = [f"{c.gecen} geçti", f"{c.kalan} kaldı"]
+            if c.atlanan:
+                parts.append(f"{c.atlanan} atlandı")
+            headline.append(", ".join(parts) + ".")
         else:
-            basliklar.append(
+            headline.append(
                 "Çıktıdan test sayısı çıkarılamadı — aşağıdaki ham çıktıya bak."
             )
 
-        satirlar = [" ".join(basliklar)]
+        lines = [" ".join(headline)]
 
         if self.basarisizlar:
-            satirlar.append("")
-            satirlar.append("Başarısız olanlar:")
-            for b in self.basarisizlar[:MAX_FAILURES]:
-                satirlar.append(f"  {b.metin()}")
-            kalan = len(self.basarisizlar) - MAX_FAILURES
-            if kalan > 0:
-                satirlar.append(f"  ... {kalan} başarısız test daha.")
+            lines.append("")
+            lines.append("Başarısız olanlar:")
+            for failure in self.basarisizlar[:MAX_FAILURES]:
+                lines.append(f"  {failure.text()}")
+            remaining = len(self.basarisizlar) - MAX_FAILURES
+            if remaining > 0:
+                lines.append(f"  ... {remaining} başarısız test daha.")
 
-        satirlar.append("")
-        satirlar.append(self._shutdown())
+        lines.append("")
+        lines.append(self._shutdown())
 
-        for not_ in self.notlar:
-            satirlar.append(not_)
+        for note in self.notlar:
+            lines.append(note)
 
         if self.ham:
-            satirlar.append("")
-            satirlar.append("Ham çıktı:")
-            satirlar.append(self.ham)
-        return "\n".join(satirlar)
+            lines.append("")
+            lines.append("Ham çıktı:")
+            lines.append(self.ham)
+        return "\n".join(lines)
 
     def _shutdown(self) -> str:
-        """Sonucun ne KADAR şey kanıtladığını söyleyen cümle.
+        """The sentence that says HOW MUCH the result proves.
 
-        Buradaki her kelime bilinçli. "Testler geçti" demek, modele
-        olmayan bir güvence verir; o güvenceyle kullanıcıya "hazır" der ve
-        hata kullanıcının tarayıcısında patlar.
+        Every word here is deliberate. Saying "tests passed" gives the model a
+        guarantee that does not exist; with that guarantee it tells the user
+        "ready" and the error blows up in the user's browser.
         """
         if self.tur == "saglik":
             if self.cikis_kodu == 0:
@@ -221,23 +224,23 @@ class Result:
             return ("Sağlık denetimi başarısız — uygulama bu komutu bile "
                     "cevaplayamadı. Testlerden önce bunu çöz.")
 
-        s = self.sayim
-        if self.cikis_kodu != 0 or s.kalan or self.basarisizlar:
+        c = self.sayim
+        if self.cikis_kodu != 0 or c.kalan or self.basarisizlar:
             return ("Bu hatalar senin dokunduğun projede. Düzeltmeden "
                     "'çalışıyor' deme.")
-        if s.okundu and s.toplam == 0:
+        if c.okundu and c.toplam == 0:
             return ("Hiç test koşmadı — düzenek var ama içi boş. Bu koşum "
                     "hiçbir şey doğrulamıyor; doğrulama için uygulamayı "
                     "gerçekten çalıştır.")
-        if s.okundu:
-            return (f"{s.gecen} test geçti, 0 kaldı — bu, koşulan testlerin "
+        if c.okundu:
+            return (f"{c.gecen} test geçti, 0 kaldı — bu, koşulan testlerin "
                     "kapsadığı kadarını doğrular. Testlerin dokunmadığı yollar "
                     "hâlâ denenmemiş durumda.")
         return ("Komut sıfır çıkış koduyla bitti. Test sayısı okunamadığı "
                 "için ne kadarının doğrulandığı belli değil — ham çıktıya bak.")
 
     def detay(self) -> dict:
-        """Arayüzün rozet çizebilmesi için makine okur hali."""
+        """Machine-readable form so the UI can draw a badge."""
         return {
             "ekosistem": self.ekosistem,
             "komut": self.etiket,
@@ -250,733 +253,737 @@ class Result:
             "atlanan": self.sayim.atlanan,
             "okundu": self.sayim.okundu,
             "basarisizlar": [
-                {"ad": b.ad, "mesaj": b.mesaj, "yer": b.yer}
-                for b in self.basarisizlar[:MAX_FAILURES]
+                {"ad": f.name, "mesaj": f.message, "yer": f.location}
+                for f in self.basarisizlar[:MAX_FAILURES]
             ],
         }
 
 
-# -- proje kökü ---------------------------------------------------------
+# -- project root -------------------------------------------------------
 
-# Bir klasörü "proje" yapan izler. Sıra önemsiz; varlıkları yeter.
-KOK_IZLERI = (
+# Markers that make a folder a "project". Order does not matter; presence does.
+ROOT_MARKERS = (
     ".git", "pyproject.toml", "package.json", "composer.json", "go.mod",
     "Cargo.toml", "pytest.ini", "setup.py", "phpunit.xml", "phpunit.xml.dist",
     "phpunit.dist.xml", "spark",
 )
 
 
-def project_root(yol: Path | str) -> Path:
-    """Verilen yoldan yukarı doğru en yakın proje kökü.
+def project_root(path: Path | str) -> Path:
+    """The nearest project root upwards from the given path.
 
-    Model çoğu zaman elindeki tek somut şeyi verir: az önce yazdığı dosyanın
-    yolu. `app/Controllers/Home.php` bir proje değil; kökü bulmak bizim
-    işimiz. Hiçbir iz yoksa başlangıç klasörü aynen dönüyor — uydurma bir
-    üst klasöre tırmanmıyoruz.
+    The model usually gives the only concrete thing it has: the path of the
+    file it just wrote. `app/Controllers/Home.php` is not a project; finding
+    the root is our job. With no marker at all the starting folder is
+    returned as is — we do not climb to an invented parent.
     """
-    yol = Path(yol).expanduser()
-    baslangic = yol if yol.is_dir() else yol.parent
-    aday = baslangic
-    for _ in range(MAX_YUKARI):
+    path = Path(path).expanduser()
+    start = path if path.is_dir() else path.parent
+    candidate = start
+    for _ in range(MAX_UPWARD):
         try:
-            if any((aday / iz).exists() for iz in KOK_IZLERI):
-                return aday
-        except OSError:  # pragma: no cover - erişilemeyen klasör
+            if any((candidate / marker).exists() for marker in ROOT_MARKERS):
+                return candidate
+        except OSError:  # pragma: no cover - inaccessible folder
             break
-        if aday.parent == aday:
+        if candidate.parent == candidate:
             break
-        aday = aday.parent
-    return baslangic
+        candidate = candidate.parent
+    return start
 
 
-# -- tespit -------------------------------------------------------------
+# -- detection ----------------------------------------------------------
 
 
-def _python(kok: Path) -> Duzenek | None:
-    """pytest düzeneği var mı? Kanıt sırasıyla: yapılandırma, sonra tests/.
+def _python(root: Path) -> Harness | None:
+    """Is there a pytest setup? Evidence in order: configuration, then tests/.
 
-    Yapılandırma açık bir beyandır ("bu projede pytest kullanılıyor").
-    `tests/` klasörü daha zayıf bir kanıt: içinde `test_*.py` bulunmadıkça
-    saymıyoruz — belge, sabit veri ya da elle çalıştırılan betikler de
-    `tests/` altında durabiliyor.
+    Configuration is an explicit declaration ("this project uses pytest"). A
+    `tests/` folder is weaker evidence: we do not count it unless it holds a
+    `test_*.py` — documents, fixed data or hand-run scripts can live under
+    `tests/` too.
     """
-    ad, etiket_exe = ("py", "py") if sys.platform == "win32" else ("python3", "python3")
-    argv = [ad, "-m", "pytest", "-q"]
-    etiket = f"{etiket_exe} -m pytest -q"
+    name, label_exe = ("py", "py") if sys.platform == "win32" else ("python3", "python3")
+    argv = [name, "-m", "pytest", "-q"]
+    label = f"{label_exe} -m pytest -q"
 
-    if (kok / "pytest.ini").is_file():
-        return Duzenek("python", "test", etiket, argv, kok, "pytest.ini", 2)
+    if (root / "pytest.ini").is_file():
+        return Harness("python", "test", label, argv, root, "pytest.ini", 2)
 
-    tomlyol = kok / "pyproject.toml"
-    if tomlyol.is_file():
+    toml_path = root / "pyproject.toml"
+    if toml_path.is_file():
         try:
-            metin = tomlyol.read_text(encoding="utf-8", errors="replace")
+            text = toml_path.read_text(encoding="utf-8", errors="replace")
         except OSError:
-            metin = ""
-        if "[tool.pytest" in metin:
-            return Duzenek("python", "test", etiket, argv, kok,
+            text = ""
+        if "[tool.pytest" in text:
+            return Harness("python", "test", label, argv, root,
                            "pyproject.toml [tool.pytest]", 2)
 
-    for dosya, stamp in (("setup.cfg", "[tool:pytest]"), ("tox.ini", "[pytest]")):
-        aday = kok / dosya
-        if aday.is_file():
+    for file_name, stamp in (("setup.cfg", "[tool:pytest]"), ("tox.ini", "[pytest]")):
+        candidate = root / file_name
+        if candidate.is_file():
             try:
-                if stamp in aday.read_text(encoding="utf-8", errors="replace"):
-                    return Duzenek("python", "test", etiket, argv, kok,
-                                   f"{dosya} {stamp}", 2)
+                if stamp in candidate.read_text(encoding="utf-8", errors="replace"):
+                    return Harness("python", "test", label, argv, root,
+                                   f"{file_name} {stamp}", 2)
             except OSError:  # pragma: no cover
                 pass
 
-    for klasor in ("tests", "test"):
-        dizin = kok / klasor
-        if not dizin.is_dir():
+    for folder in ("tests", "test"):
+        directory = root / folder
+        if not directory.is_dir():
             continue
         try:
-            varmi = any(
+            present = any(
                 p.name.startswith("test_") or p.name.endswith("_test.py")
-                for p in dizin.iterdir() if p.suffix == ".py"
+                for p in directory.iterdir() if p.suffix == ".py"
             )
         except OSError:  # pragma: no cover
             continue
-        if varmi:
-            return Duzenek("python", "test", etiket, argv, kok,
-                           f"{klasor}/ altında test_*.py", 1)
+        if present:
+            return Harness("python", "test", label, argv, root,
+                           f"{folder}/ altında test_*.py", 1)
     return None
 
 
-# npm'in `npm init` ile ürettiği yer tutucu betik. Bunu "test düzeneği" saymak,
-# olmayan bir güvence uydurmak olurdu — komut zaten kasten 1 ile çıkıyor.
-_NPM_YERTUTUCU = "no test specified"
+# The placeholder script `npm init` generates. Counting it as a "test setup"
+# would invent a guarantee that does not exist — the command deliberately
+# exits with 1 anyway.
+_NPM_PLACEHOLDER = "no test specified"
 
 
-def _node(kok: Path) -> Duzenek | None:
-    """package.json'daki `scripts.test`. Yoksa düzenek de yok.
+def _node(root: Path) -> Harness | None:
+    """`scripts.test` in package.json. Without it there is no setup.
 
-    `scripts.build` ve `scripts.dev` de okunuyor ama komut olarak
-    önerilmiyor: not olarak geçiliyor, çünkü model bunları bilmeden
-    "projeyi nasıl derlerim" diye kabukta el yordamıyla dolaşıyordu.
+    `scripts.build` and `scripts.dev` are read too but not offered as
+    commands: they are passed along as a note, because without knowing them
+    the model was groping around the shell asking "how do I build this
+    project".
     """
-    paket = kok / "package.json"
-    if not paket.is_file():
+    package = root / "package.json"
+    if not package.is_file():
         return None
     try:
-        veri = json.loads(paket.read_text(encoding="utf-8", errors="replace"))
+        data = json.loads(package.read_text(encoding="utf-8", errors="replace"))
     except (OSError, ValueError):
         return None
-    if not isinstance(veri, dict):
+    if not isinstance(data, dict):
         return None
-    betikler = veri.get("scripts")
-    if not isinstance(betikler, dict):
-        betikler = {}
+    scripts = data.get("scripts")
+    if not isinstance(scripts, dict):
+        scripts = {}
 
-    notlar: list[str] = []
-    digerleri = [ad for ad in ("build", "dev", "start", "lint")
-                 if isinstance(betikler.get(ad), str)]
-    if digerleri:
-        notlar.append("package.json'daki diğer betikler: " + ", ".join(digerleri) + ".")
+    notes: list[str] = []
+    others = [name for name in ("build", "dev", "start", "lint")
+              if isinstance(scripts.get(name), str)]
+    if others:
+        notes.append("package.json'daki diğer betikler: " + ", ".join(others) + ".")
 
-    test = betikler.get("test")
+    test = scripts.get("test")
     if not isinstance(test, str) or not test.strip():
         return None
-    if _NPM_YERTUTUCU in test:
+    if _NPM_PLACEHOLDER in test:
         return None
 
-    engel = ""
-    if not (kok / "node_modules").is_dir():
-        # Yalnızca BİLDİRİYORUZ. "npm install çalıştır" demek makineyi
-        # düzenlemektir ve modelin işi değil.
-        engel = ("node_modules klasörü yok — bağımlılıklar bu makinede kurulu "
-                 "değil, `npm test` çalışmaz.")
-    return Duzenek("node", "test", "npm test", ["npm", "test"], kok,
+    blocker = ""
+    if not (root / "node_modules").is_dir():
+        # We only REPORT. Saying "run npm install" is editing the machine,
+        # and that is not the model's job.
+        blocker = ("node_modules klasörü yok — bağımlılıklar bu makinede kurulu "
+                   "değil, `npm test` çalışmaz.")
+    return Harness("node", "test", "npm test", ["npm", "test"], root,
                    f"package.json scripts.test = {test.strip()[:60]}", 2,
-                   notlar, engel)
+                   notes, blocker)
 
 
-_PHPUNIT_YAPILANDIRMA = ("phpunit.xml", "phpunit.xml.dist", "phpunit.dist.xml")
+_PHPUNIT_CONFIGS = ("phpunit.xml", "phpunit.xml.dist", "phpunit.dist.xml")
 
 
-def _phpunit_ikili(kok: Path) -> str | None:
-    """vendor/bin/phpunit — Windows'ta .bat kardeşi de olabilir."""
-    for ad in ("vendor/bin/phpunit", "vendor/bin/phpunit.bat"):
-        if (kok / ad).is_file():
+def _phpunit_binary(root: Path) -> str | None:
+    """vendor/bin/phpunit — on Windows it may have a .bat sibling."""
+    for name in ("vendor/bin/phpunit", "vendor/bin/phpunit.bat"):
+        if (root / name).is_file():
             return "vendor/bin/phpunit"
     return None
 
 
-def _php(kok: Path) -> Duzenek | None:
-    """phpunit; yoksa CodeIgniter 4 projesinde ucuz bir sağlık komutu.
+def _php(root: Path) -> Harness | None:
+    """phpunit; failing that, a cheap health command in a CodeIgniter 4 project.
 
-    `php spark routes` test değildir ve öyle sunulmuyor: uygulamayı ayağa
-    kaldırır, yapılandırmayı okur, rotaları basar. Bir CI4 projesinde
-    bozuk bir `Config`, eksik bir sınıf ya da sözdizimi kazası bu komutu
-    düşürür — yani sıfır maliyetli, gerçek bir kanıt. Testin yerini
-    tutmadığını sonucun kapanış cümlesi açıkça söylüyor.
+    `php spark routes` is not a test and is not presented as one: it boots
+    the application, reads the configuration, prints the routes. In a CI4
+    project a broken `Config`, a missing class or a syntax accident brings
+    this command down — that is zero-cost, real evidence. The result's
+    closing sentence says explicitly that it is no substitute for tests.
     """
-    yapilandirma = next(
-        (ad for ad in _PHPUNIT_YAPILANDIRMA if (kok / ad).is_file()), None
+    config = next(
+        (name for name in _PHPUNIT_CONFIGS if (root / name).is_file()), None
     )
-    ikili = _phpunit_ikili(kok)
+    binary = _phpunit_binary(root)
 
-    if yapilandirma or ikili:
-        kanit = yapilandirma or "vendor/bin/phpunit"
-        engel = ""
-        if ikili is None:
-            engel = (f"{yapilandirma} var ama vendor/bin/phpunit yok — composer "
-                     "bağımlılıkları bu makinede kurulu değil.")
-        return Duzenek("php", "test", "php vendor/bin/phpunit",
-                       ["php", "vendor/bin/phpunit"], kok, kanit, 2,
-                       [], engel)
+    if config or binary:
+        evidence = config or "vendor/bin/phpunit"
+        blocker = ""
+        if binary is None:
+            blocker = (f"{config} var ama vendor/bin/phpunit yok — composer "
+                       "bağımlılıkları bu makinede kurulu değil.")
+        return Harness("php", "test", "php vendor/bin/phpunit",
+                       ["php", "vendor/bin/phpunit"], root, evidence, 2,
+                       [], blocker)
 
-    if (kok / "spark").is_file():
-        return Duzenek("php", "saglik", "php spark routes",
-                       ["php", "spark", "routes"], kok, "spark (CodeIgniter 4)", 1,
+    if (root / "spark").is_file():
+        return Harness("php", "saglik", "php spark routes",
+                       ["php", "spark", "routes"], root, "spark (CodeIgniter 4)", 1,
                        ["Bu bir test takımı değil; phpunit yapılandırması "
                         "bulunamadı."])
     return None
 
 
-def _go(kok: Path) -> Duzenek | None:
-    if not (kok / "go.mod").is_file():
+def _go(root: Path) -> Harness | None:
+    if not (root / "go.mod").is_file():
         return None
-    return Duzenek("go", "test", "go test ./...",
-                   ["go", "test", "./..."], kok, "go.mod", 2)
+    return Harness("go", "test", "go test ./...",
+                   ["go", "test", "./..."], root, "go.mod", 2)
 
 
-def _rust(kok: Path) -> Duzenek | None:
-    if not (kok / "Cargo.toml").is_file():
+def _rust(root: Path) -> Harness | None:
+    if not (root / "Cargo.toml").is_file():
         return None
-    return Duzenek("rust", "test", "cargo test",
-                   ["cargo", "test"], kok, "Cargo.toml", 2)
+    return Harness("rust", "test", "cargo test",
+                   ["cargo", "test"], root, "Cargo.toml", 2)
 
 
-def _dotnet(kok: Path) -> Duzenek | None:
-    """.sln ya da .csproj kanıtı. Kök klasörde aranıyor, ağaç taranmıyor."""
+def _dotnet(root: Path) -> Harness | None:
+    """.sln or .csproj evidence. Looked for in the root folder; the tree is not walked."""
     try:
-        aday = next(
-            (p for p in sorted(kok.iterdir())
+        candidate = next(
+            (p for p in sorted(root.iterdir())
              if p.suffix in (".sln", ".csproj", ".fsproj")), None
         )
     except OSError:  # pragma: no cover
         return None
-    if aday is None:
+    if candidate is None:
         return None
-    return Duzenek("dotnet", "test", "dotnet test",
-                   ["dotnet", "test"], kok, aday.name, 2)
+    return Harness("dotnet", "test", "dotnet test",
+                   ["dotnet", "test"], root, candidate.name, 2)
 
 
-_TESPITCILER = (_python, _php, _node, _go, _rust, _dotnet)
+_DETECTORS = (_python, _php, _node, _go, _rust, _dotnet)
 
 
-def tespit_hepsi(kok: Path | str) -> list[Duzenek]:
-    """Klasörde bulunan TÜM düzenekler, güvene göre sıralı.
+def tespit_hepsi(root: Path | str) -> list[Harness]:
+    """ALL setups found in the folder, ordered by confidence.
 
-    Tek proje birden çok ekosistem taşıyabiliyor (PHP arka uç + npm ile
-    derlenen ön yüz). Hepsini görüp birini seçmek, ilkine takılıp kalmaktan
-    iyi.
+    A single project can carry several ecosystems (a PHP back end + a front
+    end built with npm). Seeing them all and choosing one beats getting stuck
+    on the first.
     """
-    kok = Path(kok).expanduser()
-    if not kok.is_dir():
+    root = Path(root).expanduser()
+    if not root.is_dir():
         return []
-    bulunan: list[Duzenek] = []
-    for bul in _TESPITCILER:
+    found: list[Harness] = []
+    for detect in _DETECTORS:
         try:
-            if (duzenek := bul(kok)) is not None:
-                bulunan.append(duzenek)
-        except OSError:  # pragma: no cover - erişilemeyen dosya tespiti durdurmaz
+            if (harness := detect(root)) is not None:
+                found.append(harness)
+        except OSError:  # pragma: no cover - an inaccessible file does not stop detection
             continue
-    bulunan.sort(key=lambda d: (-d.guven, d.tur != "test"))
-    return bulunan
+    found.sort(key=lambda h: (-h.guven, h.tur != "test"))
+    return found
 
 
-def tespit(kok: Path | str) -> Duzenek | None:
-    """En güçlü kanıta sahip düzenek; hiçbiri yoksa None."""
-    hepsi = tespit_hepsi(kok)
-    return hepsi[0] if hepsi else None
+def tespit(root: Path | str) -> Harness | None:
+    """The setup with the strongest evidence; None if there is none."""
+    all_found = tespit_hepsi(root)
+    return all_found[0] if all_found else None
 
 
-def tespit_metni(kok: Path) -> str:
-    """Düzenek bulunamadığında söylenen şey. Uydurma komut YOK."""
+def tespit_metni(root: Path) -> str:
+    """What is said when no setup is found. NO invented command."""
     return (
-        f"{kok} altında test düzeneği bulunamadı — ne pytest yapılandırması, "
+        f"{root} altında test düzeneği bulunamadı — ne pytest yapılandırması, "
         "ne package.json'da `scripts.test`, ne phpunit, ne go.mod/Cargo.toml. "
         "Sana bir komut uydurmayacağım. Bu değişikliği doğrulamak istiyorsan "
         "uygulamayı gerçekten çalıştır (sayfayı aç, betiği koştur) ve çıktısına bak."
     )
 
 
-# -- çıktı normalleştirme ----------------------------------------------
+# -- output normalisation ----------------------------------------------
 #
-# Ayrı, saf fonksiyonlar: koşucu bu makinede kurulu olmasa da ayrıştırmanın
-# doğruluğu sınanabilsin. `tanilar`daki ayrıştırıcılarla aynı gerekçe —
-# gerçek çıktı metinlerini teste gömüp öyle doğruluyoruz.
+# Separate, pure functions: so that parsing can be verified even when the
+# runner is not installed on this machine. Same rationale as the parsers in
+# `diagnostics` — we embed real output texts in the tests and verify against
+# those.
 
-_TEMIZ = re.compile(r"^[=\-_\s]+|[=\-_\s]+$")
-
-
-def _sat(metin: str) -> list[str]:
-    return metin.replace("\r\n", "\n").replace("\r", "\n").split("\n")
+_STRIP_EDGES = re.compile(r"^[=\-_\s]+|[=\-_\s]+$")
 
 
-# pytest -q son satırı: "1 failed, 6 passed in 0.42s" (kalın kipte `=` ile
-# çevrili gelir; iki biçimi de tanıyoruz).
-_PYTEST_OZET = re.compile(r"\b(\d+)\s+(passed|failed|errors?|skipped|xfailed|"
-                          r"xpassed|deselected)\b")
-_PYTEST_SURE = re.compile(r"\bin\s+[\d.]+\s*s(econds)?\b")
-_PYTEST_HATA = re.compile(r"^(FAILED|ERROR)\s+(?P<ad>\S+?)(?:\s+-\s+(?P<mesaj>.*))?$")
-# FAILURES bölümündeki başlık: "____________ test_falan ____________"
-_PYTEST_BASLIK = re.compile(r"^_{3,}\s+(?P<ad>.+?)\s+_{3,}$")
-_PYTEST_YER = re.compile(r"^(?P<dosya>[A-Za-z]?[^\s:]*\.py):(?P<satir>\d+):\s")
+def _lines(text: str) -> list[str]:
+    return text.replace("\r\n", "\n").replace("\r", "\n").split("\n")
 
 
-def _pytest_yerleri(cikti: str) -> dict[str, str]:
-    """FAILURES bloklarından test adı → "dosya:satır" eşlemesi.
+# pytest -q last line: "1 failed, 6 passed in 0.42s" (in bold mode it comes
+# wrapped in `=`; we recognise both forms).
+_PYTEST_SUMMARY = re.compile(r"\b(\d+)\s+(passed|failed|errors?|skipped|xfailed|"
+                             r"xpassed|deselected)\b")
+_PYTEST_DURATION = re.compile(r"\bin\s+[\d.]+\s*s(econds)?\b")
+_PYTEST_FAILED = re.compile(r"^(FAILED|ERROR)\s+(?P<name>\S+?)(?:\s+-\s+(?P<message>.*))?$")
+# Header in the FAILURES section: "____________ test_something ____________"
+_PYTEST_HEADER = re.compile(r"^_{3,}\s+(?P<name>.+?)\s+_{3,}$")
+_PYTEST_LOCATION = re.compile(r"^(?P<file>[A-Za-z]?[^\s:]*\.py):(?P<line>\d+):\s")
 
-    Blok başlığı testin adını, blok içindeki son `dosya.py:12:` satırı da
-    hatanın patladığı yeri veriyor. Bulamazsak boş bırakıyoruz — yer
-    uydurmak, yanlış dosyayı açtırmak demek.
+
+def _pytest_locations(output: str) -> dict[str, str]:
+    """Test name → "file:line" mapping from the FAILURES blocks.
+
+    The block header gives the test's name; the last `file.py:12:` line in
+    the block gives where the error blew up. If we cannot find it we leave
+    it empty — inventing a location means opening the wrong file.
     """
-    yerler: dict[str, str] = {}
-    ad: str | None = None
-    for satir in _sat(cikti):
-        if m := _PYTEST_BASLIK.match(satir.strip()):
-            ad = m["ad"].strip()
+    locations: dict[str, str] = {}
+    name: str | None = None
+    for line in _lines(output):
+        if m := _PYTEST_HEADER.match(line.strip()):
+            name = m["name"].strip()
             continue
-        if ad and (m := _PYTEST_YER.match(satir.strip())):
-            yerler[ad] = f"{m['dosya']}:{m['satir']}"
-    return yerler
+        if name and (m := _PYTEST_LOCATION.match(line.strip())):
+            locations[name] = f"{m['file']}:{m['line']}"
+    return locations
 
 
-def _oku_pytest(cikti: str) -> tuple[Count, list[Failure]]:
-    sayim = Count()
-    for satir in reversed(_sat(cikti)):
-        duz = _TEMIZ.sub("", satir).strip()
-        if not duz or not _PYTEST_SURE.search(duz):
+def _read_pytest(output: str) -> tuple[Count, list[Failure]]:
+    count = Count()
+    for line in reversed(_lines(output)):
+        flat = _STRIP_EDGES.sub("", line).strip()
+        if not flat or not _PYTEST_DURATION.search(flat):
             continue
-        parcalar = _PYTEST_OZET.findall(duz)
-        if not parcalar:
-            if "no tests ran" in duz:
-                sayim.okundu = True
+        parts = _PYTEST_SUMMARY.findall(flat)
+        if not parts:
+            if "no tests ran" in flat:
+                count.okundu = True
             break
-        for sayi, tur in parcalar:
-            n = int(sayi)
-            if tur == "passed":
-                sayim.gecen += n
-            elif tur in ("failed", "error", "errors"):
-                sayim.kalan += n
-            elif tur in ("skipped", "deselected"):
-                sayim.atlanan += n
-            elif tur == "xfailed":
-                sayim.atlanan += n
-            elif tur == "xpassed":
-                sayim.gecen += n
-        sayim.okundu = True
+        for number, kind in parts:
+            n = int(number)
+            if kind == "passed":
+                count.gecen += n
+            elif kind in ("failed", "error", "errors"):
+                count.kalan += n
+            elif kind in ("skipped", "deselected"):
+                count.atlanan += n
+            elif kind == "xfailed":
+                count.atlanan += n
+            elif kind == "xpassed":
+                count.gecen += n
+        count.okundu = True
         break
-    sayim.toplam = sayim.gecen + sayim.kalan + sayim.atlanan
+    count.toplam = count.gecen + count.kalan + count.atlanan
 
-    yerler = _pytest_yerleri(cikti)
-    basarisizlar: list[Failure] = []
-    for satir in _sat(cikti):
-        if not (m := _PYTEST_HATA.match(satir.strip())):
+    locations = _pytest_locations(output)
+    failures: list[Failure] = []
+    for line in _lines(output):
+        if not (m := _PYTEST_FAILED.match(line.strip())):
             continue
-        ad = m["ad"]
-        kisa = ad.rsplit("::", 1)[-1]
-        dosya = ad.split("::", 1)[0]
-        basarisizlar.append(
-            Failure(ad, (m["mesaj"] or "").strip(), yerler.get(kisa, dosya))
+        name = m["name"]
+        short = name.rsplit("::", 1)[-1]
+        file_name = name.split("::", 1)[0]
+        failures.append(
+            Failure(name, (m["message"] or "").strip(), locations.get(short, file_name))
         )
-    return sayim, basarisizlar
+    return count, failures
 
 
-# phpunit kapanışı iki biçimde gelir:
+# The phpunit closing comes in two forms:
 #   OK (5 tests, 7 assertions)
 #   Tests: 5, Assertions: 7, Errors: 1, Failures: 2, Skipped: 1.
 _PHPUNIT_OK = re.compile(r"^OK\s*\((?P<tests>\d+) tests?", re.M)
-_PHPUNIT_OZET = re.compile(r"^Tests:\s*(?P<tests>\d+)(?P<kuyruk>.*)$", re.M)
-_PHPUNIT_PARCA = re.compile(r"\b(Failures|Errors|Skipped|Incomplete|Risky):\s*(\d+)")
+_PHPUNIT_SUMMARY = re.compile(r"^Tests:\s*(?P<tests>\d+)(?P<tail>.*)$", re.M)
+_PHPUNIT_PART = re.compile(r"\b(Failures|Errors|Skipped|Incomplete|Risky):\s*(\d+)")
 # "1) App\Tests\FooTest::testBar"
-_PHPUNIT_BASLIK = re.compile(r"^(?P<no>\d+)\)\s+(?P<ad>\S+::\S+|\S+)\s*$")
-_PHPUNIT_YER = re.compile(r"^(?P<dosya>.+\.php):(?P<satir>\d+)\s*$")
+_PHPUNIT_HEADER = re.compile(r"^(?P<no>\d+)\)\s+(?P<name>\S+::\S+|\S+)\s*$")
+_PHPUNIT_LOCATION = re.compile(r"^(?P<file>.+\.php):(?P<line>\d+)\s*$")
 
 
-def _oku_phpunit(cikti: str) -> tuple[Count, list[Failure]]:
-    sayim = Count()
-    if m := _PHPUNIT_OK.search(cikti):
-        sayim.gecen = int(m["tests"])
-        sayim.toplam = sayim.gecen
-        sayim.okundu = True
-    elif m := _PHPUNIT_OZET.search(cikti):
-        sayim.toplam = int(m["tests"])
-        sayilar = {ad: int(deger)
-                   for ad, deger in _PHPUNIT_PARCA.findall(m["kuyruk"])}
-        sayim.kalan = sayilar.get("Failures", 0) + sayilar.get("Errors", 0)
-        sayim.atlanan = (sayilar.get("Skipped", 0) + sayilar.get("Incomplete", 0)
-                         + sayilar.get("Risky", 0))
-        sayim.gecen = max(0, sayim.toplam - sayim.kalan - sayim.atlanan)
-        sayim.okundu = True
-    elif "No tests executed" in cikti:
-        sayim.okundu = True
+def _read_phpunit(output: str) -> tuple[Count, list[Failure]]:
+    count = Count()
+    if m := _PHPUNIT_OK.search(output):
+        count.gecen = int(m["tests"])
+        count.toplam = count.gecen
+        count.okundu = True
+    elif m := _PHPUNIT_SUMMARY.search(output):
+        count.toplam = int(m["tests"])
+        numbers = {name: int(value)
+                   for name, value in _PHPUNIT_PART.findall(m["tail"])}
+        count.kalan = numbers.get("Failures", 0) + numbers.get("Errors", 0)
+        count.atlanan = (numbers.get("Skipped", 0) + numbers.get("Incomplete", 0)
+                         + numbers.get("Risky", 0))
+        count.gecen = max(0, count.toplam - count.kalan - count.atlanan)
+        count.okundu = True
+    elif "No tests executed" in output:
+        count.okundu = True
 
-    basarisizlar: list[Failure] = []
-    ad: str | None = None
-    mesajlar: list[str] = []
-    yer = ""
+    failures: list[Failure] = []
+    name: str | None = None
+    messages: list[str] = []
+    location = ""
 
-    def kapat() -> None:
-        if ad is not None:
-            basarisizlar.append(
-                Failure(ad, " ".join(mesajlar).strip()[:300], yer))
+    def close() -> None:
+        if name is not None:
+            failures.append(
+                Failure(name, " ".join(messages).strip()[:300], location))
 
-    for ham in _sat(cikti):
-        satir = ham.strip()
-        if m := _PHPUNIT_BASLIK.match(satir):
-            kapat()
-            ad, mesajlar, yer = m["ad"], [], ""
+    for raw in _lines(output):
+        line = raw.strip()
+        if m := _PHPUNIT_HEADER.match(line):
+            close()
+            name, messages, location = m["name"], [], ""
             continue
-        if ad is None:
+        if name is None:
             continue
-        if m := _PHPUNIT_YER.match(satir):
-            yer = f"{Path(m['dosya']).name}:{m['satir']}"
+        if m := _PHPUNIT_LOCATION.match(line):
+            location = f"{Path(m['file']).name}:{m['line']}"
             continue
-        if satir.startswith(("FAILURES!", "ERRORS!", "OK ", "Tests:")):
-            kapat()
-            ad = None
+        if line.startswith(("FAILURES!", "ERRORS!", "OK ", "Tests:")):
+            close()
+            name = None
             continue
-        if satir:
-            mesajlar.append(satir)
-    kapat()
-    return sayim, basarisizlar
+        if line:
+            messages.append(line)
+    close()
+    return count, failures
 
 
-# jest / vitest / mocha / node --test — `npm test` arkasında hangisinin
-# durduğunu bilmiyoruz, o yüzden sırayla deniyoruz.
-_JEST_OZET = re.compile(r"^Tests:\s+(?P<govde>.+)$", re.M)
-_JEST_PARCA = re.compile(r"(\d+)\s+(failed|passed|skipped|todo|total|pending)")
-_JEST_HATA = re.compile(r"^\s*●\s+(?P<ad>.+?)\s*$", re.M)
-_VITEST_OZET = re.compile(r"^\s*Tests\s+(?P<govde>.*?\(\d+\))\s*$", re.M)
-_VITEST_PARCA = re.compile(r"(\d+)\s+(failed|passed|skipped|todo)")
-_MOCHA_GECEN = re.compile(r"^\s*(\d+)\s+passing\b", re.M)
-_MOCHA_KALAN = re.compile(r"^\s*(\d+)\s+failing\b", re.M)
-_MOCHA_ATLANAN = re.compile(r"^\s*(\d+)\s+pending\b", re.M)
+# jest / vitest / mocha / node --test — we do not know which one stands
+# behind `npm test`, so we try them in turn.
+_JEST_SUMMARY = re.compile(r"^Tests:\s+(?P<body>.+)$", re.M)
+_JEST_PART = re.compile(r"(\d+)\s+(failed|passed|skipped|todo|total|pending)")
+_JEST_FAILED = re.compile(r"^\s*●\s+(?P<name>.+?)\s*$", re.M)
+_VITEST_SUMMARY = re.compile(r"^\s*Tests\s+(?P<body>.*?\(\d+\))\s*$", re.M)
+_VITEST_PART = re.compile(r"(\d+)\s+(failed|passed|skipped|todo)")
+_MOCHA_PASSED = re.compile(r"^\s*(\d+)\s+passing\b", re.M)
+_MOCHA_FAILED = re.compile(r"^\s*(\d+)\s+failing\b", re.M)
+_MOCHA_SKIPPED = re.compile(r"^\s*(\d+)\s+pending\b", re.M)
 _NODETEST = re.compile(r"^#\s*(pass|fail|skipped|tests)\s+(\d+)\s*$", re.M)
-# mocha başarısızlığı iki satıra yayılır:
+# A mocha failure spans two lines:
 #   1) Hesap makinesi
 #        toplar:
 #      AssertionError: expected 3 to equal 4
-_MOCHA_BASLIK = re.compile(r"^\s*\d+\)\s+(?P<ad>.+?)\s*$")
+_MOCHA_HEADER = re.compile(r"^\s*\d+\)\s+(?P<name>.+?)\s*$")
 
 
-def _mocha_basarisizlar(cikti: str) -> list[Failure]:
-    """Mocha'nın iki satıra yayılan başarısızlık başlıklarını birleştirir."""
-    satirlar = _sat(cikti)
-    bulunan: list[Failure] = []
-    for i, satir in enumerate(satirlar):
-        if not (m := _MOCHA_BASLIK.match(satir)):
+def _mocha_failures(output: str) -> list[Failure]:
+    """Joins mocha's failure headers that span two lines."""
+    lines = _lines(output)
+    found: list[Failure] = []
+    for i, line in enumerate(lines):
+        if not (m := _MOCHA_HEADER.match(line)):
             continue
-        ad = m["ad"].strip()
-        mesaj = ""
-        for sonraki in satirlar[i + 1: i + 5]:
-            duz = sonraki.strip()
-            if not duz:
+        name = m["name"].strip()
+        message = ""
+        for following in lines[i + 1: i + 5]:
+            flat = following.strip()
+            if not flat:
                 continue
-            if duz.endswith(":") and not ad.endswith(":"):
-                ad = f"{ad} › {duz.rstrip(':')}"
+            if flat.endswith(":") and not name.endswith(":"):
+                name = f"{name} › {flat.rstrip(':')}"
                 continue
-            mesaj = duz[:200]
+            message = flat[:200]
             break
-        bulunan.append(Failure(ad, mesaj))
-    return bulunan
+        found.append(Failure(name, message))
+    return found
 
 
-def _oku_node(cikti: str) -> tuple[Count, list[Failure]]:
-    sayim = Count()
-    basarisizlar: list[Failure] = []
+def _read_node(output: str) -> tuple[Count, list[Failure]]:
+    count = Count()
+    failures: list[Failure] = []
 
-    if m := _JEST_OZET.search(cikti):
-        for sayi, tur in _JEST_PARCA.findall(m["govde"]):
-            n = int(sayi)
-            if tur == "passed":
-                sayim.gecen = n
-            elif tur == "failed":
-                sayim.kalan = n
-            elif tur in ("skipped", "todo", "pending"):
-                sayim.atlanan += n
-            elif tur == "total":
-                sayim.toplam = n
-        sayim.okundu = True
-        basarisizlar = [Failure(a.strip()) for a in _JEST_HATA.findall(cikti)]
-    elif m := _VITEST_OZET.search(cikti):
-        for sayi, tur in _VITEST_PARCA.findall(m["govde"]):
-            n = int(sayi)
-            if tur == "passed":
-                sayim.gecen = n
-            elif tur == "failed":
-                sayim.kalan = n
+    if m := _JEST_SUMMARY.search(output):
+        for number, kind in _JEST_PART.findall(m["body"]):
+            n = int(number)
+            if kind == "passed":
+                count.gecen = n
+            elif kind == "failed":
+                count.kalan = n
+            elif kind in ("skipped", "todo", "pending"):
+                count.atlanan += n
+            elif kind == "total":
+                count.toplam = n
+        count.okundu = True
+        failures = [Failure(a.strip()) for a in _JEST_FAILED.findall(output)]
+    elif m := _VITEST_SUMMARY.search(output):
+        for number, kind in _VITEST_PART.findall(m["body"]):
+            n = int(number)
+            if kind == "passed":
+                count.gecen = n
+            elif kind == "failed":
+                count.kalan = n
             else:
-                sayim.atlanan += n
-        sayim.okundu = True
-    elif (gecen := _MOCHA_GECEN.search(cikti)) or (
-            kalan := _MOCHA_KALAN.search(cikti)):
-        atlanan = _MOCHA_ATLANAN.search(cikti)
-        kalan = _MOCHA_KALAN.search(cikti)
-        sayim.gecen = int(gecen.group(1)) if gecen else 0
-        sayim.kalan = int(kalan.group(1)) if kalan else 0
-        sayim.atlanan = int(atlanan.group(1)) if atlanan else 0
-        sayim.okundu = True
-        basarisizlar = _mocha_basarisizlar(cikti)
-    elif parcalar := _NODETEST.findall(cikti):
-        veri = {tur: int(sayi) for tur, sayi in parcalar}
-        sayim.gecen = veri.get("pass", 0)
-        sayim.kalan = veri.get("fail", 0)
-        sayim.atlanan = veri.get("skipped", 0)
-        sayim.toplam = veri.get("tests", 0)
-        sayim.okundu = True
+                count.atlanan += n
+        count.okundu = True
+    elif (passed := _MOCHA_PASSED.search(output)) or (
+            failed := _MOCHA_FAILED.search(output)):
+        skipped = _MOCHA_SKIPPED.search(output)
+        failed = _MOCHA_FAILED.search(output)
+        count.gecen = int(passed.group(1)) if passed else 0
+        count.kalan = int(failed.group(1)) if failed else 0
+        count.atlanan = int(skipped.group(1)) if skipped else 0
+        count.okundu = True
+        failures = _mocha_failures(output)
+    elif parts := _NODETEST.findall(output):
+        data = {kind: int(number) for kind, number in parts}
+        count.gecen = data.get("pass", 0)
+        count.kalan = data.get("fail", 0)
+        count.atlanan = data.get("skipped", 0)
+        count.toplam = data.get("tests", 0)
+        count.okundu = True
 
-    if not sayim.toplam:
-        sayim.toplam = sayim.gecen + sayim.kalan + sayim.atlanan
-    return sayim, basarisizlar
+    if not count.toplam:
+        count.toplam = count.gecen + count.kalan + count.atlanan
+    return count, failures
 
 
-# go test: `-v` olmadan tek tek test adı basılmaz; sayıyı uydurmuyoruz.
-_GO_FAIL = re.compile(r"^\s*--- FAIL:\s+(?P<ad>\S+)", re.M)
+# go test: without `-v` individual test names are not printed; we do not
+# invent the count.
+_GO_FAIL = re.compile(r"^\s*--- FAIL:\s+(?P<name>\S+)", re.M)
 _GO_PASS = re.compile(r"^\s*--- PASS:\s+\S+", re.M)
-_GO_PAKET = re.compile(r"^(ok|FAIL)\s+(?P<paket>\S+)", re.M)
-_GO_YER = re.compile(r"^\s+(?P<dosya>\S+\.go):(?P<satir>\d+):\s*(?P<mesaj>.*)$", re.M)
+_GO_PACKAGE = re.compile(r"^(ok|FAIL)\s+(?P<package>\S+)", re.M)
+_GO_LOCATION = re.compile(r"^\s+(?P<file>\S+\.go):(?P<line>\d+):\s*(?P<message>.*)$", re.M)
 
 
-def _oku_go(cikti: str) -> tuple[Count, list[Failure]]:
-    sayim = Count()
-    kalanlar = _GO_FAIL.findall(cikti)
-    gecenler = _GO_PASS.findall(cikti)
-    if kalanlar or gecenler:
-        sayim.gecen = len(gecenler)
-        sayim.kalan = len(kalanlar)
-        sayim.toplam = sayim.gecen + sayim.kalan
-        sayim.okundu = True
+def _read_go(output: str) -> tuple[Count, list[Failure]]:
+    count = Count()
+    failed = _GO_FAIL.findall(output)
+    passed = _GO_PASS.findall(output)
+    if failed or passed:
+        count.gecen = len(passed)
+        count.kalan = len(failed)
+        count.toplam = count.gecen + count.kalan
+        count.okundu = True
 
-    yerler = _GO_YER.findall(cikti)
-    basarisizlar = []
-    for i, ad in enumerate(kalanlar):
-        dosya, satir, mesaj = yerler[i] if i < len(yerler) else ("", "", "")
-        basarisizlar.append(
-            Failure(ad, mesaj.strip(), f"{dosya}:{satir}" if dosya else "")
+    locations = _GO_LOCATION.findall(output)
+    failures = []
+    for i, name in enumerate(failed):
+        file_name, line, message = locations[i] if i < len(locations) else ("", "", "")
+        failures.append(
+            Failure(name, message.strip(), f"{file_name}:{line}" if file_name else "")
         )
-    return sayim, basarisizlar
+    return count, failures
 
 
 # cargo: "test result: FAILED. 3 passed; 1 failed; 0 ignored; ..."
-_CARGO_SONUC = re.compile(
-    r"^test result:\s+\w+\.\s+(?P<gecen>\d+) passed;\s*(?P<kalan>\d+) failed;"
-    r"\s*(?P<atlanan>\d+) ignored", re.M)
-_CARGO_HATA = re.compile(r"^\s{4}(?P<ad>[\w:]+)\s*$", re.M)
+_CARGO_RESULT = re.compile(
+    r"^test result:\s+\w+\.\s+(?P<passed>\d+) passed;\s*(?P<failed>\d+) failed;"
+    r"\s*(?P<skipped>\d+) ignored", re.M)
+_CARGO_FAILED = re.compile(r"^\s{4}(?P<name>[\w:]+)\s*$", re.M)
 
 
-def _oku_cargo(cikti: str) -> tuple[Count, list[Failure]]:
-    sayim = Count()
-    for m in _CARGO_SONUC.finditer(cikti):
-        sayim.gecen += int(m["gecen"])
-        sayim.kalan += int(m["kalan"])
-        sayim.atlanan += int(m["atlanan"])
-        sayim.okundu = True
-    sayim.toplam = sayim.gecen + sayim.kalan + sayim.atlanan
+def _read_cargo(output: str) -> tuple[Count, list[Failure]]:
+    count = Count()
+    for m in _CARGO_RESULT.finditer(output):
+        count.gecen += int(m["passed"])
+        count.kalan += int(m["failed"])
+        count.atlanan += int(m["skipped"])
+        count.okundu = True
+    count.toplam = count.gecen + count.kalan + count.atlanan
 
-    basarisizlar: list[Failure] = []
-    if "\nfailures:\n" in cikti and sayim.kalan:
-        kuyruk = cikti.rsplit("\nfailures:\n", 1)[1]
-        for ad in _CARGO_HATA.findall(kuyruk):
-            if ad not in [b.ad for b in basarisizlar]:
-                basarisizlar.append(Failure(ad))
-    return sayim, basarisizlar
+    failures: list[Failure] = []
+    if "\nfailures:\n" in output and count.kalan:
+        tail = output.rsplit("\nfailures:\n", 1)[1]
+        for name in _CARGO_FAILED.findall(tail):
+            if name not in [f.name for f in failures]:
+                failures.append(Failure(name))
+    return count, failures
 
 
 # dotnet: "Failed!  - Failed:     1, Passed:     2, Skipped:     0, Total:     3"
-_DOTNET_OZET = re.compile(
-    r"Failed:\s*(?P<kalan>\d+),\s*Passed:\s*(?P<gecen>\d+),"
-    r"\s*Skipped:\s*(?P<atlanan>\d+),\s*Total:\s*(?P<toplam>\d+)")
-_DOTNET_HATA = re.compile(r"^\s*(?:X|Failed)\s+(?P<ad>\S+)", re.M)
+_DOTNET_SUMMARY = re.compile(
+    r"Failed:\s*(?P<failed>\d+),\s*Passed:\s*(?P<passed>\d+),"
+    r"\s*Skipped:\s*(?P<skipped>\d+),\s*Total:\s*(?P<total>\d+)")
+_DOTNET_FAILED = re.compile(r"^\s*(?:X|Failed)\s+(?P<name>\S+)", re.M)
 
 
-def _oku_dotnet(cikti: str) -> tuple[Count, list[Failure]]:
-    sayim = Count()
-    for m in _DOTNET_OZET.finditer(cikti):
-        sayim.kalan += int(m["kalan"])
-        sayim.gecen += int(m["gecen"])
-        sayim.atlanan += int(m["atlanan"])
-        sayim.toplam += int(m["toplam"])
-        sayim.okundu = True
-    basarisizlar = [Failure(ad) for ad in _DOTNET_HATA.findall(cikti)]
-    return sayim, basarisizlar
+def _read_dotnet(output: str) -> tuple[Count, list[Failure]]:
+    count = Count()
+    for m in _DOTNET_SUMMARY.finditer(output):
+        count.kalan += int(m["failed"])
+        count.gecen += int(m["passed"])
+        count.atlanan += int(m["skipped"])
+        count.toplam += int(m["total"])
+        count.okundu = True
+    failures = [Failure(name) for name in _DOTNET_FAILED.findall(output)]
+    return count, failures
 
 
-_OKUYUCULAR = {
-    "python": _oku_pytest,
-    "php": _oku_phpunit,
-    "node": _oku_node,
-    "go": _oku_go,
-    "rust": _oku_cargo,
-    "dotnet": _oku_dotnet,
+_READERS = {
+    "python": _read_pytest,
+    "php": _read_phpunit,
+    "node": _read_node,
+    "go": _read_go,
+    "rust": _read_cargo,
+    "dotnet": _read_dotnet,
 }
 
 
-def normalize(ekosistem: str, cikti: str) -> tuple[Count, list[Failure]]:
-    """Ham çıktıyı ortak çerçeveye indirir.
+def normalize(ecosystem: str, output: str) -> tuple[Count, list[Failure]]:
+    """Reduces raw output to the common frame.
 
-    `ekosistem` "oto" ise okuyucular sırayla denenir ve sayı okuyabilen ilki
-    kazanır — elle verilen komutta hangi koşucunun konuştuğunu bilmiyoruz.
-    Hiçbiri okuyamazsa `Sayim.okundu` False kalıyor ve sonuç metni bunu
-    açıkça söylüyor: uydurulmuş bir "0 kaldı" olmuyor.
+    If `ecosystem` is "oto" the readers are tried in turn and the first one
+    that can read a count wins — with a hand-given command we do not know
+    which runner is speaking. If none can read it, `Count.okundu` stays False
+    and the result text says so explicitly: there is no invented "0 failed".
     """
-    if ekosistem in _OKUYUCULAR:
-        return _OKUYUCULAR[ekosistem](cikti)
-    for oku in (_oku_pytest, _oku_phpunit, _oku_node, _oku_cargo, _oku_dotnet,
-                _oku_go):
-        sayim, basarisizlar = oku(cikti)
-        if sayim.okundu:
-            return sayim, basarisizlar
+    if ecosystem in _READERS:
+        return _READERS[ecosystem](output)
+    for read in (_read_pytest, _read_phpunit, _read_node, _read_cargo, _read_dotnet,
+                 _read_go):
+        count, failures = read(output)
+        if count.okundu:
+            return count, failures
     return Count(), []
 
 
-def kirp(metin: str, limit: int = MAX_HAM) -> str:
-    """Baş ve son korunarak kırpma.
+def trim(text: str, limit: int = MAX_RAW) -> str:
+    """Trimming that keeps the head and the tail.
 
-    Koşucular başta ne koştuklarını, sonda özeti yazar; ortadaki yığın
-    izleri modele bir şey öğretmiyor ve pencereyi yiyor.
+    Runners print what they ran at the start and the summary at the end; the
+    stack traces in the middle teach the model nothing and eat the window.
     """
-    metin = metin.strip()
-    if len(metin) <= limit:
-        return metin
-    bas = metin[: limit // 2].rstrip()
-    son = metin[-(limit // 2):].lstrip()
-    atilan = len(metin) - len(bas) - len(son)
-    return f"{bas}\n\n... [{atilan} karakter kırpıldı] ...\n\n{son}"
+    text = text.strip()
+    if len(text) <= limit:
+        return text
+    head = text[: limit // 2].rstrip()
+    tail = text[-(limit // 2):].lstrip()
+    dropped = len(text) - len(head) - len(tail)
+    return f"{head}\n\n... [{dropped} karakter kırpıldı] ...\n\n{tail}"
 
 
-# -- koşum --------------------------------------------------------------
+# -- running ------------------------------------------------------------
 
 
-def _parse(ad: str) -> str | None:
-    """Mantıksal araç adını gerçek çalıştırılabilire çevirir.
+def _parse(name: str) -> str | None:
+    """Turns the logical tool name into a real executable.
 
-    `php` için `tanilar.denetleyici_yolu` kullanılıyor: Windows'ta PHP
-    çoğu zaman PATH'te değil (XAMPP, Laragon, winget) ve orada zaten
-    aranıyor. Aynı bilgiyi ikinci kez yazmanın anlamı yok.
+    For `php`, `diagnostics.checker_path` is used: on Windows PHP is often
+    not on PATH (XAMPP, Laragon, winget) and it is already looked for there.
+    There is no point in writing the same knowledge twice.
     """
-    if ad in ("py", "python3", "python"):
-        return shutil.which(ad) or sys.executable
-    if ad == "php":
+    if name in ("py", "python3", "python"):
+        return shutil.which(name) or sys.executable
+    if name == "php":
         return diagnostics.checker_path("php")
-    return shutil.which(ad)
+    return shutil.which(name)
 
 
 async def kos(
-    duzenek: Duzenek,
+    harness: Harness,
     *,
     zaman_asimi: float = DEFAULT_TIMEOUT,
     cancel: asyncio.Event | None = None,
 ) -> Result:
-    """Düzeneği koşturur ve normalleştirilmiş sonucu döndürür."""
-    if not duzenek.kosulabilir:
-        return Result(duzenek.ekosistem, duzenek.etiket, str(duzenek.kok),
-                     "yok", ham=duzenek.engel, notlar=list(duzenek.notlar),
-                     tur=duzenek.tur)
+    """Runs the setup and returns the normalised result."""
+    if not harness.kosulabilir:
+        return Result(harness.ekosistem, harness.etiket, str(harness.kok),
+                      "yok", ham=harness.engel, notlar=list(harness.notlar),
+                      tur=harness.tur)
 
-    exe = _parse(duzenek.argv[0])
+    exe = _parse(harness.argv[0])
     if exe is None:
         return Result(
-            duzenek.ekosistem, duzenek.etiket, str(duzenek.kok), "baslatilamadi",
-            ham=f"`{duzenek.argv[0]}` bu makinede bulunamadı.",
-            notlar=list(duzenek.notlar), tur=duzenek.tur,
+            harness.ekosistem, harness.etiket, str(harness.kok), "baslatilamadi",
+            ham=f"`{harness.argv[0]}` bu makinede bulunamadı.",
+            notlar=list(harness.notlar), tur=harness.tur,
         )
-    return await _calistir(
-        [exe, *duzenek.argv[1:]], duzenek.kok, duzenek.ekosistem, duzenek.etiket,
-        zaman_asimi=zaman_asimi, cancel=cancel, notlar=list(duzenek.notlar),
-        tur=duzenek.tur,
+    return await _run(
+        [exe, *harness.argv[1:]], harness.kok, harness.ekosistem, harness.etiket,
+        timeout=zaman_asimi, cancel=cancel, notes=list(harness.notlar),
+        kind=harness.tur,
     )
 
 
 async def kos_komut(
-    komut: str,
-    kok: Path,
+    command: str,
+    root: Path,
     *,
     ekosistem: str = "oto",
     zaman_asimi: float = DEFAULT_TIMEOUT,
     cancel: asyncio.Event | None = None,
 ) -> Result:
-    """Elle verilen komutu koşturur (tespitin geçersiz kılınması).
+    """Runs a hand-given command (overriding detection).
 
-    Kabuk üzerinden çalışıyor: `npm test -- --filter x` gibi bir dizede
-    boruların ve bayrakların çalışması bekleniyor. İzin kapısı bu komutu
-    özne olarak görüyor (`permissions.SUBJECT_KEYS` içinde `komut` var).
+    Goes through the shell: in a string like `npm test -- --filter x` pipes
+    and flags are expected to work. The permission gate sees this command as
+    the subject (`komut` is in `permissions.SUBJECT_KEYS`).
     """
-    return await _calistir(None, kok, ekosistem, komut, kabuk=komut,
-                           zaman_asimi=zaman_asimi, cancel=cancel)
+    return await _run(None, root, ekosistem, command, shell=command,
+                      timeout=zaman_asimi, cancel=cancel)
 
 
-async def _oldur(proc) -> None:
-    """Süreci ve ALTINDAKİLERİ sonlandırır.
+async def _kill(proc) -> None:
+    """Terminates the process and EVERYTHING beneath it.
 
-    Gövde `ortam`a taşındı: aynı yara kancalarda da çıktı (kabuğu öldürmek
-    asıl süreci bırakıyor, borular açık kaldığı için çağıran asılı
-    kalıyor), yani bu bir test koşucusu meselesi değil, bu ortamda alt
-    süreç öldürmenin doğru yolu.
+    The body moved to `environment`: the same wound showed up in the hooks
+    (killing the shell leaves the real process behind; because the pipes stay
+    open the caller hangs), so this is not a test-runner matter but the right
+    way to kill a subprocess in this environment.
     """
     await environment.kill_tree(proc)
 
 
-async def _calistir(
+async def _run(
     argv: list[str] | None,
-    kok: Path,
-    ekosistem: str,
-    etiket: str,
+    root: Path,
+    ecosystem: str,
+    label: str,
     *,
-    kabuk: str | None = None,
-    zaman_asimi: float,
+    shell: str | None = None,
+    timeout: float,
     cancel: asyncio.Event | None,
-    notlar: list[str] | None = None,
-    tur: str = "test",
+    notes: list[str] | None = None,
+    kind: str = "test",
 ) -> Result:
-    """Ortak koşum yolu: başlat, kesmeyle yarıştır, çıktıyı normalleştir.
+    """The shared run path: start, race against cancellation, normalise output.
 
-    Konsol penceresi açtırmayan bayraklarla (`ortam.sessiz_bayraklar`): dornick
-    pythonw altında koşarken her test koşumu ekranda bir cmd penceresi
-    parlatırdı.
+    With flags that keep a console window from opening
+    (`environment.quiet_flags`): while dornick runs under pythonw every test
+    run used to flash a cmd window on the screen.
     """
-    zaman_asimi = max(1.0, min(float(zaman_asimi), MAX_TIMEOUT))
-    baslangic = time.monotonic()
-    ortak = dict(
-        cwd=str(kok),
+    timeout = max(1.0, min(float(timeout), MAX_TIMEOUT))
+    start = time.monotonic()
+    common = dict(
+        cwd=str(root),
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.STDOUT,
-        # Renk kaçış dizileri ayrıştırmayı bozuyor ve modele çöp gidiyor.
+        # Colour escape sequences break parsing and send junk to the model.
         env={**os.environ, "NO_COLOR": "1", "FORCE_COLOR": "0",
              "PYTEST_ADDOPTS": "--color=no"},
         **environment.quiet_flags(),
     )
-    if sys.platform != "win32":  # pragma: no cover - POSIX yolu
-        # Kendi süreç grubu: zaman aşımında bütün ağaç tek hamlede ölsün.
-        ortak["start_new_session"] = True
+    if sys.platform != "win32":  # pragma: no cover - POSIX path
+        # Own process group: on timeout the whole tree dies in one stroke.
+        common["start_new_session"] = True
     try:
-        if kabuk is not None:
-            proc = await asyncio.create_subprocess_shell(kabuk, **ortak)
+        if shell is not None:
+            proc = await asyncio.create_subprocess_shell(shell, **common)
         else:
-            proc = await asyncio.create_subprocess_exec(*(argv or []), **ortak)
+            proc = await asyncio.create_subprocess_exec(*(argv or []), **common)
     except (OSError, ValueError) as exc:
-        return Result(ekosistem, etiket, str(kok), "baslatilamadi",
-                     ham=f"{type(exc).__name__}: {exc}",
-                     notlar=notlar or [], tur=tur)
+        return Result(ecosystem, label, str(root), "baslatilamadi",
+                      ham=f"{type(exc).__name__}: {exc}",
+                      notlar=notes or [], tur=kind)
 
     comm = asyncio.ensure_future(proc.communicate())
-    bekleyenler = {comm}
+    pending = {comm}
     stop = None
     if cancel is not None:
         stop = asyncio.ensure_future(cancel.wait())
-        bekleyenler.add(stop)
+        pending.add(stop)
 
     try:
-        bitenler, _ = await asyncio.wait(
-            bekleyenler, timeout=zaman_asimi,
+        done, _ = await asyncio.wait(
+            pending, timeout=timeout,
             return_when=asyncio.FIRST_COMPLETED,
         )
-    except asyncio.CancelledError:  # pragma: no cover - tur iptali
+    except asyncio.CancelledError:  # pragma: no cover - turn cancelled
         proc.kill()
         await proc.wait()
         comm.cancel()
@@ -984,109 +991,110 @@ async def _calistir(
             stop.cancel()
         raise
 
-    sure = time.monotonic() - baslangic
+    elapsed = time.monotonic() - start
 
-    if comm not in bitenler:
-        # Zaman aşımı ya da kullanıcı kesmesi. Süreç AĞACINI öldürüp elde
-        # ne varsa onunla dürüst ol: yarım çıktı da bilgidir — asılı kalan
-        # testin adı çoğu zaman son satırda yazıyor.
-        kesildi = stop is not None and stop in bitenler
-        await _oldur(proc)
+    if comm not in done:
+        # Timeout or user interruption. Kill the process TREE and be honest
+        # with whatever we have: partial output is information too — the
+        # name of the hanging test is usually on the last line.
+        interrupted = stop is not None and stop in done
+        await _kill(proc)
         try:
-            yarim, _ = await asyncio.wait_for(comm, 5)
+            partial, _ = await asyncio.wait_for(comm, 5)
         except (asyncio.TimeoutError, asyncio.CancelledError, OSError):
             comm.cancel()
-            yarim = b""
+            partial = b""
         if stop is not None:
             stop.cancel()
-        parca = (yarim or b"").decode("utf-8", errors="replace")
-        return Result(ekosistem, etiket, str(kok),
-                     "kesildi" if kesildi else "zaman_asimi", sure=sure,
-                     ham=kirp(parca.replace("\r\n", "\n")),
-                     notlar=notlar or [], tur=tur)
+        piece = (partial or b"").decode("utf-8", errors="replace")
+        return Result(ecosystem, label, str(root),
+                      "kesildi" if interrupted else "zaman_asimi", sure=elapsed,
+                      ham=trim(piece.replace("\r\n", "\n")),
+                      notlar=notes or [], tur=kind)
 
     if stop is not None:
         stop.cancel()
-    veri, _ = comm.result()
-    metin = (veri or b"").decode("utf-8", errors="replace")
-    metin = metin.replace("\r\n", "\n").replace("\r", "\n")
+    data, _ = comm.result()
+    text = (data or b"").decode("utf-8", errors="replace")
+    text = text.replace("\r\n", "\n").replace("\r", "\n")
 
-    sayim, basarisizlar = normalize(ekosistem, metin)
+    count, failures = normalize(ecosystem, text)
     return Result(
-        ekosistem=ekosistem, etiket=etiket, kok=str(kok), status="kostu",
-        cikis_kodu=proc.returncode or 0, sure=sure, sayim=sayim,
-        basarisizlar=basarisizlar, ham=kirp(metin), notlar=notlar or [], tur=tur,
+        ekosistem=ecosystem, etiket=label, kok=str(root), status="kostu",
+        cikis_kodu=proc.returncode or 0, sure=elapsed, sayim=count,
+        basarisizlar=failures, ham=trim(text), notlar=notes or [], tur=kind,
     )
 
 
-# -- yazma sonrası hatırlatma ------------------------------------------
+# -- post-write reminder -----------------------------------------------
 #
-# Test koşumu PAHALI: saniyeler, büyük takımlarda dakikalar. Her
-# `write_file` sonrası kendiliğinden koşturmak turu dondurur ve kullanıcıyı
-# bekletir — üstelik ajan çoğu zaman aynı dosyaya arka arkaya yazar, yani
-# aradaki koşumların hepsi boşa gider. Onun yerine düzeneğin VARLIĞINI
-# bildiriyoruz: bilgi bedava, koşum pahalı, karar modelin.
+# A test run is EXPENSIVE: seconds, minutes on big suites. Running it
+# automatically after every `write_file` freezes the turn and keeps the user
+# waiting — and the agent usually writes the same file several times in a
+# row, so every run in between is wasted. Instead we report that the setup
+# EXISTS: information is free, a run is expensive, the decision is the model's.
 
-# Aynı dosyaya bu kadar yazımdan sonra hatırlatma sertleşir. Üçüncü yazım
-# "deneme yanılma" demek: model kodu gözüyle düzeltmeye çalışıyor ve
-# göremediği için dönüp duruyor. Orada koşum artık öneri değil, gereklilik.
-ISRAR_ESIGI = 3
+# After this many writes to the same file the reminder hardens. A third write
+# means "trial and error": the model is trying to fix the code by eye and,
+# unable to see, keeps going round in circles. There a run is no longer a
+# suggestion but a necessity.
+NAG_THRESHOLD = 3
 
 
-def hatirlatma(yol: Path | str, *, yazim: int = 1) -> str:
-    """Yazılan dosyanın projesinde test düzeneği varsa tek satırlık not.
+def hatirlatma(path: Path | str, *, yazim: int = 1) -> str:
+    """A one-line note if the written file's project has a test setup.
 
-    Boş dize = söylenecek bir şey yok (proje değil, düzenek yok). Gürültü
-    üretmemek şart: her yazmanın altına anlamsız bir cümle eklemek, gerçek
-    uyarıların da okunmamasına yol açar.
+    Empty string = nothing to say (not a project, no setup). Producing no
+    noise is essential: adding a meaningless sentence under every write makes
+    the real warnings go unread too.
     """
     try:
-        kok = project_root(yol)
-        duzenek = tespit(kok)
-    except OSError:  # pragma: no cover - erişim hatası sessizce yutulur
+        root = project_root(path)
+        harness = tespit(root)
+    except OSError:  # pragma: no cover - access errors are swallowed silently
         return ""
-    if duzenek is None:
+    if harness is None:
         return ""
 
-    if duzenek.engel:
-        return (f"koşum: bu projede {duzenek.etiket} düzeneği var ama "
-                f"{duzenek.engel}")
+    if harness.engel:
+        return (f"koşum: bu projede {harness.etiket} düzeneği var ama "
+                f"{harness.engel}")
 
-    if duzenek.tur == "saglik":
-        govde = (f"bu projede test takımı yok; `{duzenek.etiket}` ucuz bir "
-                 f"sağlık denetimi ({duzenek.kanit})")
+    if harness.tur == "saglik":
+        body = (f"bu projede test takımı yok; `{harness.etiket}` ucuz bir "
+                f"sağlık denetimi ({harness.kanit})")
     else:
-        govde = f"bu projede `{duzenek.etiket}` var ({duzenek.kanit})"
+        body = f"bu projede `{harness.etiket}` var ({harness.kanit})"
 
-    if yazim >= ISRAR_ESIGI:
-        return (f"koşum: {govde} — aynı dosyaya {yazim}. kez yazıyorsun. "
+    if yazim >= NAG_THRESHOLD:
+        return (f"koşum: {body} — aynı dosyaya {yazim}. kez yazıyorsun. "
                 "Gözle düzeltmeyi bırak, `kos` aracıyla çalıştır ve gerçek "
                 "hatayı gör.")
-    return f"koşum: {govde} — değişikliği doğrulamak için `kos` aracını kullan."
+    return f"koşum: {body} — değişikliği doğrulamak için `kos` aracını kullan."
 
 
-# -- son dokunulan proje ------------------------------------------------
+# -- last touched project ----------------------------------------------
 #
-# `kos` yolsuz çağrılabilmeli: model az önce yazdığı dosyanın projesini
-# tekrar yazmak zorunda kalmasın. Dosya araçları her yazmada burayı
-# güncelliyor; modül düzeyinde tek bir değer, çünkü tek oturumda tek ajan
-# yazıyor ve yanlış tahmin edilse bile sonucun içinde kökün tam yolu
-# yazıyor — model gördüğü an düzeltir.
-_SON_PROJE: list[Path] = []
+# `kos` must be callable without a path: the model should not have to write
+# the project of the file it just wrote all over again. The file tools update
+# this on every write; a single module-level value, because one agent writes
+# in one session, and even if guessed wrong the result carries the full path
+# of the root — the model corrects it the moment it sees it.
+_LAST_PROJECT: list[Path] = []
 
 
-def touched(yol: Path | str) -> None:
-    """Bir dosya yazıldı/düzenlendi: projesini hatırla."""
+def touched(path: Path | str) -> None:
+    """A file was written/edited: remember its project."""
     try:
-        _SON_PROJE[:] = [project_root(yol)]
+        _LAST_PROJECT[:] = [project_root(path)]
     except OSError:  # pragma: no cover
         pass
 
 
 def son_proje() -> Path | None:
-    return _SON_PROJE[0] if _SON_PROJE else None
+    return _LAST_PROJECT[0] if _LAST_PROJECT else None
 
 
-def unut() -> None:
-    """Testler için: hatırlanan projeyi temizler."""
-    _SON_PROJE.clear()
+def forget() -> None:
+    """For tests: clears the remembered project."""
+    _LAST_PROJECT.clear()

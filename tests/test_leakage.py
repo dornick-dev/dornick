@@ -1,21 +1,23 @@
-"""İç içerik sızıntıları: harness notu, ham muhakeme, sahte araç çağrısı.
+"""Internal content leaks: harness note, raw reasoning, fake tool call.
 
-Üçü de aynı yaranın üyeleri — kullanıcının yazmadığı ya da kullanıcıya
-gösterilmemesi gereken bir metin sohbete DÜZ ÇİZİLİYORDU. Ekran
-görüntüsüyle yakalandılar:
+All three are members of the same wound — text the user did not write, or
+that must not be shown to the user, was drawn STRAIGHT into the chat. They
+were caught in screenshots:
 
-  1. "Planını yazdın ama uygulamadın. Şimdi yap: …" — harness'ın sürdürme
-     dürtüsü, sohbette kullanıcı mesajı gibi.
-  2. Modelin iç muhakemesi, sohbette italik paragraflar hâlinde.
-  3. `<function_calls><invoke name="shell">…` — modelin düz metin yazdığı
-     sahte araç çağrısı.
+  1. "Planını yazdın ama uygulamadın. Şimdi yap: …" — the harness's
+     continuation nudge, in the chat like a user message.
+  2. The model's internal reasoning, in the chat as italic paragraphs.
+  3. `<function_calls><invoke name="shell">…` — a fake tool call the model
+     wrote as plain text.
 
-Kökleri farklı, savunma hattı aynı: iç içerik işaretlenir ve işaretli
-içerik ne canlı akışa ne de döküme çıkar.
+Their roots differ, the line of defence is the same: internal content is
+marked, and marked content reaches neither the live stream nor the
+transcript.
 
-Zincirin başı ayrı bir yarada: araç katmanı modele HAM istisna
-döndürüyordu ("KeyError: 'path'"), model bunu "araç bozuk" diye okuyup
-çağrıyı metin olarak yazmaya başlıyordu. Şema kapısı da burada sınanıyor.
+The head of the chain is a separate wound: the tool layer returned the RAW
+exception to the model ("KeyError: 'path'"), the model read it as "the tool
+is broken" and started writing the call as text. The schema gate is tested
+here too.
 """
 
 from __future__ import annotations
@@ -34,44 +36,44 @@ from dornick.tools.base import ToolSpec, schema_violation
 from dornick.session import PendingToolUse
 from types import SimpleNamespace
 
-from tests.test_loop import (  # noqa: F401  (fixture + yardımcılar)
+from tests.test_loop import (  # noqa: F401  (fixture + helpers)
     FakeClient, build_agent, registry, text_turn, tool_turn,
 )
 
 
-# -- 1. harness notu: döküm süzgeci ------------------------------------
+# -- 1. harness note: the transcript filter -----------------------------
 #
-# Canlı akışta hub `_payload` süzüyordu; DÖKÜM süzmüyordu. Oturum
-# sürdürülünce ya da geçmişten açılınca iç notlar kullanıcı mesajı olarak
-# geri geliyordu — sızıntının gerçek kökü buydu.
+# On the live stream the hub filtered `_payload`; the TRANSCRIPT did not.
+# When a session was resumed or opened from history the internal notes came
+# back as user messages — that was the real root of the leak.
 
 
-def _log_yaz(path: Path, satirlar: list[dict]) -> None:
+def _write_log(path: Path, rows: list[dict]) -> None:
     with path.open("w", encoding="utf-8") as fh:
-        for satir in satirlar:
-            fh.write(json.dumps(satir, ensure_ascii=False) + "\n")
+        for row in rows:
+            fh.write(json.dumps(row, ensure_ascii=False) + "\n")
 
 
 def test_the_transcript_hides_harness_notes(tmp_path: Path) -> None:
-    """Sürdürme dürtüsü, harness notu ve araç sonucu dökümde GÖRÜNMEZ;
-    kullanıcının ve ajanın gerçek sözleri görünür."""
+    """The continuation nudge, the harness note and the tool result are
+    INVISIBLE in the transcript; the real words of the user and the agent show."""
     mind = Mind(tmp_path / "mind", tmp_path / "sessions", "s1")
     mind.sessions_dir.mkdir(parents=True, exist_ok=True)
-    _log_yaz(mind.sessions_dir / "s1.jsonl", [
+    _write_log(mind.sessions_dir / "s1.jsonl", [
         {"kind": "message", "role": "user", "ts": 1,
          "content": [{"type": "text", "text": "bir panel yap"}], "meta": {}},
         {"kind": "message", "role": "assistant", "ts": 2,
          "content": [{"type": "text", "text": "Planım şu."}], "meta": {}},
-        # Harness'ın sürdürme dürtüsü — kullanıcı yazmadı.
+        # The harness's continuation nudge — the user did not write it.
         {"kind": "message", "role": "user", "ts": 3,
          "content": [{"type": "text",
                       "text": "Planını yazdın ama uygulamadın. Şimdi yap: …"}],
          "meta": {"continuation": True}},
-        # Harness notu (yardımcı bitti gibi) — kullanıcı yazmadı.
+        # A harness note (like "helper finished") — the user did not write it.
         {"kind": "message", "role": "user", "ts": 4,
          "content": [{"type": "text", "text": "[Yardımcı bitti · x] Sonucu: y"}],
          "meta": {"internal": True}},
-        # Araç sonucu — teknik olarak kullanıcı turu, sohbet satırı değil.
+        # A tool result — technically a user turn, not a chat line.
         {"kind": "message", "role": "user", "ts": 5,
          "content": [{"type": "text", "text": "çıktı: 42"}],
          "meta": {"tool_results": True}},
@@ -79,22 +81,22 @@ def test_the_transcript_hides_harness_notes(tmp_path: Path) -> None:
          "content": [{"type": "text", "text": "Panel hazır."}], "meta": {}},
     ])
 
-    dokum = mind.transcript("s1")
+    transcript = mind.transcript("s1")
 
-    assert [t["text"] for t in dokum] == ["bir panel yap", "Planım şu.", "Panel hazır."]
-    hepsi = " ".join(t["text"] for t in dokum)
-    assert "uygulamadın" not in hepsi
-    assert "Yardımcı bitti" not in hepsi
+    assert [t["text"] for t in transcript] == ["bir panel yap", "Planım şu.", "Panel hazır."]
+    everything = " ".join(t["text"] for t in transcript)
+    assert "uygulamadın" not in everything
+    assert "Yardımcı bitti" not in everything
 
 
 def test_the_transcript_hides_reasoning_only_turns(tmp_path: Path) -> None:
-    """Model yalnızca akıl yürütüp durduğunda sağlayıcı katmanı o muhakemeyi
-    METİN bloğuna çeviriyor (openai_backend, `empty_turn`). Geçmişe girmesi
-    doğru — model kendi planını görmeli — ama kullanıcıya CEVAP DEĞİL.
-    `internal` işareti onu dökümden de uzak tutuyor."""
+    """When the model only reasons and stops, the provider layer turns that
+    reasoning into a TEXT block (openai_backend, `empty_turn`). Entering the
+    history is right — the model should see its own plan — but it is NOT AN
+    ANSWER to the user. The `internal` mark keeps it out of the transcript too."""
     mind = Mind(tmp_path / "mind", tmp_path / "sessions", "s2")
     mind.sessions_dir.mkdir(parents=True, exist_ok=True)
-    _log_yaz(mind.sessions_dir / "s2.jsonl", [
+    _write_log(mind.sessions_dir / "s2.jsonl", [
         {"kind": "message", "role": "user", "ts": 1,
          "content": [{"type": "text", "text": "hisse verisi çek"}], "meta": {}},
         {"kind": "message", "role": "assistant", "ts": 2,
@@ -105,12 +107,12 @@ def test_the_transcript_hides_reasoning_only_turns(tmp_path: Path) -> None:
          "content": [{"type": "text", "text": "Veri çekildi."}], "meta": {}},
     ])
 
-    dokum = mind.transcript("s2")
+    transcript = mind.transcript("s2")
 
-    assert [t["text"] for t in dokum] == ["hisse verisi çek", "Veri çekildi."]
+    assert [t["text"] for t in transcript] == ["hisse verisi çek", "Veri çekildi."]
 
 
-# -- 2. şema kapısı: ham istisna yerine yönerge -------------------------
+# -- 2. the schema gate: guidance instead of a raw exception -------------
 
 
 def _spec(properties: dict, required: list[str]) -> ToolSpec:
@@ -122,40 +124,40 @@ def _spec(properties: dict, required: list[str]) -> ToolSpec:
 
 
 def test_a_missing_required_field_teaches_instead_of_raising() -> None:
-    """Kanıtlanmış zincirin ilk halkası: eksik `path` ham `KeyError` yerine
-    ne yapılacağını söyleyen bir mesaj olmalı."""
+    """The first link of the proven chain: a missing `path` must be a message
+    saying what to do instead of a raw `KeyError`."""
     spec = _spec({"path": {"type": "string"}, "text": {"type": "string"}},
                  ["path", "text"])
 
-    uyari = schema_violation(spec, {"text": "merhaba"})
+    warning = schema_violation(spec, {"text": "merhaba"})
 
-    assert uyari is not None
-    assert "`path`" in uyari                    # hangi alan
-    assert "Verdiğin alanlar: text" in uyari    # ne verdin
-    assert "path (string, zorunlu)" in uyari    # şema ne
-    assert "KeyError" not in uyari
+    assert warning is not None
+    assert "`path`" in warning                    # which field
+    assert "Verdiğin alanlar: text" in warning    # what you gave
+    assert "path (string, zorunlu)" in warning    # what the schema is
+    assert "KeyError" not in warning
 
 
 def test_a_wrong_type_is_named_with_both_sides() -> None:
     spec = _spec({"timeout": {"type": "number"}}, [])
 
-    uyari = schema_violation(spec, {"timeout": "otuz"})
+    warning = schema_violation(spec, {"timeout": "otuz"})
 
-    assert uyari and "`timeout` alanı number olmalı" in uyari
-    assert "str verdin" in uyari
+    assert warning and "`timeout` alanı number olmalı" in warning
+    assert "str verdin" in warning
 
 
 def test_an_enum_violation_lists_the_valid_values() -> None:
     spec = _spec({"action": {"type": "string", "enum": ["read", "write"]}}, [])
 
-    uyari = schema_violation(spec, {"action": "oku"})
+    warning = schema_violation(spec, {"action": "oku"})
 
-    assert uyari and "read, write" in uyari
+    assert warning and "read, write" in warning
 
 
 def test_a_valid_call_passes_and_extra_fields_are_tolerated() -> None:
-    """Fazladan alan hata DEĞİL: çalışan bir çağrıyı fazladan alan yüzünden
-    reddetmek, aracı bozmak olurdu."""
+    """An extra field is NOT an error: rejecting a working call because of
+    an extra field would break the tool."""
     spec = _spec({"path": {"type": "string"}}, ["path"])
 
     assert schema_violation(spec, {"path": "a.txt"}) is None
@@ -163,9 +165,9 @@ def test_a_valid_call_passes_and_extra_fields_are_tolerated() -> None:
 
 
 async def test_the_executor_gates_every_tool_from_one_place(tmp_path: Path) -> None:
-    """Şema kapısı yürütücüde: her araç için aynı güvence, tek tek araçlara
-    yama yok. Handler HİÇ çağrılmıyor — eksik alanla çalıştırmak zaten
-    patlardı."""
+    """The schema gate is in the executor: the same guarantee for every tool,
+    no patching of individual tools. The handler is NEVER called — running
+    with a missing field would have blown up anyway."""
     from dornick.config import Config
     from dornick.events import EventLog
     from dornick.session import Session
@@ -177,14 +179,14 @@ async def test_the_executor_gates_every_tool_from_one_place(tmp_path: Path) -> N
                       cancel=asyncio.Event())
 
     registry = ToolRegistry()
-    kosuldu: list[dict] = []
+    ran: list[dict] = []
 
     @registry.tool("write_file", "yazar",
                    object_schema({"path": {"type": "string"},
                                   "text": {"type": "string"}}, ["path", "text"]))
     async def _write(args, _ctx):
-        kosuldu.append(args)
-        return ToolResult("yazıldı: " + args["path"])   # eksik alanda patlardı
+        ran.append(args)
+        return ToolResult("yazıldı: " + args["path"])   # would blow up on a missing field
 
     blocks = await execute(
         [PendingToolUse("1", "write_file", {"text": "merhaba"})],
@@ -194,16 +196,16 @@ async def test_the_executor_gates_every_tool_from_one_place(tmp_path: Path) -> N
         approve=lambda *_: asyncio.sleep(0, result=True),
     )
 
-    assert kosuldu == [], "şemaya uymayan çağrı handler'a gitmemeliydi"
+    assert ran == [], "şemaya uymayan çağrı handler'a gitmemeliydi"
     assert blocks[0]["is_error"] is True
     assert "`path`" in blocks[0]["content"]
     assert "KeyError" not in blocks[0]["content"]
 
 
 async def test_a_handler_exception_is_wrapped_with_guidance(tmp_path: Path) -> None:
-    """Handler içinden sızan istisna da ham gitmiyor: tip + mesaj DURUYOR
-    (teşhis lazım) ama yanında ne yapılacağı yazıyor. Model "araç bozuk"
-    diye okumasın."""
+    """An exception leaking out of the handler does not go raw either: the
+    type + message STAY (diagnosis is needed) but what to do is written next
+    to them. The model must not read it as "the tool is broken"."""
     from dornick.config import Config
     from dornick.events import EventLog
     from dornick.session import Session
@@ -228,49 +230,49 @@ async def test_a_handler_exception_is_wrapped_with_guidance(tmp_path: Path) -> N
         approve=lambda *_: asyncio.sleep(0, result=True),
     )
 
-    icerik = blocks[0]["content"]
+    content = blocks[0]["content"]
     assert blocks[0]["is_error"] is True
-    assert "ValueError" in icerik and "ters gitti" in icerik   # teşhis kalıyor
-    assert "yeniden dene" in icerik                             # yönerge eklendi
-    assert "Traceback" not in icerik
+    assert "ValueError" in content and "ters gitti" in content   # the diagnosis stays
+    assert "yeniden dene" in content                             # guidance added
+    assert "Traceback" not in content
 
 
-# -- 3. sahte araç çağrısı ----------------------------------------------
+# -- 3. fake tool call --------------------------------------------------
 
 
-@pytest.mark.parametrize("metin", [
+@pytest.mark.parametrize("text", [
     '<function_calls><invoke name="shell">',
     'Şimdi çalıştırıyorum:\n<invoke name="write_file">\n<parameter name="path">a</parameter>',
     "<invoke name=\"shell\">",
 ])
-def test_tool_call_xml_in_text_is_recognised(metin: str) -> None:
+def test_tool_call_xml_in_text_is_recognised(text: str) -> None:
     from dornick.loop import fake_tool_call
 
-    assert fake_tool_call(metin) is True
+    assert fake_tool_call(text) is True
 
 
-@pytest.mark.parametrize("metin", [
+@pytest.mark.parametrize("text", [
     "Dosyayı yazdım ve testleri koşturdum.",
     "HTML'de <div> ve <span> kullandım.",
     "",
 ])
-def test_ordinary_text_is_not_mistaken_for_a_tool_call(metin: str) -> None:
-    """Kalıp DAR olmalı: sıradan bir cevapta geçen etiketler yüzünden
-    kullanıcının cevabı yutulursa savunma yaranın kendisi olur."""
+def test_ordinary_text_is_not_mistaken_for_a_tool_call(text: str) -> None:
+    """The pattern must be NARROW: if the user's answer gets swallowed because
+    of tags in an ordinary reply, the defence becomes the wound itself."""
     from dornick.loop import fake_tool_call
 
-    assert fake_tool_call(metin) is False
+    assert fake_tool_call(text) is False
 
 
-# -- sahte çağrı: döngü tarafı ------------------------------------------
+# -- fake call: the loop side -------------------------------------------
 
 
 async def test_a_faked_tool_call_does_not_end_the_turn(
     tmp_path: Path, registry: ToolRegistry
 ) -> None:
-    """Model çağrıyı metin olarak yazdı ve turu bitirdi. Burada durmak
-    kullanıcıyı sessizce yarım bırakırdı: harness notu düşer, tur SÜRER ve
-    model gerçek çağrıyı yapar."""
+    """The model wrote the call as text and ended the turn. Stopping here
+    would silently leave the user halfway: a harness note drops, the turn
+    CONTINUES and the model makes the real call."""
     from tests.test_loop import FakeClient, build_agent, text_turn, tool_turn
 
     client = FakeClient(
@@ -286,19 +288,19 @@ async def test_a_faked_tool_call_does_not_end_the_turn(
 
     assert stats.stop_reason == "end_turn"
     assert stats.sahte_cagri == 1
-    # Düzeltme notu modele gerçekten gitti.
-    gonderilen = str(client.seen_messages[-1])
-    assert "DÜZ METİN olarak yazdın" in gonderilen
-    # Not harness kanalından: kullanıcı yazmadı, sohbette görünmemeli.
-    isaretli = [e for e in agent.session.log.messages()
-                if e.meta.get("internal") and "DÜZ METİN" in str(e.content)]
-    assert isaretli, "düzeltme notu `internal` işaretli olmalı"
+    # The correction note really went to the model.
+    sent = str(client.seen_messages[-1])
+    assert "DÜZ METİN olarak yazdın" in sent
+    # The note comes through the harness channel: the user did not write it, it must not show in the chat.
+    marked = [e for e in agent.session.log.messages()
+              if e.meta.get("internal") and "DÜZ METİN" in str(e.content)]
+    assert marked, "düzeltme notu `internal` işaretli olmalı"
 
 
 async def test_a_repeated_fake_call_hardens_the_note(
     tmp_path: Path, registry: ToolRegistry
 ) -> None:
-    """Yumuşak not işe yaramadıysa sertleşir — tur yine kapatılmaz."""
+    """If the soft note did not work it hardens — the turn is still not closed."""
     from tests.test_loop import FakeClient, build_agent, text_turn
 
     xml = '<invoke name="shell"><parameter name="command">dir</parameter></invoke>'
@@ -314,9 +316,9 @@ async def test_a_repeated_fake_call_hardens_the_note(
 async def test_a_hopeless_model_stops_holding_the_turn(
     tmp_path: Path, registry: ToolRegistry, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Mutlak sigorta: düzelmeyen model turu sonsuza kadar meşgul etmesin.
-    Tavanda tur kendi akışına bırakılıyor ve kullanıcıya durum söyleniyor —
-    çözüm onun elinde (model değiştirmek)."""
+    """The absolute fuse: a model that does not recover must not occupy the
+    turn forever. At the ceiling the turn is left to its own flow and the user
+    is told the situation — the fix is in their hands (switching model)."""
     import dornick.loop as loop_module
     from tests.test_loop import FakeClient, build_agent, text_turn
 
@@ -336,16 +338,16 @@ async def test_a_hopeless_model_stops_holding_the_turn(
 async def test_a_real_tool_call_is_never_hijacked(
     tmp_path: Path, registry: ToolRegistry
 ) -> None:
-    """Metinde XML geçse bile GERÇEK bir araç çağrısı varsa karışılmaz:
-    iş yürüyor demektir."""
+    """Even with XML in the text, if there is a REAL tool call we do not
+    interfere: it means the work is moving."""
     from dornick.backends import TurnResult
     from tests.test_loop import FakeClient, build_agent, message, text_turn
 
-    karma = TurnResult(message=message([
+    mixed = TurnResult(message=message([
         {"type": "text", "text": '<invoke name="shell">'},
         {"type": "tool_use", "id": "t1", "name": "echo", "input": {"text": "x"}},
     ], "tool_use"))
-    client = FakeClient(karma, text_turn("bitti"))
+    client = FakeClient(mixed, text_turn("bitti"))
     agent = build_agent(tmp_path, client, registry)
 
     stats = await agent.run("çalış")
@@ -354,14 +356,15 @@ async def test_a_real_tool_call_is_never_hijacked(
     assert stats.tool_calls == 1
 
 
-# -- oto havuz sağlık cezası --------------------------------------------
+# -- auto pool health penalty -------------------------------------------
 #
-# Ücretsiz havuzda araç çağıramayan bir uç, hata veren uçtan farksız: işi
-# ilerletmiyor, yalnızca tur harcıyor. Şema ihlali ve sahte araç çağrısı
-# artık hata/zaman aşımı/boş yanıtın yanında sağlık sinyali.
+# In the free pool an endpoint that cannot call tools is no different from
+# one that errors: it does not move the work forward, it only spends turns.
+# A schema violation and a fake tool call are now health signals alongside
+# error/timeout/empty reply.
 
 
-def _oto_backend():
+def _auto_backend():
     from dornick.backends.openai_backend import OpenAIBackend
     from dornick.config import OPENROUTER_URL, OTO_MODEL, ModelConfig
 
@@ -370,11 +373,11 @@ def _oto_backend():
 
 
 def test_content_faults_penalise_the_auto_pool() -> None:
-    """Şema ihlali ve sahte çağrı sağlık defterine başarısızlık yazar;
-    eşiği aşan model havuzun sonuna iner."""
+    """A schema violation and a fake call write a failure into the health
+    ledger; a model past the threshold sinks to the bottom of the pool."""
     from dornick import automode
 
-    backend = _oto_backend()
+    backend = _auto_backend()
     backend._last_selected = "ucuz/model"
     for _ in range(automode.ERROR_THRESHOLD):
         backend.kusurlu("sahte araç çağrısı")
@@ -385,8 +388,8 @@ def test_content_faults_penalise_the_auto_pool() -> None:
 
 
 def test_a_chosen_model_is_never_punished_behind_the_users_back() -> None:
-    """Oto kipi DIŞINDA karşılığı yok: kullanıcı modeli kendi seçti, onu
-    arkasından sıralamaya sokmak bize düşmez."""
+    """OUTSIDE auto mode there is no consequence: the user chose the model
+    themselves, ranking it behind their back is not our place."""
     from dornick.backends.openai_backend import OpenAIBackend
     from dornick.config import ModelConfig
 
@@ -401,22 +404,22 @@ def test_a_chosen_model_is_never_punished_behind_the_users_back() -> None:
 async def test_the_loop_reports_content_faults_to_the_backend(
     tmp_path: Path, registry: ToolRegistry  # noqa: F811
 ) -> None:
-    """Döngü sinyali gerçekten geçiriyor: sahte çağrı ve şema ihlali
-    `client.kusurlu` ile sağlayıcıya bildiriliyor."""
+    """The loop really passes the signal on: a fake call and a schema
+    violation are reported to the provider with `client.kusurlu`."""
     from tests.test_loop import FakeClient, build_agent, text_turn, tool_turn
 
-    class _Sayan(FakeClient):
+    class _Counting(FakeClient):
         def __init__(self, *script):
             super().__init__(*script)
-            self.sebepler: list[str] = []
+            self.reasons: list[str] = []
 
         def kusurlu(self, sebep: str = "") -> None:
-            self.sebepler.append(sebep)
+            self.reasons.append(sebep)
 
-    client = _Sayan(
+    client = _Counting(
         text_turn('<invoke name="shell">'),
-        # `echo` şeması `text` bekliyor; `metin` yanlış alan değil ama
-        # zorunlu alan yok — bu yüzden tip ihlaliyle sınanıyor.
+        # The `echo` schema expects `text`; `metin` is not a wrong field but
+        # there is no required field — so it is tested with a type violation.
         tool_turn(("t1", "echo", {"text": 42})),
         text_turn("bitti"),
     )
@@ -424,16 +427,16 @@ async def test_the_loop_reports_content_faults_to_the_backend(
 
     await agent.run("çalış")
 
-    assert "sahte araç çağrısı" in client.sebepler
-    assert "şema ihlali" in client.sebepler
+    assert "sahte araç çağrısı" in client.reasons
+    assert "şema ihlali" in client.reasons
 
 
-# -- hedef paneli: yönetim ucu ------------------------------------------
+# -- the goals panel: the management endpoint ----------------------------
 #
-# Panel salt gösterimdi ve kullanıcı haklı olarak soruyordu: "bunlar
-# nereden ekleniyor, nereden temizleniyor?" Ajan `mind_goals` ile ekliyor;
-# kullanıcının elinde hiçbir şey yoktu ve eski oturumlardan kalan hedefler
-# birikip duruyordu. Artık aynı deftere kullanıcı da yazabiliyor.
+# The panel was display-only and the user rightly asked: "where do these get
+# added, where do they get cleared?" The agent adds with `mind_goals`; the
+# user had nothing in hand, and goals left over from old sessions kept piling
+# up. Now the user can write to the same ledger too.
 
 
 def _goals_server(tmp_path: Path):
@@ -451,45 +454,45 @@ def _goals_server(tmp_path: Path):
     server = MindServer(mind, log, port=0, config=config)
     server.start()
 
-    def gonder(payload: dict) -> dict:
-        istek = urllib.request.Request(
+    def send(payload: dict) -> dict:
+        request = urllib.request.Request(
             server.url + "api/goals",
             data=json.dumps(payload).encode("utf-8"),
             headers={"Content-Type": "application/json"}, method="POST")
-        with urllib.request.urlopen(istek, timeout=5) as cevap:
-            return json.loads(cevap.read().decode("utf-8"))
+        with urllib.request.urlopen(request, timeout=5) as response:
+            return json.loads(response.read().decode("utf-8"))
 
-    return server, log, mind, gonder
+    return server, log, mind, send
 
 
 def test_the_user_can_finish_and_drop_a_goal(tmp_path: Path) -> None:
-    server, log, mind, gonder = _goals_server(tmp_path)
+    server, log, mind, send = _goals_server(tmp_path)
     try:
-        bitecek = mind.push_goal("testleri yeşile al")
-        kalkacak = mind.push_goal("bayat hedef")
+        finishing = mind.push_goal("testleri yeşile al")
+        dropping = mind.push_goal("bayat hedef")
 
-        assert gonder({"action": "done", "id": bitecek.id})["ok"] is True
-        assert gonder({"action": "drop", "id": kalkacak.id})["ok"] is True
+        assert send({"action": "done", "id": finishing.id})["ok"] is True
+        assert send({"action": "drop", "id": dropping.id})["ok"] is True
 
-        # Aktif liste boşaldı; defterde durumlar gerçekten değişti.
+        # The active list emptied; the statuses in the ledger really changed.
         assert mind.goals() == []
-        assert mind._goals[bitecek.id].status == "done"
-        assert mind._goals[kalkacak.id].status == "dropped"
+        assert mind._goals[finishing.id].status == "done"
+        assert mind._goals[dropping.id].status == "dropped"
     finally:
         server.stop()
         log.close()
 
 
 def test_clear_empties_the_whole_stack(tmp_path: Path) -> None:
-    """Birikmiş liste tek jestle temizlenebilmeli — arayüzde iki adımlı
-    onayın arkasında duruyor."""
-    server, log, mind, gonder = _goals_server(tmp_path)
+    """A piled-up list must be clearable with one gesture — in the UI it
+    sits behind a two-step confirmation."""
+    server, log, mind, send = _goals_server(tmp_path)
     try:
         for i in range(6):
             mind.push_goal(f"eski hedef {i}")
         assert len(mind.goals()) == 6
 
-        assert gonder({"action": "clear"})["ok"] is True
+        assert send({"action": "clear"})["ok"] is True
         assert mind.goals() == []
     finally:
         server.stop()
@@ -499,16 +502,16 @@ def test_clear_empties_the_whole_stack(tmp_path: Path) -> None:
 def test_a_bad_goal_request_is_refused_without_touching_the_ledger(
     tmp_path: Path
 ) -> None:
-    """Uydurma eylem ve geçersiz id deftere dokunmadan reddedilir."""
-    server, log, mind, gonder = _goals_server(tmp_path)
+    """An invented action and an invalid id are refused without touching the ledger."""
+    server, log, mind, send = _goals_server(tmp_path)
     try:
-        hedef = mind.push_goal("duran hedef")
+        goal = mind.push_goal("duran hedef")
 
-        assert gonder({"action": "sil-hepsini"})["ok"] is False
-        assert gonder({"action": "done", "id": "../../etc"})["ok"] is False
-        assert gonder({"action": "done", "id": "goal-yok"})["ok"] is False
+        assert send({"action": "sil-hepsini"})["ok"] is False
+        assert send({"action": "done", "id": "../../etc"})["ok"] is False
+        assert send({"action": "done", "id": "goal-yok"})["ok"] is False
 
-        assert [g.id for g in mind.goals()] == [hedef.id]
+        assert [g.id for g in mind.goals()] == [goal.id]
     finally:
         server.stop()
         log.close()
@@ -517,8 +520,9 @@ def test_a_bad_goal_request_is_refused_without_touching_the_ledger(
 async def test_a_faked_call_turn_is_marked_internal(
     tmp_path: Path, registry: ToolRegistry  # noqa: F811
 ) -> None:
-    """Ham XML geçmişe girer (model ne yaptığını görmeli) ama `internal`
-    işaretlidir: oturum sürdürülünce ajan mesajı olarak geri gelmez."""
+    """The raw XML enters the history (the model must see what it did) but is
+    marked `internal`: when the session is resumed it does not come back as an
+    agent message."""
     from tests.test_loop import FakeClient, build_agent, text_turn
 
     client = FakeClient(text_turn('<invoke name="shell">'), text_turn("düzeldim"))
@@ -526,30 +530,30 @@ async def test_a_faked_call_turn_is_marked_internal(
 
     await agent.run("listele")
 
-    xml_turu = [e for e in agent.session.log.messages()
+    xml_turn = [e for e in agent.session.log.messages()
                 if e.role == "assistant" and "invoke" in str(e.content)]
-    assert xml_turu and xml_turu[0].meta.get("internal") is True
-    # Gerçek cevap işaretli DEĞİL: kullanıcı onu görmeli.
-    gercek = [e for e in agent.session.log.messages()
-              if e.role == "assistant" and "düzeldim" in str(e.content)]
-    assert gercek and not gercek[0].meta.get("internal")
+    assert xml_turn and xml_turn[0].meta.get("internal") is True
+    # The real answer is NOT marked: the user must see it.
+    real = [e for e in agent.session.log.messages()
+            if e.role == "assistant" and "düzeldim" in str(e.content)]
+    assert real and not real[0].meta.get("internal")
 
 
 def test_the_user_can_add_their_own_item(tmp_path: Path) -> None:
-    """Liste iki taraflı: ajan `mind_goals` ile yazıyor, kullanıcı panelden.
-    Aynı defter — ajan kendi maddesini de görüyor."""
-    server, log, mind, gonder = _goals_server(tmp_path)
+    """The list is two-sided: the agent writes with `mind_goals`, the user
+    from the panel. The same ledger — the agent sees its own item too."""
+    server, log, mind, send = _goals_server(tmp_path)
     try:
-        cevap = gonder({"action": "add", "text": "faturayi ode"})
-        assert cevap["ok"] is True and cevap["id"]
+        response = send({"action": "add", "text": "faturayi ode"})
+        assert response["ok"] is True and response["id"]
         assert [g.text for g in mind.goals()] == ["faturayi ode"]
 
-        # Boş madde reddediliyor; defter kirlenmiyor.
-        assert gonder({"action": "add", "text": "   "})["ok"] is False
+        # An empty item is refused; the ledger is not polluted.
+        assert send({"action": "add", "text": "   "})["ok"] is False
         assert len(mind.goals()) == 1
 
-        # Roman uzunluğunda madde kırpılıyor.
-        gonder({"action": "add", "text": "x" * 500})
+        # A novel-length item is trimmed.
+        send({"action": "add", "text": "x" * 500})
         assert max(len(g.text) for g in mind.goals()) <= 200
     finally:
         server.stop()
@@ -557,50 +561,52 @@ def test_the_user_can_add_their_own_item(tmp_path: Path) -> None:
 
 
 def test_goals_from_earlier_sessions_stay_out_of_the_panel(tmp_path: Path) -> None:
-    """"Bu görevleri kim oluşturuyor" sorusunun cevabı: hedef defteri
-    SOHBETİN defteri. Başka oturumun maddesi panele hiç gelmez (canlı yara:
-    PDF sohbetinin sonunda ajan başka sohbetin "ev otomasyonu" hedefini
-    tartışıyordu); zihnin tamamına bakan yerler all_sessions ile ister."""
+    """The answer to "who creates these tasks": the goal ledger is the
+    CHAT's ledger. Another session's item never reaches the panel (live
+    wound: at the end of a PDF chat the agent was discussing another chat's
+    "home automation" goal); the places that look at the whole mind ask with
+    all_sessions."""
     from types import SimpleNamespace
 
     from dornick.desktop import _active_goals
     from dornick.mind import open_mind
 
     mind = open_mind(tmp_path / "mind", tmp_path / "sessions", "eski-oturum")
-    bayat = mind.push_goal("geçen oturumdan kalan")
+    stale = mind.push_goal("geçen oturumdan kalan")
     mind.session_id = "yeni-oturum"
-    taze = mind.push_goal("bu oturumda açıldı")
+    fresh = mind.push_goal("bu oturumda açıldı")
 
-    dokum = {g["id"] for g in _active_goals(SimpleNamespace(mind=mind))}
-    assert taze.id in dokum
-    assert bayat.id not in dokum
+    shown = {g["id"] for g in _active_goals(SimpleNamespace(mind=mind))}
+    assert fresh.id in shown
+    assert stale.id not in shown
 
-    # Kabul kapısının ve sistem notlarının kaynağı da aynı süzgeçten geçer.
-    assert bayat.text not in mind.goal_digest()
-    assert taze.text in mind.goal_digest()
+    # The acceptance gate and the source of the system notes go through the same filter.
+    assert stale.text not in mind.goal_digest()
+    assert fresh.text in mind.goal_digest()
 
-    # Beyin grafiği zihnin tamamını ister — süzgecin kapısı açık.
-    hepsi = {g.id for g in mind.goals(all_sessions=True)}
-    assert {bayat.id, taze.id} <= hepsi
+    # The brain graph asks for the whole mind — the filter's gate is open.
+    everything = {g.id for g in mind.goals(all_sessions=True)}
+    assert {stale.id, fresh.id} <= everything
 
 
-# -- zihin yazma refleksi ------------------------------------------------
+# -- the mind-writing reflex --------------------------------------------
 #
-# Ölçülmüş regresyon: son altı oturumda `mind_memory` çağrısı SIFIR, 91
-# araç çağrılı turda bile. Otomatik yol (episode) akıyordu, model-güdümlü
-# kalıcı yazma durmuştu. İki kök birden düzeltildi: (1) kendi defterine
-# yazmak onay kapısının arkasındaydı, (2) yazma yalnızca bir öğüttü.
+# Measured regression: ZERO `mind_memory` calls in the last six sessions,
+# even in a turn with 91 tool calls. The automatic path (episode) was
+# flowing, model-driven persistent writing had stopped. Two roots fixed at
+# once: (1) writing to its own ledger was behind the approval gate, (2)
+# writing was only advice.
 
 
-class _Zihin:
-    """Yazmayı sayan sahte zihin."""
+class _Mind:
+    """A fake mind that counts writes."""
 
     def __init__(self) -> None:
         self.session_id = "s"
-        self.yazilanlar: list[str] = []
+        self.written: list[str] = []
 
     def remember(self, body, **kw):
-        self.yazilanlar.append(body)
+        self.written.append(body)
         return SimpleNamespace(id="m1")
 
     def goals(self, **kw):
@@ -613,29 +619,29 @@ class _Zihin:
 async def test_a_preference_nudges_the_agent_to_remember(
     tmp_path: Path, registry: ToolRegistry
 ) -> None:
-    """Kullanıcı kalıcı bir şey söyledi ve model kendi defterine yazmadı:
-    tur sonunda modelin önüne TEK SATIR not konuyor. Not harness kanalından
-    gidiyor — sohbette görünmez."""
+    """The user said something lasting and the model did not write it into
+    its own ledger: at the end of the turn a ONE-LINE note is put in front of
+    the model. The note goes through the harness channel — invisible in the chat."""
     client = FakeClient(text_turn("tamam, öyle yapacağım"))
     agent = build_agent(tmp_path, client, registry)
-    agent.mind = _Zihin()
+    agent.mind = _Mind()
 
     await agent.run("bundan sonra raporları hep tablo yaz")
 
-    notlar = [e for e in agent.session.log.messages()
-              if e.meta.get("internal") and "[Zihin]" in str(e.content)]
-    assert notlar, "kalıcı bir şey geçti, dürtü düşmeliydi"
-    icerik = str(notlar[0].content)
-    assert "mind_memory" in icerik
-    assert "tablo yaz" in icerik, "not neyi kastettiğini söylemeli"
-    assert "yok say" in icerik, "emir değil davet: yanlış pozitifte zararsız"
+    notes = [e for e in agent.session.log.messages()
+             if e.meta.get("internal") and "[Zihin]" in str(e.content)]
+    assert notes, "kalıcı bir şey geçti, dürtü düşmeliydi"
+    content = str(notes[0].content)
+    assert "mind_memory" in content
+    assert "tablo yaz" in content, "not neyi kastettiğini söylemeli"
+    assert "yok say" in content, "emir değil davet: yanlış pozitifte zararsız"
     assert agent.session.log.notes("zihin_durtusu")
 
 
 async def test_no_nudge_when_the_agent_already_wrote(
     tmp_path: Path, registry: ToolRegistry
 ) -> None:
-    """Model zaten yazdıysa dürtmek gereksiz gürültü."""
+    """If the model already wrote, nudging is needless noise."""
     reg = ToolRegistry()
 
     @reg.tool("mind_memory", "yazar", object_schema({"action": {"type": "string"}}))
@@ -647,7 +653,7 @@ async def test_no_nudge_when_the_agent_already_wrote(
         text_turn("kaydettim"),
     )
     agent = build_agent(tmp_path, client, reg)
-    agent.mind = _Zihin()
+    agent.mind = _Mind()
 
     await agent.run("bundan sonra raporları hep tablo yaz")
 
@@ -657,10 +663,10 @@ async def test_no_nudge_when_the_agent_already_wrote(
 async def test_no_nudge_without_a_lasting_signal(
     tmp_path: Path, registry: ToolRegistry
 ) -> None:
-    """Sıradan bir soru dürtü üretmez: sezgi ucuz ama gürültücü olmamalı."""
+    """An ordinary question produces no nudge: the heuristic is cheap but must not be noisy."""
     client = FakeClient(text_turn("saat 14:00"))
     agent = build_agent(tmp_path, client, registry)
-    agent.mind = _Zihin()
+    agent.mind = _Mind()
 
     await agent.run("saat kaç")
 
@@ -670,10 +676,10 @@ async def test_no_nudge_without_a_lasting_signal(
 async def test_the_nudge_does_not_repeat_for_the_same_sentence(
     tmp_path: Path, registry: ToolRegistry
 ) -> None:
-    """Art arda aynı konuda dürtmek bıkkınlık: bir kez söylenir."""
+    """Nudging about the same thing back to back is tiresome: it is said once."""
     client = FakeClient(text_turn("tamam"), text_turn("tamam"))
     agent = build_agent(tmp_path, client, registry)
-    agent.mind = _Zihin()
+    agent.mind = _Mind()
 
     await agent.run("bundan sonra hep tablo yaz")
     await agent.run("bundan sonra hep tablo yaz")
@@ -682,7 +688,7 @@ async def test_the_nudge_does_not_repeat_for_the_same_sentence(
 
 
 def test_the_scent_reads_both_languages() -> None:
-    """Kullanıcı iki dilde de yazıyor; sinyal listesi ikisini de tanımalı."""
+    """The user writes in both languages; the signal list must recognise both."""
     from dornick.loop import persistent_root
 
     assert persistent_root("bundan sonra raporları hep tablo yaz")
@@ -690,19 +696,20 @@ def test_the_scent_reads_both_languages() -> None:
     assert persistent_root("hayır, öyle değil — düzelt")
     assert persistent_root("from now on always use tables")
     assert persistent_root("i prefer short answers")
-    # Sıradan cümleler koku vermemeli.
+    # Ordinary sentences must give no scent.
     assert not persistent_root("saat kaç")
     assert not persistent_root("bu dosyayı okur musun")
     assert not persistent_root("")
 
 
-# -- kendi defterine yazmak onay istemez ---------------------------------
+# -- writing to its own ledger needs no approval -------------------------
 
 
 def test_writing_to_its_own_mind_needs_no_approval() -> None:
-    """ASIL KÖK: `mind_memory save` mutasyon sayılıyordu — her hatıra bir
-    onay penceresi, plan kipinde ise düpedüz RET. Zihin bu yüzden sustu.
-    Kendi defterine yazmak onay istemiyor; SİLMEK hâlâ istiyor."""
+    """THE REAL ROOT: `mind_memory save` counted as a mutation — every memory
+    an approval window, and in plan mode an outright DENY. That is why the
+    mind went silent. Writing to its own ledger asks for no approval;
+    DELETING still does."""
     from dornick.permissions import Decision, PermissionEngine
     from dornick.tools.base import ToolSpec, object_schema
 
@@ -714,10 +721,10 @@ def test_writing_to_its_own_mind_needs_no_approval() -> None:
 
     for mode in ("ask", "auto", "plan"):
         engine = PermissionEngine(mode, allow=[], deny=[])
-        karar, _ = engine.evaluate(spec, {"action": "save"})
-        assert karar is Decision.ALLOW, f"{mode}: kaydetmek sorulmamalı"
+        decision, _ = engine.evaluate(spec, {"action": "save"})
+        assert decision is Decision.ALLOW, f"{mode}: kaydetmek sorulmamalı"
 
-    # Silmek başka bir şey: kalıcı kayıp, kapı kapalı kalıyor.
+    # Deleting is something else: permanent loss, the gate stays closed.
     assert PermissionEngine("ask", allow=[], deny=[]).evaluate(
         spec, {"action": "forget"})[0] is Decision.ASK
     assert PermissionEngine("plan", allow=[], deny=[]).evaluate(
@@ -725,40 +732,40 @@ def test_writing_to_its_own_mind_needs_no_approval() -> None:
 
 
 def test_the_real_mind_tools_declare_their_safe_actions(tmp_path: Path) -> None:
-    """Bayrak gerçekten kayıtlı araçlarda: kalıp bir yerde kalmasın."""
+    """The flag is really on the registered tools: the pattern must not stay in one place."""
     from dornick.mind import open_mind
     from dornick.mind.tools import register as register_mind
 
     reg = ToolRegistry()
     register_mind(reg, open_mind(tmp_path / "mind", tmp_path / "sessions", "s"))
 
-    hafiza = reg.get("mind_memory")
-    assert hafiza and "save" in hafiza.safe_actions
-    assert "forget" not in hafiza.safe_actions, "silme gated kalmalı"
-    hedef = reg.get("mind_goals")
-    assert hedef and "push" in hedef.safe_actions
+    memory = reg.get("mind_memory")
+    assert memory and "save" in memory.safe_actions
+    assert "forget" not in memory.safe_actions, "silme gated kalmalı"
+    goals = reg.get("mind_goals")
+    assert goals and "push" in goals.safe_actions
 
 
 def test_the_guide_asks_for_writing_in_the_moment() -> None:
-    """Rehber genel kural olarak yazıyor: reçete değil, ilke."""
+    """The guide writes it as a general rule: a principle, not a prescription."""
     from dornick import prompt as builder
 
-    duz = " ".join(builder.MEMORY_RULES.split())
-    assert "sen sormasan da" in duz
-    assert "o an" in duz or "konu geçerken" in duz
-    assert "oturum kapanınca bağlam gider, zihin kalır" in duz
+    flat = " ".join(builder.MEMORY_RULES.split())
+    assert "sen sormasan da" in flat
+    assert "o an" in flat or "konu geçerken" in flat
+    assert "oturum kapanınca bağlam gider, zihin kalır" in flat
 
 
-# -- "Şimdi eğit" sessiz kalmaz -----------------------------------------
+# -- "Train now" does not stay silent -----------------------------------
 #
-# Kullanıcı düğmeye basıyor, ekranda hiçbir şey olmuyordu. Gerçek: döngü
-# başlıyor ve bir saniyeden kısa sürede "yeni veri az: 0/50" deyip
-# çıkıyordu. Sonuç artık SEBEBİYLE dönüyor ve arayüz tek satırla söylüyor.
+# The user pressed the button, nothing happened on screen. The truth: the
+# loop started and within a second said "too little new data: 0/50" and
+# exited. The result now returns WITH ITS REASON and the UI says it in one line.
 
 
 def test_train_now_reports_why_it_did_not_start(tmp_path: Path) -> None:
-    """Kapalı özellik, eksik düzenek ve veri yokluğu ayrı ayrı adlandırılıyor
-    — hepsi sessiz bir "hiçbir şey olmadı" değil."""
+    """A disabled feature, a missing setup and a lack of data are named
+    separately — none of them is a silent "nothing happened"."""
     from dornick import recognition
 
     class _Hub:
@@ -767,44 +774,45 @@ def test_train_now_reports_why_it_did_not_start(tmp_path: Path) -> None:
 
     hub = _Hub()
 
-    # Kapalıyken: adı konuyor.
+    # While disabled: it is named.
     assert recognition.maybe_start(tmp_path, hub, zorla=True) == "kapali"
 
     recognition.configure(tmp_path, True)
-    sebep = recognition.maybe_start(tmp_path, hub, zorla=True)
-    # Düzenek kurulu değilse orada durur; kuruluysa eğitecek veri yoktur —
-    # ikisi de ADLANDIRILMIŞ bir sonuç, sessizlik değil.
-    assert sebep in ("duzenek_yok", "veri_yok")
-    assert sebep != "basladi", "boş veriyle koşu başlatılmamalı"
+    reason = recognition.maybe_start(tmp_path, hub, zorla=True)
+    # If the setup is not installed it stops there; if it is, there is no
+    # data to train on — both are a NAMED outcome, not silence.
+    assert reason in ("duzenek_yok", "veri_yok")
+    assert reason != "basladi", "boş veriyle koşu başlatılmamalı"
 
 
 def test_the_ui_has_a_line_for_every_outcome() -> None:
-    """Her sebep kodunun bir karşılığı var: kullanıcı "neden olmadı"yı
-    okuyabilmeli. Sessiz düşen bir kod kalmamalı."""
+    """Every reason code has a counterpart: the user must be able to read
+    "why it did not happen". No code may fall silently."""
     APP_JS = (Path(__file__).resolve().parents[1]
               / "src" / "dornick" / "web" / "static" / "app.js").read_text(encoding="utf-8")
-    for kod in ("basladi", "veri_yok", "kosuyor", "duzenek_yok",
-                "kapali", "ara_yok", "baslatilamadi"):
-        assert re.search(rf"\b{kod}:", APP_JS), kod
-    # Nabız çok kısa koşularda bile görünsün.
+    for code in ("basladi", "veri_yok", "kosuyor", "duzenek_yok",
+                 "kapali", "ara_yok", "baslatilamadi"):
+        assert re.search(rf"\b{code}:", APP_JS), code
+    # The pulse must show even on very short runs.
     assert re.search(r"const TANIMA_EN_AZ_MS = \d+", APP_JS)
 
 
 def test_derived_session_titles_skip_one_letter_keystrokes() -> None:
-    """Canli yara: ilk mesaj kazara tek harf olunca ("e" + Enter) sohbet
-    solda o harfle listeleniyordu. Turetilmis baslik kirintiyi atlar."""
+    """Live wound: when the first message was accidentally a single letter
+    ("e" + Enter) the chat was listed on the left under that letter. The
+    derived title skips the crumb."""
     from dornick.web.server import _session_title
 
     assert _session_title(
         "e ev otomasyonu yapıyorum mock data ile"
     ) == "ev otomasyonu yapıyorum mock data ile"
-    assert _session_title("b") == "b"          # tek soz varsa o kalir
-    assert _session_title("2 sayı topla") == "2 sayı topla"  # rakam baslik olabilir
+    assert _session_title("b") == "b"          # if there is a single word it stays
+    assert _session_title("2 sayı topla") == "2 sayı topla"  # a digit can be a title
 
 
 def test_generated_titles_reject_single_letter_junk() -> None:
-    """Kucuk model bazen cop donduruyor ("e"); zayif suzgec bunu KALICI ad
-    yapiyordu ve ad bir kez yazilinca bir daha uretilmiyordu."""
+    """The small model sometimes returns junk ("e"); the weak filter made it
+    the PERMANENT name, and once a name was written it was never generated again."""
     from dornick.loop import _title_valid
 
     assert not _title_valid("e")
@@ -816,10 +824,10 @@ def test_generated_titles_reject_single_letter_junk() -> None:
 
 
 def test_goal_note_frames_the_ledger_as_reminder(tmp_path: Path, registry) -> None:
-    """Canli yara (31.08): ciplak "Aktif hedefler" notu kucuk modelde
-    TALIMAT gibi okunuyordu — "selam yaz" diyen kullaniciya model defterdeki
-    hedefi tartisarak cevap verdi. Nota oncelik cercevesi gomulu: gundemi
-    kullanicinin son sozu belirler."""
+    """Live wound (31.08): the bare "Aktif hedefler" note read like an
+    INSTRUCTION to the small model — to a user saying "selam yaz" the model
+    replied by discussing the goal in the ledger. A priority frame is embedded
+    in the note: the agenda is set by the user's last word."""
     from dornick.mind import open_mind
 
     agent = build_agent(tmp_path, FakeClient([]), registry)
@@ -831,52 +839,52 @@ def test_goal_note_frames_the_ledger_as_reminder(tmp_path: Path, registry) -> No
 
     agent._sync_goals()
 
-    notlar = [m for m in agent.session.messages() if m.get("role") == "system"]
-    assert notlar, "hedef notu hic yazilmadi"
-    metin = str(notlar[-1].get("content"))
-    assert "pdf dönüşümü" in metin
-    assert "talimat değil" in metin
-    assert "son sözü" in metin
+    notes = [m for m in agent.session.messages() if m.get("role") == "system"]
+    assert notes, "hedef notu hic yazilmadi"
+    text = str(notes[-1].get("content"))
+    assert "pdf dönüşümü" in text
+    assert "talimat değil" in text
+    assert "son sözü" in text
 
 
 def test_soul_goal_block_carries_the_same_framing(tmp_path: Path) -> None:
-    """Ruhun hedef blogu da ayni cerceveyi tasir ve "onceki oturumlardan"
-    demez — defter artik oturuma suzulu, buraya yalniz surdurulen sohbetin
-    kendi maddeleri gelir."""
+    """The soul's goal block carries the same frame and does not say "from
+    earlier sessions" — the ledger is now filtered per session, only the
+    resumed chat's own items arrive here."""
     from dornick.mind import open_mind
 
     mind = open_mind(tmp_path / "mind", tmp_path / "sessions", "s1")
     mind.push_goal("ev otomasyonu simülasyonu")
 
-    metin = mind.soul().render()
+    text = mind.soul().render()
 
-    assert "ev otomasyonu simülasyonu" in metin
-    assert "talimat değil" in metin
-    assert "Önceki oturumlardan" not in metin
+    assert "ev otomasyonu simülasyonu" in text
+    assert "talimat değil" in text
+    assert "Önceki oturumlardan" not in text
 
 
 def test_the_tree_carries_no_provider_keys() -> None:
-    """Tek-klasor duzenine gecis (31.08): eskiden anahtar taramasi yayin
-    esitleme betigindeydi; artik kod dogrudan acik depoda yasadigi icin
-    tarama her test kosusunda calisir. OpenRouter/generic anahtar deseni
-    agacta gorunurse takim kirmizi — sizinti push'a ulasamaz."""
-    kok = Path(__file__).resolve().parents[1]
-    # GERÇEK anahtar uzunluğu: kısa yer tutucular ("sk-ant-...", test
-    # sahteleri) alarm değildir — dokümantasyon ve fixture'lar meşru.
-    desen = re.compile(r"sk-or-v1-[0-9a-f]{60,}|sk-ant-[A-Za-z0-9_-]{60,}")
-    atla = {".git", ".dornick", "atolye", "__pycache__", ".pytest_cache",
+    """Move to the single-folder layout (31.08): the key scan used to live in
+    the publish-sync script; now that the code lives directly in the open
+    repository the scan runs on every test run. If the OpenRouter/generic key
+    pattern shows up in the tree the suite goes red — a leak cannot reach a push."""
+    root = Path(__file__).resolve().parents[1]
+    # REAL key length: short placeholders ("sk-ant-...", test fakes) are not
+    # an alarm — documentation and fixtures are legitimate.
+    pattern = re.compile(r"sk-or-v1-[0-9a-f]{60,}|sk-ant-[A-Za-z0-9_-]{60,}")
+    skip = {".git", ".dornick", "atolye", "__pycache__", ".pytest_cache",
             "node_modules", "dist"}
-    supheliler: list[str] = []
-    for yol in kok.rglob("*"):
-        if not yol.is_file() or yol.stat().st_size > 2_000_000:
+    suspects: list[str] = []
+    for path in root.rglob("*"):
+        if not path.is_file() or path.stat().st_size > 2_000_000:
             continue
-        parcalar = set(yol.relative_to(kok).parts)
-        if parcalar & atla:
+        parts = set(path.relative_to(root).parts)
+        if parts & skip:
             continue
         try:
-            icerik = yol.read_text(encoding="utf-8", errors="ignore")
+            content = path.read_text(encoding="utf-8", errors="ignore")
         except OSError:
             continue
-        if desen.search(icerik):
-            supheliler.append(str(yol.relative_to(kok)))
-    assert not supheliler, f"anahtar deseni tasiyan dosyalar: {supheliler}"
+        if pattern.search(content):
+            suspects.append(str(path.relative_to(root)))
+    assert not suspects, f"anahtar deseni tasiyan dosyalar: {suspects}"

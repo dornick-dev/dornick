@@ -1,17 +1,18 @@
-"""Ajanın bedeni: duyuları ve kendine taktığı modüller.
+"""The agent's body: its senses and the modules it has attached to itself.
 
-Sahnedeki ağ ajanın **bildiklerini** gösteriyor. Bu dosya ajanın
-**yapabildiklerini** gösteriyor: mikrofon, kameralar, hoparlör ve kendi
-yazdığı modüller (harita, PLC, USB — ne yazdıysa).
+The web on the stage shows what the agent **knows**. This file shows what
+the agent **can do**: microphone, cameras, speaker and the modules it wrote
+for itself (map, PLC, USB — whatever it wrote).
 
-Neden ayrı bir katman: bir hatıra ile bir kamera aynı şey değil. Hatıra
-çağrılır, kamera açılır. İkisini aynı düğüm türü yapmak, "şu an neyi
-kullanıyor" sorusunu cevapsız bırakıyordu.
+Why a separate layer: a memory and a camera are not the same thing. A
+memory is recalled, a camera is opened. Making both the same node type
+left the question "what is it using right now" unanswered.
 
-Burada hiçbir şey uydurulmuyor. Listede görünen her organın karşılığı
-gerçekten var: mikrofon paketi kuruluysa mikrofon var, kamera ayarlanmışsa
-kamera var, atölyede bir yetenek dosyası varsa modül var. Olmayan bir
-şeyi soluk da olsa çizmek, ekranda çalışıyormuş gibi duran bir yalan olur.
+Nothing here is made up. Every organ shown in the list really has a
+counterpart: the microphone exists if the microphone package is installed,
+the camera exists if a camera is configured, the module exists if there is
+a skill file in the workshop. Drawing something that does not exist, even
+faintly, would be a lie that looks like it is working on screen.
 """
 
 from __future__ import annotations
@@ -20,11 +21,11 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
-# Organ türleri. Sahnede her tür kendi rengini alıyor.
-SENSE = "sense"      # duyu: mikrofon, kamera
-SPEECH = "speech"    # hoparlör
-MODULE = "module"    # ajanın kendine yazdığı yetenek
-DEVICE = "device"    # kayıtlı cihaz: PLC, uzak kamera, seri port, MCP
+# Organ kinds. Each kind gets its own colour on the stage.
+SENSE = "sense"      # sense: microphone, camera
+SPEECH = "speech"    # speaker
+MODULE = "module"    # a skill the agent wrote for itself
+DEVICE = "device"    # registered device: PLC, remote camera, serial port, MCP
 
 
 @dataclass(slots=True)
@@ -32,34 +33,35 @@ class Organ:
     id: str
     name: str
     kind: str
-    # Ne olduğu — üzerine gelince okunan satır.
+    # What it is — the line read on hover.
     detail: str
-    # O anki hali: "dinliyor", "kapalı", "açık". Kısa olmalı, etiketin
-    # altına sığıyor.
+    # Its current state: "dinliyor", "kapalı", "açık". Must be short, it
+    # fits under the label.
     state: str
-    # Gerçekten çalışıyor mu. Soluk/parlak ayrımı bu.
+    # Whether it is really running. This is the faint/bright distinction.
     live: bool = False
-    # Bu organı kullanan araç adları. Araç çağrıldığında sahne hangi
-    # organın canlanacağını bundan biliyor.
+    # Names of the tools that use this organ. When a tool is called the
+    # stage knows from this which organ lights up.
     tools: list[str] = field(default_factory=list)
 
 
-# Kamera yoklaması aygıtı gerçekten açıyor ve ölçüldü: 518 ms. Ayar
-# sayfası her açılışta bunu çağıramaz, o yüzden sonuç bir süre saklanıyor.
-# Mikrofon listesi ise ölçülemeyecek kadar ucuz (<0,1 ms), orada saklama yok.
-# 60 sn idi; arayüz organları 30 sn'de bir yokluyor ve kabaca her ikinci
-# istek yarım saniyeyi HTTP iş parçacığında yakıyordu. Kamera takılıp
-# çıkarılan bir şey değil — 5 dakika saklamak güvenli.
+# The camera probe really opens the device and was measured: 518 ms. The
+# settings page cannot call this on every open, so the result is kept for
+# a while. The microphone list is too cheap to measure (<0.1 ms), no
+# caching there. It was 60 s; the UI probes the organs every 30 s and
+# roughly every second request burnt half a second on the HTTP thread. A
+# camera is not something plugged and unplugged — keeping it 5 minutes is
+# safe.
 _CAMERA_TTL = 300.0
 _camera_seen: tuple[float, bool] | None = None
 
 
 def has_microphone() -> bool:
-    """Makinede giriş yapan bir ses aygıtı var mı.
+    """Is there an audio device with input on the machine.
 
-    Olmayan bir mikrofonu ayarda açılabilir göstermek, kullanıcıyı
-    çalışmayan bir düğmeye tıklatmak demek — ve neden çalışmadığı hiçbir
-    yerde yazmıyor.
+    Showing a non-existent microphone as switchable in the settings means
+    making the user click a button that does not work — and nowhere does it
+    say why it does not work.
     """
     try:
         import sounddevice
@@ -72,10 +74,11 @@ def has_microphone() -> bool:
 
 
 def has_camera(lens: Any = None) -> bool:
-    """Makinede bir kamera var mı.
+    """Is there a camera on the machine.
 
-    Açık bir tampon varsa soru zaten cevaplı: kamera var ve çalışıyor.
-    Yoksa aygıt kısa süre açılıp kapatılıyor ve sonuç saklanıyor.
+    If there is an open buffer the question is already answered: the camera
+    exists and is running. Otherwise the device is opened and closed briefly
+    and the result is kept.
     """
     global _camera_seen
     import time
@@ -104,10 +107,10 @@ def has_camera(lens: Any = None) -> bool:
 def _mic(config: Any, ear: Any) -> Organ:
     from . import ear as hearing
 
-    # Kulak nesnesi VARSA paket/aygıt yoklamasına bakılmıyor: bir akış
-    # açılmış ya da açılmaya çalışılmış demektir ve onun gerçek hali
-    # (arıza, sağır, dinliyor) yoklamadan daha doğru. Yoklama araya girince
-    # gerçek bir arıza "yok" diye raporlanıyordu.
+    # If an ear object EXISTS the package/device probe is not consulted: a
+    # stream has been opened or an attempt was made, and its real state
+    # (failure, deaf, listening) is more accurate than the probe. When the
+    # probe got in the way, a real failure was reported as "yok".
     if ear is None:
         if not hearing.available():
             return Organ("mic", "Mikrofon", SENSE,
@@ -115,8 +118,9 @@ def _mic(config: Any, ear: Any) -> Organ:
         if not has_microphone():
             return Organ("mic", "Mikrofon", SENSE,
                          "bu makinede giriş yapan bir ses aygıtı yok", "yok", False, [])
-        # Donanım var ama kullanıcı ayarlardan kapatmış: sebep söylenmeli.
-        # "Kapalı" tek başına arıza gibi okunuyor; bu bir tercih.
+        # Hardware present but the user turned it off in settings: the
+        # reason must be said. "Kapalı" alone reads like a failure; this is
+        # a preference.
         if not bool(getattr(getattr(config, "listen", None), "enabled", False)):
             return Organ("mic", "Mikrofon", SENSE,
                          "kullanıcı ayarlardan kapatmış; o istemedikçe dinleme yok",
@@ -124,8 +128,9 @@ def _mic(config: Any, ear: Any) -> Organ:
         return Organ("mic", "Mikrofon", SENSE,
                      "sürekli dinleme kapalı", "kapalı", False, [])
 
-    # Gerçek durum, iyimser durum değil. Akış açılamadıysa "dinliyor"
-    # demek, kullanıcıyı olmayan bir kulağa konuşturmak.
+    # The real state, not the optimistic one. Saying "dinliyor" when the
+    # stream could not be opened makes the user talk to an ear that is not
+    # there.
     if failure := getattr(ear, "failure", ""):
         return Organ("mic", "Mikrofon", SENSE,
                      f"mikrofon akışı açılamadı — {failure}", "arıza", False, [])
@@ -158,10 +163,11 @@ def _lens(config: Any, lens: Any) -> Organ:
                      "kullanıcı istedi diye susturuldu; \"dornick\" demek geri açar",
                      "susturuldu", False, list(_LENS_TOOLS))
 
-    # Ayarlardan kapalıysa aygıta HİÇ dokunulmuyor. Yoklama kamerayı kısaca
-    # gerçekten açıyor (LED yanıp sönüyor) — kamerayı bilerek kapatan
-    # kullanıcı için bu "kapattım ama ışığı yanıyor" demek. Kapatan için
-    # kamera yok hükmünde; var mı yok mu sorusu ancak açınca sorulur.
+    # If it is off in settings the device is NOT touched at all. The probe
+    # really opens the camera briefly (the LED blinks) — for a user who
+    # deliberately turned the camera off this means "I turned it off but the
+    # light is on". For someone who turned it off the camera counts as
+    # absent; whether it exists is only asked when it is turned on.
     if lens is None and not bool(getattr(getattr(config, "camera", None), "enabled", False)):
         return Organ("lens", _LENS_NAME, SENSE,
                      "kullanıcı ayarlardan kapatmış; o istemedikçe bakılmaz, "
@@ -174,8 +180,8 @@ def _lens(config: Any, lens: Any) -> Organ:
 
     return Organ(
         "lens", _LENS_NAME, SENSE,
-        _bakis_detay("sürekli açık tampon; kareler kendiliğinden modele "
-                     "gitmiyor, `look` veya `kamera kesit` istediğinde alınıyor"),
+        _sight_detail("sürekli açık tampon; kareler kendiliğinden modele "
+                      "gitmiyor, `look` veya `kamera kesit` istediğinde alınıyor"),
         "açık" if live else "kapalı",
         live,
         list(_LENS_TOOLS),
@@ -196,20 +202,20 @@ def _voice(config: Any) -> Organ:
     )
 
 
-def _bakis_detay(taban: str) -> str:
-    """GPU analizi açıksa ajan bunu bilsin: kare değil metin gidiyor."""
+def _sight_detail(base: str) -> str:
+    """If GPU analysis is on the agent should know: text goes, not frames."""
     try:
         from . import sight as sight_mod
         if sight_mod.status().get("ready"):
-            return (taban + "; NVIDIA GPU yerelde nesneleri okuyor, "
+            return (base + "; NVIDIA GPU yerelde nesneleri okuyor, "
                     "sohbet modeline metin gidiyor")
     except Exception:
         pass
-    return taban
+    return base
 
 
 def _cameras(config: Any) -> list[Organ]:
-    """Dışarıdan bağlanan kameralar. Ayarlanmamışsa liste boş."""
+    """Externally connected cameras. Empty list if none is configured."""
     from . import watch as watching
 
     try:
@@ -220,16 +226,16 @@ def _cameras(config: Any) -> list[Organ]:
     organs: list[Organ] = []
     for camera in cameras:
         if camera.is_builtin():
-            # Dahili webcam `_lens` organında "Bilgisayar kamerası" — çiftleme.
+            # The built-in webcam is "Bilgisayar kamerası" in the `_lens` organ — duplicate.
             continue
-        detay = _bakis_detay(
+        detail = _sight_detail(
             "izlenen kamera; hareket yerelde ölçülüyor, yalnızca bir şey "
             "değiştiğinde soru soruluyor")
         if note := (camera.last_note or "").strip():
-            detay += f"; son: {note[:80]}"
+            detail += f"; son: {note[:80]}"
         organs.append(Organ(
             f"cam:{camera.id}", camera.name, SENSE,
-            detay,
+            detail,
             "izliyor" if getattr(camera, "enabled", True) else "duruyor",
             bool(getattr(camera, "enabled", True)),
             ["kamera"],
@@ -238,11 +244,11 @@ def _cameras(config: Any) -> list[Organ]:
 
 
 def _modules(config: Any) -> list[Organ]:
-    """Ajanın kendine yazdığı yetenekler.
+    """The skills the agent wrote for itself.
 
-    Harita çizmek, PLC adresinden değer okumak, USB'den cihaz yoklamak:
-    hangisini yazdıysa burada bir organ olarak duruyor. Elle eklenen bir
-    liste değil — atölyedeki dosyalardan okunuyor.
+    Drawing a map, reading a value from a PLC address, probing a device
+    over USB: whichever it wrote stands here as an organ. Not a hand-kept
+    list — read from the files in the workshop.
     """
     from . import skills as authored
 
@@ -262,12 +268,11 @@ def _modules(config: Any) -> list[Organ]:
 
 
 def _devices(config: Any) -> list[Organ]:
-    """Kayıtlı cihazlar: PLC, uzak kamera, seri porttaki kol, MCP sunucusu.
+    """Registered devices: PLC, remote camera, arm on a serial port, MCP server.
 
-    Kaydın kendisi bir şey yapmıyor — nereye bağlanılacağını söylüyor.
-    O yüzden `live` değil: bağlı olduğu doğrulanmış değil, yalnızca
-    tanımlanmış. Sahnede soluk duruyor ve onu süren yetenek çağrıldığında
-    canlanıyor.
+    The record itself does nothing — it says where to connect. So it is not
+    `live`: it is not verified as connected, only defined. It stands faint
+    on the stage and lights up when the skill that drives it is called.
     """
     from . import devices as declared
 
@@ -282,8 +287,9 @@ def _devices(config: Any) -> list[Organ]:
             device.summary or declared.line(device),
             declared.KIND_STATE.get(device.kind, "tanımlı"),
             False,
-            # Cihazı süren yetenek çağrıldığında sahnede bu organ canlanıyor:
-            # kutunun kendisi bir araç değil, ona bağlanan betik araç.
+            # When the skill driving the device is called this organ lights
+            # up on the stage: the box itself is not a tool, the script
+            # attached to it is.
             list(device.skills),
         )
         for device in found
@@ -291,7 +297,7 @@ def _devices(config: Any) -> list[Organ]:
 
 
 def _hand(config: Any) -> Organ:
-    """Ekran ve el: ajanın bilgisayarın kendisini kullanabilmesi."""
+    """Screen and hand: the agent being able to use the computer itself."""
     from .tools import hands as control
 
     if not control.available():
@@ -306,17 +312,17 @@ def _hand(config: Any) -> Organ:
 
 
 def senses(config: Any, *, ear: Any = None, lens: Any = None) -> list[Organ]:
-    """Duyular ve uzuvlar: mikrofon, kamera, ses, el.
+    """Senses and limbs: microphone, camera, voice, hand.
 
-    Sahne bütün envanteri çiziyor; sistem promptunun ihtiyacı bu dördü.
-    Ayrı duruyor ki prompt cihaz ve modülleri ikinci kez saymasın —
-    onların kendi bölümleri var.
+    The stage draws the whole inventory; the system prompt needs these
+    four. Kept separate so the prompt does not count devices and modules a
+    second time — they have their own sections.
     """
     return [_mic(config, ear), _lens(config, lens), _voice(config), _hand(config)]
 
 
 def inventory(config: Any, *, ear: Any = None, lens: Any = None) -> list[dict[str, Any]]:
-    """Ajanın o anki bedeni. Sahne bunu çiziyor."""
+    """The agent's current body. The stage draws this."""
     organs = senses(config, ear=ear, lens=lens)
     organs += _cameras(config)
     organs += _devices(config)

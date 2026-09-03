@@ -36,11 +36,11 @@ from typing import Any, Callable, Iterable
 from . import switches, weave
 from .clock import Clock, parse, wall_clock
 
-# Derived, not chosen. `yasam_bench.py --esik-egrisi` runs the 90-day
+# Derived, not chosen. `life_bench.py --threshold-curve` runs the 90-day
 # scenario with the night switched off and records prime precision against S
 # (unshrunk strengthening: total edge weight / node). Baseline precision was
 # 0.6033; the 5% drop starts at S = 2.3374. Run of 2026-09-02, curve in
-# docs/charts/basinc-bozulma.md. ESIK_ALT is a third of it (roadmap 3.10.3).
+# docs/charts/basinc-bozulma.md. LOWER_THRESHOLD is a third of it (roadmap 3.10.3).
 UPPER_THRESHOLD = 2.3374
 LOWER_THRESHOLD = 0.7791
 
@@ -385,24 +385,24 @@ class Sleeper:
         self.clock = clock or wall_clock
         self.watermark = watermark
         self.state_dir = state_dir
-        # Olaylar dondurulmuş şemadan geçiyor (night_events.SCHEMA): arayüz
-        # yalnız o sözlüğe güveniyor ve `recall.db`'ye hiç bakmıyor.
+        # Events go through the frozen schema (night_events.SCHEMA): the view
+        # trusts only that dict and never looks at `recall.db`.
         self.events = events or self._default_event
         self._wake: str = ""
         self._wake_at: float = 0.0
 
-    def _default_event(self, tur: str, veri: dict[str, Any]) -> None:
+    def _default_event(self, kind: str, data: dict[str, Any]) -> None:
         if self.state_dir is None:
             return
         from . import night_events
 
-        gun = self.clock().date().isoformat()
+        day = self.clock().date().isoformat()
         try:
             night_events.NightLog(
-                night_events.night_path(self.state_dir, gun),
-                lambda: self.clock()).emit(tur, **veri)
+                night_events.night_path(self.state_dir, day),
+                lambda: self.clock()).emit(kind, **data)
         except Exception:
-            pass        # gece, günlüğü yazılamadıysa da yaşandı
+            pass        # the night still happened if its log could not be written
 
     def wake(self, reason: str = "kullanici") -> None:
         """Ask the night to stop. The running unit finishes; none starts."""
@@ -410,12 +410,12 @@ class Sleeper:
         self._wake_at = time.perf_counter()
 
     def rhythm_arrival(self) -> str:
-        """Kullanıcının ne zaman geleceği tahmini — gece ona göre bitiyor."""
+        """The predicted time the user shows up — the night ends against it."""
         return self.rhythm.next_arrival(self.clock()).isoformat(timespec="minutes")
 
     def run(self, *, model: Callable[[str], str] | None = None,
-            max_cycles: int = 6, budget_sn: float = 300.0,
-            cycle_budget_sn: float = CYCLE_MINUTES * 60.0) -> NightReport:
+            max_cycles: int = 6, budget_s: float = 300.0,
+            cycle_budget_s: float = CYCLE_MINUTES * 60.0) -> NightReport:
         report = NightReport()
         if not switches.ACTIVE.weave:
             report.woke_reason = "orgu kapali"
@@ -433,8 +433,8 @@ class Sleeper:
             phase = phase_of(cycle, debt_phase=debt.get("faz", ""))
             report.phases.append(phase.value)
             self.events("uyku.dongu", {"no": cycle, "faz": phase.value})
-            kalan = min(cycle_budget_sn, budget_sn - (time.perf_counter() - started))
-            if kalan <= 0:
+            remaining = min(cycle_budget_s, budget_s - (time.perf_counter() - started))
+            if remaining <= 0:
                 break
             night = weave.night_pass(
                 self.store, self.sessions_dir, clock=self.clock,
@@ -442,7 +442,7 @@ class Sleeper:
                 # REM is where distillation lives; deep cycles never call the
                 # model, so an early wake cannot leave half a guess behind.
                 model=model if phase is Phase.REM else None,
-                budget_s=kalan, state_dir=self.state_dir)
+                budget_s=remaining, state_dir=self.state_dir)
             report.cycles = cycle
             report.replayed += night.replayed
             report.carried = night.devreden

@@ -1,28 +1,29 @@
-"""`kos` aracı: projenin kendi test düzeneğini bulup çalıştırır.
+"""The `kos` tool: finds the project's own test harness and runs it.
 
-Bu araç `denetle`nin bittiği yerden başlıyor. `denetle` dilin sözdizimine
-bakar; `kos` kodu GERÇEKTEN çalıştırır. Aradaki fark bir kullanıcı
-şikâyetinin tamamı:
+This tool starts where `denetle` ends. `denetle` looks at the language's
+syntax; `kos` ACTUALLY runs the code. The difference is an entire user
+complaint:
 
     public function index(): string { return redirect(); }
 
-`php -l` bunu temiz bulur, tarayıcı TypeError verir. Testi koşan bir ajan
-bunu tur kapanmadan görür.
+`php -l` finds this clean, the browser throws a TypeError. An agent that
+runs the tests sees it before the turn closes.
 
-İzin kipi kararı — `mutates=True`, gerekçesi:
+Permission-mode decision — `mutates=True`, the reasoning:
 
-    Test koşmak "dosya değiştirmez" diye başlar ama bu doğru değil. Bir
-    test takımı geçiş (migration) koşturur, `writable/` temizler, önbellek
-    yazar, veritabanı düşürüp kurar, ağa çıkar, e-posta gönderir. Üstelik
-    çalıştırdığı kod BİZİM değil, projenin — yani kullanıcının makinesinde
-    kullanıcının yetkileriyle koşan üçüncü taraf koddur. `shell` tam bu
-    yüzden `mutates=True`; `kos` da keşfedilmiş bir komutu koşturan bir
-    kabuktur. `mutates=False` demek, plan kipindeki bir ajanın kullanıcının
-    test takımını (ve onun yan etkilerini) sessizce tetikleyebilmesi
-    demekti. Sürtünmeyi izin kuralı çözer: kullanıcı bir kez "kos:*" der.
+    Running tests starts as "does not change files" but that is not true.
+    A test suite runs migrations, cleans `writable/`, writes caches, drops
+    and recreates databases, goes out to the network, sends e-mail. And the
+    code it runs is not OURS but the project's — i.e. third-party code
+    running on the user's machine with the user's privileges. `shell` is
+    `mutates=True` for exactly this reason; `kos` is also a shell that runs
+    a discovered command. `mutates=False` would have meant an agent in plan
+    mode could silently trigger the user's test suite (and its side
+    effects). Friction is solved by a permission rule: the user says
+    "kos:*" once.
 
-`parallel_safe=False`: iki test koşumu aynı anda aynı veritabanına,
-aynı `writable/` klasörüne girer.
+`parallel_safe=False`: two test runs at the same time enter the same
+database, the same `writable/` folder.
 """
 
 from __future__ import annotations
@@ -34,42 +35,44 @@ from .. import testrun
 from .base import ToolContext, ToolRegistry, ToolResult, object_schema
 
 
-def _kok_bul(args: dict[str, Any], ctx: ToolContext) -> Path:
-    """Hangi projede koşacağız?
+def _find_root(args: dict[str, Any], ctx: ToolContext) -> Path:
+    """Which project are we going to run in?
 
-    Sıra: (1) modelin verdiği yol, (2) bu oturumda en son dosya yazılan
-    proje, (3) atölye, (4) çalışma alanı. Her durumda sonuç metninde kökün
-    tam yolu yazıyor — yanlış tahmin edilse bile model gördüğü an düzeltir.
+    Order: (1) the path the model gave, (2) the project a file was most
+    recently written to in this session, (3) the workshop, (4) the
+    workspace. In every case the full path of the root is in the result
+    text — even if guessed wrong, the model corrects it the moment it sees
+    it.
     """
-    if ham := (args.get("path") or "").strip():
-        yol = Path(ham).expanduser()
-        if not yol.is_absolute():
-            temel = ctx.sandbox.root if ctx.sandbox.enabled else ctx.workspace
-            yol = temel / yol
-        return testrun.project_root(yol)
-    if (son := testrun.son_proje()) is not None:
-        return son
+    if raw := (args.get("path") or "").strip():
+        path = Path(raw).expanduser()
+        if not path.is_absolute():
+            base = ctx.sandbox.root if ctx.sandbox.enabled else ctx.workspace
+            path = base / path
+        return testrun.project_root(path)
+    if (last := testrun.son_proje()) is not None:
+        return last
     return ctx.sandbox.root if ctx.sandbox.enabled else ctx.workspace
 
 
-def _duzenek_ozeti(kok: Path) -> str:
-    """Klasörde bulunan düzeneklerin listesi — koşmadan, bedava."""
-    hepsi = testrun.tespit_hepsi(kok)
-    if not hepsi:
-        return testrun.tespit_metni(kok)
+def _harness_summary(root: Path) -> str:
+    """The list of harnesses found in the folder — without running, for free."""
+    found = testrun.tespit_hepsi(root)
+    if not found:
+        return testrun.tespit_metni(root)
 
-    satirlar = [f"{kok} altında bulunan düzenekler:"]
-    for d in hepsi:
-        etiket = "test" if d.tur == "test" else "sağlık denetimi"
-        satirlar.append(f"  `{d.etiket}` — {etiket}, kanıt: {d.kanit}")
-        for not_ in d.notlar:
-            satirlar.append(f"      {not_}")
+    lines = [f"{root} altında bulunan düzenekler:"]
+    for d in found:
+        label = "test" if d.tur == "test" else "sağlık denetimi"
+        lines.append(f"  `{d.etiket}` — {label}, kanıt: {d.kanit}")
+        for note in d.notlar:
+            lines.append(f"      {note}")
         if d.engel:
-            satirlar.append(f"      koşulamaz: {d.engel}")
-    satirlar.append("")
-    satirlar.append("Bunlar tespit; hiçbiri koşturulmadı. Koşturmak için "
-                    "`kos` aracını `sadece_tespit` olmadan çağır.")
-    return "\n".join(satirlar)
+            lines.append(f"      koşulamaz: {d.engel}")
+    lines.append("")
+    lines.append("Bunlar tespit; hiçbiri koşturulmadı. Koşturmak için "
+                 "`kos` aracını `sadece_tespit` olmadan çağır.")
+    return "\n".join(lines)
 
 
 def register(registry: ToolRegistry) -> None:
@@ -125,54 +128,55 @@ yazıyor — kullanıcıya aktarırken de aynı sınırı koru.
         parallel_safe=False,
     )
     async def kos(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
-        kok = _kok_bul(args, ctx)
-        if not kok.is_dir():
+        root = _find_root(args, ctx)
+        if not root.is_dir():
             return ToolResult.error(
-                f"Klasör yok: {kok}. `path` ile var olan bir proje klasörü ver."
+                f"Klasör yok: {root}. `path` ile var olan bir proje klasörü ver."
             )
 
         if args.get("sadece_tespit"):
-            return ToolResult(content=_duzenek_ozeti(kok),
-                              detail={"kok": str(kok), "tespit": True})
+            return ToolResult(content=_harness_summary(root),
+                              detail={"kok": str(root), "tespit": True})
 
-        zaman_asimi = float(args.get("zaman_asimi") or testrun.DEFAULT_TIMEOUT)
+        timeout = float(args.get("zaman_asimi") or testrun.DEFAULT_TIMEOUT)
 
-        if komut := (args.get("komut") or "").strip():
-            sonuc = await testrun.kos_komut(
-                komut, kok, zaman_asimi=zaman_asimi, cancel=ctx.cancel)
-            return _cevap(sonuc)
+        if command := (args.get("komut") or "").strip():
+            result = await testrun.kos_komut(
+                command, root, zaman_asimi=timeout, cancel=ctx.cancel)
+            return _reply(result)
 
-        duzenek = testrun.tespit(kok)
-        if duzenek is None:
-            # Kanıt yok. Uydurma komut üretmek yerine ne yapılacağını söyle.
-            return ToolResult(content=testrun.tespit_metni(kok),
-                              detail={"kok": str(kok), "duzenek": None})
+        harness = testrun.tespit(root)
+        if harness is None:
+            # No evidence. Instead of inventing a command, say what to do.
+            return ToolResult(content=testrun.tespit_metni(root),
+                              detail={"kok": str(root), "duzenek": None})
 
-        if not duzenek.kosulabilir:
+        if not harness.kosulabilir:
             return ToolResult(
                 content=(
-                    f"{kok} altında `{duzenek.etiket}` düzeneği var "
-                    f"(kanıt: {duzenek.kanit}) ama koşturulamıyor: "
-                    f"{duzenek.engel}\n\nBu bir kod hatası değil, makinenin "
+                    f"{root} altında `{harness.etiket}` düzeneği var "
+                    f"(kanıt: {harness.kanit}) ama koşturulamıyor: "
+                    f"{harness.engel}\n\nBu bir kod hatası değil, makinenin "
                     "durumu. Kullanıcıya bildir; kurulum kararı onun."
                 ),
-                detail={"kok": str(kok), "engel": duzenek.engel},
+                detail={"kok": str(root), "engel": harness.engel},
             )
 
-        sonuc = await testrun.kos(duzenek, zaman_asimi=zaman_asimi, cancel=ctx.cancel)
-        return _cevap(sonuc)
+        result = await testrun.kos(harness, zaman_asimi=timeout, cancel=ctx.cancel)
+        return _reply(result)
 
 
-def _cevap(sonuc: testrun.Result) -> ToolResult:
-    """Sonucu araç cevabına çevirir.
+def _reply(result: testrun.Result) -> ToolResult:
+    """Turns the result into a tool reply.
 
-    `is_error` yalnızca gerçekten kötü giden durumlarda: başarısız test,
-    sıfırdan farklı çıkış kodu, zaman aşımı. "Düzenek yok" hata değil —
-    bilgi; hata sayılırsa model kendi yazdığında bir kusur olduğunu sanır.
+    `is_error` only when things really went wrong: a failed test, a
+    non-zero exit code, a timeout. "No harness" is not an error — it is
+    information; counted as an error, the model would assume a flaw in what
+    it wrote.
     """
     faulty = (
-        sonuc.status in ("zaman_asimi", "baslatilamadi", "kesildi")
-        or sonuc.cikis_kodu != 0
-        or sonuc.sayim.kalan > 0
+        result.status in ("zaman_asimi", "baslatilamadi", "kesildi")
+        or result.cikis_kodu != 0
+        or result.sayim.kalan > 0
     )
-    return ToolResult(content=sonuc.metin(), is_error=faulty, detail=sonuc.detay())
+    return ToolResult(content=result.metin(), is_error=faulty, detail=result.detay())

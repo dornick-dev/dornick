@@ -1,14 +1,14 @@
-"""Otomasyonların hafızada bıraktığı iz.
+"""The trace automations leave in memory.
 
-İki vaat sınanıyor:
+Two promises are tested:
 
-  1. Kurulan bir akış hafızaya YORDAM olarak giriyor ve sonradan
-     bulunabiliyor — "bunu daha önce otomasyonda yapmıştım" anı ancak
-     kayıt varsa geliyor.
-  2. Bozulan bir adım hafızaya DERS olarak, HER ZAMAN AYNI KALIPLA
-     giriyor. Kalıbın sabitliği yalnız düzen meselesi değil: bu kayıtlar
-     gece koşan kişisel ince ayarın girdisi ve her seferinde başka türlü
-     yazılan bir olayda öğrenilecek örüntü kalmıyor.
+  1. A created workflow enters memory as a PROCEDURE and can be found later
+     — the "I did this in an automation before" moment only comes if the
+     record exists.
+  2. A broken step enters memory as a LESSON, ALWAYS WITH THE SAME PATTERN.
+     The fixed pattern is not just a matter of tidiness: these records are
+     the input of the personal fine-tuning that runs at night, and an event
+     written differently every time leaves no pattern to learn.
 """
 
 from __future__ import annotations
@@ -18,7 +18,7 @@ from pathlib import Path
 from dornick import workflow_mind, workflows
 
 
-def _akis(tmp_path: Path) -> workflows.Workflow:
+def _workflow(tmp_path: Path) -> workflows.Workflow:
     return workflows.save(tmp_path, {
         "id": "posta", "title": "Günlük posta özeti",
         "nodes": [
@@ -32,99 +32,99 @@ def _akis(tmp_path: Path) -> workflows.Workflow:
     })
 
 
-class _SahteZihin:
+class _FakeMind:
     def __init__(self) -> None:
-        self.kayitlar: list[dict] = []
+        self.records: list[dict] = []
 
     def remember(self, content, *, kind="fact", title="", tags=()):
-        self.kayitlar.append({"content": content, "kind": kind,
-                              "title": title, "tags": tuple(tags)})
+        self.records.append({"content": content, "kind": kind,
+                             "title": title, "tags": tuple(tags)})
         return object()
 
 
 def test_a_saved_automation_becomes_a_procedure(tmp_path: Path) -> None:
-    zihin = _SahteZihin()
-    assert workflow_mind.akisi_hatirla(zihin, _akis(tmp_path)) is True
+    mind = _FakeMind()
+    assert workflow_mind.akisi_hatirla(mind, _workflow(tmp_path)) is True
 
-    (kayit,) = zihin.kayitlar
-    assert kayit["kind"] == "procedure"
-    assert kayit["title"] == "otomasyon:posta"
-    assert workflow_mind.ETIKET in kayit["tags"]
-    # İçerik aylar sonra okunabilir olmalı: ne yaptığı, neye ihtiyaç duyduğu.
-    assert "Günlük posta özeti" in kayit["content"]
-    assert "mail_read" in kayit["content"] and "http" in kayit["content"]
-    assert "MAIL_TOKEN" in kayit["content"] and "WP_TOKEN" in kayit["content"]
-    assert "wp_gonder" in kayit["content"]
+    (record,) = mind.records
+    assert record["kind"] == "procedure"
+    assert record["title"] == "otomasyon:posta"
+    assert workflow_mind.TAG in record["tags"]
+    # The content must be readable months later: what it does, what it needs.
+    assert "Günlük posta özeti" in record["content"]
+    assert "mail_read" in record["content"] and "http" in record["content"]
+    assert "MAIL_TOKEN" in record["content"] and "WP_TOKEN" in record["content"]
+    assert "wp_gonder" in record["content"]
 
 
 def test_a_big_graph_does_not_flood_the_memory(tmp_path: Path) -> None:
-    """Elli düğümlük bir grafiği olduğu gibi dökmek çağrışımı boğar."""
+    """Dumping a fifty-node graph as is drowns association."""
     wf = workflows.save(tmp_path, {
         "id": "buyuk", "title": "Büyük",
         "nodes": [{"id": f"n{i}", "title": f"Adım {i}", "type": "shell"}
                   for i in range(40)],
         "edges": [],
     })
-    metin = workflow_mind.akis_metni(wf)
-    assert "ve 28 adım daha" in metin
-    assert len(metin) < 900
+    text = workflow_mind.workflow_text(wf)
+    assert "ve 28 adım daha" in text
+    assert len(text) < 900
 
 
 def test_the_lesson_shape_is_stable(tmp_path: Path) -> None:
-    """Aynı olay her seferinde aynı kalıpla — ince ayarın görebilmesi için."""
-    wf = _akis(tmp_path)
-    bir = workflow_mind.lesson_text(wf.id, wf.nodes[0], RuntimeError("bağlanamadı"))
-    iki = workflow_mind.lesson_text(wf.id, wf.nodes[0], RuntimeError("bağlanamadı"))
-    assert bir == iki
-    assert bir.startswith("Otomasyon [posta] adımı hata verdi")
-    assert "RuntimeError: bağlanamadı" in bir
+    """The same event with the same pattern every time — so fine-tuning can see it."""
+    wf = _workflow(tmp_path)
+    first = workflow_mind.lesson_text(wf.id, wf.nodes[0], RuntimeError("bağlanamadı"))
+    second = workflow_mind.lesson_text(wf.id, wf.nodes[0], RuntimeError("bağlanamadı"))
+    assert first == second
+    assert first.startswith("Otomasyon [posta] adımı hata verdi")
+    assert "RuntimeError: bağlanamadı" in first
 
-    zihin = _SahteZihin()
-    workflow_mind.recall_lesson(zihin, wf.id, wf.nodes[0], RuntimeError("bağlanamadı"))
-    (kayit,) = zihin.kayitlar
-    assert kayit["kind"] == "lesson"
-    assert workflow_mind.LESSON_TAG in kayit["tags"]
-    # Akış etiketi de var: bir akışın bütün dersleri birlikte bulunabilsin.
-    assert f"{workflow_mind.ETIKET}:posta" in kayit["tags"]
+    mind = _FakeMind()
+    workflow_mind.recall_lesson(mind, wf.id, wf.nodes[0], RuntimeError("bağlanamadı"))
+    (record,) = mind.records
+    assert record["kind"] == "lesson"
+    assert workflow_mind.LESSON_TAG in record["tags"]
+    # The workflow tag is there too: all lessons of a workflow can be found together.
+    assert f"{workflow_mind.TAG}:posta" in record["tags"]
 
 
 def test_no_mind_is_silent_not_fatal() -> None:
-    """Hafıza yoksa otomasyon yine çalışmalı — kayıt ikincil."""
+    """Without a memory the automation must still run — the record is secondary."""
     assert workflow_mind.akisi_hatirla(None, None) is False
     assert workflow_mind.recall_lesson(None, "x", None, RuntimeError("y")) is False
-    assert workflow_mind.akislari_ara(None, "posta") == []
+    assert workflow_mind.search_workflows(None, "posta") == []
 
 
 def test_recall_returns_only_automations() -> None:
-    """Arama otomasyon kayıtlarını süzüyor; alakasız hatıra dönmüyor."""
+    """The search filters automation records; unrelated memories do not come back."""
 
-    class _Hatira:
+    class _Memory:
         def __init__(self, title, tags):
             self.title, self.tags = title, tags
 
-    class _Puanli:
+    class _Scored:
         def __init__(self, item):
             self.item = item
 
-    class _Zihin:
+    class _Mind:
         def recall(self, _q, limit=8):
             return [
-                _Puanli(_Hatira("kahve tarifi", ["mutfak"])),
-                _Puanli(_Hatira("otomasyon:posta", [workflow_mind.ETIKET])),
-                _Puanli(_Hatira("otomasyon:rapor", [])),
+                _Scored(_Memory("kahve tarifi", ["mutfak"])),
+                _Scored(_Memory("otomasyon:posta", [workflow_mind.TAG])),
+                _Scored(_Memory("otomasyon:rapor", [])),
             ]
 
-    bulunan = workflow_mind.akislari_ara(_Zihin(), "posta")
-    assert [m.title for m in bulunan] == ["otomasyon:posta", "otomasyon:rapor"]
+    found = workflow_mind.search_workflows(_Mind(), "posta")
+    assert [m.title for m in found] == ["otomasyon:posta", "otomasyon:rapor"]
 
 
 def test_a_broken_mind_never_breaks_the_caller() -> None:
-    class _Bozuk:
+    class _Broken:
         def remember(self, *a, **k):
             raise RuntimeError("zihin düştü")
 
         def recall(self, *a, **k):
             raise RuntimeError("zihin düştü")
 
-    assert workflow_mind.akisi_hatirla(_Bozuk(), None) is False
-    assert workflow_mind.akislari_ara(_Bozuk(), "x") == []
+    assert workflow_mind.akisi_hatirla(_Broken(), None) is False
+    assert workflow_mind.search_workflows(_Broken(), "x") == []

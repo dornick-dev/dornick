@@ -1,16 +1,17 @@
-"""İzin motoru.
+"""Permission engine.
 
-Kritik tasarım kararı: bu kapı **döngünün dışındadır**. Modelin onayladığı
-bir şey değil, harness'ın uyguladığı bir şey. Politikayı ajanın mantığına
-gömersen, model onu ikna edebilir hale gelir.
+Critical design decision: this gate is **outside the loop**. It is not
+something the model approves, it is something the harness enforces. Bury
+the policy in the agent's logic and the model becomes able to talk it
+around.
 
-Kural biçimi: "araç_adı:argüman-deseni" (fnmatch).
-    "shell:git *"     git komutları
-    "shell:*"         tüm kabuk komutları
-    "write_file:*"    tüm dosya yazmaları
-    "*"               her şey
+Rule format: "tool_name:argument-pattern" (fnmatch).
+    "shell:git *"     git commands
+    "shell:*"         every shell command
+    "write_file:*"    every file write
+    "*"               everything
 
-Reddetme her zaman kazanır.
+Deny always wins.
 """
 
 from __future__ import annotations
@@ -25,11 +26,11 @@ from . import guards
 if TYPE_CHECKING:  # pragma: no cover
     from .tools.base import ToolSpec
 
-# Bir aracın "neyi hedeflediğini" temsil eden argümanlar, öncelik sırasıyla.
-# `komut`: `kos` aracının tespiti geçersiz kılan alanı. Burada olmasaydı
-# elle verilen bir komut kapıya `path` olarak görünürdü — yani kural
-# komutu değil klasörü eşleştirirdi ve "şu klasörde test koş" izni, aynı
-# klasörde HERHANGİ bir komuta izin haline gelirdi.
+# Arguments that represent "what a tool targets", in priority order.
+# `komut`: the field of the `kos` tool that overrides detection. Without it
+# here a hand-given command would appear to the gate as `path` — the rule
+# would match the folder, not the command, and a "run tests in that folder"
+# permission would become permission for ANY command in that folder.
 SUBJECT_KEYS = ("command", "komut", "path", "url", "target", "query", "pattern")
 
 
@@ -54,15 +55,17 @@ class PermissionEngine:
     def evaluate(self, spec: "ToolSpec", args: dict[str, Any]) -> tuple[Decision, str]:
         subject = f"{spec.name}:{describe(args)}"
 
-        # Sabit korumalar HER ŞEYDEN önce: kullanıcının allow/yolo gevşetmesi
-        # bile bunları açamaz. Sır dosyaları, kip/kapı dosyalarına yazma ve
-        # açılış kalıcılığı — açılması güvenlik modelini çökertir.
-        mutasyon = bool(spec.mutates) and not _safe_action(spec, args)
-        if (gerekce := guards.sabit_ret(spec.name, mutasyon, args)) is not None:
-            # Gerekçe kural dizesinde taşınıyor (sentinel önekiyle): executor
-            # bunu jenerik "politika gereği engellendi" yerine olduğu gibi
-            # modele gösterir — model neyi neden yapamadığını bilsin.
-            return Decision.DENY, "sabit:koruma:" + gerekce
+        # Fixed guards BEFORE EVERYTHING: even the user's allow/yolo
+        # loosening cannot open these. Secret files, writes to mode/gate
+        # files and startup persistence — opening them collapses the
+        # security model.
+        mutation = bool(spec.mutates) and not _safe_action(spec, args)
+        if (reason := guards.sabit_ret(spec.name, mutation, args)) is not None:
+            # The reason travels in the rule string (with a sentinel prefix):
+            # the executor shows it to the model as-is instead of the generic
+            # "blocked by policy" — the model should know what it cannot do
+            # and why.
+            return Decision.DENY, "sabit:koruma:" + reason
 
         if rule := _first_match(subject, self.deny):
             return Decision.DENY, rule
@@ -73,11 +76,12 @@ class PermissionEngine:
         if self.mode == "yolo":
             return Decision.ALLOW, "mode:yolo"
 
-        # Ajanın KENDİ defterine yazması mutasyon sayılmıyor: `mind_memory
-        # save` için kullanıcıya onay penceresi açmak (plan kipinde ise
-        # düpedüz reddetmek) zihni durduruyordu — konuşma dökümü akarken
-        # kalıcı bellek iki gün boyunca hiçbir tercih/ders/olgu yazmadı.
-        # Silmek (forget) hâlâ mutasyon ve gated kalıyor.
+        # The agent writing to its OWN notebook does not count as a mutation:
+        # opening a confirmation window for `mind_memory save` (or flatly
+        # denying it in plan mode) was stalling the mind — while the
+        # conversation transcript flowed, persistent memory wrote no
+        # preference/lesson/fact for two days. Deleting (forget) is still a
+        # mutation and stays gated.
         mutating = spec.mutates and not _safe_action(spec, args)
 
         if self.mode == "plan":
@@ -88,16 +92,17 @@ class PermissionEngine:
         if self.mode == "auto":
             return (Decision.ASK if mutating else Decision.ALLOW), "mode:auto"
 
-        # mode == "ask": her şey sorulur. TEK istisna, aracın açıkça güvenli
-        # ilan ettiği eylemler (ajanın kendi defterine yazması) — yoksa her
-        # hatıra bir onay penceresi olur ve model kaydetmeyi bırakır.
-        # Okuma/yazma gibi asıl işler burada aynen sorulmaya devam ediyor.
+        # mode == "ask": everything is asked. The ONE exception is actions
+        # the tool explicitly declares safe (the agent writing to its own
+        # notebook) — otherwise every memory becomes a confirmation window
+        # and the model stops saving. Real work like reading/writing keeps
+        # being asked here exactly as before.
         if _safe_action(spec, args):
             return Decision.ALLOW, "mode:ask"
         return Decision.ASK, "mode:ask"
 
     def remember_allow(self, spec: "ToolSpec", args: dict[str, Any]) -> str:
-        """Kullanıcı 'bir daha sorma' derse üretilecek kural."""
+        """The rule produced when the user says 'don't ask again'."""
         rule = f"{spec.name}:{describe(args)}" if describe(args) else f"{spec.name}:*"
         if rule not in self.allow:
             self.allow.append(rule)
@@ -105,7 +110,7 @@ class PermissionEngine:
 
 
 def describe(args: dict[str, Any]) -> str:
-    """Argümanlardan eşleştirilebilir tek satırlık bir özne çıkarır."""
+    """Extracts a matchable one-line subject from the arguments."""
     for key in SUBJECT_KEYS:
         value = args.get(key)
         if isinstance(value, str) and value.strip():
@@ -116,11 +121,12 @@ def describe(args: dict[str, Any]) -> str:
 
 
 def _safe_action(spec: "ToolSpec", args: dict[str, Any]) -> bool:
-    """Bu çağrı, aracın onaysız yapabileceğini ilan ettiği eylem mi?
+    """Is this call an action the tool declared it may perform unconfirmed?
 
-    Çok-eylemli araçlarda (`action` enum'u) tek bir `mutates` bayrağı fazla
-    kaba kalıyor: `mind_memory save` ajanın kendi not defterine yazmak,
-    `forget` ise kalıcı silme. İkisini aynı kefeye koymak zihni durdurdu.
+    On multi-action tools (an `action` enum) a single `mutates` flag is too
+    coarse: `mind_memory save` is the agent writing to its own notebook,
+    `forget` is permanent deletion. Putting both in the same basket stalled
+    the mind.
     """
     safe = getattr(spec, "safe_actions", ()) or ()
     if not safe:

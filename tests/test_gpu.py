@@ -1,4 +1,4 @@
-"""GPU ölçümü konsol penceresi açtırmasın."""
+"""The GPU measurement must not open a console window."""
 
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ def _fresh_cache() -> None:
 
 
 def test_nvidia_gpus_uses_create_no_window(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Ayar kaydı / VRAM ölçümü nvidia-smi ile siyah cmd parlatmasın."""
+    """Saving settings / measuring VRAM must not flash a black cmd via nvidia-smi."""
     seen: dict = {}
 
     def capture(*_a, **kwargs):
@@ -32,8 +32,8 @@ def test_nvidia_gpus_uses_create_no_window(monkeypatch: pytest.MonkeyPatch) -> N
 
 
 def test_nvidia_gpus_is_cached(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Kamera güvertesi her 1.5 sn liste soruyordu; her seferinde nvidia-smi
-    HTTP iş parçacığını 4 sn kilitleyebiliyordu."""
+    """The camera deck asked for the list every 1.5 s; each time nvidia-smi
+    could lock the HTTP thread for 4 s."""
     n = {"n": 0}
 
     def capture(*_a, **_k):

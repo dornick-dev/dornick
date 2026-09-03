@@ -1,19 +1,19 @@
-"""Masaüstü uygulaması.
+"""Desktop application.
 
-Pencere, işletim sisteminin kendi webview'ıdır (Windows'ta WebView2) —
-Electron'un yaptığının aynısı, ama Chromium'u paketlemeden. Arayüz aynı
-HTML/CSS/JS; motor da aynı motor.
+The window is the operating system's own webview (WebView2 on Windows) —
+exactly what Electron does, but without bundling Chromium. The UI is the
+same HTML/CSS/JS; the engine is the same engine.
 
-Üç thread var ve sınırları net:
+There are three threads and the boundaries are sharp:
 
-    ana thread      pencere. pywebview'in start()'ı ana thread'de çalışmak
-                    zorunda ve pencere kapanana kadar bloke eder.
-    asyncio thread  ajan döngüsü.
-    HTTP thread'ler sunucu; arayüzden gelen istekleri karşılar.
+    main thread     the window. pywebview's start() has to run on the main
+                    thread and blocks until the window closes.
+    asyncio thread  the agent loop.
+    HTTP threads    the server; answers requests coming from the UI.
 
-Arayüzden ajana geçiş her zaman `loop.call_soon_threadsafe` ya da
-`run_coroutine_threadsafe` üzerinden yapılır. Ajandan arayüze geçiş
-`Hub.emit` üzerinden — o da kendi içinde kilitli.
+Crossing from the UI to the agent always goes through
+`loop.call_soon_threadsafe` or `run_coroutine_threadsafe`. Crossing from
+the agent to the UI goes through `Hub.emit` — which is locked internally.
 """
 
 from __future__ import annotations
@@ -65,23 +65,24 @@ from .web.server import Hub, MindServer
 WINDOW_TITLE = "Dornick"
 WINDOW_BACKGROUND = "#0b0e14"
 
-# Uyandirma taramasi icin kullanilan model. Kucuk ve hizli olmasi
-# yeterli: aranan sey tek kelime.
+# Model used for the wake-word scan. Small and fast is enough: the thing
+# being searched for is a single word.
 SCOUT_SIZE = "base"
 
-# Biri odaya girdiğinde ajana gidilen soru. Selam vermesi değil, **bakması**
-# isteniyor: kim geldiğini görsün, tanıdıksa adıyla karşılasın.
-# Adı çağrıldı ama arkasından bir şey söylenmedi ("dornick"). Adı çağrılıp
-# susmak, duymamakla aynı şey: karşındaki insan başını çevirir ve "efendim"
-# der. Kısa tutulması önemli — uzun bir açılış cümlesi burada gereksiz.
+# The question sent to the agent when someone enters the room. Not a greeting
+# but a **look** is asked for: see who arrived and, if familiar, greet by name.
+# The name was called but nothing followed it ("dornick"). Calling the name
+# and then going silent is the same as not hearing: the person across from
+# you turns their head and says "yes?". Keeping it short matters — a long
+# opening sentence is unnecessary here.
 CALLED_ASK = (
     "Kullanıcı yalnızca adını söyledi, arkasından bir şey istemedi. "
     "Tek kelimelik bir karşılık ver (\"efendim\", \"buradayım\" gibi) ve "
     "sus. Araç kullanma, soru sorma, uzatma."
 )
 
-# Açılışın azami süresi. Cömert: ilk açılışta bir tanıma modeli inebiliyor
-# ve o indirme dakikalar sürüyor.
+# Maximum boot duration. Generous: on first launch a recognition model may
+# be downloaded, and that download takes minutes.
 BOOT_TIMEOUT_S = 300.0
 
 GREET_ASK = (
@@ -92,28 +93,28 @@ GREET_ASK = (
 )
 
 
-# Açık sesli iptal sözleri: yalnızca bunlar süren turu durduruyor. Gerisi
-# (yeni bir istek) iptal değil, sıraya girer. "Yeni söylediğim eskiyi iptal
-# etmesini istiyorsa ancak öyle yapabilir" — kullanıcının koyduğu kural.
+# Explicit spoken cancel words: only these stop the running turn. Everything
+# else (a new request) is not a cancel, it queues. "Only if I want what I
+# just said to cancel the old one can it do that" — the rule the user set.
 _STOP_WORDS = ("dur", "durdur", "yeter", "kes", "iptal", "vazgeç", "stop", "sus")
 
 
 def _is_stop(text: str) -> bool:
     words = text.lower().replace("!", "").replace(".", "").split()
-    # Kısa ve yalnızca durdurma sözünden ibaret: "dur", "yeter dur" gibi.
-    # Uzun bir cümlenin içinde "dur" geçmesi (ör. "durumu anlat") iptal değil.
+    # Short and consisting only of a stop word: "dur", "yeter dur" and so on.
+    # "dur" occurring inside a long sentence (e.g. "durumu anlat") is not a cancel.
     return bool(words) and len(words) <= 2 and all(w in _STOP_WORDS for w in words)
 
 
-# Kapatma sözleri: sohbet penceresini kapatır. Karşılık verilmez — "rica
-# ederim!" demek kapanan konuşmayı yeniden açmak olurdu; insan da vedaya
-# veda ile cevap verip durmaz. "tamam" tek başına listede yok: ajanın
-# sorduğu bir sorunun cevabı da "tamam" olabiliyor.
+# Closing words: they close the chat window. No reply is given — saying
+# "you're welcome!" would reopen the conversation that just closed; a human
+# doesn't keep answering a goodbye with a goodbye either. "tamam" alone is
+# not on the list: it can also be the answer to a question the agent asked.
 _CLOSE_WORDS = ("kapat", "kapan", "görüşürüz", "hoşça kalın", "hoşça kal",
                 "hoşçakal", "iyi geceler", "sonra konuşuruz")
 
-# Kapatma sözünün yanında gelebilecek dolgu: "tamam görüşürüz",
-# "teşekkürler kapat" da kapanış sayılıyor.
+# Filler that may come alongside a closing word: "tamam görüşürüz",
+# "teşekkürler kapat" also count as a close.
 _CLOSE_PAD = frozenset(("tamam", "peki", "teşekkürler", "teşekkür", "ederim",
                         "sağ", "sağol", "ol", "çok", "iyi"))
 
@@ -129,9 +130,9 @@ def _is_close(text: str) -> bool:
     return False
 
 
-# Nezaket / bekleme: modele gitmez. "teşekkürler" → "rica ederim" bir
-# asistan döngüsü; "şimdi bakayım" bir istek değil. "tamam" tek başına
-# yok — ajanın sorduğu şeye evet de olabiliyor.
+# Courtesy / waiting: does not go to the model. "teşekkürler" → "rica ederim"
+# is an assistant loop; "şimdi bakayım" is not a request. "tamam" alone is
+# absent — it can also be a yes to what the agent asked.
 _ACK_CORE = frozenset((
     "teşekkürler", "teşekkür", "tesekkurler", "tesekkur",
     "sağol", "sagol", "sağolun", "sagolun", "eyvallah",
@@ -161,10 +162,11 @@ def _is_ack(text: str) -> bool:
 
 
 def inherit_last_model(mind: Any, session_id: str, sessions_dir: Any) -> str:
-    """Yeni oturuma en son sabitlenmiş sohbet modelini yazar.
+    """Writes the most recently pinned chat model into the new session.
 
-    Katalog seçimi sohbet metasındadır; `dornick --app` her açılışta yeni
-    oturum açınca pin kayboluyor ve küresel eski model geri geliyordu.
+    The catalogue choice lives in the chat meta; since `dornick --app` opens
+    a new session on every launch, the pin was getting lost and the global
+    old model kept coming back.
     """
     from pathlib import Path
 
@@ -192,10 +194,10 @@ def inherit_last_model(mind: Any, session_id: str, sessions_dir: Any) -> str:
 
 
 async def _retire(client: Any) -> None:
-    """Değiştirilen istemciyi kapatır.
+    """Closes the client that was swapped out.
 
-    Kapatmamak açık bağlantı bırakıyor; kapatırken patlaması ise ajanı
-    durdurmamalı — yeni istemci zaten çalışıyor.
+    Not closing it leaves an open connection; blowing up while closing
+    must not stop the agent — the new client is already running.
     """
     try:
         await client.close()
@@ -203,117 +205,122 @@ async def _retire(client: Any) -> None:
         pass
 
 
-# Snapshot'a giren hedef sayısının tavanı. Panel zaten ilk altısını açıkta
-# gösteriyor; yüzlerce bayat hedefi her sayfa yüklemede taşımanın alemi yok.
+# Cap on the number of goals that enter the snapshot. The panel already
+# shows only the first six openly; there is no point in carrying hundreds
+# of stale goals on every page load.
 GOAL_SNAPSHOT_LIMIT = 20
 
 
 def _active_goals(agent: Any) -> list[dict[str, Any]]:
-    """Aktif hedeflerin arayüz dökümü (id + metin + bu oturumdan mı).
+    """UI dump of the active goals (id + text + whether from this session).
 
-    Hedef paneli olay güdümlü (goal_push/goal_status) ama sayfa yenilenince
-    olaylar kaçmış oluyor; snapshot bu listeyle panele kaldığı yeri veriyor.
-    Zihin yoksa ya da okunamıyorsa boş liste — panel görünmez, sohbet düşmez.
+    The goal panel is event-driven (goal_push/goal_status) but a page refresh
+    misses the events; the snapshot hands the panel where it left off via
+    this list. No mind, or unreadable — empty list: the panel stays hidden,
+    the chat does not go down.
 
-    Hedef defteri artık oturuma süzülü (`mind.goals()` varsayılanı):
-    "bu görevleri kim oluşturuyor" şikâyetinin köküydü — başka sohbetlerin
-    maddeleri panele hiç gelmez. `eski` alanı arayüz uyumluluğu için
-    duruyor; süzgeç sayesinde pratikte hep False.
+    The goal ledger is now filtered to the session (`mind.goals()` default):
+    this was the root of the "who is creating these tasks" complaint — items
+    from other chats never reach the panel. The `eski` field stays for UI
+    compatibility; thanks to the filter it is practically always False.
     """
     mind = getattr(agent, "mind", None)
     if mind is None:
         return []
-    simdiki = getattr(mind, "session_id", "")
+    current = getattr(mind, "session_id", "")
     try:
         return [
             {"id": g.id, "text": g.text,
-             "eski": bool(simdiki and g.session_id and g.session_id != simdiki)}
+             "eski": bool(current and g.session_id and g.session_id != current)}
             for g in mind.goals()[:GOAL_SNAPSHOT_LIMIT]
         ]
     except Exception:
         return []
 
 
-# Kaba token tahmini: karakter / bu sayı. Sağlayıcıdan gelen gerçek sayıya
-# hiçbir zaman denk gelmez ve gelmesi de beklenmiyor — kullanıcının bilmek
-# istediği "ne kadar doluyum", tam rakam değil. Bu yüzden tahmin olduğu
-# arayüzde açıkça söyleniyor (title'da).
-TAHMIN_BOLEN = 4
+# Rough token estimate: characters / this number. It never matches the real
+# count coming from the provider and is not expected to — what the user
+# wants to know is "how full am I", not the exact figure. That is why the
+# UI says openly that it is an estimate (in the title).
+ESTIMATE_DIVISOR = 4
 
 
 def context_breakdown(agent: Any, prompt_total: int = 0) -> list[dict[str, Any]]:
-    """İstem penceresinin kalem kalem tahmini — Cursor'un Context Usage'ı.
+    """Item-by-item estimate of the prompt window — Cursor's Context Usage.
 
-    Sağlayıcı yalnız TOPLAM veriyor; kırılım karakter/4. Toplam varsa
-    sabitler ondan büyük çıkmasın diye orantılanır, kalan Konuşma'dır.
+    The provider only gives the TOTAL; the breakdown is characters/4. When a
+    total exists, the fixed items are scaled so they don't exceed it, and
+    the remainder is Conversation.
     """
     import json
 
     def tok(text: str) -> int:
-        return max(0, len(text or "") // TAHMIN_BOLEN)
+        return max(0, len(text or "") // ESTIMATE_DIVISOR)
 
-    sistem = ruh = 0
+    system_tokens = soul_tokens = 0
     sys = getattr(agent, "_system", None) if agent is not None else None
     if sys is not None:
-        sistem = tok(getattr(sys, "core", "") or "")
-        ruh = tok(getattr(sys, "identity", "") or "")
+        system_tokens = tok(getattr(sys, "core", "") or "")
+        soul_tokens = tok(getattr(sys, "identity", "") or "")
 
-    # `task` / `task_say` / `task_status` Cursor'daki "Subagent definitions"
-    # kalemi: yerleşik araçlardan ayrı dursun, yoksa Araç tanımları şişer.
-    _YARDIMCI = {"task", "task_say", "task_status"}
+    # `task` / `task_say` / `task_status` are Cursor's "Subagent definitions"
+    # item: keep them apart from the built-in tools, otherwise the Tool
+    # definitions line bloats.
+    _HELPER_TOOLS = {"task", "task_say", "task_status"}
 
-    arac = yetenek = mcp = yardimci = 0
+    tool_tokens = skill_tokens = mcp_tokens = helper_tokens = 0
     registry = getattr(agent, "registry", None) if agent is not None else None
     if registry is not None and hasattr(registry, "all"):
         brief = bool(getattr(agent, "brief_schema", False))
         for spec in registry.all():
             try:
-                sema = spec.api_schema()
-                if brief and isinstance(sema, dict):
-                    desc = str(sema.get("description") or "")
-                    sema = {**sema, "description": desc.split("\n\n", 1)[0]}
-                blob = json.dumps(sema, ensure_ascii=False, separators=(",", ":"))
+                schema = spec.api_schema()
+                if brief and isinstance(schema, dict):
+                    desc = str(schema.get("description") or "")
+                    schema = {**schema, "description": desc.split("\n\n", 1)[0]}
+                blob = json.dumps(schema, ensure_ascii=False, separators=(",", ":"))
             except Exception:
                 continue
             n = tok(blob)
             src = str(getattr(spec, "source", None) or "")
-            ad = str(getattr(spec, "name", "") or "")
-            if not ad and isinstance(sema, dict):
-                ad = str(sema.get("name") or "")
+            name = str(getattr(spec, "name", "") or "")
+            if not name and isinstance(schema, dict):
+                name = str(schema.get("name") or "")
             if src.startswith("mcp"):
-                mcp += n
+                mcp_tokens += n
             elif src == "yetenek":
-                yetenek += n
-            elif ad in _YARDIMCI:
-                yardimci += n
+                skill_tokens += n
+            elif name in _HELPER_TOOLS:
+                helper_tokens += n
             else:
-                arac += n
+                tool_tokens += n
 
-    parcalar: list[tuple[str, str, int]] = [
-        ("sistem", "Sistem istemi", sistem),
-        ("arac", "Araç tanımları", arac),
-        ("ruh", "Ruh / kurallar", ruh),
-        ("yetenek", "Yetenekler", yetenek),
-        ("mcp", "MCP ve dinamik araçlar", mcp),
-        ("yardimci", "Yardımcı tanımları", yardimci),
+    parts: list[tuple[str, str, int]] = [
+        ("sistem", "Sistem istemi", system_tokens),
+        ("arac", "Araç tanımları", tool_tokens),
+        ("ruh", "Ruh / kurallar", soul_tokens),
+        ("yetenek", "Yetenekler", skill_tokens),
+        ("mcp", "MCP ve dinamik araçlar", mcp_tokens),
+        ("yardimci", "Yardımcı tanımları", helper_tokens),
     ]
-    sabit = sum(n for _, _, n in parcalar)
-    toplam = max(0, int(prompt_total or 0))
-    if toplam and sabit > toplam:
-        oran = toplam / sabit
-        parcalar = [(k, ad, int(n * oran)) for k, ad, n in parcalar]
-        sabit = sum(n for _, _, n in parcalar)
-    sohbet = max(0, toplam - sabit) if toplam else 0
-    parcalar.append(("sohbet", "Konuşma", sohbet))
-    return [{"id": k, "ad": ad, "n": n} for k, ad, n in parcalar]
+    fixed = sum(n for _, _, n in parts)
+    total = max(0, int(prompt_total or 0))
+    if total and fixed > total:
+        ratio = total / fixed
+        parts = [(k, label, int(n * ratio)) for k, label, n in parts]
+        fixed = sum(n for _, _, n in parts)
+    chat_tokens = max(0, total - fixed) if total else 0
+    parts.append(("sohbet", "Konuşma", chat_tokens))
+    return [{"id": k, "ad": label, "n": n} for k, label, n in parts]
 
 
-def _saglayici_adi(agent: Any) -> str:
-    """Arayüzde gösterilecek sağlayıcı kimliği (openrouter, ollama, …).
+def _provider_name(agent: Any) -> str:
+    """Provider identity to show in the UI (openrouter, ollama, …).
 
-    `model.provider` backend tipidir ("openai") ve altında altı farklı
-    sunucu var; kullanıcıya "openai" demek OpenRouter'a bağlıyken yanlış
-    bilgi olurdu. Adrese bakan eşleştirme `settings.provider_of`'ta.
+    `model.provider` is the backend type ("openai") and six different
+    servers sit under it; telling the user "openai" while connected to
+    OpenRouter would be wrong information. The address-based mapping is
+    in `settings.provider_of`.
     """
     if agent is None:
         return ""
@@ -325,12 +332,13 @@ def _saglayici_adi(agent: Any) -> str:
                    and agent.config.model.provider or "")
 
 
-def _calisabilir(agent: Any) -> bool:
-    """Ajan gerçekten kimlik doğrulayabiliyor mu?
+def _can_run(agent: Any) -> bool:
+    """Can the agent actually authenticate?
 
-    Model "oto"/varsayılan gelse bile anahtar yoksa hiçbir iş yapılamaz;
-    arayüz ilk-kurulum yönlendirmesini buna göre gösteriyor. Yerel sunucu
-    (localhost/LM Studio) anahtar istemez — o durumda çalışabilir sayılır.
+    Even if the model comes as "oto"/default, without a key no work can be
+    done; the UI shows the first-run guidance based on this. A local server
+    (localhost/LM Studio) asks for no key — in that case it counts as
+    runnable.
     """
     if agent is None:
         return False
@@ -343,7 +351,7 @@ def _calisabilir(agent: Any) -> bool:
         return True
     env = getattr(model, "api_key_env", "") or ""
     if not env:
-        return True   # anahtar istemeyen sağlayıcı
+        return True   # provider that asks for no key
     if os.environ.get(env):
         return True
     try:
@@ -354,121 +362,123 @@ def _calisabilir(agent: Any) -> bool:
 
 
 def _past_usage(agent: Any) -> dict[str, Any]:
-    """Sürdürülen bir oturumun bağlam + harcama durumu.
+    """Context + spend state of a resumed session.
 
-    Kanıtlanmış yara: uygulama kapanıp açılınca ya da geçmişten bir
-    konuşma sürdürülünce dock'taki bağlam çubuğu ve maliyet çipi SIFIRDAN
-    başlıyordu. Oysa geçmiş yüklü — kullanıcı hem doluluğu hem toplam
-    harcamayı kaybediyordu. Bu turda hiç model çağrılmadığı için
-    `_last_usage` boş; doğru kaynak oturum günlüğü.
+    Proven wound: when the app was closed and reopened, or a conversation
+    was resumed from history, the context bar and the cost chip in the dock
+    started FROM ZERO. Yet the history is loaded — the user was losing both
+    the fullness and the total spend. No model was called in this turn, so
+    `_last_usage` is empty; the right source is the session log.
 
-    İki ayrı rakam:
-      * `prompt_total` — SON turun istemi (bağlam çubuğu: şu an pencere
-        ne kadar dolu).
-      * `girdi` — tüm turların `prompt_total` toplamı (maliyet çipi:
-        canlı `_usage_yay` ile aynı muhafazakâr muhasebe; konuşmayı
-        yeniden açınca sıfırdan değil geçmişin üstünden).
+    Two separate figures:
+      * `prompt_total` — the prompt of the LAST turn (context bar: how full
+        the window is right now).
+      * `girdi` — the sum of `prompt_total` over all turns (cost chip: the
+        same conservative accounting as the live `_usage_yay`; reopening a
+        conversation continues on top of the past instead of from zero).
 
-    Kaynak sırası:
-      1. Asistan mesajlarının `usage` meta'sı — sağlayıcının saydığı
-         gerçek rakam.
-      2. Yoksa yüklü mesajlardan kaba tahmin (karakter/4). `tahmin`
-         bayrağı arayüze taşınıyor: uydurma bir kesinlik satılmıyor.
+    Source order:
+      1. The `usage` meta of the assistant messages — the real figure the
+         provider counted.
+      2. Otherwise a rough estimate from the loaded messages (characters/4).
+         The `tahmin` flag is carried to the UI: no made-up precision is
+         being sold.
 
-    Yeni oturumda ikisi de boş çıkar ve sayaç gerçekten sıfırdan başlar.
+    In a new session both come out empty and the counter truly starts at zero.
     """
-    bos = {"prompt_total": 0, "girdi": 0, "output": 0, "cagri": 0, "tahmin": False}
+    empty = {"prompt_total": 0, "girdi": 0, "output": 0, "cagri": 0, "tahmin": False}
     session = getattr(agent, "session", None)
     if session is None:
-        return bos
+        return empty
     try:
-        mesajlar = session.log.messages()
+        messages = session.log.messages()
     except Exception:
-        return bos
+        return empty
 
-    cagri = 0
-    son: dict[str, Any] | None = None
-    toplam_girdi = 0
-    toplam_cikti = 0
-    for ev in mesajlar:
+    calls = 0
+    last: dict[str, Any] | None = None
+    total_input = 0
+    total_output = 0
+    for ev in messages:
         if ev.role != "assistant":
             continue
-        kullanim = ev.meta.get("usage")
-        if isinstance(kullanim, dict) and kullanim.get("prompt_total"):
-            son = kullanim
-            cagri += 1
-            toplam_girdi += int(kullanim.get("prompt_total") or 0)
-            toplam_cikti += int(kullanim.get("output") or 0)
+        usage = ev.meta.get("usage")
+        if isinstance(usage, dict) and usage.get("prompt_total"):
+            last = usage
+            calls += 1
+            total_input += int(usage.get("prompt_total") or 0)
+            total_output += int(usage.get("output") or 0)
 
-    if son is not None:
+    if last is not None:
         return {
-            "prompt_total": int(son.get("prompt_total") or 0),
-            "girdi": toplam_girdi,
-            "output": toplam_cikti,
-            "cagri": cagri,
+            "prompt_total": int(last.get("prompt_total") or 0),
+            "girdi": total_input,
+            "output": total_output,
+            "cagri": calls,
             "tahmin": False,
         }
 
-    # Usage yok (eski günlük ya da sayaç vermeyen sağlayıcı): kaba tahmin.
-    # Sıfır göstermektense yaklaşık göstermek doğru — yeter ki tahmin
-    # olduğu söylensin.
+    # No usage (old log or a provider that gives no counter): rough estimate.
+    # Showing an approximation beats showing zero — as long as it is said
+    # to be an estimate.
     #
-    # Tahmin PENCEREDEN yapılıyor, ham günlükten değil: günlük hiç
-    # kısaltılmıyor ve sıkıştırılmış (ufkun gerisinde kalan) turları da
-    # saymak, küçük bir sohbete "182k token" yazdırıyordu — sağlayıcı
-    # panelinde hiç görünmeyen bir rakam (canlı yara, 01.09). `messages()`
-    # bir SONRAKİ isteğin gerçekten taşıyacağı projeksiyondur; doğru taban o.
+    # The estimate is made FROM THE WINDOW, not from the raw log: the log is
+    # never trimmed, and counting the compacted turns (the ones behind the
+    # horizon) too was printing "182k token" for a small chat — a figure that
+    # never shows up in the provider's panel (live wound, 01.09). `messages()`
+    # is the projection of what the NEXT request will really carry; that is
+    # the right base.
     try:
-        pencere = session.messages()
+        window = session.messages()
     except Exception:
-        pencere = [{"role": e.role, "content": e.content} for e in mesajlar]
-    harf = 0
-    for mesaj in pencere:
-        harf += len(_metin_uzunlugu(mesaj.get("content")))
-    if not harf:
-        return bos
-    tahmini = harf // TAHMIN_BOLEN
-    return {"prompt_total": tahmini, "girdi": tahmini, "output": 0,
+        window = [{"role": e.role, "content": e.content} for e in messages]
+    chars = 0
+    for message in window:
+        chars += len(_text_body(message.get("content")))
+    if not chars:
+        return empty
+    estimate = chars // ESTIMATE_DIVISOR
+    return {"prompt_total": estimate, "girdi": estimate, "output": 0,
             "cagri": 0, "tahmin": True}
 
 
-def _metin_uzunlugu(content: Any) -> str:
-    """Bir mesajın metin gövdesi (tahmin için). Görüntüler sayılmıyor.
+def _text_body(content: Any) -> str:
+    """Text body of a message (for the estimate). Images are not counted.
 
-    tool_result blokları da sayılıyor: içerikleri düz dize ya da blok
-    listesi olabiliyor ve istekte gerçekten taşınıyorlar — eski hal onları
-    atlayıp tahmini sistemsiz biçimde düşük gösteriyordu.
+    tool_result blocks are counted too: their content can be a plain string
+    or a list of blocks and they really are carried in the request — the old
+    version skipped them and showed the estimate systematically low.
     """
     if isinstance(content, str):
         return content
     if not isinstance(content, list):
         return ""
-    parcalar = []
-    for blok in content:
-        if not isinstance(blok, dict):
+    parts = []
+    for block in content:
+        if not isinstance(block, dict):
             continue
-        if isinstance(blok.get("text"), str):
-            parcalar.append(blok["text"])
-        elif blok.get("type") == "tool_result":
-            ic = blok.get("content")
-            if isinstance(ic, str):
-                parcalar.append(ic)
-            elif isinstance(ic, list):
-                parcalar.append(_metin_uzunlugu(ic))
-    return "\n".join(parcalar)
+        if isinstance(block.get("text"), str):
+            parts.append(block["text"])
+        elif block.get("type") == "tool_result":
+            inner = block.get("content")
+            if isinstance(inner, str):
+                parts.append(inner)
+            elif isinstance(inner, list):
+                parts.append(_text_body(inner))
+    return "\n".join(parts)
 
 
-# Yardımcı durumlarının arayüz dili. Defterde Türkçe halleri duruyor;
-# panel tarafı olaylarla aynı kelimeleri (run/done/fail) bekliyor.
-_KANAL_DURUM = {"kosuyor": "run", "bitti": "done", "yetim": "yetim"}
+# UI language of the helper states. The ledger keeps the Turkish forms;
+# the panel side expects the same words as the events (run/done/fail).
+_CHANNEL_STATE = {"kosuyor": "run", "bitti": "done", "yetim": "yetim"}
 
 
 def _local_endpoint(base_url: str) -> bool:
-    """Model ucu kullanıcının makinesinde/ağında mı? (loopback + RFC-1918)
+    """Is the model endpoint on the user's machine/network? (loopback + RFC-1918)
 
-    Kamera karesinin buluta çıkıp çıkmayacağının tek ölçütü. Gece
-    okulundaki `_yerel_mi` ile aynı tanım — iki yerde iki farklı "yerel"
-    tanımı olmasın.
+    The single criterion for whether a camera frame may leave for the cloud.
+    Same definition as `_yerel_mi` in the night school — there must not be
+    two different definitions of "local" in two places.
     """
     from urllib.parse import urlparse
     host = (urlparse(str(base_url or "")).hostname or "").casefold()
@@ -480,11 +490,12 @@ def _local_endpoint(base_url: str) -> bool:
 
 def _send_motion(bridge: Any, config: Config, hub: Hub,
                     sighting: watching.Sighting) -> None:
-    """Hareket olayı: GPU varsa yerelde analiz, modele metin.
+    """Motion event: analysed locally if there is a GPU, text goes to the model.
 
-    GPU analizi başarılıysa kare hiç gitmez — sohbet modeli metni okur.
-    Analiz yoksa eski kapı: yerel model serbest, bulut için cloud_ok.
-    HUD kapalıyken izleyici hâlâ bir kare üretmiş olsa bile sohbet açılmaz.
+    If the GPU analysis succeeds the frame never leaves — the chat model
+    reads the text. Without analysis, the old gate: a local model is free,
+    the cloud needs cloud_ok. With the HUD off, no chat opens even if the
+    watcher still produced a frame.
     """
     if not bool(getattr(config.camera, "enabled", False)):
         return
@@ -501,21 +512,21 @@ def _send_motion(bridge: Any, config: Config, hub: Hub,
     })
     from . import sight
 
-    ozet = ""
+    summary = ""
     if getattr(sighting.camera, "analyze", True):
-        ozet = sight.analyze_url(sighting.frame)
+        summary = sight.analyze_url(sighting.frame)
     try:
-        watching.remember(config.state_dir, sighting.camera, ozet or "hareket")
+        watching.remember(config.state_dir, sighting.camera, summary or "hareket")
     except Exception:
         pass
-    baslik = f"[{sighting.camera.name}] {sighting.ask}"
-    if ozet:
-        bridge.submit(f"{baslik}\n\nYerel GPU analizi: {ozet}")
+    title = f"[{sighting.camera.name}] {sighting.ask}"
+    if summary:
+        bridge.submit(f"{title}\n\nYerel GPU analizi: {summary}")
         return
     model_url = str(getattr(bridge.agent.config.model, "base_url", "") or "") \
         if bridge.agent is not None else ""
-    yerel = _local_endpoint(model_url)
-    if not yerel and not config.camera.cloud_ok:
+    local = _local_endpoint(model_url)
+    if not local and not config.camera.cloud_ok:
         hub.emit({
             "type": "notice",
             "text": (f"{sighting.camera.name}: kare BULUT modele gönderilmedi "
@@ -523,15 +534,16 @@ def _send_motion(bridge: Any, config: Config, hub: Hub,
                      "bulut iznini aç."),
         })
         return
-    bridge.submit(baslik, sighting.frame)
+    bridge.submit(title, sighting.frame)
 
 
 def _drop_finished_channels(agent: Any) -> None:
-    """Oturum geçişinde bitmiş yardımcıları defterden düşürür.
+    """Drops finished helpers from the ledger on session switch.
 
-    "O sohbet bittiyse o da bitmiştir" (canlı şikâyet — orkestra eski
-    sohbetlerin bitmiş kayıtlarıyla doluyordu). Koşanlar ve yetimler
-    (sürdürülebilir) kalır; bitmiş/hatalı olanlar yeni sohbete taşınmaz.
+    "If that chat is over, so is it" (live complaint — the orchestra was
+    filling up with finished records from old chats). Running ones and
+    orphans (resumable) stay; finished/failed ones are not carried into
+    the new chat.
     """
     try:
         children = getattr(agent, "_children", None) or {}
@@ -543,14 +555,14 @@ def _drop_finished_channels(agent: Any) -> None:
 
 
 def _live_channels(agent: Any) -> list[dict[str, Any]]:
-    """Yardımcı kanallarının arayüz dökümü (orkestra panelinin tohumu).
+    """UI dump of the helper channels (the seed of the orchestra panel).
 
-    Panel olay güdümlü (child_start/child_end) ama sayfa yenilenince ya da
-    uygulama yeniden açılınca olaylar kaçmış oluyor ve panel hayalet
-    "çalışıyor" kartlarıyla kalabiliyordu. Tek doğru kaynak ajanın defteri
-    (`Agent._children`): snapshot bu listeyle panele kaldığı yeri veriyor,
-    listede olmayan "çalışıyor" kanalı çizilmiyor. Hedef panelindeki
-    tohumlama kalıbının aynısı (bkz. _active_goals).
+    The panel is event-driven (child_start/child_end) but on a page refresh
+    or an app restart the events are missed and the panel could be left with
+    ghost "running" cards. The single source of truth is the agent's ledger
+    (`Agent._children`): the snapshot hands the panel where it left off via
+    this list, and a "running" channel absent from the list is not drawn.
+    The same seeding pattern as the goal panel (see _active_goals).
     """
     children = getattr(agent, "_children", None)
     if not children:
@@ -563,7 +575,7 @@ def _live_channels(agent: Any) -> list[dict[str, Any]]:
                 "model": h.model,
                 "bg": bool(h.arka_plan),
                 "kind": h.kind,
-                "state": _KANAL_DURUM.get(h.state, "fail"),
+                "state": _CHANNEL_STATE.get(h.state, "fail"),
                 "ozet": "" if h.state == "kosuyor" else (h.sonuc or "")[:200],
             }
             for h in children.values()
@@ -572,22 +584,24 @@ def _live_channels(agent: Any) -> list[dict[str, Any]]:
         return []
 
 
-# Kuyruğa düşen iç işaret: bir arka plan yardımcısı bitti. pump bunu
-# görünce (ajan o an boş demektir — kuyruk seri) bir sürdürme turu açar.
-# Metin değil nesne: hiçbir kullanıcı mesajıyla karışamaz.
+# Internal marker dropped into the queue: a background helper finished.
+# When pump sees it (the agent is idle at that moment — the queue is serial)
+# it opens a resume turn. An object, not text: it cannot be confused with
+# any user message.
 _CHILD_DONE = object()
 
-# Açılışta bulunan park kaydı (yarım kalmış uzun iş): pump bunu görünce
-# koşuyu kaldığı yerden sürdürür.
+# Park record found at boot (a long job left unfinished): when pump sees
+# this it resumes the run from where it stopped.
 _PARK_RESUME = object()
 
 
 @dataclass(slots=True)
 class Pending:
-    """Bekleyen izin istegi.
+    """A pending permission request.
 
-    Future yaninda spec ve args da tutuluyor: "hep izin ver" secildiginde
-    kurali yazmak icin hangi arac ve hangi hedef oldugu gerekiyor.
+    The spec and args are kept alongside the future: when "always allow"
+    is chosen, writing the rule needs to know which tool and which target
+    it was.
     """
 
     future: asyncio.Future[bool]
@@ -596,192 +610,204 @@ class Pending:
 
 
 @dataclass(slots=False)
-class Serit:
-    """Bir oturumun bağımsız koşu şeridi: ajan + kuyruk + meşgul bayrağı.
+class Lane:
+    """A session's independent run lane: agent + queue + busy flag.
 
-    Paralel oturumların çekirdeği (canlı istek, 29.08): "yeni konuşma
-    dediğimde eskinin bitmesini bekliyor" — tek ajan/tek kuyruk mimarisi
-    oturum geçişini koşan turun bitişine kilitliyordu. Artık her oturumun
-    kendi şeridi var: kendi Agent'ı, kendi kuyruğu, kendi pompası. Aktif
-    şerit arayüze akar; arkadakiler kendi oturum günlüğüne yazar ve
-    kullanıcı dönünce döküm oradan yüklenir.
+    The core of parallel sessions (live request, 29.08): "when I say new
+    conversation it waits for the old one to finish" — the single-agent /
+    single-queue architecture locked session switching to the end of the
+    running turn. Now every session has its own lane: its own Agent, its
+    own queue, its own pump. The active lane streams to the UI; the ones
+    behind write to their own session log and the transcript is loaded from
+    there when the user returns.
     """
 
     sid: str
     agent: Any
     queue: asyncio.Queue
     busy: bool = False
-    task: Any = None    # pompa görevi (ilk şeritte Controller.pump koşuyor)
+    task: Any = None    # pump task (on the first lane Controller.pump runs it)
 
 
 class Bridge:
-    """Arayüz ile ajan arasındaki iki yönlü köprü.
+    """Two-way bridge between the UI and the agent.
 
-    Controller yüzeyi HTTP thread'inden, AgentIO yüzeyi asyncio thread'inden
-    çağrılır. İkisi arasındaki her geçiş açıkça işaretli.
+    The Controller surface is called from the HTTP thread, the AgentIO
+    surface from the asyncio thread. Every crossing between the two is
+    marked explicitly.
     """
 
     def __init__(self, hub: Hub, loop: asyncio.AbstractEventLoop) -> None:
         self.hub = hub
         self.loop = loop
-        # Şeritler: oturum kimliği -> Serit. Aktif şerit arayüzün baktığı
-        # oturum; diğerleri arka planda koşabilir (paralel oturumlar).
-        self.seritler: dict[str, Serit] = {}
-        self._aktif_sid: str | None = None
-        # İlk şeridin kuyruğu — ajan henüz yokken de mesaj sıraya girebilsin
-        # (açılış yarışı). `agent` atandığında şerit bu kuyruğu devralır.
-        self._ilk_kuyruk: asyncio.Queue[tuple[str, str]] = asyncio.Queue()
-        # Oturum değiştirmek (yeni/devam) olay akışını yeni günlüğe bağlamayı
-        # gerektiriyor; bunu sunucu yapıyor. _boot referansı sonradan veriyor.
+        # Lanes: session id -> Lane. The active lane is the session the UI
+        # looks at; the others may run in the background (parallel sessions).
+        self.seritler: dict[str, Lane] = {}
+        self._active_sid: str | None = None
+        # Queue of the first lane — so a message can queue even before the
+        # agent exists (boot race). When `agent` is assigned the lane takes
+        # this queue over.
+        self._first_queue: asyncio.Queue[tuple[str, str]] = asyncio.Queue()
+        # Switching sessions (new/resume) requires rebinding the event stream
+        # to the new log; the server does that. _boot gives the reference later.
         self.server: Any = None
         self._pending: dict[str, Pending] = {}
-        # Sürekli dinleyen kulak sonradan bağlanıyor: açılış sırasında
-        # köprü ondan önce kuruluyor.
+        # The always-listening ear is attached later: during boot the bridge
+        # is built before it.
         self.ear: Any = None
         self.lens: Any = None
         self.eyes: Any = None
-        # Turun ortasında istenen model değişikliği. Akan bir istemciyi
-        # altından çekmek o cevabı öldürür; tur bitince uygulanıyor. Modelle
-        # birlikte sistem promptu da tazelendiği için tüm config saklanıyor.
+        # Model change requested mid-turn. Pulling a streaming client out
+        # from under a turn kills that answer; it is applied when the turn
+        # ends. The whole config is kept because the system prompt is
+        # refreshed together with the model.
         self._wanted_model: Any = None
         self._wanted_config: Config | None = None
-        # Bekleyen istemci değişiminde arayüze basılacak not: gerçek model
-        # değişimi mi yoksa yalnız anahtar/ayar tazelemesi mi.
+        # Note to print to the UI on the pending client swap: a real model
+        # change, or only a key/settings refresh.
         self._swap_note: str = ""
-        # Uyandırma sözü duyulunca pencereyi geri getiren çağrı.
-        # Masaüstü katmanı kuruyor; arayüz önizlemesinde None kalıyor.
+        # Call that brings the window back when the wake word is heard.
+        # The desktop layer sets it; in the UI preview it stays None.
         self.on_wake: Any = None
-        # Sistem tepsisi: arka plan görev bitince Windows bildirimi.
-        # Masaüstü `run()` bağlar; önizleme / headless'ta None.
+        # System tray: Windows notification when a background task finishes.
+        # The desktop `run()` attaches it; in preview / headless it is None.
         self.tray: Any = None
-        # Açılışta kaçırılan zamanlanmış görevler: kullanıcı karar verene
-        # dek zamanlayıcı bekler (bkz. schedule.run_forever `paused`).
+        # Scheduled tasks missed at boot: the scheduler waits until the
+        # user decides (see schedule.run_forever `paused`).
         self._missed_ids: list[str] = []
         self._missed_fire: Any = None
-        # Açılış sırasında nerede olunduğu. Model yüklenmeden konuşmak
-        # anlamsız: arayüz bu bilgiyle giriş satırını kapalı tutuyor.
+        # Where boot currently stands. Talking before the model is loaded is
+        # pointless: the UI keeps the input line closed using this.
         self.stage = "uyanıyor"
         self.ready = False
-        # Maliyet çipi: tur ve oturum toplamları (token) + seçili modelin
-        # fiyat etiketi (USD/token, OpenRouter kataloğundan). Fiyat arka
-        # plan thread'inde EN FAZLA bir kez çekiliyor; tur ağ beklemiyor.
-        self._fiyat: dict[str, float] | None = None
-        self._fiyat_bakildi = False
-        self._tur_kullanim = {"girdi": 0, "cikti": 0, "cagri": 0}
+        # Cost chip: turn and session totals (tokens) + the price tag of the
+        # selected model (USD/token, from the OpenRouter catalogue). The price
+        # is fetched AT MOST once on a background thread; the turn never
+        # waits on the network.
+        self._price: dict[str, float] | None = None
+        self._price_checked = False
+        self._turn_usage = {"girdi": 0, "cikti": 0, "cagri": 0}
         self._session_usage = {"girdi": 0, "cikti": 0, "cagri": 0}
-        # Sürdürülen oturumun geçmiş harcaması bir kez tohumlanır; bkz.
-        # _oturum_tohumla. Yeni oturumda tohum yok — sayaç gerçekten sıfır.
-        self._oturum_tohumlandi = False
-        # Bütçe freni: bu oturum için üst sınır (USD). None = sınırsız.
-        # Ayar sayfasında değil, maliyet çipinin açılır kutusunda duruyor —
-        # rakamın yanında. Sınıra ulaşılınca koşan tur duruyor (bkz.
-        # _butce_freni ve loop.Agent._drive).
+        # The past spend of a resumed session is seeded once; see
+        # _seed_session_usage. No seed in a new session — the counter is
+        # truly zero.
+        self._session_seeded = False
+        # Budget brake: upper limit for this session (USD). None = unlimited.
+        # It lives not on the settings page but in the cost chip's popover —
+        # next to the number. When the cap is reached the running turn stops
+        # (see _budget_brake and loop.Agent._drive).
         self._budget_usd: float | None = None
-        # Sınır bir kez bildirildi mi: her model çağrısından önce sorulan
-        # fren, aynı satırı turda onlarca kez basmasın.
+        # Has the cap been reported once: the brake asked before every model
+        # call must not print the same line dozens of times in a turn.
         self._budget_reported = False
 
-    # -- şerit yüzeyi ---------------------------------------------------
+    # -- lane surface ---------------------------------------------------
     #
-    # Eski tek-ajan alanları (`agent`, `queue`, `_busy`) özelliğe döndü:
-    # 30+ çağrı yeri değişmeden aktif şeride bakmaya devam ediyor. Yazma
-    # yolu daralttı — `_busy` artık atanamaz, meşguliyet şeridin kendi
-    # bayrağı (bkz. _serit_durum).
+    # The old single-agent fields (`agent`, `queue`, `_busy`) became
+    # properties: 30+ call sites keep looking at the active lane unchanged.
+    # The write path narrowed — `_busy` can no longer be assigned, busyness
+    # is the lane's own flag (see _lane_status).
 
-    def _serit_alanlari(self) -> None:
-        # Testler köprüyü `Bridge.__new__` ile init'siz kuruyor; şerit
-        # alanları ilk dokunuşta tembelce tamamlanır.
+    def _lane_fields(self) -> None:
+        # Tests build the bridge with `Bridge.__new__` without init; the lane
+        # fields are completed lazily on first touch.
         if not hasattr(self, "seritler"):
             self.seritler = {}
-            self._aktif_sid = None
-        if not hasattr(self, "_ilk_kuyruk"):
-            self._ilk_kuyruk = asyncio.Queue()
+            self._active_sid = None
+        if not hasattr(self, "_first_queue"):
+            self._first_queue = asyncio.Queue()
 
     @property
     def agent(self) -> Any:
-        self._serit_alanlari()
-        s = self.seritler.get(self._aktif_sid or "")
+        self._lane_fields()
+        s = self.seritler.get(self._active_sid or "")
         return s.agent if s else None
 
     @agent.setter
     def agent(self, value: Any) -> None:
-        # _boot uyumu: ilk ajan atanınca ilk şerit kurulur ve açılıştan
-        # beri biriken kuyruğu devralır. None = kurulamadı (modelsiz açılış).
-        self._serit_alanlari()
+        # _boot compatibility: when the first agent is assigned the first lane
+        # is built and takes over the queue accumulated since boot. None =
+        # could not be built (model-less boot).
+        self._lane_fields()
         if value is None:
             return
         sid = str(getattr(getattr(value, "session", None), "id", "") or "ilk")
-        serit = Serit(sid=sid, agent=value, queue=self._ilk_kuyruk,
-                      busy=bool(getattr(self, "_busy_beklet", False)))
-        self._busy_beklet = False
-        self.seritler[sid] = serit
-        self._aktif_sid = sid
-        # Akış kapıları şeride bağlansın: bu şerit arka plana düşerse
-        # olayları aktif sohbete sızmasın. Yardımcı-bitti işareti de kendi
-        # kuyruğuna düşsün — aktif şeride değil.
+        lane = Lane(sid=sid, agent=value, queue=self._first_queue,
+                      busy=bool(getattr(self, "_busy_pending", False)))
+        self._busy_pending = False
+        self.seritler[sid] = lane
+        self._active_sid = sid
+        # Bind the stream gates to the lane: if this lane drops to the
+        # background its events must not leak into the active chat. The
+        # helper-done marker should also land in its own queue — not the
+        # active lane's.
         try:
-            value.io = self.io(serit)
+            value.io = self.io(lane)
             value.on_children_settled = (
-                lambda s=serit: self.loop.call_soon_threadsafe(
-                    self._serit_child_done, s))
+                lambda s=lane: self.loop.call_soon_threadsafe(
+                    self._lane_child_done, s))
         except Exception:
             pass
 
-    def _serit(self) -> Serit | None:
-        self._serit_alanlari()
-        return self.seritler.get(self._aktif_sid or "")
+    def _lane(self) -> Lane | None:
+        self._lane_fields()
+        return self.seritler.get(self._active_sid or "")
 
     @property
     def queue(self) -> asyncio.Queue:
-        s = self._serit()
-        return s.queue if s else self._ilk_kuyruk
+        s = self._lane()
+        return s.queue if s else self._first_queue
 
     @property
     def _busy(self) -> bool:
-        s = self._serit()
+        s = self._lane()
         if s is not None:
             return bool(s.busy)
-        return bool(getattr(self, "_busy_beklet", False))
+        return bool(getattr(self, "_busy_pending", False))
 
     @_busy.setter
     def _busy(self, value: bool) -> None:
-        # Test uyumu: köprüyü elle kuran testler meşguliyeti doğrudan
-        # atıyor. Üründe bu yol kullanılmıyor (bkz. _serit_durum). Şerit
-        # henüz yoksa bayrak bekletilir; ilk şerit kurulunca devralır.
-        s = self._serit()
+        # Test compatibility: tests that build the bridge by hand assign
+        # busyness directly. The product never uses this path (see
+        # _lane_status). If there is no lane yet the flag is held; the first
+        # lane takes it over when built.
+        s = self._lane()
         if s is not None:
             s.busy = bool(value)
         else:
-            self._busy_beklet = bool(value)
+            self._busy_pending = bool(value)
 
-    def _serit_durum(self, serit: Serit, busy: bool) -> None:
-        """Şeridin meşguliyetini işler ve doğru kanallara duyurur.
+    def _lane_status(self, lane: Lane, busy: bool) -> None:
+        """Records the lane's busyness and announces it on the right channels.
 
-        Klasik `status` yalnız AKTİF şerit için yayınlanır (arayüzün tek
-        kompozeri var); `lane` olayı her şerit için gider — kenar çubuğu
-        hangi sohbetlerin koştuğunu rozetle gösterir.
+        The classic `status` is published only for the ACTIVE lane (the UI
+        has a single composer); the `lane` event goes out for every lane —
+        the sidebar shows which chats are running with a badge.
         """
-        serit.busy = busy
-        if serit.sid == self._aktif_sid:
+        lane.busy = busy
+        if lane.sid == self._active_sid:
             self.hub.emit({"type": "status", "busy": busy})
-        self.hub.emit({"type": "lane", "id": serit.sid, "busy": busy})
+        self.hub.emit({"type": "lane", "id": lane.sid, "busy": busy})
 
-    # -- HTTP thread'inden çağrılanlar ---------------------------------
+    # -- called from the HTTP thread ------------------------------------
 
     def submit(self, text: str, image: str = "", *, siraya: bool = False) -> None:
-        """Kullanıcı mesajını ajana verir.
+        """Hands the user message to the agent.
 
-        Ajan MEŞGULKEN gelen düz metin artık kuyruğa değil, koşan turun
-        gelen kutusuna giriyor: mesaj aynı turun bir sonraki adımında
-        harness notu olarak modelin önüne düşüyor ("araya girme"). Kullanıcı
-        turun bitmesini beklemeden yön değiştirebiliyor.
+        Plain text arriving while the agent is BUSY now goes not to the queue
+        but into the running turn's inbox: the message lands in front of the
+        model as a harness note at the next step of the same turn
+        ("interjection"). The user can change direction without waiting for
+        the turn to end.
 
-        Eski kuyruk davranışı üç durumda korunuyor:
-          * `siraya=True` — zamanlanmış görev ve dış kapı gibi, koşan işin
-            ortasına karışmaması gereken kaynaklar.
-          * Görüntülü mesaj — görüntü bloğu harness notuna giremiyor
-            (system kanalı düz metin); basit tutmak için eski kuyruk.
-          * Gelen kutusu dolduysa — araya girme tekil bir jest, sel değil.
+        The old queue behaviour is kept in three cases:
+          * `siraya=True` — sources such as scheduled tasks and the external
+            gate, which must not mix into the middle of the running job.
+          * A message with an image — an image block cannot enter a harness
+            note (the system channel is plain text); the old queue keeps it
+            simple.
+          * The inbox is full — an interjection is a single gesture, not a
+            flood.
         """
         if not image and _is_ack(text):
             return
@@ -793,32 +819,35 @@ class Bridge:
             self.loop.call_soon_threadsafe(
                 lambda: agent.take_note(note, encode=text))
             return
-        # Ajan çalışırken sıraya giren mesaj atılmıyor ama sırada beklediği
-        # ekranda görünmeli: kullanıcı yazıp enter'a basıyor ve hiçbir şey
-        # olmuyor gibi duruyordu.
+        # A message queued while the agent runs is not dropped, but its
+        # waiting in line must show on screen: the user typed, hit enter and
+        # it looked like nothing happened.
         if self._busy:
             self.hub.emit({"type": "queued", "text": text})
         asyncio.run_coroutine_threadsafe(self.queue.put((text, image)), self.loop)
 
     def child_done(self) -> None:
-        """Bir arka plan yardımcısı bitti (asyncio thread'inden çağrılır).
+        """A background helper finished (called from the asyncio thread).
 
-        Kuyruğa iç işaret düşer; sırası gelince (ajan boşken) sürdürme
-        turu açılır. Ajan meşgulse işaret turun bitmesini kuyrukta bekler —
-        o zamana kadar sonuç zaten tur başındaki notla verilmiş olabilir,
-        `_surdur` boşa model çağırmaz. (Geri uyum: aktif şerit. Şeride özel
-        yol `_serit_child_done` — her ajan kendi şeridine bağlanır.)
+        The internal marker lands in the queue; when its turn comes (agent
+        idle) a resume turn opens. If the agent is busy the marker waits in
+        the queue for the turn to end — by then the result may already have
+        been delivered by the note at the start of the turn, and `_surdur`
+        does not call the model for nothing. (Backward compat: active lane.
+        The lane-specific path is `_lane_child_done` — every agent binds to
+        its own lane.)
         """
         self.queue.put_nowait(_CHILD_DONE)
 
-    def _serit_child_done(self, serit: Serit) -> None:
-        serit.queue.put_nowait(_CHILD_DONE)
+    def _lane_child_done(self, lane: Lane) -> None:
+        lane.queue.put_nowait(_CHILD_DONE)
 
     def run_scheduled(self, task: Any) -> dict[str, Any]:
-        """Zamanlanmış görevi sohbete değil Orkestra yardımcısı olarak koşturur.
+        """Runs a scheduled task as an Orchestra helper, not in the chat.
 
-        Otomasyon (`kind_ui=automation` + workflow_id) → workflow runner;
-        basit görev → sessiz spawn_scheduled. Her koşum task_runs'a yazılır.
+        Automation (`kind_ui=automation` + workflow_id) → workflow runner;
+        simple task → silent spawn_scheduled. Every run is written to
+        task_runs.
         """
         agent = self.agent
         if agent is None:
@@ -832,8 +861,9 @@ class Bridge:
 
         if kind_ui == "automation" and workflow_id and hasattr(agent, "run_workflow"):
             try:
-                # Görev kimliği geçiyor: koşum, arayüzün baktığı deftere
-                # yazılsın (bkz. `run_workflow` içindeki gerekçe).
+                # The task id is passed along: the run should be written to
+                # the ledger the UI looks at (see the rationale inside
+                # `run_workflow`).
                 fut = asyncio.run_coroutine_threadsafe(
                     agent.run_workflow(workflow_id, tid), self.loop)
                 result = fut.result(timeout=30)
@@ -868,19 +898,20 @@ class Bridge:
         return box or {"ok": False, "error": "başlatılamadı"}
 
     def new_session(self) -> dict[str, Any]:
-        """Taze bir konuşma başlatır: yeni oturum, boş bağlam."""
+        """Starts a fresh conversation: new session, empty context."""
         return self._switch(None)
 
     def resume_session(self, sid: str) -> dict[str, Any]:
-        """Geçmiş bir konuşmayı sürdürür: o oturumu aktif yapar, bağlamı
-        (geçmiş mesajları) yükler ve yeni mesajlar oraya eklenir."""
+        """Resumes a past conversation: makes that session active, loads its
+        context (past messages) and new messages are appended there."""
         return self._switch(sid)
 
     def open_path(self, path: str, *, message: str = "") -> dict[str, Any]:
-        """Windows 'Dornick ile aç': yeni sohbet + çalışma klasörü + isteğe bağlı tohum.
+        """Windows 'Open with Dornick': new chat + working folder + optional seed.
 
-        Dosya → üst klasör proje; klasör → doğrudan proje. Yeni oturum meta'sına
-        path yazılır; ardından isteğe bağlı kullanıcı mesajı kuyruğa girer.
+        File → parent folder is the project; folder → the project directly.
+        The path is written into the new session's meta; then the optional
+        user message enters the queue.
         """
         from pathlib import Path
 
@@ -915,7 +946,8 @@ class Bridge:
                     ad=folder.name[:80] or "Dornick ile aç",
                     path=str(folder),
                 )
-                # Proje klasörü etiketine de yaz: geçmiş listesinde gruplansın.
+                # Write it to the project-folder tag too: group it in the
+                # history list.
                 if hasattr(agent.mind, "set_project"):
                     agent.mind.set_project(sid, folder.name[:80] or "Dornick ile aç")
             except Exception:
@@ -925,7 +957,7 @@ class Bridge:
             except Exception:
                 pass
 
-        # Tohum mesajı: chat kuyruğu üzerinden (tur boşsa hemen başlar).
+        # Seed message: via the chat queue (starts at once if the turn is idle).
         if seed:
             try:
                 self.submit(seed)
@@ -939,17 +971,18 @@ class Bridge:
         return {"ok": True, "id": sid, "path": str(folder)}
 
     def apply_session_context(self, session_id: str) -> None:
-        """Dış çağrı (sohbet-modeli seçildi/temizlendi): canlıya uygula."""
+        """External call (chat model picked/cleared): apply to the live agent."""
         self._apply_session_context(session_id)
 
     def _apply_session_context(self, session_id: str) -> None:
-        """Oturum metasındaki klasör + modeli canlıya uygular.
+        """Applies the folder + model from the session meta to the live agent.
 
-        İkisi de SOHBETE özeldir ve yalnız BELLEKTE uygulanır — eski hal
-        klasörü settings.apply ile diske yazıyordu; yeni konuşmada path
-        olmasa bile önceki projenin git çubuğu (dornick / dal) kalıyordu.
-        Taban her zaman diskteki küresel ayar: pin varsa üstüne biner,
-        pin yoksa (ya da silindiyse) taban geri gelir.
+        Both are CHAT-specific and applied only IN MEMORY — the old version
+        wrote the folder to disk through settings.apply; even when the new
+        conversation had no path, the previous project's git bar
+        (dornick / branch) stayed. The base is always the global setting on
+        disk: a pin rides on top of it, and without a pin (or once deleted)
+        the base comes back.
         """
         agent = self.agent
         if agent is None:
@@ -957,11 +990,11 @@ class Bridge:
         mind = agent.mind
         if not hasattr(mind, "session_meta"):
             return
-        kayit = (mind.session_meta() or {}).get(session_id) or {}
-        path = str(kayit.get("path") or "").strip()
-        model_name = str(kayit.get("model") or "").strip()
+        record = (mind.session_meta() or {}).get(session_id) or {}
+        path = str(record.get("path") or "").strip()
+        model_name = str(record.get("model") or "").strip()
 
-        from dataclasses import replace as _degistir
+        from dataclasses import replace as _replace
 
         from . import settings as saved_settings
 
@@ -970,36 +1003,36 @@ class Bridge:
         except Exception:
             disk = agent.config
 
-        # Klasör: sohbet path'i varsa onu, yoksa küresel projeyi uygula.
-        disk_proje = str(disk.sandbox.project or "").strip()
-        hedef_proje = path or disk_proje
-        if hedef_proje != str(agent.config.sandbox.project or "").strip():
+        # Folder: the chat's path if it has one, otherwise the global project.
+        disk_project = str(disk.sandbox.project or "").strip()
+        target_project = path or disk_project
+        if target_project != str(agent.config.sandbox.project or "").strip():
             try:
-                self.reload(_degistir(
+                self.reload(_replace(
                     agent.config,
-                    sandbox=_degistir(agent.config.sandbox, project=hedef_proje),
+                    sandbox=_replace(agent.config.sandbox, project=target_project),
                 ))
             except Exception:
                 pass
 
-        taban = disk.model
+        base = disk.model
         if model_name and saved_settings.batch_only_model(model_name):
             model_name = model_name.rsplit(":", 1)[0]
-        hedef = _degistir(taban, name=model_name) if model_name else taban
-        if hedef != agent.config.model:
+        target = _replace(base, name=model_name) if model_name else base
+        if target != agent.config.model:
             try:
-                # Sohbet pininde de katalog penceresini doldur.
+                # Fill in the catalogue window for the chat pin as well.
                 if model_name:
                     try:
-                        hedef = saved_settings.adopt_caps(agent.config, hedef)
+                        target = saved_settings.adopt_caps(agent.config, target)
                     except Exception:
                         pass
-                self.reload(_degistir(agent.config, model=hedef))
+                self.reload(_replace(agent.config, model=target))
             except Exception:
                 pass
 
-        # Composer git çubuğu canlı config'ten okunur; oturum değişince
-        # yenilenmezse eski repo/dal adı yeni konuşmada asılı kalır.
+        # The composer's git bar reads from the live config; unless refreshed
+        # on session change the old repo/branch name hangs in the new chat.
         hub = getattr(self, "hub", None)
         if hub is not None:
             try:
@@ -1008,16 +1041,17 @@ class Bridge:
                 pass
 
     def _switch(self, sid: str | None) -> dict[str, Any]:
-        """Aktif oturumu değiştirir. sid None ise yeni, değilse o oturum.
+        """Switches the active session. sid None means new, otherwise that session.
 
-        Paralel oturumlar (canlı istek, 29.08): geçiş MEŞGULKEN DE çalışır.
-        Aktif şerit boştaysa ucuz yol — aynı ajan yeni oturuma bağlanır
-        (şerit sayısı 1'de kalır). Meşgulse koşan şeride DOKUNULMAZ: hedef
-        için ayrı bir şerit bulunur ya da kurulur; eski tur kendi şeridinde
-        arka planda biter, kenar çubuğu rozeti koştuğunu gösterir.
+        Parallel sessions (live request, 29.08): switching works EVEN WHILE
+        BUSY. If the active lane is idle, the cheap path — the same agent
+        binds to the new session (the lane count stays at 1). If busy, the
+        running lane is NOT TOUCHED: a separate lane is found or built for
+        the target; the old turn finishes in the background on its own lane,
+        and the sidebar badge shows it running.
         """
-        aktif = self._serit()
-        agent = aktif.agent if aktif else None
+        active = self._lane()
+        agent = active.agent if active else None
         if agent is None or self.server is None:
             return {"ok": False, "error": "henüz hazır değil"}
 
@@ -1028,9 +1062,9 @@ class Bridge:
 
         sessions_dir = agent.config.sessions_dir
 
-        # Hedef zaten bir şeritte mi (arka planda koşuyor ya da bekliyor)?
-        if sid and sid in self.seritler and sid != self._aktif_sid:
-            return self._aktive_et(self.seritler[sid], resumed=True)
+        # Is the target already on a lane (running or waiting in the background)?
+        if sid and sid in self.seritler and sid != self._active_sid:
+            return self._activate(self.seritler[sid], resumed=True)
 
         if sid:
             path = Path(sessions_dir) / f"{sid}.jsonl"
@@ -1042,195 +1076,198 @@ class Bridge:
             session = Session.create(sessions_dir)
             resumed = False
 
-        onceki_sid = ""
+        previous_sid = ""
         if agent.session is not None:
-            onceki_sid = str(getattr(agent.session, "id", "") or "")
+            previous_sid = str(getattr(agent.session, "id", "") or "")
 
-        if aktif.busy:
-            # Koşan şeridin altından oturum çekilmez: hedef için YENİ şerit.
+        if active.busy:
+            # The session is not pulled out from under a running lane: a NEW
+            # lane for the target.
             try:
-                yeni = self._serit_kur(session)
+                fresh_lane = self._build_lane(session)
             except Exception as exc:
                 return {"ok": False,
                         "error": f"şerit kurulamadı: {type(exc).__name__}: {exc}"}
-            self._model_devri(agent, onceki_sid, session, resumed)
-            return self._aktive_et(yeni, resumed=resumed)
+            self._inherit_model(agent, previous_sid, session, resumed)
+            return self._activate(fresh_lane, resumed=resumed)
 
-        # Boş şeritte ucuz yol: aynı ajan yeni oturuma bağlanır.
-        eski_anahtar = aktif.sid
-        eski_oturum = agent.session      # günlüğü aşağıda kapatılacak
+        # Cheap path on an idle lane: the same agent binds to the new session.
+        old_key = active.sid
+        old_session = agent.session      # its log is closed below
         agent.session = session
         agent.mind.session_id = session.id
-        agent._last_encoded = ""      # yeni oturumda anlık-encode tekrarını sıfırla
-        aktif.sid = session.id
-        self.seritler.pop(eski_anahtar, None)
-        self.seritler[session.id] = aktif
-        self._aktif_sid = session.id
+        agent._last_encoded = ""      # reset the instant-encode dedupe in the new session
+        active.sid = session.id
+        self.seritler.pop(old_key, None)
+        self.seritler[session.id] = active
+        self._active_sid = session.id
         self.server.rebind(session)
-        # Eski oturumun günlük dosyasını KAPAT. Windows açık bir dosyayı
-        # taşıtmıyor: kapatılmayınca kullanıcı o sohbeti silmek/arşivlemek
-        # istediğinde "WinError 32 — dosya başka bir işlem tarafından
-        # kullanılıyor" hatası alıyordu (canlı yara, 02.09; hem bende hem
-        # kullanıcıda görüldü). Başka bir şerit aynı oturumu tutuyorsa
-        # dokunulmuyor.
+        # CLOSE the old session's log file. Windows won't let an open file be
+        # moved: left open, the user got "WinError 32 — the file is being used
+        # by another process" when trying to delete/archive that chat (live
+        # wound, 02.09; seen both on my side and the user's). If another lane
+        # holds the same session it is left alone.
         try:
-            if (eski_oturum is not None and eski_oturum is not session
-                    and not any(getattr(s.agent, "session", None) is eski_oturum
+            if (old_session is not None and old_session is not session
+                    and not any(getattr(s.agent, "session", None) is old_session
                                 for s in self.seritler.values())):
-                eski_oturum.close()
+                old_session.close()
         except Exception:
             pass
-        self._model_devri(agent, onceki_sid, session, resumed)
-        # Sohbete özel klasör / model — geçişte uygula.
+        self._inherit_model(agent, previous_sid, session, resumed)
+        # Chat-specific folder / model — apply on switch.
         try:
             self._apply_session_context(session.id)
         except Exception:
             pass
         _drop_finished_channels(agent)
-        # Sayaçlar sohbete özel: önceki konuşmanın harcaması yeni/öteki
-        # sohbette kalmasın; sürdürülen sohbet geçmiş toplamını alsın.
-        self._kullanim_sifirla()
+        # Counters are chat-specific: the previous conversation's spend must
+        # not linger in the new/other chat; a resumed chat gets its past total.
+        self._reset_usage()
         if resumed:
             try:
-                self._oturum_tohumla(_past_usage(agent))
+                self._seed_session_usage(_past_usage(agent))
             except Exception:
                 pass
         self.hub.emit({"type": "session_reset", "id": session.id, "resumed": resumed})
         self.hub.emit({"type": "channels", "channels": _live_channels(agent)})
         return {"ok": True, "id": session.id, "resumed": resumed}
 
-    def _model_devri(self, agent: Any, onceki_sid: str, session: Any,
+    def _inherit_model(self, agent: Any, previous_sid: str, session: Any,
                      resumed: bool) -> None:
-        """Yeni sohbet son sohbetin modelini devralır — yalnız son sohbet
-        bir model SABİTLEMİŞSE. Sabitlemeyen kullanıcıda akış eskisi gibi:
-        küresel varsayılan neyse o."""
-        if resumed or not onceki_sid or not hasattr(agent.mind, "session_meta"):
+        """The new chat inherits the last chat's model — only if the last
+        chat PINNED a model. For a user who doesn't pin, the flow is as
+        before: whatever the global default is."""
+        if resumed or not previous_sid or not hasattr(agent.mind, "session_meta"):
             return
         try:
-            eski_kayit = (agent.mind.session_meta() or {}).get(onceki_sid) or {}
-            if eski_kayit.get("model"):
+            old_record = (agent.mind.session_meta() or {}).get(previous_sid) or {}
+            if old_record.get("model"):
                 agent.mind.set_session_meta(
                     session.id,
-                    model=str(eski_kayit["model"]),
-                    provider=str(eski_kayit.get("provider") or ""))
+                    model=str(old_record["model"]),
+                    provider=str(old_record.get("provider") or ""))
         except Exception:
             pass
 
-    def _aktive_et(self, serit: Serit, *, resumed: bool) -> dict[str, Any]:
-        """Var olan bir şeridi arayüzün baktığı şerit yapar.
+    def _activate(self, lane: Lane, *, resumed: bool) -> dict[str, Any]:
+        """Makes an existing lane the one the UI looks at.
 
-        Koşan şeride dokunulmaz — yalnız yayın hedefi değişir: sunucu o
-        oturumun günlüğüne bağlanır, arayüz dökümü oradan yeniden yükler,
-        meşguliyet ve kanallar o şeridin gerçeğinden basılır.
+        A running lane is not touched — only the broadcast target changes:
+        the server binds to that session's log, the UI reloads the transcript
+        from there, busyness and channels are printed from that lane's truth.
         """
-        self._aktif_sid = serit.sid
-        self.server.rebind(serit.agent.session)
+        self._active_sid = lane.sid
+        self.server.rebind(lane.agent.session)
         try:
-            self._apply_session_context(serit.sid)
+            self._apply_session_context(lane.sid)
         except Exception:
             pass
-        self._kullanim_sifirla()
+        self._reset_usage()
         if resumed:
             try:
-                self._oturum_tohumla(_past_usage(serit.agent))
+                self._seed_session_usage(_past_usage(lane.agent))
             except Exception:
                 pass
-        self.hub.emit({"type": "session_reset", "id": serit.sid,
+        self.hub.emit({"type": "session_reset", "id": lane.sid,
                        "resumed": resumed})
-        self.hub.emit({"type": "status", "busy": serit.busy})
+        self.hub.emit({"type": "status", "busy": lane.busy})
         self.hub.emit({"type": "channels",
-                       "channels": _live_channels(serit.agent)})
-        return {"ok": True, "id": serit.sid, "resumed": resumed}
+                       "channels": _live_channels(lane.agent)})
+        return {"ok": True, "id": lane.sid, "resumed": resumed}
 
-    def _serit_kur(self, session: Any) -> Serit:
-        """Yeni bir oturum için bağımsız şerit kurar.
+    def _build_lane(self, session: Any) -> Lane:
+        """Builds an independent lane for a new session.
 
-        Ajan sıfırdan: kendi zihni (aynı SQLite, ayrı bağlantı — oturum
-        kimliği karışmasın), kendi kayıt defteri, TEMİZ taban yapılandırma
-        (başka sohbetin sabitlediği model buraya sızmaz; sohbete özel pin
-        aktivasyonda `_apply_session_context` ile gelir). Model istemcisi
-        aynı (ad, adres) için ÖNBELLEKTEN paylaşılır: yerel sunucuda iki
-        istemci modeli iki kez yükletirdi; paylaşılan istemcinin kapısı
-        istekleri zaten sıraya koyar.
+        The agent from scratch: its own mind (same SQLite, separate
+        connection — session ids must not mix), its own registry, a CLEAN
+        base configuration (a model pinned by another chat does not leak in
+        here; the chat-specific pin arrives on activation through
+        `_apply_session_context`). The model client is shared FROM THE CACHE
+        for the same (name, address): on a local server two clients would
+        make the model load twice; the shared client's gate already
+        serialises requests.
         """
-        ornek = self._serit()
-        if ornek is None or ornek.agent is None:
+        template = self._lane()
+        if template is None or template.agent is None:
             raise RuntimeError("kurulu şerit yok")
-        cfg = settings._from_disk(ornek.agent.config)
+        cfg = settings._from_disk(template.agent.config)
 
         mind = open_mind(cfg.mind_dir, cfg.sessions_dir, session.id)
         registry = build_registry(mind, subagents=not prompt.is_lean(cfg))
 
-        if not hasattr(self, "_istemciler"):
-            self._istemciler: dict[tuple[str, str], Any] = {}
-            eski_model = ornek.agent.config.model
-            self._istemciler[(eski_model.name, str(eski_model.base_url or ""))] = (
-                ornek.agent.client)
-        switches = (cfg.model.name, str(cfg.model.base_url or ""))
-        client = self._istemciler.get(switches)
+        if not hasattr(self, "_clients"):
+            self._clients: dict[tuple[str, str], Any] = {}
+            old_model = template.agent.config.model
+            self._clients[(old_model.name, str(old_model.base_url or ""))] = (
+                template.agent.client)
+        key = (cfg.model.name, str(cfg.model.base_url or ""))
+        client = self._clients.get(key)
         if client is None:
             client = build_client(cfg.model)
-            self._istemciler[switches] = client
+            self._clients[key] = client
 
-        serit = Serit(sid=session.id, agent=None, queue=asyncio.Queue())
+        lane = Lane(sid=session.id, agent=None, queue=asyncio.Queue())
         agent = Agent(
             config=cfg,
             session=session,
             registry=registry,
             client=client,
-            io=self.io(serit),
+            io=self.io(lane),
             permissions=PermissionEngine.from_config(cfg.permissions),
             policy=ContextPolicy(cfg.context),
-            schedule=getattr(ornek.agent, "schedule", None),
+            schedule=getattr(template.agent, "schedule", None),
             mind=mind,
         )
         agent.on_children_settled = (
-            lambda s=serit: self.loop.call_soon_threadsafe(
-                self._serit_child_done, s))
+            lambda s=lane: self.loop.call_soon_threadsafe(
+                self._lane_child_done, s))
         agent.on_retry_wait = self._swap_model
-        serit.agent = agent
-        self.seritler[session.id] = serit
-        serit.task = self.loop.create_task(self._pompa(serit))
-        return serit
+        lane.agent = agent
+        self.seritler[session.id] = lane
+        lane.task = self.loop.create_task(self._pump_lane(lane))
+        return lane
 
     def compact_now(self) -> dict[str, Any]:
-        """Bağlamı ŞİMDİ sıkıştırır (kompozerdeki `/sifirla` komutu).
+        """Compacts the context NOW (the `/sifirla` command in the composer).
 
-        Aynı yol kendiliğinden de işliyor: pencere dolmaya yaklaşınca
-        `_relieve_pressure` bunu zaten çağırıyor. Buradaki tek fark kararı
-        kullanıcının vermesi — "konuşma ağırlaştı, topla" diyebilmek.
+        The same path also runs on its own: when the window nears full,
+        `_relieve_pressure` already calls this. The only difference here is
+        that the user makes the call — being able to say "the conversation
+        got heavy, gather it up".
 
-        Yalnız boştayken: akan bir turun altından geçmişi özetleyip
-        değiştirmek o cevabı bozar.
+        Only while idle: summarising and replacing the history from under a
+        streaming turn breaks that answer.
         """
-        serit = self._serit()
-        agent = serit.agent if serit else None
+        lane = self._lane()
+        agent = lane.agent if lane else None
         if agent is None:
             return {"ok": False, "error": "henüz hazır değil"}
-        if serit.busy:
+        if lane.busy:
             return {"ok": False, "error": "Dornick meşgul; tur bitince dene", "busy": True}
 
-        async def _kos() -> None:
-            self._serit_durum(serit, True)
+        async def _run() -> None:
+            self._lane_status(lane, True)
             try:
                 if not await agent._compact(reason="kullanıcı istedi"):
-                    self._serit_yayin(serit, {"type": "notice", "text":
+                    self._lane_emit(lane, {"type": "notice", "text":
                                    "Sıkıştıracak kadar geçmiş yok — bağlam zaten kısa."})
-            except Exception as exc:   # sıkıştırma uygulamayı düşürmemeli
-                self._serit_yayin(serit, {"type": "notice",
+            except Exception as exc:   # compaction must not bring the app down
+                self._lane_emit(lane, {"type": "notice",
                                           "text": f"{type(exc).__name__}: {exc}"})
             finally:
-                self._serit_durum(serit, False)
-                self._serit_yayin(serit, {"type": "turn_end"})
+                self._lane_status(lane, False)
+                self._lane_emit(lane, {"type": "turn_end"})
 
-        asyncio.run_coroutine_threadsafe(_kos(), self.loop)
+        asyncio.run_coroutine_threadsafe(_run(), self.loop)
         return {"ok": True}
 
     def wake(self) -> None:
-        """Uyandırma sözü duyuldu: pencere gizliyse geri gelsin.
+        """The wake word was heard: if the window is hidden, bring it back.
 
-        Pencere gizliyken de sayfa çalışıyor ve mikrofon dinliyor; duyulan
-        söze cevap verilirken kullanıcının cevabı görebilmesi gerekiyor.
+        The page runs and the microphone listens even while the window is
+        hidden; while the heard phrase is being answered the user needs to
+        be able to see the answer.
         """
         if self.on_wake is not None:
             self.on_wake()
@@ -1246,30 +1283,31 @@ class Bridge:
         if pending is None or pending.future.done():
             return
         if always and granted and self.agent is not None:
-            # Ayni arac ve ayni hedef bir daha sorulmasin. Kural izin
-            # motoruna yaziliyor; karar dongunun disinda kaliyor.
-            rule = self.agent.permissions.remember_allow(pending.spec, pending.args)
+            # The same tool and the same target must not be asked again. The
+            # rule is written into the permission engine; the decision stays
+            # outside the loop.
+            rule =self.agent.permissions.remember_allow(pending.spec, pending.args)
             self.hub.emit({"type": "notice", "text": f"Kural eklendi: {rule}"})
         self.loop.call_soon_threadsafe(pending.future.set_result, granted)
 
     def reload(self, config: Config, *, force: bool = False) -> None:
-        """Ayar sayfası kaydettiğinde çağrılır.
+        """Called when the settings page saves.
 
-        İzin kipi ve bağlam politikası anında geçiyor. Model de artık
-        geçiyor: "kaydet"e basıp hiçbir şeyin değişmediğini görmek, sonra
-        programı kapatıp açmak gerektiğini keşfetmek iyi bir ayar sayfası
-        değil.
+        Permission mode and context policy take effect at once. The model
+        does too now: pressing "save", seeing nothing change, then
+        discovering you have to close and reopen the program is not a good
+        settings page.
 
-        `force`: model adı/adresi aynı kalsa bile istemciyi yeniden kur.
-        Anahtar değişiminde şart — API anahtarı `ModelConfig`'in parçası değil
-        (yalnız env adı), o yüzden anahtarı değiştirmek `config.model`'i
-        değiştirmiyor ve eski istemci eski anahtarla kalıyordu; yeni anahtar
-        ancak yeniden başlatınca etkili oluyordu. Artık anahtar değişince de
-        istemci tazeleniyor.
+        `force`: rebuild the client even if the model name/address stayed the
+        same. Required on a key change — the API key is not part of
+        `ModelConfig` (only the env name), so changing the key does not
+        change `config.model` and the old client stayed with the old key;
+        the new key only took effect after a restart. Now the client is
+        refreshed on a key change too.
 
-        Geçmiş yeni modele taşınıyor — kullanıcıya söyleniyor, sessizce
-        yapılmıyor. Turun ortasındaysak değişiklik bir sonraki model
-        çağrısına (araç turu arası) kadar bekler: akan stream kesilmez.
+        The history is carried over to the new model — the user is told, it
+        is not done silently. If we are mid-turn the change waits until the
+        next model call (between tool rounds): the streaming answer is not cut.
         """
         agent = self.agent
         if agent is None:
@@ -1285,38 +1323,39 @@ class Bridge:
         before = agent.config.model
         agent.permissions = PermissionEngine.from_config(config.permissions)
 
-        # Bekleyen izin kartları yeni kiple YENİDEN değerlendiriliyor: tam
-        # yetkiye geçen kullanıcı açık kartın kendiliğinden onaylanmasını
-        # bekliyor. Eski hal kartı asılı bırakıyordu — tur sonsuza dek izin
-        # bekliyor, Durdur bile işlemiyordu (canlı yara, 01.09: "yolo izin
-        # verdim, tam yetki dedim, sonra öyle kaldı").
-        from .permissions import Decision as _Karar
-        # getattr: önizleme/test köprüleri __new__ ile kurulabiliyor.
-        for bekleyen in tuple(getattr(self, "_pending", {}).values()):
-            if bekleyen.future.done():
+        # Pending permission cards are RE-EVALUATED under the new mode: a user
+        # who switches to full authority expects the open card to approve
+        # itself. The old version left the card hanging — the turn waited for
+        # permission forever, even Stop didn't work (live wound, 01.09: "I
+        # gave yolo permission, said full authority, and it just stayed").
+        from .permissions import Decision as _Decision
+        # getattr: preview/test bridges may be built with __new__.
+        for pending_req in tuple(getattr(self, "_pending", {}).values()):
+            if pending_req.future.done():
                 continue
             try:
-                karar, _kural = agent.permissions.evaluate(
-                    bekleyen.spec, bekleyen.args)
+                decision, _rule = agent.permissions.evaluate(
+                    pending_req.spec, pending_req.args)
             except Exception:
                 continue
-            if karar is _Karar.ALLOW or karar is _Karar.DENY:
-                deger = karar is _Karar.ALLOW
-                fut = bekleyen.future
+            if decision is _Decision.ALLOW or decision is _Decision.DENY:
+                value = decision is _Decision.ALLOW
+                fut = pending_req.future
                 self.loop.call_soon_threadsafe(
-                    lambda f=fut, d=deger: None if f.done() else f.set_result(d))
+                    lambda f=fut, d=value: None if f.done() else f.set_result(d))
 
         if was != config.permissions.mode:
             self.hub.emit({"type": "notice", "text": f"İzin kipi: {config.permissions.mode}"})
-            # Dock çipi ve plan-onay düğmesi gerçek kipi göstersin: ayar
-            # sayfası DIŞINDAN (başka sekme, dış kapı) değişen kip de
-            # arayüze olay olarak düşmeli — notice metni makine okunur değil.
+            # The dock chip and the plan-approve button should show the real
+            # mode: a mode changed from OUTSIDE the settings page (another
+            # tab, the external gate) must also reach the UI as an event —
+            # the notice text is not machine-readable.
             self.hub.emit({"type": "mode", "mode": config.permissions.mode})
 
         model_changed = before != config.model
         if model_changed or force:
-            # İstemci (ve onunla birlikte sistem promptu) yeniden kuruluyor;
-            # tur ortasındaysak bir sonraki client.turn öncesi uygulanır.
+            # The client (and with it the system prompt) is rebuilt; if we
+            # are mid-turn it is applied before the next client.turn.
             self._wanted_model = config.model
             self._wanted_config = config
             self._swap_note = (
@@ -1327,12 +1366,12 @@ class Bridge:
             if not self._busy:
                 self._swap_model()
         else:
-            # Model aynı ama başka bir şey değişmiş olabilir: duyu açıldı,
-            # cihaz eklendi, bağlam politikası değişti. Bunlar bir sonraki
-            # tura anında girmeli — yeniden başlatmaya gerek yok.
+            # Same model but something else may have changed: a sense was
+            # switched on, a device added, the context policy changed. These
+            # must enter the next turn immediately — no restart needed.
             agent.reconfigure(config)
-        # Kamera anahtarı anında: ayar kaydı Lens'i start/stop eder, yeniden
-        # başlatmaya gerek yok (LED/GPU oturum ortasında kapanabilmeli).
+        # The camera switch is immediate: a settings save starts/stops the
+        # Lens, no restart needed (LED/GPU must be able to go off mid-session).
         self.sync_camera(config)
         self.sync_hearing(config)
         self.hub.emit({
@@ -1341,9 +1380,9 @@ class Bridge:
         })
 
     def _on_camera_motion(self, sighting: watching.Sighting) -> None:
-        """İzleyici hareketi: HUD kapalıysa sohbet açılmaz.
+        """Watcher motion: no chat opens while the HUD is off.
 
-        Ayar anlık okunur — açılıştaki bayrağa kapanmış bir kapanış olmasın.
+        The setting is read live — no closure bound to the flag at boot.
         """
         agent = getattr(self, "agent", None)
         cfg = getattr(agent, "config", None) if agent is not None else None
@@ -1355,10 +1394,11 @@ class Bridge:
         _send_motion(self, cfg, self.hub, sighting)
 
     def sync_camera(self, config: Config) -> dict[str, Any]:
-        """Kamera anahtarını donanıma uygular: Lens, izleyici, LED, YOLO ısısı.
+        """Applies the camera switch to the hardware: Lens, watcher, LED, YOLO warmth.
 
-        HUD yalnız Lens'i kapatıyordu; arka plan izleyici (Watcher) kameraları
-        okumaya devam edip sohbete hareket mesajı basıyordu. İkisi aynı kapı.
+        The HUD only turned the Lens off; the background watcher (Watcher)
+        kept reading the cameras and printing motion messages into the chat.
+        Both go through the same gate.
         """
         from . import sight, watch as watching
 
@@ -1425,7 +1465,7 @@ class Bridge:
         return payload
 
     def camera_power(self, on: bool) -> str:
-        """Sohbet/HUD: kamerayı tamamen aç veya kapat (ayarı da yazar)."""
+        """Chat/HUD: turn the camera fully on or off (writes the setting too)."""
         from . import settings as settings_mod
 
         agent = getattr(self, "agent", None)
@@ -1450,11 +1490,11 @@ class Bridge:
         return "Kamera kapalı. Aygıt bırakıldı, LED söner."
 
     def sync_hearing(self, config: Config) -> dict[str, Any]:
-        """Dinleme anahtarını donanıma uygular: Ear start/stop.
+        """Applies the listening switch to the hardware: Ear start/stop.
 
-        Ayar kaydı tek başına yetmiyordu — bayrak değişiyor, kulak ancak
-        yeniden başlatınca açılıyordu; o yüzden yalnız bas-konuş duyuluyordu.
-        Uyandırma sözü veya serbest dinleme (`open`) varsa kulak açılır.
+        Saving the setting alone was not enough — the flag changed, but the
+        ear only opened after a restart; so only push-to-talk was heard.
+        The ear opens if there is a wake word or open listening (`open`).
         """
         from . import listen as recogniser
 
@@ -1532,10 +1572,11 @@ class Bridge:
         return payload
 
     def hearing_power(self, on: bool) -> str:
-        """HUD: dinlemeyi aç veya kapat (ayarı da yazar).
+        """HUD: turn listening on or off (writes the setting too).
 
-        Açarken serbest dinleme de açılır: uyandırma sözü beklenmeden
-        duyulan cümle ajana gider. Kapatınca mikrofon bırakılır.
+        Turning it on also opens free listening: the heard sentence goes to
+        the agent without waiting for the wake word. Turning it off releases
+        the microphone.
         """
         from . import settings as settings_mod
 
@@ -1562,7 +1603,7 @@ class Bridge:
         return "Dinleme kapalı. Mikrofon bırakıldı."
 
     def voice_power(self, on: bool) -> str:
-        """HUD: sesi aç veya kapat (ayarı da yazar)."""
+        """HUD: turn the voice on or off (writes the setting too)."""
         from . import settings as settings_mod
 
         agent = getattr(self, "agent", None)
@@ -1583,10 +1624,10 @@ class Bridge:
         return "Ses kapalı."
 
     def _swap_model(self) -> None:
-        """Bekleyen model değişikliğini uygular.
+        """Applies the pending model change.
 
-        Eski istemci burada kapatılmıyor: kapatmak bir eşyordam ve bu
-        çağrı HTTP thread'inden geliyor. Döngüye bırakılıyor.
+        The old client is not closed here: closing is a coroutine and this
+        call comes from the HTTP thread. It is left to the loop.
         """
         wanted = self._wanted_model
         pending = self._wanted_config
@@ -1606,50 +1647,53 @@ class Bridge:
 
         old = agent.client
         agent.client = fresh
-        # Yeni model LM Studio'ysa doğru pencereyle yüklet ve GERÇEK yüklü
-        # pencereyi ayara çek — boot'taki ile aynı: canlı model değişiminde de
-        # (kullanıcı ayarlardan değiştirince) pencere gerçekle uyuşsun, yoksa
-        # sıkıştırma geç tetiklenip istem taşıyor. LM Studio dışı sağlayıcıda
-        # sessizce hiçbir şey yapmıyor.
+        # If the new model is LM Studio, load it with the right window and
+        # pull the REAL loaded window into the setting — same as at boot: on
+        # a live model change too (user switching from settings) the window
+        # must match reality, otherwise compaction triggers late and the
+        # prompt overflows. On a non-LM-Studio provider it silently does
+        # nothing.
         if pending is not None:
             try:
                 _prepare_model(pending)
             except Exception:
                 pass
-        # İstemci ve sistem promptu birlikte tazeleniyor: yeni model dar
-        # pencereliyse lean hale geçmeli, araç şemaları kısalmalı. İkisi
-        # ayrı düşerse biri yeni modele biri eskisine göre kalır.
+        # Client and system prompt are refreshed together: if the new model
+        # has a narrow window it must switch to lean, the tool schemas must
+        # shorten. If the two fall apart, one is set for the new model and
+        # the other for the old.
         if pending is not None:
             agent.reconfigure(pending)
-        # Yeni modelin fiyatı yeniden sorulmalı: eski etiketle harcama
-        # göstermek yanlış rakam basmak olur. Bir sonraki usage olayı
-        # arka planda taze etiketi çektirir.
-        self._fiyat = None
-        self._fiyat_bakildi = False
+        # The new model's price must be asked again: showing spend with the
+        # old tag would print a wrong figure. The next usage event fetches
+        # a fresh tag in the background.
+        self._price = None
+        self._price_checked = False
         note = self._swap_note or f"Model değişti: {wanted.name}."
         self._swap_note = ""
         self.hub.emit({"type": "notice", "text": note})
-        # Paylaşımlı istemci önbelleği (paralel şeritler): eski istemciyi
-        # BAŞKA bir şerit hâlâ kullanıyorsa kapatma — altından bağlantı
-        # çekmek koşan turu düşürür. Önbellekten de yalnız kimse
-        # kullanmıyorsa düşülür.
-        kullanan = any(s.agent is not None and s.agent.client is old
-                       for s in self.seritler.values())
-        if not kullanan:
-            for switches, istemci in list(getattr(self, "_istemciler", {}).items()):
-                if istemci is old:
-                    self._istemciler.pop(switches, None)
+        # Shared client cache (parallel lanes): don't close the old client if
+        # ANOTHER lane is still using it — pulling the connection out from
+        # under it drops the running turn. It is dropped from the cache only
+        # when nobody uses it either.
+        in_use = any(s.agent is not None and s.agent.client is old
+                     for s in self.seritler.values())
+        if not in_use:
+            for key, cached in list(getattr(self, "_clients", {}).items()):
+                if cached is old:
+                    self._clients.pop(key, None)
             self.loop.call_soon_threadsafe(
                 lambda: self.loop.create_task(_retire(old)))
-        # Yeni istemci önbelleğe: aynı modele açılacak yeni şerit paylaşsın.
-        if hasattr(self, "_istemciler"):
-            self._istemciler[(wanted.name, str(wanted.base_url or ""))] = fresh
+        # The new client into the cache: a new lane opened on the same model
+        # should share it.
+        if hasattr(self, "_clients"):
+            self._clients[(wanted.name, str(wanted.base_url or ""))] = fresh
 
     def waking(self, stage: str, *, ready: bool = False) -> None:
-        """Açılışın hangi adımında olunduğunu duyurur.
+        """Announces which step of boot we are at.
 
-        Model yüklenirken pencere boş durmasın; ne beklendiği yazsın ve
-        hazır olunca canlansın.
+        The window must not sit empty while the model loads; it should say
+        what is being waited for and come alive once ready.
         """
         self.stage = stage
         self.ready = ready
@@ -1661,63 +1705,67 @@ class Bridge:
 
     def snapshot(self) -> dict[str, Any]:
         agent = self.agent
-        # Bu süreçte bir tur koştuysa canlı sayaç doğrudur; koşmadıysa
-        # (sürdürülen oturum, taze açılış) gerçek durum oturum günlüğünde.
-        canli = int((getattr(agent, "_last_usage", None) or {}).get("prompt_total") or 0)
-        gecmis = ({"prompt_total": canli, "output": 0, "cagri": 0, "tahmin": False}
-                  if canli else _past_usage(agent) if agent
-                  else {"prompt_total": 0, "output": 0, "cagri": 0, "tahmin": False})
-        # Maliyet çipinin oturum toplamı da aynı kaynaktan tohumlanıyor:
-        # yeni turlar bunun ÜSTÜNE ekleniyor (bkz. _usage_yay).
-        self._oturum_tohumla(gecmis)
+        # If a turn ran in this process the live counter is right; if not
+        # (resumed session, fresh boot) the truth is in the session log.
+        live_total = int((getattr(agent, "_last_usage", None) or {}).get("prompt_total") or 0)
+        past = ({"prompt_total": live_total, "output": 0, "cagri": 0, "tahmin": False}
+                if live_total else _past_usage(agent) if agent
+                else {"prompt_total": 0, "output": 0, "cagri": 0, "tahmin": False})
+        # The cost chip's session total is seeded from the same source: new
+        # turns are added ON TOP of it (see _usage_yay).
+        self._seed_session_usage(past)
         return {
             "busy": self._busy,
             "ready": self.ready,
             "stage": self.stage,
             "session": agent.session.id if agent else "",
             "model": agent.config.model.name if agent else "",
-            # Sağlayıcı ADI arayüz için: `model.provider` backend TİPİdir
-            # ("openai") ve OpenRouter'a bağlıyken "openai" yazmak yanıltıcı.
-            # Ayarlardaki gerçek sağlayıcı kimliği adrese bakarak bulunuyor.
-            "provider": _saglayici_adi(agent),
-            # Kompozer altındaki şerit için: düşünme derinliği ve bağlam
-            # penceresi. Pencere olmadan kullanım yüzdesi hesaplanamıyor.
+            # Provider NAME for the UI: `model.provider` is the backend TYPE
+            # ("openai") and writing "openai" while connected to OpenRouter
+            # misleads. The real provider identity from the settings is
+            # found by looking at the address.
+            "provider": _provider_name(agent),
+            # For the strip under the composer: thinking depth and context
+            # window. Without the window the usage percentage can't be
+            # computed.
             "effort": agent.config.model.effort if agent else "",
             "context_window": int(agent.config.model.context_window) if agent else 0,
-            # Son turun istem toplamı: sayfa yenilenince — ve uygulama
-            # kapanıp açılınca — bağlam göstergesi sıfırdan değil kaldığı
-            # yerden başlasın. Bu süreçte hiç tur koşmadıysa (sürdürülen
-            # oturum) değer oturum günlüğünden geliyor; bkz. _gecmis_kullanim.
-            "prompt_total": gecmis["prompt_total"],
-            # Rakam sağlayıcının saydığı gerçek değil, kaba bir tahmin mi?
-            # Arayüz bunu title'da söylüyor — uydurma kesinlik satılmıyor.
-            "tahmin": gecmis["tahmin"],
-            # Bağlam kutusunun kalem kalem kırılımı (sistem / araç / ruh /
-            # yetenek / MCP / konuşma). Toplam yokken de sabitler görünür.
-            "kirilim": context_breakdown(agent, gecmis["prompt_total"]),
-            # Maliyet çipi: sayfa yenilenince harcama göstergesi sıfırdan
-            # değil kaldığı yerden başlasın. Fiyat bilinmiyorsa None —
-            # çip token sayısına düşer.
-            "fiyat": self._fiyat,
+            # The last turn's prompt total: on a page refresh — and after the
+            # app is closed and reopened — the context gauge should start
+            # where it left off, not from zero. If no turn ran in this process
+            # (resumed session) the value comes from the session log; see
+            # _past_usage.
+            "prompt_total": past["prompt_total"],
+            # Is the figure a rough estimate rather than the provider's real
+            # count? The UI says so in the title — no made-up precision.
+            "tahmin": past["tahmin"],
+            # Item-by-item breakdown of the context box (system / tools /
+            # soul / skills / MCP / conversation). The fixed items show even
+            # without a total.
+            "kirilim": context_breakdown(agent, past["prompt_total"]),
+            # Cost chip: on a page refresh the spend gauge should start where
+            # it left off, not from zero. None if the price is unknown — the
+            # chip falls back to token counts.
+            "fiyat": self._price,
             "kullanim": {
-                "tur": dict(self._tur_kullanim),
+                "tur": dict(self._turn_usage),
                 "oturum": dict(self._session_usage),
             },
-            # Bu oturum için konmuş harcama sınırı (USD) — None = sınırsız.
-            # Sayfa yenilenince maliyet çipi sınırı unutmasın.
+            # Spend cap set for this session (USD) — None = unlimited. The
+            # cost chip must not forget the cap on a page refresh.
             "butce": self._budget_usd,
             "mode": agent.permissions.mode if agent else "",
-            # Aktif hedefler: sayfa yenilenince hedef paneli olay akışını
-            # kaçırmış oluyor; panel bu listeyle tohumlanıp kaldığı yerden
-            # sürüyor.
+            # Active goals: on a page refresh the goal panel has missed the
+            # event stream; the panel is seeded with this list and carries
+            # on from where it left off.
             "goals": _active_goals(agent),
-            # Yardımcı kanalları: orkestra paneli de aynı sebepten buradan
-            # tohumlanıyor — hayalet "çalışıyor" kartı kalmasın, yetimler
-            # "yarım kaldı" olarak görünsün.
+            # Helper channels: the orchestra panel is seeded from here for
+            # the same reason — no ghost "running" card left behind, orphans
+            # shown as "left unfinished".
             "channels": _live_channels(agent),
             "voice": bool(agent and agent.config.voice.enabled),
-            # Sesin karakteri tarayıcıda uygulanıyor: sentezleyici düz bir
-            # insan sesi üretiyor, katman onun üstüne biniyor.
+            # The voice character is applied in the browser: the synthesiser
+            # produces a plain human voice, the layer rides on top of it.
             "character": float(agent.config.voice.character) if agent else 0.0,
             "listen": bool(agent and agent.config.listen.enabled),
             "wake": bool(agent and agent.config.listen.wake.strip()),
@@ -1727,25 +1775,27 @@ class Bridge:
                             and getattr(self.ear, "snoozed", False)),
             "camera": bool(agent and agent.config.camera.enabled),
             "tools": len(agent.registry) if agent else 0,
-            # Çalışan kopyanın sürümü: üst bar marka ipucu buradan besleniyor.
-            # Sahada "hangi sürüm açık?" sorusu cevapsız kalmasın.
+            # Version of the running copy: the top-bar brand tooltip feeds
+            # from here. In the field, "which version is open?" must not go
+            # unanswered.
             "surum": environment.version(),
             "kurulu": environment.kurulu_mu(),
-            # Ajan gerçekten kimlik doğrulayabiliyor mu (anahtar var ya da
-            # yerel sunucu)? Arayüz ilk-kurulum yönlendirmesini buna göre
-            # gösteriyor — model "oto" gelse bile anahtar yoksa iş yapılamaz.
-            "can_run": _calisabilir(agent),
-            # Çalışma dizini: sohbet ekranı atölyede mi yoksa bağlı bir
-            # klasörde mi olduğunu göstersin. project boşsa atölyedeyiz.
+            # Can the agent actually authenticate (a key exists, or a local
+            # server)? The UI shows the first-run guidance based on this —
+            # even if the model comes as "oto", without a key no work is done.
+            "can_run": _can_run(agent),
+            # Working directory: the chat screen should show whether we are
+            # in the workshop or in an attached folder. Empty project = the
+            # workshop.
             "workspace": str(agent.config.workspace) if agent else "",
             "project": (str(getattr(agent.config.sandbox, "project", "") or "")
                         if agent else ""),
-            # Program kapalıyken zamanı geçmiş görevler (açılış sorusu).
+            # Tasks whose time passed while the program was closed (boot question).
             "missed_tasks": self._missed_tasks_payload(),
         }
 
     def missed_pending(self) -> bool:
-        """Kaçırılan görevler için kullanıcı kararı bekleniyor mu?"""
+        """Is a user decision pending for the missed tasks?"""
         return bool(self._missed_ids)
 
     def _missed_tasks_payload(self) -> list[dict[str, Any]]:
@@ -1766,7 +1816,7 @@ class Bridge:
         return out
 
     def resolve_missed(self, action: str) -> dict[str, Any]:
-        """Kaçırılan görevler: şimdi koştur veya bu seferlik atla."""
+        """Missed tasks: run them now or skip them this once."""
         if not self._missed_ids:
             return {"ok": True, "resolved": 0}
 
@@ -1803,168 +1853,168 @@ class Bridge:
             self.hub.emit({"type": "jobs_refresh"})
         return {"ok": True, "action": act, "count": count}
 
-    # -- maliyet çipi ---------------------------------------------------
+    # -- cost chip ------------------------------------------------------
 
-    def _kullanim_sifirla(self) -> None:
-        """Aktif sohbet değişince sayaçlar o sohbete ait olsun.
+    def _reset_usage(self) -> None:
+        """When the active chat changes, the counters should belong to it.
 
-        Bridge tek sayaç tutuyor; sohbet A'dan B'ye geçince eski toplam
-        ya B'ye yapışıyor ya da `_oturum_tohumlandi` yüzünden B'nin
-        geçmişi hiç yüklenmiyordu — çip her yeniden açılışta sıfır
-        görünüyordu (canlı şikâyet). Sıfırla; tohum bir sonraki
-        snapshot / açık tohum çağrısında doğru günlükten gelir.
+        Bridge keeps a single counter; on switching from chat A to B the old
+        total either stuck to B, or because of `_session_seeded` B's past
+        was never loaded — the chip showed zero on every reopen (live
+        complaint). Reset; the seed comes from the right log on the next
+        snapshot / explicit seed call.
         """
-        self._tur_kullanim = {"girdi": 0, "cikti": 0, "cagri": 0}
+        self._turn_usage = {"girdi": 0, "cikti": 0, "cagri": 0}
         self._session_usage = {"girdi": 0, "cikti": 0, "cagri": 0}
-        self._oturum_tohumlandi = False
+        self._session_seeded = False
 
-    def _oturum_tohumla(self, gecmis: dict[str, Any]) -> None:
-        """Sürdürülen oturumun harcamasını çipe bir kez tohumlar.
+    def _seed_session_usage(self, past: dict[str, Any]) -> None:
+        """Seeds the resumed session's spend into the chip once.
 
-        Bağlam çubuğuyla aynı yara: yeniden açılan bir konuşmada çip de
-        sıfırdan başlıyordu. Tohum YALNIZCA bir kez ve yalnızca bu
-        sohbet için hiç tur koşmamışken konuyor — yoksa her snapshot
-        (sayfa yenileme) toplamı şişirirdi. `girdi` tüm turların
-        toplamı; canlı `_usage_yay` muhasebesiyle aynı dil.
+        The same wound as the context bar: in a reopened conversation the
+        chip also started from zero. The seed is placed ONLY once and only
+        while no turn has run for this chat yet — otherwise every snapshot
+        (page refresh) would inflate the total. `girdi` is the sum over all
+        turns; the same language as the live `_usage_yay` accounting.
         """
-        if self._oturum_tohumlandi or self._session_usage["cagri"]:
+        if self._session_seeded or self._session_usage["cagri"]:
             return
-        if not gecmis.get("cagri"):
+        if not past.get("cagri"):
             return
-        self._oturum_tohumlandi = True
-        # Eski günlükler yalnız prompt_total taşıyabilir — geriye uyum.
-        girdi = int(gecmis.get("girdi") or gecmis.get("prompt_total") or 0)
+        self._session_seeded = True
+        # Old logs may carry only prompt_total — backward compat.
+        input_total = int(past.get("girdi") or past.get("prompt_total") or 0)
         self._session_usage = {
-            "girdi": girdi,
-            "cikti": int(gecmis.get("output") or 0),
-            "cagri": int(gecmis.get("cagri") or 0),
+            "girdi": input_total,
+            "cikti": int(past.get("output") or 0),
+            "cagri": int(past.get("cagri") or 0),
         }
 
     def _usage_yay(self, report: dict[str, int]) -> None:
-        """Tur-sonu kullanım raporunu toplayarak hub'a akıtır.
+        """Accumulates the end-of-turn usage report and streams it to the hub.
 
-        Olay sözleşmesi (arayüzdeki maliyet çipi buna bağlı):
-            {type: "usage", ...cache_report alanları,
-             tur:    {girdi, cikti, cagri},    bu kullanıcı turunun toplamı
-             oturum: {girdi, cikti, cagri},    oturumun toplamı
-             fiyat:  {girdi, cikti} | None}    USD/token; bilinmiyorsa None
+        Event contract (the cost chip in the UI depends on it):
+            {type: "usage", ...cache_report fields,
+             tur:    {girdi, cikti, cagri},    total of this user turn
+             oturum: {girdi, cikti, cagri},    total of the session
+             fiyat:  {girdi, cikti} | None}    USD/token; None if unknown
 
-        `girdi` istemin tamamı (prompt_total: önbellek dahil) — tahmin
-        kasıtlı olarak muhafazakâr, önbellek indirimi sayılmıyor. Fiyat
-        None ise çip token sayısı gösterir.
+        `girdi` is the whole prompt (prompt_total: cache included) — the
+        estimate is deliberately conservative, the cache discount is not
+        counted. If the price is None the chip shows token counts.
         """
-        for hedef in (self._tur_kullanim, self._session_usage):
-            hedef["girdi"] += int(report.get("prompt_total") or 0)
-            hedef["cikti"] += int(report.get("output") or 0)
-            hedef["cagri"] += 1
-        self._fiyat_getir()
-        kirilim = context_breakdown(self.agent, int(report.get("prompt_total") or 0))
+        for counter in (self._turn_usage, self._session_usage):
+            counter["girdi"] += int(report.get("prompt_total") or 0)
+            counter["cikti"] += int(report.get("output") or 0)
+            counter["cagri"] += 1
+        self._fetch_price()
+        breakdown = context_breakdown(self.agent, int(report.get("prompt_total") or 0))
         self.hub.emit({
             "type": "usage", **report,
-            "tur": dict(self._tur_kullanim),
+            "tur": dict(self._turn_usage),
             "oturum": dict(self._session_usage),
-            "fiyat": self._fiyat,
-            "kirilim": kirilim,
+            "fiyat": self._price,
+            "kirilim": breakdown,
         })
 
-    # -- bütçe freni ----------------------------------------------------
+    # -- budget brake ---------------------------------------------------
 
     def budget(self, usd: Any = None) -> dict[str, Any]:
-        """Bu oturumun harcama üst sınırını okur ya da kurar (HTTP thread).
+        """Reads or sets this session's spend cap (HTTP thread).
 
-        `usd` None/boş ise sınır KALKAR (sınırsız). Sıfır ya da negatif de
-        sınırsız sayılıyor: "0 dolar harca" diye bir istek yok, elini
-        klavyeye sürtmüş bir kullanıcı var.
+        If `usd` is None/empty the cap is LIFTED (unlimited). Zero or
+        negative also count as unlimited: there is no such request as
+        "spend 0 dollars", there is a user who brushed the keyboard.
 
-        Sınır ayar dosyasına yazılmıyor — bilinçli. Bu bir tercih değil, bu
-        oturuma konmuş bir emniyet kemeri; yarın açılan konuşma dün konan
-        sınırla sessizce durmamalı.
+        The cap is not written to the settings file — deliberately. This is
+        not a preference, it is a seat belt put on this session; tomorrow's
+        conversation must not silently stop under yesterday's cap.
         """
         if usd is None or usd == "":
             self._budget_usd = None
         else:
             try:
-                deger = float(usd)
+                value = float(usd)
             except (TypeError, ValueError):
                 return {"ok": False, "error": "Sayı bekleniyordu.",
                         "butce": self._budget_usd}
-            self._budget_usd = deger if deger > 0 else None
-        # Sınır değişti: "ulaşıldı" satırı bir kez daha basılabilsin.
+            self._budget_usd = value if value > 0 else None
+        # The cap changed: the "reached" line may be printed once more.
         self._budget_reported = False
         return {"ok": True, "butce": self._budget_usd,
                 "harcanan": self._spent()}
 
     def _spent(self) -> float | None:
-        """Bu oturumun tahmini harcaması (USD). Fiyat bilinmiyorsa None."""
-        if not self._fiyat:
+        """Estimated spend of this session (USD). None if the price is unknown."""
+        if not self._price:
             return None
         o = self._session_usage
-        return o["girdi"] * self._fiyat["girdi"] + o["cikti"] * self._fiyat["cikti"]
+        return o["girdi"] * self._price["girdi"] + o["cikti"] * self._price["cikti"]
 
     def _budget_brake(self) -> str:
-        """Sınıra ulaşıldı mı? Ulaşıldıysa sohbete basılacak tek satır.
+        """Has the cap been reached? If so, the single line to print in the chat.
 
-        Ajan döngüsü her model çağrısından ÖNCE soruyor (bkz.
-        loop.AgentIO.butce_freni). Burada ağ yok, dosya yok: yalnızca
-        elimizdeki sayaç ile elimizdeki fiyat etiketi.
+        The agent loop asks BEFORE every model call (see
+        loop.AgentIO.butce_freni). No network here, no file: only the
+        counter we have and the price tag we have.
 
-        Fiyat bilinmiyorsa (yerel sunucu, katalog dışı model) fren ÇALIŞMAZ.
-        Uydurma bir dolar rakamıyla kullanıcının işini durdurmak, sınırı hiç
-        koymamaktan kötü olurdu.
+        If the price is unknown (local server, model outside the catalogue)
+        the brake DOES NOT RUN. Stopping the user's work over a made-up
+        dollar figure would be worse than never setting the cap.
         """
-        sinir = self._budget_usd
-        if not sinir or self._budget_reported:
+        cap = self._budget_usd
+        if not cap or self._budget_reported:
             return ""
-        harcanan = self._spent()
-        if harcanan is None or harcanan < sinir:
+        spent = self._spent()
+        if spent is None or spent < cap:
             return ""
         self._budget_reported = True
-        return (f"Bütçe sınırına ulaşıldı (${sinir:.2f}) — "
+        return (f"Bütçe sınırına ulaşıldı (${cap:.2f}) — "
                 "devam etmek için sınırı yükselt.")
 
-    # -- koşan görevler -------------------------------------------------
+    # -- running tasks --------------------------------------------------
 
-    def _cocuk_arka_plan(self, cid: str) -> bool:
-        """Bu kanal arka planda mı koşuyordu (biten kanal bildirimi için)."""
+    def _child_in_background(self, cid: str) -> bool:
+        """Was this channel running in the background (for the finished-channel notice)."""
         children = getattr(self.agent, "_children", None) or {}
         handle = children.get(cid)
         return bool(handle is not None and handle.arka_plan)
 
     def tasks(self) -> dict[str, Any]:
-        """Koşan (ve yakın zamanda bitmiş) her işin tek listesi (HTTP thread).
+        """Single list of every running (and recently finished) job (HTTP thread).
 
-        İki kaynak birleşiyor, çünkü kullanıcı için ikisi de "arkada koşan
-        bir şey":
+        Two sources merge, because to the user both are "something running
+        in the back":
 
-          * `Agent._children` — arka plan yardımcıları (`kind="yardımcı"`)
-            ve arka plan kabuk işleri (`kind="iş"`, `shell` aracının
-            `arka_plan: true` yolu).
-          * `apps._PROCS` — ayrılmış (detached) süreçler: `shell`in
-            `background: true` yolu ve panelden başlatılan uygulamalar.
+          * `Agent._children` — background helpers (`kind="yardımcı"`) and
+            background shell jobs (`kind="iş"`, the `shell` tool's
+            `arka_plan: true` path).
+          * `apps._PROCS` — detached processes: the `shell` tool's
+            `background: true` path and apps launched from the panel.
 
-        Süre CANLI: satır `basladi` damgasını taşıyor, saymayı arayüz
-        yapıyor — sunucuya saniyede bir sormaya gerek yok.
+        The duration is LIVE: the row carries the `basladi` stamp and the
+        UI does the counting — no need to ask the server once a second.
         """
-        from . import apps as katalog
+        from . import apps as catalog
 
         rows: list[dict[str, Any]] = []
 
         children = getattr(self.agent, "_children", None) or {}
         from .tools.shell import short_job_summary
         for h in children.values():
-            ozet = ""
+            summary = ""
             if h.state != "kosuyor":
-                ozet = short_job_summary(h.sonuc or "", title=h.title)[:400]
+                summary = short_job_summary(h.sonuc or "", title=h.title)[:400]
             rows.append({
                 "id": "c:" + h.id,
                 "ad": h.title,
                 "tur": h.kind,
                 "durum": h.state,
-                # Yetimde gerçek başlangıç bilinmiyor (geçen oturumdan
-                # devralındı): 0 gönderiliyor, arayüz süre çizmiyor.
+                # For an orphan the real start is unknown (inherited from the
+                # previous session): 0 is sent, the UI draws no duration.
                 "basladi": 0.0 if h.state == "yetim" else h.baslangic_ts,
                 "bitti": h.bitis_ts,
-                "ozet": ozet,
+                "ozet": summary,
                 "model": h.model,
                 "oturum": h.session_id,
                 "arka_plan": bool(h.arka_plan),
@@ -1982,19 +2032,19 @@ class Bridge:
                 "usage": dict(h.usage) if h.usage else None,
             })
 
-        for pid, info in list(katalog._PROCS.items()):
+        for pid, info in list(catalog._PROCS.items()):
             proc = info.get("proc")
             if proc is None:
                 continue
-            biten = proc.poll() is not None
-            komut = str(info.get("path") or "")
-            kendi = katalog.is_dornick_process(komut) or katalog.is_dornick_process(
+            finished = proc.poll() is not None
+            command = str(info.get("path") or "")
+            own = catalog.is_dornick_process(command) or catalog.is_dornick_process(
                 str(info.get("run") or ""))
             rows.append({
                 "id": "p:" + str(pid),
-                "ad": "Dornick (kendisi)" if kendi else str(info.get("name") or komut or pid),
+                "ad": "Dornick (kendisi)" if own else str(info.get("name") or command or pid),
                 "tur": "süreç",
-                "durum": "bitti" if biten else "kosuyor",
+                "durum": "bitti" if finished else "kosuyor",
                 "basladi": float(info.get("started") or 0.0),
                 "bitti": 0.0,
                 "ozet": "",
@@ -2002,23 +2052,23 @@ class Bridge:
                 "oturum": "",
                 "arka_plan": True,
                 "pid": pid,
-                "komut": komut,
-                # Kendi kopyasını panelden öldürmek uygulamayı kapatmak olur.
-                "durdurulabilir": (not biten) and not kendi,
+                "komut": command,
+                # Killing its own copy from the panel would close the app.
+                "durdurulabilir": (not finished) and not own,
             })
 
-        # Koşanlar önce, sonra en yeni bitenler: kullanıcının aradığı şey
-        # neredeyse hep "şu an ne dönüyor".
+        # Running ones first, then the most recently finished: what the user
+        # is looking for is almost always "what is running right now".
         rows.sort(key=lambda r: (r["durum"] != "kosuyor",
                                  -(r["bitti"] or r["basladi"])))
         return {"gorevler": rows,
                 "kosan": sum(1 for r in rows if r["durum"] == "kosuyor")}
 
     def task_report(self, gid: str) -> dict[str, Any]:
-        """Tam yardımcı/iş metni — Orkestra/Görevler tıklanınca Viewer'a.
+        """Full helper/job text — to the Viewer when Orchestra/Tasks is clicked.
 
-        Sohbete yapıştırılan uzun bültenlerin yerine: panelde kısa satır,
-        tıklanınca artifact benzeri sayfa.
+        Instead of long bulletins pasted into the chat: a short line in the
+        panel, an artifact-like page on click.
         """
         gid = str(gid or "").strip()
         cid = gid[2:] if gid.startswith("c:") else gid
@@ -2028,29 +2078,30 @@ class Bridge:
         handle = children.get(cid)
         if handle is None:
             return {"ok": False, "error": "Görev bulunamadı."}
-        metin = str(handle.sonuc or "").strip()
-        if not metin and handle.state == "kosuyor":
-            # Koşarken boş rapor yerine anlık durum — Viewer / Raporu aç.
-            parcalar: list[str] = ["Görev hâlâ çalışıyor."]
+        text = str(handle.sonuc or "").strip()
+        if not text and handle.state == "kosuyor":
+            # While running, the current status instead of an empty report —
+            # Viewer / Open report.
+            parts: list[str] = ["Görev hâlâ çalışıyor."]
             if handle.wait:
                 w = handle.wait
-                satir = "Model bekleniyor"
+                line = "Model bekleniyor"
                 if w.get("deneme") and w.get("toplam"):
-                    satir += f" ({w['deneme']}/{w['toplam']})"
+                    line += f" ({w['deneme']}/{w['toplam']})"
                 if w.get("saniye"):
-                    satir += f" · {w['saniye']}s"
-                parcalar.append(satir)
+                    line += f" · {w['saniye']}s"
+                parts.append(line)
             elif handle.son_arac:
-                satir = f"Şu an: {handle.son_arac}"
+                line = f"Şu an: {handle.son_arac}"
                 if handle.son_hedef:
-                    satir += f" — {handle.son_hedef}"
-                parcalar.append(satir)
+                    line += f" — {handle.son_hedef}"
+                parts.append(line)
             else:
-                parcalar.append("Araç bekleniyor…")
-            metin = "\n".join(parcalar)
+                parts.append("Araç bekleniyor…")
+            text = "\n".join(parts)
         else:
             from .tools.shell import human_job_report
-            metin = human_job_report(metin, title=handle.title)
+            text = human_job_report(text, title=handle.title)
         deliverable = getattr(handle, "deliverable", None)
         if not deliverable and getattr(handle, "schedule_id", ""):
             try:
@@ -2058,7 +2109,7 @@ class Bridge:
                 book = scheduling.Schedule(self.agent.config.state_dir)
                 task = book.get(handle.schedule_id)
                 if task is not None:
-                    deliverable = _infer_deliverable(task.prompt or "", metin)
+                    deliverable = _infer_deliverable(task.prompt or "", text)
                     if deliverable:
                         handle.deliverable = deliverable
             except Exception:
@@ -2068,17 +2119,18 @@ class Bridge:
             "id": "c:" + handle.id,
             "title": handle.title,
             "state": handle.state,
-            "metin": metin or "(çıktı yok)",
+            "metin": text or "(çıktı yok)",
             "deliverable": deliverable,
         }
 
     def stop_task(self, gid: str) -> dict[str, Any]:
-        """Tek bir görevi durdurur. `gid` gorevler() satırındaki kimlik.
+        """Stops a single task. `gid` is the id from a tasks() row.
 
-        Canlı yardımcıya cancel yollar; planlanmış 'koşuyor' hayaletini de
-        temizler (çocuk yoksa / bitmişse UI'da takılı kalmasın).
+        Sends cancel to the live helper; also clears the scheduled 'koşuyor'
+        ghost (so it doesn't stay stuck in the UI when there is no child /
+        it has finished).
         """
-        from . import apps as katalog
+        from . import apps as catalog
 
         gid = str(gid or "").strip()
         if gid.startswith("c:"):
@@ -2099,7 +2151,7 @@ class Bridge:
                             pass
                 self.loop.call_soon_threadsafe(_stop)
 
-            # Hayalet / canlı: planlanmış satır 'koşuyor'da kalmasın.
+            # Ghost / live: the scheduled row must not stay at 'koşuyor'.
             cleared = self._clear_schedule_running(cid, handle)
             try:
                 self.hub.emit({"type": "jobs_refresh"})
@@ -2118,13 +2170,13 @@ class Bridge:
                 pid = int(gid[2:])
             except ValueError:
                 return {"ok": False, "error": "Geçersiz süreç kimliği."}
-            return katalog.stop(pid)
+            return catalog.stop(pid)
         return {"ok": False, "error": "Geçersiz görev kimliği."}
 
     def _clear_schedule_running(
         self, child_id: str, handle: Any = None,
     ) -> bool:
-        """last_status=koşuyor + last_child_id eşleşen görevleri 'kesildi' yap."""
+        """Mark tasks with last_status=koşuyor + a matching last_child_id as 'kesildi'."""
         agent = self.agent
         if agent is None:
             return False
@@ -2191,10 +2243,10 @@ class Bridge:
         return cleared
 
     def resume_task(self, gid: str, message: str = "") -> dict[str, Any]:
-        """Yetim / bitmiş yardımcıyı disk oturumundan sürdürür.
+        """Resumes an orphaned / finished helper from its session on disk.
 
-        `task_say` / `_child_say` yolunun HTTP sarmalayıcısı — ajan döngüsünde
-        `create_task` gerekir.
+        HTTP wrapper of the `task_say` / `_child_say` path — `create_task`
+        is needed on the agent loop.
         """
         gid = str(gid or "").strip()
         cid = gid[2:] if gid.startswith("c:") else gid
@@ -2238,11 +2290,11 @@ class Bridge:
         return box if box else {"ok": False, "error": "Sürdürülemedi."}
 
     def gorev_iptal(self, gid: str) -> dict[str, Any]:
-        """Yetim/bitmiş yardımcıyı defterden VE açılış taramasından düşürür.
+        """Drops an orphaned/finished helper from the ledger AND from the boot scan.
 
-        Kalıcılık: çocuğun kendi günlüğüne bir `subagent_end` kapanışı
-        yazılır — `yetim_tara` kapanış gören günlüğü bir daha diriltmez.
-        ("Devam et var ama iptal et yok" — canlı istek, 31.08.)
+        Persistence: a `subagent_end` closure is written into the child's own
+        log — `yetim_tara` never resurrects a log that has seen a closure.
+        ("There is Continue but no Cancel" — live request, 31.08.)
         """
         gid = str(gid or "").strip()
         cid = gid[2:] if gid.startswith("c:") else gid
@@ -2260,103 +2312,108 @@ class Bridge:
         sid = str(getattr(handle, "session_id", "") or "")
         if sid and re.match(r"^[A-Za-z0-9_-]+$", sid):
             try:
-                yol = Path(agent.config.sessions_dir) / f"{sid}.jsonl"
-                satir = json.dumps({
+                path = Path(agent.config.sessions_dir) / f"{sid}.jsonl"
+                line = json.dumps({
                     "kind": "meta", "role": None, "content": "subagent_end",
                     "meta": {"session": sid, "title": handle.title,
                              "summary": "kullanıcı iptal etti"},
                 }, ensure_ascii=False)
-                with yol.open("a", encoding="utf-8") as fh:
-                    fh.write(satir + "\n")
+                with path.open("a", encoding="utf-8") as fh:
+                    fh.write(line + "\n")
             except OSError:
                 pass
         children.pop(cid, None)
         self.hub.emit({"type": "channels", "channels": _live_channels(agent)})
         return {"ok": True}
 
-    def _fiyat_getir(self) -> None:
-        """Seçili modelin fiyatını arka planda bir kez çeker.
+    def _fetch_price(self) -> None:
+        """Fetches the selected model's price once, in the background.
 
-        Ağ isteği turun yolunda DEĞİL: thread bitince `fiyat` olayı
-        yayınlanıyor ve çip token sayısından dolara döner. Katalogda
-        olmayan model için de bir kez bakılıp bırakılıyor — her turda
-        yeniden ağa çıkmak olmaz. Model değişince bayrak sıfırlanır.
+        The network request is NOT in the turn's path: when the thread ends
+        the `fiyat` event is published and the chip turns from token counts
+        to dollars. A model missing from the catalogue is also looked up once
+        and left alone — going out to the network every turn is not on.
+        The flag resets when the model changes.
         """
-        if self._fiyat_bakildi:
+        if self._price_checked:
             return
         agent = self.agent
         if agent is None:
             return
-        self._fiyat_bakildi = True
+        self._price_checked = True
         model = agent.config.model
         state_dir = agent.config.state_dir
 
-        def _kos() -> None:
+        def _run() -> None:
             try:
-                etiket = fiyatlama.etiket(model, state_dir, ag=True)
+                label = fiyatlama.etiket(model, state_dir, ag=True)
             except Exception:
                 return
-            if etiket is not None:
-                self._fiyat = etiket
-                self.hub.emit({"type": "fiyat", "fiyat": etiket})
+            if label is not None:
+                self._price = label
+                self.hub.emit({"type": "fiyat", "fiyat": label})
 
-        threading.Thread(target=_kos, daemon=True).start()
+        threading.Thread(target=_run, daemon=True).start()
 
     # -- asyncio thread ------------------------------------------------
 
-    def io(self, serit: Any = None) -> AgentIO:
-        """Ajanın olay yüzeyi. `serit` verilirse akış olayları YALNIZ o
-        şerit aktifken canlı yayına gider — arka şeridin metni/araçları
-        aktif sohbete karışmaz (paralel oturumların görünmez direği).
-        Onay istekleri kapılanmaz: arka şeridin izni de sorulmalı, yoksa
-        tur sonsuza dek bekler.
+    def io(self, lane: Any = None) -> AgentIO:
+        """The agent's event surface. When `lane` is given, stream events go
+        to the live broadcast ONLY while that lane is active — a background
+        lane's text/tools do not mix into the active chat (the invisible
+        pillar of parallel sessions). Approval requests are not gated: the
+        background lane's permission must be asked too, otherwise the turn
+        waits forever.
         """
-        def yay(ev: dict[str, Any]) -> None:
-            if serit is None or serit.sid == self._aktif_sid:
-                # Olay OTURUM KİMLİĞİYLE damgalanıyor: kapı (aktif şerit
-                # karşılaştırması) anlıktır ve geçiş sırasında yarışabilir —
-                # kuyrukta bekleyen ya da tam geçiş anında sızan bir parça,
-                # kimliksizken yeni açılan sohbetin ekranına akıyordu
-                # (canlı yara, 01.09: "bir önceki sohbetle karıştığı bile
-                # oluyor"). Arayüz artık kimliği tutmayan olayı ÇİZMİYOR.
-                sid = serit.sid if serit is not None else self._aktif_sid or ""
+        def publish(ev: dict[str, Any]) -> None:
+            if lane is None or lane.sid == self._active_sid:
+                # The event is stamped WITH THE SESSION ID: the gate (active
+                # lane comparison) is instantaneous and can race during a
+                # switch — a chunk waiting in the queue, or leaking right at
+                # the moment of the switch, was flowing onto the screen of the
+                # newly opened chat while carrying no id (live wound, 01.09:
+                # "it even gets mixed up with the previous chat"). The UI now
+                # DOES NOT DRAW an event that carries no id.
+                sid = lane.sid if lane is not None else self._active_sid or ""
                 if sid:
                     ev.setdefault("sid", sid)
                 self.hub.emit(ev)
 
         return AgentIO(
-            on_text=lambda chunk: yay({"type": "assistant_delta", "text": chunk}),
-            on_thinking=lambda chunk: yay({"type": "thinking_delta", "text": chunk}),
-            on_notice=lambda text: yay({"type": "notice", "text": text}),
-            # Model kesintisi: yapısal bekleme olayı. Arayüz bunu çalışma
-            # şeridinde TEK canlı satır olarak işler — sohbete hata duvarı
-            # basılmaz (bkz. app.js "bekleme").
-            on_wait=lambda payload: yay({"type": "bekleme", **payload}),
-            # Maliyet çipi aktif sohbeti gösterir: arka şeridin harcaması
-            # çipe karışmaz (kendi oturum günlüğünde zaten duruyor).
-            on_usage=(self._usage_yay if serit is None else
-                      (lambda rapor: self._usage_yay(rapor)
-                       if serit.sid == self._aktif_sid else None)),
-            # Oturum başlığı: kenar listesi sayfa yenilemeden güncellensin.
-            # Arka şeritte de yayınlanır — başlık sohbet kimliğidir, aktif
-            # ekrana bağlı değildir.
-            on_session_title=lambda sid, ad: self.hub.emit(
-                {"type": "session_title", "id": sid, "title": ad}),
-            # Bütçe freni: döngü her model çağrısından önce soruyor. Fiyat
-            # ve sayaçlar burada olduğu için karar da burada.
+            on_text=lambda chunk: publish({"type": "assistant_delta", "text": chunk}),
+            on_thinking=lambda chunk: publish({"type": "thinking_delta", "text": chunk}),
+            on_notice=lambda text: publish({"type": "notice", "text": text}),
+            # Model outage: a structural wait event. The UI renders it as a
+            # SINGLE live line in the work strip — no wall of errors printed
+            # into the chat (see app.js "bekleme").
+            on_wait=lambda payload: publish({"type": "bekleme", **payload}),
+            # The cost chip shows the active chat: a background lane's spend
+            # does not mix into the chip (it already sits in its own session
+            # log).
+            on_usage=(self._usage_yay if lane is None else
+                      (lambda report: self._usage_yay(report)
+                       if lane.sid == self._active_sid else None)),
+            # Session title: the sidebar list should update without a page
+            # refresh. Published for a background lane too — the title is the
+            # chat's identity, not tied to the active screen.
+            on_session_title=lambda sid, name: self.hub.emit(
+                {"type": "session_title", "id": sid, "title": name}),
+            # Budget brake: the loop asks before every model call. Since the
+            # price and the counters are here, the decision is here too.
             butce_freni=self._budget_brake,
-            # Orkestra kanalları: alt ajanlar canlı görünsün (şef modu).
-            on_child_start=lambda title, model, cid, bg=False: yay(
+            # Orchestra channels: sub-agents should look live (conductor mode).
+            on_child_start=lambda title, model, cid, bg=False: publish(
                 {"type": "child_start", "title": title, "model": model, "id": cid,
                  "bg": bool(bg)}),
-            on_child_tool=lambda title, tool, phase, hedef="": yay(
+            on_child_tool=lambda title, tool, phase, target="": publish(
                 {"type": "child_tool", "title": title, "tool": tool,
-                 "phase": phase, "hedef": hedef or ""}),
-            # `bg`: bu biten kanal arka planda mı koşuyordu. Görevler paneli
-            # sohbete "bitti" bildirimini YALNIZ arka plan işleri için
-            # düşürüyor — senkron yardımcının sonucu zaten cevabın içinde.
+                 "phase": phase, "hedef": target or ""}),
+            # `bg`: was this finished channel running in the background. The
+            # tasks panel drops the "finished" notice into the chat ONLY for
+            # background jobs — a synchronous helper's result is already
+            # inside the answer.
             on_child_end=self._child_end,
-            on_child_wait=lambda payload: yay(
+            on_child_wait=lambda payload: publish(
                 {"type": "child_wait", **(payload or {})}),
             approve=self._approve,
         )
@@ -2368,10 +2425,10 @@ class Bridge:
         turns: int,
         tools: int,
         cid: str = "",
-        ozet: str = "",
+        summary: str = "",
     ) -> None:
-        """Alt kanal bitti: Orkestra + (arka plansa) Windows tepsi balonu."""
-        bg = self._cocuk_arka_plan(cid)
+        """A sub-channel finished: Orchestra + (if background) a Windows tray balloon."""
+        bg = self._child_in_background(cid)
         deliverable = None
         children = getattr(self.agent, "_children", None) or {}
         handle = children.get(cid) if cid else None
@@ -2380,14 +2437,14 @@ class Bridge:
         usage = dict(getattr(handle, "usage", None) or {}) if handle else {}
         self.hub.emit({
             "type": "child_end", "title": title, "ok": ok, "turns": turns,
-            "tools": tools, "id": cid, "ozet": ozet, "bg": bg,
+            "tools": tools, "id": cid, "ozet": summary, "bg": bg,
             "deliverable": deliverable,
             "model": getattr(handle, "model", "") if handle else "",
             "usage": usage or None,
         })
-        # Pencere kapalı olsa da kullanıcı haberdar olsun — yalnız arka
-        # plan / zamanlanmış / otomasyon işleri (senkron yardımcı zaten
-        # sohbette).
+        # Let the user know even with the window closed — only background /
+        # scheduled / automation jobs (a synchronous helper is already in
+        # the chat).
         if not bg:
             return
         t = self.tray
@@ -2404,10 +2461,11 @@ class Bridge:
         args: dict[str, Any],
         channel: dict[str, Any] | None = None,
     ) -> bool:
-        """İzin isteğini arayüze gönderir ve cevabı bekler.
+        """Sends the permission request to the UI and waits for the answer.
 
-        Pencere cevap vermeden kapanırsa bu future asla çözülmez; kapanış
-        yolunda bekleyenler iptal ediliyor (bkz. cancel_pending).
+        If the window closes before answering, this future never resolves;
+        the pending ones are cancelled on the shutdown path (see
+        cancel_pending).
         """
         request_id = uuid4().hex[:12]
         future: asyncio.Future[bool] = self.loop.create_future()
@@ -2420,8 +2478,9 @@ class Bridge:
             "args": args,
             "mutates": spec.mutates,
         }
-        # İsteyen bir yardımcıysa kimliği/başlığı da gidiyor: kullanıcı
-        # diyalogda "[yardımcı: başlık]" görsün, kime izin verdiğini bilsin.
+        # If the requester is a helper, its id/title go along too: the user
+        # should see "[yardımcı: başlık]" in the dialog and know whom they
+        # are granting permission to.
         if channel:
             payload["channel"] = channel
         self.hub.emit(payload)
@@ -2441,175 +2500,182 @@ class Bridge:
         self._pending.clear()
 
     async def pump(self) -> None:
-        """İlk şeridin pompası (açılışta kurulur; yeni şeritler kendi
-        pompalarını `_serit_kur` içinde alır)."""
+        """Pump of the first lane (set up at boot; new lanes get their own
+        pumps inside `_build_lane`)."""
         while True:
-            serit = self._serit()
-            if serit is None:
-                # Ajan henüz kurulmadı: açılış kuyruğundan bekle.
-                item = await self._ilk_kuyruk.get()
+            lane = self._lane()
+            if lane is None:
+                # The agent is not built yet: wait on the boot queue.
+                item = await self._first_queue.get()
                 if self.agent is None:
                     continue
-                serit = self._serit()
-                if serit is None:
+                lane = self._lane()
+                if lane is None:
                     continue
-                await self._pompa_isle(serit, item)
+                await self._pump_item(lane, item)
                 continue
-            await self._pompa(serit)
+            await self._pump_lane(lane)
             return
 
-    async def _pompa(self, serit: Serit) -> None:
-        """Bir şeridin pompası: kendi kuyruğunu kendi ajanına akıtır.
+    async def _pump_lane(self, lane: Lane) -> None:
+        """A lane's pump: streams its own queue into its own agent.
 
-        Şerit başına bir pompa = şerit başına serilik; şeritler ARASI ise
-        tam paralellik. Kullanıcı yeni sohbete geçtiğinde eski şerit kendi
-        turunu burada sürdürür.
+        One pump per lane = seriality per lane; BETWEEN lanes, full
+        parallelism. When the user switches to a new chat the old lane
+        carries on with its turn here.
         """
         while True:
-            item = await serit.queue.get()
-            if serit.agent is None:
+            item = await lane.queue.get()
+            if lane.agent is None:
                 continue
-            await self._pompa_isle(serit, item)
+            await self._pump_item(lane, item)
 
-    async def _pompa_isle(self, serit: Serit, item: Any) -> None:
+    async def _pump_item(self, lane: Lane, item: Any) -> None:
         if item is _CHILD_DONE:
-            await self._surdur(serit)
+            await self._surdur(lane)
         elif item is _PARK_RESUME:
-            await self._park_surdur(serit)
+            await self._park_surdur(lane)
         else:
             text, image = item
-            await self._isle(text, image, serit=serit)
+            await self._isle(text, image, lane=lane)
 
-    async def _park_surdur(self, serit: Serit | None = None) -> None:
-        """Park edilmiş (yarım kalmış) koşuyu kaldığı yerden sürdürür.
+    async def _park_surdur(self, lane: Lane | None = None) -> None:
+        """Resumes a parked (unfinished) run from where it stopped.
 
-        Açılışta park kaydı bulunduğunda kuyruğa düşen işaretin karşılığı.
-        `resume_after_interrupt` karşılıksız tool_use'ları kapatıp döngüyü
-        yeniden sürer; model hâlâ ulaşılamıyorsa aynı koşu içinde yeniden
-        deneme/park zinciri zaten devrede.
+        The counterpart of the marker dropped into the queue when a park
+        record is found at boot. `resume_after_interrupt` closes the
+        unanswered tool_uses and drives the loop again; if the model is
+        still unreachable the retry/park chain inside the same run is
+        already in play.
         """
-        serit = serit or self._serit()
-        agent = serit.agent if serit else None
+        lane = lane or self._lane()
+        agent = lane.agent if lane else None
         if agent is None:
             return
-        self._serit_durum(serit, True)
+        self._lane_status(lane, True)
         try:
             await agent.resume_after_interrupt()
-        except Exception as exc:  # sürdürme uygulamayı düşürmemeli
-            self._serit_yayin(serit, {"type": "notice",
+        except Exception as exc:  # resuming must not bring the app down
+            self._lane_emit(lane, {"type": "notice",
                                       "text": f"{type(exc).__name__}: {exc}"})
         finally:
-            self._serit_durum(serit, False)
-            if self._wanted_model is not None and serit.sid == self._aktif_sid:
+            self._lane_status(lane, False)
+            if self._wanted_model is not None and lane.sid == self._active_sid:
                 self._swap_model()
-            self._serit_yayin(serit, {"type": "turn_end"})
+            self._lane_emit(lane, {"type": "turn_end"})
 
-    async def _surdur(self, serit: Serit | None = None) -> None:
-        """Bir yardımcı bitti ve ajan boşta: sonucu değerlendiren tur.
+    async def _surdur(self, lane: Lane | None = None) -> None:
+        """A helper finished and the agent is idle: the turn that weighs the result.
 
-        Bildirilecek bir şey kalmadıysa (sonuç koşan turun başında zaten
-        verildiyse) model hiç çağrılmaz — sessizce geçilir.
+        If nothing is left to report (the result was already delivered at the
+        start of the running turn) the model is not called at all — it is
+        passed over silently.
         """
-        serit = serit or self._serit()
-        agent = serit.agent if serit else None
+        lane = lane or self._lane()
+        agent = lane.agent if lane else None
         if agent is None or not agent.has_unreported_children():
             return
-        self._serit_durum(serit, True)
+        self._lane_status(lane, True)
         try:
             await agent.resume_for_children()
-        except Exception as exc:  # sürdürme turu uygulamayı düşürmemeli
-            self._serit_yayin(serit, {"type": "notice",
+        except Exception as exc:  # the resume turn must not bring the app down
+            self._lane_emit(lane, {"type": "notice",
                                       "text": f"{type(exc).__name__}: {exc}"})
         finally:
-            self._serit_durum(serit, False)
-            if self._wanted_model is not None and serit.sid == self._aktif_sid:
+            self._lane_status(lane, False)
+            if self._wanted_model is not None and lane.sid == self._active_sid:
                 self._swap_model()
-            self._serit_yayin(serit, {"type": "turn_end"})
+            self._lane_emit(lane, {"type": "turn_end"})
 
-    def _serit_yayin(self, serit: Serit, ev: dict[str, Any]) -> None:
-        """Şerit olayını YALNIZ aktifken canlı akışa verir.
+    def _lane_emit(self, lane: Lane, ev: dict[str, Any]) -> None:
+        """Hands a lane event to the live stream ONLY while the lane is active.
 
-        Arka şeridin metni kendi oturum günlüğüne zaten yazılıyor; canlı
-        yayına da sızsaydı iki sohbet ekranda birbirine karışırdı. Kullanıcı
-        şeride dönünce döküm günlükten yüklenir — kayıp yok.
+        A background lane's text is already written to its own session log;
+        had it also leaked into the live broadcast, two chats would mix on
+        screen. When the user returns to the lane the transcript is loaded
+        from the log — nothing is lost.
         """
-        if serit.sid == self._aktif_sid:
-            ev.setdefault("sid", serit.sid)   # bkz. io().yay: geçiş yarışı
+        if lane.sid == self._active_sid:
+            ev.setdefault("sid", lane.sid)   # see io().publish: the switch race
             self.hub.emit(ev)
 
     async def _isle(self, text: str, image: str = "", *,
-                    serit: Serit | None = None) -> None:
-        """Tek mesajı kendi şeridinde işler (varsayılan: aktif şerit).
+                    lane: Lane | None = None) -> None:
+        """Processes a single message on its lane (default: the active lane).
 
-        pump'tan ayrı durması bilinçli: testler bir turu kuyruk ve sonsuz
-        döngüye bulaşmadan koşturabiliyor.
+        Kept apart from pump deliberately: tests can run a turn without
+        touching the queue and the endless loop.
         """
-        serit = serit or self._serit()
-        if serit is None or serit.agent is None:
+        lane = lane or self._lane()
+        if lane is None or lane.agent is None:
             return
-        self._serit_durum(serit, True)
-        agent = serit.agent
-        # Yeni kullanıcı mesajı = yeni tur: çipin "bu tur" toplamı sıfırdan
-        # başlar. Oturum toplamına dokunulmuyor; sürdürme turları
-        # (_surdur, park) aynı işin devamı sayılıp sıfırlamıyor. Sayaç
-        # yalnız aktif şeritte sıfırlanıyor — çip aktif sohbeti gösteriyor.
-        if serit.sid == self._aktif_sid:
-            self._tur_kullanim = {"girdi": 0, "cikti": 0, "cagri": 0}
-        # Yeni mesaj = yeni deneme: sınır hâlâ aşılmışsa fren bir kez daha
-        # konuşsun. Yoksa kullanıcı yazıyor ve hiçbir şey olmuyor.
+        self._lane_status(lane, True)
+        agent = lane.agent
+        # New user message = new turn: the chip's "this turn" total starts
+        # from zero. The session total is untouched; resume turns (_surdur,
+        # park) count as continuation of the same work and don't reset. The
+        # counter is reset only on the active lane — the chip shows the
+        # active chat.
+        if lane.sid == self._active_sid:
+            self._turn_usage = {"girdi": 0, "cikti": 0, "cagri": 0}
+        # New message = new attempt: if the cap is still exceeded the brake
+        # should speak once more. Otherwise the user types and nothing happens.
         self._budget_reported = False
         try:
-            # İlk kurulum: hiçbir sağlayıcı kullanılabilir değilken model
-            # HİÇ çağrılmıyor — cevapsız kalan ya da anlaşılmaz bir API
-            # hatasıyla biten bir mesaj yerine, sohbete yol gösteren bir
-            # asistan mesajı düşüyor. Kullanıcı tekrar yazarsa yeniden
-            # hatırlatılıyor; ama bir mesaj bir kez cevaplanıyor.
+            # First run: while no provider is usable the model is NEVER
+            # called — instead of a message that stays unanswered or ends
+            # with an unintelligible API error, an assistant message that
+            # points the way lands in the chat. If the user types again it
+            # is repeated; but a message is answered once.
             if settings.yapilandirilmamis(agent.config.model):
                 agent.session.add_user_text(text)
                 agent.session.add_assistant(
                     [{"type": "text", "text": settings.KURULUM_YONLENDIRME}]
                 )
-                self._serit_yayin(serit,
+                self._lane_emit(lane,
                                   {"type": "setup_hint",
                                    "text": settings.KURULUM_YONLENDIRME})
                 return
-            # Başlık koşunun SONUNU beklemez: solda "ilk sözün kırıntısı"
-            # uzun bir koşu boyunca asılı kalıyordu. İlk kullanıcı sözü
-            # yeterli sinyal — ama `run` mesajı henüz günlüğe yazmamış
-            # olabilir; metni doğrudan geçiriyoruz (yarış, canlı). Küçük
-            # çağrı ana akışla paralel; her hatası yutulur. Koşu sonundaki
-            # çağrı yedek (ad hâlâ yoksa, cevapla daha isabetli başlık).
-            basla = getattr(agent, "_session_title", None)
-            if basla is not None:
-                gorev = asyncio.ensure_future(basla(text))
-                gorev.add_done_callback(lambda t: t.exception())  # sessiz
+            # The title does not wait for the END of the run: on the left, a
+            # "crumb of the first words" hung for the whole of a long run.
+            # The first user words are signal enough — but `run` may not have
+            # written the message to the log yet; we pass the text directly
+            # (race, live). The small call runs parallel to the main flow;
+            # every error of it is swallowed. The call at the end of the run
+            # is the fallback (if there is still no name, a more accurate
+            # title from the answer).
+            title_fn = getattr(agent, "_session_title", None)
+            if title_fn is not None:
+                title_task = asyncio.ensure_future(title_fn(text))
+                title_task.add_done_callback(lambda t: t.exception())  # silent
             await agent.run(text, image)
-        except Exception as exc:  # ajan bir istekte patlarsa uygulama ölmemeli
-            self._serit_yayin(serit, {"type": "notice",
-                                      "text": f"{type(exc).__name__}: {exc}"})
+        except Exception as exc:  # if the agent blows up on a request the app must not die
+            self._lane_emit(lane, {"type": "notice",
+                                   "text": f"{type(exc).__name__}: {exc}"})
         finally:
-            self._serit_durum(serit, False)
-            # Karşılık verildi: sohbet açık. Bu süre boyunca söylenen
-            # her şey ona söylenmiş sayılıyor, adını tekrarlamak
-            # gerekmiyor — karşındaki insana da her cümlede adıyla
-            # başlamıyorsun.
-            if self.ear is not None and serit.sid == self._aktif_sid:
+            self._lane_status(lane, False)
+            # Answered: the conversation is open. Everything said during this
+            # time counts as said to it, no need to repeat its name — you
+            # don't start every sentence with the name of the person across
+            # from you either.
+            if self.ear is not None and lane.sid == self._active_sid:
                 self.ear.engage()
-            # Tur sırasında model değiştirilmişse şimdi geçiliyor.
-            if self._wanted_model is not None and serit.sid == self._aktif_sid:
+            # If the model was changed during the turn, switch now.
+            if self._wanted_model is not None and lane.sid == self._active_sid:
                 self._swap_model()
-            self._serit_yayin(serit, {"type": "turn_end"})
-            # Arka şerit bitti: kullanıcı başka sohbetteyken haberdar olsun.
-            if serit.sid != self._aktif_sid:
-                baslik = ""
+            self._lane_emit(lane, {"type": "turn_end"})
+            # A background lane finished: let the user know while they are in
+            # another chat.
+            if lane.sid != self._active_sid:
+                title = ""
                 try:
-                    meta = (serit.agent.mind.session_meta() or {}).get(serit.sid) or {}
-                    baslik = str(meta.get("ad") or "")
+                    meta = (lane.agent.mind.session_meta() or {}).get(lane.sid) or {}
+                    title = str(meta.get("ad") or "")
                 except Exception:
                     pass
                 self.hub.emit({"type": "notice",
-                               "text": (f"Arka plandaki sohbet bitti: {baslik}"
-                                        if baslik else
+                               "text": (f"Arka plandaki sohbet bitti: {title}"
+                                        if title else
                                         "Arka plandaki sohbet cevabını bitirdi — "
                                         "kenar çubuğundan dönebilirsin.")})
 
@@ -2631,15 +2697,15 @@ class Runtime:
 
 
 def _allow_media() -> None:
-    """WebView2'ye medya izin penceresini atlamasını söyler.
+    """Tells WebView2 to skip the media permission prompt.
 
-    `--use-fake-ui-for-media-stream` Chromium'un "izin penceresini gösterme,
-    kabul et" bayrağı. Kendi penceremizde bu doğru davranış: kullanıcı zaten
-    ayarlardan mikrofonu/kamerayı açmış durumda ve WebView2'nin sorabileceği
-    bir yüzeyi yok.
+    `--use-fake-ui-for-media-stream` is Chromium's "don't show the permission
+    prompt, accept" flag. In our own window this is the right behaviour: the
+    user has already turned the microphone/camera on in the settings and
+    WebView2 has no surface on which it could ask.
 
-    Ortamda zaten bir değer varsa üstüne ekleniyor: kullanıcının verdiği
-    bayrakları silmek istemiyoruz.
+    If the environment already has a value it is appended to: we don't want
+    to wipe flags the user provided.
     """
     name = "WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS"
     flag = "--use-fake-ui-for-media-stream"
@@ -2649,7 +2715,7 @@ def _allow_media() -> None:
 
 
 def _hearing_wanted(config: Config) -> bool:
-    """Kulak açılsın mı: dinleme açık, aygıt ve tanıma var, uyandırma veya serbest."""
+    """Should the ear open: listening on, device and recognition present, wake word or open."""
     from . import listen as recogniser
 
     return bool(
@@ -2661,9 +2727,10 @@ def _hearing_wanted(config: Config) -> bool:
 
 
 def close_senses(config: Config) -> Config:
-    """Açılışta kamera, mikrofon ve sesli yanıt kapalı.
+    """Camera, microphone and spoken replies are off at boot.
 
-    HUD'dan açılınca ayara yazılır; bir sonraki açılış yine kapalı gelir.
+    Turning them on from the HUD writes the setting; the next boot comes
+    up off again.
     """
     return replace(
         config,
@@ -2674,7 +2741,7 @@ def close_senses(config: Config) -> Config:
 
 
 def _ear_alive(ear: Any) -> bool:
-    """Kulak thread'i hâlâ dönüyor mu? stop() sonrası yeniden kurulur."""
+    """Is the ear thread still spinning? After stop() it gets rebuilt."""
     if ear is None:
         return False
     stop = getattr(ear, "_stop", None)
@@ -2685,18 +2752,18 @@ def _ear_alive(ear: Any) -> bool:
 
 
 def _open_ear(config: Config, bridge: "Bridge", hub: Hub) -> Any:
-    """Sürekli dinleyen kulağı açar.
+    """Opens the always-listening ear.
 
-    Uyandırma sözü duyulduğunda pencere geri geliyor ve söz sonrası
-    doğrudan ajana gidiyor. Söz geçmeyen hiçbir şey kaydedilmiyor,
-    gösterilmiyor, modele gitmiyor.
+    When the wake word is heard the window comes back and what follows the
+    word goes straight to the agent. Nothing without the word is recorded,
+    shown, or sent to the model.
     """
     from . import listen as recogniser
 
-    # Alan sözlüğü kendiliğinden doluyor: kullanıcının cihaz ve yetenek
-    # adları tanıyıcının bias istemine giriyor. "Modbus cihazını oku"
-    # cümlesindeki "Modbus"un doğru yazılması buna bağlı — tanıyıcı
-    # duymadığı özel adı en yakın gerçek kelimeye çeviriyor.
+    # The domain vocabulary fills itself: the user's device and skill names
+    # enter the recogniser's bias prompt. Spelling "Modbus" correctly in the
+    # sentence "Modbus cihazını oku" depends on this — the recogniser turns
+    # a proper name it never heard into the nearest real word.
     from dataclasses import replace as _replace
 
     words = [config.listen.vocab, "Modbus", "SCADA", "PLC", "register"]
@@ -2714,42 +2781,44 @@ def _open_ear(config: Config, bridge: "Bridge", hub: Hub) -> Any:
 
     listener = recogniser.Listener(spoken)
 
-    # Model burada **yüklenmiyor**. Yüklemek indirme demek olabiliyor —
-    # `medium` 1,5 GB — ve açılışı otuz saniyeden uzun bekletince pencere
-    # hiç açılmıyordu. Yükleme kulağın kendi thread'inde, ilk konuşmada
-    # ya da arka plandaki ısıtmada oluyor.
+    # The model is **not loaded** here. Loading can mean downloading —
+    # `medium` is 1.5 GB — and holding boot for more than thirty seconds
+    # meant the window never opened. Loading happens on the ear's own
+    # thread, at the first utterance or in the background warm-up.
     #
-    # Gözcü nesnesi de burada kuruluyor ama o da yüklenmiyor; gerekip
-    # gerekmediğine, aygıt belli olduktan sonra `Ear` karar veriyor.
+    # The scout object is also built here but not loaded either; `Ear`
+    # decides whether it is needed once the device is known.
     scout = recogniser.Listener(_replace(spoken, size=SCOUT_SIZE))
 
     def heard(said: hearing.Heard) -> None:
         hub.emit({"type": "notice", "text": f"Duydum: {said.text}"})
         bridge.wake()
 
-        # "dornick ile kes" / enerji barge: dornick konuşurken araya girildi —
-        # önce konuşmayı sustur (arayüz TTS'i durduruyor), sonra komut normal
-        # akışa (kuyruk) giriyor. Enerji eşiği zaten `on_hush` ile kesmiş
-        # olabilir; ikinci hush zararsız.
+        # "dornick ile kes" / energy barge: interrupted while dornick was
+        # speaking — first silence the speech (the UI stops TTS), then the
+        # command enters the normal flow (queue). The energy threshold may
+        # already have cut it via `on_hush`; a second hush is harmless.
         if getattr(said, "barge", False):
             hub.emit({"type": "hush"})
 
-        # Süren tur İPTAL EDİLMİYOR — sıraya giriyor (metinle aynı davranış).
-        # Eski hâl duyulan her sözde turu kesiyordu; kullanıcı "bir işlem
-        # yaparken bir şey daha söyleyince eskiyi iptal ediyor" dedi. Doğrusu
-        # paralel düşünüp sıraya almak: yeni söz kuyruğa girer, tur bitince
-        # işlenir. İptali kullanıcı açıkça ister (durdur düğmesi / sesli
-        # "dur"); varsayılan artık iptal değil.
+        # The running turn is NOT CANCELLED — it queues (same behaviour as
+        # text). The old version cut the turn on every heard phrase; the
+        # user said "when I say one more thing while it does something, it
+        # cancels the old one". The right thing is to think in parallel and
+        # queue: the new phrase enters the queue, processed when the turn
+        # ends. Cancel is asked for explicitly (stop button / spoken "dur");
+        # the default is no longer cancel.
         text = (said.command or "").strip()
         if _is_stop(text):
-            # Açık iptal: "dur", "yeter", "kes" gibi bir söz süreni durdurur.
+            # Explicit cancel: a word like "dur", "yeter", "kes" stops the running one.
             if bridge.busy:
                 bridge.interrupt()
             return
 
         if _is_close(text):
-            # Kapanış: pencere kapanır ve susulur. Belirsizlikte susmak
-            # ucuz, yanlış cevap pahalı — kullanıcı isterse "dornick" der.
+            # Close: the window closes and we go quiet. Silence is cheap under
+            # uncertainty, a wrong answer is expensive — the user says
+            # "dornick" if they want it.
             if ear is not None:
                 ear.disengage()
             hub.emit({"type": "notice",
@@ -2757,17 +2826,18 @@ def _open_ear(config: Config, bridge: "Bridge", hub: Hub) -> Any:
             return
 
         if _is_ack(text):
-            # Teşekkür / "tamamdır" / "şimdi bakayım": modele gitmez,
-            # "rica ederim" döngüsü açılmaz. "bakıyorum" klibi de yok.
+            # Thanks / "tamamdır" / "şimdi bakayım": does not go to the model,
+            # no "rica ederim" loop opens. No "bakıyorum" clip either.
             return
 
-        # Sözden geriye bir şey kalmadıysa yalnızca adı çağrılmış demektir.
-        # Orada susmak duymamakla aynı şey: ekranda "Duydum" yazıyor ve
-        # hiçbir şey olmuyordu.
+        # If nothing is left of the phrase, only the name was called. Going
+        # quiet there is the same as not hearing: the screen said "Duydum"
+        # and nothing happened.
         if text:
-            # Onay klibi: model ilk kelimesini üretmeden arayüz kısa bir ses
-            # çalıyor ("bakıyorum"). Ad çağrısında (CALLED_ASK) çalınmıyor —
-            # "efendim"den önce "bakıyorum" demek tuhaf olurdu.
+            # Acknowledgement clip: the UI plays a short sound ("bakıyorum")
+            # before the model produces its first word. Not played on a name
+            # call (CALLED_ASK) — saying "bakıyorum" before "efendim" would be
+            # odd.
             hub.emit({"type": "ack"})
         bridge.submit(text or CALLED_ASK)
 
@@ -2776,9 +2846,9 @@ def _open_ear(config: Config, bridge: "Bridge", hub: Hub) -> Any:
         heard,
         scout=scout,
         wake=config.listen.wake,
-        # Serbest dinleme açıksa uyandırma sözü hiç aranmıyor.
+        # With open listening on, the wake word is never searched for.
         open=config.listen.open,
-        # Seviye arayüze gidiyor: duyup duymadığı görünmeli.
+        # The level goes to the UI: whether it hears should be visible.
         level=lambda loud: hub.emit({"type": "level", "value": round(loud, 4)}),
     )
     ear.on_hush = lambda: hub.emit({"type": "hush"})
@@ -2793,12 +2863,12 @@ def _open_ear(config: Config, bridge: "Bridge", hub: Hub) -> Any:
     return ear
 
 
-def _yarim_is(sessions_dir: Any) -> str | None:
-    """Çökme artığı var mı: son oturumda cevapsız tool_use kalmış mı?
+def _unfinished_work(sessions_dir: Any) -> str | None:
+    """Is there crash residue: an unanswered tool_use left in the last session?
 
-    Park kaydı olmadan yarım kalmış bir koşunun izi. Yalnızca haber vermek
-    için kullanılıyor (otomatik sürdürme park kaydına bağlı); o yüzden en
-    iyi çaba — okunamayan/bozuk günlükte sessizce None.
+    The trace of a run left unfinished without a park record. Used only to
+    inform (automatic resume depends on the park record); therefore best
+    effort — silently None on an unreadable/corrupt log.
     """
     import json as _json
     from pathlib import Path as _Path
@@ -2815,7 +2885,7 @@ def _yarim_is(sessions_dir: Any) -> str | None:
             except ValueError:
                 continue
             meta = ev.get("meta") or {}
-            # Yardımcı (alt ajan) oturumu: ana listeye konu değil.
+            # A helper (sub-agent) session: not a subject for the main list.
             if ev.get("content") == "subagent_start" and meta.get("parent"):
                 return None
             if ev.get("kind") != "message":
@@ -2838,19 +2908,22 @@ def _yarim_is(sessions_dir: Any) -> str | None:
 
 
 def _prepare_model(config: Config) -> None:
-    """Modeli ayarlardaki pencereyle yüklü hale getirir (yalnızca LM Studio).
+    """Gets the model loaded with the window from the settings (LM Studio only).
 
-    LM Studio kendiliğinden yüklerken 4096 token kullanıyor — model 262144
-    desteklese bile. Sistem promptu artı araç şemaları bunu zaten aşıyor ve
-    sunucu istemin başını sessizce atıyor: model kim olduğunu unutuyor.
+    When LM Studio loads on its own it uses 4096 tokens — even if the model
+    supports 262144. The system prompt plus the tool schemas already exceed
+    that and the server silently drops the head of the prompt: the model
+    forgets who it is.
 
-    Aynı yerde fazla kopyalar da kaldırılıyor: meşgul bir modele ikinci
-    istek gelince LM Studio ikinci bir kopya yüklüyor ve bellek katlanıyor.
+    Surplus copies are removed in the same place: when a second request hits
+    a busy model, LM Studio loads a second copy and memory doubles.
 
-    `local_optimize` açıksa (ve adres localhost ise): diğer modeller boşaltılır,
-    VRAM/model boyutuna göre bağlam düşürülür. Kapalıysa dokunulmaz.
+    If `local_optimize` is on (and the address is localhost): other models
+    are unloaded, the context is lowered by VRAM/model size. If off, nothing
+    is touched.
 
-    Sessizce başarısız oluyor: LM Studio yoksa uçlar da yok ve bu normal.
+    Fails silently: without LM Studio the endpoints don't exist either, and
+    that is normal.
     """
     if config.model.provider != "openai":
         return
@@ -2863,7 +2936,7 @@ def _prepare_model(config: Config) -> None:
     if optimize:
         for gone in lmstudio.unload_others(url, name):
             print(f"[dornick] yerel opt: başka model boşaltıldı: {gone}", flush=True)
-        # Boşaltmadan sonra VRAM ölç — önceki modelin yeri geri gelsin.
+        # Measure VRAM after unloading — the previous model's room comes back.
         model = lmstudio.find(url, name)
         free_mb = None
         try:
@@ -2872,8 +2945,9 @@ def _prepare_model(config: Config) -> None:
         except Exception:
             free_mb = None
         if model is not None:
-            # Model zaten yüklüyse VRAM'de ağırlık yer kaplıyor — size'ı
-            # tekrar düşmek çifte sayım olur, bağlamı gereksiz keser.
+            # If the model is already loaded the weights occupy VRAM —
+            # subtracting the size again would be double counting and cut
+            # the context needlessly.
             size_for_fit = 0 if model.instances else model.size_bytes
             fitted = lmstudio.suggest_context(
                 context,
@@ -2893,10 +2967,10 @@ def _prepare_model(config: Config) -> None:
     for gone in lmstudio.drop_duplicates(url, name):
         print(f"[dornick] fazla kopya kaldırıldı: {gone}", flush=True)
 
-    # keep_loaded ayarlanmışsa onu, yoksa cömert bir varsayılan (30 dk) TTL
-    # veriyoruz: LM Studio kendi varsayılanıyla modeli çabuk boşaltıp sonraki
-    # isteği "Model unloaded" ile düşürüyordu. Böylece konuşma sürerken model
-    # yüklü kalıyor.
+    # We give the keep_loaded TTL if set, otherwise a generous default
+    # (30 min): with its own default LM Studio unloaded the model quickly and
+    # failed the next request with "Model unloaded". This way the model stays
+    # loaded while the conversation continues.
     ttl = config.model.keep_loaded or 1800
     result = lmstudio.ensure_loaded(url, name, context, ttl=ttl)
     if result.get("state") == "loaded":
@@ -2905,12 +2979,14 @@ def _prepare_model(config: Config) -> None:
     elif result.get("state") == "capped":
         print(f"[dornick] pencere modelin sınırına çekildi: {result['context']}", flush=True)
 
-    # Gerçek yüklü pencereyi AYARA yansıt. LM Studio istenen pencereyi modelin
-    # sınırı ya da kendi yapılandırması yüzünden küçültmüş olabilir (ör. 4096).
-    # Ayar gerçeğin üstünde kalırsa sıkıştırma taşmadan tetiklenmiyor, istem
-    # modelin sınırını aşıyor ve LM Studio "model unloaded / context" hatası
-    # veriyordu — kullanıcı "context dolunca duruyor" diyordu. Gerçeğe çekince
-    # konuşma dolmadan özetlenip sürüyor, yeni bir konuşmaya gerek kalmıyor.
+    # Reflect the REAL loaded window into the SETTING. LM Studio may have
+    # shrunk the requested window because of the model's limit or its own
+    # configuration (e.g. 4096). If the setting stays above reality,
+    # compaction doesn't trigger before overflow, the prompt exceeds the
+    # model's limit and LM Studio threw a "model unloaded / context" error —
+    # the user said "it stops when the context fills". Pulled down to
+    # reality, the conversation is summarised and continues before filling
+    # up, no new conversation needed.
     actual = result.get("context")
     if isinstance(actual, int) and actual > 0 and actual != config.model.context_window:
         from dataclasses import replace as _replace
@@ -2919,18 +2995,19 @@ def _prepare_model(config: Config) -> None:
 
 
 async def _boot(config: Config, port: int, resume: bool) -> Runtime:
-    """Uygulamayı ayağa kaldırır.
+    """Brings the application up.
 
-    Sıra bilinçli: sunucu **önce** açılıyor, ağır işler sonra. Böylece
-    pencere hemen görünüyor ve model yüklenirken boş bir ekrana değil,
-    uyanma sırasına bakılıyor. Model hazır olmadan giriş satırı kapalı
-    kalıyor — hazır olmayan bir ajana yazmak cevapsız kalmak demek.
+    The order is deliberate: the server opens **first**, the heavy work
+    comes after. That way the window shows at once and, while the model
+    loads, the user looks at the wake-up sequence rather than a blank
+    screen. The input line stays closed until the model is ready — writing
+    to an agent that isn't ready means going unanswered.
     """
     config.ensure_dirs()
-    # Kamera, mikrofon ve sesli yanıt kapalı açılır. Kullanıcı HUD'dan
-    # açar; bir sonraki oturum yine kapalı gelir — LED/kulak/hoparlör
-    # kendiliğinden uyanmaz. Diskte "açık" kalırsa başka bir ayar kaydı
-    # oturum ortasında duyuyu geri yakardı.
+    # Camera, microphone and spoken replies start off. The user turns them
+    # on from the HUD; the next session comes up off again — LED/ear/speaker
+    # don't wake by themselves. If "on" stayed on disk, another settings save
+    # would relight the sense mid-session.
     config = close_senses(config)
     if (config.state_dir / settings.CONFIG_FILE).exists():
         try:
@@ -2942,13 +3019,14 @@ async def _boot(config: Config, port: int, resume: bool) -> Runtime:
         except Exception:
             pass
 
-    # Ayar sayfasindan girilen anahtarlar ortama yukleniyor: backend'ler
-    # zaten oradan okuyor, ikinci bir yol acmaya gerek yok.
+    # Keys entered on the settings page are loaded into the environment: the
+    # backends already read from there, no need to open a second path.
     settings.export_keys(config.state_dir)
 
-    # Park kaydı: önceki koşuda model ulaşılamaz olmuş ve iş bekletilirken
-    # uygulama kapanmış olabilir. Kayıt varsa O oturum açılır ve aşağıda
-    # (pump kurulunca) koşu kaldığı yerden otomatik sürdürülür.
+    # Park record: in the previous run the model may have become unreachable
+    # and the app closed while the work was on hold. If the record exists
+    # THAT session is opened and below (once pump is set up) the run is
+    # resumed automatically from where it stopped.
     park_session = None
     if parked := read_park(config.state_dir):
         p = config.sessions_dir / f"{parked.get('session', '')}.jsonl"
@@ -2957,20 +3035,21 @@ async def _boot(config: Config, port: int, resume: bool) -> Runtime:
         else:
             clear_park(config.state_dir)
 
-    # Park kaydı yok ama son oturumda cevapsız tool_use kalmışsa (çökme
-    # artığı) kullanıcıya yalnızca haber verilir — belirsiz durumda sorma
-    # tarafında kalınıyor, kendiliğinden sürdürülmüyor.
-    yarim = None if (park_session or resume) else _yarim_is(config.sessions_dir)
+    # No park record, but if an unanswered tool_use was left in the last
+    # session (crash residue) the user is only informed — under uncertainty
+    # we stay on the side of asking, no resuming on our own.
+    unfinished = None if (park_session or resume) else _unfinished_work(config.sessions_dir)
 
-    # Yetim yardımcılar: geçen oturumda arka planda koşarken uygulamayla
-    # birlikte ölen alt ajanlar (subagent_start var, subagent_end yok).
-    # Park/yarım işten ayrı bir yara — orada ana koşu, burada çocuklar
-    # yarım. Bir kez bulunur ve çocuk günlüğüne hemen işaret düşülür ki
-    # ikinci açılış aynı yetimi yeniden bildirmesin; haber aşağıda (ajan
-    # kurulunca) hem kullanıcıya hem modele veriliyor.
-    yetimler = yetim_tara(config.sessions_dir)
-    if yetimler:
-        mark_orphan(config.sessions_dir, yetimler)
+    # Orphaned helpers: sub-agents that died together with the app while
+    # running in the background last session (subagent_start present,
+    # subagent_end missing). A separate wound from the park/unfinished work
+    # — there the main run, here the children are half done. Found once and
+    # a marker is dropped into the child log at once so a second boot does
+    # not report the same orphan again; the news is given below (once the
+    # agent is built) to both the user and the model.
+    orphans = yetim_tara(config.sessions_dir)
+    if orphans:
+        mark_orphan(config.sessions_dir, orphans)
 
     session = park_session or (
         Session.latest(config.sessions_dir) if resume else None
@@ -2983,12 +3062,13 @@ async def _boot(config: Config, port: int, resume: bool) -> Runtime:
         inherit_last_model(mind, session.id, config.sessions_dir)
     pin = str(((mind.session_meta() or {}).get(session.id) or {}).get("model") or "").strip()
     if pin and pin != config.model.name:
-        from dataclasses import replace as _degistir
-        config = _degistir(config, model=_degistir(config.model, name=pin))
+        from dataclasses import replace as _replace
+        config = _replace(config, model=_replace(config.model, name=pin))
     book = scheduling.Schedule(config.state_dir)
 
-    # Hub paylaşılıyor: köprünün yayınladıkları (metin akışı, onay isteği) ile
-    # günlükten gelenler (kullanıcı mesajı, araç olayları) aynı akışa düşmeli.
+    # The hub is shared: what the bridge publishes (text stream, approval
+    # request) and what comes from the log (user message, tool events) must
+    # land in the same stream.
     server = MindServer(
         mind,
         session.log,
@@ -2998,27 +3078,29 @@ async def _boot(config: Config, port: int, resume: bool) -> Runtime:
         config=config,
         schedule=book,
     )
-    # Köprü oturum değiştirmek için sunucuya (olay akışını yeniden bağlamak)
-    # ihtiyaç duyuyor; referans burada veriliyor.
+    # The bridge needs the server to switch sessions (rebinding the event
+    # stream); the reference is given here.
     bridge.server = server
     url = server.start()
 
-    # -- ağır kısım: pencere zaten açık, adımlar görünüyor ---------------
+    # -- the heavy part: the window is already open, the steps are visible --
 
     bridge.waking("zihin açılıyor")
-    # Dar pencereli modelde alt ajan aracı hiç kaydedilmiyor: şeması
-    # tek başına 130 token ve 4096'lık bir pencerede o yer konuşmanın.
+    # On a narrow-window model the sub-agent tool is not registered at all:
+    # its schema alone is 130 tokens, and in a 4096 window that room belongs
+    # to the conversation.
     registry = build_registry(mind, subagents=not prompt.is_lean(config))
 
     bridge.waking("yetenekler yükleniyor")
-    # Ajanın kendi yazdığı yetenekler: her açılışta atölyeden yükleniyor.
-    # Bozuk bir dosya diğerlerini engellemiyor — tek bir yazım hatası ajanı
-    # tüm yeteneklerinden etmemeli.
-    # Paketle gelen standart yetenekler ilk açılışta atölyeye kopyalanıyor;
-    # sonrası kullanıcının: düzenler, siler, yeniden eklemeyiz.
+    # Skills the agent wrote itself: loaded from the workshop on every boot.
+    # A broken file does not block the others — a single typo must not
+    # strip the agent of all its skills.
+    # The standard skills shipped with the package are copied into the
+    # workshop on first boot; afterwards they are the user's: they edit,
+    # delete, we don't re-add.
     skills.seed(config.open_sandbox().root, config.state_dir)
-    # Açılış: insan yok — yalnız onaylı manifestteki yetenekler yüklenir.
-    # Atölyeye düşürülmüş rastgele bir .py kendiliğinden çalışmaz.
+    # Boot: no human present — only skills in the approved manifest load.
+    # A random .py dropped into the workshop does not run by itself.
     learned, broken = skills.discover(config.open_sandbox().root, config.state_dir)
     added, _updated = skills.register(registry, learned)
     if added:
@@ -3026,9 +3108,9 @@ async def _boot(config: Config, port: int, resume: bool) -> Runtime:
     for problem in broken:
         print(f"[dornick] yetenek yüklenemedi: {problem.splitlines()[0]}", flush=True)
 
-    # MCP bağlayıcıları arka planda bağlanıyor: `npx` ilk seferde paket
-    # indirebiliyor ve açılış bunu beklememeli. Bağlanınca araçlar canlı
-    # deftere düşüyor — bir sonraki tur onları görüyor.
+    # MCP connectors connect in the background: `npx` may download a package
+    # the first time and boot must not wait for it. Once connected, the
+    # tools land in the live registry — the next turn sees them.
     pool = linking.Pool()
     server._httpd.connectors = pool  # type: ignore[attr-defined]
 
@@ -3050,15 +3132,15 @@ async def _boot(config: Config, port: int, resume: bool) -> Runtime:
     threading.Thread(target=_connect_mcp, daemon=True, name="dornick-mcp").start()
 
     bridge.waking(f"model yükleniyor · {config.model.name}")
-    # Yükleme saniyeler sürüyor ve bloklayan bir çağrı; döngüyü kilitlememesi
-    # için ayrı bir thread'e alınıyor.
+    # Loading takes seconds and is a blocking call; it is moved to a separate
+    # thread so it does not lock the loop.
     await asyncio.to_thread(_prepare_model, config)
 
-    # Model yapılandırılmamışsa (ilk kurulum: anahtar yok, yerel sunucu yok)
-    # pencere yine de açılıyor: ayar sayfası ajandan bağımsız çalışıyor ve
-    # düzeltmenin yeri tam olarak orası. Eskiden burası patlayınca kullanıcı
-    # pencereyi hiç göremiyordu — kurulum sihirbazından çıkan birine "görünmez
-    # bir hata" bırakılamaz.
+    # If the model is not configured (first run: no key, no local server) the
+    # window still opens: the settings page works independently of the agent
+    # and that is exactly where the fix belongs. Before, when this blew up
+    # the user never saw the window — someone fresh out of the setup wizard
+    # cannot be left with "an invisible error".
     try:
         client = build_client(config.model)
     except Exception as exc:
@@ -3077,36 +3159,39 @@ async def _boot(config: Config, port: int, resume: bool) -> Runtime:
             schedule=book,
             mind=mind,
         )
-        # Arka plan yardımcısı bitince köprü haber alsın: ajan boştaysa
-        # sonucu değerlendiren bir sürdürme turu açılır. (Şeride özel
-        # bağlama `bridge.agent = agent` atamasında kuruluyor; buradaki
-        # geri-uyum satırı onun ÜSTÜNE yazmasın diye kaldırıldı.)
-        # Model kesintisinde her yeniden denemeden önce bekleyen ayar/model
-        # değişikliği uygulansın: bozuk adres/anahtar düzeltildiğinde parklı
-        # koşu yeni istemciyle sürebilsin (normalde değişim tur sonunu
-        # bekler; parklı tur hiç bitmez).
+        # The bridge should hear when a background helper finishes: if the
+        # agent is idle a resume turn that weighs the result opens. (The
+        # lane-specific binding is set up in the `bridge.agent = agent`
+        # assignment; the backward-compat line here was removed so it does
+        # not overwrite it.)
+        # On a model outage, apply the pending settings/model change before
+        # every retry: when a broken address/key is fixed the parked run can
+        # continue with the new client (normally the change waits for the
+        # end of the turn; a parked turn never ends).
         agent.on_retry_wait = bridge._swap_model
     bridge.agent = agent
 
-    # Sürekli dinleme Python tarafında: tarayıcıda duramıyor çünkü pencere
-    # gizlendiğinde Chromium arka plan zamanlayıcılarını dakikaya kısıyor ve
-    # dinleme ölüyor. Burada tepside dururken de çalışıyor. Ayar kaydı
-    # aynı kapıyı kullanır (`sync_hearing`) — yoksa yalnız bas-konuş kalır.
+    # Always-on listening lives on the Python side: it can't live in the
+    # browser because when the window is hidden Chromium throttles background
+    # timers to once a minute and listening dies. Here it runs even while
+    # sitting in the tray. A settings save uses the same gate
+    # (`sync_hearing`) — otherwise only push-to-talk remains.
     if _hearing_wanted(config):
         bridge.waking("kulak açılıyor")
     bridge.sync_hearing(config)
 
-    # Tanıma modeli arka planda ısıtılıyor: ilk sesli isteğin indirmeyi
-    # beklemesi bütün arayüzü kilitliyordu.
+    # The recognition model is warmed in the background: having the first
+    # voice request wait for the download locked the whole UI.
     server_module.warm_ear(server._httpd, config)
 
-    # Beni tanı: kişisel ince ayar döngüsünün bekçisi. Zamanlama üründe —
-    # schtasks yok; bekçi on beş dakikada bir bakar, sırası geldiyse
-    # döngüyü düşük öncelikli başlatır. Özellik kapalıysa hiç kımıldamaz.
+    # Recognise me: the watchman of the personal fine-tuning loop. Scheduling
+    # is in the product — no schtasks; the watchman looks every fifteen
+    # minutes and, if its turn has come, starts the loop at low priority.
+    # If the feature is off it never stirs.
     recognition.start_watcher(config.state_dir, hub)
 
-    # Yerel kameranın sürekli açık tamponu. Kareler bellekte duruyor ve
-    # kendiliğinden modele gitmiyor; `look` aracı istediğinde alınıyor.
+    # The local camera's always-open buffer. Frames stay in memory and do not
+    # go to the model by themselves; the `look` tool takes them on request.
     lens = None
     if config.camera.enabled and watching.available():
         bridge.waking("göz açılıyor")
@@ -3114,8 +3199,8 @@ async def _boot(config: Config, port: int, resume: bool) -> Runtime:
         if lens.start():
             if agent is not None:
                 agent.lens = lens
-            # Arayüz de bilsin: sahnedeki kamera organı gerçekten açık mı
-            # diye ayara değil buna bakıyor.
+            # The UI should know too: to tell whether the camera organ on
+            # the scene is really open it looks at this, not the setting.
             server._httpd.lens = lens  # type: ignore[attr-defined]
             print("[dornick] kamera tamponu açık", flush=True)
             from . import sight
@@ -3141,37 +3226,38 @@ async def _boot(config: Config, port: int, resume: bool) -> Runtime:
     loop = asyncio.get_running_loop()
     loop.create_task(bridge.pump())
 
-    # Yetim yardımcılar: tek toplu bildirim + defter kaydı. Defter kaydıyla
-    # panel "yarım kaldı" satırını çizebiliyor (snapshot kanalları) ve
-    # kullanıcı "sürdür" derse model `task_say` ile diskteki oturumu
-    # diriltebiliyor — harness notunu adopt_orphans düşürüyor.
-    if yetimler:
+    # Orphaned helpers: a single batched notice + ledger entry. With the
+    # ledger entry the panel can draw the "left unfinished" row (snapshot
+    # channels) and, if the user says "resume", the model can revive the
+    # session on disk with `task_say` — adopt_orphans drops the harness note.
+    if orphans:
         if agent is not None:
-            agent.adopt_orphans(yetimler)
-        adlar = ", ".join(
-            (y.get("title") or y.get("session") or "?") for y in yetimler)
+            agent.adopt_orphans(orphans)
+        names = ", ".join(
+            (y.get("title") or y.get("session") or "?") for y in orphans)
         hub.emit({"type": "notice", "text": (
-            f"Geçen oturumdan {len(yetimler)} yardımcı yarım kaldı: {adlar}. "
+            f"Geçen oturumdan {len(orphans)} yardımcı yarım kaldı: {names}. "
             "Uygulama kapanınca arka plan yardımcıları durur; istersen "
             "kaldıkları yerden sürdürebilirim.")})
-        # Açılış sırasında yüklenmiş sayfa snapshot'ı ajan kurulmadan çekmiş
-        # olabilir (kanallar o an boş); panel bu olayla gerçek listeye
-        # tohumlanıyor — pencereyi yenilemeye gerek kalmıyor.
+        # A page loaded during boot may have pulled the snapshot before the
+        # agent was built (channels empty at that moment); this event seeds
+        # the panel with the real list — no need to refresh the window.
         hub.emit({"type": "channels", "channels": _live_channels(agent)})
 
-    # Yarım kalmış uzun iş: park kaydı varsa otomatik sürdürülür; yalnızca
-    # çökme artığı (kayıtsız yarım tur) varsa haber verilir, karar kullanıcının.
+    # Long job left unfinished: with a park record it resumes automatically;
+    # with only crash residue (an unrecorded half turn) the user is informed
+    # and the decision is theirs.
     if park_session is not None and agent is not None:
         hub.emit({"type": "notice",
                   "text": "Yarım kalmış uzun iş bulundu — kaldığı yerden sürdürülüyor."})
         loop.create_task(bridge.queue.put(_PARK_RESUME))
-    elif yarim:
+    elif unfinished:
         hub.emit({"type": "notice",
-                  "text": f"Yarım kalmış bir iş görünüyor (oturum {yarim}). "
+                  "text": f"Yarım kalmış bir iş görünüyor (oturum {unfinished}). "
                           "Geçmiş'ten açıp 'devam et' diyebilirsin."})
 
-    # Zamanlayıcı ajanın döngüsünde koşuyor: tetiklenen görev sohbet
-    # kuyruğuna değil arka plan yardımcıya düşüyor — rapor Orkestra'da.
+    # The scheduler runs on the agent's loop: a fired task lands not in the
+    # chat queue but on a background helper — the report is in the Orchestra.
     def fire(task: Any) -> None:
         hub.emit({"type": "notice", "text": f"Zamanlanmış görev: {task.title}"})
         result = bridge.run_scheduled(task)
@@ -3192,9 +3278,9 @@ async def _boot(config: Config, port: int, resume: bool) -> Runtime:
     ticker = loop.create_task(scheduling.run_forever(
         book, fire, paused=bridge.missed_pending))
 
-    # Geliş: uzun bir sessizlikten sonra biri odaya girdiğinde ajan bir kez
-    # bakıyor. Küçük bir çocuk gibi — kimse yokken kendini beklemeye alıyor,
-    # bir şey kımıldayınca kim geldiğine bakıyor.
+    # Arrival: when someone enters the room after a long silence the agent
+    # looks once. Like a small child — puts itself on hold when nobody is
+    # around, and looks at who came when something moves.
     async def greet() -> None:
         while True:
             await asyncio.sleep(2.0)
@@ -3207,24 +3293,26 @@ async def _boot(config: Config, port: int, resume: bool) -> Runtime:
 
     greeter = loop.create_task(greet())
 
-    # Kameralar arka planda izleniyor. Model her kareye bakmıyor: hareket
-    # yerelde ölçülüyor ve yalnızca bir şey değiştiğinde soru soruluyor.
-    # GPU varsa kare yerelde analiz edilir, sohbet modeline METİN gider;
-    # görüntü makineden çıkmaz. GPU yoksa eski kesit kipi (kare + cloud_ok).
+    # Cameras are watched in the background. The model does not look at
+    # every frame: motion is measured locally and a question is asked only
+    # when something changed. With a GPU the frame is analysed locally and
+    # TEXT goes to the chat model; the image never leaves the machine.
+    # Without a GPU, the old snapshot mode (frame + cloud_ok).
     def seen(sighting: watching.Sighting) -> None:
         bridge._on_camera_motion(sighting)
 
     eyes = watching.Watcher(
         watching.load(config.state_dir) if config.camera.enabled else [], seen)
     bridge.eyes = eyes
-    # "Beni izleme" ağ kameralarını da kapsıyor; sesleniş hepsini geri
-    # açıyor. Kulak, göz ve izleyici tek bir "duyular" bütünü.
+    # "Stop watching me" covers the network cameras too; calling its name
+    # reopens them all. Ear, eye and watcher are a single "senses" whole.
     if bridge.agent is not None:
         bridge.agent.watcher = eyes
     if bridge.ear is not None:
-        # "dornick" kulağı ve ağ kameralarını geri açar. Dahili kamera
-        # HUD/sohbet anahtarıyla açılır — sesleniş LED'i yeniden yakmaz.
-        # HUD kapalıyken unsnooze izleyiciyi başlatmaz; start() HUD'a bağlı.
+        # "dornick" reopens the ear and the network cameras. The built-in
+        # camera is opened with the HUD/chat switch — calling the name does
+        # not relight the LED. With the HUD off, unsnooze does not start the
+        # watcher; start() is tied to the HUD.
         bridge.ear.companions = [s for s in (eyes,) if s is not None]
     if config.camera.enabled and eyes.start():
         print(f"[dornick] {len(watching.load(config.state_dir))} kamera izleniyor", flush=True)
@@ -3257,7 +3345,7 @@ async def _boot(config: Config, port: int, resume: bool) -> Runtime:
 
 
 def _handoff_open(port: int, path: str) -> bool:
-    """Çalışan dornick örneğine yolu devret. Başarılıysa True (yeni örnek açma)."""
+    """Hand the path to a running dornick instance. True on success (don't open a new one)."""
     import json
     import urllib.error
     import urllib.request
@@ -3278,11 +3366,11 @@ def _handoff_open(port: int, path: str) -> bool:
 
 
 def _kill_ghosts() -> None:
-    """Bu makinedeki DİĞER dornick masaüstü örneklerini kapatır.
+    """Closes the OTHER dornick desktop instances on this machine.
 
-    Ölçüt komut satırı: python + ("dornick" ve "--app"). Kendi sürecimiz ve
-    alakasız pythonlar dokunulmaz. Sessizce, en iyi çaba — süreç listesi
-    okunamazsa açılış yine devam eder.
+    The criterion is the command line: python + ("dornick" and "--app").
+    Our own process and unrelated pythons are left alone. Silent, best
+    effort — if the process list can't be read, boot continues anyway.
     """
     if sys.platform != "win32":
         return
@@ -3323,12 +3411,12 @@ def _kill_ghosts() -> None:
 
 def run(config: Config, *, port: int = 8765, resume: bool = False,
         open_path: str | None = None) -> int:
-    """Pencereyi açar ve kapanana kadar bloke eder."""
-    # Görev çubuğu kimliği: bu ayarlanmazsa Windows pencereyi python.exe'nin
-    # grubunda gösteriyor ve simge PYTHON logosu kalıyordu. Kendi kimliğiyle
-    # gruplanınca pencerenin kendi simgesi (dornick logosu) görünür.
-    # Görev Yöneticisi / WebView2 alt süreçleri ise PE ikonuna bakar —
-    # o yüzden python(w) ise damgalı dornick.exe olarak yeniden açılır.
+    """Opens the window and blocks until it closes."""
+    # Taskbar identity: unless this is set, Windows shows the window in
+    # python.exe's group and the icon stayed the PYTHON logo. Grouped under
+    # its own identity, the window's own icon (the dornick logo) shows.
+    # Task Manager / WebView2 child processes look at the PE icon instead —
+    # hence a python(w) relaunches itself as the stamped dornick.exe.
     if sys.platform == "win32":
         try:
             import ctypes
@@ -3339,18 +3427,21 @@ def run(config: Config, *, port: int = 8765, resume: bool = False,
         except Exception:
             pass
 
-    # 'Dornick ile aç': çalışan örnek varsa ona devret — hayalet avı öldürmesin.
+    # 'Open with Dornick': if an instance is running, hand it over — so the
+    # ghost hunt does not kill it.
     pending_open = str(open_path or "").strip() or None
     if pending_open and _handoff_open(port, pending_open):
         return 0
 
-    # HAYALET AVI: tepside gizli kalmış eski dornick örnekleri portu ve pencere
-    # hedeflemesini ele geçirip yeni örneği sağır bırakıyordu — kullanıcı
-    # "kapattım açtım" dedikçe hayaletler çoğalıyor, hiçbir düzeltme ekrana
-    # ulaşmıyordu (üç günlük yaranın gerçek kökü). Yeni örnek açılırken
-    # eskileri tek tek kapatır: her açılış temiz, tek örnek.
-    # Damgalı dornick.exe yazılabilsin diye relaunch'tan ÖNCE: çalışan dornick.exe
-    # kilitli kalırsa kopya basılmaz, Görev Yöneticisi'nde yılan kalır.
+    # GHOST HUNT: old dornick instances left hidden in the tray seized the
+    # port and the window targeting and left the new instance deaf — the
+    # more the user said "I closed and reopened it" the more ghosts
+    # multiplied, and no fix ever reached the screen (the real root of the
+    # three-day wound). When a new instance opens it closes the old ones one
+    # by one: every boot clean, a single instance.
+    # BEFORE the relaunch so the stamped dornick.exe can be written: if a
+    # running dornick.exe stays locked, the copy isn't stamped and the snake
+    # stays in Task Manager.
     _kill_ghosts()
     if sys.platform == "win32":
         try:
@@ -3358,12 +3449,13 @@ def run(config: Config, *, port: int = 8765, resume: bool = False,
             winicon.relaunch_as_host()
         except Exception:
             pass
-    # WebView2 mikrofon ve kamera için kendi izin penceresini açar; gömülü
-    # bir pencerede o pencere hiç görünmüyor ve istek sessizce reddediliyor
-    # — arayüzde yalnızca "mikrofon açılamadı" yazıyordu.
+    # WebView2 opens its own permission prompt for microphone and camera; in
+    # an embedded window that prompt never shows and the request is silently
+    # denied — the UI only said "microphone could not be opened".
     #
-    # Bayrak yalnızca kullanıcı ayarlardan açtıysa veriliyor: kapalıyken
-    # medya iznini kendiliğinden vermek, istenmemiş bir yetkiyi açmak olur.
+    # The flag is given only if the user turned it on in the settings:
+    # granting media permission on our own while it is off would open an
+    # authority nobody asked for.
     if config.listen.enabled or config.camera.enabled:
         _allow_media()
 
@@ -3399,10 +3491,10 @@ def run(config: Config, *, port: int = 8765, resume: bool = False,
     thread = threading.Thread(target=spin, daemon=True, name="dornick-agent")
     thread.start()
 
-    # Açılış bir model indirmesine denk gelebiliyor (tanıma modeli `medium`
-    # ise 1,5 GB). Kısa bir zaman aşımı o durumda `KeyError` olarak
-    # patlıyordu: kullanıcının gördüğü şey yığın izi oluyor, sebebi
-    # hiçbir yerde yazmıyordu.
+    # Boot may coincide with a model download (1.5 GB if the recognition
+    # model is `medium`). A short timeout blew up as a `KeyError` in that
+    # case: what the user saw was a stack trace, and the reason was written
+    # nowhere.
     if not ready.wait(timeout=BOOT_TIMEOUT_S):
         loop.call_soon_threadsafe(loop.stop)
         raise SystemExit(
@@ -3417,26 +3509,28 @@ def run(config: Config, *, port: int = 8765, resume: bool = False,
 
     runtime: Runtime = box["runtime"]
 
-    # Soğuk açılışta --open: boot bittikten sonra yeni sohbet + klasör.
+    # --open on a cold start: new chat + folder once boot has finished.
     if pending_open:
         try:
             runtime.bridge.open_path(pending_open)
         except Exception:
             pass
 
-    # Native çerçeve: işletim sisteminin başlık çubuğu ve kenarları — böylece
-    # TAŞIMA, büyüt/küçült, kenardan RESIZE ve Windows snap hepsi normal bir
-    # uygulama gibi çalışıyor. (Çerçevesiz hal holografik "tek parça" hissi
-    # veriyordu ama bunların hiçbirini vermiyordu; kullanıcı normal pencere
-    # istedi.) resizable varsayılan True.
-    # frameless: pywebview FormBorderStyle.None kurar — istemci alan pencereyi
-    # ZATEN tam doldurur (kenarlarda masaüstü sızması yapısal olarak imkânsız).
-    # Native davranışlar ayrıca ekleniyor: kutu stilleri (snap/animasyon),
-    # HTCAPTION sürükleme (Aero snap dahil), WM_SYSCOMMAND büyüt/küçült ve
-    # SC_SIZE kenar boyutlandırma — hepsi işletim sisteminin kendi döngüleri.
+    # Native frame: the operating system's title bar and edges — so MOVING,
+    # maximise/minimise, edge RESIZE and Windows snap all work like a normal
+    # application. (The frameless form gave a holographic "one piece" feel
+    # but gave none of these; the user asked for a normal window.) resizable
+    # defaults to True.
+    # frameless: pywebview sets FormBorderStyle.None — the client area
+    # ALREADY fills the window completely (desktop leaking at the edges is
+    # structurally impossible). The native behaviours are added separately:
+    # box styles (snap/animation), HTCAPTION dragging (Aero snap included),
+    # WM_SYSCOMMAND maximise/minimise and SC_SIZE edge resizing — all the
+    # operating system's own loops.
     geo = prefs.window_args(prefs.load(config.state_dir))
-    # maximized'ı create_window'a VERME: çerçevesizde konum (101,101) gibi
-    # kayıyor; kabuk + MaximizedBounds sonrası _force_maximize oturtuyor.
+    # DON'T pass maximized to create_window: frameless, the position drifts
+    # to something like (101,101); shell + MaximizedBounds and then
+    # _force_maximize seat it.
     want_max = bool(geo.get("maximized"))
     window = webview.create_window(
         WINDOW_TITLE,
@@ -3449,38 +3543,42 @@ def run(config: Config, *, port: int = 8765, resume: bool = False,
         min_size=(900, 600),
         background_color=WINDOW_BACKGROUND,
         frameless=True,
-        # Varsayılan True: TÜM istemci alanı sürükleme bölgesi olur — kullanıcı
-        # beyinden / sohbetten tutup pencereyi taşıyordu. Taşıma yalnız üst
-        # şeritten (chrome.js → HTCAPTION); snap de o yoldan geliyor.
+        # Default True: the WHOLE client area becomes a drag region — the
+        # user grabbed the brain / the chat and moved the window. Moving is
+        # only from the top strip (chrome.js → HTCAPTION); snap comes the
+        # same way.
         easy_drag=False,
-        # pywebview varsayılanı metin SEÇİMİNİ kapatıyor: pakette üretilen
-        # cevaplar kopyalanamıyordu ("kopyala yapıştır çalışmıyor" — canlı,
-        # 31.08; tarayıcı önizlemede görünmez çünkü orada pywebview yok).
+        # pywebview's default turns text SELECTION off: answers produced in
+        # the packaged build couldn't be copied ("copy paste doesn't work" —
+        # live, 31.08; invisible in the browser preview because there is no
+        # pywebview there).
         text_select=True,
     )
-    # Kapatma penceresi gizliyor, yok etmiyor: ajanın arka planda durması
-    # gereken işleri var (zamanlanmış görevler, kameraları izleyen alt
-    # ajanlar, uyandırma sözünü bekleyen mikrofon). Tepsi yoksa kapatma
-    # gerçekten kapatıyor — yoksa program kapanmaz hale gelirdi.
+    # Closing hides the window, it does not destroy it: the agent has work
+    # that must keep going in the background (scheduled tasks, sub-agents
+    # watching the cameras, the microphone waiting for the wake word). With
+    # no tray, closing really closes — otherwise the program could never be
+    # shut down.
     #
-    # Çıkış bekçisi: tepsiden Çıkış seçildiğinde ajan bir işin ortasındaysa
-    # native bir Evet/Hayır penceresi soruyor — süren iş sessizce ölmesin.
-    # Evet'te temiz kapanış: park/yetim mekanizmaları izi düşürür ve açılış
-    # sürdürmeyi zaten teklif eder.
-    # X ile Çıkış aynı `closing` olayına düşüyor; ayrımı `Kapanis` tutuyor.
-    # `gizle` aşağıda tanımlanan `_hide_to_tray`e bağlanıyor (balon dahil),
-    # ama o daha ilerideki satırlarda doğduğu için buradan geç bağlanıyor.
-    kapanis = tray_module.Shutdown(
-        gizle=lambda: _hide_to_tray(),
-        yok_et=lambda: window.destroy(),
+    # Exit guard: when Exit is chosen from the tray while the agent is in
+    # the middle of a job, a native Yes/No dialog asks — the running job must
+    # not die silently. On Yes, a clean shutdown: the park/orphan mechanisms
+    # drop the trace and boot already offers to resume.
+    # X and Exit land on the same `closing` event; `Shutdown` holds the
+    # distinction. `hide` binds to `_hide_to_tray` defined below (balloon
+    # included), but since that is born on later lines it is bound lazily
+    # from here.
+    shutdown = tray_module.Shutdown(
+        hide=lambda: _hide_to_tray(),
+        destroy=lambda: window.destroy(),
     )
 
     def _show_from_tray() -> None:
-        """Tepsiden / uyandırma: pencere gelsin; arka planda biten işler
-        Görevler panelinde görünsün (liste tazelensin)."""
+        """From the tray / wake: bring the window; jobs that finished in the
+        background should show in the Tasks panel (refresh the list)."""
         window.show()
         _ensure_native_chrome()
-        # Gizliyken kutu bozulmuş olabilir (kaymış büyütme); görünür olunca bak.
+        # The box may have broken while hidden (offset maximise); look once visible.
         threading.Timer(0.4, _heal_geometry).start()
         runtime.bridge.hub.emit({"type": "jobs_refresh"})
 
@@ -3493,20 +3591,21 @@ def run(config: Config, *, port: int = 8765, resume: bool = False,
     tray = tray_module.Tray(
         show=_show_from_tray,
         hide=lambda: window.hide(),
-        quit=kapanis.cik,
+        quit=shutdown.quit,
         busy=lambda: runtime.bridge.busy,
         confirm=_confirm_quit,
         jobs=_open_jobs_from_tray,
-        # Onaylı Çıkış her koşulda süreçle biter: GUI katmanı kilitliyse
-        # 12 sn sonra kesin iniş (canlı yara, 01.09).
-        bekci=tray_module.install_exit_guard,
+        # A confirmed Exit ends with the process under every condition: if
+        # the GUI layer is locked, a hard landing after 12 s (live wound, 01.09).
+        guard=tray_module.install_exit_guard,
     )
     live = tray.start()
     runtime.bridge.tray = tray
 
-    # Tek şerit: OS başlık çubuğu sökülüyor (strip_caption, _titlebar_boot'ta)
-    # ve pencere denetimleri app'in kendi şeridine geçiyor. Native davranışlar
-    # (kenardan resize, snap, görev çubuğu) pencere stillerinde duruyor.
+    # Single strip: the OS title bar is stripped (strip_caption, in
+    # _titlebar_boot) and the window controls move to the app's own strip.
+    # The native behaviours (edge resize, snap, taskbar) stay in the window
+    # styles.
     window.expose(_wake(window))
     window.expose(paint_titlebar)
 
@@ -3517,13 +3616,13 @@ def run(config: Config, *, port: int = 8765, resume: bool = False,
         _win_do("minimize")
 
     def maximize() -> bool:
-        # Büyütme sınırı o anki monitöre göre tazelensin (görev çubuğu);
-        # dönen değer yeni durum — arayüz ikonunu ona göre çiziyor.
+        # Refresh the maximise bound for the current monitor (taskbar); the
+        # return value is the new state — the UI draws its icon from it.
         _update_max_bounds()
         return _win_do("maximize")
 
     def drag() -> bool:
-        # Dönen değer: sürükleme sonrası büyütülü mü? Şerit ikonu buna göre.
+        # Return value: maximised after the drag? The strip icon follows it.
         _win_do("drag")
         _update_max_bounds()
         return _is_zoomed()
@@ -3535,19 +3634,19 @@ def run(config: Config, *, port: int = 8765, resume: bool = False,
         return _is_zoomed()
 
     def pano_oku() -> str:
-        """Windows panosundan düz metin okur (ctypes; ek bağımlılık yok).
+        """Reads plain text from the Windows clipboard (ctypes; no extra dependency).
 
-        Sağ tık menüsünün "Yapıştır"ı buradan besleniyor: WebView2'nin
-        varsayılan menüsünü pywebview üretimde kapatıyor ve tarayıcı
-        pano-okuma izni WebView2 içinde sorulamıyor — Python tarafı her
-        zaman okuyabilir (natif tur, 31.08)."""
+        The context menu's "Paste" feeds from here: pywebview disables
+        WebView2's default menu in production and the browser clipboard-read
+        permission cannot be asked inside WebView2 — the Python side can
+        always read (native round, 31.08)."""
         import ctypes
         CF_UNICODETEXT = 13
         u32 = ctypes.windll.user32
         k32 = ctypes.windll.kernel32
-        # 64-bit tuzak: restype bildirilmezse tutamaç 32-bit'e KIRPILIR ve
-        # GlobalLock çöp işaretçiyle patlar (natif turda menü "Yapıştır"ı
-        # sessizce boş dönüyordu, 31.08).
+        # 64-bit trap: unless restype is declared the handle is TRUNCATED to
+        # 32 bits and GlobalLock blows up on a garbage pointer (in the native
+        # round the menu "Paste" silently returned empty, 31.08).
         u32.GetClipboardData.restype = ctypes.c_void_p
         k32.GlobalLock.restype = ctypes.c_void_p
         k32.GlobalLock.argtypes = [ctypes.c_void_p]
@@ -3568,11 +3667,11 @@ def run(config: Config, *, port: int = 8765, resume: bool = False,
         finally:
             u32.CloseClipboard()
 
-    def pano_yaz(metin: str = "") -> bool:
-        """Windows panosuna düz metin yazar (Kopyala/Kes için)."""
+    def pano_yaz(text: str = "") -> bool:
+        """Writes plain text to the Windows clipboard (for Copy/Cut)."""
         import ctypes
         CF_UNICODETEXT, GMEM_MOVEABLE = 13, 0x0002
-        veri = str(metin or "")
+        data = str(text or "")
         u32 = ctypes.windll.user32
         k32 = ctypes.windll.kernel32
         k32.GlobalAlloc.restype = ctypes.c_void_p
@@ -3586,12 +3685,12 @@ def run(config: Config, *, port: int = 8765, resume: bool = False,
             return False
         try:
             u32.EmptyClipboard()
-            boyut = (len(veri) + 1) * ctypes.sizeof(ctypes.c_wchar)
-            hglob = k32.GlobalAlloc(GMEM_MOVEABLE, boyut)
+            size = (len(data) + 1) * ctypes.sizeof(ctypes.c_wchar)
+            hglob = k32.GlobalAlloc(GMEM_MOVEABLE, size)
             if not hglob:
                 return False
             ptr = k32.GlobalLock(hglob)
-            ctypes.memmove(ptr, ctypes.create_unicode_buffer(veri), boyut)
+            ctypes.memmove(ptr, ctypes.create_unicode_buffer(data), size)
             k32.GlobalUnlock(hglob)
             u32.SetClipboardData(CF_UNICODETEXT, hglob)
             return True
@@ -3601,7 +3700,7 @@ def run(config: Config, *, port: int = 8765, resume: bool = False,
             u32.CloseClipboard()
 
     def open_camera_window(cam: str = "") -> str:
-        """Kamera izlemeyi ayrı OS penceresinde açar; varsa öne getirir."""
+        """Opens camera watching in a separate OS window; brings it forward if it exists."""
         global _CAM_WINDOW
         import threading
         import webview
@@ -3688,32 +3787,33 @@ def run(config: Config, *, port: int = 8765, resume: bool = False,
             pass
         return "ok"
 
-    # X = gizle, uygulama TEPSİDE yaşar (Claude Code / masaüstü geleneği):
-    # süren iş, zamanlanmış görevler ve duyular pencereyle birlikte ölmez.
-    # Eskiden yalnızca kulak açıkken gizleniyordu; ama X'in işi yarıda
-    # kesmesi kulaktan bağımsız bir yara — koşan bir görev de pencere
-    # kapandı diye ölmemeli. Hayalet-süreç riski kalmadı: her açılış
-    # eski örnekleri kapatıyor (_kill_ghosts) ve tepsiden gerçek Çıkış var.
-    # Tepsi hiç açılamadıysa (paket yok) X gerçekten kapatır — yoksa
-    # program kapanmaz hale gelirdi.
+    # X = hide, the app lives IN THE TRAY (Claude Code / desktop tradition):
+    # the running job, scheduled tasks and the senses don't die with the
+    # window. It used to hide only while the ear was on; but X cutting the
+    # work short is a wound independent of the ear — a running task must not
+    # die just because the window closed either. No ghost-process risk
+    # remains: every boot closes the old instances (_kill_ghosts) and there
+    # is a real Exit in the tray. If the tray could not open at all (no
+    # package) X really closes — otherwise the program could never be shut
+    # down.
     hide_on_close = live
 
-    # X'e İLK basışta bir kez balon bildirimi: "arka planda çalışmaya devam
-    # ediyor". Meşgul olup olmamasından bağımsız — pencere kaybolunca
-    # kullanıcı programın kapandığını sanıyor ve asıl öğretilmesi gereken
-    # şey bu. Tekrarı `note_once` engelliyor (her gizlenişte balon = dırdır).
+    # A single balloon on the FIRST press of X: "keeps running in the
+    # background". Regardless of busy or not — when the window vanishes the
+    # user thinks the program closed, and that is the thing to teach.
+    # `note_once` prevents repeats (a balloon on every hide = nagging).
     def _remember_window() -> None:
-        """Pencere kutusu kapanıştaki gibi açılsın."""
+        """The window box should open as it was at close."""
         try:
             zoomed = _is_zoomed()
             w = int(window.width or 0)
             h = int(window.height or 0)
             x = int(window.x if window.x is not None else 0)
             y = int(window.y if window.y is not None else 0)
-            # Offset’li neredeyse-tam-ekran = bozuk büyütme; bir daha yazma.
+            # Offset near-fullscreen = broken maximise; don't write it again.
             if not zoomed and prefs.offset_fullscreen(x, y, w, h):
                 zoomed = True
-            # Work-area'ya oturan fake maximize da büyütülmüş sayılsın.
+            # A fake maximise seated on the work area also counts as maximised.
             elif not zoomed and _fills_work_area(x, y, w, h):
                 zoomed = True
             box: dict[str, Any] = {"maximized": zoomed}
@@ -3739,20 +3839,21 @@ def run(config: Config, *, port: int = 8765, resume: bool = False,
                open_camera_window, pano_oku, pano_yaz):
         window.expose(fn)
 
-    # Native kapatma (X / Alt+F4) programı YOK ETMESİN, tepsiye gizlesin:
-    # pywebview'in closing olayı False dönünce kapanış iptal olur ve pencere
-    # gizlenir — app şeridindeki X ile aynı yol.
+    # The native close (X / Alt+F4) must NOT DESTROY the program, it should
+    # hide to the tray: when pywebview's closing event returns False the
+    # close is cancelled and the window hides — the same path as the X on
+    # the app strip.
     if hide_on_close:
         def _hide_instead_of_close() -> bool:
-            return kapanis.kapanabilir_mi()
+            return shutdown.may_close()
 
         try:
             window.events.closing += _hide_instead_of_close
         except Exception:
             pass
 
-    # Uyandırma sözü duyulduğunda pencere geri geliyor: gizliyken de sayfa
-    # çalışmaya devam ediyor, mikrofon dinliyor.
+    # When the wake word is heard the window comes back: the page keeps
+    # running while hidden, the microphone keeps listening.
     runtime.bridge.on_wake = _show_from_tray
 
     if hide_on_close:
@@ -3764,8 +3865,8 @@ def run(config: Config, *, port: int = 8765, resume: bool = False,
               flush=True)
 
     try:
-        # Pencere/görev çubuğu simgesi: tek kaynak logodan (tepsi ve sekmeyle
-        # aynı işaret). pywebview winforms bunu form.Icon yapıyor.
+        # Window/taskbar icon: from the single-source logo (the same mark as
+        # the tray and the tab). pywebview winforms makes it form.Icon.
         from . import logo as logo_module
         webview.start(
             lambda: _titlebar_boot(want_max=want_max),
@@ -3781,12 +3882,12 @@ def run(config: Config, *, port: int = 8765, resume: bool = False,
 
 
 def _ensure_native_chrome() -> None:
-    """Tek şeridi garanti eder: stiller + kabuk kurulu değilse kurar.
+    """Guarantees the single strip: installs styles + shell if not installed.
 
-    Açılışta pencere gizliyse `_titlebar_boot` boşa dönebiliyor; pencere
-    sonradan (tepsi, uyandırma) gösterildiğinde OS başlık çubuğu uygulama
-    şeridinin üstünde kalıyordu. Kurulumlar bağışık (idempotent): zaten
-    kuruluysa maliyeti yok.
+    If the window is hidden at boot `_titlebar_boot` can return empty-handed;
+    when the window was shown later (tray, wake) the OS title bar stayed on
+    top of the app strip. The installs are idempotent: if already installed
+    there is no cost.
     """
     try:
         if _apply_native_styles():
@@ -3798,14 +3899,15 @@ def _ensure_native_chrome() -> None:
 
 
 def _titlebar_boot(*, want_max: bool = False) -> None:
-    """webview başladıktan sonra çalışır: pencere oluşana dek dener.
+    """Runs after webview starts: retries until the window exists.
 
-    Tek şerit: CAPTION+THICKFRAME stilleri yerinde (snap), WM_NCCALCSIZE üst
-    payı istemciye (OS şeridi görünmez), WM_NCHITTEST kenar tutamakları.
+    Single strip: CAPTION+THICKFRAME styles in place (snap), the
+    WM_NCCALCSIZE top margin given to the client (OS strip invisible),
+    WM_NCHITTEST edge grips.
 
-    `want_max`: prefs büyütülmüş diyorsa MaximizedBounds hazır olduktan
-    sonra zorla büyüt — create_window(maximized)+offset çerçevesizde
-    tutmuyordu; küçült/görev çubuğu açınca düzelirdi.
+    `want_max`: if prefs say maximised, force maximise once MaximizedBounds
+    is ready — create_window(maximized)+offset didn't hold when frameless;
+    it fixed itself on minimise/opening the taskbar.
     """
     import time
     for _ in range(40):
@@ -3817,26 +3919,26 @@ def _titlebar_boot(*, want_max: bool = False) -> None:
                 _force_maximize()
             else:
                 _clamp_window_to_work()
-            # Geç bozulmaya karşı nöbet: açılış yerleşiminden sonra kutu
-            # birileri tarafından (100,100)'e kayarsa yakala ve oturt.
+            # Watch against late breakage: if after the boot placement the
+            # box drifts to (100,100) at someone's hand, catch it and seat it.
             threading.Thread(target=_geometry_watch, daemon=True,
                              name="dornick-geometry-watch").start()
             return
         time.sleep(0.15)
 
 
-# Ana pencere referansı: pencere-kabuk yardımcıları (MaximizedBounds) için.
+# Main window reference: for the window-shell helpers (MaximizedBounds).
 _MAIN_WINDOW: Any = None
-# Ayrı kamera izleme penceresi (create_window); kapanınca None.
+# Separate camera watch window (create_window); None once closed.
 _CAM_WINDOW: Any = None
 
-# Kabuk referansları (WndProc callback + eski proc) GC'ye gitmesin.
+# Shell references (WndProc callback + old proc) must not be GC'd.
 _SHELL: dict[int, tuple[Any, int]] = {}
 
-# ÖZEL WinDLL: ctypes.windll süreç-genelinde PAYLAŞILAN bir önbellek —
-# pystray/pywebview aynı fonksiyon nesnelerine kendi argtypes'larını yazınca
-# bizim çağrılarımız bozuk marshaling'le çöküyordu (access violation'ların
-# gerçek kökü; sabotajlı stres testiyle kanıtlandı). Bu handle yalnız bizim.
+# PRIVATE WinDLL: ctypes.windll is a process-wide SHARED cache — when
+# pystray/pywebview wrote their own argtypes onto the same function objects
+# our calls crashed with broken marshaling (the real root of the access
+# violations; proven with a sabotaged stress test). This handle is ours alone.
 _PRIV: dict[str, Any] = {}
 
 
@@ -3862,34 +3964,34 @@ def _user32() -> Any:
 
 
 def _install_shell() -> bool:
-    """Pencere kabuğu: görünmez çerçeve, native davranış (kanıtlanmış tasarım).
+    """Window shell: invisible frame, native behaviour (proven design).
 
-    WS_THICKFRAME pencerede DURUYOR: Windows kenardan boyutlandırmayı ve
-    snap'i yalnız boyutlandırılabilir pencereye verir.
+    WS_THICKFRAME STAYS on the window: Windows grants edge resizing and snap
+    only to a resizable window.
 
-    Çerçeveyi WM_NCCALCSIZE→0 ile TAMAMEN yutmak snap'i bozuyordu: Windows
-    yapıştırma boyutunu uyguluyor ama KONUMU uygulamıyordu, pencere fareyi
-    izlemeye devam ediyordu (izole testte birebir: sol kenara sürüklerken
-    istemci (-400,504) 960x1032'de kalıyor, beklenen (0,0) 960x1032). Kenardan
-    boyutlandırma da aynı sebeple ölüydü (3/3 koşumda 0 piksel). Windows
-    yapıştırılan/boyutlandırılan pencereyi yerleştirmek için GERÇEK çerçeve
-    ölçülerine bakıyor; çerçeve sıfırlanınca hesap tutmuyor.
+    Swallowing the frame ENTIRELY with WM_NCCALCSIZE→0 broke snap: Windows
+    applied the snap size but NOT the position, the window kept following
+    the mouse (verbatim in the isolated test: dragging to the left edge the
+    client stayed at (-400,504) 960x1032, expected (0,0) 960x1032). Edge
+    resizing was dead for the same reason (0 pixels in 3/3 runs). Windows
+    looks at the REAL frame metrics to place a snapped/resized window; with
+    the frame zeroed the arithmetic doesn't hold.
 
-    Bu yüzden çerçeve YERİNDE bırakılıyor, yalnız ÜST payı istemciye
-    katılıyor: yan/alt kenarlar Windows'un görünmez tutamakları olarak duruyor
-    (zaten görünmezler — pencere kenarı istemcide bitiyor), üstte de OS şeridi
-    kalmıyor. Aynı izole testte snap istemciyi (1,0) 958x1031'e oturttu ve
-    Windows'un yapıştırma önizlemesi/Snap Assist paneli çıktı; boyutlandırma
-    3/3 çalıştı. Büyütülmüşken çerçeve payı istenmiyor: MaximizedBounds
-    pencereyi çalışma alanına oturttuğu için istemci = pencere (→0) ve
-    büyütme birebir çalışma alanına denk geliyor.
+    So the frame is left IN PLACE and only the TOP margin is folded into the
+    client: the side/bottom edges remain as Windows' invisible grips (they
+    are invisible anyway — the window edge ends in the client), and no OS
+    strip remains at the top. In the same isolated test snap seated the
+    client at (1,0) 958x1031 and Windows' snap preview / Snap Assist panel
+    appeared; resizing worked 3/3. When maximised no frame margin is wanted:
+    since MaximizedBounds seats the window on the work area, client = window
+    (→0) and maximise lands exactly on the work area.
 
-    WM_NCHITTEST kenar tutamaklarını veriyor. Ayrı pencerede 5000+ mesajlık
-    sabotajlı stres testinden sıfır hatayla geçti.
+    WM_NCHITTEST provides the edge grips. Passed a 5000+ message sabotaged
+    stress test in a separate window with zero errors.
     """
     if sys.platform != "win32":
         return True
-    targets = _dornick_windows(gizli_de=True)   # bkz. _apply_native_styles
+    targets = _dornick_windows(gizli_de=True)   # see _apply_native_styles
     if not targets:
         return False
     ok = False
@@ -3931,10 +4033,11 @@ def _install_shell_on(hwnd: int) -> bool:
                 if msg == 0x0083 and wp:          # WM_NCCALCSIZE(TRUE)
                     p = ctypes.cast(lp, ctypes.POINTER(NcCalcSize)).contents
                     if u.IsZoomed(h):
-                        # Kalın çerçeveli pencere büyüyünce Windows ~8px ekran
-                        # DIŞINA taşır; gerçek non-client o payı gizler. Biz
-                        # zoom'da çerçeveyi yutunca HUD/üst şerit de -8'e
-                        # kayıyordu. İstemciyi monitör ÇALIŞMA ALANINA kilitle.
+                        # When a thick-framed window maximises, Windows pushes
+                        # it ~8px OFF the screen; the real non-client hides
+                        # that margin. Once we swallowed the frame in zoom the
+                        # HUD/top strip drifted to -8 too. Lock the client to
+                        # the monitor's WORK AREA.
                         mi = MonitorInfo()
                         mi.cbSize = ctypes.sizeof(MonitorInfo)
                         mon = u.MonitorFromRect(ctypes.byref(p.rgrc[0]), 2)
@@ -3946,12 +4049,13 @@ def _install_shell_on(hwnd: int) -> bool:
                             p.rgrc[0].right = mi.rcWork.right
                             p.rgrc[0].bottom = mi.rcWork.bottom
                         else:
-                            # Yedek — ve KAYMIŞ zoom: pencere (100,100) gibi
-                            # bozuk bir konumda zoom'lanmışken work-area kilidi
-                            # istemciyi pencereye göre EKSİYE kaydırıyordu
-                            # (canlı: içerik solda/üstte kırpık, masaüstü
-                            # sızıyor). Kaymışsa klasik payla yetin; pencereyi
-                            # yerine oturtmak _heal_geometry'nin işi.
+                            # Fallback — and an OFFSET zoom: with the window
+                            # zoomed at a broken position such as (100,100),
+                            # the work-area lock shifted the client NEGATIVE
+                            # relative to the window (live: content clipped
+                            # on the left/top, desktop leaking). If offset,
+                            # settle for the classic margin; seating the
+                            # window is _heal_geometry's job.
                             p.rgrc[0].left += 8
                             p.rgrc[0].top += 8
                             p.rgrc[0].right -= 8
@@ -3959,7 +4063,7 @@ def _install_shell_on(hwnd: int) -> bool:
                         return 0
                     top = p.rgrc[0].top
                     ret = u.CallWindowProcW(old, h, msg, wp, lp)
-                    p.rgrc[0].top = top            # üst pay istemciye
+                    p.rgrc[0].top = top            # top margin to the client
                     return ret
                 if msg == 0x0084:                  # WM_NCHITTEST
                     x = ctypes.c_short(lp & 0xFFFF).value
@@ -3993,7 +4097,7 @@ def _install_shell_on(hwnd: int) -> bool:
 
 
 def _hwnd_of(window: Any) -> int:
-    """pywebview penceresinin HWND'si; henüz doğmadıysa 0."""
+    """HWND of the pywebview window; 0 if not born yet."""
     if window is None:
         return 0
     try:
@@ -4014,14 +4118,14 @@ def _update_max_bounds() -> None:
 
 
 def _update_max_bounds_for(window: Any) -> None:
-    """Büyütme sınırını o anki monitörün ÇALIŞMA ALANINA ayarlar.
+    """Sets the maximise bound to the WORK AREA of the current monitor.
 
-    Çerçevesiz bir pencereyi Windows tam ekrana (görev çubuğunun üstüne)
-    büyütür — kullanıcının en başta şikayet ettiği davranış. WinForms'un
-    MaximizedBounds özelliği bunu kökünden çözüyor: Win+Yukarı, üst kenara
-    snap ve bizim düğmemiz dahil HER büyütme yolu bu sınırı kullanır.
-    Pencere hangi monitördeyse onun çalışma alanı; her sürüklemeden sonra
-    tazeleniyor ki monitör değişimi doğru kalsın.
+    Windows maximises a frameless window to full screen (over the taskbar)
+    — the behaviour the user complained about first. WinForms'
+    MaximizedBounds property solves this at the root: EVERY maximise path —
+    Win+Up, snap to the top edge, and our own button — uses this bound.
+    The work area of whichever monitor the window is on; refreshed after
+    every drag so a monitor change stays correct.
     """
     if window is None or sys.platform != "win32":
         return
@@ -4036,41 +4140,42 @@ def _update_max_bounds_for(window: Any) -> None:
         def apply() -> None:
             screen = Screen.FromControl(form)
             wa, sb = screen.WorkingArea, screen.Bounds
-            # KONUM MONİTÖRE GÖRELİ olmak zorunda (WM_GETMINMAXINFO
-            # ptMaxPosition semantiği): mutlak verilince Windows monitör
-            # orijinini BİR KEZ DAHA ekliyor ve pencere ikinci monitörde
-            # tamamen ekran DIŞINA büyüyordu — kullanıcının 'kareye
-            # basınca kayboluyor' yaşadığı hata buydu (canlı yakalandı:
-            # (1920,-77) beklenirken (3840,-154)'e gitti; göreli konumla
-            # birebir çalışma alanına oturduğu ayrı formda kanıtlandı).
+            # THE POSITION HAS TO BE RELATIVE TO THE MONITOR (WM_GETMINMAXINFO
+            # ptMaxPosition semantics): given absolute, Windows adds the
+            # monitor origin ONCE MORE and on the second monitor the window
+            # maximised entirely OFF screen — this was the bug behind the
+            # user's 'it vanishes when I press the square' (caught live:
+            # expected (1920,-77), went to (3840,-154); proven on a separate
+            # form that with the relative position it seats exactly on the
+            # work area).
             form.MaximizedBounds = Rectangle(
                 wa.X - sb.X, wa.Y - sb.Y, wa.Width, wa.Height)
 
-        # WinForms özellikleri UI thread'inden: Invoke oraya sıraya sokar.
+        # WinForms properties from the UI thread: Invoke queues it there.
         form.Invoke(Action(apply))
     except Exception:
         pass
 
 
 def _apply_native_styles() -> bool:
-    """Çerçevesiz pencereye native pencere KİMLİĞİ kazandırır.
+    """Gives the frameless window a native window IDENTITY.
 
-    WS_CAPTION şart: Aero snap / kenara yapıştırma konumunu Windows yalnız
-    başlıklı (caption'lı) pencerelerde doğru uygular. Görsel OS şeridi
-    kabuğun WM_NCCALCSIZE üst-yutmasıyla silinir; stil bayrağı yerinde kalır.
+    WS_CAPTION is a must: Windows applies the Aero snap / edge-snap position
+    correctly only to captioned windows. The visual OS strip is erased by
+    the shell's WM_NCCALCSIZE top-swallow; the style flag stays in place.
 
-    THICKFRAME + MIN/MAXIMIZEBOX + SYSMENU: kenar resize, Win+ok, görev
-    çubuğu animasyonları. Win11 köşeleri yuvarlatılır.
+    THICKFRAME + MIN/MAXIMIZEBOX + SYSMENU: edge resize, Win+arrow, taskbar
+    animations. Win11 rounds the corners.
     """
     if sys.platform != "win32":
         return True
     try:
-        # GİZLİ pencere de hedef: uygulama tepsiye açıldığında (pencere
-        # gizli doğar) görünürlük süzgeci hiçbir şey bulamıyordu ve
-        # `_titlebar_boot` altı saniye deneyip vazgeçiyordu — kabuk hiç
-        # kurulmuyor, pencere sonradan gösterilince Windows'un kendi
-        # başlık çubuğu uygulamanın şeridinin ÜSTÜNDE kalıyordu
-        # (canlı yara, 02.09: "üstte iki şerit").
+        # The HIDDEN window is a target too: when the app opened into the
+        # tray (the window is born hidden) the visibility filter found
+        # nothing and `_titlebar_boot` tried for six seconds and gave up —
+        # the shell was never installed, and when the window was shown later
+        # Windows' own title bar stayed ON TOP of the app's strip (live
+        # wound, 02.09: "two strips at the top").
         targets = _dornick_windows(gizli_de=True)
         if not targets:
             return False
@@ -4122,7 +4227,7 @@ _WM_SYSCOMMAND = 0x0112
 _SC_MINIMIZE = 0xF020
 _SC_MAXIMIZE = 0xF030
 _SC_RESTORE = 0xF120
-# Kenar HT* — SC_SIZE FormBorderStyle.None'da ölüydü; NCLBUTTONDOWN çalışıyor.
+# Edge HT* — SC_SIZE was dead under FormBorderStyle.None; NCLBUTTONDOWN works.
 _HT_EDGES = {
     "l": 10, "r": 11, "t": 12, "tl": 13, "tr": 14,
     "b": 15, "bl": 16, "br": 17,
@@ -4144,15 +4249,17 @@ def _is_zoomed(window: Any | None = None) -> bool:
 
 
 def _win_do(action: str, window: Any | None = None) -> bool:
-    """Pencere eylemleri app şeridinden: sürükle / küçült / büyüt / geri al.
+    """Window actions from the app strip: drag / minimise / maximise / restore.
 
-    Sürükleme WM_NCLBUTTONDOWN + HTCAPTION: OS taşıma döngüsü (Aero snap dahil).
-    JS köprüsü başka thread'den gelir — SendMessage'i WinForms UI thread'inde
-    BeginInvoke ile çalıştırıyoruz; aksi halde fare basılıyken döngü hiç
-    başlamıyor (kullanıcı 'üst bardan tutup sürükleyemiyorum').
+    Dragging is WM_NCLBUTTONDOWN + HTCAPTION: the OS move loop (Aero snap
+    included). The JS bridge comes from another thread — we run SendMessage
+    on the WinForms UI thread via BeginInvoke; otherwise the loop never
+    starts while the mouse is down (user: 'I can't grab the top bar and
+    drag').
 
-    SendMessageW / ReleaseCapture özel `_user32()` handle'ından: paylaşılan
-    ctypes.windll argtypes'ı pywebview/pystray bozunca çağrı sessizce ölüyordu.
+    SendMessageW / ReleaseCapture from the private `_user32()` handle: when
+    pywebview/pystray corrupted the shared ctypes.windll argtypes the call
+    died silently.
     """
     if sys.platform != "win32":
         return False
@@ -4194,7 +4301,7 @@ def _win_do(action: str, window: Any | None = None) -> bool:
             u.SendMessageW(hwnd, _WM_NCLBUTTONDOWN, edge, 0)
 
         def _on_ui(fn) -> None:
-            """Taşıma/boyutlandırma döngüsü UI thread'inde başlamalı."""
+            """The move/resize loop must start on the UI thread."""
             win = window if window is not None else _MAIN_WINDOW
             form = getattr(win, "native", None) if win is not None else None
             if form is not None:
@@ -4226,15 +4333,15 @@ def _win_do(action: str, window: Any | None = None) -> bool:
 
 
 def _dornick_windows(*, gizli_de: bool = False) -> list[int]:
-    """Bu süreçte 'dornick' başlıklı görünür top-level pencerelerin HWND'leri.
+    """HWNDs of the visible top-level windows titled 'dornick' in this process.
 
-    FindWindowW(None, title) tek bir eşleşme döndürüyor ve bazı kurulumlarda
-    hiç bulamıyordu; EnumWindows tüm eşleşmeleri güvenle veriyor (canlı
-    pencerede kanıtlandı).
+    FindWindowW(None, title) returns a single match and on some setups found
+    nothing at all; EnumWindows reliably gives every match (proven on the
+    live window).
 
-    `gizli_de=True` görünürlük süzgecini kaldırıyor: pencere tepsiye
-    gizlenmişken de bir sahip (owner) HWND'sine ihtiyaç duyan tek yer
-    `_confirm_quit` — ve tam o an pencere gizli oluyor.
+    `gizli_de=True` lifts the visibility filter: the one place that needs an
+    owner HWND even while the window is hidden to the tray is `_confirm_quit`
+    — and at exactly that moment the window is hidden.
     """
     import ctypes
     from ctypes import wintypes
@@ -4247,9 +4354,10 @@ def _dornick_windows(*, gizli_de: bool = False) -> list[int]:
     def _enum(hwnd, _lparam):
         if not gizli_de and not user32.IsWindowVisible(hwnd):
             return True
-        # YALNIZCA bu sürecin penceresi: iki dornick örneği açıkken (ya da bir
-        # test örneği varken) düğmeler ÖTEKİ örneğin penceresini yönetiyordu —
-        # "basıyorum, olmuyor / başka bir şey oluyor" tam buydu.
+        # ONLY this process's window: with two dornick instances open (or a
+        # test instance around) the buttons were driving the OTHER instance's
+        # window — "I press, nothing happens / something else happens" was
+        # exactly this.
         owner = wintypes.DWORD()
         user32.GetWindowThreadProcessId(hwnd, ctypes.byref(owner))
         if owner.value != my_pid:
@@ -4268,17 +4376,17 @@ def _dornick_windows(*, gizli_de: bool = False) -> list[int]:
 
 
 def paint_titlebar(dark: bool = True) -> bool:
-    """Native başlık çubuğunu uygulamanın temasına boyar (Windows 11 DWM).
+    """Paints the native title bar in the app's theme (Windows 11 DWM).
 
-    Native çerçeve normal pencere davranışını (taşı/büyüt/resize/snap) veriyor
-    ama işletim sisteminin açık başlık çubuğu koyu holografik gövdeyle
-    çelişiyordu ("bu yukarı sistemle uyumsuz oldu"). DWM ile başlık çubuğunu
-    koyu/açık yapıyoruz; arayüzdeki tema düğmesi de bunu çağırıyor ki OS çubuğu
-    ile uygulama teması birlikte dönsün. Pencere henüz yoksa False döner ki
-    çağıran tekrar denesin.
+    The native frame gives normal window behaviour (move/maximise/resize/
+    snap) but the operating system's light title bar clashed with the dark
+    holographic body ("this top part became inconsistent with the system").
+    We make the title bar dark/light through DWM; the theme button in the UI
+    calls this too so the OS bar and the app theme turn together. Returns
+    False if the window doesn't exist yet so the caller retries.
     """
     if sys.platform != "win32":
-        return True   # başka platformda yapılacak bir şey yok, "tamam" say
+        return True   # nothing to do on another platform, count it as "done"
     try:
         import ctypes
 
@@ -4286,22 +4394,23 @@ def paint_titlebar(dark: bool = True) -> bool:
         dwm = ctypes.windll.dwmapi
         targets = _dornick_windows()
         if not targets:
-            return False   # pencere henüz oluşmadı — çağıran tekrar denesin
+            return False   # the window doesn't exist yet — the caller retries
 
         def _set(hwnd: int, attr: int, value: int) -> None:
             v = ctypes.c_int(value)
             dwm.DwmSetWindowAttribute(hwnd, attr, ctypes.byref(v), ctypes.sizeof(v))
 
         for hwnd in targets:
-            # Immersive dark mode — hem yeni (20) hem eski (19) indeks; hangisi
-            # bu yapıda geçerliyse o tutuyor.
+            # Immersive dark mode — both the new (20) and the old (19) index;
+            # whichever is valid on this build sticks.
             for attr in (20, 19):
                 _set(hwnd, attr, 1 if dark else 0)
-            # Tam renk (Win11 22000+): COLORREF 0x00BBGGRR. Koyu #0b0e14/#dceefc,
-            # açık #e7edf4/#1a2836. Eski yapıda sessizce yok sayılır.
-            _set(hwnd, 35, 0x00140E0B if dark else 0x00F4EDE7)  # caption zemini
-            _set(hwnd, 36, 0x00FCEEDC if dark else 0x0036281A)  # başlık yazısı
-            # Başlık çubuğunu hemen yeniden çizmeye zorla (FRAMECHANGED).
+            # Full colour (Win11 22000+): COLORREF 0x00BBGGRR. Dark
+            # #0b0e14/#dceefc, light #e7edf4/#1a2836. Silently ignored on
+            # an older build.
+            _set(hwnd, 35, 0x00140E0B if dark else 0x00F4EDE7)  # caption background
+            _set(hwnd, 36, 0x00FCEEDC if dark else 0x0036281A)  # title text
+            # Force the title bar to redraw at once (FRAMECHANGED).
             user32.SetWindowPos(hwnd, 0, 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0004 | 0x0020)
         return True
     except Exception:
@@ -4316,17 +4425,17 @@ def _minimize(window: Any) -> Any:
 
 
 def _work_area() -> tuple[int, int, int, int] | None:
-    """Ekranın görev çubuğu hariç alanı (x, y, genişlik, yükseklik)."""
+    """The screen area excluding the taskbar (x, y, width, height)."""
     return prefs.work_area()
 
 
 def _force_maximize() -> None:
-    """Çalışma alanına oturt — native SW_MAXIMIZE çerçevesizde kaydırıyordu.
+    """Seat on the work area — the native SW_MAXIMIZE drifted when frameless.
 
-    create_window(maximized=True) / ShowWindow(SW_MAXIMIZE) IsZoomed=True
-    bırakıp HWND'yi (101,101) gibi bırakıyordu (sol masaüstü boşluğu).
-    Küçült/geri aç düzeltiyordu. Açılışta doğrudan work-area kutusu
-    veriyoruz; prefs `maximized` bayrağı _remember_window ile korunur.
+    create_window(maximized=True) / ShowWindow(SW_MAXIMIZE) left IsZoomed=True
+    and left the HWND at something like (101,101) (desktop gap on the left).
+    Minimise/restore fixed it. At boot we give the work-area box directly;
+    the prefs `maximized` flag is preserved by _remember_window.
     """
     if sys.platform != "win32":
         return
@@ -4346,7 +4455,7 @@ def _force_maximize() -> None:
             return
         ax, ay, aw, ah = area
         _update_max_bounds()
-        # SW_RESTORE: önceki bozuk zoom state'ini bırak.
+        # SW_RESTORE: let go of the previous broken zoom state.
         if raw.IsZoomed(hwnd):
             raw.ShowWindow(hwnd, 9)
         # SWP_NOZORDER|SWP_SHOWWINDOW
@@ -4364,11 +4473,12 @@ def _force_maximize() -> None:
 
 
 def _monitor_work_area(hwnd: int) -> tuple[int, int, int, int] | None:
-    """Pencerenin ÜZERİNDE olduğu monitörün çalışma alanı.
+    """Work area of the monitor the window is ON.
 
-    `prefs.work_area` yalnız ANA monitörü bilir; ikinci monitörde büyütülmüş
-    bir pencereyi "kaymış" sanıp ana ekrana çekmek olmaz — kıyas pencerenin
-    kendi monitörüne göre yapılmalı.
+    `prefs.work_area` only knows the PRIMARY monitor; a window maximised on
+    the second monitor must not be taken for "offset" and dragged to the
+    primary screen — the comparison must be against the window's own
+    monitor.
     """
     if sys.platform != "win32" or not hwnd:
         return None
@@ -4399,16 +4509,18 @@ def _monitor_work_area(hwnd: int) -> tuple[int, int, int, int] | None:
 
 
 def _heal_geometry() -> bool:
-    """Kaymış büyütmeyi yakalayıp oturtur — "küçült/geri aç" jestinin kod hali.
+    """Catches an offset maximise and seats it — the "minimise/restore" gesture in code.
 
-    Canlı yara (31.08): açılışta pencere near-full boyutta ama (100,100) gibi
-    kaymış geliyordu — sol/üstten masaüstü sızıyor, zoom'luysa içerik de sola
-    kırpılıyordu; kullanıcı elle küçültüp geri açınca düzeliyordu. Burada aynı
-    jest kodla: kaymış zoom ya da kaymış near-full kutu görülürse restore +
-    pencerenin KENDİ monitörünün çalışma alanına oturt.
+    Live wound (31.08): at boot the window came near-full size but offset to
+    something like (100,100) — desktop leaking from the left/top, and if
+    zoomed the content was clipped to the left too; it fixed itself when the
+    user minimised and restored by hand. Here the same gesture in code: if an
+    offset zoom or an offset near-full box is seen, restore + seat on the
+    work area of the window's OWN monitor.
 
-    Düzgün pencereye dokunmaz; sürükleme sırasında da karışmaz (sol fare tuşu
-    basılıysa hiçbir şey yapmaz). Döner: bir şey düzeltildi mi.
+    Doesn't touch a proper window; doesn't interfere during a drag either
+    (does nothing while the left mouse button is down). Returns whether
+    anything was fixed.
     """
     if sys.platform != "win32":
         return False
@@ -4423,7 +4535,7 @@ def _heal_geometry() -> bool:
             hwnd = targets[0] if targets else 0
         if not hwnd or not raw.IsWindowVisible(hwnd) or raw.IsIconic(hwnd):
             return False
-        if raw.GetAsyncKeyState(0x01) & 0x8000:   # sürükleme olabilir
+        if raw.GetAsyncKeyState(0x01) & 0x8000:   # may be a drag
             return False
 
         r = wintypes.RECT()
@@ -4435,17 +4547,17 @@ def _heal_geometry() -> bool:
         if not area:
             return False
         ax, ay, aw, ah = area
-        kaymis = (abs(x - ax) > prefs.OFFSET_SLACK
-                  or abs(y - ay) > prefs.OFFSET_SLACK)
+        shifted = (abs(x - ax) > prefs.OFFSET_SLACK
+                   or abs(y - ay) > prefs.OFFSET_SLACK)
         if raw.IsZoomed(hwnd):
-            if not kaymis:
+            if not shifted:
                 return False
         elif not prefs.offset_fullscreen(x, y, w, h, area):
             return False
 
         _update_max_bounds()
         if raw.IsZoomed(hwnd):
-            raw.ShowWindow(hwnd, 9)   # SW_RESTORE: bozuk zoom durumunu bırak
+            raw.ShowWindow(hwnd, 9)   # SW_RESTORE: let go of the broken zoom state
         # SWP_NOZORDER | SWP_SHOWWINDOW
         raw.SetWindowPos(hwnd, 0, ax, ay, aw, ah, 0x0004 | 0x0040)
         return True
@@ -4454,22 +4566,23 @@ def _heal_geometry() -> bool:
 
 
 def _geometry_watch(seconds: float = 12.0) -> None:
-    """Açılıştan sonra pencere kutusunu kısa süre kollar.
+    """Keeps an eye on the window box for a short while after boot.
 
-    Bozuk büyütme `_force_maximize`'dan SONRA da oluşabiliyor (WebView2 /
-    pywebview açılışı konumu geç oynatıyor); tek atış yetmiyordu — kullanıcı
-    pencereyi kesik görüp elle küçültüp açıyordu. Bu nöbet geç bozulmayı
-    yakalayıp düzeltir, sonra kendiliğinden biter.
+    A broken maximise can also occur AFTER `_force_maximize` (the WebView2 /
+    pywebview start-up moves the position late); a single shot was not
+    enough — the user saw the window clipped and minimised/reopened it by
+    hand. This watch catches the late breakage and fixes it, then ends on
+    its own.
     """
     import time
-    son = time.monotonic() + seconds
-    while time.monotonic() < son:
+    until = time.monotonic() + seconds
+    while time.monotonic() < until:
         time.sleep(0.6)
         _heal_geometry()
 
 
 def _fills_work_area(x: int, y: int, w: int, h: int) -> bool:
-    """Pencere çalışma alanını dolduruyor mu (fake maximize)."""
+    """Does the window fill the work area (fake maximise)."""
     area = _work_area()
     if not area:
         return False
@@ -4483,7 +4596,7 @@ def _fills_work_area(x: int, y: int, w: int, h: int) -> bool:
 
 
 def _clamp_window_to_work() -> None:
-    """Büyütülmemiş pencere çalışma alanı dışındaysa içeri çek."""
+    """If the un-maximised window is outside the work area, pull it inside."""
     if sys.platform != "win32":
         return
     try:
@@ -4524,14 +4637,14 @@ def _clamp_window_to_work() -> None:
 
 
 def _maximize(window: Any) -> Any:
-    """Büyüt / geri al — görev çubuğuna saygılı (tam ekran değil).
+    """Maximise / restore — respectful of the taskbar (not full screen).
 
-    Çerçevesiz pencerede `window.maximize()` görev çubuğunu da kaplayan bir
-    tam ekran veriyordu. Onun yerine pencereyi ekranın çalışma alanına (görev
-    çubuğu hariç) taşıyıp boyutlandırıyoruz; ikinci tık önceki konum/boyuta
-    döndürüyor. Böylece hem "büyütüyor ama küçültmüyor" hem de "görev çubuğunu
-    kaptı" sorunları birlikte çözülüyor. Çalışma alanı alınamazsa (Windows
-    dışı ya da hata) `maximize()`'e düşülüyor.
+    On a frameless window `window.maximize()` gave a full screen that covered
+    the taskbar too. Instead we move and resize the window to the screen's
+    work area (taskbar excluded); a second click returns to the previous
+    position/size. That solves both "it maximises but won't shrink back" and
+    "it grabbed the taskbar" together. If the work area can't be obtained
+    (non-Windows or an error) it falls back to `maximize()`.
     """
     state: dict[str, Any] = {"box": None}
 
@@ -4566,11 +4679,11 @@ def _maximize(window: Any) -> Any:
 
 
 def _close(window: Any, *, tray: bool = False) -> Any:
-    """Kapatma düğmesi.
+    """The close button.
 
-    Tepsi çalışıyorsa gizliyor: arka plandaki işler sürsün. Tepsi yoksa
-    gerçekten kapatıyor — aksi halde program kapanmaz hale gelirdi ve
-    kullanıcının onu görev yöneticisinden öldürmesi gerekirdi.
+    If the tray is running it hides: the background jobs go on. Without a
+    tray it really closes — otherwise the program could never be shut down
+    and the user would have to kill it from the task manager.
     """
 
     def close() -> None:
@@ -4588,18 +4701,18 @@ def _wake(window: Any) -> Any:
 
 
 def _confirm_quit(question: str) -> bool:
-    """Çıkış onayı: native Evet/Hayır penceresi (tepsi thread'inden güvenli).
+    """Exit confirmation: a native Yes/No dialog (safe from the tray thread).
 
-    Pencere gizliyken de görünmesi gerekiyor; MB_TOPMOST + MB_SETFOREGROUND
-    onu öne getiriyor. Windows dışı ya da diyalog kurulamayan durumda True:
-    kullanıcının açık Çıkış jesti "çıkamıyorum" tuzağına dönüşmesin.
+    It has to show even while the window is hidden; MB_TOPMOST +
+    MB_SETFOREGROUND bring it forward. Off Windows, or when the dialog can't
+    be built, True: the user's explicit Exit gesture must not turn into the
+    "I can't quit" trap.
 
-    SAHİP pencere veriliyor. Sahipsiz (hWnd=0) bir MessageBox kendi görev
-    çubuğu düğmesini alıyor ve o düğmenin simgesi uygulamanınki değil,
-    sürecin varsayılanı — yani Python'un yılan simgesi — oluyordu. Sahipli
-    bir kutu ayrı düğme açmıyor. Pencere bulunamazsa (henüz doğmamış ya da
-    yok edilmiş) 0'a düşüyoruz: yanlış simgeli bir soru, sorulmayan bir
-    sorudan iyidir.
+    An OWNER window is given. An ownerless (hWnd=0) MessageBox gets its own
+    taskbar button, and that button's icon was not the app's but the
+    process default — i.e. Python's snake. An owned box opens no separate
+    button. If no window is found (not born yet or destroyed) we fall back to
+    0: a question with the wrong icon beats a question never asked.
     """
     if sys.platform != "win32":
         return True
@@ -4612,11 +4725,11 @@ def _confirm_quit(question: str) -> bool:
         MB_SETFOREGROUND = 0x00010000
         IDYES = 6
         try:
-            sahipler = _dornick_windows(gizli_de=True)
+            owners = _dornick_windows(gizli_de=True)
         except Exception:
-            sahipler = []
+            owners = []
         answer = ctypes.windll.user32.MessageBoxW(
-            sahipler[0] if sahipler else 0, question, WINDOW_TITLE,
+            owners[0] if owners else 0, question, WINDOW_TITLE,
             MB_YESNO | MB_ICONWARNING | MB_TOPMOST | MB_SETFOREGROUND,
         )
         return answer == IDYES
@@ -4635,14 +4748,14 @@ def _teardown(loop: asyncio.AbstractEventLoop, runtime: Runtime) -> None:
     if runtime.ear is not None:
         runtime.ear.stop()
     runtime.bridge.cancel_pending()
-    # Açık MCP oturumları alt süreç tutuyor; kapatılmazsa hayalet kalıyor.
+    # Open MCP sessions hold child processes; left unclosed, ghosts remain.
     pool = getattr(runtime.server._httpd, "connectors", None)
     if pool is not None:
         pool.close()
     runtime.server.stop()
     runtime.session.close()
 
-    # Model yapılandırılmamış açılışta istemci hiç kurulmadı (bkz. _boot).
+    # On a model-less boot the client was never built (see _boot).
     if runtime.client is not None:
         closing = asyncio.run_coroutine_threadsafe(runtime.client.close(), loop)
         try:

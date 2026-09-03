@@ -1,17 +1,18 @@
-"""Enjekte edilebilir saat.
+"""Injectable clock.
 
-Hafıza zamanla çalışıyor: bir kaydın ne kadar hatırlanacağı, ne zaman
-yazıldığına ve en son ne zaman kullanıldığına bakıyor. Bu, ölçülemez bir
-tasarım tuzağı taşır — `datetime.now()` doğrudan çağrılırsa "otuz gün sonra
-ne olur" sorusu ancak otuz gün beklenerek yanıtlanabilir.
+Memory runs on time: how well a record is remembered depends on when it was
+written and when it was last used. That carries an unmeasurable design trap —
+if `datetime.now()` is called directly, the question "what happens thirty
+days from now" can only be answered by waiting thirty days.
 
-Bu yüzden zamanı okuyan tek bir yer var ve orası dışarıdan verilebiliyor.
-Ürün varsayılanı duvar saati; yaşam benchmark'ı (eval/context_memory/
-yasam_bench.py) yerine sanal bir takvim koyup doksan günü saniyeler içinde
-oynatıyor. Ürün davranışı değişmiyor, ölçülebilirlik açılıyor.
+So there is a single place that reads the time, and it can be supplied from
+outside. The product default is the wall clock; the life benchmark
+(eval/context_memory/life_bench.py) puts a virtual calendar in its place and
+plays ninety days in seconds. Product behaviour does not change,
+measurability opens up.
 
-Kural: `recall/store.py` ve `mind/store.py` içinde `datetime.now()` doğrudan
-çağrılmaz — `tests/test_saat.py` bunu zorluyor.
+Rule: `datetime.now()` is not called directly inside `recall/store.py` and
+`mind/store.py` — `tests/test_clock.py` enforces it.
 """
 
 from __future__ import annotations
@@ -19,37 +20,37 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Callable
 
-# Saat: argümansız çağrılıp "şu an"ı veren şey. Zaman dilimi bilgisi taşıması
-# şart — naif bir damga ile UTC damgasını çıkarmak sessizce yanlış aralık
-# üretir.
+# Clock: something called with no arguments that gives "now". It must carry
+# timezone information — subtracting a UTC stamp from a naive one silently
+# produces a wrong interval.
 Clock = Callable[[], datetime]
 
 
 def wall_clock() -> datetime:
-    """Ürünün varsayılan saati: gerçek zaman, UTC."""
+    """The product's default clock: real time, UTC."""
     return datetime.now(timezone.utc)
 
 
 def stamp(clock: Clock) -> str:
-    """Diske yazılan biçim.
+    """The format written to disk.
 
-    Milisaniye çözünürlük: aynı saniye içinde yazılan iki kaydın sırası
-    kaybolmasın (tazelik sıralaması buna bakıyor).
+    Millisecond resolution: the order of two records written within the same
+    second must not be lost (the recency ranking depends on it).
     """
     return clock().isoformat(timespec="milliseconds")
 
 
-def parse(metin: str | None) -> datetime | None:
-    """Diskteki damgayı geri okur; tanınmayan biçimde None.
+def parse(text: str | None) -> datetime | None:
+    """Reads back an on-disk stamp; None for an unrecognised format.
 
-    Zaman dilimi olmadan yazılmış eski damgalar (bu sürümden önceki bir
-    hatanın kalıntısı ya da elle düzenlenmiş bir db) UTC sayılıyor —
-    aksi halde naif ve bilinçli damgaların karşılaştırması patlar.
+    Old stamps written without a timezone (the residue of a bug before this
+    version, or a hand-edited db) are taken as UTC — otherwise comparing naive
+    and aware stamps blows up.
     """
-    if not metin:
+    if not text:
         return None
     try:
-        an = datetime.fromisoformat(metin)
+        moment = datetime.fromisoformat(text)
     except ValueError:
         return None
-    return an if an.tzinfo else an.replace(tzinfo=timezone.utc)
+    return moment if moment.tzinfo else moment.replace(tzinfo=timezone.utc)

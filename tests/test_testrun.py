@@ -1,20 +1,20 @@
-"""Proje test koşucusu: ajan yazdığı kodu gerçekten çalıştırıyor mu?
+"""Project test runner: does the agent really run the code it wrote?
 
-Sınanan vaat: `denetle` sözdizimine bakar, `kos` kodu ÇALIŞTIRIR. Aradaki
-boşluk kullanıcının ekranında patlayan hata sınıfıydı —
+The promise under test: `denetle` looks at syntax, `kos` RUNS the code. The
+gap between them was the class of error that blew up on the user's screen —
 
     public function index(): string { return redirect(); }
 
-`php -l` bunu temiz bulur, tarayıcı TypeError verir.
+`php -l` finds this clean, the browser gives a TypeError.
 
-Üç şey ayrı ayrı doğrulanıyor:
+Three things are verified separately:
 
-  1. TESPİT kanıta dayalı: yapılandırma dosyası yoksa komut da yok. Uydurma
-     komut, olmayan bir güvenceden beter.
-  2. NORMALLEŞTİRME gerçek çıktı metinleriyle sınanıyor — pytest, phpunit,
-     jest, mocha, go, cargo, dotnet bu makinede kurulu olmasa da çıktılarını
-     doğru okuduğumuzu ancak böyle kanıtlayabiliyoruz.
-  3. DÜRÜSTLÜK: hiçbir metin "her şey çalışıyor" demiyor.
+  1. DETECTION is evidence-based: no configuration file, no command. An
+     invented command is worse than a missing guarantee.
+  2. NORMALISATION is tested with real output texts — pytest, phpunit, jest,
+     mocha, go, cargo, dotnet may not be installed on this machine, and this
+     is the only way to prove we read their output correctly.
+  3. HONESTY: no text says "everything works".
 """
 
 from __future__ import annotations
@@ -32,7 +32,7 @@ from dornick.config import Config
 from dornick.events import EventLog
 from dornick.session import Session
 from dornick.tools import ToolContext, ToolRegistry
-from dornick.tools import runner as kos_tools
+from dornick.tools import runner as run_tools
 
 
 @pytest.fixture()
@@ -49,33 +49,33 @@ def ctx(tmp_path: Path) -> ToolContext:
 @pytest.fixture()
 def registry() -> ToolRegistry:
     reg = ToolRegistry()
-    kos_tools.register(reg)
+    run_tools.register(reg)
     return reg
 
 
 @pytest.fixture(autouse=True)
-def temiz_hafiza():
-    """Modül düzeyindeki "son dokunulan proje" testler arasında sızmasın."""
-    testrun.unut()
+def clean_memory():
+    """The module-level "last touched project" must not leak between tests."""
+    testrun.forget()
     yield
-    testrun.unut()
+    testrun.forget()
 
 
 async def call(registry: ToolRegistry, ctx: ToolContext, **args):
     return await registry.get("kos").handler(args, ctx)
 
 
-# -- tespit: python -----------------------------------------------------
+# -- detection: python --------------------------------------------------
 
 
 def test_pytest_ini_is_evidence(tmp_path: Path) -> None:
     (tmp_path / "pytest.ini").write_text("[pytest]\n", encoding="utf-8")
-    duzenek = testrun.tespit(tmp_path)
-    assert duzenek is not None
-    assert duzenek.ekosistem == "python"
-    assert duzenek.argv[1:] == ["-m", "pytest", "-q"]
-    assert duzenek.kanit == "pytest.ini"
-    assert duzenek.guven == 2
+    harness = testrun.tespit(tmp_path)
+    assert harness is not None
+    assert harness.ekosistem == "python"
+    assert harness.argv[1:] == ["-m", "pytest", "-q"]
+    assert harness.kanit == "pytest.ini"
+    assert harness.guven == 2
 
 
 def test_pyproject_pytest_section_is_evidence(tmp_path: Path) -> None:
@@ -83,13 +83,13 @@ def test_pyproject_pytest_section_is_evidence(tmp_path: Path) -> None:
         '[project]\nname = "x"\n\n[tool.pytest.ini_options]\ntestpaths = ["tests"]\n',
         encoding="utf-8",
     )
-    duzenek = testrun.tespit(tmp_path)
-    assert duzenek is not None and duzenek.ekosistem == "python"
-    assert "pyproject.toml" in duzenek.kanit
+    harness = testrun.tespit(tmp_path)
+    assert harness is not None and harness.ekosistem == "python"
+    assert "pyproject.toml" in harness.kanit
 
 
 def test_pyproject_without_pytest_is_not_evidence(tmp_path: Path) -> None:
-    """pyproject'in varlığı pytest'in varlığı değildir."""
+    """The presence of a pyproject is not the presence of pytest."""
     (tmp_path / "pyproject.toml").write_text('[project]\nname = "x"\n', encoding="utf-8")
     assert testrun.tespit(tmp_path) is None
 
@@ -97,12 +97,12 @@ def test_pyproject_without_pytest_is_not_evidence(tmp_path: Path) -> None:
 def test_tests_folder_is_weaker_evidence(tmp_path: Path) -> None:
     (tmp_path / "tests").mkdir()
     (tmp_path / "tests" / "test_a.py").write_text("def test_a(): pass\n", encoding="utf-8")
-    duzenek = testrun.tespit(tmp_path)
-    assert duzenek is not None and duzenek.guven == 1
+    harness = testrun.tespit(tmp_path)
+    assert harness is not None and harness.guven == 1
 
 
 def test_tests_folder_without_test_files_is_not_evidence(tmp_path: Path) -> None:
-    """`tests/` altında belge de durabiliyor; test dosyası yoksa kanıt yok."""
+    """Documents can live under `tests/` too; without a test file there is no evidence."""
     (tmp_path / "tests").mkdir()
     (tmp_path / "tests" / "veriler.json").write_text("{}", encoding="utf-8")
     (tmp_path / "tests" / "yardimci.py").write_text("x = 1\n", encoding="utf-8")
@@ -111,49 +111,49 @@ def test_tests_folder_without_test_files_is_not_evidence(tmp_path: Path) -> None
 
 def test_python_command_matches_platform(tmp_path: Path) -> None:
     (tmp_path / "pytest.ini").write_text("[pytest]\n", encoding="utf-8")
-    duzenek = testrun.tespit(tmp_path)
-    beklenen = "py -m pytest -q" if sys.platform == "win32" else "python3 -m pytest -q"
-    assert duzenek is not None and duzenek.etiket == beklenen
+    harness = testrun.tespit(tmp_path)
+    expected = "py -m pytest -q" if sys.platform == "win32" else "python3 -m pytest -q"
+    assert harness is not None and harness.etiket == expected
 
 
-# -- tespit: node -------------------------------------------------------
+# -- detection: node ----------------------------------------------------
 
 
-def _paket(tmp_path: Path, betikler: dict) -> None:
+def _package(tmp_path: Path, scripts: dict) -> None:
     (tmp_path / "package.json").write_text(
-        json.dumps({"name": "x", "scripts": betikler}), encoding="utf-8")
+        json.dumps({"name": "x", "scripts": scripts}), encoding="utf-8")
 
 
 def test_package_json_test_script_is_evidence(tmp_path: Path) -> None:
-    _paket(tmp_path, {"test": "jest", "build": "vite build", "dev": "vite"})
+    _package(tmp_path, {"test": "jest", "build": "vite build", "dev": "vite"})
     (tmp_path / "node_modules").mkdir()
-    duzenek = testrun.tespit(tmp_path)
-    assert duzenek is not None
-    assert duzenek.ekosistem == "node" and duzenek.etiket == "npm test"
-    assert "scripts.test = jest" in duzenek.kanit
-    # build/dev komut olarak önerilmiyor ama model bilsin diye not düşülüyor.
-    assert any("build" in n and "dev" in n for n in duzenek.notlar)
+    harness = testrun.tespit(tmp_path)
+    assert harness is not None
+    assert harness.ekosistem == "node" and harness.etiket == "npm test"
+    assert "scripts.test = jest" in harness.kanit
+    # build/dev are not offered as commands but noted so the model knows.
+    assert any("build" in n and "dev" in n for n in harness.notlar)
 
 
 def test_npm_placeholder_test_script_is_not_evidence(tmp_path: Path) -> None:
-    """`npm init`in bıraktığı yer tutucu bir test düzeneği değildir."""
-    _paket(tmp_path, {"test": 'echo "Error: no test specified" && exit 1'})
+    """The placeholder `npm init` leaves behind is not a test setup."""
+    _package(tmp_path, {"test": 'echo "Error: no test specified" && exit 1'})
     assert testrun.tespit(tmp_path) is None
 
 
 def test_package_json_without_test_script_is_not_evidence(tmp_path: Path) -> None:
-    _paket(tmp_path, {"build": "vite build"})
+    _package(tmp_path, {"build": "vite build"})
     assert testrun.tespit(tmp_path) is None
 
 
 def test_missing_node_modules_is_reported_not_prescribed(tmp_path: Path) -> None:
-    """Bağımlılık yoksa BİLDİRİLİR; kurulum önerilmez."""
-    _paket(tmp_path, {"test": "jest"})
-    duzenek = testrun.tespit(tmp_path)
-    assert duzenek is not None
-    assert not duzenek.kosulabilir
-    assert "node_modules" in duzenek.engel
-    assert "npm install" not in duzenek.engel.lower()
+    """Missing dependencies are REPORTED; installing is not prescribed."""
+    _package(tmp_path, {"test": "jest"})
+    harness = testrun.tespit(tmp_path)
+    assert harness is not None
+    assert not harness.kosulabilir
+    assert "node_modules" in harness.engel
+    assert "npm install" not in harness.engel.lower()
 
 
 def test_broken_package_json_is_not_evidence(tmp_path: Path) -> None:
@@ -161,37 +161,37 @@ def test_broken_package_json_is_not_evidence(tmp_path: Path) -> None:
     assert testrun.tespit(tmp_path) is None
 
 
-# -- tespit: php --------------------------------------------------------
+# -- detection: php -----------------------------------------------------
 
 
-@pytest.mark.parametrize("ad", ["phpunit.xml", "phpunit.xml.dist", "phpunit.dist.xml"])
-def test_phpunit_configuration_names(tmp_path: Path, ad: str) -> None:
-    """CodeIgniter 4 `phpunit.dist.xml` kullanıyor — üç ad da tanınmalı."""
-    (tmp_path / ad).write_text("<phpunit/>", encoding="utf-8")
+@pytest.mark.parametrize("name", ["phpunit.xml", "phpunit.xml.dist", "phpunit.dist.xml"])
+def test_phpunit_configuration_names(tmp_path: Path, name: str) -> None:
+    """CodeIgniter 4 uses `phpunit.dist.xml` — all three names must be recognised."""
+    (tmp_path / name).write_text("<phpunit/>", encoding="utf-8")
     (tmp_path / "vendor" / "bin").mkdir(parents=True)
     (tmp_path / "vendor" / "bin" / "phpunit").write_text("#!/usr/bin/env php\n",
                                                          encoding="utf-8")
-    duzenek = testrun.tespit(tmp_path)
-    assert duzenek is not None
-    assert duzenek.ekosistem == "php"
-    assert duzenek.etiket == "php vendor/bin/phpunit"
-    assert duzenek.kosulabilir
+    harness = testrun.tespit(tmp_path)
+    assert harness is not None
+    assert harness.ekosistem == "php"
+    assert harness.etiket == "php vendor/bin/phpunit"
+    assert harness.kosulabilir
 
 
 def test_phpunit_config_without_vendor_is_blocked(tmp_path: Path) -> None:
     (tmp_path / "phpunit.xml").write_text("<phpunit/>", encoding="utf-8")
-    duzenek = testrun.tespit(tmp_path)
-    assert duzenek is not None and not duzenek.kosulabilir
-    assert "vendor/bin/phpunit" in duzenek.engel
+    harness = testrun.tespit(tmp_path)
+    assert harness is not None and not harness.kosulabilir
+    assert "vendor/bin/phpunit" in harness.engel
 
 
 def test_spark_is_a_health_command_not_a_test_suite(tmp_path: Path) -> None:
-    """phpunit yoksa CI4'te ucuz sağlık komutu — ama test diye sunulmuyor."""
+    """Without phpunit a CI4 project gets a cheap health command — but not sold as a test."""
     (tmp_path / "spark").write_text("#!/usr/bin/env php\n", encoding="utf-8")
-    duzenek = testrun.tespit(tmp_path)
-    assert duzenek is not None
-    assert duzenek.tur == "saglik"
-    assert duzenek.etiket == "php spark routes"
+    harness = testrun.tespit(tmp_path)
+    assert harness is not None
+    assert harness.tur == "saglik"
+    assert harness.etiket == "php spark routes"
 
 
 def test_phpunit_beats_spark(tmp_path: Path) -> None:
@@ -199,45 +199,45 @@ def test_phpunit_beats_spark(tmp_path: Path) -> None:
     (tmp_path / "phpunit.dist.xml").write_text("<phpunit/>", encoding="utf-8")
     (tmp_path / "vendor" / "bin").mkdir(parents=True)
     (tmp_path / "vendor" / "bin" / "phpunit").write_text("x", encoding="utf-8")
-    duzenek = testrun.tespit(tmp_path)
-    assert duzenek is not None and duzenek.tur == "test"
+    harness = testrun.tespit(tmp_path)
+    assert harness is not None and harness.tur == "test"
 
 
-# -- tespit: go / rust / dotnet ----------------------------------------
+# -- detection: go / rust / dotnet -------------------------------------
 
 
 def test_go_mod(tmp_path: Path) -> None:
     (tmp_path / "go.mod").write_text("module example.com/x\n", encoding="utf-8")
-    duzenek = testrun.tespit(tmp_path)
-    assert duzenek is not None and duzenek.etiket == "go test ./..."
+    harness = testrun.tespit(tmp_path)
+    assert harness is not None and harness.etiket == "go test ./..."
 
 
 def test_cargo_toml(tmp_path: Path) -> None:
     (tmp_path / "Cargo.toml").write_text("[package]\nname = 'x'\n", encoding="utf-8")
-    duzenek = testrun.tespit(tmp_path)
-    assert duzenek is not None and duzenek.etiket == "cargo test"
+    harness = testrun.tespit(tmp_path)
+    assert harness is not None and harness.etiket == "cargo test"
 
 
 def test_dotnet_project(tmp_path: Path) -> None:
     (tmp_path / "Uygulama.csproj").write_text("<Project/>", encoding="utf-8")
-    duzenek = testrun.tespit(tmp_path)
-    assert duzenek is not None and duzenek.etiket == "dotnet test"
+    harness = testrun.tespit(tmp_path)
+    assert harness is not None and harness.etiket == "dotnet test"
 
 
-# -- tespit: hiçbiri ----------------------------------------------------
+# -- detection: none ----------------------------------------------------
 
 
 def test_empty_folder_yields_nothing(tmp_path: Path) -> None:
-    """En önemli test: kanıt yoksa komut da yok."""
+    """The most important test: no evidence, no command."""
     assert testrun.tespit(tmp_path) is None
     assert testrun.tespit_hepsi(tmp_path) == []
 
 
 def test_no_setup_message_refuses_to_invent(tmp_path: Path) -> None:
-    metin = testrun.tespit_metni(tmp_path)
-    assert "test düzeneği bulunamadı" in metin
-    assert "uydurmayacağım" in metin
-    assert "gerçekten çalıştır" in metin
+    text = testrun.tespit_metni(tmp_path)
+    assert "test düzeneği bulunamadı" in text
+    assert "uydurmayacağım" in text
+    assert "gerçekten çalıştır" in text
 
 
 def test_a_folder_of_source_files_alone_is_not_a_test_setup(tmp_path: Path) -> None:
@@ -247,39 +247,39 @@ def test_a_folder_of_source_files_alone_is_not_a_test_setup(tmp_path: Path) -> N
 
 
 def test_multiple_ecosystems_are_all_reported(tmp_path: Path) -> None:
-    """PHP arka uç + npm ile derlenen ön yüz: ikisi de görünmeli."""
+    """PHP back end + front end built with npm: both must show up."""
     (tmp_path / "phpunit.xml").write_text("<phpunit/>", encoding="utf-8")
     (tmp_path / "vendor" / "bin").mkdir(parents=True)
     (tmp_path / "vendor" / "bin" / "phpunit").write_text("x", encoding="utf-8")
-    _paket(tmp_path, {"test": "vitest"})
+    _package(tmp_path, {"test": "vitest"})
     (tmp_path / "node_modules").mkdir()
-    hepsi = testrun.tespit_hepsi(tmp_path)
-    assert {d.ekosistem for d in hepsi} == {"php", "node"}
+    all_found = testrun.tespit_hepsi(tmp_path)
+    assert {h.ekosistem for h in all_found} == {"php", "node"}
 
 
-# -- proje kökü ---------------------------------------------------------
+# -- project root -------------------------------------------------------
 
 
 def test_project_root_is_found_from_a_nested_file(tmp_path: Path) -> None:
-    """Model elindeki tek şeyi verir: az önce yazdığı dosyanın yolu."""
+    """The model gives the only thing it has: the path of the file it just wrote."""
     (tmp_path / "composer.json").write_text("{}", encoding="utf-8")
-    derin = tmp_path / "app" / "Controllers"
-    derin.mkdir(parents=True)
-    dosya = derin / "Home.php"
-    dosya.write_text("<?php", encoding="utf-8")
-    assert testrun.project_root(dosya) == tmp_path
+    deep = tmp_path / "app" / "Controllers"
+    deep.mkdir(parents=True)
+    file = deep / "Home.php"
+    file.write_text("<?php", encoding="utf-8")
+    assert testrun.project_root(file) == tmp_path
 
 
 def test_project_root_falls_back_to_the_folder_itself(tmp_path: Path) -> None:
-    """Hiçbir iz yoksa uydurma bir üst klasöre tırmanmıyoruz."""
-    derin = tmp_path / "a" / "b"
-    derin.mkdir(parents=True)
-    assert testrun.project_root(derin) == derin
+    """With no marker at all we do not climb to an invented parent."""
+    deep = tmp_path / "a" / "b"
+    deep.mkdir(parents=True)
+    assert testrun.project_root(deep) == deep
 
 
-# -- normalleştirme: pytest --------------------------------------------
+# -- normalisation: pytest ---------------------------------------------
 
-PYTEST_BASARISIZ = """\
+PYTEST_FAILING = """\
 ..F..                                                                    [100%]
 =================================== FAILURES ===================================
 _________________________________ test_toplama _________________________________
@@ -294,43 +294,43 @@ FAILED tests/test_hesap.py::test_toplama - assert 3 == 4
 1 failed, 4 passed in 0.42s
 """
 
-PYTEST_TEMIZ = """\
+PYTEST_CLEAN = """\
 .........................................................................
 978 passed, 3 skipped in 45.12s
 """
 
 
 def test_pytest_failure_output(tmp_path: Path) -> None:
-    sayim, basarisizlar = testrun.normalize("python", PYTEST_BASARISIZ)
-    assert (sayim.gecen, sayim.kalan, sayim.okundu) == (4, 1, True)
-    assert len(basarisizlar) == 1
-    assert basarisizlar[0].ad == "tests/test_hesap.py::test_toplama"
-    assert basarisizlar[0].mesaj == "assert 3 == 4"
-    assert basarisizlar[0].yer == "tests/test_hesap.py:12"
+    count, failures = testrun.normalize("python", PYTEST_FAILING)
+    assert (count.gecen, count.kalan, count.okundu) == (4, 1, True)
+    assert len(failures) == 1
+    assert failures[0].name == "tests/test_hesap.py::test_toplama"
+    assert failures[0].message == "assert 3 == 4"
+    assert failures[0].location == "tests/test_hesap.py:12"
 
 
 def test_pytest_clean_output(tmp_path: Path) -> None:
-    sayim, basarisizlar = testrun.normalize("python", PYTEST_TEMIZ)
-    assert (sayim.gecen, sayim.kalan, sayim.atlanan) == (978, 0, 3)
-    assert basarisizlar == []
+    count, failures = testrun.normalize("python", PYTEST_CLEAN)
+    assert (count.gecen, count.kalan, count.atlanan) == (978, 0, 3)
+    assert failures == []
 
 
 def test_pytest_error_line_counts_as_failure() -> None:
-    cikti = ("ERROR tests/test_x.py::test_y - ImportError: yok\n"
-             "1 error in 0.10s\n")
-    sayim, basarisizlar = testrun.normalize("python", cikti)
-    assert sayim.kalan == 1 and sayim.okundu
-    assert basarisizlar[0].mesaj == "ImportError: yok"
+    output = ("ERROR tests/test_x.py::test_y - ImportError: yok\n"
+              "1 error in 0.10s\n")
+    count, failures = testrun.normalize("python", output)
+    assert count.kalan == 1 and count.okundu
+    assert failures[0].message == "ImportError: yok"
 
 
 def test_pytest_no_tests_ran() -> None:
-    sayim, _ = testrun.normalize("python", "no tests ran in 0.01s\n")
-    assert sayim.okundu and sayim.toplam == 0
+    count, _ = testrun.normalize("python", "no tests ran in 0.01s\n")
+    assert count.okundu and count.toplam == 0
 
 
-# -- normalleştirme: phpunit -------------------------------------------
+# -- normalisation: phpunit --------------------------------------------
 
-PHPUNIT_BASARISIZ = """\
+PHPUNIT_FAILING = """\
 PHPUnit 10.5.11 by Sebastian Bergmann and contributors.
 
 Runtime:       PHP 8.2.12
@@ -351,7 +351,7 @@ FAILURES!
 Tests: 4, Assertions: 6, Failures: 1.
 """
 
-PHPUNIT_TEMIZ = """\
+PHPUNIT_CLEAN = """\
 PHPUnit 10.5.11 by Sebastian Bergmann and contributors.
 
 ....                                                                4 / 4 (100%)
@@ -363,28 +363,28 @@ OK (4 tests, 6 assertions)
 
 
 def test_phpunit_failure_output() -> None:
-    sayim, basarisizlar = testrun.normalize("php", PHPUNIT_BASARISIZ)
-    assert (sayim.toplam, sayim.gecen, sayim.kalan) == (4, 3, 1)
-    assert sayim.okundu
-    assert len(basarisizlar) == 1
-    assert basarisizlar[0].ad == "App\\Tests\\HomeTest::testIndexReturnsString"
-    assert "null is of type string" in basarisizlar[0].mesaj
-    assert basarisizlar[0].yer == "HomeTest.php:23"
+    count, failures = testrun.normalize("php", PHPUNIT_FAILING)
+    assert (count.toplam, count.gecen, count.kalan) == (4, 3, 1)
+    assert count.okundu
+    assert len(failures) == 1
+    assert failures[0].name == "App\\Tests\\HomeTest::testIndexReturnsString"
+    assert "null is of type string" in failures[0].message
+    assert failures[0].location == "HomeTest.php:23"
 
 
 def test_phpunit_clean_output() -> None:
-    sayim, basarisizlar = testrun.normalize("php", PHPUNIT_TEMIZ)
-    assert (sayim.gecen, sayim.kalan, sayim.okundu) == (4, 0, True)
-    assert basarisizlar == []
+    count, failures = testrun.normalize("php", PHPUNIT_CLEAN)
+    assert (count.gecen, count.kalan, count.okundu) == (4, 0, True)
+    assert failures == []
 
 
 def test_phpunit_errors_and_skips() -> None:
-    cikti = "ERRORS!\nTests: 10, Assertions: 12, Errors: 2, Failures: 1, Skipped: 3.\n"
-    sayim, _ = testrun.normalize("php", cikti)
-    assert (sayim.toplam, sayim.kalan, sayim.atlanan, sayim.gecen) == (10, 3, 3, 4)
+    output = "ERRORS!\nTests: 10, Assertions: 12, Errors: 2, Failures: 1, Skipped: 3.\n"
+    count, _ = testrun.normalize("php", output)
+    assert (count.toplam, count.kalan, count.atlanan, count.gecen) == (10, 3, 3, 4)
 
 
-# -- normalleştirme: node ----------------------------------------------
+# -- normalisation: node -----------------------------------------------
 
 JEST = """\
  FAIL  src/hesap.test.js
@@ -429,34 +429,34 @@ VITEST = """\
 
 
 def test_jest_output() -> None:
-    sayim, basarisizlar = testrun.normalize("node", JEST)
-    assert (sayim.gecen, sayim.kalan, sayim.toplam) == (2, 1, 3)
-    assert basarisizlar and basarisizlar[0].ad == "Hesap › toplar"
+    count, failures = testrun.normalize("node", JEST)
+    assert (count.gecen, count.kalan, count.toplam) == (2, 1, 3)
+    assert failures and failures[0].name == "Hesap › toplar"
 
 
 def test_mocha_output() -> None:
-    sayim, basarisizlar = testrun.normalize("node", MOCHA)
-    assert (sayim.gecen, sayim.kalan, sayim.okundu) == (1, 1, True)
-    assert basarisizlar and "çıkarır" in basarisizlar[0].ad
+    count, failures = testrun.normalize("node", MOCHA)
+    assert (count.gecen, count.kalan, count.okundu) == (1, 1, True)
+    assert failures and "çıkarır" in failures[0].name
 
 
 def test_node_test_runner_output() -> None:
-    sayim, _ = testrun.normalize("node", NODE_TEST)
-    assert (sayim.gecen, sayim.kalan, sayim.toplam) == (3, 1, 4)
+    count, _ = testrun.normalize("node", NODE_TEST)
+    assert (count.gecen, count.kalan, count.toplam) == (3, 1, 4)
 
 
 def test_vitest_output() -> None:
-    sayim, _ = testrun.normalize("node", VITEST)
-    assert (sayim.gecen, sayim.kalan) == (5, 1)
+    count, _ = testrun.normalize("node", VITEST)
+    assert (count.gecen, count.kalan) == (5, 1)
 
 
 def test_unreadable_node_output_admits_it() -> None:
-    """Tanımadığımız koşucuda uydurma sayı yok — `okundu` False kalır."""
-    sayim, _ = testrun.normalize("node", "bilinmeyen koşucu bir şeyler yazdı\n")
-    assert not sayim.okundu
+    """No invented count for a runner we do not recognise — `okundu` stays False."""
+    count, _ = testrun.normalize("node", "bilinmeyen koşucu bir şeyler yazdı\n")
+    assert not count.okundu
 
 
-# -- normalleştirme: go / cargo / dotnet -------------------------------
+# -- normalisation: go / cargo / dotnet --------------------------------
 
 GO = """\
 --- FAIL: TestTopla (0.00s)
@@ -484,252 +484,253 @@ Failed!  - Failed:     1, Passed:     2, Skipped:     0, Total:     3, Duration:
 
 
 def test_go_output() -> None:
-    sayim, basarisizlar = testrun.normalize("go", GO)
-    assert (sayim.gecen, sayim.kalan) == (1, 1)
-    assert basarisizlar[0].ad == "TestTopla"
-    assert basarisizlar[0].yer == "hesap_test.go:14"
+    count, failures = testrun.normalize("go", GO)
+    assert (count.gecen, count.kalan) == (1, 1)
+    assert failures[0].name == "TestTopla"
+    assert failures[0].location == "hesap_test.go:14"
 
 
 def test_cargo_output() -> None:
-    sayim, basarisizlar = testrun.normalize("rust", CARGO)
-    assert (sayim.gecen, sayim.kalan) == (3, 1)
-    assert basarisizlar and basarisizlar[0].ad == "tests::topla"
+    count, failures = testrun.normalize("rust", CARGO)
+    assert (count.gecen, count.kalan) == (3, 1)
+    assert failures and failures[0].name == "tests::topla"
 
 
 def test_dotnet_output() -> None:
-    sayim, _ = testrun.normalize("dotnet", DOTNET)
-    assert (sayim.gecen, sayim.kalan, sayim.toplam) == (2, 1, 3)
+    count, _ = testrun.normalize("dotnet", DOTNET)
+    assert (count.gecen, count.kalan, count.toplam) == (2, 1, 3)
 
 
 def test_auto_detection_picks_the_right_reader() -> None:
-    """Elle verilen komutta hangi koşucunun konuştuğunu bilmiyoruz."""
-    sayim, _ = testrun.normalize("oto", PYTEST_TEMIZ)
-    assert sayim.gecen == 978
-    sayim, _ = testrun.normalize("oto", PHPUNIT_TEMIZ)
-    assert sayim.gecen == 4
+    """With a hand-given command we do not know which runner is speaking."""
+    count, _ = testrun.normalize("oto", PYTEST_CLEAN)
+    assert count.gecen == 978
+    count, _ = testrun.normalize("oto", PHPUNIT_CLEAN)
+    assert count.gecen == 4
 
 
-# -- kırpma -------------------------------------------------------------
+# -- trimming -----------------------------------------------------------
 
 
 def test_long_output_keeps_head_and_tail() -> None:
-    metin = "BAS\n" + ("x" * 20000) + "\nSON"
-    kirpik = testrun.kirp(metin, limit=400)
-    assert kirpik.startswith("BAS")
-    assert kirpik.endswith("SON")
-    assert "kırpıldı" in kirpik
-    assert len(kirpik) < 600
+    text = "BAS\n" + ("x" * 20000) + "\nSON"
+    trimmed = testrun.trim(text, limit=400)
+    assert trimmed.startswith("BAS")
+    assert trimmed.endswith("SON")
+    assert "kırpıldı" in trimmed
+    assert len(trimmed) < 600
 
 
 def test_short_output_is_untouched() -> None:
-    assert testrun.kirp("kısa çıktı") == "kısa çıktı"
+    assert testrun.trim("kısa çıktı") == "kısa çıktı"
 
 
-# -- dürüstlük metinleri -----------------------------------------------
+# -- honesty texts -----------------------------------------------------
 
 
-def _sonuc(**kw) -> testrun.Result:
-    temel = dict(ekosistem="python", etiket="py -m pytest -q", kok="C:/x",
-                 status="kostu")
-    temel.update(kw)
-    return testrun.Result(**temel)
+def _result(**kw) -> testrun.Result:
+    base = dict(ekosistem="python", etiket="py -m pytest -q", kok="C:/x",
+                status="kostu")
+    base.update(kw)
+    return testrun.Result(**base)
 
 
 def test_a_green_run_never_claims_everything_works() -> None:
-    sonuc = _sonuc(sayim=testrun.Count(gecen=12, toplam=12, okundu=True))
-    metin = sonuc.metin()
-    assert "12 geçti, 0 kaldı" in metin
-    assert "koşulan testlerin kapsadığı kadarını doğrular" in metin
-    assert "her şey" not in metin.lower()
-    assert "denenmemiş" in metin
+    result = _result(sayim=testrun.Count(gecen=12, toplam=12, okundu=True))
+    text = result.metin()
+    assert "12 geçti, 0 kaldı" in text
+    assert "koşulan testlerin kapsadığı kadarını doğrular" in text
+    assert "her şey" not in text.lower()
+    assert "denenmemiş" in text
 
 
 def test_a_red_run_says_do_not_call_it_done() -> None:
-    sonuc = _sonuc(cikis_kodu=1,
-                   sayim=testrun.Count(gecen=4, kalan=1, toplam=5, okundu=True),
-                   basarisizlar=[testrun.Failure("test_x", "assert 3 == 4",
-                                                 "tests/test_h.py:12")])
-    metin = sonuc.metin()
-    assert "1 kaldı" in metin
-    assert "tests/test_h.py:12" in metin
-    assert "'çalışıyor' deme" in metin
+    result = _result(cikis_kodu=1,
+                     sayim=testrun.Count(gecen=4, kalan=1, toplam=5, okundu=True),
+                     basarisizlar=[testrun.Failure("test_x", "assert 3 == 4",
+                                                   "tests/test_h.py:12")])
+    text = result.metin()
+    assert "1 kaldı" in text
+    assert "tests/test_h.py:12" in text
+    assert "'çalışıyor' deme" in text
 
 
 def test_only_five_failures_are_named() -> None:
-    sonuc = _sonuc(cikis_kodu=1,
-                   sayim=testrun.Count(kalan=9, toplam=9, okundu=True),
-                   basarisizlar=[testrun.Failure(f"test_{i}") for i in range(9)])
-    metin = sonuc.metin()
-    assert "test_4" in metin and "test_5" not in metin
-    assert "4 başarısız test daha" in metin
+    result = _result(cikis_kodu=1,
+                     sayim=testrun.Count(kalan=9, toplam=9, okundu=True),
+                     basarisizlar=[testrun.Failure(f"test_{i}") for i in range(9)])
+    text = result.metin()
+    assert "test_4" in text and "test_5" not in text
+    assert "4 başarısız test daha" in text
 
 
 def test_unreadable_counts_are_admitted() -> None:
-    sonuc = _sonuc(sayim=testrun.Count(), ham="anlaşılmaz çıktı")
-    metin = sonuc.metin()
-    assert "Test sayısı okunamadığı için" in metin
+    result = _result(sayim=testrun.Count(), ham="anlaşılmaz çıktı")
+    text = result.metin()
+    assert "Test sayısı okunamadığı için" in text
 
 
 def test_empty_suite_proves_nothing() -> None:
-    sonuc = _sonuc(sayim=testrun.Count(okundu=True))
-    assert "Hiç test koşmadı" in sonuc.metin()
-    assert "gerçekten çalıştır" in sonuc.metin()
+    result = _result(sayim=testrun.Count(okundu=True))
+    assert "Hiç test koşmadı" in result.metin()
+    assert "gerçekten çalıştır" in result.metin()
 
 
 def test_health_check_is_not_sold_as_a_test() -> None:
-    sonuc = _sonuc(ekosistem="php", etiket="php spark routes", tur="saglik",
-                   sayim=testrun.Count())
-    metin = sonuc.metin()
-    assert "test takımı değil" in metin
-    assert "Davranışın doğruluğunu göstermez" in metin
+    result = _result(ekosistem="php", etiket="php spark routes", tur="saglik",
+                     sayim=testrun.Count())
+    text = result.metin()
+    assert "test takımı değil" in text
+    assert "Davranışın doğruluğunu göstermez" in text
 
 
 def test_timeout_text_explains_both_causes() -> None:
-    sonuc = _sonuc(status="zaman_asimi", sure=300.0)
-    metin = sonuc.metin()
-    assert "bitmedi ve durduruldu" in metin
-    assert "zaman_asimi" in metin
+    result = _result(status="zaman_asimi", sure=300.0)
+    text = result.metin()
+    assert "bitmedi ve durduruldu" in text
+    assert "zaman_asimi" in text
 
 
-# -- gerçek koşum -------------------------------------------------------
+# -- a real run ---------------------------------------------------------
 
 
-def _sahte_python_projesi(kok: Path, govde: str) -> None:
-    kok.mkdir(parents=True, exist_ok=True)
-    (kok / "pytest.ini").write_text("[pytest]\n", encoding="utf-8")
-    tests = kok / "tests"
+def _fake_python_project(root: Path, body: str) -> None:
+    root.mkdir(parents=True, exist_ok=True)
+    (root / "pytest.ini").write_text("[pytest]\n", encoding="utf-8")
+    tests = root / "tests"
     tests.mkdir(exist_ok=True)
-    (tests / "test_ornek.py").write_text(govde, encoding="utf-8")
+    (tests / "test_ornek.py").write_text(body, encoding="utf-8")
 
 
 @pytest.fixture()
-def kendi_python(monkeypatch: pytest.MonkeyPatch):
-    """Uçtan uca koşumlar bu takımın Python'unu kullansın.
+def own_python(monkeypatch: pytest.MonkeyPatch):
+    """End-to-end runs should use this suite's own Python.
 
-    Tespit `py -m pytest -q` üretiyor (kullanıcının projesi için doğrusu bu)
-    ama CI makinesinde `py` başka bir yoruma işaret edip pytest'siz olabilir.
-    Burada sınadığımız şey koşucunun kendisi, makinenin Python düzeni değil.
+    Detection produces `py -m pytest -q` (the right thing for the user's
+    project), but on a CI machine `py` may point at another interpreter
+    without pytest. What we test here is the runner itself, not the
+    machine's Python layout.
     """
-    gercek = testrun._parse
+    real = testrun._parse
 
-    def sahte(ad: str) -> str | None:
-        if ad in ("py", "python3", "python"):
+    def fake(name: str) -> str | None:
+        if name in ("py", "python3", "python"):
             return sys.executable
-        return gercek(ad)
+        return real(name)
 
-    monkeypatch.setattr(testrun, "_parse", sahte)
-
-
-async def test_a_real_passing_suite_runs(tmp_path: Path, kendi_python) -> None:
-    """Uçtan uca: sahte projede gerçek pytest koşuyor ve sayılar okunuyor."""
-    _sahte_python_projesi(tmp_path, "def test_gecer():\n    assert True\n")
-    duzenek = testrun.tespit(tmp_path)
-    assert duzenek is not None
-    sonuc = await testrun.kos(duzenek, zaman_asimi=120)
-    assert sonuc.status == "kostu"
-    assert sonuc.cikis_kodu == 0
-    assert sonuc.sayim.okundu and sonuc.sayim.gecen == 1
+    monkeypatch.setattr(testrun, "_parse", fake)
 
 
-async def test_a_real_failing_suite_is_reported(tmp_path: Path, kendi_python) -> None:
-    """Yaranın kendisi: kod sözdizimi olarak sağlam ama davranışı yanlış."""
-    _sahte_python_projesi(
+async def test_a_real_passing_suite_runs(tmp_path: Path, own_python) -> None:
+    """End to end: real pytest runs in a fake project and the numbers are read."""
+    _fake_python_project(tmp_path, "def test_gecer():\n    assert True\n")
+    harness = testrun.tespit(tmp_path)
+    assert harness is not None
+    result = await testrun.kos(harness, zaman_asimi=120)
+    assert result.status == "kostu"
+    assert result.cikis_kodu == 0
+    assert result.sayim.okundu and result.sayim.gecen == 1
+
+
+async def test_a_real_failing_suite_is_reported(tmp_path: Path, own_python) -> None:
+    """The wound itself: the code is syntactically sound but behaves wrong."""
+    _fake_python_project(
         tmp_path,
         "def topla(a, b):\n"
-        "    return a - b\n"     # sözdizimi temiz, davranış yanlış
+        "    return a - b\n"     # syntax clean, behaviour wrong
         "\n"
         "def test_toplama():\n"
         "    assert topla(1, 2) == 3\n",
     )
-    duzenek = testrun.tespit(tmp_path)
-    assert duzenek is not None
-    sonuc = await testrun.kos(duzenek, zaman_asimi=120)
-    assert sonuc.cikis_kodu != 0
-    assert sonuc.sayim.kalan == 1
-    assert sonuc.basarisizlar
-    assert "test_toplama" in sonuc.basarisizlar[0].ad
+    harness = testrun.tespit(tmp_path)
+    assert harness is not None
+    result = await testrun.kos(harness, zaman_asimi=120)
+    assert result.cikis_kodu != 0
+    assert result.sayim.kalan == 1
+    assert result.basarisizlar
+    assert "test_toplama" in result.basarisizlar[0].name
 
 
-ASILAN = "import time; print('asilan_test_basladi', flush=True); time.sleep(120)"
+HANGING = "import time; print('asilan_test_basladi', flush=True); time.sleep(120)"
 
 
 async def test_timeout_kills_the_whole_process_tree(tmp_path: Path) -> None:
-    """Hiç bitmeyen bir komut turu dondurmamalı — ve arkada da kalmamalı.
+    """A command that never ends must not freeze the turn — nor linger behind.
 
-    Kabuk üzerinden koşan komutta `proc` cmd.exe/bash; asıl süreç onun
-    çocuğu. Yalnızca kabuğu öldürmek koşucuyu makinede bırakıyor ve boruyu
-    açık tuttuğu için çağıran taraf ÖLÇÜLEBİLİR biçimde asılı kalıyordu:
-    2 saniyelik zaman aşımı, 30 saniyelik bir bekleyişe dönüşmüştü.
+    For a command run through the shell, `proc` is cmd.exe/bash; the real
+    process is its child. Killing only the shell left the runner on the
+    machine and, because it kept the pipe open, the caller hung MEASURABLY:
+    a 2-second timeout had become a 30-second wait.
     """
-    basla = time.monotonic()
-    sonuc = await testrun.kos_komut(
-        f'"{sys.executable}" -c "{ASILAN}"', tmp_path, zaman_asimi=2,
+    start = time.monotonic()
+    result = await testrun.kos_komut(
+        f'"{sys.executable}" -c "{HANGING}"', tmp_path, zaman_asimi=2,
     )
-    gecen = time.monotonic() - basla
-    assert sonuc.status == "zaman_asimi"
-    # Asıl güvence: çağrı zaman aşımından hemen sonra dönüyor.
-    assert gecen < 20, f"koşum {gecen:.0f} sn asılı kaldı"
+    elapsed = time.monotonic() - start
+    assert result.status == "zaman_asimi"
+    # The real guarantee: the call returns right after the timeout.
+    assert elapsed < 20, f"koşum {elapsed:.0f} sn asılı kaldı"
 
 
 async def test_timeout_keeps_the_partial_output(tmp_path: Path) -> None:
-    """Yarım çıktı da bilgidir: son satır nerede takıldığını söyler."""
-    sonuc = await testrun.kos_komut(
-        f'"{sys.executable}" -c "{ASILAN}"', tmp_path, zaman_asimi=3,
+    """Partial output is information too: the last line says where it got stuck."""
+    result = await testrun.kos_komut(
+        f'"{sys.executable}" -c "{HANGING}"', tmp_path, zaman_asimi=3,
     )
-    assert "asilan_test_basladi" in sonuc.ham
-    assert "nerede takıldığını" in sonuc.metin()
+    assert "asilan_test_basladi" in result.ham
+    assert "nerede takıldığını" in result.metin()
 
 
 async def test_cancel_stops_the_run(tmp_path: Path) -> None:
-    """Kullanıcı 'durdur' dediğinde koşan süreç ölmeli — ve öyle raporlanmalı."""
+    """When the user says 'stop' the running process must die — and be reported so."""
     cancel = asyncio.Event()
 
-    async def dur() -> None:
+    async def stop() -> None:
         await asyncio.sleep(0.3)
         cancel.set()
 
-    gorev = asyncio.ensure_future(dur())
-    basla = time.monotonic()
-    sonuc = await testrun.kos_komut(
-        f'"{sys.executable}" -c "{ASILAN}"', tmp_path, zaman_asimi=120,
+    task = asyncio.ensure_future(stop())
+    start = time.monotonic()
+    result = await testrun.kos_komut(
+        f'"{sys.executable}" -c "{HANGING}"', tmp_path, zaman_asimi=120,
         cancel=cancel,
     )
-    gecen = time.monotonic() - basla
-    await gorev
-    assert sonuc.status == "kesildi"          # zaman aşımı DEĞİL
-    assert "Durduruldu" in sonuc.metin()
-    assert gecen < 20, f"kesme {gecen:.0f} sn sürdü"
+    elapsed = time.monotonic() - start
+    await task
+    assert result.status == "kesildi"          # NOT a timeout
+    assert "Durduruldu" in result.metin()
+    assert elapsed < 20, f"kesme {elapsed:.0f} sn sürdü"
 
 
 async def test_missing_executable_is_honest(tmp_path: Path) -> None:
-    duzenek = testrun.Duzenek(
+    harness = testrun.Harness(
         "go", "test", "go test ./...", ["kesinlikle-olmayan-arac", "test"],
         tmp_path, "go.mod",
     )
-    sonuc = await testrun.kos(duzenek)
-    assert sonuc.status == "baslatilamadi"
-    assert "bulunamadı" in sonuc.metin()
+    result = await testrun.kos(harness)
+    assert result.status == "baslatilamadi"
+    assert "bulunamadı" in result.metin()
 
 
 async def test_blocked_setup_is_not_run(tmp_path: Path) -> None:
-    _paket(tmp_path, {"test": "jest"})   # node_modules yok
-    duzenek = testrun.tespit(tmp_path)
-    assert duzenek is not None
-    sonuc = await testrun.kos(duzenek)
-    assert sonuc.status == "yok"
-    assert "node_modules" in sonuc.ham
+    _package(tmp_path, {"test": "jest"})   # no node_modules
+    harness = testrun.tespit(tmp_path)
+    assert harness is not None
+    result = await testrun.kos(harness)
+    assert result.status == "yok"
+    assert "node_modules" in result.ham
 
 
-# -- yazma sonrası hatırlatma ------------------------------------------
+# -- post-write reminder -----------------------------------------------
 
 
 def test_reminder_names_the_command(tmp_path: Path) -> None:
     (tmp_path / "pytest.ini").write_text("[pytest]\n", encoding="utf-8")
     (tmp_path / "modul.py").write_text("x = 1\n", encoding="utf-8")
-    metin = testrun.hatirlatma(tmp_path / "modul.py")
-    assert "pytest -q" in metin
-    assert "`kos`" in metin
-    assert len(metin.splitlines()) == 1   # TEK satır: gürültü yok
+    text = testrun.hatirlatma(tmp_path / "modul.py")
+    assert "pytest -q" in text
+    assert "`kos`" in text
+    assert len(text.splitlines()) == 1   # ONE line: no noise
 
 
 def test_no_reminder_without_a_setup(tmp_path: Path) -> None:
@@ -738,31 +739,31 @@ def test_no_reminder_without_a_setup(tmp_path: Path) -> None:
 
 
 def test_reminder_hardens_after_repeated_writes(tmp_path: Path) -> None:
-    """Aynı dosyaya üçüncü yazım: model gözle düzeltmeye çalışıyor demektir."""
+    """A third write to the same file: the model is trying to fix it by eye."""
     (tmp_path / "pytest.ini").write_text("[pytest]\n", encoding="utf-8")
-    dosya = tmp_path / "modul.py"
-    dosya.write_text("x = 1\n", encoding="utf-8")
-    yumusak = testrun.hatirlatma(dosya, yazim=1)
-    sert = testrun.hatirlatma(dosya, yazim=3)
-    assert "Gözle düzeltmeyi bırak" in sert
-    assert "3. kez" in sert
-    assert sert != yumusak
+    file = tmp_path / "modul.py"
+    file.write_text("x = 1\n", encoding="utf-8")
+    soft = testrun.hatirlatma(file, yazim=1)
+    hard = testrun.hatirlatma(file, yazim=3)
+    assert "Gözle düzeltmeyi bırak" in hard
+    assert "3. kez" in hard
+    assert hard != soft
 
 
 def test_reminder_reports_a_blocked_setup(tmp_path: Path) -> None:
-    _paket(tmp_path, {"test": "jest"})
-    metin = testrun.hatirlatma(tmp_path / "index.js")
-    assert "node_modules" in metin
+    _package(tmp_path, {"test": "jest"})
+    text = testrun.hatirlatma(tmp_path / "index.js")
+    assert "node_modules" in text
 
 
 def test_reminder_marks_a_health_command_as_such(tmp_path: Path) -> None:
     (tmp_path / "spark").write_text("#!/usr/bin/env php\n", encoding="utf-8")
-    metin = testrun.hatirlatma(tmp_path / "app" / "Controllers" / "Home.php")
-    assert "test takımı yok" in metin
-    assert "sağlık denetimi" in metin
+    text = testrun.hatirlatma(tmp_path / "app" / "Controllers" / "Home.php")
+    assert "test takımı yok" in text
+    assert "sağlık denetimi" in text
 
 
-# -- araç yüzeyi --------------------------------------------------------
+# -- tool surface -------------------------------------------------------
 
 
 def test_tool_is_registered_in_the_real_registry() -> None:
@@ -772,14 +773,14 @@ def test_tool_is_registered_in_the_real_registry() -> None:
 
 
 def test_tool_is_gated(registry: ToolRegistry) -> None:
-    """Test koşmak projenin kodunu koşturur: izin kipine tabi olmalı."""
+    """Running tests runs the project's code: it must be subject to the permission mode."""
     spec = registry.get("kos")
     assert spec.mutates is True
     assert spec.parallel_safe is False
 
 
 def test_manual_command_is_the_permission_subject() -> None:
-    """Elle verilen komut kapıya `path` olarak görünmemeli."""
+    """A hand-given command must not appear at the gate as `path`."""
     from dornick.permissions import describe
 
     assert describe({"path": "C:/proje", "komut": "npm test"}) == "npm test"
@@ -789,11 +790,11 @@ def test_manual_command_is_the_permission_subject() -> None:
 async def test_tool_reports_no_setup_without_erroring(
     registry: ToolRegistry, ctx: ToolContext, tmp_path: Path
 ) -> None:
-    bos = tmp_path / "bos"
-    bos.mkdir()
-    sonuc = await call(registry, ctx, path=str(bos))
-    assert not sonuc.is_error      # bilgi, hata değil
-    assert "test düzeneği bulunamadı" in sonuc.content
+    empty = tmp_path / "bos"
+    empty.mkdir()
+    result = await call(registry, ctx, path=str(empty))
+    assert not result.is_error      # information, not an error
+    assert "test düzeneği bulunamadı" in result.content
 
 
 async def test_tool_detection_only_mode_runs_nothing(
@@ -801,65 +802,65 @@ async def test_tool_detection_only_mode_runs_nothing(
 ) -> None:
     (tmp_path / "pytest.ini").write_text("[pytest]\n", encoding="utf-8")
     (tmp_path / "spark").write_text("#!/usr/bin/env php\n", encoding="utf-8")
-    sonuc = await call(registry, ctx, path=str(tmp_path), sadece_tespit=True)
-    assert "pytest -q" in sonuc.content
-    assert "php spark routes" in sonuc.content
-    assert "hiçbiri koşturulmadı" in sonuc.content
-    assert sonuc.detail["tespit"] is True
+    result = await call(registry, ctx, path=str(tmp_path), sadece_tespit=True)
+    assert "pytest -q" in result.content
+    assert "php spark routes" in result.content
+    assert "hiçbiri koşturulmadı" in result.content
+    assert result.detail["tespit"] is True
 
 
 async def test_tool_uses_the_last_touched_project(
     registry: ToolRegistry, ctx: ToolContext, tmp_path: Path
 ) -> None:
-    """`path` yoksa en son dosya yazılan proje."""
-    proje = tmp_path / "proje"
-    proje.mkdir()
-    (proje / "pytest.ini").write_text("[pytest]\n", encoding="utf-8")
-    testrun.touched(proje / "modul.py")
-    sonuc = await call(registry, ctx, sadece_tespit=True)
-    assert str(proje) in sonuc.content
+    """Without `path`: the project of the last written file."""
+    project = tmp_path / "proje"
+    project.mkdir()
+    (project / "pytest.ini").write_text("[pytest]\n", encoding="utf-8")
+    testrun.touched(project / "modul.py")
+    result = await call(registry, ctx, sadece_tespit=True)
+    assert str(project) in result.content
 
 
 async def test_tool_refuses_a_missing_folder(
     registry: ToolRegistry, ctx: ToolContext, tmp_path: Path
 ) -> None:
-    sonuc = await call(registry, ctx, path=str(tmp_path / "yok" / "burada"))
-    assert sonuc.is_error
-    assert "Klasör yok" in sonuc.content
+    result = await call(registry, ctx, path=str(tmp_path / "yok" / "burada"))
+    assert result.is_error
+    assert "Klasör yok" in result.content
 
 
 async def test_tool_runs_a_real_suite_end_to_end(
-    registry: ToolRegistry, ctx: ToolContext, tmp_path: Path, kendi_python
+    registry: ToolRegistry, ctx: ToolContext, tmp_path: Path, own_python
 ) -> None:
-    _sahte_python_projesi(tmp_path, "def test_gecer():\n    assert True\n")
-    sonuc = await call(registry, ctx, path=str(tmp_path), zaman_asimi=120)
-    assert not sonuc.is_error
-    assert "1 geçti, 0 kaldı" in sonuc.content
-    assert sonuc.detail["gecen"] == 1
+    _fake_python_project(tmp_path, "def test_gecer():\n    assert True\n")
+    result = await call(registry, ctx, path=str(tmp_path), zaman_asimi=120)
+    assert not result.is_error
+    assert "1 geçti, 0 kaldı" in result.content
+    assert result.detail["gecen"] == 1
 
 
 async def test_tool_marks_a_failing_suite_as_an_error(
-    registry: ToolRegistry, ctx: ToolContext, tmp_path: Path, kendi_python
+    registry: ToolRegistry, ctx: ToolContext, tmp_path: Path, own_python
 ) -> None:
-    _sahte_python_projesi(tmp_path, "def test_kalir():\n    assert 1 == 2\n")
-    sonuc = await call(registry, ctx, path=str(tmp_path), zaman_asimi=120)
-    assert sonuc.is_error
-    assert sonuc.detail["kalan"] == 1
+    _fake_python_project(tmp_path, "def test_kalir():\n    assert 1 == 2\n")
+    result = await call(registry, ctx, path=str(tmp_path), zaman_asimi=120)
+    assert result.is_error
+    assert result.detail["kalan"] == 1
 
 
 async def test_tool_honours_a_manual_command(
     registry: ToolRegistry, ctx: ToolContext, tmp_path: Path
 ) -> None:
-    """Elle komut: tespit atlanır."""
-    sonuc = await call(
+    """A manual command: detection is skipped."""
+    result = await call(
         registry, ctx, path=str(tmp_path),
         komut=f'"{sys.executable}" -c "print(\'merhaba\')"', zaman_asimi=60,
     )
-    assert "merhaba" in sonuc.content
+    assert "merhaba" in result.content
 
 
 def test_the_tool_description_warns_about_scope(registry: ToolRegistry) -> None:
-    """Araç şeması modelin gördüğü tek belge: sınırı orada da yazmalı."""
-    aciklama = registry.get("kos").description
-    assert "uydurulmaz" in aciklama
-    assert "her şey çalışıyor" in aciklama
+    """The tool schema is the only document the model sees: the limit must be written there too."""
+    description = registry.get("kos").description
+    assert "uydurulmaz" in description
+    assert "her şey çalışıyor" in description

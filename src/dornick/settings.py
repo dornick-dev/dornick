@@ -1,17 +1,18 @@
-"""Ayarların okunması ve yazılması.
+"""Reading and writing settings.
 
-Arayüzün ayar sayfası buradan besleniyor. İki dosyaya yazılıyor:
+The UI's settings page is fed from here. Two files are written:
 
-    .dornick/config.json   model, bağlam, izin — paylaşılabilir
-    .dornick/keys.json     API anahtarları — paylaşılamaz
+    .dornick/config.json   model, context, permissions — shareable
+    .dornick/keys.json     API keys — not shareable
 
-Ayrılmasının sebebi tek: config.json bir projeye girip sürüm kontrolüne
-düşebilir, anahtar oraya yazılmamalı. keys.json ayrı duruyor ve tarayıcıya
-hiçbir zaman gönderilmiyor — ayar sayfası yalnızca "anahtar var mı" bilgisini
-görüyor. Girilen bir anahtar sunucuya bir kez gidiyor, bir daha geri gelmiyor.
+There is a single reason for the split: config.json can end up in a project
+and fall into version control, and a key must not be written there.
+keys.json stands apart and is never sent to the browser — the settings page
+only sees "is there a key". An entered key goes to the server once and never
+comes back.
 
-Anahtarlar açılışta ortam değişkenine yükleniyor: backend'ler zaten oradan
-okuyor, ikinci bir yol açmaya gerek yok.
+Keys are loaded into the environment at startup: the backends already read
+from there, no need to open a second path.
 """
 
 from __future__ import annotations
@@ -43,19 +44,20 @@ from .voice import VoiceConfig
 KEYS_FILE = "keys.json"
 CONFIG_FILE = "config.json"
 
-# Değeri girilmiş bir anahtarın tarayıcıya dönen hali. Gerçek değer değil,
-# yalnızca "burada bir şey var" işareti.
+# What a key that has a value looks like when returned to the browser. Not
+# the real value, only a "there is something here" marker.
 MASK = "••••••••"
 
 
-# Sağlayıcı listesi tek yerde: hem ayar sayfası hem `dornick setup` buradan
-# okuyor. `env` alanı anahtarın hangi ortam değişkenine yazılacağını söyler;
-# None olanlar yerel sunucular, anahtar istemiyorlar.
+# The provider list lives in one place: both the settings page and
+# `dornick setup` read it from here. The `env` field says which environment
+# variable the key is written to; None ones are local servers, they do not
+# want a key.
 #
-# Bulut önayarları resmi OpenAI-uyumlu uçlardan (2026): rastgele ekleme yok.
-# Kaynaklar: ai.google.dev/gemini-api/docs/openai · build.nvidia.com ·
-# api-docs.deepseek.com · console.groq.com/docs/openai · docs.mistral.ai ·
-# help.aliyun.com/en/model-studio/base-url
+# Cloud presets are from the official OpenAI-compatible endpoints (2026): no
+# random additions. Sources: ai.google.dev/gemini-api/docs/openai ·
+# build.nvidia.com · api-docs.deepseek.com · console.groq.com/docs/openai ·
+# docs.mistral.ai · help.aliyun.com/en/model-studio/base-url
 PROVIDERS: tuple[dict[str, Any], ...] = (
     {
         "id": "anthropic",
@@ -125,8 +127,8 @@ PROVIDERS: tuple[dict[str, Any], ...] = (
         "id": "qwen",
         "label": "Qwen (DashScope)",
         "provider": "openai",
-        # Ortak DashScope alanı hâlâ geçerli; üretimde workspace/bölge
-        # adresine geçmek için Model › Adres alanını düzenle.
+        # The shared DashScope domain is still valid; to move to the
+        # workspace/region address in production edit the Model › Address field.
         "base_url": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
         "env": "DASHSCOPE_API_KEY",
         "hint": "Model Studio — bölgeye göre adresi değiştir",
@@ -157,8 +159,8 @@ PROVIDERS: tuple[dict[str, Any], ...] = (
     },
 )
 
-# Posta hesabı. Kimlik bilgileri API anahtarlarıyla aynı dosyada duruyor:
-# config.json bir projeye girip sürüm kontrolüne düşebilir.
+# Mail account. The credentials sit in the same file as the API keys:
+# config.json can end up in a project and fall into version control.
 MAIL_FIELDS: tuple[dict[str, str], ...] = (
     {"env": "DORNICK_IMAP_HOST", "label": "IMAP sunucusu", "hint": "imap.gmail.com", "secret": "0"},
     {"env": "DORNICK_SMTP_HOST", "label": "SMTP sunucusu", "hint": "smtp.gmail.com", "secret": "0"},
@@ -180,9 +182,9 @@ PERMISSION_MODES: tuple[dict[str, str], ...] = (
 )
 
 
-# İlk kurulum yönlendirmesi: hiçbir sağlayıcı kullanılabilir değilken
-# kullanıcı yazarsa (ya da konuşursa) model hiç çağrılmıyor; sohbete bu
-# mesaj düşüyor. Metin arayüzde t() ile İngilizceye çevriliyor (app.js).
+# First-setup guidance: when no provider is usable and the user types (or
+# speaks) the model is not called at all; this message lands in the chat.
+# The text is translated to English in the UI with t() (app.js).
 KURULUM_YONLENDIRME = (
     "Henüz bir yapay zekâ sağlayıcısı tanımlı değil. Ayarlar › Model'den bir "
     "sağlayıcı seçip API anahtarı girmelisin. Varsayılan sağlayıcı "
@@ -192,7 +194,7 @@ KURULUM_YONLENDIRME = (
 
 
 def _gpu_snapshot() -> list[dict[str, Any]]:
-    """Ayarlar › Makine için VRAM özeti. nvidia-smi yoksa []."""
+    """VRAM summary for Settings › Machine. [] without nvidia-smi."""
     try:
         from . import gpu as gpu_module
         return [
@@ -209,10 +211,11 @@ def _gpu_snapshot() -> list[dict[str, Any]]:
 
 
 def provider_of(config: ModelConfig) -> str:
-    """Ayarlardaki modelin hangi sağlayıcıya denk düştüğü.
+    """Which provider the model in settings corresponds to.
 
-    Eşleştirme adrese bakıyor, sağlayıcı adına değil: "openai" altında altı
-    farklı sunucu var ve ayar sayfasında hangisinin seçili olduğu görünmeli.
+    Matching looks at the address, not the provider name: there are six
+    different servers under "openai" and the settings page must show which
+    one is selected.
     """
     for entry in PROVIDERS:
         if entry["provider"] != config.provider:
@@ -222,11 +225,11 @@ def provider_of(config: ModelConfig) -> str:
     return "anthropic" if config.provider == "anthropic" else "openai"
 
 
-def _gerekli_env(model: ModelConfig) -> str | None:
-    """Bu yapılandırmanın çalışması için gereken anahtar değişkeni.
+def _required_env(model: ModelConfig) -> str | None:
+    """The key variable this configuration needs to work.
 
-    Adres bilinen bir sağlayıcıya denk düşüyorsa onun anahtarı; düşmüyorsa
-    (özel/yerel bir uç) kullanıcı ne yazdıysa o. None = anahtar gerekmiyor.
+    If the address corresponds to a known provider, that provider's key; if
+    not (a custom/local endpoint) whatever the user wrote. None = no key needed.
     """
     entry = next((e for e in PROVIDERS if e["id"] == provider_of(model)), None)
     if entry is not None and entry["base_url"] == (model.base_url or entry["base_url"]):
@@ -235,20 +238,20 @@ def _gerekli_env(model: ModelConfig) -> str | None:
 
 
 def yapilandirilmamis(model: ModelConfig) -> bool:
-    """Hiçbir sağlayıcı kullanılabilir durumda değil mi?
+    """Is no provider in a usable state?
 
-    Tanım: model adı boş YA DA anahtar isteyen sağlayıcıda anahtar yok.
-    Yerel sunucular (env=None) anahtar istemiyor — onlar adla yapılandırılmış
-    sayılır. Anahtarlar açılışta ortama yükleniyor (export_keys), o yüzden
-    tek bakılan yer ortam.
+    Definition: the model name is empty OR a key-requiring provider has no
+    key. Local servers (env=None) do not want a key — they count as
+    configured by name. Keys are loaded into the environment at startup
+    (export_keys), so the only place looked at is the environment.
     """
     if not (model.name or "").strip():
         return True
-    env = _gerekli_env(model)
+    env = _required_env(model)
     return bool(env) and not os.environ.get(env)
 
 
-# -- okuma -------------------------------------------------------------
+# -- reading -----------------------------------------------------------
 
 
 def load_keys(state_dir: Path) -> dict[str, str]:
@@ -263,10 +266,10 @@ def load_keys(state_dir: Path) -> dict[str, str]:
 
 
 def export_keys(state_dir: Path) -> int:
-    """Kaydedilmiş anahtarları ortama yükler. Kaç tane olduğunu döndürür.
+    """Loads the saved keys into the environment. Returns how many.
 
-    Ortamda zaten bir değer varsa dokunulmuyor: kullanıcının kabuğunda
-    verdiği anahtar dosyadakinin önünde gelmeli.
+    If the environment already has a value it is not touched: the key the
+    user gave in their shell must come before the one in the file.
     """
     loaded = 0
     for name, value in load_keys(state_dir).items():
@@ -277,27 +280,26 @@ def export_keys(state_dir: Path) -> int:
 
 
 def _sandbox_snapshot(config: Config) -> dict[str, Any]:
-    """Atölye + proje durumu, ayar sayfasının çizdiği hâliyle."""
+    """Workshop + project state, as the settings page draws it."""
     box = config.open_sandbox()
-    secilen = config.sandbox.project.strip()
-    # Ayarda duran yol geçersizleşmiş olabilir (klasör silinmiş, elle
-    # düzenlenmiş): sandbox onu sessizce düşürüyor, kullanıcı SEBEBİNİ
-    # burada görüyor.
-    engel = sandbox.root_block(Path(secilen).expanduser()) if secilen else None
+    chosen = config.sandbox.project.strip()
+    # The path sitting in settings may have become invalid (folder deleted,
+    # hand-edited): the sandbox drops it silently, the user sees the REASON here.
+    block = sandbox.root_block(Path(chosen).expanduser()) if chosen else None
     return {
         **asdict(config.sandbox),
-        # Ayarda göreli bir ad durabiliyor; kullanıcının görmesi
-        # gereken çözülmüş hali.
+        # A relative name can sit in settings; what the user needs to see
+        # is the resolved form.
         "root": str(box.root),
         "project_root": str(box.project) if box.project else "",
-        "project_error": engel or "",
+        "project_error": block or "",
         "project_note": box.note,
         "recent": sandbox.son_projeler(config.state_dir),
     }
 
 
 def snapshot(config: Config) -> dict[str, Any]:
-    """Ayar sayfasının çizdiği her şey. Anahtar değerleri asla girmiyor."""
+    """Everything the settings page draws. Key values never go in."""
     keys = load_keys(config.state_dir)
     return {
         "model": asdict(config.model),
@@ -305,17 +307,16 @@ def snapshot(config: Config) -> dict[str, Any]:
         "permissions": asdict(config.permissions),
         "sandbox": _sandbox_snapshot(config),
         "voice": {**asdict(config.voice), "available": voice_module.available()},
-        # Konum ve otomatik başlatma. İkisi de kapalı geliyor: biri
-        # kullanıcının adresini üçüncü bir servise gönderiyor, diğeri
-        # açılışa bir kayıt yazıyor.
+        # Location and autostart. Both ship off: one sends the user's
+        # address to a third-party service, the other writes a record into startup.
         "place": asdict(config.place),
-        # Makinede gerçekten var mı. Olmayan bir aygıtı açılabilir
-        # göstermek, çalışmayan bir düğmeye tıklatmak demek.
-        # Kurulu düzen mi (sihirbazla)? Arayüz eksik-özellik metnini buna
-        # göre seçiyor: kuruluda pip önerilmez, sihirbaz önerilir.
+        # Does it really exist on the machine. Showing a non-existent device
+        # as switchable means making the user click a button that does nothing.
+        # Installed layout (via the wizard)? The UI picks the missing-feature
+        # text by this: in the installed layout pip is not suggested, the wizard is.
         "installed": environment.kurulu_mu(),
-        # Sahada "hangi sürüm kurulu?" sorusu cevapsızdı: Makine sekmesi
-        # salt-okunur gösteriyor, kurulu/geliştirme ayrımı installed'dan.
+        # The field question "which version is installed?" had no answer:
+        # the Machine tab shows it read-only, installed/dev distinction from installed.
         "surum": environment.version(),
         "hardware": {
             "microphone": organs.has_microphone(),
@@ -346,8 +347,9 @@ def snapshot(config: Config) -> dict[str, Any]:
         "providers": [
             {
                 **entry,
-                # Ortamdan gelen anahtar da "var" sayılıyor: kullanıcı
-                # kabuğunda vermişse ayar sayfası "eksik" dememeli.
+                # A key coming from the environment counts as "present" too:
+                # if the user gave it in their shell the settings page must
+                # not say "missing".
                 "has_key": bool(
                     entry["env"] and (keys.get(entry["env"]) or os.environ.get(entry["env"]))
                 ),
@@ -363,28 +365,29 @@ def snapshot(config: Config) -> dict[str, Any]:
     }
 
 
-# -- pencere algılama ---------------------------------------------------
+# -- window detection ---------------------------------------------------
 #
-# Yanlış bir bağlam penceresi ayarının belirtisi sinsi: sıkıştırma hiç
-# tetiklenmiyor, istem modelin gerçek sınırını aşıyor ve sunucu istemin
-# **başını** sessizce atıyor. Model o noktada kim olduğunu ve ne istendiğini
-# unutmuş oluyor — dışarıdan "sapıtıyor" gibi görünüyor.
+# The symptom of a wrong context-window setting is insidious: compaction
+# never triggers, the prompt exceeds the model's real limit and the server
+# silently drops the **head** of the prompt. At that point the model has
+# forgotten who it is and what was asked — from the outside it looks like
+# it is "going haywire".
 #
-# Varsayılan 200_000 Claude'un penceresi; yerel bir modelde çoğunlukla
-# 8k–32k. Sunucuya sorup öğrenebiliyorsak tahmin etmeyelim.
+# The default 200_000 is Claude's window; on a local model it is mostly
+# 8k–32k. If we can ask the server and learn, let's not guess.
 
 PROBE_TIMEOUT = 2.0
-# Bulut katalogları (NVIDIA, OpenRouter…) yerelden yavaş olabilir; 2 sn
-# sessizce boş listeye düşüyordu — "model yüklenmiyor" gibi görünüyordu.
+# Cloud catalogues (NVIDIA, OpenRouter…) can be slower than local; 2 s was
+# silently falling to an empty list — it looked like "the model won't load".
 REMOTE_PROBE_TIMEOUT = 10.0
 
-# Uyumlu sunucuların pencereyi bildirdiği alan adları. Standart değil, her
-# sunucu kendi adını kullanıyor.
-# Sıra önemli: `loaded_context_length` modelin **o an yüklü olduğu**
-# pencere, `max_context_length` ise desteklediği en büyük değer. LM Studio
-# bir modeli 262144 desteklediği halde 4096 ile yükleyebiliyor; büyük olanı
-# yazmak sıkıştırmayı hiç tetiklemeyip sunucunun istemin başını atmasına
-# yol açıyor. Gerçek olan yüklü olan.
+# The field names compatible servers report the window under. Not standard,
+# every server uses its own name.
+# Order matters: `loaded_context_length` is the window the model is
+# **currently loaded with**, `max_context_length` the largest it supports.
+# LM Studio can load a model with 4096 even though it supports 262144;
+# writing the large one never triggers compaction and leads the server to
+# drop the head of the prompt. The real one is the loaded one.
 WINDOW_FIELDS = (
     "loaded_context_length",
     "context_length",
@@ -398,10 +401,11 @@ WINDOW_FIELDS = (
 def _openai_models_payload(
     config: Config,
 ) -> tuple[dict[str, Any] | None, str | None]:
-    """OpenAI-uyumlu `{base}/models`.
+    """OpenAI-compatible `{base}/models`.
 
-    Dönüş: (payload, hata). Anahtarlı uçlar Bearer ister (Gemini…).
-    Hata kısa Türkçe — ayar sayfası 'liste yok' yerine nedeni göstersin.
+    Returns: (payload, error). Keyed endpoints want Bearer (Gemini…).
+    The error is short Turkish — so the settings page shows the reason
+    instead of 'no list'.
     """
     if config.model.provider != "openai" or not config.model.base_url:
         return None, None
@@ -436,10 +440,10 @@ def _openai_models_payload(
 
 
 def detect_window(config: Config) -> int | None:
-    """Sunucudan modelin gerçek pencere boyutunu sorar.
+    """Asks the server for the model's real window size.
 
-    Bulamazsa None döner — uydurmak, yanlış ayarı sessizce sürdürmekten
-    daha kötü.
+    Returns None if it cannot find it — making it up is worse than silently
+    continuing with the wrong setting.
     """
     caps = detect_caps(config)
     window = caps.get("max_context")
@@ -447,13 +451,13 @@ def detect_window(config: Config) -> int | None:
 
 
 def detect_caps(config: Config) -> dict[str, Any]:
-    """Seçili modelin katalogdaki yetenekleri. Bilinmeyen alan yok.
+    """The selected model's capabilities from the catalogue. No unknown fields.
 
-    Sağlayıcıya göre şekil değişir: OpenRouter `context_length` +
+    The shape changes per provider: OpenRouter `context_length` +
     `architecture.input_modalities` + `supported_parameters`; LM Studio
-    `max_context_length` + `capabilities`; Anthropic listede pencere yok,
-    düşünme/görüntü Claude sohbet modellerinde var sayılır; OpenAI resmi
-    listede bu alanlar yok — uydurulmaz.
+    `max_context_length` + `capabilities`; Anthropic's list has no window,
+    thinking/vision are assumed on Claude chat models; OpenAI's official
+    list lacks these fields — they are not invented.
     """
     name = (config.model.name or "").strip()
     if not name or name.lower() == "oto":
@@ -467,8 +471,8 @@ def detect_caps(config: Config) -> dict[str, Any]:
                 if key in entry
             }
             break
-    # Ollama `/v1/models` yalnız kimlik verir; pencere/yetenek `/api/show`
-    # ile seçili modele sorulur — katalogda N çağrı yok, yalnız Algıla.
+    # Ollama `/v1/models` only gives ids; window/capabilities are asked of
+    # the selected model via `/api/show` — no N calls in the catalogue, only Detect.
     if any(key not in caps for key in ("max_context", "vision", "thinking")):
         for key, value in _ollama_show_caps(config, name).items():
             caps.setdefault(key, value)
@@ -476,7 +480,7 @@ def detect_caps(config: Config) -> dict[str, Any]:
 
 
 def _caps_of(entry: dict[str, Any]) -> dict[str, Any]:
-    """Tek bir `/models` kaydından bilinen yetenekler. Eksik alan eklenmez."""
+    """Known capabilities from a single `/models` record. Missing fields are not added."""
     ident = str(entry.get("id") or entry.get("key") or "")
     out: dict[str, Any] = {"id": ident}
     shown = entry.get("name") or entry.get("display_name")
@@ -535,21 +539,21 @@ def _window_of(entry: dict[str, Any]) -> int | None:
 
 
 def scan_models(config: Config) -> list[dict[str, Any]]:
-    """Sunucudaki modeller, yetenekleriyle birlikte.
+    """The models on the server, with their capabilities.
 
-    Yalnızca ad listelemek yetmiyordu: görüntü kabul etmeyen bir modelde
-    kamerayı açmanın, araç kullanmak için eğitilmemiş bir modelde araçları
-    beklemenin anlamı yok. LM Studio bunları söylüyor.
+    Listing only names was not enough: there is no point opening the camera
+    on a model that does not accept images, or expecting tools from a model
+    not trained for tool use. LM Studio tells us these.
     """
     return scan_models_result(config)["models"]
 
 
 def batch_only_model(ident: str) -> bool:
-    """OpenRouter `:batch` varyantı — canlı sohbet değil, Batch API'ye özel.
+    """OpenRouter `:batch` variant — not live chat, specific to the Batch API.
 
-    Bu modeller `/v1/chat/completions` ile 404 verir; asenkron
-    `/api/beta/batches` uçuna aittir (saatler sürebilir, araçlı tur
-    döngüsüne uymaz). Katalogda ve kayıttta elenir.
+    These models give 404 with `/v1/chat/completions`; they belong to the
+    asynchronous `/api/beta/batches` endpoint (can take hours, does not fit
+    the tool turn loop). Dropped from the catalogue and on save.
     """
     text = str(ident or "").strip()
     if ":" not in text:
@@ -558,9 +562,9 @@ def batch_only_model(ident: str) -> bool:
 
 
 def scan_models_result(config: Config) -> dict[str, Any]:
-    """`{models, error}` — ayar sayfası boş listede nedeni göstersin."""
-    # LM Studio yönetimi yalnız localhost — NVIDIA/OpenRouter'a
-    # /api/v1/models yoklamak yanlış ve gecikme.
+    """`{models, error}` — so the settings page shows the reason on an empty list."""
+    # LM Studio management only on localhost — probing /api/v1/models on
+    # NVIDIA/OpenRouter is wrong and a delay.
     if lmstudio.is_local_url(config.model.base_url):
         found = lmstudio.models(config.model.base_url)
         if found:
@@ -597,7 +601,7 @@ def scan_models_result(config: Config) -> dict[str, Any]:
             ident = str(raw.get("id"))
             if "embed" in ident.lower():
                 continue
-            # `:batch` canlı sohbet değil — seçilirse 404 + Batch API uyarısı.
+            # `:batch` is not live chat — if selected, 404 + Batch API warning.
             if batch_only_model(ident):
                 continue
             entries.append(_caps_of(raw))
@@ -609,8 +613,8 @@ def scan_models_result(config: Config) -> dict[str, Any]:
 
 
 def _anthropic_catalog(config: Config) -> tuple[list[dict[str, Any]], str | None]:
-    """Claude model listesi. Listede pencere yok; sohbet modelleri görüntü
-    ve düşünme kabul eder — bu, uçtan gelen bir sayı değil, sağlayıcı gerçeği.
+    """Claude model list. No window in the list; chat models accept images
+    and thinking — this is a provider fact, not a number coming from the endpoint.
     """
     import urllib.error
     import urllib.request
@@ -653,8 +657,8 @@ def _anthropic_catalog(config: Config) -> tuple[list[dict[str, Any]], str | None
         if "embed" in ident.lower():
             continue
         item = _caps_of(raw)
-        # Claude sohbet modelleri görüntü ve düşünme kabul eder; listede
-        # pencere yok — sayı uydurulmaz.
+        # Claude chat models accept images and thinking; no window in the
+        # list — no number is invented.
         item.setdefault("vision", True)
         item.setdefault("thinking", True)
         item.setdefault("tools", True)
@@ -663,7 +667,7 @@ def _anthropic_catalog(config: Config) -> tuple[list[dict[str, Any]], str | None
 
 
 def _ollama_show_caps(config: Config, name: str) -> dict[str, Any]:
-    """Ollama `/api/show` — uç söylemezse boş. Katalogda çağrılmaz."""
+    """Ollama `/api/show` — empty if the endpoint does not say. Not called in the catalogue."""
     base = config.model.base_url or ""
     if "11434" not in base and "ollama" not in base.lower():
         return {}
@@ -703,13 +707,13 @@ def _ollama_show_caps(config: Config, name: str) -> dict[str, Any]:
 
 
 def available_models(config: Config) -> list[str]:
-    """Sunucunun sunduğu model kimlikleri."""
+    """The model ids the server offers."""
     names, _err = available_models_with_error(config)
     return names
 
 
 def available_models_with_error(config: Config) -> tuple[list[str], str | None]:
-    """Sunucunun sunduğu model kimlikleri + hata özeti."""
+    """The model ids the server offers + error summary."""
     payload, err = _openai_models_payload(config)
     if not payload:
         return [], err
@@ -722,28 +726,28 @@ def available_models_with_error(config: Config) -> tuple[list[str], str | None]:
         str(entry.get("id"))
         for entry in entries
         if isinstance(entry, dict) and entry.get("id")
-        # Gömme modelleri sohbet edemiyor; listede görünmeleri yanlış seçime
-        # yol açıyor ve hata ancak ilk mesajda çıkıyor.
+        # Embedding models cannot chat; showing them in the list leads to a
+        # wrong pick and the error only surfaces on the first message.
         and entry.get("type") not in ("embeddings", "embedding")
         and "embed" not in str(entry.get("id")).lower()
-        # `:batch` yalnız asenkron Batch API — canlı sohbet listesinde yok.
+        # `:batch` is only the asynchronous Batch API — not in the live chat list.
         and not batch_only_model(str(entry.get("id")))
     ]
     return sorted(dict.fromkeys(names)), None
 
 
 def loaded_models(config: Config) -> list[dict[str, Any]]:
-    """Sunucuda o an yüklü duran modeller.
+    """The models currently loaded on the server.
 
-    LM Studio meşgul bir modele ikinci istek gelince modelin **ikinci bir
-    kopyasını** yüklüyor: `qwen3.5-9b`, `qwen3.5-9b:2`, `qwen3.5-9b:3`… Üç
-    kopya 6.5 GB'lık bir modelde 20 GB demek ve makine buna dayanmıyor.
+    When a second request hits a busy model LM Studio loads a **second copy**
+    of the model: `qwen3.5-9b`, `qwen3.5-9b:2`, `qwen3.5-9b:3`… Three copies
+    of a 6.5 GB model mean 20 GB and the machine cannot take it.
 
-    Asıl çözüm önlemek — `model.max_calls = 1` sunucuya aynı anda tek istek
-    gitmesini sağlıyor. Burası teşhis: kaç kopya durduğu görünsün ki
-    kullanıcı ne olduğunu anlasın.
+    The real fix is prevention — `model.max_calls = 1` keeps a single
+    request in flight to the server. This is diagnosis: how many copies are
+    sitting there should be visible so the user understands what happened.
 
-    `/api/v0/models` LM Studio'ya özgü; olmayan sunucularda boş dönüyor.
+    `/api/v0/models` is LM Studio specific; returns empty on servers without it.
     """
     if config.model.provider != "openai" or not config.model.base_url:
         return []
@@ -751,7 +755,7 @@ def loaded_models(config: Config) -> list[dict[str, Any]]:
     import urllib.error
     import urllib.request
 
-    # `/v1` yerine `/api/v0`: durum bilgisini yalnızca o uç veriyor.
+    # `/api/v0` instead of `/v1`: only that endpoint gives state information.
     root = config.model.base_url.rstrip("/")
     root = root[: -len("/v1")] if root.endswith("/v1") else root
 
@@ -770,8 +774,8 @@ def loaded_models(config: Config) -> list[dict[str, Any]]:
             "id": entry.get("id", ""),
             "kind": entry.get("type", ""),
             "window": _window_of(entry),
-            # Kopyalar ada eklenen `:2`, `:3` ile ayrılıyor; hangi modelin
-            # kaç kopyası olduğunu bulmak için taban ad gerekiyor.
+            # Copies are told apart by `:2`, `:3` appended to the name; the
+            # base name is needed to find how many copies each model has.
             "base": str(entry.get("id", "")).split(":")[0],
         }
         for entry in entries
@@ -779,26 +783,26 @@ def loaded_models(config: Config) -> list[dict[str, Any]]:
     ]
 
 
-# -- yazma -------------------------------------------------------------
+# -- writing -----------------------------------------------------------
 
 
-# Çıktı tavanı bağlamdan taşmasın diye bırakılan pay (istem + araçlar).
-_TOKEN_REZERV = 2048
+# Margin left so the output ceiling does not overflow the context (prompt + tools).
+_TOKEN_RESERVE = 2048
 
 
 def adopt_caps(config: Config, model: ModelConfig) -> ModelConfig:
-    """Katalog/detect ile model yeteneklerini doldurur. Uydurma yok.
+    """Fills the model capabilities via catalogue/detect. Nothing invented.
 
-    Pencere/thinking/vision biliniyorsa yazar; bilinmiyorsa dokunmaz.
-    max_tokens pencereden büyükse kısılır.
+    Writes window/thinking/vision if known; leaves them alone if not.
+    max_tokens is clamped if larger than the window.
     """
-    ad = (model.name or "").strip()
-    if not ad or ad.lower() == "oto":
+    name = (model.name or "").strip()
+    if not name or name.lower() == "oto":
         return _clamp_max_tokens(model)
 
-    from dataclasses import replace as _degistir
+    from dataclasses import replace as _replace
 
-    probe = _degistir(config, model=model)
+    probe = _replace(config, model=model)
     try:
         caps = detect_caps(probe)
     except Exception:
@@ -814,44 +818,45 @@ def adopt_caps(config: Config, model: ModelConfig) -> ModelConfig:
     if "vision" in caps:
         fields["vision"] = bool(caps["vision"])
     if fields:
-        model = _degistir(model, **fields)
+        model = _replace(model, **fields)
     return _clamp_max_tokens(model)
 
 
 def _clamp_max_tokens(model: ModelConfig) -> ModelConfig:
-    from dataclasses import replace as _degistir
+    from dataclasses import replace as _replace
 
     window = int(model.context_window or 0)
     if window <= 0:
         return model
-    tavan = max(256, window - _TOKEN_REZERV)
-    if model.max_tokens <= tavan:
+    ceiling = max(256, window - _TOKEN_RESERVE)
+    if model.max_tokens <= ceiling:
         return model
-    return _degistir(model, max_tokens=tavan)
+    return _replace(model, max_tokens=ceiling)
 
 
 def apply(config: Config, patch: dict[str, Any]) -> Config:
-    """Ayarları diske yazar ve güncellenmiş yapılandırmayı döndürür.
+    """Writes the settings to disk and returns the updated configuration.
 
-    Doğrulama burada yapılıyor, arayüzde değil: ayar sayfası tek istemci
-    değil (dosya elle de düzenlenebiliyor) ve bozuk bir değer açılışta
-    çöken bir programa dönüşüyor.
+    Validation is done here, not in the UI: the settings page is not the
+    only client (the file can be hand-edited too) and a broken value turns
+    into a program that crashes on startup.
     """
-    # Taban diskteki hal, çağıranın elindeki değil. Ayar sayfası kısmi yama
-    # gönderiyor ("yalnızca izin kipini değiştirdim") ve elde bayat bir
-    # Config varsa dokunulmayan alanlar sessizce eski değerlerine dönüyordu.
+    # The base is the on-disk state, not what the caller holds. The settings
+    # page sends partial patches ("I only changed the permission mode") and
+    # with a stale Config in hand the untouched fields silently reverted to
+    # their old values.
     base = _from_disk(config)
 
     model = _model_patch(base.model, patch)
     patch_model = patch.get("model") or {}
-    # Model kimliği değiştiyse bağlamı API'den doldur (Algıla şart değil).
-    # Kullanıcı aynı yamada context_window gönderdiyse ona dokunma.
-    kimlik_degisti = (
+    # If the model identity changed fill the context from the API (Detect not required).
+    # If the user sent context_window in the same patch, leave it alone.
+    identity_changed = (
         model.name != base.model.name
         or model.provider != base.model.provider
         or (model.base_url or "") != (base.model.base_url or "")
     )
-    if kimlik_degisti and "context_window" not in patch_model:
+    if identity_changed and "context_window" not in patch_model:
         try:
             model = adopt_caps(base, model)
         except Exception:
@@ -865,8 +870,8 @@ def apply(config: Config, patch: dict[str, Any]) -> Config:
     speech = _section(VoiceConfig, base.voice, patch.get("voice"))
     located = _section(PlaceConfig, base.place, patch.get("place"))
 
-    # Otomatik başlatma bir dosyaya değil kayda yazılıyor; ayar nesnesinde
-    # tutmanın anlamı yok, gerçek durum kaydın kendisi.
+    # Autostart is written to the registry, not a file; there is no point
+    # holding it in the settings object, the real state is the registry itself.
     if (wanted := (patch.get("startup") or {}).get("enabled")) is not None:
         startup.apply(bool(wanted))
     if (wanted := (patch.get("shell_assoc") or {}).get("enabled")) is not None:
@@ -877,23 +882,23 @@ def apply(config: Config, patch: dict[str, Any]) -> Config:
 
     if permissions.mode not in {m["id"] for m in PERMISSION_MODES}:
         raise ValueError(f"Bilinmeyen izin kipi: {permissions.mode}")
-    # OpenRouter anahtarı kaydedilmeden ÖNCE canlı doğrulanıyor: yanlış
-    # yapıştırılan bir anahtar ancak ilk mesajda patlıyordu ve hata ayar
-    # sayfasından uzaktaydı. Ağ yoksa doğrulama atlanıyor — çevrimdışı bir
-    # kurulum kilitlenmemeli.
-    _dogrula_openrouter_anahtari(patch.get("keys") or {})
+    # The OpenRouter key is verified live BEFORE being saved: a wrongly
+    # pasted key only blew up on the first message and the error was far
+    # from the settings page. Without network the verification is skipped —
+    # an offline setup must not lock up.
+    _verify_openrouter_key(patch.get("keys") or {})
     if model.max_tokens < 256:
         raise ValueError("max_tokens en az 256 olmalı.")
     if model.context_window < model.max_tokens:
         raise ValueError("Bağlam penceresi max_tokens'tan küçük olamaz.")
     if not workshop.directory.strip():
         raise ValueError("Atölye klasörü boş olamaz.")
-    # Proje seçimi yazma iznini genişletiyor: doğrulama burada, arayüzde
-    # değil. Geçersiz bir kök (sürücü kökü, sistem klasörü) ancak ajan
-    # oraya yazmaya çalışınca patlardı ve o çok geç.
-    if (proje := workshop.project.strip()):
-        if (engel := sandbox.root_block(Path(proje).expanduser())) is not None:
-            raise ValueError(engel)
+    # Selecting a project widens the write permission: validation is here,
+    # not in the UI. An invalid root (drive root, system folder) would only
+    # blow up when the agent tried to write there, and that is far too late.
+    if (project := workshop.project.strip()):
+        if (block := sandbox.root_block(Path(project).expanduser())) is not None:
+            raise ValueError(block)
 
     updated = replace(
         base,
@@ -909,19 +914,20 @@ def apply(config: Config, patch: dict[str, Any]) -> Config:
     )
     _write_config(updated)
 
-    # Proje DEĞİŞTİYSE son projeler defterine yaz. Her kaydedişte değil:
-    # kullanıcı sesi değiştirdiğinde defterin başı karışmamalı.
-    if proje and proje != base.sandbox.project.strip():
-        sandbox.proje_hatirla(updated.state_dir, str(Path(proje).expanduser()))
+    # If the project CHANGED, write to the recent-projects notebook. Not on
+    # every save: when the user changes the voice the top of the notebook
+    # must not get shuffled.
+    if project and project != base.sandbox.project.strip():
+        sandbox.proje_hatirla(updated.state_dir, str(Path(project).expanduser()))
 
     if keys := patch.get("keys"):
         _write_keys(config.state_dir, keys)
-        # Kullanıcı ayar sayfasından bir anahtarı AÇIKÇA değiştirdi: ortamda
-        # eski bir değer olsa bile üzerine yazılmalı. `export_keys` "zaten
-        # varsa dokunma" diyor (kabuktaki anahtar dosyadan önce gelsin diye);
-        # ama açık bir değişiklik o kuralın istisnası — yoksa yeni anahtar
-        # çalışan sürece hiç ulaşmıyor ve yalnızca yeniden başlatınca etkili
-        # oluyordu.
+        # The user EXPLICITLY changed a key from the settings page: even if
+        # the environment holds an old value it must be overwritten.
+        # `export_keys` says "leave it if already set" (so the shell key
+        # comes before the file); but an explicit change is the exception
+        # to that rule — otherwise the new key never reached the running
+        # process and only took effect after a restart.
         for name, value in keys.items():
             if value:
                 os.environ[name] = value
@@ -930,20 +936,20 @@ def apply(config: Config, patch: dict[str, Any]) -> Config:
     return updated
 
 
-def _dogrula_openrouter_anahtari(keys: dict[str, Any]) -> None:
-    """Yamadaki OpenRouter anahtarını kaydetmeden yoklar.
+def _verify_openrouter_key(keys: dict[str, Any]) -> None:
+    """Probes the OpenRouter key in the patch before saving.
 
-    401 dönerse ValueError: ayar sayfası bunu kırmızı satır olarak basıyor
-    ve HİÇBİR ŞEY diske yazılmıyor. Ağ yoksa (belirsiz) atla-kaydet; not
-    terminale düşüyor — çevrimdışı kurulum kilitlenmemeli.
+    On 401 a ValueError: the settings page prints it as a red line and
+    NOTHING is written to disk. Without network (undetermined) skip-and-save;
+    the note falls to the terminal — an offline setup must not lock up.
     """
-    aday = str(keys.get("OPENROUTER_API_KEY") or "").strip()
-    if not aday or aday == MASK:
+    candidate = str(keys.get("OPENROUTER_API_KEY") or "").strip()
+    if not candidate or candidate == MASK:
         return
 
     from . import automode
 
-    status = automode.verify_key(aday)
+    status = automode.verify_key(candidate)
     if status == "gecersiz":
         raise ValueError(
             "OpenRouter anahtarı geçersiz (401) — kaydedilmedi. "
@@ -958,10 +964,10 @@ def _dogrula_openrouter_anahtari(keys: dict[str, Any]) -> None:
 
 
 def _from_disk(config: Config) -> Config:
-    """Yapılandırmanın diskteki hali.
+    """The on-disk state of the configuration.
 
-    `Config.load` kullanılmıyor: o ortam değişkenlerini de karıştırıyor ve
-    kabuktan gelen geçici bir değer kalıcı dosyaya yazılmış olurdu.
+    `Config.load` is not used: it also mixes in environment variables, and
+    a transient value from the shell would end up written to the persistent file.
     """
     path = config.state_dir / CONFIG_FILE
     if not path.exists():
@@ -987,8 +993,9 @@ def _from_disk(config: Config) -> Config:
 def _model_patch(current: ModelConfig, patch: dict[str, Any]) -> ModelConfig:
     fields = dict(patch.get("model") or {})
 
-    # Sağlayıcı seçimi adresi ve anahtar değişkenini birlikte belirliyor;
-    # üçünü elle tutarlı tutmayı kullanıcıya bırakmak hataya davetiye.
+    # Choosing a provider determines the address and the key variable
+    # together; leaving the user to keep all three consistent by hand is an
+    # invitation to error.
     if chosen := patch.get("provider"):
         entry = next((e for e in PROVIDERS if e["id"] == chosen), None)
         if entry is None:
@@ -1008,13 +1015,13 @@ def _model_patch(current: ModelConfig, patch: dict[str, Any]) -> ModelConfig:
         if name in fields and fields[name] is not None:
             fields[name] = bool(fields[name])
 
-    # Yerel opt açılınca çift kopyayı engelle — kullanıcı açıkça max_calls
-    # yazmadıysa 1'e çek.
+    # When local opt is switched on prevent the double copy — pull to 1
+    # unless the user explicitly wrote max_calls.
     if fields.get("local_optimize") is True and "max_calls" not in fields:
         fields["max_calls"] = 1
 
-    # OpenRouter `:batch` canlı chat completions kabul etmez; aynı modelin
-    # senkron kimliğine düşür (google/…:batch → google/…).
+    # OpenRouter `:batch` does not accept live chat completions; fall back
+    # to the same model's synchronous id (google/…:batch → google/…).
     if "name" in fields and batch_only_model(str(fields.get("name") or "")):
         raw = str(fields["name"]).strip()
         fields["name"] = raw.rsplit(":", 1)[0]
@@ -1043,18 +1050,19 @@ def _write_config(config: Config) -> None:
         "listen": asdict(config.listen),
         "camera": asdict(config.camera),
         "browser": asdict(config.browser),
-        # Posta kimliği burada değil: `keys.json` içinde, tıpkı API
-        # anahtarları gibi. config.json bir projeye girip sürüm kontrolüne
-        # düşebilir.
+        # The mail identity is not here: it is in `keys.json`, just like the
+        # API keys. config.json can end up in a project and fall into
+        # version control.
     }
     _atomic(config.state_dir / CONFIG_FILE, json.dumps(payload, ensure_ascii=False, indent=2))
 
 
 def _write_keys(state_dir: Path, incoming: dict[str, Any]) -> None:
-    """Anahtarları birleştirip yazar.
+    """Merges and writes the keys.
 
-    Maskeli gelen alan "değiştirilmedi" demek: ayar sayfası gerçek değeri
-    hiç görmediği için geri de gönderemiyor. Boş dize ise silme isteği.
+    A masked incoming field means "unchanged": the settings page never saw
+    the real value so it cannot send it back either. An empty string is a
+    delete request.
     """
     keys = load_keys(state_dir)
     for name, value in incoming.items():
@@ -1070,15 +1078,15 @@ def _write_keys(state_dir: Path, incoming: dict[str, Any]) -> None:
     state_dir.mkdir(parents=True, exist_ok=True)
     _atomic(path, json.dumps(keys, ensure_ascii=False, indent=2))
     try:
-        # Yalnızca sahibi okuyabilsin. Windows'ta bu çağrı sessizce etkisiz
-        # kalıyor; orada dosya zaten kullanıcı profilinin altında.
+        # Only the owner should be able to read. On Windows this call is
+        # silently a no-op; there the file already sits under the user profile.
         path.chmod(stat.S_IRUSR | stat.S_IWUSR)
     except OSError:
         pass
 
 
 def _atomic(path: Path, text: str) -> None:
-    """Yarım yazılmış bir ayar dosyası programı açılmaz hale getirir."""
+    """A half-written settings file makes the program unable to start."""
     temp = path.with_suffix(path.suffix + ".tmp")
     temp.write_text(text, encoding="utf-8")
     temp.replace(path)

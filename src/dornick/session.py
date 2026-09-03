@@ -1,15 +1,16 @@
-"""Oturum: olay günlüğünü API mesaj listesine projekte eder.
+"""Session: projects the event log onto the API message list.
 
-API durumsuzdur — her turda tüm geçmiş yeniden gönderilir. "Hafıza" diye bir
-şey yok; burada tutulan liste var. Bu sınıf o listenin tek sahibidir.
+The API is stateless — the whole history is re-sent every turn. There is no
+such thing as "memory"; there is the list kept here. This class is the sole
+owner of that list.
 
-İki katı API kuralı burada zorlanır:
+Two strict API rules are enforced here:
 
-  1. Bir asistan turundaki *tüm* tool_use bloklarının karşılığı *tek bir*
-     kullanıcı mesajında dönmeli. Birden fazla mesaja bölmek modeli sessizce
-     paralel araç çağırmamaya eğitir.
-  2. Hiçbir tool_use karşılıksız kalamaz. Kalırsa bir sonraki istek 400 alır.
-     Kesme (ESC) durumunda bile iptal sonucu enjekte edilmek zorunda.
+  1. The results of *all* tool_use blocks in an assistant turn must come
+     back in *a single* user message. Splitting them across messages quietly
+     trains the model not to call tools in parallel.
+  2. No tool_use may be left unanswered. If one is, the next request gets a
+     400. Even on interrupt (ESC) a cancellation result must be injected.
 """
 
 from __future__ import annotations
@@ -24,8 +25,8 @@ from .events import Event, EventLog
 
 Block = dict[str, Any]
 
-# Bağlam sıkıştırmasının bıraktığı işaret. Mesaj projeksiyonu buradan
-# başlar; günlüğün kendisi dokunulmadan kalır.
+# The marker context compaction leaves behind. The message projection starts
+# from here; the log itself stays untouched.
 HORIZON = "context_reset"
 
 
@@ -41,15 +42,16 @@ class Session:
         self.log = log
         self.id = session_id
 
-    # -- fabrika -------------------------------------------------------
+    # -- factory -------------------------------------------------------
 
     @classmethod
     def create(cls, sessions_dir: Path) -> Session:
         base = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-        # Kimlik saniye çözünürlüklü: aynı saniyede iki oturum açılırsa
-        # (ör. yeni konuşma butonu, açılıştan hemen sonra) ikisi aynı dosyaya
-        # yazardı ve "yeni" konuşma eskisinin üstüne binerdi. Çakışmada kısa
-        # bir sonek ekleniyor — biçim bozulmuyor, benzersizlik garanti.
+        # The id has second resolution: if two sessions open within the same
+        # second (e.g. the new-conversation button right after startup) both
+        # would write to the same file and the "new" conversation would pile
+        # onto the old one. On collision a short suffix is appended — the
+        # format is not broken, uniqueness is guaranteed.
         session_id = base
         for suffix in range(1, 100):
             if not (sessions_dir / f"{session_id}.jsonl").exists():
@@ -68,57 +70,59 @@ class Session:
 
     @classmethod
     def latest(cls, sessions_dir: Path) -> Session | None:
-        """`--resume`'un sürdürdüğü oturum: en son KULLANILAN.
+        """The session `--resume` continues: the most recently USED one.
 
-        Ada göre sıralamak en son AÇILAN'ı veriyordu. İkisi çoğu zaman
-        aynı oturum — ama kullanıcı geçmişten eski bir konuşmaya dönüp
-        oradan devam ettiyse değil: o durumda yeniden başlatma, kullanıcıyı
-        günün ilk yarısında bıraktığı başka bir konuşmaya atıyordu.
-        Dosyaya her olayda yazıldığı için mtime "son etkinlik" demek.
+        Sorting by name gave the most recently OPENED one. The two are
+        usually the same session — but not when the user went back to an
+        older conversation in history and continued from there: in that
+        case a restart threw the user into another conversation they had
+        left in the first half of the day. Since the file is written on
+        every event, mtime means "last activity".
         """
         files = list(sessions_dir.glob("*.jsonl"))
         if not files:
             return None
-        # Eşit mtime'da ad ikinci ölçüt: sıralama belirsiz kalmasın.
+        # On equal mtime the name is the second key: the order must not be ambiguous.
         return cls.resume(max(files, key=lambda p: (p.stat().st_mtime, p.name)))
 
-    # -- yazma ---------------------------------------------------------
+    # -- writing -------------------------------------------------------
 
     def add_user_text(self, text: str) -> None:
         self.log.message("user", [{"type": "text", "text": text}])
 
     def add_user_blocks(self, blocks: list[Block], *, internal: bool = False) -> None:
-        """Kullanıcı turuna blok ekler.
+        """Adds blocks to a user turn.
 
-        `internal`, kullanıcının yazmadığı turlar için: araçtan gelen bir
-        görüntü ya da harness'ın eklediği bir not. Arayüz bunları sohbette
-        göstermiyor — kullanıcının yazmadığı bir metin cevap gibi duruyor.
+        `internal` is for turns the user did not write: an image coming from
+        a tool or a note the harness added. The UI does not show these in
+        the chat — text the user did not write looks like a reply.
         """
         self.log.message("user", blocks, internal=internal)
 
     def add_assistant(self, content: Iterable[Any], **meta: Any) -> None:
-        """API yanıtının content'ini olduğu gibi saklar.
+        """Stores the API response's content as-is.
 
-        Thinking blokları dahil hiçbir blok düzenlenmez — API değiştirilmiş
-        blokları reddeder ve aynı modelde devam ederken hepsi geri gitmeli.
+        No block is edited, thinking blocks included — the API rejects
+        modified blocks and all of them must go back while continuing on the
+        same model.
         """
         self.log.message("assistant", blocks_to_dicts(content), **meta)
 
     def add_tool_results(self, results: list[Block]) -> None:
-        """Tüm araç sonuçlarını TEK bir kullanıcı mesajı olarak ekler."""
+        """Adds all tool results as ONE user message."""
         if not results:
             return
         self.log.message("user", results, tool_results=True)
 
     def add_system_note(self, text: str) -> None:
-        """Konuşma ortası operatör yönergesi.
+        """Mid-conversation operator directive.
 
-        messages[] içine role="system" olarak gider (Opus 4.8). Üstteki system
-        alanını düzenlemek yerine bunu kullanmak önbelleği korur ve kanal
-        taklit edilemez: kullanıcı içeriğine gömülü metin sahtelenebilir,
-        role="system" edilemez.
+        Goes into messages[] as role="system" (Opus 4.8). Using this instead
+        of editing the top-level system field preserves the cache and the
+        channel cannot be spoofed: text embedded in user content can be
+        forged, role="system" cannot.
 
-        Kısıt: ilk mesaj olamaz ve bir user mesajını takip etmeli.
+        Constraint: it cannot be the first message and must follow a user message.
         """
         if not self._can_take_system_note():
             self.log.note("system_note_skipped", text=text)
@@ -126,15 +130,16 @@ class Session:
         self.log.message("system", text)
 
     def add_harness_note(self, text: str) -> None:
-        """Harness'ın tur ortası notu: yardımcı bitti, kullanıcı araya yazdı.
+        """The harness's mid-turn note: a helper finished, the user interjected.
 
-        `add_system_note`'tan farkı iki yerde:
-          * Kaybolmaz. System notu bir user mesajını takip etmek zorunda;
-            uymuyorsa (ör. peş peşe iki not) buradaki not user kanalından
-            girer — düşürülmez.
-          * Görünmez. `internal` işareti arayüzde saklanmasını sağlıyor:
-            kullanıcının yazmadığı bir metin sohbette mesaj gibi durmamalı
-            (araya giren mesajın balonu zaten `araya` olayıyla çizildi).
+        Differs from `add_system_note` in two places:
+          * It is not lost. A system note must follow a user message; if
+            that does not hold (e.g. two notes back to back) this note goes
+            in through the user channel — it is not dropped.
+          * It is invisible. The `internal` flag keeps it hidden in the UI:
+            text the user did not write must not sit in the chat like a
+            message (the interjecting message's bubble was already drawn by
+            the `araya` event).
         """
         if self._can_take_system_note():
             self.log.message("system", text, internal=True)
@@ -142,26 +147,26 @@ class Session:
             self.log.message("user", [{"type": "text", "text": text}], internal=True)
 
     def add_continuation_note(self, text: str) -> None:
-        """Tavana çarpmış bir yanıtı sürdürmesi için dürtü.
+        """Nudge to continue a reply that hit the ceiling.
 
-        `add_system_note` burada kullanılamıyor: system notu bir user
-        mesajını takip etmek zorunda, oysa kesilen turdan sonra sondaki mesaj
-        asistanın kendisi. Bu yüzden user kanalından gidiyor.
+        `add_system_note` cannot be used here: a system note must follow a
+        user message, whereas after the cut-off turn the last message is
+        the assistant's own. So it goes through the user channel.
 
-        `continuation` işareti arayüz için: kullanıcının yazmadığı bir mesaj
-        sohbette kullanıcı mesajı gibi görünmemeli.
+        The `continuation` flag is for the UI: a message the user did not
+        write must not look like a user message in the chat.
         """
         self.log.message("user", [{"type": "text", "text": text}], continuation=True)
 
-    # -- okuma ---------------------------------------------------------
+    # -- reading -------------------------------------------------------
 
     def messages(self) -> list[dict[str, Any]]:
-        """API'ye gidecek mesaj listesi.
+        """The message list going to the API.
 
-        Günlük hiçbir zaman kısaltılmıyor — sıkıştırma yalnızca bir ufuk
-        işareti bırakıyor ve bu projeksiyon oradan başlıyor. Ham gerçek
-        diskte durmaya devam ediyor: geçmiş oturum özeti çıkarmak, hata
-        aramak ve zihni yeniden örmek hep o dosyadan yapılıyor.
+        The log is never shortened — compaction only leaves a horizon marker
+        and this projection starts from there. The raw truth keeps sitting
+        on disk: extracting a past-session summary, hunting for an error and
+        re-weaving the mind are all done from that file.
         """
         horizon = self._horizon()
         if horizon is None:
@@ -177,51 +182,51 @@ class Session:
         ]
 
     def _horizon(self) -> Event | None:
-        """En son bağlam sıkıştırması. Yoksa pencere oturumun başından açık."""
+        """The latest context compaction. If none, the window is open from the session start."""
         marks = self.log.notes(HORIZON)
         return marks[-1] if marks else None
 
     def _live_events(self) -> list[Event]:
-        """Şu anki pencerede duran mesaj olayları."""
+        """The message events sitting in the current window."""
         events = self.log.messages()
         if (horizon := self._horizon()) is None:
             return events
         floor = int(horizon.meta.get("from_seq", 0))
         return [e for e in events if e.seq >= floor]
 
-    # -- sıkıştırma ----------------------------------------------------
+    # -- compaction ----------------------------------------------------
 
     def compaction_plan(self, *, keep: int = compaction.KEEP_MESSAGES) -> tuple[int, str] | None:
-        """Neyin özetleneceğini hazırlar: (ilk kalan mesajın seq'i, döküm).
+        """Prepares what will be summarised: (seq of the first kept message, transcript).
 
-        None dönerse güvenli bir kesme noktası yok — pencerede henüz
-        kesilebilecek kadar tamamlanmış tur birikmemiş demektir.
+        None means there is no safe cut point — not enough completed turns
+        have accumulated in the window to cut yet.
         """
         events = self._live_events()
         projected = [{"role": e.role, "content": e.content} for e in events]
         cut = compaction.cut_point(projected, keep=keep)
         if cut <= 0:
-            # Tek koşunun ortası: gerçek kullanıcı turu yalnız başta olabilir.
-            # Asistan sınırından kesmek de güvenli — uzun bir iş, pencere
-            # doldu diye ölmek zorunda değil.
+            # Middle of a single run: the real user turn may only be at the
+            # start. Cutting at an assistant boundary is also safe — a long
+            # job does not have to die because the window filled.
             cut = compaction.work_cut(projected, keep=keep)
         if cut <= 0:
             return None
         return events[cut].seq, compaction.transcript(projected[:cut])
 
     def compact(self, summary: str, from_seq: int) -> None:
-        """Pencereyi özetin arkasına alır.
+        """Puts the window behind the summary.
 
-        Silme yok: yalnızca projeksiyonun nereden başlayacağı işaretleniyor.
+        No deletion: only where the projection starts is marked.
         """
         self.log.note(HORIZON, summary=summary, from_seq=from_seq)
 
     def pending_tool_uses(self) -> list[PendingToolUse]:
-        """Karşılığı henüz dönmemiş tool_use blokları.
+        """tool_use blocks whose result has not come back yet.
 
-        Son asistan turuna bakar; ardından gelen kullanıcı turunda hangi
-        tool_use_id'lerin karşılandığını çıkarır. Kesme sonrası eksik olanlara
-        iptal sonucu üretmek için kullanılır.
+        Looks at the last assistant turn; works out which tool_use_ids were
+        answered in the user turn that follows. Used to produce cancellation
+        results for the missing ones after an interrupt.
         """
         msgs = self.log.messages()
         if not msgs:
@@ -265,34 +270,34 @@ class Session:
         self.log.close()
 
     def outcome(self) -> str:
-        """Oturum nasıl bitti? Gece tekrarının önceliklendirmesi buna bakıyor.
+        """How did the session end? The night replay's prioritisation looks at this.
 
-        Dört değer var ve hepsi günlükte zaten duran izlerden çıkıyor:
+        Four values, all derived from traces already sitting in the log:
 
-            basarisiz   son doğrulama aracı kırıldı ya da araç hata verdi
-            duzeltildi  kullanıcı düzeltti — `lesson` yazıldı ya da bir kayıt
-                        supersede edildi
-            acik        hedef açık kaldı
-            basarili    hiçbiri değilse
+            basarisiz   the last verification tool broke or a tool errored
+            duzeltildi  the user corrected — a `lesson` was written or a
+                        record was superseded
+            acik        a goal was left open
+            basarili    if none of the above
 
-        `basarisiz` ve `duzeltildi` en çok öğreten oturumlardır (Mattar-Daw:
-        kazanç × ihtiyaç); gece onları önce tekrar eder.
+        `basarisiz` and `duzeltildi` are the sessions that teach the most
+        (Mattar-Daw: gain × need); the night replays them first.
         """
-        son_hata = False
-        for olay in self.log.notes("tool_end"):
-            son_hata = bool(olay.meta.get("error"))
-        if son_hata:
+        last_error = False
+        for event in self.log.notes("tool_end"):
+            last_error = bool(event.meta.get("error"))
+        if last_error:
             return "basarisiz"
-        for olay in self.log.notes("mind_write"):
-            if olay.meta.get("kind") == "lesson" or olay.meta.get("supersedes"):
+        for event in self.log.notes("mind_write"):
+            if event.meta.get("kind") == "lesson" or event.meta.get("supersedes"):
                 return "duzeltildi"
-        acik = {o.meta.get("goal_id") for o in self.log.notes("goal_push")}
-        acik -= {o.meta.get("goal_id") for o in self.log.notes("goal_status")}
-        return "acik" if acik else "basarili"
+        open_goals = {o.meta.get("goal_id") for o in self.log.notes("goal_push")}
+        open_goals -= {o.meta.get("goal_id") for o in self.log.notes("goal_status")}
+        return "acik" if open_goals else "basarili"
 
 
 def blocks_to_dicts(content: Iterable[Any]) -> list[Block]:
-    """SDK blok nesnelerini API'ye geri gönderilebilir sözlüklere çevirir."""
+    """Turns SDK block objects into dicts that can be sent back to the API."""
     out: list[Block] = []
     for block in content:
         if isinstance(block, dict):
@@ -305,7 +310,7 @@ def blocks_to_dicts(content: Iterable[Any]) -> list[Block]:
 
 
 def cancelled_result(tool_use_id: str, reason: str = "Kullanıcı işlemi kesti.") -> Block:
-    """Kesme sonrası karşılıksız kalan tool_use için zorunlu iptal sonucu."""
+    """The mandatory cancellation result for a tool_use left unanswered after an interrupt."""
     return {
         "type": "tool_result",
         "tool_use_id": tool_use_id,

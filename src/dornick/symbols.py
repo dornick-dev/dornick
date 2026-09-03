@@ -1,25 +1,26 @@
-"""Sembol araması — LSP'siz, ağır dil sunucusu olmadan yapısal kod gezintisi.
+"""Symbol search — structural code navigation without an LSP or a heavy language server.
 
-Neden var: ajanın "bu fonksiyon nerede tanımlı, nereden çağrılıyor?" sorusuna
-tek cevabı `grep`ti. `grep` metin görür, yapı görmez. `kaydet` diye aratınca
-tanımı, çağrıları, yorumları, dizeleri ve `kaydetme_hatasi` gibi başka
-isimleri aynı yığında döker — model o yığını okuyup yanlış yeri düzeltir ya
-da doğru yeri hiç bulamaz.
+Why it exists: the agent's only answer to "where is this function defined,
+where is it called from?" was `grep`. `grep` sees text, not structure.
+Searching for `kaydet` dumps the definition, the calls, the comments, the
+strings and other names like `kaydetme_hatasi` into one pile — the model
+reads that pile and fixes the wrong place, or never finds the right one.
 
-Buradaki araç ikisini ayırıyor: TANIM ayrı, KULLANIM ayrı, her biri
-`dosya:satır: imza` biçiminde.
+The tool here separates the two: DEFINITION apart, USAGE apart, each in the
+form `file:line: signature`.
 
-İki katman, iki farklı dürüstlük seviyesi — ve bu fark saklanmıyor:
+Two layers, two different levels of honesty — and the difference is not hidden:
 
-  * **Python: kesin.** `ast` ile ayrıştırılıyor. Yorumdaki, dizedeki bir
-    isim asla kullanım sayılmaz; `def` gerçekten `def`tir. Bir dosya
-    ayrıştırılamıyorsa (sözdizimi hatası) bu söylenir, tahmine geçilmez.
-  * **PHP / JS / TS: dikkatli düzenli ifade.** Dil ayrıştırıcısı yok, o
-    yüzden sonuç "kesin" değil "büyük olasılıkla". Yorum satırları eleniyor
-    ama bir dize içindeki isim hâlâ karışabilir. Sonucun altında bu yazıyor.
-  * **Diğer diller: yok.** Uydurma yapmıyoruz — "bu dilde yapısal arama
-    yok, `grep` kullan" deniyor. Yarım bir cevap, dürüst bir yönlendirmeden
-    kötüdür.
+  * **Python: exact.** Parsed with `ast`. A name inside a comment or a string
+    is never counted as a usage; a `def` really is a `def`. If a file cannot
+    be parsed (syntax error) that is said, we do not fall back to guessing.
+  * **PHP / JS / TS: careful regular expressions.** There is no language
+    parser, so the result is "most probably" rather than "exact". Comment
+    lines are dropped, but a name inside a string can still slip in. The
+    footer of the result says so.
+  * **Other languages: none.** We do not invent — it says "no structural
+    search for this language, use `grep`". A half answer is worse than an
+    honest redirection.
 """
 
 from __future__ import annotations
@@ -30,509 +31,511 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
-# Tek turda bakılacak en fazla dosya. Bir depo taramak istenen şey değil;
-# "şu projede şu sembol" istenen şey.
+# At most this many files are looked at in one go. Scanning a repository is
+# not what is wanted; "this symbol in this project" is.
 MAX_FILES = 400
 
-# Bundle'lar ve üretilmiş dosyalar taranmıyor: tek satırlık 3 MB'lık bir
-# `app.min.js` hem yavaş hem anlamsız.
-MAX_BOYUT = 400_000
+# Bundles and generated files are not scanned: a single-line 3 MB
+# `app.min.js` is both slow and meaningless.
+MAX_SIZE = 400_000
 
-# Kaç klasör derinliğine inilecek. Üçüncü seviye `src/dornick/tools/` demek;
-# gerçek projelerde kaynak orada bitiyor.
-MAX_DERINLIK = 3
+# How many folder levels to descend. The third level is `src/dornick/tools/`;
+# in real projects the source ends there.
+MAX_DEPTH = 3
 
-# Sonuçta gösterilen en fazla tanım ve kullanım.
-MAX_TANIM = 25
+# At most this many definitions and usages shown in the result.
+MAX_DEFINITIONS = 25
 MAX_USAGES = 40
 
-# Bağımlılık ve üretilmiş çıktı klasörleri. `tanilar.toplu_yollar` ile aynı
-# liste — aynı gerekçe: `node_modules` içindeki on bin dosya ne kullanıcının
-# yazdığı ne de ajanın aradığı.
-ATLA = {
+# Dependency and generated-output folders. The same list as
+# `diagnostics.batch_paths` — same rationale: the ten thousand files inside
+# `node_modules` are neither what the user wrote nor what the agent is
+# looking for.
+SKIP = {
     "node_modules", "vendor", ".git", "__pycache__", ".venv", "venv",
     "dist", "build", ".next", "writable", "site-packages", ".mypy_cache",
     ".pytest_cache", "coverage", "target", "bin", "obj",
 }
 
-DILLER: dict[str, str] = {
+LANGUAGES: dict[str, str] = {
     ".py": "python", ".pyw": "python",
     ".php": "php",
     ".js": "js", ".mjs": "js", ".cjs": "js", ".jsx": "js",
     ".ts": "ts", ".tsx": "ts",
 }
 
-# Kesin ayrıştırıcısı olan diller. Gerisi düzenli ifadeyle ve bunu söyleyerek.
-KESIN = {"python"}
+# Languages with an exact parser. The rest goes by regex, and says so.
+EXACT = {"python"}
 
 
-def detect_language(yol: Path | str) -> str | None:
-    return DILLER.get(Path(yol).suffix.lower())
+def detect_language(path: Path | str) -> str | None:
+    return LANGUAGES.get(Path(path).suffix.lower())
 
 
 @dataclass(slots=True)
 class Symbol:
-    """Bir tanım: fonksiyon, sınıf ya da metot."""
+    """A definition: function, class or method."""
 
-    ad: str
-    tur: str            # fonksiyon | sinif | metot | sabit
-    dosya: str
-    satir: int
-    imza: str
-    kapsam: str = ""    # metotsa sınıf adı
+    name: str
+    kind: str           # fonksiyon | sinif | metot | sabit
+    file: str
+    line: int
+    signature: str
+    scope: str = ""     # the class name for a method
 
-    def format(self, kok: Path | None = None) -> str:
+    def format(self, root: Path | None = None) -> str:
         """"tools/files.py:180: async def write_file(args, ctx) -> ToolResult"
 
-        Metot ise sınıfı da yazılıyor: aynı adlı on `handle` arasında hangisi
-        olduğunu ancak sahibi söylüyor.
+        For a method the class is written too: among ten `handle`s of the
+        same name only the owner says which one it is.
         """
-        yer = f"{_kisa(self.dosya, kok)}:{self.satir}"
-        kuyruk = f"   [{self.kapsam} sınıfının metodu]" if self.kapsam else ""
-        return f"{yer}: {self.imza}{kuyruk}"
+        place = f"{_short(self.file, root)}:{self.line}"
+        tail = f"   [{self.scope} sınıfının metodu]" if self.scope else ""
+        return f"{place}: {self.signature}{tail}"
 
 
 @dataclass(slots=True)
 class Use:
-    """Bir kullanım yeri ve nasıl kullanıldığı."""
+    """A usage site and how it is used."""
 
-    dosya: str
-    satir: int
-    metin: str
-    tur: str = "anma"   # cagri | kurulum | ice_aktarma | anma
+    file: str
+    line: int
+    text: str
+    kind: str = "anma"   # cagri | kurulum | ice_aktarma | anma
 
-    def format(self, kok: Path | None = None) -> str:
-        return f"{_kisa(self.dosya, kok)}:{self.satir}: {self.metin}"
+    def format(self, root: Path | None = None) -> str:
+        return f"{_short(self.file, root)}:{self.line}: {self.text}"
 
 
 @dataclass(slots=True)
 class Result:
-    sorgu: str
+    query: str
     tanimlar: list[Symbol] = field(default_factory=list)
     use_log: list[Use] = field(default_factory=list)
     taranan: int = 0
-    diller: set[str] = field(default_factory=set)
-    # Ayrıştırılamayan dosyalar: sessizce atlanmıyor, sayılıyor.
-    okunamayan: list[str] = field(default_factory=list)
-    # Tam ad eşleşmesi bulunamayınca içerene düşüldü mü?
-    gevsek: bool = False
-    kok: Path | None = None
-    # Taramanın tavana çarpıp çarpmadığı: eksik sonuç sessiz kalmamalı.
-    tavana_carpti: bool = False
+    languages: set[str] = field(default_factory=set)
+    # Files that could not be parsed: not skipped silently, counted.
+    unparsable: list[str] = field(default_factory=list)
+    # Did we fall back to substring matches because no exact name matched?
+    loose: bool = False
+    root: Path | None = None
+    # Whether the scan hit the ceiling: an incomplete result must not stay quiet.
+    hit_ceiling: bool = False
 
     @property
     def kesin(self) -> bool:
-        """Yalnızca gerçek ayrıştırıcıdan gelen sonuç kesindir."""
-        return bool(self.diller) and self.diller <= KESIN
+        """Only a result coming from a real parser is exact."""
+        return bool(self.languages) and self.languages <= EXACT
 
     def metin(self, *, tur: str = "hepsi") -> str:
-        if not self.diller:
+        if not self.languages:
             return (
-                f"{self.kok} altında yapısal arama yapabildiğim bir dosya yok. "
+                f"{self.root} altında yapısal arama yapabildiğim bir dosya yok. "
                 "Python, PHP, JS ve TS için sembol araması var; başka diller "
                 "için yapısal arama YOK — `grep` aracını kullan."
             )
 
-        satirlar: list[str] = []
+        lines: list[str] = []
         if tur in ("tanim", "hepsi"):
-            satirlar += self._tanim_bolumu()
+            lines += self._definition_section()
         if tur in ("kullanim", "hepsi"):
-            if satirlar:
-                satirlar.append("")
-            satirlar += self._kullanim_bolumu()
+            if lines:
+                lines.append("")
+            lines += self._usage_section()
 
-        satirlar.append("")
-        satirlar.append(self._altyazi())
-        return "\n".join(satirlar)
+        lines.append("")
+        lines.append(self._footer())
+        return "\n".join(lines)
 
-    def _tanim_bolumu(self) -> list[str]:
+    def _definition_section(self) -> list[str]:
         if not self.tanimlar:
-            return [f"'{self.sorgu}' adında bir tanım bulunamadı "
+            return [f"'{self.query}' adında bir tanım bulunamadı "
                     f"({self.taranan} dosya tarandı)."]
-        basi = f"{len(self.tanimlar)} tanım"
-        if self.gevsek:
-            basi += f" (tam '{self.sorgu}' yok; adı içerenler)"
-        satirlar = [basi + ":"]
-        for s in self.tanimlar[:MAX_TANIM]:
-            satirlar.append(f"  {s.format(self.kok)}")
-        if len(self.tanimlar) > MAX_TANIM:
-            satirlar.append(f"  ... {len(self.tanimlar) - MAX_TANIM} tanım daha.")
-        return satirlar
+        head = f"{len(self.tanimlar)} tanım"
+        if self.loose:
+            head += f" (tam '{self.query}' yok; adı içerenler)"
+        lines = [head + ":"]
+        for s in self.tanimlar[:MAX_DEFINITIONS]:
+            lines.append(f"  {s.format(self.root)}")
+        if len(self.tanimlar) > MAX_DEFINITIONS:
+            lines.append(f"  ... {len(self.tanimlar) - MAX_DEFINITIONS} tanım daha.")
+        return lines
 
-    def _kullanim_bolumu(self) -> list[str]:
+    def _usage_section(self) -> list[str]:
         if not self.use_log:
             if self.tanimlar:
-                return [f"Kullanım bulunamadı. '{self.sorgu}' tanımlı ama bu "
+                return [f"Kullanım bulunamadı. '{self.query}' tanımlı ama bu "
                         "kapsamda hiçbir yerden çağrılmıyor — ölü kod olabilir, "
                         "ya da çağrı bu klasörün dışında."]
             return ["Kullanım da bulunamadı."]
-        sayim: dict[str, int] = {}
-        for k in self.use_log:
-            sayim[k.tur] = sayim.get(k.tur, 0) + 1
-        ozet = ", ".join(f"{n} {ad.replace('_', ' ')}"
-                         for ad, n in sorted(sayim.items()))
-        satirlar = [f"{len(self.use_log)} kullanım ({ozet}):"]
-        for k in self.use_log[:MAX_USAGES]:
-            satirlar.append(f"  {k.format(self.kok)}")
+        counts: dict[str, int] = {}
+        for u in self.use_log:
+            counts[u.kind] = counts.get(u.kind, 0) + 1
+        summary = ", ".join(f"{n} {kind.replace('_', ' ')}"
+                            for kind, n in sorted(counts.items()))
+        lines = [f"{len(self.use_log)} kullanım ({summary}):"]
+        for u in self.use_log[:MAX_USAGES]:
+            lines.append(f"  {u.format(self.root)}")
         if len(self.use_log) > MAX_USAGES:
-            satirlar.append(f"  ... {len(self.use_log) - MAX_USAGES} kullanım daha.")
-        return satirlar
+            lines.append(f"  ... {len(self.use_log) - MAX_USAGES} kullanım daha.")
+        return lines
 
-    def _altyazi(self) -> str:
-        """Sonucun ne kadar güvenilir olduğunu söyleyen satır."""
-        parcalar = [f"{self.taranan} dosya tarandı "
-                    f"({', '.join(sorted(self.diller))})."]
-        if "python" in self.diller:
-            parcalar.append("Python dosyaları `ast` ile ayrıştırıldı: yorum ve "
-                            "dize içindeki isimler sayılmadı.")
-        if self.diller - KESIN:
-            parcalar.append("PHP/JS/TS için düzenli ifade kullanıldı — yorum "
-                            "satırları elendi ama dize içindeki bir isim "
-                            "kullanım gibi görünebilir; şüphelenirsen dosyayı aç.")
-        if self.okunamayan:
-            parcalar.append(f"{len(self.okunamayan)} dosya ayrıştırılamadı "
-                            f"(ilki: {self.okunamayan[0]}).")
-        if self.tavana_carpti:
-            parcalar.append(f"Tarama {MAX_FILES} dosya tavanına çarptı; sonuç "
-                            "eksik olabilir — `path` ile daralt.")
-        return " ".join(parcalar)
+    def _footer(self) -> str:
+        """The line that says how reliable the result is."""
+        parts = [f"{self.taranan} dosya tarandı "
+                 f"({', '.join(sorted(self.languages))})."]
+        if "python" in self.languages:
+            parts.append("Python dosyaları `ast` ile ayrıştırıldı: yorum ve "
+                         "dize içindeki isimler sayılmadı.")
+        if self.languages - EXACT:
+            parts.append("PHP/JS/TS için düzenli ifade kullanıldı — yorum "
+                         "satırları elendi ama dize içindeki bir isim "
+                         "kullanım gibi görünebilir; şüphelenirsen dosyayı aç.")
+        if self.unparsable:
+            parts.append(f"{len(self.unparsable)} dosya ayrıştırılamadı "
+                         f"(ilki: {self.unparsable[0]}).")
+        if self.hit_ceiling:
+            parts.append(f"Tarama {MAX_FILES} dosya tavanına çarptı; sonuç "
+                         "eksik olabilir — `path` ile daralt.")
+        return " ".join(parts)
 
 
-def _kisa(dosya: str, kok: Path | None) -> str:
-    if kok is None:
-        return Path(dosya).name
+def _short(file: str, root: Path | None) -> str:
+    if root is None:
+        return Path(file).name
     try:
-        return str(Path(dosya).relative_to(kok))
+        return str(Path(file).relative_to(root))
     except ValueError:
-        return dosya
+        return file
 
 
-# -- dosya toplama ------------------------------------------------------
+# -- collecting files ---------------------------------------------------
 
 
 def files(
-    kok: Path,
+    root: Path,
     *,
-    dil: str | None = None,
-    tavan: int = MAX_FILES,
-    derinlik: int = MAX_DERINLIK,
+    language: str | None = None,
+    limit: int = MAX_FILES,
+    depth: int = MAX_DEPTH,
 ) -> tuple[list[Path], bool]:
-    """Taranacak dosyalar ve tavana çarpılıp çarpılmadığı.
+    """The files to scan, and whether the ceiling was hit.
 
-    İkili dosya atlanıyor: bir `.py` uzantısı taşısa bile içinde NUL baytı
-    varsa o kaynak değildir, ayrıştırmaya çalışmak boşa iş.
+    Binary files are skipped: even with a `.py` extension, a file holding a
+    NUL byte is not source, and trying to parse it is wasted work.
     """
-    bulunan: list[Path] = []
-    kok = Path(kok)
-    for temel, klasorler, adlar in os.walk(kok):
-        seviye = len(Path(temel).relative_to(kok).parts)
-        if seviye >= derinlik:
-            klasorler[:] = []
+    found: list[Path] = []
+    root = Path(root)
+    for base, folders, names in os.walk(root):
+        level = len(Path(base).relative_to(root).parts)
+        if level >= depth:
+            folders[:] = []
         else:
-            klasorler[:] = [k for k in klasorler
-                            if k not in ATLA and not k.startswith(".")]
-        for ad in sorted(adlar):
-            yol = Path(temel) / ad
-            bulunan_dil = detect_language(yol)
-            if bulunan_dil is None or (dil and bulunan_dil != dil):
+            folders[:] = [f for f in folders
+                          if f not in SKIP and not f.startswith(".")]
+        for name in sorted(names):
+            path = Path(base) / name
+            found_language = detect_language(path)
+            if found_language is None or (language and found_language != language):
                 continue
             try:
-                if yol.stat().st_size > MAX_BOYUT:
+                if path.stat().st_size > MAX_SIZE:
                     continue
             except OSError:  # pragma: no cover
                 continue
-            bulunan.append(yol)
-            if len(bulunan) >= tavan:
-                return bulunan, True
-    return bulunan, False
+            found.append(path)
+            if len(found) >= limit:
+                return found, True
+    return found, False
 
 
-def _oku(yol: Path) -> str | None:
-    """Kaynağı okur; ikili ya da okunamıyorsa None."""
+def _read(path: Path) -> str | None:
+    """Reads the source; None if binary or unreadable."""
     try:
-        ham = yol.read_bytes()
+        raw = path.read_bytes()
     except OSError:
         return None
-    if b"\x00" in ham[:4096]:
+    if b"\x00" in raw[:4096]:
         return None
-    return ham.decode("utf-8", errors="replace")
+    return raw.decode("utf-8", errors="replace")
 
 
-# -- Python: ast ile kesin ---------------------------------------------
+# -- Python: exact with ast --------------------------------------------
 
 
-def _imza_python(node: ast.AST) -> str:
+def _python_signature(node: ast.AST) -> str:
     if isinstance(node, ast.ClassDef):
-        temeller = ", ".join(_kaynak(t) for t in node.bases)
-        return f"class {node.name}({temeller})" if temeller else f"class {node.name}"
+        bases = ", ".join(_source(b) for b in node.bases)
+        return f"class {node.name}({bases})" if bases else f"class {node.name}"
     if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-        onek = "async def" if isinstance(node, ast.AsyncFunctionDef) else "def"
+        prefix = "async def" if isinstance(node, ast.AsyncFunctionDef) else "def"
         try:
-            argumanlar = ast.unparse(node.args)
-        except Exception:  # pragma: no cover - eski sürüm / tuhaf ağaç
-            argumanlar = ", ".join(a.arg for a in node.args.args)
-        kuyruk = ""
+            arguments = ast.unparse(node.args)
+        except Exception:  # pragma: no cover - old version / odd tree
+            arguments = ", ".join(a.arg for a in node.args.args)
+        tail = ""
         if node.returns is not None:
-            kuyruk = f" -> {_kaynak(node.returns)}"
-        return f"{onek} {node.name}({argumanlar}){kuyruk}"
+            tail = f" -> {_source(node.returns)}"
+        return f"{prefix} {node.name}({arguments}){tail}"
     return getattr(node, "name", "?")  # pragma: no cover
 
 
-def _kaynak(node: ast.AST) -> str:
+def _source(node: ast.AST) -> str:
     try:
         return ast.unparse(node)
     except Exception:  # pragma: no cover
         return "?"
 
 
-def tanimlar_python(yol: Path, kaynak: str) -> list[Symbol] | None:
-    """Dosyadaki tüm tanımlar; ayrıştırılamıyorsa None.
+def python_definitions(path: Path, source: str) -> list[Symbol] | None:
+    """All definitions in the file; None if it cannot be parsed.
 
-    None dönmek önemli: bozuk bir dosyayı sessizce "tanımsız" saymak,
-    aradığı şeyi tam da orada olan bir modeli yanlış yere gönderirdi.
+    Returning None matters: silently counting a broken file as "no
+    definitions" would send a model looking for exactly what is there to the
+    wrong place.
     """
     try:
-        agac = ast.parse(kaynak, filename=str(yol))
+        tree = ast.parse(source, filename=str(path))
     except (SyntaxError, ValueError):
         return None
 
-    bulunan: list[Symbol] = []
+    found: list[Symbol] = []
 
-    def gez(dugum: ast.AST, kapsam: str) -> None:
-        for cocuk in ast.iter_child_nodes(dugum):
-            if isinstance(cocuk, ast.ClassDef):
-                bulunan.append(Symbol(cocuk.name, "sinif", str(yol),
-                                      cocuk.lineno, _imza_python(cocuk), kapsam))
-                gez(cocuk, cocuk.name)
-            elif isinstance(cocuk, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                tur = "metot" if kapsam else "fonksiyon"
-                bulunan.append(Symbol(cocuk.name, tur, str(yol), cocuk.lineno,
-                                      _imza_python(cocuk), kapsam))
-                # İç içe fonksiyonlar da tanımdır; kapsam adı korunuyor.
-                gez(cocuk, kapsam)
+    def walk(node: ast.AST, scope: str) -> None:
+        for child in ast.iter_child_nodes(node):
+            if isinstance(child, ast.ClassDef):
+                found.append(Symbol(child.name, "sinif", str(path),
+                                    child.lineno, _python_signature(child), scope))
+                walk(child, child.name)
+            elif isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                kind = "metot" if scope else "fonksiyon"
+                found.append(Symbol(child.name, kind, str(path), child.lineno,
+                                    _python_signature(child), scope))
+                # Nested functions are definitions too; the scope name is kept.
+                walk(child, scope)
             else:
-                gez(cocuk, kapsam)
+                walk(child, scope)
 
-    gez(agac, "")
-    return bulunan
+    walk(tree, "")
+    return found
 
 
-def kullanimlar_python(
-    yol: Path, kaynak: str, ad: str, tanim_satirlari: set[int]
+def python_usages(
+    path: Path, source: str, name: str, definition_lines: set[int]
 ) -> list[Use] | None:
-    """`ad`ın bu dosyadaki kullanımları — `ast` ile, yani kesin.
+    """Usages of `name` in this file — via `ast`, hence exact.
 
-    Yorum ve dize içindeki isimler AĞAÇTA YOKTUR; bu yüzden burada hiç
-    görünmüyorlar. Düzenli ifadeyle asla ulaşılamayacak kesinlik bu.
+    Names inside comments and strings are NOT IN THE TREE; that is why they
+    never show up here. This is precision a regex can never reach.
     """
     try:
-        agac = ast.parse(kaynak, filename=str(yol))
+        tree = ast.parse(source, filename=str(path))
     except (SyntaxError, ValueError):
         return None
 
-    satirlar = kaynak.splitlines()
-    bulunan: dict[int, Use] = {}
+    lines = source.splitlines()
+    found: dict[int, Use] = {}
 
-    def ekle(satir: int, tur: str) -> None:
-        if satir in tanim_satirlari or satir in bulunan:
+    def add(line: int, kind: str) -> None:
+        if line in definition_lines or line in found:
             return
-        ham = satirlar[satir - 1].strip() if 0 < satir <= len(satirlar) else ""
-        bulunan[satir] = Use(str(yol), satir, ham[:120], tur)
+        raw = lines[line - 1].strip() if 0 < line <= len(lines) else ""
+        found[line] = Use(str(path), line, raw[:120], kind)
 
-    for dugum in ast.walk(agac):
-        if isinstance(dugum, ast.Call):
-            hedef = dugum.func
-            isim = (getattr(hedef, "id", None) if isinstance(hedef, ast.Name)
-                    else getattr(hedef, "attr", None))
-            if isim == ad:
-                ekle(dugum.lineno, "cagri")
-        elif isinstance(dugum, (ast.Import, ast.ImportFrom)):
-            for takma in dugum.names:
-                if takma.name.rsplit(".", 1)[-1] == ad or takma.asname == ad:
-                    ekle(dugum.lineno, "ice_aktarma")
-        elif isinstance(dugum, ast.Name) and dugum.id == ad:
-            ekle(dugum.lineno, "anma")
-        elif isinstance(dugum, ast.Attribute) and dugum.attr == ad:
-            ekle(dugum.lineno, "anma")
-    return list(bulunan.values())
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call):
+            target = node.func
+            ident = (getattr(target, "id", None) if isinstance(target, ast.Name)
+                     else getattr(target, "attr", None))
+            if ident == name:
+                add(node.lineno, "cagri")
+        elif isinstance(node, (ast.Import, ast.ImportFrom)):
+            for alias in node.names:
+                if alias.name.rsplit(".", 1)[-1] == name or alias.asname == name:
+                    add(node.lineno, "ice_aktarma")
+        elif isinstance(node, ast.Name) and node.id == name:
+            add(node.lineno, "anma")
+        elif isinstance(node, ast.Attribute) and node.attr == name:
+            add(node.lineno, "anma")
+    return list(found.values())
 
 
-# -- PHP / JS / TS: dikkatli düzenli ifade ------------------------------
+# -- PHP / JS / TS: careful regular expressions ------------------------
 #
-# Her desen belirli bir imzayı hedefliyor; genel bir "şu kelime geçiyor mu"
-# taraması bilerek yok. Yakalanan ad daima birinci grup.
+# Every pattern targets a specific signature; a generic "does this word
+# occur" scan is deliberately absent. The captured name is always group 1.
 
-_PHP_DESENLER: tuple[tuple[str, str], ...] = (
+_PHP_PATTERNS: tuple[tuple[str, str], ...] = (
     ("fonksiyon", r"^\s*(?:(?:public|private|protected|static|final|abstract)\s+)*"
                   r"function\s+&?(\w+)\s*\("),
     ("sinif", r"^\s*(?:abstract\s+|final\s+)?(?:class|interface|trait|enum)\s+(\w+)"),
     ("sabit", r"^\s*(?:public\s+|private\s+|protected\s+)?const\s+(\w+)\s*="),
 )
 
-_JS_DESENLER: tuple[tuple[str, str], ...] = (
+_JS_PATTERNS: tuple[tuple[str, str], ...] = (
     ("fonksiyon", r"^\s*(?:export\s+)?(?:default\s+)?(?:async\s+)?function\s*\*?\s*(\w+)\s*\("),
     ("sinif", r"^\s*(?:export\s+)?(?:default\s+)?(?:abstract\s+)?class\s+(\w+)"),
-    # const ad = (…) => …   /   const ad = function …
+    # const name = (…) => …   /   const name = function …
     ("fonksiyon", r"^\s*(?:export\s+)?(?:const|let|var)\s+(\w+)\s*=\s*"
                   r"(?:async\s*)?(?:function\b|\([^)]*\)\s*=>|\w+\s*=>)"),
-    # sınıf gövdesindeki metot:  ad(arg) {   —  if/for/while/switch elenir
+    # a method in a class body:  name(arg) {   —  if/for/while/switch are filtered out
     ("metot", r"^\s{2,}(?:static\s+|async\s+|get\s+|set\s+)*(\w+)\s*\([^;]*\)\s*\{"),
-    # TypeScript arayüz/tip
+    # TypeScript interface/type
     ("sinif", r"^\s*(?:export\s+)?(?:interface|type|enum)\s+(\w+)\b"),
 )
 
-# Metot deseninin yanlışlıkla yakalayacağı denetim yapıları.
-_ANAHTAR = {"if", "for", "while", "switch", "catch", "function", "return",
-            "else", "do", "try", "with", "case", "typeof", "new", "await"}
+# Control structures the method pattern would catch by mistake.
+_KEYWORDS = {"if", "for", "while", "switch", "catch", "function", "return",
+             "else", "do", "try", "with", "case", "typeof", "new", "await"}
 
-# Yorum satırları: kullanım sayılmıyor. Dize içi hâlâ karışabilir ve
-# sonucun altyazısı bunu açıkça söylüyor.
-_YORUM = re.compile(r"^\s*(//|#|\*|/\*|<!--)")
+# Comment lines: not counted as usage. Inside strings it can still slip in
+# and the result footer says so explicitly.
+_COMMENT = re.compile(r"^\s*(//|#|\*|/\*|<!--)")
 
 
-def tanimlar_desenli(yol: Path, kaynak: str, dil: str) -> list[Symbol]:
-    desenler = _PHP_DESENLER if dil == "php" else _JS_DESENLER
-    derli = [(tur, re.compile(desen)) for tur, desen in desenler]
-    bulunan: list[Symbol] = []
-    gorulen: set[tuple[str, int]] = set()
-    for i, satir in enumerate(kaynak.splitlines(), start=1):
-        if _YORUM.match(satir):
+def pattern_definitions(path: Path, source: str, language: str) -> list[Symbol]:
+    patterns = _PHP_PATTERNS if language == "php" else _JS_PATTERNS
+    compiled = [(kind, re.compile(pattern)) for kind, pattern in patterns]
+    found: list[Symbol] = []
+    seen: set[tuple[str, int]] = set()
+    for i, line in enumerate(source.splitlines(), start=1):
+        if _COMMENT.match(line):
             continue
-        for tur, desen in derli:
-            if not (m := desen.match(satir)):
+        for kind, pattern in compiled:
+            if not (m := pattern.match(line)):
                 continue
-            ad = m.group(1)
-            if ad in _ANAHTAR:
+            name = m.group(1)
+            if name in _KEYWORDS:
                 continue
-            if (ad, i) in gorulen:
+            if (name, i) in seen:
                 continue
-            gorulen.add((ad, i))
-            bulunan.append(Symbol(ad, tur, str(yol), i, satir.strip()[:160]))
-    return bulunan
+            seen.add((name, i))
+            found.append(Symbol(name, kind, str(path), i, line.strip()[:160]))
+    return found
 
 
-def _kullanim_deseni(ad: str) -> re.Pattern[str]:
-    """`ad`ın kullanıldığı satırları yakalayan desen.
+def _usage_pattern(name: str) -> re.Pattern[str]:
+    """The pattern that catches lines where `name` is used.
 
-    Önüne `$` ve `.` bakışı bilinçli: PHP'de `$kaydet` başka bir şeydir,
-    JS'te `nesne.kaydet(` ise ARADIĞIMIZ şeydir — o yüzden nokta engelleyici
-    değil, ayrı bir kola alınıyor.
+    The look-behind for `$` and `.` is deliberate: in PHP `$kaydet` is
+    something else, whereas in JS `nesne.kaydet(` IS what we are looking for
+    — so the dot is not a blocker but gets its own branch.
     """
-    k = re.escape(ad)
+    k = re.escape(name)
     return re.compile(
-        rf"(?:(?<![\w$]){k}\s*\()"          # çağrı: kaydet(
-        rf"|(?:->\s*{k}\s*\()"              # PHP metot: $o->kaydet(
-        rf"|(?:(?<![\w$]){k}::)"            # PHP statik: Kayit::
-        rf"|(?:\bnew\s+{k}(?![\w$]))"       # kurulum: new Kayit
+        rf"(?:(?<![\w$]){k}\s*\()"          # call: kaydet(
+        rf"|(?:->\s*{k}\s*\()"              # PHP method: $o->kaydet(
+        rf"|(?:(?<![\w$]){k}::)"            # PHP static: Kayit::
+        rf"|(?:\bnew\s+{k}(?![\w$]))"       # instantiation: new Kayit
         rf"|(?:\b(?:extends|implements|instanceof)\s+{k}(?![\w$]))"
         rf"|(?:\b(?:use|import|require|from)\b[^\n]*(?<![\w$]){k}(?![\w$]))"
     )
 
 
-def _kullanim_turu(satir: str, ad: str) -> str:
-    duz = satir.strip()
-    if re.search(rf"\bnew\s+{re.escape(ad)}\b", duz):
+def _usage_kind(line: str, name: str) -> str:
+    flat = line.strip()
+    if re.search(rf"\bnew\s+{re.escape(name)}\b", flat):
         return "kurulum"
-    if re.match(r"^\s*(use|import|require|from|include)\b", duz):
+    if re.match(r"^\s*(use|import|require|from|include)\b", flat):
         return "ice_aktarma"
-    if re.search(rf"(?<![\w$]){re.escape(ad)}\s*\(", duz) or \
-       re.search(rf"->\s*{re.escape(ad)}\s*\(", duz):
+    if re.search(rf"(?<![\w$]){re.escape(name)}\s*\(", flat) or \
+       re.search(rf"->\s*{re.escape(name)}\s*\(", flat):
         return "cagri"
     return "anma"
 
 
-def kullanimlar_desenli(
-    yol: Path, kaynak: str, ad: str, tanim_satirlari: set[int]
+def pattern_usages(
+    path: Path, source: str, name: str, definition_lines: set[int]
 ) -> list[Use]:
-    desen = _kullanim_deseni(ad)
-    bulunan: list[Use] = []
-    for i, satir in enumerate(kaynak.splitlines(), start=1):
-        if i in tanim_satirlari or _YORUM.match(satir):
+    pattern = _usage_pattern(name)
+    found: list[Use] = []
+    for i, line in enumerate(source.splitlines(), start=1):
+        if i in definition_lines or _COMMENT.match(line):
             continue
-        if not desen.search(satir):
+        if not pattern.search(line):
             continue
-        bulunan.append(Use(str(yol), i, satir.strip()[:120],
-                                _kullanim_turu(satir, ad)))
-    return bulunan
+        found.append(Use(str(path), i, line.strip()[:120],
+                         _usage_kind(line, name)))
+    return found
 
 
-# -- arama --------------------------------------------------------------
+# -- search -------------------------------------------------------------
 
 
 def ara(
-    kok: Path | str,
-    sorgu: str,
+    root: Path | str,
+    query: str,
     *,
     tur: str = "hepsi",
     dil: str | None = None,
-    tavan: int = MAX_FILES,
-    derinlik: int = MAX_DERINLIK,
+    limit: int = MAX_FILES,
+    depth: int = MAX_DEPTH,
 ) -> Result:
-    """`sorgu` adlı sembolün tanımlarını ve kullanımlarını bulur.
+    """Finds the definitions and usages of the symbol named `query`.
 
-    Önce tam ad eşleşmesi aranıyor; hiç tanım yoksa adı İÇERENLERE
-    düşülüyor ve bu sonuçta yazılıyor — model yanlışlıkla "tam bunu buldum"
-    sanmasın.
+    An exact name match is looked for first; if there is no definition at
+    all we fall back to names CONTAINING it, and the result says so — the
+    model must not mistakenly think "I found exactly this".
     """
-    kok = Path(kok).expanduser()
-    sonuc = Result(sorgu=sorgu, kok=kok)
-    if not kok.is_dir():
-        return sonuc
+    root = Path(root).expanduser()
+    result = Result(query=query, root=root)
+    if not root.is_dir():
+        return result
 
-    yollar, carpti = files(kok, dil=dil, tavan=tavan, derinlik=derinlik)
-    sonuc.tavana_carpti = carpti
+    paths, hit = files(root, language=dil, limit=limit, depth=depth)
+    result.hit_ceiling = hit
 
-    # Dosya başına: kaynak + dil + tanımlar. İki kez okumamak için tutuluyor.
-    okunan: list[tuple[Path, str, str, list[Symbol]]] = []
-    for yol in yollar:
-        dosya_dili = detect_language(yol)
-        if dosya_dili is None:
+    # Per file: source + language + definitions. Kept so we do not read twice.
+    loaded: list[tuple[Path, str, str, list[Symbol]]] = []
+    for path in paths:
+        file_language = detect_language(path)
+        if file_language is None:
             continue  # pragma: no cover
-        kaynak = _oku(yol)
-        if kaynak is None:
+        source = _read(path)
+        if source is None:
             continue
-        sonuc.taranan += 1
-        sonuc.diller.add(dosya_dili)
-        if dosya_dili == "python":
-            tanim = tanimlar_python(yol, kaynak)
-            if tanim is None:
-                sonuc.okunamayan.append(_kisa(str(yol), kok))
-                tanim = []
+        result.taranan += 1
+        result.languages.add(file_language)
+        if file_language == "python":
+            definitions = python_definitions(path, source)
+            if definitions is None:
+                result.unparsable.append(_short(str(path), root))
+                definitions = []
         else:
-            tanim = tanimlar_desenli(yol, kaynak, dosya_dili)
-        okunan.append((yol, kaynak, dosya_dili, tanim))
+            definitions = pattern_definitions(path, source, file_language)
+        loaded.append((path, source, file_language, definitions))
 
-    if not sonuc.diller:
-        return sonuc
+    if not result.languages:
+        return result
 
-    tam = [s for _y, _k, _d, tanim in okunan for s in tanim if s.ad == sorgu]
-    if tam:
-        sonuc.tanimlar = tam
+    exact = [s for _p, _s, _l, definitions in loaded for s in definitions if s.name == query]
+    if exact:
+        result.tanimlar = exact
     else:
-        alt = sorgu.lower()
-        sonuc.tanimlar = [s for _y, _k, _d, tanim in okunan for s in tanim
-                          if alt in s.ad.lower()]
-        sonuc.gevsek = bool(sonuc.tanimlar)
+        needle = query.lower()
+        result.tanimlar = [s for _p, _s, _l, definitions in loaded for s in definitions
+                           if needle in s.name.lower()]
+        result.loose = bool(result.tanimlar)
 
     if tur == "tanim":
-        return sonuc
+        return result
 
-    # Kullanımlar her zaman TAM ad üzerinden: gevşek eşleşmede "kaydet"
-    # ararken "kaydetme_hatasi"nın çağrılarını göstermek gürültüdür.
-    hedef = sorgu if tam or not sonuc.tanimlar else sonuc.tanimlar[0].ad
-    for yol, kaynak, dosya_dili, tanim in okunan:
-        satirlar = {s.satir for s in tanim if s.ad == hedef}
-        if dosya_dili == "python":
-            bulunan = kullanimlar_python(yol, kaynak, hedef, satirlar)
-            if bulunan is None:
+    # Usages always go by the EXACT name: while searching "kaydet" in loose
+    # mode, showing the calls of "kaydetme_hatasi" is noise.
+    target = query if exact or not result.tanimlar else result.tanimlar[0].name
+    for path, source, file_language, definitions in loaded:
+        lines = {s.line for s in definitions if s.name == target}
+        if file_language == "python":
+            found = python_usages(path, source, target, lines)
+            if found is None:
                 continue
         else:
-            bulunan = kullanimlar_desenli(yol, kaynak, hedef, satirlar)
-        sonuc.use_log.extend(bulunan)
+            found = pattern_usages(path, source, target, lines)
+        result.use_log.extend(found)
 
-    # Dosya ve satıra göre sıralı: `ast.walk` ağaç sırasında geziyor ve
-    # aynı dosyanın 203. satırı 137.'den önce çıkabiliyordu. Liste okunacaksa
-    # kaynaktaki sırayı izlemeli.
-    sonuc.use_log.sort(key=lambda k: (k.dosya, k.satir))
-    sonuc.tanimlar.sort(key=lambda s: (s.dosya, s.satir))
-    return sonuc
+    # Sorted by file and line: `ast.walk` walks in tree order and line 203 of
+    # the same file could come out before line 137. If the list is to be
+    # read it should follow the order in the source.
+    result.use_log.sort(key=lambda u: (u.file, u.line))
+    result.tanimlar.sort(key=lambda s: (s.file, s.line))
+    return result

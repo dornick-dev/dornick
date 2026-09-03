@@ -1,27 +1,29 @@
-"""Çağrışımsal imza katmanı — hatırlamanın "sezgi" tarafı.
+"""Associative signature layer — the "intuition" side of recall.
 
-FTS5 kelimeyi bilir, anlamı bilmez. "postgres yedeği" araması "veritabanı
-dökümü" yazan kaydı asla bulamaz; harf farkı yeter, kayıt görünmez olur.
-Buradaki katman o boşluğu dolduruyor.
+FTS5 knows the word, not the meaning. A search for "postgres yedeği" can
+never find a record saying "veritabanı dökümü"; a letter's difference is
+enough for the record to become invisible. The layer here fills that gap.
 
-Fikir LLM'lerin token gömmesinden geliyor ama ağırlığı yok, eğitimi yok ve
-dışarıdan model indirmiyor: her metin sabit bir **hiper-vektöre** yansıtılıyor
-(rastgele izdüşüm / SimHash). Yakın metinler yakın vektör üretir; uzaklık
-Hamming mesafesi.
+The idea comes from LLM token embeddings but there are no weights, no
+training, and no model downloaded from outside: every text is projected onto
+a fixed **hypervector** (random projection / SimHash). Close texts produce
+close vectors; the distance is Hamming distance.
 
-Bunun asıl kazancı hız. Vektör 256 bit — tek bir Python tamsayısı. İki kayıt
-karşılaştırması `(a ^ b).bit_count()`, yani tek makine komutu düzeyinde bir iş.
-Float kosinüs benzerliği 256 çarpma demekti; bu tek XOR. Elli bin kayıt saf
-Python'da milisaniyeler içinde taranıyor — kullanıcının koyduğu şart tam olarak
-buydu: "uzun süre geçince dakikalarca içinde kaybolursa bir anlamı kalmaz".
+The real gain is speed. The vector is 256 bits — a single Python integer.
+Comparing two records is `(a ^ b).bit_count()`, that is, work on the level
+of a single machine instruction. Float cosine similarity meant 256
+multiplications; this is one XOR. Fifty thousand records are scanned in pure
+Python within milliseconds — which was exactly the user's condition: "if it
+gets lost for minutes once a long time has passed, there is no point".
 
-Özellik çıkarımı iki kanallı:
+Feature extraction has two channels:
 
-    kelime      "rapor"        — tam eşleşme, güçlü sinyal
-    harf 4'lüsü "rapo" "apor"  — Türkçe sondan eklemeli; "raporları" ile
-                                 "rapor" bu kanalda örtüşür
+    word          "rapor"        — exact match, strong signal
+    4-char gram   "rapo" "apor"  — Turkish is agglutinative; "raporları"
+                                   and "rapor" overlap in this channel
 
-İkisi birlikte hem yazım hatasına hem çekim ekine dayanıklı bir iz üretiyor.
+Together they produce a trace robust to both typos and inflectional
+suffixes.
 """
 
 from __future__ import annotations
@@ -30,33 +32,39 @@ import hashlib
 import re
 from typing import Iterable, Iterator
 
-# İmza genişliği. 256 bit tek tamsayıya sığıyor ve ayırt etmeye fazlasıyla
-# yetiyor; büyütmek karşılaştırmayı çok basamaklı aritmetiğe iter.
+# Signature width. 256 bits fits in a single integer and is more than enough
+# to discriminate; making it bigger pushes the comparison into multi-limb
+# arithmetic.
 BITS = 256
 
-# Bu uzunluktan kısa kelimeler parçalanmaz — parçası zaten kendisi.
+# Words shorter than this are not split — their fragment is already
+# themselves.
 GRAM = 4
 
-# Rastgele eşleşen iki imza bitlerinin yarısında tutar. Bunun altı bilgi
-# değil gürültü; sıfıra kırpılıyor ki tohumlamaya sızmasın.
+# Two randomly matching signatures agree on half their bits. Below that is
+# noise, not information; it is clipped to zero so it does not leak into
+# seeding.
 CHANCE = 0.5
 
-# Gurultu esigi. Iki alakasiz imza bitlerinin tam yarisinda degil, yarisi
-# civarinda tutar; 256 bitte sapma benzerlik olceginde ~0.06. Esik bu
-# saciligin ustunde olmali, yoksa her sorgu bir sey "hatirlar".
+# Noise floor. Two unrelated signatures agree not on exactly half their bits
+# but around half; at 256 bits the spread is ~0.06 on the similarity scale.
+# The floor must be above this scatter, otherwise every query "remembers"
+# something.
 FLOOR = 0.15
 
 _WORD = re.compile(r"\w+", re.UNICODE)
 
-# Sorguyu daraltmayan işlev kelimeleri (edat, zamir, soru eki, bağlaç). FTS
-# literal kanalında (store._match_expression) eleniyor: "bir fıkra anlat" gibi
-# bir soru, içinde "bir" geçen genel bir anıya ("...bir kod asistanı değil;
-# genel bir ajan") FTS üstünden yapışıyor ve boş dönmesi gereken sorgu bir
-# şey hatırlıyordu. İçerik değil gürültü.
+# Function words that do not narrow the query (prepositions, pronouns,
+# question particles, conjunctions). Dropped in the FTS literal channel
+# (store._match_expression): a question like "bir fıkra anlat" was sticking,
+# through FTS, to a general memory containing "bir" ("...bir kod asistanı
+# değil; genel bir ajan"), and a query that should have come back empty
+# remembered something. Noise, not content.
 #
-# İmza tarafında ELENMİYOR — orada silmek kısa metinleri ("bir şey" → tek
-# "şey" özniteliği) kararsızlaştırıp birbirine benzetiyor (bkz. test_vector
-# short-texts). İmzadaki sık-kelime sorunu ayrı ele alınmalı (IDF ağırlığı).
+# NOT dropped on the signature side — deleting them there makes short texts
+# ("bir şey" → a single "şey" feature) unstable and similar to one another
+# (see test_vector short-texts). The frequent-word problem in the signature
+# should be handled separately (IDF weighting).
 STOPWORDS = frozenset(
     """
     ve veya ile için gibi kadar daha çok az bir bu şu o ne nasıl neden
@@ -65,18 +73,18 @@ STOPWORDS = frozenset(
     """.split()
 )
 
-# Bayt -> o baytın 8 bitinin işaret dizisi. Özellik başına 256 kez bit kaydırmak
-# yerine 32 tablo okuması yapıyoruz; indeksleme birkaç kat hızlanıyor.
+# Byte -> the sign sequence of that byte's 8 bits. Instead of 256 bit shifts
+# per feature we do 32 table lookups; indexing gets several times faster.
 _SIGNS: tuple[tuple[int, ...], ...] = tuple(
     tuple(1 if (byte >> (7 - i)) & 1 else -1 for i in range(8)) for byte in range(256)
 )
 
 
 def features(text: str) -> Iterator[str]:
-    """Metni imzalanacak özelliklere ayırır.
+    """Splits the text into the features to be signed.
 
-    Kelimenin kendisi ve harf n-gramları birlikte veriliyor: ilki kesinlik,
-    ikincisi hoşgörü sağlıyor.
+    The word itself and its character n-grams are given together: the first
+    provides precision, the second tolerance.
     """
     for match in _WORD.finditer((text or "").lower()):
         word = match.group(0)
@@ -87,11 +95,11 @@ def features(text: str) -> Iterator[str]:
 
 
 def signature(text: str) -> int:
-    """Metnin 256 bitlik çağrışım imzası.
+    """The text's 256-bit association signature.
 
-    Her özellik kendi hash'inden türeyen sabit bir ±1 vektörüne açılıyor,
-    hepsi toplanıyor, sonuç işaretine göre bitleniyor. Aynı metin her
-    çalışmada aynı imzayı verir — hash tohumu sabit.
+    Every feature expands into a fixed ±1 vector derived from its own hash,
+    all are summed, and the result is turned into bits by sign. The same
+    text gives the same signature on every run — the hash seed is fixed.
     """
     weights = [0] * BITS
     seen = False
@@ -109,12 +117,12 @@ def signature(text: str) -> int:
     if not seen:
         return 0
 
-    # Beraberlik (toplam 0) kisa metinlerde sik: iki-uc ozellikli bir kayitta
-    # boyutlarin cogu berabere kalir. Berabereyi sabit bir tarafa yazmak
-    # butun kisa metinleri birbirine benzetiyordu — "bir sey" ile "hic
-    # konusulmamis konu" komsu cikiyordu. Bunun yerine metnin kendi
-    # ozetinden bir bit aliniyor: ayni metin ayni biti verir, farkli metin
-    # bagimsiz bir bit verir.
+    # Ties (sum 0) are frequent in short texts: in a record with two or
+    # three features most dimensions stay tied. Writing ties to a fixed side
+    # made all short texts look alike — "bir sey" and "hic konusulmamis
+    # konu" came out as neighbours. Instead a bit is taken from the text's
+    # own digest: the same text gives the same bit, a different text gives
+    # an independent bit.
     tie = int.from_bytes(
         hashlib.blake2b(text.encode("utf-8"), digest_size=BITS // 8).digest(), "big"
     )
@@ -130,10 +138,11 @@ def signature(text: str) -> int:
 
 
 def similarity(a: int, b: int) -> float:
-    """İki imzanın yakınlığı, 0..1.
+    """Closeness of two signatures, 0..1.
 
-    Şansın (yarısı tutan iki rastgele imza) altı sıfıra kırpılıyor; aksi
-    halde alakasız her kayıt 0.5 puanla listeye girerdi.
+    Below chance (two random signatures agreeing on half) is clipped to
+    zero; otherwise every unrelated record would enter the list with 0.5
+    points.
     """
     if not a or not b:
         return 0.0
@@ -150,23 +159,24 @@ def from_blob(blob: bytes | None) -> int:
 
 
 class Index:
-    """İmzaların RAM'deki hali.
+    """The signatures as they live in RAM.
 
-    Tamamı bellekte tutuluyor çünkü tutmamak için bir sebep yok: elli bin
-    kayıt ~1.6 MB imza demek. Asıl gövde diskte kalır, burada yalnızca
-    "neye benziyor" bilgisi durur.
+    All of it is kept in memory because there is no reason not to: fifty
+    thousand records mean ~1.6 MB of signatures. The actual body stays on
+    disk; only the "what does it look like" information lives here.
 
-    Arama saf tarama — ama taranan şey tamsayı XOR'u olduğu için yaklaşık
-    komşu yapılarının (HNSW, IVF) karmaşıklığına bu ölçekte gerek yok.
+    The search is a plain scan — but since what is scanned is an integer
+    XOR, the complexity of approximate-neighbour structures (HNSW, IVF) is
+    unnecessary at this scale.
     """
 
     __slots__ = ("_sigs", "_flat")
 
     def __init__(self, entries: Iterable[tuple[str, int]] = ()) -> None:
         self._sigs: dict[str, int] = {k: v for k, v in entries if v}
-        # Taramanin uzerinden gectigi duz liste. Sozluk uzerinde donmek her
-        # adimda bir hash tablosu adimi ekliyordu; tarama zaten tek XOR'a
-        # inmisken bu ek yuk toplamin kayda deger bir kismi oluyor.
+        # The flat list the scan runs over. Iterating over the dict added a
+        # hash-table step at every iteration; with the scan already down to a
+        # single XOR, that overhead was a noticeable share of the total.
         self._flat: list[tuple[int, str]] | None = None
 
     def __len__(self) -> int:
@@ -181,7 +191,7 @@ class Index:
             self._flat = None
 
     def ids(self) -> list[str]:
-        """İndekste duran kimlikler. Sıcak kümenin ta kendisi (Faz 3.11)."""
+        """The ids sitting in the index. The hot set itself (Phase 3.11)."""
         return list(self._sigs)
 
     def drop(self, node_id: str) -> None:
@@ -189,16 +199,17 @@ class Index:
             self._flat = None
 
     def search(self, query: int, limit: int, *, floor: float = FLOOR) -> list[tuple[str, float]]:
-        """En yakin `limit` imzayi dondurur.
+        """Returns the closest `limit` signatures.
 
-        Tarama tam ve DOGRUSAL: yaklasik komsu yapilarinin (LSH bantlari,
-        HNSW) aksine hicbir eslesmeyi kacirmiyor. Bu olcekte gerekmiyor
-        da — kayit basina is tek bir XOR ve popcount oldugu icin elli bin
-        kayit ~3-5 ms (olculdu, 29.08); bir model cagrisinin binde biri.
+        The scan is exact and LINEAR: unlike approximate-neighbour structures
+        (LSH bands, HNSW) it misses no match. Nor is one needed at this
+        scale — since the work per record is a single XOR and popcount,
+        fifty thousand records take ~3-5 ms (measured, 29.08); a thousandth
+        of a model call.
 
-        `floor` gurultu esigi: altinda kalan her sey "hatirlamadim" demektir.
-        Zayif eslesmeyi listeye almak, yayilan aktivasyonun alakasiz bir
-        bolgeye sicramasina yol aciyor.
+        `floor` is the noise floor: everything below it means "I did not
+        remember". Letting a weak match into the list makes spreading
+        activation jump into an unrelated region.
         """
         if not query or not self._sigs:
             return []
@@ -206,8 +217,9 @@ class Index:
         if self._flat is None:
             self._flat = [(value, node_id) for node_id, value in self._sigs.items()]
 
-        # Esik dongunun disinda bir kez, mesafe cinsinden hesaplaniyor:
-        # her adayda benzerlik orani hesaplamak taramayi yavaslatirdi.
+        # The floor is computed once outside the loop, in distance terms:
+        # computing the similarity ratio for every candidate would slow the
+        # scan down.
         #   sim >= floor  <=>  hamming <= BITS * CHANCE * (1 - floor)
         cutoff = int(BITS * CHANCE * (1.0 - floor))
 

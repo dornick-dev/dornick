@@ -1,11 +1,12 @@
-"""Cihazlar: bağlı fiziksel ve uzak şeyler için ortak biçim.
+"""Devices: a common format for the connected physical and remote things.
 
-Bir PLC, bir kamera, bir seri porttaki kol, bir MCP sunucusu — hepsi
-birbirinden çok farklı. Biçimin sabitlediği tek şey, üçünün ortak olması:
-ne olduğu, nasıl bağlanılacağı, neresine dokunulacağı.
+A PLC, a camera, an arm on a serial port, an MCP server — all very
+different from each other. The only thing the format pins down is what the
+three have in common: what it is, how to connect, where to touch it.
 
-Buradaki kontroller iki tarafı birden tutuyor: kullanıcının elle yazdığı
-dosya ile ajanın araçla yazdığı kayıt aynı yere ve aynı biçimde gidiyor.
+The checks here hold both sides at once: the file the user writes by hand
+and the record the agent writes with the tool go to the same place in the
+same format.
 """
 
 from __future__ import annotations
@@ -19,8 +20,8 @@ from dornick import devices
 
 
 def test_a_device_needs_an_id_a_name_and_a_known_kind() -> None:
-    """Hata mesajı modele gidiyor. "geçersiz" demek onu tahmin etmeye
-    zorluyor; hangi alanın neden geçersiz olduğunu söylemek düzeltiyor."""
+    """The error message goes to the model. Saying "invalid" forces it to
+    guess; saying which field is invalid and why fixes it."""
     with pytest.raises(devices.DeviceError, match="id"):
         devices.parse({"name": "kapı"})
 
@@ -32,17 +33,17 @@ def test_a_device_needs_an_id_a_name_and_a_known_kind() -> None:
 
 
 def test_an_id_cannot_escape_the_folder() -> None:
-    """Kimlik dosya adı oluyor: yol ayracı kabul edilirse atölyenin
-    dışına yazılabilir."""
+    """The identity becomes the file name: if a path separator is accepted
+    it can write outside the workshop."""
     for bad in ("../kacak", "a/b", "C:\\x", "büyük Harf", ""):
         with pytest.raises(devices.DeviceError):
             devices.parse({"id": bad, "name": "x"})
 
 
 def test_the_link_is_deliberately_free_form() -> None:
-    """Modbus'un host/port'u var, seri portun baud'u, MCP'nin komut
-    satırı. Hepsini tek bir şemaya sokmak ya her cihaza uymayan bir kalıp
-    ya da hiçbir şey söylemeyen bir sözlük üretir."""
+    """Modbus has host/port, a serial port has baud, MCP has a command
+    line. Forcing all of them into one schema produces either a mould that
+    fits no device or a dict that says nothing."""
     serial = devices.parse({
         "id": "kol", "name": "kol", "kind": "serial",
         "link": {"protocol": "serial", "port_name": "COM3", "baud": 9600},
@@ -54,13 +55,13 @@ def test_the_link_is_deliberately_free_form() -> None:
 
 
 def test_a_point_says_whether_it_is_written_to() -> None:
-    """Yanlış tarafa yazmak fiziksel bir sonuç doğuruyor."""
+    """Writing to the wrong side has a physical consequence."""
     device = devices.parse({
         "id": "kapi", "name": "kapı", "kind": "plc",
         "points": [{"name": "kapı aç", "address": "%QX0.1", "access": "write"}],
     })
     assert device.points[0].access == "write"
-    # Belirtilmemişse okuma: varsayılan olarak yazmak tehlikeli.
+    # Read when unspecified: writing by default is dangerous.
     assert devices.parse({
         "id": "a", "name": "a", "points": [{"name": "sıcaklık"}]
     }).points[0].access == "read"
@@ -88,8 +89,8 @@ def test_devices_live_inside_the_workshop(tmp_path: Path) -> None:
 
 
 def test_a_broken_file_does_not_hide_the_others(tmp_path: Path) -> None:
-    """Elle yazılmış yarım bir JSON yüzünden bütün cihazların kaybolması,
-    o dosyadan çok daha kötü."""
+    """Losing every device because of a half-written hand-edited JSON is
+    far worse than that one file."""
     devices.save(tmp_path, {"id": "saglam", "name": "sağlam"})
     (devices.folder(tmp_path) / "bozuk.json").write_text("{ yarim", encoding="utf-8")
 
@@ -99,19 +100,19 @@ def test_a_broken_file_does_not_hide_the_others(tmp_path: Path) -> None:
 
 
 def test_the_file_is_readable_by_a_person(tmp_path: Path) -> None:
-    """Kullanıcı da aynı dosyalara elle yazıyor: okunamayan bir dosya
-    "ben de ekleyebileyim" isteğini karşılamıyor."""
+    """The user writes to the same files by hand too: an unreadable file
+    does not satisfy the "let me add one too" request."""
     devices.save(tmp_path, {"id": "kapi", "name": "kapı PLC'si", "kind": "plc"})
     raw = (devices.folder(tmp_path) / "kapi.json").read_text(encoding="utf-8")
 
-    assert "kapı PLC'si" in raw          # kaçış dizisi değil, okunur Türkçe
+    assert "kapı PLC'si" in raw          # readable Turkish, not an escape sequence
     assert json.loads(raw)["kind"] == "plc"
 
 
 def test_the_briefing_stays_short(tmp_path: Path) -> None:
-    """Ajanın neye bağlı olduğunu her turda araç çağırarak öğrenmesi hem
-    yavaş hem anlamsız. Ama on cihazın bütün adresleri de istemi
-    şişiriyor: özet satır satır, ayrıntı istendiğinde."""
+    """Having the agent learn what it is connected to by calling a tool on
+    every turn is both slow and pointless. But all the addresses of ten
+    devices bloat the prompt too: summary line by line, detail on request."""
     for index in range(5):
         devices.save(tmp_path, {
             "id": f"cihaz{index}", "name": f"cihaz {index}", "kind": "plc",
@@ -121,20 +122,20 @@ def test_the_briefing_stays_short(tmp_path: Path) -> None:
     text = devices.briefing(tmp_path)
     assert "cihaz0" in text
     assert "20 adres" in text
-    # Adreslerin kendisi özette yok.
+    # The addresses themselves are not in the summary.
     assert "%QX0.7" not in text
 
 
 def test_no_devices_means_no_briefing(tmp_path: Path) -> None:
-    """Boş bir başlık ("Bağlı cihazlar: yok") her istemde yer kaplıyor
-    ve hiçbir şey söylemiyor."""
+    """An empty heading ("Bağlı cihazlar: yok") takes space in every
+    prompt and says nothing."""
     assert devices.briefing(tmp_path) == ""
 
 
 def test_related_memories_are_the_ones_about_that_device(tmp_path: Path) -> None:
-    """Cihaz silinince ölçüm/adres anıları sessizce kalıyordu; kullanıcı
-    'hafızadan da sil' demek zorunda kalıyordu. Silme, ilgili anıları
-    gösterir ve sorar — kendiliğinden forget etmez."""
+    """When a device was removed its measurement/address memories lingered
+    silently; the user had to say 'delete it from memory too'. Removal
+    shows the related memories and asks — it does not forget on its own."""
     from dornick.config import Config
     from dornick.mind import open_mind
     from dornick.tools.devices import related_memories
@@ -189,6 +190,6 @@ def test_removing_a_device_asks_before_forgetting_memories(tmp_path: Path) -> No
     assert "sileyim mi" in result.content
     assert "depo adresi" in result.content
     assert "forget" in result.content
-    # Anı duruyor — onay yok.
+    # The memory stays — no confirmation.
     left = [m.title for m in mind.memories() if not m.deleted]
     assert "depo adresi" in left

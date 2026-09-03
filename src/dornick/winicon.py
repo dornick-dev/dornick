@@ -1,11 +1,12 @@
-"""Windows süreç simgesi: damgalı dornick.exe.
+"""Windows process icon: the stamped dornick.exe.
 
-Görev çubuğu AppUserModelID + pencere ikonuna bakar; Görev Yöneticisi ve
-WebView2 alt süreçleri ise ev sahibi PE'nin kaynağına. python.exe damgalı
-olmadığı sürece orada Python yılanı kalır. Çözüm: pythonw.exe'yi aynı
-klasöre dornick.exe diye kopyalayıp dornick.ico'yu RT_GROUP_ICON olarak yazmak —
-DLL'ler yan yana kalır, yorumlayıcı adı değişmez, yalnız görünen kimlik
-değişir. pythonw.exe'nin üstüne yazılmaz (venv/başka işler).
+The taskbar looks at the AppUserModelID + the window icon; Task Manager and
+the WebView2 child processes look at the host PE's resource. As long as
+python.exe is not stamped, the Python snake stays there. The fix: copy
+pythonw.exe into the same folder as dornick.exe and write dornick.ico in as
+RT_GROUP_ICON — the DLLs stay side by side, the interpreter name does not
+change, only the visible identity does. pythonw.exe is not overwritten
+(venv/other work).
 """
 
 from __future__ import annotations
@@ -16,16 +17,17 @@ import sys
 from pathlib import Path
 
 HOST_NAME = "dornick.exe"
-# Görev çubuğu + Windows bildirimi aynı kimlik: eşleşmezse toast Python
-# yılanını gösterir, kısayol ikonu da bağlanmaz.
+# Taskbar + Windows notification share one identity: if they don't match
+# the toast shows the Python snake and the shortcut icon doesn't bind.
 AUMID = "fatih.dornick.app"
 
-# UpdateResource dil kodu: yansız + US English (pythonw 1033 taşır).
+# UpdateResource language code: neutral + US English (pythonw carries 1033).
 _LANG_NEUTRAL = 0
 _RT_ICON = 3
 _RT_GROUP_ICON = 14
 
-# Relaunch: process tree'den kop (taskkill /T ebeveyni öldürünce çocuk kalır).
+# Relaunch: break away from the process tree (when taskkill /T kills the
+# parent, the child survives).
 _CREATE_NEW_PROCESS_GROUP = 0x00000200
 _CREATE_BREAKAWAY_FROM_JOB = 0x01000000
 
@@ -34,7 +36,7 @@ _SKIP_PIDS_ENV = "DORNICK_REEXEC_SKIP"
 
 
 def app_executable() -> Path:
-    """Kısayol / kayıt hedefi: damgalı dornick.exe varsa o, yoksa pythonw."""
+    """Shortcut / registry target: the stamped dornick.exe if present, else pythonw."""
     exe = Path(sys.executable).resolve()
     if sys.platform != "win32":
         return exe
@@ -46,7 +48,7 @@ def app_executable() -> Path:
 
 
 def skip_pids() -> set[int]:
-    """Relaunch ebeveyni: hayalet avı /T ile çocuğu da öldürmesin."""
+    """The relaunch parent: the ghost hunt must not kill the child too via /T."""
     raw = os.environ.get(_SKIP_PIDS_ENV, "")
     found: set[int] = set()
     for part in raw.split(","):
@@ -57,10 +59,11 @@ def skip_pids() -> set[int]:
 
 
 def ensure_host() -> Path | None:
-    """pythonw → dornick.exe kopyası + ico damgası. Yazılamazsa None.
+    """pythonw → dornick.exe copy + ico stamp. None if it cannot be written.
 
-    Çalışan görüntüye yazılmaz. Damga sürümü logo._SURUM ile kilitli:
-    çizim değişince sidecar uyuşmaz, pythonw serbestse yeniden kopyalanır.
+    The running image is never written to. The stamp version is locked to
+    logo._SURUM: when the drawing changes the sidecar no longer matches and,
+    if pythonw is free, it is copied again.
     """
     if sys.platform != "win32":
         return None
@@ -76,11 +79,11 @@ def ensure_host() -> Path | None:
 
     from .logo import _SURUM, ico_path
 
-    bekci = Path(str(dest) + ".surum")
+    marker = Path(str(dest) + ".surum")
     need = True
     if dest.exists():
         try:
-            if bekci.read_text(encoding="utf-8").strip() == _SURUM:
+            if marker.read_text(encoding="utf-8").strip() == _SURUM:
                 if dest.stat().st_mtime >= source.stat().st_mtime:
                     need = False
         except OSError:
@@ -91,7 +94,7 @@ def ensure_host() -> Path | None:
 
             shutil.copy2(source, dest)
             if stamp_exe_icon(dest, ico_path()):
-                bekci.write_text(_SURUM, encoding="utf-8")
+                marker.write_text(_SURUM, encoding="utf-8")
         except OSError:
             if not dest.exists():
                 return None
@@ -99,10 +102,11 @@ def ensure_host() -> Path | None:
 
 
 def relaunch_as_host() -> None:
-    """python(w) ise damgalı dornick.exe olarak yeniden açılıp bu süreç biter.
+    """If running as python(w), relaunch as the stamped dornick.exe and end this process.
 
-    DORNICK_KEEP_INTERPRETER=1 geliştirme konsolunu korur. Program Files altındaki
-    sistem Python'u yazılamazsa sessizce mevcut yorumlayıcıyla devam eder.
+    DORNICK_KEEP_INTERPRETER=1 preserves the development console. If the
+    system Python under Program Files cannot be written, it silently
+    continues with the current interpreter.
     """
     if sys.platform != "win32":
         return
@@ -137,16 +141,16 @@ def relaunch_as_host() -> None:
 
 
 def _argv_tail() -> list[str]:
-    """dornick.exe pythonw kopyasıdır: mutlaka `-m dornick …` ile açılır.
+    """dornick.exe is a pythonw copy: it must always open with `-m dornick …`.
 
-    `dornick --app` konsol betiğinde `sys.orig_argv` `[dornick.exe, --app]`
-    oluyor. Bunu olduğu gibi vermek `pythonw --app` demek — geçersiz
-    seçenek, konsolsuz süreç sessizce ölür, terminal de hemen boş prompt'a
-    döner.
+    In the `dornick --app` console script `sys.orig_argv` is
+    `[dornick.exe, --app]`. Passing that as is means `pythonw --app` — an
+    invalid option, the console-less process dies silently and the terminal
+    drops straight back to an empty prompt.
     """
     rest = list(sys.argv[1:])
     orig = getattr(sys, "orig_argv", None) or []
-    # `python -m dornick …` / `python -m dornick.cli …` zaten doğru kuyruk.
+    # `python -m dornick …` / `python -m dornick.cli …` is already the right tail.
     if (len(orig) >= 3 and orig[1] == "-m"
             and orig[2].replace("-", "_").startswith("dornick")):
         return list(orig[1:])
@@ -154,12 +158,12 @@ def _argv_tail() -> list[str]:
 
 
 def stamp_exe_icon(exe: Path, ico: Path) -> bool:
-    """ICO görüntülerini PE'nin RT_ICON / RT_GROUP_ICON kaynaklarına yazar.
+    """Writes the ICO images into the PE's RT_ICON / RT_GROUP_ICON resources.
 
-    Tip/ad tamsayı ID'dir (MAKEINTRESOURCE). ctypes argtype LPCWSTR olursa
-    ID=1 adres 1'den string okunur → access violation. c_void_p kullanılır.
-    Dil 0 ve 1033: pythonw genelde US English taşır; ikisine de yazınca
-    Görev Yöneticisi eski yılanı seçmez.
+    Type/name are integer IDs (MAKEINTRESOURCE). With an LPCWSTR ctypes
+    argtype, ID=1 gets read as a string from address 1 → access violation.
+    c_void_p is used. Languages 0 and 1033: pythonw usually carries US
+    English; written to both, Task Manager no longer picks the old snake.
     """
     if sys.platform != "win32":
         return False
@@ -257,11 +261,12 @@ def _planes_and_bits(planes: int, bits: int, payload: bytes) -> tuple[int, int]:
 
 
 def ensure_toast_identity() -> None:
-    """Windows bildiriminin başlığı 'dornick', simgesi logo olsun.
+    """The Windows notification should be titled 'dornick' with the logo as its icon.
 
-    Toast, süreç AUMID'sine bakıyor. Eşleşen bir Başlat kısayolu ve
-    DisplayName olmadan bildirim Python yılanıyla geliyor (ya da hiç
-    gelmiyor). Kısayol ikonu + kayıt, pystray balonundan bağımsız.
+    The toast looks at the process AUMID. Without a matching Start Menu
+    shortcut and DisplayName the notification comes with the Python snake
+    (or not at all). Shortcut icon + registry entry, independent of the
+    pystray balloon.
     """
     if sys.platform != "win32":
         return
@@ -275,12 +280,12 @@ def ensure_toast_identity() -> None:
         return
     lnk = programs / "dornick.lnk"
     args = " ".join(_argv_tail())
-    _yaz_kisayol(lnk, target, args, ico)
-    _kisayol_aumid_yaz(lnk, AUMID)
-    _yaz_bildirim_kaydi(png)
+    _write_shortcut(lnk, target, args, ico)
+    _write_shortcut_aumid(lnk, AUMID)
+    _write_notification_registry(png)
 
 
-def _yaz_kisayol(lnk: Path, target: Path, args: str, ico: Path) -> None:
+def _write_shortcut(lnk: Path, target: Path, args: str, ico: Path) -> None:
     from . import environment
 
     def q(s: str) -> str:
@@ -302,7 +307,7 @@ def _yaz_kisayol(lnk: Path, target: Path, args: str, ico: Path) -> None:
         return
 
 
-def _yaz_bildirim_kaydi(png: Path) -> None:
+def _write_notification_registry(png: Path) -> None:
     try:
         import winreg
         key = winreg.CreateKey(
@@ -318,11 +323,12 @@ def _yaz_bildirim_kaydi(png: Path) -> None:
         return
 
 
-def _kisayol_aumid_yaz(lnk: Path, aumid: str) -> None:
-    """Kısayola System.AppUserModel.ID yazar.
+def _write_shortcut_aumid(lnk: Path, aumid: str) -> None:
+    """Writes System.AppUserModel.ID onto the shortcut.
 
-    WScript.Shell IconLocation yazar; AUMID yazmaz. Toast notifier o
-    kimliği Start Menu kısayolunda arar — yoksa Python yılanı gelir.
+    WScript.Shell writes IconLocation; it does not write the AUMID. The
+    toast notifier looks for that identity in the Start Menu shortcut —
+    without it the Python snake comes.
     """
     if sys.platform != "win32" or not lnk.is_file():
         return

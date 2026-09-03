@@ -1,13 +1,15 @@
-"""Araç yürütücüsü.
+"""Tool executor.
 
-Sorumlulukları:
-  * bilinmeyen aracı öğretici hatayla karşılamak
-  * çağrıyı handler'a vermeden ÖNCE şemaya vurmak (eksik/yanlış alan ham
-    istisna değil, düzeltmeyi anlatan bir mesajla dönsün)
-  * her çağrıyı izin kapısından ve kullanıcının kancalarından geçirmek
-  * paralel-güvenli çağrıları eşzamanlı, diğerlerini sırayla koşturmak
-  * zaman aşımı ve kullanıcı kesmesini yönetmek
-  * HER tool_use için bir tool_result üretmek — biri bile eksikse API 400 döner
+Its responsibilities:
+  * meet an unknown tool with a teaching error
+  * check the call against the schema BEFORE handing it to the handler (a
+    missing/wrong field returns a message that explains the fix, not a
+    raw exception)
+  * pass every call through the permission gate and the user's hooks
+  * run parallel-safe calls concurrently, the others sequentially
+  * manage the timeout and the user interrupt
+  * produce one tool_result for EVERY tool_use — if even one is missing
+    the API returns 400
 """
 
 from __future__ import annotations
@@ -23,7 +25,7 @@ from .base import Block, ToolContext, ToolRegistry, ToolResult, ToolSpec, schema
 
 DEFAULT_TIMEOUT_S = 180.0
 
-# İzin sorusu arayüze delege edilir. True -> çalıştır, False -> reddet.
+# The permission question is delegated to the UI. True -> run, False -> refuse.
 Approver = Callable[[ToolSpec, dict[str, Any]], Awaitable[bool]]
 Observer = Callable[[str, dict[str, Any]], None]
 
@@ -38,16 +40,17 @@ async def execute(
     observe: Observer = lambda *_: None,
     timeout_s: float = DEFAULT_TIMEOUT_S,
 ) -> list[Block]:
-    """Çağrıları yürütür ve giriş sırasıyla tool_result bloklarını döndürür."""
+    """Executes the calls and returns the tool_result blocks in input order."""
     results: dict[str, Block] = {}
     batch: list[PendingToolUse] = []
 
     async def flush() -> None:
         if not batch:
             return
-        # Eşzamanlılık sınırlı: model bir turda on araç birden isteyebiliyor
-        # ve hepsini aynı anda başlatmak zayıf bir makinede belleği tüketiyor.
-        # Sınır ayarlardan geliyor; alt ajanlar da aynı kapıdan geçiyor.
+        # Concurrency is bounded: the model can ask for ten tools in one
+        # turn and starting all of them at once exhausts memory on a weak
+        # machine. The limit comes from settings; sub-agents pass through
+        # the same gate.
         gate = asyncio.Semaphore(max(1, ctx.config.context.max_parallel))
 
         async def guarded(call: PendingToolUse):
@@ -68,7 +71,7 @@ async def execute(
         if spec is not None and spec.parallel_safe:
             batch.append(call)
             continue
-        # Paralel-güvenli olmayan çağrı: önce biriken partiyi bitir.
+        # A call that is not parallel-safe: finish the accumulated batch first.
         await flush()
         if ctx.cancel.is_set():
             break
@@ -78,7 +81,7 @@ async def execute(
 
     await flush()
 
-    # Kesme ya da erken çıkış: karşılıksız kalan her tool_use'a iptal sonucu.
+    # Interrupt or early exit: a cancel result for every unanswered tool_use.
     return [results.get(c.id) or cancelled_result(c.id) for c in calls]
 
 
@@ -98,17 +101,18 @@ async def _run_one(
             f"'{call.name}' diye bir araç yok. Kullanılabilir araçlar: {available}"
         ).to_block(call.id)
 
-    # Şema kapısı izin kapısından ÖNCE: bozuk bir çağrı için kullanıcıya
-    # onay sorulmamalı ("write_file çalıştırılsın mı?" diye sorup sonra
-    # eksik alandan patlamak, kullanıcının vaktini boşa harcamak olur).
-    if (uyari := schema_violation(spec, call.input)) is not None:
-        observe("sema_ihlali", {"tool": spec.name, "id": call.id, "detail": uyari})
-        return ToolResult.error(uyari).to_block(call.id)
+    # The schema gate comes BEFORE the permission gate: the user must not be
+    # asked to approve a broken call (asking "run write_file?" and then
+    # blowing up on a missing field would waste the user's time).
+    if (warning := schema_violation(spec, call.input)) is not None:
+        observe("sema_ihlali", {"tool": spec.name, "id": call.id, "detail": warning})
+        return ToolResult.error(warning).to_block(call.id)
 
-    # Kanca dosyasına uzanan DEĞİŞTİREN çağrı: izin kapısından önce reddedilir
-    # (kullanıcıya zaten reddedeceğimiz bir şey için onay sorulmamalı).
-    # `tools/files.py` yazma araçlarının yolunu kapatıyordu ama kabuk bir yazma
-    # aracı değil — `Set-Content .dornick/kancalar.json` o kapıdan geçmiyordu.
+    # A MUTATING call that reaches the hook file is refused before the
+    # permission gate (the user should not be asked to approve something we
+    # will refuse anyway). `tools/files.py` closed that path for the write
+    # tools, but the shell is not a write tool — `Set-Content
+    # .dornick/kancalar.json` did not pass through that gate.
     if spec.mutates and hooks.call_touches_hook(spec.name, call.input):
         observe("kanca_ret", {"tool": spec.name, "id": call.id,
                               "detail": "kanca dosyası"})
@@ -125,8 +129,9 @@ async def _run_one(
     observe("permission", {"tool": spec.name, "decision": decision.value, "rule": rule})
 
     if decision is Decision.DENY:
-        # Sabit koruma gerekçesini olduğu gibi göster (kip-bağımsız ret);
-        # jenerik "izin iste" mesajı yanıltıcı olurdu — bu kapı izinle açılmaz.
+        # Show the fixed-guard reason as is (a mode-independent refusal); a
+        # generic "ask for permission" message would mislead — this gate
+        # does not open with permission.
         if rule.startswith("sabit:koruma:"):
             return ToolResult.error(rule[len("sabit:koruma:"):]).to_block(call.id)
         return ToolResult.error(
@@ -135,26 +140,27 @@ async def _run_one(
         ).to_block(call.id)
 
     if decision is Decision.ASK:
-        # Onay bekleyişi kullanıcı kesmesiyle YARIŞTIRILIYOR: izin kartı
-        # açıkken Durdur'a basılırsa tur bekleyişte asılı kalmamalı. Eski
-        # hal yalnız future'ı bekliyordu — kart cevapsız kaldığında Durdur
-        # dahil hiçbir şey turu kurtaramıyordu (canlı yara, 01.09: "sohbeti
-        # durdur dediğimde durmuyor").
-        soru = asyncio.ensure_future(approve(spec, call.input))
-        kesme = asyncio.ensure_future(ctx.cancel.wait())
+        # Waiting for approval is RACED against the user interrupt: if Stop
+        # is pressed while the permission card is open the turn must not
+        # hang in the wait. The old version only awaited the future — when
+        # the card went unanswered nothing, Stop included, could rescue the
+        # turn (live wound, 01.09: "it doesn't stop when I say stop the
+        # chat").
+        question = asyncio.ensure_future(approve(spec, call.input))
+        interrupt = asyncio.ensure_future(ctx.cancel.wait())
         try:
-            await asyncio.wait({soru, kesme}, return_when=asyncio.FIRST_COMPLETED)
+            await asyncio.wait({question, interrupt}, return_when=asyncio.FIRST_COMPLETED)
         except asyncio.CancelledError:
-            soru.cancel()
-            kesme.cancel()
+            question.cancel()
+            interrupt.cancel()
             return cancelled_result(call.id)
-        kesme.cancel()
-        if not soru.done():
-            soru.cancel()
+        interrupt.cancel()
+        if not question.done():
+            question.cancel()
             observe("tool_cancelled", {"tool": spec.name, "id": call.id})
             return cancelled_result(call.id)
         try:
-            granted = soru.result()
+            granted = question.result()
         except asyncio.CancelledError:
             return cancelled_result(call.id)
         except Exception:
@@ -165,37 +171,40 @@ async def _run_one(
                 "ne yapmak istediğini açıkla ya da başka bir yol öner."
             ).to_block(call.id)
 
-    # Kullanıcının kendi bekçisi. İzin kapısından SONRA çalışıyor: kanca
-    # kullanıcının kuralı, izin motoru da kullanıcının kuralı — ama izin
-    # kapısı reddettiyse kancayı koşturmak boşa yan etki olurdu (biçimlendirme
-    # kancası hiç yazılmayan bir dosyayı biçimlendirmeye kalkardı).
+    # The user's own guard. It runs AFTER the permission gate: the hook is
+    # the user's rule and the permission engine is the user's rule too — but
+    # if the permission gate refused, running the hook would be a wasted
+    # side effect (a formatting hook would try to format a file that was
+    # never written).
     #
-    # Kancalar izin motorunun DIŞINDA çalışır: onay penceresi çıkmaz. Bu
-    # bilinçli — kanca kullanıcının kendi diskindeki kendi dosyasına kendi
-    # eliyle yazdığı komuttur ve model o dosyaya iki kapıdan da uzanamaz:
-    # yazma araçları `kancalar.korunan_mu` (`tools/files.py`), diğer
-    # değiştiren araçlar (kabuk) yukarıdaki `cagri_kancaya_dokunuyor_mu`.
-    kanca_notlari: list[str] = []
+    # Hooks run OUTSIDE the permission engine: no approval prompt appears.
+    # This is deliberate — a hook is a command the user wrote by hand into
+    # their own file on their own disk, and the model cannot reach that file
+    # through either gate: the write tools via `kancalar.korunan_mu`
+    # (`tools/files.py`), the other mutating tools (the shell) via
+    # `cagri_kancaya_dokunuyor_mu` above.
+    hook_notes: list[str] = []
     try:
-        karar = await hooks.before_tool(
+        verdict = await hooks.before_tool(
             ctx.config.state_dir, spec.name, call.input,
-            oturum=ctx.session.id, cwd=_kanca_dizini(ctx))
-    except Exception as exc:  # pragma: no cover - kanca katmanı aracı öldürmesin
-        karar = hooks.Karar(notlar=[
+            oturum=ctx.session.id, cwd=_hook_cwd(ctx))
+    except Exception as exc:  # pragma: no cover - the hook layer must not kill the tool
+        verdict = hooks.Karar(notlar=[
             f"kanca katmanı çalışmadı ({type(exc).__name__}: {exc})"])
-    kanca_notlari.extend(karar.notlar)
+    hook_notes.extend(verdict.notlar)
 
-    if not karar.izin:
+    if not verdict.izin:
         observe("kanca_ret", {"tool": spec.name, "id": call.id,
-                              "detail": karar.gerekce})
-        return ToolResult.error(karar.gerekce).to_block(call.id)
+                              "detail": verdict.gerekce})
+        return ToolResult.error(verdict.gerekce).to_block(call.id)
 
     observe("tool_start", {"tool": spec.name, "input": call.input, "id": call.id})
     started = time.monotonic()
-    # Araç kendi zaman aşımını istediyse (ör. shell'e `timeout: 600` verildi)
-    # yürütücünün 180 sn'lik genel sınırı onu ezmemeli: model 10 dakikalık
-    # bir derleme için açıkça süre istiyor ve eski hal onu 3 dakikada
-    # öldürüyordu. Genel sınır, süre istemeyen araçlar için aynen duruyor.
+    # If the tool asked for its own timeout (e.g. shell was given
+    # `timeout: 600`) the executor's general 180 s limit must not override
+    # it: the model explicitly asks for time for a 10-minute build and the
+    # old version killed it at 3 minutes. The general limit stays as is for
+    # tools that do not ask for time.
     wanted = call.input.get("timeout")
     if isinstance(wanted, (int, float)) and wanted > 0:
         timeout_s = max(timeout_s, float(wanted) + 30.0)
@@ -209,13 +218,13 @@ async def _run_one(
     except asyncio.CancelledError:
         observe("tool_cancelled", {"tool": spec.name, "id": call.id})
         return cancelled_result(call.id)
-    except Exception as exc:  # araç hatası modeli düşürmemeli
-        # Ham istisna metni ("KeyError: 'path'") modele hiçbir şey
-        # öğretmiyor; hatta yanlış bir şey öğretiyor — model bunu "araç
-        # bozuk" diye okuyup araç çağırmayı bırakabiliyor (kanıtlandı:
-        # ardından çağrı XML'ini düz metin yazdı). Aynı bilgi, ne
-        # yapılacağını söyleyen bir cümleyle sarmalanıyor. Traceback
-        # gitmiyor: modelin bağlamında yeri yok, günlükte zaten var.
+    except Exception as exc:  # a tool error must not bring the model down
+        # The raw exception text ("KeyError: 'path'") teaches the model
+        # nothing; it even teaches something wrong — the model can read it
+        # as "the tool is broken" and stop calling tools (proven: it then
+        # wrote the call XML as plain text). The same information is wrapped
+        # in a sentence that says what to do. No traceback: it has no place
+        # in the model's context, it is already in the log.
         result = ToolResult.error(
             f"'{spec.name}' aracı çalışırken hata verdi — "
             f"{type(exc).__name__}: {exc}. Bu aracın hatası; çağrını gözden "
@@ -223,18 +232,18 @@ async def _run_one(
             "bir yol izle."
         )
 
-    # Araç bitti: bilgilendirme kancaları. Veto yetkileri yok — iş çoktan
-    # oldu. Çıktıları araç sonucuna tek satır olarak ekleniyor ki model
-    # `black` çalıştığını, dosyanın biçimlendirildiğini görsün.
+    # The tool finished: informational hooks. They have no veto — the work
+    # is already done. Their output is appended to the tool result as single
+    # lines so the model sees that `black` ran and the file was formatted.
     try:
-        kanca_notlari.extend(await hooks.after_tool(
+        hook_notes.extend(await hooks.after_tool(
             ctx.config.state_dir, spec.name, call.input,
-            oturum=ctx.session.id, cwd=_kanca_dizini(ctx)))
+            oturum=ctx.session.id, cwd=_hook_cwd(ctx)))
     except Exception as exc:  # pragma: no cover
-        kanca_notlari.append(f"kanca katmanı çalışmadı ({type(exc).__name__}: {exc})")
+        hook_notes.append(f"kanca katmanı çalışmadı ({type(exc).__name__}: {exc})")
 
-    if kanca_notlari:
-        result = _kanca_ekle(result, kanca_notlari)
+    if hook_notes:
+        result = _append_hook_notes(result, hook_notes)
 
     elapsed = time.monotonic() - started
     note = {
@@ -242,28 +251,30 @@ async def _run_one(
         "id": call.id,
         "ms": round(elapsed * 1000),
         "error": result.is_error,
-        # Tek satırlık sonuç özeti: arayüz araç satırının altına "⎿ 340 satır"
-        # gibi bir iz çizebilsin. Ham çıktı DEĞİL — ilk satır + hacim; çıktının
-        # kendisi zaten modelin bağlamında, kullanıcıya akıtılmıyor.
+        # One-line result summary so the UI can draw a trace like "⎿ 340
+        # satır" under the tool row. NOT the raw output — first line +
+        # volume; the output itself is already in the model's context, it is
+        # not streamed to the user.
         "summary": _brief(result),
     }
-    # Zengin adım kartı: adım açıldığında arayüz gerçek çıktıyı (komut
-    # çıktısı, okuma önizlemesi, çıkış kodu, değişikliğin satırı)
-    # gösterebilsin. Ham dökümün tamamı değil — uzun çıktıda baş + son;
-    # hub'ı ve tarayıcı DOM'unu şişirmemek için sert kırpılıyor.
+    # Rich step card: when the step is expanded the UI can show the real
+    # output (command output, read preview, exit code, the changed line).
+    # Not the whole raw dump — head + tail for long output; clipped hard so
+    # as not to bloat the hub and the browser DOM.
     if card := _card(result):
         note["detail"] = card
-    # Dokunulan yol arayüze taşınıyor: görüntüleyici işi biten dosyayı
-    # tazeleyebilsin. Aracın kendi bildirdiği yol, çağrıdaki argümandan
-    # daha doğru — göreli yol çözülmüş halde geliyor.
+    # The touched path is carried to the UI so the viewer can refresh the
+    # file whose job is done. The path the tool itself reports is more
+    # accurate than the argument in the call — it arrives with the relative
+    # path resolved.
     if path := result.detail.get("path"):
         note["path"] = str(path)
     observe("tool_end", note)
 
-    # Araç bir görüntü döndürdüyse blokta taşınamıyor: OpenAI sözleşmesi
-    # role=tool içeriğinin dize olmasını istiyor. Döngü bunu görüp bir
-    # sonraki kullanıcı turuna iliştiriyor. `images` (liste) kamera
-    # kesitleri için: birkaç kare tek araç sonucundan çıkabiliyor.
+    # If the tool returned an image it cannot be carried in the block: the
+    # OpenAI contract wants role=tool content to be a string. The loop sees
+    # this and attaches it to the next user turn. `images` (a list) is for
+    # camera captures: several frames can come out of one tool result.
     image = result.detail.get("image") or result.detail.get("images")
     if image:
         block = result.to_block(call.id)
@@ -272,52 +283,54 @@ async def _run_one(
     return result.to_block(call.id)
 
 
-def _kanca_dizini(ctx: ToolContext) -> str:
-    """Kancanın çalışma dizini: atölye varsa orası, yoksa çalışma alanı.
+def _hook_cwd(ctx: ToolContext) -> str:
+    """The hook's working directory: the workshop if there is one, else the workspace.
 
-    Öngörülebilir olması şart — kullanıcı kancasında göreli yol
-    kullanacaksa neye göre olduğunu bilmeli.
+    It must be predictable — if the user uses a relative path in a hook
+    they must know what it is relative to.
     """
     try:
         if ctx.sandbox.enabled:
             return str(ctx.sandbox.root)
-    except Exception:  # pragma: no cover - atölye açılamıyorsa
+    except Exception:  # pragma: no cover - the workshop cannot be opened
         pass
     return str(ctx.workspace)
 
 
-def _kanca_ekle(result: ToolResult, notlar: list[str]) -> ToolResult:
-    """Kanca satırlarını araç sonucunun SONUNA ekler.
+def _append_hook_notes(result: ToolResult, notes: list[str]) -> ToolResult:
+    """Appends the hook lines to the END of the tool result.
 
-    İçerik blok listesiyse (görüntü döndüren araç) metin eklenmiyor:
-    blokların arasına metin sıkıştırmak sözleşmeyi bozar ve kanca notu
-    bir görüntü aracında zaten nadir. Detayda yine de taşınıyor.
+    If the content is a block list (an image-returning tool) no text is
+    added: squeezing text between the blocks breaks the contract and a hook
+    note on an image tool is rare anyway. It is still carried in the detail.
     """
-    detay = {**result.detail, "kancalar": list(notlar)}
+    detail = {**result.detail, "kancalar": list(notes)}
     if not isinstance(result.content, str):
         return ToolResult(content=result.content, is_error=result.is_error,
-                          detail=detay)
-    kuyruk = "\n".join(notlar)
-    govde = f"{result.content}\n\n{kuyruk}" if result.content.strip() else kuyruk
-    return ToolResult(content=govde, is_error=result.is_error, detail=detay)
+                          detail=detail)
+    tail = "\n".join(notes)
+    body = f"{result.content}\n\n{tail}" if result.content.strip() else tail
+    return ToolResult(content=body, is_error=result.is_error, detail=detail)
 
 
-# Kart çıktısının kırpma sınırları: baştan/sondan satır, toplam karakter.
-# Bir pytest dökümünde ilginç olan baş (hangi testler) ve son (özet satırı);
-# ortası zaten modelin bağlamında duruyor.
+# Clipping limits of the card output: lines from the head/tail, total
+# characters. In a pytest dump the interesting parts are the head (which
+# tests) and the tail (the summary line); the middle is already in the
+# model's context anyway.
 CARD_HEAD = 60
 CARD_TAIL = 20
 CARD_CHARS = 12_000
 
 
 def _card(result: ToolResult) -> dict[str, Any]:
-    """Adım kartının veri yükü: kırpılmış çıktı + araca özgü küçük alanlar.
+    """The step card's payload: clipped output + small tool-specific fields.
 
-    Görüntü dönen araçlarda content blok listesi olur; oradan metin
-    çekilmiyor — kart görüntü taşımıyor, görüntü zaten sohbete iliştiriliyor.
+    For image-returning tools the content is a block list; no text is
+    pulled from there — the card carries no image, the image is already
+    attached to the chat.
     """
     card: dict[str, Any] = {}
-    # Kabuk kartındaki çıkış rozeti; edit kartındaki değişiklik satırı.
+    # The exit badge on the shell card; the changed line on the edit card.
     for key in ("exit_code", "line"):
         if (value := result.detail.get(key)) is not None:
             card[key] = value
@@ -337,10 +350,10 @@ def _card(result: ToolResult) -> dict[str, Any]:
 
 
 def _brief(result: ToolResult, width: int = 90) -> str:
-    """Sonucun tek satırlık izi: ilk satır + hacim.
+    """The result's one-line trace: first line + volume.
 
-    Görüntü dönen araçta metin boş olabiliyor; o zaman iz de boş — arayüz
-    satır çizmiyor.
+    For an image-returning tool the text can be empty; then the trace is
+    empty too — the UI draws no line.
     """
     text = (result.content or "").strip()
     if not text:

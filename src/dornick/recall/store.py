@@ -1,22 +1,23 @@
-"""Hatırlama deposu.
+"""Recall store.
 
-Tasarımın çıkış noktası tek bir şikâyet: bellek büyüdükçe yavaşlamamalı.
-Önceki hal her sorguda bütün oturum günlüklerini okuyup tarıyordu — on
-oturumda fark edilmez, on bin oturumda kullanılamaz.
+The design starts from a single complaint: memory must not slow down as it
+grows. The previous version read and scanned every session log on every
+query — unnoticeable at ten sessions, unusable at ten thousand.
 
-Burada tarama yok. SQLite'ın FTS5 indeksi terimden kayda gidiyor; sorgu
-maliyeti toplam hacme değil, eşleşen kayıt sayısına bağlı. Ek bağımlılık da
-yok: sqlite3 standart kütüphanede.
+There is no scanning here. SQLite's FTS5 index goes from term to record; the
+query cost depends on the number of matching records, not on total volume.
+No extra dependency either: sqlite3 is in the standard library.
 
-İki katman:
+Two layers:
 
-    disk    Kalıcı. Bilgisayar kapansa da durur. Tek dosya: recall.db
-    RAM     SQLite'ın kendi sayfa önbelleği. Sınırı yapılandırılabilir
-            (varsayılan 2 GB). Dolunca en az kullanılan sayfalar düşer —
-            ama veri kaybolmaz, diskte durmaya devam eder.
+    disk    Persistent. Survives the computer being switched off. One file:
+            recall.db
+    RAM     SQLite's own page cache. Its limit is configurable (default
+            2 GB). When it fills, the least-used pages drop out — but no
+            data is lost, it keeps living on disk.
 
-Bu ikinci katmanı elle yazmıyoruz çünkü SQLite'ınki tam olarak istenen şey:
-sıcak olan RAM'de kalır, soğuyan diske iner, hiçbir şey silinmez.
+We do not hand-write that second layer because SQLite's is exactly what is
+wanted: what is hot stays in RAM, what cools goes to disk, nothing is deleted.
 """
 
 from __future__ import annotations
@@ -34,52 +35,56 @@ from uuid import uuid4
 from . import activation, switches, vector
 from .clock import Clock, parse, stamp, wall_clock
 
-# Üç özne (Faz 7): kullanıcı ne SÖYLEDİ (`user`/`preference`/`voice`),
-# ajan ne GÖRDÜ (`world`, kaynağıyla birlikte), sonuçlar ne gösterdi
-# (`self`, yalnız gece ters tekrarı yazar). Köken kuralı konuya değil
-# kaynağa bakıyor: bir gözlem tercih değildir.
+# Three subjects (Phase 7): what the user SAID (`user`/`preference`/`voice`),
+# what the agent SAW (`world`, together with its source), what the outcomes
+# showed (`self`, written only by the night's reverse replay). The
+# provenance rule looks at the source, not the topic: an observation is not
+# a preference.
 KINDS = ("fact", "preference", "lesson", "procedure", "user", "voice",
          "goal", "episode", "world", "self")
 
-# Varsayılan RAM bütçesi. Kullanıcı artırabilir; dolunca en az kullanılan
-# sayfalar düşer, kayıt diskte kalır.
+# Default RAM budget. The user can raise it; when it fills, the least-used
+# pages drop out and the record stays on disk.
 DEFAULT_CACHE_BYTES = 2 * 1024**3
 
-# Yayılan aktivasyonda her sıçramada zayıflama. 1.0 olsaydı uzak çağrışımlar
-# doğrudan eşleşmeler kadar güçlü görünürdü.
-# Imza kanalinin puani bu carpanla oleceklenir. Birebir gecen bir terim,
-# benzer duran bir metinden daha guclu bir kanit oldugu icin bir altinda.
+# Attenuation at every hop of spreading activation. At 1.0 distant
+# associations would look as strong as direct matches.
+# The signature channel's score is scaled by this factor. It sits below one
+# because a term that matches verbatim is stronger evidence than a text that
+# merely looks similar.
 SIGNATURE_WEIGHT = 0.9
 
-# Terimden govde tahmini icin alinan harf sayisi. Kisaltmak alakasiz
-# eslesme, uzatmak eki yakalayamamak demek.
+# Number of characters taken as the stem guess of a term. Shorter means
+# unrelated matches, longer means failing to catch the suffix.
 STEM_CHARS = 5
 
-# Bir kaydın "aynı konuda zaten var olanı" sayılması için gereken benzerlik.
-# Kalibrasyon (yaşam bench, `--celiski-esik`, 2026-09-02): 24 düzeltme
-# olayında doğru önceki sürümü yakalama oranı, 60 gürültü kaydında yanlış
-# alarm sayısına karşı tarandı:
-#     0.50 → yakalama 0.79, yanlış 24     0.60 → yakalama 0.25, yanlış 2
-#     0.55 → yakalama 0.75, yanlış  5     0.75 → yakalama 0.00, yanlış 1
-# Yol haritasının önerdiği başlangıç 0.75 hiçbir şey yakalamıyor; eğri
-# 0.55–0.60 arasında dikleşiyor. Diz noktası seçildi: dörtte üç yakalama,
-# altmış gürültü kaydında beş uyarı. Uyarı bir öneridir, kayıt her hâlükârda
-# yazılır — yanlış alarmın maliyeti bir cümle, kaçırmanınki bir çelişki.
-# Bkz. docs/charts/celiski-esigi.md.
+# Similarity required for a record to count as "already present on the same
+# topic". Calibration (life bench, `--celiski-esik`, 2026-09-02): the rate of
+# catching the correct previous version over 24 correction events was swept
+# against the number of false alarms over 60 noise records:
+#     0.50 → catch 0.79, false 24     0.60 → catch 0.25, false 2
+#     0.55 → catch 0.75, false  5     0.75 → catch 0.00, false 1
+# The roadmap's suggested starting point of 0.75 catches nothing; the curve
+# steepens between 0.55 and 0.60. The knee was chosen: three-quarters catch
+# rate, five warnings over sixty noise records. A warning is a suggestion,
+# the record is written regardless — a false alarm costs a sentence, a miss
+# costs a contradiction.
+# See docs/charts/celiski-esigi.md.
 CONFLICT_THRESHOLD = 0.55
 
-# Aynı bağlamda yazılmış kaydın aldığı pay. Üç alan (proje, dizin, saat
-# dilimi) tam örtüşürse çarpan (1 + BAGLAM_BONUS). Kalibrasyon:
-# docs/hafiza-fazlar.md "Faz 5".
+# Share gained by a record written in the same context. If all three fields
+# (project, directory, time of day) overlap fully, the multiplier is
+# (1 + CONTEXT_BONUS). Calibration: docs/hafiza-fazlar.md "Faz 5".
 CONTEXT_BONUS = 0.15
-# Aynı alanda ÇATIŞAN değer taşıyan kaydın kaybettiği pay. Bonus tek başına
-# yetmiyordu ve sebebi ölçüldü: `select_prime` beş yuvayı doldurmaya
-# çalışıyor, doğruyu yukarı itmek yanlışı dışarı atmıyor. Boş bağlam hâlâ
-# nötr — ceza yalnız çatışmaya.
+# Share lost by a record carrying a CONFLICTING value in the same field. The
+# bonus alone was not enough and the reason was measured: `select_prime`
+# tries to fill five slots, and pushing the right one up does not push the
+# wrong one out. An empty context is still neutral — the penalty is only for
+# conflict.
 CONTEXT_PENALTY = 1.0
-# Çatışan bağlamın koruduğu asgari pay. Sıfıra indirmek "başka projedeyken
-# o kaydı ASLA bulma" demekti; mezar taşı felsefesinin arama tarafındaki
-# karşılığı bu tabandır.
+# Minimum share a conflicting context keeps. Dropping it to zero would have
+# meant "NEVER find that record while in another project"; this floor is the
+# search-side counterpart of the tombstone philosophy.
 CONTEXT_FLOOR = 0.15
 
 HOP_DECAY = 0.45
@@ -100,36 +105,38 @@ CREATE TABLE IF NOT EXISTS node (
     uses      INTEGER NOT NULL DEFAULT 0,
     deleted   INTEGER NOT NULL DEFAULT 0,
     sig       BLOB,
-    -- Kullanım geçmişi: son 30 kullanım, JSON dizi.
+    -- Usage history: the last 30 uses, as a JSON array.
     --   [{"t": "<ISO>", "w": 1.0, "etiket": "acildi"}, ...]
-    -- Yazım anı ilk kullanımdır (w = 1.0; Faz 4 bunu sürprizle değiştirir).
-    -- w negatif olabilir (Faz 3 ters tekrar): hataya götüren kullanım izi
-    -- zayıflatır. etiket: yazildi | acildi | basari | hata | sema | yakalandi.
-    -- Faz 1'de yalnız ilk ikisi yazılır; alan baştan bu biçimde açılıyor ki
-    -- sonraki fazlar şema değiştirmesin.
-    -- `uses`/`last_used` korunuyor (arayüz okuyor) ama aktivasyon bu
-    -- sütundan hesaplanıyor — sayaç zamanı bilmiyor.
+    -- The moment of writing is the first use (w = 1.0; Phase 4 replaces this
+    -- with surprise). w can be negative (Phase 3 reverse replay): a use that
+    -- led to a failure weakens the trace. etiket: yazildi | acildi | basari |
+    -- hata | sema | yakalandi. Phase 1 writes only the first two; the field
+    -- is opened in this shape from the start so later phases need not
+    -- change the schema.
+    -- `uses`/`last_used` are kept (the UI reads them) but activation is
+    -- computed from this column — a counter does not know time.
     use_log TEXT NOT NULL DEFAULT '[]',
-    -- Güncelleme zinciri. Silme değil YER DEĞİŞTİRME: eski satır diskte,
-    -- `series`'te ve açık aramada kalır; yalnız tohumlamadan ve ruhtan
-    -- düşer, ve kendisine gelen çağrışım yeni sürüme yönlenir.
-    supersedes    TEXT NOT NULL DEFAULT '',   -- bu kayıt kimin yerini aldı
-    superseded_by TEXT NOT NULL DEFAULT '',   -- bu kaydın yerini kim aldı
-    -- Aktif küme. Hafıza büyüdükçe imza taraması ve RAM doğrusal büyüyordu;
-    -- beynin cevabı arşivi küçültmek değil, aktif kümeyi sınırlı tutmak.
-    -- Sıcak düğüm imza indeksinde: kendiliğinden gelir. Soğuk düğüm yalnız
-    -- FTS'te: ipucuyla (birebir kelimeyle) uyanır, kendiliğinden gelmez.
-    -- Silinmez, mezar taşı almaz, `series`'ten düşmez.
+    -- Update chain. Not deletion but REPLACEMENT: the old row stays on disk,
+    -- in `series` and in open search; it only drops out of seeding and the
+    -- soul, and association arriving at it is redirected to the new version.
+    supersedes    TEXT NOT NULL DEFAULT '',   -- which record this one replaced
+    superseded_by TEXT NOT NULL DEFAULT '',   -- which record replaced this one
+    -- Active set. As memory grew, the signature scan and RAM grew linearly;
+    -- the brain's answer is not to shrink the archive but to keep the active
+    -- set bounded. A hot node is in the signature index: it comes on its
+    -- own. A cold node is only in FTS: it wakes to a cue (an exact word),
+    -- it does not come on its own. It is not deleted, gets no tombstone,
+    -- does not drop out of `series`.
     hot           INTEGER NOT NULL DEFAULT 1,
-    -- Yazım anındaki bağlam: {"proje": "koru1000", "dizin_kok": "...",
-    -- "saat_dilimi": "sabah"}. Model doldurmuyor, harness yazıyor —
-    -- modelin beyanı değil, olayın kendisi.
-    baglam        TEXT NOT NULL DEFAULT '{}'
+    -- Context at the moment of writing: {"proje": "koru1000", "dizin_kok":
+    -- "...", "saat_dilimi": "sabah"}. The model does not fill it in, the
+    -- harness writes it — not the model's claim but the event itself.
+    context       TEXT NOT NULL DEFAULT '{}'
 );
 CREATE INDEX IF NOT EXISTS node_kind ON node(kind) WHERE deleted = 0;
--- node_superseded indeksi _add_missing_columns'ta kuruluyor: eski bir
--- belleği açarken sütun henüz eklenmemiş oluyor ve buradaki CREATE INDEX
--- bütün şema betiğini düşürürdü.
+-- The node_superseded index is built in _add_missing_columns: when opening
+-- an old memory the column has not been added yet, and a CREATE INDEX here
+-- would bring down the whole schema script.
 
 CREATE TABLE IF NOT EXISTS link (
     src    TEXT NOT NULL,
@@ -178,42 +185,43 @@ class Node:
     created: str = ""
     last_used: str | None = None
     uses: int = 0
-    # Taban seviyesi aktivasyon (ACT-R B). Okuma anında hesaplanıyor: bir
-    # izin "şu an ne kadar canlı" olduğu diskte durabilecek bir sayı değil,
-    # zamanın fonksiyonu.
+    # Base-level activation (ACT-R B). Computed at read time: how "alive" a
+    # trace is right now is not a number that can sit on disk, it is a
+    # function of time.
     activation: float = activation.NO_BASE
-    # Güncelleme zinciri. `superseded_by` doluysa bu kayıt geçmiştir:
-    # aranmaz, ruha girmez — ama silinmemiştir.
+    # Update chain. If `superseded_by` is set this record is history: it is
+    # not searched, it does not enter the soul — but it is not deleted.
     supersedes: str = ""
     superseded_by: str = ""
     deleted: bool = False
-    # Aktif kümede mi? Soğuk kayıt silinmiş değil: FTS'te duruyor, birebir
-    # kelimeyle bulunuyor, `series`'te görünüyor — yalnız kendiliğinden
-    # gelmiyor ve önyüklemeye giremiyor.
+    # In the active set? A cold record is not deleted: it sits in FTS, it is
+    # found by an exact word, it shows up in `series` — it just does not
+    # come on its own and cannot enter priming.
     hot: bool = True
-    # Yazıldığı andaki bağlam. Arama tarafı bunu okuyup aynı bağlamdaki
-    # kaydı öne alıyor; bağlamı boş olan eski kayıtlar bonus almıyor ama
-    # ceza da almıyor.
+    # Context at the moment it was written. The search side reads this and
+    # brings records from the same context forward; old records with an
+    # empty context get no bonus but no penalty either.
     context: dict = field(default_factory=dict)
 
     def headline(self) -> str:
-        """Modele önce bu gider: kimlik ve tek satır. Gövde açılınca gelir."""
+        """This goes to the model first: identity and one line. The body
+        arrives once opened."""
         tags = f" [{', '.join(self.tags)}]" if self.tags else ""
         return f"{self.id} ({self.kind}) {self.title}{tags}"
 
 
 @dataclass(slots=True)
 class Step:
-    """Aktivasyonun bir adımı — hatırlarken uğranan yer.
+    """One step of activation — a place visited while recalling.
 
-    Arayüz bunu sırayla canlandırıyor: sinapsın ateşlendiği yol.
+    The UI animates these in order: the path along which the synapse fired.
     """
 
     node: str
     kind: str
     activation: float
     hop: int
-    via: str  # "query" ya da aktivasyonu ileten düğümün kimliği
+    via: str  # "query" or the id of the node that passed the activation on
 
 
 @dataclass(slots=True)
@@ -235,53 +243,66 @@ class RecallStore:
         clock: Clock | None = None,
     ) -> None:
         self.path = path
-        # Zaman tek bir yerden okunuyor (bkz. saat.py): ürün duvar saatini
-        # kullanır, benchmark sanal takvimi verir. Doğrudan datetime.now()
-        # çağrısı "otuz gün sonra ne olur" sorusunu ölçülemez yapardı.
+        # Time is read from a single place (see clock.py): the product uses
+        # the wall clock, the benchmark supplies a virtual calendar. A direct
+        # datetime.now() call would make the question "what happens thirty
+        # days later" unmeasurable.
         self._clock: Clock = clock or wall_clock
         path.parent.mkdir(parents=True, exist_ok=True)
         self._lock = threading.Lock()
         self._db = sqlite3.connect(path, check_same_thread=False)
         self._db.row_factory = sqlite3.Row
 
-        # WAL: okuyucu yazarı bloke etmiyor. Birden fazla süreç aynı belleği
-        # açtığında (ajan + arayüz + MCP istemcisi) bu şart.
+        # WAL: readers do not block the writer. Required when several
+        # processes open the same memory (agent + UI + MCP client).
         self._db.execute("PRAGMA journal_mode=WAL")
         self._db.execute("PRAGMA synchronous=NORMAL")
-        # Negatif değer KiB cinsinden bütçe demek; sayfa sayısı değil.
+        # A negative value means a budget in KiB, not a page count.
         self._db.execute(f"PRAGMA cache_size={-(cache_bytes // 1024)}")
         self._db.executescript(SCHEMA)
         self._add_missing_columns()
         self._db.commit()
-        # Imza indeksi ilk aramada yukleniyor: bellegi hic aramadan acan
-        # surecler (yalnizca yazan bir MCP istemcisi gibi) bedelini odemesin.
-        # Oturum acan surec `warm()` ile arka planda erkenden RAM'e alabilir.
+        # The signature index is loaded on the first search: processes that
+        # open the memory without ever searching (a write-only MCP client,
+        # say) should not pay for it. The process that opens a session can
+        # pull it into RAM early in the background with `warm()`.
         self._index: vector.Index | None = None
         self._index_lock = threading.Lock()
 
     def _now(self) -> str:
-        """Diske yazılacak "şu an" damgası."""
+        """The "now" stamp that goes to disk."""
         return stamp(self._clock)
 
     def _add_missing_columns(self) -> None:
-        """Once acilmis bir belleği yeni sutunla surdurur.
+        """Carries a memory opened before forward with new columns.
 
-        Kullanicinin diskindeki hatiralar surum yukseltmesinde silinmemeli;
-        eksik sutun eklenip imzalar ilk aramada geriye donuk uretiliyor.
+        The memories on the user's disk must not be lost on a version
+        upgrade; the missing column is added and signatures are produced
+        retroactively on the first search.
         """
         have = {row["name"] for row in self._db.execute("PRAGMA table_info(node)")}
+        # A memory written by a pre-release build of this branch carries the
+        # same three columns under their Turkish names. Renaming keeps the
+        # data; adding an empty English twin would have lost it.
+        for old_name, new_name in (("baglam", "context"), ("sicak", "hot"),
+                                   ("kullanimlar", "use_log")):
+            if old_name in have and new_name not in have:
+                self._db.execute(
+                    f"ALTER TABLE node RENAME COLUMN {old_name} TO {new_name}")
+                have.discard(old_name)
+                have.add(new_name)
         if "sig" not in have:
             self._db.execute("ALTER TABLE node ADD COLUMN sig BLOB")
-        for sutun in ("supersedes", "superseded_by"):
-            if sutun not in have:
+        for column in ("supersedes", "superseded_by"):
+            if column not in have:
                 self._db.execute(
-                    f"ALTER TABLE node ADD COLUMN {sutun} TEXT NOT NULL DEFAULT ''")
+                    f"ALTER TABLE node ADD COLUMN {column} TEXT NOT NULL DEFAULT ''")
         if "context" not in have:
             self._db.execute(
                 "ALTER TABLE node ADD COLUMN context TEXT NOT NULL DEFAULT '{}'")
         if "hot" not in have:
-            # Varsayılan 1: göç anında hiçbir kayıt kaybolmuyor. İlk gece
-            # geçişi hangilerinin soğuduğuna karar veriyor.
+            # Default 1: no record is lost at migration time. The first night
+            # pass decides which ones have cooled.
             self._db.execute(
                 "ALTER TABLE node ADD COLUMN hot INTEGER NOT NULL DEFAULT 1")
         self._db.execute(
@@ -290,40 +311,41 @@ class RecallStore:
         if "use_log" not in have:
             self._db.execute(
                 "ALTER TABLE node ADD COLUMN use_log TEXT NOT NULL DEFAULT '[]'")
-            # Sütun boş kalsa da okuma tarafı created/last_used/uses'tan
-            # geriye dönük üretiyor (aktivasyon.coz_kullanimlar); burada bir
-            # kez diske yazmak o hesabı her okumadan kaldırıyor.
+            # Even if the column stays empty, the read side reconstructs it
+            # from created/last_used/uses (activation.parse_use_log); writing
+            # it to disk once here removes that computation from every read.
             self._backfill_use_log()
 
     def _backfill_use_log(self) -> None:
-        """`kullanimlar` sütunu yokken yazılmış kayıtları kabaca doldurur.
+        """Roughly fills in records written before the `use_log` column existed.
 
-        Bu olmadan sütun eklendiği anda kullanıcının yıllarca biriktirdiği
-        bütün hatıralar "hiç kullanılmamış" sayılır ve bellek tek bir sürüm
-        yükseltmesinde sıfırlanmış gibi davranırdı.
+        Without this, the moment the column is added every memory the user
+        accumulated over years would count as "never used" and the memory
+        would behave as if reset by a single version upgrade.
         """
-        satirlar = []
+        rows_to_write = []
         for row in self._db.execute(
                 "SELECT id, created, last_used, uses FROM node"
                 " WHERE use_log IN ('', '[]')"):
-            gecmis = activation.parse_use_log(
+            history = activation.parse_use_log(
                 "", created=row["created"], last_used=row["last_used"],
                 uses=int(row["uses"] or 0))
-            if not gecmis:
+            if not history:
                 continue
-            satirlar.append((activation.encode(gecmis), row["id"]))
-        if satirlar:
+            rows_to_write.append((activation.encode(history), row["id"]))
+        if rows_to_write:
             self._db.executemany(
-                "UPDATE node SET use_log=? WHERE id=?", satirlar)
+                "UPDATE node SET use_log=? WHERE id=?", rows_to_write)
 
     def add_use(self, node_id: str, *, w: float = 1.0,
                       etiket: str = activation.OPENED) -> bool:
-        """İze bir kullanım işler — sayaç artırmadan.
+        """Writes a use into the trace — without bumping the counter.
 
-        `open()` modelin kaydı okumasıdır; bu ise sistemin ona bir pay
-        vermesidir: gece tekrarı başarıya götüren düğüme artı, hataya
-        götürene eksi ağırlık yazıyor. `uses` dokunulmuyor çünkü kayıt
-        gerçekten "kullanılmadı" — sorumluluğu dağıtıldı.
+        `open()` is the model reading the record; this is the system giving
+        it a share: the night replay writes positive weight to the node that
+        led to success and negative weight to the one that led to failure.
+        `uses` is left alone because the record was not really "used" — its
+        responsibility was distributed.
         """
         with self._lock:
             row = self._db.execute(
@@ -331,35 +353,35 @@ class RecallStore:
                 " WHERE id=? AND deleted=0", (node_id,)).fetchone()
             if row is None:
                 return False
-            gecmis = activation.parse_use_log(
+            history = activation.parse_use_log(
                 row["use_log"], created=row["created"],
                 last_used=row["last_used"], uses=int(row["uses"] or 0))
             self._db.execute(
                 "UPDATE node SET use_log=? WHERE id=?",
-                (activation.append_use(gecmis, self._clock(), w=w, etiket=etiket), node_id))
+                (activation.append_use(history, self._clock(), w=w, etiket=etiket), node_id))
             self._db.commit()
         return True
 
     def track_record(self, node_id: str) -> tuple[int, int]:
-        """Bir hatıranın (başarı, hata) sicili. Model bunu görürse
-        "bu bazen yanıltıyor" bilgisini de görür."""
+        """A memory's (success, failure) record. If the model sees this it
+        also sees "this one sometimes misleads"."""
         return activation.track_record(self.use_log(node_id))
 
     def _node(self, row: sqlite3.Row) -> Node:
-        """Satırı düğüme çevirir ve o anki aktivasyonunu hesaplar."""
-        return _to_node(row, seviye=self._base_level(row))
+        """Turns a row into a node and computes its activation at this moment."""
+        return _to_node(row, level=self._base_level(row))
 
     def _base_level(self, row: sqlite3.Row) -> float:
-        gecmis = activation.parse_use_log(
-            _alan(row, "use_log"),
-            created=_alan(row, "created"),
-            last_used=_alan(row, "last_used"),
-            uses=int(_alan(row, "uses") or 0),
+        history = activation.parse_use_log(
+            _field(row, "use_log"),
+            created=_field(row, "created"),
+            last_used=_field(row, "last_used"),
+            uses=int(_field(row, "uses") or 0),
         )
-        return activation.base_activation(gecmis, self._clock())
+        return activation.base_activation(history, self._clock())
 
     def use_log(self, node_id: str) -> list:
-        """Bir kaydın kullanım geçmişi. İçgözlem ve ölçüm için."""
+        """A record's usage history. For introspection and measurement."""
         with self._lock:
             row = self._db.execute(
                 "SELECT created, last_used, uses, use_log FROM node WHERE id=?",
@@ -373,22 +395,23 @@ class RecallStore:
 
     @property
     def index(self) -> vector.Index:
-        """Imzalarin RAM'deki hali; ilk erisimde diskten kuruluyor."""
+        """The signatures as they live in RAM; built from disk on first access."""
         if self._index is None:
-            # Çift kilit: warm() arka planda kurarken ilk arama da gelirse
-            # indeks iki kez inşa edilmesin.
+            # Double-checked lock: if the first search arrives while warm()
+            # is building in the background, the index must not be built
+            # twice.
             with self._index_lock:
                 if self._index is None:
                     self._index = self._load_index()
         return self._index
 
     def warm(self) -> None:
-        """İmza indeksini arka planda diskten RAM'e alır.
+        """Pulls the signature index from disk into RAM in the background.
 
-        Oturum açılışında çağrılıyor: hatıralar model daha ilk mesajı
-        almadan RAM'de hazır oluyor ve ilk hatırlama indeks kurulumunu
-        beklemiyor. Ayrı iş parçacığında — açılışı bloke etmek,
-        hızlandırmak istediğimiz şeyi yavaşlatmak olurdu.
+        Called at session start: the memories are ready in RAM before the
+        model receives its first message, and the first recall does not wait
+        for the index build. On a separate thread — blocking startup would
+        slow down the very thing we want to speed up.
         """
         if self._index is None:
             threading.Thread(
@@ -396,20 +419,21 @@ class RecallStore:
             ).start()
 
     def _load_index(self) -> vector.Index:
-        # Episode'lar (tur dökümleri) BİLEREK indekste: kendiliğinden
-        # önyükleme ve hasat onları dışlıyor ama model-güdümlü `mind_recall`
-        # bir konuşmayı eşanlamlı kelimelerle de bulabilmeli — imza kanalı
-        # tam da bunu sağlıyor, FTS yalnız birebir kelimeyi yakalar. Bedeli
-        # taramanın büyümesi; ölçüldü: kayıt başına iş tek XOR+popcount,
-        # 50k kayıtta ~3-5 ms — bir model çağrısının binde biri. Episode
-        # sayısı taramayı gerçekten yorana kadar (yüz binler) bu takas doğru.
+        # Episodes (turn transcripts) are DELIBERATELY in the index: automatic
+        # priming and harvesting exclude them, but model-driven `mind_recall`
+        # must be able to find a conversation by synonyms too — the signature
+        # channel provides exactly that, FTS only catches the exact word. The
+        # price is a bigger scan; measured: one XOR+popcount per record,
+        # ~3-5 ms at 50k records — a thousandth of a model call. Until the
+        # episode count really tires the scan (hundreds of thousands) this
+        # trade is right.
         with self._lock:
-            # İmza indeksi YALNIZ sıcak düğümleri tutuyor. Tarama maliyeti
-            # artık aktif hafızayla büyüyor, toplamla değil. FTS her şeyi
-            # kapsamaya devam ediyor: soğuk kayıt birebir kelimeyle bulunur.
+            # The signature index holds ONLY hot nodes. The scan cost now
+            # grows with active memory, not with the total. FTS keeps
+            # covering everything: a cold record is found by an exact word.
             rows = self._db.execute(
                 "SELECT id, title, body, tags, sig FROM node WHERE deleted=0"
-                + self._gecmis_suzgeci()
+                + self._history_filter()
                 + (" AND hot=1" if switches.ACTIVE.weave else "")
             ).fetchall()
 
@@ -418,8 +442,8 @@ class RecallStore:
         for row in rows:
             value = vector.from_blob(row["sig"])
             if not value:
-                # Imzasiz kayit: bu surumden once yazilmis. Bir kez uretilip
-                # diske yaziliyor, bir daha hesaplanmiyor.
+                # Record without a signature: written before this version.
+                # Produced once and written to disk, never computed again.
                 value = vector.signature(f"{row['title']} {row['body']} {row['tags']}")
                 if value:
                     backfill.append((vector.to_blob(value), row["id"]))
@@ -435,7 +459,7 @@ class RecallStore:
         with self._lock:
             self._db.close()
 
-    # -- yazma ---------------------------------------------------------
+    # -- writing -------------------------------------------------------
 
     def remember(
         self,
@@ -456,12 +480,12 @@ class RecallStore:
         if not body:
             raise ValueError("Boş içerik kaydedilmez.")
 
-        # Kodlama gücü (Faz 4): kayıt YAZILMADAN önce ölçülüyor, yoksa en
-        # yakın komşu kaydın kendisi olurdu ve her şey "hiç sürprizli değil"
-        # görünürdü.
-        komsular = self._seed(f"{title or _first_line(body)} {body}"[:400], 1)
-        surprise = 1.0 - (komsular[0][1] if komsular else 0.0)
-        guc = activation.encoding_strength(surprise, kind=kind, supersedes=supersedes)
+        # Encoding strength (Phase 4): measured BEFORE the record is written,
+        # otherwise the nearest neighbour would be the record itself and
+        # everything would look "not surprising at all".
+        neighbours = self._seed(f"{title or _first_line(body)} {body}"[:400], 1)
+        surprise = 1.0 - (neighbours[0][1] if neighbours else 0.0)
+        strength = activation.encoding_strength(surprise, kind=kind, supersedes=supersedes)
 
         node = Node(
             id=_new_id(),
@@ -483,7 +507,7 @@ class RecallStore:
                 " VALUES (?,?,?,?,?,?,?,?,?,?,?)",
                 (node.id, node.kind, node.title, node.body,
                  tag_text, node.session, node.created, vector.to_blob(sign),
-                 use_log or activation.first_stamp(node.created, guc),
+                 use_log or activation.first_stamp(node.created, strength),
                  supersedes,
                  json.dumps(node.context, ensure_ascii=False)),
             )
@@ -491,24 +515,25 @@ class RecallStore:
                 self._link(node.id, other, 1.0, "birlikte kaydedildi")
             self._db.commit()
 
-        # Yeni imza hem diske (yukaridaki INSERT) hem RAM'e yaziliyor. RAM
-        # eklemesi indeks kilidinin altinda: warm() arka planda indeksi
-        # kurarken bu kayit ne diskten okunan anlik goruntuye ne de RAM'e
-        # girmeden aradan dusmesin. Indeks henuz kurulmadiysa eklemeye gerek
-        # yok — kuruldugunda bu satiri zaten diskten okuyacak.
+        # The new signature is written both to disk (the INSERT above) and to
+        # RAM. The RAM addition is under the index lock: while warm() builds
+        # the index in the background, this record must not fall through the
+        # gap — neither in the snapshot read from disk nor in RAM. If the
+        # index is not built yet there is nothing to add — when it is built
+        # it will read this row from disk anyway.
         with self._index_lock:
             if self._index is not None:
                 self._index.add(node.id, sign)
 
-        # Ag kendiliginden orulsun: yeni kayit, icerigine en yakin birkac
-        # hatiraya baglanir. Elle baglama beklemek agin hic olusmamasi
-        # demekti; cagrisim da bu baglarin uzerinden yuruyor.
+        # Let the network weave itself: a new record links to the few
+        # memories closest to its content. Waiting for manual linking meant
+        # the network never formed; association walks over these links.
         self._weave(node)
         return node
 
     def update(
         self,
-        eski_id: str,
+        old_id: str,
         body: str,
         *,
         kind: str = "",
@@ -516,120 +541,125 @@ class RecallStore:
         tags: Iterable[str] = (),
         session: str = "",
     ) -> Node:
-        """Bir kaydın yerine yenisini yazar. Eskisi SİLİNMEZ.
+        """Writes a new record in place of an old one. The old one is NOT deleted.
 
-        Dört iş bir arada:
+        Four jobs in one:
 
-        1. Yeni kayıt `supersedes=eski_id` ile yazılır.
-        2. Eskiye `superseded_by=yeni_id` yazılır; `deleted` 0 kalır.
-        3. İkisi "günceller" gerekçeli bir kenarla bağlanır — arayüz zinciri
-           çizebilsin, çağrışım o yoldan yürüyebilsin.
-        4. Eskinin kullanım geçmişi yeniye **kopyalanır**. Pekişme mirası
-           olmasaydı düzeltme sıfırdan başlar ve ruhta düzelttiği şeyin
-           altında kalırdı — düzeltmenin bütün amacının tersi.
+        1. The new record is written with `supersedes=old_id`.
+        2. The old one gets `superseded_by=new_id`; `deleted` stays 0.
+        3. The two are linked by an edge with the reason "günceller" — so the
+           UI can draw the chain and association can walk that path.
+        4. The old record's usage history is **copied** to the new one.
+           Without inheriting the consolidation, a correction would start
+           from zero and sit below the thing it corrected in the soul — the
+           opposite of the correction's whole purpose.
 
-        Eski kayıt imza indeksinden düşürülüyor: aranmaz, ruha girmez, ama
-        diskte, `series`'te ve açık aramada durmaya devam eder.
+        The old record is dropped from the signature index: not searched,
+        does not enter the soul, but keeps living on disk, in `series` and
+        in open search.
         """
-        eski = self.peek(eski_id)
-        if eski is None:
-            raise ValueError(f"Güncellenecek kayıt yok: {eski_id}")
+        old = self.peek(old_id)
+        if old is None:
+            raise ValueError(f"Güncellenecek kayıt yok: {old_id}")
 
-        # Miras + yeni yazım anı: düzeltme, düzelttiği şeyin pekişmesini
-        # devralır ve üstüne kendi tazeliğini koyar.
-        miras = activation.append_use(self.use_log(eski_id), self._clock(),
-                                etiket=activation.WRITTEN)
-        yeni = self.remember(
+        # Inheritance + a new write stamp: the correction takes over the
+        # consolidation of what it corrects and puts its own freshness on top.
+        inherited = activation.append_use(self.use_log(old_id), self._clock(),
+                                          etiket=activation.WRITTEN)
+        new = self.remember(
             body,
-            kind=kind or eski.kind,
+            kind=kind or old.kind,
             title=title,
-            tags=tags or eski.tags,
-            session=session or eski.session,
-            supersedes=eski_id,
-            use_log=miras,
-            context=eski.context,
+            tags=tags or old.tags,
+            session=session or old.session,
+            supersedes=old_id,
+            use_log=inherited,
+            context=old.context,
         )
         with self._lock:
             self._db.execute("UPDATE node SET superseded_by=? WHERE id=?",
-                             (yeni.id, eski_id))
-            self._link(yeni.id, eski_id, 1.0, "günceller")
+                             (new.id, old_id))
+            self._link(new.id, old_id, 1.0, "günceller")
             self._db.commit()
-        # Eski sürüm imza kanalından düşüyor; FTS'te kalıyor (birebir
-        # kelimeyle hâlâ bulunur — "ipucuyla uyanır").
+        # The old version drops out of the signature channel; it stays in
+        # FTS (still found by an exact word — "wakes to a cue").
         with self._index_lock:
             if self._index is not None:
-                self._index.drop(eski_id)
-        return yeni
+                self._index.drop(old_id)
+        return new
 
     def find_by_title(self, kind: str, title: str) -> Node | None:
-        """Aynı başlıklı kayıt. Benzerlik değil KESİN eşleme.
+        """A record with the same title. Not similarity, EXACT match.
 
-        Gecenin yazdığı ders ve yordamların tekilliği bir eşiğe
-        bırakılamaz: aynı hata metni aynı başlığı verir, ve "aynı ders mi"
-        sorusunun cevabı 0.55 gibi bir sayıya değil eşitliğe bakmalı.
+        The uniqueness of the lessons and procedures the night writes cannot
+        be left to a threshold: the same error text yields the same title,
+        and the answer to "is this the same lesson" should look at equality,
+        not at a number like 0.55.
         """
         if not title:
             return None
         with self._lock:
             row = self._db.execute(
                 "SELECT * FROM node WHERE deleted=0 AND kind=? AND title=?"
-                + self._gecmis_suzgeci()
+                + self._history_filter()
                 + " ORDER BY created DESC LIMIT 1",
                 (kind, title[:140])).fetchone()
         return self._node(row) if row else None
 
     def similar_record(self, body: str, kind: str, *,
-                     esik: float = CONFLICT_THRESHOLD) -> Node | None:
-        """Aynı türden, yeterince benzer bir kayıt var mı?
+                       threshold: float = CONFLICT_THRESHOLD) -> Node | None:
+        """Is there a sufficiently similar record of the same kind?
 
-        İki ayrı işin ortak sorusu: model `supersedes` vermeyi unuttu mu
-        (`celiski_adayi`), ve gece aynı dersi ikinci kez mi yazıyor
-        (`orgu.ters_tekrar`). İkincisi supersede anahtarına bağlı değil —
-        mekanik kapalıyken de aynı ders iki kez yazılmamalı.
+        The shared question of two separate jobs: did the model forget to
+        pass `supersedes` (`conflict_candidate`), and is the night writing
+        the same lesson a second time (`weave.reverse_replay`). The second
+        does not depend on the supersede switch — the same lesson must not
+        be written twice even with the mechanism off.
         """
-        for node_id, score, aday_kind in self._seed(body[:400], 3):
-            if aday_kind == kind and score >= esik:
+        for node_id, score, candidate_kind in self._seed(body[:400], 3):
+            if candidate_kind == kind and score >= threshold:
                 return self.peek(node_id)
         return None
 
     def conflict_candidate(self, body: str, kind: str, *,
-                      esik: float = CONFLICT_THRESHOLD) -> Node | None:
-        """Bu gövde, aynı türden var olan bir kaydın güncellemesi olabilir mi?
+                           threshold: float = CONFLICT_THRESHOLD) -> Node | None:
+        """Could this body be an update of an existing record of the same kind?
 
-        Model `supersedes` vermeyi unutursa sistem sessiz kalmamalı: en yakın
-        birkaç komşuya bakılıyor, aynı türden ve yeterince benzer olan varsa
-        araç yanıtında adı geçiyor. Karar modelin — kayıt her hâlükârda
-        yazılıyor. Kaçırmamak, temiz olmaktan önemli.
+        If the model forgets to pass `supersedes` the system must not stay
+        silent: the nearest few neighbours are examined, and if one is of the
+        same kind and similar enough, its name appears in the tool reply. The
+        decision is the model's — the record is written regardless. Not
+        missing matters more than being clean.
         """
         if not switches.ACTIVE.supersede:
             return None
-        return self.similar_record(body, kind, esik=esik)
+        return self.similar_record(body, kind, threshold=threshold)
 
     def current_version(self, node_id: str) -> str:
-        """Zincirin ucundaki kayıt. Döngü korumalı.
+        """The record at the tip of the chain. Cycle-safe.
 
-        Elle bozulmuş bir db'de A→B, B→A yazılabilir; hatırlama o zaman
-        sonsuza kadar dönerdi. Görülen kimlik ikinci kez gelirse durulur.
+        In a hand-corrupted db A→B, B→A can be written; recall would then
+        spin forever. If a seen id comes up a second time, we stop.
         """
-        gorulen = {node_id}
-        simdiki = node_id
+        seen = {node_id}
+        current = node_id
         while True:
             with self._lock:
                 row = self._db.execute(
-                    "SELECT superseded_by FROM node WHERE id=?", (simdiki,)
+                    "SELECT superseded_by FROM node WHERE id=?", (current,)
                 ).fetchone()
-            sonraki = (row["superseded_by"] if row else "") or ""
-            if not sonraki or sonraki in gorulen:
-                return simdiki
-            gorulen.add(sonraki)
-            simdiki = sonraki
+            next_id = (row["superseded_by"] if row else "") or ""
+            if not next_id or next_id in seen:
+                return current
+            seen.add(next_id)
+            current = next_id
 
     def neighbours_with_reasons(self, node_id: str) -> list[tuple[Node, float, str]]:
-        """Komşular, bağın gerekçesiyle birlikte.
+        """Neighbours, together with the reason for the link.
 
-        `neighbours` yalnız ağırlık döndürüyor; gerekçe hem arayüzün
-        (supersede kenarını farklı çizmek) hem `mind_recall` çıktısının
-        (modele "neden bağlı" bilgisini vermek) ihtiyacı.
+        `neighbours` returns only the weight; the reason is needed both by
+        the UI (drawing the supersede edge differently) and by the
+        `mind_recall` output (telling the model "why linked").
         """
         with self._lock:
             rows = self._db.execute(
@@ -650,27 +680,29 @@ class RecallStore:
             self._db.commit()
 
     def connect(self, src: str, dst: str, *, weight: float = 1.0, reason: str = "",
-               birikimli: bool = False, yalniz_yeni: bool = False) -> bool:
-        """Bağ kurar; kenarın gerçekten değişip değişmediğini döndürür.
+                birikimli: bool = False, yalniz_yeni: bool = False) -> bool:
+        """Creates a link; returns whether the edge actually changed.
 
-        `birikimli`: aynı gerekçeli bağ tekrar geldiğinde ağırlık MAX'ta
-        donmasın, birikerek 1.0'a yaklaşsın. Sıkça birlikte kullanılan iki
-        şey güçlü bağlanmalı — beş oturumda peş peşe gelen bir çift, tek
-        seferlikle aynı ağırlıkta kalmamalı.
+        `birikimli` (cumulative): when a link with the same reason comes
+        again, the weight must not freeze at MAX but accumulate towards 1.0.
+        Two things used together often should be strongly linked — a pair
+        that came back to back in five sessions must not keep the same
+        weight as a one-off.
 
-        `yalniz_yeni`: kenar zaten varsa dokunma. Dikiş (Adım 4) böyle
-        çalışıyor — yaşanmış bir bağın üstüne varsayım yazılmaz.
+        `yalniz_yeni` (only-if-new): if the edge already exists, leave it.
+        Stitching (Step 4) works this way — an assumption is never written
+        over a link that was actually lived.
         """
         if src == dst or not src or not dst:
             return False
         with self._lock:
-            mevcut = self._db.execute(
+            existing = self._db.execute(
                 "SELECT weight FROM link WHERE src=? AND dst=?", (src, dst)
             ).fetchone()
-            if mevcut is not None and yalniz_yeni:
+            if existing is not None and yalniz_yeni:
                 return False
-            if birikimli and mevcut is not None:
-                weight = min(1.0, float(mevcut["weight"]) + weight * 0.5)
+            if birikimli and existing is not None:
+                weight = min(1.0, float(existing["weight"]) + weight * 0.5)
             self._link(src, dst, weight, reason)
             self._db.commit()
         return True
@@ -685,22 +717,22 @@ class RecallStore:
         with self._lock:
             rows = self._db.execute(
                 "SELECT id, created, last_used, uses, use_log FROM node"
-                " WHERE deleted=0" + self._gecmis_suzgeci()).fetchall()
+                " WHERE deleted=0" + self._history_filter()).fetchall()
         cold: list[str] = []
         hot = 0
         for row in rows:
-            gecmis = activation.parse_use_log(
+            history = activation.parse_use_log(
                 row["use_log"], created=row["created"],
                 last_used=row["last_used"], uses=int(row["uses"] or 0))
-            son = max((k.t for k in gecmis), default=None)
-            if son is not None and son >= cutoff:
+            last = max((k.t for k in history), default=None)
+            if last is not None and last >= cutoff:
                 hot += 1
             else:
                 cold.append(row["id"])
         return cold, hot
 
     def shrink_edges_between(self, node_ids: Sequence[str], epsilon: float,
-                             taban: float) -> tuple[int, int]:
+                             floor: float) -> tuple[int, int]:
         """Shrink only the edges whose BOTH ends are in `node_ids`.
 
         An edge with one end in the active region is left alone: shrinking it
@@ -709,96 +741,99 @@ class RecallStore:
         """
         if not node_ids:
             return 0, 0
-        kucult = silinen = 0
+        shrunk = removed = 0
         with self._lock:
             for i in range(0, len(node_ids), 400):
-                parca = list(node_ids[i:i + 400])
-                yer = ",".join("?" * len(parca))
-                kucult += self._db.execute(
+                chunk = list(node_ids[i:i + 400])
+                placeholders = ",".join("?" * len(chunk))
+                shrunk += self._db.execute(
                     f"UPDATE link SET weight = weight * ?"
-                    f" WHERE src IN ({yer}) AND dst IN ({yer})",
-                    (1.0 - epsilon, *parca, *parca)).rowcount
-                silinen += self._db.execute(
+                    f" WHERE src IN ({placeholders}) AND dst IN ({placeholders})",
+                    (1.0 - epsilon, *chunk, *chunk)).rowcount
+                removed += self._db.execute(
                     f"DELETE FROM link WHERE weight < ?"
-                    f" AND src IN ({yer}) AND dst IN ({yer})",
-                    (taban, *parca, *parca)).rowcount
+                    f" AND src IN ({placeholders}) AND dst IN ({placeholders})",
+                    (floor, *chunk, *chunk)).rowcount
             self._db.commit()
-        return int(kucult), int(silinen)
+        return int(shrunk), int(removed)
 
-    def update_heat(self, esik: float, taze_gun: int = 7,
-                     damitik_gun: int = 14) -> tuple[int, int]:
-        """Sıcak kümeyi yeniden hesaplar. Gece sonunda koşar.
+    def update_heat(self, threshold: float, fresh_days: int = 7,
+                    distilled_days: int = 14) -> tuple[int, int]:
+        """Recomputes the hot set. Runs at the end of the night.
 
-        Üç kural, sırayla:
+        Three rules, in order:
 
-        * yeni kayıt her zaman sıcak (yazıldıktan sonraki ilk `taze_gun`),
-        * aktivasyonu eşiğin üstünde olan sıcak,
-        * damıtılmış bir `episode` `damitik_gun` sonra **koşulsuz** soğur —
-          ayrıntı diskte, özet sıcakta yaşar (sistemler konsolidasyonu).
+        * a new record is always hot (the first `fresh_days` after writing),
+        * one whose activation is above the threshold is hot,
+        * a distilled `episode` cools **unconditionally** after
+          `distilled_days` — the detail lives on disk, the summary in the hot
+          set (systems consolidation).
 
-        Döner: (ısınan, soğuyan). İmza indeksi de aynı anda güncelleniyor.
+        Returns: (warmed, cooled). The signature index is updated at the same
+        time.
         """
-        simdi = self._clock()
+        now = self._clock()
         with self._lock:
             rows = self._db.execute(
                 "SELECT id, kind, created, last_used, uses, use_log, hot,"
                 " superseded_by FROM node WHERE deleted=0").fetchall()
-        isinan: list[str] = []
-        soguyan: list[str] = []
+        warming: list[str] = []
+        cooling: list[str] = []
         for row in rows:
-            gecmis = activation.parse_use_log(
+            history = activation.parse_use_log(
                 row["use_log"], created=row["created"],
                 last_used=row["last_used"], uses=int(row["uses"] or 0))
-            b = activation.base_activation(gecmis, simdi)
-            yazim = parse(row["created"])
-            yeni = (yazim is not None
-                    and (simdi - yazim).days < taze_gun
-                    and not (row["superseded_by"] or ""))
-            damitik = any(k.etiket == activation.DISTILLED for k in gecmis)
-            eskiyen = damitik and gecmis and (
-                simdi - max(k.t for k in gecmis
-                            if k.etiket == activation.DISTILLED)).days >= damitik_gun
-            hot = bool((yeni or b >= esik) and not eskiyen)
+            b = activation.base_activation(history, now)
+            written = parse(row["created"])
+            fresh = (written is not None
+                     and (now - written).days < fresh_days
+                     and not (row["superseded_by"] or ""))
+            distilled = any(k.etiket == activation.DISTILLED for k in history)
+            aged = distilled and history and (
+                now - max(k.t for k in history
+                          if k.etiket == activation.DISTILLED)).days >= distilled_days
+            hot = bool((fresh or b >= threshold) and not aged)
             if hot and not row["hot"]:
-                isinan.append(row["id"])
+                warming.append(row["id"])
             elif not hot and row["hot"]:
-                soguyan.append(row["id"])
-        if isinan or soguyan:
+                cooling.append(row["id"])
+        if warming or cooling:
             with self._lock:
                 self._db.executemany("UPDATE node SET hot=1 WHERE id=?",
-                                     [(i,) for i in isinan])
+                                     [(i,) for i in warming])
                 self._db.executemany("UPDATE node SET hot=0 WHERE id=?",
-                                     [(i,) for i in soguyan])
+                                     [(i,) for i in cooling])
                 self._db.commit()
             with self._index_lock:
-                self._index = None      # indeks bir sonraki aramada kurulur
-        return len(isinan), len(soguyan)
+                self._index = None      # the index is rebuilt on the next search
+        return len(warming), len(cooling)
 
     def hot_share(self) -> float:
-        """Sıcak düğümlerin toplama oranı. Hedef %10-30 (yol haritası 3.11)."""
+        """Share of hot nodes over the total. Target 10-30% (roadmap 3.11)."""
         with self._lock:
-            toplam = self._db.execute(
+            total = self._db.execute(
                 "SELECT COUNT(*) FROM node WHERE deleted=0").fetchone()[0]
             hot = self._db.execute(
                 "SELECT COUNT(*) FROM node WHERE deleted=0 AND hot=1").fetchone()[0]
-        return round(float(hot) / max(int(toplam), 1), 4)
+        return round(float(hot) / max(int(total), 1), 4)
 
     def strengthening(self) -> float:
-        """Küçültülmemiş güçlenme: toplam kenar ağırlığı / düğüm.
+        """Un-downscaled strengthening: total edge weight / node.
 
-        Uyku basıncının ana terimi (SHY). Eşik bu büyüklüğe karşı ölçüldü
-        (bkz. docs/charts/basinc-bozulma.md); aynı büyüklük olmasaydı eşik
-        başka bir şeyin eşiği olurdu.
+        The main term of sleep pressure (SHY). The threshold was measured
+        against this quantity (see docs/charts/basinc-bozulma.md); were it
+        not the same quantity, the threshold would be a threshold of
+        something else.
         """
         with self._lock:
-            toplam = self._db.execute(
+            total = self._db.execute(
                 "SELECT COALESCE(SUM(weight), 0) FROM link").fetchone()[0]
-            dugum = self._db.execute(
+            nodes = self._db.execute(
                 "SELECT COUNT(*) FROM node WHERE deleted=0").fetchone()[0]
-        return round(float(toplam) / max(int(dugum), 1), 4)
+        return round(float(total) / max(int(nodes), 1), 4)
 
     def checkpoint(self) -> int:
-        """WAL'ı tam kapatır. Yazar yokken yapılır — yani yalnız uykuda."""
+        """Fully closes the WAL. Done when there is no writer — that is, only in sleep."""
         with self._lock:
             self._db.execute("PRAGMA wal_checkpoint(TRUNCATE)")
             self._db.commit()
@@ -808,7 +843,7 @@ class RecallStore:
             return 0
 
     def optimize_fts(self) -> bool:
-        """FTS b-tree birleştirme: I/O yoğun, uyanıkken yapılmamalı."""
+        """FTS b-tree merge: I/O heavy, must not be done while awake."""
         with self._lock:
             self._db.execute(
                 "INSERT INTO node_fts(node_fts) VALUES('optimize')")
@@ -816,58 +851,60 @@ class RecallStore:
         return True
 
     def vacuum(self) -> bool:
-        """Özel kilit ister; canlı bir oturumun altında imkânsız."""
+        """Wants an exclusive lock; impossible underneath a live session."""
         with self._lock:
             self._db.execute("VACUUM")
         return True
 
     def update_edge(self, src: str, dst: str, *, weight: float | None = None,
-                       reason: str | None = None) -> bool:
-        """Var olan bir kenarın ağırlığını ya da gerekçesini ÜSTÜNE yazar.
+                    reason: str | None = None) -> bool:
+        """OVERWRITES the weight or the reason of an existing edge.
 
-        `baglan` bilinçli olarak yalnız güçlendiriyor (max/birikim); bu ise
-        bilerek zayıflatabiliyor. Tek kullanıcısı damıtmanın kenar gerekçesi
-        adımı: model "bu ikili ilişkisiz" dediğinde bağ kesilmiyor ama
-        ağırlığı düşüyor, ve "neden ilişkili" cümlesi kenarda duruyor —
-        SimHash'in eşanlam bilmemesini embedding'siz telafi eden tek yer.
+        `connect` deliberately only strengthens (max/accumulate); this one
+        can deliberately weaken. Its single user is distillation's
+        edge-reason step: when the model says "these two are unrelated" the
+        link is not cut but its weight drops, and the sentence "why related"
+        stays on the edge — the one place that compensates, without
+        embeddings, for SimHash not knowing synonyms.
         """
         if src == dst or not src or not dst:
             return False
         with self._lock:
-            degisti = 0
+            changed = 0
             for a, b in ((src, dst), (dst, src)):
                 if weight is not None and reason is not None:
-                    degisti += self._db.execute(
+                    changed += self._db.execute(
                         "UPDATE link SET weight=?, reason=? WHERE src=? AND dst=?",
                         (weight, reason, a, b)).rowcount
                 elif weight is not None:
-                    degisti += self._db.execute(
+                    changed += self._db.execute(
                         "UPDATE link SET weight=? WHERE src=? AND dst=?",
                         (weight, a, b)).rowcount
                 elif reason is not None:
-                    degisti += self._db.execute(
+                    changed += self._db.execute(
                         "UPDATE link SET reason=? WHERE src=? AND dst=?",
                         (reason, a, b)).rowcount
             self._db.commit()
-        return bool(degisti)
+        return bool(changed)
 
-    def shrink_edges(self, epsilon: float, taban: float) -> tuple[int, int]:
-        """Bütün kenarları orantılı küçültür, tabanın altındakini siler.
+    def shrink_edges(self, epsilon: float, floor: float) -> tuple[int, int]:
+        """Shrinks every edge proportionally, deletes those below the floor.
 
-        Sinaptik homeostaz (Tononi-Cirelli): gündüz güçlenen her şey gece
-        orantılı küçülür. Güçlü olan güçlü kalır, zayıf olan gürültü altına
-        iner ve budanır. Tek SQL — 300k kenarda bir saniyenin altında.
+        Synaptic homeostasis (Tononi-Cirelli): everything strengthened by day
+        shrinks proportionally at night. The strong stays strong, the weak
+        sinks below the noise and is pruned. A single SQL statement — under
+        a second at 300k edges.
         """
         with self._lock:
-            kucult = self._db.execute(
+            shrunk = self._db.execute(
                 "UPDATE link SET weight = weight * ?", (1.0 - epsilon,)).rowcount
-            silinen = self._db.execute(
-                "DELETE FROM link WHERE weight < ?", (taban,)).rowcount
+            removed = self._db.execute(
+                "DELETE FROM link WHERE weight < ?", (floor,)).rowcount
             self._db.commit()
-        return int(kucult), int(silinen)
+        return int(shrunk), int(removed)
 
     def link(self, src: str, dst: str, *, weight: float = 1.0, reason: str = "") -> None:
-        """İki hatırayı birbirine bağlar. Çağrışım bu bağların üstünden yürür."""
+        """Links two memories to each other. Association walks over these links."""
         with self._lock:
             self._link(src, dst, weight, reason)
             self._db.commit()
@@ -875,34 +912,35 @@ class RecallStore:
     def _link(self, src: str, dst: str, weight: float, reason: str) -> None:
         if src == dst:
             return
-        # Bağ çift yönlü: hatırlamada yön yok.
+        # The link is bidirectional: recall has no direction.
         for a, b in ((src, dst), (dst, src)):
             self._db.execute(
                 "INSERT INTO link(src, dst, weight, reason) VALUES (?,?,?,?)"
                 " ON CONFLICT(src, dst) DO UPDATE SET"
                 "   weight=max(weight, excluded.weight),"
-                # Gerekçe ağırlıkla birlikte taşınıyor: daha güçlü bağ daha
-                # iyi bir açıklama demek. "benzer icerik" üstüne yazılan
-                # "günceller" kaybolmamalı — arayüz zinciri ondan çiziyor.
+                # The reason travels with the weight: a stronger link means a
+                # better explanation. A "günceller" written over "benzer
+                # icerik" must not be lost — the UI draws the chain from it.
                 "   reason=CASE WHEN excluded.weight >= weight"
                 "               THEN excluded.reason ELSE reason END",
                 (a, b, weight, reason),
             )
 
     def merge_from(self, other_path: Path) -> dict[str, int]:
-        """Başka bir belleği bu belleğe birleştirir (üzerine yazmadan).
+        """Merges another memory into this one (without overwriting).
 
-        Taşınabilirlik için: Dornick'in başka bir makinede biriktirdiği anılar
-        ve bağlar buraya katılıyor. `INSERT OR IGNORE` — kimlik birincil
-        anahtar olduğundan aynı anı iki kez girmiyor (idempotent); yalnızca
-        yeni olanlar ekleniyor. İki makinenin öğrendikleri tek bir Dornick'te
-        toplanabiliyor. FTS trigger'la kendiliğinden güncelleniyor; imza
-        indeksi bir sonraki aramada diskten yeniden kuruluyor.
+        For portability: the memories and links Dornick accumulated on
+        another machine join this one. `INSERT OR IGNORE` — since the id is
+        the primary key, the same memory does not enter twice (idempotent);
+        only new ones are added. What two machines learned can be gathered
+        into a single Dornick. FTS updates itself through the trigger; the
+        signature index is rebuilt from disk on the next search.
         """
         if not Path(other_path).exists():
             return {"nodes": 0, "links": 0}
         with self._lock:
-            # ATTACH bir işlem içinde çalışmaz: önce beklemedeki her şeyi yaz.
+            # ATTACH does not work inside a transaction: flush everything
+            # pending first.
             self._db.commit()
             before_n = self._db.execute("SELECT COUNT(*) FROM node").fetchone()[0]
             before_l = self._db.execute("SELECT COUNT(*) FROM link").fetchone()[0]
@@ -929,17 +967,18 @@ class RecallStore:
                 after_l = self._db.execute("SELECT COUNT(*) FROM link").fetchone()[0]
             finally:
                 self._db.execute("DETACH DATABASE incoming")
-        # İmza indeksi baştan kurulsun: yeni imzalar RAM'e girsin.
+        # Let the signature index be rebuilt from scratch: the new
+        # signatures enter RAM.
         with self._index_lock:
             self._index = None
         return {"nodes": after_n - before_n, "links": after_l - before_l}
 
     def backup_to(self, dest_path: Path) -> None:
-        """Belleğin tutarlı, tek dosyalık bir kopyasını yazar (WAL dahil).
+        """Writes a consistent, single-file copy of the memory (WAL included).
 
-        Ham dosyayı kopyalamak WAL'daki son yazımları kaçırabilir; SQLite
-        yedek API'si tam ve kilitlenmeden bir kopya üretiyor. Dışa aktarma
-        bunu kullanıyor.
+        Copying the raw file can miss the latest writes in the WAL; SQLite's
+        backup API produces a complete copy without locking up. Export uses
+        this.
         """
         Path(dest_path).parent.mkdir(parents=True, exist_ok=True)
         with self._lock:
@@ -950,13 +989,14 @@ class RecallStore:
                 dest.close()
 
     def reset(self) -> int:
-        """Bütün anıları ve bağları kaldırır; kaç kaydın gittiğini döndürür.
+        """Removes every memory and link; returns how many records went.
 
-        Geri dönüşsüz — çağıran önce yedeğini almış olmalı (backup_to).
-        Satır satır DELETE: node_ad trigger'ı FTS'i her satır için zaten
-        temizliyor, ayrı bir 'delete-all' yoluna gerek yok. İmza indeksi
-        boş bir indeksle değiştiriliyor ki RAM'de hayalet kayıt kalmasın
-        ve canlı uygulama dosyayı kapatmadan sıfırlanabilsin.
+        Irreversible — the caller must have taken its backup first
+        (backup_to). Row-by-row DELETE: the node_ad trigger already cleans
+        FTS for every row, no separate 'delete-all' path is needed. The
+        signature index is replaced with an empty one so that no ghost
+        record stays in RAM and the live app can be reset without closing
+        the file.
         """
         with self._lock:
             n = self._db.execute("SELECT COUNT(*) FROM node").fetchone()[0]
@@ -968,42 +1008,45 @@ class RecallStore:
         return int(n)
 
     def forget(self, node_id: str) -> bool:
-        """Mezar taşı bırakır: neyin ne zaman unutulduğu da bilginin parçası."""
+        """Leaves a tombstone: what was forgotten and when is part of the
+        knowledge too."""
         with self._lock:
             changed = self._db.execute(
                 "UPDATE node SET deleted=1 WHERE id=? AND deleted=0", (node_id,)
             ).rowcount
             self._db.commit()
         if changed:
-            # remember() ile ayni gerekce: warm() indeksi kurarken silinen
-            # kaydin RAM'de canli kalmamasi icin kilit altinda dusuruluyor.
+            # Same rationale as remember(): dropped under the lock so that
+            # the deleted record does not stay alive in RAM while warm() is
+            # building the index.
             with self._index_lock:
                 if self._index is not None:
                     self._index.drop(node_id)
         return bool(changed)
 
-    # -- okuma ---------------------------------------------------------
+    # -- reading -------------------------------------------------------
 
-    def _gecmis_suzgeci(self, onek: str = "") -> str:
-        """Geçmiş sürümleri dışarıda bırakan SQL parçası.
+    def _history_filter(self, prefix: str = "") -> str:
+        """SQL fragment that leaves out past versions.
 
-        Mekanik kapalıyken boş dönüyor: ablation koşusu ürünün kendi
-        kodundan geçsin, bench'e kopyalanmış bir sürümden değil.
+        Returns empty with the mechanism off: the ablation run should go
+        through the product's own code, not through a version copied into
+        the bench.
         """
         if not switches.ACTIVE.supersede:
             return ""
-        return f" AND {onek}superseded_by=''"
+        return f" AND {prefix}superseded_by=''"
 
     def open(self, node_id: str) -> Node | None:
-        """Tam kaydı getirir ve izi güçlendirir.
+        """Fetches the full record and strengthens the trace.
 
-        Kullanılan hatıra güçlenir; kullanılmayan geride kalır. Sıralama
-        buna bakıyor.
+        A memory that is used grows stronger; one that is not falls behind.
+        Ranking looks at this.
 
-        Üç alan birlikte güncelleniyor: `uses` ve `last_used` arayüz için
-        (ve eski belleklerin geriye dönük doldurulması için), `kullanimlar`
-        aktivasyon için. Sayaç kaç kez olduğunu bilir, damga ne zaman
-        olduğunu — hatırlamanın ihtiyacı ikincisi.
+        Three fields are updated together: `uses` and `last_used` for the UI
+        (and for the retroactive fill of old memories), `use_log` for
+        activation. The counter knows how many times, the stamp knows when
+        — recall needs the second.
         """
         with self._lock:
             row = self._db.execute(
@@ -1011,25 +1054,25 @@ class RecallStore:
             ).fetchone()
             if row is None:
                 return None
-            simdi = self._now()
-            gecmis = activation.parse_use_log(
-                _alan(row, "use_log"), created=row["created"],
+            now = self._now()
+            history = activation.parse_use_log(
+                _field(row, "use_log"), created=row["created"],
                 last_used=row["last_used"], uses=int(row["uses"] or 0))
             self._db.execute(
                 "UPDATE node SET uses=uses+1, last_used=?, use_log=? WHERE id=?",
-                (simdi, activation.append_use(gecmis, self._clock(),
-                                        etiket=activation.OPENED), node_id),
+                (now, activation.append_use(history, self._clock(),
+                                            etiket=activation.OPENED), node_id),
             )
             self._db.commit()
         node = self._node(row)
         if node.superseded_by:
-            # Model elinde eski bir kimlik tutuyor olabilir; yönü görmeli.
-            uc = self.current_version(node_id)
-            node.body = f"{node.body}\n[güncellendi → {uc}]"
+            # The model may be holding an old id; it should see the way.
+            tip = self.current_version(node_id)
+            node.body = f"{node.body}\n[güncellendi → {tip}]"
         return node
 
     def peek(self, node_id: str) -> Node | None:
-        """Güçlendirmeden bakar. İç işleyiş için; kullanım sayılmaz."""
+        """Looks without strengthening. For internal workings; not counted as a use."""
         with self._lock:
             row = self._db.execute(
                 "SELECT * FROM node WHERE id=? AND deleted=0", (node_id,)
@@ -1046,10 +1089,10 @@ class RecallStore:
         return [(self._node(r), float(r["weight"])) for r in rows]
 
     def links(self, limit: int = 4000) -> list[tuple[str, str, float]]:
-        """Tum baglar. Arayuz agi bununla ciziyor.
+        """All links. The UI draws the network with this.
 
-        Her bag cift yonlu saklandigi icin yalnizca bir yonu donduruluyor;
-        aksi halde her kenar iki kez cizilirdi.
+        Since every link is stored in both directions only one direction is
+        returned; otherwise every edge would be drawn twice.
         """
         with self._lock:
             rows = self._db.execute(
@@ -1062,7 +1105,7 @@ class RecallStore:
         return [(r["src"], r["dst"], float(r["weight"])) for r in rows]
 
     def count(self, kind: str | None = None) -> int:
-        sql = "SELECT count(*) FROM node WHERE deleted=0" + self._gecmis_suzgeci()
+        sql = "SELECT count(*) FROM node WHERE deleted=0" + self._history_filter()
         args: tuple[Any, ...] = ()
         if kind:
             sql += " AND kind=?"
@@ -1074,7 +1117,7 @@ class RecallStore:
         with self._lock:
             rows = self._db.execute(
                 "SELECT * FROM node WHERE deleted=0"
-                + self._gecmis_suzgeci()
+                + self._history_filter()
                 + " ORDER BY created DESC, rowid DESC LIMIT ?",
                 (limit,),
             ).fetchall()
@@ -1082,77 +1125,79 @@ class RecallStore:
 
     def by_kind_any(self, limit: int = 500, *,
                     all_versions: bool = False) -> list[Node]:
-        """Silinmemiş kayıtlar, en yeniden eskiye. Etiket taraması için.
+        """Undeleted records, newest to oldest. For tag scans.
 
-        `tum_surumler` zaman dizisi içindir (`series`): orada geçmiş sürümler
-        gürültü değil, istenen şeyin ta kendisidir.
+        `all_versions` is for the time series (`series`): there, past
+        versions are not noise but the very thing that is wanted.
         """
-        suzgec = "" if all_versions else self._gecmis_suzgeci()
+        filter_sql = "" if all_versions else self._history_filter()
         with self._lock:
             rows = self._db.execute(
-                "SELECT * FROM node WHERE deleted=0" + suzgec
+                "SELECT * FROM node WHERE deleted=0" + filter_sql
                 + " ORDER BY created DESC LIMIT ?",
                 (limit,),
             ).fetchall()
         return [self._node(r) for r in rows]
 
     def by_kind(self, kind: str, limit: int = 50) -> list[Node]:
-        """Bir türün kayıtları, en canlı izden en soluğuna.
+        """A kind's records, from the liveliest trace to the faintest.
 
-        Sıralama SQL'de yapılamıyor: aktivasyon zamanın fonksiyonu, diskte
-        duran bir sayı değil. Bu yüzden aday kümesi SQL'de daraltılıp
-        (kullanım ve tazelik, ikisi de aktivasyonla aynı yöne bakar)
-        sıralama Python'da yapılıyor. Aday kümesi istenenin katı kadar
-        geniş tutuluyor ki ön eleme gerçekten canlı bir izi düşürmesin.
+        The ordering cannot be done in SQL: activation is a function of time,
+        not a number sitting on disk. So the candidate set is narrowed in
+        SQL (usage and freshness, both of which point the same way as
+        activation) and the ordering is done in Python. The candidate set is
+        kept several times wider than what is asked for so that the
+        pre-selection does not drop a genuinely lively trace.
 
-        Eski hal `ORDER BY uses DESC` idi ve zamanı bilmiyordu: yıllar önce
-        çok kullanılmış bir kayıt, dünkü düzeltmeyi ruhun dışında
-        tutabiliyordu.
+        The old version was `ORDER BY uses DESC` and did not know time: a
+        record used heavily years ago could keep yesterday's correction out
+        of the soul.
         """
         if not switches.ACTIVE.activation:
-            # Ablation: mekanik kapalıyken eski SQL sırası (kullanım, sonra
-            # tazelik) olduğu gibi dönüyor.
+            # Ablation: with the mechanism off, the old SQL order (usage,
+            # then freshness) is returned as is.
             with self._lock:
                 rows = self._db.execute(
                     "SELECT * FROM node WHERE deleted=0 AND kind=?"
-                    + self._gecmis_suzgeci()
+                    + self._history_filter()
                     + " ORDER BY uses DESC, created DESC LIMIT ?",
                     (kind, limit),
                 ).fetchall()
             return [self._node(r) for r in rows]
 
-        aday = max(limit * 4, 50)
+        candidates = max(limit * 4, 50)
         with self._lock:
             rows = self._db.execute(
                 "SELECT * FROM node WHERE deleted=0 AND kind=?"
-                + self._gecmis_suzgeci()
+                + self._history_filter()
                 + " ORDER BY uses DESC, created DESC LIMIT ?",
-                (kind, aday),
+                (kind, candidates),
             ).fetchall()
-        dugumler = [self._node(r) for r in rows]
-        # Kararlı sıralama: eşit aktivasyonda SQL'in verdiği sıra (kullanım,
-        # sonra tazelik) korunuyor.
-        dugumler.sort(key=lambda n: -n.activation)
-        return dugumler[:limit]
+        nodes = [self._node(r) for r in rows]
+        # Stable sort: at equal activation the order SQL gave (usage, then
+        # freshness) is preserved.
+        nodes.sort(key=lambda n: -n.activation)
+        return nodes[:limit]
 
-    # -- hatırlama -----------------------------------------------------
+    # -- recalling -----------------------------------------------------
 
     def recall(self, query: str, *, limit: int = 8, hops: int = 2,
                context: dict | None = None) -> Recollection:
-        """Sorgudan tohumlanır, bağlar üzerinden yayılır.
+        """Seeded from the query, spread over the links.
 
-        Dönen `trace`, aktivasyonun uğradığı yerleri sırayla taşır: arayüz
-        bunu canlandırıp hatırlamanın kendisini gösterebiliyor.
+        The returned `trace` carries, in order, the places activation
+        visited: the UI can animate it and show recall itself.
 
-        Sorgu önce sinonim köprüsünden geçer: "bitcoin" yazan kullanıcı
-        "BTC" yazılmış kaydı bulabilmeli. Köprü yalnız arama tarafında —
-        kayıt yazıldığı gibi durur, tablo değişince indeks yeniden kurulmaz.
+        The query first passes through the synonym bridge: a user who types
+        "bitcoin" must be able to find a record written as "BTC". The bridge
+        is on the search side only — the record stays as written, and the
+        index is not rebuilt when the table changes.
         """
         from . import bridge
 
         query = bridge.expand(query)
         if not _match_expression(query):
-            # Bos sorgu bir arama degil, bir goz atma: en yeni kayitlar.
+            # An empty query is not a search but a browse: the newest records.
             recent = self.recent(limit)
             return Recollection(
                 query=query,
@@ -1175,27 +1220,28 @@ class RecallStore:
             nxt: list[tuple[str, float, str]] = []
             for node_id, strength, _kind in frontier:
                 for neighbour, weight in self.neighbours(node_id):
-                    # Geçmiş sürüme gelen çağrışım güncel sürüme yönlenir:
-                    # eski kaydın komşuluğu kaybolmuyor, taşınıyor.
-                    hedef = neighbour
+                    # Association arriving at a past version is redirected to
+                    # the current one: the old record's neighbourhood is not
+                    # lost, it is carried over.
+                    target = neighbour
                     if neighbour.superseded_by and switches.ACTIVE.supersede:
-                        uc = self.peek(self.current_version(neighbour.id))
-                        if uc is None or uc.id == node_id:
+                        tip = self.peek(self.current_version(neighbour.id))
+                        if tip is None or tip.id == node_id:
                             continue
-                        hedef = uc
-                    # Unutulmuş düğüm çağrışım yolunu iletmez: aktivasyonu
-                    # sönmüş bir kaydın üzerinden geçen yol, konudan
-                    # uzaklaşmanın en sessiz yoluydu.
+                        target = tip
+                    # A forgotten node does not pass the association path on:
+                    # a path running over a record whose activation has died
+                    # out was the quietest way of drifting off topic.
                     spread = (strength * weight * HOP_DECAY
-                              * activation.spread_factor(hedef.activation))
-                    if spread < MIN_ACTIVATION or spread <= scores.get(hedef.id, 0.0):
+                              * activation.spread_factor(target.activation))
+                    if spread < MIN_ACTIVATION or spread <= scores.get(target.id, 0.0):
                         continue
-                    scores[hedef.id] = spread
+                    scores[target.id] = spread
                     trace.append(
-                        Step(node=hedef.id, kind=hedef.kind,
+                        Step(node=target.id, kind=target.kind,
                              activation=spread, hop=hop, via=node_id)
                     )
-                    nxt.append((hedef.id, spread, hedef.kind))
+                    nxt.append((target.id, spread, target.kind))
             frontier = nxt
             if not frontier:
                 break
@@ -1206,18 +1252,19 @@ class RecallStore:
 
     def _seed(self, query: str, limit: int,
               *, context: dict | None = None) -> list[tuple[str, float, str]]:
-        """Sorgunun ilk temas ettigi kayitlar.
+        """The records the query first touches.
 
-        Iki kanal birlikte calisiyor cunku ikisi de tek basina eksik:
+        Two channels work together because each alone is incomplete:
 
-            harf   FTS5 indeksi — "postgres" yazan kaydi kesin bulur,
-                   "veritabani dokumu" yazani asla bulmaz.
-            imza   cagrisim vektoru — kelimeler tutmasa da yakin metni
-                   getirir, ama tam eslesmeyi one cikaramaz.
+            literal    the FTS5 index — finds a record saying "postgres"
+                       for certain, never finds one saying "database dump".
+            signature  the association vector — brings close text even when
+                       the words do not match, but cannot single out an
+                       exact match.
 
-        Ikisinin birlesimi aliniyor, ortak kayitta yuksek puan kaliyor.
-        Harf kanali biraz onde tutuluyor: birebir gecen bir terim, benzer
-        duran bir metinden daha guclu bir kanittir.
+        The union of the two is taken; a record in both keeps the high score.
+        The literal channel is kept slightly ahead: a term that matches
+        verbatim is stronger evidence than a text that merely looks similar.
         """
         lit: dict[str, float] = {}
         sig: dict[str, float] = {}
@@ -1230,13 +1277,15 @@ class RecallStore:
         for node_id, score in self._seed_signature(query, limit):
             sig[node_id] = round(score * SIGNATURE_WEIGHT, 4)
 
-        # Noisy-or birleşim: iki bağımsız kanıtı BÜYÜKLÜĞÜ koruyarak birleştir.
-        # Skor yüksek, kanallardan BİRİ güvenliyse; düşük, ancak İKİSİ de
-        # zayıfsa. Böylece kelime tutmayan paraphrase imza kanalından,
-        # birebir eşleşme literalden güven kazanır; boş sorgu (iki kanal da
-        # zayıf) düşük kalır ve eşikle ayrılabilir. Eski MAX birleşim literali
-        # bastırıp imzayı yutuyordu; eski sıra-tabanlı literal skoru da
-        # büyüklüğü atıp top1'i her zaman 1.0 yapıyordu — ikisinin kökü buydu.
+        # Noisy-or combination: merge two independent pieces of evidence
+        # while preserving MAGNITUDE. The score is high if EITHER channel is
+        # confident; low only if BOTH are weak. So a paraphrase with no word
+        # overlap gains confidence from the signature channel, an exact match
+        # from the literal; an empty query (both channels weak) stays low and
+        # can be separated by a threshold. The old MAX combination let the
+        # literal swallow the signature; the old rank-based literal score
+        # also threw away magnitude and always made top1 1.0 — both had the
+        # same root.
         scores: dict[str, float] = {}
         for node_id in set(lit) | set(sig):
             miss = (1.0 - lit.get(node_id, 0.0)) * (1.0 - sig.get(node_id, 0.0))
@@ -1253,47 +1302,50 @@ class RecallStore:
 
     def _context_bonus(self, scores: dict[str, float],
                        context: dict) -> dict[str, float]:
-        """Aynı bağlamda yazılmış kayıtları öne alır.
+        """Brings records written in the same context forward.
 
-        "SCADA'dayken borsa notu" sızıntısı bugüne kadar sayı-silme ve
-        gövde-sayma hileleriyle bastırılıyordu; ikisi de aramanın kendisine
-        ait olmayan, sonradan takılmış süzgeçlerdi. Bağlam alanı zaten
-        yazılıyordu, arama okumuyordu.
+        The "crypto note while in SCADA" leak had until now been held down
+        with digit-stripping and stem-counting tricks; both were filters
+        bolted on afterwards, not belonging to the search itself. The
+        context field was already being written, search just did not read
+        it.
 
-        Bağlamı boş olan eski kayıtlar bonus almaz ama **ceza da almaz**:
-        göç, kullanıcının yıllarca biriktirdiğini geri plana itmemeli.
+        Old records with an empty context get no bonus but **no penalty
+        either**: migration must not push what the user accumulated over
+        years to the back.
         """
         if not switches.ACTIVE.context or not scores:
             return scores
-        kimlikler = list(scores)
-        yerler = ",".join("?" * len(kimlikler))
+        ids = list(scores)
+        placeholders = ",".join("?" * len(ids))
         with self._lock:
             rows = self._db.execute(
-                f"SELECT id, context FROM node WHERE id IN ({yerler})",
-                tuple(kimlikler)).fetchall()
+                f"SELECT id, context FROM node WHERE id IN ({placeholders})",
+                tuple(ids)).fetchall()
         for row in rows:
-            kayit = _parse_context(row["context"])
-            if not kayit:
+            stored = _parse_context(row["context"])
+            if not stored:
                 continue
-            ortak = sum(1 for alan, deger in context.items()
-                        if alan in kayit and kayit[alan] == deger)
-            catisan = sum(1 for alan, deger in context.items()
-                          if alan in kayit and kayit[alan] != deger)
-            if ortak:
+            shared = sum(1 for key, value in context.items()
+                         if key in stored and stored[key] == value)
+            conflicting = sum(1 for key, value in context.items()
+                              if key in stored and stored[key] != value)
+            if shared:
                 scores[row["id"]] = round(
-                    min(1.0, scores[row["id"]] * (1 + CONTEXT_BONUS * ortak / 3)), 4)
-            elif catisan:
-                # Aynı alanda BAŞKA bir değer taşıyan kayıt: koru1000
-                # oturumundayken kobyte'ın raporu. Boş bağlamla aynı şey
-                # değil — boşluk bilgi eksikliği, çatışma bilginin kendisi.
-                # Silinmiyor, öne geçmesi zorlaşıyor.
+                    min(1.0, scores[row["id"]] * (1 + CONTEXT_BONUS * shared / 3)), 4)
+            elif conflicting:
+                # A record carrying a DIFFERENT value in the same field:
+                # kobyte's report while in the koru1000 session. Not the
+                # same thing as an empty context — emptiness is missing
+                # information, conflict is information itself. Not deleted,
+                # just harder to get ahead.
                 scores[row["id"]] = round(
                     scores[row["id"]]
-                    * max(CONTEXT_FLOOR, 1 - CONTEXT_PENALTY * catisan / 3), 4)
+                    * max(CONTEXT_FLOOR, 1 - CONTEXT_PENALTY * conflicting / 3), 4)
         return scores
 
     def _seed_literal(self, query: str, limit: int) -> list[tuple[str, float, str]]:
-        """FTS ile birebir temas. Tarama yok: indeks terimden kayda gidiyor."""
+        """Exact contact through FTS. No scan: the index goes from term to record."""
         expression = _match_expression(query)
         if not expression:
             return []
@@ -1303,47 +1355,50 @@ class RecallStore:
                 " n.use_log, bm25(node_fts) AS rank"
                 " FROM node_fts JOIN node n ON n.rowid = node_fts.rowid"
                 " WHERE node_fts MATCH ? AND n.deleted=0"
-                + self._gecmis_suzgeci("n.")
+                + self._history_filter("n.")
                 + " ORDER BY rank LIMIT ?",
                 (expression, limit),
             ).fetchall()
 
         out: list[tuple[str, float, str]] = []
         for row in rows:
-            # bm25 negatif; -rank = eşleşme gücü (büyük = güçlü). SIRA yerine
-            # BÜYÜKLÜK: strength/(1+strength) ile 0..1'e sıkıştır. Zayıf ya da
-            # rastlantısal bir eşleşme (boş sorgunun ön-ek genişletmesiyle
-            # değdiği kayıt gibi) düşük güven alır; güçlü eşleşme 1'e yaklaşır.
-            # Eski `1/(1+pozisyon)` en üste her zaman 1.0 veriyordu — eşleşme
-            # gücü ne olursa olsun — ve top1 boş/hafıza ayrımını yapamıyordu.
+            # bm25 is negative; -rank = match strength (bigger = stronger).
+            # MAGNITUDE instead of RANK: squash into 0..1 with
+            # strength/(1+strength). A weak or accidental match (such as a
+            # record an empty query grazes through prefix expansion) gets
+            # low confidence; a strong match approaches 1. The old
+            # `1/(1+position)` always gave the top entry 1.0 — whatever the
+            # match strength — and top1 could not tell empty from memory.
             strength = max(0.0, -float(row["rank"]))
             conf = strength / (1.0 + strength)
-            # Canlı iz daha kolay uyanır. Eski hal `min(0.15, 0.03*uses)`
-            # idi: zamanı bilmeyen, doyan ve yalnızca EKLEYEN bir aşinalık
-            # payı. Yerine aktivasyon çarpanı geçti — en unutulmuş kayıt
-            # bile skorunun yarısını koruyor (bkz. aktivasyon.TOHUM_TABANI),
-            # yani geride kalıyor ama aramadan düşmüyor.
-            carpan = activation.seed_factor(self._base_level(row))
-            out.append((row["id"], round(min(1.0, conf * carpan), 4), row["kind"]))
+            # A lively trace wakes more easily. The old version was
+            # `min(0.15, 0.03*uses)`: a familiarity share that did not know
+            # time, saturated and only ever ADDED. The activation multiplier
+            # replaced it — even the most forgotten record keeps half its
+            # score (see activation.SEED_FLOOR), so it falls behind but does
+            # not drop out of the search.
+            factor = activation.seed_factor(self._base_level(row))
+            out.append((row["id"], round(min(1.0, conf * factor), 4), row["kind"]))
         return out
 
     def _seed_signature(self, query: str, limit: int) -> list[tuple[str, float]]:
-        """Cagrisimsal temas: kelime tutmasa da yakin duran kayitlar."""
-        # Indeks ozelligi kendi kilidini aliyor; kilit yeniden girilebilir
-        # degil, bu yuzden buraya kilit disinda dokunulmali.
+        """Associative contact: records that sit close even when the words differ."""
+        # The index property takes its own lock; the lock is not reentrant,
+        # so it must be touched here outside the lock.
         index = self.index
         if not len(index):
             return []
-        bulunan = index.search(vector.signature(query), limit)
-        if not bulunan:
+        found = index.search(vector.signature(query), limit)
+        if not found:
             return []
-        # İmza kanalı yalnız kimlik ve benzerlik döndürüyor; aktivasyon için
-        # tek bir toplu sorgu yetiyor (aday sayısı `limit` kadar, onlarca).
-        seviye = self._taban_seviyeleri([n for n, _ in bulunan])
-        return [(n, round(p * activation.seed_factor(seviye.get(n, activation.NO_BASE)), 4))
-                for n, p in bulunan]
+        # The signature channel returns only id and similarity; a single
+        # batch query suffices for activation (as many candidates as
+        # `limit`, dozens).
+        levels = self._base_levels([n for n, _ in found])
+        return [(n, round(p * activation.seed_factor(levels.get(n, activation.NO_BASE)), 4))
+                for n, p in found]
 
-    def _taban_seviyeleri(self, node_ids: Sequence[str]) -> dict[str, float]:
+    def _base_levels(self, node_ids: Sequence[str]) -> dict[str, float]:
         if not node_ids:
             return {}
         placeholders = ",".join("?" * len(node_ids))
@@ -1369,24 +1424,25 @@ class RecallStore:
 
 
 def _match_expression(query: str) -> str:
-    """Sorguyu FTS5 ifadesine cevirir.
+    """Turns the query into an FTS5 expression.
 
-    Turkce sondan eklemeli oldugu icin ek her iki yonde de gorunuyor:
-    kullanici "rapor" yazip kayitta "raporlari" olabilir ya da tersi.
-    Bu yuzden her terim iki kez giriyor —
+    Because Turkish is agglutinative, the suffix shows up in both
+    directions: the user may type "rapor" while the record says "raporlari",
+    or the reverse. So every term goes in twice —
 
-        "rapor"*    terimin kendisi, eki olan kayitlari da tutar
-        "rapor"     govde tahmini, terimin kendisi ekli geldiginde tutar
+        "rapor"*    the term itself, also catches records carrying a suffix
+        "rapor"     the stem guess, catches it when the term itself came
+                    with a suffix
 
-    Kok bulma (stemming) yapilmiyor: Turkce icin duzgun bir kok bulucu ek
-    bagimlilik demek ve yanlis kok, hic eslesmemekten daha kotu. Ilk
-    STEM_CHARS harf pratikte ayni isi goruyor.
+    No stemming is done: a proper stemmer for Turkish means an extra
+    dependency, and a wrong stem is worse than no match at all. The first
+    STEM_CHARS characters do the same job in practice.
 
-    Terimler OR'laniyor — biri tutan kayit da cagrisimi baslatabilmeli;
-    siralamayi zaten bm25 yapiyor.
+    Terms are OR'ed — a record matching one of them must also be able to
+    start the association; bm25 does the ranking anyway.
     """
-    # İşlev kelimeleri elenir (imza tarafıyla aynı liste): "bir", "ne" gibi
-    # sözcükler FTS'te genel anıları yanlış uyandırıyordu.
+    # Function words are dropped (same list as the signature side): words
+    # like "bir", "ne" were wrongly waking up general memories in FTS.
     terms = [t for t in (m.group(0) for m in _WORD.finditer(query or ""))
              if len(t) > 1 and t.lower() not in vector.STOPWORDS]
     if not terms:
@@ -1397,45 +1453,47 @@ def _match_expression(query: str) -> str:
         parts.append(f'"{term}"*')
         if len(term) > STEM_CHARS:
             parts.append(f'"{term[:STEM_CHARS]}"*')
-    # Ayni govdeyi iki kez sormak bm25'i bozmuyor ama ifadeyi sisiriyor.
+    # Asking for the same stem twice does not break bm25 but bloats the
+    # expression.
     return " OR ".join(dict.fromkeys(parts))
 
 
-def _parse_context(ham) -> dict:
-    """Diskteki bağlam alanı. Bozuksa boş — ceza değil, bilgi eksikliği."""
-    if not ham:
+def _parse_context(raw) -> dict:
+    """The context field on disk. Empty if broken — not a penalty, missing
+    information."""
+    if not raw:
         return {}
     try:
-        deger = json.loads(ham) if isinstance(ham, str) else ham
+        value = json.loads(raw) if isinstance(raw, str) else raw
     except ValueError:
         return {}
-    return deger if isinstance(deger, dict) else {}
+    return value if isinstance(value, dict) else {}
 
 
 def _first_line(text: str) -> str:
     return next((line.strip() for line in text.splitlines() if line.strip()), "(başlıksız)")
 
 
-def _alan(row: sqlite3.Row, ad: str):
-    """Satırda olmayabilecek bir sütunu okur.
+def _field(row: sqlite3.Row, name: str):
+    """Reads a column that may be absent from the row.
 
-    Eski bir bellek göç edilmeden okunabilir ya da bir sorgu sütunu
-    seçmemiş olabilir; yokluk hata değil, bilgi eksikliği.
+    An old memory may be read before migration, or a query may not have
+    selected the column; absence is not an error, it is missing information.
     """
     try:
-        return row[ad]
+        return row[name]
     except (IndexError, KeyError):
         return None
 
 
-def _to_node(row: sqlite3.Row, *, seviye: float = activation.NO_BASE) -> Node:
+def _to_node(row: sqlite3.Row, *, level: float = activation.NO_BASE) -> Node:
     return Node(
-        activation=seviye,
-        supersedes=_alan(row, "supersedes") or "",
-        superseded_by=_alan(row, "superseded_by") or "",
-        deleted=bool(_alan(row, "deleted") or 0),
-        hot=bool(1 if _alan(row, "hot") is None else _alan(row, "hot")),
-        context=_parse_context(_alan(row, "context")),
+        activation=level,
+        supersedes=_field(row, "supersedes") or "",
+        superseded_by=_field(row, "superseded_by") or "",
+        deleted=bool(_field(row, "deleted") or 0),
+        hot=bool(1 if _field(row, "hot") is None else _field(row, "hot")),
+        context=_parse_context(_field(row, "context")),
         id=row["id"],
         kind=row["kind"],
         title=row["title"],

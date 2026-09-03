@@ -1,20 +1,21 @@
-"""Otomasyonların hafızada bıraktığı iz.
+"""The trace automations leave in memory.
 
-İki şey yazılıyor, ikisi de aynı biçimde:
+Two things are written, both in the same shape:
 
-    yordam   Bir akış kurulduğunda/güncellendiğinde ne yaptığı
-             (`kind="procedure"`). Amaç, aylar sonra "bunu daha önce
-             otomasyonda yapmıştım" diye hatırlayıp oradan bakabilmek —
-             işe yararsa kullanmak, yaramazsa yenisini yazmak.
-    ders     Bir adım hata verdiğinde ne olduğu (`kind="lesson"`).
+    procedure  What a workflow does, when it is created/updated
+               (`kind="procedure"`). The aim is to remember months later
+               "I did this in an automation before" and look there — use it
+               if it works, write a new one if it does not.
+    lesson     What happened when a step failed (`kind="lesson"`).
 
-Biçim neden ÖNEMLİ: bu kayıtlar yalnız çağrışım için değil, gece koşan
-kişisel ince ayarın da girdisi. Aynı olayın her seferinde aynı kalıpla
-yazılması, modelin örüntüyü görmesini sağlıyor; serbest metin her
-seferinde farklı yazılırsa ortada öğrenilecek bir kalıp kalmıyor.
+Why the shape MATTERS: these records are not only for association, they are
+also the input of the personal fine-tuning that runs at night. Writing the
+same event with the same pattern every time lets the model see the pattern;
+if free text is written differently every time there is no pattern left to
+learn.
 
-Hafıza yoksa ya da yazma patlarsa sessizce geçiliyor: otomasyonun kendisi,
-hatırlanmasından önemli.
+If there is no memory or the write blows up it is silently skipped: the
+automation itself matters more than being remembered.
 """
 
 from __future__ import annotations
@@ -23,59 +24,59 @@ from typing import Any
 
 from .workflows import Workflow
 
-# Etiketler tek yerde: geri bulmanın anahtarı bunlar.
-ETIKET = "otomasyon"
+# Tags in one place: these are the key to finding things again.
+TAG = "otomasyon"
 LESSON_TAG = "otomasyon-ders"
 
-# Kayıtta taşınacak azami adım sayısı — elli düğümlük bir grafiği hafızaya
-# olduğu gibi dökmek, çağrışımı kendi gürültüsüyle boğar.
-AZAMI_ADIM = 12
+# Maximum number of steps carried in the record — dumping a fifty-node graph
+# into memory as is drowns association in its own noise.
+MAX_STEPS = 12
 
 
-def _ozet(wf: Workflow) -> str:
-    adimlar = []
-    for node in wf.nodes[:AZAMI_ADIM]:
-        ad = (node.title or node.id).strip()
-        adimlar.append(f"{node.type}: {ad}")
-    if len(wf.nodes) > AZAMI_ADIM:
-        adimlar.append(f"… ve {len(wf.nodes) - AZAMI_ADIM} adım daha")
-    return " → ".join(adimlar) if adimlar else "(adım yok)"
+def _summary(wf: Workflow) -> str:
+    steps = []
+    for node in wf.nodes[:MAX_STEPS]:
+        name = (node.title or node.id).strip()
+        steps.append(f"{node.type}: {name}")
+    if len(wf.nodes) > MAX_STEPS:
+        steps.append(f"… ve {len(wf.nodes) - MAX_STEPS} adım daha")
+    return " → ".join(steps) if steps else "(adım yok)"
 
 
-def akis_metni(wf: Workflow) -> str:
-    """Bir akışın hafızaya yazılan hâli. Kalıp sabit."""
-    satirlar = [
+def workflow_text(wf: Workflow) -> str:
+    """A workflow's shape as written to memory. The pattern is fixed."""
+    lines = [
         f"Otomasyon [{wf.id}] «{wf.title or wf.id}» — {len(wf.nodes)} adım.",
-        f"Adımlar: {_ozet(wf)}",
+        f"Adımlar: {_summary(wf)}",
     ]
-    gizli = sorted({s for n in wf.nodes for s in n.secrets_needed if s})
-    if gizli:
-        satirlar.append(f"Gerektirdiği gizli alanlar: {', '.join(gizli)}")
-    yetenekler = sorted({n.skill for n in wf.nodes if n.skill})
-    if yetenekler:
-        satirlar.append(f"Kullandığı yetenekler: {', '.join(yetenekler)}")
-    return "\n".join(satirlar)
+    secrets = sorted({s for n in wf.nodes for s in n.secrets_needed if s})
+    if secrets:
+        lines.append(f"Gerektirdiği gizli alanlar: {', '.join(secrets)}")
+    skills = sorted({n.skill for n in wf.nodes if n.skill})
+    if skills:
+        lines.append(f"Kullandığı yetenekler: {', '.join(skills)}")
+    return "\n".join(lines)
 
 
 def lesson_text(wf_id: str, node: Any, exc: BaseException) -> str:
-    """Bir adım hatasının hafızaya yazılan hâli. Kalıp sabit."""
-    ad = (getattr(node, "title", "") or getattr(node, "id", "")).strip()
+    """A step failure's shape as written to memory. The pattern is fixed."""
+    name = (getattr(node, "title", "") or getattr(node, "id", "")).strip()
     return (
-        f"Otomasyon [{wf_id}] adımı hata verdi — {getattr(node, 'type', '?')}: «{ad}». "
+        f"Otomasyon [{wf_id}] adımı hata verdi — {getattr(node, 'type', '?')}: «{name}». "
         f"Hata: {type(exc).__name__}: {exc}"
     )
 
 
 def akisi_hatirla(mind: Any, wf: Workflow) -> bool:
-    """Akışı yordam olarak yaz. Yazıldıysa True."""
+    """Write the workflow as a procedure. True if written."""
     if mind is None or not hasattr(mind, "remember"):
         return False
     try:
         mind.remember(
-            akis_metni(wf),
+            workflow_text(wf),
             kind="procedure",
             title=f"otomasyon:{wf.id}",
-            tags=(ETIKET, f"{ETIKET}:{wf.id}"),
+            tags=(TAG, f"{TAG}:{wf.id}"),
         )
         return True
     except Exception:
@@ -83,7 +84,7 @@ def akisi_hatirla(mind: Any, wf: Workflow) -> bool:
 
 
 def recall_lesson(mind: Any, wf_id: str, node: Any, exc: BaseException) -> bool:
-    """Adım hatasını ders olarak yaz. Yazıldıysa True."""
+    """Write the step failure as a lesson. True if written."""
     if mind is None or not hasattr(mind, "remember"):
         return False
     try:
@@ -91,35 +92,35 @@ def recall_lesson(mind: Any, wf_id: str, node: Any, exc: BaseException) -> bool:
             lesson_text(wf_id, node, exc),
             kind="lesson",
             title=f"otomasyon-hata:{wf_id}:{getattr(node, 'id', '?')}",
-            tags=(LESSON_TAG, f"{ETIKET}:{wf_id}"),
+            tags=(LESSON_TAG, f"{TAG}:{wf_id}"),
         )
         return True
     except Exception:
         return False
 
 
-def akislari_ara(mind: Any, sorgu: str, *, limit: int = 5) -> list[Any]:
-    """Bu işi daha önce otomasyonda yapmış mıyız?
+def search_workflows(mind: Any, query: str, *, limit: int = 5) -> list[Any]:
+    """Have we done this job in an automation before?
 
-    Hiçbir şey bulamamak normal ve sessiz: "yok" cevabı, uydurulmuş bir
-    eşleşmeden iyidir. Çağıran bulduğunu KULLANMAK ZORUNDA DEĞİL — işe
-    yaramıyorsa yenisini yazmak doğru olan.
+    Finding nothing is normal and silent: a "none" answer is better than a
+    made-up match. The caller is NOT OBLIGED to USE what it finds — if it
+    does not work, writing a new one is the right thing.
     """
     if mind is None or not hasattr(mind, "recall"):
         return []
     try:
-        bulunan = mind.recall(sorgu, limit=limit * 3) or []
+        found = mind.recall(query, limit=limit * 3) or []
     except Exception:
         return []
-    sonuc = []
-    for m in bulunan:
-        # `recall` puanlanmış sarmalayıcı döndürüyor (`Scored.item`); doğrudan
-        # hatıra dönen bir çağırana da açık kalsın diye ikisi de kabul.
-        kayit = getattr(m, "item", m)
-        etiketler = set(getattr(kayit, "tags", ()) or ())
-        baslik = str(getattr(kayit, "title", ""))
-        if ETIKET in etiketler or baslik.startswith("otomasyon:"):
-            sonuc.append(kayit)
-        if len(sonuc) >= limit:
+    result = []
+    for m in found:
+        # `recall` returns a scored wrapper (`Scored.item`); both are accepted
+        # so a caller that returns the memory directly stays supported too.
+        record = getattr(m, "item", m)
+        tags = set(getattr(record, "tags", ()) or ())
+        title = str(getattr(record, "title", ""))
+        if TAG in tags or title.startswith("otomasyon:"):
+            result.append(record)
+        if len(result) >= limit:
             break
-    return sonuc
+    return result

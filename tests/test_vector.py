@@ -1,8 +1,9 @@
-"""Çağrışım imzası testleri.
+"""Association signature tests.
 
-Buradaki katmanın işi iki uçlu: yakın metni bulmak *ve* uzak metni
-bulmamak. İkincisi daha kolay kaçırılıyor — eşiği gevşek bırakınca her
-sorgu bir şey "hatırlıyor" ve yayılan aktivasyon alakasız bölgeye sıçrıyor.
+The layer here has a two-sided job: finding close text *and* not finding
+distant text. The second is easier to miss — with a loose floor every query
+"remembers" something and spreading activation jumps into an unrelated
+region.
 """
 
 from __future__ import annotations
@@ -13,8 +14,8 @@ from dornick.recall.vector import BITS, FLOOR, Index, from_blob, signature, simi
 
 
 def test_same_text_gives_the_same_signature() -> None:
-    """Hash tohumu sabit olmalı: aksi halde diske yazılan imza bir sonraki
-    çalıştırmada anlamsızlaşır."""
+    """The hash seed must be fixed: otherwise a signature written to disk
+    becomes meaningless on the next run."""
     assert signature("postgres yedeği") == signature("postgres yedeği")
 
 
@@ -31,21 +32,22 @@ def test_similar_texts_land_close() -> None:
 
 
 def test_unrelated_texts_stay_under_the_noise_floor() -> None:
-    """İki rastgele imza bitlerinin yarısı civarında tutar. Ham oranı
-    benzerlik diye vermek alakasız her kaydı 0.5 puanla listeye sokardı;
-    ölçek kaydırıldıktan sonra geriye yalnızca saçılma kalıyor ve o da
-    eşiğin altında olmalı."""
+    """Two random signatures agree on around half their bits. Reporting the
+    raw ratio as similarity would put every unrelated record on the list
+    with 0.5 points; after the scale is shifted only the scatter remains,
+    and that must be below the floor."""
     assert similarity(signature("kahve makinesi"), signature("borsa analizi")) < FLOOR
 
 
 def test_short_texts_do_not_all_look_alike() -> None:
-    """Kısa metinde boyutların çoğu berabere kalıyor. Beraberliği sabit bir
-    tarafa yazmak bütün kısa metinleri komşu yapmıştı."""
+    """In a short text most dimensions stay tied. Writing ties to a fixed
+    side had made all short texts neighbours."""
     assert similarity(signature("bir şey"), signature("hiç konuşulmamış konu")) < FLOOR
 
 
 def test_turkish_suffix_survives_the_signature() -> None:
-    """Harf n-gramları bu yüzden var: 'rapor' ile 'raporlarımızı' örtüşmeli."""
+    """This is why the character n-grams exist: 'rapor' and 'raporlarımızı'
+    must overlap."""
     assert similarity(signature("haftalık rapor"), signature("haftalık raporlarımızı")) > 0.3
 
 
@@ -61,7 +63,7 @@ def test_blob_round_trip() -> None:
     assert from_blob(None) == 0
 
 
-# -- indeks ------------------------------------------------------------
+# -- index -------------------------------------------------------------
 
 
 def test_index_ranks_the_closest_first() -> None:
@@ -87,22 +89,22 @@ def test_dropped_entries_stop_matching() -> None:
 
 
 def test_added_entries_are_visible_after_a_search() -> None:
-    """Tarama düz bir liste üzerinden gidiyor; ekleme o listeyi tazelemezse
-    yeni kayıt sessizce görünmez kalır."""
+    """The scan runs over a flat list; if adding does not refresh that list
+    the new record silently stays invisible."""
     index = Index([("coffee", signature("kahve makinesi"))])
-    index.search(signature("herhangi bir sorgu"), 5)  # düz listeyi kurdurur
+    index.search(signature("herhangi bir sorgu"), 5)  # forces the flat list to be built
     index.add("db", signature("postgres veritabanı yedeği alınıyor"))
     assert index.search(signature("veritabanı dökümü"), 5)[0][0] == "db"
 
 
 def test_signatureless_entries_are_ignored() -> None:
-    assert len(Index([("boş", 0)])) == 0
+    assert len(Index([("empty", 0)])) == 0
 
 
 def test_fifty_thousand_signatures_stay_under_a_tenth_of_a_second() -> None:
-    """Kullanıcının koyduğu şart: 'uzun süre geçince dakikalarca içinde
-    kaybolursa bir anlamı kalmaz.' Tarama tam ve doğrusal; ölçü buranın
-    doğrusal katsayısını tutuyor."""
+    """The user's condition: 'if it gets lost for minutes once a long time
+    has passed, there is no point.' The scan is exact and linear; the
+    measurement pins down its linear coefficient."""
     index = Index((f"n{i}", signature(f"kayıt {i} hakkında birkaç kelime")) for i in range(50_000))
     query = signature("kayıt 400 hakkında")
 

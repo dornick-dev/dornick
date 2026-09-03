@@ -1,19 +1,21 @@
-"""Yerel GPU görüntü analizi — Whisper'ın kamera kardeşi.
+"""Local GPU image analysis — Whisper's camera sibling.
 
-Sohbet modeli her kareye bakmıyor: saniyede yirmi kare, karesi 1.5–4.8k
-token. Bunun yerine NVIDIA kartı varsa küçük bir nesne modeli kareyi
-**metne** çeviriyor; sohbet modeli o metni alıyor. Görüntü makineden
-çıkmıyor.
+The chat model does not look at every frame: twenty frames a second,
+1.5–4.8k tokens each. Instead, with an NVIDIA card, a small object model
+turns the frame into **text**; the chat model gets that text. The image
+never leaves the machine.
 
-Kapalı sözlüklü YOLOv8n (COCO-80) sigara ve çakmağı tanımıyor — en yakın
-sınıfa yakıştırıyor (kitap, diş fırçası, kişi). CUDA yolunda önce
-YOLO-World (açık sözlük) deneniyor; olmazsa nano COCO yedeğe düşer.
+Closed-vocabulary YOLOv8n (COCO-80) does not know cigarette and lighter —
+it forces them onto the nearest class (book, toothbrush, person). On the
+CUDA route YOLO-World (open vocabulary) is tried first; failing that, the
+nano COCO fallback.
 
-GPU yoksa / CUDA oturumu açılamazsa bu katman sessizce durur — o zaman
-eski kesit kipi: kare, görüntü kabul eden modele gider.
+Without a GPU / if the CUDA session cannot be opened this layer stops
+silently — then the old snapshot mode: the frame goes to a model that
+accepts images.
 
-Model ilk kullanımda indirilir ve `~/.dornick/models` altında kalır.
-Whisper gibi süreç boyunca bellekte durur.
+The model is downloaded on first use and stays under `~/.dornick/models`.
+Like Whisper it stays in memory for the life of the process.
 """
 
 from __future__ import annotations
@@ -29,7 +31,7 @@ from typing import Any
 
 INSTALL_HINT = "Yerel GPU kamera analizi için: pip install 'dornick[watch]'"
 
-# Ultralytics'in resmî nano ONNX'i. İlk kullanımda bir kez.
+# Ultralytics' official nano ONNX. Once, on first use.
 MODEL_URL = (
     "https://github.com/ultralytics/assets/releases/download/v8.4.0/yolov8n.onnx"  # v8.3.0 404 (31.08)
 )
@@ -37,10 +39,10 @@ MODEL_NAME = "yolov8n.onnx"
 INPUT = 640
 CONF = 0.35
 IOU = 0.45
-# Nano model ~200–400 MB VRAM. Bunun altı: yerel LLM kartı doldurmuş,
-# ikinci oturum OOM olur — kesit kipine düş.
+# The nano model needs ~200–400 MB VRAM. Below this: the local LLM has
+# filled the card, a second session would OOM — fall to snapshot mode.
 MIN_FREE_MB = 400
-# YOLO-World s bir kademe daha yer ister; yetmezse nano COCO.
+# YOLO-World s wants one notch more room; if not enough, nano COCO.
 MIN_FREE_MB_WORLD = 650
 CONF_WORLD = 0.25
 
@@ -74,8 +76,8 @@ COCO_TR = (
     "buzdolabı", "kitap", "saat", "vazo", "makas", "oyuncak ayı",
     "saç kurutma", "diş fırçası",
 )
-# World'e 80 COCO sınıfı vermek sigara/çakmağı yine kitaba gömüyor.
-# Oda + el nesnesi: CLIP'in ayırt etmesi için kısa sözlük.
+# Giving World the 80 COCO classes buries cigarette/lighter in "book" again.
+# Room + handheld objects: a short vocabulary for CLIP to tell apart.
 WORLD_EN = (
     "person",
     "chair", "couch", "bed", "dining table",
@@ -144,16 +146,17 @@ def _ort_importable() -> bool:
 
 
 def _onnxruntime() -> Any:
-    """Kurulu düzende watch/site GPU tekerleğini dinleme CPU tekerleğinin
-    önüne alır. İki bileşen de onnxruntime adlı paketi koyuyor; ._pth'te
-    listen önce geldiği için CPU kopyası CUDA EP'siz yüklenebiliyordu."""
+    """In the installed layout puts the watch/site GPU wheel ahead of the
+    listen CPU wheel. Both components ship a package named onnxruntime;
+    because listen came first in the ._pth the CPU copy could load without
+    the CUDA EP."""
     exe = Path(sys.executable).resolve()
-    aday = exe.parent.parent / "watch" / "site"
-    if aday.is_dir():
-        yol = str(aday)
-        if yol in sys.path:
-            sys.path.remove(yol)
-        sys.path.insert(0, yol)
+    candidate = exe.parent.parent / "watch" / "site"
+    if candidate.is_dir():
+        folder = str(candidate)
+        if folder in sys.path:
+            sys.path.remove(folder)
+        sys.path.insert(0, folder)
     import onnxruntime as ort
     return ort
 
@@ -163,8 +166,8 @@ def _retryable(reason: str) -> bool:
     return r in ("", "yükleniyor") or "indirilemedi" in r
 
 
-def _etiket(idx: int, names: Any = None) -> str:
-    """Sınıf adı: modelin İngilizce ismi → Türkçe etiket."""
+def _label(idx: int, names: Any = None) -> str:
+    """Class name: the model's English name → Turkish label."""
     en = ""
     if isinstance(names, dict):
         en = str(names.get(idx, names.get(str(idx), "")) or "")
@@ -188,7 +191,7 @@ def _vram_free() -> int | None:
 
 
 def _load_world() -> tuple[Any, str]:
-    """Açık sözlük: sigara / çakmak COCO'da yok, World metinle arar."""
+    """Open vocabulary: cigarette / lighter are not in COCO, World searches by text."""
     free = _vram_free()
     if free is not None and free < MIN_FREE_MB_WORLD:
         return None, ""
@@ -212,7 +215,7 @@ def _load_world() -> tuple[Any, str]:
 
 
 def _open_ultra() -> tuple[Any, str, str, str]:
-    """YOLO-World (açık sözlük) ya da YOLOv8n — torch CUDA."""
+    """YOLO-World (open vocabulary) or YOLOv8n — torch CUDA."""
     if not _ultra_ok():
         return None, "", "", ""
     try:
@@ -258,17 +261,18 @@ def _open_ort() -> tuple[Any, str, str, str]:
 
 
 def _model_path() -> Path:
-    """Model ağırlığının yeri: önce KURULUMLA GELEN kopya.
+    """Where the model weights live: the copy SHIPPED WITH THE INSTALL first.
 
-    Kurulum sihirbazı ONNX'i kamera bileşeniyle birlikte paketliyor
-    (watch/models) — kurulu makinede ilk bakış indirme beklemez ve
-    çevrimdışı da çalışır ("kullanıcı sonradan hiçbir şey kurmasın",
-    31.08). Paket kopyası yoksa (kaynaktan koşan geliştirici) eski yol:
-    ~/.dornick/models altına bir kez indirilir.
+    The installer wizard packages the ONNX together with the camera
+    component (watch/models) — on an installed machine the first look does
+    not wait for a download and works offline too ("the user should not
+    install anything afterwards", 31.08). Without the packaged copy (a
+    developer running from source) the old route: downloaded once under
+    ~/.dornick/models.
     """
-    paketli = Path(sys.executable).resolve().parent.parent / "watch" / "models" / MODEL_NAME
-    if paketli.is_file():
-        return paketli
+    packaged = Path(sys.executable).resolve().parent.parent / "watch" / "models" / MODEL_NAME
+    if packaged.is_file():
+        return packaged
     return Path.home() / ".dornick" / "models" / MODEL_NAME
 
 
@@ -276,14 +280,14 @@ def _model_path() -> Path:
 class Hit:
     name: str
     conf: float
-    x: float  # 0..1, kutu merkezi
+    x: float  # 0..1, box centre
     y: float
-    w: float = 0.0  # 0..1, kutu eni (çizim)
-    h: float = 0.0  # 0..1, kutu boyu
+    w: float = 0.0  # 0..1, box width (drawing)
+    h: float = 0.0  # 0..1, box height
 
 
 class Seer:
-    """Tek GPU oturumu. Whisper Listener gibi bir kez yüklenir."""
+    """Single GPU session. Loaded once, like the Whisper Listener."""
 
     def __init__(self) -> None:
         self._session: Any = None
@@ -298,7 +302,7 @@ class Seer:
         return self._session is not None and self.device == "cuda"
 
     def load(self) -> bool:
-        """CUDA oturumunu açar. CPU'ya düşmez — o kesit kipinin işi."""
+        """Opens the CUDA session. No CPU fallback — that is snapshot mode's job."""
         with self._lock:
             if self.ready:
                 return True
@@ -329,7 +333,7 @@ class Seer:
         return None, "", (ultra[2] or ort[2] or hint()), ""
 
     def hits_bgr(self, frame: Any) -> list[Hit]:
-        """OpenCV BGR kare → kutulu tespit. GPU yoksa boş."""
+        """OpenCV BGR frame → detections with boxes. Empty without a GPU."""
         if not self.load():
             return []
         try:
@@ -344,11 +348,11 @@ class Seer:
             return []
 
     def analyze_bgr(self, frame: Any) -> str:
-        """OpenCV BGR kare → Türkçe nesne özeti. Boş string = bakılamadı."""
+        """OpenCV BGR frame → Turkish object summary. Empty string = could not look."""
         hits = self.hits_bgr(frame)
         if not self.ready:
             return ""
-        return _ozet(hits)
+        return _summary(hits)
 
     def analyze_url(self, data_url: str) -> str:
         frame = _decode(data_url)
@@ -370,7 +374,7 @@ def seer() -> Seer:
 
 
 def status() -> dict[str, Any]:
-    """UI/API için ucuz özet. load() tetiklemez."""
+    """Cheap summary for the UI/API. Does not trigger load()."""
     s = seer()
     return {
         "ready": s.ready,
@@ -390,7 +394,7 @@ _warmup_started = False
 
 
 def ensure_warmup() -> None:
-    """Deck/API açılınca bir kez arka planda yükle. Çift thread yok."""
+    """Load once in the background when the deck/API opens. No double thread."""
     global _warmup_started
     with _warmup_lock:
         if _warmup_started:
@@ -400,7 +404,7 @@ def ensure_warmup() -> None:
 
 
 def warmup() -> dict[str, Any]:
-    """Açılışta arka planda: ilk bakış indirme beklemesin."""
+    """In the background at startup: the first look should not wait for a download."""
     ok = seer().load()
     st = status()
     if ok:
@@ -422,10 +426,10 @@ def hits_bgr(frame: Any) -> list[Hit]:
     return seer().hits_bgr(frame)
 
 
-def satir(data_url: str) -> str:
-    """Araç metnine eklenecek satır. Analiz yoksa boş."""
-    ozet = analyze_url(data_url)
-    return f"Yerel GPU analizi: {ozet}" if ozet else ""
+def line(data_url: str) -> str:
+    """The line appended to the tool text. Empty without analysis."""
+    summary = analyze_url(data_url)
+    return f"Yerel GPU analizi: {summary}" if summary else ""
 
 
 def _ensure_model() -> Path | None:
@@ -441,8 +445,8 @@ def _ensure_model() -> Path | None:
         try:
             req = urllib.request.Request(
                 url, headers={"User-Agent": "Mozilla/5.0 dornick/sight"})
-            with urllib.request.urlopen(req, timeout=60) as cevap, open(tmp, "wb") as out:
-                while chunk := cevap.read(1 << 16):
+            with urllib.request.urlopen(req, timeout=60) as response, open(tmp, "wb") as out:
+                while chunk := response.read(1 << 16):
                     out.write(chunk)
             if tmp.is_file() and tmp.stat().st_size > 1_000_000:
                 tmp.replace(path)
@@ -494,7 +498,7 @@ def _detect_ultra(model: Any, bgr: Any, *, conf: float = CONF) -> list[Hit]:
     confs = boxes.conf.tolist()
     for (x, y, bw, bh), c, p in zip(xywhn, cls, confs):
         idx = int(c)
-        hits.append(Hit(name=_etiket(idx, names), conf=float(p),
+        hits.append(Hit(name=_label(idx, names), conf=float(p),
                         x=float(x), y=float(y), w=float(bw), h=float(bh)))
     return hits
 
@@ -518,7 +522,7 @@ def _parse(out: Any, scale: float, pad_x: int, pad_y: int,
     import numpy as np
 
     arr = np.asarray(out)
-    # (1, 84, 8400) ya da (1, 8400, 84)
+    # (1, 84, 8400) or (1, 8400, 84)
     if arr.ndim == 3:
         arr = arr[0]
     if arr.shape[0] in (84, 85) and arr.shape[0] < arr.shape[1]:
@@ -535,7 +539,7 @@ def _parse(out: Any, scale: float, pad_x: int, pad_y: int,
         return []
     boxes, conf, cls = boxes[keep], conf[keep], cls[keep]
 
-    # xywh (letterbox px) → xyxy orijinal
+    # xywh (letterbox px) → xyxy original
     xyxy = np.empty_like(boxes)
     xyxy[:, 0] = (boxes[:, 0] - boxes[:, 2] / 2 - pad_x) / scale
     xyxy[:, 1] = (boxes[:, 1] - boxes[:, 3] / 2 - pad_y) / scale
@@ -545,7 +549,7 @@ def _parse(out: Any, scale: float, pad_x: int, pad_y: int,
     order = _nms(xyxy, conf)
     hits: list[Hit] = []
     for i in order:
-        name = _etiket(int(cls[i]))
+        name = _label(int(cls[i]))
         cx = float(((xyxy[i, 0] + xyxy[i, 2]) / 2) / max(1, width))
         cy = float(((xyxy[i, 1] + xyxy[i, 3]) / 2) / max(1, height))
         bw = float((xyxy[i, 2] - xyxy[i, 0]) / max(1, width))
@@ -578,8 +582,8 @@ def _nms(xyxy: Any, scores: Any, iou: float = IOU) -> list[int]:
     return keep
 
 
-def _yan(x: float, y: float) -> str:
-    """Kutu merkezi: yalnız kenardaysa yer söylenir."""
+def _side(x: float, y: float) -> str:
+    """Box centre: the place is named only when it is at an edge."""
     lr = "sol" if x < 0.33 else ("sağ" if x > 0.67 else "")
     tb = "üstte" if y < 0.33 else ("altta" if y > 0.67 else "")
     if lr and tb:
@@ -591,11 +595,11 @@ def _yan(x: float, y: float) -> str:
     return ""
 
 
-def _ozet(hits: list[Hit]) -> str:
-    """Nesne listesini tek cümleye indirir. Boş sahne de bir cevaptır."""
+def _summary(hits: list[Hit]) -> str:
+    """Reduces the object list to a single sentence. An empty scene is an answer too."""
     if not hits:
         return "belirgin nesne yok"
-    # Aynı sınıfı say, en güvenilir konumu tut.
+    # Count the same class, keep the most confident position.
     groups: dict[str, list[Hit]] = {}
     for h in hits:
         groups.setdefault(h.name, []).append(h)
@@ -603,14 +607,14 @@ def _ozet(hits: list[Hit]) -> str:
     for name, bunch in sorted(groups.items(), key=lambda kv: -max(h.conf for h in kv[1])):
         n = len(bunch)
         best = max(bunch, key=lambda h: h.conf)
-        yer = _yan(best.x, best.y)
+        where = _side(best.x, best.y)
         if n > 1:
-            parca = f"{n} {name}"
+            part = f"{n} {name}"
         else:
-            parca = name
-        if yer:
-            parca += f" ({yer})"
-        parts.append(parca)
+            part = name
+        if where:
+            part += f" ({where})"
+        parts.append(part)
     return ", ".join(parts)
 
 
@@ -639,7 +643,7 @@ def _font(size: int) -> Any:
 
 
 def paint_jpeg(jpeg: bytes, hits: list[Hit]) -> bytes:
-    """Kutulari ve Turkce etiketleri JPEG uzerine cizer. GPU gerekmez."""
+    """Draws the boxes and Turkish labels onto the JPEG. No GPU needed."""
     if not jpeg or not hits:
         return jpeg
     try:
@@ -667,14 +671,14 @@ def paint_jpeg(jpeg: bytes, hits: list[Hit]) -> bytes:
             x2 = int((hit.x + bw / 2) * w)
             y2 = int((hit.y + bh / 2) * h)
             draw.rectangle([x1, y1, x2, y2], outline=color, width=2)
-            etiket = f"{hit.name} {int(hit.conf * 100)}"
+            label = f"{hit.name} {int(hit.conf * 100)}"
             if font is not None:
-                box = draw.textbbox((x1, y1), etiket, font=font)
+                box = draw.textbbox((x1, y1), label, font=font)
                 ty = max(0, y1 - (box[3] - box[1]) - 2)
                 draw.rectangle([x1, ty, box[2] - box[0] + x1 + 6, y1], fill=color)
-                draw.text((x1 + 3, ty), etiket, fill=(20, 16, 12), font=font)
+                draw.text((x1 + 3, ty), label, fill=(20, 16, 12), font=font)
             else:
-                draw.text((x1 + 3, max(0, y1 - 14)), etiket, fill=color)
+                draw.text((x1 + 3, max(0, y1 - 14)), label, fill=color)
         bgr = cv2.cvtColor(np.asarray(im), cv2.COLOR_RGB2BGR)
     except Exception:
         bgr = frame
@@ -699,7 +703,7 @@ _ANNOT_TTL = 0.35
 
 
 def annotate_jpeg(jpeg: bytes, *, key: str = "") -> tuple[bytes, str]:
-    """YOLO + boyama. Hazir degilse ham kare. Ayni kamera 0.35 sn onbellegi."""
+    """YOLO + painting. The raw frame if not ready. A 0.35 s cache per camera."""
     import time
 
     if not jpeg:
@@ -722,9 +726,9 @@ def annotate_jpeg(jpeg: bytes, *, key: str = "") -> tuple[bytes, str]:
     if frame is None:
         return jpeg, ""
     hits = hits_bgr(frame)
-    ozet = _ozet(hits)
+    summary = _summary(hits)
     painted = paint_jpeg(jpeg, hits) if hits else jpeg
     if key:
         with _annot_lock:
-            _annot_cache[key] = (now, painted, ozet)
-    return painted, ozet
+            _annot_cache[key] = (now, painted, summary)
+    return painted, summary

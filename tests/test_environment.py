@@ -1,9 +1,10 @@
-"""Ortam algısı testleri.
+"""Environment-detection tests.
 
-Kurulu düzen (kurulum sihirbazı) ile geliştirici deposu ayrımı kullanıcıya
-görünen metinleri değiştiriyor: kuruluda pip önerilmez, sihirbaz önerilir.
-Konsolsuz alt süreç bayrakları da burada — pythonw altında bayraksız her
-konsol çağrısı ekranda cmd penceresi parlatıyordu.
+The distinction between the installed layout (installer wizard) and the
+developer repo changes user-visible texts: in the installed layout pip is
+not suggested, the wizard is. The console-less child-process flags are here
+too — under pythonw every console call without flags flashed a cmd window
+on screen.
 """
 
 from __future__ import annotations
@@ -15,8 +16,8 @@ from pathlib import Path
 from dornick import listen, environment, voice, watch
 
 
-def test_gelistirici_deposu_kurulu_sayilmaz(tmp_path: Path, monkeypatch) -> None:
-    """Ne ._pth ne setup.json: geliştirici düzeni."""
+def test_developer_repo_does_not_count_as_installed(tmp_path: Path, monkeypatch) -> None:
+    """Neither ._pth nor setup.json: developer layout."""
     exe = tmp_path / "python" / "python.exe"
     exe.parent.mkdir(parents=True)
     exe.write_bytes(b"")
@@ -25,38 +26,38 @@ def test_gelistirici_deposu_kurulu_sayilmaz(tmp_path: Path, monkeypatch) -> None
         environment.kurulu_mu.cache_clear()
         assert environment.kurulu_mu() is False
 
-        # Sihirbazın bıraktığı işaret: kökte setup.json.
+        # The mark the wizard leaves: setup.json at the root.
         (tmp_path / "setup.json").write_text('{"dil": "tr"}', encoding="utf-8")
         environment.kurulu_mu.cache_clear()
         assert environment.kurulu_mu() is True
 
-        # Eski ad da tanınır (mevcut kurulumlar).
+        # The old name is recognised too (existing installs).
         (tmp_path / "setup.json").unlink()
         (tmp_path / "kurulum.json").write_text('{"dil": "tr"}', encoding="utf-8")
         environment.kurulu_mu.cache_clear()
         assert environment.kurulu_mu() is True
 
-        # Gömülü Python izi tek başına yeter: ._pth dosyası.
+        # The embedded-Python trace alone suffices: the ._pth file.
         (tmp_path / "kurulum.json").unlink()
         (exe.parent / "python311._pth").write_text("..\\src\n", encoding="ascii")
         environment.kurulu_mu.cache_clear()
         assert environment.kurulu_mu() is True
     finally:
-        environment.kurulu_mu.cache_clear()  # sahte yol önbellekte kalmasın
+        environment.kurulu_mu.cache_clear()  # the fake path must not stay in the cache
 
 
-def test_kuruluda_pip_onerilmez(monkeypatch) -> None:
-    """Kurulu düzende mesaj sihirbaza yönlendirir, pip'e değil."""
+def test_installed_layout_does_not_suggest_pip(monkeypatch) -> None:
+    """In the installed layout the message points to the wizard, not pip."""
     monkeypatch.setattr(environment, "kurulu_mu", lambda: True)
-    for mesaj in (listen.hint(), voice.hint(), watch.hint()):
-        assert "pip install" not in mesaj
-        assert "sihirbaz" in mesaj
-    # Bileşen adları sihirbazdakiyle aynı olmalı — kullanıcı onu arayacak.
+    for message in (listen.hint(), voice.hint(), watch.hint()):
+        assert "pip install" not in message
+        assert "sihirbaz" in message
+    # Component names must match the ones in the wizard — the user will look for them.
     assert "Dinleme (mikrofon)" in listen.hint()
     assert "Kamera izleme" in watch.hint()
 
 
-def test_gelistiricide_pip_onerilir(monkeypatch) -> None:
+def test_developer_layout_suggests_pip(monkeypatch) -> None:
     monkeypatch.setattr(environment, "kurulu_mu", lambda: False)
     assert listen.hint() == listen.INSTALL_HINT
     assert voice.hint() == voice.INSTALL_HINT
@@ -64,38 +65,38 @@ def test_gelistiricide_pip_onerilir(monkeypatch) -> None:
     assert "pip install" in listen.hint()
 
 
-def test_sessiz_bayraklar_konsol_penceresi_actirmaz() -> None:
-    """Windows'ta CREATE_NO_WINDOW; başka platformda hiçbir şey."""
-    bayraklar = environment.quiet_flags()
+def test_quiet_flags_do_not_open_a_console_window() -> None:
+    """CREATE_NO_WINDOW on Windows; nothing on other platforms."""
+    flags = environment.quiet_flags()
     if sys.platform == "win32":
-        assert bayraklar == {"creationflags": subprocess.CREATE_NO_WINDOW}
+        assert flags == {"creationflags": subprocess.CREATE_NO_WINDOW}
     else:
-        assert bayraklar == {}
+        assert flags == {}
 
 
-# -- sürüm ---------------------------------------------------------------
+# -- version -------------------------------------------------------------
 #
-# Sahada hangi kopyanın kurulu olduğu görünmüyordu. Tek gerçek kaynak
-# pyproject.toml: geliştirici deposunda kökte durur, kurulu ağaca
-# build.ps1 koyar — ikisinde de aynı yerden okunur.
+# Which copy was installed was invisible in the field. The single source of
+# truth is pyproject.toml: it sits at the root in the developer repo,
+# build.ps1 puts it in the installed tree — read from the same place in both.
 
 
-def test_surum_pyprojecttan_okunur() -> None:
-    """surum() pyproject.toml'daki version ile birebir aynı olmalı."""
+def test_version_is_read_from_pyproject() -> None:
+    """version() must match the version in pyproject.toml exactly."""
     import re
 
-    metin = (environment._root() / "pyproject.toml").read_text(encoding="utf-8")
-    beklenen = re.search(r'^version\s*=\s*"([^"]+)"', metin, re.M).group(1)
+    text = (environment._root() / "pyproject.toml").read_text(encoding="utf-8")
+    expected = re.search(r'^version\s*=\s*"([^"]+)"', text, re.M).group(1)
     environment.version.cache_clear()
     try:
-        assert environment.version() == beklenen
+        assert environment.version() == expected
     finally:
         environment.version.cache_clear()
 
 
-def test_surum_sahte_kokten_okunur(tmp_path: Path, monkeypatch) -> None:
-    """Kök nereye taşınırsa taşınsın (kurulu düzen dahil) oradaki
-    pyproject okunur — yol varsayımı değil, dosyanın kendisi konuşur."""
+def test_version_is_read_from_a_fake_root(tmp_path: Path, monkeypatch) -> None:
+    """Wherever the root moves (installed layout included) the pyproject
+    there is read — the file itself speaks, not a path assumption."""
     (tmp_path / "pyproject.toml").write_text(
         '[project]\nname = "dornick"\nversion = "9.9.9"\n', encoding="utf-8")
     monkeypatch.setattr(environment, "_root", lambda: tmp_path)
@@ -106,40 +107,40 @@ def test_surum_sahte_kokten_okunur(tmp_path: Path, monkeypatch) -> None:
         environment.version.cache_clear()
 
 
-def test_surum_bozuk_agacta_patlamaz(tmp_path: Path, monkeypatch) -> None:
-    """pyproject yoksa (elle bozulmuş kurulum) istisna değil, bir dizgi
-    dönmeli — arayüz sürümsüz de açılabilmeli."""
+def test_version_does_not_blow_up_on_a_broken_tree(tmp_path: Path, monkeypatch) -> None:
+    """Without pyproject (a hand-broken install) a string must come back, not
+    an exception — the UI must be able to open without a version too."""
     monkeypatch.setattr(environment, "_root", lambda: tmp_path)
     environment.version.cache_clear()
     try:
-        deger = environment.version()
-        assert isinstance(deger, str) and deger
+        value = environment.version()
+        assert isinstance(value, str) and value
     finally:
         environment.version.cache_clear()
 
 
-def test_surum_parcalama_v_onekini_ve_metni_yutar() -> None:
+def test_version_parsing_swallows_the_v_prefix_and_text() -> None:
     assert environment._parse_version("v0.2.10") == (0, 2, 10)
     assert environment._parse_version("0.2.2") == (0, 2, 2)
     assert environment._parse_version("surum yok") == ()
-    # Karşılaştırma sayısal: 0.2.10 > 0.2.9 (dizgi kıyası bunu ıskalar).
+    # The comparison is numeric: 0.2.10 > 0.2.9 (a string comparison misses this).
     assert environment._parse_version("0.2.10") > environment._parse_version("0.2.9")
 
 
-# -- güncelleme denetimi -------------------------------------------------
+# -- update check ----------------------------------------------------------
 #
-# YALNIZ elle tetiklenir (Ayarlar › Makine). Testler ağa hiç çıkmaz:
-# urlopen yerine sahte açıcı veriliyor.
+# Triggered MANUALLY only (Settings › Machine). The tests never go to the
+# network: a fake opener is passed instead of urlopen.
 
 
-class _SahteCevap:
-    def __init__(self, govde: dict) -> None:
+class _FakeResponse:
+    def __init__(self, body: dict) -> None:
         import json
 
-        self._govde = json.dumps(govde).encode("utf-8")
+        self._body = json.dumps(body).encode("utf-8")
 
     def read(self) -> bytes:
-        return self._govde
+        return self._body
 
     def __enter__(self):
         return self
@@ -148,22 +149,22 @@ class _SahteCevap:
         pass
 
 
-def test_guncelleme_yeni_surum_varsa_soyler(monkeypatch) -> None:
+def test_update_check_reports_a_newer_version(monkeypatch) -> None:
     monkeypatch.setattr(environment, "version", lambda: "0.2.2")
-    cevap = environment.check_update(
-        _ac=lambda *a, **k: _SahteCevap(
+    answer = environment.check_update(
+        _ac=lambda *a, **k: _FakeResponse(
             {"tag_name": "v0.9.0", "html_url": "https://ornek/yayin"}))
-    assert cevap["ok"] and cevap["yeni"] == "0.9.0"
-    assert cevap["url"] == "https://ornek/yayin"
-    assert cevap["mevcut"] == "0.2.2"
+    assert answer["ok"] and answer["yeni"] == "0.9.0"
+    assert answer["url"] == "https://ornek/yayin"
+    assert answer["mevcut"] == "0.2.2"
 
 
-def test_guncelleme_kurulum_varligini_bulur(monkeypatch) -> None:
-    """Yayına eklenmiş kurulum .exe'si doğrudan indirme bağlantısı olarak
-    dönüyor; birden çok exe varsa adında setup/kurulum geçen yeğleniyor."""
+def test_update_check_finds_the_installer_asset(monkeypatch) -> None:
+    """The installer .exe attached to the release comes back as a direct
+    download link; with several exes the one named setup/kurulum is preferred."""
     monkeypatch.setattr(environment, "version", lambda: "0.2.2")
-    cevap = environment.check_update(
-        _ac=lambda *a, **k: _SahteCevap({
+    answer = environment.check_update(
+        _ac=lambda *a, **k: _FakeResponse({
             "tag_name": "v0.9.0", "html_url": "https://ornek/yayin",
             "assets": [
                 {"name": "araclar.exe",
@@ -171,75 +172,75 @@ def test_guncelleme_kurulum_varligini_bulur(monkeypatch) -> None:
                 {"name": "dornick-setup-0.9.0.exe",
                  "browser_download_url": "https://ornek/setup.exe"},
             ]}))
-    assert cevap["yeni"] == "0.9.0"
-    assert cevap["indirme"] == "https://ornek/setup.exe"
+    assert answer["yeni"] == "0.9.0"
+    assert answer["indirme"] == "https://ornek/setup.exe"
 
 
-def test_guncelleme_varliksiz_yayinda_indirme_bos(monkeypatch) -> None:
-    """Yayında exe yoksa indirme boş kalır — arayüz yayın sayfasına düşer."""
+def test_update_check_leaves_download_empty_without_assets(monkeypatch) -> None:
+    """Without an exe in the release the download stays empty — the UI falls back to the release page."""
     monkeypatch.setattr(environment, "version", lambda: "0.2.2")
-    cevap = environment.check_update(
-        _ac=lambda *a, **k: _SahteCevap(
+    answer = environment.check_update(
+        _ac=lambda *a, **k: _FakeResponse(
             {"tag_name": "v0.9.0", "html_url": "https://ornek/yayin"}))
-    assert cevap["yeni"] == "0.9.0" and cevap["indirme"] == ""
+    assert answer["yeni"] == "0.9.0" and answer["indirme"] == ""
 
 
-def test_guncelleme_ayni_surumde_sessiz(monkeypatch) -> None:
+def test_update_check_is_silent_on_the_same_version(monkeypatch) -> None:
     monkeypatch.setattr(environment, "version", lambda: "0.2.2")
-    cevap = environment.check_update(
-        _ac=lambda *a, **k: _SahteCevap({"tag_name": "v0.2.2"}))
-    assert cevap["ok"] and cevap["yeni"] == "" and cevap["hata"] == ""
+    answer = environment.check_update(
+        _ac=lambda *a, **k: _FakeResponse({"tag_name": "v0.2.2"}))
+    assert answer["ok"] and answer["yeni"] == "" and answer["hata"] == ""
 
 
-def test_guncelleme_agsizken_kibar_hata(monkeypatch) -> None:
-    """Ağ yoksa istisna değil, insan diliyle bir hata metni dönmeli."""
+def test_update_check_gives_a_polite_error_offline(monkeypatch) -> None:
+    """Without network a human-language error text must come back, not an exception."""
     import urllib.error
 
-    def agsiz(*a, **k):
+    def offline(*a, **k):
         raise urllib.error.URLError("dns yok")
 
     monkeypatch.setattr(environment, "version", lambda: "0.2.2")
-    cevap = environment.check_update(_ac=agsiz)
-    assert not cevap["ok"] and cevap["yeni"] == ""
-    assert "internet" in cevap["hata"].lower() or "ağ" in cevap["hata"].lower()
+    answer = environment.check_update(_ac=offline)
+    assert not answer["ok"] and answer["yeni"] == ""
+    assert "internet" in answer["hata"].lower() or "ağ" in answer["hata"].lower()
 
 
-def test_guncelleme_yayin_yoksa_dogru_soyler(monkeypatch) -> None:
-    """404 (yayın hiç yapılmamış/depo görünmüyor) ağ hatasıyla karışmasın."""
+def test_update_check_says_so_when_there_is_no_release(monkeypatch) -> None:
+    """404 (no release ever published / repo not visible) must not be confused with a network error."""
     import io
     import urllib.error
 
-    def yok(*a, **k):
+    def missing(*a, **k):
         raise urllib.error.HTTPError("u", 404, "Not Found", {}, io.BytesIO(b""))
 
     monkeypatch.setattr(environment, "version", lambda: "0.2.2")
-    cevap = environment.check_update(_ac=yok)
-    assert not cevap["ok"]
-    assert "sürüm" in cevap["hata"].lower() or "yayın" in cevap["hata"].lower()
+    answer = environment.check_update(_ac=missing)
+    assert not answer["ok"]
+    assert "sürüm" in answer["hata"].lower() or "yayın" in answer["hata"].lower()
 
 
-# -- uygulama içi güncelleme indirmesi (güvenlik) ----------------------
+# -- in-app update download (security) ---------------------------------
 #
-# İndirme+çalıştırma tehlikeli bir eylem: adres YALNIZ resmî GitHub yayın
-# altyapısından olmalı (host süzgeci) ve nihai (yönlendirme sonrası) adres
-# de aynı süzgeçten geçmeli. Kesik/küçük indirme çalıştırılmamalı.
+# Download+run is a dangerous action: the address must be ONLY the official
+# GitHub release infrastructure (host filter) and the final (post-redirect)
+# address must pass the same filter. A truncated/small download must not run.
 
 
-class _SahteIndirme:
-    def __init__(self, govde: bytes, nihai: str) -> None:
-        self._govde = govde
-        self._nihai = nihai
-        self.headers = {"Content-Length": str(len(govde))}
-        self._okundu = False
+class _FakeDownload:
+    def __init__(self, body: bytes, final: str) -> None:
+        self._body = body
+        self._final = final
+        self.headers = {"Content-Length": str(len(body))}
+        self._read = False
 
     def geturl(self) -> str:
-        return self._nihai
+        return self._final
 
     def read(self, n: int = -1) -> bytes:
-        if self._okundu:
+        if self._read:
             return b""
-        self._okundu = True
-        return self._govde
+        self._read = True
+        return self._body
 
     def __enter__(self):
         return self
@@ -248,48 +249,48 @@ class _SahteIndirme:
         pass
 
 
-def test_indirme_yalniz_guvenilir_adresten(tmp_path: Path) -> None:
-    """github.com / *.githubusercontent.com dışına indirme REDDEDİLİR."""
+def test_download_only_from_a_trusted_address(tmp_path: Path) -> None:
+    """Downloads outside github.com / *.githubusercontent.com are REFUSED."""
     import pytest
 
     with pytest.raises(ValueError, match="[Gg]üvenil"):
         environment.download_update("https://evil.example/setup.exe", tmp_path,
-                               _ac=lambda *a, **k: _SahteIndirme(b"x" * (2 * 1024 * 1024), "https://evil.example/setup.exe"))
+                               _ac=lambda *a, **k: _FakeDownload(b"x" * (2 * 1024 * 1024), "https://evil.example/setup.exe"))
 
 
-def test_indirme_yonlendirme_guvenilmezse_reddeder(tmp_path: Path) -> None:
-    """İlk adres github olsa da NİHAİ adres güvenilmezse indirme durur."""
+def test_download_refuses_an_untrusted_redirect(tmp_path: Path) -> None:
+    """Even if the first address is github, the download stops if the FINAL address is untrusted."""
     import pytest
 
-    govde = b"MZ" + b"0" * (2 * 1024 * 1024)
-    ac = lambda *a, **k: _SahteIndirme(govde, "https://evil.example/gizli.exe")
+    body = b"MZ" + b"0" * (2 * 1024 * 1024)
+    opener = lambda *a, **k: _FakeDownload(body, "https://evil.example/gizli.exe")
     with pytest.raises(ValueError, match="[Yy]önlendirme"):
         environment.download_update(
             "https://github.com/dornick-dev/dornick/releases/download/v9/dornick-setup-9.exe",
-            tmp_path, ad="dornick-setup-9.exe", _ac=ac)
+            tmp_path, ad="dornick-setup-9.exe", _ac=opener)
 
 
-def test_indirme_basarili_dosya_yazar(tmp_path: Path) -> None:
-    """Güvenilir adres + yeterli boyut: dosya diske iner ve yolu döner."""
-    govde = b"MZ" + b"0" * (2 * 1024 * 1024)
-    nihai = "https://objects.githubusercontent.com/gh/abc"
-    ac = lambda *a, **k: _SahteIndirme(govde, nihai)
-    yuzdeler: list[int] = []
-    yol = environment.download_update(
+def test_successful_download_writes_the_file(tmp_path: Path) -> None:
+    """Trusted address + sufficient size: the file lands on disk and its path is returned."""
+    body = b"MZ" + b"0" * (2 * 1024 * 1024)
+    final = "https://objects.githubusercontent.com/gh/abc"
+    opener = lambda *a, **k: _FakeDownload(body, final)
+    progress_calls: list[int] = []
+    path = environment.download_update(
         "https://github.com/dornick-dev/dornick/releases/download/v9/dornick-setup-9.exe",
-        tmp_path, ad="dornick-setup-9.exe", beklenen_boyut=len(govde),
-        progress=lambda a, t: yuzdeler.append(a), _ac=ac)
-    assert yol.is_file() and yol.name == "dornick-setup-9.exe"
-    assert yol.read_bytes() == govde
-    assert yuzdeler  # ilerleme çağrıldı
+        tmp_path, ad="dornick-setup-9.exe", beklenen_boyut=len(body),
+        progress=lambda a, t: progress_calls.append(a), _ac=opener)
+    assert path.is_file() and path.name == "dornick-setup-9.exe"
+    assert path.read_bytes() == body
+    assert progress_calls  # progress was called
 
 
-def test_indirme_cok_kucukse_reddeder(tmp_path: Path) -> None:
-    """1 MB altı bir 'kurulum' olamaz — çalıştırılacak dosya inmez."""
+def test_download_refuses_a_tiny_file(tmp_path: Path) -> None:
+    """Under 1 MB cannot be an 'installer' — the file to be executed does not land."""
     import pytest
 
-    ac = lambda *a, **k: _SahteIndirme(b"kucuk", "https://github.com/x/y/z.exe")
+    opener = lambda *a, **k: _FakeDownload(b"kucuk", "https://github.com/x/y/z.exe")
     with pytest.raises(ValueError, match="küçük"):
         environment.download_update(
             "https://github.com/dornick-dev/dornick/releases/download/v9/z.exe",
-            tmp_path, ad="z.exe", _ac=ac)
+            tmp_path, ad="z.exe", _ac=opener)

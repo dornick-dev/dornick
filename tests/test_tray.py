@@ -1,9 +1,9 @@
-"""Tepsi ve kapanış davranışı.
+"""Tray and shutdown behaviour.
 
-X pencereyi GİZLER (uygulama tepside yaşar), tepsiden Çıkış ise ajan
-meşgulken önce sorar — süren iş sessizce ölmesin. Buradaki testler görsel
-tepsiyi (pystray) değil, karar mantığını sınıyor: pencere yokken de aynı
-kararlar aynı sonucu vermeli.
+X HIDES the window (the app lives in the tray), while Exit from the tray
+asks first when the agent is busy — the running job must not die silently.
+The tests here exercise the decision logic, not the visual tray (pystray):
+the same decisions must give the same result even without a window.
 """
 
 from __future__ import annotations
@@ -11,68 +11,68 @@ from __future__ import annotations
 from dornick import tray
 
 
-# -- X davranışı: gizle mi kapat mı --------------------------------------
+# -- X behaviour: hide or close ------------------------------------------
 
 
 def test_close_hides_when_the_tray_is_alive() -> None:
-    """Tepsi yaşıyorsa X = gizle: iş, duyular ve zamanlanmış görevler sürer."""
-    assert tray.close_decision(tepsi_acik=True) == "gizle"
+    """If the tray is alive, X = hide: work, senses and scheduled tasks go on."""
+    assert tray.close_decision(tray_alive=True) == "gizle"
 
 
 def test_close_really_closes_without_a_tray() -> None:
-    """Tepsi yoksa gizlemek programı kapanmaz hale getirirdi: X = kapat."""
-    assert tray.close_decision(tepsi_acik=False) == "kapat"
+    """Without a tray, hiding would make the program impossible to close: X = close."""
+    assert tray.close_decision(tray_alive=False) == "kapat"
 
 
-# -- Çıkış bekçisi: meşgulken onay ---------------------------------------
+# -- Exit guard: confirmation while busy ---------------------------------
 
 
 def test_quit_asks_nothing_when_idle() -> None:
-    """Boştayken Çıkış sorgusuzdur — onay fonksiyonu HİÇ çağrılmaz."""
+    """When idle, Exit asks nothing — the confirm function is NEVER called."""
     asked: list[str] = []
 
     def confirm(q: str) -> bool:
         asked.append(q)
         return False
 
-    assert tray.exit_decision(mesgul=False, onayla=confirm) is True
+    assert tray.exit_decision(busy=False, confirm=confirm) is True
     assert asked == []
 
 
 def test_quit_while_busy_asks_and_respects_no() -> None:
-    """Meşgulken soru sorulur; Hayır dersen çıkılmaz, iş sürer."""
+    """While busy the question is asked; say No and it doesn't quit, the work goes on."""
     asked: list[str] = []
 
-    def hayir(q: str) -> bool:
+    def say_no(q: str) -> bool:
         asked.append(q)
         return False
 
-    assert tray.exit_decision(mesgul=True, onayla=hayir) is False
+    assert tray.exit_decision(busy=True, confirm=say_no) is False
     assert asked == [tray.EXIT_QUESTION]
-    assert "yarım kalır" in tray.EXIT_QUESTION   # kullanıcı neyi göze aldığını okur
+    assert "yarım kalır" in tray.EXIT_QUESTION   # the user reads what they are risking
 
 
 def test_quit_while_busy_respects_yes() -> None:
-    assert tray.exit_decision(mesgul=True, onayla=lambda _q: True) is True
+    assert tray.exit_decision(busy=True, confirm=lambda _q: True) is True
 
 
 def test_quit_never_traps_the_user() -> None:
-    """Onay sorulamıyorsa (diyalog yok/patladı) açık Çıkış jesti kazanır:
-    "çıkamıyorum" tuzağı, yarım işten daha kötü."""
-    assert tray.exit_decision(mesgul=True, onayla=None) is True
+    """If confirmation can't be asked (no dialog / it blew up) the explicit
+    Exit gesture wins: the "I can't quit" trap is worse than unfinished work."""
+    assert tray.exit_decision(busy=True, confirm=None) is True
 
-    def patlar(_q: str) -> bool:
-        raise RuntimeError("diyalog kurulamadı")
+    def blows_up(_q: str) -> bool:
+        raise RuntimeError("dialog could not be built")
 
-    assert tray.exit_decision(mesgul=True, onayla=patlar) is True
+    assert tray.exit_decision(busy=True, confirm=blows_up) is True
 
 
-# -- Tray._quit: bekçi menüye gerçekten bağlı ----------------------------
+# -- Tray._quit: the guard is really wired to the menu -------------------
 
 
 def test_tray_quit_is_gated_by_the_busy_confirm() -> None:
-    """Menüdeki Çıkış, karar fonksiyonundan geçer: meşgul + Hayır → quit
-    çağrılmaz; meşgul + Evet → çağrılır."""
+    """Exit in the menu goes through the decision function: busy + No → quit
+    is not called; busy + Yes → it is called."""
     calls: list[str] = []
     box = {"busy": True, "answer": False}
 
@@ -85,7 +85,7 @@ def test_tray_quit_is_gated_by_the_busy_confirm() -> None:
     )
 
     t._quit()
-    assert calls == [], "Hayır dendi: çıkılmamalı"
+    assert calls == [], "No was said: must not quit"
 
     box["answer"] = True
     t._quit()
@@ -93,24 +93,24 @@ def test_tray_quit_is_gated_by_the_busy_confirm() -> None:
 
 
 def test_tray_quit_survives_a_broken_busy_probe() -> None:
-    """`busy` sorgusu patlarsa meşgul değil sayılır — çıkış kilitlenmez."""
+    """If the `busy` probe blows up it counts as not busy — the exit is not locked."""
     calls: list[str] = []
 
-    def bozuk() -> bool:
-        raise RuntimeError("köprü öldü")
+    def broken() -> bool:
+        raise RuntimeError("the bridge died")
 
     t = tray.Tray(
         show=lambda: None, hide=lambda: None,
         quit=lambda: calls.append("quit"),
-        busy=bozuk,
-        confirm=lambda _q: False,   # sorulsaydı Hayır derdi
+        busy=broken,
+        confirm=lambda _q: False,   # would have said No if asked
     )
     t._quit()
     assert calls == ["quit"]
 
 
 def test_tray_without_guards_keeps_the_old_behaviour() -> None:
-    """busy/confirm verilmeden kurulan tepsi (eski çağıranlar) sorgusuz çıkar."""
+    """A tray built without busy/confirm (old callers) quits without asking."""
     calls: list[str] = []
     t = tray.Tray(show=lambda: None, hide=lambda: None,
                   quit=lambda: calls.append("quit"))
@@ -118,61 +118,61 @@ def test_tray_without_guards_keeps_the_old_behaviour() -> None:
     assert calls == ["quit"]
 
 
-# -- X ile Çıkış'ın ayrımı ------------------------------------------------
+# -- Telling X apart from Exit -------------------------------------------
 #
-# İkisi de pencere katmanının aynı `closing` olayına düşüyor. Ayrımı bir
-# bayrak yapıyor; bayrak olmayınca Çıkış sessizce gizlemeye düşüyordu.
+# Both land on the same `closing` event of the window layer. A flag makes
+# the distinction; without the flag Exit silently fell through to hiding.
 
 
 def _shutdown() -> tuple[tray.Shutdown, list[str]]:
-    iz: list[str] = []
-    k = tray.Shutdown(gizle=lambda: iz.append("gizle"),
-                     yok_et=lambda: iz.append("yok et"))
-    return k, iz
+    trace: list[str] = []
+    k = tray.Shutdown(hide=lambda: trace.append("gizle"),
+                      destroy=lambda: trace.append("yok et"))
+    return k, trace
 
 
 def test_x_hides_and_cancels_the_close() -> None:
-    k, iz = _shutdown()
-    assert k.kapanabilir_mi() is False, "X kapanışı İPTAL etmeli"
-    assert iz == ["gizle"]
+    k, trace = _shutdown()
+    assert k.may_close() is False, "X must CANCEL the close"
+    assert trace == ["gizle"]
 
 
 def test_quit_from_the_tray_actually_closes() -> None:
-    """Canlıda kırılan tam bu zincirdi: kullanıcı Evet diyor, pencere
-    yok edilmeye çalışılıyor, `closing` kancası bunu bir X sanıp iptal
-    ediyor ve program kapanmıyordu."""
-    k, iz = _shutdown()
-    k.cik()
-    assert iz == ["yok et"], "Çıkış gizlemeye DÜŞMEMELİ"
-    assert k.kapanabilir_mi() is True, "kapanış artık iptal edilmemeli"
-    assert iz == ["yok et"], "izin verirken bir daha gizlenmemeli"
+    """Exactly this chain broke live: the user says Yes, the window is about
+    to be destroyed, the `closing` hook takes it for an X and cancels, and
+    the program never closed."""
+    k, trace = _shutdown()
+    k.quit()
+    assert trace == ["yok et"], "Exit must NOT fall through to hiding"
+    assert k.may_close() is True, "the close must no longer be cancelled"
+    assert trace == ["yok et"], "must not hide again while allowing"
 
 
 def test_the_flag_only_lifts_for_a_real_quit() -> None:
-    """Bayrak kendiliğinden kalkmıyor: birkaç X üst üste hep gizler."""
-    k, iz = _shutdown()
+    """The flag does not lift by itself: several X presses in a row always hide."""
+    k, trace = _shutdown()
     for _ in range(3):
-        assert k.kapanabilir_mi() is False
-    assert iz == ["gizle"] * 3
-    assert k.cikiliyor is False
-    k.cik()
-    assert k.cikiliyor is True
+        assert k.may_close() is False
+    assert trace == ["gizle"] * 3
+    assert k.quitting is False
+    k.quit()
+    assert k.quitting is True
 
 
-# -- Görev bitiş bildirimi / tepsi Görevler -------------------------------
+# -- Task-finished notification / tray Tasks -----------------------------
 
 
-def test_gorev_bildirim_ok_and_fail() -> None:
+def test_task_notification_ok_and_fail() -> None:
     assert tray.task_notification_text("Rapor", ok=True) == "Görev tamamlandı: Rapor"
     assert tray.task_notification_text("Rapor", ok=False) == "Görev hata verdi: Rapor"
 
 
-def test_gorev_bildirim_trims_long_title() -> None:
-    uzun = "x" * 100
-    metin = tray.task_notification_text(uzun, ok=True)
-    assert metin.startswith("Görev tamamlandı: ")
-    assert metin.endswith("…")
-    assert len(metin) < 120
+def test_task_notification_trims_long_title() -> None:
+    long_title = "x" * 100
+    text = tray.task_notification_text(long_title, ok=True)
+    assert text.startswith("Görev tamamlandı: ")
+    assert text.endswith("…")
+    assert len(text) < 120
 
 
 def test_tray_jobs_menu_calls_jobs_or_falls_back_to_show() -> None:
@@ -193,7 +193,7 @@ def test_tray_jobs_menu_calls_jobs_or_falls_back_to_show() -> None:
     assert calls == ["show"]
 
 
-def test_arka_plan_notu_mentions_tasks() -> None:
+def test_background_note_mentions_tasks() -> None:
     assert "görev" in tray.BACKGROUND_NOTE.lower() or "otomasyon" in tray.BACKGROUND_NOTE.lower()
 
 
@@ -206,7 +206,7 @@ def test_toast_xml_embeds_logo_and_escapes() -> None:
 
 
 def test_installer_asks_keep_or_wipe_data() -> None:
-    """Kurulumda eski veri (görevler dahil) koru / sıfırla seçenekleri durur."""
+    """The installer keeps the keep / wipe options for old data (tasks included)."""
     from pathlib import Path
     iss = Path(__file__).resolve().parents[1] / "installer" / "dornick.iss"
     text = iss.read_text(encoding="utf-8-sig")

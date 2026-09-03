@@ -61,7 +61,7 @@ Yalnızca kullanıcının SÖYLEDİĞİ ya da doğrulanmış olanı yaz; tahmin 
 ilişkisizse cümle yerine 'ilişkisiz' yaz.
 Kalıcı bilgi satırlarında kaynak id'lerini satır sonuna köşeli parantezle yaz.
 
-{govdeler}
+{bodies}
 """
 
 _CONTRADICTION = re.compile(r"^ÇELİŞKİ:\s*(\S+)\s+vs\s+(\S+)", re.IGNORECASE)
@@ -176,7 +176,7 @@ def distil(
         if len(nodes) < MIN_CLUSTER:
             continue
         try:
-            answer = model(PROMPT.format(n=MAX_KEEPERS, govdeler=_render(nodes)))
+            answer = model(PROMPT.format(n=MAX_KEEPERS, bodies=_render(nodes)))
         except Exception as exc:
             report.status = f"kısmi: model hatası ({exc})"
             continue
@@ -211,9 +211,9 @@ def _apply(store: Any, nodes: Sequence[Any], answer: str, report: DistilReport,
             a, b, reason = hit.group(1), hit.group(2), hit.group(3).strip()
             if a in ids and b in ids:
                 if reason.lower().startswith("ilişkisiz"):
-                    # Kesilmiyor, zayıflatılıyor: bir görüş üzerine yol
-                    # atılmaz. Sonradan birlikte kullanılırsa Adım 2 geri
-                    # güçlendirir.
+                    # Not cut, weakened: a path is not thrown away on a
+                    # single opinion. If they are later used together,
+                    # Step 2 strengthens it back.
                     store.update_edge(a, b, weight=UNRELATED_WEIGHT,
                                          reason="ilişkisiz (damıtma)")
                 elif not store.update_edge(a, b, reason=reason[:200]):
@@ -285,8 +285,8 @@ def exam(
         return 0
     worse = False
     for key in ("prime_precision", "tuzak_sessizlik"):
-        eski, yeni = before.get(key), after.get(key)
-        if eski is not None and yeni is not None and yeni < eski:
+        old, new = before.get(key), after.get(key)
+        if old is not None and new is not None and new < old:
             worse = True
     if not worse:
         return 0

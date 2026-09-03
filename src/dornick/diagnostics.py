@@ -1,26 +1,27 @@
-"""Kod tanıları: yazılan dosyayı, daha kimse çalıştırmadan denetle.
+"""Code diagnostics: check a written file before anyone runs it.
 
-Neden var: ajanın en pahalı hata sınıfı "yazdım, çalıştırmadım, bitti dedim".
-Dosya diske düşüyor, tur kapanıyor, hata ancak kullanıcı sayfayı açtığında
-ortaya çıkıyor — ve o noktada modelin bağlamı çoktan dağılmış oluyor. Oysa
-her dilin zaten bir denetleyicisi var (Python'un derleyicisi, `php -l`,
-`node --check`); tek eksik, yazma bittiği anda onu koşturup sonucu ARACIN
-CEVABINA koymak. Model bir sonraki turda hatayı görür ve düzeltir.
+Why it exists: the agent's most expensive class of error is "I wrote it, I
+did not run it, I said done". The file lands on disk, the turn closes, the
+error only surfaces when the user opens the page — and by then the model's
+context has long scattered. Yet every language already has a checker
+(Python's compiler, `php -l`, `node --check`); the only missing piece was to
+run it the moment the write finished and put the result INTO THE TOOL'S
+REPLY. The model sees the error on the next turn and fixes it.
 
-Üç kural bu modülün omurgası:
+Three rules are the spine of this module:
 
-  1. **Asla hata uydurma.** Bulgular yalnızca gerçek bir denetleyicinin
-     çıktısından gelir. Kendi yazdığımız sezgisel tip analizi yok — yanlış
-     alarm, hiç bakmamaktan kötüdür: modeli olmayan bir hatayı "düzeltmeye"
-     gönderir.
-  2. **Asla "her şey yolunda" deme.** Temiz sonuç, "şu denetleyici şunu
-     görmedi" demektir. Her denetleyicinin görmediği bir hata sınıfı var
-     (`php -l` tip hatası görmez) ve bunu sonucun içinde açıkça yazıyoruz.
-  3. **Denetleyici yoksa sus, kurulum önerme.** "kontrol edilemedi" tek
-     satırla söylenir; makineyi düzenlemek modelin işi değil.
+  1. **Never invent an error.** Findings come only from a real checker's
+     output. No heuristic type analysis of our own — a false alarm is worse
+     than not looking at all: it sends the model off to "fix" an error that
+     does not exist.
+  2. **Never say "all is well".** A clean result means "that checker did not
+     see this". Every checker has a class of error it does not see (`php -l`
+     does not see type errors) and we write that explicitly into the result.
+  3. **No checker, stay quiet, do not suggest installing.** "could not be
+     checked" is said in one line; editing the machine is not the model's job.
 
-Denetleyici seçimi uzantıdan yapılır. Tanımadığımız uzantıda `denetle()`
-None döner — çağıran hiçbir şey eklemez, gürültü olmaz.
+The checker is chosen by extension. For an extension we do not know
+`denetle()` returns None — the caller adds nothing, there is no noise.
 """
 
 from __future__ import annotations
@@ -36,102 +37,103 @@ from pathlib import Path
 
 from . import environment
 
-# Denetleyiciye verilen süre tavanı. Bir yazma sonrası geri besleme bu kadar
-# beklerse zaten çok beklemiştir; aşarsa dürüstçe "kontrol edilemedi" denir.
+# Ceiling on the time given to a checker. If post-write feedback waits this
+# long it has already waited too long; past it we honestly say "could not be
+# checked".
 TIMEOUT = 20.0
 
-# Ham çıktının modele giden kırpılmış hali.
-MAX_HAM = 1500
+# The trimmed form of the raw output that goes to the model.
+MAX_RAW = 1500
 
-# Geri beslemede gösterilen en fazla bulgu. Gerisi sayıyla özetlenir:
-# ilk hata düzeltilince çoğu zaten kaybolur.
+# At most this many findings are shown in the feedback. The rest is
+# summarised as a count: once the first error is fixed most of them vanish.
 MAX_FINDINGS = 5
 
-# Devasa dosyalar (paketlenmiş bundle, üretilmiş veri) denetlenmez: hem
-# yavaş hem de ajanın elle yazdığı bir şey değil.
-MAX_BOYUT = 2_000_000
+# Huge files (packed bundles, generated data) are not checked: slow, and not
+# something the agent wrote by hand anyway.
+MAX_SIZE = 2_000_000
 
 
 @dataclass(slots=True)
 class Finding:
-    """Tek bir denetleyici bulgusu. `satir` bilinmiyorsa 0."""
+    """A single checker finding. `line` is 0 when unknown."""
 
-    satir: int
-    mesaj: str
-    dosya: str = ""
+    line: int
+    message: str
+    file: str = ""
 
 
 @dataclass(slots=True)
-class Tani:
-    """Bir dosyanın denetim sonucu.
+class Diagnosis:
+    """The check result for one file.
 
-    durum üç değerden biri:
-      temiz  denetleyici koştu, bulgu çıkmadı
-      hata   denetleyici koştu, bulgu çıktı
-      yok    denetleyici koşturulamadı (kurulu değil, zaman aşımı, çöktü)
+    status is one of three values:
+      temiz  the checker ran, no findings
+      hata   the checker ran, there are findings
+      yok    the checker could not be run (not installed, timeout, crashed)
     """
 
-    dosya: str
-    dil: str
-    denetleyici: str
+    file: str
+    language: str
+    checker: str
     status: str
-    bulgular: list[Finding] = field(default_factory=list)
-    ham: str = ""
-    # Bu denetleyicinin GÖREMEDİĞİ hata sınıfları. Temiz sonucun yanında
-    # yazılır ki "kontrol ettim, sağlam" yanılsaması doğmasın.
-    kapsam: str = ""
-    # durum == "yok" iken: neden koşturulamadı.
-    neden: str = ""
+    findings: list[Finding] = field(default_factory=list)
+    raw: str = ""
+    # The error classes this checker CANNOT see. Written next to a clean
+    # result so that the illusion "I checked it, it is solid" does not arise.
+    scope: str = ""
+    # While status == "yok": why it could not be run.
+    reason: str = ""
 
     @property
     def faulty(self) -> bool:
         return self.status == "hata"
 
     def metin(self) -> str:
-        """Araç sonucuna eklenen insan (ve model) okur metin."""
-        ad = Path(self.dosya).name
+        """The human- (and model-) readable text appended to the tool result."""
+        name = Path(self.file).name
         if self.status == "yok":
-            return f"tanı: {ad} kontrol edilemedi — {self.neden}."
+            return f"tanı: {name} kontrol edilemedi — {self.reason}."
 
         if self.status == "temiz":
-            son = f"tanı: temiz — {self.denetleyici} bu dosyada hata görmedi."
-            if self.kapsam:
-                son += f" ({self.kapsam})"
-            return son
+            closing = f"tanı: temiz — {self.checker} bu dosyada hata görmedi."
+            if self.scope:
+                closing += f" ({self.scope})"
+            return closing
 
-        satirlar = [f"tanı: {self.denetleyici} {len(self.bulgular)} hata buldu:"]
-        for bulgu in self.bulgular[:MAX_FINDINGS]:
-            yer = f"satır {bulgu.satir}" if bulgu.satir else "yer belirsiz"
-            satirlar.append(f"  {yer}: {bulgu.mesaj}")
-        kalan = len(self.bulgular) - MAX_FINDINGS
-        if kalan > 0:
-            satirlar.append(f"  ... {kalan} bulgu daha.")
-        satirlar.append(
-            f"Bu hatalar senin az önce yazdığın dosyada ({ad}). "
+        lines = [f"tanı: {self.checker} {len(self.findings)} hata buldu:"]
+        for finding in self.findings[:MAX_FINDINGS]:
+            place = f"satır {finding.line}" if finding.line else "yer belirsiz"
+            lines.append(f"  {place}: {finding.message}")
+        remaining = len(self.findings) - MAX_FINDINGS
+        if remaining > 0:
+            lines.append(f"  ... {remaining} bulgu daha.")
+        lines.append(
+            f"Bu hatalar senin az önce yazdığın dosyada ({name}). "
             "Düzeltmeden devam etme."
         )
-        return "\n".join(satirlar)
+        return "\n".join(lines)
 
     def detay(self) -> dict:
-        """Arayüzün rozet çizebilmesi için makine okur hali."""
+        """Machine-readable form so the UI can draw a badge."""
         return {
-            "dosya": self.dosya,
-            "dil": self.dil,
-            "denetleyici": self.denetleyici,
+            "dosya": self.file,
+            "dil": self.language,
+            "denetleyici": self.checker,
             "durum": self.status,
             "bulgular": [
-                {"satir": b.satir, "mesaj": b.mesaj} for b in self.bulgular
+                {"satir": f.line, "mesaj": f.message} for f in self.findings
             ],
         }
 
 
-# -- denetleyici bulma --------------------------------------------------
+# -- finding the checker ------------------------------------------------
 #
-# Windows'ta kurulu araçlar PATH'te olmayabiliyor: winget paketleri kendi
-# klasörlerinde, XAMPP/Laragon kendi ağacında duruyor. PATH'e bakıp "yok"
-# demek, kurulu bir denetleyiciyi görmezden gelmek olurdu.
+# On Windows installed tools may not be on PATH: winget packages sit in their
+# own folders, XAMPP/Laragon in their own tree. Looking at PATH and saying
+# "missing" would ignore an installed checker.
 
-_EK_YERLER: dict[str, tuple[str, ...]] = {
+_EXTRA_LOCATIONS: dict[str, tuple[str, ...]] = {
     "php": (
         r"~\AppData\Local\Microsoft\WinGet\Packages\PHP.PHP.*\php.exe",
         r"C:\xampp*\php\php.exe",
@@ -142,130 +144,132 @@ _EK_YERLER: dict[str, tuple[str, ...]] = {
 
 
 @lru_cache(maxsize=32)
-def checker_path(ad: str) -> str | None:
-    """`ad` adlı çalıştırılabilirin tam yolu; bulunamazsa None.
+def checker_path(name: str) -> str | None:
+    """Full path of the executable called `name`; None if not found.
 
-    Sonuç önbelleklenir — her yazmada diski taramanın anlamı yok. Testler
-    `denetleyici_yolu.cache_clear()` ile temizler.
+    The result is cached — there is no point scanning the disk on every
+    write. Tests clear it with `checker_path.cache_clear()`.
     """
     import shutil
 
-    if yol := shutil.which(ad):
-        return yol
-    for desen in _EK_YERLER.get(ad, ()):
-        genis = Path(desen).expanduser()
-        kok = Path(genis.anchor)
+    if path := shutil.which(name):
+        return path
+    for pattern in _EXTRA_LOCATIONS.get(name, ()):
+        expanded = Path(pattern).expanduser()
+        root = Path(expanded.anchor)
         try:
-            adaylar = sorted(kok.glob(str(genis.relative_to(kok))))
-        except (OSError, ValueError):  # pragma: no cover - bozuk desen/izin
+            candidates = sorted(root.glob(str(expanded.relative_to(root))))
+        except (OSError, ValueError):  # pragma: no cover - broken pattern/permission
             continue
-        for aday in adaylar:
-            if aday.is_file():
-                return str(aday)
+        for candidate in candidates:
+            if candidate.is_file():
+                return str(candidate)
     return None
 
 
-def _kos(komut: list[str], zaman_asimi: float) -> tuple[int, str] | None:
-    """Denetleyiciyi koşturur: (çıkış kodu, çıktı). Bitmezse None.
+def _run(command: list[str], timeout: float) -> tuple[int, str] | None:
+    """Runs the checker: (exit code, output). None if it does not finish.
 
-    Konsol penceresi açtırmayan bayraklarla: dornick pythonw altında koşarken
-    her denetim ekranda bir cmd penceresi parlatırdı.
+    With flags that keep a console window from opening: while dornick runs
+    under pythonw every check used to flash a cmd window on the screen.
     """
     try:
-        sonuc = subprocess.run(
-            komut,
+        result = subprocess.run(
+            command,
             capture_output=True,
-            timeout=zaman_asimi,
+            timeout=timeout,
             **environment.quiet_flags(),
         )
     except subprocess.TimeoutExpired:
         return None
-    ciktilar = (sonuc.stdout or b"") + b"\n" + (sonuc.stderr or b"")
-    # Satır sonları tekleştiriliyor: Windows'un \r'si satır sonu deseninin
-    # ($) önünde durup satır numarasını okunamaz hale getiriyordu.
-    metin = ciktilar.decode("utf-8", errors="replace").replace("\r\n", "\n")
-    return sonuc.returncode, metin.replace("\r", "\n").strip()
+    streams = (result.stdout or b"") + b"\n" + (result.stderr or b"")
+    # Line endings are unified: Windows' \r used to sit in front of the
+    # end-of-line pattern ($) and make the line number unreadable.
+    text = streams.decode("utf-8", errors="replace").replace("\r\n", "\n")
+    return result.returncode, text.replace("\r", "\n").strip()
 
 
-def _kirp(metin: str, limit: int = MAX_HAM) -> str:
-    return metin if len(metin) <= limit else metin[:limit] + "\n... [kırpıldı]"
+def _trim(text: str, limit: int = MAX_RAW) -> str:
+    return text if len(text) <= limit else text[:limit] + "\n... [kırpıldı]"
 
 
-# -- çıktı ayrıştırıcıları ----------------------------------------------
+# -- output parsers -----------------------------------------------------
 #
-# Ayrı fonksiyonlar: denetleyici makinede kurulu olmasa da ayrıştırma
-# sınanabilsin. Kurulu olmayan bir aracın çıktısını doğru okuduğumuzu ancak
-# böyle kanıtlayabiliyoruz.
+# Separate functions: so that parsing can be tested even when the checker is
+# not installed on the machine. This is the only way we can prove that we
+# read the output of a tool that is not installed correctly.
 
-# ruff/pyflakes: "yol:satır:sütun: mesaj" (sütun kimi sürümde yok)
-_PYSATIR = re.compile(r"^(?P<dosya>.+?):(?P<satir>\d+)(?::\d+)?: (?P<mesaj>.+)$")
+# ruff/pyflakes: "path:line:column: message" (the column is absent in some versions)
+_PY_LINE = re.compile(r"^(?P<file>.+?):(?P<line>\d+)(?::\d+)?: (?P<message>.+)$")
 
-# php -l: "PHP Parse error:  syntax error, ... in DOSYA on line 4"
-# "PHP " öneki php.ini'ye bağlı: aynı hata hem önekli (stderr) hem öneksiz
-# (stdout) gelebiliyor — ikisini de tanıyıp sonra tekrarları eliyoruz.
-_PHPSATIR = re.compile(
-    r"^(?:PHP )?(?:Parse|Fatal) error:\s*(?P<mesaj>.*?) in (?P<dosya>.*) "
-    r"on line (?P<satir>\d+)"
+# php -l: "PHP Parse error:  syntax error, ... in FILE on line 4"
+# The "PHP " prefix depends on php.ini: the same error can arrive both with
+# the prefix (stderr) and without (stdout) — we recognise both and then drop
+# the duplicates.
+_PHP_LINE = re.compile(
+    r"^(?:PHP )?(?:Parse|Fatal) error:\s*(?P<message>.*?) in (?P<file>.*) "
+    r"on line (?P<line>\d+)"
 )
 
-# node --check: ilk satır "DOSYA:SATIR", sonra kod, sonra "SyntaxError: mesaj"
-_NODEYER = re.compile(r"^(?P<dosya>.+):(?P<satir>\d+)$", re.MULTILINE)
-_NODEMESAJ = re.compile(r"^(?P<mesaj>\w*Error: .+)$", re.MULTILINE)
+# node --check: first line "FILE:LINE", then the code, then "SyntaxError: message"
+_NODE_LOCATION = re.compile(r"^(?P<file>.+):(?P<line>\d+)$", re.MULTILINE)
+_NODE_MESSAGE = re.compile(r"^(?P<message>\w*Error: .+)$", re.MULTILINE)
 
-# tsc: "dosya(12,5): error TS2322: mesaj"
-_TSSATIR = re.compile(
-    r"^(?P<dosya>.+?)\((?P<satir>\d+),\d+\): error (?P<mesaj>.+)$", re.MULTILINE
+# tsc: "file(12,5): error TS2322: message"
+_TS_LINE = re.compile(
+    r"^(?P<file>.+?)\((?P<line>\d+),\d+\): error (?P<message>.+)$", re.MULTILINE
 )
 
 
-def _py_findings(cikti: str) -> list[Finding]:
-    bulgular = []
-    for satir in cikti.splitlines():
-        if m := _PYSATIR.match(satir.strip()):
-            bulgular.append(
-                Finding(int(m["satir"]), m["mesaj"].strip(), m["dosya"].strip())
+def _py_findings(output: str) -> list[Finding]:
+    findings = []
+    for line in output.splitlines():
+        if m := _PY_LINE.match(line.strip()):
+            findings.append(
+                Finding(int(m["line"]), m["message"].strip(), m["file"].strip())
             )
-    return bulgular
+    return findings
 
 
-def _php_findings(cikti: str) -> list[Finding]:
-    bulgular: list[Finding] = []
-    gorulen: set[tuple[str, int, str]] = set()
-    for satir in cikti.splitlines():
-        if not (m := _PHPSATIR.match(satir.strip())):
+def _php_findings(output: str) -> list[Finding]:
+    findings: list[Finding] = []
+    seen: set[tuple[str, int, str]] = set()
+    for line in output.splitlines():
+        if not (m := _PHP_LINE.match(line.strip())):
             continue
-        bulgu = Finding(int(m["satir"]), m["mesaj"].strip(), m["dosya"].strip())
-        # Aynı hata önekli ve öneksiz iki kez gelir; modele bir kez gitsin.
-        imza = (bulgu.dosya, bulgu.satir, bulgu.mesaj)
-        if imza in gorulen:
+        finding = Finding(int(m["line"]), m["message"].strip(), m["file"].strip())
+        # The same error arrives twice, with and without the prefix; let it
+        # reach the model once.
+        signature = (finding.file, finding.line, finding.message)
+        if signature in seen:
             continue
-        gorulen.add(imza)
-        bulgular.append(bulgu)
-    return bulgular
+        seen.add(signature)
+        findings.append(finding)
+    return findings
 
 
-def _node_findings(cikti: str) -> list[Finding]:
-    yer = _NODEYER.search(cikti)
-    mesaj = _NODEMESAJ.search(cikti)
-    if not mesaj:
+def _node_findings(output: str) -> list[Finding]:
+    location = _NODE_LOCATION.search(output)
+    message = _NODE_MESSAGE.search(output)
+    if not message:
         return []
     return [
         Finding(
-            int(yer["satir"]) if yer else 0,
-            mesaj["mesaj"].strip(),
-            yer["dosya"].strip() if yer else "",
+            int(location["line"]) if location else 0,
+            message["message"].strip(),
+            location["file"].strip() if location else "",
         )
     ]
 
 
-def _ts_findings(cikti: str) -> list[Finding]:
+def _ts_findings(output: str) -> list[Finding]:
     return [
-        Finding(int(m["satir"]), m["mesaj"].strip(), m["dosya"].strip())
-        for m in _TSSATIR.finditer(cikti)
+        Finding(int(m["line"]), m["message"].strip(), m["file"].strip())
+        for m in _TS_LINE.finditer(output)
     ]
 
 
-# -- diller -------------------------------------------------------------
+# -- languages ----------------------------------------------------------
 
 UZANTILAR: dict[str, str] = {
     ".py": "python",
@@ -280,210 +284,212 @@ UZANTILAR: dict[str, str] = {
     ".yaml": "yaml",
     ".yml": "yaml",
 }
-# .jsx bilerek listede yok: `node --check` JSX sözdizimini tanımaz ve
-# sapasağlam bir dosyaya hata uydururdu.
+# .jsx is deliberately absent: `node --check` does not understand JSX syntax
+# and would invent errors for a perfectly sound file.
 
 
-def detect_language(yol: Path | str) -> str | None:
-    """Uzantıdan dil; tanımıyorsak None (= sessizce atla)."""
-    return UZANTILAR.get(Path(yol).suffix.lower())
+def detect_language(path: Path | str) -> str | None:
+    """Language from the extension; None if we do not know it (= skip silently)."""
+    return UZANTILAR.get(Path(path).suffix.lower())
 
 
-def desteklenir(yol: Path | str) -> bool:
-    return detect_language(yol) is not None
+def supported(path: Path | str) -> bool:
+    return detect_language(path) is not None
 
 
-def _python(yol: Path, zaman_asimi: float) -> Tani:
-    """Önce derleyici (her zaman var), sonra varsa ruff/pyflakes.
+def _python(path: Path, timeout: float) -> Diagnosis:
+    """The compiler first (always there), then ruff/pyflakes if present.
 
-    Derleyici sözdizimini görür; ruff/pyflakes bir adım öteye geçip tanımsız
-    isim, kullanılmayan içe aktarma gibi "çalıştırınca patlar" sınıfını da
-    yakalar. İkisi de yoksa yine de bir şey demiş oluyoruz — Python'un
-    derleyicisi yorumlayıcının kendisiyle gelir.
+    The compiler sees syntax; ruff/pyflakes go one step further and also
+    catch the "blows up when run" class such as undefined names and unused
+    imports. Even with neither we still say something — Python's compiler
+    ships with the interpreter itself.
     """
-    kapsam_temel = "çalışma zamanı hataları bu denetimin dışında"
+    base_scope = "çalışma zamanı hataları bu denetimin dışında"
     try:
-        kaynak = yol.read_text(encoding="utf-8", errors="replace")
+        source = path.read_text(encoding="utf-8", errors="replace")
     except OSError as exc:
-        return Tani(str(yol), "python", "python derleyicisi", "yok",
-                    neden=f"dosya okunamadı ({exc.strerror or exc})")
+        return Diagnosis(str(path), "python", "python derleyicisi", "yok",
+                         reason=f"dosya okunamadı ({exc.strerror or exc})")
 
     try:
-        compile(kaynak, str(yol), "exec")
+        compile(source, str(path), "exec")
     except SyntaxError as exc:
-        return Tani(
-            str(yol), "python", "python derleyicisi", "hata",
-            bulgular=[Finding(exc.lineno or 0, exc.msg or "sözdizimi hatası", str(yol))],
-            ham=f"{type(exc).__name__}: {exc}",
+        return Diagnosis(
+            str(path), "python", "python derleyicisi", "hata",
+            findings=[Finding(exc.lineno or 0, exc.msg or "sözdizimi hatası", str(path))],
+            raw=f"{type(exc).__name__}: {exc}",
         )
-    except ValueError as exc:  # kaynakta NUL baytı gibi
-        return Tani(
-            str(yol), "python", "python derleyicisi", "hata",
-            bulgular=[Finding(0, str(exc), str(yol))], ham=str(exc),
+    except ValueError as exc:  # a NUL byte in the source, for instance
+        return Diagnosis(
+            str(path), "python", "python derleyicisi", "hata",
+            findings=[Finding(0, str(exc), str(path))], raw=str(exc),
         )
 
-    # Sözdizimi sağlam. Daha derin bakabilecek bir araç var mı?
-    for ad, komut in (
+    # Syntax is sound. Is there a tool that can look deeper?
+    for name, arguments in (
         ("ruff", ["check", "--quiet", "--output-format=concise"]),
         ("pyflakes", []),
     ):
-        if (exe := checker_path(ad)) is None:
+        if (exe := checker_path(name)) is None:
             continue
-        sonuc = _kos([exe, *komut, str(yol)], zaman_asimi)
-        if sonuc is None:
-            break  # zaman aşımı: derleyici sonucuna güven, sessizce dur
-        _kod, cikti = sonuc
-        bulgular = _py_findings(cikti)
-        etiket = f"python derleyicisi + {ad}"
-        if bulgular:
-            return Tani(str(yol), "python", etiket, "hata",
-                        bulgular=bulgular, ham=_kirp(cikti))
-        return Tani(str(yol), "python", etiket, "temiz", kapsam=kapsam_temel)
+        result = _run([exe, *arguments, str(path)], timeout)
+        if result is None:
+            break  # timeout: trust the compiler result, stop quietly
+        _code, output = result
+        findings = _py_findings(output)
+        label = f"python derleyicisi + {name}"
+        if findings:
+            return Diagnosis(str(path), "python", label, "hata",
+                             findings=findings, raw=_trim(output))
+        return Diagnosis(str(path), "python", label, "temiz", scope=base_scope)
 
-    return Tani(
-        str(yol), "python", "python derleyicisi", "temiz",
-        kapsam="yalnızca sözdizimi denetlendi; tanımsız isim ve tip hataları "
-               "ancak çalıştırınca görünür",
+    return Diagnosis(
+        str(path), "python", "python derleyicisi", "temiz",
+        scope="yalnızca sözdizimi denetlendi; tanımsız isim ve tip hataları "
+              "ancak çalıştırınca görünür",
     )
 
 
-def _php(yol: Path, zaman_asimi: float) -> Tani:
-    """`php -l`: sözdizimi ve derleme zamanı ölümcül hataları.
+def _php(path: Path, timeout: float) -> Diagnosis:
+    """`php -l`: syntax and compile-time fatal errors.
 
-    Kapsamı hakkında dürüst olmak şart: `php -l` TİP hatası görmez. Bildirdiği
-    dönüş tipiyle uyuşmayan bir `return` (`: string` deyip nesne döndürmek)
-    ondan geçer ve ancak istek geldiğinde TypeError olur. Bunu temiz sonucun
-    yanına yazıyoruz ki model "linter geçti" diye rahatlamasın.
+    Being honest about its scope is essential: `php -l` does not see TYPE
+    errors. A `return` that disagrees with the declared return type (saying
+    `: string` and returning an object) passes it and only becomes a
+    TypeError when a request arrives. We write this next to the clean result
+    so the model does not relax with "the linter passed".
     """
     exe = checker_path("php")
     if exe is None:
-        return Tani(str(yol), "php", "php -l", "yok",
-                    neden="php bu makinede bulunamadı")
-    # -n: php.ini okunmasın — eksik eklenti uyarıları bulguya karışmasın.
-    sonuc = _kos([exe, "-n", "-l", str(yol)], zaman_asimi)
-    if sonuc is None:
-        return Tani(str(yol), "php", "php -l", "yok",
-                    neden=f"php -l {zaman_asimi:.0f} sn'de bitmedi")
-    kod, cikti = sonuc
-    bulgular = _php_findings(cikti)
-    if bulgular:
-        return Tani(str(yol), "php", "php -l", "hata",
-                    bulgular=bulgular, ham=_kirp(cikti))
-    if kod != 0:
-        # Çıkış kodu hata diyor ama satırı çözemedik: ham çıktıyı olduğu
-        # gibi ver, uydurma yapma.
-        return Tani(str(yol), "php", "php -l", "hata",
-                    bulgular=[Finding(0, cikti.splitlines()[0] if cikti else
-                                    f"çıkış kodu {kod}", str(yol))],
-                    ham=_kirp(cikti))
-    return Tani(str(yol), "php", "php -l", "temiz",
-                kapsam="php -l yalnızca sözdizimini görür; tip hataları "
-                       "(bildirilen dönüş tipiyle uyuşmayan return) ve "
-                       "bulunamayan sınıflar ancak çalıştırınca ortaya çıkar")
+        return Diagnosis(str(path), "php", "php -l", "yok",
+                         reason="php bu makinede bulunamadı")
+    # -n: do not read php.ini — missing-extension warnings must not mix into
+    # the findings.
+    result = _run([exe, "-n", "-l", str(path)], timeout)
+    if result is None:
+        return Diagnosis(str(path), "php", "php -l", "yok",
+                         reason=f"php -l {timeout:.0f} sn'de bitmedi")
+    code, output = result
+    findings = _php_findings(output)
+    if findings:
+        return Diagnosis(str(path), "php", "php -l", "hata",
+                         findings=findings, raw=_trim(output))
+    if code != 0:
+        # The exit code says error but we could not resolve the line: hand
+        # over the raw output as it is, do not invent.
+        return Diagnosis(str(path), "php", "php -l", "hata",
+                         findings=[Finding(0, output.splitlines()[0] if output else
+                                           f"çıkış kodu {code}", str(path))],
+                         raw=_trim(output))
+    return Diagnosis(str(path), "php", "php -l", "temiz",
+                     scope="php -l yalnızca sözdizimini görür; tip hataları "
+                           "(bildirilen dönüş tipiyle uyuşmayan return) ve "
+                           "bulunamayan sınıflar ancak çalıştırınca ortaya çıkar")
 
 
-def _js(yol: Path, zaman_asimi: float) -> Tani:
+def _js(path: Path, timeout: float) -> Diagnosis:
     exe = checker_path("node")
     if exe is None:
-        return Tani(str(yol), "js", "node --check", "yok",
-                    neden="node bu makinede bulunamadı")
-    sonuc = _kos([exe, "--check", str(yol)], zaman_asimi)
-    if sonuc is None:
-        return Tani(str(yol), "js", "node --check", "yok",
-                    neden=f"node --check {zaman_asimi:.0f} sn'de bitmedi")
-    kod, cikti = sonuc
-    if kod == 0:
-        return Tani(str(yol), "js", "node --check", "temiz",
-                    kapsam="yalnızca sözdizimi; tanımsız değişken ve tip "
-                           "hataları ancak çalıştırınca görünür")
-    bulgular = _node_findings(cikti) or [
-        Finding(0, cikti.splitlines()[0] if cikti else f"çıkış kodu {kod}", str(yol))
+        return Diagnosis(str(path), "js", "node --check", "yok",
+                         reason="node bu makinede bulunamadı")
+    result = _run([exe, "--check", str(path)], timeout)
+    if result is None:
+        return Diagnosis(str(path), "js", "node --check", "yok",
+                         reason=f"node --check {timeout:.0f} sn'de bitmedi")
+    code, output = result
+    if code == 0:
+        return Diagnosis(str(path), "js", "node --check", "temiz",
+                         scope="yalnızca sözdizimi; tanımsız değişken ve tip "
+                               "hataları ancak çalıştırınca görünür")
+    findings = _node_findings(output) or [
+        Finding(0, output.splitlines()[0] if output else f"çıkış kodu {code}", str(path))
     ]
-    return Tani(str(yol), "js", "node --check", "hata",
-                bulgular=bulgular, ham=_kirp(cikti))
+    return Diagnosis(str(path), "js", "node --check", "hata",
+                     findings=findings, raw=_trim(output))
 
 
-def _tsconfig(yol: Path) -> Path | None:
-    """Dosyanın üstünde bir tsconfig.json var mı? (proje sınırı)"""
-    for klasor in [yol.parent, *yol.parent.parents]:
-        aday = klasor / "tsconfig.json"
-        if aday.is_file():
-            return aday
-        if (klasor / ".git").exists():
+def _tsconfig(path: Path) -> Path | None:
+    """Is there a tsconfig.json above the file? (the project boundary)"""
+    for folder in [path.parent, *path.parent.parents]:
+        candidate = folder / "tsconfig.json"
+        if candidate.is_file():
+            return candidate
+        if (folder / ".git").exists():
             break
     return None
 
 
-def _ts(yol: Path, zaman_asimi: float) -> Tani:
-    """TypeScript ancak proje bağlamında anlamlı: tsconfig yoksa hiç deneme.
+def _ts(path: Path, timeout: float) -> Diagnosis:
+    """TypeScript is only meaningful in project context: no tsconfig, no attempt.
 
-    Tek dosyayı projeden koparıp derlemek, gerçekte olmayan "modül bulunamadı"
-    hataları üretirdi — birinci kuralın ihlali.
+    Compiling a single file torn from its project would produce "module not
+    found" errors that do not really exist — a violation of the first rule.
     """
-    if _tsconfig(yol) is None:
-        return Tani(str(yol), "ts", "tsc", "yok",
-                    neden="tsconfig.json bulunamadı, proje bağlamı olmadan "
-                          "TypeScript denetlenemez")
+    if _tsconfig(path) is None:
+        return Diagnosis(str(path), "ts", "tsc", "yok",
+                         reason="tsconfig.json bulunamadı, proje bağlamı olmadan "
+                                "TypeScript denetlenemez")
     exe = checker_path("npx") or checker_path("npx.cmd")
     if exe is None:
-        return Tani(str(yol), "ts", "tsc", "yok", neden="npx bulunamadı")
-    sonuc = _kos([exe, "--no-install", "tsc", "--noEmit", str(yol)], zaman_asimi)
-    if sonuc is None:
-        return Tani(str(yol), "ts", "tsc", "yok",
-                    neden=f"tsc {zaman_asimi:.0f} sn'de bitmedi")
-    kod, cikti = sonuc
-    bulgular = _ts_findings(cikti)
-    if bulgular:
-        return Tani(str(yol), "ts", "tsc", "hata",
-                    bulgular=bulgular, ham=_kirp(cikti))
-    if kod != 0:
-        # tsc kurulu değilse npx --no-install burada patlar: bu bir kod
-        # hatası değil, denetleyicinin yokluğu.
-        return Tani(str(yol), "ts", "tsc", "yok",
-                    neden="tsc çalıştırılamadı (projede kurulu olmayabilir)")
-    return Tani(str(yol), "ts", "tsc", "temiz",
-                kapsam="tsc çalışma zamanı davranışını değil tipleri denetler")
+        return Diagnosis(str(path), "ts", "tsc", "yok", reason="npx bulunamadı")
+    result = _run([exe, "--no-install", "tsc", "--noEmit", str(path)], timeout)
+    if result is None:
+        return Diagnosis(str(path), "ts", "tsc", "yok",
+                         reason=f"tsc {timeout:.0f} sn'de bitmedi")
+    code, output = result
+    findings = _ts_findings(output)
+    if findings:
+        return Diagnosis(str(path), "ts", "tsc", "hata",
+                         findings=findings, raw=_trim(output))
+    if code != 0:
+        # If tsc is not installed, npx --no-install blows up here: that is
+        # not a code error but the absence of the checker.
+        return Diagnosis(str(path), "ts", "tsc", "yok",
+                         reason="tsc çalıştırılamadı (projede kurulu olmayabilir)")
+    return Diagnosis(str(path), "ts", "tsc", "temiz",
+                     scope="tsc çalışma zamanı davranışını değil tipleri denetler")
 
 
-def _json(yol: Path, zaman_asimi: float) -> Tani:
+def _json(path: Path, timeout: float) -> Diagnosis:
     try:
-        metin = yol.read_text(encoding="utf-8")
+        text = path.read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError) as exc:
-        return Tani(str(yol), "json", "json ayrıştırıcı", "yok",
-                    neden=f"dosya okunamadı ({exc})")
+        return Diagnosis(str(path), "json", "json ayrıştırıcı", "yok",
+                         reason=f"dosya okunamadı ({exc})")
     try:
-        json.loads(metin)
+        json.loads(text)
     except json.JSONDecodeError as exc:
-        return Tani(str(yol), "json", "json ayrıştırıcı", "hata",
-                    bulgular=[Finding(exc.lineno, exc.msg, str(yol))], ham=str(exc))
-    return Tani(str(yol), "json", "json ayrıştırıcı", "temiz",
-                kapsam="yalnızca biçim; alanların doğruluğu denetlenmedi")
+        return Diagnosis(str(path), "json", "json ayrıştırıcı", "hata",
+                         findings=[Finding(exc.lineno, exc.msg, str(path))], raw=str(exc))
+    return Diagnosis(str(path), "json", "json ayrıştırıcı", "temiz",
+                     scope="yalnızca biçim; alanların doğruluğu denetlenmedi")
 
 
-def _yaml(yol: Path, zaman_asimi: float) -> Tani:
+def _yaml(path: Path, timeout: float) -> Diagnosis:
     try:
         import yaml  # type: ignore
     except ImportError:
-        return Tani(str(yol), "yaml", "yaml ayrıştırıcı", "yok",
-                    neden="PyYAML kurulu değil")
+        return Diagnosis(str(path), "yaml", "yaml ayrıştırıcı", "yok",
+                         reason="PyYAML kurulu değil")
     try:
-        metin = yol.read_text(encoding="utf-8")
+        text = path.read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError) as exc:
-        return Tani(str(yol), "yaml", "yaml ayrıştırıcı", "yok",
-                    neden=f"dosya okunamadı ({exc})")
+        return Diagnosis(str(path), "yaml", "yaml ayrıştırıcı", "yok",
+                         reason=f"dosya okunamadı ({exc})")
     try:
-        list(yaml.safe_load_all(metin))
+        list(yaml.safe_load_all(text))
     except yaml.YAMLError as exc:
-        isaret = getattr(exc, "problem_mark", None)
-        mesaj = getattr(exc, "problem", None) or str(exc).splitlines()[0]
-        satir = (isaret.line + 1) if isaret is not None else 0
-        return Tani(str(yol), "yaml", "yaml ayrıştırıcı", "hata",
-                    bulgular=[Finding(satir, mesaj, str(yol))], ham=_kirp(str(exc)))
-    return Tani(str(yol), "yaml", "yaml ayrıştırıcı", "temiz",
-                kapsam="yalnızca biçim; alanların doğruluğu denetlenmedi")
+        mark = getattr(exc, "problem_mark", None)
+        message = getattr(exc, "problem", None) or str(exc).splitlines()[0]
+        line = (mark.line + 1) if mark is not None else 0
+        return Diagnosis(str(path), "yaml", "yaml ayrıştırıcı", "hata",
+                         findings=[Finding(line, message, str(path))], raw=_trim(str(exc)))
+    return Diagnosis(str(path), "yaml", "yaml ayrıştırıcı", "temiz",
+                     scope="yalnızca biçim; alanların doğruluğu denetlenmedi")
 
 
-_DENETLEYICILER = {
+_CHECKERS = {
     "python": _python,
     "php": _php,
     "js": _js,
@@ -493,109 +499,110 @@ _DENETLEYICILER = {
 }
 
 
-def denetle(yol: Path | str, *, zaman_asimi: float = TIMEOUT) -> Tani | None:
-    """Tek dosyayı denetler. Dil tanınmıyorsa None — çağıran hiçbir şey demez.
+def denetle(path: Path | str, *, timeout: float = TIMEOUT) -> Diagnosis | None:
+    """Checks a single file. None if the language is unknown — the caller says nothing.
 
-    Bloklayıcıdır (alt süreç çalıştırır); asenkron çağıranlar
-    `asyncio.to_thread` ile sarmalı.
+    Blocking (runs a subprocess); async callers should wrap it in
+    `asyncio.to_thread`.
     """
-    yol = Path(yol)
-    dil = detect_language(yol)
-    if dil is None:
+    path = Path(path)
+    language = detect_language(path)
+    if language is None:
         return None
     try:
-        if not yol.is_file():
+        if not path.is_file():
             return None
-        if yol.stat().st_size > MAX_BOYUT:
-            return Tani(str(yol), dil, "-", "yok",
-                        neden="dosya denetim için fazla büyük")
+        if path.stat().st_size > MAX_SIZE:
+            return Diagnosis(str(path), language, "-", "yok",
+                             reason="dosya denetim için fazla büyük")
     except OSError:
         return None
 
     try:
-        return _DENETLEYICILER[dil](yol, zaman_asimi)
-    except Exception as exc:  # denetleyici çöktü: sahte bulgu üretme
-        return Tani(str(yol), dil, "-", "yok",
-                    neden=f"denetleyici çalıştırılamadı ({type(exc).__name__})",
-                    ham=_kirp(str(exc)))
+        return _CHECKERS[language](path, timeout)
+    except Exception as exc:  # the checker crashed: do not produce a fake finding
+        return Diagnosis(str(path), language, "-", "yok",
+                         reason=f"denetleyici çalıştırılamadı ({type(exc).__name__})",
+                         raw=_trim(str(exc)))
 
 
 def denetle_coklu(
-    yollar: list[Path], *, zaman_asimi: float = TIMEOUT
-) -> list[Tani]:
-    """Birden çok dosya; desteklenmeyenler listeden düşer."""
-    sonuclar = []
-    for yol in yollar:
-        if (tani := denetle(yol, zaman_asimi=zaman_asimi)) is not None:
-            sonuclar.append(tani)
-    return sonuclar
+    paths: list[Path], *, timeout: float = TIMEOUT
+) -> list[Diagnosis]:
+    """Several files; unsupported ones drop out of the list."""
+    results = []
+    for path in paths:
+        if (diagnosis := denetle(path, timeout=timeout)) is not None:
+            results.append(diagnosis)
+    return results
 
 
-def ozet(taniler: list[Tani], *, kok: Path | None = None) -> str:
-    """Çok dosyalı denetimin özeti — `denetle` aracının cevabı.
+def ozet(diagnoses: list[Diagnosis], *, kok: Path | None = None) -> str:
+    """Summary of a multi-file check — the reply of the `denetle` tool.
 
-    Önce hatalılar (asıl mesele onlar), sonra tek satırlık sayım. "Hepsi
-    temiz" demiyoruz: hangi denetleyicinin baktığı yazıyor.
+    The faulty ones first (they are the real matter), then a one-line count.
+    We do not say "all clean": it says which checker looked.
     """
-    if not taniler:
+    if not diagnoses:
         return ("Denetlenecek dosya bulunamadı. Tanınan uzantılar: "
                 + ", ".join(sorted(UZANTILAR)) + ".")
 
-    def ad(t: Tani) -> str:
+    def name(d: Diagnosis) -> str:
         if kok is None:
-            return Path(t.dosya).name
+            return Path(d.file).name
         try:
-            return str(Path(t.dosya).relative_to(kok))
+            return str(Path(d.file).relative_to(kok))
         except ValueError:
-            return t.dosya
+            return d.file
 
-    faulty = [t for t in taniler if t.status == "hata"]
-    temiz = [t for t in taniler if t.status == "temiz"]
-    bakilamayan = [t for t in taniler if t.status == "yok"]
+    faulty = [d for d in diagnoses if d.status == "hata"]
+    clean = [d for d in diagnoses if d.status == "temiz"]
+    unchecked = [d for d in diagnoses if d.status == "yok"]
 
-    satirlar: list[str] = []
-    for tani in faulty:
-        satirlar.append(f"{ad(tani)} — {tani.denetleyici}, {len(tani.bulgular)} hata:")
-        for bulgu in tani.bulgular[:MAX_FINDINGS]:
-            yer = f"satır {bulgu.satir}" if bulgu.satir else "yer belirsiz"
-            satirlar.append(f"  {yer}: {bulgu.mesaj}")
-        kalan = len(tani.bulgular) - MAX_FINDINGS
-        if kalan > 0:
-            satirlar.append(f"  ... {kalan} bulgu daha.")
+    lines: list[str] = []
+    for diagnosis in faulty:
+        lines.append(f"{name(diagnosis)} — {diagnosis.checker}, {len(diagnosis.findings)} hata:")
+        for finding in diagnosis.findings[:MAX_FINDINGS]:
+            place = f"satır {finding.line}" if finding.line else "yer belirsiz"
+            lines.append(f"  {place}: {finding.message}")
+        remaining = len(diagnosis.findings) - MAX_FINDINGS
+        if remaining > 0:
+            lines.append(f"  ... {remaining} bulgu daha.")
 
-    if temiz:
-        araclar = sorted({t.denetleyici for t in temiz})
-        satirlar.append(
-            f"{len(temiz)} dosyada bulgu yok ({', '.join(araclar)} baktı). "
+    if clean:
+        tools = sorted({d.checker for d in clean})
+        lines.append(
+            f"{len(clean)} dosyada bulgu yok ({', '.join(tools)} baktı). "
             "Bu, kodun çalıştığı anlamına gelmez — denetleyiciler çoğunlukla "
             "sözdizimine bakar."
         )
-    for tani in bakilamayan:
-        satirlar.append(f"{ad(tani)} kontrol edilemedi — {tani.neden}.")
+    for diagnosis in unchecked:
+        lines.append(f"{name(diagnosis)} kontrol edilemedi — {diagnosis.reason}.")
 
     if faulty:
-        satirlar.append("Hataları düzeltmeden devam etme.")
-    return "\n".join(satirlar)
+        lines.append("Hataları düzeltmeden devam etme.")
+    return "\n".join(lines)
 
 
 def batch_paths(kok: Path, *, desen: str | None = None, tavan: int = 60) -> list[Path]:
-    """Bir klasörün altındaki denetlenebilir dosyalar.
+    """The checkable files under a folder.
 
-    Bağımlılık ve üretilmiş çıktı klasörleri atlanır: `node_modules` içindeki
-    on bin dosyayı denetlemek ne kullanıcının istediği ne de ajanın yazdığı.
+    Dependency and generated-output folders are skipped: checking the ten
+    thousand files inside `node_modules` is neither what the user asked for
+    nor what the agent wrote.
     """
-    atla = {"node_modules", "vendor", ".git", "__pycache__", ".venv", "venv",
+    skip = {"node_modules", "vendor", ".git", "__pycache__", ".venv", "venv",
             "dist", "build", ".next", "writable"}
-    bulunan: list[Path] = []
-    for temel, klasorler, files in os.walk(kok):
-        klasorler[:] = [k for k in klasorler if k not in atla and not k.startswith(".")]
-        for dosya in sorted(files):
-            yol = Path(temel) / dosya
-            if not desteklenir(yol):
+    found: list[Path] = []
+    for base, folders, files in os.walk(kok):
+        folders[:] = [f for f in folders if f not in skip and not f.startswith(".")]
+        for file_name in sorted(files):
+            path = Path(base) / file_name
+            if not supported(path):
                 continue
-            if desen and not yol.match(desen):
+            if desen and not path.match(desen):
                 continue
-            bulunan.append(yol)
-            if len(bulunan) >= tavan:
-                return bulunan
-    return bulunan
+            found.append(path)
+            if len(found) >= tavan:
+                return found
+    return found

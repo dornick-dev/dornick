@@ -1,20 +1,20 @@
-"""Hatırlama protokolü.
+"""Recall protocol.
 
-Belleğe erişimin tek sözleşmesi. Dornick'in kendisi de, MCP üzerinden
-bağlanan başka bir ajan da (Claude Code dahil) aynı yüzeyi kullanır.
+The single contract for accessing memory. Dornick itself and any other agent
+connecting over MCP (Claude Code included) use the same surface.
 
-Sözleşme kademeli — model her şeyi almaz, gezinir:
+The contract is tiered — the model does not get everything, it navigates:
 
-    recall(sorgu)   başlıklar + aktivasyonun uğradığı yol
-    open(kimlik)    tam kayıt; izi güçlendirir
-    expand(kimlik)  komşulara bak
-    remember(...)   yeni kayıt, isteğe bağlı bağlarla
-    link(a, b)      çağrışım kur
-    forget(kimlik)  mezar taşı bırak
+    recall(query)   titles + the path activation travelled
+    open(id)        full record; strengthens the trace
+    expand(id)      look at the neighbours
+    remember(...)   new record, with optional links
+    link(a, b)      establish an association
+    forget(id)      leave a tombstone
 
-`recall` yalnızca sonuç değil **iz** de döndürüyor: hangi düğüm hangi
-düğümden uyandı, hangi sırayla. Arayüz bunu canlandırınca hatırlamanın
-kendisi görünür oluyor.
+`recall` returns not only results but also the **trace**: which node woke
+from which node, in what order. When the UI animates it, remembering itself
+becomes visible.
 """
 
 from __future__ import annotations
@@ -36,8 +36,8 @@ __all__ = [
     "DEFAULT_CACHE_BYTES",
     "activation",
     "switches",
-    "Saat",
-    "duvar_saati",
+    "Clock",
+    "wall_clock",
     "KINDS",
     "Node",
     "RecallStore",
@@ -53,5 +53,5 @@ def open_store(
     cache_bytes: int = DEFAULT_CACHE_BYTES,
     clock: Clock | None = None,
 ) -> RecallStore:
-    """Belleği açar. `saat` verilmezse duvar saati (bkz. saat.py)."""
+    """Opens the memory. Wall clock if `clock` is not given (see clock.py)."""
     return RecallStore(directory / "recall.db", cache_bytes=cache_bytes, clock=clock)

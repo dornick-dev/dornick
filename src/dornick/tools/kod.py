@@ -1,12 +1,13 @@
-"""`semboller` aracı: kodda yapısal gezinme.
+"""The `semboller` tool: structural navigation in code.
 
-`grep` metin görür, bu araç yapı görür. "Bu fonksiyon nerede tanımlı,
-nereden çağrılıyor?" sorusunun cevabı `grep`te bir yığın eşleşmedir —
-tanım, çağrı, yorum, dize ve benzer adlı başka semboller aynı listede.
-Burada tanım ayrı, kullanım ayrı; her satır `dosya:satır: imza`.
+`grep` sees text, this tool sees structure. The answer to "where is this
+function defined, where is it called from?" is a pile of matches in
+`grep` — definition, call, comment, string and other similarly named
+symbols all in one list. Here definitions are separate from uses; every
+line is `file:line: signature`.
 
-Okuma aracı: `mutates=False`. Hiçbir şey çalıştırmıyor, hiçbir şey
-yazmıyor — yalnızca kaynak dosyaları okuyup ayrıştırıyor.
+A read tool: `mutates=False`. It runs nothing, writes nothing — it only
+reads and parses source files.
 """
 
 from __future__ import annotations
@@ -69,49 +70,49 @@ bağımlılık klasörlerine (node_modules, vendor, .venv) hiç girmez.
         ),
         mutates=False,
     )
-    async def semboller_araci(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
-        sorgu = str(args.get("sorgu") or "").strip()
-        if not sorgu:
+    async def symbols_tool(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
+        query = str(args.get("sorgu") or "").strip()
+        if not query:
             return ToolResult.error(
                 "`sorgu` boş. Aradığın fonksiyon/sınıf adını ver."
             )
-        # Bir sembol adı boşluk taşımaz; taşıyorsa model serbest metin
-        # arıyor demektir ve doğru araç `grep`.
-        if any(ch.isspace() for ch in sorgu):
+        # A symbol name carries no whitespace; if it does, the model is
+        # searching free text and the right tool is `grep`.
+        if any(ch.isspace() for ch in query):
             return ToolResult.error(
-                f"'{sorgu}' bir sembol adı değil (boşluk içeriyor). Bu araç "
+                f"'{query}' bir sembol adı değil (boşluk içeriyor). Bu araç "
                 "fonksiyon/sınıf adı arar; serbest metin için `grep` kullan."
             )
 
-        kok = _root(args, ctx)
-        if not kok.is_dir():
-            return ToolResult.error(f"Klasör yok: {kok}")
+        root = _root(args, ctx)
+        if not root.is_dir():
+            return ToolResult.error(f"Klasör yok: {root}")
 
-        tur = str(args.get("tur") or "hepsi")
-        dil = str(args.get("dil") or "") or None
+        kind = str(args.get("tur") or "hepsi")
+        lang = str(args.get("dil") or "") or None
 
-        sonuc = await asyncio.to_thread(
-            symbols.ara, kok, sorgu, tur=tur, dil=dil)
+        result = await asyncio.to_thread(
+            symbols.ara, root, query, tur=kind, dil=lang)
         return ToolResult(
-            content=sonuc.metin(tur=tur),
+            content=result.metin(tur=kind),
             detail={
-                "sorgu": sorgu,
-                "kok": str(kok),
-                "tanim": len(sonuc.tanimlar),
-                "kullanim": len(sonuc.use_log),
-                "taranan": sonuc.taranan,
-                "kesin": sonuc.kesin,
+                "sorgu": query,
+                "kok": str(root),
+                "tanim": len(result.tanimlar),
+                "kullanim": len(result.use_log),
+                "taranan": result.taranan,
+                "kesin": result.kesin,
             },
         )
 
 
 def _root(args: dict[str, Any], ctx: ToolContext) -> Path:
-    """Taranacak klasör: verilen yol (dosyaysa klasörü), yoksa atölye."""
-    ham = str(args.get("path") or "").strip()
-    if not ham:
+    """The folder to scan: the given path (its folder if a file), else the workshop."""
+    raw = str(args.get("path") or "").strip()
+    if not raw:
         return ctx.sandbox.root if ctx.sandbox.enabled else ctx.workspace
-    yol = Path(ham).expanduser()
-    if not yol.is_absolute():
-        temel = ctx.sandbox.root if ctx.sandbox.enabled else ctx.workspace
-        yol = temel / yol
-    return yol if yol.is_dir() else yol.parent
+    path = Path(raw).expanduser()
+    if not path.is_absolute():
+        base = ctx.sandbox.root if ctx.sandbox.enabled else ctx.workspace
+        path = base / path
+    return path if path.is_dir() else path.parent

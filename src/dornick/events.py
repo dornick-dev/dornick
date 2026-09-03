@@ -1,18 +1,19 @@
-"""Append-only olay günlüğü.
+"""Append-only event log.
 
-Tek gerçek kaynak budur. Konuşma geçmişi, zihin durumu, denetim kaydı —
-hepsi bu günlüğün bir projeksiyonu. Diske JSONL olarak yazılır; her satır
-bağımsız çözülebilir, böylece süreç ortasında ölse bile kayıt tutarlı kalır.
+This is the single source of truth. The conversation history, the mind
+state, the audit trail — all of them are projections of this log. It is
+written to disk as JSONL; every line decodes on its own, so the record
+stays consistent even if the process dies mid-way.
 
-İki olay ailesi var:
+There are two event families:
 
-    kind="message"  API'ye giden bir konuşma turu (user/assistant/system).
-                    content, API'nin beklediği blok yapısını birebir tutar —
-                    thinking blokları dahil, değiştirilmeden geri gönderilmeli.
+    kind="message"  a conversation turn going to the API (user/assistant/system).
+                    content keeps the exact block structure the API expects —
+                    thinking blocks included, and they must be sent back unchanged.
 
-    kind="meta"     Modele gitmeyen kayıtlar: izin kararı, araç süresi,
-                    hata, bağlam sıkıştırma işareti, kullanıcı kesmesi.
-                    Denetim ve zihin görselleştirmesi bunları okur.
+    kind="meta"     records that never reach the model: permission decision,
+                    tool duration, error, context-compaction marker, user
+                    interrupt. The audit trail and the mind visualisation read these.
 """
 
 from __future__ import annotations
@@ -33,10 +34,11 @@ def utcnow() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="milliseconds")
 
 
-# Zaman tek bir yerden okunuyor (bkz. recall/saat.py). Gece geçişi oturum
-# günlüğündeki damgalara bakıyor — hangi düğüm hangisinden sonra dokunuldu,
-# sürprizli olayın ±60 dakikası neresi — ve o damgalar duvar saatinden
-# gelseydi doksan günlük bir senaryo ölçülemezdi.
+# Time is read from a single place (see recall/clock.py). The night pass
+# looks at the stamps in the session log — which node was touched after
+# which, where the ±60 minutes around a surprising event fall — and if
+# those stamps came from the wall clock a ninety-day scenario could not be
+# measured.
 Clock = Callable[[], str]
 
 
@@ -62,7 +64,7 @@ class Event:
 
 
 class EventLog:
-    """Sürecin ömrü boyunca açık kalan, satır-tamponlu JSONL yazıcı."""
+    """Line-buffered JSONL writer that stays open for the life of the process."""
 
     def __init__(self, path: Path, *, clock: Clock | None = None) -> None:
         self.path = path
@@ -75,16 +77,16 @@ class EventLog:
         self._listeners: list[Callable[[Event], None]] = []
 
     def subscribe(self, listener: Callable[[Event], None]) -> Callable[[], None]:
-        """Yeni olayları dinler. Geri dönen çağrılabilir aboneliği iptal eder.
+        """Listens for new events. The returned callable cancels the subscription.
 
-        Zihin arayüzü bunu kullanır: günlüğe yazılan her şey aynı anda
-        tarayıcıya da akar. Dinleyicideki hata günlüğü yazmayı engellemez —
-        arayüz çökerse ajan çalışmaya devam etmeli.
+        The mind UI uses this: everything written to the log streams to the
+        browser at the same time. An error in a listener does not block the
+        log write — if the UI crashes the agent must keep running.
         """
         self._listeners.append(listener)
         return lambda: self._listeners.remove(listener) if listener in self._listeners else None
 
-    # -- yazma ---------------------------------------------------------
+    # -- writing -------------------------------------------------------
 
     def append(
         self,
@@ -94,12 +96,12 @@ class EventLog:
         content: Any = None,
         meta: dict[str, Any] | None = None,
     ) -> Event:
-        """Olay ekler.
+        """Appends an event.
 
-        meta bilinçli olarak **kwargs değil, açık bir sözlük: aksi halde
-        "kind", "role", "content" adlı bir meta alanı bu fonksiyonun kendi
-        parametreleriyle çakışır ve çağrı TypeError ile düşer. Zihin
-        kayıtlarında "kind" gerçekten kullanılıyor.
+        meta is deliberately an explicit dict, not **kwargs: otherwise a meta
+        field named "kind", "role" or "content" would collide with this
+        function's own parameters and the call would fail with TypeError.
+        Mind records really do use "kind".
         """
         with self._lock:
             ev = Event(
@@ -113,14 +115,14 @@ class EventLog:
             self._seq += 1
             self._events.append(ev)
             self._fh.write(ev.to_json() + "\n")
-            # Kesme/çökme anında son turun kaybolmaması için diske indir.
+            # Flush to disk so the last turn is not lost on interrupt/crash.
             self._fh.flush()
             os.fsync(self._fh.fileno())
 
         for listener in tuple(self._listeners):
             try:
                 listener(ev)
-            except Exception:  # arayüz çökerse ajan çalışmaya devam etmeli
+            except Exception:  # if the UI crashes the agent must keep running
                 pass
         return ev
 
@@ -130,7 +132,7 @@ class EventLog:
     def note(self, event_type: str, **data: Any) -> Event:
         return self.append(META, content=event_type, meta=data)
 
-    # -- okuma ---------------------------------------------------------
+    # -- reading -------------------------------------------------------
 
     def __iter__(self) -> Iterator[Event]:
         return iter(tuple(self._events))
@@ -171,6 +173,6 @@ def _read(path: Path) -> Iterator[Event]:
             try:
                 yield Event.from_json(line)
             except (json.JSONDecodeError, TypeError) as exc:
-                # Yarım yazılmış son satır: süreç yazarken öldürülmüş olabilir.
-                # Sessizce atla, ama gürültüsüzce de geçme.
+                # Half-written last line: the process may have been killed
+                # while writing. Skip quietly, but not silently.
                 raise ValueError(f"{path}:{lineno} bozuk olay kaydı: {exc}") from exc

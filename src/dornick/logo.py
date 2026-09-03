@@ -1,90 +1,93 @@
-"""Dornick'in logosu — tek kaynak.
+"""Dornick's logo — single source.
 
-Ocak kimliği: koyu kömür yuvarlak kare üstünde "ağdan örülmüş n" — dört
-tebeşir düğüm, kehribar tepe düğümü. Üst şeritteki marka SVG'siyle aynı
-işaret; pencere simgesi, görev çubuğu, tepsi ve sekme hepsinde AYNI çizim.
+Hearth identity: a "net-woven n" on a dark-charcoal rounded square — four
+chalk knots, an amber top knot. The same mark as the brand SVG in the top
+strip; window icon, taskbar, tray and tab all use the SAME drawing.
 
-Vektör dosyası yerine kodla çiziliyor: paketlenmiş uygulamada en sık kırılan
-şey varlık yolu — çizim koddaysa simge asla boş kalmaz. PIL tepsi için zaten
-gerekli; yoksa çağıran taraf sessizce vazgeçiyor.
+Drawn in code instead of a vector file: in the packaged app the thing that
+breaks most often is the asset path — if the drawing is code the icon is
+never blank. PIL is already required for the tray; if it is missing the
+caller gives up silently.
 """
 
 from __future__ import annotations
 
 from pathlib import Path
 
-# Ocak renkleri (app.css'teki token ailesiyle aynı).
-_ZEMIN = (27, 24, 20)          # --panel: koyu kömür
-_KENAR = (62, 55, 44)          # ince kenar — koyu görev çubuğunda da seçilsin
-_CIZGI = (239, 232, 220)       # tebeşir: n'nin ipliği ve alt düğümler
-_TEPE = (240, 160, 32)         # kehribar: tepe düğümü (--cyan)
+# Hearth colours (same token family as app.css).
+_GROUND = (27, 24, 20)         # --panel: dark charcoal
+_EDGE = (62, 55, 44)           # thin edge — stays visible on a dark taskbar too
+_STROKE = (239, 232, 220)      # chalk: the thread of the n and the lower knots
+_TOP = (240, 160, 32)          # amber: top knot (--cyan)
 
-# İşaretin geometrisi 32'lik ızgarada — index.html'deki marka SVG'siyle
-# birebir: ağ örgüsünden bir "d" (düğüm-d). Sap + kase, üç tebeşir boğum
-# karesi, tepede kehribar düğüm.
-_SAP = ((21.5, 7.0), (21.5, 23.5))
-_KASE = (9.7, 13.3, 21.5, 26.3)          # yuvarlak köşeli çerçeve
-_KASE_R = 2.8
-_BOGUMLAR = [(7.4, 11.2), (7.4, 21.9), (19.3, 24.1)]   # 4.4'lük kareler
-_TEPE_NOKTA = (21.5, 5.6, 3.3)           # cx, cy, r
+# Geometry of the mark on a 32-unit grid — identical to the brand SVG in
+# index.html: a "d" out of net weave (knot-d). Stem + bowl, three chalk
+# knot squares, an amber knot at the top.
+_STEM = ((21.5, 7.0), (21.5, 23.5))
+_BOWL = (9.7, 13.3, 21.5, 26.3)          # rounded-corner frame
+_BOWL_R = 2.8
+_KNOTS = [(7.4, 11.2), (7.4, 21.9), (19.3, 24.1)]   # 4.4-unit squares
+_TOP_DOT = (21.5, 5.6, 3.3)              # cx, cy, r
 
-# Çizim değişince paketlerdeki .ico kendini tazelesin: sürüm bekçisi.
+# When the drawing changes the packaged .ico should refresh itself: version
+# sentinel. (Name kept: winicon.py imports it.)
 _SURUM = "dugum-1"
 
 
 def draw(size: int):
-    """size×size logo (PIL Image): koyu yuvarlak kare + örülmüş n.
+    """size×size logo (PIL Image): dark rounded square + woven n.
 
-    4× süperörnekleyip küçültüyoruz: 16px'te bile kenarlar temiz kalsın.
+    We supersample 4× and shrink: edges stay clean even at 16px.
     """
     from PIL import Image, ImageDraw
 
     s = size * 4
     img = Image.new("RGBA", (s, s), (0, 0, 0, 0))
     d = ImageDraw.Draw(img)
-    u = s / 32.0                 # 32'lik ızgara → piksel
+    u = s / 32.0                 # 32-unit grid → pixels
 
-    # Zemin: yuvarlak kare karo. Şeffaf zemin yerine karo: açık görev
-    # çubuğunda da koyu temada da aynı okunur kimlik.
-    pay = s * 0.02
-    d.rounded_rectangle((pay, pay, s - pay, s - pay), radius=s * 0.21,
-                        fill=(*_ZEMIN, 255), outline=(*_KENAR, 255),
+    # Ground: rounded square tile. A tile instead of a transparent ground:
+    # the same readable identity on a light taskbar and in the dark theme.
+    margin = s * 0.02
+    d.rounded_rectangle((margin, margin, s - margin, s - margin), radius=s * 0.21,
+                        fill=(*_GROUND, 255), outline=(*_EDGE, 255),
                         width=max(1, int(s * 0.012)))
 
-    # d ipliği: sap + yuvarlak köşeli kase (SVG yoluyla aynı ağırlık).
+    # The d thread: stem + rounded-corner bowl (same weight as the SVG path).
     w = max(2, int(3.6 * u))
-    (x1, y1), (x2, y2) = _SAP
-    d.line([(x1 * u, y1 * u), (x2 * u, y2 * u)], fill=(*_CIZGI, 255), width=w)
+    (x1, y1), (x2, y2) = _STEM
+    d.line([(x1 * u, y1 * u), (x2 * u, y2 * u)], fill=(*_STROKE, 255), width=w)
     r = w / 2
-    for x, y in _SAP:
-        d.ellipse((x * u - r, y * u - r, x * u + r, y * u + r), fill=(*_CIZGI, 255))
-    kx1, ky1, kx2, ky2 = (v * u for v in _KASE)
-    d.rounded_rectangle((kx1, ky1, kx2, ky2), radius=_KASE_R * u,
-                        outline=(*_CIZGI, 255), width=w)
+    for x, y in _STEM:
+        d.ellipse((x * u - r, y * u - r, x * u + r, y * u + r), fill=(*_STROKE, 255))
+    kx1, ky1, kx2, ky2 = (v * u for v in _BOWL)
+    d.rounded_rectangle((kx1, ky1, kx2, ky2), radius=_BOWL_R * u,
+                        outline=(*_STROKE, 255), width=w)
 
-    # Boğum kareleri: tebeşir, yuvarlatılmış.
-    for x, y in _BOGUMLAR:
+    # Knot squares: chalk, rounded.
+    for x, y in _KNOTS:
         d.rounded_rectangle((x * u, y * u, (x + 4.4) * u, (y + 4.4) * u),
-                            radius=1.2 * u, fill=(*_CIZGI, 255))
+                            radius=1.2 * u, fill=(*_STROKE, 255))
 
-    # Tepe düğümü: kehribar.
-    cx, cy, cr = _TEPE_NOKTA
+    # Top knot: amber.
+    cx, cy, cr = _TOP_DOT
     d.ellipse(((cx - cr) * u, (cy - cr) * u, (cx + cr) * u, (cy + cr) * u),
-              fill=(*_TEPE, 255))
+              fill=(*_TOP, 255))
 
     return img.resize((size, size), Image.LANCZOS)
 
 
 def ensure_ico(path: Path) -> bool:
-    """Çok boyutlu .ico dosyasını (yoksa) üretir. Başarı durumunu döndürür."""
+    """Produces the multi-size .ico file (if missing). Returns success."""
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
-        # Sürüm bekçisi: çizim değiştiyse (ocak göçü gibi) eski .ico
-        # sessizce kalmasın — yeniden üret. Yan dosya .ico'nun yanında.
-        bekci = path.with_suffix(".ico.surum")
+        # Version sentinel: if the drawing changed (like the hearth migration)
+        # the old .ico must not linger silently — regenerate. The side file
+        # sits next to the .ico.
+        sentinel = path.with_suffix(".ico.surum")
         if path.exists():
             try:
-                if bekci.read_text(encoding="utf-8").strip() == _SURUM:
+                if sentinel.read_text(encoding="utf-8").strip() == _SURUM:
                     return True
             except OSError:
                 pass
@@ -93,7 +96,7 @@ def ensure_ico(path: Path) -> bool:
                   sizes=[(16, 16), (20, 20), (24, 24), (32, 32),
                          (40, 40), (48, 48), (64, 64), (128, 128), (256, 256)])
         try:
-            bekci.write_text(_SURUM, encoding="utf-8")
+            sentinel.write_text(_SURUM, encoding="utf-8")
         except OSError:
             pass
         return True
@@ -102,26 +105,26 @@ def ensure_ico(path: Path) -> bool:
 
 
 def ico_path() -> Path:
-    """Paket içindeki simge yolu (gerekiyorsa üretir)."""
+    """Icon path inside the package (generated if needed)."""
     path = Path(__file__).parent / "assets" / "dornick.ico"
     ensure_ico(path)
     return path
 
 
 def ensure_png(path: Path, size: int = 256) -> bool:
-    """Windows toast ve sekme için PNG. ICO WinRT src olarak tutulmuyor."""
+    """PNG for the Windows toast and the tab. ICO is not accepted as a WinRT src."""
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
-        bekci = path.with_suffix(".png.surum")
+        sentinel = path.with_suffix(".png.surum")
         if path.exists():
             try:
-                if bekci.read_text(encoding="utf-8").strip() == _SURUM:
+                if sentinel.read_text(encoding="utf-8").strip() == _SURUM:
                     return True
             except OSError:
                 pass
         draw(size).save(path, format="PNG")
         try:
-            bekci.write_text(_SURUM, encoding="utf-8")
+            sentinel.write_text(_SURUM, encoding="utf-8")
         except OSError:
             pass
         return True
@@ -130,7 +133,7 @@ def ensure_png(path: Path, size: int = 256) -> bool:
 
 
 def png_path(size: int = 256) -> Path:
-    """Paket içindeki PNG yolu (gerekiyorsa üretir)."""
+    """PNG path inside the package (generated if needed)."""
     path = Path(__file__).parent / "assets" / "dornick.png"
     ensure_png(path, size)
     return path

@@ -1,11 +1,13 @@
-"""Tarayıcı aracı — dornick chrome.
+"""Browser tool — dornick chrome.
 
-Ekran aracı (`screen`) piksel görüyor, `web` aracı çıplak HTTP indiriyor.
-Bu araç ikisinin arasındaki boşluk: **gerçek bir tarayıcı** — JavaScript
-çalışmış, oturumlar açık, sayfa insanın gördüğü halinde.
+The screen tool (`screen`) sees pixels, the `web` tool downloads bare
+HTTP. This tool is the gap between the two: **a real browser** —
+JavaScript has run, sessions are logged in, the page is as a human sees
+it.
 
-Tarayıcı Dornick'in kendi Chrome profiliyle açılıyor. Kullanıcı orada bir
-siteye giriş yaparsa o oturum kalıcı: profil `.dornick/chrome/` içinde.
+The browser opens with Dornick's own Chrome profile. If the user logs in
+to a site there, that session is durable: the profile lives in
+`.dornick/chrome/`.
 """
 
 from __future__ import annotations
@@ -140,9 +142,9 @@ def register(registry: ToolRegistry) -> None:
                 "Bu makinede Chrome ya da Edge bulunamadı; tarayıcı aracı çalışamaz."
             )
 
-        # Süreç-geneli tek tarayıcı: ana ajan ve tüm alt ajanlar aynı Chrome'u
-        # sürüyor, aynı sekmeleri görüyor — her defter kendi tarayıcısını açıp
-        # aynı kapıda yarışmıyor.
+        # One process-wide browser: the main agent and all sub-agents drive
+        # the same Chrome and see the same tabs — no registry opens its own
+        # browser and races on the same port.
         box = chrome.shared(
             ctx.config.state_dir,
             port=int(getattr(ctx.config.browser, "port", chrome.DEFAULT_PORT)),
@@ -185,35 +187,35 @@ def register(registry: ToolRegistry) -> None:
                 )
 
             if action == "konsol":
-                kayit = box.kayit(tab)
+                record = box.kayit(tab)
                 return ToolResult(_konsol_metni(
-                    kayit, str(args.get("seviye") or "hepsi"), args.get("n")))
+                    record, str(args.get("seviye") or "hepsi"), args.get("n")))
 
             if action == "ag":
-                kayit = box.kayit(tab)
-                return ToolResult(_ag_metni(kayit, args.get("n")))
+                record = box.kayit(tab)
+                return ToolResult(_ag_metni(record, args.get("n")))
 
             if action == "js":
-                ifade = str(args.get("text") or "").strip()
-                if not ifade:
+                expression = str(args.get("text") or "").strip()
+                if not expression:
                     return ToolResult.error(
                         "`text` gerekli: çalıştırılacak ifade. Örn. "
                         "`document.querySelectorAll('.satir').length`."
                     )
-                cevap = box.js(tab, ifade)
-                if cevap["tip"] == "hata":
+                answer = box.js(tab, expression)
+                if answer["tip"] == "hata":
                     return ToolResult(
                         f"İfade hata verdi — bu bir bulgudur, aracın arızası değil:"
-                        f"\n{cevap['deger']}",
+                        f"\n{answer['deger']}",
                         is_error=True,
                     )
                 import json as _json
 
-                deger = cevap["deger"]
-                govde = (deger if isinstance(deger, str)
-                         else _json.dumps(deger, ensure_ascii=False, indent=1))
+                value = answer["deger"]
+                body = (value if isinstance(value, str)
+                        else _json.dumps(value, ensure_ascii=False, indent=1))
                 return ToolResult(
-                    f"({cevap['tip']}) {govde}\n\n"
+                    f"({answer['tip']}) {body}\n\n"
                     "Bu yalnızca inceleme. Sayfada bir şey DÜZELTMEN gerekiyorsa "
                     "kaynak kodu değiştir — betikle yapılan değişiklik yenilemede "
                     "kaybolur."
@@ -277,149 +279,149 @@ def register(registry: ToolRegistry) -> None:
             )
 
         try:
-            # CDP çağrıları bloklayan soket işleri; döngüyü kilitlemesin.
+            # CDP calls are blocking socket work; they must not lock the loop.
             return await asyncio.to_thread(work)
         except chrome.BrowseError as exc:
             return ToolResult.error(str(exc))
-        except Exception as exc:  # tarayıcı kapandı, kapı koptu…
+        except Exception as exc:  # the browser closed, the port went away…
             return ToolResult.error(f"Tarayıcı hatası: {type(exc).__name__}: {exc}")
 
 
-# -- sonuç metinleri ----------------------------------------------------
+# -- result texts ------------------------------------------------------
 #
-# Buradaki her cümlenin bir gerekçesi var ve hepsi aynı yere çıkıyor:
-# "sayfa açıldı" ile "sayfa çalışıyor" aynı şey değil. Araç, aradaki farkı
-# modelin görebileceği yerde tutmak zorunda.
+# Every sentence here has a reason and they all lead to the same place:
+# "the page opened" and "the page works" are not the same thing. The tool
+# has to keep that difference where the model can see it.
 
 
 def _error_suffix(seen: dict[str, Any]) -> str:
-    """Çerçeve hata sayfası bulunduysa metnin BAŞINA konan uyarı.
+    """The warning put at the TOP of the text when a framework error page is found.
 
-    Sayfanın altına değil üstüne: uzun bir yığın izinin sonunda duran bir
-    not okunmuyordu.
+    At the top of the page, not the bottom: a note standing at the end of a
+    long stack trace was not being read.
     """
-    hata = seen.get("hata")
-    if not isinstance(hata, dict) or not hata.get("tur"):
+    error = seen.get("hata")
+    if not isinstance(error, dict) or not error.get("tur"):
         return ""
-    satirlar = [f"\n\n!! Bu bir HATA SAYFASI ({hata['tur']})."]
-    if hata.get("baslik"):
-        satirlar.append(f"   {hata['baslik']}")
-    if hata.get("mesaj"):
-        satirlar.append(f"   {hata['mesaj']}")
-    if hata.get("yer"):
-        satirlar.append(f"   {hata['yer']}")
-    satirlar.append("   Sayfa açıldı ama uygulama patladı; bunu 'çalışıyor' "
-                    "diye rapor etme.")
-    return "\n".join(satirlar)
+    lines = [f"\n\n!! Bu bir HATA SAYFASI ({error['tur']})."]
+    if error.get("baslik"):
+        lines.append(f"   {error['baslik']}")
+    if error.get("mesaj"):
+        lines.append(f"   {error['mesaj']}")
+    if error.get("yer"):
+        lines.append(f"   {error['yer']}")
+    lines.append("   Sayfa açıldı ama uygulama patladı; bunu 'çalışıyor' "
+                 "diye rapor etme.")
+    return "\n".join(lines)
 
 
 def _warning_suffix(box: Any, tab: dict[str, Any]) -> str:
-    """Okuma sonrası uyarı: üst hataları satır içi ver (ayrı konsol+ağ ritüeli yok).
+    """Post-read warning: the top errors inline (no separate console+network ritual).
 
-    Değişiklik başına tek doğrulama turu yeterli; her `read` sonrası modeli
-    `konsol`/`ag` çağırmaya zorlamak token yakıyordu.
+    One verification round per change is enough; forcing the model to call
+    `konsol`/`ag` after every `read` was burning tokens.
     """
     try:
-        kayit = box.kayit(tab)
-    except Exception:  # pragma: no cover - dinleyici asla sayfayı bozmasın
+        record = box.kayit(tab)
+    except Exception:  # pragma: no cover - the listener must never break the page
         return ""
-    if getattr(kayit, "hata", ""):
+    if getattr(record, "hata", ""):
         return ("\n\n(konsol/ağ dinleyicisi kurulamadı — bu sayfada JS hatası "
                 "olup olmadığını göremiyorum.)")
-    hatalar = [k for k in getattr(kayit, "konsol", ()) if k.seviye == "hata"]
-    kotuler = [i for i in getattr(kayit, "istekler", ()) if i.failed]
-    if not hatalar and not kotuler:
+    errors = [k for k in getattr(record, "konsol", ()) if k.seviye == "hata"]
+    bad = [i for i in getattr(record, "istekler", ()) if i.failed]
+    if not errors and not bad:
         return ""
-    parcalar = [f"\n\n!! {len(hatalar)} konsol hatası, {len(kotuler)} başarısız istek."]
-    for k in hatalar[:3]:
-        metin = str(getattr(k, "metin", "") or getattr(k, "text", "") or k)[:160]
-        parcalar.append(f"  · konsol: {metin}")
-    for i in kotuler[:3]:
+    parts = [f"\n\n!! {len(errors)} konsol hatası, {len(bad)} başarısız istek."]
+    for k in errors[:3]:
+        text = str(getattr(k, "metin", "") or getattr(k, "text", "") or k)[:160]
+        parts.append(f"  · konsol: {text}")
+    for i in bad[:3]:
         url = str(getattr(i, "url", "") or "")[:120]
-        kod = getattr(i, "status", getattr(i, "kod", ""))
-        parcalar.append(f"  · ağ {kod}: {url}")
-    if len(hatalar) > 3 or len(kotuler) > 3:
-        parcalar.append("  (fazlası için bir kez `konsol` / `ag`)")
-    parcalar.append("Bu sayfayı 'çalışıyor' diye rapor etme.")
-    return "\n".join(parcalar)
+        code = getattr(i, "status", getattr(i, "kod", ""))
+        parts.append(f"  · ağ {code}: {url}")
+    if len(errors) > 3 or len(bad) > 3:
+        parts.append("  (fazlası için bir kez `konsol` / `ag`)")
+    parts.append("Bu sayfayı 'çalışıyor' diye rapor etme.")
+    return "\n".join(parts)
 
 
-def _eksik_notu(kayit: Any) -> str:
-    if getattr(kayit, "eksik", False):
+def _missing_note(record: Any) -> str:
+    if getattr(record, "eksik", False):
         return ("\nNot: dinleyici sayfa açıldıktan SONRA bağlandı; yüklenme "
                 "sırasındaki mesajlar kaçmış olabilir. Kesin liste için `go` "
                 "ile aynı adrese yeniden git.")
     return ""
 
 
-def _konsol_metni(kayit: Any, seviye: str, n: Any) -> str:
+def _konsol_metni(record: Any, level: str, n: Any) -> str:
     from .. import chrome
 
-    if getattr(kayit, "hata", ""):
-        return ("Konsol dinleyicisi kurulamadı: " + str(kayit.hata) +
+    if getattr(record, "hata", ""):
+        return ("Konsol dinleyicisi kurulamadı: " + str(record.hata) +
                 "\nBu sayfada JS hatası olup olmadığını göremiyorum — "
                 "uydurma yorum yapma, kullanıcıya bildir.")
 
-    kac = max(1, min(int(n or chrome.DEFAULT_N), chrome.TAMPON))
-    hepsi = list(kayit.konsol)
-    süz = {"hata": {"hata"}, "uyari": {"uyari", "hata"}}.get(seviye)
-    secili = [k for k in hepsi if k.seviye in süz] if süz else hepsi
+    count = max(1, min(int(n or chrome.DEFAULT_N), chrome.TAMPON))
+    everything = list(record.konsol)
+    sieve = {"hata": {"hata"}, "uyari": {"uyari", "hata"}}.get(level)
+    chosen = [k for k in everything if k.seviye in sieve] if sieve else everything
 
-    if not secili:
-        kuyruk = _eksik_notu(kayit)
-        if hepsi:
-            return (f"Bu süzgeçle ({seviye}) kayıt yok; konsolda toplam "
-                    f"{len(hepsi)} mesaj var (`seviye: hepsi` ile bak)." + kuyruk)
+    if not chosen:
+        tail = _missing_note(record)
+        if everything:
+            return (f"Bu süzgeçle ({level}) kayıt yok; konsolda toplam "
+                    f"{len(everything)} mesaj var (`seviye: hepsi` ile bak)." + tail)
         return ("Konsolda hiç kayıt yok. Bu, sayfanın hatasız olduğu anlamına "
                 "GELMEZ: sessizce yanlış davranan kod konsola bir şey yazmaz. "
-                "Davranışı ayrıca doğrula." + kuyruk)
+                "Davranışı ayrıca doğrula." + tail)
 
-    hatalar = sum(1 for k in secili if k.seviye == "hata")
-    govde_basligi = (f"{len(secili)} konsol kaydı ({hatalar} hata) — son "
-              f"{min(kac, len(secili))} tanesi:")
-    satirlar = [govde_basligi]
-    satirlar += [f"  {k.format()}" for k in secili[-kac:]]
-    if hatalar:
-        satirlar.append("")
-        satirlar.append("Bu hatalar sayfa çalışırken oluştu. Kaynak koddaki "
-                        "karşılıklarını bul ve düzelt.")
-    return "\n".join(satirlar) + _eksik_notu(kayit)
+    errors = sum(1 for k in chosen if k.seviye == "hata")
+    heading = (f"{len(chosen)} konsol kaydı ({errors} hata) — son "
+               f"{min(count, len(chosen))} tanesi:")
+    lines = [heading]
+    lines += [f"  {k.format()}" for k in chosen[-count:]]
+    if errors:
+        lines.append("")
+        lines.append("Bu hatalar sayfa çalışırken oluştu. Kaynak koddaki "
+                     "karşılıklarını bul ve düzelt.")
+    return "\n".join(lines) + _missing_note(record)
 
 
-def _ag_metni(kayit: Any, n: Any) -> str:
+def _ag_metni(record: Any, n: Any) -> str:
     from .. import chrome
 
-    if getattr(kayit, "hata", ""):
-        return ("Ağ dinleyicisi kurulamadı: " + str(kayit.hata) +
+    if getattr(record, "hata", ""):
+        return ("Ağ dinleyicisi kurulamadı: " + str(record.hata) +
                 "\nBu sayfanın isteklerini göremiyorum.")
 
-    kac = max(1, min(int(n or chrome.DEFAULT_N), chrome.TAMPON))
-    hepsi = list(kayit.istekler)
-    if not hepsi:
+    count = max(1, min(int(n or chrome.DEFAULT_N), chrome.TAMPON))
+    everything = list(record.istekler)
+    if not everything:
         return ("Kayıtlı ağ isteği yok. Sayfa dinleyici bağlanmadan önce "
-                "yüklenmiş olabilir; `go` ile yeniden git." + _eksik_notu(kayit))
+                "yüklenmiş olabilir; `go` ile yeniden git." + _missing_note(record))
 
-    kotu = [i for i in hepsi if i.failed]
-    iyi = [i for i in hepsi if not i.failed]
+    bad = [i for i in everything if i.failed]
+    good = [i for i in everything if not i.failed]
 
-    satirlar = [f"{len(hepsi)} istek · {len(kotu)} başarısız."]
-    if kotu:
-        satirlar.append("")
-        satirlar.append("Başarısız olanlar (önce bunlar):")
-        satirlar += [f"  {i.format()}" for i in kotu[:kac]]
-        if len(kotu) > kac:
-            satirlar.append(f"  ... {len(kotu) - kac} başarısız istek daha.")
-    if iyi:
-        kalan = max(1, kac - min(len(kotu), kac))
-        satirlar.append("")
-        satirlar.append(f"Başarılı olanlardan son {min(kalan, len(iyi))}:")
-        satirlar += [f"  {i.format()}" for i in iyi[-kalan:]]
-    if kotu:
-        satirlar.append("")
-        satirlar.append("4xx eksik bir yol, 5xx sunucu tarafında patlayan bir "
-                        "kod demek. Sayfa açılmış görünse de bunlar gerçek "
-                        "hatalar — düzeltmeden 'çalışıyor' deme.")
-    return "\n".join(satirlar) + _eksik_notu(kayit)
+    lines = [f"{len(everything)} istek · {len(bad)} başarısız."]
+    if bad:
+        lines.append("")
+        lines.append("Başarısız olanlar (önce bunlar):")
+        lines += [f"  {i.format()}" for i in bad[:count]]
+        if len(bad) > count:
+            lines.append(f"  ... {len(bad) - count} başarısız istek daha.")
+    if good:
+        remaining = max(1, count - min(len(bad), count))
+        lines.append("")
+        lines.append(f"Başarılı olanlardan son {min(remaining, len(good))}:")
+        lines += [f"  {i.format()}" for i in good[-remaining:]]
+    if bad:
+        lines.append("")
+        lines.append("4xx eksik bir yol, 5xx sunucu tarafında patlayan bir "
+                     "kod demek. Sayfa açılmış görünse de bunlar gerçek "
+                     "hatalar — düzeltmeden 'çalışıyor' deme.")
+    return "\n".join(lines) + _missing_note(record)
 
 
 def _pick(box: Any, tab_id: str) -> dict[str, Any] | None:

@@ -21,11 +21,11 @@ Senaryo **yasam-holdout-30** · 34 soru · 43 düğüm · kaynak `calisma-agaci`
 | `yakalama` | ↑ | yok | — | **yok** | > 0 |
 | `ders_gecikmesi` | ↓ | yok | — | **yok** | <= 1 |
 | `sicak_oran` | · | 1 | — | **0.8837** | 0.10–0.30 |
-| `gece_suresi` | ↓ | yok | — | **0.0165** | <= 300 |
+| `gece_suresi` | ↓ | yok | — | **0.0163** | <= 300 |
 | `uykusuz_kayip` | ↑ | yok | — | **yok** | >= 0.8 |
 | `uykusuz_sisme` | ↓ | yok | — | **yok** | <= 1.3 |
 | `aktif_bolge_ihlali` | ↓ | yok | — | **yok** | <= 0 |
-| `tur_bloklama` | ↓ | yok | — | **7.47** | <= 50 |
+| `tur_bloklama` | ↓ | yok | — | **7.85** | <= 50 |
 | `kesinti_kaybi` | ↓ | yok | — | **yok** | <= 0 |
 | `kesinti_gecikmesi` | ↓ | yok | — | **yok** | <= 500 |
 | `yarim_damitma` | ↓ | yok | — | **yok** | <= 0 |
@@ -33,7 +33,7 @@ Senaryo **yasam-holdout-30** · 34 soru · 43 düğüm · kaynak `calisma-agaci`
 | `atalet` | ↓ | yok | — | **yok** | <= 0 |
 | `buyume_p95` | ↓ | yok | — | **yok** | <= 1.5 |
 | `buyume_ram` | ↓ | yok | — | **yok** | <= 2 |
-| `gecikme_p95` | ↓ | 11.19 | — | **7.84** | <= 20 |
+| `gecikme_p95` | ↓ | 13.9 | — | **8.04** | <= 20 |
 
 ## Küme kırılımı (prime precision / recall)
 
@@ -49,10 +49,10 @@ Senaryo **yasam-holdout-30** · 34 soru · 43 düğüm · kaynak `calisma-agaci`
 
 ## Ölçekte gecikme
 
-50000 düğüm · p50 **4.37 ms** · p95 **7.84 ms** (bütçe 20 ms)
+50000 düğüm · p50 **4.43 ms** · p95 **8.04 ms** (bütçe 20 ms)
 
 ---
 
 `yok` = o sürümde mekanik hiç yoktu; boş bırakılmaz.
 
-Üretim: `py eval/context_memory/yasam_bench.py --etiket holdout`. Sayılar deterministiktir: aynı veri seti, aynı sanal takvim, aynı sonuç.
+Üretim: `py eval/context_memory/life_bench.py --label holdout`. Sayılar deterministiktir: aynı veri seti, aynı sanal takvim, aynı sonuç.

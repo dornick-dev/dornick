@@ -233,7 +233,7 @@ def test_micro_sleep_reduces_debt_without_clearing_it(
         Log(sessions, f"s{i}", clock).touch(node.id).close()
 
     report = awake.micro_sleep(store, sessions, clock=clock,
-                               watermark=watermark, budget_sn=0.0)
+                               watermark=watermark, budget_s=0.0)
     assert report.replayed >= 1
     assert report.devreden >= 1              # night still has work left
 

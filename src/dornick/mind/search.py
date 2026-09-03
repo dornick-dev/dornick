@@ -1,9 +1,9 @@
-"""Sıralama.
+"""Ranking.
 
-Gömme vektörü yok — sözcük örtüşmesi + nadirlik ağırlığı + tazelik. Küçük
-kişisel bir bellek için bu şaşırtıcı derecede iyi çalışır ve hiçbir bağımlılık
-getirmez. Bellek binlerce kayda çıktığında burası gömme tabanlı bir indeksle
-değiştirilir; arayüz aynı kalır.
+No embedding vectors — word overlap + rarity weight + freshness. For a small
+personal memory this works surprisingly well and brings in no dependency.
+When the memory grows to thousands of records this gets replaced with an
+embedding-based index; the interface stays the same.
 """
 
 from __future__ import annotations
@@ -16,7 +16,7 @@ from typing import Any, Iterable, Sequence
 
 _WORD = re.compile(r"\w+", re.UNICODE)
 
-# Sorguyu daraltmayan çok sık Türkçe/İngilizce sözcükler.
+# Very frequent Turkish/English words that do not narrow the query.
 STOPWORDS = frozenset(
     """
     ve veya ile için gibi kadar daha çok az bir bu şu o ne nasıl neden
@@ -26,7 +26,7 @@ STOPWORDS = frozenset(
 )
 
 
-# Ön ek eşleşmesinin devreye girmesi için gereken en kısa sözcük.
+# The shortest word for which prefix matching kicks in.
 MIN_STEM = 4
 
 
@@ -37,15 +37,16 @@ def tokenize(text: str) -> list[str]:
 
 
 def matches(term: str, vocabulary: set[str]) -> list[str]:
-    """Bir sorgu terimiyle eşleşen belge terimleri.
+    """Document terms matching a query term.
 
-    Türkçe sondan eklemeli: "rapor" sorgusu "raporları", "raporu", "raporlar"
-    ile eşleşmeli. Tam sözcük karşılaştırması bu dilde aramanın yarısını
-    kaybettirir. Gövdeleyici yerine ön ek eşleşmesi kullanıyoruz — kaba ama
-    bağımlılıksız ve ekleme yönü tek olduğu için şaşırtıcı derecede isabetli.
+    Turkish is agglutinative: the query "rapor" must match "raporları",
+    "raporu", "raporlar". Exact word comparison loses half of search in this
+    language. We use prefix matching instead of a stemmer — crude, but
+    dependency-free and, since suffixing goes in a single direction,
+    surprisingly accurate.
 
-    Yanlış pozitifleri sınırlamak için iki taraf da en az MIN_STEM uzunlukta
-    olmalı; kısa sözcükler yalnızca birebir eşleşir.
+    To limit false positives both sides must be at least MIN_STEM long;
+    short words only match exactly.
     """
     if term in vocabulary:
         return [term]
@@ -74,11 +75,11 @@ def rank(
     limit: int = 10,
     half_life_days: float = 30.0,
 ) -> list[Scored]:
-    """Sorguya göre sıralar. Sorgu boşsa en yeniler döner.
+    """Ranks by the query. If the query is empty the newest come back.
 
-    Skor = terim örtüşmesi × ters belge sıklığı × tazelik.
-    Nadirlik ağırlığı olmadan "dosya" gibi her yerde geçen bir sözcük
-    sonuçları ele geçirirdi.
+    Score = term overlap × inverse document frequency × freshness.
+    Without the rarity weight a word that occurs everywhere, like "dosya",
+    would take over the results.
     """
     if not items:
         return []
@@ -106,8 +107,8 @@ def rank(
                 continue
             hit_terms += 1
             surface.update(found)
-            # Terim sıklığını doyur: aynı sözcüğün 50 kez geçmesi 5 kez
-            # geçmesinden 10 kat daha alakalı değil.
+            # Saturate term frequency: the same word occurring 50 times is
+            # not 10 times more relevant than occurring 5 times.
             occurrences = sum(doc.count(f) for f in found)
             raw += idf[term] * (1 + math.log(occurrences))
 
@@ -130,7 +131,7 @@ def _idf(vocabularies: list[set[str]], terms: Iterable[str]) -> dict[str, float]
 
 
 def _freshness(item: Any, time_of, half_life_days: float) -> float:
-    """0.5 ile 1.0 arası çarpan. Tazelik alakayı ezmemeli, sadece eğmeli."""
+    """A multiplier between 0.5 and 1.0. Freshness must not crush relevance, only tilt it."""
     if time_of is None:
         return 1.0
     stamp = time_of(item)
@@ -147,7 +148,7 @@ def _freshness(item: Any, time_of, half_life_days: float) -> float:
 
 
 def excerpt(text: str, matched: Sequence[str], width: int = 220) -> str:
-    """Eşleşen terimin etrafından okunabilir bir pencere keser."""
+    """Cuts a readable window around the matched term."""
     flat = " ".join((text or "").split())
     if len(flat) <= width:
         return flat

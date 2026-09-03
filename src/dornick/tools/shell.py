@@ -1,9 +1,9 @@
-"""Kabuk aracı.
+"""Shell tool.
 
-Genel amaçlı bir ajan için kabuk en geniş kaldıraçtır — ama harness'a sadece
-opak bir komut dizesi verir. Kapıya, işleme, denetime konu olması gereken
-eylemler (dosya yazma, tarayıcı, bilgisayar kullanımı) ayrı araçlara
-terfi ettirilmelidir; kabuk artakalan için.
+For a general-purpose agent the shell is the widest lever — but it hands
+the harness only an opaque command string. Actions that should be subject
+to gating, processing and inspection (file writes, browser, computer use)
+must be promoted to separate tools; the shell is for what is left over.
 """
 
 from __future__ import annotations
@@ -22,15 +22,16 @@ from .. import environment
 MAX_OUTPUT_CHARS = 30_000
 DEFAULT_TIMEOUT_S = 120
 
-# Arka plana alınan (arka_plan: true) işin varsayılan sigortası. Uzun ama
-# BİTEN işler için: derleme, kurulum, test koşusu, indirme. 2 saat cömert;
-# model isterse `timeout` ile değiştirir.
+# Default fuse of a job moved to the background (arka_plan: true). For long
+# but FINITE jobs: build, install, test run, download. 2 hours is generous;
+# the model changes it with `timeout` if it wants.
 JOB_TIMEOUT_S = 7200
 
-# Hiç bitmeyen sunucu-tipi komutların imzaları. Bunları önplanda beklemek turu
-# sonsuza dek dondurur — kullanıcının "takıldı kaldı" dediği durum. Model
-# `background:true` demeyi atlasa bile shell bunları KENDİSİ tanıyıp arka plana
-# alır; böylece tur asla donmaz, durdurulacak bir şey kalmaz, kuyruk akar.
+# Signatures of server-type commands that never end. Waiting for these in
+# the foreground freezes the turn forever — the situation the user calls
+# "it got stuck". Even if the model forgets to say `background:true`, the
+# shell recognises these ITSELF and moves them to the background; so the
+# turn never freezes, there is nothing left to stop, the queue flows.
 _SERVER_SIGNS = (
     "flask run", "flask --app", "uvicorn", "gunicorn", "hypercorn", "waitress",
     "runserver", "http.server", "npm start", "npm run dev", "npm run serve",
@@ -42,20 +43,20 @@ _SERVER_SIGNS = (
 
 
 def _looks_like_server(command: str) -> bool:
-    """Komut hiç bitmeyecek bir sunucu/izleyici mi? (sezgisel, temkinli)
+    """Is the command a server/watcher that will never end? (heuristic, cautious)
 
-    İki sinyal: (1) bilinen sunucu araçları/altkomutları, (2) bir ağ arayüzüne
-    bağlanma bayrakları (`--host`/`--port`/`-p 5000`/`:5000`). `pip install`,
-    `git`, derleme gibi uzun-ama-biten komutlar bu listeye girmez — onların
-    çıktısı önplanda gerekli.
+    Two signals: (1) known server tools/subcommands, (2) flags that bind to
+    a network interface (`--host`/`--port`/`-p 5000`/`:5000`). Long-but-
+    finite commands like `pip install`, `git`, a build do not enter this
+    list — their output is needed in the foreground.
     """
     import re
 
     low = " " + command.lower().strip() + " "
     if any(sign in low for sign in _SERVER_SIGNS):
         return True
-    # Ağ arayüzüne bağlanma bayrakları güçlü bir sunucu işareti (modbus web
-    # client `app.py --host 0.0.0.0 --port 5000` gibi).
+    # Flags binding to a network interface are a strong server sign (like
+    # the modbus web client `app.py --host 0.0.0.0 --port 5000`).
     if re.search(r"(^|\s)--(host|port|serve|bind)(\s|=)", low):
         return True
     if re.search(r"(^|\s)-p\s+\d{2,5}(\s|$)", low):
@@ -64,7 +65,7 @@ def _looks_like_server(command: str) -> bool:
 
 
 def _shell_command(command: str) -> list[str]:
-    """Platforma uygun kabuk çağrısını kurar."""
+    """Builds the platform-appropriate shell invocation."""
     if sys.platform == "win32":
         exe = shutil.which("pwsh") or shutil.which("powershell") or "powershell.exe"
         return [exe, "-NoProfile", "-NonInteractive", "-Command", command]
@@ -72,29 +73,30 @@ def _shell_command(command: str) -> list[str]:
     return [exe, "-lc", command]
 
 
-# Süreç ağacını öldürme işi ortam.agaci_oldur'da: tamamen async, her
-# bekleyişi sınırlı. Buradaki eski senkron ikiz (subprocess.run ile
-# zaman aşımsız taskkill) ajan döngüsünün TAMAMINI kilitleyebiliyordu —
-# kullanıcı Durdur'a basıyor, taskkill takılıyor, bütün sohbetler ve
-# Durdur'un kendisi donuyordu (canlı yara, 01.09).
+# Killing the process tree lives in environment.kill_tree: fully async,
+# every wait bounded. The old synchronous twin here (subprocess.run with
+# an untimed taskkill) could lock up the ENTIRE agent loop — the user
+# presses Stop, taskkill hangs, every chat and Stop itself freeze (live
+# wound, 01.09).
 
 
 async def _run_shell(
     command: str, cwd: Path, session_id: str, timeout: float, cancel: asyncio.Event
 ) -> tuple[str, str, int]:
-    """Komutu koşturur: (durum, çıktı, kod). durum: ok | stop | timeout.
+    """Runs the command: (status, output, code). status: ok | stop | timeout.
 
-    Komut KESME olayıyla yarıştırılıyor: kullanıcı "durdur" dediğinde
-    (cancel) çalışan komut anında öldürülüyor. Senkron yol ctx.cancel ile,
-    arka plan işi kendi defter bayrağıyla çağırıyor — mekanizma tek.
+    The command is RACED against the interrupt event: when the user says
+    "stop" (cancel) the running command is killed at once. The synchronous
+    path calls with ctx.cancel, the background job with its own ledger
+    flag — one mechanism.
     """
     proc = await asyncio.create_subprocess_exec(
         *_shell_command(command),
         cwd=str(cwd),
-        # stdin kapalı: çocuk stdin'i miras alırsa `input()` bekleyen bir
-        # program (canlıda ajanın kendi yazdığı araç) turu dakikalarca
-        # asıyor. Kapalı stdin'de input() anında EOFError verir — model
-        # hatayı görür ve düzeltir.
+        # stdin closed: if the child inherits stdin, a program waiting on
+        # `input()` (live case: a tool the agent wrote itself) hangs the
+        # turn for minutes. With stdin closed input() raises EOFError at
+        # once — the model sees the error and fixes it.
         stdin=asyncio.subprocess.DEVNULL,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.STDOUT,
@@ -209,12 +211,12 @@ UZUN SÜREN SÜREÇLER — iki ayrı kip, karıştırma:
         if not command:
             return ToolResult.error("Boş komut. `command` alanını doldur.")
 
-        # dornick KENDİNİ başlatmasın. Model kafası karıştığında ("uygulamayı
-        # ayağa kaldırayım") `dornick --web 8873` çalıştırıp Dornick'in ikinci bir
-        # kopyasını açıyordu; kullanıcı panelde kendi programının klonunu
-        # "uygulaman" diye görüyordu. Sessiz reddetmek yerine NEDENİ ve
-        # doğrusu söyleniyor — model bir sonraki hamlede kendi uygulamasını
-        # kendi portunda başlatabilsin.
+        # dornick must not launch ITSELF. When the model got confused ("let
+        # me bring the app up") it ran `dornick --web 8873` and opened a
+        # second copy of Dornick; the user saw a clone of their own program
+        # in the panel labelled "your app". Instead of refusing silently
+        # the REASON and the right way are stated — so the model can start
+        # its own app on its own port on the next move.
         from .. import apps as _apps
 
         if _apps.is_dornick_process(command):
@@ -226,40 +228,43 @@ UZUN SÜREN SÜREÇLER — iki ayrı kip, karıştırma:
                 "(örn. `py app.py`)."
             )
 
-        # Varsayılan çalışma dizini atölye: ajanın ürettiği her şey oraya
-        # düşsün. Kabuk dosya araçları gibi bağlanamıyor — bir komut
-        # istediği yere yazabilir — o sınırı izin motoru tutuyor.
+        # Default working directory is the workshop: everything the agent
+        # produces should land there. The shell cannot be bound like the
+        # file tools — a command can write wherever it wants — the
+        # permission engine holds that boundary.
         default = ctx.sandbox.root if ctx.sandbox.enabled else ctx.workspace
         cwd = Path(args.get("cwd") or default).expanduser()
         if not cwd.is_dir() and not cwd.is_absolute():
-            # Dosya araçlarındaki atölye-önek tuzağının kabuk kopyası
-            # (ölçüldü, 29.08 süpürümü: 3 hatalı çağrının kalıbı "Çalışma
-            # dizini yok: atolye\X"): model sistem promptundaki klasör
-            # adını yola kendisi ekliyor. files._resolve bunu dosyalarda
-            # sessizce düzeltiyordu; kabuk cwd'si aynı düzeltmeyi almalı.
-            kok = default
+            # The shell copy of the workshop-prefix trap in the file tools
+            # (measured, 29.08 sweep: the pattern of 3 failed calls was
+            # "Çalışma dizini yok: atolye\X"): the model adds the folder
+            # name from the system prompt to the path itself.
+            # files._resolve fixed this silently for files; the shell cwd
+            # should get the same fix.
+            root = default
             parts = cwd.parts
-            if parts and parts[0] == kok.name:
-                aday = kok / Path(*parts[1:]) if len(parts) > 1 else kok
+            if parts and parts[0] == root.name:
+                candidate = root / Path(*parts[1:]) if len(parts) > 1 else root
             else:
-                aday = kok / cwd
-            if aday.is_dir():
-                cwd = aday
+                candidate = root / cwd
+            if candidate.is_dir():
+                cwd = candidate
         if not cwd.is_dir():
             return ToolResult.error(f"Çalışma dizini yok: {cwd}")
 
-        # Arka plan (detached): sunucu gibi hiç bitmeyen süreçler. Beklemeden
-        # başlatılıyor; apps süreç defterine yazılıyor ki Uygulamalar ›
-        # Çalışıyor'dan görülüp durdurulabilsin ve canlı adresi belirsin.
-        # Çıktı PIPE'a değil DOSYAYA gidiyor: dinlenmeyen boru süreci
-        # kilitler, görünür konsol ise kullanıcının ekranında pencere
-        # patlatır ("dornick çalışırken durmadan cmd açılıyor" şikâyetinin
-        # köklerinden biri buydu) — dosya ikisini de çözer ve log sonradan
-        # okunabilir kalır.
+        # Background (detached): processes like servers that never end.
+        # Started without waiting; written to the apps process ledger so it
+        # can be seen and stopped from Uygulamalar › Çalışıyor and its live
+        # address appears. Output goes to a FILE, not a PIPE: an unread pipe
+        # locks the process, while a visible console pops windows on the
+        # user's screen (one of the roots of the "cmd keeps opening while
+        # dornick runs" complaint) — a file solves both and the log stays
+        # readable afterwards.
         #
-        # `background` açıkça verilmese bile komut sunucu-tipi görünüyorsa
-        # KENDİLİĞİNDEN arka plana alıyoruz: model bayrağı unutsa da tur
-        # donmasın. Auto olduğunda kullanıcıya bunu ayrıca söylüyoruz.
+        # Even when `background` is not given explicitly, if the command
+        # looks server-type we move it to the background OURSELVES: the turn
+        # must not freeze even if the model forgets the flag. When it is
+        # auto we also tell the user so.
         auto = not args.get("background") and _looks_like_server(command)
         if args.get("background") or auto:
             import subprocess
@@ -286,7 +291,7 @@ UZUN SÜREN SÜREÇLER — iki ayrı kip, karıştırma:
                 return ToolResult.error(f"Arka planda başlatılamadı: {type(exc).__name__}: {exc}")
             finally:
                 if log is not subprocess.DEVNULL:
-                    log.close()  # Popen kendi tanıtıcısını miras aldı
+                    log.close()  # Popen inherited its own handle
             apps._PROCS[bg.pid] = {
                 "proc": bg, "path": command[:80], "name": command.split()[0] if command.split() else "süreç",
                 "started": _time.time(),
@@ -303,10 +308,11 @@ UZUN SÜREN SÜREÇLER — iki ayrı kip, karıştırma:
                 "tarayıcıdan açmak isterse o adresi ver."
             )
 
-        # Uzun ama BİTEN iş: arka plan defterine. Araç hemen döner, iş
-        # bitince çıktısı harness notuyla ajana bildirilir (yardımcıların
-        # bildirim altyapısının aynısı). Sunucu-tipi komut buraya girmez —
-        # o hiç bitmez, yukarıdaki detached yol onun için.
+        # Long but FINITE job: to the background ledger. The tool returns at
+        # once, when the job finishes its output is reported to the agent
+        # with a harness note (the same notification infrastructure as the
+        # helpers). A server-type command does not enter here — it never
+        # ends, the detached path above is for it.
         if args.get("arka_plan") and ctx.job_bg is not None:
             session_id = ctx.session.id
             job_timeout = float(args.get("timeout") or JOB_TIMEOUT_S)
@@ -339,7 +345,7 @@ UZUN SÜREN SÜREÇLER — iki ayrı kip, karıştırma:
             command, cwd, ctx.session.id, timeout, ctx.cancel)
 
         if status == "stop":
-            # Kullanıcı durdurdu.
+            # The user stopped it.
             return ToolResult.error("Durduruldu — çalışan komut sonlandırıldı.")
 
         if status == "timeout":
@@ -363,18 +369,18 @@ UZUN SÜREN SÜREÇLER — iki ayrı kip, karıştırma:
         )
 
 
-# -- öğretici kabuk hataları ---------------------------------------------
+# -- teaching shell errors -------------------------------------------------
 #
-# Hata metni sonraki turun düzeltme tarifi olmalı (OpenCode'un edit aracı
-# kalıbı). Buradaki üç kalıp kıyas koşusundaki 6 hatalı çağrının tamamını
-# kapsıyor. Kalıp tekrarı ders hafızasına da işlenebilir (yol haritasında);
-# önce hatanın kendisi öğretsin.
+# The error text should be the next turn's recipe for the fix (OpenCode's
+# edit-tool pattern). The three patterns here cover all 6 failed calls of
+# the benchmark run. Pattern repetition can also be fed into the lesson
+# memory (on the roadmap); first let the error itself teach.
 
-_IPUCLARI: list[tuple[tuple[str, ...], str]] = [
+_HINTS: list[tuple[tuple[str, ...], str]] = [
     (("unexpected token", "missing terminator", "parsererror",
       "was unexpected at this time", "terminator in the string",
-      # PowerShell'de bash heredoc denemesi (py - <<EOF): z1 koşusunda
-      # ipucusuz kalan gerçek vaka.
+      # A bash heredoc attempt in PowerShell (py - <<EOF): a real case that
+      # was left without a hint in the z1 run.
       "missing file specification after redirection"),
      "PowerShell tırnak/kaçış kırılgandır: karmaşık komutu write_file ile "
      "bir betiğe yaz ve dosyayı koş; $ içeren metinlerde tek tırnak kullan."),
@@ -390,7 +396,7 @@ _IPUCLARI: list[tuple[tuple[str, ...], str]] = [
 ]
 
 _MODULE_RE = re.compile(r"No module named ['\"]([^'\"]+)['\"]", re.I)
-_PAKET_RE = re.compile(
+_PACKAGE_RE = re.compile(
     r"paketi yüklü değil[:\s]*\*?\*?`?([A-Za-z0-9_.-]+)",
     re.I,
 )
@@ -398,109 +404,110 @@ _PIP_RE = re.compile(r"pip install ([A-Za-z0-9_.-]+)", re.I)
 _ERROR_LINE = re.compile(
     r"^[A-Za-z_][\w.]*?(?:Error|Exception|Warning): .+"
 )
-_CIKIS_RE = re.compile(r"^Çıkış kodu (\d+)\s*\n+(.*)$", re.S)
+_EXIT_RE = re.compile(r"^Çıkış kodu (\d+)\s*\n+(.*)$", re.S)
 
 
-def _module_name(cikti: str) -> str:
-    ham = cikti or ""
-    for rx in (_MODULE_RE, _PAKET_RE, _PIP_RE):
-        m = rx.search(ham)
+def _module_name(output: str) -> str:
+    raw = output or ""
+    for rx in (_MODULE_RE, _PACKAGE_RE, _PIP_RE):
+        m = rx.search(raw)
         if m:
             return m.group(1).strip()
     return ""
 
 
-def son_hata_satiri(cikti: str) -> str:
-    """Traceback'in son Exception satırı — 'File …' izi değil."""
-    for line in reversed((cikti or "").splitlines()):
+def last_error_line(output: str) -> str:
+    """The traceback's last Exception line — not the 'File …' trace."""
+    for line in reversed((output or "").splitlines()):
         s = line.strip()
         if _ERROR_LINE.match(s):
             return s
     return ""
 
 
-def shell_hint(cikti: str) -> str:
-    """Bilinen hata kalıbına tek satırlık çıkış yolu (yoksa boş)."""
-    ad = _module_name(cikti)
-    if ad:
+def shell_hint(output: str) -> str:
+    """A one-line way out for a known error pattern (empty if none)."""
+    name = _module_name(output)
+    if name:
         return (
-            f"Python paketi `{ad}` yüklü değil. "
-            f"`py -m pip install {ad}` ile kur, sonra komutu yeniden koş."
+            f"Python paketi `{name}` yüklü değil. "
+            f"`py -m pip install {name}` ile kur, sonra komutu yeniden koş."
         )
-    kucuk = cikti.lower()
-    for izler, tarif in _IPUCLARI:
-        if any(iz in kucuk for iz in izler):
-            return tarif
+    lower = output.lower()
+    for traces, recipe in _HINTS:
+        if any(trace in lower for trace in traces):
+            return recipe
     return ""
 
 
-def kabuk_ozet(cikti: str) -> str:
-    """Ham kabuk çıktısından kullanıcının anlayacağı cümle."""
-    ad = _module_name(cikti)
-    if ad:
+def shell_summary(output: str) -> str:
+    """A sentence the user will understand, from raw shell output."""
+    name = _module_name(output)
+    if name:
         return (
-            f"Gerekli Python paketi yüklü değil: **{ad}**. "
-            f"Kurmak için `py -m pip install {ad}` yaz, sonra aynı komutu "
+            f"Gerekli Python paketi yüklü değil: **{name}**. "
+            f"Kurmak için `py -m pip install {name}` yaz, sonra aynı komutu "
             "yeniden çalıştır."
         )
-    if ipucu := shell_hint(cikti or ""):
-        son = son_hata_satiri(cikti)
-        if son:
-            return f"{son}. {ipucu}"
-        return ipucu
-    return son_hata_satiri(cikti)
+    if hint := shell_hint(output or ""):
+        last = last_error_line(output)
+        if last:
+            return f"{last}. {hint}"
+        return hint
+    return last_error_line(output)
 
 
 def job_report(*, command: str, code: int, text: str) -> str:
-    """Başarısız kabuk işinin kullanıcı raporu — traceback duvarı değil."""
-    ozet = kabuk_ozet(text)
-    satirlar = [
+    """The user report of a failed shell job — not a wall of traceback."""
+    summary = shell_summary(text)
+    lines = [
         "## Sonuç",
         "",
-        ozet or "Komut çalışmadı.",
+        summary or "Komut çalışmadı.",
         "",
         f"- Komut: `{command}`",
     ]
-    if not ozet:
-        kuyruk = _kisa_kuyruk(text)
-        if kuyruk:
-            satirlar += ["", "## Çıktı", "", kuyruk]
+    if not summary:
+        tail = _short_tail(text)
+        if tail:
+            lines += ["", "## Çıktı", "", tail]
     if code and code != 1:
-        satirlar.append(f"- Çıkış kodu: {code}")
-    return "\n".join(satirlar)
+        lines.append(f"- Çıkış kodu: {code}")
+    return "\n".join(lines)
 
 
 def success_report(*, command: str, text: str) -> str:
-    """Başarılı kabuk işinin kullanıcı raporu — ham stdout duvarı değil.
+    """The user report of a successful shell job — not a wall of raw stdout.
 
-    Viewer'da önce ne bittiği okunsun; uzun log ## Çıktı altında kalsın.
+    In the Viewer what finished should be read first; a long log stays
+    under ## Çıktı.
     """
-    ham = (text or "").strip()
-    bos = not ham or ham == "(çıktı yok, komut başarılı)"
-    ozet = "Komut başarıyla bitti."
-    if not bos:
-        for line in reversed(ham.splitlines()):
+    raw = (text or "").strip()
+    empty = not raw or raw == "(çıktı yok, komut başarılı)"
+    summary = "Komut başarıyla bitti."
+    if not empty:
+        for line in reversed(raw.splitlines()):
             s = line.strip()
             if s:
-                ozet = s[:220]
+                summary = s[:220]
                 break
-    satirlar = [
+    lines = [
         "## Sonuç",
         "",
-        ozet,
+        summary,
         "",
         f"- Komut: `{command}`",
     ]
-    if not bos and (ham.count("\n") > 0 or len(ham) > len(ozet) + 24):
-        govde = ham if len(ham) <= 12000 else "…\n" + "\n".join(ham.splitlines()[-100:])
-        satirlar += ["", "## Çıktı", "", govde]
-    return "\n".join(satirlar)
+    if not empty and (raw.count("\n") > 0 or len(raw) > len(summary) + 24):
+        body = raw if len(raw) <= 12000 else "…\n" + "\n".join(raw.splitlines()[-100:])
+        lines += ["", "## Çıktı", "", body]
+    return "\n".join(lines)
 
 
-def _kisa_kuyruk(cikti: str) -> str:
-    """Traceback izini at; son birkaç anlamlı satır."""
+def _short_tail(output: str) -> str:
+    """Drop the traceback trace; the last few meaningful lines."""
     keep: list[str] = []
-    for line in (cikti or "").splitlines():
+    for line in (output or "").splitlines():
         s = line.strip()
         if not s or s.startswith("Traceback") or s.startswith("File "):
             continue
@@ -510,40 +517,40 @@ def _kisa_kuyruk(cikti: str) -> str:
     return "\n".join(keep[-5:])[:400]
 
 
-def _komut_from_title(title: str) -> str:
-    ad = (title or "").strip()
-    return ad[2:].strip() if ad.startswith("$ ") else ad
+def _command_from_title(title: str) -> str:
+    name = (title or "").strip()
+    return name[2:].strip() if name.startswith("$ ") else name
 
 
-def human_job_report(metin: str, *, title: str = "") -> str:
-    """Eski ham dökümü (Çıkış kodu + traceback) okunur rapora çevir.
+def human_job_report(text: str, *, title: str = "") -> str:
+    """Turn the old raw dump (Çıkış kodu + traceback) into a readable report.
 
-    Yeni işler zaten `is_raporu` / `basari_raporu` yazar; Viewer hâlâ
-    bellekteki eski dökümü gösterebilir.
+    New jobs already write `job_report` / `success_report`; the Viewer can
+    still show an old dump from memory.
     """
-    ham = (metin or "").strip()
-    if not ham:
-        return ham
-    if ham.startswith("## Sonuç"):
-        return ham
-    komut = _komut_from_title(title)
-    m = _CIKIS_RE.match(ham)
+    raw = (text or "").strip()
+    if not raw:
+        return raw
+    if raw.startswith("## Sonuç"):
+        return raw
+    command = _command_from_title(title)
+    m = _EXIT_RE.match(raw)
     if m:
-        return job_report(command=komut, code=int(m.group(1)), text=m.group(2))
-    if "Traceback (most recent call last)" in ham:
-        return job_report(command=komut, code=1, text=ham)
-    # Başarı dökümü: komut başlıklı arka plan işlerinde yapılandır.
-    if komut or (title or "").strip().startswith("$ "):
-        return success_report(command=komut or title, text=ham)
-    return ham
+        return job_report(command=command, code=int(m.group(1)), text=m.group(2))
+    if "Traceback (most recent call last)" in raw:
+        return job_report(command=command, code=1, text=raw)
+    # Success dump: structure it for background jobs titled with a command.
+    if command or (title or "").strip().startswith("$ "):
+        return success_report(command=command or title, text=raw)
+    return raw
 
 
-def short_job_summary(metin: str, *, title: str = "") -> str:
-    """Görevler listesi için tek cümle — traceback değil."""
-    rapor = human_job_report(metin, title=title)
-    for line in rapor.splitlines():
+def short_job_summary(text: str, *, title: str = "") -> str:
+    """One sentence for the tasks list — not a traceback."""
+    report = human_job_report(text, title=title)
+    for line in report.splitlines():
         s = line.strip()
         if not s or s.startswith("#") or s.startswith("- "):
             continue
         return s
-    return rapor[:400]
+    return report[:400]

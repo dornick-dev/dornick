@@ -1,12 +1,13 @@
-"""Kabuk aracı: arka plan (sunucu) ve kesme (durdur).
+"""Shell tool: background (server) and interrupt (stop).
 
-İki gerçek dünya hatası: (1) dornick bir sunucuyu (`python app.py`) normal kipte
-çalıştırınca komut hiç bitmediği için tur takılıp kalıyordu — `background`
-bunu detached başlatıp hemen dönüyor. (2) Uzun bir komutta "durdur" işe
-yaramıyordu — kabuk `communicate()`'i beklerken kesmeyi görmüyordu; artık
-`ctx.cancel` ile yarışıyor ve süreci öldürüyor.
+Two real-world failures: (1) when dornick ran a server (`python app.py`) in
+normal mode the turn got stuck because the command never finished —
+`background` now starts it detached and returns at once. (2) On a long
+command "stop" did not work — the shell did not see the interrupt while
+waiting on `communicate()`; it now races against `ctx.cancel` and kills
+the process.
 
-Windows'ta PowerShell `Start-Sleep` kullanılıyor (quoting-güvenli, uzun sürer).
+On Windows PowerShell `Start-Sleep` is used (quoting-safe, runs long).
 """
 
 from __future__ import annotations
@@ -68,7 +69,7 @@ def test_background_returns_immediately_and_is_tracked(tmp_path: Path) -> None:
     assert blocks[0]["is_error"] is False
     assert "Arka planda" in blocks[0]["content"]
     assert len(apps._PROCS) == before + 1
-    # Temizle: başlattığımız süreci bitir.
+    # Clean up: finish the process we started.
     for pid in list(apps._PROCS)[before:]:
         try:
             apps._PROCS[pid]["proc"].terminate()

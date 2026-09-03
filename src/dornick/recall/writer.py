@@ -1,21 +1,22 @@
 # -*- coding: utf-8 -*-
-"""Taban yazıcı: sorguyu yerel küçük modelle genişleten katman.
+"""Base writer: the layer that expands a query with the small local model.
 
-10.8M parametrelik, bayt seviyesinde, iki dilli (TR/EN) bir GPT sorgudaki
-konuyu birkaç eşanlamlı/komşu terime açar; terimler sorguya eklenip
-hatırlama aramasına verilir. Sözlük köprüsünün (bridge.py) elle yazılmış
-~50 grubu neyi kaçırıyorsa bu model onu öğrenilmiş genellemeyle kapatır —
-ölçülen fark: eşanlam sınıfı 0.50 → 1.00, genel isabet 0.87 → 0.93
-(eval/context_memory/scale_bench.py, dondurulmuş set).
+A 10.8M-parameter, byte-level, bilingual (TR/EN) GPT opens the topic in the
+query into a few synonymous/neighbouring terms; the terms are appended to the
+query and handed to the recall search. Whatever the dictionary bridge's
+(bridge.py) ~50 hand-written groups miss, this model closes with learned
+generalisation — measured difference: synonym class 0.50 → 1.00, overall
+hit rate 0.87 → 0.93 (eval/context_memory/scale_bench.py, frozen set).
 
-Saf numpy: torch yok, kurulum yok. Ağırlıklar tek .npz dosyası; önce
-kullanıcının kendi eğittiği .dornick/taban.npz aranır (kişisel ince ayar
-vizyonu), yoksa ürünle gelen assets/taban.npz. İkisi de yoksa ya da numpy
-yüklü değilse katman sessizce devre dışı kalır ve sorgu olduğu gibi geçer:
-hatırlama bu model OLMADAN da çalışır, model yalnızca iyileştirir.
+Pure numpy: no torch, no install. The weights are a single .npz file; the
+user's own trained .dornick/taban.npz is looked for first (the personal
+fine-tuning vision), otherwise the assets/taban.npz shipped with the product.
+If neither exists, or numpy is not installed, the layer silently stays out
+and the query passes through as is: recall works WITHOUT this model, the
+model only improves it.
 
-Eğitim düzeneği ayrı depoda: D:\\Projects\\ai\\neocp-base-model
-(öğretmen-öğrenci damıtma, gemini flash-lite etiketli 138k örnek).
+The training rig lives in a separate repo: D:\\Projects\\ai\\neocp-base-model
+(teacher-student distillation, 138k examples labelled by gemini flash-lite).
 """
 
 from __future__ import annotations
@@ -26,98 +27,101 @@ from pathlib import Path
 
 BOS, SEP, EOS, PAD = 256, 257, 258, 259
 
-# Açgözlü çözümleme takılıp aynı kelimeyi tekrarlayabiliyor; tekrarlar
-# atılır, liste 8 terimle sınırlanır (model en emin olduğunu önce üretir).
-EN_COK_TERIM = 8
+# Greedy decoding can get stuck repeating the same word; repeats are dropped
+# and the list is capped at 8 terms (the model emits what it is surest of
+# first).
+MAX_TERMS = 8
 
-# Genişletmenin üreteceği azami bayt. Sınav bu değerle ölçüldü; değiştiren
-# önce benchmark'ı yeniden koşmalı.
+# Maximum bytes the expansion may generate. The benchmark was measured with
+# this value; whoever changes it must re-run the benchmark first.
 MAX_BYTES = 64
 
-_kilit = threading.Lock()
-_writer: "TabanYazici | None" = None
+_lock = threading.Lock()
+_writer: "BaseWriter | None" = None
 _denendi = False
-_yuklu_iz: tuple[str, float] | None = None  # (yol, mtime) — sıcak yenileme için
-_son_bakis = 0.0
+_loaded_trace: tuple[str, float] | None = None  # (path, mtime) — for hot refresh
+_last_check = 0.0
 
-# Gece döngüsü .dornick/taban.npz'ye yeni model koyunca uygulama yeniden
-# başlamadan devreye girsin diye dosya en fazla bu aralıkla yeniden yoklanır.
+# When the night loop drops a new model into .dornick/taban.npz it should take
+# effect without restarting the app, so the file is re-probed at most this
+# often.
 REFRESH_INTERVAL_S = 300.0
 
 
-def zenginlestir(sorgu: str, state_dir: Path | None = None) -> str:
-    """Sorgu + model terimleri; model yoksa/susarsa sorgu olduğu gibi.
+def zenginlestir(query: str, state_dir: Path | None = None) -> str:
+    """Query + model terms; if there is no model, or it says nothing, the query as is.
 
-    select_prime'a giden metni üretir. Benchmark'taki yöntem birebir bu:
-    `select_prime(m, q + " " + genislet(q))` — buradaki birleştirme o
-    ölçümün ürünü; biçimi değiştirmek ölçülmemiş bir ürüne geçmektir.
+    Produces the text that goes to select_prime. The method in the benchmark
+    is exactly this: `select_prime(m, q + " " + expand(q))` — the joining
+    here is the product of that measurement; changing the format means
+    moving to an unmeasured product.
     """
-    sorgu = (sorgu or "").strip()
-    if not sorgu:
-        return sorgu
-    yazici = _yukle(state_dir)
-    if yazici is None:
-        return sorgu
+    query = (query or "").strip()
+    if not query:
+        return query
+    writer = _load(state_dir)
+    if writer is None:
+        return query
     try:
-        terimler = yazici.genislet(sorgu)
+        terms = writer.expand(query)
     except Exception:
-        # Genişletme hiçbir koşulda hatırlamayı düşürmemeli.
-        return sorgu
-    return f"{sorgu} {terimler}" if terimler else sorgu
+        # Expansion must never, under any condition, make recall worse.
+        return query
+    return f"{query} {terms}" if terms else query
 
 
-def hazir(state_dir: Path | None = None) -> bool:
-    return _yukle(state_dir) is not None
+def ready(state_dir: Path | None = None) -> bool:
+    return _load(state_dir) is not None
 
 
 def reset() -> None:
-    """Önbelleği düşürür: bir sonraki sorgu adayları diskten yeniden yoklar.
+    """Drops the cache: the next query re-probes the candidates on disk.
 
-    Kişisel model silindiğinde (ya da içe aktarımla değiştiğinde) beş
-    dakikalık yenileme aralığını beklemek "sıfırladım ama hâlâ eski model
-    konuşuyor" demek; sıfırlama/geri yükleme uçları bunu çağırıp geçişi
-    anında yapıyor.
+    When the personal model is deleted (or replaced by an import), waiting
+    out the five-minute refresh interval means "I reset it but the old model
+    is still talking"; the reset/restore endpoints call this and make the
+    switch immediate.
     """
-    global _writer, _denendi, _yuklu_iz, _son_bakis
-    with _kilit:
+    global _writer, _denendi, _loaded_trace, _last_check
+    with _lock:
         _writer = None
         _denendi = False
-        _yuklu_iz = None
-        _son_bakis = 0.0
+        _loaded_trace = None
+        _last_check = 0.0
 
 
-def _adaylar(state_dir: Path | None) -> list[Path]:
-    adaylar = []
+def _candidates(state_dir: Path | None) -> list[Path]:
+    candidates = []
     if state_dir is not None:
-        adaylar.append(Path(state_dir) / "taban.npz")
-    adaylar.append(Path(__file__).parent.parent / "assets" / "taban.npz")
-    return adaylar
+        candidates.append(Path(state_dir) / "taban.npz")
+    candidates.append(Path(__file__).parent.parent / "assets" / "taban.npz")
+    return candidates
 
 
-def _yukle(state_dir: Path | None) -> "TabanYazici | None":
-    global _writer, _denendi, _yuklu_iz, _son_bakis
+def _load(state_dir: Path | None) -> "BaseWriter | None":
+    global _writer, _denendi, _loaded_trace, _last_check
     import time
-    simdi = time.monotonic()
-    taze_gerek = simdi - _son_bakis >= REFRESH_INTERVAL_S
-    if (_writer is not None or _denendi) and not taze_gerek:
+    now = time.monotonic()
+    refresh_due = now - _last_check >= REFRESH_INTERVAL_S
+    if (_writer is not None or _denendi) and not refresh_due:
         return _writer
-    with _kilit:
-        simdi = time.monotonic()
-        if (_writer is not None or _denendi) and simdi - _son_bakis < REFRESH_INTERVAL_S:
+    with _lock:
+        now = time.monotonic()
+        if (_writer is not None or _denendi) and now - _last_check < REFRESH_INTERVAL_S:
             return _writer
-        _son_bakis = simdi
+        _last_check = now
         _denendi = True
-        for yol in _adaylar(state_dir):
+        for path in _candidates(state_dir):
             try:
-                iz = (str(yol), yol.stat().st_mtime)
+                trace = (str(path), path.stat().st_mtime)
             except OSError:
                 continue
-            # Aynı dosya, aynı damga: yüklü olan geçerli.
-            if _writer is not None and iz == _yuklu_iz:
+            # Same file, same stamp: what is loaded is still valid.
+            if _writer is not None and trace == _loaded_trace:
                 return _writer
             try:
-                _writer = BaseWriter(yol)
-                _yuklu_iz = iz
+                _writer = BaseWriter(path)
+                _loaded_trace = trace
             except Exception:
                 continue
             return _writer
@@ -129,29 +133,29 @@ def _np():
     return np
 
 
-def _clean(ham: str) -> str:
-    gorulen: set[str] = set()
-    terimler: list[str] = []
-    for parca in ham.split():
-        switches = parca.casefold()
-        if switches in gorulen:
+def _clean(raw: str) -> str:
+    seen: set[str] = set()
+    terms: list[str] = []
+    for piece in raw.split():
+        key = piece.casefold()
+        if key in seen:
             continue
-        gorulen.add(switches)
-        terimler.append(parca)
-        if len(terimler) >= EN_COK_TERIM:
+        seen.add(key)
+        terms.append(piece)
+        if len(terms) >= MAX_TERMS:
             break
-    return " ".join(terimler)
+    return " ".join(terms)
 
 
 class BaseWriter:
-    """Tek .npz'den yüklenen, KV önbellekli açgözlü çözümleyici."""
+    """Greedy decoder with a KV cache, loaded from a single .npz."""
 
-    def __init__(self, yol: str | Path) -> None:
+    def __init__(self, path: str | Path) -> None:
         np = _np()
-        paket = np.load(Path(yol), allow_pickle=False)
-        self.w = {k: paket[k].astype(np.float32) for k in paket.files if k != "_ayar"}
-        self.a = json.loads(bytes(paket["_ayar"]).decode("utf-8"))
-        self.kafa = self.a["kafa"]
+        bundle = np.load(Path(path), allow_pickle=False)
+        self.w = {k: bundle[k].astype(np.float32) for k in bundle.files if k != "_ayar"}
+        self.a = json.loads(bytes(bundle["_ayar"]).decode("utf-8"))
+        self.heads = self.a["kafa"]
 
     def _ln(self, x, w, b, eps=1e-5):
         mu = x.mean(-1, keepdims=True)
@@ -162,61 +166,61 @@ class BaseWriter:
         np = _np()
         return 0.5 * x * (1 + np.tanh(np.sqrt(2 / np.pi) * (x + 0.044715 * x ** 3)))
 
-    def _blok(self, x, i: int, onbellek: list):
+    def _block(self, x, i: int, cache: list):
         np = _np()
         w = self.w
         T, d = x.shape
         h = self._ln(x, w[f"b{i}.n1.w"], w[f"b{i}.n1.b"])
-        # MultiheadAttention: in_proj tek matris (3d, d), out_proj (d, d).
+        # MultiheadAttention: in_proj is a single (3d, d) matrix, out_proj (d, d).
         qkv = h @ w[f"b{i}.att.in_w"].T + w[f"b{i}.att.in_b"]
         q, k, v = np.split(qkv, 3, axis=-1)
-        hd = d // self.kafa
-        q = q.reshape(T, self.kafa, hd).transpose(1, 0, 2)
-        k = k.reshape(T, self.kafa, hd).transpose(1, 0, 2)
-        v = v.reshape(T, self.kafa, hd).transpose(1, 0, 2)
-        gecmis = 0
-        if onbellek[i] is not None:
-            ek, ev = onbellek[i]
-            gecmis = ek.shape[1]
-            k = np.concatenate([ek, k], axis=1)
-            v = np.concatenate([ev, v], axis=1)
-        onbellek[i] = (k, v)
-        puan = q @ k.transpose(0, 2, 1) / np.sqrt(hd)
-        # Nedensellik: yeni konum, kendinden sonraki anahtarı görmez.
+        hd = d // self.heads
+        q = q.reshape(T, self.heads, hd).transpose(1, 0, 2)
+        k = k.reshape(T, self.heads, hd).transpose(1, 0, 2)
+        v = v.reshape(T, self.heads, hd).transpose(1, 0, 2)
+        past = 0
+        if cache[i] is not None:
+            ck, cv = cache[i]
+            past = ck.shape[1]
+            k = np.concatenate([ck, k], axis=1)
+            v = np.concatenate([cv, v], axis=1)
+        cache[i] = (k, v)
+        score = q @ k.transpose(0, 2, 1) / np.sqrt(hd)
+        # Causality: a new position does not see the keys after itself.
         S = k.shape[1]
-        puan += np.triu(np.full((T, S), -1e9, dtype=np.float32), 1 + gecmis)
-        puan -= puan.max(-1, keepdims=True)
-        agirlik = np.exp(puan)
-        agirlik /= agirlik.sum(-1, keepdims=True)
-        birlesik = (agirlik @ v).transpose(1, 0, 2).reshape(T, d)
-        x = x + birlesik @ w[f"b{i}.att.out_w"].T + w[f"b{i}.att.out_b"]
+        score += np.triu(np.full((T, S), -1e9, dtype=np.float32), 1 + past)
+        score -= score.max(-1, keepdims=True)
+        weight = np.exp(score)
+        weight /= weight.sum(-1, keepdims=True)
+        merged = (weight @ v).transpose(1, 0, 2).reshape(T, d)
+        x = x + merged @ w[f"b{i}.att.out_w"].T + w[f"b{i}.att.out_b"]
         h = self._ln(x, w[f"b{i}.n2.w"], w[f"b{i}.n2.b"])
         h = self._gelu(h @ w[f"b{i}.mlp0.w"].T + w[f"b{i}.mlp0.b"])
         return x + h @ w[f"b{i}.mlp2.w"].T + w[f"b{i}.mlp2.b"]
 
-    def _ilerle(self, dizin: list[int], baslangic: int, onbellek: list):
+    def _forward(self, sequence: list[int], start: int, cache: list):
         w = self.w
-        yeni = dizin[baslangic:]
-        x = w["gomme"][yeni] + w["konum"][baslangic: baslangic + len(yeni)]
+        fresh = sequence[start:]
+        x = w["gomme"][fresh] + w["konum"][start: start + len(fresh)]
         for i in range(self.a["kat"]):
-            x = self._blok(x, i, onbellek)
+            x = self._block(x, i, cache)
         x = self._ln(x, w["son.w"], w["son.b"])
         return x[-1] @ w["gomme"].T
 
-    def genislet(self, girdi: str, en_cok_bayt: int = MAX_BYTES) -> str:
-        """Sorguya eklenecek terimler; konu yoksa boş dize."""
+    def expand(self, text: str, max_bytes: int = MAX_BYTES) -> str:
+        """Terms to append to the query; an empty string if there is no topic."""
         np = _np()
-        dizin = [BOS] + list(girdi.encode("utf-8")[-152:]) + [SEP]
-        onbellek: list = [None] * self.a["kat"]
-        logits = self._ilerle(dizin, 0, onbellek)
-        uretilen: list[int] = []
-        for _ in range(en_cok_bayt):
-            sonraki = int(np.argmax(logits))
-            if sonraki in (EOS, PAD, BOS, SEP):
+        sequence = [BOS] + list(text.encode("utf-8")[-152:]) + [SEP]
+        cache: list = [None] * self.a["kat"]
+        logits = self._forward(sequence, 0, cache)
+        generated: list[int] = []
+        for _ in range(max_bytes):
+            nxt = int(np.argmax(logits))
+            if nxt in (EOS, PAD, BOS, SEP):
                 break
-            uretilen.append(sonraki)
-            dizin.append(sonraki)
-            if len(dizin) >= self.a["ctx"]:
+            generated.append(nxt)
+            sequence.append(nxt)
+            if len(sequence) >= self.a["ctx"]:
                 break
-            logits = self._ilerle(dizin, len(dizin) - 1, onbellek)
-        return _clean(bytes(uretilen).decode("utf-8", "ignore").strip())
+            logits = self._forward(sequence, len(sequence) - 1, cache)
+        return _clean(bytes(generated).decode("utf-8", "ignore").strip())

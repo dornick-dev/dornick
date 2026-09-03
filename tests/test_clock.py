@@ -1,10 +1,10 @@
-"""Enjekte edilebilir saat.
+"""Injectable clock.
 
-Hafızanın bundan sonraki bütün mekaniği (bozunma, pekişme, tazelik) zamana
-bakıyor. Zaman doğrudan `datetime.now()` ile okunursa "otuz gün sonra ne
-olur" sorusu ancak otuz gün beklenerek yanıtlanabilir — yani hiç. Buradaki
-testler enjekte edilen saatin diske yazılan HER damgaya ulaştığını ve
-doğrudan çağrının geri sızmadığını zorluyor.
+Every memory mechanism from here on (decay, consolidation, recency) looks at
+time. If time is read directly via `datetime.now()`, the question "what
+happens thirty days from now" can only be answered by waiting thirty days —
+that is, never. The tests here enforce that the injected clock reaches EVERY
+stamp written to disk and that the direct call does not leak back in.
 """
 
 from __future__ import annotations
@@ -17,140 +17,140 @@ from dornick.mind import open_mind
 from dornick.recall import open_store
 from dornick.recall.clock import parse, stamp
 
-KOK = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[1]
 
 
-class Takvim:
-    """Elle ilerletilen saat."""
+class Calendar:
+    """Manually advanced clock."""
 
-    def __init__(self, baslangic: datetime) -> None:
-        self.an = baslangic
+    def __init__(self, start: datetime) -> None:
+        self.moment = start
 
     def __call__(self) -> datetime:
-        return self.an
+        return self.moment
 
-    def gun_ekle(self, gun: int) -> None:
-        self.an += timedelta(days=gun)
-
-
-BASLANGIC = datetime(2025, 1, 6, 9, 0, tzinfo=timezone.utc)
+    def add_days(self, days: int) -> None:
+        self.moment += timedelta(days=days)
 
 
-# -- depo --------------------------------------------------------------
+START = datetime(2025, 1, 6, 9, 0, tzinfo=timezone.utc)
 
 
-def test_enjekte_saat_created_alanina_ulasir(tmp_path: Path) -> None:
-    takvim = Takvim(BASLANGIC)
-    store = open_store(tmp_path, clock=takvim)
+# -- store -------------------------------------------------------------
+
+
+def test_injected_clock_reaches_created_field(tmp_path: Path) -> None:
+    calendar = Calendar(START)
+    store = open_store(tmp_path, clock=calendar)
     try:
         node = store.remember("ilk gün yazılan kayıt", kind="fact")
         assert node.created.startswith("2025-01-06T09:00")
-        takvim.gun_ekle(40)
-        sonraki = store.remember("kırk gün sonra yazılan kayıt", kind="fact")
-        assert sonraki.created.startswith("2025-02-15T09:00")
+        calendar.add_days(40)
+        later = store.remember("kırk gün sonra yazılan kayıt", kind="fact")
+        assert later.created.startswith("2025-02-15T09:00")
     finally:
         store.close()
 
 
-def test_enjekte_saat_last_used_alanina_ulasir(tmp_path: Path) -> None:
-    takvim = Takvim(BASLANGIC)
-    store = open_store(tmp_path, clock=takvim)
+def test_injected_clock_reaches_last_used_field(tmp_path: Path) -> None:
+    calendar = Calendar(START)
+    store = open_store(tmp_path, clock=calendar)
     try:
         node = store.remember("kullanılacak kayıt", kind="fact")
-        takvim.gun_ekle(10)
+        calendar.add_days(10)
         store.open(node.id)
-        tazelenmis = store.peek(node.id)
-        assert tazelenmis is not None
-        assert tazelenmis.last_used.startswith("2025-01-16")
-        assert tazelenmis.uses == 1
-        # Yazım anı geride kaldı: kullanım onu değiştirmiyor.
-        assert tazelenmis.created.startswith("2025-01-06")
+        refreshed = store.peek(node.id)
+        assert refreshed is not None
+        assert refreshed.last_used.startswith("2025-01-16")
+        assert refreshed.uses == 1
+        # The moment of writing stays behind: a use does not change it.
+        assert refreshed.created.startswith("2025-01-06")
     finally:
         store.close()
 
 
-def test_saat_verilmezse_duvar_saati(tmp_path: Path) -> None:
-    """Ürün davranışı değişmemeli: parametre verilmeyince gerçek zaman."""
+def test_wall_clock_when_no_clock_given(tmp_path: Path) -> None:
+    """Product behaviour must not change: real time when the parameter is absent."""
     store = open_store(tmp_path)
     try:
         node = store.remember("bugün yazıldı", kind="fact")
-        yazim = parse(node.created)
-        assert yazim is not None
-        assert abs((datetime.now(timezone.utc) - yazim).total_seconds()) < 60
+        written = parse(node.created)
+        assert written is not None
+        assert abs((datetime.now(timezone.utc) - written).total_seconds()) < 60
     finally:
         store.close()
 
 
-# -- zihin -------------------------------------------------------------
+# -- mind --------------------------------------------------------------
 
 
-def test_zihin_saati_depoya_ve_hedeflere_gecirir(tmp_path: Path) -> None:
-    takvim = Takvim(BASLANGIC)
-    mind = open_mind(tmp_path / "mind", tmp_path / "sessions", "t", clock=takvim)
+def test_mind_passes_clock_to_store_and_goals(tmp_path: Path) -> None:
+    calendar = Calendar(START)
+    mind = open_mind(tmp_path / "mind", tmp_path / "sessions", "t", clock=calendar)
     try:
-        hafiza = mind.remember("kullanıcı Ankara'da yaşıyor", kind="user")
-        hedef = mind.push_goal("kurulum paketini imzala")
-        assert hafiza.ts.startswith("2025-01-06")
-        assert hedef.ts.startswith("2025-01-06")
+        memory = mind.remember("kullanıcı Ankara'da yaşıyor", kind="user")
+        goal = mind.push_goal("kurulum paketini imzala")
+        assert memory.ts.startswith("2025-01-06")
+        assert goal.ts.startswith("2025-01-06")
 
-        takvim.gun_ekle(30)
-        sonraki = mind.remember("kullanıcı taşındı", kind="user")
-        kapanan = mind.set_goal_status(hedef.id, "done")
-        assert sonraki.ts.startswith("2025-02-05")
-        assert kapanan is not None and kapanan.ts.startswith("2025-02-05")
+        calendar.add_days(30)
+        later = mind.remember("kullanıcı taşındı", kind="user")
+        closed = mind.set_goal_status(goal.id, "done")
+        assert later.ts.startswith("2025-02-05")
+        assert closed is not None and closed.ts.startswith("2025-02-05")
     finally:
         mind.store.close()
 
 
-def test_zihin_ve_depo_ayni_saati_gorur(tmp_path: Path) -> None:
-    """İki katman farklı takvimlerden okusa tazelik sıralaması bozulurdu."""
-    takvim = Takvim(BASLANGIC)
-    mind = open_mind(tmp_path / "mind", tmp_path / "sessions", "t", clock=takvim)
+def test_mind_and_store_see_the_same_clock(tmp_path: Path) -> None:
+    """If the two layers read different calendars the recency ranking would break."""
+    calendar = Calendar(START)
+    mind = open_mind(tmp_path / "mind", tmp_path / "sessions", "t", clock=calendar)
     try:
-        assert mind.store._clock is takvim
-        assert mind._now() == stamp(takvim)
+        assert mind.store._clock is calendar
+        assert mind._now() == stamp(calendar)
     finally:
         mind.store.close()
 
 
-# -- kural -------------------------------------------------------------
+# -- rule --------------------------------------------------------------
 
 
-def test_dogrudan_datetime_now_cagrisi_kalmadi() -> None:
-    """`_now()` yerine `_simdi()`.
+def test_no_direct_datetime_now_call_remains() -> None:
+    """`_now()` instead of `datetime.now()`.
 
-    Yeni bir mekanik yazarken doğrudan `datetime.now()` çağırmak, o mekaniği
-    sessizce ölçülemez yapar — benchmark sanal saati o çağrıya ulaşamaz.
-    Kural grep ile zorlanıyor; tek istisna `recall/saat.py`, zamanın okunduğu
-    tek yer.
+    Calling `datetime.now()` directly while writing a new mechanism silently
+    makes that mechanism unmeasurable — the benchmark's virtual clock cannot
+    reach that call. The rule is enforced by grep; the single exception is
+    `recall/clock.py`, the one place where time is read.
     """
-    for goreli in ("src/dornick/recall/store.py", "src/dornick/mind/store.py"):
-        # Yorum satırları elenir: kuralı ANLATAN bir yorum kuralı çiğnemiş
-        # sayılmamalı.
-        satirlar = [
-            satir
-            for satir in (KOK / goreli).read_text(encoding="utf-8").splitlines()
-            if not satir.lstrip().startswith("#")
+    for relative in ("src/dornick/recall/store.py", "src/dornick/mind/store.py"):
+        # Comment lines are filtered out: a comment DESCRIBING the rule must
+        # not count as breaking it.
+        lines = [
+            line
+            for line in (ROOT / relative).read_text(encoding="utf-8").splitlines()
+            if not line.lstrip().startswith("#")
         ]
-        bulunan = re.findall(r"datetime\.now\(", " ".join(satirlar))
-        assert not bulunan, (
-            f"{goreli}: doğrudan datetime.now() çağrısı var. "
-            "Zamanı `self._simdi()` üzerinden oku (bkz. recall/saat.py)."
+        found = re.findall(r"datetime\.now\(", " ".join(lines))
+        assert not found, (
+            f"{relative}: direct datetime.now() call present. "
+            "Read time through `self._now()` (see recall/clock.py)."
         )
 
 
-# -- damga çözme -------------------------------------------------------
+# -- stamp parsing -----------------------------------------------------
 
 
-def test_bozuk_damga_hata_yerine_none_doner() -> None:
-    """Elle düzenlenmiş ya da bozulmuş bir db açılabilir kalmalı."""
+def test_corrupt_stamp_returns_none_instead_of_error() -> None:
+    """A hand-edited or corrupted db must stay openable."""
     assert parse(None) is None
     assert parse("") is None
     assert parse("dün akşam") is None
 
 
-def test_zaman_dilimsiz_damga_utc_sayilir() -> None:
-    """Naif ve bilinçli damgayı karşılaştırmak TypeError'la patlardı."""
-    an = parse("2025-01-06T09:00:00.000")
-    assert an is not None and an.tzinfo is timezone.utc
-    assert an == datetime(2025, 1, 6, 9, 0, tzinfo=timezone.utc)
+def test_stamp_without_timezone_is_taken_as_utc() -> None:
+    """Comparing a naive and an aware stamp used to blow up with TypeError."""
+    moment = parse("2025-01-06T09:00:00.000")
+    assert moment is not None and moment.tzinfo is timezone.utc
+    assert moment == datetime(2025, 1, 6, 9, 0, tzinfo=timezone.utc)

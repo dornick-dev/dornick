@@ -1,11 +1,11 @@
-"""Bağlam ve önbellek politikası.
+"""Context and cache policy.
 
-Tek değişmez kural: **önbellek bir önek eşleşmesidir.** Önekte herhangi bir
-bayt değişirse o noktadan sonraki her şey geçersiz olur. Render sırası
-tools -> system -> messages. Buradaki her karar bu kuraldan türer.
+One invariant rule: **the cache is a prefix match.** If any byte in the
+prefix changes, everything after that point is invalidated. Render order is
+tools -> system -> messages. Every decision here derives from that rule.
 
-Bu modül geçmişi asla yerinde değiştirmez; API'ye gidecek bir kopya üretir.
-Olay günlüğü ham gerçeği tutmaya devam eder.
+This module never modifies history in place; it produces a copy that goes
+to the API. The event log keeps holding the raw truth.
 """
 
 from __future__ import annotations
@@ -24,35 +24,35 @@ Message = dict[str, Any]
 
 EPHEMERAL: Block = {"type": "ephemeral"}
 
-# API isteğinde toplam breakpoint sınırı. Biri sistem promptuna ayrılır.
+# Total breakpoint limit in an API request. One is reserved for the system prompt.
 MAX_BREAKPOINTS = 4
 
-# Sunucu tarafı bağlam düzenleme beta bayrağı.
+# Server-side context editing beta flags.
 CONTEXT_EDIT_BETA = "context-management-2025-06-27"
 COMPACT_BETA = "compact-2026-01-12"
 
 IMAGE_PLACEHOLDER = "[eski ekran görüntüsü bağlamdan çıkarıldı]"
 
-# Eski araç yüklerinin kısaltma eşiği (harf) ve dokunulmayan kuyruk.
+# Trim threshold (chars) for old tool payloads and the untouched tail.
 #
-# Ölçülen yara: bir web sayfası yazımında HTML'in tamamı `write_file`
-# argümanında geçmişe giriyor ve SONRAKİ HER İSTEKLE yeniden gönderiliyor —
-# 51.608 token'lik gerçek bir istemin ~12-14k'sı buydu. Dosya diskte zaten
-# duruyor; modelin geçmişte ihtiyacı olan şey "ne yaptım"ın izi, baytların
-# kendisi değil. Gerekirse read_file ile açar.
+# The measured wound: while writing a web page the entire HTML enters the
+# history in the `write_file` argument and is re-sent WITH EVERY SUBSEQUENT
+# REQUEST — ~12-14k of a real 51,608-token prompt was this. The file is
+# already sitting on disk; what the model needs in history is the trace of
+# "what did I do", not the bytes themselves. It opens it with read_file if needed.
 #
-# Kuyruk korunuyor: model az önce yazdığı/okuduğu içeriğe hâlâ atıf
-# yapabilir. Anthropic'in sunucu-taraflı `clear_tool_uses` betası aynı işi
-# yapıyor ama yalnız Anthropic arka ucunda; bu yol her arka uçta çalışıyor.
+# The tail is preserved: the model may still refer to content it just
+# wrote/read. Anthropic's server-side `clear_tool_uses` beta does the same
+# job but only on the Anthropic backend; this path works on every backend.
 TRIM_TOOL_CHARS = 1_600
 TRIM_KEEP_MESSAGES = 6
-# Browser / büyük dump araçları: son 1–2 mesaj hariç daha agresif kısalt.
+# Browser / big-dump tools: trim more aggressively except for the last 1–2 messages.
 TRIM_BROWSER_CHARS = 600
 TRIM_BROWSER_KEEP = 2
 TRIM_NOTE = "… [{gone:,} harf geçmişten kısaltıldı — gerekirse dosyadan/araçtan yeniden oku]"
 
-# Bu araçların sonuçları HTML/DOM/ağ dökümü taşıyor; geçmişte tutmak
-# Market Lens tarzı taramalarda istemi şişiriyor.
+# These tools' results carry HTML/DOM/network dumps; keeping them in history
+# bloats the prompt in Market Lens style scans.
 _HEAVY_TOOLS = frozenset({
     "browser", "fetch", "read_file", "write_file", "edit_file",
 })
@@ -60,7 +60,7 @@ _HEAVY_TOOLS = frozenset({
 
 @dataclass(slots=True)
 class Prepared:
-    """API'ye gönderilmeye hazır istek parçaları."""
+    """Request parts ready to be sent to the API."""
 
     system: list[Block]
     messages: list[Message]
@@ -125,16 +125,16 @@ class ContextPolicy:
 
 
 def drop_provider_fields(messages: list[Message]) -> list[Message]:
-    """Anthropic'e giderken sağlayıcıya özel alanları ayıklar.
+    """Strips provider-specific fields on the way to Anthropic.
 
-    `tool_use` bloklarında OpenAI-uyumlu sağlayıcıların kendi alanları
-    taşınıyor (Gemini'nin `thought_signature`'ı gibi) — o sağlayıcıya geri
-    göndermek ZORUNLU, ama Anthropic tanımadığı alanı reddediyor. Aynı
-    konuşma iki sağlayıcı arasında taşınabildiği için (yedek model, model
-    değiştirme) bu ayıklama şart.
+    `tool_use` blocks carry OpenAI-compatible providers' own fields (like
+    Gemini's `thought_signature`) — sending them back to that provider is
+    MANDATORY, but Anthropic rejects fields it does not recognise. Since the
+    same conversation can move between two providers (fallback model, model
+    switch) this stripping is required.
 
-    Gereksiz kopya yok: böyle bir alan taşıyan blok yoksa liste olduğu gibi
-    dönüyor — bu, mesajların ezici çoğunluğu için geçerli.
+    No needless copy: if no block carries such a field the list is returned
+    as-is — which holds for the overwhelming majority of messages.
     """
     if not any(
         isinstance(b, dict) and "saglayici" in b
@@ -143,38 +143,39 @@ def drop_provider_fields(messages: list[Message]) -> list[Message]:
     ):
         return messages
 
-    temiz: list[Message] = []
+    clean: list[Message] = []
     for m in messages:
-        icerik = m.get("content")
-        if not isinstance(icerik, list):
-            temiz.append(m)
+        content = m.get("content")
+        if not isinstance(content, list):
+            clean.append(m)
             continue
-        temiz.append({
+        clean.append({
             **m,
             "content": [
                 {k: v for k, v in b.items() if k != "saglayici"}
                 if isinstance(b, dict) and "saglayici" in b else b
-                for b in icerik
+                for b in content
             ],
         })
-    return temiz
+    return clean
 
 
 def build_system(system: "SystemPrompt") -> list[Block]:
-    """Sistem promptunu önbelleklenen bloklara böler.
+    """Splits the system prompt into cached blocks.
 
-    İki blok, iki breakpoint:
+    Two blocks, two breakpoints:
 
-        [0] core     — her oturumda birebir aynı. Aynı çalışma alanında
-                       açılan bir sonraki oturum burayı önbellekten okur.
-        [1] identity — diskteki zihinden gelen ruh; oturumlar arasında değişir.
+        [0] core     — byte-identical every session. The next session opened
+                       in the same workspace reads this from the cache.
+        [1] identity — the soul from the on-disk mind; changes between sessions.
 
-    Önek eşleşmesi olduğu için ruh değiştiğinde core hâlâ geçerli kalır.
-    Tek blok olsaydı her yeni hatıra tüm önbelleği düşürürdü.
+    Because it is a prefix match, core stays valid when the soul changes.
+    With a single block every new memory would drop the whole cache.
 
-    Araçlar sistemden ÖNCE render edilir, yani [0]'daki breakpoint onları da
-    kapsar. Bu yüzden buraya asla saat, aktif pencere, oturum kimliği gibi
-    tur başına değişen şey koyma — sonraki her şeyi çöpe atarsın.
+    Tools are rendered BEFORE the system, so the breakpoint at [0] covers
+    them too. That is why you must never put anything that changes per turn
+    here — clock, active window, session id — you would throw away
+    everything after it.
     """
     blocks = [{"type": "text", "text": system.core, "cache_control": EPHEMERAL}]
     if system.identity:
@@ -183,27 +184,28 @@ def build_system(system: "SystemPrompt") -> list[Block]:
 
 
 def place_breakpoints(messages: list[Message], *, limit: int, stride: int) -> None:
-    """Mesaj listesine önbellek breakpoint'leri yerleştirir (yerinde).
+    """Places cache breakpoints into the message list (in place).
 
-    İki şeyi aynı anda çözer:
+    Solves two things at once:
 
-    1. **20 bloklu geri-bakış penceresi.** Her breakpoint önceki önbellek
-       girdisini ararken geriye doğru en fazla 20 içerik bloğu tarar. Ajanik
-       bir turda 15 araç çağrısı 30 blok demek — pencereyi aşarsan önbellek
-       sessizce ıskalar ve tam fiyat ödersin. `stride` bunu 20'nin altında
-       tutar.
+    1. **The 20-block lookback window.** Each breakpoint scans backwards at
+       most 20 content blocks looking for the previous cache entry. In an
+       agentic turn 15 tool calls mean 30 blocks — exceed the window and the
+       cache silently misses and you pay full price. `stride` keeps this
+       under 20.
 
-    2. **Breakpoint kayması.** Her turda breakpoint'i sadece sona koyarsan
-       her istek yeni bir önbellek girdisi yazar. Ara breakpoint'ler kümülatif
-       blok sayısının `stride` katlarına çıpalanır; böylece konuşma büyürken
-       yerlerinde kalır ve okuma isabeti sürer.
+    2. **Breakpoint drift.** If you only put the breakpoint at the end every
+       turn, every request writes a new cache entry. The intermediate
+       breakpoints are anchored to multiples of `stride` in the cumulative
+       block count; so as the conversation grows they stay in place and
+       read hits continue.
     """
     if limit <= 0 or not messages:
         return
 
     clear_breakpoints(messages)
 
-    # Her mesajın bittiği kümülatif blok indeksi.
+    # The cumulative block index where each message ends.
     ends: list[int] = []
     total = 0
     for msg in messages:
@@ -213,11 +215,11 @@ def place_breakpoints(messages: list[Message], *, limit: int, stride: int) -> No
 
     targets: list[int] = []
 
-    # En yeni mesaj her zaman breakpoint alır: yeni yazılan önek burasıdır.
+    # The newest message always gets a breakpoint: this is the freshly written prefix.
     if _mark_last_block(messages[-1]):
         targets.append(len(messages) - 1)
 
-    # Geriye doğru stride katlarına çıpalanmış sabit breakpoint'ler.
+    # Fixed breakpoints anchored backwards to multiples of stride.
     anchor = (total // stride) * stride
     while len(targets) < limit and anchor > 0:
         idx = _message_at(ends, anchor)
@@ -244,7 +246,7 @@ def _message_at(ends: list[int], block_index: int) -> int | None:
 
 
 def _mark_last_block(msg: Message) -> bool:
-    """Mesajın son bloğuna cache_control koyar. Metin içerikli mesaj alamaz."""
+    """Puts cache_control on the message's last block. A message with text content cannot take one."""
     content = msg.get("content")
     if not isinstance(content, list) or not content:
         return False
@@ -256,11 +258,11 @@ def _mark_last_block(msg: Message) -> bool:
 
 
 def prune_images(messages: list[Message], *, keep: int) -> None:
-    """En yeni `keep` görüntü dışındaki tüm görüntüleri metinle değiştirir.
+    """Replaces every image except the newest `keep` with text.
 
-    Bir ekran görüntüsü kabaca 1.5k-4.8k token. Otuz adımlık bir görevde
-    budamazsan bağlam yarı yolda dolar. Sondaki birkaç görüntü modelin
-    "az önce ne gördüm" sorusuna cevap vermesi için yeterli.
+    A screenshot is roughly 1.5k-4.8k tokens. In a thirty-step task, if you
+    do not prune, the context fills halfway through. The last few images are
+    enough for the model to answer "what did I just see".
     """
     if keep < 0:
         return
@@ -281,12 +283,12 @@ def prune_tool_payloads(
     cap: int = TRIM_TOOL_CHARS,
     keep: int = TRIM_KEEP_MESSAGES,
 ) -> None:
-    """Eski araç yüklerini kısaltır: dev argümanlar ve şişkin sonuçlar.
+    """Trims old tool payloads: giant arguments and bloated results.
 
-    Son `keep` mesaj DOKUNULMAZ — model az önceki içeriğe atıf yapabilir.
-    Daha eskisinde: tool_use girdilerindeki ve tool_result içeriklerindeki
-    `cap`'i aşan metinler baş+son korunarak kısaltılır. Browser / fetch /
-    dosya dump'ları için daha sıkı keep+cap uygulanır.
+    The last `keep` messages are UNTOUCHED — the model may refer to content
+    it just saw. Older than that: texts exceeding `cap` in tool_use inputs
+    and tool_result contents are trimmed keeping head+tail. Browser / fetch /
+    file dumps get a tighter keep+cap.
     """
     if cap <= 0:
         return
@@ -299,9 +301,9 @@ def prune_tool_payloads(
         note = TRIM_NOTE.format(gone=len(text) - head - tail)
         return text[:head] + note + text[-tail:]
 
-    # Önce genel pencere.
+    # The general window first.
     _prune_range(messages, end_keep=keep, cap=cap, shorten=shorten)
-    # Ağır araçlar: daha kısa kuyruk + daha düşük tavan.
+    # Heavy tools: shorter tail + lower ceiling.
     _prune_range(
         messages,
         end_keep=TRIM_BROWSER_KEEP,
@@ -350,7 +352,7 @@ def _prune_range(
 
 
 def _result_looks_heavy(block: dict[str, Any]) -> bool:
-    """tool_result'ta ad yok; HTML/DOM/URL ipuçlarıyla browser dump say."""
+    """A tool_result has no name; count it as a browser dump by HTML/DOM/URL hints."""
     inner = block.get("content")
     text = inner if isinstance(inner, str) else ""
     if isinstance(inner, list):
@@ -359,7 +361,7 @@ def _result_looks_heavy(block: dict[str, Any]) -> bool:
             if isinstance(sub, dict) and isinstance(sub.get("text"), str):
                 parts.append(sub["text"])
         text = "\n".join(parts)
-    # Çok büyük dump'lar her zaman ağır sayılır.
+    # Very large dumps always count as heavy.
     if len(text) > TRIM_TOOL_CHARS:
         return True
     head = text[:400].lower()
@@ -387,11 +389,11 @@ def _iter_image_blocks(msg: Message):
 
 
 def cache_report(usage: Any) -> dict[str, int]:
-    """usage nesnesinden önbellek sağlığını çıkarır.
+    """Extracts cache health from the usage object.
 
-    read sürekli 0 kalıyorsa sessiz bir bozucu var: sistem promptunda
-    değişen bir değer, oturum ortasında değişen araç listesi ya da
-    20 bloğu aşan bir geri-bakış boşluğu.
+    If read stays at 0 constantly there is a silent breaker: a changing
+    value in the system prompt, a tool list that changes mid-session, or a
+    lookback gap exceeding 20 blocks.
     """
     get = (lambda k: getattr(usage, k, 0) or 0) if usage is not None else (lambda k: 0)
     read = get("cache_read_input_tokens")
@@ -402,6 +404,6 @@ def cache_report(usage: Any) -> dict[str, int]:
         "cache_write": write,
         "uncached": fresh,
         "output": get("output_tokens"),
-        # Gerçek prompt boyutu üçünün toplamıdır; input_tokens sadece artıktır.
+        # The real prompt size is the sum of the three; input_tokens is only the residue.
         "prompt_total": read + write + fresh,
     }

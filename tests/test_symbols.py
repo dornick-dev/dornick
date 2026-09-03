@@ -1,13 +1,13 @@
-"""Sembol araması: `grep` gürültüsü yerine yapısal cevap.
+"""Symbol search: a structural answer instead of `grep` noise.
 
-Sınanan vaat: "bu fonksiyon nerede tanımlı, nereden çağrılıyor?" sorusuna
-TANIM ve KULLANIM ayrı ayrı cevap gelmeli. `grep kaydet` tanımı, çağrıları,
-yorumları, dizeleri ve `kaydetme_hatasi` gibi başka isimleri aynı yığında
-döküyordu.
+The promise under test: "where is this function defined, where is it called
+from?" must be answered with DEFINITION and USAGE separately. `grep kaydet`
+dumped the definition, the calls, the comments, the strings and other names
+like `kaydetme_hatasi` into one pile.
 
-İkinci vaat dürüstlük: Python `ast` ile kesin, PHP/JS/TS düzenli ifadeyle
-"büyük olasılıkla", başka diller için hiç — ve hangisinin geçerli olduğu
-sonucun altında yazıyor.
+The second promise is honesty: Python exact via `ast`, PHP/JS/TS "most
+probably" via regex, other languages not at all — and which one applies is
+written at the bottom of the result.
 """
 
 from __future__ import annotations
@@ -22,9 +22,9 @@ from dornick.config import Config
 from dornick.events import EventLog
 from dornick.session import Session
 from dornick.tools import ToolContext, ToolRegistry
-from dornick.tools import kod as kod_tools
+from dornick.tools import kod as code_tools
 
-PY_KAYNAK = '''\
+PY_SOURCE = '''\
 """Örnek modül — kaydet burada da geçiyor ama bu bir dize."""
 
 import json
@@ -50,7 +50,7 @@ async def toplu_kaydet(hepsi):
     return Depo().kaydet(hepsi)
 '''
 
-PHP_KAYNAK = """\
+PHP_SOURCE = """\
 <?php
 namespace App\\Controllers;
 
@@ -72,7 +72,7 @@ class Home extends BaseController
 function kaydet($x) { return $x; }
 """
 
-JS_KAYNAK = """\
+JS_SOURCE = """\
 // kaydet burada yorumda
 export function kaydet(veri) {
   return JSON.stringify(veri);
@@ -91,224 +91,224 @@ export class Depo {
 
 
 @pytest.fixture()
-def proje(tmp_path: Path) -> Path:
-    (tmp_path / "depo.py").write_text(PY_KAYNAK, encoding="utf-8")
+def project(tmp_path: Path) -> Path:
+    (tmp_path / "depo.py").write_text(PY_SOURCE, encoding="utf-8")
     return tmp_path
 
 
-# -- Python: ast ile kesin ---------------------------------------------
+# -- Python: exact with ast --------------------------------------------
 
 
-def test_python_definitions_are_exact(proje: Path) -> None:
-    sonuc = symbols.ara(proje, "kaydet")
-    adlar = [(s.tur, s.kapsam, s.satir) for s in sonuc.tanimlar]
-    assert ("fonksiyon", "", 6) in adlar        # modül düzeyi def kaydet
-    assert ("metot", "Depo", 12) in adlar       # Depo.kaydet
-    assert sonuc.kesin
+def test_python_definitions_are_exact(project: Path) -> None:
+    result = symbols.ara(project, "kaydet")
+    names = [(s.kind, s.scope, s.line) for s in result.tanimlar]
+    assert ("fonksiyon", "", 6) in names       # module-level def kaydet
+    assert ("metot", "Depo", 12) in names      # Depo.kaydet
+    assert result.kesin
 
 
-def test_python_signature_carries_arguments_and_return(proje: Path) -> None:
-    sonuc = symbols.ara(proje, "kaydet", tur="tanim")
-    imza = next(s.imza for s in sonuc.tanimlar if s.kapsam == "")
-    assert imza.startswith("def kaydet(")
-    assert "yol: str" in imza
-    assert "-> bool" in imza
+def test_python_signature_carries_arguments_and_return(project: Path) -> None:
+    result = symbols.ara(project, "kaydet", tur="tanim")
+    signature = next(s.signature for s in result.tanimlar if s.scope == "")
+    assert signature.startswith("def kaydet(")
+    assert "yol: str" in signature
+    assert "-> bool" in signature
 
 
-def test_a_method_names_its_class(proje: Path) -> None:
-    sonuc = symbols.ara(proje, "kaydet", tur="tanim")
-    metin = sonuc.metin(tur="tanim")
-    assert "Depo sınıfının metodu" in metin
+def test_a_method_names_its_class(project: Path) -> None:
+    result = symbols.ara(project, "kaydet", tur="tanim")
+    text = result.metin(tur="tanim")
+    assert "Depo sınıfının metodu" in text
 
 
-def test_async_definitions_are_found(proje: Path) -> None:
-    sonuc = symbols.ara(proje, "toplu_kaydet", tur="tanim")
-    assert len(sonuc.tanimlar) == 1
-    assert sonuc.tanimlar[0].imza.startswith("async def toplu_kaydet(")
+def test_async_definitions_are_found(project: Path) -> None:
+    result = symbols.ara(project, "toplu_kaydet", tur="tanim")
+    assert len(result.tanimlar) == 1
+    assert result.tanimlar[0].signature.startswith("async def toplu_kaydet(")
 
 
-def test_classes_are_found(proje: Path) -> None:
-    sonuc = symbols.ara(proje, "Depo", tur="tanim")
-    assert [s.tur for s in sonuc.tanimlar] == ["sinif"]
-    assert sonuc.tanimlar[0].imza == "class Depo"
+def test_classes_are_found(project: Path) -> None:
+    result = symbols.ara(project, "Depo", tur="tanim")
+    assert [s.kind for s in result.tanimlar] == ["sinif"]
+    assert result.tanimlar[0].signature == "class Depo"
 
 
-def test_python_ignores_comments_and_strings(proje: Path) -> None:
-    """`ast`in asıl değeri bu: yorumdaki ve dizedeki isim AĞAÇTA YOKTUR."""
-    sonuc = symbols.ara(proje, "kaydet")
-    satirlar = {k.satir for k in sonuc.use_log}
-    # 1: modül belgesindeki "kaydet", 18: yorum, 19: dize dönüşü
-    assert 1 not in satirlar
-    assert 18 not in satirlar
-    assert 19 not in satirlar
+def test_python_ignores_comments_and_strings(project: Path) -> None:
+    """The real value of `ast`: a name in a comment or a string is NOT IN THE TREE."""
+    result = symbols.ara(project, "kaydet")
+    lines = {u.line for u in result.use_log}
+    # 1: "kaydet" in the module docstring, 18: comment, 19: string return
+    assert 1 not in lines
+    assert 18 not in lines
+    assert 19 not in lines
 
 
-def test_python_usages_are_classified(proje: Path) -> None:
-    sonuc = symbols.ara(proje, "kaydet")
-    turler = {k.tur for k in sonuc.use_log}
-    assert "cagri" in turler
-    # Tanım satırları kullanım sayılmaz.
-    tanim_satirlari = {s.satir for s in sonuc.tanimlar}
-    assert not (tanim_satirlari & {k.satir for k in sonuc.use_log})
+def test_python_usages_are_classified(project: Path) -> None:
+    result = symbols.ara(project, "kaydet")
+    kinds = {u.kind for u in result.use_log}
+    assert "cagri" in kinds
+    # Definition lines are not counted as usages.
+    definition_lines = {s.line for s in result.tanimlar}
+    assert not (definition_lines & {u.line for u in result.use_log})
 
 
 def test_imports_count_as_usage(tmp_path: Path) -> None:
     (tmp_path / "a.py").write_text("def kaydet():\n    pass\n", encoding="utf-8")
     (tmp_path / "b.py").write_text("from a import kaydet\n", encoding="utf-8")
-    sonuc = symbols.ara(tmp_path, "kaydet")
-    assert any(k.tur == "ice_aktarma" for k in sonuc.use_log)
+    result = symbols.ara(tmp_path, "kaydet")
+    assert any(u.kind == "ice_aktarma" for u in result.use_log)
 
 
 def test_a_broken_python_file_is_reported_not_silently_skipped(tmp_path: Path) -> None:
-    """Bozuk dosyayı sessizce 'tanımsız' saymak, modeli yanlış yere gönderir."""
+    """Silently counting a broken file as 'undefined' sends the model to the wrong place."""
     (tmp_path / "bozuk.py").write_text("def kaydet(:\n", encoding="utf-8")
-    sonuc = symbols.ara(tmp_path, "kaydet")
-    assert sonuc.okunamayan
-    assert "ayrıştırılamadı" in sonuc.metin()
+    result = symbols.ara(tmp_path, "kaydet")
+    assert result.unparsable
+    assert "ayrıştırılamadı" in result.metin()
 
 
 # -- PHP ----------------------------------------------------------------
 
 
 def test_php_definitions(tmp_path: Path) -> None:
-    (tmp_path / "Home.php").write_text(PHP_KAYNAK, encoding="utf-8")
-    sonuc = symbols.ara(tmp_path, "kaydet", tur="tanim")
-    satirlar = sorted(s.satir for s in sonuc.tanimlar)
-    assert 13 in satirlar          # private static function kaydet
-    assert 19 in satirlar          # serbest function kaydet
-    assert not sonuc.kesin         # düzenli ifade: "kesin" demiyoruz
+    (tmp_path / "Home.php").write_text(PHP_SOURCE, encoding="utf-8")
+    result = symbols.ara(tmp_path, "kaydet", tur="tanim")
+    lines = sorted(s.line for s in result.tanimlar)
+    assert 13 in lines             # private static function kaydet
+    assert 19 in lines             # free function kaydet
+    assert not result.kesin        # regex: we do not say "exact"
 
 
 def test_php_class_definition(tmp_path: Path) -> None:
-    (tmp_path / "Home.php").write_text(PHP_KAYNAK, encoding="utf-8")
-    sonuc = symbols.ara(tmp_path, "Home", tur="tanim")
-    assert [s.tur for s in sonuc.tanimlar] == ["sinif"]
+    (tmp_path / "Home.php").write_text(PHP_SOURCE, encoding="utf-8")
+    result = symbols.ara(tmp_path, "Home", tur="tanim")
+    assert [s.kind for s in result.tanimlar] == ["sinif"]
 
 
 def test_php_usages_cover_arrow_and_static_calls(tmp_path: Path) -> None:
-    (tmp_path / "Home.php").write_text(PHP_KAYNAK, encoding="utf-8")
-    sonuc = symbols.ara(tmp_path, "kaydet")
-    metinler = " ".join(k.metin for k in sonuc.use_log)
-    assert "$depo->kaydet" in metinler       # nesne metodu
-    assert "Kayit::kaydet" in metinler       # statik çağrı
+    (tmp_path / "Home.php").write_text(PHP_SOURCE, encoding="utf-8")
+    result = symbols.ara(tmp_path, "kaydet")
+    texts = " ".join(u.text for u in result.use_log)
+    assert "$depo->kaydet" in texts        # object method
+    assert "Kayit::kaydet" in texts        # static call
 
 
 def test_php_comment_lines_are_dropped(tmp_path: Path) -> None:
-    (tmp_path / "Home.php").write_text(PHP_KAYNAK, encoding="utf-8")
-    sonuc = symbols.ara(tmp_path, "kaydet")
-    assert all("yalnızca yorumda" not in k.metin for k in sonuc.use_log)
+    (tmp_path / "Home.php").write_text(PHP_SOURCE, encoding="utf-8")
+    result = symbols.ara(tmp_path, "kaydet")
+    assert all("yalnızca yorumda" not in u.text for u in result.use_log)
 
 
 def test_php_new_is_an_instantiation(tmp_path: Path) -> None:
-    (tmp_path / "Home.php").write_text(PHP_KAYNAK, encoding="utf-8")
-    sonuc = symbols.ara(tmp_path, "Depo")
-    assert any(k.tur == "kurulum" for k in sonuc.use_log)
+    (tmp_path / "Home.php").write_text(PHP_SOURCE, encoding="utf-8")
+    result = symbols.ara(tmp_path, "Depo")
+    assert any(u.kind == "kurulum" for u in result.use_log)
 
 
 # -- JS -----------------------------------------------------------------
 
 
 def test_js_function_class_and_arrow(tmp_path: Path) -> None:
-    (tmp_path / "depo.js").write_text(JS_KAYNAK, encoding="utf-8")
-    hepsi = symbols.ara(tmp_path, "kaydet", tur="tanim")
-    assert any(s.satir == 2 for s in hepsi.tanimlar)     # export function
+    (tmp_path / "depo.js").write_text(JS_SOURCE, encoding="utf-8")
+    everything = symbols.ara(tmp_path, "kaydet", tur="tanim")
+    assert any(s.line == 2 for s in everything.tanimlar)     # export function
 
-    ok = symbols.ara(tmp_path, "yukle", tur="tanim")   # const yukle = async () =>
-    assert ok.tanimlar and ok.tanimlar[0].tur == "fonksiyon"
+    arrow = symbols.ara(tmp_path, "yukle", tur="tanim")   # const yukle = async () =>
+    assert arrow.tanimlar and arrow.tanimlar[0].kind == "fonksiyon"
 
-    sinif = symbols.ara(tmp_path, "Depo", tur="tanim")
-    assert sinif.tanimlar and sinif.tanimlar[0].tur == "sinif"
+    klass = symbols.ara(tmp_path, "Depo", tur="tanim")
+    assert klass.tanimlar and klass.tanimlar[0].kind == "sinif"
 
 
 def test_js_control_keywords_are_not_symbols(tmp_path: Path) -> None:
-    """`if (x) {` bir metot tanımı değildir."""
+    """`if (x) {` is not a method definition."""
     (tmp_path / "a.js").write_text(
         "class A {\n  metot() {\n    if (x) {\n      return 1;\n    }\n  }\n}\n",
         encoding="utf-8")
-    sonuc = symbols.ara(tmp_path, "if", tur="tanim")
-    assert sonuc.tanimlar == []
-    metot = symbols.ara(tmp_path, "metot", tur="tanim")
-    assert metot.tanimlar and metot.tanimlar[0].tur == "metot"
+    result = symbols.ara(tmp_path, "if", tur="tanim")
+    assert result.tanimlar == []
+    method = symbols.ara(tmp_path, "metot", tur="tanim")
+    assert method.tanimlar and method.tanimlar[0].kind == "metot"
 
 
-# -- kapsam ve sınırlar -------------------------------------------------
+# -- scope and limits ---------------------------------------------------
 
 
 def test_unsupported_language_says_so_and_points_at_grep(tmp_path: Path) -> None:
-    """Ölçemediğimiz dilde yarım cevap değil, dürüst yönlendirme."""
+    """For a language we cannot measure: not a half answer but an honest redirection."""
     (tmp_path / "ana.go").write_text("func Kaydet() {}\n", encoding="utf-8")
     (tmp_path / "notlar.md").write_text("# kaydet\n", encoding="utf-8")
-    sonuc = symbols.ara(tmp_path, "Kaydet")
-    metin = sonuc.metin()
-    assert "yapısal arama YOK" in metin
-    assert "`grep`" in metin
+    result = symbols.ara(tmp_path, "Kaydet")
+    text = result.metin()
+    assert "yapısal arama YOK" in text
+    assert "`grep`" in text
 
 
 def test_dependency_folders_are_skipped(tmp_path: Path) -> None:
     (tmp_path / "kod.py").write_text("def kaydet(): pass\n", encoding="utf-8")
-    icerde = tmp_path / "node_modules" / "paket"
-    icerde.mkdir(parents=True)
-    (icerde / "kaydet.js").write_text("function kaydet() {}\n", encoding="utf-8")
-    sonuc = symbols.ara(tmp_path, "kaydet")
-    assert sonuc.taranan == 1
-    assert all("node_modules" not in s.dosya for s in sonuc.tanimlar)
+    inside = tmp_path / "node_modules" / "paket"
+    inside.mkdir(parents=True)
+    (inside / "kaydet.js").write_text("function kaydet() {}\n", encoding="utf-8")
+    result = symbols.ara(tmp_path, "kaydet")
+    assert result.taranan == 1
+    assert all("node_modules" not in s.file for s in result.tanimlar)
 
 
 def test_depth_is_limited(tmp_path: Path) -> None:
-    derin = tmp_path / "a" / "b" / "c" / "d"
-    derin.mkdir(parents=True)
-    (derin / "gizli.py").write_text("def kaydet(): pass\n", encoding="utf-8")
+    deep = tmp_path / "a" / "b" / "c" / "d"
+    deep.mkdir(parents=True)
+    (deep / "gizli.py").write_text("def kaydet(): pass\n", encoding="utf-8")
     (tmp_path / "yuzey.py").write_text("def kaydet(): pass\n", encoding="utf-8")
-    sonuc = symbols.ara(tmp_path, "kaydet", derinlik=3)
-    assert all("gizli" not in s.dosya for s in sonuc.tanimlar)
+    result = symbols.ara(tmp_path, "kaydet", depth=3)
+    assert all("gizli" not in s.file for s in result.tanimlar)
 
 
 def test_binary_files_are_skipped(tmp_path: Path) -> None:
     (tmp_path / "veri.py").write_bytes(b"def kaydet():\x00\x00 pass")
-    sonuc = symbols.ara(tmp_path, "kaydet")
-    assert sonuc.taranan == 0
+    result = symbols.ara(tmp_path, "kaydet")
+    assert result.taranan == 0
 
 
 def test_the_file_ceiling_is_announced(tmp_path: Path) -> None:
-    """Eksik sonuç sessiz kalmamalı."""
+    """An incomplete result must not stay quiet."""
     for i in range(6):
         (tmp_path / f"m{i}.py").write_text("def kaydet(): pass\n", encoding="utf-8")
-    sonuc = symbols.ara(tmp_path, "kaydet", tavan=3)
-    assert sonuc.tavana_carpti
-    assert "tavanına çarptı" in sonuc.metin()
+    result = symbols.ara(tmp_path, "kaydet", limit=3)
+    assert result.hit_ceiling
+    assert "tavanına çarptı" in result.metin()
 
 
 def test_language_filter(tmp_path: Path) -> None:
     (tmp_path / "a.py").write_text("def kaydet(): pass\n", encoding="utf-8")
     (tmp_path / "a.js").write_text("function kaydet() {}\n", encoding="utf-8")
-    sonuc = symbols.ara(tmp_path, "kaydet", dil="python")
-    assert sonuc.diller == {"python"}
-    assert len(sonuc.tanimlar) == 1
+    result = symbols.ara(tmp_path, "kaydet", dil="python")
+    assert result.languages == {"python"}
+    assert len(result.tanimlar) == 1
 
 
 def test_a_loose_match_says_it_is_loose(tmp_path: Path) -> None:
-    """Tam ad yoksa içerenler gösteriliyor ama bu SAKLANMIYOR."""
+    """Without an exact name, containing names are shown — but this is NOT HIDDEN."""
     (tmp_path / "a.py").write_text(
         "def kaydet_hepsini(): pass\n", encoding="utf-8")
-    sonuc = symbols.ara(tmp_path, "kaydet")
-    assert sonuc.gevsek
-    assert "adı içerenler" in sonuc.metin()
+    result = symbols.ara(tmp_path, "kaydet")
+    assert result.loose
+    assert "adı içerenler" in result.metin()
 
 
 def test_a_defined_but_unused_symbol_is_called_out(tmp_path: Path) -> None:
     (tmp_path / "a.py").write_text("def kaydet(): pass\n", encoding="utf-8")
-    sonuc = symbols.ara(tmp_path, "kaydet")
-    assert "ölü kod olabilir" in sonuc.metin()
+    result = symbols.ara(tmp_path, "kaydet")
+    assert "ölü kod olabilir" in result.metin()
 
 
 def test_nothing_found_is_not_an_invention(tmp_path: Path) -> None:
     (tmp_path / "a.py").write_text("def baska(): pass\n", encoding="utf-8")
-    sonuc = symbols.ara(tmp_path, "kaydet")
-    assert sonuc.tanimlar == [] and sonuc.use_log == []
-    assert "bulunamadı" in sonuc.metin()
+    result = symbols.ara(tmp_path, "kaydet")
+    assert result.tanimlar == [] and result.use_log == []
+    assert "bulunamadı" in result.metin()
 
 
-# -- araç yüzeyi --------------------------------------------------------
+# -- tool surface -------------------------------------------------------
 
 
 @pytest.fixture()
@@ -325,7 +325,7 @@ def ctx(tmp_path: Path) -> ToolContext:
 @pytest.fixture()
 def registry() -> ToolRegistry:
     reg = ToolRegistry()
-    kod_tools.register(reg)
+    code_tools.register(reg)
     return reg
 
 
@@ -339,53 +339,53 @@ def test_the_tool_is_registered_and_read_only() -> None:
     registry = build_registry(subagents=False)
     spec = registry.get("semboller")
     assert spec is not None
-    # Hiçbir şey çalıştırmıyor, hiçbir şey yazmıyor: kapıya takılmamalı.
+    # Runs nothing, writes nothing: must not get stuck at the gate.
     assert spec.mutates is False
 
 
 async def test_the_tool_finds_a_definition(
-    registry: ToolRegistry, ctx: ToolContext, proje: Path
+    registry: ToolRegistry, ctx: ToolContext, project: Path
 ) -> None:
-    sonuc = await call(registry, ctx, sorgu="kaydet", path=str(proje))
-    assert "def kaydet(" in sonuc.content
-    assert sonuc.detail["tanim"] >= 2
-    assert sonuc.detail["kesin"] is True
+    result = await call(registry, ctx, sorgu="kaydet", path=str(project))
+    assert "def kaydet(" in result.content
+    assert result.detail["tanim"] >= 2
+    assert result.detail["kesin"] is True
 
 
 async def test_the_tool_refuses_free_text(
-    registry: ToolRegistry, ctx: ToolContext, proje: Path
+    registry: ToolRegistry, ctx: ToolContext, project: Path
 ) -> None:
-    """Boşluklu sorgu bir sembol adı değil; doğru araç `grep`."""
-    sonuc = await call(registry, ctx, sorgu="veri kaydedilemedi", path=str(proje))
-    assert sonuc.is_error
-    assert "`grep`" in sonuc.content
+    """A query with spaces is not a symbol name; the right tool is `grep`."""
+    result = await call(registry, ctx, sorgu="veri kaydedilemedi", path=str(project))
+    assert result.is_error
+    assert "`grep`" in result.content
 
 
 async def test_the_tool_accepts_a_file_path(
-    registry: ToolRegistry, ctx: ToolContext, proje: Path
+    registry: ToolRegistry, ctx: ToolContext, project: Path
 ) -> None:
-    """Model elindeki tek şeyi verir: dosyanın yolu."""
-    sonuc = await call(registry, ctx, sorgu="Depo", path=str(proje / "depo.py"))
-    assert "class Depo" in sonuc.content
+    """The model gives the only thing it has: the path of the file."""
+    result = await call(registry, ctx, sorgu="Depo", path=str(project / "depo.py"))
+    assert "class Depo" in result.content
 
 
 async def test_the_tool_can_show_definitions_only(
-    registry: ToolRegistry, ctx: ToolContext, proje: Path
+    registry: ToolRegistry, ctx: ToolContext, project: Path
 ) -> None:
-    sonuc = await call(registry, ctx, sorgu="kaydet", path=str(proje), tur="tanim")
-    assert "tanım" in sonuc.content
-    assert "kullanım" not in sonuc.content
+    result = await call(registry, ctx, sorgu="kaydet", path=str(project), tur="tanim")
+    assert "tanım" in result.content
+    assert "kullanım" not in result.content
 
 
 async def test_the_tool_rejects_a_missing_folder(
     registry: ToolRegistry, ctx: ToolContext, tmp_path: Path
 ) -> None:
-    sonuc = await call(registry, ctx, sorgu="x", path=str(tmp_path / "yok" / "yok"))
-    assert sonuc.is_error
+    result = await call(registry, ctx, sorgu="x", path=str(tmp_path / "yok" / "yok"))
+    assert result.is_error
 
 
 def test_the_description_admits_its_limits(registry: ToolRegistry) -> None:
-    aciklama = registry.get("semboller").description
-    assert "kesin" in aciklama
-    assert "yapısal arama YOKTUR" in aciklama
-    assert "`grep`" in aciklama
+    description = registry.get("semboller").description
+    assert "kesin" in description
+    assert "yapısal arama YOKTUR" in description
+    assert "`grep`" in description

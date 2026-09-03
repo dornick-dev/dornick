@@ -1,10 +1,11 @@
-"""Zihin katmanı.
+"""The mind layer.
 
-Ajanın kendi geçmişini, bilgisini ve hedeflerini gezinebileceği yüzey.
-Depo `store.Mind`, ajana açılan araçlar `tools.register`.
+The surface through which the agent can navigate its own past, knowledge
+and goals. The store is `store.Mind`, the tools exposed to the agent are
+`tools.register`.
 
-Aynı depo ileride MCP sunucusu olarak da açılacak; o zaman dışarıdaki
-ajanlar da (Claude Code dahil) aynı zihni okuyabilecek.
+The same store will later be exposed as an MCP server too; then outside
+agents (Claude Code included) will be able to read the same mind.
 """
 
 from __future__ import annotations
@@ -25,6 +26,6 @@ def open_mind(
     *,
     clock: Clock | None = None,
 ) -> Mind:
-    """Zihni açar. `saat` verilmezse duvar saati (bkz. recall/saat.py)."""
+    """Opens the mind. Without `clock` the wall clock is used (see recall/clock.py)."""
     return Mind(mind_dir=mind_dir, sessions_dir=sessions_dir,
                 session_id=session_id, clock=clock)

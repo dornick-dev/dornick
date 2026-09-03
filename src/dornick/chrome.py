@@ -1,24 +1,24 @@
-"""dornick chrome — tarayıcıyı DevTools protokolüyle sürmek.
+"""dornick chrome — driving the browser through the DevTools protocol.
 
-Claude'un Chrome eklentisinin yerlisi: dornick, Chrome ya da Edge'i hata
-ayıklama kapısıyla (`--remote-debugging-port`) başlatıyor ve DevTools
-protokolü (CDP) üzerinden konuşuyor — sekmeleri görüyor, sayfa açıyor,
-metni okuyor, ekran görüntüsü alıyor.
+The native counterpart of Claude's Chrome extension: dornick starts Chrome
+or Edge with the debugging port (`--remote-debugging-port`) and talks over
+the DevTools protocol (CDP) — sees tabs, opens pages, reads the text, takes
+screenshots.
 
-Tarayıcı **Dornick'in kendi profiliyle** açılıyor (`.dornick/chrome/`):
-kullanıcının gündelik Chrome'una bağlanmak mümkün değil çünkü o kapı
-kapalı açılıyor. Ayrı profil aynı zamanda bir sınır — kullanıcı hangi
-sitelere giriş verdiyse dornick yalnızca onları görüyor ve o oturumlar
-profil klasöründe kalıcı: bir kez giriş yapılan siteye ertesi gün de
-girilebiliyor.
+The browser opens **with Dornick's own profile** (`.dornick/chrome/`):
+attaching to the user's everyday Chrome is not possible because that one
+starts with the port closed. The separate profile is also a boundary — the
+user sees only the sites they signed in to through dornick, and those
+sessions persist in the profile folder: a site signed in once can be
+entered the next day too.
 
-CDP'nin iki yüzü var:
-    http  sekme listesi, sekme açma/kapama — düz JSON uçları
-    ws    sayfanın içi (JavaScript çalıştırma, ekran görüntüsü)
+CDP has two faces:
+    http  tab list, opening/closing tabs — plain JSON endpoints
+    ws    the inside of the page (running JavaScript, screenshots)
 
-stdlib'de WebSocket istemcisi yok; buradaki `Wire` gereken kadarını
-yapıyor: tek bağlantı, maskeli metin çerçeveleri, parçalı mesaj ve
-ping/pong. Bir kütüphane bağımlılığına değmeyecek kadar küçük bir iş.
+The stdlib has no WebSocket client; the `Wire` here does just enough:
+single connection, masked text frames, fragmented messages and ping/pong.
+Too small a job to be worth a library dependency.
 """
 
 from __future__ import annotations
@@ -39,20 +39,20 @@ from . import environment
 
 DEFAULT_PORT = 9222
 
-# Tarayıcının kapıyı açması ilk kurulumda yavaş olabiliyor.
+# The browser opening the port can be slow on first setup.
 BOOT_WAIT_S = 20.0
 
-# Tek bir CDP cevabı için bekleme. Ekran görüntüsü büyük bir sayfada
-# birkaç saniye sürebiliyor.
+# Wait for a single CDP answer. A screenshot can take a few seconds on a
+# large page.
 CALL_TIMEOUT_S = 30.0
 
 
 class BrowseError(RuntimeError):
-    """Tarayıcı hatası — mesaj modele gidiyor, öğretici olmalı."""
+    """Browser error — the message goes to the model, it must be instructive."""
 
 
 def executable() -> str | None:
-    """Kurulu Chrome/Edge. PATH'te yoksa bilinen konumlara bakılıyor."""
+    """Installed Chrome/Edge. If not on PATH, known locations are checked."""
     import shutil
 
     for name in ("chrome", "msedge", "chromium", "google-chrome", "brave"):
@@ -78,10 +78,10 @@ def available() -> bool:
     return executable() is not None
 
 
-# Süreç-geneli tek tarayıcı. Ana ajan ve alt ajanlar ayrı araç defterleri
-# taşıyor; her biri kendi Browser'ını kursaydı aynı anda aynı kapıyı açmaya
-# çalışıp yarışırlardı. Tek örnek: hepsi aynı Chrome'u sürüyor, aynı
-# sekmeleri görüyor.
+# Process-wide single browser. The main agent and the subagents carry
+# separate tool registries; if each built its own Browser they would try to
+# open the same port at once and race. One instance: all drive the same
+# Chrome, all see the same tabs.
 _shared: dict[tuple[str, int], "Browser"] = {}
 _shared_lock: Any = None
 
@@ -101,15 +101,15 @@ def shared(state_dir: Path | str, port: int = DEFAULT_PORT) -> "Browser":
         return box
 
 
-# -- WebSocket teli -----------------------------------------------------
+# -- WebSocket wire -----------------------------------------------------
 
 
 class Wire:
-    """RFC 6455'in CDP için gereken kadarı — istemci tarafı.
+    """As much of RFC 6455 as CDP needs — client side.
 
-    İstemci çerçeveleri maskeli gitmek zorunda; sunucununkiler çıplak
-    geliyor. Uzunluk 7 bite sığmazsa 16 ya da 64 bitlik ek alan var —
-    ekran görüntüsü 64 bitlik yolu gerçekten kullanıyor.
+    Client frames must go masked; the server's arrive bare. If the length
+    does not fit in 7 bits there is a 16- or 64-bit extension — a
+    screenshot really uses the 64-bit path.
     """
 
     def __init__(self, url: str, timeout: float = CALL_TIMEOUT_S) -> None:
@@ -145,7 +145,7 @@ class Wire:
 
     def send(self, text: str) -> None:
         payload = text.encode("utf-8")
-        head = bytearray([0x81])  # FIN + metin
+        head = bytearray([0x81])  # FIN + text
         size = len(payload)
         if size < 126:
             head.append(0x80 | size)
@@ -161,7 +161,7 @@ class Wire:
         self.sock.sendall(bytes(head) + veiled)
 
     def recv(self) -> str:
-        """Bir mesaj — parçalıysa birleştirilmiş hali."""
+        """One message — reassembled if fragmented."""
         gathered = b""
         while True:
             first, second = self._exactly(2)
@@ -172,13 +172,13 @@ class Wire:
                 (size,) = struct.unpack(">H", self._exactly(2))
             elif size == 127:
                 (size,) = struct.unpack(">Q", self._exactly(8))
-            # Sunucu maskelemez; maskeliyse yine de okunur.
+            # The server does not mask; if it does, it is still read.
             mask = self._exactly(4) if second & 0x80 else b""
             body = self._exactly(size) if size else b""
             if mask:
                 body = bytes(b ^ mask[i % 4] for i, b in enumerate(body))
 
-            if opcode == 0x9:  # ping → pong, aynı gövdeyle
+            if opcode == 0x9:  # ping → pong, with the same body
                 pong = bytearray([0x8A, 0x80 | len(body)])
                 veil = os.urandom(4)
                 pong += veil + bytes(b ^ veil[i % 4] for i, b in enumerate(body))
@@ -186,7 +186,7 @@ class Wire:
                 continue
             if opcode == 0x8:
                 raise BrowseError("Tarayıcı bağlantıyı kapattı.")
-            if opcode == 0xA:  # pong — istemedik ama zararsız
+            if opcode == 0xA:  # pong — unasked for but harmless
                 continue
 
             gathered += body
@@ -209,33 +209,33 @@ class Wire:
             pass
 
 
-# -- olay tamponu -------------------------------------------------------
+# -- event buffer -------------------------------------------------------
 #
-# Kanıtlanmış yara: dornick bir web uygulaması yapıyor, sayfayı açıyor, metni
-# okuyor ve "çalışıyor" diyor. Oysa sayfada JavaScript patlamış olabilir —
-# konsolda kırmızı bir yığın izi, ağda 500 dönen bir istek. Bunlar
-# `document.body.innerText`te GÖRÜNMEZ; sayfa yarım çizilmiş ama sessizdir.
-# Kullanıcı tarayıcıyı açınca öğreniyor.
+# Proven wound: dornick builds a web app, opens the page, reads the text and
+# says "it works". Yet JavaScript may have blown up on the page — a red
+# stack trace in the console, a request returning 500 on the network. These
+# are INVISIBLE in `document.body.innerText`; the page is half-drawn but
+# silent. The user finds out when they open the browser.
 #
-# `read` bunu tek başına çözemez, çünkü konsol mesajı bir OLAYDIR: geçmişte
-# bir an olur ve kaybolur. Sonradan sorulamaz, ancak dinlenebilir. O yüzden
-# sayfa açılırken sekmeye kalıcı bir dinleyici bağlanıyor ve olaylar burada
-# birikiyor.
+# `read` cannot solve this alone, because a console message is an EVENT: it
+# happens at a moment in the past and is gone. It cannot be asked for
+# afterwards, only listened for. So while the page is being opened a
+# persistent listener attaches to the tab and the events accumulate here.
 #
-# Dürüstlük kuralı: dinleyici sayfa yüklendikten SONRA bağlandıysa daha
-# önceki mesajlar kaçmıştır. Bunu uydurmuyoruz — `eksik` bayrağıyla
-# söylüyoruz, çünkü "konsol temiz" demek ile "ben bakmaya geç kaldım"
-# demek arasındaki fark, kullanıcının hatayı bulup bulmamasıdır.
+# Honesty rule: if the listener attached AFTER the page loaded, earlier
+# messages were missed. We do not make that up — we say so with the `eksik`
+# flag, because the difference between "console clean" and "I was late to
+# look" is whether the user finds the bug.
 
-# Sekme başına tutulan en fazla kayıt. Döngüde hata basan bir sayfa
-# saniyede yüzlerce satır üretir; en tazeler zaten en yararlısı.
+# Maximum records kept per tab. A page erroring in a loop produces hundreds
+# of lines a second; the freshest are the most useful anyway.
 TAMPON = 300
 
-# Modele varsayılan olarak gösterilen kayıt sayısı.
+# Number of records shown to the model by default.
 DEFAULT_N = 20
 
-# CDP seviyelerinin ortak adları. "warning" ve "warn" aynı şey.
-_SEVIYE = {
+# Common names of the CDP levels. "warning" and "warn" are the same thing.
+_LEVELS = {
     "log": "log", "info": "info", "debug": "debug", "verbose": "debug",
     "warning": "uyari", "warn": "uyari", "error": "hata", "assert": "hata",
     "trace": "log", "dir": "log", "table": "log",
@@ -244,91 +244,91 @@ _SEVIYE = {
 
 @dataclass(slots=True)
 class ConsoleLine:
-    """Tek bir konsol mesajı ya da yakalanmamış istisna."""
+    """A single console message or uncaught exception."""
 
     seviye: str            # log | info | debug | uyari | hata
     metin: str
-    yer: str = ""          # dosya:satır
-    kaynak: str = "konsol"  # konsol | istisna | tarayici
+    location: str = ""     # file:line
+    source: str = "konsol"  # konsol | istisna | tarayici
 
     def format(self) -> str:
-        etiket = {"hata": "HATA", "uyari": "UYARI"}.get(self.seviye, self.seviye)
-        kuyruk = f"  ({self.yer})" if self.yer else ""
-        return f"[{etiket}] {self.metin}{kuyruk}"
+        label = {"hata": "HATA", "uyari": "UYARI"}.get(self.seviye, self.seviye)
+        tail = f"  ({self.location})" if self.location else ""
+        return f"[{label}] {self.metin}{tail}"
 
 
 @dataclass(slots=True)
 class Request:
-    """Tek bir ağ isteği: yol, yöntem, durum, süre."""
+    """A single network request: path, method, status, duration."""
 
     url: str
-    yontem: str = "GET"
+    method: str = "GET"
     status: int = 0
-    tur: str = ""
-    sure_ms: float = 0.0
-    hata: str = ""
+    kind: str = ""
+    duration_ms: float = 0.0
+    error: str = ""
     _t0: float = 0.0
 
     @property
     def failed(self) -> bool:
-        return bool(self.hata) or self.status >= 400
+        return bool(self.error) or self.status >= 400
 
     def format(self) -> str:
         from urllib.parse import urlsplit
 
-        parca = urlsplit(self.url)
-        kisa = (parca.path or "/") + (f"?{parca.query}" if parca.query else "")
-        if len(kisa) > 80:
-            kisa = kisa[:77] + "…"
-        if self.hata:
-            return f"{self.yontem} {kisa} — BAŞARISIZ: {self.hata}"
+        parts = urlsplit(self.url)
+        short = (parts.path or "/") + (f"?{parts.query}" if parts.query else "")
+        if len(short) > 80:
+            short = short[:77] + "…"
+        if self.error:
+            return f"{self.method} {short} — BAŞARISIZ: {self.error}"
         status = self.status or "?"
-        sure = f"{self.sure_ms:.0f} ms" if self.sure_ms else "—"
-        return f"{self.yontem} {kisa} → {status} · {sure}"
+        duration = f"{self.duration_ms:.0f} ms" if self.duration_ms else "—"
+        return f"{self.method} {short} → {status} · {duration}"
 
 
-def _arg_metni(arg: dict[str, Any]) -> str:
-    """CDP RemoteObject'ini okunur metne çevirir.
+def _arg_text(arg: dict[str, Any]) -> str:
+    """Turns a CDP RemoteObject into readable text.
 
-    `value` varsa odur; yoksa Chrome'un kendi tarifi (`description`) —
-    bir Error nesnesinde yığın izinin tamamı orada duruyor.
+    If `value` exists that is it; otherwise Chrome's own description
+    (`description`) — for an Error object the whole stack trace sits there.
     """
     if "value" in arg:
-        deger = arg["value"]
-        if isinstance(deger, (dict, list)):
+        value = arg["value"]
+        if isinstance(value, (dict, list)):
             try:
-                return json.dumps(deger, ensure_ascii=False)[:400]
+                return json.dumps(value, ensure_ascii=False)[:400]
             except (TypeError, ValueError):  # pragma: no cover
-                return str(deger)[:400]
-        return str(deger)
-    for switches in ("description", "unserializableValue", "className"):
-        if arg.get(switches):
-            return str(arg[switches])
+                return str(value)[:400]
+        return str(value)
+    for key in ("description", "unserializableValue", "className"):
+        if arg.get(key):
+            return str(arg[key])
     return str(arg.get("type") or "?")
 
 
-def _yer(url: Any, satir: Any) -> str:
-    """"http://x/app.js:41" — ikisi de yoksa boş."""
-    metin = str(url or "").strip()
-    if not metin:
+def _location(url: Any, line: Any) -> str:
+    """"http://x/app.js:41" — empty if neither is present."""
+    text = str(url or "").strip()
+    if not text:
         return ""
-    kisa = metin.rsplit("/", 1)[-1] or metin
+    short = text.rsplit("/", 1)[-1] or text
     try:
-        n = int(satir)
+        n = int(line)
     except (TypeError, ValueError):
-        return kisa
-    return f"{kisa}:{n + 1}"
+        return short
+    return f"{short}:{n + 1}"
 
 
 class Record:
-    """Bir sekmeye kalıcı bağlı dinleyici: konsol ve ağ tamponu.
+    """A listener persistently attached to a tab: console and network buffer.
 
-    Kendi WebSocket bağlantısını tutuyor ve arka planda okuyor. `Browser`in
-    diğer çağrıları her seferinde taze bir bağlantı açıyor (`_call`); modern
-    Chrome aynı hedefe birden çok istemciyi kabul ediyor, o yüzden ikisi
-    yan yana yaşayabiliyor. Bağlanamazsak bu bir felaket değil: `hata`
-    doluyor ve araç "dinleyici kurulamadı" diyor — sayfa açma işlemi
-    yine de sürüyor.
+    Holds its own WebSocket connection and reads in the background. The
+    `Browser`'s other calls open a fresh connection every time (`_call`);
+    modern Chrome accepts multiple clients on the same target, so the two
+    can live side by side. If we cannot connect it is not a disaster: `hata`
+    is filled and the tool says "listener could not be set up" — opening the
+    page still goes ahead.
     """
 
     def __init__(self, ws_url: str, *, limit: int = TAMPON) -> None:
@@ -337,165 +337,166 @@ class Record:
         self.konsol: deque[ConsoleLine] = deque(maxlen=limit)
         self.istekler: deque[Request] = deque(maxlen=limit)
         self.hata = ""
-        # Dinleyici sayfa yüklendikten sonra bağlandıysa: baştaki mesajlar
-        # kaçtı. Model bunu bilmeli.
+        # If the listener attached after the page loaded: the first messages
+        # were missed. The model must know.
         self.eksik = False
-        self.baslangic = time.monotonic()
-        self._acik: dict[str, Request] = {}
-        self._kapali = False
+        self.started = time.monotonic()
+        self._open: dict[str, Request] = {}
+        self._closed = False
         self._wire: Wire | None = None
-        self._sira = 1000
-        # Kaçıncı ana-çerçeve gezinmesindeyiz? Birincisi beklediğimiz
-        # sayfanın kendi yüklenmesi; onu temizlemiyoruz.
-        self._gezinme = 0
+        self._seq = 1000
+        # Which main-frame navigation are we in? The first is the load of
+        # the page we are waiting for; we do not clear that one.
+        self._navigations = 0
 
         try:
             wire = Wire(ws_url, timeout=CALL_TIMEOUT_S)
-            # Dinleme süresiz: zaman aşımı bir çerçevenin ortasında kesip
-            # akışı bozardı. Bağlantı `kapat()` ile sonlanıyor.
+            # Listening is indefinite: a timeout would cut in the middle of a
+            # frame and break the stream. The connection ends with `close()`.
             wire.sock.settimeout(None)
             self._wire = wire
-            for alan in ("Runtime.enable", "Log.enable", "Network.enable",
-                         "Page.enable"):
-                self._sira += 1
-                wire.send(json.dumps({"id": self._sira, "method": alan,
+            for domain in ("Runtime.enable", "Log.enable", "Network.enable",
+                           "Page.enable"):
+                self._seq += 1
+                wire.send(json.dumps({"id": self._seq, "method": domain,
                                       "params": {}}))
         except Exception as exc:
             self.hata = f"{type(exc).__name__}: {exc}"
             return
 
-        self._thread = threading.Thread(target=self._dinle, daemon=True)
+        self._thread = threading.Thread(target=self._listen, daemon=True)
         self._thread.start()
 
     @property
-    def calisiyor(self) -> bool:
-        return self._wire is not None and not self._kapali
+    def running(self) -> bool:
+        return self._wire is not None and not self._closed
 
     def clear(self) -> None:
-        """Yeni sayfaya geçildi: eski sayfanın kayıtları gürültü."""
+        """Moved to a new page: the old page's records are noise."""
         self.konsol.clear()
         self.istekler.clear()
-        self._acik.clear()
+        self._open.clear()
         self.eksik = False
-        self._gezinme = 0
-        self.baslangic = time.monotonic()
+        self._navigations = 0
+        self.started = time.monotonic()
 
-    def kapat(self) -> None:
-        self._kapali = True
+    def close(self) -> None:
+        self._closed = True
         if self._wire is not None:
             self._wire.close()
 
-    # -- olay döngüsü --------------------------------------------------
+    # -- event loop ----------------------------------------------------
 
-    def _dinle(self) -> None:
+    def _listen(self) -> None:
         wire = self._wire
         assert wire is not None
-        while not self._kapali:
+        while not self._closed:
             try:
-                ham = wire.recv()
+                raw = wire.recv()
             except Exception:
-                return  # bağlantı kapandı ya da koptu; sessizce bit
+                return  # connection closed or dropped; end quietly
             try:
-                mesaj = json.loads(ham)
-            except ValueError:  # pragma: no cover - bozuk çerçeve
+                message = json.loads(raw)
+            except ValueError:  # pragma: no cover - broken frame
                 continue
-            yontem = mesaj.get("method")
-            if not yontem:
-                continue  # bizim `enable` çağrılarımızın cevabı
+            method = message.get("method")
+            if not method:
+                continue  # the answer to our own `enable` calls
             try:
-                self._isle(str(yontem), mesaj.get("params") or {})
-            except Exception:  # pragma: no cover - tek olay her şeyi bozmasın
+                self._handle(str(method), message.get("params") or {})
+            except Exception:  # pragma: no cover - one event must not break everything
                 continue
 
-    def _isle(self, yontem: str, p: dict[str, Any]) -> None:
-        if yontem == "Runtime.consoleAPICalled":
-            seviye = _SEVIYE.get(str(p.get("type") or "log"), "log")
-            metin = " ".join(_arg_metni(a) for a in (p.get("args") or [])
-                             if isinstance(a, dict))
-            kareler = ((p.get("stackTrace") or {}).get("callFrames") or [])
-            ilk = kareler[0] if kareler else {}
+    def _handle(self, method: str, p: dict[str, Any]) -> None:
+        if method == "Runtime.consoleAPICalled":
+            level = _LEVELS.get(str(p.get("type") or "log"), "log")
+            text = " ".join(_arg_text(a) for a in (p.get("args") or [])
+                            if isinstance(a, dict))
+            frames = ((p.get("stackTrace") or {}).get("callFrames") or [])
+            first = frames[0] if frames else {}
             self.konsol.append(ConsoleLine(
-                seviye, metin.strip() or "(boş mesaj)",
-                _yer(ilk.get("url"), ilk.get("lineNumber")), "konsol"))
+                level, text.strip() or "(boş mesaj)",
+                _location(first.get("url"), first.get("lineNumber")), "konsol"))
 
-        elif yontem == "Runtime.exceptionThrown":
-            ayrinti = p.get("exceptionDetails") or {}
-            nesne = ayrinti.get("exception") or {}
-            # `description` yığın izini de taşıyor; yoksa `text` kalıyor.
-            metin = str(nesne.get("description") or ayrinti.get("text")
-                        or "yakalanmamış istisna")
+        elif method == "Runtime.exceptionThrown":
+            details = p.get("exceptionDetails") or {}
+            obj = details.get("exception") or {}
+            # `description` carries the stack trace too; otherwise `text` remains.
+            text = str(obj.get("description") or details.get("text")
+                       or "yakalanmamış istisna")
             self.konsol.append(ConsoleLine(
-                "hata", metin.strip(),
-                _yer(ayrinti.get("url"), ayrinti.get("lineNumber")), "istisna"))
+                "hata", text.strip(),
+                _location(details.get("url"), details.get("lineNumber")), "istisna"))
 
-        elif yontem == "Log.entryAdded":
-            # Tarayıcının kendi günlüğü: "Failed to load resource: 404",
-            # CSP ihlalleri, karışık içerik uyarıları. Sayfanın konsolunda
-            # görünen ama `console.*` çağrısı OLMAYAN satırlar burada.
-            giris = p.get("entry") or {}
-            seviye = _SEVIYE.get(str(giris.get("level") or "info"), "log")
+        elif method == "Log.entryAdded":
+            # The browser's own log: "Failed to load resource: 404", CSP
+            # violations, mixed-content warnings. Lines that show in the
+            # page's console but are NOT `console.*` calls live here.
+            entry = p.get("entry") or {}
+            level = _LEVELS.get(str(entry.get("level") or "info"), "log")
             self.konsol.append(ConsoleLine(
-                seviye, str(giris.get("text") or "").strip() or "(boş kayıt)",
-                _yer(giris.get("url"), giris.get("lineNumber")), "tarayici"))
+                level, str(entry.get("text") or "").strip() or "(boş kayıt)",
+                _location(entry.get("url"), entry.get("lineNumber")), "tarayici"))
 
-        elif yontem == "Network.requestWillBeSent":
-            istek = p.get("request") or {}
-            kayit = Request(
-                url=str(istek.get("url") or ""),
-                yontem=str(istek.get("method") or "GET"),
-                tur=str(p.get("type") or ""),
+        elif method == "Network.requestWillBeSent":
+            request = p.get("request") or {}
+            record = Request(
+                url=str(request.get("url") or ""),
+                method=str(request.get("method") or "GET"),
+                kind=str(p.get("type") or ""),
                 _t0=float(p.get("timestamp") or 0.0),
             )
-            kimlik = str(p.get("requestId") or "")
-            if kimlik:
-                self._acik[kimlik] = kayit
-            self.istekler.append(kayit)
+            ident = str(p.get("requestId") or "")
+            if ident:
+                self._open[ident] = record
+            self.istekler.append(record)
 
-        elif yontem == "Network.responseReceived":
-            if (kayit := self._acik.get(str(p.get("requestId") or ""))) is None:
+        elif method == "Network.responseReceived":
+            if (record := self._open.get(str(p.get("requestId") or ""))) is None:
                 return
-            cevap = p.get("response") or {}
-            kayit.status = int(cevap.get("status") or 0)
-            if tur := str(p.get("type") or ""):
-                kayit.tur = tur
+            response = p.get("response") or {}
+            record.status = int(response.get("status") or 0)
+            if kind := str(p.get("type") or ""):
+                record.kind = kind
 
-        elif yontem in ("Network.loadingFinished", "Network.loadingFailed"):
-            kimlik = str(p.get("requestId") or "")
-            if (kayit := self._acik.pop(kimlik, None)) is None:
+        elif method in ("Network.loadingFinished", "Network.loadingFailed"):
+            ident = str(p.get("requestId") or "")
+            if (record := self._open.pop(ident, None)) is None:
                 return
-            bitis = float(p.get("timestamp") or 0.0)
-            if kayit._t0 and bitis > kayit._t0:
-                kayit.sure_ms = (bitis - kayit._t0) * 1000.0
-            if yontem == "Network.loadingFailed":
-                iptal = bool(p.get("canceled"))
-                kayit.hata = str(p.get("errorText") or
-                                 ("iptal edildi" if iptal else "yüklenemedi"))
+            end = float(p.get("timestamp") or 0.0)
+            if record._t0 and end > record._t0:
+                record.duration_ms = (end - record._t0) * 1000.0
+            if method == "Network.loadingFailed":
+                cancelled = bool(p.get("canceled"))
+                record.error = str(p.get("errorText") or
+                                   ("iptal edildi" if cancelled else "yüklenemedi"))
 
-        elif yontem == "Page.frameNavigated":
-            # Yeni belge: eski sayfanın kayıtları artık gürültü — model A
-            # sayfasının hatalarını B sayfasına yazmasın.
+        elif method == "Page.frameNavigated":
+            # New document: the old page's records are now noise — the model
+            # must not write page A's errors against page B.
             #
-            # AMA ilk gezinme silinmez ve bu ölçülerek öğrenildi: dinleyici
-            # sayfa yüklenmeden bağlanıyor, sonra belgenin kendi commit'i
-            # `frameNavigated` olarak geliyor ve o ana kadar biriken
-            # istekleri (belgenin kendisi, ilk betikler, ilk 404'ler)
-            # süpürüyordu. Canlı denemede ağ listesi 4 istek yerine 2 ile
-            # geldi. Bu yüzden yalnızca İKİNCİ ve sonraki gezinmeler
-            # temizliyor: birincisi zaten bizim beklediğimiz sayfa.
+            # BUT the first navigation is not cleared, and this was learnt by
+            # measuring: the listener attaches before the page loads, then
+            # the document's own commit arrives as `frameNavigated` and was
+            # sweeping away the requests accumulated until then (the
+            # document itself, the first scripts, the first 404s). In a live
+            # trial the network list came back with 2 requests instead of 4.
+            # So only the SECOND and later navigations clear: the first is
+            # the page we were waiting for anyway.
             if (p.get("frame") or {}).get("parentId"):
-                return  # iframe gezinmesi sayfayı değiştirmiyor
-            self._gezinme += 1
-            if self._gezinme > 1:
+                return  # an iframe navigation does not change the page
+            self._navigations += 1
+            if self._navigations > 1:
                 self.konsol.clear()
                 self.istekler.clear()
-                self._acik.clear()
+                self._open.clear()
 
 
-# -- tarayıcı -----------------------------------------------------------
+# -- browser ------------------------------------------------------------
 
 
 class Browser:
-    """Hata ayıklama kapısı açık bir Chrome/Edge ve onun sekmeleri."""
+    """A Chrome/Edge with the debugging port open, and its tabs."""
 
     def __init__(self, state_dir: Path | str, port: int = DEFAULT_PORT) -> None:
         import threading
@@ -503,13 +504,13 @@ class Browser:
         self.state_dir = Path(state_dir)
         self.port = port
         self._proc: subprocess.Popen[bytes] | None = None
-        # Paylaşılan örnekte iki alt ajan aynı anda başlatmaya kalkabilir;
-        # başlatma tek seferde olsun.
+        # On the shared instance two subagents may try to launch at once;
+        # let the launch happen once.
         self._boot_lock = threading.Lock()
-        # Sekme kimliği → dinleyici. Sekme başına tek dinleyici yeter.
-        self._kayitlar: dict[str, Record] = {}
+        # Tab id → listener. One listener per tab is enough.
+        self._records: dict[str, Record] = {}
 
-    # -- http yüzü -----------------------------------------------------
+    # -- http face -----------------------------------------------------
 
     def _http(self, path: str, method: str = "GET") -> Any:
         import urllib.request
@@ -528,11 +529,11 @@ class Browser:
             return False
 
     def ensure(self) -> None:
-        """Tarayıcı ayaktaysa dokunmaz; değilse kendi profiliyle başlatır."""
+        """Leaves the browser alone if it is up; otherwise launches it with its own profile."""
         if self.alive():
             return
         with self._boot_lock:
-            # Kilidi beklerken başkası başlatmış olabilir.
+            # Someone else may have launched while we waited for the lock.
             if self.alive():
                 return
             self._launch()
@@ -555,8 +556,9 @@ class Browser:
             ],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
-            # Chrome/Edge zaten pencereli (GUI) süreç; bayrak konsollu
-            # bir sarmalayıcıdan başlatılsa bile cmd parlatmamayı garantiler.
+            # Chrome/Edge is already a windowed (GUI) process; the flag
+            # guarantees no cmd flash even when launched from a console
+            # wrapper.
             **environment.quiet_flags(),
         )
         deadline = time.monotonic() + BOOT_WAIT_S
@@ -571,93 +573,98 @@ class Browser:
         return [t for t in found if isinstance(t, dict) and t.get("type") == "page"]
 
     def open(self, url: str) -> dict[str, Any]:
-        """Yeni sekmede adres açar — dinleyici bağlandıktan SONRA gezinerek.
+        """Opens an address in a new tab — navigating AFTER the listener attaches.
 
-        Sekme doğrudan hedef adresle açılabilirdi (`/json/new?<url>`) ve
-        önce öyleydi; ama o zaman yükleme, biz dinleyiciyi bağlayana kadar
-        çoktan başlıyor. Canlı denemede sonuç ölçüldü: belgenin kendi
-        isteği ve ilk betiğin 404'ü ağ listesinde HİÇ görünmedi.
-        Bu yüzden sekme boş açılıyor, dinleyici bağlanıyor, gezinme ondan
-        sonra başlıyor — ilk bayttan itibaren her şey kayıt altında.
+        The tab could be opened directly with the target address
+        (`/json/new?<url>`) and it was at first; but then the load is well
+        under way by the time we attach the listener. The result was
+        measured in a live trial: the document's own request and the first
+        script's 404 NEVER showed in the network list. So the tab opens
+        blank, the listener attaches, and the navigation starts after that —
+        everything is on record from the first byte.
         """
         from urllib.parse import quote
 
         spot = "/json/new?" + quote("about:blank", safe=":/?&=%")
         try:
-            # Yeni Chrome PUT istiyor; eskisi GET kabul ediyordu.
+            # New Chrome wants PUT; the old one accepted GET.
             made = self._http(spot, method="PUT")
         except Exception:
             made = self._http(spot)
         if not isinstance(made, dict) or not made.get("id"):
             raise BrowseError("Sekme açılamadı.")
 
-        self.dinle(made, taze=True)
+        self.listen(made, fresh=True)
         try:
             self._call(made, "Page.navigate", {"url": url})
         except BrowseError:
-            # Gezinme kurulamadıysa sekmeyi adresiyle açmayı dene: yarım
-            # bir dinleyici uğruna sayfayı hiç açmamak kötü bir takas.
-            geri = "/json/new?" + quote(url, safe=":/?&=%")
+            # If the navigation could not be set up, try opening the tab
+            # with the address: not opening the page at all for the sake of
+            # a half listener is a bad trade.
+            fallback = "/json/new?" + quote(url, safe=":/?&=%")
             try:
-                made = self._http(geri, method="PUT")
+                made = self._http(fallback, method="PUT")
             except Exception:
-                made = self._http(geri)
-            self.dinle(made, taze=True)
+                made = self._http(fallback)
+            self.listen(made, fresh=True)
         made["url"] = url
         return made
 
     def close_tab(self, tab_id: str) -> None:
-        if (kayit := self._kayitlar.pop(str(tab_id), None)) is not None:
-            kayit.kapat()
+        if (record := self._records.pop(str(tab_id), None)) is not None:
+            record.close()
         try:
             self._http(f"/json/close/{tab_id}")
         except Exception:
             pass
 
-    # -- dinleyici -----------------------------------------------------
+    # -- listener ------------------------------------------------------
 
-    def dinle(self, tab: dict[str, Any], *, taze: bool = False) -> Record:
-        """Sekmeye kalıcı dinleyici bağlar; zaten varsa mevcut olanı verir.
+    def listen(self, tab: dict[str, Any], *, fresh: bool = False) -> Record:
+        """Attaches a persistent listener to the tab; returns the existing one if present.
 
-        `taze=True` yeni bir sayfaya geçildiğini bildiriyor: eski sayfanın
-        kayıtları temizleniyor ve "geç kaldım" bayrağı düşüyor.
+        `fresh=True` announces a move to a new page: the old page's records
+        are cleared and the "I was late" flag drops.
 
-        Dinleyici KURULAMAZSA ortalık yıkılmıyor — `Kayit.hata` doluyor ve
-        araç bunu dürüstçe söylüyor. Sayfayı açamamak, sayfayı açıp konsolu
-        dinleyememekten kötüdür.
+        If the listener CANNOT be set up nothing collapses — `Record.hata`
+        is filled and the tool says so honestly. Failing to open the page is
+        worse than opening it and not being able to listen to the console.
         """
-        kimlik = str(tab.get("id") or "")
-        kayit = self._kayitlar.get(kimlik)
-        if kayit is not None and kayit.calisiyor:
-            if taze:
-                kayit.clear()
-            return kayit
-        if kayit is not None:
-            kayit.kapat()
+        ident = str(tab.get("id") or "")
+        record = self._records.get(ident)
+        if record is not None and record.running:
+            if fresh:
+                record.clear()
+            return record
+        if record is not None:
+            record.close()
 
         spot = str(tab.get("webSocketDebuggerUrl") or "")
         if not spot:
-            kayit = Record.__new__(Record)   # bağlantısız kabuk
-            kayit.konsol, kayit.istekler = deque(), deque()
-            kayit.hata = "sekmenin hata ayıklama adresi yok"
-            kayit.eksik = True
-            kayit._kapali = True
-            kayit._wire = None
-            self._kayitlar[kimlik] = kayit
-            return kayit
+            record = Record.__new__(Record)   # connectionless shell
+            record.konsol, record.istekler = deque(), deque()
+            record.hata = "sekmenin hata ayıklama adresi yok"
+            record.eksik = True
+            record._closed = True
+            record._wire = None
+            self._records[ident] = record
+            return record
 
-        kayit = Record(spot)
-        # Taze değilse sayfa çoktan yüklenmiş olabilir: baştaki mesajlar
-        # kaçtı ve bunu saklamıyoruz.
-        kayit.eksik = not taze
-        self._kayitlar[kimlik] = kayit
-        return kayit
+        record = Record(spot)
+        # If not fresh the page may already be loaded: the first messages
+        # were missed and we do not hide that.
+        record.eksik = not fresh
+        self._records[ident] = record
+        return record
 
     def kayit(self, tab: dict[str, Any]) -> Record:
-        """Sekmenin dinleyicisi; yoksa şimdi kurulur (geç kalmış olarak)."""
-        return self.dinle(tab)
+        """The tab's listener; set up now if missing (as a late one).
 
-    # -- sayfanın içi (ws) ---------------------------------------------
+        (Name kept: tools/browser.py calls it.)
+        """
+        return self.listen(tab)
+
+    # -- inside the page (ws) ------------------------------------------
 
     def _call(self, tab: dict[str, Any], method: str, params: dict[str, Any]) -> dict[str, Any]:
         spot = tab.get("webSocketDebuggerUrl")
@@ -670,7 +677,7 @@ class Browser:
             while time.monotonic() < deadline:
                 answer = json.loads(wire.recv())
                 if answer.get("id") != 1:
-                    continue  # olay bildirimi; bizim cevabımız değil
+                    continue  # event notification; not our answer
                 if "error" in answer:
                     raise BrowseError(str(answer["error"].get("message") or "CDP hatası"))
                 result = answer.get("result")
@@ -692,11 +699,12 @@ class Browser:
         return (answer.get("result") or {}).get("value")
 
     def read(self, tab: dict[str, Any], limit: int = 6000) -> dict[str, Any]:
-        """Sayfanın görünen metni. Yüklenmesini kısa bir süre bekliyor.
+        """The page's visible text. Waits a short while for it to load.
 
-        Yalnızca `readyState` yetmiyor: yeni açılan sekme bir an
-        `about:blank` oluyor ve o sayfa anında "complete" — gezinme daha
-        başlamadan boş sayfa okunuyordu. Adres de yerine oturmalı.
+        `readyState` alone is not enough: a newly opened tab is
+        `about:blank` for a moment and that page is instantly "complete" —
+        the empty page was being read before the navigation even started.
+        The address must settle too.
         """
         deadline = time.monotonic() + 8.0
         while time.monotonic() < deadline:
@@ -715,49 +723,50 @@ class Browser:
             "title": title,
             "url": spot,
             "text": text[:limit] + ("\n… (kırpıldı)" if clipped else ""),
-            # Çerçeve hata sayfası — varsa ayrı alan. Metnin içinde kaybolan
-            # bir "Whoops!" başlığı gözden kaçıyordu.
-            "hata": self.hata_katmani(tab),
+            # Framework error page — a separate field if present. A
+            # "Whoops!" heading lost inside the text was being overlooked.
+            "hata": self.error_page(tab),
         }
 
-    def hata_katmani(self, tab: dict[str, Any]) -> dict[str, Any] | None:
-        """Sayfa bir çerçeve hata sayfası mı? Öyleyse özü, değilse None.
+    def error_page(self, tab: dict[str, Any]) -> dict[str, Any] | None:
+        """Is the page a framework error page? If so its gist, else None.
 
-        Neden ayrı alan: CodeIgniter'ın "Whoops!", Django'nun sarı hata
-        sayfası, Werkzeug'un yığın izi — hepsi `innerText` içinde SIRADAN
-        metin olarak akıyor. Model uzun bir sayfa metninin ortasında
-        istisna sınıfını fark etmeyip "sayfa açıldı" diyordu.
+        Why a separate field: CodeIgniter's "Whoops!", Django's yellow error
+        page, Werkzeug's stack trace — all flow through `innerText` as
+        ORDINARY text. The model failed to notice the exception class in the
+        middle of a long page text and said "page opened".
 
-        Tespit kanıta dayalı: çerçevenin kendi imzası (DOM işareti ya da
-        başlık deseni) aranıyor. Hiçbiri tutmuyorsa None — bir sayfayı
-        "hata sayfası" diye yaftalamak, olmayan bir hatayı rapor etmektir.
+        Detection is evidence-based: the framework's own signature (a DOM
+        marker or a title pattern) is looked for. If none matches, None —
+        labelling a page an "error page" is reporting an error that is not
+        there.
         """
         try:
-            bulgu = self.eval(tab, _ERROR_JS)
-        except BrowseError:  # pragma: no cover - sayfa okunamıyorsa sus
+            finding = self.eval(tab, _ERROR_JS)
+        except BrowseError:  # pragma: no cover - stay quiet if the page cannot be read
             return None
-        return bulgu if isinstance(bulgu, dict) and bulgu.get("tur") else None
+        return finding if isinstance(finding, dict) and finding.get("tur") else None
 
-    def js(self, tab: dict[str, Any], ifade: str) -> dict[str, Any]:
-        """Sayfada küçük bir ifade çalıştırır ve SONUCU döndürür (teşhis).
+    def js(self, tab: dict[str, Any], expression: str) -> dict[str, Any]:
+        """Runs a small expression on the page and returns the RESULT (diagnosis).
 
-        Sonuç JSON'a çevrilebiliyorsa değeriyle, çevrilemiyorsa metin
-        haliyle geliyor: bir DOM düğümü ya da fonksiyon `returnByValue`
-        ile serileşmiyor ve çıplak çağrı orada patlıyordu.
+        If the result can be turned into JSON it comes as its value,
+        otherwise as text: a DOM node or a function does not serialise with
+        `returnByValue` and the bare call was blowing up there.
 
-        İfadenin kendi istisnası bir ARAÇ hatası değil, bir BULGUDUR:
-        modele "şu satırda şu hata" diye dönüyor, çünkü sorduğu şey zaten
-        buydu.
+        The expression's own exception is not a TOOL error, it is a
+        FINDING: it goes back to the model as "this error at that line",
+        because that is what it asked.
         """
-        cevap = self.eval(tab, _JS_SARGI % json.dumps(ifade))
-        if not isinstance(cevap, dict):  # pragma: no cover - sargı hep dict döner
-            return {"tip": "?", "deger": cevap}
-        if cevap.get("hata"):
-            return {"tip": "hata", "deger": str(cevap["hata"])}
-        return {"tip": str(cevap.get("tip") or "?"), "deger": cevap.get("deger")}
+        answer = self.eval(tab, _JS_WRAP % json.dumps(expression))
+        if not isinstance(answer, dict):  # pragma: no cover - the wrapper always returns a dict
+            return {"tip": "?", "deger": answer}
+        if answer.get("hata"):
+            return {"tip": "hata", "deger": str(answer["hata"])}
+        return {"tip": str(answer.get("tip") or "?"), "deger": answer.get("deger")}
 
     def screenshot(self, tab: dict[str, Any]) -> str:
-        """Görünen alanın görüntüsü, data: adresi olarak."""
+        """Image of the visible area, as a data: URL."""
         answer = self._call(tab, "Page.captureScreenshot", {
             "format": "jpeg",
             "quality": 72,
@@ -767,22 +776,22 @@ class Browser:
             raise BrowseError("Görüntü alınamadı.")
         return "data:image/jpeg;base64," + data
 
-    # -- faz 2: sayfayla etkileşim -------------------------------------
+    # -- phase 2: interacting with the page ----------------------------
 
     def navigate(self, tab: dict[str, Any], url: str) -> dict[str, Any]:
-        """Aynı sekmede başka adrese gider ve yeni sayfayı okur."""
-        # Dinleyici gezinmeden ÖNCE: yeni sayfanın ilk hatası da yakalansın.
-        self.dinle(tab, taze=True)
+        """Goes to another address in the same tab and reads the new page."""
+        # Listener BEFORE navigating: the new page's first error must be caught too.
+        self.listen(tab, fresh=True)
         self._call(tab, "Page.navigate", {"url": url})
         return self.read(tab)
 
     def click(self, tab: dict[str, Any], text: str) -> str:
-        """Metnine göre bir düğme ya da bağlantıya tıklar.
+        """Clicks a button or link by its text.
 
-        Piksel değil metin: model "Giriş" düğmesini görüyor, koordinatını
-        değil. Sayfadaki tıklanabilirler (buton, bağlantı, role=button,
-        input) taranıyor ve metni en iyi eşleşen tıklanıyor. Görünmeyen
-        eşleşme atlanıyor — gizli bir bağlantıya tıklamak işe yaramaz.
+        Text, not pixels: the model sees the "Giriş" button, not its
+        coordinates. The clickables on the page (button, link, role=button,
+        input) are scanned and the best text match is clicked. An invisible
+        match is skipped — clicking a hidden link does nothing.
         """
         want = json.dumps(text)
         found = self.eval(tab, _CLICK_JS % want)
@@ -794,12 +803,13 @@ class Browser:
         return str(found)
 
     def type(self, tab: dict[str, Any], text: str, into: str = "") -> str:
-        """Bir alana metin yazar.
+        """Types text into a field.
 
-        `into` verilirse etiketine/placeholder'ına göre alan seçilir; boşsa
-        o an odakta olan (ya da ilk boş metin) alan kullanılıyor. Yazma DOM'a
-        doğrudan değil, gerçek tuş olaylarıyla: bazı sayfalar `input`
-        olayını dinliyor ve doğrudan değer atamayı görmüyor.
+        With `into` given the field is chosen by its label/placeholder; if
+        empty the currently focused field (or the first empty text field) is
+        used. Typing is not straight into the DOM but with real key events:
+        some pages listen to the `input` event and do not see a direct value
+        assignment.
         """
         focused = self.eval(tab, _FOCUS_JS % json.dumps(into))
         if not focused:
@@ -807,14 +817,14 @@ class Browser:
                 (f"'{into}' alanı bulunamadı." if into else "Yazılacak bir alan bulunamadı.")
                 + " `read` ile forma bak."
             )
-        # Odaklı alana karakterleri gerçek tuş olayı olarak gönder.
+        # Send the characters to the focused field as real key events.
         for ch in text:
             self._call(tab, "Input.dispatchKeyEvent", {"type": "keyDown", "text": ch})
             self._call(tab, "Input.dispatchKeyEvent", {"type": "keyUp", "text": ch})
         return str(focused)
 
     def press(self, tab: dict[str, Any], key: str) -> None:
-        """Tek bir özel tuş: Enter, Tab, Escape…"""
+        """A single special key: Enter, Tab, Escape…"""
         spec = _KEYS.get(key.lower())
         if spec is None:
             raise BrowseError(f"Bilinmeyen tuş: {key}. (Enter, Tab, Escape…)")
@@ -831,14 +841,15 @@ class Browser:
         name: str = "",
         placeholder: str = "",
     ) -> str:
-        """Bir form alanını bulur, temizler ve değeri yazar.
+        """Finds a form field, clears it and writes the value.
 
-        `type`'tan farkı hedefli olması: alan CSS seçiciyle ya da görünen
-        etiket / name / placeholder ile seçiliyor. Yazma doğrudan `value`
-        ataması değil — çerçeveler (React vb.) yerli ayarlayıcı + `input`
-        ve `change` olaylarını görmeden değeri saymıyor; sayfa içindeki
-        yardımcı ikisini de yapıyor. Birden çok alan eşleşirse adaylar
-        sayılarak hata dönüyor; sessizce yanlış alana yazılmıyor.
+        The difference from `type` is that it is targeted: the field is
+        chosen by CSS selector or by visible label / name / placeholder.
+        Writing is not a direct `value` assignment — frameworks (React etc.)
+        do not count the value without seeing the native setter + `input`
+        and `change` events; the in-page helper does both. If several fields
+        match, the error lists the candidates; nothing is written silently
+        to the wrong field.
         """
         if not (selector or label or name or placeholder):
             raise BrowseError(
@@ -853,19 +864,20 @@ class Browser:
                         "Alan doldurulamadı.")
 
     def submit(self, tab: dict[str, Any], selector: str = "") -> str:
-        """Formu gönderir.
+        """Submits the form.
 
-        Seçici verilirse o form ya da düğme; verilmezse odaklı alanın formu,
-        o da yoksa sayfadaki tek form. Gönderme düğmesi varsa tıklanıyor
-        (sayfanın kendi akışı çalışsın); yoksa `requestSubmit` — o da
-        `submit` olayını tetikliyor, çıplak `form.submit()` tetiklemezdi.
+        With a selector, that form or button; without one, the focused
+        field's form, failing that the only form on the page. If there is a
+        submit button it is clicked (so the page's own flow runs); otherwise
+        `requestSubmit` — that fires the `submit` event too, bare
+        `form.submit()` would not.
         """
         return _outcome(self.eval(tab, _SUBMIT_JS % json.dumps(selector)),
                         "Form gönderilemedi.")
 
 
 def _outcome(answer: Any, fallback: str) -> str:
-    """Sayfa yardımcılarının ortak sözleşmesi: {ok} ya da {err, adaylar}."""
+    """The common contract of the page helpers: {ok} or {err, adaylar}."""
     if not isinstance(answer, dict):
         raise BrowseError(fallback + " (Sayfa beklenmedik bir cevap verdi.)")
     if answer.get("err"):
@@ -877,12 +889,13 @@ def _outcome(answer: Any, fallback: str) -> str:
     return str(answer.get("ok") or "tamam")
 
 
-# -- sayfa içinde çalışan yardımcılar -----------------------------------
+# -- helpers that run inside the page -----------------------------------
 #
-# Tıklama ve alan seçimi sayfanın kendi DOM'unda çözülüyor: koordinat
-# hesaplamak kırılgan (kaydırma, ölçek, gizli katman) ve model zaten metin
-# düşünüyor — "Giriş düğmesi", "e-posta alanı". Eşleşme önce birebir, sonra
-# içeren; görünmeyen aday atlanıyor.
+# Clicking and field selection are resolved in the page's own DOM:
+# computing coordinates is fragile (scroll, scale, hidden layer) and the
+# model thinks in text anyway — "the Giriş button", "the e-mail field".
+# Matching is exact first, then containing; invisible candidates are
+# skipped.
 
 _CLICK_JS = """(() => {
   const want = %s.trim().toLowerCase();
@@ -930,11 +943,12 @@ _FOCUS_JS = """(() => {
   return (pick.getAttribute("aria-label") || pick.placeholder || pick.name || pick.id || "alan").slice(0, 80);
 })()"""
 
-# Alan bulma + doldurma da sayfa içinde. Sözleşme: {ok: "..."} ya da
-# {err: "...", adaylar: [...]} döner — Python tarafı `_outcome` ile açıyor.
-# Değer yazma yerli ayarlayıcıyla (React'in kendi value takibini aşmak için)
-# ve ardından input+change olaylarıyla: çerçevelerin dinlediği yol bu.
-# iframe içindeki formlara buradan ulaşılamıyor; hata mesajı bunu söylüyor.
+# Field lookup + filling also lives in the page. Contract: returns
+# {ok: "..."} or {err: "...", adaylar: [...]} — the Python side unpacks it
+# with `_outcome`. The value is written with the native setter (to get past
+# React's own value tracking) and then with input+change events: that is
+# the path frameworks listen to. Forms inside iframes cannot be reached from
+# here; the error message says so.
 
 _FILL_JS = """(() => { // dornick:fill
   const spec = %s;
@@ -1065,11 +1079,12 @@ _SUBMIT_JS = """(() => { // dornick:submit
   return {ok: fire(form)};
 })()"""
 
-# Teşhis ifadesinin sargısı. `eval` bilinçli: model bazen tek bir ifade
-# değil iki satırlık bir yoklama gönderiyor ve düz `Runtime.evaluate`
-# bunu sözdizimi hatası sayıyordu. Sonuç JSON'a çevrilemezse metne
-# düşülüyor — DOM düğümü ve fonksiyon serileşmiyor.
-_JS_SARGI = """(function () { // dornick:js
+# Wrapper for the diagnostic expression. `eval` is deliberate: the model
+# sometimes sends not a single expression but a two-line probe, and plain
+# `Runtime.evaluate` counted that as a syntax error. If the result cannot
+# be turned into JSON it falls back to text — DOM nodes and functions do
+# not serialise.
+_JS_WRAP = """(function () { // dornick:js
   let r;
   try { r = eval(%s); }
   catch (e) { return {hata: String((e && (e.stack || e.message)) || e)}; }
@@ -1078,16 +1093,16 @@ _JS_SARGI = """(function () { // dornick:js
   catch (e) { return {tip: t, deger: String(r).slice(0, 2000)}; }
 })()"""
 
-# Çerçeve hata sayfalarının imzaları. Her madde gerçekten o çerçevenin
-# ürettiği sayfada bulunan bir işaret; genel bir "sayfada 'error' geçiyor
-# mu" taraması bilerek YOK — o, sıradan bir blog yazısını hata sayfası
-# ilan ederdi.
+# Signatures of framework error pages. Every item is a marker really found
+# on the page that framework produces; a generic "does 'error' appear on the
+# page" scan is deliberately ABSENT — it would declare an ordinary blog post
+# an error page.
 _ERROR_JS = """(() => { // dornick:hata
   const kes = (s, n) => (s || "").trim().replace(/\\s+/g, " ").slice(0, n || 300);
   const q = (s) => document.querySelector(s);
   const baslik = document.title || "";
 
-  // CodeIgniter 4 — "Whoops!" başlığı, .header h1 istisna sınıfını taşır.
+  // CodeIgniter 4 — "Whoops!" heading, .header h1 carries the exception class.
   if (q(".container.text-center h1") && /whoops/i.test(document.body.innerText.slice(0, 400))) {
     const h = q("h1"), p = q(".header p") || q("p");
     return {tur: "CodeIgniter 4 hata sayfası", baslik: kes(h && h.innerText, 200),
@@ -1099,31 +1114,31 @@ _ERROR_JS = """(() => { // dornick:hata
     return {tur: "PHP çerçeve hata sayfası (Whoops/Ignition)",
             baslik: kes(h && h.innerText, 200), mesaj: kes(baslik, 200), yer: ""};
   }
-  // Django hata ayıklama sayfası: "TypeError at /yol"
+  // Django debug page: "TypeError at /path"
   if (q("#summary") && q("#traceback") && / at \\//.test(baslik)) {
     const h = q("#summary h1"), p = q("#summary pre.exception_value");
     return {tur: "Django hata sayfası", baslik: kes(h && h.innerText, 200),
             mesaj: kes(p && p.innerText, 300), yer: ""};
   }
-  // Flask/Werkzeug hata ayıklayıcı
+  // Flask/Werkzeug debugger
   if (/werkzeug debugger/i.test(baslik) || q(".traceback .frame")) {
     const h = q("h1"), p = q(".errormsg") || q(".detail .errormsg");
     return {tur: "Werkzeug (Flask) hata ayıklayıcı", baslik: kes(h && h.innerText, 200),
             mesaj: kes(p && p.innerText, 300), yer: ""};
   }
-  // Çıplak PHP: gövdenin başında "Fatal error:" / "Parse error:" / "Warning:"
+  // Bare PHP: "Fatal error:" / "Parse error:" / "Warning:" at the head of the body
   const bas = (document.body ? document.body.innerText : "").slice(0, 500);
   const m = bas.match(/(Fatal error|Parse error|Warning|Notice|Deprecated):\\s*([^\\n]+)/);
   if (m) return {tur: "PHP " + m[1], baslik: kes(m[1], 60), mesaj: kes(m[2], 300),
                  yer: kes((bas.match(/ in (.+ on line \\d+)/) || [])[1], 200)};
-  // Node/Express varsayılan hata sayfası
+  // Node/Express default error page
   if (q("pre") && /^\\s*(Error|TypeError|ReferenceError):/.test(q("pre").innerText || ""))
     return {tur: "Node/Express hata sayfası", baslik: kes(q("pre").innerText.split("\\n")[0], 200),
             mesaj: "", yer: ""};
   return null;
 })()"""
 
-# Özel tuşlar için CDP anahtar tanımları.
+# CDP key definitions for the special keys.
 _KEYS = {
     "enter": {"key": "Enter", "code": "Enter", "windowsVirtualKeyCode": 13},
     "tab": {"key": "Tab", "code": "Tab", "windowsVirtualKeyCode": 9},

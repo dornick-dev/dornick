@@ -1,23 +1,23 @@
-"""Bağlam dolduğunda ne olacağı.
+"""What happens when the context fills up.
 
-Model penceresi sonlu, konuşma değil. Pencere dolduğunda üç seçenek var:
-düşürmek (en eskiyi at — ajan neden orada olduğunu unutur), reddetmek
-("bağlam doldu, yeni oturum aç" — kullanıcının işini bölmek) ya da
-**özetleyip devam etmek**. Burada üçüncüsü yapılıyor.
+The model window is finite, the conversation is not. When the window fills
+there are three options: drop (throw away the oldest — the agent forgets
+why it is there), refuse ("context full, open a new session" — cutting the
+user's work in half) or **summarise and carry on**. The third is done here.
 
-Sıkıştırma iki yere birden yazıyor ve asıl fikir bu:
+Compaction writes to two places at once, and that is the whole idea:
 
-    bağlama   özet, yeni pencerenin ilk mesajı olur — konuşma kesilmez
-    zihne     aynı özet kalıcı belleğe düşer — oturum kapansa da durur
+    to the context   the summary becomes the first message of the new window — the conversation is not cut
+    to the mind      the same summary lands in persistent memory — it survives the session closing
 
-İkincisi olmadan sıkıştırma sadece kontrollü bir unutma olurdu. Zihne de
-yazıldığı için, aylar sonra ilgisiz bir konuşmada geçen bir kelime bu özeti
-çağrışımla geri getirebiliyor.
+Without the second, compaction would just be controlled forgetting. Because
+it is also written to the mind, a word passing in an unrelated conversation
+months later can bring this summary back by association.
 
-Kesme noktası rastgele seçilemez. API iki şeyi şart koşuyor: her tool_use
-karşılığını almalı ve pencere bir kullanıcı turuyla başlamalı. Bu yüzden
-kesim her zaman gerçek bir kullanıcı mesajının önüne düşüyor — araç sonucu
-taşıyan kullanıcı turları kesme noktası olamaz.
+The cut point cannot be picked at random. The API requires two things: every
+tool_use must receive its result and the window must start with a user
+turn. That is why the cut always falls in front of a real user message —
+user turns carrying tool results cannot be cut points.
 """
 
 from __future__ import annotations
@@ -27,12 +27,13 @@ from typing import Any
 
 Message = dict[str, Any]
 
-# Pencerenin bu oranı dolduğunda sıkıştırma tetiklenir. Tavana kadar
-# beklemek işe yaramaz: özet isteğinin kendisi de pencereye sığmalı.
+# Compaction triggers when this fraction of the window is full. Waiting
+# until the ceiling does not work: the summary request itself must also
+# fit in the window.
 PRESSURE = 0.75
 
-# Sıkıştırmadan sonra olduğu gibi taşınacak asgari mesaj sayısı. Özet
-# "ne konuşulduğunu" verir, bu mesajlar "az önce ne olduğunu".
+# Minimum number of messages carried over verbatim after compaction. The
+# summary says "what was discussed", these messages say "what just happened".
 KEEP_MESSAGES = 6
 
 SUMMARY_SYSTEM = """Sen bir oturum özetleyicisin. Sana bir ajan oturumunun
@@ -57,8 +58,8 @@ SUMMARY_REQUEST = """Aşağıdaki oturum dökümünü yukarıdaki kurallara gör
 {transcript}
 --- DÖKÜM SONU ---"""
 
-# Yeni pencerenin ilk mesajı. Modelin bunu bir kullanıcı isteği sanmaması
-# için ne olduğu açıkça söyleniyor.
+# First message of the new window. It says explicitly what it is so the
+# model does not mistake it for a user request.
 CARRY_OVER = """[önceki bağlamın özeti — konuşma buradan devam ediyor]
 
 {summary}
@@ -68,7 +69,7 @@ CARRY_OVER = """[önceki bağlamın özeti — konuşma buradan devam ediyor]
 
 @dataclass(slots=True)
 class Pressure:
-    """Pencerenin ne kadarının dolu olduğu."""
+    """How much of the window is full."""
 
     used: int
     window: int
@@ -87,21 +88,22 @@ class Pressure:
 
 
 def measure(usage: dict[str, int], window: int) -> Pressure:
-    """Kullanım raporundan pencere doluluğunu çıkarır.
+    """Derives window fullness from the usage report.
 
-    `prompt_total` kullanılıyor, `input_tokens` değil: ikincisi yalnızca
-    önbelleğe girmemiş artığı sayar ve pencere doluyken bile küçük kalır.
+    `prompt_total` is used, not `input_tokens`: the latter counts only the
+    residue that did not hit the cache and stays small even when the window
+    is full.
     """
     return Pressure(used=int(usage.get("prompt_total") or 0), window=window)
 
 
 def cut_point(messages: list[Message], *, keep: int = KEEP_MESSAGES) -> int:
-    """Kesimin düşeceği indeks. 0 dönerse sıkıştırılacak bir şey yok.
+    """The index the cut lands on. 0 means there is nothing to compact.
 
-    Geriye doğru, `keep` mesaj bırakacak kadar gerilenip oradan ileri ilk
-    **gerçek** kullanıcı mesajı aranıyor. Gerçek olması şart: araç sonucu
-    taşıyan kullanıcı turu bir asistan turunun devamıdır, önünden kesmek
-    karşılıksız tool_use bırakır.
+    Walking backwards, we step back far enough to leave `keep` messages and
+    from there look forward for the first **real** user message. It must be
+    real: a user turn carrying tool results is the continuation of an
+    assistant turn, and cutting in front of it leaves an unanswered tool_use.
     """
     if len(messages) <= keep:
         return 0
@@ -113,17 +115,18 @@ def cut_point(messages: list[Message], *, keep: int = KEEP_MESSAGES) -> int:
 
 
 def work_cut(messages: list[Message], *, keep: int = KEEP_MESSAGES) -> int:
-    """Tek koşunun ORTASI için kesim: bir asistan mesajının önü.
+    """Cut for the MIDDLE of a single run: in front of an assistant message.
 
-    Yüz araçlık tek bir koşuda gerçek kullanıcı turu yalnızca en başta —
-    `cut_point` 0 döner ve sıkıştırma hiç çalışamazdı: pencere dolunca
-    koşu "yeni oturum aç" ile ölüyordu. Oysa bir asistan mesajının önü de
-    güvenli bir kesimdir: o mesajın tool_use'ları ve karşılıkları birlikte
-    pencerede kalır, öncekiler birlikte özete katlanır; pencerenin başını
-    zaten carry_over (user) mesajı açıyor.
+    In a single run of a hundred tools the only real user turn is at the very
+    start — `cut_point` returns 0 and compaction could never run: when the
+    window filled, the run died with "open a new session". Yet the front of
+    an assistant message is also a safe cut: that message's tool_uses and
+    their results stay together in the window, the earlier ones fold into
+    the summary together; the carry_over (user) message already opens the
+    window anyway.
 
-    `cut_point` yine önce deneniyor (gerçek kullanıcı turu daha iyi bir
-    sınır); burası yalnızca onun bulamadığı durumun yedeği.
+    `cut_point` is still tried first (a real user turn is a better
+    boundary); this is only the fallback for the case it cannot find one.
     """
     if len(messages) <= keep:
         return 0
@@ -139,17 +142,18 @@ def _is_user_turn(message: Message) -> bool:
     content = message.get("content")
     if not isinstance(content, list):
         return bool(content)
-    # Araç sonucu içeren tur kullanıcının kendi turu sayılmaz.
+    # A turn carrying a tool result does not count as the user's own turn.
     return not any(
         isinstance(block, dict) and block.get("type") == "tool_result" for block in content
     )
 
 
 def transcript(messages: list[Message], *, tool_output_limit: int = 400) -> str:
-    """Mesajları özetleyiciye verilecek düz metne çevirir.
+    """Turns the messages into plain text for the summariser.
 
-    Araç çıktıları kırpılıyor: bir dizin listesinin tamamı özet için bilgi
-    değil gürültü, ama ilk satırları hangi araca ne sorulduğunu gösteriyor.
+    Tool outputs are trimmed: a whole directory listing is noise for the
+    summary, not information, but its first lines show which tool was asked
+    what.
     """
     lines: list[str] = []
     for message in messages:
@@ -176,8 +180,8 @@ def _render(content: Any, limit: int) -> list[str]:
             out.append(f"[araç: {block.get('name')} {_short(block.get('input'), 200)}]")
         elif kind == "tool_result":
             out.append(f"[sonuç: {_short(block.get('content'), limit)}]")
-        # thinking blokları atlanıyor: özete girmesi gereken sonuçlar,
-        # oraya varılan yol değil.
+        # thinking blocks are skipped: what belongs in the summary is the
+        # conclusions, not the road taken to reach them.
     return [piece for piece in out if piece.strip()]
 
 
@@ -188,5 +192,5 @@ def _short(value: Any, limit: int) -> str:
 
 
 def carry_over(summary: str) -> Message:
-    """Özeti yeni pencerenin ilk mesajı haline getirir."""
+    """Turns the summary into the first message of the new window."""
     return {"role": "user", "content": [{"type": "text", "text": CARRY_OVER.format(summary=summary)}]}

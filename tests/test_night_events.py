@@ -96,10 +96,10 @@ def test_a_night_replays_in_the_order_it_happened(tmp_path: Path) -> None:
     log.emit("dikis", a="n_1", b="n_3", uzerinden="n_2", oturumlar=["s1", "s2"])
     log.emit("uyku.bitti", sebep="basinc", rapor={"tekrar": 1})
 
-    okunan = list(ne.replay(tmp_path / "gece" / "2025-06-02.jsonl"))
-    assert [e["tur"] for e in okunan] == [
+    read_back = list(ne.replay(tmp_path / "gece" / "2025-06-02.jsonl"))
+    assert [e["tur"] for e in read_back] == [
         "uyku.basladi", "tekrar.ileri", "dikis", "uyku.bitti"]
-    assert okunan[1]["dizi"] == ["n_1", "n_2"]
+    assert read_back[1]["dizi"] == ["n_1", "n_2"]
 
 
 def test_a_truncated_log_replays_up_to_the_cut(tmp_path: Path) -> None:
@@ -114,19 +114,19 @@ def test_a_truncated_log_replays_up_to_the_cut(tmp_path: Path) -> None:
 
 
 def test_a_live_listener_sees_what_the_file_gets(tmp_path: Path) -> None:
-    gorulen: list[str] = []
+    seen: list[str] = []
     log = ne.NightLog(tmp_path / "gece" / "x.jsonl", clock,
-                      listeners=[lambda e: gorulen.append(e["tur"])])
+                      listeners=[lambda e: seen.append(e["tur"])])
     log.emit("dokunus", id="n_1")
-    assert gorulen == ["dokunus"]
+    assert seen == ["dokunus"]
     assert [e["tur"] for e in ne.replay(log.path)] == ["dokunus"]
 
 
 def test_a_broken_view_does_not_stop_the_night(tmp_path: Path) -> None:
-    def patla(_event):
-        raise RuntimeError("arayüz çöktü")
+    def blow_up(_event):
+        raise RuntimeError("the view crashed")
 
-    log = ne.NightLog(tmp_path / "gece" / "x.jsonl", clock, listeners=[patla])
+    log = ne.NightLog(tmp_path / "gece" / "x.jsonl", clock, listeners=[blow_up])
     log.emit("dokunus", id="n_1")
     assert [e["id"] for e in ne.replay(log.path)] == ["n_1"]
 
@@ -145,21 +145,21 @@ def test_the_summary_counts_what_a_person_would_ask(tmp_path: Path) -> None:
     log.emit("uyku.uyandi", sebep="kullanici", dongu=2, tamamlanan=2,
              devreden=5, borc={"faz": "rem"})
 
-    ozet = ne.summary(ne.replay(log.path))
-    assert ozet["tekrar"] == 2 and ozet["kenar"] == 1
-    assert ozet["dikis"] == 1 and ozet["damitik"] == 1
-    assert ozet["uyandi"] == "kullanici" and ozet["devreden"] == 5
+    summary = ne.summary(ne.replay(log.path))
+    assert summary["tekrar"] == 2 and summary["kenar"] == 1
+    assert summary["dikis"] == 1 and summary["damitik"] == 1
+    assert summary["uyandi"] == "kullanici" and summary["devreden"] == 5
 
 
 def test_nights_are_listed_newest_first(tmp_path: Path) -> None:
-    for tarih in ("2025-06-01", "2025-06-03", "2025-06-02"):
-        ne.NightLog(tmp_path / "gece" / f"{tarih}.jsonl", clock).emit(
+    for date in ("2025-06-01", "2025-06-03", "2025-06-02"):
+        ne.NightLog(tmp_path / "gece" / f"{date}.jsonl", clock).emit(
             "dokunus", id="n_1")
     assert ne.nights(tmp_path) == ["2025-06-03", "2025-06-02", "2025-06-01"]
 
 
 def test_the_date_from_a_request_cannot_escape_the_folder(tmp_path: Path) -> None:
     """The date reaches this from an HTTP path; it is untrusted input."""
-    yol = ne.night_path(tmp_path, "../../etc/passwd")
-    assert yol.parent == tmp_path / "gece"
-    assert ".." not in yol.name
+    path = ne.night_path(tmp_path, "../../etc/passwd")
+    assert path.parent == tmp_path / "gece"
+    assert ".." not in path.name

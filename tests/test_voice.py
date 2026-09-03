@@ -1,8 +1,8 @@
-"""Sesli konuşma.
+"""Spoken speech.
 
-Ses üretimi ağa çıkıyor, o yüzden burada test edilen şey ağ değil: **neyin
-sesletileceği**. Kod bloğunu sesli okumak ("üç ters tırnak powershell dolar
-u r l eşittir…") bir asistanı anında dayanılmaz yapıyor.
+Speech synthesis goes out to the network, so what is tested here is not the
+network: **what gets spoken**. Reading a code block aloud ("three backticks
+powershell dollar u r l equals…") makes an assistant instantly unbearable.
 """
 
 from __future__ import annotations
@@ -40,7 +40,7 @@ def test_inline_code_is_dropped_too() -> None:
 
 
 def test_tables_are_skipped() -> None:
-    """Tabloyu sesli okumak sütun sütun anlamsız bir liste üretiyor."""
+    """Reading a table aloud produces a meaningless column-by-column list."""
     said = voice.speakable("Sonuç:\n\n| Borsa | Hacim |\n|---|---|\n| Binance | 412880 |\n\nBitti.")
 
     assert "Sonuç" in said and "Bitti" in said
@@ -70,8 +70,8 @@ def test_markdown_marks_do_not_get_spelled_out() -> None:
 
 
 def test_a_message_that_is_only_code_says_nothing() -> None:
-    """Sesletilecek bir şey kalmadıysa sessiz kalmalı; "kod bloğu" diye
-    seslendirmek her cevapta tekrarlanan bir gürültü olurdu."""
+    """If nothing is left to speak it must stay silent; saying "code block"
+    would be a noise repeated in every answer."""
     assert voice.speakable("```py\nprint(1)\n```") == ""
 
 
@@ -84,16 +84,17 @@ def test_empty_input_is_safe() -> None:
     assert voice.speakable(None) == ""  # type: ignore[arg-type]
 
 
-# -- ayarlar -----------------------------------------------------------
+# -- settings ----------------------------------------------------------
 
 
 def test_voice_is_off_until_asked_for(tmp_path: Path) -> None:
-    """Kendiliğinden konuşmaya başlayan bir program rahatsız edici."""
+    """A program that starts talking on its own is annoying."""
     assert not Config.load(tmp_path).voice.enabled
 
 
 def test_senses_open_turned_off(tmp_path: Path) -> None:
-    """Açılışta kamera / mikrofon / ses kapalı — kayıtta açık kalsalar bile."""
+    """At startup camera / microphone / voice are off — even if the saved
+    settings left them on."""
     from dataclasses import replace
     from dornick.desktop import close_senses
 
@@ -112,7 +113,8 @@ def test_senses_open_turned_off(tmp_path: Path) -> None:
 
 
 def test_boot_closes_senses_before_hardware() -> None:
-    """Donanım açılmadan duyular kapatılır; izleyici kamera anahtarına bağlı."""
+    """The senses are closed before the hardware is opened; the watcher
+    depends on the camera switch."""
     import inspect
     from dornick import desktop
 
@@ -137,8 +139,8 @@ def test_voice_settings_survive_a_restart(tmp_path: Path) -> None:
 
 
 def test_the_settings_page_knows_whether_the_package_is_installed(tmp_path: Path) -> None:
-    """Kurulu değilken ses ayarlarını göstermek, çalışmayan bir düğme
-    göstermek demek."""
+    """Showing voice settings when the package is not installed means
+    showing a button that does not work."""
     from dornick import settings
 
     config = Config.load(tmp_path)
@@ -146,9 +148,9 @@ def test_the_settings_page_knows_whether_the_package_is_installed(tmp_path: Path
     assert settings.snapshot(config)["voice"]["available"] == voice.available()
 
 
-@pytest.mark.skipif(not voice.available(), reason="ses paketi kurulu değil")
+@pytest.mark.skipif(not voice.available(), reason="voice package not installed")
 async def test_real_speech_comes_back_as_audio() -> None:
-    """Ağa çıkıyor; ağ yoksa atlanıyor."""
+    """Goes out to the network; skipped when there is none."""
     import asyncio
 
     try:
@@ -156,20 +158,20 @@ async def test_real_speech_comes_back_as_audio() -> None:
             voice.synthesize("Merhaba, bugün ne yapıyoruz?", voice.VoiceConfig()), timeout=20
         )
     except (asyncio.TimeoutError, Exception):
-        pytest.skip("ses sunucusuna ulaşılamadı")
+        pytest.skip("voice server unreachable")
 
-    # mp3 çerçevesi ya ID3 ile ya da senkron baytıyla başlar.
+    # An mp3 frame starts either with ID3 or with the sync byte.
     assert len(audio) > 1000
     assert audio[:3] == b"ID3" or audio[0] == 0xFF
 
 
-# -- tonlama -----------------------------------------------------------
+# -- intonation --------------------------------------------------------
 
 
 def test_a_question_lifts_the_voice() -> None:
-    """Türkçe seslerde SSML duygu stili yok (hepsi "General"), ama hız ve
-    perde cümle cümle ayarlanabiliyor. Düz okumanın sebebi tek bir ayarın
-    bütün cevaba uygulanmasıydı."""
+    """Turkish voices have no SSML emotion style (all "General"), but rate
+    and pitch can be adjusted per sentence. The reason for the flat reading
+    was one setting applied to the whole answer."""
     rate, pitch = voice.tone_of("Buyur, ne var?")
     assert pitch.startswith("+")
 
@@ -196,7 +198,7 @@ def test_a_plain_sentence_is_left_alone() -> None:
 
 
 def test_the_users_setting_is_not_replaced() -> None:
-    """Ayardaki hız kişisel bir tercih; tonlama onun üstüne biniyor."""
+    """The rate in the setting is a personal preference; the intonation rides on top of it."""
     assert voice._blend("+10%", "+8%", "%") == "+18%"
     assert voice._blend("-5Hz", "+6Hz", "Hz") == "+1Hz"
 
@@ -205,16 +207,17 @@ def test_a_broken_setting_does_not_crash() -> None:
     assert voice._blend("hızlı", "+8%", "%") == "hızlı"
 
 
-# -- karakter ----------------------------------------------------------
+# -- character ---------------------------------------------------------
 #
-# Sentezleyici gerçek bir insan sesi üretiyor ve tek başına düz duruyor:
-# metin okuyan biri gibi, konuşan bir şey gibi değil. Türkçe seslerde
-# SSML duygu stili de yok (hepsi "General"). Karakter sesin üstüne
-# tarayıcıda biniyor; ayarı burada.
+# The synthesizer produces a real human voice and on its own it stands
+# flat: like someone reading text, not like something that talks. Turkish
+# voices have no SSML emotion style either (all "General"). The character
+# rides on top of the voice in the browser; its setting lives here.
 
 
 def test_the_voice_is_neither_a_recording_nor_a_person(tmp_path: Path) -> None:
-    """Varsayılan iki ucun arasında: ne santral kaydı ne insan taklidi."""
+    """The default is between the two extremes: neither a switchboard
+    recording nor a human imitation."""
     character = Config.load(tmp_path).voice.character
     assert 0 < character < 1
 
@@ -230,8 +233,8 @@ def test_the_character_survives_a_restart(tmp_path: Path) -> None:
 
 
 def test_a_problem_is_not_said_like_good_news() -> None:
-    """Noktalama tek başına yetmiyor: "Bir sorun var." ile "Tamam, oldu."
-    aynı noktayla bitiyor ve düz okunduğunda ikisi de aynı çıkıyordu."""
+    """Punctuation alone is not enough: "Bir sorun var." and "Tamam, oldu."
+    end with the same full stop and read flatly both came out the same."""
     bad_rate, bad_pitch = voice.tone_of("Bir sorun var, PLC cevap vermiyor.")
     good_rate, good_pitch = voice.tone_of("Tamam, oldu.")
 
@@ -240,15 +243,15 @@ def test_a_problem_is_not_said_like_good_news() -> None:
 
 
 def test_uncertainty_slows_down_without_dropping() -> None:
-    """Emin olmamak ile kötü haber aynı şey değil: biri yavaşlar ama
-    perdesi düşmez, diğeri ikisini birden yapar."""
+    """Being unsure and bad news are not the same: one slows down but its
+    pitch does not drop, the other does both."""
     rate, pitch = voice.tone_of("Sanırım o adres yanlış.")
     assert int(rate.rstrip("%")) < 0
     assert int(pitch.rstrip("Hz")) >= 0
 
 
 def test_the_cue_words_do_not_override_a_question() -> None:
-    """Soru cümlesi her şeyden önce soru: içinde "sorun" geçse bile
-    sonunda ses yükselmeli."""
+    """A question sentence is a question above all: even if "sorun" appears
+    in it, the voice must rise at the end."""
     _rate, pitch = voice.tone_of("Bir sorun mu var?")
     assert pitch.startswith("+")

@@ -1,14 +1,15 @@
-"""Kancalar: kullanıcının kendi komutlarını araç yaşam döngüsüne takması.
+"""Hooks: the user plugging their own commands into the tool lifecycle.
 
-Neden var: Dornick'in ne yapıp ne yapmayacağı iki yerden belirleniyordu —
-sistem promptu (modeli İKNA eder) ve izin motoru (araç adı ve argümanına
-bakar). İkisinin arasında bir boşluk var: "bu depoda `main` dalına asla
-yazma", "her Python dosyası yazıldıktan sonra `black` çalıştır", "üretim
-yapılandırmasına dokunulacaksa önce beni uyar". Bunlar kullanıcının kendi
-kuralları ve hiçbiri prompta ya da izin desenine sığmıyor.
+Why it exists: what Dornick does and does not do was decided in two places —
+the system prompt (PERSUADES the model) and the permission engine (looks at
+the tool name and its argument). There is a gap between the two: "never write
+to the `main` branch in this repo", "run `black` after every Python file is
+written", "warn me first if the production configuration is going to be
+touched". These are the user's own rules and none of them fits into the
+prompt or a permission pattern.
 
-Kanca bu boşluğu dolduruyor: kullanıcı `.dornick/kancalar.json` dosyasına
-kendi komutunu yazıyor, komut aracın önünde ya da arkasında koşuyor.
+A hook fills that gap: the user writes their own command into the
+`.dornick/kancalar.json` file, and the command runs before or after the tool.
 
     [
       {"olay": "arac_oncesi", "arac": "write_file",
@@ -17,27 +18,27 @@ kendi komutunu yazıyor, komut aracın önünde ya da arkasında koşuyor.
        "komut": "black -q \\"%DORNICK_YOL%\\" && echo bicimlendirildi"}
     ]
 
-`arac_oncesi` VETO yetkisine sahiptir: komut sıfırdan farklı bir çıkış
-koduyla dönerse araç hiç çalışmaz ve komutun çıktısı modele gerekçe olarak
-gider. `arac_sonrasi` yalnızca bilgilendirir; çıktısı araç sonucuna tek
-satır olarak eklenir.
+`arac_oncesi` has VETO power: if the command returns with a non-zero exit
+code the tool does not run at all and the command's output goes to the model
+as the reason. `arac_sonrasi` only informs; its output is appended to the
+tool result as a single line.
 
-GÜVENLİK — bilinçli iki karar ve gerekçeleri:
+SECURITY — two deliberate decisions and their rationale:
 
-  1. **Kancalar izin motorunun DIŞINDA çalışır.** Onay penceresi çıkmaz,
-     `plan` kipinde bile koşarlar. Bu bir gözden kaçırma değil: kanca
-     kullanıcının KENDİ komutudur, kendi diskindeki kendi dosyasına kendi
-     eliyle yazmıştır. Ona her seferinde "kendi kuralını çalıştırayım mı?"
-     diye sormak, kuralı işe yaramaz hale getirirdi — hele ki kuralın işi
-     modeli engellemekse.
-  2. **Model kancaları DEĞİŞTİREMEZ.** Birinci karar ancak bununla
-     güvenli: dosyayı model yazabilseydi, kendisini engelleyen kancayı
-     silerek ya da oraya kendi komutunu koyarak izin motorunu tümüyle
-     atlardı. Bu yüzden `.dornick/kancalar.json` dosya yazma araçlarına
-     kapalı (`tools/files.py` içindeki `_guard`) ve tek düzenleyicisi
-     kullanıcının kendisi.
+  1. **Hooks run OUTSIDE the permission engine.** No approval window pops
+     up; they run even in `plan` mode. This is not an oversight: a hook is
+     the user's OWN command, written by their own hand into their own file
+     on their own disk. Asking them every time "shall I run your own rule?"
+     would make the rule useless — especially when the rule's job is to
+     block the model.
+  2. **The model CANNOT modify hooks.** The first decision is only safe with
+     this one: if the model could write the file, it would bypass the
+     permission engine entirely by deleting the hook that blocks it or by
+     putting its own command there. That is why `.dornick/kancalar.json` is
+     closed to the file-writing tools (`_guard` in `tools/files.py`) and its
+     only editor is the user.
 
-Dosya yoksa hiçbir şey olmaz: kanca katmanı sessizce devre dışıdır.
+If the file does not exist nothing happens: the hook layer is silently off.
 """
 
 from __future__ import annotations
@@ -52,256 +53,257 @@ from typing import Any
 
 from . import environment
 
-DOSYA_ADI = "kancalar.json"
+FILE_NAME = "kancalar.json"
 
-# Bir kancaya verilen varsayılan süre. Kanca aracın önünde durduğu için
-# cömert olamaz: her `write_file`a eklenen 30 saniye, turu yaşanmaz yapar.
+# Default time given to a hook. Since the hook stands in front of the tool it
+# cannot be generous: 30 seconds added to every `write_file` makes the turn
+# unbearable.
 DEFAULT_TIMEOUT = 20.0
 MAX_TIMEOUT = 120.0
 
-# Kanca çıktısının modele giden kırpılmış hali. Kanca bir gerekçe yazar,
-# rapor değil.
-MAX_CIKTI = 1200
+# The trimmed form of the hook output that goes to the model. A hook writes
+# a reason, not a report.
+MAX_OUTPUT = 1200
 
-OLAYLAR = ("arac_oncesi", "arac_sonrasi")
+EVENTS = ("arac_oncesi", "arac_sonrasi")
 
 
 @dataclass(slots=True)
 class Hook:
-    """Tek bir kanca tanımı."""
+    """A single hook definition."""
 
-    olay: str
-    arac: str                   # fnmatch deseni; "|" ile birden çok
-    komut: str
-    zaman_asimi: float = DEFAULT_TIMEOUT
+    event: str
+    tool: str                   # fnmatch pattern; several joined with "|"
+    command: str
+    timeout: float = DEFAULT_TIMEOUT
 
-    def uyar_mi(self, arac: str) -> bool:
-        """Bu kanca `arac` için mi?
+    def matches(self, tool: str) -> bool:
+        """Is this hook for `tool`?
 
-        Desen `|` ile bölünüyor: "write_file|edit_file" iki ayrı desen.
-        Tek tek satır yazmak zorunda kalmak, kullanıcıyı kopyala-yapıştıra
-        iterdi ve kopyalar birbirinden ayrı bozulurdu.
+        The pattern is split on `|`: "write_file|edit_file" is two separate
+        patterns. Having to write separate lines would push the user into
+        copy-paste, and the copies would drift apart.
         """
-        for parca in self.arac.split("|"):
-            if fnmatch.fnmatch(arac, parca.strip()):
+        for part in self.tool.split("|"):
+            if fnmatch.fnmatch(tool, part.strip()):
                 return True
         return False
 
 
 @dataclass(slots=True)
-class Cikti:
-    """Bir kanca koşumunun sonucu."""
+class Output:
+    """The result of one hook run."""
 
-    kanca: Hook
-    kod: int = 0
-    metin: str = ""
+    hook: Hook
+    code: int = 0
+    text: str = ""
     status: str = "kostu"        # kostu | zaman_asimi | baslatilamadi
 
     @property
-    def engelliyor(self) -> bool:
-        """`arac_oncesi` için: araç çalışmamalı mı?
+    def blocks(self) -> bool:
+        """For `arac_oncesi`: should the tool NOT run?
 
-        Zaman aşımı da engelliyor. Güvenli taraf bu: kullanıcı bir bekçi
-        yazdıysa ve bekçi cevap vermiyorsa, "herhalde izin verirdi" demek
-        bekçinin varlık sebebini ortadan kaldırır.
+        A timeout blocks too. That is the safe side: if the user wrote a
+        gatekeeper and the gatekeeper does not answer, saying "it would
+        probably have allowed it" removes the gatekeeper's reason to exist.
         """
-        return self.status == "zaman_asimi" or (self.status == "kostu" and self.kod != 0)
+        return self.status == "zaman_asimi" or (self.status == "kostu" and self.code != 0)
 
 
 @dataclass(slots=True)
 class Karar:
-    """`arac_oncesi` kancalarının toplu sonucu."""
+    """The combined result of the `arac_oncesi` hooks."""
 
     izin: bool = True
     gerekce: str = ""
-    # Engellemeyen ama söylenmesi gereken şeyler (bozuk kanca gibi).
+    # Things that do not block but must be said (a broken hook, for instance).
     notlar: list[str] = field(default_factory=list)
 
 
-# -- yapılandırma -------------------------------------------------------
+# -- configuration ------------------------------------------------------
 
 
-def dosya_yolu(state_dir: Path | str) -> Path:
-    return Path(state_dir) / DOSYA_ADI
+def file_path(state_dir: Path | str) -> Path:
+    return Path(state_dir) / FILE_NAME
 
 
-def korunan_mu(yol: Path | str) -> bool:
-    """Bu yol bir kanca dosyası mı? (yazma araçları buna bakıyor)
+def korunan_mu(path: Path | str) -> bool:
+    """Is this path a hook file? (the write tools look at this)
 
-    Yalnızca etkin `.dornick` klasörüne değil, ADI `.dornick` olan herhangi bir
-    klasörün altındaki `kancalar.json`a bakıyoruz. Model başka bir projenin
-    kanca dosyasını da yazamamalı — ve `state_dir`i bilmeyen bir çağıran
-    yine de korunmalı.
+    We look not only at the active `.dornick` folder but at `kancalar.json`
+    under ANY folder NAMED `.dornick`. The model must not be able to write
+    another project's hook file either — and a caller that does not know
+    `state_dir` must still be protected.
     """
-    yol = Path(yol)
-    return (yol.name.lower() == DOSYA_ADI
-            and yol.parent.name.lower() == ".dornick")
+    path = Path(path)
+    return (path.name.lower() == FILE_NAME
+            and path.parent.name.lower() == ".dornick")
 
 
-def call_touches_hook(arac: str, girdi: Any) -> bool:
-    """Bu DEĞİŞTİREN çağrı kanca dosyasına uzanıyor mu? (yürütücü sorar)
+def call_touches_hook(tool: str, payload: Any) -> bool:
+    """Does this MUTATING call reach the hook file? (the executor asks)
 
-    `korunan_mu` yazma araçlarının yolunu kapatıyor; ama kabuk bir yazma
-    aracı değil ve `Set-Content .dornick/kancalar.json` diye bir komut o
-    kapıdan hiç geçmiyordu. "Model kendisini durduran çiti sökemez"
-    iddiasındaki delik buydu.
+    `korunan_mu` closes the path for the write tools; but the shell is not a
+    write tool, and a command like `Set-Content .dornick/kancalar.json`
+    never went through that gate. That was the hole in the claim "the model
+    cannot tear down the fence that stops it".
 
-    Yürütücü bunu yalnız `mutates` araçlar için soruyor; `read_file`,
-    `grep`, `list_dir` etkilenmiyor — model hangi kuralın altında
-    çalıştığını okuyabilmeli. Kabukla okumak da kapanıyor (kabuk hem
-    okur hem yazar, ikisi komut metninden ayrılamaz); red mesajı
-    `read_file`'a yönlendiriyor.
+    The executor asks this only for `mutates` tools; `read_file`, `grep`,
+    `list_dir` are unaffected — the model must be able to read which rule it
+    is working under. Reading through the shell is closed too (the shell
+    both reads and writes, and the two cannot be told apart from the command
+    text); the refusal message points at `read_file`.
 
-    Bu bir HAPİS DEĞİL, kasıt kapısıdır: adı gizleyen bir komut
-    (değişkene atama, parça parça kurma, base64) bunu aşar — kabuk
-    komutunu ayrıştırarak kazanılacak bir yarış yok. Kapattığı şey
-    gerçek başarısızlık kipi: modelin "şu kancayı kaldırayım da iş
-    görsün" deyip doğrudan yazması. Kasıtlı bir düşmana karşı çit,
-    izin motorudur.
+    This is NOT A PRISON, it is an intent gate: a command that hides the
+    name (assigning to a variable, building it piece by piece, base64) gets
+    past it — there is no race to be won by parsing the shell command. What
+    it closes is the real failure mode: the model saying "let me remove that
+    hook so the job goes through" and writing directly. The fence against a
+    deliberate adversary is the permission engine.
     """
-    if arac in {"write_file", "edit_file", "copy_in"}:
-        return False  # kendi kapıları var (`korunan_mu`); mesajları daha iyi
-    if not isinstance(girdi, dict):
+    if tool in {"write_file", "edit_file", "copy_in"}:
+        return False  # they have their own gates (`korunan_mu`); their messages are better
+    if not isinstance(payload, dict):
         return False
-    return any(isinstance(d, str) and DOSYA_ADI in d.lower()
-               for d in girdi.values())
+    return any(isinstance(v, str) and FILE_NAME in v.lower()
+               for v in payload.values())
 
 
-def _ayrıstir(ham: Any) -> list[Hook]:
-    """JSON gövdesinden kanca listesi. Bozuk maddeler SESSİZCE düşer.
+def _parse_entries(raw: Any) -> list[Hook]:
+    """The hook list from the JSON body. Broken entries drop SILENTLY.
 
-    Neden sessizce: kanca dosyası kullanıcının elindedir ve bir yazım
-    hatası yüzünden bütün araç katmanını durdurmak orantısız. Tanınmayan
-    olay adı ya da boş komut, olmayan bir kanca demektir — o kadar.
+    Why silently: the hook file is in the user's hands, and stopping the
+    whole tool layer because of a typo is disproportionate. An unknown event
+    name or an empty command means a hook that does not exist — that is all.
     """
-    if not isinstance(ham, list):
+    if not isinstance(raw, list):
         return []
-    bulunan: list[Hook] = []
-    for madde in ham:
-        if not isinstance(madde, dict):
+    found: list[Hook] = []
+    for entry in raw:
+        if not isinstance(entry, dict):
             continue
-        olay = str(madde.get("olay") or "").strip()
-        komut = str(madde.get("komut") or "").strip()
-        if olay not in OLAYLAR or not komut:
+        event = str(entry.get("olay") or "").strip()
+        command = str(entry.get("komut") or "").strip()
+        if event not in EVENTS or not command:
             continue
         try:
-            sure = float(madde.get("zaman_asimi") or DEFAULT_TIMEOUT)
+            seconds = float(entry.get("zaman_asimi") or DEFAULT_TIMEOUT)
         except (TypeError, ValueError):
-            sure = DEFAULT_TIMEOUT
-        bulunan.append(Hook(
-            olay=olay,
-            arac=str(madde.get("arac") or "*").strip() or "*",
-            komut=komut,
-            zaman_asimi=max(1.0, min(sure, MAX_TIMEOUT)),
+            seconds = DEFAULT_TIMEOUT
+        found.append(Hook(
+            event=event,
+            tool=str(entry.get("arac") or "*").strip() or "*",
+            command=command,
+            timeout=max(1.0, min(seconds, MAX_TIMEOUT)),
         ))
-    return bulunan
+    return found
 
 
-# Dosya her araç çağrısında okunuyor gibi görünmesin diye küçük bir
-# önbellek: (yol) -> (mtime_ns, boyut, kancalar). Kullanıcı dosyayı
-# düzenlediği anda mtime değişiyor ve önbellek kendiliğinden düşüyor —
-# yeniden başlatmaya gerek yok.
-_bellek: dict[str, tuple[int, int, list[Hook]]] = {}
+# A small cache so the file does not look like it is read on every tool
+# call: (path) -> (mtime_ns, size, hooks). The moment the user edits the
+# file the mtime changes and the cache drops by itself — no restart needed.
+_cache: dict[str, tuple[int, int, list[Hook]]] = {}
 
 
-def yukle(state_dir: Path | str) -> list[Hook]:
-    """`.dornick/kancalar.json` içindeki kancalar; dosya yoksa boş liste.
+def load(state_dir: Path | str) -> list[Hook]:
+    """The hooks inside `.dornick/kancalar.json`; an empty list if the file is absent.
 
-    Dosyanın YOKLUĞU olağan durum: kanca kullanan kullanıcı azınlıktır ve
-    kullanmayan hiçbir bedel ödememeli. O yüzden hızlı yol tek bir `stat`.
+    The ABSENCE of the file is the normal case: users of hooks are a
+    minority and those who do not use them must pay nothing. So the fast
+    path is a single `stat`.
     """
-    yol = dosya_yolu(state_dir)
+    path = file_path(state_dir)
     try:
-        bilgi = yol.stat()
+        info = path.stat()
     except OSError:
-        _bellek.pop(str(yol), None)
+        _cache.pop(str(path), None)
         return []
 
-    switches = str(yol)
-    if (onceki := _bellek.get(switches)) is not None:
-        if onceki[0] == bilgi.st_mtime_ns and onceki[1] == bilgi.st_size:
-            return onceki[2]
+    key = str(path)
+    if (previous := _cache.get(key)) is not None:
+        if previous[0] == info.st_mtime_ns and previous[1] == info.st_size:
+            return previous[2]
 
     try:
-        ham = json.loads(yol.read_text(encoding="utf-8"))
+        raw = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError):
-        # Bozuk JSON: kancasız çalış. Sessiz değil — çağıran bunu
-        # `bozuk_mu` ile sorup kullanıcıya söyleyebiliyor.
-        _bellek[switches] = (bilgi.st_mtime_ns, bilgi.st_size, [])
+        # Broken JSON: run without hooks. Not silent — the caller can ask
+        # with `broken_reason` and tell the user.
+        _cache[key] = (info.st_mtime_ns, info.st_size, [])
         return []
 
-    hooks = _ayrıstir(ham)
-    _bellek[switches] = (bilgi.st_mtime_ns, bilgi.st_size, hooks)
+    hooks = _parse_entries(raw)
+    _cache[key] = (info.st_mtime_ns, info.st_size, hooks)
     return hooks
 
 
-def bozuk_mu(state_dir: Path | str) -> str:
-    """Dosya var ama okunamıyorsa hatanın insan okur hali; yoksa boş dize."""
-    yol = dosya_yolu(state_dir)
-    if not yol.is_file():
+def broken_reason(state_dir: Path | str) -> str:
+    """If the file exists but cannot be read, the human-readable error; else an empty string."""
+    path = file_path(state_dir)
+    if not path.is_file():
         return ""
     try:
-        ham = json.loads(yol.read_text(encoding="utf-8"))
+        raw = json.loads(path.read_text(encoding="utf-8"))
     except OSError as exc:
-        return f"{yol} okunamadı ({exc.strerror or exc})"
+        return f"{path} okunamadı ({exc.strerror or exc})"
     except ValueError as exc:
-        return f"{yol} geçerli JSON değil ({exc})"
-    if not isinstance(ham, list):
-        return f"{yol} bir liste olmalı (köşeli parantezle başlamalı)"
+        return f"{path} geçerli JSON değil ({exc})"
+    if not isinstance(raw, list):
+        return f"{path} bir liste olmalı (köşeli parantezle başlamalı)"
     return ""
 
 
 def clear_cache() -> None:
-    """Testler için: dosya önbelleğini boşaltır."""
-    _bellek.clear()
+    """For tests: empties the file cache."""
+    _cache.clear()
 
 
-def eslesenler(state_dir: Path | str, olay: str, arac: str) -> list[Hook]:
-    return [k for k in yukle(state_dir) if k.olay == olay and k.uyar_mi(arac)]
+def matching(state_dir: Path | str, event: str, tool: str) -> list[Hook]:
+    return [h for h in load(state_dir) if h.event == event and h.matches(tool)]
 
 
-# -- koşum --------------------------------------------------------------
+# -- running ------------------------------------------------------------
 
 
-def _ortam(arac: str, args: dict[str, Any], oturum: str) -> dict[str, str]:
-    """Kancaya bağlam ORTAM DEĞİŞKENİYLE geçiyor.
+def _environment(tool: str, args: dict[str, Any], session: str) -> dict[str, str]:
+    """Context reaches the hook through ENVIRONMENT VARIABLES.
 
-    JSON'u komut satırına gömmek kaçış cehennemidir: içindeki tırnaklar
-    kabuğun tırnaklarıyla dövüşür, Windows'ta `cmd` ile PowerShell farklı
-    kaçış kuralları ister ve kullanıcının kancası ilk yolunda ters eğik
-    çizgi görünce sessizce bozulur. Ortam değişkeni bu sorunu hiç
-    doğurmuyor.
+    Embedding JSON in the command line is escaping hell: its quotes fight
+    the shell's quotes, on Windows `cmd` and PowerShell want different
+    escaping rules, and the user's hook silently breaks the first time it
+    sees a backslash in a path. An environment variable never raises that
+    problem.
     """
-    cevre = dict(os.environ)
-    cevre["DORNICK_ARAC"] = arac
-    cevre["DORNICK_OTURUM"] = oturum
+    env = dict(os.environ)
+    env["DORNICK_ARAC"] = tool
+    env["DORNICK_OTURUM"] = session
     try:
-        cevre["DORNICK_ARGS"] = json.dumps(args, ensure_ascii=False)[:32_000]
-    except (TypeError, ValueError):  # pragma: no cover - serileşmeyen argüman
-        cevre["DORNICK_ARGS"] = "{}"
-    # En sık kullanılacak alan ayrıca ve çıplak: kancanın JSON ayrıştırmak
-    # zorunda kalmadan `$DORNICK_YOL` yazabilmesi, tek satırlık kancaları
-    # mümkün kılan şey.
-    yol = args.get("path") or args.get("target") or ""
-    cevre["DORNICK_YOL"] = str(yol) if isinstance(yol, str) else ""
-    return cevre
+        env["DORNICK_ARGS"] = json.dumps(args, ensure_ascii=False)[:32_000]
+    except (TypeError, ValueError):  # pragma: no cover - unserialisable argument
+        env["DORNICK_ARGS"] = "{}"
+    # The most used field separately and bare: being able to write
+    # `$DORNICK_YOL` without parsing JSON is what makes one-line hooks
+    # possible.
+    path = args.get("path") or args.get("target") or ""
+    env["DORNICK_YOL"] = str(path) if isinstance(path, str) else ""
+    return env
 
 
-def _kirp(metin: str) -> str:
-    metin = metin.strip()
-    if len(metin) <= MAX_CIKTI:
-        return metin
-    return metin[:MAX_CIKTI] + "\n… [kanca çıktısı kırpıldı]"
+def _trim(text: str) -> str:
+    text = text.strip()
+    if len(text) <= MAX_OUTPUT:
+        return text
+    return text[:MAX_OUTPUT] + "\n… [kanca çıktısı kırpıldı]"
 
 
-async def _baslat(komut: str, ortak: dict[str, Any]):
-    """Komutu platformun kabuğunda başlatır.
+async def _launch(command: str, common: dict[str, Any]):
+    """Starts the command in the platform's shell.
 
-    Windows'ta PowerShell açıkça çağrılıyor (`shell` aracının yaptığı gibi):
-    `create_subprocess_shell` orada `cmd.exe`ye düşüyor ve kullanıcının
-    kanca dosyasına yazdığı komut, Dornick'in her yerde kullandığı kabuktan
-    başka bir kabukta koşuyordu — aynı satır bir yerde çalışıp burada
-    çalışmıyordu.
+    On Windows PowerShell is called explicitly (as the `shell` tool does):
+    `create_subprocess_shell` falls back to `cmd.exe` there, and the command
+    the user wrote into the hook file ran in a different shell from the one
+    Dornick uses everywhere else — the same line worked in one place and
+    not here.
     """
     import sys
 
@@ -309,158 +311,158 @@ async def _baslat(komut: str, ortak: dict[str, Any]):
         import shutil
 
         exe = shutil.which("pwsh") or shutil.which("powershell") or "powershell.exe"
-        # ÇIKIŞ KODU SADAKATİ. Kancanın sözleşmesi çıkış koduna dayanıyor
-        # ("sıfır değilse aracı çalıştırma") ve PowerShell kendi çıkış
-        # kodunu native bir programın kodundan ayrı tutuyor: `python -c
-        # "sys.exit(3)"` çağıran bir kanca dışarıya 1 olarak görünüyordu.
-        # Engelleme kararı yine doğru çıkıyordu ama modele giden gerekçe
-        # yanlış kodu yazıyordu. `$LASTEXITCODE` varsa onunla çıkılıyor;
-        # yoksa (saf cmdlet koştuysa) PowerShell'in kendi kodu geçerli.
-        sarmal = f"{komut}\nif ($null -ne $LASTEXITCODE) {{ exit $LASTEXITCODE }}"
+        # EXIT CODE FIDELITY. The hook's contract rests on the exit code
+        # ("non-zero: do not run the tool") and PowerShell keeps its own
+        # exit code apart from a native program's: a hook calling `python -c
+        # "sys.exit(3)"` looked like 1 from outside. The blocking decision
+        # still came out right, but the reason sent to the model carried the
+        # wrong code. If `$LASTEXITCODE` is set we exit with it; if not (only
+        # cmdlets ran) PowerShell's own code stands.
+        wrapped = f"{command}\nif ($null -ne $LASTEXITCODE) {{ exit $LASTEXITCODE }}"
         return await asyncio.create_subprocess_exec(
-            exe, "-NoProfile", "-NonInteractive", "-Command", sarmal, **ortak)
-    # POSIX: kendi oturumunda başlasın ki zaman aşımında bütün ağaç
-    # tek sinyalle düşsün.
-    ortak.setdefault("start_new_session", True)  # pragma: no cover
-    return await asyncio.create_subprocess_shell(komut, **ortak)  # pragma: no cover
+            exe, "-NoProfile", "-NonInteractive", "-Command", wrapped, **common)
+    # POSIX: start in its own session so that on timeout the whole tree
+    # falls with one signal.
+    common.setdefault("start_new_session", True)  # pragma: no cover
+    return await asyncio.create_subprocess_shell(command, **common)  # pragma: no cover
 
 
-async def kos(
-    kanca: Hook,
+async def run(
+    hook: Hook,
     *,
-    arac: str,
+    tool: str,
     args: dict[str, Any],
-    oturum: str,
+    session: str,
     cwd: Path | str,
-) -> Cikti:
-    """Tek bir kancayı koşturur.
+) -> Output:
+    """Runs a single hook.
 
-    Kabuk üzerinden: kullanıcı kanca dosyasına boru, `&&`, değişken içeren
-    gerçek bir komut satırı yazar. Konsol penceresi açtırmıyor
-    (`ortam.sessiz_bayraklar`) — dornick pythonw altında koşarken her yazma
-    ekranda bir cmd parlatırdı.
+    Through the shell: the user writes a real command line with pipes, `&&`
+    and variables into the hook file. Opens no console window
+    (`environment.quiet_flags`) — while dornick runs under pythonw every
+    write used to flash a cmd on the screen.
     """
-    ortak: dict[str, Any] = dict(
+    common: dict[str, Any] = dict(
         cwd=str(cwd),
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
-        env=_ortam(arac, args, oturum),
+        env=_environment(tool, args, session),
         **environment.quiet_flags(),
     )
     try:
-        proc = await _baslat(kanca.komut, ortak)
+        proc = await _launch(hook.command, common)
     except (OSError, ValueError) as exc:
-        # Kancanın kendi arızası aracı öldürmemeli: bu bir yapılandırma
-        # sorunu, kullanıcının işine engel değil.
-        return Cikti(kanca, status="baslatilamadi",
-                     metin=f"{type(exc).__name__}: {exc}")
+        # The hook's own fault must not kill the tool: this is a
+        # configuration problem, not an obstacle to the user's work.
+        return Output(hook, status="baslatilamadi",
+                      text=f"{type(exc).__name__}: {exc}")
 
-    is_ = asyncio.ensure_future(proc.communicate())
+    job = asyncio.ensure_future(proc.communicate())
     try:
-        cikti, hata = await asyncio.wait_for(asyncio.shield(is_), kanca.zaman_asimi)
+        out, err = await asyncio.wait_for(asyncio.shield(job), hook.timeout)
     except asyncio.TimeoutError:
-        # Süreç AĞACINI öldür. Yalnızca kabuğu öldürmek kullanıcının asıl
-        # kanca komutunu makinede çalışır halde bırakıyor ve boruları açık
-        # tuttuğu için burası yine bekliyordu: ölçüldü, 2 saniyelik zaman
-        # aşımı 60 saniyelik bir bekleyişe dönüştü.
+        # Kill the process TREE. Killing only the shell left the user's real
+        # hook command running on the machine and, since it kept the pipes
+        # open, this spot kept waiting: measured, a 2-second timeout turned
+        # into a 60-second wait.
         await environment.kill_tree(proc)
         try:
-            await asyncio.wait_for(is_, 5)
+            await asyncio.wait_for(job, 5)
         except (asyncio.TimeoutError, asyncio.CancelledError, OSError):
-            is_.cancel()
-        return Cikti(kanca, status="zaman_asimi")
+            job.cancel()
+        return Output(hook, status="zaman_asimi")
 
-    ham = (cikti or b"").decode("utf-8", errors="replace").strip()
-    if not ham:
-        ham = (hata or b"").decode("utf-8", errors="replace").strip()
-    return Cikti(kanca, kod=proc.returncode or 0, metin=_kirp(ham))
+    raw = (out or b"").decode("utf-8", errors="replace").strip()
+    if not raw:
+        raw = (err or b"").decode("utf-8", errors="replace").strip()
+    return Output(hook, code=proc.returncode or 0, text=_trim(raw))
 
 
 async def before_tool(
     state_dir: Path | str,
-    arac: str,
+    tool: str,
     args: dict[str, Any],
     *,
     oturum: str = "",
     cwd: Path | str = ".",
 ) -> Karar:
-    """Araç çalışmadan ÖNCE koşan kancalar. Biri reddederse araç çalışmaz.
+    """Hooks that run BEFORE the tool. If one refuses, the tool does not run.
 
-    İlk reddedende duruyoruz: ikinci bir bekçiye sormanın anlamı yok,
-    karar çoktan verildi ve kalan kancaları koşturmak yalnızca zaman
-    (ve olası yan etki) demek.
+    We stop at the first refusal: there is no point asking a second
+    gatekeeper, the decision has already been made and running the rest
+    only costs time (and possible side effects).
     """
-    karar = Karar()
-    for kanca in eslesenler(state_dir, "arac_oncesi", arac):
-        sonuc = await kos(kanca, arac=arac, args=args, oturum=oturum, cwd=cwd)
+    decision = Karar()
+    for hook in matching(state_dir, "arac_oncesi", tool):
+        result = await run(hook, tool=tool, args=args, session=oturum, cwd=cwd)
 
-        if sonuc.status == "baslatilamadi":
-            # Bozuk kanca aracı engellemiyor ama saklanmıyor da: kullanıcı
-            # kuralının hiç koşmadığını bilmeli.
-            karar.notlar.append(
-                f"kanca çalıştırılamadı (`{kanca.komut}`): {sonuc.metin} — "
+        if result.status == "baslatilamadi":
+            # A broken hook does not block the tool, but it is not hidden
+            # either: the user must know their rule never ran.
+            decision.notlar.append(
+                f"kanca çalıştırılamadı (`{hook.command}`): {result.text} — "
                 "bu kural bu çağrıda uygulanmadı."
             )
             continue
 
-        if sonuc.status == "zaman_asimi":
-            karar.izin = False
-            karar.gerekce = (
-                f"Kanca reddetti: `{kanca.komut}` {kanca.zaman_asimi:.0f} "
+        if result.status == "zaman_asimi":
+            decision.izin = False
+            decision.gerekce = (
+                f"Kanca reddetti: `{hook.command}` {hook.timeout:.0f} "
                 "saniyede cevap vermedi. Kullanıcının bu araç için bir bekçisi "
                 "var ve bekçi cevap vermiyor; güvenli taraf çalıştırmamak. "
                 "Kullanıcıya bildir — kancayı ancak o düzeltebilir."
             )
-            return karar
+            return decision
 
-        if sonuc.kod != 0:
-            karar.izin = False
-            aciklama = sonuc.metin or "(kanca bir açıklama yazmadı)"
-            karar.gerekce = (
-                f"Kanca reddetti (çıkış kodu {sonuc.kod}): {aciklama}\n"
+        if result.code != 0:
+            decision.izin = False
+            explanation = result.text or "(kanca bir açıklama yazmadı)"
+            decision.gerekce = (
+                f"Kanca reddetti (çıkış kodu {result.code}): {explanation}\n"
                 "Bu, kullanıcının kendi kuralı — sistem promptunda ya da "
                 "izin listesinde değil, kendi kanca dosyasında. Kuralı aşmaya "
                 "çalışma; başka bir yol dene ya da kullanıcıya sor."
             )
-            return karar
-    return karar
+            return decision
+    return decision
 
 
 async def after_tool(
     state_dir: Path | str,
-    arac: str,
+    tool: str,
     args: dict[str, Any],
     *,
     oturum: str = "",
     cwd: Path | str = ".",
 ) -> list[str]:
-    """Araç çalıştıktan SONRA koşan kancalar. Veto yetkisi YOK.
+    """Hooks that run AFTER the tool. NO veto power.
 
-    Sonucu değiştiremezler çünkü iş çoktan oldu: dosya diske düştü, komut
-    koştu. "Reddediyorum" demenin bir karşılığı olmadığı için çıkış kodu
-    yalnızca not olarak geçiyor.
+    They cannot change the result because the work is already done: the
+    file landed on disk, the command ran. Since "I refuse" has no
+    consequence, the exit code only goes in as a note.
     """
-    satirlar: list[str] = []
-    for kanca in eslesenler(state_dir, "arac_sonrasi", arac):
-        sonuc = await kos(kanca, arac=arac, args=args, oturum=oturum, cwd=cwd)
-        if sonuc.status == "baslatilamadi":
-            satirlar.append(f"kanca çalıştırılamadı (`{kanca.komut}`): {sonuc.metin}")
+    lines: list[str] = []
+    for hook in matching(state_dir, "arac_sonrasi", tool):
+        result = await run(hook, tool=tool, args=args, session=oturum, cwd=cwd)
+        if result.status == "baslatilamadi":
+            lines.append(f"kanca çalıştırılamadı (`{hook.command}`): {result.text}")
             continue
-        if sonuc.status == "zaman_asimi":
-            satirlar.append(
-                f"kanca `{kanca.komut}` {kanca.zaman_asimi:.0f} saniyede "
+        if result.status == "zaman_asimi":
+            lines.append(
+                f"kanca `{hook.command}` {hook.timeout:.0f} saniyede "
                 "bitmedi ve durduruldu.")
             continue
-        if sonuc.metin:
-            onek = "kanca" if sonuc.kod == 0 else f"kanca (çıkış {sonuc.kod})"
-            satirlar.append(f"{onek}: {_tek_satir(sonuc.metin)}")
-        elif sonuc.kod != 0:
-            satirlar.append(
-                f"kanca `{kanca.komut}` {sonuc.kod} koduyla bitti (çıktı yok).")
-    return satirlar
+        if result.text:
+            prefix = "kanca" if result.code == 0 else f"kanca (çıkış {result.code})"
+            lines.append(f"{prefix}: {_one_line(result.text)}")
+        elif result.code != 0:
+            lines.append(
+                f"kanca `{hook.command}` {result.code} koduyla bitti (çıktı yok).")
+    return lines
 
 
-def _tek_satir(metin: str, tavan: int = 300) -> str:
-    """Çok satırlı kanca çıktısını araç sonucuna sığacak hale getirir."""
-    duz = " ".join(metin.split())
-    return duz if len(duz) <= tavan else duz[:tavan] + "…"
+def _one_line(text: str, limit: int = 300) -> str:
+    """Makes multi-line hook output fit into the tool result."""
+    flat = " ".join(text.split())
+    return flat if len(flat) <= limit else flat[:limit] + "…"

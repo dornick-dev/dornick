@@ -1,4 +1,4 @@
-"""Araç katmanı."""
+"""Tool layer."""
 
 from __future__ import annotations
 
@@ -31,17 +31,18 @@ __all__ = [
 
 
 def build_registry(mind: Any = None, *, subagents: bool = True) -> ToolRegistry:
-    """Yerleşik araçlarla dolu bir kayıt defteri kurar.
+    """Builds a registry filled with the built-in tools.
 
-    `mind` verilirse zihin araçları da eklenir — ajan kendi belleğini,
-    hedeflerini ve geçmiş oturumlarını araçla gezebilir hale gelir.
+    If `mind` is given the mind tools are added too — the agent becomes able
+    to walk its own memory, goals and past sessions with a tool.
 
-    `subagents=False` alt ajanın kendi defterini kurarken kullanılıyor: alt
-    ajanın alt ajanı olmuyor. Aracın hiç kaydedilmemesi, kaydedilip
-    reddedilmesinden iyi — model olmayan bir yeteneği denemesin.
+    `subagents=False` is used when a sub-agent builds its own registry: a
+    sub-agent gets no sub-agent of its own. Never registering the tool is
+    better than registering it and refusing — the model should not try a
+    capability that does not exist.
 
-    MCP sunucularından gelen araçlar sonradan aynı deftere eklenir; döngü
-    aracın nereden geldiğini bilmez.
+    Tools coming from MCP servers are added to the same registry later; the
+    loop does not know where a tool came from.
     """
     from . import (
         artifacts,
@@ -70,65 +71,70 @@ def build_registry(mind: Any = None, *, subagents: bool = True) -> ToolRegistry:
 
     registry = ToolRegistry()
     shell.register(registry)
-    # Git: commit/push/GitHub — kabuğa `git commit` için düşülmesin.
+    # Git: commit/push/GitHub — so nobody drops to the shell for `git commit`.
     git_tool.register(registry)
-    # Dosya araçları + `denetle`: yazılan kod, yazıldığı anda dilinin kendi
-    # denetleyicisinden geçiyor ve sonuç aracın cevabına giriyor. Ayrı bir
-    # kayıt satırı yok — tanı dosya yazmanın parçası, ayrı bir yetenek değil.
+    # File tools + `denetle`: written code passes through its language's own
+    # checker the moment it is written and the result goes into the tool's
+    # reply. No separate registration line — diagnosis is part of writing a
+    # file, not a separate capability.
     files.register(registry)
-    # İçerik arama: "X nerede geçiyor?" için dosya dosya okumak yerine tek araç.
+    # Content search: one tool for "where does X occur?" instead of reading
+    # file by file.
     search.register(registry)
-    # Yapısal arama: `grep` metin görür, `semboller` tanımı kullanımdan
-    # ayırır — imzasını değiştireceğin fonksiyonun çağrılarını görmek için.
+    # Structural search: `grep` sees text, `semboller` separates definition
+    # from use — to see the calls of the function whose signature you are
+    # about to change.
     kod.register(registry)
-    # Değişiklik defteri: dosya araçlarının aldığı anlık görüntüleri listeler
-    # ve geri alır (undo/redo).
+    # Change ledger: lists and reverts the snapshots the file tools take
+    # (undo/redo).
     checkpoint.register(registry)
-    # Test koşucusu: `denetle` sözdizimine bakar, `kos` kodu ÇALIŞTIRIR.
-    # Tip/davranış hatalarını yakalayan tek şey bu.
+    # Test runner: `denetle` looks at syntax, `kos` RUNS the code. This is
+    # the only thing that catches type/behaviour errors.
     runner.register(registry)
     web.register(registry)
     jobs.register(registry)
-    # İş akışı grafikleri: schedule tek prompt; workflow düğüm/kenar.
+    # Workflow graphs: schedule is a single prompt; workflow is nodes/edges.
     workflow.register(registry)
-    # Büyük iş planı (onay kapısı).
+    # Big job plan (approval gate).
     plan_tool.register(registry)
     eyes.register(registry)
-    # Kamera kesiti: opencv kuruluysa. Kayıt aracın kendi içinde
-    # da denetleniyor; burada eksik bileşende listeye hiç girmiyor.
+    # Camera capture: only if opencv is installed. The registration is also
+    # checked inside the tool itself; here it never enters the list when a
+    # component is missing.
     from .. import watch as watching
     if watching.available():
         camera.register(registry)
-    # Ekran ve el: yalnızca yakalama gerçekten mümkünse. Olmayan bir eli
-    # listede göstermek, modeli boşa tıklatmak demek.
+    # Screen and hand: only if capture is actually possible. Showing a hand
+    # that does not exist in the list means making the model click for
+    # nothing.
     if hands.available():
         hands.register(registry)
-    # Tarayıcı (dornick chrome): Chrome/Edge kuruluysa kaydediliyor; kullanıcı
-    # açmadıysa araç kendisi "kapalı" diyor.
+    # Browser (dornick chrome): registered if Chrome/Edge is installed; if
+    # the user did not enable it the tool itself says "off".
     from .. import chrome as chromium
 
     if chromium.available():
         browser.register(registry)
     learn.register(registry)
-    # Cihazlar: kullanıcının bir kez tarif ettiği PLC, kamera, seri port.
-    # Konuşmanın içinde kalırsa bir sonraki oturumda yok oluyor.
+    # Devices: the PLC, camera, serial port the user described once. If it
+    # stays inside the conversation it is gone in the next session.
     devices.register(registry)
-    # Konum: "yarın hava nasıl?" sorusunun cevabı buna bağlı ve model
-    # bunu hiçbir yerden öğrenemiyordu.
+    # Location: the answer to "what's the weather tomorrow?" depends on it
+    # and the model could not learn it from anywhere.
     place.register(registry)
-    # Ekrana çizim: bazı cevaplar yazıyla anlatılınca kayboluyor.
+    # Drawing on screen: some answers get lost when told in words.
     canvas.register(registry)
-    # Artifact: kalıcı teslimat sayfaları — sohbet akar, artifact adreste
-    # kalır ve aynı kimlikle güncellenir.
+    # Artifact: durable delivery pages — the chat flows on, the artifact
+    # stays at its address and is updated under the same identity.
     artifacts.register(registry)
-    # Kulak yönetimi: "beni dinleme" gerçek bir eylem olabilmeli.
+    # Ear management: "stop listening to me" must be able to be a real action.
     hearing.register(registry)
-    # Model listesi yalnizca alt ajan varken ise yariyor: alt ajan
-    # yoksa secilecek bir sey de yok.
+    # The model list is only useful while there are sub-agents: without a
+    # sub-agent there is nothing to pick.
     if subagents:
         learn.register_models(registry)
-    # Posta araçları yalnızca hesap tanımlıysa: tanımsız bir aracı
-    # listede göstermek modeli olmayan bir yeteneğe yönlendiriyor.
+    # Mail tools only if an account is configured: showing an unconfigured
+    # tool in the list steers the model towards a capability it lacks.
     if mail.configured():
         mail.register(registry)
 

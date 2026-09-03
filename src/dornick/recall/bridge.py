@@ -1,33 +1,36 @@
-"""Sinonim köprüsü — sorgu tarafında anlam genişletme.
+"""Synonym bridge — meaning expansion on the query side.
 
-Sözcüksel hatırlamanın ölçülmüş duvarı: sorgu ile kayıt hiç ortak
-kelime/n-gram taşımıyorsa (bitcoin↔BTC, etiket↔tag) FTS de imza da köprü
-kuramıyor. Embedding bilinçli olarak yok (kurulumsuz, GPU'suz ilke); bunun
-yerine küçük, elle bakımı yapılabilir bir eşleme: sorgudaki kelimenin
-eşanlamlıları sorguya ek terim olarak katılıyor. Kayıt tarafına dokunulmuyor
-— yazılan şey yazıldığı gibi kalır, köprü yalnızca ararken açılır.
+The measured wall of lexical recall: if the query and the record share no
+word/n-gram at all (bitcoin↔BTC, etiket↔tag), neither FTS nor the signature
+can bridge the gap. Embeddings are deliberately absent (the no-install,
+no-GPU principle); instead, a small, hand-maintainable mapping: the synonyms
+of a word in the query are added to the query as extra terms. The record
+side is untouched — what was written stays as written, the bridge opens only
+while searching.
 
-Tablo GENEL kategorilerden derlendi (kripto kısaltmaları, endüstri terimleri,
-BT'nin İngilizce↔Türkçe gündelik sözlüğü, yaygın Türkçe eşanlamlılar) —
-eval sorgularına bakılarak değil; eval'e göre tablo yazmak ölçümü anlamsız
-kılar (ARASTIRMA.md hile kuralı). Dürüstlük notu: yazarı başarısızlık
-SINIFLARINI biliyordu (kısaltma/çeviri çiftleri); çiftler yine de kategori
-geneli seçildi ve sınıfın örtmediği kaçışlar (iş↔mühendis gibi gerçek
-eşanlamlı olmayanlar) bilerek dışarıda bırakıldı.
+The table was compiled from GENERAL categories (crypto abbreviations,
+industry terms, IT's everyday English↔Turkish vocabulary, common Turkish
+synonyms) — not by looking at the eval queries; writing the table against
+the eval makes the measurement meaningless (the ARASTIRMA.md cheating rule).
+Honesty note: the author knew the failure CLASSES (abbreviation/translation
+pairs); the pairs were still chosen category-wide, and the misses the class
+does not cover (non-synonyms such as iş↔mühendis) were deliberately left
+out.
 
-Genişletme ölçülüdür: kelime başına en çok birkaç ek terim, yalnız içerik
-kelimeleri, ekli biçimler önekle yakalanır ("etiketleri" → etiket).
+The expansion is measured: at most a few extra terms per word, content words
+only, suffixed forms are caught by prefix ("etiketleri" → etiket).
 """
 
 from __future__ import annotations
 
 import re
 
-# Eş anlam grupları. Grup içindeki her kelime, gruptaki diğerlerini çağırır.
-# Kısa tutmak bilinçli: agresif bir tablo ("fiyat/bedel/ücret/para" gibi
-# gevşek zincirler) alakasız kayıtları uyandırıp tuzak sızıntısını artırıyor.
+# Synonym groups. Every word in a group calls the others in the group. Kept
+# short on purpose: an aggressive table (loose chains like
+# "fiyat/bedel/ücret/para") wakes unrelated records and increases trap
+# leakage.
 GROUPS: tuple[tuple[str, ...], ...] = (
-    # kripto / finans kısaltmaları
+    # crypto / finance abbreviations
     ("btc", "bitcoin"),
     ("eth", "ethereum"),
     ("usdt", "tether"),
@@ -36,7 +39,7 @@ GROUPS: tuple[tuple[str, ...], ...] = (
     ("portföy", "portfolio"),
     ("alım", "alış"),
     ("satım", "satış"),
-    # endüstri / SCADA
+    # industry / SCADA
     ("vana", "valf"),
     ("debi", "akış"),
     ("arıza", "fault"),
@@ -44,10 +47,10 @@ GROUPS: tuple[tuple[str, ...], ...] = (
     ("sensör", "algılayıcı"),
     ("yazmaç", "register"),
     ("pano", "panel"),
-    ("motor", "pompa"),  # sahada sık geçişli; ölçümde zarar verirse çıkar
+    ("motor", "pompa"),  # frequently interchanged in the field; remove if it hurts the measurement
     ("sondaj", "kuyu"),
     ("basınç", "bar"),
-    # BT — İngilizce↔Türkçe gündelik sözlük
+    # IT — everyday English↔Turkish vocabulary
     ("etiket", "tag"),
     ("yedek", "backup"),
     ("şifre", "parola", "password"),
@@ -63,7 +66,7 @@ GROUPS: tuple[tuple[str, ...], ...] = (
     ("depolama", "disk"),
     ("bellek", "hafıza"),
     ("araç", "tool"),
-    # gündelik Türkçe
+    # everyday Turkish
     ("araba", "otomobil"),
     ("ev", "konut"),
     ("doktor", "hekim"),
@@ -86,21 +89,21 @@ GROUPS: tuple[tuple[str, ...], ...] = (
 
 _CLEAN = re.compile(r"[^\wçğıöşü]+", re.UNICODE)
 
-# kelime → çağırdığı ek terimler. Önek eşleşmesi için anahtarlar ayrıca
-# uzunluklarıyla tutuluyor ("etiketleri" → "etiket").
+# word → the extra terms it calls. For prefix matching the keys are also
+# kept by length ("etiketleri" → "etiket").
 _CALLS: dict[str, tuple[str, ...]] = {}
 for _group in GROUPS:
     for _word in _group:
         _CALLS.setdefault(_word, tuple(w for w in _group if w != _word))
 
-# Önek araması yalnız ≥5 harfli anahtarlarda: "işlem"in "iş"i çağırması gibi
-# kazaları kısa anahtarlarda tam eşleşme şartı kesiyor.
+# Prefix search only on keys of ≥5 letters: accidents like "işlem" calling
+# "iş" are cut off by requiring an exact match on short keys.
 _LONG_KEYS = tuple(sorted((k for k in _CALLS if len(k) >= 5),
                           key=len, reverse=True))
 
 
 def calls_of(word: str) -> tuple[str, ...]:
-    """Bir kelimenin çağırdığı eş anlamlılar (ekli biçimler dahil)."""
+    """The synonyms a word calls (suffixed forms included)."""
     plain = _CLEAN.sub("", (word or "").casefold())
     if not plain:
         return ()
@@ -113,11 +116,12 @@ def calls_of(word: str) -> tuple[str, ...]:
 
 
 def expand(query: str) -> str:
-    """Sorguya eş anlamlı ek terimleri katar; yoksa sorguyu aynen döndürür.
+    """Adds synonymous extra terms to the query; returns it unchanged if none.
 
-    Ekler SONA gelir: FTS tarafında fazladan OR terimi, imza tarafında
-    birkaç ek özellik. Kayıt tarafı değişmediği için genişletme her an
-    geri alınabilir — indeks yeniden kurulmaz.
+    The additions go at the END: an extra OR term on the FTS side, a few
+    extra features on the signature side. Since the record side does not
+    change, the expansion can be reverted at any time — the index is not
+    rebuilt.
     """
     text = query or ""
     extra: list[str] = []

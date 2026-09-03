@@ -1,30 +1,32 @@
-"""Atölye ve proje: ajanın nereye yazabildiği.
+"""Workshop and project: where the agent may write.
 
-Kural tek cümle: **okumak her yerde serbest, yazmak yalnızca atölyede —
-bir de kullanıcının açıkça seçtiği projede.**
+The rule is one sentence: **reading is free everywhere, writing only in the
+workshop — plus the project the user explicitly chose.**
 
-Ayrımın sebebi pratik. Bir şey yapması istendiğinde ajanın bilgisayardaki
-her şeyi görebilmesi gerekiyor — hangi dosya nerede, ne yazıyor. Ama ürettiği
-şey (betik, site, rapor, kendi MCP'si) kullanıcının dosyalarının arasına
-karışmamalı. Lazım olan bir dosya varsa kopyalanıyor: `copy_in` tam olarak
-bunun için var, kopya atölyeye düşüyor ve orijinale dokunulmuyor.
+The reason for the distinction is practical. When asked to do something the
+agent needs to be able to see everything on the computer — which file is
+where, what it says. But what it produces (a script, a site, a report, its
+own MCP) must not mix into the user's files. If a file is needed it gets
+copied: `copy_in` exists exactly for this, the copy lands in the workshop and
+the original is untouched.
 
-Proje kipi bu kuralın istisnası değil, tamamlayıcısı. Kullanıcı kendi
-kodunda çalıştırmak istediğinde ("şu projede şunu düzelt") her dosyayı
-atölyeye kopyalamak işi imkânsız kılıyor: proje bir dosya değil bir ağaç,
-kopyası da orijinali olmuyor. O yüzden kullanıcı bir klasörü AÇIKÇA
-seçince orası da yazılabilir oluyor — **seçimin kendisi onaydır**. Atölye
-her koşulda açık kalıyor: Dornick'in kendi işleri oraya yazılmaya devam
-ediyor, projeyle karışmıyor.
+Project mode is not an exception to this rule but its complement. When the
+user wants work done in their own code ("fix this in that project"), copying
+every file into the workshop makes the job impossible: a project is a tree,
+not a file, and a copy of it is not the original. So when the user
+EXPLICITLY picks a folder, that folder becomes writable too — **the choice
+itself is the approval**. The workshop stays open in every case: Dornick's
+own work keeps being written there and does not mix with the project.
 
-Kapsamın sınırı dürüstçe söylenmeli: bu katman **dosya araçlarını** bağlıyor.
-Kabuk bağlanmıyor — bir komut istediği yere yazabilir. Kabuğun çalışma dizini
-atölyeye kuruluyor ve gerisini izin motoru tutuyor. Gerçek bir hapis işletim
-sistemi seviyesinde iş (kapsayıcı, AppContainer, seccomp) ve bu programın
-kurulumunu taşıyabileceğinden ağır.
+The scope's limit must be stated honestly: this layer binds the **file
+tools**. The shell is not bound — a command can write wherever it wants. The
+shell's working directory is set to the workshop and the permission engine
+holds the rest. A real prison is operating-system-level work (container,
+AppContainer, seccomp) and heavier than this program's installation can
+carry.
 
-Yol karşılaştırması `resolve()` üzerinden yapılıyor: `..`, sembolik bağ ve
-Windows'un kısa adları (`PROGRA~1`) ancak çözümlendikten sonra karşılaştırılabilir.
+Path comparison goes through `resolve()`: `..`, symbolic links and Windows'
+short names (`PROGRA~1`) can only be compared once resolved.
 """
 
 from __future__ import annotations
@@ -35,10 +37,10 @@ import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
-# Atölyenin çalışma alanı içindeki varsayılan adı.
+# The workshop's default name inside the workspace.
 DEFAULT_DIR = "atolye"
 
-# Son projeler defteri (`.dornick/projeler.json`) ve kaç tane tutulduğu.
+# The recent-projects ledger (`.dornick/projeler.json`) and how many are kept.
 PROJECTS_FILE = "projeler.json"
 MAX_RECENT = 8
 
@@ -54,18 +56,18 @@ REFUSAL = (
 
 
 class OutsideSandbox(Exception):
-    """Açık köklerin dışına yazma girişimi. Araç katmanı hataya çeviriyor."""
+    """An attempt to write outside the open roots. The tool layer turns it into an error."""
 
 
-# -- proje kökü güvenliği ------------------------------------------------
+# -- project root safety -------------------------------------------------
 #
-# Bir klasörü "yazılabilir" ilan etmek ciddi bir karar. Kullanıcı seçse
-# bile bazı kökler kabul edilemez: `C:\` seçmek "her yere yazabilirsin"
-# demenin uzun yoludur ve seçim ekranında bunun ne anlama geldiği
-# görünmüyor. Bu liste dar ve açık: sistem kökleri, işletim sistemi
-# klasörleri ve kullanıcı profilinin KENDİSİ (altındaki projeler serbest).
+# Declaring a folder "writable" is a serious decision. Even if the user
+# picks it, some roots are unacceptable: choosing `C:\` is the long way of
+# saying "you may write anywhere", and the picker does not show what that
+# means. This list is narrow and explicit: drive roots, operating-system
+# folders and the user profile ITSELF (projects beneath it are free).
 
-_TEHLIKELI_ADLAR = (
+_DANGEROUS_NAMES = (
     "windows", "program files", "program files (x86)", "programdata",
     "system32", "syswow64", "$recycle.bin", "recovery",
     "/bin", "/sbin", "/usr", "/etc", "/var", "/lib", "/boot", "/dev", "/proc", "/sys",
@@ -73,74 +75,74 @@ _TEHLIKELI_ADLAR = (
 
 
 def root_block(path: Path) -> str | None:
-    """Bu klasör proje kökü olabilir mi? Olamıyorsa sebebini söyler.
+    """Can this folder be a project root? If not, says why.
 
-    Dönen metin doğrudan kullanıcıya gösteriliyor: "geçersiz" demek
-    yetmiyor, NEDEN geçersiz olduğu ve ne yapması gerektiği yazmalı.
+    The returned text is shown directly to the user: "invalid" is not
+    enough, it must say WHY it is invalid and what to do.
     """
     try:
-        kok = path.expanduser().resolve()
+        root = path.expanduser().resolve()
     except OSError:
         return "Bu yol çözümlenemedi."
 
-    if not kok.exists():
-        return f"Böyle bir klasör yok: {kok}"
-    if not kok.is_dir():
-        return f"Bu bir klasör değil: {kok}"
+    if not root.exists():
+        return f"Böyle bir klasör yok: {root}"
+    if not root.is_dir():
+        return f"Bu bir klasör değil: {root}"
 
-    # Sürücü/dosya sistemi kökü: `C:\` ya da `/`. Parent'ı kendisiyse köktür.
-    if kok.parent == kok:
+    # Drive/file-system root: `C:\` or `/`. If its parent is itself, it is a root.
+    if root.parent == root:
         return (
-            f"{kok} bir sürücü kökü — proje olarak seçmek 'her yere yazabilirsin' "
+            f"{root} bir sürücü kökü — proje olarak seçmek 'her yere yazabilirsin' "
             "demek olur. Üzerinde çalıştığın projenin kendi klasörünü seç."
         )
 
-    duz = str(kok).replace("\\", "/").lower()
-    ad = kok.name.lower()
-    for tehlikeli in _TEHLIKELI_ADLAR:
-        if ad == tehlikeli or duz == tehlikeli or duz.endswith("/" + tehlikeli.strip("/")):
+    flat = str(root).replace("\\", "/").lower()
+    name = root.name.lower()
+    for dangerous in _DANGEROUS_NAMES:
+        if name == dangerous or flat == dangerous or flat.endswith("/" + dangerous.strip("/")):
             return (
-                f"{kok} bir işletim sistemi klasörü. Buraya yazmak sistemi "
+                f"{root} bir işletim sistemi klasörü. Buraya yazmak sistemi "
                 "bozabilir; projenin kendi klasörünü seç."
             )
 
-    # Kullanıcı profilinin KENDİSİ fazla geniş (Masaüstü, Belgeler, indirilenler,
-    # tarayıcı profilleri hepsi altında). Altındaki bir proje klasörü serbest.
-    if (ev := _ev_dizini()) is not None and kok == ev:
+    # The user profile ITSELF is too wide (Desktop, Documents, Downloads,
+    # browser profiles all sit beneath it). A project folder beneath it is free.
+    if (home := _home_dir()) is not None and root == home:
         return (
-            f"{kok} kullanıcı klasörünün kendisi — altındaki her şeyi (belgeler, "
+            f"{root} kullanıcı klasörünün kendisi — altındaki her şeyi (belgeler, "
             "masaüstü, indirilenler) yazılabilir yapardı. İçindeki proje "
             "klasörünü seç."
         )
     return None
 
 
-def _ev_dizini() -> Path | None:
+def _home_dir() -> Path | None:
     try:
         return Path.home().resolve()
-    except (OSError, RuntimeError):  # pragma: no cover - ev tanımsız olabilir
+    except (OSError, RuntimeError):  # pragma: no cover - home may be undefined
         return None
 
 
 def root_warning(path: Path, *, state_dir: Path | None = None) -> str:
-    """Engel değil ama söylenmesi gereken haller. Boş dize = söylenecek yok.
+    """Not a blocker, but cases that must be said. Empty string = nothing to say.
 
-    Kendi kaynak ağacını ya da `.dornick` durumunu kapsayan bir seçim
-    ENGELLENMİYOR: kendi kodunu Dornick'e düzelttirmek meşru bir istek ve bu
-    depo tam olarak öyle geliştiriliyor. Ama sessiz de kalınmıyor —
-    kullanıcı neyin kapsandığını bilerek seçsin.
+    A choice that covers Dornick's own source tree or its `.dornick` state
+    is NOT BLOCKED: having Dornick fix its own code is a legitimate request
+    and this repository is developed exactly that way. But we do not stay
+    silent either — the user should choose knowing what is covered.
     """
     try:
-        kok = path.expanduser().resolve()
+        root = path.expanduser().resolve()
     except OSError:
         return ""
 
-    notlar: list[str] = []
+    notes: list[str] = []
     if state_dir is not None:
         try:
-            status = state_dir.expanduser().resolve()
-            if status == kok or kok in status.parents:
-                notlar.append(
+            state = state_dir.expanduser().resolve()
+            if state == root or root in state.parents:
+                notes.append(
                     "Dornick'in kendi durumu (.dornick: ayarlar, anılar, oturumlar) "
                     "bu klasörün altında — buraya yazmak Dornick'in hafızasına "
                     "dokunabilir."
@@ -148,25 +150,25 @@ def root_warning(path: Path, *, state_dir: Path | None = None) -> str:
         except OSError:
             pass
 
-    # Kaynak ağacı: bu dosyanın kendisi nerede duruyorsa oradaki paket.
+    # The source tree: the package wherever this very file lives.
     try:
-        kaynak = Path(__file__).resolve().parent
-        if kaynak == kok or kok in kaynak.parents:
-            notlar.append(
+        source = Path(__file__).resolve().parent
+        if source == root or root in source.parents:
+            notes.append(
                 "Dornick'in kendi kaynak kodu bu klasörün altında — kendi "
                 "kodunu düzenletmek istiyorsan bu doğru; istemiyorsan daha "
                 "dar bir klasör seç."
             )
     except OSError:  # pragma: no cover
         pass
-    return " ".join(notlar)
+    return " ".join(notes)
 
 
-# -- son projeler defteri ------------------------------------------------
+# -- recent-projects ledger ----------------------------------------------
 
 
 def son_projeler(state_dir: Path) -> list[str]:
-    """En son seçilenden başlayarak proje yolları."""
+    """Project paths, most recently chosen first."""
     path = state_dir / PROJECTS_FILE
     if not path.is_file():
         return []
@@ -179,31 +181,31 @@ def son_projeler(state_dir: Path) -> list[str]:
     return [str(x) for x in data if isinstance(x, str) and x.strip()][:MAX_RECENT]
 
 
-def proje_hatirla(state_dir: Path, yol: str) -> list[str]:
-    """Seçilen projeyi defterin başına alır; kopyaları eler, listeyi kırpar."""
-    temiz = (yol or "").strip()
-    if not temiz:
+def proje_hatirla(state_dir: Path, path: str) -> list[str]:
+    """Moves the chosen project to the head of the ledger; drops duplicates, trims the list."""
+    clean = (path or "").strip()
+    if not clean:
         return son_projeler(state_dir)
-    kalan = [x for x in son_projeler(state_dir) if x.lower() != temiz.lower()]
-    yeni = [temiz, *kalan][:MAX_RECENT]
+    rest = [x for x in son_projeler(state_dir) if x.lower() != clean.lower()]
+    updated = [clean, *rest][:MAX_RECENT]
     try:
         state_dir.mkdir(parents=True, exist_ok=True)
         (state_dir / PROJECTS_FILE).write_text(
-            json.dumps(yeni, ensure_ascii=False, indent=2), encoding="utf-8")
+            json.dumps(updated, ensure_ascii=False, indent=2), encoding="utf-8")
     except OSError:
         pass
-    return yeni
+    return updated
 
 
 @dataclass(slots=True)
 class Sandbox:
     root: Path
     enabled: bool = True
-    # Atölye DIŞINDA yazılabilir kökler: kullanıcının seçtiği proje.
-    # Çoğul, çünkü kavram tek bir projeye bağlı değil; bugün arayüz bir
-    # tane veriyor.
+    # Writable roots OUTSIDE the workshop: the project the user chose.
+    # Plural, because the concept is not bound to a single project; today
+    # the UI gives one.
     open_roots: tuple[Path, ...] = ()
-    # Uyarı gerektiren ama engellenmeyen haller (bkz. kok_uyarisi).
+    # Cases that warrant a warning but are not blocked (see root_warning).
     note: str = ""
 
     @classmethod
@@ -220,72 +222,73 @@ class Sandbox:
         if not root.is_absolute():
             root = workspace / root
 
-        acik: list[Path] = []
+        opened: list[Path] = []
         note = ""
-        if (secilen := (project or "").strip()):
-            aday = Path(secilen).expanduser()
-            if not aday.is_absolute():
-                aday = workspace / aday
-            # Geçersiz bir proje yolu programı AÇILMAZ yapmamalı: ayar
-            # dosyası elle düzenlenmiş ya da klasör silinmiş olabilir.
-            # Sessizce atölyeye dönülüyor; ayar sayfası sebebi söylüyor.
-            if root_block(aday) is None:
-                acik.append(aday.resolve())
-                note = root_warning(aday, state_dir=state_dir)
+        if (chosen := (project or "").strip()):
+            candidate = Path(chosen).expanduser()
+            if not candidate.is_absolute():
+                candidate = workspace / candidate
+            # An invalid project path must not make the program FAIL TO
+            # START: the settings file may have been edited by hand or the
+            # folder deleted. We fall back to the workshop silently; the
+            # settings page says why.
+            if root_block(candidate) is None:
+                opened.append(candidate.resolve())
+                note = root_warning(candidate, state_dir=state_dir)
 
         sandbox = cls(root=root.resolve(), enabled=enabled,
-                      open_roots=tuple(acik), note=note)
+                      open_roots=tuple(opened), note=note)
         if enabled:
             sandbox.ensure()
         return sandbox
 
     @property
     def project(self) -> Path | None:
-        """Seçili proje kökü (varsa). Bugün en çok bir tane."""
+        """The chosen project root (if any). Today at most one."""
         return self.open_roots[0] if self.open_roots else None
 
     @property
     def roots(self) -> tuple[Path, ...]:
-        """Yazmanın serbest olduğu tüm kökler — atölye her zaman ilk."""
+        """All roots where writing is free — the workshop always first."""
         return (self.root, *self.open_roots)
 
     def ensure(self) -> Path:
         self.root.mkdir(parents=True, exist_ok=True)
         return self.root
 
-    # -- sınır ---------------------------------------------------------
+    # -- boundary ------------------------------------------------------
 
     def contains(self, path: Path) -> bool:
-        """Yol açık köklerden birinin içinde mi?
+        """Is the path inside one of the open roots?
 
-        Var olmayan bir yol da doğru cevaplanmalı: yazma çoğunlukla henüz
-        olmayan bir dosyaya yapılıyor. `Path.resolve()` var olmayan yolu da
-        çözüyor, o yüzden ayrı bir yola gerek yok.
+        A path that does not exist must be answered correctly too: writing
+        mostly targets a file that is not there yet. `Path.resolve()`
+        resolves a non-existent path as well, so no separate path is needed.
         """
         try:
             resolved = path.expanduser().resolve()
-        except OSError:  # Windows'ta bozuk bir bağ burada patlayabiliyor
+        except OSError:  # on Windows a broken link can blow up here
             return False
-        return any(resolved == kok or kok in resolved.parents for kok in self.roots)
+        return any(resolved == root or root in resolved.parents for root in self.roots)
 
     def check(self, path: Path) -> Path:
-        """Yazılabilir mi diye bakar; değilse anlatan bir hata atar."""
+        """Checks whether it is writable; if not, raises an explanatory error."""
         if not self.enabled:
             return path
         if not self.contains(path):
             raise OutsideSandbox(REFUSAL.format(
-                roots=", ".join(str(k) for k in self.roots), path=path))
+                roots=", ".join(str(r) for r in self.roots), path=path))
         return path
 
     def relative(self, path: Path) -> str:
-        """En yakın açık köke göre yol; hiçbirinin altında değilse mutlak hali."""
+        """The path relative to the nearest open root; the absolute form if under none."""
         try:
             resolved = path.resolve()
         except OSError:
             return str(path)
-        for kok in self.roots:
+        for root in self.roots:
             try:
-                return resolved.relative_to(kok).as_posix()
+                return resolved.relative_to(root).as_posix()
             except ValueError:
                 continue
         return str(resolved)
@@ -296,7 +299,7 @@ class Sandbox:
         if not self.enabled:
             return ""
 
-        atolye = (
+        workshop = (
             "Atölyen:\n"
             f"- Kendi klasörün: {self.root}\n"
             "- Dışarıdaki bir dosya lazımsa `copy_in` ile kopyala, "
@@ -307,21 +310,22 @@ class Sandbox:
             "önce kendine bir alt klasör aç; hiyerarşi senin."
         )
 
-        if (proje := self.project) is None:
+        if (project := self.project) is None:
             return (
-                atolye
+                workshop
                 + "\n- Okuma her yerde serbest; **yazma yalnızca bu klasörde**.\n"
                 f"- Göreli yol zaten buraya çözülüyor: `site/index.html` yaz, "
                 f"`{self.root.name}/site/index.html` yazma."
             )
 
-        # Proje seçiliyken sıra tersine dönüyor: asıl iş projede, atölye
-        # Dornick'in kendi işleri için. Model hangisinin ne olduğunu bilmeli,
-        # yoksa kullanıcının projesine "kendi denemelerini" bırakır.
-        uyari = f"\n- Dikkat: {self.note}" if self.note else ""
+        # With a project chosen the order flips: the real work is in the
+        # project, the workshop is for Dornick's own business. The model
+        # must know which is which, or it leaves "its own experiments" in
+        # the user's project.
+        warning = f"\n- Dikkat: {self.note}" if self.note else ""
         return (
             "Nerede çalışıyorsun:\n"
-            f"- **Çalışılan proje: {proje}** — kullanıcının klasörü, yazma "
+            f"- **Çalışılan proje: {project}** — kullanıcının klasörü, yazma "
             "serbest. Kullanıcı bu klasörü Ayarlar › Proje'den bilerek seçti; "
             "asıl iş burada. Göreli yollar buraya çözülüyor.\n"
             f"- Dornick'in kendi atölyesi: {self.root} — kendi işlerin, "
@@ -330,5 +334,5 @@ class Sandbox:
             "- Okuma her yerde serbest; yazma yalnızca bu iki klasörde.\n"
             "- Projede çalışırken oranın kendi düzenine uy: var olan dosya "
             "yapısını, adlandırmayı ve araçları kullan; kendi kalıbını "
-            "dayatma." + uyari + "\n\n" + atolye
+            "dayatma." + warning + "\n\n" + workshop
         )

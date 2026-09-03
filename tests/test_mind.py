@@ -1,7 +1,7 @@
-"""Zihin katmanı testleri.
+"""Mind layer tests.
 
-Odak: kalıcılık (yeniden açınca kaybolmuyor mu), arama isabeti, ve zihnin
-döngüye gerçekten bağlanıp bağlanmadığı.
+Focus: persistence (does it survive a reopen), search precision, and whether
+the mind is really wired into the loop.
 """
 
 from __future__ import annotations
@@ -27,7 +27,7 @@ def mind(tmp_path: Path) -> Mind:
     return open_mind(tmp_path / "mind", tmp_path / "sessions", "cur")
 
 
-# -- sıralama ----------------------------------------------------------
+# -- ranking -----------------------------------------------------------
 
 
 def test_stopwords_are_dropped() -> None:
@@ -42,27 +42,27 @@ def test_rare_terms_outrank_common_ones() -> None:
         "dosya silme ve postgres bağlantısı hakkında not",
     ]
     hits = rank("postgres dosya", items, text_of=lambda s: s, limit=3)
-    # "dosya" her belgede var, "postgres" nadir — nadir olan sıralamayı belirlemeli.
+    # "dosya" is in every document, "postgres" is rare — the rare one must decide the order.
     assert "postgres" in hits[0].item
 
 
 @pytest.mark.parametrize(
     ("query", "document"),
     [
-        ("rapor", "raporları hazırladım"),      # sorgu kök, belge ekli
-        ("raporları", "rapor formatı"),          # sorgu ekli, belge kök
-        ("yedek", "yedeklemeyi otomatikleştir"), # araya ek girmiş
+        ("rapor", "raporları hazırladım"),      # query is the stem, document suffixed
+        ("raporları", "rapor formatı"),          # query suffixed, document is the stem
+        ("yedek", "yedeklemeyi otomatikleştir"), # a suffix inserted in between
         ("dosya", "dosyaların listesi"),
     ],
 )
 def test_suffixed_forms_match_the_stem(query: str, document: str) -> None:
-    """Türkçe sondan eklemeli — tam sözcük eşleşmesi aramanın yarısını kaybettirir."""
+    """Turkish is agglutinative — exact word matching loses half of search."""
     hits = rank(query, [document, "tamamen alakasız bir metin"], text_of=lambda s: s)
     assert hits and hits[0].item == document
 
 
 def test_short_words_do_not_prefix_match() -> None:
-    """Kısa sözcükler için ön ek eşleşmesi gürültü üretir; birebir olmalı."""
+    """Prefix matching produces noise for short words; they must match exactly."""
     hits = rank("kar", ["karpuz kavun", "kar yağıyor"], text_of=lambda s: s)
     assert [h.item for h in hits] == ["kar yağıyor"]
 
@@ -74,7 +74,7 @@ def test_empty_query_returns_newest_first(mind: Mind) -> None:
     assert hits[0].item.title == "ikinci"
 
 
-# -- semantik bellek ---------------------------------------------------
+# -- semantic memory ---------------------------------------------------
 
 
 def test_memories_survive_reopen(tmp_path: Path) -> None:
@@ -94,10 +94,11 @@ def test_forget_is_a_tombstone_not_a_deletion(tmp_path: Path) -> None:
     mind.forget(memory.id)
 
     assert mind.memories() == []
-    assert mind.forget(memory.id) is None  # iki kez silinmez
+    assert mind.forget(memory.id) is None  # cannot be deleted twice
 
-    # Mezar taşı: kayıt silinmedi, işaretlendi. Neyin ne zaman unutulduğu
-    # da zihnin parçası; depo artık indeksli olduğu için işaret orada.
+    # Tombstone: the record was not deleted, it was marked. What was
+    # forgotten and when is part of the mind too; since the store is now
+    # indexed the mark lives there.
     with sqlite3.connect(tmp_path / "mind" / "recall.db") as db:
         rows = db.execute("SELECT deleted FROM node WHERE id=?", (memory.id,)).fetchall()
     assert rows == [(1,)]
@@ -111,7 +112,7 @@ def test_recall_filters_by_kind(mind: Mind) -> None:
     assert [h.item.title for h in hits] == ["rebase"]
 
 
-# -- hedefler ----------------------------------------------------------
+# -- goals -------------------------------------------------------------
 
 
 def test_goal_lifecycle_and_digest(mind: Mind) -> None:
@@ -127,10 +128,10 @@ def test_goal_lifecycle_and_digest(mind: Mind) -> None:
 
 
 def test_snapshot_lists_only_active_goals(mind: Mind) -> None:
-    """Arayüzdeki hedef paneli sayfa yenilenince snapshot'tan tohumlanıyor:
-    döküm yalnız aktifleri taşımalı — id, metin ve maddenin geçmiş bir
-    oturumdan kalıp kalmadığı (`eski`). Zihinsiz ajan (ya da patlayan
-    okuma) boş liste demek — sohbet düşmemeli."""
+    """The goal panel in the UI is seeded from the snapshot on page refresh:
+    the dump must carry only the active ones — id, text and whether the item
+    is left over from a past session (`eski`). A mindless agent (or a read
+    that blows up) means an empty list — the chat must not go down."""
     from dornick.desktop import _active_goals
 
     keep = mind.push_goal("kalan iş")
@@ -154,7 +155,7 @@ def test_goals_survive_reopen(tmp_path: Path) -> None:
     assert reopened.goals(active_only=False)[0].status == "done"
 
 
-# -- epizodik ----------------------------------------------------------
+# -- episodic ----------------------------------------------------------
 
 
 def _write_session(sessions: Path, name: str, user_text: str, tool: str) -> None:
@@ -179,7 +180,7 @@ def test_episodes_search_past_sessions(tmp_path: Path) -> None:
 
 
 def test_current_session_is_excluded_from_episodes(tmp_path: Path) -> None:
-    """Mevcut oturum zaten bağlamda; tekrar getirmek boşa token."""
+    """The current session is already in the context; bringing it back wastes tokens."""
     sessions = tmp_path / "sessions"
     _write_session(sessions, "cur", "postgres yedeğini al", "shell")
 
@@ -188,7 +189,7 @@ def test_current_session_is_excluded_from_episodes(tmp_path: Path) -> None:
     assert mind.episodes("postgres", include_current=True)
 
 
-# -- araç yüzeyi -------------------------------------------------------
+# -- tool surface ------------------------------------------------------
 
 
 @pytest.fixture()
@@ -200,11 +201,12 @@ def ctx(tmp_path: Path, mind: Mind) -> ToolContext:
 
 
 async def _call(registry, ctx, name: str, args: dict, *, expect_error: bool = False) -> str:
-    """Aracı çağırır ve hata durumunu doğrular.
+    """Calls the tool and verifies the error state.
 
-    Yürütücü araç içindeki istisnayı yakalayıp hata sonucuna çeviriyor —
-    doğru davranış, ama testte kontrol edilmezse patlayan bir araç sessizce
-    'geçti' görünür. Bir kez tam olarak bu oldu.
+    The executor catches the exception inside the tool and turns it into an
+    error result — correct behaviour, but if the test does not check it a
+    crashing tool silently looks like it 'passed'. That happened exactly
+    once.
     """
     blocks = await execute(
         [PendingToolUse("x", name, args)],
@@ -244,7 +246,7 @@ async def test_recall_says_so_when_nothing_is_known(ctx: ToolContext, mind: Mind
 
 
 async def test_introspect_flags_repeated_identical_calls(ctx: ToolContext, mind: Mind) -> None:
-    """Aynı çağrıyı üst üste denemek en sık takılma biçimi; zihin bunu görmeli."""
+    """Retrying the same call back to back is the most common way of getting stuck; the mind must see it."""
     for _ in range(3):
         ctx.session.log.note("tool_start", tool="shell", input={"command": "make build"})
         ctx.session.log.note("tool_end", tool="shell", ms=10, error=True)
@@ -263,12 +265,12 @@ async def test_goal_tool_updates_digest(ctx: ToolContext, mind: Mind) -> None:
     assert mind.goals()[0].text == "testi geçir"
 
 
-# -- konuşma geçmişi: anı DEĞİL, ham oturumlar -------------------------
+# -- conversation history: NOT memories, raw sessions ------------------
 
 
 def test_sessions_lists_past_conversations_newest_first(tmp_path):
-    """Sohbet listesi: geçmiş oturumlar, en yeniden eskiye. Bu bir anı
-    listesi değil — ham konuşmaların kendisi."""
+    """The chat list: past sessions, newest to oldest. This is not a list of
+    memories — it is the raw conversations themselves."""
     from dornick.events import EventLog
     from dornick.mind import open_mind
 
@@ -286,13 +288,13 @@ def test_sessions_lists_past_conversations_newest_first(tmp_path):
     mind = open_mind(tmp_path / "mind", sessions, "cur")
     got = mind.sessions()
     assert len(got) == 2
-    assert got[0].session_id == "20260612T140000Z"  # en yeni başta
+    assert got[0].session_id == "20260612T140000Z"  # newest first
 
 
 def test_transcript_returns_spoken_turns_with_trace(tmp_path):
-    """Döküm metin turlarını VE turun izini taşıyor: araç çağrıları tek
-    satırlık özet (ham argüman değil), düşünme ayrı alanda — yeniden açılan
-    sohbette şerit yeniden kurulabilsin (canlı yara, 01.09)."""
+    """The transcript carries the text turns AND the turn's trace: tool calls
+    as a one-line summary (not raw arguments), thinking in a separate field —
+    so the strip can be rebuilt in a reopened chat (live wound, 01.09)."""
     from dornick.events import EventLog
     from dornick.mind import open_mind
 
@@ -318,8 +320,8 @@ def test_transcript_returns_spoken_turns_with_trace(tmp_path):
 
 
 def test_transcript_orphan_trace_attaches_to_empty_turn(tmp_path):
-    """Metinsiz kesilen turun izi kaybolmuyor: sonraki kullanıcı sözünden
-    önce metinsiz bir asistan turuna bağlanıyor."""
+    """The trace of a turn cut without text is not lost: it attaches to a
+    textless assistant turn before the next user utterance."""
     from dornick.events import EventLog
     from dornick.mind import open_mind
 
@@ -344,8 +346,8 @@ def test_transcript_orphan_trace_attaches_to_empty_turn(tmp_path):
 
 
 def test_transcript_cache_serves_unchanged_file(tmp_path):
-    """Değişmeyen dosyanın dökümü önbellekten dönüyor (derin arama 40
-    oturumu her yazışta baştan ayrıştırıyordu)."""
+    """The transcript of an unchanged file comes from the cache (the deep
+    search used to re-parse 40 sessions on every exchange)."""
     from dornick.events import EventLog
     from dornick.mind import open_mind
 
@@ -356,15 +358,16 @@ def test_transcript_cache_serves_unchanged_file(tmp_path):
     log.close()
 
     mind = open_mind(tmp_path / "mind", sessions, "cur")
-    ilk = mind.transcript("20260610T110000Z")
-    assert ilk and ilk[0]["text"] == "merhaba"
-    # Aynı nesne dönmeli: dosya değişmedi, ayrıştırma tekrarlanmadı.
-    assert mind.transcript("20260610T110000Z") is ilk
+    first = mind.transcript("20260610T110000Z")
+    assert first and first[0]["text"] == "merhaba"
+    # The same object must come back: the file did not change, parsing was not repeated.
+    assert mind.transcript("20260610T110000Z") is first
 
 
 def test_projects_assign_and_clear(tmp_path):
-    """Bir konuşma bir projeye bağlanıp çözülebiliyor; kalıcı ve boş ad
-    bağlamayı kaldırıyor. Bir konuşma bir anı değil — bu yalnızca klasör."""
+    """A conversation can be attached to a project and detached; it persists
+    and an empty name removes the attachment. A conversation is not a memory
+    — this is only a folder."""
     from dornick.mind import open_mind
 
     sessions = tmp_path / "sessions"
@@ -375,23 +378,23 @@ def test_projects_assign_and_clear(tmp_path):
     mind.set_project("20260610T090000Z", "Çorum SCADA")
     assert mind.projects()["20260610T090000Z"] == "Çorum SCADA"
 
-    # Yeniden açınca korunuyor (diske yazıldı).
+    # Preserved on reopen (written to disk).
     again = open_mind(tmp_path / "mind", sessions, "cur")
     assert again.projects()["20260610T090000Z"] == "Çorum SCADA"
 
-    # Boş ad bağlamayı kaldırıyor.
+    # An empty name removes the attachment.
     again.set_project("20260610T090000Z", "")
     assert "20260610T090000Z" not in again.projects()
 
 
-# -- gövde sınırı -------------------------------------------------------
+# -- body cap ----------------------------------------------------------
 
 
 def test_recall_answers_are_body_capped(tmp_path):
-    """Sınırsızdı: bir episode kaydı (sıkıştırma özeti 8.000 harfe kadar)
-    tek isabette binlerce token yiyip gerçek eşleşmeyi boğuyordu. Kırpılan
-    kayıp değil — model sorguyu daraltıp yeniden arayabilir ve cevap bunu
-    söylüyor."""
+    """It was unbounded: one episode record (a compaction digest of up to
+    8,000 characters) ate thousands of tokens in a single hit and drowned the
+    real match. The clipped part is not a loss — the model can narrow the
+    query and search again, and the answer says so."""
     from dornick.mind.tools import RECALL_BODY_CAP, _bounded
 
     short = "kısa kayıt"
@@ -404,18 +407,19 @@ def test_recall_answers_are_body_capped(tmp_path):
     assert "kırpıldı" in cut
 
 
-# -- oturum kimliği ve döküm araması ------------------------------------
+# -- session identity and transcript search ----------------------------
 #
-# Başlık bugüne kadar dijestin ilk sözcüklerinden türetiliyordu: ucuz ama
-# kullanıcının seçtiği bir ad değil. "Şu CMS işi neredeydi?" diye bakan
-# biri kendi verdiği adı arıyor — ya da konuşmanın ortasında geçen bir söz.
+# Until now the title was derived from the first words of the digest: cheap
+# but not a name the user chose. Someone looking for "where was that CMS
+# job?" is looking for the name they gave it — or a phrase spoken in the
+# middle of the conversation.
 
 
-def _oturum_yaz(sessions_dir: Path, sid: str, turlar: list[tuple[str, str]]) -> None:
-    """Sahte bir oturum günlüğü: rol + metin satırları."""
+def _fake_session(sessions_dir: Path, sid: str, turns: list[tuple[str, str]]) -> None:
+    """A fake session log: role + text lines."""
     sessions_dir.mkdir(parents=True, exist_ok=True)
     lines = [json.dumps({"kind": "note", "name": "session_start"})]
-    for role, text in turlar:
+    for role, text in turns:
         lines.append(json.dumps({
             "kind": "message", "role": role,
             "content": [{"type": "text", "text": text}],
@@ -424,23 +428,25 @@ def _oturum_yaz(sessions_dir: Path, sid: str, turlar: list[tuple[str, str]]) -> 
 
 
 def test_a_conversation_can_be_named_and_tagged(tmp_path: Path, mind: Mind) -> None:
-    kayit = mind.set_session_meta("s1", ad="CMS göçü", etiketler=["cms", "acil"])
-    # Birebir sozluk esitligi DEGIL: kayit sonradan yeni alanlar kazandi
-    # (model/path/provider — pencere devri isi) ve her yeni alan bu testi
-    # kirmamali. Test, verdigimiz iki alanin dogru dondugunu sinar.
-    assert kayit["ad"] == "CMS göçü"
-    assert kayit["etiketler"] == ["cms", "acil"]
+    record = mind.set_session_meta("s1", ad="CMS göçü", etiketler=["cms", "acil"])
+    # NOT exact dict equality: the record later gained new fields
+    # (model/path/provider — the window handover work) and every new field
+    # must not break this test. The test checks that the two fields we gave
+    # come back correctly.
+    assert record["ad"] == "CMS göçü"
+    assert record["etiketler"] == ["cms", "acil"]
 
-    # Diskten taze okunduğunda da orada: panel her açılışta yeniden okuyor.
-    taze = open_mind(tmp_path / "mind", tmp_path / "sessions", "cur")
-    assert taze.session_meta()["s1"]["ad"] == "CMS göçü"
+    # Also there when read fresh from disk: the panel re-reads on every open.
+    fresh = open_mind(tmp_path / "mind", tmp_path / "sessions", "cur")
+    assert fresh.session_meta()["s1"]["ad"] == "CMS göçü"
 
 
 def test_archive_moves_the_log_out_of_the_list(tmp_path: Path, mind: Mind) -> None:
-    """Arşiv kalıcı silme değil: günlük sessions/.arsiv'e gider, listeden
-    düşer, ad/proje eşlemesi de gider. Açık oturum taşınmaz."""
+    """Archiving is not permanent deletion: the log goes to sessions/.arsiv,
+    drops from the list, and the name/project mapping goes too. The open
+    session is not moved."""
     sid = "20260610T090000Z"
-    _oturum_yaz(mind.sessions_dir, sid, [("user", "pompa"), ("assistant", "ok")])
+    _fake_session(mind.sessions_dir, sid, [("user", "pompa"), ("assistant", "ok")])
     mind.set_session_meta(sid, ad="Pompa")
     mind.set_project(sid, "SCADA")
     assert any(e.session_id == sid for e in mind.sessions())
@@ -459,86 +465,86 @@ def test_archive_moves_the_log_out_of_the_list(tmp_path: Path, mind: Mind) -> No
 
 
 def test_touching_one_field_leaves_the_other_alone(tmp_path: Path, mind: Mind) -> None:
-    """Yalnız etiket değiştiren bir istek adı silmemeli."""
+    """A request that changes only the tags must not delete the name."""
     mind.set_session_meta("s1", ad="CMS göçü", etiketler=["cms"])
-    kayit = mind.set_session_meta("s1", etiketler=["cms", "borsa"])
-    assert kayit["ad"] == "CMS göçü"
-    kayit = mind.set_session_meta("s1", ad="Yeni ad")
-    assert kayit["etiketler"] == ["cms", "borsa"]
+    record = mind.set_session_meta("s1", etiketler=["cms", "borsa"])
+    assert record["ad"] == "CMS göçü"
+    record = mind.set_session_meta("s1", ad="Yeni ad")
+    assert record["etiketler"] == ["cms", "borsa"]
 
 
 def test_tags_are_normalised_and_bounded(tmp_path: Path, mind: Mind) -> None:
-    """Etiket bir süzgeç anahtarı: "CMS" ile "cms" iki ayrı küme olamaz."""
-    kayit = mind.set_session_meta(
+    """A tag is a filter key: "CMS" and "cms" cannot be two separate sets."""
+    record = mind.set_session_meta(
         "s1", etiketler=["  CMS  ", "cms", "Borsa", "", "   "])
-    assert kayit["etiketler"] == ["cms", "borsa"]
-    # Sınır: bir konuşmaya sekiz etiketten fazlası panelde okunmuyor.
-    cok = mind.set_session_meta("s2", etiketler=[f"e{i}" for i in range(20)])
-    assert len(cok["etiketler"]) == 8
+    assert record["etiketler"] == ["cms", "borsa"]
+    # Bound: more than eight tags on one conversation is unreadable in the panel.
+    many = mind.set_session_meta("s2", etiketler=[f"e{i}" for i in range(20)])
+    assert len(many["etiketler"]) == 8
 
 
 def test_an_empty_name_and_no_tags_drops_the_record(tmp_path: Path, mind: Mind) -> None:
-    """Adı silmek türetilen başlığa dönmek demek; dosyada boş kayıt birikmesin."""
+    """Deleting the name means falling back to the derived title; empty records must not pile up in the file."""
     mind.set_session_meta("s1", ad="Bir ad")
     mind.set_session_meta("s1", ad="")
     assert "s1" not in mind.session_meta()
 
 
 def test_session_meta_keeps_path_and_model(tmp_path: Path, mind: Mind) -> None:
-    """Klasör/model bağlıysa ad silinse bile kayıt düşmez."""
+    """If a folder/model is attached the record does not drop even when the name is deleted."""
     mind.set_session_meta(
         "s1", ad="İş", path=r"D:\proj\foo", model="openai/gpt-4o-mini")
-    kayit = mind.set_session_meta("s1", ad="")
-    assert kayit["path"].endswith("foo")
-    assert kayit["model"] == "openai/gpt-4o-mini"
+    record = mind.set_session_meta("s1", ad="")
+    assert record["path"].endswith("foo")
+    assert record["model"] == "openai/gpt-4o-mini"
     assert "s1" in mind.session_meta()
 
 
 def test_binding_a_folder_also_files_the_chat_under_that_project(
     tmp_path: Path, mind: Mind
 ) -> None:
-    """Klasör bağlayınca konuşma o klasör adının altında gruplansın.
+    """Attaching a folder groups the conversation under that folder's name.
 
-    Cursor Repositories gibi: path=...\\dornick → proje etiketi 'dornick'. Elle
-    verilmiş proje adı varsa üzerine yazılmaz.
+    Like Cursor Repositories: path=...\\dornick → project label 'dornick'. A
+    manually given project name is not overwritten.
     """
     mind.set_session_meta("s1", path=r"C:\projeler\Fatih\dornick")
     assert mind.projects().get("s1") == "dornick"
-    # İkinci path yazımı: zaten etiket var → dokunma.
+    # Second path write: a label already exists → leave it alone.
     mind.set_project("s1", "Dornick SCADA")
     mind.set_session_meta("s1", path=r"C:\projeler\Fatih\dornick")
     assert mind.projects().get("s1") == "Dornick SCADA"
-    # Path yokken proje de yoksa boş kalır.
+    # No path and no project either → stays empty.
     mind.set_project("s2", "")
     mind.set_session_meta("s2", ad="yalnız ad")
     assert "s2" not in mind.projects()
 
 
 def test_a_corrupt_meta_file_does_not_break_the_panel(tmp_path: Path, mind: Mind) -> None:
-    """Elle düzenlenip bozulan bir dosya geçmiş panelini kapatmamalı."""
+    """A file corrupted by hand editing must not shut down the history panel."""
     (tmp_path / "sessions").mkdir(parents=True, exist_ok=True)
     (tmp_path / "sessions" / "_oturumlar.json").write_text("{bozuk", encoding="utf-8")
     assert mind.session_meta() == {}
 
 
 def test_the_raw_logs_are_never_touched_by_naming(tmp_path: Path, mind: Mind) -> None:
-    """Anılar günlüklerden üretiliyor: elle verilen bir ad geçmişi yeniden
-    yazmak anlamına gelirdi."""
+    """Memories are produced from the logs: a manually given name would mean
+    rewriting history."""
     sessions = tmp_path / "sessions"
-    _oturum_yaz(sessions, "20260101T000000Z", [("user", "merhaba")])
-    once = (sessions / "20260101T000000Z.jsonl").read_bytes()
+    _fake_session(sessions, "20260101T000000Z", [("user", "merhaba")])
+    before = (sessions / "20260101T000000Z.jsonl").read_bytes()
     mind.set_session_meta("20260101T000000Z", ad="Selamlaşma", etiketler=["x"])
-    assert (sessions / "20260101T000000Z.jsonl").read_bytes() == once
+    assert (sessions / "20260101T000000Z.jsonl").read_bytes() == before
 
 
 def test_search_finds_words_spoken_inside_a_conversation(tmp_path: Path, mind: Mind) -> None:
-    """Aranan söz çoğu zaman başlıkta değil, konuşmanın ortasında."""
+    """The searched phrase is mostly not in the title but in the middle of the conversation."""
     sessions = tmp_path / "sessions"
-    _oturum_yaz(sessions, "20260101T000000Z", [
+    _fake_session(sessions, "20260101T000000Z", [
         ("user", "selam"),
         ("assistant", "Kayseri OSB için SCADA teklifini hazırladım."),
     ])
-    _oturum_yaz(sessions, "20260102T000000Z", [("user", "hava nasıl")])
+    _fake_session(sessions, "20260102T000000Z", [("user", "hava nasıl")])
 
     found = mind.search_transcripts("scada")
     assert set(found) == {"20260101T000000Z"}
@@ -546,41 +552,41 @@ def test_search_finds_words_spoken_inside_a_conversation(tmp_path: Path, mind: M
     assert hit["role"] == "assistant"
     assert "SCADA" in hit["text"]
 
-    # Eşleşme yoksa boş: "hiç sonuç yok" ile "her şey" karışmamalı.
+    # Empty when nothing matches: "no results" and "everything" must not be confused.
     assert mind.search_transcripts("bulunmayan-sozcuk") == {}
-    # Çok kısa sorgu taranmıyor: tek harf her konuşmada geçer.
+    # A very short query is not scanned: a single letter occurs in every conversation.
     assert mind.search_transcripts("a") == {}
 
 
 def test_search_clips_the_quote_and_caps_the_hits(tmp_path: Path, mind: Mind) -> None:
-    """Turun tamamını döndürmek listeyi duvara çevirirdi."""
+    """Returning the whole turn would turn the list into a wall."""
     sessions = tmp_path / "sessions"
-    uzun = "dolgu " * 200 + "ANAHTAR" + " dolgu" * 200
-    _oturum_yaz(sessions, "20260101T000000Z",
-                [("user", uzun)] + [("user", "ANAHTAR burada")] * 6)
+    long_text = "dolgu " * 200 + "ANAHTAR" + " dolgu" * 200
+    _fake_session(sessions, "20260101T000000Z",
+                  [("user", long_text)] + [("user", "ANAHTAR burada")] * 6)
 
     found = mind.search_transcripts("anahtar", per_session=3)
     hits = found["20260101T000000Z"]
-    assert len(hits) == 3                      # oturum başına sınır
-    assert len(hits[0]["text"]) < 200          # alıntı kırpıldı
+    assert len(hits) == 3                      # per-session cap
+    assert len(hits[0]["text"]) < 200          # quote clipped
     assert "ANAHTAR" in hits[0]["text"]
-    assert hits[0]["text"].startswith("…")     # kırpma görünür
+    assert hits[0]["text"].startswith("…")     # clipping is visible
 
 
 def test_search_only_scans_the_most_recent_sessions(tmp_path: Path, mind: Mind) -> None:
-    """Sınır ucuzluk için: eskiler zaten anılara süzülmüş oluyor."""
+    """The bound is for cheapness: older ones have already been distilled into memories."""
     sessions = tmp_path / "sessions"
     for i in range(1, 6):
-        _oturum_yaz(sessions, f"2026010{i}T000000Z", [("user", "ANAHTAR")])
+        _fake_session(sessions, f"2026010{i}T000000Z", [("user", "ANAHTAR")])
 
     assert len(mind.search_transcripts("anahtar", limit=2)) == 2
 
 
 def _arac_ortami(tmp_path: Path):
-    """Araç kaydı + bağlam + zihin — başka test dosyaları da kullanıyor."""
-    zihin = open_mind(tmp_path / "mind", tmp_path / "sessions", "cur")
+    """Tool registry + context + mind — other test files use this too."""
+    mind = open_mind(tmp_path / "mind", tmp_path / "sessions", "cur")
     config = Config.load(tmp_path)
     config.ensure_dirs()
     session = Session(EventLog(tmp_path / "s.jsonl"), "cur")
     context = ToolContext(config=config, session=session, cancel=asyncio.Event())
-    return build_registry(zihin), context, zihin
+    return build_registry(mind), context, mind

@@ -15,7 +15,7 @@ Two product wounds follow from ignoring that:
   a night, so consolidation debt grows without bound and nobody notices.
 
 This module owns **when** things run, not what they do: the mechanics live in
-`orgu`. The one invariant it defends is the reason any of this is tied to
+`weave`. The one invariant it defends is the reason any of this is tied to
 sleep at all — **downscaling only runs where learning is not happening.**
 Night sleep downscales the whole graph; local sleep downscales the cold
 region only; micro-sleep never downscales.
@@ -117,10 +117,10 @@ def on_result(
         return report
 
     session = weave._read_session(Path(log_path))      # noqa: SLF001 - same module family
-    if session is None or not session.dizi or _already_replayed(Path(log_path)):
+    if session is None or not session.sequence or _already_replayed(Path(log_path)):
         return report
-    session.sonuc = outcome
-    weave.reverse_replay(store, session, rapor=report)
+    session.outcome = outcome
+    weave.reverse_replay(store, session, report=report)
     report.replayed = 1
     if log is not None:
         log.note(REVERSE_DONE, oturum=session.id, sonuc=outcome)
@@ -144,7 +144,7 @@ def forward_replay(store: Any, log_path: Path, *, clock: Clock | None = None,
 
     The end-of-session capsule used to be a single shot: if the process
     crashed, the edges were never written. Doing it incrementally is also
-    idempotent — `baglan` is a max/accumulate over the same pair, and the
+    idempotent — `connect` is a max/accumulate over the same pair, and the
     replay is bounded by the same window as the night's step 2.
 
     Deliberately absent: schema refresh (that is cross-session), stitching,
@@ -154,16 +154,16 @@ def forward_replay(store: Any, log_path: Path, *, clock: Clock | None = None,
     if not switches.ACTIVE.weave:
         return 0
     session = weave._read_session(Path(log_path))      # noqa: SLF001
-    if session is None or len(session.dizi) < 2:
+    if session is None or len(session.sequence) < 2:
         return 0
-    uzunluk = len(dict.fromkeys(session.dizi))
-    if session.ileri_tekrar_indeksi >= uzunluk:
+    length = len(dict.fromkeys(session.sequence))
+    if session.forward_index >= length:
         return 0                                    # nothing new since last run
     report = weave.NightReport()
     weave._forward_replay(store, session, report,      # noqa: SLF001
-                       bastan=session.ileri_tekrar_indeksi)
+                       start=session.forward_index)
     if log is not None:
-        log.note(FORWARD_MARK, oturum=session.id, n=uzunluk)
+        log.note(FORWARD_MARK, oturum=session.id, n=length)
     return report.new_edges
 
 
@@ -193,7 +193,7 @@ def micro_sleep(
     *,
     clock: Clock | None = None,
     watermark: Path | None = None,
-    budget_sn: float = MICRO_BUDGET_SECONDS,
+    budget_s: float = MICRO_BUDGET_SECONDS,
 ) -> weave.NightReport:
     """One deep cycle, capped. Catches up on replay; never downscales.
 
@@ -212,12 +212,12 @@ def micro_sleep(
     report.session_count = len(sessions)
     replayed: list[weave.ReplaySession] = []
     for session in sessions:
-        if replayed and time.perf_counter() - started > budget_sn:
+        if replayed and time.perf_counter() - started > budget_s:
             break
         weave._forward_replay(store, session, report)          # noqa: SLF001
         weave._schema_refresh(store, session, report)       # noqa: SLF001
         if not _already_replayed(sessions_dir / f"{session.id}.jsonl"):
-            weave.reverse_replay(store, session, rapor=report)
+            weave.reverse_replay(store, session, report=report)
         replayed.append(session)
         state.setdefault("islenen", {})[session.id] = weave._stamp(clock)  # noqa: SLF001
         report.replayed += 1
@@ -225,7 +225,7 @@ def micro_sleep(
     report.devreden = len(sessions) - len(replayed)
     weave._write_watermark(watermark, state)                     # noqa: SLF001
     report.distillation = "atlandı: mikro-uyku damıtmaz"
-    report.sure_sn = round(time.perf_counter() - started, 3)
+    report.seconds = round(time.perf_counter() - started, 3)
     return report
 
 

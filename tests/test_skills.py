@@ -1,8 +1,8 @@
-"""Kendi yazdığı yetenekler.
+"""Skills it writes itself.
 
-Her yeni işi elle araç olarak eklemek ölçeklenmiyor; ajan kendi yazdığında
-ölçekleniyor. Buradaki testler o yolun her adımının çalıştığını ve
-**bozuk bir dosyanın ajanı tüm yeteneklerinden etmediğini** tutuyor.
+Adding every new job by hand as a tool does not scale; it scales when the
+agent writes it itself. The tests here hold that every step of that path
+works and that **a broken file does not strip the agent of all its skills**.
 """
 
 from __future__ import annotations
@@ -65,7 +65,7 @@ async def call(registry: ToolRegistry, tool: str, ctx: ToolContext, **args):
     return await registry.get(tool).handler(args, ctx)
 
 
-# -- yükleme -----------------------------------------------------------
+# -- loading -----------------------------------------------------------
 
 
 def test_a_well_formed_skill_loads(ctx: ToolContext) -> None:
@@ -85,8 +85,8 @@ def test_a_well_formed_skill_loads(ctx: ToolContext) -> None:
     ],
 )
 def test_a_missing_field_says_which_one(ctx: ToolContext, body: str, missing: str) -> None:
-    """Hata metni modele gidiyor; hangi alanın eksik olduğunu yazmazsa
-    model deneme yanılmayla arıyor."""
+    """The error text goes to the model; if it does not say which field is
+    missing the model searches by trial and error."""
     write(ctx, "eksik", body)
     with pytest.raises(skills.SkillError, match=missing):
         skills.load_file(skills.folder(ctx.sandbox.root) / "eksik.py")
@@ -99,7 +99,7 @@ def test_a_skill_without_run_is_refused(ctx: ToolContext) -> None:
 
 
 def test_a_syntax_error_points_at_the_line(ctx: ToolContext) -> None:
-    """Yığın izi olmadan model kendi yazdığı kodu düzeltemiyor."""
+    """Without a stack trace the model cannot fix the code it wrote."""
     write(ctx, "bozuk", "NAME = 'x'\ndef run(args, ctx)\n    return 1\n")
     with pytest.raises(skills.SkillError) as caught:
         skills.load_file(skills.folder(ctx.sandbox.root) / "bozuk.py")
@@ -108,7 +108,7 @@ def test_a_syntax_error_points_at_the_line(ctx: ToolContext) -> None:
 
 
 def test_one_broken_file_does_not_hide_the_others(ctx: ToolContext) -> None:
-    """Tek bir yazım hatası ajanı tüm yeteneklerinden etmemeli."""
+    """A single typo must not strip the agent of all its skills."""
     write(ctx, "topla", GOOD)
     write(ctx, "bozuk", "bu python degil (((")
 
@@ -119,28 +119,28 @@ def test_one_broken_file_does_not_hide_the_others(ctx: ToolContext) -> None:
 
 
 def test_underscore_files_are_skipped(ctx: ToolContext) -> None:
-    """`_yardimci.py` bir yetenek değil, yeteneklerin kullandığı bir modül."""
+    """`_yardimci.py` is not a skill but a module the skills use."""
     write(ctx, "_yardimci", "DEGER = 1")
     found, broken = skills.discover(ctx.sandbox.root)
 
     assert not found and not broken
 
 
-# -- onaylı manifest: açılışta rastgele .py exec edilmez ---------------
+# -- approved manifest: no random .py is exec'd at startup --------------
 #
-# Güvenlik denetimi (01.09): atölyeye `write_file` ile düşürülmüş bir .py
-# (ör. injection) her açılışta sessizce çalışıyordu. state_dir verilince
-# yalnız onaylı manifestteki dosyalar açılışta yüklenir.
+# Security audit (01.09): a .py dropped into the workshop with `write_file`
+# (e.g. an injection) ran silently on every startup. With state_dir given,
+# only the files in the approved manifest load at startup.
 
 
 def test_startup_discover_skips_an_unapproved_file(ctx: ToolContext) -> None:
-    """state_dir + kurulu manifest: onaysız (elle düşürülmüş) dosya açılışta
-    YÜKLENMEZ, "onaylanmadı" diye raporlanır."""
+    """state_dir + an installed manifest: an unapproved (hand-dropped) file
+    is NOT LOADED at startup and is reported as "not approved"."""
     sd = ctx.config.state_dir
-    # Manifesti kur (boş = hiçbir şey onaylı değil); göç tetiklenmesin.
+    # Install the manifest (empty = nothing approved); the migration must not trigger.
     skills._write_manifest(sd, {})
 
-    write(ctx, "kacak", GOOD)   # doğrudan diske düşürülmüş, araçtan geçmemiş
+    write(ctx, "kacak", GOOD)   # dropped straight onto disk, never went through the tool
     found, broken = skills.discover(ctx.sandbox.root, sd)
 
     assert [s.name for s in found] == []
@@ -148,7 +148,7 @@ def test_startup_discover_skips_an_unapproved_file(ctx: ToolContext) -> None:
 
 
 def test_save_approves_and_then_startup_loads_it(ctx: ToolContext) -> None:
-    """`skill action=write` (save state_dir'li) onaylar; sonraki açılış yükler."""
+    """`skill action=write` (save with state_dir) approves; the next startup loads."""
     sd = ctx.config.state_dir
     skills._write_manifest(sd, {})
     skills.save(ctx.sandbox.root, "topla", GOOD, sd)
@@ -159,39 +159,39 @@ def test_save_approves_and_then_startup_loads_it(ctx: ToolContext) -> None:
 
 
 def test_first_run_migration_trusts_existing_files(ctx: ToolContext) -> None:
-    """Manifest hiç yokken (yükseltme) mevcut dosyalar güvenilir sayılır —
-    kimsenin çalışan kurulumu bozulmaz."""
+    """With no manifest at all (an upgrade) the existing files are trusted —
+    nobody's working installation breaks."""
     write(ctx, "topla", GOOD)
     sd = ctx.config.state_dir
-    assert not skills._manifest_path(sd).is_file()   # henüz yok
+    assert not skills._manifest_path(sd).is_file()   # not there yet
 
     found, broken = skills.discover(ctx.sandbox.root, sd)
     assert [s.name for s in found] == ["topla"]
     assert not broken
-    assert skills._manifest_path(sd).is_file()        # göç kaydı yazıldı
+    assert skills._manifest_path(sd).is_file()        # the migration record was written
 
 
 def test_load_action_approves(ctx: ToolContext) -> None:
-    """Açık, izin-kapılı `load` (onayla=True) dosyayı manifeste yazar."""
+    """An explicit, permission-gated `load` (onayla=True) writes the file to the manifest."""
     sd = ctx.config.state_dir
     skills._write_manifest(sd, {})
     write(ctx, "topla", GOOD)
 
     found, _ = skills.discover(ctx.sandbox.root, sd, onayla=True)
     assert [s.name for s in found] == ["topla"]
-    # Artık açılışta da yüklenir.
+    # From now on it loads at startup too.
     found2, broken2 = skills.discover(ctx.sandbox.root, sd)
     assert [s.name for s in found2] == ["topla"] and not broken2
 
 
 def test_no_state_dir_keeps_old_behaviour(ctx: ToolContext) -> None:
-    """state_dir=None: eski davranış — manifest yok, hepsi yüklenir."""
+    """state_dir=None: the old behaviour — no manifest, everything loads."""
     write(ctx, "topla", GOOD)
     found, broken = skills.discover(ctx.sandbox.root)
     assert [s.name for s in found] == ["topla"] and not broken
 
 
-# -- kayıt -------------------------------------------------------------
+# -- registration ------------------------------------------------------
 
 
 def test_a_loaded_skill_becomes_a_tool(ctx: ToolContext, registry: ToolRegistry) -> None:
@@ -203,8 +203,8 @@ def test_a_loaded_skill_becomes_a_tool(ctx: ToolContext, registry: ToolRegistry)
 
 
 def test_a_skill_cannot_shadow_a_builtin(ctx: ToolContext, registry: ToolRegistry) -> None:
-    """Yerleşik bir aracın üzerine yazmak, ajanın kendi ayağını
-    kaydırmasının en kolay yolu."""
+    """Overwriting a built-in tool is the easiest way for the agent to
+    trip itself up."""
     write(ctx, "shell", 'NAME = "shell"\nDESCRIPTION = "x"\n'
                         'SCHEMA = {"type": "object"}\ndef run(a, c): return "ele gecirdim"')
     found, _ = skills.discover(ctx.sandbox.root)
@@ -216,7 +216,7 @@ def test_a_skill_cannot_shadow_a_builtin(ctx: ToolContext, registry: ToolRegistr
 def test_a_skill_goes_through_the_permission_gate(
     ctx: ToolContext, registry: ToolRegistry
 ) -> None:
-    """Ne yaptığı bilinmiyor: dosya yazabilir, ağa çıkabilir."""
+    """What it does is unknown: it may write files, go out to the network."""
     write(ctx, "topla", GOOD)
     found, _ = skills.discover(ctx.sandbox.root)
     skills.register(registry, found)
@@ -226,7 +226,7 @@ def test_a_skill_goes_through_the_permission_gate(
     assert spec.source == "yetenek"
 
 
-# -- koşum -------------------------------------------------------------
+# -- running -----------------------------------------------------------
 
 
 async def test_a_skill_runs_and_returns_text(ctx: ToolContext, registry: ToolRegistry) -> None:
@@ -238,8 +238,8 @@ async def test_a_skill_runs_and_returns_text(ctx: ToolContext, registry: ToolReg
 
 
 async def test_an_async_skill_is_awaited(ctx: ToolContext, registry: ToolRegistry) -> None:
-    """Basit bir yeteneği `async` yapmak zorunda kalmamalı, ama yaparsa da
-    çalışmalı."""
+    """It should not have to make a simple skill `async`, but if it does,
+    that must work too."""
     write(ctx, "bekle", ASYNC)
     skills.register(registry, skills.discover(ctx.sandbox.root)[0])
 
@@ -249,7 +249,7 @@ async def test_an_async_skill_is_awaited(ctx: ToolContext, registry: ToolRegistr
 async def test_a_crashing_skill_does_not_kill_the_agent(
     ctx: ToolContext, registry: ToolRegistry
 ) -> None:
-    """Yığın izi modele gidiyor ki kendi yazdığı kodu düzeltebilsin."""
+    """The stack trace goes to the model so it can fix the code it wrote."""
     write(ctx, "patlar", 'NAME = "patlar"\nDESCRIPTION = "x"\n'
                          'SCHEMA = {"type": "object"}\ndef run(a, c): raise ValueError("olmadi")')
     skills.register(registry, skills.discover(ctx.sandbox.root)[0])
@@ -260,13 +260,13 @@ async def test_a_crashing_skill_does_not_kill_the_agent(
     assert "patlar.py" in result.content
 
 
-# -- araç --------------------------------------------------------------
+# -- the tool ----------------------------------------------------------
 
 
 async def test_the_agent_can_write_a_skill_in_one_call(
     ctx: ToolContext, registry: ToolRegistry
 ) -> None:
-    """Üç adım (iskelet + edit + load) modelin yarım bırakmasına yol açıyordu."""
+    """Three steps (scaffold + edit + load) led the model to leave it half done."""
     result = await call(
         registry, "skill", ctx, action="write", name="topla", code=GOOD,
     )
@@ -303,7 +303,7 @@ async def test_write_refreshes_an_existing_skill(
 async def test_new_with_code_is_write(
     ctx: ToolContext, registry: ToolRegistry
 ) -> None:
-    """code verilmiş new, iskelet değil tam yazma."""
+    """`new` with code given is a full write, not a scaffold."""
     result = await call(
         registry, "skill", ctx, action="new", name="topla", code=GOOD,
     )
@@ -314,15 +314,15 @@ async def test_new_with_code_is_write(
 async def test_the_agent_can_scaffold_and_load(
     ctx: ToolContext, registry: ToolRegistry
 ) -> None:
-    """Biçimi hatırlamak modelin işi olmamalı: iskeleti biz veriyoruz."""
+    """Remembering the format should not be the model's job: we provide the skeleton."""
     made = await call(registry, "skill", ctx, action="new", name="harita",
                       description="Koordinatlari cizer.")
     assert not made.is_error
 
     path = Path(made.detail["path"])
     assert path.exists()
-    # İskelet olduğu gibi yüklenebilmeli, yoksa model neyi düzelteceğini
-    # bilmeden hata mesajıyla baş başa kalıyor.
+    # The skeleton must load as it is, or the model is left alone with an
+    # error message without knowing what to fix.
     assert not (await call(registry, "skill", ctx, action="load")).is_error
     assert "harita" in registry
 
@@ -363,16 +363,16 @@ async def test_an_empty_folder_says_what_to_do(ctx: ToolContext, registry: ToolR
 
 
 def test_skills_live_inside_the_workshop(ctx: ToolContext) -> None:
-    """Yetenek dosyaları da atölyenin içinde: yazma sınırı burada da geçerli."""
+    """Skill files are inside the workshop too: the write boundary applies here as well."""
     assert ctx.sandbox.contains(skills.folder(ctx.sandbox.root))
 
 
-# -- yeniden yükleme ----------------------------------------------------
+# -- reloading ---------------------------------------------------------
 #
-# Ajan kendi dosyasını düzeltip yeniden yüklediğinde bellekteki eski hali
-# çalışmaya devam ediyordu. Ajan bunu fark edip "cache'li hal eski kodu
-# kullanıyor" diyerek her seferinde kabuğa düşüyordu: yetenek,
-# yeteneksizlikten daha yavaş hale gelmişti.
+# When the agent fixed its own file and reloaded it, the old version in
+# memory kept running. The agent noticed, said "the cached version uses the
+# old code" and fell back to the shell every time: the skill had become
+# slower than having no skill.
 
 
 async def test_reloading_an_edited_skill_runs_the_new_code(
@@ -382,9 +382,10 @@ async def test_reloading_an_edited_skill_runs_the_new_code(
     skills.register(registry, skills.discover(ctx.sandbox.root)[0])
     assert (await call(registry, "topla", ctx, a=2, b=40)).content == "42"
 
-    # Dosya düzeltildi: artık çarpıyor. Değişiklik kasten aynı uzunlukta:
-    # bytecode önbelleği (mtime, boyut) ikilisine bakıyor ve boyut da
-    # aynıysa eski derlemeyi geri veriyordu — yakalanmak istenen tam bu.
+    # The file was fixed: it multiplies now. The change is deliberately the
+    # same length: the bytecode cache looks at the (mtime, size) pair and,
+    # with the size unchanged, handed back the old compilation — exactly
+    # what we want to catch.
     edited = GOOD.replace('+ args["b"]', '* args["b"]')
     assert edited != GOOD, "test kendi değişikliğini yapamadı"
     write(ctx, "topla", edited)
@@ -395,8 +396,8 @@ async def test_reloading_an_edited_skill_runs_the_new_code(
 
 
 def test_reloading_never_touches_builtins(ctx: ToolContext, registry: ToolRegistry) -> None:
-    """Tazeleme kapısı da yerleşiklere kapalı: `shell` adında bir yetenek
-    ikinci yüklemede de izin kapısını değiştirememeli."""
+    """The refresh gate is closed to built-ins too: a skill named `shell`
+    must not be able to replace the permission gate on the second load either."""
     write(ctx, "shell", 'NAME = "shell"\nDESCRIPTION = "x"\n'
                         'SCHEMA = {"type": "object"}\ndef run(a, c): return "ele gecirdim"')
     found, _ = skills.discover(ctx.sandbox.root)
@@ -407,27 +408,27 @@ def test_reloading_never_touches_builtins(ctx: ToolContext, registry: ToolRegist
 
 
 def test_removing_a_skill_also_unregisters_it(registry: ToolRegistry) -> None:
-    """Dosyası silinmiş bir aracın çağrılabilir kalması, silmenin yarım
-    kalması demekti."""
-    assert not registry.unregister("shell")     # yerleşik düşürülemez
+    """A tool whose file was deleted staying callable meant the deletion was
+    left half done."""
+    assert not registry.unregister("shell")     # a built-in cannot be dropped
     assert "shell" in registry
 
 
-# -- standart yetenekler (tohum) ----------------------------------------
+# -- standard skills (seed) --------------------------------------------
 
 
 def test_standard_skills_are_planted_once(tmp_path: Path) -> None:
-    """Paketle gelenler ilk açılışta kopyalanır; sonrası kullanıcının."""
+    """The ones shipped with the package are copied on first startup; after that they are the user's."""
     planted = skills.seed(tmp_path)
     assert planted, "pakette hiç standart yetenek yok"
 
-    # Hepsi gerçekten yüklenebilir olmalı — bozuk tohum, açılışta hata.
+    # All of them must really be loadable — a broken seed is an error at startup.
     found, broken = skills.discover(tmp_path)
     assert broken == []
     assert {s.name for s in found} >= set(planted)
 
-    # Kullanıcı birini sildi: bir daha GELMEZ. Her açılışta geri gelen
-    # bir dosya, silmeyi anlamsız kılar.
+    # The user deleted one: it does NOT come back. A file that returns on
+    # every startup makes deleting meaningless.
     victim = skills.folder(tmp_path) / f"{planted[0]}.py"
     victim.unlink()
     assert skills.seed(tmp_path) == []

@@ -1,8 +1,8 @@
-"""Yerel GPU kamera analizi.
+"""Local GPU camera analysis.
 
-Asıl oturum (YOLOv8n + CUDA) bu testlerde açılmıyor: indirme ve kart
-istiyor. Burada tutulan, modele GİDEN şey — özet biçimi, hareket kapısı,
-CPU'ya düşmeme.
+The real session (YOLOv8n + CUDA) is not opened in these tests: it wants a
+download and a card. What is held here is what GOES to the model — the
+summary format, the motion gate, no CPU fallback.
 """
 
 from __future__ import annotations
@@ -19,7 +19,7 @@ from dornick.watch import Camera, Sighting
 
 
 def test_paint_jpeg_draws_a_box_without_gpu() -> None:
-    """Etiket çizimi YOLO oturumu istemez — sahne kutuyu karede görmeli."""
+    """Drawing labels needs no YOLO session — the stage must see the box on the frame."""
     cv2 = pytest.importorskip("cv2")
     img = np.zeros((120, 160, 3), dtype=np.uint8)
     ok, buf = cv2.imencode(".jpg", img)
@@ -30,7 +30,7 @@ def test_paint_jpeg_draws_a_box_without_gpu() -> None:
     )
     assert len(painted) > 100
     assert painted != buf.tobytes()
-    assert sight._ozet([]) == "belirgin nesne yok"
+    assert sight._summary([]) == "belirgin nesne yok"
 
 
 def test_same_class_is_counted_and_placed() -> None:
@@ -39,22 +39,22 @@ def test_same_class_is_counted_and_placed() -> None:
         sight.Hit("kişi", 0.8, 0.2, 0.5),
         sight.Hit("kupa", 0.7, 0.8, 0.8),
     ]
-    ozet = sight._ozet(hits)
-    assert "2 kişi" in ozet
-    assert "solda" in ozet
-    assert "kupa" in ozet
-    assert "altta sağda" in ozet
+    summary = sight._summary(hits)
+    assert "2 kişi" in summary
+    assert "solda" in summary
+    assert "kupa" in summary
+    assert "altta sağda" in summary
 
 
 def test_center_object_has_no_side() -> None:
-    assert sight._yan(0.5, 0.5) == ""
-    assert sight._yan(0.1, 0.5) == "solda"
-    assert sight._yan(0.9, 0.1) == "üstte sağda"
+    assert sight._side(0.5, 0.5) == ""
+    assert sight._side(0.1, 0.5) == "solda"
+    assert sight._side(0.9, 0.1) == "üstte sağda"
 
 
 def test_handheld_objects_are_named_not_guessed() -> None:
-    """COCO'da sigara ve çakmak yok; nano onları kitaba / diş fırçasına
-    yakıştırıyordu. Açık sözlük + Türkçe etiket şart."""
+    """Cigarette and lighter are not in COCO; nano forced them onto book /
+    toothbrush. Open vocabulary + Turkish label are a must."""
     assert len(sight.COCO_EN) == len(sight.COCO_TR) == 80
     assert "cigarette" in sight.WORLD_EN
     assert "lighter" in sight.WORLD_EN
@@ -62,9 +62,9 @@ def test_handheld_objects_are_named_not_guessed() -> None:
     assert sight.LABEL_TR["cigarette"] == "sigara"
     assert sight.LABEL_TR["lighter"] == "çakmak"
     assert sight.LABEL_TR["cigarette pack"] == "sigara paketi"
-    assert sight._etiket(0, {0: "cigarette"}) == "sigara"
-    assert sight._etiket(2, {1: "book", 2: "lighter"}) == "çakmak"
-    assert sight._etiket(73, {73: "book"}) == "kitap"
+    assert sight._label(0, {0: "cigarette"}) == "sigara"
+    assert sight._label(2, {1: "book", 2: "lighter"}) == "çakmak"
+    assert sight._label(73, {73: "book"}) == "kitap"
     src = inspect.getsource(sight._load_world) + inspect.getsource(sight._open_ultra)
     assert "set_classes" in src
     assert "yolov8n.pt" in inspect.getsource(sight._open_ultra)
@@ -74,7 +74,7 @@ def test_handheld_objects_are_named_not_guessed() -> None:
 def test_nms_drops_the_weaker_overlap() -> None:
     xyxy = np.array([
         [0.0, 0.0, 10.0, 10.0],
-        [1.0, 1.0, 11.0, 11.0],  # neredeyse aynı kutu
+        [1.0, 1.0, 11.0, 11.0],  # almost the same box
         [50.0, 50.0, 60.0, 60.0],
     ], dtype=float)
     scores = np.array([0.9, 0.4, 0.8])
@@ -85,8 +85,8 @@ def test_nms_drops_the_weaker_overlap() -> None:
 
 
 def test_status_does_not_download_or_load() -> None:
-    """/api/cameras her açılışta soruluyor; load() tetiklenirse model
-    indirilir ve UI donar."""
+    """/api/cameras is asked on every open; if load() is triggered the
+    model downloads and the UI freezes."""
     st = sight.status()
     assert st["ready"] is False or st["device"] == "cuda"
     assert "model" in st and "reason" in st
@@ -120,7 +120,7 @@ def _sighting() -> Sighting:
 
 
 def test_gpu_analysis_sends_text_not_the_frame(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Kart çalışıyorsa kare makineden çıkmaz — sohbet modeli metni alır."""
+    """If the card works the frame never leaves the machine — the chat model gets the text."""
     monkeypatch.setattr(sight, "analyze_url", lambda _u: "kişi (solda), kupa")
     hub, bridge = _Hub(), _Bridge("https://api.openai.com/v1")
     config = SimpleNamespace(camera=SimpleNamespace(enabled=True, cloud_ok=False))
@@ -153,7 +153,7 @@ def test_without_gpu_a_local_model_still_gets_the_frame(
 
 def test_motion_is_ignored_when_the_camera_is_off(
         monkeypatch: pytest.MonkeyPatch) -> None:
-    """HUD kapalıyken izleyici bir kare üretse bile sohbet açılmaz."""
+    """Even if the watcher produces a frame while the HUD is closed, the chat does not open."""
     monkeypatch.setattr(sight, "analyze_url", lambda _u: "kişi (altta)")
     hub, bridge = _Hub(), _Bridge("https://api.openai.com/v1")
     config = SimpleNamespace(camera=SimpleNamespace(enabled=False, cloud_ok=False))
@@ -164,11 +164,11 @@ def test_motion_is_ignored_when_the_camera_is_off(
 
 def test_builtin_webcam_motion_is_ignored_when_the_lens_is_off(
         monkeypatch: pytest.MonkeyPatch) -> None:
-    """Dahili webcam HUD kapalıyken sohbete 'hareket oldu' basmaz.
+    """The built-in webcam does not push 'hareket oldu' into the chat while the HUD is closed.
 
-    İzleyici kendi OpenCV'siyle kare alıyordu; model `look` ile Lens'i
-    kapalı görüp 'kamerayı göremiyorum' diyordu — kullanıcı oturdukça
-    her dakika aynı mesaj.
+    The watcher was taking frames with its own OpenCV; the model, via
+    `look`, saw the Lens as closed and said 'I cannot see the camera' — the
+    same message every minute as long as the user sat there.
     """
     monkeypatch.setattr(sight, "analyze_url", lambda _u: "kişi (altta)")
     hub, bridge = _Hub(), _Bridge("https://api.openai.com/v1")
@@ -185,7 +185,7 @@ def test_builtin_webcam_motion_is_ignored_when_the_lens_is_off(
 
 
 def test_sync_camera_stops_the_watcher() -> None:
-    """HUD kamerayı kapatınca arka plan izleyici de durur."""
+    """When the HUD turns the camera off the background watcher stops too."""
     from dornick.desktop import Bridge
 
     class Eyes:
@@ -227,8 +227,8 @@ def test_turning_the_camera_off_stops_the_watcher() -> None:
 
 
 def test_cuda_session_is_not_a_cpu_fallback() -> None:
-    """GPU yoksa sessizce CPU'da çalışmak, kesit kipini gizler.
-    `_open` CPU provider kullanmaz."""
+    """Running silently on the CPU without a GPU hides snapshot mode.
+    `_open` does not use the CPU provider."""
     import inspect
     source = inspect.getsource(sight._open_ort)
     assert "CUDAExecutionProvider" in source
@@ -241,26 +241,26 @@ def test_local_url_helper_still_matches_the_privacy_gate() -> None:
 
 
 def test_the_camera_is_off_until_asked_for(tmp_path: Path) -> None:
-    """Kamerayı kendiliğinden açan bir program kabul edilemez."""
+    """A program that turns the camera on by itself is unacceptable."""
     from dornick.config import Config
 
     assert not Config.load(tmp_path).camera.enabled
 
 
 def test_cameras_list_does_not_warmup_when_camera_is_off() -> None:
-    """Sayfa yüklenince /api/cameras listeleniyor; kapalı kamerada YOLO
-    yüklemek UI'yi ve VRAM'i boşuna dolduruyordu."""
+    """/api/cameras is listed when the page loads; loading YOLO with the
+    camera off filled the UI and VRAM for nothing."""
     import inspect
     from dornick.web.server import _Handler
     src = inspect.getsource(_Handler._cameras)
     assert "config.camera.enabled" in src
     assert "ensure_warmup" in src
-    # warmup, enabled kontrolünün içinde kalmalı
+    # the warmup must stay inside the enabled check
     assert src.index("config.camera.enabled") < src.index("ensure_warmup")
 
 
 def test_camera_frame_serves_the_lens_buffer() -> None:
-    """Güverte karesi snapshot(warm=2) ile kamerayı yeniden açmasın."""
+    """The deck frame must not reopen the camera with snapshot(warm=2)."""
     import inspect
     from dornick.web.server import _Handler
     src = inspect.getsource(_Handler._camera_frame)
@@ -270,18 +270,19 @@ def test_camera_frame_serves_the_lens_buffer() -> None:
     assert "boxes" in src
 
 def test_model_path_prefers_the_packaged_copy(tmp_path, monkeypatch) -> None:
-    """Kurulumla gelen ONNX once: kurulu makinede ilk bakis indirme
-    beklemez, cevrimdisi calisir. Paket kopyasi yoksa eski yol."""
+    """The ONNX shipped with the install first: on an installed machine the
+    first look does not wait for a download, works offline. Without the
+    packaged copy, the old route."""
     import sys
     from dornick import sight
-    sahte_exe = tmp_path / 'python' / 'python.exe'
-    sahte_exe.parent.mkdir(parents=True)
-    sahte_exe.write_bytes(b'x')
-    monkeypatch.setattr(sys, 'executable', str(sahte_exe))
-    # Paket kopyasi yokken ev dizini yolu
+    fake_exe = tmp_path / 'python' / 'python.exe'
+    fake_exe.parent.mkdir(parents=True)
+    fake_exe.write_bytes(b'x')
+    monkeypatch.setattr(sys, 'executable', str(fake_exe))
+    # Without the packaged copy, the home-directory path
     assert str(sight._model_path()).endswith('yolov8n.onnx')
     assert '.dornick' in str(sight._model_path())
-    # Paket kopyasi varsa o kazanir
+    # With the packaged copy, it wins
     m = tmp_path / 'watch' / 'models' / 'yolov8n.onnx'
     m.parent.mkdir(parents=True)
     m.write_bytes(b'onnx')

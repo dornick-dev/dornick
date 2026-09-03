@@ -1,9 +1,9 @@
-"""Kamera izleme.
+"""Camera watching.
 
-Naif yol her kareyi modele sormak olurdu ve o yol çalışmıyor: saniyede
-yirmi kare, karesi 1.5–4.8k token. Buradaki testler **modelin ne zaman
-uyandığını** tutuyor — yanlış eşik ya boş bir odada dakikada onlarca istek
-demek, ya da hiç uyanmayan bir kamera.
+The naive route would be asking the model about every frame, and that
+route does not work: twenty frames a second, 1.5–4.8k tokens each. The
+tests here hold **when the model wakes** — a wrong threshold means either
+dozens of requests a minute in an empty room, or a camera that never wakes.
 """
 
 from __future__ import annotations
@@ -14,24 +14,24 @@ import pytest
 
 from dornick import watch
 
-pytestmark = pytest.mark.skipif(not watch.available(), reason="görüntü paketi kurulu değil")
+pytestmark = pytest.mark.skipif(not watch.available(), reason="image package not installed")
 
 
 def frames(*shades: int):
-    """Düz renkli kareler. Fark hesabı için gerçek görüntüye gerek yok."""
+    """Flat-coloured frames. No real image is needed for the difference computation."""
     import numpy as np
 
     return [np.full((120, 160, 3), shade, dtype=np.uint8) for shade in shades]
 
 
 class FakeCapture:
-    """Verilen kareleri sırayla döndüren sahte kamera."""
+    """Fake camera returning the given frames in order."""
 
     def __init__(self, images: list) -> None:
         self.images = list(images)
         self.released = False
 
-    def isOpened(self) -> bool:  # noqa: N802 - OpenCV arayüzü
+    def isOpened(self) -> bool:  # noqa: N802 - OpenCV interface
         return True
 
     def read(self):
@@ -55,17 +55,17 @@ def look_all(watcher: watch.Eye, count: int) -> list:
     return [seen for _ in range(count) if (seen := watcher.look()) is not None]
 
 
-# -- hareket eşiği -----------------------------------------------------
+# -- motion threshold --------------------------------------------------
 
 
 def test_a_still_scene_never_wakes_the_model(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Boş bir odada saatlerce hiçbir istek gitmemeli."""
+    """In an empty room no request should go out for hours."""
     still = frames(*([40] * 20))
     assert look_all(eye(monkeypatch, still), 20) == []
 
 
 def test_a_real_change_is_reported(monkeypatch: pytest.MonkeyPatch) -> None:
-    # Isınma kareleri, sonra belirgin bir değişim.
+    # Warm-up frames, then a clear change.
     images = frames(*([40] * watch.WARMUP), 40, 200)
     seen = look_all(eye(monkeypatch, images), len(images))
 
@@ -75,8 +75,9 @@ def test_a_real_change_is_reported(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_the_warmup_frames_are_skipped(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Kamera açıldıktan sonra pozlama otururken her kare "hareket" gibi
-    görünüyor; ilk kareler atlanmazsa her açılış bir yanlış alarm."""
+    """After the camera opens, while the exposure settles every frame looks
+    like "motion"; if the first frames are not skipped every opening is a
+    false alarm."""
     images = frames(10, 90, 170, 250, 30, 30, 30)
     seen = look_all(eye(monkeypatch, images), len(images))
 
@@ -84,7 +85,7 @@ def test_the_warmup_frames_are_skipped(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_a_tiny_flicker_does_not_wake_it(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Gölge, gürültü ve sıkıştırma titremesi hareket değil."""
+    """Shadow, noise and compression flicker are not motion."""
     images = frames(*([40] * watch.WARMUP), 40, 42)
     assert look_all(eye(monkeypatch, images), len(images)) == []
 
@@ -94,11 +95,11 @@ def test_sensitivity_can_be_lowered(monkeypatch: pytest.MonkeyPatch) -> None:
     assert look_all(eye(monkeypatch, images, sensitivity=0.001), len(images))
 
 
-# -- sessizlik payı ----------------------------------------------------
+# -- quiet margin ------------------------------------------------------
 
 
 def test_continuing_motion_asks_only_once(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Kapı açık kaldığında her saniye haber vermemeli."""
+    """A door left open must not report every second."""
     images = frames(*([40] * watch.WARMUP), 40, 200, 40, 200, 40, 200)
     seen = look_all(eye(monkeypatch, images, cooldown_s=600), len(images))
 
@@ -106,22 +107,22 @@ def test_continuing_motion_asks_only_once(monkeypatch: pytest.MonkeyPatch) -> No
 
 
 def test_a_short_cooldown_is_clamped(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Sıfır sessizlik, hareket süren bir karede saniyede onlarca istek
-    demek; taban değer koruyor."""
+    """Zero quiet time on a frame with continuing motion means dozens of
+    requests a second; the floor value protects."""
     images = frames(*([40] * watch.WARMUP), 40, 200, 40, 200)
     seen = look_all(eye(monkeypatch, images, cooldown_s=0), len(images))
 
     assert len(seen) == 1
 
 
-# -- dayanıklılık ------------------------------------------------------
+# -- resilience --------------------------------------------------------
 
 
 def test_a_dropped_stream_closes_and_retries(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Ağ kamerası kopabiliyor; bir sonraki turda yeniden açılmalı."""
+    """A network camera can drop; it must reopen on the next round."""
     watcher = eye(monkeypatch, frames(40))
     watcher.look()
-    watcher.look()          # kare kalmadı → kopma
+    watcher.look()          # no frames left → drop
 
     assert watcher._capture is None
 
@@ -137,7 +138,7 @@ def test_one_broken_camera_does_not_stop_the_others(monkeypatch: pytest.MonkeyPa
     reported: list = []
     watcher = watch.Watcher([watch.Camera(id="c1", name="bozuk", source="1")], reported.append)
 
-    # Döngünün bir turu: hata yutulmalı, çağrı geri dönmeli.
+    # One round of the loop: the error must be swallowed, the call must return.
     watcher._eyes["c1"].camera.every_s = 0.01
     watcher._stop.set()
     watcher._loop()
@@ -145,7 +146,7 @@ def test_one_broken_camera_does_not_stop_the_others(monkeypatch: pytest.MonkeyPa
     assert reported == []
 
 
-# -- kayıt -------------------------------------------------------------
+# -- records -----------------------------------------------------------
 
 
 def test_cameras_survive_a_restart(tmp_path: Path) -> None:
@@ -178,7 +179,7 @@ def test_a_disabled_camera_is_not_watched() -> None:
 
 
 def test_the_builtin_webcam_is_not_watched() -> None:
-    """Dahili kamera Lens'in işi; ikinci OpenCV sohbete hareket basıyordu."""
+    """The built-in camera is the Lens's job; a second OpenCV was pushing motion into the chat."""
     watcher = watch.Watcher(
         [watch.Camera(id="usb", name="Bilgisayar kamerası", source="0")],
         lambda _s: None,
@@ -188,7 +189,7 @@ def test_the_builtin_webcam_is_not_watched() -> None:
 
 
 def test_watcher_can_start_again_after_stop(monkeypatch: pytest.MonkeyPatch) -> None:
-    """HUD kapatıp açınca izleyici yeniden dönmeli; stop Event'i set kalırdı."""
+    """Closing and reopening the HUD must restart the watcher; the stop Event stayed set."""
     import cv2
 
     monkeypatch.setattr(cv2, "VideoCapture", lambda *_a: FakeCapture(frames(40, 40, 40)))
@@ -206,23 +207,23 @@ def test_watcher_can_start_again_after_stop(monkeypatch: pytest.MonkeyPatch) -> 
 
 
 def test_the_default_question_says_what_matters() -> None:
-    """Model "bir şeyler var" demesin; dikkat gerektireni ayırsın."""
+    """The model must not say "there are some things"; it must single out what needs attention."""
     assert "dikkat" in watch.DEFAULT_ASK.lower()
 
 
-# -- yerel kamera tamponu ----------------------------------------------
+# -- local camera buffer -----------------------------------------------
 
 
 def lens(monkeypatch: pytest.MonkeyPatch, images: list) -> watch.Lens:
     import cv2
 
     monkeypatch.setattr(cv2, "VideoCapture", lambda *_a: FakeCapture(images))
-    return watch.Lens(fps=1000)   # testte beklemeden dönsün
+    return watch.Lens(fps=1000)   # return without waiting in the test
 
 
 def test_the_buffer_keeps_only_the_latest_frame(monkeypatch: pytest.MonkeyPatch) -> None:
-    """İki dakikalık video bellekte yüzlerce megabayt ve hiçbir işe
-    yaramıyor; sorulan şey "şu an ne var"."""
+    """Two minutes of video is hundreds of megabytes in memory and serves
+    nothing; what is asked is "what is there now"."""
     box = lens(monkeypatch, frames(10, 90, 200))
     for _ in range(3):
         box.step()
@@ -230,15 +231,16 @@ def test_the_buffer_keeps_only_the_latest_frame(monkeypatch: pytest.MonkeyPatch)
     frame, age = box.snapshot()
     assert frame.startswith("data:image/jpeg;base64,")
     assert age < 5
-    # Ham kare biriktirilmiyor; geriye dönük pencere JPEG olarak ve sınırlı.
+    # Raw frames are not accumulated; the backward window is JPEG and bounded.
     assert len(box._history) <= watch.HISTORY
     assert len(box._recent) <= 3
 
 
 def test_recall_prefers_the_sharp_frame() -> None:
-    """"Az önce ne gösterdim": kullanıcı gösterdiğini indirmişse şu anki
-    kare boş. Penceredeki en NET kare seçilmeli — hareket halindeki kareler
-    bulanık, gösterilen şey sabit tutulurken çekilen kare net."""
+    """"What did I just show": if the user lowered what they showed, the
+    current frame is empty. The SHARPEST frame in the window must be chosen
+    — frames in motion are blurry, the frame taken while the shown thing is
+    held still is sharp."""
     import time as clock
 
     import cv2
@@ -250,28 +252,29 @@ def test_recall_prefers_the_sharp_frame() -> None:
         return raw.tobytes()
 
     rng = np.random.default_rng(7)
-    sharp = rng.integers(0, 255, (120, 160, 3), dtype=np.uint8)   # detaylı → net
-    blurry = np.full((120, 160, 3), 90, dtype=np.uint8)           # düz → bulanık
+    sharp = rng.integers(0, 255, (120, 160, 3), dtype=np.uint8)   # detailed → sharp
+    blurry = np.full((120, 160, 3), 90, dtype=np.uint8)           # flat → blurry
 
     box = watch.Lens()
     now = clock.time()
-    # Net kare ESKİ olan: yalnızca "en yeniyi al" doğru cevabı vermez.
+    # The sharp frame is the OLD one: just "take the newest" does not give the right answer.
     box._recent = [(now - 3.0, packed(sharp)), (now - 1.0, packed(blurry))]
 
     frame, age = box.recall(5.0)
     assert frame.startswith("data:image/jpeg;base64,")
-    assert age > 2.0   # seçilen, üç saniye önceki net kare
+    assert age > 2.0   # the chosen one is the sharp frame from three seconds ago
 
 
 def test_recall_falls_back_to_the_snapshot() -> None:
-    """Tampon boşken (kamera yeni açıldı) eldeki son kare yine de cevap."""
+    """With an empty buffer (camera just opened) the last frame in hand is still an answer."""
     box = watch.Lens()
     assert box.recall(5.0) == ("", 0.0)
 
 
 def test_snooze_also_clears_the_recent_frames() -> None:
-    """"İzlemiyorum" derken bellekte on saniyelik kare tutmak yarım bir
-    kapanma olurdu — susturma geriye dönük pencereyi de boşaltmalı."""
+    """Holding ten seconds of frames in memory while saying "I'm not
+    watching" would be a half closure — the snooze must empty the backward
+    window too."""
     import time as clock
 
     box = watch.Lens()
@@ -282,7 +285,7 @@ def test_snooze_also_clears_the_recent_frames() -> None:
 
 
 def test_lens_stop_can_start_again() -> None:
-    """HUD kapat/aç: stop sonrası start yeniden döngü kurabilmeli."""
+    """HUD close/open: start after stop must be able to set up the loop again."""
     box = watch.Lens()
     box.stop()
     assert not box.running
@@ -300,8 +303,8 @@ def test_an_empty_buffer_says_so() -> None:
 
 
 def test_motion_answers_without_a_frame() -> None:
-    """"Bir şey oldu mu" sorusu modele hiç uğramadan cevaplanabilmeli:
-    boş bir odada tek bir görüntü bile gitmemeli."""
+    """The question "did something happen" must be answerable without ever
+    touching the model: in an empty room not a single image should go."""
     import time as clock
 
     box = watch.Lens()
@@ -336,12 +339,12 @@ def test_motion_ignores_what_fell_out_of_the_window() -> None:
     assert box.motion(60)["frames"] == 0
 
 
-# -- güverte önizlemesi ------------------------------------------------
+# -- deck preview ------------------------------------------------------
 
 
 def test_preview_uses_the_lens_buffer_not_a_second_open(
         monkeypatch: pytest.MonkeyPatch) -> None:
-    """Açık Lens varken dahili kamerayı yeniden açmak Windows'ta kilitler."""
+    """Reopening the built-in camera while the Lens is open locks on Windows."""
     monkeypatch.setattr(watch, "snapshot", lambda *_a, **_k: (_ for _ in ()).throw(
         AssertionError("snapshot should not run while Lens owns the device")
     ))

@@ -1,8 +1,8 @@
-"""Sabit korumalar — izin kipinden bağımsız aşılamaz retler.
+"""Hard guards — refusals independent of the permission mode that cannot be lifted.
 
-Bu testler güvenlik denetiminde (01.09) bulunan somut sızıntı/eskalasyon
-zincirlerine karşılık geliyor: sırların okunup dışarı gitmesi, kip/kapı
-dosyalarına yazıp `yolo`'ya kendini çekme, açılış kalıcılığı bırakma.
+These tests correspond to the concrete leak/escalation chains found in the
+security audit (01.09): secrets being read and sent out, writing to the
+mode/gate files and pulling oneself to `yolo`, leaving startup persistence.
 """
 
 from __future__ import annotations
@@ -14,43 +14,43 @@ from dornick.permissions import Decision, PermissionEngine
 def _spec(name: str, mutates: bool = False):
     from dornick.tools.base import object_schema, ToolSpec
 
-    async def _h(_a, _c):  # pragma: no cover - çağrılmaz
+    async def _h(_a, _c):  # pragma: no cover - never called
         return None
 
     return ToolSpec(name=name, description="", input_schema=object_schema({}),
                     handler=_h, mutates=mutates)
 
 
-# -- sabit_ret birimi ---------------------------------------------------
+# -- sabit_ret unit -----------------------------------------------------
 
 
 def test_keys_json_read_and_write_both_denied() -> None:
-    """`.dornick/keys.json` ne okunur ne yazılır — sır, injection'ın malı."""
+    """`.dornick/keys.json` is neither read nor written — a secret, injection's prize."""
     assert guards.sabit_ret("read_file", False,
-                               {"path": r"C:\x\.dornick\keys.json"})
+                            {"path": r"C:\x\.dornick\keys.json"})
     assert guards.sabit_ret("write_file", True,
-                               {"path": "/home/u/.dornick/keys.json"})
-    # copy_in kaynağı farklı alanda olsa da yakalanır (tüm değerler taranır).
+                            {"path": "/home/u/.dornick/keys.json"})
+    # copy_in's source is caught even though it sits in a different field (all values are scanned).
     assert guards.sabit_ret("copy_in", True,
-                               {"source": ".dornick/keys.json", "dest": "a"})
-    # shell içinde adı geçse de.
+                            {"source": ".dornick/keys.json", "dest": "a"})
+    # Even when the name only appears inside a shell command.
     assert guards.sabit_ret("shell", True,
-                               {"command": "type .dornick\\keys.json"})
+                            {"command": "type .dornick\\keys.json"})
 
 
 def test_config_and_gate_write_denied_read_allowed() -> None:
-    """config/gate/manifest YAZMAYA kapalı (kip/kapı/onay), okumaya açık."""
-    for hedef in ("config.json", "gate.json", "skills_onayli.json"):
-        yol = f".dornick/{hedef}"
-        assert guards.sabit_ret("write_file", True, {"path": yol}), hedef
+    """config/gate/manifest are closed to WRITING (mode/gate/approval), open to reading."""
+    for target in ("config.json", "gate.json", "skills_onayli.json"):
+        path = f".dornick/{target}"
+        assert guards.sabit_ret("write_file", True, {"path": path}), target
         assert guards.sabit_ret("shell", True,
-                                   {"command": f"echo x > .dornick/{hedef}"}), hedef
-        # Okuma (mutasyon değil, yazma yüzeyi değil) serbest.
-        assert guards.sabit_ret("read_file", False, {"path": yol}) is None, hedef
+                                {"command": f"echo x > .dornick/{target}"}), target
+        # Reading (not a mutation, not the write surface) is free.
+        assert guards.sabit_ret("read_file", False, {"path": path}) is None, target
 
 
 def test_startup_persistence_denied() -> None:
-    """Run anahtarı ve Başlangıç klasörü — kabuk/mutasyon uzanamaz."""
+    """The Run key and the Startup folder — shell/mutation cannot reach."""
     assert guards.sabit_ret(
         "shell", True,
         {"command": r'reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Run" /v x /d y'})
@@ -60,31 +60,31 @@ def test_startup_persistence_denied() -> None:
 
 
 def test_ordinary_paths_are_not_touched() -> None:
-    """Sıradan iş engellenmiyor — koruma dar. keys.json/config.json adı
-    `.dornick` DIŞINDA bir kullanıcı dosyasıysa serbest."""
+    """Ordinary work is not blocked — the guard is narrow. A keys.json/config.json
+    name OUTSIDE `.dornick` is a user file and is free."""
     assert guards.sabit_ret("write_file", True, {"path": "atolye/site/index.html"}) is None
     assert guards.sabit_ret("shell", True, {"command": "npm test"}) is None
-    # Kullanıcının kendi projesindeki config.json (‑.dornick değil) yazılabilir.
+    # A config.json in the user's own project (not .dornick) can be written.
     assert guards.sabit_ret("write_file", True, {"path": "proje/config.json"}) is None
     assert guards.sabit_ret("read_file", False, {"path": "proje/keys.json"}) is None
 
 
-# -- izin motoruyla bütünleşme: yolo bile aşamaz -----------------------
+# -- integration with the permission engine: even yolo cannot pass ------
 
 
 def test_yolo_cannot_bypass_hard_deny() -> None:
-    """En gevşek kip bile sabit korumayı açamaz — kapı yolo'dan ÖNCE."""
+    """Even the loosest mode cannot open a hard guard — the gate comes BEFORE yolo."""
     engine = PermissionEngine("yolo", allow=["*"], deny=[])
     decision, rule = engine.evaluate(_spec("read_file"),
                                      {"path": ".dornick/keys.json"})
     assert decision is Decision.DENY
     assert rule.startswith("sabit:koruma:")
-    # Gerekçe insan diliyle taşınıyor (executor bunu modele gösterir).
+    # The reason travels in human language (the executor shows it to the model).
     assert "keys.json" in rule
 
 
 def test_allow_rule_cannot_bypass_hard_deny() -> None:
-    """Açık bir allow kuralı da sabit korumayı geçemez."""
+    """An explicit allow rule cannot get past a hard guard either."""
     engine = PermissionEngine("ask", allow=["write_file:*"], deny=[])
     decision, _rule = engine.evaluate(_spec("write_file", mutates=True),
                                       {"path": ".dornick/config.json"})
@@ -92,7 +92,7 @@ def test_allow_rule_cannot_bypass_hard_deny() -> None:
 
 
 def test_normal_call_still_flows_through_the_gate() -> None:
-    """Koruma sıradan çağrıyı etkilemiyor: yolo'da normal yazma ALLOW."""
+    """The guard does not affect an ordinary call: a normal write in yolo is ALLOW."""
     engine = PermissionEngine("yolo", allow=[], deny=[])
     decision, _rule = engine.evaluate(_spec("write_file", mutates=True),
                                       {"path": "atolye/rapor.md"})

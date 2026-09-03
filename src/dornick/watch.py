@@ -1,30 +1,34 @@
-"""Kamera izleme.
+"""Camera watching.
 
-"Sürekli kameraları izlesin, sorun görünce haber versin" isteğinin karşılığı.
+The answer to "let it watch the cameras all the time and tell me when it
+sees a problem".
 
-Naif yol her kareyi modele sormak olurdu ve o yol çalışmıyor: saniyede
-yirmi kare, karesi 1.5–4.8k token. Yerel bir modelde dakikada onlarca istek
-demek ve makine buna dayanmıyor.
+The naive route would be asking the model about every frame, and that
+route does not work: twenty frames a second, 1.5–4.8k tokens each. With a
+local model that means dozens of requests a minute and the machine cannot
+take it.
 
-Bunun yerine iş ikiye bölünüyor:
+Instead the work is split in two:
 
-    yerelde   hareket var mı? — küçültülmüş gri kareler arasındaki fark.
-              Mikrosaniyeler sürüyor, model hiç uyanmıyor.
-    GPU'da    hareket varsa **ne** var? — NVIDIA kartı varsa YOLOv8n
-              kareyi metne çevirir; görüntü makineden çıkmaz.
-    modelde   GPU yoksa hareket karesi bir kez soruluyor (cloud_ok kapısı).
+    locally     is there motion? — the difference between downscaled grey
+                frames. Takes microseconds, the model never wakes.
+    on the GPU  if there is motion, **what** is there? — with an NVIDIA
+                card YOLOv8n turns the frame into text; the image never
+                leaves the machine.
+    in the model  without a GPU the motion frame is asked about once
+                (the cloud_ok gate).
 
-Yani model sessizce bekliyor ve yalnızca bir şey değiştiğinde bakıyor. Boş
-bir odada saatlerce hiçbir istek gitmiyor.
+So the model waits quietly and only looks when something changes. In an
+empty room no request goes out for hours.
 
-İki fren daha var:
-  * `cooldown` — hareket sürerken saniyede bir soru sorulmuyor; bir kez
-    sorulup bir süre susuluyor.
-  * `warmup`  — kamera açıldıktan sonraki ilk kareler atlanıyor; pozlama
-    otururken her kare "hareket" gibi görünüyor.
+Two more brakes:
+  * `cooldown` — while motion continues a question is not asked every
+    second; it is asked once and then it stays quiet for a while.
+  * `warmup`  — the first frames after the camera opens are skipped; while
+    the exposure settles every frame looks like "motion".
 
-Kaynak yerel bir kamera indeksi (0, 1) ya da bir adres olabilir: RTSP, HTTP,
-MJPEG. OpenCV ikisini de aynı arayüzle açıyor.
+The source can be a local camera index (0, 1) or an address: RTSP, HTTP,
+MJPEG. OpenCV opens both with the same interface.
 """
 
 from __future__ import annotations
@@ -39,7 +43,7 @@ INSTALL_HINT = "Kamera izleme için: pip install 'dornick[watch]'"
 
 
 def hint() -> str:
-    """Eksik-özellik mesajı: kurulu düzende bileşen önerilir, pip değil."""
+    """Missing-feature message: in the installed layout the component is suggested, not pip."""
     from . import environment
 
     if environment.kurulu_mu():
@@ -48,11 +52,11 @@ def hint() -> str:
                 "bileşenini işaretleyerek ekleyebilirsin.")
     return INSTALL_HINT
 
-# Karşılaştırma bu ölçüde yapılıyor. Küçük olması hem hızlı hem de gölge,
-# gürültü ve sıkıştırma titremesine karşı dayanıklı.
+# The comparison is done at this size. Small is both fast and robust
+# against shadow, noise and compression flicker.
 COMPARE = (64, 48)
 
-# Kameranın pozlamayı oturtması için atlanan ilk kare sayısı.
+# Number of initial frames skipped so the camera settles its exposure.
 WARMUP = 5
 
 
@@ -66,15 +70,15 @@ def available() -> bool:
 
 @dataclass(slots=True)
 class Camera:
-    """İzlenen bir kamera.
+    """A watched camera.
 
-    source: yerel kamera için "0", ağ kamerası için tam adres.
-    sensitivity: 0..1. Yükseldikçe daha küçük değişiklik tetikliyor.
-        0.06 kapalı bir odada yaprak kımıldamasını kaçırmaz ama gürültüyle
-        de uyanmaz — deneyerek bulunan orta yer.
-    cooldown_s: bir uyarıdan sonra susulacak süre. Kapı açık kaldığında
-        her saniye haber vermemek için.
-    ask: modele sorulacak soru. Boşsa genel bir bakış isteniyor.
+    source: "0" for a local camera, the full address for a network camera.
+    sensitivity: 0..1. The higher, the smaller the change that triggers.
+        0.06 does not miss a leaf stirring in a closed room but does not
+        wake on noise either — the middle ground found by trial.
+    cooldown_s: how long to stay quiet after an alert. So that a door left
+        open does not report every second.
+    ask: the question to ask the model. Empty asks for a general look.
     """
 
     id: str
@@ -87,20 +91,21 @@ class Camera:
     ask: str = ""
     last_seen: str = ""
     last_note: str = ""
-    # usb = yerel aygıt indeksi; rtsp / http = ağ. Eski kayıtlarda yalnız
-    # `source` dolu — connect_source onu olduğu gibi kullanır.
+    # usb = local device index; rtsp / http = network. In old records only
+    # `source` is filled — connect_source uses it as is.
     kind: str = "usb"
     host: str = ""
     port: int = 0
     path: str = ""
     user: str = ""
     password: str = ""
-    # True: GPU varsa kare yerelde YOLOv8n ile okunur. GPU yok/yetersizse
-    # zaten no-op (CPU'ya düşmez). Kamerayı tek tek kapatmak için False.
+    # True: with a GPU the frame is read locally by YOLOv8n. Without / with
+    # an insufficient GPU it is a no-op anyway (no CPU fallback). False to
+    # turn it off for one camera.
     analyze: bool = True
 
     def connect_source(self) -> Any:
-        """OpenCV'ye verilecek kaynak: indeks veya kimlikli URL."""
+        """The source given to OpenCV: an index, or a URL with credentials."""
         from urllib.parse import quote
 
         if self.host.strip():
@@ -122,7 +127,7 @@ class Camera:
         return int(src) if src.isdigit() else src
 
     def public_dict(self) -> dict[str, Any]:
-        """API/UI: şifre yok, URL'deki user:pass maskeli."""
+        """API/UI: no password, the user:pass in the URL masked."""
         import re
 
         d = asdict(self)
@@ -132,7 +137,7 @@ class Camera:
         return d
 
     def is_builtin(self) -> bool:
-        """Dahili webcam: indeks 0, host yok."""
+        """Built-in webcam: index 0, no host."""
         if (self.host or "").strip():
             return False
         src = (self.source or "0").strip() or "0"
@@ -141,11 +146,12 @@ class Camera:
 
 
 def _watchable(cameras: list[Camera]) -> list[Camera]:
-    """İzleyiciye düşen kameralar: açık ağ/USB-ek; dahili webcam Lens'in.
+    """Cameras that fall to the watcher: enabled network/extra USB; the built-in webcam is the Lens's.
 
-    `cameras.json` içindeki "Bilgisayar kamerası" (kaynak 0) ikinci bir
-    OpenCV oturumu açıyordu. HUD kapalıyken bile kare alınıp sohbete
-    "hareket oldu" basılıyordu; model de `look` ile Lens'i kapalı görüyordu.
+    The "Bilgisayar kamerası" (source 0) inside `cameras.json` was opening a
+    second OpenCV session. Even with the HUD closed, frames were taken and
+    "hareket oldu" was pushed into the chat; the model, via `look`, saw the
+    Lens as closed.
     """
     return [c for c in cameras if c.enabled and not c.is_builtin()]
 
@@ -161,14 +167,14 @@ DEFAULT_ASK = (
 @dataclass(slots=True)
 class Sighting:
     camera: Camera
-    frame: str          # data: adresi
-    change: float       # 0..1, kareler arası fark
+    frame: str          # data: URL
+    change: float       # 0..1, difference between frames
     ask: str
 
 
 @dataclass(slots=True)
 class Eye:
-    """Tek bir kameranın izleyicisi."""
+    """Watcher of a single camera."""
 
     camera: Camera
     _last: Any = None
@@ -197,7 +203,7 @@ class Eye:
         self._last = None
 
     def jpeg(self) -> str:
-        """Açık yakalamadan bir JPEG (data: URL). Yoksa boş."""
+        """A JPEG (data: URL) from the open capture. Empty if none."""
         if self._capture is None:
             return ""
         ok, frame = self._capture.read()
@@ -206,7 +212,7 @@ class Eye:
         return _encode(frame) or ""
 
     def look(self) -> Sighting | None:
-        """Bir kare alır. Değişiklik eşiği aştıysa görüntüyü döndürür."""
+        """Takes a frame. Returns the image if the change crossed the threshold."""
         import cv2
 
         if self._capture is None and not self.open():
@@ -214,14 +220,14 @@ class Eye:
 
         ok, frame = self._capture.read()
         if not ok:
-            # Ağ kamerası kopmuş olabilir; bir sonraki turda yeniden açılsın.
+            # A network camera may have dropped; let it reopen on the next round.
             self.close()
             return None
 
         small = cv2.cvtColor(cv2.resize(frame, COMPARE), cv2.COLOR_BGR2GRAY)
 
         if self._warm > 0:
-            # Pozlama otururken her kare "hareket" gibi görünüyor.
+            # While the exposure settles every frame looks like "motion".
             self._warm -= 1
             self._last = small
             return None
@@ -234,7 +240,7 @@ class Eye:
         if change < self.camera.sensitivity:
             return None
 
-        # Hareket sürerken saniyede bir soru sorulmuyor.
+        # While motion continues a question is not asked every second.
         now = time.monotonic()
         if now < self._quiet_until:
             return None
@@ -249,10 +255,10 @@ class Eye:
 
 
 def _encode(frame: Any, max_edge: int = 800, quality: int = 78) -> str:
-    """Kareyi data: adresine çevirir.
+    """Turns the frame into a data: URL.
 
-    Küçültme burada: bir görüntü bağlamda 1.5–4.8k token ve tam çözünürlük
-    fark ettirmiyor.
+    Downscaling happens here: an image is 1.5–4.8k tokens in context and
+    full resolution makes no difference.
     """
     import cv2
 
@@ -269,14 +275,15 @@ def _encode(frame: Any, max_edge: int = 800, quality: int = 78) -> str:
 
 def snapshot(source: str, count: int = 1, gap_s: float = 0.6,
              warm: int = 3) -> list[str]:
-    """Kameradan anlık kesit(ler): data:image/jpeg;base64 listesi.
+    """Instant snapshot(s) from the camera: a list of data:image/jpeg;base64.
 
-    İzleme döngüsünden bağımsız — "sorduğumuzda birkaç kesit alıp modele"
-    yolunun temeli (GPU'suz makinede TEK çalışma kipi bu). Kamera açılır,
-    pozlama otursun diye birkaç kare atlanır, istenen sayıda kare alınır
-    ve kapatılır: arkada açık kamera bırakılmaz.
+    Independent of the watch loop — the basis of the "take a few snapshots
+    when asked and send them to the model" route (on a GPU-less machine the
+    ONLY working mode). The camera opens, a few frames are skipped so the
+    exposure settles, the wanted number of frames is taken and it closes:
+    no camera is left open in the background.
     """
-    import cv2  # noqa: F401 — open() zaten ister; hint() için erken kontrol
+    import cv2  # noqa: F401 — open() needs it anyway; early check for hint()
 
     eye = Eye(Camera(id="kesit", name="kesit", source=str(source)))
     if not eye.open():
@@ -299,17 +306,18 @@ def snapshot(source: str, count: int = 1, gap_s: float = 0.6,
 
 
 def same_source(a: str, b: str) -> bool:
-    """'0' ve boş string aynı dahili kamera."""
+    """'0' and the empty string are the same built-in camera."""
     x = (str(a or "").strip() or "0")
     y = (str(b or "").strip() or "0")
     return x == y
 
 
 def preview_jpeg(source: str, lens: Any = None, warm: int = 0) -> bytes:
-    """Güverte karosu: açık Lens tamponu, yoksa tek kesit.
+    """Deck tile: the open Lens buffer, otherwise a single snapshot.
 
-    Dahili kamera zaten Lens'te açıksa ikinci VideoCapture Windows
-    DirectShow'da 0.5–2 sn kilitler ve açık oturumla yarışır.
+    If the built-in camera is already open in the Lens, a second
+    VideoCapture locks for 0.5–2 s on Windows DirectShow and races the
+    open session.
     """
     src = (source or "0").strip() or "0"
     if lens is not None and same_source(getattr(lens, "source", "0"), src):
@@ -322,10 +330,10 @@ def preview_jpeg(source: str, lens: Any = None, warm: int = 0) -> bytes:
 
 
 class Watcher:
-    """Kameraları arka planda izler.
+    """Watches the cameras in the background.
 
-    Kendi thread'inde dönüyor: OpenCV'nin okuması bloklayan bir çağrı ve
-    ajanın asyncio döngüsünü kilitlemesi kabul edilemez.
+    Runs on its own thread: OpenCV's read is a blocking call and locking the
+    agent's asyncio loop is unacceptable.
     """
 
     def __init__(self, cameras: list[Camera], report: Callable[[Sighting], None]) -> None:
@@ -337,7 +345,7 @@ class Watcher:
         self.armed = False
 
     def load_from(self, cameras: list[Camera]) -> None:
-        """HUD açılınca kayıtlı kameraları yeniden yükler; dönen döngüye dokunmaz."""
+        """Reloads the saved cameras when the HUD opens; does not touch a running loop."""
         self._all = list(cameras)
 
     def start(self) -> bool:
@@ -348,7 +356,7 @@ class Watcher:
         self._eyes = {c.id: Eye(camera=c) for c in _watchable(self._all)}
         if not self._eyes:
             return False
-        # stop() Event'i set bırakıyor; yeniden kullanılamaz.
+        # stop() leaves the Event set; it cannot be reused.
         self._stop = threading.Event()
         self.armed = True
         self._thread = threading.Thread(target=self._loop, daemon=True, name="dornick-watch")
@@ -385,14 +393,14 @@ class Watcher:
             prefs_mod.tell(getattr(self, "on_snooze", None), False)
 
     def peek(self, camera_id: str) -> str:
-        """İzlenen kameradan kare; ikinci kez açmaz."""
+        """A frame from a watched camera; does not open it a second time."""
         eye = self._eyes.get(camera_id)
         return eye.jpeg() if eye is not None else ""
 
     def _loop(self) -> None:
         while not self._stop.is_set():
-            # Susturulmuşken hiçbir kameraya bakılmıyor ve hiçbir görüş
-            # bildirilmiyor: "izlemiyorum" ağ kameralarını da kapsıyor.
+            # While snoozed no camera is looked at and no sighting is
+            # reported: "I'm not watching" covers the network cameras too.
             if self.snoozed or not self.armed:
                 self._stop.wait(1.0)
                 continue
@@ -404,12 +412,12 @@ class Watcher:
                         if self.armed:
                             self.report(sighting)
                 except Exception:
-                    # Tek bir kameranın hatası ötekileri durdurmamalı.
+                    # One camera's error must not stop the others.
                     eye.close()
             self._stop.wait(max(0.2, slowest))
 
 
-# -- kayıt -------------------------------------------------------------
+# -- records -----------------------------------------------------------
 
 
 def load(state_dir: Any) -> list[Camera]:
@@ -455,7 +463,7 @@ def save(state_dir: Any, cameras: list[Camera]) -> None:
 
 
 def remember(state_dir: Any, camera: Camera, note: str) -> None:
-    """Hareket özetini kayda yazar — model `kamera action=yol` ile okur."""
+    """Writes the motion summary to the record — the model reads it with `kamera action=yol`."""
     from datetime import datetime
 
     camera.last_note = (note or "").strip()[:240]
@@ -473,36 +481,37 @@ def remember(state_dir: Any, camera: Camera, note: str) -> None:
         save(state_dir, cameras)
 
 
-# -- yerel kamera tamponu ----------------------------------------------
+# -- local camera buffer -----------------------------------------------
 #
-# Ajanın "gözü". Kamera sürekli açık ve kare alıyor ama **hiçbiri modele
-# gitmiyor**: her kareyi modele vermek dakikada onlarca istek ve saniyede
-# binlerce token demek — kullanılamaz.
+# The agent's "eye". The camera is always open and taking frames but **none
+# of them goes to the model**: giving every frame to the model means dozens
+# of requests a minute and thousands of tokens a second — unusable.
 #
-# Bunun yerine kareler burada, bellekte duruyor. Model bakmaya karar
-# verdiğinde (`look` aracı) tek bir kare alıyor. Aradaki hareket yerelde
-# ölçülüyor, yani "son bir dakikada bir şey oldu mu" sorusu modele hiç
-# uğramadan cevaplanıyor.
+# Instead the frames sit here, in memory. When the model decides to look
+# (the `look` tool) it takes a single frame. Motion in between is measured
+# locally, so the question "did anything happen in the last minute" is
+# answered without ever touching the model.
 
-# Saniyede bu kadar kare. Önizleme akıcı dursun diye 8; YOLO her karede
-# değil, yalnız bakış/harekette çalışır — GPU buradan yanmaz.
+# This many frames a second. 8 so the preview stays smooth; YOLO runs not on
+# every frame but only on a look/motion — the GPU does not burn from here.
 LENS_FPS = 8.0
 
-# Bellekte tutulan hareket geçmişi. 2 fps'te iki dakika.
+# Motion history kept in memory. Two minutes at 2 fps.
 HISTORY = 240
 
-# Geriye dönük **kare** penceresi. "Az önce ne gösterdim" sorusunun cevabı
-# bu tampon: kullanıcı bir şeyi gösterip indirmiş olabiliyor ve o an kamerayı
-# açmak geç kalmak demek. 2 fps'te on saniye ~yirmi kare; kareler JPEG
-# olarak tutuluyor, toplamı birkaç MB — ham kare tutmak yüz MB'ı bulurdu.
+# Backward **frame** window. This buffer is the answer to "what did I just
+# show": the user may have shown something and lowered it, and opening the
+# camera at that moment means being late. At 2 fps ten seconds is ~twenty
+# frames; frames are kept as JPEG, a few MB in total — keeping raw frames
+# would reach a hundred MB.
 RECENT_S = 10.0
 
-# Bu kadar süre hiçbir şey kımıldamazsa oda "boş" sayılıyor. Sonrasında
-# gelen hareket sıradan bir kıpırtı değil, **biri geldi** demek.
+# If nothing stirs for this long the room counts as "empty". Motion after
+# that is not an ordinary stir, it means **someone came**.
 AWAY_S = 90.0
 
-# Geliş bildiriminden sonra susulacak süre. Biri odada oturup kıpırdadıkça
-# her seferinde haber vermek gürültü.
+# Quiet period after an arrival notice. Reporting every time someone sits
+# in the room and stirs is noise.
 GREET_QUIET_S = 300.0
 
 
@@ -513,12 +522,12 @@ class Moment:
 
 
 class Lens:
-    """Yerel kameranın sürekli açık tamponu.
+    """The always-open buffer of the local camera.
 
-    Tek bir kare bellekte duruyor (en yenisi) ve yanında hareket geçmişi.
-    Kareleri biriktirmiyoruz: iki dakikalık video bellekte yüzlerce megabayt
-    ve hiçbir işe yaramıyor — sorulan şey "şu an ne var" ya da "az önce bir
-    şey oldu mu".
+    A single frame sits in memory (the newest) with the motion history next
+    to it. We do not accumulate frames: two minutes of video is hundreds of
+    megabytes in memory and serves nothing — what is asked is "what is
+    there now" or "did something just happen".
     """
 
     def __init__(self, source: str = "0", fps: float = LENS_FPS) -> None:
@@ -529,18 +538,18 @@ class Lens:
         self._frame: Any = None
         self._at = 0.0
         self._history: list[Moment] = []
-        # Son RECENT_S saniyenin kareleri, JPEG olarak: (zaman, bayt).
+        # Frames of the last RECENT_S seconds, as JPEG: (time, bytes).
         self._recent: list[tuple[float, bytes]] = []
-        # Son gerçek hareketin anı, bekleyen geliş ve susma payı.
+        # Moment of the last real motion, a pending arrival and the quiet margin.
         self._last_move = time.monotonic()
         self._arrived = False
         self._greeted_until = 0.0
         self._lock = threading.Lock()
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
-        # Susturma: "beni izleme" dendiğinde kare almak duruyor ve tampon
-        # boşalıyor. Kulakta aynı kapı vardı, gözde yoktu — ajan
-        # "izlemiyorum" deyip kare almaya devam ediyordu.
+        # Snooze: when "don't watch me" is said, taking frames stops and the
+        # buffer empties. The ear had the same gate, the eye did not — the
+        # agent said "I'm not watching" and kept taking frames.
         self._snooze_until = 0.0
 
     def start(self) -> bool:
@@ -563,11 +572,11 @@ class Lens:
         return time.monotonic() < self._snooze_until
 
     def snooze(self, seconds: float = 0.0) -> None:
-        """Gözü kapatır. Süresiz de olabilir; "dornick" demek geri açar.
+        """Closes the eye. Can be indefinite; saying "dornick" reopens it.
 
-        Kapatmak yalnızca yeni kare almamak değil: eldeki kare silinir ve
-        aygıt bırakılır (LED söner). "İzlemiyorum" deyip kamerayı açık
-        tutmak yarım bir kapanma olurdu.
+        Closing is not just not taking new frames: the frame in hand is
+        deleted and the device is released (the LED goes off). Saying "I'm
+        not watching" while keeping the camera open would be a half closure.
         """
         self._snooze_until = (
             time.monotonic() + seconds if seconds > 0 else float("inf")
@@ -588,7 +597,7 @@ class Lens:
             prefs_mod.tell(getattr(self, "on_snooze", None), False)
 
     def stop(self) -> None:
-        """Tam kapatma: döngü biter, aygıt bırakılır, tampon boşalır."""
+        """Full shutdown: the loop ends, the device is released, the buffer empties."""
         self._stop.set()
         self._eye.close()
         t = self._thread
@@ -612,12 +621,12 @@ class Lens:
             self._stop.wait(1.0 / max(0.2, self.fps))
 
     def step(self) -> None:
-        """Tek bir kare alır ve tamponu tazeler.
+        """Takes a single frame and refreshes the buffer.
 
-        Susturulmuşken kare alınmıyor ve aygıt bırakılıyor (LED söner).
+        While snoozed no frame is taken and the device is released (the LED goes off).
 
-        Döngüden ayrı durması bilinçli: bekleme olmadan tek adım
-        çalıştırılabiliyor ve davranışı ölçülebiliyor.
+        Standing apart from the loop is deliberate: a single step can be
+        run without waiting and its behaviour measured.
         """
         if self.snoozed:
             if self._eye._capture is not None:
@@ -631,7 +640,7 @@ class Lens:
 
             ok, frame = self._eye._capture.read()
             if not ok:
-                # Kamera koptu; bir sonraki adımda yeniden açılır.
+                # The camera dropped; it reopens on the next step.
                 self._eye.close()
                 return
 
@@ -641,8 +650,8 @@ class Lens:
                 change = float(cv2.absdiff(self._eye._last, small).mean()) / 255.0
             self._eye._last = small
 
-            # Kare tampona JPEG olarak giriyor; sıkıştırma kilidin dışında,
-            # kilit yalnızca listeyi tutarken tutuluyor.
+            # The frame enters the buffer as JPEG; compression is outside the
+            # lock, the lock is only held while touching the list.
             ok, packed = cv2.imencode(".jpg", frame, [int(cv2.IMWRITE_JPEG_QUALITY), 80])
             raw = packed.tobytes() if ok else b""
 
@@ -650,8 +659,8 @@ class Lens:
                 self._frame = frame
                 self._at = time.time()
                 self._history.append(Moment(at=self._at, change=change))
-                # Geçmiş sınırlı: iki dakikalık pencere yeterli ve bellek
-                # sınırsız büyümemeli.
+                # The history is bounded: a two-minute window is enough and
+                # memory must not grow without limit.
                 del self._history[:-HISTORY]
                 if raw:
                     self._recent.append((self._at, raw))
@@ -660,28 +669,28 @@ class Lens:
         except Exception:
             self._eye.close()
 
-    # -- sorular -------------------------------------------------------
+    # -- questions -----------------------------------------------------
 
     def jpeg_bytes(self) -> bytes:
-        """Önizleme için son JPEG. Kamerayı yeniden açmaz."""
+        """The last JPEG for the preview. Does not reopen the camera."""
         with self._lock:
             return self._recent[-1][1] if self._recent else b""
 
     def snapshot(self) -> tuple[str, float]:
-        """En yeni kare ve kaç saniye önce alındığı."""
+        """The newest frame and how many seconds ago it was taken."""
         with self._lock:
             if self._frame is None:
                 return "", 0.0
             return _encode(self._frame), time.time() - self._at
 
     def recall(self, back_s: float) -> tuple[str, float]:
-        """Son `back_s` saniyeden en iyi kare ve kaç saniye önce alındığı.
+        """The best frame from the last `back_s` seconds and how many seconds ago it was taken.
 
-        "Az önce ne gösterdim" sorusunun cevabı: kullanıcı gösterdiğini
-        indirmişse şu anki kare boş. Pencere içindeki karelerden **en net**
-        olanı seçiliyor — hareket halindeki kareler bulanık, gösterilen şey
-        elde sabit dururken çekilen kare net çıkıyor. Eşitlikte yeni olan
-        kazanıyor.
+        The answer to "what did I just show": if the user lowered what they
+        showed, the current frame is empty. Of the frames in the window the
+        **sharpest** is chosen — frames in motion are blurry, the frame
+        taken while the shown thing is held still comes out sharp. On a tie
+        the newer wins.
         """
         import cv2
         import numpy as np
@@ -695,28 +704,28 @@ class Lens:
             frame = cv2.imdecode(np.frombuffer(raw, dtype=np.uint8), cv2.IMREAD_COLOR)
             if frame is None:
                 continue
-            # Netlik ölçüsü: Laplace varyansı. Küçültülmüş gri kare üstünde
-            # — tam çözünürlük aynı sırayı verip on kat yavaş.
+            # Sharpness measure: Laplacian variance. On a downscaled grey
+            # frame — full resolution gives the same order and is ten times slower.
             gray = cv2.cvtColor(cv2.resize(frame, (320, 240)), cv2.COLOR_BGR2GRAY)
             score = float(cv2.Laplacian(gray, cv2.CV_64F).var())
             if score >= best_score:
                 best_frame, best_at, best_score = frame, at, score
 
         if best_frame is None:
-            # Tampon boşsa (kamera yeni açıldı, susturulmuştu) eldeki son
-            # kare yine de bir cevap.
+            # If the buffer is empty (camera just opened, was snoozed) the
+            # last frame in hand is still an answer.
             return self.snapshot()
         return _encode(best_frame), now - best_at
 
     def arrival(self) -> bool:
-        """Uzun bir sessizlikten sonra biri geldi mi?
+        """Did someone come after a long silence?
 
-        Küçük bir çocuk gibi: odada kimse yokken kendini beklemeye alıyor,
-        bir şey kımıldayınca bakıyor. Her hareketi bildirmek gürültü olurdu
-        — bildirilen şey **gelme anı**.
+        Like a small child: when nobody is in the room it settles into
+        waiting, when something stirs it looks. Reporting every motion would
+        be noise — what is reported is the **moment of arrival**.
 
-        Bir kez bildirdikten sonra bir süre susuyor: biri odada oturup
-        kıpırdadıkça her seferinde haber vermek aynı gürültü.
+        After reporting once it stays quiet for a while: reporting every
+        time someone sits in the room and stirs is the same noise.
         """
         if self.snoozed:
             return False
@@ -731,10 +740,10 @@ class Lens:
         return True
 
     def motion(self, seconds: float = 60.0) -> dict[str, Any]:
-        """Son `seconds` içindeki hareket özeti. Modele hiç uğramadan.
+        """Motion summary of the last `seconds`. Without ever touching the model.
 
-        "Bir şey oldu mu" sorusunun cevabı burada: kaç kare bakıldı, en
-        yüksek değişim ne, hareketli an var mıydı.
+        The answer to "did something happen" is here: how many frames were
+        looked at, what the peak change was, whether there was a busy moment.
         """
         now = time.time()
         with self._lock:
@@ -744,8 +753,8 @@ class Lens:
             return {"frames": 0, "peak": 0.0, "busy": 0, "quiet": True}
 
         peak = max(m.change for m in window)
-        # Gürültüyü ayıklamak için sabit bir eşik: bunun altı kamera
-        # titremesi, üstü gerçek hareket.
+        # A fixed threshold to weed out noise: below it camera jitter, above
+        # it real motion.
         busy = sum(1 for m in window if m.change >= 0.04)
         return {
             "frames": len(window),

@@ -78,9 +78,9 @@ def test_thresholds_are_the_measured_ones() -> None:
     assert sleep.UPPER_THRESHOLD == pytest.approx(2.3374)
     assert sleep.LOWER_THRESHOLD == pytest.approx(sleep.UPPER_THRESHOLD / 3, rel=1e-3)
 
-    kaynak = (Path(__file__).resolve().parents[1]
+    source = (Path(__file__).resolve().parents[1]
               / "src" / "dornick" / "recall" / "sleep.py").read_text("utf-8")
-    assert "basinc-bozulma.md" in kaynak, "sabitin kaynağı yorumda yazmalı"
+    assert "basinc-bozulma.md" in source, "the constant's source must be in the comment"
 
 
 # -- pressure is measured ----------------------------------------------
@@ -290,15 +290,15 @@ def test_an_uninterrupted_night_finishes_and_reports(store, sessions,
     for i, node in enumerate(nodes):
         _session(sessions, f"s{i}", [node.id], clock)
 
-    olaylar: list[str] = []
+    events: list[str] = []
     sleeper = Sleeper(store, sessions, clock=clock, watermark=tmp_path / "w.json",
                       state_dir=tmp_path,
-                      events=lambda kind, _data: olaylar.append(kind))
+                      events=lambda kind, _data: events.append(kind))
     report = sleeper.run(max_cycles=3)
 
     assert report.replayed == 4
     assert report.carried == 0
-    assert "uyku.basladi" in olaylar and "uyku.bitti" in olaylar
+    assert "uyku.basladi" in events and "uyku.bitti" in events
 
 
 def test_deep_cycles_never_call_the_model(store, sessions, tmp_path,

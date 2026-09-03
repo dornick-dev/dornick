@@ -1,30 +1,32 @@
-"""Gece geçişi — günün dizilerini yeniden oynatmak.
+"""Night pass — replaying the day's sequences.
 
-Night school bugüne kadar *eğitim* yapıyordu: taban yazıcıyı kişisel korpusla
-ince ayarlıyordu. *Tekrar* yapmıyordu. Oysa beynin gece yaptığı asıl iş
-günün dizilerini yeniden oynatmak (sharp-wave ripple), ve bundan çıkan
-şeylerin hiçbiri dornick'te yoktu:
+Until now night school did *training*: it fine-tuned the base writer on the
+personal corpus. It did no *replay*. Yet the real work the brain does at
+night is replaying the day's sequences (sharp-wave ripple), and none of
+what falls out of that existed in dornick:
 
-1. Kenarların tamamı "benzer içerik" — **birlikte yaşandı** bağı yok.
-   "Geçen hafta o raporu yaparken kullandığım şey neydi" içerik aramasıyla
-   bulunamaz; o soru zamansal bir soru.
-2. `uses` sayacı ayrım yapmıyor: yanlış cevaba götüren hatıra da doğru
-   cevaba götüren de bir puan alıyor. **Sorumluluk atama** yok.
-3. Tekrar önceliksiz: tetik "25 yeni anı birikti mi". Başarısız oturum,
-   açık hedef, düzeltme turu rutin oturumla aynı muameleyi görüyor.
-4. `_weave` yazım anında donuyor; ağ yazım sırasına bağımlı, erken kayıtlar
-   zayıf bağlı kalıyor.
-5. Gündüz güçlenen hiçbir şey küçülmüyor. Kenarlar şişiyor, `_weave`
-   komşuları gürültüleniyor.
+1. Every edge was "similar content" — there was no **experienced together**
+   bond. "What was the thing I used while doing that report last week"
+   cannot be found by a content search; that question is a temporal one.
+2. The `uses` counter makes no distinction: the memory that led to the
+   wrong answer and the one that led to the right answer each get one
+   point. There is no **credit assignment**.
+3. Replay has no priority: the trigger is "have 25 new memories piled up".
+   A failed session, an open goal, a correction round get the same
+   treatment as a routine session.
+4. `_weave` freezes at write time; the graph depends on write order, early
+   records stay weakly linked.
+5. Nothing that strengthens by day ever shrinks. Edges bloat, `_weave`
+   neighbours turn to noise.
 
-Altı adım var ve **ilk beşi model gerektirmez** — saf Python + SQLite.
-Modeli olmayan bir kurulumda bile gece anlamlı iş yapar; damıtma (6. adım)
-yalnızca yerel model varsa koşar.
+There are six steps and **the first five need no model** — pure Python +
+SQLite. Even an installation without a model does meaningful work at
+night; distillation (step 6) runs only when a local model is present.
 
-Atomik birim tek bir oturumun tekrarıdır: bütçe biterse kalanlar atlanmaz,
-bir sonraki geceye **devreder**. Filigran oturum bazında tutulur, böylece
-yarıda kesilen bir gece iş kaybetmez ve tamamlanmış bir oturum ikinci kez
-pay dağıtmaz.
+The atomic unit is the replay of a single session: when the budget runs
+out the remainder is not skipped, it **carries over** to the next night.
+The watermark is kept per session, so a night cut short loses no work and
+a completed session never pays out credit a second time.
 """
 
 from __future__ import annotations
@@ -39,151 +41,157 @@ from typing import Any, Callable, Iterable
 from . import activation, switches
 from .clock import Clock, parse, wall_clock
 
-# Adım 1 — Mattar-Daw: kazanç × ihtiyaç. Başarısız ve düzeltilen oturumlar
-# en çok öğreteceklerdir; rutin bir oturumdan öğrenilecek şey azdır.
+# Step 1 — Mattar-Daw: gain × need. Failed and corrected sessions are the
+# ones that teach the most; there is little to learn from a routine session.
 GAIN = {"basarisiz": 1.0, "duzeltildi": 1.0, "acik": 0.7,
           "basarili": 0.4, "rutin": 0.1}
 
-# Rutin sayılmanın sınırı: araç hatası yok, hedef yok, düzeltme yok ve
-# bu kadar az tur.
+# The bound for counting as routine: no tool error, no goal, no correction
+# and at most this many turns.
 ROUTINE_KIND = 3
 
-# Tekrar penceresi: filigrandan beri kapanan oturumlar her zaman aday.
-# Önceki bu kadar günün oturumları da aday ama önceliği yarılanarak düşer
-# ve yalnız bütçe artarsa sıraya girer. Daha eskisi taranmaz — eskinin
-# pekişmesi tarama ile değil şema tazelemesiyle olur.
+# Replay window: sessions closed since the watermark are always candidates.
+# Sessions from the previous this-many days are candidates too, but their
+# priority halves per day and they only get a turn if the budget grows.
+# Anything older is not scanned — the old is consolidated by schema refresh,
+# not by scanning.
 LOOKBACK_DAYS = 7
 LOOKBACK_DECAY = 0.5
 
-# Adım 2 — zaman komşuluğu penceresi ve ağırlığı. Komşu 0.6, iki ötesi 0.42.
+# Step 2 — temporal adjacency window and weight. Neighbour 0.6, two away 0.42.
 WINDOW = 4
 ADJACENCY_WEIGHT = 0.6
 ADJACENCY_DECAY = 0.7
 
-# Adım 2b — şemaya bağlı komşunun aldığı tazeleme payı. Bir sıçrama; ötesi
-# Faz 1 bozunmasına bırakılıyor.
+# Step 2b — the refresh share a schema-linked neighbour receives. One jump;
+# the rest is left to Phase 1 decay.
 SCHEMA_SHARE = 0.15
 
-# Adım 3 — sorumluluk payları. Sonuca yakın olan çok alır.
-# Kalibrasyon (yaşam bench, 2026-09-03): (0.5, -0.3) / (0.7, -0.5) /
-# (0.5, -0.6) / (1.0, -0.8) tarandı. `sorumluluk_dogrulugu` yalnız sonuncuda
-# hedefi geçiyor: 0.75 → 1.00. Yol haritasının önerdiği (0.5, -0.3) çifti
-# çok zayıf — tek bir başarı/hata payı, kaydın kendi tazeliğinin altında
-# kalıyor ve sıralamayı çeviremiyor. Diğer metrikler bu aralıkta duyarsız
-# (precision 0.2758–0.2773).
+# Step 3 — credit shares. Whatever is close to the outcome takes the most.
+# Calibration (life bench, 2026-09-03): (0.5, -0.3) / (0.7, -0.5) /
+# (0.5, -0.6) / (1.0, -0.8) were scanned. `sorumluluk_dogrulugu` clears the
+# target only with the last pair: 0.75 → 1.00. The (0.5, -0.3) pair the
+# roadmap suggested is far too weak — a single success/failure share stays
+# below the record's own freshness and cannot flip the ranking. The other
+# metrics are insensitive in this range (precision 0.2758–0.2773).
 SHARE_DECAY = 0.8
 SUCCESS_SHARE = 1.0
 FAILURE_SHARE = -0.8
 
-# Adım 1 — geriye dönük yakalama (synaptic tagging and capture): yüksek
-# sürprizli bir olayın ±60 dakikasındaki sıradan kayıtlar da pekişir.
-# Zayıf iz, güçlü olayın yanında durduğu için kurtulur.
+# Step 1 — retroactive capture (synaptic tagging and capture): the ordinary
+# records within ±60 minutes of a high-surprise event get consolidated too.
+# The weak trace survives because it stood next to the strong event.
 #
-# Kalibrasyon DENENDİ ve SONUÇSUZ kaldı (yaşam bench, 2026-09-03): eşik
-# 0.35'ten 0.70'e taranınca `yakalama` metriği hiç oynamadı (-0.108 sabit).
-# Sebep ölçüldü: beş yüz düğümlük bir bellekte "sabah kahvesi içildi"nin
-# sürprizi 0.389, "ana pano yandı, saha elektriksiz kaldı"nınki 0.422.
-# Sürpriz vekili (1 − en yakın komşu skoru) bu ölçekte sıradan ile felaketi
-# ayırt edemiyor; ayıramayan bir sinyalin eşiği de ayarlanamaz. Yol
-# haritasının başlangıç değeri korundu ve bulgu rapora yazıldı — Faz 4'ün
-# kodlama gücü aynı vekile dayanıyor, aynı duvara çarpması beklenir.
+# Calibration was TRIED and stayed INCONCLUSIVE (life bench, 2026-09-03):
+# scanning the threshold from 0.35 to 0.70 did not move the `yakalama`
+# metric at all (-0.108 constant). The cause was measured: in a memory of
+# five hundred nodes the surprise of "morning coffee was drunk" is 0.389,
+# that of "main panel burned out, the site lost power" is 0.422. The
+# surprise proxy (1 − nearest-neighbour score) cannot tell the ordinary from
+# the catastrophic at this scale; the threshold of a signal that cannot
+# discriminate cannot be tuned either. The roadmap's initial value was kept
+# and the finding was written into the report — Phase 4's encoding strength
+# rests on the same proxy and is expected to hit the same wall.
 CAPTURE_THRESHOLD = 0.7
 CAPTURE_MINUTES = 60
 CAPTURE_SHARE = 0.3
 
-# Adım 5a — yeniden örgü: kaç aday çekilip kaçına bağlanılacağı.
+# Step 5a — reweaving: how many candidates are pulled and how many linked.
 WEAVE_CANDIDATES = 6
 WEAVE_LINKS = 3
 
-# Adım 5b — sinaptik homeostaz (Tononi-Cirelli): gündüz güçlenen her şey
-# gece orantılı küçülür. Dokunulmayan kenar her gece bu oranda erir;
-# %2 ile ~35 gecede yarıya, ~150 gecede tabana iner. Bu gece güçlenen
-# kenarlar küçültmeden önce büyüdüğü için net kazançlı.
-# Kalibrasyon: docs/hafiza-fazlar.md "Faz 3 kalibrasyonu".
+# Step 5b — synaptic homeostasis (Tononi-Cirelli): everything that
+# strengthens by day shrinks proportionally at night. An untouched edge
+# melts by this ratio every night; at 2% it halves in ~35 nights and reaches
+# the floor in ~150. Edges strengthened tonight grew before the shrink, so
+# they come out with a net gain.
+# Calibration: docs/hafiza-fazlar.md "Faz 3 kalibrasyonu".
 EPSILON = 0.02
 EDGE_FLOOR = 0.05
 
-# Faz 3.11 — sıcak/soğuk sınırı. Bu aktivasyonun altındaki (ve yedi günden
-# eski) kayıt imza indeksinden düşüyor: kendiliğinden gelmiyor ama birebir
-# kelimeyle hâlâ bulunuyor.
+# Phase 3.11 — the hot/cold boundary. A record below this activation (and
+# older than seven days) drops out of the signature index: it no longer
+# comes up on its own but is still found by an exact word.
 #
-# Kalibrasyon hedefi yol haritasında sayı olarak değil ORAN olarak veriliyor:
-# doksan günlük senaryoda sıcak oran %10-30 arasında kalmalı. Tarama
-# (2026-09-03): -2.0 → %2.9 · -3.0 → %4.5 · -4.0 → %6.5 · **-5.0 → %25.2** ·
-# -6.0 → %69 · -7.0 → %98.5. Banda düşen tek değer -5.0.
-# Yan etki ölçüldü ve beklenendir: soğuk kayıt önyüklemeye giremediği için
-# tuzak sessizliği 0.45 → 0.525'e çıkıyor, prime recall 0.99 → 0.75'e
-# düşüyor. İkincisi mekaniğin amacının doğrudan sonucu, kusuru değil.
+# The roadmap gives the calibration target not as a number but as a RATIO:
+# in the ninety-day scenario the hot share must stay between 10-30%. Scan
+# (2026-09-03): -2.0 → 2.9% · -3.0 → 4.5% · -4.0 → 6.5% · **-5.0 → 25.2%** ·
+# -6.0 → 69% · -7.0 → 98.5%. The only value that lands in the band is -5.0.
+# The side effect was measured and is the expected one: because a cold
+# record cannot enter the prime, trap silence rises 0.45 → 0.525 and prime
+# recall drops 0.99 → 0.75. The latter is the direct consequence of what the
+# mechanism is for, not a flaw in it.
 COLD_THRESHOLD = -5.0
 
 
 @dataclass(slots=True)
 class ReplaySession:
-    """Bir oturumun geceye taşınan özeti."""
+    """A session's summary as carried into the night."""
 
     id: str
-    dizi: list[str] = field(default_factory=list)
-    damgalar: dict[str, datetime] = field(default_factory=dict)
-    sonuc: str = ""
-    araclar: list[str] = field(default_factory=list)
-    hata_metni: str = ""
-    hedef_acik: bool = False
-    duzeltme: bool = False
-    turlar: int = 0
-    bitis: datetime | None = None
-    oncelik: float = 0.0
-    # Uyanık tekrar (recall/awake.py) bu oturumun sorumluluğunu sonuç anında
-    # dağıttıysa gece onu bir daha dağıtmaz: bir başarı iki `basari` girdisi
-    # bırakmamalı. İleri tekrar ve dikiş yine koşar — ikisi de birikimli
-    # değil, tekrarı zararsız.
-    ters_tekrar_kostu: bool = False
-    ileri_tekrar_indeksi: int = 0
+    sequence: list[str] = field(default_factory=list)
+    stamps: dict[str, datetime] = field(default_factory=dict)
+    outcome: str = ""
+    tools: list[str] = field(default_factory=list)
+    error_text: str = ""
+    goal_open: bool = False
+    correction: bool = False
+    turns: int = 0
+    end: datetime | None = None
+    priority: float = 0.0
+    # If awake replay (recall/awake.py) already assigned this session's
+    # credit at the moment of the outcome, the night does not assign it
+    # again: one success must not leave two `basari` entries. Forward replay
+    # and stitching still run — neither is cumulative, repeating them is
+    # harmless.
+    reverse_done: bool = False
+    forward_index: int = 0
 
     @property
     def disabled(self) -> bool:
-        return bool(self.sonuc)
+        return bool(self.outcome)
 
-    def kazanc_sinifi(self) -> str:
-        if self.sonuc in ("basarisiz", "duzeltildi", "acik"):
-            return self.sonuc
-        if (not self.hata_metni and not self.hedef_acik and not self.duzeltme
-                and self.turlar <= ROUTINE_KIND):
+    def gain_class(self) -> str:
+        if self.outcome in ("basarisiz", "duzeltildi", "acik"):
+            return self.outcome
+        if (not self.error_text and not self.goal_open and not self.correction
+                and self.turns <= ROUTINE_KIND):
             return "rutin"
-        return self.sonuc or "rutin"
+        return self.outcome or "rutin"
 
 
 @dataclass(slots=True)
 class NightReport:
-    """Gecenin ne yaptığı. `.dornick/gece.jsonl`'a yazılır; arayüz okur."""
+    """What the night did. Written to `.dornick/gece.jsonl`; the UI reads it."""
 
     session_count: int = 0
     replayed: int = 0
-    devreden: int = 0
+    devreden: int = 0           # carried over (read by sleep.py)
     new_edges: int = 0
-    sema_dokunusu: int = 0
-    yakalanan: int = 0
-    basari_payi: int = 0
-    hata_payi: int = 0
+    schema_touches: int = 0
+    captured: int = 0
+    success_shares: int = 0
+    failure_shares: int = 0
     lessons_written: int = 0
     procedures_written: int = 0
-    yazilan_hedef: int = 0
-    damitik: int = 0
-    isinan: int = 0
-    soguyan: int = 0
-    celiski: int = 0
+    goals_written: int = 0
+    damitik: int = 0            # distilled (read by sleep.py)
+    warmed: int = 0
+    soguyan: int = 0            # cooled down (read by test_hot_cold.py)
+    contradictions: int = 0
     rolled_back: int = 0
-    dikis: int = 0
-    orgu_kenari: int = 0
+    stitched: int = 0
+    reweave_edges: int = 0
     edges_shrunk: int = 0
     edges_removed: int = 0
     distillation: str = ""
-    sure_sn: float = 0.0
+    seconds: float = 0.0
 
-    def sozluk(self) -> dict[str, Any]:
+    def as_dict(self) -> dict[str, Any]:
         return asdict(self)
 
 
-# -- giriş noktası -----------------------------------------------------
+# -- entry point -------------------------------------------------------
 
 
 def night_pass(
@@ -199,72 +207,75 @@ def night_pass(
     state_dir: Path | None = None,
     exam: Callable[[], dict[str, Any]] | None = None,
 ) -> NightReport:
-    """Gecenin altı adımı. İlk beşi model gerektirmez.
+    """The night's six steps. The first five need no model.
 
-    `butce_sn` bittiğinde koşan birim tamamlanır, sonraki başlamaz; kalan
-    oturumlar filigranda işaretlenmeden kalır ve ertesi gece öne geçer.
+    When `budget_s` runs out the running unit is completed and the next one
+    is not started; the remaining sessions stay unmarked in the watermark
+    and go to the front of the queue the next night.
     """
-    basla = time.perf_counter()
+    started = time.perf_counter()
     clock = clock or wall_clock
-    rapor = NightReport()
+    report = NightReport()
     if not switches.ACTIVE.weave:
-        rapor.distillation = "atlandı: örgü kapalı"
-        return rapor
+        report.distillation = "atlandı: örgü kapalı"
+        return report
 
     status = _read_watermark(watermark)
-    oturumlar = prioritised_sessions(store, sessions_dir, clock=clock,
+    sessions = prioritised_sessions(store, sessions_dir, clock=clock,
                                     watermark=watermark, status=status)
-    rapor.session_count = len(oturumlar)
+    report.session_count = len(sessions)
 
-    dokunulanlar: list[str] = []
-    islenen: list[ReplaySession] = []
-    for oturum in oturumlar:
-        if islenen and time.perf_counter() - basla > budget_s:
+    touched: list[str] = []
+    processed: list[ReplaySession] = []
+    for session in sessions:
+        if processed and time.perf_counter() - started > budget_s:
             break
-        _forward_replay(store, oturum, rapor)
-        _schema_refresh(store, oturum, rapor)
-        _capture(store, oturum, rapor, clock)
-        if not oturum.ters_tekrar_kostu:
-            reverse_replay(store, oturum, rapor=rapor)
-        dokunulanlar.extend(oturum.dizi)
-        islenen.append(oturum)
-        status.setdefault("islenen", {})[oturum.id] = _stamp(clock)
-        rapor.replayed += 1
-    rapor.devreden = len(oturumlar) - len(islenen)
+        _forward_replay(store, session, report)
+        _schema_refresh(store, session, report)
+        _capture(store, session, report, clock)
+        if not session.reverse_done:
+            reverse_replay(store, session, report=report)
+        touched.extend(session.sequence)
+        processed.append(session)
+        status.setdefault("islenen", {})[session.id] = _stamp(clock)
+        report.replayed += 1
+    report.devreden = len(sessions) - len(processed)
 
-    _stitch(store, islenen, rapor)
-    _reweave(store, dict.fromkeys(dokunulanlar), rapor)
-    _downscale(store, rapor)
+    _stitch(store, processed, report)
+    _reweave(store, dict.fromkeys(touched), report)
+    _downscale(store, report)
 
-    # Adım 6 — damıtma. Tek model gerektiren adım, tek geri alınabilen adım:
-    # ilk beşi yaşananın kaydı, bu bir çıkarım. Gizlilik kapısı distil.gate'te.
+    # Step 6 — distillation. The one step that needs a model, the one step
+    # that can be rolled back: the first five are a record of what happened,
+    # this one is an inference. The privacy gate lives in distil.gate.
     from . import distil
 
-    onceki_sinav = exam() if exam is not None else None
-    distillation = distil.distil(store, dokunulanlar, model=model, clock=clock,
+    exam_before = exam() if exam is not None else None
+    distillation = distil.distil(store, touched, model=model, clock=clock,
                             local_model=local_model, cloud_ok=cloud_consent,
                             state_dir=state_dir)
-    rapor.damitik = distillation.written
-    rapor.celiski = distillation.contradictions
+    report.damitik = distillation.written
+    report.contradictions = distillation.contradictions
     if distillation.node_ids and exam is not None:
-        # Sınav kapısı: geçiş önyükleme kalitesini düşürdüyse damıtık
-        # düğümler mezar taşına gider. Tekrar ve sorumluluk geri alınmaz.
-        rapor.rolled_back = distil.exam(store, distillation, onceki_sinav, exam())
-    rapor.distillation = distillation.status
+        # Exam gate: if the pass lowered prime quality, the distilled nodes
+        # go to the tombstone. Replay and credit are not rolled back.
+        report.rolled_back = distil.exam(store, distillation, exam_before, exam())
+    report.distillation = distillation.status
 
-    # Adım 7 — sıcak/soğuk. Gece sonunda, her şey yerine oturduktan sonra:
-    # aktif küme sınırlı tutulmazsa imza taraması ve RAM toplam hafızayla
-    # doğrusal büyür (ölçüldü: 200k'da p95 33 ms, bütçe 20).
-    rapor.isinan, rapor.soguyan = store.update_heat(COLD_THRESHOLD)
+    # Step 7 — hot/cold. At the end of the night, after everything has
+    # settled: unless the active set is kept bounded, the signature scan and
+    # RAM grow linearly with total memory (measured: p95 33 ms at 200k,
+    # budget 20).
+    report.warmed, report.soguyan = store.update_heat(COLD_THRESHOLD)
 
     status["son_kosu"] = _stamp(clock)
     _write_watermark(watermark, status)
-    rapor.sure_sn = round(time.perf_counter() - basla, 3)
-    _gunluge_yaz(sessions_dir, rapor, clock)
-    return rapor
+    report.seconds = round(time.perf_counter() - started, 3)
+    _append_journal(sessions_dir, report, clock)
+    return report
 
 
-# -- Adım 1: öncelik ---------------------------------------------------
+# -- Step 1: priority --------------------------------------------------
 
 
 def prioritised_sessions(
@@ -275,408 +286,418 @@ def prioritised_sessions(
     watermark: Path | None = None,
     status: dict[str, Any] | None = None,
 ) -> list[ReplaySession]:
-    """Tekrar edilecek oturumlar, kazanç × ihtiyaç sırasıyla.
+    """The sessions to replay, in gain × need order.
 
-    Kazanç sonuçtan gelir (başarısız oturum en çok öğretir), ihtiyaç
-    dokunulan düğüm sayısından: çok hatıraya değen oturum gelecekte de
-    değecektir.
+    Gain comes from the outcome (a failed session teaches the most), need
+    from the number of nodes touched: a session that touched many memories
+    will touch them in the future too.
     """
     status = status if status is not None else _read_watermark(watermark)
-    islenen = set((status.get("islenen") or {}).keys())
-    simdi = clock()
+    processed = set((status.get("islenen") or {}).keys())
+    now = clock()
     out: list[ReplaySession] = []
-    for yol in sorted(sessions_dir.glob("*.jsonl")):
-        if yol.stem in islenen:
+    for path in sorted(sessions_dir.glob("*.jsonl")):
+        if path.stem in processed:
             continue
-        oturum = _read_session(yol)
-        if oturum is None or not oturum.disabled or not oturum.dizi:
+        session = _read_session(path)
+        if session is None or not session.disabled or not session.sequence:
             continue
-        yas = _gun_farki(simdi, oturum.bitis)
-        if yas > LOOKBACK_DAYS:
-            continue        # eskinin pekişmesi tarama ile değil, şemayla
-        surpriz_ort = _surpriz_ortalamasi(store, oturum.dizi)
-        oturum.oncelik = (
-            GAIN.get(oturum.kazanc_sinifi(), 0.1)
-            * (1 + 0.1 * len(set(oturum.dizi)))
-            * (1 + surpriz_ort)
-            * (LOOKBACK_DECAY ** max(0, yas))
+        age = _days_between(now, session.end)
+        if age > LOOKBACK_DAYS:
+            continue        # the old is consolidated by schema, not by scanning
+        mean_surprise = _mean_surprise(store, session.sequence)
+        session.priority = (
+            GAIN.get(session.gain_class(), 0.1)
+            * (1 + 0.1 * len(set(session.sequence)))
+            * (1 + mean_surprise)
+            * (LOOKBACK_DECAY ** max(0, age))
         )
-        out.append(oturum)
-    out.sort(key=lambda o: (-o.oncelik, o.id))
+        out.append(session)
+    out.sort(key=lambda o: (-o.priority, o.id))
     return out
 
 
-def _gun_farki(simdi: datetime, an: datetime | None) -> int:
-    if an is None:
+def _days_between(now: datetime, moment: datetime | None) -> int:
+    if moment is None:
         return 0
-    return max(0, (simdi - an).days)
+    return max(0, (now - moment).days)
 
 
-def surprise(store: Any, body: str, *, haric: str = "") -> float:
-    """Bu gövde ne kadar yeni? 0 = bilinen, 1 = hiç görülmemiş.
+def surprise(store: Any, body: str, *, exclude: str = "") -> float:
+    """How new is this body? 0 = known, 1 = never seen.
 
-    `haric`: kaydın kendisi. Yazıldıktan sonra en yakın komşu kendisi olur
-    ve her kayıt "hiç sürprizli değil" görünürdü — sessizce yanlış bir sıfır.
+    `exclude`: the record itself. Once written, its nearest neighbour is
+    itself and every record would look "not surprising at all" — a silently
+    wrong zero.
 
-    Faz 4 aynı hesabı YAZIM ANINDA yapıp kodlama gücü olarak saklıyor
-    (`aktivasyon.kodlama_gucu`). Buradaki hesap o anın değil ŞU ANIN
-    sürprizi: gece, bugünün belleğine göre neyin sıradan olduğuna bakıyor.
-    İkisi bilerek ayrı.
+    Phase 4 does the same computation AT WRITE TIME and stores it as
+    encoding strength (`activation.encoding_strength`). The computation here
+    is not that moment's surprise but THIS moment's: the night looks at what
+    is ordinary relative to today's memory. The two are deliberately
+    separate.
     """
     try:
-        komsular = store._seed(body[:400], 4)          # noqa: SLF001
+        neighbours = store._seed(body[:400], 4)          # noqa: SLF001
     except Exception:
         return 0.0
-    for node_id, skor, _kind in komsular:
-        if node_id != haric:
-            return round(1.0 - skor, 4)
+    for node_id, score, _kind in neighbours:
+        if node_id != exclude:
+            return round(1.0 - score, 4)
     return 1.0
 
 
-def _surpriz_ortalamasi(store: Any, dizi: Iterable[str]) -> float:
-    degerler = []
-    for node_id in dict.fromkeys(dizi):
+def _mean_surprise(store: Any, sequence: Iterable[str]) -> float:
+    values = []
+    for node_id in dict.fromkeys(sequence):
         node = store.peek(node_id)
         if node is not None:
-            degerler.append(surprise(store, f"{node.title} {node.body}",
-                                    haric=node_id))
-    return sum(degerler) / len(degerler) if degerler else 0.0
+            values.append(surprise(store, f"{node.title} {node.body}",
+                                   exclude=node_id))
+    return sum(values) / len(values) if values else 0.0
 
 
-# -- Adım 2: ileri tekrar ----------------------------------------------
+# -- Step 2: forward replay --------------------------------------------
 
 
-def _forward_replay(store: Any, oturum: ReplaySession, rapor: NightReport, *,
-                  bastan: int = 0) -> None:
-    """Oturum dizisindeki komşuları "birlikte kullanıldı" ile bağlar.
+def _forward_replay(store: Any, session: ReplaySession, report: NightReport, *,
+                    start: int = 0) -> None:
+    """Links the neighbours in the session sequence with "used together".
 
-    Bu kenarlar `recall()` yayılmasında içerik kenarlarıyla aynı yoldan
-    yürür ama **prime'a girmez** (prime hop-0 ile sınırlı). Yani zaman
-    komşuluğu açık aramayı zenginleştirir, otomatik enjeksiyonu kirletmez.
+    These edges travel the same road as content edges in `recall()`
+    spreading but **do not enter the prime** (the prime is limited to hop
+    0). So temporal adjacency enriches explicit search without polluting
+    automatic injection.
     """
-    dizi = list(dict.fromkeys(oturum.dizi))
-    for i, a in enumerate(dizi):
-        for j in range(i + 1, min(i + WINDOW, len(dizi))):
-            if j < bastan:
-                continue        # bu çift daha önce yazıldı (artımlı koşum)
-            agirlik = round(ADJACENCY_WEIGHT * ADJACENCY_DECAY ** (j - i - 1), 3)
-            if store.connect(a, dizi[j], weight=agirlik,
-                            reason=f"birlikte kullanıldı ({oturum.id})",
+    sequence = list(dict.fromkeys(session.sequence))
+    for i, a in enumerate(sequence):
+        for j in range(i + 1, min(i + WINDOW, len(sequence))):
+            if j < start:
+                continue        # this pair was written before (incremental run)
+            weight = round(ADJACENCY_WEIGHT * ADJACENCY_DECAY ** (j - i - 1), 3)
+            if store.connect(a, sequence[j], weight=weight,
+                            reason=f"birlikte kullanıldı ({session.id})",
                             birikimli=True):
-                rapor.new_edges += 1
+                report.new_edges += 1
 
 
-# -- Adım 2b: şema tazelemesi ------------------------------------------
+# -- Step 2b: schema refresh -------------------------------------------
 
 
-def _schema_refresh(store: Any, oturum: ReplaySession, rapor: NightReport) -> None:
-    """Bugünün anısına bağlı eski anı kendiliğinden tazelenir.
+def _schema_refresh(store: Any, session: ReplaySession, report: NightReport) -> None:
+    """An old memory linked to today's memory refreshes on its own.
 
-    Beynin "eskiyi tarayıp pekiştirme" yapmamasının, örtüşen örüntüyü
-    yeniden oynatmasının karşılığı (Tse 2007: şemaya uyan bilgi hızlı
-    konsolide olur). Bağlı olmayan tazelenmez — ve tazelenmemelidir.
+    The counterpart of the brain not "scanning the old to consolidate it"
+    but replaying the overlapping pattern (Tse 2007: information that fits
+    a schema consolidates fast). What is not linked is not refreshed — and
+    must not be.
     """
-    dokunulan = set(oturum.dizi)
-    for node_id in dict.fromkeys(oturum.dizi):
-        for komsu, agirlik in store.neighbours(node_id):
-            if komsu.id in dokunulan:
+    touched = set(session.sequence)
+    for node_id in dict.fromkeys(session.sequence):
+        for neighbour, weight in store.neighbours(node_id):
+            if neighbour.id in touched:
                 continue
-            store.add_use(komsu.id, w=SCHEMA_SHARE * agirlik,
+            store.add_use(neighbour.id, w=SCHEMA_SHARE * weight,
                                 etiket=activation.SCHEMA)
-            rapor.sema_dokunusu += 1
+            report.schema_touches += 1
 
 
-# -- Adım 1b: geriye dönük yakalama ------------------------------------
+# -- Step 1b: retroactive capture --------------------------------------
 
 
-def _capture(store: Any, oturum: ReplaySession, rapor: NightReport, clock: Clock) -> None:
-    """Sürprizli olayın yanındaki sıradan kayıt da pekişir."""
-    surprizli: list[datetime] = []
-    for node_id in dict.fromkeys(oturum.dizi):
+def _capture(store: Any, session: ReplaySession, report: NightReport, clock: Clock) -> None:
+    """The ordinary record next to a surprising event consolidates too."""
+    surprising: list[datetime] = []
+    for node_id in dict.fromkeys(session.sequence):
         node = store.peek(node_id)
-        an = oturum.damgalar.get(node_id)
-        if node is None or an is None:
+        moment = session.stamps.get(node_id)
+        if node is None or moment is None:
             continue
         if surprise(store, f"{node.title} {node.body}",
-                   haric=node_id) >= CAPTURE_THRESHOLD:
-            surprizli.append(an)
-    if not surprizli:
+                    exclude=node_id) >= CAPTURE_THRESHOLD:
+            surprising.append(moment)
+    if not surprising:
         return
-    pencere = timedelta(minutes=CAPTURE_MINUTES)
-    for node_id in dict.fromkeys(oturum.dizi):
-        an = oturum.damgalar.get(node_id)
-        if an is None:
+    window = timedelta(minutes=CAPTURE_MINUTES)
+    for node_id in dict.fromkeys(session.sequence):
+        moment = session.stamps.get(node_id)
+        if moment is None:
             continue
         node = store.peek(node_id)
         if node is None or surprise(store, f"{node.title} {node.body}",
-                                   haric=node_id) >= CAPTURE_THRESHOLD:
+                                    exclude=node_id) >= CAPTURE_THRESHOLD:
             continue
-        if any(abs(an - buyuk) <= pencere for buyuk in surprizli):
+        if any(abs(moment - big) <= window for big in surprising):
             store.add_use(node_id, w=CAPTURE_SHARE,
                                 etiket=activation.CAPTURED)
-            rapor.yakalanan += 1
+            report.captured += 1
 
 
-# -- Adım 3: ters tekrar -----------------------------------------------
+# -- Step 3: reverse replay --------------------------------------------
 
 
-def reverse_replay(store: Any, oturum: ReplaySession, *,
-                rapor: NightReport | None = None) -> NightReport:
-    """Sonuçtan geriye yürüyerek sorumluluğu dağıtır.
+def reverse_replay(store: Any, session: ReplaySession, *,
+                   report: NightReport | None = None) -> NightReport:
+    """Walks backwards from the outcome and assigns credit.
 
-    `uses` sayacının yapmadığı ayrım: yanlış cevaba götüren hatıra da doğru
-    cevaba götüren de bir puan alıyordu. Burada başarıya götüren artı,
-    hataya götüren eksi ağırlıklı bir kullanım alıyor — ve hataya götürenin
-    yanına bir `lesson` yazılıyor. Kayıt unutulmuyor, **geride kalıyor**.
+    The distinction the `uses` counter never made: the memory that led to
+    the wrong answer and the one that led to the right answer each got one
+    point. Here what led to success gets a positively weighted use and what
+    led to failure a negatively weighted one — and a `lesson` is written
+    next to what led to failure. The record is not forgotten, it **falls
+    behind**.
 
-    Uyanık tekrar (Faz 3.12) aynı fonksiyonu sonuç anında çağıracak; gece
-    yalnız o koşumu kaçırmış oturumları topluyor.
+    Awake replay (Phase 3.12) will call the same function at the moment of
+    the outcome; the night only collects the sessions that missed that run.
     """
-    rapor = rapor if rapor is not None else NightReport()
-    dizi = list(dict.fromkeys(oturum.dizi))
-    if not dizi:
-        return rapor
+    report = report if report is not None else NightReport()
+    sequence = list(dict.fromkeys(session.sequence))
+    if not sequence:
+        return report
 
-    if oturum.sonuc == "basarili":
-        for k, node_id in enumerate(reversed(dizi)):
+    if session.outcome == "basarili":
+        for k, node_id in enumerate(reversed(sequence)):
             store.add_use(node_id, w=SUCCESS_SHARE * SHARE_DECAY ** k,
                                 etiket=activation.SUCCESS)
-            rapor.basari_payi += 1
-        if len(dizi) >= 3 and len(oturum.araclar) >= 2:
-            baslik = "yordam: " + " → ".join(oturum.araclar[:6])
-            if not _reinforce(store, "procedure", baslik, activation.SUCCESS):
+            report.success_shares += 1
+        if len(sequence) >= 3 and len(session.tools) >= 2:
+            title = "yordam: " + " → ".join(session.tools[:6])
+            if not _reinforce(store, "procedure", title, activation.SUCCESS):
                 store.remember("Bu yordam işe yaradı: "
-                               + " → ".join(oturum.araclar[:6]),
-                               kind="procedure", title=baslik,
+                               + " → ".join(session.tools[:6]),
+                               kind="procedure", title=title,
                                tags=["gece", "yordam"],
-                               links=dizi[-3:], session=oturum.id)
-                rapor.procedures_written += 1
+                               links=sequence[-3:], session=session.id)
+                report.procedures_written += 1
 
-    elif oturum.sonuc in ("basarisiz", "duzeltildi"):
-        for k, node_id in enumerate(reversed(dizi)):
+    elif session.outcome in ("basarisiz", "duzeltildi"):
+        for k, node_id in enumerate(reversed(sequence)):
             store.add_use(node_id, w=FAILURE_SHARE * SHARE_DECAY ** k,
                                 etiket=activation.FAILURE)
-            rapor.hata_payi += 1
-        kaynak = dizi[-1]
-        if oturum.hata_metni:
-            # Aynı ders ikinci kez ÖĞRENİLMEZ, pekişir. Gece her başarısız
-            # oturum için yeni bir ders yazsaydı, beş kez olan bir hata beş
-            # ayrı ders olur ve hepsi ruhun sekiz yuvası için yarışırdı.
-            # Benzerlik kaydın KİMLİĞİYLE değil hata METNİYLE ölçülüyor:
-            # kimlik her oturumda başka, hata aynı.
-            baslik = f"hata: {oturum.hata_metni}"[:140]
-            mevcut = store.find_by_title("lesson", baslik)
-            if mevcut is not None:
-                store.add_use(mevcut.id, w=0.5, etiket=activation.FAILURE)
-                store.connect(mevcut.id, kaynak, weight=0.6,
+            report.failure_shares += 1
+        source = sequence[-1]
+        if session.error_text:
+            # The same lesson is not LEARNED a second time, it is reinforced.
+            # If the night wrote a new lesson for every failed session, an
+            # error that happened five times would become five separate
+            # lessons, all competing for the soul's eight slots. Similarity
+            # is measured by the error TEXT, not by the record's IDENTITY:
+            # the identity differs per session, the error is the same.
+            title = f"hata: {session.error_text}"[:140]
+            existing = store.find_by_title("lesson", title)
+            if existing is not None:
+                store.add_use(existing.id, w=0.5, etiket=activation.FAILURE)
+                store.connect(existing.id, source, weight=0.6,
                              reason="bu hatıra hataya götürdü")
             else:
-                # Kaydın kimliği gövdeye YAZILMIYOR: zaten kenarda
-                # duruyor ("bu hatıra hataya götürdü") ve `mind_recall`
-                # kenar gerekçelerini gösteriyor. Ham bir kimlik modele
-                # bilgi vermiyor, yalnız ruhun her oturumdaki bedelini
-                # artırıyordu.
+                # The record's identity is NOT written into the body: it
+                # already sits on the edge ("bu hatıra hataya götürdü") and
+                # `mind_recall` shows edge reasons. A raw identity gave the
+                # model no information; it only raised the soul's cost in
+                # every session.
                 store.remember(
-                    oturum.hata_metni, kind="lesson", title=baslik,
-                    tags=["gece", "hata"], links=[kaynak], session=oturum.id)
-                rapor.lessons_written += 1
+                    session.error_text, kind="lesson", title=title,
+                    tags=["gece", "hata"], links=[source], session=session.id)
+                report.lessons_written += 1
 
-    elif oturum.sonuc == "acik":
-        # Açık hedefe dokunulmuyor — Faz 1 bozunması işini yapsın. Ama
-        # "kaldığın yer" bir sonraki oturumun bulabileceği bir düğüm olsun.
+    elif session.outcome == "acik":
+        # An open goal is left alone — let Phase 1 decay do its work. But
+        # "where you left off" should be a node the next session can find.
         store.remember(
-            f"Yarım kalan iş ({oturum.id}): son dokunulan kayıtlar {', '.join(dizi[-2:])}",
-            kind="goal", tags=["acik"], links=dizi[-2:], session=oturum.id)
-        rapor.yazilan_hedef += 1
-    return rapor
+            f"Yarım kalan iş ({session.id}): son dokunulan kayıtlar {', '.join(sequence[-2:])}",
+            kind="goal", tags=["acik"], links=sequence[-2:], session=session.id)
+        report.goals_written += 1
+    return report
 
 
-def _reinforce(store: Any, kind: str, baslik: str, etiket: str) -> bool:
-    """Aynı şey zaten yazılmışsa onu güçlendir, yenisini yazma.
+def _reinforce(store: Any, kind: str, title: str, label: str) -> bool:
+    """If the same thing is already written, strengthen it; do not write anew.
 
-    Yol haritasının yordamlar için koyduğu kural ("aynı başlıklı varsa
-    supersede değil, kullanım ekle") asıl derslerde gerekiyordu: hafızayı
-    dolduran şey, aynı hatanın her tekrarında yazılan yeni bir ders.
+    The rule the roadmap set for procedures ("if one with the same title
+    exists, add a use instead of superseding") was needed for lessons most
+    of all: what fills the memory is a new lesson written on every repeat of
+    the same error.
     """
-    mevcut = store.find_by_title(kind, baslik)
-    if mevcut is None:
+    existing = store.find_by_title(kind, title)
+    if existing is None:
         return False
-    store.add_use(mevcut.id, w=0.5, etiket=etiket)
+    store.add_use(existing.id, w=0.5, etiket=label)
     return True
 
 
-# -- Adım 4: dikiş -----------------------------------------------------
+# -- Step 4: stitching -------------------------------------------------
 
 
-def _stitch(store: Any, oturumlar: list[ReplaySession], rapor: NightReport) -> None:
-    """Hiç yaşanmamış diziler: pazartesi A→B, perşembe B→C ⇒ A→C.
+def _stitch(store: Any, sessions: list[ReplaySession], report: NightReport) -> None:
+    """Sequences never experienced: Monday A→B, Thursday B→C ⇒ A→C.
 
-    Ağırlık düşük (0.3): yaşanmamış bir bağ, yaşanmışın yarısı kadar
-    güvenilir. Sonradan gerçekten birlikte kullanılırsa Adım 2 ağırlığı
-    artırır; kullanılmazsa küçültme onu düşürür.
+    The weight is low (0.3): a bond never experienced is half as
+    trustworthy as one that was. If they are later genuinely used together
+    Step 2 raises the weight; if not, downscaling lowers it.
     """
-    # Zaman sırasına göre: dikiş yönlü bir iştir — önceki oturumdaki "o'dan
-    # önce gelen" ile sonraki oturumdaki "o'dan sonra gelen" birleştirilir.
-    # Öncelik sırası (Adım 1) burada yanlış yön verirdi.
-    sirali = sorted(oturumlar, key=lambda o: (o.bitis is None, o.bitis, o.id))
-    for i, birinci in enumerate(sirali):
-        for ikinci in sirali[i + 1:]:
-            d1 = list(dict.fromkeys(birinci.dizi))
-            d2 = list(dict.fromkeys(ikinci.dizi))
-            for ortak in set(d1) & set(d2):
-                a = _onceki(d1, ortak)
-                c = _sonraki(d2, ortak)
+    # In time order: stitching is a directed job — "what came before it" in
+    # the earlier session is joined with "what came after it" in the later
+    # one. Priority order (Step 1) would give the wrong direction here.
+    ordered = sorted(sessions, key=lambda o: (o.end is None, o.end, o.id))
+    for i, first in enumerate(ordered):
+        for second in ordered[i + 1:]:
+            s1 = list(dict.fromkeys(first.sequence))
+            s2 = list(dict.fromkeys(second.sequence))
+            for shared in set(s1) & set(s2):
+                a = _before(s1, shared)
+                c = _after(s2, shared)
                 if not a or not c or a == c:
                     continue
                 if store.connect(a, c, weight=0.3,
-                                reason=f"{ortak} üzerinden dikildi "
-                                       f"({birinci.id}→{ikinci.id})",
+                                reason=f"{shared} üzerinden dikildi "
+                                       f"({first.id}→{second.id})",
                                 yalniz_yeni=True):
-                    rapor.dikis += 1
+                    report.stitched += 1
 
 
-def _onceki(dizi: list[str], node_id: str) -> str:
-    i = dizi.index(node_id)
-    return dizi[i - 1] if i > 0 else ""
+def _before(sequence: list[str], node_id: str) -> str:
+    i = sequence.index(node_id)
+    return sequence[i - 1] if i > 0 else ""
 
 
-def _sonraki(dizi: list[str], node_id: str) -> str:
-    i = dizi.index(node_id)
-    return dizi[i + 1] if i + 1 < len(dizi) else ""
+def _after(sequence: list[str], node_id: str) -> str:
+    i = sequence.index(node_id)
+    return sequence[i + 1] if i + 1 < len(sequence) else ""
 
 
-# -- Adım 5: yeniden örgü ve küçültme ----------------------------------
+# -- Step 5: reweaving and downscaling ---------------------------------
 
 
-def _reweave(store: Any, dokunulanlar: Iterable[str],
-                  rapor: NightReport) -> None:
-    """`_weave` yazım anında donuyordu; ağ yazım sırasına bağımlıydı.
+def _reweave(store: Any, touched: Iterable[str],
+             report: NightReport) -> None:
+    """`_weave` used to freeze at write time; the graph depended on write order.
 
-    Artımlı: yalnız bu gece dokunulan düğümler yeniden örülüyor. Tam ağ
-    50k düğümde 250 saniye ederdi; dokunulan küme birkaç saniye.
+    Incremental: only the nodes touched tonight are rewoven. The full graph
+    would cost 250 seconds at 50k nodes; the touched set takes a few
+    seconds.
     """
-    for node_id in dokunulanlar:
+    for node_id in touched:
         node = store.peek(node_id)
         if node is None:
             continue
-        adaylar = store._seed(f"{node.title} {node.body}"[:400], WEAVE_CANDIDATES)  # noqa: SLF001
-        sira = 0
-        for aday, _skor, _kind in adaylar:
-            if aday == node_id:
+        candidates = store._seed(f"{node.title} {node.body}"[:400], WEAVE_CANDIDATES)  # noqa: SLF001
+        rank = 0
+        for candidate, _score, _kind in candidates:
+            if candidate == node_id:
                 continue
-            if store.connect(node_id, aday, weight=round(0.8 - sira * 0.15, 3),
+            if store.connect(node_id, candidate, weight=round(0.8 - rank * 0.15, 3),
                             reason="benzer icerik (yeniden örgü)"):
-                rapor.orgu_kenari += 1
-            sira += 1
-            if sira >= WEAVE_LINKS:
+                report.reweave_edges += 1
+            rank += 1
+            if rank >= WEAVE_LINKS:
                 break
 
 
-def _downscale(store: Any, rapor: NightReport) -> None:
-    """Sinaptik homeostaz: bütün kenarlar orantılı küçülür, gerekçe ayrımı yok.
+def _downscale(store: Any, report: NightReport) -> None:
+    """Synaptic homeostasis: all edges shrink proportionally, no reason is exempt.
 
-    Bu gece güçlenenler küçültmeden önce büyüdüğü için net kazançlı;
-    dokunulmayanlar her gece erir. Tabanın altına inen kenar siliniyor —
-    kenar silinebilir, düğüm silinemez: kenar bilgi değil yol.
+    Those strengthened tonight grew before the shrink, so they come out
+    with a net gain; the untouched melt every night. An edge that falls
+    below the floor is deleted — an edge may be deleted, a node may not:
+    an edge is a road, not knowledge.
     """
-    rapor.edges_shrunk, rapor.edges_removed = store.shrink_edges(
+    report.edges_shrunk, report.edges_removed = store.shrink_edges(
         EPSILON, EDGE_FLOOR)
 
 
-# -- oturum günlüğü ----------------------------------------------------
+# -- session log -------------------------------------------------------
 
 
-# Günlükte bir düğüme dokunulduğunu söyleyen olaylar. `prime` ile enjekte
-# edilen kayıtlar da diziye giriyor: model onları GÖRDÜ, kullandı sayılır.
+# The log events that say a node was touched. Records injected via `prime`
+# enter the sequence too: the model SAW them, that counts as use.
 TOUCH = ("mind_open", "mind_write")
 
 
-def _read_session(yol: Path) -> ReplaySession | None:
-    oturum = ReplaySession(id=yol.stem)
+def _read_session(path: Path) -> ReplaySession | None:
+    session = ReplaySession(id=path.stem)
     try:
-        satirlar = yol.read_text(encoding="utf-8").splitlines()
+        lines = path.read_text(encoding="utf-8").splitlines()
     except OSError:
         return None
-    for satir in satirlar:
-        if not satir.strip():
+    for line in lines:
+        if not line.strip():
             continue
         try:
-            olay = json.loads(satir)
+            event = json.loads(line)
         except ValueError:
             continue
-        if olay.get("kind") != "meta":
+        if event.get("kind") != "meta":
             continue
-        tur = olay.get("content")
-        meta = olay.get("meta") or {}
-        an = parse(olay.get("ts"))
+        name = event.get("content")
+        meta = event.get("meta") or {}
+        moment = parse(event.get("ts"))
 
-        if tur in TOUCH:
+        if name in TOUCH:
             if node_id := meta.get("memory_id"):
-                oturum.dizi.append(node_id)
-                if an is not None:
-                    oturum.damgalar.setdefault(node_id, an)
-            oturum.turlar += 1
+                session.sequence.append(node_id)
+                if moment is not None:
+                    session.stamps.setdefault(node_id, moment)
+            session.turns += 1
             if meta.get("kind") == "lesson" or meta.get("supersedes"):
-                oturum.duzeltme = True
-        elif tur == "prime":
+                session.correction = True
+        elif name == "prime":
             for node_id in meta.get("ids") or []:
-                oturum.dizi.append(node_id)
-                if an is not None:
-                    oturum.damgalar.setdefault(node_id, an)
-            oturum.turlar += 1
-        elif tur == "tool_end":
-            oturum.araclar.append(str(meta.get("tool") or ""))
+                session.sequence.append(node_id)
+                if moment is not None:
+                    session.stamps.setdefault(node_id, moment)
+            session.turns += 1
+        elif name == "tool_end":
+            session.tools.append(str(meta.get("tool") or ""))
             if meta.get("error"):
-                oturum.hata_metni = str(meta.get("ozet") or meta.get("tool") or "hata")
-        elif tur == "goal_push":
-            oturum.hedef_acik = True
-        elif tur == "goal_status":
-            oturum.hedef_acik = False
-        elif tur == "ters_tekrar_kostu":
-            oturum.ters_tekrar_kostu = True
-        elif tur == "ileri_tekrar_kostu":
-            oturum.ileri_tekrar_indeksi = max(oturum.ileri_tekrar_indeksi,
-                                              int(meta.get("n") or 0))
-        elif tur == "sonuc":
-            oturum.sonuc = str(meta.get("sonuc") or "")
-            oturum.bitis = an
-    if oturum.bitis is None:
-        oturum.bitis = parse(json.loads(satirlar[-1]).get("ts")) if satirlar else None
-    return oturum
+                session.error_text = str(meta.get("ozet") or meta.get("tool") or "hata")
+        elif name == "goal_push":
+            session.goal_open = True
+        elif name == "goal_status":
+            session.goal_open = False
+        elif name == "ters_tekrar_kostu":
+            session.reverse_done = True
+        elif name == "ileri_tekrar_kostu":
+            session.forward_index = max(session.forward_index,
+                                        int(meta.get("n") or 0))
+        elif name == "sonuc":
+            session.outcome = str(meta.get("sonuc") or "")
+            session.end = moment
+    if session.end is None:
+        session.end = parse(json.loads(lines[-1]).get("ts")) if lines else None
+    return session
 
 
-# -- filigran ve rapor -------------------------------------------------
+# -- watermark and report ----------------------------------------------
 
 
 def _stamp(clock: Clock) -> str:
     return clock().isoformat(timespec="milliseconds")
 
 
-def _read_watermark(yol: Path | None) -> dict[str, Any]:
-    if yol is None or not Path(yol).exists():
+def _read_watermark(path: Path | None) -> dict[str, Any]:
+    if path is None or not Path(path).exists():
         return {"islenen": {}}
     try:
-        status = json.loads(Path(yol).read_text(encoding="utf-8"))
+        status = json.loads(Path(path).read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return {"islenen": {}}
     status.setdefault("islenen", {})
     return status
 
 
-def _write_watermark(yol: Path | None, status: dict[str, Any]) -> None:
-    if yol is None:
+def _write_watermark(path: Path | None, status: dict[str, Any]) -> None:
+    if path is None:
         return
-    Path(yol).parent.mkdir(parents=True, exist_ok=True)
-    Path(yol).write_text(json.dumps(status, ensure_ascii=False), encoding="utf-8")
+    Path(path).parent.mkdir(parents=True, exist_ok=True)
+    Path(path).write_text(json.dumps(status, ensure_ascii=False), encoding="utf-8")
 
 
-def _gunluge_yaz(sessions_dir: Path, rapor: NightReport, clock: Clock) -> None:
-    """Gecenin özeti diske: arayüzdeki "hafıza sağlığı" paneli bunu okuyor."""
+def _append_journal(sessions_dir: Path, report: NightReport, clock: Clock) -> None:
+    """The night's summary to disk: the "memory health" panel in the UI reads it."""
     try:
-        yol = Path(sessions_dir).parent / "gece.jsonl"
-        yol.parent.mkdir(parents=True, exist_ok=True)
-        with yol.open("a", encoding="utf-8") as fh:
-            fh.write(json.dumps({"ts": _stamp(clock), **rapor.sozluk()},
+        path = Path(sessions_dir).parent / "gece.jsonl"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps({"ts": _stamp(clock), **report.as_dict()},
                                 ensure_ascii=False) + "\n")
     except OSError:
-        pass        # rapor yazılamadıysa gece yine de yapıldı
+        pass        # if the report could not be written, the night still happened

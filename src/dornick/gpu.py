@@ -1,11 +1,12 @@
-"""Makine GPU belleği — yerel LLM bağlamını sığdırmak için.
+"""Machine GPU memory — to fit the local LLM context.
 
-Harici bağımlılık yok: `nvidia-smi` varsa okunuyor, yoksa boş liste.
-CUDA/Whisper ile karışmasın diye `listen` içinde değil burada.
+No external dependency: read from `nvidia-smi` when present, otherwise an
+empty list. Lives here rather than inside `listen` so it does not get
+tangled with CUDA/Whisper.
 
-`cuda_libs_on_path`: pip `nvidia-*` paketlerinin DLL klasörlerini
-Windows arama yoluna ekler. Whisper (ctranslate2) ve kamera analizi
-(onnxruntime) aynı DLL'leri arıyor.
+`cuda_libs_on_path`: adds the DLL folders of the pip `nvidia-*` packages
+to the Windows search path. Whisper (ctranslate2) and the camera analysis
+(onnxruntime) look for the same DLLs.
 """
 
 from __future__ import annotations
@@ -32,16 +33,16 @@ _gpu_rows: list[GpuMemory] | None = None
 
 
 def _cache_clear() -> None:
-    """Testlerin sahte nvidia-smi görmesi için."""
+    """So tests can see a fake nvidia-smi."""
     global _gpu_at, _gpu_rows
     _gpu_at, _gpu_rows = 0.0, None
 
 
 def nvidia_gpus() -> list[GpuMemory]:
-    """`nvidia-smi` CSV çıktısı. Sürücü yoksa / komut yoksa [].
+    """`nvidia-smi` CSV output. No driver / no command → [].
 
-    Kamera güvertesi bu listeyi sık soruyor; her istekte nvidia-smi
-    (4 sn timeout) HTTP iş parçacığını kilitliyordu. 20 sn önbellek.
+    The camera deck asks for this list often; running nvidia-smi (4 s
+    timeout) on every request was locking the HTTP thread. 20 s cache.
     """
     global _gpu_at, _gpu_rows
     now = time.monotonic()
@@ -53,14 +54,14 @@ def nvidia_gpus() -> list[GpuMemory]:
 
 
 def _read_nvidia_gpus() -> list[GpuMemory]:
-    """`nvidia-smi` CSV çıktısı. Sürücü yoksa / komut yoksa []."""
+    """`nvidia-smi` CSV output. No driver / no command → []."""
     if not shutil.which("nvidia-smi"):
         return []
     try:
         from . import environment
 
-        # CREATE_NO_WINDOW: ayarlar kaydı / yerel opt VRAM ölçümü her
-        # nvidia-smi'de ekranda siyah cmd parlatıyordu.
+        # CREATE_NO_WINDOW: saving settings / measuring local-opt VRAM was
+        # flashing a black cmd window on every nvidia-smi call.
         raw = subprocess.check_output(
             [
                 "nvidia-smi",
@@ -97,31 +98,31 @@ def _read_nvidia_gpus() -> list[GpuMemory]:
 
 
 def primary_free_mb() -> int | None:
-    """İlk GPU'nun boş VRAM'i (MB). Yoksa None."""
+    """Free VRAM of the first GPU (MB). None when there is none."""
     gpus = nvidia_gpus()
     return gpus[0].free_mb if gpus else None
 
 
 def cuda_libs_on_path() -> bool:
-    """pip `nvidia-*` DLL klasörlerini Windows arama yoluna ekler.
+    """Adds the pip `nvidia-*` DLL folders to the Windows search path.
 
-    Windows'ta ctranslate2 / onnxruntime CUDA kütüphanelerini DLL
-    yolundan arıyor ve pip ile kurulan `nvidia-*` paketleri onları
-    site-packages içine koyuyor — yani varsayılan olarak bulunamıyorlar.
-    Klasörler burada tanıtılıyor; yoksa "cublas64_12.dll bulunamadı"
-    diye ilk kullanımda patlıyor.
+    On Windows ctranslate2 / onnxruntime look for the CUDA libraries on the
+    DLL path, and the pip-installed `nvidia-*` packages put them inside
+    site-packages — so by default they cannot be found. The folders are
+    registered here; otherwise the first use blows up with
+    "cublas64_12.dll not found".
 
-    İki yol birden gerekiyor. `add_dll_directory` yalnızca arama
-    bayrağı kullanan yüklemelerde işe yarıyor; ctranslate2 düz
-    `LoadLibrary` çağırdığı için klasörün PATH'te de olması şart.
+    Both routes are needed at once. `add_dll_directory` only works for loads
+    that use the search flag; ctranslate2 calls plain `LoadLibrary`, so the
+    folder must also be on PATH.
     """
-    if not hasattr(os, "add_dll_directory"):  # Windows dışı: sistem yolu yeter
+    if not hasattr(os, "add_dll_directory"):  # non-Windows: the system path is enough
         return True
 
     try:
         import nvidia
     except ImportError:
-        # Kart var ama kütüphaneler yok. Sistemde CUDA kurulu olabilir.
+        # Card present but libraries missing. CUDA may be installed system-wide.
         return True
 
     found: list[str] = []

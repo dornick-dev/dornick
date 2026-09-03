@@ -44,7 +44,7 @@ BANNED_ADJECTIVES = (
     "careful", "curious", "good", "smart", "creative", "patient",
 )
 
-_SAYI = re.compile(r"\d")
+_DIGIT = re.compile(r"\d")
 
 
 class SelfWriteRefused(PermissionError):
@@ -54,41 +54,41 @@ class SelfWriteRefused(PermissionError):
 # -- world -------------------------------------------------------------
 
 
-def world_record(body: str, *, kaynak: str, clock: Clock | None = None) -> dict[str, Any]:
+def world_record(body: str, *, source: str, clock: Clock | None = None) -> dict[str, Any]:
     """A world fact needs a source. Without one it is a rumour, not an
     observation, and rumours do not get to age gracefully."""
-    if not kaynak or not kaynak.strip():
+    if not source or not source.strip():
         raise ValueError("`world` kaydı kaynaksız yazılamaz (yol, URL ya da komut)")
     clock = clock or wall_clock
-    return {"body": body, "kaynak": kaynak.strip(),
+    return {"body": body, "kaynak": source.strip(),
             "dogrulama": clock().isoformat(timespec="milliseconds")}
 
 
-def confidence(dogrulama: str | None, *, clock: Clock | None = None) -> float:
+def confidence(verified_at: str | None, *, clock: Clock | None = None) -> float:
     """0.5 ** (days / 14). The world moves; a fact about it decays."""
     clock = clock or wall_clock
-    an = parse(dogrulama)
-    if an is None:
+    moment = parse(verified_at)
+    if moment is None:
         return 0.0
-    gun = max(0.0, (clock() - an).total_seconds() / 86400.0)
-    return round(0.5 ** (gun / CONFIDENCE_HALF_LIFE_DAYS), 4)
+    days = max(0.0, (clock() - moment).total_seconds() / 86400.0)
+    return round(0.5 ** (days / CONFIDENCE_HALF_LIFE_DAYS), 4)
 
 
-def is_stale(dogrulama: str | None, *, clock: Clock | None = None) -> bool:
+def is_stale(verified_at: str | None, *, clock: Clock | None = None) -> bool:
     """Older than 30 days unverified: still searchable, no longer injected."""
     clock = clock or wall_clock
-    an = parse(dogrulama)
-    return an is None or (clock() - an).days >= STALE_DAYS
+    moment = parse(verified_at)
+    return moment is None or (clock() - moment).days >= STALE_DAYS
 
 
-def world_label(dogrulama: str | None, *, clock: Clock | None = None) -> str:
+def world_label(verified_at: str | None, *, clock: Clock | None = None) -> str:
     """What `mind_recall` shows next to it, so the model can decide to check."""
     clock = clock or wall_clock
-    an = parse(dogrulama)
-    if an is None:
+    moment = parse(verified_at)
+    if moment is None:
         return " (doğrulanmadı)"
-    gun = (clock() - an).days
-    return f" ({gun} gündür doğrulanmadı)" if gun >= 1 else ""
+    days = (clock() - moment).days
+    return f" ({days} gündür doğrulanmadı)" if days >= 1 else ""
 
 
 # -- self --------------------------------------------------------------
@@ -98,29 +98,30 @@ def world_label(dogrulama: str | None, *, clock: Clock | None = None) -> str:
 class SelfRecord:
     """A competence record. Countable only — no adjectives, ever."""
 
-    alan: str
-    arac: str = ""
-    basari: int = 0
-    hata: int = 0
-    ort_deneme: float = 0.0
-    tekrar_eden_hata: str = ""
+    area: str
+    tool: str = ""
+    successes: int = 0
+    failures: int = 0
+    mean_attempts: float = 0.0
+    recurring_error: str = ""
     model_id: str = ""
 
     def line(self) -> str:
-        toplam = self.basari + self.hata
-        # "başarılı" bilerek kullanılmıyor: kendi kuralımızın yasakladığı
-        # sıfat, kendi çıktımızda da geçemez (test bunu zorluyor).
-        parca = f"{self.alan}: {toplam} işin {self.basari} tanesi geçti"
-        if self.arac:
-            parca += f" ({self.arac})"
-        if self.tekrar_eden_hata:
-            parca += f"; tekrar eden hata: {self.tekrar_eden_hata}"
-        return parca
+        total = self.successes + self.failures
+        # "başarılı" is deliberately not used: the adjective our own rule bans
+        # may not pass in our own output either (the test enforces this).
+        piece = f"{self.area}: {total} işin {self.successes} tanesi geçti"
+        if self.tool:
+            piece += f" ({self.tool})"
+        if self.recurring_error:
+            piece += f"; tekrar eden hata: {self.recurring_error}"
+        return piece
 
     def as_dict(self) -> dict[str, Any]:
-        return {"alan": self.alan, "arac": self.arac, "basari": self.basari,
-                "hata": self.hata, "ort_deneme": self.ort_deneme,
-                "tekrar_eden_hata": self.tekrar_eden_hata,
+        # Record form — the keys are the Turkish meta names, like `world_record`'s.
+        return {"alan": self.area, "arac": self.tool, "basari": self.successes,
+                "hata": self.failures, "ort_deneme": self.mean_attempts,
+                "tekrar_eden_hata": self.recurring_error,
                 "model_id": self.model_id}
 
 
@@ -131,13 +132,13 @@ def check_self_line(line: str) -> str:
     model change. "In 41 tasks I wrote tests first 33 times" can be all
     three.
     """
-    dusuk = line.casefold()
-    for sifat in BANNED_ADJECTIVES:
-        if re.search(rf"\b{re.escape(sifat)}\b", dusuk):
+    lowered = line.casefold()
+    for adjective in BANNED_ADJECTIVES:
+        if re.search(rf"\b{re.escape(adjective)}\b", lowered):
             raise ValueError(
-                f"`self` satırında değerlendirici sıfat: '{sifat}'. "
+                f"`self` satırında değerlendirici sıfat: '{adjective}'. "
                 "Yalnız sayılabilir ifade yazılır.")
-    if not _SAYI.search(line):
+    if not _DIGIT.search(line):
         raise ValueError("`self` satırı sayı içermeli: sicil bir iddia değil, "
                          "bir sayımdır.")
     return line

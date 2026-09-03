@@ -1,14 +1,15 @@
-"""Ajan döngüsü.
+"""The agent loop.
 
-Döngünün kendisi utanç verecek kadar basittir — modeli çağır, söylediğini yap,
-sonucu geri ver, tekrarla. Değerin tamamı döngünün *etrafındaki* şeylerde:
-bağlam yönetimi, izin kapısı, kesme güvenliği, kalıcılık.
+The loop itself is embarrassingly simple — call the model, do what it says,
+hand the result back, repeat. All of the value lives in the things *around*
+the loop: context management, the permission gate, interrupt safety,
+persistence.
 
-Kesme güvenliği burada iki noktada zorlanır:
-  * akış ortasında kesilirse yarım asistan mesajı atılır (yarım tool_use
-    input'u bir sonraki isteği bozar),
-  * araç yürütme ortasında kesilirse karşılıksız kalan her tool_use'a iptal
-    sonucu enjekte edilir (eksik tool_result = 400).
+Interrupt safety is enforced at two points here:
+  * if interrupted mid-stream the half-written assistant message is dropped
+    (a half tool_use input corrupts the next request),
+  * if interrupted mid tool execution, every unanswered tool_use gets a
+    cancellation result injected (a missing tool_result = 400).
 """
 
 from __future__ import annotations
@@ -32,87 +33,93 @@ from .session import PendingToolUse, Session, cancelled_result
 from .tools import ToolContext, ToolRegistry, build_registry, execute
 from .tools.base import JobFailed, ToolSpec
 
-# Uzun koşu kontrol noktası aralığı. Eskiden SERT tavandı: 60. turda döngü
-# durur, saatlik bir iş yarıda kalırdı. Artık her 60 turda bir ajan kısa bir
-# ilerleme notu yazmaya çağrılıyor ve iş SÜRÜYOR; gerçek fren kullanıcı
-# (durdurma ilk andan işliyor) + aşağıdaki mutlak sigorta.
+# Long-run checkpoint interval. It used to be a HARD ceiling: at turn 60 the
+# loop stopped and an hour-long job was left half done. Now every 60 turns
+# the agent is asked to write a short progress note and the work CONTINUES;
+# the real brake is the user (stop works from the first moment) + the
+# absolute fuse below.
 MAX_TURNS = 60
 
-# Koşu başına mutlak tur sigortası. Kaçak döngüye karşı son emniyet.
-# 600 tur token yakıyordu (Market Lens ~80+ adım); 240 ≈ 4× soft MAX_TURNS.
+# Absolute per-run turn fuse. Last line of defence against a runaway loop.
+# 600 turns burned tokens (Market Lens ~80+ steps); 240 ≈ 4× soft MAX_TURNS.
 HARD_TURN_LIMIT = 240
 
-# Tavana carpan bir yanit kac kez surdurulsun. Sinirsiz birakmak, uzun
-# uzun yazip hicbir zaman bitirmeyen bir modelde donguye doner. Sayaç,
-# araç çağıran (yani ilerleyen) her turda sıfırlanır: uzun bir koşuda
-# arada bir tavana çarpmak işi kapanış turuna sürüklememeli.
+# How many times a reply that hits the ceiling gets continued. Leaving it
+# unbounded turns into a loop with a model that writes and writes and never
+# finishes. The counter resets on every turn that calls a tool (i.e. makes
+# progress): occasionally hitting the ceiling during a long run must not
+# drag the job into the closing turn.
 MAX_CONTINUATIONS = 4
 
-# Model hatasında (bağlantı, 5xx, zaman aşımı) yeniden deneme aralıkları.
-# Üstel geri çekilme: tek bir sağlayıcı hıçkırığı saatlik bir işi
-# öldürmemeli. Testler kısaltmak için modül değişkenini yamalıyor.
+# Retry intervals on a model error (connection, 5xx, timeout). Exponential
+# backoff: a single provider hiccup must not kill an hour-long job. Tests
+# patch the module variable to shorten it.
 RETRY_DELAYS = (15.0, 30.0, 60.0, 120.0, 300.0)
 
-# Denemeler tükenince ANA ajan işi PARK eder: ölmez, seyrek yoklamayla
-# bekler. Alt ajan / zamanlı görev PARK ETMEZ — sonsuz "Model bekleniyor
-# (5/5)" kilidi yerine hata ile biter (chat çalışırken görev takılı kalmasın).
+# When the retries run out the MAIN agent PARKS the job: it does not die, it
+# waits with sparse probing. A subagent / scheduled task does NOT park — it
+# ends with an error instead of an endless "Model bekleniyor (5/5)" lock
+# (so a task does not stay stuck while chat is working).
 PARK_PROBE_S = 180.0
 
-# Park kaydı: uygulama kapansa bile yarım işin izi diskte durur; açılışta
-# görülürse koşu otomatik sürdürülür.
+# Park record: even if the app closes, the trace of the half-done job stays
+# on disk; if seen at startup the run is resumed automatically.
 PARK_FILE = "park.json"
 
-# Alt ajan yuvalanma sınırı. 1 demek: ana ajan yardımcı çıkarabilir,
-# yardımcı çıkaramaz. Sınırsız bırakmak tek bir isteği ağaç gibi açar ve
-# ne kadar iş yapıldığını kimse bilemez.
+# Subagent nesting limit. 1 means: the main agent can spawn a helper, the
+# helper cannot. Leaving it unbounded fans one request out like a tree and
+# nobody can tell how much work was done.
 MAX_DEPTH = 1
 
-# Yardımcı defterinin boyu. Bitmiş kayıtlar sınırsız birikmesin diye en
-# eski bitmişler düşürülür; koşan bir yardımcı asla düşürülmez. Oturumlar
-# diskte durmaya devam ediyor — defterden düşmek veri kaybı değil.
+# Size of the helper ledger. So finished records do not pile up without
+# bound, the oldest finished ones are dropped; a running helper is never
+# dropped. Sessions stay on disk — dropping from the ledger is not data loss.
 MAX_CHILDREN = 8
 
-# Bildirim notundaki sonucun tavanı: yardımcının cevabı ana bağlama girer,
-# sınırsız girerse bağlamı bölme amacı boşa çıkar.
+# Cap on the result inside the notification note: the helper's answer enters
+# the main context, and if it enters unbounded the whole point of splitting
+# the context is lost.
 CHILD_RESULT_CLIP = 2000
 
-# Her kullanici mesajindan once zihinden onune konacak hatira sayisi.
-# Fazlası bağlam israfı: ilgisiz hatira modeli konudan uzaklastiriyor.
+# Number of memories placed in front of the model before each user message.
+# More is context waste: an irrelevant memory pulls the model off topic.
 RECALL_PRIME_LIMIT = 5
 
-# Dar pencerede aynı sayı bağlamın önemli bir kısmını yiyor.
+# In a narrow window the same count eats a significant part of the context.
 LEAN_PRIME_LIMIT = 2
 
-# Anlık encode için asgari uzunluk. "evet", "tamam", "ok" gibi turlar bir
-# konuya atıf taşımıyor; belleğe yazmak yalnızca gürültü. Eşik + _worth_recalling
-# birlikte selamı ve tek kelimelik onayları eliyor.
+# Minimum length for instant encoding. Turns like "evet", "tamam", "ok" carry
+# no reference to a topic; writing them to memory is only noise. The
+# threshold + _worth_recalling together filter out greetings and one-word
+# acknowledgements.
 ENCODE_MIN_CHARS = 25
 
-# Kendiliğinden hatırlananlar için asgari güç. Kalibre birleşimden sonra
-# skor SIRA değil BÜYÜKLÜK: küçük bir hafızada tek gerçek eşleşme ~0.24
-# alabiliyor (bm25 gücü korpusla büyüyor), kalabalık hafızada ~0.9'a
-# doyuyor. Eski 0.3 tabanı eski sıra-ölçeğine göreydi ve genç hafızada
-# prime'ı sessizce kapatıyordu. Alaka süzgeci artık eşik değil: doğrudan
-# eşleşme şartı + harf zemini (_grounded) taşıyor; taban yalnızca gürültü
-# tabanını kesiyor.
+# Minimum strength for spontaneously recalled items. After the calibrated
+# fusion the score is a MAGNITUDE, not a RANK: in a small memory the single
+# real match can get ~0.24 (bm25 strength grows with the corpus), in a
+# crowded memory it saturates at ~0.9. The old 0.3 floor was for the old
+# rank scale and silently switched priming off in a young memory. The
+# relevance filter is no longer the threshold: the direct-match requirement
+# + the letter grounding (_grounded) carry it; the floor only cuts the noise
+# floor.
 RECALL_PRIME_FLOOR = 0.12
 
-# Önyükleme sorgusundan atılan sayı biçimleri: IP adresi, port, register
-# adresi, uzun ölçüm değerleri.
+# Number formats stripped from the priming query: IP address, port, register
+# address, long measurement values.
 #
-# Sayılar imza katmanında birbirine benziyor ve alakasız kayıtları
-# çekiyorlar. Ölçüldü: "5.11.239.227 ... 5004 portunda ... 404195
-# adresinde depo seviye" sorgusu üç BTC fiyat kaydını getiriyordu (BTC
-# 3.715.633 TL). Sayılar çıkarılınca üçü de listeden tümden düşüyor.
+# Numbers look alike at the signature layer and pull in unrelated records.
+# Measured: the query "5.11.239.227 ... 5004 portunda ... 404195 adresinde
+# depo seviye" brought up three BTC price records (BTC 3.715.633 TL). With
+# the numbers removed all three drop off the list entirely.
 #
-# Yalnızca **kendiliğinden** önyüklemede uygulanıyor. Modelin kendi
-# `mind_recall` çağrısında sayı gerçekten aranan şey olabiliyor
-# ("404195 hangi register?") ve orada dokunulmuyor.
+# Applied only to **spontaneous** priming. In the model's own `mind_recall`
+# call the number may be exactly what is being searched for ("404195 hangi
+# register?") and is left untouched there.
 _NUMERIC = re.compile(r"\b[\d][\d.,:/-]*\b")
 
-# Selam ve hâl hatır. Bunlar bir konuya atıf değil; zihni açmaya değmez.
-# Liste kısa tutuluyor: uzun bir yasak listesi bakımı zor ve asıl işi
-# uzunluk ölçütü yapıyor.
+# Greetings and small talk. These do not refer to a topic; not worth opening
+# the mind for. The list is kept short: a long ban list is hard to maintain
+# and the length criterion does the real work.
 SMALL_TALK = frozenset(
     {
         "selam", "merhaba", "naber", "nabersin", "nasilsin", "nasılsın",
@@ -130,25 +137,25 @@ RECALL_PRIME_HEADER = (
     "yazmadi, sana hatirlatildi."
 )
 
-# Surdurme durtusu. Kullanici kanalindan gidiyor cunku kesilen turdan
-# sonra sondaki mesaj asistanin kendisi ve system notu bir user mesajini
-# takip etmek zorunda. Arayuzde gizleniyor: kullanicinin yazmadigi bir
-# mesaj sohbette kullanici mesaji gibi gorunmemeli.
+# Continuation nudge. It goes through the user channel because after the
+# cut-off turn the last message is the assistant's own and a system note has
+# to follow a user message. Hidden in the UI: a message the user did not
+# write must not look like a user message in the chat.
 CONTINUE_NOTE = (
     "Önceki yanıtın uzunluk sınırında kesildi. Kaldığın yerden devam et. "
     "Yazdıklarını baştan tekrarlama, girişi yeniden yapma, kod bloğunu "
     "yeniden açma; tam olarak kestiğin karakterden sonrasını yaz."
 )
 
-# Sürdürme hakkı bittiğinde verilen son tur.
+# The final turn given when the continuation allowance runs out.
 #
-# Önceki hal burada duruyor ve kullanıcıya "isteği daha küçük parçalara
-# bölmek gerekebilir" diyordu. Ama ajan iş yapmıştı: araçları çağırmış,
-# değerleri okumuş, yalnızca bitirememişti. Kullanıcının eline hiçbir şey
-# geçmiyordu — hem yapılan iş hem de sorusu kayboluyordu.
+# The previous version stopped here and told the user "the request may need
+# to be split into smaller pieces". But the agent had done work: it had
+# called tools, read values, it just had not finished. The user got nothing
+# — both the work done and their question were lost.
 #
-# Bu tur araçsız veriliyor: tekrar araç çağırmasına izin vermek, kilitlenen
-# döngünün bir turunu daha çalıştırmak demek.
+# This turn is given without tools: letting it call tools again means
+# running one more turn of the loop that locked up.
 CLOSING_NOTE = (
     "Sürdürme hakkın bitti. Şimdi elindekiyle bitir: yeni araç çağırma, "
     "yeni plan yapma, baştan anlatma. Birkaç cümlede şunu yaz — ne buldun, "
@@ -156,8 +163,8 @@ CLOSING_NOTE = (
     "kesin gibi yazma; eksikse eksik olduğunu söyle."
 )
 
-# Kamera karesi metinsiz gonderildiginde eklenen yonerge. Bakmasi gerekeni
-# saymak, tek cumlelik gecistirmeyi engelliyor.
+# Instruction attached when a camera frame is sent without text. Listing
+# what it should look at prevents the one-sentence brush-off.
 LOOK_NOTE = (
     "Kameradan bir kare. Gerçekten bak ve gördüğünü anlat: ortam, kişi, "
     "elinde ya da önünde ne var, yüz ifadesi nasıl duruyor, genel hâli ne "
@@ -166,128 +173,134 @@ LOOK_NOTE = (
     "ya da karanlıksa onu söyle."
 )
 
-# Ajan kendisi baktığında (kamera karesi ya da ekran görüntüsü) görüntünün
-# yanına konan not. "Kameranın gördüğü" diye yazmıyor: aynı yoldan artık
-# `screen` görüntüsü de geliyor ve yanlış adlandırmak modeli şaşırtıyordu.
+# Note placed next to the image when the agent looked by itself (camera
+# frame or screenshot). It does not say "what the camera saw": a `screen`
+# image now arrives through the same path and misnaming it confused the
+# model.
 SEEN_NOTE = (
     "Yukarıdaki görüntü senin kendi bakışın — kameradan bir kare ya da "
     "ekran görüntüsü. Kullanıcı göndermedi, sen baktın. Ne gördüğünü "
     "söyle ve işine o gördüğünle devam et; göremediğin bir şeyi uydurma."
 )
 
-# Yalnizca akil yurutup duran tura verilen durtu.
+# Nudge given to a turn that only reasoned and stopped.
 ACT_NOTE = (
     "Planını yazdın ama uygulamadın. Şimdi yap: gereken aracı çağır ya da "
     "cevabı doğrudan kullanıcıya yaz. Planı tekrar anlatma."
 )
 
-# Model gerçek araç çağrısı yerine çağrı XML'ini DÜZ METİN yazdı. Bu bir
-# cevap değil, başarısız bir araç denemesi: kullanıcıya gösterilmiyor
-# (arayüz çizmiyor) ve model tek satırlık bir notla düzeltiliyor. Tur
-# devam ediyor — burada durmak, kullanıcıyı sessizce yarım bırakırdı.
-SAHTE_CAGRI_NOTU = (
+# The model wrote the call XML as PLAIN TEXT instead of a real tool call.
+# This is not an answer, it is a failed tool attempt: it is not shown to the
+# user (the UI does not draw it) and the model is corrected with a one-line
+# note. The turn continues — stopping here would silently leave the user
+# with half an answer.
+FAKE_CALL_NOTE = (
     "[Harness notu] Az önce bir araç çağrısını DÜZ METİN olarak yazdın "
     "(<function_calls>… gibi). O metin çalıştırılmadı ve kullanıcıya "
     "gösterilmedi. Araçları yalnızca gerçek araç çağrısı kanalıyla "
     "çağırabilirsin: aynı isteği araç çağrısı olarak yap."
 )
 
-# Aynı turda tekrarladı: not sertleşiyor. Yumuşak not işe yaramadıysa
-# sebebi çoğu zaman modelin önceki hatayı "araç bozuk" diye okuması.
-SAHTE_CAGRI_SERT_NOTU = (
+# Repeated within the same turn: the note hardens. When the soft note did
+# not work the reason is usually that the model read the previous failure
+# as "the tool is broken".
+FAKE_CALL_HARD_NOTE = (
     "[Harness notu] Araç çağrısını YİNE metin olarak yazdın. Yazdığın XML "
     "hiçbir şey çalıştırmıyor. Araçlar çalışıyor; sorun çağrı biçiminde. "
     "Ya aracı gerçek araç çağrısı olarak çağır ya da araç kullanmadan "
     "kullanıcıya doğrudan cevap yaz. Üçüncü bir seçenek yok."
 )
 
-# Sahte çağrı düzeltme denemesinin mutlak sigortası. Not sertleştikçe
-# düzelmeyen model (çoğu zaman araç çağıramayan ücretsiz bir uç) turu
-# sonsuza kadar meşgul etmesin: bu sayıdan sonra tur kendi akışına
-# bırakılıyor ve kullanıcıya durum bildiriliyor — model değiştirebilsin.
+# Absolute fuse on the fake-call correction attempts. A model that does not
+# recover as the note hardens (usually a free endpoint that cannot call
+# tools) must not keep the turn busy forever: after this count the turn is
+# left to its own flow and the user is told — so they can switch models.
 SAHTE_CAGRI_TAVANI = 5
 
-# Asistan metninde araç çağrısı XML'i. Arayüzdeki savunmayla (app.js
-# SAHTE_CAGRI_KALIBI) aynı kalıp — biri kaçarsa diğeri tutuyor.
-SAHTE_CAGRI_DESENI = re.compile(
+# Tool-call XML inside assistant text. Same pattern as the UI-side defence
+# (app.js SAHTE_CAGRI_KALIBI) — if one misses, the other catches it.
+FAKE_CALL_PATTERN = re.compile(
     r"<\s*/?\s*(function_calls|invoke\b|parameter\b|antml:)", re.IGNORECASE)
 
 
 def fake_tool_call(text: str) -> bool:
-    """Metin, araç çağrısı XML'i taşıyor mu?
+    """Does the text carry tool-call XML?
 
-    Model araç kanalını kullanamadığını sandığında (ör. ham bir istisna
-    mesajını "araç bozuk" diye okuduğunda) çağrıyı düz metin olarak
-    yazıyor. Kullanıcı ekranında ham XML olarak göründüğü kanıtlandı.
+    When the model believes it cannot use the tool channel (e.g. it read a
+    raw exception message as "the tool is broken") it writes the call as
+    plain text. Proven to show up as raw XML on the user's screen.
     """
-    return bool(SAHTE_CAGRI_DESENI.search(text or ""))
+    return bool(FAKE_CALL_PATTERN.search(text or ""))
 
 
-# -- zihin yazma refleksi ----------------------------------------------
+# -- mind-writing reflex --------------------------------------------------
 #
-# Ölçülmüş regresyon: son altı oturumda `mind_memory` çağrısı SIFIR — 91
-# araç çağrısı yapılan turda bile. Otomatik yol (episode encode) akmaya
-# devam ediyordu ama model-güdümlü kalıcı yazma tamamen durmuştu; iki gün
-# boyunca tek bir tercih/ders/olgu kaydedilmedi.
+# Measured regression: ZERO `mind_memory` calls in the last six sessions —
+# even in a turn with 91 tool calls. The automatic path (episode encode)
+# kept flowing but model-driven persistent writing had stopped entirely;
+# for two days not a single preference/lesson/fact was recorded.
 #
-# Kök asimetri: HATIRLAMA bir refleks (her kullanıcı mesajından önce
-# `_prime_recall` kendiliğinden koşuyor), YAZMA ise yalnızca bir öğüt.
-# Zayıf ya da orta bir model o öğüdü hiç seçmiyor. Simetri kuruluyor:
-# hatırlama nasıl sistem tarafından tetikleniyorsa, yazmaya GEÇİŞ de
-# tetikleniyor — kararı yine model veriyor.
+# The root asymmetry: RECALL is a reflex (`_prime_recall` runs by itself
+# before every user message), WRITING is only advice. A weak or mid-tier
+# model never picks that advice. Symmetry is restored: just as recall is
+# triggered by the system, the TRANSITION to writing is triggered too — the
+# decision is still the model's.
 #
-# Sezgi bilerek UCUZ ve DÜRÜST: anahtar kelime düzeyinde, model çağrısı
-# yok. Yanlış pozitifin zararı yok çünkü not "değmezse yok say" diyor.
-KALICI_SINYALLER = (
-    # Kalıcı kural / tercih bildirimi
+# The heuristic is deliberately CHEAP and HONEST: keyword level, no model
+# call. A false positive does no harm because the note says "ignore if not
+# worth it".
+PERSISTENT_SIGNALS = (
+    # Persistent rule / preference statement
     r"\bbundan sonra\b", r"\bbundan böyle\b", r"\bher zaman\b", r"\bhep\b",
     r"\basla\b", r"\bhiçbir zaman\b", r"\bşunu yapma\b", r"\byapma artık\b",
     r"\btercih ediyorum\b", r"\bsevmiyorum\b", r"\bistemiyorum\b",
     r"\bşöyle olsun\b", r"\bböyle olsun\b", r"\bkuralımız\b",
     r"\bunutma\b", r"\baklında tut\b", r"\bnot al\b",
-    # Düzeltme: modelin yanlışını gösteren cümleler
+    # Correction: sentences pointing out the model's mistake
     r"\byanlış\b", r"\böyle değil\b", r"\bdüzelt\b", r"\bhayır,",
-    # Kullanıcıya ait bir olgu bildirimi
+    # A fact about the user
     r"\bbenim\b", r"\bbizim\b", r"\badım\b", r"\bçalıştığım\b",
     r"\bkullanıyorum\b", r"\bprojem\b", r"\bişim\b",
-    # İngilizce karşılıklar: kullanıcı iki dilde de yazıyor
+    # English counterparts: the user writes in both languages
     r"\bfrom now on\b", r"\balways\b", r"\bnever\b", r"\bdon't\b",
     r"\bi prefer\b", r"\bremember that\b", r"\bmy name is\b",
     r"\bactually,", r"\bthat's wrong\b",
 )
 
-_KALICI = re.compile("|".join(KALICI_SINYALLER), re.IGNORECASE)
+_PERSISTENT = re.compile("|".join(PERSISTENT_SIGNALS), re.IGNORECASE)
 
 
 def persistent_root(text: str) -> bool:
-    """Bu mesajda kalıcı olabilecek bir şey geçti mi?
+    """Did something that might be persistent come up in this message?
 
-    Kesinlik iddiası yok — bir koku. Kararı model veriyor; buradaki tek iş
-    konuyu modelin önüne getirmek.
+    No claim of certainty — a scent. The model decides; the only job here is
+    to put the topic in front of the model.
     """
-    return bool(_KALICI.search(text or ""))
+    return bool(_PERSISTENT.search(text or ""))
 
 
-# Kokunun karşılığı: tek satır, iç kanaldan. Sohbete DÜŞMEZ (internal).
-# Emir değil davet: yanlış pozitifte model yok sayıp geçiyor.
-ZIHIN_DURTUSU = (
+# The counterpart of the scent: one line, via the internal channel. Does NOT
+# land in the chat (internal). An invitation, not an order: on a false
+# positive the model ignores it and moves on.
+MIND_NUDGE = (
     "[Zihin] Bu turda kalıcı olabilecek bir şey geçti: \"{alinti}\" "
     "Kaydetmeye değerse `mind_memory` ile yaz — oturum kapanınca bağlam "
     "gider, zihin kalır. Değmezse bu notu yok say."
 )
 
-# Dürtüdeki alıntının uzunluğu: konuyu hatırlatmaya yetecek kadar.
-DURTU_ALINTI = 160
+# Length of the quote in the nudge: enough to bring the topic back to mind.
+NUDGE_QUOTE_CHARS = 160
 
 
-# Arka planda biten yardımcının sonucu tur başında ana ajanın önüne bu
-# notla konuyor. Kanal harness'ın: kullanıcı yazmadı, model bunu bilmeli.
+# The result of a helper that finished in the background is placed in front
+# of the main agent at the start of the turn with this note. The channel is
+# the harness's: the user did not write it, and the model must know that.
 CHILD_DONE_NOTE = "[Yardımcı bitti · {title} (id={id})] Sonucu: {result}"
 CHILD_FAIL_NOTE = "[Yardımcı hata verdi · {title} (id={id})] {result}"
 
-# Ana ajan boştayken bir yardımcı bittiğinde açılan sürdürme turunun
-# girdisi. Kullanıcı mesajı DEĞİL: continuation kanalından gidiyor,
-# arayüzde görünmüyor.
+# Input of the resume turn opened when a helper finishes while the main
+# agent is idle. NOT a user message: it goes through the continuation
+# channel and is not shown in the UI.
 CHILDREN_RESUME_NOTE = (
     "Arka plandaki yardımcı(lar) bitti: {titles}. "
     "Tam rapor Orkestra / Görevler panelinde duruyor; kullanıcı tıklayınca "
@@ -297,7 +310,8 @@ CHILDREN_RESUME_NOTE = (
     "yeni iş başlatma."
 )
 
-# Zamanlanmış görev yardımcısına verilen zarf: çıktı rapor, sohbet değil.
+# Envelope given to the scheduled-task helper: the output is a report, not
+# chat.
 SCHEDULE_CHILD_WRAP = (
     "[Zamanlanmış görev · {title}]\n{prompt}\n\n"
     "Bu bir zamanlanmış iş. Sonucu sohbet cevabı gibi değil, kendi başına "
@@ -305,28 +319,32 @@ SCHEDULE_CHILD_WRAP = (
     "Rapor Orkestra panelinden açılacak; ana sohbete yapıştırılmayacak."
 )
 
-# Tur ortasında kullanıcıdan gelen mesajın zarfı. Köprü (desktop) gelen
-# kutusuna bu zarfla koyuyor; buradan tanımlı çünkü testler de kullanıyor.
+# Envelope of a user message that arrives mid-turn. The bridge (desktop)
+# puts it into the inbox with this envelope; defined here because the tests
+# use it too.
 BARGE_NOTE = (
     "[Kullanıcı bu arada yazdı] {text} — koşan işi sürdürürken bunu da "
     "ele al; öncelik gerekiyorsa yön değiştir."
 )
 
-# `task_say`: ana ajandan koşan yardımcıya giden ara mesajın zarfı.
+# `task_say`: envelope of the interim message from the main agent to a
+# running helper.
 SAY_NOTE = (
     "[Ana ajandan ara mesaj] {message} — işini sürdürürken bunu da hesaba "
     "kat; öncelik gerekiyorsa yön değiştir."
 )
 
-# Arka plan İŞİ (uzun komut/derleme/test koşusu) bittiğinde düşen notlar.
-# Yardımcı (model koşan alt ajan) notlarından ayrı: bu bir süreç çıktısı.
+# Notes dropped when a background JOB (long command/build/test run) ends.
+# Separate from helper (model-running subagent) notes: this is a process
+# output.
 JOB_DONE_NOTE = "[Arka plan işi bitti · {title} (id={id})] Çıktısı: {result}"
 JOB_FAIL_NOTE = "[Arka plan işi hata verdi · {title} (id={id})] {result}"
 
-# Açılışta bulunan yetim yardımcılar (geçen oturumda uygulamayla birlikte
-# ölen arka plan alt ajanları) modele bu notla tanıtılıyor: kullanıcı
-# "sürdür" derse `task_say` bitmiş/diskteki oturumu zaten diriltebiliyor.
-YETIM_NOTU = (
+# Orphan helpers found at startup (background subagents that died together
+# with the app in the previous session) are introduced to the model with
+# this note: if the user says "continue", `task_say` can already revive the
+# finished/on-disk session.
+ORPHAN_NOTE = (
     "[Harness notu] Geçen oturumdan {n} yardımcı yarım kaldı: {liste}. "
     "Uygulama kapanınca arka plan yardımcıları durur; oturumları diskte "
     "duruyor. Kullanıcı sürdürmek isterse `task_say` (id + yönerge) ile "
@@ -334,43 +352,45 @@ YETIM_NOTU = (
     "kendiliğinden başlatma."
 )
 
-# Yetim yardımcının defterdeki sonucu — panel ve `task_status` bunu gösteriyor.
-YETIM_SONUC = (
+# The orphan helper's result in the ledger — the panel and `task_status`
+# show this.
+ORPHAN_RESULT = (
     "Uygulama kapanınca yarım kaldı. Oturumu diskte duruyor; `task_say` ile "
     "kaldığı yerden sürdürülebilir."
 )
 
-# -- plan refleksi -------------------------------------------------------
+# -- plan reflex ----------------------------------------------------------
 #
-# İstemde "büyük işte önce modül planı yaz" YAZIYOR ve ÇALIŞMIYOR: yedi
-# görevlik bir ölçümde yedisinde de plan yazılmadı. Hafıza yazmada
-# öğrenilen ders burada da geçerli — öğüt yetmiyor, refleks gerekiyor.
+# The prompt SAYS "on a big job write a module plan first" and it DOES NOT
+# WORK: in a seven-task measurement no plan was written in any of the seven.
+# The lesson learned with memory writing applies here too — advice is not
+# enough, a reflex is needed.
 #
-# Kapı UCUZ: model çağrısı yok, regex ve uzunluk düzeyinde. Yanlış
-# pozitifin bedeli gereksiz bir plan cümlesi (kabul edilebilir); yanlış
-# negatifin bedeli plansız başlayan bir koşu (asıl kaçınılan). Yine de
-# seyrek tetiklenmesi için üç sinyalin BİRLİKTE aranması şart: yapım
-# fiili + (ölçek sözü ya da madde listesi ya da uzun metin).
+# The gate is CHEAP: no model call, regex and length level. The cost of a
+# false positive is an unnecessary plan sentence (acceptable); the cost of a
+# false negative is a run that starts without a plan (the thing actually
+# being avoided). Still, so it fires rarely, three signals must be looked
+# for TOGETHER: a build verb + (a scale word or an item list or long text).
 
-BUYUK_IS_UZUNLUK = 350      # bu kadar karakterden uzun istek
-# 180'di; ölçülen yara: 10 satırlık o1-rapor görevi bile "[Plan] Bu iş
-# büyük görünüyor" dürtüsü yedi (kullanıcı: "her şeye plan çizmene
-# gerek yok — kapsam fazlaysa plan, yoksa hemen yap"). Uzun bir
-# paragraf tek başına büyüklük kanıtı değil; ölçek sözü ve madde
-# sayısı sinyalleri duruyor.
-BUYUK_IS_MADDE = 3          # ya da bu kadar madde/teslimat
+BIG_JOB_CHARS = 350        # a request longer than this many characters
+# Was 180; measured wound: even the 10-line o1-report task got the "[Plan]
+# Bu iş büyük görünüyor" nudge (user: "you don't need to draw a plan for
+# everything — plan if the scope is big, otherwise just do it"). A long
+# paragraph alone is not proof of size; the scale-word and item-count
+# signals remain.
+BIG_JOB_ITEMS = 3          # or this many items/deliverables
 
-# "Bir şey ÜRETMEMİ istiyor" fiilleri. Soru sormak, okumak, açmak,
-# düzeltmek burada yok — onlar plan gerektiren işler değil.
-_YAPIM_FIILI = re.compile(
+# Verbs meaning "wants me to PRODUCE something". Asking, reading, opening,
+# fixing are not here — they are not jobs that need a plan.
+_BUILD_VERB = re.compile(
     r"\b(yap|yapar\s+mısın|kur|geliştir|gelistir|tamamla|oluştur|olustur|"
     r"inşa\s+et|insa\s+et|tasarla|hazırla|hazirla|yazar\s+mısın|"
     r"build|create|implement|develop|make)\w*\b",
     re.IGNORECASE,
 )
 
-# Ölçek sözü: tek dosyalık bir betik değil, birden çok parçası olan bir şey.
-_OLCEK_SOZU = re.compile(
+# Scale word: not a single-file script, something with several parts.
+_SCALE_WORD = re.compile(
     r"\b(panel|dashboard|sistem|system|uygulama|app|servis|service|site|"
     r"web\s*sitesi|proje|project|platform|api|arayüz|arayuz|altyapı|altyapi|"
     r"modül|modul|module|oyun|game|bot|editör|editor|yönetim|yonetim|"
@@ -378,98 +398,105 @@ _OLCEK_SOZU = re.compile(
     re.IGNORECASE,
 )
 
-# Madde listesi: "şunlar olsun: - a - b - c" biçimindeki çoklu teslimat.
-_MADDE_SATIRI = re.compile(r"^\s*(?:[-*•]|\d+[.)])\s+\S", re.MULTILINE)
+# Item list: multiple deliverables in the form "şunlar olsun: - a - b - c".
+_ITEM_LINE = re.compile(r"^\s*(?:[-*•]|\d+[.)])\s+\S", re.MULTILINE)
 
 
 def buyuk_is(text: str) -> bool:
-    """Bu istek "büyük / ucu açık" mı görünüyor?
+    """Does this request look "big / open-ended"?
 
-    Kesinlik iddiası yok — `kalici_koku` gibi bir koku. Karar yine modelin;
-    buradaki tek iş plan yazma sırasını modelin önüne koymak.
+    No claim of certainty — a scent, like `persistent_root`. The decision is
+    still the model's; the only job here is to put the plan-writing order in
+    front of the model.
     """
-    metin = (text or "").strip()
-    if not metin or not _YAPIM_FIILI.search(metin):
-        # Yapım fiili yoksa bu bir soru, bir sohbet ya da küçük bir düzeltme.
-        # Plan istemek gürültü olurdu.
+    body = (text or "").strip()
+    if not body or not _BUILD_VERB.search(body):
+        # Without a build verb this is a question, a chat or a small fix.
+        # Asking for a plan would be noise.
         return False
-    if len(_MADDE_SATIRI.findall(metin)) >= BUYUK_IS_MADDE:
+    if len(_ITEM_LINE.findall(body)) >= BIG_JOB_ITEMS:
         return True
-    if _OLCEK_SOZU.search(metin):
+    if _SCALE_WORD.search(body):
         return True
-    return len(metin) >= BUYUK_IS_UZUNLUK
+    return len(body) >= BIG_JOB_CHARS
 
 
-# Kokunun karşılığı: TEK satır, iç kanaldan, tur başında bir kez. Sohbete
-# düşmez. Emir değil sıra kuralı — istemdeki uzun anlatımın refleks hali.
+# The counterpart of the scent: ONE line, via the internal channel, once at
+# the start of the turn. Does not land in the chat. Not an order but an
+# ordering rule — the reflex form of the long passage in the prompt.
 PLAN_NOTU = (
     "[Plan] Bu iş büyük görünüyor. İlk cevabında modül listesi + her modül "
     "için kabul ölçütü yaz, sonra başla."
 )
 
 
-# -- kırmızıyken "bitti" deme kapısı -------------------------------------
+# -- the "don't say done while red" gate ---------------------------------
 #
-# Ölçümde bir görev kendi test takımı KIRMIZIYKEN teslim edildi. İstemde
-# "bitti demeden doğrula" yazıyor; yazmak yetmiyor.
+# In the measurement a task was delivered while its own test suite was RED.
+# The prompt says "verify before saying done"; saying it is not enough.
 #
-# Kırmızının izi araç sonuçlarından okunuyor. Araç katmanı `detail`i modele
-# ve döngüye taşımıyor (executor `_card` ile kırpıyor), o yüzden okunan şey
-# döngünün gerçekten gördüğü iki alan: `error` (ToolResult.is_error) ve
-# aracın KENDİ başlık satırı. Tool başına ne anlama geldikleri farklı:
+# The trace of red is read from tool results. The tool layer does not carry
+# `detail` to the model or the loop (the executor trims it with `_card`), so
+# what is read are the two fields the loop actually sees: `error`
+# (ToolResult.is_error) and the tool's OWN headline. What they mean differs
+# per tool:
 #
-#   kos      — kırmızıyı kendisi işaretliyor (is_error): başarısız test,
-#              sıfırdan farklı çıkış kodu, zaman aşımı, kesilme.
-#   denetle  — hatayı is_error ile işaretlemiyor (bir denetim bulgusu
-#              yazmayı düşürmemeli); kırmızı kendi metninde yazıyor.
-#   browser  — konsol/ağ dökümü hiç hata döndürmüyor; sayılar başlıkta.
+#   kos      — marks red itself (is_error): failed test, non-zero exit code,
+#              timeout, interruption.
+#   denetle  — does not mark an error with is_error (a lint finding must not
+#              fail a write); red is written in its own text.
+#   browser  — the console/network dump never returns an error; the numbers
+#              are in the headline.
 #
-# Yalnız bu üçü sayılıyor: başarısız bir `read_file` kırmızı bir koşu değil.
+# Only these three count: a failed `read_file` is not a red run.
 
 VERIFICATION_TOOLS = frozenset({"kos", "denetle", "browser"})
 
-_DENETIM_HATASI = re.compile(r",\s*\d+\s+hata:")
-_KONSOL_HATASI = re.compile(r"\((\d+)\s+hata\)")
-_AG_HATASI = re.compile(r"(\d+)\s+başarısız")
-# Executor'ın hacim eki ("  (+22 satır)"): aracın hükmü değil, arayüz izi.
-_HACIM_EKI = re.compile(r"\s*\(\+\d+\s+satır\)\s*$")
+_LINT_ERROR = re.compile(r",\s*\d+\s+hata:")
+_CONSOLE_ERROR = re.compile(r"\((\d+)\s+hata\)")
+_NETWORK_ERROR = re.compile(r"(\d+)\s+başarısız")
+# The executor's volume suffix ("  (+22 satır)"): a UI trace, not the tool's
+# verdict.
+_VOLUME_SUFFIX = re.compile(r"\s*\(\+\d+\s+satır\)\s*$")
 
 
 def kirmizi_iz(tool: str, note: dict[str, Any]) -> str:
-    """Bu araç sonucu kırmızı mı? Kırmızıysa tek satırlık özeti, değilse "".
+    """Is this tool result red? If red, a one-line summary, otherwise "".
 
-    `note` executor'ın `tool_end` gözlem yükü: {tool, error, summary,
-    detail: {output, exit_code, …}}.
+    `note` is the executor's `tool_end` observation payload: {tool, error,
+    summary, detail: {output, exit_code, …}}.
     """
     if tool not in VERIFICATION_TOOLS:
         return ""
-    ozet = _HACIM_EKI.sub("", str(note.get("summary") or "").strip())
-    govde = ozet + "\n" + str((note.get("detail") or {}).get("output") or "")
+    summary = _VOLUME_SUFFIX.sub("", str(note.get("summary") or "").strip())
+    body = summary + "\n" + str((note.get("detail") or {}).get("output") or "")
 
     if tool == "kos":
-        return (ozet or "test koşumu başarısız") if note.get("error") else ""
+        return (summary or "test koşumu başarısız") if note.get("error") else ""
 
     if tool == "denetle":
-        return (ozet or "denetimde hata var") if _DENETIM_HATASI.search(govde) else ""
+        return (summary or "denetimde hata var") if _LINT_ERROR.search(body) else ""
 
-    # browser: konsolda hata ya da başarısız istek.
-    if (m := _KONSOL_HATASI.search(govde)) and int(m.group(1)) > 0:
+    # browser: an error in the console or a failed request.
+    if (m := _CONSOLE_ERROR.search(body)) and int(m.group(1)) > 0:
         return f"tarayıcı konsolunda {m.group(1)} hata"
-    if (m := _AG_HATASI.search(govde)) and int(m.group(1)) > 0:
+    if (m := _NETWORK_ERROR.search(body)) and int(m.group(1)) > 0:
         return f"{m.group(1)} başarısız istek"
     return ""
 
 
-# "Bitti" iddiası: model turu araçsız kapatırken işi bitmiş ilan ediyor mu.
-_BITTI_IDDIASI = re.compile(
+# The "done" claim: does the model declare the job finished while closing
+# the turn without tools.
+_DONE_CLAIM = re.compile(
     r"\b(bitti|bitirdim|tamamlandı|tamamlandi|tamamladım|tamamladim|"
     r"hazır|hazir|hazırdır|hazirdir|çalışıyor|calisiyor|sorunsuz|"
     r"done|completed?|finished|ready|works|working)\b",
     re.IGNORECASE,
 )
 
-# Kırmızıyı zaten söylüyorsa dürtme: dürüst rapor, yanlış "bitti" değil.
-_KIRMIZI_ITIRAFI = re.compile(
+# Don't nudge if it already admits the red: an honest report, not a false
+# "done".
+_RED_ADMISSION = re.compile(
     r"\b(başarısız|basarisiz|kırmızı|kirmizi|geçmedi|gecmedi|hata\s+var|"
     r"düzeltemedim|duzeltemedim|kaldı|kaldi|eksik|çalışmıyor|calismiyor|"
     r"fail(ing|ed|s)?|broken|not\s+working)\b",
@@ -478,16 +505,16 @@ _KIRMIZI_ITIRAFI = re.compile(
 
 
 def done_claim(text: str) -> bool:
-    """Araçsız kapanan bu cevap işi bitmiş ilan ediyor mu?
+    """Does this tool-less closing answer declare the job finished?
 
-    Kırmızıyı zaten söyleyen bir cevap "bitti" dese de dürüsttür —
-    dürtülmez. Yanlış pozitifin bedeli tek bir fazladan tur ve o tur
-    yalnızca ortada gerçekten kırmızı bir koşum varken açılıyor.
+    An answer that already admits the red is honest even if it says "done"
+    — it is not nudged. The cost of a false positive is a single extra turn
+    and that turn only opens while there really is a red run on the table.
     """
-    metin = text or ""
-    if not _BITTI_IDDIASI.search(metin):
+    body = text or ""
+    if not _DONE_CLAIM.search(body):
         return False
-    return not _KIRMIZI_ITIRAFI.search(metin)
+    return not _RED_ADMISSION.search(body)
 
 
 KIRMIZI_NOTU = (
@@ -495,27 +522,29 @@ KIRMIZI_NOTU = (
     "düzelt ya da neyin çalışmadığını açıkça söyle."
 )
 
-# Kabul-listesi kapısı: iş defterinde AÇIK maddeler dururken "bitti"
-# denirse bir tur geri veriliyor. Ölçülen yara (CMS koşusu): plan M4'te
-# "zengin metin editörü" yazarken teslim düz textarea çıktı ve hiçbir şey
-# yakalamadı — madde sessizce düşmüştü.
-# Başlığı MODEL koyar (Claude Code gibi): kullanıcının ilk cümlesinin ilk
-# 30 karakteri başlık değildir. İlk alışverişten sonra tek küçük çağrı.
-BASLIK_ISTEMI = (
+# Acceptance-list gate: if "done" is said while OPEN items sit in the job
+# ledger, one turn is handed back. Measured wound (the CMS run): the plan
+# said "rich text editor" at M4, the delivery came out as a plain textarea
+# and nothing caught it — the item had silently dropped.
+# The MODEL sets the title (like Claude Code): the first 30 characters of
+# the user's first sentence are not a title. One small call after the first
+# exchange.
+TITLE_PROMPT = (
     "Aşağıdaki konuşma için 2-5 kelimelik kısa bir başlık üret. Yalnız "
     "başlığı yaz: tırnak, nokta, emoji, açıklama yok. Konuşmanın dilinde."
 )
 
-def _title_valid(baslik: str) -> bool:
-    """Üretilen oturum başlığı kaydedilmeye değer mi?
+def _title_valid(title: str) -> bool:
+    """Is the generated session title worth saving?
 
-    Tek harflik çöp ("e", "b") kalıcı ad olarak yapışıyordu ve ad bir kez
-    yazılınca bir daha üretilmiyordu — sohbet solda o harfle listeleniyordu.
-    Anlamlı bir başlık en az birkaç karakterdir ve tek bir noktalama değildir.
+    Single-letter junk ("e", "b") stuck as the permanent name and once the
+    name was written it was never generated again — the chat was listed on
+    the left under that letter. A meaningful title is at least a few
+    characters and not a single punctuation mark.
     """
-    if not baslik or len(baslik) < 4 or len(baslik) > 60:
+    if not title or len(title) < 4 or len(title) > 60:
         return False
-    return any(ch.isalnum() for ch in baslik)
+    return any(ch.isalnum() for ch in title)
 
 
 ACCEPTANCE_NOTE = (
@@ -525,48 +554,49 @@ ACCEPTANCE_NOTE = (
 )
 
 
-# -- teslim edileni ÇALIŞTIRMA kapısı ------------------------------------
+# -- the RUN-what-you-delivered gate -------------------------------------
 #
-# Ölçümün en keskin sonucu: bir görev 14 geçen test, 18 gerçek iddia ve
-# kod sağlığı 20/20 ile teslim edildi — ve istemin asıl istediği komut
-# satırı HİÇ çalışmıyordu. `py ara.py bul "salmastra"` her sorguda kendi
-# kullanım satırını basıp 1 ile çıkıyordu. Testler iç fonksiyonları
-# kapsamış; kullanıcının yazacağı giriş noktasına hiçbir şey dokunmamış.
+# The sharpest finding of the measurement: a task was delivered with 14
+# passing tests, 18 real assertions and code health 20/20 — and the command
+# line the prompt actually asked for did NOT work at all. `py ara.py bul
+# "salmastra"` printed its own usage line on every query and exited with 1.
+# The tests had covered the internal functions; nothing had touched the
+# entry point the user would type.
 #
-# Bu vaka kırmızı kapısını AŞIYOR: takım yeşildi, orada durduracak bir şey
-# yoktu. Yakalayan tek şey, teslim edileni kullanıcının çalıştıracağı gibi
-# çalıştırmak.
+# This case gets PAST the red gate: the suite was green, there was nothing
+# to stop it there. The only thing that catches it is running the delivered
+# thing the way the user would run it.
 #
-# Kapı dar tutuluyor. Yalnızca KENDİNİ ÇALIŞTIRILMAK ÜZERE İLAN EDEN bir
-# dosya sayılıyor: `__main__` bloğu, `sys.argv`/`argparse`, `process.argv`,
-# PHP `$argv`. Kütüphane modülü, sınıf dosyası, yapılandırma bunu taşımaz —
-# onları doğrudan koşmak zaten yanlış olurdu.
+# The gate is kept narrow. Only a file that DECLARES ITSELF TO BE RUN
+# counts: a `__main__` block, `sys.argv`/`argparse`, `process.argv`, PHP
+# `$argv`. A library module, a class file, a configuration does not carry
+# that — running those directly would be wrong anyway.
 
-_GIRIS_IZLERI = (
+_ENTRY_MARKS = (
     re.compile(r"""if\s+__name__\s*==\s*['"]__main__['"]"""),
     re.compile(r"\bsys\.argv\b|\bargparse\b|\bclick\.command\b"),
     re.compile(r"\bprocess\.argv\b|\brequire\.main\s*===\s*module\b"),
     re.compile(r"\$argv\b|\bgetopt\b"),
 )
 
-# Girişi olabilecek dosyalar. HTML/CSS/JSON dışarıda: onları "çalıştırmak"
-# başka bir şey (tarayıcı kapısının işi), burada karıştırılmamalı.
-_KOSULABILIR_UZANTI = frozenset({".py", ".js", ".mjs", ".cjs", ".ts", ".php", ".sh", ".ps1"})
+# Files that could be an entry point. HTML/CSS/JSON are out: "running" those
+# is a different thing (the browser gate's job) and must not be mixed in.
+_RUNNABLE_SUFFIXES = frozenset({".py", ".js", ".mjs", ".cjs", ".ts", ".php", ".sh", ".ps1"})
 
 
-def is_entry_point(metin: str) -> bool:
-    """Bu dosya kendini komut satırından çalıştırılmak üzere ilan ediyor mu?"""
-    return any(d.search(metin or "") for d in _GIRIS_IZLERI)
+def is_entry_point(text: str) -> bool:
+    """Does this file declare itself to be run from the command line?"""
+    return any(d.search(text or "") for d in _ENTRY_MARKS)
 
 
-TEST_NOTU = (
+TEST_NOTE = (
     "[Doğrulama] Bu turda test dosyası yazdın ({dosya}) ama onu hiç "
     "KOŞMADIN. Yazılmış ama koşulmamış test, test değildir — kırmızı da "
     "olabilir. Bitti demeden önce test komutunu çalıştır; kırmızıysa "
     "düzelt, yeşilse turu kapat."
 )
 
-GIRIS_NOTU = (
+ENTRY_NOTE = (
     "[Doğrulama] Bu turda {dosya} yazdın ve o dosya kendini komut "
     "satırından çalıştırılmak üzere ilan ediyor — ama onu hiç "
     "ÇALIŞTIRMADIN. Testlerin yeşil olması yetmiyor: testler iç "
@@ -575,9 +605,9 @@ GIRIS_NOTU = (
 )
 
 
-# Uzun koşu kontrol noktası: yumuşak dürtü — kabul ölçütü geçildiyse
-# `end_turn` serbest. Eski "iş bitmeden durma" uzun tarama işlerini
-# sonsuz döngüye sokuyordu.
+# Long-run checkpoint: a soft nudge — if the acceptance criterion is met,
+# `end_turn` is free. The old "don't stop before the job is done" pushed
+# long scanning jobs into an endless loop.
 CHECKPOINT_NOTE = (
     "[Uzun koşu kontrol noktası — {turns} tur] Bir-iki cümleyle ilerleme "
     "durumunu yaz (ne bitti, ne kaldı) — bu satırı kullanıcıya da yaz. "
@@ -587,12 +617,12 @@ CHECKPOINT_NOTE = (
 )
 
 
-# -- park kaydı ---------------------------------------------------------
+# -- park record -----------------------------------------------------------
 #
-# Model kesintisinde koşunun durumu zaten diskte (oturum jsonl + notlar);
-# park kaydı yalnızca "yarım bir iş var ve bekliyor" işareti. Açılışta
-# görülürse koşu otomatik sürdürülür; kullanıcı keserse ya da iş biterse
-# silinir.
+# On a model outage the state of the run is already on disk (session jsonl +
+# notes); the park record is only the "there is a half-done job and it is
+# waiting" marker. If seen at startup the run is resumed automatically; if
+# the user interrupts or the job finishes it is deleted.
 
 
 def read_park(state_dir: Path) -> dict[str, Any] | None:
@@ -617,27 +647,29 @@ def clear_park(state_dir: Path) -> None:
         pass
 
 
-# -- yetim yardımcılar ---------------------------------------------------
+# -- orphan helpers --------------------------------------------------------
 #
-# Uygulama kapanınca arka planda koşan yardımcılar süreçle birlikte ölür:
-# ana oturumun günlüğünde subagent_start olur ama subagent_end olmaz.
-# Kullanıcıya hiçbir şey söylenmezse sabah "ne oldu bilmiyorum" kalıyor.
-# Açılışta bu iz taranır (yetim_tara), kullanıcıya ve modele bir kez haber
-# verilir, çocuk günlüğüne subagent_end(orphaned=True) düşülür
-# (yetim_isaretle) — ikinci açılış aynı yetimi yeniden bildirmesin.
+# When the app closes, helpers running in the background die with the
+# process: the main session's log has a subagent_start but no subagent_end.
+# If nothing is said to the user, the morning brings "I don't know what
+# happened". At startup this trace is scanned (yetim_tara), the user and the
+# model are told once, and a subagent_end(orphaned=True) is written to the
+# child's log (mark_orphan) — so the second startup does not report the same
+# orphan again.
 
-# Taramanın dosya tavanı: son bu kadar oturum günlüğüne bakılır. Yıllık bir
-# arşivi her açılışta baştan sona okumanın alemi yok; yetimler doğaları
-# gereği en son oturumlardadır.
-YETIM_TARAMA_TAVANI = 40
+# File cap of the scan: the last this-many session logs are looked at. There
+# is no point in reading a year's archive end to end at every startup;
+# orphans are by nature in the most recent sessions.
+ORPHAN_SCAN_LIMIT = 40
 
 
-def _gunluk_oku(path: Path) -> list[dict[str, Any]]:
-    """Oturum günlüğünü ham satırlar halinde okur — en iyi çaba.
+def _read_log(path: Path) -> list[dict[str, Any]]:
+    """Reads a session log as raw lines — best effort.
 
-    Sert kapanan bir süreç son satırı yarım bırakmış olabilir; bozuk satır
-    sessizce atlanır. `EventLog` burada bilerek kullanılmıyor: o bozuk
-    satırda ValueError fırlatıyor ve açılış taraması bir teşhis, tamir değil.
+    A hard-killed process may have left the last line half written; a broken
+    line is skipped silently. `EventLog` is deliberately not used here: it
+    raises ValueError on the broken line and the startup scan is a
+    diagnosis, not a repair.
     """
     out: list[dict[str, Any]] = []
     for line in path.read_text(encoding="utf-8").splitlines():
@@ -650,11 +682,12 @@ def _gunluk_oku(path: Path) -> list[dict[str, Any]]:
     return out
 
 
-def _cocuk_gunlugu_mu(events: list[dict[str, Any]]) -> bool:
-    """Bir günlük çocuk (alt ajan) oturumuna mı ait?
+def _is_child_log(events: list[dict[str, Any]]) -> bool:
+    """Does a log belong to a child (subagent) session?
 
-    Çocuk oturumun ilk notlarından biri parent'lı subagent_start — ana
-    oturumdaki aynı adlı notta parent değil session (çocuğun kimliği) var.
+    One of the child session's first notes is a subagent_start with a
+    parent — the note of the same name in the main session has session (the
+    child's id) rather than parent.
     """
     return any(
         ev.get("content") == "subagent_start" and (ev.get("meta") or {}).get("parent")
@@ -663,28 +696,30 @@ def _cocuk_gunlugu_mu(events: list[dict[str, Any]]) -> bool:
 
 
 def yetim_tara(sessions_dir: Path | str) -> list[dict[str, str]]:
-    """Geçen oturum(lar)dan yetim kalan yardımcıları bulur.
+    """Finds the helpers orphaned by the previous session(s).
 
-    Ana oturum günlüklerinde subagent_start olup karşılığında subagent_end
-    olmayan çocuklar aranır (çocuk oturum kimliği start notunun meta'sında).
-    Eşleşme kimlikle; eski kayıtlar (end notunda session yokken) başlıkla
-    eşleşir. Çocuğun kendi günlüğünde herhangi bir subagent_end (normal
-    bitiş ya da önceki açılışın orphaned işareti) varsa yetim sayılmaz.
+    Children with a subagent_start in the main session logs but no matching
+    subagent_end are looked for (the child session id is in the start note's
+    meta). Matching is by id; old records (from before the end note carried
+    a session) match by title. If the child's own log has any subagent_end
+    (a normal ending or the orphaned mark of a previous startup) it is not
+    counted as an orphan.
 
-    En iyi çaba: okunamayan/bozuk günlükte sessizce boş liste — açılış
-    taraması uygulamayı düşürmemeli.
+    Best effort: on an unreadable/broken log, silently an empty list — the
+    startup scan must not bring the app down.
     """
     try:
-        files = sorted(Path(sessions_dir).glob("*.jsonl"))[-YETIM_TARAMA_TAVANI:]
-        adaylar: list[dict[str, str]] = []
+        files = sorted(Path(sessions_dir).glob("*.jsonl"))[-ORPHAN_SCAN_LIMIT:]
+        candidates: list[dict[str, str]] = []
         for path in files:
             try:
-                events = _gunluk_oku(path)
+                events = _read_log(path)
             except OSError:
                 continue
-            if _cocuk_gunlugu_mu(events):
+            if _is_child_log(events):
                 continue
-            # Bu ana oturumun açtığı çocuklar: end'i görülen start düşer.
+            # Children opened by this main session: a start whose end was
+            # seen drops out.
             starts: list[dict[str, str]] = []
             for ev in events:
                 if ev.get("kind") != "meta":
@@ -696,54 +731,57 @@ def yetim_tara(sessions_dir: Path | str) -> list[dict[str, str]]:
                         "session": str(meta["session"]),
                     })
                 elif ev.get("content") in ("subagent_end", "subagent_failed"):
-                    # subagent_failed da bir kapanış: çöken yardımcı zaten
-                    # bildirildi, bir de yetim diye anons edilmesin.
+                    # subagent_failed is a closing too: the crashed helper
+                    # was already reported, don't announce it as an orphan
+                    # on top.
                     sid = str(meta.get("session") or "")
                     title = str(meta.get("title") or "")
                     for i, s in enumerate(starts):
                         if s["session"] == sid or (not sid and s["title"] == title):
                             del starts[i]
                             break
-            adaylar.extend(starts)
+            candidates.extend(starts)
 
-        yetimler: list[dict[str, str]] = []
-        for aday in adaylar:
-            child = Path(sessions_dir) / f"{aday['session']}.jsonl"
+        orphans: list[dict[str, str]] = []
+        for candidate in candidates:
+            child = Path(sessions_dir) / f"{candidate['session']}.jsonl"
             if not child.is_file():
-                # Oturum dosyası hiç doğmamış: sürdürülecek bir iz de yok.
+                # The session file was never born: there is no trace to
+                # resume either.
                 continue
             try:
-                child_events = _gunluk_oku(child)
+                child_events = _read_log(child)
             except OSError:
                 continue
             if any(ev.get("content") == "subagent_end" for ev in child_events):
-                continue   # önceki açılışta işaretlenmiş ya da kapanmış
-            yetimler.append(aday)
-        return yetimler
+                continue   # marked at a previous startup, or closed
+            orphans.append(candidate)
+        return orphans
     except Exception:
         return []
 
 
-def mark_orphan(sessions_dir: Path | str, yetimler: list[dict[str, str]]) -> None:
-    """Yetimlerin çocuk günlüğüne subagent_end(orphaned=True) düşer.
+def mark_orphan(sessions_dir: Path | str, orphans: list[dict[str, str]]) -> None:
+    """Writes subagent_end(orphaned=True) into the orphans' child logs.
 
-    İşaret bir mezar taşı: bir sonraki açılış aynı yardımcıyı yeniden
-    "yarım kaldı" diye bildirmesin. Oturum diskte duruyor — `task_say`
-    istenirse yine diriltebiliyor.
+    The mark is a tombstone: the next startup must not report the same
+    helper as "left half done" again. The session stays on disk — `task_say`
+    can still revive it if asked.
     """
     from .events import EventLog
 
-    for y in yetimler:
+    for y in orphans:
         path = Path(sessions_dir) / f"{y['session']}.jsonl"
         try:
             log = EventLog(path)
             log.note("subagent_end", title=y["title"], orphaned=True)
             log.close()
         except Exception:
-            # Sert kapanış son satırı yarım bırakmış olabilir ve EventLog
-            # bozuk satırda açılmıyor. İşaret yine de düşmeli — yoksa aynı
-            # yetim her açılışta yeniden bildirilir. Satır elle ekleniyor;
-            # tarama (yetim_tara) ham JSON okuduğu için bunu görüyor.
+            # A hard shutdown may have left the last line half written and
+            # EventLog does not open on a broken line. The mark must still
+            # land — otherwise the same orphan is reported at every startup.
+            # The line is appended by hand; the scan (yetim_tara) reads raw
+            # JSON so it sees it.
             try:
                 with path.open("a", encoding="utf-8") as fh:
                     fh.write("\n" + json.dumps({
@@ -752,42 +790,44 @@ def mark_orphan(sessions_dir: Path | str, yetimler: list[dict[str, str]]) -> Non
                         "meta": {"title": y["title"], "orphaned": True},
                     }, ensure_ascii=False) + "\n")
             except OSError:
-                continue   # tek bozuk günlük diğerlerini engellemesin
+                continue   # one broken log must not block the others
 
 
 @dataclass(slots=True)
 class AgentIO:
-    """Harness ile arayüz arasındaki tek temas yüzeyi."""
+    """The single contact surface between the harness and the UI."""
 
     on_text: Callable[[str], None] = lambda _: None
     on_thinking: Callable[[str], None] = lambda _: None
     on_tool_start: Callable[[str, dict[str, Any]], None] = lambda *_: None
     on_tool_end: Callable[[str, bool, int], None] = lambda *_: None
     on_notice: Callable[[str], None] = lambda _: None
-    # Model kesintisinde bekleme durumunun YAPISAL kanalı. Arayüz bunu
-    # çalışma şeridinde tek canlı satır olarak çizer (geri sayım, deneme
-    # sayacı, katlanır ayrıntı) — sohbete ham hata duvarı basılmaz.
-    # None kalırsa (CLI, testler) eski düz-metin on_notice yolu işler.
-    # Sözleşme: {"kip": "deneme"|"park"|"bitti"|"iptal",
+    # The STRUCTURED channel of the waiting state during a model outage. The
+    # UI draws it as a single live line in the work strip (countdown, retry
+    # counter, collapsible detail) — no raw error wall is printed into the
+    # chat. If it stays None (CLI, tests) the old plain-text on_notice path
+    # applies.
+    # Contract: {"kip": "deneme"|"park"|"bitti"|"iptal",
     #            "deneme": int, "toplam": int, "saniye": int, "detay": str}
     on_wait: Callable[[dict[str, Any]], None] | None = None
     on_usage: Callable[[dict[str, int]], None] = lambda _: None
-    # Modelin koyduğu oturum başlığı — kenar listesi anında güncellenir.
-    on_session_title: Callable[[str, str], None] = lambda *_: None  # sid, ad
-    # Bütçe freni. Her model çağrısından ÖNCE soruluyor: boş dize "sınır
-    # yok ya da aşılmadı", dolu dize ise sohbete basılacak tek satır ve
-    # "dur" emri. Fiyat bilgisi harness'ta değil köprüde duruyor (bkz.
-    # desktop.Bridge._butce_freni) — döngü yalnızca kararı soruyor, tur
-    # yolunda ağ isteği ya da fiyat tablosu okuması yapmıyor.
+    # The session title set by the model — the sidebar list updates at once.
+    on_session_title: Callable[[str, str], None] = lambda *_: None  # sid, name
+    # Budget brake. Asked BEFORE every model call: an empty string means "no
+    # limit or not exceeded", a non-empty string is the single line to print
+    # into the chat plus a "stop" order. The price information lives in the
+    # bridge, not the harness (see desktop.Bridge._budget_brake) — the loop
+    # only asks for the decision and does no network request or price-table
+    # read on the turn path.
     butce_freni: Callable[[], str] = lambda: ""
-    # Alt ajan (orkestra) kanalları: bir alt ajan doğduğunda, bir araç
-    # çağırdığında ve bittiğinde. Arayüz bunları canlı kanal olarak çiziyor;
-    # ana sohbete karışmadan "kimin ne yaptığı" görünür oluyor. Varsayılan
-    # boş: alt ajan kullanmayan çağıranlar (testler, salt-metin) etkilenmiyor.
+    # Subagent (orchestra) channels: when a subagent is born, when it calls
+    # a tool and when it ends. The UI draws these as a live channel; "who is
+    # doing what" becomes visible without mixing into the main chat. Default
+    # empty: callers that use no subagents (tests, text-only) are unaffected.
     on_child_start: Callable[[str, str, str, bool], None] = lambda *_: None  # title, model, id, bg
-    on_child_tool: Callable[..., None] = lambda *_: None  # title, tool, phase, hedef=""
-    on_child_end: Callable[[str, bool, int, int, str, str], None] = lambda *_: None  # title, ok, turns, tools, id, özet
-    # Alt ajan bekleme/retry (model boş yanıt vb.) — panel kanalı.
+    on_child_tool: Callable[..., None] = lambda *_: None  # title, tool, phase, target=""
+    on_child_end: Callable[[str, bool, int, int, str, str], None] = lambda *_: None  # title, ok, turns, tools, id, summary
+    # Subagent wait/retry (empty model reply etc.) — panel channel.
     on_child_wait: Callable[[dict[str, Any]], None] | None = None
     approve: Callable[[ToolSpec, dict[str, Any]], Awaitable[bool]] = None  # type: ignore[assignment]
 
@@ -801,63 +841,68 @@ class AgentIO:
 
 @dataclass(slots=True)
 class ChildHandle:
-    """Bir yardımcının defter kaydı.
+    """A helper's ledger record.
 
-    Senkron yardımcı da buraya yazılıyor (task_say bitmiş bir yardımcıyı
-    sürdürebilsin diye) ama asıl müşteri arka plan yardımcısı: `task`
-    aracı hemen dönüyor, iş bu kayıt üzerinden izleniyor ve bitince
-    sonucu buradan bildiriliyor.
+    A synchronous helper is written here too (so task_say can resume a
+    finished helper) but the real customer is the background helper: the
+    `task` tool returns immediately, the work is tracked through this record
+    and when it finishes the result is reported from here.
     """
 
     id: str
     title: str
     model: str
-    # "yardımcı": model koşan alt ajan · "iş": arka plan süreci (uzun komut).
-    # İkisi aynı defteri ve aynı bildirim yolunu paylaşıyor.
+    # "yardımcı": a model-running subagent · "iş": a background process (long
+    # command). Both share the same ledger and the same notification path.
     kind: str = "yardımcı"
     arka_plan: bool = False
     session_id: str = ""
     state: str = "kosuyor"          # kosuyor | bitti | hata
     sonuc: str = ""
-    # Ne zaman başladı. Kayıt işin başladığı anda kuruluyor, o yüzden
-    # varsayılan "şimdi" doğru cevap: görevler paneli süreyi buradan
-    # canlı sayıyor ("2 dk 14 sn"). Yetim kayıtlarında (geçen oturumdan
-    # devralınan) gerçek başlangıç bilinmiyor; panel orada süre çizmiyor.
+    # When it started. The record is created the moment the work starts, so
+    # the default "now" is the right answer: the tasks panel counts the
+    # duration live from here ("2 dk 14 sn"). In orphan records (inherited
+    # from the previous session) the real start is unknown; the panel draws
+    # no duration there.
     baslangic_ts: float = field(default_factory=time.time)
     bitis_ts: float = 0.0
-    # Sonuç ana ajana duyuruldu mu. Senkron yolda araç sonucu zaten döndü;
-    # arka planda tur başındaki bildirim notu bunu True yapar.
+    # Has the result been announced to the main agent. On the synchronous
+    # path the tool result already returned; in the background the
+    # notification note at the start of the turn sets this True.
     bildirildi: bool = False
-    # Arka plan görevinin referansı: referanssız asyncio.Task çöp
-    # toplayıcıya gidebilir ve iş sessizce kaybolur.
+    # Reference to the background task: an unreferenced asyncio.Task can go
+    # to the garbage collector and the work silently disappears.
     task: asyncio.Task | None = None
-    # Koşarken canlı ajan nesnesi (task_say notu buna gidiyor); bitince None.
+    # The live agent object while running (the task_say note goes to it);
+    # None when finished.
     agent: "Agent | None" = None
-    # Çocuğun KENDİ kesme bayrağı. Ananınkini paylaşmak olmuyordu: ana her
-    # `run`da bayrağını tazeliyor ve arka plandaki çocuk eski bayrakta
-    # sahipsiz kalıyordu. Ana `interrupt()` hepsini türev olarak kurar.
+    # The child's OWN cancel flag. Sharing the parent's did not work: the
+    # parent refreshes its flag on every `run` and the background child was
+    # left ownerless on the old flag. The parent's `interrupt()` sets them
+    # all as derivatives.
     cancel: asyncio.Event = field(default_factory=asyncio.Event)
-    # Zamanlanmış görev kimliği (varsa): bitince deftere yazılıyor.
+    # Scheduled task id (if any): written to the ledger when finished.
     schedule_id: str = ""
-    # Sessiz: bitince ana ajan sürdürme turu AÇMAZ — rapor panellerde kalır.
-    # Zamanlanmış işler için: sohbet Q&A değil, görev alanı.
+    # Silent: when finished the main agent does NOT open a resume turn — the
+    # report stays in the panels. For scheduled jobs: a task area, not chat
+    # Q&A.
     sessiz: bool = False
-    # task_runs arşivindeki koşum kimliği.
+    # Run id in the task_runs archive.
     run_id: str = ""
-    # Otomasyon workflow kimliği (varsa).
+    # Automation workflow id (if any).
     workflow_id: str = ""
-    # Bitişte açılacak teslimat: {kind: app|artifact|json|text, url?, body?}
+    # Deliverable to open on finish: {kind: app|artifact|json|text, url?, body?}
     deliverable: dict[str, Any] | None = None
-    # Canlı panel: son araç adı / model bekleme durumu.
+    # Live panel: last tool name / model wait state.
     son_arac: str = ""
     son_hedef: str = ""
     wait: dict[str, Any] | None = None
-    # Koşum ölçümü: {girdi, cikti, cagri} — chat dock ile aynı birimler.
+    # Run meter: {girdi, cikti, cagri} — same units as the chat dock.
     usage: dict[str, int] = field(
         default_factory=lambda: {"girdi": 0, "cikti": 0, "cagri": 0})
     # Mid-run task_runs.patch_run throttle.
     last_patch_ts: float = 0.0
-    # Kaç araç çağrısı başladı (panel + koşum arşivi).
+    # How many tool calls started (panel + run archive).
     tools_count: int = 0
 
 
@@ -868,34 +913,37 @@ class TurnStats:
     usage: dict[str, int] = field(default_factory=dict)
     interrupted: bool = False
     stop_reason: str | None = None
-    # Art arda kaç model çağrısı hata verdi. Başarılı turda sıfırlanır;
-    # geri çekilme merdiveni ve park kararı buna bakıyor.
+    # How many consecutive model calls failed. Reset on a successful turn;
+    # the backoff ladder and the park decision look at this.
     api_errors: int = 0
-    # Tavana carpip surdurulen tur sayisi.
+    # Number of turns that hit the ceiling and were continued.
     continuations: int = 0
-    # Kapanis turu verildi mi. Bir kez: yoksa kilitlenen dongu kapanis
-    # turunda da kilitlenir ve ayni yere geri gelinir.
+    # Was the closing turn given. Once: otherwise the locked-up loop locks
+    # up in the closing turn too and comes back to the same place.
     closing: bool = False
-    # Model bu turda kaç kez araç çağrısını DÜZ METİN olarak yazdı
-    # (gerçek çağrı yerine XML). Tekrar ederse not sertleşiyor.
+    # How many times in this turn the model wrote a tool call as PLAIN TEXT
+    # (XML instead of a real call). If it repeats, the note hardens.
     sahte_cagri: int = 0
-    # Kırmızı kapısı bu turda bir kez açıldı mı. En fazla bir kez: model
-    # ikinci turda yine bitirmek isterse bırakılıyor — sonsuz döngü yok.
+    # Was the red gate opened once in this turn. At most once: if the model
+    # wants to finish again on the second turn it is let go — no endless
+    # loop.
     kirmizi_uyarildi: bool = False
     kabul_uyarildi: bool = False
-    test_uyarildi: bool = False
-    # Teslim-edileni-çalıştır kapısı bu turda açıldı mı. Aynı sebeple bir kez.
+    test_warned: bool = False
+    # Was the run-what-you-delivered gate opened in this turn. Once, for the
+    # same reason.
     giris_uyarildi: bool = False
-    # Alt ajan: max retry sonrası model hatası metni (park yerine).
+    # Subagent: model error text after max retries (instead of parking).
     fail_reason: str | None = None
 
 
 def _without_numbers(text: str) -> str:
-    """Önyükleme sorgusundan sayıları atar.
+    """Strips numbers from the priming query.
 
-    Bir cihaz eklemek isteyen mesaj IP, port ve register adresi taşıyor ve
-    bunlar zihindeki her sayılı kaydı çekiyor. Kullanıcının gördüğü şey
-    "modbus cihazı ekle" derken BTC fiyat ölçümlerinin taranmasıydı.
+    A message that wants to add a device carries an IP, a port and a
+    register address, and these pull in every numbered record in the mind.
+    What the user saw was BTC price measurements being scanned while saying
+    "modbus cihazı ekle".
     """
     return _NUMERIC.sub(" ", text or "").strip()
 
@@ -923,111 +971,123 @@ class Agent:
         self.client = client
         self.io = io
         self.mind = mind
-        # 0 ana ajan, 1 alt ajan. Derinlik `task` aracının varlığını da
-        # belirliyor.
+        # 0 main agent, 1 subagent. The depth also decides whether the
+        # `task` tool exists.
         self.depth = depth
-        # Zamanlanmış görev defteri; `schedule` aracı buradan okuyor.
+        # Scheduled-task ledger; the `schedule` tool reads from here.
         self.schedule = schedule
-        # Yerel kameranın tamponu; `look` aracı buradan kare alıyor.
+        # The local camera's buffer; the `look` tool takes frames from here.
         self.lens = lens
         self.camera_power: Any = None
-        # Kulak ve izleyici masaüstü tarafında sonradan bağlanıyor
-        # (açılışta ajan onlardan önce kuruluyor); `senses` aracı buradan
-        # erişiyor.
+        # The ear and the watcher are attached later on the desktop side
+        # (at startup the agent is built before them); the `senses` tool
+        # reaches them from here.
         self.ear: Any = None
         self.watcher: Any = None
         self.permissions = permissions or PermissionEngine.from_config(config.permissions)
         self.policy = policy or ContextPolicy(config.context)
-        # Kesme bayrağı dışarıdan verilebiliyor: alt ajan ana ajanınkini
-        # paylaşıyor. Paylaşmasa kullanıcı durdur dediğinde arkada
-        # çalışmaya devam ederdi.
+        # The cancel flag can be given from outside: the subagent shares the
+        # main agent's. Without sharing it would keep working in the
+        # background when the user says stop.
         self.cancel = cancel or asyncio.Event()
         self._owns_cancel = cancel is None
-        # Ruh oturum başında bir kez yüklenir ve oturum boyunca sabit kalır.
-        # Sabit olması şart: sistem promptunun parçası, ortasında değişirse
-        # o noktadan sonraki tüm önbellek düşer. Oturum içinde kaydedilen
-        # yeni hatıralar bir sonraki açılışta ruha girer.
+        # The soul is loaded once at session start and stays fixed for the
+        # whole session. Fixed is a must: it is part of the system prompt,
+        # and if it changes mid-way the whole cache from that point on is
+        # lost. New memories saved during the session enter the soul at the
+        # next startup.
         self.soul = mind.soul(persona=prompt.read_persona(config)) if mind else None
         self._system = prompt.build(config, registry, soul=self.soul)
         self._last_goal_digest = self.mind.goal_digest() if mind else ""
-        # Son turun kullanim raporu. Sikistirma karari buna bakiyor;
-        # istekten once token saymak ekstra bir tur maliyeti demekti.
+        # The usage report of the last turn. The compaction decision looks
+        # at it; counting tokens before the request would have meant the
+        # cost of an extra round trip.
         self._last_usage: dict[str, int] = {}
-        # Dar pencereli model: sistem promptu kısalıyor, araç
-        # açıklamaları tek paragrafa iniyor, hatırlama önyüklemesi
-        # azalıyor. 4096 token'lık bir modelde bunlar olmadan konuşmaya
-        # hiç yer kalmıyor.
+        # Narrow-window model: the system prompt gets shorter, tool
+        # descriptions drop to a single paragraph, recall priming shrinks.
+        # On a 4096-token model there is no room left for conversation
+        # without these.
         self.lean = prompt.is_lean(config)
-        # Küçük aile: tam şema (~11k token) yerine kısa şema (~6k). Dar
-        # pencere zaten kısaydı; flash sınıfı geniş pencerede de kısayı
-        # hak ediyor — kıyasta tur başına taşınan yükün ana kalemi buydu.
+        # Small family: brief schema (~6k) instead of the full schema (~11k
+        # tokens). The narrow window was already brief; the flash class
+        # deserves brief on a wide window too — in the comparison this was
+        # the main item of the per-turn payload.
         self.brief_schema = self.lean or prompt.kucuk_aile(config.model.name)
-        # Yanlış pencere ayarı bir kez söylenip bırakılıyor: her turda
-        # tekrarlamak uyarıyı gürültüye çeviriyor.
+        # A wrong window setting is said once and left: repeating it every
+        # turn turns the warning into noise.
         self._window_warned = False
-        # Alt ajanlar için kurulan ek istemciler; model adına göre
-        # saklanıyor ki aynı model üç kez istendiğinde üç bağlantı
-        # havuzu açılmasın.
+        # Extra clients built for subagents; stored by model name so that
+        # asking for the same model three times does not open three
+        # connection pools.
         self._clients: dict[str, tuple[Any, Config]] = {}
-        # Anlık encode'da peş peşe aynı metni iki kez yazmayı önler.
+        # Prevents writing the same text twice back to back in instant
+        # encoding.
         self._last_encoded: str = ""
-        # Bu oturumda zaten öne konmuş hatıralar. Eski not geçmişte DURUYOR
-        # (mesajlar her istekte baştan oynatılıyor); aynı hatırayı yeniden
-        # enjekte etmek modele yeni bilgi vermez, yalnızca token yakar.
-        # Sıkıştırmada sıfırlanır — notlar özete katlanınca hak geri gelir.
+        # Memories already placed in front of the model in this session. The
+        # old note STAYS in the history (messages are replayed from the
+        # start on every request); re-injecting the same memory gives the
+        # model no new information, it only burns tokens. Reset on
+        # compaction — when the notes fold into the summary the right comes
+        # back.
         #
-        # Küme ruhla başlıyor: ruhun TAM GÖVDEYLE prompta koyduğu kayıtlar
-        # (user/preference/lesson/voice) da "zaten bağlamda". Ölçüldü
-        # (scale_bench): aynı isabetle sorgu başına ~%9 daha az token ve
-        # "hava nasıl" sorusuna çay-tercihi türü sızıntıların bir kısmı
-        # kendiliğinden susuyor. Yordamlar girmiyor — ruhta yalnız başlıkları
-        # var, gövdeleri önyüklemede hâlâ değerli.
+        # The set starts with the soul: records the soul put into the prompt
+        # WITH THEIR FULL BODY (user/preference/lesson/voice) are also
+        # "already in context". Measured (scale_bench): same hit rate with
+        # ~9% fewer tokens per query, and some of the tea-preference-type
+        # leaks into a "how is the weather" question go quiet by themselves.
+        # Procedures do not enter — the soul has only their titles, their
+        # bodies are still valuable in priming.
         self._primed: set[str] = self._soul_resident()
-        # Alt ajan kapısı: aynı anda en fazla `max_agents` yardımcı koşar.
-        # Sınırı aşan spawn reddedilmiyor, sıraya giriyor — model beş iş
-        # dağıttığında beşi de yapılır, ama makine ezilmeden. Araç
-        # sınırından (max_parallel) ayrı çünkü bir alt ajan tek araçtan
-        # çok daha ağır.
+        # Subagent gate: at most `max_agents` helpers run at the same time.
+        # A spawn over the limit is not refused, it queues — when the model
+        # hands out five jobs all five get done, but without crushing the
+        # machine. Separate from the tool limit (max_parallel) because a
+        # subagent is far heavier than a single tool.
         self._agent_gate = asyncio.Semaphore(
             max(1, getattr(config.context, "max_agents", 3)))
-        # Yardımcı defteri: id → kayıt. Arka planda koşanlar, bitmişler ve
-        # (task_say için) senkron koşmuş olanlar burada.
+        # Helper ledger: id → record. Those running in the background, the
+        # finished ones and (for task_say) those that ran synchronously are
+        # here.
         self._children: dict[str, ChildHandle] = {}
-        # Tur ortası gelen kutusu: koşan tur bitmeden araya giren kullanıcı
-        # mesajları (ve çocukta: task_say notları). Her turun başında
-        # boşaltılıp harness notu olarak geçmişe giriyor.
+        # Mid-turn inbox: user messages that barge in before the running
+        # turn ends (and in a child: task_say notes). Drained at the start
+        # of every turn and entered into the history as a harness note.
         self._inbox: deque[str] = deque()
-        # Bir yardımcı bitince köprüye (varsa) haber: ana ajan boştaysa
-        # köprü bir sürdürme turu açar. Masaüstü katmanı bağlıyor.
+        # When a helper finishes, tell the bridge (if any): if the main
+        # agent is idle the bridge opens a resume turn. The desktop layer
+        # attaches it.
         self.on_children_settled: Callable[[], None] | None = None
-        # Model kesintisinde her yeniden denemeden önce çağrılır. Köprü
-        # buraya bekleyen model/ayar değişikliğini uygulayan çağrıyı bağlar:
-        # bozuk adres/anahtar düzeltildiyse yeni istemci ancak böyle devreye
-        # girer (normalde değişiklik tur SONUNU bekler, parklı tur bitmez).
+        # Called before every retry during a model outage. The bridge
+        # attaches here the call that applies a pending model/setting
+        # change: if a broken address/key was fixed, the new client only
+        # takes effect this way (normally a change waits for the END of the
+        # turn, and a parked turn does not end).
         self.on_retry_wait: Callable[[], None] | None = None
-        # İş park edildi mi (model ulaşılamıyor, bekliyor).
+        # Is the job parked (model unreachable, waiting).
         self._parked = False
-        # Zihin yazma refleksi (bkz. _zihin_kapisi): bu turda model kendi
-        # defterine yazdı mı, ve en son hangi cümle için dürtüldü.
-        self._zihin_yazildi = False
-        self._son_durtu = ""
-        # Kırmızı defteri: doğrulama aracı → o aracın son KIRMIZI izi.
-        # Araç başına tutuluyor ki model düzeltip yeniden koşturunca kayıt
-        # temizlensin — yeşile dönen bir koşum artık kırmızı değil. Her
-        # kullanıcı turunda sıfırlanıyor (bkz. run).
+        # Mind-writing reflex (see _mind_gate): did the model write to its
+        # own ledger in this turn, and for which sentence it was last
+        # nudged.
+        self._mind_written = False
+        self._last_nudge = ""
+        # Red ledger: verification tool → that tool's last RED trace. Kept
+        # per tool so that when the model fixes and re-runs the record is
+        # cleared — a run that turned green is no longer red. Reset on every
+        # user turn (see run).
         self._kirmizi: dict[str, str] = {}
-        # Teslim defteri: bu turda YAZILAN dosya yolları ve bu turda
-        # KOŞULAN komutların metni. Kapı ikisini karşılaştırıyor —
-        # yazdığın ama hiç çalıştırmadığın bir giriş noktası var mı?
-        # Her kullanıcı turunda sıfırlanıyor (bkz. run).
-        self._yazilan: list[str] = []
-        self._komutlar: list[str] = []
-        # Hata kalıbı sayacı (koşu başına): aynı kalıba İKİNCİ düşüş derstir.
-        self._hata_kalibi: dict[str, int] = {}
-        self._kapsul_yazildi = False
+        # Delivery ledger: the file paths WRITTEN in this turn and the text
+        # of the commands RUN in this turn. The gate compares the two — is
+        # there an entry point you wrote but never ran? Reset on every user
+        # turn (see run).
+        self._written: list[str] = []
+        self._commands: list[str] = []
+        # Error-pattern counter (per run): the SECOND fall into the same
+        # pattern is a lesson.
+        self._error_patterns: dict[str, int] = {}
+        self._capsule_written = False
 
     def _soul_resident(self) -> set[str]:
-        """Ruhun tam gövdesiyle prompta koyduğu kayıtların kimlikleri."""
+        """Ids of the records the soul put into the prompt with their full body."""
         if self.soul is None:
             return set()
         return {
@@ -1042,20 +1102,22 @@ class Agent:
         return self._system.rendered()
 
     def reconfigure(self, config: Config) -> None:
-        """Ayar değişince çekirdeği yeniden kurar — yeniden başlatmadan.
+        """Rebuilds the core when settings change — without a restart.
 
-        Model değiştiğinde pencere boyutu da değişebiliyor (200k Claude ↔
-        4096 yerel): o zaman `lean` kararı, gönderilen araç şemaları ve
-        sistem promptundaki ortam/duyu/cihaz özeti hepsi değişmeli. İstemciyi
-        `Bridge` zaten değiştiriyor; burada geri kalanı tazeliyoruz.
+        When the model changes the window size can change too (200k Claude
+        ↔ 4096 local): then the `lean` decision, the tool schemas sent and
+        the environment/senses/device summary in the system prompt must all
+        change. `Bridge` already swaps the client; here we refresh the rest.
 
-        **Ruh dokunulmadan kalıyor.** Kimlik bloğu oturum boyunca sabit
-        olmalı (önbellek önek eşleşmesi ona bağlı) ve oturum ortasında
-        öğrenilen kullanıcı adı, tanışma bağlamı kaybolmamalı. Yalnızca
-        `core` yeniden kuruluyor; `soul` aynı nesne olarak geçiyor.
+        **The soul stays untouched.** The identity block must stay fixed
+        for the whole session (the cache prefix match depends on it) and the
+        user name and introduction context learned mid-session must not be
+        lost. Only `core` is rebuilt; `soul` passes through as the same
+        object.
 
-        Tur ortasında çağrılmamalı: akan bir isteğin altından şemaları
-        çekmek o cevabı bozar. `Bridge` bunu tur bittiğinde uyguluyor.
+        Must not be called mid-turn: pulling the schemas out from under a
+        streaming request corrupts that answer. `Bridge` applies this when
+        the turn ends.
         """
         self.config = config
         self.policy = ContextPolicy(config.context)
@@ -1064,11 +1126,11 @@ class Agent:
         self._system = prompt.build(config, self.registry, soul=self.soul)
 
     def interrupt(self) -> None:
-        """Dur: ana turu VE koşan tüm yardımcıları durdurur.
+        """Stop: stops the main turn AND every running helper.
 
-        Kullanıcı beklentisi "dur = her şey durur". Yardımcıların bayrağı
-        ayrı (bkz. ChildHandle.cancel) ama karar türev: buradan hepsine
-        yayılıyor.
+        The user's expectation is "stop = everything stops". The helpers'
+        flags are separate (see ChildHandle.cancel) but the decision is
+        derived: it fans out to all of them from here.
         """
         self.cancel.set()
         for handle in self._children.values():
@@ -1076,87 +1138,93 @@ class Agent:
                 handle.cancel.set()
 
     def take_note(self, note: str, *, encode: str = "") -> None:
-        """Koşan turun bir sonraki adımına girecek harness notu.
+        """A harness note that enters the next step of the running turn.
 
-        Tur ortasında araya giren kullanıcı mesajı (köprüden) ve koşan bir
-        yardımcıya `task_say` ile verilen yön buradan giriyor. Not kuyruğu
-        her turun başında boşaltılır; tur o sırada bitmişse bir adım daha
-        verilir ki mesaj kaybolmasın.
+        A user message barging in mid-turn (from the bridge) and a direction
+        given to a running helper with `task_say` enter from here. The note
+        queue is drained at the start of every turn; if the turn has ended
+        by then one more step is given so the message is not lost.
 
-        `encode` doluysa metin anlık belleğe de yazılır — araya giren söz
-        de söylenmiş bir sözdür.
+        If `encode` is non-empty the text is also written to instant memory
+        — a word that barged in is still a word that was said.
         """
         self._inbox.append(note)
         if encode:
             self._encode_turn("kullanıcı", encode)
 
     def inbox_full(self) -> bool:
-        """Gelen kutusu taştı mı? Köprü doluysa eski kuyruk yoluna düşer."""
+        """Has the inbox overflowed? If full, the bridge falls back to the old queue path."""
         return len(self._inbox) >= 8
 
     def _arm(self) -> None:
-        """Yeni bir istek için kesmeyi sıfırlar.
+        """Resets the interrupt for a new request.
 
-        Bayrak dışarıdan geldiyse dokunulmuyor: onu sıfırlamak, paylaşan
-        tarafın kesme kararını sessizce iptal etmek olurdu.
+        If the flag came from outside it is not touched: resetting it would
+        silently cancel the sharing side's stop decision.
         """
         if self._owns_cancel:
             self.cancel = asyncio.Event()
 
-    # -- ana akış ------------------------------------------------------
+    # -- main flow -----------------------------------------------------
 
     async def run(self, user_input: str, image: str = "") -> TurnStats:
-        """Bir kullanıcı isteğini baştan sona koşturur.
+        """Runs one user request from start to finish.
 
-        `image` verilirse (base64 veri adresi) mesaja görüntü bloğu olarak
-        ekleniyor — kameradan gelen kare bu yoldan giriyor. Model görüntü
-        kabul etmiyorsa sağlayıcı katmanı bunu anlaşılır bir hataya çeviriyor.
+        If `image` is given (a base64 data URL) it is added to the message
+        as an image block — the camera frame enters this way. If the model
+        does not accept images the provider layer turns that into an
+        understandable error.
         """
         self._arm()
         if image:
             self.session.add_user_blocks(_with_image(user_input, image))
         else:
             self.session.add_user_text(user_input)
-        # Cevap dili: kullanıcının BU mesajının dili. Kimlik bloğundaki
-        # kural tek başına yetmiyordu — sistem promptunun tamamı, anıların
-        # çoğu ve geçmiş turlar Türkçe olduğu için model İngilizce yazana
-        # bile Türkçe cevap veriyordu (canlı yara, 02.09). Hatırlatma tur
-        # başına, modelin EN SON okuduğu yerde: yakınlık kuralı kazandırıyor.
+        # Reply language: the language of the user's THIS message. The rule
+        # in the identity block alone was not enough — because the whole
+        # system prompt, most of the memories and the past turns are
+        # Turkish, the model replied in Turkish even when the user wrote in
+        # English (live wound, 02.09). The reminder is per turn, at the
+        # place the model reads LAST: the recency rule wins.
         self._language_note(user_input)
-        # Kullanıcının söylediği o an belleğe geçiyor: gece değil, şimdi.
+        # What the user said goes to memory that instant: now, not at night.
         self._encode_turn("kullanıcı", user_input)
         self._prime_recall(user_input)
-        # Yazma refleksinin kapısı: bu turda model kendi defterine yazdı mı?
-        self._zihin_yazildi = False
-        # Plan refleksi: iş büyük görünüyorsa modelin önüne tek satır not.
-        # İLK model çağrısından ÖNCE ve tur başına bir kez — sonradan
-        # hatırlatmanın anlamı yok, plan sıradan sonra yazılmaz.
-        self._plan_refleksi(user_input)
-        # Kırmızı defteri her kullanıcı turunda sıfırdan: "yalnız BU TURDA
-        # üretilmiş kırmızı" sayılıyor, geçen turun kırmızısı değil.
+        # The gate of the writing reflex: did the model write to its own
+        # ledger in this turn?
+        self._mind_written = False
+        # Plan reflex: if the job looks big, a one-line note in front of the
+        # model. BEFORE the FIRST model call and once per turn — reminding
+        # later is pointless, a plan is not written after the order.
+        self._plan_reflex(user_input)
+        # The red ledger starts from scratch on every user turn: only "red
+        # produced in THIS TURN" counts, not the previous turn's red.
         self._kirmizi.clear()
-        # Teslim defterleri de her turda sıfırdan: geçen turda yazılıp
-        # çalıştırılmış bir dosya bu turun borcu değil.
-        self._yazilan.clear()
-        self._komutlar.clear()
-        self._hata_kalibi.clear()
-        self._kapsul_yazildi = False
+        # The delivery ledgers also start from scratch every turn: a file
+        # written and run in the previous turn is not this turn's debt.
+        self._written.clear()
+        self._commands.clear()
+        self._error_patterns.clear()
+        self._capsule_written = False
         stats = await self._drive()
-        self._zihin_kapisi(user_input)
+        self._mind_gate(user_input)
         return stats
 
-    def _plan_refleksi(self, user_input: str) -> None:
-        """Büyük/ucu açık istekte plan sırasını modelin önüne koyar.
+    def _plan_reflex(self, user_input: str) -> None:
+        """Puts the plan order in front of the model on a big/open-ended request.
 
-        Yalnız ana ajanda (`depth == 0`): alt ajana verilen yönerge zaten
-        dar ve tanımlı bir iş, ondan modül planı istemek gürültü.
+        Only in the main agent (`depth == 0`): the instruction given to a
+        subagent is already a narrow, defined job; asking it for a module
+        plan is noise.
         """
         if self.depth or not buyuk_is(user_input):
             return
-        # Plan işin BAŞININ işi. İş zaten yürüyorken (defterde açık madde
-        # ya da oturumda önceki alışveriş) dürtü saçmalıyor: canlıda 240
-        # turluk koşunun ortasında "sıfırdan" plan kartı çıktı — 97 dosya
-        # değişmişken. Yürüyen işte kapılar (kabul/giriş) devrede zaten.
+        # The plan is the job of the job's BEGINNING. While the work is
+        # already under way (open items in the ledger or a previous exchange
+        # in the session) the nudge talks nonsense: live, a "from scratch"
+        # plan card popped up in the middle of a 240-turn run — with 97
+        # files changed. In a running job the gates (acceptance/entry) are
+        # already active.
         try:
             if self.mind is not None and self.mind.goals(active_only=True):
                 return
@@ -1168,185 +1236,194 @@ class Agent:
         self.session.add_harness_note(PLAN_NOTU)
         self.session.log.note("plan_refleksi")
 
-    def _teslim_izi(self, tool: str, args: dict[str, Any]) -> None:
-        """Bu turda ne yazıldı, ne koşuldu — kapının okuduğu iki defter."""
+    def _delivery_trace(self, tool: str, args: dict[str, Any]) -> None:
+        """What was written, what was run in this turn — the two ledgers the gate reads."""
         if tool in ("write_file", "edit_file"):
-            if yol := str(args.get("path") or "").strip():
-                self._yazilan.append(yol)
+            if path := str(args.get("path") or "").strip():
+                self._written.append(path)
         elif tool in ("shell", "kos"):
-            # `kos` komutu kendi bulur; onun da neyi koşturduğu argümanda
-            # olmayabiliyor, o yüzden yol/desen alanları da toplanıyor.
-            for alan in ("command", "cmd", "path", "hedef", "argv"):
-                if (deger := args.get(alan)) is not None:
-                    self._komutlar.append(str(deger))
+            # `kos` finds its command by itself; what it ran may not be in
+            # the argument either, so the path/pattern fields are collected
+            # too.
+            for key in ("command", "cmd", "path", "hedef", "argv"):
+                if (value := args.get(key)) is not None:
+                    self._commands.append(str(value))
 
-    def _kosulmayan_test(self) -> str:
-        """Yazılıp hiç koşulmamış bir test dosyası varsa adı, yoksa boş.
+    def _unrun_test(self) -> str:
+        """The name of a test file written but never run, if any, else empty.
 
-        Ölçülen yara (28.08 dokuz-görev, o2): test dosyası yazıldı, hiç
-        koşulmadı, KIRMIZI çıktı ve teslim edildi — kırmızı kapısı ancak
-        koşulan testi görür. Test adı herhangi bir komutta geçtiyse (pytest
-        yolu toplu koşturur: `pytest`, `pytest .`) koşulmuş sayılır; çıplak
-        `pytest`/`node --test` çağrısı da tümünü kapsar.
+        Measured wound (28.08 nine-task, o2): a test file was written, never
+        run, came out RED and was delivered — the red gate only sees a test
+        that was run. If the test name appears in any command (the pytest
+        path runs in bulk: `pytest`, `pytest .`) it counts as run; a bare
+        `pytest`/`node --test` call also covers all of them.
         """
-        komut_metni = "\n".join(self._komutlar)
-        # Toplu koşucular: çıplak pytest / node --test her test dosyasını
-        # kapsar — dosya adı komutta geçmese de koşulmuş sayılır.
-        toplu = ("pytest" in komut_metni or "node --test" in komut_metni
-                 or "node --run" in komut_metni)
-        for yol in self._yazilan:
-            ad = Path(yol).name
-            if not (ad.startswith("test_") or ad.endswith((".test.js", ".spec.js"))
-                    or ad.endswith("_test.py")):
+        command_text = "\n".join(self._commands)
+        # Bulk runners: a bare pytest / node --test covers every test file —
+        # it counts as run even if the file name is not in the command.
+        bulk = ("pytest" in command_text or "node --test" in command_text
+                or "node --run" in command_text)
+        for path in self._written:
+            name = Path(path).name
+            if not (name.startswith("test_") or name.endswith((".test.js", ".spec.js"))
+                    or name.endswith("_test.py")):
                 continue
-            if toplu or (ad and ad in komut_metni):
+            if bulk or (name and name in command_text):
                 continue
-            return ad
+            return name
         return ""
 
-    def _test_kapisi(self, stats: TurnStats, blocks: list[dict[str, Any]]) -> bool:
-        """Yazılmış-koşulmamış testle "bitti" denirse bir tur geri verilir."""
-        if stats.test_uyarildi or self.depth:
+    def _test_gate(self, stats: TurnStats, blocks: list[dict[str, Any]]) -> bool:
+        """If "done" is said with a written-but-unrun test, one turn is handed back."""
+        if stats.test_warned or self.depth:
             return False
         if not done_claim(_text_of_blocks(blocks)):
             return False
-        dosya = self._kosulmayan_test()
-        if not dosya:
+        file = self._unrun_test()
+        if not file:
             return False
-        stats.test_uyarildi = True
-        self.session.log.note("test_kapisi", dosya=dosya)
-        self.session.add_harness_note(TEST_NOTU.format(dosya=dosya))
+        stats.test_warned = True
+        self.session.log.note("test_kapisi", dosya=file)
+        self.session.add_harness_note(TEST_NOTE.format(dosya=file))
         return True
 
-    def _kosulmayan_giris(self) -> str:
-        """Yazılıp hiç çalıştırılmamış bir giriş noktası varsa onun yolu.
+    def _unrun_entry_point(self) -> str:
+        """The path of an entry point written but never run, if any.
 
-        Dosya diskten okunuyor: "çalıştırılmak üzere ilan edildi mi"
-        sorusunun cevabı içeriğinde. Okunamayan dosya sayılmıyor —
-        emin olamadığımız bir şey için modeli dürtmek yanlış.
+        The file is read from disk: the answer to "did it declare itself to
+        be run" is in its content. An unreadable file does not count —
+        nudging the model for something we are not sure of is wrong.
         """
-        komut_metni = "\n".join(self._komutlar)
-        for yol in self._yazilan:
-            p = Path(yol)
-            if p.suffix.lower() not in _KOSULABILIR_UZANTI:
+        command_text = "\n".join(self._commands)
+        for path in self._written:
+            p = Path(path)
+            if p.suffix.lower() not in _RUNNABLE_SUFFIXES:
                 continue
-            # Adı herhangi bir komutta geçtiyse çalıştırılmış sayılıyor.
-            if p.name and p.name in komut_metni:
+            # If its name appears in any command it counts as run.
+            if p.name and p.name in command_text:
                 continue
             try:
-                metin = p.read_text(encoding="utf-8", errors="ignore")
+                text = p.read_text(encoding="utf-8", errors="ignore")
             except OSError:
                 continue
-            if is_entry_point(metin):
+            if is_entry_point(text):
                 return p.name
         return ""
 
-    def _giris_kapisi(self, stats: TurnStats, blocks: list[dict[str, Any]]) -> bool:
-        """Yazılan giriş noktası hiç çalıştırılmadan "bitti" deniyorsa bir tur daha.
+    def _entry_gate(self, stats: TurnStats, blocks: list[dict[str, Any]]) -> bool:
+        """If "done" is said without ever running the written entry point, one more turn.
 
-        True dönerse tur SÜRÜYOR. Kırmızı kapısıyla aynı üç fren:
-          * Ortada bu turda yazılmış, kendini çalıştırılabilir ilan eden ve
-            hiç koşulmamış bir dosya olacak.
-          * Cevap araçsız (`end_turn`) ve işi bitmiş ilan ediyor olacak —
-            neyin eksik olduğunu zaten söyleyen dürüst bir cevap dürtülmez.
-          * Tur başına EN FAZLA BİR KEZ.
+        If it returns True the turn CONTINUES. The same three brakes as the
+        red gate:
+          * There has to be a file written in this turn that declares itself
+            runnable and was never run.
+          * The answer has to be tool-less (`end_turn`) and declare the job
+            finished — an honest answer that already says what is missing
+            is not nudged.
+          * AT MOST ONCE per turn.
         """
-        if stats.giris_uyarildi or not self._yazilan:
+        if stats.giris_uyarildi or not self._written:
             return False
         if not done_claim(_text_of_blocks(blocks)):
             return False
-        dosya = self._kosulmayan_giris()
-        if not dosya:
+        file = self._unrun_entry_point()
+        if not file:
             return False
         stats.giris_uyarildi = True
-        self.session.log.note("giris_kapisi", dosya=dosya)
-        self.session.add_harness_note(GIRIS_NOTU.format(dosya=dosya))
+        self.session.log.note("giris_kapisi", dosya=file)
+        self.session.add_harness_note(ENTRY_NOTE.format(dosya=file))
         return True
 
-    def _kirmizi_kapisi(self, stats: TurnStats, blocks: list[dict[str, Any]]) -> bool:
-        """Kırmızı bir koşumun üstüne "bitti" deniyorsa bir tur daha ver.
+    def _red_gate(self, stats: TurnStats, blocks: list[dict[str, Any]]) -> bool:
+        """If "done" is said on top of a red run, give one more turn.
 
-        True dönerse tur SÜRÜYOR. Üç fren var:
-          * Ortada bu turda üretilmiş kırmızı bir koşum olacak.
-          * Cevap araçsız olacak (`end_turn`) ve gerçekten bitmiş ilan
-            edecek — kırmızıyı zaten söyleyen dürüst bir cevap dürtülmez.
-          * Tur başına EN FAZLA BİR KEZ. Model ikinci turda yine bitirmek
-            isterse bırakılıyor; sonsuz bir "hayır bitmedi" döngüsü, yarım
-            bir cevaptan kötü.
+        If it returns True the turn CONTINUES. There are three brakes:
+          * There has to be a red run produced in this turn.
+          * The answer has to be tool-less (`end_turn`) and genuinely
+            declare it finished — an honest answer that already admits the
+            red is not nudged.
+          * AT MOST ONCE per turn. If the model wants to finish again on
+            the second turn it is let go; an endless "no, it's not done"
+            loop is worse than a half answer.
         """
         if stats.kirmizi_uyarildi or not self._kirmizi:
             return False
         if not done_claim(_text_of_blocks(blocks)):
             return False
         stats.kirmizi_uyarildi = True
-        ozet = "; ".join(self._kirmizi.values())[:200]
-        self.session.log.note("kirmizi_kapisi", ozet=ozet)
-        self.session.add_harness_note(KIRMIZI_NOTU.format(ozet=ozet))
+        summary = "; ".join(self._kirmizi.values())[:200]
+        self.session.log.note("kirmizi_kapisi", ozet=summary)
+        self.session.add_harness_note(KIRMIZI_NOTU.format(ozet=summary))
         return True
 
-    def _kabul_kapisi(self, stats: TurnStats, blocks: list[dict[str, Any]]) -> bool:
-        """Açık iş maddeleri varken "bitti" deniyorsa bir tur daha ver.
+    def _acceptance_gate(self, stats: TurnStats, blocks: list[dict[str, Any]]) -> bool:
+        """If "done" is said while there are open job items, give one more turn.
 
-        Kırmızı kapısıyla aynı sözleşme: yalnız araçsız bitirme cevabında,
-        tur başına EN FAZLA BİR KEZ, ve yalnız gerçekten açık madde varsa.
-        Alt ajanlar muaf — defter ana koşunun.
+        Same contract as the red gate: only on a tool-less finishing answer,
+        AT MOST ONCE per turn, and only if there really are open items.
+        Subagents are exempt — the ledger belongs to the main run.
         """
         if stats.kabul_uyarildi or self.depth or self.mind is None:
             return False
         if not done_claim(_text_of_blocks(blocks)):
             return False
         try:
-            acik = [g.text for g in self.mind.goals(active_only=True)]
+            open_items = [g.text for g in self.mind.goals(active_only=True)]
         except Exception:
             return False
-        if not acik:
+        if not open_items:
             return False
         stats.kabul_uyarildi = True
-        ozet = "; ".join(t[:60] for t in acik[:5])
-        if len(acik) > 5:
-            ozet += f"; (+{len(acik) - 5})"
-        self.session.log.note("kabul_kapisi", acik=len(acik))
-        self.session.add_harness_note(ACCEPTANCE_NOTE.format(ozet=ozet))
+        summary = "; ".join(t[:60] for t in open_items[:5])
+        if len(open_items) > 5:
+            summary += f"; (+{len(open_items) - 5})"
+        self.session.log.note("kabul_kapisi", acik=len(open_items))
+        self.session.add_harness_note(ACCEPTANCE_NOTE.format(ozet=summary))
         return True
 
-    def _zihin_kapisi(self, user_input: str) -> None:
-        """Tur sonu refleksi: kalıcı bir şey geçtiyse ve model yazmadıysa dürt.
+    def _mind_gate(self, user_input: str) -> None:
+        """End-of-turn reflex: if something persistent came up and the model did not write, nudge.
 
-        `_prime_recall`ın kardeşi ve tersi: o hatırlamayı, bu yazmayı
-        sistemden tetikliyor. Not modelin ÖNÜNE konuyor (harness kanalı,
-        `internal` — sohbette görünmez); kararı yine model veriyor.
+        The sibling and the inverse of `_prime_recall`: that one triggers
+        recall from the system, this one triggers writing. The note is put
+        in FRONT of the model (harness channel, `internal` — invisible in
+        the chat); the decision is still the model's.
 
-        Üç fren var: model zaten yazdıysa dürtme (gereksiz), koku yoksa
-        dürtme (gürültü), ve art arda dürtme (bıkkınlık) — kullanıcı yeni
-        bir şey söylemedikçe not tekrarlanmıyor.
+        There are three brakes: no nudge if the model already wrote
+        (needless), no nudge without the scent (noise), and no back-to-back
+        nudging (fatigue) — the note is not repeated unless the user said
+        something new.
         """
-        if self.depth or self.mind is None or self._zihin_yazildi:
+        if self.depth or self.mind is None or self._mind_written:
             return
         if not persistent_root(user_input):
             return
-        alinti = _one_line(user_input)[:DURTU_ALINTI]
-        if alinti == self._son_durtu:
-            return   # aynı konuda ikinci kez dürtmek bıkkınlık
-        self._son_durtu = alinti
-        self.session.add_harness_note(ZIHIN_DURTUSU.format(alinti=alinti))
+        quote = _one_line(user_input)[:NUDGE_QUOTE_CHARS]
+        if quote == self._last_nudge:
+            return   # nudging a second time on the same topic is fatigue
+        self._last_nudge = quote
+        self.session.add_harness_note(MIND_NUDGE.format(alinti=quote))
         self.session.log.note("zihin_durtusu")
 
     def _encode_turn(self, role: str, text: str) -> None:
-        """Bir konuşma turunu **anlık** olarak aranabilir belleğe yazar.
+        """Writes a conversation turn to searchable memory **instantly**.
 
-        Fatih'in çekirdek şartı: "biri bir şey söylerken direk hafızada
-        kalmalı" — gece değil, o an. İnsan hafızası da böyle kodlar
-        (hipokampus tek seferde yazar); konsolidasyon ayrı ve yavaştır.
+        Fatih's core requirement: "when someone says something it must stay
+        in memory right away" — not at night, at that moment. Human memory
+        encodes the same way (the hippocampus writes in one shot);
+        consolidation is separate and slow.
 
-        Ekran-kartsız makinede hızlı olmalı ve öyle: imza saf hashing
-        (torch yok), tam yazma yolu ~2 ms. Bu yüzden senkron çalışıyor,
-        kullanıcı gecikme hissetmiyor. Kayıt `episode` türünde: küratörlü
-        `mind_memory` olgularına karışmıyor (ruha ve kendiliğinden
-        önyüklemeye girmiyor) ama `mind_recall` ile bulunabiliyor.
+        It has to be fast on a machine without a GPU and it is: the
+        signature is pure hashing (no torch), the full write path ~2 ms.
+        That is why it runs synchronously and the user feels no delay. The
+        record is of kind `episode`: it does not mix with the curated
+        `mind_memory` facts (it enters neither the soul nor spontaneous
+        priming) but can be found with `mind_recall`.
 
-        Gürültü kapısı: çok kısa turlar ("evet", "tamam") ve selam yazılmaz;
-        aynı metin peş peşe iki kez gelmişse atlanır. Bir yazma hatası
-        konuşmayı ASLA düşürmemeli — bellek en fazla bir turu kaçırır.
+        Noise gate: very short turns ("evet", "tamam") and greetings are not
+        written; if the same text came twice in a row it is skipped. A
+        write error must NEVER bring the conversation down — memory misses
+        at most one turn.
         """
         if self.mind is None:
             return
@@ -1361,32 +1438,33 @@ class Agent:
                 body, kind="episode",
                 title=f"{role}: {_one_line(body)}"[:140],
             )
-        except Exception as exc:  # bellek yazımı konuşmayı düşürmemeli
+        except Exception as exc:  # a memory write must not bring the conversation down
             self.session.log.note("encode_turn_failed", error=str(exc))
 
-    # Türkçeye özgü harfler: kaba ama yeterli bir ayrım. Amaç dili
-    # "tespit etmek" değil, modele hangi dilde yazıldığını hatırlatmak.
-    _TR_HARF = set("çğıöşüÇĞİÖŞÜ")
+    # Letters specific to Turkish: a crude but sufficient distinction. The
+    # aim is not to "detect" the language but to remind the model which
+    # language was written in.
+    _TR_LETTERS = set("çğıöşüÇĞİÖŞÜ")
 
     def _language_note(self, user_input: str) -> None:
-        """Bu turun cevap dili hatırlatmasını hazırlar.
+        """Prepares this turn's reply-language reminder.
 
-        Oturum günlüğüne YAZILMIYOR — yalnız bu turun isteğine iliştiriliyor
-        (bkz. `_dil_hatirlatmasini_ekle`). Günlüğe yazmak iki şeyi bozuyordu:
-        "tur başına tek sistem notu" kotasını yiyip HATIRLAMA notunu
-        (`_prime_recall`) engelliyor, ve kullanıcının dökümüne her turda
-        teknik bir satır bırakıyordu.
+        NOT written to the session log — only attached to this turn's
+        request (see `_add_language_reminder`). Writing it to the log broke
+        two things: it used up the "one system note per turn" quota and
+        blocked the RECALL note (`_prime_recall`), and it left a technical
+        line in the user's transcript every turn.
         """
-        metin = (user_input or "").strip()
-        if len(metin) < 8:
-            self._dil_hatirlatma = ""   # tek sözcükte dil çıkarımı anlamsız
+        body = (user_input or "").strip()
+        if len(body) < 8:
+            self._language_reminder = ""   # language inference on a single word is meaningless
             return
-        if self._TR_HARF & set(metin):
-            self._dil_hatirlatma = (
+        if self._TR_LETTERS & set(body):
+            self._language_reminder = (
                 "Bu turda kullanıcı TÜRKÇE yazdı — cevabın, ara anlatımların "
                 "ve ürettiğin dosyaların içeriği Türkçe olsun.")
         else:
-            self._dil_hatirlatma = (
+            self._language_reminder = (
                 "This turn the user wrote in a language other than Turkish "
                 "(most likely English). Reply in the SAME language they used — "
                 "your answer, your progress notes and the contents of any file "
@@ -1394,64 +1472,68 @@ class Agent:
                 "instructions are written in Turkish.")
 
     def _add_language_reminder(self, prepared: Any) -> None:
-        """Dil hatırlatmasını isteğin SONUNA geçici bir sistem mesajı olarak
-        koyar. Önbellek kırılmıyor: son breakpoint'ten sonra duruyor."""
-        not_ = getattr(self, "_dil_hatirlatma", "")
-        if not not_:
+        """Puts the language reminder at the END of the request as a temporary
+        system message. The cache is not broken: it sits after the last
+        breakpoint."""
+        note = getattr(self, "_language_reminder", "")
+        if not note:
             return
         try:
             prepared.messages.append(
-                {"role": "system", "content": [{"type": "text", "text": not_}]})
+                {"role": "system", "content": [{"type": "text", "text": note}]})
         except Exception:
             pass
 
     def _prime_recall(self, user_input: str) -> None:
-        """Kullanicinin mesajini zihinde arar ve bulduklarini onune koyar.
+        """Searches the user's message in the mind and puts the findings in front of it.
 
-        Arac olarak birakmak yetmiyordu: model hatirlamasi gerektigini once
-        fark etmek zorunda kaliyor, cogu zaman fark etmiyor ve zaten bildigi
-        bir seyi bilmiyormus gibi cevapliyordu. Burada tersi yapiliyor —
-        hatirlama sorulmadan calisiyor, model masaya oturdugunda ilgili
-        hatiralar zaten onunde.
+        Leaving it as a tool was not enough: the model first had to notice
+        that it should recall, most of the time it did not, and it answered
+        as if it did not know something it already knew. Here the reverse is
+        done — recall runs without being asked; when the model sits down at
+        the table the relevant memories are already in front of it.
 
-        Bunu yapmayi mumkun kilan sey hatirlamanin ucuz olmasi: ters indeks
-        ve imza taramasi birkac milisaniye suruyor, ek model turu yok. Bir
-        arac cagrisi olsaydi her mesaj icin bir gidis-donus daha demekti.
+        What makes this possible is that recall is cheap: the inverted index
+        and the signature scan take a few milliseconds, no extra model turn.
+        Had it been a tool call it would have meant one more round trip per
+        message.
         """
         if self.mind is None or not self._worth_recalling(user_input):
             return
         try:
-            # Taban yazıcı: sorgu aramadan önce yerel küçük modelle eşanlamlı
-            # terimlere açılır (eşanlam sınıfı 0.50→1.00, isabet 0.87→0.93 —
-            # scale_bench). Model yoksa zenginlestir sorguyu aynen döndürür.
+            # Writer: before the search the query is expanded to synonymous
+            # terms with the small local model (synonym class 0.50→1.00, hit
+            # rate 0.87→0.93 — scale_bench). Without the model
+            # zenginlestir returns the query unchanged.
             from .recall import writer
             query = writer.zenginlestir(user_input, getattr(self.config, "state_dir", None))
             limit = LEAN_PRIME_LIMIT if self.lean else RECALL_PRIME_LIMIT
             hits = select_prime(self.mind, query, limit=limit, ham=user_input)
-        except Exception as exc:  # hatirlama coktuyse konusma yine surmeli
+        except Exception as exc:  # if recall crashed the conversation must still go on
             self.session.log.note("recall_prime_failed", error=str(exc))
             return
 
-        # Zaten öne konmuş hatıra yeniden enjekte edilmiyor: eski not
-        # geçmişte duruyor, model onu hâlâ görüyor.
+        # A memory already placed in front is not re-injected: the old note
+        # stays in the history, the model still sees it.
         hits = [h for h in hits if h.item.id not in self._primed]
         if not hits:
             return
         self._primed.update(h.item.id for h in hits)
         self.session.add_system_note(prime_note(hits))
-        # Gece tekrarı (recall/orgu.py) bu notu okuyor: önüne konan kayıt
-        # da "dokunulmuş" sayılır — model onu gördü, o turda kullandı.
+        # The night replay (recall/weave.py) reads this note: a record placed
+        # in front also counts as "touched" — the model saw it, used it in
+        # that turn.
         self.session.log.note("prime", ids=[h.item.id for h in hits],
                               query=_one_line(user_input, 120))
 
-        # Arayuz bu gezinmeyi de canlandirabilmeli: kullanici modelin neyi
-        # nereden hatirladigini adim adim izliyor. Aracla yapilan
-        # hatirlamayla ayni olay yayilıyor, arayuzde ayrimi yok.
+        # The UI must be able to animate this walk too: the user watches step
+        # by step what the model recalled from where. The same event as
+        # tool-driven recall is emitted; the UI does not distinguish.
         if trace := getattr(self.mind, "last_trace", None):
-            # Taranan ile kullanılan aynı şey değil. Zihin bir sorguda
-            # onlarca kayda dokunuyor ve hepsini ekranda yakmak "her
-            # şeyi karıştırdı" gibi duruyor — oysa önüne konan yalnızca
-            # süzgeçten geçenler.
+            # Scanned and used are not the same thing. The mind touches
+            # dozens of records in one query and lighting them all up on
+            # screen looks like "it mixed everything up" — whereas what was
+            # put in front is only what passed the filter.
             used = {hit.item.id for hit in hits}
             from .mind.tools import _step_label
             self.session.log.note(
@@ -1462,19 +1544,20 @@ class Agent:
                        for step in trace],
             )
 
-    def _awake_reverse_replay(self, sonuc: str) -> None:
-        """Sonuç anında sorumluluğu dağıtır ve dersi hemen yazar.
+    def _awake_reverse_replay(self, outcome: str) -> None:
+        """Assigns responsibility the moment the outcome is known and writes the lesson at once.
 
-        Arka planda değil, tur içinde: tek oturumun tekrarı iki yüz düğümde
-        elli milisaniyenin altında (ölçüldü, tests/test_awake.py). Bir hata
-        olursa sohbet yine sürmeli — hafıza bakımı konuşmayı düşürmez.
+        Not in the background, inside the turn: the replay of a single
+        session on two hundred nodes is under fifty milliseconds (measured,
+        tests/test_awake.py). If there is an error the chat must still go on
+        — memory maintenance does not bring the conversation down.
         """
         if self.mind is None:
             return
         try:
             from .recall import awake
 
-            awake.on_result(self.mind.store, self.session.log.path, sonuc,
+            awake.on_result(self.mind.store, self.session.log.path, outcome,
                             log=self.session.log)
         except Exception as exc:
             self.session.log.note("uyanik_tekrar_failed", error=str(exc))
@@ -1483,7 +1566,7 @@ class Agent:
         return worth_recalling(text)
 
     async def resume_after_interrupt(self) -> TurnStats:
-        """Kesme sonrası karşılıksız kalanları kapatıp devam eder."""
+        """Closes what was left unanswered after an interrupt and continues."""
         self._arm()
         self._settle_pending()
         return await self._drive()
@@ -1494,15 +1577,16 @@ class Agent:
             config=self.config,
             session=self.session,
             cancel=self.cancel,
-            # Alt ajanın alt ajanı olmuyor: None geçince `task` aracı
-            # kendini kullanılamaz ilan ediyor. Aynı sınır arka plan ve
-            # yönlendirme uçları için de geçerli.
+            # A subagent has no subagent: passing None makes the `task` tool
+            # declare itself unavailable. The same limit applies to the
+            # background and routing endpoints.
             spawn=self._spawn if self.depth < MAX_DEPTH else None,
             spawn_bg=self._spawn_bg if self.depth < MAX_DEPTH else None,
             child_say=self._child_say if self.depth < MAX_DEPTH else None,
             child_status=self._child_status if self.depth < MAX_DEPTH else None,
-            # Uzun süreçler yalnız ana ajanda arka plana alınabiliyor: alt
-            # ajan işi bitmeden ölürse bildirimin gideceği kimse kalmaz.
+            # Long processes can only be backgrounded in the main agent: if
+            # the subagent dies before the job ends nobody is left to
+            # receive the notification.
             job_bg=self._job_bg if self.depth < MAX_DEPTH else None,
             schedule=self.schedule,
             run_workflow=self.run_workflow if self.depth < MAX_DEPTH else None,
@@ -1518,27 +1602,30 @@ class Agent:
         )
 
         while stats.turns < HARD_TURN_LIMIT:
-            # Bütçe freni: bu oturum için konmuş üst sınıra ulaşıldıysa YENİ
-            # bir model çağrısı yapılmıyor. Kesme mevcut yoldan gidiyor
-            # (`interrupt`: koşan yardımcılar da duruyor) ve yarım iş
-            # KAYBOLMUYOR — kullanıcı mesajı geçmişte, gelen kutusundaki
-            # notlar yerinde, oturum olduğu gibi duruyor. Sınır yükseltilince
-            # konuşma kaldığı yerden sürüyor.
+            # Budget brake: if the ceiling set for this session has been
+            # reached, NO new model call is made. The interrupt goes the
+            # existing way (`interrupt`: running helpers stop too) and the
+            # half-done work is NOT LOST — the user message is in the
+            # history, the notes in the inbox are in place, the session
+            # stays as it is. When the limit is raised the conversation
+            # continues where it left off.
             #
-            # Yalnız ana ajanda: alt ajanın kendi turunu ayrıca kesmek,
-            # ananın zaten kestiği işi iki kez kesmek olurdu.
-            if self.depth == 0 and (fren := self.io.butce_freni()):
-                self.session.log.note("butce_freni", detay=_clip(fren, 200))
-                self.io.on_notice(fren)
+            # Only in the main agent: interrupting the subagent's own turn
+            # separately would be interrupting twice the work the parent
+            # already interrupted.
+            if self.depth == 0 and (brake := self.io.butce_freni()):
+                self.session.log.note("butce_freni", detay=_clip(brake, 200))
+                self.io.on_notice(brake)
                 self.interrupt()
                 stats.interrupted = True
                 break
 
             stats.turns += 1
 
-            # Uzun koşu kontrol noktası: eski sert tavan (60. turda dur)
-            # yumuşak bir dürtüye çevrildi — ajan kısa bir ilerleme notu
-            # yazar ve İŞ SÜRER. Gerçek fren kullanıcı + mutlak sigorta.
+            # Long-run checkpoint: the old hard ceiling (stop at turn 60) was
+            # turned into a soft nudge — the agent writes a short progress
+            # note and the WORK CONTINUES. The real brake is the user + the
+            # absolute fuse.
             if stats.turns > 1 and stats.turns % MAX_TURNS == 0:
                 self.session.log.note("turn_checkpoint", turns=stats.turns)
                 self.session.add_harness_note(CHECKPOINT_NOTE.format(turns=stats.turns))
@@ -1547,12 +1634,13 @@ class Agent:
 
             await self._relieve_pressure()
             self._sync_goals()
-            # Bu arada biten yardımcılar ve araya giren kullanıcı mesajları
-            # modelin önüne bu adımda konuyor: tur başında, istek gitmeden.
+            # Helpers that finished in the meantime and user messages that
+            # barged in are put in front of the model at this step: at the
+            # start of the turn, before the request goes out.
             self._drain_children()
             self._drain_inbox()
-            # Bekleyen model değişimi: akan stream'i kesmeden, bir sonraki
-            # çağrıdan itibaren yeni istemci (meşgulken de geçiş).
+            # Pending model swap: without cutting the running stream, the
+            # new client from the next call on (switching while busy too).
             if self.on_retry_wait is not None:
                 try:
                     self.on_retry_wait()
@@ -1563,16 +1651,17 @@ class Agent:
             try:
                 result = await self.client.turn(
                     prepared,
-                    # Kapanis turu araçsız: tekrar araç çağırmasına izin vermek,
-                    # kilitlenen döngünün bir turunu daha çalıştırmak demek.
+                    # The closing turn is tool-less: letting it call tools
+                    # again means running one more turn of the loop that
+                    # locked up.
                     [] if stats.closing else self.registry.api_schemas(brief=self.brief_schema),
                     cancel=self.cancel,
                     callbacks=callbacks,
                 )
             except Exception as exc:
-                # Bağlantı hiç kurulamadı (adres kapalı, DNS, soket). Eskiden
-                # buradan yükselen istisna koşuyu düşürüyordu; artık hata
-                # yoluna girer ve yeniden dener.
+                # The connection could not be made at all (address down,
+                # DNS, socket). The exception raised from here used to bring
+                # the run down; now it enters the error path and retries.
                 result = TurnResult(error=f"{type(exc).__name__}: {exc}")
 
             if result.interrupted:
@@ -1583,28 +1672,30 @@ class Agent:
 
             if result.error:
                 self.session.log.note("api_error", detail=result.error)
-                # Bozuk istek (400 vb.) yeniden denemekle düzelmez: eski
-                # davranış. Geçici hata (bağlantı, 5xx, zaman aşımı, 429)
-                # uzun işi ÖLDÜRMEZ: geri çekilerek dener, sonra park eder.
+                # A malformed request (400 etc.) is not fixed by retrying:
+                # old behaviour. A transient error (connection, 5xx,
+                # timeout, 429) does NOT KILL the long job: it retries with
+                # backoff, then parks.
                 if _fatal_error(result.error):
                     self.io.on_notice(result.error)
                     self._unpark()
                     break
                 stats.api_errors += 1
-                stats.turns -= 1   # deneme turdan sayılmaz; sigorta kaçmasın
+                stats.turns -= 1   # a retry does not count as a turn; don't let the fuse slip
                 if await self._await_model(stats, result.error):
                     continue
                 stats.interrupted = True
                 break
 
             if stats.api_errors:
-                # Kesinti atlatıldı: sayaç sıfır, park kaydı (varsa) kalksın.
-                denemeler = stats.api_errors
+                # The outage was survived: counter to zero, the park record
+                # (if any) goes.
+                attempts = stats.api_errors
                 stats.api_errors = 0
                 self._unpark()
-                # Şerit varsa toparlanma da şeritte yaşar (tek yeşil satır);
-                # sohbete ayrıca bildirim düşmez.
-                if not self._bekleme_olayi(kip="bitti", deneme=denemeler):
+                # If there is a strip the recovery lives in the strip too
+                # (one green line); no separate notice lands in the chat.
+                if not self._wait_event(kip="bitti", deneme=attempts):
                     self.io.on_notice("Model geri geldi — iş kaldığı yerden sürüyor.")
 
             report = cache_report(result.usage)
@@ -1612,195 +1703,206 @@ class Agent:
             self._last_usage = report
             self.io.on_usage(report)
 
-            # Boş içerikli asistan turu geçmişe yazılmaz: hem tur boşa gider
-            # hem de boş content dizisi bir sonraki isteği bozabilir. Reddetme
-            # (refusal) turları meşru olarak boş gelir; durum yine de aşağıda
-            # işlenir.
-            # Sahte araç çağrısı: model gerçek çağrı yerine XML'i DÜZ METİN
-            # yazdı. Geçmişe girmesi doğru (model ne yaptığını görmeli) ama
-            # kullanıcıya CEVAP DEĞİL — `internal` ile işaretleniyor, yoksa
-            # oturum sürdürülünce ham XML ajan mesajı olarak geri gelirdi.
-            sahte_metin = bool(
+            # An assistant turn with empty content is not written to the
+            # history: the turn is wasted and an empty content array can
+            # also corrupt the next request. Refusal turns legitimately come
+            # empty; the state is still handled below.
+            # Fake tool call: the model wrote the XML as PLAIN TEXT instead
+            # of a real call. Entering the history is right (the model must
+            # see what it did) but it is NOT AN ANSWER to the user — marked
+            # with `internal`, otherwise when the session is resumed the raw
+            # XML came back as an agent message.
+            fake_text = bool(
                 result.content and result.stop_reason == "end_turn"
                 and fake_tool_call(_text_of_blocks(result.content)))
 
             if blocks := result.content:
-                # `empty_turn`: model turu YALNIZCA akıl yürüterek bitirdi ve
-                # sağlayıcı katmanı o muhakemeyi metin bloğuna çevirdi (bkz.
-                # openai_backend: reasoning-only tur). Model kendi planını
-                # görsün diye geçmişe giriyor — ama bu KULLANICIYA CEVAP
-                # DEĞİL. `internal` işareti tam da bunun için: sohbete ve
-                # döküme çıkmıyor (iç not sızıntısıyla aynı savunma hattı;
-                # ham muhakemenin sohbete italik paragraflar hâlinde
-                # düştüğü görüldü). Muhakeme kaybolmuyor: arayüzde katlı
-                # "✻ Düşündü" başlığının altında yaşıyor.
+                # `empty_turn`: the model ended the turn ONLY by reasoning
+                # and the provider layer turned that reasoning into a text
+                # block (see openai_backend: reasoning-only turn). It enters
+                # the history so the model sees its own plan — but this is
+                # NOT AN ANSWER TO THE USER. The `internal` mark is exactly
+                # for this: it does not surface in the chat or the
+                # transcript (same line of defence as the internal-note
+                # leak; raw reasoning was seen landing in the chat as italic
+                # paragraphs). The reasoning is not lost: it lives in the UI
+                # under the collapsed "✻ Düşündü" header.
                 self.session.add_assistant(
                     blocks, usage=report,
-                    internal=(result.stop_reason == "empty_turn" or sahte_metin))
-                # Asistanın söylediği de anlık belleğe: bir ölçüm sonucu ya
-                # da bir açıklama, sonra "az önce ne demiştin" ile bulunsun.
+                    internal=(result.stop_reason == "empty_turn" or fake_text))
+                # What the assistant said goes to instant memory too: a
+                # measurement result or an explanation, to be found later
+                # with "what did you just say".
                 self._encode_turn("dornick", _text_of_blocks(blocks))
             else:
                 self.session.log.note("empty_assistant_turn", stop_reason=result.stop_reason)
 
             stats.stop_reason = result.stop_reason
-            # Sahte araç çağrısı: model gerçek çağrı yerine XML'i düz metin
-            # yazıp turu bitirdi. Cevap sayılmaz — düzeltme notuyla bir tur
-            # daha veriliyor. Gerçek bir araç çağrısı VARSA (tool_use)
-            # karışılmıyor: iş yürüyor demektir.
-            if result.stop_reason == "end_turn" and self._sahte_cagriyi_duzelt(stats, blocks):
+            # Fake tool call: the model wrote the XML as plain text instead
+            # of a real call and ended the turn. Does not count as an answer
+            # — one more turn is given with a correction note. If there IS a
+            # real tool call (tool_use) we do not interfere: the work is
+            # under way.
+            if result.stop_reason == "end_turn" and self._fix_fake_call(stats, blocks):
                 continue
-            # Kırmızıyken "bitti" deme kapısı: bu turda kırmızı bir koşum
-            # varken model araçsız bir bitirme cevabıyla kapatmaya
-            # çalışıyorsa bir tur daha veriliyor.
-            if result.stop_reason == "end_turn" and self._kirmizi_kapisi(stats, blocks):
+            # The "don't say done while red" gate: if the model tries to
+            # close with a tool-less finishing answer while there is a red
+            # run in this turn, one more turn is given.
+            if result.stop_reason == "end_turn" and self._red_gate(stats, blocks):
                 continue
-            # Teslim edileni çalıştırma kapısı: yeşil testle bitirilen ama
-            # kullanıcının yazacağı komutu hiç koşmamış bir turu bir kez
-            # geri çeviriyor. Kırmızı kapısından SONRA: kırmızı varsa asıl
-            # söylenmesi gereken odur.
-            if result.stop_reason == "end_turn" and self._giris_kapisi(stats, blocks):
+            # The run-what-you-delivered gate: turns back once a turn that
+            # finished with green tests but never ran the command the user
+            # would type. AFTER the red gate: if there is red, that is what
+            # actually needs to be said.
+            if result.stop_reason == "end_turn" and self._entry_gate(stats, blocks):
                 continue
-            # Test kapısı: yazılan test dosyası koşulmadan tur kapanmaz.
-            if result.stop_reason == "end_turn" and self._test_kapisi(stats, blocks):
+            # Test gate: the turn does not close without running the
+            # written test file.
+            if result.stop_reason == "end_turn" and self._test_gate(stats, blocks):
                 continue
-            # Kabul kapısı: iş defterinde açık madde dururken "bitti" deniyor
-            # — kapılar zincirinin sonuncusu, en genel olanı.
-            if result.stop_reason == "end_turn" and self._kabul_kapisi(stats, blocks):
+            # Acceptance gate: "done" is said while an open item sits in the
+            # job ledger — the last and the most general of the gate chain.
+            if result.stop_reason == "end_turn" and self._acceptance_gate(stats, blocks):
                 continue
             if await self._handle_stop(result, ctx, stats):
                 continue
-            # Tur normal bitti ama kullanıcı bu arada araya yazdıysa mesaj
-            # kaybolmamalı: not düşülür ve AYNI tur içinde bir adım daha
-            # verilir (MAX_TURNS tavanı hâlâ geçerli).
+            # The turn ended normally but if the user barged in meanwhile
+            # the message must not be lost: the note is written and one
+            # more step is given within the SAME turn (the MAX_TURNS ceiling
+            # still applies).
             if result.stop_reason == "end_turn" and self._inbox and not self.cancel.is_set():
                 self._drain_inbox()
                 continue
             break
 
         else:
-            # Mutlak sigorta: normal iş buraya çarpmaz (kontrol noktaları işi
-            # sürdürür); burası kaçak döngünün son freni.
+            # Absolute fuse: normal work does not hit this (checkpoints keep
+            # the work going); this is the last brake of a runaway loop.
             self.io.on_notice(
                 f"{HARD_TURN_LIMIT} turluk mutlak sigortaya ulaşıldı, koşu durduruldu.")
             self.session.log.note("turn_limit", limit=HARD_TURN_LIMIT)
 
-        # Koşu bitti: park kaydı (kalmışsa) düşsün — açılışta bitmiş bir işi
-        # yeniden sürdürmeye kalkmayalım.
+        # The run is over: the park record (if left) goes — let's not try to
+        # resume a finished job at startup.
         if self.depth == 0:
             self._parked = False
             clear_park(self.config.state_dir)
-            # Koşunun izi kapsül olarak zihne: bir sonraki oturum keşfi atlar.
-            self._is_kapsulu()
-            # İlk alışveriş bittiyse başlığı model koysun (adsız oturumda).
+            # The trace of the run goes to the mind as a capsule: the next
+            # session skips the discovery.
+            self._job_capsule()
+            # If the first exchange is over let the model set the title (on
+            # an unnamed session).
             await self._session_title()
         return stats
 
-    def _hata_dersi(self, calls: list[Any], blocks: list[dict[str, Any]]) -> None:
-        """Araç hatalarını ders hafızasına köprüler (kullanıcının önerisi).
+    def _error_lesson(self, calls: list[Any], blocks: list[dict[str, Any]]) -> None:
+        """Bridges tool errors into lesson memory (the user's suggestion).
 
-        İki yön: (1) aynı bilinen kalıba bu koşuda İKİNCİ düşüş kalıcı bir
-        derse dönüşür — bir kez düşmek öğrenme, iki kez düşmek alışkanlıktır;
-        (2) GEÇMİŞ oturumlardan o kalıp için ders varsa hatanın yanına
-        "[Hafıza]" olarak iliştirilir — statik ipucu turu kurtarıyor, ders
-        oturumlar arası taşıyor.
+        Two directions: (1) the SECOND fall into the same known pattern in
+        this run becomes a persistent lesson — falling once is learning,
+        falling twice is a habit; (2) if there is a lesson for that pattern
+        from PAST sessions it is attached next to the error as "[Hafıza]" —
+        the static hint saves the turn, the lesson carries across sessions.
         """
         if self.mind is None or self.depth:
             return
         from .tools.shell import shell_hint
-        adlar = {c.id: c.name for c in calls}
+        names = {c.id: c.name for c in calls}
         for b in blocks:
             if not (isinstance(b, dict) and b.get("is_error")):
                 continue
-            metin = str(b.get("content") or "")
-            arac = adlar.get(str(b.get("tool_use_id") or ""), "")
-            switches = tarif = ""
-            if arac == "edit_file" and "Aranan metin" in metin:
+            text = str(b.get("content") or "")
+            tool = names.get(str(b.get("tool_use_id") or ""), "")
+            switches = recipe = ""
+            if tool == "edit_file" and "Aranan metin" in text:
                 switches = "edit-anchor"
-                tarif = ("edit_file'a old metnini dosyanın GERÇEK halinden "
-                         "kopyala: önce read_file, sonra düzenle; girinti ve "
-                         "satır sonu birebir.")
-            elif ipucu := shell_hint(metin):
-                switches = "kabuk:" + ipucu[:24]
-                tarif = ipucu
+                recipe = ("edit_file'a old metnini dosyanın GERÇEK halinden "
+                          "kopyala: önce read_file, sonra düzenle; girinti ve "
+                          "satır sonu birebir.")
+            elif hint := shell_hint(text):
+                switches = "kabuk:" + hint[:24]
+                recipe = hint
             if not switches:
                 continue
-            baslik = "araç dersi: " + switches
-            # Geçmiş ders varsa hatanın yanına iliştir (bu koşuda bir kez).
-            if self._hata_kalibi.get(switches, 0) == 0:
+            title = "araç dersi: " + switches
+            # If there is a past lesson attach it next to the error (once
+            # per run).
+            if self._error_patterns.get(switches, 0) == 0:
                 try:
-                    for hit in self.mind.recall(baslik, limit=3):
-                        if hit.item.title == baslik and hit.item.session_id != self.session.id:
-                            b["content"] = (metin + "\n\n[Hafıza] "
+                    for hit in self.mind.recall(title, limit=3):
+                        if hit.item.title == title and hit.item.session_id != self.session.id:
+                            b["content"] = (text + "\n\n[Hafıza] "
                                             + hit.item.content)
                             break
                 except Exception:
                     pass
-            sayi = self._hata_kalibi.get(switches, 0) + 1
-            self._hata_kalibi[switches] = sayi
-            if sayi != 2:
-                continue   # ilk düşüş: ipucu yeter; üçüncü+: ders zaten var
+            count = self._error_patterns.get(switches, 0) + 1
+            self._error_patterns[switches] = count
+            if count != 2:
+                continue   # first fall: the hint is enough; third+: the lesson already exists
             try:
-                if any(h.item.title == baslik
-                       for h in self.mind.recall(baslik, limit=3)):
+                if any(h.item.title == title
+                       for h in self.mind.recall(title, limit=3)):
                     continue
                 self.mind.remember(
-                    f"{arac or 'araç'} hatası tekrar etti — {tarif}",
-                    kind="lesson", title=baslik)
+                    f"{tool or 'araç'} hatası tekrar etti — {recipe}",
+                    kind="lesson", title=title)
                 self.session.log.note("hata_dersi", anahtar=switches)
             except Exception:
                 pass
 
-    def _is_kapsulu(self) -> None:
-        """Koşu sonunda mekanik iş kapsülü: ne istendi, ne üretildi, ne koştu.
+    def _job_capsule(self) -> None:
+        """Mechanical job capsule at the end of the run: what was asked, what was produced, what ran.
 
-        Ölçülen kazanç (28.08 hafıza deneyi B kolu): bir sonraki oturumda
-        bu kapsül kendiliğinden hatırlanınca model keşif çağrısını atlıyor
-        (−%24 token). Kapsül modelden değil defterden: uydurma riski yok.
+        Measured gain (28.08 memory experiment, arm B): when this capsule is
+        recalled spontaneously in the next session the model skips the
+        discovery call (−24% tokens). The capsule comes from the ledger, not
+        the model: no risk of fabrication.
         """
-        if (self.mind is None or self.depth or self._kapsul_yazildi
-                or not self._yazilan):
+        if (self.mind is None or self.depth or self._capsule_written
+                or not self._written):
             return
-        ilk = ""
+        first = ""
         for m in self.session.messages():
             if m.get("role") == "user":
                 g = m.get("content")
-                ilk = g if isinstance(g, str) else _text_of_blocks(g or [])
+                first = g if isinstance(g, str) else _text_of_blocks(g or [])
                 break
-        if not ilk.strip():
+        if not first.strip():
             return
         files = []
-        for yol in self._yazilan:
-            ad = Path(yol).name
-            if ad and ad not in files:
-                files.append(ad)
-        komutlar = [k.strip()[:80] for k in self._komutlar[-2:] if k.strip()]
-        icerik = (_one_line(ilk)[:200]
-                  + " — üretilen: " + ", ".join(files[:6])
-                  + ((". çalıştırılan: " + "; ".join(komutlar)) if komutlar else "")
-                  + ".")
-        baslik = "iş kapsülü: " + _one_line(ilk)[:40]
+        for path in self._written:
+            name = Path(path).name
+            if name and name not in files:
+                files.append(name)
+        commands = [k.strip()[:80] for k in self._commands[-2:] if k.strip()]
+        content = (_one_line(first)[:200]
+                   + " — üretilen: " + ", ".join(files[:6])
+                   + ((". çalıştırılan: " + "; ".join(commands)) if commands else "")
+                   + ".")
+        title = "iş kapsülü: " + _one_line(first)[:40]
         try:
-            if any(h.item.title == baslik
-                   for h in self.mind.recall(baslik, limit=3)):
+            if any(h.item.title == title
+                   for h in self.mind.recall(title, limit=3)):
                 return
-            self.mind.remember(icerik, kind="fact", title=baslik)
-            self._kapsul_yazildi = True
+            self.mind.remember(content, kind="fact", title=title)
+            self._capsule_written = True
             self.session.log.note("is_kapsulu", dosyalar=files[:6])
         except Exception:
             pass
 
-    async def _session_title(self, on_izleme: str = "") -> None:
-        """Adsız oturumun ilk alışverişinden kısa bir başlık üretir.
+    async def _session_title(self, preview: str = "") -> None:
+        """Generates a short title from the first exchange of an unnamed session.
 
-        Kullanıcı adının ilk 30 karakteri başlık değildir ("bana
-        profesonel bir cms yapa ama plan oluştur..." diye listelenmesi
-        canlı şikâyetti). Tek küçük çağrı; her hata sessizce yutulur —
-        başlık süs, koşunun sonucu değil.
+        The first 30 characters of the user's message are not a title
+        (being listed as "bana profesonel bir cms yapa ama plan oluştur..."
+        was a live complaint). One small call; every error is swallowed
+        silently — the title is decoration, not the result of the run.
 
-        `on_izleme`: koşu henüz kullanıcı mesajını günlüğe yazmadan
-        paralel başlık üretirken (desktop._isle) metni buradan alır —
-        aksi halde boş günlüğe bakıp sessizce vazgeçiyordu.
+        `preview`: when the run generates the title in parallel before it
+        has written the user message to the log (desktop._isle) it takes
+        the text from here — otherwise it looked at the empty log and
+        silently gave up.
         """
         if self.depth or self.mind is None or self.cancel.is_set():
             return
@@ -1808,56 +1910,59 @@ class Agent:
             meta = (self.mind.session_meta() or {}).get(self.session.id) or {}
             if meta.get("ad"):
                 return
-            mesajlar = self.session.messages()
-            # İlk denemede başlık üretilemeyebiliyor (küçük model boş/çöp
-            # dönebiliyor, çağrı patlayabiliyor). Eski `> 2` kapısı tek bir
-            # aksaklıkta sonsuza dek vazgeçiyordu — sohbet solda hep ilk
-            # sözün kırıntısıyla listeleniyordu ("sohbet ismi oluşmuyor",
-            # canlı şikâyet). Pencere ilk birkaç alışverişe genişledi.
-            if sum(1 for m in mesajlar if m.get("role") == "user") > 6:
-                return   # ilk alışverişler çoktan geçmiş: başlığı kurcalama
-            soru = cevap = ""
-            for m in mesajlar:
-                govde = m.get("content")
-                metin = govde if isinstance(govde, str) else _text_of_blocks(govde or [])
-                if m.get("role") == "user" and not soru:
-                    soru = metin
-                elif m.get("role") == "assistant" and metin:
-                    cevap = metin
-            if not soru and on_izleme:
-                soru = on_izleme
-            if not soru.strip():
+            messages = self.session.messages()
+            # The title may fail to be generated on the first attempt (a
+            # small model can return empty/junk, the call can blow up). The
+            # old `> 2` gate gave up forever on a single hiccup — the chat
+            # was listed on the left forever with the crumb of the first
+            # words ("sohbet ismi oluşmuyor", live complaint). The window
+            # was widened to the first few exchanges.
+            if sum(1 for m in messages if m.get("role") == "user") > 6:
+                return   # the first exchanges are long gone: leave the title alone
+            question = answer = ""
+            for m in messages:
+                body = m.get("content")
+                text = body if isinstance(body, str) else _text_of_blocks(body or [])
+                if m.get("role") == "user" and not question:
+                    question = text
+                elif m.get("role") == "assistant" and text:
+                    answer = text
+            if not question and preview:
+                question = preview
+            if not question.strip():
                 return
-            alinti = ("KULLANICI: " + _one_line(soru)[:400]
-                      + "\nASISTAN: " + _one_line(cevap)[:300])
-            hazir = Prepared(
-                system=[{"type": "text", "text": BASLIK_ISTEMI}],
-                messages=[{"role": "user", "content": alinti}],
+            excerpt = ("KULLANICI: " + _one_line(question)[:400]
+                       + "\nASISTAN: " + _one_line(answer)[:300])
+            prepared = Prepared(
+                system=[{"type": "text", "text": TITLE_PROMPT}],
+                messages=[{"role": "user", "content": excerpt}],
                 betas=[], context_management=None)
-            # Başlık çağrısı GERÇEK kesme olayını taşıyor ve süreyle sınırlı:
-            # eski hali (taze Event + sınırsız bekleme) tek kanallı API
-            # kapısını iptal edilemez biçimde tutabiliyordu — asıl tur ve
-            # Durdur dahil her şey arkasında bekliyordu (canlı yara, 01.09:
-            # "10 dakika durdu, olduğu yerde devam etmedi").
-            sonuc = await asyncio.wait_for(
-                self.client.turn(hazir, [], cancel=self.cancel), timeout=60)
-            baslik = _one_line(_text_of_blocks(
-                getattr(sonuc.message, "content", None) or [])).strip().strip("\"'.!*# ")
-            if _title_valid(baslik):
-                self.mind.set_session_meta(self.session.id, ad=baslik)
-                self.session.log.note("baslik", ad=baslik)
-                # Kenar listesi 5 sn yoklamayı beklemesin — anında taşınsın.
+            # The title call carries the REAL cancel event and is
+            # time-limited: its old form (a fresh Event + unbounded wait)
+            # could hold the single-channel API gate uncancellably — the
+            # main turn and everything including Stop waited behind it
+            # (live wound, 01.09: "it stopped for 10 minutes, didn't carry
+            # on where it was").
+            result = await asyncio.wait_for(
+                self.client.turn(prepared, [], cancel=self.cancel), timeout=60)
+            title = _one_line(_text_of_blocks(
+                getattr(result.message, "content", None) or [])).strip().strip("\"'.!*# ")
+            if _title_valid(title):
+                self.mind.set_session_meta(self.session.id, ad=title)
+                self.session.log.note("baslik", ad=title)
+                # Don't make the sidebar list wait for the 5 s poll — carry
+                # it over at once.
                 try:
-                    self.io.on_session_title(self.session.id, baslik)
+                    self.io.on_session_title(self.session.id, title)
                 except Exception:
                     pass
         except Exception:
-            pass   # başlık üretilemedi: türetilmiş başlık zaten var
+            pass   # the title could not be generated: the derived title already exists
 
     async def _handle_stop(
         self, result: TurnResult, ctx: ToolContext, stats: TurnStats
     ) -> bool:
-        """Döngü devam etmeli mi? True -> devam."""
+        """Should the loop continue? True -> continue."""
         reason = result.stop_reason
 
         if reason == "tool_use":
@@ -1866,9 +1971,10 @@ class Agent:
                 for b in result.tool_uses()
             ]
             stats.tool_calls += len(calls)
-            # Araç çağıran tur ilerliyor demektir: sürdürme hakkı tazelenir.
-            # Uzun bir koşuda arada bir max_tokens tavanına çarpmak, işi
-            # kapanış turuna sürüklememeli.
+            # A turn that calls tools is making progress: the continuation
+            # allowance is refreshed. Occasionally hitting the max_tokens
+            # ceiling in a long run must not drag the job into the closing
+            # turn.
             if not stats.closing:
                 stats.continuations = 0
             blocks = await execute(
@@ -1879,26 +1985,28 @@ class Agent:
                 approve=self.io.approve,
                 observe=self._observe,
             )
-            # Bir araç görüntü döndürdüyse (kameraya bakmak gibi) blokta
-            # taşınamıyor: OpenAI sözleşmesi role=tool içeriğinin dize
-            # olmasını istiyor. Görüntü ayrılıp bir sonraki kullanıcı turuna
-            # iliştiriliyor — model o turda gerçekten bakıyor.
+            # If a tool returned an image (like looking at the camera) it
+            # cannot be carried in the block: the OpenAI contract wants
+            # role=tool content to be a string. The image is split off and
+            # attached to the next user turn — the model really looks in
+            # that turn.
             seen = []
             for b in blocks:
                 v = b.pop("_image", None)
                 if isinstance(v, list):
-                    seen.extend(x for x in v if x)   # kamera kesitleri
+                    seen.extend(x for x in v if x)   # camera crops
                 elif v:
                     seen.append(v)
-            # Hafıza köprüsü: bilinen hata kalıbı derse dönüşür; geçmiş
-            # oturumlardan ders varsa hatanın YANINA iliştirilir.
-            self._hata_dersi(calls, blocks)
+            # Memory bridge: a known error pattern becomes a lesson; if
+            # there is a lesson from past sessions it is attached NEXT TO
+            # the error.
+            self._error_lesson(calls, blocks)
             self.session.add_tool_results(blocks)
             if seen:
-                # `internal`: kullanıcının yazmadığı bir mesaj sohbette
-                # kullanıcı mesajı gibi görünmemeli. Gerçek bir koşuda
-                # "Yukarıdaki kare kendi kameranın gördüğü…" notu ekrana
-                # cevap gibi düştü.
+                # `internal`: a message the user did not write must not
+                # look like a user message in the chat. In a real run the
+                # "Yukarıdaki kare kendi kameranın gördüğü…" note landed on
+                # screen like an answer.
                 self.session.add_user_blocks(_seen_blocks(seen), internal=True)
             if self.cancel.is_set():
                 stats.interrupted = True
@@ -1907,27 +2015,29 @@ class Agent:
             return True
 
         if reason == "pause_turn":
-            # Sunucu taraflı araç kendi yineleme sınırına çarptı. Ek kullanıcı
-            # mesajı ekleme — geçmişi olduğu gibi tekrar göndermek yeterli.
+            # A server-side tool hit its own iteration limit. Don't add a
+            # user message — resending the history as it is suffices.
             self.session.log.note("pause_turn")
             return True
 
         if reason == "max_tokens":
-            # Model cevabini bitiremeden tavana carpti. Burada durmak
-            # kullaniciya yarim cumle birakiyordu; oysa gecmis zaten yazildi,
-            # bir tur daha vermek kaldigi yerden surdurmesi icin yeterli.
+            # The model hit the ceiling before finishing its answer.
+            # Stopping here left the user with half a sentence; yet the
+            # history is already written, one more turn is enough for it to
+            # continue where it left off.
             #
-            # Kesinti bir arac cagrisinin ortasinda olduysa yarim kalan
-            # tool_use'lar karsiliksiz kalir; karsiliksiz tool_use bir sonraki
-            # istegi 400 ile dusurur.
+            # If the cut-off happened in the middle of a tool call the
+            # half-written tool_uses stay unanswered; an unanswered tool_use
+            # drops the next request with a 400.
             self._settle_pending()
             return self._continue(stats, CONTINUE_NOTE, "max_tokens")
 
         if reason == "empty_turn":
-            # Model yalnizca akil yurutup durdu: plan yapti, "simdi sunu
-            # yapmaliyim" dedi ve turu bitirdi. Akil yurutmeyi cevap diye
-            # sunmak kullaniciyi yarim birakiyordu; plani zaten gecmiste,
-            # yapmasi gerekeni yapmasi icin bir tur daha veriliyor.
+            # The model only reasoned and stopped: it made a plan, said "now
+            # I should do this" and ended the turn. Presenting the reasoning
+            # as the answer left the user hanging; its plan is already in
+            # the history, one more turn is given so it does what it has to
+            # do.
             return self._continue(stats, ACT_NOTE, "empty_turn")
 
         if reason == "refusal":
@@ -1938,14 +2048,16 @@ class Agent:
             return False
 
         if reason == "model_context_window_exceeded":
-            # Sunucu pencereyi bizden once tuketti (tahminimiz sapmis ya da
-            # context_window ayari gercegin ustunde). Durmak yerine
-            # sikistir / sikı / son care — is surer.
+            # The server exhausted the window before we did (our estimate
+            # drifted or the context_window setting is above reality).
+            # Instead of stopping: compact / tight / last resort — the work
+            # goes on.
             self.session.log.note("context_exhausted")
             if await self._refresh_context("pencere tasti"):
                 return True
-            # _yenile_baglam False donerse bile durma: hedef ozetiyle
-            # devam notu — kullaniciya "yeni oturum ac" demiyoruz.
+            # Even if _refresh_context returns False don't stop: a
+            # continuation note with the goal summary — we don't tell the
+            # user "open a new session".
             self.session.add_continuation_note(
                 "Bağlam yenilendi. İş listendeki açık maddelerden kaldığın "
                 "yerden devam et; baştan anlatma."
@@ -1953,19 +2065,20 @@ class Agent:
             self.io.on_notice("Bağlam yenilendi — iş sürüyor.")
             return True
 
-        return False  # end_turn ve bilinmeyenler: sıra kullanıcıda
+        return False  # end_turn and unknowns: the user's turn
 
     def _continue(self, stats: TurnStats, note: str, why: str) -> bool:
-        """Yarim kalan bir turu surdurur. Sinir dolduysa False.
+        """Continues a half-finished turn. False if the limit is full.
 
-        Iki ayri sebeple ayni sey gerekiyor (tavana carpma ve yalnizca akil
-        yurutup durma), ve ikisinde de tek bir tavan sayilmali: bir turun
-        surdurulme hakki toplamda sinirli.
+        The same thing is needed for two separate reasons (hitting the
+        ceiling and only reasoning then stopping), and in both a single
+        ceiling must be counted: a turn's continuation allowance is limited
+        in total.
         """
         if stats.continuations >= MAX_CONTINUATIONS:
             if stats.closing:
-                # Kapanis turu da bitmedi. Burada gercekten yapilacak bir
-                # sey kalmiyor.
+                # The closing turn did not finish either. There is really
+                # nothing left to do here.
                 self.io.on_notice(
                     f"Yanıt {MAX_CONTINUATIONS} kez sürdürüldü ve kapanış turu da "
                     "bitmedi; durduruldu."
@@ -1973,9 +2086,9 @@ class Agent:
                 self.session.log.note(why, exhausted=True)
                 return False
 
-            # Ajan is yapti, yalnizca bitiremedi. Elindekiyle bir kapanis
-            # yazmasi isteniyor: kullanicinin eline hicbir sey gecmemesi,
-            # yarim bir cevaptan kotu.
+            # The agent did work, it only failed to finish. It is asked to
+            # write a closing with what it has: the user getting nothing is
+            # worse than a half answer.
             stats.closing = True
             self.io.on_notice("Yanıt uzadı; elindekiyle özetlemesi istendi.")
             self.session.add_continuation_note(CLOSING_NOTE)
@@ -1987,23 +2100,25 @@ class Agent:
         self.session.log.note(why, continuation=stats.continuations)
         return True
 
-    # -- model kesintisi dayanıklılığı ---------------------------------
+    # -- model outage resilience --------------------------------------
 
     async def _await_model(self, stats: TurnStats, error: str) -> bool:
-        """Model hatasında bekler; True → yeniden dene, False → kullanıcı kesti.
+        """Waits on a model error; True → retry, False → the user interrupted.
 
-        İlk denemeler üstel geri çekilme (RETRY_DELAYS); tükenince iş PARK
-        edilir: ölmez, PARK_PROBE_S aralıklarla yoklamaya düşer — yoklama
-        isteğin kendisi. Oto kipinde her yeni deneme sağlık sıralamasından
-        geçer ve havuzdaki başka bir modele düşebilir; belirli model
-        seçiliyse model DEĞİŞTİRİLMEZ, yalnızca beklenir.
+        The first attempts use exponential backoff (RETRY_DELAYS); when they
+        run out the job is PARKED: it does not die, it drops to probing at
+        PARK_PROBE_S intervals — the probe is the request itself. In auto
+        mode every new attempt goes through the health ranking and can fall
+        to another model in the pool; if a specific model is selected the
+        model is NOT CHANGED, we only wait.
         """
         retries = len(RETRY_DELAYS)
         if stats.api_errors <= retries:
             delay = RETRY_DELAYS[stats.api_errors - 1]
-            # Yapısal kanal varsa ham hata sohbete DÜŞMEZ: çalışma şeridi
-            # tek canlı satırda geri sayımı işletir, ayrıntı tık ile açılır.
-            if not self._bekleme_olayi(
+            # With a structured channel the raw error does NOT land in the
+            # chat: the work strip runs the countdown in a single live line,
+            # the detail opens on click.
+            if not self._wait_event(
                 kip="deneme", deneme=stats.api_errors, toplam=retries,
                 saniye=int(delay), detay=_clip(error, 1500),
             ):
@@ -2011,10 +2126,11 @@ class Agent:
                     f"Model yanıt vermiyor; {delay:.0f} sn sonra yeniden denenecek "
                     f"({stats.api_errors}/{retries}). ({_clip(error, 120)})")
         elif self.depth > 0:
-            # Alt ajan: ana sohbet çalışsa bile burada sonsuz park YOK.
-            # Orkestra "Model bekleniyor (5/5) · 300s"de kilitlenmesin.
+            # Subagent: NO endless park here even while the main chat works.
+            # The orchestra must not lock up at "Model bekleniyor (5/5) ·
+            # 300s".
             stats.fail_reason = _clip(error, 400)
-            self._bekleme_olayi(
+            self._wait_event(
                 kip="hata", deneme=stats.api_errors, toplam=retries,
                 saniye=0, detay=stats.fail_reason,
             )
@@ -2025,18 +2141,19 @@ class Agent:
         else:
             delay = PARK_PROBE_S
             self._park(error)
-            # Her yoklama turunda şerit tazelenir: "iş bekletiliyor" satırı
-            # canlı kalır (sayfa yenilense de bir sonraki yoklamada geri gelir).
-            self._bekleme_olayi(
+            # The strip is refreshed on every probe turn: the "iş
+            # bekletiliyor" line stays live (even if the page is reloaded it
+            # comes back on the next probe).
+            self._wait_event(
                 kip="park", saniye=int(delay), detay=_clip(error, 1500))
 
-        # Kesilebilir bekleyiş: kullanıcı "dur" derse bekleme anında biter.
+        # Interruptible wait: if the user says "stop" the wait ends at once.
         try:
             await asyncio.wait_for(self.cancel.wait(), timeout=delay)
         except asyncio.TimeoutError:
-            # Süre doldu: yeniden dene. Bekleyen bir model/ayar değişikliği
-            # varsa önce uygula — bozuk adres/anahtar düzeltildiyse yeni
-            # istemci ancak böyle devreye girer.
+            # Time is up: retry. If there is a pending model/setting change
+            # apply it first — if a broken address/key was fixed the new
+            # client only takes effect this way.
             if self.on_retry_wait is not None:
                 try:
                     self.on_retry_wait()
@@ -2044,35 +2161,38 @@ class Agent:
                     pass
             return True
 
-        # Kullanıcı kesti: bilinçli durdurma — park kaydı da düşer.
+        # The user interrupted: a deliberate stop — the park record goes too.
         self._unpark()
-        self._bekleme_olayi(kip="iptal")   # şeritteki bekleme satırı kapansın
+        self._wait_event(kip="iptal")   # close the waiting line in the strip
         self.io.on_notice("Kesildi.")
         return False
 
-    # -- sahte araç çağrısı --------------------------------------------
+    # -- fake tool call ------------------------------------------------
 
-    def _sahte_cagriyi_duzelt(
+    def _fix_fake_call(
         self, stats: TurnStats, blocks: list[dict[str, Any]]
     ) -> bool:
-        """Model araç çağrısını metin olarak mı yazdı? Yazdıysa düzelt.
+        """Did the model write the tool call as text? If so, correct it.
 
-        True dönerse tur SÜRÜYOR: modele tek satırlık bir not düşüldü ve
-        bir tur daha veriliyor. Burada durmak kullanıcıyı ham XML'le (ya
-        da arayüz onu çizmediği için hiçbir şeyle) baş başa bırakırdı.
+        If it returns True the turn CONTINUES: a one-line note was written
+        to the model and one more turn is given. Stopping here would leave
+        the user alone with raw XML (or with nothing, since the UI does not
+        draw it).
         """
         if not fake_tool_call(_text_of_blocks(blocks)):
             return False
 
         stats.sahte_cagri += 1
         self.session.log.note("sahte_arac_cagrisi", deneme=stats.sahte_cagri)
-        # Oto havuzunda bu bir sağlık sinyali: araç çağıramayan uç elensin.
+        # In the auto pool this is a health signal: an endpoint that cannot
+        # call tools gets weeded out.
         self._kusurlu("sahte araç çağrısı")
 
         if stats.sahte_cagri > SAHTE_CAGRI_TAVANI:
-            # Mutlak sigorta: model düzelmiyor (çoğu zaman araç çağrısını
-            # hiç desteklemeyen bir uç). Turu kendi akışına bırak ve
-            # kullanıcıya söyle — çözüm onun elinde: model değiştirmek.
+            # Absolute fuse: the model does not recover (usually an endpoint
+            # that does not support tool calls at all). Leave the turn to
+            # its own flow and tell the user — the fix is in their hands:
+            # switching models.
             self.io.on_notice(
                 "Model araç çağrılarını metin olarak yazmayı sürdürüyor ve "
                 "düzelmedi. Ayarlar › Model'den başka bir model denemek "
@@ -2080,32 +2200,34 @@ class Agent:
             return False
 
         self.session.add_harness_note(
-            SAHTE_CAGRI_NOTU if stats.sahte_cagri == 1 else SAHTE_CAGRI_SERT_NOTU)
+            FAKE_CALL_NOTE if stats.sahte_cagri == 1 else FAKE_CALL_HARD_NOTE)
         return True
 
-    def _kusurlu(self, sebep: str) -> None:
-        """Tur teknik olarak başarılı ama İÇERİĞİ kusurlu.
+    def _kusurlu(self, reason: str) -> None:
+        """The turn technically succeeded but its CONTENT is flawed.
 
-        Şema ihlali ve sahte araç çağrısı, hata/zaman aşımı kadar gerçek
-        birer başarısızlık: ikisi de turu boşa harcıyor. Oto kipinde bu
-        sinyal sağlık defterine yazılıyor, model havuzun sonuna itiliyor
-        ve ücretsiz havuzda araç çağıramayan uç kendiliğinden eleniyor.
-        Başka sağlayıcıda karşılığı yok — sessizce geçiliyor.
+        A schema violation and a fake tool call are failures as real as an
+        error/timeout: both waste the turn. In auto mode this signal is
+        written to the health ledger, the model is pushed to the end of the
+        pool and in the free pool an endpoint that cannot call tools gets
+        weeded out by itself. Other providers have no equivalent — silently
+        skipped.
         """
         save = getattr(self.client, "kusurlu", None)
         if save is None:
             return
         try:
-            save(sebep)
+            save(reason)
         except Exception:
-            pass   # sağlık defteri koşuyu düşürmemeli
+            pass   # the health ledger must not bring the run down
 
-    def _bekleme_olayi(self, **payload: Any) -> bool:
-        """Bekleme durumunu yapısal kanala yazar.
+    def _wait_event(self, **payload: Any) -> bool:
+        """Writes the waiting state to the structured channel.
 
-        True dönerse arayüz canlı satırı üstlendi demektir; çağıran düz
-        metin bildirimini basmaz. Kanal yoksa (CLI/test) False döner ve
-        eski davranış aynen sürer. Kanalın hatası koşuyu düşürmez.
+        If it returns True the UI took over the live line; the caller does
+        not print the plain-text notice. Without the channel (CLI/test) it
+        returns False and the old behaviour goes on as it is. An error in
+        the channel does not bring the run down.
         """
         if self.io.on_wait is None:
             return False
@@ -2138,17 +2260,18 @@ class Agent:
             self._parked = False
             self.session.log.note("unparked")
 
-    # -- alt ajanlar ---------------------------------------------------
+    # -- subagents -----------------------------------------------------
 
     def _child_registry(self) -> ToolRegistry:
-        """Alt ajanın araç defteri: yerleşikler (task hariç) + dinamikler.
+        """The subagent's tool registry: built-ins (except task) + dynamics.
 
-        Taze defter `build_registry(subagents=False)` yalnızca yerleşikleri
-        taşıyor. Yetenekler ve MCP araçları açılıştan SONRA yalnızca ana
-        deftere ekleniyordu — alt ajan bir cihaz için yazılmış yeteneği ya
-        da bağlanmış bir MCP sunucusunu göremiyordu. Yerleşiklerin `source`u
-        None; yetenek/MCP'nin dolu ("yetenek", "mcp:<ad>"). Dolu olanları
-        ana defterden kopyalıyoruz — o an ne varsa alt ajana da o iner.
+        A fresh registry `build_registry(subagents=False)` carries only the
+        built-ins. Skills and MCP tools were added AFTER startup only to the
+        main registry — the subagent could not see a skill written for a
+        device or a connected MCP server. The built-ins' `source` is None;
+        the skill/MCP one is set ("yetenek", "mcp:<ad>"). We copy the set
+        ones from the main registry — whatever exists at that moment goes
+        down to the subagent too.
         """
         registry = build_registry(self.mind, subagents=False)
         for spec in self.registry.all():
@@ -2157,43 +2280,47 @@ class Agent:
         return registry
 
     async def _spawn(self, title: str, instruction: str, model: str = "") -> str:
-        """Alt ajanı kendi oturumunda koşturur ve yalnızca son sözünü döndürür.
+        """Runs the subagent in its own session and returns only its last word.
 
-        Ayrı oturum asıl mesele: alt ajanın otuz araç çağrısı kendi
-        günlüğüne yazılıyor, ana konuşmanın penceresine değil. Geriye kalan
-        tek şey cevabın kendisi.
+        The separate session is the whole point: the subagent's thirty tool
+        calls are written to its own log, not into the main conversation's
+        window. All that remains is the answer itself.
 
-        İzin motoru ve atölye sınırı paylaşılıyor — "ben alt ajanım" diyerek
-        atlanabilen bir kapı, kapı değildir.
+        The permission engine and the workshop boundary are shared — a gate
+        that can be skipped by saying "I'm a subagent" is not a gate.
         """
         handle = ChildHandle(id=uuid4().hex[:6], title=title,
                              model=model or self.config.model.name)
         self._register_child(handle)
         answer = await self._child_round(handle, instruction)
-        # Sonuç araç sonucuyla zaten döndü; bir de bildirim notu düşülmesin.
+        # The result already returned with the tool result; don't drop a
+        # notification note on top.
         handle.bildirildi = True
         return answer
 
     def _spawn_bg(self, title: str, instruction: str, model: str = "") -> ChildHandle:
-        """Yardımcıyı arka planda başlatır ve HEMEN döner.
+        """Starts the helper in the background and returns IMMEDIATELY.
 
-        Ana ajan beklemeden işine devam ediyor; yardımcı bitince sonucu
-        tur başındaki bildirim notuyla (ya da ana ajan boştaysa köprünün
-        açtığı sürdürme turuyla) ana ajanın önüne konuyor.
+        The main agent carries on without waiting; when the helper finishes
+        the result is put in front of the main agent with the notification
+        note at the start of the turn (or, if the main agent is idle, with
+        the resume turn the bridge opens).
         """
         handle = ChildHandle(id=uuid4().hex[:6], title=title,
                              model=model or self.config.model.name, arka_plan=True)
         self._register_child(handle)
-        # Referans defterde saklanıyor: referanssız task çöp toplanabilir.
+        # The reference is kept in the ledger: an unreferenced task can be
+        # garbage collected.
         handle.task = asyncio.get_running_loop().create_task(
             self._bg_round(handle, instruction))
         return handle
 
     def spawn_scheduled(self, title: str, prompt: str, schedule_id: str) -> ChildHandle:
-        """Zamanlanmış görevi sessiz arka plan yardımcı olarak koşturur.
+        """Runs the scheduled task as a silent background helper.
 
-        Sohbet kuyruğuna düşmez; bitince ana ajanı konuşturmaz. Rapor
-        Orkestra / Görevler + Viewer'da kalır. Her koşum task_runs'a yazılır.
+        It does not land in the chat queue; when finished it does not make
+        the main agent talk. The report stays in Orchestra / Tasks + the
+        Viewer. Every run is written to task_runs.
         """
         from . import task_runs
 
@@ -2223,14 +2350,14 @@ class Agent:
 
     async def run_workflow(self, workflow_id: str,
                            schedule_id: str = "") -> dict[str, Any]:
-        """Otomasyon grafiğini sessiz yardımcı olarak koşturur.
+        """Runs the automation graph as a silent helper.
 
-        `schedule_id` verilmişse koşum O GÖREVİN defterine yazılıyor.
-        Şarttır: arayüz koşum geçmişini görev kimliğiyle soruyor
-        (`/api/jobs/runs?id=<görev>`). Akıştan türetilmiş bir kimlik
-        kullanmak, koşumları kimsenin bakmadığı bir çekmeceye yazmak
-        demekti — geçmiş boş görünüyor, canlı ilerleme hiç gelmiyordu.
-        Görevsiz (doğrudan akış) koşumlar için eski türetme duruyor.
+        If `schedule_id` is given the run is written to THAT TASK's ledger.
+        A must: the UI asks for the run history by task id
+        (`/api/jobs/runs?id=<görev>`). Using an id derived from the workflow
+        meant writing the runs into a drawer nobody looks at — the history
+        looked empty, live progress never arrived. For task-less (direct
+        workflow) runs the old derivation stays.
         """
         from . import task_runs, workflows
         from .workflow_run import execute_workflow
@@ -2256,7 +2383,8 @@ class Agent:
         except Exception:
             pass
         self._register_child(handle)
-        # Orkestra kanalı: düğüm tool olayları kanalsız düşmesin.
+        # Orchestra channel: node tool events must not land without a
+        # channel.
         try:
             self.io.on_child_start(
                 handle.title, handle.model, handle.id, handle.arka_plan)
@@ -2313,23 +2441,24 @@ class Agent:
 
     async def _bg_round(self, handle: ChildHandle, instruction: str,
                         *, resume: bool = False) -> None:
-        """Arka plan sarmalayıcı: koştur, ne olursa olsun defteri düşür,
-        köprüye haber ver."""
+        """Background wrapper: run it, update the ledger whatever happens,
+        tell the bridge."""
         try:
             await self._child_round(handle, instruction, resume=resume)
-        except Exception as exc:  # arka plandaki çöküş sessiz kalmamalı
+        except Exception as exc:  # a crash in the background must not stay silent
             handle.state = "hata"
             handle.sonuc = f"Alt ajan hata verdi: {type(exc).__name__}: {exc}"
             handle.bitis_ts = time.time()
             self.session.log.note("subagent_failed", title=handle.title,
                                   session=handle.session_id, error=str(exc))
         if handle.sessiz:
-            # Zamanlı iş: ana sohbet sürdürme turu yok — rapor panelde.
+            # Scheduled job: no resume turn in the main chat — the report is
+            # in the panel.
             handle.bildirildi = True
         if handle.schedule_id and self.schedule is not None:
             try:
                 status = ("bitti" if handle.state == "bitti"
-                         else f"hata: {_clip(handle.sonuc, 80)}")
+                          else f"hata: {_clip(handle.sonuc, 80)}")
                 self.schedule.note_run(handle.schedule_id, status)
             except Exception:
                 pass
@@ -2355,21 +2484,22 @@ class Agent:
 
     async def _child_round(self, handle: ChildHandle, instruction: str,
                            *, resume: bool = False) -> str:
-        """Bir yardımcının tam turu: oturum aç (ya da diskten sürdür),
-        koştur, defteri güncelle, sonucu döndür."""
+        """A helper's full round: open a session (or resume from disk), run
+        it, update the ledger, return the result."""
         from .session import Session
 
-        # Alt ajan başka bir modelle koşabiliyor: tarama işi küçük ve hızlı
-        # bir modele, görüntü gerektiren iş görüntü okuyan bir modele
-        # gidebilsin. Aynı model isteniyorsa istemci paylaşılıyor — ikinci
-        # bir istemci ikinci bir bağlantı havuzu demek.
+        # The subagent can run with another model: a scanning job can go to
+        # a small fast model, a job that needs vision to a model that reads
+        # images. If the same model is asked for the client is shared — a
+        # second client means a second connection pool.
         client, config = self.client, self.config
         if handle.model and handle.model != self.config.model.name:
             client, config = self._client_for(handle.model)
 
-        # Ajan kapısı: makinenin taşıyabileceği kadarı aynı anda koşar,
-        # gerisi sırada bekler. Durdur (cancel) kapıda beklerken de işlesin —
-        # yoksa "koşuyor" görünen görev Durdur'a cevap vermiyordu.
+        # Agent gate: as many as the machine can carry run at the same time,
+        # the rest wait in line. Stop (cancel) must work while waiting at
+        # the gate too — otherwise a task that looked "running" did not
+        # respond to Stop.
         try:
             await self._acquire_agent_gate(handle)
         except asyncio.CancelledError:
@@ -2389,13 +2519,13 @@ class Agent:
                 handle.session_id = child.id
                 child.log.note("subagent_start", title=handle.title, parent=self.session.id)
                 self.session.log.note("subagent_start", title=handle.title, session=child.id)
-            # Orkestra kanalı doğdu: arayüz canlı göstersin.
+            # The orchestra channel is born: let the UI show it live.
             self.io.on_child_start(handle.title, handle.model, handle.id, handle.arka_plan)
 
             agent = Agent(
                 config=config,
                 session=child,
-                # Alt ajanın kendi defteri: `task` aracı olmadan.
+                # The subagent's own registry: without the `task` tool.
                 registry=self._child_registry(),
                 client=client,
                 io=self._child_io(handle.title, handle.id),
@@ -2404,29 +2534,31 @@ class Agent:
                 mind=self.mind,
                 depth=self.depth + 1,
                 schedule=self.schedule,
-                # Çocuğun KENDİ bayrağı; ana `interrupt()` türev olarak
-                # kurar ("dur = her şey durur"). Paylaşmak olmuyordu: ana
-                # her `run`da bayrağını tazeliyor ve arka plandaki çocuk
-                # eski bayrakta sahipsiz kalıyordu.
+                # The child's OWN flag; the parent's `interrupt()` sets it
+                # as a derivative ("stop = everything stops"). Sharing did
+                # not work: the parent refreshes its flag on every `run`
+                # and the background child was left ownerless on the old
+                # flag.
                 cancel=handle.cancel,
             )
-            # Ana sohbet ayardan model değiştirdiyse retry'de çocuğa da geçsin
-            # — chat çalışırken görev ölü modelde kilitlenmesin.
+            # If the main chat changed the model from settings, let the
+            # child switch too on retry — a task must not lock up on a dead
+            # model while chat works.
             def _child_retry_wait(
                 _agent=agent, _handle=handle, _parent=self,
-                _dogum=self.client,
+                _birth=self.client,
             ) -> None:
                 if _parent.on_retry_wait is not None:
                     try:
                         _parent.on_retry_wait()
                     except Exception:
                         pass
-                # Yalnız ebeveynin istemcisi GERÇEKTEN değiştiyse benimse.
-                # Kanca artık her model çağrısından önce koşuyor (bekleyen
-                # değişim akışı); koşulsuz benimseme, farklı modelle açılan
-                # çocuğun istemcisini İLK turda ebeveyne çeviriyordu —
-                # task'ın model yönlendirmesi kırılıyordu (kök, 01.09).
-                if _parent.client is _dogum:
+                # Adopt only if the parent's client REALLY changed. The hook
+                # now runs before every model call (pending-swap flow);
+                # unconditional adoption turned the client of a child opened
+                # with a different model into the parent's on the FIRST turn
+                # — task's model routing was broken (root cause, 01.09).
+                if _parent.client is _birth:
                     return
                 _agent.client = _parent.client
                 _agent.config = _parent.config
@@ -2437,7 +2569,7 @@ class Agent:
 
             try:
                 stats = await agent.run(instruction)
-            except Exception as exc:  # yardımcının çökmesi ana turu düşürmemeli
+            except Exception as exc:  # a helper's crash must not bring the main turn down
                 self.session.log.note("subagent_failed", title=handle.title,
                                       session=handle.session_id, error=str(exc))
                 handle.state = "hata"
@@ -2448,16 +2580,17 @@ class Agent:
             finally:
                 handle.agent = None
                 handle.bitis_ts = time.time()
-                # Günlük kapanıyor ama oturum diskte duruyor: `task_say`
-                # bitmiş bir yardımcıyı Session.resume ile geri açabiliyor.
+                # The log closes but the session stays on disk: `task_say`
+                # can reopen a finished helper with Session.resume.
                 child.close()
         finally:
             self._agent_gate.release()
 
         answer = _last_text(child)
         if stats.interrupted:
-            # Kesilen yardımcı için bildirim turu açılmaz: durduran zaten
-            # kullanıcının kendisi — ya da model max retry ile durdu.
+            # No notification turn is opened for an interrupted helper: the
+            # one who stopped it is the user themselves — or the model
+            # stopped with max retries.
             handle.state = "hata"
             if stats.fail_reason:
                 handle.sonuc = (
@@ -2472,8 +2605,8 @@ class Agent:
             handle.sonuc = answer
         if not handle.deliverable:
             handle.deliverable = _infer_deliverable(instruction, handle.sonuc or "")
-        # `session` yetim taraması için: açılışta start/end eşleşmesi
-        # kimlikle yapılıyor (başlık benzersiz olmak zorunda değil).
+        # `session` is for the orphan scan: at startup the start/end match
+        # is done by id (the title does not have to be unique).
         self.session.log.note(
             "subagent_end", title=handle.title, session=handle.session_id,
             turns=stats.turns, tools=stats.tool_calls
@@ -2485,7 +2618,8 @@ class Agent:
 
     def _register_child(self, handle: ChildHandle) -> None:
         self._children[handle.id] = handle
-        # Defter sınırlı: koşan atılmaz, en eski bitmişler düşer.
+        # The ledger is bounded: a running one is not thrown out, the oldest
+        # finished ones drop.
         while len(self._children) > MAX_CHILDREN:
             finished = [h for h in self._children.values() if h.state != "kosuyor"]
             if not finished:
@@ -2493,17 +2627,18 @@ class Agent:
             oldest = min(finished, key=lambda h: h.bitis_ts)
             self._children.pop(oldest.id, None)
 
-    def adopt_orphans(self, yetimler: list[dict[str, str]]) -> list[ChildHandle]:
-        """Geçen oturumun yetim yardımcılarını deftere alır.
+    def adopt_orphans(self, orphans: list[dict[str, str]]) -> list[ChildHandle]:
+        """Takes the previous session's orphan helpers into the ledger.
 
-        Defter kaydı iki kapıyı birden açıyor: arayüz paneli yetimi soluk
-        bir "yarım kaldı" satırı olarak çizebiliyor (snapshot kanalları) ve
-        kullanıcı "sürdür" derse `task_say` diskteki oturumu handle
-        üzerinden diriltebiliyor. Modele tek toplu harness notu düşer —
-        gelen kutusundan, yani ilk turun başında önüne konur.
+        The ledger record opens two doors at once: the UI panel can draw the
+        orphan as a faded "left half done" row (snapshot channels) and if
+        the user says "continue" `task_say` can revive the on-disk session
+        through the handle. A single bulk harness note is dropped for the
+        model — from the inbox, i.e. put in front of it at the start of the
+        first turn.
         """
         adopted: list[ChildHandle] = []
-        for y in yetimler:
+        for y in orphans:
             sid = str(y.get("session") or "")
             if not sid:
                 continue
@@ -2514,24 +2649,26 @@ class Agent:
                 arka_plan=True,
                 session_id=sid,
                 state="yetim",
-                sonuc=YETIM_SONUC,
+                sonuc=ORPHAN_RESULT,
                 bitis_ts=time.time(),
-                # Bildirim turu açılmasın: haber notu zaten aşağıda.
+                # Don't open a notification turn: the news note is already
+                # below.
                 bildirildi=True,
             )
             self._register_child(handle)
             adopted.append(handle)
         if adopted:
-            liste = ", ".join(f"{h.title} (id={h.id})" for h in adopted)
-            self.take_note(YETIM_NOTU.format(n=len(adopted), liste=liste))
+            listing = ", ".join(f"{h.title} (id={h.id})" for h in adopted)
+            self.take_note(ORPHAN_NOTE.format(n=len(adopted), liste=listing))
         return adopted
 
     def _children_settled(self) -> None:
-        """Bir yardımcı bitti: köprüye (varsa) haber ver.
+        """A helper finished: tell the bridge (if any).
 
-        Köprü, ana ajan boştaysa bir sürdürme turu açar; meşgulse haber
-        kuyruğa düşer ve tur bitince değerlendirilir. Köprüsüz kullanımda
-        (test, salt-metin) sonuç bir sonraki turun başında zaten bildirilir.
+        If the main agent is idle the bridge opens a resume turn; if busy
+        the news drops into the queue and is evaluated when the turn ends.
+        Without a bridge (test, text-only) the result is reported anyway at
+        the start of the next turn.
         """
         callback = self.on_children_settled
         if callback is not None:
@@ -2541,7 +2678,7 @@ class Agent:
                 pass
 
     def _drain_children(self) -> None:
-        """Biten ve henüz bildirilmemiş yardımcı/iş sonuçlarını nota döker."""
+        """Turns finished and not-yet-reported helper/job results into notes."""
         for handle in self._children.values():
             if handle.state == "kosuyor" or handle.bildirildi:
                 continue
@@ -2552,12 +2689,13 @@ class Agent:
                 template = CHILD_DONE_NOTE if handle.state == "bitti" else CHILD_FAIL_NOTE
             self.session.add_harness_note(template.format(
                 title=handle.title, id=handle.id,
-                # Panele tam metin gidiyor; modele yalnızca kısa özet —
-                # uzun bülteni sohbete yapıştırmasın.
+                # The full text goes to the panel; the model gets only a
+                # short summary — so it does not paste a long bulletin into
+                # the chat.
                 result=_clip(handle.sonuc, 400)))
 
     def _drain_inbox(self) -> None:
-        """Gelen kutusunu geçmişe harness notu olarak boşaltır."""
+        """Drains the inbox into the history as harness notes."""
         while self._inbox:
             self.session.add_harness_note(self._inbox.popleft())
 
@@ -2566,11 +2704,12 @@ class Agent:
                    for h in self._children.values())
 
     async def resume_for_children(self) -> TurnStats | None:
-        """Boştayken biten yardımcıları değerlendiren sürdürme turu.
+        """The resume turn that evaluates helpers finished while idle.
 
-        Girdisi kullanıcı mesajı değil: continuation kanalından bir not
-        (arayüzde görünmez) + sonuçların harness notları. Hiç bekleyen
-        bildirim yoksa None döner ve model hiç çağrılmaz.
+        Its input is not a user message: a note from the continuation
+        channel (invisible in the UI) + the harness notes of the results. If
+        there is no pending notification it returns None and the model is
+        never called.
         """
         done = [h for h in self._children.values()
                 if h.state != "kosuyor" and not h.bildirildi]
@@ -2583,7 +2722,7 @@ class Agent:
         return await self._drive()
 
     def _child_say(self, cid: str, message: str) -> tuple[bool, str]:
-        """`task_say`: koşan yardımcıya not, bitmiş yardımcıya devam turu."""
+        """`task_say`: a note to a running helper, a continuation turn to a finished one."""
         handle = self._children.get((cid or "").strip())
         if handle is None:
             known = ", ".join(self._children) or "(defter boş)"
@@ -2594,7 +2733,7 @@ class Agent:
                            "Bitince çıktısı zaten sana bildirilecek.")
         if handle.state == "kosuyor":
             if handle.agent is None:
-                # Ajan kapısında sırada: nesne henüz kurulmadı.
+                # In line at the agent gate: the object is not built yet.
                 return False, (f"'{handle.title}' henüz sırada (ajan kapısı dolu); "
                                "birazdan tekrar dene.")
             handle.agent.take_note(SAY_NOTE.format(message=message))
@@ -2602,7 +2741,8 @@ class Agent:
                           "adımında bu notu görecek.")
         if not handle.session_id:
             return False, f"'{handle.title}' oturumsuz bitti; sürdürülemiyor."
-        # Bitmiş yardımcı: oturumu diskten açılıp arka planda sürdürülüyor.
+        # Finished helper: its session is opened from disk and resumed in
+        # the background.
         handle.state = "kosuyor"
         handle.bildirildi = False
         handle.sonuc = ""
@@ -2613,7 +2753,7 @@ class Agent:
                       "açılıp arka planda sürdürülüyor — bitince sonucu bildirilecek.")
 
     def _child_status(self, cid: str = "") -> str:
-        """`task_status`: tek/tüm yardımcıların durum özeti."""
+        """`task_status`: status summary of one/all helpers."""
         if not self._children:
             return "Defter boş: başlatılmış yardımcı yok."
         wanted = (cid or "").strip()
@@ -2634,15 +2774,16 @@ class Agent:
                     f"Defterdekiler: {', '.join(self._children)}")
         return "\n".join(rows)
 
-    # -- arka plan işleri (uzun süreçler) ------------------------------
+    # -- background jobs (long processes) ------------------------------
 
     def _job_bg(self, title: str, runner: Callable[[asyncio.Event], Awaitable[str]]) -> ChildHandle:
-        """Uzun bir işi (derleme, kurulum, test koşusu) arka plana alır.
+        """Moves a long job (build, install, test run) to the background.
 
-        Yardımcı defterinin AYNISI kullanılıyor: kayıt, bildirim notu,
-        boştayken sürdürme turu ve türev kesme — hepsi hazır altyapı.
-        Fark: model koşan bir alt ajan değil, tek bir eşyordam (süreç).
-        `runner` kendi kesme bayrağını alır — ana `interrupt()` onu kurar.
+        The SAME helper ledger is used: record, notification note, resume
+        turn while idle and derived interrupt — all ready infrastructure.
+        The difference: not a model-running subagent but a single coroutine
+        (process). `runner` gets its own cancel flag — the parent's
+        `interrupt()` sets it.
         """
         handle = ChildHandle(id=uuid4().hex[:6], title=title, model="",
                              kind="iş", arka_plan=True)
@@ -2656,14 +2797,15 @@ class Agent:
     async def _job_round(self, handle: ChildHandle,
                          runner: Callable[[asyncio.Event], Awaitable[str]]) -> None:
         try:
-            # Tam çıktı panellerde/Viewer'da; harness notuna kısaltma ayrı.
+            # The full output is in the panels/Viewer; the clip for the
+            # harness note is separate.
             handle.sonuc = await runner(handle.cancel)
             handle.state = "bitti"
         except JobFailed as exc:
-            # Komut bitti ama başarısız — 'tamamlandı' demeyelim.
+            # The command finished but failed — let's not say 'completed'.
             handle.state = "hata"
             handle.sonuc = str(exc)
-        except Exception as exc:  # işin çökmesi ajanı düşürmemeli
+        except Exception as exc:  # a job's crash must not bring the agent down
             handle.state = "hata"
             handle.sonuc = f"{type(exc).__name__}: {exc}"
         handle.bitis_ts = time.time()
@@ -2674,10 +2816,11 @@ class Agent:
         self._children_settled()
 
     async def _acquire_agent_gate(self, handle: "ChildHandle") -> None:
-        """Ajan semaforunu al; Durdur gelirse CancelledError.
+        """Acquire the agent semaphore; CancelledError if Stop arrives.
 
-        Düz `async with gate` cancel'i dinlemiyordu — planlanmış görev
-        kapıda beklerken UI 'koşuyor' diyordu, Durdur hiçbir işe yaramıyordu.
+        A plain `async with gate` did not listen to cancel — while a
+        scheduled task waited at the gate the UI said 'running' and Stop
+        did nothing at all.
         """
         if handle.cancel.is_set():
             raise asyncio.CancelledError()
@@ -2694,7 +2837,7 @@ class Agent:
                     pass
             if stopper in done and acquire not in done:
                 raise asyncio.CancelledError()
-            # acquire tamamlandı (veya ikisi birden — yine de kapı alınmış).
+            # acquire completed (or both did — the gate is taken either way).
             if acquire.cancelled() or acquire.exception():
                 raise asyncio.CancelledError()
         except asyncio.CancelledError:
@@ -2705,19 +2848,20 @@ class Agent:
                 except (asyncio.CancelledError, Exception):
                     pass
             elif not acquire.cancelled() and acquire.exception() is None:
-                # Kapıyı almışken kesildik — serbest bırak.
+                # We were cancelled while holding the gate — release it.
                 self._agent_gate.release()
             raise
 
     def _client_for(self, model: str) -> tuple[Any, Config]:
-        """Başka bir model için istemci kurar.
+        """Builds a client for another model.
 
-        Sağlayıcı ve adres aynı kalıyor, yalnızca model adı değişiyor: aynı
-        LM Studio üzerindeki başka bir model ya da aynı API'deki başka bir
-        model. Farklı bir sağlayıcı istemek ayarların işi, alt ajanın değil.
+        The provider and the address stay the same, only the model name
+        changes: another model on the same LM Studio or another model on
+        the same API. Asking for a different provider is the settings' job,
+        not the subagent's.
 
-        Kurulan istemci saklanıyor: aynı modeli üç alt ajan isterse üç
-        bağlantı havuzu açmanın anlamı yok.
+        The built client is kept: if three subagents ask for the same model
+        there is no point in opening three connection pools.
         """
         from dataclasses import replace as _replace
 
@@ -2732,16 +2876,16 @@ class Agent:
         return pair
 
     def _child_io(self, title: str, cid: str) -> AgentIO:
-        """Alt ajanın arayüz bağlantısı.
+        """The subagent's UI connection.
 
-        Metni akıtmıyor: alt ajanın ara cümleleri ana sohbete karışsa
-        kullanıcı kimin konuştuğunu ayırt edemezdi. Araç olayları geçiyor —
-        ne yaptığı izlenebilmeli.
+        It does not stream text: if the subagent's interim sentences mixed
+        into the main chat the user could not tell who was speaking. Tool
+        events pass through — what it does must be observable.
 
-        Onay isteği kanal kimliğiyle gidiyor: kullanıcı diyalogda hangi
-        yardımcının izin istediğini görsün. Köprünün onayı üçüncü bir
-        `channel` parametresi alabiliyor; testlerin iki parametreli onayları
-        olduğu gibi çalışmaya devam ediyor.
+        The approval request goes with the channel identity: the user
+        should see in the dialog which helper is asking for permission. The
+        bridge's approve can take a third `channel` parameter; the tests'
+        two-parameter approvals keep working as they are.
         """
         import inspect
 
@@ -2759,9 +2903,9 @@ class Agent:
             child_approve = approve
 
         def on_tool_start(name: str, args: dict[str, Any]) -> None:
-            hedef = _tool_hedef(args)
-            self._child_tool_mark(cid, name, "start", hedef)
-            self.io.on_child_tool(title, name, "start", hedef)
+            target = _tool_target(args)
+            self._child_tool_mark(cid, name, "start", target)
+            self.io.on_child_tool(title, name, "start", target)
 
         def on_tool_end(name: str, ok: bool, ms: float) -> None:
             self._child_tool_mark(cid, name, "ok" if ok else "fail")
@@ -2778,37 +2922,39 @@ class Agent:
             h.usage["cagri"] = int(h.usage.get("cagri") or 0) + 1
 
         return AgentIO(
-            # Araç olayları alt ajanın kanalına yazılıyor (ana sohbete değil):
-            # "kim ne yapıyor" orkestra panelinde görünür olsun.
+            # Tool events are written to the subagent's channel (not the
+            # main chat): "who is doing what" is visible in the orchestra
+            # panel.
             on_tool_start=on_tool_start,
             on_tool_end=on_tool_end,
             on_usage=on_usage,
-            # Ham BadRequestError duvarı ana sohbete sarı cevap gibi
-            # dökülmesin — kısa özet; tam metin arayüzde tıkla-aç.
-            # Bekleme/retry sohbete spam olmasın: yapısal child_wait.
+            # A raw BadRequestError wall must not spill into the main chat
+            # like a yellow answer — a short summary; the full text opens on
+            # click in the UI.
+            # Wait/retry must not spam the chat: structured child_wait.
             on_notice=lambda text: self.io.on_notice(_child_notice_line(title, text)),
             on_wait=lambda payload, _t=title, _c=cid: self._child_wait(_t, _c, payload),
             approve=child_approve,
         )
 
     def _child_tool_mark(self, cid: str, name: str, phase: str,
-                         hedef: str = "") -> None:
+                         target: str = "") -> None:
         handle = self._children.get(cid)
         if handle is None:
             return
         if phase == "start":
             handle.son_arac = name
-            handle.son_hedef = hedef or ""
+            handle.son_hedef = target or ""
             handle.wait = None
             handle.tools_count = int(handle.tools_count or 0) + 1
         else:
             handle.son_arac = name + (" ✗" if phase == "fail" else " ✓")
-            if not handle.son_hedef and hedef:
-                handle.son_hedef = hedef
+            if not handle.son_hedef and target:
+                handle.son_hedef = target
         self._maybe_patch_run(handle)
 
     def _maybe_patch_run(self, handle: ChildHandle) -> None:
-        """Zamanlı koşum arşivine canlı özet yazar (throttle)."""
+        """Writes a live summary to the scheduled-run archive (throttled)."""
         if not handle.schedule_id or not handle.run_id:
             return
         now = time.time()
@@ -2846,23 +2992,23 @@ class Agent:
             pass
 
     def _child_wait(self, title: str, cid: str, payload: dict[str, Any]) -> None:
-        """Alt ajan model beklemesi → panel (sohbet duvarı değil)."""
+        """Subagent model wait → panel (not the chat wall)."""
         body = dict(payload or {})
         body.setdefault("title", title)
         body.setdefault("id", cid)
-        kip = str(body.get("kip") or "")
+        mode = str(body.get("kip") or "")
         handle = self._children.get(cid)
         if handle is not None:
-            if kip in ("bitti", "iptal"):
+            if mode in ("bitti", "iptal"):
                 handle.wait = None
             else:
                 handle.wait = body
                 handle.son_arac = ""
                 handle.son_hedef = ""
-            if kip in ("deneme", "park", "hata"):
+            if mode in ("deneme", "park", "hata"):
                 self._maybe_patch_run(handle)
-        # Bridge / CLI: on_child_wait yoksa notice'a düşme — kip bitti/iptal
-        # hariç kısa satır.
+        # Bridge / CLI: without on_child_wait fall back to notice — a short
+        # line except for kip bitti/iptal.
         emit = getattr(self.io, "on_child_wait", None)
         if callable(emit):
             try:
@@ -2870,31 +3016,31 @@ class Agent:
                 return
             except Exception:
                 pass
-        if kip in ("bitti", "iptal"):
+        if mode in ("bitti", "iptal"):
             return
-        if kip in ("deneme", "park", "hata"):
-            detay = _clip(str(body.get("detay") or ""), 120)
-            sn = body.get("saniye")
-            den = body.get("deneme")
-            top = body.get("toplam")
+        if mode in ("deneme", "park", "hata"):
+            detail = _clip(str(body.get("detay") or ""), 120)
+            secs = body.get("saniye")
+            attempt = body.get("deneme")
+            total = body.get("toplam")
             msg = f"[{title}] Model yanıt vermiyor"
-            if kip == "hata":
+            if mode == "hata":
                 msg = f"[{title}] Model yanıt vermedi — görev durdu"
-            if den and top:
-                msg += f" ({den}/{top})"
-            if sn:
-                msg += f"; {sn} sn"
-            if detay:
-                msg += f". ({detay})"
+            if attempt and total:
+                msg += f" ({attempt}/{total})"
+            if secs:
+                msg += f"; {secs} sn"
+            if detail:
+                msg += f". ({detail})"
             self.io.on_notice(msg)
 
-    # -- bağlam basıncı ------------------------------------------------
+    # -- context pressure ----------------------------------------------
 
     async def _relieve_pressure(self) -> None:
-        """Pencere dolmaya yaklaştıysa sıkıştırır.
+        """Compacts if the window is getting close to full.
 
-        Tavana çarpmadan önce yapılıyor: özet isteğinin kendisi de aynı
-        pencereye sığmak zorunda.
+        Done before hitting the ceiling: the summary request itself also
+        has to fit into the same window.
         """
         if not self._last_usage:
             return
@@ -2904,15 +3050,16 @@ class Agent:
             await self._refresh_context(f"pencere %{pressure.percent} dolu")
 
     def _warn_if_window_is_wrong(self, pressure: compaction.Pressure) -> None:
-        """Ayardaki pencere gerçeğin üstündeyse söyler.
+        """Says so if the configured window is above reality.
 
-        Belirtisi sinsi: sıkıştırma hiç tetiklenmiyor, istem modelin gerçek
-        sınırını aşıyor ve sunucu istemin **başını** sessizce atıyor. Model o
-        noktada kim olduğunu ve ne istendiğini unutmuş oluyor — dışarıdan
-        "sapıtıyor" gibi görünüyor, oysa ayar yanlış.
+        The symptom is insidious: compaction never triggers, the prompt
+        exceeds the model's real limit and the server silently drops the
+        **head** of the prompt. At that point the model has forgotten who
+        it is and what was asked — from outside it looks like "it went
+        haywire", whereas the setting is wrong.
 
-        İstem penceresini aştığı halde cevap gelmeye devam ediyorsa kanıt
-        kesin: sunucu kırpıyor demektir.
+        If answers keep coming although the prompt exceeded its window the
+        proof is conclusive: the server is trimming.
         """
         if self._window_warned or pressure.used <= pressure.window:
             return
@@ -2928,9 +3075,10 @@ class Agent:
         )
 
     async def _refresh_context(self, reason: str) -> bool:
-        """Bağlamı sıkıştırır; olmazsa sıkı / son çare horizon.
+        """Compacts the context; failing that, tight / last-resort horizon.
 
-        True = pencere yenilendi (iş sürebilir). False = dokunulamadı.
+        True = the window was refreshed (the work can go on). False = it
+        could not be touched.
         """
         if await self._compact(reason=reason):
             return True
@@ -2939,7 +3087,7 @@ class Agent:
         return self._force_horizon(reason)
 
     async def _compact(self, *, reason: str, keep: int | None = None) -> bool:
-        """Pencereyi özetleyip daraltır. Sıkıştırılamadıysa False."""
+        """Summarises and narrows the window. False if it could not be compacted."""
         plan = (
             self.session.compaction_plan(keep=keep)
             if keep is not None
@@ -2958,28 +3106,32 @@ class Agent:
             self.session.log.note("compact_failed", reason=reason)
             return False
 
-        # İş durumu özetin BAŞINA sabitleniyor: kaybolan bağlamda en kritik
-        # şey "neyin peşindeydim, nerede kalmıştım". Özetleyici bunu bazen
-        # gömüyor; burada garanti altına alınıyor.
-        if state := self._is_durumu(from_seq):
+        # The job status is pinned to the HEAD of the summary: the most
+        # critical thing in the lost context is "what was I after, where
+        # did I leave off". The summariser sometimes buries it; here it is
+        # guaranteed.
+        if state := self._job_status(from_seq):
             summary = state + "\n\n" + summary
 
         self.session.compact(summary, from_seq)
-        # Hedef notu özete katlandı; canlı hedefler bir sonraki turda
-        # yeniden enjekte edilebilsin (aksi halde dijest değişmediği için
-        # _sync_goals susar ve hedefler bağlamdan tümden düşerdi).
+        # The goal note folded into the summary; let the live goals be
+        # re-injected on the next turn (otherwise, since the digest has not
+        # changed, _sync_goals stays silent and the goals drop out of the
+        # context entirely).
         self._last_goal_digest = ""
         self._last_usage = {}
-        # Eski prime notları özete katlandı; artık bağlamda durmuyorlar.
-        # Tekrar hakkı geri gelmeli, yoksa özetin kaybettiği bir hatıra
-        # oturum boyunca bir daha öne konamaz. Ruh tohumları kalıyor —
-        # ruh sistem promptunda, sıkıştırma ona dokunmuyor.
+        # The old prime notes folded into the summary; they are no longer
+        # in the context. The right to repeat must come back, otherwise a
+        # memory the summary lost can never be put in front again for the
+        # rest of the session. The soul seeds stay — the soul is in the
+        # system prompt, compaction does not touch it.
         self._primed = self._soul_resident()
         self.session.log.note("compacted", from_seq=from_seq, chars=len(summary))
 
-        # Özet yalnızca bağlama değil zihne de yazılıyor. Aksi halde
-        # sıkıştırma kontrollü bir unutma olurdu: oturum kapandığında özet
-        # de giderdi. Zihne düştüğü için aylar sonra çağrışımla geri gelebilir.
+        # The summary is written not only to the context but to the mind
+        # too. Otherwise compaction would be a controlled forgetting: when
+        # the session closed the summary would go too. Because it lands in
+        # the mind it can come back by association months later.
         if self.mind is not None:
             try:
                 self.mind.remember(
@@ -2988,14 +3140,14 @@ class Agent:
                     title=f"oturum {self.session.id} — özet",
                     tags=("özet", "oturum"),
                 )
-            except Exception as exc:  # zihin yazılamazsa konuşma yine sürmeli
+            except Exception as exc:  # if the mind cannot be written the conversation must still go on
                 self.session.log.note("compact_memory_failed", error=str(exc))
 
         self.io.on_notice("Bağlam özetlendi; kalıcı belleğe de yazıldı.")
         return True
 
     def _force_horizon(self, reason: str) -> bool:
-        """Özetlenecek tur yoksa ufku son mesaja çek — iş dursun diye değil."""
+        """If there is no turn to summarise pull the horizon to the last message — not so the work stops."""
         try:
             events = self.session._live_events()
         except Exception:
@@ -3004,7 +3156,7 @@ class Agent:
             return False
         from_seq = events[-1].seq
         summary = (
-            self._is_durumu(from_seq)
+            self._job_status(from_seq)
             or "Bağlam yenilendi; açık iş listesinden devam."
         )
         self.session.compact(summary, from_seq)
@@ -3018,10 +3170,11 @@ class Agent:
         return True
 
     async def _summarize(self, text: str) -> str:
-        """Dökümü özetlemesi için modele tek seferlik bir istek gönderir.
+        """Sends the model a one-off request to summarise the transcript.
 
-        Araçsız ve önbelleksiz: bu istek konuşmanın parçası değil, onun
-        hakkında bir soru. Geçmişe de yazılmıyor.
+        Tool-less and cache-less: this request is not part of the
+        conversation, it is a question about it. Not written to the history
+        either.
         """
         prepared = Prepared(
             system=[{"type": "text", "text": compaction.SUMMARY_SYSTEM}],
@@ -3045,12 +3198,12 @@ class Agent:
             if isinstance(block, dict) and block.get("type") == "text"
         ).strip()
 
-    def _is_durumu(self, before_seq: int) -> str:
-        """Sıkıştırmada özetin başına sabitlenen iş durumu bölümü.
+    def _job_status(self, before_seq: int) -> str:
+        """The job-status section pinned to the head of the summary on compaction.
 
-        İki parça: hedef yığını (varsa) + katlanan bölgedeki son asistan
-        sözü ("son ilerleme"). Uzun bir koşuda özetin kaybetmemesi gereken
-        şey tam olarak bu ikisi.
+        Two parts: the goal stack (if any) + the last assistant word in the
+        folded region ("last progress"). In a long run what the summary
+        must not lose is exactly these two.
         """
         parts: list[str] = []
         if self.mind is not None:
@@ -3059,14 +3212,14 @@ class Agent:
                     parts.append(digest)
             except Exception:
                 pass
-        if progress := self._son_ilerleme(before_seq):
+        if progress := self._last_progress(before_seq):
             parts.append(f"Son ilerleme: {_clip(progress, 600)}")
         if not parts:
             return ""
         return "[İŞ DURUMU]\n" + "\n".join(parts)
 
-    def _son_ilerleme(self, before_seq: int) -> str:
-        """Katlanan bölgedeki son asistan metni — modelin kendi anlatımı."""
+    def _last_progress(self, before_seq: int) -> str:
+        """The last assistant text in the folded region — the model's own narrative."""
         for event in reversed(self.session.log.messages()):
             if event.seq >= before_seq or event.role != "assistant":
                 continue
@@ -3079,14 +3232,15 @@ class Agent:
                 return text
         return ""
 
-    # -- yardımcılar ---------------------------------------------------
+    # -- helpers -------------------------------------------------------
 
     def _sync_goals(self) -> None:
-        """Hedef yığını değiştiyse operatör kanalından geri hatırlatır.
+        """Reminds through the operator channel if the goal stack changed.
 
-        Sistem promptuna yazılamaz — orası bayt bayt sabit kalmak zorunda,
-        yoksa her hedef değişiminde tüm önbellek düşer. role="system" mesajı
-        geçmişin sonuna eklenir: önek korunur, kanal taklit edilemez.
+        It cannot be written into the system prompt — that has to stay
+        byte-for-byte fixed, otherwise every goal change drops the whole
+        cache. A role="system" message is appended to the end of the
+        history: the prefix is preserved, the channel cannot be imitated.
         """
         if self.mind is None:
             return
@@ -3095,10 +3249,11 @@ class Agent:
             return
         self._last_goal_digest = digest
         if digest:
-            # Çıplak liste küçük modelde TALİMAT gibi okunuyordu: kullanıcı
-            # "selam yaz" derken model defterdeki hedefi tartışmaya
-            # girişiyordu (canlı yara, 31.08). Öncelik tek cümleyle nota
-            # gömülü: gündemi kullanıcının son sözü belirler.
+            # The bare list read like an INSTRUCTION on a small model: while
+            # the user said "selam yaz" the model set about discussing the
+            # goal in the ledger (live wound, 31.08). The priority is
+            # embedded in the note in one sentence: the user's last word
+            # sets the agenda.
             self.session.add_system_note(
                 digest + "\n(Hatırlatma, talimat değil: gündemi kullanıcının "
                 "son sözü belirler. Hedefe sırası gelince ya da kullanıcı "
@@ -3114,46 +3269,49 @@ class Agent:
     def _observe(self, event: str, data: dict[str, Any]) -> None:
         self.session.log.note(event, **data)
         if event == "tool_start":
-            # Model kendi defterine yazdıysa tur sonu dürtüsü gereksiz.
+            # If the model wrote to its own ledger the end-of-turn nudge is
+            # needless.
             if data.get("tool") == "mind_memory":
-                self._zihin_yazildi = True
-            self._teslim_izi(str(data.get("tool") or ""), data.get("input") or {})
+                self._mind_written = True
+            self._delivery_trace(str(data.get("tool") or ""), data.get("input") or {})
             self.io.on_tool_start(data["tool"], data.get("input") or {})
         elif event == "tool_end":
-            # Kırmızı defteri: doğrulama araçlarının verdiği son hüküm.
-            # Yeşile dönen bir koşum kaydı SİLİYOR — model düzeltip yeniden
-            # koşturduysa kapı açılmamalı.
+            # Red ledger: the last verdict given by the verification tools.
+            # A run that turned green DELETES the record — if the model
+            # fixed and re-ran, the gate must not open.
             tool = data["tool"]
             if tool in VERIFICATION_TOOLS:
-                if iz := kirmizi_iz(tool, data):
-                    self._kirmizi[tool] = iz
+                if trace := kirmizi_iz(tool, data):
+                    self._kirmizi[tool] = trace
                 else:
                     self._kirmizi.pop(tool, None)
             self.io.on_tool_end(tool, not data["error"], data["ms"])
             if data["error"]:
-                # Uyanık ters tekrar (yol haritası 3.12.1): sorumluluk sonuç
-                # belli olduğu an dağıtılıyor, geceyi beklemeden. Dersi
-                # sabaha bırakmak, aynı hatayı aynı oturumda tekrar etmeye
-                # izin vermek demekti.
+                # Awake reverse replay (roadmap 3.12.1): responsibility is
+                # assigned the moment the outcome is known, without waiting
+                # for the night. Leaving the lesson to the morning meant
+                # allowing the same mistake to be repeated in the same
+                # session.
                 self._awake_reverse_replay("basarisiz")
         elif event == "sema_ihlali":
-            # Şemaya uymayan çağrı da boşa giden bir tur: oto havuzunda
-            # sağlık sinyali sayılıyor (bkz. _kusurlu). Araç hiç çalışmadı,
-            # arayüzde adım satırı da yok — yalnızca günlükte ve defterde.
+            # A call that does not fit the schema is a wasted turn too: it
+            # counts as a health signal in the auto pool (see _kusurlu).
+            # The tool never ran, there is no step line in the UI either —
+            # only in the log and the ledger.
             self._kusurlu("şema ihlali")
 
 
 def worth_recalling(text: str) -> bool:
-    """Bu mesaj için zihne bakmaya değer mi?
+    """Is this message worth looking into the mind for?
 
-    "naber" bir soru değil, bir selam. Zihni her mesajda modelin önüne
-    boşaltmak istenen şey değildi — istenen, **lazım olduğunda hızlıca
-    bulabilmesi**. Gerçek bir koşuda "naber" dendiğinde model geçmiş
-    oturum özetiyle, kullanıcı profiliyle ve BTC zinciriyle karşılaştı
-    ve sohbet etmek yerine "ne yapmak istersin" diye sordu.
+    "naber" is not a question, it is a greeting. Dumping the mind in front
+    of the model on every message was not the goal — the goal was **being
+    able to find it quickly when needed**. In a real run, when "naber" was
+    said the model met the previous session summary, the user profile and
+    the BTC chain, and instead of chatting asked "what do you want to do".
 
-    Ölçüt basit: içerik taşıyan bir kelime var mı. Selam ve hâl hatır
-    sormada yok; bir konuya atıf yapan mesajda var.
+    The criterion is simple: is there a word carrying content. Greetings
+    and small talk have none; a message referring to a topic does.
     """
     words = [w for w in _WORDS.findall((text or "").lower()) if len(w) >= 4]
     return any(word not in SMALL_TALK for word in words)
@@ -3161,33 +3319,37 @@ def worth_recalling(text: str) -> bool:
 
 def select_prime(mind: Any, user_input: str, *, limit: int = RECALL_PRIME_LIMIT,
                  ham: str | None = None, context: dict | None = None) -> list[Any]:
-    """Kendiliğinden önyüklemenin seçim çekirdeği: ara, süz, kuyruğu kes.
+    """The selection core of spontaneous priming: search, filter, cut the tail.
 
-    Modül fonksiyonu olması bilinçli — ölçek benchmark'ı
-    (eval/context_memory/scale_bench.py) ürünle BİREBİR aynı yolu ölçmeli;
-    kopyalanmış bir seçim mantığı sessizce ayrışır ve ölçülen şey ürün olmaz.
+    Being a module function is deliberate — the scale benchmark
+    (eval/context_memory/scale_bench.py) must measure EXACTLY the same path
+    as the product; a copied selection logic silently diverges and what is
+    measured is no longer the product.
 
-    Süzme kuralları (hepsi gerçek koşularda kanayan yaralardan):
+    Filtering rules (all from wounds that bled in real runs):
 
-    * Yalnızca **doğrudan eşleşenler** (hop 0). Çağrışımla sıçrayarak gelen
-      kayıt ("borsa" sorusuna ağın öteki ucundaki SCADA) modeli konudan
-      çıkarıyor; o yol modelin kendi `mind_recall` çağrısına kalıyor.
-    * `episode` düğümleri girmiyor: konuşma turları uzun ve neredeyse her
-      sorguyla eşleşiyor, gerçek eşleşmeyi boğuyorlar.
-    * Harf zemini (`_grounded`): kayıt, sorgunun içerik kelimelerinden en az
-      birinin gövdesini gerçekten içermeli — skorlar doygunlaşınca eşik tek
-      başına ayıramıyor, salt imza-benzerliğiyle gelen kayıt sızıyordu.
-    * Taban eşiği en güçlü kayda uygulanmıyor: genç hafızada bm25 çöküyor
-      (tek belgeli korpusta kusursuz eşleşme 0.0) ve mutlak eşik prime'ı
-      tümden kapatıyordu. Zemini olan en iyi kayıt her zaman gösterilir;
-      eşik yalnızca kuyruğu keser.
+    * Only **direct matches** (hop 0). A record arriving by associative
+      jump ("borsa" question → SCADA at the far end of the network) pulls
+      the model off topic; that path is left to the model's own
+      `mind_recall` call.
+    * `episode` nodes do not enter: conversation turns are long and match
+      almost every query, they drown the real match.
+    * Letter grounding (`_grounded`): the record must actually contain the
+      stem of at least one of the query's content words — once the scores
+      saturate the threshold alone cannot separate, and records arriving
+      on pure signature similarity leaked through.
+    * The floor threshold is not applied to the strongest record: in a
+      young memory bm25 collapses (a perfect match in a one-document corpus
+      is 0.0) and the absolute threshold shut priming off entirely. The
+      best grounded record is always shown; the threshold only cuts the
+      tail.
     """
     query = _without_numbers(user_input)
     try:
         hits = mind.recall(query, limit=limit, context=context)
     except TypeError:
-        # Bağlamı bilmeyen bir zihin (eski sürüm ya da testteki sahte):
-        # bağlam bir iyileştirme, ön şart değil.
+        # A mind that does not know context (an old version or a fake in a
+        # test): context is an improvement, not a prerequisite.
         hits = mind.recall(query, limit=limit)
 
     trace = getattr(mind, "last_trace", None) or []
@@ -3195,75 +3357,83 @@ def select_prime(mind: Any, user_input: str, *, limit: int = RECALL_PRIME_LIMIT,
     if not direct:
         return []
     stems = _query_stems(query)
-    # Zengin sorguda (>=5 gövde) TEK gövdeyle tutunan kayıt önyüklemeye
-    # giremez: 50 alakasız saha notu "ayın" ↔ "ayında" gibi tek örtüşmeyle
-    # tam bu yoldan sızdı (28.08 hafıza deneyi, C kolu: +%28 token,
-    # +1 çağrı). Kendiliğinden enjeksiyonun çıtası açık aramadan yüksek —
-    # tek-konulu gerçek ihtiyaç için modelin `mind_recall` yolu duruyor.
-    # Kısaltma sorguları (btc, plc) zarar görmez: gövdeleri az, kural uyumaz.
-    # Zenginlik HAM kullanıcı sorgusundan ölçülür: sinonim genişletmesi
-    # (taban.zenginlestir + köprü) sorguyu yapay şişiriyor ve üç kelimelik
-    # meşru bir soru "zengin" sayılıp genç hafızadaki tek-gövdeli gerçek
-    # kaydı kesiyordu (test bunu yakaladı). Çağıran ham metni verir;
-    # vermezse eldeki sorgudan köprüsüz gövdelere düşülür.
-    zengin = len(_query_stems(ham if ham is not None else query,
-                              genislet=False)) >= 5
-    def _gecer(item: Any) -> bool:
+    # In a rich query (>=5 stems) a record hanging on by a SINGLE stem
+    # cannot enter priming: 50 unrelated field notes leaked in through
+    # exactly this path on a single overlap like "ayın" ↔ "ayında" (28.08
+    # memory experiment, arm C: +28% tokens, +1 call). The bar for
+    # spontaneous injection is higher than for an explicit search — for a
+    # single-topic real need the model's `mind_recall` path remains.
+    # Abbreviation queries (btc, plc) are unharmed: few stems, the rule does
+    # not fire. Richness is measured on the RAW user query: the synonym
+    # expansion (writer.zenginlestir + bridge) inflates the query
+    # artificially and a legitimate three-word question counted as "rich"
+    # and cut the single-stem real record in a young memory (a test caught
+    # this). The caller passes the raw text; if not, it falls back to the
+    # bridge-less stems of the query at hand.
+    rich = len(_query_stems(ham if ham is not None else query,
+                            genislet=False)) >= 5
+    def _passes(item: Any) -> bool:
         if not stems:
             return True
         text = f"{item.title} {item.content} {' '.join(item.tags)}".casefold()
-        vuranlar = [g for g in stems if g in text]
-        if not vuranlar:
+        hitting = [g for g in stems if g in text]
+        if not hitting:
             return False
-        # Önek kopyaları tek sayılır: "ayı" ve "ayın" aynı kelimenin iki
-        # kesimi — ikisini iki kanıt saymak süzgeci deliyordu.
-        tekil = [g for g in vuranlar
-                 if not any(g != d and d.startswith(g) for d in vuranlar)]
-        return len(tekil) >= 2 if zengin else True
+        # Prefix copies count once: "ayı" and "ayın" are two cuts of the
+        # same word — counting them as two pieces of evidence punched
+        # through the filter.
+        distinct = [g for g in hitting
+                    if not any(g != d and d.startswith(g) for d in hitting)]
+        return len(distinct) >= 2 if rich else True
     passed = [
         hit
         for hit in hits
         if hit.item.kind != "episode"
         and hit.item.id in direct
         and getattr(hit.item, "hot", True)
-        and _gecer(hit.item)
+        and _passes(hit.item)
     ]
-    # Soğuk kayıt önyüklemeye giremez. Skoru aktivasyon çarpanıyla zaten
-    # düşük ama kural açık olmalı: genç-hafıza istisnası (aşağıda) onu
-    # koşulsuz-top olarak geçirebilirdi.
+    # A cold record cannot enter priming. Its score is already low through
+    # the activation multiplier but the rule must be explicit: the
+    # young-memory exception (below) could pass it as the unconditional
+    # top.
     if not passed:
         return []
     top = max(passed, key=lambda h: h.score)
     if top.score < RECALL_PRIME_FLOOR:
-        # Koşulsuz-top istisnası yalnız GENÇ zihinde. İstisnanın yazılma
-        # sebebi genç korpusta bm25'in çökmesiydi (tek belgeli korpusta
-        # kusursuz eşleşme 0.0 — mutlak eşik prime'ı tümden kapatıyordu).
-        # Olgun zihinde aynı istisna düşük-IDF tek kazananı HER turda
-        # bağlama taşıyordu — dış incelemenin bulduğu kök neden: ilgisiz
-        # 9-görev dizisindeki +%9 istem tokeni buradan geliyordu.
+        # The unconditional-top exception only in a YOUNG mind. The reason
+        # the exception was written was bm25 collapsing in a young corpus
+        # (a perfect match in a one-document corpus is 0.0 — the absolute
+        # threshold shut priming off entirely). In a mature mind the same
+        # exception carried the single low-IDF winner into the context on
+        # EVERY turn — the root cause found by the external review: the
+        # +9% prompt tokens in the unrelated 9-task sequence came from
+        # here.
         try:
-            genc = mind.store.count() < 30
+            young = mind.store.count() < 30
         except Exception:
-            genc = True
-        if not genc:
+            young = True
+        if not young:
             return []
     return [h for h in passed if h is top or h.score >= RECALL_PRIME_FLOOR][:limit]
 
 
 def prime_note(hits: list[Any]) -> str:
-    """Önüne konan hatıraların sistem notu — maliyeti bu metnin uzunluğu.
+    """The system note of the memories placed in front — the cost is the length of this text.
 
-    `render()` kullanılmıyor: o `(tür) başlık [etiketler]` diye açıyor ve
-    satır başındaki `[tür]` ile türü iki kez basıyordu; otomatik başlıklı
-    kayıtlarda (başlık = gövdenin ilk satırı) başlık gövdeyle bir daha
-    tekrarlanıyordu. Etiketler de girmiyor — model için sinyal değil dolgu.
+    `render()` is not used: it opens with `(tür) başlık [etiketler]` and
+    printed the kind twice together with the `[tür]` at the start of the
+    line; in auto-titled records (title = the first line of the body) the
+    title was repeated again with the body. Tags do not enter either — for
+    the model they are filler, not signal.
     """
     lines = [RECALL_PRIME_HEADER]
     for hit in hits:
         item = hit.item
         body = " ".join((item.content or "").split())
         title = " ".join((item.title or "").split())
-        # Başlık gövdenin başıyla aynıysa (otomatik başlık) yalnız gövde.
+        # If the title is the same as the head of the body (auto title),
+        # only the body.
         if title and not body.casefold().startswith(title.casefold()[:40]):
             body = f"{title} — {body}"
         lines.append(f"- [{item.kind}] {_one_line(body)}")
@@ -3271,32 +3441,35 @@ def prime_note(hits: list[Any]) -> str:
 
 
 def _query_stems(query: str, *, genislet: bool = True) -> set[str]:
-    """Sorgunun içerik kelimelerinin gövdeleri (ilk 5 harf, küçük harf).
+    """The stems of the query's content words (first 5 letters, lower case).
 
-    İşlev kelimeleri (ve/bir/için...) atılıyor — onlar her kayıtta var ve
-    zemin saymak süzgeci deler. Kısaltmalar (btc, plc) 3 harfte de içerik
-    taşıyor; o yüzden eşik 4 değil 3.
+    Function words (ve/bir/için...) are dropped — they are in every record
+    and counting them as grounding punches through the filter.
+    Abbreviations (btc, plc) carry content at 3 letters too; that is why
+    the threshold is 3, not 4.
 
-    Sorgu önce sinonim köprüsünden geçer: arama "bitcoin"i BTC kaydına
-    köprüyle ulaştırıyorsa zemin kapısı da o köprüyü tanımalı — yoksa
-    bulunan kayıt "kelimesi geçmiyor" diye önyüklemeden düşer.
+    The query first goes through the synonym bridge: if the search reaches
+    the BTC record from "bitcoin" through the bridge, the grounding gate
+    must recognise that bridge too — otherwise the found record drops out
+    of priming as "the word does not appear".
     """
     from .recall import bridge
     from .recall.vector import STOPWORDS
 
-    metin = bridge.expand(query or "") if genislet else (query or "")
+    text = bridge.expand(query or "") if genislet else (query or "")
     return {
         w[:5]
-        for w in _WORDS.findall(metin.casefold())
+        for w in _WORDS.findall(text.casefold())
         if len(w) >= 3 and w not in STOPWORDS
     }
 
 
 def _grounded(item: Any, stems: set[str]) -> bool:
-    """Kayıt, sorgu gövdelerinden en az birini gerçekten içeriyor mu?
+    """Does the record actually contain at least one of the query stems?
 
-    Gövde yoksa (sorgu yalnız işlev kelimesi) kapı açık kalıyor: süzgecin
-    işi imza-tek kanıtlı sızıntıyı kesmek, hatırlamayı tümden kapatmak değil.
+    If there are no stems (the query is only function words) the gate stays
+    open: the filter's job is to cut the signature-only-evidence leak, not
+    to shut recall off entirely.
     """
     if not stems:
         return True
@@ -3305,12 +3478,13 @@ def _grounded(item: Any, stems: set[str]) -> bool:
 
 
 def _fatal_error(text: str) -> bool:
-    """Yeniden denemenin işe yaramayacağı hata mı?
+    """Is this an error that retrying will not help?
 
-    Bozuk istek (400/404/405/413/422) ve pencere taşması (n_ctx) aynı
-    istekle tekrar denemekle düzelmez — eski davranış korunur, hemen durur.
-    Bağlantı, zaman aşımı, 401/403 (anahtar sonradan düzelebilir), 408/429
-    ve 5xx geçici sayılır: uzun işi tek bir sağlayıcı hıçkırığı öldürmemeli.
+    A malformed request (400/404/405/413/422) and a window overflow (n_ctx)
+    are not fixed by retrying the same request — the old behaviour is kept,
+    it stops at once. Connection, timeout, 401/403 (the key can be fixed
+    later), 408/429 and 5xx count as transient: a single provider hiccup
+    must not kill a long job.
     """
     t = text or ""
     if re.search(r"\b(400|404|405|413|422)\b", t):
@@ -3319,7 +3493,7 @@ def _fatal_error(text: str) -> bool:
 
 
 def _clip(text: str, limit: int) -> str:
-    """Uzun bir sonucu keser — bildirim notu bağlamı boğmasın."""
+    """Cuts a long result — so the notification note does not drown the context."""
     flat = (text or "").strip()
     return flat if len(flat) <= limit else flat[:limit] + "…"
 
@@ -3331,8 +3505,8 @@ _APP_URL_RE = re.compile(
 _ARTIFACT_RE = re.compile(r"/artifact/[A-Za-z0-9_-]+/?", re.I)
 
 
-def _tool_hedef(args: Any, limit: int = 100) -> str:
-    """Araç argümanından tek satır: komut / yol / url."""
+def _tool_target(args: Any, limit: int = 100) -> str:
+    """One line from the tool argument: command / path / url."""
     if not isinstance(args, dict):
         return ""
     for key in ("command", "path", "query", "url", "title", "id", "text", "run"):
@@ -3344,7 +3518,7 @@ def _tool_hedef(args: Any, limit: int = 100) -> str:
 
 
 def _report_with_deliverable(handle: ChildHandle) -> str:
-    """task_runs.report: özet + varsa canlı app/artifact adresi."""
+    """task_runs.report: summary + the live app/artifact address if any."""
     text = str(handle.sonuc or "").strip()
     d = handle.deliverable if isinstance(handle.deliverable, dict) else None
     if not d or not d.get("url"):
@@ -3363,7 +3537,7 @@ def _report_with_deliverable(handle: ChildHandle) -> str:
 
 
 def _run_meter(handle: ChildHandle, config: Any) -> dict[str, Any]:
-    """Koşum ölçümü: model + token + süre + araç + tahmini USD."""
+    """Run meter: model + tokens + duration + tools + estimated USD."""
     from dataclasses import replace
 
     from . import pricing
@@ -3421,7 +3595,7 @@ def _meter_line(
     duration_s: int,
     last_tool: str = "",
 ) -> str:
-    """Tek satır özet — rapor dosyasında ve panelde kalır."""
+    """One-line summary — stays in the report file and the panel."""
     parts: list[str] = []
     if model:
         parts.append(model.rsplit("/", 1)[-1])
@@ -3454,7 +3628,7 @@ def _fmt_duration(seconds: int) -> str:
 
 
 def _report_with_meter(handle: ChildHandle, config: Any, body: str = "") -> str:
-    """Rapor gövdesi + kalıcı meter satırı (uygulama kapanınca da kalsın)."""
+    """Report body + the persistent meter line (so it stays after the app closes)."""
     text = (body if body is not None else _report_with_deliverable(handle)).strip()
     meter = _run_meter(handle, config)
     line = meter.get("line") or ""
@@ -3466,7 +3640,7 @@ def _report_with_meter(handle: ChildHandle, config: Any, body: str = "") -> str:
 
 
 def _infer_deliverable(*texts: str) -> dict[str, Any] | None:
-    """Prompt/çıktıdan bitiş teslimatı çıkar: canlı app veya artifact adresi."""
+    """Extracts the final deliverable from the prompt/output: a live app or artifact address."""
     from urllib.parse import urlparse
 
     blob = "\n".join(str(t) for t in texts if t)
@@ -3476,7 +3650,7 @@ def _infer_deliverable(*texts: str) -> dict[str, Any] | None:
     if m:
         raw = m.group(0).rstrip(".,;)\"]'")
         parsed = urlparse(raw)
-        # /api/refresh gibi uçlar yerine uygulamanın kökünü aç.
+        # Open the app's root instead of endpoints like /api/refresh.
         url = f"{parsed.scheme}://{parsed.netloc}/"
         return {"kind": "app", "url": url}
     m = _ARTIFACT_RE.search(blob)
@@ -3489,10 +3663,11 @@ def _infer_deliverable(*texts: str) -> dict[str, Any] | None:
 
 
 def _child_notice_line(title: str, text: str) -> str:
-    """Alt ajan uyarısını ana sohbete kısa satır olarak taşır.
+    """Carries a subagent warning into the main chat as a short line.
 
-    Ham BadRequestError / JSON duvarı sarı "cevap" gibi ekranı kaplıyordu.
-    Mesaj çıkarılabiliyorsa onu kullan; yoksa ilk satırı kısalt.
+    A raw BadRequestError / JSON wall covered the screen like a yellow
+    "answer". If the message can be extracted use it; otherwise shorten the
+    first line.
     """
     raw = (text or "").strip()
     if not raw:
@@ -3510,20 +3685,20 @@ def _child_notice_line(title: str, text: str) -> str:
 
 
 def _one_line(text: str, limit: int = 220) -> str:
-    """Hatirayi tek satira indirir.
+    """Reduces a memory to a single line.
 
-    Sistem notu kisa kalmali: her mesajdan once ekleniyor ve uzunlugu
-    dogrudan her turun maliyetine biniyor.
+    The system note must stay short: it is added before every message and
+    its length goes directly onto the cost of every turn.
     """
     flat = " ".join((text or "").split())
     return flat if len(flat) <= limit else flat[:limit] + "…"
 
 
 def _text_of_blocks(blocks: list[dict[str, Any]]) -> str:
-    """Asistan turundaki metin bloklarını birleştirir.
+    """Joins the text blocks of an assistant turn.
 
-    Araç çağrıları ve düşünme blokları atlanıyor: belleğe giren, asistanın
-    kullanıcıya söylediği söz — araç argümanları değil.
+    Tool calls and thinking blocks are skipped: what enters memory is what
+    the assistant said to the user — not tool arguments.
     """
     parts = [b.get("text", "") for b in blocks
              if isinstance(b, dict) and b.get("type") == "text"]
@@ -3531,10 +3706,10 @@ def _text_of_blocks(blocks: list[dict[str, Any]]) -> str:
 
 
 def _last_text(session: "Session") -> str:
-    """Oturumun son asistan turundaki metin.
+    """The text of the session's last assistant turn.
 
-    Alt ajanın "sonucu" bu: araç sonuçları kendi günlüğünde kalıyor, geriye
-    yalnızca son söz dönüyor.
+    This is the subagent's "result": the tool results stay in its own log,
+    only the last word comes back.
     """
     for event in reversed(session.log.messages()):
         if event.role != "assistant":
@@ -3551,10 +3726,10 @@ def _last_text(session: "Session") -> str:
 
 
 def _with_image(text: str, data_url: str) -> list[dict[str, Any]]:
-    """Metin + görüntüyü Anthropic blok biçimine çevirir.
+    """Converts text + image into the Anthropic block format.
 
-    Tarayıcı `data:image/png;base64,...` gönderiyor; API tür ve veriyi ayrı
-    alanlarda istiyor.
+    The browser sends `data:image/png;base64,...`; the API wants the type
+    and the data in separate fields.
     """
     header, _, payload = data_url.partition(",")
     media = "image/png"
@@ -3567,20 +3742,20 @@ def _with_image(text: str, data_url: str) -> list[dict[str, Any]]:
             "source": {"type": "base64", "media_type": media, "data": payload},
         }
     ]
-    # Görüntü önce, metin sonra: model önce baktığı şeyi, sonra soruyu görüyor.
-    # Soru yoksa da bakması gerekeni söylüyoruz — yalnızca bir kare gönderip
-    # "ne diyeceksin bakalım" demek modelin tek cümleyle geçiştirmesine
-    # yol açıyordu.
+    # Image first, text after: the model sees what it looked at first, then
+    # the question. If there is no question we still say what it should
+    # look at — sending only a frame and saying "let's see what you say"
+    # led the model to brush it off in a single sentence.
     blocks.append({"type": "text", "text": text.strip() or LOOK_NOTE})
     return blocks
 
 
 def _seen_blocks(images: list[str]) -> list[dict[str, Any]]:
-    """Araçtan gelen görüntüleri kullanıcı turuna çevirir.
+    """Converts images coming from a tool into a user turn.
 
-    Araç sonucunda taşınamadığı için buraya düşüyorlar. Yanlarına kısa bir
-    not konuyor: modelin bunu kullanıcının gönderdiği bir fotoğraf değil,
-    kendi bakışının sonucu olarak okuması gerekiyor.
+    They land here because they cannot be carried in the tool result. A
+    short note is put next to them: the model has to read this not as a
+    photo the user sent but as the result of its own looking.
     """
     blocks: list[dict[str, Any]] = []
     for data in images:

@@ -1,4 +1,4 @@
-"""Windows 'Dornick ile aç' kayıt yardımcıları."""
+"""Windows 'Open with Dornick' registration helpers."""
 
 from __future__ import annotations
 

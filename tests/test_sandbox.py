@@ -1,9 +1,9 @@
-"""Atölye sınırı.
+"""The workshop boundary.
 
-Buradaki tek kural — okuma her yerde, yazma yalnızca atölyede — sessizce
-delinebilecek üç yer var: `..` ile yukarı çıkmak, sembolik bağ üzerinden
-dışarı taşmak, ve henüz var olmayan bir dosyanın nerede olduğunun yanlış
-hesaplanması. Üçü de aşağıda.
+The single rule here — read anywhere, write only in the workshop — can be
+silently punctured in three places: climbing up with `..`, escaping
+through a symbolic link, and miscalculating where a file that does not
+exist yet would be. All three are below.
 """
 
 from __future__ import annotations
@@ -46,12 +46,12 @@ async def call(registry: ToolRegistry, name: str, ctx: ToolContext, **args):
     return await registry.get(name).handler(args, ctx)
 
 
-# -- sınır hesabı ------------------------------------------------------
+# -- boundary calculation ----------------------------------------------
 
 
 def test_a_path_that_does_not_exist_yet_is_still_placed(tmp_path: Path) -> None:
-    """Yazma çoğunlukla henüz olmayan bir dosyaya yapılıyor; sınır kontrolü
-    dosyanın varlığına bağlı olamaz."""
+    """Writes mostly go to a file that does not exist yet; the boundary
+    check cannot depend on the file's existence."""
     box = Sandbox.open(tmp_path)
 
     assert box.contains(box.root / "site" / "index.html")
@@ -66,7 +66,7 @@ def test_climbing_out_with_dot_dot_is_caught(tmp_path: Path) -> None:
 
 
 def test_a_symlink_pointing_outside_is_caught(tmp_path: Path) -> None:
-    """Bağ çözülmeden karşılaştırılırsa sınır kâğıt üstünde kalıyor."""
+    """If compared without resolving the link, the boundary stays on paper."""
     box = Sandbox.open(tmp_path)
     outside = tmp_path / "disarisi"
     outside.mkdir()
@@ -85,7 +85,7 @@ def test_the_root_itself_counts_as_inside(tmp_path: Path) -> None:
 
 
 def test_a_disabled_sandbox_lets_everything_through(tmp_path: Path) -> None:
-    """Kapatmak bilinçli bir karar; kapalıyken kısıt hiç uygulanmamalı."""
+    """Disabling is a deliberate decision; while disabled the restriction must never apply."""
     box = Sandbox.open(tmp_path, enabled=False)
     assert box.check(tmp_path / "her" / "yer.txt")
 
@@ -98,15 +98,15 @@ def test_an_absolute_directory_can_be_used(tmp_path: Path) -> None:
     assert box.root.is_dir()
 
 
-# -- araçlar -----------------------------------------------------------
+# -- tools -------------------------------------------------------------
 
 
 async def test_relative_writes_land_in_the_workshop(
     registry: ToolRegistry, ctx: ToolContext
 ) -> None:
-    """Ajan "site/index.html" yazdığında bunun kendi klasöründe olmasını
-    bekliyor; çalışma alanının köküne düşmesi kullanıcının dosyalarının
-    arasına karışmak demek."""
+    """When the agent writes "site/index.html" it expects that to be in its
+    own folder; landing at the root of the workspace means mixing into the
+    user's files."""
     result = await call(registry, "write_file", ctx, path="site/index.html", content="<h1>x</h1>")
 
     assert not result.is_error
@@ -116,8 +116,8 @@ async def test_relative_writes_land_in_the_workshop(
 async def test_writing_outside_is_refused_with_a_way_forward(
     registry: ToolRegistry, ctx: ToolContext, workspace: Path
 ) -> None:
-    """"İzin yok" demek yetmiyor: model bir sonraki turda ne yapacağını
-    bilmeli, yoksa aynı çağrıyı tekrarlıyor."""
+    """Saying "no permission" is not enough: the model must know what to do
+    on the next turn, otherwise it repeats the same call."""
     result = await call(
         registry, "write_file", ctx, path=str(workspace / "gizli.txt"), content="ezildi"
     )
@@ -130,7 +130,7 @@ async def test_writing_outside_is_refused_with_a_way_forward(
 async def test_editing_outside_is_refused_too(
     registry: ToolRegistry, ctx: ToolContext, workspace: Path
 ) -> None:
-    """write_file kapatılıp edit_file açık kalırsa sınır hiç yok demektir."""
+    """If write_file is closed but edit_file stays open there is no boundary at all."""
     target = str(workspace / "gizli.txt")
     await call(registry, "read_file", ctx, path=target)
 
@@ -143,7 +143,7 @@ async def test_editing_outside_is_refused_too(
 async def test_reading_outside_stays_free(
     registry: ToolRegistry, ctx: ToolContext, workspace: Path
 ) -> None:
-    """Kısıt yazmada; ajan bilgisayardaki her şeyi görebilmeli."""
+    """The restriction is on writing; the agent must be able to see everything on the computer."""
     result = await call(registry, "read_file", ctx, path=str(workspace / "gizli.txt"))
 
     assert not result.is_error
@@ -164,8 +164,8 @@ async def test_copy_in_brings_a_file_without_touching_the_original(
 async def test_the_copy_is_immediately_editable(
     registry: ToolRegistry, ctx: ToolContext, workspace: Path
 ) -> None:
-    """Kopyayı az önce bu süreç yazdı; bayatlık kontrolü modeli gereksiz bir
-    read_file turuna zorlamamalı."""
+    """This process wrote the copy a moment ago; the staleness check must
+    not force the model into a needless read_file turn."""
     await call(registry, "copy_in", ctx, path=str(workspace / "gizli.txt"), to="calisma.txt")
 
     result = await call(registry, "edit_file", ctx, path="calisma.txt",
@@ -178,7 +178,7 @@ async def test_the_copy_is_immediately_editable(
 async def test_copy_in_cannot_be_used_to_escape(
     registry: ToolRegistry, ctx: ToolContext, workspace: Path
 ) -> None:
-    """Hedef de sınır kontrolünden geçmeli; yoksa kopyalama bir kaçış yolu."""
+    """The target must pass the boundary check too; otherwise copying is an escape route."""
     result = await call(
         registry, "copy_in", ctx, path=str(workspace / "gizli.txt"), to="../kacak.txt"
     )
@@ -216,8 +216,8 @@ async def test_a_whole_directory_can_be_copied(
 
 
 def test_the_agent_is_told_where_it_lives(tmp_path: Path) -> None:
-    """Kural sistem promptunda yazmazsa model her yazmada duvara çarpıp
-    deneme yanılmayla öğreniyor."""
+    """If the rule is not in the system prompt the model hits the wall on
+    every write and learns by trial and error."""
     briefing = Sandbox.open(tmp_path).briefing()
 
     assert "atolye" in briefing.lower()
@@ -231,12 +231,12 @@ def test_a_disabled_sandbox_says_nothing(tmp_path: Path) -> None:
 async def test_the_workshop_name_is_not_nested(
     registry: ToolRegistry, ctx: ToolContext
 ) -> None:
-    """Model atölyenin adını yola kendisi ekliyor.
+    """The model adds the workshop's name to the path itself.
 
-    Sistem promptunda klasörün tam yolu yazıyor ve oradan çıkarım yapıp
-    "atolye/merhaba.txt" diyor. Olduğu gibi birleştirmek `atolye/atolye/...`
-    üretiyordu — gerçek bir koşuda tam olarak bu oldu ve dosya bir alt
-    klasöre düştü.
+    The full path of the folder is in the system prompt and it infers from
+    there, saying "atolye/merhaba.txt". Joining as-is produced
+    `atolye/atolye/...` — in a real run exactly this happened and the file
+    landed in a subfolder.
     """
     name = ctx.sandbox.root.name
     result = await call(registry, "write_file", ctx, path=f"{name}/merhaba.txt", content="selam")
@@ -258,8 +258,8 @@ async def test_a_deeper_path_keeps_its_shape(
 async def test_a_folder_that_only_shares_the_name_is_untouched(
     registry: ToolRegistry, ctx: ToolContext
 ) -> None:
-    """Kırpma yalnızca ilk parçada; içeride aynı adı taşıyan bir klasör
-    olabilir ve o kalmalı."""
+    """The trimming is only on the first part; inside there can be a folder
+    with the same name and it must stay."""
     name = ctx.sandbox.root.name
     await call(registry, "write_file", ctx, path=f"proje/{name}/not.txt", content="x")
 
@@ -271,40 +271,41 @@ def test_the_briefing_says_relative_paths_land_here(tmp_path: Path) -> None:
     assert "Göreli yol" in briefing
 
 
-# -- proje kipi --------------------------------------------------------
+# -- project mode ------------------------------------------------------
 #
-# "Benim projemde vibe-coding yapacaksam klasörü seçmem gerekiyor." Bir
-# AĞACI atölyeye kopyalamak işi imkânsız kılıyor: kopyası orijinali
-# olmuyor. Kullanıcı klasörü açıkça seçince orası da yazılabilir oluyor —
-# seçimin kendisi onaydır. Atölye her koşulda açık kalıyor.
+# "If I'm going to vibe-code in my own project I need to pick the folder."
+# Copying a TREE into the workshop makes the job impossible: the copy is
+# not the original. When the user explicitly picks a folder it becomes
+# writable too — the choice itself is the approval. The workshop stays
+# open in every case.
 
 from dornick import sandbox as sandbox_module   # noqa: E402
 
 
 def test_a_chosen_project_becomes_writable(tmp_path: Path) -> None:
-    proje = tmp_path / "musteri-projesi"
-    proje.mkdir()
-    box = Sandbox.open(tmp_path, "atolye", project=str(proje))
+    project = tmp_path / "musteri-projesi"
+    project.mkdir()
+    box = Sandbox.open(tmp_path, "atolye", project=str(project))
 
-    assert box.contains(proje / "src" / "yeni.py")     # henüz olmayan dosya da
-    assert box.check(proje / "app.py") is not None
-    # Atölye kaybolmuyor: dornick'nun kendi işleri oraya gitmeye devam ediyor.
+    assert box.contains(project / "src" / "yeni.py")     # a file that does not exist yet, too
+    assert box.check(project / "app.py") is not None
+    # The workshop does not disappear: dornick's own work keeps going there.
     assert box.contains(box.root / "deneme.txt")
-    assert box.project == proje.resolve()
-    assert box.roots[0] == box.root                     # atölye her zaman ilk
+    assert box.project == project.resolve()
+    assert box.roots[0] == box.root                     # the workshop is always first
 
 
 def test_everything_outside_the_open_roots_is_still_refused(tmp_path: Path) -> None:
-    proje = tmp_path / "proje"
-    proje.mkdir()
+    project = tmp_path / "proje"
+    project.mkdir()
     (tmp_path / "baska").mkdir()
-    box = Sandbox.open(tmp_path, "atolye", project=str(proje))
+    box = Sandbox.open(tmp_path, "atolye", project=str(project))
 
     with pytest.raises(OutsideSandbox) as caught:
         box.check(tmp_path / "baska" / "dosya.txt")
-    # Hata ne yapılacağını söylemeli; "izin yok" tek başına bir yol açmıyor.
+    # The error must say what to do; "no permission" alone opens no path.
     assert "Ayarlar › Proje" in str(caught.value)
-    assert str(proje.resolve()) in str(caught.value)
+    assert str(project.resolve()) in str(caught.value)
 
 
 def test_without_a_project_the_old_rule_holds(tmp_path: Path) -> None:
@@ -316,79 +317,80 @@ def test_without_a_project_the_old_rule_holds(tmp_path: Path) -> None:
 
 
 def test_dangerous_roots_are_refused_with_a_reason(tmp_path: Path) -> None:
-    r"""Kullanıcı seçse bile bazı kökler kabul edilemez: `C:\` seçmek
-    "her yere yazabilirsin" demenin uzun yoludur."""
-    kok = Path(tmp_path.anchor or "/")
-    assert sandbox_module.root_block(kok) is not None
+    r"""Even if the user picks it, some roots are unacceptable: picking `C:\`
+    is the long way of saying "you may write anywhere"."""
+    root = Path(tmp_path.anchor or "/")
+    assert sandbox_module.root_block(root) is not None
 
-    ev = Path.home()
-    assert sandbox_module.root_block(ev) is not None, "kullanıcı klasörü fazla geniş"
-    # Ev DİZİNİNİN ALTI serbest: asıl projeler orada duruyor.
-    alt = tmp_path / "kod" / "proje"
-    alt.mkdir(parents=True)
-    assert sandbox_module.root_block(alt) is None
+    home = Path.home()
+    assert sandbox_module.root_block(home) is not None, "kullanıcı klasörü fazla geniş"
+    # BELOW the home directory is free: the real projects live there.
+    sub = tmp_path / "kod" / "proje"
+    sub.mkdir(parents=True)
+    assert sandbox_module.root_block(sub) is None
 
-    # Olmayan ve klasör olmayan yollar da sebebiyle reddediliyor.
+    # Non-existent and non-folder paths are refused with a reason too.
     assert sandbox_module.root_block(tmp_path / "yok") is not None
-    dosya = tmp_path / "dosya.txt"
-    dosya.write_text("x", encoding="utf-8")
-    assert sandbox_module.root_block(dosya) is not None
+    file = tmp_path / "dosya.txt"
+    file.write_text("x", encoding="utf-8")
+    assert sandbox_module.root_block(file) is not None
 
 
 def test_system_folders_are_refused(tmp_path: Path) -> None:
-    """İşletim sistemi klasörleri: adı yeterli kanıt, var olmaları şart değil."""
-    sahte = tmp_path / "Windows"
-    sahte.mkdir()
-    assert "işletim sistemi" in (sandbox_module.root_block(sahte) or "")
+    """Operating system folders: the name is evidence enough, they need not exist."""
+    fake = tmp_path / "Windows"
+    fake.mkdir()
+    assert "işletim sistemi" in (sandbox_module.root_block(fake) or "")
 
 
 def test_an_invalid_project_falls_back_instead_of_breaking(tmp_path: Path) -> None:
-    """Ayar dosyası elle düzenlenmiş ya da klasör silinmiş olabilir:
-    program AÇILMAZ hâle gelmemeli, sessizce atölyeye dönmeli."""
+    """The settings file may have been edited by hand or the folder deleted:
+    the program must not become UNABLE TO OPEN, it should silently fall
+    back to the workshop."""
     box = Sandbox.open(tmp_path, "atolye", project=str(tmp_path / "silinmis"))
     assert box.project is None
     assert box.contains(box.root / "x.txt")
 
 
 def test_covering_neos_own_state_warns_but_does_not_block(tmp_path: Path) -> None:
-    """Kendi kodunu dornick'ya düzelttirmek meşru bir istek — bu depo tam
-    olarak öyle geliştiriliyor. Engelleme değil, uyarı."""
+    """Having dornick fix its own code is a legitimate request — this repo
+    is developed exactly that way. A warning, not a block."""
     status = tmp_path / ".dornick"
     status.mkdir()
     box = Sandbox.open(tmp_path / "ws", "atolye", project=str(tmp_path),
                        state_dir=status)
-    assert box.project == tmp_path.resolve()      # engellenmedi
-    assert "hafızasına" in box.note               # ama söylendi
+    assert box.project == tmp_path.resolve()      # not blocked
+    assert "hafızasına" in box.note               # but said
 
 
 def test_the_briefing_tells_the_model_which_folder_is_which(tmp_path: Path) -> None:
-    """Model hangisinin ne olduğunu bilmeli, yoksa kullanıcının projesine
-    kendi denemelerini bırakır."""
-    proje = tmp_path / "musteri"
-    proje.mkdir()
+    """The model must know which is which, otherwise it leaves its own
+    experiments in the user's project."""
+    project = tmp_path / "musteri"
+    project.mkdir()
 
-    yalin = Sandbox.open(tmp_path, "atolye").briefing()
-    assert "yazma yalnızca bu klasörde" in yalin
-    assert "Çalışılan proje" not in yalin
+    plain = Sandbox.open(tmp_path, "atolye").briefing()
+    assert "yazma yalnızca bu klasörde" in plain
+    assert "Çalışılan proje" not in plain
 
-    projeli = Sandbox.open(tmp_path, "atolye", project=str(proje)).briefing()
-    assert f"Çalışılan proje: {proje.resolve()}" in projeli
-    assert "yazma serbest" in projeli
-    # Atölye de görünmeye devam ediyor: ikisi ayrı işler.
-    assert str(Sandbox.open(tmp_path, "atolye").root) in projeli
-    assert "kendi işlerin" in projeli
+    with_project = Sandbox.open(tmp_path, "atolye", project=str(project)).briefing()
+    assert f"Çalışılan proje: {project.resolve()}" in with_project
+    assert "yazma serbest" in with_project
+    # The workshop keeps showing too: the two are separate jobs.
+    assert str(Sandbox.open(tmp_path, "atolye").root) in with_project
+    assert "kendi işlerin" in with_project
 
 
 def test_relative_paths_resolve_against_the_nearest_open_root(tmp_path: Path) -> None:
-    proje = tmp_path / "proje"
-    (proje / "src").mkdir(parents=True)
-    box = Sandbox.open(tmp_path, "atolye", project=str(proje))
-    assert box.relative(proje / "src" / "app.py") == "src/app.py"
+    project = tmp_path / "proje"
+    (project / "src").mkdir(parents=True)
+    box = Sandbox.open(tmp_path, "atolye", project=str(project))
+    assert box.relative(project / "src" / "app.py") == "src/app.py"
     assert box.relative(box.root / "not.md") == "not.md"
 
 
 def test_recent_projects_are_remembered_in_order(tmp_path: Path) -> None:
-    """Son projeler tek tıkla geçiş için; en son seçilen başta."""
+    """Recent projects are for one-click switching; the most recently picked first."""
     status = tmp_path / ".dornick"
     assert sandbox_module.son_projeler(status) == []
 
@@ -396,11 +398,11 @@ def test_recent_projects_are_remembered_in_order(tmp_path: Path) -> None:
     sandbox_module.proje_hatirla(status, "C:/b")
     assert sandbox_module.son_projeler(status) == ["C:/b", "C:/a"]
 
-    # Aynı proje iki kez listelenmiyor, başa geçiyor.
+    # The same project is not listed twice, it moves to the front.
     sandbox_module.proje_hatirla(status, "C:/a")
     assert sandbox_module.son_projeler(status) == ["C:/a", "C:/b"]
 
-    # Defter sınırlı: liste sonsuza kadar uzamıyor.
+    # The ledger is bounded: the list does not grow forever.
     for i in range(20):
         sandbox_module.proje_hatirla(status, f"C:/p{i}")
     assert len(sandbox_module.son_projeler(status)) == sandbox_module.MAX_RECENT
@@ -416,23 +418,23 @@ def test_a_corrupt_recent_file_does_not_break_settings(tmp_path: Path) -> None:
 def test_the_project_survives_a_settings_round_trip(tmp_path: Path) -> None:
     from dornick import settings
 
-    proje = tmp_path / "musteri"
-    proje.mkdir()
+    project = tmp_path / "musteri"
+    project.mkdir()
     config = Config.load(tmp_path)
     config.ensure_dirs()
 
-    updated = settings.apply(config, {"sandbox": {"project": str(proje)}})
-    assert updated.sandbox.project == str(proje)
-    assert Config.load(tmp_path).sandbox.project == str(proje)
-    # Seçim son projeler defterine de düşüyor.
-    assert str(proje) in sandbox_module.son_projeler(updated.state_dir)
-    # Ve gerçekten yazılabilir.
-    assert updated.open_sandbox().contains(proje / "yeni.py")
+    updated = settings.apply(config, {"sandbox": {"project": str(project)}})
+    assert updated.sandbox.project == str(project)
+    assert Config.load(tmp_path).sandbox.project == str(project)
+    # The choice lands in the recent-projects ledger too.
+    assert str(project) in sandbox_module.son_projeler(updated.state_dir)
+    # And it is really writable.
+    assert updated.open_sandbox().contains(project / "yeni.py")
 
 
 def test_settings_refuses_a_dangerous_project_with_a_reason(tmp_path: Path) -> None:
-    """Doğrulama arayüzde değil burada: geçersiz bir kök ancak ajan oraya
-    yazmaya çalışınca patlardı ve o çok geç."""
+    """Validation is here, not in the UI: an invalid root would only blow up
+    when the agent tried to write there, and that is too late."""
     from dornick import settings
 
     config = Config.load(tmp_path)
@@ -440,5 +442,5 @@ def test_settings_refuses_a_dangerous_project_with_a_reason(tmp_path: Path) -> N
     with pytest.raises(ValueError) as caught:
         settings.apply(config, {"sandbox": {"project": str(Path(tmp_path.anchor or "/"))}})
     assert "sürücü kökü" in str(caught.value) or "işletim sistemi" in str(caught.value)
-    # Reddedilen seçim diske yazılmamalı.
+    # The refused choice must not be written to disk.
     assert Config.load(tmp_path).sandbox.project == ""

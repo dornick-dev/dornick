@@ -1,19 +1,20 @@
-"""Beni tanı: kişisel ince ayar döngüsünün ürün içinden zamanlanması.
+"""Know me: scheduling the personal fine-tuning loop from inside the product.
 
-Eğitim düzeneği ayrı bir depoda yaşıyor (neocp-base-model); gece döngüsü
-(hasat → etiket → ince ayar → sınav kapısı → .dornick/taban.npz) orada.
-Burası yalnızca **ne zaman** koşacağına karar veriyor: özellik ayarlardan
-açılır, bekçi thread'i on beş dakikada bir yoklar ve ya yeterli yeni anı
-birikmişse ya da son koşudan bir gün geçmişse (akıllı tetik, aşağıdaki
-sabitler) döngüyü düşük öncelikli bir alt süreç olarak başlatır.
+The training rig lives in a separate repo (neocp-base-model); the night
+loop (harvest → label → fine-tune → exam gate → .dornick/taban.npz) is
+there. This place only decides **when** it runs: the feature is switched
+on from settings, the watcher thread polls every fifteen minutes and starts
+the loop as a low-priority child process either when enough new memories
+have accumulated or when a day has passed since the last run (smart
+trigger, constants below).
 
-Neden schtasks değil: zamanlama üründe durunca kullanıcı tek anahtarla
-açıp kapatabiliyor, koşunun başladığı/bittiği arayüzde görünüyor ve
-kurulumsuz makinede özellik sessizce pasif kalıyor.
+Why not schtasks: with scheduling inside the product the user can switch it
+on and off with a single toggle, the run's start/finish shows in the UI and
+on a machine without the rig the feature stays quietly passive.
 
-`son_kosu` koşu BİTİNCE yazılıyor: yarıda kesilen (kapanan bilgisayar,
-öldürülen süreç) bir koşu tekrarlanabilir kalmalı. Döngünün kendi durumu
-(filigran, eşik) zaten kendi deposunda — yarım koşu veri kaybetmez.
+`son_kosu` is written when the run FINISHES: a run cut short (computer shut
+down, process killed) must stay repeatable. The loop's own state
+(watermark, threshold) is in its own store anyway — a half run loses no data.
 """
 
 from __future__ import annotations
@@ -30,44 +31,48 @@ from typing import Any
 
 FILE = "tanima.json"
 
-# Eğitim düzeneğinin yeri. Önce kurulum düzeni: paket <kök>/src/dornick
-# altında yaşıyorsa düzenek <kök>/egitim'de aranıyor (Windows kurulum
-# sihirbazı oraya koyuyor). Yoksa geliştirici yolu — bu da yoksa özellik
-# pasif: ayar sayfası anahtarın yanında "kurulu değil" notu gösteriyor.
-_KURULUM_BETIK = (Path(__file__).resolve().parents[2]
-                  / "egitim" / "betikler" / "08_kisisel_dongu.py")
-_GELISTIRICI_BETIK = (Path("D:/Projects/ai/neocp-base-model")
-                      / "betikler" / "08_kisisel_dongu.py")
-DONGU_BETIK = _KURULUM_BETIK if _KURULUM_BETIK.exists() else _GELISTIRICI_BETIK
+# Where the training rig lives. Install layout first: if the package lives
+# under <root>/src/dornick the rig is looked for in <root>/egitim (the
+# Windows installer puts it there). Otherwise the developer path — and if
+# that is missing too the feature is passive: the settings page shows a
+# "not installed" note next to the toggle.
+_INSTALL_SCRIPT = (Path(__file__).resolve().parents[2]
+                   / "egitim" / "betikler" / "08_kisisel_dongu.py")
+_DEVELOPER_SCRIPT = (Path("D:/Projects/ai/neocp-base-model")
+                     / "betikler" / "08_kisisel_dongu.py")
+LOOP_SCRIPT = _INSTALL_SCRIPT if _INSTALL_SCRIPT.exists() else _DEVELOPER_SCRIPT
 
-# Döngünün filigranı: en son hangi anıya kadar hasat edildiği burada.
-# Yeni anı sayısı buna göre ölçülüyor; dosya/alan yoksa boş filigran —
-# her şey yeni sayılır, ilk kurulumda doğru davranış.
-WATERMARK = DONGU_BETIK.parents[1] / "veri" / "kisisel_durum.json"
+# The loop's watermark: up to which memory was last harvested lives here.
+# The new-memory count is measured against it; a missing file/field means
+# an empty watermark — everything counts as new, the right behaviour on a
+# first install.
+WATERMARK = LOOP_SCRIPT.parents[1] / "veri" / "kisisel_durum.json"
 
-# Kullanıcıdan damıtılan soru→terim çiftleri: kişisel eğitimin ham maddesi.
-# Taşıma (transfer) ve sıfırlama bu iki dosyayı birlikte ele alıyor.
-KORPUS = DONGU_BETIK.parents[1] / "veri" / "kisisel_korpus.jsonl"
+# Question→term pairs distilled from the user: the raw material of personal
+# training. Transfer and reset handle these two files together.
+CORPUS = LOOP_SCRIPT.parents[1] / "veri" / "kisisel_korpus.jsonl"
 
-# Akıllı tetik: yoklamada iki yoldan biri koşturur.
-#   (a) filigrandan beri YENI_ANI_ESIGI anı birikti VE son koşudan en az
-#       EN_AZ_ARA_SAAT geçti — taze malzeme varken geceyi beklemek boşuna;
-#       alt sınır, yoğun bir sohbet gününde döngünün art arda tetiklenip
-#       makineyi meşgul etmesini önlüyor.
-#   (b) son koşudan TAZELIK_SAAT geçti — günlük tazeleme sigortası: anı
-#       birikmese de hasat + eşik yoklaması günde bir kez koşsun.
+# Smart trigger: a poll runs the loop via one of two paths.
+#   (a) NEW_MEMORY_THRESHOLD memories accumulated since the watermark AND at
+#       least MIN_GAP_HOURS passed since the last run — waiting for the night
+#       while there is fresh material is pointless; the lower bound keeps the
+#       loop from firing back-to-back on a busy chat day and keeping the
+#       machine busy.
+#   (b) FRESHNESS_HOURS passed since the last run — the daily refresh
+#       insurance: even without accumulated memories, harvest + threshold
+#       poll should run once a day.
 NEW_MEMORY_THRESHOLD = 25
 MIN_GAP_HOURS = 2
 FRESHNESS_HOURS = 20
 
-# Bekçinin adımları: ilk bakış açılışı yavaşlatmasın diye gecikmeli.
+# The watcher's steps: the first look is delayed so it does not slow startup.
 FIRST_WAIT_S = 60.0
-YOKLAMA_SN = 15 * 60.0
+POLL_S = 15 * 60.0
 
-# Süreç modül-global: sunucu thread'li ve "zaten koşuyor mu" sorusunun
-# tek bir doğru cevabı olmalı.
-_surec: subprocess.Popen | None = None
-_kilit = threading.Lock()
+# Process is module-global: the server is threaded and the question "is it
+# already running" must have a single true answer.
+_proc: subprocess.Popen | None = None
+_lock = threading.Lock()
 
 
 def status(state_dir: Path) -> dict:
@@ -76,11 +81,11 @@ def status(state_dir: Path) -> dict:
     except (OSError, ValueError):
         return {"on": False, "son_kosu": "", "learn_cloud_ok": False}
     return {"on": bool(d.get("on")), "son_kosu": str(d.get("son_kosu") or ""),
-            # Mahremiyet onayı: barındırılan modelle etiketlemeye açık izin.
-            # Burada normalize edilip GERİ YAZILIYOR ki `ayarla` gibi
-            # oku-değiştir-yaz akışları bayrağı silmesin. config.json'a
-            # konmadı: settings._write_config dosyayı dataclass'lardan
-            # yeniden kuruyor ve bilinmeyen anahtarı ilk kayıtta düşürüyor.
+            # Privacy consent: explicit permission for labelling with the
+            # hosted model. Normalised here and WRITTEN BACK so that
+            # read-modify-write flows like `configure` do not wipe the flag.
+            # Not put in config.json: settings._write_config rebuilds the
+            # file from dataclasses and drops an unknown key on first save.
             "learn_cloud_ok": bool(d.get("learn_cloud_ok"))}
 
 
@@ -91,10 +96,10 @@ def configure(state_dir: Path, on: bool) -> None:
 
 
 def set_cloud_consent(state_dir: Path, ok: bool) -> None:
-    """Bulut modelle gece etiketlemesine açık izin (mahremiyet onayı).
+    """Explicit permission for night labelling with the cloud model (privacy consent).
 
-    Gece döngüsü (08_kisisel_dongu / personal_loop) bu bayrağı okur:
-    barındırılan uca anı metni yalnız bu açıkken gider.
+    The night loop (08_kisisel_dongu / personal_loop) reads this flag:
+    memory text goes to the hosted endpoint only while this is on.
     """
     d = status(state_dir)
     d["learn_cloud_ok"] = bool(ok)
@@ -102,20 +107,21 @@ def set_cloud_consent(state_dir: Path, ok: bool) -> None:
 
 
 def hazir() -> bool:
-    """Eğitim düzeneği bu makinede kurulu mu?"""
-    return DONGU_BETIK.exists()
+    """Is the training rig installed on this machine?"""
+    return LOOP_SCRIPT.exists()
 
 
 def running() -> bool:
-    return _surec is not None and _surec.poll() is None
+    return _proc is not None and _proc.poll() is None
 
 
 def _new_memory_count(state_dir: Path) -> int:
-    """Filigrandan beri biriken anı sayısı (episode hariç).
+    """Number of memories accumulated since the watermark (episodes excluded).
 
-    Veritabanı SALT OKUNUR açılıyor (hasat/gate kalıbı): bekçinin işi
-    saymak, ajanın zihnine dokunmak değil. Okunamayan db/filigran sıfır
-    sayılıyor — akıllı yol susar, günlük sigorta yine çalışır.
+    The database is opened READ-ONLY (harvest/gate pattern): the watcher's
+    job is to count, not to touch the agent's mind. An unreadable
+    db/watermark counts as zero — the smart path stays quiet, the daily
+    insurance still works.
     """
     db = state_dir / "mind" / "recall.db"
     if not db.exists():
@@ -140,28 +146,28 @@ def _new_memory_count(state_dir: Path) -> int:
 
 
 def maybe_start(state_dir: Path, hub: Any, *, zorla: bool = False) -> str:
-    """Şartlar uygunsa döngüyü başlatır. Dönen değer SEBEP kodudur.
+    """Starts the loop if the conditions hold. The return value is a REASON code.
 
-        basladi      koşu başladı
-        kapali       özellik kapalı
-        duzenek_yok  eğitim düzeneği kurulu değil
-        kosuyor      zaten koşuyor
-        veri_yok     yeni veri yok (eğitecek bir şey yok)
-        ara_yok      zaman/birikim şartı henüz oluşmadı
-        baslatilamadi süreç açılamadı
+        basladi      the run started
+        kapali       the feature is off
+        duzenek_yok  the training rig is not installed
+        kosuyor      already running
+        veri_yok     no new data (nothing to train on)
+        ara_yok      the time/accumulation condition has not formed yet
+        baslatilamadi the process could not be opened
 
-    Sebep döndürmesi bilinçli: "Şimdi eğit" düğmesi sessizce hiçbir şey
-    yapmıyordu. Gerçek şuydu — döngü başlıyor ve bir saniyeden kısa sürede
-    "yeni veri az: 0/50" deyip çıkıyordu; kullanıcı ekranda hiçbir şey
-    görmüyordu. Artık neden olmadığını arayüz söyleyebiliyor.
+    Returning a reason is deliberate: the "Train now" button was silently
+    doing nothing. The truth was — the loop started and in under a second
+    said "little new data: 0/50" and exited; the user saw nothing on screen.
+    Now the UI can say why nothing happened.
 
-    `zorla` yalnızca ZAMAN şartını atlar ("şimdi çalıştır" düğmesi);
-    kapalı özelliği, eksik düzeneği, koşan süreci ve eğitecek veri
-    olmamasını atlamaz — olmayan veriyle süreç açmak, kullanıcıya boş bir
-    "başladı" göstermek olurdu.
+    `zorla` skips only the TIME condition (the "run now" button); it does
+    not skip the disabled feature, the missing rig, the running process or
+    the lack of training data — opening a process with no data would be
+    showing the user an empty "started".
     """
-    global _surec
-    with _kilit:
+    global _proc
+    with _lock:
         d = status(state_dir)
         if not d["on"]:
             return "kapali"
@@ -173,65 +179,66 @@ def maybe_start(state_dir: Path, hub: Any, *, zorla: bool = False) -> str:
             return "veri_yok"
         if not zorla and d["son_kosu"]:
             try:
-                son = datetime.fromisoformat(d["son_kosu"])
-                gecen = (datetime.now(timezone.utc) - son).total_seconds()
+                last = datetime.fromisoformat(d["son_kosu"])
+                elapsed = (datetime.now(timezone.utc) - last).total_seconds()
             except ValueError:
-                gecen = float("inf")  # bozuk tarih engel olmasın
-            # Akıllı tetik: taze malzeme + kısa ara, ya da günlük sigorta.
-            if gecen < FRESHNESS_HOURS * 3600 and not (
-                gecen >= MIN_GAP_HOURS * 3600
+                elapsed = float("inf")  # a broken date must not block
+            # Smart trigger: fresh material + short gap, or the daily insurance.
+            if elapsed < FRESHNESS_HOURS * 3600 and not (
+                elapsed >= MIN_GAP_HOURS * 3600
                 and _new_memory_count(state_dir) >= NEW_MEMORY_THRESHOLD
             ):
                 return "ara_yok"
 
-        # Günlük dosyaya ekleniyor: döngünün kendi çıktısı burada birikiyor
-        # ve canlı doğrulamanın baktığı yer de burası.
-        gunluk = (state_dir / "tanima.log").open("a", encoding="utf-8")
-        # Düşük öncelik + penceresiz: eğitim fark edilmeden koşmalı, fan
-        # sesi ve donan arayüz "gece öğrenmesi"nin tam tersi.
+        # Appended to the log file: the loop's own output accumulates here
+        # and this is also where live verification looks.
+        logfile = (state_dir / "tanima.log").open("a", encoding="utf-8")
+        # Low priority + windowless: training must run unnoticed; fan noise
+        # and a frozen UI are the exact opposite of "night learning".
         try:
-            # Kendi kökümüz betiğe açıkça geçiliyor: kurulum düzeninde
-            # 08'in içindeki geliştirici sabiti geçersiz, .dornick/src/eval
-            # yolları buradan türetiliyor. Geliştirici düzeninde aynı yol
-            # zaten sabitin kendisi — davranış değişmiyor.
-            _surec = subprocess.Popen(
-                [sys.executable or "py", str(DONGU_BETIK),
+            # Our own root is passed to the script explicitly: in the install
+            # layout the developer constant inside 08 is invalid, the
+            # .dornick/src/eval paths are derived from here. In the developer
+            # layout the same path is the constant itself — behaviour unchanged.
+            _proc = subprocess.Popen(
+                [sys.executable or "py", str(LOOP_SCRIPT),
                  "--dornick", str(Path(state_dir).resolve().parent)],
-                cwd=str(DONGU_BETIK.parents[1]),
-                stdout=gunluk, stderr=subprocess.STDOUT,
+                cwd=str(LOOP_SCRIPT.parents[1]),
+                stdout=logfile, stderr=subprocess.STDOUT,
                 creationflags=(subprocess.BELOW_NORMAL_PRIORITY_CLASS
                                | subprocess.CREATE_NO_WINDOW),
             )
         except OSError:
-            gunluk.close()
+            logfile.close()
             return "baslatilamadi"
-        surec = _surec
+        proc = _proc
 
     hub.emit({"type": "tanima", "state": "basladi"})
 
-    def izle() -> None:
+    def watch() -> None:
         try:
-            surec.wait()
+            proc.wait()
         finally:
-            gunluk.close()
-        # `son_kosu` bitişte: yarım kalan koşu bir sonraki yoklamada
-        # yeniden denenebilsin.
+            logfile.close()
+        # `son_kosu` on finish: a half-finished run can be retried on the
+        # next poll.
         d2 = status(state_dir)
         d2["son_kosu"] = datetime.now(timezone.utc).isoformat()
         (state_dir / FILE).write_text(json.dumps(d2, ensure_ascii=False), encoding="utf-8")
         hub.emit({"type": "tanima", "state": "bitti"})
 
-    threading.Thread(target=izle, daemon=True, name="dornick-tanima").start()
+    threading.Thread(target=watch, daemon=True, name="dornick-tanima").start()
     return "basladi"
 
 
 def reset(state_dir: Path) -> dict:
-    """Beni tanı'yı taban modele döndürür; kişisel olan her şey yedeğe.
+    """Returns Know-me to the base model; everything personal goes to a backup.
 
-    Silinen yok, taşınan var: .dornick/taban.npz ile eğitim düzeneğindeki
-    korpus + filigran .dornick/yedek-<tarih>/tanima/ altına gidiyor. Taban
-    önbelleği anında düşürülüyor ki 5 dakikalık sıcak yenilemeyi beklemeden
-    ürünle gelen assets/taban.npz konuşmaya başlasın.
+    Nothing deleted, things moved: .dornick/taban.npz plus the corpus +
+    watermark in the training rig go under .dornick/yedek-<date>/tanima/.
+    The base cache is dropped immediately so the assets/taban.npz shipped
+    with the product starts talking without waiting for the 5-minute hot
+    refresh.
     """
     if running():
         return {"ok": False, "error": "Eğitim şu an koşuyor — bitince sıfırla."}
@@ -240,39 +247,40 @@ def reset(state_dir: Path) -> dict:
 
     from .recall import writer
 
-    yedek = Path(state_dir) / f"yedek-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
-    tasinan: list[str] = []
-    for kaynak in (Path(state_dir) / "taban.npz", KORPUS, WATERMARK):
-        if not kaynak.is_file():
+    backup = Path(state_dir) / f"yedek-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
+    moved: list[str] = []
+    for source in (Path(state_dir) / "taban.npz", CORPUS, WATERMARK):
+        if not source.is_file():
             continue
-        hedef = yedek / "tanima" / kaynak.name
-        hedef.parent.mkdir(parents=True, exist_ok=True)
+        target = backup / "tanima" / source.name
+        target.parent.mkdir(parents=True, exist_ok=True)
         try:
-            shutil.move(str(kaynak), str(hedef))
+            shutil.move(str(source), str(target))
         except OSError as exc:
-            return {"ok": False, "error": f"Taşınamadı ({kaynak.name}): {exc}",
-                    "tasinan": tasinan}
-        tasinan.append(kaynak.name)
+            return {"ok": False, "error": f"Taşınamadı ({source.name}): {exc}",
+                    "tasinan": moved}
+        moved.append(source.name)
 
     writer.reset()
-    return {"ok": True, "tasinan": tasinan,
-            "yedek": str(yedek) if tasinan else ""}
+    return {"ok": True, "tasinan": moved,
+            "yedek": str(backup) if moved else ""}
 
 
 def start_watcher(state_dir: Path, hub: Any) -> None:
-    """Bekçi: arka planda on beş dakikada bir belki_baslat'ı yoklar.
+    """Watcher: polls maybe_start in the background every fifteen minutes.
 
-    İlk bakış bir dakika gecikmeli — açılış zaten model yüklüyor, bir de
-    eğitim yoklaması eklemenin alemi yok. Hata yutuluyor: bekçinin ölmesi
-    özelliğin sessizce durması demek ve bunu kimse fark etmez.
+    The first look is delayed by a minute — startup is already loading the
+    model, no point piling a training poll on top. Errors are swallowed:
+    the watcher dying means the feature silently stopping and nobody would
+    notice.
     """
-    def don() -> None:
+    def spin() -> None:
         time.sleep(FIRST_WAIT_S)
         while True:
             try:
                 maybe_start(state_dir, hub)
             except Exception:
                 pass
-            time.sleep(YOKLAMA_SN)
+            time.sleep(POLL_S)
 
-    threading.Thread(target=don, daemon=True, name="dornick-tanima-gozcu").start()
+    threading.Thread(target=spin, daemon=True, name="dornick-tanima-gozcu").start()

@@ -1,12 +1,13 @@
-"""İçerik arama: `grep`.
+"""Content search: `grep`.
 
-Ajan "X nerede geçiyor?" sorusunu bugüne kadar ya kabuğa düşerek (findstr,
-Select-String — her platformda farklı, her seferinde izin sorusu) ya da
-dosyaları tek tek okuyarak cevaplıyordu. Tipli tek araç bunu bitiriyor:
-saf Python (re + os.walk), harici ikili yok, çıktı biçimi hep aynı.
+Until now the agent answered "where does X occur?" either by dropping to
+the shell (findstr, Select-String — different on every platform, a
+permission question every time) or by reading files one by one. A single
+typed tool ends that: pure Python (re + os.walk), no external binary, the
+output format always the same.
 
-Okuma her yerde serbest olduğu için arama da her yerde serbest —
-`mutates=False`, izin kapısına takılmaz.
+Since reading is free everywhere, searching is free everywhere too —
+`mutates=False`, it does not hit the permission gate.
 """
 
 from __future__ import annotations
@@ -21,18 +22,18 @@ from typing import Any
 from .base import ToolContext, ToolRegistry, ToolResult, object_schema
 from .files import _resolve
 
-# Taramada atlanan dizinler: araç artıkları, sürüm kontrolü, çöp kutusu
-# (transfer._ATLA / gate._ATLA ile aynı akıl). .dornick da burada: oturum
-# günlükleri ve değişiklik görüntüleri aramayı çöple doldurur.
-_ATLA = frozenset({".git", "__pycache__", "node_modules", ".venv",
+# Directories skipped while scanning: tool debris, version control, the
+# recycle bin (same reasoning as transfer._ATLA / gate._ATLA). .dornick is
+# here too: session logs and change snapshots fill a search with junk.
+_SKIP = frozenset({".git", "__pycache__", "node_modules", ".venv",
                    ".mypy_cache", ".geri-donusum", ".dornick"})
 
-VARSAYILAN_SONUC = 50
-SONUC_TAVANI = 200
-DOSYA_BASINA = 20            # tek dosya tüm bütçeyi yutmasın
-CIKTI_TAVANI = 60_000        # karakter
-DOSYA_BOYU_TAVANI = 4 * 1024 * 1024
-_KOKLAMA = 8192              # ikili sezgisi için okunan baş kısım
+DEFAULT_RESULTS = 50
+RESULT_CAP = 200
+PER_FILE = 20                # a single file must not swallow the whole budget
+OUTPUT_CAP = 60_000          # characters
+FILE_SIZE_CAP = 4 * 1024 * 1024
+_SNIFF = 8192                # head read for the binary heuristic
 
 
 def register(registry: ToolRegistry) -> None:
@@ -70,142 +71,143 @@ kendiliğinden atlanır.
                 },
                 "max_results": {
                     "type": "integer",
-                    "description": f"Azami eşleşme sayısı (varsayılan {VARSAYILAN_SONUC}, tavan {SONUC_TAVANI}).",
+                    "description": f"Azami eşleşme sayısı (varsayılan {DEFAULT_RESULTS}, tavan {RESULT_CAP}).",
                 },
             },
             required=["pattern"],
         ),
     )
     async def grep(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
-        desen = str(args.get("pattern") or "")
-        if not desen:
+        pattern = str(args.get("pattern") or "")
+        if not pattern:
             return ToolResult.error("Boş desen. Ne aradığını `pattern` alanına yaz.")
         try:
-            rx = re.compile(desen)
+            rx = re.compile(pattern)
         except re.error as exc:
             return ToolResult.error(
                 f"Düzenli ifade derlenemedi: {exc}. Özel karakterleri (( ) [ ] . * + ?) "
                 "kaçırmayı unutma; düz metin arıyorsan re.escape edilmiş halini gönder."
             )
 
-        kok = _resolve(str(args.get("path") or "."), ctx)
-        if not kok.exists():
-            return ToolResult.error(f"Yol yok: {kok}")
+        root = _resolve(str(args.get("path") or "."), ctx)
+        if not root.exists():
+            return ToolResult.error(f"Yol yok: {root}")
 
         context = max(0, min(int(args.get("context") or 0), 3))
-        tavan = max(1, min(int(args.get("max_results") or VARSAYILAN_SONUC), SONUC_TAVANI))
+        cap = max(1, min(int(args.get("max_results") or DEFAULT_RESULTS), RESULT_CAP))
 
-        def _tara() -> tuple[list[str], int, int, bool]:
-            return _search(kok, rx, args.get("glob"), context, tavan, ctx.cancel)
+        def _scan() -> tuple[list[str], int, int, bool]:
+            return _search(root, rx, args.get("glob"), context, cap, ctx.cancel)
 
         try:
-            bloklar, eslesme, dosya_sayisi, kirpildi = await asyncio.to_thread(_tara)
+            blocks, matches, file_count, clipped = await asyncio.to_thread(_scan)
         except OSError as exc:
             return ToolResult.error(f"Aranamadı: {exc}")
 
-        if not eslesme:
+        if not matches:
             return ToolResult(
-                content=f"'{desen}' için eşleşme yok ({kok}).",
-                detail={"pattern": desen, "matches": 0},
+                content=f"'{pattern}' için eşleşme yok ({root}).",
+                detail={"pattern": pattern, "matches": 0},
             )
 
-        baslik = f"'{desen}' için {eslesme} eşleşme ({dosya_sayisi} dosya):"
-        if kirpildi:
-            baslik += " (kırpıldı — daraltmak için glob ya da daha özgül bir desen ver)"
-        govde = "\n\n".join(bloklar)
-        if len(govde) > CIKTI_TAVANI:
-            govde = govde[:CIKTI_TAVANI] + "\n… çıktı tavanı aşıldı, gerisi kırpıldı."
+        heading = f"'{pattern}' için {matches} eşleşme ({file_count} dosya):"
+        if clipped:
+            heading += " (kırpıldı — daraltmak için glob ya da daha özgül bir desen ver)"
+        body = "\n\n".join(blocks)
+        if len(body) > OUTPUT_CAP:
+            body = body[:OUTPUT_CAP] + "\n… çıktı tavanı aşıldı, gerisi kırpıldı."
         return ToolResult(
-            content=f"{baslik}\n\n{govde}",
-            detail={"pattern": desen, "matches": eslesme, "files": dosya_sayisi},
+            content=f"{heading}\n\n{body}",
+            detail={"pattern": pattern, "matches": matches, "files": file_count},
         )
 
 
-# -- tarama ------------------------------------------------------------
+# -- scanning ----------------------------------------------------------
 
 
 def _search(
-    kok: Path,
+    root: Path,
     rx: re.Pattern[str],
     glob: str | None,
     context: int,
-    tavan: int,
+    cap: int,
     cancel: asyncio.Event,
 ) -> tuple[list[str], int, int, bool]:
-    """Dosyaları gezer; (dosya blokları, eşleşme, dosya sayısı, kırpıldı mı) döner."""
-    bloklar: list[str] = []
-    toplam = 0
-    dosyali = 0
-    kirpildi = False
-    karakter = 0
+    """Walks the files; returns (file blocks, matches, file count, clipped?)."""
+    blocks: list[str] = []
+    total = 0
+    files_hit = 0
+    clipped = False
+    chars = 0
 
-    for yol, rel in _dosyalar(kok, glob):
-        if cancel.is_set() or toplam >= tavan or karakter >= CIKTI_TAVANI:
-            kirpildi = kirpildi or toplam >= tavan
+    for path, rel in _files(root, glob):
+        if cancel.is_set() or total >= cap or chars >= OUTPUT_CAP:
+            clipped = clipped or total >= cap
             break
-        satirlar = _oku(yol)
-        if satirlar is None:
+        lines = _read_lines(path)
+        if lines is None:
             continue
 
-        blok: list[str] = []
-        dosyada = 0
-        for no, satir in enumerate(satirlar, 1):
-            if not rx.search(satir):
+        block: list[str] = []
+        in_file = 0
+        for no, line in enumerate(lines, 1):
+            if not rx.search(line):
                 continue
-            dosyada += 1
-            toplam += 1
-            if dosyada > DOSYA_BASINA:
-                blok.append(f"{rel}: … dosyada daha fazla eşleşme var, kırpıldı.")
-                kirpildi = True
-                toplam -= 1  # kırpılan eşleşme sayılmaz
+            in_file += 1
+            total += 1
+            if in_file > PER_FILE:
+                block.append(f"{rel}: … dosyada daha fazla eşleşme var, kırpıldı.")
+                clipped = True
+                total -= 1  # the clipped match does not count
                 break
             if context:
-                bas = max(0, no - 1 - context)
-                for i in range(bas, no - 1):
-                    blok.append(f"{rel}-{i + 1}- {satirlar[i].rstrip()}")
-            blok.append(f"{rel}:{no}: {satir.rstrip()}")
+                start = max(0, no - 1 - context)
+                for i in range(start, no - 1):
+                    block.append(f"{rel}-{i + 1}- {lines[i].rstrip()}")
+            block.append(f"{rel}:{no}: {line.rstrip()}")
             if context:
-                son = min(len(satirlar), no + context)
-                for i in range(no, son):
-                    blok.append(f"{rel}-{i + 1}- {satirlar[i].rstrip()}")
-            if toplam >= tavan:
-                kirpildi = True
+                end = min(len(lines), no + context)
+                for i in range(no, end):
+                    block.append(f"{rel}-{i + 1}- {lines[i].rstrip()}")
+            if total >= cap:
+                clipped = True
                 break
-        if blok:
-            dosyali += 1
-            parca = "\n".join(blok)
-            karakter += len(parca)
-            bloklar.append(parca)
+        if block:
+            files_hit += 1
+            piece = "\n".join(block)
+            chars += len(piece)
+            blocks.append(piece)
 
-    return bloklar, toplam, dosyali, kirpildi
+    return blocks, total, files_hit, clipped
 
 
-def _dosyalar(kok: Path, glob: str | None):
-    """Aranacak dosyaları sırayla verir: (mutlak yol, görünen yol)."""
-    if kok.is_file():
-        yield kok, str(kok)
+def _files(root: Path, glob: str | None):
+    """Yields the files to search in order: (absolute path, displayed path)."""
+    if root.is_file():
+        yield root, str(root)
         return
-    for dirpath, dirnames, filenames in os.walk(kok):
-        dirnames[:] = sorted(d for d in dirnames if d not in _ATLA)
-        for ad in sorted(filenames):
-            yol = Path(dirpath) / ad
-            rel = yol.relative_to(kok).as_posix()
-            # "**/*.py" fnmatch'te kökteki dosyayı tutmuyor; ada ayrıca
-            # bakmak hem onu hem "*.py" gibi kısa desenleri kurtarıyor.
-            if glob and not (fnmatch.fnmatch(rel, glob) or fnmatch.fnmatch(ad, glob)):
+    for dirpath, dirnames, filenames in os.walk(root):
+        dirnames[:] = sorted(d for d in dirnames if d not in _SKIP)
+        for name in sorted(filenames):
+            path = Path(dirpath) / name
+            rel = path.relative_to(root).as_posix()
+            # "**/*.py" does not match a file at the root in fnmatch; also
+            # checking the bare name rescues both that and short patterns
+            # like "*.py".
+            if glob and not (fnmatch.fnmatch(rel, glob) or fnmatch.fnmatch(name, glob)):
                 continue
-            yield yol, rel
+            yield path, rel
 
 
-def _oku(yol: Path) -> list[str] | None:
-    """Metin dosyasının satırları; ikili ya da dev dosyada None."""
+def _read_lines(path: Path) -> list[str] | None:
+    """The lines of a text file; None for a binary or a huge file."""
     try:
-        if yol.stat().st_size > DOSYA_BOYU_TAVANI:
+        if path.stat().st_size > FILE_SIZE_CAP:
             return None
-        with yol.open("rb") as f:
-            bas = f.read(_KOKLAMA)
-        if b"\0" in bas:  # ikili sezgisi: null bayt metinde olmaz
+        with path.open("rb") as f:
+            head = f.read(_SNIFF)
+        if b"\0" in head:  # binary heuristic: a null byte never occurs in text
             return None
-        return yol.read_text(encoding="utf-8", errors="replace").splitlines()
+        return path.read_text(encoding="utf-8", errors="replace").splitlines()
     except OSError:
         return None

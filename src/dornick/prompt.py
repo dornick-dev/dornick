@@ -1,18 +1,22 @@
-"""Sistem promptu inşası.
+"""System prompt construction.
 
-İki parçalı:
+Two parts:
 
-    core      her oturumda birebir aynı — kimlik, ortam, araç kuralları.
-              Aynı çalışma alanında açılan her oturum bunu önbellekten okur.
-    identity  diskteki zihinden gelen ruh. Oturumlar arasında değişir,
-              oturum içinde sabittir.
+    core      byte-identical every session — identity, environment, tool rules.
+              Every session opened in the same workspace reads it from the cache.
+    identity  the soul coming from the on-disk mind. Changes between
+              sessions, fixed within a session.
 
-Ayrı tutulmalarının sebebi önbellek: önek eşleşmesi olduğu için ruh
-değiştiğinde ondan önceki her şey hâlâ geçerli kalır. Tek blok olsaydı
-her yeni hatıra tüm önbelleği düşürürdü.
+They are kept apart because of the cache: since it is a prefix match,
+everything before the soul stays valid when the soul changes. With a single
+block every new memory would drop the whole cache.
 
-İkisi de tur başına değişen hiçbir şey içermez: saat yok, aktif pencere yok,
-kalan token yok. Onlar messages sonuna role="system" mesajı olarak gider.
+Neither contains anything that changes per turn: no clock, no active
+window, no remaining tokens. Those go to the end of messages as a
+role="system" message.
+
+The prompt text itself (IDENTITY, TOOL_RULES, ...) is what the model reads
+and is Turkish by design — do not translate it.
 """
 
 from __future__ import annotations
@@ -258,12 +262,12 @@ bakmamalı. Özellik listesi saymak iş bitirmek değildir; "eklendi" dediğin
 her şeyin çalıştığını göstermiş ol.
 """
 
-# Küçük pencereli modeller için sıkıştırılmış hal. 4096 token'lık bir modelde
-# yukarıdaki metin araç şemalarıyla birlikte pencerenin tamamını yiyor ve
-# konuşmaya yer kalmıyor — sunucu da istemin başını atıyor.
+# Compressed form for small-window models. On a 4096-token model the text
+# above together with the tool schemas eats the entire window and no room is
+# left for the conversation — and the server drops the head of the prompt.
 #
-# Kısaltırken neyin gittiğine dikkat: örnekler ve gerekçeler gidiyor,
-# kurallar kalıyor. Küçük modeller zaten uzun yönergeyi tam izlemiyor.
+# Mind what goes when shortening: the examples and justifications go, the
+# rules stay. Small models do not follow the long directive fully anyway.
 LEAN_IDENTITY = """
 Sen Dornick'sin — kullanıcının bilgisayarında çalışan bir ajansın. Kapsamın bir
 kod asistanından geniştir; diskte kalıcı bir zihnin var.
@@ -361,11 +365,12 @@ Araç kullanımı:
   değişiklik yaptıysan söyle, yeniden başlatmayı kullanıcı yapar.
 """
 
-# Plan kipinin çalışma sözleşmesi. İzin motoru mutasyonu zaten kapıda
-# reddediyor (permissions.py — karar döngünün DIŞINDA, model ikna edemez);
-# buradaki metin modelin o kapıya hiç çarpmadan doğru davranması için.
-# Genel kural, tarif değil: hangi aracın salt okunur olduğunu model kendi
-# şemalarından biliyor, burada araç listesi sayılmıyor.
+# Plan mode's working contract. The permission engine already refuses the
+# mutation at the gate (permissions.py — the decision is OUTSIDE the loop,
+# the model cannot persuade it); the text here is so the model behaves
+# right without ever hitting that gate. A general rule, not a recipe: the
+# model knows which tool is read-only from its own schemas, no tool list is
+# enumerated here.
 PLAN_RULES = """
 Yetki kipin: plan — salt okunur keşif.
 
@@ -389,9 +394,9 @@ Bir plan maddesinin İÇİNDEKİ her alt öğe teslimde ya vardır ya da
 gerekçesiyle ertelendiği yazılıdır; madde sessizce eksik kapanmaz.
 """
 
-# Öteki kiplerin tek satırlık karşılığı. Model hangi kapının arkasında
-# çalıştığını bilmeli — "bu araç neden reddedildi" sorusunun cevabı ve
-# gereksiz izin turlarından kaçınma buna bağlı.
+# The one-line counterpart of the other modes. The model must know which
+# gate it is working behind — the answer to "why was this tool refused" and
+# avoiding needless permission rounds depend on it.
 MODE_TELL = {
     "auto": "değişiklik yapmayan araçlar serbest, değişiklik yapanlar kullanıcıya sorulur",
     "ask": "her araç çağrısı kullanıcıya sorulur",
@@ -400,12 +405,13 @@ MODE_TELL = {
 
 
 def _authority(config: Config) -> str:
-    """Yetki kipinin istemdeki karşılığı.
+    """The authority mode's counterpart in the prompt.
 
-    Kip istemde görünmüyordu ve model plan kipinde reddedilen mutasyonu
-    hata sanıp tekrar tekrar deniyordu. Kip değişince Bridge.reload →
-    Agent.reconfigure çekirdeği zaten yeniden kuruyor; bu blok o yoldan
-    güncel kalır (tur ortasında değişmez, önbellek öngörülebilir düşer).
+    The mode was not visible in the prompt and in plan mode the model took
+    the refused mutation for an error and kept retrying. When the mode
+    changes Bridge.reload → Agent.reconfigure already rebuilds the core;
+    this block stays current through that path (it does not change
+    mid-turn, the cache drops predictably).
     """
     mode = config.permissions.mode
     if mode == "plan":
@@ -460,13 +466,13 @@ class SystemPrompt:
 
 
 def _body(config: Config) -> str:
-    """Duyuların tek satırlık dökümü: mikrofon, kamera, ses.
+    """One-line rundown of the senses: microphone, camera, voice.
 
-    Sahne bunları zaten çiziyor ama ajan sahneyi görmüyor. Duyularını
-    bilmeden konuşan ajan ya olmayan bir kameraya bakmaya kalkıyor ya da
-    var olan mikrofonu keşfetmek için araç çağırıyor — ikisi de saçma.
-    Kamera yoklaması ölçüldü (~500 ms) ve süreç içinde saklanıyor;
-    bedel oturum başına bir kez ödeniyor.
+    The stage already draws these but the agent does not see the stage. An
+    agent talking without knowing its senses either tries to look at a
+    camera that does not exist or calls a tool to discover the microphone
+    that does — both absurd. The camera probe was measured (~500 ms) and is
+    cached in-process; the price is paid once per session.
     """
     from . import organs as body
 
@@ -492,11 +498,11 @@ def _body(config: Config) -> str:
 
 
 def _devices(config: Config) -> str:
-    """Kayıtlı cihazların tek satırlık özeti.
+    """One-line summary of the registered devices.
 
-    Ayrıntı (adresler, notlar) burada değil: on cihazın bütün adresleri
-    istemi şişiriyor ve çoğu tur hiçbirine dokunulmuyor. Gerektiğinde
-    `device action=show` veriyor.
+    The detail (addresses, notes) is not here: all the addresses of ten
+    devices bloat the prompt and most turns touch none of them. When
+    needed `device action=show` gives it.
     """
     from . import devices as declared
 
@@ -507,12 +513,14 @@ def _devices(config: Config) -> str:
 
 
 def build(config: Config, registry: ToolRegistry, soul: Any = None) -> SystemPrompt:
-    # Dar pencerede kalan: kimlik, ortam, atölye sınırı. Araç kuralları ve
-    # bellek yönergesi düşüyor — ikisi de aracın kendi açıklamasında zaten
-    # var ve 4096 token'lık bir modelde konuşmaya yer bırakmak gerekiyor.
+    # What stays in a narrow window: identity, environment, workshop
+    # boundary. Tool rules and the memory directive drop — both are already
+    # in the tool's own description and on a 4096-token model room must be
+    # left for the conversation.
     parts = (
-        # Dar pencerede de kip düşmüyor: plan kipinde ne yapması gerektiğini
-        # bilmeyen model, kapıya çarpa çarpa turu tüketiyor.
+        # The mode does not drop in a narrow window either: a model that
+        # does not know what to do in plan mode burns the turn bumping
+        # into the gate.
         (LEAN_IDENTITY.strip(), _environment(config),
          config.open_sandbox().briefing(), _authority(config))
         if is_lean(config)
@@ -520,24 +528,25 @@ def build(config: Config, registry: ToolRegistry, soul: Any = None) -> SystemPro
             IDENTITY.strip(),
             _environment(config),
             config.open_sandbox().briefing(),
-            # Açılış brifingi: çalışma alanının sığ dökümü. Ölçüldü
-            # (9-görev koşusu): model ilk ~18 çağrısını "hangi dosyalar
-            # var" keşfine harcıyor; liste baştan önündeyse o turlar hiç
-            # doğmuyor. Dar pencerede düşüyor — orada yer konuşmanın.
+            # Opening briefing: a shallow rundown of the workspace. Measured
+            # (9-task run): the model spends its first ~18 calls on "which
+            # files are there" discovery; with the list in front of it from
+            # the start those turns are never born. Drops in a narrow
+            # window — there the room belongs to the conversation.
             _workspace_brief(config),
-            # Duyular: mikrofon, kamera, ses. Dar pencerede düşüyor.
+            # Senses: microphone, camera, voice. Drops in a narrow window.
             _body(config),
-            # Bağlı cihazlar. Ajanın neye bağlı olduğunu her turda araç
-            # çağırarak öğrenmesi hem yavaş hem anlamsız: kendi bedenini
-            # biliyor olması gerekiyor. Dar pencerede düşüyor — orada
-            # konuşmaya yer bırakmak öncelikli.
+            # Connected devices. The agent learning what it is connected to
+            # by calling a tool every turn is both slow and senseless: it
+            # should know its own body. Drops in a narrow window — leaving
+            # room for the conversation comes first there.
             _devices(config),
-            # Yetki kipi: modelin hangi kapının arkasında çalıştığı.
+            # Authority mode: which gate the model is working behind.
             _authority(config),
             TOOL_RULES.strip(),
             MEMORY_RULES.strip() if _has_mind(registry) else "",
             _tool_list(registry),
-            # Küçük aile: kısalık sözleşmesi en sona — kurallar taze kalsın.
+            # Small family: the brevity contract goes last — keep the rules fresh.
             BREVITY.strip() if kucuk_aile(config.model.name) else "",
         )
     )
@@ -552,31 +561,31 @@ def build(config: Config, registry: ToolRegistry, soul: Any = None) -> SystemPro
     return SystemPrompt(core=core, identity=identity)
 
 
-# Bu pencerenin altındaki her model "dar" sayılıyor. 16k, sistem promptu +
-# araç şemaları + birkaç tur araç çıktısı için asgari sayılabilecek yer.
+# Every model below this window counts as "lean". 16k is about the minimum
+# room for system prompt + tool schemas + a few turns of tool output.
 LEAN_BELOW = 16_000
 
 
-# Küçük/hızlı model ailesi: gevezeliğe ve şema şişkinliğine en duyarlı
-# sınıf. Ölçüm (kiyas-opencode-2608): aynı flash model, sıkı istemli
-# harness'ta 5 adımda bitirdi; bizde 16 turda dolandı. Bu aileye kısa
-# araç şeması + sert-kısalık bloğu gidiyor.
-_KUCUK_IZLER = ("flash", "mini", "lite", "small", "haiku", "nano", "tiny",
-                "air", "-7b", "-8b", "-9b", "7b-", "8b-", "9b-")
+# The small/fast model family: the class most sensitive to chatter and
+# schema bloat. Measurement (kiyas-opencode-2608): the same flash model
+# finished in 5 steps in a tightly-prompted harness; in ours it wandered
+# for 16 turns. This family gets the short tool schema + the hard-brevity block.
+_SMALL_MARKERS = ("flash", "mini", "lite", "small", "haiku", "nano", "tiny",
+                  "air", "-7b", "-8b", "-9b", "7b-", "8b-", "9b-")
 
 
-def kucuk_aile(model_adi: str) -> bool:
-    ad = (model_adi or "").lower()
-    return any(iz in ad for iz in _KUCUK_IZLER)
+def kucuk_aile(model_name: str) -> bool:
+    name = (model_name or "").lower()
+    return any(marker in name for marker in _SMALL_MARKERS)
 
 
-# Kodlama araçları: bu isimler turda geçtiyse (veya kullanıcı kod istediyse)
-# flash kısalık/effort tavanı gevşer — sohbet hâlâ kısa kalır.
-_KOD_ARACLARI = frozenset({
+# Coding tools: if these names appeared in the turn (or the user asked for
+# code) the flash brevity/effort ceiling loosens — chat still stays short.
+_CODE_TOOLS = frozenset({
     "write_file", "edit_file", "read_file", "read_many", "grep",
     "semboller", "kos", "denetle", "git", "list_dir",
 })
-_KOD_ISTEK = re.compile(
+_CODE_REQUEST = re.compile(
     r"(?i)\b("
     r"kod|yaz(?:ar|ın|ıp)?|düzelt|implement|refactor|bug|patch|fix|"
     r"derle|build|test|dosya|sınıf|fonksiyon|class|function|module|"
@@ -590,12 +599,13 @@ def coding_turn(
     *,
     metin: str = "",
 ) -> bool:
-    """Bu tur kodlama işi mi — dosya yaz/düzelt/test veya kod isteği?
+    """Is this turn coding work — write/edit/test a file, or a code request?
 
-    Sistem promptu oturum boyunca donuk kaldığı için KISALIK metnindeki
-    istisna her zaman yazılı; effort tavanı ise çağrı anında buna bakar.
+    Because the system prompt stays frozen for the whole session the
+    exception in the BREVITY text is always written; the effort ceiling
+    looks at this at call time.
     """
-    if metin and _KOD_ISTEK.search(metin):
+    if metin and _CODE_REQUEST.search(metin):
         return True
     if not messages:
         return False
@@ -603,26 +613,26 @@ def coding_turn(
         role = m.get("role")
         if role == "assistant":
             for c in (m.get("tool_calls") or []):
-                ad = ((c.get("function") or {}).get("name") or "")
-                if ad in _KOD_ARACLARI:
+                name = ((c.get("function") or {}).get("name") or "")
+                if name in _CODE_TOOLS:
                     return True
         elif role == "user":
             content = m.get("content")
             if isinstance(content, str):
-                if _KOD_ISTEK.search(content):
+                if _CODE_REQUEST.search(content):
                     return True
             elif isinstance(content, list):
                 for part in content:
                     if isinstance(part, dict) and part.get("type") == "text":
-                        if _KOD_ISTEK.search(str(part.get("text") or "")):
+                        if _CODE_REQUEST.search(str(part.get("text") or "")):
                             return True
     return False
 
 
-# Sert kısalık (OpenCode'un default.txt sözleşmesinden damıtıldı): küçük
-# model ara anlatım turlarıyla ve önsöz/özet gevezeliğiyle token yakıyor.
-# Kodlama istisnası: 4 satır kuralı write/edit/kos işlerini boğuyordu
-# (Cursor/Claude kalitesi beklentisi, 01.09).
+# Hard brevity (distilled from OpenCode's default.txt contract): the small
+# model burns tokens on interim-narration turns and preamble/summary
+# chatter. Coding exception: the 4-line rule was choking write/edit/kos
+# work (Cursor/Claude quality expectation, 01.09).
 BREVITY = """Kısalık sözleşmesi (küçük model):
 - Araç çağrıları arasında anlatı yazma; işi yap, biterken tek özet ver.
 - Sohbet cevabı 4 satırı geçmesin (kod ve araç çıktısı hariç); önsöz/özet yok.
@@ -634,11 +644,11 @@ BREVITY = """Kısalık sözleşmesi (küçük model):
   değiştir: komutu dosyaya yazıp koş ya da başka yol seç."""
 
 
-# Oturum boyunca DONUK: sistem promptu önbellek çapası (ilk system mesajı
-# işaretli) ve her dosya yazımında değişen bir liste her istemi önbellek
-# ıskasına çevirirdi (ölçülen %65-92 isabet sıfırlanır). Süreç başına,
-# çalışma alanı başına bir kez çekiliyor ve "açılış anındaki görünüm"
-# olarak etiketleniyor.
+# FROZEN for the whole session: the system prompt is the cache anchor (the
+# first system message is marked) and a list changing on every file write
+# would turn every prompt into a cache miss (the measured 65-92% hit rate
+# resets). Pulled once per process, per workspace, and labelled as "the
+# view at startup".
 _BRIEF_CACHE: dict[str, str] = {}
 _BRIEF_SKIP = {".git", "__pycache__", "node_modules", ".venv", "venv",
                ".dornick", "dist", "build"}
@@ -646,11 +656,11 @@ _BRIEF_MAX = 30
 
 
 def _workspace_brief(config: Config) -> str:
-    """Çalışma alanının sığ dökümü (kök + bir seviye), oturum başında bir kez.
+    """Shallow rundown of the workspace (root + one level), once at session start.
 
-    Amaç keşif turlarını kesmek, dosya sistemini promptta yaşatmak değil:
-    derinlik 1, en çok _BRIEF_MAX satır, gürültü klasörleri atlanır. Boş
-    ya da okunamayan alanda bölüm hiç girmez.
+    The aim is to cut discovery turns, not to keep the file system alive in
+    the prompt: depth 1, at most _BRIEF_MAX lines, noise folders skipped. On
+    an empty or unreadable area the section is not entered at all.
     """
     root = Path(config.workspace)
     key = str(root)
@@ -659,31 +669,31 @@ def _workspace_brief(config: Config) -> str:
 
     lines: list[str] = []
     try:
-        tepe = sorted(root.iterdir(), key=lambda p: (p.is_file(), p.name.casefold()))
+        top = sorted(root.iterdir(), key=lambda p: (p.is_file(), p.name.casefold()))
     except OSError:
         _BRIEF_CACHE[key] = ""
         return ""
-    kalan = 0
-    for entry in tepe:
+    remaining = 0
+    for entry in top:
         if entry.name.startswith(".") or entry.name in _BRIEF_SKIP:
             continue
         if len(lines) >= _BRIEF_MAX:
-            kalan += 1
+            remaining += 1
             continue
         if entry.is_dir():
             try:
-                cocuk = [c.name for c in entry.iterdir()
-                         if not c.name.startswith(".") and c.name not in _BRIEF_SKIP]
+                children = [c.name for c in entry.iterdir()
+                            if not c.name.startswith(".") and c.name not in _BRIEF_SKIP]
             except OSError:
-                cocuk = []
-            ic = ", ".join(sorted(cocuk)[:8])
-            if len(cocuk) > 8:
-                ic += f", … +{len(cocuk) - 8}"
-            lines.append(f"- {entry.name}/" + (f"  ({ic})" if ic else ""))
+                children = []
+            inner = ", ".join(sorted(children)[:8])
+            if len(children) > 8:
+                inner += f", … +{len(children) - 8}"
+            lines.append(f"- {entry.name}/" + (f"  ({inner})" if inner else ""))
         else:
             lines.append(f"- {entry.name}")
-    if kalan:
-        lines.append(f"- … +{kalan} girdi daha")
+    if remaining:
+        lines.append(f"- … +{remaining} girdi daha")
 
     brief = ""
     if lines:
@@ -694,10 +704,11 @@ def _workspace_brief(config: Config) -> str:
 
 
 def is_lean(config: Config) -> bool:
-    """Model dar pencereli mi?
+    """Is the model narrow-windowed?
 
-    Kararı tek yerde tutuyoruz: prompt, araç şemaları ve hatırlama önyüklemesi
-    aynı eşiğe bakmalı, yoksa biri kısalırken öteki yerinde kalıyor.
+    We keep the decision in one place: the prompt, the tool schemas and the
+    recall bootstrap must look at the same threshold, otherwise one shrinks
+    while the other stays put.
     """
     return config.model.context_window < LEAN_BELOW
 
@@ -706,12 +717,12 @@ def _has_mind(registry: ToolRegistry) -> bool:
     return "mind_memory" in registry
 
 
-# Yeteneklerin düz Türkçe karşılığı. Yalnızca araç adı listelemek yetmiyordu:
-# model "dışarısı sıcak mı" sorusunda hava durumuna bakabileceğini
-# çıkaramıyor, ya kullanıcıya soruyor ya da bilmediğini söylüyordu.
+# The plain-Turkish counterpart of the abilities. Listing only tool names
+# was not enough: on "is it hot outside" the model could not infer it could
+# check the weather; it either asked the user or said it did not know.
 #
-# Bir insan telefonundaki uygulamaları her seferinde taramıyor; ne
-# yapabildiğini biliyor. Buradaki liste o bilgi.
+# A person does not scan the apps on their phone every time; they know what
+# they can do. The list here is that knowledge.
 ABILITIES: tuple[tuple[str, str, tuple[str, ...]], ...] = (
     ("İnternet", "arama yaparsın, sayfa açıp okursun", ("search", "fetch")),
     ("Bilgisayar", "komut çalıştırır, dosya ve dizin okursun",
@@ -733,11 +744,11 @@ ABILITIES: tuple[tuple[str, str, tuple[str, ...]], ...] = (
 
 
 def _tool_list(registry: ToolRegistry) -> str:
-    """Ne yapabildiğinin özeti. Yalnızca gerçekten kayıtlı olanlar yazılıyor.
+    """Summary of what it can do. Only the ones actually registered are written.
 
-    Bu liste araç şemalarının yerine geçmiyor — onlar zaten istekte
-    gidiyor. Buradaki iş farklı: modelin "bunu yapabilir miyim" diye
-    düşünmeden bildiği şeyi vermek.
+    This list does not replace the tool schemas — those already go in the
+    request. The job here is different: to give the model what it knows
+    without having to think "can I do this".
     """
     lines: list[str] = []
     for title, what, names in ABILITIES:
@@ -760,19 +771,19 @@ def _tool_list(registry: ToolRegistry) -> str:
     )
 
 
-# Türkçe gün adları. `strftime("%A")` sistemin diline bağlı ve sunucuda
-# İngilizce dönebiliyor; istemde karışık dil istemiyoruz.
+# Turkish day names. `strftime("%A")` depends on the system language and
+# can come back English on a server; we do not want mixed languages in the prompt.
 DAYS = ("Pazartesi", "Salı", "Çarşamba", "Perşembe", "Cuma", "Cumartesi", "Pazar")
 
 
 def _environment(config: Config) -> str:
-    """Makinenin kendi bildikleri.
+    """What the machine itself knows.
 
-    Tarih ve saat dilimi buraya sonradan eklendi ve eksiklikleri gerçek bir
-    hataya yol açıyordu: "yarın hava nasıl?" sorusunun cevabı bugünün ne
-    olduğuna bağlı ve model bunu hiçbir yerden öğrenemiyordu. Saat dilimi de
-    ülkeyi söylüyor — şehri değil. O ayrım kasıtlı: makinenin bildiği kadarı
-    veriliyor, gerisi soruluyor.
+    Date and time zone were added here later and their absence caused a
+    real error: the answer to "what's the weather tomorrow?" depends on
+    what today is and the model could learn it from nowhere. The time zone
+    also tells the country — not the city. That distinction is deliberate:
+    as much as the machine knows is given, the rest is asked.
     """
     shell = "PowerShell" if sys.platform == "win32" else "bash"
     now = datetime.now().astimezone()
@@ -796,16 +807,17 @@ def _environment(config: Config) -> str:
     return "\n".join(lines)
 
 
-# Oturum başına bir kez yoklanıyor; süreç içinde saklanıyor. WSL listesi
-# kabuk çağrısı gerektiriyor ve her istemde tekrarlamanın anlamı yok.
+# Probed once per session; cached in-process. The WSL list needs a shell
+# call and repeating it on every prompt is pointless.
 _WSL_CACHE: str | None = None
 
 
 def _wsl_distros() -> str:
-    """Kurulu WSL dağıtımları (virgülle); yoksa boş.
+    """Installed WSL distributions (comma-separated); empty if none.
 
-    `wsl.exe` dağıtım olmadan da var olabiliyor — dosyaya değil listeye
-    bakılıyor. Model olmayan bir yeteneği varmış gibi anlatmasın.
+    `wsl.exe` can exist without any distribution — the list is checked, not
+    the file. The model must not describe a capability it does not have as
+    if it did.
     """
     global _WSL_CACHE
     if _WSL_CACHE is not None:
@@ -821,7 +833,7 @@ def _wsl_distros() -> str:
             try:
                 res = subprocess.run(["wsl", "-l", "-q"], capture_output=True,
                                      timeout=5, **environment.quiet_flags())
-                # wsl.exe UTF-16 konuşuyor; utf-8 çözmek NUL'lu çöp veriyor.
+                # wsl.exe speaks UTF-16; decoding as utf-8 gives NUL-laden garbage.
                 names = [n.strip() for n in
                          res.stdout.decode("utf-16-le", errors="ignore").splitlines()
                          if n.strip()]

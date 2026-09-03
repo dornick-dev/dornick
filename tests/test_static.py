@@ -66,7 +66,7 @@ def test_reopened_chat_rebuilds_the_trace() -> None:
     assert "dusunme" in APP_JS and "adimlar" in APP_JS
     # Sunucu tarafı: döküm izleri üretir.
     store_py = (STATIC.parents[1] / "mind" / "store.py").read_text(encoding="utf-8")
-    assert "_dusunme_bloklari" in store_py and "_step_summaries" in store_py
+    assert "_thinking_blocks" in store_py and "_step_summaries" in store_py
 
 
 def test_big_transcripts_render_capped_with_a_gate() -> None:
@@ -91,7 +91,7 @@ def test_setup_guide_is_gated_on_can_run() -> None:
     assert "canRun" in APP_JS
     assert re.search(r"if \(!canRun\) showSetupGuide\(\)", APP_JS)
     desktop_py = (STATIC.parents[1] / "desktop.py").read_text(encoding="utf-8")
-    assert '"can_run": _calisabilir(agent)' in desktop_py
+    assert '"can_run": _can_run(agent)' in desktop_py
 
 
 def test_provider_chip_shows_the_real_provider() -> None:
@@ -100,7 +100,7 @@ def test_provider_chip_shows_the_real_provider() -> None:
     assert 'id="dock-provider"' in HTML
     assert "providerName" in APP_JS
     desktop_py = (STATIC.parents[1] / "desktop.py").read_text(encoding="utf-8")
-    assert "_saglayici_adi" in desktop_py and "provider_of" in desktop_py
+    assert "_provider_name" in desktop_py and "provider_of" in desktop_py
 
 
 def test_model_settings_put_key_before_model() -> None:
@@ -164,7 +164,7 @@ def test_in_app_update_is_wired() -> None:
     assert "/api/guncelle" in settings_js
     # Sunucu ucu + güvenli indirme sunucu tarafında.
     server_py = (STATIC.parents[0] / "server.py").read_text(encoding="utf-8")
-    assert 'route == "/api/guncelle"' in server_py and "_guncelle" in server_py
+    assert 'route == "/api/guncelle"' in server_py and "_run_update" in server_py
     ortam_py = (STATIC.parents[1] / "environment.py").read_text(encoding="utf-8")
     assert "_guvenilir_indirme" in ortam_py and "start_update" in ortam_py
 
@@ -1425,9 +1425,9 @@ def test_usage_events_feed_the_chip_and_the_snapshot_seeds_it() -> None:
     # tur/oturum/fiyat alanlarını basıyor.
     DESKTOP = (Path(__file__).resolve().parents[1] / "src" / "dornick" / "desktop.py").read_text(
         encoding="utf-8")
-    assert '"tur": dict(self._tur_kullanim)' in DESKTOP
+    assert '"tur": dict(self._turn_usage)' in DESKTOP
     assert '"oturum": dict(self._session_usage)' in DESKTOP
-    assert '"fiyat": self._fiyat' in DESKTOP
+    assert '"fiyat": self._price' in DESKTOP
 
 
 # -- model bekleme durumu (çalışma şeridinde) ---------------------------
@@ -2022,7 +2022,7 @@ def test_the_task_panel_can_stop_one_job_and_only_a_stoppable_one() -> None:
     assert "if (g.durdurulabilir)" in GOREV_JS
     bridge = (Path(__file__).resolve().parents[1] / "src" / "dornick"
               / "desktop.py").read_text(encoding="utf-8")
-    assert '"durdurulabilir": (not biten) and not kendi' in bridge
+    assert '"durdurulabilir": (not finished) and not own' in bridge
 
 
 def test_a_finished_background_job_knocks_on_the_conversation() -> None:
@@ -2037,14 +2037,14 @@ def test_a_finished_background_job_knocks_on_the_conversation() -> None:
     bridge = (Path(__file__).resolve().parents[1] / "src" / "dornick"
               / "desktop.py").read_text(encoding="utf-8")
     assert "def _child_end" in bridge
-    assert "bg = self._cocuk_arka_plan(cid)" in bridge
+    assert "bg = self._child_in_background(cid)" in bridge
     assert '"bg": bg' in bridge
 
 
 def test_a_failed_job_report_page_is_not_a_traceback_dump() -> None:
     """Rapor sayfası komutu h1 yapıp traceback basmasın — 'İş başarısız'."""
     assert "İş başarısız" in SERVER_SRC
-    assert "def _rapor_kapak" in SERVER_SRC
+    assert "def _report_cover" in SERVER_SRC
     assert 'class="badge err"' in SERVER_SRC
     # Ham iz rapor değil.
     assert 's.startswith("Traceback ("' in SERVER_SRC
@@ -2206,7 +2206,7 @@ def test_the_turn_summary_reads_the_agents_own_ledger() -> None:
     assert "/api/degisiklikler" in CHG_JS
     assert "checkpoint import KLASOR, Defter" in SERVER_SRC
     # Geri alma: tur (n), dosya (sira/siralar) veya path.
-    assert "defter.undo(n)" in SERVER_SRC
+    assert "ledger.undo(n)" in SERVER_SRC
     assert "undo_sequence" in SERVER_SRC
     assert "undo_file" in SERVER_SRC
     assert "kartUndoDosya" in CHG_JS
@@ -2392,7 +2392,7 @@ def test_camera_can_open_in_a_separate_window() -> None:
     assert "def open_camera_window" in desk
     assert "watch.html" in desk
     cam_fn = re.search(
-        r"def open_camera_window\(.*?(?=\n    # X = gizle)", desk, re.S)
+        r"def open_camera_window\(.*?(?=\n    # X = hide)", desk, re.S)
     assert cam_fn, "open_camera_window bulunamadı"
     assert "frameless=True" in cam_fn.group(0)
     assert "easy_drag=False" in cam_fn.group(0)
@@ -2618,7 +2618,7 @@ def test_folder_flows_and_task_mirror_are_wired() -> None:
     loop_src = (Path(__file__).resolve().parents[1] / "src" / "dornick" / "loop.py").read_text(
         encoding="utf-8")
     assert "on_retry_wait" in loop_src
-    assert "_yenile_baglam" in loop_src
+    assert "_refresh_context" in loop_src
     assert "Yeni bir oturum açman gerekiyor" not in loop_src
 
 

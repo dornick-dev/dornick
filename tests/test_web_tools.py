@@ -1,9 +1,9 @@
-"""İnternet araçları.
+"""Internet tools.
 
-Ağa çıkmadan test ediliyor: getirme tek bir fonksiyonda toplandığı için
-onu değiştirmek yetiyor. Asıl iş zaten indirgemede — ham HTML bağlamın
-düşmanı ve buradaki her kayıp karakter modelin okuyacağı bir şeyin yerini
-alıyor.
+Tested without going to the network: since fetching is gathered in a single
+function, replacing that one is enough. The real work is in the reduction
+anyway — raw HTML is the enemy of the context and every lost character here
+takes the place of something the model would read.
 """
 
 from __future__ import annotations
@@ -58,7 +58,7 @@ async def call(registry: ToolRegistry, name: str, ctx: ToolContext, **args):
 
 def serving(monkeypatch: pytest.MonkeyPatch, body: str, kind: str = "text/html",
             final: str | None = None) -> list[str]:
-    """Ağ yerine sabit bir cevap. Dönen liste istenen adresleri tutuyor."""
+    """A fixed reply instead of the network. The returned list holds the requested addresses."""
     asked: list[str] = []
 
     def fake(url: str) -> tuple[str, str, str]:
@@ -69,11 +69,11 @@ def serving(monkeypatch: pytest.MonkeyPatch, body: str, kind: str = "text/html",
     return asked
 
 
-# -- indirgeme ---------------------------------------------------------
+# -- reduction ---------------------------------------------------------
 
 
 def test_scripts_and_styles_do_not_reach_the_model() -> None:
-    """200 KB'lık bir sayfanın 190 KB'ı betik, stil ve gezinme."""
+    """190 KB of a 200 KB page is script, style and navigation."""
     text = web._readable(PAGE, "text/html")
 
     assert "tracker" not in text
@@ -85,13 +85,13 @@ def test_the_readable_parts_survive() -> None:
     text = web._readable(PAGE, "text/html")
 
     assert "24 Saatlik Hacim" in text
-    assert "Binance ilk sırada & fark açık." in text   # varlık çözülmüş
+    assert "Binance ilk sırada & fark açık." in text   # entity resolved
     assert "Coinbase" in text
 
 
 def test_blocks_do_not_run_into_each_other() -> None:
-    """Yalnızca kapanış etiketine bakmak 'menuBaşlık' gibi yapışmış metin
-    üretiyordu."""
+    """Looking only at the closing tag produced glued text like
+    'menuBaşlık'."""
     text = web._readable(PAGE, "text/html")
 
     assert "İletişim24" not in text
@@ -99,8 +99,8 @@ def test_blocks_do_not_run_into_each_other() -> None:
 
 
 def test_the_title_is_kept_once() -> None:
-    """Başlık `<head>` içinde; head atılmadan önce alınıyor, sonra da
-    gövdede ikinci kez görünmemeli."""
+    """The title is inside `<head>`; it is taken before the head is
+    discarded, and afterwards it must not appear a second time in the body."""
     text = web._readable(PAGE, "text/html")
 
     assert text.startswith("# Kripto Borsaları")
@@ -108,7 +108,7 @@ def test_the_title_is_kept_once() -> None:
 
 
 def test_non_html_is_left_alone() -> None:
-    """JSON'u indirgemeye kalkmak veriyi bozar."""
+    """Trying to reduce JSON corrupts the data."""
     payload = '{"binance": {"volume": 412880}}'
     assert web._readable(payload, "application/json") == payload
 
@@ -130,7 +130,7 @@ async def test_fetch_returns_readable_text(
 async def test_raw_skips_the_reduction(
     registry: ToolRegistry, ctx: ToolContext, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Seçici yazacaksa modelin ham HTML'e ihtiyacı var."""
+    """If it is going to write a selector, the model needs the raw HTML."""
     serving(monkeypatch, PAGE)
     result = await call(registry, "fetch", ctx, url="https://ornek.com", raw=True)
 
@@ -140,7 +140,7 @@ async def test_raw_skips_the_reduction(
 async def test_a_redirect_is_reported(
     registry: ToolRegistry, ctx: ToolContext, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Model hangi sayfayı okuduğunu bilmeli."""
+    """The model must know which page it read."""
     serving(monkeypatch, PAGE, final="https://ornek.com/tr/borsa")
     result = await call(registry, "fetch", ctx, url="https://ornek.com/borsa")
 
@@ -155,8 +155,8 @@ async def test_a_redirect_is_reported(
 async def test_only_web_addresses_are_fetched(
     registry: ToolRegistry, ctx: ToolContext, url: str
 ) -> None:
-    """`fetch` bir dosya okuma yolu olmamalı: read_file izin kapısından
-    geçiyor, bu geçmiyor."""
+    """`fetch` must not be a road for reading files: read_file passes
+    through the permission gate, this does not."""
     result = await call(registry, "fetch", ctx, url=url)
 
     assert result.is_error
@@ -219,8 +219,8 @@ async def test_search_lists_title_link_and_snippet(
 async def test_the_redirect_wrapper_is_unwrapped(
     registry: ToolRegistry, ctx: ToolContext, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Sarmalanmış adres modelin ekranında okunmuyor ve `fetch`e verilince
-    fazladan bir atlama demek."""
+    """A wrapped address is unreadable on the model's screen and, when given
+    to `fetch`, means an extra hop."""
     serving(monkeypatch, RESULTS)
     result = await call(registry, "search", ctx, query="deneme")
 
@@ -240,8 +240,8 @@ async def test_the_limit_is_respected(
 async def test_no_results_is_not_an_error(
     registry: ToolRegistry, ctx: ToolContext, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Bulamamak bir hata değil; hata döndürmek modeli gereksiz yere
-    'düzeltme' turlarına sokuyor."""
+    """Finding nothing is not an error; returning an error pushes the model
+    into needless 'fix-up' turns."""
     serving(monkeypatch, "<html><body>hiç sonuç yok</body></html>")
     result = await call(registry, "search", ctx, query="hiçbir şey")
 
@@ -253,7 +253,7 @@ async def test_an_empty_query_is_refused(registry: ToolRegistry, ctx: ToolContex
     assert (await call(registry, "search", ctx, query="   ")).is_error
 
 
-# -- yedek kaynak ------------------------------------------------------
+# -- fallback source ---------------------------------------------------
 
 LITE_PAGE = """
 <table>
@@ -271,8 +271,8 @@ LITE_PAGE = """
 async def test_the_lite_fallback_catches_a_broken_primary(
     registry: ToolRegistry, ctx: ToolContext, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """html.duckduckgo kırıldığında arama sessizce boş dönmemeli; yedek
-    kaynak denenmeli."""
+    """When html.duckduckgo breaks the search must not silently return
+    empty; the fallback source must be tried."""
     import urllib.error
 
     asked: list[str] = []
@@ -288,7 +288,7 @@ async def test_the_lite_fallback_catches_a_broken_primary(
 
     assert not result.is_error
     assert "Lite Birinci" in result.content
-    assert "https://bir.com/a" in result.content        # yönlendirici çözülmüş
+    assert "https://bir.com/a" in result.content        # redirector resolved
     assert "Lite özet" in result.content
     assert any("lite.duckduckgo" in u for u in asked)
     assert result.detail["source"] == web.LITE_URL
@@ -297,8 +297,9 @@ async def test_the_lite_fallback_catches_a_broken_primary(
 async def test_a_changed_format_is_an_error_not_silence(
     registry: ToolRegistry, ctx: ToolContext, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Sayfa geldi ama desen tutmadı: bu 'sonuç yok' değil, 'kaynak biçim
-    değiştirdi' — ajan farkı bilmeli."""
+    """The page arrived but the pattern did not match: this is not 'no
+    results' but 'the source changed its format' — the agent must know the
+    difference."""
     serving(monkeypatch, "<html><body><div>bambaşka bir düzen</div></body></html>")
     result = await call(registry, "search", ctx, query="deneme")
 
@@ -344,11 +345,11 @@ def test_the_lite_parser_reads_the_table_layout() -> None:
     assert hits[1][1] == "https://iki.com/b"
 
 
-# -- kayıt -------------------------------------------------------------
+# -- registration ------------------------------------------------------
 
 
 def test_reading_the_web_is_not_a_mutation(registry: ToolRegistry) -> None:
-    """Ağdan okumak yerel dosya okumak gibi. Dışarı **veri gönderen** bir şey
-    olsaydı onay kapısına girerdi."""
+    """Reading from the network is like reading a local file. Something that
+    **sends data** outward would enter the approval gate."""
     assert not registry.get("fetch").mutates
     assert not registry.get("search").mutates

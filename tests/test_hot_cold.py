@@ -164,7 +164,7 @@ def test_a_distilled_episode_cools_unconditionally_after_two_weeks(
                              kind="episode")
     store.add_use(episode.id, w=-0.2, etiket=A.DISTILLED)
 
-    # Kullanılmaya devam ediyor: normal kurala göre sıcak kalması gerekirdi.
+    # It keeps being used: by the normal rule it should have stayed hot.
     for _ in range(10):
         clock.advance(days=1)
         store.open(episode.id)
@@ -175,7 +175,7 @@ def test_a_distilled_episode_cools_unconditionally_after_two_weeks(
         clock.advance(days=1)
         store.open(episode.id)
     _cool(store, clock)
-    # Koşulsuz: hâlâ kullanılıyor ama özü artık kısa bir `fact`ta yaşıyor.
+    # Unconditional: still in use, but its essence now lives in a short `fact`.
     assert store.peek(episode.id).hot is False
     assert store.peek(episode.id) is not None         # and still there
 
@@ -207,7 +207,7 @@ def test_the_hot_share_lands_in_the_target_band(store, clock) -> None:
     _cool(store, clock)
 
     share = store.hot_share()
-    assert 0.05 <= share <= 0.35, f"sıcak oran {share}"
+    assert 0.05 <= share <= 0.35, f"hot share {share}"
 
 
 def test_the_night_recomputes_the_active_set(store, tmp_path, clock) -> None:
@@ -216,14 +216,15 @@ def test_the_night_recomputes_the_active_set(store, tmp_path, clock) -> None:
     sessions = tmp_path / "sessions"
     sessions.mkdir()
     old = store.remember("Rulman tedarikçisi İzmir'deki Mekanik Ltd.", kind="fact")
-    # Dolgu: iki düğümlük bir bellekte `_weave` her şeyi bağlar ve gece şema
-    # tazelemesi eski kaydı ısıtır — ki bu DOĞRU davranış (K kümesinin şemalı
-    # kolu). Yalıtık kolu ölçmek için araya bağlanmayacak kayıtlar gerekiyor.
-    for metin in ("Kapı zilinin pili bitmek üzere.",
-                  "Semt pazarı perşembe kuruluyor.",
-                  "Ütü masasının ayağı gevşek.",
-                  "Kavanoz kapakları paslanıyor."):
-        store.remember(metin, kind="fact")
+    # Filler: in a two-node memory `_weave` links everything, and the night's
+    # schema refresh warms the old record — which is the CORRECT behaviour
+    # (the schema arm of the K set). To measure the isolated arm, records
+    # that will not get linked in between are needed.
+    for text in ("Kapı zilinin pili bitmek üzere.",
+                 "Semt pazarı perşembe kuruluyor.",
+                 "Ütü masasının ayağı gevşek.",
+                 "Kavanoz kapakları paslanıyor."):
+        store.remember(text, kind="fact")
     clock.advance(days=90)
     fresh = store.remember("Bugünkü vardiya raporu hazırlandı.", kind="fact")
     assert old.id not in {n.id for n, _w, _r in store.neighbours_with_reasons(fresh.id)}

@@ -33,7 +33,7 @@ Senaryo **yasam-holdout-30** · 34 soru · 47 düğüm · kaynak `hafiza-eski` �
 | `atalet` | ↓ | — | — | **yok** | <= 0 |
 | `buyume_p95` | ↓ | — | — | **yok** | <= 1.5 |
 | `buyume_ram` | ↓ | — | — | **yok** | <= 2 |
-| `gecikme_p95` | ↓ | — | — | **11.19** | <= 20 |
+| `gecikme_p95` | ↓ | — | — | **13.9** | <= 20 |
 
 ## Küme kırılımı (prime precision / recall)
 
@@ -49,10 +49,10 @@ Senaryo **yasam-holdout-30** · 34 soru · 47 düğüm · kaynak `hafiza-eski` �
 
 ## Ölçekte gecikme
 
-50000 düğüm · p50 **7.87 ms** · p95 **11.19 ms** (bütçe 20 ms)
+50000 düğüm · p50 **8.23 ms** · p95 **13.9 ms** (bütçe 20 ms)
 
 ---
 
 `yok` = o sürümde mekanik hiç yoktu; boş bırakılmaz.
 
-Üretim: `py eval/context_memory/yasam_bench.py --etiket holdout-taban`. Sayılar deterministiktir: aynı veri seti, aynı sanal takvim, aynı sonuç.
+Üretim: `py eval/context_memory/life_bench.py --label holdout-taban`. Sayılar deterministiktir: aynı veri seti, aynı sanal takvim, aynı sonuç.

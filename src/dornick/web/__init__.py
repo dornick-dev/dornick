@@ -1,8 +1,7 @@
-"""Zihin arayüzü.
+"""Mind interface.
 
-Yalnızca standart kütüphane. Kullanıcı tarafında Node, npm ya da derleme
-adımı yok: `pip install` yeter, arayüz tek bir HTML dosyası olarak servis
-edilir.
+Standard library only. No Node, npm or build step on the user's side:
+`pip install` is enough, the interface is served as a single HTML file.
 """
 
 from __future__ import annotations

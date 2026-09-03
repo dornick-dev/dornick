@@ -1,8 +1,8 @@
-"""Uygulama kataloğu: atölyeyi çalıştırılabilir bir ağaca çevirir.
+"""App catalogue: turns the workshop into a runnable tree.
 
-İki kural: her düğüm türüne göre sınıflanmalı (web/çalıştır/belge) ve
-çalıştırma atölyenin dışına çıkmamalı — ajanın kendi ürettiği çalışır,
-kullanıcının dosyaları değil.
+Two rules: every node must be classified by kind (web/run/doc) and running
+must not step outside the workshop — the agent's own product runs, not the
+user's files.
 """
 
 from __future__ import annotations
@@ -65,7 +65,7 @@ def test_folders_nest(tmp_path: Path) -> None:
 
 
 def test_manifest_makes_a_folder_one_app(tmp_path: Path) -> None:
-    """app.json varsa klasör tek bir uygulama; ajan kendi tarif eder."""
+    """With app.json the folder is a single app; the agent describes it itself."""
     site = tmp_path / "dashboard"
     site.mkdir()
     (site / "index.html").write_text("<title>x</title>", encoding="utf-8")
@@ -79,7 +79,7 @@ def test_manifest_makes_a_folder_one_app(tmp_path: Path) -> None:
     assert node["name"] == "Kuyu Panosu"
     assert node["type"] == "web"
     assert node["url"] == "http://127.0.0.1:8730"
-    # Manifestli klasörün içi ayrıca listelenmiyor: uygulama tek düğüm.
+    # The insides of a manifest-bearing folder are not listed separately: the app is a single node.
     assert "dashboard" not in flat
 
 
@@ -106,13 +106,13 @@ def test_launch_reports_missing_file(tmp_path: Path) -> None:
     assert not result["ok"]
 
 
-# -- çalışan süreç izleme --------------------------------------------------
+# -- running-process tracking ----------------------------------------------
 
 
 def test_launch_tracks_process_and_stop_ends_it(tmp_path: Path) -> None:
-    """Başlatılan izlenebilir bir süreç `running`'de görünür, `stop` bitirir."""
+    """A launched trackable process shows in `running`, `stop` ends it."""
     script = tmp_path / "bekle.py"
-    # Kısa ömürlü değil: durum/durdurmayı deneyebilmek için bir süre yaşamalı.
+    # Not short-lived: it must live a while so state/stop can be tried.
     script.write_text("import time\ntime.sleep(30)\n", encoding="utf-8")
 
     res = apps.launch(tmp_path, "bekle.py")
@@ -125,7 +125,7 @@ def test_launch_tracks_process_and_stop_ends_it(tmp_path: Path) -> None:
 
     stopped = apps.stop(pid)
     assert stopped["ok"]
-    # Durdurulan süreç artık listelenmiyor.
+    # The stopped process is no longer listed.
     assert all(p["pid"] != pid for p in apps.running())
 
 
@@ -135,7 +135,7 @@ def test_stop_unknown_pid_is_reported(tmp_path: Path) -> None:
 
 
 def test_projects_are_units_not_loose_files(tmp_path: Path) -> None:
-    """Bir proje (klasör) tek bir birim; sezgi türü/girişi/README'yi bulur."""
+    """A project (folder) is a single unit; intuition finds kind/entry/README."""
     proj = tmp_path / "modbus-web-client"
     (proj / "backend").mkdir(parents=True)
     (proj / "backend" / "app.py").write_text("# flask", encoding="utf-8")
@@ -147,15 +147,15 @@ def test_projects_are_units_not_loose_files(tmp_path: Path) -> None:
     items = {p["name"]: p for p in apps.projects(tmp_path)}
 
     mb = items["modbus-web-client"]
-    assert mb["kind"] == "web"                     # index.html + sunucu → web
+    assert mb["kind"] == "web"                     # index.html + server → web
     assert mb["entry"].endswith("index.html")
-    assert "app.py" in mb["run"]                   # sunucudan besleniyor
-    assert "pip install" in mb["howto"]            # README yakalandı
-    assert mb["scope"] == ""                       # manifest yok → dornick sormalı
+    assert "app.py" in mb["run"]                   # fed from the server
+    assert "pip install" in mb["howto"]            # README captured
+    assert mb["scope"] == ""                       # no manifest → dornick should ask
 
     pano = items["pano.html"]
     assert pano["kind"] == "web" and pano["single"] is True
-    assert pano["scope"] == "in-app"               # tek sayfa çerçevede açılır
+    assert pano["scope"] == "in-app"               # a single page opens in the frame
 
 
 def test_manifest_sets_project_scope_and_howto(tmp_path: Path) -> None:
@@ -173,16 +173,16 @@ def test_manifest_sets_project_scope_and_howto(tmp_path: Path) -> None:
     assert p["howto"] == "Başlat düğmesine bas"
 
 
-# -- keşif sağlamlaştırma ---------------------------------------------------
+# -- discovery hardening -----------------------------------------------------
 #
-# Kullanıcının atölyesinde yaşanan hal: model manifesti YANLIŞ yerlere yazdı
-# (atölye köküne, klasörsüz "llm-donanim-app.json" diye), doğru yerdeki
-# uygulama çalışıyordu ama panelde görünmüyordu ve hiçbir şey kimseyi
-# uyarmıyordu. Aşağısı o üç kusuru kilitliyor.
+# What happened in the user's workshop: the model wrote the manifest in the
+# WRONG places (the workshop root, folder-less as "llm-donanim-app.json"),
+# the app in the right place was running but did not show in the panel and
+# nothing warned anyone. The tests below lock down those three flaws.
 
 
-def test_kok_manifest_uygulama_sayilmaz_ve_uyarir(tmp_path: Path) -> None:
-    """Atölye kökündeki `app.json` bir uygulama değil — atölye uygulama değil."""
+def test_root_manifest_is_not_an_app_and_warns(tmp_path: Path) -> None:
+    """`app.json` at the workshop root is not an app — the workshop is not an app."""
     (tmp_path / "app.json").write_text(
         '{"name": "Market Lens", "type": "web", "entry": "borsa/static/index.html"}',
         encoding="utf-8",
@@ -190,21 +190,21 @@ def test_kok_manifest_uygulama_sayilmaz_ve_uyarir(tmp_path: Path) -> None:
     (tmp_path / "pano.html").write_text("<title>Pano</title>", encoding="utf-8")
 
     data = apps.katalog(tmp_path)
-    adlar = {p["name"] for p in data["projects"]}
-    assert "Market Lens" not in adlar        # kök manifest kart olmadı
-    assert "app.json" not in adlar           # dosya olarak da sızmadı
-    assert "pano.html" in adlar              # gerisi normal keşfediliyor
+    names = {p["name"] for p in data["projects"]}
+    assert "Market Lens" not in names        # the root manifest did not become a card
+    assert "app.json" not in names           # nor did it leak in as a file
+    assert "pano.html" in names              # the rest is discovered normally
 
     assert len(data["sorunlar"]) == 1
-    sorun = data["sorunlar"][0]
-    assert sorun["path"] == "app.json"
-    assert "manifest uygulamanın kendi klasöründe olmalı" in sorun["uyari"]
-    # Uyarı öğretiyor: nereye, neye göreli, örneğiyle.
-    assert "app.json" in sorun["ogretici"] and "entry" in sorun["ogretici"]
+    problem = data["sorunlar"][0]
+    assert problem["path"] == "app.json"
+    assert "manifest uygulamanın kendi klasöründe olmalı" in problem["uyari"]
+    # The warning teaches: where, relative to what, with an example.
+    assert "app.json" in problem["ogretici"] and "entry" in problem["ogretici"]
 
 
-def test_kokteki_basibos_manifest_de_yok_sayilir(tmp_path: Path) -> None:
-    """`llm-donanim-app.json` gibi klasörsüz manifestler de uygulama değil."""
+def test_stray_manifest_at_root_is_ignored_too(tmp_path: Path) -> None:
+    """Folder-less manifests like `llm-donanim-app.json` are not apps either."""
     (tmp_path / "llm-donanim-app.json").write_text(
         '{"name": "LLM Donanım", "entry": "site/llm-donanim.html"}', encoding="utf-8"
     )
@@ -213,12 +213,12 @@ def test_kokteki_basibos_manifest_de_yok_sayilir(tmp_path: Path) -> None:
     assert [s["path"] for s in data["sorunlar"]] == ["llm-donanim-app.json"]
 
 
-def test_kesif_uc_seviye_derine_iner(tmp_path: Path) -> None:
-    """Manifest ilk seviyede olmak zorunda değil: 3 seviyeye kadar bulunur."""
-    derin = tmp_path / "site" / "panolar" / "kuyu"
-    derin.mkdir(parents=True)
-    (derin / "index.html").write_text("<title>Kuyu</title>", encoding="utf-8")
-    (derin / "app.json").write_text(
+def test_discovery_descends_three_levels(tmp_path: Path) -> None:
+    """The manifest need not be at the first level: found up to 3 levels down."""
+    deep = tmp_path / "site" / "panolar" / "kuyu"
+    deep.mkdir(parents=True)
+    (deep / "index.html").write_text("<title>Kuyu</title>", encoding="utf-8")
+    (deep / "app.json").write_text(
         '{"name": "Kuyu Panosu", "type": "web", "entry": "index.html", '
         '"scope": "in-app"}', encoding="utf-8"
     )
@@ -226,24 +226,24 @@ def test_kesif_uc_seviye_derine_iner(tmp_path: Path) -> None:
     assert "Kuyu Panosu" in items
     assert items["Kuyu Panosu"]["path"] == "site/panolar/kuyu"
     assert items["Kuyu Panosu"]["scope"] == "in-app"
-    # Üst klasör yalnızca bir kap: uygulama tekrarlanmıyor.
+    # The parent folder is only a container: the app is not repeated.
     assert "site" not in items
 
 
-def test_kesif_bagimlilik_copluklerine_inmez(tmp_path: Path) -> None:
-    """node_modules/vendor içindeki paket manifestleri kullanıcı uygulaması değil."""
-    paket = tmp_path / "proje" / "node_modules" / "sol"
-    paket.mkdir(parents=True)
-    (paket / "app.json").write_text('{"name": "sol paketi"}', encoding="utf-8")
+def test_discovery_does_not_enter_dependency_junk(tmp_path: Path) -> None:
+    """Package manifests inside node_modules/vendor are not user apps."""
+    package = tmp_path / "proje" / "node_modules" / "sol"
+    package.mkdir(parents=True)
+    (package / "app.json").write_text('{"name": "sol paketi"}', encoding="utf-8")
     (tmp_path / "proje" / "index.html").write_text("<title>P</title>", encoding="utf-8")
 
-    adlar = {p["name"] for p in apps.projects(tmp_path)}
-    assert "sol paketi" not in adlar
-    assert "proje" in adlar     # manifest bulunmadı → klasörün kendisi proje
+    names = {p["name"] for p in apps.projects(tmp_path)}
+    assert "sol paketi" not in names
+    assert "proje" in names     # no manifest found → the folder itself is the project
 
 
-def test_gecersiz_entry_uygulamayi_dusurmez_eksik_gosterir(tmp_path: Path) -> None:
-    """Bozuk manifest listeden düşmüyor: "eksik" rozeti + NEDEN."""
+def test_invalid_entry_does_not_drop_the_app_but_marks_it_incomplete(tmp_path: Path) -> None:
+    """A broken manifest does not drop from the list: "eksik" badge + REASON."""
     proj = tmp_path / "llm-donanim"
     proj.mkdir()
     (proj / "llm-donanim.html").write_text("<title>x</title>", encoding="utf-8")
@@ -256,7 +256,7 @@ def test_gecersiz_entry_uygulamayi_dusurmez_eksik_gosterir(tmp_path: Path) -> No
     assert p["neden"] == "entry bulunamadı: site/llm-donanım.html"
 
 
-def test_anlamsiz_run_komutu_eksik_olarak_isaretlenir(tmp_path: Path) -> None:
+def test_meaningless_run_command_is_marked_incomplete(tmp_path: Path) -> None:
     proj = tmp_path / "araç"
     proj.mkdir()
     (proj / "index.html").write_text("<title>x</title>", encoding="utf-8")
@@ -269,8 +269,8 @@ def test_anlamsiz_run_komutu_eksik_olarak_isaretlenir(tmp_path: Path) -> None:
     assert "run komutu anlaşılmadı" in p["neden"]
 
 
-def test_saglam_manifest_eksik_sayilmaz(tmp_path: Path) -> None:
-    """Kullanıcının borsa-ara'sının birebir hali: geçerli, eksik değil."""
+def test_sound_manifest_is_not_incomplete(tmp_path: Path) -> None:
+    """The exact form of the user's borsa-ara: valid, not incomplete."""
     proj = tmp_path / "borsa-ara"
     (proj / "static").mkdir(parents=True)
     (proj / "static" / "index.html").write_text("<title>Market</title>", encoding="utf-8")
@@ -282,17 +282,17 @@ def test_saglam_manifest_eksik_sayilmaz(tmp_path: Path) -> None:
     )
     p = {x["name"]: x for x in apps.projects(tmp_path)}["Market Lens"]
     assert p["eksik"] is False and p["neden"] == ""
-    assert p["scope"] == "in-app"                     # SİSTEM İÇİ bölümüne gider
+    assert p["scope"] == "in-app"                     # goes to the IN-APP section
     assert p["desc"] == "Piyasa nabzı"
-    assert p["port"] == 8090                          # kaynaktan okundu
+    assert p["port"] == 8090                          # read from source
 
 
-def test_calisan_surec_uygulamaya_eslesir(tmp_path: Path) -> None:
-    """Uygulamanın portu gerçekten dinleniyorsa kart CANLI olur.
+def test_running_process_is_matched_to_the_app(tmp_path: Path) -> None:
+    """If the app's port is really listened on, the card becomes LIVE.
 
-    Kullanıcının halinin birebir kopyası: sunucu dornick'nun süreç defterinde
-    YOK (kendi başına, ayrı bir süreç olarak koşuyor) ama uygulamanın kartı
-    yine de canlı görünmeli. Kanıt bir soket, tahmin değil.
+    An exact copy of the user's situation: the server is NOT in dornick's
+    process ledger (running on its own, as a separate process) but the
+    app's card must still look live. The proof is a socket, not a guess.
     """
     import socket
     import subprocess
@@ -308,16 +308,16 @@ def test_calisan_surec_uygulamaya_eslesir(tmp_path: Path) -> None:
     port = probe.getsockname()[1]
     probe.close()
 
-    # Ayrı bir süreç: pytest'in KENDİ süreci "dornick'nun kendisi" sayılıyor
-    # (ve doğru olarak canlı rozeti almıyor) — sunucu dışarıda olmalı.
-    sunucu = subprocess.Popen(
+    # A separate process: pytest's OWN process counts as "dornick itself"
+    # (and correctly gets no live badge) — the server must be outside.
+    server = subprocess.Popen(
         [sys.executable, "-c",
          "import socket,time;s=socket.socket();"
          "s.setsockopt(socket.SOL_SOCKET,socket.SO_REUSEADDR,1);"
          f"s.bind(('127.0.0.1',{port}));s.listen(1);time.sleep(30)"],
     )
     try:
-        for _ in range(50):        # dinlemeye başlamasını bekle
+        for _ in range(50):        # wait for it to start listening
             try:
                 socket.create_connection(("127.0.0.1", port), timeout=0.2).close()
                 break
@@ -331,20 +331,20 @@ def test_calisan_surec_uygulamaya_eslesir(tmp_path: Path) -> None:
         p = {x["name"]: x for x in apps.projects(tmp_path)}["Pano"]
         assert p["port"] == port
         assert p["address"] == f"http://127.0.0.1:{port}"
-        assert p["pid"] == sunucu.pid
+        assert p["pid"] == server.pid
         assert p["stoppable"] is True
 
-        # Çalışanlar listesi de bu uygulamayı görüyor (defterde olmasa bile).
-        canli = {r["name"]: r for r in apps.running(tmp_path)}
-        assert canli["Pano"]["address"] == f"http://127.0.0.1:{port}"
-        assert canli["Pano"]["discovered"] is True
+        # The running list sees this app too (even though it is not in the ledger).
+        live = {r["name"]: r for r in apps.running(tmp_path)}
+        assert live["Pano"]["address"] == f"http://127.0.0.1:{port}"
+        assert live["Pano"]["discovered"] is True
     finally:
-        sunucu.kill()
-        sunucu.wait(timeout=10)
+        server.kill()
+        server.wait(timeout=10)
 
 
-def test_dinlenmeyen_port_canli_gostermez(tmp_path: Path) -> None:
-    """Port ilan edilmiş ama kimse dinlemiyorsa uygulama DURDU."""
+def test_unlistened_port_does_not_show_live(tmp_path: Path) -> None:
+    """Port declared but nobody listening: the app is STOPPED."""
     proj = tmp_path / "pano"
     proj.mkdir()
     (proj / "index.html").write_text("<title>x</title>", encoding="utf-8")
@@ -356,30 +356,30 @@ def test_dinlenmeyen_port_canli_gostermez(tmp_path: Path) -> None:
     assert p["address"] == "" and p["pid"] == 0
 
 
-def test_bos_atolye(tmp_path: Path) -> None:
+def test_empty_workshop(tmp_path: Path) -> None:
     data = apps.katalog(tmp_path)
     assert data == {"projects": [], "sorunlar": []}
     assert apps.katalog(tmp_path / "yok") == {"projects": [], "sorunlar": []}
 
 
-def test_neo_kendi_sureci_taninir() -> None:
-    """Model kafası karışıp dornick'yu başlatırsa bu tanınmalı."""
+def test_dornick_own_process_is_recognised() -> None:
+    """If the model gets confused and starts dornick, this must be recognised."""
     assert apps.is_dornick_process("dornick --web 8873 -C D:\\Projects\\Fatih\\dornick")
     assert apps.is_dornick_process("python -m dornick --web 8080")
     assert apps.is_dornick_process(
         '"C:\\Py\\python.exe" "C:\\Py\\Scripts\\dornick.exe" --web 8873')
     assert apps.is_dornick_process(r'"C:\dornick\python\dornick.exe" -m dornick --app')
-    # Kullanıcının uygulaması dornick değil — yanlış alarm olmamalı.
+    # The user's app is not dornick — no false alarm.
     assert not apps.is_dornick_process("py app.py")
     assert not apps.is_dornick_process("python D:\\Projects\\Fatih\\dornick\\atolye\\borsa-ara\\app.py")
 
 
-def test_neo_kendi_kopyasi_uygulama_gibi_listelenmez(tmp_path: Path) -> None:
-    """Model dornick'yu başlatırsa panel onu "uygulaman" diye göstermemeli.
+def test_dornick_own_copy_is_not_listed_as_an_app(tmp_path: Path) -> None:
+    """If the model starts dornick the panel must not show it as "your app".
 
-    Kullanıcının yaşadığı hal: model `dornick --web 8873` çalıştırdı, kabuk
-    aracı bunu süreç defterine yazdı, panel de dornick'nun bir kopyasını
-    uygulama olarak listeledi ("ne saçmaladı").
+    What the user lived through: the model ran `dornick --web 8873`, the
+    shell tool wrote it into the process ledger, and the panel listed a
+    copy of dornick as an app ("what nonsense").
     """
     import subprocess
     import sys
@@ -395,17 +395,17 @@ def test_neo_kendi_kopyasi_uygulama_gibi_listelenmez(tmp_path: Path) -> None:
         assert row["self"] is True
         assert row["stoppable"] is False
         assert row["name"] == "Dornick (kendisi)"
-        # Panelden durdurulamaz: dornick kendi bacağına sıkmasın.
-        red = apps.stop(proc.pid)
-        assert not red["ok"] and "kendi süreci" in red["error"]
+        # Cannot be stopped from the panel: dornick must not shoot its own leg.
+        refused = apps.stop(proc.pid)
+        assert not refused["ok"] and "kendi süreci" in refused["error"]
     finally:
         apps._PROCS.pop(proc.pid, None)
         proc.kill()
         proc.wait(timeout=10)
 
 
-async def test_shell_neo_yu_yeniden_baslatmayi_reddeder(tmp_path: Path) -> None:
-    """Kabuk aracı `dornick` başlatma girişimini NEDENİYLE geri çevirir."""
+async def test_shell_refuses_to_restart_dornick(tmp_path: Path) -> None:
+    """The shell tool turns down an attempt to start `dornick` WITH A REASON."""
     import asyncio
 
     from dornick.config import Config
@@ -424,12 +424,12 @@ async def test_shell_neo_yu_yeniden_baslatmayi_reddeder(tmp_path: Path) -> None:
     res = await reg.get("shell").handler({"command": "dornick --web 8873"}, ctx)
     assert res.is_error
     assert "kendini yeniden başlatma" in res.content
-    # Kullanıcının kendi uygulaması engellenmiyor.
+    # The user's own app is not blocked.
     ok = await reg.get("shell").handler({"command": "echo merhaba"}, ctx)
     assert not ok.is_error
 
 
-def test_reveal_atolye_disina_cikmaz(tmp_path: Path) -> None:
+def test_reveal_does_not_leave_the_workshop(tmp_path: Path) -> None:
     root = tmp_path / "atolye"
     root.mkdir()
     res = apps.reveal(root, "../gizli")
@@ -437,18 +437,18 @@ def test_reveal_atolye_disina_cikmaz(tmp_path: Path) -> None:
 
 
 def test_running_prunes_finished_processes(tmp_path: Path) -> None:
-    """Kendiliğinden biten bir süreç bir sonraki yoklamada düşer."""
+    """A process that ends on its own drops on the next poll."""
     script = tmp_path / "cik.py"
     script.write_text("pass\n", encoding="utf-8")
     res = apps.launch(tmp_path, "cik.py")
     pid = res["pid"]
     proc = apps._PROCS[pid]["proc"]
-    proc.wait(timeout=10)          # bitmesini bekle
+    proc.wait(timeout=10)          # wait for it to finish
     assert all(p["pid"] != pid for p in apps.running())
 
 
 def test_winexe_csproj_is_desktop_not_tool(tmp_path: Path) -> None:
-    """WinExe .NET projesi betik değil masaüstü — ScadaStudio sınıfı."""
+    """A WinExe .NET project is desktop, not a script — the ScadaStudio class."""
     proj = tmp_path / "ScadaStudio"
     proj.mkdir()
     (proj / "ScadaStudio.csproj").write_text(
@@ -459,7 +459,7 @@ def test_winexe_csproj_is_desktop_not_tool(tmp_path: Path) -> None:
         "</Project>\n",
         encoding="utf-8",
     )
-    # bin gürültüsü yanlış exe seçmesin diye.
+    # So bin noise does not pick the wrong exe.
     junk = proj / "bin" / "Debug" / "net8.0-windows"
     junk.mkdir(parents=True)
     (junk / "helper.exe").write_bytes(b"MZ")
@@ -480,7 +480,7 @@ def test_folder_named_exe_is_desktop(tmp_path: Path) -> None:
 
 
 def test_manifest_tool_soft_corrects_to_desktop(tmp_path: Path) -> None:
-    """Ajan type=tool yazsa bile WinExe masaüstü sayılır."""
+    """Even if the agent writes type=tool a WinExe counts as desktop."""
     proj = tmp_path / "Studio"
     proj.mkdir()
     (proj / "Studio.csproj").write_text(
@@ -498,7 +498,7 @@ def test_manifest_tool_soft_corrects_to_desktop(tmp_path: Path) -> None:
 
 
 def test_bin_obj_ignored_when_finding_scripts(tmp_path: Path) -> None:
-    """bin/obj içindeki .py/.exe giriş sayılmaz."""
+    """A .py/.exe inside bin/obj does not count as the entry."""
     proj = tmp_path / "app"
     proj.mkdir()
     (proj / "bin").mkdir()

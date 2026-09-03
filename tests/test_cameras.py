@@ -1,6 +1,6 @@
-"""Kamera kaynağı: USB indeksi ve RTSP kimlik bilgisi.
+"""Camera source: USB index and RTSP credentials.
 
-OpenCV yokken de çalışır — URL kurulumu GPU/önizlemeden bağımsız.
+Works without OpenCV too — building the URL is independent of GPU/preview.
 """
 
 from __future__ import annotations

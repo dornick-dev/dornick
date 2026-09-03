@@ -1,14 +1,15 @@
-"""Zihin arayüzü sunucusu.
+"""Mind interface server.
 
-Bilinçli olarak yalnızca standart kütüphane: ne aiohttp, ne uvicorn, ne npm.
-Canlı akış için WebSocket yerine SSE kullanılıyor — tek yönlü bir akış için
-yeterli ve düz HTTP üzerinde çalıştığı için ek bağımlılık gerektirmiyor.
+Deliberately standard library only: no aiohttp, no uvicorn, no npm.
+SSE is used instead of WebSocket for the live stream — enough for a
+one-way stream and, since it runs over plain HTTP, needs no extra
+dependency.
 
-Sunucu ayrı bir thread'de döner; ajan asyncio döngüsünde çalışmaya devam
-eder. İkisi arasındaki tek köprü olay günlüğünün abonelik kancası.
+The server runs in its own thread; the agent keeps running in the asyncio
+loop. The only bridge between the two is the event log's subscription hook.
 
-Yalnızca 127.0.0.1'e bağlanır. Burada ajanın belleği, hedefleri ve geçmiş
-oturumları var — dışarı açılacak bir yüzey değil.
+Binds to 127.0.0.1 only. The agent's memory, goals and past sessions live
+here — not a surface to expose outward.
 """
 
 from __future__ import annotations
@@ -41,9 +42,9 @@ QUEUE_LIMIT = 500
 
 
 def _attachment_disposition(title: str, suffix: str = ".html") -> str:
-    """Content-Disposition: HTTP header latin-1; Türkçe başlık ASCII + RFC5987.
+    """Content-Disposition: the HTTP header is latin-1; a Turkish title goes ASCII + RFC5987.
 
-    `filename=` yalnız ASCII; `filename*=UTF-8''…` yüzde kodlu gerçek ad.
+    `filename=` is ASCII only; `filename*=UTF-8''…` carries the percent-encoded real name.
     """
     raw = str(title or "download").strip() or "download"
     if suffix and not raw.lower().endswith(suffix.lower()):
@@ -57,22 +58,22 @@ def _attachment_disposition(title: str, suffix: str = ".html") -> str:
         f'attachment; filename="{ascii_name}"; '
         f"filename*=UTF-8''{quote(display, safe='')}"
     )
-# Kullanıcının hedef panelinden elle yazdığı maddenin tavanı. Panelde tek
-# satır olarak duruyor; roman uzunluğunda bir madde ne panelde ne de
-# modelin bağlamında işe yarar.
+# Cap on an item the user types by hand into the goal panel. It sits on a
+# single line in the panel; a novel-length item is useless both in the
+# panel and in the model's context.
 GOAL_TEXT_LIMIT = 200
 
-# Servis edilen dosyalar açıkça listeleniyor: yol birleştirmeyi istekten
-# türetmek dizin dışına çıkma açığının klasik yolu.
+# Served files are listed explicitly: deriving the path join from the
+# request is the classic road to a directory-traversal hole.
 ASSETS = {
     "/app.css": "text/css; charset=utf-8",
     "/settings.css": "text/css; charset=utf-8",
     "/logo.png": "image/png",
     "/app.js": "text/javascript; charset=utf-8",
-    # Dil katmanı: diğer betiklerden ÖNCE yüklenir (t() ve Dil.ekle onlarda).
+    # Language layer: loaded BEFORE the other scripts (t() and Dil.ekle live in them).
     "/dil.js": "text/javascript; charset=utf-8",
     "/scene.js": "text/javascript; charset=utf-8",
-    # Gerçek beyin geometrisi: seyreltilmiş nokta bulutu, 42 KB.
+    # Real brain geometry: a decimated point cloud, 42 KB.
     "/brain.js": "text/javascript; charset=utf-8",
     "/md.js": "text/javascript; charset=utf-8",
     "/highlight.js": "text/javascript; charset=utf-8",
@@ -82,20 +83,21 @@ ASSETS = {
     "/capsule.js": "text/javascript; charset=utf-8",
     "/history.js": "text/javascript; charset=utf-8",
     "/orchestra.js": "text/javascript; charset=utf-8",
-    # Kamera güvertesi: izleme alanı (dahili + IP kameralar).
+    # Camera deck: the watch area (built-in + IP cameras).
     "/cameras.js": "text/javascript; charset=utf-8",
     "/watch.js": "text/javascript; charset=utf-8",
-    # Koşan görevler paneli: arka plan işleri, yardımcılar, süreçler.
+    # Running-tasks panel: background jobs, helpers, processes.
     "/gorevler.js": "text/javascript; charset=utf-8",
-    # Kompozer yüzeyleri: `/` komut defteri ve `@` dosya bahsi.
+    # Composer surfaces: the `/` command book and the `@` file mention.
     "/komut.js": "text/javascript; charset=utf-8",
-    # "Bu turda ne değişti" şeridi + geri alma.
+    # "What changed this turn" strip + undo.
     "/degisiklik.js": "text/javascript; charset=utf-8",
     "/git.js": "text/javascript; charset=utf-8",
     "/workdir.js": "text/javascript; charset=utf-8",
     "/chrome.js": "text/javascript; charset=utf-8",
-    # Sağ tık menüsü (kullanıcının laptop paketi): index.html yüklüyor ama
-    # izin listesine hiç girmemişti — üründe sağ tık sessizce ölüydü (404).
+    # Right-click menu (the user's laptop package): index.html loads it but
+    # it had never entered the allow list — right-click was silently dead in
+    # the product (404).
     "/menu.js": "text/javascript; charset=utf-8",
     "/speech.js": "text/javascript; charset=utf-8",
     "/listen.js": "text/javascript; charset=utf-8",
@@ -105,8 +107,8 @@ ASSETS = {
     "/jobs.js": "text/javascript; charset=utf-8",
 }
 
-# Arayüze akıtılan meta olaylar. Gerisi (oturum başlangıcı, izin kaydı gibi)
-# grafı kalabalıklaştırmaktan başka işe yaramıyor.
+# Meta events streamed to the UI. The rest (session start, permission
+# record and the like) do nothing but clutter the graph.
 STREAMED_NOTES = frozenset(
     {
         "tool_start",
@@ -125,23 +127,23 @@ STREAMED_NOTES = frozenset(
         "refusal",
         "recall_trace",
         "queued",
-        # Artifact yayınlandı/güncellendi: sohbette kart olarak görünür.
+        # Artifact published/updated: shows up as a card in the chat.
         "artifact",
-        # Büyük iş planı: onay kartı.
+        # Big job plan: approval card.
         "plan",
-        # Cihaz kaydı silindi: sahne organı ve ayarlar listesi bayat kalmasın.
+        # Device record deleted: the scene organ and the settings list must not go stale.
         "device_removed",
-        # Git commit/push/publish: çubuk ve pane tazelensin.
+        # Git commit/push/publish: refresh the bar and the pane.
         "git",
     }
 )
 
 
 class Controller(Protocol):
-    """Arayüzün ajanı sürmek için kullandığı yüzey.
+    """The surface the UI uses to drive the agent.
 
-    HTTP thread'inden çağrılır, ajan başka bir thread'in asyncio döngüsünde
-    çalışır. Geçişi thread-safe yapmak uygulayanın sorumluluğu.
+    Called from the HTTP thread while the agent runs in another thread's
+    asyncio loop. Making the crossing thread-safe is the implementer's job.
     """
 
     def submit(self, text: str, image: str = "") -> None: ...
@@ -151,15 +153,15 @@ class Controller(Protocol):
     def interrupt(self) -> None: ...
     def snapshot(self) -> dict[str, Any]: ...
     def reload(self, config: Config, *, force: bool = False) -> None: ...
-    # Köprünün ayrıca sunduğu ama ZORUNLU OLMAYAN uçlar (görevler paneli,
-    # bütçe freni, elle sıkıştırma) burada değil: `_controller_call`
-    # olmayan metodu sessizce None'a çeviriyor ve uç nokta bunu dürüst bir
-    # ok:false'a döndürüyor. Salt-gözlem köprüleri (önizleme, testler)
-    # bunları uygulamak zorunda kalmıyor.
+    # The endpoints the bridge additionally offers but which are NOT
+    # MANDATORY (tasks panel, budget brake, manual compaction) are not
+    # here: `_controller_call` silently turns a missing method into None
+    # and the endpoint turns that into an honest ok:false. Observe-only
+    # bridges (preview, tests) are not forced to implement them.
 
 
 class Hub:
-    """Olay günlüğünü açık tarayıcı sekmelerine dağıtır."""
+    """Fans the event log out to the open browser tabs."""
 
     def __init__(self) -> None:
         self._clients: list[queue.Queue[str]] = []
@@ -183,7 +185,7 @@ class Hub:
             self.emit(payload)
 
     def emit(self, payload: dict[str, Any]) -> None:
-        """Günlükten gelmeyen olayları da yayınlar (metin akışı, onay isteği)."""
+        """Also publishes events that do not come from the log (text stream, approval request)."""
         line = json.dumps(payload, ensure_ascii=False)
         with self._lock:
             clients = tuple(self._clients)
@@ -191,30 +193,30 @@ class Hub:
             try:
                 channel.put_nowait(line)
             except queue.Full:
-                # Yavaş sekme ajanı yavaşlatmasın; o sekme birkaç olay kaçırır.
+                # A slow tab must not slow the agent down; that tab misses a few events.
                 pass
 
 
 def _machine_language() -> str:
-    """Makinenin diline göre varsayılan arayüz dili: "tr" ya da "en".
+    """Default UI language by the machine's language: "tr" or "en".
 
-    Türkçe bir Windows'ta (ya da bölge Türkiye ise) Türkçe; diğer her
-    yerde İngilizce. Okunamazsa İngilizce — ürünün varsayılanı budur.
+    Turkish on a Turkish Windows (or if the region is Türkiye); English
+    everywhere else. Unreadable → English — that is the product's default.
     """
     try:
         import locale
-        etiket = ""
+        tag = ""
         try:
-            etiket = (locale.getdefaultlocale()[0] or "")
+            tag = (locale.getdefaultlocale()[0] or "")
         except (ValueError, TypeError):
-            etiket = ""
-        if not etiket:
+            tag = ""
+        if not tag:
             try:
-                etiket = (locale.getlocale()[0] or "")
+                tag = (locale.getlocale()[0] or "")
             except (ValueError, TypeError):
-                etiket = ""
-        etiket = etiket.lower().replace("-", "_")
-        if etiket.startswith("tr") or etiket.endswith("_tr") or "turkish" in etiket:
+                tag = ""
+        tag = tag.lower().replace("-", "_")
+        if tag.startswith("tr") or tag.endswith("_tr") or "turkish" in tag:
             return "tr"
     except Exception:
         pass
@@ -223,13 +225,13 @@ def _machine_language() -> str:
 
 def _payload(event: Event) -> dict[str, Any] | None:
     if event.kind == "message":
-        # Araç sonuçları teknik olarak kullanıcı turudur ama sohbette
-        # kullanıcı mesajı gibi görünmemeli — araç kartı zaten sonucu
-        # gösteriyor.
+        # Tool results are technically a user turn but must not look like a
+        # user message in the chat — the tool card already shows the result.
         if event.meta.get("tool_results"):
             return None
-        # Sürdürme dürtüsünü de kullanıcı yazmadı; sohbette görünmemeli.
-        # Aynısı araçtan gelen görüntü ve harness notları için de geçerli.
+        # The continuation nudge was not typed by the user either; it must
+        # not appear in the chat. Same for images coming from a tool and
+        # harness notes.
         if event.meta.get("continuation") or event.meta.get("internal"):
             return None
         return {
@@ -262,16 +264,16 @@ def _summarize(content: Any, limit: int = 400) -> str:
     return " ".join(parts)[:limit]
 
 
-# Bu boyutun üstündeki dosyanın gövdesi gönderilmiyor. Amaç ajanın ürettiği
-# betiği/raporu göz atmak; bir veri dökümünü tarayıcıya yıkmak değil.
+# The body of a file above this size is not sent. The aim is glancing at a
+# script/report the agent produced; not dumping a data file into the browser.
 PREVIEW_LIMIT = 256 * 1024
 
-# Sohbete bırakılabilecek azami dosya. Tarayıcı içeriği base64 ile
-# taşıyor (üçte bir şişme) ve bellekte tutuluyor.
+# Largest file that can be dropped into the chat. The browser carries the
+# content as base64 (a third of bloat) and keeps it in memory.
 DROP_LIMIT = 25 * 1024 * 1024
 
-# Gövdesi gösterilmeyecek uzantılar. Listede olmayan her şey metin gibi
-# okunmaya çalışılıyor; çözülemezse ikili sayılıyor.
+# Extensions whose body is not shown. Everything not on the list is tried
+# as text; if it does not decode it counts as binary.
 BINARY_SUFFIXES = frozenset(
     {".png", ".jpg", ".jpeg", ".gif", ".webp", ".ico", ".bmp", ".pdf", ".zip",
      ".gz", ".exe", ".dll", ".so", ".dylib", ".db", ".sqlite", ".wasm",
@@ -279,12 +281,13 @@ BINARY_SUFFIXES = frozenset(
      ".ttf", ".otf", ".woff", ".woff2"}
 )
 
-# `/api/raw` yalnızca bu türleri ADIYLA servis ediyor. Liste bilinçli olarak
-# kısa ve medyaya kapalı: tarayıcının içeriğe bakıp tür tahmin etmesi
-# (sniffing) çalışma alanındaki bir metin dosyasını HTML sayıp
-# çalıştırabilirdi. Listede olmayan her şey octet-stream — indirilir,
-# yorumlanmaz. `.svg` de burada: XML olduğu için betik taşıyabiliyor ama
-# görüntüleyici onu `<img>` ile çiziyor — bir resimde betik çalışmıyor.
+# `/api/raw` serves only these types BY NAME. The list is deliberately short
+# and closed to media: letting the browser look at the content and guess
+# the type (sniffing) could have treated a text file in the workspace as
+# HTML and executed it. Everything not on the list is octet-stream —
+# downloaded, not interpreted. `.svg` is here too: being XML it can carry
+# script, but the viewer draws it with `<img>` — script does not run in an
+# image.
 RAW_TYPES = {
     ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
     ".gif": "image/gif", ".webp": "image/webp", ".bmp": "image/bmp",
@@ -295,25 +298,26 @@ RAW_TYPES = {
     ".mp4": "video/mp4", ".webm": "video/webm", ".mov": "video/quicktime",
 }
 
-# Gezinmede atlanan dizinler: ajanın ürettiği değil, araçların bıraktığı şeyler.
+# Directories skipped while browsing: things tools leave behind, not what the agent produced.
 SKIPPED = frozenset({".git", "__pycache__", "node_modules", ".venv", ".mypy_cache"})
 
-# Kompozerdeki `@` dosya bahsi her tuşta arama yapıyor: tarama TAVANLI
-# olmak zorunda. Dev bir çalışma alanında bile yazma akışı kesilmiyor —
-# tavana çarpınca elde ne varsa o dönüyor ve arayüz "daralt" diyor.
+# The `@` file mention in the composer searches on every keystroke: the
+# scan MUST be capped. Even in a huge workspace the typing flow is not
+# interrupted — on hitting the cap whatever was found is returned and the
+# UI says "narrow it down".
 SEARCH_SCAN_CAP = 6000
 SEARCH_LIMIT = 20
 
-# Fark kartında gösterilecek azami metin. Daha büyüğü zaten okunmuyor,
-# ama tarayıcıya yığmak paneli kilitliyor.
+# Maximum text shown in the diff card. Anything larger is unreadable anyway,
+# but piling it into the browser locks the panel.
 DIFF_LIMIT = 200 * 1024
 
 
-def _hedef_ozeti(args: Any, limit: int = 90) -> str:
-    """Araç argümanlarından tek satırlık hedef: yol ya da komut.
+def _target_summary(args: Any, limit: int = 90) -> str:
+    """One-line target from tool arguments: a path or a command.
 
-    Görev dökümünde okunan şey "hangi dosyaya / hangi komutla" — ham JSON
-    değil. Tanınan bir alan yoksa ilk metin değeri kullanılıyor.
+    What is read in the task dump is "which file / which command" — not raw
+    JSON. If no recognised field exists the first text value is used.
     """
     if not isinstance(args, dict):
         return ""
@@ -326,7 +330,7 @@ def _hedef_ozeti(args: Any, limit: int = 90) -> str:
 
 
 def _plain_blocks(content: Any) -> list[str]:
-    """Bir mesajın düz metin blokları (araç çağrıları ve muhakeme dışarıda)."""
+    """A message's plain text blocks (tool calls and reasoning left out)."""
     if isinstance(content, str):
         return [content]
     if not isinstance(content, list):
@@ -335,12 +339,13 @@ def _plain_blocks(content: Any) -> list[str]:
             if isinstance(b, dict) and b.get("type") == "text" and b.get("text")]
 
 
-def _rapor_html(metin: str) -> str:
-    """Görev raporunu güvenli HTML'e çevirir (hafif markdown).
+def _report_html(text: str) -> str:
+    """Turns a task report into safe HTML (light markdown).
 
-    Tam markdown motoru yok; başlık / liste / link / kod yeter — rapor
-    sohbete yapışmak yerine Viewer'da okunur. ## Çıktı varsayılan kapalı
-    <details> — uzun kurulum logları özeti örtmesin.
+    No full markdown engine; heading / list / link / code suffice — the
+    report is read in the Viewer instead of sticking to the chat. ## Çıktı
+    is a <details> closed by default — long setup logs must not bury the
+    summary.
     """
     out: list[str] = []
     in_ul = False
@@ -359,23 +364,23 @@ def _rapor_html(metin: str) -> str:
         in_log = False
         log_buf = []
 
-    for ham in (metin or "").replace("\r\n", "\n").split("\n"):
-        s = ham.rstrip()
-        # Ham Python izi rapor değil — insan_is_raporu kaçırırsa bile basma.
+    for raw_line in (text or "").replace("\r\n", "\n").split("\n"):
+        s = raw_line.rstrip()
+        # A raw Python trace is not a report — do not print it even if insan_is_raporu let it through.
         if s.startswith("Traceback (") or s.startswith("File \""):
             continue
         if s.startswith("## "):
             flush_log()
             if in_ul:
                 out.append("</ul>"); in_ul = False
-            baslik = s[3:].strip()
-            if baslik.casefold() in ("çıktı", "cikti", "output"):
+            heading = s[3:].strip()
+            if heading.casefold() in ("çıktı", "cikti", "output"):
                 in_log = True
                 log_buf = []
                 continue
-            out.append("<h2>" + _inline_md(baslik) + "</h2>")
+            out.append("<h2>" + _inline_md(heading) + "</h2>")
         elif in_log:
-            log_buf.append(ham)
+            log_buf.append(raw_line)
         elif s.startswith("### "):
             if in_ul:
                 out.append("</ul>"); in_ul = False
@@ -398,41 +403,41 @@ def _rapor_html(metin: str) -> str:
     return "\n".join(out) or "<p><i>(boş rapor)</i></p>"
 
 
-def _rapor_kapak(result: dict[str, Any]) -> tuple[str, str, str, str, str]:
-    """Rapor sayfasının başlığı: komut h1 olmasın, görev id'si öne çıkmasın.
+def _report_cover(result: dict[str, Any]) -> tuple[str, str, str, str, str]:
+    """The report page's heading: the command must not be the h1, the task id must not stand out.
 
-    Dönen: (sekme başlığı, h1, badge HTML, özet metin, komut metin).
+    Returns: (tab title, h1, badge HTML, summary text, command text).
     """
-    ham = str(result.get("title") or "Rapor").strip()
+    raw_title = str(result.get("title") or "Rapor").strip()
     state = str(result.get("state") or "")
-    komut = ham[2:].strip() if ham.startswith("$ ") else ""
+    command = raw_title[2:].strip() if raw_title.startswith("$ ") else ""
     if state == "hata":
         h1 = "İş başarısız"
         badge = '<span class="badge err">Başarısız</span>'
     elif state == "kosuyor":
         h1 = "İş sürüyor"
         badge = '<span class="badge">Sürüyor</span>'
-    elif komut:
+    elif command:
         h1 = "İş tamamlandı"
         badge = '<span class="badge ok">Tamamlandı</span>'
     else:
-        h1 = ham or "Rapor"
+        h1 = raw_title or "Rapor"
         badge = (
             '<span class="badge ok">Tamamlandı</span>' if state == "bitti"
             else ""
         )
-    ozet = ""
+    summary = ""
     for line in str(result.get("metin") or "").splitlines():
         s = line.strip()
         if not s or s.startswith("#") or s.startswith("- "):
             continue
-        ozet = s
+        summary = s
         break
-    if not komut and ham and ham != h1:
-        # Komut yoksa eski başlığı meta olarak taşıma — ozet yoksa ham.
-        if not ozet:
-            ozet = ham
-    return h1, h1, badge, ozet, komut
+    if not command and raw_title and raw_title != h1:
+        # No command: carry the old title as meta — the raw title when there is no summary.
+        if not summary:
+            summary = raw_title
+    return h1, h1, badge, summary, command
 
 
 def _inline_md(s: str) -> str:
@@ -448,31 +453,31 @@ def _inline_md(s: str) -> str:
 
 
 def _search_files(root: Path, want: str, *, limit: int = SEARCH_LIMIT) -> list[dict[str, Any]]:
-    """Çalışma alanında ada göre hızlı dosya araması (`@` seçicisi).
+    """Fast file search by name in the workspace (the `@` picker).
 
-    Sıralama kullanıcının aradığı şeye göre: adında geçenler önce, yol
-    içinde geçenler sonra; her grupta kısa yol önde (kök dosyalar derindeki
-    kopyalarından daha muhtemel). Sorgu boşsa "en son dokunulanlar" —
-    `@` yazan kullanıcı çoğu zaman üzerinde çalıştığı dosyayı istiyor.
+    Ordering follows what the user is looking for: name matches first, path
+    matches after; within each group the short path leads (root files are
+    more likely than their deep copies). An empty query means "most recently
+    touched" — a user typing `@` usually wants the file they are working on.
     """
     import os
 
-    adda: list[tuple[int, str, float]] = []
-    yolda: list[tuple[int, str, float]] = []
-    hepsi: list[tuple[str, float]] = []
-    tarandi = 0
-    tasti = False
+    in_name: list[tuple[int, str, float]] = []
+    in_path: list[tuple[int, str, float]] = []
+    everything: list[tuple[str, float]] = []
+    scanned = 0
+    overflowed = False
 
     for dirpath, dirnames, filenames in os.walk(root):
-        # Gizli ve araç klasörleri: ne ajanın ürettiği ne kullanıcının yazdığı.
+        # Hidden and tool folders: neither produced by the agent nor written by the user.
         dirnames[:] = sorted(d for d in dirnames
                              if d not in SKIPPED and not d.startswith("."))
         for name in filenames:
             if name.startswith("."):
                 continue
-            tarandi += 1
-            if tarandi > SEARCH_SCAN_CAP:
-                tasti = True
+            scanned += 1
+            if scanned > SEARCH_SCAN_CAP:
+                overflowed = True
                 break
             full = Path(dirpath) / name
             try:
@@ -481,32 +486,32 @@ def _search_files(root: Path, want: str, *, limit: int = SEARCH_LIMIT) -> list[d
             except (OSError, ValueError):
                 continue
             if not want:
-                hepsi.append((rel, mtime))
+                everything.append((rel, mtime))
             elif want in name.lower():
-                adda.append((len(rel), rel, mtime))
+                in_name.append((len(rel), rel, mtime))
             elif want in rel.lower():
-                yolda.append((len(rel), rel, mtime))
-        if tasti:
+                in_path.append((len(rel), rel, mtime))
+        if overflowed:
             break
 
     if not want:
-        hepsi.sort(key=lambda r: -r[1])
-        secilen = [rel for rel, _ in hepsi[:limit]]
+        everything.sort(key=lambda r: -r[1])
+        chosen = [rel for rel, _ in everything[:limit]]
     else:
-        adda.sort()
-        yolda.sort()
-        secilen = [rel for _, rel, _ in (adda + yolda)[:limit]]
-    return [{"path": rel, "name": rel.rsplit("/", 1)[-1]} for rel in secilen]
+        in_name.sort()
+        in_path.sort()
+        chosen = [rel for _, rel, _ in (in_name + in_path)[:limit]]
+    return [{"path": rel, "name": rel.rsplit("/", 1)[-1]} for rel in chosen]
 
 
 def warm_ear(server: Any, config: Config) -> None:
-    """Tanıma modelini arka planda yükler.
+    """Loads the recognition model in the background.
 
-    İlk çağrıya bırakılırsa o çağrı modeli indirirken (bir kez, ~70 sn) HTTP
-    thread'ini tutuyor. Arka planda dinleme açıkken üç saniyede bir yeni
-    istek geliyor ve hepsi aynı yerde birikiyor: tarayıcının bir kaynağa
-    açabildiği altı bağlantı doluyor ve **her şey** sıraya giriyor —
-    kullanıcının yazdığı mesaj bile gitmiyor.
+    Left to the first call, that call holds the HTTP thread while the model
+    downloads (once, ~70 s). With background listening on, a new request
+    arrives every three seconds and they all pile up in the same place: the
+    six connections the browser can open to one origin fill up and
+    **everything** queues — even the message the user typed does not go.
     """
     if not config.listen.enabled or not listen.available():
         return
@@ -515,17 +520,17 @@ def warm_ear(server: Any, config: Config) -> None:
         try:
             _ear(server, config).load()
         except Exception:
-            # Model inmediyse ilk gerçek istekte yeniden denenir.
+            # If the model did not download it is retried on the first real request.
             pass
 
     threading.Thread(target=warm, daemon=True, name="dornick-ear").start()
 
 
 def _ear(server: Any, config: Config) -> Any:
-    """Tanıyıcıyı bir kez kurup saklar.
+    """Builds the recogniser once and keeps it.
 
-    Model her çağrıda yeniden yüklenirse bas-konuş kullanılamaz hale geliyor:
-    her seferinde saniyeler. Ayar değişirse yeniden kuruluyor.
+    Reloading the model on every call makes push-to-talk unusable: seconds
+    each time. Rebuilt if the setting changes.
     """
     if not listen.available():
         return None
@@ -537,10 +542,11 @@ def _ear(server: Any, config: Config) -> Any:
 
 
 def ear_gate(ear: Any, action: str) -> dict[str, Any]:
-    """Kompozer mikrofonu: kulağı sustur / aç. Ajan `senses` aracıyla aynı kapı.
+    """Composer microphone: mute / unmute the ear. Same gate as the agent's `senses` tool.
 
-    Tarayıcı bas-konuş aynı mikrofona ikinci kez yapışır ve sürekli
-    dinleme durmaz — durdurmak ajan aracına kalıyordu.
+    Browser push-to-talk grabs the same microphone a second time and the
+    continuous listening does not stop — stopping it was left to the agent
+    tool.
     """
     if ear is None:
         return {"ok": True, "ear": False, "snoozed": False}
@@ -562,10 +568,10 @@ def ear_gate(ear: Any, action: str) -> dict[str, Any]:
 
 
 def _as_json(raw: bytes) -> dict[str, Any]:
-    """Gövdeyi JSON olarak okur. Değilse boş sözlük.
+    """Reads the body as JSON. Empty dict if it is not.
 
-    Ses gibi ham gövdeler de aynı yoldan geçiyor; onlarda ayrıştırma
-    başarısız oluyor ve olması gerektiği gibi.
+    Raw bodies such as audio pass through the same road; parsing fails for
+    them, and rightly so.
     """
     if not raw:
         return {}
@@ -576,17 +582,18 @@ def _as_json(raw: bytes) -> dict[str, Any]:
 
 
 def _session_title(digest: str) -> str:
-    """Konuşmanın başlığı: dijestin ilk birkaç kelimesi.
+    """The conversation's title: the first few words of the digest.
 
-    Ayrı bir başlık üretmek için LLM çağırmak — her oturum için bir istek —
-    pahalı ve gereksiz; ilk söz zaten konuyu veriyor.
+    Calling the LLM to produce a separate title — one request per session —
+    is expensive and unnecessary; the first utterance already gives the topic.
     """
     flat = " ".join((digest or "").split())
     if not flat:
         return "(boş konuşma)"
     words = flat.split(" ")
-    # İlk söz tek harflik bir tuş kazasıysa ("e", "b" + Enter) başlık o
-    # harfe kilitleniyordu; kırıntıyı atlayıp ilk gerçek kelimeden başla.
+    # If the first utterance was a one-letter key slip ("e", "b" + Enter)
+    # the title locked onto that letter; skip the crumb and start from the
+    # first real word.
     while len(words) > 1 and len(words[0]) == 1 and not words[0].isdigit():
         words = words[1:]
     words = words[:8]
@@ -595,7 +602,7 @@ def _session_title(digest: str) -> str:
 
 
 def _stem_date(stem: str) -> str:
-    """20260610T090000Z -> 2026-06-10 09:00. Tanınmayanı olduğu gibi bırakır."""
+    """20260610T090000Z -> 2026-06-10 09:00. Leaves an unrecognised one as is."""
     m = re.match(r"^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})", stem or "")
     if not m:
         return stem
@@ -603,45 +610,45 @@ def _stem_date(stem: str) -> str:
     return f"{y}-{mo}-{d} {h}:{mi}"
 
 
-def _baslangic_yerleri() -> list[dict[str, str]]:
-    """Klasör seçicinin açılış listesi: sürücüler ve ev.
+def _starting_places() -> list[dict[str, str]]:
+    """The folder picker's opening list: drives and home.
 
-    Windows'ta sürücü harfleri, ötekilerde kök ve ev. Amaç "nereden
-    başlayacağım" sorusunu ilk ekranda cevaplamak.
+    Drive letters on Windows, root and home elsewhere. The aim is answering
+    "where do I start" on the first screen.
     """
-    yerler: list[dict[str, str]] = []
+    places: list[dict[str, str]] = []
     try:
-        ev = Path.home()
-        yerler.append({"ad": f"~ ({ev.name})", "yol": str(ev)})
-    except (OSError, RuntimeError):  # pragma: no cover - ev tanımsız olabilir
+        home = Path.home()
+        places.append({"ad": f"~ ({home.name})", "yol": str(home)})
+    except (OSError, RuntimeError):  # pragma: no cover - home may be undefined
         pass
 
     if os.name == "nt":
-        for harf in "CDEFGHIJKLMNOPQRSTUVWXYZ":
-            surucu = Path(f"{harf}:\\")
+        for letter in "CDEFGHIJKLMNOPQRSTUVWXYZ":
+            drive = Path(f"{letter}:\\")
             try:
-                if surucu.is_dir():
-                    yerler.append({"ad": f"{harf}:", "yol": str(surucu)})
-            except OSError:  # pragma: no cover - hazır olmayan sürücü
+                if drive.is_dir():
+                    places.append({"ad": f"{letter}:", "yol": str(drive)})
+            except OSError:  # pragma: no cover - drive not ready
                 continue
-    else:  # pragma: no cover - bu makinede koşmuyor
-        yerler.append({"ad": "/", "yol": "/"})
-    return yerler
+    else:  # pragma: no cover - does not run on this machine
+        places.append({"ad": "/", "yol": "/"})
+    return places
 
 
-def _proje_turu(kok: Path) -> str:
-    """Klasörde tanınan bir koşum düzeneği varsa etiketi ("pytest" gibi).
+def _project_kind(root: Path) -> str:
+    """The label if the folder has a recognised test rig ("pytest" and the like).
 
-    Tespit `kosum` modülünde zaten var; burada yalnızca okunur bir etikete
-    indirgeniyor. Bulunamazsa boş dize — uydurma etiket yok.
+    Detection already lives in the `testrun` module; here it is reduced to a
+    readable label only. Empty string if none is found — no made-up label.
     """
     try:
         from .. import testrun
 
-        duzenek = testrun.tespit(kok)
-    except Exception:  # pragma: no cover - tespit bir kolaylık, patlarsa sus
+        rig = testrun.tespit(root)
+    except Exception:  # pragma: no cover - detection is a convenience, stay quiet if it blows
         return ""
-    return duzenek.etiket if duzenek is not None else ""
+    return rig.etiket if rig is not None else ""
 
 
 def _relative(path: Path, root: Path) -> str:
@@ -706,68 +713,72 @@ class MindServer:
         schedule: Any = None,
     ) -> None:
         self.mind = mind
-        # Ayar sayfasi buradan okuyup buraya yaziyor. Yoksa sayfa
-        # acilmiyor — ajansiz calisan bir arayuz onizlemesinde oldugu gibi.
+        # The settings page reads from and writes to this. Without it the
+        # page does not open — as in a UI preview running without an agent.
         self.config = config
-        # Zamanlanmış görevler: ajanın kurduğu bir otomasyon kullanıcıdan
-        # gizli çalışmamalı, o yüzden arayüzden de yönetilebiliyor.
+        # Scheduled tasks: an automation the agent set up must not run
+        # hidden from the user, so it can be managed from the UI as well.
         self.schedule = schedule
-        # Hub dışarıdan verilebilmeli: masaüstü köprüsü kendi olaylarını
-        # (metin akışı, onay isteği) aynı kanaldan yayınlıyor. Sunucu kendi
-        # hub'ını kurup sonradan değiştirmek abonelik ile yayını ayırır ve
-        # günlükten gelen olaylar sessizce kaybolur.
+        # The hub must be injectable: the desktop bridge publishes its own
+        # events (text stream, approval request) over the same channel. If
+        # the server built its own hub and swapped it later, the
+        # subscription and the publishing would part ways and events from
+        # the log would silently vanish.
         self.hub = hub or Hub()
         self._unsubscribe = log.subscribe(self.hub.publish)
-        # Port GERÇEKTEN boş mu? Windows'ta ThreadingHTTPServer'ın
-        # varsayılan SO_REUSEADDR'ı dolu portun üstüne sessizce ikinci kez
-        # bağlanmaya izin veriyor — bağlantılar ESKİ sürece gidiyor ve
-        # pencere dornick yerine o portu tutan uygulamayı gösteriyordu (canlı,
-        # 29.08: laptopta eski bir atölye paneli 8765'i tutuyordu ve dornick
-        # "kendi olmayan" bir sayfayla açıldı). Çözüm iki katlı: gasp izni
-        # kapalı bir sunucu sınıfı + doluysa sıradaki boş porta kayma.
-        # Gerçek adres her zaman `url`'den okunur; pencere de onu kullanır.
-        son_hata: OSError | None = None
-        for aday in range(int(port), int(port) + 20):
+        # Is the port REALLY free? On Windows ThreadingHTTPServer's default
+        # SO_REUSEADDR silently allows binding a second time on top of an
+        # occupied port — connections go to the OLD process and the window
+        # showed whatever application held that port instead of dornick
+        # (live, 29.08: on the laptop an old workshop panel held 8765 and
+        # dornick opened with a page "not its own"). The fix is two-layered:
+        # a server class with the takeover permission off + sliding to the
+        # next free port when occupied. The real address is always read from
+        # `url`; the window uses that too.
+        last_error: OSError | None = None
+        for candidate in range(int(port), int(port) + 20):
             try:
-                self._httpd = _TekSahipSunucu((host, aday), _Handler)
-                if aday != int(port):
-                    print(f"[dornick] {port} portu dolu — arayüz {aday} portunda",
+                self._httpd = _SoleOwnerServer((host, candidate), _Handler)
+                if candidate != int(port):
+                    print(f"[dornick] {port} portu dolu — arayüz {candidate} portunda",
                           flush=True)
                 break
             except OSError as exc:
-                son_hata = exc
+                last_error = exc
         else:
             raise OSError(
                 f"{port}-{int(port) + 19} arası hiçbir port boş değil"
-            ) from son_hata
+            ) from last_error
         self._httpd.daemon_threads = True
-        # Handler'lar server üzerinden erişiyor.
+        # Handlers reach these through the server.
         self._httpd.mind = mind  # type: ignore[attr-defined]
         self._httpd.hub = self.hub  # type: ignore[attr-defined]
         self._httpd.controller = controller  # type: ignore[attr-defined]
         self._httpd.config = config  # type: ignore[attr-defined]
         self._httpd.schedule = schedule  # type: ignore[attr-defined]
-        # Sürekli dinleyen kulak ve kamera tamponu sonradan bağlanıyor:
-        # açılış sırasında sunucu ikisinden de önce ayağa kalkıyor.
+        # The always-listening ear and the camera buffer are attached later:
+        # during startup the server comes up before either of them.
         self._httpd.ear = None  # type: ignore[attr-defined]
         self._httpd.lens = None  # type: ignore[attr-defined]
         self._thread = threading.Thread(target=self._httpd.serve_forever, daemon=True)
 
     def rebind(self, session: Any) -> None:
-        """Olay akışını yeni bir oturumun günlüğüne bağlar.
+        """Attaches the event stream to a new session's log.
 
-        Yeni ya da devam eden bir konuşmaya geçildiğinde SSE akışı eski
-        günlüğü dinlemeye devam ederse yeni mesajlar arayüze hiç ulaşmıyor.
-        Eski abonelik bırakılıp yenisi kuruluyor; zihnin oturum kimliği de
-        güncelleniyor ki yeni anılar doğru oturuma yazılsın.
+        When switching to a new or resumed conversation, if the SSE stream
+        kept listening to the old log the new messages never reached the UI.
+        The old subscription is dropped and a new one is made; the mind's
+        session id is updated too so new memories are written to the right
+        session.
         """
         try:
             self._unsubscribe()
         except Exception:
             pass
-        # Günlük olayları da oturum kimliğiyle damgalanıyor: abonelik
-        # değişimi geçiş anında yarışabilir ve eski günlüğün kuyruktaki
-        # olayı yeni ekrana düşebilirdi — arayüz kimliği tutmayanı çizmiyor.
+        # Log events are stamped with the session id as well: the
+        # subscription swap can race at the moment of switching and a queued
+        # event of the old log could land on the new screen — the UI does
+        # not draw one whose id does not match.
         sid = str(getattr(session, "id", "") or "")
         self._unsubscribe = session.log.subscribe(
             lambda ev, _sid=sid: self.hub.publish(ev, sid=_sid))
@@ -785,21 +796,21 @@ class MindServer:
 
     def stop(self) -> None:
         self._unsubscribe()
-        # shutdown() serve_forever döngüsünün bitmesini bekler; döngü hiç
-        # başlamadıysa sonsuza kadar bekler. Başlatılmamış bir sunucuyu
-        # kapatmak sessizce asılmamalı.
+        # shutdown() waits for the serve_forever loop to finish; if the loop
+        # never started it waits forever. Stopping a server that was never
+        # started must not hang silently.
         if self._thread.is_alive():
             self._httpd.shutdown()
         self._httpd.server_close()
 
 
-class _TekSahipSunucu(ThreadingHTTPServer):
-    """Portun tek sahibi olan sunucu.
+class _SoleOwnerServer(ThreadingHTTPServer):
+    """A server that is the sole owner of its port.
 
-    Windows'ta SO_REUSEADDR başka bir sürecin dinlediği portun üstüne
-    bağlanmayı hata VERMEDEN kabul ediyor ve trafik ilk sahibe akıyor.
-    Kapatınca bağlanma dolu portta dürüstçe patlıyor; üst katman da boş
-    porta kayabiliyor.
+    On Windows SO_REUSEADDR accepts binding on top of a port another process
+    is listening on WITHOUT an error, and the traffic flows to the first
+    owner. With it off, binding on an occupied port fails honestly; the
+    layer above can then slide to a free port.
     """
 
     allow_reuse_address = sys.platform != "win32"
@@ -809,35 +820,35 @@ class _Handler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
 
     def log_message(self, *_args: Any) -> None:
-        """Terminali istek kaydıyla kirletme — ajanın çıktısı orada."""
+        """Do not litter the terminal with request logs — the agent's output lives there."""
 
     def send_error(self, code: int, message: str | None = None, explain: str | None = None) -> None:
-        """Hata gönderir — Türkçe mesajlar durum satırını çökertmeden.
+        """Sends an error — without Turkish messages crashing the status line.
 
-        HTTP durum satırı latin-1 olmak zorunda. "Sesli komut kapalı"
-        gönderince stdlib `UnicodeEncodeError` atıyor, handler ölüyor ve
-        bağlantı **cevapsız** kapanıyor. İstemci tarafında bu "hiçbir şey
-        olmuyor" gibi görünüyordu.
+        The HTTP status line must be latin-1. Sending "Sesli komut kapalı"
+        made the stdlib raise `UnicodeEncodeError`, the handler died and the
+        connection closed **without a reply**. On the client side this
+        looked like "nothing happens".
 
-        Çözüm: durum satırına ASCII bir karşılık, gerçek metin gövdeye.
-        Gövdeyi zaten arayüz okuyor.
+        The fix: an ASCII counterpart on the status line, the real text in
+        the body. The UI reads the body anyway.
         """
         reason = (message or "").encode("ascii", "replace").decode("ascii")
         super().send_error(code, reason or None, explain=message)
 
     def handle_one_request(self) -> None:
-        """Kopan bağlantıyı sessizce yut.
+        """Swallow a dropped connection quietly.
 
-        Tarayıcı sekmesi kapandığında ya da keep-alive soketi zaman
-        aşımına uğradığında socketserver koca bir yığın izi basıyor.
-        Bu normal bir olay; ajanın terminalinde hata gibi görünmemeli.
+        When a browser tab closes or a keep-alive socket times out,
+        socketserver prints a huge stack trace. This is a normal event; it
+        must not look like an error in the agent's terminal.
         """
         try:
             super().handle_one_request()
         except (ConnectionResetError, ConnectionAbortedError, BrokenPipeError):
             self.close_connection = True
 
-    def do_GET(self) -> None:  # noqa: N802 - stdlib arayüzü
+    def do_GET(self) -> None:  # noqa: N802 - stdlib interface
         route = self.path.split("?", 1)[0]
         if route in ("/", "/index.html"):
             self._file("index.html", "text/html; charset=utf-8")
@@ -854,11 +865,11 @@ class _Handler(BaseHTTPRequestHandler):
         elif route == "/api/state":
             self._json(self._controller_call("snapshot") or {"busy": False})
         elif route == "/api/uyku":
-            self._uyku_durumu()
+            self._sleep_status()
         elif route == "/api/gece":
-            self._gece_listesi()
+            self._night_list()
         elif route.startswith("/api/gece/"):
-            self._gece_oynat(route[len("/api/gece/"):])
+            self._night_replay(route[len("/api/gece/"):])
         elif route == "/api/gate":
             config = getattr(self.server, "config", None)
             on = gate.status(config.state_dir) if config is not None else False
@@ -871,29 +882,30 @@ class _Handler(BaseHTTPRequestHandler):
                         "hazir": recognition.hazir(), "son": d["son_kosu"],
                         "learn_cloud_ok": d.get("learn_cloud_ok", False)})
         elif route == "/api/dil":
-            # Kurulum sihirbazının seçtiği arayüz dili. localStorage'a
-            # kurulumdan yazılamıyor; sihirbaz çalışma alanına setup.json
-            # bırakıyor, ilk açılışta dil.js buradan okuyup kendine yazıyor.
-            # Eski sürümler aynı dosyayı kurulum.json adıyla bırakmıştı;
-            # setup.json yoksa ona da bakılır — mevcut kurulumlar kırılmaz.
-            # Sihirbaz bir dil bırakmadıysa MAKİNENİN diline bakılır:
-            # Türkiye/Türkçe ise Türkçe, değilse İngilizce. Varsayılanın
-            # Türkçe olması ürünü dünyaya kapalı gösteriyordu (kullanıcı
-            # isteği, 02.09) — kaynak metinler Türkçe kalıyor, yalnızca
-            # varsayılan görüntü dili değişiyor.
+            # The UI language the setup wizard chose. localStorage cannot be
+            # written from the installer; the wizard drops setup.json into
+            # the workspace and dil.js reads it from here on first launch
+            # and writes it to itself. Older versions left the same file
+            # under the name kurulum.json; if setup.json is missing that one
+            # is consulted too — existing installs do not break. If the
+            # wizard left no language, the MACHINE's language is consulted:
+            # Turkish if Türkiye/Turkish, English otherwise. A Turkish
+            # default made the product look closed to the world (user
+            # request, 02.09) — the source strings stay Turkish, only the
+            # default display language changes.
             config = getattr(self.server, "config", None)
-            dil = ""
+            lang = ""
             if config is not None:
-                for ad in ("setup.json", "kurulum.json"):
+                for name in ("setup.json", "kurulum.json"):
                     try:
-                        dil = str(json.loads(
-                            (config.workspace / ad).read_text(encoding="utf-8")
+                        lang = str(json.loads(
+                            (config.workspace / name).read_text(encoding="utf-8")
                         ).get("dil") or "")
                     except (OSError, ValueError):
-                        dil = ""
-                    if dil:
+                        lang = ""
+                    if lang:
                         break
-            self._json({"dil": dil or _machine_language()})
+            self._json({"dil": lang or _machine_language()})
         elif route == "/api/settings":
             self._settings()
         elif route == "/api/files":
@@ -903,9 +915,9 @@ class _Handler(BaseHTTPRequestHandler):
         elif route == "/api/gorevler":
             self._json(self._controller_call("tasks") or {"gorevler": [], "kosan": 0})
         elif route == "/api/gorevler/dokum":
-            self._gorev_dokumu()
+            self._task_dump()
         elif route == "/api/gorevler/rapor":
-            self._gorev_raporu()
+            self._task_report()
         elif route == "/api/jobs":
             self._jobs_list()
         elif route == "/api/jobs/runs":
@@ -917,17 +929,17 @@ class _Handler(BaseHTTPRequestHandler):
         elif route == "/api/git":
             self._git_status()
         elif route.startswith("/gorev-rapor/"):
-            self._gorev_rapor_sayfasi(route)
+            self._task_report_page(route)
         elif route == "/api/degisiklikler":
-            self._degisiklikler()
+            self._changes()
         elif route == "/api/degisiklikler/fark":
-            self._degisiklik_farki()
+            self._change_diff()
         elif route == "/api/camera/frame":
             self._camera_frame()
         elif route == "/api/raw":
             self._raw_file()
         elif route == "/api/gozat":
-            self._gozat()
+            self._browse()
         elif route == "/api/apps":
             self._apps()
         elif route == "/api/projects":
@@ -949,29 +961,31 @@ class _Handler(BaseHTTPRequestHandler):
         else:
             self.send_error(404)
 
-    def do_POST(self) -> None:  # noqa: N802 - stdlib arayüzü
+    def do_POST(self) -> None:  # noqa: N802 - stdlib interface
         route = self.path.split("?", 1)[0]
-        # Gövde bir kez okunuyor. Önce JSON diye ayrıştırıp sonra ham hali
-        # tekrar okumaya kalkmak istekleri sonsuza kadar askıda bırakıyordu:
-        # ses isteğinin gövdesi JSON değil ham ses ve ikinci okuma hiç
-        # gelmeyecek baytları bekliyor. O istek bir thread'i tutunca
-        # tarayıcının bağlantı kotası doluyor ve **her şey** kilitleniyordu.
+        # The body is read once. Parsing it as JSON first and then trying to
+        # read the raw form again left requests hanging forever: the audio
+        # request's body is raw audio, not JSON, and the second read waits
+        # for bytes that will never come. Once that request held a thread
+        # the browser's connection quota filled and **everything** locked up.
         raw = self._raw()
         body = _as_json(raw)
 
-        # Çapraz-köken koruması: kullanıcının BAŞKA bir tarayıcı sekmesindeki
-        # yabancı bir sayfa 127.0.0.1'e durum değiştiren bir POST atarsa
-        # (drive-by CSRF) reddedilir. Kendi arayüzümüz aynı-köken → geçer;
-        # Origin/Referer hiç yoksa (curl, testler, benchmark, yerel otomasyon)
-        # geçer — HTTP katmanında yerel süreç arayüzden ayırt edilemez, o yol
-        # zaten kabuk izin kapısıyla korunuyor. Kapatılan gerçek ve önlenebilir
-        # tehdit yabancı KÖKEN (güvenlik denetimi, 01.09).
-        if self._capraz_koken_mi():
+        # Cross-origin protection: if a foreign page in ANOTHER browser tab
+        # of the user's fires a state-changing POST at 127.0.0.1 (drive-by
+        # CSRF) it is rejected. Our own UI is same-origin → passes; with no
+        # Origin/Referer at all (curl, tests, benchmark, local automation)
+        # it passes — at the HTTP layer a local process cannot be told apart
+        # from the UI, and that road is already guarded by the shell
+        # permission gate. The real and preventable threat being closed is
+        # a foreign ORIGIN (security audit, 01.09).
+        if self._is_cross_origin():
             self.send_error(403, "Capraz koken istegi reddedildi")
             return
 
-        # Ayarlar ajandan bağımsız: model yanlış yapılandırıldığı için ajan
-        # hiç açılmamış olabilir ve düzeltmenin yeri tam olarak burası.
+        # Settings are independent of the agent: the agent may never have
+        # started because the model was misconfigured, and this is exactly
+        # the place to fix that.
         if route == "/api/settings":
             self._save_settings(body)
             return
@@ -1026,9 +1040,10 @@ class _Handler(BaseHTTPRequestHandler):
             self._json(catalog.stop(pid))
             return
         if route == "/api/apps/remove":
-            # Panelden silme: kalıcı değil — atölyedeki .geri-donusum'a taşır.
-            # `base` şart: proje yolları çalışma alanına göre ("atolye/…")
-            # geliyor; base'siz çözmek atolye/atolye/… diye ıskalıyordu.
+            # Deleting from the panel: not permanent — moves to the
+            # workshop's .geri-donusum. `base` is required: project paths
+            # arrive relative to the workspace ("atolye/…"); resolving
+            # without base missed as atolye/atolye/….
             from .. import apps as catalog
             config = getattr(self.server, "config", None)
             path = str((body or {}).get("path") or "").strip()
@@ -1039,8 +1054,8 @@ class _Handler(BaseHTTPRequestHandler):
                                       base=Path(config.workspace)))
             return
         if route == "/api/apps/open":
-            # Sistem DIŞINDA aç (varsayılan uygulama/tarayıcı): statik web
-            # sayfası server'sız, dosyadan tam çalışır.
+            # Open OUTSIDE the system (default application/browser): a
+            # static web page works fully from a file, without a server.
             from .. import apps as catalog
             config = getattr(self.server, "config", None)
             path = str((body or {}).get("path") or "").strip()
@@ -1051,8 +1066,9 @@ class _Handler(BaseHTTPRequestHandler):
                                          base=self._opening_base(config)))
             return
         if route == "/api/apps/file-open":
-            # Dosyayı sistemin VARSAYILAN uygulamasında aç (PDF, docx, png…).
-            # Ajanın ürettiği rapora ulaşmanın kısa yolu (canlı yara, 02.09).
+            # Open the file in the system's DEFAULT application (PDF, docx,
+            # png…). The short road to a report the agent produced (live
+            # wound, 02.09).
             from .. import apps as catalog
             config = getattr(self.server, "config", None)
             path = str((body or {}).get("path") or "").strip()
@@ -1063,8 +1079,9 @@ class _Handler(BaseHTTPRequestHandler):
                                            base=self._opening_base(config)))
             return
         if route == "/api/apps/reveal":
-            # "Klasörü göster": uygulamanın diskteki yerini dosya gezgininde
-            # açar. Kartta yazan yolu kullanıcının elle bulması gerekmesin.
+            # "Show folder": opens the application's place on disk in the
+            # file explorer. The user should not have to find by hand the
+            # path written on the card.
             from .. import apps as catalog
             config = getattr(self.server, "config", None)
             path = str((body or {}).get("path") or "").strip()
@@ -1078,10 +1095,10 @@ class _Handler(BaseHTTPRequestHandler):
             self._artifacts_edit(body)
             return
         if route == "/api/disari-ac":
-            self._disari_ac(body)
+            self._open_outside(body)
             return
         if route == "/api/artifact/indir":
-            self._artifact_indir(body)
+            self._artifact_download(body)
             return
         if route == "/api/transfer/import":
             self._transfer_import(raw)
@@ -1110,7 +1127,7 @@ class _Handler(BaseHTTPRequestHandler):
                        else {"ok": False, "error": "Görev iptali desteklenmiyor."})
             return
         if route == "/api/degisiklikler/geri":
-            self._degisiklik_geri(body)
+            self._change_undo(body)
             return
         if route == "/api/butce":
             result = self._controller_call("butce", (body or {}).get("usd"))
@@ -1123,14 +1140,15 @@ class _Handler(BaseHTTPRequestHandler):
                        else {"ok": False, "error": "Sıkıştırma bu köprüde yok."})
             return
         if route == "/api/session/new":
-            # Canlı yeni oturum köprüye bağlı: olay akışının yeni günlüğe
-            # yeniden bağlanması gerekiyor. Köprü bunu desteklemiyorsa (ör.
-            # salt-gözlem önizlemesi) dürüstçe ok:false dönüyor.
+            # A live new session depends on the bridge: the event stream has
+            # to be re-attached to the new log. If the bridge does not
+            # support it (e.g. an observe-only preview) it honestly returns
+            # ok:false.
             result = self._controller_call("new_session")
             self._json(result if isinstance(result, dict) else {"ok": False})
             return
         if route == "/api/open":
-            # Windows 'Dornick ile aç' / ikinci örnek handoff.
+            # Windows 'Open with Dornick' / second-instance handoff.
             path = str((body or {}).get("path") or "").strip()
             message = str((body or {}).get("message") or "")
             controller = getattr(self.server, "controller", None)
@@ -1161,8 +1179,8 @@ class _Handler(BaseHTTPRequestHandler):
             self._json({"ok": True, "projects": sorted(set(mapping.values()))})
             return
         if route == "/api/session/meta":
-            # Konuşmaya ad verme ve etiketleme. Ham günlük değişmiyor —
-            # yalnızca yanındaki eşleme dosyası (bkz. mind.store).
+            # Naming and tagging a conversation. The raw log does not change
+            # — only the mapping file beside it (see mind.store).
             mind = getattr(self.server, "mind", None)
             sid = str((body or {}).get("id") or "").strip()
             if mind is None or not hasattr(mind, "set_session_meta"):
@@ -1171,42 +1189,43 @@ class _Handler(BaseHTTPRequestHandler):
             if not sid or not re.match(r"^[A-Za-z0-9_-]+$", sid):
                 self._json({"ok": False, "error": "geçersiz oturum"})
                 return
-            # Alan GÖNDERİLMEDİYSE dokunulmuyor: yalnızca etiket değiştiren
-            # bir istek adı silmemeli.
-            ad = body.get("ad") if isinstance(body, dict) else None
-            etiketler = body.get("etiketler") if isinstance(body, dict) else None
+            # A field that was NOT SENT is left untouched: a request that
+            # only changes tags must not erase the name.
+            name = body.get("ad") if isinstance(body, dict) else None
+            tags = body.get("etiketler") if isinstance(body, dict) else None
             path = body.get("path") if isinstance(body, dict) else None
             model = body.get("model") if isinstance(body, dict) else None
             provider = body.get("provider") if isinstance(body, dict) else None
-            # `:batch` canlı sohbette 404 — senkron kimliğe indir.
+            # `:batch` is a 404 in live chat — reduce to the synchronous id.
             if isinstance(model, str) and model.strip():
                 from ..settings import batch_only_model
                 if batch_only_model(model):
                     model = model.strip().rsplit(":", 1)[0]
-            kayit = mind.set_session_meta(
+            record = mind.set_session_meta(
                 sid,
-                ad=None if ad is None else str(ad),
-                etiketler=None if not isinstance(etiketler, list) else etiketler,
+                ad=None if name is None else str(name),
+                etiketler=None if not isinstance(tags, list) else tags,
                 path=None if path is None else str(path),
                 model=None if model is None else str(model),
                 provider=None if provider is None else str(provider),
             )
-            # Sohbet-modeli AKTİF oturumda değiştiyse hemen uygulanır —
-            # "kaydettim ama hâlâ eski modelle konuşuyor" olmasın.
+            # If the chat model changed on the ACTIVE session it is applied
+            # at once — no "I saved it but it still talks with the old model".
             if model is not None or provider is not None:
                 controller = getattr(self.server, "controller", None)
-                aktif = str(getattr(mind, "session_id", "") or "")
-                if controller is not None and sid == aktif                         and hasattr(controller, "apply_session_context"):
+                active = str(getattr(mind, "session_id", "") or "")
+                if controller is not None and sid == active                         and hasattr(controller, "apply_session_context"):
                     try:
                         controller.apply_session_context(sid)
                     except Exception:
                         pass
-            self._json({"ok": True, "meta": kayit})
+            self._json({"ok": True, "meta": record})
             return
         if route == "/api/session/archive":
-            # Listeden çıkar, günlüğü sessions/.arsiv'e taşı. Kalıcı silme
-            # yok. Koşan şeridin günlüğü taşınmaz; açık sohbet önce yeni
-            # boş oturuma geçer, sonra eski arşivlenir.
+            # Drop from the list, move the log to sessions/.arsiv. No
+            # permanent deletion. A running lane's log is not moved; the
+            # open chat first switches to a new empty session, then the old
+            # one is archived.
             mind = getattr(self.server, "mind", None)
             sid = str((body or {}).get("id") or "").strip()
             if mind is None or not hasattr(mind, "archive_session"):
@@ -1216,9 +1235,9 @@ class _Handler(BaseHTTPRequestHandler):
                 self._json({"ok": False, "error": "geçersiz oturum"})
                 return
             controller = getattr(self.server, "controller", None)
-            seritler = getattr(controller, "seritler", None) or {}
-            serit = seritler.get(sid) if isinstance(seritler, dict) else None
-            if serit is not None and getattr(serit, "busy", False):
+            lanes = getattr(controller, "seritler", None) or {}
+            lane = lanes.get(sid) if isinstance(lanes, dict) else None
+            if lane is not None and getattr(lane, "busy", False):
                 self._json({"ok": False,
                             "error": "koşan sohbet arşivlenemez — tur bitince dene"})
                 return
@@ -1233,22 +1252,23 @@ class _Handler(BaseHTTPRequestHandler):
             self._json(mind.archive_session(sid))
             return
         if route == "/api/surum":
-            # Güncelleme denetimi YALNIZ elle: Ayarlar › Makine'deki düğme.
-            # Arka planda kendiliğinden ağa çıkan denetim bilerek yok.
-            # POST: ağa çıkan bir eylem — GET'le yanlışlıkla tetiklenmesin.
+            # The update check is MANUAL only: the button under Settings ›
+            # Machine. There is deliberately no check that goes out to the
+            # network by itself in the background. POST: an action that hits
+            # the network — must not be triggered by accident via GET.
             self._json(environment.check_update())
             return
         if route == "/api/guncelle":
-            self._guncelle()
+            self._run_update()
             return
         if route == "/api/klasor/olustur":
-            self._klasor_olustur(body)
+            self._create_folder(body)
             return
         if route == "/api/gate":
             self._gate(body)
             return
         if route == "/api/tanima":
-            self._tanima(body)
+            self._recognition(body)
             return
         if route == "/api/goals":
             self._goals(body)
@@ -1266,9 +1286,9 @@ class _Handler(BaseHTTPRequestHandler):
             self._hear(raw)
             return
         if route == "/api/speaking":
-            # Ajan konuşurken kulak kapanıyor: hoparlörden çıkan ses
-            # mikrofona geri geliyor ve asistan kendi cümlesini duyup
-            # cevap vermeye kalkıyordu.
+            # The ear closes while the agent speaks: the sound from the
+            # speaker came back into the microphone and the assistant heard
+            # its own sentence and tried to answer it.
             ear = getattr(self.server, "ear", None) or getattr(
                 getattr(self.server, "controller", None), "ear", None)
             if ear is not None:
@@ -1297,19 +1317,20 @@ class _Handler(BaseHTTPRequestHandler):
             ))
             return
         if route == "/api/wake":
-            # Uyandırma sözü tarayıcı tarafında duyuldu (listen.js): pencere
-            # gizliyse geri gelmeli, yoksa cevap görünmeyen bir pencerede
-            # akıyor. Python tarafındaki kulak köprüyü doğrudan çağırıyor;
-            # tarayıcı tarafının tek yolu buydu ve rota YOKTU — istek sessizce
-            # 404 dönüyordu. Pencereyi getiren davranış köprüde zaten var
-            # (Bridge.wake → on_wake); burası yalnızca kapıyı açıyor.
-            # Köprü uyandırmayı desteklemiyorsa (salt-gözlem önizlemesi)
-            # dürüstçe ok:false — "yaptım" demek yapmamaktan kötü.
-            uyandirilabilir = callable(
+            # The wake word was heard on the browser side (listen.js): if
+            # the window is hidden it must come back, otherwise the answer
+            # flows in an invisible window. The Python-side ear calls the
+            # bridge directly; this was the browser side's only road and
+            # the route DID NOT EXIST — the request silently returned 404.
+            # The behaviour that brings the window forward already lives in
+            # the bridge (Bridge.wake → on_wake); this only opens the door.
+            # If the bridge does not support waking (observe-only preview)
+            # honestly ok:false — saying "done" is worse than not doing it.
+            can_wake = callable(
                 getattr(getattr(self.server, "controller", None), "wake", None))
-            if uyandirilabilir:
+            if can_wake:
                 self._controller_call("wake")
-            self._json({"ok": uyandirilabilir})
+            self._json({"ok": can_wake})
             return
 
         controller = getattr(self.server, "controller", None)
@@ -1319,16 +1340,17 @@ class _Handler(BaseHTTPRequestHandler):
 
         if route == "/api/chat":
             text = str(body.get("text") or "").strip()
-            # Kameradan gelen kare metinsiz de gönderilebiliyor ("şuna bak").
+            # A frame from the camera can be sent without text too ("look at this").
             image = str(body.get("image") or "")
             if not text and not image:
                 self._json({"ok": False, "error": "boş mesaj"})
                 return
-            # YAZILI durdurma da kesme sayılır. Sesli "dur" ve Durdur düğmesi
-            # turu kesiyordu ama composer'a "durdur" yazmak sıradan bir mesaj
-            # gibi KUYRUĞA giriyordu — kullanıcı "durdur dedim, hâlâ çalışıyor"
-            # yaşıyordu. Aynı sözler (desktop._is_stop ile bire bir) burada da
-            # kesme tetikliyor; mesaj olarak işlenmiyor.
+            # A WRITTEN stop counts as an interrupt too. The spoken "dur" and
+            # the Stop button cut the turn, but typing "durdur" into the
+            # composer went into the QUEUE like an ordinary message — the
+            # user lived "I said stop, it is still running". The same words
+            # (one-to-one with desktop._is_stop) trigger an interrupt here
+            # as well; not processed as a message.
             if not image:
                 from ..desktop import _is_stop
                 if _is_stop(text):
@@ -1353,15 +1375,16 @@ class _Handler(BaseHTTPRequestHandler):
 
         self._json({"ok": True})
 
-    # -- dış kapı -------------------------------------------------------
+    # -- outer gate -----------------------------------------------------
 
     def _gate(self, body: dict[str, Any]) -> None:
-        """Dış kapı: aç/kapa ya da soru sor.
+        """Outer gate: switch on/off or ask a question.
 
-        Gövdede `on` varsa anahtar çevriliyor (ayar sayfasından gelir);
-        `text` varsa kapı açıksa mesaj ajana veriliyor ve tur bitene kadar
-        beklenip TÜM çıktı döndürülüyor. İkisi aynı uçta çünkü ikisi de
-        aynı kavramın yüzü ve dışarıdaki araç tek adres ezberliyor.
+        If the body has `on` the switch is flipped (comes from the settings
+        page); if it has `text` and the gate is open, the message is handed
+        to the agent and we wait until the turn ends, returning ALL output.
+        Both on one endpoint because both are faces of the same concept and
+        the tool outside memorises a single address.
         """
         config = getattr(self.server, "config", None)
         if config is None:
@@ -1392,31 +1415,32 @@ class _Handler(BaseHTTPRequestHandler):
         except Exception:
             root = None
         try:
-            bekle = float(body.get("bekle_sn") or gate.DEFAULT_WAIT_S)
+            wait_s = float(body.get("bekle_sn") or gate.DEFAULT_WAIT_S)
         except (TypeError, ValueError):
-            bekle = gate.DEFAULT_WAIT_S
+            wait_s = gate.DEFAULT_WAIT_S
         try:
             self._json(gate.ask(
                 controller=controller,
                 hub=hub,
                 text=text,
                 image=str(body.get("image") or ""),
-                bekle_sn=bekle,
+                wait_s=wait_s,
                 sandbox_root=root,
             ))
         except Exception as exc:
-            # Kapıdaki hata dışarıdaki aracın bağlantısını sessizce
-            # koparmamalı; sebep JSON olarak gitmeli.
+            # An error at the gate must not silently cut the outside tool's
+            # connection; the reason must go out as JSON.
             self._json({"ok": False, "error": f"{type(exc).__name__}: {exc}"})
 
-    # -- beni tanı ------------------------------------------------------
+    # -- recognise me ---------------------------------------------------
 
-    def _uyku_durumu(self) -> None:
-        """Talamus halkasının okuduğu şey: basınç, borç, ritim, durum.
+    def _sleep_status(self) -> None:
+        """What the thalamus ring reads: pressure, debt, rhythm, status.
 
-        Arayüz `recall.db`'ye doğrudan BAKMIYOR. Gece yazarken okuyan bir
-        arayüz yarı konsolide bir grafiği doğruymuş gibi gösterirdi; bu uç
-        ve olay akışı o yarışın olmadığı tek yol.
+        The UI does NOT LOOK at `recall.db` directly. A UI reading while the
+        night writes would show a half-consolidated graph as if it were
+        true; this endpoint and the event stream are the only road without
+        that race.
         """
         config = getattr(self.server, "config", None)
         mind = getattr(self.server, "mind", None)
@@ -1426,21 +1450,21 @@ class _Handler(BaseHTTPRequestHandler):
         try:
             from ..recall import awake, sleep
 
-            basinc = sleep.pressure(mind.store, config.sessions_dir,
-                                    watermark=config.state_dir / "filigran.json")
-            clock, bekleyen = awake.sleep_debt(
+            pressure = sleep.pressure(mind.store, config.sessions_dir,
+                                      watermark=config.state_dir / "filigran.json")
+            clock, pending = awake.sleep_debt(
                 config.sessions_dir,
                 watermark=config.state_dir / "filigran.json")
             self._json({
-                "basinc": basinc.as_dict(),
+                "basinc": pressure.as_dict(),
                 "esik": {"ust": sleep.UPPER_THRESHOLD, "alt": sleep.LOWER_THRESHOLD},
-                "borc": {"saat": round(clock, 2), "oturum": bekleyen},
+                "borc": {"saat": round(clock, 2), "oturum": pending},
                 "sicak_oran": mind.store.hot_share(),
             })
-        except Exception as hata:
-            self._json({"durum": "okunamadı", "hata": str(hata)})
+        except Exception as err:
+            self._json({"durum": "okunamadı", "hata": str(err)})
 
-    def _gece_listesi(self) -> None:
+    def _night_list(self) -> None:
         config = getattr(self.server, "config", None)
         if config is None:
             self._json({"geceler": []})
@@ -1449,26 +1473,28 @@ class _Handler(BaseHTTPRequestHandler):
 
         self._json({"geceler": night_events.nights(config.state_dir)})
 
-    def _gece_oynat(self, tarih: str) -> None:
-        """Bir gecenin olayları, yaşandığı sırayla. Yeniden oynatma budur."""
+    def _night_replay(self, date: str) -> None:
+        """One night's events, in the order they happened. This is the replay."""
         config = getattr(self.server, "config", None)
         if config is None:
             self._json({"olaylar": [], "ozet": {}})
             return
         from ..recall import night_events
 
-        yol = night_events.night_path(config.state_dir, tarih)
-        olaylar = list(night_events.replay(yol))
-        self._json({"tarih": yol.stem, "olaylar": olaylar,
-                    "ozet": night_events.summary(olaylar)})
+        path = night_events.night_path(config.state_dir, date)
+        events = list(night_events.replay(path))
+        self._json({"tarih": path.stem, "olaylar": events,
+                    "ozet": night_events.summary(events)})
 
-    def _tanima(self, body: dict[str, Any]) -> None:
-        """Beni tanı: aç/kapa ya da hemen başlat.
+    def _recognition(self, body: dict[str, Any]) -> None:
+        """Recognise me: switch on/off or start right now.
 
-        Gövdede `on` varsa anahtar çevriliyor (ayar sayfasından gelir) ve
-        açılışta bekçiyi beklemeden bir kez denenir; `simdi` varsa aralık
-        şartı atlanarak başlatılır — canlı doğrulamanın ve "geceyi bekleme"
-        isteğinin yolu. Kapı (`/api/gate`) ile aynı kalıp: tek uç, iki yüz.
+        If the body has `on` the switch is flipped (comes from the settings
+        page) and on switching on it is tried once without waiting for the
+        watchdog; if it has `simdi` it is started skipping the interval
+        condition — the road for live verification and the "don't wait for
+        the night" request. Same pattern as the gate (`/api/gate`): one
+        endpoint, two faces.
         """
         config = getattr(self.server, "config", None)
         if config is None:
@@ -1477,9 +1503,10 @@ class _Handler(BaseHTTPRequestHandler):
         hub = getattr(self.server, "hub", None)
 
         if "learn_cloud_ok" in (body or {}):
-            # Mahremiyet onayı: bulut modelle gece etiketlemesine açık izin.
-            # Ayrı dal — "on" ile birlikte gelmez, ayar sayfasındaki alt
-            # anahtardan tek başına düşer.
+            # Privacy consent: explicit permission for night labelling with
+            # the cloud model. Separate branch — does not come together with
+            # "on", it drops on its own from the sub-switch on the settings
+            # page.
             recognition.set_cloud_consent(config.state_dir,
                                       bool(body.get("learn_cloud_ok")))
             self._json({"ok": True,
@@ -1487,22 +1514,23 @@ class _Handler(BaseHTTPRequestHandler):
             return
         if "on" in (body or {}):
             recognition.configure(config.state_dir, bool(body.get("on")))
-            # Üst bardaki ikon anahtarla birlikte yanıp sönsün: durum
-            # değişikliği de SSE'den duyuruluyor — ayar sayfası ve sohbet
-            # sekmesi ayrı istemciler, biri diğerini göremiyor.
+            # The icon in the top bar should blink together with the switch:
+            # the state change is announced over SSE too — the settings page
+            # and the chat tab are separate clients, one cannot see the other.
             if hub is not None:
                 hub.emit({"type": "tanima",
                           "state": "acik" if body.get("on") else "kapali"})
             if body.get("on") and hub is not None:
                 recognition.maybe_start(config.state_dir, hub)
         elif (body or {}).get("simdi"):
-            # "Şimdi eğit" SESSİZ KALMASIN: sonuç kullanıcıya dönüyor.
-            # Eski hal düğmeye basınca hiçbir şey göstermiyordu — oysa
-            # döngü başlayıp bir saniyede "yeni veri az" deyip çıkıyordu.
-            sebep = ("duzenek_yok" if hub is None
-                     else recognition.maybe_start(config.state_dir, hub, zorla=True))
+            # "Train now" MUST NOT STAY SILENT: the result goes back to the
+            # user. The old state showed nothing on pressing the button —
+            # while the loop started, said "too little new data" within a
+            # second and exited.
+            reason = ("duzenek_yok" if hub is None
+                      else recognition.maybe_start(config.state_dir, hub, zorla=True))
             d = recognition.status(config.state_dir)
-            self._json({"ok": sebep == "basladi", "sebep": sebep,
+            self._json({"ok": reason == "basladi", "sebep": reason,
                         "on": d["on"], "kosuyor": recognition.running(),
                         "hazir": recognition.hazir(), "son": d["son_kosu"]})
             return
@@ -1511,7 +1539,7 @@ class _Handler(BaseHTTPRequestHandler):
         self._json({"ok": True, "on": d["on"], "kosuyor": recognition.running(),
                     "hazir": recognition.hazir(), "son": d["son_kosu"]})
 
-    # -- ayarlar --------------------------------------------------------
+    # -- settings -------------------------------------------------------
 
     def _settings(self) -> None:
         config = getattr(self.server, "config", None)
@@ -1529,15 +1557,15 @@ class _Handler(BaseHTTPRequestHandler):
         try:
             updated = settings.apply(config, body)
         except (ValueError, OSError) as exc:
-            # Bozuk bir değeri sessizce yutmak, açılmayan bir programa
-            # dönüşüyor; sebebi ayar sayfasında görünmeli.
+            # Silently swallowing a broken value turns into a program that
+            # does not start; the reason must be visible on the settings page.
             self._json({"ok": False, "error": str(exc)})
             return
 
         self.server.config = updated  # type: ignore[attr-defined]
-        # Anahtar değiştiyse istemci yeniden kurulmalı: anahtar ModelConfig'in
-        # parçası olmadığından model "değişmemiş" görünüyor ve eski istemci
-        # eski anahtarla kalıyordu. `force` bunu tazeletiyor.
+        # If the key changed the client must be rebuilt: since the key is
+        # not part of ModelConfig the model looks "unchanged" and the old
+        # client stayed with the old key. `force` makes it refresh.
         keys_changed = bool(body.get("keys"))
         if (controller := getattr(self.server, "controller", None)) is not None:
             reload = getattr(controller, "reload", None)
@@ -1545,16 +1573,16 @@ class _Handler(BaseHTTPRequestHandler):
                 try:
                     reload(updated, force=keys_changed)
                 except TypeError:
-                    # Eski imza (force'suz) — yine de uygula.
+                    # Old signature (no force) — apply anyway.
                     reload(updated)
 
         self._json({"ok": True, "settings": settings.snapshot(updated)})
 
     def _detect_window(self) -> None:
-        """Modelin gerçek bağlam penceresini sunucuya sorar.
+        """Asks the server for the model's real context window.
 
-        Yanlış bir pencere ayarı sıkıştırmayı hiç tetiklemiyor ve sunucu
-        istemin başını sessizce atıyor; tahmin ettirmek yerine soruyoruz.
+        A wrong window setting never triggers compaction and the server
+        silently drops the head of the prompt; instead of guessing we ask.
         """
         config = getattr(self.server, "config", None)
         if config is None:
@@ -1570,8 +1598,8 @@ class _Handler(BaseHTTPRequestHandler):
         self._json(payload)
 
     def _loaded(self) -> None:
-        """Sunucuda yüklü duran modeller. Aynı modelin birden çok kopyası
-        varsa bellek boşa gidiyor demektir."""
+        """Models sitting loaded on the server. Several copies of the same
+        model means memory going to waste."""
         config = getattr(self.server, "config", None)
         if config is None:
             self.send_error(503, "Yapılandırma yüklü değil")
@@ -1579,12 +1607,12 @@ class _Handler(BaseHTTPRequestHandler):
         self._json({"models": settings.loaded_models(config)})
 
     def _models(self, body: dict[str, Any] | None = None) -> None:
-        """Sunucunun sunduğu model kimlikleri; elle yazmak hataya davetiye.
+        """The model ids the server offers; typing them by hand invites mistakes.
 
-        Henüz kaydedilmemiş bir sağlayıcı da sorulabiliyor. Ayar sayfasında
-        sağlayıcıya tıklandığında değişiklik daha kaydedilmemiş oluyordu ve
-        katalog eski sunucudan geliyordu: kullanıcı LM Studio'ya geçip
-        OpenRouter'ın model listesini görüyordu.
+        A provider not yet saved can be queried too. On the settings page,
+        when a provider was clicked the change was not saved yet and the
+        catalogue came from the old server: the user switched to LM Studio
+        and saw OpenRouter's model list.
         """
         from dataclasses import replace
 
@@ -1603,14 +1631,14 @@ class _Handler(BaseHTTPRequestHandler):
 
         self._json(settings.scan_models_result(config))
 
-    # -- izlenen kameralar ------------------------------------------------
+    # -- watched cameras --------------------------------------------------
 
     def _cameras(self, body: dict[str, Any]) -> None:
-        """İzlenen kameraları listeler ve düzenler.
+        """Lists and edits the watched cameras.
 
-        Değişiklik yeniden başlatınca geçerli oluyor: izleyici kendi
-        thread'inde dönüyor ve çalışırken kamera eklemek/çıkarmak açık bir
-        akışın ortasına girmek demek.
+        A change takes effect after a restart: the watcher runs in its own
+        thread and adding/removing a camera while it runs means stepping
+        into the middle of an open stream.
         """
         from uuid import uuid4
 
@@ -1686,10 +1714,11 @@ class _Handler(BaseHTTPRequestHandler):
         if action in ("add", "update", "remove"):
             watch.save(config.state_dir, cameras)
 
-        # Donanım gerçeği görünür (canlı istek): GPU varsa sürekli
-        # izleme/işleme aşamasına aday; yoksa tek kip "sorulunca kesit".
-        # Asgari beklenti de yazıyor — kullanıcı neyin neden kapalı
-        # olduğunu ekrandan okuyabilmeli.
+        # The hardware truth is visible (live request): with a GPU it is a
+        # candidate for the continuous watch/processing stage; without one
+        # the only mode is "snapshot when asked". The minimum expectation is
+        # written too — the user should be able to read from the screen
+        # what is off and why.
         try:
             from .. import gpu as gpu_mod
             gpus = [{"name": g.name, "total_mb": g.total_mb,
@@ -1699,42 +1728,42 @@ class _Handler(BaseHTTPRequestHandler):
         from .. import sight as sight_mod
         if config.camera.enabled:
             sight_mod.ensure_warmup()
-        goz = sight_mod.status()
-        gpu_var = any(g["total_mb"] >= 4096 for g in gpus)
-        if goz.get("ready"):
-            kip = "gpu"
-        elif gpu_var:
-            kip = "izleme"
+        eye = sight_mod.status()
+        has_gpu = any(g["total_mb"] >= 4096 for g in gpus)
+        if eye.get("ready"):
+            mode = "gpu"
+        elif has_gpu:
+            mode = "izleme"
         else:
-            kip = "kesit"
+            mode = "kesit"
         self._json({
             "ok": True,
             "available": watch.available(),
-            # Yerel kamera kullanımı ana anahtarı (Ayarlar › Kamera):
-            # üstteki durum ikonu buradan besleniyor.
+            # Master switch of local camera use (Settings › Camera): the
+            # status icon at the top is fed from here.
             "enabled": bool(config.camera.enabled),
             "live": bool(getattr(getattr(self.server, "lens", None), "running", False)
                          or getattr(getattr(getattr(self.server, "controller", None), "lens", None), "running", False)),
             "cloud_ok": bool(getattr(config.camera, "cloud_ok", False)),
             "cameras": [c.public_dict() for c in cameras],
             "gpus": gpus,
-            "sight": goz,
-            # gpu: CUDA'da yerel analiz çalışıyor, modele metin gidiyor.
-            # izleme: kart var ama oturum henüz/hiç açılmadı.
-            # kesit: GPU yok — sorulunca kare.
-            "vision_mode": kip,
+            "sight": eye,
+            # gpu: local analysis runs on CUDA, text goes to the model.
+            # izleme: a card exists but the session has not / never opened.
+            # kesit: no GPU — a frame when asked.
+            "vision_mode": mode,
             "min_spec": "Sürekli izleme/işleme için ≥4 GB VRAM'li NVIDIA GPU; "
                         "yoksa sorulduğunda kesit alınır.",
         })
 
-    # -- izin kuralları ---------------------------------------------------
+    # -- permission rules -------------------------------------------------
 
     def _rules(self, body: dict[str, Any]) -> None:
-        """İzin kurallarını listeler ve düzenler.
+        """Lists and edits the permission rules.
 
-        Kurallar `araç:hedef-deseni` biçiminde. "Hep izin ver" dendiğinde
-        buraya bir satır yazılıyor; kullanıcının verdiği izni geri
-        alabileceği bir yer olmadan o düğme tek yönlü bir kapı oluyordu.
+        Rules are shaped `tool:target-pattern`. "Always allow" writes a line
+        here; without a place where the user could take back a granted
+        permission, that button was a one-way door.
         """
         config = getattr(self.server, "config", None)
         if config is None:
@@ -1774,13 +1803,14 @@ class _Handler(BaseHTTPRequestHandler):
             "modes": list(settings.PERMISSION_MODES),
         }
 
-    # -- zamanlanmış görevler --------------------------------------------
+    # -- scheduled tasks --------------------------------------------------
 
     def _tasks(self, body: dict[str, Any]) -> None:
-        """Görevleri listeler ve düzenler.
+        """Lists and edits the tasks.
 
-        Tek uç: arayüzün her işlemi aynı yerden geçiyor ve listeyi güncel
-        haliyle geri alıyor. Ayrı uçlar arayüzde bayat liste bırakıyordu.
+        One endpoint: every UI operation passes through the same place and
+        gets the list back in its current state. Separate endpoints left a
+        stale list in the UI.
         """
         book = getattr(self.server, "schedule", None)
         if book is None:
@@ -1792,12 +1822,12 @@ class _Handler(BaseHTTPRequestHandler):
 
         try:
             if action == "add":
-                # Akış kimliği verildiyse görev otomasyondur. Bu iki alan
-                # eskiden burada DÜŞÜYORDU: zamanlayıcı, koşucu ve arayüz
-                # `kind_ui`/`workflow_id` biliyordu ama onları yazabilen
-                # hiçbir yol yoktu — otomasyon kurulamıyor, süzgeç hep boş
-                # kalıyordu.
-                akis = str(body.get("workflow_id") or "").strip()
+                # If a workflow id is given the task is an automation. These
+                # two fields used to be DROPPED here: the scheduler, the
+                # runner and the UI knew `kind_ui`/`workflow_id` but no road
+                # could write them — automations could not be set up, the
+                # filter stayed empty forever.
+                flow = str(body.get("workflow_id") or "").strip()
                 book.add(
                     scheduling.Task(
                         id="",
@@ -1806,8 +1836,8 @@ class _Handler(BaseHTTPRequestHandler):
                         kind=str(body.get("kind") or "every"),
                         every_s=int(body.get("every_s") or 3600),
                         at=str(body.get("at") or "09:00"),
-                        kind_ui="automation" if akis else "simple",
-                        workflow_id=akis,
+                        kind_ui="automation" if flow else "simple",
+                        workflow_id=flow,
                     )
                 )
             elif action == "update":
@@ -1816,7 +1846,7 @@ class _Handler(BaseHTTPRequestHandler):
             elif action == "remove":
                 book.remove(task_id)
             elif action == "run":
-                # Elle çalıştırma: zamanı beklemeden arka plan yardımcı.
+                # Manual run: a background helper without waiting for the time.
                 task = book.get(task_id)
                 controller = getattr(self.server, "controller", None)
                 if task is None or controller is None:
@@ -1853,7 +1883,7 @@ class _Handler(BaseHTTPRequestHandler):
         self._json({"ok": True, "tasks": scheduling.payload(book.all())})
 
     def _jobs_list(self) -> None:
-        """Ana ekran Görevler: zamanlanmış işler + son koşum özeti."""
+        """Main-screen Tasks: scheduled jobs + summary of the latest runs."""
         from .. import task_runs
 
         book = getattr(self.server, "schedule", None)
@@ -1875,7 +1905,7 @@ class _Handler(BaseHTTPRequestHandler):
         self._json({"ok": True, "tasks": rows})
 
     def _jobs_runs(self) -> None:
-        """Tek görevin koşum arşivi: ?id=<task_id>&run=<run_id?>"""
+        """One task's run archive: ?id=<task_id>&run=<run_id?>"""
         from .. import task_runs
 
         config = getattr(self.server, "config", None)
@@ -1903,7 +1933,7 @@ class _Handler(BaseHTTPRequestHandler):
             self._json({"ok": False, "error": str(exc)})
 
     def _jobs_action(self, body: dict[str, Any]) -> None:
-        """Ana ekrandan Çalıştır / güncelle — /api/tasks ile aynı defter."""
+        """Run / update from the main screen — same book as /api/tasks."""
         self._tasks(body)
 
     def _workflows_list(self) -> None:
@@ -1941,9 +1971,9 @@ class _Handler(BaseHTTPRequestHandler):
             if action == "save":
                 payload = body.get("workflow") or body
                 wf = workflows.save(config.state_dir, payload)
-                # Arayüzden kaydedilen akış da hafızaya girsin: kayıt yolu
-                # araca göre değişirse, "daha önce yapmıştım" anı bazen
-                # geliyor bazen gelmiyor olurdu.
+                # A workflow saved from the UI enters memory too: if the
+                # save road depended on the tool, the "I did this before"
+                # memory would sometimes come and sometimes not.
                 from .. import workflow_mind
                 workflow_mind.akisi_hatirla(getattr(self.server, "mind", None), wf)
                 self._json({"ok": True, "workflow": workflows.to_dict(wf)})
@@ -1953,21 +1983,22 @@ class _Handler(BaseHTTPRequestHandler):
                 self._json({"ok": ok})
                 return
             if action == "run":
-                # Elle çalıştırma, zamanlayıcının kullandığı YOLUN AYNISI:
-                # takvimsiz bir Task ile `run_scheduled`. Böyle olması şart —
-                # elle koşan akış ile zamanlı koşan akış farklı yollardan
-                # giderse ikisi ayrı ayrı bozulur ve biri çalışırken diğeri
-                # çalışmaz. Kimliksiz Task defteri kirletmiyor: `mark_running`
-                # ve `note_run` boş id'de hiçbir şey yazmıyor.
+                # Manual run, the SAME ROAD the scheduler uses: `run_scheduled`
+                # with a calendar-less Task. This has to be so — if a
+                # manually run workflow and a scheduled one took different
+                # roads the two would break separately and one would work
+                # while the other did not. An id-less Task does not dirty
+                # the book: `mark_running` and `note_run` write nothing on
+                # an empty id.
                 wid = str(body.get("id") or "")
                 controller = getattr(self.server, "controller", None)
                 if controller is None or not hasattr(controller, "run_scheduled"):
                     self._json({"ok": False, "error": "koşturucu yok"})
                     return
                 from ..schedule import Task
-                gecici = Task(id="", title=wid, prompt=".", kind_ui="automation",
-                              workflow_id=wid)
-                result = controller.run_scheduled(gecici)
+                temp_task = Task(id="", title=wid, prompt=".", kind_ui="automation",
+                                 workflow_id=wid)
+                result = controller.run_scheduled(temp_task)
                 self._json(result if isinstance(result, dict)
                            else {"ok": False, "error": "koşturulamadı"})
                 return
@@ -2000,7 +2031,7 @@ class _Handler(BaseHTTPRequestHandler):
                     steps=body.get("steps") or [],
                 )
                 self._json({"ok": True, "plan": plan_store.to_dict(plan)})
-                # SSE: arayüz Plan kartını çizsin.
+                # SSE: let the UI draw the Plan card.
                 hub = getattr(self.server, "hub", None)
                 if hub is not None:
                     hub.emit({"type": "plan", **plan_store.to_dict(plan)})
@@ -2027,7 +2058,7 @@ class _Handler(BaseHTTPRequestHandler):
                 if plan is None:
                     self._json({"ok": False, "error": "plan yok"})
                     return
-                # Onay → ajana devam notu.
+                # Approval → continuation note to the agent.
                 controller = getattr(self.server, "controller", None)
                 if controller is not None and hasattr(controller, "submit"):
                     controller.submit(
@@ -2059,10 +2090,11 @@ class _Handler(BaseHTTPRequestHandler):
             return
         snap = gitmod.snapshot(config)
         if not snap.get("present"):
-            # Depo yokken de çalışma klasörü çubukta görünsün: "Repo aç"
-            # ve "klasörü aç" oradan yaşıyor (canlı istek, 31.08). YALNIZ
-            # atanmış proje: atölye karalama alanıdır, repo yüzeyi değil
-            # ("atölye için repo açmaması lazım" — 01.09).
+            # Even without a repo the working folder should show in the bar:
+            # "Open repo" and "open folder" live there (live request,
+            # 31.08). ONLY the assigned project: the workshop is a scratch
+            # area, not a repo surface ("it must not open a repo for the
+            # workshop" — 01.09).
             try:
                 box = config.open_sandbox()
                 if box.project is not None:
@@ -2138,20 +2170,19 @@ class _Handler(BaseHTTPRequestHandler):
         )
         return {"ok": True, **snap}
 
-    # -- hedef yığını -----------------------------------------------------
+    # -- goal stack -------------------------------------------------------
 
     def _goals(self, body: dict[str, Any]) -> None:
-        """Hedef panelinin yönetim ucu: bitir, bırak, tümünü temizle.
+        """The goal panel's management endpoint: finish, drop, clear all.
 
-        Panel eskiden salt gösterimdi ve kullanıcı haklı olarak soruyordu:
-        "bunlar nereden ekleniyor, nereden temizleniyor?" Ajan `mind_goals`
-        ile ekliyor; kullanıcının elinde hiçbir şey yoktu ve eski
-        oturumlardan kalan hedefler birikip duruyordu. Artık aynı deftere
-        kullanıcı da yazabiliyor — ajanın kullandığı yolun (set_goal_status)
-        aynısı, ayrı bir gerçeklik üretilmiyor.
+        The panel used to be display-only and the user rightly asked:
+        "where do these get added, where are they cleared?" The agent adds
+        with `mind_goals`; the user had nothing in hand and goals left over
+        from old sessions kept piling up. Now the user can write to the same
+        book too — the same road the agent uses (set_goal_status), no
+        separate reality is produced.
 
-        Eylemler: done (tamamlandı), drop (kaldır), clear (aktif olanların
-        tümünü bırak).
+        Actions: done (completed), drop (remove), clear (drop all active ones).
         """
         mind = getattr(self.server, "mind", None)
         if mind is None or not hasattr(mind, "set_goal_status"):
@@ -2160,15 +2191,15 @@ class _Handler(BaseHTTPRequestHandler):
 
         action = str((body or {}).get("action") or "").strip()
         if action == "add":
-            # Liste artık iki taraflı: ajan `mind_goals` ile yazıyor,
-            # kullanıcı da buradan. Aynı defter — ayrı bir gerçeklik
-            # üretmiyoruz, ajan kendi maddesini de görüyor.
-            metin = str((body or {}).get("text") or "").strip()
-            if not metin:
+            # The list is now two-sided: the agent writes with `mind_goals`,
+            # the user from here. The same book — we do not produce a
+            # separate reality, the agent sees its own item too.
+            text = str((body or {}).get("text") or "").strip()
+            if not text:
                 self._json({"ok": False, "error": "boş madde"})
                 return
             try:
-                goal = mind.push_goal(metin[:GOAL_TEXT_LIMIT])
+                goal = mind.push_goal(text[:GOAL_TEXT_LIMIT])
             except Exception as exc:
                 self._json({"ok": False, "error": f"{type(exc).__name__}: {exc}"})
                 return
@@ -2205,17 +2236,18 @@ class _Handler(BaseHTTPRequestHandler):
             return
         self._json({"ok": True, "id": gid, "status": updated.status})
 
-    # -- sohbete bırakılan dosyalar ---------------------------------------
+    # -- files dropped into the chat ---------------------------------------
 
     def _drop(self, body: dict[str, Any]) -> None:
-        """Sürüklenen ya da yapıştırılan dosyayı atölyeye yazar.
+        """Writes a dragged or pasted file into the workshop.
 
-        Tarayıcı yerel dosyanın **yolunu** vermiyor, yalnızca içeriğini —
-        güvenlik gereği. O yüzden dosya atölyeye kopyalanıyor ve ajana yol
-        veriliyor: oradan `read_file` ile açıp inceleyebiliyor.
+        The browser does not give the local file's **path**, only its
+        content — for security. So the file is copied into the workshop and
+        the agent is given the path: from there it can open and inspect it
+        with `read_file`.
 
-        Görüntüler ayrı: onlar mesaja doğrudan iliştiriliyor ve model
-        bakabiliyor. Yine de dosya olarak da kalıyor.
+        Images are separate: they are attached to the message directly and
+        the model can look at them. They still remain as files too.
         """
         import base64
         import re
@@ -2241,8 +2273,8 @@ class _Handler(BaseHTTPRequestHandler):
         folder = config.open_sandbox().root / "gelen"
         folder.mkdir(parents=True, exist_ok=True)
         target = folder / name
-        # Aynı adlı dosya varsa üzerine yazmıyoruz: bırakılan bir dosyanın
-        # öncekini sessizce silmesi veri kaybı.
+        # A same-named file is not overwritten: a dropped file silently
+        # erasing the previous one is data loss.
         stem, suffix, index = target.stem, target.suffix, 2
         while target.exists():
             target = folder / f"{stem}-{index}{suffix}"
@@ -2256,14 +2288,14 @@ class _Handler(BaseHTTPRequestHandler):
 
         self._json({"ok": True, "path": str(target), "name": target.name, "bytes": len(raw)})
 
-    # -- ses -------------------------------------------------------------
+    # -- voice -------------------------------------------------------------
 
     def _speak(self, body: dict[str, Any]) -> None:
-        """Metni sese çevirir ve mp3 olarak döndürür.
+        """Turns text into speech and returns it as mp3.
 
-        Ses üretimi ağa çıkıyor ve saniyeler sürebiliyor; bu istek HTTP
-        thread'ini meşgul ediyor ama ajanın döngüsüne dokunmuyor —
-        sunucu zaten thread'li.
+        Speech synthesis goes out to the network and can take seconds; this
+        request keeps an HTTP thread busy but does not touch the agent's
+        loop — the server is threaded anyway.
         """
         config = getattr(self.server, "config", None)
         if config is None or not config.voice.enabled:
@@ -2272,10 +2304,10 @@ class _Handler(BaseHTTPRequestHandler):
 
         text = str(body.get("text") or "")
 
-        # Klip: kısa onay sesleri ("bakıyorum") her seferinde ağa çıkıp
-        # yeniden üretilmesin — bir kez üretilip diskte duruyor, sonrası
-        # anında dönüyor. Anahtar ses ayarlarını da içeriyor: ses ya da
-        # hız değişirse eski klip kullanılmıyor.
+        # Clip: short acknowledgement sounds ("bakıyorum") must not go out
+        # to the network and be regenerated every time — produced once, kept
+        # on disk, instant afterwards. The key includes the voice settings
+        # too: if the voice or the rate changes the old clip is not used.
         cached = None
         if body.get("clip") and text:
             import hashlib
@@ -2291,16 +2323,16 @@ class _Handler(BaseHTTPRequestHandler):
 
         try:
             audio = asyncio.run(voice.synthesize(text, config.voice))
-        except RuntimeError as exc:  # paket kurulu değil
+        except RuntimeError as exc:  # package not installed
             self.send_error(501, str(exc))
             return
         except Exception:
-            # Ağ yoksa ses de yok; metin yerinde duruyor, iş durmamalı.
+            # No network, no voice; the text stays in place, work must not stop.
             self.send_error(503, "Ses üretilemedi")
             return
 
         if not audio:
-            # Söylenecek bir şey kalmamış (yalnızca kod bloğuydu gibi).
+            # Nothing left to say (it was only a code block, say).
             self._send(204, "audio/mpeg", b"")
             return
         if cached is not None:
@@ -2308,7 +2340,7 @@ class _Handler(BaseHTTPRequestHandler):
                 cached.parent.mkdir(parents=True, exist_ok=True)
                 cached.write_bytes(audio)
             except OSError:
-                pass  # disk yazılamıyorsa klip önbelleksiz devam eder
+                pass  # if the disk cannot be written the clip goes on uncached
         self._send(200, "audio/mpeg", audio)
 
     def _voices(self) -> None:
@@ -2321,11 +2353,11 @@ class _Handler(BaseHTTPRequestHandler):
         self._json({"voices": listing})
 
     def _hear(self, audio: bytes) -> None:
-        """Gelen ses parçasını yazıya çevirir.
+        """Transcribes the incoming audio chunk.
 
-        Gövde ham ses (webm/opus); JSON değil, çünkü base64'e çevirmek
-        üçte bir büyüme ve boşuna iş. Tanıma yerel — ses hiçbir yere
-        gitmiyor.
+        The body is raw audio (webm/opus); not JSON, because base64 means a
+        third of growth and wasted work. Recognition is local — the audio
+        goes nowhere.
         """
         config = getattr(self.server, "config", None)
         if config is None or not config.listen.enabled:
@@ -2341,7 +2373,7 @@ class _Handler(BaseHTTPRequestHandler):
             self.send_error(501, listen.hint())
             return
 
-        # Tanıyıcı dosya yolu istiyor; parça küçük ve geçici.
+        # The recogniser wants a file path; the chunk is small and temporary.
         with tempfile.NamedTemporaryFile(suffix=".webm", delete=False) as handle:
             handle.write(audio)
             clip = Path(handle.name)
@@ -2359,18 +2391,18 @@ class _Handler(BaseHTTPRequestHandler):
             "ok": True,
             "text": said,
             "wake": listen.heard_wake(said, wake),
-            # Uyandırma sözünün kendisi komutun parçası değil.
+            # The wake word itself is not part of the command.
             "command": listen.after_wake(said, wake),
         })
 
-    # -- ajanın ürettiği dosyalar ---------------------------------------
+    # -- files the agent produced ---------------------------------------
 
     def _devices(self, body: dict[str, Any]) -> None:
-        """Cihaz kayıtları: listele, yaz, sil.
+        """Device records: list, write, delete.
 
-        Ajanla aynı dosyalara yazıyor. İki ayrı depo tutmak, kullanıcının
-        eklediği bir PLC'yi ajanın görmemesi demekti — cihazın anlamı
-        zaten ikisinin de bilmesi.
+        Writes to the same files as the agent. Keeping two separate stores
+        meant the agent not seeing a PLC the user added — the whole point of
+        a device is that both of them know it.
         """
         from .. import devices as declared
 
@@ -2384,8 +2416,8 @@ class _Handler(BaseHTTPRequestHandler):
 
         if action == "save":
             raw = dict(body.get("device") or {})
-            # Ayarlar sayfasından eklenen kayıt kullanıcınındır: ajan onu
-            # kendiliğinden silemiyor.
+            # A record added from the settings page belongs to the user: the
+            # agent cannot delete it on its own.
             raw.setdefault("source", "elle")
             try:
                 declared.save(root, raw)
@@ -2405,11 +2437,12 @@ class _Handler(BaseHTTPRequestHandler):
         })
 
     def _skills(self, body: dict[str, Any]) -> None:
-        """Yetenekler: listele, oluştur, oku, yaz, sil.
+        """Skills: list, create, read, write, delete.
 
-        Kullanıcı da ekleyip düzenleyebiliyor — yetenek yalnızca ajanın
-        kendine yazdığı şey değil. Her değişiklik canlı deftere de işleniyor:
-        kaydedilen yetenek bir sonraki turda araç olarak var, silinen yok.
+        The user can add and edit too — a skill is not only something the
+        agent writes for itself. Every change is applied to the live
+        registry as well: a saved skill exists as a tool on the next turn, a
+        deleted one does not.
         """
         from .. import skills as authored
 
@@ -2418,8 +2451,8 @@ class _Handler(BaseHTTPRequestHandler):
             self.send_error(503, "Yapılandırma yüklü değil")
             return
 
-        # Canlı defter: değişiklik oturuma anında işlensin. Ajan yoksa
-        # (salt-gözlem önizlemesi) dosya işleri yine de çalışıyor.
+        # Live registry: the change is applied to the session at once. With
+        # no agent (observe-only preview) the file work still runs.
         agent = getattr(getattr(self.server, "controller", None), "agent", None)
         registry = getattr(agent, "registry", None)
 
@@ -2473,11 +2506,11 @@ class _Handler(BaseHTTPRequestHandler):
         })
 
     def _connectors(self, body: dict[str, Any]) -> None:
-        """MCP bağlayıcıları: listele, kaydet, yeniden bağlan.
+        """MCP connectors: list, save, reconnect.
 
-        Kayıt tek bir JSON metni — Claude Code'un `mcpServers` biçimi.
-        Kaydetmek yeniden bağlanmayı da kapsıyor: dosyada duran ama
-        bağlanmamış bir sunucu, yok hükmünde.
+        The record is a single JSON text — Claude Code's `mcpServers`
+        format. Saving covers reconnecting too: a server that sits in the
+        file but is not connected counts as non-existent.
         """
         from .. import connectors as linking
 
@@ -2502,18 +2535,18 @@ class _Handler(BaseHTTPRequestHandler):
                 return
 
         if action == "login":
-            # OAuth: tarayıcı açılır, kullanıcı girer, jeton saklanır.
-            # Bu istek giriş bitene kadar bekler — sunucu thread'li, başka
-            # istekleri durdurmuyor.
+            # OAuth: the browser opens, the user signs in, the token is
+            # stored. This request waits until the login finishes — the
+            # server is threaded, it does not stall other requests.
             name = str(body.get("name") or "")
             found, _ = linking.load(config.state_dir)
             target = next((c for c in found if c.name == name), None)
             if target is None:
                 self._json({"ok": False, "error": f"Sunucu yok: {name}"})
                 return
-            # Giriş adresi sohbete de düşüyor: tarayıcı arka planda ya da
-            # görünmeden açılmış olabilir — adres ekranda olursa kullanıcı
-            # kopyalayıp kendisi açabilir.
+            # The login address drops into the chat too: the browser may
+            # have opened in the background or invisibly — with the address
+            # on screen the user can copy it and open it themselves.
             hub = getattr(self.server, "hub", None)
 
             def tell(url: str) -> None:
@@ -2533,8 +2566,8 @@ class _Handler(BaseHTTPRequestHandler):
                 note = "Çıkış yapıldı."
 
         if action in ("save", "reload", "login", "logout") and pool is not None:
-            # Bağlanmak saniyeler sürebilir (npx paket indirebiliyor); ayar
-            # sayfası bekliyor ve dönen liste gerçek durumu gösteriyor.
+            # Connecting can take seconds (npx may download a package); the
+            # settings page waits and the returned list shows the real state.
             found, problems = linking.load(config.state_dir)
             pool.connect(found, config.state_dir)
             if registry is not None:
@@ -2549,11 +2582,11 @@ class _Handler(BaseHTTPRequestHandler):
         })
 
     def _organs(self) -> None:
-        """Ajanın o anki bedeni: duyuları ve kendine yazdığı modüller.
+        """The agent's current body: its senses and the modules it wrote for itself.
 
-        Sahne bunu soluk olarak çiziyor ve kullanıldığında canlandırıyor.
-        Ayarlardan değil buradan okunuyor: ayarda açık görünen bir kamera
-        gerçekten açılmamış olabilir ve ekranda çalışıyormuş gibi durur.
+        The scene draws this faded and lights it up when used. It is read
+        from here, not from settings: a camera that looks on in the settings
+        may not have actually opened and would sit on screen as if working.
         """
         from .. import organs as body
 
@@ -2571,11 +2604,11 @@ class _Handler(BaseHTTPRequestHandler):
         })
 
     def _files(self) -> None:
-        """Çalışma alanını gezdirir.
+        """Walks the workspace.
 
-        Yol istekten geliyor, o yüzden çözümlenip çalışma alanının altında
-        kaldığı doğrulanıyor: `..` ile yukarı çıkmak dizin dışına çıkma
-        açığının klasik yolu.
+        The path comes from the request, so it is resolved and verified to
+        stay under the workspace: climbing up with `..` is the classic road
+        to a directory-traversal hole.
         """
         config = getattr(self.server, "config", None)
         if config is None:
@@ -2604,11 +2637,12 @@ class _Handler(BaseHTTPRequestHandler):
         })
 
     def _files_search(self) -> None:
-        """`@` dosya bahsi: çalışma alanında ada göre hızlı arama.
+        """`@` file mention: fast search by name in the workspace.
 
-        `/api/files` bir dizini listeliyor; bu uç TÜM alanda arıyor. Aynı
-        kapıdan geçiyor: kök çalışma alanı, dışına çıkacak bir yol yok
-        (istekten gelen tek şey arama metni, bir yol değil).
+        `/api/files` lists one directory; this endpoint searches the WHOLE
+        space. It passes through the same gate: the root is the workspace,
+        there is no path that could leave it (the only thing coming from the
+        request is the search text, not a path).
         """
         config = getattr(self.server, "config", None)
         if config is None:
@@ -2618,14 +2652,14 @@ class _Handler(BaseHTTPRequestHandler):
         root = Path(config.workspace).resolve()
         self._json({"q": want, "files": _search_files(root, want)})
 
-    def _gorev_dokumu(self) -> None:
-        """Bir yardımcının ADIM listesi: `?oturum=<id>`.
+    def _task_dump(self) -> None:
+        """A helper's STEP list: `?oturum=<id>`.
 
-        `/api/session` bir konuşmanın METİN turlarını veriyor — bir
-        yardımcıya bakarken sorulan soru o değil: "ne yaptı?". Burada
-        araç çağrıları da var, sırayla: hangi aracı hangi hedefle çağırdı,
-        başardı mı, kaç ms sürdü. Kaynak yardımcının kendi oturum günlüğü;
-        ikinci bir defter tutulmuyor.
+        `/api/session` gives a conversation's TEXT turns — that is not the
+        question asked when looking at a helper: "what did it do?". Here
+        the tool calls are included, in order: which tool it called with
+        which target, whether it succeeded, how many ms it took. The source
+        is the helper's own session log; no second book is kept.
         """
         config = getattr(self.server, "config", None)
         if config is None:
@@ -2640,44 +2674,44 @@ class _Handler(BaseHTTPRequestHandler):
             self._json({"ok": False, "error": "Oturum günlüğü bulunamadı."})
             return
 
-        adimlar: list[dict[str, Any]] = []
+        steps: list[dict[str, Any]] = []
         try:
             with path.open(encoding="utf-8") as fh:
-                for satir in fh:
-                    if not (satir := satir.strip()):
+                for line in fh:
+                    if not (line := line.strip()):
                         continue
                     try:
-                        ev = json.loads(satir)
+                        ev = json.loads(line)
                     except ValueError:
                         continue
                     meta = ev.get("meta") or {}
                     if ev.get("content") == "tool_start":
-                        adimlar.append({
+                        steps.append({
                             "tur": "arac",
                             "ad": str(meta.get("tool") or ""),
-                            "hedef": _hedef_ozeti(meta.get("input")),
+                            "hedef": _target_summary(meta.get("input")),
                         })
-                    elif ev.get("content") == "tool_end" and adimlar:
-                        # Son açık araç adımını kapatıyor: ayrı bir satır
-                        # açmak listeyi ikiye katlar, okunmaz.
-                        son = adimlar[-1]
-                        if son.get("tur") == "arac" and "hata" not in son:
-                            son["hata"] = bool(meta.get("error"))
-                            son["ms"] = int(meta.get("ms") or 0)
+                    elif ev.get("content") == "tool_end" and steps:
+                        # Closes the last open tool step: opening a separate
+                        # row would double the list, unreadable.
+                        last = steps[-1]
+                        if last.get("tur") == "arac" and "hata" not in last:
+                            last["hata"] = bool(meta.get("error"))
+                            last["ms"] = int(meta.get("ms") or 0)
                     elif ev.get("role") == "assistant" and ev.get("kind") == "message":
                         if meta.get("internal") or meta.get("continuation"):
                             continue
-                        metin = "\n".join(_plain_blocks(ev.get("content"))).strip()
-                        if metin:
-                            adimlar.append({"tur": "soz", "metin": metin[:2000]})
+                        text = "\n".join(_plain_blocks(ev.get("content"))).strip()
+                        if text:
+                            steps.append({"tur": "soz", "metin": text[:2000]})
         except OSError as exc:
             self._json({"ok": False, "error": f"Günlük okunamadı: {exc}"})
             return
-        # Uzun bir koşuda yüzlerce adım olabiliyor; son 200 yeter.
-        self._json({"ok": True, "oturum": sid, "adimlar": adimlar[-200:]})
+        # A long run can have hundreds of steps; the last 200 are enough.
+        self._json({"ok": True, "oturum": sid, "adimlar": steps[-200:]})
 
-    def _gorev_raporu(self) -> None:
-        """Tam yardımcı/iş metni: `?id=c:<cid>` — paneller Viewer'a açar."""
+    def _task_report(self) -> None:
+        """Full helper/job text: `?id=c:<cid>` — the panels open it in the Viewer."""
         result = self._controller_call(
             "task_report",
             parse_qs(urlparse(self.path).query).get("id", [""])[0],
@@ -2685,18 +2719,18 @@ class _Handler(BaseHTTPRequestHandler):
         self._json(result if isinstance(result, dict)
                    else {"ok": False, "error": "Rapor bu köprüde yok."})
 
-    def _gorev_rapor_sayfasi(self, route: str) -> None:
-        """Artifact benzeri sayfa: /gorev-rapor/<cid>/ → HTML rapor."""
+    def _task_report_page(self, route: str) -> None:
+        """Artifact-like page: /gorev-rapor/<cid>/ → HTML report."""
         cid = route[len("/gorev-rapor/"):].strip("/")
-        # URL'de yalnız ham id; API tarafı c: öneki de kabul eder.
+        # Only the raw id in the URL; the API side accepts the c: prefix too.
         result = self._controller_call("task_report", cid)
         if not isinstance(result, dict) or not result.get("ok"):
             self.send_error(404, str((result or {}).get("error") or "Rapor yok"))
             return
-        title_doc, h1, badge, ozet, komut = _rapor_kapak(result)
+        title_doc, h1, badge, summary, command = _report_cover(result)
         title = html.escape(title_doc)
-        metin = str(result.get("metin") or "")
-        body = _rapor_html(metin)
+        text = str(result.get("metin") or "")
+        body = _report_html(text)
         deliverable = result.get("deliverable") if isinstance(result.get("deliverable"), dict) else None
         app_block = ""
         if deliverable and deliverable.get("kind") == "app" and deliverable.get("url"):
@@ -2714,13 +2748,13 @@ class _Handler(BaseHTTPRequestHandler):
         meta_bits = []
         if badge:
             meta_bits.append(f'<p class="meta">{badge}</p>')
-        if ozet:
-            meta_bits.append(f'<p class="ozet">{html.escape(ozet)}</p>')
-        if komut:
-            goster = komut if len(komut) <= 120 else komut[:117] + "…"
+        if summary:
+            meta_bits.append(f'<p class="ozet">{html.escape(summary)}</p>')
+        if command:
+            shown = command if len(command) <= 120 else command[:117] + "…"
             meta_bits.append(
-                f'<p class="cmd"><code title="{html.escape(komut)}">'
-                f"{html.escape(goster)}</code></p>"
+                f'<p class="cmd"><code title="{html.escape(command)}">'
+                f"{html.escape(shown)}</code></p>"
             )
         meta_html = "\n".join(meta_bits)
         page = (
@@ -2776,15 +2810,15 @@ class _Handler(BaseHTTPRequestHandler):
         ).encode("utf-8")
         self._send(200, "text/html; charset=utf-8", page)
 
-    # -- değişiklik defteri ---------------------------------------------
+    # -- change ledger ---------------------------------------------------
 
-    def _defter(self) -> Any:
-        """Bu oturumun değişiklik defteri (`tools/checkpoint.Defter`).
+    def _ledger(self) -> Any:
+        """This session's change ledger (`tools/checkpoint.Defter`).
 
-        Defteri araç katmanı yazıyor (write_file/edit_file/copy_in her
-        değişiklikten önce), burası YALNIZCA okuyor ve `undo` aracının
-        kullandığı geri alma yolunu çağırıyor. İkinci bir gerçek kaynak
-        üretilmiyor: panelin gördüğü şey ajanın gördüğüyle aynı.
+        The tool layer writes the ledger (write_file/edit_file/copy_in
+        before every change); this ONLY reads it and calls the undo road the
+        `undo` tool uses. No second source of truth is produced: what the
+        panel sees is what the agent sees.
         """
         from ..tools.checkpoint import KLASOR, Defter
 
@@ -2800,159 +2834,161 @@ class _Handler(BaseHTTPRequestHandler):
             return None
         return Defter(Path(config.state_dir) / KLASOR, sid)
 
-    def _degisiklikler(self) -> None:
-        """Bu oturumda yazılan/düzenlenen dosyalar.
+    def _changes(self) -> None:
+        """Files written/edited in this session.
 
-        `?since=N` verilirse yalnızca N'den sonraki kayıtlar döner —
-        arayüzdeki "bu turda ne değişti" şeridi tam olarak bunu kullanıyor:
-        tur başında `son`u alıyor, tur bitince ondan sonrasını soruyor.
+        With `?since=N` only the records after N are returned — the "what
+        changed this turn" strip in the UI uses exactly that: it takes `son`
+        at the start of the turn and asks for what came after once the turn
+        ends.
         """
-        defter = self._defter()
-        if defter is None:
+        ledger = self._ledger()
+        if ledger is None:
             self._json({"son": 0, "kayitlar": []})
             return
         try:
             since = int(parse_qs(urlparse(self.path).query).get("since", ["0"])[0])
         except ValueError:
             since = 0
-        kayitlar = defter.list_entries(tavan=200)      # en yenisi önce
-        son = kayitlar[0]["sira"] if kayitlar else 0
+        records = ledger.list_entries(tavan=200)      # newest first
+        last = records[0]["sira"] if records else 0
         out = []
-        for k in kayitlar:
+        for k in records:
             if since and k["sira"] <= since:
                 continue
-            dosya = str(k.get("dosya") or "")
+            file_path = str(k.get("dosya") or "")
             out.append({
                 "sira": k["sira"],
-                "dosya": dosya,
-                "ad": dosya.replace("\\", "/").rsplit("/", 1)[-1],
+                "dosya": file_path,
+                "ad": file_path.replace("\\", "/").rsplit("/", 1)[-1],
                 "arac": k.get("arac") or "",
                 "zaman": k.get("zaman") or "",
                 "yoktu": bool(k.get("yoktu")),
                 "atlandi": k.get("atlandi") or "",
-                # Görüntüsü olmayan kayıt geri alınamıyor; arayüz bunu
-                # gizlemiyor, satırın yanında söylüyor.
+                # A record without a snapshot cannot be undone; the UI does
+                # not hide that, it says so next to the row.
                 "gerialinabilir": bool(k.get("goruntu")) or bool(k.get("yoktu")),
             })
-        self._json({"son": son, "kayitlar": out})
+        self._json({"son": last, "kayitlar": out})
 
-    def _degisiklik_farki(self) -> None:
-        """Tek bir kaydın farkı: `?sira=N` → {eski, yeni}.
+    def _change_diff(self) -> None:
+        """A single record's diff: `?sira=N` → {eski, yeni}.
 
-        `eski` defterdeki anlık görüntü, `yeni` dosyanın ŞU ANKİ hali.
-        Yani gösterilen şey "bu kayıttan bu yana ne oldu" — kullanıcının
-        geri alma düğmesine basınca göreceği değişimin aynısı.
+        `eski` is the snapshot in the ledger, `yeni` the file's CURRENT
+        state. So what is shown is "what happened since this record" — the
+        very change the user will see on pressing the undo button.
         """
-        defter = self._defter()
-        if defter is None:
+        ledger = self._ledger()
+        if ledger is None:
             self._json({"ok": False, "error": "Değişiklik defteri yok."})
             return
         try:
-            sira = int(parse_qs(urlparse(self.path).query).get("sira", ["0"])[0])
+            seq = int(parse_qs(urlparse(self.path).query).get("sira", ["0"])[0])
         except ValueError:
-            sira = 0
-        kayit = next((k for k in defter.list_entries(tavan=200) if k["sira"] == sira), None)
-        if kayit is None:
+            seq = 0
+        record = next((k for k in ledger.list_entries(tavan=200) if k["sira"] == seq), None)
+        if record is None:
             self._json({"ok": False, "error": "Kayıt bulunamadı."})
             return
 
-        def _oku(path: Path) -> tuple[str, bool]:
+        def _read(path: Path) -> tuple[str, bool]:
             try:
                 data = path.read_bytes()[:DIFF_LIMIT]
             except OSError:
                 return "", False
             try:
-                # Satır sonu normalleştiriliyor: fark çizici "\n" ile
-                # bölüyor ve Windows'ta her satırın ucunda görünmez bir
-                # "\r" kalıyordu — değişmemiş satırlar bile değişmiş gibi
-                # duruyordu. Bu bir GÖRÜNTÜ ucu; diske dokunmuyor.
+                # Line endings are normalised: the diff renderer splits on
+                # "\n" and on Windows an invisible "\r" stayed at the end of
+                # every line — even unchanged lines looked changed. This is
+                # a DISPLAY endpoint; it does not touch the disk.
                 return data.decode("utf-8").replace("\r\n", "\n"), True
             except UnicodeDecodeError:
                 return "", False
 
-        dosya = Path(str(kayit.get("dosya") or ""))
-        eski, eski_ok = ("", True) if kayit.get("yoktu") else (
-            _oku(defter.dizin / str(kayit.get("goruntu")))
-            if kayit.get("goruntu") else ("", False))
-        yeni, yeni_ok = _oku(dosya) if dosya.exists() else ("", True)
+        file_path = Path(str(record.get("dosya") or ""))
+        old, old_ok = ("", True) if record.get("yoktu") else (
+            _read(ledger.dizin / str(record.get("goruntu")))
+            if record.get("goruntu") else ("", False))
+        new, new_ok = _read(file_path) if file_path.exists() else ("", True)
         self._json({
             "ok": True,
-            "sira": sira,
-            "dosya": str(dosya),
-            "ad": dosya.name,
-            "eski": eski,
-            "yeni": yeni,
-            "yoktu": bool(kayit.get("yoktu")),
-            # İkili ya da okunamayan dosyada fark çizilmiyor; sebebi yazıyor.
-            "metin": bool(eski_ok and yeni_ok),
-            "atlandi": kayit.get("atlandi") or "",
+            "sira": seq,
+            "dosya": str(file_path),
+            "ad": file_path.name,
+            "eski": old,
+            "yeni": new,
+            "yoktu": bool(record.get("yoktu")),
+            # No diff is drawn for a binary or unreadable file; the reason is written.
+            "metin": bool(old_ok and new_ok),
+            "atlandi": record.get("atlandi") or "",
         })
 
-    def _degisiklik_geri(self, body: dict[str, Any]) -> None:
-        """Değişiklik geri alır — `undo` aracının kullandığı yol.
+    def _change_undo(self, body: dict[str, Any]) -> None:
+        """Undoes a change — the road the `undo` tool uses.
 
-        Gövde seçenekleri:
-          * `{n}` — son n kayıt (tur undo)
-          * `{sira}` — tek kayıt (dosya Keep/Undo)
-          * `{siralar: [...]}` — birden fazla kayıt (Accept All dışı toplu undo)
+        Body options:
+          * `{n}` — the last n records (turn undo)
+          * `{sira}` — a single record (file Keep/Undo)
+          * `{siralar: [...]}` — several records (bulk undo other than Accept All)
 
-        Onay arayüzde. Görüntüsüz kayıtta defter hiçbir şey yazmaz (n yolu)
-        ya da o satırı reddeder (sira yolu).
+        Confirmation is in the UI. On a record without a snapshot the ledger
+        writes nothing (the n road) or rejects that row (the sira road).
         """
-        defter = self._defter()
-        if defter is None:
+        ledger = self._ledger()
+        if ledger is None:
             self._json({"ok": False, "error": "Değişiklik defteri yok."})
             return
         body = body or {}
         hub = getattr(self.server, "hub", None)
-        yapilan: list[str] = []
-        hata: str | None = None
+        done: list[str] = []
+        error: str | None = None
 
         if body.get("sira") is not None or body.get("siralar") is not None:
-            ham = body.get("siralar")
-            if ham is None:
-                ham = [body.get("sira")]
-            if not isinstance(ham, list) or not ham:
+            raw_seqs = body.get("siralar")
+            if raw_seqs is None:
+                raw_seqs = [body.get("sira")]
+            if not isinstance(raw_seqs, list) or not raw_seqs:
                 self._json({"ok": False, "error": "Geçersiz sira listesi."})
                 return
-            siralar: list[int] = []
-            for x in ham:
+            seqs: list[int] = []
+            for x in raw_seqs:
                 try:
-                    siralar.append(int(x))
+                    seqs.append(int(x))
                 except (TypeError, ValueError):
                     self._json({"ok": False, "error": "Geçersiz sira."})
                     return
-            # En yeniden eskiye: aynı dosyada üst üste kayıt varsa doğru sıra.
-            for sira in sorted(siralar, reverse=True):
-                parca, err = defter.undo_sequence(sira)
-                yapilan.extend(parca)
+            # Newest to oldest: the right order if the same file has stacked records.
+            for seq in sorted(seqs, reverse=True):
+                part, err = ledger.undo_sequence(seq)
+                done.extend(part)
                 if err:
-                    hata = err
+                    error = err
                     break
         elif body.get("dosya"):
-            yapilan, hata = defter.undo_file(str(body.get("dosya") or ""))
+            done, error = ledger.undo_file(str(body.get("dosya") or ""))
         else:
             try:
                 n = int(body.get("n") or 1)
             except (TypeError, ValueError):
                 n = 1
             n = max(1, min(n, 200))
-            yapilan, hata = defter.undo(n)
+            done, error = ledger.undo(n)
 
-        if hata:
-            self._json({"ok": False, "error": hata, "yapilan": yapilan})
+        if error:
+            self._json({"ok": False, "error": error, "yapilan": done})
             return
         if hub is not None:
             hub.emit({"type": "notice",
-                      "text": f"Geri alındı: {len(yapilan)} değişiklik eski haline döndü."})
-        self._json({"ok": True, "yapilan": yapilan})
+                      "text": f"Geri alındı: {len(done)} değişiklik eski haline döndü."})
+        self._json({"ok": True, "yapilan": done})
 
     def _camera_frame(self) -> None:
-        """Bir kameradan TEK taze kare (JPEG) — izleme alanının önizlemesi.
+        """ONE fresh frame (JPEG) from a camera — the watch area's preview.
 
-        Sürekli akış (MJPEG/WebRTC) yok. Dahili kamera zaten Lens
-        tamponunda açıksa o JPEG kullanılır — aynı aygıtı ikinci kez
-        açmak Windows'ta güverteyi kilitler. Ağ kameraları tek kesit.
+        No continuous stream (MJPEG/WebRTC). If the built-in camera is
+        already open in the Lens buffer that JPEG is used — opening the same
+        device a second time locks the deck on Windows. Network cameras are
+        a single snapshot.
         """
         config = getattr(self.server, "config", None)
         if config is None:
@@ -2962,7 +2998,7 @@ class _Handler(BaseHTTPRequestHandler):
             self.send_error(501, "opencv kurulu değil")
             return
         query = parse_qs(urlparse(self.path).query)
-        kaynak = (query.get("source", [""])[0] or "").strip()
+        source = (query.get("source", [""])[0] or "").strip()
         cid = (query.get("id", [""])[0] or "").strip()
         cam = None
         if cid:
@@ -2971,22 +3007,22 @@ class _Handler(BaseHTTPRequestHandler):
             if cam is None:
                 self.send_error(404, "kamera yok")
                 return
-            kaynak = str(cam.connect_source())
-        kaynak = kaynak or "0"
+            source = str(cam.connect_source())
+        source = source or "0"
 
         lens = getattr(self.server, "lens", None)
         if lens is None:
             ctrl = getattr(self.server, "controller", None)
             lens = getattr(ctrl, "lens", None) if ctrl else None
-        payload = watch.preview_jpeg(kaynak, lens=lens)
+        payload = watch.preview_jpeg(source, lens=lens)
         if not payload:
             if lens is not None and watch.same_source(
-                    getattr(lens, "source", "0"), kaynak):
+                    getattr(lens, "source", "0"), source):
                 self.send_error(503, "kamera henüz hazır değil")
                 return
             self.send_error(502, "kamera açılamadı")
             return
-        ozet = ""
+        summary = ""
         want_boxes = (query.get("boxes", ["0"])[0] or "0") not in ("0", "false", "")
         if cam is None:
             cam = next((c for c in watch.load(config.state_dir)
@@ -2994,32 +3030,33 @@ class _Handler(BaseHTTPRequestHandler):
         analyze = True if cam is None else bool(getattr(cam, "analyze", True))
         if want_boxes and analyze:
             from .. import sight as sight_mod
-            payload, ozet = sight_mod.annotate_jpeg(
-                payload, key=cid or kaynak or "0")
+            payload, summary = sight_mod.annotate_jpeg(
+                payload, key=cid or source or "0")
         self.send_response(200)
         self.send_header("Content-Type", "image/jpeg")
         self.send_header("Content-Length", str(len(payload)))
         self.send_header("Cache-Control", "no-store")
         self.send_header("Access-Control-Expose-Headers", "X-Dornick-Sight")
-        if ozet:
-            self.send_header("X-Dornick-Sight", quote(ozet, safe=" ,()-"))
+        if summary:
+            self.send_header("X-Dornick-Sight", quote(summary, safe=" ,()-"))
         self.end_headers()
         self.wfile.write(payload)
 
     def _raw_file(self) -> None:
-        """Bir dosyanın HAM baytları: görüntüleyicinin görsel/ses/video/PDF ucu.
+        """A file's RAW bytes: the viewer's image/audio/video/PDF endpoint.
 
-        `/api/files` metin döndürüyor; bir PNG oradan yalnızca "ikili dosya"
-        olarak geliyordu ve panel görseli gösteremiyordu. Bu uç aynı KAPIDAN
-        geçiyor: yol istekten geliyor, o yüzden çözümlenip çalışma alanının
-        altında kaldığı doğrulanıyor (`..` ile yukarı çıkmak dizin dışına
-        çıkma açığının klasik yolu).
+        `/api/files` returns text; a PNG came from there only as a "binary
+        file" and the panel could not show the image. This endpoint passes
+        through the same GATE: the path comes from the request, so it is
+        resolved and verified to stay under the workspace (climbing up with
+        `..` is the classic road to a directory-traversal hole).
 
-        İçerik türü UZANTIDAN veriliyor ve yalnızca bilinen bir medya
-        listesinden: tarayıcının içeriğe bakıp kendi kararını vermesi
-        (sniffing) bir metin dosyasını HTML sayıp çalıştırabilirdi.
-        Tanınmayan uzantı `application/octet-stream` — yani indirilir,
-        yorumlanmaz. `X-Content-Type-Options: nosniff` bunu mühürlüyor.
+        The content type is given BY EXTENSION and only from a known media
+        list: letting the browser look at the content and decide for itself
+        (sniffing) could have treated a text file as HTML and executed it.
+        An unrecognised extension is `application/octet-stream` — i.e.
+        downloaded, not interpreted. `X-Content-Type-Options: nosniff`
+        seals that.
         """
         config = getattr(self.server, "config", None)
         if config is None:
@@ -3044,9 +3081,9 @@ class _Handler(BaseHTTPRequestHandler):
             self.send_error(404)
             return
 
-        # Menzil isteği: video/ses oynatıcıları ileri sarabilmek için bunu
-        # kullanıyor. Tek menzil yeterli; anlaşılmayan başlık yok sayılıp
-        # dosyanın tamamı gönderiliyor.
+        # Range request: video/audio players use this to seek. A single
+        # range is enough; an unparseable header is ignored and the whole
+        # file is sent.
         start, end = 0, size - 1
         partial = False
         if size and (raw_range := self.headers.get("Range", "")).startswith("bytes="):
@@ -3056,7 +3093,7 @@ class _Handler(BaseHTTPRequestHandler):
                     start = int(match.group(1))
                     if match.group(2):
                         end = int(match.group(2))
-                else:                                   # "bytes=-500": sondan
+                else:                                   # "bytes=-500": from the end
                     start = max(0, size - int(match.group(2)))
                 end = min(end, size - 1)
                 if start > end or start >= size:
@@ -3073,19 +3110,19 @@ class _Handler(BaseHTTPRequestHandler):
         self.send_header("Accept-Ranges", "bytes")
         self.send_header("X-Content-Type-Options", "nosniff")
         if query.get("download", [""])[0]:
-            # Sohbetteki "raporu indir" bağının ucu: attachment başlığı
-            # tarayıcıyı yorumlamak yerine kaydetmeye zorlar. Ad ASCII'ye
-            # inceltiliyor — başlık satırına ham UTF-8 koymak bazı
-            # istemcilerde kırılıyor.
-            temiz = re.sub(r"[^\w.\-]", "_", target.name) or "dosya"
+            # The end of the "download the report" link in the chat: the
+            # attachment header forces the browser to save instead of
+            # interpreting. The name is thinned to ASCII — raw UTF-8 on the
+            # header line breaks in some clients.
+            clean = re.sub(r"[^\w.\-]", "_", target.name) or "dosya"
             self.send_header("Content-Disposition",
-                             f'attachment; filename="{temiz}"')
+                             f'attachment; filename="{clean}"')
         if partial:
             self.send_header("Content-Range", f"bytes {start}-{end}/{size}")
         self.send_header("Cache-Control", "no-store")
         self.end_headers()
 
-        # Parça parça: bir video dosyasını belleğe almak sunucuyu düşürürdü.
+        # Chunk by chunk: loading a video file into memory would bring the server down.
         try:
             with target.open("rb") as handle:
                 handle.seek(start)
@@ -3097,54 +3134,54 @@ class _Handler(BaseHTTPRequestHandler):
                     self.wfile.write(chunk)
                     left -= len(chunk)
         except (OSError, BrokenPipeError, ConnectionError):
-            # Başlıklar gitti; burada yapılabilecek tek şey susmak.
+            # The headers are gone; the only thing to do here is stay quiet.
             self.close_connection = True
 
-    def _gozat(self) -> None:
-        """Klasör gezgini: proje seçmek için KLASÖRLERİ listeler.
+    def _browse(self) -> None:
+        """Folder explorer: lists FOLDERS for choosing a project.
 
-        Neden ayrı bir uç: `/api/files` çalışma alanının içinde kalıyor ve
-        proje tam olarak onun DIŞINDA bir yer. Native bir klasör diyaloğu
-        da kullanılamıyor (masaüstü katmanı ayrı bir işte), o yüzden seçici
-        tarayıcının kendi içinde.
+        Why a separate endpoint: `/api/files` stays inside the workspace and
+        the project is exactly a place OUTSIDE it. A native folder dialog
+        cannot be used either (the desktop layer is a separate process), so
+        the picker lives inside the browser itself.
 
-        Yeni bir maruziyet sınıfı değil: okuma bu programda zaten her yerde
-        serbest (ajanın `list_dir`i tam da bunu yapıyor). Burada yalnızca
-        klasör ADLARI dönüyor — dosya içeriği yok, dosya listesi yalnızca
-        sayı olarak. Yazma tarafı bundan etkilenmiyor: seçmek yazma iznini
-        vermiyor, ayarı KAYDETMEK veriyor.
+        Not a new exposure class: reading is already free everywhere in this
+        program (the agent's `list_dir` does exactly this). Only folder
+        NAMES are returned here — no file content, the file list only as a
+        count. The write side is unaffected: choosing does not grant write
+        permission, SAVING the setting does.
         """
         query = parse_qs(urlparse(self.path).query)
-        istenen = (query.get("yol", [""])[0] or "").strip()
+        requested = (query.get("yol", [""])[0] or "").strip()
 
-        if not istenen:
-            # Başlangıç: sürücüler (Windows) ya da kök + ev.
-            self._json({"yol": "", "ust": None, "klasorler": _baslangic_yerleri()})
+        if not requested:
+            # Start: drives (Windows) or root + home.
+            self._json({"yol": "", "ust": None, "klasorler": _starting_places()})
             return
 
         try:
-            hedef = Path(istenen).expanduser().resolve()
+            target = Path(requested).expanduser().resolve()
         except OSError:
             self._json({"hata": "Bu yol çözümlenemedi."})
             return
-        if not hedef.is_dir():
-            self._json({"hata": f"Böyle bir klasör yok: {hedef}"})
+        if not target.is_dir():
+            self._json({"hata": f"Böyle bir klasör yok: {target}"})
             return
 
-        klasorler: list[dict[str, Any]] = []
-        dosya = 0
+        folders: list[dict[str, Any]] = []
+        file_count = 0
         try:
-            for child in sorted(hedef.iterdir(), key=lambda p: p.name.lower()):
+            for child in sorted(target.iterdir(), key=lambda p: p.name.lower()):
                 try:
                     if child.is_dir():
-                        # Gizli/araç klasörleri seçicide gürültü: gösteriliyor
-                        # ama sona atılıyor değil — gizleniyor. İsteyen yolu
-                        # elle yazabilir.
+                        # Hidden/tool folders are noise in the picker: not
+                        # shown-but-pushed-to-the-end — hidden. Whoever wants
+                        # them can type the path by hand.
                         if child.name.startswith(".") or child.name in SKIPPED:
                             continue
-                        klasorler.append({"ad": child.name, "yol": str(child)})
+                        folders.append({"ad": child.name, "yol": str(child)})
                     else:
-                        dosya += 1
+                        file_count += 1
                 except OSError:
                     continue
         except OSError as exc:
@@ -3154,21 +3191,21 @@ class _Handler(BaseHTTPRequestHandler):
         config = getattr(self.server, "config", None)
         status = config.state_dir if config is not None else None
         self._json({
-            "yol": str(hedef),
-            "ust": str(hedef.parent) if hedef.parent != hedef else None,
-            "klasorler": klasorler[:400],
-            "dosya": dosya,
-            # Seçilebilir mi ve seçilirse ne söylenmeli: kullanıcı KAYDETMEDEN
-            # önce görsün.
-            "engel": sandbox.root_block(hedef) or "",
-            "uyari": sandbox.root_warning(hedef, state_dir=status),
-            "tur": _proje_turu(hedef),
+            "yol": str(target),
+            "ust": str(target.parent) if target.parent != target else None,
+            "klasorler": folders[:400],
+            "dosya": file_count,
+            # Can it be chosen and what should be said if it is: the user
+            # should see it BEFORE SAVING.
+            "engel": sandbox.root_block(target) or "",
+            "uyari": sandbox.root_warning(target, state_dir=status),
+            "tur": _project_kind(target),
         })
 
     def _apps(self) -> None:
-        """Atölyeyi çalıştırılabilir uygulama kataloğu olarak verir.
+        """Serves the workshop as a catalogue of runnable applications.
 
-        Sandbox yoksa boş kök: ajanın atölyesi henüz açılmamış olabilir.
+        Empty root without a sandbox: the agent's workshop may not have opened yet.
         """
         from .. import apps as catalog
 
@@ -3178,8 +3215,8 @@ class _Handler(BaseHTTPRequestHandler):
             return
         try:
             root = config.open_sandbox().root
-            # base çalışma alanı: yollar `/api/files` ile aynı köke göreli
-            # olsun ki bir web uygulaması tıklanınca gerçekten açılabilsin.
+            # base is the workspace: paths are relative to the same root as
+            # `/api/files` so a web app really opens when clicked.
             tree = catalog.catalog(root, base=Path(config.workspace))
         except Exception as exc:
             self._json({"root": None, "error": str(exc)})
@@ -3187,11 +3224,11 @@ class _Handler(BaseHTTPRequestHandler):
         self._json({"root": catalog.to_dict(tree)})
 
     def _projects(self) -> None:
-        """Atölyeyi PROJE birimleri olarak verir (dosya ağacı değil).
+        """Serves the workshop as PROJECT units (not a file tree).
 
-        Her proje bir iş birimi: Dornick'in ürettiği bir klasör (Modbus web
-        client gibi) ya da tek başına bir dosya. Panel bunları kart olarak
-        gösteriyor; tıklanınca nasıl çalıştırılacağı + Çalıştır beliriyor.
+        Every project is a unit of work: a folder Dornick produced (like a
+        Modbus web client) or a standalone file. The panel shows them as
+        cards; clicking reveals how to run it + Run.
         """
         from .. import apps as catalog
 
@@ -3205,17 +3242,18 @@ class _Handler(BaseHTTPRequestHandler):
         except Exception as exc:
             self._json({"projects": [], "sorunlar": [], "error": str(exc)})
             return
-        # `sorunlar`: atölye kökündeki başıboş manifestler. Panel bunları
-        # ayrı bir "sorunlu" bölümünde nedeniyle gösteriyor — yanlış yere
-        # yazılmış bir manifest sessizce kaybolmasın.
+        # `sorunlar`: stray manifests at the workshop root. The panel shows
+        # them in a separate "problematic" section with the reason — a
+        # manifest written to the wrong place must not vanish silently.
         self._json(data)
 
     def _apps_running(self) -> None:
-        """Çalışan, izlenebilen uygulamalar (canlı adresleriyle).
+        """Running, watchable applications (with their live addresses).
 
-        Köprü/atölye yoksa boş liste: panel bunu "çalışan yok" gösteriyor.
-        Atölye kökü veriliyor ki süreç defterinde OLMAYAN ama atölyeye ait
-        bir sunucu (dornick yeniden başlatılmışsa) da canlı görünsün.
+        Empty list without a bridge/workshop: the panel shows that as
+        "nothing running". The workshop root is passed so a server that is
+        NOT in the process book but belongs to the workshop (if dornick was
+        restarted) also shows as live.
         """
         from .. import apps as catalog
 
@@ -3232,12 +3270,12 @@ class _Handler(BaseHTTPRequestHandler):
         except Exception as exc:
             self._json({"running": [], "error": str(exc)})
 
-    # -- artifact'lar ----------------------------------------------------
+    # -- artifacts -------------------------------------------------------
 
     def _artifacts_list(self) -> None:
-        """Yayınlanmış artifact'lar: kimlik, başlık, sürüm, güncellenme.
+        """Published artifacts: id, title, version, updated.
 
-        Depo yoksa boş liste — galeri bunu "henüz yok" gösteriyor.
+        Empty list without a store — the gallery shows that as "none yet".
         """
         from .. import artifacts
 
@@ -3248,11 +3286,11 @@ class _Handler(BaseHTTPRequestHandler):
         self._json({"artifacts": artifacts.listing(config.state_dir)})
 
     def _artifacts_edit(self, body: dict[str, Any]) -> None:
-        """Galerinin tek yazma ucu: {"action": "remove", "id": ...}.
+        """The gallery's only write endpoint: {"action": "remove", "id": ...}.
 
-        Kalıcı silme yok — depo çöpe taşıyor; onay arayüzde (iki adımlı
-        düğme). Cevap her durumda güncel listeyi de taşıyor ki panel
-        bayat kalmasın.
+        No permanent deletion — the store moves to the bin; confirmation is
+        in the UI (two-step button). The reply carries the current list in
+        every case so the panel does not go stale.
         """
         from .. import artifacts
 
@@ -3274,16 +3312,16 @@ class _Handler(BaseHTTPRequestHandler):
             return
         self._json({"ok": True, "artifacts": artifacts.listing(config.state_dir)})
 
-    def _disari_ac(self, body: dict[str, Any]) -> None:
-        """Uygulama içi bir sayfayı kullanıcının GERÇEK tarayıcısında açar.
+    def _open_outside(self, body: dict[str, Any]) -> None:
+        """Opens an in-app page in the user's REAL browser.
 
-        Kanıtlanmış yara (31.08): ajan artifact adresini varsayılan 8765
-        portuyla söylüyordu, sunucu kaymış portta koşuyordu ve kullanıcı
-        "bağlantı reddedildi" görüyordu. Gerçek port yalnız burada,
-        sunucunun kendisinde biliniyor — adres istekten değil buradan
-        kurulur. Yol GÖRELİ olmak zorunda: bu uç yalnız BU sunucunun
-        servis ettiği sayfaları açar; dışarıdan gelen bir adresi kullanıcı
-        tarayıcısında açtırmanın kapısı olamaz.
+        Proven wound (31.08): the agent stated the artifact address with the
+        default port 8765, the server was running on a shifted port and the
+        user saw "connection refused". The real port is known only here, in
+        the server itself — the address is built from here, not from the
+        request. The path MUST be RELATIVE: this endpoint only opens pages
+        THIS server serves; it cannot be a door for opening an outside
+        address in the user's browser.
         """
         import webbrowser
 
@@ -3300,13 +3338,14 @@ class _Handler(BaseHTTPRequestHandler):
             return
         self._json({"ok": bool(ok), "url": url})
 
-    def _artifact_indir(self, body: dict[str, Any]) -> None:
-        """Artifact'ı İndirilenler klasörüne kaydeder; TAM yolu döndürür.
+    def _artifact_download(self, body: dict[str, Any]) -> None:
+        """Saves the artifact into the Downloads folder; returns the FULL path.
 
-        Pencere WebView2: blob + <a download> tıklaması indirme penceresi
-        açmadan sessizce ölüyordu — kullanıcı "indiremiyorum" yaşıyordu
-        (canlı, 31.08). Diske sunucu kendisi yazar; arayüz dönen yolu
-        gösterir. Var olan dosya ezilmez — sayaçlı yeni ad açılır.
+        Window WebView2: blob + <a download> click died silently without
+        opening a download window — the user lived "I can't download"
+        (live, 31.08). The server itself writes to disk; the UI shows the
+        returned path. An existing file is not overwritten — a new
+        counter-suffixed name is opened.
         """
         import shutil
 
@@ -3349,14 +3388,15 @@ class _Handler(BaseHTTPRequestHandler):
         self._json({"ok": True, "path": str(target)})
 
     def _artifact_page(self, route: str) -> None:
-        """Artifact sayfası: /artifact/<id>/ → index.html.
+        """Artifact page: /artifact/<id>/ → index.html.
 
-        Yol istekten geliyor ama diske istekten kurulmuyor: kimlik depo
-        modülünün sıkı deseninden geçiyor ve çözümlenen yolun depo altında
-        kaldığı orada bir daha doğrulanıyor (ASSETS kalıbındaki ilke:
-        servis edilen şey istek metni değil, doğrulanmış bir kayıt).
-        Sayfa olduğu gibi render ediliyor — betikler dahil; içerik yerel
-        makinede, kullanıcının kendi ajanının ürettiği sayfa.
+        The path comes from the request but the disk path is not built from
+        the request: the id passes through the store module's strict
+        pattern and that the resolved path stays under the store is
+        verified there once more (the principle of the ASSETS pattern: what
+        is served is a verified record, not request text). The page is
+        rendered as is — scripts included; the content is on the local
+        machine, a page the user's own agent produced.
         """
         from .. import artifacts
 
@@ -3375,7 +3415,7 @@ class _Handler(BaseHTTPRequestHandler):
         except OSError:
             self.send_error(404, "Artifact okunamadı")
             return
-        # ?download=1 → dosya olarak indir (HTML standart teslimat).
+        # ?download=1 → download as a file (HTML standard delivery).
         want_dl = "download=1" in (urlparse(self.path).query or "")
         if want_dl:
             try:
@@ -3390,22 +3430,24 @@ class _Handler(BaseHTTPRequestHandler):
             return
         self._send(200, "text/html; charset=utf-8", body)
 
-    def _parcalar(self) -> list[str] | None:
-        """İstekteki parça seçimi: ?parcalar=anilar,tanima → liste.
+    def _parts(self) -> list[str] | None:
+        """The part selection in the request: ?parcalar=anilar,tanima → list.
 
-        Parametre yoksa None — dışa/içe aktarma eski (varsayılan)
-        davranışına düşer; bilinmeyen adları transfer modülü eliyor.
+        None if the parameter is absent — export/import fall back to the
+        old (default) behaviour; unknown names are weeded out by the
+        transfer module.
         """
         raw = parse_qs(urlparse(self.path).query).get("parcalar", [""])[0]
-        secim = [p.strip() for p in raw.split(",") if p.strip()]
-        return secim or None
+        selection = [p.strip() for p in raw.split(",") if p.strip()]
+        return selection or None
 
     def _transfer_export(self) -> None:
-        """Dornick'in biriktirdiklerini taşınabilir bir paket olarak indirir.
+        """Downloads what Dornick has accumulated as a portable bundle.
 
-        `?parcalar=anilar,tanima,projeler,ayarlar` ile seçmeli: sunucuya
-        taşınırken yalnızca gerekenler paketlenir. Parametresiz istek
-        eskisiyle birebir aynı paketi üretir (geriye uyumluluk).
+        Selective with `?parcalar=anilar,tanima,projeler,ayarlar`: when
+        moving to a server only what is needed is packed. A request without
+        the parameter produces exactly the same bundle as before (backwards
+        compatibility).
         """
         from .. import transfer
 
@@ -3415,7 +3457,7 @@ class _Handler(BaseHTTPRequestHandler):
             self.send_error(503, "Bellek bağlı değil")
             return
         try:
-            data = transfer.export_bundle(config, mind, self._parcalar())
+            data = transfer.export_bundle(config, mind, self._parts())
         except Exception as exc:
             self._json({"ok": False, "error": str(exc)})
             return
@@ -3430,11 +3472,12 @@ class _Handler(BaseHTTPRequestHandler):
         self.wfile.write(data)
 
     def _transfer_import(self, raw: bytes) -> None:
-        """Yüklenen bir paketi bu Dornick'e birleştirir.
+        """Merges an uploaded bundle into this Dornick.
 
-        Anılar katılır (üzerine yazılmaz); dosya parçaları geri yüklenirken
-        ezilecek mevcut hal önce .dornick/yedek-<tarih>/ altına alınır.
-        `?parcalar=...` pakette olsa bile yalnızca istenenleri işletir.
+        Memories are joined (not overwritten); while file parts are
+        restored, the existing state that would be crushed is first moved
+        under .dornick/yedek-<date>/. `?parcalar=...` processes only the
+        requested parts even if the bundle has more.
         """
         from .. import transfer
 
@@ -3447,18 +3490,19 @@ class _Handler(BaseHTTPRequestHandler):
             self._json({"ok": False, "error": "Boş yükleme"})
             return
         try:
-            result = transfer.import_bundle(config, mind, raw, self._parcalar())
+            result = transfer.import_bundle(config, mind, raw, self._parts())
         except Exception as exc:
             self._json({"ok": False, "error": f"{type(exc).__name__}: {exc}"})
             return
         self._json(result)
 
     def _reset(self, body: dict[str, Any]) -> None:
-        """Sıfırlama: {"hedef": "anilar"} ya da {"hedef": "tanima"}.
+        """Reset: {"hedef": "anilar"} or {"hedef": "tanima"}.
 
-        İkisi de yıkım değil taşıma: mevcut hal .dornick/yedek-<tarih>/
-        altına gidiyor, sonra temiz başlanıyor. Onay arayüzde (iki adımlı
-        düğme); burada tek güvence hedef adının tanınması.
+        Neither is destruction but a move: the current state goes under
+        .dornick/yedek-<date>/, then a clean start. Confirmation is in the
+        UI (two-step button); here the only safeguard is recognising the
+        target name.
         """
         from .. import transfer
 
@@ -3467,9 +3511,9 @@ class _Handler(BaseHTTPRequestHandler):
             self.send_error(503, "Yapılandırma yüklü değil")
             return
         hub = getattr(self.server, "hub", None)
-        hedef = str((body or {}).get("hedef") or "")
+        target = str((body or {}).get("hedef") or "")
 
-        if hedef == "anilar":
+        if target == "anilar":
             mind = getattr(self.server, "mind", None)
             if mind is None:
                 self._json({"ok": False, "error": "Bellek bağlı değil"})
@@ -3479,22 +3523,22 @@ class _Handler(BaseHTTPRequestHandler):
                 hub.emit({"type": "notice",
                           "text": f"Anılar sıfırlandı ({result['silinen']} kayıt) — "
                                   f"yedek: {result['yedek']}"})
-        elif hedef == "tanima":
+        elif target == "tanima":
             result = recognition.reset(config.state_dir)
             if result.get("ok") and hub is not None:
-                metin = ("Beni tanı sıfırlandı — taban modele dönüldü"
-                         + (f" · yedek: {result['yedek']}" if result.get("yedek") else ""))
-                hub.emit({"type": "notice", "text": metin})
+                text = ("Beni tanı sıfırlandı — taban modele dönüldü"
+                        + (f" · yedek: {result['yedek']}" if result.get("yedek") else ""))
+                hub.emit({"type": "notice", "text": text})
         else:
             self._json({"ok": False, "error": "`hedef` anilar ya da tanima olmalı"})
             return
         self._json(result)
 
     def _run_app(self, body: dict[str, Any]) -> None:
-        """Atölyedeki bir betiği/aracı başlatır.
+        """Launches a script/tool in the workshop.
 
-        Yalnızca atölyenin içi çalıştırılabiliyor; sınır `apps.launch`
-        içinde bir kez daha doğrulanıyor.
+        Only the inside of the workshop can be run; the boundary is verified
+        once more inside `apps.launch`.
         """
         from .. import apps as catalog
 
@@ -3510,11 +3554,11 @@ class _Handler(BaseHTTPRequestHandler):
         self._json(catalog.launch(root, path, base=Path(config.workspace)))
 
     def _sessions(self) -> None:
-        """Geçmiş konuşmaların listesi. Beyin/anı DEĞİL — ham oturumlar.
+        """The list of past conversations. NOT brain/memory — raw sessions.
 
-        Bir konuşma bir anı demek değil: anılar konuşmalardan ayrıca oluşuyor.
-        Bu liste konuşmaların kendisi; sahnedeki ağ ise onlardan süzülen
-        anılar.
+        A conversation is not a memory: memories form from conversations
+        separately. This list is the conversations themselves; the net on
+        the scene is the memories distilled from them.
         """
         mind = getattr(self.server, "mind", None)
         if mind is None:
@@ -3525,132 +3569,135 @@ class _Handler(BaseHTTPRequestHandler):
         meta = mind.session_meta() if hasattr(mind, "session_meta") else {}
         controller = getattr(self.server, "controller", None)
         busy = bool(getattr(controller, "_busy", False))
-        # Paralel şeritler: arka planda koşan HER sohbet listede "koşuyor"
-        # görünmeli — yalnız aktif olan değil. Kenar çubuğu rozeti buradan.
-        kosanlar: set[str] = set()
+        # Parallel lanes: EVERY chat running in the background must show as
+        # "running" in the list — not only the active one. The sidebar
+        # badge comes from here.
+        running: set[str] = set()
         try:
-            for sid, serit in (getattr(controller, "seritler", None) or {}).items():
-                if getattr(serit, "busy", False):
-                    kosanlar.add(sid)
+            for sid, lane in (getattr(controller, "seritler", None) or {}).items():
+                if getattr(lane, "busy", False):
+                    running.add(sid)
         except Exception:
             pass
 
-        # `?ara=` verilirse arama DÖKÜMLERİN İÇİNDE de yapılıyor: aranan söz
-        # çoğu zaman başlıkta değil konuşmanın ortasında geçiyor.
-        sorgu = parse_qs(urlparse(self.path).query).get("ara", [""])[0].strip()
-        icinde = {}
-        if sorgu and hasattr(mind, "search_transcripts"):
+        # With `?ara=` the search also runs INSIDE THE TRANSCRIPTS: the
+        # sought word is usually not in the title but in the middle of the
+        # conversation.
+        query = parse_qs(urlparse(self.path).query).get("ara", [""])[0].strip()
+        inside = {}
+        if query and hasattr(mind, "search_transcripts"):
             try:
-                icinde = mind.search_transcripts(sorgu)
+                inside = mind.search_transcripts(query)
             except Exception:
-                icinde = {}   # arama bir kolaylık; patlarsa liste yine gelsin
+                inside = {}   # search is a convenience; if it blows the list still comes
 
         out = []
-        proje_adlari: set[str] = set(projects.values())
+        project_names: set[str] = set(projects.values())
         for ep in mind.sessions():
-            kayit = meta.get(ep.session_id) or {}
+            record = meta.get(ep.session_id) or {}
             is_current = ep.session_id == current
-            yol = kayit.get("path") or ""
-            proje = projects.get(ep.session_id, "")
-            # Klasör bağlı ama proje etiketi yoksa klasör adıyla grupla
-            # (eski kayıtlar / yalnız path atanmış sohbetler).
-            if not proje and yol:
-                leaf = Path(str(yol)).name.strip()
+            path = record.get("path") or ""
+            project = projects.get(ep.session_id, "")
+            # Folder attached but no project label: group by the folder
+            # name (old records / chats with only a path assigned).
+            if not project and path:
+                leaf = Path(str(path)).name.strip()
                 if leaf:
-                    proje = leaf
-                    proje_adlari.add(leaf)
+                    project = leaf
+                    project_names.add(leaf)
             out.append({
                 "id": ep.session_id,
-                # Kullanıcının verdiği ad varsa o; yoksa dijestten türetilen.
-                "title": kayit.get("ad") or _session_title(ep.digest),
-                "named": bool(kayit.get("ad")),
-                "tags": kayit.get("etiketler") or [],
+                # The user-given name if any; otherwise derived from the digest.
+                "title": record.get("ad") or _session_title(ep.digest),
+                "named": bool(record.get("ad")),
+                "tags": record.get("etiketler") or [],
                 "date": _stem_date(ep.session_id),
                 "turns": ep.turns,
                 "tools": ep.tools[:6],
                 "preview": ep.digest[:160],
                 "current": is_current,
-                # açık = şu an seçili; koşuyor = turu süren HER şerit
-                # (aktif ya da arka plan); biten = diğerleri.
+                # açık = currently selected; koşuyor = EVERY lane whose turn
+                # is running (active or background); biten = the rest.
                 "status": ("koşuyor" if ((is_current and busy)
-                                         or ep.session_id in kosanlar)
+                                         or ep.session_id in running)
                            else ("açık" if is_current else "biten")),
-                "project": proje,
-                "path": yol,
-                "model": kayit.get("model") or "",
-                "provider": kayit.get("provider") or "",
-                "hits": icinde.get(ep.session_id, []),
+                "project": project,
+                "path": path,
+                "model": record.get("model") or "",
+                "provider": record.get("provider") or "",
+                "hits": inside.get(ep.session_id, []),
             })
 
-        etiketler = sorted({e for k in meta.values() for e in (k.get("etiketler") or [])})
+        tags = sorted({e for k in meta.values() for e in (k.get("etiketler") or [])})
         self._json({
             "sessions": out,
-            "projects": sorted(proje_adlari),
-            "tags": etiketler,
-            "searched": bool(sorgu),
+            "projects": sorted(project_names),
+            "tags": tags,
+            "searched": bool(query),
         })
 
     def _session(self) -> None:
-        """Bir oturumun konuşma dökümü (görüntüleme için)."""
+        """One session's conversation transcript (for viewing)."""
         mind = getattr(self.server, "mind", None)
         if mind is None:
             self._json({"turns": []})
             return
         sid = parse_qs(urlparse(self.path).query).get("id", [""])[0]
-        # Yol/ad enjeksiyonu olmasın: kimlik yalnızca harf/rakam/-/_ olabilir.
+        # No path/name injection: the id may only be letters/digits/-/_.
         if not sid or not re.match(r"^[A-Za-z0-9_-]+$", sid):
             self.send_error(400, "geçersiz oturum")
             return
         self._json({"id": sid, "turns": mind.transcript(sid)})
 
     def _raw(self) -> bytes:
-        """Gövdeyi bir kez okur.
+        """Reads the body once.
 
-        İki kez okumak mümkün değil: ilk okuma akışı tüketiyor, ikincisi hiç
-        gelmeyecek baytları bekliyor ve istek askıda kalıyor.
+        Reading twice is impossible: the first read consumes the stream, the
+        second waits for bytes that will never come and the request hangs.
         """
         length = int(self.headers.get("Content-Length") or 0)
         return self.rfile.read(length) if length else b''
 
-    def _capraz_koken_mi(self) -> bool:
-        """İstek YABANCI bir kökenden mi geliyor?
+    def _is_cross_origin(self) -> bool:
+        """Does the request come from a FOREIGN origin?
 
-        True yalnızca Origin (yoksa Referer) BAŞLIĞI VARSA ve kökeni bizim
-        host:port'umuzla uyuşmuyorsa. Başlık hiç yoksa False döner: kabuk,
-        test, benchmark ve yerel otomasyon Origin göndermez ve bunları
-        arayüzden ayırt etmek HTTP katmanında zaten mümkün değil. Kapatılan
-        şey çapraz-köken tarayıcı POST'u (drive-by CSRF).
+        True only if an Origin (else Referer) HEADER EXISTS and its origin
+        does not match our host:port. With no header at all it returns
+        False: the shell, tests, benchmark and local automation send no
+        Origin and telling them apart from the UI is impossible at the HTTP
+        layer anyway. What is closed is the cross-origin browser POST
+        (drive-by CSRF).
         """
-        koken = self.headers.get("Origin") or ""
-        if not koken:
+        origin = self.headers.get("Origin") or ""
+        if not origin:
             ref = self.headers.get("Referer") or ""
             if not ref:
                 return False
-            koken = ref
+            origin = ref
         try:
             from urllib.parse import urlparse
-            ayr = urlparse(koken)
+            parsed = urlparse(origin)
         except ValueError:
-            return True  # ayrıştırılamayan köken: güvenli tarafta reddet
-        host = (ayr.hostname or "").lower()
+            return True  # unparseable origin: reject on the safe side
+        host = (parsed.hostname or "").lower()
         if host not in ("127.0.0.1", "localhost", "::1"):
             return True
         try:
-            bizim_port = int(self.server.server_address[1])
+            our_port = int(self.server.server_address[1])
         except (AttributeError, IndexError, TypeError, ValueError):
-            return False  # portu bilemiyorsak host eşleşmesi yeter
-        # Köken portu belirtmişse eşleşmeli; belirtmemişse (nadiren) host yeter.
-        return ayr.port is not None and int(ayr.port) != bizim_port
+            return False  # if we cannot know the port the host match is enough
+        # If the origin states a port it must match; if not (rarely) the host is enough.
+        return parsed.port is not None and int(parsed.port) != our_port
 
     def _controller_call(self, name: str, *args: Any) -> Any:
         controller = getattr(self.server, "controller", None)
         fn = getattr(controller, name, None) if controller else None
-        # Olmayan bir metot (ör. salt-gözlem önizlemesi ya da new_session
-        # desteklemeyen bir köprü) sessizce None: uç nokta bunu ok:false'a
-        # çeviriyor, 500 atmıyor.
+        # A missing method (e.g. an observe-only preview or a bridge that
+        # does not support new_session) is silently None: the endpoint
+        # turns that into ok:false, does not throw 500.
         return fn(*args) if callable(fn) else None
 
-    # -- yanıt biçimleri -----------------------------------------------
+    # -- response formats -----------------------------------------------
 
     def _logo_png(self) -> None:
         from ..logo import png_path
@@ -3674,119 +3721,122 @@ class _Handler(BaseHTTPRequestHandler):
         self._send(200, "application/json; charset=utf-8", body)
 
     def _opening_base(self, config: Any) -> Path:
-        """Göreli yolların çözüleceği taban: bağlı proje varsa O, yoksa
-        çalışma alanı.
+        """The base relative paths are resolved against: the attached
+        project if there is one, else the workspace.
 
-        Ajan bağlı bir klasöre yazdığında kart "atolye/…" değil o klasöre
-        göreli bir yol taşıyor; taban çalışma alanına sabitlenince
-        "Klasörde göster" dosyayı bulamıyordu (canlı yara, 02.09).
+        When the agent writes into an attached folder the card carries a
+        path relative to that folder, not "atolye/…"; with the base pinned
+        to the workspace "Show in folder" could not find the file (live
+        wound, 02.09).
         """
         try:
-            proje = str(getattr(config.sandbox, "project", "") or "").strip()
-            if proje:
-                yol = Path(proje).expanduser()
-                if yol.is_dir():
-                    return yol
+            project = str(getattr(config.sandbox, "project", "") or "").strip()
+            if project:
+                path = Path(project).expanduser()
+                if path.is_dir():
+                    return path
         except Exception:
             pass
         return Path(config.workspace)
 
-    def _klasor_olustur(self, body: dict[str, Any] | None) -> None:
-        """Yeni bir çalışma klasörü oluşturur (ve yolunu döndürür).
+    def _create_folder(self, body: dict[str, Any] | None) -> None:
+        """Creates a new working folder (and returns its path).
 
-        Sohbet ekranındaki "Yeni klasör" akışı: kullanıcı bir üst dizin
-        seçip ad veriyor, klasör burada açılıyor. Atölye DIŞI da olabilir —
-        seçim kullanıcının rızasıdır (sandbox'ın kuralı da bu). Yine de
-        `kok_engeli` süzgeci var: sürücü kökü, Windows/Program Files gibi
-        sistem dizinleri ve ev dizininin kendisi reddedilir.
+        The "New folder" flow on the chat screen: the user picks a parent
+        directory and gives a name, the folder is opened here. It may be
+        OUTSIDE the workshop too — the choice is the user's consent (that is
+        the sandbox's rule as well). Still, the `kok_engeli` filter applies:
+        a drive root, system directories like Windows/Program Files and the
+        home directory itself are refused.
         """
-        from .. import sandbox as kum
+        from .. import sandbox as sandbox_mod
 
-        ust = str((body or {}).get("ust") or "").strip()
-        ad = str((body or {}).get("ad") or "").strip()
-        if not ust or not ad:
+        parent = str((body or {}).get("ust") or "").strip()
+        name = str((body or {}).get("ad") or "").strip()
+        if not parent or not name:
             self._json({"ok": False, "hata": "üst klasör ve ad gerekli"})
             return
-        # Ad tek parça olmalı: yol ayracı ya da `..` ile üst dizine çıkılmasın.
-        if any(sep in ad for sep in ("/", "\\")) or ad in (".", ".."):
+        # The name must be a single segment: no climbing to the parent via a path separator or `..`.
+        if any(sep in name for sep in ("/", "\\")) or name in (".", ".."):
             self._json({"ok": False, "hata": "Klasör adı yol içeremez"})
             return
         try:
-            kok = Path(ust).expanduser().resolve()
-            hedef = (kok / ad).resolve()
+            root = Path(parent).expanduser().resolve()
+            target = (root / name).resolve()
         except OSError:
             self._json({"ok": False, "hata": "Yol çözümlenemedi"})
             return
-        if kok != hedef.parent:
+        if root != target.parent:
             self._json({"ok": False, "hata": "Klasör seçilen dizinin altında olmalı"})
             return
-        if not kok.is_dir():
-            self._json({"ok": False, "hata": f"Üst klasör yok: {kok}"})
+        if not root.is_dir():
+            self._json({"ok": False, "hata": f"Üst klasör yok: {root}"})
             return
-        # Denetim ÜST dizine: hedef henüz yok ve `kok_engeli` var olmayan
-        # yolu "böyle bir klasör yok" diye reddediyor. Asıl soru zaten
-        # "bu klasörü açmak güvenli bir yerde mi?" — cevabı üst dizin verir.
-        if (engel := kum.root_block(kok)) is not None:
-            self._json({"ok": False, "hata": engel})
+        # The check is on the PARENT directory: the target does not exist
+        # yet and `kok_engeli` rejects a non-existent path with "no such
+        # folder". The real question is "is opening this folder in a safe
+        # place?" anyway — the parent directory answers that.
+        if (block := sandbox_mod.root_block(root)) is not None:
+            self._json({"ok": False, "hata": block})
             return
         try:
-            hedef.mkdir(parents=True, exist_ok=True)
+            target.mkdir(parents=True, exist_ok=True)
         except OSError as exc:
             self._json({"ok": False, "hata": f"oluşturulamadı: {exc}"})
             return
-        self._json({"ok": True, "yol": str(hedef),
-                    "uyari": kum.root_warning(hedef) or ""})
+        self._json({"ok": True, "yol": str(target),
+                    "uyari": sandbox_mod.root_warning(target) or ""})
 
-    def _guncelle(self) -> None:
-        """Yeni sürümü indirir ve kurulum sihirbazını başlatır.
+    def _run_update(self) -> None:
+        """Downloads the new version and launches the setup wizard.
 
-        Adres İSTEMCİDEN GELMEZ: sunucu GitHub yayın API'sini yeniden
-        sorup güvenilir indirme bağlantısını oradan alır (zehirlenmiş bir
-        URL enjekte edilemez). İndirme arka planda; ilerleme SSE ile
-        ("guncelleme" olayı) arayüze akar. Bitince sihirbaz açılır; çalışan
-        uygulamayı kapatmayı sihirbazın kendisi (PrepareToInstall → "Kapat
-        ve devam") üstlenir.
+        The address DOES NOT COME FROM THE CLIENT: the server asks the
+        GitHub release API again and takes the trusted download link from
+        there (a poisoned URL cannot be injected). The download runs in the
+        background; progress flows to the UI over SSE (the "guncelleme"
+        event). When done the wizard opens; closing the running application
+        is the wizard's own job (PrepareToInstall → "Close and continue").
         """
         import tempfile
         import threading
 
-        bilgi = environment.check_update()
-        if not bilgi.get("yeni") or not bilgi.get("indirme"):
+        info = environment.check_update()
+        if not info.get("yeni") or not info.get("indirme"):
             self._json({"ok": False,
-                        "hata": bilgi.get("hata") or "İndirilecek güncelleme yok"})
+                        "hata": info.get("hata") or "İndirilecek güncelleme yok"})
             return
 
         hub = getattr(self.server, "hub", None)
 
-        def duyur(ev: dict) -> None:
+        def announce(ev: dict) -> None:
             if hub is not None:
                 try:
                     hub.emit({"type": "guncelleme", **ev})
                 except Exception:
                     pass
 
-        def kos() -> None:
+        def run() -> None:
             try:
-                duyur({"asama": "indiriliyor", "yuzde": 0, "yeni": bilgi["yeni"]})
-                dizin = Path(tempfile.gettempdir()) / "dornick-guncelleme"
+                announce({"asama": "indiriliyor", "yuzde": 0, "yeni": info["yeni"]})
+                folder = Path(tempfile.gettempdir()) / "dornick-guncelleme"
 
-                def progress(indirilen: int, toplam: int) -> None:
-                    yuzde = int(indirilen * 100 / toplam) if toplam else 0
-                    duyur({"asama": "indiriliyor", "yuzde": yuzde,
-                           "indirilen": indirilen, "toplam": toplam})
+                def progress(downloaded: int, total: int) -> None:
+                    percent = int(downloaded * 100 / total) if total else 0
+                    announce({"asama": "indiriliyor", "yuzde": percent,
+                              "indirilen": downloaded, "toplam": total})
 
-                yol = environment.download_update(
-                    bilgi["indirme"], dizin,
-                    beklenen_boyut=int(bilgi.get("boyut") or 0),
-                    ad=str(bilgi.get("ad") or ""), progress=progress)
-                duyur({"asama": "kuruluyor", "yeni": bilgi["yeni"]})
-                environment.start_update(yol)
-                duyur({"asama": "acildi", "yeni": bilgi["yeni"]})
-            except Exception as exc:  # ağ/doğrulama/başlatma — arayüze dürüst hata
-                duyur({"asama": "hata", "hata": f"{type(exc).__name__}: {exc}"})
+                path = environment.download_update(
+                    info["indirme"], folder,
+                    beklenen_boyut=int(info.get("boyut") or 0),
+                    ad=str(info.get("ad") or ""), progress=progress)
+                announce({"asama": "kuruluyor", "yeni": info["yeni"]})
+                environment.start_update(path)
+                announce({"asama": "acildi", "yeni": info["yeni"]})
+            except Exception as exc:  # network/verification/launch — honest error to the UI
+                announce({"asama": "hata", "hata": f"{type(exc).__name__}: {exc}"})
 
-        threading.Thread(target=kos, name="dornick-guncelle", daemon=True).start()
-        self._json({"ok": True, "yeni": bilgi["yeni"]})
+        threading.Thread(target=run, name="dornick-guncelle", daemon=True).start()
+        self._json({"ok": True, "yeni": info["yeni"]})
 
     def _send(self, status: int, content_type: str, body: bytes,
               headers: dict[str, str] | None = None) -> None:
@@ -3804,12 +3854,12 @@ class _Handler(BaseHTTPRequestHandler):
         self.send_response(200)
         self.send_header("Content-Type", "text/event-stream; charset=utf-8")
         self.send_header("Cache-Control", "no-store")
-        # HTTP/1.1'de gövdenin sonu ya Content-Length ile ya chunked ile ya da
-        # bağlantının kapanmasıyla belirlenir. Uzunluk bilinmediği için
-        # "keep-alive" demek gövdeyi çerçevesiz bırakıyordu: tarayıcı akışı
-        # tamponluyor ve cevap toptan geliyordu.
+        # In HTTP/1.1 the end of the body is determined either by
+        # Content-Length, by chunked, or by the connection closing. Since
+        # the length is unknown, saying "keep-alive" left the body unframed:
+        # the browser buffered the stream and the reply arrived in bulk.
         self.send_header("Connection", "close")
-        self.send_header("X-Accel-Buffering", "no")   # araya giren vekiller için
+        self.send_header("X-Accel-Buffering", "no")   # for intervening proxies
         self.end_headers()
         self.close_connection = True
 
@@ -3818,13 +3868,13 @@ class _Handler(BaseHTTPRequestHandler):
                 try:
                     line = channel.get(timeout=HEARTBEAT_S)
                 except queue.Empty:
-                    # Yorum satırı: bağlantıyı canlı tutar, istemci yok sayar.
+                    # Comment line: keeps the connection alive, the client ignores it.
                     self.wfile.write(b": ping\n\n")
                     self.wfile.flush()
                     continue
                 self.wfile.write(f"data: {line}\n\n".encode("utf-8"))
                 self.wfile.flush()
         except (BrokenPipeError, ConnectionResetError, OSError):
-            pass  # sekme kapandı
+            pass  # tab closed
         finally:
             self.server.hub.unregister(channel)  # type: ignore[attr-defined]

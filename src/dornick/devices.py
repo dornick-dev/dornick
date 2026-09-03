@@ -1,26 +1,26 @@
-"""Cihazlar: ajanın bağlandığı fiziksel ve uzak şeyler için ortak biçim.
+"""Devices: a common format for the physical and remote things the agent connects to.
 
-Bir PLC, bir kamera, bir seri porttaki kol, bir MCP sunucusu — hepsi
-birbirinden çok farklı şeyler ve her biri için ayrı bir yapı yazmak
-ölçeklenmiyor. Ortak olan üç şey var, ve biçim yalnızca onları sabitliyor:
+A PLC, a camera, an arm on a serial port, an MCP server — all very different
+things, and writing a separate structure for each does not scale. Three
+things are common, and the format pins down only those:
 
-    ne olduğu      kind + name + summary
-    nasıl bağlanılacağı   link (serbest: her protokolün kendi alanları var)
-    neresine dokunulacağı points (adresler, uçlar, kanallar)
+    what it is            kind + name + summary
+    how to connect        link (free-form: each protocol has its own fields)
+    where to touch it     points (addresses, endpoints, channels)
 
-`link` bilerek şemasız. Modbus'un host/port'u var, seri portun baud'u,
-MCP'nin komut satırı. Hepsini tek bir şemaya sokmaya çalışmak ya her
-cihaza uymayan bir kalıp ya da hiçbir şey söylemeyen bir sözlük üretir.
+`link` is deliberately schemaless. Modbus has host/port, a serial port has
+baud, MCP has a command line. Trying to force all of them into one schema
+produces either a mould that fits no device or a dict that says nothing.
 
-Kayıtlar atölyenin içinde, `cihazlar/` klasöründe birer JSON dosyası.
-İki yoldan da eklenebiliyor ve ikisi aynı dosyaya yazıyor:
+Records live inside the workshop, one JSON file each in the `cihazlar/`
+folder. They can be added two ways, and both write to the same file:
 
-    kullanıcı  ayarlar sayfasından ya da klasöre dosya bırakarak
-    ajan       konuşma sırasında `device` aracıyla
+    user   from the settings page or by dropping a file into the folder
+    agent  during conversation with the `device` tool
 
-Bir cihaz kendi başına bir şey yapmıyor: ne olduğunu ve nereye
-bağlanılacağını söylüyor. İşi yapan şey ona bağlanan yetenek — ajanın
-kendine yazdığı betik. `skills` alanı ikisini birbirine bağlıyor.
+A device does nothing on its own: it says what it is and where to connect.
+The thing that does the work is the skill attached to it — the script the
+agent writes for itself. The `skills` field ties the two together.
 """
 
 from __future__ import annotations
@@ -31,16 +31,16 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
-# Atölye içinde cihazların durduğu klasör.
+# Folder inside the workshop where devices live.
 FOLDER = "cihazlar"
 
-# Cihaz türleri. Liste kapalı: sahnede her türün bir karşılığı var ve
-# serbest bırakmak "plc" ile "PLC" ile "Plc"yi üç ayrı tür yapıyordu.
+# Device kinds. The list is closed: every kind has a counterpart on the
+# stage, and leaving it free made "plc", "PLC" and "Plc" three separate kinds.
 KINDS = ("plc", "camera", "serial", "usb", "network", "mcp", "other")
 
-# Sahnede türün altında görünen kelime. "tanımlı" hepsi için doğru ama
-# hiçbir şey söylemiyor; kullanıcı listeye baktığında neyin ne olduğunu
-# okumak istiyor.
+# The word shown under the kind on the stage. "tanımlı" is true for all of
+# them but says nothing; when the user looks at the list they want to read
+# what is what.
 KIND_STATE = {
     "plc": "makine",
     "camera": "kamera",
@@ -51,27 +51,27 @@ KIND_STATE = {
     "other": "cihaz",
 }
 
-# Kimlik: dosya adı oluyor, o yüzden yol ayracı ya da boşluk kabul yok.
+# Identity: it becomes the file name, so no path separators or spaces.
 _ID = re.compile(r"^[a-z0-9][a-z0-9_-]{0,48}$")
 
 
 class DeviceError(Exception):
-    """Biçim hatası. Mesajı doğrudan modele ve kullanıcıya gösteriliyor."""
+    """Format error. The message is shown directly to the model and the user."""
 
 
 @dataclass(slots=True)
 class Point:
-    """Cihazın dokunulabilir bir noktası: bir adres, bir uç, bir kanal.
+    """A touchable point of the device: an address, an endpoint, a channel.
 
-    Sanayide asıl bilgi burada. "Şu adres kapıyı açıyor" cümlesinin
-    gideceği yer bu satır.
+    In industry the real information is here. This row is where the
+    sentence "that address opens the door" goes.
     """
 
     name: str
     address: str = ""
     note: str = ""
-    # Okunur mu, yazılır mı. Yanlış tarafa yazmak fiziksel bir sonuç
-    # doğuruyor, o yüzden ayrı duruyor.
+    # Readable or writable. Writing to the wrong side has a physical
+    # consequence, so it stands apart.
     access: str = "read"
 
 
@@ -81,15 +81,15 @@ class Device:
     name: str
     kind: str = "other"
     summary: str = ""
-    # Nasıl bağlanılacağı. Şemasız: her protokolün kendi alanları var.
+    # How to connect. Schemaless: each protocol has its own fields.
     link: dict[str, Any] = field(default_factory=dict)
     points: list[Point] = field(default_factory=list)
-    # Bu cihazı süren yetenekler. İşi yapan şey cihaz değil, ona bağlanan
-    # betik; ikisini bu alan birbirine bağlıyor.
+    # The skills that drive this device. The thing that does the work is not
+    # the device but the script attached to it; this field ties the two.
     skills: list[str] = field(default_factory=list)
     notes: str = ""
-    # Kim ekledi. Kullanıcının elle yazdığı bir kaydı ajanın sessizce
-    # değiştirmesi ya da silmesi doğru değil.
+    # Who added it. It is not right for the agent to silently change or
+    # delete a record the user wrote by hand.
     source: str = "dornick"
 
 
@@ -97,14 +97,14 @@ def folder(sandbox_root: Path) -> Path:
     return Path(sandbox_root) / FOLDER
 
 
-# -- biçim -------------------------------------------------------------
+# -- format ------------------------------------------------------------
 
 
 def parse(raw: Any) -> Device:
-    """Sözlükten cihaza. Eksik ya da yanlış olanı adıyla söylüyor.
+    """Dict to device. Names what is missing or wrong.
 
-    Hata mesajı modele gidiyor: "geçersiz" demek onu tahmin etmeye
-    zorluyor, hangi alanın neden geçersiz olduğunu söylemek düzeltiyor.
+    The error message goes to the model: saying "invalid" forces it to
+    guess, saying which field is invalid and why fixes it.
     """
     if not isinstance(raw, dict):
         raise DeviceError("Cihaz bir nesne olmalı.")
@@ -163,14 +163,14 @@ def to_dict(device: Device) -> dict[str, Any]:
     return asdict(device)
 
 
-# -- klasör ------------------------------------------------------------
+# -- folder ------------------------------------------------------------
 
 
 def load(sandbox_root: Path) -> tuple[list[Device], list[str]]:
-    """Klasördeki bütün cihazlar. (cihazlar, hatalar)
+    """All devices in the folder. (devices, errors)
 
-    Bozuk bir dosya listeyi düşürmüyor: elle yazılmış yarım bir JSON
-    yüzünden bütün cihazların kaybolması, o dosyadan çok daha kötü.
+    A broken file does not bring the list down: losing every device because
+    of a half-written hand-edited JSON is far worse than that one file.
     """
     root = folder(sandbox_root)
     if not root.is_dir():
@@ -192,7 +192,7 @@ def find(sandbox_root: Path, ident: str) -> Device | None:
 
 
 def save(sandbox_root: Path, raw: Any) -> Device:
-    """Cihazı yazar. Var olanı günceller, yoksa oluşturur."""
+    """Writes the device. Updates an existing one, creates it otherwise."""
     device = parse(raw)
     root = folder(sandbox_root)
     root.mkdir(parents=True, exist_ok=True)
@@ -211,11 +211,11 @@ def remove(sandbox_root: Path, ident: str) -> bool:
     return True
 
 
-# -- anlatım -----------------------------------------------------------
+# -- narration ---------------------------------------------------------
 
 
 def _where(device: Device) -> str:
-    """Bağlantıyı tek satıra indirir: "modbus-tcp 192.168.1.50:502"."""
+    """Reduces the link to one line: "modbus-tcp 192.168.1.50:502"."""
     link = device.link
     protocol = str(link.get("protocol") or link.get("transport") or "")
     host = str(link.get("host") or link.get("url") or link.get("port_name") or
@@ -226,7 +226,7 @@ def _where(device: Device) -> str:
 
 
 def line(device: Device) -> str:
-    """Listede görünen tek satır."""
+    """The single line shown in the list."""
     parts = [device.kind]
     if where := _where(device):
         parts.append(where)
@@ -238,12 +238,12 @@ def line(device: Device) -> str:
 
 
 def briefing(sandbox_root: Path) -> str:
-    """Sistem istemine giren kısa özet.
+    """The short summary that goes into the system prompt.
 
-    Ajanın neye bağlı olduğunu her seferinde araç çağırarak öğrenmesi
-    hem yavaş hem anlamsız: kendi bedenini biliyor olması gerekiyor.
-    Ayrıntı (adresler, notlar) burada değil — onu `device action=show`
-    veriyor, çünkü on cihazın bütün adresleri istemi şişiriyor.
+    Having the agent learn what it is connected to by calling a tool every
+    time is both slow and pointless: it should know its own body. Detail
+    (addresses, notes) is not here — `device action=show` gives that,
+    because all the addresses of ten devices bloat the prompt.
     """
     devices, _broken = load(sandbox_root)
     if not devices:

@@ -58,15 +58,15 @@ def store(tmp_path: Path, clock: Clock):
 @pytest.fixture()
 def pair(store):
     """The same words, two projects. This is the whole test set in miniature."""
-    # Dolgu: iki belgelik bir korpusta bm25 çöker (kusursuz eşleşme 0.0) ve
-    # ölçülen şey bağlam değil o çöküş olurdu.
-    for metin in ("Kapı zilinin pili bitmek üzere.",
-                  "Semt pazarı perşembe kuruluyor.",
-                  "Jeneratör motorini altı ayda bir tazeleniyor.",
-                  "Rapor şablonu üç sayfalı bir dosya.",
-                  "Rapor teslimi vardiya defterine işleniyor.",
-                  "Raporlama aracı yeniden yazıldı."):
-        store.remember(metin, kind="fact")
+    # Filler: on a two-document corpus bm25 collapses (a perfect match scores
+    # 0.0) and what got measured would be that collapse, not context.
+    for text in ("Kapı zilinin pili bitmek üzere.",
+                 "Semt pazarı perşembe kuruluyor.",
+                 "Jeneratör motorini altı ayda bir tazeleniyor.",
+                 "Rapor şablonu üç sayfalı bir dosya.",
+                 "Rapor teslimi vardiya defterine işleniyor.",
+                 "Raporlama aracı yeniden yazıldı."):
+        store.remember(text, kind="fact")
     koru = store.remember("Raporlar vardiya sonunda otomatik üretiliyor.",
                           kind="fact", context=KORU)
     kobyte = store.remember("Raporlar ayın ilk günü müşteriye gönderiliyor.",
@@ -211,7 +211,7 @@ def test_an_old_memory_opens_with_empty_contexts(tmp_path: Path) -> None:
 
 def test_a_broken_context_field_does_not_break_search(store) -> None:
     node = store.remember("Bir kayıt.", kind="fact", context=KORU)
-    with store._lock:                    # noqa: SLF001 — bilerek bozuk veri
+    with store._lock:                    # noqa: SLF001 — deliberately broken data
         store._db.execute("UPDATE node SET context='bu json değil' WHERE id=?",
                           (node.id,))
         store._db.commit()

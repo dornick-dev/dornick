@@ -1,17 +1,18 @@
-"""Sistem tepsisi.
+"""System tray.
 
-Pencereyi kapatmak programı kapatmamalı. Ajanın arka planda durması gereken
-işleri var: zamanlanmış görevler, kameraları izleyen alt ajanlar ve —
-kullanıcı açtıysa — uyandırma sözünü bekleyen mikrofon. Pencere kapanınca
-bunların hepsi ölürse "arka planda çalışıyor" demek anlamsız.
+Closing the window must not close the program. The agent has work that has
+to keep going in the background: scheduled tasks, sub-agents watching the
+cameras and — if the user turned it on — the microphone waiting for the
+wake word. If all of those die when the window closes, "runs in the
+background" means nothing.
 
-Bu yüzden kapatma düğmesi pencereyi **gizliyor**, yok etmiyor. Sayfa
-çalışmaya devam ediyor: WebView2 gizli pencerede de betikleri koşturuyor,
-yani mikrofon dinlemeyi sürdürüyor. "dornick" duyulduğunda pencere kendiliğinden
-geri geliyor.
+That is why the close button **hides** the window rather than destroying
+it. The page keeps running: WebView2 keeps executing scripts in a hidden
+window, so the microphone keeps listening. When "dornick" is heard the
+window comes back by itself.
 
-Tepsi simgesi ayrı bir thread'de dönüyor. pywebview'in kendi döngüsü ana
-thread'i istiyor ve ikisi aynı thread'i paylaşamıyor.
+The tray icon spins on a separate thread. pywebview's own loop wants the
+main thread and the two cannot share it.
 """
 
 from __future__ import annotations
@@ -20,28 +21,28 @@ import sys
 import threading
 from typing import Any, Callable
 
-# Simge ölçüsü. Windows tepsisi 16-32 px arası ölçekliyor; 64 hepsinde net.
+# Icon size. The Windows tray scales between 16-32 px; 64 is crisp on all.
 SIZE = 64
 
 INSTALL_HINT = "Sistem tepsisi için: pip install 'dornick[tray]'"
 
-# X'e basılınca iş sürüyorsa gösterilen balon. Yalnızca İLK seferde —
-# her gizlenişte bildirim basmak rahatsız eder, bir kez öğretmek yeter.
+# Balloon shown when X is pressed while work is running. Only the FIRST
+# time — a notification on every hide annoys, teaching once is enough.
 BACKGROUND_NOTE = ("Dornick arka planda — zamanlanmış görevler ve otomasyonlar "
                   "çalışmaya devam eder; tepsiden açabilirsin")
 
-# Zamanlanmış / otomasyon işi bittiğinde Windows tepsi bildirimi.
-GOREV_BITTI = "Görev tamamlandı: {title}"
-GOREV_HATA = "Görev hata verdi: {title}"
+# Windows tray notification when a scheduled / automation job finishes.
+TASK_DONE_NOTE = "Görev tamamlandı: {title}"
+TASK_FAILED_NOTE = "Görev hata verdi: {title}"
 
 
 def task_notification_text(title: str, *, ok: bool) -> str:
-    """Koşu bitiş balonu metni — test edilebilir, UI'dan bağımsız."""
-    sablon = GOREV_BITTI if ok else GOREV_HATA
-    ad = (title or "görev").strip() or "görev"
-    if len(ad) > 80:
-        ad = ad[:79] + "…"
-    return sablon.format(title=ad)
+    """Text of the run-finished balloon — testable, independent of the UI."""
+    template = TASK_DONE_NOTE if ok else TASK_FAILED_NOTE
+    name = (title or "görev").strip() or "görev"
+    if len(name) > 80:
+        name = name[:79] + "…"
+    return template.format(title=name)
 
 
 def _xml_esc(text: str) -> str:
@@ -50,7 +51,7 @@ def _xml_esc(text: str) -> str:
 
 
 def toast_xml(title: str, body: str, icon_uri: str) -> str:
-    """WinRT toast gövdesi — logo `appLogoOverride` ile solda durur."""
+    """WinRT toast body — the logo sits on the left via `appLogoOverride`."""
     return (
         "<toast><visual><binding template='ToastGeneric'>"
         f"<text>{_xml_esc(title)}</text>"
@@ -61,7 +62,7 @@ def toast_xml(title: str, body: str, icon_uri: str) -> str:
 
 
 def _windows_toast(title: str, body: str) -> bool:
-    """WinRT toast. Başarısızsa False — çağıran pystray balonuna düşer."""
+    """WinRT toast. False on failure — the caller falls back to the pystray balloon."""
     if sys.platform != "win32":
         return False
     try:
@@ -100,68 +101,72 @@ def _windows_toast(title: str, body: str) -> bool:
     except Exception:
         return False
 
-# Tepsiden Çıkış seçildi ama ajan meşgul: yarım kalacak işin onayı.
+# Exit chosen from the tray but the agent is busy: confirmation for the work
+# that will be left unfinished.
 EXIT_QUESTION = ("Bir iş sürüyor; çıkarsan yarım kalır (kaldığın yerden "
                 "sürdürülebilir).\n\nYine de çık?")
 
 
-def close_decision(tepsi_acik: bool) -> str:
-    """X'e basılınca ne olur: tepsi yaşıyorsa pencere GİZLENİR, uygulama
-    tepside sürer (Claude Code / masaüstü geleneği). Tepsi yoksa gizlemek
-    programı kapanmaz hale getirirdi — gerçekten kapatılır."""
-    return "gizle" if tepsi_acik else "kapat"
+def close_decision(tray_alive: bool) -> str:
+    """What happens on X: if the tray is alive the window is HIDDEN and the
+    app lives on in the tray (Claude Code / desktop tradition). Without a
+    tray, hiding would make the program impossible to close — it really
+    closes."""
+    return "gizle" if tray_alive else "kapat"
 
 
-def exit_decision(mesgul: bool, onayla: Callable[[str], bool] | None) -> bool:
-    """Tepsiden Çıkış seçildi: çıkılsın mı?
+def exit_decision(busy: bool, confirm: Callable[[str], bool] | None) -> bool:
+    """Exit chosen from the tray: should we quit?
 
-    Ajan meşgulse kullanıcıya sorulur — yarım kalacak işten haberi olsun.
-    Boştaysa sorgusuz çıkılır. Onay sorulamıyorsa (diyalog yok/patladı)
-    kullanıcının açık jesti kazanır: çıkılır — "çıkamıyorum" durumu,
-    yarım işten daha kötü bir tuzak.
+    If the agent is busy the user is asked — so they know about the work
+    that will be left unfinished. If idle, quit without asking. If the
+    confirmation cannot be asked (no dialog / it blew up) the user's
+    explicit gesture wins: quit — the "I can't quit" situation is a worse
+    trap than unfinished work.
     """
-    if not mesgul:
+    if not busy:
         return True
-    if onayla is None:
+    if confirm is None:
         return True
     try:
-        return bool(onayla(EXIT_QUESTION))
+        return bool(confirm(EXIT_QUESTION))
     except Exception:
         return True
 
 
 class Shutdown:
-    """X ile "Çıkış"ı ayıran bayrak.
+    """The flag that separates X from "Exit".
 
-    İkisi de pencere katmanının AYNI olayına (pywebview `closing`) düşüyor:
-    X'e basmak da, `destroy()` çağırmak da. Olay tek başına niyeti
-    taşımadığı için, ayrımı burada tutulan bayrak yapıyor.
+    Both land on the SAME event of the window layer (pywebview `closing`):
+    pressing X as well as calling `destroy()`. Since the event alone does
+    not carry the intent, the flag held here makes the distinction.
 
-    Bayrak olmadan tepsideki Çıkış sessizce gizlemeye düşüyordu: kullanıcı
-    onay penceresinde Evet diyor, `destroy()` çağrılıyor, `closing` kancası
-    "bu bir X'tir" varsayıp kapanışı iptal ediyor. Program yaşamaya devam
-    ediyor — üstelik tepsi simgesi çoktan kapandığı için geri de gelinemiyor.
+    Without the flag, Exit from the tray silently fell through to hiding:
+    the user says Yes in the confirmation dialog, `destroy()` is called, the
+    `closing` hook assumes "this is an X" and cancels the close. The program
+    keeps living — and since the tray icon has already gone there is no way
+    back either.
     """
 
-    def __init__(self, gizle: Callable[[], None], yok_et: Callable[[], None]) -> None:
-        self._gizle = gizle
-        self._yok_et = yok_et
-        self._cikiliyor = False
+    def __init__(self, hide: Callable[[], None], destroy: Callable[[], None]) -> None:
+        self._hide = hide
+        self._destroy = destroy
+        self._quitting = False
 
     @property
-    def cikiliyor(self) -> bool:
-        return self._cikiliyor
+    def quitting(self) -> bool:
+        return self._quitting
 
-    def cik(self) -> None:
-        """Tepsiden Çıkış: bayrağı kaldır, sonra pencereyi yok et."""
-        self._cikiliyor = True
-        self._yok_et()
+    def quit(self) -> None:
+        """Exit from the tray: raise the flag, then destroy the window."""
+        self._quitting = True
+        self._destroy()
 
-    def kapanabilir_mi(self) -> bool:
-        """`closing` olayının dönüş değeri: True kapan, False iptal et."""
-        if self._cikiliyor:
+    def may_close(self) -> bool:
+        """Return value of the `closing` event: True close, False cancel."""
+        if self._quitting:
             return True
-        self._gizle()
+        self._hide()
         return False
 
 
@@ -175,22 +180,23 @@ def available() -> bool:
 
 
 def _icon_image() -> Any:
-    """Çekirdeğin küçük hali: ortada parlak bir nokta, çevresinde halka.
+    """The small form of the core: a bright dot in the middle, a ring around it.
 
-    Dosyadan okumak yerine çiziliyor — paketlenmiş bir uygulamada varlık
-    yolu en sık kırılan şey ve simge kırılınca tepsi bomboş görünüyor.
+    Drawn rather than read from a file — in a packaged application the
+    asset path is the thing that breaks most often, and with a broken icon
+    the tray looks empty.
     """
-    # Tek kaynak: pencere ve sekmeyle AYNI işaret (logo modülü).
+    # Single source: the SAME mark as the window and the tab (logo module).
     from .logo import draw as draw_logo
 
     return draw_logo(SIZE)
 
 
 class Tray:
-    """Tepsi simgesi ve menüsü.
+    """Tray icon and menu.
 
-    `show`/`hide`/`quit` dışarıdan veriliyor: bu sınıf pencereyi tanımıyor,
-    yalnızca çağrıları taşıyor.
+    `show`/`hide`/`quit` are supplied from outside: this class does not know
+    the window, it only carries the calls.
     """
 
     def __init__(
@@ -203,32 +209,31 @@ class Tray:
         busy: Callable[[], bool] | None = None,
         confirm: Callable[[str], bool] | None = None,
         jobs: Callable[[], None] | None = None,
-        bekci: Callable[[], None] | None = None,
+        guard: Callable[[], None] | None = None,
     ) -> None:
         self.show = show
         self.hide = hide
         self.quit = quit
         self.title = title
-        # Çıkış bekçisi: ajan meşgulken Çıkış seçilirse `confirm` ile
-        # sorulur — süren iş sessizce ölmesin. İkisi de isteğe bağlı:
-        # verilmezse eski davranış (sorgusuz çıkış) aynen durur.
+        # Exit guard: if Exit is chosen while the agent is busy, `confirm`
+        # asks — the running work must not die silently. Both optional: if
+        # not given the old behaviour (quit without asking) stays as is.
         self.busy = busy
         self.confirm = confirm
-        # Tepsiden Görevler: pencereyi açıp HUD Görevler panelini getirir.
+        # Tasks from the tray: opens the window and brings the HUD Tasks panel.
         self.jobs = jobs
-        # Çıkış bekçisi kancası: kullanıcı Çıkış'ı onayladıktan sonra
-        # kurulur (bkz. cikis_bekcisi_kur). İsteğe bağlı — testler ve eski
-        # çağıranlar vermez, süreç öldüren bir yan etkiyle karşılaşmaz.
-        self.bekci = bekci
+        # Exit guard hook: installed after the user has confirmed Exit (see
+        # install_exit_guard). Optional — tests and old callers don't pass
+        # it and never meet a process-killing side effect.
+        self.guard = guard
         self._icon: Any = None
         self._thread: threading.Thread | None = None
-        # Bir kez gösterilmiş balonlar. "Arka planda çalışmaya devam
-        # ediyor" bilgisi ÖĞRETİCİ: ilk gizlenişte gerekli, her
-        # gizlenişte rahatsız edici.
-        self._gosterilen: set[str] = set()
+        # Balloons shown once. The "keeps running in the background" note
+        # is INSTRUCTIVE: needed on the first hide, annoying on every hide.
+        self._shown: set[str] = set()
 
     def start(self) -> bool:
-        """Simgeyi ayrı bir thread'de açar. Paket yoksa False."""
+        """Opens the icon on a separate thread. False if the package is missing."""
         if not available():
             return False
 
@@ -239,7 +244,7 @@ class Tray:
             _icon_image(),
             self.title,
             menu=pystray.Menu(
-                # İlk madde varsayılan: simgeye çift tıklayınca bu çalışıyor.
+                # The first item is the default: double-clicking the icon runs it.
                 pystray.MenuItem("Göster", self._show, default=True),
                 pystray.MenuItem("Görevler", self._jobs),
                 pystray.MenuItem("Gizle", self._hide),
@@ -248,16 +253,16 @@ class Tray:
             ),
         )
 
-        # pywebview ana thread'i istiyor; tepsi ayrı thread'de dönmek zorunda.
+        # pywebview wants the main thread; the tray has to spin on its own thread.
         self._thread = threading.Thread(target=self._icon.run, daemon=True, name="dornick-tray")
         self._thread.start()
         return True
 
     def note(self, text: str) -> None:
-        """Tepsiden bildirim. Desteklenmiyorsa sessizce geçiliyor.
+        """Notification from the tray. Silently skipped if unsupported.
 
-        Windows 10/11 toast pystray balonunu Python yılanıyla gösteriyor;
-        WinRT bildirimi logoyu `appLogoOverride` ile basıyor.
+        The Windows 10/11 toast shows the pystray balloon with the Python
+        snake; the WinRT notification prints the logo via `appLogoOverride`.
         """
         if _windows_toast(self.title, text):
             return
@@ -269,15 +274,15 @@ class Tray:
             pass
 
     def note_once(self, text: str) -> bool:
-        """Aynı balonu ömürde bir kez basar. Bastıysa True.
+        """Shows the same balloon once in a lifetime. True if it was shown.
 
-        X'e ilk basışta "dornick arka planda çalışmaya devam ediyor" demek
-        gerekiyor — pencere kaybolunca kullanıcı programın kapandığını
-        sanıyor. İkinci kez demek ise öğretmek değil, dırdır.
+        On the first press of X we have to say "dornick keeps running in the
+        background" — when the window vanishes the user thinks the program
+        closed. Saying it a second time is not teaching, it is nagging.
         """
-        if text in self._gosterilen:
+        if text in self._shown:
             return False
-        self._gosterilen.add(text)
+        self._shown.add(text)
         self.note(text)
         return True
 
@@ -289,58 +294,61 @@ class Tray:
                 pass
             self._icon = None
 
-    # -- menü çağrıları ------------------------------------------------
+    # -- menu callbacks -------------------------------------------------
     #
-    # pystray geri çağrılara (icon, item) veriyor; bizim işimize yaramıyor
-    # ve hatası menüyü sessizce kırıyor, o yüzden sarmalanıyor.
+    # pystray passes (icon, item) to the callbacks; we have no use for them
+    # and an error in one silently breaks the menu, so they are wrapped.
 
     def _show(self, *_args: Any) -> None:
         _safely(self.show)
 
     def _jobs(self, *_args: Any) -> None:
-        # Ayrı `jobs` yoksa en azından pencereyi göster — menü kırılmasın.
+        # Without a separate `jobs` at least show the window — don't break the menu.
         _safely(self.jobs or self.show)
 
     def _hide(self, *_args: Any) -> None:
         _safely(self.hide)
 
     def _quit(self, *_args: Any) -> None:
-        # Meşgulken onay: yarım kalacak iş varsa kullanıcı bilerek çıksın.
-        # `busy` sorgusu patlarsa meşgul DEĞİL sayılır — çıkışı kilitleme.
-        mesgul = False
+        # Confirmation while busy: if work would be left unfinished the user
+        # quits knowingly. If the `busy` probe blows up it counts as NOT busy
+        # — don't lock the exit.
+        is_busy = False
         if self.busy is not None:
             try:
-                mesgul = bool(self.busy())
+                is_busy = bool(self.busy())
             except Exception:
-                mesgul = False
-        if not exit_decision(mesgul, self.confirm):
+                is_busy = False
+        if not exit_decision(is_busy, self.confirm):
             return
-        # Bekçi: kullanıcı Çıkış'ı ONAYLADI — bu jest her koşulda süreçle
-        # bitmeli (canlı yara, 01.09: "traydan çık dedim, tamam dedim, onu
-        # bile yapamıyor" — görev yöneticisine mecbur kaldı). Kanca uygulama
-        # tarafından verilir; testlerde/eski çağıranlarda yoktur.
-        if self.bekci is not None:
-            _safely(self.bekci)
+        # Guard: the user CONFIRMED Exit — this gesture must end with the
+        # process under every condition (live wound, 01.09: "I said exit
+        # from the tray, said ok, and it can't even do that" — they were
+        # forced to the task manager). The hook is supplied by the app; in
+        # tests/old callers it is absent.
+        if self.guard is not None:
+            _safely(self.guard)
         self.stop()
         _safely(self.quit)
 
 
-def install_exit_guard(sure_sn: float = 12.0) -> None:
-    """Onaylanmış Çıkış'ın süreçle bitmesini garanti eden bekçi.
+def install_exit_guard(grace_s: float = 12.0) -> None:
+    """Guard that guarantees a confirmed Exit ends with the process.
 
-    Pencere katmanı (pywebview/GUI thread'i) kilitliyse `destroy()` sessizce
-    asılı kalabiliyor. Zarif kapanışa `sure_sn` tanınır; süre dolduğunda
-    süreç kesin olarak indirilir. Thread daemon: zarif yol kazanırsa süreç
-    zaten biter, bekçi onu tutmaz. YALNIZ gerçek uygulama kurar — pytest
-    gibi paylaşılan bir süreçte kurulursa koşuyu ortasından öldürür.
+    If the window layer (pywebview/GUI thread) is locked, `destroy()` can
+    silently hang. The graceful shutdown is granted `grace_s`; when the time
+    is up the process is taken down for good. The thread is a daemon: if the
+    graceful path wins the process ends anyway, the guard does not hold it.
+    ONLY the real application installs it — installed in a shared process
+    such as pytest it would kill the run midway.
     """
-    def _indir() -> None:
+    def _bring_down() -> None:
         import os
         import time
-        time.sleep(sure_sn)
+        time.sleep(grace_s)
         os._exit(0)
 
-    threading.Thread(target=_indir, name="dornick-cikis-bekci",
+    threading.Thread(target=_bring_down, name="dornick-exit-guard",
                      daemon=True).start()
 
 
@@ -348,6 +356,6 @@ def _safely(fn: Callable[[], None]) -> None:
     try:
         fn()
     except Exception:
-        # Tepsi menüsündeki bir hata programı düşürmemeli; en kötü ihtimalle
-        # o tıklama işe yaramaz.
+        # An error in the tray menu must not bring the program down; at
+        # worst that click does nothing.
         pass

@@ -1,9 +1,9 @@
-"""dornick chrome — CDP istemcisi.
+"""dornick chrome — the CDP client.
 
-Gerçek tarayıcı testte yok; olmaması testin değerini düşürmüyor çünkü
-kırılgan olan kısım protokol: WebSocket çerçeveleri (maske, 16/64 bitlik
-uzunluklar, parçalı mesaj) ve CDP'nin istek/cevap eşleşmesi. İkisi de
-burada gerçek soketlerle, sahte bir sunucuya karşı sürülüyor.
+No real browser in the test; its absence does not lower the test's value
+because the fragile part is the protocol: WebSocket frames (mask, 16/64-bit
+lengths, fragmented messages) and CDP's request/answer matching. Both are
+driven here with real sockets, against a fake server.
 """
 
 from __future__ import annotations
@@ -23,7 +23,7 @@ from dornick import chrome
 GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 
 
-# -- sahte WebSocket sunucusu -------------------------------------------
+# -- fake WebSocket server ----------------------------------------------
 
 
 def _accept_key(key: str) -> str:
@@ -34,7 +34,7 @@ def _accept_key(key: str) -> str:
 def _read_frame(conn: socket.socket) -> tuple[int, bytes]:
     head = conn.recv(2)
     if len(head) < 2:
-        raise ConnectionError("kapandı")
+        raise ConnectionError("closed")
     opcode = head[0] & 0x0F
     size = head[1] & 0x7F
     if size == 126:
@@ -46,7 +46,7 @@ def _read_frame(conn: socket.socket) -> tuple[int, bytes]:
     while len(body) < size:
         piece = conn.recv(size - len(body))
         if not piece:
-            raise ConnectionError("kapandı")
+            raise ConnectionError("closed")
         body += piece
     if mask:
         body = bytes(b ^ mask[i % 4] for i, b in enumerate(body))
@@ -54,7 +54,7 @@ def _read_frame(conn: socket.socket) -> tuple[int, bytes]:
 
 
 def _send_text(conn: socket.socket, payload: bytes) -> None:
-    # Sunucu çerçevesi maskesiz gider.
+    # Server frames go unmasked.
     head = bytearray([0x81])
     if len(payload) < 126:
         head.append(len(payload))
@@ -68,10 +68,10 @@ def _send_text(conn: socket.socket, payload: bytes) -> None:
 
 
 def ws_server(answer: Callable[[bytes], bytes]) -> tuple[str, threading.Thread, socket.socket]:
-    """Sahte sunucu: her bağlantıyla el sıkışır, her mesaja `answer` döner.
+    """Fake server: shakes hands with every connection, returns `answer` for every message.
 
-    Bağlantı başına değil döngüyle: `Browser` her CDP çağrısı için taze
-    bir bağlantı açıyor — tek `accept` ikinci çağrıda asılı kalıyordu.
+    A loop, not one per connection: `Browser` opens a fresh connection for
+    every CDP call — a single `accept` hung on the second call.
     """
     box = socket.socket()
     box.bind(("127.0.0.1", 0))
@@ -105,7 +105,7 @@ def ws_server(answer: Callable[[bytes], bytes]) -> tuple[str, threading.Thread, 
             try:
                 conn, _ = box.accept()
             except OSError:
-                return  # kutu kapandı, test bitti
+                return  # the box closed, the test is over
             threading.Thread(target=talk, args=(conn,), daemon=True).start()
 
     thread = threading.Thread(target=serve, daemon=True)
@@ -113,12 +113,12 @@ def ws_server(answer: Callable[[bytes], bytes]) -> tuple[str, threading.Thread, 
     return f"ws://127.0.0.1:{port}/dev", thread, box
 
 
-# -- tel ----------------------------------------------------------------
+# -- wire ---------------------------------------------------------------
 
 
 def test_the_wire_echoes_small_and_giant_frames() -> None:
-    """7, 16 ve 64 bitlik uzunluk yolları — ekran görüntüsü 64'lüğü
-    gerçekten kullanıyor, o yol test edilmeden bırakılamaz."""
+    """The 7-, 16- and 64-bit length paths — a screenshot really uses the
+    64-bit one, that path cannot be left untested."""
     url, _thread, box = ws_server(lambda body: body)
     wire = chrome.Wire(url, timeout=10)
     try:
@@ -152,24 +152,24 @@ def test_the_wire_refuses_a_non_websocket_answer() -> None:
     box.close()
 
 
-# -- sahte CDP ----------------------------------------------------------
+# -- fake CDP -----------------------------------------------------------
 
 
-# Sahte CDP'nin gördüğü tuş vuruşları — press/type testleri bunu okuyor.
+# Keystrokes the fake CDP saw — the press/type tests read this.
 KEYSTROKES: list[dict[str, Any]] = []
 
-# Sahte CDP'ye giden sayfa betikleri — fill/submit testleri, gönderilen
-# JS'in doğru ölçütleri ve olayları taşıdığını buradan denetliyor.
+# Page scripts sent to the fake CDP — the fill/submit tests check from here
+# that the JS sent carries the right criteria and events.
 EXPRESSIONS: list[str] = []
 
-# fill/submit yardımcılarının sayfa sözleşmesi ({ok} / {err, adaylar});
-# test, senaryosuna göre bu kutuları dolduruyor.
+# The page contract of the fill/submit helpers ({ok} / {err, adaylar});
+# the test fills these boxes according to its scenario.
 FILL_OUTCOME: dict[str, Any] = {}
 SUBMIT_OUTCOME: dict[str, Any] = {}
 
 
 def cdp_answer(body: bytes) -> bytes:
-    """Runtime.evaluate, screenshot, navigate ve Input.* bilen minicik CDP."""
+    """A tiny CDP that knows Runtime.evaluate, screenshot, navigate and Input.*."""
     message = json.loads(body)
     method = message.get("method")
     params = message.get("params") or {}
@@ -181,7 +181,7 @@ def cdp_answer(body: bytes) -> bytes:
             "document.title": "Deneme Sayfası",
             "location.href": "http://ornek/",
         }.get(source, "MERHABA DÜNYA")
-        # click/focus yardımcıları uzun IIFE; eşleşen metni geri döndür.
+        # The click/focus helpers are long IIFEs; return the matched text.
         if "hit.click()" in source:
             value = "Giriş"
         elif "// dornick:fill" in source:
@@ -192,7 +192,7 @@ def cdp_answer(body: bytes) -> bytes:
             value = "e-posta"
         result = {"result": {"value": value}}
     elif method == "Page.captureScreenshot":
-        result = {"data": base64.b64encode(b"sahte-jpeg").decode("ascii")}
+        result = {"data": base64.b64encode(b"fake-jpeg").decode("ascii")}
     elif method == "Page.navigate":
         result = {"frameId": "1"}
     elif method == "Input.dispatchKeyEvent":
@@ -204,7 +204,7 @@ def cdp_answer(body: bytes) -> bytes:
 
 
 class FakeCdpHttp:
-    """CDP'nin http yüzü: /json/version, /json/list, /json/new."""
+    """CDP's http face: /json/version, /json/list, /json/new."""
 
     def __init__(self, ws_url: str) -> None:
         from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -224,7 +224,7 @@ class FakeCdpHttp:
 
             def do_GET(self) -> None:  # noqa: N802
                 if self.path.startswith("/json/version"):
-                    self._json({"Browser": "Sahte/1.0"})
+                    self._json({"Browser": "Fake/1.0"})
                 elif self.path.startswith("/json/list"):
                     self._json(tabs)
                 else:
@@ -249,7 +249,7 @@ class FakeCdpHttp:
 
 
 def test_the_browser_reads_and_shoots_through_fake_cdp(tmp_path) -> None:
-    """tabs → read → screenshot, gerçek soketlerle sahte sunucuya karşı."""
+    """tabs → read → screenshot, with real sockets against the fake server."""
     ws_url, _thread, ws_box = ws_server(cdp_answer)
     http = FakeCdpHttp(ws_url)
     try:
@@ -274,8 +274,8 @@ def test_the_browser_reads_and_shoots_through_fake_cdp(tmp_path) -> None:
 
 
 def test_click_type_press_drive_the_page(tmp_path) -> None:
-    """Faz 2: metne göre tıklama, alana yazma ve özel tuş — hepsi gerçek
-    CDP çağrılarına dönüşüyor."""
+    """Phase 2: clicking by text, typing into a field and a special key —
+    all turn into real CDP calls."""
     KEYSTROKES.clear()
     ws_url, _thread, ws_box = ws_server(cdp_answer)
     http = FakeCdpHttp(ws_url)
@@ -286,7 +286,7 @@ def test_click_type_press_drive_the_page(tmp_path) -> None:
         assert box.click(tab, "Giriş") == "Giriş"
 
         box.type(tab, "ab", into="e-posta")
-        # İki karakter → dört olay (her biri keyDown + keyUp).
+        # Two characters → four events (keyDown + keyUp each).
         typed = [k for k in KEYSTROKES if k.get("text") in ("a", "b")]
         assert len(typed) == 4
 
@@ -303,9 +303,9 @@ def test_click_type_press_drive_the_page(tmp_path) -> None:
 
 
 def test_fill_carries_the_target_and_the_events_to_the_page(tmp_path) -> None:
-    """fill'in sayfaya yolladığı betik hedef ölçütlerini (label/name/
-    placeholder/selector) taşımalı ve çerçevelerin dinlediği input+change
-    olaylarını tetiklemeli — yoksa React'li bir form değeri hiç görmez."""
+    """The script fill sends to the page must carry the target criteria
+    (label/name/placeholder/selector) and fire the input+change events the
+    frameworks listen to — otherwise a React form never sees the value."""
     EXPRESSIONS.clear()
     FILL_OUTCOME.clear()
     FILL_OUTCOME["ok"] = "E-posta / name=email"
@@ -319,12 +319,12 @@ def test_fill_carries_the_target_and_the_events_to_the_page(tmp_path) -> None:
         assert where == "E-posta / name=email"
 
         source = next(s for s in EXPRESSIONS if "// dornick:fill" in s)
-        # Hedef ölçütleri sayfaya gitmiş olmalı.
+        # The target criteria must have gone to the page.
         assert '"E-posta"' in source and '"ali@ornek.com"' in source
-        # Etiket, name ve placeholder eşlemesi sayfa betiğinde.
+        # Label, name and placeholder matching are in the page script.
         for needle in ("labels", "aria-label", "el.name", "el.placeholder"):
             assert needle in source
-        # Yerli ayarlayıcı + input/change olayları: çerçeveler bunu dinliyor.
+        # Native setter + input/change events: frameworks listen to these.
         assert "getOwnPropertyDescriptor" in source
         assert 'new Event("input"' in source and 'new Event("change"' in source
     finally:
@@ -333,8 +333,8 @@ def test_fill_carries_the_target_and_the_events_to_the_page(tmp_path) -> None:
 
 
 def test_a_crowded_fill_match_names_the_candidates(tmp_path) -> None:
-    """Birden çok alan eşleşince sessizce ilkine yazılmaz: hata, adayları
-    sayar ki model hedefi daraltabilsin."""
+    """When several fields match, the first is not written silently: the
+    error lists the candidates so the model can narrow the target."""
     FILL_OUTCOME.clear()
     FILL_OUTCOME.update({
         "err": "Birden çok alan eşleşti; hedefi daralt.",
@@ -355,14 +355,15 @@ def test_a_crowded_fill_match_names_the_candidates(tmp_path) -> None:
 
 
 def test_fill_without_a_target_is_refused_before_touching_the_page(tmp_path) -> None:
-    box = chrome.Browser(tmp_path, port=1)  # sunucu yok; çağrı da olmamalı
+    box = chrome.Browser(tmp_path, port=1)  # no server; there must be no call either
     with pytest.raises(chrome.BrowseError):
         box.fill({"webSocketDebuggerUrl": "ws://127.0.0.1:1/x"}, "metin")
 
 
 def test_submit_finds_the_form_and_reports_the_button(tmp_path) -> None:
-    """submit iki yolu da bilmeli: düğme varsa tıklama, yoksa requestSubmit.
-    Seçici verilirse sayfaya taşınmalı; çoklu form hatası adaylarıyla gelmeli."""
+    """submit must know both routes: click if there is a button, otherwise
+    requestSubmit. A given selector must reach the page; the multi-form
+    error must come with candidates."""
     EXPRESSIONS.clear()
     SUBMIT_OUTCOME.clear()
     SUBMIT_OUTCOME["ok"] = "Giriş Yap"
@@ -374,7 +375,7 @@ def test_submit_finds_the_form_and_reports_the_button(tmp_path) -> None:
 
         assert box.submit(tab) == "Giriş Yap"
         source = next(s for s in EXPRESSIONS if "// dornick:submit" in s)
-        # İki gönderim yolu da sayfa betiğinde: düğme tıklama + requestSubmit.
+        # Both submission routes are in the page script: button click + requestSubmit.
         assert "btn.click()" in source and "requestSubmit" in source
 
         EXPRESSIONS.clear()
@@ -407,33 +408,33 @@ def test_an_unknown_key_is_refused(tmp_path) -> None:
         ws_box.close()
 
 
-# -- araç kapısı --------------------------------------------------------
+# -- tool gate ----------------------------------------------------------
 
 
 def test_every_registry_shares_one_browser(tmp_path) -> None:
-    """Ana ajan ve alt ajanlar ayrı araç defterleri taşıyor; hepsi AYNI
-    tarayıcıyı sürmeli — yoksa her defter kendi Chrome'unu açıp aynı kapıda
-    yarışır."""
+    """The main agent and the subagents carry separate tool registries; all
+    must drive the SAME browser — otherwise every registry opens its own
+    Chrome and races on the same port."""
     a = chrome.shared(tmp_path, port=9999)
     b = chrome.shared(tmp_path, port=9999)
     assert a is b
-    # Farklı profil/kapı ayrı tarayıcı: iki proje çakışmasın.
+    # A different profile/port is a separate browser: two projects must not clash.
     assert chrome.shared(tmp_path, port=9998) is not a
 
 
 def test_the_browser_tool_is_in_the_subagent_registry() -> None:
-    """"Alt ajanlar da görsün": browser yerleşik, alt ajan defterinde de var."""
+    """"Subagents should see it too": browser is built in, present in the subagent registry as well."""
     from dornick.tools import build_registry
 
     if not chrome.available():
         import pytest as _p
-        _p.skip("bu makinede tarayıcı yok")
+        _p.skip("no browser on this machine")
     assert "browser" in build_registry(subagents=False)
 
 
 def test_the_tool_offers_fill_and_submit() -> None:
-    """Form doldurma araç yüzeyinde olmalı: dornick, ürettiği uygulamada giriş
-    yapamazsa giriş-sonrası sayfaları hiç doğrulayamıyor."""
+    """Form filling must be on the tool surface: if dornick cannot log in
+    to the app it built, it can never verify the post-login pages."""
     from dornick.tools import ToolRegistry
     from dornick.tools import browser as surf
 
@@ -448,8 +449,8 @@ def test_the_tool_offers_fill_and_submit() -> None:
 
 
 def test_the_tool_stays_shut_until_the_user_opens_it(tmp_path) -> None:
-    """Kapalı tarayıcı bir eksiklik değil, bir tercih: araç bunu söylemeli
-    ve kendiliğinden açmamalı."""
+    """A closed browser is not a deficiency, it is a preference: the tool
+    must say so and must not open it on its own."""
     import asyncio
 
     from dornick.config import Config
@@ -462,7 +463,7 @@ def test_the_tool_stays_shut_until_the_user_opens_it(tmp_path) -> None:
     surf.register(registry)
     spec = registry.get("browser")
     assert spec is not None
-    assert spec.mutates is True   # sayfa açmak dışa dönük bir eylem
+    assert spec.mutates is True   # opening a page is an outward-facing action
 
     config = Config.load(tmp_path)
     ctx = ToolContext(

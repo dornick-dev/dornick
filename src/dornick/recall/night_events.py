@@ -66,8 +66,8 @@ class NightLog:
             self.listeners = []
         self.path.parent.mkdir(parents=True, exist_ok=True)
 
-    def emit(self, tur: str, **fields: Any) -> dict[str, Any]:
-        event = build(tur, self.clock, **fields)
+    def emit(self, kind: str, **fields: Any) -> dict[str, Any]:
+        event = build(kind, self.clock, **fields)
         try:
             with self.path.open("a", encoding="utf-8") as fh:
                 fh.write(json.dumps(event, ensure_ascii=False) + "\n")
@@ -81,32 +81,32 @@ class NightLog:
         return event
 
 
-def build(tur: str, clock: Clock = wall_clock, **fields: Any) -> dict[str, Any]:
+def build(kind: str, clock: Clock = wall_clock, **fields: Any) -> dict[str, Any]:
     """One event, validated against the frozen schema before it exists."""
-    if tur not in SCHEMA:
-        raise SchemaError(f"şemada olmayan olay: {tur}")
-    eksik = [ad for ad in SCHEMA[tur] if ad not in fields]
-    if eksik:
-        raise SchemaError(f"{tur}: eksik alan {', '.join(eksik)}")
-    fazla = [ad for ad in fields if ad not in SCHEMA[tur]]
-    if fazla:
-        raise SchemaError(f"{tur}: şemada olmayan alan {', '.join(fazla)}")
-    return {"ts": clock().isoformat(timespec="milliseconds"), "tur": tur, **fields}
+    if kind not in SCHEMA:
+        raise SchemaError(f"şemada olmayan olay: {kind}")
+    missing = [name for name in SCHEMA[kind] if name not in fields]
+    if missing:
+        raise SchemaError(f"{kind}: eksik alan {', '.join(missing)}")
+    extra = [name for name in fields if name not in SCHEMA[kind]]
+    if extra:
+        raise SchemaError(f"{kind}: şemada olmayan alan {', '.join(extra)}")
+    return {"ts": clock().isoformat(timespec="milliseconds"), "tur": kind, **fields}
 
 
 def validate(event: dict[str, Any]) -> dict[str, Any]:
     """Read side of the same contract — used when replaying a file."""
     if not isinstance(event, dict):
         raise SchemaError("olay bir sözlük değil")
-    for ad in ORTAK:
-        if ad not in event:
-            raise SchemaError(f"ortak alan eksik: {ad}")
-    tur = event["tur"]
-    if tur not in SCHEMA:
-        raise SchemaError(f"şemada olmayan olay: {tur}")
-    for ad in SCHEMA[tur]:
-        if ad not in event:
-            raise SchemaError(f"{tur}: eksik alan {ad}")
+    for name in ORTAK:
+        if name not in event:
+            raise SchemaError(f"ortak alan eksik: {name}")
+    kind = event["tur"]
+    if kind not in SCHEMA:
+        raise SchemaError(f"şemada olmayan olay: {kind}")
+    for name in SCHEMA[kind]:
+        if name not in event:
+            raise SchemaError(f"{kind}: eksik alan {name}")
     return event
 
 
@@ -117,30 +117,30 @@ def replay(path: Path) -> Iterator[dict[str, Any]]:
     a power cut should still replay up to the cut.
     """
     try:
-        satirlar = Path(path).read_text(encoding="utf-8").splitlines()
+        lines = Path(path).read_text(encoding="utf-8").splitlines()
     except OSError:
         return
-    for satir in satirlar:
-        if not satir.strip():
+    for line in lines:
+        if not line.strip():
             continue
         try:
-            yield validate(json.loads(satir))
+            yield validate(json.loads(line))
         except (ValueError, SchemaError):
             continue
 
 
 def nights(state_dir: Path) -> list[str]:
     """Which nights can be replayed, newest first."""
-    klasor = Path(state_dir) / "gece"
-    if not klasor.is_dir():
+    folder = Path(state_dir) / "gece"
+    if not folder.is_dir():
         return []
-    return sorted((p.stem for p in klasor.glob("*.jsonl")), reverse=True)
+    return sorted((p.stem for p in folder.glob("*.jsonl")), reverse=True)
 
 
-def night_path(state_dir: Path, tarih: str) -> Path:
-    """`.dornick/gece/<tarih>.jsonl`, with the date treated as untrusted."""
-    guvenli = "".join(ch for ch in tarih if ch.isalnum() or ch in "-_")
-    return Path(state_dir) / "gece" / f"{guvenli}.jsonl"
+def night_path(state_dir: Path, date: str) -> Path:
+    """`.dornick/gece/<date>.jsonl`, with the date treated as untrusted."""
+    safe = "".join(ch for ch in date if ch.isalnum() or ch in "-_")
+    return Path(state_dir) / "gece" / f"{safe}.jsonl"
 
 
 def summary(events: Iterable[dict[str, Any]]) -> dict[str, Any]:
@@ -148,19 +148,19 @@ def summary(events: Iterable[dict[str, Any]]) -> dict[str, Any]:
     out = {"dongu": 0, "tekrar": 0, "kenar": 0, "dikis": 0, "damitik": 0,
            "dokunus": 0, "uyandi": "", "devreden": 0}
     for event in events:
-        tur = event["tur"]
-        if tur == "uyku.dongu":
+        kind = event["tur"]
+        if kind == "uyku.dongu":
             out["dongu"] = max(out["dongu"], int(event.get("no") or 0))
-        elif tur == "tekrar.ileri":
+        elif kind == "tekrar.ileri":
             out["tekrar"] += 1
             out["kenar"] += len(event.get("kenarlar") or [])
-        elif tur == "dikis":
+        elif kind == "dikis":
             out["dikis"] += 1
-        elif tur == "damitma":
+        elif kind == "damitma":
             out["damitik"] += 1
-        elif tur == "dokunus":
+        elif kind == "dokunus":
             out["dokunus"] += 1
-        elif tur == "uyku.uyandi":
+        elif kind == "uyku.uyandi":
             out["uyandi"] = str(event.get("sebep") or "")
             out["devreden"] = int(event.get("devreden") or 0)
     return out

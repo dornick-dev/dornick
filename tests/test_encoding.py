@@ -6,7 +6,7 @@ remembers. Strength now comes from surprise — how far the new body is from
 what is already there — with a floor, because hearing a known thing again is
 still information, just not news.
 
-The floor is the point of the design: `KODLAMA_TABANI = 0.4` means the most
+The floor is the point of the design: `ENCODING_FLOOR = 0.4` means the most
 predictable record still starts at 40% of full. Nothing is ever born
 unreachable.
 """
@@ -112,9 +112,9 @@ def test_an_unrelated_record_is_born_at_full_strength(store, clock) -> None:
         store.remember(f"Rapor şablonu notu {i}: sayfa düzeni ve başlıklar.",
                        kind="fact")
     clock.advance(hours=1)
-    yabanci = store.remember(
+    stranger = store.remember(
         "Jeneratör motorini altı ayda bir tazeleniyor.", kind="fact")
-    assert _birth_weight(store, yabanci.id) > 0.8
+    assert _birth_weight(store, stranger.id) > 0.8
 
 
 def test_a_lesson_is_written_stronger_than_the_same_body_as_a_fact(
@@ -122,18 +122,18 @@ def test_a_lesson_is_written_stronger_than_the_same_body_as_a_fact(
     """Two stores, because order matters: whichever is written second sees
     the first as a neighbour and would be weaker for that reason alone."""
     body = "Şema göçü yedek alınmadan koşulmamalı."
-    agirliklar = {}
+    weights = {}
     for kind in ("fact", "lesson"):
         st = open_store(tmp_path / kind, clock=clock)
         try:
-            # Yakın bir komşu şart: sürpriz 1.0'a dayanırsa iki kol da
-            # tavana çarpar ve `lesson` çarpanı görünmez olur.
+            # A close neighbour is required: if surprise pushes to 1.0 both
+            # arms hit the ceiling and the `lesson` multiplier becomes invisible.
             st.remember("Şema göçü yedek alınmadan koşulmamalıdır.", kind="fact")
             clock.advance(hours=1)
-            agirliklar[kind] = _birth_weight(st, st.remember(body, kind=kind).id)
+            weights[kind] = _birth_weight(st, st.remember(body, kind=kind).id)
         finally:
             st.close()
-    assert agirliklar["lesson"] > agirliklar["fact"]
+    assert weights["lesson"] > weights["fact"]
 
 
 def test_a_correction_inherits_and_is_born_at_full_strength(store, clock) -> None:
@@ -144,7 +144,7 @@ def test_a_correction_inherits_and_is_born_at_full_strength(store, clock) -> Non
     entries = store.use_log(second.id)
     assert entries[-1].etiket == A.WRITTEN
     assert entries[-1].w == pytest.approx(1.0)
-    assert len(entries) > 1                    # miras da duruyor
+    assert len(entries) > 1                    # the inheritance is still there
 
 
 def test_a_weakly_encoded_record_starts_lower_but_is_still_findable(

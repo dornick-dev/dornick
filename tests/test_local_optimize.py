@@ -1,4 +1,4 @@
-"""Yerel LLM optimizasyonu: bağlam sığdırma, diğer modeli boşaltma."""
+"""Local LLM optimisation: fitting the context, unloading the other model."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ def test_suggest_context_caps_to_max_without_vram() -> None:
 
 
 def test_suggest_context_fits_to_vram() -> None:
-    # ~5.6 GB Q4 9B + sınırlı boş VRAM → bağlam 200k olamaz.
+    # ~5.6 GB Q4 9B + limited free VRAM → the context cannot be 200k.
     fitted = lmstudio.suggest_context(
         200_000,
         max_context=262_144,
@@ -29,7 +29,7 @@ def test_suggest_context_tiny_vram_falls_to_jit() -> None:
         max_context=262_144,
         size_bytes=5_629_108_499,
         params_b=9.0,
-        free_vram_mb=5200,  # modele zar zor yer
+        free_vram_mb=5200,  # barely room for the model
     )
     assert fitted == lmstudio.JIT_CONTEXT
 
