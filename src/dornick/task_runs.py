@@ -1,10 +1,10 @@
-"""Görev koşum arşivi.
+"""The task-run archive.
 
-Zamanlanmış bir görev her tetiklendiğinde bir koşum kaydı düşer:
-ne zaman başladı, bitti mi, yardımcı kimliği, kısa rapor. Orkestra /
-Görevler paneli buradan okuyor — sohbet balonu değil.
+Every time a scheduled task fires, a run record is written: when it
+started, whether it finished, the helper's id, a short report. The
+Orchestra / Tasks panel reads from here — not a chat bubble.
 
-Depo: `{state_dir}/task-runs/<task_id>/<run_id>.json`
+Store: `{state_dir}/task-runs/<task_id>/<run_id>.json`
 """
 
 from __future__ import annotations
@@ -20,17 +20,17 @@ from .events import utcnow
 
 FOLDER = "task-runs"
 
-# Durumlar Türkçe: panel ve araç aynı kelimeleri kullanıyor.
+# Statuses are Turkish: the panel and the tool use the same words.
 STATUSES = ("koşuyor", "bitti", "hata")
 
-# Rapor paneli için kısaltma; sınırsız biriktirmek diski şişirir.
+# Truncation for the report panel; hoarding without bounds bloats the disk.
 REPORT_CLIP = 8000
 
 _ID = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9_-]{0,64}$")
 
 
 class TaskRunError(Exception):
-    """Biçim / depo hatası."""
+    """Format / store error."""
 
 
 @dataclass(slots=True)
@@ -44,11 +44,11 @@ class TaskRun:
     title: str = ""
     report: str = ""
     nodes_progress: list[dict[str, Any]] | None = field(default=None)
-    # Chat dock ile aynı birimler: model adı, token, tahmini USD.
+    # Same units as the chat dock: model name, tokens, estimated USD.
     model: str = ""
     usage: dict[str, int] | None = field(default=None)
     cost_usd: float | None = None
-    # Araç sayısı ve süre (sn) — uygulama kapanınca da panoda kalsın.
+    # Tool count and duration (s) — so they stay on the board after the app closes.
     tools: int = 0
     duration_s: int = 0
     last_tool: str = ""
@@ -171,7 +171,7 @@ def start_run(
     child_id: str = "",
     run_id: str = "",
 ) -> TaskRun:
-    """Yeni koşum: status=koşuyor, started=şimdi."""
+    """A new run: status=koşuyor, started=now."""
     tid = _safe_id(task_id, "task_id")
     rid = _safe_id(run_id, "run_id") if run_id else f"run_{uuid.uuid4().hex[:10]}"
     run = TaskRun(
@@ -205,7 +205,7 @@ def finish_run(
     duration_s: int | None = None,
     last_tool: str | None = None,
 ) -> TaskRun:
-    """Koşumu kapatır. status bitti|hata olmalı (koşuyor bırakılmaz)."""
+    """Closes the run. status must be bitti|hata (koşuyor is not left behind)."""
     if status not in ("bitti", "hata"):
         raise TaskRunError("finish_run status 'bitti' veya 'hata' olmalı.")
 
@@ -257,9 +257,9 @@ def patch_run(
     last_tool: str | None = None,
     cost_usd: float | None = None,
 ) -> TaskRun | None:
-    """Koşan koşumu canlı günceller (status koşuyor kalır).
+    """Live-updates a running run (status stays koşuyor).
 
-    Yoksa / bitmişse None. Son koşu paneli mid-run boş kalmasın diye.
+    None if missing / finished. So the last-run panel is not empty mid-run.
     """
     existing = get_run(state_dir, task_id, run_id)
     if existing is None or existing.status != "koşuyor":
@@ -268,7 +268,7 @@ def patch_run(
     if report is not None:
         existing.report = _clip(report)
     if last_error:
-        # Hata satırı raporun başına; paneller kısa özet görsün.
+        # The error line goes to the head of the report; panels should see a short summary.
         err = _clip(last_error, 400)
         body = existing.report or ""
         existing.report = _clip(f"Hata: {err}\n{body}" if body else f"Hata: {err}")
@@ -310,7 +310,7 @@ def get_run(state_dir: Path, task_id: str, run_id: str) -> TaskRun | None:
 
 
 def list_runs(state_dir: Path, task_id: str, limit: int = 50) -> list[TaskRun]:
-    """Bir görevin koşumları: en yeni başta, en fazla `limit` kayıt."""
+    """A task's runs: newest first, at most `limit` records."""
     try:
         parent = _task_dir(state_dir, task_id)
     except TaskRunError:

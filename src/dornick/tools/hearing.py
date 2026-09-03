@@ -1,15 +1,17 @@
-"""Duyu aracı — ajanın kendi kulağını ve gözünü yönetmesi.
+"""Senses tool — the agent managing its own ear and eye.
 
-Gerçek bir kayıtta kullanıcı "şu an beni dinleme, oyun oynuyorum" dedi;
-ajan "anladım, kapalıyım" diye cevap verdi ve dinlemeye devam etti —
-çünkü kulağını kapatacak hiçbir aracı yoktu. Aynı hata gözde de vardı:
-"beni izleme" dendiğinde "izlemiyorum" diyor ama kamera kare almaya
-devam ediyordu. Yapamadığı bir şeyi yaptım demek, en kötü tür yalan.
+In a real recording the user said "don't listen to me right now, I'm
+playing a game"; the agent replied "understood, I'm off" and kept
+listening — because it had no tool to shut its ear. The same bug existed
+for the eye: told "don't watch me", it said "I'm not watching" while the
+camera kept taking frames. Claiming to have done something it cannot do
+is the worst kind of lie.
 
-Bu araç iki duyuyu birden yönetiyor. Susturmak kulağı koparmıyor: ses yerelde dinlenmeye devam ediyor ama
-yalnızca uyandırma sözü aranıyor. Kamera kapanınca aygıt bırakılır
-(LED söner). Kullanıcı "dornick" deyince yalnız kulak geri açılır; kamera
-üstteki ikon veya "kamerayı aç" ile açılır.
+This tool manages both senses at once. Muting does not tear the ear off:
+audio keeps being listened to locally, but only the wake word is looked
+for. When the camera is turned off the device is released (LED goes
+dark). When the user says "dornick" only the ear reopens; the camera is
+opened with the top icon or "kamerayı aç".
 """
 
 from __future__ import annotations

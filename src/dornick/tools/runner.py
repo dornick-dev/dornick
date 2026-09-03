@@ -50,25 +50,25 @@ def _find_root(args: dict[str, Any], ctx: ToolContext) -> Path:
             base = ctx.sandbox.root if ctx.sandbox.enabled else ctx.workspace
             path = base / path
         return testrun.project_root(path)
-    if (last := testrun.son_proje()) is not None:
+    if (last := testrun.last_project()) is not None:
         return last
     return ctx.sandbox.root if ctx.sandbox.enabled else ctx.workspace
 
 
 def _harness_summary(root: Path) -> str:
     """The list of harnesses found in the folder — without running, for free."""
-    found = testrun.tespit_hepsi(root)
+    found = testrun.detect_all(root)
     if not found:
-        return testrun.tespit_metni(root)
+        return testrun.detect_text(root)
 
     lines = [f"{root} altında bulunan düzenekler:"]
     for d in found:
-        label = "test" if d.tur == "test" else "sağlık denetimi"
-        lines.append(f"  `{d.etiket}` — {label}, kanıt: {d.kanit}")
-        for note in d.notlar:
+        label = "test" if d.kind == "test" else "sağlık denetimi"
+        lines.append(f"  `{d.label}` — {label}, kanıt: {d.evidence}")
+        for note in d.notes:
             lines.append(f"      {note}")
-        if d.engel:
-            lines.append(f"      koşulamaz: {d.engel}")
+        if d.blocker:
+            lines.append(f"      koşulamaz: {d.blocker}")
     lines.append("")
     lines.append("Bunlar tespit; hiçbiri koşturulmadı. Koşturmak için "
                  "`kos` aracını `sadece_tespit` olmadan çağır.")
@@ -127,7 +127,7 @@ yazıyor — kullanıcıya aktarırken de aynı sınırı koru.
         mutates=True,
         parallel_safe=False,
     )
-    async def kos(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
+    async def run(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
         root = _find_root(args, ctx)
         if not root.is_dir():
             return ToolResult.error(
@@ -141,28 +141,28 @@ yazıyor — kullanıcıya aktarırken de aynı sınırı koru.
         timeout = float(args.get("zaman_asimi") or testrun.DEFAULT_TIMEOUT)
 
         if command := (args.get("komut") or "").strip():
-            result = await testrun.kos_komut(
-                command, root, zaman_asimi=timeout, cancel=ctx.cancel)
+            result = await testrun.run_command(
+                command, root, timeout=timeout, cancel=ctx.cancel)
             return _reply(result)
 
-        harness = testrun.tespit(root)
+        harness = testrun.detect(root)
         if harness is None:
             # No evidence. Instead of inventing a command, say what to do.
-            return ToolResult(content=testrun.tespit_metni(root),
+            return ToolResult(content=testrun.detect_text(root),
                               detail={"kok": str(root), "duzenek": None})
 
-        if not harness.kosulabilir:
+        if not harness.runnable:
             return ToolResult(
                 content=(
-                    f"{root} altında `{harness.etiket}` düzeneği var "
-                    f"(kanıt: {harness.kanit}) ama koşturulamıyor: "
-                    f"{harness.engel}\n\nBu bir kod hatası değil, makinenin "
+                    f"{root} altında `{harness.label}` düzeneği var "
+                    f"(kanıt: {harness.evidence}) ama koşturulamıyor: "
+                    f"{harness.blocker}\n\nBu bir kod hatası değil, makinenin "
                     "durumu. Kullanıcıya bildir; kurulum kararı onun."
                 ),
-                detail={"kok": str(root), "engel": harness.engel},
+                detail={"kok": str(root), "engel": harness.blocker},
             )
 
-        result = await testrun.kos(harness, zaman_asimi=timeout, cancel=ctx.cancel)
+        result = await testrun.run_harness(harness, timeout=timeout, cancel=ctx.cancel)
         return _reply(result)
 
 
@@ -176,7 +176,7 @@ def _reply(result: testrun.Result) -> ToolResult:
     """
     faulty = (
         result.status in ("zaman_asimi", "baslatilamadi", "kesildi")
-        or result.cikis_kodu != 0
-        or result.sayim.kalan > 0
+        or result.exit_code != 0
+        or result.count.failed > 0
     )
-    return ToolResult(content=result.metin(), is_error=faulty, detail=result.detay())
+    return ToolResult(content=result.text(), is_error=faulty, detail=result.detail())

@@ -106,7 +106,7 @@ def set_cloud_consent(state_dir: Path, ok: bool) -> None:
     (state_dir / FILE).write_text(json.dumps(d, ensure_ascii=False), encoding="utf-8")
 
 
-def hazir() -> bool:
+def ready() -> bool:
     """Is the training rig installed on this machine?"""
     return LOOP_SCRIPT.exists()
 
@@ -145,7 +145,7 @@ def _new_memory_count(state_dir: Path) -> int:
     return int(n)
 
 
-def maybe_start(state_dir: Path, hub: Any, *, zorla: bool = False) -> str:
+def maybe_start(state_dir: Path, hub: Any, *, force: bool = False) -> str:
     """Starts the loop if the conditions hold. The return value is a REASON code.
 
         basladi      the run started
@@ -161,7 +161,7 @@ def maybe_start(state_dir: Path, hub: Any, *, zorla: bool = False) -> str:
     said "little new data: 0/50" and exited; the user saw nothing on screen.
     Now the UI can say why nothing happened.
 
-    `zorla` skips only the TIME condition (the "run now" button); it does
+    `force` skips only the TIME condition (the "run now" button); it does
     not skip the disabled feature, the missing rig, the running process or
     the lack of training data — opening a process with no data would be
     showing the user an empty "started".
@@ -171,13 +171,13 @@ def maybe_start(state_dir: Path, hub: Any, *, zorla: bool = False) -> str:
         d = status(state_dir)
         if not d["on"]:
             return "kapali"
-        if not hazir():
+        if not ready():
             return "duzenek_yok"
         if running():
             return "kosuyor"
-        if zorla and _new_memory_count(state_dir) <= 0:
+        if force and _new_memory_count(state_dir) <= 0:
             return "veri_yok"
-        if not zorla and d["son_kosu"]:
+        if not force and d["son_kosu"]:
             try:
                 last = datetime.fromisoformat(d["son_kosu"])
                 elapsed = (datetime.now(timezone.utc) - last).total_seconds()

@@ -1,7 +1,8 @@
-// Git çubuğu + Viewer'daki commit/diff panosu.
+// Git bar + the commit/diff board inside the Viewer.
 //
-// Çubuk composer'ın üstünde: repo + dal; kirliyken +N −M ve Commit;
-// uzak yoksa Yayınla. Tıklanınca mevcut Viewer açılır (yeni kabuk yok).
+// The bar sits above the composer: repo + branch; +N −M and Commit when
+// dirty; Publish when there is no remote. Clicking opens the existing
+// Viewer (no new shell).
 
 Dil.ekle({
   "Değişiklikler": "Changes",
@@ -64,20 +65,21 @@ const GitBar = (() => {
   function drawBar() {
     if (!bar) return;
     if (!snap || !snap.present) {
-      // Depo yok ama çalışma klasörü VAR: çubuk yine görünür — "Repo aç"
-      // (git init) tek tık uzakta ve klasör adı Explorer'ı açar. Eski hal
-      // çubuğu tamamen gizliyordu; kullanıcı repo açmayı arayüzden hiç
-      // yapamıyordu ("create repo diyemiyorum" — canlı istek, 31.08).
-      const yol = snap && snap.root;
-      if (!yol) {
+      // No repo but the working folder EXISTS: the bar still shows —
+      // "Repo aç" (git init) is one click away and the folder name opens
+      // Explorer. The old version hid the bar entirely; the user could not
+      // create a repo from the UI at all ("create repo diyemiyorum" —
+      // live request, 31.08).
+      const path = snap && snap.root;
+      if (!path) {
         bar.hidden = true;
         document.body.style.setProperty("--git-h", "0px");
         return;
       }
       bar.hidden = false;
-      bar.dataset.root = yol;
-      nameEl.textContent = snap.name || String(yol).split(/[\\/]/).pop();
-      nameEl.title = yol + " — " + t("klasörü aç");
+      bar.dataset.root = path;
+      nameEl.textContent = snap.name || String(path).split(/[\\/]/).pop();
+      nameEl.title = path + " — " + t("klasörü aç");
       branchEl.textContent = t("repo yok");
       statEl.hidden = true;
       commitBtn.hidden = true;
@@ -163,78 +165,78 @@ const GitBar = (() => {
   }
 
   function fileRow(row) {
-    const satir = el("div", "chg-row");
-    const bas = el("div", "chg-row-head");
+    const rowEl = el("div", "chg-row");
+    const head = el("div", "chg-row-head");
     const mark = row.status === "?" || row.status === "A" ? "+"
       : row.status === "D" ? "−" : "~";
-    bas.append(el("span", "chg-mark", mark));
-    const ad = el("b", null, row.path);
-    ad.title = row.path;
-    bas.append(ad);
+    head.append(el("span", "chg-mark", mark));
+    const nameB = el("b", null, row.path);
+    nameB.title = row.path;
+    head.append(nameB);
     if (row.plus || row.minus) {
       const st = el("span", "chg-tool",
         "+" + fmt(row.plus) + " −" + fmt(row.minus));
-      bas.append(st);
+      head.append(st);
     }
     const acts = el("div", "chg-row-acts");
-    const fark = el("button", "chg-diff-btn", t("farkı gör"));
-    fark.type = "button";
-    acts.append(fark);
+    const diffBtn = el("button", "chg-diff-btn", t("farkı gör"));
+    diffBtn.type = "button";
+    acts.append(diffBtn);
     if (row.open && typeof Viewer !== "undefined") {
       const open = el("button", "git-open-btn", t("Dosyayı aç"));
       open.type = "button";
       open.addEventListener("click", () => Viewer.open(row.open));
       acts.append(open);
     }
-    bas.append(acts);
-    satir.append(bas);
-    const kutu = el("div", "chg-diff");
-    kutu.hidden = true;
-    satir.append(kutu);
-    satir.addEventListener("contextmenu", (ev) => {
+    head.append(acts);
+    rowEl.append(head);
+    const box = el("div", "chg-diff");
+    box.hidden = true;
+    rowEl.append(box);
+    rowEl.addEventListener("contextmenu", (ev) => {
       if (typeof Menu === "undefined") return;
-      const maddeler = [];
+      const items = [];
       if (row.open && typeof Viewer !== "undefined") {
-        maddeler.push({ ad: "Dosyayı aç", is: () => Viewer.open(row.open) });
+        items.push({ ad: "Dosyayı aç", is: () => Viewer.open(row.open) });
       }
-      maddeler.push({
-        ad: kutu.hidden ? "farkı gör" : "farkı gizle",
-        is: () => fark.click(),
+      items.push({
+        ad: box.hidden ? "farkı gör" : "farkı gizle",
+        is: () => diffBtn.click(),
       });
-      Menu.ac(ev, maddeler);
+      Menu.ac(ev, items);
     });
-    let yuklendi = false;
-    fark.addEventListener("click", async () => {
-      kutu.hidden = !kutu.hidden;
-      fark.textContent = kutu.hidden ? t("farkı gör") : t("farkı gizle");
-      if (yuklendi || kutu.hidden) return;
-      yuklendi = true;
-      kutu.replaceChildren(el("div", "diff-empty dugum-yukleniyor", t("Yükleniyor…")));
-      let veri = null;
+    let loaded = false;
+    diffBtn.addEventListener("click", async () => {
+      box.hidden = !box.hidden;
+      diffBtn.textContent = box.hidden ? t("farkı gör") : t("farkı gizle");
+      if (loaded || box.hidden) return;
+      loaded = true;
+      box.replaceChildren(el("div", "diff-empty dugum-yukleniyor", t("Yükleniyor…")));
+      let data = null;
       try {
-        veri = await (await fetch("/api/git", {
+        data = await (await fetch("/api/git", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ action: "diff", path: row.path }),
         })).json();
-      } catch { veri = null; }
-      kutu.replaceChildren(diffBox(veri));
+      } catch { data = null; }
+      box.replaceChildren(diffBox(data));
     });
-    return satir;
+    return rowEl;
   }
 
-  function diffBox(veri) {
-    if (!veri || veri.ok === false) {
-      return el("div", "diff-empty", (veri && veri.error) || t("Fark okunamadı."));
+  function diffBox(data) {
+    if (!data || data.ok === false) {
+      return el("div", "diff-empty", (data && data.error) || t("Fark okunamadı."));
     }
-    if (veri.binary) {
+    if (data.binary) {
       return el("div", "diff-empty", t("İkili dosya — fark çizilmiyor."));
     }
     if (typeof diffHunk !== "function") {
-      return el("div", "diff-empty", (veri.path || "") + "  +" + fmt(veri.plus)
-        + " −" + fmt(veri.minus));
+      return el("div", "diff-empty", (data.path || "") + "  +" + fmt(data.plus)
+        + " −" + fmt(data.minus));
     }
-    return diffHunk(veri.old, veri.new, 1);
+    return diffHunk(data.old, data.new, 1);
   }
 
   async function act(action, extra) {
@@ -242,25 +244,25 @@ const GitBar = (() => {
     busy = true;
     drawBar();
     if (hosted()) paint();
-    let veri = null;
+    let data = null;
     try {
-      veri = await (await fetch("/api/git", {
+      data = await (await fetch("/api/git", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action, ...(extra || {}) }),
       })).json();
     } catch {
-      veri = { ok: false, error: t("Açılamadı") };
+      data = { ok: false, error: t("Açılamadı") };
     }
     busy = false;
-    if (veri && veri.ok === false) {
+    if (data && data.ok === false) {
       snap = snap || {};
       drawBar();
       if (hosted()) paint();
       const pane = document.querySelector(".git-pane");
       if (pane && pane._err) {
         pane._err.hidden = false;
-        pane._err.textContent = veri.error || "";
+        pane._err.textContent = data.error || "";
       }
       return;
     }
@@ -278,28 +280,28 @@ const GitBar = (() => {
     refresh();
   }
 
-  // Çalışma klasörünü Explorer'da açar — "sohbetten klasöre gidemiyorum"
-  // (canlı istek, 31.08): çubuktaki ad artık kapı.
-  async function klasoruAc() {
-    const yol = (snap && snap.root) || bar.dataset.root || "";
-    if (!yol) return;
+  // Opens the working folder in Explorer — "I cannot get from the chat to
+  // the folder" (live request, 31.08): the name on the bar is now the door.
+  async function openFolder() {
+    const path = (snap && snap.root) || bar.dataset.root || "";
+    if (!path) return;
     try {
       await fetch("/api/apps/reveal", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ path: yol }),
+        body: JSON.stringify({ path }),
       });
-    } catch { /* sessiz: en iyi çaba */ }
+    } catch { /* silent: best effort */ }
   }
 
   if (bar) {
     document.getElementById("git-id").title = t("Değişiklikler");
     document.getElementById("git-id").addEventListener("click", openPane);
     nameEl.style.cursor = "pointer";
-    nameEl.addEventListener("click", (ev) => { ev.stopPropagation(); klasoruAc(); });
+    nameEl.addEventListener("click", (ev) => { ev.stopPropagation(); openFolder(); });
     statEl.addEventListener("click", openPane);
     commitBtn.addEventListener("click", openPane);
     publishBtn.addEventListener("click", (ev) => {
-      // Depo yokken "Repo aç": doğrudan git init — panoya gitmeden.
+      // Without a repo, "Repo aç": straight to git init — no board detour.
       if (snap && !snap.present) { ev.stopPropagation(); act("init"); return; }
       openPane();
     });

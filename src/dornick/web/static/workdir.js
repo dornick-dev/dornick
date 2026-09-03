@@ -1,13 +1,14 @@
-// Çalışma klasörü şeridi + klasör seçici/oluşturucu.
+// Working-folder strip + folder picker/creator.
 //
-// Neden var: sohbet ekranında "şu an nerede çalışıyorum?" sorusunun cevabı
-// hiçbir yerde yazmıyordu. Atölyede miyiz, bağlı bir klasörde mi —
-// kullanıcı ancak ayarları açıp bakarak anlayabiliyordu (canlı yara,
-// 02.09). Şerit bunu söylüyor ve tek tıkla değiştirmeyi açıyor.
+// Why it exists: nowhere on the chat screen did the question "where am I
+// working right now?" have an answer. Workshop or a bound folder — the user
+// could only tell by opening the settings (live wound, 02.09). The strip
+// says it, and opens a one-click way to change it.
 //
-// Klasör seçimi kullanıcının RIZASIDIR: atölye dışı bir dizin de seçilebilir
-// (sandbox'ın kuralı da bu). Sunucu yalnız gerçekten tehlikeli kökleri
-// (sürücü kökü, Windows/Program Files, ev dizininin kendisi) reddediyor.
+// Picking a folder is the user's CONSENT: a directory outside the workshop
+// can also be chosen (that is the sandbox's rule too). The server only
+// rejects the genuinely dangerous roots (drive root, Windows/Program Files,
+// the home directory itself).
 
 Dil.ekle({
   "Çalışma klasörü": "Working folder",
@@ -39,200 +40,203 @@ const WorkDir = (() => {
   const pickBtn = document.getElementById("workdir-pick");
   const newBtn = document.getElementById("workdir-new");
 
-  let acikYol = "";      // şu an bağlı klasör ("" = atölye)
-  let atolye = "";       // atölye kökü (workspace)
-  let panel = null;      // açık seçici paneli
-  let gezinen = "";      // seçicide gezilen dizin
+  let boundPath = "";    // currently bound folder ("" = workshop)
+  let workshop = "";     // workshop root (workspace)
+  let panel = null;      // open picker panel
+  let browsing = "";     // directory being browsed in the picker
 
-  const kisaAd = (yol) => String(yol || "").replace(/[\\/]+$/, "").split(/[\\/]/).pop() || yol;
+  const shortName = (path) => String(path || "").replace(/[\\/]+$/, "").split(/[\\/]/).pop() || path;
 
-  // Şeridi boya: atölyedeysek "Atölye", değilse klasör adı + tam yol ipucu.
-  function ciz(proje, workspace) {
+  // Paint the strip: "Workshop" when in the workshop, otherwise the folder
+  // name plus a full-path tooltip.
+  function ciz(project, workspace) {
     if (!bar) return;
-    acikYol = String(proje || "");
-    atolye = String(workspace || "");
+    boundPath = String(project || "");
+    workshop = String(workspace || "");
     bar.hidden = false;
-    if (acikYol) {
-      nameEl.textContent = kisaAd(acikYol);
+    if (boundPath) {
+      nameEl.textContent = shortName(boundPath);
       kindEl.textContent = Dil.t("bağlı klasör");
       iconEl.textContent = "📁";
-      idBtn.title = acikYol;
+      idBtn.title = boundPath;
       bar.classList.add("bound");
     } else {
       nameEl.textContent = Dil.t("Atölye");
       kindEl.textContent = Dil.t("atölye (varsayılan)");
       iconEl.textContent = "🗂";
-      idBtn.title = atolye || Dil.t("Atölye");
+      idBtn.title = workshop || Dil.t("Atölye");
       bar.classList.remove("bound");
     }
   }
 
-  // --- seçici paneli ---------------------------------------------------
+  // --- picker panel ----------------------------------------------------
 
   function kapat() {
     if (panel) { panel.remove(); panel = null; }
   }
 
-  function ac(kip) {
+  function openPicker(mode) {
     kapat();
     panel = document.createElement("div");
     panel.className = "workdir-panel";
-    const bas = document.createElement("div");
-    bas.className = "workdir-panel-head";
-    bas.textContent = Dil.t(kip === "yeni" ? "Yeni klasör" : "Klasör seç");
-    const kapa = document.createElement("button");
-    kapa.type = "button";
-    kapa.className = "workdir-close";
-    kapa.textContent = "✕";
-    kapa.title = Dil.t("Kapat");
-    kapa.onclick = kapat;
-    bas.append(kapa);
-    panel.append(bas);
+    const head = document.createElement("div");
+    head.className = "workdir-panel-head";
+    head.textContent = Dil.t(mode === "new" ? "Yeni klasör" : "Klasör seç");
+    const closeBtn = document.createElement("button");
+    closeBtn.type = "button";
+    closeBtn.className = "workdir-close";
+    closeBtn.textContent = "✕";
+    closeBtn.title = Dil.t("Kapat");
+    closeBtn.onclick = kapat;
+    head.append(closeBtn);
+    panel.append(head);
 
-    const govde = document.createElement("div");
-    govde.className = "workdir-body";
-    panel.append(govde);
+    const bodyEl = document.createElement("div");
+    bodyEl.className = "workdir-body";
+    panel.append(bodyEl);
     bar.parentElement.insertBefore(panel, bar);
-    gozat(gezinen || acikYol || atolye || "", govde, kip);
+    browse(browsing || boundPath || workshop || "", bodyEl, mode);
   }
 
-  // Sunucudaki /api/gozat ile dizin gezme (yerel dosya diyaloğu yok:
-  // masaüstü katmanı ayrı süreç, bu tarayıcı içi gezgin bilinçli).
-  async function gozat(yol, govde, kip) {
-    govde.textContent = Dil.t("Yükleniyor…");
-    let veri;
+  // Directory browsing via the server's /api/gozat (no native file dialog:
+  // the desktop layer is a separate process; this in-browser explorer is
+  // deliberate).
+  async function browse(path, bodyEl, mode) {
+    bodyEl.textContent = Dil.t("Yükleniyor…");
+    let data;
     try {
-      veri = await (await fetch("/api/gozat?yol=" + encodeURIComponent(yol || ""))).json();
+      data = await (await fetch("/api/gozat?yol=" + encodeURIComponent(path || ""))).json();
     } catch {
-      govde.textContent = Dil.t("Bu klasör seçilemez");
+      bodyEl.textContent = Dil.t("Bu klasör seçilemez");
       return;
     }
-    gezinen = veri.yol || "";
-    govde.textContent = "";
+    browsing = data.yol || "";
+    bodyEl.textContent = "";
 
-    // Konum satırı + üst klasör.
-    const konum = document.createElement("div");
-    konum.className = "workdir-crumb";
-    const yolYazi = document.createElement("code");
-    yolYazi.textContent = veri.yol || Dil.t("Buradasın");
-    konum.append(yolYazi);
-    if (veri.ust) {
-      const ust = document.createElement("button");
-      ust.type = "button";
-      ust.className = "workdir-up";
-      ust.textContent = "↑ " + Dil.t("Üst klasör");
-      ust.onclick = () => gozat(veri.ust, govde, kip);
-      konum.append(ust);
+    // Location row + parent folder.
+    const crumb = document.createElement("div");
+    crumb.className = "workdir-crumb";
+    const pathCode = document.createElement("code");
+    pathCode.textContent = data.yol || Dil.t("Buradasın");
+    crumb.append(pathCode);
+    if (data.ust) {
+      const upBtn = document.createElement("button");
+      upBtn.type = "button";
+      upBtn.className = "workdir-up";
+      upBtn.textContent = "↑ " + Dil.t("Üst klasör");
+      upBtn.onclick = () => browse(data.ust, bodyEl, mode);
+      crumb.append(upBtn);
     }
-    govde.append(konum);
+    bodyEl.append(crumb);
 
-    if (veri.hata) {
+    if (data.hata) {
       const h = document.createElement("div");
       h.className = "workdir-warn";
-      h.textContent = veri.hata;
-      govde.append(h);
+      h.textContent = data.hata;
+      bodyEl.append(h);
     }
-    if (veri.uyari) {
+    if (data.uyari) {
       const u = document.createElement("div");
       u.className = "workdir-warn";
-      u.textContent = veri.uyari;
-      govde.append(u);
+      u.textContent = data.uyari;
+      bodyEl.append(u);
     }
 
-    // Alt klasörler.
-    const liste = document.createElement("div");
-    liste.className = "workdir-list";
-    for (const k of (veri.klasorler || [])) {
-      const satir = document.createElement("button");
-      satir.type = "button";
-      satir.className = "workdir-row";
-      satir.textContent = "📁 " + k.ad;
-      satir.onclick = () => gozat(k.yol, govde, kip);
-      liste.append(satir);
+    // Subfolders.
+    const list = document.createElement("div");
+    list.className = "workdir-list";
+    for (const k of (data.klasorler || [])) {
+      const row = document.createElement("button");
+      row.type = "button";
+      row.className = "workdir-row";
+      row.textContent = "📁 " + k.ad;
+      row.onclick = () => browse(k.yol, bodyEl, mode);
+      list.append(row);
     }
-    if (!(veri.klasorler || []).length) {
-      const bos = document.createElement("div");
-      bos.className = "workdir-empty";
-      bos.textContent = "—";
-      liste.append(bos);
+    if (!(data.klasorler || []).length) {
+      const blank = document.createElement("div");
+      blank.className = "workdir-empty";
+      blank.textContent = "—";
+      list.append(blank);
     }
-    govde.append(liste);
+    bodyEl.append(list);
 
-    // Eylem satırı.
-    const eylem = document.createElement("div");
-    eylem.className = "workdir-actions";
-    if (kip === "yeni") {
-      const ad = document.createElement("input");
-      ad.type = "text";
-      ad.className = "input-text";
-      ad.placeholder = Dil.t("Yeni klasörün adı");
-      const olustur = document.createElement("button");
-      olustur.type = "button";
-      olustur.className = "workdir-go";
-      olustur.textContent = Dil.t("Oluştur ve çalış");
-      olustur.onclick = async () => {
-        const isim = ad.value.trim();
-        if (!isim) { ad.focus(); return; }
-        olustur.disabled = true;
+    // Action row.
+    const actions = document.createElement("div");
+    actions.className = "workdir-actions";
+    if (mode === "new") {
+      const nameInput = document.createElement("input");
+      nameInput.type = "text";
+      nameInput.className = "input-text";
+      nameInput.placeholder = Dil.t("Yeni klasörün adı");
+      const createBtn = document.createElement("button");
+      createBtn.type = "button";
+      createBtn.className = "workdir-go";
+      createBtn.textContent = Dil.t("Oluştur ve çalış");
+      createBtn.onclick = async () => {
+        const name = nameInput.value.trim();
+        if (!name) { nameInput.focus(); return; }
+        createBtn.disabled = true;
         let c;
         try {
           c = await (await fetch("/api/klasor/olustur", {
             method: "POST", headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ ust: veri.yol, ad: isim }),
+            body: JSON.stringify({ ust: data.yol, ad: name }),
           })).json();
         } catch { c = { ok: false }; }
-        olustur.disabled = false;
+        createBtn.disabled = false;
         if (!c || !c.ok) {
           const h = document.createElement("div");
           h.className = "workdir-warn";
           h.textContent = (c && c.hata) || Dil.t("Klasör oluşturulamadı");
-          eylem.append(h);
+          actions.append(h);
           return;
         }
-        await bagla(c.yol);
+        await bind(c.yol);
       };
-      eylem.append(ad, olustur);
+      actions.append(nameInput, createBtn);
     } else {
-      const sec = document.createElement("button");
-      sec.type = "button";
-      sec.className = "workdir-go";
-      sec.textContent = Dil.t("Bu klasörde çalış");
-      sec.disabled = !!veri.engel || !veri.yol;
-      if (veri.engel) sec.title = veri.engel;
-      sec.onclick = () => bagla(veri.yol);
-      eylem.append(sec);
-      if (acikYol) {
-        const geri = document.createElement("button");
-        geri.type = "button";
-        geri.className = "workdir-plain";
-        geri.textContent = Dil.t("Atölyeye dön");
-        geri.onclick = () => bagla("");
-        eylem.append(geri);
+      const chooseBtn = document.createElement("button");
+      chooseBtn.type = "button";
+      chooseBtn.className = "workdir-go";
+      chooseBtn.textContent = Dil.t("Bu klasörde çalış");
+      chooseBtn.disabled = !!data.engel || !data.yol;
+      if (data.engel) chooseBtn.title = data.engel;
+      chooseBtn.onclick = () => bind(data.yol);
+      actions.append(chooseBtn);
+      if (boundPath) {
+        const backBtn = document.createElement("button");
+        backBtn.type = "button";
+        backBtn.className = "workdir-plain";
+        backBtn.textContent = Dil.t("Atölyeye dön");
+        backBtn.onclick = () => bind("");
+        actions.append(backBtn);
       }
     }
-    govde.append(eylem);
+    bodyEl.append(actions);
   }
 
-  // Klasörü BU SOHBETE bağla (oturum metası; küresel ayar değişmiyor).
-  async function bagla(yol) {
+  // Bind the folder to THIS CONVERSATION (session meta; the global setting
+  // does not change).
+  async function bind(path) {
     const sid = (typeof oturumId !== "undefined" && oturumId) ? oturumId : "";
     if (!sid) { kapat(); return; }
     try {
       await fetch("/api/session/meta", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: sid, path: String(yol || "") }),
+        body: JSON.stringify({ id: sid, path: String(path || "") }),
       });
-    } catch { /* aşağıda durum yine tazelenir */ }
+    } catch { /* the state is refreshed again below */ }
     kapat();
-    ciz(yol, atolye);
-    // Sunucu tarafı canlıya uygulandıktan sonra gerçeği geri oku.
+    ciz(path, workshop);
+    // Read the truth back once the server side applied it to the live agent.
     setTimeout(() => { if (typeof loadState === "function") loadState(); }, 250);
     if (typeof GitBar !== "undefined" && GitBar.refresh) GitBar.refresh();
   }
 
-  if (idBtn) idBtn.onclick = () => (panel ? kapat() : ac("sec"));
-  if (pickBtn) pickBtn.onclick = () => ac("sec");
-  if (newBtn) newBtn.onclick = () => ac("yeni");
+  if (idBtn) idBtn.onclick = () => (panel ? kapat() : openPicker("pick"));
+  if (pickBtn) pickBtn.onclick = () => openPicker("pick");
+  if (newBtn) newBtn.onclick = () => openPicker("new");
 
   return { ciz, kapat };
 })();

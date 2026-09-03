@@ -111,13 +111,13 @@ class Output:
 
 
 @dataclass(slots=True)
-class Karar:
+class Verdict:
     """The combined result of the `arac_oncesi` hooks."""
 
-    izin: bool = True
-    gerekce: str = ""
+    allowed: bool = True
+    reason: str = ""
     # Things that do not block but must be said (a broken hook, for instance).
-    notlar: list[str] = field(default_factory=list)
+    notes: list[str] = field(default_factory=list)
 
 
 # -- configuration ------------------------------------------------------
@@ -127,7 +127,7 @@ def file_path(state_dir: Path | str) -> Path:
     return Path(state_dir) / FILE_NAME
 
 
-def korunan_mu(path: Path | str) -> bool:
+def is_protected(path: Path | str) -> bool:
     """Is this path a hook file? (the write tools look at this)
 
     We look not only at the active `.dornick` folder but at `kancalar.json`
@@ -143,7 +143,7 @@ def korunan_mu(path: Path | str) -> bool:
 def call_touches_hook(tool: str, payload: Any) -> bool:
     """Does this MUTATING call reach the hook file? (the executor asks)
 
-    `korunan_mu` closes the path for the write tools; but the shell is not a
+    `is_protected` closes the path for the write tools; but the shell is not a
     write tool, and a command like `Set-Content .dornick/kancalar.json`
     never went through that gate. That was the hole in the claim "the model
     cannot tear down the fence that stops it".
@@ -162,7 +162,7 @@ def call_touches_hook(tool: str, payload: Any) -> bool:
     deliberate adversary is the permission engine.
     """
     if tool in {"write_file", "edit_file", "copy_in"}:
-        return False  # they have their own gates (`korunan_mu`); their messages are better
+        return False  # they have their own gates (`is_protected`); their messages are better
     if not isinstance(payload, dict):
         return False
     return any(isinstance(v, str) and FILE_NAME in v.lower()
@@ -383,31 +383,31 @@ async def before_tool(
     tool: str,
     args: dict[str, Any],
     *,
-    oturum: str = "",
+    session: str = "",
     cwd: Path | str = ".",
-) -> Karar:
+) -> Verdict:
     """Hooks that run BEFORE the tool. If one refuses, the tool does not run.
 
     We stop at the first refusal: there is no point asking a second
     gatekeeper, the decision has already been made and running the rest
     only costs time (and possible side effects).
     """
-    decision = Karar()
+    decision = Verdict()
     for hook in matching(state_dir, "arac_oncesi", tool):
-        result = await run(hook, tool=tool, args=args, session=oturum, cwd=cwd)
+        result = await run(hook, tool=tool, args=args, session=session, cwd=cwd)
 
         if result.status == "baslatilamadi":
             # A broken hook does not block the tool, but it is not hidden
             # either: the user must know their rule never ran.
-            decision.notlar.append(
+            decision.notes.append(
                 f"kanca çalıştırılamadı (`{hook.command}`): {result.text} — "
                 "bu kural bu çağrıda uygulanmadı."
             )
             continue
 
         if result.status == "zaman_asimi":
-            decision.izin = False
-            decision.gerekce = (
+            decision.allowed = False
+            decision.reason = (
                 f"Kanca reddetti: `{hook.command}` {hook.timeout:.0f} "
                 "saniyede cevap vermedi. Kullanıcının bu araç için bir bekçisi "
                 "var ve bekçi cevap vermiyor; güvenli taraf çalıştırmamak. "
@@ -416,9 +416,9 @@ async def before_tool(
             return decision
 
         if result.code != 0:
-            decision.izin = False
+            decision.allowed = False
             explanation = result.text or "(kanca bir açıklama yazmadı)"
-            decision.gerekce = (
+            decision.reason = (
                 f"Kanca reddetti (çıkış kodu {result.code}): {explanation}\n"
                 "Bu, kullanıcının kendi kuralı — sistem promptunda ya da "
                 "izin listesinde değil, kendi kanca dosyasında. Kuralı aşmaya "
@@ -433,7 +433,7 @@ async def after_tool(
     tool: str,
     args: dict[str, Any],
     *,
-    oturum: str = "",
+    session: str = "",
     cwd: Path | str = ".",
 ) -> list[str]:
     """Hooks that run AFTER the tool. NO veto power.
@@ -444,7 +444,7 @@ async def after_tool(
     """
     lines: list[str] = []
     for hook in matching(state_dir, "arac_sonrasi", tool):
-        result = await run(hook, tool=tool, args=args, session=oturum, cwd=cwd)
+        result = await run(hook, tool=tool, args=args, session=session, cwd=cwd)
         if result.status == "baslatilamadi":
             lines.append(f"kanca çalıştırılamadı (`{hook.command}`): {result.text}")
             continue

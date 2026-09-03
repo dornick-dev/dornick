@@ -187,12 +187,12 @@ def register(registry: ToolRegistry) -> None:
                 )
 
             if action == "konsol":
-                record = box.kayit(tab)
+                record = box.snapshot(tab)
                 return ToolResult(_konsol_metni(
                     record, str(args.get("seviye") or "hepsi"), args.get("n")))
 
             if action == "ag":
-                record = box.kayit(tab)
+                record = box.snapshot(tab)
                 return ToolResult(_ag_metni(record, args.get("n")))
 
             if action == "js":
@@ -322,14 +322,14 @@ def _warning_suffix(box: Any, tab: dict[str, Any]) -> str:
     `konsol`/`ag` after every `read` was burning tokens.
     """
     try:
-        record = box.kayit(tab)
+        record = box.snapshot(tab)
     except Exception:  # pragma: no cover - the listener must never break the page
         return ""
-    if getattr(record, "hata", ""):
+    if getattr(record, "error", ""):
         return ("\n\n(konsol/ağ dinleyicisi kurulamadı — bu sayfada JS hatası "
                 "olup olmadığını göremiyorum.)")
-    errors = [k for k in getattr(record, "konsol", ()) if k.seviye == "hata"]
-    bad = [i for i in getattr(record, "istekler", ()) if i.failed]
+    errors = [k for k in getattr(record, "console", ()) if k.level == "hata"]
+    bad = [i for i in getattr(record, "requests", ()) if i.failed]
     if not errors and not bad:
         return ""
     parts = [f"\n\n!! {len(errors)} konsol hatası, {len(bad)} başarısız istek."]
@@ -347,7 +347,7 @@ def _warning_suffix(box: Any, tab: dict[str, Any]) -> str:
 
 
 def _missing_note(record: Any) -> str:
-    if getattr(record, "eksik", False):
+    if getattr(record, "missing", False):
         return ("\nNot: dinleyici sayfa açıldıktan SONRA bağlandı; yüklenme "
                 "sırasındaki mesajlar kaçmış olabilir. Kesin liste için `go` "
                 "ile aynı adrese yeniden git.")
@@ -357,15 +357,15 @@ def _missing_note(record: Any) -> str:
 def _konsol_metni(record: Any, level: str, n: Any) -> str:
     from .. import chrome
 
-    if getattr(record, "hata", ""):
-        return ("Konsol dinleyicisi kurulamadı: " + str(record.hata) +
+    if getattr(record, "error", ""):
+        return ("Konsol dinleyicisi kurulamadı: " + str(record.error) +
                 "\nBu sayfada JS hatası olup olmadığını göremiyorum — "
                 "uydurma yorum yapma, kullanıcıya bildir.")
 
-    count = max(1, min(int(n or chrome.DEFAULT_N), chrome.TAMPON))
-    everything = list(record.konsol)
+    count = max(1, min(int(n or chrome.DEFAULT_N), chrome.BUFFER))
+    everything = list(record.console)
     sieve = {"hata": {"hata"}, "uyari": {"uyari", "hata"}}.get(level)
-    chosen = [k for k in everything if k.seviye in sieve] if sieve else everything
+    chosen = [k for k in everything if k.level in sieve] if sieve else everything
 
     if not chosen:
         tail = _missing_note(record)
@@ -376,7 +376,7 @@ def _konsol_metni(record: Any, level: str, n: Any) -> str:
                 "GELMEZ: sessizce yanlış davranan kod konsola bir şey yazmaz. "
                 "Davranışı ayrıca doğrula." + tail)
 
-    errors = sum(1 for k in chosen if k.seviye == "hata")
+    errors = sum(1 for k in chosen if k.level == "hata")
     heading = (f"{len(chosen)} konsol kaydı ({errors} hata) — son "
                f"{min(count, len(chosen))} tanesi:")
     lines = [heading]
@@ -391,12 +391,12 @@ def _konsol_metni(record: Any, level: str, n: Any) -> str:
 def _ag_metni(record: Any, n: Any) -> str:
     from .. import chrome
 
-    if getattr(record, "hata", ""):
-        return ("Ağ dinleyicisi kurulamadı: " + str(record.hata) +
+    if getattr(record, "error", ""):
+        return ("Ağ dinleyicisi kurulamadı: " + str(record.error) +
                 "\nBu sayfanın isteklerini göremiyorum.")
 
-    count = max(1, min(int(n or chrome.DEFAULT_N), chrome.TAMPON))
-    everything = list(record.istekler)
+    count = max(1, min(int(n or chrome.DEFAULT_N), chrome.BUFFER))
+    everything = list(record.requests)
     if not everything:
         return ("Kayıtlı ağ isteği yok. Sayfa dinleyici bağlanmadan önce "
                 "yüklenmiş olabilir; `go` ile yeniden git." + _missing_note(record))

@@ -1,8 +1,8 @@
-"""Zamanlanmış görevler.
+"""Scheduled tasks.
 
-İki şey burada sessizce bozulabiliyor: bir görevin hiç tetiklenmemesi ve
-aynı görevin üst üste tetiklenmesi. İkisi de hata vermiyor — biri hiç
-olmuyor, öteki fazla oluyor.
+Two things can silently break here: a task never firing, and the same
+task firing back-to-back. Neither raises an error — one never happens,
+the other happens too much.
 """
 
 from __future__ import annotations
@@ -26,17 +26,17 @@ def book(tmp_path: Path) -> Schedule:
     return Schedule(tmp_path)
 
 
-# -- doğrulama ---------------------------------------------------------
+# -- validation --------------------------------------------------------
 
 
 def test_an_empty_prompt_is_refused() -> None:
-    """Boş görev sessizce hiç iş yapmayan bir görevdir."""
+    """An empty task is a task that silently does no work."""
     with pytest.raises(ValueError):
         validate(task(prompt="   "))
 
 
 def test_too_frequent_is_refused() -> None:
-    """Dakikada bir tetiklenen bir ajan turu hem maliyet hem gürültü."""
+    """An agent turn triggered every minute is both cost and noise."""
     with pytest.raises(ValueError):
         validate(task(kind="every", every_s=5))
 
@@ -51,7 +51,7 @@ def test_an_unknown_repeat_is_refused() -> None:
         validate(task(kind="cron"))
 
 
-# -- zamanlama ---------------------------------------------------------
+# -- timing ------------------------------------------------------------
 
 
 def test_interval_counts_from_now() -> None:
@@ -60,7 +60,7 @@ def test_interval_counts_from_now() -> None:
 
 
 def test_daily_uses_local_time() -> None:
-    """Kullanıcı "sabah 9" derken UTC değil kendi saatini kastediyor."""
+    """When the user says "9 in the morning" they mean their own clock, not UTC."""
     now = datetime.now().astimezone().replace(hour=8, minute=0, second=0, microsecond=0)
     when = next_after(task(kind="daily", at="09:00"), now.astimezone(timezone.utc))
 
@@ -75,7 +75,7 @@ def test_a_time_that_already_passed_goes_to_tomorrow() -> None:
     assert when.astimezone().day != now.day or when.astimezone() > now
 
 
-# -- defter ------------------------------------------------------------
+# -- ledger ------------------------------------------------------------
 
 
 def test_a_new_task_gets_an_id_and_a_first_run(book: Schedule) -> None:
@@ -98,13 +98,13 @@ def test_nothing_is_due_before_its_time(book: Schedule) -> None:
 
 
 def test_a_ripe_task_fires_once(book: Schedule) -> None:
-    """Sıradaki zaman tetiklenirken ilerletiliyor, çalıştırıldıktan sonra
-    değil: iş uzun sürerse aynı görev ikinci kez tetiklenmemeli."""
+    """The next time is advanced at trigger time, not after running: if
+    the job runs long the same task must not fire a second time."""
     created = book.add(task(kind="every", every_s=MIN_INTERVAL_S))
     later = datetime.now(timezone.utc) + timedelta(hours=1)
 
     assert [t.id for t in book.due(later)] == [created.id]
-    assert book.due(later) == []   # ikinci bakışta artık hazır değil
+    assert book.due(later) == []   # no longer ripe on a second look
 
 
 def test_a_paused_task_never_fires(book: Schedule) -> None:
@@ -115,7 +115,7 @@ def test_a_paused_task_never_fires(book: Schedule) -> None:
 
 
 def test_changing_the_timing_moves_the_next_run(book: Schedule) -> None:
-    """Yeni ayar bir sonraki tetiklenmeye kadar geçersiz kalmamalı."""
+    """The new setting must not stay inert until the next trigger."""
     created = book.add(task(kind="every", every_s=7200))
     before = created.next_run
 
@@ -130,7 +130,7 @@ def test_removing_a_task(book: Schedule) -> None:
 
 
 def test_mark_running_binds_child_and_status(book: Schedule) -> None:
-    """Detay paneli 'koşuyor' + rapor id'si için defter bağlanır."""
+    """The ledger is bound so the detail panel gets 'koşuyor' + the report id."""
     created = book.add(task())
     book.mark_running(created.id, "ab12cd")
     got = book.get(created.id)
@@ -143,7 +143,7 @@ def test_mark_running_binds_child_and_status(book: Schedule) -> None:
 
 
 def test_update_can_change_prompt_in_place(book: Schedule) -> None:
-    """Silip yeniden eklemek zorunda kalınmamalı."""
+    """One should not have to delete and re-add."""
     created = book.add(task(prompt="eski metin"))
     updated = book.update(created.id, prompt="yeni metin", title="yeni ad")
     assert updated is not None
@@ -160,8 +160,8 @@ def test_the_id_cannot_be_overwritten(book: Schedule) -> None:
 
 
 def test_a_hand_edited_file_does_not_break_startup(tmp_path: Path) -> None:
-    """Dosya elle düzenlenebiliyor; bilinmeyen alan programı açılmaz hale
-    getirmemeli."""
+    """The file can be hand-edited; an unknown field must not render the
+    program unable to open."""
     (tmp_path / "tasks.json").write_text(
         '[{"id": "job_1", "title": "x", "prompt": "y", "uydurma": 1}, "cop", {}]',
         encoding="utf-8",
@@ -180,14 +180,14 @@ def test_the_description_reads_in_plain_turkish(book: Schedule) -> None:
     assert book.add(task(kind="every", every_s=900)).describe() == "her 15 dakikada"
 
 
-# -- döngü -------------------------------------------------------------
+# -- loop --------------------------------------------------------------
 
 
 async def test_the_ticker_hands_ripe_tasks_to_the_queue(book: Schedule) -> None:
-    """Tetiklenen görev doğrudan koşmuyor, kuyruğa giriyor: ajan bir işin
-    ortasındayken araya girmemeli."""
-    # `add` sıradaki anı kendi hesaplıyor; geçmişe çekmek için sonradan
-    # yazılıyor, yoksa görev bir saat sonra tetiklenirdi.
+    """A triggered task does not run directly, it enters the queue: it
+    must not barge in while the agent is mid-job."""
+    # `add` computes the next moment itself; it is overwritten afterwards
+    # to pull it into the past, otherwise the task would fire an hour later.
     created = book.add(task(kind="every", every_s=MIN_INTERVAL_S))
     book.update(created.id, next_run="2000-01-01T00:00:00+00:00")
     queued: list[Task] = []
@@ -226,7 +226,7 @@ async def test_one_failing_task_does_not_stop_the_ticker(book: Schedule) -> None
 
 
 def test_overdue_peeks_without_advancing(book: Schedule) -> None:
-    """Kaçırılan görevler kullanıcı karar verene dek next_run sabit kalmalı."""
+    """Missed tasks must keep next_run fixed until the user decides."""
     created = book.add(task(kind="every", every_s=MIN_INTERVAL_S))
     book.update(created.id, next_run="2000-01-01T00:00:00+00:00")
     moment = datetime.now(timezone.utc)
@@ -288,7 +288,7 @@ async def test_ticker_waits_while_paused(book: Schedule) -> None:
     assert [t.id for t in queued] == [created.id]
 
 
-# -- araç --------------------------------------------------------------
+# -- tool --------------------------------------------------------------
 
 
 async def test_the_agent_can_set_up_an_automation(tmp_path: Path, book: Schedule) -> None:
@@ -325,13 +325,13 @@ async def test_the_agent_can_set_up_an_automation(tmp_path: Path, book: Schedule
 async def test_the_agent_can_bind_a_workflow_to_a_schedule(
     tmp_path: Path, book: Schedule
 ) -> None:
-    """Otomasyonun taşıyıcı dikişi: bir AKIŞ zamana bağlanabilmeli.
+    """The automation's load-bearing seam: a WORKFLOW must be bindable to time.
 
-    Bu dikiş kopukken her şey çalışıyor görünüyordu — zamanlayıcı
-    `kind_ui`/`workflow_id` alanlarını taşıyor, koşucu onlara göre
-    dallanıyor, arayüz süzgeç ve rozet gösteriyordu. Ama o iki alanı
-    YAZABİLEN hiçbir yol yoktu: ne araç, ne API. Sonuç, kimsenin
-    kuramadığı bir özellik ve hiç girilmeyen bir dal.
+    With this seam broken everything looked like it worked — the scheduler
+    carried the `kind_ui`/`workflow_id` fields, the runner branched on
+    them, the UI showed a filter and a badge. But no path could WRITE
+    those two fields: not the tool, not the API. The result was a feature
+    nobody could set up and a branch never entered.
     """
     from dornick.config import Config
     from dornick.events import EventLog
@@ -349,35 +349,35 @@ async def test_the_agent_can_bind_a_workflow_to_a_schedule(
         cancel=asyncio.Event(),
         schedule=book,
     )
-    arac = registry.get("schedule").handler
+    tool = registry.get("schedule").handler
 
-    sonuc = await arac(
+    result = await tool(
         {"action": "add", "title": "sabah postası", "kind": "daily",
          "at": "08:30", "workflow_id": "posta-ozeti"},
         ctx,
     )
-    assert not sonuc.is_error, sonuc.content
-    (kurulan,) = book.all()
-    assert kurulan.kind_ui == "automation"
-    assert kurulan.workflow_id == "posta-ozeti"
-    # Otomasyonda prompt taşıyıcı alan değil: boş olması hata olmamalı.
-    assert kurulan.prompt == ""
+    assert not result.is_error, result.content
+    (installed,) = book.all()
+    assert installed.kind_ui == "automation"
+    assert installed.workflow_id == "posta-ozeti"
+    # In an automation the prompt is not a carrier field: empty must not be an error.
+    assert installed.prompt == ""
 
-    # Akış bağlamak türü de değiştirmeli — "otomasyon değil ama akışı var"
-    # diye tutarsız bir kayıt kalmamalı.
-    basit = book.add(task(title="düz görev"))
-    assert basit.kind_ui == "simple"
-    guncel = await arac(
-        {"action": "update", "id": basit.id, "workflow_id": "baska-akis"}, ctx)
-    assert not guncel.is_error, guncel.content
-    assert book.get(basit.id).kind_ui == "automation"
+    # Binding a workflow must change the type too — no inconsistent record
+    # like "not an automation but has a workflow" may remain.
+    simple = book.add(task(title="düz görev"))
+    assert simple.kind_ui == "simple"
+    updated = await tool(
+        {"action": "update", "id": simple.id, "workflow_id": "baska-akis"}, ctx)
+    assert not updated.is_error, updated.content
+    assert book.get(simple.id).kind_ui == "automation"
 
 
 def test_an_automation_without_a_flow_is_refused() -> None:
-    """Akışsız otomasyon, tetiklendiğinde hiçbir şey yapmayan bir kayıttır."""
+    """An automation without a workflow is a record that does nothing when triggered."""
     with pytest.raises(ValueError, match="akış kimliği"):
         validate(task(prompt="", kind_ui="automation"))
-    # Basit görevde kural değişmedi: metin hâlâ şart.
+    # The rule for a simple task is unchanged: the text is still required.
     with pytest.raises(ValueError, match="Boş görev metni"):
         validate(task(prompt=""))
 

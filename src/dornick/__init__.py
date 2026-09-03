@@ -1,18 +1,19 @@
-"""dornick — bilgisayarı kullanabilen bir ajan harness'ı.
+"""dornick — an agent harness that can use the computer.
 
-Katmanlar:
-    config      yapılandırma
-    events      append-only olay günlüğü (epizodik belleğin taşıyıcısı)
-    session     olayları API mesajlarına projekte eder
-    tools       araç kayıt defteri ve yürütücüsü
-    permissions eylem öncesi politika kapısı
-    context     önbellek breakpoint'leri ve bağlam budama
-    client      Anthropic API sarmalayıcısı (streaming, iptal)
-    loop        ajan döngüsü
+Layers:
+    config      configuration
+    events      append-only event log (the carrier of episodic memory)
+    session     projects events into API messages
+    tools       tool registry and executor
+    permissions pre-action policy gate
+    context     cache breakpoints and context pruning
+    client      Anthropic API wrapper (streaming, cancel)
+    loop        the agent loop
 """
 
-# Tek gerçek kaynak pyproject.toml — buraya elle sürüm yazılmaz (yazılan
-# unutulur: 0.1.0 kalıntısı öyle doğmuştu). ortam.surum() okur, önbellekler.
-from .environment import version as _surum
+# The single source of truth is pyproject.toml — no version is written
+# here by hand (what is written gets forgotten: the 0.1.0 relic was born
+# that way). environment.version() reads and caches it.
+from .environment import version as _version
 
-__version__ = _surum()
+__version__ = _version()

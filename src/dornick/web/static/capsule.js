@@ -1,16 +1,15 @@
-// Kapsül: sistem içi bir uygulamayı Dornick'in İÇİNDE, canlı bir çerçevede
-// çalıştırır ve gösterir.
+// Capsule: runs and shows an in-system app INSIDE Dornick, in a live frame.
 //
-// Ayrım kullanıcının niyeti: DIŞ uygulama zaten ayrı bir dış uygulamadır —
-// kendi penceresinde/sekmesinde açılır. SİSTEM İÇİ olan ise Dornick'e bağlı bir
-// kapsüldür: Dornick arkada süreci çalıştırır (shell auto-background), kapsül onu
-// İZLER (canlı adres, çalışma süresi, canlılık), KONTROL eder (yenile, durdur)
-// ve gösterir. Böylece hem Dornick kendi kullanabilir hem kullanıcı arayüz
-// üzerinden — bir stok takibi, bir modbus görüntüleyici, bir web panosu
-// sistemin içinde bir sayfa gibi açılır.
+// The distinction is the user's intent: an EXTERNAL app is simply a separate
+// external application — it opens in its own window/tab. An IN-SYSTEM one is a
+// capsule bound to Dornick: Dornick runs the process in the background (shell
+// auto-background) while the capsule WATCHES it (live address, uptime,
+// liveness), CONTROLS it (reload, stop) and shows it. That way both Dornick
+// itself and the user through the UI can use it — a stock tracker, a modbus
+// viewer, a web dashboard opens like a page inside the system.
 //
-// Kaynaklar: /api/apps/run (başlat → pid), /api/apps/running (pid → canlı
-// adres + başlangıç), /api/apps/stop (durdur).
+// Sources: /api/apps/run (start → pid), /api/apps/running (pid → live
+// address + start time), /api/apps/stop (stop).
 
 const Capsule = (() => {
   const panel = document.getElementById("capsule");
@@ -26,8 +25,8 @@ const Capsule = (() => {
   let poll = null;
   let findTimer = null;
 
-  // app: { name, pid, address?, started? }. Adres verilmişse hemen yükler;
-  // verilmemişse (yeni başlatıldıysa) süreç portu bağlayana dek yoklar.
+  // app: { name, pid, address?, started? }. If an address is given, loads it
+  // right away; if not (freshly started) polls until the process binds a port.
   function open(app) {
     current = { name: app.name || "Uygulama", pid: app.pid, address: app.address || "",
                 started: app.started || 0 };
@@ -48,8 +47,9 @@ const Capsule = (() => {
     if (frame.getAttribute("src") !== address) frame.setAttribute("src", address);
   }
 
-  // pid'in dinlediği adres belirene dek yokla (sunucu portu birkaç saniyede
-  // bağlayabilir). Süreç ölürse ya da makul sürede adres çıkmazsa açıkça söyle.
+  // Poll until the address the pid listens on shows up (a server can take a
+  // few seconds to bind its port). If the process dies or no address appears
+  // within a reasonable time, say so explicitly.
   function findAddress() {
     clearTimeout(findTimer);
     let tries = 0;
@@ -85,8 +85,8 @@ const Capsule = (() => {
     } catch { return null; }
   }
 
-  // Panel açıkken süreci canlı izle: çalışma süresi ilerlesin, ölürse belli
-  // olsun, adres sonradan belirdiyse çerçeveyi yükle.
+  // Watch the process live while the panel is open: keep the uptime ticking,
+  // make death visible, and load the frame if the address appeared late.
   function startPoll() {
     clearInterval(poll);
     poll = setInterval(async () => {
@@ -123,7 +123,7 @@ const Capsule = (() => {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ pid: current.pid }),
       });
-    } catch { /* yut: yoklama zaten ölümü görecek */ }
+    } catch { /* swallow: the poll will see the death anyway */ }
     markDead();
     if (typeof Apps !== "undefined" && Apps.load) Apps.load();
   }

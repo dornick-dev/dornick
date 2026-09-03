@@ -36,7 +36,7 @@ from pathlib import Path
 
 
 @lru_cache(maxsize=1)
-def kurulu_mu() -> bool:
+def is_installed() -> bool:
     """Are we in the layout set up by the installer wizard?
 
     Two independent traces suffice: the embedded Python's ._pth file (the
@@ -187,8 +187,8 @@ def _guvenilir_indirme(url: str) -> bool:
     return host == "github.com" or host.endswith(".githubusercontent.com")
 
 
-def download_update(url: str, target_dir, *, beklenen_boyut: int = 0,
-                     ad: str = "", progress=None,
+def download_update(url: str, target_dir, *, expected_size: int = 0,
+                     name: str = "", progress=None,
                      _ac=urllib.request.urlopen):
     """Downloads the installer file from the trusted GitHub address.
 
@@ -205,7 +205,7 @@ def download_update(url: str, target_dir, *, beklenen_boyut: int = 0,
     if not _guvenilir_indirme(url):
         raise ValueError(f"Güvenilmeyen indirme adresi: {url!r}")
 
-    file_name = ad or Path(urllib.parse.urlparse(url).path).name or "dornick-setup.exe"
+    file_name = name or Path(urllib.parse.urlparse(url).path).name or "dornick-setup.exe"
     if not file_name.lower().endswith(".exe"):
         raise ValueError("Kurulum dosyası .exe olmalı")
     target = Path(target_dir)
@@ -220,7 +220,7 @@ def download_update(url: str, target_dir, *, beklenen_boyut: int = 0,
         final = getattr(response, "url", None) or response.geturl()
         if not _guvenilir_indirme(final):
             raise ValueError(f"Yönlendirme güvenilmeyen adrese gitti: {final!r}")
-        total = int(response.headers.get("Content-Length") or beklenen_boyut or 0)
+        total = int(response.headers.get("Content-Length") or expected_size or 0)
         downloaded = 0
         temp = path.with_suffix(path.suffix + ".indiriliyor")
         with open(temp, "wb") as f:
@@ -236,10 +236,10 @@ def download_update(url: str, target_dir, *, beklenen_boyut: int = 0,
                     except Exception:
                         pass
     # Integrity: if the size is known it must roughly match (a truncated download must not run).
-    if beklenen_boyut and abs(downloaded - beklenen_boyut) > max(1024, beklenen_boyut // 100):
+    if expected_size and abs(downloaded - expected_size) > max(1024, expected_size // 100):
         temp.unlink(missing_ok=True)
         raise ValueError(
-            f"İndirme eksik: {downloaded} bayt geldi, {beklenen_boyut} bekleniyordu")
+            f"İndirme eksik: {downloaded} bayt geldi, {expected_size} bekleniyordu")
     if downloaded < 1024 * 1024:   # under 1 MB cannot be an installer wizard
         temp.unlink(missing_ok=True)
         raise ValueError(f"İndirilen dosya fazla küçük ({downloaded} bayt)")

@@ -1,19 +1,19 @@
-"""MCP bağlayıcıları — dış araç sunucularının istemci tarafı.
+"""MCP connectors — the client side of external tool servers.
 
-`recall/mcp.py` bu protokolün sunucu tarafı: Dornick'in belleğini dışarı açıyor.
-Burası tersi — kullanıcı Claude Code / LM Studio'daki `mcpServers` biçimiyle
-sunucu tanımlıyor, dornick bağlanıp sunucunun araçlarını kendi defterine ekliyor.
-Döngü aracın nereden geldiğini bilmiyor; `ToolSpec.source` alanı zaten bunun
-için vardı.
+`recall/mcp.py` is the server side of this protocol: it exposes Dornick's
+memory to the outside. This is the reverse — the user defines servers in
+the same `mcpServers` format as Claude Code / LM Studio, dornick connects
+and adds the server's tools to its own registry. The loop does not know
+where a tool came from; the `ToolSpec.source` field existed for exactly this.
 
-İki taşıma:
+Two transports:
 
-    stdio  komut başlatılıyor, satır başına bir JSON-RPC mesajı gidip
-           geliyor (recall sunucusuyla aynı biçim).
-    http   adres + başlıklar. Cevap düz JSON da gelebilir SSE olarak da —
-           streamable HTTP sunucuları ikisini de yapıyor, ikisi de okunuyor.
+    stdio  a command is launched, one JSON-RPC message per line goes back
+           and forth (same format as the recall server).
+    http   address + headers. The answer can come as plain JSON or as
+           SSE — streamable HTTP servers do both, both are read.
 
-Yapılandırma `.dornick/mcp.json`, Claude Code'un biçimiyle birebir:
+The configuration is `.dornick/mcp.json`, byte-for-byte Claude Code's format:
 
     {"mcpServers": {
         "hesap":  {"command": "npx", "args": ["-y", "bir-mcp"]},
@@ -21,9 +21,10 @@ Yapılandırma `.dornick/mcp.json`, Claude Code'un biçimiyle birebir:
                    "headers": {"Authorization": "Bearer ${ORNEK_TOKEN}"}}
     }}
 
-Gizli değerler bu dosyaya düz yazılmıyor: `${AD}` biçimindeki değerler
-bağlanırken ortamdan genişletiliyor. Ayarlar › Anahtarlar'a girilen her
-değer ortama zaten yazılıyor — token oraya, dosyaya yalnızca adı.
+Secrets are not written to this file in the clear: `${NAME}`-style values
+are expanded from the environment at connect time. Every value entered in
+Settings › Keys is already written to the environment — the token goes
+there, only its name goes in the file.
 """
 
 from __future__ import annotations
@@ -43,35 +44,35 @@ FILE = "mcp.json"
 PROTOCOL = "2025-06-18"
 CLIENT = {"name": "dornick", "version": "1.0.0"}
 
-# urllib'in kendi imzası (`Python-urllib/3.11`) Cloudflare arkasındaki
-# sunucularda 1010 "Access denied" yiyor — Notion'da yaşandı. Kendimizi
-# adımızla tanıtıyoruz.
+# urllib's own signature (`Python-urllib/3.11`) eats a 1010 "Access
+# denied" from servers behind Cloudflare — happened with Notion. We
+# introduce ourselves by name.
 USER_AGENT = "dornick/1.0 (MCP istemcisi)"
 
-# Bağlanma ve tek bir araç çağrısı için üst sınırlar. Bağlanma cömert:
-# `npx` ilk çalıştırmada paket indirebiliyor.
+# Upper bounds for connecting and for a single tool call. Connecting is
+# generous: `npx` may download the package on first run.
 CONNECT_TIMEOUT_S = 30.0
 CALL_TIMEOUT_S = 120.0
 
 DEFAULT_RAW = '{\n  "mcpServers": {}\n}\n'
 
-# Araç adları model API'lerinin kabul ettiği alfabeyle sınırlı.
+# Tool names are limited to the alphabet model APIs accept.
 _NAME_OK = re.compile(r"^[a-zA-Z0-9_-]+$")
 _UNSAFE = re.compile(r"[^a-zA-Z0-9_-]")
 _ENV_REF = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}")
 
 
 class ConnectorError(ValueError):
-    """Yapılandırma ya da bağlantı hatası — kullanıcıya gösterilecek dilde."""
+    """Configuration or connection error — in the language shown to the user."""
 
 
 class AuthRequired(ConnectorError):
-    """Sunucu 401 döndü: sabit token yok, kullanıcı girişi gerekiyor."""
+    """The server returned 401: no fixed token, user login required."""
 
 
 @dataclass(slots=True)
 class Connector:
-    """Tek bir MCP sunucusunun tanımı."""
+    """The definition of a single MCP server."""
 
     name: str
     command: str = ""
@@ -80,12 +81,14 @@ class Connector:
     url: str = ""
     headers: dict[str, str] = field(default_factory=dict)
     enabled: bool = True
-    # "defer" (varsayılan): araçlar deftere şemalarıyla GİRMEZ; model tek
-    # köprü araç üzerinden listeler/çağırır. "full": eski davranış — her
-    # araç tam şemasıyla kaydedilir (küçük sunucular için mantıklı).
+    # "defer" (default): the tools do NOT enter the registry with their
+    # schemas; the model lists/calls through a single bridge tool. "full":
+    # the old behaviour — every tool is registered with its full schema
+    # (sensible for small servers).
     #
-    # Ölçüldü: Notion'un 28 şeması ~27.000 token ve her mesajla gidiyordu —
-    # istemin yarısından fazlası, hiç kullanılmayan araç tarifleriydi.
+    # Measured: Notion's 28 schemas were ~27,000 tokens and went with
+    # every message — more than half the prompt was descriptions of tools
+    # never used.
     expose: str = "defer"
 
     @property
@@ -93,14 +96,14 @@ class Connector:
         return "http" if self.url else "stdio"
 
 
-# -- yapılandırma -------------------------------------------------------
+# -- configuration ------------------------------------------------------
 
 
 def parse(raw: str) -> list[Connector]:
-    """`mcpServers` metnini çözer. Hatalar alan adıyla söylenir.
+    """Parses the `mcpServers` text. Errors are stated with the field name.
 
-    Hem `{"mcpServers": {...}}` hem çıplak `{ad: tanım}` kabul ediliyor:
-    kullanıcı başka bir istemciden kopyalarken dış kabuğu unutabiliyor.
+    Both `{"mcpServers": {...}}` and a bare `{name: spec}` are accepted:
+    users can forget the outer shell when copying from another client.
     """
     try:
         data = json.loads(raw or "{}")
@@ -170,7 +173,7 @@ def read_raw(state_dir: Path | str) -> str:
 
 
 def save(state_dir: Path | str, raw: str) -> list[Connector]:
-    """Metni doğrular ve yazar. Bozuksa dosyaya dokunulmaz."""
+    """Validates and writes the text. If broken, the file is left untouched."""
     found = parse(raw)
     path = Path(state_dir) / FILE
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -181,7 +184,7 @@ def save(state_dir: Path | str, raw: str) -> list[Connector]:
 
 
 def load(state_dir: Path | str) -> tuple[list[Connector], list[str]]:
-    """Kayıtlı bağlayıcılar. Bozuk dosya boş liste + sorun olarak döner."""
+    """The saved connectors. A broken file comes back as an empty list + the problem."""
     raw = read_raw(state_dir)
     try:
         return [c for c in parse(raw) if c.enabled], []
@@ -190,11 +193,12 @@ def load(state_dir: Path | str) -> tuple[list[Connector], list[str]]:
 
 
 def _expand(value: str) -> str:
-    """`${AD}` göndermelerini ortamdan doldurur.
+    """Fills `${NAME}` references from the environment.
 
-    Eksik değişken sessizce boş geçilmiyor: boş bir Authorization başlığı
-    "yetkisiz" hatası olarak geri dönüyor ve sebebi görünmüyor. Burada
-    adıyla söyleniyor — değer Ayarlar › Anahtarlar'a yazılınca düzeliyor.
+    A missing variable is not silently left empty: an empty Authorization
+    header comes back as an "unauthorized" error with the cause invisible.
+    Here it is stated by name — it heals once the value is written into
+    Settings › Keys.
     """
 
     def fill(match: re.Match[str]) -> str:
@@ -210,21 +214,22 @@ def _expand(value: str) -> str:
     return _ENV_REF.sub(fill, value)
 
 
-# -- OAuth: uzak sunucular için giriş ------------------------------------
+# -- OAuth: login for remote servers -------------------------------------
 #
-# Bazı uzak MCP sunucuları sabit token değil OAuth istiyor (MCP 2025-06-18
-# yetkilendirme sözleşmesi): istek 401 dönüyor, istemci tarayıcıda giriş
-# açıyor, jetonu alıp saklıyor ve sonraki isteklerde Bearer taşıyor. Akış
-# Claude Code'unkiyle aynı:
+# Some remote MCP servers want OAuth, not a fixed token (the MCP
+# 2025-06-18 authorization contract): the request returns 401, the client
+# opens a login in the browser, obtains and stores the token, and carries
+# a Bearer on later requests. The flow is the same as Claude Code's:
 #
-#   keşif     korunan kaynak metaverisi (RFC 9728) yetki sunucusunu söylüyor,
-#             yetki sunucusu metaverisi (RFC 8414 / OIDC) uçları veriyor
-#   kayıt     dinamik istemci kaydı (RFC 7591) — elle client_id derdi yok
-#   giriş     tarayıcıda yetki kodu + PKCE (S256), geri dönüş 127.0.0.1'e
-#   jeton     takas + saklama; yenileme jetonu varsa sessiz tazeleme
+#   discovery  protected-resource metadata (RFC 9728) names the
+#              authorization server, authorization-server metadata
+#              (RFC 8414 / OIDC) gives the endpoints
+#   register   dynamic client registration (RFC 7591) — no manual client_id hassle
+#   login      authorization code + PKCE (S256) in the browser, redirect to 127.0.0.1
+#   token      exchange + storage; silent refresh when there is a refresh token
 #
-# Jetonlar `.dornick/mcp_oauth.json` içinde sunucu adıyla duruyor ve ayar
-# görüntüsüne hiçbir zaman çıkmıyor.
+# Tokens live in `.dornick/mcp_oauth.json` keyed by server name and never
+# appear in the settings view.
 
 TOKENS_FILE = "mcp_oauth.json"
 LOGIN_TIMEOUT_S = 180.0
@@ -246,14 +251,14 @@ def _tokens_write(state_dir: Path | str, data: dict[str, Any]) -> None:
     temp = path.with_suffix(".tmp")
     temp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
     temp.replace(path)
-    try:  # jeton dosyası yalnızca sahibine — elden geldiğince
+    try:  # the token file for its owner only — as far as possible
         os.chmod(path, 0o600)
     except OSError:
         pass
 
 
 def forget_login(state_dir: Path | str, name: str) -> bool:
-    """Bir sunucunun jetonlarını siler. Çıkış bu."""
+    """Deletes a server's tokens. This is logout."""
     stored = _tokens_read(state_dir)
     if name not in stored:
         return False
@@ -270,10 +275,10 @@ def _json_request(
     headers: dict[str, str] | None = None,
     timeout: float = 20.0,
 ) -> dict[str, Any]:
-    """Küçük JSON istemcisi: `form` form-kodlu POST, `body` JSON POST, yoksa GET.
+    """Small JSON client: `form` is a form-encoded POST, `body` a JSON POST, otherwise GET.
 
-    Testler bunun yerine sahte bir çağrılabilir veriyor; OAuth adımlarının
-    hiçbiri ağa doğrudan dokunmuyor.
+    Tests supply a fake callable instead; none of the OAuth steps touches
+    the network directly.
     """
     import urllib.error
     import urllib.parse
@@ -302,11 +307,12 @@ def _json_request(
 
 
 def _oauth_discover(url: str, http: Any = _json_request) -> dict[str, Any]:
-    """Yetki sunucusunun uçlarını bulur.
+    """Finds the authorization server's endpoints.
 
-    Önce korunan kaynak metaverisi: MCP sunucusu hangi yetki sunucusunu
-    kullandığını orada söylüyor. Yoksa kaynağın kendisi yetki sunucusu
-    sayılıyor (eski sunucular böyle). Sonra uçlar: RFC 8414, olmazsa OIDC.
+    Protected-resource metadata first: the MCP server says there which
+    authorization server it uses. If absent, the resource itself counts as
+    the authorization server (old servers work that way). Then the
+    endpoints: RFC 8414, failing that OIDC.
     """
     from urllib.parse import urlsplit
 
@@ -337,7 +343,7 @@ def _oauth_discover(url: str, http: Any = _json_request) -> dict[str, Any]:
 
 
 def _pkce() -> tuple[str, str]:
-    """PKCE (S256): doğrulayıcı ve karşılığı."""
+    """PKCE (S256): the verifier and its challenge."""
     import base64
     import hashlib
     import secrets
@@ -348,7 +354,7 @@ def _pkce() -> tuple[str, str]:
 
 
 def _oauth_register(meta: dict[str, Any], redirect: str, http: Any = _json_request) -> str:
-    """Dinamik istemci kaydı. `client_id` döner."""
+    """Dynamic client registration. Returns the `client_id`."""
     spot = meta.get("registration_endpoint")
     if not spot:
         raise ConnectorError(
@@ -369,10 +375,10 @@ def _oauth_register(meta: dict[str, Any], redirect: str, http: Any = _json_reque
 
 
 def _catch_code(timeout: float) -> tuple[str, Any]:
-    """127.0.0.1'de tek kullanımlık geri dönüş dinleyicisi.
+    """A single-use callback listener on 127.0.0.1.
 
-    (geri dönüş adresi, bekleyici) döner; bekleyici tarayıcıdan kod gelene
-    ya da süre dolana kadar bloklar.
+    Returns (redirect address, waiter); the waiter blocks until the code
+    arrives from the browser or the time runs out.
     """
     from http.server import BaseHTTPRequestHandler, HTTPServer
     from urllib.parse import parse_qs, urlsplit
@@ -380,7 +386,7 @@ def _catch_code(timeout: float) -> tuple[str, Any]:
     got: dict[str, str] = {}
 
     class Catcher(BaseHTTPRequestHandler):
-        def do_GET(self) -> None:  # noqa: N802 - stdlib arayüzü
+        def do_GET(self) -> None:  # noqa: N802 - stdlib interface
             query = parse_qs(urlsplit(self.path).query)
             for key in ("code", "state", "error"):
                 if key in query:
@@ -393,7 +399,7 @@ def _catch_code(timeout: float) -> tuple[str, Any]:
                 "<h3>Giriş tamam — bu sekmeyi kapatıp Dornick'e dönebilirsin.</h3>"
                 .encode("utf-8"))
 
-        def log_message(self, *args: Any) -> None:  # sessiz
+        def log_message(self, *args: Any) -> None:  # silent
             pass
 
     server = HTTPServer(("127.0.0.1", 0), Catcher)
@@ -423,11 +429,11 @@ def login(
     announce: Any = None,
     timeout: float = LOGIN_TIMEOUT_S,
 ) -> str:
-    """Tarayıcıda OAuth girişi yürütür ve jetonları saklar.
+    """Runs the OAuth login in the browser and stores the tokens.
 
-    `announce` verilirse giriş adresi ona da söyleniyor: tarayıcı arka
-    planda ya da başka bir oturumda açılmış olabilir — adres arayüzde
-    görünürse kullanıcı elle de açabilir.
+    If `announce` is given, the login address is told to it as well: the
+    browser may have opened in the background or in another session — if
+    the address shows in the UI the user can open it by hand too.
     """
     import time as clock
 
@@ -451,7 +457,7 @@ def login(
         "code_challenge": challenge,
         "code_challenge_method": "S256",
         "state": state,
-        # RFC 8707: jeton bu kaynak için istensin — başka sunucuda geçmesin.
+        # RFC 8707: request the token for this resource — it must not be valid on another server.
         "resource": resource,
     }
     if meta.get("scopes_supported"):
@@ -502,10 +508,10 @@ def login(
 
 
 def _bearer(state_dir: Path | str | None, name: str, http: Any = _json_request) -> str:
-    """Geçerli erişim jetonu; süresi geçtiyse sessizce tazeler.
+    """The current access token; refreshed silently when expired.
 
-    Tazeleme başarısız olursa eldeki jeton döner — 401'i sunucu söylesin,
-    kullanıcı 'Giriş yap' ile yeniler.
+    If the refresh fails, the token in hand is returned — let the server
+    say the 401, the user renews with 'Giriş yap'.
     """
     import time as clock
 
@@ -542,40 +548,40 @@ def _bearer(state_dir: Path | str | None, name: str, http: Any = _json_request) 
     return str(entry["access_token"])
 
 
-# -- oturum -------------------------------------------------------------
+# -- session ------------------------------------------------------------
 
 
 class Session:
-    """Tek bir MCP sunucusuyla açık oturum.
+    """An open session with a single MCP server.
 
-    Çağrılar bir kilitle sıralanıyor: JSON-RPC eşzamanlı isteklere izin
-    veriyor ama stdio üstünde cevapları ayıklamak karmaşıklığa değmiyor —
-    araç çağrıları zaten `parallel_safe=False`.
+    Calls are serialized with a lock: JSON-RPC allows concurrent requests
+    but demultiplexing the answers over stdio is not worth the complexity —
+    tool calls are `parallel_safe=False` anyway.
     """
 
     def __init__(self, connector: Connector, state_dir: Path | str | None = None) -> None:
         self.connector = connector
-        # OAuth jetonları burada aranıyor; None ise giriş katmanı kapalı.
+        # OAuth tokens are looked up here; None means the login layer is off.
         self.state_dir = state_dir
         self.tools: list[dict[str, Any]] = []
         self.error = ""
         self._lock = threading.Lock()
         self._id = 0
-        # stdio tarafı
+        # the stdio side
         self._proc: subprocess.Popen[str] | None = None
         self._lines: queue.Queue[str] = queue.Queue()
         self._stderr_tail: list[str] = []
-        # http tarafı
+        # the http side
         self._session_id = ""
 
     @property
     def ok(self) -> bool:
         return bool(self.tools) and not self.error
 
-    # -- açılış --------------------------------------------------------
+    # -- opening -------------------------------------------------------
 
     def open(self) -> None:
-        """Bağlanır, el sıkışır, araç listesini alır. Hata `self.error`a."""
+        """Connects, shakes hands, fetches the tool list. Errors go to `self.error`."""
         try:
             if self.connector.kind == "stdio":
                 self._spawn()
@@ -588,8 +594,9 @@ class Session:
                 },
                 timeout=CONNECT_TIMEOUT_S,
             )
-            # Sunucunun söylediği sürümle devam ediliyor; pazarlığı burada
-            # büyütmeye gerek yok — araç çağrısı her sürümde aynı.
+            # We proceed with the version the server states; no need to
+            # blow up the negotiation here — tool calling is the same in
+            # every version.
             _ = hello.get("protocolVersion")
             self._notify("notifications/initialized")
             listed = self._rpc("tools/list", {}, timeout=CONNECT_TIMEOUT_S)
@@ -598,12 +605,12 @@ class Session:
         except ConnectorError as exc:
             self.error = str(exc)
             self.close()
-        except Exception as exc:  # ağ, süreç, çözümleme — hepsi aynı kapı
+        except Exception as exc:  # network, process, parsing — all through the same door
             self.error = f"{type(exc).__name__}: {exc}"
             self.close()
 
     def call(self, tool: str, arguments: dict[str, Any]) -> tuple[str, bool]:
-        """Bir aracı çağırır. (metin, hata mı) döner — istisna fırlatmaz."""
+        """Calls a tool. Returns (text, is_error) — never raises."""
         try:
             result = self._rpc(
                 "tools/call",
@@ -630,15 +637,15 @@ class Session:
             except OSError:
                 pass
 
-    # -- taşıma: stdio -------------------------------------------------
+    # -- transport: stdio ----------------------------------------------
 
     def _spawn(self) -> None:
         import shutil
 
         command = _expand(self.connector.command)
         args = [_expand(a) for a in self.connector.args]
-        # Windows'ta `npx` gibi komutlar `.cmd` sarmalayıcı; `which` onu
-        # buluyor, çıplak Popen bulamıyordu.
+        # On Windows commands like `npx` are `.cmd` wrappers; `which`
+        # finds them, bare Popen could not.
         resolved = shutil.which(command) or command
 
         env = dict(os.environ)
@@ -663,8 +670,8 @@ class Session:
         threading.Thread(
             target=self._pump_stdout, daemon=True, name=f"mcp-{self.connector.name}"
         ).start()
-        # stderr boşaltılmazsa boru dolunca sunucu kilitleniyor; son satırlar
-        # da hata mesajı olarak işe yarıyor.
+        # If stderr is not drained the server deadlocks once the pipe
+        # fills; the last lines also serve as an error message.
         threading.Thread(
             target=self._pump_stderr, daemon=True, name=f"mcp-{self.connector.name}-err"
         ).start()
@@ -675,7 +682,7 @@ class Session:
             return
         for line in proc.stdout:
             self._lines.put(line)
-        self._lines.put("")  # akış kapandı işareti
+        self._lines.put("")  # stream-closed marker
 
     def _pump_stderr(self) -> None:
         proc = self._proc
@@ -702,7 +709,7 @@ class Session:
                 else:
                     self._stdio_write(message)
         except Exception:
-            # Bildirim nezaket: sunucu istemiyorsa akış yine de çalışıyor.
+            # The notification is a courtesy: if the server doesn't want it, the flow still works.
             pass
 
     def _stdio_write(self, message: dict[str, Any]) -> None:
@@ -735,15 +742,15 @@ class Session:
             try:
                 answer = json.loads(line)
             except json.JSONDecodeError:
-                continue  # protokol dışı gürültü (bir print kaçmış olabilir)
+                continue  # out-of-protocol noise (a print may have escaped)
             if not isinstance(answer, dict) or answer.get("id") != message["id"]:
-                continue  # bildirim ya da başka bir isteğin cevabı değil, bizim değil
+                continue  # a notification or another request's answer, not ours
             return self._unwrap(answer)
 
-    # -- taşıma: http --------------------------------------------------
+    # -- transport: http -----------------------------------------------
 
     def _http_post(self, message: dict[str, Any], timeout: float) -> tuple[str, str]:
-        """Mesajı gönderir; (içerik türü, gövde) döner."""
+        """Sends the message; returns (content type, body)."""
         import urllib.error
         import urllib.request
 
@@ -754,8 +761,9 @@ class Session:
             "User-Agent": USER_AGENT,
         }
         headers.update({k: _expand(v) for k, v in self.connector.headers.items()})
-        # Elle yazılmış Authorization her zaman kazanır; yoksa ve giriş
-        # yapılmışsa OAuth jetonu takılır (süresi geçtiyse sessizce tazelenir).
+        # A hand-written Authorization always wins; if absent and the user
+        # is logged in, the OAuth token is attached (silently refreshed
+        # when expired).
         if "Authorization" not in headers:
             token = _bearer(self.state_dir, self.connector.name)
             if token:
@@ -775,7 +783,7 @@ class Session:
                 return kind, response.read().decode("utf-8", "replace")
         except urllib.error.HTTPError as exc:
             if exc.code == 401:
-                # Sunucu OAuth istiyor: bu bir arıza değil, giriş çağrısı.
+                # The server wants OAuth: this is not a fault, it is a call to log in.
                 raise AuthRequired(LOGIN_HINT) from exc
             body = exc.read().decode("utf-8", "replace")[:300]
             raise ConnectorError(f"HTTP {exc.code}: {body or exc.reason}") from exc
@@ -789,7 +797,7 @@ class Session:
                 return self._unwrap(answer)
         raise ConnectorError(f"Sunucu `{message['method']}` için cevap döndürmedi.")
 
-    # -- ortak ---------------------------------------------------------
+    # -- shared --------------------------------------------------------
 
     def _unwrap(self, answer: dict[str, Any]) -> dict[str, Any]:
         if "error" in answer:
@@ -800,7 +808,7 @@ class Session:
 
 
 def _decode_http(kind: str, body: str) -> list[Any]:
-    """HTTP gövdesini mesaj listesine çevirir — düz JSON ya da SSE."""
+    """Turns an HTTP body into a message list — plain JSON or SSE."""
     if kind == "text/event-stream":
         found: list[Any] = []
         for line in body.splitlines():
@@ -818,11 +826,11 @@ def _decode_http(kind: str, body: str) -> list[Any]:
         return []
 
 
-# -- havuz ve defter köprüsü --------------------------------------------
+# -- pool and registry bridge -------------------------------------------
 
 
 class Pool:
-    """Açık oturumların tamamı. Sunucu nesnesinde tek bir örnek duruyor."""
+    """All open sessions. A single instance lives on the server object."""
 
     def __init__(self) -> None:
         self.sessions: dict[str, Session] = {}
@@ -831,7 +839,7 @@ class Pool:
 
     def connect(self, connectors: list[Connector],
                 state_dir: Path | str | None = None) -> None:
-        """Eski oturumları kapatıp verilenlere bağlanır."""
+        """Closes the old sessions and connects to the given ones."""
         if state_dir is not None:
             self.state_dir = state_dir
         with self._lock:
@@ -869,27 +877,28 @@ class Pool:
 
 
 def tool_name(server: str, tool: str) -> str:
-    """Defterdeki ad: `mcp__sunucu__araç` — Claude Code ile aynı düzen."""
+    """The registry name: `mcp__server__tool` — same scheme as Claude Code."""
     plain = f"mcp__{_UNSAFE.sub('_', server)}__{_UNSAFE.sub('_', tool)}"
     return plain[:64]
 
 
 def register(registry: Any, pool: Pool) -> tuple[list[str], list[str]]:
-    """Havuzdaki araçları deftere yazar; kalkan sunucuların araçlarını düşer.
+    """Writes the pool's tools into the registry; drops the tools of servers that left.
 
-    İki yol var ve varsayılan ERTELEME:
+    There are two paths and the default is DEFERRAL:
 
-    * `expose="defer"` — sunucunun araçları deftere şemalarıyla GİRMEZ.
-      Hepsinin yerine tek bir `connector` köprü aracı durur: model önce
-      listeler, gerekirse tek aracın şemasını ister, sonra çağırır. Ölçülen
-      sebep: Notion'un 28 şeması ~27.000 token ve her mesajla gidiyordu —
-      istemin yarısı, o mesajda hiç kullanılmayan araç tarifleriydi.
-    * `expose="full"` — eski davranış: her araç `mcp__sunucu__araç` adıyla
-      tam şemasıyla kaydedilir. Birkaç araçlı küçük sunucuda tek turda
-      doğru çağrı için hâlâ en iyisi.
+    * `expose="defer"` — the server's tools do NOT enter the registry with
+      their schemas. A single `connector` bridge tool stands in for all of
+      them: the model lists first, asks for a single tool's schema if
+      needed, then calls. The measured reason: Notion's 28 schemas were
+      ~27,000 tokens and went with every message — half the prompt was
+      descriptions of tools never used in that message.
+    * `expose="full"` — the old behaviour: every tool is registered as
+      `mcp__server__tool` with its full schema. Still best on a small
+      server with a few tools, for a correct call in a single turn.
 
-    Kayıtlar `source="mcp:*"` taşıyor: yerleşiklerle karışmıyor, sunucu
-    gidince topluca silinebiliyor.
+    Entries carry `source="mcp:*"`: they don't mix with the builtins, and
+    when a server goes they can be deleted wholesale.
     """
     from .tools.base import ToolSpec
 
@@ -918,8 +927,8 @@ def register(registry: Any, pool: Pool) -> tuple[list[str], list[str]]:
                 ),
                 input_schema=schema,
                 handler=_handler(session, plain),
-                # Dış sunucunun ne yaptığı buradan görünmüyor; izin kapısı
-                # temkinli tarafta durmalı.
+                # What the external server does is not visible from here;
+                # the permission gate must stay on the cautious side.
                 mutates=True,
                 parallel_safe=False,
                 source=f"mcp:{session.connector.name}",
@@ -946,8 +955,8 @@ def register(registry: Any, pool: Pool) -> tuple[list[str], list[str]]:
 
 BRIDGE_TOOL = "connector"
 
-# describe cevabındaki tek şemanın üst sınırı: Notion'un en şişkini ~5.600
-# token — gerektiğinde bir kez ödenir ama sınırsız da bırakılmaz.
+# Upper bound for the single schema in a describe answer: Notion's most
+# bloated is ~5,600 tokens — paid once when needed, but not left unbounded.
 DESCRIBE_CAP = 24_000
 
 

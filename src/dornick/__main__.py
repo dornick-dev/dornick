@@ -1,8 +1,9 @@
-"""`py -m dornick` girişi.
+"""The `py -m dornick` entry point.
 
-Konsol betiği (dornick.exe) hangi ortama kurulduysa oradan çalışır ve sanal
-ortam karmaşasında kaybolabiliyor; `py -m dornick --app` ise py başlatıcısının
-varsayılan Python'unu kullanır — aktif venv ne olursa olsun aynı kapı.
+The console script (dornick.exe) runs from whichever environment it was
+installed into and can get lost in virtual-environment tangles;
+`py -m dornick --app` uses the py launcher's default Python — the same
+door regardless of the active venv.
 """
 
 import sys

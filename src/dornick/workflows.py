@@ -1,12 +1,13 @@
-"""İş akışı (workflow) deposu.
+"""Workflow store.
 
-Bir otomasyon yalnızca bir prompt metni değil: düğümler ve kenarlar
-olarak duran bir grafik. Depo `.dornick/workflows/<id>.json` altında;
-ayar sayfası ve ajan aynı dosyaları okuyup yazıyor.
+An automation is not just a prompt text: it is a graph of nodes and
+edges. The store lives under `.dornick/workflows/<id>.json`; the
+settings page and the agent read and write the same files.
 
-Düğüm türleri kapalı bir enum değil (`mail_read`, `http`, `skill`,
-`shell`, `agent`, `custom`, …): yeni bir düğüm türü eklemek için
-depo şemasını kırmak gerekmiyor — koşucu bilmediği türü reddeder.
+Node types are not a closed enum (`mail_read`, `http`, `skill`,
+`shell`, `agent`, `custom`, …): adding a new node type does not
+require breaking the store schema — the runner rejects types it
+does not know.
 """
 
 from __future__ import annotations
@@ -22,23 +23,23 @@ from .events import utcnow
 
 FOLDER = "workflows"
 
-# Kimlik dosya adı oluyor; yol ayracı ve boşluk kabul yok.
+# The id becomes the file name; no path separators or spaces allowed.
 _ID = re.compile(r"^[a-z0-9][a-z0-9_-]{0,48}$")
 
 
 class WorkflowError(Exception):
-    """Biçim hatası. Mesajı modele ve kullanıcıya gösteriliyor."""
+    """Format error. The message is shown to the model and the user."""
 
 
 @dataclass(slots=True)
 class WorkflowNode:
-    """Grafikteki tek bir adım.
+    """A single step in the graph.
 
-    type: açık string — koşucu hangi türleri bildiğini kendi bilir.
-    config: türe özel serbest nesne.
-    secrets_needed: bu adımın istediği gizli anahtar adları.
-    skill: `skill` türü için yetenek adı; diğerlerinde boş kalabilir.
-    position: editör konumu ({"x": …, "y": …}); koşucu umursamaz.
+    type: open string — the runner itself knows which types it understands.
+    config: free-form object specific to the type.
+    secrets_needed: names of the secret keys this step requires.
+    skill: skill name for the `skill` type; may stay empty for the rest.
+    position: editor position ({"x": …, "y": …}); the runner does not care.
     """
 
     id: str
@@ -48,18 +49,18 @@ class WorkflowNode:
     secrets_needed: list[str] = field(default_factory=list)
     skill: str = ""
     position: dict[str, Any] = field(default_factory=dict)
-    # Kullanıcı bu adımı ELLE düzenledi mi? Kendini onarma buna bakıyor:
-    # modelin, kullanıcının bilerek yazdığı bir adımı arkasından yeniden
-    # yazması, "düzeltme" değil sessizce geri alma olurdu.
+    # Did the user edit this step BY HAND? Self-repair checks this:
+    # the model rewriting a step the user deliberately wrote would not be
+    # a "fix" but a silent revert. (`elle` is a persisted JSON key.)
     elle: bool = False
 
 
 @dataclass(slots=True)
 class WorkflowEdge:
-    """İki düğüm arasındaki geçiş.
+    """A transition between two nodes.
 
-    `from_` JSON'da `from` olarak yazılır — `from` Python anahtar sözcüğü.
-    on: hangi koşulda (ör. "ok", "hata", ""); boş = her zaman.
+    `from_` is written as `from` in JSON — `from` is a Python keyword.
+    on: under which condition (e.g. "ok", "hata", ""); empty = always.
     """
 
     from_: str
@@ -81,7 +82,7 @@ def folder(state_dir: Path) -> Path:
 
 
 def new_id(state_dir: Path, title: str = "") -> str:
-    """Kısa, çakışmaz kimlik: isteğe bağlı slug + 8 hex."""
+    """Short, collision-free id: optional slug + 8 hex chars."""
     from . import canvas
 
     slug = canvas.slug(title, fallback="wf")[:24].strip("-") or "wf"
@@ -106,7 +107,7 @@ def _path(state_dir: Path, workflow_id: str) -> Path:
     return target
 
 
-# -- biçim -------------------------------------------------------------
+# -- format ------------------------------------------------------------
 
 
 def _parse_node(raw: Any, index: int) -> WorkflowNode:
@@ -135,7 +136,7 @@ def _parse_node(raw: Any, index: int) -> WorkflowNode:
 def _parse_edge(raw: Any, index: int) -> WorkflowEdge:
     if not isinstance(raw, dict):
         raise WorkflowError(f"edges[{index}] bir nesne olmalı.")
-    # JSON `from`; eski / Python yanından `from_` de kabul.
+    # JSON uses `from`; `from_` from the old / Python side is accepted too.
     src = str(raw.get("from") if "from" in raw else raw.get("from_") or "").strip()
     dst = str(raw.get("to") or "").strip()
     if not src or not dst:
@@ -144,7 +145,7 @@ def _parse_edge(raw: Any, index: int) -> WorkflowEdge:
 
 
 def parse(raw: Any) -> Workflow:
-    """Sözlükten workflow. Temel yapı: nodes ve edges listeleri."""
+    """Workflow from a dict. Basic structure: nodes and edges lists."""
     if not isinstance(raw, dict):
         raise WorkflowError("Workflow bir nesne olmalı.")
 
@@ -179,7 +180,7 @@ def parse(raw: Any) -> Workflow:
 
 
 def to_dict(wf: Workflow) -> dict[str, Any]:
-    """Disk / API biçimi: kenarda `from` anahtarı."""
+    """Disk / API format: the edge carries a `from` key."""
     return {
         "id": wf.id,
         "title": wf.title,
@@ -190,15 +191,15 @@ def to_dict(wf: Workflow) -> dict[str, Any]:
 
 
 def validate(raw: Any) -> Workflow:
-    """Temel yapı doğrulaması — parse ile aynı kapı."""
+    """Basic structural validation — the same gate as parse."""
     return parse(raw)
 
 
-# -- depo --------------------------------------------------------------
+# -- store -------------------------------------------------------------
 
 
 def list_all(state_dir: Path) -> list[Workflow]:
-    """Klasördeki bütün akışlar. Bozuk dosya listeyi düşürmez."""
+    """All workflows in the folder. A broken file does not sink the list."""
     root = folder(state_dir)
     if not root.is_dir():
         return []
@@ -226,7 +227,7 @@ def get(state_dir: Path, workflow_id: str) -> Workflow | None:
 
 
 def save(state_dir: Path, raw: Any) -> Workflow:
-    """Akışı yazar. Var olanı günceller, yoksa oluşturur."""
+    """Writes the workflow. Updates an existing one, creates it otherwise."""
     data = dict(raw) if isinstance(raw, dict) else raw
     if isinstance(data, dict) and not str(data.get("id") or "").strip():
         data = {**data, "id": new_id(state_dir, str(data.get("title") or ""))}

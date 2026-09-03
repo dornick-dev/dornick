@@ -25,11 +25,11 @@ import pytest
 from dornick.config import Config
 from dornick.events import EventLog
 from dornick.loop import (
-    KIRMIZI_NOTU,
-    PLAN_NOTU,
+    RED_NOTE,
+    PLAN_NOTE,
     done_claim,
-    buyuk_is,
-    kirmizi_iz,
+    big_job,
+    red_trace,
 )
 from dornick.mind import Mind, open_mind
 from dornick.prompt import build as build_prompt
@@ -51,7 +51,7 @@ from .test_loop import FakeClient, build_agent, text_turn, tool_turn
 ])
 def test_a_big_open_ended_request_is_recognised(istek: str) -> None:
     """Ölçek sözü + yapım fiili: ortada tek dosyalık bir betik yok."""
-    assert buyuk_is(istek) is True
+    assert big_job(istek) is True
 
 
 @pytest.mark.parametrize("istek", [
@@ -69,7 +69,7 @@ def test_a_big_open_ended_request_is_recognised(istek: str) -> None:
 def test_a_small_request_never_asks_for_a_plan(istek: str) -> None:
     """Yanlış pozitifin bedeli gereksiz bir plan; her mesajda plan istemek
     kapının kendisini gürültüye çevirir."""
-    assert buyuk_is(istek) is False
+    assert big_job(istek) is False
 
 
 def test_a_long_multi_delivery_request_counts_even_without_a_scale_word() -> None:
@@ -80,7 +80,7 @@ def test_a_long_multi_delivery_request_counts_even_without_a_scale_word() -> Non
         "- bir temizleme betiği\n"
         "- bir de özet çıktısı\n"
     )
-    assert buyuk_is(istek) is True
+    assert big_job(istek) is True
 
 
 # -- 1) plan refleksi: döngüdeki davranış -------------------------------
@@ -108,7 +108,7 @@ def test_the_plan_note_lands_before_the_model_is_ever_called(tmp_path: Path) -> 
     asyncio.run(agent.run("gelişmiş bir yönetim paneli yap"))
 
     ilk_istek = json.dumps(client.seen_messages[0], ensure_ascii=False)
-    assert PLAN_NOTU in ilk_istek
+    assert PLAN_NOTE in ilk_istek
     assert "modül listesi" in ilk_istek
 
 
@@ -123,7 +123,7 @@ def test_the_plan_note_fires_once_per_turn(tmp_path: Path) -> None:
 
     asyncio.run(agent.run("gelişmiş bir yönetim paneli yap"))
 
-    kac = sum(1 for metin in _harness_notlari(agent) if PLAN_NOTU in metin)
+    kac = sum(1 for metin in _harness_notlari(agent) if PLAN_NOTE in metin)
     assert kac == 1
 
 
@@ -133,7 +133,7 @@ def test_a_small_request_leaves_the_context_untouched(tmp_path: Path) -> None:
 
     asyncio.run(agent.run("bu dosyada kaç satır var?"))
 
-    assert PLAN_NOTU not in json.dumps(client.seen_messages, ensure_ascii=False)
+    assert PLAN_NOTE not in json.dumps(client.seen_messages, ensure_ascii=False)
 
 
 def test_the_plan_note_never_reaches_the_conversation(tmp_path: Path) -> None:
@@ -144,7 +144,7 @@ def test_the_plan_note_never_reaches_the_conversation(tmp_path: Path) -> None:
 
     plan_olaylari = [
         ev for ev in agent.session.log.messages()
-        if PLAN_NOTU in json.dumps(ev.content, ensure_ascii=False)
+        if PLAN_NOTE in json.dumps(ev.content, ensure_ascii=False)
     ]
     assert plan_olaylari, "not günlüğe hiç düşmemiş"
     assert all(ev.meta.get("internal") for ev in plan_olaylari)
@@ -157,19 +157,19 @@ def test_a_failing_run_is_red() -> None:
     """`kos` kırmızıyı kendisi işaretliyor (is_error)."""
     note = {"tool": "kos", "error": True,
             "summary": "1 test başarısız, 6 geçti", "detail": {"output": "…"}}
-    assert kirmizi_iz("kos", note) == "1 test başarısız, 6 geçti"
+    assert red_trace("kos", note) == "1 test başarısız, 6 geçti"
 
 
 def test_the_summary_drops_the_interface_volume_marker() -> None:
     """"(+22 satır)" aracın hükmü değil, arayüzün hacim izi — nota girmez."""
     note = {"tool": "kos", "error": True,
             "summary": "1 geçti, 1 kaldı.  (+22 satır)", "detail": {}}
-    assert kirmizi_iz("kos", note) == "1 geçti, 1 kaldı."
+    assert red_trace("kos", note) == "1 geçti, 1 kaldı."
 
 
 def test_a_green_run_is_not_red() -> None:
     note = {"tool": "kos", "error": False, "summary": "7 test geçti", "detail": {}}
-    assert kirmizi_iz("kos", note) == ""
+    assert red_trace("kos", note) == ""
 
 
 def test_a_diagnostic_error_is_red_even_though_the_tool_did_not_fail() -> None:
@@ -178,35 +178,35 @@ def test_a_diagnostic_error_is_red_even_though_the_tool_did_not_fail() -> None:
     note = {"tool": "denetle", "error": False,
             "summary": "Home.php — php -l, 1 hata:",
             "detail": {"output": "Home.php — php -l, 1 hata:\n  satır 12: syntax error"}}
-    assert kirmizi_iz("denetle", note)
+    assert red_trace("denetle", note)
 
 
 def test_a_clean_diagnostic_is_not_red() -> None:
     note = {"tool": "denetle", "error": False,
             "summary": "3 dosya denetlendi, hepsi temiz", "detail": {}}
-    assert kirmizi_iz("denetle", note) == ""
+    assert red_trace("denetle", note) == ""
 
 
 def test_console_errors_and_failed_requests_are_red() -> None:
     """Tarayıcı dökümü hiç hata döndürmüyor; sayılar başlıkta."""
     konsol = {"tool": "browser", "error": False,
               "summary": "12 konsol kaydı (3 hata) — son 20 tanesi:", "detail": {}}
-    assert "3 hata" in kirmizi_iz("browser", konsol)
+    assert "3 hata" in red_trace("browser", konsol)
 
     ag = {"tool": "browser", "error": False,
           "summary": "18 istek · 2 başarısız.", "detail": {}}
-    assert "2 başarısız" in kirmizi_iz("browser", ag)
+    assert "2 başarısız" in red_trace("browser", ag)
 
     temiz = {"tool": "browser", "error": False,
              "summary": "9 konsol kaydı (0 hata) — son 9 tanesi:", "detail": {}}
-    assert kirmizi_iz("browser", temiz) == ""
+    assert red_trace("browser", temiz) == ""
 
 
 def test_a_failing_read_is_not_a_red_run() -> None:
     """Kırmızı kavramı yalnız doğrulama araçları için tanımlı: başarısız bir
     okuma bir koşum değil."""
     note = {"tool": "read_file", "error": True, "summary": "Dosya yok", "detail": {}}
-    assert kirmizi_iz("read_file", note) == ""
+    assert red_trace("read_file", note) == ""
 
 
 @pytest.mark.parametrize("cevap,beklenen", [
@@ -267,7 +267,7 @@ def test_saying_done_over_a_red_run_buys_one_more_turn(tmp_path: Path) -> None:
     assert "kırmızıydı" in notlar[0]
     # Bir tur DAHA verildi: model kapatamadı.
     assert stats.turns == 3
-    assert stats.kirmizi_uyarildi is True
+    assert stats.red_warned is True
 
 
 def test_a_green_run_closes_the_turn_normally(tmp_path: Path) -> None:
@@ -283,7 +283,7 @@ def test_a_green_run_closes_the_turn_normally(tmp_path: Path) -> None:
 
     assert not [n for n in _harness_notlari(agent) if "[Doğrulama]" in n]
     assert stats.turns == 2
-    assert stats.kirmizi_uyarildi is False
+    assert stats.red_warned is False
 
 
 def test_fixing_the_red_and_rerunning_green_reopens_the_door(tmp_path: Path) -> None:
@@ -312,7 +312,7 @@ def test_fixing_the_red_and_rerunning_green_reopens_the_door(tmp_path: Path) -> 
     stats = asyncio.run(agent.run("servisi yaz ve testlerini koştur"))
 
     assert not [n for n in _harness_notlari(agent) if "[Doğrulama]" in n]
-    assert stats.kirmizi_uyarildi is False
+    assert stats.red_warned is False
 
 
 def test_the_door_opens_at_most_once(tmp_path: Path) -> None:
@@ -363,13 +363,13 @@ def test_the_red_ledger_does_not_leak_into_the_next_turn(tmp_path: Path) -> None
     )
     agent = build_agent(tmp_path, client, registry)
     asyncio.run(agent.run("testleri koştur"))
-    assert agent._kirmizi, "ilk turda kırmızı kaydedilmemiş"
+    assert agent._red, "ilk turda kırmızı kaydedilmemiş"
 
     client.script = [text_turn("Hazır.")]
     stats = asyncio.run(agent.run("teşekkürler"))
 
     assert not [n for n in _harness_notlari(agent) if "[Doğrulama]" in n]
-    assert stats.kirmizi_uyarildi is False
+    assert stats.red_warned is False
 
 
 def test_the_verification_note_never_reaches_the_conversation(tmp_path: Path) -> None:
@@ -391,7 +391,7 @@ def test_the_verification_note_never_reaches_the_conversation(tmp_path: Path) ->
 
 def test_the_note_template_says_what_to_do_not_just_what_is_wrong() -> None:
     """Not bir suçlama değil bir sıra kuralı: düzelt ya da açıkça söyle."""
-    metin = KIRMIZI_NOTU.format(ozet="1 test başarısız")
+    metin = RED_NOTE.format(ozet="1 test başarısız")
     assert "düzelt" in metin and "açıkça söyle" in metin
 
 
@@ -584,7 +584,7 @@ def test_a_written_entry_point_that_was_never_run_buys_one_more_turn(
     assert "ara.py" in notlar[0]
     assert "ÇALIŞTIRMADIN" in notlar[0]
     assert stats.turns == 3
-    assert stats.giris_uyarildi is True
+    assert stats.entry_warned is True
 
 
 def test_running_the_entry_point_closes_the_turn_normally(tmp_path: Path) -> None:
@@ -603,7 +603,7 @@ def test_running_the_entry_point_closes_the_turn_normally(tmp_path: Path) -> Non
     stats = asyncio.run(agent.run("bir not arama aracı yaz"))
 
     assert not [n for n in _harness_notlari(agent) if "[Doğrulama]" in n]
-    assert stats.giris_uyarildi is False
+    assert stats.entry_warned is False
 
 
 def test_a_library_module_is_never_nagged(tmp_path: Path) -> None:
@@ -625,7 +625,7 @@ def test_a_library_module_is_never_nagged(tmp_path: Path) -> None:
     stats = asyncio.run(agent.run("toplama modülü yaz"))
 
     assert not [n for n in _harness_notlari(agent) if "[Doğrulama]" in n]
-    assert stats.giris_uyarildi is False
+    assert stats.entry_warned is False
 
 
 def test_an_honest_report_about_an_unrun_entry_point_is_left_alone(
@@ -644,7 +644,7 @@ def test_an_honest_report_about_an_unrun_entry_point_is_left_alone(
     stats = asyncio.run(agent.run("bir not arama aracı yaz"))
 
     assert not [n for n in _harness_notlari(agent) if "[Doğrulama]" in n]
-    assert stats.giris_uyarildi is False
+    assert stats.entry_warned is False
 
 
 @pytest.mark.parametrize("kaynak,giris", [
@@ -710,7 +710,7 @@ def test_open_goals_block_a_done_claim(tmp_path: Path) -> None:
     assert len(notlar) == 1, notlar
     assert "zengin metin editörü" in notlar[0]
     assert stats.turns == 2
-    assert stats.kabul_uyarildi is True
+    assert stats.acceptance_warned is True
 
 
 def test_no_open_goals_no_kabul_gate(tmp_path: Path) -> None:
@@ -760,10 +760,10 @@ def test_an_honest_open_items_report_is_not_a_done_claim(tmp_path: Path) -> None
 def test_small_family_is_recognised_and_briefed() -> None:
     from dornick import prompt as p
 
-    assert p.kucuk_aile("z-ai/glm-5.3-flash")
-    assert p.kucuk_aile("gemini-2.5-flash-lite")
-    assert not p.kucuk_aile("claude-opus-5")
-    assert not p.kucuk_aile("z-ai/glm-5.3")
+    assert p.small_family("z-ai/glm-5.3-flash")
+    assert p.small_family("gemini-2.5-flash-lite")
+    assert not p.small_family("claude-opus-5")
+    assert not p.small_family("z-ai/glm-5.3")
 
 
 def test_small_family_gets_the_brevity_block_and_brief_schemas(tmp_path: Path) -> None:
@@ -887,7 +887,7 @@ def test_named_session_is_not_retitled(tmp_path: Path) -> None:
     registry = ToolRegistry()
     client = FakeClient(text_turn("tamam, yaptım."))
     agent = _akilli_agent(tmp_path, client, registry, [])
-    agent.mind.set_session_meta("test", ad="Elle verilen ad")
+    agent.mind.set_session_meta("test", name="Elle verilen ad")
 
     asyncio.run(agent.run("küçük bir iş"))
 
@@ -1590,16 +1590,16 @@ def test_discovery_downshift_lowers_effort_for_small_family() -> None:
                     thinking=True, effort='high')
     b = OpenAIBackend(m, client=object())
     assert b._reasoning() == {'effort': 'medium'}   # kucuk-aile tavani
-    assert b._reasoning(kesif=True) == {'effort': 'low'}
+    assert b._reasoning(discovery=True) == {'effort': 'low'}
     # Kodlama turunda tavan kalkar: high serbest.
     assert b._reasoning(encoding=True) == {'effort': 'high'}
     # Keşif kodlamadan üstün: salt-okur kuyruk hâlâ low.
-    assert b._reasoning(kesif=True, encoding=True) == {'effort': 'low'}
+    assert b._reasoning(discovery=True, encoding=True) == {'effort': 'low'}
     # Dusunmesi kapali modelde kesif bayragi bir sey acmaz.
     m2 = ModelConfig(name='z-ai/glm-5.3-flash', base_url='http://x',
                     thinking=False)
     b2 = OpenAIBackend(m2, client=object())
-    assert b2._reasoning(kesif=True) == {'enabled': False}
+    assert b2._reasoning(discovery=True) == {'enabled': False}
 
 
 def test_coding_turn_detected_from_tools_or_user_request() -> None:
@@ -1705,14 +1705,14 @@ def test_plan_steps_can_be_ticked_and_the_card_hears_it(tmp_path) -> None:
 
 def test_a_short_paragraph_is_not_a_big_job() -> None:
     # Olculen yara: 10 satirlik gorev bile plan durtusu yiyordu (esik 180).
-    from dornick.loop import buyuk_is
+    from dornick.loop import big_job
     kisa = ('Su CSV dosyasini okuyup satis toplamini hesaplayan bir betik '
             'yaz; cikti ekrana gelsin ve kurus yuvarlamasina dikkat et. '
             'Dosya ayraci noktali virgul olabilir, onu da destekle; '
             'ondalik ayirici da bolgeye gore degisebilir.')
     assert len(kisa) > 180, 'test anlamli olsun: eski esigi asiyor'
-    assert buyuk_is(kisa) is False
-    assert buyuk_is('Bana bir yonetim paneli yap: kullanici, rol, rapor') is True
+    assert big_job(kisa) is False
+    assert big_job('Bana bir yonetim paneli yap: kullanici, rol, rapor') is True
 
 # -- kamera: sorulunca kesit + izleme alani ------------------------------
 

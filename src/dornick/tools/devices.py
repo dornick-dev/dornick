@@ -1,19 +1,19 @@
-"""Cihaz aracı — ajanın bağlı olduğu şeyleri kaydetmesi.
+"""Device tool — the agent recording what it is connected to.
 
-Kullanıcı bir cihazı bir kez tarif ediyor: "şu PC'nin IP'si bu, şu porttan
-Modbus konuşacaksın, şu adres kapıyı açıyor." Bu bilgi konuşmanın içinde
-kalırsa bir sonraki oturumda yok oluyor ve her seferinde yeniden anlatmak
-gerekiyor.
+The user describes a device once: "this PC's IP is this, you will speak
+Modbus over that port, this address opens the gate." If that knowledge
+stays inside the conversation it is gone by the next session and has to
+be retold every time.
 
-Burada kaydediliyor — ortak bir biçimde, atölyenin içinde. Kayıt tek
-başına bir şey yapmıyor: nereye bağlanılacağını söylüyor. İşi yapan şey
-ona bağlanan yetenek (`skill action=new`). İkisi ayrı, çünkü bir cihaza
-zamanla birden çok yetenek bağlanabiliyor ve bir yetenek birden çok
-cihazla çalışabiliyor.
+It is recorded here — in a shared format, inside the workshop. The
+record does nothing by itself: it says where to connect. What does the
+work is the skill bound to it (`skill action=new`). The two are separate
+because over time a device may get several skills, and one skill may
+work with several devices.
 
-Kullanıcı da aynı dosyalara elle yazabiliyor (ayarlar sayfasından ya da
-klasöre JSON bırakarak). Tek biçim olmasının sebebi bu: iki taraf da
-aynı yere yazsın.
+The user can also write the same files by hand (from the settings page
+or by dropping JSON into the folder). That is why there is a single
+format: both sides write to the same place.
 """
 
 from __future__ import annotations
@@ -64,7 +64,7 @@ adres fiziksel bir sonuç doğuruyor.
 
 
 def _dump(device: devices.Device) -> str:
-    """Bir cihazın okunabilir tam dökümü."""
+    """A readable full dump of one device."""
     lines = [f"{device.name}  ({device.id})", f"tür: {device.kind}"]
     if device.summary:
         lines.append(device.summary)
@@ -89,10 +89,11 @@ def _dump(device: devices.Device) -> str:
 
 
 def _needles(device: devices.Device) -> list[str]:
-    """Bu cihaza dair anı ararken bakılacak parçalar.
+    """The fragments to look for when searching memories about this device.
 
-    Kısa ve genel sözler (plc, tcp) her şeye yapışır; kimlik, ad, adres,
-    host yeter. Ölçüm/yükseklik kayıtları genelde cihaz adını taşır.
+    Short, generic words (plc, tcp) stick to everything; id, name,
+    address and host are enough. Measurement/level records usually carry
+    the device name.
     """
     bits: list[str] = []
     for raw in (device.id, device.name, device.summary):
@@ -111,7 +112,7 @@ def _needles(device: devices.Device) -> list[str]:
     host = host.strip().casefold()
     if len(host) >= 4:
         bits.append(host)
-    # Tekrarları koru sırayı: ilk eşleşme daha özgül (id, ad).
+    # Dedupe but keep the order: the first match is the more specific one (id, name).
     seen: set[str] = set()
     out: list[str] = []
     for bit in bits:
@@ -122,7 +123,7 @@ def _needles(device: devices.Device) -> list[str]:
 
 
 def related_memories(mind: Any, device: devices.Device, *, limit: int = 8) -> list[Any]:
-    """Cihaz kaydı silindikten sonra zihinde kalan ilgili anılar."""
+    """The related memories left in the mind after the device record is deleted."""
     tokens = _needles(device)
     if mind is None or not tokens:
         return []
@@ -230,9 +231,9 @@ def register(registry: ToolRegistry) -> None:
             return ToolResult(_dump(found))
 
         if action == "save":
-            # Var olan kaydın üstüne yazarken verilmeyen alanlar korunuyor:
-            # tek bir adres eklemek için bütün cihazı yeniden yazdırmak
-            # hem uzun hem de kaybetmeye açık.
+            # When overwriting an existing record, fields not given are
+            # preserved: making the model rewrite the whole device to add a
+            # single address is both long and prone to losing data.
             existing = devices.find(root, ident) if ident else None
             raw = devices.to_dict(existing) if existing else {"id": ident, "source": "dornick"}
 
@@ -261,8 +262,8 @@ def register(registry: ToolRegistry) -> None:
             found = devices.find(root, ident)
             if found is None:
                 return ToolResult.error(f"Böyle bir cihaz yok: {ident}")
-            # Kullanıcının elle yazdığı kaydı ajanın kendiliğinden silmesi
-            # doğru değil; istenirse kullanıcı ayarlardan siliyor.
+            # The agent deleting a record the user wrote by hand on its own
+            # is not right; if wanted, the user deletes it from settings.
             if found.source != "dornick":
                 return ToolResult.error(
                     f"{ident} kullanıcı tarafından eklenmiş. Silmek istiyorsa "

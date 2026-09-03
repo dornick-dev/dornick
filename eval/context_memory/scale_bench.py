@@ -144,7 +144,7 @@ def parametric(
     # Product rule (2026-08-28): when the RAW query has ≥5 stems, a record
     # grounded by a single (prefix-deduplicated) stem cannot prime. The
     # copy carries it verbatim.
-    rich = len(_query_stems(query, genislet=False)) >= 5
+    rich = len(_query_stems(query, expand=False)) >= 5
 
     def _distinct_matches(item: Any) -> int:
         text = f"{item.title} {item.content} {' '.join(item.tags)}".casefold()

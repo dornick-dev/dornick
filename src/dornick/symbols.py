@@ -95,7 +95,7 @@ class Symbol:
 
 
 @dataclass(slots=True)
-class Use:
+class Reference:
     """A usage site and how it is used."""
 
     file: str
@@ -110,9 +110,9 @@ class Use:
 @dataclass(slots=True)
 class Result:
     query: str
-    tanimlar: list[Symbol] = field(default_factory=list)
-    use_log: list[Use] = field(default_factory=list)
-    taranan: int = 0
+    definitions: list[Symbol] = field(default_factory=list)
+    usages: list[Reference] = field(default_factory=list)
+    scanned: int = 0
     languages: set[str] = field(default_factory=set)
     # Files that could not be parsed: not skipped silently, counted.
     unparsable: list[str] = field(default_factory=list)
@@ -123,11 +123,11 @@ class Result:
     hit_ceiling: bool = False
 
     @property
-    def kesin(self) -> bool:
+    def exact(self) -> bool:
         """Only a result coming from a real parser is exact."""
         return bool(self.languages) and self.languages <= EXACT
 
-    def metin(self, *, tur: str = "hepsi") -> str:
+    def text(self, *, kind: str = "hepsi") -> str:
         if not self.languages:
             return (
                 f"{self.root} altında yapısal arama yapabildiğim bir dosya yok. "
@@ -136,9 +136,9 @@ class Result:
             )
 
         lines: list[str] = []
-        if tur in ("tanim", "hepsi"):
+        if kind in ("tanim", "hepsi"):
             lines += self._definition_section()
-        if tur in ("kullanim", "hepsi"):
+        if kind in ("kullanim", "hepsi"):
             if lines:
                 lines.append("")
             lines += self._usage_section()
@@ -148,41 +148,41 @@ class Result:
         return "\n".join(lines)
 
     def _definition_section(self) -> list[str]:
-        if not self.tanimlar:
+        if not self.definitions:
             return [f"'{self.query}' adında bir tanım bulunamadı "
-                    f"({self.taranan} dosya tarandı)."]
-        head = f"{len(self.tanimlar)} tanım"
+                    f"({self.scanned} dosya tarandı)."]
+        head = f"{len(self.definitions)} tanım"
         if self.loose:
             head += f" (tam '{self.query}' yok; adı içerenler)"
         lines = [head + ":"]
-        for s in self.tanimlar[:MAX_DEFINITIONS]:
+        for s in self.definitions[:MAX_DEFINITIONS]:
             lines.append(f"  {s.format(self.root)}")
-        if len(self.tanimlar) > MAX_DEFINITIONS:
-            lines.append(f"  ... {len(self.tanimlar) - MAX_DEFINITIONS} tanım daha.")
+        if len(self.definitions) > MAX_DEFINITIONS:
+            lines.append(f"  ... {len(self.definitions) - MAX_DEFINITIONS} tanım daha.")
         return lines
 
     def _usage_section(self) -> list[str]:
-        if not self.use_log:
-            if self.tanimlar:
+        if not self.usages:
+            if self.definitions:
                 return [f"Kullanım bulunamadı. '{self.query}' tanımlı ama bu "
                         "kapsamda hiçbir yerden çağrılmıyor — ölü kod olabilir, "
                         "ya da çağrı bu klasörün dışında."]
             return ["Kullanım da bulunamadı."]
         counts: dict[str, int] = {}
-        for u in self.use_log:
+        for u in self.usages:
             counts[u.kind] = counts.get(u.kind, 0) + 1
         summary = ", ".join(f"{n} {kind.replace('_', ' ')}"
                             for kind, n in sorted(counts.items()))
-        lines = [f"{len(self.use_log)} kullanım ({summary}):"]
-        for u in self.use_log[:MAX_USAGES]:
+        lines = [f"{len(self.usages)} kullanım ({summary}):"]
+        for u in self.usages[:MAX_USAGES]:
             lines.append(f"  {u.format(self.root)}")
-        if len(self.use_log) > MAX_USAGES:
-            lines.append(f"  ... {len(self.use_log) - MAX_USAGES} kullanım daha.")
+        if len(self.usages) > MAX_USAGES:
+            lines.append(f"  ... {len(self.usages) - MAX_USAGES} kullanım daha.")
         return lines
 
     def _footer(self) -> str:
         """The line that says how reliable the result is."""
-        parts = [f"{self.taranan} dosya tarandı "
+        parts = [f"{self.scanned} dosya tarandı "
                  f"({', '.join(sorted(self.languages))})."]
         if "python" in self.languages:
             parts.append("Python dosyaları `ast` ile ayrıştırıldı: yorum ve "
@@ -322,7 +322,7 @@ def python_definitions(path: Path, source: str) -> list[Symbol] | None:
 
 def python_usages(
     path: Path, source: str, name: str, definition_lines: set[int]
-) -> list[Use] | None:
+) -> list[Reference] | None:
     """Usages of `name` in this file — via `ast`, hence exact.
 
     Names inside comments and strings are NOT IN THE TREE; that is why they
@@ -334,13 +334,13 @@ def python_usages(
         return None
 
     lines = source.splitlines()
-    found: dict[int, Use] = {}
+    found: dict[int, Reference] = {}
 
     def add(line: int, kind: str) -> None:
         if line in definition_lines or line in found:
             return
         raw = lines[line - 1].strip() if 0 < line <= len(lines) else ""
-        found[line] = Use(str(path), line, raw[:120], kind)
+        found[line] = Reference(str(path), line, raw[:120], kind)
 
     for node in ast.walk(tree):
         if isinstance(node, ast.Call):
@@ -446,15 +446,15 @@ def _usage_kind(line: str, name: str) -> str:
 
 def pattern_usages(
     path: Path, source: str, name: str, definition_lines: set[int]
-) -> list[Use]:
+) -> list[Reference]:
     pattern = _usage_pattern(name)
-    found: list[Use] = []
+    found: list[Reference] = []
     for i, line in enumerate(source.splitlines(), start=1):
         if i in definition_lines or _COMMENT.match(line):
             continue
         if not pattern.search(line):
             continue
-        found.append(Use(str(path), i, line.strip()[:120],
+        found.append(Reference(str(path), i, line.strip()[:120],
                          _usage_kind(line, name)))
     return found
 
@@ -462,12 +462,12 @@ def pattern_usages(
 # -- search -------------------------------------------------------------
 
 
-def ara(
+def search(
     root: Path | str,
     query: str,
     *,
-    tur: str = "hepsi",
-    dil: str | None = None,
+    kind: str = "hepsi",
+    language: str | None = None,
     limit: int = MAX_FILES,
     depth: int = MAX_DEPTH,
 ) -> Result:
@@ -482,7 +482,7 @@ def ara(
     if not root.is_dir():
         return result
 
-    paths, hit = files(root, language=dil, limit=limit, depth=depth)
+    paths, hit = files(root, language=language, limit=limit, depth=depth)
     result.hit_ceiling = hit
 
     # Per file: source + language + definitions. Kept so we do not read twice.
@@ -494,7 +494,7 @@ def ara(
         source = _read(path)
         if source is None:
             continue
-        result.taranan += 1
+        result.scanned += 1
         result.languages.add(file_language)
         if file_language == "python":
             definitions = python_definitions(path, source)
@@ -510,19 +510,19 @@ def ara(
 
     exact = [s for _p, _s, _l, definitions in loaded for s in definitions if s.name == query]
     if exact:
-        result.tanimlar = exact
+        result.definitions = exact
     else:
         needle = query.lower()
-        result.tanimlar = [s for _p, _s, _l, definitions in loaded for s in definitions
+        result.definitions = [s for _p, _s, _l, definitions in loaded for s in definitions
                            if needle in s.name.lower()]
-        result.loose = bool(result.tanimlar)
+        result.loose = bool(result.definitions)
 
-    if tur == "tanim":
+    if kind == "tanim":
         return result
 
     # Usages always go by the EXACT name: while searching "kaydet" in loose
     # mode, showing the calls of "kaydetme_hatasi" is noise.
-    target = query if exact or not result.tanimlar else result.tanimlar[0].name
+    target = query if exact or not result.definitions else result.definitions[0].name
     for path, source, file_language, definitions in loaded:
         lines = {s.line for s in definitions if s.name == target}
         if file_language == "python":
@@ -531,11 +531,11 @@ def ara(
                 continue
         else:
             found = pattern_usages(path, source, target, lines)
-        result.use_log.extend(found)
+        result.usages.extend(found)
 
     # Sorted by file and line: `ast.walk` walks in tree order and line 203 of
     # the same file could come out before line 137. If the list is to be
     # read it should follow the order in the source.
-    result.use_log.sort(key=lambda u: (u.file, u.line))
-    result.tanimlar.sort(key=lambda s: (s.file, s.line))
+    result.usages.sort(key=lambda u: (u.file, u.line))
+    result.definitions.sort(key=lambda s: (s.file, s.line))
     return result

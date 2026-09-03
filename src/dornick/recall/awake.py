@@ -222,7 +222,7 @@ def micro_sleep(
         state.setdefault("islenen", {})[session.id] = weave._stamp(clock)  # noqa: SLF001
         report.replayed += 1
     weave._stitch(store, replayed, report)                    # noqa: SLF001
-    report.devreden = len(sessions) - len(replayed)
+    report.carried_over = len(sessions) - len(replayed)
     weave._write_watermark(watermark, state)                     # noqa: SLF001
     report.distillation = "atlandı: mikro-uyku damıtmaz"
     report.seconds = round(time.perf_counter() - started, 3)

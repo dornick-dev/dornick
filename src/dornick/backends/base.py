@@ -1,15 +1,16 @@
-"""Sağlayıcıdan bağımsız model arayüzü.
+"""Provider-independent model interface.
 
-Harness'ın geri kalanı hangi modelin konuştuğunu bilmez. Backend'in görevi,
-hangi API'yle konuşursa konuşsun, sonucu **Anthropic blok biçiminde**
-döndürmektir:
+The rest of the harness does not know which model is speaking. The
+Backend's job is to return the result in **Anthropic block format**, no
+matter which API it talks to:
 
     {"type": "text", "text": ...}
     {"type": "tool_use", "id": ..., "name": ..., "input": {...}}
 
-Bu biçimi ortak payda seçmenin sebebi, oturum günlüğünün tek bir şekli
-olması. Zihin, geçmiş oturumları modelden bağımsız okuyabilmeli — bugün
-Opus'la konuştuğun bir işi yarın yerel bir modelle sürdürebilesin.
+The reason for choosing this format as the common denominator is that the
+session log has a single shape. The mind must be able to read past
+sessions independently of the model — so that a job you discussed with
+Opus today can be continued with a local model tomorrow.
 """
 
 from __future__ import annotations
@@ -26,44 +27,47 @@ TextSink = Callable[[str], None]
 
 
 class Interrupted(Exception):
-    """Kullanıcı akışı kesti — bu bir hata değil, bir karar.
+    """The user cut the stream — this is a decision, not an error.
 
-    Backend'ler bunu yakalayıp `TurnResult(interrupted=True)` döndürür;
-    genel hata yoluna düşmemeli (hata sayılırsa oto-mod modele kara liste
-    puanı yazar, arayüz de "hata" diye gösterir).
+    Backends catch this and return `TurnResult(interrupted=True)`; it must
+    not fall into the generic error path (if it counts as an error,
+    auto-mode writes a blacklist score for the model, and the UI shows it
+    as "error").
     """
 
 
 class Stalled(Exception):
-    """Akış sessizliğe gömüldü: pencere boyunca tek parça gelmedi.
+    """The stream sank into silence: not a single chunk arrived during the window.
 
-    Ölçülen yara (29.08, z1): 8 çağrılık bir tur 900 sn'lik KAPI tavanına
-    asıldı — tek bir sağlayıcı çağrısı dakikalarca hiçbir şey akıtmadan
-    açık kaldı ve zaman aşımı ancak turun tavanında koptu. Doğru kesim
-    yeri tur değil ÇAĞRI: parça akıtan uzun bir çağrı sağlıklıdır (büyük
-    dosya yazımı), pencere boyunca SUSAN çağrı asılıdır.
+    Measured wound (29.08, z1): an 8-call turn hung against the 900 s GATE
+    ceiling — a single provider call stayed open for minutes streaming
+    nothing, and the timeout only broke at the turn's ceiling. The right
+    place to cut is the CALL, not the turn: a long call that streams
+    chunks is healthy (writing a big file), a call that stays SILENT for
+    the whole window is hung.
     """
 
 
 async def cancellable(stream: Any, cancel: Any,
                       *, stall_s: float | None = None) -> AsyncIterator[Any]:
-    """Akışı, kesme bayrağını DA dinleyerek dolaşır.
+    """Iterates the stream while ALSO listening to the cancel flag.
 
-    `async for` yalnızca parça GELDİĞİNDE kontrol veriyor. İlk token'dan
-    önce — istek kuruldu, sunucu istemi işliyor — hiç parça yok ve kesme
-    hiç yoklanmıyordu. Önbelleksiz İLK turda istem işleme dakikalar
-    sürebiliyor: kullanıcı Durdur'a basıyor ve hiçbir şey olmuyordu
-    ("ilk konuşmada durdurma çalışmıyor" yarasının kökü). Sonraki turlarda
-    önbellek ilk token'ı hızlandırdığı için hata gizleniyordu.
+    `async for` only yields control when a chunk ARRIVES. Before the first
+    token — request built, server processing the prompt — there are no
+    chunks and the cancel flag was never polled. On the FIRST uncached
+    turn, prompt processing can take minutes: the user pressed Stop and
+    nothing happened (the root of the "stop doesn't work on the first
+    conversation" wound). On later turns the cache sped up the first
+    token, hiding the bug.
 
-    Burada her adım kesme bekleyişiyle yarıştırılıyor: hangisi önce
-    gelirse o kazanır. Kesildiğinde `Interrupted` yükselir; akışın
-    kapatılması çağıranın sorumluluğunda kalır (openai: _aclose,
+    Here every step is raced against the cancel wait: whichever comes
+    first wins. When cancelled, `Interrupted` is raised; closing the
+    stream remains the caller's responsibility (openai: _aclose,
     anthropic: context manager).
 
-    `stall_s`: parçalar arası sessizlik penceresi. Pencere dolarsa
-    `Stalled` yükselir — asılı kalan sağlayıcı çağrısı turun tavanını
-    değil kendi penceresini yer. None eski davranış (pencere yok).
+    `stall_s`: silence window between chunks. If the window fills,
+    `Stalled` is raised — a hung provider call burns its own window, not
+    the turn's ceiling. None is the old behaviour (no window).
     """
     iterator = stream.__aiter__()
     stop = asyncio.ensure_future(cancel.wait())
@@ -75,13 +79,13 @@ async def cancellable(stream: Any, cancel: Any,
             done, _ = await asyncio.wait({step, stop}, timeout=stall_s,
                                          return_when=asyncio.FIRST_COMPLETED)
             if not done:
-                # Pencere doldu: ne parça ne kesme. Çağrı asılı.
+                # Window filled: no chunk, no cancel. The call is hung.
                 step.cancel()
                 with contextlib.suppress(BaseException):
                     await step
                 raise Stalled(f"akış {stall_s:.0f} sn sessiz kaldı")
             if step not in done:
-                # Kesme kazandı: yarım kalan okuma adımını iptal et.
+                # Cancel won: abort the half-finished read step.
                 step.cancel()
                 with contextlib.suppress(BaseException):
                     await step
@@ -99,11 +103,12 @@ async def cancellable(stream: Any, cancel: Any,
 
 @dataclass(slots=True)
 class TurnResult:
-    """Bir model turunun sonucu.
+    """The result of one model turn.
 
-    interrupted=True ise message None'dır ve yarım kalan içerik bilinçli
-    olarak atılmıştır: yarım gelen bir tool_use bloğunun input JSON'u
-    eksik olur ve onu geçmişe yazmak bir sonraki isteği bozar.
+    If interrupted=True, message is None and the half-finished content was
+    deliberately discarded: a partially received tool_use block has
+    incomplete input JSON, and writing it into the history breaks the
+    next request.
     """
 
     message: Any | None = None
@@ -117,12 +122,12 @@ class TurnResult:
 
     @property
     def content(self) -> list[dict[str, Any]]:
-        """İçerik bloklarını tek biçimde sözlük olarak verir.
+        """Returns the content blocks uniformly as dicts.
 
-        SDK nesneleriyle sözlükler arasındaki farkı burada bir kez kapatmak,
-        döngünün ve oturumun her yerde ikisini de düşünmesini engeller.
-        Thinking blokları dahil hiçbir alan atılmaz — API değiştirilmiş
-        blokları reddeder.
+        Closing the gap between SDK objects and dicts once here keeps the
+        loop and the session from having to consider both everywhere.
+        No field is dropped, thinking blocks included — the API rejects
+        modified blocks.
         """
         return blocks_to_dicts(getattr(self.message, "content", None) or [])
 
@@ -144,7 +149,7 @@ class Callbacks:
 
 @runtime_checkable
 class Backend(Protocol):
-    """Her sağlayıcının uyması gereken sözleşme."""
+    """The contract every provider must satisfy."""
 
     async def turn(
         self,
@@ -162,10 +167,10 @@ class Backend(Protocol):
 
 @dataclass(slots=True)
 class SimpleMessage:
-    """Anthropic yanıt nesnesinin yerine geçen taşıyıcı.
+    """Carrier standing in for the Anthropic response object.
 
-    Yerel sağlayıcılar kendi biçimlerinde cevap verir; backend onu bu
-    şekle çevirir ve harness farkı görmez.
+    Local providers answer in their own formats; the backend converts them
+    to this shape and the harness sees no difference.
     """
 
     content: list[dict[str, Any]]

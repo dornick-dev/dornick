@@ -445,8 +445,8 @@ class Sleeper:
                 budget_s=remaining, state_dir=self.state_dir)
             report.cycles = cycle
             report.replayed += night.replayed
-            report.carried = night.devreden
-            report.distilled += night.damitik
+            report.carried = night.carried_over
+            report.distilled += night.distilled_nodes
             if night.replayed == 0 and phase is not Phase.REM:
                 break               # nothing left to replay
         report.seconds = time.perf_counter() - started

@@ -1,6 +1,6 @@
-// Pencere düğmeleri + tek şerit sürükleme / kenar resize.
+// Window buttons + single-strip dragging / edge resize.
 //
-// Tarayıcıda `window.pywebview` yok; düğmeler o zaman gizli kalır.
+// In a browser `window.pywebview` does not exist; the buttons then stay hidden.
 
 (() => {
   const chrome = document.getElementById("chrome");
@@ -40,8 +40,8 @@
       });
     }
 
-    // Kenar resize: üst kenarın ORTASI şerit sürüklemesine aittir —
-    // yalnız köşelerde "t" (üst) resize; aksi halde üst 8px drag'i çalıyordu.
+    // Edge resize: the MIDDLE of the top edge belongs to the strip drag —
+    // "t" (top) resize only at the corners; otherwise the top 8px stole the drag.
     if (typeof window.pywebview.api.resize === "function") {
       const EDGE = 8;
       const zone = (e) => {
@@ -52,7 +52,7 @@
         if (b && l) return "bl"; if (b && r) return "br";
         if (l) return "l"; if (r) return "r";
         if (b) return "b";
-        // Üst orta: HUD / kamera şeridi içindeyse resize etme (sürükleme).
+        // Top middle: if inside the HUD / camera strip, do not resize (dragging).
         if (t && !e.target.closest(".hud, .watch-bar")) return "t";
         return "";
       };
@@ -72,7 +72,7 @@
       }, true);
     }
 
-    // Şerit sürükleme → HTCAPTION (Python UI thread'de SendMessage).
+    // Strip dragging → HTCAPTION (SendMessage on the Python UI thread).
     if (typeof window.pywebview.api.drag === "function") {
       const hud = document.querySelector(".hud") || document.querySelector(".watch-bar");
       const syncZoom = (zoomed) => {
@@ -82,12 +82,12 @@
         const startDrag = (e) => {
           if (e.button !== 0) return;
           if (e.target.closest("button, a, input, textarea, select")) return;
-          // Üst köşe resize'a bırak.
+          // Leave the top corners to resize.
           const EDGE = 8;
           const w = window.innerWidth;
           if (e.clientY < EDGE && (e.clientX < EDGE || e.clientX >= w - EDGE)) return;
           e.preventDefault();
-          // Hemen çağır — Promise bekleme; fare basılıyken UI thread'e ulaşsın.
+          // Call immediately — no awaiting the Promise; it must reach the UI thread while the mouse is down.
           const p = window.pywebview.api.drag();
           if (p && typeof p.then === "function") p.then(syncZoom).catch(() => {});
         };

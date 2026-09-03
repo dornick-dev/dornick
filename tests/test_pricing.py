@@ -208,10 +208,10 @@ async def test_a_new_user_turn_resets_the_turn_total_not_the_session(
 
     bridge.agent.run = _run
     monkeypatch.setattr(
-        "dornick.settings.yapilandirilmamis", lambda model: False)
+        "dornick.settings.unconfigured", lambda model: False)
 
-    await bridge._isle("ilk iş", "")
-    await bridge._isle("ikinci iş", "")
+    await bridge._handle("ilk iş", "")
+    await bridge._handle("ikinci iş", "")
 
     last = hub.only("usage")[-1]
     assert last["tur"] == {"girdi": 500, "cikti": 20, "cagri": 1}, \

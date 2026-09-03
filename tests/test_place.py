@@ -1,8 +1,8 @@
-"""Konum ve otomatik başlatma.
+"""Location and autostart.
 
-"Yarın hava nasıl?" sorusuna model İstanbul'u varsayıp cevap vermişti.
-Buradaki kontroller o hatanın iki tarafını da tutuyor: konumun gerçekten
-öğrenilebilmesi, ve öğrenilemediğinde uydurulmaması.
+The model once answered "what's the weather tomorrow?" assuming
+Istanbul. The checks here hold both sides of that bug: the location can
+really be learned, and when it cannot, it is not made up.
 """
 
 from __future__ import annotations
@@ -13,12 +13,12 @@ from dornick import place, startup
 from dornick.config import Config
 
 
-# -- kaynaklar ---------------------------------------------------------
+# -- sources -----------------------------------------------------------
 
 
 def test_location_is_off_until_asked_for(tmp_path: Path) -> None:
-    """IP sorgusu kullanıcının adresini üçüncü bir servise gönderiyor.
-    Sessizce yapılacak bir şey değil."""
+    """The IP query sends the user's address to a third-party service.
+    Not something to do silently."""
     assert not Config.load(tmp_path).place.enabled
 
 
@@ -29,9 +29,9 @@ def test_what_the_user_typed_beats_everything(tmp_path: Path) -> None:
 
 
 def test_the_machine_knows_the_country_but_not_the_city() -> None:
-    """Saat dilimi ülkeyi veriyor, şehri vermiyor. "Türkiye'desin" ile
-    "İstanbul'dasın" arasındaki fark, hava durumu sorusunda cevabın
-    tamamı demek."""
+    """The timezone gives the country, not the city. The difference
+    between "you are in Türkiye" and "you are in Istanbul" is the entire
+    answer to a weather question."""
     found = place.from_machine()
     assert found.trust in ("ülke", "yok")
     if found.where:
@@ -39,7 +39,7 @@ def test_the_machine_knows_the_country_but_not_the_city() -> None:
 
 
 def test_a_closed_setting_never_touches_the_network(monkeypatch) -> None:
-    """Kapalıyken ağa çıkmamalı: ayarın anlamı bu."""
+    """While disabled it must not touch the network: that is what the setting means."""
     def boom() -> place.Place:
         raise AssertionError("kapalıyken ağa çıkıldı")
 
@@ -47,13 +47,13 @@ def test_a_closed_setting_never_touches_the_network(monkeypatch) -> None:
     assert place.locate(place.PlaceConfig(enabled=False)).trust in ("ülke", "yok")
 
 
-# -- güven -------------------------------------------------------------
+# -- trust -------------------------------------------------------------
 
 
 def test_an_ip_guess_is_never_presented_as_fact() -> None:
-    """Ölçüm: aynı anda iki servise soruldu, biri "Manisa" dedi diğeri
-    "Kayseri". Mobil bağlantıda çıkış noktası kullanıcının bulunduğu yer
-    değil."""
+    """Measured: two services asked at the same moment, one said "Manisa",
+    the other "Kayseri". On a mobile connection the exit point is not
+    where the user is."""
     said = place.describe(place.Place(where="Manisa", trust="ipucu", source="IP"))
 
     assert "Kesin değil" in said
@@ -78,7 +78,7 @@ def test_knowing_nothing_says_to_ask() -> None:
 
 
 def test_disagreeing_services_are_both_reported() -> None:
-    """Tek bir cevaba indirgemek, ölçümde yanlış olanı seçmek demekti."""
+    """Reducing to a single answer would have meant picking the wrong one in the measurement."""
     import json
 
     calls = []
@@ -97,7 +97,7 @@ def test_disagreeing_services_are_both_reported() -> None:
     assert len(calls) == 2
     assert "Manisa" in found.where and "Kayseri" in found.where
     assert found.trust == "ipucu"
-    json.dumps(found.detail)  # arayüze gidiyor: serileşebilmeli
+    json.dumps(found.detail)  # goes to the UI: must serialize
 
 
 def test_a_dead_service_does_not_break_the_answer() -> None:
@@ -112,12 +112,12 @@ def test_a_dead_service_does_not_break_the_answer() -> None:
         place._ask = original
 
 
-# -- açılışta başlat ---------------------------------------------------
+# -- start at boot -----------------------------------------------------
 
 
 def test_autostart_reads_without_writing() -> None:
-    """Durumu okumak hiçbir şey değiştirmemeli: ayar sayfası her
-    açılışta bunu çağırıyor."""
+    """Reading the state must change nothing: the settings page calls
+    this on every open."""
     before = startup.current()
     startup.enabled()
     startup.command()
@@ -125,17 +125,17 @@ def test_autostart_reads_without_writing() -> None:
 
 
 def test_autostart_runs_a_command_that_exists() -> None:
-    """`python -m dornick` çalışmıyor (paket doğrudan çalıştırılamıyor);
-    açılışa yazılan satırın gerçekten bir şey başlatması gerekiyor."""
+    """`python -m dornick` does not work (the package cannot be run
+    directly); the line written to startup must actually start something."""
     line = startup.command()
     assert "dornick.cli" in line and "--app" in line
-    # Konsol penceresi açılmasın; Görev Yöneticisi damgalı dornick.exe ister.
+    # No console window; Task Manager wants the branded dornick.exe.
     low = line.lower()
     assert "dornick.exe" in low or "pythonw" in low or "python" in low
 
 
 def test_autostart_writes_only_for_this_user() -> None:
-    """Bir kullanıcının tercihi bütün makineyi bağlamamalı."""
+    """One user's preference must not bind the whole machine."""
     import inspect
 
     source = inspect.getsource(startup)

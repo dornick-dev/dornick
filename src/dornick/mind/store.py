@@ -764,8 +764,8 @@ class Mind:
         self,
         session_id: str,
         *,
-        ad: str | None = None,
-        etiketler: list[str] | None = None,
+        name: str | None = None,
+        tags: list[str] | None = None,
         path: str | None = None,
         model: str | None = None,
         provider: str | None = None,
@@ -780,11 +780,11 @@ class Mind:
             record = mapping.get(session_id, {
                 "ad": "", "etiketler": [], "path": "", "model": "", "provider": "",
             })
-            if ad is not None:
-                record["ad"] = " ".join(str(ad).split())[:80]
-            if etiketler is not None:
+            if name is not None:
+                record["ad"] = " ".join(str(name).split())[:80]
+            if tags is not None:
                 clean: list[str] = []
-                for tag in etiketler:
+                for tag in tags:
                     flat = " ".join(str(tag).split()).strip().lower()[:24]
                     if flat and flat not in clean:
                         clean.append(flat)

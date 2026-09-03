@@ -1,9 +1,9 @@
-"""İş akışı aracı — otomasyon grafiklerini kaydetmek ve koşturmak.
+"""Workflow tool — saving and running automation graphs.
 
-Zamanlanmış görev (`schedule`) tek bir prompt metnidir. Workflow ise
-düğümlerden oluşan bir grafik: posta oku → HTTP → yetenek → ajan.
-Bu araç o grafiği listeler, kaydeder, siler; `run` henüz koşucuya
-bağlıysa çağırır, değilse dürüstçe stub döner.
+A scheduled task (`schedule`) is a single prompt text. A workflow is a
+graph of nodes: read mail → HTTP → skill → agent. This tool lists,
+saves and deletes that graph; `run` calls the runner if one is attached,
+otherwise it honestly returns a stub.
 """
 
 from __future__ import annotations
@@ -54,9 +54,9 @@ def register(registry: ToolRegistry) -> None:
                 },
                 "id": {"type": "string", "description": "get/update/remove/run için kimlik."},
                 "title": {"type": "string", "description": "create/update için başlık."},
-                # `items` ŞART: Gemini `items`siz bir array gördüğünde araç
-                # listesinin TAMAMINI reddediyor. Şekli burada yazmak ayrıca
-                # modelin alan adlarını tahmin etmesini de bitiriyor.
+                # `items` is REQUIRED: when Gemini sees an array without
+                # `items` it rejects the ENTIRE tool list. Writing the shape
+                # here also ends the model guessing the field names.
                 "nodes": {
                     "type": "array",
                     "description": "Grafiğin düğümleri.",
@@ -124,7 +124,7 @@ def register(registry: ToolRegistry) -> None:
                 created = store.save(state_dir, payload)
             except store.WorkflowError as exc:
                 return ToolResult.error(str(exc))
-            _hatirla(ctx, created)
+            _remember(ctx, created)
             return ToolResult(
                 f"Oluşturuldu: [{created.id}] {created.title}",
                 detail={"id": created.id},
@@ -158,7 +158,7 @@ def register(registry: ToolRegistry) -> None:
                 updated = store.save(state_dir, payload)
             except store.WorkflowError as exc:
                 return ToolResult.error(str(exc))
-            _hatirla(ctx, updated)
+            _remember(ctx, updated)
             return ToolResult(
                 f"Güncellendi: [{updated.id}] {updated.title}",
                 detail={"id": updated.id},
@@ -179,7 +179,7 @@ def register(registry: ToolRegistry) -> None:
                     result = runner(wf.id)
                     if hasattr(result, "__await__"):
                         result = await result  # type: ignore[misc]
-                except Exception as exc:  # koşucu hatası aracı düşürmemeli
+                except Exception as exc:  # a runner error must not sink the tool
                     return ToolResult.error(f"Akış koşturulamadı: {exc}")
                 return ToolResult(
                     str(result or f"Akış koşturuldu: [{wf.id}] {wf.title}"),
@@ -194,13 +194,14 @@ def register(registry: ToolRegistry) -> None:
         return ToolResult.error(f"Bilinmeyen işlem: {action}")
 
 
-def _hatirla(ctx: Any, wf: Any) -> None:
-    """Kurulan/güncellenen akışı hafızaya yordam olarak yaz.
+def _remember(ctx: Any, wf: Any) -> None:
+    """Write the created/updated workflow into memory as a procedure.
 
-    Amaç aylar sonraki "bunu daha önce otomasyonda yapmıştım" anı: kayıt
-    olmadan o an hiç gelmiyor. Hafıza yoksa sessiz — otomasyonun kendisi,
-    hatırlanmasından önemli.
+    The goal is the "I did this in an automation before" moment months
+    later: without the record that moment never comes. Silent if there
+    is no memory — the automation itself matters more than remembering
+    it.
     """
     from .. import workflow_mind
 
-    workflow_mind.akisi_hatirla(getattr(ctx, "mind", None), wf)
+    workflow_mind.recall_workflow(getattr(ctx, "mind", None), wf)

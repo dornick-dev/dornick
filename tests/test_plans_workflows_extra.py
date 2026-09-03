@@ -1,4 +1,4 @@
-"""Plan deposu ve workflow koşucu duman testleri."""
+"""Smoke tests for the plan store and the workflow runner."""
 
 from __future__ import annotations
 

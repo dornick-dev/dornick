@@ -1,18 +1,21 @@
-// Kompozer yüzeyleri: `/` komut defteri ve `@` dosya bahsi.
+// Composer surfaces: the `/` command book and the `@` file mention.
 //
-// İkisi de aynı şeyin iki hâli: kompozerde yazarken açılan, klavyeyle
-// gezilen, Enter'la seçilen, Escape'le kapanan tek bir kutu. Bu yüzden
-// TEK durum makinesi var — iki ayrı menü iki ayrı hata demekti (biri açıkken
-// öteki de açılıyor, ok tuşu ikisine birden gidiyor).
+// Both are two states of the same thing: a single box that opens while
+// typing in the composer, is navigated by keyboard, selected with Enter,
+// closed with Escape. Hence ONE state machine — two separate menus meant
+// two separate bugs (one opening while the other is open, arrow keys going
+// to both at once).
 //
-// İki kural:
+// Two rules:
 //
-//   * Komut defterindeki her satır ZATEN VAR OLAN bir yola bağlanıyor.
-//     Uydurma komut yok: `/model` dock'taki model kutusunu açıyor, `/durdur`
-//     Durdur düğmesine basıyor. Yeni komut eklemek defterde tek satır.
-//   * `@` ile seçilen dosya GİZLİCE eklenmiyor. Cip olarak görünüyor ve
-//     mesaja giren cümle cipte yazan yolun aynısı: "Kullanıcı şu dosyayı
-//     işaret etti: <yol>". Kullanıcı ne gönderdiğini okuyabiliyor.
+//   * Every row of the command book binds to a path that ALREADY EXISTS.
+//     No invented commands: `/model` opens the model box in the dock,
+//     `/durdur` presses the Stop button. Adding a command is one line in
+//     the book.
+//   * A file picked with `@` is not added SECRETLY. It shows as a chip and
+//     the sentence entering the message is the very path written on the
+//     chip: "Kullanıcı şu dosyayı işaret etti: <path>". The user can read
+//     what they are sending.
 
 Dil.ekle({
   "Yeni konuşma başlat": "Start a new conversation",
@@ -37,7 +40,7 @@ Dil.ekle({
   "Kısayollar": "Shortcuts",
   "Enter — gönder · Shift+Enter — alt satır": "Enter — send · Shift+Enter — new line",
   "/ — komut defteri · @ — dosya işaret et": "/ — command book · @ — mention a file",
-  "Escape — açık kutuyu kapat": "Escape — close the open box",
+  "Escape — açık kutuyu closePop": "Escape — close the open box",
   "Bağlam sıkıştırılamadı.": "Could not compact the context.",
   "işaret edilen dosya": "mentioned file",
 });
@@ -56,17 +59,17 @@ const Komut = (() => {
 
   const tik = (id) => { const b = document.getElementById(id); if (b) b.click(); };
 
-  const gonder = (yol, govde) => fetch(yol, {
+  const post = (path, payload) => fetch(path, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(govde || {}),
+    body: JSON.stringify(payload || {}),
   }).then(r => r.json()).catch(() => null);
 
-  // --- komut defteri ---------------------------------------------------
+  // --- command book ----------------------------------------------------
   //
-  // Tek gerçek kaynak. Yeni bir komut eklemek buraya tek satır yazmak;
-  // menü, süzgeç, klavye gezinmesi ve `/yardim` listesi kendiliğinden
-  // öğreniyor.
+  // The single source of truth. Adding a command is one line here; the
+  // menu, the filter, the keyboard navigation and the `/yardim` listing
+  // learn it by themselves.
   const DEFTER = [
     { ad: "yeni", ne: "Yeni konuşma başlat", kos: () => tik("hist-new") },
     { ad: "gecmis", ne: "Geçmiş konuşmalar", kos: () => tik("history") },
@@ -81,245 +84,246 @@ const Komut = (() => {
     { ad: "artifact", ne: "Yayınlanan artifact'lar — Uygulamalar panelinde",
       kos: () => tik("apps") },
     { ad: "ayarlar", ne: "Ayar sayfasını aç", kos: () => tik("gear") },
-    { ad: "sifirla", ne: "Bağlamı sıkıştır — konuşma kesilmez", kos: sikistir },
-    // Durdurma kendi düğmesinden geçiyor: ikinci bir kesme yolu açmak,
-    // günün birinde biri değişip öteki kalmak demek.
+    { ad: "sifirla", ne: "Bağlamı sıkıştır — konuşma kesilmez", kos: compactContext },
+    // Stopping goes through its own button: opening a second interrupt
+    // path means one changes some day and the other stays behind.
     { ad: "durdur", ne: "Koşan turu durdur", kos: () => tik("stop") },
-    { ad: "yardim", ne: "Komutlar ve kısayollar", kos: yardim },
+    { ad: "yardim", ne: "Komutlar ve kısayollar", kos: showHelp },
   ];
 
-  async function sikistir() {
-    const cevap = await gonder("/api/compact");
-    if (cevap && cevap.ok === false) {
-      line("alert", cevap.error || t("Bağlam sıkıştırılamadı."));
+  async function compactContext() {
+    const answer = await post("/api/compact");
+    if (answer && answer.ok === false) {
+      line("alert", answer.error || t("Bağlam sıkıştırılamadı."));
     }
   }
 
-  // `/yardim`: defterin kendisinden çizilen kart. Elle tutulan ikinci bir
-  // liste bir gün defterden ayrı düşerdi.
-  function yardim() {
-    // Kendi sınıfı: `system` satırı tek satırlık bir not için biçimlenmiş
-    // (nowrap + ellipsis) ve çok satırlı bir kartı görünmez yapıyor.
-    const kart = line("help");
-    kart.replaceChildren();
-    kart.append(el("div", "help-head", t("Komutlar")));
+  // `/yardim`: a card drawn from the book itself. A second, hand-kept list
+  // would drift away from the book one day.
+  function showHelp() {
+    // Its own class: the `system` row is styled for a one-line note
+    // (nowrap + ellipsis) and makes a multi-line card invisible.
+    const card = line("help");
+    card.replaceChildren();
+    card.append(el("div", "help-head", t("Komutlar")));
     for (const k of DEFTER) {
-      const satir = el("div", "help-row");
-      satir.append(el("b", null, "/" + k.ad));
-      satir.append(el("span", null, t(k.ne)));
-      kart.append(satir);
+      const row = el("div", "help-row");
+      row.append(el("b", null, "/" + k.ad));
+      row.append(el("span", null, t(k.ne)));
+      card.append(row);
     }
-    kart.append(el("div", "help-head", t("Kısayollar")));
+    card.append(el("div", "help-head", t("Kısayollar")));
     for (const s of ["Enter — gönder · Shift+Enter — alt satır",
                      "/ — komut defteri · @ — dosya işaret et",
-                     "Escape — açık kutuyu kapat"]) {
-      kart.append(el("div", "help-row hint", t(s)));
+                     "Escape — açık kutuyu closePop"]) {
+      card.append(el("div", "help-row hint", t(s)));
     }
     scroll();
   }
 
-  // --- durum makinesi --------------------------------------------------
+  // --- state machine ---------------------------------------------------
   //
-  // kip: "" (kapalı) · "komut" · "dosya"
-  // at:  tetikleyen karakterin metindeki yeri — seçim yapılınca `@sorgu` ya
-  //      da `/sorgu` parçası tam olarak buradan silinir.
-  const durum = { kip: "", sorgu: "", at: -1, liste: [], secili: 0, baslik: "" };
+  // mode: "" (closed) · "komut" (command) · "dosya" (file)
+  // at:  position of the trigger character in the text — on selection the
+  //      `@query` or `/query` fragment is deleted from exactly here.
+  const state = { mode: "", query: "", at: -1, items: [], selected: 0, title: "" };
 
-  // `/` YALNIZCA satır başında komuttur: cümlenin ortasındaki eğik çizgi
-  // (bir yol, bir kesir) menü açmamalı.
+  // `/` is a command ONLY at the start of a line: a slash mid-sentence
+  // (a path, a fraction) must not open the menu.
   const KOMUT_KALIBI = /(?:^|\n)\/([\wğüşıöçĞÜŞİÖÇ.-]*)$/;
-  // `@` boşluktan sonra ya da satır başında. İçinde boşluk ve ikinci bir
-  // `@` olmayan her şey sorgu.
+  // `@` after whitespace or at line start. Everything without whitespace
+  // or a second `@` inside is the query.
   const DOSYA_KALIBI = /(?:^|\s)@([^\s@]*)$/;
 
-  function bak() {
+  function check() {
     const caret = input.selectionStart;
-    const onu = input.value.slice(0, caret);
-    let m = KOMUT_KALIBI.exec(onu);
-    if (m) return ac("komut", m[1], caret - m[1].length - 1);
-    m = DOSYA_KALIBI.exec(onu);
-    if (m) return ac("dosya", m[1], caret - m[1].length - 1);
-    kapat();
+    const before = input.value.slice(0, caret);
+    let m = KOMUT_KALIBI.exec(before);
+    if (m) return openPop("komut", m[1], caret - m[1].length - 1);
+    m = DOSYA_KALIBI.exec(before);
+    if (m) return openPop("dosya", m[1], caret - m[1].length - 1);
+    closePop();
   }
 
-  function ac(kip, sorgu, at) {
-    const yeniKip = durum.kip !== kip;
-    durum.kip = kip;
-    durum.sorgu = sorgu;
-    durum.at = at;
-    if (yeniKip) durum.secili = 0;
-    if (kip === "komut") komutlariCiz();
+  function openPop(mode, query, at) {
+    const modeChanged = state.mode !== mode;
+    state.mode = mode;
+    state.query = query;
+    state.at = at;
+    if (modeChanged) state.selected = 0;
+    if (mode === "komut") drawCommands();
     else dosyalariAra();
   }
 
-  function kapat() {
-    durum.kip = "";
-    durum.liste = [];
-    durum.secili = 0;
+  function closePop() {
+    state.mode = "";
+    state.items = [];
+    state.selected = 0;
     pop.hidden = true;
   }
 
-  const acikMi = () => !pop.hidden && durum.kip !== "";
+  const acikMi = () => !pop.hidden && state.mode !== "";
 
-  // Klavye: kutu açıkken ok tuşları gezer, Enter seçer, Escape kapatır.
-  // Dinleyici BELGEDE ve yakalama evresinde: app.js'in Enter → gönder
-  // dinleyicisi kompozerin üzerinde duruyor ve kutu açıkken mesajın
-  // gitmemesi gerekiyor.
+  // Keyboard: with the box open, arrow keys navigate, Enter selects,
+  // Escape closes. The listener is on the DOCUMENT and in the capture
+  // phase: app.js's Enter → send listener sits above the composer and the
+  // message must not go out while the box is open.
   function tus(ev) {
     if (!acikMi() || ev.target !== input) return;
-    if (ev.key === "Escape") { ev.preventDefault(); ev.stopPropagation(); kapat(); return; }
+    if (ev.key === "Escape") { ev.preventDefault(); ev.stopPropagation(); closePop(); return; }
     if (ev.key === "ArrowDown" || ev.key === "ArrowUp") {
-      if (!durum.liste.length) return;
+      if (!state.items.length) return;
       ev.preventDefault(); ev.stopPropagation();
-      const yon = ev.key === "ArrowDown" ? 1 : -1;
-      durum.secili = (durum.secili + yon + durum.liste.length) % durum.liste.length;
-      ciz();
+      const dir = ev.key === "ArrowDown" ? 1 : -1;
+      state.selected = (state.selected + dir + state.items.length) % state.items.length;
+      draw();
       return;
     }
     if (ev.key === "Enter" || ev.key === "Tab") {
-      if (!durum.liste.length) return;
+      if (!state.items.length) return;
       ev.preventDefault(); ev.stopPropagation();
-      sec(durum.secili);
+      select(state.selected);
     }
   }
 
-  function sec(i) {
-    const madde = durum.liste[i];
-    if (!madde) return;
-    const kip = durum.kip;
-    kirp();
-    kapat();
-    if (kip === "komut") madde.kos();
-    else bahisEkleYol(madde.path);
+  function select(i) {
+    const item = state.items[i];
+    if (!item) return;
+    const mode = state.mode;
+    trimTrigger();
+    closePop();
+    if (mode === "komut") item.kos();
+    else addMentionPath(item.path);
     input.focus();
   }
 
-  // Tetikleyici parçayı metinden çıkarır: seçim yapıldıktan sonra kompozerde
-  // yarım kalmış bir `/mod` ya da `@src/a` durmamalı.
-  function kirp() {
-    if (durum.at < 0) return;
+  // Removes the trigger fragment from the text: after a selection, a
+  // half-typed `/mod` or `@src/a` must not linger in the composer.
+  function trimTrigger() {
+    if (state.at < 0) return;
     const caret = input.selectionStart;
-    input.value = input.value.slice(0, durum.at) + input.value.slice(caret);
-    input.selectionStart = input.selectionEnd = durum.at;
+    input.value = input.value.slice(0, state.at) + input.value.slice(caret);
+    input.selectionStart = input.selectionEnd = state.at;
     input.dispatchEvent(new Event("input"));
   }
 
-  // --- çizim -----------------------------------------------------------
+  // --- drawing ---------------------------------------------------------
 
-  function komutlariCiz() {
-    const want = durum.sorgu.toLowerCase();
-    durum.liste = DEFTER.filter(k => !want || k.ad.includes(want));
-    if (durum.secili >= durum.liste.length) durum.secili = 0;
-    ciz(t("Komutlar"));
+  function drawCommands() {
+    const want = state.query.toLowerCase();
+    state.items = DEFTER.filter(k => !want || k.ad.includes(want));
+    if (state.selected >= state.items.length) state.selected = 0;
+    draw(t("Komutlar"));
   }
 
-  // Başlık durumda saklanıyor: ok tuşuyla yeniden çizerken parametre
-  // gelmiyor ve kutunun başlığı ("KOMUTLAR") her gezinmede kayboluyordu.
-  function ciz(baslik) {
-    if (baslik !== undefined) durum.baslik = baslik;
+  // The title is kept in the state: redrawing on arrow keys passes no
+  // parameter and the box title ("KOMUTLAR") vanished on every move.
+  function draw(title) {
+    if (title !== undefined) state.title = title;
     pop.replaceChildren();
     pop.hidden = false;
-    if (durum.baslik) pop.append(el("div", "pop-head", durum.baslik));
-    if (!durum.liste.length) {
+    if (state.title) pop.append(el("div", "pop-head", state.title));
+    if (!state.items.length) {
       pop.append(el("div", "pop-note",
-        durum.kip === "komut" ? t("Eşleşen komut yok.") : t("Eşleşen dosya yok.")));
+        state.mode === "komut" ? t("Eşleşen komut yok.") : t("Eşleşen dosya yok.")));
     }
-    durum.liste.forEach((madde, i) => {
-      const satir = el("div", "pop-row" + (i === durum.secili ? " sel" : ""));
-      satir.append(el("b", null, durum.kip === "komut" ? "/" + madde.ad : madde.name));
-      satir.append(el("span", null, durum.kip === "komut" ? t(madde.ne) : madde.path));
-      // Fareyle seçim de aynı yoldan: iki ayrı seçim mantığı olmasın.
-      satir.addEventListener("mousedown", (ev) => { ev.preventDefault(); sec(i); });
-      pop.append(satir);
+    state.items.forEach((item, i) => {
+      const row = el("div", "pop-row" + (i === state.selected ? " sel" : ""));
+      row.append(el("b", null, state.mode === "komut" ? "/" + item.ad : item.name));
+      row.append(el("span", null, state.mode === "komut" ? t(item.ne) : item.path));
+      // Mouse selection goes the same way: no two separate selection logics.
+      row.addEventListener("mousedown", (ev) => { ev.preventDefault(); select(i); });
+      pop.append(row);
     });
-    yerlestir();
+    place();
   }
 
-  function yerlestir() {
+  function place() {
     const at = input.getBoundingClientRect();
     pop.style.left = Math.max(8, at.left) + "px";
     pop.style.bottom = (window.innerHeight - at.top + 10) + "px";
     pop.style.maxWidth = Math.min(560, window.innerWidth - 24) + "px";
   }
 
-  // --- dosya arama -----------------------------------------------------
+  // --- file search -----------------------------------------------------
   //
-  // Her tuşta ağa çıkmıyor: kısa bir gecikme ve bir jeton. Geç dönen eski
-  // bir cevap yeni sorgunun listesini EZMEMELİ — yazarken listenin bir
-  // öncekine geri atlaması tam olarak böyle oluyordu.
+  // Not hitting the network on every keystroke: a short delay and a token.
+  // A stale answer arriving late must NOT clobber the new query's list —
+  // the list jumping back to the previous one while typing happened exactly
+  // like that.
   let aramaTimer = null;
   let jeton = 0;
 
   function dosyalariAra() {
     clearTimeout(aramaTimer);
     const benim = ++jeton;
-    const q = durum.sorgu;
+    const q = state.query;
     aramaTimer = setTimeout(async () => {
-      let bulunan = [];
+      let found = [];
       try {
-        const cevap = await (await fetch("/api/files/search?q=" + encodeURIComponent(q))).json();
-        bulunan = (cevap && cevap.files) || [];
-      } catch { bulunan = []; }
-      if (benim !== jeton || durum.kip !== "dosya") return;
-      durum.liste = bulunan;
-      if (durum.secili >= durum.liste.length) durum.secili = 0;
-      ciz(t("Dosya ara"));
+        const answer = await (await fetch("/api/files/search?q=" + encodeURIComponent(q))).json();
+        found = (answer && answer.files) || [];
+      } catch { found = []; }
+      if (benim !== jeton || state.mode !== "dosya") return;
+      state.items = found;
+      if (state.selected >= state.items.length) state.selected = 0;
+      draw(t("Dosya ara"));
     }, 110);
-    // Bekletirken kutu boş kalmasın.
-    if (!durum.liste.length) {
+    // Do not leave the box empty while waiting.
+    if (!state.items.length) {
       pop.replaceChildren(el("div", "pop-head", t("Dosya ara")),
                           el("div", "pop-note dugum-yukleniyor", t("Aranıyor…")));
       pop.hidden = false;
-      yerlestir();
+      place();
     }
   }
 
-  // --- bahisler --------------------------------------------------------
+  // --- mentions --------------------------------------------------------
 
   let bahis = [];
 
-  function bahisEkleYol(path) {
+  function addMentionPath(path) {
     if (!path || bahis.includes(path)) return;
     bahis.push(path);
-    bahisCiz();
+    drawMentions();
   }
 
-  function bahisCiz() {
+  function drawMentions() {
     chipBox.replaceChildren();
     chipBox.hidden = !bahis.length;
-    for (const yol of bahis) {
-      const cip = el("span", "chip mention");
-      cip.append(el("span", "mention-at", "@"));
-      cip.append(el("span", "mention-yol", yol));
-      cip.title = yol;
+    for (const path of bahis) {
+      const chip = el("span", "chip mention");
+      chip.append(el("span", "mention-at", "@"));
+      chip.append(el("span", "mention-yol", path));
+      chip.title = path;
       const x = el("button", null, "×");
       x.type = "button";
       x.title = t("Bahisten çıkar");
-      x.onclick = () => { bahis = bahis.filter(p => p !== yol); bahisCiz(); };
-      cip.append(x);
-      chipBox.append(cip);
+      x.onclick = () => { bahis = bahis.filter(p => p !== path); drawMentions(); };
+      chip.append(x);
+      chipBox.append(chip);
     }
   }
 
-  // Mesaja giren cümle. Gizli enjeksiyon yok: yazan şey cipte görünenin
-  // aynısı ve gönderilen metinde de duruyor.
+  // The sentence that enters the message. No hidden injection: what is
+  // written is exactly what the chip shows, and it stays in the sent text.
   function bahisEkle(text) {
     if (!bahis.length) return text;
-    const satirlar = bahis.map(p => "Kullanıcı şu dosyayı işaret etti: " + p).join("\n");
+    const lines = bahis.map(p => "Kullanıcı şu dosyayı işaret etti: " + p).join("\n");
     bahis = [];
-    bahisCiz();
-    return (text ? text + "\n\n" : "") + satirlar;
+    drawMentions();
+    return (text ? text + "\n\n" : "") + lines;
   }
 
-  // --- bağlama ---------------------------------------------------------
+  // --- wiring ----------------------------------------------------------
 
-  input.addEventListener("input", bak);
-  input.addEventListener("click", bak);
+  input.addEventListener("input", check);
+  input.addEventListener("click", check);
   input.addEventListener("keyup", (ev) => {
-    if (ev.key === "ArrowLeft" || ev.key === "ArrowRight") bak();
+    if (ev.key === "ArrowLeft" || ev.key === "ArrowRight") check();
   });
-  input.addEventListener("blur", () => setTimeout(kapat, 120));
+  input.addEventListener("blur", () => setTimeout(closePop, 120));
   document.addEventListener("keydown", tus, true);
 
-  return { DEFTER, durum, ac, kapat, tus, sec, acikMi, bahisEkle, bahisler: () => bahis.slice() };
+  return { DEFTER, state, openPop, closePop, tus, select, acikMi, bahisEkle, bahisler: () => bahis.slice() };
 })();

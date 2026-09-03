@@ -1,19 +1,19 @@
-"""Anthropic blok biçimi ile OpenAI sohbet biçimi arasında çeviri.
+"""Translation between the Anthropic block format and the OpenAI chat format.
 
-İki biçim araç çağrılarını farklı yerlerde taşır:
+The two formats carry tool calls in different places:
 
-    Anthropic   asistan içeriğinde tool_use bloğu
-                kullanıcı içeriğinde tool_result bloğu
-    OpenAI      asistan mesajında tool_calls dizisi
-                ayrı bir role="tool" mesajı, tool_call_id ile
+    Anthropic   tool_use block in the assistant content
+                tool_result block in the user content
+    OpenAI      tool_calls array in the assistant message
+                a separate role="tool" message, with tool_call_id
 
-OpenAI tarafında sıralama katıdır: tool mesajları, kendilerini isteyen
-tool_calls'lu asistan mesajını **doğrudan** izlemek zorundadır. Araya bir
-user mesajı girerse sunucu reddeder. Bu yüzden bir kullanıcı turunda hem
-tool_result hem metin varsa, önce tool mesajları yazılır.
+On the OpenAI side the ordering is strict: tool messages must **directly**
+follow the tool_calls assistant message that requested them. If a user
+message slips in between, the server rejects. That is why, when a user
+turn has both tool_result and text, the tool messages are written first.
 
-Bu modül saf fonksiyonlardan oluşur ve ağ erişimi yoktur — biçim hataları
-en sinsi hata sınıfı olduğu için ayrı test edilebilmesi önemli.
+This module consists of pure functions and has no network access — format
+bugs are the sneakiest class of bug, so being testable in isolation matters.
 """
 
 from __future__ import annotations
@@ -25,8 +25,8 @@ from typing import Any
 Block = dict[str, Any]
 Message = dict[str, Any]
 
-# Anthropic'e özgü, OpenAI karşılığı olmayan bloklar. Sessizce düşürülür:
-# yerel modeller bunları anlamaz ve göndermek hataya yol açar.
+# Blocks specific to Anthropic with no OpenAI equivalent. Silently dropped:
+# local models do not understand them and sending them causes errors.
 DROPPED_BLOCK_TYPES = frozenset({"thinking", "redacted_thinking"})
 
 IMAGE_IN_TOOL_RESULT = "[görüntü — bu sağlayıcı araç sonucunda görüntü kabul etmiyor]"
@@ -40,7 +40,7 @@ FINISH_REASONS = {
 }
 
 
-# -- giden yön: Anthropic -> OpenAI ------------------------------------
+# -- outbound direction: Anthropic -> OpenAI ---------------------------
 
 
 def to_openai_messages(system: list[Block], messages: list[Message]) -> list[Message]:
@@ -64,12 +64,12 @@ def to_openai_messages(system: list[Block], messages: list[Message]) -> list[Mes
         if role == "assistant":
             out.append(_assistant_message(content))
         elif role == "system":
-            # Tur ortası sistem notları (hedef senkronu, harness notları)
-            # user rolüyle gider: Anthropic ailesi — OpenAI-uyumlu uçlar
-            # üzerinden bile — system'ı yalnız dizinin başında kabul ediyor
-            # ("role 'system' must precede an 'assistant' message"), OpenAI
-            # ailesi ise user-notunu aynı şekilde okuyor. Tek biçim, sıfır
-            # sağlayıcı koklama.
+            # Mid-turn system notes (goal sync, harness notes) go with the
+            # user role: the Anthropic family — even over OpenAI-compatible
+            # endpoints — accepts system only at the head of the array
+            # ("role 'system' must precede an 'assistant' message"), and
+            # the OpenAI family reads the user-note just the same. One
+            # format, zero provider sniffing.
             out.append({"role": "user",
                         "content": "[Sistem notu]\n" + _flatten_text(content)})
         else:
@@ -89,7 +89,7 @@ def _assistant_message(content: list[Block]) -> Message:
         if kind == "text":
             texts.append(block.get("text", ""))
         elif kind == "tool_use":
-            cagri: Message = {
+            call: Message = {
                 "id": block.get("id", ""),
                 "type": "function",
                 "function": {
@@ -97,12 +97,12 @@ def _assistant_message(content: list[Block]) -> Message:
                     "arguments": json.dumps(block.get("input") or {}, ensure_ascii=False),
                 },
             }
-            # Sağlayıcının kendi alanları geri konuyor (bkz. to_anthropic_blocks).
-            # Bilinen alanların üstüne yazmıyor: kimlik ve argüman bizim.
-            for switches, deger in (block.get("saglayici") or {}).items():
-                if switches not in cagri:
-                    cagri[switches] = deger
-            tool_calls.append(cagri)
+            # The provider's own fields are put back (see to_anthropic_blocks).
+            # Known fields are not overwritten: the id and arguments are ours.
+            for key, value in (block.get("saglayici") or {}).items():
+                if key not in call:
+                    call[key] = value
+            tool_calls.append(call)
 
     message: Message = {"role": "assistant", "content": "\n".join(t for t in texts if t) or None}
     if tool_calls:
@@ -114,7 +114,7 @@ def _user_messages(content: list[Block]) -> list[Message]:
     results = [b for b in content if b.get("type") == "tool_result"]
     rest = [b for b in content if b.get("type") != "tool_result"]
 
-    # Araç sonuçları önce: asistanın tool_calls mesajını doğrudan izlemeliler.
+    # Tool results first: they must directly follow the assistant's tool_calls message.
     out: list[Message] = [
         {
             "role": "tool",
@@ -141,8 +141,8 @@ def _user_parts(blocks: list[Block]) -> str | list[Block] | None:
 
     if not parts:
         return None
-    # Tek metin parçası varsa düz dize gönder: bazı uyumlu sunucular dizi
-    # biçimini yalnızca görüntü varken kabul ediyor.
+    # If there is a single text part, send a plain string: some compatible
+    # servers only accept the array form when an image is present.
     if len(parts) == 1 and parts[0]["type"] == "text":
         return parts[0]["text"]
     return parts
@@ -177,29 +177,30 @@ def _flatten_text(content: list[Block]) -> str:
     return "\n".join(b.get("text", "") for b in content if b.get("type") == "text")
 
 
-def sema_onar(sema: Any) -> Any:
-    """Şemayı sağlayıcıların en katısına göre onarır.
+def repair_schema(schema: Any) -> Any:
+    """Repairs the schema to the strictest of the providers.
 
-    Bugünkü tek onarım: `items`i olmayan bir `array`e serbest bir `items`
-    konuyor. Anthropic ve OpenAI bunu hoş görüyor; Gemini görmüyor ve
-    ARACIN DEĞİL, araç listesinin TAMAMINI reddediyor:
+    Today's only repair: an `array` without `items` gets a free-form
+    `items`. Anthropic and OpenAI tolerate this; Gemini does not, and it
+    rejects the ENTIRE tool list, NOT just the tool:
 
         GenerateContentRequest.tools[0].function_declarations[23]
         .parameters.properties[steps].items: missing field
 
-    Yani tek bir aracın eksiği, o modelde Dornick'i tümüyle çalışmaz yapıyor.
-    Şemaları elle düzeltmek şart ama yetmez: bir sonraki araç aynı hatayla
-    yazıldığında da kırılmamak için burada da yakalanıyor.
+    So one tool's omission makes Dornick completely unusable on that
+    model. Fixing the schemas by hand is necessary but not sufficient: it
+    is also caught here so the next tool written with the same mistake
+    does not break things either.
     """
-    if isinstance(sema, list):
-        return [sema_onar(x) for x in sema]
-    if not isinstance(sema, dict):
-        return sema
-    yeni_sema = {k: sema_onar(v) for k, v in sema.items()}
-    if yeni_sema.get("type") == "array" and "items" not in yeni_sema:
-        # Serbest içerik: neyin geldiğini bilmiyoruz, uydurmuyoruz da.
-        yeni_sema["items"] = {}
-    return yeni_sema
+    if isinstance(schema, list):
+        return [repair_schema(x) for x in schema]
+    if not isinstance(schema, dict):
+        return schema
+    new_schema = {k: repair_schema(v) for k, v in schema.items()}
+    if new_schema.get("type") == "array" and "items" not in new_schema:
+        # Free-form content: we don't know what comes, and we don't invent it.
+        new_schema["items"] = {}
+    return new_schema
 
 
 def to_openai_tools(tools: list[Block]) -> list[Message]:
@@ -209,7 +210,7 @@ def to_openai_tools(tools: list[Block]) -> list[Message]:
             "function": {
                 "name": tool["name"],
                 "description": tool.get("description", ""),
-                "parameters": sema_onar(
+                "parameters": repair_schema(
                     tool.get("input_schema") or {"type": "object", "properties": {}}),
             },
         }
@@ -217,7 +218,7 @@ def to_openai_tools(tools: list[Block]) -> list[Message]:
     ]
 
 
-# -- dönen yön: OpenAI -> Anthropic ------------------------------------
+# -- inbound direction: OpenAI -> Anthropic ----------------------------
 
 
 def to_anthropic_blocks(text: str, tool_calls: list[dict[str, Any]]) -> list[Block]:
@@ -225,31 +226,31 @@ def to_anthropic_blocks(text: str, tool_calls: list[dict[str, Any]]) -> list[Blo
     if text.strip():
         blocks.append({"type": "text", "text": text})
     for index, call in enumerate(tool_calls):
-        blok: Block = {
+        block: Block = {
             "type": "tool_use",
-            # Bazı uyumlu sunucular id göndermiyor; eksikse üretiyoruz,
-            # çünkü tool_result eşleşmesi buna dayanıyor.
+            # Some compatible servers send no id; if missing we generate
+            # one, because tool_result matching depends on it.
             "id": call.get("id") or f"call_{index}",
             "name": call.get("name", ""),
             "input": parse_arguments(call.get("arguments", "")),
         }
-        # Sağlayıcıya özel alanlar (Gemini `thought_signature` gibi) blokta
-        # saklanıyor ve sonraki turda AYNEN geri gönderiliyor. Kaybolursa
-        # Gemini araç çağrısını reddediyor: "Function call is missing a
-        # thought_signature in functionCall parts."
-        if ek := call.get("ek"):
-            blok["saglayici"] = dict(ek)
-        blocks.append(blok)
+        # Provider-specific fields (like Gemini's `thought_signature`) are
+        # kept on the block and sent back VERBATIM on the next turn. If
+        # they get lost, Gemini rejects the tool call: "Function call is
+        # missing a thought_signature in functionCall parts."
+        if extra := call.get("extra"):
+            block["saglayici"] = dict(extra)
+        blocks.append(block)
     return blocks
 
 
 def parse_arguments(raw: str) -> dict[str, Any]:
-    """Araç argümanlarını çözer, küçük modellerin sık hatalarını onarır.
+    """Parses tool arguments, repairing small models' frequent mistakes.
 
-    Yerel modeller argümanları sık sık markdown çitiyle sarar ya da yarım
-    bırakır. Çözülemezse boş sözlük döner: araç o zaman "zorunlu alan eksik"
-    diye öğretici bir hata verir ve model bir sonraki turda düzeltir —
-    isteği düşürmekten iyidir.
+    Local models often wrap the arguments in a markdown fence or leave
+    them half-finished. If unparseable, an empty dict is returned: the
+    tool then gives an instructive "required field missing" error and the
+    model fixes it on the next turn — better than dropping the request.
     """
     text = (raw or "").strip()
     if not text:
@@ -275,11 +276,11 @@ def map_finish_reason(reason: str | None) -> str:
     return FINISH_REASONS.get(reason or "", "end_turn")
 
 
-# -- metne sizan arac cagrilari ----------------------------------------
+# -- tool calls leaking into text --------------------------------------
 #
-# Bazi yerel modeller arac cagrisini `tool_calls` alaninda degil, duz metin
-# icinde uretiyor. Sunucu bunu ayristirmadiginda cagri hic calismiyor ve ham
-# etiketler kullaniciya cevap gibi gosteriliyor. Iki bicim gorulduu:
+# Some local models produce the tool call not in the `tool_calls` field but
+# inside plain text. When the server does not parse it, the call never runs
+# and the raw tags are shown to the user as an answer. Two forms were seen:
 #
 #   <tool_call>{"name": "x", "arguments": {...}}</tool_call>
 #   <tool_call><function=x><parameter=k>v</parameter></function></tool_call>
@@ -290,10 +291,10 @@ _PARAMETER = re.compile(r"<parameter=([\w.\-]+)>\s*(.*?)\s*(?:</parameter>|$)", 
 
 
 def extract_inline_calls(text: str) -> tuple[str, list[dict[str, Any]]]:
-    """Metne gomulu arac cagrilarini ayirir.
+    """Separates tool calls embedded in text.
 
-    Geriye temizlenmis metin ve bulunan cagrilar doner. Cozulemeyen bir blok
-    metinde birakilmaz: kullaniciya ham etiket gostermek her durumda kotu.
+    Returns the cleaned text and the calls found. An unparseable block is
+    not left in the text: showing the user raw tags is bad in every case.
     """
     if "<tool_call>" not in text and "<function=" not in text:
         return text, []
@@ -308,7 +309,7 @@ def extract_inline_calls(text: str) -> tuple[str, list[dict[str, Any]]]:
         return ""
 
     cleaned = _TOOL_CALL.sub(take, text)
-    # Cit olmadan dogrudan <function=...> uretenler de var.
+    # Some also produce <function=...> directly, without the fence.
     cleaned = _FUNCTION.sub(lambda m: take_function(m, calls), cleaned)
     return cleaned.strip(), calls
 
@@ -336,7 +337,7 @@ def _params(body: str) -> dict[str, Any]:
     values: dict[str, Any] = {}
     for name, raw in _PARAMETER.findall(body):
         text = raw.strip()
-        # Sayi ve mantiksal degerler dize olarak gelirse arac semasi reddeder.
+        # If numbers and booleans arrive as strings, the tool schema rejects them.
         if text.lower() in ("true", "false"):
             values[name] = text.lower() == "true"
         elif re.fullmatch(r"-?\d+", text):

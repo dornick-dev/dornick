@@ -189,30 +189,30 @@ def make_record():
 
 def test_a_console_error_reaches_the_buffer(make_record) -> None:
     record = make_record([CONSOLE_ERROR])
-    assert wait_for(lambda: len(record.konsol) == 1)
-    line = record.konsol[0]
-    assert line.seviye == "hata"
-    assert line.metin == "Kaydetme başarısız"
+    assert wait_for(lambda: len(record.console) == 1)
+    line = record.console[0]
+    assert line.level == "hata"
+    assert line.text == "Kaydetme başarısız"
     assert line.location == "app.js:41"        # CDP counts from 0, humans from 1
 
 
 def test_an_uncaught_exception_keeps_its_stack(make_record) -> None:
     """The stack trace is in the `description` field; `text` only says 'Uncaught'."""
     record = make_record([EXCEPTION])
-    assert wait_for(lambda: len(record.konsol) == 1)
-    line = record.konsol[0]
-    assert line.seviye == "hata"
+    assert wait_for(lambda: len(record.console) == 1)
+    line = record.console[0]
+    assert line.level == "hata"
     assert line.source == "istisna"
-    assert "yok.forEach is not a function" in line.metin
+    assert "yok.forEach is not a function" in line.text
 
 
 def test_browser_level_log_entries_are_captured(make_record) -> None:
     """The 404's console line is NOT a `console.*` call — it is Log.entryAdded."""
     record = make_record([BROWSER_ENTRY])
-    assert wait_for(lambda: len(record.konsol) == 1)
-    assert record.konsol[0].seviye == "hata"
-    assert "404" in record.konsol[0].metin
-    assert record.konsol[0].source == "tarayici"
+    assert wait_for(lambda: len(record.console) == 1)
+    assert record.console[0].level == "hata"
+    assert "404" in record.console[0].text
+    assert record.console[0].source == "tarayici"
 
 
 def test_levels_are_normalised(make_record) -> None:
@@ -220,8 +220,8 @@ def test_levels_are_normalised(make_record) -> None:
                "params": {"type": "warning",
                           "args": [{"type": "string", "value": "dikkat"}]}}
     record = make_record([CONSOLE_LOG, warning])
-    assert wait_for(lambda: len(record.konsol) == 2)
-    assert [k.seviye for k in record.konsol] == ["log", "uyari"]
+    assert wait_for(lambda: len(record.console) == 2)
+    assert [k.level for k in record.console] == ["log", "uyari"]
 
 
 def test_object_arguments_are_rendered(make_record) -> None:
@@ -230,8 +230,8 @@ def test_object_arguments_are_rendered(make_record) -> None:
                  {"type": "string", "value": "durum"},
                  {"type": "object", "value": {"kod": 500}}]}}
     record = make_record([event])
-    assert wait_for(lambda: len(record.konsol) == 1)
-    assert '"kod": 500' in record.konsol[0].metin
+    assert wait_for(lambda: len(record.console) == 1)
+    assert '"kod": 500' in record.console[0].text
 
 
 MAIN_NAVIGATION = {"method": "Page.frameNavigated",
@@ -245,18 +245,18 @@ def test_the_first_navigation_keeps_the_page_it_loaded(make_record) -> None:
     network list came back with 2 requests instead of 4 — the document
     itself and the first script's 404 were lost."""
     record = make_record([*REQUEST_404, CONSOLE_ERROR, MAIN_NAVIGATION])
-    assert wait_for(lambda: len(record.konsol) == 1 and len(record.istekler) == 1)
+    assert wait_for(lambda: len(record.console) == 1 and len(record.requests) == 1)
     time.sleep(0.3)
-    assert len(record.konsol) == 1        # the first navigation does NOT clear
-    assert len(record.istekler) == 1
+    assert len(record.console) == 1        # the first navigation does NOT clear
+    assert len(record.requests) == 1
 
 
 def test_a_second_navigation_clears_the_buffer(make_record) -> None:
     """Page A's errors must not be written against page B."""
     record = make_record([MAIN_NAVIGATION, CONSOLE_ERROR, MAIN_NAVIGATION, CONSOLE_LOG])
-    assert wait_for(lambda: len(record.konsol) == 1)
+    assert wait_for(lambda: len(record.console) == 1)
     time.sleep(0.3)
-    assert [k.metin for k in record.konsol] == ["hazır"]
+    assert [k.text for k in record.console] == ["hazır"]
 
 
 def test_an_iframe_navigation_does_not_clear_the_buffer(make_record) -> None:
@@ -264,9 +264,9 @@ def test_an_iframe_navigation_does_not_clear_the_buffer(make_record) -> None:
     iframe = {"method": "Page.frameNavigated",
               "params": {"frame": {"id": "F2", "parentId": "F1"}}}
     record = make_record([MAIN_NAVIGATION, CONSOLE_ERROR, iframe, iframe, iframe])
-    assert wait_for(lambda: len(record.konsol) == 1)
+    assert wait_for(lambda: len(record.console) == 1)
     time.sleep(0.3)
-    assert len(record.konsol) == 1
+    assert len(record.console) == 1
 
 
 def test_a_fresh_attach_resets_the_navigation_count(make_record) -> None:
@@ -282,8 +282,8 @@ def test_a_fresh_attach_resets_the_navigation_count(make_record) -> None:
 
 def test_a_404_is_recorded_with_status_and_duration(make_record) -> None:
     record = make_record(REQUEST_404)
-    assert wait_for(lambda: record.istekler and record.istekler[0].status == 404)
-    request = record.istekler[0]
+    assert wait_for(lambda: record.requests and record.requests[0].status == 404)
+    request = record.requests[0]
     assert request.failed
     assert request.method == "GET"
     assert round(request.duration_ms) == 250
@@ -292,8 +292,8 @@ def test_a_404_is_recorded_with_status_and_duration(make_record) -> None:
 
 def test_a_successful_request_is_not_a_failure(make_record) -> None:
     record = make_record(REQUEST_200)
-    assert wait_for(lambda: record.istekler and record.istekler[0].status == 200)
-    request = record.istekler[0]
+    assert wait_for(lambda: record.requests and record.requests[0].status == 200)
+    request = record.requests[0]
     assert not request.failed
     # Path + query are shown, not the host: information, not noise.
     assert "/sayfa?x=1" in request.format()
@@ -301,8 +301,8 @@ def test_a_successful_request_is_not_a_failure(make_record) -> None:
 
 def test_a_failed_load_keeps_the_reason(make_record) -> None:
     record = make_record(REQUEST_BROKEN)
-    assert wait_for(lambda: record.istekler and record.istekler[0].error)
-    request = record.istekler[0]
+    assert wait_for(lambda: record.requests and record.requests[0].error)
+    request = record.requests[0]
     assert request.failed
     assert "ERR_NAME_NOT_RESOLVED" in request.format()
 
@@ -312,10 +312,10 @@ def test_the_buffer_has_a_ceiling() -> None:
     record = chrome.Record.__new__(chrome.Record)
     from collections import deque
 
-    record.konsol = deque(maxlen=3)
+    record.console = deque(maxlen=3)
     for i in range(10):
-        record.konsol.append(chrome.ConsoleLine("log", str(i)))
-    assert [k.metin for k in record.konsol] == ["7", "8", "9"]
+        record.console.append(chrome.ConsoleLine("log", str(i)))
+    assert [k.text for k in record.console] == ["7", "8", "9"]
 
 
 # -- tool texts: honesty ------------------------------------------------
@@ -323,10 +323,10 @@ def test_the_buffer_has_a_ceiling() -> None:
 
 class FakeRecord:
     def __init__(self, konsol=(), istekler=(), hata="", eksik=False) -> None:
-        self.konsol = list(konsol)
-        self.istekler = list(istekler)
-        self.hata = hata
-        self.eksik = eksik
+        self.console = list(konsol)
+        self.requests = list(istekler)
+        self.error = hata
+        self.missing = eksik
 
 
 def _error(text: str, location: str = "") -> chrome.ConsoleLine:
@@ -405,7 +405,7 @@ class FakeBox:
     def __init__(self, record) -> None:
         self._record = record
 
-    def kayit(self, tab):
+    def snapshot(self, tab):
         return self._record
 
 
@@ -503,11 +503,11 @@ def test_opening_a_tab_attaches_the_listener(tmp_path) -> None:
     try:
         box = chrome.Browser(tmp_path, port=http.port)
         made = box.open("http://ornek/")
-        record = box.kayit(made)
-        assert not record.eksik           # attached during `open`
-        assert wait_for(lambda: len(record.konsol) == 1 and len(record.istekler) == 1)
-        assert record.konsol[0].seviye == "hata"
-        assert record.istekler[0].status == 404
+        record = box.snapshot(made)
+        assert not record.missing           # attached during `open`
+        assert wait_for(lambda: len(record.console) == 1 and len(record.requests) == 1)
+        assert record.console[0].level == "hata"
+        assert record.requests[0].status == 404
 
         text = surf._konsol_metni(record, "hata", None)
         assert "Kaydetme başarısız" in text
@@ -523,8 +523,8 @@ def test_a_listener_attached_late_is_marked_incomplete(tmp_path) -> None:
     try:
         box = chrome.Browser(tmp_path, port=http.port)
         tab = box.tabs()[0]
-        record = box.kayit(tab)           # not via `open`, afterwards
-        assert record.eksik
+        record = box.snapshot(tab)           # not via `open`, afterwards
+        assert record.missing
         assert "SONRA bağlandı" in surf._konsol_metni(record, "hepsi", None)
     finally:
         http.stop()
@@ -537,7 +537,7 @@ def test_one_listener_per_tab(tmp_path) -> None:
     try:
         box = chrome.Browser(tmp_path, port=http.port)
         tab = box.tabs()[0]
-        assert box.kayit(tab) is box.kayit(tab)
+        assert box.snapshot(tab) is box.snapshot(tab)
     finally:
         http.stop()
         ws_box.close()
@@ -546,5 +546,5 @@ def test_one_listener_per_tab(tmp_path) -> None:
 def test_a_tab_without_a_debug_url_degrades_honestly(tmp_path) -> None:
     box = chrome.Browser(tmp_path, port=1)
     record = box.listen({"id": "T9"})
-    assert record.hata
+    assert record.error
     assert "göremiyorum" in surf._konsol_metni(record, "hepsi", None)

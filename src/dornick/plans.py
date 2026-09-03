@@ -1,7 +1,8 @@
-"""Büyük iş planları — Cursor/Claude tarzı onay kapısı.
+"""Large work plans — a Cursor/Claude style approval gate.
 
-Ajan sohbete duvar metin yapıştırmaz; yapılandırılmış bir Plan üretir.
-Kullanıcı Onayla / Düzenle / İptal eder. Depo: `{state_dir}/plans/<id>.json`
+The agent does not paste a wall of text into the chat; it produces a
+structured Plan. The user Approves / Edits / Cancels. Store:
+`{state_dir}/plans/<id>.json`
 """
 
 from __future__ import annotations

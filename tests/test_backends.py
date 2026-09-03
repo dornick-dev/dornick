@@ -1,8 +1,9 @@
-"""Sağlayıcı çevirisi ve OpenAI-uyumlu backend testleri.
+"""Provider translation and OpenAI-compatible backend tests.
 
-Biçim hataları bu katmanın en sinsi hata sınıfı: sunucu 400 döndürür ama
-sebebi mesaj dizisinin ortasında bir yerdedir. Çeviri saf fonksiyonlar
-olduğu için hepsi ağ olmadan doğrulanabiliyor.
+Format bugs are this layer's sneakiest class of bug: the server returns
+400 but the cause is somewhere in the middle of the message array. Since
+the translation is pure functions, all of it can be verified without a
+network.
 """
 
 from __future__ import annotations
@@ -28,7 +29,7 @@ from dornick.context import Prepared
 SYSTEM = [{"type": "text", "text": "çekirdek"}, {"type": "text", "text": "ruh"}]
 
 
-# -- giden çeviri ------------------------------------------------------
+# -- outbound translation ----------------------------------------------
 
 
 def test_system_blocks_collapse_into_one_message() -> None:
@@ -56,8 +57,8 @@ def test_tool_use_becomes_tool_calls() -> None:
 
 
 def test_tool_results_precede_user_text() -> None:
-    """OpenAI sıralaması katı: tool mesajları asistanın tool_calls'ını
-    doğrudan izlemeli. Araya user mesajı girerse sunucu reddeder."""
+    """OpenAI ordering is strict: tool messages must directly follow the
+    assistant's tool_calls. If a user message slips in between, the server rejects."""
     messages = [
         {
             "role": "user",
@@ -86,7 +87,7 @@ def test_error_results_are_marked_for_the_model() -> None:
 
 
 def test_thinking_blocks_are_dropped() -> None:
-    """Yerel modeller thinking bloğunu anlamaz; göndermek hataya yol açar."""
+    """Local models do not understand the thinking block; sending it causes errors."""
     messages = [
         {
             "role": "assistant",
@@ -119,13 +120,13 @@ def test_images_become_data_urls() -> None:
 
 
 def test_lone_text_is_sent_as_a_plain_string() -> None:
-    """Bazı uyumlu sunucular dizi biçimini yalnızca görüntü varken kabul ediyor."""
+    """Some compatible servers only accept the array form when an image is present."""
     messages = [{"role": "user", "content": [{"type": "text", "text": "selam"}]}]
     assert to_openai_messages([], messages)[0]["content"] == "selam"
 
 
 def test_image_inside_tool_result_degrades_to_a_note() -> None:
-    """role=tool içeriği dize olmak zorunda; görüntü sessizce kaybolmamalı."""
+    """role=tool content must be a string; an image must not vanish silently."""
     messages = [
         {
             "role": "user",
@@ -154,18 +155,18 @@ def test_tool_schema_shape() -> None:
     assert tools[0]["function"]["parameters"] == {"type": "object"}
 
 
-# -- dönen çeviri ------------------------------------------------------
+# -- inbound translation -----------------------------------------------
 
 
 @pytest.mark.parametrize(
     ("raw", "expected"),
     [
         ('{"a": 1}', {"a": 1}),
-        ('```json\n{"a": 1}\n```', {"a": 1}),          # markdown çiti
-        ('Tabii! {"a": 1}', {"a": 1}),                  # önüne sohbet eklemiş
+        ('```json\n{"a": 1}\n```', {"a": 1}),          # markdown fence
+        ('Tabii! {"a": 1}', {"a": 1}),                  # chatter prepended
         ("", {}),
         ("tamamen bozuk", {}),
-        ('["liste"]', {}),                              # sözlük değil
+        ('["liste"]', {}),                              # not a dict
     ],
 )
 def test_parse_arguments_repairs_common_local_model_mistakes(raw: str, expected: dict) -> None:
@@ -173,7 +174,7 @@ def test_parse_arguments_repairs_common_local_model_mistakes(raw: str, expected:
 
 
 def test_missing_call_id_is_synthesized() -> None:
-    """tool_result eşleşmesi id'ye dayanıyor; eksikse üretmek zorundayız."""
+    """tool_result matching depends on the id; if it is missing we must generate one."""
     blocks = to_anthropic_blocks("", [{"name": "shell", "arguments": "{}"}])
     assert blocks[0]["id"]
 
@@ -210,7 +211,7 @@ def fragment(index: int, *, id=None, name=None, arguments=None) -> SimpleNamespa
 
 
 class FakeStream:
-    """Kapatılıp kapatılmadığını kaydeden akış."""
+    """A stream that records whether it was closed."""
 
     def __init__(self, chunks: list[SimpleNamespace]) -> None:
         self.chunks = chunks
@@ -267,7 +268,7 @@ async def test_text_stream_is_assembled(monkeypatch) -> None:
 
 
 async def test_tool_call_assembled_from_fragments() -> None:
-    """Argümanlar parça parça gelir; birleştirme hatası sessizce bozuk JSON üretir."""
+    """Arguments arrive in pieces; a joining bug silently produces broken JSON."""
     be, _ = backend(
         [
             chunk(tool_calls=[fragment(0, id="c1", name="shell", arguments='{"comm')]),
@@ -300,8 +301,8 @@ async def test_parallel_tool_calls_keep_their_slots() -> None:
 
 
 async def test_tool_calls_imply_tool_use_even_without_finish_reason() -> None:
-    """Bazı uyumlu sunucular finish_reason atlıyor; döngü o zaman turu
-    end_turn sanıp aracı hiç çalıştırmadan dururdu."""
+    """Some compatible servers omit finish_reason; the loop would then
+    mistake the turn for end_turn and stop without ever running the tool."""
     be, _ = backend([chunk(tool_calls=[fragment(0, id="c1", name="shell", arguments="{}")])])
     result = await be.turn(prepared(), [], cancel=asyncio.Event())
     assert result.stop_reason == "tool_use"
@@ -338,14 +339,14 @@ async def test_usage_maps_cached_tokens_from_prompt_details() -> None:
     )
     usage = _usage(raw)
     assert usage.cache_read_input_tokens == 4200
-    assert usage.input_tokens == 800  # taze = toplam - cache
+    assert usage.input_tokens == 800  # fresh = total - cache
     report = cache_report(usage)
     assert report["cache_read"] == 4200
     assert report["prompt_total"] == 5000
 
 
 async def test_anthropic_only_parameters_are_not_sent_to_local_servers() -> None:
-    """effort ve thinking yerel sunucularda 400 sebebi olur."""
+    """effort and thinking are 400 material on local servers."""
     be, fake = backend([chunk(content="x", finish="stop")], temperature=0.4)
     await be.turn(prepared(), [{"name": "shell", "description": "d", "input_schema": {}}], cancel=asyncio.Event())
 
@@ -356,13 +357,14 @@ async def test_anthropic_only_parameters_are_not_sent_to_local_servers() -> None
 
 
 async def test_reasoning_only_turn_is_marked_incomplete_not_answered() -> None:
-    """Düşünme modelleri turu bazen yalnızca reasoning kanalında bitirir:
-    plan yapar, "şimdi şunu yapmalıyım" der ve durur.
+    """Thinking models sometimes finish a turn only in the reasoning
+    channel: they plan, say "now I should do this" and stop.
 
-    Bunu cevap diye sunmak kullanıcıyı yarıda bırakıyordu — gerçek bir
-    koşuda ekranda "Şimdi bilgi toplayıp sunmalıyım:" yazıp konuşma bitti.
-    Akıl yürütme geçmişe girmeli (model kendi planını görsün) ama cevap
-    sayılmamalı; döngü `empty_turn` görünce turu sürdürüyor.
+    Presenting that as an answer left the user hanging — in a real run the
+    screen said "Şimdi bilgi toplayıp sunmalıyım:" and the conversation
+    ended. The reasoning must enter the history (so the model sees its own
+    plan) but must not count as an answer; the loop keeps the turn going
+    when it sees `empty_turn`.
     """
     from dornick.backends import Callbacks
 
@@ -374,21 +376,21 @@ async def test_reasoning_only_turn_is_marked_incomplete_not_answered() -> None:
 
     assert result.error is None
     assert result.stop_reason == "empty_turn"
-    # Geçmişte duruyor...
+    # It sits in the history...
     assert result.content == [{"type": "text", "text": "Şimdi şunu yapmalıyım:"}]
-    # ...ama cevap kanalından akmadı.
+    # ...but it never flowed through the answer channel.
     assert shown == []
 
 
 async def test_reasoning_in_model_extra_is_found() -> None:
-    """Alan OpenAI şemasında yok; SDK onu model_extra'ya koyuyor."""
+    """The field is not in the OpenAI schema; the SDK puts it into model_extra."""
     be, _ = backend([chunk(extra={"reasoning_content": "gizli kanal"}, finish="stop")])
     result = await be.turn(prepared(), [], cancel=asyncio.Event())
     assert result.content == [{"type": "text", "text": "gizli kanal"}]
 
 
 async def test_completely_empty_response_is_an_error_not_an_empty_turn() -> None:
-    """Boş content dizisini geçmişe yazmak sonraki isteği bozar."""
+    """Writing an empty content array into the history breaks the next request."""
     be, _ = backend([chunk(finish="stop")])
     result = await be.turn(prepared(), [], cancel=asyncio.Event())
 
@@ -398,8 +400,8 @@ async def test_completely_empty_response_is_an_error_not_an_empty_turn() -> None
 
 
 async def test_empty_length_is_recoverable_not_context_error() -> None:
-    """finish=length + boş içerik bağlam değil — çıktı bütçesi.
-    api_error ile 5 deneme aynı isteği tekrarlar; empty_turn sürdürür."""
+    """finish=length + empty content is not the context — it is the output
+    budget. api_error with 5 retries repeats the same request; empty_turn continues."""
     be, _ = backend([chunk(finish="length")])
     result = await be.turn(prepared(), [], cancel=asyncio.Event())
 
@@ -409,32 +411,33 @@ async def test_empty_length_is_recoverable_not_context_error() -> None:
 
 
 async def test_stream_is_closed_after_normal_completion() -> None:
-    """Kapatılmazsa httpx bağlantısı kapanışta toplanır ve hata basar."""
+    """If not closed, the httpx connection gets collected at shutdown and prints an error."""
     be, fake = backend([chunk(content="bitti", finish="stop")])
     await be.turn(prepared(), [], cancel=asyncio.Event())
     assert fake.stream.closed is True
 
 
 async def test_stream_is_closed_when_cancelled() -> None:
-    """Akış SIRASINDA kesme: açık akış kapatılır. İstekten ÖNCE kesme:
-    istek hiç kurulmaz — boşa bağlantı açıp kapatmak yerine Durdur anında
-    işlenir (canlı yara, 01.09: Durdur ancak akış başlayınca işleniyordu)."""
-    # 1) Akış sırasında: ilk parça geldiğinde kesilir, akış kapanır.
+    """Cancel DURING the stream: the open stream is closed. Cancel BEFORE
+    the request: the request is never built — instead of pointlessly
+    opening and closing a connection, Stop is handled instantly (live
+    wound, 01.09: Stop was only handled once the stream started)."""
+    # 1) During the stream: cut when the first chunk arrives, the stream closes.
     cancel = asyncio.Event()
     be, fake = backend([chunk(content="x"), chunk(content="y", finish="stop")])
-    sonuc = await be.turn(
+    result = await be.turn(
         prepared(), [], cancel=cancel,
         callbacks=Callbacks(on_text=lambda _t: cancel.set()))
-    assert sonuc.interrupted is True
+    assert result.interrupted is True
     assert fake.stream.closed is True
 
-    # 2) İstekten önce: hiç istek gitmez.
-    once = asyncio.Event()
-    once.set()
+    # 2) Before the request: no request goes out at all.
+    early = asyncio.Event()
+    early.set()
     be2, fake2 = backend([chunk(content="x", finish="stop")])
-    sonuc2 = await be2.turn(prepared(), [], cancel=once)
-    assert sonuc2.interrupted is True
-    assert fake2.seen == {}, "kesilmiş turda istek kurulmamalı"
+    result2 = await be2.turn(prepared(), [], cancel=early)
+    assert result2.interrupted is True
+    assert fake2.seen == {}, "no request should be built on a cancelled turn"
 
 
 def test_unknown_provider_fails_loudly() -> None:
@@ -442,14 +445,14 @@ def test_unknown_provider_fails_loudly() -> None:
         build_client(ModelConfig(provider="llamafile"))
 
 
-# -- metne sizan arac cagrilari ----------------------------------------
+# -- tool calls leaking into text --------------------------------------
 
 
 def test_inline_tool_call_in_text_is_executed_not_shown() -> None:
-    """Bazi yerel modeller cagriyi tool_calls alaninda degil metinde uretiyor.
+    """Some local models produce the call in text, not in the tool_calls field.
 
-    Ayristirilmazsa cagri hic calismaz ve ham XML kullaniciya cevap gibi
-    gorunur — gercek bir kosuda tam olarak bu oldu.
+    If it is not parsed the call never runs and the raw XML looks like an
+    answer to the user — in a real run exactly this happened.
     """
     from dornick.backends.translate import extract_inline_calls
 
@@ -497,17 +500,17 @@ async def test_backend_turns_inline_calls_into_tool_use() -> None:
     assert result.tool_uses() == [
         {"type": "tool_use", "id": "inline_0", "name": "list_dir", "input": {"path": "src"}}
     ]
-    # Ham etiket cevaba sizmamali.
+    # The raw tag must not leak into the answer.
     assert "<tool_call>" not in result.content[0]["text"]
 
 
-# -- düşünme çabası ----------------------------------------------------
+# -- thinking effort ---------------------------------------------------
 #
-# "Çaba" ayarı OpenAI uyumlu sunuculara hiç gönderilmiyordu: qwen3 gibi
-# düşünen modeller kendi kararlarıyla akıl yürütüyor ve ayar sayfasındaki
-# değer hiçbir şey yapmıyordu. Ölçüm (qwen3-27b, OpenRouter, tek kelimelik
-# istem): high 8,97 sn — low 1,60 sn. Selam vermek için dokuz saniye akıl
-# yürütmek asistanı gerçek zamanlı olmaktan çıkarıyor.
+# The "effort" setting was never sent to OpenAI-compatible servers:
+# thinking models like qwen3 reasoned by their own choice and the value on
+# the settings page did nothing. Measurement (qwen3-27b, OpenRouter,
+# one-word prompt): high 8.97 s — low 1.60 s. Reasoning for nine seconds
+# to say hello takes the assistant out of real time.
 
 
 def _backend(**fields):
@@ -523,47 +526,47 @@ def test_the_effort_setting_actually_reaches_the_server() -> None:
 
 
 def test_turning_thinking_off_says_so_explicitly() -> None:
-    """Alanı hiç göndermemek "model bildiği gibi düşünsün" demek."""
+    """Not sending the field at all means "let the model think as it pleases"."""
     assert _backend(thinking=False)._reasoning() == {"enabled": False}
 
 
 def test_a_model_that_cannot_think_omits_reasoning() -> None:
-    """Katalog düşünme yok dediyse alanı göndermek 400 + bir tur gecikme."""
+    """If the catalog says no thinking, sending the field means a 400 + a round-trip of latency."""
     be = _backend(can_think=False, thinking=True)
     assert be._reasoning() is None
     assert be._no_reasoning is True
 
 
 def test_efforts_the_server_does_not_know_are_folded_down() -> None:
-    """xhigh/max yalnızca Claude'da var; olduğu gibi göndermek 400 demek."""
+    """xhigh/max exist only on Claude; sending them as-is means a 400."""
     assert _backend(effort="xhigh")._reasoning() == {"effort": "high"}
     assert _backend(effort="max")._reasoning() == {"effort": "high"}
     assert _backend(effort="")._reasoning() is None
 
 
 def test_a_server_that_rejects_the_field_is_recognised() -> None:
-    """Alanı tanımayan sunucu 400 dönüyor; bir kez alan atılıp yeniden
-    deneniyor ve bir daha gönderilmiyor."""
+    """A server that does not know the field returns 400; the field is
+    dropped once, retried, and never sent again."""
     from dornick.backends.openai_backend import _rejects_reasoning
 
     assert _rejects_reasoning(Exception("400: unknown field 'reasoning'"))
     assert _rejects_reasoning(Exception("Unrecognized request argument: extra_body"))
-    # Gerçek bir hatayı alan hatası sanıp sessizce yutmamalı.
+    # A real error must not be mistaken for a field error and silently swallowed.
     assert not _rejects_reasoning(Exception("rate limit exceeded"))
 
 
 def test_the_field_is_only_dropped_once() -> None:
-    """Her istekte 400 alıp yeniden denemek, her cevaba bir tur gecikme
-    eklerdi."""
+    """Taking a 400 and retrying on every request would add a round-trip
+    of latency to every answer."""
     backend = _backend(effort="low")
     assert backend._no_reasoning is False
 
 
-# -- metin-only modelde görüntü sıyırma (auto-heal) --------------------
+# -- image stripping on a text-only model (auto-heal) ------------------
 
 
 class ImageRejectingOpenAI:
-    """İlk çağrıda görüntü hatası, sonra başarılı — metin-only modeli taklit."""
+    """Image error on the first call, then success — imitates a text-only model."""
 
     def __init__(self, chunks: list[SimpleNamespace]) -> None:
         self.stream = FakeStream(chunks)
@@ -597,8 +600,9 @@ def _image_prepared() -> Prepared:
 
 
 async def test_text_only_model_strips_images_and_retries() -> None:
-    """Metin-only modele geçince geçmişteki kare 404 veriyor; backend bir
-    kez öğrenip kareyi sıyırıp yeniden deniyor — kullanıcı hata görmüyor."""
+    """After switching to a text-only model the frame in the history gives
+    a 404; the backend learns once, strips the frame and retries — the
+    user never sees an error."""
     fake = ImageRejectingOpenAI([chunk(content="tamam", finish="stop")])
     model = ModelConfig(name="deepseek-flash", provider="openai", base_url="http://x/v1")
     be = OpenAIBackend(model, client=fake)
@@ -606,16 +610,16 @@ async def test_text_only_model_strips_images_and_retries() -> None:
     result = await be.turn(_image_prepared(), [], cancel=asyncio.Event())
 
     assert result.content == [{"type": "text", "text": "tamam"}]
-    assert len(fake.calls) == 2, "hata sonrası yeniden denenmedi"
+    assert len(fake.calls) == 2, "no retry after the error"
     second = str(fake.calls[1]["messages"])
-    assert "image_url" not in second, "görüntü hâlâ istekte"
-    assert "göremiyor" in second, "görüntü izi konmadı"
-    assert be._no_vision, "metin-only olduğu öğrenilmedi"
+    assert "image_url" not in second, "the image is still in the request"
+    assert "göremiyor" in second, "the image trace was not placed"
+    assert be._no_vision, "text-only was not learned"
 
 
 async def test_learned_no_vision_strips_before_sending() -> None:
-    """Bir kez öğrenildikten sonra sonraki turlar boşa 404 yememeli:
-    kareler baştan sıyrılıyor."""
+    """Once learned, later turns must not eat a pointless 404: the frames
+    are stripped from the start."""
     fake = FakeOpenAI([chunk(content="ok", finish="stop")])
     model = ModelConfig(name="x", provider="openai", base_url="http://x/v1")
     be = OpenAIBackend(model, client=fake)
@@ -627,7 +631,7 @@ async def test_learned_no_vision_strips_before_sending() -> None:
 
 
 async def test_known_no_vision_strips_on_the_first_turn() -> None:
-    """Katalog görüntü yok dediyse ilk turda 404 beklenmez."""
+    """If the catalog says no vision, no 404 is expected on the first turn."""
     fake = FakeOpenAI([chunk(content="ok", finish="stop")])
     model = ModelConfig(
         name="x", provider="openai", base_url="http://x/v1", vision=False,
@@ -640,16 +644,17 @@ async def test_known_no_vision_strips_on_the_first_turn() -> None:
     assert "image_url" not in str(fake.seen["messages"])
 
 
-# -- kesme: ilk token'dan önce -----------------------------------------
+# -- cancel: before the first token ------------------------------------
 #
-# Yara: kesme yalnız parça GELİNCE yoklanıyordu. Önbelleksiz İLK turda
-# istem işleme dakikalar sürebiliyor ve o sırada hiç parça yok — Durdur
-# hiçbir şey yapmıyordu ("ilk konuşmada durdurma çalışmıyor" raporunun
-# kökü). `cancellable` her adımı kesme bekleyişiyle yarıştırıyor.
+# The wound: cancel was only polled when a chunk ARRIVED. On the FIRST
+# uncached turn prompt processing can take minutes and there are no chunks
+# in that time — Stop did nothing (the root of the "stop doesn't work on
+# the first conversation" report). `cancellable` races every step against
+# the cancel wait.
 
 
 class _SilentStream:
-    """İlk token'ı hiç göndermeyen akış: sunucu istemi işliyor."""
+    """A stream that never sends the first token: the server is processing the prompt."""
 
     def __init__(self) -> None:
         self.closed = False
@@ -671,11 +676,11 @@ async def test_cancellable_fires_while_waiting_for_the_first_chunk() -> None:
 
     async def consume() -> None:
         async for _ in cancellable(_SilentStream(), cancel):
-            raise AssertionError("parça gelmemeliydi")
+            raise AssertionError("no chunk should have arrived")
 
     task = asyncio.ensure_future(consume())
     await asyncio.sleep(0.01)
-    assert not task.done(), "akış beklemede olmalı"
+    assert not task.done(), "the stream should be waiting"
     cancel.set()
     with pytest.raises(Interrupted):
         await asyncio.wait_for(task, timeout=2)
@@ -692,8 +697,9 @@ async def test_cancellable_passes_chunks_through_untouched() -> None:
 
 
 async def test_interrupt_before_first_token_returns_interrupted() -> None:
-    """Uçtan uca: turun kendisi, parça beklerken kesilebiliyor ve sonuç
-    `interrupted` — hata değil (oto-mod hanesine hata yazılmamalı)."""
+    """End to end: the turn itself can be cancelled while waiting for a
+    chunk and the result is `interrupted` — not an error (no error must be
+    written to the auto-mode ledger)."""
 
     class SilentOpenAI:
         def __init__(self) -> None:
@@ -721,37 +727,38 @@ async def test_interrupt_before_first_token_returns_interrupted() -> None:
 
     assert result.interrupted is True
     assert result.error is None
-    assert fake.stream.closed, "kesilen akış kapatılmalı"
+    assert fake.stream.closed, "a cancelled stream must be closed"
 
 
-def test_tur_ortasi_sistem_notu_user_notuna_cevrilir():
-    """Anthropic ailesi system'i yalnız dizi başında kabul ediyor; tur ortası
-    notlar user-notu olarak gitmeli — yoksa Claude modelleri 400 döndürüyor."""
+def test_mid_turn_system_note_becomes_a_user_note():
+    """The Anthropic family accepts system only at the head of the array;
+    mid-turn notes must go as user-notes — otherwise Claude models return 400."""
     from dornick.backends.translate import to_openai_messages
 
-    mesajlar = [
+    messages = [
         {"role": "user", "content": [{"type": "text", "text": "merhaba"}]},
         {"role": "assistant", "content": [{"type": "text", "text": "selam"}]},
         {"role": "system", "content": [{"type": "text", "text": "hedef notu"}]},
     ]
-    out = to_openai_messages([{"type": "text", "text": "sistem promptu"}], mesajlar)
+    out = to_openai_messages([{"type": "text", "text": "sistem promptu"}], messages)
     assert [m["role"] for m in out] == ["system", "user", "assistant", "user"]
     assert out[-1]["content"].startswith("[Sistem notu]")
 
 
-# -- yedek model -------------------------------------------------------
+# -- fallback model ----------------------------------------------------
 #
-# Uzun bir iş koşarken kredi bitiyor (402) ya da ayarlardaki model kimliği
-# geçersizleşiyor. Sağlayıcı her istekte aynı cevabı veriyor: beklemek işe
-# yaramıyor ve saatlerdir süren iş yarıda kalıyor. Yedek model tanımlıysa
-# tur ölmek yerine orada sürüyor.
+# While a long job runs, credits run out (402) or the model id in the
+# settings becomes invalid. The provider gives the same answer on every
+# request: waiting achieves nothing and a job hours in the making is left
+# half-done. If a fallback model is defined, the turn continues there
+# instead of dying.
 
 from dornick.backends.base import Callbacks, TurnResult      # noqa: E402
 from dornick.backends.fallback import FallbackBackend, is_permanent   # noqa: E402
 
 
-class _SahteBackend:
-    """Sırayla verilen sonuçları döndüren backend taklidi."""
+class _FakeBackend:
+    """A backend imitation that returns the given results in order."""
 
     def __init__(self, name: str, results: list[TurnResult]) -> None:
         self.name = name
@@ -770,14 +777,14 @@ class _SahteBackend:
         self.closed = True
 
 
-def _kur(primary_results, fallback_results=None):
-    """Yedekli sarmalayıcı + iki sahte backend."""
+def _setup(primary_results, fallback_results=None):
+    """The fallback wrapper + two fake backends."""
     model = ModelConfig(name="asil", fallback_model="yedek")
-    made: dict[str, _SahteBackend] = {}
+    made: dict[str, _FakeBackend] = {}
 
-    def build(cfg: ModelConfig) -> _SahteBackend:
+    def build(cfg: ModelConfig) -> _FakeBackend:
         results = primary_results if cfg.name == "asil" else (fallback_results or [])
-        made[cfg.name] = _SahteBackend(cfg.name, results)
+        made[cfg.name] = _FakeBackend(cfg.name, results)
         return made[cfg.name]
 
     return FallbackBackend(model, build), made
@@ -789,25 +796,26 @@ def _ok(text: str = "tamam") -> TurnResult:
 
 
 def test_permanent_and_transient_errors_are_told_apart() -> None:
-    """Ölçü tek soru: aynı istek birazdan tekrar gönderilse sonuç değişir mi?
+    """The measure is a single question: if the same request were sent
+    again shortly, would the result change?
 
-    Değişecekse (bağlantı, 429, 5xx) döngünün yeniden deneme merdiveni
-    doğru yer; yedeğe düşmek bir sağlayıcı hıçkırığında kalıcı olarak
-    zayıf bir modele geçmek demek olurdu.
+    If it would (connection, 429, 5xx) the loop's retry ladder is the
+    right place; falling to the fallback would mean permanently switching
+    to a weaker model on a provider hiccup.
     """
-    for kalici in ("openrouter 402: insufficient credits",
-                   "qwen3.1-14b is not a valid model ID",
-                   "openrouter 404: model bulunamadı",
-                   "403: unsupported_country"):
-        assert is_permanent(kalici), kalici
+    for permanent in ("openrouter 402: insufficient credits",
+                      "qwen3.1-14b is not a valid model ID",
+                      "openrouter 404: model bulunamadı",
+                      "403: unsupported_country"):
+        assert is_permanent(permanent), permanent
 
-    for gecici in ("Connection error", "openrouter 429: rate limited",
-                   "openrouter 500: upstream", "timeout", "", None):
-        assert not is_permanent(gecici), gecici
+    for transient in ("Connection error", "openrouter 429: rate limited",
+                      "openrouter 500: upstream", "timeout", "", None):
+        assert not is_permanent(transient), transient
 
 
 def test_a_permanent_failure_continues_on_the_fallback() -> None:
-    client, made = _kur([TurnResult(error="openrouter 402: insufficient credits")], [_ok("yedek konuştu")])
+    client, made = _setup([TurnResult(error="openrouter 402: insufficient credits")], [_ok("yedek konuştu")])
 
     said: list[str] = []
     result = asyncio.run(client.turn(None, [], cancel=None,
@@ -816,65 +824,66 @@ def test_a_permanent_failure_continues_on_the_fallback() -> None:
     assert result.error is None
     assert made["yedek"].calls == 1
     assert client.switched
-    # Kullanıcı ne olduğunu görmeli: sessiz bir model değişimi, kalitesi
-    # sessizce düşmüş bir iş demek.
+    # The user must see what happened: a silent model change means a job
+    # whose quality silently degraded.
     assert any("yedek" in line for line in said)
 
 
 def test_the_notice_never_enters_the_answer_content() -> None:
-    """Satır GÖSTERİM kanalından gidiyor: geçmişe modelin söylemediği bir
-    cümleyi yazmak, sonraki turlarda modelin kendi sözü sanılırdı."""
-    client, _ = _kur([TurnResult(error="402: payment required")], [_ok("asıl cevap")])
+    """The line goes through the DISPLAY channel: writing a sentence the
+    model never said into the history would be mistaken for the model's
+    own words on later turns."""
+    client, _ = _setup([TurnResult(error="402: payment required")], [_ok("asıl cevap")])
     result = asyncio.run(client.turn(None, [], cancel=None, callbacks=Callbacks()))
-    metin = " ".join(b.get("text", "") for b in result.content)
-    assert "yedek modelle" not in metin
-    assert metin == "asıl cevap"
+    text = " ".join(b.get("text", "") for b in result.content)
+    assert "yedek modelle" not in text
+    assert text == "asıl cevap"
 
 
 def test_a_transient_failure_is_left_to_the_retry_ladder() -> None:
-    """Geçici hata yedeğe hiç uğramamalı: döngü onu zaten yeniden deniyor."""
-    client, made = _kur([TurnResult(error="Connection error")], [_ok()])
+    """A transient error must never reach the fallback: the loop already retries it."""
+    client, made = _setup([TurnResult(error="Connection error")], [_ok()])
     result = asyncio.run(client.turn(None, [], cancel=None, callbacks=Callbacks()))
 
     assert result.error == "Connection error"
-    assert "yedek" not in made          # yedek istemci hiç kurulmadı
+    assert "yedek" not in made          # the fallback client was never built
     assert not client.switched
 
 
 def test_an_interruption_is_a_decision_not_a_failure() -> None:
-    client, made = _kur([TurnResult(interrupted=True)], [_ok()])
+    client, made = _setup([TurnResult(interrupted=True)], [_ok()])
     result = asyncio.run(client.turn(None, [], cancel=None, callbacks=Callbacks()))
     assert result.interrupted and "yedek" not in made
 
 
 def test_once_switched_the_main_model_is_not_tried_again() -> None:
-    """Her turda asıl modeli yeniden denemek turu iki isteğe çıkarır ve
-    kredi bittiyse hiçbir zaman düzelmez."""
-    client, made = _kur([TurnResult(error="402: no credit")], [_ok(), _ok()])
+    """Retrying the primary on every turn doubles the turn into two
+    requests, and if credits are out it never recovers."""
+    client, made = _setup([TurnResult(error="402: no credit")], [_ok(), _ok()])
     asyncio.run(client.turn(None, [], cancel=None, callbacks=Callbacks()))
     asyncio.run(client.turn(None, [], cancel=None, callbacks=Callbacks()))
 
-    assert made["asil"].calls == 1      # ikinci turda hiç denenmedi
+    assert made["asil"].calls == 1      # never tried on the second turn
     assert made["yedek"].calls == 2
 
 
 def test_without_a_fallback_nothing_changes() -> None:
-    """Yedek yoksa bugünkü davranış aynen kalmalı: hata yüzeye çıkar."""
+    """Without a fallback today's behaviour must stay as-is: the error surfaces."""
     plain = build_client(ModelConfig(name="asil"))
     assert not isinstance(plain, FallbackBackend)
-    # Yedek asıl modelle aynıysa sarmalamak anlamsız: aynı model iki kez.
+    # Wrapping is pointless when the fallback equals the primary: same model twice.
     same = build_client(ModelConfig(name="asil", fallback_model="asil"))
     assert not isinstance(same, FallbackBackend)
 
 
 def test_the_fallback_client_keeps_the_provider_and_address() -> None:
-    """Yedek "aynı kapıdaki başka model" demek. Sessizce başka bir
-    sağlayıcıya düşmek, hangi anahtarla konuşulduğunu görünmez kılardı."""
+    """Fallback means "another model at the same door". Silently falling to
+    a different provider would make it invisible which key is being spoken with."""
     seen: list[ModelConfig] = []
 
     def build(cfg: ModelConfig):
         seen.append(cfg)
-        return _SahteBackend(cfg.name, [_ok()])
+        return _FakeBackend(cfg.name, [_ok()])
 
     model = ModelConfig(name="asil", fallback_model="yedek",
                         base_url="http://localhost:1234/v1", api_key_env="LOCAL_KEY")
@@ -882,24 +891,24 @@ def test_the_fallback_client_keeps_the_provider_and_address() -> None:
     client.switched = True
     asyncio.run(client.turn(None, [], cancel=None, callbacks=Callbacks()))
 
-    yedek = seen[-1]
-    assert yedek.name == "yedek"
-    assert yedek.base_url == "http://localhost:1234/v1"
-    assert yedek.api_key_env == "LOCAL_KEY"
-    # Yedeğin yedeği yok: sonsuz zincir olmasın.
-    assert yedek.fallback_model == ""
+    fallback = seen[-1]
+    assert fallback.name == "yedek"
+    assert fallback.base_url == "http://localhost:1234/v1"
+    assert fallback.api_key_env == "LOCAL_KEY"
+    # The fallback has no fallback: no infinite chain.
+    assert fallback.fallback_model == ""
 
 
 def test_closing_releases_both_clients() -> None:
-    client, made = _kur([TurnResult(error="402")], [_ok()])
+    client, made = _setup([TurnResult(error="402")], [_ok()])
     asyncio.run(client.turn(None, [], cancel=None, callbacks=Callbacks()))
     asyncio.run(client.close())
     assert made["asil"].closed and made["yedek"].closed
 
 
 def test_the_fallback_field_survives_a_settings_round_trip(tmp_path) -> None:
-    """Alan config.json'a yazılıp geri okunmazsa ayar sayfası çalışıyor
-    görünür ama hiçbir şey değişmez."""
+    """If the field is not written to config.json and read back, the
+    settings page looks like it works but nothing changes."""
     from dornick import settings
     from dornick.config import Config
 
@@ -910,55 +919,57 @@ def test_the_fallback_field_survives_a_settings_round_trip(tmp_path) -> None:
     assert Config.load(tmp_path).model.fallback_model == "yedek-model"
 
 
-# -- sağlayıcıya özel alanların gidiş-dönüşü ----------------------------
+# -- round trip of provider-specific fields -----------------------------
 #
-# Gemini düşünen modellerde her araç çağrısına bir `thought_signature`
-# iliştiriyor ve SONRAKİ turda onu geri göndermeni ŞART koşuyor. dornick bir tur
-# içinde aracı çağırıp cevabı geri yolladığı için bu tam da bizim yolumuza
-# düşüyordu ve alan çeviride kayboluyordu:
+# Gemini attaches a `thought_signature` to every tool call in thinking
+# models and REQUIRES you to send it back on the NEXT turn. Since dornick
+# calls the tool and sends the answer back within one turn, this landed
+# exactly on our path and the field got lost in translation:
 #
 #   400 — Function call is missing a thought_signature in functionCall parts.
 #
-# Çözüm alanı MODELLEMEK değil KAYBETMEMEK: adını bilmediğimiz bir alanı da
-# taşıyoruz, böylece böyle bir alan ekleyen bir sonraki sağlayıcıda kırılmıyoruz.
+# The fix is not to MODEL the field but not to LOSE it: we carry even a
+# field whose name we don't know, so the next provider adding such a field
+# doesn't break us.
 
 
 def test_provider_fields_survive_the_round_trip() -> None:
     from dornick.backends.translate import to_anthropic_blocks, to_openai_messages
 
-    bloklar = to_anthropic_blocks("", [{
+    blocks = to_anthropic_blocks("", [{
         "id": "call_1", "name": "mind_memory", "arguments": '{"kind": "fact"}',
-        "ek": {"thought_signature": "ABC123", "extra_content": {"google": {"x": 1}}},
+        "extra": {"thought_signature": "ABC123", "extra_content": {"google": {"x": 1}}},
     }])
-    (blok,) = bloklar
-    assert blok["saglayici"]["thought_signature"] == "ABC123"
+    (block,) = blocks
+    assert block["saglayici"]["thought_signature"] == "ABC123"
 
-    mesajlar = to_openai_messages([], [{"role": "assistant", "content": bloklar}])
-    (cagri,) = mesajlar[0]["tool_calls"]
-    assert cagri["thought_signature"] == "ABC123"
-    assert cagri["extra_content"] == {"google": {"x": 1}}
-    # Kimlik ve argüman BİZİM: sağlayıcı alanı onların üstüne yazmıyor.
-    assert cagri["id"] == "call_1"
-    assert cagri["function"]["name"] == "mind_memory"
+    messages = to_openai_messages([], [{"role": "assistant", "content": blocks}])
+    (call,) = messages[0]["tool_calls"]
+    assert call["thought_signature"] == "ABC123"
+    assert call["extra_content"] == {"google": {"x": 1}}
+    # The id and arguments are OURS: the provider field does not overwrite them.
+    assert call["id"] == "call_1"
+    assert call["function"]["name"] == "mind_memory"
 
 
 def test_a_call_without_provider_fields_is_unchanged() -> None:
-    """Alanı olmayan sağlayıcıda çıktı bir harf bile değişmemeli."""
+    """On a provider without the field, not a single character of output may change."""
     from dornick.backends.translate import to_anthropic_blocks, to_openai_messages
 
-    bloklar = to_anthropic_blocks("", [
+    blocks = to_anthropic_blocks("", [
         {"id": "c1", "name": "shell", "arguments": '{"command": "ls"}'}])
-    assert "saglayici" not in bloklar[0]
-    (cagri,) = to_openai_messages([], [{"role": "assistant", "content": bloklar}])[0]["tool_calls"]
-    assert set(cagri) == {"id", "type", "function"}
+    assert "saglayici" not in blocks[0]
+    (call,) = to_openai_messages([], [{"role": "assistant", "content": blocks}])[0]["tool_calls"]
+    assert set(call) == {"id", "type", "function"}
 
 
 def test_provider_fields_never_reach_anthropic() -> None:
-    """Anthropic tanımadığı alanı reddediyor; aynı konuşma iki sağlayıcı
-    arasında taşınabildiği için (yedek model, model değiştirme) ayıklama şart."""
+    """Anthropic rejects fields it does not know; since the same
+    conversation can move between two providers (fallback model, model
+    switching), weeding is a must."""
     from dornick.context import drop_provider_fields
 
-    mesajlar = [
+    messages = [
         {"role": "user", "content": [{"type": "text", "text": "selam"}]},
         {"role": "assistant", "content": [
             {"type": "text", "text": "bakıyorum"},
@@ -966,26 +977,26 @@ def test_provider_fields_never_reach_anthropic() -> None:
              "saglayici": {"thought_signature": "ABC123"}},
         ]},
     ]
-    temiz = drop_provider_fields(mesajlar)
-    arac = temiz[1]["content"][1]
-    assert "saglayici" not in arac
-    assert arac["id"] == "c1" and arac["input"] == {"command": "ls"}
-    # Kaynak liste DEĞİŞMEMELİ: aynı konuşma OpenAI yoluna da gidiyor.
-    assert "saglayici" in mesajlar[1]["content"][1]
+    clean = drop_provider_fields(messages)
+    tool = clean[1]["content"][1]
+    assert "saglayici" not in tool
+    assert tool["id"] == "c1" and tool["input"] == {"command": "ls"}
+    # The source list must NOT change: the same conversation also goes down the OpenAI path.
+    assert "saglayici" in messages[1]["content"][1]
 
 
 def test_stripping_does_not_copy_when_there_is_nothing_to_strip() -> None:
-    """Alan yoksa liste olduğu gibi dönüyor — her istekte derin kopya değil."""
+    """Without the field the list comes back as-is — no deep copy on every request."""
     from dornick.context import drop_provider_fields
 
-    mesajlar = [{"role": "user", "content": [{"type": "text", "text": "selam"}]}]
-    assert drop_provider_fields(mesajlar) is mesajlar
+    messages = [{"role": "user", "content": [{"type": "text", "text": "selam"}]}]
+    assert drop_provider_fields(messages) is messages
 
 
 def test_every_array_in_a_tool_schema_declares_items() -> None:
-    """Gemini `items`siz bir array görünce ARACIN değil, araç listesinin
-    TAMAMINI reddediyor — yani tek bir aracın eksiği dornick'yu o modelde
-    tümüyle çalışmaz yapıyor. Canlıda birebir bu oldu:
+    """When Gemini sees an array without `items` it rejects the ENTIRE
+    tool list, NOT just the tool — so one tool's omission makes dornick
+    completely unusable on that model. This happened verbatim in production:
 
         function_declarations[23].parameters.properties[steps].items: missing
         function_declarations[37].parameters.properties[nodes].items: missing
@@ -1000,28 +1011,29 @@ def test_every_array_in_a_tool_schema_declares_items() -> None:
     cfg.ensure_dirs()
     registry = build_registry(cfg)
 
-    def eksikler(sema, yol=""):
-        if not isinstance(sema, dict):
+    def missing_items(schema, path=""):
+        if not isinstance(schema, dict):
             return []
-        bulunan = []
-        if sema.get("type") == "array" and "items" not in sema:
-            bulunan.append(yol or "(kök)")
-        for ad, alt in (sema.get("properties") or {}).items():
-            bulunan += eksikler(alt, f"{yol}.{ad}" if yol else ad)
-        if isinstance(sema.get("items"), dict):
-            bulunan += eksikler(sema["items"], yol + "[]")
-        return bulunan
+        found = []
+        if schema.get("type") == "array" and "items" not in schema:
+            found.append(path or "(root)")
+        for name, sub in (schema.get("properties") or {}).items():
+            found += missing_items(sub, f"{path}.{name}" if path else name)
+        if isinstance(schema.get("items"), dict):
+            found += missing_items(schema["items"], path + "[]")
+        return found
 
-    kusurlu = {s.name: e for s in registry.all() if (e := eksikler(s.input_schema))}
-    assert not kusurlu, f"`items` eksik: {kusurlu}"
+    defective = {s.name: e for s in registry.all() if (e := missing_items(s.input_schema))}
+    assert not defective, f"`items` missing: {defective}"
 
 
 def test_the_converter_repairs_a_schema_that_slipped_through() -> None:
-    """Şemaları elle düzeltmek şart ama yetmez: bir sonraki araç aynı
-    hatayla yazıldığında da sağlayıcıya bozuk şema gitmemeli."""
+    """Fixing the schemas by hand is necessary but not sufficient: when
+    the next tool is written with the same mistake, a broken schema must
+    still not reach the provider."""
     from dornick.backends.translate import to_openai_tools
 
-    (arac,) = to_openai_tools([{
+    (tool,) = to_openai_tools([{
         "name": "deneme",
         "description": "d",
         "input_schema": {
@@ -1033,18 +1045,18 @@ def test_the_converter_repairs_a_schema_that_slipped_through() -> None:
             },
         },
     }])
-    alanlar = arac["function"]["parameters"]["properties"]
-    assert alanlar["liste"]["items"] == {}
-    assert alanlar["ic"]["properties"]["derin"]["items"] == {}
-    # Zaten doğru olan şemaya DOKUNULMUYOR.
-    assert alanlar["saglam"]["items"] == {"type": "string"}
+    fields = tool["function"]["parameters"]["properties"]
+    assert fields["liste"]["items"] == {}
+    assert fields["ic"]["properties"]["derin"]["items"] == {}
+    # A schema that is already correct is NOT touched.
+    assert fields["saglam"]["items"] == {"type": "string"}
 
 
-# -- istem önbelleği işaretleri (OpenRouter) ---------------------------
+# -- prompt cache marks (OpenRouter) -----------------------------------
 #
-# OpenCode incelemesinden alınan ölçülmüş kalıp: ilk sistem + son iki
-# mesaja ephemeral nokta. İşaretsiz gidiş, aynı model/aynı işte ~6,7x
-# maliyet farkı olarak ölçüldü (kiyas-opencode-2608.md).
+# The measured pattern taken from the OpenCode review: an ephemeral point
+# on the first system + last two messages. Going unmarked was measured as
+# a ~6.7x cost difference on the same model/same job (kiyas-opencode-2608.md).
 
 
 def test_cache_markers_land_on_system_and_last_two() -> None:
@@ -1058,54 +1070,55 @@ def test_cache_markers_land_on_system_and_last_two() -> None:
     ]
     _mark_cache(messages)
 
-    # Sistem: düz metin tek parçaya sarılıp işaretlenir.
-    sistem = messages[0]["content"]
-    assert isinstance(sistem, list) and sistem[0]["cache_control"] == {"type": "ephemeral"}
-    assert sistem[0]["text"] == "sistem istemi"
-    # Son iki (assistant + tool) işaretli; ilk kullanıcı mesajı DEĞİL.
+    # System: plain text is wrapped in a single part and marked.
+    system = messages[0]["content"]
+    assert isinstance(system, list) and system[0]["cache_control"] == {"type": "ephemeral"}
+    assert system[0]["text"] == "sistem istemi"
+    # The last two (assistant + tool) are marked; the first user message is NOT.
     assert isinstance(messages[1]["content"], str)
     assert messages[2]["content"][0]["cache_control"] == {"type": "ephemeral"}
     assert messages[3]["content"][0]["cache_control"] == {"type": "ephemeral"}
-    # Toplam üç nokta: Anthropic ailesinin 4 sınırının altında.
-    noktalar = sum(
+    # Three points in total: under the Anthropic family's limit of 4.
+    points = sum(
         1
         for m in messages
         if isinstance(m.get("content"), list)
         for p in m["content"]
         if isinstance(p, dict) and "cache_control" in p
     )
-    assert noktalar == 3
+    assert points == 3
 
 
 def test_cache_markers_can_be_stripped_after_rejection() -> None:
-    from dornick.backends.openai_backend import _mark_cache, _cache_sok
+    from dornick.backends.openai_backend import _mark_cache, _unmark_cache
 
     messages = [
         {"role": "system", "content": "s"},
         {"role": "user", "content": "u"},
     ]
     _mark_cache(messages)
-    _cache_sok(messages)
+    _unmark_cache(messages)
     for m in messages:
-        icerik = m.get("content")
-        if isinstance(icerik, list):
-            assert all("cache_control" not in p for p in icerik if isinstance(p, dict))
+        content = m.get("content")
+        if isinstance(content, list):
+            assert all("cache_control" not in p for p in content if isinstance(p, dict))
 
 
 def test_cache_markers_only_for_openrouter_base() -> None:
-    """LM Studio / Ollama gibi uçlara işaret hiç gitmez: bayrak adresten."""
+    """No mark ever goes to endpoints like LM Studio / Ollama: the flag comes from the address."""
     import re
     from pathlib import Path
 
-    kaynak = (Path(__file__).parent.parent / "src/dornick/backends/openai_backend.py").read_text(encoding="utf-8")
-    assert re.search(r'_cache_isaretli = "openrouter" in', kaynak)
-    assert "_mark_cache(messages)" in kaynak
+    source = (Path(__file__).parent.parent / "src/dornick/backends/openai_backend.py").read_text(encoding="utf-8")
+    assert re.search(r'_cache_marked = "openrouter" in', source)
+    assert "_mark_cache(messages)" in source
 
-# -- cagri-basi sessizlik penceresi -------------------------------------
+# -- per-call silence window --------------------------------------------
 #
-# Olculen yara (29.08, z1): tek bir saglayici cagrisi dakikalarca sustu
-# ve tur ancak 900 sn'lik kapi tavaninda koptu. Kesim yeri tur degil
-# CAGRI: parca akitan uzun cagri saglikli, pencere boyunca susan asili.
+# Measured wound (29.08, z1): a single provider call went silent for
+# minutes and the turn only broke at the 900 s gate ceiling. The place to
+# cut is the CALL, not the turn: a long call streaming chunks is healthy,
+# one silent for the whole window is hung.
 
 
 async def test_a_silent_stream_raises_stalled_within_the_window() -> None:
@@ -1113,7 +1126,7 @@ async def test_a_silent_stream_raises_stalled_within_the_window() -> None:
     cancel = asyncio.Event()
     with pytest.raises(Stalled):
         async for _ in cancellable(_SilentStream(), cancel, stall_s=0.05):
-            raise AssertionError('parca gelmemeliydi')
+            raise AssertionError('no chunk should have arrived')
 
 
 async def test_healthy_chunks_flow_despite_the_window() -> None:
@@ -1128,16 +1141,16 @@ async def test_healthy_chunks_flow_despite_the_window() -> None:
 
 
 async def test_stalled_call_is_retried_once_then_reported() -> None:
-    # Ilk cagri asili, ikincisi sagliklu: tur sonucu normal cikmali.
+    # First call hung, second healthy: the turn result must come out normal.
     from dornick.backends import openai_backend as ob
     from types import SimpleNamespace
     from dornick.config import ModelConfig
-    eski = ob.CAGRI_SESSIZLIK_SN
-    ob.CAGRI_SESSIZLIK_SN = 0.05
+    old = ob.CALL_SILENCE_S
+    ob.CALL_SILENCE_S = 0.05
     try:
-        akislar = [_SilentStream(), FakeStream([chunk(content='tamam')])]
+        streams = [_SilentStream(), FakeStream([chunk(content='tamam')])]
         async def create(**kwargs):
-            return akislar.pop(0)
+            return streams.pop(0)
         fake = SimpleNamespace(
             chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
         model = ModelConfig(name='m', provider='openai',
@@ -1147,7 +1160,7 @@ async def test_stalled_call_is_retried_once_then_reported() -> None:
         assert r.error is None
         assert r.message.content[0]['text'] == 'tamam'
     finally:
-        ob.CAGRI_SESSIZLIK_SN = eski
+        ob.CALL_SILENCE_S = old
 
 
 async def test_local_endpoints_have_no_silence_window() -> None:

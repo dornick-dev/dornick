@@ -1,15 +1,16 @@
-// Konuşma geçmişi paneli: geçmiş oturumlar.
+// Conversation history panel: past sessions.
 //
-// Önemli ayrım — bu bir ANI listesi DEĞİL. Bir konuşma bir anı demek
-// değil: anılar konuşmalardan ayrıca oluşuyor (bir konuşmadan hiç, ya da
-// birden fazla). Sahnedeki ağ anıları gösteriyor; bu panel ham
-// konuşmaların kendisini. İkisi bağlanabilir ama aynı şey değil.
+// An important distinction — this is NOT a list of MEMORIES. A conversation
+// is not a memory: memories form separately from conversations (none from
+// one, or several). The web on the scene shows memories; this panel shows
+// the raw conversations themselves. The two can be linked but are not the
+// same thing.
 //
-// Opt-in: varsayılan minimal görünümde yok, isteyince açılıyor. Kaynak
-// `/api/sessions` (liste) ve `/api/session?id=` (döküm).
+// Opt-in: absent from the default minimal view, opens on demand. Sources:
+// `/api/sessions` (list) and `/api/session?id=` (transcript).
 
-// Bu dosyanın kullanıcıya gösterdiği metinlerin İngilizceleri. Kaynak
-// metin Türkçe kalıyor; görüntüleme noktasında t("...") ile çevriliyor.
+// English translations of the texts this file shows the user. The source
+// text stays Turkish; it is translated at display time with t("...").
 Dil.ekle({
   "şu an açık": "open now",
   "koşuyor": "running",
@@ -81,19 +82,19 @@ const History = (() => {
   const search = document.getElementById("hist-search");
 
   let sessions = [];
-  let knownProjects = [];       // var olan proje adları (atama için öneri)
-  let knownTags = [];           // var olan etiketler (öneri + süzgeç)
-  let collapsed = new Set();    // kapalı proje klasörleri
+  let knownProjects = [];       // existing project names (suggested on assign)
+  let knownTags = [];           // existing tags (suggestions + filter)
+  let collapsed = new Set();    // collapsed project folders
   let loaded = false;
-  let deep = false;             // "içinde ara": döküm araması açık mı
-  let searching = false;        // sunucu araması sürüyor
-  let tagFilter = "";           // seçili etiket süzgeci
+  let deep = false;             // "search inside": is transcript search on
+  let searching = false;        // a server search is in flight
+  let tagFilter = "";           // the chosen tag filter
   let statusFilter = "";        // "" | açık | koşuyor | biten
   let deepTimer = null;
-  // Uzun liste kaydırma çubuğuyla değil "Daha fazla göster" ile açılır
-  // (Claude Code'un Show more'u). Arama/filtre varken sınır yok.
-  let hepsi = false;
-  const GOSTER = 16;
+  // A long list opens with "Daha fazla göster", not a scrollbar (Claude
+  // Code's Show more). No cap while searching/filtering.
+  let showAll = false;
+  const SHOW_CAP = 16;
   const UNFILED = "— Projesiz —";
 
   const el = (tag, cls, text) => {
@@ -103,11 +104,12 @@ const History = (() => {
     return node;
   };
 
-  // --- yükleme ---------------------------------------------------------
+  // --- loading ---------------------------------------------------------
 
-  // `ara` verilirse sunucu DÖKÜMLERİN içinde de arıyor ve eşleşen satırları
-  // (`hits`) gönderiyor. Verilmezse bu yalnızca liste tazelemesi.
-  function panelAcik() {
+  // With `query` given, the server searches inside the TRANSCRIPTS too and
+  // sends the matching lines (`hits`). Without it, this is a mere list
+  // refresh.
+  function panelOpen() {
     return document.body.classList.contains("hist-open");
   }
 
@@ -128,15 +130,16 @@ const History = (() => {
     loaded = true;
     searching = false;
     render();
-    // Koşan sohbet varken liste nefes alır: başlık artık koşunun BAŞINDA
-    // üretiliyor (loop._oturum_basligi) ve session_title olayı anında
-    // taşır; bu yoklama yedek (olay kaçarsa 2 sn içinde sola gelir).
-    clearTimeout(canliTazele);
-    if (!ara && panelAcik() && sessions.some((s) => s.status === "koşuyor")) {
-      canliTazele = setTimeout(() => { if (panelAcik()) load(); }, 2000);
+    // With a running chat the list breathes: the title is now produced at
+    // the START of the run (loop._oturum_basligi) and the session_title
+    // event carries it instantly; this poll is the backup (a missed event
+    // reaches the left side within 2 s).
+    clearTimeout(liveRefresh);
+    if (!ara && panelOpen() && sessions.some((s) => s.status === "koşuyor")) {
+      liveRefresh = setTimeout(() => { if (panelOpen()) load(); }, 2000);
     }
   }
-  let canliTazele = null;
+  let liveRefresh = null;
 
   function applyTitle(id, title) {
     if (!id || !title) return;
@@ -147,12 +150,13 @@ const History = (() => {
       render();
       return;
     }
-    // Liste henüz yüklenmediyse kısa sonra çek.
-    if (panelAcik()) load();
+    // If the list has not loaded yet, fetch shortly.
+    if (panelOpen()) load();
   }
 
-  // Döküm araması sunucuya gidiyor; her tuşta istek atmamak için kısa bir
-  // bekleme. Kutu boşalırsa arama iptal ve liste tazeleniyor.
+  // Transcript search goes to the server; a short delay avoids a request
+  // per keystroke. If the box empties, the search is cancelled and the
+  // list refreshed.
   const DEEP_DELAY = 320;
 
   function scheduleDeep() {
@@ -160,7 +164,7 @@ const History = (() => {
     const q = (search.value || "").trim();
     if (!deep || q.length < 2) {
       searching = false;
-      // Derin arama kapandı: eşleşme izleri kalmasın.
+      // Deep search turned off: no leftover match traces.
       for (const s of sessions) s.hits = [];
       render();
       return;
@@ -173,9 +177,9 @@ const History = (() => {
   function render() {
     body.textContent = "";
     const q = (search.value || "").trim().toLowerCase();
-    // Yerel süzgeç her zaman çalışıyor (ad, önizleme, proje, etiket); derin
-    // arama açıkken sunucudan gelen eşleşmeler de kabul ediliyor — söz
-    // başlıkta değil dökümün ortasında geçiyor olabilir.
+    // The local filter always runs (name, preview, project, tag); with deep
+    // search on, matches from the server are accepted too — the phrase may
+    // occur mid-transcript, not in the title.
     let shown = q
       ? sessions.filter(s =>
           (s.title + " " + s.preview + " " + (s.project || "") + " "
@@ -205,9 +209,9 @@ const History = (() => {
       return;
     }
 
-    // Klasör adı: elle proje etiketi, yoksa bağlı path'in son parçası.
-    // Böylece "Klasör bağla" ile path alan sohbetler de Dornick/dornick altında
-    // görünür (Cursor Repositories düzeni).
+    // Folder name: the manual project label, else the last segment of the
+    // bound path. So chats given a path via "Klasör bağla" also show under
+    // Dornick/dornick (the Cursor Repositories layout).
     function klasorAdi(s) {
       if (s.project) return s.project;
       const p = String(s.path || "").replace(/\\/g, "/").replace(/\/+$/, "");
@@ -216,19 +220,19 @@ const History = (() => {
       return parts.length ? parts[parts.length - 1] : UNFILED;
     }
 
-    // Önce PROJEYE / klasöre göre grupla, sonra her klasörün içinde
-    // yenilik sırası. Projesiz olanlar en sonda tek bir kümede.
+    // Group by PROJECT / folder first, then recency inside each folder.
+    // The unfiled ones sit in a single cluster at the end.
     const byProject = new Map();
     for (const s of shown) {
       const key = klasorAdi(s);
       if (!byProject.has(key)) byProject.set(key, []);
       byProject.get(key).push(s);
     }
-    // Liste sınırı: kırpma proje gruplamasından ÖNCE — en yeni 16.
-    let kirpilan = 0;
-    if (!hepsi && !q && !tagFilter && !statusFilter && shown.length > GOSTER) {
-      kirpilan = shown.length - GOSTER;
-      shown = shown.slice(0, GOSTER);
+    // List cap: trimming happens BEFORE project grouping — newest 16.
+    let trimmed = 0;
+    if (!showAll && !q && !tagFilter && !statusFilter && shown.length > SHOW_CAP) {
+      trimmed = shown.length - SHOW_CAP;
+      shown = shown.slice(0, SHOW_CAP);
       byProject.clear();
       for (const s of shown) {
         const key = klasorAdi(s);
@@ -236,14 +240,15 @@ const History = (() => {
         byProject.get(key).push(s);
       }
     }
-    // Projeler alfabetik, projesiz en sonda.
+    // Projects alphabetical, unfiled last.
     const names = [...byProject.keys()].filter(n => n !== UNFILED).sort((a, b) => a.localeCompare(b, "tr"));
     if (byProject.has(UNFILED)) names.push(UNFILED);
 
     for (const name of names) {
       const items = byProject.get(name);
-      // Aktifi tepeye taşımak listeyi SIÇRATIYORDU ("yerinde durmuyor"):
-      // sıra hep yenilik sırası; aktif yalnız vurguyla belli olur.
+      // Moving the active one to the top made the list JUMP ("it won't stay
+      // put"): order is always recency; the active one shows only through
+      // emphasis.
       const isOpen = !collapsed.has(name);
       const head = el("div", "hist-folder" + (name === UNFILED ? " unfiled" : ""));
       head.append(el("span", "hist-fold", isOpen ? "▾" : "▸"));
@@ -254,12 +259,12 @@ const History = (() => {
       body.append(head);
       if (isOpen) items.forEach(s => body.append(row(s)));
     }
-    if (kirpilan) body.append(dahaFazla(kirpilan));
+    if (trimmed) body.append(showMore(trimmed));
   }
 
-  // Arama kutusunun altındaki şerit: "içinde ara" anahtarı ve (varsa)
-  // etkin etiket süzgeci. Kutunun kendisi işaretlemede duruyor; bu şerit
-  // onun hemen altına bir kez kuruluyor.
+  // The strip under the search box: the "search inside" toggle and (if
+  // any) the active tag filter. The box itself lives in the markup; this
+  // strip is built right below it once.
   function drawTools() {
     let strip = document.getElementById("hist-tools");
     if (!strip) {
@@ -286,9 +291,9 @@ const History = (() => {
     }
     strip.append(filters);
 
-    const anahtar = el("button", "hist-deep" + (deep ? " on" : ""));
-    anahtar.type = "button";
-    anahtar.replaceChildren();
+    const deepBtn = el("button", "hist-deep" + (deep ? " on" : ""));
+    deepBtn.type = "button";
+    deepBtn.replaceChildren();
     const ico = document.createElementNS("http://www.w3.org/2000/svg", "svg");
     ico.setAttribute("viewBox", "0 0 16 16");
     ico.setAttribute("aria-hidden", "true");
@@ -303,18 +308,18 @@ const History = (() => {
     p.setAttribute("stroke-width", "1.5");
     ico.append(c, p);
     const lbl = el("span", null, t("Dökümde ara"));
-    anahtar.append(ico, lbl);
-    anahtar.title = t("Konuşmaların İÇİNDE ara — başlıkta değil, dökümde geçen söz");
-    anahtar.onclick = () => { deep = !deep; scheduleDeep(); };
-    strip.append(anahtar);
+    deepBtn.append(ico, lbl);
+    deepBtn.title = t("Konuşmaların İÇİNDE ara — başlıkta değil, dökümde geçen söz");
+    deepBtn.onclick = () => { deep = !deep; scheduleDeep(); };
+    strip.append(deepBtn);
 
     if (tagFilter) {
-      const cip = el("button", "hist-label on");
-      cip.type = "button";
-      cip.textContent = "#" + tagFilter + " ×";
-      cip.title = t("süzgeci kaldır");
-      cip.onclick = () => { tagFilter = ""; render(); };
-      strip.append(cip);
+      const chip = el("button", "hist-label on");
+      chip.type = "button";
+      chip.textContent = "#" + tagFilter + " ×";
+      chip.title = t("süzgeci kaldır");
+      chip.onclick = () => { tagFilter = ""; render(); };
+      strip.append(chip);
     }
   }
 
@@ -325,9 +330,9 @@ const History = (() => {
     const dot = el("span", "hist-dot"
       + (s.status === "koşuyor" ? " run" : (s.current ? " on" : "")));
     line.append(dot);
-    const baslik = el("span", "hist-title" + (s.named ? " named" : ""), s.title);
-    baslik.title = s.named ? s.title : s.preview || s.title;
-    line.append(baslik);
+    const titleEl = el("span", "hist-title" + (s.named ? " named" : ""), s.title);
+    titleEl.title = s.named ? s.title : s.preview || s.title;
+    line.append(titleEl);
     if (s.status === "koşuyor") line.append(el("span", "hist-live", t("koşuyor")));
     else if (s.current) line.append(el("span", "hist-live", t("şu an açık")));
     const bits = [_time(s.date)];
@@ -343,23 +348,24 @@ const History = (() => {
     }
     line.append(el("span", "hist-meta", bits.join(" · ")));
     const acts = el("div", "hist-acts");
-    for (const [glif, ipucu, islev] of [
+    for (const [glyph, tip, action] of [
       ["✎", "Yeniden adlandır", editName],
       ["#", "Etiketle", editTags],
       ["⌗", "Projeye taşı", assignProject],
       ["📁", "Klasör bağla", assignPath],
       ["◈", "Model ata", assignModel],
     ]) {
-      const dugme = el("button", "hist-assign", glif);
-      dugme.title = t(ipucu);
-      dugme.onclick = (ev) => { ev.stopPropagation(); islev(s, wrap); };
-      acts.append(dugme);
+      const btn = el("button", "hist-assign", glyph);
+      btn.title = t(tip);
+      btn.onclick = (ev) => { ev.stopPropagation(); action(s, wrap); };
+      acts.append(btn);
     }
     line.append(acts);
-    // Satıra tıklamak: AKTİF konuşmada panel kapanır ve süren sohbet görünür —
-    // geçiş çağrısı gerekmediği için Dornick meşgulken de her zaman çalışır.
-    // Başka konuşmada o konuşmaya geçilir (sürdürür); meşgulse resume
-    // kullanıcıya söylüyor, tık sessiz ölmüyor.
+    // Clicking the row: on the ACTIVE conversation the panel closes and the
+    // ongoing chat shows — no switch call needed, so it always works even
+    // while Dornick is busy. On another conversation we switch to it
+    // (resume); if busy, resume tells the user — the click does not die
+    // silently.
     line.onclick = () => {
       if (s.current) { if (innerWidth <= 860) close(); }
       else resume(s, wrap);
@@ -368,35 +374,35 @@ const History = (() => {
 
     wrap.addEventListener("contextmenu", (ev) => sohbetMenu(s, wrap, ev));
 
-    // Etiket rozetleri: tıklayınca o etikete süzülüyor. Etiket bir klasör
-    // değil — bir konuşma birden çok etiket taşıyabiliyor, proje ise tek.
+    // Tag badges: clicking filters to that tag. A tag is not a folder — a
+    // conversation can carry several tags, a project only one.
     if ((s.tags || []).length) {
-      const şerit = el("div", "hist-tags");
+      const tagStrip = el("div", "hist-tags");
       for (const etiket of s.tags) {
-        const cip = el("button", "hist-label" + (etiket === tagFilter ? " on" : ""));
-        cip.type = "button";
-        cip.textContent = "#" + etiket;
-        cip.onclick = (ev) => {
+        const chip = el("button", "hist-label" + (etiket === tagFilter ? " on" : ""));
+        chip.type = "button";
+        chip.textContent = "#" + etiket;
+        chip.onclick = (ev) => {
           ev.stopPropagation();
           tagFilter = (tagFilter === etiket) ? "" : etiket;
           render();
         };
-        şerit.append(cip);
+        tagStrip.append(chip);
       }
-      wrap.append(şerit);
+      wrap.append(tagStrip);
     }
 
-    // Döküm araması eşleşmeleri: hangi sözün nerede geçtiği. Satıra
-    // tıklamak yine konuşmayı açıyor.
+    // Transcript search matches: which phrase occurs where. Clicking the
+    // row still opens the conversation.
     for (const hit of (s.hits || [])) {
-      const iz = el("div", "hist-hit");
-      iz.append(el("span", "hist-hit-who", hit.role === "user" ? "sen" : "Dornick"));
-      iz.append(el("span", "hist-hit-text", hit.text));
-      iz.onclick = () => {
+      const trace = el("div", "hist-hit");
+      trace.append(el("span", "hist-hit-who", hit.role === "user" ? "sen" : "Dornick"));
+      trace.append(el("span", "hist-hit-text", hit.text));
+      trace.onclick = () => {
         if (s.current) { if (innerWidth <= 860) close(); }
         else resume(s, wrap);
       };
-      wrap.append(iz);
+      wrap.append(trace);
     }
 
     return wrap;
@@ -404,7 +410,7 @@ const History = (() => {
 
   function sohbetMenu(s, wrap, ev) {
     if (typeof Menu === "undefined") return;
-    const kosuyor = s.status === "koşuyor";
+    const running = s.status === "koşuyor";
     Menu.ac(ev, [
       { ad: "Aç", is: () => {
         if (s.current) { if (innerWidth <= 860) close(); }
@@ -416,17 +422,17 @@ const History = (() => {
       { ad: "Klasör bağla", is: () => assignPath(s, wrap) },
       { ad: "Model ata", is: () => assignModel(s, wrap) },
       { ayrac: true },
-      { ad: "Arşivle", risk: true, kapali: kosuyor,
-        ipucu: kosuyor ? "koşan sohbet arşivlenemez — tur bitince dene" : "",
-        is: () => arsivle(s) },
+      { ad: "Arşivle", risk: true, kapali: running,
+        ipucu: running ? "koşan sohbet arşivlenemez — tur bitince dene" : "",
+        is: () => archiveChat(s) },
     ]);
   }
 
-  async function arsivle(s) {
-    const uyari = s.current
+  async function archiveChat(s) {
+    const warning = s.current
       ? t("Açık sohbet arşivlensin mi? Yeni boş konuşma açılır; bu sohbet listeden kalkar.")
       : t("Bu sohbet arşivlensin mi? Listeden kalkar, geri alınabilir.");
-    if (!confirm(uyari)) return;
+    if (!confirm(warning)) return;
     let res;
     try {
       res = await (await fetch("/api/session/archive", {
@@ -443,9 +449,9 @@ const History = (() => {
     status((res && res.error) ? res.error : t("Arşivlenemedi"));
   }
 
-  // Yeniden adlandırma: satır içi tek kutu. Boş bırakmak adı kaldırıyor ve
-  // başlık yine konuşmanın ilk sözünden türetiliyor — "adı sil" ayrı bir
-  // düğme istemiyor.
+  // Renaming: a single inline box. Leaving it empty removes the name and
+  // the title is again derived from the conversation's first words — no
+  // separate "delete name" button needed.
   function editName(s, wrap) {
     const existing = wrap.querySelector(".hist-assign-box");
     if (existing) { existing.remove(); return; }
@@ -459,12 +465,12 @@ const History = (() => {
     const save = async () => {
       const ad = input.value.trim();
       box.remove();
-      const kayit = await saveMeta(s.id, { ad });
-      if (kayit) {
-        s.named = !!kayit.ad;
-        if (kayit.ad) s.title = kayit.ad;
+      const saved = await saveMeta(s.id, { ad });
+      if (saved) {
+        s.named = !!saved.ad;
+        if (saved.ad) s.title = saved.ad;
       }
-      // Ad silindiyse türetilen başlığı sunucu biliyor: listeyi tazele.
+      // If the name was deleted, the server knows the derived title: refresh.
       if (!ad) await load();
       else render();
     };
@@ -478,7 +484,7 @@ const History = (() => {
     input.select();
   }
 
-  // Etiketler: virgülle ayrılmış serbest metin. Var olanlar öneriliyor.
+  // Tags: comma-separated free text. Existing ones are suggested.
   function editTags(s, wrap) {
     const existing = wrap.querySelector(".hist-assign-box");
     if (existing) { existing.remove(); return; }
@@ -496,10 +502,10 @@ const History = (() => {
     const save = async () => {
       const etiketler = input.value.split(",").map(x => x.trim()).filter(Boolean);
       box.remove();
-      const kayit = await saveMeta(s.id, { etiketler });
-      if (kayit) s.tags = kayit.etiketler || [];
-      for (const etiket of s.tags) {
-        if (!knownTags.includes(etiket)) knownTags.push(etiket);
+      const saved = await saveMeta(s.id, { etiketler });
+      if (saved) s.tags = saved.etiketler || [];
+      for (const tag of s.tags) {
+        if (!knownTags.includes(tag)) knownTags.push(tag);
       }
       render();
     };
@@ -513,14 +519,14 @@ const History = (() => {
     input.select();
   }
 
-  // Ad/etiket yazımı. Gönderilmeyen alan sunucuda DOKUNULMADAN kalıyor:
-  // yalnız etiket değiştiren bir istek adı silmemeli.
-  async function saveMeta(id, alanlar) {
+  // Name/tag writes. A field not sent stays UNTOUCHED on the server: a
+  // request changing only tags must not delete the name.
+  async function saveMeta(id, fields) {
     try {
       const res = await (await fetch("/api/session/meta", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id, ...alanlar }),
+        body: JSON.stringify({ id, ...fields }),
       })).json();
       if (res && res.ok) return res.meta || {};
       status((res && res.error) || t("Okunamadı"));
@@ -528,8 +534,9 @@ const History = (() => {
     return null;
   }
 
-  // Küçük satır-içi düzenleyici: oturuma proje adı ata (ya da boş bırakıp
-  // çıkar). Var olan projeler datalist ile öneriliyor; Enter kaydeder.
+  // A small inline editor: assign a project name to the session (or leave
+  // empty to remove). Existing projects are suggested via datalist; Enter
+  // saves.
   function assignProject(s, wrap) {
     const existing = wrap.querySelector(".hist-assign-box");
     if (existing) { existing.remove(); return; }
@@ -554,7 +561,7 @@ const History = (() => {
           body: JSON.stringify({ id: s.id, project: name }),
         })).json();
         if (res && res.ok) { knownProjects = res.projects || knownProjects; }
-      } catch { /* yut */ }
+      } catch { /* swallow */ }
       s.project = name;
       render();
     };
@@ -579,14 +586,16 @@ const History = (() => {
     const save = async () => {
       const path = input.value.trim();
       box.remove();
-      const kayit = await saveMeta(s.id, { path });
-      if (kayit) s.path = kayit.path || "";
-      // Path → klasör adı: liste hemen gruplasın (sunucu da set_project yazar).
+      const saved = await saveMeta(s.id, { path });
+      if (saved) s.path = saved.path || "";
+      // Path → folder name: group the list right away (the server writes
+      // set_project too).
       if (path) {
         const leaf = path.replace(/\\/g, "/").replace(/\/+$/, "").split("/").filter(Boolean).pop() || "";
         if (leaf && !s.project) s.project = leaf;
       }
-      // Aktif sohbetse hemen uygula (geçişte de uygulanır).
+      // If it is the active chat, apply immediately (also applied on
+      // switch).
       if (s.current) {
         try {
           await fetch("/api/session/resume", {
@@ -594,7 +603,7 @@ const History = (() => {
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ id: s.id }),
           });
-        } catch { /* yut */ }
+        } catch { /* swallow */ }
       }
       render();
     };
@@ -619,8 +628,8 @@ const History = (() => {
     const save = async () => {
       const model = input.value.trim();
       box.remove();
-      const kayit = await saveMeta(s.id, { model });
-      if (kayit) s.model = kayit.model || "";
+      const saved = await saveMeta(s.id, { model });
+      if (saved) s.model = saved.model || "";
       if (s.current) {
         try {
           await fetch("/api/session/resume", {
@@ -628,7 +637,7 @@ const History = (() => {
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ id: s.id }),
           });
-        } catch { /* yut */ }
+        } catch { /* swallow */ }
       }
       render();
     };
@@ -642,76 +651,77 @@ const History = (() => {
     input.select();
   }
 
-  // Klasörde başlat (canlı istek, 31.08 — "sendeki gibi klasör seçip
-  // konuşma başlatayım"): /api/gozat ile mini gezgin, "Burada başlat" yeni
-  // oturum açar + çalışma klasörünü atar + uygular.
+  // Start in a folder (live request, 31.08 — "let me pick a folder and
+  // start a conversation like yours"): a mini explorer via /api/gozat;
+  // "Burada başlat" opens a new session + assigns the work folder +
+  // applies it.
   function klasordeBaslat() {
-    const eski = document.getElementById("hist-klasor-sec");
-    if (eski) { eski.remove(); return; }
+    const existing = document.getElementById("hist-klasor-sec");
+    if (existing) { existing.remove(); return; }
     const kutu = el("div", "hist-assign-box hist-klasor-kutu");
     kutu.id = "hist-klasor-sec";
-    const baslik = el("div", "hist-klasor-yol", "");
-    const liste = el("div", "hist-klasor-liste");
-    const alt = el("div", "hist-klasor-alt");
-    const basla = el("button", "plan-btn", t("Burada başlat"));
-    basla.type = "button";
-    const kapat = el("button", "plan-btn muted", t("Vazgeç"));
-    kapat.type = "button";
-    kapat.onclick = () => kutu.remove();
-    alt.append(basla, kapat);
-    kutu.append(baslik, liste, alt);
-    let secili = "";
-    async function gez(yol) {
-      let veri;
+    const titleEl = el("div", "hist-klasor-yol", "");
+    const listEl = el("div", "hist-klasor-liste");
+    const foot = el("div", "hist-klasor-alt");
+    const startBtn = el("button", "plan-btn", t("Burada başlat"));
+    startBtn.type = "button";
+    const closeBtn = el("button", "plan-btn muted", t("Vazgeç"));
+    closeBtn.type = "button";
+    closeBtn.onclick = () => kutu.remove();
+    foot.append(startBtn, closeBtn);
+    kutu.append(titleEl, listEl, foot);
+    let selected = "";
+    async function browse(dirPath) {
+      let data;
       try {
-        veri = await (await fetch("/api/gozat?yol=" + encodeURIComponent(yol || ""))).json();
+        data = await (await fetch("/api/gozat?yol=" + encodeURIComponent(dirPath || ""))).json();
       } catch { return; }
-      secili = veri.yol || "";
-      baslik.textContent = secili || t("Sürücü seç");
-      basla.disabled = !secili;
-      liste.replaceChildren();
-      if (veri.ust !== null && veri.ust !== undefined) {
-        const yukari = el("button", "hist-klasor-satir ust", "‹ " + t("üst klasör"));
-        yukari.type = "button";
-        yukari.onclick = () => gez(veri.ust);
-        liste.append(yukari);
+      selected = data.yol || "";
+      titleEl.textContent = selected || t("Sürücü seç");
+      startBtn.disabled = !selected;
+      listEl.replaceChildren();
+      if (data.ust !== null && data.ust !== undefined) {
+        const upBtn = el("button", "hist-klasor-satir ust", "‹ " + t("üst klasör"));
+        upBtn.type = "button";
+        upBtn.onclick = () => browse(data.ust);
+        listEl.append(upBtn);
       }
-      for (const k of (veri.klasorler || [])) {
+      for (const k of (data.klasorler || [])) {
         const satir = el("button", "hist-klasor-satir", k.ad || k.yol);
         satir.type = "button";
-        satir.onclick = () => gez(k.yol);
-        liste.append(satir);
+        satir.onclick = () => browse(k.yol);
+        listEl.append(satir);
       }
     }
-    basla.onclick = async () => {
-      if (!secili) return;
-      basla.disabled = true;
-      basla.textContent = t("Başlatılıyor…");
+    startBtn.onclick = async () => {
+      if (!selected) return;
+      startBtn.disabled = true;
+      startBtn.textContent = t("Başlatılıyor…");
       try {
         const res = await (await fetch("/api/session/new", { method: "POST" })).json();
         if (res && res.ok && res.id) {
-          await saveMeta(res.id, { path: secili });
+          await saveMeta(res.id, { path: selected });
           await fetch("/api/session/resume", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ id: res.id }),
           });
         }
-      } catch { /* durum satırı zaten konuşur */ }
+      } catch { /* the status row already speaks */ }
       kutu.remove();
       if (innerWidth <= 860) close(); else { load(); setTimeout(load, 600); }
     };
-    // Satırın İÇİNE değil ALTINA: hist-new.after flex satırını parçalıyor
-    // (Yeni konuşma + Sürücü seç yan yana — canlı, 01.09).
-    const dugme = document.getElementById("hist-new");
-    const satir = (dugme && dugme.closest(".hist-new-row")) || dugme;
+    // BELOW the row, not INSIDE it: hist-new.after shattered the flex row
+    // (Yeni konuşma + Sürücü seç side by side — live, 01.09).
+    const btn = document.getElementById("hist-new");
+    const satir = (btn && btn.closest(".hist-new-row")) || btn;
     if (satir) satir.after(kutu);
     else document.getElementById("hist-panel")?.querySelector(".hist-head")?.after(kutu);
-    gez("");
+    browse("");
   }
 
-  // Yeni konuşma: taze bir oturum başlatır. Sunucu desteklemiyorsa (eski
-  // süreç) kullanıcıya söylenir — sessizce yutulmaz.
+  // New conversation: starts a fresh session. If the server does not
+  // support it (old process), the user is told — not swallowed silently.
   async function newConversation() {
     let res;
     try {
@@ -721,12 +731,13 @@ const History = (() => {
     }
     const btn = document.getElementById("hist-new");
     if (res && res.ok) {
-      // Rail kalıcı: yeni konuşma onu KAPATMAZ (canlı şikâyet). Dar
-      // pencerede overlay çekilir; genişte liste tazelenip yeni oturum
-      // işaretlenir.
+      // The rail is permanent: a new conversation does NOT close it (live
+      // complaint). Narrow windows retract the overlay; wide ones refresh
+      // the list and mark the new session.
       if (innerWidth <= 860) close(); else { load(); setTimeout(load, 600); }
     } else {
-      // Canlı yeni oturum henüz köprüde yok: kırık görünmesin, söyle.
+      // Live new-session is not on the bridge yet: countEl so instead of
+      // looking broken.
       btn.textContent = "Yeni oturum için yeniden başlat";
       setTimeout(() => {
         btn.replaceChildren();
@@ -736,8 +747,9 @@ const History = (() => {
     }
   }
 
-  // Geçmiş bir konuşmayı sürdür: sunucu oturumu değiştirip session_reset
-  // yayınlıyor; ana akış thread'i temizleyip dökümü yüklüyor.
+  // Resume a past conversation: the server switches the session and emits
+  // session_reset; the main stream clears the thread and loads the
+  // transcript.
   async function resume(s, wrap) {
     status(t("Geçiliyor…"));
     let res;
@@ -749,16 +761,17 @@ const History = (() => {
       })).json();
     } catch { res = { ok: false }; }
     if (res && res.ok) {
-      // Geniş ekranda rail kalıcı bir sütun: konuşma değiştirmek onu
-      // KAPATMAZ. Liste tazelenir; sunucu geçişi işlerken yarış olursa
-      // "şu an açık" işareti ilk yüklemeye yetişemeyebiliyor — kısa bir
-      // gecikmeyle ikinci tazeleme işareti oturtur.
+      // On a wide screen the rail is a permanent column: switching
+      // conversations does NOT close it. The list refreshes; if a race
+      // happens while the server processes the switch, the "open now" mark
+      // may miss the first load — a second refresh after a short delay
+      // settles it.
       if (innerWidth > 860) { load(); } else close();
       return;
     }
     if (res && res.busy) {
-      // Meşgulken tık sessiz ölmüyor: kısa geri bildirim + satır görsel
-      // olarak "beklemede" işaretleniyor. Tur bitince tekrar tıklanır.
+      // A click while busy does not die silently: brief feedback + the row
+      // is visually marked "waiting". Click again once the turn ends.
       status(t("Tur bitince geçilebilir"));
       if (wrap) {
         wrap.classList.add("waiting");
@@ -766,19 +779,19 @@ const History = (() => {
       }
       return;
     }
-    // Görünür hata: köprü yoksa ya da oturum bulunamadıysa.
+    // A visible error: no bridge, or the session was not found.
     status((res && res.error) ? res.error : t("Geçilemedi — Dornick meşgul olabilir, tur bitince dene."));
   }
 
-  // "Daha fazla göster": kırpılan satır sayısıyla, listenin dibinde.
-  function dahaFazla(kirpilan) {
-    const dugme = el("button", "hist-more", t("Daha fazla göster") + " · " + kirpilan);
-    dugme.type = "button";
-    dugme.addEventListener("click", () => { hepsi = true; render(); });
-    return dugme;
+  // "Show more": with the trimmed row count, at the bottom of the list.
+  function showMore(trimmed) {
+    const btn = el("button", "hist-more", t("Daha fazla göster") + " · " + trimmed);
+    btn.type = "button";
+    btn.addEventListener("click", () => { showAll = true; render(); });
+    return btn;
   }
 
-  // Panelin üstünde kısa bir durum/hata satırı.
+  // A short status/error row above the panel.
   function status(text) {
     let bar = document.getElementById("hist-status");
     if (!bar) {
@@ -791,7 +804,7 @@ const History = (() => {
     if (text) setTimeout(() => { if (bar.textContent === text) { bar.hidden = true; } }, 4000);
   }
 
-  // --- yardımcılar -----------------------------------------------------
+  // --- helpers ---------------------------------------------------------
 
   const _time = (date) => (date || "").slice(11, 16) || (date || "").slice(0, 10);
 
@@ -803,39 +816,40 @@ const History = (() => {
   }
   function open() {
     userClosed = false;
-    if (innerWidth <= 860 && typeof Apps !== "undefined") Apps.close();   // dar: overlay çakışmasın
+    if (innerWidth <= 860 && typeof Apps !== "undefined") Apps.close();   // narrow: overlays must not clash
     panel.hidden = false;
     document.body.classList.add("hist-open");
     document.getElementById("history").classList.add("on");
-    try { localStorage.setItem("dornick-rail", "acik"); } catch { /* dosya:// */ }
+    try { localStorage.setItem("dornick-rail", "acik"); } catch { /* file:// */ }
     load();
   }
-  let userClosed = false;   // bu oturumda elle kapatıldı mı
+  let userClosed = false;   // manually closed in this session
   function close() {
     panel.hidden = true;
     userClosed = true;
     document.body.classList.remove("hist-open");
     document.getElementById("history").classList.remove("on");
-    // Bilinçli karar: tercih DİSKE YAZILMAZ. Kenar çubuğu kalıcı bir
-    // yapı (Claude Code gibi "sürekli açık"); X yalnız bu oturumda
-    // gizler, sonraki açılışta yine gelir.
+    // Deliberate decision: the choice is NOT WRITTEN TO DISK. The sidebar
+    // is a permanent structure ("always open" like Claude Code); X hides
+    // it only for this session, next launch it returns.
   }
 
   document.getElementById("history").addEventListener("click", toggle_panel);
-  // Panelin kendi X'i kalktı (Claude Code: ☰ tek anahtar); id bir gün
-  // geri gelirse yine bağlanır.
-  const kapat = document.getElementById("hist-close");
-  if (kapat) kapat.addEventListener("click", close);
-  // Süzgeç hunisi: filtre çipleri istenince görünür — varsayılan sade.
-  const huni = document.getElementById("hist-filter-toggle");
-  if (huni) huni.addEventListener("click", () => {
-    const acik = panel.classList.toggle("filters-on");
-    huni.classList.toggle("on", acik);
+  // The panel's own X is gone (Claude Code: ☰ as the single toggle); if
+  // the id ever returns it gets wired again.
+  const closeBtn = document.getElementById("hist-close");
+  if (closeBtn) closeBtn.addEventListener("click", close);
+  // The filter funnel: filter chips show on demand — plain by default.
+  const funnel = document.getElementById("hist-filter-toggle");
+  if (funnel) funnel.addEventListener("click", () => {
+    const isOn = panel.classList.toggle("filters-on");
+    funnel.classList.toggle("on", isOn);
   });
   document.getElementById("hist-new").addEventListener("click", newConversation);
-  // Klasörde başlat: yan düğme kalktı — sağ tık / uzun basış isteğe bağlı.
-  // Yeni konuşma atölyede açılır; klasör gerekirse Dornick ilk mesaja göre
-  // açar veya kullanıcı burada seçer.
+  // Start-in-folder: the side button is gone — right-click / long press on
+  // demand. A new conversation opens in the workshop; if a folder is
+  // needed, Dornick opens one from the first message or the user picks
+  // here.
   document.getElementById("hist-new").addEventListener("contextmenu", (ev) => {
     ev.preventDefault();
     klasordeBaslat();
@@ -844,10 +858,11 @@ const History = (() => {
     t("Yeni konuşma") + " · " + t("sağ tık: klasörde başlat");
   search.addEventListener("input", () => { render(); scheduleDeep(); });
 
-  // Rail varsayılan AÇIK ve KALICI (Claude Code alışkanlığı: konuşmalar
-  // hep solda). Dar pencerede overlay'i kendiliğinden açmak sohbetin
-  // üstüne binmek olurdu — orada kapalı başlar. Pencere genişleyince
-  // (kullanıcı bu oturumda elle kapatmadıysa) kendiliğinden geri gelir.
+  // The rail defaults to OPEN and PERMANENT (the Claude Code habit:
+  // conversations always on the left). Auto-opening the overlay in a
+  // narrow window would ride on the chat — it starts closed there. When
+  // the window widens it returns by itself (unless the user closed it by
+  // hand this session).
   if (innerWidth > 860) open();
   window.addEventListener("resize", () => {
     if (innerWidth > 860 && panel.hidden && !userClosed) open();
@@ -856,20 +871,22 @@ const History = (() => {
 
   return { open, close, toggle: toggle_panel, newChat: newConversation,
            applyTitle,
-           // Şerit olayı (paralel oturumlar): arka planda koşan/biten
-           // sohbetin rozeti canlı tazelensin — panel açıkken liste
-           // yeniden yüklenir, kapalıyken bir sonraki açılış zaten taze.
-           laneChanged: () => { try { if (panelAcik()) load(); } catch {} },
-           // Sahneden gelen "konuşmaya git": önce panel açılır — geçiş
-           // ve olası hata mesajı GÖRÜNÜR bir yerde yaşasın (kapalı
-           // paneldeki durum satırı sessiz ölüyordu).
+           // Lane event (parallel sessions): the badge of a chat
+           // running/finishing in the background refreshes live — with the
+           // panel open the list reloads, closed the next opening is fresh
+           // anyway.
+           laneChanged: () => { try { if (panelOpen()) load(); } catch {} },
+           // "Go to conversation" from the scene: the panel opens first —
+           // the switch and any error message must live somewhere VISIBLE
+           // (the status row in a closed panel died silently).
            resumeById: (id) => { open(); resume({ id }); } };
 })();
 
 
-// --- kenar bölümleri: Görevler · Otomasyonlar ve Uygulamalar ------------
-// Rail tek kenar çubuğu: konuşmaların altında katlanır iki bölüm. Satıra
-// tıklamak ilgili DETAYI ORTA alanda açar (JobsPanel.show / Apps.open).
+// --- side sections: Tasks · Automations and Apps ------------------------
+// The rail is the single sidebar: two collapsible sections under the
+// conversations. Clicking a row opens the DETAIL in the CENTRE area
+// (JobsPanel.show / Apps.open).
 Dil.ekle({
   "Henüz görev yok": "No tasks yet",
   "Uygulama yok": "No apps yet",
@@ -886,20 +903,20 @@ Dil.ekle({
     return n;
   };
 
-  async function doldurGorevler(list, say) {
+  async function fillTasks(list, countEl) {
     let tasks = [];
-    try { tasks = (await (await fetch("/api/jobs")).json()).tasks || []; } catch { /* sunucu yok */ }
-    say.textContent = tasks.length || "";
+    try { tasks = (await (await fetch("/api/jobs")).json()).tasks || []; } catch { /* no server */ }
+    countEl.textContent = tasks.length || "";
     list.textContent = "";
     if (!tasks.length) { list.append(elx("div", "side-blank", t("Henüz görev yok"))); return; }
     for (const task of tasks.slice(0, 40)) {
       const row = elx("button", "side-row");
       row.type = "button";
-      const durum = task.last_status === "koşuyor" ? " run"
+      const stateCls = task.last_status === "koşuyor" ? " run"
         : (task.last_status === "hata" || task.last_status === "başlatılamadı") ? " bad"
         : task.kind_ui === "automation" ? " auto"
         : task.enabled ? " on" : "";
-      row.append(elx("i", "side-row-dot" + durum),
+      row.append(elx("i", "side-row-dot" + stateCls),
                  elx("span", "side-row-name", task.title || task.id));
       if (task.kind_ui === "automation") row.append(elx("span", "side-row-meta", t("otomasyon")));
       row.addEventListener("click", () => { if (window.JobsPanel) JobsPanel.show(task.id); });
@@ -910,23 +927,24 @@ Dil.ekle({
     }
   }
 
-  async function doldurUygulamalar(list, say) {
-    let projeler = [];
-    try { projeler = (await (await fetch("/api/projects")).json()).projects || []; } catch { /* sunucu yok */ }
-    // Kenar çubuğu yalnız GERÇEK uygulamaları gösterir: türü belli ve
-    // eksik olmayanlar. Atölyedeki başıboş dosyalar (rapor.txt, betik.ps1)
-    // katalogda "belirsiz" diye dursun ama burada liste çöplüğü yapmasın.
-    projeler = projeler.filter((p) => p.kind && !p.eksik);
-    say.textContent = projeler.length || "";
+  async function fillApps(list, countEl) {
+    let projects = [];
+    try { projects = (await (await fetch("/api/projects")).json()).projects || []; } catch { /* no server */ }
+    // The sidebar shows only REAL apps: a known kind and not incomplete.
+    // Stray workshop files (rapor.txt, betik.ps1) may sit as "unclear" in
+    // the catalogue but must not litter the list here.
+    projects = projects.filter((p) => p.kind && !p.eksik);
+    countEl.textContent = projects.length || "";
     list.textContent = "";
-    if (!projeler.length) { list.append(elx("div", "side-blank", t("Uygulama yok"))); return; }
-    for (const p of projeler.slice(0, 40)) {
+    if (!projects.length) { list.append(elx("div", "side-blank", t("Uygulama yok"))); return; }
+    for (const p of projects.slice(0, 40)) {
       const row = elx("button", "side-row");
       row.type = "button";
       row.append(elx("i", "side-row-dot" + (p.eksik ? " bad" : "")),
                  elx("span", "side-row-name", p.name));
-      // Orta alan yalnız SEÇİLENİN detayı: katalog değil, o uygulamanın
-      // sayfası (liste zaten burada, solda).
+      // The centre area holds only the CHOSEN one's detail: not the
+      // catalogue, that app's page (the list is already here, on the
+      // left).
       row.addEventListener("click", () => {
         if (typeof Apps !== "undefined") Apps.show(p.name);
       });
@@ -937,36 +955,36 @@ Dil.ekle({
     }
   }
 
-  const BOLUMLER = [
-    ["side-jobs-head", "side-jobs-list", "side-jobs-count", "dornick-side-jobs", doldurGorevler],
-    ["side-apps-head", "side-apps-list", "side-apps-count", "dornick-side-apps", doldurUygulamalar],
+  const SECTIONS = [
+    ["side-jobs-head", "side-jobs-list", "side-jobs-count", "dornick-side-jobs", fillTasks],
+    ["side-apps-head", "side-apps-list", "side-apps-count", "dornick-side-apps", fillApps],
   ];
 
-  for (const [headId, listId, countId, anahtar, doldur] of BOLUMLER) {
+  for (const [headId, listId, countId, storeKey, fill] of SECTIONS) {
     const head = document.getElementById(headId);
     const list = document.getElementById(listId);
-    const say = document.getElementById(countId);
+    const countEl = document.getElementById(countId);
     if (!head || !list) continue;
 
-    const uygula = (acik) => {
-      list.hidden = !acik;
-      head.querySelector(".side-fold").textContent = acik ? "▾" : "▸";
-      try { localStorage.setItem(anahtar, acik ? "acik" : "kapali"); } catch { /* dosya:// */ }
-      if (acik) doldur(list, say);
+    const apply = (isOn) => {
+      list.hidden = !isOn;
+      head.querySelector(".side-fold").textContent = isOn ? "▾" : "▸";
+      try { localStorage.setItem(storeKey, isOn ? "acik" : "kapali"); } catch { /* file:// */ }
+      if (isOn) fill(list, countEl);
     };
-    head.addEventListener("click", () => uygula(list.hidden));
+    head.addEventListener("click", () => apply(list.hidden));
 
-    let kayit = null;
-    try { kayit = localStorage.getItem(anahtar); } catch { /* dosya:// */ }
-    // Varsayılan açık: kenar çubuğu tek bakışta her şeyi göstersin.
-    uygula(kayit !== "kapali");
+    let saved = null;
+    try { saved = localStorage.getItem(storeKey); } catch { /* file:// */ }
+    // Default open: the sidebar should show everything at a glance.
+    apply(saved !== "kapali");
     document.addEventListener("dornick-side-tazele", () => {
-      if (!list.hidden) doldur(list, say);
+      if (!list.hidden) fill(list, countEl);
     });
   }
 })();
 
-// --- hızlı gezinti satırları: detay orta alanda -------------------------
+// --- quick navigation rows: detail in the centre area -------------------
 (() => {
   const g = document.getElementById("side-jobs-nav");
   if (g) g.addEventListener("click", () => { if (window.JobsPanel) JobsPanel.open(); });
@@ -974,19 +992,20 @@ Dil.ekle({
   if (u) u.addEventListener("click", () => { if (typeof Apps !== "undefined") Apps.open(); });
 })();
 
-// --- statik kabuk etiketleri çeviriden geçer ---------------------------
-// Sidebar v4 bu metinleri HTML'e gömdü; İngilizce kipte Türkçe kalıyorlardı
-// (vitrin çekiminde yakalandı). Çeviri, metnin doğduğu yerde uygulanır.
+// --- static shell labels go through translation -------------------------
+// Sidebar v4 embedded these texts in the HTML; in English mode they stayed
+// Turkish (caught in the showcase shoot). Translation is applied where the
+// text is born.
 (() => {
-  const yeniBtn = document.getElementById("hist-new");
-  if (yeniBtn && yeniBtn.lastChild && yeniBtn.lastChild.nodeType === 3) {
-    yeniBtn.lastChild.textContent = " " + t("Yeni konuşma");
+  const newChatBtn = document.getElementById("hist-new");
+  if (newChatBtn && newChatBtn.lastChild && newChatBtn.lastChild.nodeType === 3) {
+    newChatBtn.lastChild.textContent = " " + t("Yeni konuşma");
   }
-  const ara = document.getElementById("hist-search");
-  if (ara) ara.placeholder = t("Konuşmalarda ara");
+  const searchBox = document.getElementById("hist-search");
+  if (searchBox) searchBox.placeholder = t("Konuşmalarda ara");
   for (const nav of document.querySelectorAll(".side-nav span")) {
     nav.textContent = t(nav.textContent.trim());
   }
-  const etiket = document.querySelector(".side-label");
-  if (etiket) etiket.textContent = t(etiket.textContent.trim());
+  const labelEl = document.querySelector(".side-label");
+  if (labelEl) labelEl.textContent = t(labelEl.textContent.trim());
 })();

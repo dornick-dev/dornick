@@ -249,7 +249,7 @@ def load_file(path: Path) -> Skill:
 
 
 def discover(sandbox_root: Path, state_dir: Path | str | None = None,
-             *, onayla: bool = False) -> tuple[list[Skill], list[str]]:
+             *, approve: bool = False) -> tuple[list[Skill], list[str]]:
     """Loads the skills in the folder. (loaded ones, errors)
 
     A broken file does not block the others: the error goes into the list
@@ -260,9 +260,9 @@ def discover(sandbox_root: Path, state_dir: Path | str | None = None,
     (digest matching) are loaded. If the manifest does not exist at all this
     is the FIRST-RUN migration — the existing files are considered trusted
     and recorded (nobody's installation breaks on upgrade). With
-    `onayla=True` (an explicit `write`/`load` through the tool, a human
+    `approve=True` (an explicit `write`/`load` through the tool, a human
     action that passed the permission gate) the valid files found are
-    written to the manifest; at startup (onayla=False) an unapproved file is
+    written to the manifest; at startup (approve=False) an unapproved file is
     not loaded and is reported as "not approved".
 
     state_dir=None: the old behaviour — everything loads (for tests and
@@ -294,7 +294,7 @@ def discover(sandbox_root: Path, state_dir: Path | str | None = None,
                 current = _digest(path)
             except OSError:
                 continue
-            if not onayla and manifest.get(path.name) != current:
+            if not approve and manifest.get(path.name) != current:
                 broken.append(
                     f"{path.name}: onaylanmadı — bu dosya `skill` aracıyla "
                     "yazılmadı ya da elle değişti; güvenlik gereği açılışta "
@@ -309,7 +309,7 @@ def discover(sandbox_root: Path, state_dir: Path | str | None = None,
             broken.append(str(exc))
             continue
         found.append(skill)
-        if onayla and state_dir is not None:
+        if approve and state_dir is not None:
             _approve(state_dir, path)
     return found, broken
 

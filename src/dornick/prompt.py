@@ -547,7 +547,7 @@ def build(config: Config, registry: ToolRegistry, soul: Any = None) -> SystemPro
             MEMORY_RULES.strip() if _has_mind(registry) else "",
             _tool_list(registry),
             # Small family: the brevity contract goes last — keep the rules fresh.
-            BREVITY.strip() if kucuk_aile(config.model.name) else "",
+            BREVITY.strip() if small_family(config.model.name) else "",
         )
     )
     core = "\n\n---\n\n".join(p for p in parts if p)
@@ -574,7 +574,7 @@ _SMALL_MARKERS = ("flash", "mini", "lite", "small", "haiku", "nano", "tiny",
                   "air", "-7b", "-8b", "-9b", "7b-", "8b-", "9b-")
 
 
-def kucuk_aile(model_name: str) -> bool:
+def small_family(model_name: str) -> bool:
     name = (model_name or "").lower()
     return any(marker in name for marker in _SMALL_MARKERS)
 

@@ -172,12 +172,12 @@ def test_first_run_migration_trusts_existing_files(ctx: ToolContext) -> None:
 
 
 def test_load_action_approves(ctx: ToolContext) -> None:
-    """An explicit, permission-gated `load` (onayla=True) writes the file to the manifest."""
+    """An explicit, permission-gated `load` (approve=True) writes the file to the manifest."""
     sd = ctx.config.state_dir
     skills._write_manifest(sd, {})
     write(ctx, "topla", GOOD)
 
-    found, _ = skills.discover(ctx.sandbox.root, sd, onayla=True)
+    found, _ = skills.discover(ctx.sandbox.root, sd, approve=True)
     assert [s.name for s in found] == ["topla"]
     # From now on it loads at startup too.
     found2, broken2 = skills.discover(ctx.sandbox.root, sd)

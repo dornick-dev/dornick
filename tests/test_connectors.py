@@ -1,9 +1,9 @@
-"""MCP bağlayıcıları.
+"""MCP connectors.
 
-Buradaki testlerin çoğu ağsız: yapılandırma çözümü, ad üretimi, defter
-köprüsü. Tek uçtan uca test gerçek bir alt süreçle konuşuyor — sahte bir
-MCP sunucusu başlatılıyor ve el sıkışmadan araç çağrısına kadar tam yol
-yürünüyor. Taşımanın satır-başına-JSON olduğu ancak böyle tutulabiliyor.
+Most tests here are network-free: configuration parsing, name generation,
+the registry bridge. One end-to-end test talks to a real subprocess — a
+fake MCP server is started and the full path from handshake to tool call
+is walked. That the transport is JSON-per-line can only be kept true this way.
 """
 
 from __future__ import annotations
@@ -18,7 +18,7 @@ from dornick import connectors
 from dornick.tools.base import ToolRegistry, ToolSpec
 
 
-# -- yapılandırma -------------------------------------------------------
+# -- configuration ------------------------------------------------------
 
 
 def test_the_claude_code_format_is_accepted() -> None:
@@ -37,7 +37,7 @@ def test_the_claude_code_format_is_accepted() -> None:
 
 
 def test_the_outer_wrapper_may_be_omitted() -> None:
-    # Başka bir istemciden kopyalarken dış kabuk unutulabiliyor.
+    # The outer shell can be forgotten when copying from another client.
     found = connectors.parse('{"tekil": {"command": "echo"}}')
     assert [c.name for c in found] == ["tekil"]
 
@@ -57,8 +57,9 @@ def test_errors_name_the_field() -> None:
 
 
 def test_a_missing_secret_is_named_not_blanked(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Eksik `${AD}` sessizce boş geçilmez: boş bir Authorization başlığı
-    "yetkisiz" hatası olarak döner ve sebebi görünmez."""
+    """A missing `${NAME}` is not silently left empty: an empty
+    Authorization header comes back as an "unauthorized" error with the
+    cause invisible."""
     monkeypatch.delenv("HIC_YOK_TOKEN", raising=False)
     with pytest.raises(connectors.ConnectorError) as caught:
         connectors._expand("Bearer ${HIC_YOK_TOKEN}")
@@ -90,17 +91,17 @@ def test_disabled_servers_are_not_loaded(tmp_path: Path) -> None:
     assert problems == []
 
 
-# -- ad üretimi ---------------------------------------------------------
+# -- name generation ----------------------------------------------------
 
 
 def test_tool_names_follow_the_claude_code_shape() -> None:
     assert connectors.tool_name("hesap", "topla") == "mcp__hesap__topla"
-    # API alfabesi dışındaki karakterler alt çizgi; uzunluk sınırlı.
+    # Characters outside the API alphabet become underscores; length is capped.
     assert connectors.tool_name("a", "çok uzun" + "x" * 100).startswith("mcp__a__")
     assert len(connectors.tool_name("a", "x" * 200)) <= 64
 
 
-# -- SSE çözümü ---------------------------------------------------------
+# -- SSE decoding -------------------------------------------------------
 
 
 def test_http_bodies_decode_both_ways() -> None:
@@ -113,7 +114,7 @@ def test_http_bodies_decode_both_ways() -> None:
     assert connectors._decode_http("application/json", "") == []
 
 
-# -- defter köprüsü -----------------------------------------------------
+# -- registry bridge ----------------------------------------------------
 
 
 class FakeSession:
@@ -144,13 +145,14 @@ def test_full_exposure_registers_tools_with_their_source() -> None:
     spec = registry.get("mcp__hesap__topla")
     assert spec is not None
     assert spec.source == "mcp:hesap"
-    assert spec.mutates is True          # dış sunucu: izin kapısından geçmeli
-    assert "hesap" in spec.description   # model nereden geldiğini görsün
+    assert spec.mutates is True          # external server: must pass the permission gate
+    assert "hesap" in spec.description   # the model should see where it came from
 
 
 def test_deferred_is_the_default_and_registers_one_bridge() -> None:
-    """Ölçülen sebep: Notion'un 28 şeması ~27.000 token ve her mesajla
-    gidiyordu. Varsayılan artık erteleme — deftere yalnız köprü girer."""
+    """The measured reason: Notion's 28 schemas were ~27,000 tokens and
+    went with every message. The default is now deferral — only the bridge
+    enters the registry."""
     import json as js
 
     registry = ToolRegistry()
@@ -166,10 +168,10 @@ def test_deferred_is_the_default_and_registers_one_bridge() -> None:
     assert added == [connectors.BRIDGE_TOOL]
     assert registry.get("mcp__notion__arac-0") is None
 
-    # İsteme giden şema küçük olmalı: 28 tam şema değil, tek köprü.
+    # The schema going into the prompt must be small: one bridge, not 28 full schemas.
     bridge = registry.get(connectors.BRIDGE_TOOL)
     weight = len(js.dumps(bridge.api_schema(), ensure_ascii=False))
-    assert weight < 4_000     # ~27.000 token'lık şişkinliğe karşı sigorta
+    assert weight < 4_000     # insurance against the ~27,000-token bloat
     assert "notion" in bridge.description
     assert "28 araç" in bridge.description
 
@@ -205,8 +207,8 @@ def test_the_gone_server_also_takes_the_bridge() -> None:
 
 
 def test_the_bridge_lists_describes_and_calls() -> None:
-    """Köprünün üç yüzü: kısa liste → tek şema → çağrı. Şema yalnız
-    istendiğinde ödenir."""
+    """The bridge's three faces: short list → single schema → call. The
+    schema is only paid for when asked."""
     import asyncio
 
     registry = ToolRegistry()
@@ -223,17 +225,17 @@ def test_the_bridge_lists_describes_and_calls() -> None:
 
     listed = asyncio.run(bridge.handler({"action": "tools"}, None))
     assert "ara: Çalışma alanında arar." in listed.content
-    assert "Uzun detay" not in listed.content          # liste kısa kalır
+    assert "Uzun detay" not in listed.content          # the list stays short
 
     shown = asyncio.run(bridge.handler({"action": "describe", "tool": "ara"}, None))
-    assert '"query"' in shown.content                   # tam şema burada
+    assert '"query"' in shown.content                   # the full schema lives here
 
     answer = asyncio.run(bridge.handler(
         {"action": "call", "tool": "ara", "args": {"query": "klor"}}, None))
     assert answer.content == "ara: tamam"
     assert session.called == [("ara", {"query": "klor"})]
 
-    # Yanlış araç adı öğretici hata verir, sunucuyu düşürmez.
+    # A wrong tool name gives an instructive error, it does not bring the server down.
     missing = asyncio.run(bridge.handler({"action": "call", "tool": "yok",
                                           "args": {}}, None))
     assert missing.is_error and "tools" in missing.content
@@ -249,7 +251,7 @@ def test_builtin_tools_survive_a_reconnect() -> None:
     assert registry.get("shell") is not None
 
 
-# -- uçtan uca: gerçek alt süreç ---------------------------------------
+# -- end to end: a real subprocess -------------------------------------
 
 FAKE_SERVER = r'''
 import json, sys
@@ -260,7 +262,7 @@ for line in sys.stdin:
     msg = json.loads(line)
     method, rid = msg.get("method"), msg.get("id")
     if rid is None:
-        continue  # bildirim
+        continue  # notification
     if method == "initialize":
         result = {"protocolVersion": "2025-06-18", "capabilities": {"tools": {}},
                   "serverInfo": {"name": "sahte", "version": "1"}}
@@ -279,7 +281,7 @@ for line in sys.stdin:
 
 
 def test_a_real_stdio_server_end_to_end(tmp_path: Path) -> None:
-    """El sıkışma → araç listesi → çağrı, gerçek bir alt süreçle."""
+    """Handshake → tool list → call, with a real subprocess."""
     script = tmp_path / "sahte_mcp.py"
     script.write_text(FAKE_SERVER, encoding="utf-8")
 
@@ -315,10 +317,10 @@ def test_pkce_pairs_are_wellformed() -> None:
     import hashlib
 
     verifier, challenge = connectors._pkce()
-    assert 43 <= len(verifier) <= 128            # RFC 7636 sınırları
+    assert 43 <= len(verifier) <= 128            # RFC 7636 bounds
     digest = hashlib.sha256(verifier.encode("ascii")).digest()
     assert challenge == base64.urlsafe_b64encode(digest).rstrip(b"=").decode("ascii")
-    # Her çağrı taze bir çift: tekrar kullanılan doğrulayıcı, PKCE'yi boşa çıkarır.
+    # Every call is a fresh pair: a reused verifier defeats PKCE.
     assert connectors._pkce()[0] != verifier
 
 
@@ -332,7 +334,7 @@ def test_tokens_roundtrip_and_logout(tmp_path: Path) -> None:
 
 
 def test_bearer_refreshes_a_stale_token(tmp_path: Path) -> None:
-    """Süresi geçen jeton sessizce tazelenir; kullanıcıya sorulmaz."""
+    """An expired token is refreshed silently; the user is not asked."""
     import time as clock
 
     connectors._tokens_write(tmp_path, {"uzak": {
@@ -352,7 +354,7 @@ def test_bearer_refreshes_a_stale_token(tmp_path: Path) -> None:
     got = connectors._bearer(tmp_path, "uzak", http=fake_http)
     assert got == "taze"
     assert asked["form"]["grant_type"] == "refresh_token"
-    # Tazelenen jeton diske de yazıldı: bir sonraki istek ağa çıkmasın.
+    # The refreshed token was also written to disk: the next request should not go to the network.
     assert connectors._tokens_read(tmp_path)["uzak"]["access_token"] == "taze"
 
 
@@ -368,7 +370,7 @@ def test_bearer_keeps_the_old_token_when_refresh_fails(tmp_path: Path) -> None:
     def broken(url, **kwargs):
         raise connectors.ConnectorError("ağ yok")
 
-    # 401'i sunucu söylesin; jeton silinmez, kullanıcı 'Giriş yap' der.
+    # Let the server say the 401; the token is not deleted, the user hits 'Giriş yap'.
     assert connectors._bearer(tmp_path, "uzak", http=broken) == "eski"
 
 
@@ -396,16 +398,16 @@ def test_discovery_names_the_alternative_when_there_is_no_oauth() -> None:
 
     with pytest.raises(connectors.ConnectorError) as caught:
         connectors._oauth_discover("https://mcp.ornek/mcp", nothing)
-    # Kör bir "olmadı" değil: sabit token yolunu tarif ediyor.
+    # Not a blind "didn't work": it describes the fixed-token path.
     assert "headers" in str(caught.value)
 
 
 def test_login_end_to_end_with_a_real_callback(tmp_path: Path) -> None:
-    """Keşif → kayıt → tarayıcı → kod → jeton, gerçek dinleyiciyle.
+    """Discovery → registration → browser → code → token, with a real listener.
 
-    "Tarayıcı" sahte: verilen yetki adresinden state'i okuyup geri dönüş
-    adresine gerçek bir HTTP isteği atıyor — dinleyicinin kendisi test
-    ediliyor, akışın geri kalanı sahte http ile."""
+    The "browser" is fake: it reads the state from the given authorization
+    address and fires a real HTTP request at the redirect address — the
+    listener itself is tested, the rest of the flow with fake http."""
     import threading
     import urllib.parse
     import urllib.request
@@ -424,7 +426,7 @@ def test_login_end_to_end_with_a_real_callback(tmp_path: Path) -> None:
             form = kwargs["form"]
             assert form["grant_type"] == "authorization_code"
             assert form["code"] == "kod-42"
-            assert form["code_verifier"]          # PKCE takasta doğrulanıyor
+            assert form["code_verifier"]          # PKCE is verified at the exchange
             return {"access_token": "erisim", "refresh_token": "tazele",
                     "expires_in": 3600}
         raise connectors.ConnectorError("beklenmeyen: " + url)
@@ -453,7 +455,7 @@ def test_login_end_to_end_with_a_real_callback(tmp_path: Path) -> None:
 
 
 def test_a_401_asks_for_login_instead_of_erroring(tmp_path: Path) -> None:
-    """Uzak sunucu 401 dönünce hata 'HTTP 401' değil, giriş çağrısı."""
+    """When the remote server returns 401, the error is a call to log in, not 'HTTP 401'."""
     import threading
     from http.server import BaseHTTPRequestHandler, HTTPServer
 
@@ -477,10 +479,11 @@ def test_a_401_asks_for_login_instead_of_erroring(tmp_path: Path) -> None:
         )
         session.open()
         if not (session.ok is False and "Giriş" in (session.error or "")):
-            # Tam takım yükü altında (Windows soket baskısı) ilk deneme ara
-            # sıra farklı bir ağ hatasıyla dönebiliyor (31.08'de iki tam
-            # koşuda görüldü; izole/dosya koşusunda hiç). Davranış bozuksa
-            # ikinci deneme de kırmızı kalır.
+            # Under full-suite load (Windows socket pressure) the first
+            # attempt can occasionally come back with a different network
+            # error (seen in two full runs on 31.08; never in an
+            # isolated/single-file run). If the behaviour is broken, the
+            # second attempt stays red too.
             session = connectors.Session(
                 connectors.Connector(name="uzak", url=f"http://127.0.0.1:{port}/mcp"),
                 tmp_path,

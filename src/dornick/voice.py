@@ -34,7 +34,7 @@ def hint() -> str:
     """
     from . import environment
 
-    if environment.kurulu_mu():
+    if environment.is_installed():
         return ("Ses paketi bu kurulumda eksik görünüyor. Kurulum "
                 "sihirbazını yeniden çalıştırmak eksiği onarır.")
     return INSTALL_HINT

@@ -1,40 +1,41 @@
-// Mikrofon.
+// Microphone.
 //
-// İki kip var ve ikisi de aynı boruyu kullanıyor:
+// There are two modes and both use the same pipe:
 //
-//   bas-konuş     mikrofon düğmesine basılı tut, konuş, bırak. Söylediğin
-//                 yazı alanına düşüyor — göndermeden önce düzeltebilirsin.
-//   uyandırma     sürekli dinleme açıkken kısa parçalar sunucuya gidiyor;
-//                 içinde "Dornick" geçen bir parça oturumu açıyor ve sözden
-//                 sonrası doğrudan gönderiliyor.
+//   push-to-talk  hold the mic button, speak, release. What you said lands
+//                 in the composer — you can fix it before sending.
+//   wake          with continuous listening on, short chunks go to the
+//                 server; a chunk containing "Dornick" opens the session and
+//                 what follows the word is sent directly.
 //
-// Tanıma sunucuda ve yerel: ses bilgisayardan çıkmıyor. Tarayıcının kendi
-// `SpeechRecognition` API'si kullanılmıyor — WebView2'de yok, olduğu yerde
-// de sesi Google'a gönderiyor.
+// Recognition is on the server and local: audio never leaves the computer.
+// The browser's own `SpeechRecognition` API is not used — WebView2 lacks it,
+// and where it exists it sends the audio to Google.
 //
-// Mikrofon kendiliğinden açılmıyor. Kullanıcı düğmeye basana kadar
-// `getUserMedia` hiç çağrılmıyor; sürekli dinleme de ayrı bir karar.
+// The microphone never opens by itself. `getUserMedia` is not called until
+// the user presses the button; continuous listening is a separate decision.
 
 const Listen = (() => {
-  // Uyandırma kipinde parça uzunluğu. Kısası daha çabuk tepki ama daha çok
-  // tanıma; uzunu tersi. 3 saniye ikisinin arasında duruyor.
+  // Chunk length in wake mode. Shorter reacts faster but recognises more
+  // often; longer is the reverse. 3 seconds sits between the two.
   const CHUNK_MS = 3000;
 
-  // Aynı anda tek çözümleme. Bu olmadan her parça yeni bir istek açıyordu ve
-  // ilk istek modeli indirirken (bir kez, ~70 sn) arkasına yenileri
-  // diziliyordu. Tarayıcı bir kaynağa aynı anda altı bağlantı açabiliyor;
-  // dolunca **her şey** sıraya giriyor — yazdığın mesaj bile gitmiyor.
+  // One transcription at a time. Without this, every chunk opened a new
+  // request, and while the first one downloaded the model (once, ~70 s) new
+  // ones piled up behind it. The browser can open six connections to one
+  // origin; once full, **everything** queues — even the message you typed
+  // stops going out.
   let busy = false;
 
-  // Bu seviyenin altındaki kayıtta konuşma yok sayılıyor. Baytla ölçmek
-  // yanıltıcıydı: opus sessizliği neredeyse hiç yer kaplamıyor ama kısa bir
-  // "evet" de küçük bir dosya. Eşik düşük tutuldu — kaçırmaktansa arada bir
-  // sessizlik göndermek yeğ.
+  // A recording below this level is treated as having no speech. Measuring
+  // in bytes was misleading: opus silence takes almost no space, but a short
+  // "yes" is a small file too. The threshold is kept low — sending the odd
+  // stretch of silence beats missing speech.
   const SILENT = 0.008;
 
-  // Sesin duyulup duyulmadığı görünmeli. "Konuştum ama hiçbir şey olmadı"
-  // durumunda kabahat mikrofonda mı, tanımada mı, yoksa kayıt hiç mi
-  // başlamadı — ölçer olmadan ayırt edilemiyor.
+  // Whether sound is heard must be visible. In the "I spoke and nothing
+  // happened" case — is the fault the microphone, the recognition, or did
+  // recording never start — without a meter you cannot tell.
   const METER_HZ = 24;
 
 
@@ -48,7 +49,7 @@ const Listen = (() => {
   let onState = () => {};
   let onLevel = () => {};
 
-  // Seviye ölçer.
+  // Level meter.
   let audio = null;
   let analyser = null;
   let meter = null;
@@ -63,8 +64,8 @@ const Listen = (() => {
 
   async function mic() {
     if (stream) return stream;
-    // Bu satır izin penceresini açıyor; kullanıcı istemeden buraya
-    // gelinmiyor.
+    // This line opens the permission prompt; we never get here unless the
+    // user asked.
     stream = await navigator.mediaDevices.getUserMedia({
       audio: { echoCancellation: true, noiseSuppression: true },
     });
@@ -76,27 +77,27 @@ const Listen = (() => {
     if (recorder && recorder.state !== "inactive") recorder.stop();
     recorder = null;
     if (stream) {
-      // Şeridi bırakmazsak tarayıcı "kayıt sürüyor" göstergesini açık
-      // tutuyor ve mikrofon meşgul kalıyor.
+      // If we do not release the track, the browser keeps its "recording"
+      // indicator on and the microphone stays busy.
       for (const track of stream.getTracks()) track.stop();
       stream = null;
     }
   }
 
-  // --- seviye ölçer ------------------------------------------------------
+  // --- level meter -------------------------------------------------------
 
-  // Ölçer çalıştı mı? Çalışmadıysa seviyeye bakarak karar vermek yanlış:
-  // hep sessizlik okuyor ve gerçekten konuşulan bir kayıt "ses duyulmadı"
-  // diye atılıyordu.
+  // Did the meter actually run? If not, deciding by level is wrong: it reads
+  // permanent silence, and a recording with real speech was being dropped as
+  // "no sound heard".
   let metering = false;
 
   function startMeter() {
     if (analyser || !stream) return;
     try {
       audio = audio || new (window.AudioContext || window.webkitAudioContext)();
-      // Ses bağlamı kullanıcı hareketine kadar askıda başlıyor. Askıdayken
-      // çözümleyici hep 128 (sessizlik) döndürüyor — ölçer sıfır gösteriyor
-      // ve konuşulan kayıt bile "sessiz" sayılıyordu.
+      // The audio context starts suspended until a user gesture. While
+      // suspended the analyser always returns 128 (silence) — the meter shows
+      // zero and even a spoken recording counted as "silent".
       if (audio.state === "suspended") audio.resume();
       analyser = audio.createAnalyser();
       analyser.fftSize = 512;
@@ -113,7 +114,7 @@ const Listen = (() => {
     meter = setInterval(() => {
       if (!analyser) return;
       analyser.getByteTimeDomainData(buffer);
-      // Ortalama sapma: 128 sessizlik, uzaklık ses.
+      // Mean deviation: 128 is silence, distance from it is sound.
       let sum = 0;
       for (const value of buffer) sum += Math.abs(value - 128);
       const level = Math.min(1, sum / buffer.length / 40);
@@ -129,16 +130,16 @@ const Listen = (() => {
     onLevel(0);
   }
 
-  // Kayıtta konuşma var mı? Ölçer çalışmadıysa "var" sayılıyor: kararı
-  // güvenilmeyen bir ölçüme dayandırıp kaydı atmak, sessizliği sunucuya
-  // göndermekten çok daha kötü.
+  // Does the recording carry speech? If the meter never ran, assume it does:
+  // dropping a recording on an untrustworthy measurement is far worse than
+  // sending silence to the server.
   const spoken = (loud) => !metering || loud === undefined || loud >= SILENT;
 
-  // --- tıkla-konuş-tıkla -------------------------------------------------
+  // --- click-speak-click -------------------------------------------------
   //
-  // Basılı tutmak değil: kullanıcı düğmeye tıklıyor ve bırakıyor, o da
-  // sıfır saniyelik bir kayıt üretip sessizce atılıyordu. Tıklamak
-  // başlatıyor, tekrar tıklamak bitiriyor.
+  // Not hold-to-talk: the user clicked the button and let go, which produced
+  // a zero-second recording that was silently discarded. A click starts,
+  // another click finishes.
 
   async function toggle() {
     if (mode === "push") { stop(); return true; }
@@ -154,8 +155,8 @@ const Listen = (() => {
       return false;
     }
 
-    // Uyandırma dinlemesi varsa duraklatılıyor: aynı şeridi iki kaydedici
-    // paylaşamıyor.
+    // Wake listening, if any, is paused: two recorders cannot share the
+    // same track.
     const listening = mode === "wake";
     mode = "push";
     chunks = [];
@@ -168,7 +169,7 @@ const Listen = (() => {
       const loud = peak;
       stopMeter();
       send(new Blob(chunks, { type: "audio/webm" }), false, loud);
-      // Uyandırma kipi kesildiyse geri dönsün.
+      // If wake mode was interrupted, resume it.
       if (listening) { mode = "wake"; loop(); }
     };
     recorder.start();
@@ -180,11 +181,11 @@ const Listen = (() => {
     mode = "off";
     onState("Çözülüyor…");
     if (recorder && recorder.state !== "inactive") recorder.stop();
-    // Şerit kapatılmıyor: art arda konuşulacaksa izni her seferinde
-    // yeniden almak hem yavaş hem rahatsız edici.
+    // The track is not closed: for back-to-back speech, re-acquiring the
+    // permission every time is both slow and annoying.
   }
 
-  // --- uyandırma ---------------------------------------------------------
+  // --- wake --------------------------------------------------------------
 
   async function wake(on) {
     if (!on) {
@@ -200,20 +201,21 @@ const Listen = (() => {
       return;
     }
     mode = "wake";
-    // Beklediğini yazmıyor. Bir insan odada beklerken "bekliyorum" diye
-    // durmuyor; sessizce duruyor ve seslenilince dönüyor.
+    // It does not announce that it is waiting. A person waiting in a room
+    // does not stand there saying "I am waiting"; they stand quietly and turn
+    // when called.
     //
-    // Ama duyduğunu gösteriyor: ölçer arka planda da çalışıyor, konuşunca
-    // mikrofon simgesi canlanıyor. "Dinliyor mu, duyuyor mu" sorusunun
-    // cevabı yazıyla değil böyle veriliyor.
+    // But it does show that it hears: the meter runs in the background too,
+    // and the mic icon comes alive when you speak. The answer to "is it
+    // listening, does it hear" is given this way, not in words.
     onState("");
     startMeter();
     loop();
   }
 
   function loop() {
-    // Bas-konuş sırasında uyandırma dinlemesi duruyor: aynı şeridi iki
-    // kaydedici paylaşamıyor.
+    // Wake listening stops during push-to-talk: two recorders cannot share
+    // the same track.
     if (mode !== "wake" || !stream) return;
 
     chunks = [];
@@ -222,14 +224,14 @@ const Listen = (() => {
     recorder.ondataavailable = (event) => chunks.push(event.data);
     recorder.onstop = () => {
       const loud = peak;
-      // Sessiz parça ve sırada bekleyen bir çözümleme varken hiç
-      // gönderilmiyor: birincisi boşuna iş, ikincisi bağlantı kotasını
-      // tüketip yazdığın mesajı bile sıraya sokuyordu.
+      // A silent chunk is never sent, nor anything while a transcription is
+      // pending: the first is wasted work, the second ate the connection
+      // quota and queued even the message you typed.
       if (spoken(loud) && !busy) {
         send(new Blob(chunks, { type: "audio/webm" }), true, loud);
       }
-      // Bir sonraki parça hemen başlıyor; arada boşluk kalırsa söz o
-      // boşluğa denk gelip kaçıyor.
+      // The next chunk starts immediately; leave a gap and the wake word
+      // lands in the gap and escapes.
       loop();
     };
     recorder.start();
@@ -238,15 +240,15 @@ const Listen = (() => {
     }, CHUNK_MS);
   }
 
-  // --- gönderme ----------------------------------------------------------
+  // --- sending -----------------------------------------------------------
 
   async function send(blob, listening, loud) {
     if (!blob || !blob.size) {
       if (!listening) onState("Kayıt boş — mikrofon başka bir program tarafından kullanılıyor olabilir");
       return;
     }
-    // Sessizliği baytla ölçmek yanıltıcıydı: opus sessizliği neredeyse hiç
-    // yer kaplamıyor ama kısa bir "evet" de küçük bir dosya.
+    // Measuring silence in bytes was misleading: opus silence takes almost
+    // no space, but a short "yes" is a small file too.
     if (!listening && !spoken(loud)) {
       onState("Ses duyulmadı — mikrofon seviyesini kontrol et");
       return;
@@ -273,13 +275,13 @@ const Listen = (() => {
       return;
     }
     if (!answer.text) {
-      // Ses vardı ama kelime çıkmadı: gürültü ya da çok kısa.
+      // There was sound but no words came out: noise, or too short.
       if (!listening) onState("Bir şey anlaşılmadı");
       return;
     }
 
     if (listening) {
-      // Uyandırma kipinde her duyulan gönderilmiyor; yalnızca sözü taşıyan.
+      // In wake mode not everything heard is sent; only what carries the word.
       if (answer.wake && answer.command) onCommand(answer.command);
       return;
     }

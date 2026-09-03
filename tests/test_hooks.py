@@ -136,8 +136,8 @@ async def test_a_zero_exit_lets_the_tool_run(tmp_path: Path) -> None:
     write_hooks(tmp_path, [{"olay": "arac_oncesi", "arac": "write_file",
                             "komut": script("pass")}])
     decision = await hooks.before_tool(tmp_path, "write_file", {}, cwd=tmp_path)
-    assert decision.izin
-    assert decision.gerekce == ""
+    assert decision.allowed
+    assert decision.reason == ""
 
 
 async def test_a_nonzero_exit_blocks_the_tool(tmp_path: Path) -> None:
@@ -146,18 +146,18 @@ async def test_a_nonzero_exit_blocks_the_tool(tmp_path: Path) -> None:
                             "komut": script("import sys; print('uretim dosyasi, dokunma'); "
                                             "sys.exit(1)")}])
     decision = await hooks.before_tool(tmp_path, "write_file", {}, cwd=tmp_path)
-    assert not decision.izin
-    assert "Kanca reddetti" in decision.gerekce
-    assert "uretim dosyasi, dokunma" in decision.gerekce
+    assert not decision.allowed
+    assert "Kanca reddetti" in decision.reason
+    assert "uretim dosyasi, dokunma" in decision.reason
     # The source is named so the model does not try to get around the rule.
-    assert "kullanıcının kendi kuralı" in decision.gerekce
+    assert "kullanıcının kendi kuralı" in decision.reason
 
 
 async def test_an_unmatched_tool_is_untouched(tmp_path: Path) -> None:
     write_hooks(tmp_path, [{"olay": "arac_oncesi", "arac": "write_file",
                             "komut": script("import sys; sys.exit(1)")}])
     decision = await hooks.before_tool(tmp_path, "read_file", {}, cwd=tmp_path)
-    assert decision.izin
+    assert decision.allowed
 
 
 async def test_the_first_refusal_stops_the_chain(tmp_path: Path) -> None:
@@ -170,8 +170,8 @@ async def test_the_first_refusal_stops_the_chain(tmp_path: Path) -> None:
          "komut": script(f"open(r'{trace}', 'w').write('kostum')")},
     ])
     decision = await hooks.before_tool(tmp_path, "shell", {}, cwd=tmp_path)
-    assert not decision.izin
-    assert "çıkış kodu 3" in decision.gerekce
+    assert not decision.allowed
+    assert "çıkış kodu 3" in decision.reason
     assert not trace.exists()          # the second hook never ran
 
 
@@ -186,9 +186,9 @@ async def test_a_timeout_blocks_on_the_safe_side(tmp_path: Path) -> None:
     start = _t.monotonic()
     decision = await hooks.before_tool(tmp_path, "shell", {}, cwd=tmp_path)
     elapsed = _t.monotonic() - start
-    assert not decision.izin
-    assert "cevap vermedi" in decision.gerekce
-    assert "güvenli taraf" in decision.gerekce
+    assert not decision.allowed
+    assert "cevap vermedi" in decision.reason
+    assert "güvenli taraf" in decision.reason
     # The timeout must REALLY return within the timeout: killing the shell
     # and leaving the real process behind (the pipes stay open) turned a
     # 2-second limit into a 60-second wait.
@@ -205,10 +205,10 @@ async def test_a_hook_that_cannot_start_is_skipped_and_reported(
     monkeypatch.setattr(hooks, "_launch", crash)
     write_hooks(tmp_path, [{"olay": "arac_oncesi", "arac": "*", "komut": "her neyse"}])
     decision = await hooks.before_tool(tmp_path, "shell", {}, cwd=tmp_path)
-    assert decision.izin                    # the tool keeps running
-    assert decision.notlar
-    assert "çalıştırılamadı" in decision.notlar[0]
-    assert "uygulanmadı" in decision.notlar[0]
+    assert decision.allowed                    # the tool keeps running
+    assert decision.notes
+    assert "çalıştırılamadı" in decision.notes[0]
+    assert "uygulanmadı" in decision.notes[0]
 
 
 # -- environment variables ---------------------------------------------
@@ -237,7 +237,7 @@ async def test_the_hook_receives_its_context_in_the_environment(tmp_path: Path) 
     await hooks.before_tool(
         tmp_path, "write_file",
         {"path": "C:/proje/app.py", "content": "x = 1"},
-        oturum="20260101T0000Z", cwd=tmp_path)
+        session="20260101T0000Z", cwd=tmp_path)
 
     seen = json.loads(target.read_text(encoding="utf-8"))
     assert seen["arac"] == "write_file"
@@ -323,7 +323,7 @@ async def test_post_hook_timeout_is_reported_not_fatal(tmp_path: Path) -> None:
     ("src/kancalar.json", False),
 ])
 def test_which_paths_are_protected(path: str, protected: bool) -> None:
-    assert hooks.korunan_mu(Path(path)) is protected
+    assert hooks.is_protected(Path(path)) is protected
 
 
 @pytest.fixture()

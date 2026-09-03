@@ -1,20 +1,23 @@
-// Uygulamalar paneli: ajanın atölyede ürettiği şeyleri çalıştırılabilir
-// bir katalog olarak gösterir.
+// Apps panel: shows the things the agent produced in the workshop as a
+// runnable catalog.
 //
-// Sohbette "bir pano kurdum" cümlesini okumakla o panoyu açıp kullanmak
-// aynı şey değil. Panel projeleri KAPSAMA göre iki grupta çizer —
+// Reading "I built a dashboard" in the chat and actually opening and using
+// that dashboard are not the same thing. The panel draws projects in two
+// groups by SCOPE —
 //
-//   Sistem içi   Dornick'in içinde (kapsülde) yaşayan uygulamalar
-//   Dış          kendi başına çalışan ayrı uygulamalar
+//   In-app     apps that live inside Dornick (in a capsule)
+//   External   separate apps that run on their own
 //
-// — üstte de o an çalışanlar. Her kart ne olduğunu (tür rozeti), ne
-// yaptığını (tek cümle özet) ve durumunu (yeşil nokta = çalışıyor) taşır.
-// Arama kutusu ve tür süzgeci kalabalık atölyede aranan şeyi bulur.
+// — with whatever is currently running on top. Every card carries what it
+// is (kind badge), what it does (one-sentence summary) and its state (green
+// dot = running). The search box and kind filter find things in a crowded
+// workshop.
 //
-// Kaynak `/api/projects`; sınıflama sunucuda, burada yalnızca çizim var.
+// The source is `/api/projects`; classification happens on the server, only
+// drawing happens here.
 
-// Bu dosyanın kullanıcıya gösterdiği metinlerin İngilizceleri. Kaynak metin
-// Türkçe kalıyor; görüntüleme noktasında t("...") ile çevriliyor.
+// English translations of the texts this file shows the user. The source
+// text stays Turkish; it is translated at display time with t("...").
 Dil.ekle({
   "Aç": "Open",
   "Başlat": "Start",
@@ -74,16 +77,16 @@ const Apps = (() => {
   const panel = document.getElementById("apps-panel");
   const body = document.getElementById("apps-body");
 
-  const folded = new Set();   // kapalı kapsam grupları
-  let all = [];               // son okunan projeler
-  let procs = [];             // son okunan çalışanlar
-  let query = "";             // arama metni
+  const folded = new Set();   // collapsed scope groups
+  let all = [];               // last projects read
+  let procs = [];             // last running processes read
+  let query = "";             // search text
   let kindFilter = "";        // "" | web | service | tool | doc
-  let sorunlar = [];          // yanlış yere yazılmış manifestler
+  let brokenManifests = [];   // manifests written in the wrong place
 
-  // Metin her zaman t()'den geçiyor: kaynak Türkçe, görüntü kullanıcının
-  // diline göre. (Dil eşlemede yoksa Türkçesi kalıyor — eksik çeviri göze
-  // batsın diye.)
+  // Text always goes through t(): the source is Turkish, the display follows
+  // the user's language. (Anything missing from the mapping stays Turkish —
+  // so a missing translation is conspicuous.)
   const el = (tag, cls, text) => {
     const node = document.createElement(tag);
     if (cls) node.className = cls;
@@ -91,16 +94,16 @@ const Apps = (() => {
     return node;
   };
 
-  // Panelin KENDİ stilleri panelle birlikte duruyor: rozetler, sorunlu
-  // bölümü, eylem sırası. Ana sayfa yaprağını (app.css) şişirmeden
-  // uygulamalar paneli kendi görünümünü taşıyor.
-  (function stil() {
+  // The panel's OWN styles live with the panel: badges, the broken-manifest
+  // section, the action row. The apps panel carries its own look without
+  // bloating the main stylesheet (app.css).
+  (function style() {
     if (document.getElementById("apps-ek-stil")) return;
     const s = document.createElement("style");
     s.id = "apps-ek-stil";
     s.textContent = `
-/* Rozetler, neden, adres ve eylemler açıklama satırıyla AYNI hizada
-   (soldan 30px): kart tek bir sütun gibi okunsun. */
+/* Badges, reason, address and actions align with the description line
+   (30px from the left): the card should read as a single column. */
 .proj-badges {
   display: flex; gap: 5px; align-items: center; flex-wrap: wrap;
   margin: 0 8px 6px 30px;
@@ -141,7 +144,7 @@ const Apps = (() => {
     document.head.append(s);
   })();
 
-  // Proje türü → simge ve etiket.
+  // Project kind → glyph and label.
   const PKIND = {
     web: { glyph: "◈", tag: "web" },
     service: { glyph: "⧉", tag: "servis" },
@@ -149,14 +152,14 @@ const Apps = (() => {
     tool: { glyph: "▶", tag: "betik" },
     doc: { glyph: "≡", tag: "belge" },
   };
-  // Kapsam rozeti: sistem içi mi (Dornick'in içinde), dış mı (kendi başına).
+  // Scope badge: in-app (inside Dornick) or external (on its own).
   const SCOPE = {
     "in-app": { label: "sistem içi", cls: "inapp" },
     external: { label: "dış", cls: "ext" },
     "": { label: "belirsiz", cls: "unknown" },
   };
 
-  // --- arama + süzgeç ---------------------------------------------------
+  // --- search + filter --------------------------------------------------
 
   const search = document.getElementById("apps-search");
   const chips = document.getElementById("apps-chips");
@@ -189,16 +192,16 @@ const Apps = (() => {
       .every((w) => hay.includes(w));
   }
 
-  // --- yükleme ---------------------------------------------------------
+  // --- loading ---------------------------------------------------------
 
   async function load() {
     body.textContent = "";
-    await drawRunning();   // çalışanlar en üstte, projelerden önce
-    drawArts();            // artifact'lar: kalıcı sayfalar, katalogdan önce
+    await drawRunning();   // running processes on top, before projects
+    drawArts();            // artifacts: permanent pages, before the catalog
     try {
       const data = await (await fetch("/api/projects")).json();
       all = data.projects || [];
-      sorunlar = data.sorunlar || [];
+      brokenManifests = data.sorunlar || [];
     } catch {
       body.append(el("p", "apps-blank", "Okunamadı"));
       return;
@@ -206,37 +209,37 @@ const Apps = (() => {
     render();
   }
 
-  // Projeleri (çalışanlar bölümüne dokunmadan) baştan çizer. Arama ve
-  // süzgeç her tuşta burayı çağırıyor; çalışanlar kendi yoklamasında.
+  // Redraws the projects (without touching the running section). Search and
+  // filter call this on every keystroke; the running section has its own poll.
   function render() {
     body.querySelectorAll(".apps-catalog").forEach((n) => n.remove());
     const box = el("div", "apps-catalog");
     body.append(box);
 
-    // Solo: yalnız seçilen uygulamanın kartı, detayı AÇIK. Katalog, arama,
-    // çalışanlar ve gruplar yok — liste zaten kenar çubuğunda.
+    // Solo: only the chosen app's card, with its detail OPEN. No catalog,
+    // search, running section or groups — the list is already in the sidebar.
     panel.classList.toggle("apps-solo", !!solo);
     if (solo) {
       const p = all.find((x) => x.name === solo);
       if (p) {
-        const geri = el("button", "apps-solo-back", "← Tüm uygulamalar");
-        geri.onclick = () => { solo = ""; panel.classList.remove("apps-solo"); render(); };
-        box.append(geri);
-        const kart = projectCard(p);
-        box.append(kart);
-        toggleView(p, kart);   // detay görünümü baştan açık
+        const back = el("button", "apps-solo-back", "← Tüm uygulamalar");
+        back.onclick = () => { solo = ""; panel.classList.remove("apps-solo"); render(); };
+        box.append(back);
+        const card = projectCard(p);
+        box.append(card);
+        toggleView(p, card);   // detail view open from the start
         markCards();
         return;
       }
-      // Uygulama artık yoksa (arşivlendi?) kataloga düş.
+      // If the app no longer exists (archived?) fall back to the catalog.
       solo = "";
       panel.classList.remove("apps-solo");
     }
 
-    drawSorunlar(box);
+    drawBrokenManifests(box);
 
     if (!all.length) {
-      if (!procs.length && !sorunlar.length) {
+      if (!procs.length && !brokenManifests.length) {
         box.append(el("p", "apps-blank",
           "Henüz uygulama yok — Dornick bir şey üretince burada belirir."));
       }
@@ -247,9 +250,9 @@ const Apps = (() => {
       box.append(el("p", "apps-blank", "Aramana uyan uygulama yok."));
       return;
     }
-    // KAPSAMA göre gruplu: sistem içi olanlar Dornick'in içinde (kapsülde)
-    // yaşar; dış olanlar kendi başına ayrı uygulamalardır; belirsizler
-    // Dornick'in kapsam sorusunu bekler.
+    // Grouped by SCOPE: in-app ones live inside Dornick (in a capsule);
+    // external ones are separate apps on their own; the unsorted await
+    // Dornick's scope question.
     const groups = [
       { key: "in-app", title: "Sistem içi", hint: "Dornick'in içinde çalışır" },
       { key: "external", title: "Dış uygulamalar", hint: "kendi başına çalışır" },
@@ -258,15 +261,16 @@ const Apps = (() => {
     for (const g of groups) {
       const items = found.filter((p) => (p.scope || "") === g.key);
       if (!items.length) continue;
-      // Arama varken gruplar hep açık: kullanıcı bir şey arıyor, kapalı
-      // grubun içindeki eşleşmeyi saklamak aramayı işe yaramaz yapar.
+      // With a search active the groups are always open: the user is looking
+      // for something, and hiding a match inside a collapsed group would make
+      // the search useless.
       const isOpen = !!query || !folded.has(g.key);
       const head = el("div", "apps-group scope-" + (g.key || "unknown"));
       head.append(el("span", "apps-fold", isOpen ? "▾" : "▸"));
       head.append(el("span", null, g.title));
-      // Belirsiz kutusu kalabalıklaştığında (eski denemeler, aynı işin üç
-      // kopyası) temizlik ipucu veriliyor: her kartta Arşivle var, bir
-      // tıkla .geri-donusum'a taşınıyor ve geri alınabiliyor.
+      // When the unsorted box gets crowded (old experiments, three copies of
+      // the same job) a cleanup hint appears: every card has Archive, one
+      // click moves it into .geri-donusum, and it can be recovered.
       const hint = (g.key === "" && items.length >= 8)
         ? "toplu temizlik: artık kullanmadıklarını Arşivle ile kaldırabilirsin"
         : g.hint;
@@ -285,11 +289,11 @@ const Apps = (() => {
     markCards();
   }
 
-  // Bir proje kartı. Kullanıcının bir bakışta cevabını istediği dört soru,
-  // sırayla: NE (ad + tür rozeti), NE YAPAR (tek satır açıklama), NE
-  // DURUMDA (çalışıyor / durdu / eksik) ve NE YAPABİLİRİM (Aç ·
-  // Başlat/Durdur · Klasörü göster). Eskiden kartta yalnız tek bir
-  // "Çalıştır" düğmesi vardı ve durum hiç yazmıyordu.
+  // A project card. The four questions the user wants answered at a glance,
+  // in order: WHAT (name + kind badge), WHAT DOES IT DO (one-line
+  // description), WHAT STATE (running / stopped / incomplete) and WHAT CAN I
+  // DO (Open · Start/Stop · Show folder). The old card had only a single
+  // "Run" button and never stated the state.
   function projectCard(p) {
     const wrap = el("div", "proj");
     wrap.dataset.path = p.path || "";
@@ -297,36 +301,36 @@ const Apps = (() => {
     const head = el("div", "proj-head " + p.kind);
     const meta = PKIND[p.kind] || PKIND.doc;
     head.append(el("span", "proj-glyph", meta.glyph));
-    head.append(el("span", "proj-dot"));   // çalışıyor işareti (CSS gösterir)
+    head.append(el("span", "proj-dot"));   // running mark (CSS shows it)
     const name = el("span", "proj-name", p.name);
     name.title = p.name;
     head.append(name);
     head.onclick = () => toggleView(p, wrap);
     wrap.append(head);
 
-    // Rozetler ADIN ALTINDA, kendi satırında. Panel dar (256px): rozetleri
-    // ada yandaş dizmek adı sıfır genişliğe eziyordu — kullanıcı kartın
-    // hangi uygulama olduğunu göremiyordu.
+    // Badges UNDER THE NAME, on their own row. The panel is narrow (256px):
+    // laying badges beside the name crushed it to zero width — the user
+    // could not tell which app the card was.
     const badges = el("div", "proj-badges");
     badges.append(el("span", "proj-kind-tag " + p.kind, meta.tag));
-    // Durum rozeti: kartın en çok sorulan bilgisi. "eksik" olan uygulama
-    // listeden DÜŞMÜYOR — nedeni altında yazıyor.
+    // State badge: the card's most asked-for fact. An "incomplete" app does
+    // NOT drop off the list — the reason is written underneath.
     const st = state(p);
     badges.append(el("span", "proj-state " + st.cls, st.label));
     const scope = SCOPE[p.scope] || SCOPE[""];
     badges.append(el("span", "proj-scope " + scope.cls, scope.label));
     wrap.append(badges);
-    // Tek cümlelik özet: bu uygulama NE YAPAR. "Çalıştır'a bastım ama ne
-    // olduğunu bilmiyorum" tam da bu satırın yokluğuydu. app.json'daki
-    // `desc`ten, yoksa README/docstring ilk satırından geliyor.
+    // One-sentence summary: WHAT this app DOES. "I hit Run but I don't know
+    // what happened" was exactly the absence of this line. Comes from `desc`
+    // in app.json, else the first line of the README/docstring.
     wrap.append(el("div", "proj-desc" + (p.desc ? "" : " empty"),
       p.desc || "Açıklama yok — Dornick'e sorup app.json'a yazdırabilirsin."));
-    // Eksikse NEDENİ: "entry bulunamadı: static/index.html". Kullanıcı da
-    // model de neyin yanlış olduğunu okuyabilsin.
+    // If incomplete, WHY: "entry bulunamadı: static/index.html". Both the
+    // user and the model should be able to read what is wrong.
     if (p.eksik && p.neden) wrap.append(el("p", "proj-why", p.neden));
 
-    // Canlı adres kartın üstünde: çalışan bir uygulamaya ulaşmak için
-    // kartı açmak gerekmesin.
+    // The live address sits on the card: reaching a running app should not
+    // require opening the card.
     const live = liveOf(p);
     if (live && live.address) {
       const addr = el("button", "proj-addr", live.address);
@@ -339,49 +343,49 @@ const Apps = (() => {
     return wrap;
   }
 
-  // Kartın eylem sırası. Aynı satır proje görünümünde de kullanılıyor —
-  // iki yerde iki farklı düğme kümesi olması kafa karıştırıyordu.
+  // The card's action row. The same row is used in the project view too —
+  // two different button sets in two places was confusing.
   function actionRow(p, live, where) {
     const row = el("div", "proj-actions");
     const stop = (ev) => ev.stopPropagation();
 
-    // Aç: canlı adres, masaüstü (Başlat), ya da giriş dosyası.
+    // Open: live address, desktop (Start), or the entry file.
     if ((live && live.address) || p.entry || p.kind === "desktop") {
       const open = el("button", "proj-btn primary", "Aç");
       open.onclick = (ev) => { stop(ev); openApp(p, live); };
       row.append(open);
     }
-    // Başlat / Durdur: tek DİNAMİK düğme — tıklandığı ANIN durumuna göre
-    // davranır ve 4 sn'lik yoklama etiketini tazeler (canlı şikâyet:
-    // durum sayfa yenilenmeden değişmiyordu; düğme ilk çizimin
-    // fotoğrafında kalıyordu).
+    // Start / Stop: a single DYNAMIC button — it acts on the state at the
+    // MOMENT of the click and the 4s poll refreshes its label (live
+    // complaint: the state did not change without a page refresh; the button
+    // stayed frozen in the first draw's snapshot).
     if (live || runnable(p)) {
       const st = el("button", "proj-btn act-run", "");
-      const boya = () => {
-        const kosan = liveOf(p) || (live && procs.some((q) => q.pid === live.pid) ? live : null);
-        st.textContent = t(kosan ? "Durdur" : "Başlat");
-        st.classList.toggle("danger", !!kosan);
-        st.hidden = kosan ? kosan.stoppable === false : !runnable(p);
+      const repaint = () => {
+        const running = liveOf(p) || (live && procs.some((q) => q.pid === live.pid) ? live : null);
+        st.textContent = t(running ? "Durdur" : "Başlat");
+        st.classList.toggle("danger", !!running);
+        st.hidden = running ? running.stoppable === false : !runnable(p);
       };
-      boya();
+      repaint();
       st.onclick = (ev) => {
         stop(ev);
-        const kosan = liveOf(p);
-        if (kosan && kosan.stoppable !== false) stopProc(kosan);
-        else if (!kosan && runnable(p)) launchProject(p);
+        const running = liveOf(p);
+        if (running && running.stoppable !== false) stopProc(running);
+        else if (!running && runnable(p)) launchProject(p);
         setTimeout(drawRunning, 800);
       };
       row.append(st);
     }
-    // Klasörü göster: "nerede bu şey?" — kartta yol yazıyordu ama diskte
-    // bulmak kullanıcının işiydi.
+    // Show folder: "where is this thing?" — the card printed the path, but
+    // finding it on disk was left to the user.
     const show = el("button", "proj-btn", "Klasörü göster");
     show.title = t("Bu uygulamanın klasörünü dosya gezgininde aç");
     show.onclick = async (ev) => { stop(ev); await revealApp(p); };
     row.append(show);
 
-    // Arşivle yalnız kartta (proje görünümünde ayrıntılı "Sil" duruyor):
-    // kapsamı belirsiz kalabalığı tek tıkla toparlamak için.
+    // Archive only on the card (the project view keeps the detailed
+    // "Delete"): to tidy the unsorted crowd with one click.
     if (where === "card" && !(p.scope || "")) {
       const arch = el("button", "proj-btn", "Arşivle");
       arch.onclick = (ev) => { stop(ev); archive(p, arch); };
@@ -390,7 +394,8 @@ const Apps = (() => {
     return row;
   }
 
-  // Durum rozeti. Üç hal, üç renk: canlı (yeşil), durdu (gri), eksik (amber).
+  // State badge. Three states, three colors: live (green), stopped (grey),
+  // incomplete (amber).
   function state(p) {
     if (liveOf(p)) return { cls: "live", label: "çalışıyor" };
     if (p.eksik) return { cls: "gap", label: "eksik" };
@@ -400,10 +405,10 @@ const Apps = (() => {
   const runnable = (p) => !!(p.run || p.kind === "service" || p.kind === "tool"
                              || p.kind === "desktop");
 
-  // Bu projenin çalışan bir süreci var mı? İki kaynak: (1) çalışanlar
-  // listesi (süreç defteri), (2) sunucunun kartın kendisine iliştirdiği
-  // canlı bilgisi — Dornick yeniden başlatılmışsa süreç defterde yoktur ama
-  // uygulama portunu dinlemeye devam eder.
+  // Does this project have a running process? Two sources: (1) the running
+  // list (process ledger), (2) live info the server attached to the card
+  // itself — after a Dornick restart the process is not in the ledger, but
+  // the app keeps listening on its port.
   function liveOf(p) {
     const r = procs.find((q) =>
       q.path === p.path || (p.entry && q.path === p.entry));
@@ -415,7 +420,7 @@ const Apps = (() => {
     return null;
   }
 
-  // "Aç": canlı adres → kapsül; masaüstü → Başlat (pencere); yoksa giriş.
+  // "Open": live address → capsule; desktop → Start (window); else the entry.
   function openApp(p, live) {
     if (live && live.address) { openLive(p, live); return; }
     if (p.kind === "desktop" || (p.entry && /\.exe$/i.test(p.entry || ""))) {
@@ -426,9 +431,9 @@ const Apps = (() => {
     toast(p.name + ": " + (p.neden || t("Açılacak giriş dosyası bulunamadı")));
   }
 
-  // Kartlardaki canlı durumu tazeler: yeşil nokta + durum rozeti + eylem.
-  // Kartları baştan çizmek yerine yerinde işaretleniyor — açık proje
-  // görünümü ve arama odağı bozulmasın.
+  // Refreshes the live state on the cards: green dot + state badge + action.
+  // Cards are marked in place instead of being redrawn — the open project
+  // view and search focus must not break.
   function paintViewLive(view, p) {
     view.querySelector(".proj-live")?.remove();
     const r = liveOf(p) || procs.find((q) => q.path === (p.path || ""));
@@ -455,15 +460,15 @@ const Apps = (() => {
         badge.className = "proj-state " + st.cls;
         badge.textContent = t(st.label);
       }
-      // Kart + açık detay birlikte nefes alır: canlı satır ve
-      // Başlat/Durdur etiketleri o anki gerçeğe çekilir.
+      // The card and its open detail breathe together: the live row and the
+      // Start/Stop labels are pulled to the current truth.
       if (p) {
-        const kosan = liveOf(p);
-        w.querySelectorAll(".proj-btn.act-run").forEach((eylem) => {
-          eylem.disabled = false;   // "Durduruluyor…" kilidi gerçek durumla çözülür
-          eylem.textContent = t(kosan ? "Durdur" : "Başlat");
-          eylem.classList.toggle("danger", !!kosan);
-          eylem.hidden = kosan ? kosan.stoppable === false : !runnable(p);
+        const running = liveOf(p);
+        w.querySelectorAll(".proj-btn.act-run").forEach((btn) => {
+          btn.disabled = false;   // the "Stopping…" lock is released by the real state
+          btn.textContent = t(running ? "Durdur" : "Başlat");
+          btn.classList.toggle("danger", !!running);
+          btn.hidden = running ? running.stoppable === false : !runnable(p);
         });
         const view = w.querySelector(".proj-view");
         if (view) paintViewLive(view, p);
@@ -493,19 +498,19 @@ const Apps = (() => {
   function appMenu(p, ev) {
     if (typeof Menu === "undefined") return;
     const live = liveOf(p);
-    const maddeler = [];
+    const items = [];
     if ((live && live.address) || p.entry) {
-      maddeler.push({ ad: "Aç", is: () => openApp(p, live) });
+      items.push({ ad: "Aç", is: () => openApp(p, live) });
     }
     if (live && live.stoppable !== false) {
-      maddeler.push({ ad: "Durdur", is: () => stopProc(live) });
+      items.push({ ad: "Durdur", is: () => stopProc(live) });
     } else if (!live && runnable(p)) {
-      maddeler.push({ ad: "Başlat", is: () => launchProject(p) });
+      items.push({ ad: "Başlat", is: () => launchProject(p) });
     }
-    maddeler.push({ ad: "Klasörü göster", is: () => revealApp(p) });
-    maddeler.push({ ayrac: true });
-    maddeler.push({ ad: "Arşivle", risk: true, is: () => archiveNow(p) });
-    Menu.ac(ev, maddeler);
+    items.push({ ad: "Klasörü göster", is: () => revealApp(p) });
+    items.push({ ayrac: true });
+    items.push({ ad: "Arşivle", risk: true, is: () => archiveNow(p) });
+    Menu.ac(ev, items);
   }
 
   async function archiveNow(p) {
@@ -514,8 +519,8 @@ const Apps = (() => {
     await archive(p, fake);
   }
 
-  // Arşivle: .geri-donusum'a taşır (kalıcı silmez). İki adımlı onay —
-  // yanlış tık bir projeyi götürmesin.
+  // Archive: moves into .geri-donusum (no permanent delete). Two-step
+  // confirmation — a stray click must not take a project away.
   async function archive(p, btn) {
     if (!btn.dataset.armed) {
       btn.dataset.armed = "1";
@@ -539,28 +544,28 @@ const Apps = (() => {
     }
   }
 
-  // Yanlış yere yazılmış manifestler. Sessizce yok saymak modeli de
-  // kullanıcıyı da karanlıkta bırakıyordu ("uygulamayı yaptım ama panelde
-  // yok"): burada NEDENİYLE ve DOĞRUSUYLA duruyorlar.
-  function drawSorunlar(box) {
-    if (!sorunlar.length) return;
-    const sec = el("div", "apps-sorun");
+  // Manifests written in the wrong place. Ignoring them silently left both
+  // the model and the user in the dark ("I built the app but it's not in the
+  // panel"): here they stand WITH THE REASON and THE FIX.
+  function drawBrokenManifests(box) {
+    if (!brokenManifests.length) return;
+    const section = el("div", "apps-sorun");
     const head = el("div", "apps-group");
     head.append(el("span", null, "Sorunlu manifestler"));
     head.append(el("i", "apps-group-hint", "yanlış yere yazılmış — uygulama sayılmadı"));
-    head.append(el("b", "apps-group-count", String(sorunlar.length)));
-    sec.append(head);
-    for (const s of sorunlar) {
+    head.append(el("b", "apps-group-count", String(brokenManifests.length)));
+    section.append(head);
+    for (const s of brokenManifests) {
       const row = el("div", "apps-sorun-row");
       row.append(el("div", "apps-sorun-name", "atolye/" + s.path));
       row.append(el("div", "apps-sorun-why", s.uyari || ""));
       if (s.ogretici) row.append(el("div", "apps-sorun-fix", s.ogretici));
-      sec.append(row);
+      section.append(row);
     }
-    box.append(sec);
+    box.append(section);
   }
 
-  // Proje görünümü: README/nasıl-çalıştır + eylemler + canlı durum.
+  // Project view: README/how-to-run + actions + live state.
   function toggleView(p, wrap) {
     const open = wrap.querySelector(".proj-view");
     if (open) { open.remove(); return; }
@@ -569,15 +574,16 @@ const Apps = (() => {
     const view = el("div", "proj-view");
     view.dataset.path = p.path || "";
 
-    // Canlı durum: çalışıyorsa adresi ve süresi burada da görünsün.
-    // Ayrı fonksiyon: 4 sn'lik yoklama AÇIK detayı da tazeler (canlı
-    // şikâyet, 31.08: durum sayfa yenilenmeden gelmiyordu — kartlar
-    // tazeleniyordu ama açık detay ilk anın fotoğrafında kalıyordu).
+    // Live state: while running, the address and duration show here too.
+    // A separate function: the 4s poll also refreshes an OPEN detail (live
+    // complaint, 31.08: the state did not arrive without a page refresh —
+    // the cards refreshed but the open detail stayed frozen in the first
+    // moment's snapshot).
     paintViewLive(view, p);
-    // Eksik manifestin nedeni burada da: "entry bulunamadı: static/index.html".
+    // The incomplete manifest's reason here too: "entry bulunamadı: static/index.html".
     if (p.eksik && p.neden) view.append(el("p", "proj-why", p.neden));
 
-    // Nasıl çalıştırılır (README). Markdown varsa render, yoksa düz metin.
+    // How to run (README). Rendered as markdown when available, else plain text.
     if (p.howto) {
       const how = el("div", "proj-howto");
       if (typeof Markdown !== "undefined" && Markdown.into) Markdown.into(how, p.howto);
@@ -587,21 +593,22 @@ const Apps = (() => {
       view.append(el("p", "proj-howto empty", "README yok. Dornick'e sorabilirsin."));
     }
 
-    // Nerede olduğu + neyle çalıştığı: kullanıcı diskte bulabilsin,
-    // komutu görebilsin. Yol zaten atolye/ ile gelebiliyor — bir daha
-    // ekleyip "atolye/atolye/…" yazma.
+    // Where it is + what runs it: the user should find it on disk and see
+    // the command. The path can already arrive with atolye/ — do not prepend
+    // it again and write "atolye/atolye/…".
     const rel = p.path || p.entry || "";
     view.append(el("p", "proj-path", rel.startsWith("atolye") ? rel : "atolye/" + rel));
     if (p.run) view.append(el("p", "proj-cmd", "» " + p.run));
 
-    // Aç · Başlat/Durdur · Klasörü göster — kartla AYNI sıra: aynı işin
-    // iki yerde iki farklı düğme kümesi olması kafa karıştırıyordu.
+    // Open · Start/Stop · Show folder — the SAME row as the card: two
+    // different button sets for the same job in two places was confusing.
     const row = actionRow(p, r, "view");
 
-    // Sistem dışında aç: statik bir web sayfası server'sız, gerçek tarayıcıda
-    // dosyadan tam çalışır — "içeride açıyor ama tarayıcıda da istiyorum".
-    // YALNIZCA tarayıcının işi olanlarda: Word/Excel gibi belgeler bu düğmeyi
-    // almaz — tarayıcıda açmaya çalışmak yanlış beklenti kurar.
+    // Open outside the system: a static web page runs fully from a file in a
+    // real browser, no server — "it opens inside but I want it in the
+    // browser too". ONLY for things that are the browser's job: Word/Excel
+    // style documents do not get this button — trying to open them in a
+    // browser sets the wrong expectation.
     const inBrowser = /\.(html?|svg)$/i.test(p.entry || "");
     if (p.entry && inBrowser) {
       const ext = el("button", "proj-btn", "Tarayıcıda");
@@ -618,7 +625,7 @@ const Apps = (() => {
       };
       row.append(ext);
     }
-    // "Dornick'e sor: nasıl çalıştırırım" — projeyi bağlam olarak verir.
+    // "Ask Dornick: how do I run this" — hands the project over as context.
     if (typeof setAppContext === "function") {
       const ask = el("button", "proj-btn", "Dornick'e sor");
       ask.title = "Bu projeyi konuşmanın bağlamına ver";
@@ -631,9 +638,9 @@ const Apps = (() => {
       row.append(ask);
     }
 
-    // Sil: iki adımlı onay (yanlış tık bir projeyi götürmesin). Kalıcı
-    // silmiyor — atölyedeki .geri-donusum klasörüne taşınıyor; elle geri
-    // alınabilir.
+    // Delete: two-step confirmation (a stray click must not take a project
+    // away). Not permanent — it moves into the workshop's .geri-donusum
+    // folder; recoverable by hand.
     const del = el("button", "proj-btn danger", "Sil");
     del.onclick = async () => {
       if (!del.dataset.armed) {
@@ -662,11 +669,11 @@ const Apps = (() => {
     wrap.append(view);
   }
 
-  // Projeyi başlat. Klasör projelerde PROJE YOLU gönderiliyor: sunucu
-  // manifestin `run` komutunu (npm start, dotnet run...) projenin kendi
-  // klasöründe çalıştırıyor — yalnızca Python betikleri değil. SİSTEM İÇİ
-  // servis/web projeler sonucu Dornick'in İÇİNDE bir kapsülde açar; dış proje
-  // kendi penceresinde yaşar. Web/belge → görüntüleyici.
+  // Launch the project. For folder projects the PROJECT PATH is sent: the
+  // server runs the manifest's `run` command (npm start, dotnet run...) in
+  // the project's own folder — not just Python scripts. IN-APP service/web
+  // projects open the result in a capsule INSIDE Dornick; an external
+  // project lives in its own window. Web/document → viewer.
   async function launchProject(p) {
     if (runnable(p)) {
       const target = p.single ? (p.entry || p.path) : p.path;
@@ -684,7 +691,7 @@ const Apps = (() => {
         return;
       }
       drawRunning(); setTimeout(drawRunning, 1400);
-      // Kapsül YALNIZCA servis/web projeler için. Masaüstü kendi penceresinde.
+      // The capsule is ONLY for service/web projects. Desktop gets its own window.
       const servesWeb = p.kind === "service" || p.kind === "web";
       if (servesWeb && p.scope !== "external" && typeof Capsule !== "undefined" && res.pid) {
         toast(p.name + " başlatıldı");
@@ -700,7 +707,7 @@ const Apps = (() => {
             try {
               const data = await (await fetch("/api/apps/running")).json();
               alive = (data.running || []).some((q) => q.pid === res.pid);
-            } catch { /* yoklanamadı: sessiz kal */ }
+            } catch { /* could not poll: stay silent */ }
             toast(alive
               ? p.name + " çalışıyor — panelin üstünde Çalışıyor bölümünde"
               : p.name + " çalıştı ve tamamlandı");
@@ -710,23 +717,23 @@ const Apps = (() => {
       }
       return;
     }
-    // Çalıştırılamayan: web/belge → görüntüleyici.
+    // Not runnable: web/document → viewer.
     if (typeof Viewer !== "undefined" && p.entry) { Viewer.present(p.entry); close(); return; }
-    // Giriş dosyası yok: sessiz kalma — kullanıcı "tıklıyorum, hiçbir şey
-    // olmuyor" yaşamasın, ne yapabileceğini söyle.
+    // No entry file: do not stay silent — the user must not live through
+    // "I click and nothing happens"; say what they can do.
     toast(p.name + ": açılacak giriş dosyası bulunamadı — \"Dornick'e sor\" ile sorabilirsin");
   }
 
-  // --- artifact'lar ----------------------------------------------------
+  // --- artifacts -------------------------------------------------------
   //
-  // Ajanın yayınladığı kalıcı sayfalar (rapor, pano, görselleştirme).
-  // Sohbetteki kart akıp gidebilir; galeri hepsini bir arada tutar:
-  // aç (uygulama içi görüntüleyici) + sil (iki adımlı onay — sunucu
-  // kalıcı silmez, çöpe taşır).
+  // Permanent pages the agent published (report, dashboard, visualization).
+  // The card in the chat can drift away; the gallery keeps them all in one
+  // place: open (in-app viewer) + delete (two-step confirmation — the
+  // server does not delete permanently, it moves to the trash).
 
   const artAddress = (a) => "/artifact/" + a.id + "/";
 
-  // ISO damgayı kısa yerel tarihe çevirir: "26.08 14:05".
+  // Converts an ISO stamp to a short local date: "26.08 14:05".
   function artWhen(iso) {
     const d = new Date(iso || "");
     if (isNaN(d)) return "";
@@ -738,14 +745,14 @@ const Apps = (() => {
     const old = body.querySelector(".apps-arts");
     if (old) old.remove();
 
-    const sec = el("div", "apps-arts");
+    const section = el("div", "apps-arts");
     const head = el("div", "apps-group", "Artifact'lar");
     head.append(el("i", "apps-group-hint", "kalıcı sayfalar"));
     const holder = el("div", "arts-body");
     holder.append(el("p", "apps-blank dugum-yukleniyor", "Yükleniyor…"));
-    sec.append(head, holder);
-    // Katalogdan önce, çalışanlardan sonra dursun.
-    body.insertBefore(sec, body.querySelector(".apps-catalog"));
+    section.append(head, holder);
+    // Sits before the catalog, after the running section.
+    body.insertBefore(section, body.querySelector(".apps-catalog"));
 
     let rows;
     try {
@@ -778,8 +785,8 @@ const Apps = (() => {
     row.setAttribute("role", "button");
     row.title = (a.title || a.id) + " — görüntüleyicide aç";
 
-    // Simge app.js'teki artGlyphSvg'den (DOM API — işaretleme metni yok);
-    // bir ihtimal yüklenmemişse düz karakter yedeği.
+    // The glyph comes from artGlyphSvg in app.js (DOM API — no markup
+    // strings); a plain character fallback in case it did not load.
     const glyph = el("span", "arts-glyph");
     if (typeof artGlyphSvg === "function") glyph.append(artGlyphSvg());
     else glyph.textContent = "⬒";
@@ -817,8 +824,9 @@ const Apps = (() => {
       else window.open(url, "_blank", "noopener");
     };
 
-    // Sil: iki adımlı onay — yanlış tık bir teslimatı götürmesin. Sunucu
-    // kalıcı silmiyor, çöpe taşıyor; yine de niyet sorulur.
+    // Delete: two-step confirmation — a stray click must not take a
+    // deliverable away. The server does not delete permanently, it moves to
+    // the trash; intent is asked anyway.
     const del = el("button", "arts-btn danger", "Sil");
     del.onclick = async (ev) => {
       ev.stopPropagation();
@@ -851,12 +859,12 @@ const Apps = (() => {
     return row;
   }
 
-  // --- çalışan uygulamalar --------------------------------------------
+  // --- running apps ----------------------------------------------------
   //
-  // Ajan bir betik/sunucu başlattıysa burada canlı görünüyor: bir web
-  // sunucusu bağladıysa adresi tıklanınca kapsülde açılıyor, her biri
-  // durdurulabiliyor. Panel açıkken periyodik yoklanıyor; kartlardaki
-  // yeşil noktalar da aynı yoklamayla tazeleniyor.
+  // If the agent started a script/server, it shows live here: when it bound
+  // a web server, clicking the address opens it in a capsule, and each one
+  // can be stopped. Polled periodically while the panel is open; the green
+  // dots on the cards refresh with the same poll.
 
   let pollTimer = null;
 
@@ -878,13 +886,12 @@ const Apps = (() => {
     markCards();
     if (!procs.length) return;
 
-    const sec = el("div", "apps-running");
-    sec.append(el("div", "apps-group", "Çalışıyor"));
+    const section = el("div", "apps-running");
+    section.append(el("div", "apps-group", "Çalışıyor"));
     for (const p of procs) {
-      // Dornick'in KENDİ kopyası (model `dornick --web ...` çalıştırdıysa):
-      // görünür ama "uygulaman" gibi değil — ayrı ad, sönük nokta,
-      // Durdur yok. Gizlemek de yanlış olurdu; kullanıcı orada bir şey
-      // çalıştığını bilmeli.
+      // Dornick's OWN copy (when the model ran `dornick --web ...`): visible
+      // but not like "your app" — separate name, dim dot, no Stop. Hiding it
+      // would be wrong too; the user should know something runs there.
       const r = el("div", "apps-proc" + (p.self ? " self" : ""));
       r.append(el("span", "apps-proc-dot"));
       const name = el("span", "apps-proc-name", p.self ? t("Dornick (kendisi)") : p.name);
@@ -894,12 +901,13 @@ const Apps = (() => {
       if (p.self) {
         r.append(el("i", "apps-proc-self-note",
           "Dornick'in kendi süreci — panelden durdurulmuyor"));
-        sec.append(r);
+        section.append(r);
         continue;
       }
       if (p.address) {
-        // Canlı sunucu: sistem içinde kapsülde aç (Dornick'in içinde). Kapsülün
-        // kendi "dışarıda aç" düğmesi ayrı sekme isteyene duruyor.
+        // Live server: opens in-system in a capsule (inside Dornick). The
+        // capsule's own "open outside" button is there for whoever wants a
+        // separate tab.
         const link = el("button", "apps-proc-addr", p.address);
         link.title = "Sistem içinde aç (kapsül)";
         link.onclick = () => {
@@ -913,23 +921,24 @@ const Apps = (() => {
       const stop = el("button", "apps-proc-stop", "Durdur");
       stop.onclick = () => stopProc(p);
       r.append(stop);
-      sec.append(r);
+      section.append(r);
     }
-    // Katalog zaten çizildiyse en başa, değilse tek başına.
-    body.insertBefore(sec, body.firstChild);
+    // If the catalog is already drawn, go to the very top; else stand alone.
+    body.insertBefore(section, body.firstChild);
   }
 
-  // Durdur ve SONUCU söyle. Eski hal cevaba bakmadan "durduruldu" diyordu;
-  // süreç inmemişse kullanıcı "durdur diyorum durmuyor" yaşıyordu.
+  // Stop and REPORT THE OUTCOME. The old version said "stopped" without
+  // looking at the answer; when the process had not gone down the user lived
+  // through "I say stop and it doesn't stop".
   async function stopProc(p) {
-    // İyimser arayüz: düğme ANINDA "Durduruluyor…" der. Süreç ağacının
-    // ölümü işletim sisteminde bir-iki saniye sürebiliyor; eski hal o
-    // arada hâlâ "Durdur" gösteriyordu ("durumlar güncellenmiyor
-    // realtime" — canlı, 31.08). Yoklama patlaması geçişi saniyeler
-    // içinde ekrana taşır; 4 sn'lik olağan yoklama gerisini toparlar.
-    const hedefler = body.querySelectorAll(
+    // Optimistic UI: the button says "Stopping…" IMMEDIATELY. Killing a
+    // process tree can take a second or two in the OS; the old version still
+    // showed "Stop" in the meantime ("states don't update in realtime" —
+    // live, 31.08). A burst of polls brings the transition to the screen
+    // within seconds; the regular 4s poll tidies up the rest.
+    const targets = body.querySelectorAll(
       '.proj[data-path="' + (p.path || "") + '"] .proj-btn.act-run');
-    hedefler.forEach((b) => { b.disabled = true; b.textContent = t("Durduruluyor…"); });
+    targets.forEach((b) => { b.disabled = true; b.textContent = t("Durduruluyor…"); });
     let res;
     try {
       res = await (await fetch("/api/apps/stop", {
@@ -944,8 +953,8 @@ const Apps = (() => {
     drawRunning();
   }
 
-  // Kısa bir bildirim: başlatılan bir betiğin kendi penceresi var, ama
-  // "başladı" geri bildirimi arayüzde de görünmeli.
+  // A short notification: a launched script has its own window, but the
+  // "it started" feedback should show in the UI too.
   let toastTimer = null;
   function toast(text) {
     let bar = document.getElementById("apps-toast");
@@ -966,8 +975,8 @@ const Apps = (() => {
     if (panel.hidden) open(); else close();
   }
 
-  // Solo kip: kenar çubuğundan tek uygulama seçildi — katalog değil,
-  // o uygulamanın detay sayfası. HUD düğmesi tam kataloğu açar.
+  // Solo mode: a single app was picked from the sidebar — not the catalog
+  // but that app's detail page. The HUD button opens the full catalog.
   let solo = "";
 
   function show(name) {
@@ -975,25 +984,27 @@ const Apps = (() => {
     open(true);
   }
 
-  function open(soloKoru) {
-    if (!soloKoru) solo = "";
-    // Geniş ekranda panel ORTA yüzey: rail'e dokunmaz. Dar pencerede
-    // sol overlay'ler çakışır — orada konuşmalar kapanır (eski davranış).
+  function open(keepSolo) {
+    if (!keepSolo) solo = "";
+    // On a wide screen the panel is a CENTER surface: it does not touch the
+    // rail. In a narrow window the left overlays collide — there the
+    // conversations close (old behavior).
     if (innerWidth <= 860 && typeof History !== "undefined") History.close();
-    // Orta alanda tek yüzey: görevler açıksa çekilir.
+    // One surface in the center: if the tasks panel is open, it withdraws.
     if (window.JobsPanel) JobsPanel.close();
     panel.classList.toggle("apps-solo", !!solo);
     {
       panel.hidden = false;
       document.body.classList.add("apps-open");
-      // HER açılışta yeniden okunuyor. Eskiden ilk açılıştan sonra yalnız
-      // önbellek çiziliyordu: Dornick bir uygulamayı panel açıldıktan SONRA
-      // ürettiyse (ya da manifestini sonradan yazdıysa) kullanıcı elle
-      // "yenile"ye basana kadar eski listeyi görüyordu — "yaptığı uygulama
-      // panelde görünmedi" şikâyetinin doğrudan sebebi buydu.
+      // Re-read on EVERY open. Previously, after the first open only the
+      // cache was drawn: if Dornick produced an app AFTER the panel opened
+      // (or wrote its manifest later) the user saw the stale list until they
+      // manually hit "refresh" — the direct cause of the "the app it built
+      // didn't show in the panel" complaint.
       load();
-      // Çalışanları panel açıkken canlı tut (canlı adres gecikmeli belirir,
-      // süreç kendi kendine bitebilir). Kapanınca yoklamayı durduruyoruz.
+      // Keep the running section live while the panel is open (the live
+      // address appears late, a process can finish on its own). The poll
+      // stops when the panel closes.
       clearInterval(pollTimer);
       pollTimer = setInterval(drawRunning, 4000);
     }

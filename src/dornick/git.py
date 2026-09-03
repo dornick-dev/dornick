@@ -1,9 +1,9 @@
-"""Git ve GitHub — alt süreç, uydurma yok.
+"""Git and GitHub — subprocess, no make-believe.
 
-Sohbet çubuğu ve `git` aracı aynı yüzeyi kullanır: durum, fark, commit,
-push/pull, GitHub'da repo açma, yayın. Ağ yalnızca `create_repo` /
-`publish` sırasında ve yalnızca `gh` ya da bir token varken çıkar.
-İkisi de yoksa öğretici hata — sahte yayın yok.
+The chat bar and the `git` tool use the same surface: status, diff,
+commit, push/pull, creating a repo on GitHub, publishing. The network is
+only touched during `create_repo` / `publish` and only when `gh` or a
+token exists. If neither does, an instructive error — no fake publishing.
 """
 
 from __future__ import annotations
@@ -31,11 +31,11 @@ GH_TEACH = (
 
 
 class GitError(Exception):
-    """git/gh çağrısı başarısız. Mesajı kullanıcıya ve modele gider."""
+    """A git/gh call failed. Its message goes to the user and the model."""
 
 
 def find_root(start: Path) -> Path | None:
-    """`start` ve üstündeki ilk `.git` dizininin çalışma ağacı."""
+    """The working tree of the first `.git` directory at `start` or above."""
     try:
         cur = start.expanduser().resolve()
     except OSError:
@@ -49,15 +49,16 @@ def find_root(start: Path) -> Path | None:
 
 
 def repo_root(config: Any, *, scratch_ok: bool = False) -> Path | None:
-    """`.git` kökünü bulur.
+    """Finds the `.git` root.
 
-    Varsayılan (çubuk/HTTP yüzeyi): yalnız seçili PROJEDE aranır. Atölye
-    ajanın karalama alanıdır, kullanıcının projesi değil — çubuğun atölyeyi
-    repo sanıp "+407 Commit · Yayınla" teklif etmesi canlı yaraydı
-    ("atölye için repo açmaması lazım", 01.09).
+    Default (bar/HTTP surface): searched only in the selected PROJECT. The
+    workshop is the agent's scratch area, not the user's project — the bar
+    mistaking the workshop for a repo and offering "+407 Commit · Yayınla"
+    was a live wound ("it must not open a repo for the workshop", 01.09).
 
-    `scratch_ok=True` (ajanın `git` aracı): eski davranış — proje yoksa
-    atölyeye düşer; ajan kendi kurduğu projelerde çalışmayı sürdürür.
+    `scratch_ok=True` (the agent's `git` tool): the old behaviour — falls
+    to the workshop when there is no project; the agent keeps working on
+    projects it set up itself.
     """
     box = config.open_sandbox()
     if box.project is not None:
@@ -86,7 +87,7 @@ def github_token(state_dir: Path | None = None) -> str:
 
 
 def snapshot(config: Any) -> dict[str, Any]:
-    """Çubuk için özet. Repo yoksa `present: false` — çubuk gizlenir."""
+    """The summary for the bar. Without a repo, `present: false` — the bar hides."""
     root = repo_root(config)
     if root is None:
         return {"ok": True, "present": False}
@@ -127,7 +128,7 @@ def status(root: Path, *, workspace: Path | None = None) -> dict[str, Any]:
 
 
 def diff(root: Path, path: str | None = None) -> dict[str, Any]:
-    """Bir dosyanın (veya hepsinin) eski/yeni gövdesi — Viewer hunk için."""
+    """The old/new body of one file (or all) — for the Viewer's hunks."""
     _need_git()
     root = root.resolve()
     if path:
@@ -213,24 +214,24 @@ def create_repo(
     source: Path | None = None,
     state_dir: Path | None = None,
 ) -> dict[str, Any]:
-    """GitHub'da repo açar. `gh` (girişliyse), yoksa token; ikisi de yoksa öğretir."""
-    ad = (name or "").strip()
-    if not ad:
+    """Creates a repo on GitHub. `gh` (if logged in), else a token; if neither, it teaches."""
+    repo_name = (name or "").strip()
+    if not repo_name:
         raise GitError("Repo adı boş olamaz.")
-    if any(c in ad for c in " /\\"):
-        raise GitError(f"Geçersiz repo adı: {ad!r}")
+    if any(c in repo_name for c in " /\\"):
+        raise GitError(f"Geçersiz repo adı: {repo_name!r}")
 
     src = source.resolve() if source is not None else None
     if src is not None and not (src / ".git").exists():
         init(src)
 
     if _gh_ready():
-        return _create_via_gh(ad, private=private, source=src)
+        return _create_via_gh(repo_name, private=private, source=src)
 
     token = github_token(state_dir)
     if not token:
         raise GitError(GH_TEACH)
-    return _create_via_api(ad, private=private, source=src, token=token)
+    return _create_via_api(repo_name, private=private, source=src, token=token)
 
 
 def publish(
@@ -240,16 +241,16 @@ def publish(
     private: bool = True,
     state_dir: Path | None = None,
 ) -> dict[str, Any]:
-    """Remote yoksa GitHub'da aç + `git push -u`."""
+    """If there is no remote, create on GitHub + `git push -u`."""
     _need_git()
     root = root.resolve()
     remote = _git(root, "remote", "get-url", "origin", check=False).stdout.strip()
     if not remote:
-        ad = (name or "").strip() or root.name
-        created = create_repo(ad, private=private, source=root, state_dir=state_dir)
+        repo_name = (name or "").strip() or root.name
+        created = create_repo(repo_name, private=private, source=root, state_dir=state_dir)
         remote = str(created.get("remote") or "")
         if not remote:
-            # gh --source zaten origin eklemiş olabilir
+            # gh --source may already have added origin
             remote = _git(root, "remote", "get-url", "origin",
                           check=False).stdout.strip()
         if not remote:
@@ -258,7 +259,7 @@ def publish(
     return status(root)
 
 
-# -- iç iş -------------------------------------------------------------
+# -- internals ----------------------------------------------------------
 
 
 def _need_git() -> None:
@@ -421,7 +422,7 @@ def _one_diff(root: Path, rel: str) -> dict[str, Any]:
     if not binary:
         old_l = old.splitlines()
         new_l = new.splitlines()
-        # Kabaca: ortak önek/sonek sonrası kalan satırlar.
+        # Roughly: the lines left after the common prefix/suffix.
         pre = 0
         while pre < len(old_l) and pre < len(new_l) and old_l[pre] == new_l[pre]:
             pre += 1

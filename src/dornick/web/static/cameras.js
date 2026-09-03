@@ -1,7 +1,8 @@
-// Kamera — izleme her zaman ayrı OS penceresi (`watch.html`).
-// Ana Dornick sohbet/beyin olarak kalır; tarayıcı tam ekranı ana belgeye
-// uygulanmaz (Dornick kaybolur). Ayarlar Ayarlar › Kameralar’da.
-// GPU kutuları sunucuda JPEG üzerine çizilir (`?boxes=1`).
+// Camera — watching always happens in a separate OS window (`watch.html`).
+// The main Dornick stays as chat/brain; browser fullscreen is never applied
+// to the main document (Dornick would vanish). Settings live under
+// Settings › Cameras. GPU boxes are drawn onto the JPEG on the server
+// (`?boxes=1`).
 
 const Cameras = (() => {
   Dil.ekle({
@@ -57,30 +58,30 @@ const Cameras = (() => {
   const sightEl = document.getElementById("cam-stage-sight");
   const titleEl = document.getElementById("cam-stage-title");
   const spec = document.getElementById("cam-spec");
-  const ikon = document.getElementById("cams");
+  const icon = document.getElementById("cams");
   const pop = document.getElementById("cam-pop");
   let timer = null;
   let cams = [];
-  let hazir = true;
-  let acikMi = false;
-  let kip = "kesit";
-  let gpuAd = "";
-  let secili = "usb";
-  let ozet = "";
+  let ready = true;
+  let isOpen = false;
+  let mode = "kesit";
+  let gpuName = "";
+  let selected = "usb";
+  let summary = "";
   let liveUrl = "";
   const thumbUrls = new Map();
 
-  function ikonTazele() {
-    ikon.classList.toggle("cam-off", !aktifVar());
-    ikon.classList.toggle("cam-on", aktifVar());
-    ikon.classList.toggle("on", aktifVar());
-    ikon.setAttribute("aria-pressed", acikMi ? "true" : "false");
-    ikon.title = aktifVar()
+  function refreshIcon() {
+    icon.classList.toggle("cam-off", !aktifVar());
+    icon.classList.toggle("cam-on", aktifVar());
+    icon.classList.toggle("on", aktifVar());
+    icon.setAttribute("aria-pressed", isOpen ? "true" : "false");
+    icon.title = aktifVar()
       ? t("Kamera açık — tıkla: pencerede izle")
       : t("Kamera kapalı — tıkla: aç");
   }
 
-  function asamaAcik() {
+  function stageOpen() {
     return !!(deck && !deck.hidden);
   }
 
@@ -89,42 +90,42 @@ const Cameras = (() => {
     return src === "0" && (!c.kind || c.kind === "usb");
   }
 
-  function netAktif() {
+  function netLive() {
     return cams.some((c) => !usb0(c) && c.enabled);
   }
 
   function aktifVar() {
-    return !!(acikMi || netAktif());
+    return !!(isOpen || netLive());
   }
 
-  function adlar() {
-    const dahili = cams.find(usb0);
+  function rowsFor() {
+    const builtin = cams.find(usb0);
     const extras = cams.filter((c) => !usb0(c));
     return [
       {
         key: "usb",
-        ad: (dahili && dahili.name) || t("Bilgisayar kamerası"),
-        q: dahili ? "id=" + encodeURIComponent(dahili.id) : "source=0",
-        id: dahili ? dahili.id : "",
-        izleniyor: !!(dahili && dahili.enabled),
-        analyze: dahili ? dahili.analyze !== false : true,
+        name: (builtin && builtin.name) || t("Bilgisayar kamerası"),
+        q: builtin ? "id=" + encodeURIComponent(builtin.id) : "source=0",
+        id: builtin ? builtin.id : "",
+        watched: !!(builtin && builtin.enabled),
+        analyze: builtin ? builtin.analyze !== false : true,
       },
       ...extras.map((c) => ({
         key: c.id,
-        ad: c.name,
+        name: c.name,
         q: "id=" + encodeURIComponent(c.id),
         id: c.id,
-        izleniyor: !!c.enabled,
+        watched: !!c.enabled,
         analyze: c.analyze !== false,
       })),
     ];
   }
 
-  function secilen() {
-    return adlar().find((w) => w.key === secili) || adlar()[0];
+  function selectedRow() {
+    return rowsFor().find((w) => w.key === selected) || rowsFor()[0];
   }
 
-  async function yukle(opts) {
+  async function load(opts) {
     const redraw = !!(opts && opts.redraw);
     let d = null;
     try {
@@ -134,28 +135,28 @@ const Cameras = (() => {
         body: JSON.stringify({ action: "list" }),
       })).json();
     } catch { return; }
-    hazir = !!d.available;
-    acikMi = !!d.enabled && (d.live !== false);
-    kip = d.vision_mode || "kesit";
+    ready = !!d.available;
+    isOpen = !!d.enabled && (d.live !== false);
+    mode = d.vision_mode || "kesit";
     cams = d.cameras || [];
     const gpu = (d.gpus || [])[0];
-    gpuAd = gpu ? gpu.name + " · " + Math.round(gpu.total_mb / 1024) + " GB" : "";
-    const kisa = !hazir
+    gpuName = gpu ? gpu.name + " · " + Math.round(gpu.total_mb / 1024) + " GB" : "";
+    const shortLabel = !ready
       ? t("opencv kurulu değil")
-      : kip === "gpu"
-        ? t("GPU analiz ediyor") + (gpuAd ? " · " + gpuAd : "")
-      : kip === "izleme" && gpu
-        ? t("GPU hazır") + (gpuAd ? " · " + gpuAd : "")
+      : mode === "gpu"
+        ? t("GPU analiz ediyor") + (gpuName ? " · " + gpuName : "")
+      : mode === "izleme" && gpu
+        ? t("GPU hazır") + (gpuName ? " · " + gpuName : "")
         : t("GPU yok — sorulunca kesit");
     if (spec) {
-      spec.textContent = kisa;
-      spec.title = !hazir
+      spec.textContent = shortLabel;
+      spec.title = !ready
         ? t("opencv kurulu değil — kurulumda kamera bileşenini seç")
-        : kip === "gpu"
-          ? t("GPU analiz ediyor") + ": " + gpuAd + " — "
+        : mode === "gpu"
+          ? t("GPU analiz ediyor") + ": " + gpuName + " — "
             + t("kare yerelde okunuyor, sohbet modeline metin gidiyor")
-        : kip === "izleme" && gpu
-          ? t("GPU hazır") + ": " + gpuAd + " — "
+        : mode === "izleme" && gpu
+          ? t("GPU hazır") + ": " + gpuName + " — "
             + ((d.sight && d.sight.reason)
                 ? d.sight.reason
                 : t("analiz henüz yüklenmedi; şimdilik LLM kesitle bakıyor"))
@@ -164,70 +165,70 @@ const Cameras = (() => {
     const lab = document.getElementById("cam-gpu-lab");
     const box = document.getElementById("cam-analyze");
     if (lab && box) {
-      const varGpu = kip === "gpu" || kip === "izleme";
-      lab.hidden = !varGpu;
-      if (varGpu) box.checked = true;
+      const hasGpu = mode === "gpu" || mode === "izleme";
+      lab.hidden = !hasGpu;
+      if (hasGpu) box.checked = true;
     }
-    ikonTazele();
-    if (!aktifVar() && asamaAcik()) kapat();
-    if (redraw && asamaAcik()) ciz();
-    const goz = d.sight || {};
-    if (kip === "izleme" && !goz.ready
-        && (!goz.tried || goz.reason === "yükleniyor")) {
-      setTimeout(() => yukle({ redraw: false }), 2500);
+    refreshIcon();
+    if (!aktifVar() && stageOpen()) kapat();
+    if (redraw && stageOpen()) paint();
+    const sight = d.sight || {};
+    if (mode === "izleme" && !sight.ready
+        && (!sight.tried || sight.reason === "yükleniyor")) {
+      setTimeout(() => load({ redraw: false }), 2500);
     }
   }
 
-  function serit() {
+  function paintStrip() {
     if (!strip) return;
-    const want = adlar();
+    const want = rowsFor();
     strip.replaceChildren();
     want.forEach((w) => {
       const btn = document.createElement("button");
       btn.type = "button";
-      btn.className = "cam-thumb" + (w.key === secili ? " on" : "");
+      btn.className = "cam-thumb" + (w.key === selected ? " on" : "");
       btn.dataset.key = w.key;
       const img = document.createElement("img");
       img.alt = "";
       img.dataset.q = w.q;
       img.dataset.key = w.key;
       const cap = document.createElement("span");
-      cap.textContent = w.ad;
+      cap.textContent = w.name;
       btn.append(img, cap);
       btn.onclick = () => {
-        secili = w.key;
-        ciz();
+        selected = w.key;
+        paint();
       };
       if (w.id && w.key !== "usb") {
-        const sil = document.createElement("i");
-        sil.textContent = "×";
-        sil.title = t("sil");
-        sil.onclick = async (ev) => {
+        const removeBtn = document.createElement("i");
+        removeBtn.textContent = "×";
+        removeBtn.title = t("sil");
+        removeBtn.onclick = async (ev) => {
           ev.stopPropagation();
           await fetch("/api/cameras", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ action: "remove", id: w.id }),
           });
-          if (secili === w.key) secili = "usb";
-          yukle({ redraw: true });
+          if (selected === w.key) selected = "usb";
+          load({ redraw: true });
         };
-        btn.append(sil);
+        btn.append(removeBtn);
       }
       strip.append(btn);
     });
   }
 
-  function ciz() {
-    if (!hazir || !asamaAcik()) return;
-    const w = secilen();
-    if (titleEl) titleEl.textContent = w ? w.ad : t("Bilgisayar kamerası");
-    if (live) live.alt = w ? w.ad : "";
-    serit();
-    tazele();
+  function paint() {
+    if (!ready || !stageOpen()) return;
+    const w = selectedRow();
+    if (titleEl) titleEl.textContent = w ? w.name : t("Bilgisayar kamerası");
+    if (live) live.alt = w ? w.name : "";
+    paintStrip();
+    refresh();
   }
 
-  async function kareYukle(img, q, boxes, follow) {
+  async function loadFrame(img, q, boxes, follow) {
     if (!img) return "";
     try {
       const r = await fetch(
@@ -258,30 +259,30 @@ const Cameras = (() => {
     }
   }
 
-  function tazele() {
+  function refresh() {
     clearInterval(timer);
-    if (!asamaAcik() || document.hidden || !hazir) return;
+    if (!stageOpen() || document.hidden || !ready) return;
     const tick = async () => {
-      if (!asamaAcik() || document.hidden) return;
-      const w = secilen();
+      if (!stageOpen() || document.hidden) return;
+      const w = selectedRow();
       if (!w || !live) return;
       const thumb = strip && [...strip.querySelectorAll("img")]
         .find((el) => el.dataset.key === w.key);
-      const seen = await kareYukle(live, w.q, w.analyze !== false, thumb);
+      const seen = await loadFrame(live, w.q, w.analyze !== false, thumb);
       if (seen) {
-        ozet = seen;
+        summary = seen;
         if (sightEl) sightEl.textContent = seen;
       }
       for (const img of strip.querySelectorAll("img")) {
         if (img.dataset.key === w.key) continue;
-        kareYukle(img, img.dataset.q, false);
+        loadFrame(img, img.dataset.q, false);
       }
     };
     tick();
     timer = setInterval(tick, 450);
   }
 
-  function yerTut() {
+  function placeholderSync() {
     const input = document.getElementById("input");
     if (!input) return;
     input.placeholder = aktifVar()
@@ -290,23 +291,23 @@ const Cameras = (() => {
   }
 
   async function ac() {
-    if (!aktifVar() || !hazir) return;
+    if (!aktifVar() || !ready) return;
     if (deck) deck.hidden = true;
     if (layer) layer.hidden = true;
-    const w = secilen();
+    const w = selectedRow();
     try {
       if (window.pywebview && window.pywebview.api
           && window.pywebview.api.open_camera_window) {
         await window.pywebview.api.open_camera_window(w ? w.key : "");
-        yerTut();
-        ikonTazele();
+        placeholderSync();
+        refreshIcon();
         return;
       }
-    } catch { /* tarayıcı / eski kabuk */ }
+    } catch { /* browser / old shell */ }
     window.open("/watch.html?cam=" + encodeURIComponent(w ? w.key : "usb"),
                 "dornick-cam", "popup=yes,width=980,height=640");
-    yerTut();
-    ikonTazele();
+    placeholderSync();
+    refreshIcon();
   }
 
   function gizle() {
@@ -314,8 +315,8 @@ const Cameras = (() => {
     if (layer) layer.hidden = true;
     document.body.classList.remove("cam-stage", "cam-open");
     clearInterval(timer);
-    yerTut();
-    ikonTazele();
+    placeholderSync();
+    refreshIcon();
   }
 
   function kapat() {
@@ -323,39 +324,39 @@ const Cameras = (() => {
     document.body.classList.remove("cam-open");
   }
 
-  async function guc(on) {
+  async function power(on) {
     try {
       const d = await (await fetch("/api/cameras", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "power", enabled: !!on }),
       })).json();
-      acikMi = !!(d && d.enabled && (on ? d.live : false));
-      if (d && d.enabled === false) acikMi = false;
-      ikonTazele();
+      isOpen = !!(d && d.enabled && (on ? d.live : false));
+      if (d && d.enabled === false) isOpen = false;
+      refreshIcon();
       if (!aktifVar()) kapat();
       else if (on) ac();
-      yukle({ redraw: asamaAcik() });
+      load({ redraw: stageOpen() });
     } catch { /* */ }
   }
 
   function durum(e) {
-    acikMi = !!(e && e.enabled && e.live);
-    if (e && e.enabled && !e.live && e.note) acikMi = false;
-    ikonTazele();
+    isOpen = !!(e && e.enabled && e.live);
+    if (e && e.enabled && !e.live && e.note) isOpen = false;
+    refreshIcon();
     if (!aktifVar()) kapat();
   }
 
   function baglam() {
     if (!aktifVar()) return "";
-    const w = secilen();
-    const ad = (w && w.ad) || t("Bilgisayar kamerası");
-    const ne = ozet || t("kare alınamadı");
-    return `[Kamera] Şu an "${ad}" bakıyorsun. Yerel GPU: ${ne}. `
+    const w = selectedRow();
+    const camName = (w && w.name) || t("Bilgisayar kamerası");
+    const seen = summary || t("kare alınamadı");
+    return `[Kamera] Şu an "${camName}" bakıyorsun. Yerel GPU: ${seen}. `
       + "Görüntü hakkında soru sorulduğunda kamera aracını kullan.";
   }
 
-  function turAlanlari() {
+  function kindFields() {
     const kindEl = document.getElementById("cam-kind");
     if (!kindEl) return;
     const kind = kindEl.value;
@@ -370,7 +371,7 @@ const Cameras = (() => {
     if (port && net && !port.value) port.placeholder = kind === "rtsp" ? "554" : "80";
   }
 
-  ikon.addEventListener("click", () => {
+  icon.addEventListener("click", () => {
     if (!aktifVar()) {
       pop.hidden = !pop.hidden;
       return;
@@ -380,7 +381,7 @@ const Cameras = (() => {
   });
   document.getElementById("cam-enable").addEventListener("click", async () => {
     pop.hidden = true;
-    await guc(true);
+    await power(true);
   });
   document.getElementById("cam-settings").addEventListener("click", () => {
     pop.hidden = true;
@@ -388,24 +389,24 @@ const Cameras = (() => {
     if (s) s.click();
   });
   document.addEventListener("click", (ev) => {
-    if (!pop.hidden && !pop.contains(ev.target) && ev.target !== ikon
-        && !ikon.contains(ev.target)) pop.hidden = true;
+    if (!pop.hidden && !pop.contains(ev.target) && ev.target !== icon
+        && !icon.contains(ev.target)) pop.hidden = true;
   });
-  yukle({ redraw: false });
+  load({ redraw: false });
   const camClose = document.getElementById("cam-close");
   if (camClose) camClose.addEventListener("click", gizle);
-  const dur = document.getElementById("cam-stop");
-  if (dur) dur.addEventListener("click", () => guc(false));
+  const stopBtn = document.getElementById("cam-stop");
+  if (stopBtn) stopBtn.addEventListener("click", () => power(false));
   const popWin = document.getElementById("cam-stage-pop");
   if (popWin) popWin.addEventListener("click", ac);
   const kindEl = document.getElementById("cam-kind");
-  if (kindEl) kindEl.addEventListener("change", turAlanlari);
-  turAlanlari();
+  if (kindEl) kindEl.addEventListener("change", kindFields);
+  kindFields();
   document.getElementById("cam-add").addEventListener("click", async () => {
     const kind = document.getElementById("cam-kind").value;
-    const ad = document.getElementById("cam-name").value.trim();
+    const camName = document.getElementById("cam-name").value.trim();
     const analyze = !!(document.getElementById("cam-analyze") || {}).checked;
-    const body = { action: "add", kind, name: ad, analyze };
+    const body = { action: "add", kind, name: camName, analyze };
     if (kind === "usb") {
       body.source = (document.getElementById("cam-index").value.trim() || "0");
       if (!body.name) body.name = body.source === "0" ? t("Bilgisayar kamerası") : "kamera";
@@ -425,13 +426,13 @@ const Cameras = (() => {
     });
     document.getElementById("cam-name").value = "";
     document.getElementById("cam-pass").value = "";
-    yukle({ redraw: true });
+    load({ redraw: true });
   });
 
   document.addEventListener("visibilitychange", () => {
     if (document.hidden) clearInterval(timer);
-    else if (asamaAcik()) tazele();
+    else if (stageOpen()) refresh();
   });
 
-  return { ac, kapat, gizle, durum, baglam, get ozet() { return ozet; } };
+  return { ac, kapat, gizle, durum, baglam, get ozet() { return summary; } };
 })();

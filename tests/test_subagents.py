@@ -1,8 +1,9 @@
-"""Alt ajanlar.
+"""Subagents.
 
-Aracın asıl işi bağlamı bölmek: alt ajanın otuz araç çağrısı kendi
-günlüğünde kalmalı, ana konuşmaya yalnızca cevap dönmeli. Bu bozulursa
-hiçbir hata çıkmıyor — sadece pencere iki kat hızlı doluyor.
+The tool's real job is splitting the context: the subagent's thirty tool
+calls must stay in its own log, only the answer must return to the main
+conversation. When this breaks, no error appears — the window just fills
+twice as fast.
 """
 
 from __future__ import annotations
@@ -24,27 +25,27 @@ from tests.test_loop import (  # noqa: F401
 
 @pytest.fixture()
 def full(tmp_path: Path):
-    """Gerçek araç defteri: `task` aracı da içinde."""
+    """The real tool registry: the `task` tool included."""
     return build_registry()
 
 
 @pytest.fixture(autouse=True)
-def _agsiz_katalog(monkeypatch):
-    """Bu dosyadaki testler AĞA ÇIKMAMALI.
+def _offline_catalog(monkeypatch):
+    """The tests in this file must NOT touch the network.
 
-    `task` aracı, kendisine bir model kimliği verildiğinde onu sağlayıcının
-    kataloğuyla doğruluyor ve katalog gerçek bir HTTP isteğiyle geliyor.
-    Testin sonucu makinenin internetine bağlı olamaz: burada katalog
-    varsayılan olarak BOŞ, yani "sunucu liste vermiyor" hali — doğrulama
-    atlanır ve model aynen geçer. Doğrulamayı sınayan testler kataloğu
-    kendileri sabitliyor.
+    When given a model id, the `task` tool validates it against the
+    provider's catalog, and the catalog comes via a real HTTP request. A
+    test's result cannot depend on the machine's internet: here the
+    catalog is EMPTY by default, i.e. the "server gives no list" state —
+    validation is skipped and the model passes through as-is. Tests that
+    exercise validation pin the catalog themselves.
     """
     from dornick import settings
 
     monkeypatch.setattr(settings, "scan_models", lambda _config: [])
 
 
-# -- kayıt -------------------------------------------------------------
+# -- registration ------------------------------------------------------
 
 
 def test_the_task_tool_exists_at_the_top_level(full) -> None:
@@ -52,37 +53,37 @@ def test_the_task_tool_exists_at_the_top_level(full) -> None:
 
 
 def test_a_subagent_gets_no_task_tool() -> None:
-    """Aracın hiç kaydedilmemesi, kaydedilip reddedilmesinden iyi: model
-    olmayan bir yeteneği denemesin."""
+    """Never registering the tool is better than registering and refusing
+    it: the model should not try an ability that does not exist."""
     assert "task" not in build_registry(subagents=False)
 
 
 def test_subagents_can_run_side_by_side(full) -> None:
-    """Asıl kazanç burada: bağımsız parçalar aynı turda paralel koşuyor."""
+    """The real win is here: independent pieces run in parallel in the same turn."""
     assert full.get("task").parallel_safe
 
 
 def test_the_tool_itself_changes_nothing(full) -> None:
-    """Yan etki alt ajanın araçlarından geliyor ve onlar zaten izin
-    kapısından geçiyor; aracı da mutasyon saymak her alt ajan için ikinci
-    bir onay sorusu demekti."""
+    """Side effects come from the subagent's tools and those already pass
+    the permission gate; counting the tool itself as a mutation would mean
+    a second approval question for every subagent."""
     assert not full.get("task").mutates
 
 
-# -- koşum -------------------------------------------------------------
+# -- running -----------------------------------------------------------
 
 
 async def test_the_answer_comes_back_but_the_steps_do_not(
     tmp_path: Path, full
 ) -> None:
-    """Alt ajanın ara adımları ana bağlamı doldurmamalı."""
+    """The subagent's intermediate steps must not fill the main context."""
     client = FakeClient(
-        # Ana ajan alt ajan başlatıyor.
+        # The main agent launches a subagent.
         tool_turn(("c1", "task", {"title": "ara", "task": "şu dizinde X'i bul"})),
-        # Alt ajan: bir araç çağırıp sonra cevaplıyor.
+        # The subagent: calls one tool, then answers.
         tool_turn(("c2", "list_dir", {"path": str(tmp_path)})),
         text_turn("X, ayarlar.py içinde geçiyor."),
-        # Ana ajan sonucu aktarıyor.
+        # The main agent relays the result.
         text_turn("Buldum: ayarlar.py"),
     )
     agent = build_agent(tmp_path, client, full)
@@ -90,8 +91,8 @@ async def test_the_answer_comes_back_but_the_steps_do_not(
     await agent.run("X nerede geçiyor")
 
     history = str(agent.session.messages())
-    assert "X, ayarlar.py içinde geçiyor." in history   # cevap geldi
-    assert "list_dir" not in history                     # ara adım gelmedi
+    assert "X, ayarlar.py içinde geçiyor." in history   # the answer arrived
+    assert "list_dir" not in history                     # the intermediate step did not
 
 
 async def test_the_subagent_writes_to_its_own_session(tmp_path: Path, full) -> None:
@@ -114,9 +115,10 @@ async def test_the_subagent_writes_to_its_own_session(tmp_path: Path, full) -> N
 
 
 def test_the_child_registry_inherits_dynamic_tools(tmp_path: Path, full) -> None:
-    """Yetenekler ve MCP araçları açılıştan sonra yalnızca ana deftere
-    ekleniyordu; alt ajan bir cihaz yeteneğini ya da bağlı bir MCP sunucusunu
-    göremiyordu. Artık `source`u dolu araçlar ana defterden alt ajana iniyor.
+    """Skills and MCP tools were only added to the main registry after
+    startup; a subagent could not see a device skill or a connected MCP
+    server. Now tools with a non-empty `source` descend from the main
+    registry to the subagent.
     """
     from dornick.tools.base import ToolSpec
 
@@ -134,17 +136,17 @@ def test_the_child_registry_inherits_dynamic_tools(tmp_path: Path, full) -> None
     agent = build_agent(tmp_path, client, full)
     child = agent._child_registry()
 
-    # Dinamikler indi.
+    # The dynamics came down.
     assert "modbus_oku" in child
     assert "mcp__notion__notion-search" in child
-    # Yerleşik ayrımı korundu: task alt ajanda yok.
+    # The builtin distinction held: task is absent in the subagent.
     assert "task" not in child
-    # Kaynak etiketi de taşındı — alt ajanın kendi alt ajanına da inebilsin.
+    # The source label was carried too — so it can descend to the subagent's own subagent.
     assert child.get("modbus_oku").source == "yetenek"
 
 
 async def test_a_subagent_cannot_spawn_another(tmp_path: Path, full) -> None:
-    """Sınırsız yuvalanma tek bir isteği ağaç gibi açar."""
+    """Unbounded nesting opens a single request up like a tree."""
     client = FakeClient(
         tool_turn(("c1", "task", {"task": "birinci seviye"})),
         text_turn("bitti"),
@@ -154,16 +156,16 @@ async def test_a_subagent_cannot_spawn_another(tmp_path: Path, full) -> None:
     await agent.run("başla")
 
     assert MAX_DEPTH == 1
-    # Alt ajanın defterinde araç yok demek, modelin denemesi de mümkün değil.
+    # No tool in the subagent's registry means the model cannot even try.
     assert "task" not in build_registry(subagents=False)
 
 
 async def test_an_empty_answer_is_reported_as_an_error(tmp_path: Path, full) -> None:
-    """Sessizce boş dönen bir alt ajan, ana ajanın "tamamdır" deyip
-    geçmesine yol açıyordu."""
+    """A subagent silently returning empty led the main agent to say
+    "all done" and move on."""
     client = FakeClient(
         tool_turn(("c1", "task", {"task": "bir şey yap"})),
-        text_turn(""),        # alt ajan hiçbir şey söylemeden bitiyor
+        text_turn(""),        # the subagent finishes without saying anything
         text_turn("peki"),
     )
     agent = build_agent(tmp_path, client, full)
@@ -186,16 +188,17 @@ async def test_a_blank_instruction_is_refused(tmp_path: Path, full) -> None:
     agent = build_agent(tmp_path, client, full)
     await agent.run("başla")
 
-    # Boş görev için alt ajan hiç başlatılmamalı.
+    # No subagent should be started for an empty task.
     assert not agent.session.log.notes("subagent_start")
 
 
 async def test_interrupting_the_parent_stops_the_child(tmp_path: Path, full) -> None:
-    """Kullanıcı durdur dediğinde alt ajan arkada çalışmaya devam etmemeli.
+    """When the user says stop, the subagent must not keep running in the back.
 
-    Bayrak artık paylaşılmıyor (arka plandaki çocuk, ananın `_arm`inde
-    sahipsiz kalıyordu); çocuğun KENDİ bayrağı var ve ana `interrupt()`
-    hepsini türev olarak kuruyor. Sözleşme aynı: dur = her şey durur.
+    The flag is no longer shared (a background child was left orphaned in
+    the parent's `_arm`); the child has its OWN flag and the parent's
+    `interrupt()` sets them all derivatively. The contract is the same:
+    stop = everything stops.
     """
     client = FakeClient(
         tool_turn(("c1", "task", {"task": "uzun iş"})),
@@ -228,15 +231,15 @@ async def test_interrupting_the_parent_stops_the_child(tmp_path: Path, full) -> 
     agent._spawn = watched
     await agent.run("başla")
 
-    assert captured, "alt ajan hiç kurulmadı"
-    # Çocuğun bayrağı defterdeki handle'ın bayrağı; ana interrupt() onu kurar.
+    assert captured, "the subagent was never built"
+    # The child's flag is the handle's flag in the ledger; the parent's interrupt() sets it.
     handle = next(iter(agent._children.values()))
     assert captured[0].cancel is handle.cancel
     assert not captured[0].cancel.is_set()
     agent.interrupt()
     assert agent.cancel.is_set()
-    # Bitmiş çocuğun bayrağına dokunulmaz; koşan çocuk için kurulduğunu
-    # ayrı bir sahte handle ile doğrula.
+    # A finished child's flag is untouched; verify it is set for a running
+    # child with a separate fake handle.
     from dornick.loop import ChildHandle
 
     running = ChildHandle(id="abc123", title="koşan", model="m")
@@ -245,12 +248,12 @@ async def test_interrupting_the_parent_stops_the_child(tmp_path: Path, full) -> 
     assert running.cancel.is_set()
 
 
-# -- arka plan yardımcıları ---------------------------------------------
+# -- background helpers -------------------------------------------------
 
 
 class SlowClient(FakeClient):
-    """Her turu biraz geciktiren sahte istemci: çocuk, ana ajandan sonra
-    bitsin diye. Zamanlama testin özü değil, sıralamayı sabitliyor."""
+    """A fake client that delays every turn a little: so the child finishes
+    after the main agent. Timing is not the test's essence, it pins the ordering."""
 
     def __init__(self, *script, delay: float = 0.05) -> None:
         super().__init__(*script)
@@ -266,8 +269,9 @@ class SlowClient(FakeClient):
 async def test_a_background_helper_returns_immediately_and_reports_later(
     tmp_path: Path, full
 ) -> None:
-    """arka_plan=true: araç sonucu HEMEN dönüyor, iş arkada koşuyor ve
-    bitince sonucu bir sonraki turun başında nota dökülüyor."""
+    """background=true: the tool result returns IMMEDIATELY, the job runs
+    in the back and once done its result is dropped as a note at the start
+    of the next turn."""
     parent = FakeClient(
         tool_turn(("c1", "task", {"title": "sayım", "task": "dosyaları say",
                                   "arka_plan": True, "model": "kucuk"})),
@@ -280,19 +284,19 @@ async def test_a_background_helper_returns_immediately_and_reports_later(
 
     await agent.run("dosyaları arka planda say")
 
-    # Araç sonucu beklemeden döndü; defterde koşan kayıt var.
+    # The tool result returned without waiting; a running record is in the ledger.
     history = str(agent.session.messages())
     assert "yardımcı başlatıldı" in history
     handle = next(iter(agent._children.values()))
-    assert handle.arka_plan and handle.task is not None
+    assert handle.background and handle.task is not None
 
-    # Çocuk bitene kadar bekle: sonuç defterde, henüz bildirilmedi.
+    # Wait until the child finishes: the result is in the ledger, not yet reported.
     await handle.task
     assert handle.state == "bitti"
-    assert "42 dosya var" in handle.sonuc
+    assert "42 dosya var" in handle.outcome
     assert agent.has_unreported_children()
 
-    # Bir sonraki turun başında sonuç nota dökülüyor.
+    # At the start of the next turn the result is dropped as a note.
     await agent.run("nasıl gitti?")
     notes = str(agent.session.messages())
     assert "[Yardımcı bitti" in notes
@@ -303,33 +307,33 @@ async def test_a_background_helper_returns_immediately_and_reports_later(
 async def test_resume_for_children_opens_a_continuation_turn(
     tmp_path: Path, full
 ) -> None:
-    """Ana ajan boştayken biten yardımcı: sürdürme turu continuation
-    notuyla açılıyor (kullanıcı mesajı değil) ve sonucu değerlendiriyor."""
+    """A helper finishing while the main agent is idle: the resume turn
+    opens with a continuation note (not a user message) and evaluates the result."""
     from dornick.loop import ChildHandle
 
     client = FakeClient(text_turn("başlat"), text_turn("sonucu aktardım"))
     agent = build_agent(tmp_path, client, full)
-    await agent.run("merhaba de")   # geçmişte en az bir tur olsun
+    await agent.run("merhaba de")   # so there is at least one turn in the history
 
     handle = ChildHandle(id="ab12cd", title="şiir", model="m",
-                         arka_plan=True, state="bitti", sonuc="beş kelimelik şiir hazır")
+                         background=True, state="bitti", outcome="beş kelimelik şiir hazır")
     agent._children[handle.id] = handle
 
     stats = await agent.resume_for_children()
     assert stats is not None and stats.turns == 1
 
-    # Girdi kullanıcı mesajı DEĞİL: continuation işaretli.
+    # The input is NOT a user message: it is marked continuation.
     nudges = [e for e in agent.session.log.messages() if e.meta.get("continuation")]
     assert nudges and "yardımcı(lar) bitti" in str(nudges[-1].content)
-    # Sonuç harness notu olarak geçmişte.
+    # The result is in the history as a harness note.
     assert "beş kelimelik şiir hazır" in str(agent.session.messages())
 
-    # Bildirilecek bir şey kalmadıysa model hiç çağrılmıyor.
+    # If nothing is left to report, the model is never called.
     assert await agent.resume_for_children() is None
 
 
 async def test_interrupt_stops_a_background_helper(tmp_path: Path, full) -> None:
-    """Dur = her şey durur: arka planda koşan yardımcı da."""
+    """Stop = everything stops: the helper running in the background too."""
     import asyncio
 
     class WaitsForCancel(FakeClient):
@@ -344,22 +348,22 @@ async def test_interrupt_stops_a_background_helper(tmp_path: Path, full) -> None
     agent._client_for = lambda name: (WaitsForCancel(), agent.config)
 
     handle = agent._spawn_bg("uzun iş", "hiç bitmeyecek bir şey yap", "kucuk")
-    await asyncio.sleep(0.05)   # çocuk kapıyı alıp koşmaya başlasın
+    await asyncio.sleep(0.05)   # let the child take the gate and start running
     assert handle.state == "kosuyor"
 
     agent.interrupt()
     await handle.task
 
     assert handle.state == "hata"
-    assert handle.bildirildi, "kesilen yardımcı için bildirim turu açılmamalı"
+    assert handle.notified, "no report turn should open for a cancelled helper"
 
 
-# -- tur ortası gelen kutusu --------------------------------------------
+# -- the mid-turn inbox --------------------------------------------------
 
 
 async def test_a_mid_turn_note_lands_in_the_same_turn(tmp_path: Path) -> None:
-    """Koşan tur sürerken düşen not, AYNI koşunun bir sonraki isteğine
-    harness notu olarak giriyor."""
+    """A note dropped while the running turn is underway enters the SAME
+    run's next request as a harness note."""
     from dornick.tools import ToolRegistry, ToolResult, object_schema
 
     reg = ToolRegistry()
@@ -379,18 +383,18 @@ async def test_a_mid_turn_note_lands_in_the_same_turn(tmp_path: Path) -> None:
     assert stats.turns == 2
     second_request = str(client.seen_messages[-1])
     assert "rengi mavi yap" in second_request
-    assert not agent._inbox, "kutu boşalmalı"
+    assert not agent._inbox, "the box must be emptied"
 
 
 async def test_a_note_after_the_final_answer_gets_one_more_step(
     tmp_path: Path
 ) -> None:
-    """Model son cevabını verirken kullanıcı araya yazdıysa mesaj
-    kaybolmuyor: aynı tur içinde bir adım daha veriliyor."""
+    """If the user interjected while the model gave its final answer, the
+    message is not lost: one more step is granted within the same turn."""
     from dornick.tools import ToolRegistry
 
     class InterjectedClient(FakeClient):
-        """İlk turun ORTASINDA (model cevap üretirken) not düşer."""
+        """Drops a note in the MIDDLE of the first turn (while the model produces its answer)."""
 
         def __init__(self, agent_box: dict, *script) -> None:
             super().__init__(*script)
@@ -411,32 +415,33 @@ async def test_a_note_after_the_final_answer_gets_one_more_step(
 
     stats = await agent.run("bir şey anlat")
 
-    assert stats.turns == 2, "not için bir adım daha verilmeliydi"
+    assert stats.turns == 2, "one more step should have been granted for the note"
     assert "bir şey daha var" in str(client.seen_messages[-1])
 
 
 def test_the_inbox_note_is_invisible_in_the_chat(tmp_path: Path) -> None:
-    """Harness notu arayüzde mesaj gibi görünmemeli (balon zaten `araya`
-    olayıyla çizildi); system kanalı uygun değilse user kanalından girer
-    ama yine `internal` işaretli."""
+    """A harness note must not look like a message in the UI (the bubble
+    was already drawn by the `araya` event); when the system channel is
+    not suitable it enters through the user channel but still marked
+    `internal`."""
     from dornick.events import EventLog
     from dornick.session import Session
     from dornick.web.server import _payload
 
     session = Session(EventLog(tmp_path / "n.jsonl"), "test")
     session.add_user_text("merhaba")
-    session.add_harness_note("[Kullanıcı bu arada yazdı] birinci")   # system kanalı
-    session.add_harness_note("[Kullanıcı bu arada yazdı] ikinci")    # user kanalına düşer
+    session.add_harness_note("[Kullanıcı bu arada yazdı] birinci")   # the system channel
+    session.add_harness_note("[Kullanıcı bu arada yazdı] ikinci")    # falls to the user channel
     events = session.log.messages()
     assert [e.role for e in events] == ["user", "system", "user"]
     assert _payload(events[1]) is None
     assert _payload(events[2]) is None
-    # İkisi de modele gidiyor.
+    # Both go to the model.
     sent = str(session.messages())
     assert "birinci" in sent and "ikinci" in sent
 
 
-# -- task_say / task_status ---------------------------------------------
+# -- task_say / task_status ----------------------------------------------
 
 
 async def test_task_say_reaches_a_running_child(tmp_path: Path, full) -> None:
@@ -465,13 +470,13 @@ async def test_task_say_reaches_a_running_child(tmp_path: Path, full) -> None:
 
 
 async def test_task_say_resumes_a_finished_child(tmp_path: Path, full) -> None:
-    """Bitmiş yardımcı: oturumu diskten `Session.resume` ile açılıp aynı
-    handle üzerinden arka planda sürdürülüyor."""
+    """A finished helper: its session is opened from disk with
+    `Session.resume` and continued in the background over the same handle."""
     client = FakeClient(
         tool_turn(("c1", "task", {"title": "iş", "task": "bir şey yap"})),
         text_turn("çocuğun ilk cevabı"),
         text_turn("tamam"),
-        text_turn("çocuğun devam cevabı"),   # sürdürülen koşunun turu
+        text_turn("çocuğun devam cevabı"),   # the resumed run's turn
     )
     agent = build_agent(tmp_path, client, full)
     await agent.run("başla")
@@ -485,11 +490,11 @@ async def test_task_say_resumes_a_finished_child(tmp_path: Path, full) -> None:
     await handle.task
 
     assert handle.state == "bitti"
-    assert handle.session_id == before, "aynı oturum sürdürülmeli, yenisi açılmamalı"
-    assert "devam cevabı" in handle.sonuc
+    assert handle.session_id == before, "the same session must continue, not a new one"
+    assert "devam cevabı" in handle.outcome
     assert agent.has_unreported_children()
 
-    # Diskte hâlâ TEK çocuk oturumu var ve içinde sürdürme izi duruyor.
+    # There is still ONE child session on disk and the resume trace sits inside it.
     files = list(agent.config.sessions_dir.glob("*.jsonl"))
     assert len(files) == 1
     text = files[0].read_text(encoding="utf-8")
@@ -506,9 +511,9 @@ async def test_task_status_reports_the_ledger(tmp_path: Path, full) -> None:
     )
     agent = build_agent(tmp_path, client, full)
     agent._children["aa11"] = ChildHandle(id="aa11", title="koşan", model="m",
-                                          arka_plan=True)
+                                          background=True)
     agent._children["bb22"] = ChildHandle(id="bb22", title="biten", model="m",
-                                          state="bitti", sonuc="üç dosya bulundu")
+                                          state="bitti", outcome="üç dosya bulundu")
 
     await agent.run("yardımcılar ne durumda")
 
@@ -525,14 +530,14 @@ def test_the_ledger_keeps_at_most_eight_finished_children(tmp_path: Path, full) 
     for i in range(12):
         agent._register_child(ChildHandle(
             id=f"h{i:02d}", title=f"iş {i}", model="m",
-            state="bitti", bitis_ts=float(i), bildirildi=True))
+            state="bitti", ended_ts=float(i), notified=True))
 
     assert len(agent._children) == MAX_CHILDREN
-    # En eskiler düştü, en yeniler duruyor.
+    # The oldest dropped, the newest remain.
     assert "h00" not in agent._children and "h11" in agent._children
 
 
-# -- köprü: araya girme ve sürdürme turu ---------------------------------
+# -- the bridge: interjection and the resume turn -------------------------
 
 
 class _Hub:
@@ -546,8 +551,8 @@ class _Hub:
 async def test_submitting_while_busy_interjects_into_the_running_turn(
     tmp_path: Path
 ) -> None:
-    """Meşgulken gelen düz metin kuyruğa değil, koşan turun gelen kutusuna
-    giriyor; arayüze `araya` olayı basılıyor (queued değil)."""
+    """Plain text arriving while busy enters the running turn's inbox, not
+    the queue; the UI gets an `araya` event (not queued)."""
     import asyncio
 
     from dornick.desktop import Bridge
@@ -567,18 +572,18 @@ async def test_submitting_while_busy_interjects_into_the_running_turn(
 
     bridge.agent = StubAgent()
     bridge.submit("rengi mavi yap")
-    await asyncio.sleep(0)   # call_soon_threadsafe işlesin
+    await asyncio.sleep(0)   # let call_soon_threadsafe run
 
     assert notes and "rengi mavi yap" in notes[0][0]
     assert "[Kullanıcı bu arada yazdı]" in notes[0][0]
-    assert notes[0][1] == "rengi mavi yap"          # anlık belleğe de gidiyor
+    assert notes[0][1] == "rengi mavi yap"          # goes to instant memory too
     kinds = [e["type"] for e in hub.events]
     assert "araya" in kinds and "queued" not in kinds
-    assert bridge.queue.empty(), "araya giren mesaj kuyruğa da düşmemeli"
+    assert bridge.queue.empty(), "an interjected message must not also land in the queue"
 
 
 async def test_scheduled_and_gate_messages_still_queue(tmp_path: Path) -> None:
-    """`siraya=True` (zamanlanmış görev, dış kapı): eski kuyruk davranışı."""
+    """`queue=True` (scheduled task, external gate): the old queue behaviour."""
     import asyncio
 
     from dornick.desktop import Bridge
@@ -586,18 +591,18 @@ async def test_scheduled_and_gate_messages_still_queue(tmp_path: Path) -> None:
     hub = _Hub()
     bridge = Bridge(hub, asyncio.get_running_loop())
     bridge._busy = True
-    bridge.agent = object()   # take_note'suz: inbox yolu zaten kapalı
+    bridge.agent = object()   # no take_note: the inbox path is closed anyway
 
-    bridge.submit("zamanlanmış iş", siraya=True)
-    await asyncio.sleep(0.05)   # run_coroutine_threadsafe kuyruğa yazsın
+    bridge.submit("zamanlanmış iş", queue=True)
+    await asyncio.sleep(0.05)   # let run_coroutine_threadsafe write to the queue
 
     assert [e["type"] for e in hub.events] == ["queued"]
     assert bridge.queue.qsize() == 1
 
 
 async def test_child_done_opens_a_resume_turn_when_idle(tmp_path: Path) -> None:
-    """Yardımcı bitti sinyali kuyruğa düşüyor; sırası gelince (ajan boş)
-    sürdürme turu koşuluyor ve turn_end yayılıyor."""
+    """The helper-finished signal lands in the queue; when its turn comes
+    (agent idle) the resume turn runs and turn_end is emitted."""
     import asyncio
 
     from dornick.desktop import _CHILD_DONE, Bridge
@@ -618,7 +623,7 @@ async def test_child_done_opens_a_resume_turn_when_idle(tmp_path: Path) -> None:
     bridge.child_done()
     assert bridge.queue.get_nowait() is _CHILD_DONE
 
-    await bridge._surdur()
+    await bridge._resume()
 
     assert resumed == [True]
     kinds = [e["type"] for e in hub.events]
@@ -639,16 +644,16 @@ async def test_a_resume_with_nothing_to_report_is_silent(tmp_path: Path) -> None
             return False
 
         async def resume_for_children(self):
-            raise AssertionError("model çağrılmamalıydı")
+            raise AssertionError("the model should not have been called")
 
     bridge.agent = StubAgent()
-    await bridge._surdur()
+    await bridge._resume()
     assert hub.events == []
 
 
 async def test_an_approval_from_a_helper_carries_its_channel(tmp_path: Path) -> None:
-    """Onay diyaloğu kimin izin istediğini bilsin: yardımcının kimliği ve
-    başlığı approval_request olayında."""
+    """The approval dialog should know who asked: the helper's id and
+    title are in the approval_request event."""
     import asyncio
 
     from dornick.desktop import Bridge
@@ -657,7 +662,7 @@ async def test_an_approval_from_a_helper_carries_its_channel(tmp_path: Path) -> 
     hub = _Hub()
     bridge = Bridge(hub, asyncio.get_running_loop())
 
-    async def handler(args, ctx):  # pragma: no cover - sadece imza
+    async def handler(args, ctx):  # pragma: no cover - signature only
         return None
 
     spec = ToolSpec(name="shell", description="d", input_schema={}, handler=handler)
@@ -672,7 +677,7 @@ async def test_an_approval_from_a_helper_carries_its_channel(tmp_path: Path) -> 
     await asyncio.sleep(0)
     assert await task is True
 
-    # Ana ajanın kendi isteğinde kanal alanı hiç yok.
+    # The main agent's own request has no channel field at all.
     task = asyncio.ensure_future(bridge._approve(spec, {"command": "ls"}))
     await asyncio.sleep(0)
     ask = [e for e in hub.events if e["type"] == "approval_request"][-1]
@@ -682,12 +687,12 @@ async def test_an_approval_from_a_helper_carries_its_channel(tmp_path: Path) -> 
     assert await task is False
 
 
-# -- sohbet listesi ------------------------------------------------------
+# -- the chat list -------------------------------------------------------
 
 
 async def test_child_sessions_stay_out_of_the_chat_list(tmp_path: Path, full) -> None:
-    """Yardımcı oturumları /api/sessions listesine (mind.sessions) girmiyor;
-    günlükleri diskte duruyor ve arşiv taramasında hâlâ bulunuyorlar."""
+    """Helper sessions do not enter the /api/sessions list (mind.sessions);
+    their logs stay on disk and the archive scan still finds them."""
     from dornick.mind import open_mind
 
     client = FakeClient(
@@ -699,20 +704,20 @@ async def test_child_sessions_stay_out_of_the_chat_list(tmp_path: Path, full) ->
     await agent.run("başla")
 
     files = list(agent.config.sessions_dir.glob("*.jsonl"))
-    assert files, "çocuk oturumu diske yazılmalıydı"
+    assert files, "the child session should have been written to disk"
 
     mind = open_mind(tmp_path / "mind2", agent.config.sessions_dir, "test")
     listed = [e.session_id for e in mind.sessions()]
     assert files[0].stem not in listed
-    # Silinmedi: doğrudan bakınca hâlâ orada ve çocuk işaretli.
+    # Not deleted: looking directly it is still there and marked as a child.
     episode = mind.episode(files[0].stem)
     assert episode is not None and episode.child
     mind.store.close()
 
 
 async def test_a_subagent_can_use_another_model(tmp_path: Path, full) -> None:
-    """Tarama işi küçük ve hızlı bir modele, görüntü gerektiren iş görüntü
-    okuyan bir modele gidebilmeli."""
+    """A scan job should be able to go to a small fast model, a job
+    needing images to an image-reading one."""
     client = FakeClient(
         tool_turn(("c1", "task", {"task": "şunu tara", "model": "kucuk-model"})),
         text_turn("tarama bitti"),
@@ -727,18 +732,18 @@ async def test_a_subagent_can_use_another_model(tmp_path: Path, full) -> None:
     assert made == ["kucuk-model"]
 
 
-# -- model doğrulaması -------------------------------------------------
+# -- model validation --------------------------------------------------
 #
-# Sahada görülen: model yardımcıya UYDURMA bir kimlik verdi
-# (`qwen3.1-14b`), sağlayıcı 400 döndürdü ve yardımcı tur boyunca boşa
-# yandı. Hata alt ajanın günlüğünde patlıyor; ana ajan yalnızca "hata
-# verdi" görüyor ve sebebini bilmiyor. Kimlik spawn'dan ÖNCE katalogla
-# karşılaştırılmalı.
+# Seen in the field: the model gave the helper a MADE-UP id
+# (`qwen3.1-14b`), the provider returned 400 and the helper burned for the
+# whole turn. The error blows up in the subagent's log; the main agent
+# only sees "it errored" and does not know why. The id must be checked
+# against the catalog BEFORE the spawn.
 
 
 @pytest.fixture()
-def kayit(tmp_path: Path):
-    """Aracı doğrudan çağırmak için bağlam + çağrı yardımcısı."""
+def task_ctx(tmp_path: Path):
+    """Context + call helper for invoking the tool directly."""
     import asyncio
 
     from dornick.config import Config
@@ -764,32 +769,32 @@ def kayit(tmp_path: Path):
     return build_registry().get("task"), ctx, spawned
 
 
-def _katalog(monkeypatch, ids: list[str]) -> None:
-    """Sağlayıcının model kataloğunu sabitler; boş liste = ağ yok."""
+def _catalog(monkeypatch, ids: list[str]) -> None:
+    """Pins the provider's model catalog; an empty list = no network."""
     from dornick import settings
 
     monkeypatch.setattr(settings, "scan_models", lambda _config: [{"id": i} for i in ids])
 
 
-async def test_a_made_up_model_falls_back_to_the_main_one(kayit, monkeypatch) -> None:
-    """İş ölmemeli: yardımcı ana modelle başlar. Ama sessizce değil —
-    aracın cevabı ne olduğunu ve nereye bakılacağını söyler."""
-    tool, ctx, spawned = kayit
-    _katalog(monkeypatch, ["qwen3-14b", "llama-3.1-8b"])
+async def test_a_made_up_model_falls_back_to_the_main_one(task_ctx, monkeypatch) -> None:
+    """The job must not die: the helper starts with the main model. But
+    not silently — the tool's answer says what happened and where to look."""
+    tool, ctx, spawned = task_ctx
+    _catalog(monkeypatch, ["qwen3-14b", "llama-3.1-8b"])
 
     result = await tool.handler({"task": "iş", "model": "qwen3.1-14b"}, ctx)
 
-    assert spawned == [""]                       # ana modelle başladı
-    assert "yardımcı sonucu" in result.content    # iş yapıldı
+    assert spawned == [""]                       # started with the main model
+    assert "yardımcı sonucu" in result.content    # the job was done
     assert "`qwen3.1-14b` geçerli bir model kimliği değil" in result.content
-    assert "`models`" in result.content           # nereye bakacağını söylüyor
-    # Yakın adaylar öneriliyor: "hangi kimlik doğru" sorusunun cevabı elde.
+    assert "`models`" in result.content           # it says where to look
+    # Close candidates are suggested: the answer to "which id is right" is at hand.
     assert "qwen3-14b" in result.content
 
 
-async def test_a_real_model_passes_through_untouched(kayit, monkeypatch) -> None:
-    tool, ctx, spawned = kayit
-    _katalog(monkeypatch, ["qwen3-14b", "llama-3.1-8b"])
+async def test_a_real_model_passes_through_untouched(task_ctx, monkeypatch) -> None:
+    tool, ctx, spawned = task_ctx
+    _catalog(monkeypatch, ["qwen3-14b", "llama-3.1-8b"])
 
     result = await tool.handler({"task": "iş", "model": "qwen3-14b"}, ctx)
 
@@ -798,39 +803,41 @@ async def test_a_real_model_passes_through_untouched(kayit, monkeypatch) -> None
 
 
 async def test_validation_is_skipped_when_the_catalogue_is_unreachable(
-    kayit, monkeypatch
+    task_ctx, monkeypatch
 ) -> None:
-    """Çevrimdışı bir makinede aracı çalışmaz yapmak, uydurma kimlikten
-    daha kötü: katalog yoksa doğrulama atlanır ve model aynen geçer."""
-    tool, ctx, spawned = kayit
-    _katalog(monkeypatch, [])
+    """Making the tool unusable on an offline machine is worse than a
+    made-up id: without a catalog, validation is skipped and the model
+    passes through as-is."""
+    tool, ctx, spawned = task_ctx
+    _catalog(monkeypatch, [])
 
     await tool.handler({"task": "iş", "model": "her-neyse"}, ctx)
     assert spawned == ["her-neyse"]
 
 
 async def test_a_catalogue_lookup_that_explodes_does_not_kill_the_task(
-    kayit, monkeypatch
+    task_ctx, monkeypatch
 ) -> None:
-    """Doğrulama bir kolaylık; patlarsa işin kendisi durmamalı."""
+    """Validation is a convenience; if it blows up the job itself must not stop."""
     from dornick import settings
 
-    tool, ctx, spawned = kayit
+    tool, ctx, spawned = task_ctx
 
-    def patla(_config):
+    def boom(_config):
         raise RuntimeError("katalog yandı")
 
-    monkeypatch.setattr(settings, "scan_models", patla)
+    monkeypatch.setattr(settings, "scan_models", boom)
 
     await tool.handler({"task": "iş", "model": "her-neyse"}, ctx)
     assert spawned == ["her-neyse"]
 
 
-async def test_only_the_letter_case_is_corrected_silently(kayit, monkeypatch) -> None:
-    """`Qwen3-14B` bir uydurma değil, bir yazım kayması: katalogdaki
-    hâliyle düzeltilip devam ediliyor — ana model dayatmak gereksiz."""
-    tool, ctx, spawned = kayit
-    _katalog(monkeypatch, ["qwen3-14b"])
+async def test_only_the_letter_case_is_corrected_silently(task_ctx, monkeypatch) -> None:
+    """`Qwen3-14B` is not an invention, it is a spelling drift: it is
+    corrected to the catalog's form and things continue — imposing the
+    main model would be needless."""
+    tool, ctx, spawned = task_ctx
+    _catalog(monkeypatch, ["qwen3-14b"])
 
     result = await tool.handler({"task": "iş", "model": "Qwen3-14B"}, ctx)
 
@@ -838,15 +845,15 @@ async def test_only_the_letter_case_is_corrected_silently(kayit, monkeypatch) ->
     assert "geçerli bir model kimliği değil" not in result.content
 
 
-async def test_no_model_asked_means_no_catalogue_lookup(kayit, monkeypatch) -> None:
-    """Alan boşsa ana model kullanılıyor; katalog için ağa çıkmanın anlamı
-    yok — her `task` çağrısına bir istek eklemek pahalı."""
+async def test_no_model_asked_means_no_catalogue_lookup(task_ctx, monkeypatch) -> None:
+    """With the field empty the main model is used; going to the network
+    for the catalog is pointless — adding a request to every `task` call is costly."""
     from dornick import settings
 
-    tool, ctx, spawned = kayit
+    tool, ctx, spawned = task_ctx
     monkeypatch.setattr(
         settings, "scan_models",
-        lambda _c: pytest.fail("boş model alanında kataloğa bakılmamalı"),
+        lambda _c: pytest.fail("the catalog must not be consulted with an empty model field"),
     )
 
     await tool.handler({"task": "iş"}, ctx)
@@ -854,7 +861,7 @@ async def test_no_model_asked_means_no_catalogue_lookup(kayit, monkeypatch) -> N
 
 
 def test_the_tool_tells_the_model_not_to_invent_ids(full) -> None:
-    """Doğrulama son savunma; ilk savunma aracın kendi açıklaması."""
+    """Validation is the last defence; the first is the tool's own description."""
     schema = full.get("task").input_schema
     note = schema["properties"]["model"]["description"]
     assert "UYDURMA" in note
@@ -862,7 +869,7 @@ def test_the_tool_tells_the_model_not_to_invent_ids(full) -> None:
 
 
 async def test_the_same_model_reuses_the_parent_client(tmp_path: Path, full) -> None:
-    """İkinci bir istemci ikinci bir bağlantı havuzu demek."""
+    """A second client means a second connection pool."""
     client = FakeClient(
         tool_turn(("c1", "task", {"task": "iş", "model": "test-model"})),
         text_turn("bitti"),

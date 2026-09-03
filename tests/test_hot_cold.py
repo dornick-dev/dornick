@@ -162,7 +162,7 @@ def test_a_distilled_episode_cools_unconditionally_after_two_weeks(
     """Detail on disk, summary in the active set. The episode is not deleted."""
     episode = store.remember("Uzun bir konuşma dökümü, rapor tartışması.",
                              kind="episode")
-    store.add_use(episode.id, w=-0.2, etiket=A.DISTILLED)
+    store.add_use(episode.id, w=-0.2, label=A.DISTILLED)
 
     # It keeps being used: by the normal rule it should have stayed hot.
     for _ in range(10):
@@ -235,7 +235,7 @@ def test_the_night_recomputes_the_active_set(store, tmp_path, clock) -> None:
 
     report = weave.night_pass(store, sessions, clock=clock,
                               watermark=tmp_path / "w.json")
-    assert report.soguyan >= 1
+    assert report.cooled >= 1
     assert store.peek(old.id).hot is False
     assert store.peek(fresh.id).hot is True
 

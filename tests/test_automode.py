@@ -92,7 +92,7 @@ def test_the_pool_is_cached_on_disk_and_survives_offline(
     automode._MEMORY.clear()
 
     clock = [1_000.0]
-    assert automode.havuz(tmp_path, now=lambda: clock[0]) == ["a/1", "b/2"]
+    assert automode.pool(tmp_path, now=lambda: clock[0]) == ["a/1", "b/2"]
     cache = json.loads((tmp_path / automode.POOL_FILE).read_text(encoding="utf-8"))
     assert cache["havuz"] == ["a/1", "b/2"]
 
@@ -102,11 +102,11 @@ def test_the_pool_is_cached_on_disk_and_survives_offline(
 
     monkeypatch.setattr("urllib.request.urlopen", _explode)
     automode._MEMORY.clear()
-    assert automode.havuz(tmp_path, now=lambda: clock[0] + 3600) == ["a/1", "b/2"]
+    assert automode.pool(tmp_path, now=lambda: clock[0] + 3600) == ["a/1", "b/2"]
 
     # 24 hours passed, still no network: a stale cache beats nothing.
     automode._MEMORY.clear()
-    assert automode.havuz(tmp_path, now=lambda: clock[0] + automode.FRESHNESS_S + 5) == ["a/1", "b/2"]
+    assert automode.pool(tmp_path, now=lambda: clock[0] + automode.FRESHNESS_S + 5) == ["a/1", "b/2"]
 
 
 def test_no_network_and_no_cache_means_an_empty_pool(
@@ -117,20 +117,20 @@ def test_no_network_and_no_cache_means_an_empty_pool(
 
     monkeypatch.setattr("urllib.request.urlopen", _explode)
     automode._MEMORY.clear()
-    assert automode.havuz(tmp_path) == []
+    assert automode.pool(tmp_path) == []
 
 
 # -- auto mode definition -----------------------------------------------
 
 
 def test_oto_mode_needs_both_openrouter_and_the_oto_name() -> None:
-    assert automode.oto_mu(ModelConfig())  # the fresh-install default
-    assert automode.oto_mu(ModelConfig(name="Oto", base_url=OPENROUTER_URL + "/"))
+    assert automode.is_auto(ModelConfig())  # the fresh-install default
+    assert automode.is_auto(ModelConfig(name="Oto", base_url=OPENROUTER_URL + "/"))
     # On another provider "oto" may be a real model name; left alone.
-    assert not automode.oto_mu(
+    assert not automode.is_auto(
         ModelConfig(name="oto", base_url="http://localhost:1234/v1")
     )
-    assert not automode.oto_mu(ModelConfig(name="qwen/qwen3", base_url=OPENROUTER_URL))
+    assert not automode.is_auto(ModelConfig(name="qwen/qwen3", base_url=OPENROUTER_URL))
 
 
 # -- (b) request body ---------------------------------------------------
@@ -195,7 +195,7 @@ def _prepared() -> Prepared:
 
 @pytest.fixture()
 def fixed_pool(monkeypatch: pytest.MonkeyPatch) -> list[str]:
-    monkeypatch.setattr(automode, "havuz", lambda *a, **k: list(POOL))
+    monkeypatch.setattr(automode, "pool", lambda *a, **k: list(POOL))
     monkeypatch.setattr(automode, "write_last", lambda *a, **k: None)
     return POOL
 
@@ -240,7 +240,7 @@ async def test_a_named_openrouter_model_is_left_untouched(fixed_pool) -> None:
 
 
 async def test_an_empty_pool_fails_with_words_not_a_404(monkeypatch) -> None:
-    monkeypatch.setattr(automode, "havuz", lambda *a, **k: [])
+    monkeypatch.setattr(automode, "pool", lambda *a, **k: [])
     fake = _FakeOpenAI()
     be = _backend(ModelConfig(), fake)
 
@@ -264,7 +264,7 @@ async def test_failures_are_recorded_and_the_pool_rotates(fixed_pool) -> None:
         with pytest.raises(ConnectionError):
             await be.turn(_prepared(), [], cancel=asyncio.Event())
 
-    assert be._saglik.cezali("h/1")
+    assert be._health.cezali("h/1")
     fake.explode = False
     await be.turn(_prepared(), [], cancel=asyncio.Event())
     assert fake.seen["model"] == "h/2"
@@ -275,7 +275,7 @@ async def test_failures_are_recorded_and_the_pool_rotates(fixed_pool) -> None:
 
 def test_two_failures_bench_a_model_for_fifteen_minutes() -> None:
     clock = [0.0]
-    health = automode.Saglik(clock=lambda: clock[0])
+    health = automode.Health(clock=lambda: clock[0])
 
     health.save("m/1", ok=True)
     health.save("m/1", ok=False)
@@ -295,7 +295,7 @@ def test_two_failures_bench_a_model_for_fifteen_minutes() -> None:
 
 def test_the_window_slides_old_failures_out() -> None:
     """The window is 5 calls: old errors do not stay on its back forever."""
-    health = automode.Saglik(clock=lambda: 0.0)
+    health = automode.Health(clock=lambda: 0.0)
     health.save("m", ok=False)
     for _ in range(automode.WINDOW):
         health.save("m", ok=True)
@@ -342,7 +342,7 @@ async def test_an_unconfigured_setup_guides_instead_of_calling_the_model(
     config = Config.load(tmp_path)  # fresh: openrouter + oto, no key
     bridge.agent = SimpleNamespace(config=config, session=session, run=_never)
 
-    await bridge._isle("merhaba", "")
+    await bridge._handle("merhaba", "")
 
     assert not called, "the model should not have been called"
     hints = [e for e in hub.events if e.get("type") == "setup_hint"]
@@ -357,7 +357,7 @@ async def test_an_unconfigured_setup_guides_instead_of_calling_the_model(
     assert roles[1][0] == "assistant"
 
     # If the user writes again it is reminded again (once per message).
-    await bridge._isle("hâlâ orda mısın", "")
+    await bridge._handle("hâlâ orda mısın", "")
     hints = [e for e in hub.events if e.get("type") == "setup_hint"]
     assert len(hints) == 2
 
@@ -382,7 +382,7 @@ async def test_a_configured_setup_runs_the_model(
     session = Session(EventLog(tmp_path / "s.jsonl"), "test")
     bridge.agent = SimpleNamespace(config=Config.load(tmp_path), session=session, run=_run)
 
-    await bridge._isle("merhaba", "")
+    await bridge._handle("merhaba", "")
 
     assert ran == ["merhaba"]
     assert not [e for e in hub.events if e.get("type") == "setup_hint"]
@@ -392,16 +392,16 @@ def test_unconfigured_definition_covers_key_and_name(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _keyless(monkeypatch)
-    assert settings.yapilandirilmamis(ModelConfig())          # no key
-    assert settings.yapilandirilmamis(ModelConfig(name=" "))  # name empty
+    assert settings.unconfigured(ModelConfig())          # no key
+    assert settings.unconfigured(ModelConfig(name=" "))  # name empty
 
     monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-test")
-    assert not settings.yapilandirilmamis(ModelConfig())
+    assert not settings.unconfigured(ModelConfig())
 
     # A local server wants no key: one with a name counts as configured.
     local = ModelConfig(name="qwen/q3", base_url="http://localhost:1234/v1",
                         api_key_env=None)
-    assert not settings.yapilandirilmamis(local)
+    assert not settings.unconfigured(local)
 
 
 # -- (e) key verification -----------------------------------------------

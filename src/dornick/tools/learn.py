@@ -1,19 +1,20 @@
-"""Yetenek aracı — ajanın kendine yeni beceri kazandırması.
+"""Skill tool — the agent teaching itself new abilities.
 
-Her yeni işi elle araç olarak eklemek ölçeklenmiyor. Bir haritaya rota
-çizmek, PLC adresinden değer okumak, USB'den gelen cihazı yoklamak: bunların
-ortak yanı, hepsinin ajanın kendisinin yazabileceği kadar küçük olması.
+Adding every new job as a hand-written tool does not scale. Drawing a
+route on a map, reading a value from a PLC address, probing a device on
+USB: what they share is that each is small enough for the agent itself
+to write.
 
-Akış:
+Flow:
 
-    skill action=write   tam dosyayı yazar, doğrular, yükler — asıl yol
-    skill action=new     boş iskelet (yalnız ad+açıklama); gövde sonra write
-    skill action=load    klasördekileri yeniden yükle
-    skill action=list    yüklü yetenekler
-    skill action=remove  dosyayı sil
+    skill action=write   writes the full file, validates, loads — the main path
+    skill action=new     empty scaffold (name+description only); body via write
+    skill action=load    reload what is in the folder
+    skill action=list    loaded skills
+    skill action=remove  delete the file
 
-Yetki açısından yeni bir kapı açmıyor: yetenek de `shell` gibi tam Python
-çalıştırıyor. Farkı iş adlandırılmış, şemalı ve tekrar kullanılabilir olması.
+Privilege-wise it opens no new gate: a skill runs full Python just like
+`shell`. The difference is the job being named, schema'd and reusable.
 """
 
 from __future__ import annotations
@@ -156,20 +157,21 @@ def register(registry: ToolRegistry) -> None:
             )
 
         if action == "load":
-            # Açık, izin-kapılı yükleme = onay: bulunan geçerli dosyalar
-            # onaylı manifeste yazılır (insan bu turu onayladı).
+            # Explicit, permission-gated loading = approval: the valid files
+            # found are written to the approved manifest (a human approved
+            # this turn).
             found, broken = skills.discover(
-                root, ctx.config.state_dir, onayla=True)
+                root, ctx.config.state_dir, approve=True)
             added, updated = skills.register(registry, found)
 
             lines: list[str] = []
             if added:
                 lines.append(f"Yüklendi: {', '.join(added)}")
             if updated:
-                # Dosya düzeltilip yeniden yüklendi: eski hali gitti, bir
-                # sonraki çağrı taze kodu çalıştırıyor. Bunu açıkça söylemek
-                # gerekiyor — model eskiden "belki hâlâ eski kod" diye
-                # kabuğa düşüyordu.
+                # The file was fixed and reloaded: the old state is gone, the
+                # next call runs the fresh code. This must be said explicitly —
+                # the model used to drop to the shell thinking "maybe it is
+                # still the old code".
                 lines.append(
                     f"Tazelendi: {', '.join(updated)} — bir sonraki çağrı "
                     "dosyanın yeni halini çalıştırır."
@@ -178,16 +180,16 @@ def register(registry: ToolRegistry) -> None:
             if skipped:
                 lines.append(f"Adı yerleşik bir araçla çakışıyor, atlandı: {', '.join(skipped)}")
             if broken:
-                # Hata metni ayrıntılı: modelin kendi yazdığı kodu
-                # düzeltebilmesi için satır numarası lazım.
+                # The error text is detailed: the model needs the line number
+                # to fix code it wrote itself.
                 lines.append("Yüklenemeyenler:\n" + "\n\n".join(broken))
             if not lines:
                 lines.append(
                     "Klasörde yetenek yok. `action=new` ile bir iskelet aç."
                 )
 
-            # Yeni araçlar bir sonraki istekte şemalarıyla gidiyor; model
-            # bunu bilsin, aynı turda çağırmaya kalkmasın.
+            # New tools go out with their schemas on the next request; the
+            # model should know that and not try to call them in the same turn.
             if added:
                 lines.append("Bir sonraki turdan itibaren araç olarak çağırabilirsin.")
             return ToolResult(content="\n".join(lines),
@@ -212,8 +214,8 @@ def register(registry: ToolRegistry) -> None:
             if not path.is_file():
                 return ToolResult.error(f"Yetenek dosyası yok: {path.name}")
             path.unlink()
-            # Kayıt da düşüyor: dosyası silinmiş bir aracın çağrılabilir
-            # kalması, silmenin yarım kalması demekti.
+            # The registration drops too: a tool whose file was deleted
+            # staying callable would mean the deletion was left half-done.
             gone = registry.unregister(name)
             return ToolResult(
                 content=f"{path.name} silindi"
@@ -247,8 +249,8 @@ def register_models(registry: ToolRegistry) -> None:
     async def models(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
         from .. import settings
 
-        # scan_models senkron ağ sondaları (urlopen, 2-10 sn) içeriyor;
-        # döngüde koşarsa bütün sohbetleri kilitliyor — iş parçacığına.
+        # scan_models contains synchronous network probes (urlopen, 2-10 s);
+        # run on the loop it locks up every chat — off to a thread.
         found = await asyncio.to_thread(settings.scan_models, ctx.config)
         if not found:
             return ToolResult(
@@ -257,7 +259,7 @@ def register_models(registry: ToolRegistry) -> None:
 
         lines = [f"{len(found)} model:"]
         for entry in found:
-            # LM Studio olmayan bir sunucuda yalnızca ad var.
+            # On a non-LM Studio server there is only the name.
             if "max_context" not in entry:
                 lines.append(f"- {entry['id']}")
                 continue

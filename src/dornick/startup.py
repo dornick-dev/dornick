@@ -1,39 +1,39 @@
-"""Bilgisayar açıldığında kendiliğinden başlama.
+"""Starting on its own when the computer boots.
 
-Tepside sürekli çalışan, "hey dornick" ile uyanan bir ajanın her açılışta elle
-başlatılması gerekiyorsa otonom değil demektir.
+An agent that lives in the tray and wakes on "hey dornick" is not
+autonomous if it has to be started by hand on every boot.
 
-Kayıt yeri `HKCU\\...\\Run`: yalnızca bu kullanıcı için, yönetici hakkı
-istemeden, tek bir değerle. Sistem geneline (HKLM) yazmıyoruz — bir
-kullanıcının tercihi bütün makineyi bağlamamalı.
+The registration place is `HKCU\\...\\Run`: for this user only, without
+admin rights, with a single value. We do not write system-wide (HKLM) —
+one user's preference must not bind the whole machine.
 
-Kapatmak da aynı yerden: değeri silmek yetiyor. Kullanıcı isterse
-`regedit` ile ya da Görev Yöneticisi › Başlangıç sekmesinden de görebiliyor;
-gizli bir şey bırakmıyoruz.
+Turning it off is the same place: deleting the value is enough. The user
+can also see it in `regedit` or in Task Manager › Startup if they wish;
+we leave nothing hidden.
 """
 
 from __future__ import annotations
 
 import sys
 
-# Kayıttaki ad. Görev Yöneticisi'nin başlangıç listesinde bu görünüyor.
+# The name in the registry. This is what shows in Task Manager's startup list.
 NAME = "dornick"
 
 RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
 
 
 def available() -> bool:
-    """Yalnızca Windows. Başka yerde ayar gösterilmiyor."""
+    """Windows only. The setting is not shown elsewhere."""
     return sys.platform == "win32"
 
 
 def command() -> str:
-    """Açılışta çalıştırılacak satır.
+    """The line to run at boot.
 
-    Damgalı `dornick.exe` (yoksa `pythonw`) seçiliyor: `python` bir konsol
-    penceresi açıyor ve her açılışta ekranın ortasında siyah bir kutu
-    beliriyor. Görev Yöneticisi de ev sahibi PE'nin simgesini gösterdiği
-    için pythonw yerine damgalı kopya gerekir.
+    The stamped `dornick.exe` (or `pythonw` if absent) is chosen:
+    `python` opens a console window and a black box appears in the middle
+    of the screen on every boot. Task Manager also shows the host PE's
+    icon, so the stamped copy is needed instead of pythonw.
     """
     from .winicon import app_executable
 
@@ -55,8 +55,8 @@ def enabled() -> bool:
 
 
 def current() -> str:
-    """Kayıtta duran satır. Ayar sayfası bunu gösteriyor: kullanıcı neyin
-    yazıldığını görebilmeli."""
+    """The line sitting in the registry. The settings page shows this: the
+    user must be able to see what was written."""
     if not available():
         return ""
     import winreg
@@ -70,7 +70,7 @@ def current() -> str:
 
 
 def enable() -> str:
-    """Açılışa ekler. Yazılan satırı döndürür."""
+    """Adds to startup. Returns the written line."""
     if not available():
         raise RuntimeError("Otomatik başlatma yalnızca Windows'ta.")
     import winreg
@@ -82,7 +82,7 @@ def enable() -> str:
 
 
 def disable() -> None:
-    """Açılıştan çıkarır. Yoksa sessizce geçiyor."""
+    """Removes from startup. Passes silently if absent."""
     if not available():
         return
     import winreg

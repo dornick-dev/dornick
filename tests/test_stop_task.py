@@ -64,9 +64,9 @@ async def test_stop_task_archives_meter_on_stop(
     state = agent.config.state_dir
     handle = ChildHandle(
         id="live01", title="Market Lens", model="openai/gpt-test",
-        arka_plan=True, sessiz=True, schedule_id="job_ml2",
-        baslangic_ts=__import__("time").time() - 125,
-        son_arac="web_search", son_hedef="BIST",
+        background=True, quiet=True, schedule_id="job_ml2",
+        started_ts=__import__("time").time() - 125,
+        last_tool="web_search", last_goal="BIST",
         tools_count=7,
         usage={"girdi": 8000, "cikti": 400, "cagri": 5},
     )
@@ -102,7 +102,7 @@ async def test_child_waiting_at_agent_gate_can_be_stopped(
     agent._agent_gate = asyncio.Semaphore(0)
 
     handle = ChildHandle(
-        id="gate1", title="sırada", model="m", arka_plan=True, sessiz=True,
+        id="gate1", title="sırada", model="m", background=True, quiet=True,
     )
     agent._register_child(handle)
 

@@ -1,24 +1,25 @@
-"""El ve ekran — ajanın bilgisayarın kendisini kullanması.
+"""Hand and screen — the agent using the computer itself.
 
-`shell` komut çalıştırır ama ekranda olup biteni görmez; `fetch` sayfa okur
-ama açık bir tarayıcı oturumunu süremez. Buradaki iki araç o boşluğu
-kapatıyor:
+`shell` runs commands but does not see what happens on screen; `fetch`
+reads pages but cannot drive an open browser session. The two tools here
+close that gap:
 
-    screen   bakar: ekran görüntüsü, açık pencereler         (okuma)
-    hand     dokunur: fare, klavye, pencere, uygulama        (mutasyon)
+    screen   looks: screenshot, open windows                 (read)
+    hand     touches: mouse, keyboard, window, application   (mutation)
 
-İkiye ayrılmaları izin kapısı yüzünden: bakmak zararsız, dokunmak değil.
-Tek araç olsalardı ya her ekran görüntüsü onay isterdi ya da hiçbir
-tıklama sormadan geçerdi.
+They are split in two because of the permission gate: looking is
+harmless, touching is not. As a single tool either every screenshot
+would need approval, or no click would ever ask.
 
-Koordinat sözleşmesi: `screen` görüntüyü küçülterek verir ve son karenin
-geometrisini saklar; `hand` tıklamayı **o görüntünün** pikselleriyle alır,
-gerçek ekrana kendisi çevirir. Model gördüğü resimde nereye bakıyorsa
-oraya tıklar — ölçek hesabı ona bırakılmıyor, çünkü bırakıldığında yanlış
-yapıyor ve yanlış tıklama geri alınamıyor.
+The coordinate contract: `screen` delivers the image scaled down and
+stores the last frame's geometry; `hand` takes the click in **that
+image's** pixels and converts to the real screen itself. The model
+clicks wherever it is looking in the picture it saw — the scale math is
+not left to it, because when it was, it got it wrong, and a wrong click
+cannot be undone.
 
-Bağımlılık tek: ekran yakalama için Pillow. Fare ve klavye `ctypes` ile
-doğrudan user32'ye gidiyor — ek paket yok.
+Single dependency: Pillow for screen capture. Mouse and keyboard go
+straight to user32 via `ctypes` — no extra package.
 """
 
 from __future__ import annotations
@@ -33,22 +34,23 @@ from typing import Any
 
 from .base import ToolContext, ToolRegistry, ToolResult, object_schema
 
-# Gönderilen görüntünün uzun kenarı. Üstü token israfı: model 1568'den
-# büyüğünü zaten küçültülmüş görüyor.
+# The long edge of the image sent. Above this is token waste: the model
+# already sees anything bigger than 1568 downscaled.
 MAX_EDGE = 1400
 
 JPEG_QUALITY = 72
 
-# Son ekran görüntüsünün geometrisi: (sol, üst) köşe, ölçek, boyut.
-# `hand` görüntü pikselini gerçek ekrana bununla çeviriyor.
+# The geometry of the last screenshot: (left, top) corner, scale, size.
+# `hand` converts an image pixel to the real screen with this.
 _frame: dict[str, Any] | None = None
 
 _dpi_set = False
 
 
 def available() -> bool:
-    """Yalnızca Windows ve Pillow kuruluysa. Yoksa araçlar hiç kaydedilmez —
-    model olmayan bir yeteneği denemesin, organ sahnede 'yok' görünsün."""
+    """Only on Windows with Pillow installed. Otherwise the tools are never
+    registered — the model must not try an ability that does not exist, and
+    the organ shows as 'absent' on the scene."""
     if sys.platform != "win32":
         return False
     try:
@@ -58,10 +60,11 @@ def available() -> bool:
 
 
 def _dpi_aware() -> None:
-    """Süreci DPI'dan haberdar eder — bir kez.
+    """Makes the process DPI-aware — once.
 
-    Yapılmazsa ölçekli (%125, %150) ekranlarda yakalanan görüntü ile
-    gerçek koordinatlar kayıyor ve her tıklama hedefin soluna düşüyor.
+    Without it, on scaled displays (125%, 150%) the captured image and
+    the real coordinates drift, and every click lands to the left of the
+    target.
     """
     global _dpi_set
     if _dpi_set:
@@ -79,10 +82,10 @@ def _dpi_aware() -> None:
 
 
 def _monitors() -> list[tuple[int, int, int, int]]:
-    """Ekranların sanal masaüstündeki dikdörtgenleri (sol, üst, sağ, alt).
+    """The monitors' rectangles on the virtual desktop (left, top, right, bottom).
 
-    İkinci ekran solda ya da üstteyse koordinatlar negatif olabiliyor;
-    bu yüzden 0,0 varsayılamıyor, gerçekten sorulması gerekiyor.
+    If the second monitor is on the left or above, coordinates can be
+    negative; so 0,0 cannot be assumed, it really has to be asked.
     """
     import ctypes
     from ctypes import wintypes
@@ -103,16 +106,17 @@ def _monitors() -> list[tuple[int, int, int, int]]:
         user32 = ctypes.windll.user32
         rects.append((0, 0, user32.GetSystemMetrics(0), user32.GetSystemMetrics(1)))
 
-    # Birincil monitör başa. EnumDisplayMonitors sırayı garanti etmiyor ve
-    # gerçek bir koşuda 0. sırada sağdaki ekran geldi: `screen look` yanlış
-    # monitörü çekti, kullanıcının baktığı birincil ekranı değil. Birincil
-    # monitörün sol-üstü sanal masaüstünde her zaman (0,0).
+    # Primary monitor first. EnumDisplayMonitors guarantees no order, and
+    # in a real run the right-hand monitor came at index 0: `screen look`
+    # captured the wrong monitor, not the primary one the user was looking
+    # at. The primary monitor's top-left is always (0,0) on the virtual
+    # desktop.
     rects.sort(key=lambda r: (r[0] != 0 or r[1] != 0, r[0], r[1]))
     return rects
 
 
 def to_screen(x: float, y: float, frame: dict[str, Any]) -> tuple[int, int]:
-    """Görüntü pikselini gerçek ekran koordinatına çevirir. Saf — test edilir."""
+    """Converts an image pixel to a real screen coordinate. Pure — testable."""
     ox, oy = frame["origin"]
     scale = frame["scale"] or 1.0
     return int(ox + round(x / scale)), int(oy + round(y / scale))
@@ -122,7 +126,7 @@ def to_screen(x: float, y: float, frame: dict[str, Any]) -> tuple[int, int]:
 
 
 def _grab(display: int) -> tuple[str, str]:
-    """Bir ekranın görüntüsünü alır. (içerik metni, data-url) döndürür."""
+    """Captures one monitor. Returns (content text, data-url)."""
     from PIL import Image, ImageGrab
 
     global _frame
@@ -162,7 +166,7 @@ def _grab(display: int) -> tuple[str, str]:
 
 
 def _windows() -> list[tuple[str, bool]]:
-    """Görünür üst pencereler: (başlık, önde mi)."""
+    """Visible top-level windows: (title, is it in front)."""
     import ctypes
     from ctypes import wintypes
 
@@ -339,7 +343,7 @@ def _pointer(action: str, args: dict[str, Any]) -> ToolResult:
     user32 = ctypes.windll.user32
 
     if action == "scroll" and args.get("x") is None:
-        # Koordinatsız kaydırma imlecin olduğu yerde geçerli.
+        # Scrolling without coordinates applies where the cursor is.
         amount = int(args.get("amount") or -3)
         user32.mouse_event(0x0800, 0, 0, amount * 120, 0)  # MOUSEEVENTF_WHEEL
         return ToolResult(
@@ -374,8 +378,8 @@ def _pointer(action: str, args: dict[str, Any]) -> ToolResult:
             return ToolResult.error("drag için `x2` ve `y2` de gerekli.")
         ex, ey = to_screen(int(args["x2"]), int(args["y2"]), _frame)
         user32.mouse_event(0x0002, 0, 0, 0, 0)  # LEFTDOWN
-        # Tek sıçrayışta bırakmak çoğu uygulamada sürüklemeyi başlatmıyor;
-        # ara adımlar gerçek bir el hareketini taklit ediyor.
+        # Dropping in a single jump does not start a drag in most apps;
+        # the intermediate steps mimic a real hand movement.
         steps = 12
         for i in range(1, steps + 1):
             user32.SetCursorPos(sx + (ex - sx) * i // steps, sy + (ey - sy) * i // steps)
@@ -398,8 +402,8 @@ def _pointer(action: str, args: dict[str, Any]) -> ToolResult:
     )
 
 
-# Kısayollarda ada çevrilen tuşlar. Tek harfler VkKeyScanW'den geliyor —
-# klavye düzenine (Türkçe Q/F) göre doğru sanal tuşu verir.
+# Keys resolved by name in shortcuts. Single letters come from VkKeyScanW —
+# it gives the right virtual key for the keyboard layout (Turkish Q/F).
 VK = {
     "ctrl": 0x11, "control": 0x11, "alt": 0x12, "shift": 0x10,
     "win": 0x5B, "meta": 0x5B, "enter": 0x0D, "return": 0x0D,
@@ -412,7 +416,7 @@ VK = {
 
 
 def parse_keys(combo: str) -> list[int]:
-    """"ctrl+shift+t" -> sanal tuş listesi, basılış sırasıyla. Saf — test edilir."""
+    """"ctrl+shift+t" -> list of virtual keys, in press order. Pure — testable."""
     out: list[int] = []
     for token in (t.strip().lower() for t in combo.split("+")):
         if not token:
@@ -457,11 +461,11 @@ def _press(combo: str) -> ToolResult:
 
 
 def _type(text: str) -> ToolResult:
-    """Metni odaklı alana yazar.
+    """Types the text into the focused field.
 
-    KEYEVENTF_UNICODE ile: klavye düzeninden bağımsız, Türkçe karakterler
-    dahil her şey UTF-16 birimleriyle gidiyor. Satır sonu gerçek Enter
-    olarak basılıyor — çoğu alan U+000A'yı görmezden geliyor.
+    Via KEYEVENTF_UNICODE: independent of keyboard layout, everything
+    including Turkish characters goes as UTF-16 units. A newline is
+    pressed as a real Enter — most fields ignore U+000A.
     """
     import ctypes
 
@@ -542,9 +546,10 @@ def _focus(target: str) -> ToolResult:
 
     if _to_front(hwnd_found[0]):
         return ToolResult(f"Öne getirildi: {match}. Görmek için `screen action=look`.")
-    # Öne gelmediyse bunu SÖYLE: sessizce başarısız olursa yazma ve tıklama
-    # yanlış pencereye gider. Gerçek bir koşuda tam olarak bu oldu — Not
-    # Defteri arka planda kaldı, yazılanlar öndeki tarayıcıya gitti.
+    # If it did not come to the front, SAY SO: failing silently sends the
+    # typing and clicking to the wrong window. Exactly this happened in a
+    # real run — Notepad stayed in the background, the text went to the
+    # browser in front.
     return ToolResult.error(
         f"{match!r} öne getirilemedi (Windows odak kilidi). Görev çubuğunda "
         "yanıp sönüyor olabilir; kullanıcıdan bir kez tıklamasını iste ya da "
@@ -554,23 +559,25 @@ def _focus(target: str) -> ToolResult:
 
 
 def _to_front(hwnd: int) -> bool:
-    """Bir pencereyi gerçekten öne getirir ve geldiğini doğrular.
+    """Really brings a window to the front and verifies it got there.
 
-    Windows, arka planda çalışan bir sürecin `SetForegroundWindow` ile odağı
-    çalmasını engelliyor: çağrı sessizce başarısız oluyor, pencere yalnızca
-    görev çubuğunda yanıp sönüyor. Bu, gerçek bir koşuda yazılan metnin
-    yanlış (öndeki) pencereye gitmesine yol açtı.
+    Windows prevents a background process from stealing focus with
+    `SetForegroundWindow`: the call fails silently, the window only
+    blinks on the taskbar. In a real run this sent the typed text to the
+    wrong (frontmost) window.
 
-    Üç önlem birlikte kilidi aşıyor:
-      1. Odak kilidi zaman aşımını sıfırla (SPI_SETFOREGROUNDLOCKTIMEOUT).
-      2. Çağıran thread'in girdisini hem öndeki hem hedef pencerenin
-         thread'ine bağla (AttachThreadInput) — o an "ön plandaki uygulama"
-         sayılıp izin kazanıyoruz.
-      3. Kısa bir ALT dokunuşu: Windows'u kullanıcı etkileşimi olmuş gibi
-         kandırıyor, kilidi gevşetiyor.
+    Three measures together beat the lock:
+      1. Reset the focus-lock timeout (SPI_SETFOREGROUNDLOCKTIMEOUT).
+      2. Attach the calling thread's input to both the foreground and
+         the target window's thread (AttachThreadInput) — for that
+         moment we count as "the foreground application" and gain the
+         right.
+      3. A short ALT tap: tricks Windows into thinking user interaction
+         happened, loosening the lock.
 
-    Sonuç gerçekten doğrulanıyor: GetForegroundWindow hedefi göstermiyorsa
-    False dönüyor ki çağıran taraf yanlış pencereye yazmasın.
+    The result is actually verified: if GetForegroundWindow does not
+    show the target, False is returned so the caller does not type into
+    the wrong window.
     """
     import ctypes
 
@@ -598,15 +605,15 @@ def _to_front(hwnd: int) -> bool:
         if tid and tid != cur and user32.AttachThreadInput(cur, tid, True):
             attached.append(tid)
 
-    # ALT dokunuşu odak kilidini gevşetiyor.
+    # The ALT tap loosens the focus lock.
     user32.keybd_event(ALT, 0, 0, 0)
     user32.keybd_event(ALT, 0, 2, 0)
 
-    # Küçültüp geri açmak gerçek foreground hakkı kazandırıyor. Yalnızca
-    # SetForegroundWindow, kaplayan bir pencerenin (tam ekran tarayıcı gibi)
-    # ardında kalan pencereyi öne almıyor — GetForegroundWindow "geldi" dese
-    # bile tuşlar eski pencereye gidiyordu. Minimize→restore bu tuzağı aşan
-    # tek güvenilir yol. Zaten önde ve normalse dokunmuyoruz.
+    # Minimize then restore earns real foreground rights. SetForegroundWindow
+    # alone does not raise a window buried behind a covering one (like a
+    # fullscreen browser) — even when GetForegroundWindow said "it came",
+    # the keystrokes went to the old window. Minimize→restore is the only
+    # reliable way past this trap. Already in front and normal: we do not touch it.
     if not user32.IsIconic(hwnd):
         user32.ShowWindow(hwnd, SW_MINIMIZE)
         time.sleep(0.02)
@@ -640,7 +647,7 @@ def _open(target: str) -> ToolResult:
         )
 
     try:
-        os.startfile(target)  # dosya, klasör ya da PATH'teki uygulama
+        os.startfile(target)  # a file, a folder, or an application on PATH
     except OSError as exc:
         return ToolResult.error(
             f"Açılamadı: {target!r} ({exc}). Tam yol dene ya da `shell` ile "

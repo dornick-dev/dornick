@@ -70,12 +70,12 @@ async def call(registry: ToolRegistry, ctx: ToolContext, **args):
 
 def test_pytest_ini_is_evidence(tmp_path: Path) -> None:
     (tmp_path / "pytest.ini").write_text("[pytest]\n", encoding="utf-8")
-    harness = testrun.tespit(tmp_path)
+    harness = testrun.detect(tmp_path)
     assert harness is not None
-    assert harness.ekosistem == "python"
+    assert harness.ecosystem == "python"
     assert harness.argv[1:] == ["-m", "pytest", "-q"]
-    assert harness.kanit == "pytest.ini"
-    assert harness.guven == 2
+    assert harness.evidence == "pytest.ini"
+    assert harness.confidence == 2
 
 
 def test_pyproject_pytest_section_is_evidence(tmp_path: Path) -> None:
@@ -83,22 +83,22 @@ def test_pyproject_pytest_section_is_evidence(tmp_path: Path) -> None:
         '[project]\nname = "x"\n\n[tool.pytest.ini_options]\ntestpaths = ["tests"]\n',
         encoding="utf-8",
     )
-    harness = testrun.tespit(tmp_path)
-    assert harness is not None and harness.ekosistem == "python"
-    assert "pyproject.toml" in harness.kanit
+    harness = testrun.detect(tmp_path)
+    assert harness is not None and harness.ecosystem == "python"
+    assert "pyproject.toml" in harness.evidence
 
 
 def test_pyproject_without_pytest_is_not_evidence(tmp_path: Path) -> None:
     """The presence of a pyproject is not the presence of pytest."""
     (tmp_path / "pyproject.toml").write_text('[project]\nname = "x"\n', encoding="utf-8")
-    assert testrun.tespit(tmp_path) is None
+    assert testrun.detect(tmp_path) is None
 
 
 def test_tests_folder_is_weaker_evidence(tmp_path: Path) -> None:
     (tmp_path / "tests").mkdir()
     (tmp_path / "tests" / "test_a.py").write_text("def test_a(): pass\n", encoding="utf-8")
-    harness = testrun.tespit(tmp_path)
-    assert harness is not None and harness.guven == 1
+    harness = testrun.detect(tmp_path)
+    assert harness is not None and harness.confidence == 1
 
 
 def test_tests_folder_without_test_files_is_not_evidence(tmp_path: Path) -> None:
@@ -106,14 +106,14 @@ def test_tests_folder_without_test_files_is_not_evidence(tmp_path: Path) -> None
     (tmp_path / "tests").mkdir()
     (tmp_path / "tests" / "veriler.json").write_text("{}", encoding="utf-8")
     (tmp_path / "tests" / "yardimci.py").write_text("x = 1\n", encoding="utf-8")
-    assert testrun.tespit(tmp_path) is None
+    assert testrun.detect(tmp_path) is None
 
 
 def test_python_command_matches_platform(tmp_path: Path) -> None:
     (tmp_path / "pytest.ini").write_text("[pytest]\n", encoding="utf-8")
-    harness = testrun.tespit(tmp_path)
+    harness = testrun.detect(tmp_path)
     expected = "py -m pytest -q" if sys.platform == "win32" else "python3 -m pytest -q"
-    assert harness is not None and harness.etiket == expected
+    assert harness is not None and harness.label == expected
 
 
 # -- detection: node ----------------------------------------------------
@@ -127,38 +127,38 @@ def _package(tmp_path: Path, scripts: dict) -> None:
 def test_package_json_test_script_is_evidence(tmp_path: Path) -> None:
     _package(tmp_path, {"test": "jest", "build": "vite build", "dev": "vite"})
     (tmp_path / "node_modules").mkdir()
-    harness = testrun.tespit(tmp_path)
+    harness = testrun.detect(tmp_path)
     assert harness is not None
-    assert harness.ekosistem == "node" and harness.etiket == "npm test"
-    assert "scripts.test = jest" in harness.kanit
+    assert harness.ecosystem == "node" and harness.label == "npm test"
+    assert "scripts.test = jest" in harness.evidence
     # build/dev are not offered as commands but noted so the model knows.
-    assert any("build" in n and "dev" in n for n in harness.notlar)
+    assert any("build" in n and "dev" in n for n in harness.notes)
 
 
 def test_npm_placeholder_test_script_is_not_evidence(tmp_path: Path) -> None:
     """The placeholder `npm init` leaves behind is not a test setup."""
     _package(tmp_path, {"test": 'echo "Error: no test specified" && exit 1'})
-    assert testrun.tespit(tmp_path) is None
+    assert testrun.detect(tmp_path) is None
 
 
 def test_package_json_without_test_script_is_not_evidence(tmp_path: Path) -> None:
     _package(tmp_path, {"build": "vite build"})
-    assert testrun.tespit(tmp_path) is None
+    assert testrun.detect(tmp_path) is None
 
 
 def test_missing_node_modules_is_reported_not_prescribed(tmp_path: Path) -> None:
     """Missing dependencies are REPORTED; installing is not prescribed."""
     _package(tmp_path, {"test": "jest"})
-    harness = testrun.tespit(tmp_path)
+    harness = testrun.detect(tmp_path)
     assert harness is not None
-    assert not harness.kosulabilir
-    assert "node_modules" in harness.engel
-    assert "npm install" not in harness.engel.lower()
+    assert not harness.runnable
+    assert "node_modules" in harness.blocker
+    assert "npm install" not in harness.blocker.lower()
 
 
 def test_broken_package_json_is_not_evidence(tmp_path: Path) -> None:
     (tmp_path / "package.json").write_text("{ bozuk", encoding="utf-8")
-    assert testrun.tespit(tmp_path) is None
+    assert testrun.detect(tmp_path) is None
 
 
 # -- detection: php -----------------------------------------------------
@@ -171,27 +171,27 @@ def test_phpunit_configuration_names(tmp_path: Path, name: str) -> None:
     (tmp_path / "vendor" / "bin").mkdir(parents=True)
     (tmp_path / "vendor" / "bin" / "phpunit").write_text("#!/usr/bin/env php\n",
                                                          encoding="utf-8")
-    harness = testrun.tespit(tmp_path)
+    harness = testrun.detect(tmp_path)
     assert harness is not None
-    assert harness.ekosistem == "php"
-    assert harness.etiket == "php vendor/bin/phpunit"
-    assert harness.kosulabilir
+    assert harness.ecosystem == "php"
+    assert harness.label == "php vendor/bin/phpunit"
+    assert harness.runnable
 
 
 def test_phpunit_config_without_vendor_is_blocked(tmp_path: Path) -> None:
     (tmp_path / "phpunit.xml").write_text("<phpunit/>", encoding="utf-8")
-    harness = testrun.tespit(tmp_path)
-    assert harness is not None and not harness.kosulabilir
-    assert "vendor/bin/phpunit" in harness.engel
+    harness = testrun.detect(tmp_path)
+    assert harness is not None and not harness.runnable
+    assert "vendor/bin/phpunit" in harness.blocker
 
 
 def test_spark_is_a_health_command_not_a_test_suite(tmp_path: Path) -> None:
     """Without phpunit a CI4 project gets a cheap health command — but not sold as a test."""
     (tmp_path / "spark").write_text("#!/usr/bin/env php\n", encoding="utf-8")
-    harness = testrun.tespit(tmp_path)
+    harness = testrun.detect(tmp_path)
     assert harness is not None
-    assert harness.tur == "saglik"
-    assert harness.etiket == "php spark routes"
+    assert harness.kind == "saglik"
+    assert harness.label == "php spark routes"
 
 
 def test_phpunit_beats_spark(tmp_path: Path) -> None:
@@ -199,8 +199,8 @@ def test_phpunit_beats_spark(tmp_path: Path) -> None:
     (tmp_path / "phpunit.dist.xml").write_text("<phpunit/>", encoding="utf-8")
     (tmp_path / "vendor" / "bin").mkdir(parents=True)
     (tmp_path / "vendor" / "bin" / "phpunit").write_text("x", encoding="utf-8")
-    harness = testrun.tespit(tmp_path)
-    assert harness is not None and harness.tur == "test"
+    harness = testrun.detect(tmp_path)
+    assert harness is not None and harness.kind == "test"
 
 
 # -- detection: go / rust / dotnet -------------------------------------
@@ -208,20 +208,20 @@ def test_phpunit_beats_spark(tmp_path: Path) -> None:
 
 def test_go_mod(tmp_path: Path) -> None:
     (tmp_path / "go.mod").write_text("module example.com/x\n", encoding="utf-8")
-    harness = testrun.tespit(tmp_path)
-    assert harness is not None and harness.etiket == "go test ./..."
+    harness = testrun.detect(tmp_path)
+    assert harness is not None and harness.label == "go test ./..."
 
 
 def test_cargo_toml(tmp_path: Path) -> None:
     (tmp_path / "Cargo.toml").write_text("[package]\nname = 'x'\n", encoding="utf-8")
-    harness = testrun.tespit(tmp_path)
-    assert harness is not None and harness.etiket == "cargo test"
+    harness = testrun.detect(tmp_path)
+    assert harness is not None and harness.label == "cargo test"
 
 
 def test_dotnet_project(tmp_path: Path) -> None:
     (tmp_path / "Uygulama.csproj").write_text("<Project/>", encoding="utf-8")
-    harness = testrun.tespit(tmp_path)
-    assert harness is not None and harness.etiket == "dotnet test"
+    harness = testrun.detect(tmp_path)
+    assert harness is not None and harness.label == "dotnet test"
 
 
 # -- detection: none ----------------------------------------------------
@@ -229,12 +229,12 @@ def test_dotnet_project(tmp_path: Path) -> None:
 
 def test_empty_folder_yields_nothing(tmp_path: Path) -> None:
     """The most important test: no evidence, no command."""
-    assert testrun.tespit(tmp_path) is None
-    assert testrun.tespit_hepsi(tmp_path) == []
+    assert testrun.detect(tmp_path) is None
+    assert testrun.detect_all(tmp_path) == []
 
 
 def test_no_setup_message_refuses_to_invent(tmp_path: Path) -> None:
-    text = testrun.tespit_metni(tmp_path)
+    text = testrun.detect_text(tmp_path)
     assert "test düzeneği bulunamadı" in text
     assert "uydurmayacağım" in text
     assert "gerçekten çalıştır" in text
@@ -243,7 +243,7 @@ def test_no_setup_message_refuses_to_invent(tmp_path: Path) -> None:
 def test_a_folder_of_source_files_alone_is_not_a_test_setup(tmp_path: Path) -> None:
     (tmp_path / "index.php").write_text("<?php echo 1;", encoding="utf-8")
     (tmp_path / "app.js").write_text("console.log(1)", encoding="utf-8")
-    assert testrun.tespit(tmp_path) is None
+    assert testrun.detect(tmp_path) is None
 
 
 def test_multiple_ecosystems_are_all_reported(tmp_path: Path) -> None:
@@ -253,8 +253,8 @@ def test_multiple_ecosystems_are_all_reported(tmp_path: Path) -> None:
     (tmp_path / "vendor" / "bin" / "phpunit").write_text("x", encoding="utf-8")
     _package(tmp_path, {"test": "vitest"})
     (tmp_path / "node_modules").mkdir()
-    all_found = testrun.tespit_hepsi(tmp_path)
-    assert {h.ekosistem for h in all_found} == {"php", "node"}
+    all_found = testrun.detect_all(tmp_path)
+    assert {h.ecosystem for h in all_found} == {"php", "node"}
 
 
 # -- project root -------------------------------------------------------
@@ -302,7 +302,7 @@ PYTEST_CLEAN = """\
 
 def test_pytest_failure_output(tmp_path: Path) -> None:
     count, failures = testrun.normalize("python", PYTEST_FAILING)
-    assert (count.gecen, count.kalan, count.okundu) == (4, 1, True)
+    assert (count.passed, count.failed, count.parsed) == (4, 1, True)
     assert len(failures) == 1
     assert failures[0].name == "tests/test_hesap.py::test_toplama"
     assert failures[0].message == "assert 3 == 4"
@@ -311,7 +311,7 @@ def test_pytest_failure_output(tmp_path: Path) -> None:
 
 def test_pytest_clean_output(tmp_path: Path) -> None:
     count, failures = testrun.normalize("python", PYTEST_CLEAN)
-    assert (count.gecen, count.kalan, count.atlanan) == (978, 0, 3)
+    assert (count.passed, count.failed, count.skipped) == (978, 0, 3)
     assert failures == []
 
 
@@ -319,13 +319,13 @@ def test_pytest_error_line_counts_as_failure() -> None:
     output = ("ERROR tests/test_x.py::test_y - ImportError: yok\n"
               "1 error in 0.10s\n")
     count, failures = testrun.normalize("python", output)
-    assert count.kalan == 1 and count.okundu
+    assert count.failed == 1 and count.parsed
     assert failures[0].message == "ImportError: yok"
 
 
 def test_pytest_no_tests_ran() -> None:
     count, _ = testrun.normalize("python", "no tests ran in 0.01s\n")
-    assert count.okundu and count.toplam == 0
+    assert count.parsed and count.total == 0
 
 
 # -- normalisation: phpunit --------------------------------------------
@@ -364,8 +364,8 @@ OK (4 tests, 6 assertions)
 
 def test_phpunit_failure_output() -> None:
     count, failures = testrun.normalize("php", PHPUNIT_FAILING)
-    assert (count.toplam, count.gecen, count.kalan) == (4, 3, 1)
-    assert count.okundu
+    assert (count.total, count.passed, count.failed) == (4, 3, 1)
+    assert count.parsed
     assert len(failures) == 1
     assert failures[0].name == "App\\Tests\\HomeTest::testIndexReturnsString"
     assert "null is of type string" in failures[0].message
@@ -374,14 +374,14 @@ def test_phpunit_failure_output() -> None:
 
 def test_phpunit_clean_output() -> None:
     count, failures = testrun.normalize("php", PHPUNIT_CLEAN)
-    assert (count.gecen, count.kalan, count.okundu) == (4, 0, True)
+    assert (count.passed, count.failed, count.parsed) == (4, 0, True)
     assert failures == []
 
 
 def test_phpunit_errors_and_skips() -> None:
     output = "ERRORS!\nTests: 10, Assertions: 12, Errors: 2, Failures: 1, Skipped: 3.\n"
     count, _ = testrun.normalize("php", output)
-    assert (count.toplam, count.kalan, count.atlanan, count.gecen) == (10, 3, 3, 4)
+    assert (count.total, count.failed, count.skipped, count.passed) == (10, 3, 3, 4)
 
 
 # -- normalisation: node -----------------------------------------------
@@ -430,30 +430,30 @@ VITEST = """\
 
 def test_jest_output() -> None:
     count, failures = testrun.normalize("node", JEST)
-    assert (count.gecen, count.kalan, count.toplam) == (2, 1, 3)
+    assert (count.passed, count.failed, count.total) == (2, 1, 3)
     assert failures and failures[0].name == "Hesap › toplar"
 
 
 def test_mocha_output() -> None:
     count, failures = testrun.normalize("node", MOCHA)
-    assert (count.gecen, count.kalan, count.okundu) == (1, 1, True)
+    assert (count.passed, count.failed, count.parsed) == (1, 1, True)
     assert failures and "çıkarır" in failures[0].name
 
 
 def test_node_test_runner_output() -> None:
     count, _ = testrun.normalize("node", NODE_TEST)
-    assert (count.gecen, count.kalan, count.toplam) == (3, 1, 4)
+    assert (count.passed, count.failed, count.total) == (3, 1, 4)
 
 
 def test_vitest_output() -> None:
     count, _ = testrun.normalize("node", VITEST)
-    assert (count.gecen, count.kalan) == (5, 1)
+    assert (count.passed, count.failed) == (5, 1)
 
 
 def test_unreadable_node_output_admits_it() -> None:
-    """No invented count for a runner we do not recognise — `okundu` stays False."""
+    """No invented count for a runner we do not recognise — `parsed` stays False."""
     count, _ = testrun.normalize("node", "bilinmeyen koşucu bir şeyler yazdı\n")
-    assert not count.okundu
+    assert not count.parsed
 
 
 # -- normalisation: go / cargo / dotnet --------------------------------
@@ -485,28 +485,28 @@ Failed!  - Failed:     1, Passed:     2, Skipped:     0, Total:     3, Duration:
 
 def test_go_output() -> None:
     count, failures = testrun.normalize("go", GO)
-    assert (count.gecen, count.kalan) == (1, 1)
+    assert (count.passed, count.failed) == (1, 1)
     assert failures[0].name == "TestTopla"
     assert failures[0].location == "hesap_test.go:14"
 
 
 def test_cargo_output() -> None:
     count, failures = testrun.normalize("rust", CARGO)
-    assert (count.gecen, count.kalan) == (3, 1)
+    assert (count.passed, count.failed) == (3, 1)
     assert failures and failures[0].name == "tests::topla"
 
 
 def test_dotnet_output() -> None:
     count, _ = testrun.normalize("dotnet", DOTNET)
-    assert (count.gecen, count.kalan, count.toplam) == (2, 1, 3)
+    assert (count.passed, count.failed, count.total) == (2, 1, 3)
 
 
 def test_auto_detection_picks_the_right_reader() -> None:
     """With a hand-given command we do not know which runner is speaking."""
     count, _ = testrun.normalize("oto", PYTEST_CLEAN)
-    assert count.gecen == 978
+    assert count.passed == 978
     count, _ = testrun.normalize("oto", PHPUNIT_CLEAN)
-    assert count.gecen == 4
+    assert count.passed == 4
 
 
 # -- trimming -----------------------------------------------------------
@@ -529,15 +529,15 @@ def test_short_output_is_untouched() -> None:
 
 
 def _result(**kw) -> testrun.Result:
-    base = dict(ekosistem="python", etiket="py -m pytest -q", kok="C:/x",
+    base = dict(ecosystem="python", label="py -m pytest -q", root="C:/x",
                 status="kostu")
     base.update(kw)
     return testrun.Result(**base)
 
 
 def test_a_green_run_never_claims_everything_works() -> None:
-    result = _result(sayim=testrun.Count(gecen=12, toplam=12, okundu=True))
-    text = result.metin()
+    result = _result(count=testrun.Count(passed=12, total=12, parsed=True))
+    text = result.text()
     assert "12 geçti, 0 kaldı" in text
     assert "koşulan testlerin kapsadığı kadarını doğrular" in text
     assert "her şey" not in text.lower()
@@ -545,48 +545,48 @@ def test_a_green_run_never_claims_everything_works() -> None:
 
 
 def test_a_red_run_says_do_not_call_it_done() -> None:
-    result = _result(cikis_kodu=1,
-                     sayim=testrun.Count(gecen=4, kalan=1, toplam=5, okundu=True),
-                     basarisizlar=[testrun.Failure("test_x", "assert 3 == 4",
+    result = _result(exit_code=1,
+                     count=testrun.Count(passed=4, failed=1, total=5, parsed=True),
+                     failures=[testrun.Failure("test_x", "assert 3 == 4",
                                                    "tests/test_h.py:12")])
-    text = result.metin()
+    text = result.text()
     assert "1 kaldı" in text
     assert "tests/test_h.py:12" in text
     assert "'çalışıyor' deme" in text
 
 
 def test_only_five_failures_are_named() -> None:
-    result = _result(cikis_kodu=1,
-                     sayim=testrun.Count(kalan=9, toplam=9, okundu=True),
-                     basarisizlar=[testrun.Failure(f"test_{i}") for i in range(9)])
-    text = result.metin()
+    result = _result(exit_code=1,
+                     count=testrun.Count(failed=9, total=9, parsed=True),
+                     failures=[testrun.Failure(f"test_{i}") for i in range(9)])
+    text = result.text()
     assert "test_4" in text and "test_5" not in text
     assert "4 başarısız test daha" in text
 
 
 def test_unreadable_counts_are_admitted() -> None:
-    result = _result(sayim=testrun.Count(), ham="anlaşılmaz çıktı")
-    text = result.metin()
+    result = _result(count=testrun.Count(), raw="anlaşılmaz çıktı")
+    text = result.text()
     assert "Test sayısı okunamadığı için" in text
 
 
 def test_empty_suite_proves_nothing() -> None:
-    result = _result(sayim=testrun.Count(okundu=True))
-    assert "Hiç test koşmadı" in result.metin()
-    assert "gerçekten çalıştır" in result.metin()
+    result = _result(count=testrun.Count(parsed=True))
+    assert "Hiç test koşmadı" in result.text()
+    assert "gerçekten çalıştır" in result.text()
 
 
 def test_health_check_is_not_sold_as_a_test() -> None:
-    result = _result(ekosistem="php", etiket="php spark routes", tur="saglik",
-                     sayim=testrun.Count())
-    text = result.metin()
+    result = _result(ecosystem="php", label="php spark routes", kind="saglik",
+                     count=testrun.Count())
+    text = result.text()
     assert "test takımı değil" in text
     assert "Davranışın doğruluğunu göstermez" in text
 
 
 def test_timeout_text_explains_both_causes() -> None:
-    result = _result(status="zaman_asimi", sure=300.0)
-    text = result.metin()
+    result = _result(status="zaman_asimi", duration=300.0)
+    text = result.text()
     assert "bitmedi ve durduruldu" in text
     assert "zaman_asimi" in text
 
@@ -624,12 +624,12 @@ def own_python(monkeypatch: pytest.MonkeyPatch):
 async def test_a_real_passing_suite_runs(tmp_path: Path, own_python) -> None:
     """End to end: real pytest runs in a fake project and the numbers are read."""
     _fake_python_project(tmp_path, "def test_gecer():\n    assert True\n")
-    harness = testrun.tespit(tmp_path)
+    harness = testrun.detect(tmp_path)
     assert harness is not None
-    result = await testrun.kos(harness, zaman_asimi=120)
+    result = await testrun.run_harness(harness, timeout=120)
     assert result.status == "kostu"
-    assert result.cikis_kodu == 0
-    assert result.sayim.okundu and result.sayim.gecen == 1
+    assert result.exit_code == 0
+    assert result.count.parsed and result.count.passed == 1
 
 
 async def test_a_real_failing_suite_is_reported(tmp_path: Path, own_python) -> None:
@@ -642,13 +642,13 @@ async def test_a_real_failing_suite_is_reported(tmp_path: Path, own_python) -> N
         "def test_toplama():\n"
         "    assert topla(1, 2) == 3\n",
     )
-    harness = testrun.tespit(tmp_path)
+    harness = testrun.detect(tmp_path)
     assert harness is not None
-    result = await testrun.kos(harness, zaman_asimi=120)
-    assert result.cikis_kodu != 0
-    assert result.sayim.kalan == 1
-    assert result.basarisizlar
-    assert "test_toplama" in result.basarisizlar[0].name
+    result = await testrun.run_harness(harness, timeout=120)
+    assert result.exit_code != 0
+    assert result.count.failed == 1
+    assert result.failures
+    assert "test_toplama" in result.failures[0].name
 
 
 HANGING = "import time; print('asilan_test_basladi', flush=True); time.sleep(120)"
@@ -663,8 +663,8 @@ async def test_timeout_kills_the_whole_process_tree(tmp_path: Path) -> None:
     a 2-second timeout had become a 30-second wait.
     """
     start = time.monotonic()
-    result = await testrun.kos_komut(
-        f'"{sys.executable}" -c "{HANGING}"', tmp_path, zaman_asimi=2,
+    result = await testrun.run_command(
+        f'"{sys.executable}" -c "{HANGING}"', tmp_path, timeout=2,
     )
     elapsed = time.monotonic() - start
     assert result.status == "zaman_asimi"
@@ -674,11 +674,11 @@ async def test_timeout_kills_the_whole_process_tree(tmp_path: Path) -> None:
 
 async def test_timeout_keeps_the_partial_output(tmp_path: Path) -> None:
     """Partial output is information too: the last line says where it got stuck."""
-    result = await testrun.kos_komut(
-        f'"{sys.executable}" -c "{HANGING}"', tmp_path, zaman_asimi=3,
+    result = await testrun.run_command(
+        f'"{sys.executable}" -c "{HANGING}"', tmp_path, timeout=3,
     )
-    assert "asilan_test_basladi" in result.ham
-    assert "nerede takıldığını" in result.metin()
+    assert "asilan_test_basladi" in result.raw
+    assert "nerede takıldığını" in result.text()
 
 
 async def test_cancel_stops_the_run(tmp_path: Path) -> None:
@@ -691,14 +691,14 @@ async def test_cancel_stops_the_run(tmp_path: Path) -> None:
 
     task = asyncio.ensure_future(stop())
     start = time.monotonic()
-    result = await testrun.kos_komut(
-        f'"{sys.executable}" -c "{HANGING}"', tmp_path, zaman_asimi=120,
+    result = await testrun.run_command(
+        f'"{sys.executable}" -c "{HANGING}"', tmp_path, timeout=120,
         cancel=cancel,
     )
     elapsed = time.monotonic() - start
     await task
     assert result.status == "kesildi"          # NOT a timeout
-    assert "Durduruldu" in result.metin()
+    assert "Durduruldu" in result.text()
     assert elapsed < 20, f"kesme {elapsed:.0f} sn sürdü"
 
 
@@ -707,18 +707,18 @@ async def test_missing_executable_is_honest(tmp_path: Path) -> None:
         "go", "test", "go test ./...", ["kesinlikle-olmayan-arac", "test"],
         tmp_path, "go.mod",
     )
-    result = await testrun.kos(harness)
+    result = await testrun.run_harness(harness)
     assert result.status == "baslatilamadi"
-    assert "bulunamadı" in result.metin()
+    assert "bulunamadı" in result.text()
 
 
 async def test_blocked_setup_is_not_run(tmp_path: Path) -> None:
     _package(tmp_path, {"test": "jest"})   # no node_modules
-    harness = testrun.tespit(tmp_path)
+    harness = testrun.detect(tmp_path)
     assert harness is not None
-    result = await testrun.kos(harness)
+    result = await testrun.run_harness(harness)
     assert result.status == "yok"
-    assert "node_modules" in result.ham
+    assert "node_modules" in result.raw
 
 
 # -- post-write reminder -----------------------------------------------
@@ -727,7 +727,7 @@ async def test_blocked_setup_is_not_run(tmp_path: Path) -> None:
 def test_reminder_names_the_command(tmp_path: Path) -> None:
     (tmp_path / "pytest.ini").write_text("[pytest]\n", encoding="utf-8")
     (tmp_path / "modul.py").write_text("x = 1\n", encoding="utf-8")
-    text = testrun.hatirlatma(tmp_path / "modul.py")
+    text = testrun.reminder(tmp_path / "modul.py")
     assert "pytest -q" in text
     assert "`kos`" in text
     assert len(text.splitlines()) == 1   # ONE line: no noise
@@ -735,7 +735,7 @@ def test_reminder_names_the_command(tmp_path: Path) -> None:
 
 def test_no_reminder_without_a_setup(tmp_path: Path) -> None:
     (tmp_path / "not.txt").write_text("selam", encoding="utf-8")
-    assert testrun.hatirlatma(tmp_path / "not.txt") == ""
+    assert testrun.reminder(tmp_path / "not.txt") == ""
 
 
 def test_reminder_hardens_after_repeated_writes(tmp_path: Path) -> None:
@@ -743,8 +743,8 @@ def test_reminder_hardens_after_repeated_writes(tmp_path: Path) -> None:
     (tmp_path / "pytest.ini").write_text("[pytest]\n", encoding="utf-8")
     file = tmp_path / "modul.py"
     file.write_text("x = 1\n", encoding="utf-8")
-    soft = testrun.hatirlatma(file, yazim=1)
-    hard = testrun.hatirlatma(file, yazim=3)
+    soft = testrun.reminder(file, writes=1)
+    hard = testrun.reminder(file, writes=3)
     assert "Gözle düzeltmeyi bırak" in hard
     assert "3. kez" in hard
     assert hard != soft
@@ -752,13 +752,13 @@ def test_reminder_hardens_after_repeated_writes(tmp_path: Path) -> None:
 
 def test_reminder_reports_a_blocked_setup(tmp_path: Path) -> None:
     _package(tmp_path, {"test": "jest"})
-    text = testrun.hatirlatma(tmp_path / "index.js")
+    text = testrun.reminder(tmp_path / "index.js")
     assert "node_modules" in text
 
 
 def test_reminder_marks_a_health_command_as_such(tmp_path: Path) -> None:
     (tmp_path / "spark").write_text("#!/usr/bin/env php\n", encoding="utf-8")
-    text = testrun.hatirlatma(tmp_path / "app" / "Controllers" / "Home.php")
+    text = testrun.reminder(tmp_path / "app" / "Controllers" / "Home.php")
     assert "test takımı yok" in text
     assert "sağlık denetimi" in text
 

@@ -167,7 +167,7 @@ def root_warning(path: Path, *, state_dir: Path | None = None) -> str:
 # -- recent-projects ledger ----------------------------------------------
 
 
-def son_projeler(state_dir: Path) -> list[str]:
+def recent_projects(state_dir: Path) -> list[str]:
     """Project paths, most recently chosen first."""
     path = state_dir / PROJECTS_FILE
     if not path.is_file():
@@ -181,12 +181,12 @@ def son_projeler(state_dir: Path) -> list[str]:
     return [str(x) for x in data if isinstance(x, str) and x.strip()][:MAX_RECENT]
 
 
-def proje_hatirla(state_dir: Path, path: str) -> list[str]:
+def remember_project(state_dir: Path, path: str) -> list[str]:
     """Moves the chosen project to the head of the ledger; drops duplicates, trims the list."""
     clean = (path or "").strip()
     if not clean:
-        return son_projeler(state_dir)
-    rest = [x for x in son_projeler(state_dir) if x.lower() != clean.lower()]
+        return recent_projects(state_dir)
+    rest = [x for x in recent_projects(state_dir) if x.lower() != clean.lower()]
     updated = [clean, *rest][:MAX_RECENT]
     try:
         state_dir.mkdir(parents=True, exist_ok=True)

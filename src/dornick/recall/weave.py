@@ -166,7 +166,7 @@ class NightReport:
 
     session_count: int = 0
     replayed: int = 0
-    devreden: int = 0           # carried over (read by sleep.py)
+    carried_over: int = 0       # read by sleep.py
     new_edges: int = 0
     schema_touches: int = 0
     captured: int = 0
@@ -175,9 +175,9 @@ class NightReport:
     lessons_written: int = 0
     procedures_written: int = 0
     goals_written: int = 0
-    damitik: int = 0            # distilled (read by sleep.py)
+    distilled_nodes: int = 0    # read by sleep.py
     warmed: int = 0
-    soguyan: int = 0            # cooled down (read by test_hot_cold.py)
+    cooled: int = 0             # read by test_hot_cold.py
     contradictions: int = 0
     rolled_back: int = 0
     stitched: int = 0
@@ -239,7 +239,7 @@ def night_pass(
         processed.append(session)
         status.setdefault("islenen", {})[session.id] = _stamp(clock)
         report.replayed += 1
-    report.devreden = len(sessions) - len(processed)
+    report.carried_over = len(sessions) - len(processed)
 
     _stitch(store, processed, report)
     _reweave(store, dict.fromkeys(touched), report)
@@ -254,7 +254,7 @@ def night_pass(
     distillation = distil.distil(store, touched, model=model, clock=clock,
                             local_model=local_model, cloud_ok=cloud_consent,
                             state_dir=state_dir)
-    report.damitik = distillation.written
+    report.distilled_nodes = distillation.written
     report.contradictions = distillation.contradictions
     if distillation.node_ids and exam is not None:
         # Exam gate: if the pass lowered prime quality, the distilled nodes
@@ -266,7 +266,7 @@ def night_pass(
     # settled: unless the active set is kept bounded, the signature scan and
     # RAM grow linearly with total memory (measured: p95 33 ms at 200k,
     # budget 20).
-    report.warmed, report.soguyan = store.update_heat(COLD_THRESHOLD)
+    report.warmed, report.cooled = store.update_heat(COLD_THRESHOLD)
 
     status["son_kosu"] = _stamp(clock)
     _write_watermark(watermark, status)
@@ -397,7 +397,7 @@ def _schema_refresh(store: Any, session: ReplaySession, report: NightReport) -> 
             if neighbour.id in touched:
                 continue
             store.add_use(neighbour.id, w=SCHEMA_SHARE * weight,
-                                etiket=activation.SCHEMA)
+                                label=activation.SCHEMA)
             report.schema_touches += 1
 
 
@@ -428,7 +428,7 @@ def _capture(store: Any, session: ReplaySession, report: NightReport, clock: Clo
             continue
         if any(abs(moment - big) <= window for big in surprising):
             store.add_use(node_id, w=CAPTURE_SHARE,
-                                etiket=activation.CAPTURED)
+                                label=activation.CAPTURED)
             report.captured += 1
 
 
@@ -457,7 +457,7 @@ def reverse_replay(store: Any, session: ReplaySession, *,
     if session.outcome == "basarili":
         for k, node_id in enumerate(reversed(sequence)):
             store.add_use(node_id, w=SUCCESS_SHARE * SHARE_DECAY ** k,
-                                etiket=activation.SUCCESS)
+                                label=activation.SUCCESS)
             report.success_shares += 1
         if len(sequence) >= 3 and len(session.tools) >= 2:
             title = "yordam: " + " → ".join(session.tools[:6])
@@ -472,7 +472,7 @@ def reverse_replay(store: Any, session: ReplaySession, *,
     elif session.outcome in ("basarisiz", "duzeltildi"):
         for k, node_id in enumerate(reversed(sequence)):
             store.add_use(node_id, w=FAILURE_SHARE * SHARE_DECAY ** k,
-                                etiket=activation.FAILURE)
+                                label=activation.FAILURE)
             report.failure_shares += 1
         source = sequence[-1]
         if session.error_text:
@@ -485,7 +485,7 @@ def reverse_replay(store: Any, session: ReplaySession, *,
             title = f"hata: {session.error_text}"[:140]
             existing = store.find_by_title("lesson", title)
             if existing is not None:
-                store.add_use(existing.id, w=0.5, etiket=activation.FAILURE)
+                store.add_use(existing.id, w=0.5, label=activation.FAILURE)
                 store.connect(existing.id, source, weight=0.6,
                              reason="bu hatıra hataya götürdü")
             else:
@@ -520,7 +520,7 @@ def _reinforce(store: Any, kind: str, title: str, label: str) -> bool:
     existing = store.find_by_title(kind, title)
     if existing is None:
         return False
-    store.add_use(existing.id, w=0.5, etiket=label)
+    store.add_use(existing.id, w=0.5, label=label)
     return True
 
 

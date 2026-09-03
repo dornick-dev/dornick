@@ -1,10 +1,10 @@
-"""OpenAI-uyumlu backend: LM Studio, Ollama, vLLM, llama.cpp, OpenRouter.
+"""OpenAI-compatible backend: LM Studio, Ollama, vLLM, llama.cpp, OpenRouter.
 
-Bu sunucuların hepsi aynı `/v1/chat/completions` sözleşmesini konuşur, o
-yüzden tek backend yeter. Farklılıklar biçimde değil yetenekte: küçük
-modeller araç argümanlarını bozuk JSON olarak üretebilir, bazıları görüntü
-kabul etmez, çoğunda önbellek yoktur. Bunların hepsi burada ya da
-`translate.py` içinde soğurulur; döngü farkı görmez.
+These servers all speak the same `/v1/chat/completions` contract, so one
+backend is enough. The differences are in capability, not format: small
+models may produce tool arguments as broken JSON, some accept no images,
+most have no cache. All of that is absorbed here or in `translate.py`;
+the loop sees no difference.
 """
 
 from __future__ import annotations
@@ -34,30 +34,31 @@ INSTALL_HINT = (
 
 
 def _hint() -> str:
-    """openai paketi kuruluma dahil; kuruluda yokluğu onarım gerektirir."""
+    """The openai package ships with the install; its absence on an installed copy needs repair."""
     from .. import environment
 
-    if environment.kurulu_mu():
+    if environment.is_installed():
         return ("openai paketi bu kurulumda eksik görünüyor. Kurulum "
                 "sihirbazını yeniden çalıştırmak eksiği onarır.")
     return INSTALL_HINT
 
-# Yerel sunucular anahtar doğrulamaz ama istemci boş dize kabul etmez.
+# Local servers don't validate the key but the client rejects an empty string.
 PLACEHOLDER_KEY = "local"
 
-# Keşif düşüşünün çıktı tavanı. 4096 token ≈ 300+ satır kod: bu görev
-# sınıfında tek dosyalık yazmaların neredeyse tamamı sığıyor; sığmayan
-# tur tam bütçeyle bir kez yineleniyor (aşağıda, turn içinde).
-KESIF_TAVANI = 4096
+# Output ceiling of the discovery drop. 4096 tokens ≈ 300+ lines of code:
+# in this task class almost all single-file writes fit; a turn that does
+# not fit is repeated once with the full budget (below, inside turn).
+DISCOVERY_CAP = 4096
 
-# Çağrı-başı sessizlik penceresi (barındırılan uçlar): pencere boyunca tek
-# parça gelmezse çağrı asılı sayılır, bir kez yeniden denenir. Ölçülen yara
-# (29.08, z1): tek bir sağlayıcı çağrısı dakikalarca sustu ve tur ancak
-# 900 sn'lik kapı tavanında koptu. 120 sn cömert bir ilk-token payı:
-# önbelleksiz dev istemde bile barındırılan uç ya bu sürede akıtır ya hiç.
-# Yerel uçlarda pencere YOK — CPU'daki LM Studio ilk token'a meşru olarak
-# dakikalar harcayabilir; sabırsız bir kesim orada özellik değil hata olur.
-CAGRI_SESSIZLIK_SN = 120.0
+# Per-call silence window (hosted endpoints): if not a single chunk arrives
+# during the window the call counts as hung and is retried once. Measured
+# wound (29.08, z1): a single provider call went silent for minutes and the
+# turn only broke at the 900 s gate ceiling. 120 s is a generous
+# first-token allowance: even on a huge uncached prompt a hosted endpoint
+# either streams within that time or never. Local endpoints get NO window —
+# LM Studio on a CPU can legitimately spend minutes on the first token; an
+# impatient cut there would be a bug, not a feature.
+CALL_SILENCE_S = 120.0
 
 
 def _silence_window(base_url: str | None) -> float | None:
@@ -67,34 +68,36 @@ def _silence_window(base_url: str | None) -> float | None:
             or host.startswith("192.168.") or host.startswith("10.")
             or host.endswith(".local")):
         return None
-    return CAGRI_SESSIZLIK_SN
+    return CALL_SILENCE_S
 
-# Salt-okur araçlar: sonucu dünyayı değiştirmeyen, ardından tipik olarak
-# ya bir okuma daha ya kısa bir yazma gelen araçlar. Liste bilinçli dar —
-# yanlış üye eklemek (örn. shell) yazma turlarının çabasını kısar. Araç
-# katmanındaki `mutates` bayrağına bağlanmıyor çünkü backend'e araçların
-# yalnız API şeması iniyor; adlar üründe kararlı.
+# Read-only tools: tools whose result does not change the world, typically
+# followed by either another read or a short write. The list is
+# deliberately narrow — adding a wrong member (e.g. shell) would cut the
+# effort of writing turns. It is not tied to the `mutates` flag in the
+# tool layer because only the tools' API schema reaches the backend; the
+# names are stable in the product.
 _READ_ONLY = frozenset({"read_file", "read_many", "list_dir", "denetle"})
 
 
 def _discovery_turn(messages: list[dict[str, Any]]) -> bool:
-    """Son alışveriş yalnız salt-okur araç sonuçları mı taşıdı?
+    """Did the last exchange carry only read-only tool results?
 
-    Sondan geriye yürünür: kuyruk `tool` sonuçlarıysa, onları çağıran
-    asistan turunun araç adlarına bakılır. Kuyrukta user/system varsa
-    (taze kullanıcı mesajı, hafıza notu) keşif sayılmaz — ilk çağrının ve
-    kullanıcıya dönen turların çabasına dokunulmaz.
+    Walk backwards from the end: if the tail is `tool` results, look at
+    the tool names of the assistant turn that called them. If the tail has
+    user/system messages (a fresh user message, a memory note) it does not
+    count as discovery — the effort of the first call and of turns that
+    return to the user is left untouched.
     """
-    gordu_tool = False
+    saw_tool = False
     for m in reversed(messages):
         role = m.get("role")
         if role == "tool":
-            gordu_tool = True
+            saw_tool = True
             continue
-        if role == "assistant" and gordu_tool:
-            adlar = [((c.get("function") or {}).get("name") or "")
+        if role == "assistant" and saw_tool:
+            names = [((c.get("function") or {}).get("name") or "")
                      for c in (m.get("tool_calls") or [])]
-            return bool(adlar) and all(ad in _READ_ONLY for ad in adlar)
+            return bool(names) and all(name in _READ_ONLY for name in names)
         return False
     return False
 
@@ -105,41 +108,45 @@ class OpenAIBackend:
     def __init__(self, model: ModelConfig, client: Any | None = None) -> None:
         self.model = model
         self._client = client or _make_client(model)
-        # Sunucuya aynı anda kaç istek gideceğinin kapısı. Yerel sunucularda
-        # bu 1: LM Studio meşgul bir modele ikinci istek gelince modelin
-        # ikinci bir kopyasını yüklüyor ve bellek katlanıyor. Kapı burada,
-        # döngüde değil — alt ajanlar da aynı istemciyi paylaşıyor.
+        # Gate for how many requests go to the server at once. On local
+        # servers this is 1: when a second request hits a busy model, LM
+        # Studio loads a second copy of the model and memory doubles. The
+        # gate lives here, not in the loop — subagents share the same client.
         self._gate = asyncio.Semaphore(max(1, model.max_calls))
-        # Sunucu `reasoning` alanını tanımıyorsa bir kez öğrenip bir daha
-        # göndermiyoruz. Her istekte 400 alıp yeniden denemek, her cevaba
-        # bir tur gecikme eklerdi.
+        # If the server does not recognise the `reasoning` field we learn
+        # it once and never send it again. Taking a 400 and retrying on
+        # every request would add a round-trip of latency to every answer.
         self._no_reasoning = model.can_think is False
-        # Model görüntü kabul etmiyorsa aynı biçimde bir kez öğreniliyor:
-        # metin-only bir modele geçildiğinde geçmişteki kareler istekte
-        # kalıyor ve sunucu 404 veriyor. İlk hatadan sonra kareler sıyrılıp
-        # bir daha gönderilmiyor. Katalog False dediyse baştan sıyır.
+        # If the model accepts no images the same one-time learning applies:
+        # after switching to a text-only model the frames from the history
+        # stay in the request and the server returns 404. After the first
+        # error the frames are stripped and never sent again. If the
+        # catalog says False, strip from the start.
         self._no_vision = model.vision is False
-        # İstem önbelleği işaretleri yalnız OpenRouter'da: ilk sistem +
-        # son iki mesaja ephemeral nokta (OpenCode'un ölçülmüş kalıbı —
-        # aynı model, aynı iş: %77 isabet, ~6,7x maliyet farkı). Başka
-        # uçlara gönderilmiyor; OpenRouter'da bile reddeden olursa bir
-        # kez öğrenilip kapatılıyor.
-        self._cache_isaretli = "openrouter" in str(model.base_url or "").lower()
+        # Prompt-cache marks only on OpenRouter: an ephemeral point on the
+        # first system + last two messages (OpenCode's measured pattern —
+        # same model, same job: 77% hit rate, ~6.7x cost difference). Not
+        # sent to other endpoints; even on OpenRouter a rejecting endpoint
+        # is learned once and the marks are turned off.
+        self._cache_marked = "openrouter" in str(model.base_url or "").lower()
         self._cache_off = False
-        # Oto kipi: adres OpenRouter ve ad "oto" ise istekler ücretsiz
-        # havuzdan atılıyor (bkz. otomod). Başka sağlayıcı/model
-        # isteklerine DOKUNULMUYOR. Sağlık defteri bellek-içi: arka arkaya
-        # hata veren model bir süre havuzun sonuna itiliyor.
-        self._oto = automode.oto_mu(model)
-        self._saglik = automode.Saglik()
-        # Oto kipinde en son hangi ucu seçtik. İçerik kusuru (şema ihlali,
-        # sahte araç çağrısı) tur BİTTİKTEN sonra döngüde anlaşılıyor;
-        # cezayı doğru modele yazabilmek için seçim burada saklanıyor.
+        # Auto mode: if the address is OpenRouter and the name is "oto",
+        # requests are drawn from the free pool (see automode). Other
+        # provider/model requests are NOT touched. The health ledger is
+        # in-memory: a model erroring back-to-back is pushed to the end of
+        # the pool for a while.
+        self._auto = automode.is_auto(model)
+        self._health = automode.Health()
+        # Which endpoint we selected last in auto mode. A content defect
+        # (schema violation, fake tool call) is discovered in the loop
+        # AFTER the turn ends; the selection is kept here so the penalty
+        # can be written to the right model.
         self._last_selected = ""
-        # Son akışın ham finish_reason'ı. `_stream` kırpılmış araç çağrısını
-        # yine "tool_use" diye damgalıyor (çağrı varlığı belirleyici); keşif
-        # tavanına çarpan turu yakalamak için ham değer burada saklanıyor.
-        self._son_finish: str | None = None
+        # Raw finish_reason of the last stream. `_stream` still stamps a
+        # truncated tool call as "tool_use" (the call's presence decides);
+        # the raw value is kept here to catch a turn that hit the
+        # discovery cap.
+        self._last_finish: str | None = None
 
     async def close(self) -> None:
         await self._client.close()
@@ -156,11 +163,12 @@ class OpenAIBackend:
         callbacks.on_turn_start()
 
         messages = to_openai_messages(prepared.system, prepared.messages)
-        # Model görüntü kabul etmediği öğrenildiyse kareleri baştan sıyır:
-        # ilk turda öğrenildi, sonraki turlar boşa 404 yememeli.
+        # If we learned the model accepts no images, strip the frames from
+        # the start: learned on the first turn, later turns should not eat
+        # a pointless 404.
         if self._no_vision:
             _strip_images(messages)
-        if self._cache_isaretli and not self._cache_off:
+        if self._cache_marked and not self._cache_off:
             _mark_cache(messages)
 
         kwargs: dict[str, Any] = {
@@ -178,43 +186,45 @@ class OpenAIBackend:
         extra: dict[str, Any] = {}
 
         if self.model.keep_loaded > 0:
-            # Sunucular bunu farklı adlarla anlıyor: LM Studio `ttl`, Ollama
-            # `keep_alive`. İkisi de gönderiliyor; tanımadığı alanı ikisi de
-            # yok sayıyor. Yoksa model her istekten sonra bellekten düşüyor
-            # ve bir sonraki cevap onlarca saniye yeniden yüklemeyi bekliyor.
+            # Servers understand this under different names: LM Studio
+            # `ttl`, Ollama `keep_alive`. Both are sent; each ignores the
+            # field it does not know. Without it the model drops out of
+            # memory after every request and the next answer waits tens of
+            # seconds for a reload.
             extra["ttl"] = self.model.keep_loaded
             extra["keep_alive"] = self.model.keep_loaded
 
-        # Keşif düşüşü (B5): küçük ailede, son alışveriş YALNIZ salt-okur
-        # araç sonuçları getirdiyse bu çağrı büyük ihtimalle bir sonraki
-        # okuma ya da kısa bir yazma — duvar süresinin %89'unun model
-        # gecikmesi olduğu ölçüldü (29.08 süpürümü) ve o gecikmenin aslanı
-        # akıl yürütme. Böyle turlarda çaba low'a, çıktı tavanı KESIF_TAVANI'na
-        # iner; tavana çarpan tur (finish=length) tam bütçeyle BİR kez
-        # yinelenir — kalite tavana kurban edilmez, yalnız gecikme kırpılır.
-        # Kodlama turu: flash'ta high→medium tavanı kalkar (yazma kalitesi).
-        kesif = False
+        # Discovery drop (B5): in the small family, if the last exchange
+        # brought ONLY read-only tool results, this call is most likely the
+        # next read or a short write — 89% of wall time was measured to be
+        # model latency (29.08 sweep) and the lion's share of that latency
+        # is reasoning. On such turns effort drops to low and the output
+        # ceiling to DISCOVERY_CAP; a turn that hits the ceiling
+        # (finish=length) is repeated ONCE with the full budget — quality
+        # is not sacrificed to the cap, only latency is trimmed.
+        # Coding turn: on flash the high→medium cap is lifted (write quality).
+        discovery = False
         encoding = False
-        if tools and not self._oto:
-            from ..prompt import coding_turn, kucuk_aile
-            if kucuk_aile(kwargs["model"]):
+        if tools and not self._auto:
+            from ..prompt import coding_turn, small_family
+            if small_family(kwargs["model"]):
                 if _discovery_turn(messages):
-                    kesif = True
-                    kwargs["max_tokens"] = min(self.model.max_tokens, KESIF_TAVANI)
+                    discovery = True
+                    kwargs["max_tokens"] = min(self.model.max_tokens, DISCOVERY_CAP)
                 elif coding_turn(messages):
                     encoding = True
 
-        if (reasoning := self._reasoning(kesif=kesif, encoding=encoding)) is not None and not self._no_reasoning:
+        if (reasoning := self._reasoning(discovery=discovery, encoding=encoding)) is not None and not self._no_reasoning:
             extra["reasoning"] = reasoning
 
-        # Oto kipi: model ücretsiz havuzun başından seçiliyor, sıradaki
-        # birkaçı OpenRouter'ın yerel yedek zincirine (`models`) yazılıyor.
-        # `provider.data_collection=deny`: ücretsiz uçların bir kısmı veriyi
-        # eğitimde kullanabiliyor; reddeden uca yönlendirilsin.
-        secilen = ""
-        if self._oto:
-            secilen, oto_ek = await asyncio.to_thread(self._oto_hazirla)
-            if not secilen:
+        # Auto mode: the model is picked from the head of the free pool,
+        # the next few are written into OpenRouter's native fallback chain
+        # (`models`). `provider.data_collection=deny`: some free endpoints
+        # may use the data for training; route to a refusing endpoint.
+        selected = ""
+        if self._auto:
+            selected, auto_extra = await asyncio.to_thread(self._prepare_auto)
+            if not selected:
                 return TurnResult(
                     error=(
                         "Oto havuzu kurulamadı: OpenRouter model listesine "
@@ -222,15 +232,16 @@ class OpenAIBackend:
                         "Ayarlar › Model'den belirli bir model seç."
                     )
                 )
-            kwargs["model"] = secilen
-            self._last_selected = secilen
-            extra.update(oto_ek)
+            kwargs["model"] = selected
+            self._last_selected = selected
+            extra.update(auto_extra)
 
         if extra:
             kwargs["extra_body"] = extra
 
-        # Kapı beklerken kesme yoklanır: kapıyı tutan çağrı uzun sürerse
-        # (tek kanal varsayılan) sıradaki tur Durdur'a sağır kalıyordu.
+        # The cancel flag is polled while waiting on the gate: when the
+        # call holding the gate ran long (single channel is the default)
+        # the queued turn stayed deaf to Stop.
         if cancel.is_set():
             return TurnResult(interrupted=True, partial_text="")
         async with self._gate:
@@ -240,28 +251,30 @@ class OpenAIBackend:
                 try:
                     result = await self._stream(kwargs, cancel, callbacks)
                 except Stalled:
-                    # Asılı sağlayıcı çağrısı: tur tavanını yemeden bir kez
-                    # taze bağlantıyla yinele. İkincisi de susarsa hata —
-                    # oto kipinde sağlık defterine düşer, model sıraya iner.
+                    # Hung provider call: retry once on a fresh connection
+                    # before eating the turn ceiling. If the second one is
+                    # silent too, it is an error — in auto mode it lands in
+                    # the health ledger and the model moves down the queue.
                     try:
                         result = await self._stream(kwargs, cancel, callbacks)
                     except Stalled as exc:
                         result = TurnResult(error=(
                             f"{kwargs['model']} yanıt akıtmadı: {exc} "
                             "(iki deneme). Sağlayıcı asılı görünüyor."))
-                if self._son_finish == "length" and (
-                    kesif
+                if self._last_finish == "length" and (
+                    discovery
                     or result.error
                     or not (result.partial_text or "").strip()
                 ):
-                    # Çıktı tavanı doldu ve kullanılabilir içerik yok (ya da
-                    # keşif tavanı kırptı). finish=length ≠ bağlam doldu:
-                    # çoğu zaman akıl yürütme max_tokens'ı yedi. Aynı isteği
-                    # 5 kez denemek boşuna; bir kez tam bütçe + düşük çaba.
+                    # The output ceiling filled and there is no usable
+                    # content (or the discovery cap truncated). finish=length
+                    # ≠ context full: most of the time reasoning ate
+                    # max_tokens. Trying the same request 5 times is
+                    # pointless; once with full budget + low effort.
                     kwargs["max_tokens"] = self.model.max_tokens
                     body = dict(kwargs.get("extra_body") or {})
-                    if (yumusak := self._reasoning(kesif=True)) is not None and not self._no_reasoning:
-                        body["reasoning"] = yumusak
+                    if (soft := self._reasoning(discovery=True)) is not None and not self._no_reasoning:
+                        body["reasoning"] = soft
                     elif not self._no_reasoning:
                         body.pop("reasoning", None)
                     if body:
@@ -270,58 +283,60 @@ class OpenAIBackend:
                         kwargs.pop("extra_body", None)
                     result = await self._stream(kwargs, cancel, callbacks)
             except Exception:
-                # İstek hiç kurulamadı (örn. bağlantı reddi): bu da o
-                # modelin hanesine hata yazılır.
-                if self._oto and secilen:
-                    self._saglik.save(secilen, False)
+                # The request never got built (e.g. connection refused):
+                # this too is written as an error against that model.
+                if self._auto and selected:
+                    self._health.save(selected, False)
                 raise
 
-        # Zaman aşımı, boş yanıt ve hata aynı kefede: çağrı başarısız.
-        # Kesme kullanıcının kararı, modelin suçu değil — sayılmıyor.
-        if self._oto and secilen and not result.interrupted:
-            self._saglik.save(secilen, ok=not result.error)
+        # Timeout, empty response and error weigh the same: the call
+        # failed. A cancel is the user's decision, not the model's fault —
+        # it does not count.
+        if self._auto and selected and not result.interrupted:
+            self._health.save(selected, ok=not result.error)
         return result
 
-    def kusurlu(self, sebep: str = "") -> None:
-        """İçerik kusuru: tur teknik olarak başarılı ama boşa gitti.
+    def kusurlu(self, reason: str = "") -> None:
+        """Content defect: the turn technically succeeded but was wasted.
 
-        Döngü çağırıyor (bkz. `Agent._kusurlu`): şemaya uymayan araç
-        çağrısı ya da gerçek çağrı yerine düz metin yazılmış çağrı XML'i.
-        Ücretsiz havuzda bunlar hata kadar gerçek: araç çağıramayan bir uç
-        işi ilerletmiyor, yalnızca tur harcıyor. Sağlık defterine
-        başarısızlık olarak yazılıyor; eşiği aşan model havuzun sonuna
-        itiliyor ve kendiliğinden eleniyor.
+        The loop calls this (see `Agent._kusurlu`): a tool call that
+        violates the schema, or call XML written as plain text instead of
+        a real call. In the free pool these are as real as errors: an
+        endpoint that cannot call tools does not advance the work, it only
+        burns turns. It is written to the health ledger as a failure; a
+        model crossing the threshold is pushed to the end of the pool and
+        weeds itself out.
 
-        Oto kipi dışında karşılığı yok: kullanıcı modeli kendi seçti,
-        onu arkasından sıralamaya sokmak bize düşmez.
+        Outside auto mode there is no equivalent: the user picked the
+        model themselves; ranking it behind their back is not our place.
         """
-        if self._oto and self._last_selected:
-            self._saglik.save(self._last_selected, False)
+        if self._auto and self._last_selected:
+            self._health.save(self._last_selected, False)
 
-    def _oto_hazirla(self) -> tuple[str, dict[str, Any]]:
-        """Oto kipinin istek parçaları: seçilen model + ek gövde alanları.
+    def _prepare_auto(self) -> tuple[str, dict[str, Any]]:
+        """Auto mode's request pieces: the selected model + extra body fields.
 
-        Havuz sağlık sırasına göre diziliyor: cezalı modeller sona. Son
-        seçim teşhis için önbellek dosyasına not ediliyor — "hangi modelle
-        konuştum" sorusunun cevabı orada.
+        The pool is ordered by health: penalised models go last. The last
+        selection is noted in the cache file for diagnosis — the answer to
+        "which model did I talk to" lives there.
         """
-        pool = self._saglik.rank(automode.havuz())
+        pool = self._health.rank(automode.pool())
         if not pool:
             return "", {}
-        ek: dict[str, Any] = {
+        extra: dict[str, Any] = {
             "provider": {"data_collection": "deny", "require_parameters": True},
         }
-        if yedekler := pool[1:4]:
-            ek["models"] = yedekler
+        if fallbacks := pool[1:4]:
+            extra["models"] = fallbacks
         automode.write_last(pool[0])
-        return pool[0], ek
+        return pool[0], extra
 
     def _heal(self, kwargs: dict[str, Any], exc: Exception) -> bool:
-        """Bilinen bir reddi bir kez iyileştirir; iyileştirdiyse True.
+        """Heals a known rejection once; True if it healed something.
 
-        Aynı hatayı sonsuza kadar denememek için her tür bir kez: `reasoning`
-        alanı ya da görüntü. İyileştirecek bir şey kalmadıysa False döner ve
-        çağıran hatayı yükseltir.
+        Each kind once, so the same error is not retried forever: the
+        `reasoning` field or images. If nothing is left to heal it returns
+        False and the caller raises the error.
         """
         if not self._no_reasoning and _rejects_reasoning(exc):
             self._no_reasoning = True
@@ -338,50 +353,53 @@ class OpenAIBackend:
             _strip_images(kwargs["messages"])
             return True
 
-        # Önbellek işaretini tanımayan uç: işareti söküp bir daha gönderme.
-        if (self._cache_isaretli and not self._cache_off
+        # Endpoint that does not recognise the cache mark: strip the mark
+        # and never send it again.
+        if (self._cache_marked and not self._cache_off
                 and "cache_control" in str(exc).lower()):
             self._cache_off = True
-            _cache_sok(kwargs["messages"])
+            _unmark_cache(kwargs["messages"])
             return True
 
         return False
 
-    def _reasoning(self, kesif: bool = False, encoding: bool = False) -> dict[str, Any] | None:
-        """Düşünme ayarının sunucuya gönderilecek hali.
+    def _reasoning(self, discovery: bool = False, encoding: bool = False) -> dict[str, Any] | None:
+        """The thinking setting in the form sent to the server.
 
-        Bu alan şimdiye kadar yalnızca Claude tarafında geçerliydi; qwen3
-        gibi düşünen modeller kendi kararlarıyla akıl yürütüyordu ve ayar
-        sayfasındaki "çaba" değeri hiçbir şey yapmıyordu.
+        Until now this field only applied on the Claude side; thinking
+        models like qwen3 reasoned by their own choice and the "effort"
+        value on the settings page did nothing.
 
-        Farkı ölçtüm (qwen3-27b, OpenRouter, "üyan." gibi tek kelimelik bir
-        istem):
+        I measured the difference (qwen3-27b, OpenRouter, a one-word prompt
+        like "üyan."):
 
-            şu anki hal      ilk parça 2,53 sn   toplam 8,97 sn
-            reasoning low    ilk parça 0,87 sn   toplam 1,60 sn
-            reasoning off    ilk parça 0,94 sn   toplam 1,12 sn
+            current state    first chunk 2.53 s   total 8.97 s
+            reasoning low    first chunk 0.87 s   total 1.60 s
+            reasoning off    first chunk 0.94 s   total 1.12 s
 
-        Selam vermek için dokuz saniye akıl yürütmek, asistanı gerçek
-        zamanlı olmaktan çıkarıyor. `low` hem hızlı hem de kişiliği
-        koruyor; tümden kapatmak modeli genel geçer kalıplara düşürüyor
+        Reasoning for nine seconds to say hello takes the assistant out of
+        real time. `low` is both fast and keeps the personality; turning
+        it off entirely drops the model into generic boilerplate
         ("Size nasıl yardımcı olabilirim?").
         """
         if self.model.can_think is False:
             return None
         if not self.model.thinking:
             return {"enabled": False}
-        # OpenRouter "low/medium/high" kabul ediyor; xhigh/max karşılığı yok.
+        # OpenRouter accepts "low/medium/high"; xhigh/max have no equivalent.
         effort = {"xhigh": "high", "max": "high"}.get(self.model.effort, self.model.effort)
-        # Küçük/hızlı ailede sohbet tavanı medium (28.08: her tur high →
-        # 900 sn). Kodlama turunda tavan kalkar — yazma için high serbest.
+        # In the small/fast family the chat ceiling is medium (28.08: high
+        # on every turn → 900 s). On a coding turn the ceiling is lifted —
+        # high stays available for writing.
         if effort == "high":
-            from ..prompt import kucuk_aile
-            if kucuk_aile(self.model.name) and not encoding:
+            from ..prompt import small_family
+            if small_family(self.model.name) and not encoding:
                 effort = "medium"
-        # Keşif turu: bir okumanın ardından gelen çağrıya orta/yüksek çaba
-        # akıl yürütme, gecikmenin kendisi (B5 ölçümü). Tavana çarpan tur
-        # zaten tam çabayla yineleniyor. Keşif kodlama bayrağından üstün.
-        if kesif and effort in ("medium", "high"):
+        # Discovery turn: medium/high-effort reasoning on the call that
+        # follows a read IS the latency (B5 measurement). A turn that hits
+        # the cap is repeated at full effort anyway. Discovery outranks the
+        # coding flag.
+        if discovery and effort in ("medium", "high"):
             effort = "low"
         return {"effort": effort} if effort in ("low", "medium", "high") else None
 
@@ -390,19 +408,20 @@ class OpenAIBackend:
         reasoning: list[str] = []
         calls: dict[int, dict[str, str]] = {}
         finish: str | None = None
-        self._son_finish = None
+        self._last_finish = None
         usage = SimpleUsage()
         stream = None
 
-        # İki tür ret bir kez öğrenilip iyileştiriliyor: tanınmayan
-        # `reasoning` alanı ve görüntü kabul etmeyen model. İkisi birden
-        # gerekebilir (metin-only + reasoning'siz sunucu), o yüzden
-        # denemeler bir döngüde: her hatada bir şey iyileştir, tekrar dene.
+        # Two kinds of rejection are learned once and healed: an
+        # unrecognised `reasoning` field and a model that accepts no
+        # images. Both can be needed at once (text-only server without
+        # reasoning), so the attempts sit in a loop: heal one thing per
+        # error, try again.
         stream = None
         for _ in range(3):
-            # Kesme burada da yoklanıyor: istek KURULUŞU (SDK kendi içinde
-            # 2 kez daha deniyor) dakikalarca sürebiliyor ve Durdur ancak
-            # akış başlayınca işleniyordu.
+            # The cancel flag is polled here too: request SETUP (the SDK
+            # internally retries 2 more times) can take minutes, and Stop
+            # was only handled once the stream started.
             if cancel.is_set():
                 return TurnResult(interrupted=True, partial_text="")
             try:
@@ -411,13 +430,14 @@ class OpenAIBackend:
             except Exception as exc:
                 if not self._heal(kwargs, exc):
                     raise
-        if stream is None:  # pragma: no cover - döngü hep break ya da raise
+        if stream is None:  # pragma: no cover - the loop always breaks or raises
             raise RuntimeError("istek kurulamadı")
 
         try:
-            # `cancellable`: kesme yalnız parça gelince değil, parça BEKLERKEN
-            # de yoklanıyor. İlk token'dan önceki uzun istem işleme sırasında
-            # (önbelleksiz ilk tur) Durdur işlemiyordu — kökü burasıydı.
+            # `cancellable`: the cancel flag is polled not only when a chunk
+            # arrives but also while WAITING for one. During the long prompt
+            # processing before the first token (uncached first turn) Stop
+            # did not work — this was the root.
             async for chunk in cancellable(
                     stream, cancel,
                     stall_s=_silence_window(self.model.base_url)):
@@ -434,24 +454,24 @@ class OpenAIBackend:
         except Interrupted:
             return TurnResult(interrupted=True, partial_text="".join(text))
         except Stalled:
-            # Asılı çağrı çağırana yükselir: turn() bir kez yeniden dener,
-            # ikincisi de susarsa hata TurnResult'a döner.
+            # A hung call bubbles to the caller: turn() retries once, and
+            # if the second one is silent too the error goes into TurnResult.
             raise
-        except Exception as exc:  # openai paketi opsiyonel; tipe bağlanamayız
+        except Exception as exc:  # the openai package is optional; can't bind to the type
             return TurnResult(error=_explain(exc, self.model), partial_text="".join(text))
         finally:
-            # Akış tüketilse de kesilse de kapatılmalı. Kapatılmazsa altındaki
-            # httpx bağlantısı yorumlayıcı kapanırken toplanır ve
-            # "generator didn't stop after athrow()" hatası verir.
+            # The stream must be closed whether consumed or cut. If not,
+            # the underlying httpx connection gets collected at interpreter
+            # shutdown and raises "generator didn't stop after athrow()".
             await _aclose(stream)
 
-        self._son_finish = finish
+        self._last_finish = finish
         joined = "".join(text)
         gathered = [calls[i] for i in sorted(calls)]
 
-        # Bazi yerel modeller arac cagrisini tool_calls alaninda degil, duz
-        # metin icinde XML olarak uretiyor. Ayristirilmazsa cagri hic
-        # calismiyor ve ham etiketler kullaniciya cevap gibi gorunuyor.
+        # Some local models produce the tool call not in the tool_calls
+        # field but as XML inside plain text. If it is not parsed the call
+        # never runs and the raw tags look like an answer to the user.
         joined, inline = extract_inline_calls(joined)
         if inline:
             for index, call in enumerate(inline):
@@ -464,14 +484,14 @@ class OpenAIBackend:
         blocks = to_anthropic_blocks(joined, gathered)
 
         if not blocks:
-            # Düşünme modelleri turu bazen yalnızca reasoning kanalında
-            # bitirir: plan yapar, "şimdi şunu yapmalıyım" der ve durur.
+            # Thinking models sometimes finish a turn only in the reasoning
+            # channel: they plan, say "now I should do this" and stop.
             #
-            # Bunu cevap diye sunmak yanlıştı — kullanıcı akıl yürütmeyi
-            # cevap sanıyor ve iş yarıda kalıyordu. Akıl yürütme cevap
-            # değildir; geçmişe asistan turu olarak giriyor (model kendi
-            # planını görsün diye) ama `empty_turn` ile işaretleniyor,
-            # döngü de onu sürdürüyor.
+            # Presenting that as an answer was wrong — the user mistook the
+            # reasoning for the answer and the work stalled halfway.
+            # Reasoning is not an answer; it enters the history as an
+            # assistant turn (so the model can see its own plan) but is
+            # marked with `empty_turn`, and the loop keeps going.
             if thought := "".join(reasoning).strip():
                 return TurnResult(
                     message=SimpleMessage(
@@ -482,10 +502,11 @@ class OpenAIBackend:
                     partial_text="",
                 )
             if finish == "length":
-                # Çıktı bütçesi (max_tokens) doldu; içerik yok. Bu bağlam
-                # penceresi değil — akıl yürütme çoğu zaman tüm çıktı
-                # hakkını yiyor. api_error + 5 deneme aynı sonucu verir;
-                # empty_turn ile döngü kısa cevap / araç çağrısı ister.
+                # The output budget (max_tokens) filled; no content. This
+                # is not the context window — reasoning often eats the
+                # whole output allowance. api_error + 5 retries gives the
+                # same result; with empty_turn the loop asks for a short
+                # answer / tool call.
                 return TurnResult(
                     message=SimpleMessage(
                         content=[{
@@ -508,8 +529,9 @@ class OpenAIBackend:
                 )
             )
 
-        # Sunucu finish_reason'ı atlarsa araç çağrısının varlığı belirleyicidir;
-        # aksi halde döngü tool_use turunu end_turn sanıp erken durur.
+        # If the server omits finish_reason, the presence of a tool call
+        # decides; otherwise the loop mistakes a tool_use turn for end_turn
+        # and stops early.
         stop_reason = "tool_use" if gathered else map_finish_reason(finish)
 
         return TurnResult(
@@ -518,10 +540,11 @@ class OpenAIBackend:
         )
 
     async def count_tokens(self, prepared: Prepared, tools: list[dict[str, Any]]) -> int:
-        """Kaba tahmin.
+        """Rough estimate.
 
-        Uyumlu sunucularda token sayma uç noktası yok. Karakter/4 yaklaşımı
-        raporlama için yeterli; maliyet hesabına dayanak yapma.
+        Compatible servers have no token-counting endpoint. The chars/4
+        approximation is enough for reporting; do not base cost
+        calculations on it.
         """
         payload = to_openai_messages(prepared.system, prepared.messages)
         chars = sum(len(str(m.get("content") or "")) for m in payload)
@@ -535,7 +558,7 @@ class OpenAIBackend:
 def _make_client(model: ModelConfig) -> Any:
     try:
         from openai import AsyncOpenAI
-    except ImportError as exc:  # pragma: no cover - kurulum yolu
+    except ImportError as exc:  # pragma: no cover - install path
         raise RuntimeError(_hint()) from exc
 
     key = os.getenv(model.api_key_env or "OPENAI_API_KEY") or PLACEHOLDER_KEY
@@ -543,14 +566,15 @@ def _make_client(model: ModelConfig) -> Any:
     if model.base_url:
         kwargs["base_url"] = model.base_url
 
-    # Zaman aşımı ve yeniden deneme. Varsayılan SDK zaman aşımı çok uzun ve
-    # AKIŞ boşta kalınca (sağlayıcı yanıt vermeyi bırakınca) sistem dakikalarca
-    # "düşünüyor" diye takılı kalıyordu — kullanıcı "upstream idle timeout"
-    # hatası gelene kadar bekliyordu. `read` = ardışık iki bayt arası azami
-    # boşluk: sağlıklı bir akış saniyeden kısa aralıkla token gönderir; bu
-    # süre aşılırsa istek hızla düşer ve tur temiz biter (kilitlenmez). Yerel
-    # bir model ilk token için biraz yavaş olabildiğinden cömert tutuldu.
-    # `max_retries` geçici sağlayıcı hatalarını (429, kısa idle) yutuyor.
+    # Timeout and retries. The default SDK timeout is far too long, and
+    # when the STREAM went idle (the provider stopped responding) the
+    # system sat stuck on "thinking" for minutes — the user waited until
+    # an "upstream idle timeout" error arrived. `read` = maximum gap
+    # between two consecutive bytes: a healthy stream sends tokens at
+    # sub-second intervals; if the gap is exceeded the request fails fast
+    # and the turn ends cleanly (no deadlock). Kept generous because a
+    # local model can be a bit slow to the first token.
+    # `max_retries` swallows transient provider errors (429, short idle).
     try:
         import httpx
 
@@ -576,8 +600,9 @@ def _consume(
         text.append(chunk)
         callbacks.on_text(chunk)
 
-    # Qwen3, DeepSeek-R1 ve türevleri düşünmeyi ayrı alanda akıtır. Alan adı
-    # sunucudan sunucuya değişiyor; SDK tanımadığı alanları model_extra'ya koyar.
+    # Qwen3, DeepSeek-R1 and derivatives stream thinking in a separate
+    # field. The field name varies from server to server; the SDK puts
+    # unrecognised fields into model_extra.
     if chunk := _reasoning_of(delta):
         reasoning.append(chunk)
         callbacks.on_thinking(chunk)
@@ -585,28 +610,28 @@ def _consume(
     for fragment in getattr(delta, "tool_calls", None) or []:
         slot = calls.setdefault(
             getattr(fragment, "index", 0),
-            {"id": "", "name": "", "arguments": "", "ek": {}},
+            {"id": "", "name": "", "arguments": "", "extra": {}},
         )
         if identifier := getattr(fragment, "id", None):
             slot["id"] = identifier
 
-        # Sağlayıcıya özel alanlar: TANIMADAN taşınıyor. Gemini düşünen
-        # modellerde her araç çağrısına bir `thought_signature` iliştiriyor
-        # ve SONRAKİ turda onu geri göndermeni ŞART koşuyor; göndermezsen
-        # 400 veriyor ("missing a thought_signature in functionCall parts").
-        # Alanın adını ve yerini sağlayıcıya göre kodlamak yerine bilmediğimiz
-        # her şeyi olduğu gibi saklıyoruz — böyle bir alan ekleyen bir sonraki
-        # sağlayıcıda da kırılmıyor.
-        _ek_topla(slot["ek"], fragment)
+        # Provider-specific fields: carried WITHOUT recognising them.
+        # Gemini attaches a `thought_signature` to every tool call in
+        # thinking models and REQUIRES you to send it back on the NEXT
+        # turn; if you don't, it returns 400 ("missing a thought_signature
+        # in functionCall parts"). Instead of hard-coding the field's name
+        # and place per provider, we keep everything we don't know as-is —
+        # so the next provider that adds such a field doesn't break us either.
+        _collect_extra(slot["extra"], fragment)
 
         function = getattr(fragment, "function", None)
         if function is None:
             continue
-        _ek_topla(slot["ek"], function)
+        _collect_extra(slot["extra"], function)
 
         if name := getattr(function, "name", None):
-            # Çoğu sunucu adı tek parça yollar, bazıları parçalar. Aynı parçayı
-            # iki kez eklememek için sonek kontrolü yapıyoruz.
+            # Most servers send the name in one piece, some split it. We
+            # do a suffix check so the same piece is not appended twice.
             if not slot["name"]:
                 slot["name"] = name
                 callbacks.on_tool_start(name)
@@ -617,32 +642,32 @@ def _consume(
             slot["arguments"] += arguments
 
 
-# SDK'nin modellemedigi alanlar `model_extra`da durur (pydantic). Araç
-# çağrısında ne varsa oradan alıyoruz: adını bilmediğimiz bir alanı da
-# taşıyabilmek için tek tek saymıyoruz.
-_EK_ATLA = frozenset({"index", "id", "type", "name", "arguments", "function"})
+# Fields the SDK does not model sit in `model_extra` (pydantic). We take
+# whatever the tool call has from there: we don't enumerate them one by
+# one, so a field whose name we don't know can be carried too.
+_EXTRA_SKIP = frozenset({"index", "id", "type", "name", "arguments", "function"})
 
 
-def _ek_topla(kutu: dict[str, Any], nesne: Any) -> None:
-    """Tanınmayan sağlayıcı alanlarını kutuya biriktirir (sessiz, en iyi çaba)."""
+def _collect_extra(box: dict[str, Any], obj: Any) -> None:
+    """Accumulates unrecognised provider fields into the box (silent, best effort)."""
     try:
-        fazla = getattr(nesne, "model_extra", None) or {}
+        extras = getattr(obj, "model_extra", None) or {}
     except Exception:
         return
-    for switches, deger in fazla.items():
-        if switches in _EK_ATLA or deger is None:
+    for key, value in extras.items():
+        if key in _EXTRA_SKIP or value is None:
             continue
-        # Akış parça parça geliyor; metin alanları ekleniyor, ötekiler
-        # son gelen kazanıyor (imza tek parça geliyor).
-        if isinstance(deger, str) and isinstance(kutu.get(switches), str):
-            if not kutu[switches].endswith(deger):
-                kutu[switches] += deger
+        # The stream arrives piece by piece; text fields are appended, for
+        # the rest the last one wins (the signature arrives in one piece).
+        if isinstance(value, str) and isinstance(box.get(key), str):
+            if not box[key].endswith(value):
+                box[key] += value
         else:
-            kutu[switches] = deger
+            box[key] = value
 
 
-# Alanı tanımayan bir sunucunun reddi. Sunucudan sunucuya metin değişiyor,
-# o yüzden koda değil kelimeye bakılıyor: hepsi alanın adını söylüyor.
+# A server's rejection of a field it does not know. The text varies from
+# server to server, so we look at words, not codes: they all name the field.
 _REJECTED = ("reasoning", "unknown field", "unrecognized", "extra_body",
              "unexpected keyword", "additionalproperties")
 
@@ -656,12 +681,13 @@ def _rejects_reasoning(exc: Exception) -> bool:
 
 
 def _rejects_image(exc: Exception) -> bool:
-    """Model görüntü kabul etmiyor mu?
+    """Does the model refuse image input?
 
-    Metin-only bir modele geçildiğinde geçmişteki kamera/ekran kareleri
-    hâlâ istekte oluyor ve sunucu reddediyor. OpenRouter'ın metni:
-    'No endpoints found that support image input'. Sunucuya göre değişiyor,
-    o yüzden koda değil kelimeye bakılıyor: hepsi görüntüden söz ediyor.
+    After switching to a text-only model the camera/screen frames from the
+    history are still in the request and the server rejects it.
+    OpenRouter's text: 'No endpoints found that support image input'. It
+    varies per server, so we look at words, not codes: they all mention
+    images.
     """
     text = str(exc).lower()
     status = getattr(exc, "status_code", None)
@@ -673,53 +699,53 @@ def _rejects_image(exc: Exception) -> bool:
     )
 
 
-# Görüntü sıyrıldığında yerine konan iz. Model göremiyor ama bir görüntünün
-# orada olduğunu bilmesi, "az önce gösterdiğim" gibi göndermelere yardımcı.
+# The trace left where an image was stripped. The model cannot see it, but
+# knowing an image was there helps with references like "the one I just showed".
 _IMAGE_PLACEHOLDER = "[görüntü — bu model göremiyor]"
 
 
 def _mark_cache(messages: list[dict[str, Any]]) -> None:
-    """OpenRouter istem önbelleği: ilk sistem + son iki mesaja ephemeral.
+    """OpenRouter prompt cache: ephemeral on the first system + last two messages.
 
-    İşaret bir içerik PARÇASININ üstünde yaşar; düz metin içerik tek
-    parçaya sarılır. En fazla üç nokta — Anthropic ailesinin dört-nokta
-    sınırının güvenli altında, OpenRouter diğer modellerde işareti ya
-    kullanır ya yok sayar.
+    The mark lives on a content PART; plain-text content is wrapped in a
+    single part. Three points at most — safely under the Anthropic
+    family's four-point limit, and on other models OpenRouter either uses
+    the mark or ignores it.
     """
-    isaret = {"type": "ephemeral"}
-    adaylar = [m for m in messages if m.get("role") == "system"][:1]
-    adaylar += [m for m in messages if m.get("role") != "system"][-2:]
-    gorulen: set[int] = set()
-    for m in adaylar:
-        if id(m) in gorulen:
+    mark = {"type": "ephemeral"}
+    candidates = [m for m in messages if m.get("role") == "system"][:1]
+    candidates += [m for m in messages if m.get("role") != "system"][-2:]
+    seen: set[int] = set()
+    for m in candidates:
+        if id(m) in seen:
             continue
-        gorulen.add(id(m))
-        icerik = m.get("content")
-        if isinstance(icerik, str):
-            m["content"] = [{"type": "text", "text": icerik,
-                             "cache_control": dict(isaret)}]
-        elif isinstance(icerik, list) and icerik:
-            son = icerik[-1]
-            if isinstance(son, dict):
-                son["cache_control"] = dict(isaret)
+        seen.add(id(m))
+        content = m.get("content")
+        if isinstance(content, str):
+            m["content"] = [{"type": "text", "text": content,
+                             "cache_control": dict(mark)}]
+        elif isinstance(content, list) and content:
+            last = content[-1]
+            if isinstance(last, dict):
+                last["cache_control"] = dict(mark)
 
 
-def _cache_sok(messages: list[dict[str, Any]]) -> None:
-    """İşaretleri geri alır (uç kabul etmedi): parçalardan düşürülür."""
+def _unmark_cache(messages: list[dict[str, Any]]) -> None:
+    """Reverts the marks (the endpoint refused them): dropped from the parts."""
     for m in messages:
-        icerik = m.get("content")
-        if isinstance(icerik, list):
-            for parca in icerik:
-                if isinstance(parca, dict):
-                    parca.pop("cache_control", None)
+        content = m.get("content")
+        if isinstance(content, list):
+            for part in content:
+                if isinstance(part, dict):
+                    part.pop("cache_control", None)
 
 
 def _strip_images(messages: list[dict[str, Any]]) -> None:
-    """OpenAI-biçimli mesajlardaki görüntü parçalarını metne çevirir (yerinde).
+    """Turns the image parts in OpenAI-format messages into text (in place).
 
-    Yeniden çeviriye gerek yok: zaten çevrilmiş mesajın içindeki
-    `image_url` parçaları bir metin izine dönüştürülüyor. Parça listesi
-    yalnızca görüntüden ibaretse mesaj düz metne iniyor.
+    No re-translation needed: the `image_url` parts inside an
+    already-translated message are converted into a text trace. If the
+    part list consists only of images, the message drops to plain text.
     """
     for msg in messages:
         content = msg.get("content")
@@ -731,8 +757,8 @@ def _strip_images(messages: list[dict[str, Any]]) -> None:
                 cleaned.append({"type": "text", "text": _IMAGE_PLACEHOLDER})
             else:
                 cleaned.append(part)
-        # Tek parça ve o da metinse düz dizeye indir: bazı sunucular tek
-        # elemanlı içerik dizisinde titizleniyor.
+        # If there is a single part and it is text, drop to a plain string:
+        # some servers are fussy about a one-element content array.
         if len(cleaned) == 1 and cleaned[0].get("type") == "text":
             msg["content"] = cleaned[0]["text"]
         else:
@@ -740,10 +766,11 @@ def _strip_images(messages: list[dict[str, Any]]) -> None:
 
 
 def _reasoning_of(delta: Any) -> str | None:
-    """Düşünme metnini bulur.
+    """Finds the thinking text.
 
-    Alan adı sunucudan sunucuya değişiyor ve OpenAI şemasında yok; SDK
-    tanımadığı alanları model_extra'ya koyar, oraya da bakmak gerekiyor.
+    The field name varies from server to server and is absent from the
+    OpenAI schema; the SDK puts unrecognised fields into model_extra, so
+    that has to be checked too.
     """
     for name in ("reasoning_content", "reasoning"):
         if value := getattr(delta, name, None):
@@ -756,11 +783,12 @@ def _reasoning_of(delta: Any) -> str | None:
 
 
 def _usage(raw: Any) -> SimpleUsage:
-    """OpenAI/OpenRouter usage → SimpleUsage (cache alanları dahil).
+    """OpenAI/OpenRouter usage → SimpleUsage (cache fields included).
 
-    `prompt_tokens` genelde önbellek + taze toplamıdır. `prompt_tokens_details.
-    cached_tokens` varsa cache_read'e yazılır; input_tokens taze kısım kalır
-    ki `cache_report.prompt_total` çift saymasın.
+    `prompt_tokens` is usually the cache + fresh total. If
+    `prompt_tokens_details.cached_tokens` exists it is written to
+    cache_read; input_tokens keeps the fresh part so
+    `cache_report.prompt_total` does not double-count.
     """
     if isinstance(raw, dict):
         prompt = int(raw.get("prompt_tokens") or 0)
@@ -806,7 +834,7 @@ async def _aclose(stream: Any) -> None:
             result = closer()
             if hasattr(result, "__await__"):
                 await result
-        except Exception:  # kapatma hatası turu bastırmamalı
+        except Exception:  # a close error must not squash the turn
             pass
         return
 
@@ -826,9 +854,9 @@ def _explain(exc: Exception, model: ModelConfig) -> str:
             f"{where}: '{model.name}' modeli bulunamadı. "
             "LM Studio'da yüklü modelin tam kimliğini kullan."
         )
-    # llama.cpp/LM Studio pencere taşmasını 400 ile ve kendi diliyle
-    # bildiriyor. Ham hali kullanıcıya bir şey söylemiyor; içindeki sayı
-    # tam olarak ayarlanması gereken değer.
+    # llama.cpp/LM Studio reports window overflow with a 400 and in its
+    # own words. The raw form tells the user nothing; the number inside it
+    # is exactly the value that needs adjusting.
     if match := re.search(r"n_ctx:\s*(\d+)", text):
         window = int(match.group(1))
         return (

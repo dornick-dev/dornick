@@ -1,8 +1,9 @@
-"""Artifact deposu, aracı ve servis ucu.
+"""Artifact store, tool and serving endpoint.
 
-Vaat üç cümle: yayınlanan sayfa kalıcı bir adreste yaşar, aynı kimliğe
-yazılan güncelleme adresi değiştirmez ve istekten gelen hiçbir yol deponun
-dışına çıkamaz. Buradaki testler bu üç cümlenin sınırlarını kolluyor.
+The promise is three sentences: a published page lives at a stable
+address, an update written to the same id does not change the address,
+and no path coming from a request can leave the store. The tests here
+patrol the boundaries of those three sentences.
 """
 
 from __future__ import annotations
@@ -25,7 +26,7 @@ from dornick.tools import artifacts as artifact_tools
 from dornick.web import MindServer
 
 
-# -- depo --------------------------------------------------------------
+# -- store -------------------------------------------------------------
 
 
 def test_publish_writes_page_and_meta(tmp_path: Path) -> None:
@@ -40,14 +41,15 @@ def test_publish_writes_page_and_meta(tmp_path: Path) -> None:
 
 
 def test_id_is_a_readable_slug_with_a_suffix(tmp_path: Path) -> None:
-    """Kimlik okunur olmalı (başlıktan) ama tek başına slug yetmez:
-    "Günlük rapor" her gün yayınlanır ve ikincisi ilkini ezerdi."""
+    """The id must be readable (from the title) but a slug alone is not
+    enough: "Günlük rapor" gets published every day and the second would
+    crush the first."""
     meta = artifacts.publish(tmp_path, "Günlük Şişli Raporu", "<p>x</p>")
 
     assert meta["id"].startswith("gunluk-sisli-raporu-")
     suffix = meta["id"].rsplit("-", 1)[1]
     assert len(suffix) == 4 and all(c in "0123456789abcdef" for c in suffix)
-    # Aynı başlıkla ikinci yayın ayrı bir artifact.
+    # A second publish with the same title is a separate artifact.
     other = artifacts.publish(tmp_path, "Günlük Şişli Raporu", "<p>y</p>")
     assert other["id"] != meta["id"]
 
@@ -63,11 +65,11 @@ def test_update_keeps_the_address_and_archives_the_old_page(tmp_path: Path) -> N
     meta = artifacts.publish(tmp_path, "Pano", "<p>v1</p>")
     updated = artifacts.update(tmp_path, meta["id"], "<p>v2</p>")
 
-    assert updated["id"] == meta["id"]          # adres değişmez
+    assert updated["id"] == meta["id"]          # the address does not change
     assert updated["surum"] == 2
     target = tmp_path / artifacts.FOLDER / meta["id"]
     assert "v2" in (target / "index.html").read_text(encoding="utf-8")
-    # Eski sürüm kaybolmadı: surumler/1.html olarak duruyor.
+    # The old version is not lost: it sits as surumler/1.html.
     assert "v1" in (target / artifacts.VERSIONS / "1.html").read_text(encoding="utf-8")
 
 
@@ -78,7 +80,7 @@ def test_update_can_rename(tmp_path: Path) -> None:
 
 
 def test_only_the_last_versions_are_kept(tmp_path: Path) -> None:
-    """Sınırsız sürüm biriktirmek diski çöplüğe çevirir; son beş yeter."""
+    """Hoarding unlimited versions turns the disk into a dump; the last five suffice."""
     meta = artifacts.publish(tmp_path, "Pano", "<p>v1</p>")
     for n in range(2, 10):
         artifacts.update(tmp_path, meta["id"], f"<p>v{n}</p>")
@@ -86,7 +88,7 @@ def test_only_the_last_versions_are_kept(tmp_path: Path) -> None:
     versions = tmp_path / artifacts.FOLDER / meta["id"] / artifacts.VERSIONS
     kept = sorted(int(p.stem) for p in versions.glob("*.html"))
     assert len(kept) == artifacts.KEEP_VERSIONS
-    assert kept == [4, 5, 6, 7, 8]              # en yeni beş eski sürüm
+    assert kept == [4, 5, 6, 7, 8]              # the five newest old versions
 
 
 def test_update_of_an_unknown_id_is_an_error(tmp_path: Path) -> None:
@@ -97,9 +99,9 @@ def test_update_of_an_unknown_id_is_an_error(tmp_path: Path) -> None:
 def test_listing_is_newest_first_and_skips_junk(tmp_path: Path) -> None:
     a = artifacts.publish(tmp_path, "Birinci", "<p>1</p>")
     b = artifacts.publish(tmp_path, "İkinci", "<p>2</p>")
-    artifacts.update(tmp_path, a["id"], "<p>1b</p>")   # a artık daha taze
+    artifacts.update(tmp_path, a["id"], "<p>1b</p>")   # a is now fresher
 
-    # Bozuk kayıt (meta'sız klasör) ve çöp klasörü listeyi düşürmemeli.
+    # A broken record (folder without meta) and the trash folder must not sink the list.
     (tmp_path / artifacts.FOLDER / "bozuk-kayit").mkdir()
     (tmp_path / artifacts.FOLDER / artifacts.TRASH).mkdir()
 
@@ -112,7 +114,7 @@ def test_listing_survives_a_missing_store(tmp_path: Path) -> None:
 
 
 def test_paths_cannot_escape_the_store(tmp_path: Path) -> None:
-    """Yol istekten kurulmuyor: kimlik desenden geçmeden diske dokunulmaz."""
+    """The path is not built from the request: the disk is untouched until the id passes the pattern."""
     meta = artifacts.publish(tmp_path, "Pano", "<p>x</p>")
 
     assert artifacts.page_path(tmp_path, meta["id"]) is not None
@@ -126,7 +128,7 @@ def test_remove_moves_to_trash_not_oblivion(tmp_path: Path) -> None:
 
     assert result["ok"]
     assert artifacts.listing(tmp_path) == []
-    # Kalıcı silme yok: içerik çöpte duruyor, elle geri alınabilir.
+    # No permanent delete: the content sits in the trash, recoverable by hand.
     trash = tmp_path / artifacts.FOLDER / artifacts.TRASH
     moved = list(trash.iterdir())
     assert len(moved) == 1 and (moved[0] / "index.html").is_file()
@@ -135,7 +137,7 @@ def test_remove_moves_to_trash_not_oblivion(tmp_path: Path) -> None:
         artifacts.remove(tmp_path, meta["id"])
 
 
-# -- araç --------------------------------------------------------------
+# -- tool --------------------------------------------------------------
 
 
 @pytest.fixture()
@@ -161,7 +163,7 @@ async def call(registry: ToolRegistry, ctx: ToolContext, **args):
 
 
 def test_tool_is_a_mutation(registry: ToolRegistry) -> None:
-    """İzin motoru buna bakıyor: yayın bir yazma işlemi, sorulmadan geçmemeli."""
+    """The permission engine looks at this: publishing is a write, it must not pass unasked."""
     spec = registry.get("artifact")
     assert spec is not None and spec.mutates
 
@@ -175,9 +177,9 @@ def test_tool_publish_returns_id_and_announces(registry, ctx) -> None:
     assert not result.is_error
     meta = result.detail["artifact"]
     assert f"/artifact/{meta['id']}/" in result.content
-    # Aynı id ile güncelleme yönergesi modele söyleniyor.
+    # The model is told to update using the same id.
     assert "update" in result.content
-    # Kart olayı günlüğe düştü: sunucu bunu SSE'ye taşıyor.
+    # The card event landed in the log: the server carries it to SSE.
     notes = ctx.session.log.notes("artifact")
     assert len(notes) == 1
     assert notes[0].meta["id"] == meta["id"]
@@ -220,7 +222,7 @@ def test_tool_errors_teach(registry, ctx) -> None:
     assert weird.is_error and "publish" in weird.content
 
 
-# -- servis ------------------------------------------------------------
+# -- serving -----------------------------------------------------------
 
 
 @pytest.fixture()
@@ -251,7 +253,7 @@ def test_artifact_pages_are_served_at_a_stable_address(tmp_path: Path, mind: Min
 
 
 def test_artifact_download_sends_attachment_header(tmp_path: Path, mind: Mind) -> None:
-    """?download=1 → Content-Disposition; HTML standart dışa aktarma."""
+    """?download=1 → Content-Disposition; standard HTML export."""
     server, log, config = _server(tmp_path, mind)
     meta = artifacts.publish(config.state_dir, "Günlük Özet", "<!DOCTYPE html><p>x</p>")
     try:
@@ -261,7 +263,7 @@ def test_artifact_download_sends_attachment_header(tmp_path: Path, mind: Mind) -
             disp = response.headers.get("Content-Disposition") or ""
             assert "attachment" in disp
             assert ".html" in disp
-            # HTTP header latin-1: tüm satır encode edilebilmeli; UTF-8 ad filename*'da.
+            # HTTP headers are latin-1: the whole line must encode; the UTF-8 name goes in filename*.
             disp.encode("latin-1")
             assert "filename*=UTF-8''" in disp
             assert "x" in response.read().decode("utf-8")
@@ -271,7 +273,7 @@ def test_artifact_download_sends_attachment_header(tmp_path: Path, mind: Mind) -
 
 
 def test_escape_attempts_get_a_404(tmp_path: Path, mind: Mind) -> None:
-    """Yol istekten geliyor; depo dışına çıkma denemesi diske dokunmadan 404."""
+    """The path comes from the request; an escape attempt gets a 404 without touching the disk."""
     server, log, config = _server(tmp_path, mind)
     (config.state_dir / "config.json").write_text("{}", encoding="utf-8")
     try:
@@ -307,7 +309,7 @@ def test_gallery_endpoints_list_and_remove(tmp_path: Path, mind: Mind) -> None:
 
 
 def test_artifact_notes_reach_the_stream(tmp_path: Path) -> None:
-    """Kart olayı SSE'ye taşınmalı: not günlüğe düşer, hub yayınlar."""
+    """The card event must reach SSE: the note lands in the log, the hub broadcasts."""
     from dornick.events import Event, utcnow
     from dornick.web.server import _payload
 

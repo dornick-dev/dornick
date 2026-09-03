@@ -1,25 +1,26 @@
-"""Ekrana çizme.
+"""Drawing on screen.
 
-Bazı cevaplar yazıyla anlatılınca kaybolur. "Depo seviyesi %62" bir sayı;
-depo silueti üzerinde duran bir çizgi ise bir bakışta okunuyor. Harita,
-yerleşim, karşılaştırma, zaman çizelgesi — hepsi böyle.
+Some answers get lost when told in prose. "Tank level 62%" is a number;
+a line sitting on a tank silhouette reads at a glance. Maps, layouts,
+comparisons, timelines — all the same.
 
-Sayfayı ajan kendi yazıyor. Bu bir şablon kütüphanesi değil: elli hazır
-grafik türü tanımlayıp "şunlardan birini seç" demek, tam da istenen şeyi
-—- o işe özel bir çizim— engelliyor. Ajan HTML/SVG yazabiliyor; burada
-yapılan şey ona bir yüzey ve bir çerçeve vermek.
+The agent writes the page itself. This is not a template library:
+defining fifty ready-made chart types and saying "pick one of these"
+blocks exactly what is wanted — a drawing specific to that job. The
+agent can write HTML/SVG; what is done here is giving it a surface and
+a frame.
 
-Güvenlik iki katmanlı:
+Security is two-layered:
 
-    burada    sayfa katı bir CSP ile sarılıyor: hiçbir ağ isteği yok, dış
-              kaynak yok. Yalnızca satır içi biçem, satır içi betik ve
-              gömülü (data:) görsel.
-    arayüzde  yalıtılmış çerçevede açılıyor (`sandbox="allow-scripts"`,
-              `allow-same-origin` yok): sayfa programın DOM'una, çerezine
-              ve `/api` uçlarına erişemiyor.
+    here       the page is wrapped in a strict CSP: no network request,
+               no external resource. Only inline style, inline script
+               and embedded (data:) images.
+    in the UI  it opens in an isolated frame (`sandbox="allow-scripts"`,
+               no `allow-same-origin`): the page cannot reach the
+               program's DOM, its cookies or the `/api` endpoints.
 
-İkisi de gerekli. Ajanın yazdığı bir betiğin kendi izin kapısını atlaması,
-bu programda en pahalı hata olurdu.
+Both are necessary. A script written by the agent bypassing its own
+permission gate would be the most expensive bug in this program.
 """
 
 from __future__ import annotations
@@ -27,17 +28,17 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-# Atölye içinde çizimlerin durduğu klasör.
+# The folder inside the workshop where drawings live.
 FOLDER = "gorseller"
 
-# Dosya adı: başlıktan türetiliyor ama başlık serbest metin, dosya adı değil.
+# File name: derived from the title, but the title is free text, not a file name.
 _SLUG = re.compile(r"[^a-z0-9]+")
 
 _TR = str.maketrans("çğıöşüÇĞİÖŞÜ", "cgiosuCGIOSU")
 
-# Sayfanın çerçevesi. `default-src 'none'` her şeyi kapatıyor; sonra tek
-# tek yalnızca gerekenler açılıyor. Dış bir yazı tipi, bir CDN betiği ya
-# da bir izleyici piksel hiçbir koşulda yüklenmiyor.
+# The page's frame. `default-src 'none'` shuts everything down; then only
+# what is needed is opened one by one. An external font, a CDN script or a
+# tracking pixel never loads under any condition.
 SHELL = """<!DOCTYPE html>
 <html lang="tr">
 <head>
@@ -47,8 +48,8 @@ SHELL = """<!DOCTYPE html>
 style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src data:; font-src data:">
 <title>{title}</title>
 <style>
-  /* Programın kendi paleti: çizim arayüzün içinde duruyor, üstünde
-     yüzen yabancı bir beyaz sayfa gibi değil. */
+  /* The program's own palette: the drawing sits inside the UI, not like
+     a foreign white page floating above it. */
   :root {{
     --bg: #050a0f; --ink: #dceefc; --dim: #7fa0c0; --faint: #4b6684;
     --cyan: #4fe3ff; --mint: #5ce6a4; --amber: #ffc857; --rose: #ff7a90;
@@ -84,19 +85,20 @@ def folder(sandbox_root: Path) -> Path:
 
 
 def slug(title: str, fallback: str = "cizim") -> str:
-    """Başlıktan dosya adı. Türkçe harfler sadeleşiyor, gerisi tireleniyor."""
+    """File name from the title. Turkish letters are simplified, the rest is dashed."""
     plain = (title or "").translate(_TR).lower()
     name = _SLUG.sub("-", plain).strip("-")
     return (name or fallback)[:48]
 
 
 def wrap(title: str, body: str) -> str:
-    """Ajanın yazdığı gövdeyi çerçeveye oturtur.
+    """Seats the body the agent wrote into the frame.
 
-    Ajan tam bir belge yazdıysa (`<!DOCTYPE` ya da `<html` ile başlıyorsa)
-    dokunulmuyor: kendi çerçevesini kurmuş demektir. O durumda CSP'yi de
-    kendi yazmadıysa eklenmiyor — bunu zorlamak, çalışan bir sayfayı
-    sessizce bozar. Yalıtılmış çerçeve zaten ikinci katman.
+    If the agent wrote a full document (starting with `<!DOCTYPE` or
+    `<html`) it is left alone: it built its own frame. In that case the
+    CSP is not added either unless it wrote one itself — forcing it would
+    silently break a working page. The isolated frame is the second layer
+    anyway.
     """
     text = (body or "").strip()
     if text[:200].lstrip().lower().startswith(("<!doctype", "<html")):
@@ -110,7 +112,7 @@ def _escape(text: str) -> str:
 
 
 def save(sandbox_root: Path, title: str, body: str) -> Path:
-    """Çizimi atölyeye yazar ve yolunu döndürür."""
+    """Writes the drawing into the workshop and returns its path."""
     root = folder(sandbox_root)
     root.mkdir(parents=True, exist_ok=True)
     path = root / f"{slug(title)}.html"

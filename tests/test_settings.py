@@ -423,10 +423,10 @@ def test_switching_away_while_busy_opens_a_parallel_lane(tmp_path):
     assert res["ok"], res
     # The running lane is in place: the old agent's session did NOT change and is still busy.
     assert agent.session.id == old_session
-    assert bridge.seritler[old_session].busy is True
+    assert bridge.lanes[old_session].busy is True
     # The active lane is now the new session; its agent is another agent.
     assert bridge.agent is not agent
-    assert res["id"] in bridge.seritler and rebinds[-1] == res["id"]
+    assert res["id"] in bridge.lanes and rebinds[-1] == res["id"]
     bridge.loop.close()
 
 
@@ -500,8 +500,8 @@ def test_background_lane_events_do_not_leak_into_the_active_chat(tmp_path):
     bridge._busy = True
     res = bridge.new_session()
     assert res['ok']
-    old = bridge.seritler[agent.session.id]
-    new = bridge.seritler[res['id']]
+    old = bridge.lanes[agent.session.id]
+    new = bridge.lanes[res['id']]
     emits.clear()
     # The background lane's io: the text event does NOT reach the broadcast.
     background_io = bridge.io(old)

@@ -392,27 +392,27 @@ def test_relative_paths_resolve_against_the_nearest_open_root(tmp_path: Path) ->
 def test_recent_projects_are_remembered_in_order(tmp_path: Path) -> None:
     """Recent projects are for one-click switching; the most recently picked first."""
     status = tmp_path / ".dornick"
-    assert sandbox_module.son_projeler(status) == []
+    assert sandbox_module.recent_projects(status) == []
 
-    sandbox_module.proje_hatirla(status, "C:/a")
-    sandbox_module.proje_hatirla(status, "C:/b")
-    assert sandbox_module.son_projeler(status) == ["C:/b", "C:/a"]
+    sandbox_module.remember_project(status, "C:/a")
+    sandbox_module.remember_project(status, "C:/b")
+    assert sandbox_module.recent_projects(status) == ["C:/b", "C:/a"]
 
     # The same project is not listed twice, it moves to the front.
-    sandbox_module.proje_hatirla(status, "C:/a")
-    assert sandbox_module.son_projeler(status) == ["C:/a", "C:/b"]
+    sandbox_module.remember_project(status, "C:/a")
+    assert sandbox_module.recent_projects(status) == ["C:/a", "C:/b"]
 
     # The ledger is bounded: the list does not grow forever.
     for i in range(20):
-        sandbox_module.proje_hatirla(status, f"C:/p{i}")
-    assert len(sandbox_module.son_projeler(status)) == sandbox_module.MAX_RECENT
+        sandbox_module.remember_project(status, f"C:/p{i}")
+    assert len(sandbox_module.recent_projects(status)) == sandbox_module.MAX_RECENT
 
 
 def test_a_corrupt_recent_file_does_not_break_settings(tmp_path: Path) -> None:
     status = tmp_path / ".dornick"
     status.mkdir()
     (status / sandbox_module.PROJECTS_FILE).write_text("{bozuk", encoding="utf-8")
-    assert sandbox_module.son_projeler(status) == []
+    assert sandbox_module.recent_projects(status) == []
 
 
 def test_the_project_survives_a_settings_round_trip(tmp_path: Path) -> None:
@@ -427,7 +427,7 @@ def test_the_project_survives_a_settings_round_trip(tmp_path: Path) -> None:
     assert updated.sandbox.project == str(project)
     assert Config.load(tmp_path).sandbox.project == str(project)
     # The choice lands in the recent-projects ledger too.
-    assert str(project) in sandbox_module.son_projeler(updated.state_dir)
+    assert str(project) in sandbox_module.recent_projects(updated.state_dir)
     # And it is really writable.
     assert updated.open_sandbox().contains(project / "yeni.py")
 

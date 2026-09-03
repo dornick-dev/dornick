@@ -1,51 +1,51 @@
-﻿# Kurulum sihirbazının güvenlik ağlarını sandbox'ta kanıtlar.
+﻿# Proves the install wizard's safety nets in a sandbox.
 #
-# Gerçek kuruluma DOKUNMAZ: test derlemesi ayrı bir AppId (KimlikGuid) ve
-# ayrı bir ad (dornick-test) ile yapılır — kayıt anahtarı, kısayollar ve dosya
-# ağacı tamamen izole. Paket içeriği de saplama (stub): sınanan şey
-# dornick.iss'in [Code] mantığı — dosya kopyalamanın kendisi değil.
+# Does NOT touch the real installation: the test build uses a separate AppId
+# (AppIdGuid) and a separate name (dornick-test) — registry key, shortcuts and
+# file tree are fully isolated. The package content is a stub too: what is
+# being tested is the [Code] logic of dornick.iss — not file copying itself.
 #
-# Senaryolar:
-#   1. Temiz kurulum (0.2.1) — .dornick yokken yedek zip'i OLUŞMAZ.
-#   2. Sahte .dornick koy → üstüne 0.2.2 güncelle — yedek zip'i OLUŞUR,
-#      içinde .dornick\anilar.json vardır, kurulumdaki veriler yerindedir,
-#      kayıtta DisplayVersion 0.2.2 olur.
-#   3. Yedek rotasyonu — klasörde 6 eski zip varken bir güncelleme daha:
-#      yalnız en yeni 5 kalır, en eskiler silinir.
-#   4. Açık kopya tespiti — gerçek bir "-m dornick" süreci başlatılır
-#      (recall-mcp: modelsiz, penceresiz, stdin'de bekler); kurulum
-#      /SADECE_TARA=1 /SUREC_RAPOR=<dosya> ile çağrılır ve raporda o
-#      PID'nin listelendiği kanıtlanır. (Sihirbaz sayfası otomasyonla
-#      sürülemediği için [Code] mantığı parametreyle sınanıyor.)
-#   5. Nazik/zorla kapatma zinciri — konsol sürecine nazik taskkill'in
-#      yetmediği, /F'nin öldürdüğü kanıtlanır (kurulumdaki Deneme>0
-#      tırmanışının gerekçesi).
-#   6. Kaldırma — .dornick kaldırmadan SONRA da yerindedir.
+# Scenarios:
+#   1. Clean install (0.2.1) — with no .dornick, the backup zip is NOT created.
+#   2. Plant a fake .dornick → update to 0.2.2 on top — the backup zip IS
+#      created, it contains .dornick\anilar.json, the installed data is intact,
+#      DisplayVersion in the registry becomes 0.2.2.
+#   3. Backup rotation — with 6 old zips in the folder, one more update:
+#      only the newest 5 remain, the oldest are deleted.
+#   4. Running-copy detection — a real "-m dornick" process is started
+#      (recall-mcp: no model, no window, waits on stdin); the installer is
+#      invoked with /SADECE_TARA=1 /SUREC_RAPOR=<file> and the report is
+#      proven to list that PID. (The wizard page cannot be driven by
+#      automation, so the [Code] logic is tested via the parameter.)
+#   5. Gentle/forced kill chain — proves that a gentle taskkill is not enough
+#      for a console process and /F kills it (the rationale for the
+#      Attempt>0 escalation in the installer).
+#   6. Uninstall — .dornick is still in place AFTER uninstalling.
 #
-# Kullanım: powershell -ExecutionPolicy Bypass -File installer\test_install.ps1
+# Usage: powershell -ExecutionPolicy Bypass -File installer\test_install.ps1
 
 param(
-    # Sandbox kökü. Belgeler'e ve gerçek kuruluma bulaşmaz.
-    [string]$Kok = (Join-Path $env:TEMP "dornick-kurulum-test")
+    # Sandbox root. Does not touch Documents or the real installation.
+    [string]$Root = (Join-Path $env:TEMP "dornick-kurulum-test")
 )
 
 $ErrorActionPreference = "Stop"
-$Depo = Split-Path -Parent $PSScriptRoot
+$Repo = Split-Path -Parent $PSScriptRoot
 $TestGuid = "5A5A5A5A-1111-4222-8333-444455556666"
-$KayitYolu = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\{$TestGuid}_is1"
-# Gerçek bir Python 3.11+ (WindowsApps saplaması değil): py başlatıcısından.
+$RegPath = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\{$TestGuid}_is1"
+# A real Python 3.11+ (not the WindowsApps stub): from the py launcher.
 $Py = ""
 try { $Py = (& py -3.11 -c "import sys; print(sys.executable)").Trim() } catch { }
 if (-not $Py) {
-    $aday = Get-Command python -ErrorAction SilentlyContinue
-    if ($aday) { $Py = $aday.Source }
+    $candidate = Get-Command python -ErrorAction SilentlyContinue
+    if ($candidate) { $Py = $candidate.Source }
 }
-if (-not $Py) { throw "Python bulunamadı — açık kopya senaryosu için gerekli" }
+if (-not $Py) { throw "Python not found — required for the running-copy scenario" }
 
-$Basarisiz = @()
-function Dogrula([bool]$kosul, [string]$mesaj) {
-    if ($kosul) { Write-Host "  OK   $mesaj" -ForegroundColor Green }
-    else { Write-Host "  FAIL $mesaj" -ForegroundColor Red; $script:Basarisiz += $mesaj }
+$Failed = @()
+function Check([bool]$condition, [string]$message) {
+    if ($condition) { Write-Host "  OK   $message" -ForegroundColor Green }
+    else { Write-Host "  FAIL $message" -ForegroundColor Red; $script:Failed += $message }
 }
 
 # -- iscc ---------------------------------------------------------------
@@ -55,207 +55,208 @@ foreach ($p in @("$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe",
                  "$env:ProgramFiles\Inno Setup 6\ISCC.exe")) {
     if (Test-Path $p) { $iscc = $p; break }
 }
-if (-not $iscc) { throw "ISCC bulunamadı — Inno Setup 6 gerekli" }
+if (-not $iscc) { throw "ISCC not found — Inno Setup 6 required" }
 
-# -- 0) temiz sandbox ---------------------------------------------------
-if (Test-Path $Kok) { Remove-Item -Recurse -Force $Kok }
-foreach ($alt in @("paket", "cikti", "kurulum", "yedek", "calisma")) {
-    New-Item -ItemType Directory -Force (Join-Path $Kok $alt) | Out-Null
+# -- 0) clean sandbox ---------------------------------------------------
+if (Test-Path $Root) { Remove-Item -Recurse -Force $Root }
+foreach ($sub in @("paket", "cikti", "kurulum", "yedek", "calisma")) {
+    New-Item -ItemType Directory -Force (Join-Path $Root $sub) | Out-Null
 }
-$Paket = Join-Path $Kok "paket"
-$Cikti = Join-Path $Kok "cikti"
-$Hedef = Join-Path $Kok "kurulum"
-$Yedek = Join-Path $Kok "yedek"
+$Package = Join-Path $Root "paket"
+$Out     = Join-Path $Root "cikti"
+$Target  = Join-Path $Root "kurulum"
+$Backup  = Join-Path $Root "yedek"
 
-# -- 1) saplama paket ---------------------------------------------------
-# [Files] bölümündeki her kaynak dizin var olmalı; içerik önemsiz.
+# -- 1) stub package ----------------------------------------------------
+# Every source directory in the [Files] section must exist; content is irrelevant.
 foreach ($d in @("python", "src\dornick\assets", "egitim", "listen", "watch", "eval")) {
-    New-Item -ItemType Directory -Force (Join-Path $Paket $d) | Out-Null
+    New-Item -ItemType Directory -Force (Join-Path $Package $d) | Out-Null
 }
-"saplama" | Set-Content (Join-Path $Paket "python\bos.txt")
-"saplama" | Set-Content (Join-Path $Paket "egitim\bos.txt")
-"saplama" | Set-Content (Join-Path $Paket "listen\bos.txt")
-"saplama" | Set-Content (Join-Path $Paket "watch\bos.txt")
-"saplama" | Set-Content (Join-Path $Paket "eval\bos.txt")
-"@echo off" | Set-Content (Join-Path $Paket "dornick.cmd")
-Copy-Item (Join-Path $Depo "pyproject.toml") $Paket
-Copy-Item (Join-Path $Depo "src\dornick\assets\dornick.ico") (Join-Path $Paket "src\dornick\assets")
+"saplama" | Set-Content (Join-Path $Package "python\bos.txt")
+"saplama" | Set-Content (Join-Path $Package "egitim\bos.txt")
+"saplama" | Set-Content (Join-Path $Package "listen\bos.txt")
+"saplama" | Set-Content (Join-Path $Package "watch\bos.txt")
+"saplama" | Set-Content (Join-Path $Package "eval\bos.txt")
+"@echo off" | Set-Content (Join-Path $Package "dornick.cmd")
+Copy-Item (Join-Path $Repo "pyproject.toml") $Package
+Copy-Item (Join-Path $Repo "src\dornick\assets\dornick.ico") (Join-Path $Package "src\dornick\assets")
 
-# -- 2) test derlemeleri (0.2.1 ve 0.2.2) --------------------------------
-Write-Host "`n== Derleme (izole kimlik: dornick-test / $TestGuid)" -ForegroundColor Cyan
+# -- 2) test builds (0.2.1 and 0.2.2) ------------------------------------
+Write-Host "`n== Build (isolated identity: dornick-test / $TestGuid)" -ForegroundColor Cyan
 foreach ($v in @("0.2.1", "0.2.2")) {
-    & $iscc /Qp "/DSurum=$v" "/DAd=dornick-test" "/DKimlikGuid=$TestGuid" `
-        "/DPaket=$Paket" "/O$Cikti" (Join-Path $PSScriptRoot "dornick.iss")
-    if ($LASTEXITCODE -ne 0) { throw "iscc başarısız (sürüm $v)" }
+    & $iscc /Qp "/DVersion=$v" "/DAppName=dornick-test" "/DAppIdGuid=$TestGuid" `
+        "/DPackage=$Package" "/O$Out" (Join-Path $PSScriptRoot "dornick.iss")
+    if ($LASTEXITCODE -ne 0) { throw "iscc failed (version $v)" }
 }
-$Kur021 = Join-Path $Cikti "dornick-setup-0.2.1.exe"
-$Kur022 = Join-Path $Cikti "dornick-setup-0.2.2.exe"
+$Setup021 = Join-Path $Out "dornick-setup-0.2.1.exe"
+$Setup022 = Join-Path $Out "dornick-setup-0.2.2.exe"
 
-function Kur([string]$exe, [string[]]$ekstra) {
-    $argListe = @("/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART",
-                  "/DIR=$Hedef", "/MERGETASKS=!desktopicon",
-                  "/YEDEKDIZIN=$Yedek") + $ekstra
-    $p = Start-Process -FilePath $exe -ArgumentList $argListe -Wait -PassThru
+function Install([string]$exe, [string[]]$extra) {
+    $argList = @("/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART",
+                 "/DIR=$Target", "/MERGETASKS=!desktopicon",
+                 "/YEDEKDIZIN=$Backup") + $extra
+    $p = Start-Process -FilePath $exe -ArgumentList $argList -Wait -PassThru
     return $p.ExitCode
 }
 
-# -- 3) senaryo: temiz kurulum ------------------------------------------
-Write-Host "`n== Senaryo 1: temiz kurulum (0.2.1), .dornick yok" -ForegroundColor Cyan
-$kod = Kur $Kur021 @()
-Dogrula ($kod -eq 0) "kurulum çıkış kodu 0 (gerçek: $kod)"
-Dogrula (Test-Path (Join-Path $Hedef "pyproject.toml")) "pyproject.toml kuruluma gitti (sürümün tek kaynağı)"
-$ds = (Get-ItemProperty $KayitYolu -ErrorAction SilentlyContinue).DisplayVersion
-Dogrula ($ds -eq "0.2.1") "kayıtta DisplayVersion 0.2.1 (gerçek: $ds)"
-Dogrula (@(Get-ChildItem $Yedek -Filter "dornick-backup-*.zip" -ErrorAction SilentlyContinue).Count -eq 0) ".dornick yokken yedek zip'i oluşmadı"
+# -- 3) scenario: clean install -----------------------------------------
+Write-Host "`n== Scenario 1: clean install (0.2.1), no .dornick" -ForegroundColor Cyan
+$code = Install $Setup021 @()
+Check ($code -eq 0) "install exit code 0 (actual: $code)"
+Check (Test-Path (Join-Path $Target "pyproject.toml")) "pyproject.toml went into the install (single source of the version)"
+$ds = (Get-ItemProperty $RegPath -ErrorAction SilentlyContinue).DisplayVersion
+Check ($ds -eq "0.2.1") "DisplayVersion 0.2.1 in the registry (actual: $ds)"
+Check (@(Get-ChildItem $Backup -Filter "dornick-backup-*.zip" -ErrorAction SilentlyContinue).Count -eq 0) "no backup zip created while .dornick is absent"
 
-# -- 4) senaryo: sahte .dornick + güncelleme -------------------------------
-Write-Host "`n== Senaryo 2: sahte .dornick koy, üstüne 0.2.2 güncelle" -ForegroundColor Cyan
-$Dornick = Join-Path $Hedef ".dornick"
+# -- 4) scenario: fake .dornick + update ---------------------------------
+Write-Host "`n== Scenario 2: plant a fake .dornick, update to 0.2.2 on top" -ForegroundColor Cyan
+$Dornick = Join-Path $Target ".dornick"
 New-Item -ItemType Directory -Force (Join-Path $Dornick "mind") | Out-Null
 '{"ani": "kıymetli hatıra"}' | Set-Content (Join-Path $Dornick "anilar.json") -Encoding utf8
 "sqlite-saplama" | Set-Content (Join-Path $Dornick "mind\recall.db")
 
-$kod = Kur $Kur022 @()
-Dogrula ($kod -eq 0) "güncelleme çıkış kodu 0 (gerçek: $kod)"
-$ds = (Get-ItemProperty $KayitYolu -ErrorAction SilentlyContinue).DisplayVersion
-Dogrula ($ds -eq "0.2.2") "kayıtta DisplayVersion 0.2.2 oldu (gerçek: $ds)"
-$zipler = @(Get-ChildItem $Yedek -Filter "dornick-backup-*.zip" | Sort-Object Name)
-Dogrula ($zipler.Count -eq 1) "yedek zip'i OLUŞTU (adet: $($zipler.Count))"
-Dogrula ((Get-Content (Join-Path $Dornick "anilar.json") -Raw) -match "kıymetli") "kurulumdaki .dornick verisi yerinde"
+$code = Install $Setup022 @()
+Check ($code -eq 0) "update exit code 0 (actual: $code)"
+$ds = (Get-ItemProperty $RegPath -ErrorAction SilentlyContinue).DisplayVersion
+Check ($ds -eq "0.2.2") "DisplayVersion in the registry became 0.2.2 (actual: $ds)"
+$zips = @(Get-ChildItem $Backup -Filter "dornick-backup-*.zip" | Sort-Object Name)
+Check ($zips.Count -eq 1) "backup zip WAS created (count: $($zips.Count))"
+Check ((Get-Content (Join-Path $Dornick "anilar.json") -Raw) -match "kıymetli") ".dornick data in the install is intact"
 
-# Zip'in içinde gerçekten anılar var mı?
+# Does the zip really contain the memories?
 Add-Type -AssemblyName System.IO.Compression.FileSystem
-$zip = [System.IO.Compression.ZipFile]::OpenRead($zipler[0].FullName)
+$zip = [System.IO.Compression.ZipFile]::OpenRead($zips[0].FullName)
 try {
-    $girdiler = @($zip.Entries | ForEach-Object { $_.FullName })
+    $entries = @($zip.Entries | ForEach-Object { $_.FullName })
 } finally { $zip.Dispose() }
-Dogrula (($girdiler -join "`n") -match "anilar\.json") "zip .dornick\anilar.json içeriyor"
-Dogrula (($girdiler -join "`n") -match "recall\.db") "zip .dornick\mind\recall.db içeriyor"
+Check (($entries -join "`n") -match "anilar\.json") "zip contains .dornick\anilar.json"
+Check (($entries -join "`n") -match "recall\.db") "zip contains .dornick\mind\recall.db"
 
-# -- 5) senaryo: yedek rotasyonu ----------------------------------------
-Write-Host "`n== Senaryo 3: 6 eski yedek varken güncelleme — son 5 kalır" -ForegroundColor Cyan
+# -- 5) scenario: backup rotation ---------------------------------------
+Write-Host "`n== Scenario 3: update with 6 old backups present — last 5 remain" -ForegroundColor Cyan
 foreach ($n in 1..6) {
-    "eski" | Set-Content (Join-Path $Yedek ("dornick-backup-20200101-00000$n.zip"))
+    "eski" | Set-Content (Join-Path $Backup ("dornick-backup-20200101-00000$n.zip"))
 }
-$kod = Kur $Kur022 @()
-Dogrula ($kod -eq 0) "yeniden kurulum çıkış kodu 0 (gerçek: $kod)"
-$kalan = @(Get-ChildItem $Yedek -Filter "dornick-backup-*.zip" | Sort-Object Name)
-Dogrula ($kalan.Count -eq 5) "yalnız 5 yedek kaldı (gerçek: $($kalan.Count))"
-Dogrula (-not (Test-Path (Join-Path $Yedek "dornick-backup-20200101-000001.zip"))) "en eski yedek silindi"
-Dogrula (($kalan[-1].Name) -match "dornick-backup-2") "en yeni yedek duruyor ($($kalan[-1].Name))"
+$code = Install $Setup022 @()
+Check ($code -eq 0) "reinstall exit code 0 (actual: $code)"
+$remaining = @(Get-ChildItem $Backup -Filter "dornick-backup-*.zip" | Sort-Object Name)
+Check ($remaining.Count -eq 5) "only 5 backups remain (actual: $($remaining.Count))"
+Check (-not (Test-Path (Join-Path $Backup "dornick-backup-20200101-000001.zip"))) "the oldest backup was deleted"
+Check (($remaining[-1].Name) -match "dornick-backup-2") "the newest backup remains ($($remaining[-1].Name))"
 
-# -- 6) senaryo: açık kopya tespiti -------------------------------------
-Write-Host "`n== Senaryo 4: açık '-m dornick' süreci kurulumca tespit edilir" -ForegroundColor Cyan
-# recall-mcp: modelsiz ve penceresiz gerçek bir dornick süreci; stdio
-# protokolü stdin'de beklediği için stdin'i açık tutarak yaşatıyoruz.
-$Calisma = Join-Path $Kok "calisma"
+# -- 6) scenario: running-copy detection --------------------------------
+Write-Host "`n== Scenario 4: a running '-m dornick' process is detected by the installer" -ForegroundColor Cyan
+# recall-mcp: a real dornick process without a model and without a window;
+# the stdio protocol waits on stdin, so we keep it alive by holding stdin open.
+$WorkDir = Join-Path $Root "calisma"
 $psi = New-Object System.Diagnostics.ProcessStartInfo
 $psi.FileName = $Py
-$psi.Arguments = "-m dornick recall-mcp -C `"$Calisma`""
-$psi.WorkingDirectory = $Depo
+$psi.Arguments = "-m dornick recall-mcp -C `"$WorkDir`""
+$psi.WorkingDirectory = $Repo
 $psi.RedirectStandardInput = $true
 $psi.RedirectStandardOutput = $true
 $psi.RedirectStandardError = $true
 $psi.UseShellExecute = $false
 $psi.CreateNoWindow = $true
-$surec = [System.Diagnostics.Process]::Start($psi)
+$proc = [System.Diagnostics.Process]::Start($psi)
 Start-Sleep -Seconds 3
 try {
-    Dogrula (-not $surec.HasExited) "sandbox dornick süreci ayakta (PID $($surec.Id))"
-    $Rapor = Join-Path $Kok "surec-raporu.txt"
-    $p = Start-Process -FilePath $Kur022 -ArgumentList @(
+    Check (-not $proc.HasExited) "sandbox dornick process is up (PID $($proc.Id))"
+    $Report = Join-Path $Root "surec-raporu.txt"
+    $p = Start-Process -FilePath $Setup022 -ArgumentList @(
         "/VERYSILENT", "/SUPPRESSMSGBOXES", "/SADECE_TARA=1",
-        "/SUREC_RAPOR=$Rapor") -Wait -PassThru
-    Dogrula ($p.ExitCode -ne 0) "/SADECE_TARA kurulum yapmadan çıktı (kod: $($p.ExitCode))"
-    $icerik = ""
-    if (Test-Path $Rapor) { $icerik = Get-Content $Rapor -Raw }
-    Dogrula ($icerik -match [regex]::Escape("$($surec.Id)|")) "rapor sandbox sürecinin PID'sini listeliyor"
-    Write-Host "  rapor içeriği:`n$(($icerik -split "`n" | ForEach-Object { '    ' + $_ }) -join "`n")"
+        "/SUREC_RAPOR=$Report") -Wait -PassThru
+    Check ($p.ExitCode -ne 0) "/SADECE_TARA exited without installing (code: $($p.ExitCode))"
+    $content = ""
+    if (Test-Path $Report) { $content = Get-Content $Report -Raw }
+    Check ($content -match [regex]::Escape("$($proc.Id)|")) "the report lists the sandbox process's PID"
+    Write-Host "  report content:`n$(($content -split "`n" | ForEach-Object { '    ' + $_ }) -join "`n")"
 
-    # -- 7) senaryo: nazik → zorla kapatma zinciri ----------------------
-    Write-Host "`n== Senaryo 5: nazik taskkill yetmez, /F öldürür (Deneme>0 gerekçesi)" -ForegroundColor Cyan
-    cmd /c "taskkill /PID $($surec.Id) >nul 2>&1"
+    # -- 7) scenario: gentle → forced kill chain ------------------------
+    Write-Host "`n== Scenario 5: gentle taskkill is not enough, /F kills (rationale for Attempt>0)" -ForegroundColor Cyan
+    cmd /c "taskkill /PID $($proc.Id) >nul 2>&1"
     Start-Sleep -Seconds 2
-    $nazikYetti = $surec.HasExited
-    if (-not $nazikYetti) {
-        cmd /c "taskkill /PID $($surec.Id) /F >nul 2>&1"
+    $gentleWorked = $proc.HasExited
+    if (-not $gentleWorked) {
+        cmd /c "taskkill /PID $($proc.Id) /F >nul 2>&1"
         Start-Sleep -Seconds 2
     }
-    Dogrula $surec.HasExited "süreç kapatıldı (nazik yetti: $nazikYetti; kurulumda aynı tırmanış var)"
+    Check $proc.HasExited "process was closed (gentle was enough: $gentleWorked; the installer has the same escalation)"
 } finally {
-    if (-not $surec.HasExited) { $surec.Kill() }
+    if (-not $proc.HasExited) { $proc.Kill() }
 }
 
-# -- 8) senaryo: kaldırma .dornick'ye dokunmaz ----------------------------
-Write-Host "`n== Senaryo 7: TEMİZ KURULUM — kod sıfırdan, VERİ DURUR" -ForegroundColor Cyan
-# Kullanıcının "temiz kur" dediğinde beklediği şey: bozulmuş bir kurulumun
-# kodu gitsin ama anıları/görevleri KALSIN. İkisi karışırsa kullanıcı
-# "temiz kurulum" derken hafızasını siliyor demektir.
+# -- 8) scenario: uninstall does not touch .dornick ----------------------
+Write-Host "`n== Scenario 7: CLEAN INSTALL — code from scratch, DATA STAYS" -ForegroundColor Cyan
+# What the user expects when saying "clean install": the code of a broken
+# installation goes away but their memories/tasks REMAIN. If the two get
+# mixed up, "clean install" means the user is wiping their own memory.
 New-Item -ItemType Directory -Force (Join-Path $Dornick "mind") | Out-Null
 '{"n":"temiz-senaryo"}' | Set-Content (Join-Path $Dornick "anilar.json") -Encoding utf8
 'gorev' | Set-Content (Join-Path $Dornick "tasks.json") -Encoding utf8
-$sahteKod = Join-Path (Join-Path $Hedef 'src') 'artik.py'
-New-Item -ItemType Directory -Force (Join-Path $Hedef 'src') | Out-Null
-'eski surumden kalan' | Set-Content $sahteKod -Encoding utf8
+$staleCode = Join-Path (Join-Path $Target 'src') 'artik.py'
+New-Item -ItemType Directory -Force (Join-Path $Target 'src') | Out-Null
+'eski surumden kalan' | Set-Content $staleCode -Encoding utf8
 
-$kod = Kur $Kur022 @("/TEMIZLE=temiz")
-Dogrula ($kod -eq 0) "temiz kurulum çıkış kodu 0 (gerçek: $kod)"
-Dogrula (Test-Path (Join-Path $Dornick "anilar.json")) "TEMİZ kurulumda anılar DURUYOR"
-Dogrula (Test-Path (Join-Path $Dornick "tasks.json")) "TEMİZ kurulumda görevler DURUYOR"
-Dogrula (-not (Test-Path $sahteKod)) "eski sürümden kalan kod dosyası silindi"
-Dogrula (Test-Path (Join-Path $Hedef "pyproject.toml")) "yeni kod yerine kondu"
+$code = Install $Setup022 @("/TEMIZLE=temiz")
+Check ($code -eq 0) "clean install exit code 0 (actual: $code)"
+Check (Test-Path (Join-Path $Dornick "anilar.json")) "memories REMAIN in a CLEAN install"
+Check (Test-Path (Join-Path $Dornick "tasks.json")) "tasks REMAIN in a CLEAN install"
+Check (-not (Test-Path $staleCode)) "code file left over from the old version was deleted"
+Check (Test-Path (Join-Path $Target "pyproject.toml")) "new code was put in place"
 
-Write-Host "`n== Senaryo 8: VERİLERİ DE SIFIRLA — önce yedek, sonra silme" -ForegroundColor Cyan
-# En tehlikeli yol. İki şey birden doğru olmalı: veri GERÇEKTEN gitmeli
-# (yoksa "sıfırla" yalan olur) ve gitmeden ÖNCE yedeklenmiş olmalı.
-# Yedek adedi 5'te tavanlı (Senaryo 3): "sayı arttı mı" yanlış ölçüt olurdu.
-# Doğru ölçüt, EN YENİ yedeğin değişmiş olması.
-$oncekiEnYeni = (Get-ChildItem $Yedek -Filter "dornick-backup-*.zip" -ErrorAction SilentlyContinue |
-                 Sort-Object LastWriteTime | Select-Object -Last 1).Name
-Start-Sleep -Seconds 1   # yedek adı saniye damgalı: aynı saniyeye düşmesin
-$kod = Kur $Kur022 @("/TEMIZLE=veri")
-Dogrula ($kod -eq 0) "veri sıfırlama çıkış kodu 0 (gerçek: $kod)"
-$sonYedek = @(Get-ChildItem $Yedek -Filter "dornick-backup-*.zip" -ErrorAction SilentlyContinue)
-$sonEnYeni = ($sonYedek | Sort-Object LastWriteTime | Select-Object -Last 1).Name
-Dogrula ($sonEnYeni -ne $oncekiEnYeni) "silmeden ÖNCE yeni yedek alındı ($sonEnYeni)"
-Dogrula (-not (Test-Path (Join-Path $Dornick "anilar.json"))) "anılar gerçekten silindi"
-Dogrula (-not (Test-Path (Join-Path $Dornick "tasks.json"))) "görevler gerçekten silindi"
-Dogrula (Test-Path (Join-Path $Hedef "pyproject.toml")) "silme sonrası kurulum yine sağlam"
-# Yedeğin İÇİNDE silinen veri olmalı — boş bir zip, yedek değildir.
-$enYeni = $sonYedek | Sort-Object LastWriteTime | Select-Object -Last 1
+Write-Host "`n== Scenario 8: RESET DATA TOO — backup first, deletion after" -ForegroundColor Cyan
+# The most dangerous path. Two things must both be true: the data must
+# REALLY be gone (otherwise "reset" is a lie) and it must have been backed
+# up BEFORE it went. Backup count is capped at 5 (Scenario 3): "did the
+# count increase" would be the wrong measure. The right measure is that
+# the NEWEST backup has changed.
+$prevNewest = (Get-ChildItem $Backup -Filter "dornick-backup-*.zip" -ErrorAction SilentlyContinue |
+               Sort-Object LastWriteTime | Select-Object -Last 1).Name
+Start-Sleep -Seconds 1   # backup name is second-stamped: avoid landing in the same second
+$code = Install $Setup022 @("/TEMIZLE=veri")
+Check ($code -eq 0) "data reset exit code 0 (actual: $code)"
+$finalBackups = @(Get-ChildItem $Backup -Filter "dornick-backup-*.zip" -ErrorAction SilentlyContinue)
+$newNewest = ($finalBackups | Sort-Object LastWriteTime | Select-Object -Last 1).Name
+Check ($newNewest -ne $prevNewest) "a new backup was taken BEFORE deleting ($newNewest)"
+Check (-not (Test-Path (Join-Path $Dornick "anilar.json"))) "memories were really deleted"
+Check (-not (Test-Path (Join-Path $Dornick "tasks.json"))) "tasks were really deleted"
+Check (Test-Path (Join-Path $Target "pyproject.toml")) "install is still healthy after the deletion"
+# The deleted data must be INSIDE the backup — an empty zip is not a backup.
+$newest = $finalBackups | Sort-Object LastWriteTime | Select-Object -Last 1
 Add-Type -AssemblyName System.IO.Compression.FileSystem
-$zip = [System.IO.Compression.ZipFile]::OpenRead($enYeni.FullName)
-$icerik = @($zip.Entries | ForEach-Object { $_.FullName })
+$zip = [System.IO.Compression.ZipFile]::OpenRead($newest.FullName)
+$content = @($zip.Entries | ForEach-Object { $_.FullName })
 $zip.Dispose()
-Dogrula (($icerik -join [char]10) -match 'anilar') "yedeğin içinde silinen anılar var"
+Check (($content -join [char]10) -match 'anilar') "the deleted memories are inside the backup"
 
-Write-Host "`n== Senaryo 6: kaldırma sonrası .dornick yerinde" -ForegroundColor Cyan
-# Kendi ön koşulunu kuruyor: Senaryo 8 veriyi bilerek sildi, buradaki soru
-# ise "kaldırma veriyi siler mi" — o yüzden taze veri konuyor.
+Write-Host "`n== Scenario 6: .dornick in place after uninstall" -ForegroundColor Cyan
+# Sets up its own precondition: Scenario 8 deleted the data on purpose; the
+# question here is "does uninstall delete data" — hence fresh data is planted.
 New-Item -ItemType Directory -Force $Dornick | Out-Null
 '{"n":"kaldirma-senaryosu"}' | Set-Content (Join-Path $Dornick "anilar.json") -Encoding utf8
-$unins = Join-Path $Hedef "unins000.exe"
+$unins = Join-Path $Target "unins000.exe"
 if (Test-Path $unins) {
     Start-Process -FilePath $unins -ArgumentList @("/VERYSILENT", "/SUPPRESSMSGBOXES") -Wait
     Start-Sleep -Seconds 2
-    Dogrula (Test-Path (Join-Path $Dornick "anilar.json")) "kaldırma .dornick'yi bıraktı"
-    Dogrula (-not (Test-Path (Join-Path $Hedef "pyproject.toml"))) "kod dosyaları (pyproject dahil) kaldırıldı"
+    Check (Test-Path (Join-Path $Dornick "anilar.json")) "uninstall left .dornick alone"
+    Check (-not (Test-Path (Join-Path $Target "pyproject.toml"))) "code files (pyproject included) were removed"
 } else {
-    Dogrula $false "kaldırıcı bulunamadı: $unins"
+    Check $false "uninstaller not found: $unins"
 }
 
-# -- temizlik -----------------------------------------------------------
-if (Test-Path $KayitYolu) { Remove-Item $KayitYolu -Recurse -Force }
-$kisayol = Join-Path $env:APPDATA "Microsoft\Windows\Start Menu\Programs\dornick-test.lnk"
-if (Test-Path $kisayol) { Remove-Item $kisayol -Force }
+# -- cleanup ------------------------------------------------------------
+if (Test-Path $RegPath) { Remove-Item $RegPath -Recurse -Force }
+$shortcut = Join-Path $env:APPDATA "Microsoft\Windows\Start Menu\Programs\dornick-test.lnk"
+if (Test-Path $shortcut) { Remove-Item $shortcut -Force }
 
-# -- özet ---------------------------------------------------------------
+# -- summary ------------------------------------------------------------
 Write-Host ""
-if ($Basarisiz.Count -eq 0) {
-    Write-Host "TÜM KURULUM SENARYOLARI GEÇTİ" -ForegroundColor Green
-    Write-Host "(sandbox: $Kok — incelemek istersen duruyor)"
+if ($Failed.Count -eq 0) {
+    Write-Host "ALL INSTALL SCENARIOS PASSED" -ForegroundColor Green
+    Write-Host "(sandbox: $Root — kept in place if you want to inspect it)"
     exit 0
 }
-Write-Host "BAŞARISIZ: $($Basarisiz.Count)" -ForegroundColor Red
-$Basarisiz | ForEach-Object { Write-Host " - $_" -ForegroundColor Red }
+Write-Host "FAILED: $($Failed.Count)" -ForegroundColor Red
+$Failed | ForEach-Object { Write-Host " - $_" -ForegroundColor Red }
 exit 1

@@ -1,8 +1,9 @@
-"""Otomasyon grafiği koşucusu — düğümleri sırayla işletir.
+"""Automation graph runner — executes the nodes in order.
 
-Açık düğüm türleri: bilinen yardımcılar (agent, skill, http, shell, mail_read)
-ve `custom` (skill adına düşer). Bilinmeyen tür = agent adımı (prompt config).
-Hata olursa fail kenarına gider; yoksa heal kancası için progress'e yazılır.
+Open node types: known helpers (agent, skill, http, shell, mail_read)
+and `custom` (falls back to the skill name). Unknown type = agent step
+(prompt config). On error it follows the fail edge; otherwise progress
+is written for the heal hook.
 """
 
 from __future__ import annotations
@@ -13,9 +14,9 @@ from typing import Any
 
 from .workflows import Workflow, WorkflowNode
 
-# Bir koşuda kaç adım onarılmayı deneyebilir. Sınırsız onarım,
-# gece boyunca kendi kendini bozan bir otomasyon demek.
-AZAMI_ONARIM = 3
+# How many steps may attempt repair in one run. Unlimited repair means
+# an automation that keeps breaking itself all night long.
+MAX_REPAIRS = 3
 
 
 async def execute_workflow(
@@ -24,55 +25,56 @@ async def execute_workflow(
     handle: Any,
     on_progress: Any = None,
 ) -> tuple[str, list[dict[str, Any]], bool]:
-    """Grafiği koştur. Dönüş: (rapor, progress, ok).
+    """Run the graph. Returns: (report, progress, ok).
 
-    `on_progress(progress)` her düğüm durumu değiştiğinde çağrılıyor —
-    başlarken ve biterken. Bu olmadan ilerleme yalnızca koşu BİTİNCE
-    yazılıyordu; yani "çalışırken nerede olduğunu görmek" mümkün değildi,
-    akış şeması koşu boyunca ölü duruyordu.
+    `on_progress(progress)` is called whenever a node's status changes —
+    on start and on finish. Without this, progress was only written when
+    the run FINISHED; that is, "seeing where it is while running" was
+    impossible, the flow diagram sat dead for the whole run.
     """
     if not wf.nodes:
         return ("Akışta düğüm yok.", [], False)
 
-    def _duyur(kayit: list[dict[str, Any]], ajan: Any, tutamac: Any) -> None:
-        """İlerlemeyi diske ve (varsa) dinleyiciye ver.
+    def _announce(entries: list[dict[str, Any]], agent: Any, handle: Any) -> None:
+        """Deliver progress to disk and (if any) to the listener.
 
-        Hata yutuluyor: koşunun kendisi, izlenmesinden önemli — ilerleme
-        yazılamadı diye akış düşmemeli."""
+        Errors are swallowed: the run itself matters more than watching
+        it — the flow must not fall over because progress could not be
+        written."""
         if on_progress is not None:
             try:
-                on_progress([dict(p) for p in kayit])
+                on_progress([dict(p) for p in entries])
             except Exception:
                 pass
-        if not (getattr(tutamac, "schedule_id", None)
-                and getattr(tutamac, "run_id", None)):
+        if not (getattr(handle, "schedule_id", None)
+                and getattr(handle, "run_id", None)):
             return
         try:
             from . import task_runs
-            satir = "\n".join(
+            lines = "\n".join(
                 ("✓" if p.get("status") == "bitti"
                  else "…" if p.get("status") == "koşuyor" else "✗")
                 + " " + str(p.get("title") or p.get("id"))
-                for p in kayit
+                for p in entries
             )
             task_runs.patch_run(
-                ajan.config.state_dir, tutamac.schedule_id, tutamac.run_id,
-                report=satir or "(koşuyor)",
-                nodes_progress=[dict(p) for p in kayit],
-                model=getattr(tutamac, "model", "") or "",
+                agent.config.state_dir, handle.schedule_id, handle.run_id,
+                report=lines or "(koşuyor)",
+                nodes_progress=[dict(p) for p in entries],
+                model=getattr(handle, "model", "") or "",
             )
         except Exception:
             pass
 
     by_id = {n.id: n for n in wf.nodes}
-    # Başlangıç: kimseye kenar gelmeyen düğümler; yoksa ilk düğüm.
+    # Start: nodes with no incoming edge; otherwise the first node.
     targets = {e.to for e in wf.edges}
     starts = [n.id for n in wf.nodes if n.id not in targets] or [wf.nodes[0].id]
 
     ctx: dict[str, Any] = {"last": "", "vars": {}}
     progress: list[dict[str, Any]] = []
-    # Onarım defteri: adım başına bir kez, koşu başına en fazla AZAMI_ONARIM.
-    onarilanlar: set[str] = set()
+    # Repair ledger: once per step, at most MAX_REPAIRS per run.
+    repaired: set[str] = set()
     current = starts[0]
     visited = 0
     max_steps = max(40, len(wf.nodes) * 4)
@@ -88,16 +90,16 @@ async def execute_workflow(
         step = {"id": node.id, "title": node.title or node.id,
                 "type": node.type, "status": "koşuyor"}
         progress.append(step)
-        # Canlı iz: Orkestra tool olayı gibi.
+        # Live trace: like an Orchestra tool event.
         try:
             agent.io.on_child_tool(handle.title, f"node:{node.id}", "start")
         except Exception:
             pass
-        # BAŞLARKEN de yaz. Yalnız bitişte yazmak, uzun süren bir adım
-        # boyunca ekranda koşan hiçbir şey göstermiyordu: önceki düğüm
-        # yeşil, sonraki henüz yok — akış ölü görünüyordu. Asıl izlenmek
-        # istenen an tam da bu ara.
-        _duyur(progress, agent, handle)
+        # Write at the START too. Writing only at the end showed nothing
+        # running on screen during a long step: the previous node green,
+        # the next one not there yet — the flow looked dead. The moment
+        # we actually want to watch is exactly that gap.
+        _announce(progress, agent, handle)
 
         try:
             out = await _run_node(node, ctx, agent)
@@ -107,33 +109,34 @@ async def execute_workflow(
             ctx["vars"][node.id] = out
             edge_on = "ok"
         except Exception as exc:
-            # Ders her hâlükârda yazılıyor: onarım tutsa da tutmasa da bu
-            # adımın bir kez bozulduğu bilgisi kalıcı olmalı.
+            # The lesson is written no matter what: whether the repair
+            # sticks or not, the fact that this step once broke must
+            # persist.
             await _try_heal_lesson(agent, node, exc, wf.id)
 
-            onarildi = ""
-            if node.id not in onarilanlar and len(onarilanlar) < AZAMI_ONARIM:
-                onarilanlar.add(node.id)
+            repair = ""
+            if node.id not in repaired and len(repaired) < MAX_REPAIRS:
+                repaired.add(node.id)
                 step["status"] = "onarılıyor"
-                _duyur(progress, agent, handle)
-                onarildi = await _onarmayi_dene(
+                _announce(progress, agent, handle)
+                repair = await _try_repair(
                     wf, node, exc, agent, getattr(agent.config, "state_dir", None))
 
-            if onarildi:
+            if repair:
                 try:
                     out = await _run_node(node, ctx, agent)
                 except Exception as exc2:
                     step["status"] = "hata"
                     step["detail"] = (
-                        f"onarım denendi ({onarildi}) ama yine düştü — "
+                        f"onarım denendi ({repair}) ama yine düştü — "
                         f"{type(exc2).__name__}: {exc2}")
-                    step["onarim"] = onarildi
+                    step["onarim"] = repair
                     ok = False
                     edge_on = "hata"
                 else:
                     step["status"] = "bitti"
                     step["detail"] = str(out)[:500]
-                    step["onarim"] = onarildi
+                    step["onarim"] = repair
                     ctx["last"] = out
                     ctx["vars"][node.id] = out
                     edge_on = "ok"
@@ -148,7 +151,7 @@ async def execute_workflow(
         except Exception:
             pass
 
-        _duyur(progress, agent, handle)
+        _announce(progress, agent, handle)
 
         nxt = _next_node(wf, current, edge_on)
         if nxt is None and edge_on == "hata":
@@ -186,45 +189,47 @@ async def _run_node(node: WorkflowNode, ctx: dict[str, Any], agent: Any) -> str:
         return await _call_tool(agent, name, dict(cfg.get("args") or {}), last)
 
     if kind == "http":
-        # http düğümü keyfi metot/gövde/başlık taşıyabiliyor — yani dışarı
-        # veri gönderen (POST/PUT…) ya da yerel API'yi (127.0.0.1) döven bir
-        # yüzey. Eskiden doğrudan urlopen ile koşuyordu: izin kapısı da
-        # kancalar da devre dışıydı. Artık `shell` gibi kapıdan geçiyor —
-        # okuma dışı her http çağrısı için onay sorulur (güvenlik denetimi,
-        # 01.09). Salt-okuma (GET/HEAD, yerel olmayan) `fetch` aracına düşer.
+        # An http node can carry arbitrary method/body/headers — i.e. a
+        # surface that sends data out (POST/PUT…) or hammers the local
+        # API (127.0.0.1). It used to run through urlopen directly: both
+        # the permission gate and the hooks were bypassed. Now it goes
+        # through the gate like `shell` — every non-read http call asks
+        # for approval (security review, 01.09). Read-only (GET/HEAD,
+        # non-local) falls to the `fetch` tool.
         url = str(cfg.get("url") or "")
         if not url:
             raise RuntimeError("http düğümü için url gerekli")
         method = str(cfg.get("method") or "GET").upper()
-        yerel = _yerel_adres(url)
-        if method in ("GET", "HEAD") and not yerel and not cfg.get("headers") \
+        local = _is_local_address(url)
+        if method in ("GET", "HEAD") and not local and not cfg.get("headers") \
                 and cfg.get("body") is None:
-            return await _gecir(agent, "fetch", {"url": url}, last)
-        # Mutasyon/gizli yüzey: izin kapısına sok. Kayıtlı bir araç değil,
-        # o yüzden sentetik bir onay isteği kuruluyor.
-        onay = await _http_onay(agent, node, url, method, yerel)
-        if not onay:
+            return await _run_gated(agent, "fetch", {"url": url}, last)
+        # Mutating/secret surface: push it through the permission gate.
+        # It is not a registered tool, so a synthetic approval request
+        # is built.
+        approved = await _http_approval(agent, node, url, method, local)
+        if not approved:
             raise RuntimeError(
                 "http düğümü kullanıcı tarafından onaylanmadı "
                 f"({method} {url}).")
-        return await _http_ham(cfg, url, method)
+        return await _http_raw(cfg, url, method)
 
     if kind == "shell":
         cmd = str(cfg.get("command") or cfg.get("cmd") or "")
         if not cmd:
             raise RuntimeError("shell düğümü için command gerekli")
-        # İzin motoru + kancalar üzerinden: eskiden doğrudan
-        # create_subprocess_shell çağrılıyordu ve hiçbir kapıya değmiyordu
-        # (güvenlik denetimi, 01.09). Artık gerçek `shell` aracı gibi
-        # onaydan ve kancadan geçiyor.
-        return await _gecir(agent, "shell", {"command": cmd}, last)
+        # Through the permission engine + hooks: it used to call
+        # create_subprocess_shell directly and touched no gate at all
+        # (security review, 01.09). Now it goes through approval and
+        # hooks like the real `shell` tool.
+        return await _run_gated(agent, "shell", {"command": cmd}, last)
 
     if kind in ("mail_read", "mail"):
         args = dict(cfg.get("args") or {
             "action": "list", "limit": int(cfg.get("limit") or 10)})
         return await _call_tool(agent, "mail_read", args, last)
 
-    # agent / custom / bilinmeyen: model adımı (açık düğüm modeli)
+    # agent / custom / unknown: model step (the open node model)
     prompt = str(cfg.get("prompt") or cfg.get("instruction") or node.title or "")
     if last:
         prompt = f"{prompt}\n\nÖnceki adım çıktısı:\n{last[:3000]}"
@@ -235,9 +240,10 @@ async def _run_node(node: WorkflowNode, ctx: dict[str, Any], agent: Any) -> str:
     return await agent._spawn(node.title or node.id, prompt, "")
 
 
-def _yerel_adres(url: str) -> bool:
-    """URL yerel/özel bir ağı mı hedefliyor (127.0.0.1, localhost, RFC1918,
-    link-local)? Yerel API'yi dövmek en tehlikeli http yüzeyi."""
+def _is_local_address(url: str) -> bool:
+    """Does the URL target a local/private network (127.0.0.1, localhost,
+    RFC1918, link-local)? Hammering the local API is the most dangerous
+    http surface."""
     import ipaddress
     import urllib.parse
 
@@ -251,27 +257,28 @@ def _yerel_adres(url: str) -> bool:
         return False
 
 
-async def _http_onay(agent: Any, node: WorkflowNode, url: str, method: str,
-                     yerel: bool) -> bool:
-    """http düğümü için onay iste. Kayıtlı araç yok; sentetik spec ile
-    izin yüzeyine (io.approve) sokuluyor — kullanıcı ne gönderildiğini görsün."""
+async def _http_approval(agent: Any, node: WorkflowNode, url: str, method: str,
+                         local: bool) -> bool:
+    """Ask approval for the http node. There is no registered tool; it is
+    pushed onto the permission surface (io.approve) with a synthetic spec —
+    so the user sees what is being sent."""
     from .tools.base import object_schema, ToolSpec
 
-    async def _bos(_a: dict[str, Any], _c: Any) -> Any:  # pragma: no cover
+    async def _empty(_a: dict[str, Any], _c: Any) -> Any:  # pragma: no cover
         return None
 
     spec = ToolSpec(
         name="workflow_http", description="Otomasyon http düğümü",
-        input_schema=object_schema({}), handler=_bos, mutates=True)
-    etiket = f"{method} {url}" + (" (YEREL AĞ)" if yerel else "")
+        input_schema=object_schema({}), handler=_empty, mutates=True)
+    label = f"{method} {url}" + (" (YEREL AĞ)" if local else "")
     try:
-        return bool(await agent.io.approve(spec, {"istek": etiket, "düğüm": node.id}))
+        return bool(await agent.io.approve(spec, {"istek": label, "düğüm": node.id}))
     except Exception:
         return False
 
 
-async def _http_ham(cfg: dict[str, Any], url: str, method: str) -> str:
-    """Onaylanmış http çağrısını gerçekten yapar."""
+async def _http_raw(cfg: dict[str, Any], url: str, method: str) -> str:
+    """Actually performs the approved http call."""
     import urllib.request
 
     data = cfg.get("body")
@@ -288,18 +295,17 @@ async def _http_ham(cfg: dict[str, Any], url: str, method: str) -> str:
 async def _call_tool(agent: Any, name: str, args: dict[str, Any], last: str) -> str:
     if last and "input" not in args:
         args = {**args, "input": last}
-    return await _gecir(agent, name, args, last, birlestir=False)
+    return await _run_gated(agent, name, args, last, merge_input=False)
 
 
-async def _gecir(agent: Any, name: str, args: dict[str, Any], last: str,
-                 *, birlestir: bool = True) -> str:
-    """Bir aracı ajanın GERÇEK izin kapısından ve kancalarından geçirerek
-    koşturur.
+async def _run_gated(agent: Any, name: str, args: dict[str, Any], last: str,
+                     *, merge_input: bool = True) -> str:
+    """Runs a tool through the agent's REAL permission gate and hooks.
 
-    Eski `_call_tool` doğrudan `spec.handler`'ı çağırıyordu; şema kapısı,
-    izin motoru ve iki kanca aşaması es geçiliyordu. Artık asıl turun
-    kullandığı `executor.execute` yoluyla — onay, kanca ve şema aynı
-    (güvenlik denetimi, 01.09).
+    The old `_call_tool` invoked `spec.handler` directly; the schema gate,
+    the permission engine and both hook phases were skipped. Now it goes
+    through `executor.execute`, the same path the real turn uses — the
+    same approval, hooks and schema (security review, 01.09).
     """
     from .session import PendingToolUse
     from .tools.base import ToolContext
@@ -308,7 +314,7 @@ async def _gecir(agent: Any, name: str, args: dict[str, Any], last: str,
     spec = agent.registry.get(name)
     if spec is None:
         raise RuntimeError(f"Araç yok: {name}")
-    if birlestir and last and "input" not in args:
+    if merge_input and last and "input" not in args:
         args = {**args, "input": last}
 
     tctx = ToolContext(
@@ -323,44 +329,43 @@ async def _gecir(agent: Any, name: str, args: dict[str, Any], last: str,
         approve=agent.io.approve,
         observe=getattr(agent, "_observe", lambda *_: None),
     )
-    blok = blocks[0] if blocks else {}
-    icerik = blok.get("content", "")
-    metin = icerik if isinstance(icerik, str) else json.dumps(icerik, ensure_ascii=False)
-    if blok.get("is_error"):
-        raise RuntimeError(metin or "araç hata verdi")
-    return metin
+    block = blocks[0] if blocks else {}
+    content = block.get("content", "")
+    text = content if isinstance(content, str) else json.dumps(content, ensure_ascii=False)
+    if block.get("is_error"):
+        raise RuntimeError(text or "araç hata verdi")
+    return text
 
 
 async def _try_heal_lesson(agent: Any, node: WorkflowNode, exc: BaseException,
                            wf_id: str = "") -> None:
-    """Hata dersi — hafızaya sabit kalıpla yazılır.
+    """Failure lesson — written to memory with a fixed template.
 
-    Kalıbın sabit olması gece koşan kişisel ince ayar için önemli: aynı
-    olay her seferinde aynı biçimde yazılmazsa ortada öğrenilecek bir
-    örüntü kalmıyor.
+    The template being fixed matters for the personal fine-tune that runs
+    at night: if the same event is not written the same way every time,
+    there is no pattern left to learn.
     """
     from . import workflow_mind
 
     workflow_mind.recall_lesson(getattr(agent, "mind", None), wf_id, node, exc)
 
 
-async def _onarmayi_dene(
+async def _try_repair(
     wf: Workflow, node: WorkflowNode, exc: BaseException, agent: Any,
     state_dir: Any,
 ) -> str:
-    """Bozulan adımı bir kez onarmayı dener. Döndürdüğü: ne değiştiği (boşsa yok).
+    """Tries once to repair the broken step. Returns: what changed (empty if nothing).
 
-    Sınırlar bilerek dar:
+    The limits are deliberately tight:
 
-      * Adım başına koşuda TEK deneme (çağıran sayıyor). Sınırsız onarma,
-        gece boyunca kendi kendini bozan bir otomasyon demek.
-      * `elle=True` adıma DOKUNULMAZ. Kullanıcının bilerek yazdığı bir adımı
-        modelin arkasından yeniden yazması düzeltme değil, sessizce geri
-        alma olur.
-      * Yalnızca `config` ve `skill` değişebilir; düğümün türü, kimliği ve
-        grafiğin şekli modele bırakılmıyor.
-      * Ne değiştiği geri döndürülüyor ve rapora yazılıyor — sessiz onarım,
-        onarım değil sürprizdir.
+      * ONE attempt per step per run (the caller counts). Unlimited repair
+        means an automation that keeps breaking itself all night long.
+      * A step with `elle=True` is NOT TOUCHED. The model rewriting a step
+        the user deliberately wrote is not a fix but a silent revert.
+      * Only `config` and `skill` may change; the node's type, its id and
+        the shape of the graph are not left to the model.
+      * What changed is returned and written into the report — a silent
+        repair is not a repair, it is a surprise.
     """
     if node.elle:
         return ""
@@ -369,7 +374,7 @@ async def _onarmayi_dene(
 
     from . import workflows as store
 
-    istem = (
+    prompt = (
         "Bir otomasyon adımı hata verdi. Görevin YALNIZCA bu adımın "
         "ayarını düzeltmek.\n\n"
         f"Adım türü: {node.type}\n"
@@ -381,42 +386,43 @@ async def _onarmayi_dene(
         "hiçbir şey yazma. Düzeltilecek bir şey göremiyorsan {} döndür."
     )
     try:
-        cevap = await agent._spawn(f"onar:{node.id}", istem, "")
+        reply = await agent._spawn(f"onar:{node.id}", prompt, "")
     except Exception:
         return ""
 
-    yeni = _json_nesnesi(str(cevap or ""))
-    if not yeni or yeni == node.config:
+    new_config = _json_object(str(reply or ""))
+    if not new_config or new_config == node.config:
         return ""
 
-    eski = dict(node.config)
-    node.config = yeni
+    old = dict(node.config)
+    node.config = new_config
     try:
         store.save(state_dir, store.to_dict(wf))
     except Exception:
-        node.config = eski      # yazılamadıysa bellekteki hâli de geri al
+        node.config = old   # if it could not be written, revert the in-memory state too
         return ""
 
-    degisen = sorted(set(eski) ^ set(yeni)) or [
-        k for k in yeni if eski.get(k) != yeni.get(k)]
-    return ", ".join(str(k) for k in degisen[:6]) or "config"
+    changed = sorted(set(old) ^ set(new_config)) or [
+        k for k in new_config if old.get(k) != new_config.get(k)]
+    return ", ".join(str(k) for k in changed[:6]) or "config"
 
 
-def _json_nesnesi(metin: str) -> dict[str, Any] | None:
-    """Modelin cevabından ilk JSON nesnesi. Bulamazsa None.
+def _json_object(text: str) -> dict[str, Any] | None:
+    """The first JSON object in the model's reply. None if not found.
 
-    Model kod bloğu ya da açıklama eklerse diye ham `loads` yetmiyor; ama
-    tahmin de yürütmüyoruz — nesne bulunamazsa onarım yapılmıyor.
+    Raw `loads` is not enough in case the model adds a code fence or an
+    explanation; but we do not guess either — if no object is found, no
+    repair happens.
     """
-    metin = metin.strip()
-    if metin.startswith("```"):
-        metin = re.sub(r"^```[a-zA-Z]*\n?|\n?```$", "", metin).strip()
-    bas = metin.find("{")
-    son = metin.rfind("}")
-    if bas < 0 or son <= bas:
+    text = text.strip()
+    if text.startswith("```"):
+        text = re.sub(r"^```[a-zA-Z]*\n?|\n?```$", "", text).strip()
+    start = text.find("{")
+    end = text.rfind("}")
+    if start < 0 or end <= start:
         return None
     try:
-        veri = json.loads(metin[bas:son + 1])
+        data = json.loads(text[start:end + 1])
     except ValueError:
         return None
-    return veri if isinstance(veri, dict) else None
+    return data if isinstance(data, dict) else None

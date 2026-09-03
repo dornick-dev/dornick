@@ -44,7 +44,7 @@ class _FakeMind:
 
 def test_a_saved_automation_becomes_a_procedure(tmp_path: Path) -> None:
     mind = _FakeMind()
-    assert workflow_mind.akisi_hatirla(mind, _workflow(tmp_path)) is True
+    assert workflow_mind.recall_workflow(mind, _workflow(tmp_path)) is True
 
     (record,) = mind.records
     assert record["kind"] == "procedure"
@@ -90,7 +90,7 @@ def test_the_lesson_shape_is_stable(tmp_path: Path) -> None:
 
 def test_no_mind_is_silent_not_fatal() -> None:
     """Without a memory the automation must still run — the record is secondary."""
-    assert workflow_mind.akisi_hatirla(None, None) is False
+    assert workflow_mind.recall_workflow(None, None) is False
     assert workflow_mind.recall_lesson(None, "x", None, RuntimeError("y")) is False
     assert workflow_mind.search_workflows(None, "posta") == []
 
@@ -126,5 +126,5 @@ def test_a_broken_mind_never_breaks_the_caller() -> None:
         def recall(self, *a, **k):
             raise RuntimeError("zihin düştü")
 
-    assert workflow_mind.akisi_hatirla(_Broken(), None) is False
+    assert workflow_mind.recall_workflow(_Broken(), None) is False
     assert workflow_mind.search_workflows(_Broken(), "x") == []

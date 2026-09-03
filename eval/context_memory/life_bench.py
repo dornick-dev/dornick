@@ -583,11 +583,11 @@ def _prime(mind: Any, question: str, context: dict | None) -> list[Any]:
     """The product's prime selection. The context parameter arrives in Phase 5."""
     if context:
         try:
-            return select_prime(mind, question, limit=RECALL_PRIME_LIMIT, ham=question,
+            return select_prime(mind, question, limit=RECALL_PRIME_LIMIT, raw=question,
                                 context=context)
         except TypeError:
             pass
-    return select_prime(mind, question, limit=RECALL_PRIME_LIMIT, ham=question)
+    return select_prime(mind, question, limit=RECALL_PRIME_LIMIT, raw=question)
 
 
 def _ranking(mind: Any, question: str, slug_of: dict[str, str],

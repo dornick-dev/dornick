@@ -1,10 +1,12 @@
-"""Zamanlanmış görev aracı.
+"""Scheduled task tool.
 
-Kullanıcı "her sabah borsayı kontrol et" dediğinde ajanın bunu bir kez yapıp
-unutması değil, saatini kurması gerekiyor. Bu araç o kurmayı yapıyor.
+When the user says "check the stock market every morning", the agent
+must not do it once and forget — it must set the clock. This tool does
+that setting.
 
-Kurulan her görev ayar sayfasında görünüyor ve oradan durdurulabiliyor —
-ajanın kurduğu bir otomasyonun kullanıcıdan gizli çalışması kabul edilemez.
+Every task that gets set shows up on the settings page and can be
+stopped there — an automation the agent set up running hidden from the
+user is unacceptable.
 """
 
 from __future__ import annotations
@@ -85,11 +87,12 @@ def register(registry: ToolRegistry) -> None:
             return ToolResult("\n".join(lines), detail={"count": len(tasks)})
 
         if action == "add":
-            # Akış kimliği verildiyse görev otomasyondur: tetiklenince
-            # `prompt` değil grafiğin kendisi koşar. Tek alandan türetiliyor
-            # ki ikisi çelişemesin (workflow_id dolu + kind_ui="simple" gibi
-            # bir kayıt, koşucunun sessizce prompt'a düşmesi demek olurdu).
-            akis = str(args.get("workflow_id") or "").strip()
+            # If a workflow id was given, the task is an automation: when
+            # triggered, the graph itself runs, not the `prompt`. It is
+            # derived from a single field so the two can never contradict
+            # (a record like workflow_id set + kind_ui="simple" would mean
+            # the runner silently falling back to the prompt).
+            flow_id = str(args.get("workflow_id") or "").strip()
             task = Task(
                 id="",
                 title=str(args.get("title") or "").strip() or _headline(args.get("prompt", "")),
@@ -97,8 +100,8 @@ def register(registry: ToolRegistry) -> None:
                 kind=str(args.get("kind") or "every"),
                 every_s=int(args.get("every_s") or 3600),
                 at=str(args.get("at") or "09:00"),
-                kind_ui="automation" if akis else "simple",
-                workflow_id=akis,
+                kind_ui="automation" if flow_id else "simple",
+                workflow_id=flow_id,
             )
             try:
                 created = book.add(task)
@@ -124,8 +127,9 @@ def register(registry: ToolRegistry) -> None:
             for key in ("title", "prompt", "kind", "every_s", "at", "workflow_id"):
                 if key in args and args[key] is not None and args[key] != "":
                     fields[key] = args[key]
-            # Akış bağlanınca tür de değişmeli; ikisi ayrı kalırsa görev
-            # "otomasyon değil ama akışı var" gibi tutarsız bir hâle düşer.
+            # Binding a workflow must change the kind too; if the two drift
+            # apart, the task falls into an inconsistent state like "not an
+            # automation, but has a workflow".
             if fields.get("workflow_id"):
                 fields["kind_ui"] = "automation"
             if not fields:

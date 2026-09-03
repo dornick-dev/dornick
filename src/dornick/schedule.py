@@ -1,24 +1,26 @@
-"""Zamanlanmış görevler.
+"""Scheduled tasks.
 
-"Her sabah borsayı kontrol et", "cuma günleri raporu hazırla" — bunlar
-ajanın kendi kendine yapabileceği işler ama birinin saati tutması gerekiyor.
-Burası o saat.
+"Check the market every morning", "prepare the report on Fridays" — these
+are jobs the agent can do on its own, but someone has to keep the clock.
+This is that clock.
 
-Tasarımın üç kararı:
+Three design decisions:
 
-    görünür    Görevler diskte düz JSON olarak duruyor ve ayar sayfasında
-               listeleniyor. Ajanın kurduğu bir otomasyonun kullanıcıdan
-               gizli çalışması kabul edilemez — ne olduğunu, ne zaman
-               çalıştığını ve en son ne olduğunu görebilmeli.
-    arka plan  Zamanı gelen görev sohbet balonu değil: arka plan yardımcı
-               olarak koşuyor. Rapor Orkestra / Görevler'de; tıklanınca
-               Viewer. Ana sohbet Q&A alanı kalıyor.
-    sessiz     Biten zamanlı iş ana ajanı "haber ver" turuna zorlamaz —
-               kullanıcı sormadıkça sohbete dökülmez.
+    visible    Tasks sit on disk as plain JSON and are listed on the
+               settings page. An automation the agent set up running
+               hidden from the user is unacceptable — they must be able
+               to see what it is, when it runs, and what happened last.
+    background A task whose time has come is not a chat bubble: it runs
+               as a background helper. The report is in Orchestra /
+               Tasks; clicking opens the Viewer. The main chat stays a
+               Q&A space.
+    quiet      A finished scheduled job does not force the main agent
+               into a "report it" turn — it does not spill into the chat
+               unless the user asks.
 
-Cron sözdizimi bilinçli olarak yok. Beş yıldızlı ifadeyi doğru yazmak
-kullanıcının işi değil; "her N dakikada" ve "her gün saat HH:MM" pratikte
-istenen her şeyi karşılıyor ve ikisi de tek bakışta okunuyor.
+Cron syntax is deliberately absent. Writing the five-star expression
+correctly is not the user's job; "every N minutes" and "every day at
+HH:MM" cover everything wanted in practice, and both read at a glance.
 """
 
 from __future__ import annotations
@@ -33,12 +35,12 @@ from uuid import uuid4
 
 TASKS_FILE = "tasks.json"
 
-# İki tekrar biçimi. Cron ifadesi yerine bunlar: okunması ve doğrulanması
-# kolay, ve pratikte istenen her şeyi karşılıyor.
+# Two repeat forms. These instead of a cron expression: easy to read and
+# validate, and they cover everything wanted in practice.
 KINDS = ("every", "daily")
 
-# Bir görev bundan sık çalışamaz. Dakikada bir tetiklenen bir ajan turu hem
-# maliyet hem gürültü.
+# A task cannot run more often than this. An agent turn triggered every
+# minute is both cost and noise.
 MIN_INTERVAL_S = 60
 
 
@@ -48,12 +50,13 @@ def _now() -> datetime:
 
 @dataclass(slots=True)
 class Task:
-    """Tek bir zamanlanmış iş.
+    """A single scheduled job.
 
-    prompt: ajana gönderilecek metin. Kullanıcının yazdığı bir mesajdan farkı
-        yok — o yüzden eksiksiz olmalı, "yine yap" gibi bir şey işe yaramaz.
-    at: `daily` için "HH:MM" (yerel saat). `every` için kullanılmıyor.
-    every_s: `every` için saniye.
+    prompt: the text sent to the agent. No different from a message the
+        user typed — so it must be complete; something like "do it again"
+        is useless.
+    at: "HH:MM" (local time) for `daily`. Unused for `every`.
+    every_s: seconds for `every`.
     """
 
     id: str
@@ -66,14 +69,14 @@ class Task:
     created: str = field(default_factory=lambda: _now().isoformat(timespec="seconds"))
     last_run: str = ""
     last_status: str = ""
-    # Son (veya koşan) yardımcının kimliği — detayda "raporu aç" / durum.
+    # Id of the last (or running) helper — "open the report" / status in the detail view.
     last_child_id: str = ""
-    # Bir sonraki tetiklenme; kaydedilmesi şart, yoksa program her açıldığında
-    # geçmiş görevler yeniden tetikleniyor.
+    # The next trigger; must be persisted, otherwise past tasks re-fire
+    # every time the program opens.
     next_run: str = ""
-    # Arayüz tipi: simple = tek prompt; automation = workflow grafiği.
+    # UI type: simple = a single prompt; automation = a workflow graph.
     kind_ui: str = "simple"  # simple | automation
-    # kind_ui=automation iken bağlı iş akışı kimliği; simple'da boş.
+    # The bound workflow id when kind_ui=automation; empty for simple.
     workflow_id: str = ""
 
     def describe(self) -> str:
@@ -85,13 +88,14 @@ class Task:
 
 
 def validate(task: Task) -> Task:
-    """Bozuk bir görev sessizce hiç çalışmayan bir görevdir."""
+    """A broken task is a task that silently never runs."""
     if task.kind not in KINDS:
         raise ValueError(f"Bilinmeyen tekrar biçimi: {task.kind}. Geçerli: {', '.join(KINDS)}")
-    # İki görev türünün taşıyıcı alanı farklı: basit görevde prompt, otomasyonda
-    # akış kimliği. Otomasyondan da prompt istemek, çağıranı `prompt="."` gibi
-    # anlamsız bir değer uydurmaya itiyordu — ve o değer, akış bir gün
-    # bulunamazsa koşucunun sessizce "." promptunu işletmesi demekti.
+    # The two task types carry different fields: a simple task carries a
+    # prompt, an automation a workflow id. Demanding a prompt from
+    # automations too pushed callers to invent a meaningless value like
+    # `prompt="."` — and that value meant the runner silently executing
+    # the "." prompt if the workflow ever went missing.
     if task.kind_ui == "automation":
         if not task.workflow_id.strip():
             raise ValueError("Otomasyon görevi bir akış kimliği (workflow_id) ister.")
@@ -113,10 +117,10 @@ def _parse_clock(text: str) -> clock:
 
 
 def next_after(task: Task, moment: datetime) -> datetime:
-    """Verilen andan sonraki ilk tetiklenme.
+    """The first trigger after the given moment.
 
-    `daily` yerel saate göre hesaplanıyor: kullanıcı "sabah 9" derken UTC
-    değil kendi saatini kastediyor.
+    `daily` is computed in local time: when the user says "9 in the
+    morning" they mean their own clock, not UTC.
     """
     if task.kind == "every":
         return moment + timedelta(seconds=max(MIN_INTERVAL_S, task.every_s))
@@ -130,11 +134,11 @@ def next_after(task: Task, moment: datetime) -> datetime:
 
 
 class Schedule:
-    """Görev listesinin sahibi.
+    """The owner of the task list.
 
-    Hem arayüz thread'inden hem ajanın döngüsünden okunuyor; bu yüzden
-    kilitli ve her değişiklikte diske yazıyor. Liste kısa (onlarca görev),
-    yazma maliyeti önemsiz.
+    Read from both the UI thread and the agent's loop; hence locked, and
+    it writes to disk on every change. The list is short (tens of tasks),
+    the write cost is negligible.
     """
 
     def __init__(self, state_dir: Path) -> None:
@@ -143,7 +147,7 @@ class Schedule:
         self._tasks: dict[str, Task] = {}
         self._load()
 
-    # -- okuma ---------------------------------------------------------
+    # -- reading -------------------------------------------------------
 
     def all(self) -> list[Task]:
         with self._lock:
@@ -154,10 +158,11 @@ class Schedule:
             return self._tasks.get(task_id)
 
     def overdue(self, moment: datetime | None = None) -> list[Task]:
-        """Zamanı geçmiş görevler — `next_run` İLERLETİLMEZ.
+        """Overdue tasks — `next_run` is NOT advanced.
 
-        Program kapalıyken kaçırılan tetiklenmeleri göstermek için: kullanıcı
-        "şimdi yap / atla" demeden defterdeki sıra değişmemeli.
+        For showing triggers missed while the program was closed: the
+        order in the ledger must not change until the user says "do it
+        now / skip".
         """
         moment = moment or _now()
         with self._lock:
@@ -174,12 +179,12 @@ class Schedule:
         *,
         only: Iterable[str] | None = None,
     ) -> list[Task]:
-        """Zamanı gelmiş görevler. Sıradaki zamanları da ilerletiliyor.
+        """Tasks whose time has come. Their next times are advanced too.
 
-        İlerletme burada yapılıyor, çalıştırıldıktan sonra değil: iş uzun
-        sürerse aynı görev ikinci kez tetiklenmemeli.
+        The advance happens here, not after running: if the job runs long
+        the same task must not fire a second time.
 
-        `only`: yalnızca bu kimlikler (açılışta kaçırılanlar için).
+        `only`: just these ids (for those missed at startup).
         """
         moment = moment or _now()
         want = set(only) if only is not None else None
@@ -200,7 +205,7 @@ class Schedule:
         return fired
 
     def skip_occurrence(self, task_id: str, moment: datetime | None = None) -> bool:
-        """Bu tetiklenmeyi koşmadan atla; bir sonraki slota geç."""
+        """Skip this trigger without running; move to the next slot."""
         moment = moment or _now()
         with self._lock:
             task = self._tasks.get(task_id)
@@ -213,7 +218,7 @@ class Schedule:
             self._write()
         return True
 
-    # -- yazma ---------------------------------------------------------
+    # -- writing -------------------------------------------------------
 
     def add(self, task: Task) -> Task:
         validate(task)
@@ -236,8 +241,8 @@ class Schedule:
                     setattr(task, name, value)
             validate(task)
 
-            # Zamanlama değiştiyse sıradaki an da değişmeli; yoksa yeni
-            # ayar bir sonraki tetiklenmeye kadar geçersiz kalıyor.
+            # If the timing changed, the next moment must change too;
+            # otherwise the new setting stays inert until the next trigger.
             if {"kind", "every_s", "at", "enabled"} & set(changes):
                 task.next_run = next_after(task, _now()).isoformat(timespec="seconds")
 
@@ -259,7 +264,7 @@ class Schedule:
                 self._write()
 
     def mark_running(self, task_id: str, child_id: str) -> None:
-        """Görev arka plan yardımcıya bağlandı — detay paneli 'koşuyor' görsün."""
+        """The task got bound to a background helper — the detail panel should show 'koşuyor'."""
         with self._lock:
             if task := self._tasks.get(task_id):
                 task.last_child_id = str(child_id or "")
@@ -281,8 +286,8 @@ class Schedule:
         for entry in raw if isinstance(raw, list) else []:
             if not isinstance(entry, dict) or not entry.get("id"):
                 continue
-            # Bilinmeyen alanları atmak, elle düzenlenmiş bir dosyanın
-            # programı açılmaz hale getirmesini engelliyor.
+            # Dropping unknown fields keeps a hand-edited file from
+            # rendering the program unable to open.
             self._tasks[entry["id"]] = Task(**{k: v for k, v in entry.items() if k in known})
 
     def _write(self) -> None:
@@ -301,13 +306,13 @@ async def run_forever(
     sleep: Callable[[float], Any] | None = None,
     paused: Callable[[], bool] | None = None,
 ) -> None:
-    """Zamanı gelen görevleri `submit` ile başlatır (arka plan yardımcı).
+    """Launches due tasks with `submit` (background helper).
 
-    Eski yol sohbet kuyruğuydu; artık `submit` köprüde `run_scheduled`
-    olmalı — çıktı sohbete değil Orkestra'ya düşer.
+    The old path was the chat queue; now `submit` should be
+    `run_scheduled` on the bridge — output lands in Orchestra, not the chat.
 
-    `paused`: True iken tetikleme yapılmaz — açılışta kaçırılan görevler
-    kullanıcı "şimdi yap / atla" demeden bekletilir.
+    `paused`: while True, nothing fires — tasks missed at startup wait
+    until the user says "do it now / skip".
     """
     import asyncio
 
@@ -317,11 +322,11 @@ async def run_forever(
             for task in schedule.due():
                 try:
                     submit(task)
-                except Exception:  # tek bir görev zamanlayıcıyı düşürmemeli
+                except Exception:  # a single task must not bring the scheduler down
                     schedule.note_run(task.id, "başlatılamadı")
         await naptime(tick_s)
 
 
 def payload(tasks: Iterable[Task]) -> list[dict[str, Any]]:
-    """Arayüze giden hal: okunabilir tarif de ekli."""
+    """The form sent to the UI: the readable description attached too."""
     return [{**asdict(task), "describe": task.describe()} for task in tasks]

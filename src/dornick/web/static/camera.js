@@ -1,20 +1,20 @@
-// Kamera.
+// Camera.
 //
-// Kare almadan önce canlı bir önizleme açılıyor: ne gönderdiğini görmeden
-// göndermek, kameranın ne yakaladığını bilmemek demek. Önizleme çıplak bir
-// video değil — köşe ayraçları, tarama çizgisi ve altında ajanın söyledikleri.
+// A live preview opens before a frame is taken: sending without seeing what
+// you send means not knowing what the camera captured. The preview is not a
+// bare video — corner brackets, a scan line, and the agent's words below.
 //
-// Yüz çerçevesi konusunda dürüst olmak gerekiyor: **tanımayı model yapıyor,
-// tarayıcı değil.** Chromium'un `FaceDetector` API'si varsa kutu gerçek bir
-// yüzün etrafına oturuyor; yoksa ortada sabit bir nişangâh duruyor ve
-// "burayı görüyorum" demiyor, yalnızca çerçeveliyor. Etiket ise karenin
-// gönderilmesinden sonra modelin kendi cevabından geliyor.
+// Honesty is required about the face frame: **the model does the recognising,
+// not the browser.** If Chromium's `FaceDetector` API exists, the box sits
+// around a real face; otherwise a fixed reticle stays in the middle and does
+// not claim "I see this spot", it only frames. The label comes from the
+// model's own answer after the frame is sent.
 //
-// Kamera sürekli açık kalmıyor: önizleme kapanınca şerit bırakılıyor.
+// The camera does not stay on: the track is released when the preview closes.
 
 const Camera = (() => {
-  // Gönderilecek karenin uzun kenarı. Daha büyüğü bağlamda yer yakıyor
-  // (bir görüntü kabaca 1.5–4.8k token) ve fark edilir bir kazanç yok.
+  // Long edge of the frame to send. Anything bigger burns context space
+  // (one image is roughly 1.5–4.8k tokens) with no noticeable gain.
   const MAX_EDGE = 1024;
   const QUALITY = 0.82;
 
@@ -30,8 +30,8 @@ const Camera = (() => {
 
   function init(opts) {
     onFrame = opts.onFrame || onFrame;
-    // Tarayıcıda gerçek bir yüz bulucu varsa kullanılıyor; yoksa çerçeve
-    // ortada duruyor. İkisi de aynı görünüyor, farkı kutunun takip etmesi.
+    // If the browser has a real face detector it is used; otherwise the
+    // frame stays centred. Both look the same, the difference is tracking.
     if ("FaceDetector" in window) {
       try {
         detector = new window.FaceDetector({ fastMode: true, maxDetectedFaces: 3 });
@@ -39,7 +39,7 @@ const Camera = (() => {
     }
   }
 
-  // --- önizleme ----------------------------------------------------------
+  // --- preview -----------------------------------------------------------
 
   async function open() {
     if (stream) return true;
@@ -66,7 +66,7 @@ const Camera = (() => {
     raf = null;
     panel.hidden = true;
     document.body.classList.remove("lensing");
-    // Şerit bırakılmazsa kamera ışığı yanık kalıyor.
+    // If the track is not released, the camera light stays on.
     if (stream) {
       for (const track of stream.getTracks()) track.stop();
       stream = null;
@@ -80,11 +80,11 @@ const Camera = (() => {
     label.textContent = text || "";
   }
 
-  // --- çerçeve -----------------------------------------------------------
+  // --- frame overlay -----------------------------------------------------
 
-  // Yüz bulucu saniyede bu kadar çalışıyor. `raf % 6` güvenilir değildi:
-  // istek kimliği sayaç değil, altıya bölümü rastgele. Zamanla ölçmek hem
-  // doğru hem de ana thread'i boşta bırakıyor.
+  // How often per second the face detector runs. `raf % 6` was unreliable:
+  // the request id is not a counter, its modulo six is random. Measuring by
+  // time is both correct and leaves the main thread idle.
   const DETECT_MS = 250;
   let lastDetect = 0;
 
@@ -106,13 +106,13 @@ const Camera = (() => {
       const faces = await detector.detect(video);
       place(faces.map((f) => f.boundingBox));
     } catch {
-      detector = null;   // bir kez patlıyorsa bir daha sorma
+      detector = null;   // if it blows up once, do not ask again
     } finally {
       detecting = false;
     }
   }
 
-  // Kutuları video karesinden panel ölçüsüne taşır.
+  // Maps the boxes from the video frame to panel dimensions.
   function place(boxes) {
     const w = video.videoWidth || 1;
     const h = video.videoHeight || 1;
@@ -129,7 +129,7 @@ const Camera = (() => {
     }
   }
 
-  // --- kare --------------------------------------------------------------
+  // --- snapshot ----------------------------------------------------------
 
   function draw() {
     const w = video.videoWidth || 640;
@@ -140,16 +140,18 @@ const Camera = (() => {
     canvas.width = Math.round(w * scale);
     canvas.height = Math.round(h * scale);
     canvas.getContext("2d").drawImage(video, 0, 0, canvas.width, canvas.height);
-    // JPEG: aynı kare PNG'de üç dört kat büyük ve fotoğrafta fark yok.
+    // JPEG: the same frame is three to four times bigger as PNG, with no
+    // visible difference for a photo.
     return canvas.toDataURL("image/jpeg", QUALITY);
   }
 
   async function snap() {
     if (!stream && !(await open())) return null;
-    // Kamera yeni açıldıysa ilk kare siyah gelebiliyor: pozlama ayarlanıyor.
-    // Eskiden kör bir 350 ms bekleme vardı — hızlı kamerada her mesajı
-    // boşuna bekletiyor, yavaş kamerada yine siyah kare çekiyordu. Artık
-    // gerçek kare olayı bekleniyor; 1 sn'de gelmezse eldekiyle devam.
+    // Right after opening, the first frame can come back black: exposure is
+    // still settling. There used to be a blind 350 ms wait — on a fast camera
+    // it delayed every message for nothing, on a slow one it still shot a
+    // black frame. Now the real frame event is awaited; if it does not come
+    // within 1 s, continue with what we have.
     if (!video.videoWidth) {
       await new Promise((done) => {
         const timer = setTimeout(done, 1000);

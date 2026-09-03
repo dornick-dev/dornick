@@ -1,22 +1,22 @@
-"""Konum: nerede olunduğu.
+"""Location: where we are.
 
-"Yarın hava nasıl?" sorusunun cevabı nereye bakılacağına bağlı ve model
-bunu hiçbir yerden öğrenemiyordu — İstanbul varsayıp cevap veriyordu.
+The answer to "what's the weather tomorrow?" depends on where to look,
+and the model had no way to learn it — it assumed Istanbul and answered.
 
-Üç kaynak var ve güvenilirlikleri çok farklı:
+There are three sources and their reliability differs wildly:
 
-    elle yazılan   kesin. Kullanıcı söylediyse doğrudur.
-    saat dilimi    ülkeyi verir, şehri vermez. Ağa çıkmaz, izin gerektirmez.
-    IP             şehir **iddia eder** ama tutmayabilir.
+    typed by hand  certain. If the user said it, it is true.
+    timezone       gives the country, not the city. No network, no permission.
+    IP             **claims** a city, but it may not hold.
 
-Üçüncüsü ölçüldü: aynı anda iki servise soruldu, biri "Manisa" dedi diğeri
-"Kayseri". Mobil bağlantıda ve büyük operatörlerde çıkış noktası kullanıcının
-bulunduğu yer değil. O yüzden IP'den gelen şehir burada bir **ipucu** olarak
-işaretleniyor, gerçek olarak değil: modelin onu doğrulamadan cevaba
-gömmemesi gerekiyor.
+The third was measured: two services were asked at the same moment, one
+said "Manisa", the other "Kayseri". On mobile connections and with big
+carriers the exit point is not where the user is. That is why the city
+coming from the IP is marked here as a **hint**, not as fact: the model
+must not bake it into an answer without verifying it.
 
-IP sorgusu kullanıcının adresini üçüncü bir servise gönderiyor. Bu yüzden
-kapalı geliyor ve ayrı bir izin istiyor.
+The IP query sends the user's address to a third-party service. That is
+why it ships disabled and asks for a separate permission.
 """
 
 from __future__ import annotations
@@ -28,8 +28,8 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
 
-# IP'den konum soran servisler. İkisi birden soruluyor: aynı şeyi
-# söylüyorlarsa güven artıyor, ayrılıyorlarsa bu da bir bilgi.
+# Services that resolve location from the IP. Both are asked: if they say
+# the same thing confidence grows, if they diverge that is information too.
 SOURCES = (
     ("ip-api", "http://ip-api.com/json/?fields=status,country,regionName,city"),
     ("ipinfo", "https://ipinfo.io/json"),
@@ -40,12 +40,13 @@ TIMEOUT = 6.0
 
 @dataclass(slots=True)
 class PlaceConfig:
-    """Konum ayarları.
+    """Location settings.
 
-    enabled: IP'den konum sorgusu. Kapalı geliyor — kullanıcının adresini
-        üçüncü bir servise göndermek sessizce yapılacak bir şey değil.
-    manual: kullanıcının kendi yazdığı yer. Yazılmışsa her şeyin önünde
-        gelir: kesin olan tek kaynak bu.
+    enabled: location lookup from the IP. Ships disabled — sending the
+        user's address to a third-party service is not something to do
+        silently.
+    manual: the place the user typed themselves. If set it comes before
+        everything: the only certain source.
     """
 
     enabled: bool = False
@@ -54,21 +55,21 @@ class PlaceConfig:
 
 @dataclass(slots=True)
 class Place:
-    # Nerede olunduğuna dair en iyi cevap.
+    # The best answer to where we are.
     where: str = ""
-    # Bu cevaba ne kadar güvenilir: "kesin" | "ülke" | "ipucu" | "yok"
+    # How trustworthy this answer is: "kesin" | "ülke" | "ipucu" | "yok"
     trust: str = "yok"
-    # Nereden geldiği — modelin cevaba yazması için.
+    # Where it came from — for the model to state in its answer.
     source: str = ""
     detail: dict[str, Any] = field(default_factory=dict)
 
 
 def from_machine() -> Place:
-    """Saat diliminden ülke. Ağa çıkmıyor, izin gerektirmiyor.
+    """Country from the timezone. No network, no permission needed.
 
-    Şehri vermiyor ve vermediğini söylüyor: "Türkiye'desin" ile
-    "İstanbul'dasın" arasındaki fark, hava durumu sorusunda cevabın
-    tamamı demek.
+    It does not give the city and says so: the difference between "you
+    are in Türkiye" and "you are in Istanbul" is the entire answer to a
+    weather question.
     """
     now = datetime.now().astimezone()
     region = (locale.getdefaultlocale()[0] or "").split("_")
@@ -91,12 +92,12 @@ def _ask(url: str) -> dict[str, Any]:
 
 
 def from_network() -> Place:
-    """IP'den şehir. **İpucu**, gerçek değil.
+    """City from the IP. A **hint**, not fact.
 
-    İki servise birden soruluyor. Aynı şehri söylüyorlarsa güven biraz
-    artıyor; ayrılıyorlarsa ikisi de yazılıyor — ölçümde tam olarak bu
-    oldu ("Manisa" ve "Kayseri") ve tek bir cevaba indirgemek yanlış
-    olurdu.
+    Both services are asked. If they name the same city confidence grows
+    a little; if they diverge both are written — exactly this happened
+    in the measurement ("Manisa" and "Kayseri") and reducing it to a
+    single answer would be wrong.
     """
     found: dict[str, str] = {}
     for name, url in SOURCES:
@@ -131,7 +132,7 @@ def from_network() -> Place:
 
 
 def locate(config: PlaceConfig) -> Place:
-    """Nerede olunduğuna dair en iyi cevap, güveniyle birlikte."""
+    """The best answer to where we are, together with its trust level."""
     if manual := (config.manual or "").strip():
         return Place(where=manual, trust="kesin", source="kullanıcı söyledi")
 
@@ -143,8 +144,8 @@ def locate(config: PlaceConfig) -> Place:
     if not network.where:
         return machine
 
-    # Ülke bilgisi makineden, şehir ağdan. İkisi birlikte daha çok şey
-    # söylüyor ama güven yine ağdakinin güveni.
+    # Country from the machine, city from the network. Together they say
+    # more, but the trust is still the network's trust.
     detail = {**machine.detail, **network.detail}
     where = network.where
     if machine.where and machine.where not in where:
@@ -153,10 +154,11 @@ def locate(config: PlaceConfig) -> Place:
 
 
 def describe(place: Place) -> str:
-    """Modele giden metin.
+    """The text that goes to the model.
 
-    Güven derecesi cümlenin içinde: "ipucu" olan bir şehri model cevaba
-    gerçek gibi gömerse, düzeltmeye çalıştığımız hatanın aynısı olur.
+    The trust level is inside the sentence: if the model bakes a "hint"
+    city into an answer as fact, that is exactly the mistake we are
+    trying to fix.
     """
     if not place.where:
         return (

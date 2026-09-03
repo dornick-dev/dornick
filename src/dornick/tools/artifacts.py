@@ -1,15 +1,17 @@
-"""Artifact aracı — kalıcı, güncellenebilir teslimat sayfaları.
+"""Artifact tool — persistent, updatable deliverable pages.
 
-Çizim (`draw`) anlık bir sunum: o turda ekranda durur, sonra akıntıya
-karışır. Artifact ise teslimatın kendisi: bir kez yayınlanır, kısa bir
-kimlik alır ve hep aynı adreste yaşar. Model sonraki turlarda aynı kimliği
-güncelleyerek sayfayı büyütür — her seferinde yenisini açıp kullanıcıyı
-kopya sayfalara boğmaz.
+A drawing (`draw`) is a momentary presentation: it sits on screen that
+turn, then blends into the stream. An artifact is the deliverable
+itself: published once, given a short id, living at the same address
+forever. In later turns the model grows the page by updating the same
+id — instead of opening a new one each time and drowning the user in
+duplicate pages.
 
-Depo atölye dışında (`.dornick/artifacts/`) ama yazma bu aracın kendi yolu
-üzerinden yapılıyor: kimlik sıkı bir desenden geçiyor, yol istek verisinden
-türetilmiyor. Atölye sınırı dosya araçlarını bağlar; burada dosya aracı yok,
-`mutates=True` olduğu için izin kapısı yine de soruyor.
+The store is outside the workshop (`.dornick/artifacts/`), but writing
+goes through this tool's own path: the id passes a strict pattern, the
+path is not derived from request data. The workshop boundary binds the
+file tools; there is no file tool here, and since `mutates=True` the
+permission gate still asks.
 """
 
 from __future__ import annotations
@@ -133,9 +135,10 @@ def register(registry: ToolRegistry) -> None:
 
 
 def _announce(ctx: ToolContext, meta: dict[str, Any], action: str) -> None:
-    """Kartı sohbete düşüren olay. Günlüğe not olarak yazılıyor; sunucu
-    STREAMED_NOTES üzerinden SSE'ye taşıyor — hub'a doğrudan el atmadan
-    mevcut olay yayma kalıbının içinden."""
+    """The event that drops the card into the chat. Written to the log as
+    a note; the server carries it to SSE via STREAMED_NOTES — inside the
+    existing event-broadcast pattern, without reaching into the hub
+    directly."""
     ctx.session.log.note(
         "artifact",
         id=meta["id"],

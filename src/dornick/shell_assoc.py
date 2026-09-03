@@ -1,7 +1,8 @@
-"""Windows Explorer sağ tık: 'Dornick ile aç'.
+"""Windows Explorer right-click: 'Dornick ile aç'.
 
-HKCU altına yazılır — yönetici hakkı yok. Kurulum ve Ayarlar › Makine
-aynı yardımcıları kullanır; kaldırınca değerler silinir.
+Written under HKCU — no administrator rights. The installer and
+Settings › Machine use the same helpers; uninstalling removes the
+values.
 """
 
 from __future__ import annotations
@@ -24,11 +25,11 @@ def available() -> bool:
 
 
 def command_line(*, open_arg: str = "%1") -> str:
-    """Sağ tık komut satırı. `open_arg` Background için `%V` olur."""
+    """The right-click command line. `open_arg` becomes `%V` for Background."""
     from .winicon import app_executable
 
     runner = app_executable()
-    # -m dornick.cli: kurulumda paket yolu PYTHONPATH'te.
+    # -m dornick.cli: in the installed layout the package path is on PYTHONPATH.
     return f'"{runner}" -m dornick.cli --app --open "{open_arg}"'
 
 

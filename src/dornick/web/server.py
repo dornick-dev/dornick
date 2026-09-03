@@ -645,10 +645,10 @@ def _project_kind(root: Path) -> str:
     try:
         from .. import testrun
 
-        rig = testrun.tespit(root)
+        rig = testrun.detect(root)
     except Exception:  # pragma: no cover - detection is a convenience, stay quiet if it blows
         return ""
-    return rig.etiket if rig is not None else ""
+    return rig.label if rig is not None else ""
 
 
 def _relative(path: Path, root: Path) -> str:
@@ -879,7 +879,7 @@ class _Handler(BaseHTTPRequestHandler):
             d = (recognition.status(config.state_dir) if config is not None
                  else {"on": False, "son_kosu": ""})
             self._json({"on": d["on"], "kosuyor": recognition.running(),
-                        "hazir": recognition.hazir(), "son": d["son_kosu"],
+                        "hazir": recognition.ready(), "son": d["son_kosu"],
                         "learn_cloud_ok": d.get("learn_cloud_ok", False)})
         elif route == "/api/dil":
             # The UI language the setup wizard chose. localStorage cannot be
@@ -1203,8 +1203,8 @@ class _Handler(BaseHTTPRequestHandler):
                     model = model.strip().rsplit(":", 1)[0]
             record = mind.set_session_meta(
                 sid,
-                ad=None if name is None else str(name),
-                etiketler=None if not isinstance(tags, list) else tags,
+                name=None if name is None else str(name),
+                tags=None if not isinstance(tags, list) else tags,
                 path=None if path is None else str(path),
                 model=None if model is None else str(model),
                 provider=None if provider is None else str(provider),
@@ -1235,7 +1235,7 @@ class _Handler(BaseHTTPRequestHandler):
                 self._json({"ok": False, "error": "geçersiz oturum"})
                 return
             controller = getattr(self.server, "controller", None)
-            lanes = getattr(controller, "seritler", None) or {}
+            lanes = getattr(controller, "lanes", None) or {}
             lane = lanes.get(sid) if isinstance(lanes, dict) else None
             if lane is not None and getattr(lane, "busy", False):
                 self._json({"ok": False,
@@ -1528,16 +1528,16 @@ class _Handler(BaseHTTPRequestHandler):
             # while the loop started, said "too little new data" within a
             # second and exited.
             reason = ("duzenek_yok" if hub is None
-                      else recognition.maybe_start(config.state_dir, hub, zorla=True))
+                      else recognition.maybe_start(config.state_dir, hub, force=True))
             d = recognition.status(config.state_dir)
             self._json({"ok": reason == "basladi", "sebep": reason,
                         "on": d["on"], "kosuyor": recognition.running(),
-                        "hazir": recognition.hazir(), "son": d["son_kosu"]})
+                        "hazir": recognition.ready(), "son": d["son_kosu"]})
             return
 
         d = recognition.status(config.state_dir)
         self._json({"ok": True, "on": d["on"], "kosuyor": recognition.running(),
-                    "hazir": recognition.hazir(), "son": d["son_kosu"]})
+                    "hazir": recognition.ready(), "son": d["son_kosu"]})
 
     # -- settings -------------------------------------------------------
 
@@ -1975,7 +1975,7 @@ class _Handler(BaseHTTPRequestHandler):
                 # save road depended on the tool, the "I did this before"
                 # memory would sometimes come and sometimes not.
                 from .. import workflow_mind
-                workflow_mind.akisi_hatirla(getattr(self.server, "mind", None), wf)
+                workflow_mind.recall_workflow(getattr(self.server, "mind", None), wf)
                 self._json({"ok": True, "workflow": workflows.to_dict(wf)})
                 return
             if action == "remove":
@@ -2065,7 +2065,7 @@ class _Handler(BaseHTTPRequestHandler):
                         f"[Plan onaylandı · {plan.id}] {plan.title}. "
                         f"Adımları uygula:\n" + "\n".join(
                             f"- {s.get('text') or s}" for s in (plan.steps or [])),
-                        siraya=True)
+                        queue=True)
                 self._json({"ok": True, "plan": plan_store.to_dict(plan)})
                 hub = getattr(self.server, "hub", None)
                 if hub is not None:
@@ -3574,7 +3574,7 @@ class _Handler(BaseHTTPRequestHandler):
         # badge comes from here.
         running: set[str] = set()
         try:
-            for sid, lane in (getattr(controller, "seritler", None) or {}).items():
+            for sid, lane in (getattr(controller, "lanes", None) or {}).items():
                 if getattr(lane, "busy", False):
                     running.add(sid)
         except Exception:
@@ -3827,8 +3827,8 @@ class _Handler(BaseHTTPRequestHandler):
 
                 path = environment.download_update(
                     info["indirme"], folder,
-                    beklenen_boyut=int(info.get("boyut") or 0),
-                    ad=str(info.get("ad") or ""), progress=progress)
+                    expected_size=int(info.get("boyut") or 0),
+                    name=str(info.get("ad") or ""), progress=progress)
                 announce({"asama": "kuruluyor", "yeni": info["yeni"]})
                 environment.start_update(path)
                 announce({"asama": "acildi", "yeni": info["yeni"]})

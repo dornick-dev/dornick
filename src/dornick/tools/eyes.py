@@ -1,15 +1,16 @@
-"""Bakma aracı — ajanın gözünü kullanması.
+"""Looking tool — the agent using its eye.
 
-Kamera sürekli açık ve kare alıyor ama **hiçbiri kendiliğinden modele
-gitmiyor**. Her kareyi göndermek dakikada onlarca istek, saniyede binlerce
-token demek: kullanılamaz.
+The camera is continuously open and taking frames, but **none of them
+goes to the model on its own**. Sending every frame would mean dozens of
+requests a minute, thousands of tokens a second: unusable.
 
-Bunun yerine kareler Python tarafında, bellekte duruyor. Model bakmaya karar
-verdiğinde buradan tek bir kare alıyor.
+Instead the frames sit on the Python side, in memory. When the model
+decides to look, it takes a single frame from here.
 
-İkinci ve daha ucuz soru "az önce bir şey oldu mu": onun cevabı hareket
-geçmişinden geliyor ve modele hiç uğramıyor. Boş bir odada "bir şey oldu mu"
-sorusu tek bir görüntü bile göndermeden cevaplanabiliyor.
+The second and cheaper question is "did anything just happen": its
+answer comes from the motion history and never touches the model. In an
+empty room, "did anything happen" can be answered without sending a
+single image.
 """
 
 from __future__ import annotations
@@ -65,17 +66,17 @@ def register(registry: ToolRegistry) -> None:
     )
     async def look(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
         lens = ctx.lens
-        # Susturulmuş göz "kamera kapalı" değil: kullanıcı istedi diye
-        # bakılmıyor. Ayrımı söylemek gerekiyor — model aksi halde kamerayı
-        # açtırmaya çalışıyor.
+        # A snoozed eye is not "camera off": we are not looking because the
+        # user asked us not to. The distinction must be stated — otherwise
+        # the model tries to get the camera opened.
         if lens is not None and getattr(lens, "snoozed", False):
             return ToolResult.error(
                 "Göz kapalı: kullanıcı izlememeni istedi. Kendiliğinden açma; "
                 "üstteki kamera ikonundan veya sohbette 'kamerayı aç' deyince açılır."
             )
         if lens is None or not lens.live:
-            # Ayarlardan kapatılmışsa bu bir tercih, bir eksiklik değil —
-            # model kullanıcıyı kamerayı açmaya ikna etmeye çalışmamalı.
+            # Turned off in settings it is a preference, not a deficiency —
+            # the model must not try to talk the user into enabling the camera.
             if not bool(getattr(getattr(ctx.config, "camera", None), "enabled", False)):
                 return ToolResult.error(
                     "Kamera kapalı. Bakılmaz ve varmış gibi davranılmaz; "
@@ -112,17 +113,17 @@ def register(registry: ToolRegistry) -> None:
             if not frame:
                 return ToolResult.error("Kare alınamadı; kamera henüz ısınıyor olabilir.")
 
-            # Görüntü araç sonucunda taşınamıyor: OpenAI sözleşmesi role=tool
-            # içeriğinin dize olmasını istiyor. Bu yüzden kare `detail` ile
-            # döngüye veriliyor ve bir sonraki kullanıcı turuna iliştiriliyor.
+            # The image cannot travel in the tool result: the OpenAI contract
+            # wants role=tool content to be a string. So the frame is handed
+            # to the loop via `detail` and attached to the next user turn.
             from .. import sight
 
-            ozet = sight.analyze_url(frame)
-            metin = f"Kare alındı ({age:.0f} saniye önce). Aşağıda görüyorsun."
-            if ozet:
-                metin += f"\nYerel GPU analizi: {ozet}"
+            summary = sight.analyze_url(frame)
+            text = f"Kare alındı ({age:.0f} saniye önce). Aşağıda görüyorsun."
+            if summary:
+                text += f"\nYerel GPU analizi: {summary}"
             return ToolResult(
-                metin, detail={"image": frame, "age": round(age, 1)},
+                text, detail={"image": frame, "age": round(age, 1)},
             )
 
         return ToolResult.error("`action` now ya da motion olmalı.")

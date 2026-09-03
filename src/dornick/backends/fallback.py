@@ -1,25 +1,27 @@
-"""Yedek model: asıl model kalıcı olarak susunca iş ölmesin.
+"""Fallback model: when the primary model goes permanently silent, the job must not die.
 
-Sorun sahada şöyle görünüyor: uzun bir iş koşuyor, kredi bitiyor (402) ya
-da ayarlardaki model kimliği artık geçersiz oluyor. Sağlayıcı her istekte
-aynı cevabı veriyor, yani beklemek işe yaramıyor; döngü hatayı yüzeye
-çıkarıp duruyor ve saatlerdir süren iş yarıda kalıyor.
+In the field the problem looks like this: a long job is running, credits
+run out (402) or the model id in the settings becomes invalid. The
+provider gives the same answer on every request, so waiting achieves
+nothing; the loop keeps surfacing the error and a job hours in the making
+is left half-done.
 
-Bu sarmalayıcı araya giriyor: asıl model KALICI bir hatayla dönerse aynı
-tur, yedek modelle bir kez daha deneniyor. Başarılıysa iş sürüyor ve
-kullanıcı sohbette tek satır görüyor. O andan sonra tur yedek modelle
-devam ediyor — her turda asıl modeli yeniden denemek, her turu iki isteğe
-çıkarır ve kredi bittiyse hiçbir zaman düzelmez.
+This wrapper steps in: if the primary model returns a PERMANENT error,
+the same turn is tried once more with the fallback model. If it succeeds
+the job continues and the user sees a single line in the chat. From that
+moment on, turns continue with the fallback — retrying the primary on
+every turn would double every turn into two requests, and if credits are
+out it never recovers.
 
-Neden BACKEND katmanında: döngü (`loop.py`) hangi modelin konuştuğunu
-bilmiyor, yalnızca bir `Backend` görüyor. Geçişi buraya koymak döngüyü,
-oturum günlüğünü ve arayüzü değiştirmeden çalışıyor — `build_client`
-yedek tanımlıysa asıl istemci yerine bunu döndürüyor.
+Why in the BACKEND layer: the loop (`loop.py`) does not know which model
+is speaking, it only sees a `Backend`. Putting the switch here works
+without touching the loop, the session log, or the UI — `build_client`
+returns this instead of the primary client when a fallback is defined.
 
-Sınır: GEÇİCİ hatalar buraya hiç uğramıyor. Bağlantı kopması, 429 ve 5xx
-zaten döngünün yeniden deneme merdiveninde (RETRY_DELAYS) ve orada
-kalmalı — bir sağlayıcı hıçkırığında kalıcı olarak zayıf bir modele
-geçmek, sessizce kalitesi düşmüş bir iş demek.
+Boundary: TRANSIENT errors never come here. Dropped connections, 429 and
+5xx are already on the loop's retry ladder (RETRY_DELAYS) and must stay
+there — permanently switching to a weaker model on a provider hiccup
+means a job whose quality silently degraded.
 """
 
 from __future__ import annotations
@@ -31,18 +33,19 @@ from typing import Any
 from ..config import ModelConfig
 from .base import Backend, Callbacks, TurnResult
 
-# Kalıcı sayılan haller. Ölçü tek soru: AYNI istek birazdan tekrar
-# gönderilse sonuç değişir mi? Değişmeyecekse yedeğe geçmek doğru.
+# States that count as permanent. The measure is a single question: if
+# the SAME request were sent again shortly, would the result change? If
+# not, switching to the fallback is right.
 #
-#   402  ödeme / kredi — para yatana kadar her istek aynı
-#   401  anahtar geçersiz — döngü bunu geçici sayıyor (anahtar sonradan
-#        düzelebilir) ve yeniden deniyor; oraya dokunmuyoruz
-#   404  model yok / kaldırılmış
-#   400  çoğu zaman geçersiz model kimliği ya da desteklenmeyen alan
-#   403  erişim yok (bölge, plan)
+#   402  payment / credits — every request is the same until money lands
+#   401  invalid key — the loop counts this as transient (the key can be
+#        fixed later) and retries; we don't touch that
+#   404  model missing / removed
+#   400  usually an invalid model id or an unsupported field
+#   403  no access (region, plan)
 _PERMANENT_STATUS = ("400", "402", "403", "404", "405", "422")
 
-# Durum kodu gelmeyen sağlayıcılar aynı şeyi düz metinle söylüyor.
+# Providers that send no status code say the same thing in plain text.
 _PERMANENT_TEXT = re.compile(
     r"is not a valid model|model_not_found|modeli bulunamadı|"
     r"insufficient|credit|quota|billing|payment required|"
@@ -52,11 +55,11 @@ _PERMANENT_TEXT = re.compile(
 
 
 def is_permanent(error: str | None) -> bool:
-    """Yeniden denemenin sonucu değiştirmeyeceği bir hata mı?
+    """Is this an error where retrying would not change the outcome?
 
-    Kararı METİN üzerinden veriyoruz çünkü backend'ler hatayı zaten
-    okunur bir cümleye çeviriyor (`_explain`) ve özgün istisna nesnesi
-    o noktada kayboluyor.
+    We decide from the TEXT because the backends already turn the error
+    into a readable sentence (`_explain`) and the original exception
+    object is gone by that point.
     """
     text = (error or "").strip()
     if not text:
@@ -67,29 +70,29 @@ def is_permanent(error: str | None) -> bool:
 
 
 class FallbackBackend:
-    """Asıl backend'i sarar; kalıcı hatada yedeğe geçer ve orada kalır."""
+    """Wraps the primary backend; switches to the fallback on a permanent error and stays there."""
 
     def __init__(self, model: ModelConfig, build: Any) -> None:
         self._build = build
         self._model = model
         self._primary: Backend | None = build(model)
         self._fallback: Backend | None = None
-        # Geçiş yapıldı mı: yapıldıysa artık asıl model hiç denenmiyor.
+        # Has the switch happened: if so, the primary model is never tried again.
         self.switched = False
 
-    # -- yardımcılar ---------------------------------------------------
+    # -- helpers -------------------------------------------------------
 
     @property
     def fallback_name(self) -> str:
         return (self._model.fallback_model or "").strip()
 
     def _fallback_client(self) -> Backend:
-        """Yedek istemci ilk gerektiğinde kuruluyor.
+        """The fallback client is built when first needed.
 
-        Sağlayıcı ve adres aynı kalıyor, yalnızca model adı değişiyor:
-        yedek "aynı kapıdaki başka model" demek. Farklı bir sağlayıcıya
-        düşmek ayarların işi — burada sessizce yapılması, hangi anahtarla
-        konuşulduğunu görünmez kılardı.
+        The provider and address stay the same, only the model name
+        changes: fallback means "another model at the same door". Falling
+        to a different provider is the settings' job — doing it silently
+        here would make it invisible which key is being spoken with.
         """
         if self._fallback is None:
             self._fallback = self._build(
@@ -97,7 +100,7 @@ class FallbackBackend:
             )
         return self._fallback
 
-    # -- Backend sözleşmesi --------------------------------------------
+    # -- the Backend contract ------------------------------------------
 
     async def turn(
         self,
@@ -115,15 +118,15 @@ class FallbackBackend:
         result = await self._primary.turn(
             prepared, tools, cancel=cancel, callbacks=callbacks)
 
-        # Kesme bir hata değil bir karar: yedeğe geçmek yanlış olurdu.
+        # A cancel is a decision, not an error: switching to the fallback would be wrong.
         if result.interrupted or not is_permanent(result.error):
             return result
 
         self.switched = True
-        # Tek satırlık haber. `on_text` gösterim kanalı: satır sohbette
-        # görünüyor ama cevabın içeriğine ve oturum günlüğüne girmiyor —
-        # geçmişe modelin söylemediği bir cümleyi yazmak, sonraki turlarda
-        # modelin kendi sözü sanılırdı.
+        # A one-line notice. `on_text` is the display channel: the line
+        # shows in the chat but does not enter the answer's content or the
+        # session log — writing a sentence the model never said into the
+        # history would be mistaken for the model's own words on later turns.
         if callbacks is not None:
             callbacks.on_text(
                 f"\n_Asıl model yanıt vermedi — yedek modelle sürüyorum "

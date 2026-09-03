@@ -1,102 +1,103 @@
-﻿# Kurulum paketini hazırlar ve (iscc varsa) sihirbazı derler.
+﻿# Prepares the installation package and (if iscc is present) compiles the wizard.
 #
-# Ne yapar:
-#   1. python.org'un gömülü (embeddable) Python 3.11'ini indirir ve açar —
-#      hedef makinede Python kurulu olması gerekmez.
-#   2. get-pip ile pip kurar, uygulamanın bağımlılıklarını O python'a yükler.
-#   3. src/dornick kaynağını ve (eğitim bileşeni için) dornick-base-model
-#      düzeneğini çıktı klasörüne kopyalar. .dornick'deki anahtar/veri ASLA
-#      pakete girmez — yalnız kod, varlıklar ve eğitim dosyaları.
-#   4. Torch'un CPU tekerleğini eğitim bileşeninin kendi site klasörüne
-#      (egitim\sitepaket) kurar: bileşen seçilmezse klasör hedefe hiç
-#      gitmez ve python311._pth'teki yol sessizce boş kalır — kurulum
-#      sırasında pip koşturmaya gerek kalmıyor.
-#   5. Inno Setup (iscc) bulunursa dornick.iss'i derler.
+# What it does:
+#   1. Downloads and extracts python.org's embeddable Python 3.11 —
+#      the target machine does not need Python installed.
+#   2. Installs pip via get-pip, installs the app's dependencies into THAT python.
+#   3. Copies the src/dornick source and (for the training component) the
+#      dornick-base-model rig into the output folder. Keys/data from .dornick
+#      NEVER enter the package — only code, assets and training files.
+#   4. Installs Torch's CPU wheel into the training component's own site
+#      folder (egitim\sitepaket): if the component is not selected the folder
+#      never reaches the target and the path in python311._pth stays silently
+#      empty — no need to run pip during installation.
+#   5. If Inno Setup (iscc) is found, compiles dornick.iss.
 #
-# Kullanım:
+# Usage:
 #   powershell -ExecutionPolicy Bypass -File installer\build.ps1
-#   ... -AtlaTorch    : eğitim bileşenini (torch + düzenek) paketleme
-#   ... -AtlaDinleme  : dinleme bileşenini (faster-whisper + sounddevice) paketleme
-#   ... -AtlaKamera   : kamera bileşenini (opencv + onnxruntime-gpu) paketleme
-#   ... -AtlaDerleme  : iscc'yi çağırma, yalnız paketi hazırla
+#   ... -SkipTorch    : do not package the training component (torch + rig)
+#   ... -SkipListen   : do not package the listening component (faster-whisper + sounddevice)
+#   ... -SkipCamera   : do not package the camera component (opencv + onnxruntime-gpu)
+#   ... -SkipCompile  : do not invoke iscc, only prepare the package
 
 param(
-    [switch]$AtlaTorch,
-    [switch]$AtlaDinleme,
-    [switch]$AtlaKamera,
-    [switch]$AtlaDerleme,
-    # Paket sürümü. Boş bırakılırsa pyproject.toml'daki version okunur —
-    # sürüm tek yerden yönetilir, iss'e /DSurum ile geçer.
-    [string]$Surum = "",
-    # Eğitim düzeneğinin kaynağı. Varsayılan geliştirme makinesinin yolu;
-    # depoyu klonlayan biri kendi yolunu verebilir. Yol yoksa betik
-    # PATLAMIYOR, eğitim bileşenini atlayıp söylüyor — "kurulum paketi
-    # üretemedim" demek, kullanıcının istemediği bir bileşen yüzünden
-    # orantısız.
-    # HARİCİ depo — diskteki gerçek adı bu (rebrand'de yeniden adlandırılmadı).
-    [string]$TabanDepo = "D:\Projects\ai\neocp-base-model"
+    [switch]$SkipTorch,
+    [switch]$SkipListen,
+    [switch]$SkipCamera,
+    [switch]$SkipCompile,
+    # Package version. If left empty, version is read from pyproject.toml —
+    # the version is managed in one place and passed to the iss via /DVersion.
+    [string]$Version = "",
+    # Source of the training rig. Default is the development machine's path;
+    # someone cloning the repo can pass their own path. If the path is missing
+    # the script does NOT blow up: it skips the training component and says so —
+    # "could not produce the installer" would be disproportionate for a
+    # component the user did not ask for.
+    # EXTERNAL repo — this is its real on-disk name (not renamed in the rebrand).
+    [string]$BaseRepo = "D:\Projects\ai\neocp-base-model"
 )
 
 $ErrorActionPreference = "Stop"
 
-# -- yollar -------------------------------------------------------------------
-$Kok      = Split-Path -Parent $PSScriptRoot          # dornick deposu
-$Cikti    = Join-Path $PSScriptRoot "dist"
-$Indirme  = Join-Path $Cikti "indirme"                # arşivler burada önbelleklenir
-$Paket    = Join-Path $Cikti "paket"                  # kurulacak ağacın birebir kopyası
+# -- paths --------------------------------------------------------------------
+$RepoRoot    = Split-Path -Parent $PSScriptRoot       # the dornick repo
+$OutDir      = Join-Path $PSScriptRoot "dist"
+$DownloadDir = Join-Path $OutDir "indirme"            # archives are cached here
+$PackageDir  = Join-Path $OutDir "paket"              # exact copy of the tree to be installed
 
-if (-not $Surum) {
-    $eslesme = Select-String -Path (Join-Path $Kok "pyproject.toml") -Pattern '^version\s*=\s*"([^"]+)"'
-    if (-not $eslesme) { throw "pyproject.toml içinde version bulunamadı" }
-    $Surum = $eslesme.Matches[0].Groups[1].Value
+if (-not $Version) {
+    $found = Select-String -Path (Join-Path $RepoRoot "pyproject.toml") -Pattern '^version\s*=\s*"([^"]+)"'
+    if (-not $found) { throw "version not found in pyproject.toml" }
+    $Version = $found.Matches[0].Groups[1].Value
 }
 
-$PySurum  = "3.11.9"
-$PyZip    = "python-$PySurum-embed-amd64.zip"
-$PyUrl    = "https://www.python.org/ftp/python/$PySurum/$PyZip"
+$PyVersion = "3.11.9"
+$PyZip     = "python-$PyVersion-embed-amd64.zip"
+$PyUrl     = "https://www.python.org/ftp/python/$PyVersion/$PyZip"
 
-# Uygulamanın gerçekten kullandığı üçüncü partiler (src/dornick import taraması):
-#   zorunlu : anthropic, rich, numpy (taban.npz çıkarımı), pywebview (pencere)
-#   pratik  : pillow (tepsi/simge/ekran görüntüsü), pystray (tepsi),
-#             edge-tts (ses), openai (LM Studio/Ollama), mcp (bağlayıcılar),
-#             pypdf + reportlab (paketle gelen yetenekler)
-#   dışarıda: faster-whisper/sounddevice (dinleme) ve opencv+onnxruntime-gpu
-#             (kamera) — ağır; yoklukları özelliği zaten kapatıyor.
-$Bagimliliklar = @(
+# Third parties the app actually uses (src/dornick import scan):
+#   required : anthropic, rich, numpy (taban.npz inference), pywebview (window)
+#   practical: pillow (tray/icon/screenshot), pystray (tray),
+#              edge-tts (voice), openai (LM Studio/Ollama), mcp (connectors),
+#              pypdf + reportlab (capabilities shipped with the package)
+#   excluded : faster-whisper/sounddevice (listening) and opencv+onnxruntime-gpu
+#              (camera) — heavy; their absence already disables the feature.
+$Dependencies = @(
     "anthropic>=0.92", "rich>=13.7", "pywebview>=5.0", "numpy",
     "pillow>=10.0", "pystray>=0.19", "edge-tts>=7.0", "openai>=1.60",
     "mcp>=1.2", "pypdf", "reportlab"
 )
 
-function Adim([string]$mesaj) { Write-Host "`n== $mesaj" -ForegroundColor Cyan }
+function Step([string]$message) { Write-Host "`n== $message" -ForegroundColor Cyan }
 
-function Kopyala([string]$kaynak, [string]$hedef, [string[]]$haric) {
-    # robocopy: 8 ve üstü gerçek hata; 0-7 "kopyalandı/aynıydı" demek.
-    $args = @($kaynak, $hedef, "/E", "/NFL", "/NDL", "/NJH", "/NJS", "/NP")
-    if ($haric) { $args += "/XD"; $args += $haric }
+function Copy-Tree([string]$source, [string]$destination, [string[]]$exclude) {
+    # robocopy: 8 and above is a real error; 0-7 means "copied/identical".
+    $args = @($source, $destination, "/E", "/NFL", "/NDL", "/NJH", "/NJS", "/NP")
+    if ($exclude) { $args += "/XD"; $args += $exclude }
     robocopy @args | Out-Null
-    if ($LASTEXITCODE -ge 8) { throw "robocopy başarısız ($LASTEXITCODE): $kaynak" }
+    if ($LASTEXITCODE -ge 8) { throw "robocopy failed ($LASTEXITCODE): $source" }
 }
 
-# -- 0) temiz sayfa -----------------------------------------------------------
-Adim "Çıktı klasörü: $Paket"
-if (Test-Path $Paket) { Remove-Item -Recurse -Force $Paket }
-New-Item -ItemType Directory -Force $Paket | Out-Null
-New-Item -ItemType Directory -Force $Indirme | Out-Null
+# -- 0) clean slate -----------------------------------------------------------
+Step "Output folder: $PackageDir"
+if (Test-Path $PackageDir) { Remove-Item -Recurse -Force $PackageDir }
+New-Item -ItemType Directory -Force $PackageDir | Out-Null
+New-Item -ItemType Directory -Force $DownloadDir | Out-Null
 
-# -- 1) gömülü Python ---------------------------------------------------------
-Adim "Gömülü Python $PySurum"
-$zipYolu = Join-Path $Indirme $PyZip
-if (-not (Test-Path $zipYolu)) {
-    Invoke-WebRequest -Uri $PyUrl -OutFile $zipYolu
+# -- 1) embedded Python -------------------------------------------------------
+Step "Embedded Python $PyVersion"
+$zipPath = Join-Path $DownloadDir $PyZip
+if (-not (Test-Path $zipPath)) {
+    Invoke-WebRequest -Uri $PyUrl -OutFile $zipPath
 }
-$PyDizin = Join-Path $Paket "python"
-Expand-Archive -Path $zipYolu -DestinationPath $PyDizin -Force
+$PyDir = Join-Path $PackageDir "python"
+Expand-Archive -Path $zipPath -DestinationPath $PyDir -Force
 
-# ._pth: gömülü Python'un arama yolu bu dosyadan ibaret. Kaynak, pip
-# klasörü ve (varsa) eğitim bileşeninin torch klasörü ekleniyor — var
-# olmayan yol sessizce atlanır, o yüzden eğitimsiz kurulumda da doğru.
-$pth = Join-Path $PyDizin "python311._pth"
+# ._pth: the embedded Python's search path is this file and nothing else.
+# The source, the pip folder and (if present) the training component's torch
+# folder are added — a non-existent path is silently skipped, so this is
+# also correct for an install without training.
+$pth = Join-Path $PyDir "python311._pth"
 @(
     "python311.zip",
     ".",
@@ -108,138 +109,144 @@ $pth = Join-Path $PyDizin "python311._pth"
     "import site"
 ) | Set-Content -Path $pth -Encoding Ascii
 
-# -- 2) pip + bağımlılıklar ---------------------------------------------------
-Adim "pip kuruluyor"
-$getPip = Join-Path $Indirme "get-pip.py"
+# -- 2) pip + dependencies ----------------------------------------------------
+Step "Installing pip"
+$getPip = Join-Path $DownloadDir "get-pip.py"
 if (-not (Test-Path $getPip)) {
     Invoke-WebRequest -Uri "https://bootstrap.pypa.io/get-pip.py" -OutFile $getPip
 }
-$PyExe = Join-Path $PyDizin "python.exe"
+$PyExe = Join-Path $PyDir "python.exe"
 & $PyExe $getPip --no-warn-script-location
-if ($LASTEXITCODE -ne 0) { throw "get-pip başarısız" }
+if ($LASTEXITCODE -ne 0) { throw "get-pip failed" }
 
-Adim "Bağımlılıklar kuruluyor"
-& $PyExe -m pip install --no-warn-script-location @Bagimliliklar
-if ($LASTEXITCODE -ne 0) { throw "pip install başarısız" }
+Step "Installing dependencies"
+& $PyExe -m pip install --no-warn-script-location @Dependencies
+if ($LASTEXITCODE -ne 0) { throw "pip install failed" }
 
-# -- 3) uygulama kaynağı ------------------------------------------------------
-Adim "Kaynak kopyalanıyor (src/dornick + varlıklar)"
-Kopyala (Join-Path $Kok "src\dornick") (Join-Path $Paket "src\dornick") @("__pycache__")
-# Sürümün tek gerçek kaynağı pyproject.toml; ortam.surum() çalışma zamanında
-# paket kökünden okur — kurulu ağaç da depo gibi kökünde taşımalı.
-Copy-Item (Join-Path $Kok "pyproject.toml") $Paket
+# -- 3) application source ----------------------------------------------------
+Step "Copying source (src/dornick + assets)"
+Copy-Tree (Join-Path $RepoRoot "src\dornick") (Join-Path $PackageDir "src\dornick") @("__pycache__")
+# pyproject.toml is the single source of truth for the version;
+# environment.surum() reads it from the package root at runtime — the
+# installed tree must carry it at its root just like the repo does.
+Copy-Item (Join-Path $RepoRoot "pyproject.toml") $PackageDir
 
-# -- 4) eğitim bileşeni (isteğe bağlı) ---------------------------------------
-if (-not $AtlaTorch -and -not (Test-Path $TabanDepo)) {
-    # Depoyu klonlayan biri bu yolu taşımıyor. Patlamak yerine bileşeni
-    # atlıyoruz: kullanıcı "kurulum paketi üretemedim" değil, "eğitim
-    # bileşeni pakete girmedi, sebebi şu" duymalı.
-    Write-Host ("`nEğitim deposu bulunamadı: {0}" -f $TabanDepo) -ForegroundColor Yellow
-    Write-Host "Eğitim bileşeni (Beni tanı) pakete girmeyecek."
-    Write-Host "Kendi yolunu vermek için: -TabanDepo <yol>   ·   bilerek atlamak için: -AtlaTorch"
-    $AtlaTorch = $true
+# -- 4) training component (optional) -----------------------------------------
+if (-not $SkipTorch -and -not (Test-Path $BaseRepo)) {
+    # Someone cloning the repo does not carry this path. Instead of blowing up
+    # we skip the component: the user should hear "the training component was
+    # not packaged, here is why" — not "could not produce the installer".
+    Write-Host ("`nTraining repo not found: {0}" -f $BaseRepo) -ForegroundColor Yellow
+    Write-Host "The training component (Know-me) will not be packaged."
+    Write-Host "To pass your own path: -BaseRepo <path>   ·   to skip deliberately: -SkipTorch"
+    $SkipTorch = $true
 }
 
-if (-not $AtlaTorch) {
-    Adim "Eğitim düzeneği kopyalanıyor ($TabanDepo)"
-    $Egitim = Join-Path $Paket "egitim"
+if (-not $SkipTorch) {
+    Step "Copying training rig ($BaseRepo)"
+    $TrainingDir = Join-Path $PackageDir "egitim"
 
-    Kopyala (Join-Path $TabanDepo "betikler") (Join-Path $Egitim "betikler") @("__pycache__")
-    Kopyala (Join-Path $TabanDepo "model")    (Join-Path $Egitim "model")    @("__pycache__")
-    # ayarlar.py yedek öğretmen içindir; anahtar.env BİLEREK paket dışı —
-    # anahtarsız yedek sessizce devre dışı kalır, seçili model yeter.
-    Copy-Item (Join-Path $TabanDepo "ayarlar.py") $Egitim
-    New-Item -ItemType Directory -Force (Join-Path $Egitim "out")  | Out-Null
-    New-Item -ItemType Directory -Force (Join-Path $Egitim "veri") | Out-Null
-    Copy-Item (Join-Path $TabanDepo "out\eniyi.pt") (Join-Path $Egitim "out")
-    Copy-Item (Join-Path $TabanDepo "veri\korpus.jsonl")    (Join-Path $Egitim "veri")
-    Copy-Item (Join-Path $TabanDepo "veri\korpus_en.jsonl") (Join-Path $Egitim "veri")
+    Copy-Tree (Join-Path $BaseRepo "betikler") (Join-Path $TrainingDir "betikler") @("__pycache__")
+    Copy-Tree (Join-Path $BaseRepo "model")    (Join-Path $TrainingDir "model")    @("__pycache__")
+    # ayarlar.py is for the fallback teacher; anahtar.env is DELIBERATELY kept
+    # out of the package — without a key the fallback silently stays disabled,
+    # the selected model is enough.
+    Copy-Item (Join-Path $BaseRepo "ayarlar.py") $TrainingDir
+    New-Item -ItemType Directory -Force (Join-Path $TrainingDir "out")  | Out-Null
+    New-Item -ItemType Directory -Force (Join-Path $TrainingDir "veri") | Out-Null
+    Copy-Item (Join-Path $BaseRepo "out\eniyi.pt") (Join-Path $TrainingDir "out")
+    Copy-Item (Join-Path $BaseRepo "veri\korpus.jsonl")    (Join-Path $TrainingDir "veri")
+    Copy-Item (Join-Path $BaseRepo "veri\korpus_en.jsonl") (Join-Path $TrainingDir "veri")
 
-    # Sınav kapısının TR ölçütü: ürünün kendi kıyaslama düzeneği.
-    $Eval = Join-Path $Paket "eval\context_memory"
+    # The exam gate's TR criterion: the product's own benchmark rig.
+    $Eval = Join-Path $PackageDir "eval\context_memory"
     New-Item -ItemType Directory -Force $Eval | Out-Null
-    Copy-Item (Join-Path $Kok "eval\context_memory\scale_bench.py")     $Eval
-    Copy-Item (Join-Path $Kok "eval\context_memory\scale_dataset.json") $Eval
+    Copy-Item (Join-Path $RepoRoot "eval\context_memory\scale_bench.py")     $Eval
+    Copy-Item (Join-Path $RepoRoot "eval\context_memory\scale_dataset.json") $Eval
 
-    Adim "Torch (CPU) eğitim bileşenine kuruluyor"
+    Step "Installing Torch (CPU) into the training component"
     & $PyExe -m pip install --no-warn-script-location `
-        --target (Join-Path $Egitim "sitepaket") `
+        --target (Join-Path $TrainingDir "sitepaket") `
         --index-url "https://download.pytorch.org/whl/cpu" torch
-    if ($LASTEXITCODE -ne 0) { throw "torch kurulamadı" }
+    if ($LASTEXITCODE -ne 0) { throw "torch install failed" }
 }
 
-# -- 4b) dinleme bileşeni (isteğe bağlı) --------------------------------------
-# faster-whisper (ctranslate2, onnxruntime dahil) + sounddevice kendi site
-# klasörüne gidiyor: bileşen seçilmezse klasör hedefe hiç kopyalanmaz,
-# import düşer ve özellik kapalı görünür — torch kalıbının aynısı.
-if (-not $AtlaDinleme) {
-    Adim "Dinleme bileşeni (faster-whisper + sounddevice)"
+# -- 4b) listening component (optional) ---------------------------------------
+# faster-whisper (including ctranslate2, onnxruntime) + sounddevice go into
+# their own site folder: if the component is not selected the folder is never
+# copied to the target, the import fails and the feature shows as disabled —
+# the same pattern as torch.
+if (-not $SkipListen) {
+    Step "Listening component (faster-whisper + sounddevice)"
     & $PyExe -m pip install --no-warn-script-location `
-        --target (Join-Path $Paket "listen\site") faster-whisper sounddevice
-    if ($LASTEXITCODE -ne 0) { throw "dinleme paketleri kurulamadı" }
+        --target (Join-Path $PackageDir "listen\site") faster-whisper sounddevice
+    if ($LASTEXITCODE -ne 0) { throw "listening packages failed to install" }
 }
 
-# -- 4c) kamera bileşeni (isteğe bağlı) ---------------------------------------
-if (-not $AtlaKamera) {
-    Adim "Kamera bileşeni (opencv-python-headless + onnxruntime-gpu)"
+# -- 4c) camera component (optional) ------------------------------------------
+if (-not $SkipCamera) {
+    Step "Camera component (opencv-python-headless + onnxruntime-gpu)"
     & $PyExe -m pip install --no-warn-script-location `
-        --target (Join-Path $Paket "watch\site") opencv-python-headless onnxruntime-gpu
-    if ($LASTEXITCODE -ne 0) { throw "kamera paketi kurulamadı" }
+        --target (Join-Path $PackageDir "watch\site") opencv-python-headless onnxruntime-gpu
+    if ($LASTEXITCODE -ne 0) { throw "camera package failed to install" }
 
-    # YOLO ONNX ağırlığı da pakete: kurulu makinede ilk bakış indirme
-    # beklemesin, çevrimdışı da çalışsın (kullanıcı ilkesi: "sonradan
-    # kendi kurması gerekmesin"). İndirme önbelleklenir; sight._model_path
-    # önce bu kopyaya bakar.
-    Adim "YOLO modeli (yolov8n.onnx) paketleniyor"
-    # v8.3.0 adresi oldu (404, 31.08); once v8.4.0. Indirilemezse paket
-    # DUSURULMEZ: model ilk kullanimda calisma zamaninda da inebiliyor —
-    # cevrimdisi derleme "kurulum paketi uretemedim" ile bitmemeli.
-    $OnnxCache = Join-Path $Indirme "yolov8n.onnx"
+    # The YOLO ONNX weight goes into the package too: the first look on the
+    # installed machine should not wait for a download, and it should work
+    # offline (user principle: "they should not have to install things
+    # themselves later"). The download is cached; sight._model_path checks
+    # this copy first.
+    Step "Packaging YOLO model (yolov8n.onnx)"
+    # The v8.3.0 URL went away (404, 31.08); try v8.4.0 first. If it cannot be
+    # downloaded the package is NOT dropped: the model can also come down at
+    # runtime on first use — an offline build must not end with "could not
+    # produce the installer".
+    $OnnxCache = Join-Path $DownloadDir "yolov8n.onnx"
     if (-not (Test-Path $OnnxCache)) {
         foreach ($u in @(
             "https://github.com/ultralytics/assets/releases/download/v8.4.0/yolov8n.onnx",
             "https://github.com/ultralytics/assets/releases/download/v8.2.0/yolov8n.onnx")) {
             try { Invoke-WebRequest -Uri $u -OutFile $OnnxCache -ErrorAction Stop; break }
-            catch { Write-Host "  indirilemedi: $u" -ForegroundColor Yellow }
+            catch { Write-Host "  download failed: $u" -ForegroundColor Yellow }
         }
     }
     if (Test-Path $OnnxCache) {
-        $ModelDizin = Join-Path $Paket "watch\models"
-        New-Item -ItemType Directory -Force $ModelDizin | Out-Null
-        Copy-Item $OnnxCache $ModelDizin
+        $ModelDir = Join-Path $PackageDir "watch\models"
+        New-Item -ItemType Directory -Force $ModelDir | Out-Null
+        Copy-Item $OnnxCache $ModelDir
     } else {
-        Write-Host "  ONNX paketlenemedi - ilk kullanimda indirilecek" -ForegroundColor Yellow
+        Write-Host "  ONNX could not be packaged - it will be downloaded on first use" -ForegroundColor Yellow
     }
 }
 
-# -- 5) başlatıcı -------------------------------------------------------------
-Adim "Başlatıcı yazılıyor"
-# Görev Yöneticisi PE ikonuna bakar: pythonw kopyası dornick.exe + ico damgası.
-# dornick.cmd klasörden çift tıkla açmak isteyen için aynı komutun görünür hali.
-$PyW = Join-Path $PyDizin "pythonw.exe"
-$NeoExe = Join-Path $PyDizin "dornick.exe"
-Copy-Item $PyW $NeoExe -Force
+# -- 5) launcher --------------------------------------------------------------
+Step "Writing launcher"
+# Task Manager looks at the PE icon: dornick.exe is a pythonw copy + ico stamp.
+# dornick.cmd is the visible form of the same command for whoever wants to
+# double-click it from the folder.
+$PyW = Join-Path $PyDir "pythonw.exe"
+$DornickExe = Join-Path $PyDir "dornick.exe"
+Copy-Item $PyW $DornickExe -Force
 & $PyExe -c "from dornick.winicon import ensure_host; ensure_host()"
 if ($LASTEXITCODE -ne 0) {
-    Write-Host "simge damgası atlandı — kurulum/ilk açılış dener" -ForegroundColor Yellow
+    Write-Host "icon stamp skipped — install/first launch will retry" -ForegroundColor Yellow
 }
 @'
 @echo off
 rem dornick — masaustu penceresini acar (konsol penceresi acilmaz).
 set "KOK=%~dp0"
 start "" "%KOK%python\dornick.exe" -m dornick --app -C "%KOK%."
-'@ | Set-Content -Path (Join-Path $Paket "dornick.cmd") -Encoding Ascii
+'@ | Set-Content -Path (Join-Path $PackageDir "dornick.cmd") -Encoding Ascii
 
-# -- 6) derleme ---------------------------------------------------------------
-if ($AtlaDerleme) {
-    Adim "Derleme atlandı (-AtlaDerleme). Paket hazır: $Paket"
+# -- 6) compile ---------------------------------------------------------------
+if ($SkipCompile) {
+    Step "Compile skipped (-SkipCompile). Package ready: $PackageDir"
     exit 0
 }
 
-Adim "Inno Setup aranıyor"
+Step "Looking for Inno Setup"
 $iscc = $null
-$aday = Get-Command iscc -ErrorAction SilentlyContinue
-if ($aday) { $iscc = $aday.Source }
+$candidate = Get-Command iscc -ErrorAction SilentlyContinue
+if ($candidate) { $iscc = $candidate.Source }
 if (-not $iscc) {
     foreach ($p in @(
         "$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe",
@@ -249,7 +256,7 @@ if (-not $iscc) {
     }
 }
 if (-not $iscc) {
-    Write-Host "iscc yok — winget ile kurulum deneniyor" -ForegroundColor Yellow
+    Write-Host "iscc missing — trying to install via winget" -ForegroundColor Yellow
     winget install -e --id JRSoftware.InnoSetup --scope user --accept-source-agreements --accept-package-agreements
     foreach ($p in @(
         "$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe",
@@ -258,14 +265,14 @@ if (-not $iscc) {
     }
 }
 if (-not $iscc) {
-    Write-Host "`nISCC bulunamadı. Paket hazır: $Paket" -ForegroundColor Yellow
-    Write-Host "Inno Setup kurunca: iscc installer\dornick.iss"
+    Write-Host "`nISCC not found. Package ready: $PackageDir" -ForegroundColor Yellow
+    Write-Host "Once Inno Setup is installed: iscc installer\dornick.iss"
     exit 2
 }
 
-Adim "Sihirbaz derleniyor ($iscc, sürüm $Surum)"
-& $iscc "/DSurum=$Surum" (Join-Path $PSScriptRoot "dornick.iss")
-if ($LASTEXITCODE -ne 0) { throw "iscc başarısız" }
+Step "Compiling wizard ($iscc, version $Version)"
+& $iscc "/DVersion=$Version" (Join-Path $PSScriptRoot "dornick.iss")
+if ($LASTEXITCODE -ne 0) { throw "iscc failed" }
 
-$exe = Get-ChildItem (Join-Path $Cikti "*.exe") | Sort-Object LastWriteTime | Select-Object -Last 1
-Adim ("Bitti: {0} ({1:N0} MB)" -f $exe.FullName, ($exe.Length / 1MB))
+$exe = Get-ChildItem (Join-Path $OutDir "*.exe") | Sort-Object LastWriteTime | Select-Object -Last 1
+Step ("Done: {0} ({1:N0} MB)" -f $exe.FullName, ($exe.Length / 1MB))

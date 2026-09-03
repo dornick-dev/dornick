@@ -116,8 +116,8 @@ def test_use_stamps_written_to_disk(tmp_path: Path) -> None:
         use_log = store.use_log(node.id)
         assert len(use_log) == 3          # the moment of writing is the first use
         assert [k.t for k in use_log] == sorted(k.t for k in use_log)
-        assert use_log[0].etiket == A.WRITTEN
-        assert [k.etiket for k in use_log[1:]] == [A.OPENED, A.OPENED]
+        assert use_log[0].label == A.WRITTEN
+        assert [k.label for k in use_log[1:]] == [A.OPENED, A.OPENED]
         assert all(k.w == 1.0 for k in use_log)
     finally:
         store.close()
@@ -274,12 +274,12 @@ def test_add_use_does_not_increment_counter(tmp_path: Path) -> None:
     try:
         node = store.remember("yordam kaydı", kind="procedure")
         calendar.advance(days=1)
-        assert store.add_use(node.id, w=0.5, etiket=A.SUCCESS) is True
+        assert store.add_use(node.id, w=0.5, label=A.SUCCESS) is True
         calendar.advance(days=1)
-        assert store.add_use(node.id, w=-0.3, etiket=A.FAILURE) is True
+        assert store.add_use(node.id, w=-0.3, label=A.FAILURE) is True
         assert store.peek(node.id).uses == 0
         assert store.track_record(node.id) == (1, 1)
-        labels = [k.etiket for k in store.use_log(node.id)]
+        labels = [k.label for k in store.use_log(node.id)]
         assert labels == [A.WRITTEN, A.SUCCESS, A.FAILURE]
     finally:
         store.close()
@@ -301,7 +301,7 @@ def test_old_plain_stamp_format_is_still_read() -> None:
                       ago(days=1).isoformat(timespec="milliseconds")])
     parsed = A.parse_use_log(raw)
     assert len(parsed) == 2
-    assert all(k.w == 1.0 and k.etiket == A.OPENED for k in parsed)
+    assert all(k.w == 1.0 and k.label == A.OPENED for k in parsed)
 
 
 # -- corrupt record ----------------------------------------------------
@@ -319,7 +319,7 @@ def test_corrupt_use_history_does_not_drop_record() -> None:
         ' {"t": "2025-06-01T11:00:00+00:00"}]')
     assert len(parsed) == 2
     assert parsed[0].w == 1.0        # an unparseable weight falls back to neutral
-    assert parsed[1].etiket == A.OPENED
+    assert parsed[1].label == A.OPENED
 
 
 def test_corrupt_history_falls_back_to_backfill(tmp_path: Path) -> None:
@@ -328,4 +328,4 @@ def test_corrupt_history_falls_back_to_backfill(tmp_path: Path) -> None:
         "bozuk", created="2025-06-01T09:00:00.000+00:00",
         last_used="2025-06-02T09:00:00.000+00:00", uses=3)
     assert len(parsed) == 4          # moment of writing + three uses
-    assert parsed[0].etiket == A.WRITTEN
+    assert parsed[0].label == A.WRITTEN

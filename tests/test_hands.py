@@ -1,9 +1,10 @@
-"""El ve ekran: koordinat çevirisi ve tuş ayrıştırma.
+"""Hand and screen: coordinate conversion and key parsing.
 
-Buradaki iki saf fonksiyon işin doğruluk çekirdeği. `to_screen` yanlışsa
-her tıklama hedefin yanına düşer; `parse_keys` yanlışsa kısayol tutmaz.
-İkisi de platformdan bağımsız test edilebiliyor — asıl user32 çağrıları
-Windows'a bağlı ve orada elle doğrulanıyor.
+The two pure functions here are the correctness core of the job. If
+`to_screen` is wrong, every click lands next to the target; if
+`parse_keys` is wrong, the shortcut does not take. Both are testable
+independent of platform — the actual user32 calls are Windows-bound and
+verified there by hand.
 """
 
 from __future__ import annotations
@@ -14,8 +15,8 @@ from dornick.tools import hands
 
 
 def test_to_screen_maps_image_pixel_to_real_coordinate() -> None:
-    # Görüntü yarı ölçekli ve ekran (100, 50)'den başlıyor: ikinci ekran
-    # gibi kaydırılmış bir masaüstünde tıklamanın doğru yere düşmesi şart.
+    # The image is half-scale and the screen starts at (100, 50): on a
+    # shifted desktop (like a second monitor) the click must land right.
     frame = {"origin": (100, 50), "scale": 0.5, "size": (700, 400)}
     assert hands.to_screen(0, 0, frame) == (100, 50)
     assert hands.to_screen(200, 100, frame) == (500, 250)
@@ -44,7 +45,7 @@ def test_parse_keys_rejects_unknown_token() -> None:
 
 
 def test_utf16_units_handles_astral_and_turkish() -> None:
-    # Türkçe karakter tek birim; emoji (astral düzlem) iki birim (surrogate
-    # çifti). İkisi de eksiksiz gitmeli, yoksa yazılan metin bozulur.
+    # A Turkish character is one unit; an emoji (astral plane) is two (a
+    # surrogate pair). Both must go complete, or the typed text corrupts.
     assert len(hands._utf16_units("ş")) == 1
     assert len(hands._utf16_units("😀")) == 2

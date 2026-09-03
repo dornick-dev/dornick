@@ -100,43 +100,43 @@ def project(tmp_path: Path) -> Path:
 
 
 def test_python_definitions_are_exact(project: Path) -> None:
-    result = symbols.ara(project, "kaydet")
-    names = [(s.kind, s.scope, s.line) for s in result.tanimlar]
+    result = symbols.search(project, "kaydet")
+    names = [(s.kind, s.scope, s.line) for s in result.definitions]
     assert ("fonksiyon", "", 6) in names       # module-level def kaydet
     assert ("metot", "Depo", 12) in names      # Depo.kaydet
-    assert result.kesin
+    assert result.exact
 
 
 def test_python_signature_carries_arguments_and_return(project: Path) -> None:
-    result = symbols.ara(project, "kaydet", tur="tanim")
-    signature = next(s.signature for s in result.tanimlar if s.scope == "")
+    result = symbols.search(project, "kaydet", kind="tanim")
+    signature = next(s.signature for s in result.definitions if s.scope == "")
     assert signature.startswith("def kaydet(")
     assert "yol: str" in signature
     assert "-> bool" in signature
 
 
 def test_a_method_names_its_class(project: Path) -> None:
-    result = symbols.ara(project, "kaydet", tur="tanim")
-    text = result.metin(tur="tanim")
+    result = symbols.search(project, "kaydet", kind="tanim")
+    text = result.text(kind="tanim")
     assert "Depo sınıfının metodu" in text
 
 
 def test_async_definitions_are_found(project: Path) -> None:
-    result = symbols.ara(project, "toplu_kaydet", tur="tanim")
-    assert len(result.tanimlar) == 1
-    assert result.tanimlar[0].signature.startswith("async def toplu_kaydet(")
+    result = symbols.search(project, "toplu_kaydet", kind="tanim")
+    assert len(result.definitions) == 1
+    assert result.definitions[0].signature.startswith("async def toplu_kaydet(")
 
 
 def test_classes_are_found(project: Path) -> None:
-    result = symbols.ara(project, "Depo", tur="tanim")
-    assert [s.kind for s in result.tanimlar] == ["sinif"]
-    assert result.tanimlar[0].signature == "class Depo"
+    result = symbols.search(project, "Depo", kind="tanim")
+    assert [s.kind for s in result.definitions] == ["sinif"]
+    assert result.definitions[0].signature == "class Depo"
 
 
 def test_python_ignores_comments_and_strings(project: Path) -> None:
     """The real value of `ast`: a name in a comment or a string is NOT IN THE TREE."""
-    result = symbols.ara(project, "kaydet")
-    lines = {u.line for u in result.use_log}
+    result = symbols.search(project, "kaydet")
+    lines = {u.line for u in result.usages}
     # 1: "kaydet" in the module docstring, 18: comment, 19: string return
     assert 1 not in lines
     assert 18 not in lines
@@ -144,27 +144,27 @@ def test_python_ignores_comments_and_strings(project: Path) -> None:
 
 
 def test_python_usages_are_classified(project: Path) -> None:
-    result = symbols.ara(project, "kaydet")
-    kinds = {u.kind for u in result.use_log}
+    result = symbols.search(project, "kaydet")
+    kinds = {u.kind for u in result.usages}
     assert "cagri" in kinds
     # Definition lines are not counted as usages.
-    definition_lines = {s.line for s in result.tanimlar}
-    assert not (definition_lines & {u.line for u in result.use_log})
+    definition_lines = {s.line for s in result.definitions}
+    assert not (definition_lines & {u.line for u in result.usages})
 
 
 def test_imports_count_as_usage(tmp_path: Path) -> None:
     (tmp_path / "a.py").write_text("def kaydet():\n    pass\n", encoding="utf-8")
     (tmp_path / "b.py").write_text("from a import kaydet\n", encoding="utf-8")
-    result = symbols.ara(tmp_path, "kaydet")
-    assert any(u.kind == "ice_aktarma" for u in result.use_log)
+    result = symbols.search(tmp_path, "kaydet")
+    assert any(u.kind == "ice_aktarma" for u in result.usages)
 
 
 def test_a_broken_python_file_is_reported_not_silently_skipped(tmp_path: Path) -> None:
     """Silently counting a broken file as 'undefined' sends the model to the wrong place."""
     (tmp_path / "bozuk.py").write_text("def kaydet(:\n", encoding="utf-8")
-    result = symbols.ara(tmp_path, "kaydet")
+    result = symbols.search(tmp_path, "kaydet")
     assert result.unparsable
-    assert "ayrıştırılamadı" in result.metin()
+    assert "ayrıştırılamadı" in result.text()
 
 
 # -- PHP ----------------------------------------------------------------
@@ -172,37 +172,37 @@ def test_a_broken_python_file_is_reported_not_silently_skipped(tmp_path: Path) -
 
 def test_php_definitions(tmp_path: Path) -> None:
     (tmp_path / "Home.php").write_text(PHP_SOURCE, encoding="utf-8")
-    result = symbols.ara(tmp_path, "kaydet", tur="tanim")
-    lines = sorted(s.line for s in result.tanimlar)
+    result = symbols.search(tmp_path, "kaydet", kind="tanim")
+    lines = sorted(s.line for s in result.definitions)
     assert 13 in lines             # private static function kaydet
     assert 19 in lines             # free function kaydet
-    assert not result.kesin        # regex: we do not say "exact"
+    assert not result.exact        # regex: we do not say "exact"
 
 
 def test_php_class_definition(tmp_path: Path) -> None:
     (tmp_path / "Home.php").write_text(PHP_SOURCE, encoding="utf-8")
-    result = symbols.ara(tmp_path, "Home", tur="tanim")
-    assert [s.kind for s in result.tanimlar] == ["sinif"]
+    result = symbols.search(tmp_path, "Home", kind="tanim")
+    assert [s.kind for s in result.definitions] == ["sinif"]
 
 
 def test_php_usages_cover_arrow_and_static_calls(tmp_path: Path) -> None:
     (tmp_path / "Home.php").write_text(PHP_SOURCE, encoding="utf-8")
-    result = symbols.ara(tmp_path, "kaydet")
-    texts = " ".join(u.text for u in result.use_log)
+    result = symbols.search(tmp_path, "kaydet")
+    texts = " ".join(u.text for u in result.usages)
     assert "$depo->kaydet" in texts        # object method
     assert "Kayit::kaydet" in texts        # static call
 
 
 def test_php_comment_lines_are_dropped(tmp_path: Path) -> None:
     (tmp_path / "Home.php").write_text(PHP_SOURCE, encoding="utf-8")
-    result = symbols.ara(tmp_path, "kaydet")
-    assert all("yalnızca yorumda" not in u.text for u in result.use_log)
+    result = symbols.search(tmp_path, "kaydet")
+    assert all("yalnızca yorumda" not in u.text for u in result.usages)
 
 
 def test_php_new_is_an_instantiation(tmp_path: Path) -> None:
     (tmp_path / "Home.php").write_text(PHP_SOURCE, encoding="utf-8")
-    result = symbols.ara(tmp_path, "Depo")
-    assert any(u.kind == "kurulum" for u in result.use_log)
+    result = symbols.search(tmp_path, "Depo")
+    assert any(u.kind == "kurulum" for u in result.usages)
 
 
 # -- JS -----------------------------------------------------------------
@@ -210,14 +210,14 @@ def test_php_new_is_an_instantiation(tmp_path: Path) -> None:
 
 def test_js_function_class_and_arrow(tmp_path: Path) -> None:
     (tmp_path / "depo.js").write_text(JS_SOURCE, encoding="utf-8")
-    everything = symbols.ara(tmp_path, "kaydet", tur="tanim")
-    assert any(s.line == 2 for s in everything.tanimlar)     # export function
+    everything = symbols.search(tmp_path, "kaydet", kind="tanim")
+    assert any(s.line == 2 for s in everything.definitions)     # export function
 
-    arrow = symbols.ara(tmp_path, "yukle", tur="tanim")   # const yukle = async () =>
-    assert arrow.tanimlar and arrow.tanimlar[0].kind == "fonksiyon"
+    arrow = symbols.search(tmp_path, "yukle", kind="tanim")   # const yukle = async () =>
+    assert arrow.definitions and arrow.definitions[0].kind == "fonksiyon"
 
-    klass = symbols.ara(tmp_path, "Depo", tur="tanim")
-    assert klass.tanimlar and klass.tanimlar[0].kind == "sinif"
+    klass = symbols.search(tmp_path, "Depo", kind="tanim")
+    assert klass.definitions and klass.definitions[0].kind == "sinif"
 
 
 def test_js_control_keywords_are_not_symbols(tmp_path: Path) -> None:
@@ -225,10 +225,10 @@ def test_js_control_keywords_are_not_symbols(tmp_path: Path) -> None:
     (tmp_path / "a.js").write_text(
         "class A {\n  metot() {\n    if (x) {\n      return 1;\n    }\n  }\n}\n",
         encoding="utf-8")
-    result = symbols.ara(tmp_path, "if", tur="tanim")
-    assert result.tanimlar == []
-    method = symbols.ara(tmp_path, "metot", tur="tanim")
-    assert method.tanimlar and method.tanimlar[0].kind == "metot"
+    result = symbols.search(tmp_path, "if", kind="tanim")
+    assert result.definitions == []
+    method = symbols.search(tmp_path, "metot", kind="tanim")
+    assert method.definitions and method.definitions[0].kind == "metot"
 
 
 # -- scope and limits ---------------------------------------------------
@@ -238,8 +238,8 @@ def test_unsupported_language_says_so_and_points_at_grep(tmp_path: Path) -> None
     """For a language we cannot measure: not a half answer but an honest redirection."""
     (tmp_path / "ana.go").write_text("func Kaydet() {}\n", encoding="utf-8")
     (tmp_path / "notlar.md").write_text("# kaydet\n", encoding="utf-8")
-    result = symbols.ara(tmp_path, "Kaydet")
-    text = result.metin()
+    result = symbols.search(tmp_path, "Kaydet")
+    text = result.text()
     assert "yapısal arama YOK" in text
     assert "`grep`" in text
 
@@ -249,9 +249,9 @@ def test_dependency_folders_are_skipped(tmp_path: Path) -> None:
     inside = tmp_path / "node_modules" / "paket"
     inside.mkdir(parents=True)
     (inside / "kaydet.js").write_text("function kaydet() {}\n", encoding="utf-8")
-    result = symbols.ara(tmp_path, "kaydet")
-    assert result.taranan == 1
-    assert all("node_modules" not in s.file for s in result.tanimlar)
+    result = symbols.search(tmp_path, "kaydet")
+    assert result.scanned == 1
+    assert all("node_modules" not in s.file for s in result.definitions)
 
 
 def test_depth_is_limited(tmp_path: Path) -> None:
@@ -259,53 +259,53 @@ def test_depth_is_limited(tmp_path: Path) -> None:
     deep.mkdir(parents=True)
     (deep / "gizli.py").write_text("def kaydet(): pass\n", encoding="utf-8")
     (tmp_path / "yuzey.py").write_text("def kaydet(): pass\n", encoding="utf-8")
-    result = symbols.ara(tmp_path, "kaydet", depth=3)
-    assert all("gizli" not in s.file for s in result.tanimlar)
+    result = symbols.search(tmp_path, "kaydet", depth=3)
+    assert all("gizli" not in s.file for s in result.definitions)
 
 
 def test_binary_files_are_skipped(tmp_path: Path) -> None:
     (tmp_path / "veri.py").write_bytes(b"def kaydet():\x00\x00 pass")
-    result = symbols.ara(tmp_path, "kaydet")
-    assert result.taranan == 0
+    result = symbols.search(tmp_path, "kaydet")
+    assert result.scanned == 0
 
 
 def test_the_file_ceiling_is_announced(tmp_path: Path) -> None:
     """An incomplete result must not stay quiet."""
     for i in range(6):
         (tmp_path / f"m{i}.py").write_text("def kaydet(): pass\n", encoding="utf-8")
-    result = symbols.ara(tmp_path, "kaydet", limit=3)
+    result = symbols.search(tmp_path, "kaydet", limit=3)
     assert result.hit_ceiling
-    assert "tavanına çarptı" in result.metin()
+    assert "tavanına çarptı" in result.text()
 
 
 def test_language_filter(tmp_path: Path) -> None:
     (tmp_path / "a.py").write_text("def kaydet(): pass\n", encoding="utf-8")
     (tmp_path / "a.js").write_text("function kaydet() {}\n", encoding="utf-8")
-    result = symbols.ara(tmp_path, "kaydet", dil="python")
+    result = symbols.search(tmp_path, "kaydet", language="python")
     assert result.languages == {"python"}
-    assert len(result.tanimlar) == 1
+    assert len(result.definitions) == 1
 
 
 def test_a_loose_match_says_it_is_loose(tmp_path: Path) -> None:
     """Without an exact name, containing names are shown — but this is NOT HIDDEN."""
     (tmp_path / "a.py").write_text(
         "def kaydet_hepsini(): pass\n", encoding="utf-8")
-    result = symbols.ara(tmp_path, "kaydet")
+    result = symbols.search(tmp_path, "kaydet")
     assert result.loose
-    assert "adı içerenler" in result.metin()
+    assert "adı içerenler" in result.text()
 
 
 def test_a_defined_but_unused_symbol_is_called_out(tmp_path: Path) -> None:
     (tmp_path / "a.py").write_text("def kaydet(): pass\n", encoding="utf-8")
-    result = symbols.ara(tmp_path, "kaydet")
-    assert "ölü kod olabilir" in result.metin()
+    result = symbols.search(tmp_path, "kaydet")
+    assert "ölü kod olabilir" in result.text()
 
 
 def test_nothing_found_is_not_an_invention(tmp_path: Path) -> None:
     (tmp_path / "a.py").write_text("def baska(): pass\n", encoding="utf-8")
-    result = symbols.ara(tmp_path, "kaydet")
-    assert result.tanimlar == [] and result.use_log == []
-    assert "bulunamadı" in result.metin()
+    result = symbols.search(tmp_path, "kaydet")
+    assert result.definitions == [] and result.usages == []
+    assert "bulunamadı" in result.text()
 
 
 # -- tool surface -------------------------------------------------------

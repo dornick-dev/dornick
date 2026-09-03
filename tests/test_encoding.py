@@ -49,7 +49,7 @@ def store(tmp_path: Path, clock: Clock):
 
 def _birth_weight(store, node_id: str) -> float:
     entries = store.use_log(node_id)
-    assert entries and entries[0].etiket == A.WRITTEN
+    assert entries and entries[0].label == A.WRITTEN
     return entries[0].w
 
 
@@ -142,7 +142,7 @@ def test_a_correction_inherits_and_is_born_at_full_strength(store, clock) -> Non
     second = store.update(first.id, "Raporları xlsx istiyorum.",
                             kind="preference")
     entries = store.use_log(second.id)
-    assert entries[-1].etiket == A.WRITTEN
+    assert entries[-1].label == A.WRITTEN
     assert entries[-1].w == pytest.approx(1.0)
     assert len(entries) > 1                    # the inheritance is still there
 

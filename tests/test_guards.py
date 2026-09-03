@@ -21,20 +21,20 @@ def _spec(name: str, mutates: bool = False):
                     handler=_h, mutates=mutates)
 
 
-# -- sabit_ret unit -----------------------------------------------------
+# -- hard_deny unit -----------------------------------------------------
 
 
 def test_keys_json_read_and_write_both_denied() -> None:
     """`.dornick/keys.json` is neither read nor written — a secret, injection's prize."""
-    assert guards.sabit_ret("read_file", False,
+    assert guards.hard_deny("read_file", False,
                             {"path": r"C:\x\.dornick\keys.json"})
-    assert guards.sabit_ret("write_file", True,
+    assert guards.hard_deny("write_file", True,
                             {"path": "/home/u/.dornick/keys.json"})
     # copy_in's source is caught even though it sits in a different field (all values are scanned).
-    assert guards.sabit_ret("copy_in", True,
+    assert guards.hard_deny("copy_in", True,
                             {"source": ".dornick/keys.json", "dest": "a"})
     # Even when the name only appears inside a shell command.
-    assert guards.sabit_ret("shell", True,
+    assert guards.hard_deny("shell", True,
                             {"command": "type .dornick\\keys.json"})
 
 
@@ -42,19 +42,19 @@ def test_config_and_gate_write_denied_read_allowed() -> None:
     """config/gate/manifest are closed to WRITING (mode/gate/approval), open to reading."""
     for target in ("config.json", "gate.json", "skills_onayli.json"):
         path = f".dornick/{target}"
-        assert guards.sabit_ret("write_file", True, {"path": path}), target
-        assert guards.sabit_ret("shell", True,
+        assert guards.hard_deny("write_file", True, {"path": path}), target
+        assert guards.hard_deny("shell", True,
                                 {"command": f"echo x > .dornick/{target}"}), target
         # Reading (not a mutation, not the write surface) is free.
-        assert guards.sabit_ret("read_file", False, {"path": path}) is None, target
+        assert guards.hard_deny("read_file", False, {"path": path}) is None, target
 
 
 def test_startup_persistence_denied() -> None:
     """The Run key and the Startup folder — shell/mutation cannot reach."""
-    assert guards.sabit_ret(
+    assert guards.hard_deny(
         "shell", True,
         {"command": r'reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Run" /v x /d y'})
-    assert guards.sabit_ret(
+    assert guards.hard_deny(
         "write_file", True,
         {"path": r"C:\Users\u\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Startup\x.bat"})
 
@@ -62,11 +62,11 @@ def test_startup_persistence_denied() -> None:
 def test_ordinary_paths_are_not_touched() -> None:
     """Ordinary work is not blocked — the guard is narrow. A keys.json/config.json
     name OUTSIDE `.dornick` is a user file and is free."""
-    assert guards.sabit_ret("write_file", True, {"path": "atolye/site/index.html"}) is None
-    assert guards.sabit_ret("shell", True, {"command": "npm test"}) is None
+    assert guards.hard_deny("write_file", True, {"path": "atolye/site/index.html"}) is None
+    assert guards.hard_deny("shell", True, {"command": "npm test"}) is None
     # A config.json in the user's own project (not .dornick) can be written.
-    assert guards.sabit_ret("write_file", True, {"path": "proje/config.json"}) is None
-    assert guards.sabit_ret("read_file", False, {"path": "proje/keys.json"}) is None
+    assert guards.hard_deny("write_file", True, {"path": "proje/config.json"}) is None
+    assert guards.hard_deny("read_file", False, {"path": "proje/keys.json"}) is None
 
 
 # -- integration with the permission engine: even yolo cannot pass ------

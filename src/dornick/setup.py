@@ -1,11 +1,13 @@
-"""İlk kurulum: `dornick setup`.
+"""First-time setup: `dornick setup`.
 
-Amaç tek bir sürtünmeyi kaldırmak — her açılışta ortam değişkeni yazmak.
-Bu komut ortamı yoklar, ne bulduğunu söyler, seçimi alır ve
-`.dornick/config.json` dosyasına yazar. Sonrasında `dornick --app` yeter.
+The goal is to remove a single friction — typing environment variables on
+every launch. This command probes the environment, says what it found,
+takes the choice and writes it to `.dornick/config.json`. After that
+`dornick --app` is enough.
 
-Ağ yoklaması bilinçli olarak burada; `Config.load()` içinde değil. Yapılandırma
-okumanın ağ beklemesi, hem yavaş hem de sürpriz olurdu.
+The network probe is deliberately here, not inside `Config.load()`.
+Reading the configuration waiting on the network would be both slow and a
+surprise.
 """
 
 from __future__ import annotations
@@ -19,7 +21,7 @@ from typing import Any
 
 from .config import Config
 
-# Yerel sunucu adayları. Hepsi OpenAI-uyumlu konuşuyor.
+# Local server candidates. They all speak OpenAI-compatible.
 CANDIDATES = (
     ("LM Studio", "http://localhost:1234/v1"),
     ("Ollama", "http://localhost:11434/v1"),
@@ -42,7 +44,7 @@ class Provider:
 
 
 def discover() -> list[Provider]:
-    """Ortamda ne varsa bulur. Sessizce başarısız olur — yok olan yoktur."""
+    """Finds whatever exists in the environment. Fails silently — what is absent is absent."""
     found: list[Provider] = []
 
     if os.getenv("ANTHROPIC_API_KEY"):
@@ -50,7 +52,7 @@ def discover() -> list[Provider]:
 
     for label, base_url in CANDIDATES:
         for model in _models(base_url):
-            # Gömme modelleri sohbet edemez; listeyi kirletmesinler.
+            # Embedding models cannot chat; don't let them pollute the list.
             if "embed" in model.lower():
                 continue
             found.append(Provider(label, "openai", model, base_url))
@@ -81,12 +83,13 @@ def write_config(config: Config, choice: Provider) -> None:
     model = dict(existing.get("model") or {})
     model["provider"] = choice.provider
     model["name"] = choice.model
-    # Adres AÇIKÇA yazılıyor (None dahil): alanı dosyadan silmek, varsayılana
-    # (artık OpenRouter) düşmek demek — Anthropic'e geçen kullanıcının
-    # istekleri OpenRouter'a gider ve hata ancak ilk mesajda görünürdü.
+    # The address is written EXPLICITLY (None included): deleting the
+    # field from the file means falling to the default (now OpenRouter) —
+    # a user switching to Anthropic would have their requests go to
+    # OpenRouter and the error would only show on the first message.
     model["base_url"] = choice.base_url
-    # Anahtar değişkeni de sağlayıcıyla birlikte: yerel sunucular anahtar
-    # istemiyor, kalan bir OPENROUTER_API_KEY "anahtar yok" uyarısı üretirdi.
+    # The key variable goes with the provider too: local servers want no
+    # key, and a leftover OPENROUTER_API_KEY would produce a "no key" warning.
     model["api_key_env"] = "ANTHROPIC_API_KEY" if choice.provider == "anthropic" else None
     existing["model"] = model
 
@@ -115,8 +118,8 @@ def run(config: Config, console: Any) -> int:
 
     choice = options[0]
     if len(options) > 1:
-        # Boru ile beslenen girdide stdin kapalı olur; varsayılanla devam
-        # etmek, yığın izi basıp çıkmaktan iyidir.
+        # With piped input stdin is closed; continuing with the default is
+        # better than printing a stack trace and exiting.
         try:
             raw = input(f"\nHangisi? [1-{len(options)}, varsayılan 1]: ").strip()
         except (EOFError, KeyboardInterrupt):
@@ -138,8 +141,9 @@ def run(config: Config, console: Any) -> int:
         "dolar ve bir sonraki oturumda seni hatırlar.[/dim]"
     )
     if choice.provider == "openai":
-        # LM Studio indirilmiş modelleri listeliyor; seçilen model yüklü
-        # değilse ilk istekte belleğe alınıyor ve o istek uzun sürüyor.
+        # LM Studio lists downloaded models; if the chosen model is not
+        # loaded it gets pulled into memory on the first request and that
+        # request runs long.
         console.print(
             "[dim]Model yüklü değilse ilk mesaj modeli belleğe alırken "
             "bekletebilir. Önceden yüklemek için: "

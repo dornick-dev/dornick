@@ -1,90 +1,94 @@
-// Arayüz dili.
+// UI language.
 //
-// Kaynak metinler TÜRKÇE ve kodda olduğu gibi duruyor — İngilizce, görüntüleme
-// anında TR→EN eşlemesiyle geliyor. Anahtar uydurma yok: eşlemenin anahtarı
-// Türkçe metnin kendisi. Eşlemede olmayan metin Türkçe görünür — eksik çeviri
-// sessiz bir İngilizce-yarım arayüzden iyidir: eksik hemen göze batar ve
-// haritaya eklenir.
+// Source texts are TURKISH and stay in the code as they are — English comes
+// at display time through a TR→EN mapping. No invented keys: the mapping key
+// is the Turkish text itself. Text missing from the map shows up in Turkish —
+// a missing translation beats a silently half-English UI: the gap is
+// immediately visible and gets added to the map.
 //
-// Her dosya kendi çevirilerini kendisi kaydeder (Dil.ekle) — çeviri, metnin
-// yaşadığı dosyanın başında durur, tek dev sözlük dosyası çürümez.
+// Each file registers its own translations (Dil.ekle) — the translation sits
+// at the top of the file where the text lives, so no giant dictionary file
+// rots.
 
 const Dil = (() => {
   const EN = {};
   let mode = "tr";
-  try { mode = localStorage.getItem("dornick-dil") || ""; } catch { /* dosya:// */ }
+  try { mode = localStorage.getItem("dornick-dil") || ""; } catch { /* file:// */ }
   if (!mode) {
-    // İlk açılış: kurulum sihirbazında seçilen dil sunucudan okunuyor
-    // (/api/dil → setup.json). Eşzamanlı istek bilinçli: çeviri kipi
-    // daha ilk betik yüklenirken belli olmalı; yerel sunucuda bu bir
-    // milisaniyelik iş. Cevap ne olursa olsun karar localStorage'a
-    // yazılıyor ki bundan sonrası kullanıcının kendi seçimiyle aksın.
+    // First launch: the language picked in the setup wizard is read from
+    // the server (/api/dil → setup.json). The synchronous request is
+    // deliberate: the translation mode must be known while the very first
+    // script loads; on a local server this is a millisecond's work. Whatever
+    // the answer, the decision is written to localStorage so everything from
+    // here on follows the user's own choice.
     try {
-      const istek = new XMLHttpRequest();
-      istek.open("GET", "/api/dil", false);
-      istek.send();
-      // Sunucu ya sihirbazın seçtiği dili ya da makinenin dilini söyler.
-      // VARSAYILAN İNGİLİZCE: yalnız "tr" gelirse Türkçe (kullanıcı isteği,
-      // 02.09 — ürün dünyaya İngilizce açılır, Türkiye'de Türkçe gelir).
-      mode = (JSON.parse(istek.responseText).dil === "tr") ? "tr" : "en";
+      const req = new XMLHttpRequest();
+      req.open("GET", "/api/dil", false);
+      req.send();
+      // The server reports either the wizard's language or the machine's.
+      // DEFAULT ENGLISH: Turkish only when "tr" comes back (user request,
+      // 02.09 — the product opens to the world in English, ships Turkish in
+      // Turkey).
+      mode = (JSON.parse(req.responseText).dil === "tr") ? "tr" : "en";
     } catch {
-      // Sunucusuz önizleme: tarayıcının diline bak, yoksa İngilizce.
+      // Serverless preview: check the browser language, else English.
       const nav = (navigator.language || "").toLowerCase();
       mode = nav.startsWith("tr") ? "tr" : "en";
     }
-    try { localStorage.setItem("dornick-dil", mode); } catch { /* dosya:// */ }
+    try { localStorage.setItem("dornick-dil", mode); } catch { /* file:// */ }
   }
 
   function ekle(pairs) { Object.assign(EN, pairs); }
 
-  // Çeviri: birebir eşleşme; yoksa Türkçesi kalır.
+  // Translation: exact match; otherwise the Turkish stays.
   function t(text) {
     if (mode !== "en" || text == null) return text;
     return EN[String(text)] ?? text;
   }
 
   function sec(next) {
-    try { localStorage.setItem("dornick-dil", next); } catch { /* dosya:// */ }
+    try { localStorage.setItem("dornick-dil", next); } catch { /* file:// */ }
     location.reload();
   }
 
-  // Statik HTML: id → İngilizce metin/nitelik. Sayfa yüklenince bir kez.
-  const STATIK = [];
-  function statik(id, text, attr) { STATIK.push([id, text, attr]); }
+  // Static HTML: id → English text/attribute. Once, when the page loads.
+  const STATIC_ROWS = [];
+  function statik(id, text, attr) { STATIC_ROWS.push([id, text, attr]); }
 
-  function uygula() {
+  function apply() {
     if (mode !== "en") return;
-    for (const [id, text, attr] of STATIK) {
+    for (const [id, text, attr] of STATIC_ROWS) {
       const el = document.getElementById(id);
       if (!el) continue;
       if (attr) el.setAttribute(attr, text);
       else el.textContent = text;
     }
-    // data-tab düğmeleri gibi id'siz statikler: seçici tabanlı ikinci liste.
-    for (const [sel, text] of SECICI) {
+    // Statics without an id, like the data-tab buttons: a second, selector-based list.
+    for (const [sel, text] of SELECTOR_ROWS) {
       const el = document.querySelector(sel);
       if (el) el.textContent = text;
     }
   }
 
-  const SECICI = [];
-  function secici(sel, text) { SECICI.push([sel, text]); }
+  const SELECTOR_ROWS = [];
+  function secici(sel, text) { SELECTOR_ROWS.push([sel, text]); }
 
-  // Sayfa dili: CSS `text-transform: uppercase` locale'e bakıyor ve Türkçe
-  // locale'de "i" → "İ" oluyor. İngilizce arayüzde "SIMPLE" rozeti "SİMPLE"
-  // diye çıkıyordu — görünmez sanılan bir ayarın çok görünür sonucu.
+  // Page language: CSS `text-transform: uppercase` respects the locale, and
+  // in the Turkish locale "i" → "İ". In the English UI the "SIMPLE" badge came
+  // out as "SİMPLE" — a very visible consequence of a supposedly invisible
+  // setting.
   try { document.documentElement.lang = (mode === "en") ? "en" : "tr"; }
-  catch { /* dosya:// */ }
+  catch { /* file:// */ }
 
-  document.addEventListener("DOMContentLoaded", uygula);
+  document.addEventListener("DOMContentLoaded", apply);
 
   return { t, ekle, sec, statik, secici, get mode() { return mode; } };
 })();
 
-// Kısa ad: her dosyada `t("...")` diye kullanılıyor.
+// Short alias: used as `t("...")` in every file.
 const t = Dil.t;
 
-// --- index.html'in statik metinleri -------------------------------------
+// --- index.html's static texts ------------------------------------------
 Dil.secici("#welcome h1", "What would you like me to do?");
 Dil.secici("#welcome p", "I work on your computer. What I learn is woven into the web around me.");
 Dil.secici("#cam-stage-ask", "Look at this frame");
@@ -114,8 +118,8 @@ Dil.statik("orchestra", "Orchestra", "title");
 Dil.statik("focus", "Focus", "title");
 Dil.statik("theme", "Theme", "title");
 Dil.statik("gear", "Settings", "title");
-// Eksik kalanlar: bu düğmelerin hiçbir eşlemesi yoktu ve İngilizce arayüzde
-// Türkçe başlık gösteriyorlardı.
+// The stragglers: these buttons had no mapping at all and showed Turkish
+// titles in the English UI.
 Dil.statik("reveal", "Show every memory in the web", "title");
 Dil.statik("authority", "Permissions", "title");
 Dil.statik("jobs", "Tasks", "title");
@@ -124,10 +128,10 @@ Dil.statik("cams", "Camera off — click to turn on", "title");
 Dil.statik("cam-index", "Device index", "title");
 Dil.statik("cam-head", "Drag — keep over the brain", "title");
 
-// aria-label'lar da çevriliyor. Eskiden yalnız `title` eşleniyordu; ekran
-// okuyucu kullanan biri İngilizce arayüzde Türkçe etiket duyuyordu —
-// göze görünmeyen bir eksik, ama eksik.
-for (const [id, metin] of [
+// aria-labels are translated too. Only `title` used to be mapped; a screen
+// reader user heard Turkish labels in the English UI — a gap invisible to the
+// eye, but a gap.
+for (const [id, text] of [
   ["reveal", "Show every memory in the web"],
   ["authority", "Permissions"],
   ["eye", "Viewer"],
@@ -153,10 +157,10 @@ for (const [id, metin] of [
   ["viewer-grip", "Resize panel"],
   ["capsule-external", "Open outside"],
 ]) {
-  Dil.statik(id, metin, "aria-label");
+  Dil.statik(id, text, "aria-label");
 }
 
-// Görüntüleyici ve canlı-uygulama kapsülünün ipuçları.
+// Tooltips of the viewer and the live-app capsule.
 Dil.statik("side-jobs-head", "Toggle the tasks section", "title");
 Dil.statik("side-jobs-head", "Toggle the tasks section", "aria-label");
 Dil.statik("side-apps-head", "Toggle the apps section", "title");
@@ -202,7 +206,7 @@ Dil.secici(".lens-tag", "Vision");
 Dil.secici(".panel-head b", "SETTINGS");
 Dil.secici("#jobs-panel .jobs-tag", "Tasks");
 Dil.secici("#jobs-panel .jobs-desc", "Scheduled work · live runs");
-// Ayar sekmeleri (data-tab düğmeleri) ve grup başlıkları.
+// Settings tabs (data-tab buttons) and group headings.
 Dil.secici('[data-tab="model"]', "Model");
 Dil.secici('[data-tab="voice"]', "Voice");
 Dil.secici('[data-tab="hearing"]', "Microphone");
@@ -218,7 +222,7 @@ Dil.secici('[data-tab="machine"]', "Machine");
 Dil.secici('[data-tab="files"]', "Files");
 Dil.secici('[data-tab="transfer"]', "Transfer");
 Dil.statik("side-ver", "Dornick version", "title");
-// Çalışma klasörü şeridi ve sağlayıcı çipi (02.09).
+// Working-folder strip and provider chip (02.09).
 Dil.statik("workdir-id", "Working folder — click to change", "title");
 Dil.statik("dock-provider", "Provider — click: open settings", "title");
 Dil.secici("#workdir-pick", "Choose folder");

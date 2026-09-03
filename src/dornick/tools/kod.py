@@ -92,16 +92,16 @@ bağımlılık klasörlerine (node_modules, vendor, .venv) hiç girmez.
         lang = str(args.get("dil") or "") or None
 
         result = await asyncio.to_thread(
-            symbols.ara, root, query, tur=kind, dil=lang)
+            symbols.search, root, query, kind=kind, language=lang)
         return ToolResult(
-            content=result.metin(tur=kind),
+            content=result.text(kind=kind),
             detail={
                 "sorgu": query,
                 "kok": str(root),
-                "tanim": len(result.tanimlar),
-                "kullanim": len(result.use_log),
-                "taranan": result.taranan,
-                "kesin": result.kesin,
+                "tanim": len(result.definitions),
+                "kullanim": len(result.usages),
+                "taranan": result.scanned,
+                "kesin": result.exact,
             },
         )
 

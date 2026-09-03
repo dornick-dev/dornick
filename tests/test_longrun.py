@@ -244,8 +244,8 @@ async def test_a_failed_background_job_is_not_reported_as_done(
     await handle.task
     assert handle.state == "hata"
     assert oks == [False]
-    assert "pymodbus" in (handle.sonuc or "")
-    assert "Traceback" not in (handle.sonuc or "")
+    assert "pymodbus" in (handle.outcome or "")
+    assert "Traceback" not in (handle.outcome or "")
 
 
 async def test_shell_background_returns_immediately(tmp_path: Path) -> None:
@@ -680,7 +680,7 @@ def test_outage_rotates_the_auto_pool() -> None:
     to the end of the pool, the next attempt goes with another model."""
     from dornick import automode
 
-    health = automode.Saglik()
+    health = automode.Health()
     for _ in range(automode.ERROR_THRESHOLD):
         health.save("a/model", False)
 
@@ -722,7 +722,7 @@ async def test_the_bridge_resumes_a_parked_run(tmp_path: Path) -> None:
     bridge.queue.put_nowait(_PARK_RESUME)
     item = bridge.queue.get_nowait()
     assert item is _PARK_RESUME
-    await bridge._park_surdur()
+    await bridge._resume_parked()
 
     assert resumed == [True]
     assert [e["type"] for e in hub.events][-1] == "turn_end"

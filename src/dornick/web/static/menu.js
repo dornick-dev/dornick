@@ -1,42 +1,42 @@
-// Ortak sağ tık menüsü. Liste satırları (sohbet, görev, uygulama, git)
-// tarayıcının kendi menüsü yerine buradan işlem görür: arşiv, sil, aç.
+// Shared right-click menu. List rows (chat, task, app, git) get their
+// actions here instead of the browser's own menu: archive, delete, open.
 //
-// Madde adı DOM'da textContent ile kuruluyor; işaretleme dizesi yok.
+// The item label is built with textContent in the DOM; no markup strings.
 
 const Menu = (() => {
-  let kutu = null;
-  let kapatFn = null;
+  let openBox = null;
+  let closeFn = null;
 
   function kapat() {
-    if (kutu) kutu.remove();
-    kutu = null;
-    if (kapatFn) {
-      document.removeEventListener("mousedown", kapatFn, true);
-      document.removeEventListener("keydown", kapatFn, true);
-      window.removeEventListener("blur", kapatFn);
-      kapatFn = null;
+    if (openBox) openBox.remove();
+    openBox = null;
+    if (closeFn) {
+      document.removeEventListener("mousedown", closeFn, true);
+      document.removeEventListener("keydown", closeFn, true);
+      window.removeEventListener("blur", closeFn);
+      closeFn = null;
     }
   }
 
-  function ac(ev, maddeler) {
+  function ac(ev, items) {
     if (ev) {
       ev.preventDefault();
       ev.stopPropagation();
     }
     kapat();
-    const liste = (maddeler || []).filter(Boolean);
-    if (!liste.length) return;
+    const rows = (items || []).filter(Boolean);
+    if (!rows.length) return;
 
     const box = document.createElement("div");
     box.className = "ctx-menu";
     box.setAttribute("role", "menu");
 
-    for (const m of liste) {
+    for (const m of rows) {
       if (m.ayrac) {
-        const cizgi = document.createElement("div");
-        cizgi.className = "ctx-sep";
-        cizgi.setAttribute("role", "separator");
-        box.append(cizgi);
+        const line = document.createElement("div");
+        line.className = "ctx-sep";
+        line.setAttribute("role", "separator");
+        box.append(line);
         continue;
       }
       const btn = document.createElement("button");
@@ -68,88 +68,88 @@ const Menu = (() => {
     if (y + h > innerHeight - pad) y = Math.max(pad, innerHeight - h - pad);
     box.style.left = x + "px";
     box.style.top = y + "px";
-    kutu = box;
+    openBox = box;
 
-    kapatFn = (e) => {
+    closeFn = (e) => {
       if (e.type === "keydown" && e.key !== "Escape") return;
       if (e.type === "mousedown" && box.contains(e.target)) return;
       kapat();
     };
-    document.addEventListener("mousedown", kapatFn, true);
-    document.addEventListener("keydown", kapatFn, true);
-    window.addEventListener("blur", kapatFn);
+    document.addEventListener("mousedown", closeFn, true);
+    document.addEventListener("keydown", closeFn, true);
+    window.addEventListener("blur", closeFn);
   }
 
-  // --- pano menüsü ------------------------------------------------------
+  // --- clipboard menu ---------------------------------------------------
   //
-  // WebView2'nin varsayılan sağ tık menüsünü pywebview ÜRETİMDE kapatıyor
-  // (yalnız debug'da açık): kopyala/yapıştır menüsüz kalıyordu (natif tur,
-  // 31.08). Pano erişimi pywebview köprüsünden (pano_oku/pano_yaz) —
-  // tarayıcı izin kapısına takılmaz; köprü yoksa (tarayıcı önizleme)
-  // navigator.clipboard'a düşer.
+  // pywebview disables WebView2's default right-click menu IN PRODUCTION
+  // (open only in debug): copy/paste was left without a menu (native tour,
+  // 31.08). Clipboard access goes through the pywebview bridge
+  // (pano_oku/pano_yaz) — it does not hit the browser permission gate;
+  // without the bridge (browser preview) it falls back to navigator.clipboard.
 
-  function panoYaz(metin) {
+  function clipWrite(text) {
     try {
       if (window.pywebview && window.pywebview.api.pano_yaz) {
-        window.pywebview.api.pano_yaz(String(metin));
+        window.pywebview.api.pano_yaz(String(text));
         return;
       }
-    } catch { /* köprü yok */ }
-    try { navigator.clipboard.writeText(String(metin)); } catch { /* izin yok */ }
+    } catch { /* no bridge */ }
+    try { navigator.clipboard.writeText(String(text)); } catch { /* no permission */ }
   }
 
-  async function panoOku() {
+  async function clipRead() {
     try {
       if (window.pywebview && window.pywebview.api.pano_oku) {
         return String(await window.pywebview.api.pano_oku() || "");
       }
-    } catch { /* köprü yok */ }
+    } catch { /* no bridge */ }
     try { return String(await navigator.clipboard.readText() || ""); }
     catch { return ""; }
   }
 
-  function alanaEkle(hedef, metin) {
-    hedef.focus();
-    const b = hedef.selectionStart ?? hedef.value.length;
-    const e = hedef.selectionEnd ?? b;
-    hedef.value = hedef.value.slice(0, b) + metin + hedef.value.slice(e);
-    hedef.selectionStart = hedef.selectionEnd = b + metin.length;
-    hedef.dispatchEvent(new Event("input", { bubbles: true }));
+  function insertText(target, text) {
+    target.focus();
+    const b = target.selectionStart ?? target.value.length;
+    const e = target.selectionEnd ?? b;
+    target.value = target.value.slice(0, b) + text + target.value.slice(e);
+    target.selectionStart = target.selectionEnd = b + text.length;
+    target.dispatchEvent(new Event("input", { bubbles: true }));
   }
 
-  function secimiSil(hedef) {
-    const b = hedef.selectionStart ?? 0, e = hedef.selectionEnd ?? 0;
-    hedef.value = hedef.value.slice(0, b) + hedef.value.slice(e);
-    hedef.selectionStart = hedef.selectionEnd = b;
-    hedef.dispatchEvent(new Event("input", { bubbles: true }));
+  function cutSelection(target) {
+    const b = target.selectionStart ?? 0, e = target.selectionEnd ?? 0;
+    target.value = target.value.slice(0, b) + target.value.slice(e);
+    target.selectionStart = target.selectionEnd = b;
+    target.dispatchEvent(new Event("input", { bubbles: true }));
   }
 
   document.addEventListener("contextmenu", (ev) => {
-    // Kendi menüsü olan satırlar (sohbet listesi vb.) kendi yollarını
-    // kullanıyor; onlar stopPropagation ile buraya hiç düşmez.
-    const hedef = ev.target.closest("input, textarea");
-    const yazilabilir = hedef && !hedef.readOnly && !hedef.disabled
-      && hedef.type !== "checkbox" && hedef.type !== "radio";
-    const secim = String(window.getSelection() || "");
-    const alanSecimi = yazilabilir
-      ? String(hedef.value || "").slice(hedef.selectionStart ?? 0, hedef.selectionEnd ?? 0)
+    // Rows with a menu of their own (the chat list etc.) use their own
+    // paths; with stopPropagation they never fall through to here.
+    const target = ev.target.closest("input, textarea");
+    const editable = target && !target.readOnly && !target.disabled
+      && target.type !== "checkbox" && target.type !== "radio";
+    const selection = String(window.getSelection() || "");
+    const fieldSelection = editable
+      ? String(target.value || "").slice(target.selectionStart ?? 0, target.selectionEnd ?? 0)
       : "";
-    const kopyalanacak = alanSecimi || secim;
-    if (!yazilabilir && !kopyalanacak) return;   // menülük bir şey yok
-    const maddeler = [];
-    if (kopyalanacak) {
-      maddeler.push({ ad: "Kopyala", is: () => panoYaz(kopyalanacak) });
+    const toCopy = fieldSelection || selection;
+    if (!editable && !toCopy) return;   // nothing worth a menu
+    const items = [];
+    if (toCopy) {
+      items.push({ ad: "Kopyala", is: () => clipWrite(toCopy) });
     }
-    if (yazilabilir && alanSecimi) {
-      maddeler.push({ ad: "Kes", is: () => { panoYaz(alanSecimi); secimiSil(hedef); } });
+    if (editable && fieldSelection) {
+      items.push({ ad: "Kes", is: () => { clipWrite(fieldSelection); cutSelection(target); } });
     }
-    if (yazilabilir) {
-      maddeler.push({ ad: "Yapıştır",
-                      is: () => { panoOku().then((m) => { if (m) alanaEkle(hedef, m); }); } });
-      maddeler.push({ ad: "Tümünü seç",
-                      is: () => { hedef.focus(); hedef.select && hedef.select(); } });
+    if (editable) {
+      items.push({ ad: "Yapıştır",
+                      is: () => { clipRead().then((m) => { if (m) insertText(target, m); }); } });
+      items.push({ ad: "Tümünü seç",
+                      is: () => { target.focus(); target.select && target.select(); } });
     }
-    ac(ev, maddeler);
+    ac(ev, items);
   });
 
   return { ac, kapat };

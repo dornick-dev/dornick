@@ -1,13 +1,13 @@
-"""Konum aracı.
+"""Location tool.
 
-Model konumu ancak sorunca öğreniyor: her isteme gömmek, konumun hiç
-gerekmediği yüzlerce tur boyunca boşuna yer kaplardı. Gerektiğinde
-soruluyor.
+The model learns the location only when it asks: embedding it in every
+prompt would waste space through hundreds of turns where the location is
+never needed. It is asked for when required.
 
-Dönen metin güven derecesini taşıyor. Bu kasıtlı: "ipucu" olan bir şehri
-model cevaba gerçek gibi gömerse — "yarın İstanbul'da 23–30°C" — kullanıcı
-orada değilse yanlış bir cevabı doğru gibi sunmuş olur ve yanlış olduğu
-bile anlaşılmaz.
+The returned text carries the trust level. This is deliberate: if the
+model bakes a "hint" city into an answer as fact — "tomorrow in Istanbul
+23–30°C" — and the user is not there, it has presented a wrong answer as
+right, and it is not even noticeable that it is wrong.
 """
 
 from __future__ import annotations

@@ -1,17 +1,18 @@
-// Sohbete bırakılan dosyalar.
+// Files dropped into the chat.
 //
-// Üç yol da aynı yere çıkıyor: sürükle-bırak, kopyala-yapıştır, ve gözat.
-// Tarayıcı yerel dosyanın yolunu vermiyor (güvenlik gereği), yalnızca
-// içeriğini; o yüzden dosya atölyeye kopyalanıyor ve ajana **yol**
-// veriliyor. Oradan `read_file` ile açıp inceleyebiliyor.
+// All three paths lead to the same place: drag-and-drop, copy-paste, and
+// browse. The browser does not give a local file's path (by security
+// design), only its content; so the file is copied into the workshop and
+// the agent is given the **path**. From there it can open and inspect it
+// with `read_file`.
 //
-// Görüntüler ayrı ele alınıyor: mesaja doğrudan iliştiriliyor ve model
-// bakabiliyor. Yine de dosya olarak da atölyede kalıyor — sonra tekrar
-// açması gerekebilir.
+// Images are handled separately: they are attached to the message directly
+// and the model can look at them. They still stay in the workshop as files
+// too — it may need to open them again later.
 
 const Drop = (() => {
-  // Tarayıcı içeriği base64 ile taşıyor (üçte bir şişme) ve bellekte
-  // tutuyor. Sunucu tarafında da aynı sınır var.
+  // The browser carries content as base64 (a one-third bloat) and keeps it
+  // in memory. The same limit exists on the server side.
   const LIMIT = 25 * 1024 * 1024;
 
   let onFile = () => {};
@@ -50,10 +51,11 @@ const Drop = (() => {
     }
 
     if (!answer.ok) { onNote(answer.error || "Yazılamadı"); return; }
-    // Görüntü AYRI bir önizleme yüzeyine bölünmüyor: tek kayıt, küçük
-    // resmiyle. (Eski hal hem kare önizlemesi hem ad çipi doğuruyordu —
-    // "ikisine ayrı ayrı çarpı demem gerekiyor".) Gönderimde son görüntü
-    // mesaja iliştirilir; kopya atölyede zaten duruyor.
+    // An image is NOT split into a separate preview surface: one record,
+    // with its thumbnail. (The old state spawned both a frame preview and a
+    // name chip — "I have to hit two separate close buttons".) On send the
+    // last image is attached to the message; the copy already sits in the
+    // workshop.
     onFile(isImage(file) ? { ...answer, image: data } : answer);
   }
 
@@ -66,13 +68,13 @@ const Drop = (() => {
     });
   }
 
-  // --- bağlama -----------------------------------------------------------
+  // --- wiring ------------------------------------------------------------
 
   function bind() {
     const zone = document.body;
 
-    // Varsayılan davranış dosyayı pencerede **açıyor** ve uygulamadan
-    // çıkıyor; her ikisinde de engellenmeli.
+    // The default behaviour **opens** the file in the window and leaves the
+    // app; it must be blocked on both events.
     for (const name of ["dragenter", "dragover"]) {
       zone.addEventListener(name, (ev) => {
         if (!hasFiles(ev)) return;
@@ -82,8 +84,8 @@ const Drop = (() => {
     }
     for (const name of ["dragleave", "drop"]) {
       zone.addEventListener(name, (ev) => {
-        // dragleave iç öğelere geçerken de tetikleniyor; yalnızca pencereden
-        // gerçekten çıkıldığında kapatılıyor.
+        // dragleave also fires when moving over inner elements; only close
+        // when the window is genuinely left.
         if (name === "dragleave" && ev.relatedTarget) return;
         zone.classList.remove("dropping");
       });
@@ -95,20 +97,20 @@ const Drop = (() => {
       for (const file of ev.dataTransfer.files) take(file);
     });
 
-    // Yapıştırma: ekran görüntüsü panoda görüntü olarak duruyor.
+    // Paste: a screenshot sits on the clipboard as an image.
     document.addEventListener("paste", (ev) => {
       const items = ev.clipboardData ? ev.clipboardData.files : null;
-      if (!items || !items.length) return;   // düz metin: yazma satırına gitsin
+      if (!items || !items.length) return;   // plain text: let it go to the composer
       ev.preventDefault();
       for (const file of items) take(file);
     });
 
-    // Gözat.
+    // Browse.
     const picker = document.getElementById("file-input");
     document.getElementById("clip").addEventListener("click", () => picker.click());
     picker.addEventListener("change", () => {
       for (const file of picker.files) take(file);
-      picker.value = "";   // aynı dosya art arda seçilebilsin
+      picker.value = "";   // so the same file can be picked twice in a row
     });
   }
 

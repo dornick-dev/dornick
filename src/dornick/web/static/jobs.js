@@ -1,6 +1,6 @@
-// Ana ekran Görevler: zamanlanmış + otomasyon listesi ve koşum detayı.
-// HUD ikonu (#jobs) → panel. Ayarlar sekmesi özet; asıl UX burası.
-// Sol: koşu tarihleri · Sağ: seçili koşunun raporu (sohbet genişliği gibi).
+// Main-screen Tasks: the scheduled + automation list and the run detail.
+// HUD icon (#jobs) → panel. The settings tab is a summary; the real UX is here.
+// Left: run dates · Right: the selected run's report (about chat width).
 
 (() => {
   const panel = document.getElementById("jobs-panel");
@@ -83,20 +83,21 @@
 
   const t = (s) => (typeof Dil !== "undefined" && Dil.t ? Dil.t(s) : s);
 
-  // Tekrar tarifi sunucudan Türkçe geliyor (`Task.describe()`); arka uç
-  // metinlerinin tamamını çevirmek başka bir iş, ama listede EN ÇOK göze
-  // çarpan satır bu. Kalıp dar ve sayılar korunuyor; tanınmayan biçim
-  // olduğu gibi bırakılıyor — yanlış çevirmektense Türkçe kalsın.
-  function tarif(metin) {
-    const ham = String(metin || "");
-    if (typeof Dil === "undefined" || Dil.mode !== "en") return ham;
-    let m = ham.match(/^her gün (\d{1,2}:\d{2})$/);
+  // The repeat description arrives from the server in Turkish
+  // (`Task.describe()`); translating all backend texts is a separate job,
+  // but this is the MOST visible line in the list. The pattern is narrow and
+  // the numbers are preserved; an unrecognized shape is left as-is — better
+  // Turkish than mistranslated.
+  function describeRepeat(text) {
+    const raw = String(text || "");
+    if (typeof Dil === "undefined" || Dil.mode !== "en") return raw;
+    let m = raw.match(/^her gün (\d{1,2}:\d{2})$/);
     if (m) return `daily at ${m[1]}`;
-    m = ham.match(/^her (\d+) saatte$/);
+    m = raw.match(/^her (\d+) saatte$/);
     if (m) return `every ${m[1]} h`;
-    m = ham.match(/^her (\d+) dakikada$/);
+    m = raw.match(/^her (\d+) dakikada$/);
     if (m) return `every ${m[1]} min`;
-    return ham;
+    return raw;
   }
   const el = (tag, cls, text) => {
     const n = document.createElement(tag);
@@ -149,8 +150,9 @@
     if (typeof Gorevler !== "undefined") Gorevler.mount(host);
   }
 
-  // Solo kip: kenar çubuğundan gelindi — orta alanda liste yok, yalnız
-  // seçilen görevin detayı (liste zaten solda). HUD düğmesi tam görünüm.
+  // Solo mode: entered from the sidebar — no list in the center, only the
+  // chosen task's detail (the list is already on the left). The HUD button
+  // gives the full view.
   let solo = false;
 
   function open() {
@@ -159,7 +161,8 @@
   }
 
   function openInner() {
-    // Orta alanda tek yüzey: uygulamalar açıksa çekilir (üst üste binme yok).
+    // One surface in the center: if the apps panel is open it withdraws
+    // (no stacking).
     if (typeof Apps !== "undefined") Apps.close();
     panel.classList.toggle("jobs-solo", solo);
     panel.hidden = false;
@@ -176,13 +179,13 @@
     view = "live";
     open();
   }
-  // openInner open ile aynı gövdeyi paylaşıyor; solo bayrağını open
-  // sıfırlıyor, show koruyor.
+  // openInner shares its body with open; open resets the solo flag,
+  // show keeps it.
   function close() {
     panel.hidden = true;
     document.body.classList.remove("jobs-open");
     stopLivePoll();
-    akisDurdur();   // kapalı panel arkada yoklama yapmamalı
+    stopFlowPoll();   // a closed panel must not keep polling in the background
     if (typeof Gorevler !== "undefined") Gorevler.setVisible(false);
   }
   function toggle() {
@@ -190,7 +193,7 @@
   }
 
   async function load() {
-    // Canlı görünümde görev listesini çizme — defteri siler.
+    // In the live view do not draw the task list — it would wipe the ledger.
     if (view === "live") {
       if (typeof Gorevler !== "undefined" && Gorevler.tazele) Gorevler.tazele();
       return;
@@ -218,30 +221,30 @@
     } catch { runs = []; }
   }
 
-  // Akış koşarken şemayı tazeleyen tek zamanlayıcı. Koşu bitince kendini
-  // durduruyor: biten bir işi saniyede bir yoklamak, kapalı panelde sessizce
-  // dönen bir istek trafiği demek olurdu.
-  let akisZamanlayici = null;
+  // The single timer that refreshes the diagram while a flow runs. It stops
+  // itself when the run finishes: polling a finished job every second would
+  // be silent request traffic behind a closed panel.
+  let flowTimer = null;
 
-  function akisDurdur() {
-    if (akisZamanlayici) { clearInterval(akisZamanlayici); akisZamanlayici = null; }
+  function stopFlowPoll() {
+    if (flowTimer) { clearInterval(flowTimer); flowTimer = null; }
   }
 
-  function akisCanliTakip(task, kosu) {
-    const kosuyor = kosu && (kosu.status || "").startsWith("koş");
-    if (!kosuyor) { akisDurdur(); return; }
-    if (akisZamanlayici) return;
-    akisZamanlayici = setInterval(async () => {
-      if (tab !== "flow") { akisDurdur(); return; }
-      const oncekiSecim = selectedRunId;
+  function trackFlowLive(task, run) {
+    const running = run && (run.status || "").startsWith("koş");
+    if (!running) { stopFlowPoll(); return; }
+    if (flowTimer) return;
+    flowTimer = setInterval(async () => {
+      if (tab !== "flow") { stopFlowPoll(); return; }
+      const prevPick = selectedRunId;
       await loadRuns(task.id);
-      // Kullanıcının seçtiği koşu varsa onda kal: altından değiştirmek,
-      // baktığı şeyi kaydırmak olur.
-      if (oncekiSecim && runs.some((r) => r.id === oncekiSecim)) {
-        selectedRunId = oncekiSecim;
+      // If the user picked a run, stay on it: switching it under them would
+      // move what they are looking at.
+      if (prevPick && runs.some((r) => r.id === prevPick)) {
+        selectedRunId = prevPick;
       }
-      const taze = runs.find((r) => r.id === selectedRunId);
-      if (!taze || !(taze.status || "").startsWith("koş")) akisDurdur();
+      const fresh = runs.find((r) => r.id === selectedRunId);
+      if (!fresh || !(fresh.status || "").startsWith("koş")) stopFlowPoll();
       render();
     }, 1500);
   }
@@ -269,7 +272,7 @@
     return task.last_status === "koşuyor" && !!task.last_child_id;
   }
 
-  async function acGorev(task) {
+  async function openTask(task) {
     selectedId = task.id;
     tab = "runs";
     await loadRuns(task.id);
@@ -278,7 +281,7 @@
     render();
   }
 
-  async function kosuDegistir(task) {
+  async function toggleRun(task) {
     if (taskRunning(task)) {
       const cid = task.last_child_id;
       if (!cid) return;
@@ -306,7 +309,7 @@
     document.dispatchEvent(new Event("dornick-side-tazele"));
   }
 
-  async function silGorev(task) {
+  async function deleteTask(task) {
     if (!confirm(t("Görevi silmek istediğine emin misin?"))) return;
     if (await saveTask({ action: "remove", id: task.id })) {
       selectedId = null;
@@ -317,12 +320,12 @@
 
   function gorevMenu(task, ev) {
     if (typeof Menu === "undefined") return;
-    const kosuyor = taskRunning(task);
+    const running = taskRunning(task);
     Menu.ac(ev, [
-      { ad: "Aç", is: () => { if (panel.hidden) show(task.id); else acGorev(task); } },
-      { ad: kosuyor ? "Durdur" : "Çalıştır", is: () => kosuDegistir(task) },
+      { ad: "Aç", is: () => { if (panel.hidden) show(task.id); else openTask(task); } },
+      { ad: running ? "Durdur" : "Çalıştır", is: () => toggleRun(task) },
       { ayrac: true },
-      { ad: "Sil", risk: true, is: () => silGorev(task) },
+      { ad: "Sil", risk: true, is: () => deleteTask(task) },
     ]);
   }
 
@@ -367,7 +370,7 @@
       const badge = el("span", "jobs-badge" + (task.kind_ui === "automation" ? " auto" : ""),
         task.kind_ui === "automation" ? t("Otomasyon") : t("Basit"));
       sub.append(badge);
-      if (task.describe) sub.append(el("span", "jobs-row-when", tarif(task.describe)));
+      if (task.describe) sub.append(el("span", "jobs-row-when", describeRepeat(task.describe)));
       row.append(sub);
       if (taskRunning(task)) {
         row.append(el("span", "jobs-row-status live", t("Bu görev şu an çalışıyor")));
@@ -376,7 +379,7 @@
       } else if (!task.enabled) {
         row.append(el("span", "jobs-row-status", t("Durduruldu")));
       }
-      row.onclick = async () => { await acGorev(task); };
+      row.onclick = async () => { await openTask(task); };
       row.addEventListener("contextmenu", (ev) => gorevMenu(task, ev));
       list.append(row);
     }
@@ -417,21 +420,21 @@
     const titWrap = el("div", "jobs-detail-title-wrap");
     titWrap.append(el("h2", "jobs-detail-title", task.title || task.id));
     const subParts = [];
-    if (task.describe) subParts.push(tarif(task.describe));
+    if (task.describe) subParts.push(describeRepeat(task.describe));
     if (task.enabled && task.next_run) subParts.push(t("Sırada") + ": " + short(task.next_run));
     if (!task.enabled) subParts.push(t("Durduruldu"));
     if (subParts.length) titWrap.append(el("p", "jobs-detail-sub", subParts.join(" · ")));
     head.append(titWrap);
     const acts = el("div", "jobs-detail-acts");
-    const kosuyor = taskRunning(task);
+    const running = taskRunning(task);
 
-    const toggle = el("button", "jobs-act" + (kosuyor ? " jobs-act-stop" : ""),
-      t(kosuyor ? "Durdur" : "Çalıştır"));
+    const toggle = el("button", "jobs-act" + (running ? " jobs-act-stop" : ""),
+      t(running ? "Durdur" : "Çalıştır"));
     toggle.type = "button";
     toggle.onclick = async () => {
       toggle.disabled = true;
-      if (kosuyor) toggle.textContent = t("Durduruluyor…");
-      await kosuDegistir(task);
+      if (running) toggle.textContent = t("Durduruluyor…");
+      await toggleRun(task);
     };
     acts.append(toggle);
     head.append(acts);
@@ -476,15 +479,15 @@
     }
     if (tab === "flow") {
       if (typeof WorkflowView !== "undefined" && WorkflowView.render) {
-        // Seçili koşunun canlı durumu şemaya geçiyor: adımlar koşarken
-        // renkleniyor, çıktı aynı ekranda kalıyor.
-        const kosu = runs.find((r) => r.id === selectedRunId) || runs[0] || null;
-        const durum = kosu ? {
-          progress: kosu.nodes_progress || [],
-          rapor: kosu.report || "",
-          cikti: kosu.deliverable || null,
+        // The selected run's live state flows into the diagram: steps take
+        // color while running, the output stays on the same screen.
+        const run = runs.find((r) => r.id === selectedRunId) || runs[0] || null;
+        const status = run ? {
+          progress: run.nodes_progress || [],
+          rapor: run.report || "",
+          cikti: run.deliverable || null,
         } : null;
-        akisCanliTakip(task, kosu);
+        trackFlowLive(task, run);
         box.append(WorkflowView.render(workflow, async (wf) => {
           await fetch("/api/workflows", {
             method: "POST",
@@ -493,14 +496,14 @@
           });
           await loadWorkflow(wf.id);
           render();
-        }, durum));
+        }, status));
       } else {
         box.append(el("pre", "jobs-prompt",
           workflow ? JSON.stringify(workflow, null, 2) : t("Akış yok")));
       }
       return box;
     }
-    // runs: sol tarihler + sağ içerik
+    // runs: dates on the left + content on the right
     if (!runs.length) {
       const empty = el("div", "jobs-blank-box");
       empty.append(el("p", "jobs-blank", t("Koşum yok")));
@@ -545,15 +548,15 @@
       };
       content.append(openApp);
     } else if (run.child_id) {
-      const ac = el("button", "jobs-act", t("Raporu aç"));
-      ac.type = "button";
-      ac.onclick = () => {
+      const openReport = el("button", "jobs-act", t("Raporu aç"));
+      openReport.type = "button";
+      openReport.onclick = () => {
         if (typeof Viewer !== "undefined" && Viewer.page) {
           Viewer.page("/gorev-rapor/" + encodeURIComponent(run.child_id) + "/",
                       run.title || task.title);
         }
       };
-      content.append(ac);
+      content.append(openReport);
     }
 
     if (running) {
@@ -584,8 +587,8 @@
     const status = el("div", "jobs-live-status");
     const snap = liveSnap || {};
     if (snap.wait) {
-      const kip = snap.wait.kip || "";
-      let msg = kip === "hata" ? t("Model yanıt vermedi") : t("Model bekleniyor");
+      const mode = snap.wait.kip || "";
+      let msg = mode === "hata" ? t("Model yanıt vermedi") : t("Model bekleniyor");
       if (snap.wait.deneme && snap.wait.toplam) {
         msg += ` (${snap.wait.deneme}/${snap.wait.toplam})`;
       }
@@ -601,13 +604,13 @@
     wrap.append(status);
 
     const steps = el("div", "jobs-live-steps");
-    const adimlar = snap.adimlar;
-    if (adimlar === undefined) {
+    const stepData = snap.adimlar;
+    if (stepData === undefined) {
       steps.append(el("div", "jobs-live-empty", t("Adımlar yükleniyor…")));
-    } else if (!adimlar || !adimlar.length) {
+    } else if (!stepData || !stepData.length) {
       steps.append(el("div", "jobs-live-empty", t("Araç bekleniyor…")));
     } else {
-      for (const a of adimlar.slice(-40)) {
+      for (const a of stepData.slice(-40)) {
         if (a.tur === "arac") {
           const row = el("div", "jobs-live-step" + (a.hata ? " err" : ""));
           row.append(el("span", "jobs-live-mark", a.hata ? "✗" : "·"));
@@ -635,7 +638,7 @@
   function startLivePoll(run, task) {
     const cid = run.child_id || task.last_child_id;
     if (!cid) return;
-    // Aynı koşu için çift interval açma.
+    // Do not open a second interval for the same run.
     if (livePoll && liveSnap && liveSnap._cid === cid) return;
     stopLivePoll();
     const tick = async () => {
@@ -644,8 +647,8 @@
         return;
       }
       try {
-        const gorev = await (await fetch("/api/gorevler")).json();
-        const row = ((gorev && gorev.gorevler) || [])
+        const data = await (await fetch("/api/gorevler")).json();
+        const row = ((data && data.gorevler) || [])
           .find((g) => g.id === "c:" + cid);
         const next = {
           _cid: cid,
@@ -674,7 +677,7 @@
           await loadRuns(task.id);
           await load();
         }
-      } catch { /* ağ yok — sonraki tik */ }
+      } catch { /* no network — next tick */ }
     };
     tick();
     livePoll = setInterval(tick, 2500);
@@ -685,7 +688,7 @@
     if (!host) return;
     const neu = renderLiveRun();
     host.replaceWith(neu);
-    // CTA düğmesi (uygulama) — deliverable sonradan gelmiş olabilir.
+    // CTA button (app) — the deliverable may have arrived late.
     const content = panel.querySelector(".jobs-run-content");
     if (!content || !liveSnap || !liveSnap.deliverable || !liveSnap.deliverable.url) return;
     if (content.querySelector(".jobs-act-primary")) return;
@@ -868,7 +871,7 @@
 
   function renderSettingsForm(task) {
     const box = el("div", "jobs-form");
-    const kosuyor = task.last_status === "koşuyor";
+    const running = task.last_status === "koşuyor";
     const draft = {
       action: "update",
       id: task.id,
@@ -914,15 +917,15 @@
     });
     box.append(enabledRow);
 
-    const parcalar = [];
-    if (kosuyor) parcalar.push(t("Bu görev şu an çalışıyor"));
-    else if (draft.enabled && task.next_run) parcalar.push(t("Sırada") + ": " + short(task.next_run));
-    else if (!draft.enabled) parcalar.push(t("Durduruldu"));
-    if (task.last_run) parcalar.push(t("Son koşu") + ": " + short(task.last_run));
+    const parts = [];
+    if (running) parts.push(t("Bu görev şu an çalışıyor"));
+    else if (draft.enabled && task.next_run) parts.push(t("Sırada") + ": " + short(task.next_run));
+    else if (!draft.enabled) parts.push(t("Durduruldu"));
+    if (task.last_run) parts.push(t("Son koşu") + ": " + short(task.last_run));
     if (task.last_status && task.last_status !== "koşuyor") {
-      parcalar.push(t("Son") + ": " + task.last_status);
+      parts.push(t("Son") + ": " + task.last_status);
     }
-    if (parcalar.length) box.append(el("p", "jobs-meta", parcalar.join(" · ")));
+    if (parts.length) box.append(el("p", "jobs-meta", parts.join(" · ")));
 
     const acts = el("div", "jobs-form-acts");
     const save = el("button", "jobs-act jobs-act-primary", t("Kaydet"));
@@ -932,7 +935,7 @@
     };
     const del = el("button", "jobs-act jobs-act-risk", t("Sil"));
     del.type = "button";
-    del.onclick = () => silGorev(task);
+    del.onclick = () => deleteTask(task);
     acts.append(save, del);
     box.append(acts);
     return box;
@@ -944,54 +947,54 @@
 
     box.append(field("Ad", "", inputText("", (v) => (draft.title = v), t("Yeni görev"))));
 
-    // Görev türü: basit (tek yönerge) ya da otomasyon (akış grafiği).
-    // Otomasyonun taşıyıcı alanı prompt değil AKIŞ; ikisini aynı formda
-    // istemek, kullanıcıyı anlamsız bir metin uydurmaya iterdi.
-    const tur = el("select", "jobs-input");
-    tur.append(selectOption("simple", "Basit — tek yönerge", true));
-    tur.append(selectOption("automation", "Otomasyon — akış grafiği", false));
-    box.append(field("Tür", "", tur));
+    // Task kind: simple (one instruction) or automation (flow graph). The
+    // automation's carrier is not a prompt but the FLOW; asking for both in
+    // one form would push the user to invent meaningless text.
+    const kindSel = el("select", "jobs-input");
+    kindSel.append(selectOption("simple", "Basit — tek yönerge", true));
+    kindSel.append(selectOption("automation", "Otomasyon — akış grafiği", false));
+    box.append(field("Tür", "", kindSel));
 
-    const govde = el("div", "jobs-slot jobs-slot-col");
-    const akisSec = el("select", "jobs-input");
-    const akisNot = el("span", "jobs-field-hint", "");
-    async function akislariDoldur() {
-      akisSec.replaceChildren();
-      let liste = [];
+    const bodySlot = el("div", "jobs-slot jobs-slot-col");
+    const flowSelect = el("select", "jobs-input");
+    const flowHint = el("span", "jobs-field-hint", "");
+    async function fillFlows() {
+      flowSelect.replaceChildren();
+      let list = [];
       try {
         const res = await (await fetch("/api/workflows")).json();
-        liste = res.workflows || [];
-      } catch { liste = []; }
-      if (!liste.length) {
-        akisSec.append(selectOption("", t("(kayıtlı akış yok)"), true));
-        akisNot.textContent = t("Akışı ajana kurdurabilirsin: “… için bir otomasyon kur” de.");
+        list = res.workflows || [];
+      } catch { list = []; }
+      if (!list.length) {
+        flowSelect.append(selectOption("", t("(kayıtlı akış yok)"), true));
+        flowHint.textContent = t("Akışı ajana kurdurabilirsin: “… için bir otomasyon kur” de.");
         return;
       }
-      akisNot.textContent = t("Adımlar Akış sekmesinde düzenlenir.");
-      liste.forEach((w, i) => {
-        akisSec.append(selectOption(
+      flowHint.textContent = t("Adımlar Akış sekmesinde düzenlenir.");
+      list.forEach((w, i) => {
+        flowSelect.append(selectOption(
           w.id, `${w.title || w.id} · ${w.nodes} adım`, i === 0));
       });
-      draft.workflow_id = liste[0].id;
+      draft.workflow_id = list[0].id;
     }
-    akisSec.addEventListener("change", () => { draft.workflow_id = akisSec.value; });
+    flowSelect.addEventListener("change", () => { draft.workflow_id = flowSelect.value; });
 
-    const promptAlani = inputArea("", (v) => (draft.prompt = v),
+    const promptArea = inputArea("", (v) => (draft.prompt = v),
       t("Her sabah borsayı kontrol et ve özetle"));
 
-    function govdeyiDoldur() {
-      govde.replaceChildren();
-      if (tur.value === "automation") {
-        govde.append(akisSec, akisNot);
-        akislariDoldur();
+    function fillBody() {
+      bodySlot.replaceChildren();
+      if (kindSel.value === "automation") {
+        bodySlot.append(flowSelect, flowHint);
+        fillFlows();
       } else {
         draft.workflow_id = "";
-        govde.append(promptAlani);
+        bodySlot.append(promptArea);
       }
     }
-    govdeyiDoldur();
-    tur.addEventListener("change", govdeyiDoldur);
-    box.append(field("Ne yapsın", "", govde));
+    fillBody();
+    kindSel.addEventListener("change", fillBody);
+    box.append(field("Ne yapsın", "", bodySlot));
 
     const kind = el("select", "jobs-input");
     kind.append(selectOption("every", "Belirli aralıklarla", true));
@@ -1019,7 +1022,7 @@
     const add = el("button", "jobs-act jobs-act-primary", t("Kur"));
     add.type = "button";
     add.onclick = async () => {
-      if (tur.value === "automation") {
+      if (kindSel.value === "automation") {
         if (!String(draft.workflow_id || "").trim()) {
           if (typeof say === "function") say(t("Önce bir akış gerekli"), true);
           return;
@@ -1044,7 +1047,7 @@
     else load();
   });
 
-  // Kenar çubuğundan: belirli bir görevin detayıyla, LİSTESİZ aç.
+  // From the sidebar: open with a specific task's detail, WITHOUT the list.
   function show(id) {
     view = "scheduled";
     selectedId = id;

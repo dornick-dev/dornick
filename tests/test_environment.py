@@ -23,32 +23,32 @@ def test_developer_repo_does_not_count_as_installed(tmp_path: Path, monkeypatch)
     exe.write_bytes(b"")
     monkeypatch.setattr(sys, "executable", str(exe))
     try:
-        environment.kurulu_mu.cache_clear()
-        assert environment.kurulu_mu() is False
+        environment.is_installed.cache_clear()
+        assert environment.is_installed() is False
 
         # The mark the wizard leaves: setup.json at the root.
         (tmp_path / "setup.json").write_text('{"dil": "tr"}', encoding="utf-8")
-        environment.kurulu_mu.cache_clear()
-        assert environment.kurulu_mu() is True
+        environment.is_installed.cache_clear()
+        assert environment.is_installed() is True
 
         # The old name is recognised too (existing installs).
         (tmp_path / "setup.json").unlink()
         (tmp_path / "kurulum.json").write_text('{"dil": "tr"}', encoding="utf-8")
-        environment.kurulu_mu.cache_clear()
-        assert environment.kurulu_mu() is True
+        environment.is_installed.cache_clear()
+        assert environment.is_installed() is True
 
         # The embedded-Python trace alone suffices: the ._pth file.
         (tmp_path / "kurulum.json").unlink()
         (exe.parent / "python311._pth").write_text("..\\src\n", encoding="ascii")
-        environment.kurulu_mu.cache_clear()
-        assert environment.kurulu_mu() is True
+        environment.is_installed.cache_clear()
+        assert environment.is_installed() is True
     finally:
-        environment.kurulu_mu.cache_clear()  # the fake path must not stay in the cache
+        environment.is_installed.cache_clear()  # the fake path must not stay in the cache
 
 
 def test_installed_layout_does_not_suggest_pip(monkeypatch) -> None:
     """In the installed layout the message points to the wizard, not pip."""
-    monkeypatch.setattr(environment, "kurulu_mu", lambda: True)
+    monkeypatch.setattr(environment, "is_installed", lambda: True)
     for message in (listen.hint(), voice.hint(), watch.hint()):
         assert "pip install" not in message
         assert "sihirbaz" in message
@@ -58,7 +58,7 @@ def test_installed_layout_does_not_suggest_pip(monkeypatch) -> None:
 
 
 def test_developer_layout_suggests_pip(monkeypatch) -> None:
-    monkeypatch.setattr(environment, "kurulu_mu", lambda: False)
+    monkeypatch.setattr(environment, "is_installed", lambda: False)
     assert listen.hint() == listen.INSTALL_HINT
     assert voice.hint() == voice.INSTALL_HINT
     assert watch.hint() == watch.INSTALL_HINT
@@ -267,7 +267,7 @@ def test_download_refuses_an_untrusted_redirect(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="[Yy]önlendirme"):
         environment.download_update(
             "https://github.com/dornick-dev/dornick/releases/download/v9/dornick-setup-9.exe",
-            tmp_path, ad="dornick-setup-9.exe", _ac=opener)
+            tmp_path, name="dornick-setup-9.exe", _ac=opener)
 
 
 def test_successful_download_writes_the_file(tmp_path: Path) -> None:
@@ -278,7 +278,7 @@ def test_successful_download_writes_the_file(tmp_path: Path) -> None:
     progress_calls: list[int] = []
     path = environment.download_update(
         "https://github.com/dornick-dev/dornick/releases/download/v9/dornick-setup-9.exe",
-        tmp_path, ad="dornick-setup-9.exe", beklenen_boyut=len(body),
+        tmp_path, name="dornick-setup-9.exe", expected_size=len(body),
         progress=lambda a, t: progress_calls.append(a), _ac=opener)
     assert path.is_file() and path.name == "dornick-setup-9.exe"
     assert path.read_bytes() == body
@@ -293,4 +293,4 @@ def test_download_refuses_a_tiny_file(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="küçük"):
         environment.download_update(
             "https://github.com/dornick-dev/dornick/releases/download/v9/z.exe",
-            tmp_path, ad="z.exe", _ac=opener)
+            tmp_path, name="z.exe", _ac=opener)

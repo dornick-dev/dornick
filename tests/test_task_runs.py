@@ -1,7 +1,7 @@
-"""Görev koşum arşivi.
+"""The task-run archive.
 
-Vaat: başlayan bir koşum diske yazılıyor, bitince status/report
-güncelleniyor ve list_runs en yeniyi başa koyuyor.
+The promise: a started run is written to disk, status/report is updated
+when it finishes, and list_runs puts the newest first.
 """
 
 from __future__ import annotations
@@ -68,7 +68,7 @@ def test_finish_run_archives_report(tmp_path: Path) -> None:
     assert loaded.last_tool == "browser · open"
 
 
-def test_finish_run_hata(tmp_path: Path) -> None:
+def test_finish_run_error(tmp_path: Path) -> None:
     run = task_runs.start_run(tmp_path, "job_y")
     failed = task_runs.finish_run(tmp_path, "job_y", run.id, status="hata", report="timeout")
     assert failed.status == "hata"
@@ -104,7 +104,7 @@ def test_list_runs_newest_first_with_limit(tmp_path: Path) -> None:
 
     listed = task_runs.list_runs(tmp_path, "job_z", limit=3)
     assert len(listed) == 3
-    # started ISO — sözlük sırası = zaman sırası; en yeni başta.
+    # started is ISO — lexical order = time order; newest first.
     assert listed[0].started >= listed[1].started >= listed[2].started
 
 
@@ -123,7 +123,7 @@ def test_unknown_status_refused(tmp_path: Path) -> None:
 
 
 def test_schedule_task_carries_workflow_fields(tmp_path: Path) -> None:
-    """Dilim 2: Task.kind_ui / workflow_id varsayılanları ve kalıcılık."""
+    """Slice 2: Task.kind_ui / workflow_id defaults and persistence."""
     book = Schedule(tmp_path)
     created = book.add(
         Task(

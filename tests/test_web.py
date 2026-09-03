@@ -875,11 +875,11 @@ def test_the_update_endpoint_downloads_reports_progress_and_launches(
 
     downloaded = tmp_path / "dornick-setup-9.9.9.exe"
 
-    def fake_download(url, folder, *, beklenen_boyut=0, ad="", progress=None):
+    def fake_download(url, folder, *, expected_size=0, name="", progress=None):
         assert "github.com" in url          # address from the server, trusted
         if progress:
-            progress(beklenen_boyut // 2, beklenen_boyut)
-            progress(beklenen_boyut, beklenen_boyut)
+            progress(expected_size // 2, expected_size)
+            progress(expected_size, expected_size)
         downloaded.write_bytes(b"MZ" + b"0" * 1024)
         return downloaded
 

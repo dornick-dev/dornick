@@ -38,7 +38,7 @@ MAX_BYTES = 64
 
 _lock = threading.Lock()
 _writer: "BaseWriter | None" = None
-_denendi = False
+_attempted = False
 _loaded_trace: tuple[str, float] | None = None  # (path, mtime) — for hot refresh
 _last_check = 0.0
 
@@ -48,7 +48,7 @@ _last_check = 0.0
 REFRESH_INTERVAL_S = 300.0
 
 
-def zenginlestir(query: str, state_dir: Path | None = None) -> str:
+def enrich(query: str, state_dir: Path | None = None) -> str:
     """Query + model terms; if there is no model, or it says nothing, the query as is.
 
     Produces the text that goes to select_prime. The method in the benchmark
@@ -82,10 +82,10 @@ def reset() -> None:
     is still talking"; the reset/restore endpoints call this and make the
     switch immediate.
     """
-    global _writer, _denendi, _loaded_trace, _last_check
+    global _writer, _attempted, _loaded_trace, _last_check
     with _lock:
         _writer = None
-        _denendi = False
+        _attempted = False
         _loaded_trace = None
         _last_check = 0.0
 
@@ -99,18 +99,18 @@ def _candidates(state_dir: Path | None) -> list[Path]:
 
 
 def _load(state_dir: Path | None) -> "BaseWriter | None":
-    global _writer, _denendi, _loaded_trace, _last_check
+    global _writer, _attempted, _loaded_trace, _last_check
     import time
     now = time.monotonic()
     refresh_due = now - _last_check >= REFRESH_INTERVAL_S
-    if (_writer is not None or _denendi) and not refresh_due:
+    if (_writer is not None or _attempted) and not refresh_due:
         return _writer
     with _lock:
         now = time.monotonic()
-        if (_writer is not None or _denendi) and now - _last_check < REFRESH_INTERVAL_S:
+        if (_writer is not None or _attempted) and now - _last_check < REFRESH_INTERVAL_S:
             return _writer
         _last_check = now
-        _denendi = True
+        _attempted = True
         for path in _candidates(state_dir):
             try:
                 trace = (str(path), path.stat().st_mtime)

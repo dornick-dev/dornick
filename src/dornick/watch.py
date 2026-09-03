@@ -46,7 +46,7 @@ def hint() -> str:
     """Missing-feature message: in the installed layout the component is suggested, not pip."""
     from . import environment
 
-    if environment.kurulu_mu():
+    if environment.is_installed():
         return ("Kamera izleme bu kuruluma dahil edilmemiş. Kurulum "
                 "sihirbazını yeniden çalıştırıp 'Kamera izleme' "
                 "bileşenini işaretleyerek ekleyebilirsin.")

@@ -1,7 +1,8 @@
-"""İş akışı deposu ve aracı.
+"""Workflow store and tool.
 
-Vaat: akış diske yazılıp geri okunuyor, liste bozulmadan geliyor,
-nodes/edges yapısı doğrulanıyor ve `from` kenar anahtarı JSON'da kalıyor.
+The promise: a workflow is written to disk and read back, the listing
+arrives intact, the nodes/edges structure is validated, and the `from`
+edge key stays in the JSON.
 """
 
 from __future__ import annotations
@@ -47,7 +48,7 @@ def _sample(**changes) -> dict:
     return {**base, **changes}
 
 
-# -- depo --------------------------------------------------------------
+# -- store -------------------------------------------------------------
 
 
 def test_save_and_get_roundtrip(tmp_path: Path) -> None:
@@ -98,7 +99,7 @@ def test_nodes_and_edges_must_be_lists(tmp_path: Path) -> None:
 
 
 def test_open_node_types_are_accepted(tmp_path: Path) -> None:
-    """Türler kapalı enum değil — bilinmeyen bir string de kayda girer."""
+    """Types are not a closed enum — an unknown string is recorded too."""
     saved = workflows.save(
         tmp_path,
         _sample(
@@ -117,7 +118,7 @@ def test_to_dict_uses_from_key(tmp_path: Path) -> None:
     assert "from_" not in data["edges"][0]
 
 
-# -- araç --------------------------------------------------------------
+# -- tool --------------------------------------------------------------
 
 
 @pytest.fixture()
@@ -153,28 +154,29 @@ async def test_workflow_tool_create_list_get(ctx: ToolContext) -> None:
     assert stub.detail.get("stub") is True
 
 
-# -- canlı ilerleme -----------------------------------------------------
+# -- live progress ------------------------------------------------------
 #
-# "Çalışırken nerede olduğunu göreceğim" şartının test edilebilir hâli.
+# The testable form of the "I will see where it is while it runs" requirement.
 
 
-class _SahteIO:
+class _FakeIO:
     def on_child_tool(self, *a, **k) -> None:
         pass
 
     async def approve(self, spec, args) -> bool:
-        # Testlerde onay hep verilir; asıl kapı (permissions) yolo'da zaten
-        # sormuyor, bu yalnız ASK'e düşen bir yol kalırsa diye.
+        # In tests approval is always granted; the real gate (permissions)
+        # does not ask in yolo anyway — this is only in case a path still
+        # falls to ASK.
         return True
 
 
-class _SahteAjan:
-    """Koşucunun agent'tan gerçekten istediği kadarı.
+class _FakeAgent:
+    """Exactly as much of the agent as the runner really needs.
 
-    Güvenlik denetimi (01.09) sonrası shell/skill/mail düğümleri gerçek
-    izin motorundan (executor.execute) geçiyor; sahte ajan da o yüzden
-    gerçek bir registry + permission engine + oturum taşıyor. Kip `yolo`:
-    testler kapıyı DEĞİL, düğüm koşumunu ölçüyor.
+    After the security review (01.09) the shell/skill/mail nodes go
+    through the real permission engine (executor.execute); that is why
+    the fake agent carries a real registry + permission engine + session.
+    Mode `yolo`: the tests measure the node execution, NOT the gate.
     """
 
     def __init__(self, state_dir) -> None:
@@ -186,7 +188,7 @@ class _SahteAjan:
         from dornick.session import Session
         from dornick.tools import build_registry
 
-        self.io = _SahteIO()
+        self.io = _FakeIO()
         self.mind = None
         self.config = Config(workspace=state_dir, state_dir=state_dir)
         self.config.ensure_dirs()
@@ -200,7 +202,7 @@ class _SahteAjan:
         pass
 
 
-class _SahteTutamac:
+class _FakeHandle:
     title = "deneme"
     schedule_id = ""
     run_id = ""
@@ -208,11 +210,11 @@ class _SahteTutamac:
 
 
 async def test_progress_is_reported_when_a_node_STARTS(tmp_path: Path) -> None:
-    """İlerleme adım BAŞLARKEN de bildirilmeli, yalnız biterken değil.
+    """Progress must be reported when a step STARTS too, not only when it ends.
 
-    Yalnız bitişte bildirmek, uzun süren bir adım boyunca ekranda koşan
-    hiçbir şey göstermiyordu: önceki düğüm yeşil, sonraki henüz yok — akış
-    şeması tam izlenmek istenen anda ölü duruyordu.
+    Reporting only at the end showed nothing running on screen during a
+    long step: the previous node green, the next one not there yet — the
+    flow diagram sat dead exactly at the moment we most wanted to watch.
     """
     from dornick.workflow_run import execute_workflow
 
@@ -227,24 +229,24 @@ async def test_progress_is_reported_when_a_node_STARTS(tmp_path: Path) -> None:
         "edges": [{"from": "a", "to": "b", "on": "ok"}],
     })
 
-    goruntuler: list[list[dict]] = []
-    rapor, progress, ok = await execute_workflow(
-        wf, _SahteAjan(tmp_path), _SahteTutamac(),
-        on_progress=lambda p: goruntuler.append(p))
+    snapshots: list[list[dict]] = []
+    report, progress, ok = await execute_workflow(
+        wf, _FakeAgent(tmp_path), _FakeHandle(),
+        on_progress=lambda p: snapshots.append(p))
 
-    assert ok, rapor
-    # "a" düğümünü KOŞARKEN gösteren en az bir görüntü olmalı.
-    kosarken = [g for g in goruntuler
-                if any(s["id"] == "a" and s["status"] == "koşuyor" for s in g)]
-    assert kosarken, "hiçbir görüntüde koşan adım yok — canlı takip imkânsız"
-    # Ve o ilk görüntüde ikinci düğüm henüz hiç görünmemeli.
-    assert all(s["id"] != "b" for s in kosarken[0])
-    # Son görüntüde ikisi de bitmiş olmalı.
-    assert {s["id"]: s["status"] for s in goruntuler[-1]} == {"a": "bitti", "b": "bitti"}
+    assert ok, report
+    # There must be at least one snapshot showing node "a" WHILE RUNNING.
+    running = [g for g in snapshots
+               if any(s["id"] == "a" and s["status"] == "koşuyor" for s in g)]
+    assert running, "no snapshot shows a running step — live tracking impossible"
+    # And in that first snapshot the second node must not appear at all yet.
+    assert all(s["id"] != "b" for s in running[0])
+    # In the last snapshot both must be finished.
+    assert {s["id"]: s["status"] for s in snapshots[-1]} == {"a": "bitti", "b": "bitti"}
 
 
 async def test_a_broken_progress_listener_never_kills_the_run(tmp_path: Path) -> None:
-    """İzlemek koşmaktan önemli değil: dinleyici patlarsa akış sürmeli."""
+    """Watching does not outrank running: if the listener blows up, the flow goes on."""
     from dornick.workflow_run import execute_workflow
 
     wf = workflows.save(tmp_path, {
@@ -254,102 +256,102 @@ async def test_a_broken_progress_listener_never_kills_the_run(tmp_path: Path) ->
         "edges": [],
     })
 
-    def patlar(_p):
+    def blows_up(_p):
         raise RuntimeError("dinleyici öldü")
 
-    _rapor, progress, ok = await execute_workflow(
-        wf, _SahteAjan(tmp_path), _SahteTutamac(), on_progress=patlar)
+    _report, progress, ok = await execute_workflow(
+        wf, _FakeAgent(tmp_path), _FakeHandle(), on_progress=blows_up)
     assert ok
     assert [s["status"] for s in progress] == ["bitti"]
 
 
-# -- kendini onarma -----------------------------------------------------
+# -- self-repair --------------------------------------------------------
 #
-# Onarım gerçek bir düzeltme; ama sınırsız onarım, gece boyunca kendi
-# kendini bozan bir otomasyon demek. Sınırların testi burada.
+# A repair is a real fix; but unlimited repair means an automation that
+# keeps breaking itself all night long. The limits are tested here.
 
 
-class _OnaranAjan(_SahteAjan):
-    """`_spawn` çağrıldığında verilen JSON'u döndüren ajan."""
+class _RepairingAgent(_FakeAgent):
+    """An agent that returns the given JSON when `_spawn` is called."""
 
-    def __init__(self, state_dir, cevap: str) -> None:
+    def __init__(self, state_dir, reply: str) -> None:
         super().__init__(state_dir)
-        self.cevap = cevap
-        self.istemler: list[str] = []
+        self.reply = reply
+        self.prompts: list[str] = []
 
-    async def _spawn(self, baslik: str, istem: str, _model: str) -> str:
-        self.istemler.append(istem)
-        return self.cevap
+    async def _spawn(self, title: str, prompt: str, _model: str) -> str:
+        self.prompts.append(prompt)
+        return self.reply
 
 
-def _bozuk_akis(tmp_path: Path, *, elle: bool = False):
+def _broken_flow(tmp_path: Path, *, hand_edited: bool = False):
     return workflows.save(tmp_path, {
         "id": "onar", "title": "Onarım denemesi",
         "nodes": [{"id": "a", "title": "Bozuk adım", "type": "shell",
                    "config": {"command": "kesinlikle-olmayan-komut-xyz"},
-                   "elle": elle}],
+                   "elle": hand_edited}],
         "edges": [],
     })
 
 
 async def test_a_failing_step_is_repaired_and_retried(tmp_path: Path) -> None:
-    """Onarım gerçekten çalışıyor: config düzeliyor ve adım yeniden koşuyor."""
+    """The repair really works: the config is fixed and the step runs again."""
     from dornick.workflow_run import execute_workflow
 
-    wf = _bozuk_akis(tmp_path)
-    ajan = _OnaranAjan(tmp_path, '{"command": "echo duzeldi"}')
+    wf = _broken_flow(tmp_path)
+    agent = _RepairingAgent(tmp_path, '{"command": "echo duzeldi"}')
 
-    rapor, progress, ok = await execute_workflow(wf, ajan, _SahteTutamac())
+    report, progress, ok = await execute_workflow(wf, agent, _FakeHandle())
 
-    assert ok, rapor
-    (adim,) = progress
-    assert adim["status"] == "bitti"
-    assert adim.get("onarim"), "ne değiştiği rapora yazılmalı — sessiz onarım sürprizdir"
-    # Değişiklik DİSKE de yazılmış olmalı; yoksa yarın aynı hata.
+    assert ok, report
+    (step,) = progress
+    assert step["status"] == "bitti"
+    assert step.get("onarim"), "what changed must be in the report — a silent repair is a surprise"
+    # The change must also be written to DISK; otherwise the same error tomorrow.
     assert workflows.get(tmp_path, "onar").nodes[0].config["command"] == "echo duzeldi"
 
 
 async def test_a_hand_edited_step_is_never_rewritten(tmp_path: Path) -> None:
-    """Kullanıcının elle yazdığı adımı model arkasından değiştiremez.
+    """The model cannot rewrite a step the user wrote by hand behind their back.
 
-    Bu bir düzeltme değil, sessizce geri alma olurdu.
+    That would not be a fix but a silent revert.
     """
     from dornick.workflow_run import execute_workflow
 
-    wf = _bozuk_akis(tmp_path, elle=True)
-    ajan = _OnaranAjan(tmp_path, '{"command": "echo duzeldi"}')
+    wf = _broken_flow(tmp_path, hand_edited=True)
+    agent = _RepairingAgent(tmp_path, '{"command": "echo duzeldi"}')
 
-    _rapor, progress, ok = await execute_workflow(wf, ajan, _SahteTutamac())
+    _report, progress, ok = await execute_workflow(wf, agent, _FakeHandle())
 
     assert not ok
     assert progress[0]["status"] == "hata"
-    assert not ajan.istemler, "elle düzenlenmiş adım için onarım İSTENMEMELİ"
+    assert not agent.prompts, "no repair must be REQUESTED for a hand-edited step"
     assert workflows.get(tmp_path, "onar").nodes[0].config["command"] \
         == "kesinlikle-olmayan-komut-xyz"
 
 
 async def test_repair_is_attempted_once_per_step(tmp_path: Path) -> None:
-    """Onarım da tutmazsa adım hata veriyor; ikinci kez denenmiyor."""
+    """If the repair does not stick either, the step fails; no second attempt."""
     from dornick.workflow_run import execute_workflow
 
-    wf = _bozuk_akis(tmp_path)
-    ajan = _OnaranAjan(tmp_path, '{"command": "yine-olmayan-komut-xyz"}')
+    wf = _broken_flow(tmp_path)
+    agent = _RepairingAgent(tmp_path, '{"command": "yine-olmayan-komut-xyz"}')
 
-    _rapor, progress, ok = await execute_workflow(wf, ajan, _SahteTutamac())
+    _report, progress, ok = await execute_workflow(wf, agent, _FakeHandle())
 
     assert not ok
-    assert len(ajan.istemler) == 1, "adım başına tek onarım denemesi"
+    assert len(agent.prompts) == 1, "one repair attempt per step"
     assert "onarım denendi" in progress[0]["detail"]
 
 
 async def test_an_unusable_repair_answer_changes_nothing(tmp_path: Path) -> None:
-    """Model JSON yerine laf ederse hiçbir şey değişmemeli — tahmin yok."""
+    """If the model chats instead of returning JSON, nothing must change — no guessing."""
     from dornick.workflow_run import execute_workflow
 
-    wf = _bozuk_akis(tmp_path)
-    ajan = _OnaranAjan(tmp_path, "bilmiyorum, belki yolu kontrol et")
+    wf = _broken_flow(tmp_path)
+    agent = _RepairingAgent(tmp_path, "bilmiyorum, belki yolu kontrol et")
 
-    _rapor, progress, ok = await execute_workflow(wf, ajan, _SahteTutamac())
+    _report, progress, ok = await execute_workflow(wf, agent, _FakeHandle())
 
     assert not ok
     assert not progress[0].get("onarim")
@@ -357,37 +359,38 @@ async def test_an_unusable_repair_answer_changes_nothing(tmp_path: Path) -> None
         == "kesinlikle-olmayan-komut-xyz"
 
 
-# -- güvenlik: düğümler izin kapısını atlamıyor -------------------------
+# -- security: nodes do not skip the permission gate ---------------------
 #
-# Kanıtlanmış zincir (güvenlik denetimi, 01.09): workflow'un http/shell/skill
-# düğümleri doğrudan subprocess/urllib/handler çağırıyor, izin motorunu ve
-# kancaları hiç görmüyordu. En tehlikelisi: bir http düğümüyle yerel API'ye
-# POST atıp kipi yolo'ya çekmek. Artık okuma dışı http ONAYA tabi.
+# A proven chain (security review, 01.09): the workflow's http/shell/skill
+# nodes called subprocess/urllib/handler directly and never saw the
+# permission engine or the hooks. The most dangerous: POSTing to the local
+# API with an http node and flipping the mode to yolo. Non-read http is now
+# subject to APPROVAL.
 
 
-class _RetAjan(_SahteAjan):
-    """Her onayı REDDEDEN ajan — kapının gerçekten sorulup sorulmadığını
-    ölçmek için."""
+class _RefusingAgent(_FakeAgent):
+    """An agent that REFUSES every approval — to measure whether the gate
+    was actually asked."""
 
     def __init__(self, state_dir) -> None:
         super().__init__(state_dir)
-        self.soruldu: list[dict] = []
+        self.asked: list[dict] = []
 
-        class _RedIO(_SahteIO):
-            def __init__(self, kayit):
-                self.kayit = kayit
+        class _RefuseIO(_FakeIO):
+            def __init__(self, record):
+                self.record = record
 
             async def approve(self, spec, args):
-                self.kayit.append(args)
+                self.record.append(args)
                 return False
 
-        self.io = _RedIO(self.soruldu)
+        self.io = _RefuseIO(self.asked)
 
 
 async def test_http_post_node_requires_approval(tmp_path: Path) -> None:
-    """POST yapan http düğümü onaysız çalışmaz: reddedilince adım hata verir
-    ve hiçbir istek gitmez. Yerel-API'ye-yolo self-escalation zinciri burada
-    kırılıyor."""
+    """An http node doing POST does not run unapproved: on refusal the step
+    fails and no request goes out. The local-API-to-yolo self-escalation
+    chain breaks right here."""
     from dornick.workflow_run import execute_workflow
 
     wf = workflows.save(tmp_path, {
@@ -398,12 +401,12 @@ async def test_http_post_node_requires_approval(tmp_path: Path) -> None:
                               "body": {"permissions": {"mode": "yolo"}}}}],
         "edges": [],
     })
-    ajan = _RetAjan(tmp_path)
+    agent = _RefusingAgent(tmp_path)
 
-    _rapor, progress, ok = await execute_workflow(wf, ajan, _SahteTutamac())
+    _report, progress, ok = await execute_workflow(wf, agent, _FakeHandle())
 
-    assert not ok, "reddedilen http düğümü başarılı sayılmamalı"
+    assert not ok, "a refused http node must not count as successful"
     assert progress[0]["status"] == "hata"
-    assert ajan.soruldu, "http POST için onay SORULMALIYDI"
-    # Yerel adres uyarısı onay metnine girmiş olmalı.
-    assert "YEREL" in (ajan.soruldu[0].get("istek") or "")
+    assert agent.asked, "approval SHOULD have been asked for the http POST"
+    # The local-address warning must have made it into the approval text.
+    assert "YEREL" in (agent.asked[0].get("istek") or "")

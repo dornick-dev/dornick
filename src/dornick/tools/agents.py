@@ -1,28 +1,33 @@
-"""Alt ajan araçları.
+"""Subagent tools.
 
-Ajanın kendine yardımcı çıkarabilmesi bir kolaylık değil, bağlam meselesi.
-"Şu klasördeki yirmi dosyayı gez ve hangisinde şu geçiyor bul" gibi bir iş
-otuz araç çağrısı üretiyor ve otuzunun çıktısı da ana konuşmanın penceresine
-yığılıyor. Oysa geriye kalması gereken tek şey cevabın kendisi.
+The agent being able to spawn helpers is not a convenience, it is a
+context matter. A job like "walk the twenty files in that folder and
+find which one mentions X" produces thirty tool calls, and the output
+of all thirty piles into the main conversation's window. Yet the only
+thing that should remain is the answer itself.
 
-Alt ajan kendi oturumunda, kendi geçmişiyle çalışıyor; ana ajana yalnızca
-sonucu dönüyor. Yani bu araç işi bölmekten çok **bağlamı bölüyor**.
+The subagent works in its own session with its own history; only the
+result returns to the main agent. So this tool splits **context** far
+more than it splits work.
 
-İki kip var:
+There are two modes:
 
-    bekleyerek  (varsayılan) `task` sonucu gelene kadar bekler — kısa,
-                sonucu hemen gereken işler için.
-    arka plan   `task` hemen döner, yardımcı arkada koşar; bitince sonucu
-                ana ajana bildirilir. Uzun soluklu ya da sonucu hemen
-                gerekmeyen işler için. Koşan yardımcıya `task_say` ile yön
-                verilir, `task_status` ile durum sorulur.
+    waiting     (default) `task` waits until the result arrives — for
+                short jobs whose result is needed right away.
+    background  `task` returns immediately, the helper runs behind; when
+                done the result is reported to the main agent. For
+                long-running jobs or ones whose result is not needed
+                immediately. A running helper is steered with `task_say`
+                and its status queried with `task_status`.
 
-İki sınır var:
+There are two limits:
 
-    derinlik   Alt ajanın alt ajanı olmuyor. Olsaydı tek bir istek ağaç gibi
-               açılır ve ne kadar iş yapıldığını kimse bilemezdi.
-    izin       Alt ajan aynı izin motoruna bağlı. "Ben alt ajanım" diyerek
-               atlanabilen bir kapı, kapı değildir.
+    depth       A subagent gets no subagents of its own. Otherwise a
+                single request would fan out like a tree and nobody
+                would know how much work was being done.
+    permission  The subagent is bound to the same permission engine. A
+                gate that can be skipped by saying "I am a subagent" is
+                not a gate.
 """
 
 from __future__ import annotations
@@ -111,11 +116,11 @@ def register(registry: ToolRegistry) -> None:
             },
             required=["task"],
         ),
-        # Yan etkisi araçları üzerinden oluyor ve onların hepsi zaten izin
-        # kapısından geçiyor; aracın kendisi bir şey değiştirmiyor.
+        # Its side effects happen through the tools, and all of those already
+        # pass the permission gate; the tool itself changes nothing.
         mutates=False,
-        # Bağımsız alt ajanlar aynı turda paralel koşabilmeli — asıl kazanç
-        # burada.
+        # Independent subagents must be able to run in parallel within the
+        # same turn — that is where the real gain is.
         parallel_safe=True,
     )
     async def task(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
@@ -130,12 +135,12 @@ def register(registry: ToolRegistry) -> None:
             return ToolResult.error("Boş görev. Alt ajanın ne yapacağını `task` alanına yaz.")
 
         title = str(args.get("title") or "").strip() or _headline(instruction)
-        model, uyari = _dogrula_model(str(args.get("model") or ""), ctx)
+        model, warning = _validate_model(str(args.get("model") or ""), ctx)
 
         if bool(args.get("arka_plan")) and ctx.spawn_bg is not None:
             handle = ctx.spawn_bg(title, instruction, model)
             return ToolResult(
-                content=uyari + (
+                content=warning + (
                     f"yardımcı başlatıldı · id={handle.id} · başlık={handle.title} — "
                     "bitince sonucu sana bildirilecek; beklemeden işine devam et. "
                     "Koşarken `task_say` ile yön verebilir, `task_status` ile "
@@ -147,11 +152,11 @@ def register(registry: ToolRegistry) -> None:
         answer = await ctx.spawn(title, instruction, model)
         if not answer.strip():
             return ToolResult.error(
-                uyari
+                warning
                 + f"'{title}' alt ajanı bir sonuç döndürmeden bitti. "
                 "Görevi daha açık yazıp tekrar dene."
             )
-        return ToolResult(content=uyari + answer, detail={"title": title})
+        return ToolResult(content=warning + answer, detail={"title": title})
 
     @registry.tool(
         name="task_say",
@@ -208,70 +213,72 @@ def _headline(text: str, limit: int = 60) -> str:
     return flat if len(flat) <= limit else flat[:limit] + "…"
 
 
-# --- model doğrulaması ---------------------------------------------------
+# --- model validation ----------------------------------------------------
 #
-# Model, yardımcıya UYDURMA bir kimlik verebiliyor. Sahada görüleni:
-# `qwen3.1-14b` — sağlayıcıda böyle bir model yok, yardımcı ilk istekte
-# 400 alıyor ve tur boşa yanıyor. Hata alt ajanın günlüğünde patlıyor;
-# ana ajan yalnızca "yardımcı hata verdi" görüyor ve sebebini bilmiyor.
+# The model can hand the helper a MADE-UP id. Seen in the field:
+# `qwen3.1-14b` — no such model at the provider, the helper gets a 400 on
+# its first request and the turn burns for nothing. The error blows up in
+# the subagent's log; the main agent only sees "the helper failed" and
+# does not know why.
 #
-# Kural: kimlik verildiyse spawn'dan ÖNCE katalogla karşılaştır.
-#   - katalog boş (ağ yok, sunucu liste vermiyor) → doğrulama ATLANIR;
-#     çevrimdışı bir makinede aracı çalışmaz yapmak daha kötü olurdu
-#   - kimlik katalogda → aynen geçer
-#   - yalnız harf büyüklüğü tutmuyor → katalogdaki yazımla düzeltilir
-#   - katalogda yok → yardımcı ANA modelle başlar (iş ölmez) ve aracın
-#     cevabı ne olduğunu öğretir
+# Rule: if an id was given, compare it against the catalog BEFORE spawn.
+#   - catalog empty (no network, server gives no list) → validation is
+#     SKIPPED; making the tool unusable on an offline machine would be worse
+#   - id in the catalog → passes as-is
+#   - only the letter case differs → corrected to the catalog's spelling
+#   - not in the catalog → the helper starts with the MAIN model (the job
+#     does not die) and the tool's reply teaches what happened
 
 
-def _katalog(ctx: ToolContext) -> list[str]:
-    """Sağlayıcının GERÇEK model kimlikleri; ulaşılamıyorsa boş liste.
+def _catalog(ctx: ToolContext) -> list[str]:
+    """The provider's REAL model ids; empty list if unreachable.
 
-    "Oto" (ücretsiz model havuzu) katalogdan çıkarılıyor: o bir model değil
-    bir kip ve sağlayıcı liste vermediğinde bile listeye ekleniyor. Tek
-    başına kalırsa ortada bir katalog yok demektir — onunla doğrulamak
-    sağlayıcının HER gerçek kimliğini "geçersiz" ilan ederdi.
+    "Oto" (the free model pool) is removed from the catalog: it is a mode,
+    not a model, and it gets added to the list even when the provider
+    returns none. If it is all that remains, there is effectively no
+    catalog — validating against it would declare EVERY real id of the
+    provider "invalid".
     """
     try:
         from .. import settings
         from ..config import OTO_MODEL
 
         return [
-            kimlik
+            ident
             for entry in settings.scan_models(ctx.config)
-            if isinstance(entry, dict) and (kimlik := str(entry.get("id") or ""))
-            and kimlik != OTO_MODEL
+            if isinstance(entry, dict) and (ident := str(entry.get("id") or ""))
+            and ident != OTO_MODEL
         ]
     except Exception:
-        # Doğrulama bir kolaylık; patlarsa işin kendisi durmamalı.
+        # Validation is a convenience; if it blows up, the job itself must not stop.
         return []
 
 
-def _dogrula_model(model: str, ctx: ToolContext) -> tuple[str, str]:
-    """(kullanılacak model, ana ajana verilecek uyarı) döndürür."""
+def _validate_model(model: str, ctx: ToolContext) -> tuple[str, str]:
+    """Returns (model to use, warning to hand the main agent)."""
     model = model.strip()
     if not model:
         return "", ""
 
-    katalog = _katalog(ctx)
-    if not katalog:
-        return model, ""      # ağ yok / sunucu liste vermiyor: doğrulama atlanır
-    if model in katalog:
+    catalog = _catalog(ctx)
+    if not catalog:
+        return model, ""      # no network / server gives no list: validation skipped
+    if model in catalog:
         return model, ""
 
-    # Yalnızca harf büyüklüğü tutmuyorsa bu bir uydurma değil, bir yazım
-    # kayması: katalogdaki hâliyle düzeltip sessizce devam ediyoruz.
-    for aday in katalog:
-        if aday.lower() == model.lower():
-            return aday, ""
+    # If only the letter case differs this is not a fabrication but a
+    # spelling slip: we correct to the catalog's form and continue silently.
+    for candidate in catalog:
+        if candidate.lower() == model.lower():
+            return candidate, ""
 
     from difflib import get_close_matches
 
-    yakin = get_close_matches(model, katalog, n=3, cutoff=0.6)
-    ipucu = (" Bunu mu demek istedin: " + ", ".join(f"`{a}`" for a in yakin) + "."
-             if yakin else "")
+    close = get_close_matches(model, catalog, n=3, cutoff=0.6)
+    hint = (" Bunu mu demek istedin: " + ", ".join(f"`{a}`" for a in close) + "."
+            if close else "")
     return "", (
         f"`{model}` geçerli bir model kimliği değil. Yardımcıyı ana modelle "
-        f"başlatıyorum.{ipucu} Kullanılabilir modelleri `models` aracıyla "
+        f"başlatıyorum.{hint} Kullanılabilir modelleri `models` aracıyla "
         "görebilirsin.\n\n"
     )

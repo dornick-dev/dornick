@@ -223,13 +223,13 @@ class Wire:
 # persistent listener attaches to the tab and the events accumulate here.
 #
 # Honesty rule: if the listener attached AFTER the page loaded, earlier
-# messages were missed. We do not make that up — we say so with the `eksik`
+# messages were missed. We do not make that up — we say so with the `missing`
 # flag, because the difference between "console clean" and "I was late to
 # look" is whether the user finds the bug.
 
 # Maximum records kept per tab. A page erroring in a loop produces hundreds
 # of lines a second; the freshest are the most useful anyway.
-TAMPON = 300
+BUFFER = 300
 
 # Number of records shown to the model by default.
 DEFAULT_N = 20
@@ -246,15 +246,15 @@ _LEVELS = {
 class ConsoleLine:
     """A single console message or uncaught exception."""
 
-    seviye: str            # log | info | debug | uyari | hata
-    metin: str
+    level: str             # log | info | debug | uyari | hata
+    text: str
     location: str = ""     # file:line
     source: str = "konsol"  # konsol | istisna | tarayici
 
     def format(self) -> str:
-        label = {"hata": "HATA", "uyari": "UYARI"}.get(self.seviye, self.seviye)
+        label = {"hata": "HATA", "uyari": "UYARI"}.get(self.level, self.level)
         tail = f"  ({self.location})" if self.location else ""
-        return f"[{label}] {self.metin}{tail}"
+        return f"[{label}] {self.text}{tail}"
 
 
 @dataclass(slots=True)
@@ -326,20 +326,20 @@ class Record:
     Holds its own WebSocket connection and reads in the background. The
     `Browser`'s other calls open a fresh connection every time (`_call`);
     modern Chrome accepts multiple clients on the same target, so the two
-    can live side by side. If we cannot connect it is not a disaster: `hata`
+    can live side by side. If we cannot connect it is not a disaster: `error`
     is filled and the tool says "listener could not be set up" — opening the
     page still goes ahead.
     """
 
-    def __init__(self, ws_url: str, *, limit: int = TAMPON) -> None:
+    def __init__(self, ws_url: str, *, limit: int = BUFFER) -> None:
         import threading
 
-        self.konsol: deque[ConsoleLine] = deque(maxlen=limit)
-        self.istekler: deque[Request] = deque(maxlen=limit)
-        self.hata = ""
+        self.console: deque[ConsoleLine] = deque(maxlen=limit)
+        self.requests: deque[Request] = deque(maxlen=limit)
+        self.error = ""
         # If the listener attached after the page loaded: the first messages
         # were missed. The model must know.
-        self.eksik = False
+        self.missing = False
         self.started = time.monotonic()
         self._open: dict[str, Request] = {}
         self._closed = False
@@ -361,7 +361,7 @@ class Record:
                 wire.send(json.dumps({"id": self._seq, "method": domain,
                                       "params": {}}))
         except Exception as exc:
-            self.hata = f"{type(exc).__name__}: {exc}"
+            self.error = f"{type(exc).__name__}: {exc}"
             return
 
         self._thread = threading.Thread(target=self._listen, daemon=True)
@@ -373,10 +373,10 @@ class Record:
 
     def clear(self) -> None:
         """Moved to a new page: the old page's records are noise."""
-        self.konsol.clear()
-        self.istekler.clear()
+        self.console.clear()
+        self.requests.clear()
         self._open.clear()
-        self.eksik = False
+        self.missing = False
         self._navigations = 0
         self.started = time.monotonic()
 
@@ -414,7 +414,7 @@ class Record:
                             if isinstance(a, dict))
             frames = ((p.get("stackTrace") or {}).get("callFrames") or [])
             first = frames[0] if frames else {}
-            self.konsol.append(ConsoleLine(
+            self.console.append(ConsoleLine(
                 level, text.strip() or "(boş mesaj)",
                 _location(first.get("url"), first.get("lineNumber")), "konsol"))
 
@@ -424,7 +424,7 @@ class Record:
             # `description` carries the stack trace too; otherwise `text` remains.
             text = str(obj.get("description") or details.get("text")
                        or "yakalanmamış istisna")
-            self.konsol.append(ConsoleLine(
+            self.console.append(ConsoleLine(
                 "hata", text.strip(),
                 _location(details.get("url"), details.get("lineNumber")), "istisna"))
 
@@ -434,7 +434,7 @@ class Record:
             # page's console but are NOT `console.*` calls live here.
             entry = p.get("entry") or {}
             level = _LEVELS.get(str(entry.get("level") or "info"), "log")
-            self.konsol.append(ConsoleLine(
+            self.console.append(ConsoleLine(
                 level, str(entry.get("text") or "").strip() or "(boş kayıt)",
                 _location(entry.get("url"), entry.get("lineNumber")), "tarayici"))
 
@@ -449,7 +449,7 @@ class Record:
             ident = str(p.get("requestId") or "")
             if ident:
                 self._open[ident] = record
-            self.istekler.append(record)
+            self.requests.append(record)
 
         elif method == "Network.responseReceived":
             if (record := self._open.get(str(p.get("requestId") or ""))) is None:
@@ -487,8 +487,8 @@ class Record:
                 return  # an iframe navigation does not change the page
             self._navigations += 1
             if self._navigations > 1:
-                self.konsol.clear()
-                self.istekler.clear()
+                self.console.clear()
+                self.requests.clear()
                 self._open.clear()
 
 
@@ -626,7 +626,7 @@ class Browser:
         `fresh=True` announces a move to a new page: the old page's records
         are cleared and the "I was late" flag drops.
 
-        If the listener CANNOT be set up nothing collapses — `Record.hata`
+        If the listener CANNOT be set up nothing collapses — `Record.error`
         is filled and the tool says so honestly. Failing to open the page is
         worse than opening it and not being able to listen to the console.
         """
@@ -642,9 +642,9 @@ class Browser:
         spot = str(tab.get("webSocketDebuggerUrl") or "")
         if not spot:
             record = Record.__new__(Record)   # connectionless shell
-            record.konsol, record.istekler = deque(), deque()
-            record.hata = "sekmenin hata ayıklama adresi yok"
-            record.eksik = True
+            record.console, record.requests = deque(), deque()
+            record.error = "sekmenin hata ayıklama adresi yok"
+            record.missing = True
             record._closed = True
             record._wire = None
             self._records[ident] = record
@@ -653,11 +653,11 @@ class Browser:
         record = Record(spot)
         # If not fresh the page may already be loaded: the first messages
         # were missed and we do not hide that.
-        record.eksik = not fresh
+        record.missing = not fresh
         self._records[ident] = record
         return record
 
-    def kayit(self, tab: dict[str, Any]) -> Record:
+    def snapshot(self, tab: dict[str, Any]) -> Record:
         """The tab's listener; set up now if missing (as a late one).
 
         (Name kept: tools/browser.py calls it.)

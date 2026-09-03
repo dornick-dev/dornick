@@ -236,7 +236,7 @@ def _apply(store: Any, nodes: Sequence[Any], answer: str, report: DistilReport,
         for node in nodes:
             if node.kind == "episode":
                 store.add_use(node.id, w=SOURCE_PENALTY,
-                                    etiket=activation.DISTILLED)
+                                    label=activation.DISTILLED)
                 report.cooled_sources += 1
 
 

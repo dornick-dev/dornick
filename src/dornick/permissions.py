@@ -60,7 +60,7 @@ class PermissionEngine:
         # files and startup persistence — opening them collapses the
         # security model.
         mutation = bool(spec.mutates) and not _safe_action(spec, args)
-        if (reason := guards.sabit_ret(spec.name, mutation, args)) is not None:
+        if (reason := guards.hard_deny(spec.name, mutation, args)) is not None:
             # The reason travels in the rule string (with a sentinel prefix):
             # the executor shows it to the model as-is instead of the generic
             # "blocked by policy" — the model should know what it cannot do

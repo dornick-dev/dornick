@@ -67,7 +67,7 @@ def lesson_text(wf_id: str, node: Any, exc: BaseException) -> str:
     )
 
 
-def akisi_hatirla(mind: Any, wf: Workflow) -> bool:
+def recall_workflow(mind: Any, wf: Workflow) -> bool:
     """Write the workflow as a procedure. True if written."""
     if mind is None or not hasattr(mind, "remember"):
         return False

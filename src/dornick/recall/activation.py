@@ -112,11 +112,11 @@ class Use:
 
     t: datetime
     w: float = 1.0
-    etiket: str = OPENED
+    label: str = OPENED
 
     def as_dict(self) -> dict[str, Any]:
         return {"t": self.t.isoformat(timespec="milliseconds"),
-                "w": round(self.w, 4), "etiket": self.etiket}
+                "w": round(self.w, 4), "etiket": self.label}
 
 
 def base_activation(use_log: Sequence[Use], now: datetime) -> float:
@@ -242,9 +242,9 @@ def encode(use_log: Iterable[Use]) -> str:
 
 
 def append_use(use_log: Iterable[Use], moment: datetime, *, w: float = 1.0,
-         etiket: str = OPENED) -> str:
+         label: str = OPENED) -> str:
     """Appends a new use to the history and returns the JSON to write to disk."""
-    return encode([*use_log, Use(moment, float(w), etiket)])
+    return encode([*use_log, Use(moment, float(w), label)])
 
 
 # Phase 4 — encoding strength. Every record used to be born with the same
@@ -290,6 +290,6 @@ def first_stamp(created: str, strength: float = 1.0) -> str:
 
 def track_record(use_log: Sequence[Use]) -> tuple[int, int]:
     """(successes, failures) counter — shown to the model in `mind_recall` output."""
-    successes = sum(1 for k in use_log if k.etiket == SUCCESS)
-    failures = sum(1 for k in use_log if k.etiket == FAILURE)
+    successes = sum(1 for k in use_log if k.label == SUCCESS)
+    failures = sum(1 for k in use_log if k.label == FAILURE)
     return successes, failures

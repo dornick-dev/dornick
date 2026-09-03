@@ -73,7 +73,7 @@ def _values(payload: Any) -> list[str]:
     return out
 
 
-def sabit_ret(tool: str, mutates: bool, payload: Any) -> str | None:
+def hard_deny(tool: str, mutates: bool, payload: Any) -> str | None:
     """Does this call violate one of the hard guards?
 
     Returns: a human-language reason if there is a violation (the permission

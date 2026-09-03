@@ -1,7 +1,8 @@
-"""Git motoru, aracı ve GitHub yayın kapısı.
+"""The git engine, tool, and GitHub publish gate.
 
-Ağa çıkılmaz: geçici repo, status/commit, boş mesaj reddi, `gh` yokken
-öğretici hata. İzin kapısı commit'i sorar, status'u sormaz.
+No network: a temporary repo, status/commit, empty-message rejection, an
+instructive error when `gh` is absent. The permission gate asks about
+commit, not about status.
 """
 
 from __future__ import annotations
@@ -52,7 +53,7 @@ def _ctx(tmp_path: Path) -> ToolContext:
     )
 
 
-# -- motor -------------------------------------------------------------
+# -- engine ------------------------------------------------------------
 
 
 def test_status_counts_plus_and_minus_on_a_new_file(tmp_path: Path) -> None:
@@ -84,7 +85,7 @@ def test_commit_clears_dirty_and_empty_message_is_rejected(tmp_path: Path) -> No
 def test_create_repo_teaches_when_gh_and_token_are_missing(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Sahte yayın yok: gh yok + anahtar yok = öğretici hata, ağ yok."""
+    """No fake publishing: no gh + no key = instructive error, no network."""
     real_which = shutil.which
 
     def which(name: str) -> str | None:
@@ -117,15 +118,16 @@ def test_snapshot_finds_git_above_the_workshop(tmp_path: Path) -> None:
     (tmp_path / "not.txt").write_text("x\n", encoding="utf-8")
     config = Config.load(tmp_path)
     config.ensure_dirs()
-    # 01.09 sözleşmesi: çubuk yalnız ATANMIŞ projede repo görür — atölye
-    # karalama alanı ("atölye için repo açmaması lazım", canlı).
+    # The 01.09 contract: the bar sees a repo only in the ASSIGNED project —
+    # the workshop is a scratch area ("it must not open a repo for the
+    # workshop", live).
     config.sandbox.project = str(tmp_path)
     snap = gitmod.snapshot(config)
     assert snap["present"] and snap["ok"]
     assert snap["dirty"]
 
 
-# -- araç --------------------------------------------------------------
+# -- tool --------------------------------------------------------------
 
 
 def test_prompt_names_git_as_an_ability() -> None:
@@ -185,7 +187,7 @@ def test_http_git_get_and_commit(tmp_path: Path) -> None:
     (tmp_path / "a.txt").write_text("x\n", encoding="utf-8")
     config = Config.load(tmp_path)
     config.ensure_dirs()
-    config.sandbox.project = str(tmp_path)   # çubuk yalnız projede (01.09)
+    config.sandbox.project = str(tmp_path)   # the bar looks only in the project (01.09)
     mind = open_mind(tmp_path / "mind", tmp_path / "sessions", "cur")
     log = EventLog(tmp_path / "s.jsonl")
     server = MindServer(mind, log, port=0, config=config)
@@ -209,8 +211,9 @@ def test_http_git_get_and_commit(tmp_path: Path) -> None:
 
 
 def test_the_bar_ignores_a_repo_in_the_scratch_workshop(tmp_path: Path) -> None:
-    """Atölye reposu çubuğa ÇIKMAZ: "+407 Commit · Yayınla" yarası (01.09).
-    Ajanın aracı ise scratch_ok=True ile atölyede çalışmayı sürdürür."""
+    """A workshop repo does NOT reach the bar: the "+407 Commit · Yayınla"
+    wound (01.09). The agent's tool keeps working in the workshop with
+    scratch_ok=True."""
     _repo(tmp_path)
     (tmp_path / "x.txt").write_text("x\n", encoding="utf-8")
     config = Config.load(tmp_path)

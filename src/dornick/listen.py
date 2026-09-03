@@ -36,7 +36,7 @@ def hint() -> str:
     """
     from . import environment
 
-    if environment.kurulu_mu():
+    if environment.is_installed():
         return ("Dinleme özelliği bu kuruluma dahil edilmemiş. Kurulum "
                 "sihirbazını yeniden çalıştırıp 'Dinleme (mikrofon)' "
                 "bileşenini işaretleyerek ekleyebilirsin.")

@@ -30,7 +30,7 @@ This module does three jobs and follows the same principle in all three —
      cover". With no tests it says "no tests; to verify, actually run the
      application".
 
-Also `hatirlatma()`: a one-line note after a file is written. Running tests is
+Also `reminder()`: a one-line note after a file is written. Running tests is
 EXPENSIVE (seconds, sometimes minutes) — running them automatically on every
 write would freeze the turn and keep the user waiting. Instead the model is
 told that the setup EXISTS; whether to run it is the model's decision.
@@ -84,23 +84,23 @@ class Harness:
     machine where the tool is not installed.
     """
 
-    ekosistem: str          # python | node | php | go | rust | dotnet
-    tur: str                # "test" (a real suite) | "saglik" (cheap check)
-    etiket: str             # human/model-readable form: "py -m pytest -q"
+    ecosystem: str          # python | node | php | go | rust | dotnet
+    kind: str                # "test" (a real suite) | "saglik" (cheap check)
+    label: str             # human/model-readable form: "py -m pytest -q"
     argv: list[str]
-    kok: Path
-    kanit: str              # which file proved this
+    root: Path
+    evidence: str              # which file proved this
     # 2 = explicit test configuration, 1 = weak evidence (only a tests/
     # folder, a health command). Used for ordering.
-    guven: int = 2
-    notlar: list[str] = field(default_factory=list)
+    confidence: int = 2
+    notes: list[str] = field(default_factory=list)
     # If non-empty: the setup exists but cannot run (dependencies not
     # installed, for instance). We do NOT suggest installing; we only report.
-    engel: str = ""
+    blocker: str = ""
 
     @property
-    def kosulabilir(self) -> bool:
-        return not self.engel
+    def runnable(self) -> bool:
+        return not self.blocker
 
 
 @dataclass(slots=True)
@@ -121,36 +121,36 @@ class Failure:
 
 @dataclass(slots=True)
 class Count:
-    """Numbers read from the runner. If `okundu` is False none is reliable."""
+    """Numbers read from the runner. If `parsed` is False none is reliable."""
 
-    gecen: int = 0
-    kalan: int = 0
-    atlanan: int = 0
-    toplam: int = 0
-    okundu: bool = False
+    passed: int = 0
+    failed: int = 0
+    skipped: int = 0
+    total: int = 0
+    parsed: bool = False
 
 
 @dataclass(slots=True)
 class Result:
     """The normalised result of one run."""
 
-    ekosistem: str
-    etiket: str
-    kok: str
+    ecosystem: str
+    label: str
+    root: str
     status: str              # kostu | zaman_asimi | baslatilamadi | yok
-    cikis_kodu: int = 0
-    sure: float = 0.0
-    sayim: Count = field(default_factory=Count)
-    basarisizlar: list[Failure] = field(default_factory=list)
-    ham: str = ""
-    notlar: list[str] = field(default_factory=list)
-    tur: str = "test"
+    exit_code: int = 0
+    duration: float = 0.0
+    count: Count = field(default_factory=Count)
+    failures: list[Failure] = field(default_factory=list)
+    raw: str = ""
+    notes: list[str] = field(default_factory=list)
+    kind: str = "test"
 
     @property
     def succeeded(self) -> bool:
-        return self.status == "kostu" and self.cikis_kodu == 0
+        return self.status == "kostu" and self.exit_code == 0
 
-    def metin(self) -> str:
+    def text(self) -> str:
         """The text that goes to the model.
 
         Three rules: (1) if there are numbers they come first, (2) failures
@@ -158,28 +158,28 @@ class Result:
         """
         if self.status == "kesildi":
             return (
-                f"Durduruldu — {self.etiket} ve altındaki süreçler "
-                f"sonlandırıldı ({self.sure:.0f} sn sonra).\n\n"
-                + (self.ham or "(çıktı yok)")
+                f"Durduruldu — {self.label} ve altındaki süreçler "
+                f"sonlandırıldı ({self.duration:.0f} sn sonra).\n\n"
+                + (self.raw or "(çıktı yok)")
             )
         if self.status == "zaman_asimi":
             return (
-                f"{self.etiket} {self.sure:.0f} saniyede bitmedi ve durduruldu. "
+                f"{self.label} {self.duration:.0f} saniyede bitmedi ve durduruldu. "
                 "Takım gerçekten uzunsa `zaman_asimi` değerini artır; bir test "
                 "asılı kalıyorsa asıl mesele o — aşağıdaki yarım çıktının son "
                 "satırı çoğu zaman nerede takıldığını söyler.\n\n"
-                + (self.ham or "(çıktı yok)")
+                + (self.raw or "(çıktı yok)")
             )
         if self.status == "baslatilamadi":
-            return f"{self.etiket} başlatılamadı — {self.ham}"
+            return f"{self.label} başlatılamadı — {self.raw}"
 
-        headline = [f"{self.etiket} koştu · çıkış kodu {self.cikis_kodu} · "
-                    f"{self.sure:.1f} sn"]
-        c = self.sayim
-        if c.okundu:
-            parts = [f"{c.gecen} geçti", f"{c.kalan} kaldı"]
-            if c.atlanan:
-                parts.append(f"{c.atlanan} atlandı")
+        headline = [f"{self.label} koştu · çıkış kodu {self.exit_code} · "
+                    f"{self.duration:.1f} sn"]
+        c = self.count
+        if c.parsed:
+            parts = [f"{c.passed} geçti", f"{c.failed} kaldı"]
+            if c.skipped:
+                parts.append(f"{c.skipped} atlandı")
             headline.append(", ".join(parts) + ".")
         else:
             headline.append(
@@ -188,25 +188,25 @@ class Result:
 
         lines = [" ".join(headline)]
 
-        if self.basarisizlar:
+        if self.failures:
             lines.append("")
             lines.append("Başarısız olanlar:")
-            for failure in self.basarisizlar[:MAX_FAILURES]:
+            for failure in self.failures[:MAX_FAILURES]:
                 lines.append(f"  {failure.text()}")
-            remaining = len(self.basarisizlar) - MAX_FAILURES
+            remaining = len(self.failures) - MAX_FAILURES
             if remaining > 0:
                 lines.append(f"  ... {remaining} başarısız test daha.")
 
         lines.append("")
         lines.append(self._shutdown())
 
-        for note in self.notlar:
+        for note in self.notes:
             lines.append(note)
 
-        if self.ham:
+        if self.raw:
             lines.append("")
             lines.append("Ham çıktı:")
-            lines.append(self.ham)
+            lines.append(self.raw)
         return "\n".join(lines)
 
     def _shutdown(self) -> str:
@@ -216,45 +216,45 @@ class Result:
         guarantee that does not exist; with that guarantee it tells the user
         "ready" and the error blows up in the user's browser.
         """
-        if self.tur == "saglik":
-            if self.cikis_kodu == 0:
+        if self.kind == "saglik":
+            if self.exit_code == 0:
                 return ("Bu bir test takımı değil, ucuz bir sağlık denetimi: "
                         "uygulama ayağa kalkıyor ve bu komutu cevaplıyor. "
                         "Davranışın doğruluğunu göstermez.")
             return ("Sağlık denetimi başarısız — uygulama bu komutu bile "
                     "cevaplayamadı. Testlerden önce bunu çöz.")
 
-        c = self.sayim
-        if self.cikis_kodu != 0 or c.kalan or self.basarisizlar:
+        c = self.count
+        if self.exit_code != 0 or c.failed or self.failures:
             return ("Bu hatalar senin dokunduğun projede. Düzeltmeden "
                     "'çalışıyor' deme.")
-        if c.okundu and c.toplam == 0:
+        if c.parsed and c.total == 0:
             return ("Hiç test koşmadı — düzenek var ama içi boş. Bu koşum "
                     "hiçbir şey doğrulamıyor; doğrulama için uygulamayı "
                     "gerçekten çalıştır.")
-        if c.okundu:
-            return (f"{c.gecen} test geçti, 0 kaldı — bu, koşulan testlerin "
+        if c.parsed:
+            return (f"{c.passed} test geçti, 0 kaldı — bu, koşulan testlerin "
                     "kapsadığı kadarını doğrular. Testlerin dokunmadığı yollar "
                     "hâlâ denenmemiş durumda.")
         return ("Komut sıfır çıkış koduyla bitti. Test sayısı okunamadığı "
                 "için ne kadarının doğrulandığı belli değil — ham çıktıya bak.")
 
-    def detay(self) -> dict:
+    def detail(self) -> dict:
         """Machine-readable form so the UI can draw a badge."""
         return {
-            "ekosistem": self.ekosistem,
-            "komut": self.etiket,
-            "kok": self.kok,
+            "ekosistem": self.ecosystem,
+            "komut": self.label,
+            "kok": self.root,
             "durum": self.status,
-            "cikis_kodu": self.cikis_kodu,
-            "sure": round(self.sure, 2),
-            "gecen": self.sayim.gecen,
-            "kalan": self.sayim.kalan,
-            "atlanan": self.sayim.atlanan,
-            "okundu": self.sayim.okundu,
+            "cikis_kodu": self.exit_code,
+            "sure": round(self.duration, 2),
+            "gecen": self.count.passed,
+            "kalan": self.count.failed,
+            "atlanan": self.count.skipped,
+            "okundu": self.count.parsed,
             "basarisizlar": [
                 {"ad": f.name, "mesaj": f.message, "yer": f.location}
-                for f in self.basarisizlar[:MAX_FAILURES]
+                for f in self.failures[:MAX_FAILURES]
             ],
         }
 
@@ -472,7 +472,7 @@ def _dotnet(root: Path) -> Harness | None:
 _DETECTORS = (_python, _php, _node, _go, _rust, _dotnet)
 
 
-def tespit_hepsi(root: Path | str) -> list[Harness]:
+def detect_all(root: Path | str) -> list[Harness]:
     """ALL setups found in the folder, ordered by confidence.
 
     A single project can carry several ecosystems (a PHP back end + a front
@@ -489,17 +489,17 @@ def tespit_hepsi(root: Path | str) -> list[Harness]:
                 found.append(harness)
         except OSError:  # pragma: no cover - an inaccessible file does not stop detection
             continue
-    found.sort(key=lambda h: (-h.guven, h.tur != "test"))
+    found.sort(key=lambda h: (-h.confidence, h.kind != "test"))
     return found
 
 
-def tespit(root: Path | str) -> Harness | None:
+def detect(root: Path | str) -> Harness | None:
     """The setup with the strongest evidence; None if there is none."""
-    all_found = tespit_hepsi(root)
+    all_found = detect_all(root)
     return all_found[0] if all_found else None
 
 
-def tespit_metni(root: Path) -> str:
+def detect_text(root: Path) -> str:
     """What is said when no setup is found. NO invented command."""
     return (
         f"{root} altında test düzeneği bulunamadı — ne pytest yapılandırması, "
@@ -561,23 +561,23 @@ def _read_pytest(output: str) -> tuple[Count, list[Failure]]:
         parts = _PYTEST_SUMMARY.findall(flat)
         if not parts:
             if "no tests ran" in flat:
-                count.okundu = True
+                count.parsed = True
             break
         for number, kind in parts:
             n = int(number)
             if kind == "passed":
-                count.gecen += n
+                count.passed += n
             elif kind in ("failed", "error", "errors"):
-                count.kalan += n
+                count.failed += n
             elif kind in ("skipped", "deselected"):
-                count.atlanan += n
+                count.skipped += n
             elif kind == "xfailed":
-                count.atlanan += n
+                count.skipped += n
             elif kind == "xpassed":
-                count.gecen += n
-        count.okundu = True
+                count.passed += n
+        count.parsed = True
         break
-    count.toplam = count.gecen + count.kalan + count.atlanan
+    count.total = count.passed + count.failed + count.skipped
 
     locations = _pytest_locations(output)
     failures: list[Failure] = []
@@ -607,20 +607,20 @@ _PHPUNIT_LOCATION = re.compile(r"^(?P<file>.+\.php):(?P<line>\d+)\s*$")
 def _read_phpunit(output: str) -> tuple[Count, list[Failure]]:
     count = Count()
     if m := _PHPUNIT_OK.search(output):
-        count.gecen = int(m["tests"])
-        count.toplam = count.gecen
-        count.okundu = True
+        count.passed = int(m["tests"])
+        count.total = count.passed
+        count.parsed = True
     elif m := _PHPUNIT_SUMMARY.search(output):
-        count.toplam = int(m["tests"])
+        count.total = int(m["tests"])
         numbers = {name: int(value)
                    for name, value in _PHPUNIT_PART.findall(m["tail"])}
-        count.kalan = numbers.get("Failures", 0) + numbers.get("Errors", 0)
-        count.atlanan = (numbers.get("Skipped", 0) + numbers.get("Incomplete", 0)
+        count.failed = numbers.get("Failures", 0) + numbers.get("Errors", 0)
+        count.skipped = (numbers.get("Skipped", 0) + numbers.get("Incomplete", 0)
                          + numbers.get("Risky", 0))
-        count.gecen = max(0, count.toplam - count.kalan - count.atlanan)
-        count.okundu = True
+        count.passed = max(0, count.total - count.failed - count.skipped)
+        count.parsed = True
     elif "No tests executed" in output:
-        count.okundu = True
+        count.parsed = True
 
     failures: list[Failure] = []
     name: str | None = None
@@ -701,44 +701,44 @@ def _read_node(output: str) -> tuple[Count, list[Failure]]:
         for number, kind in _JEST_PART.findall(m["body"]):
             n = int(number)
             if kind == "passed":
-                count.gecen = n
+                count.passed = n
             elif kind == "failed":
-                count.kalan = n
+                count.failed = n
             elif kind in ("skipped", "todo", "pending"):
-                count.atlanan += n
+                count.skipped += n
             elif kind == "total":
-                count.toplam = n
-        count.okundu = True
+                count.total = n
+        count.parsed = True
         failures = [Failure(a.strip()) for a in _JEST_FAILED.findall(output)]
     elif m := _VITEST_SUMMARY.search(output):
         for number, kind in _VITEST_PART.findall(m["body"]):
             n = int(number)
             if kind == "passed":
-                count.gecen = n
+                count.passed = n
             elif kind == "failed":
-                count.kalan = n
+                count.failed = n
             else:
-                count.atlanan += n
-        count.okundu = True
+                count.skipped += n
+        count.parsed = True
     elif (passed := _MOCHA_PASSED.search(output)) or (
             failed := _MOCHA_FAILED.search(output)):
         skipped = _MOCHA_SKIPPED.search(output)
         failed = _MOCHA_FAILED.search(output)
-        count.gecen = int(passed.group(1)) if passed else 0
-        count.kalan = int(failed.group(1)) if failed else 0
-        count.atlanan = int(skipped.group(1)) if skipped else 0
-        count.okundu = True
+        count.passed = int(passed.group(1)) if passed else 0
+        count.failed = int(failed.group(1)) if failed else 0
+        count.skipped = int(skipped.group(1)) if skipped else 0
+        count.parsed = True
         failures = _mocha_failures(output)
     elif parts := _NODETEST.findall(output):
         data = {kind: int(number) for kind, number in parts}
-        count.gecen = data.get("pass", 0)
-        count.kalan = data.get("fail", 0)
-        count.atlanan = data.get("skipped", 0)
-        count.toplam = data.get("tests", 0)
-        count.okundu = True
+        count.passed = data.get("pass", 0)
+        count.failed = data.get("fail", 0)
+        count.skipped = data.get("skipped", 0)
+        count.total = data.get("tests", 0)
+        count.parsed = True
 
-    if not count.toplam:
-        count.toplam = count.gecen + count.kalan + count.atlanan
+    if not count.total:
+        count.total = count.passed + count.failed + count.skipped
     return count, failures
 
 
@@ -755,10 +755,10 @@ def _read_go(output: str) -> tuple[Count, list[Failure]]:
     failed = _GO_FAIL.findall(output)
     passed = _GO_PASS.findall(output)
     if failed or passed:
-        count.gecen = len(passed)
-        count.kalan = len(failed)
-        count.toplam = count.gecen + count.kalan
-        count.okundu = True
+        count.passed = len(passed)
+        count.failed = len(failed)
+        count.total = count.passed + count.failed
+        count.parsed = True
 
     locations = _GO_LOCATION.findall(output)
     failures = []
@@ -780,14 +780,14 @@ _CARGO_FAILED = re.compile(r"^\s{4}(?P<name>[\w:]+)\s*$", re.M)
 def _read_cargo(output: str) -> tuple[Count, list[Failure]]:
     count = Count()
     for m in _CARGO_RESULT.finditer(output):
-        count.gecen += int(m["passed"])
-        count.kalan += int(m["failed"])
-        count.atlanan += int(m["skipped"])
-        count.okundu = True
-    count.toplam = count.gecen + count.kalan + count.atlanan
+        count.passed += int(m["passed"])
+        count.failed += int(m["failed"])
+        count.skipped += int(m["skipped"])
+        count.parsed = True
+    count.total = count.passed + count.failed + count.skipped
 
     failures: list[Failure] = []
-    if "\nfailures:\n" in output and count.kalan:
+    if "\nfailures:\n" in output and count.failed:
         tail = output.rsplit("\nfailures:\n", 1)[1]
         for name in _CARGO_FAILED.findall(tail):
             if name not in [f.name for f in failures]:
@@ -805,11 +805,11 @@ _DOTNET_FAILED = re.compile(r"^\s*(?:X|Failed)\s+(?P<name>\S+)", re.M)
 def _read_dotnet(output: str) -> tuple[Count, list[Failure]]:
     count = Count()
     for m in _DOTNET_SUMMARY.finditer(output):
-        count.kalan += int(m["failed"])
-        count.gecen += int(m["passed"])
-        count.atlanan += int(m["skipped"])
-        count.toplam += int(m["total"])
-        count.okundu = True
+        count.failed += int(m["failed"])
+        count.passed += int(m["passed"])
+        count.skipped += int(m["skipped"])
+        count.total += int(m["total"])
+        count.parsed = True
     failures = [Failure(name) for name in _DOTNET_FAILED.findall(output)]
     return count, failures
 
@@ -829,7 +829,7 @@ def normalize(ecosystem: str, output: str) -> tuple[Count, list[Failure]]:
 
     If `ecosystem` is "oto" the readers are tried in turn and the first one
     that can read a count wins — with a hand-given command we do not know
-    which runner is speaking. If none can read it, `Count.okundu` stays False
+    which runner is speaking. If none can read it, `Count.parsed` stays False
     and the result text says so explicitly: there is no invented "0 failed".
     """
     if ecosystem in _READERS:
@@ -837,7 +837,7 @@ def normalize(ecosystem: str, output: str) -> tuple[Count, list[Failure]]:
     for read in (_read_pytest, _read_phpunit, _read_node, _read_cargo, _read_dotnet,
                  _read_go):
         count, failures = read(output)
-        if count.okundu:
+        if count.parsed:
             return count, failures
     return Count(), []
 
@@ -874,38 +874,38 @@ def _parse(name: str) -> str | None:
     return shutil.which(name)
 
 
-async def kos(
+async def run_harness(
     harness: Harness,
     *,
-    zaman_asimi: float = DEFAULT_TIMEOUT,
+    timeout: float = DEFAULT_TIMEOUT,
     cancel: asyncio.Event | None = None,
 ) -> Result:
     """Runs the setup and returns the normalised result."""
-    if not harness.kosulabilir:
-        return Result(harness.ekosistem, harness.etiket, str(harness.kok),
-                      "yok", ham=harness.engel, notlar=list(harness.notlar),
-                      tur=harness.tur)
+    if not harness.runnable:
+        return Result(harness.ecosystem, harness.label, str(harness.root),
+                      "yok", raw=harness.blocker, notes=list(harness.notes),
+                      kind=harness.kind)
 
     exe = _parse(harness.argv[0])
     if exe is None:
         return Result(
-            harness.ekosistem, harness.etiket, str(harness.kok), "baslatilamadi",
-            ham=f"`{harness.argv[0]}` bu makinede bulunamadı.",
-            notlar=list(harness.notlar), tur=harness.tur,
+            harness.ecosystem, harness.label, str(harness.root), "baslatilamadi",
+            raw=f"`{harness.argv[0]}` bu makinede bulunamadı.",
+            notes=list(harness.notes), kind=harness.kind,
         )
     return await _run(
-        [exe, *harness.argv[1:]], harness.kok, harness.ekosistem, harness.etiket,
-        timeout=zaman_asimi, cancel=cancel, notes=list(harness.notlar),
-        kind=harness.tur,
+        [exe, *harness.argv[1:]], harness.root, harness.ecosystem, harness.label,
+        timeout=timeout, cancel=cancel, notes=list(harness.notes),
+        kind=harness.kind,
     )
 
 
-async def kos_komut(
+async def run_command(
     command: str,
     root: Path,
     *,
-    ekosistem: str = "oto",
-    zaman_asimi: float = DEFAULT_TIMEOUT,
+    ecosystem: str = "oto",
+    timeout: float = DEFAULT_TIMEOUT,
     cancel: asyncio.Event | None = None,
 ) -> Result:
     """Runs a hand-given command (overriding detection).
@@ -914,8 +914,8 @@ async def kos_komut(
     and flags are expected to work. The permission gate sees this command as
     the subject (`komut` is in `permissions.SUBJECT_KEYS`).
     """
-    return await _run(None, root, ekosistem, command, shell=command,
-                      timeout=zaman_asimi, cancel=cancel)
+    return await _run(None, root, ecosystem, command, shell=command,
+                      timeout=timeout, cancel=cancel)
 
 
 async def _kill(proc) -> None:
@@ -968,8 +968,8 @@ async def _run(
             proc = await asyncio.create_subprocess_exec(*(argv or []), **common)
     except (OSError, ValueError) as exc:
         return Result(ecosystem, label, str(root), "baslatilamadi",
-                      ham=f"{type(exc).__name__}: {exc}",
-                      notlar=notes or [], tur=kind)
+                      raw=f"{type(exc).__name__}: {exc}",
+                      notes=notes or [], kind=kind)
 
     comm = asyncio.ensure_future(proc.communicate())
     pending = {comm}
@@ -1008,9 +1008,9 @@ async def _run(
             stop.cancel()
         piece = (partial or b"").decode("utf-8", errors="replace")
         return Result(ecosystem, label, str(root),
-                      "kesildi" if interrupted else "zaman_asimi", sure=elapsed,
-                      ham=trim(piece.replace("\r\n", "\n")),
-                      notlar=notes or [], tur=kind)
+                      "kesildi" if interrupted else "zaman_asimi", duration=elapsed,
+                      raw=trim(piece.replace("\r\n", "\n")),
+                      notes=notes or [], kind=kind)
 
     if stop is not None:
         stop.cancel()
@@ -1020,9 +1020,9 @@ async def _run(
 
     count, failures = normalize(ecosystem, text)
     return Result(
-        ekosistem=ecosystem, etiket=label, kok=str(root), status="kostu",
-        cikis_kodu=proc.returncode or 0, sure=elapsed, sayim=count,
-        basarisizlar=failures, ham=trim(text), notlar=notes or [], tur=kind,
+        ecosystem=ecosystem, label=label, root=str(root), status="kostu",
+        exit_code=proc.returncode or 0, duration=elapsed, count=count,
+        failures=failures, raw=trim(text), notes=notes or [], kind=kind,
     )
 
 
@@ -1041,7 +1041,7 @@ async def _run(
 NAG_THRESHOLD = 3
 
 
-def hatirlatma(path: Path | str, *, yazim: int = 1) -> str:
+def reminder(path: Path | str, *, writes: int = 1) -> str:
     """A one-line note if the written file's project has a test setup.
 
     Empty string = nothing to say (not a project, no setup). Producing no
@@ -1050,24 +1050,24 @@ def hatirlatma(path: Path | str, *, yazim: int = 1) -> str:
     """
     try:
         root = project_root(path)
-        harness = tespit(root)
+        harness = detect(root)
     except OSError:  # pragma: no cover - access errors are swallowed silently
         return ""
     if harness is None:
         return ""
 
-    if harness.engel:
-        return (f"koşum: bu projede {harness.etiket} düzeneği var ama "
-                f"{harness.engel}")
+    if harness.blocker:
+        return (f"koşum: bu projede {harness.label} düzeneği var ama "
+                f"{harness.blocker}")
 
-    if harness.tur == "saglik":
-        body = (f"bu projede test takımı yok; `{harness.etiket}` ucuz bir "
-                f"sağlık denetimi ({harness.kanit})")
+    if harness.kind == "saglik":
+        body = (f"bu projede test takımı yok; `{harness.label}` ucuz bir "
+                f"sağlık denetimi ({harness.evidence})")
     else:
-        body = f"bu projede `{harness.etiket}` var ({harness.kanit})"
+        body = f"bu projede `{harness.label}` var ({harness.evidence})"
 
-    if yazim >= NAG_THRESHOLD:
-        return (f"koşum: {body} — aynı dosyaya {yazim}. kez yazıyorsun. "
+    if writes >= NAG_THRESHOLD:
+        return (f"koşum: {body} — aynı dosyaya {writes}. kez yazıyorsun. "
                 "Gözle düzeltmeyi bırak, `kos` aracıyla çalıştır ve gerçek "
                 "hatayı gör.")
     return f"koşum: {body} — değişikliği doğrulamak için `kos` aracını kullan."
@@ -1091,7 +1091,7 @@ def touched(path: Path | str) -> None:
         pass
 
 
-def son_proje() -> Path | None:
+def last_project() -> Path | None:
     return _LAST_PROJECT[0] if _LAST_PROJECT else None
 
 

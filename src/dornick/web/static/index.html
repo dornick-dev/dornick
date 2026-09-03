@@ -10,18 +10,18 @@
 <link rel="stylesheet" href="/app.css?v=layout5">
 <link rel="stylesheet" href="/settings.css?v=layout5">
 <link rel="icon" type="image/png" href="/logo.png">
-<!-- Kayıtlı temayı sayfa çizilmeden uygula: yoksa yanlış tema açılıp
-     doğrusuna "sıçrıyor" (flash). Varsayılan KOYU (kullanıcı kararı,
-     31.08 — 28.08'deki aydınlık kararını geri aldı); aydınlık, ancak
-     bilinçli seçilmişse. -->
+<!-- Apply the saved theme before the page paints: otherwise the wrong theme
+     opens and "jumps" to the right one (flash). Default is DARK (user
+     decision, 31.08 — reversed the 28.08 light decision); light only when
+     consciously chosen. -->
 <script>try{var tema=localStorage.getItem("dornick-theme");if(tema==="light")document.documentElement.dataset.theme="light";}catch(e){}</script>
 </head>
 <body>
 
 <canvas id="scene"></canvas>
 
-<!-- Sağ sütun: üstte görüntüleyici (Değişiklikler · Tarayıcı · terminal),
-     altta beyin. Tek kabuk — yan yana iki fixed pencere değil. -->
+<!-- Right column: the viewer on top (Changes · Browser · terminal), the
+     brain below. One shell — not two fixed windows side by side. -->
 <div class="right-col" id="right-col">
 <div class="viewer" id="viewer" hidden>
   <div class="viewer-grip" id="viewer-grip" title="Genişliği sürükle" aria-label="Paneli yeniden boyutlandır"></div>
@@ -107,10 +107,10 @@
 </div>
 
 <div class="hud">
-  <!-- Gerçek başlık çubuğu (Claude Code): solda kenar çubuğu anahtarı +
-       yeni sohbet + marka + durum; sağda YALNIZ pencere düğmeleri.
-       Özellik ikonları burada yaşamaz — bağlam araçları orta içeriğin
-       sağ üstünde, sistem ikonları kenar çubuğunun dibinde. -->
+  <!-- A real title bar (Claude Code): on the left the sidebar toggle + new
+       chat + brand + status; on the right ONLY the window buttons. Feature
+       icons do not live here — context tools sit at the top right of the
+       centre content, system icons at the bottom of the sidebar. -->
 
   <div class="hud-left">
     <button id="history" class="icon" title="Kenar çubuğu" aria-label="Kenar çubuğu">
@@ -118,14 +118,15 @@
         <path d="M3 4h10M3 8h10M3 12h6" fill="none"/>
       </svg>
     </button>
-    <!-- Marka: ağ örgüsü düğümünden bir "d" — dornick. Meşgulken düğüm
-         örülüp çözülür (CSS .mesgul; Claude'un yıldız nabzının karşılığı). -->
+    <!-- Brand: a "d" built from a knot of the web — dornick. While busy the
+         knot knits and unravels (CSS .mesgul; the counterpart of Claude's
+         star pulse). -->
     <span class="brand"><svg class="brand-mark" viewBox="0 0 32 32" role="img" aria-label="Dornick"><path class="knot" pathLength="100" d="M21.5 7v16.5a2.8 2.8 0 0 1-2.8 2.8h-6.2a2.8 2.8 0 0 1-2.8-2.8v-7.4a2.8 2.8 0 0 1 2.8-2.8h9" fill="none" stroke="currentColor" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round"/><rect x="7.4" y="11.2" width="4.4" height="4.4" rx="1.2" fill="currentColor"/><rect x="7.4" y="21.9" width="4.4" height="4.4" rx="1.2" fill="currentColor"/><rect x="19.3" y="24.1" width="4.4" height="4.4" rx="1.2" fill="currentColor"/><circle class="knot-node" cx="21.5" cy="5.6" r="3.3" fill="var(--amber)"/></svg>Dornick</span>
     <span class="status" id="status"><i></i><b>Bağlanıyor</b></span>
   </div>
   <div class="hud-right">
-  <!-- Bağlam araçları: kullanıcı isteğiyle (31.08) başlık çubuğunda —
-       eski hali sohbetin sağ üstünde yüzüyor, metnin üstüne biniyordu. -->
+  <!-- Context tools: in the title bar by user request (31.08) — the old
+       version floated at the chat's top right, overlapping the text. -->
   <div class="ctx-tools" id="ctx-tools">
     <button id="mute" class="icon off" title="Ses kapalı — tıkla: aç" aria-label="Ses" aria-pressed="false">
       <svg viewBox="0 0 16 16" aria-hidden="true">
@@ -229,21 +230,22 @@
 </div>
 
 
-<!-- Sohbet sütunu: hedef şeridi ve akış AYNI kutunun içinde, üst üste
-     değil ALT ALTA. Panel eskiden akışın üstünde yüzen ayrı bir kutuydu ve
-     uzun bir konuşmada metni örtüyordu; artık yer kaplıyor, örtmüyor. -->
+<!-- Chat column: the goal strip and the stream live in the SAME box,
+     STACKED, not overlapping. The panel used to be a separate box floating
+     over the stream, covering the text in a long conversation; now it takes
+     up space instead of covering. -->
 <div class="stream-wrap" id="stream-wrap">
-  <!-- Hedefler: ajanın kendine yazdığı iş listesi (mind_goals). Hedef
-       yokken hiç görünmez; varsayılan KATLI (tek satır), tıklayınca açılır
-       ve tercih hatırlanır. Açıkken ne olduğunu kendi anlatıyor. -->
+  <!-- Goals: the to-do list the agent writes for itself (mind_goals).
+       Invisible with no goals; default FOLDED (one line), opens on click
+       and the choice is remembered. Open, it explains itself. -->
   <div class="goals" id="goals" hidden>
     <button class="goals-head" id="goals-head" type="button"
             title="Tıkla — katla/aç" aria-label="Hedefler — katla/aç"></button>
     <div class="goals-body" id="goals-body"></div>
   </div>
-  <!-- Hatırlama izi: eskiden sol üstte yüzen kutuydu ve konuşma listesinin
-       üstüne biniyordu. Hedef şeridi gibi akışın kardeşi — yer kaplar,
-       örtmüyor. -->
+  <!-- Recall trace: used to be a box floating top-left, overlapping the
+       conversation list. Like the goal strip it is a sibling of the stream —
+       takes up space, covers nothing. -->
   <div class="route" id="route" hidden></div>
   <div class="stream" id="thread">
     <div class="welcome" id="welcome">
@@ -253,14 +255,14 @@
     </div>
   </div>
 </div>
-<!-- Hızlı inme: kullanıcı yukarı kaydırınca otomatik takip durur; bu düğme
-     yeni içerik sayısını gösterir ve tıklanınca en alta iner. -->
+<!-- Quick descent: scrolling up stops the auto-follow; this button shows
+     the count of new content and jumps to the bottom on click. -->
 <button id="jump" class="jump" hidden title="En alta in" aria-label="En alta in">↓</button>
 
 <div class="compose-shell" id="compose-shell">
-<!-- Çalışma klasörü şeridi: atölyede mi, bağlı bir klasörde mi? Eskiden
-     hiçbir yerde yazmıyordu ve kullanıcı nerede çalıştığını bilmiyordu
-     (canlı yara, 02.09). Tıklanınca klasör seç/oluştur açılır. -->
+<!-- Working-folder strip: in the workshop, or in an attached folder? It
+     used to be written nowhere and the user did not know where they were
+     working (live wound, 02.09). Clicking opens choose/create folder. -->
 <div class="workdir-bar" id="workdir-bar" hidden>
   <button type="button" class="workdir-id" id="workdir-id" title="Çalışma klasörü — tıkla: değiştir">
     <span class="workdir-icon" id="workdir-icon">🗂</span>
@@ -309,17 +311,19 @@
 </form>
 
 <div class="dock" id="dock">
-  <!-- Sağlayıcı: hangi servise bağlıyız (openrouter/ollama/…). Model adı
-       tek başına bunu söylemiyordu ve kullanıcı yanlışlıkla seçtiği
-       sağlayıcıyı fark edemiyordu (canlı yara, 02.09). -->
+  <!-- Provider: which service we are connected to (openrouter/ollama/…).
+       The model name alone did not say it, and the user could not notice a
+       provider picked by mistake (live wound, 02.09). -->
   <button id="dock-provider" type="button" class="dock-chip" title="Sağlayıcı — tıkla: ayarları aç">—</button>
   <button id="dock-model" type="button" class="dock-chip" title="Model — ayarları açar">model</button>
   <button id="dock-effort" type="button" class="dock-chip" title="Düşünme derinliği — tıkla: değiştir">—</button>
   <button id="dock-mode" type="button" class="dock-chip" title="Yetki kipi — tıkla: değiştir">—</button>
-  <!-- Maliyet çipi: bu turun tahmini harcaması (fiyat bilinmiyorsa token).
-       İlk kullanım olayına kadar gizli — boş bir "$0" göstermenin anlamı yok. -->
+  <!-- Cost chip: this turn's estimated spend (tokens when the price is
+       unknown). Hidden until the first usage event — showing an empty "$0"
+       means nothing. -->
   <button id="dock-cost" type="button" class="dock-chip" title="Tahmini harcama — tıkla: kırılım" hidden>—</button>
-  <!-- Beni tanı: kişisel ince ayar arka planda koşurken yanan sessiz çip. -->
+  <!-- Learn me: the quiet chip that lights up while the personal fine-tune
+     runs in the background. -->
   <span class="dock-tanima" id="dock-tanima" hidden></span>
   <span class="dock-ctx" id="dock-ctx" title="Bağlam doluluğu">
     <span class="dock-bar" id="dock-ctx-bar"></span>
@@ -328,26 +332,27 @@
 </div>
 </div>
 
-<!-- Kompozer yüzeyleri: satır başında `/` komut defterini, `@` çalışma
-     alanı dosya seçicisini açıyor. Tek kutu var — hangisi açıksa onun
-     içeriğiyle dolup kompozerin ÜSTÜNDE duruyor (dock kutularıyla aynı
-     yerleşim). Klavye ile gezilir: ok tuşları, Enter seçer, Escape kapatır. -->
+<!-- Composer surfaces: at line start `/` opens the command book, `@` the
+     workspace file picker. There is one box — it fills with whichever is
+     open and sits ABOVE the composer (same layout as the dock popups).
+     Keyboard-driven: arrow keys move, Enter selects, Escape closes. -->
 <div class="pop compose-pop" id="compose-pop" hidden></div>
 
-<!-- `@` ile işaret edilen dosyalar: gönderilmeden önce cip olarak burada
-     duruyor. Gizli enjeksiyon yok — mesaja eklenen satır cipte yazan yol. -->
+<!-- Files mentioned with `@`: they sit here as chips before sending. No
+     hidden injection — the line added to the message is the path written on
+     the chip. -->
 <div class="mentions" id="mentions" hidden></div>
 
-<!-- Kompozerin altındaki durum şeridi: model, düşünme derinliği, yetki kipi
-     ve bağlam doluluğu. Ayar sayfasını açmadan bir bakışta görülüyor ve
-     (model dışında) tek tıkla değişiyor. -->
-<!-- Dock çiplerinin açılır kutusu: model seçimi, düşünme derinliği, yetki
-     kipi, bağlam detayı. Tek kutu var; hangi çip tıklandıysa onun içeriğiyle
-     dolup çipin üstünde açılıyor. -->
+<!-- Status strip under the composer: model, thinking depth, permission mode
+     and context fullness. Visible at a glance without opening settings and
+     (except the model) changeable with one click. -->
+<!-- The dock chips' popup: model choice, thinking depth, permission mode,
+     context detail. There is one box; it fills with the clicked chip's
+     content and opens above that chip. -->
 <div class="pop" id="dock-pop" hidden></div>
 
-<!-- Kompozerdeki + menüsü: ekleme kısayolları. Ayar sayfasını açmadan
-     dosya eklemek ya da ilgili ayar sekmesine atlamak. -->
+<!-- The + menu in the composer: attachment shortcuts. Attach a file or
+     jump to the relevant settings tab without opening the settings page. -->
 <div class="pop" id="plus-pop" hidden></div>
 
 <div class="lens" id="lens" hidden>
@@ -400,10 +405,10 @@
   </div>
 </div>
 
-<!-- Kapsül: sistem içi bir uygulama Dornick'in İÇİNDE açılıyor (dış tarayıcı
-     değil). Dornick arkada süreci çalıştırıp izliyor; üstte canlı adres, durum ve
-     çalışma süresi, kontroller (yenile · dışarıda aç · durdur), altta
-     uygulamanın kendisi canlı bir çerçevede. -->
+<!-- Capsule: an in-system app opens INSIDE Dornick (not the external
+     browser). Dornick runs and watches the process behind it; on top the
+     live address, status and uptime, the controls (refresh · open outside ·
+     stop), below the app itself in a live frame. -->
 <div class="capsule" id="capsule" hidden>
   <div class="capsule-head">
     <span class="capsule-tag">Kapsül</span>
@@ -438,7 +443,7 @@
       <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 3h12L9.5 8.5V13l-3 1.5V8.5z" fill="none"/></svg>
     </button>
   </div>
-  <!-- Hızlı gezinti: Cursor'un sol üst eylemleri gibi listenin üstünde. -->
+  <!-- Quick navigation: above the list, like Cursor's top-left actions. -->
   <nav class="side-nav">
     <button class="side-nav-item" id="side-jobs-nav" type="button">
       <svg viewBox="0 0 16 16" aria-hidden="true">
@@ -457,7 +462,7 @@
   </nav>
   <div class="side-label">Konuşmalar</div>
   <div class="hist-body" id="hist-body"></div>
-  <!-- Dip: sistem ikonları (Claude Code'un sol-alt köşesi). -->
+  <!-- Bottom: system icons (Claude Code's bottom-left corner). -->
   <div class="side-foot">
     <button id="authority" class="icon" title="Yetki" aria-label="Yetki">
       <svg viewBox="0 0 16 16" aria-hidden="true">
@@ -493,7 +498,7 @@
     <button class="apps-refresh" id="apps-refresh" title="Yenile" aria-label="Yenile">↻</button>
     <button class="close" id="apps-close" aria-label="Kapat">×</button>
   </div>
-  <!-- Arama + tür süzgeci: kalabalık atölyede aranan uygulamayı bulur. -->
+  <!-- Search + kind filter: finds the app you want in a crowded workshop. -->
   <div class="apps-tools">
     <input class="apps-search" id="apps-search" type="search"
            placeholder="Uygulamalarda ara" aria-label="Uygulamalarda ara">
@@ -502,9 +507,9 @@
   <div class="apps-body" id="apps-body"></div>
 </div>
 
-<!-- Görevler: Planlanmış (zamanlanmış + otomasyon) ve Canlı (arkada koşan
-     kabuk işleri, yardımcılar, süreçler). Orkestra güvertesinden ayrı —
-     orada şu anki turun sahnesi, burada işin defteri. -->
+<!-- Tasks: Scheduled (timers + automations) and Live (shell jobs, helpers
+     and processes running behind). Separate from the orchestra deck — that
+     is the stage of the current turn, this is the ledger of the work. -->
 <div class="jobs-panel" id="jobs-panel" hidden>
   <div class="left-grip" data-left-grip title="Genişliği sürükle" aria-label="Paneli yeniden boyutlandır"></div>
   <div class="jobs-head">

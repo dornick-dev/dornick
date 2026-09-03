@@ -1,9 +1,9 @@
-"""Hatırlama protokolünün MCP yüzeyi.
+"""The recall protocol's MCP surface.
 
-Amaç baştan beri buydu: bu bellek yalnızca dornick'nin içinde değil, modelin
-çalıştığı her yerde kullanılabilsin. Protokol hataları sinsi — istemci
-"sunucu yanıt vermiyor" der ve sebebini söylemez — o yüzden çerçevenin
-kendisi de test ediliyor, yalnızca araçlar değil.
+This was the goal from the start: this memory should be usable not just
+inside dornick but anywhere the model runs. Protocol bugs are sneaky —
+the client says "the server is not responding" and does not say why — so
+the framing itself is tested, not just the tools.
 """
 
 from __future__ import annotations
@@ -45,7 +45,7 @@ def text_of(result: dict) -> str:
     return "\n".join(block["text"] for block in result["content"])
 
 
-# -- protokol ----------------------------------------------------------
+# -- protocol ----------------------------------------------------------
 
 
 def test_initialize_reports_tools(server: Server) -> None:
@@ -69,8 +69,8 @@ def test_an_unknown_version_falls_back_to_ours(server: Server) -> None:
 
 
 def test_notifications_get_no_answer(server: Server) -> None:
-    """Bildirimlerin id'si yok ve cevap beklemiyorlar; cevap yazmak istemciyi
-    'eşleşmeyen yanıt' hatasına düşürür."""
+    """Notifications have no id and expect no answer; writing one drops
+    the client into an 'unmatched response' error."""
     assert server.handle({"jsonrpc": "2.0", "method": "notifications/initialized"}) is None
 
 
@@ -80,7 +80,7 @@ def test_an_unknown_method_is_a_protocol_error(server: Server) -> None:
 
 
 def test_every_tool_declares_a_schema() -> None:
-    """Şemasız araç istemcide görünmüyor ya da argümansız çağrılıyor."""
+    """A schemaless tool is invisible in the client or gets called without arguments."""
     for spec in tool_specs():
         assert spec["name"] and spec["description"]
         schema = spec["inputSchema"]
@@ -89,13 +89,13 @@ def test_every_tool_declares_a_schema() -> None:
 
 
 def test_descriptions_say_when_to_use_the_tool() -> None:
-    """Açıklama modelin okuyacağı tek belge: ne zaman kullanılacağı orada
-    yazmazsa araç ya hiç çağrılmıyor ya da her mesajda çağrılıyor."""
+    """The description is the only document the model reads: if when-to-use
+    is not written there, the tool is either never called or called on every message."""
     recall = next(s for s in tool_specs() if s["name"] == "recall")
     assert len(recall["description"]) > 120
 
 
-# -- araçlar -----------------------------------------------------------
+# -- tools -------------------------------------------------------------
 
 
 def test_remember_then_recall(server: Server) -> None:
@@ -113,8 +113,8 @@ def test_recall_says_so_when_nothing_matches(server: Server) -> None:
 
 
 def test_an_empty_query_is_an_error_the_model_can_read(server: Server) -> None:
-    """Araç hatası protokol hatası değil: model hatayı okuyup düzeltebilmeli,
-    istemcinin bağlantısı kopmamalı."""
+    """A tool error is not a protocol error: the model must be able to
+    read and fix it, the client's connection must not drop."""
     result = call(server, "recall", query="   ")
 
     assert result["isError"]
@@ -153,7 +153,7 @@ def test_an_unknown_tool_is_refused(server: Server) -> None:
     assert answer["error"]["code"] == -32602
 
 
-# -- stdio kabuğu ------------------------------------------------------
+# -- the stdio shell ---------------------------------------------------
 
 
 def run_lines(store: RecallStore, *lines: str) -> list[dict]:
@@ -174,8 +174,8 @@ def test_one_message_per_line(store: RecallStore) -> None:
 
 
 def test_a_broken_line_does_not_kill_the_server(store: RecallStore) -> None:
-    """İstemci uzun süre açık kalıyor; tek bir bozuk satır yüzünden
-    bağlantıyı yeniden kurmak zorunda bırakmak gereksiz."""
+    """The client stays open for a long time; forcing it to rebuild the
+    connection over a single broken line is needless."""
     answers = run_lines(
         store,
         "bu json degil",
@@ -201,8 +201,9 @@ def test_notifications_produce_no_line(store: RecallStore) -> None:
 
 
 def test_the_same_database_is_shared_with_the_agent(tmp_path: Path) -> None:
-    """WAL açık; ajanın oturumda yazdığı bir şey MCP istemcisinde anında
-    hatırlanabilmeli. Amaç zaten belleği her yerde kullanabilmekti."""
+    """WAL is on; something the agent wrote in the session must be
+    recallable in the MCP client instantly. The whole point was using the
+    memory everywhere."""
     path = tmp_path / "recall.db"
     writer = RecallStore(path)
     writer.remember("Fatih SCADA tarafında çalışıyor", kind="user")

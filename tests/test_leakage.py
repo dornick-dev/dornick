@@ -287,7 +287,7 @@ async def test_a_faked_tool_call_does_not_end_the_turn(
     stats = await agent.run("klasörü listele")
 
     assert stats.stop_reason == "end_turn"
-    assert stats.sahte_cagri == 1
+    assert stats.fake_calls == 1
     # The correction note really went to the model.
     sent = str(client.seen_messages[-1])
     assert "DÜZ METİN olarak yazdın" in sent
@@ -309,7 +309,7 @@ async def test_a_repeated_fake_call_hardens_the_note(
 
     stats = await agent.run("listele")
 
-    assert stats.sahte_cagri == 2
+    assert stats.fake_calls == 2
     assert "YİNE metin olarak yazdın" in str(client.seen_messages[-1])
 
 
@@ -322,7 +322,7 @@ async def test_a_hopeless_model_stops_holding_the_turn(
     import dornick.loop as loop_module
     from tests.test_loop import FakeClient, build_agent, text_turn
 
-    monkeypatch.setattr(loop_module, "SAHTE_CAGRI_TAVANI", 2)
+    monkeypatch.setattr(loop_module, "FAKE_CALL_CAP", 2)
     xml = '<invoke name="shell">'
     client = FakeClient(*[text_turn(xml) for _ in range(10)])
     agent = build_agent(tmp_path, client, registry)
@@ -331,7 +331,7 @@ async def test_a_hopeless_model_stops_holding_the_turn(
 
     stats = await agent.run("listele")
 
-    assert stats.sahte_cagri == 3, "tavanı bir aşınca bırakılmalı"
+    assert stats.fake_calls == 3, "tavanı bir aşınca bırakılmalı"
     assert any("başka bir model" in n for n in notices)
 
 
@@ -352,7 +352,7 @@ async def test_a_real_tool_call_is_never_hijacked(
 
     stats = await agent.run("çalış")
 
-    assert stats.sahte_cagri == 0
+    assert stats.fake_calls == 0
     assert stats.tool_calls == 1
 
 
@@ -382,8 +382,8 @@ def test_content_faults_penalise_the_auto_pool() -> None:
     for _ in range(automode.ERROR_THRESHOLD):
         backend.kusurlu("sahte araç çağrısı")
 
-    assert backend._saglik.cezali("ucuz/model")
-    assert backend._saglik.rank(["ucuz/model", "saglam/model"]) \
+    assert backend._health.cezali("ucuz/model")
+    assert backend._health.rank(["ucuz/model", "saglam/model"]) \
         == ["saglam/model", "ucuz/model"]
 
 
@@ -398,7 +398,7 @@ def test_a_chosen_model_is_never_punished_behind_the_users_back() -> None:
     backend._last_selected = "anthropic/claude"
     backend.kusurlu("şema ihlali")
 
-    assert not backend._saglik.cezali("anthropic/claude")
+    assert not backend._health.cezali("anthropic/claude")
 
 
 async def test_the_loop_reports_content_faults_to_the_backend(
@@ -775,10 +775,10 @@ def test_train_now_reports_why_it_did_not_start(tmp_path: Path) -> None:
     hub = _Hub()
 
     # While disabled: it is named.
-    assert recognition.maybe_start(tmp_path, hub, zorla=True) == "kapali"
+    assert recognition.maybe_start(tmp_path, hub, force=True) == "kapali"
 
     recognition.configure(tmp_path, True)
-    reason = recognition.maybe_start(tmp_path, hub, zorla=True)
+    reason = recognition.maybe_start(tmp_path, hub, force=True)
     # If the setup is not installed it stops there; if it is, there is no
     # data to train on — both are a NAMED outcome, not silence.
     assert reason in ("duzenek_yok", "veri_yok")
@@ -794,7 +794,7 @@ def test_the_ui_has_a_line_for_every_outcome() -> None:
                  "kapali", "ara_yok", "baslatilamadi"):
         assert re.search(rf"\b{code}:", APP_JS), code
     # The pulse must show even on very short runs.
-    assert re.search(r"const TANIMA_EN_AZ_MS = \d+", APP_JS)
+    assert re.search(r"const TRAINING_MIN_PULSE_MS = \d+", APP_JS)
 
 
 def test_derived_session_titles_skip_one_letter_keystrokes() -> None:

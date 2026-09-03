@@ -185,7 +185,7 @@ PERMISSION_MODES: tuple[dict[str, str], ...] = (
 # First-setup guidance: when no provider is usable and the user types (or
 # speaks) the model is not called at all; this message lands in the chat.
 # The text is translated to English in the UI with t() (app.js).
-KURULUM_YONLENDIRME = (
+SETUP_REDIRECT = (
     "Henüz bir yapay zekâ sağlayıcısı tanımlı değil. Ayarlar › Model'den bir "
     "sağlayıcı seçip API anahtarı girmelisin. Varsayılan sağlayıcı "
     "OpenRouter'dır — anahtarını girdiğinde ücretsiz modellerle 'Oto' modda "
@@ -237,7 +237,7 @@ def _required_env(model: ModelConfig) -> str | None:
     return model.api_key_env
 
 
-def yapilandirilmamis(model: ModelConfig) -> bool:
+def unconfigured(model: ModelConfig) -> bool:
     """Is no provider in a usable state?
 
     Definition: the model name is empty OR a key-requiring provider has no
@@ -294,7 +294,7 @@ def _sandbox_snapshot(config: Config) -> dict[str, Any]:
         "project_root": str(box.project) if box.project else "",
         "project_error": block or "",
         "project_note": box.note,
-        "recent": sandbox.son_projeler(config.state_dir),
+        "recent": sandbox.recent_projects(config.state_dir),
     }
 
 
@@ -314,7 +314,7 @@ def snapshot(config: Config) -> dict[str, Any]:
         # as switchable means making the user click a button that does nothing.
         # Installed layout (via the wizard)? The UI picks the missing-feature
         # text by this: in the installed layout pip is not suggested, the wizard is.
-        "installed": environment.kurulu_mu(),
+        "installed": environment.is_installed(),
         # The field question "which version is installed?" had no answer:
         # the Machine tab shows it read-only, installed/dev distinction from installed.
         "surum": environment.version(),
@@ -918,7 +918,7 @@ def apply(config: Config, patch: dict[str, Any]) -> Config:
     # every save: when the user changes the voice the top of the notebook
     # must not get shuffled.
     if project and project != base.sandbox.project.strip():
-        sandbox.proje_hatirla(updated.state_dir, str(Path(project).expanduser()))
+        sandbox.remember_project(updated.state_dir, str(Path(project).expanduser()))
 
     if keys := patch.get("keys"):
         _write_keys(config.state_dir, keys)

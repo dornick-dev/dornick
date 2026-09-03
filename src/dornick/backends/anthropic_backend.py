@@ -1,8 +1,8 @@
 """Anthropic backend.
 
-Streaming varsayılan: max_tokens 16k'nın üstünde streaming olmadan istek
-atmak SDK'da HTTP timeout riski taşır, ayrıca kullanıcıya ilerleme
-göstermenin ve turu ortasında kesebilmenin tek yolu bu.
+Streaming is the default: sending a request without streaming above 16k
+max_tokens risks an HTTP timeout in the SDK, and it is also the only way
+to show the user progress and to be able to cut a turn in the middle.
 """
 
 from __future__ import annotations
@@ -24,8 +24,8 @@ class AnthropicBackend:
         kwargs: dict[str, Any] = {}
         if model.base_url:
             kwargs["base_url"] = model.base_url
-        # SDK varsayılanı 10 dakikalık zaman aşımı: ölü bir bağlantı turu
-        # dakikalarca asıyordu (OpenAI backend'iyle aynı sınırlar).
+        # The SDK default is a 10-minute timeout: a dead connection used to
+        # hang the turn for minutes (same limits as the OpenAI backend).
         kwargs.setdefault("timeout", 90.0)
         kwargs.setdefault("max_retries", 2)
         self._client = client or anthropic.AsyncAnthropic(**kwargs)
@@ -34,8 +34,8 @@ class AnthropicBackend:
         await self._client.close()
 
     def _stream_api(self, prepared: Prepared) -> Any:
-        # Beta özellikleri (bağlam düzenleme, compaction) beta ad alanını
-        # gerektirir. Gerekmedikçe GA yolunda kal.
+        # Beta features (context editing, compaction) require the beta
+        # namespace. Stay on the GA path unless needed.
         namespace = (
             self._client.beta.messages if prepared.needs_beta_client else self._client.messages
         )
@@ -58,8 +58,9 @@ class AnthropicBackend:
 
         try:
             async with stream_fn(**kwargs) as stream:
-                # `cancellable`: kesme, parça BEKLERKEN de yoklanıyor — ilk
-                # token'dan önce Durdur'un işlememesi burada düzeltildi.
+                # `cancellable`: the cancel flag is polled even while
+                # WAITING for a chunk — Stop not working before the first
+                # token was fixed here.
                 async for event in cancellable(stream, cancel):
                     _dispatch(event, callbacks, buffer)
 
@@ -75,7 +76,7 @@ class AnthropicBackend:
         return TurnResult(message=message, partial_text="".join(buffer))
 
     async def count_tokens(self, prepared: Prepared, tools: list[dict[str, Any]]) -> int:
-        """Gerçek token sayısı. Tahmin kütüphanesi kullanma — hepsi yanlış sayar."""
+        """The real token count. Do not use an estimation library — they all count wrong."""
         result = await self._client.messages.count_tokens(
             model=self.model.name,
             system=prepared.system,
@@ -104,7 +105,7 @@ def _dispatch(event: Any, cb: Callbacks, buffer: list[str]) -> None:
 
 
 def _explain_status_error(exc: anthropic.APIStatusError) -> str:
-    """Sık görülen 400'leri okunur hale getirir."""
+    """Makes the common 400s readable."""
     text = str(getattr(exc, "message", "") or exc)
     hints = {
         "budget_tokens": "Opus 4.7+ üzerinde budget_tokens kaldırıldı; adaptif düşünme kullan.",

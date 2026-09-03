@@ -1,17 +1,17 @@
-// Orkestra: alt ajan kanalları — "şef modu".
+// Orchestra: sub-agent channels — "conductor mode".
 //
-// Dornick bir işi böldüğünde alt ajanlar doğuyor (task aracı). Onların araç
-// çağrıları ana sohbete karışmıyor; bu güverte her kanalı canlı bir kart
-// olarak gösteriyor: başlığı, modeli, o an çalıştırdığı araç, kaç araç
-// çağırdığı ve durumu (çalışıyor · bitti · hata). Arka planda koşan
-// yardımcılar rozetle ayrılıyor; biten kanallar hemen silinmiyor — son
-// beşi duruyor, karta tıklayınca sonucun özeti açılıyor.
+// When Dornick splits a job, sub-agents are born (the task tool). Their tool
+// calls do not mix into the main conversation; this deck shows every channel
+// as a live card: its title, model, the tool it is running right now, how
+// many tools it has called, and its state (running · done · failed).
+// Background helpers get a badge; finished channels are not deleted right
+// away — the last five stay, and clicking a card opens the result summary.
 //
-// Kaynak canlı SSE olayları: child_start / child_tool / child_end. Bir anı
-// DEĞİL — anlık koordinasyon. Kendisi çalışırken açılıyor, sabitlenebiliyor.
-// Sayfa açılışında /api/state'teki gerçek kanal listesiyle tohumlanıyor
-// (seed): hayalet "çalışıyor" kartı kalmıyor, geçen oturumdan yarım kalan
-// yardımcılar soluk "yarım kaldı" satırıyla görünüyor.
+// The source is live SSE events: child_start / child_tool / child_end. NOT a
+// memory — momentary coordination. It opens on its own while running, and can
+// be pinned. On page load it is seeded with the real channel list from
+// /api/state (seed): no ghost "running" card is left over, and helpers left
+// unfinished by the previous session show as a faded "yarım kaldı" row.
 
 Dil.ekle({
   "Şu an alt ajan yok. Dornick bir işi böldüğünde kanallar burada belirir.":
@@ -46,14 +46,15 @@ const Orchestra = (() => {
   const status = document.getElementById("orch-status");
   const foot = document.getElementById("orch-foot");
 
-  // id → kanal durumu (id yoksa başlık anahtar olur — eski olaylarla uyum).
+  // id → channel state (without an id the title is the key — compatible
+  // with older events).
   const channels = new Map();
-  let pinned = false;      // kullanıcı elle açtı: koşu bitince kapanmasın
+  let pinned = false;      // user opened it by hand: keep open after the run
   let fadeTimer = null;
 
-  // Bitmiş kanallardan en fazla bu kadarı tutuluyor; en eskisi düşüyor.
+  // At most this many finished channels are kept; the oldest is dropped.
   const KEEP_DONE = 5;
-  // Koşan kanalda son N araç satırı (kısa act listesi).
+  // The last N tool rows on a running channel (short act list).
   const KEEP_ACTS = 8;
 
   const el = (tag, cls, text) => {
@@ -65,7 +66,7 @@ const Orchestra = (() => {
 
   const keyOf = (ev) => ev.id || ev.title;
 
-  // --- olaylar (app.js SSE'den çağırıyor) ------------------------------
+  // --- events (called by app.js from the SSE stream) -------------------
 
   function start(ev) {
     channels.set(keyOf(ev), {
@@ -79,8 +80,8 @@ const Orchestra = (() => {
   }
 
   function tool(ev) {
-    // Araç olayları başlıkla geliyor (kanal kimliği taşımıyorlar); aynı
-    // başlıklı koşan kanala yazılıyor.
+    // Tool events arrive with the title (they carry no channel id); they
+    // are written onto the running channel with the same title.
     const ch = [...channels.values()].find(c => c.title === ev.title && c.state === "run")
       || channels.get(ev.title);
     if (!ch) return;
@@ -127,8 +128,9 @@ const Orchestra = (() => {
     if (ev.usage) ch.usage = ev.usage;
     prune();
     render();
-    // Hepsi bittiyse ve sabitli değilse güverte bir süre sonra çekiliyor —
-    // kanallar SİLİNMİYOR: rozete tıklayınca son beşi yine görünür.
+    // If everything finished and the deck is not pinned, it withdraws after
+    // a while — the channels are NOT deleted: clicking the badge shows the
+    // last five again.
     if (!pinned && [...channels.values()].every(c => c.state !== "run")) {
       clearTimeout(fadeTimer);
       fadeTimer = setTimeout(() => { if (!anyRunning()) hide(); }, 6000);
@@ -165,11 +167,12 @@ const Orchestra = (() => {
 
   const anyRunning = () => [...channels.values()].some(c => c.state === "run");
 
-  // Açılış tohumu: panel olay güdümlü ama sayfa yenilenince/uygulama yeniden
-  // açılınca olaylar kaçmış oluyor. Tek doğru kaynak /api/state'teki gerçek
-  // kanal listesi (ajanın defteri): harita baştan kurulur — snapshot'ta
-  // olmayan "çalışıyor" kanalı hayalettir, çizilmez. Yetimler (geçen
-  // oturumdan yarım kalanlar) soluk "yarım kaldı" satırı olarak listelenir.
+  // Startup seed: the panel is event-driven, but after a page refresh or an
+  // app restart the events have already passed. The single source of truth is
+  // the real channel list in /api/state (the agent's ledger): the map is
+  // rebuilt from scratch — a "running" channel absent from the snapshot is a
+  // ghost and is not drawn. Orphans (left unfinished by the previous session)
+  // are listed as a faded "yarım kaldı" row.
   function seed(list) {
     channels.clear();
     for (const ev of list || []) {
@@ -182,19 +185,20 @@ const Orchestra = (() => {
     }
     prune();
     render();
-    // Gerçekten koşan kanal varsa güverte açık gelsin; yoksa rozet yeter —
-    // yetim/bitmiş envanter kullanıcı tıklayınca görünür.
+    // If a channel is genuinely running, the deck comes up open; otherwise
+    // the badge suffices — the orphan/finished inventory shows on click.
     if (anyRunning()) open();
     else if (!pinned) hide();
   }
 
-  // Bitmiş kanal envanteri sınırlı: en eski bitenler düşer, koşanlar kalır.
+  // The finished-channel inventory is bounded: the oldest finished ones
+  // drop, running ones stay.
   function prune() {
     const done = [...channels.entries()].filter(([, c]) => c.state !== "run");
     for (let i = 0; i < done.length - KEEP_DONE; i++) channels.delete(done[i][0]);
   }
 
-  // --- çizim -----------------------------------------------------------
+  // --- drawing ---------------------------------------------------------
 
   function render() {
     body.replaceChildren();
@@ -219,7 +223,7 @@ const Orchestra = (() => {
       status.className = "orch-status";
     }
 
-    // Alt bilgi: aynı anda koşabilecek yardımcı sınırı (context.max_agents).
+    // Footer: the limit on concurrently running helpers (context.max_agents).
     foot.replaceChildren();
     if (maxAgents != null) {
       foot.append(el("span", "orch-cap",
@@ -248,8 +252,8 @@ const Orchestra = (() => {
     } else {
       line.append(el("span", "orch-ch-act ok", t("Bitti")));
     }
-    // Yetimde araç sayacı yok: geçen oturumun sayısı bilinmiyor, "0 araç"
-    // yazmak yanlış bilgi olurdu.
+    // No tool counter on an orphan: the previous session's count is unknown
+    // and writing "0 tools" would be wrong information.
     if (ch.state !== "yetim") {
       line.append(el("span", "orch-ch-count", ch.tools + t(" araç")));
     }
@@ -273,51 +277,53 @@ const Orchestra = (() => {
 
     if (ch.state === "yetim" && ch.id) {
       const acts = el("div", "orch-ch-resume-row");
-      const devam = el("button", "orch-resume", t("Devam et"));
-      devam.type = "button";
-      devam.addEventListener("click", async (ev) => {
+      const resumeBtn = el("button", "orch-resume", t("Devam et"));
+      resumeBtn.type = "button";
+      resumeBtn.addEventListener("click", async (ev) => {
         ev.stopPropagation();
-        devam.disabled = true;
-        devam.textContent = t("Sürdürülüyor…");
+        resumeBtn.disabled = true;
+        resumeBtn.textContent = t("Sürdürülüyor…");
         try {
           await fetch("/api/gorevler/devam", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ id: "c:" + ch.id }),
           });
-        } catch { /* yoklama/SSE günceller */ }
-        // Snapshot tazelensin — koşuya geçince kart run olur.
+        } catch { /* polling/SSE will update */ }
+        // Refresh the snapshot — once running, the card turns to run.
         try {
           const s = await (await fetch("/api/state")).json();
           if (s && s.channels) seed(s.channels);
         } catch { render(); }
       });
-      // İptal: yarım kalan iş bir daha dirilmesin ("devam et var ama
-      // iptal et yok" — canlı istek, 31.08). Kalıcı: sunucu çocuğun
-      // günlüğüne kapanış yazar; açılış taraması artık atlar.
-      const iptal = el("button", "orch-resume orch-cancel", t("İptal et"));
-      iptal.type = "button";
-      iptal.addEventListener("click", async (ev) => {
+      // Cancel: a job left unfinished must not rise again ("there is a
+      // continue but no cancel" — live request, 31.08). Permanent: the server
+      // writes a shutdown into the child's log; the startup scan skips it
+      // from then on.
+      const cancelBtn = el("button", "orch-resume orch-cancel", t("İptal et"));
+      cancelBtn.type = "button";
+      cancelBtn.addEventListener("click", async (ev) => {
         ev.stopPropagation();
-        iptal.disabled = true;
-        iptal.textContent = t("İptal ediliyor…");
+        cancelBtn.disabled = true;
+        cancelBtn.textContent = t("İptal ediliyor…");
         try {
           await fetch("/api/gorevler/iptal", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ id: "c:" + ch.id }),
           });
-        } catch { /* kanal olayı günceller */ }
+        } catch { /* the channel event will update */ }
         try {
           const s = await (await fetch("/api/state")).json();
           if (s && s.channels) seed(s.channels);
         } catch { render(); }
       });
-      acts.append(devam, iptal);
+      acts.append(resumeBtn, cancelBtn);
       wrap.append(acts);
     }
 
-    // Biten kanal: tıklayınca özet değil TAM rapor — artifact gibi Viewer.
+    // Finished channel: a click opens not the summary but the FULL report —
+    // in the Viewer, like an artifact.
     if (ch.state !== "run") {
       wrap.classList.add("clickable");
       wrap.title = t("Raporu aç");
@@ -354,17 +360,17 @@ const Orchestra = (() => {
     return g >= 1000 ? (g / 1000).toFixed(1) + "k tok" : g + " tok";
   }
 
-  // Ayarlardaki yardımcı sınırını göstermek için okunuyor (bilgi amaçlı).
+  // Read to display the helper limit from the settings (informational).
   let maxAgents = null;
   async function loadCap() {
     try {
       const s = await (await fetch("/api/settings")).json();
       const ma = s && s.context && s.context.max_agents;
       if (typeof ma === "number") maxAgents = ma;
-    } catch { /* önemli değil */ }
+    } catch { /* not important */ }
   }
 
-  // --- güverte ---------------------------------------------------------
+  // --- deck ------------------------------------------------------------
 
   function open() {
     deck.hidden = false;

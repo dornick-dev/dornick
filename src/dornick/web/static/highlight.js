@@ -1,23 +1,24 @@
-// Sözdizimi renklendirme — bağımlılıksız ve DOM tabanlı.
+// Syntax colouring — dependency-free and DOM-based.
 //
-// Neden elle yazıldı, [[md.js]] ile aynı gerekçe: buraya akan metni model
-// (ya da diskteki, güvenilmeyen bir dosya) üretiyor. Hazır bir vurgulayıcı
-// (highlight.js, Prism) HTML dizesi kurup `innerHTML` ile basıyor — bir
-// dosyanın içeriğini etiket olarak yorumlatmak açık bir yol. Bu dosya hiç
-// HTML dizesi üretmiyor: her parça `createElement` + `textContent`, yani
-// koda gömülü bir `<script>` hiçbir koşulda çalışmıyor, yalnızca renklenir.
+// Why hand-written: same rationale as [[md.js]] — the text flowing in is
+// produced by the model (or by an untrusted file on disk). An off-the-shelf
+// highlighter (highlight.js, Prism) builds an HTML string and injects it with
+// `innerHTML` — letting a file's content be interpreted as markup is an open
+// door. This file never produces an HTML string: every piece is
+// `createElement` + `textContent`, so a `<script>` embedded in code never
+// runs under any circumstances, it only gets coloured.
 //
-// Tam bir ayrıştırıcı değil, bir belirteçleyici (tokenizer): dil ailesine
-// göre yorumları, dizeleri, sayıları, anahtar sözcükleri ve işlevleri
-// ayırıyor. Amaç doğruluk değil okunurluk — bir dosyaya bakınca "bu kod"
-// hissi versin, düz metin duvarı olmasın.
+// Not a full parser, a tokenizer: by language family it separates comments,
+// strings, numbers, keywords and functions. The goal is readability, not
+// correctness — looking at a file should feel like "this is code", not a
+// wall of plain text.
 
-// Ad `Syntax`, `Highlight` değil: tarayıcıların CSS Custom Highlight API'si
-// zaten global bir `Highlight` sınıfı tanımlıyor — aynı adı kullanmak
-// `typeof Highlight !== "undefined"` denetimini yanıltıyordu (yerleşik sınıf
-// hep var, ama `.paint`i yok).
+// The name is `Syntax`, not `Highlight`: browsers' CSS Custom Highlight API
+// already defines a global `Highlight` class — using the same name fooled the
+// `typeof Highlight !== "undefined"` check (the built-in class always exists,
+// but has no `.paint`).
 const Syntax = (() => {
-  // Dil aileleri. Uzantı → aile; her ailenin kendi tarayıcısı var.
+  // Language families. Extension → family; each family has its own scanner.
   const FAMILY = {
     html: "markup", htm: "markup", xml: "markup", svg: "markup",
     css: "css", scss: "css", less: "css",
@@ -27,15 +28,15 @@ const Syntax = (() => {
     bash: "clike", sh: "clike", sql: "clike", toml: "clike", yaml: "clike",
     yml: "clike", c: "clike", cpp: "clike", go: "clike", rust: "clike",
     java: "clike",
-    // PHP burada yoktu ve PHP dosyaları renksiz düz metin kalıyordu; aynı
-    // aileden komşuları da eklendi. Kabalık bilinçli: yanlış ailede birkaç
-    // sözcük renklenmek, hiç renklenmemekten iyi.
+    // PHP was missing here and PHP files stayed colourless plain text; its
+    // same-family neighbours were added too. The coarseness is deliberate: a
+    // few words coloured in the wrong family beats no colouring at all.
     php: "clike", cs: "clike", ruby: "clike", rb: "clike", lua: "clike",
     kotlin: "clike", kt: "clike", swift: "clike",
   };
 
-  // Anahtar sözcükler. Kabaca — birkaç dilin sözcüğü ortak havuzda; yanlış
-  // dilde bir sözcüğü renklendirmek, hiç renklendirmemekten iyi.
+  // Keywords. Rough — several languages share one pool; colouring a word in
+  // the wrong language beats not colouring it at all.
   const WORDS = (
     "if else elif for while do done then fi case esac switch return break " +
     "continue function func def fn class struct interface enum import from " +
@@ -49,7 +50,7 @@ const Syntax = (() => {
   ).split(" ");
   const KEYWORDS = new Set(WORDS);
 
-  // Değişmez değerler — anahtar sözcükten ayrı renk.
+  // Literals — a colour separate from keywords.
   const LITERALS = new Set(
     "true false null nil none undefined nan True False None NaN yes no".split(" ")
   );
@@ -61,8 +62,8 @@ const Syntax = (() => {
     return node;
   };
 
-  // Bir parça listesini ([sınıf, metin]) <code> içine döker. Sınıfsız
-  // (null) parçalar düz metin düğümü olarak gidiyor.
+  // Dumps a list of pieces ([class, text]) into a <code>. Classless (null)
+  // pieces go in as plain text nodes.
   function emit(target, parts) {
     for (const [cls, text] of parts) {
       if (!text) continue;
@@ -71,23 +72,23 @@ const Syntax = (() => {
     }
   }
 
-  // --- genel C-benzeri -------------------------------------------------
+  // --- generic C-like --------------------------------------------------
 
-  // Yorumlar (//  #  --  /* */), dizeler (" ' `  ve üçlüler), sayılar,
-  // anahtar sözcükler, işlev çağrıları. Tek bir ana ifadeyle taranıyor;
-  // aradaki boşluklar düz metin.
+  // Comments (//  #  --  /* */), strings (" ' `  and triples), numbers,
+  // keywords, function calls. Scanned with a single master expression; the
+  // gaps in between are plain text.
   const CLIKE = new RegExp(
     [
-      "\\/\\*[\\s\\S]*?(?:\\*\\/|$)",          // /* blok yorum */
-      "(?:\\/\\/|#|--)[^\\n]*",                 // satır yorumu
-      '"""[\\s\\S]*?(?:"""|$)',                 // üçlü çift
-      "'''[\\s\\S]*?(?:'''|$)",                 // üçlü tek
-      "`(?:\\\\.|[^`\\\\])*`?",                 // şablon dizesi
-      '"(?:\\\\.|[^"\\\\\\n])*"?',              // çift tırnak
-      "'(?:\\\\.|[^'\\\\\\n])*'?",              // tek tırnak
-      "\\b0[xX][0-9a-fA-F]+\\b",                // onaltılık
-      "\\b\\d[\\d_]*(?:\\.\\d+)?(?:[eE][+-]?\\d+)?\\b",  // sayı
-      "[A-Za-z_$@][\\w$]*",                     // tanımlayıcı
+      "\\/\\*[\\s\\S]*?(?:\\*\\/|$)",          // /* block comment */
+      "(?:\\/\\/|#|--)[^\\n]*",                 // line comment
+      '"""[\\s\\S]*?(?:"""|$)',                 // triple double
+      "'''[\\s\\S]*?(?:'''|$)",                 // triple single
+      "`(?:\\\\.|[^`\\\\])*`?",                 // template string
+      '"(?:\\\\.|[^"\\\\\\n])*"?',              // double quote
+      "'(?:\\\\.|[^'\\\\\\n])*'?",              // single quote
+      "\\b0[xX][0-9a-fA-F]+\\b",                // hexadecimal
+      "\\b\\d[\\d_]*(?:\\.\\d+)?(?:[eE][+-]?\\d+)?\\b",  // number
+      "[A-Za-z_$@][\\w$]*",                     // identifier
     ].join("|"),
     "g"
   );
@@ -111,9 +112,9 @@ const Syntax = (() => {
       } else if (LITERALS.has(t)) {
         parts.push(["lit", t]);
       } else if (c === "@") {
-        parts.push(["var", t]);          // dekoratör / PS değişkeni
+        parts.push(["var", t]);          // decorator / PS variable
       } else if (code[CLIKE.lastIndex] === "(") {
-        parts.push(["fn", t]);           // işlev çağrısı
+        parts.push(["fn", t]);           // function call
       } else {
         parts.push([null, t]);
       }
@@ -133,7 +134,7 @@ const Syntax = (() => {
       if (m.index > last) parts.push([null, code.slice(last, m.index)]);
       const t = m[0];
       if (t[0] === '"') {
-        // İki noktadan önceki dize anahtar, sonraki değer.
+        // A string before a colon is a key, after it a value.
         const after = code.slice(re.lastIndex).match(/^\s*:/);
         parts.push([after ? "prop" : "str", t]);
       } else if (t === "true" || t === "false" || t === "null") {
@@ -153,7 +154,7 @@ const Syntax = (() => {
 
   function cssLang(code) {
     const parts = [];
-    // Bağlam: süslü parantez içinde iki noktadan önce özellik, sonra değer.
+    // Context: inside braces, before the colon a property, after it a value.
     const re = /\/\*[\s\S]*?(?:\*\/|$)|"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|@[\w-]+|[.#][\w-]+|-?\d[\d.]*(?:px|em|rem|%|vh|vw|s|ms|deg|fr)?|[\w-]+|[{}();:,]/g;
     let last = 0, m, inBlock = false, afterColon = false;
     while ((m = re.exec(code))) {
@@ -167,9 +168,9 @@ const Syntax = (() => {
       else if (t === ":") { afterColon = true; parts.push(["punc", t]); }
       else if (t === ";") { afterColon = false; parts.push(["punc", t]); }
       else if (/^[{}();:,]$/.test(t)) parts.push(["punc", t]);
-      else if (t[0] === "." || t[0] === "#") parts.push(["fn", t]);   // seçici
+      else if (t[0] === "." || t[0] === "#") parts.push(["fn", t]);   // selector
       else if (/^-?\d/.test(t)) parts.push(["num", t]);
-      else if (inBlock && !afterColon) parts.push(["prop", t]);        // özellik
+      else if (inBlock && !afterColon) parts.push(["prop", t]);        // property
       else parts.push([null, t]);
     }
     if (last < code.length) parts.push([null, code.slice(last)]);
@@ -209,7 +210,7 @@ const Syntax = (() => {
     while ((m = re.exec(rest))) {
       const t = m[0];
       if (t[0] === '"' || t[0] === "'") parts.push(["str", t]);
-      else if (/^[\w:-]+$/.test(t)) parts.push(["atn", t]);   // öznitelik adı
+      else if (/^[\w:-]+$/.test(t)) parts.push(["atn", t]);   // attribute name
       else if (t === "=" || t === ">" || t === "/") parts.push(["punc", t]);
       else parts.push([null, t]);
     }
@@ -217,9 +218,9 @@ const Syntax = (() => {
 
   const SCAN = { markup, css: cssLang, json, clike };
 
-  // Dışarıya açık: <code> düğümünü temizler, dile göre renkli parçalarla
-  // yeniden doldurur. Dil tanınmıyorsa düz metin — renklendirememek, yanlış
-  // renklendirmekten iyi.
+  // The public surface: clears the <code> node and refills it with coloured
+  // pieces per language. Unrecognised language: plain text — failing to
+  // colour beats colouring wrongly.
   function paint(target, text, lang) {
     target.textContent = "";
     const family = FAMILY[(lang || "").toLowerCase()];
@@ -227,7 +228,7 @@ const Syntax = (() => {
     try {
       emit(target, SCAN[family](text));
     } catch {
-      target.textContent = text;   // tarayıcı patlarsa metin yine görünsün
+      target.textContent = text;   // if the scanner blows up, still show the text
     }
   }
 

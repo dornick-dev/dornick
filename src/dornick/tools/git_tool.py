@@ -1,7 +1,8 @@
-"""Git aracı — commit, push, GitHub'da repo.
+"""Git tool — commit, push, repos on GitHub.
 
-Kabuktan `git commit` yok: izin, çubuk tazelemesi ve öğretici hata bu
-aracın işi. Okuma (status/diff/log) onaysız; yazma kapıdan geçer.
+No `git commit` from the shell: permission, refreshing the bar and
+instructive errors are this tool's job. Reads (status/diff/log) need no
+approval; writes go through the gate.
 """
 
 from __future__ import annotations
@@ -84,9 +85,9 @@ def register(registry: ToolRegistry) -> None:
                 f"Bilinmeyen eylem: {action!r}. Geçerli: {', '.join(ACTIONS)}."
             )
         try:
-            # _run senkron subprocess/ağ (git push 30 sn, gh 60 sn) içeriyor;
-            # doğrudan çağrılınca ajan döngüsünün tamamını kilitliyordu —
-            # bütün sohbetler ve Durdur dahil (canlı yara, 01.09).
+            # _run contains synchronous subprocess/network work (git push
+            # 30 s, gh 60 s); called directly it locked up the entire agent
+            # loop — every chat, Stop included (live wound, 01.09).
             result = await asyncio.to_thread(_run, action, args, ctx)
         except store.GitError as exc:
             return ToolResult.error(str(exc))
@@ -96,8 +97,8 @@ def register(registry: ToolRegistry) -> None:
 
 
 def _root(ctx: ToolContext) -> Path:
-    # Ajanın aracı atölyede de çalışır (kendi kurduğu projeler orada
-    # doğuyor); yalnız ARAYÜZ çubuğu atölyeyi görmez (scratch_ok=False).
+    # The agent's tool works in the workshop too (projects it builds are
+    # born there); only the UI bar never sees the workshop (scratch_ok=False).
     found = store.repo_root(ctx.config, scratch_ok=True)
     if found is None:
         box = ctx.config.open_sandbox()

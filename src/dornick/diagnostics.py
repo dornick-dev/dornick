@@ -21,7 +21,7 @@ Three rules are the spine of this module:
      checked" is said in one line; editing the machine is not the model's job.
 
 The checker is chosen by extension. For an extension we do not know
-`denetle()` returns None — the caller adds nothing, there is no noise.
+`check()` returns None — the caller adds nothing, there is no noise.
 """
 
 from __future__ import annotations
@@ -89,7 +89,7 @@ class Diagnosis:
     def faulty(self) -> bool:
         return self.status == "hata"
 
-    def metin(self) -> str:
+    def text(self) -> str:
         """The human- (and model-) readable text appended to the tool result."""
         name = Path(self.file).name
         if self.status == "yok":
@@ -114,7 +114,7 @@ class Diagnosis:
         )
         return "\n".join(lines)
 
-    def detay(self) -> dict:
+    def detail(self) -> dict:
         """Machine-readable form so the UI can draw a badge."""
         return {
             "dosya": self.file,
@@ -271,7 +271,7 @@ def _ts_findings(output: str) -> list[Finding]:
 
 # -- languages ----------------------------------------------------------
 
-UZANTILAR: dict[str, str] = {
+EXTENSIONS: dict[str, str] = {
     ".py": "python",
     ".pyw": "python",
     ".php": "php",
@@ -290,7 +290,7 @@ UZANTILAR: dict[str, str] = {
 
 def detect_language(path: Path | str) -> str | None:
     """Language from the extension; None if we do not know it (= skip silently)."""
-    return UZANTILAR.get(Path(path).suffix.lower())
+    return EXTENSIONS.get(Path(path).suffix.lower())
 
 
 def supported(path: Path | str) -> bool:
@@ -499,7 +499,7 @@ _CHECKERS = {
 }
 
 
-def denetle(path: Path | str, *, timeout: float = TIMEOUT) -> Diagnosis | None:
+def check(path: Path | str, *, timeout: float = TIMEOUT) -> Diagnosis | None:
     """Checks a single file. None if the language is unknown — the caller says nothing.
 
     Blocking (runs a subprocess); async callers should wrap it in
@@ -526,18 +526,18 @@ def denetle(path: Path | str, *, timeout: float = TIMEOUT) -> Diagnosis | None:
                          raw=_trim(str(exc)))
 
 
-def denetle_coklu(
+def check_many(
     paths: list[Path], *, timeout: float = TIMEOUT
 ) -> list[Diagnosis]:
     """Several files; unsupported ones drop out of the list."""
     results = []
     for path in paths:
-        if (diagnosis := denetle(path, timeout=timeout)) is not None:
+        if (diagnosis := check(path, timeout=timeout)) is not None:
             results.append(diagnosis)
     return results
 
 
-def ozet(diagnoses: list[Diagnosis], *, kok: Path | None = None) -> str:
+def summary(diagnoses: list[Diagnosis], *, root: Path | None = None) -> str:
     """Summary of a multi-file check — the reply of the `denetle` tool.
 
     The faulty ones first (they are the real matter), then a one-line count.
@@ -545,13 +545,13 @@ def ozet(diagnoses: list[Diagnosis], *, kok: Path | None = None) -> str:
     """
     if not diagnoses:
         return ("Denetlenecek dosya bulunamadı. Tanınan uzantılar: "
-                + ", ".join(sorted(UZANTILAR)) + ".")
+                + ", ".join(sorted(EXTENSIONS)) + ".")
 
     def name(d: Diagnosis) -> str:
-        if kok is None:
+        if root is None:
             return Path(d.file).name
         try:
-            return str(Path(d.file).relative_to(kok))
+            return str(Path(d.file).relative_to(root))
         except ValueError:
             return d.file
 
@@ -584,7 +584,7 @@ def ozet(diagnoses: list[Diagnosis], *, kok: Path | None = None) -> str:
     return "\n".join(lines)
 
 
-def batch_paths(kok: Path, *, desen: str | None = None, tavan: int = 60) -> list[Path]:
+def batch_paths(root: Path, *, pattern: str | None = None, limit: int = 60) -> list[Path]:
     """The checkable files under a folder.
 
     Dependency and generated-output folders are skipped: checking the ten
@@ -594,15 +594,15 @@ def batch_paths(kok: Path, *, desen: str | None = None, tavan: int = 60) -> list
     skip = {"node_modules", "vendor", ".git", "__pycache__", ".venv", "venv",
             "dist", "build", ".next", "writable"}
     found: list[Path] = []
-    for base, folders, files in os.walk(kok):
+    for base, folders, files in os.walk(root):
         folders[:] = [f for f in folders if f not in skip and not f.startswith(".")]
         for file_name in sorted(files):
             path = Path(base) / file_name
             if not supported(path):
                 continue
-            if desen and not path.match(desen):
+            if pattern and not path.match(pattern):
                 continue
             found.append(path)
-            if len(found) >= tavan:
+            if len(found) >= limit:
                 return found
     return found

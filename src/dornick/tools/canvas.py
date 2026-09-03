@@ -1,11 +1,11 @@
-"""Çizim aracı — ajanın ekranı kullanması.
+"""Drawing tool — the agent using the screen.
 
-Bazı cevaplar yazıyla anlatılınca kayboluyor. "Depo seviyesi %62" bir
-sayı; depo silueti üzerinde duran bir çizgi bir bakışta okunuyor.
+Some answers get lost when told in prose. "Tank level 62%" is a number;
+a line sitting on a tank silhouette reads at a glance.
 
-Hazır grafik türleri yok. Elli şablon tanımlayıp "birini seç" demek, tam
-da istenen şeyi engelliyor: o işe özel bir çizim. Ajan HTML/SVG yazıyor,
-burada ona bir yüzey veriliyor.
+No ready-made chart types. Defining fifty templates and saying "pick
+one" blocks exactly what is wanted: a drawing specific to that job. The
+agent writes HTML/SVG; here it is given a surface.
 """
 
 from __future__ import annotations

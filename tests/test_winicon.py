@@ -1,4 +1,4 @@
-"""Görev Yöneticisi simgesi: damgalı dornick.exe, python yılanı değil."""
+"""Task Manager icon: the branded dornick.exe, not the python snake."""
 
 from __future__ import annotations
 
@@ -43,8 +43,8 @@ def test_skip_pids_from_env(monkeypatch) -> None:
 
 
 def test_relaunch_argv_always_loads_the_module(monkeypatch) -> None:
-    """Konsol betiği `dornick --app`: orig_argv [dornick.exe, --app].
-    Bunu pythonw'ye vermek sessizce ölür, pencere hiç açılmaz."""
+    """The console script `dornick --app`: orig_argv [dornick.exe, --app].
+    Handing that to pythonw dies silently, the window never opens."""
     monkeypatch.setattr(sys, "argv", [r"C:\venv\Scripts\dornick.exe", "--app"])
     monkeypatch.setattr(
         sys, "orig_argv", [r"C:\venv\Scripts\dornick.exe", "--app"], raising=False)
@@ -57,7 +57,7 @@ def test_relaunch_argv_always_loads_the_module(monkeypatch) -> None:
 
 
 def test_installer_shortcuts_target_neo_exe() -> None:
-    """Kısayol pythonw kalırsa Görev Yöneticisi yılanı gösterir."""
+    """If the shortcut stays on pythonw, Task Manager shows the snake."""
     iss = (Path(__file__).resolve().parents[1] / "installer" / "dornick.iss").read_text(
         encoding="utf-8")
     assert r'{app}\python\dornick.exe' in iss
@@ -67,7 +67,7 @@ def test_installer_shortcuts_target_neo_exe() -> None:
 
 
 def test_toast_aumid_matches_process_identity() -> None:
-    """Bildirim kimliği süreç AUMID'siyle aynı olmazsa Windows yılan basar."""
+    """If the toast identity differs from the process AUMID, Windows prints the snake."""
     assert winicon.AUMID == "fatih.dornick.app"
     desktop = (Path(__file__).resolve().parents[1] / "src" / "dornick" / "desktop.py")
     text = desktop.read_text(encoding="utf-8")
@@ -80,7 +80,7 @@ def test_png_is_a_real_png() -> None:
     assert data[:8] == b"\x89PNG\r\n\x1a\n"
 
 
-@pytest.mark.skipif(sys.platform != "win32", reason="PE damgası Windows")
+@pytest.mark.skipif(sys.platform != "win32", reason="PE stamping is Windows-only")
 def test_stamp_writes_group_icon(tmp_path: Path) -> None:
     dest = tmp_path / "dornick.exe"
     shutil.copy2(sys.executable, dest)

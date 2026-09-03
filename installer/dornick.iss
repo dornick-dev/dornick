@@ -1,69 +1,73 @@
-; dornick — Windows kurulum sihirbazı (Inno Setup 6).
+; dornick — Windows install wizard (Inno Setup 6).
 ;
-; Önce installer\build.ps1 çalıştırılır: gömülü Python + bağımlılıklar +
-; kaynak + eğitim düzeneği dist\paket altına dizilir; bu betik yalnız o
-; ağacı paketler. Kurulan ağaç geliştirici deposunun düzenini birebir
-; taklit eder (src\, eval\, egitim\, .dornick\) — ürün kodu tek bir düzen
-; tanır, "kurulumda başka yol" diye ikinci bir gerçek yoktur.
+; installer\build.ps1 runs first: embedded Python + dependencies + source +
+; training rig are laid out under dist\paket; this script only packages that
+; tree. The installed tree mimics the developer repo's layout exactly
+; (src\, eval\, egitim\, .dornick\) — the product code knows a single layout,
+; there is no second truth called "a different path when installed".
 ;
-; GÜNCELLEME: AppId sabit; önceki kurulum registry'den (DisplayVersion)
-; tanınır ve sihirbaz "kurulu sürüm → yeni sürüm" diyerek üç yol sunar:
-; güncelle (varsayılan; veriler korunur), temiz kurulum (kod sıfırdan,
-; veriler yine korunur), verileri de sıfırla (onay kutusu + Belgeler'e
-; zip yedeği önerisiyle). Sessiz kurulumda varsayılan "güncelle";
-; /TEMIZLE=temiz ya da /TEMIZLE=veri anahtarı sessizde de diğer yolları
-; seçer (/YEDEK=0 yedeği kapatır — test/otomasyon için).
+; UPDATE: AppId is fixed; a previous installation is recognized from the
+; registry (DisplayVersion) and the wizard says "installed version → new
+; version", offering three paths: update (default; data is kept), clean
+; install (code from scratch, data still kept), reset data too (with a
+; confirmation checkbox + an offer of a zip backup to Documents). In silent
+; mode the default is "update"; the /TEMIZLE=temiz or /TEMIZLE=veri switch
+; selects the other paths in silent mode too (/YEDEK=0 disables the backup —
+; for tests/automation).
 ;
-; GÜVENLİK AĞLARI (sahada yaşanan üç yaraya karşı):
-;   1. Açık kopya tespiti: "-m dornick" koşan HER python(w)/dornick.exe süreci bulunur
-;      (kurulum dizini şartı yok), liste gösterilir; [Kapat ve devam]
-;      nazik taskkill + doğrulama. Sessizde /KAPAT=1 ile kapatılır.
-;   2. Farklı dizin uyarısı: kayıtta kurulum yeri varken başka dizin
-;      seçilirse açık uyarı sayfası — önerilen "eski konuma güncelle".
-;   3. HER yolda hafıza yedeği: .dornick varsa kurulumdan önce
-;      Belgeler\dornick-backups\dornick-backup-<tarih>.zip (son 5 tutulur);
-;      başarısızlık kurulumu durdurmaz ama kullanıcıya söylenir.
-;      /YEDEKDIZIN=<klasör> testte hedefi değiştirir.
-; Test kancaları: /SADECE_TARA=1 + /SUREC_RAPOR=<dosya> süreç taramasını
-; kanıtlar ve kurulum yapmadan çıkar (installer\test_install.ps1).
+; SAFETY NETS (against three wounds experienced in the field):
+;   1. Running-copy detection: EVERY python(w)/dornick.exe process running
+;      "-m dornick" is found (no install-directory requirement), the list is
+;      shown; [Close and continue] does a gentle taskkill + verification.
+;      In silent mode /KAPAT=1 closes them.
+;   2. Different-directory warning: if the registry has an install location
+;      and another directory is chosen, an explicit warning page appears —
+;      the recommendation is "update the existing location".
+;   3. Memory backup on EVERY path: if .dornick exists, before installing,
+;      Documents\dornick-backups\dornick-backup-<date>.zip (last 5 are kept);
+;      a failure does not stop the install but the user is told.
+;      /YEDEKDIZIN=<folder> changes the target in tests.
+; Test hooks: /SADECE_TARA=1 + /SUREC_RAPOR=<file> proves the process scan
+; and exits without installing (installer\test_install.ps1).
 ;
-; Kaldırıcı .dornick'ye (anılar, anahtarlar, oturumlar) ve egitim\veri'de
-; sonradan biriken kişisel dosyalara DOKUNMAZ — kullanıcı verisi kalır.
+; The uninstaller does NOT touch .dornick (memories, keys, sessions) or the
+; personal files that accumulate later in egitim\veri — user data remains.
 
-; Ad, paket yolu ve kimlik /D ile ezilebilir: kurulum mantığının sandbox
-; testleri gerçek kurulumun kayıt anahtarına ve kısayollarına dokunmadan
-; ayrı bir kimlikle (dornick-test) koşuyor — bkz. installer\test_install.ps1.
-#ifndef Ad
-  #define Ad "dornick"
+; Name, package path and identity can be overridden with /D: the sandbox
+; tests of the install logic run under a separate identity (dornick-test)
+; without touching the real installation's registry key and shortcuts —
+; see installer\test_install.ps1.
+#ifndef AppName
+  #define AppName "dornick"
 #endif
-; Sürüm tek yerden: build.ps1 pyproject.toml'dan okuyup /DSurum=... ile
-; geçer; elle derlemede buradaki yedek değer geçerli.
-#ifndef Surum
-  #define Surum "0.1.0"
+; Version from a single place: build.ps1 reads pyproject.toml and passes it
+; via /DVersion=...; in a manual compile the fallback value here applies.
+#ifndef Version
+  #define Version "0.1.0"
 #endif
-#ifndef Paket
-  #define Paket "dist\paket"
+#ifndef Package
+  #define Package "dist\paket"
 #endif
-#ifndef KimlikGuid
-  #define KimlikGuid "17DD852A-5114-4A29-B628-75754DFA4500"  ; rebrand 01.09: taze kimlik — eski neo kurulumunun yerine gecmesin
+#ifndef AppIdGuid
+  #define AppIdGuid "17DD852A-5114-4A29-B628-75754DFA4500"  ; rebrand 01.09: fresh identity — must not replace the old neo installation
 #endif
 
 [Setup]
-AppId={{{#KimlikGuid}}
-AppName={#Ad}
-AppVersion={#Surum}
+AppId={{{#AppIdGuid}}
+AppName={#AppName}
+AppVersion={#Version}
 AppPublisher=Fatih
-DefaultDirName={localappdata}\{#Ad}
+DefaultDirName={localappdata}\{#AppName}
 DisableProgramGroupPage=yes
-; Önceki kurulum varsa dizin sorulmaz: güncelleme yerine kurulur.
+; If a previous installation exists the directory is not asked: install as update.
 DisableDirPage=auto
-; Yönetici gerektirmez: her şey kullanıcının kendi klasörüne gider.
+; No administrator required: everything goes into the user's own folder.
 PrivilegesRequired=lowest
-; Çalışan dornick'yu Restart Manager'la kendiliğinden kapatmayı DENEME —
-; nazik uyarıyı [Code] soruyor (NeoAcik), kapatma kararı kullanıcının.
+; Do NOT try to close a running dornick automatically via Restart Manager —
+; the gentle prompt is asked by [Code] (NeoAcik), closing is the user's call.
 CloseApplications=no
 OutputDir=dist
-OutputBaseFilename=dornick-setup-{#Surum}
+OutputBaseFilename=dornick-setup-{#Version}
 Compression=lzma2/fast
 SolidCompression=yes
 ArchitecturesAllowed=x64compatible
@@ -73,8 +77,9 @@ UninstallDisplayIcon={app}\src\dornick\assets\dornick.ico
 WizardStyle=modern
 
 [Languages]
-; Sihirbazın dili buradan; seçim ayrıca setup.json'a yazılır ve
-; uygulamanın arayüz dili ilk açılışta oradan gelir (/api/dil → dil.js).
+; The wizard's language comes from here; the choice is also written to
+; setup.json and the app's UI language comes from there on first launch
+; (/api/dil → dil.js).
 Name: "tr"; MessagesFile: "compiler:Languages\Turkish.isl"
 Name: "en"; MessagesFile: "compiler:Default.isl"
 
@@ -162,27 +167,29 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"
 Name: "autostart"; Description: "{cm:OtomatikBaslat}"; Flags: unchecked
 
 [Files]
-Source: "{#Paket}\python\*"; DestDir: "{app}\python"; Flags: recursesubdirs ignoreversion; Components: ana
-Source: "{#Paket}\src\*"; DestDir: "{app}\src"; Flags: recursesubdirs ignoreversion; Components: ana
-Source: "{#Paket}\dornick.cmd"; DestDir: "{app}"; Flags: ignoreversion; Components: ana
-; Sürümün tek gerçek kaynağı: ortam.surum() çalışma zamanında kökteki
-; pyproject.toml'u okur — kurulu ağaç da depo gibi kökünde taşır.
-Source: "{#Paket}\pyproject.toml"; DestDir: "{app}"; Flags: ignoreversion; Components: ana
-Source: "{#Paket}\egitim\*"; DestDir: "{app}\egitim"; Flags: recursesubdirs ignoreversion; Components: egitim
-Source: "{#Paket}\listen\*"; DestDir: "{app}\listen"; Flags: recursesubdirs ignoreversion; Components: dinleme
-Source: "{#Paket}\watch\*"; DestDir: "{app}\watch"; Flags: recursesubdirs ignoreversion; Components: kamera
-Source: "{#Paket}\eval\*"; DestDir: "{app}\eval"; Flags: recursesubdirs ignoreversion; Components: egitim
+Source: "{#Package}\python\*"; DestDir: "{app}\python"; Flags: recursesubdirs ignoreversion; Components: ana
+Source: "{#Package}\src\*"; DestDir: "{app}\src"; Flags: recursesubdirs ignoreversion; Components: ana
+Source: "{#Package}\dornick.cmd"; DestDir: "{app}"; Flags: ignoreversion; Components: ana
+; The single source of truth for the version: environment.surum() reads the
+; pyproject.toml at the root at runtime — the installed tree carries it at
+; its root just like the repo.
+Source: "{#Package}\pyproject.toml"; DestDir: "{app}"; Flags: ignoreversion; Components: ana
+Source: "{#Package}\egitim\*"; DestDir: "{app}\egitim"; Flags: recursesubdirs ignoreversion; Components: egitim
+Source: "{#Package}\listen\*"; DestDir: "{app}\listen"; Flags: recursesubdirs ignoreversion; Components: dinleme
+Source: "{#Package}\watch\*"; DestDir: "{app}\watch"; Flags: recursesubdirs ignoreversion; Components: kamera
+Source: "{#Package}\eval\*"; DestDir: "{app}\eval"; Flags: recursesubdirs ignoreversion; Components: egitim
 
 [Icons]
-; Konsolsuz açılış: hedef damgalı dornick.exe (pythonw kopyası). Görev
-; Yöneticisi PE ikonuna bakar; pythonw hedefi yılanı bırakır. -C "{app}"
-; evi kuruluma sabitler — .dornick ve atolye hep kurulumun içinde yaşar.
-Name: "{autoprograms}\{#Ad}"; Filename: "{app}\python\dornick.exe"; Parameters: "-m dornick --app -C ""{app}"""; WorkingDir: "{app}"; IconFilename: "{app}\src\dornick\assets\dornick.ico"; AppUserModelID: "fatih.dornick.app"
-Name: "{autodesktop}\{#Ad}"; Filename: "{app}\python\dornick.exe"; Parameters: "-m dornick --app -C ""{app}"""; WorkingDir: "{app}"; IconFilename: "{app}\src\dornick\assets\dornick.ico"; AppUserModelID: "fatih.dornick.app"; Tasks: desktopicon
+; Console-less launch: the target is the stamped dornick.exe (pythonw copy).
+; Task Manager looks at the PE icon; a pythonw target would leave the snake.
+; -C "{app}" pins the home to the installation — .dornick and atolye always
+; live inside the install.
+Name: "{autoprograms}\{#AppName}"; Filename: "{app}\python\dornick.exe"; Parameters: "-m dornick --app -C ""{app}"""; WorkingDir: "{app}"; IconFilename: "{app}\src\dornick\assets\dornick.ico"; AppUserModelID: "fatih.dornick.app"
+Name: "{autodesktop}\{#AppName}"; Filename: "{app}\python\dornick.exe"; Parameters: "-m dornick --app -C ""{app}"""; WorkingDir: "{app}"; IconFilename: "{app}\src\dornick\assets\dornick.ico"; AppUserModelID: "fatih.dornick.app"; Tasks: desktopicon
 
 [Registry]
-Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "{#Ad}"; ValueData: """{app}\python\dornick.exe"" -m dornick --app -C ""{app}"""; Tasks: autostart; Flags: uninsdeletevalue
-; Explorer sağ tık: Dornick ile aç (dosya / klasör / masaüstü arka planı)
+Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "{#AppName}"; ValueData: """{app}\python\dornick.exe"" -m dornick --app -C ""{app}"""; Tasks: autostart; Flags: uninsdeletevalue
+; Explorer right click: open with Dornick (file / folder / desktop background)
 Root: HKCU; Subkey: "Software\Classes\*\shell\DornickOpen"; ValueType: string; ValueName: ""; ValueData: "Dornick ile aç"; Flags: uninsdeletekey
 Root: HKCU; Subkey: "Software\Classes\*\shell\DornickOpen"; ValueType: string; ValueName: "Icon"; ValueData: "{app}\src\dornick\assets\dornick.ico"
 Root: HKCU; Subkey: "Software\Classes\*\shell\DornickOpen\command"; ValueType: string; ValueName: ""; ValueData: """{app}\python\dornick.exe"" -m dornick.cli --app -C ""{app}"" --open ""%1"""
@@ -194,19 +201,21 @@ Root: HKCU; Subkey: "Software\Classes\Directory\Background\shell\DornickOpen"; V
 Root: HKCU; Subkey: "Software\Classes\Directory\Background\shell\DornickOpen\command"; ValueType: string; ValueName: ""; ValueData: """{app}\python\dornick.exe"" -m dornick.cli --app -C ""{app}"" --open ""%V"""
 
 [Run]
-; Damga: kısayol dornick.exe'yi hedefler; dosya yoksa veya ico sürümü değiştiyse
-; python.exe (kilitli değil) kopyayı yeniler, sonra pencere açılır.
+; Stamp: the shortcut targets dornick.exe; if the file is missing or the ico
+; version changed, python.exe (not locked) refreshes the copy, then the
+; window opens.
 Filename: "{app}\python\python.exe"; Parameters: "-c ""from dornick.winicon import ensure_host; ensure_host()"""; WorkingDir: "{app}"; Flags: runhidden waituntilterminated
-Filename: "{app}\python\dornick.exe"; Parameters: "-m dornick --app -C ""{app}"""; WorkingDir: "{app}"; Description: "{cm:LaunchProgram,{#Ad}}"; Flags: nowait postinstall skipifsilent skipifdoesntexist
+Filename: "{app}\python\dornick.exe"; Parameters: "-m dornick --app -C ""{app}"""; WorkingDir: "{app}"; Description: "{cm:LaunchProgram,{#AppName}}"; Flags: nowait postinstall skipifsilent skipifdoesntexist
 
 [UninstallDelete]
-; Bizim ürettiğimiz kalıntılar: dil seçimi ve çalışma sırasında oluşan
-; bytecode önbellekleri (__pycache__ iç içe her pakette türüyor, o yüzden
-; SALT KOD içeren klasörler bütünüyle siliniyor). .dornick ile egitim\veri
-; (kişisel korpus/filigran) bilerek listede YOK — kullanıcı verisi kalır.
+; Leftovers we produce ourselves: the language choice and the bytecode
+; caches created while running (__pycache__ sprouts nested in every package,
+; which is why folders containing PURE CODE are deleted wholesale). .dornick
+; and egitim\veri (personal corpus/watermark) are deliberately NOT listed —
+; user data remains.
 Type: files; Name: "{app}\setup.json"
 Type: files; Name: "{app}\pyproject.toml"
-; Eski sürümlerin bıraktığı ad — güncellenmiş kurulumlarda kalıntı kalmasın.
+; Name left behind by old versions — no leftovers in updated installs.
 Type: files; Name: "{app}\kurulum.json"
 Type: filesandordirs; Name: "{app}\python"
 Type: filesandordirs; Name: "{app}\src"
@@ -220,205 +229,208 @@ Type: filesandordirs; Name: "{app}\egitim\__pycache__"
 
 [Code]
 var
-  EskiSurum: string;
-  EskiYol: string;
-  SecimSayfasi: TInputOptionWizardPage;
-  OnaySayfasi: TInputOptionWizardPage;
-  DizinSayfasi: TInputOptionWizardPage;
+  OldVersion: string;
+  OldPath: string;
+  ChoicePage: TInputOptionWizardPage;
+  ConfirmPage: TInputOptionWizardPage;
+  DirWarnPage: TInputOptionWizardPage;
 
-{ PowerShell tek-tırnaklı dizgi: yol içine tırnak gömme derdi olmadan. }
-function PsT(S: string): string;
+{ PowerShell single-quoted string: no quote-embedding trouble for paths. }
+function PsQuote(S: string): string;
 begin
   Result := '''' + S + '''';
 end;
 
-{ Komut satırında "-m dornick" geçen TÜM python(w)/dornick.exe süreçleri — kurulum
-  dizinine bakılmaz: sahada dosya-kullanımda hatası tam da "başka"
-  kopyalar (geliştirici deposu, ikinci kurulum) açıkken yaşandı.
-  Satır biçimi: "pid|çalıştırılabilir-yolu". Exec çıktı veremediği için
-  sonuç geçici dosyadan okunuyor. }
-function NeoSurecleri(): string;
+{ ALL python(w)/dornick.exe processes whose command line contains "-m dornick" —
+  the install directory is not checked: in the field the file-in-use error
+  happened exactly when "other" copies (developer repo, second install) were
+  open. Line format: "pid|executable-path". Exec cannot return output, so
+  the result is read from a temporary file. }
+function DornickProcesses(): string;
 var
-  Kod: Integer;
-  Cikti: AnsiString;
-  Gecici, Komut: string;
+  ResultCode: Integer;
+  Output: AnsiString;
+  TmpFile, Cmd: string;
 begin
   Result := '';
-  Gecici := ExpandConstant('{tmp}\dornick-surec-listesi.txt');
-  Komut := '/C powershell -NoProfile -Command "Get-CimInstance Win32_Process | ' +
+  TmpFile := ExpandConstant('{tmp}\dornick-process-list.txt');
+  Cmd := '/C powershell -NoProfile -Command "Get-CimInstance Win32_Process | ' +
     'Where-Object { ($_.Name -eq ''python.exe'' -or $_.Name -eq ''pythonw.exe'' -or $_.Name -eq ''dornick.exe'') ' +
     '-and $_.CommandLine -match ''-m dornick'' } | ' +
     'ForEach-Object { [string]$_.ProcessId + ''|'' + $_.ExecutablePath }" > "' +
-    Gecici + '"';
-  if not Exec(ExpandConstant('{cmd}'), Komut, '', SW_HIDE, ewWaitUntilTerminated, Kod) then
+    TmpFile + '"';
+  if not Exec(ExpandConstant('{cmd}'), Cmd, '', SW_HIDE, ewWaitUntilTerminated, ResultCode) then
     exit;
-  if LoadStringFromFile(Gecici, Cikti) then
-    Result := Trim(string(Cikti));
-  DeleteFile(Gecici);
+  if LoadStringFromFile(TmpFile, Output) then
+    Result := Trim(string(Output));
+  DeleteFile(TmpFile);
 end;
 
-{ "pid|yol" satırlarını kullanıcıya okunur hale getirir: "yol (PID pid)". }
-function ListeGoster(Liste: string): string;
+{ Makes "pid|path" lines readable for the user: "path (PID pid)". }
+function FormatList(List: string): string;
 var
-  Satir: string;
-  Ayrac: Integer;
+  Line: string;
+  Sep: Integer;
 begin
   Result := '';
-  while Liste <> '' do
+  while List <> '' do
   begin
-    Ayrac := Pos(#10, Liste);
-    if Ayrac > 0 then
+    Sep := Pos(#10, List);
+    if Sep > 0 then
     begin
-      Satir := Trim(Copy(Liste, 1, Ayrac - 1));
-      Liste := Copy(Liste, Ayrac + 1, MaxInt);
+      Line := Trim(Copy(List, 1, Sep - 1));
+      List := Copy(List, Sep + 1, MaxInt);
     end
     else
     begin
-      Satir := Trim(Liste);
-      Liste := '';
+      Line := Trim(List);
+      List := '';
     end;
-    if Satir = '' then continue;
-    Ayrac := Pos('|', Satir);
-    if Ayrac > 0 then
-      Result := Result + Copy(Satir, Ayrac + 1, MaxInt) +
-        ' (PID ' + Copy(Satir, 1, Ayrac - 1) + ')' + #13#10
+    if Line = '' then continue;
+    Sep := Pos('|', Line);
+    if Sep > 0 then
+      Result := Result + Copy(Line, Sep + 1, MaxInt) +
+        ' (PID ' + Copy(Line, 1, Sep - 1) + ')' + #13#10
     else
-      Result := Result + Satir + #13#10;
+      Result := Result + Line + #13#10;
   end;
 end;
 
-{ Listedeki süreçlere taskkill. Zorla=False nazik kapatma sinyali (pencere
-  kapanır gibi), Zorla=True /F — yalnız nazik deneme sonuçsuz kaldıysa. }
-procedure SurecleriKapat(Liste: string; Zorla: Boolean);
+{ taskkill for the processes in the list. Force=False is the gentle close
+  signal (like closing the window), Force=True is /F — only after the
+  gentle attempt came up empty. }
+procedure KillProcesses(List: string; Force: Boolean);
 var
-  Satir, Pid, Anahtar: string;
-  Ayrac, Kod: Integer;
+  Line, Pid, Flag: string;
+  Sep, ResultCode: Integer;
 begin
-  Anahtar := '';
-  if Zorla then Anahtar := ' /F';
-  while Liste <> '' do
+  Flag := '';
+  if Force then Flag := ' /F';
+  while List <> '' do
   begin
-    Ayrac := Pos(#10, Liste);
-    if Ayrac > 0 then
+    Sep := Pos(#10, List);
+    if Sep > 0 then
     begin
-      Satir := Trim(Copy(Liste, 1, Ayrac - 1));
-      Liste := Copy(Liste, Ayrac + 1, MaxInt);
+      Line := Trim(Copy(List, 1, Sep - 1));
+      List := Copy(List, Sep + 1, MaxInt);
     end
     else
     begin
-      Satir := Trim(Liste);
-      Liste := '';
+      Line := Trim(List);
+      List := '';
     end;
-    if Satir = '' then continue;
-    Ayrac := Pos('|', Satir);
-    if Ayrac > 0 then Pid := Copy(Satir, 1, Ayrac - 1) else Pid := Satir;
-    Exec(ExpandConstant('{sys}\taskkill.exe'), '/PID ' + Pid + Anahtar,
-      '', SW_HIDE, ewWaitUntilTerminated, Kod);
+    if Line = '' then continue;
+    Sep := Pos('|', Line);
+    if Sep > 0 then Pid := Copy(Line, 1, Sep - 1) else Pid := Line;
+    Exec(ExpandConstant('{sys}\taskkill.exe'), '/PID ' + Pid + Flag,
+      '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
   end;
 end;
 
 function InitializeSetup(): Boolean;
 var
-  Rapor: string;
+  Report: string;
 begin
-  { Önceki kurulumun sürümü ve yeri: sabit AppId'nin kaldırma anahtarından.
-    PrivilegesRequired=lowest olduğu için anahtar HKCU'da. }
+  { Version and location of the previous install: from the fixed AppId's
+    uninstall key. The key is under HKCU because PrivilegesRequired=lowest. }
   if not RegQueryStringValue(HKCU,
-      'Software\Microsoft\Windows\CurrentVersion\Uninstall\{{#KimlikGuid}}_is1',
-      'DisplayVersion', EskiSurum) then
-    EskiSurum := '';
+      'Software\Microsoft\Windows\CurrentVersion\Uninstall\{{#AppIdGuid}}_is1',
+      'DisplayVersion', OldVersion) then
+    OldVersion := '';
   if not RegQueryStringValue(HKCU,
-      'Software\Microsoft\Windows\CurrentVersion\Uninstall\{{#KimlikGuid}}_is1',
-      'InstallLocation', EskiYol) then
-    EskiYol := '';
-  EskiYol := RemoveBackslash(Trim(EskiYol));
+      'Software\Microsoft\Windows\CurrentVersion\Uninstall\{{#AppIdGuid}}_is1',
+      'InstallLocation', OldPath) then
+    OldPath := '';
+  OldPath := RemoveBackslash(Trim(OldPath));
   Result := True;
 
-  { Test kancası: /SADECE_TARA=1 açık dornick süreçlerini tarar, sonucu
-    /SUREC_RAPOR dosyasına yazar ve HİÇBİR ŞEY kurmadan çıkar. Sihirbaz
-    sayfaları otomasyonla sürülemediği için tespit mantığı böyle
-    kanıtlanıyor (bkz. installer\test_install.ps1). }
+  { Test hook: /SADECE_TARA=1 scans running dornick processes, writes the
+    result to the /SUREC_RAPOR file and exits WITHOUT installing anything.
+    The wizard pages cannot be driven by automation, so the detection logic
+    is proven this way (see installer\test_install.ps1). }
   if ExpandConstant('{param:SADECE_TARA|0}') = '1' then
   begin
-    Rapor := ExpandConstant('{param:SUREC_RAPOR|}');
-    if Rapor <> '' then
-      SaveStringToFile(Rapor, NeoSurecleri(), False);
+    Report := ExpandConstant('{param:SUREC_RAPOR|}');
+    if Report <> '' then
+      SaveStringToFile(Report, DornickProcesses(), False);
     Result := False;
   end;
 end;
 
-procedure OnayDegisti(Sender: TObject);
+procedure ConfirmChanged(Sender: TObject);
 begin
-  { "Anladım" işaretlenmeden İleri kapalı. }
-  WizardForm.NextButton.Enabled := OnaySayfasi.Values[0];
+  { Next stays disabled until "I understand" is checked. }
+  WizardForm.NextButton.Enabled := ConfirmPage.Values[0];
 end;
 
 procedure InitializeWizard();
 begin
-  { Farklı dizin uyarısı: kayıtta bir kurulum yeri varken kullanıcı BAŞKA
-    bir dizin seçtiyse ikinci kopya doğar — sahada iki kopya, "hangisi
-    açık, anılar hangisinde" karmaşası yaşattı. Sayfa yalnız uyuşmazlıkta
-    görünür (bkz. ShouldSkipPage); metinler sayfaya girerken gerçek
-    yollarla tazelenir (bkz. CurPageChanged). }
-  if (EskiYol <> '') and DirExists(EskiYol) then
+  { Different-directory warning: if the registry holds an install location
+    and the user picked ANOTHER directory, a second copy is born — in the
+    field two copies caused the "which one is open, which one holds the
+    memories" confusion. The page only appears on a mismatch (see
+    ShouldSkipPage); the texts are refreshed with the real paths when
+    entering the page (see CurPageChanged). }
+  if (OldPath <> '') and DirExists(OldPath) then
   begin
-    DizinSayfasi := CreateInputOptionPage(wpSelectDir,
+    DirWarnPage := CreateInputOptionPage(wpSelectDir,
       CustomMessage('DizinBaslik'),
       CustomMessage('DizinSoru'),
-      FmtMessage(CustomMessage('DizinMesaj'), [EskiYol, '…']),
+      FmtMessage(CustomMessage('DizinMesaj'), [OldPath, '…']),
       True, False);
-    DizinSayfasi.Add(FmtMessage(CustomMessage('SecEskiKonum'), [EskiYol]));
-    DizinSayfasi.Add(FmtMessage(CustomMessage('SecIkinciKopya'), ['…']));
-    DizinSayfasi.Values[0] := True;   { önerilen: eski konuma güncelle }
+    DirWarnPage.Add(FmtMessage(CustomMessage('SecEskiKonum'), [OldPath]));
+    DirWarnPage.Add(FmtMessage(CustomMessage('SecIkinciKopya'), ['…']));
+    DirWarnPage.Values[0] := True;   { recommended: update the existing location }
   end;
 
-  if EskiSurum = '' then
+  if OldVersion = '' then
     exit;
 
-  { Güncelleme yolu: kurulu → yeni sürüm mesajı + üç seçenek. }
-  SecimSayfasi := CreateInputOptionPage(wpSelectDir,
+  { Update path: installed → new version message + three options. }
+  ChoicePage := CreateInputOptionPage(wpSelectDir,
     CustomMessage('GuncellemeBaslik'),
-    FmtMessage(CustomMessage('GuncellemeMesaj'), [EskiSurum, '{#Surum}']),
+    FmtMessage(CustomMessage('GuncellemeMesaj'), [OldVersion, '{#Version}']),
     CustomMessage('GuncellemeAciklama'), True, False);
-  SecimSayfasi.Add(CustomMessage('SecGuncelle'));
-  SecimSayfasi.Add(CustomMessage('SecTemiz'));
-  SecimSayfasi.Add(CustomMessage('SecVeri'));
-  SecimSayfasi.Values[0] := True;
+  ChoicePage.Add(CustomMessage('SecGuncelle'));
+  ChoicePage.Add(CustomMessage('SecTemiz'));
+  ChoicePage.Add(CustomMessage('SecVeri'));
+  ChoicePage.Values[0] := True;
 
-  { "Verileri de sıfırla" seçilirse görünen onay sayfası. }
-  OnaySayfasi := CreateInputOptionPage(SecimSayfasi.ID,
+  { Confirmation page shown when "Reset data too" is selected. }
+  ConfirmPage := CreateInputOptionPage(ChoicePage.ID,
     CustomMessage('OnayBaslik'), CustomMessage('OnayAlt'),
     CustomMessage('OnayAciklama'), False, False);
-  OnaySayfasi.Add(CustomMessage('OnayAnladim'));
-  OnaySayfasi.Add(CustomMessage('OnayYedek'));
-  OnaySayfasi.Values[1] := True;   { yedek varsayılan işaretli }
-  OnaySayfasi.CheckListBox.OnClickCheck := @OnayDegisti;
+  ConfirmPage.Add(CustomMessage('OnayAnladim'));
+  ConfirmPage.Add(CustomMessage('OnayYedek'));
+  ConfirmPage.Values[1] := True;   { backup checked by default }
+  ConfirmPage.CheckListBox.OnClickCheck := @ConfirmChanged;
 end;
 
 function ShouldSkipPage(PageID: Integer): Boolean;
 begin
   Result := False;
-  if (OnaySayfasi <> nil) and (PageID = OnaySayfasi.ID) then
-    Result := not SecimSayfasi.Values[2];
-  { Dizin uyarısı yalnız gerçek bir uyuşmazlıkta: seçilen dizin kayıttaki
-    kurulum yerinden farklıysa. Aynı yer (olağan güncelleme) → sayfa yok. }
-  if (DizinSayfasi <> nil) and (PageID = DizinSayfasi.ID) then
-    Result := CompareText(RemoveBackslash(Trim(WizardDirValue)), EskiYol) = 0;
+  if (ConfirmPage <> nil) and (PageID = ConfirmPage.ID) then
+    Result := not ChoicePage.Values[2];
+  { The directory warning only on a real mismatch: the selected directory
+    differs from the install location in the registry. Same place (a normal
+    update) → no page. }
+  if (DirWarnPage <> nil) and (PageID = DirWarnPage.ID) then
+    Result := CompareText(RemoveBackslash(Trim(WizardDirValue)), OldPath) = 0;
 end;
 
 procedure CurPageChanged(CurPageID: Integer);
 begin
-  if (OnaySayfasi <> nil) and (CurPageID = OnaySayfasi.ID) then
-    WizardForm.NextButton.Enabled := OnaySayfasi.Values[0]
+  if (ConfirmPage <> nil) and (CurPageID = ConfirmPage.ID) then
+    WizardForm.NextButton.Enabled := ConfirmPage.Values[0]
   else
     WizardForm.NextButton.Enabled := True;
-  { Dizin uyarısına girerken metinler gerçek yollarla tazelenir: yeni
-    dizin ancak kullanıcı seçince belli oluyor. }
-  if (DizinSayfasi <> nil) and (CurPageID = DizinSayfasi.ID) then
+  { Entering the directory warning, the texts are refreshed with the real
+    paths: the new directory only becomes known once the user picks it. }
+  if (DirWarnPage <> nil) and (CurPageID = DirWarnPage.ID) then
   begin
-    DizinSayfasi.SubCaptionLabel.Caption :=
-      FmtMessage(CustomMessage('DizinMesaj'), [EskiYol, WizardDirValue]);
-    DizinSayfasi.CheckListBox.ItemCaption[1] :=
+    DirWarnPage.SubCaptionLabel.Caption :=
+      FmtMessage(CustomMessage('DizinMesaj'), [OldPath, WizardDirValue]);
+    DirWarnPage.CheckListBox.ItemCaption[1] :=
       FmtMessage(CustomMessage('SecIkinciKopya'), [WizardDirValue]);
   end;
 end;
@@ -426,17 +438,19 @@ end;
 function NextButtonClick(CurPageID: Integer): Boolean;
 begin
   Result := True;
-  { "Eski konuma güncelle" seçildiyse hedef dizin sessizce eskiye çevrilir
-    — ikinci kopya doğmaz, olağan güncelleme yoluna girilir. }
-  if (DizinSayfasi <> nil) and (CurPageID = DizinSayfasi.ID)
-     and DizinSayfasi.Values[0] then
-    WizardForm.DirEdit.Text := EskiYol;
+  { If "update the existing location" was chosen, the target directory is
+    silently switched back to the old one — no second copy is born, the
+    normal update path is taken. }
+  if (DirWarnPage <> nil) and (CurPageID = DirWarnPage.ID)
+     and DirWarnPage.Values[0] then
+    WizardForm.DirEdit.Text := OldPath;
 end;
 
-{ Kurulum kipi: 'guncelle' | 'temiz' | 'veri'.
-  /TEMIZLE anahtarı her şeyi ezer (sessiz test/otomasyon); yoksa sihirbaz
-  seçimi; sessizde sayfalar hiç görünmediği için varsayılan 'guncelle'. }
-function Kip(): string;
+{ Install mode: 'guncelle' | 'temiz' | 'veri'.
+  The /TEMIZLE switch overrides everything (silent test/automation);
+  otherwise the wizard choice; in silent mode the pages never appear so the
+  default is 'guncelle'. }
+function InstallMode(): string;
 var
   P: string;
 begin
@@ -447,101 +461,103 @@ begin
     exit;
   end;
   Result := 'guncelle';
-  if (SecimSayfasi <> nil) then
+  if (ChoicePage <> nil) then
   begin
-    if SecimSayfasi.Values[2] then
+    if ChoicePage.Values[2] then
       Result := 'veri'
-    else if SecimSayfasi.Values[1] then
+    else if ChoicePage.Values[1] then
       Result := 'temiz';
   end;
 end;
 
-function YedekIstendi(): Boolean;
+function BackupWanted(): Boolean;
 begin
-  { /YEDEK=0 kapatır; sayfa görünmediyse (sessiz) varsayılan açık. }
+  { /YEDEK=0 disables it; if the page never showed (silent), default is on. }
   if ExpandConstant('{param:YEDEK|1}') = '0' then
     Result := False
-  else if OnaySayfasi <> nil then
-    Result := OnaySayfasi.Values[1]
+  else if ConfirmPage <> nil then
+    Result := ConfirmPage.Values[1]
   else
     Result := True;
 end;
 
-{ HER kurulum yolunda (güncelle/temiz/yeni) hafıza yedeği: .dornick varsa
-  Belgeler\dornick-backups\dornick-backup-<tarih>.zip. Yalnız .dornick — anıların
-  ta kendisi; sahada "sıfırdan kur" yolunda anılar bir kez kaybedildi,
-  bir daha olmayacak. Son 5 yedek tutulur, eskiler silinir. /YEDEKDIZIN
-  testler için hedef klasörü değiştirir; /YEDEK=0 tümden kapatır. }
-function OtoYedekDizin(): string;
+{ Memory backup on EVERY install path (update/clean/new): if .dornick exists,
+  Documents\dornick-backups\dornick-backup-<date>.zip. Only .dornick — the
+  memories themselves; in the field the memories were lost once on the
+  "install from scratch" path, never again. The last 5 backups are kept,
+  older ones are deleted. /YEDEKDIZIN changes the target folder for tests;
+  /YEDEK=0 disables it entirely. }
+function AutoBackupDir(): string;
 begin
   Result := ExpandConstant('{param:YEDEKDIZIN|}');
   if Result = '' then
     Result := ExpandConstant('{userdocs}') + '\dornick-backups';
 end;
 
-function OtoYedekAl(): Boolean;
+function AutoBackup(): Boolean;
 var
-  Kod: Integer;
-  Dizin, Zip, Komut: string;
+  ResultCode: Integer;
+  BackupDir, Zip, Cmd: string;
 begin
-  Dizin := OtoYedekDizin();
-  Zip := Dizin + '\dornick-backup-' +
+  BackupDir := AutoBackupDir();
+  Zip := BackupDir + '\dornick-backup-' +
     GetDateTimeString('yyyymmdd-hhnnss', #0, #0) + '.zip';
-  Komut := '-NoProfile -ExecutionPolicy Bypass -Command "' +
-    'New-Item -ItemType Directory -Force ' + PsT(Dizin) + ' | Out-Null; ' +
-    'Compress-Archive -Path ' + PsT(ExpandConstant('{app}\.dornick')) +
-    ' -DestinationPath ' + PsT(Zip) + ' -Force; ' +
-    'if (-not (Test-Path ' + PsT(Zip) + ')) { exit 5 }; ' +
-    'Get-ChildItem -Path ' + PsT(Dizin) + ' -Filter ''dornick-backup-*.zip'' | ' +
+  Cmd := '-NoProfile -ExecutionPolicy Bypass -Command "' +
+    'New-Item -ItemType Directory -Force ' + PsQuote(BackupDir) + ' | Out-Null; ' +
+    'Compress-Archive -Path ' + PsQuote(ExpandConstant('{app}\.dornick')) +
+    ' -DestinationPath ' + PsQuote(Zip) + ' -Force; ' +
+    'if (-not (Test-Path ' + PsQuote(Zip) + ')) { exit 5 }; ' +
+    'Get-ChildItem -Path ' + PsQuote(BackupDir) + ' -Filter ''dornick-backup-*.zip'' | ' +
     'Sort-Object Name -Descending | Select-Object -Skip 5 | Remove-Item -Force"';
-  Result := Exec('powershell.exe', Komut, '', SW_HIDE, ewWaitUntilTerminated, Kod)
-    and (Kod = 0);
+  Result := Exec('powershell.exe', Cmd, '', SW_HIDE, ewWaitUntilTerminated, ResultCode)
+    and (ResultCode = 0);
 end;
 
-{ Belgeler'e zip yedeği: .dornick + egitim\veri + atolye (var olanlar).
-  Başarısızsa boş dönmez, hata verir — yedek istenmişken sessizce
-  yedeksiz silmek olmaz. }
-function YedekAl(var Hata: string): Boolean;
+{ Zip backup to Documents: .dornick + egitim\veri + atolye (those that exist).
+  On failure it does not return empty-handed, it raises the error — deleting
+  without a backup, silently, when a backup was requested, is not on. }
+function TakeBackup(var Err: string): Boolean;
 var
-  Kod: Integer;
-  Uygulama, Zip, Komut: string;
+  ResultCode: Integer;
+  AppDir, Zip, Cmd: string;
 begin
-  Uygulama := ExpandConstant('{app}');
+  AppDir := ExpandConstant('{app}');
   Zip := ExpandConstant('{userdocs}') + '\dornick-backup-' +
     GetDateTimeString('yyyymmdd-hhnnss', #0, #0) + '.zip';
-  Komut := '-NoProfile -ExecutionPolicy Bypass -Command "' +
-    '$k = @(' + PsT(Uygulama + '\.dornick') + ', ' +
-                PsT(Uygulama + '\egitim\veri') + ', ' +
-                PsT(Uygulama + '\atolye') + ') | Where-Object { Test-Path $_ }; ' +
-    'if ($k) { Compress-Archive -Path $k -DestinationPath ' + PsT(Zip) + ' -Force }; ' +
-    'if (($k) -and -not (Test-Path ' + PsT(Zip) + ')) { exit 5 }"';
-  Result := Exec('powershell.exe', Komut, '', SW_HIDE, ewWaitUntilTerminated, Kod)
-    and (Kod = 0);
+  Cmd := '-NoProfile -ExecutionPolicy Bypass -Command "' +
+    '$k = @(' + PsQuote(AppDir + '\.dornick') + ', ' +
+                PsQuote(AppDir + '\egitim\veri') + ', ' +
+                PsQuote(AppDir + '\atolye') + ') | Where-Object { Test-Path $_ }; ' +
+    'if ($k) { Compress-Archive -Path $k -DestinationPath ' + PsQuote(Zip) + ' -Force }; ' +
+    'if (($k) -and -not (Test-Path ' + PsQuote(Zip) + ')) { exit 5 }"';
+  Result := Exec('powershell.exe', Cmd, '', SW_HIDE, ewWaitUntilTerminated, ResultCode)
+    and (ResultCode = 0);
   if not Result then
-    Hata := CustomMessage('YedekHata');
+    Err := CustomMessage('YedekHata');
 end;
 
 function PrepareToInstall(var NeedsRestart: Boolean): String;
 var
-  K, Hata, Liste, Rapor: string;
-  Cevap, Deneme: Integer;
+  M, Err, List, Report: string;
+  Answer, Attempt: Integer;
 begin
   Result := '';
 
-  { Çalışan dornick kopyaları: yalnız bu kurulumun değil, "-m dornick" koşan
-    HER python(w) — dosya-kullanımda hatası tam da öteki kopyalar açıkken
-    yaşandı. Liste kullanıcıya gösterilir: [Kapat ve devam] nazik
-    taskkill + 5 sn bekleme + doğrulama; hâlâ ayakta kalan olursa liste
-    yeniden gelir ve ikinci "Kapat ve devam" zorla kapatır. [İptal]
-    kurulumu durdurur. Sessizde soru soracak ekran yok: /KAPAT=1
-    verildiyse kapatılır, verilmediyse eski davranış — devam. }
-  Rapor := ExpandConstant('{param:SUREC_RAPOR|}');
-  Liste := NeoSurecleri();
-  if Rapor <> '' then
-    SaveStringToFile(Rapor, Liste, False);
+  { Running dornick copies: not just this installation's — EVERY python(w)
+    running "-m dornick"; the file-in-use error happened exactly when the
+    other copies were open. The list is shown to the user: [Close and
+    continue] is a gentle taskkill + 5 s wait + verification; if any are
+    still standing the list comes back and a second "Close and continue"
+    force-kills. [Cancel] stops the install. In silent mode there is no
+    screen to ask on: with /KAPAT=1 they are closed, without it the old
+    behaviour — continue. }
+  Report := ExpandConstant('{param:SUREC_RAPOR|}');
+  List := DornickProcesses();
+  if Report <> '' then
+    SaveStringToFile(Report, List, False);
 
-  Deneme := 0;
-  while Liste <> '' do
+  Attempt := 0;
+  while List <> '' do
   begin
     if WizardSilent() then
     begin
@@ -550,59 +566,60 @@ begin
     end
     else
     begin
-      { Not: köşeli parantez satır başına gelmemeli — Inno satırı bölüm
-        başlığı sanıyor. }
-      Cevap := TaskDialogMsgBox(CustomMessage('NeoAcikBaslik'),
-        FmtMessage(CustomMessage('NeoAcikListe'), [ListeGoster(Liste)]),
+      { Note: the square bracket must not start a line — Inno would take the
+        line for a section header. }
+      Answer := TaskDialogMsgBox(CustomMessage('NeoAcikBaslik'),
+        FmtMessage(CustomMessage('NeoAcikListe'), [FormatList(List)]),
         mbConfirmation, MB_YESNO, [CustomMessage('KapatVeDevam'),
           CustomMessage('IptalEt')], 0);
-      if Cevap <> IDYES then
+      if Answer <> IDYES then
       begin
         Result := CustomMessage('KurulumIptalMesaj');
         exit;
       end;
     end;
-    SurecleriKapat(Liste, Deneme > 0);   { ilk tur nazik, sonrası zorla }
+    KillProcesses(List, Attempt > 0);   { first round gentle, then forced }
     Sleep(5000);
-    Liste := NeoSurecleri();             { doğrulama }
-    Deneme := Deneme + 1;
-    { Sessizde sonsuz döngü olmaz: nazik + zorla birer kez denenir. }
-    if WizardSilent() and (Deneme >= 2) then
+    List := DornickProcesses();         { verification }
+    Attempt := Attempt + 1;
+    { No endless loop in silent mode: gentle + forced are tried once each. }
+    if WizardSilent() and (Attempt >= 2) then
       break;
   end;
 
-  { Her yolda hafıza yedeği. Başarısızlık kurulumu DURDURMAZ: bu adımda
-    veri silinmiyor, blokaj gereksiz — ama kullanıcıya söylenir. }
+  { Memory backup on every path. A failure does NOT stop the install: no
+    data is deleted in this step, blocking would be pointless — but the
+    user is told. }
   if (ExpandConstant('{param:YEDEK|1}') <> '0')
      and DirExists(ExpandConstant('{app}\.dornick')) then
-    if not OtoYedekAl() then
+    if not AutoBackup() then
       SuppressibleMsgBox(FmtMessage(CustomMessage('OtoYedekHata'), [
         ExpandConstant('{app}\.dornick')]), mbError, MB_OK, IDOK);
 
-  K := Kip();
-  if K = 'veri' then
+  M := InstallMode();
+  if M = 'veri' then
   begin
-    if YedekIstendi() then
-      if not YedekAl(Hata) then
+    if BackupWanted() then
+      if not TakeBackup(Err) then
       begin
-        Result := Hata;   { yedek alınamadıysa HİÇBİR ŞEY silinmez }
+        Result := Err;   { if the backup failed, NOTHING is deleted }
         exit;
       end;
     DelTree(ExpandConstant('{app}\.dornick'), True, True, True);
     DelTree(ExpandConstant('{app}\atolye'), True, True, True);
     DelTree(ExpandConstant('{app}\egitim'), True, True, True);
   end;
-  if (K = 'temiz') or (K = 'veri') then
+  if (M = 'temiz') or (M = 'veri') then
   begin
-    { Kod klasörleri sıfırdan; 'temiz'de egitim\veri (kişisel korpus)
-      yerinde kalır, yalnız düzeneğin kod/model/çıktı kısmı gider. }
+    { Code folders from scratch; in 'temiz', egitim\veri (personal corpus)
+      stays in place, only the rig's code/model/output part goes. }
     DelTree(ExpandConstant('{app}\python'), True, True, True);
     DelTree(ExpandConstant('{app}\src'), True, True, True);
     DelTree(ExpandConstant('{app}\eval'), True, True, True);
-    { Dinleme ve kamera salt kod: temiz kurulumda sıfırdan yazılır. }
+    { Listening and camera are pure code: rewritten from scratch in a clean install. }
     DelTree(ExpandConstant('{app}\listen'), True, True, True);
     DelTree(ExpandConstant('{app}\watch'), True, True, True);
-    if K = 'temiz' then
+    if M = 'temiz' then
     begin
       DelTree(ExpandConstant('{app}\egitim\sitepaket'), True, True, True);
       DelTree(ExpandConstant('{app}\egitim\betikler'), True, True, True);
@@ -614,9 +631,9 @@ begin
   end;
 end;
 
-{ Özet sayfasına tek satır: kuruluma girmeden önce hafıza yedeğinin
-  alınacağı görünsün — kullanıcı "anılarıma ne olacak" diye tedirgin
-  olmasın. Yalnız gerçekten yedek alınacaksa yazılır. }
+{ One line on the summary page: make it visible before installing that a
+  memory backup will be taken — the user should not fret "what happens to
+  my memories". Written only when a backup will actually be taken. }
 function UpdateReadyMemo(Space, NewLine, MemoUserInfoInfo, MemoDirInfo,
   MemoTypeInfo, MemoComponentsInfo, MemoGroupInfo, MemoTasksInfo: String): String;
 begin
@@ -635,14 +652,15 @@ end;
 
 procedure CurStepChanged(CurStep: TSetupStep);
 var
-  Dil: string;
+  Lang: string;
 begin
-  { Sihirbazda seçilen dil arayüze taşınır: localStorage kurulumdan
-    yazılamaz; uygulama ilk açılışta /api/dil ile bu dosyayı okur. }
+  { The language chosen in the wizard is carried to the UI: localStorage
+    cannot be written from the installer; the app reads this file on first
+    launch via /api/dil. }
   if CurStep = ssPostInstall then
   begin
-    if ActiveLanguage = 'en' then Dil := 'en' else Dil := 'tr';
+    if ActiveLanguage = 'en' then Lang := 'en' else Lang := 'tr';
     SaveStringToFile(ExpandConstant('{app}\setup.json'),
-      '{"dil": "' + Dil + '"}', False);
+      '{"dil": "' + Lang + '"}', False);
   end;
 end;

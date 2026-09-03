@@ -1,8 +1,8 @@
-"""Terminal arayüzü.
+"""Terminal interface.
 
-Geçici bir kabuk: harness'ı sürmeye ve gözlemeye yeter. Zengin TUI ve
-zihin görselleştirmesi ayrı katman olarak gelecek — döngü arayüzü bilmiyor,
-sadece AgentIO'yu tanıyor.
+A temporary shell: enough to drive and observe the harness. A rich TUI
+and mind visualization will come as a separate layer — the loop does not
+know the interface, it only knows AgentIO.
 """
 
 from __future__ import annotations
@@ -94,9 +94,9 @@ def build_io(state: dict[str, Any], permissions: PermissionEngine) -> AgentIO:
     )
 
 
-# Bayt sırası işareti. İkinci biçim, UTF-8 BOM'un cp125x ile çözülmüş hali —
-# Windows'ta boru ile beslenen girdide böyle gelir. Temizlenmezse "/exit"
-# bir komut değil, prompt olarak modele gider ve boşuna istek atılır.
+# Byte order mark. The second form is the UTF-8 BOM decoded as cp125x —
+# on Windows, piped input arrives like that. If not cleaned, "/exit" goes
+# to the model as a prompt instead of a command and a request is wasted.
 _BOMS = ("﻿", "ï»¿", "​")
 
 
@@ -122,8 +122,9 @@ async def repl(config: Config, resume: bool, web: int | None = None) -> int:
         config.sessions_dir
     )
     mind = open_mind(config.mind_dir, config.sessions_dir, session.id)
-    # Dar pencereli modelde alt ajan aracı hiç kaydedilmiyor: şeması
-    # tek başına 130 token ve 4096'lık bir pencerede o yer konuşmanın.
+    # On a narrow-window model the subagent tool is never registered: its
+    # schema alone is 130 tokens, and in a 4096 window that space belongs
+    # to the conversation.
     registry = build_registry(mind, subagents=not prompt.is_lean(config))
     permissions = PermissionEngine.from_config(config.permissions)
     client = build_client(config.model)
@@ -180,15 +181,15 @@ async def repl(config: Config, resume: bool, web: int | None = None) -> int:
 
 def _start_web(mind: Any, session: Session, port: int,
                config: Any = None) -> Any:
-    """Zihin arayüzünü ayrı bir thread'de başlatır.
+    """Starts the mind interface in a separate thread.
 
-    Arayüz açılamazsa ajan yine de çalışmalı; bu bir gözlem yüzeyi,
-    çalışma önkoşulu değil.
+    If the interface cannot open, the agent must still run; this is an
+    observation surface, not a prerequisite for working.
 
-    `config` şart: onsuz kurulan sunucuda ayar sayfası, /api/raw ve dosya
-    uçları "Yapılandırma yüklü değil" diye düşüyordu (1.1.1 dumanlı
-    testinde yakalandı) — pencere kipi hep geçiriyordu, terminal --web
-    kipi unutmuştu.
+    `config` is a must: on a server built without it the settings page,
+    /api/raw and the file endpoints failed with "Yapılandırma yüklü değil"
+    (caught in the 1.1.1 smoke test) — the window mode always passed it,
+    the terminal --web mode had forgotten.
     """
     from .web import MindServer
 
@@ -205,7 +206,7 @@ def _start_web(mind: Any, session: Session, port: int,
 
 
 async def _run_guarded(agent: Agent, line: str) -> None:
-    """Turu koşturur; SIGINT turu keser, süreci öldürmez."""
+    """Runs the turn; SIGINT cuts the turn, it does not kill the process."""
     previous = signal.getsignal(signal.SIGINT)
 
     def on_sigint(*_: object) -> None:
@@ -302,23 +303,24 @@ def _command(
 
 
 def _has_model(config: Config) -> bool:
-    """Calistirmadan once model erisilebilir mi?
+    """Is the model reachable before running?
 
-    Anahtar yoksa istemci ancak ilk mesajda patlardi. Kullaniciyi bos bir
-    pencereyle bas basa birakmak yerine burada durdurup ne yapmasi
-    gerektigini soyluyoruz. Tanim ayar katmaninda tek yerde duruyor:
-    anahtar isteyen saglayicida anahtar yok YA DA model adi bos.
+    Without a key the client would only blow up on the first message.
+    Instead of leaving the user alone with an empty window, we stop here
+    and say what needs doing. The definition lives in one place in the
+    settings layer: a key-requiring provider without a key OR an empty
+    model name.
     """
     from . import settings as saved_settings
 
-    return not saved_settings.yapilandirilmamis(config.model)
+    return not saved_settings.unconfigured(config.model)
 
 
 def _force_utf8() -> None:
-    """Windows'ta stdout varsayılan olarak konsol kod sayfasını kullanır.
+    """On Windows stdout uses the console code page by default.
 
-    Arayüzün tamamı Türkçe; cp857/cp1254 altında ş, ğ, ı bozulur ya da
-    UnicodeEncodeError ile düşer.
+    The entire interface is Turkish; under cp857/cp1254 ş, ğ, ı get
+    mangled or it crashes with UnicodeEncodeError.
     """
     if sys.platform != "win32":
         return
@@ -369,8 +371,9 @@ def main(argv: list[str] | None = None) -> int:
         config.permissions.mode = args.mode
 
     if args.command == "recall-mcp":
-        # stdio protokolü: stdout'a protokol dışında tek bir bayt bile
-        # yazılamaz, o yüzden konsol kurulmadan doğrudan devrediliyor.
+        # The stdio protocol: not a single byte outside the protocol may
+        # be written to stdout, so control is handed over directly before
+        # the console is set up.
         from .recall.mcp import main as run_mcp
 
         return run_mcp([str(config.mind_dir / "recall.db")])
@@ -381,19 +384,20 @@ def main(argv: list[str] | None = None) -> int:
         _force_utf8()
         return run_setup(config, console)
 
-    # Ayar sayfasından kaydedilen anahtarlar dosyada (.dornick/keys.json)
-    # duruyor; _has_model ise ortama bakıyor. Dosyadaki anahtar burada
-    # ortama yüklenmezse kayıtlı bir kurulum bile "yapılandırılmamış"
-    # sayılıp açılmıyordu.
+    # Keys saved from the settings page live in a file (.dornick/keys.json);
+    # _has_model looks at the environment. If the file's key is not loaded
+    # into the environment here, even a configured install counted as
+    # "unconfigured" and refused to open.
     from . import settings as saved_settings
 
     saved_settings.export_keys(config.state_dir)
 
     if args.app or args.open:
-        # Masaüstünde model kapısı yok: model yapılandırılmamışsa pencere
-        # yine açılır ve ayar sayfası yol gösterir (bkz. desktop._boot).
-        # Kurulum sihirbazından çıkan kullanıcının terminali yok — konsola
-        # basılan bir uyarı onun için görünmez bir hatadır.
+        # No model gate on the desktop: if the model is unconfigured the
+        # window still opens and the settings page shows the way (see
+        # desktop._boot). A user coming out of the install wizard has no
+        # terminal — a warning printed to the console is an invisible
+        # error to them.
         from .desktop import run as run_desktop
 
         _force_utf8()

@@ -1,16 +1,18 @@
-// Görüntüleyici: ajanın o an dokunduğu şey.
+// Viewer: what the agent is touching right now.
 //
-// Sohbet ne yapıldığını anlatıyor ama gösteremiyor. Ajan bir betik yazdığında
-// "yazdım" cümlesini okumakla dosyayı görmek aynı şey değil; bir site kurunca
-// da kaynağı değil sitenin kendisini görmek gerekiyor.
+// The chat tells what was done but cannot show it. When the agent writes a
+// script, reading the sentence "I wrote it" and seeing the file are not the
+// same thing; when it builds a site you need the site itself, not its
+// source.
 //
-// Bu yüzden panel iki kip taşıyor:
+// So the panel carries two modes:
 //
-//   kaynak    dosya, satır numaralı ve renklendirilmiş bir kod görünümünde
-//   sahne     .html ise gerçekten çalışan hali, yalıtılmış bir çerçevede
+//   source    the file, in a line-numbered, coloured code view
+//   stage     for .html the genuinely running form, in an isolated frame
 //
-// Kendiliğinden açılıyor: ajan bir dosyaya dokunduğunda panel o dosyaya
-// geçiyor. Kullanıcı kapatırsa bir daha zorlamıyor — kapatmak bir karar.
+// It opens by itself: when the agent touches a file the panel switches to
+// it. If the user closes it, we never force it again — closing is a
+// decision.
 
 const Viewer = (() => {
   const panel = document.getElementById("viewer");
@@ -18,9 +20,9 @@ const Viewer = (() => {
   const body = document.getElementById("viewer-body");
   const modes = document.getElementById("viewer-modes");
 
-  // Tam yol/adres etikette kırpık durur; tıklayınca TAMAMI panoya gider
-  // ("tam dosya yolu göremiyorum" canlı yarası — başlığın title'ı fareyle
-  // duruyor ama kopyalanamıyordu).
+  // The full path/address sits clipped in the label; a click sends ALL of
+  // it to the clipboard (the "I can't see the full file path" live wound —
+  // the header's title showed on hover but could not be copied).
   if (title) {
     title.style.cursor = "copy";
     title.addEventListener("click", async () => {
@@ -29,7 +31,7 @@ const Viewer = (() => {
       try {
         await navigator.clipboard.writeText(full);
         if (typeof say === "function") say(t("Yol kopyalandı ✓") + " " + full);
-      } catch { /* pano izni yok */ }
+      } catch { /* no clipboard permission */ }
     });
   }
 
@@ -63,21 +65,20 @@ const Viewer = (() => {
     "Sekmeyi kapat": "Close tab",
   });
 
-  // Bu araçlar bir dosyaya dokunuyor; hangisinin hangi argümanda olduğu
-  // araca göre değişiyor.
+  // These tools touch a file; which argument holds it varies by tool.
   const WATCHED = new Set(["read_file", "write_file", "edit_file", "copy_in", "draw"]);
 
-  // Çizim bir dosya değil bir sunum: ajan onu göstermek için çağırıyor.
-  // Kullanıcı paneli daha önce kapattıysa bile açılıyor ve kaynak değil
-  // sahne kipinde geliyor — çizimin HTML'ini okumak istenen şey değil.
+  // A drawing is a presentation, not a file: the agent calls it to show
+  // something. It opens even if the user closed the panel earlier, and in
+  // stage mode, not source — reading the drawing's HTML is not the point.
   const PRESENTS = new Set(["draw"]);
 
   let current = "";
   let mode = "source";
   let dismissed = false;
   let loading = null;
-  let sourceText = "";   // kopyala düğmesi için: o an gösterilen ham metin
-  let wrap = false;      // uzun satırlar: kaydır (false) / sar (true)
+  let sourceText = "";   // for the copy button: the raw text on display
+  let wrap = false;      // long lines: scroll (false) / wrap (true)
   let lastUrl = "";
   const termLines = [];  // {kind: "cmd"|"out"|"err", text}
   const TERM_CAP = 120;
@@ -89,16 +90,16 @@ const Viewer = (() => {
     return node;
   };
 
-  // --- dışarıya açık -----------------------------------------------------
+  // --- public surface ----------------------------------------------------
 
   function watch(tool, args) {
     if (!WATCHED.has(tool) || !args) return;
-    if (PRESENTS.has(tool)) return;   // yolu araç bitince geliyor
+    if (PRESENTS.has(tool)) return;   // the path arrives when the tool finishes
     const path = args.to || args.path;
     if (typeof path === "string" && path.trim()) show(path.trim());
   }
 
-  // Ajan bir çizim koydu: paneli aç, sahne kipine geç.
+  // The agent placed a drawing: open the panel, switch to stage mode.
   function present(path) {
     if (typeof path !== "string" || !path.trim()) return;
     dismissed = false;
@@ -106,11 +107,12 @@ const Viewer = (() => {
     show(path.trim());
   }
 
-  // Sunucudan servis edilen CANLI bir sayfa (artifact gibi): dosya değil
-  // adres. İçerik her açılışta sunucudan taze çekilir ve çizimlerle AYNI
-  // yalıtılmış çerçevede gösterilir (allow-same-origin yok): ajanın yazdığı
-  // sayfa programın DOM'una ve /api uçlarına erişemiyor — kendi izin
-  // kapısını betikle atlaması bu programda en pahalı hata olurdu.
+  // A LIVE page served by the server (like an artifact): an address, not a
+  // file. The content is fetched fresh on every open and shown in the SAME
+  // isolated frame as drawings (no allow-same-origin): a page the agent
+  // wrote cannot reach the program's DOM or the /api endpoints — scripting
+  // its way past its own permission gate would be this program's most
+  // expensive bug.
   let pageLabel = "";
 
   function page(url, label) {
@@ -127,15 +129,16 @@ const Viewer = (() => {
     load(current);
   }
 
-  // Bu adres şu an panelde açık mı? (artifact güncellenince tazelemek için)
+  // Is this address open in the panel right now? (to refresh on artifact
+  // updates)
   function showing(url) {
     return !panel.hidden && current === "url:" + url;
   }
 
-  // İş bittiğinde gösterileni tazele: yazma tamamlandığında panelde hâlâ
-  // eski içerik duruyordu. Aracın bildirdiği yol çözülmüş halde geliyor,
-  // o yüzden `current` ile birebir tutmayabilir — panel açıksa ve dokunulan
-  // araç izlenenlerdense yeniden yüklemek en doğrusu.
+  // Refresh what is shown when the work finishes: after a write completed,
+  // the panel still held the old content. The path the tool reports comes
+  // resolved, so it may not match `current` exactly — with the panel open
+  // and a watched tool touched, reloading is the safest.
   function refresh(tool, path) {
     if (PRESENTS.has(tool)) { present(path); return; }
     if (panel.hidden || !WATCHED.has(tool)) return;
@@ -144,53 +147,56 @@ const Viewer = (() => {
   }
 
 
-  // Dar bantta (<=1160) sag yuzey acilirken kenar cubugu KATLANIR: ikisi
-  // birden sigmiyor (olculdu — cekmece kipi cubugu sohbetin ustune
-  // yuzduruyordu ve "Dusunuyor" basligi tiklanamiyordu, 31.08).
+  // In the narrow band (<=1160) the sidebar FOLDS while the right surface
+  // opens: both do not fit (measured — drawer mode floated the bar over the
+  // chat and the "Dusunuyor" heading was unclickable, 31.08).
   function foldSide() {
     if (innerWidth <= 1160 && typeof History !== "undefined" && History.close) {
-      try { History.close(); } catch { /* panel yoksa */ }
+      try { History.close(); } catch { /* no panel */ }
     }
   }
 
   function show(path) {
     current = path;
-    if (dismissed) return;      // kullanıcı kapattı; zorlamıyoruz
+    if (dismissed) return;      // the user closed it; we do not force
     foldSide();
     panel.hidden = false;
     document.body.classList.add("viewing");
     load(path);
   }
 
-  // Sohbetteki bir dosya referansından geliniyor: paneli AÇ (kullanıcı daha
-  // önce kapatmış olsa bile — bu bir kullanıcı isteği, ajanın dayatması
-  // değil) ve satır verildiyse oraya kaydırıp vurgula.
+  // Coming from a file reference in the chat: OPEN the panel (even if the
+  // user closed it earlier — this is a user request, not the agent's
+  // imposition) and, with a line given, scroll there and highlight.
   //
-  // Satır beklemeli bir iş: dosya sunucudan geliyor ve satırlar ancak
-  // çizildikten sonra var oluyor. `pendingLine` çizimin sonunda okunuyor.
+  // The line is deferred work: the file comes from the server and the rows
+  // only exist after drawing. `pendingLine` is read at the end of the
+  // render.
   function open(path, line) {
     if (typeof path !== "string" || !path.trim()) return;
     dismissed = false;
     mode = "source";
     pendingLine = Number(line) > 0 ? Number(line) : 0;
     const target = path.trim();
-    // Aynı dosya zaten açıksa yeniden yüklemeye gerek yok: sadece satıra git.
+    // If the same file is already open there is no need to reload: just go
+    // to the line.
     if (!panel.hidden && current === target) { gotoLine(pendingLine); return; }
     show(target);
   }
 
   let pendingLine = 0;
 
-  // Satıra git: kaydır ve kısa bir vurgu bırak. Vurgu kalıcı değil —
-  // "hangi satırdı" sorusunu cevaplayacak kadar duruyor, sonra soluyor;
-  // kalıcı olsa dosyada gezinirken yanlış yeri işaret eden bir leke olurdu.
+  // Go to line: scroll and leave a brief highlight. The highlight is not
+  // permanent — it stays long enough to answer "which line was it", then
+  // fades; permanent, it would be a stain pointing at the wrong place
+  // while browsing the file.
   function gotoLine(line) {
     pendingLine = 0;
     if (!(line > 0)) return;
     const rows = body.querySelectorAll(".viewer-code .vl");
     const row = rows[line - 1];
     if (!row) return;
-    for (const eski of body.querySelectorAll(".vl.hit")) eski.classList.remove("hit");
+    for (const old of body.querySelectorAll(".vl.hit")) old.classList.remove("hit");
     row.classList.add("hit");
     row.scrollIntoView({ block: "center", behavior: "smooth" });
   }
@@ -200,7 +206,7 @@ const Viewer = (() => {
     try {
       if (on) localStorage.removeItem(DESK);
       else localStorage.setItem(DESK, "off");
-    } catch { /* pywebview / gizli kip */ }
+    } catch { /* pywebview / private mode */ }
   }
 
   function close() {
@@ -248,17 +254,17 @@ const Viewer = (() => {
     }
   }
 
-  // --- yükleme -----------------------------------------------------------
+  // --- loading -----------------------------------------------------------
 
-  // Basliga son iki parca yaziliyor: tam yol satiri dolduruyor ve kirpilinca
-  // geriye "…html" gibi hicbir sey soylemeyen bir kalinti kaliyordu.
+  // The last two segments go into the header: the full path filled the row
+  // and, clipped, left a residue like "…html" that said nothing.
   function label(path) {
     const parts = String(path || "").split(/[\/]/).filter(Boolean);
     return parts.length > 2 ? "…/" + parts.slice(-2).join("/") : parts.join("/");
   }
 
-  // Dosya boyutu başlıkta: "hangi dosya" kadar "ne kadarlık bir şey" de
-  // bir bakışta okunmalı.
+  // File size in the header: "how big a thing" should read at a glance as
+  // much as "which file".
   function human(bytes) {
     if (typeof bytes !== "number") return "";
     if (bytes < 1024) return bytes + " B";
@@ -266,14 +272,15 @@ const Viewer = (() => {
     return (bytes / 1024 / 1024).toFixed(1) + " MB";
   }
 
-  // --- sekmeler ---------------------------------------------------------
+  // --- tabs -------------------------------------------------------------
   //
-  // Cursor sağ paneli: sabit güverte (Değişiklikler · Tarayıcı ·
-  // powershell) + açılan dosya sekmeleri. Şerit her zaman durur —
-  // tek dosyada da kaybolmaz.
+  // The Cursor right panel: a fixed deck (Değişiklikler · Tarayıcı ·
+  // powershell) + file tabs as they open. The strip always stays — it does
+  // not vanish with a single file either.
   const PINNED = [
     { key: "git:pane", kind: "changes", label: () => t("Değişiklikler") },
-    // İş listesi: yalnız madde varken pin — boşken Cursor'daki gibi yok.
+    // To-do list: pinned only while items exist — absent when empty, as in
+    // Cursor.
     { key: "plan:goals", kind: "goals", label: () => t("İş listesi"), when: "goals" },
     { key: "desk:browser", kind: "browser", label: () => t("Tarayıcı") },
     { key: "desk:term", kind: "term", label: () => "powershell" },
@@ -287,13 +294,13 @@ const Viewer = (() => {
     }
     goalsPin = next;
     if (!next && current === "plan:goals") {
-      // Boşaldı: sabit güverteye dön.
+      // Emptied: return to the fixed deck.
       openPin("git:pane");
       return;
     }
     drawTabs();
   }
-  const tabs = [];              // {key, mode, label} — dosya / url sekmeleri
+  const tabs = [];              // {key, mode, label} — file / url tabs
   function pinOn(key) {
     if (key === "git:pane") return "git:pane";
     if (key === "plan:goals") return "plan:goals";
@@ -303,19 +310,20 @@ const Viewer = (() => {
   }
   function noteTab() {
     if (!current) return;
-    // Adres, Tarayıcı sekmesinin kendisi: ayrı bir dosya sekmesi açma.
+    // An address IS the Browser tab itself: do not open a separate file
+    // tab.
     if (PINNED.some((p) => p.key === current) || String(current).startsWith("url:")) {
       drawTabs();
       return;
     }
-    const kayit = {
+    const entry = {
       key: current, mode,
       label: String(current).startsWith("url:")
         ? (pageLabel || current.slice(4)) : label(current),
     };
     const i = tabs.findIndex((s) => s.key === current);
-    if (i >= 0) tabs[i] = kayit;
-    else { tabs.push(kayit); if (tabs.length > 8) tabs.shift(); }
+    if (i >= 0) tabs[i] = entry;
+    else { tabs.push(entry); if (tabs.length > 8) tabs.shift(); }
     drawTabs();
   }
   function iconFor(kind) {
@@ -345,10 +353,10 @@ const Viewer = (() => {
     return svg;
   }
   function drawTabs() {
-    const serit = document.getElementById("viewer-tabs");
-    if (!serit) return;
-    serit.textContent = "";
-    serit.hidden = false;
+    const strip = document.getElementById("viewer-tabs");
+    if (!strip) return;
+    strip.textContent = "";
+    strip.hidden = false;
     const activePin = pinOn(current);
     for (const pin of PINNED) {
       if (pin.when === "goals" && !goalsPin) continue;
@@ -356,24 +364,24 @@ const Viewer = (() => {
       b.type = "button";
       b.className = "v-tab pin" + (pin.key === current || pin.key === activePin ? " on" : "");
       b.title = pin.label();
-      const ad = document.createElement("span");
-      ad.textContent = pin.label();
-      b.append(iconFor(pin.kind), ad);
+      const nameEl = document.createElement("span");
+      nameEl.textContent = pin.label();
+      b.append(iconFor(pin.kind), nameEl);
       b.onclick = () => openPin(pin.key);
-      serit.append(b);
+      strip.append(b);
     }
     for (const sk of tabs) {
       const b = document.createElement("button");
       b.type = "button";
       b.className = "v-tab" + (sk.key === current ? " on" : "");
       b.title = String(sk.key).startsWith("url:") ? sk.key.slice(4) : sk.key;
-      const ad = document.createElement("span");
-      ad.textContent = sk.label;
+      const nameEl = document.createElement("span");
+      nameEl.textContent = sk.label;
       const x = document.createElement("i");
       x.textContent = "×";
       x.setAttribute("aria-label", t("Sekmeyi kapat"));
       x.onclick = (ev) => { ev.stopPropagation(); dropTab(sk.key); };
-      b.append(ad, x);
+      b.append(nameEl, x);
       b.onclick = () => {
         if (sk.key === current) return;
         mode = sk.mode;
@@ -381,7 +389,7 @@ const Viewer = (() => {
         if (String(sk.key).startsWith("url:")) pageLabel = sk.label;
         load(sk.key);
       };
-      serit.append(b);
+      strip.append(b);
     }
   }
   function openPin(key) {
@@ -505,11 +513,12 @@ const Viewer = (() => {
 
   async function load(path) {
     noteTab();
-    // Yol etiketi: `hidden = true` bir daha hiç açılmıyordu — dosya/adres
-    // başlıkta hiç görünmüyordu ("tam dosya yolu göremiyorum", 31.08).
-    // Sabit güvertelerde (git/terminal) gizli kalır, içerikte görünür.
+    // The path label: `hidden = true` never turned back on — the
+    // file/address never showed in the header ("I can't see the full file
+    // path", 31.08). It stays hidden on the fixed decks (git/terminal),
+    // visible on content.
     title.hidden = true;
-    // Git panosu: gövdeyi GitBar çizer; dosya API'sine gitme.
+    // The git board: GitBar draws the body; do not hit the file API.
     if (path === "git:pane") {
       title.textContent = pageLabel || t("Değişiklikler");
       title.title = pageLabel || t("Değişiklikler");
@@ -539,8 +548,8 @@ const Viewer = (() => {
       paintBrowserEmpty();
       return;
     }
-    // Adres kipi: sunucunun servis ettiği sayfa taze çekilip yalıtılmış
-    // çerçevede açılıyor. Aynı yarış kuralı: son istek kazanır.
+    // Address mode: the server-served page is fetched fresh and opened in
+    // the isolated frame. Same race rule: the last request wins.
     if (typeof path === "string" && path.startsWith("url:")) {
       const url = path.slice(4);
       title.textContent = pageLabel || url;
@@ -549,7 +558,7 @@ const Viewer = (() => {
       modes.textContent = "";
       const token = {};
       loading = token;
-      // Canlı uygulama (localhost): srcdoc değil — kendi origin'inde iframe.
+      // A live app (localhost): not srcdoc — an iframe on its own origin.
       if (/^https?:\/\/(127\.0\.0\.1|localhost)(:\d+)?\//i.test(url)
           || /^https?:\/\/(127\.0\.0\.1|localhost):\d+/i.test(url)) {
         if (loading !== token) return;
@@ -586,7 +595,8 @@ const Viewer = (() => {
     title.hidden = !path;
     if (!path) { blank(t("Henüz bir şeye dokunulmadı")); return; }
 
-    // Aynı dosya art arda birkaç kez tetiklenebiliyor; son istek kazanmalı.
+    // The same file can trigger several times in a row; the last request
+    // must win.
     const token = {};
     loading = token;
 
@@ -614,17 +624,18 @@ const Viewer = (() => {
     sourceText = data.text || "";
     drawModes(data);
 
-    // Başlıkta ad + boyut; tam yol üstüne gelince (title) duruyor,
-    // tıklayınca panoya kopyalanıyor.
+    // Name + size in the header; the full path sits in the hover title and
+    // is copied to the clipboard on click.
     const size = human(data.size);
     title.textContent = (label(data.path) || "—") + (size ? " · " + size : "");
     title.title = data.path || "";
     title.hidden = !data.path;
 
-    // Medya: "İKİLİ DOSYA" yazmak bir görseli göstermemek demekti. Görsel,
-    // ses, video ve PDF ham uçtan (`/api/raw`) gerçekten açılıyor.
-    const tur = mediaKind(data.path);
-    if (tur) { body.append(mediaView(tur, data)); return; }
+    // Media: printing "İKİLİ DOSYA" meant not showing an image. Images,
+    // audio, video and PDF genuinely open from the raw endpoint
+    // (`/api/raw`).
+    const kind = mediaKind(data.path);
+    if (kind) { body.append(mediaView(kind, data)); return; }
 
     if (data.binary) { body.append(unknownBinary(data)); return; }
 
@@ -633,7 +644,7 @@ const Viewer = (() => {
       return;
     }
 
-    // .md dosyası biçimlendirilmiş görünmeli; gerisi kod görünümünde.
+    // An .md file should appear formatted; the rest in the code view.
     if (/\.mdx?$/i.test(data.path)) {
       const holder = el("div", "viewer-source");
       holder.append(Markdown.render(sourceText));
@@ -642,20 +653,20 @@ const Viewer = (() => {
       body.append(codeView(sourceText, language(data.path)));
     }
     if (data.truncated) body.append(el("p", "viewer-blank", t("Dosyanın başı gösteriliyor")));
-    // Sohbetteki bir referanstan gelindiyse (`loop.py:42`) satır ancak
-    // burada, çizim bittikten sonra var: bekleyen istek şimdi karşılanıyor.
+    // Coming from a chat reference (`loop.py:42`) the line only exists
+    // here, after drawing: the pending request is now fulfilled.
     if (pendingLine) gotoLine(pendingLine);
   }
 
-  // --- medya -------------------------------------------------------------
+  // --- media -------------------------------------------------------------
   //
-  // Bir PNG açıldığında panel "İKİLİ DOSYA" yazıyordu: ajan bir görsel
-  // ürettiğinde ("grafiği çizdim") kullanıcı onu göremiyordu — sohbetin
-  // anlatıp gösterememesi, bu panelin var olma sebebinin ta kendisi.
+  // Opening a PNG made the panel print "İKİLİ DOSYA": when the agent
+  // produced an image ("I drew the chart") the user could not see it — the
+  // chat telling without showing is the very reason this panel exists.
   //
-  // Baytlar `/api/raw`dan geliyor (çalışma alanı içi, yol kaçışı korumalı,
-  // nosniff). Türü uzantı söylüyor; tanınmayan ikili dosya eski mesajını
-  // koruyor ama artık boyutu ve klasörde gösterme eylemiyle.
+  // Bytes come from `/api/raw` (inside the workspace, path-escape guarded,
+  // nosniff). The extension names the type; an unrecognised binary keeps
+  // its old message but now with its size and a show-in-folder action.
 
   const IMAGE = /\.(png|jpe?g|gif|webp|bmp|ico|svg)$/i;
   const AUDIO = /\.(mp3|wav|ogg|m4a|flac)$/i;
@@ -682,8 +693,8 @@ const Viewer = (() => {
       img.className = "viewer-img";
       img.alt = data.name || data.path || "";
       img.src = url;
-      // Piksel ölçüsü başlığa: bir görselde "ne kadar büyük" sorusunun
-      // cevabı dosya boyutu değil, kenar uzunlukları.
+      // Pixel dimensions in the header: for an image the answer to "how
+      // big" is the edge lengths, not the file size.
       img.addEventListener("load", () => {
         const px = img.naturalWidth + "×" + img.naturalHeight;
         const size = human(data.size);
@@ -694,8 +705,8 @@ const Viewer = (() => {
         box.textContent = "";
         box.append(el("p", "viewer-blank", t("Görsel açılamadı")));
       });
-      // Tıklayınca 1:1 ↔ sığdır. Sığdırılmış bir ekran görüntüsünde yazı
-      // okunmuyor; 1:1 hali kutunun içinde kayıyor.
+      // Click toggles 1:1 ↔ fit. Text in a fitted screenshot is
+      // unreadable; the 1:1 form scrolls inside the box.
       img.title = t("Tıkla — 1:1 boyut / sığdır");
       img.addEventListener("click", () => {
         box.classList.toggle("full");
@@ -716,57 +727,60 @@ const Viewer = (() => {
       return box;
     }
 
-    // PDF: gömülü görüntüleyici tarayıcının kendi eklentisi — sayfa DOM'una
-    // erişemiyor. Açılmazsa (eklenti kapalı) altındaki düğme kalıyor.
+    // PDF: the embedded viewer is the browser's own plugin — it cannot
+    // reach the page DOM. If it fails to open (plugin off) the button below
+    // remains.
     const holder = document.createElement("iframe");
     holder.className = "viewer-pdf";
     holder.src = url;
     holder.setAttribute("referrerpolicy", "no-referrer");
     box.append(holder);
-    // Gömülü görüntüleyici açılmasa bile kullanıcı dosyaya ULAŞABİLMELİ:
-    // aç / indir / klasörde göster. Eskiden yalnız "Tarayıcıda aç" vardı ve
-    // bir rapor üretildiğinde kullanıcı onu ne açabiliyor ne bulabiliyordu
-    // (canlı yara, 02.09: "rapor yazdı, okuyamadım diyor").
+    // Even if the embedded viewer fails, the user must be able to REACH the
+    // file: open / download / show in folder. There used to be only
+    // "Tarayıcıda aç", and when a report was produced the user could
+    // neither open nor find it (live wound, 02.09: "it wrote a report, says
+    // I couldn't read it").
     box.append(dosyaEylemleri(data.path, url));
     return box;
   }
 
-  // Bir disk dosyası için ortak eylem şeridi: sistemde aç · tarayıcıda aç ·
-  // indir · klasörde göster. PDF ve tanınmayan ikili aynı şeridi kullanıyor.
+  // The shared action strip for a disk file: open in system · open in
+  // browser · download · show in folder. PDF and unknown binaries use the
+  // same strip.
   function dosyaEylemleri(path, url) {
     const acts = el("div", "viewer-acts");
 
-    const sistem = el("button", "viewer-open", t("Aç"));
-    sistem.type = "button";
-    sistem.title = t("Varsayılan uygulamada aç");
-    sistem.addEventListener("click", () => gonder("/api/apps/file-open", path, acts));
-    acts.append(sistem);
+    const sysBtn = el("button", "viewer-open", t("Aç"));
+    sysBtn.type = "button";
+    sysBtn.title = t("Varsayılan uygulamada aç");
+    sysBtn.addEventListener("click", () => post("/api/apps/file-open", path, acts));
+    acts.append(sysBtn);
 
     acts.append(openButton(url, t("Tarayıcıda aç")));
 
-    const indir = el("a", "viewer-open");
-    indir.textContent = t("İndir");
-    indir.href = url + "&download=1";
-    indir.setAttribute("download", "");
-    acts.append(indir);
+    const dlLink = el("a", "viewer-open");
+    dlLink.textContent = t("İndir");
+    dlLink.href = url + "&download=1";
+    dlLink.setAttribute("download", "");
+    acts.append(dlLink);
 
     const show = el("button", "viewer-open", t("Klasörde göster"));
     show.type = "button";
-    show.addEventListener("click", () => gonder("/api/apps/reveal", path, acts));
+    show.addEventListener("click", () => post("/api/apps/reveal", path, acts));
     acts.append(show);
     return acts;
   }
 
-  // Ortak POST + hata gösterimi: sessiz başarısızlık en kötü hâl.
-  async function gonder(uc, path, acts) {
+  // Shared POST + error display: silent failure is the worst state.
+  async function post(endpoint, path, acts) {
     let answer = null;
     try {
-      answer = await (await fetch(uc, {
+      answer = await (await fetch(endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ path }),
       })).json();
-    } catch { /* sunucu cevap vermedi */ }
+    } catch { /* the server did not answer */ }
     if (!answer || answer.ok === false) {
       const why = el("p", "viewer-note bad", (answer && answer.error) || t("Açılamadı"));
       acts.after(why);
@@ -774,15 +788,16 @@ const Viewer = (() => {
     }
   }
 
-  // Gerçekten ikili ve tanınmayan tür: gösterilecek bir şey yok ama ölü bir
-  // mesaj da bırakılmıyor — ne kadar yer kapladığı ve nerede olduğu.
+  // Genuinely binary and unrecognised: nothing to show, but no dead message
+  // either — how much space it takes and where it lives.
   function unknownBinary(data) {
     const box = el("div", "viewer-media unknown");
     box.append(el("p", "viewer-blank", t("İkili dosya")));
     const size = human(data.size);
     if (size) box.append(el("p", "viewer-note", size));
 
-    // Aynı eylem şeridi (aç · tarayıcıda aç · indir · klasörde göster).
+    // The same action strip (open · open in browser · download · show in
+    // folder).
     box.append(dosyaEylemleri(data.path, rawUrl(data.path)));
     return box;
   }
@@ -794,15 +809,15 @@ const Viewer = (() => {
     return button;
   }
 
-  // --- kod görünümü ------------------------------------------------------
+  // --- code view ---------------------------------------------------------
   //
-  // Satır numaralı, renklendirilmiş, ligatürsüz. Numaralar CSS sayacıyla
-  // (::before) çiziliyor: seçilip kopyalanan metne satır numarası
-  // karışmıyor. Uzun satır ya kendi içinde kayıyor ya da (sar düğmesi)
-  // satır başına kırılıyor; panel dışına asla taşmıyor.
+  // Line-numbered, coloured, ligature-free. Numbers are drawn with a CSS
+  // counter (::before): they never mix into selected-and-copied text. A
+  // long line either scrolls within itself or (the wrap button) breaks at
+  // the line start; it never spills outside the panel.
 
-  // Bu kadar satırın üstünde numarasız düz metne düşülüyor: on binlerce
-  // satır DOM düğümü kaydırmayı sürüklenemez yapıyor.
+  // Above this many rows we fall back to numberless plain text: tens of
+  // thousands of DOM row nodes make scrolling drag.
   const ROW_CAP = 60000;
 
   function codeView(source, lang) {
@@ -816,7 +831,8 @@ const Viewer = (() => {
       return box;
     }
 
-    // Numara sütunu en geniş numaraya göre: 9 ile 999'un hizası aynı.
+    // The number column sizes to the widest number: 9 and 999 align the
+    // same.
     box.style.setProperty("--gutter", (String(total).length + 3) + "ch");
     for (const fragment of paintRows(source, lang, total)) {
       const row = el("div", "vl");
@@ -828,18 +844,19 @@ const Viewer = (() => {
     return box;
   }
 
-  // Kuyruktaki boş satır dosyanın son yeni-satırından; numaralamaya değmez.
+  // The trailing empty row comes from the file's final newline; not worth
+  // numbering.
   function countRows(source) {
     const rows = source.split("\n");
     if (rows.length > 1 && rows[rows.length - 1] === "") rows.pop();
     return Math.max(1, rows.length);
   }
 
-  // Renklendirilmiş kaynağı satır satır parçalara böler. Vurgulayıcı tüm
-  // metni tek seferde boyuyor (blok yorum gibi çok satırlı parçalar ancak
-  // böyle doğru çıkıyor); satır numarası içinse her satırın kendi kutusu
-  // gerekiyor. Boyanmış düğümler yeni-satırlardan bölünür, sınıf korunur.
-  // HTML dizesi yok: her parça yine createElement + textContent.
+  // Splits the coloured source into per-line pieces. The highlighter
+  // paints the whole text in one go (multi-line tokens like block comments
+  // only come out right that way); line numbers, though, need a box per
+  // line. Painted nodes are split at newlines, classes preserved. No HTML
+  // strings: every piece is again createElement + textContent.
   function paintRows(source, lang, total) {
     const scratch = document.createElement("code");
     if (lang && typeof Syntax !== "undefined" && Syntax.paint) {
@@ -864,7 +881,8 @@ const Viewer = (() => {
         }
       }
     }
-    // Sayı gutter'la birebir: eksikse boş satır, fazlaysa (son yeni-satır) at.
+    // Exactly in step with the gutter: pad with empty rows when short, drop
+    // (the final newline) when over.
     while (rows.length < total) rows.push(document.createDocumentFragment());
     rows.length = total;
     return rows;
@@ -884,8 +902,8 @@ const Viewer = (() => {
       mode = "source";
     }
 
-    // Sahne kipinde, medyada ve ikili dosyada kaynak araçlarının işi yok:
-    // bir PNG'de "sar" ya da "kopyala" anlamsız.
+    // Source tools have no business in stage mode, media or binaries:
+    // "wrap" or "copy" on a PNG is meaningless.
     if (data.binary || mediaKind(data.path) || (mode === "live" && isPage(data.path))) return;
 
     if (!/\.mdx?$/i.test(data.path)) {
@@ -903,10 +921,11 @@ const Viewer = (() => {
     modes.append(copy);
   }
 
-  // Panoya kopyalar ve düğmenin üstünde kısa bir onay gösterir: tıklayıp
-  // hiçbir şey olmaması "çalıştı mı" belirsizliği bırakıyordu. Asıl yol
-  // Clipboard API; gömülü çerçeveler izni reddedebiliyor — o zaman eski
-  // usul (geçici textarea + execCommand) devreye giriyor.
+  // Copies to the clipboard and shows a brief confirmation on the button:
+  // clicking with nothing happening left a "did it work" ambiguity. The
+  // main path is the Clipboard API; embedded frames may deny the
+  // permission — then the old way (temporary textarea + execCommand) steps
+  // in.
   function copyText(button) {
     const done = (msg, ok) => {
       button.textContent = msg;
@@ -941,9 +960,9 @@ const Viewer = (() => {
     return ok;
   }
 
-  // Ajanın kurduğu sayfa gerçekten çalışsın diye çerçevede gösteriliyor ama
-  // yalıtılmış: `allow-same-origin` verilmiyor, yani sayfa bu programın
-  // DOM'una, çerezlerine ve `/api` uçlarına erişemiyor.
+  // The page the agent built is shown in a frame so it genuinely runs, but
+  // isolated: `allow-same-origin` is not granted, so the page cannot reach
+  // this program's DOM, cookies or `/api` endpoints.
   function frame(html) {
     const node = document.createElement("iframe");
     node.className = "viewer-frame";
@@ -957,7 +976,7 @@ const Viewer = (() => {
     const node = document.createElement("iframe");
     node.className = "viewer-frame viewer-live";
     node.setAttribute("referrerpolicy", "no-referrer");
-    // Canlı app kendi origin'inde: API çağrıları çalışsın.
+    // A live app on its own origin: its API calls must work.
     node.setAttribute("sandbox",
       "allow-scripts allow-forms allow-same-origin allow-popups allow-downloads");
     node.src = url;
@@ -966,8 +985,8 @@ const Viewer = (() => {
 
   const isPage = (path) => /\.html?$/i.test(path || "");
 
-  // Uzantı → vurgulayıcı dili. PHP'nin burada olmaması, PHP dosyalarını
-  // renksiz düz metin yapıyordu; harita genişletildi.
+  // Extension → highlighter language. PHP missing here made PHP files
+  // colourless plain text; the map was widened.
   const EXT = { py: "python", js: "javascript", mjs: "javascript", jsx: "javascript",
                 ts: "typescript", tsx: "typescript", ps1: "powershell",
                 psm1: "powershell", sh: "bash", bash: "bash", bat: "bash",
@@ -981,13 +1000,14 @@ const Viewer = (() => {
 
   const language = (path) => EXT[(path.split(".").pop() || "").toLowerCase()] || "";
 
-  // --- bağlama -----------------------------------------------------------
+  // --- wiring ------------------------------------------------------------
 
   document.getElementById("eye").addEventListener("click", toggle);
   document.getElementById("viewer-close").addEventListener("click", close);
 
-  // Panel kenarından sürükleyip genişletme. Tek sağ sütun genişliği
-  // `--mind-w-user` (beyin tutamacıyla aynı): sohbet `--right-w` ile kayar.
+  // Widening by dragging the panel edge. The single right-column width is
+  // `--mind-w-user` (same as the brain grip): the chat shifts via
+  // `--right-w`.
   (() => {
     const grip = document.getElementById("viewer-grip");
     if (!grip) return;
@@ -1004,9 +1024,9 @@ const Viewer = (() => {
 
     const move = (e) => {
       if (!active) return;
-      // Sağ kenar sabit: sola çekince sütun genişler (origin delta).
-      // Tavan mind-grip / CSS ile aynı — 420/32vw yalnız küçültmeye izin
-      // veriyordu (canlı, 01.09).
+      // The right edge is fixed: dragging left widens the column (origin
+      // delta). The ceiling matches mind-grip / CSS — 420/32vw allowed only
+      // shrinking (live, 01.09).
       const max = Math.min(760, window.innerWidth * 0.55);
       const w = Math.max(MIN, Math.min(max, originW + originX - e.clientX));
       root.style.setProperty("--mind-w-user", Math.round(w) + "px");
@@ -1022,7 +1042,7 @@ const Viewer = (() => {
       try {
         const w = parseInt(getComputedStyle(root).getPropertyValue("--mind-w-user"), 10);
         if (w) localStorage.setItem("dornick-mind-w", String(w));
-      } catch { /* dosya:// */ }
+      } catch { /* file:// */ }
     };
 
     grip.addEventListener("pointerdown", (e) => {
@@ -1030,7 +1050,7 @@ const Viewer = (() => {
       active = true;
       originX = e.clientX;
       originW = width();
-      try { grip.setPointerCapture(e.pointerId); } catch { /* eski motor */ }
+      try { grip.setPointerCapture(e.pointerId); } catch { /* old engine */ }
       window.addEventListener("pointercancel", stop);
       window.addEventListener("blur", stop);
       root.style.setProperty("--mind-w-user", Math.round(originW) + "px");
@@ -1040,9 +1060,10 @@ const Viewer = (() => {
     });
   })();
 
-  // Uygulama içi bir yolu kullanıcının GERÇEK tarayıcısında açar. Adresi
-  // (gerçek portu) sunucu kurar — ajanın 8765 tahmini canlıda "bağlantı
-  // reddedildi" ile bitmişti; pencere içinde window.open da güvenilmez.
+  // Opens an in-app path in the user's REAL browser. The server builds the
+  // address (the real port) — the agent's guess of 8765 ended in
+  // "connection refused" live; window.open inside the window is unreliable
+  // too.
   async function openOutside(path) {
     const p = String(path || "");
     if (!p.startsWith("/")) { window.open(p, "_blank", "noopener"); return; }
@@ -1053,20 +1074,20 @@ const Viewer = (() => {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ path: p }),
       })).json();
-    } catch { /* sunucu cevap vermedi */ }
+    } catch { /* the server did not answer */ }
     if (!out || !out.ok) {
       if (typeof say === "function") say(t("Açılamadı") + (out && out.error ? ": " + out.error : ""), true);
     }
   }
 
-  // Canlı sayfa: gerçek tarayıcıda aç + indir + yazdır.
+  // Live page: open in the real browser + download + print.
   function pageExportActs(url) {
     const wrap = el("span", "viewer-export");
     const base = String(url).split("?")[0];
-    const disari = el("button", "viewer-act", t("Tarayıcıda aç"));
-    disari.type = "button";
-    disari.title = t("Gerçek tarayıcıda aç");
-    disari.addEventListener("click", (ev) => { ev.stopPropagation(); openOutside(base); });
+    const outBtn = el("button", "viewer-act", t("Tarayıcıda aç"));
+    outBtn.type = "button";
+    outBtn.title = t("Gerçek tarayıcıda aç");
+    outBtn.addEventListener("click", (ev) => { ev.stopPropagation(); openOutside(base); });
     const dl = el("button", "viewer-act", t("İndir"));
     dl.type = "button";
     dl.title = t("İndir") + " (.html)";
@@ -1082,17 +1103,18 @@ const Viewer = (() => {
       ev.stopPropagation();
       printPage(base);
     });
-    wrap.append(disari, dl, pr);
+    wrap.append(outBtn, dl, pr);
     return wrap;
   }
 
   async function downloadArtifact(url) {
     const base = String(url || "").split("?")[0];
     if (!base) throw new Error(t("Adres yok"));
-    // Artifact: dosyayı SUNUCU kaydeder (İndirilenler) ve tam yol söylenir.
-    // Pencere WebView2'de blob + <a download> sessizce ölüyordu; bu yol hem
-    // pencerede hem tarayıcıda aynı ve kullanıcı dosyanın NEREDE olduğunu
-    // görüyor ("indiremiyorum / yolu göremiyorum" canlı yarası).
+    // Artifact: the SERVER saves the file (Downloads) and the full path is
+    // announced. In the WebView2 window blob + <a download> died silently;
+    // this path is the same in the window and the browser and the user sees
+    // WHERE the file is (the "can't download / can't see the path" live
+    // wound).
     if (/^\/artifact\//.test(base)) {
       let out = null;
       try {
@@ -1101,7 +1123,7 @@ const Viewer = (() => {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ path: base }),
         })).json();
-      } catch { /* sunucu cevap vermedi; blob yoluna düş */ }
+      } catch { /* the server did not answer; fall back to the blob path */ }
       if (out && out.ok && out.path) {
         if (typeof say === "function") say(t("İndirildi") + ": " + out.path);
         return;
@@ -1191,13 +1213,13 @@ const Viewer = (() => {
            openOutside, feed, openPin };
 })();
 
-// Büyüt / yerine dön: görüntüleyici sağ bölgenin tamamını kaplar (beyin
-// geçici çekilir); tekrar basınca dock düzenine döner. Sahne kapanışta
-// kendini yeniden ölçüyor (mindRect her karede taze).
+// Maximize / restore: the viewer covers the whole right region (the brain
+// steps aside for the moment); pressing again returns to the dock layout.
+// The scene re-measures itself on close (mindRect fresh every frame).
 (() => {
-  const dugme = document.getElementById("viewer-max");
-  if (!dugme) return;
-  dugme.addEventListener("click", () => {
+  const btn = document.getElementById("viewer-max");
+  if (!btn) return;
+  btn.addEventListener("click", () => {
     document.body.classList.toggle("viewer-max");
   });
 })();

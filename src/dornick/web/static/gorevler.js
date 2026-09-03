@@ -1,22 +1,23 @@
-// Canlı koşum defteri — Görevler panelinin "Canlı" sekmesi.
+// Live run ledger — the "Canlı" (Live) tab of the Tasks panel.
 //
-// Üç kaynak tek listede, çünkü kullanıcı için üçü de aynı şey ("arkada bir
-// şey koşuyor"):
+// Three sources in one list, because to the user all three are the same
+// thing ("something is running in the background"):
 //
-//   * arka plan kabuk işleri  — `shell` aracının `arka_plan: true` yolu
-//   * arka plan yardımcıları  — `task` aracının doğurduğu alt ajanlar
-//   * ayrılmış süreçler       — sunucular, panelden başlatılan uygulamalar
+//   * background shell jobs   — the `shell` tool's `arka_plan: true` path
+//   * background helpers      — sub-agents spawned by the `task` tool
+//   * detached processes      — servers, apps started from the panel
 //
-// Orkestra güvertesinden AYRI duruyor ve bu bilinçli: orkestra ŞU ANKİ
-// turun koordinasyonunu gösteren, kendiliğinden açılıp kapanan bir sahne
-// ("şef bekliyor, üç kanal çalışıyor"). Burası ise defter: süre sayıyor,
-// tek tek durduruluyor, bitmiş işin çıktısına iniliyor ve turdan turaç
-// geçse de duruyor. İkisini birleştirmek ya sahneyi kalıcı bir listeye ya
-// da defteri kaybolan bir sahneye çevirirdi.
+// It stands "Orkestra güvertesinden AYRI" (apart from the orchestra deck) and
+// that is deliberate: the orchestra is a stage that shows the CURRENT turn's
+// coordination and opens/closes on its own ("conductor waiting, three
+// channels running"). This is the ledger: it counts durations, stops jobs one
+// by one, drills into a finished job's output and survives turn changes.
+// Merging the two would turn either the stage into a permanent list or the
+// ledger into a vanishing stage.
 //
-// Süre CANLI ama sunucu saniyede bir yoklanmıyor: satır `basladi` damgasını
-// taşıyor, saymayı tarayıcı yapıyor. Ağa yalnızca durum değişince ya da
-// birkaç saniyede bir çıkılıyor.
+// The duration is LIVE but the server is not polled every second: the row
+// carries the `basladi` stamp and the browser does the counting. The network
+// is hit only on a status change or every few seconds.
 
 Dil.ekle({
   "Koşan görevler": "Running tasks",
@@ -49,7 +50,7 @@ Dil.ekle({
 });
 
 const Gorevler = (() => {
-  const rozet = document.getElementById("jobs-badge");
+  const badge = document.getElementById("jobs-badge");
 
   const el = (tag, cls, text) => {
     const n = document.createElement(tag);
@@ -59,117 +60,117 @@ const Gorevler = (() => {
   };
 
   let body = null;
-  let durumSatiri = null;
+  let statusLine = null;
   let host = null;
-  let gorunur = false;
+  let visible = false;
 
-  let satirlar = [];
-  let acikOlan = new Set();     // hangi görevin çıktısı açık
-  let dokumler = new Map();     // görev kimliği → {adimlar, ts}
+  let rows = [];
+  let openSet = new Set();      // which task's output is expanded
+  let logCache = new Map();     // task id → {steps, ts}
   const DOKUM_TTL_MS = 2500;
-  let yoklama = null;
-  let saniye = null;
+  let pollTimer = null;
+  let tickTimer = null;
 
-  const DURUM_ETIKET = {
+  const STATUS_LABEL = {
     kosuyor: "koşuyor", bitti: "bitti", hata: "hata", yetim: "yarım kaldı",
   };
 
-  // --- veri ------------------------------------------------------------
+  // --- data ------------------------------------------------------------
 
   async function tazele() {
-    let veri;
-    try { veri = await (await fetch("/api/gorevler")).json(); }
+    let data;
+    try { data = await (await fetch("/api/gorevler")).json(); }
     catch { return; }
-    satirlar = (veri && veri.gorevler) || [];
-    rozetCiz(veri && veri.kosan);
-    if (gorunur && body) {
+    rows = (data && data.gorevler) || [];
+    drawBadge(data && data.kosan);
+    if (visible && body) {
       ciz();
-      // Açık koşan kartların dökümü TTL ile yenilensin.
-      for (const g of satirlar) {
-        if (acikOlan.has(g.id) && g.oturum && g.durum === "kosuyor") {
-          dokumGetir(g);
+      // Refresh the log of expanded running cards with the TTL.
+      for (const g of rows) {
+        if (openSet.has(g.id) && g.oturum && g.durum === "kosuyor") {
+          fetchLog(g);
         }
       }
     }
   }
 
-  function rozetCiz(kosan) {
-    if (!rozet) return;
-    const n = Number(kosan) || 0;
-    rozet.hidden = n === 0;
-    rozet.textContent = n > 9 ? "9+" : String(n);
+  function drawBadge(running) {
+    if (!badge) return;
+    const n = Number(running) || 0;
+    badge.hidden = n === 0;
+    badge.textContent = n > 9 ? "9+" : String(n);
   }
 
-  // --- çizim -----------------------------------------------------------
+  // --- drawing ---------------------------------------------------------
 
   function mount(parent) {
     if (host && host.parentElement === parent) return host;
     host = el("div", "jobs-live");
-    durumSatiri = el("div", "tasks-status");
+    statusLine = el("div", "tasks-status");
     body = el("div", "tasks-body");
-    host.append(durumSatiri, body);
+    host.append(statusLine, body);
     parent.replaceChildren(host);
-    if (gorunur) ciz();
+    if (visible) ciz();
     return host;
   }
 
   function ciz() {
     if (!body) return;
     body.replaceChildren();
-    if (!satirlar.length) {
-      const bos = el("div", "tasks-blank");
-      bos.append(el("p", null, t("Şu an arkada koşan bir iş yok.")));
-      bos.append(el("p", "tasks-blank-hint",
+    if (!rows.length) {
+      const blank = el("div", "tasks-blank");
+      blank.append(el("p", null, t("Şu an arkada koşan bir iş yok.")));
+      blank.append(el("p", "tasks-blank-hint",
         t("Bir işi arka plana aldığında ya da bir yardımcı doğurduğunda burada belirir.")));
-      body.append(bos);
+      body.append(blank);
     }
-    for (const g of satirlar) body.append(kart(g));
+    for (const g of rows) body.append(card(g));
 
-    const kosan = satirlar.filter(g => g.durum === "kosuyor").length;
-    if (durumSatiri) {
-      durumSatiri.textContent = kosan
-        ? kosan + t(" iş koşuyor")
-        : (satirlar.length ? t("Hepsi bitti") : "");
-      durumSatiri.className = "tasks-status" + (kosan ? " live" : "");
+    const running = rows.filter(g => g.durum === "kosuyor").length;
+    if (statusLine) {
+      statusLine.textContent = running
+        ? running + t(" iş koşuyor")
+        : (rows.length ? t("Hepsi bitti") : "");
+      statusLine.className = "tasks-status" + (running ? " live" : "");
     }
   }
 
-  function kart(g) {
+  function card(g) {
     const wrap = el("div", "task " + g.durum);
     const top = el("div", "task-top");
     top.append(el("span", "task-dot"));
     top.append(el("span", "task-name", g.ad || g.id));
-    top.append(el("span", "task-kind " + turSinifi(g.tur), t(g.tur)));
+    top.append(el("span", "task-kind " + kindClass(g.tur), t(g.tur)));
     wrap.append(top);
 
-    const alt = el("div", "task-line");
-    alt.append(el("span", "task-state", t(DURUM_ETIKET[g.durum] || g.durum)));
-    const sure = el("span", "task-time");
-    sure.dataset.basladi = String(g.basladi || 0);
-    sure.dataset.bitti = String(g.bitti || 0);
-    sure.dataset.kosuyor = g.durum === "kosuyor" ? "1" : "";
-    sure.textContent = sureMetni(sure);
-    alt.append(sure);
-    if (g.model) alt.append(el("span", "task-model", kisaModel(g.model)));
+    const line = el("div", "task-line");
+    line.append(el("span", "task-state", t(STATUS_LABEL[g.durum] || g.durum)));
+    const timeEl = el("span", "task-time");
+    timeEl.dataset.basladi = String(g.basladi || 0);
+    timeEl.dataset.bitti = String(g.bitti || 0);
+    timeEl.dataset.kosuyor = g.durum === "kosuyor" ? "1" : "";
+    timeEl.textContent = durationText(timeEl);
+    line.append(timeEl);
+    if (g.model) line.append(el("span", "task-model", shortModel(g.model)));
     if (g.durum === "kosuyor" && g.wait) {
       let msg = t("Model bekleniyor");
       const w = g.wait;
       if (w.deneme && w.toplam) msg += ` (${w.deneme}/${w.toplam})`;
       if (w.saniye) msg += ` · ${w.saniye}s`;
-      alt.append(el("span", "task-wait", msg));
+      line.append(el("span", "task-wait", msg));
     } else if (g.durum === "kosuyor" && g.son_arac) {
-      let line = "▶ " + g.son_arac;
-      if (g.son_hedef) line += " · " + g.son_hedef;
-      alt.append(el("span", "task-tool", line));
+      let toolLine = "▶ " + g.son_arac;
+      if (g.son_hedef) toolLine += " · " + g.son_hedef;
+      line.append(el("span", "task-tool", toolLine));
     }
 
     if (g.durdurulabilir) {
-      const dur = el("button", "task-stop", t("Durdur"));
-      dur.type = "button";
-      dur.addEventListener("click", async (ev) => {
+      const stopBtn = el("button", "task-stop", t("Durdur"));
+      stopBtn.type = "button";
+      stopBtn.addEventListener("click", async (ev) => {
         ev.stopPropagation();
-        dur.disabled = true;
-        dur.textContent = t("Durduruluyor…");
+        stopBtn.disabled = true;
+        stopBtn.textContent = t("Durduruluyor…");
         let res = null;
         try {
           res = await (await fetch("/api/gorevler/durdur", {
@@ -179,20 +180,20 @@ const Gorevler = (() => {
           })).json();
         } catch { res = null; }
         if (res && res.ok === false) {
-          dur.disabled = false;
-          dur.textContent = t("Durdur");
+          stopBtn.disabled = false;
+          stopBtn.textContent = t("Durdur");
         }
         tazele();
       });
-      alt.append(dur);
+      line.append(stopBtn);
     }
     if (g.surdurulebilir || g.durum === "yetim") {
-      const devam = el("button", "task-resume", t("Devam et"));
-      devam.type = "button";
-      devam.addEventListener("click", async (ev) => {
+      const resumeBtn = el("button", "task-resume", t("Devam et"));
+      resumeBtn.type = "button";
+      resumeBtn.addEventListener("click", async (ev) => {
         ev.stopPropagation();
-        devam.disabled = true;
-        devam.textContent = t("Sürdürülüyor…");
+        resumeBtn.disabled = true;
+        resumeBtn.textContent = t("Sürdürülüyor…");
         await fetch("/api/gorevler/devam", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -200,12 +201,12 @@ const Gorevler = (() => {
         }).catch(() => {});
         tazele();
       });
-      alt.append(devam);
+      line.append(resumeBtn);
     }
-    wrap.append(alt);
+    wrap.append(line);
 
-    const inilir = g.durum !== "kosuyor" || !!g.oturum;
-    if (inilir) {
+    const drillable = g.durum !== "kosuyor" || !!g.oturum;
+    if (drillable) {
       wrap.classList.add("clickable");
       wrap.addEventListener("click", () => {
         if (g.durum !== "kosuyor" && g.deliverable && g.deliverable.url
@@ -219,110 +220,110 @@ const Gorevler = (() => {
                       g.ad || g.id);
           return;
         }
-        if (acikOlan.has(g.id)) acikOlan.delete(g.id);
-        else { acikOlan.add(g.id); if (g.oturum) dokumGetir(g); }
+        if (openSet.has(g.id)) openSet.delete(g.id);
+        else { openSet.add(g.id); if (g.oturum) fetchLog(g); }
         ciz();
       });
     }
-    if (acikOlan.has(g.id)) wrap.append(cikti(g));
+    if (openSet.has(g.id)) wrap.append(output(g));
     return wrap;
   }
 
-  function cikti(g) {
-    const kutu = el("div", "task-out");
-    if (g.ozet) kutu.append(el("div", "task-ozet", g.ozet));
-    if (g.komut) kutu.append(el("div", "task-cmd", "$ " + g.komut));
+  function output(g) {
+    const box = el("div", "task-out");
+    if (g.ozet) box.append(el("div", "task-ozet", g.ozet));
+    if (g.komut) box.append(el("div", "task-cmd", "$ " + g.komut));
     if (!g.oturum) {
-      if (!g.ozet && !g.komut) kutu.append(el("div", "task-ozet", t("(çıktı yok)")));
-      return kutu;
+      if (!g.ozet && !g.komut) box.append(el("div", "task-ozet", t("(çıktı yok)")));
+      return box;
     }
-    const cache = dokumler.get(g.id);
-    const adimlar = cache === undefined ? undefined
-      : (cache === null ? null : cache.adimlar);
-    if (adimlar === undefined) {
-      kutu.append(el("div", "task-ozet", t("Adımlar yükleniyor…")));
-      return kutu;
+    const cache = logCache.get(g.id);
+    const steps = cache === undefined ? undefined
+      : (cache === null ? null : cache.steps);
+    if (steps === undefined) {
+      box.append(el("div", "task-ozet", t("Adımlar yükleniyor…")));
+      return box;
     }
-    if (adimlar === null) {
-      kutu.append(el("div", "task-ozet", t("Döküm okunamadı.")));
-      return kutu;
+    if (steps === null) {
+      box.append(el("div", "task-ozet", t("Döküm okunamadı.")));
+      return box;
     }
-    if (!adimlar.length) {
-      kutu.append(el("div", "task-ozet", t("Adım bulunamadı.")));
-      return kutu;
+    if (!steps.length) {
+      box.append(el("div", "task-ozet", t("Adım bulunamadı.")));
+      return box;
     }
-    const liste = el("div", "task-steps");
-    for (const a of adimlar) {
+    const list = el("div", "task-steps");
+    for (const a of steps) {
       if (a.tur === "arac") {
         const s = el("div", "task-step" + (a.hata ? " err" : ""));
         s.append(el("span", "task-step-mark", a.hata ? "✗" : "·"));
         s.append(el("b", null, a.ad));
         s.append(el("span", "task-step-target", a.hedef || ""));
         if (a.ms) s.append(el("span", "task-step-ms", ms(a.ms)));
-        liste.append(s);
+        list.append(s);
       } else {
-        liste.append(el("div", "task-step say", a.metin));
+        list.append(el("div", "task-step say", a.metin));
       }
     }
-    kutu.append(liste);
-    return kutu;
+    box.append(list);
+    return box;
   }
 
-  async function dokumGetir(g, { force = false } = {}) {
-    const prev = dokumler.get(g.id);
+  async function fetchLog(g, { force = false } = {}) {
+    const prev = logCache.get(g.id);
     if (!force && prev && prev !== null
         && (Date.now() - (prev.ts || 0)) < DOKUM_TTL_MS) {
       return;
     }
-    // Koşarken TTL dolunca yenile; bitmişse bir kez yeter.
+    // While running, refresh when the TTL expires; once finished, one read is enough.
     if (!force && g.durum !== "kosuyor" && prev !== undefined) return;
-    let veri;
+    let data;
     try {
-      veri = await (await fetch("/api/gorevler/dokum?oturum="
+      data = await (await fetch("/api/gorevler/dokum?oturum="
         + encodeURIComponent(g.oturum))).json();
-    } catch { veri = null; }
-    dokumler.set(g.id, veri && veri.ok
-      ? { adimlar: veri.adimlar || [], ts: Date.now() }
+    } catch { data = null; }
+    logCache.set(g.id, data && data.ok
+      ? { steps: data.adimlar || [], ts: Date.now() }
       : null);
-    if (gorunur && body) ciz();
+    if (visible && body) ciz();
   }
 
-  // --- süre ------------------------------------------------------------
+  // --- duration --------------------------------------------------------
 
-  function sureMetni(node) {
-    const basladi = Number(node.dataset.basladi) || 0;
-    if (!basladi) return "";
-    const bitti = Number(node.dataset.bitti) || 0;
-    const son = node.dataset.kosuyor ? Date.now() / 1000 : (bitti || basladi);
-    return kisaSure(Math.max(0, son - basladi));
+  function durationText(node) {
+    const started = Number(node.dataset.basladi) || 0;
+    if (!started) return "";
+    const ended = Number(node.dataset.bitti) || 0;
+    const last = node.dataset.kosuyor ? Date.now() / 1000 : (ended || started);
+    return kisaSure(Math.max(0, last - started));
   }
 
-  function kisaSure(sn) {
-    if (sn < 60) return Math.round(sn) + " sn";
-    const dk = Math.floor(sn / 60);
-    if (dk < 60) return dk + " dk " + Math.round(sn % 60) + " sn";
-    return Math.floor(dk / 60) + " sa " + (dk % 60) + " dk";
+  function kisaSure(secs) {
+    if (secs < 60) return Math.round(secs) + " sn";
+    const mins = Math.floor(secs / 60);
+    if (mins < 60) return mins + " dk " + Math.round(secs % 60) + " sn";
+    return Math.floor(mins / 60) + " sa " + (mins % 60) + " dk";
   }
 
   const ms = (n) => (n >= 1000 ? (n / 1000).toFixed(1) + " sn" : n + " ms");
 
-  const kisaModel = (m) => {
+  const shortModel = (m) => {
     const cut = String(m).split("/").pop();
     return cut.length > 20 ? cut.slice(0, 20) + "…" : cut;
   };
 
-  const turSinifi = (tur) => (tur === "süreç" ? "proc"
-    : tur === "iş" ? "job" : "helper");
+  const kindClass = (kind) => (kind === "süreç" ? "proc"
+    : kind === "iş" ? "job" : "helper");
 
-  // --- görünürlük ------------------------------------------------------
+  // --- visibility ------------------------------------------------------
 
   function setVisible(on) {
-    gorunur = !!on;
-    if (gorunur) {
+    visible = !!on;
+    if (visible) {
       tazele();
-      baslatYoklama();
+      startPolling();
     } else {
-      durYoklama();
+      stopPolling();
     }
   }
 
@@ -337,53 +338,53 @@ const Gorevler = (() => {
 
   function toggle() { ac(); }
 
-  function baslatYoklama() {
-    durYoklama();
-    yoklama = setInterval(tazele, 4000);
-    saniye = setInterval(() => {
+  function startPolling() {
+    stopPolling();
+    pollTimer = setInterval(tazele, 4000);
+    tickTimer = setInterval(() => {
       if (!body) return;
       for (const node of body.querySelectorAll(".task-time")) {
-        node.textContent = sureMetni(node);
+        node.textContent = durationText(node);
       }
     }, 1000);
   }
 
-  function durYoklama() {
-    clearInterval(yoklama); yoklama = null;
-    clearInterval(saniye); saniye = null;
+  function stopPolling() {
+    clearInterval(pollTimer); pollTimer = null;
+    clearInterval(tickTimer); tickTimer = null;
   }
 
-  // --- sohbete bildirim ------------------------------------------------
+  // --- notifying the conversation --------------------------------------
   //
-  // Arka plandaki bir iş bitince kullanıcı paneli açık tutmuyor olabilir.
-  // Sohbete tek tıklanabilir satır düşüyor: tıklayınca panel açılıyor ve o
-  // işin çıktısı açık geliyor. Yalnız ARKA PLAN işleri için — senkron bir
-  // yardımcının sonucu zaten cevabın içinde.
+  // When a background job finishes the user may not have the panel open.
+  // A single clickable row drops into the conversation: clicking it opens
+  // the panel with that job's output expanded. Only for BACKGROUND jobs —
+  // a synchronous helper's result is already inside the answer.
   function bitti(ev) {
     tazele();
     if (!ev || !ev.bg) return;
-    const satir = line("alert task-done");
-    satir.replaceChildren();
-    const dugme = el("button", "task-note");
-    dugme.type = "button";
-    dugme.append(el("span", "task-note-mark", ev.ok ? "✓" : "✗"));
-    dugme.append(el("span", "task-note-name", ev.title || ""));
-    dugme.append(el("span", "task-note-go",
+    const row = line("alert task-done");
+    row.replaceChildren();
+    const btn = el("button", "task-note");
+    btn.type = "button";
+    btn.append(el("span", "task-note-mark", ev.ok ? "✓" : "✗"));
+    btn.append(el("span", "task-note-name", ev.title || ""));
+    btn.append(el("span", "task-note-go",
       (ev.ok ? t("bitti · ") : t("hata verdi · ")) + t("raporu aç")));
-    dugme.addEventListener("click", () => {
+    btn.addEventListener("click", () => {
       const cid = ev.id || "";
       if (cid && typeof Viewer !== "undefined" && Viewer.page) {
         Viewer.page("/gorev-rapor/" + encodeURIComponent(cid) + "/", ev.title || cid);
         return;
       }
-      if (cid) acikOlan.add("c:" + cid);
+      if (cid) openSet.add("c:" + cid);
       ac();
     });
-    satir.append(dugme);
+    row.append(btn);
     scroll();
   }
 
-  // Açılışta bir kez: rozet gerçeği söylesin (panel kapalıyken de).
+  // Once on startup: let the badge tell the truth (even with the panel closed).
   tazele();
 
   return { ac, kapat, toggle, tazele, bitti, kisaSure, mount, setVisible, ciz };

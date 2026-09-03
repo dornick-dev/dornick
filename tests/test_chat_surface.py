@@ -496,7 +496,7 @@ def test_the_turn_stops_when_the_brake_speaks(tmp_path: Path) -> None:
     agent = build_agent(tmp_path, client, ToolRegistry())
     notes: list[str] = []
     agent.io.on_notice = notes.append
-    agent.io.butce_freni = lambda: "Bütçe sınırına ulaşıldı ($5.00) — devam etmek için sınırı yükselt."
+    agent.io.budget_brake = lambda: "Bütçe sınırına ulaşıldı ($5.00) — devam etmek için sınırı yükselt."
 
     stats = asyncio.run(agent.run("bir şey yap"))
 

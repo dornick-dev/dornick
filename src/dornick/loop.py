@@ -215,7 +215,7 @@ FAKE_CALL_HARD_NOTE = (
 # recover as the note hardens (usually a free endpoint that cannot call
 # tools) must not keep the turn busy forever: after this count the turn is
 # left to its own flow and the user is told — so they can switch models.
-SAHTE_CAGRI_TAVANI = 5
+FAKE_CALL_CAP = 5
 
 # Tool-call XML inside assistant text. Same pattern as the UI-side defence
 # (app.js SAHTE_CAGRI_KALIBI) — if one misses, the other catches it.
@@ -402,7 +402,7 @@ _SCALE_WORD = re.compile(
 _ITEM_LINE = re.compile(r"^\s*(?:[-*•]|\d+[.)])\s+\S", re.MULTILINE)
 
 
-def buyuk_is(text: str) -> bool:
+def big_job(text: str) -> bool:
     """Does this request look "big / open-ended"?
 
     No claim of certainty — a scent, like `persistent_root`. The decision is
@@ -424,7 +424,7 @@ def buyuk_is(text: str) -> bool:
 # The counterpart of the scent: ONE line, via the internal channel, once at
 # the start of the turn. Does not land in the chat. Not an order but an
 # ordering rule — the reflex form of the long passage in the prompt.
-PLAN_NOTU = (
+PLAN_NOTE = (
     "[Plan] Bu iş büyük görünüyor. İlk cevabında modül listesi + her modül "
     "için kabul ölçütü yaz, sonra başla."
 )
@@ -460,7 +460,7 @@ _NETWORK_ERROR = re.compile(r"(\d+)\s+başarısız")
 _VOLUME_SUFFIX = re.compile(r"\s*\(\+\d+\s+satır\)\s*$")
 
 
-def kirmizi_iz(tool: str, note: dict[str, Any]) -> str:
+def red_trace(tool: str, note: dict[str, Any]) -> str:
     """Is this tool result red? If red, a one-line summary, otherwise "".
 
     `note` is the executor's `tool_end` observation payload: {tool, error,
@@ -517,7 +517,7 @@ def done_claim(text: str) -> bool:
     return not _RED_ADMISSION.search(body)
 
 
-KIRMIZI_NOTU = (
+RED_NOTE = (
     "[Doğrulama] Son koşumun kırmızıydı ({ozet}). Bitti demeden önce ya "
     "düzelt ya da neyin çalışmadığını açıkça söyle."
 )
@@ -652,7 +652,7 @@ def clear_park(state_dir: Path) -> None:
 # When the app closes, helpers running in the background die with the
 # process: the main session's log has a subagent_start but no subagent_end.
 # If nothing is said to the user, the morning brings "I don't know what
-# happened". At startup this trace is scanned (yetim_tara), the user and the
+# happened". At startup this trace is scanned (scan_orphans), the user and the
 # model are told once, and a subagent_end(orphaned=True) is written to the
 # child's log (mark_orphan) — so the second startup does not report the same
 # orphan again.
@@ -695,7 +695,7 @@ def _is_child_log(events: list[dict[str, Any]]) -> bool:
     )
 
 
-def yetim_tara(sessions_dir: Path | str) -> list[dict[str, str]]:
+def scan_orphans(sessions_dir: Path | str) -> list[dict[str, str]]:
     """Finds the helpers orphaned by the previous session(s).
 
     Children with a subagent_start in the main session logs but no matching
@@ -780,7 +780,7 @@ def mark_orphan(sessions_dir: Path | str, orphans: list[dict[str, str]]) -> None
             # A hard shutdown may have left the last line half written and
             # EventLog does not open on a broken line. The mark must still
             # land — otherwise the same orphan is reported at every startup.
-            # The line is appended by hand; the scan (yetim_tara) reads raw
+            # The line is appended by hand; the scan (scan_orphans) reads raw
             # JSON so it sees it.
             try:
                 with path.open("a", encoding="utf-8") as fh:
@@ -819,7 +819,7 @@ class AgentIO:
     # bridge, not the harness (see desktop.Bridge._budget_brake) — the loop
     # only asks for the decision and does no network request or price-table
     # read on the turn path.
-    butce_freni: Callable[[], str] = lambda: ""
+    budget_brake: Callable[[], str] = lambda: ""
     # Subagent (orchestra) channels: when a subagent is born, when it calls
     # a tool and when it ends. The UI draws these as a live channel; "who is
     # doing what" becomes visible without mixing into the main chat. Default
@@ -855,21 +855,21 @@ class ChildHandle:
     # "yardımcı": a model-running subagent · "iş": a background process (long
     # command). Both share the same ledger and the same notification path.
     kind: str = "yardımcı"
-    arka_plan: bool = False
+    background: bool = False
     session_id: str = ""
     state: str = "kosuyor"          # kosuyor | bitti | hata
-    sonuc: str = ""
+    outcome: str = ""
     # When it started. The record is created the moment the work starts, so
     # the default "now" is the right answer: the tasks panel counts the
     # duration live from here ("2 dk 14 sn"). In orphan records (inherited
     # from the previous session) the real start is unknown; the panel draws
     # no duration there.
-    baslangic_ts: float = field(default_factory=time.time)
-    bitis_ts: float = 0.0
+    started_ts: float = field(default_factory=time.time)
+    ended_ts: float = 0.0
     # Has the result been announced to the main agent. On the synchronous
     # path the tool result already returned; in the background the
     # notification note at the start of the turn sets this True.
-    bildirildi: bool = False
+    notified: bool = False
     # Reference to the background task: an unreferenced asyncio.Task can go
     # to the garbage collector and the work silently disappears.
     task: asyncio.Task | None = None
@@ -886,7 +886,7 @@ class ChildHandle:
     # Silent: when finished the main agent does NOT open a resume turn — the
     # report stays in the panels. For scheduled jobs: a task area, not chat
     # Q&A.
-    sessiz: bool = False
+    quiet: bool = False
     # Run id in the task_runs archive.
     run_id: str = ""
     # Automation workflow id (if any).
@@ -894,8 +894,8 @@ class ChildHandle:
     # Deliverable to open on finish: {kind: app|artifact|json|text, url?, body?}
     deliverable: dict[str, Any] | None = None
     # Live panel: last tool name / model wait state.
-    son_arac: str = ""
-    son_hedef: str = ""
+    last_tool: str = ""
+    last_goal: str = ""
     wait: dict[str, Any] | None = None
     # Run meter: {girdi, cikti, cagri} — same units as the chat dock.
     usage: dict[str, int] = field(
@@ -923,16 +923,16 @@ class TurnStats:
     closing: bool = False
     # How many times in this turn the model wrote a tool call as PLAIN TEXT
     # (XML instead of a real call). If it repeats, the note hardens.
-    sahte_cagri: int = 0
+    fake_calls: int = 0
     # Was the red gate opened once in this turn. At most once: if the model
     # wants to finish again on the second turn it is let go — no endless
     # loop.
-    kirmizi_uyarildi: bool = False
-    kabul_uyarildi: bool = False
+    red_warned: bool = False
+    acceptance_warned: bool = False
     test_warned: bool = False
     # Was the run-what-you-delivered gate opened in this turn. Once, for the
     # same reason.
-    giris_uyarildi: bool = False
+    entry_warned: bool = False
     # Subagent: model error text after max retries (instead of parking).
     fail_reason: str | None = None
 
@@ -1012,7 +1012,7 @@ class Agent:
         # tokens). The narrow window was already brief; the flash class
         # deserves brief on a wide window too — in the comparison this was
         # the main item of the per-turn payload.
-        self.brief_schema = self.lean or prompt.kucuk_aile(config.model.name)
+        self.brief_schema = self.lean or prompt.small_family(config.model.name)
         # A wrong window setting is said once and left: repeating it every
         # turn turns the warning into noise.
         self._window_warned = False
@@ -1074,7 +1074,7 @@ class Agent:
         # per tool so that when the model fixes and re-runs the record is
         # cleared — a run that turned green is no longer red. Reset on every
         # user turn (see run).
-        self._kirmizi: dict[str, str] = {}
+        self._red: dict[str, str] = {}
         # Delivery ledger: the file paths WRITTEN in this turn and the text
         # of the commands RUN in this turn. The gate compares the two — is
         # there an entry point you wrote but never ran? Reset on every user
@@ -1122,7 +1122,7 @@ class Agent:
         self.config = config
         self.policy = ContextPolicy(config.context)
         self.lean = prompt.is_lean(config)
-        self.brief_schema = self.lean or prompt.kucuk_aile(config.model.name)
+        self.brief_schema = self.lean or prompt.small_family(config.model.name)
         self._system = prompt.build(config, self.registry, soul=self.soul)
 
     def interrupt(self) -> None:
@@ -1199,7 +1199,7 @@ class Agent:
         self._plan_reflex(user_input)
         # The red ledger starts from scratch on every user turn: only "red
         # produced in THIS TURN" counts, not the previous turn's red.
-        self._kirmizi.clear()
+        self._red.clear()
         # The delivery ledgers also start from scratch every turn: a file
         # written and run in the previous turn is not this turn's debt.
         self._written.clear()
@@ -1217,7 +1217,7 @@ class Agent:
         subagent is already a narrow, defined job; asking it for a module
         plan is noise.
         """
-        if self.depth or not buyuk_is(user_input):
+        if self.depth or not big_job(user_input):
             return
         # The plan is the job of the job's BEGINNING. While the work is
         # already under way (open items in the ledger or a previous exchange
@@ -1233,7 +1233,7 @@ class Agent:
         if sum(1 for m in self.session.messages()
                if m.get("role") == "user") > 1:
             return
-        self.session.add_harness_note(PLAN_NOTU)
+        self.session.add_harness_note(PLAN_NOTE)
         self.session.log.note("plan_refleksi")
 
     def _delivery_trace(self, tool: str, args: dict[str, Any]) -> None:
@@ -1322,14 +1322,14 @@ class Agent:
             is not nudged.
           * AT MOST ONCE per turn.
         """
-        if stats.giris_uyarildi or not self._written:
+        if stats.entry_warned or not self._written:
             return False
         if not done_claim(_text_of_blocks(blocks)):
             return False
         file = self._unrun_entry_point()
         if not file:
             return False
-        stats.giris_uyarildi = True
+        stats.entry_warned = True
         self.session.log.note("giris_kapisi", dosya=file)
         self.session.add_harness_note(ENTRY_NOTE.format(dosya=file))
         return True
@@ -1346,14 +1346,14 @@ class Agent:
             the second turn it is let go; an endless "no, it's not done"
             loop is worse than a half answer.
         """
-        if stats.kirmizi_uyarildi or not self._kirmizi:
+        if stats.red_warned or not self._red:
             return False
         if not done_claim(_text_of_blocks(blocks)):
             return False
-        stats.kirmizi_uyarildi = True
-        summary = "; ".join(self._kirmizi.values())[:200]
+        stats.red_warned = True
+        summary = "; ".join(self._red.values())[:200]
         self.session.log.note("kirmizi_kapisi", ozet=summary)
-        self.session.add_harness_note(KIRMIZI_NOTU.format(ozet=summary))
+        self.session.add_harness_note(RED_NOTE.format(ozet=summary))
         return True
 
     def _acceptance_gate(self, stats: TurnStats, blocks: list[dict[str, Any]]) -> bool:
@@ -1363,7 +1363,7 @@ class Agent:
         AT MOST ONCE per turn, and only if there really are open items.
         Subagents are exempt — the ledger belongs to the main run.
         """
-        if stats.kabul_uyarildi or self.depth or self.mind is None:
+        if stats.acceptance_warned or self.depth or self.mind is None:
             return False
         if not done_claim(_text_of_blocks(blocks)):
             return False
@@ -1373,7 +1373,7 @@ class Agent:
             return False
         if not open_items:
             return False
-        stats.kabul_uyarildi = True
+        stats.acceptance_warned = True
         summary = "; ".join(t[:60] for t in open_items[:5])
         if len(open_items) > 5:
             summary += f"; (+{len(open_items) - 5})"
@@ -1504,11 +1504,11 @@ class Agent:
             # Writer: before the search the query is expanded to synonymous
             # terms with the small local model (synonym class 0.50→1.00, hit
             # rate 0.87→0.93 — scale_bench). Without the model
-            # zenginlestir returns the query unchanged.
+            # enrich returns the query unchanged.
             from .recall import writer
-            query = writer.zenginlestir(user_input, getattr(self.config, "state_dir", None))
+            query = writer.enrich(user_input, getattr(self.config, "state_dir", None))
             limit = LEAN_PRIME_LIMIT if self.lean else RECALL_PRIME_LIMIT
-            hits = select_prime(self.mind, query, limit=limit, ham=user_input)
+            hits = select_prime(self.mind, query, limit=limit, raw=user_input)
         except Exception as exc:  # if recall crashed the conversation must still go on
             self.session.log.note("recall_prime_failed", error=str(exc))
             return
@@ -1613,7 +1613,7 @@ class Agent:
             # Only in the main agent: interrupting the subagent's own turn
             # separately would be interrupting twice the work the parent
             # already interrupted.
-            if self.depth == 0 and (brake := self.io.butce_freni()):
+            if self.depth == 0 and (brake := self.io.budget_brake()):
                 self.session.log.note("butce_freni", detay=_clip(brake, 200))
                 self.io.on_notice(brake)
                 self.interrupt()
@@ -1900,7 +1900,7 @@ class Agent:
         silently — the title is decoration, not the result of the run.
 
         `preview`: when the run generates the title in parallel before it
-        has written the user message to the log (desktop._isle) it takes
+        has written the user message to the log (desktop._handle) it takes
         the text from here — otherwise it looked at the empty log and
         silently gave up.
         """
@@ -1948,7 +1948,7 @@ class Agent:
             title = _one_line(_text_of_blocks(
                 getattr(result.message, "content", None) or [])).strip().strip("\"'.!*# ")
             if _title_valid(title):
-                self.mind.set_session_meta(self.session.id, ad=title)
+                self.mind.set_session_meta(self.session.id, name=title)
                 self.session.log.note("baslik", ad=title)
                 # Don't make the sidebar list wait for the 5 s poll — carry
                 # it over at once.
@@ -2182,13 +2182,13 @@ class Agent:
         if not fake_tool_call(_text_of_blocks(blocks)):
             return False
 
-        stats.sahte_cagri += 1
-        self.session.log.note("sahte_arac_cagrisi", deneme=stats.sahte_cagri)
+        stats.fake_calls += 1
+        self.session.log.note("sahte_arac_cagrisi", deneme=stats.fake_calls)
         # In the auto pool this is a health signal: an endpoint that cannot
         # call tools gets weeded out.
         self._kusurlu("sahte araç çağrısı")
 
-        if stats.sahte_cagri > SAHTE_CAGRI_TAVANI:
+        if stats.fake_calls > FAKE_CALL_CAP:
             # Absolute fuse: the model does not recover (usually an endpoint
             # that does not support tool calls at all). Leave the turn to
             # its own flow and tell the user — the fix is in their hands:
@@ -2200,7 +2200,7 @@ class Agent:
             return False
 
         self.session.add_harness_note(
-            FAKE_CALL_NOTE if stats.sahte_cagri == 1 else FAKE_CALL_HARD_NOTE)
+            FAKE_CALL_NOTE if stats.fake_calls == 1 else FAKE_CALL_HARD_NOTE)
         return True
 
     def _kusurlu(self, reason: str) -> None:
@@ -2295,7 +2295,7 @@ class Agent:
         answer = await self._child_round(handle, instruction)
         # The result already returned with the tool result; don't drop a
         # notification note on top.
-        handle.bildirildi = True
+        handle.notified = True
         return answer
 
     def _spawn_bg(self, title: str, instruction: str, model: str = "") -> ChildHandle:
@@ -2307,7 +2307,7 @@ class Agent:
         the resume turn the bridge opens).
         """
         handle = ChildHandle(id=uuid4().hex[:6], title=title,
-                             model=model or self.config.model.name, arka_plan=True)
+                             model=model or self.config.model.name, background=True)
         self._register_child(handle)
         # The reference is kept in the ledger: an unreferenced task can be
         # garbage collected.
@@ -2330,9 +2330,9 @@ class Agent:
             id=uuid4().hex[:6],
             title=title or "zamanlanmış",
             model=self.config.model.name,
-            arka_plan=True,
+            background=True,
             schedule_id=str(schedule_id or ""),
-            sessiz=True,
+            quiet=True,
             deliverable=_infer_deliverable(prompt or ""),
         )
         if schedule_id:
@@ -2370,8 +2370,8 @@ class Agent:
             id=uuid4().hex[:6],
             title=wf.title or workflow_id,
             model=self.config.model.name,
-            arka_plan=True,
-            sessiz=True,
+            background=True,
+            quiet=True,
             workflow_id=wf.id,
             schedule_id=(schedule_id or f"wf_{wf.id}")[:48],
         )
@@ -2387,7 +2387,7 @@ class Agent:
         # channel.
         try:
             self.io.on_child_start(
-                handle.title, handle.model, handle.id, handle.arka_plan)
+                handle.title, handle.model, handle.id, handle.background)
         except Exception:
             pass
 
@@ -2397,8 +2397,8 @@ class Agent:
                 report, progress, ok = await execute_workflow(
                     wf, self, handle)
                 handle.state = "bitti" if ok else "hata"
-                handle.sonuc = report
-                handle.bitis_ts = time.time()
+                handle.outcome = report
+                handle.ended_ts = time.time()
                 if not handle.deliverable:
                     handle.deliverable = _infer_deliverable(
                         wf.title or "", report or "")
@@ -2407,13 +2407,13 @@ class Agent:
                     handle.id, _clip(report, 200))
             except Exception as exc:
                 handle.state = "hata"
-                handle.sonuc = f"{type(exc).__name__}: {exc}"
-                handle.bitis_ts = time.time()
+                handle.outcome = f"{type(exc).__name__}: {exc}"
+                handle.ended_ts = time.time()
                 self.io.on_child_end(
                     handle.title, False, 0, 0, handle.id,
-                    _clip(handle.sonuc, 200))
-            if handle.sessiz:
-                handle.bildirildi = True
+                    _clip(handle.outcome, 200))
+            if handle.quiet:
+                handle.notified = True
             if handle.schedule_id and handle.run_id:
                 try:
                     from . import task_runs as tr
@@ -2447,18 +2447,18 @@ class Agent:
             await self._child_round(handle, instruction, resume=resume)
         except Exception as exc:  # a crash in the background must not stay silent
             handle.state = "hata"
-            handle.sonuc = f"Alt ajan hata verdi: {type(exc).__name__}: {exc}"
-            handle.bitis_ts = time.time()
+            handle.outcome = f"Alt ajan hata verdi: {type(exc).__name__}: {exc}"
+            handle.ended_ts = time.time()
             self.session.log.note("subagent_failed", title=handle.title,
                                   session=handle.session_id, error=str(exc))
-        if handle.sessiz:
+        if handle.quiet:
             # Scheduled job: no resume turn in the main chat — the report is
             # in the panel.
-            handle.bildirildi = True
+            handle.notified = True
         if handle.schedule_id and self.schedule is not None:
             try:
                 status = ("bitti" if handle.state == "bitti"
-                          else f"hata: {_clip(handle.sonuc, 80)}")
+                          else f"hata: {_clip(handle.outcome, 80)}")
                 self.schedule.note_run(handle.schedule_id, status)
             except Exception:
                 pass
@@ -2504,11 +2504,11 @@ class Agent:
             await self._acquire_agent_gate(handle)
         except asyncio.CancelledError:
             handle.state = "hata"
-            handle.sonuc = "(kesildi)"
-            handle.bildirildi = True
-            handle.bitis_ts = time.time()
+            handle.outcome = "(kesildi)"
+            handle.notified = True
+            handle.ended_ts = time.time()
             self.io.on_child_end(handle.title, False, 0, 0, handle.id, "(kesildi)")
-            return handle.sonuc
+            return handle.outcome
 
         try:
             if resume:
@@ -2520,7 +2520,7 @@ class Agent:
                 child.log.note("subagent_start", title=handle.title, parent=self.session.id)
                 self.session.log.note("subagent_start", title=handle.title, session=child.id)
             # The orchestra channel is born: let the UI show it live.
-            self.io.on_child_start(handle.title, handle.model, handle.id, handle.arka_plan)
+            self.io.on_child_start(handle.title, handle.model, handle.id, handle.background)
 
             agent = Agent(
                 config=config,
@@ -2573,13 +2573,13 @@ class Agent:
                 self.session.log.note("subagent_failed", title=handle.title,
                                       session=handle.session_id, error=str(exc))
                 handle.state = "hata"
-                handle.sonuc = f"Alt ajan hata verdi: {type(exc).__name__}: {exc}"
+                handle.outcome = f"Alt ajan hata verdi: {type(exc).__name__}: {exc}"
                 self.io.on_child_end(handle.title, False, 0, 0, handle.id,
-                                     _clip(handle.sonuc, 200))
-                return handle.sonuc
+                                     _clip(handle.outcome, 200))
+                return handle.outcome
             finally:
                 handle.agent = None
-                handle.bitis_ts = time.time()
+                handle.ended_ts = time.time()
                 # The log closes but the session stays on disk: `task_say`
                 # can reopen a finished helper with Session.resume.
                 child.close()
@@ -2593,18 +2593,18 @@ class Agent:
             # stopped with max retries.
             handle.state = "hata"
             if stats.fail_reason:
-                handle.sonuc = (
+                handle.outcome = (
                     f"Model {len(RETRY_DELAYS)} denemede yanıt vermedi.\n"
                     f"{stats.fail_reason}"
                 )
             else:
-                handle.sonuc = answer or "(kesildi)"
-            handle.bildirildi = True
+                handle.outcome = answer or "(kesildi)"
+            handle.notified = True
         else:
             handle.state = "bitti"
-            handle.sonuc = answer
+            handle.outcome = answer
         if not handle.deliverable:
-            handle.deliverable = _infer_deliverable(instruction, handle.sonuc or "")
+            handle.deliverable = _infer_deliverable(instruction, handle.outcome or "")
         # `session` is for the orphan scan: at startup the start/end match
         # is done by id (the title does not have to be unique).
         self.session.log.note(
@@ -2613,8 +2613,8 @@ class Agent:
         )
         self.io.on_child_end(handle.title, not stats.interrupted, stats.turns,
                              stats.tool_calls, handle.id,
-                             _clip(handle.sonuc or answer, 200))
-        return handle.sonuc or answer
+                             _clip(handle.outcome or answer, 200))
+        return handle.outcome or answer
 
     def _register_child(self, handle: ChildHandle) -> None:
         self._children[handle.id] = handle
@@ -2624,7 +2624,7 @@ class Agent:
             finished = [h for h in self._children.values() if h.state != "kosuyor"]
             if not finished:
                 break
-            oldest = min(finished, key=lambda h: h.bitis_ts)
+            oldest = min(finished, key=lambda h: h.ended_ts)
             self._children.pop(oldest.id, None)
 
     def adopt_orphans(self, orphans: list[dict[str, str]]) -> list[ChildHandle]:
@@ -2646,14 +2646,14 @@ class Agent:
                 id=uuid4().hex[:6],
                 title=str(y.get("title") or "") or sid,
                 model="",
-                arka_plan=True,
+                background=True,
                 session_id=sid,
                 state="yetim",
-                sonuc=ORPHAN_RESULT,
-                bitis_ts=time.time(),
+                outcome=ORPHAN_RESULT,
+                ended_ts=time.time(),
                 # Don't open a notification turn: the news note is already
                 # below.
-                bildirildi=True,
+                notified=True,
             )
             self._register_child(handle)
             adopted.append(handle)
@@ -2680,9 +2680,9 @@ class Agent:
     def _drain_children(self) -> None:
         """Turns finished and not-yet-reported helper/job results into notes."""
         for handle in self._children.values():
-            if handle.state == "kosuyor" or handle.bildirildi:
+            if handle.state == "kosuyor" or handle.notified:
                 continue
-            handle.bildirildi = True
+            handle.notified = True
             if handle.kind == "iş":
                 template = JOB_DONE_NOTE if handle.state == "bitti" else JOB_FAIL_NOTE
             else:
@@ -2692,7 +2692,7 @@ class Agent:
                 # The full text goes to the panel; the model gets only a
                 # short summary — so it does not paste a long bulletin into
                 # the chat.
-                result=_clip(handle.sonuc, 400)))
+                result=_clip(handle.outcome, 400)))
 
     def _drain_inbox(self) -> None:
         """Drains the inbox into the history as harness notes."""
@@ -2700,7 +2700,7 @@ class Agent:
             self.session.add_harness_note(self._inbox.popleft())
 
     def has_unreported_children(self) -> bool:
-        return any(h.state != "kosuyor" and not h.bildirildi
+        return any(h.state != "kosuyor" and not h.notified
                    for h in self._children.values())
 
     async def resume_for_children(self) -> TurnStats | None:
@@ -2712,7 +2712,7 @@ class Agent:
         never called.
         """
         done = [h for h in self._children.values()
-                if h.state != "kosuyor" and not h.bildirildi]
+                if h.state != "kosuyor" and not h.notified]
         if not done:
             return None
         self._arm()
@@ -2744,8 +2744,8 @@ class Agent:
         # Finished helper: its session is opened from disk and resumed in
         # the background.
         handle.state = "kosuyor"
-        handle.bildirildi = False
-        handle.sonuc = ""
+        handle.notified = False
+        handle.outcome = ""
         handle.cancel = asyncio.Event()
         handle.task = asyncio.get_running_loop().create_task(
             self._bg_round(handle, message, resume=True))
@@ -2764,10 +2764,10 @@ class Agent:
             row = f"- id={h.id} · {h.title} · {h.state}"
             if h.kind == "iş":
                 row += " · süreç"
-            if h.arka_plan:
+            if h.background:
                 row += " · arka plan"
-            if h.state != "kosuyor" and h.sonuc:
-                row += f" · sonuç: {_clip(h.sonuc, 300)}"
+            if h.state != "kosuyor" and h.outcome:
+                row += f" · sonuç: {_clip(h.outcome, 300)}"
             rows.append(row)
         if not rows:
             return (f"'{wanted}' diye bir yardımcı yok. "
@@ -2786,7 +2786,7 @@ class Agent:
         `interrupt()` sets it.
         """
         handle = ChildHandle(id=uuid4().hex[:6], title=title, model="",
-                             kind="iş", arka_plan=True)
+                             kind="iş", background=True)
         self._register_child(handle)
         self.session.log.note("job_start", title=title, id=handle.id)
         self.io.on_child_start(handle.title, "süreç", handle.id, True)
@@ -2799,20 +2799,20 @@ class Agent:
         try:
             # The full output is in the panels/Viewer; the clip for the
             # harness note is separate.
-            handle.sonuc = await runner(handle.cancel)
+            handle.outcome = await runner(handle.cancel)
             handle.state = "bitti"
         except JobFailed as exc:
             # The command finished but failed — let's not say 'completed'.
             handle.state = "hata"
-            handle.sonuc = str(exc)
+            handle.outcome = str(exc)
         except Exception as exc:  # a job's crash must not bring the agent down
             handle.state = "hata"
-            handle.sonuc = f"{type(exc).__name__}: {exc}"
-        handle.bitis_ts = time.time()
+            handle.outcome = f"{type(exc).__name__}: {exc}"
+        handle.ended_ts = time.time()
         self.session.log.note("job_end", title=handle.title, id=handle.id,
                               state=handle.state)
         self.io.on_child_end(handle.title, handle.state == "bitti", 0, 0,
-                             handle.id, _clip(handle.sonuc, 200))
+                             handle.id, _clip(handle.outcome, 200))
         self._children_settled()
 
     async def _acquire_agent_gate(self, handle: "ChildHandle") -> None:
@@ -2943,14 +2943,14 @@ class Agent:
         if handle is None:
             return
         if phase == "start":
-            handle.son_arac = name
-            handle.son_hedef = target or ""
+            handle.last_tool = name
+            handle.last_goal = target or ""
             handle.wait = None
             handle.tools_count = int(handle.tools_count or 0) + 1
         else:
-            handle.son_arac = name + (" ✗" if phase == "fail" else " ✓")
-            if not handle.son_hedef and target:
-                handle.son_hedef = target
+            handle.last_tool = name + (" ✗" if phase == "fail" else " ✓")
+            if not handle.last_goal and target:
+                handle.last_goal = target
         self._maybe_patch_run(handle)
 
     def _maybe_patch_run(self, handle: ChildHandle) -> None:
@@ -2967,10 +2967,10 @@ class Agent:
             lines: list[str] = ["(koşuyor)"]
             if meter.get("line"):
                 lines.append(str(meter["line"]))
-            if handle.son_arac:
-                line = f"Araç: {handle.son_arac}"
-                if handle.son_hedef:
-                    line += f" · {handle.son_hedef}"
+            if handle.last_tool:
+                line = f"Araç: {handle.last_tool}"
+                if handle.last_goal:
+                    line += f" · {handle.last_goal}"
                 lines.append(line)
             if handle.wait:
                 w = handle.wait
@@ -3003,8 +3003,8 @@ class Agent:
                 handle.wait = None
             else:
                 handle.wait = body
-                handle.son_arac = ""
-                handle.son_hedef = ""
+                handle.last_tool = ""
+                handle.last_goal = ""
             if mode in ("deneme", "park", "hata"):
                 self._maybe_patch_run(handle)
         # Bridge / CLI: without on_child_wait fall back to notice — a short
@@ -3281,10 +3281,10 @@ class Agent:
             # fixed and re-ran, the gate must not open.
             tool = data["tool"]
             if tool in VERIFICATION_TOOLS:
-                if trace := kirmizi_iz(tool, data):
-                    self._kirmizi[tool] = trace
+                if trace := red_trace(tool, data):
+                    self._red[tool] = trace
                 else:
-                    self._kirmizi.pop(tool, None)
+                    self._red.pop(tool, None)
             self.io.on_tool_end(tool, not data["error"], data["ms"])
             if data["error"]:
                 # Awake reverse replay (roadmap 3.12.1): responsibility is
@@ -3318,7 +3318,7 @@ def worth_recalling(text: str) -> bool:
 
 
 def select_prime(mind: Any, user_input: str, *, limit: int = RECALL_PRIME_LIMIT,
-                 ham: str | None = None, context: dict | None = None) -> list[Any]:
+                 raw: str | None = None, context: dict | None = None) -> list[Any]:
     """The selection core of spontaneous priming: search, filter, cut the tail.
 
     Being a module function is deliberate — the scale benchmark
@@ -3365,13 +3365,13 @@ def select_prime(mind: Any, user_input: str, *, limit: int = RECALL_PRIME_LIMIT,
     # single-topic real need the model's `mind_recall` path remains.
     # Abbreviation queries (btc, plc) are unharmed: few stems, the rule does
     # not fire. Richness is measured on the RAW user query: the synonym
-    # expansion (writer.zenginlestir + bridge) inflates the query
+    # expansion (writer.enrich + bridge) inflates the query
     # artificially and a legitimate three-word question counted as "rich"
     # and cut the single-stem real record in a young memory (a test caught
     # this). The caller passes the raw text; if not, it falls back to the
     # bridge-less stems of the query at hand.
-    rich = len(_query_stems(ham if ham is not None else query,
-                            genislet=False)) >= 5
+    rich = len(_query_stems(raw if raw is not None else query,
+                            expand=False)) >= 5
     def _passes(item: Any) -> bool:
         if not stems:
             return True
@@ -3440,7 +3440,7 @@ def prime_note(hits: list[Any]) -> str:
     return "\n".join(lines)
 
 
-def _query_stems(query: str, *, genislet: bool = True) -> set[str]:
+def _query_stems(query: str, *, expand: bool = True) -> set[str]:
     """The stems of the query's content words (first 5 letters, lower case).
 
     Function words (ve/bir/için...) are dropped — they are in every record
@@ -3456,7 +3456,7 @@ def _query_stems(query: str, *, genislet: bool = True) -> set[str]:
     from .recall import bridge
     from .recall.vector import STOPWORDS
 
-    text = bridge.expand(query or "") if genislet else (query or "")
+    text = bridge.expand(query or "") if expand else (query or "")
     return {
         w[:5]
         for w in _WORDS.findall(text.casefold())
@@ -3519,7 +3519,7 @@ def _tool_target(args: Any, limit: int = 100) -> str:
 
 def _report_with_deliverable(handle: ChildHandle) -> str:
     """task_runs.report: summary + the live app/artifact address if any."""
-    text = str(handle.sonuc or "").strip()
+    text = str(handle.outcome or "").strip()
     d = handle.deliverable if isinstance(handle.deliverable, dict) else None
     if not d or not d.get("url"):
         return text
@@ -3566,15 +3566,15 @@ def _run_meter(handle: ChildHandle, config: Any) -> dict[str, Any]:
                 usage["girdi"] * float(tag["girdi"])
                 + usage["cikti"] * float(tag["cikti"])
             )
-    end = handle.bitis_ts or time.time()
-    start = handle.baslangic_ts or end
+    end = handle.ended_ts or time.time()
+    start = handle.started_ts or end
     duration_s = max(0, int(end - start)) if start else 0
     tools = int(handle.tools_count or 0)
     last_tool = ""
-    if handle.son_arac:
-        last_tool = handle.son_arac
-        if handle.son_hedef:
-            last_tool += f" · {handle.son_hedef}"
+    if handle.last_tool:
+        last_tool = handle.last_tool
+        if handle.last_goal:
+            last_tool += f" · {handle.last_goal}"
     return {
         "model": model_name,
         "usage": usage,

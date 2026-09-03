@@ -130,8 +130,8 @@ def test_single_strip_survives_a_hidden_start() -> None:
     from dornick import desktop
 
     # The setups target the hidden window too.
-    assert "gizli_de=True" in inspect.getsource(desktop._apply_native_styles)
-    assert "gizli_de=True" in inspect.getsource(desktop._install_shell)
+    assert "hidden_too=True" in inspect.getsource(desktop._apply_native_styles)
+    assert "hidden_too=True" in inspect.getsource(desktop._install_shell)
 
     # Guaranteed when shown: both the tray/wake path and the helper.
     run_src = inspect.getsource(desktop.run)

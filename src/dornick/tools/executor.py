@@ -180,23 +180,23 @@ async def _run_one(
     # Hooks run OUTSIDE the permission engine: no approval prompt appears.
     # This is deliberate — a hook is a command the user wrote by hand into
     # their own file on their own disk, and the model cannot reach that file
-    # through either gate: the write tools via `kancalar.korunan_mu`
+    # through either gate: the write tools via `kancalar.is_protected`
     # (`tools/files.py`), the other mutating tools (the shell) via
     # `cagri_kancaya_dokunuyor_mu` above.
     hook_notes: list[str] = []
     try:
         verdict = await hooks.before_tool(
             ctx.config.state_dir, spec.name, call.input,
-            oturum=ctx.session.id, cwd=_hook_cwd(ctx))
+            session=ctx.session.id, cwd=_hook_cwd(ctx))
     except Exception as exc:  # pragma: no cover - the hook layer must not kill the tool
-        verdict = hooks.Karar(notlar=[
+        verdict = hooks.Verdict(notes=[
             f"kanca katmanı çalışmadı ({type(exc).__name__}: {exc})"])
-    hook_notes.extend(verdict.notlar)
+    hook_notes.extend(verdict.notes)
 
-    if not verdict.izin:
+    if not verdict.allowed:
         observe("kanca_ret", {"tool": spec.name, "id": call.id,
-                              "detail": verdict.gerekce})
-        return ToolResult.error(verdict.gerekce).to_block(call.id)
+                              "detail": verdict.reason})
+        return ToolResult.error(verdict.reason).to_block(call.id)
 
     observe("tool_start", {"tool": spec.name, "input": call.input, "id": call.id})
     started = time.monotonic()
@@ -238,7 +238,7 @@ async def _run_one(
     try:
         hook_notes.extend(await hooks.after_tool(
             ctx.config.state_dir, spec.name, call.input,
-            oturum=ctx.session.id, cwd=_hook_cwd(ctx)))
+            session=ctx.session.id, cwd=_hook_cwd(ctx)))
     except Exception as exc:  # pragma: no cover
         hook_notes.append(f"kanca katmanı çalışmadı ({type(exc).__name__}: {exc})")
 

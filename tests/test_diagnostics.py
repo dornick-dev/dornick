@@ -63,7 +63,7 @@ def test_unknown_extension_stays_silent(tmp_path: Path) -> None:
     path.write_text("bu bir kod bile degil {{{", encoding="utf-8")
 
     assert diagnostics.detect_language(path) is None
-    assert diagnostics.denetle(path) is None
+    assert diagnostics.check(path) is None
 
 
 def test_jsx_is_deliberately_not_checked(tmp_path: Path) -> None:
@@ -71,18 +71,18 @@ def test_jsx_is_deliberately_not_checked(tmp_path: Path) -> None:
     path = tmp_path / "Bilesen.jsx"
     path.write_text("const A = () => <div>merhaba</div>;\n", encoding="utf-8")
 
-    assert diagnostics.denetle(path) is None
+    assert diagnostics.check(path) is None
 
 
 def test_a_missing_file_is_not_an_error(tmp_path: Path) -> None:
-    assert diagnostics.denetle(tmp_path / "yok.py") is None
+    assert diagnostics.check(tmp_path / "yok.py") is None
 
 
 def test_a_huge_file_is_skipped_honestly(tmp_path: Path) -> None:
     path = tmp_path / "kocaman.js"
     path.write_text("x=1;\n" * 500_000, encoding="utf-8")
 
-    diagnosis = diagnostics.denetle(path)
+    diagnosis = diagnostics.check(path)
     assert diagnosis is not None and diagnosis.status == "yok"
     assert "büyük" in diagnosis.reason
 
@@ -94,21 +94,21 @@ def test_broken_python_is_caught_with_a_line_number(tmp_path: Path) -> None:
     path = tmp_path / "bozuk.py"
     path.write_text("def f():\n    return (1, 2\n\nprint('x')\n", encoding="utf-8")
 
-    diagnosis = diagnostics.denetle(path)
+    diagnosis = diagnostics.check(path)
     assert diagnosis is not None
     assert diagnosis.status == "hata"
     assert diagnosis.findings
     assert diagnosis.findings[0].line > 0
-    assert "satır" in diagnosis.metin()
+    assert "satır" in diagnosis.text()
 
 
 def test_clean_python_never_claims_everything_is_fine(tmp_path: Path) -> None:
     path = tmp_path / "temiz.py"
     path.write_text("def f():\n    return 1\n", encoding="utf-8")
 
-    diagnosis = diagnostics.denetle(path)
+    diagnosis = diagnostics.check(path)
     assert diagnosis is not None and diagnosis.status == "temiz"
-    text = diagnosis.metin()
+    text = diagnosis.text()
     # Says "the checker saw no error"; does NOT say "the code works".
     assert "hata görmedi" in text
     assert diagnosis.scope  # what it cannot see is written down
@@ -118,7 +118,7 @@ def test_python_null_byte_is_reported_not_crashed(tmp_path: Path) -> None:
     path = tmp_path / "nul.py"
     path.write_bytes(b"x = 1\x00\n")
 
-    diagnosis = diagnostics.denetle(path)
+    diagnosis = diagnostics.check(path)
     assert diagnosis is not None and diagnosis.status == "hata"
 
 
@@ -133,7 +133,7 @@ def test_broken_php_is_caught(tmp_path: Path) -> None:
         encoding="utf-8",
     )
 
-    diagnosis = diagnostics.denetle(path)
+    diagnosis = diagnostics.check(path)
     assert diagnosis is not None and diagnosis.status == "hata"
     assert diagnosis.findings[0].line == 4
     assert "syntax error" in diagnosis.findings[0].message
@@ -148,7 +148,7 @@ def test_php_catches_a_void_function_returning_a_value(tmp_path: Path) -> None:
         encoding="utf-8",
     )
 
-    diagnosis = diagnostics.denetle(path)
+    diagnosis = diagnostics.check(path)
     assert diagnosis is not None and diagnosis.status == "hata"
     assert "void" in diagnosis.findings[0].message.lower()
 
@@ -168,10 +168,10 @@ def test_php_says_out_loud_what_it_cannot_see(tmp_path: Path) -> None:
         encoding="utf-8",
     )
 
-    diagnosis = diagnostics.denetle(path)
+    diagnosis = diagnostics.check(path)
     assert diagnosis is not None and diagnosis.status == "temiz"
     assert "tip hataları" in diagnosis.scope
-    assert "tip hataları" in diagnosis.metin()
+    assert "tip hataları" in diagnosis.text()
 
 
 def test_php_without_the_checker_is_honest(tmp_path: Path, monkeypatch) -> None:
@@ -179,10 +179,10 @@ def test_php_without_the_checker_is_honest(tmp_path: Path, monkeypatch) -> None:
     path = tmp_path / "a.php"
     path.write_text("<?php echo 1;\n", encoding="utf-8")
 
-    diagnosis = diagnostics.denetle(path)
+    diagnosis = diagnostics.check(path)
     assert diagnosis is not None and diagnosis.status == "yok"
     assert "bulunamadı" in diagnosis.reason
-    assert "kontrol edilemedi" in diagnosis.metin()
+    assert "kontrol edilemedi" in diagnosis.text()
 
 
 # -- js / json / yaml ---------------------------------------------------
@@ -193,7 +193,7 @@ def test_broken_js_is_caught(tmp_path: Path) -> None:
     path = tmp_path / "bozuk.js"
     path.write_text("function f() {\n  const x = ;\n}\n", encoding="utf-8")
 
-    diagnosis = diagnostics.denetle(path)
+    diagnosis = diagnostics.check(path)
     assert diagnosis is not None and diagnosis.status == "hata"
     assert diagnosis.findings[0].line == 2
     assert "SyntaxError" in diagnosis.findings[0].message
@@ -204,7 +204,7 @@ def test_clean_js_is_clean(tmp_path: Path) -> None:
     path = tmp_path / "temiz.js"
     path.write_text("const x = 1;\nconsole.log(x);\n", encoding="utf-8")
 
-    diagnosis = diagnostics.denetle(path)
+    diagnosis = diagnostics.check(path)
     assert diagnosis is not None and diagnosis.status == "temiz"
 
 
@@ -212,7 +212,7 @@ def test_broken_json_gets_a_line(tmp_path: Path) -> None:
     path = tmp_path / "ayar.json"
     path.write_text('{\n  "a": 1,\n  "b":\n}\n', encoding="utf-8")
 
-    diagnosis = diagnostics.denetle(path)
+    diagnosis = diagnostics.check(path)
     assert diagnosis is not None and diagnosis.status == "hata"
     assert diagnosis.findings[0].line == 4
 
@@ -221,7 +221,7 @@ def test_clean_json_is_clean(tmp_path: Path) -> None:
     path = tmp_path / "ayar.json"
     path.write_text('{"a": 1}\n', encoding="utf-8")
 
-    diagnosis = diagnostics.denetle(path)
+    diagnosis = diagnostics.check(path)
     assert diagnosis is not None and diagnosis.status == "temiz"
 
 
@@ -230,7 +230,7 @@ def test_broken_yaml_gets_a_line(tmp_path: Path) -> None:
     path = tmp_path / "iş.yaml"
     path.write_text("a: 1\n  b: 2\n", encoding="utf-8")
 
-    diagnosis = diagnostics.denetle(path)
+    diagnosis = diagnostics.check(path)
     assert diagnosis is not None and diagnosis.status == "hata"
     assert diagnosis.findings[0].line >= 1
 
@@ -240,7 +240,7 @@ def test_typescript_without_a_project_says_so(tmp_path: Path) -> None:
     path = tmp_path / "a.ts"
     path.write_text("const x: number = 1;\n", encoding="utf-8")
 
-    diagnosis = diagnostics.denetle(path)
+    diagnosis = diagnostics.check(path)
     assert diagnosis is not None and diagnosis.status == "yok"
     assert "tsconfig" in diagnosis.reason
 
@@ -306,7 +306,7 @@ def test_a_slow_checker_is_reported_as_unchecked(tmp_path: Path, monkeypatch) ->
     path = tmp_path / "yavas.php"
     path.write_text("<?php echo 1;\n", encoding="utf-8")
 
-    diagnosis = diagnostics.denetle(path, timeout=0.01)
+    diagnosis = diagnostics.check(path, timeout=0.01)
     assert diagnosis.status == "yok"
     assert "bitmedi" in diagnosis.reason
 
@@ -319,7 +319,7 @@ def test_a_crashing_checker_never_invents_a_finding(tmp_path: Path, monkeypatch)
     path = tmp_path / "a.php"
     path.write_text("<?php echo 1;\n", encoding="utf-8")
 
-    diagnosis = diagnostics.denetle(path)
+    diagnosis = diagnostics.check(path)
     assert diagnosis.status == "yok" and not diagnosis.findings
 
 

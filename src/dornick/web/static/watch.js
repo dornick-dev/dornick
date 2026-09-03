@@ -1,6 +1,6 @@
-// Ayrı kamera penceresi — ana Dornick sohbet/beyin olarak kalır.
-// En az bir canlı kamera yoksa boş durum; sahne açılmaz (ana penceredeki
-// `aktifVar` kuralının kardeşi).
+// Separate camera window — the main Dornick stays as chat/brain.
+// With no live camera at all: empty state; the stage does not open (sibling of
+// the `aktifVar` rule in the main window).
 
 const Watch = (() => {
   Dil.ekle({
@@ -15,11 +15,11 @@ const Watch = (() => {
   const titleEl = document.getElementById("watch-title");
   const sightEl = document.getElementById("watch-sight");
   let cams = [];
-  let acikMi = false;
-  let secili = "usb";
+  let isOpen = false;
+  let selected = "usb";
   let timer = null;
   const q = new URLSearchParams(location.search);
-  if (q.get("cam")) secili = q.get("cam");
+  if (q.get("cam")) selected = q.get("cam");
 
   function usb0(c) {
     const src = String(c.source || "0");
@@ -31,26 +31,26 @@ const Watch = (() => {
   }
 
   function aktifVar() {
-    return !!(acikMi || cams.some((c) => !usb0(c) && c.enabled));
+    return !!(isOpen || cams.some((c) => !usb0(c) && c.enabled));
   }
 
-  function adlar() {
-    const dahili = cams.find(usb0);
+  function rowsFor() {
+    const builtin = cams.find(usb0);
     const extras = cams.filter((c) => !usb0(c));
     const rows = [];
-    if (acikMi || dahili) {
+    if (isOpen || builtin) {
       rows.push({
         key: "usb",
-        ad: (dahili && dahili.name) || t("Bilgisayar kamerası"),
-        q: dahili ? "id=" + encodeURIComponent(dahili.id) : "source=0",
-        analyze: dahili ? dahili.analyze !== false : true,
+        name: (builtin && builtin.name) || t("Bilgisayar kamerası"),
+        q: builtin ? "id=" + encodeURIComponent(builtin.id) : "source=0",
+        analyze: builtin ? builtin.analyze !== false : true,
       });
     }
     for (const c of extras) {
-      if (!c.enabled && !acikMi) continue;
+      if (!c.enabled && !isOpen) continue;
       rows.push({
         key: c.id,
-        ad: c.name,
+        name: c.name,
         q: "id=" + encodeURIComponent(c.id),
         analyze: c.analyze !== false,
       });
@@ -58,12 +58,12 @@ const Watch = (() => {
     return rows;
   }
 
-  function secilen() {
-    const rows = adlar();
-    return rows.find((w) => w.key === secili) || rows[0];
+  function selectedRow() {
+    const rows = rowsFor();
+    return rows.find((w) => w.key === selected) || rows[0];
   }
 
-  async function kareYukle(img, query, boxes, follow) {
+  async function loadFrame(img, query, boxes, follow) {
     if (!img) return "";
     try {
       const r = await fetch(
@@ -93,16 +93,16 @@ const Watch = (() => {
     }
   }
 
-  function serit() {
+  function paintStrip() {
     if (!strip) return;
-    const want = adlar();
-    const mevcut = [...strip.querySelectorAll(".cam-thumb")];
-    if (mevcut.length === want.length
-        && want.every((w, i) => mevcut[i] && mevcut[i].dataset.key === w.key)) {
+    const want = rowsFor();
+    const existing = [...strip.querySelectorAll(".cam-thumb")];
+    if (existing.length === want.length
+        && want.every((w, i) => existing[i] && existing[i].dataset.key === w.key)) {
       want.forEach((w, i) => {
-        mevcut[i].classList.toggle("on", w.key === secili);
-        const cap = mevcut[i].querySelector("span");
-        if (cap) cap.textContent = w.ad;
+        existing[i].classList.toggle("on", w.key === selected);
+        const cap = existing[i].querySelector("span");
+        if (cap) cap.textContent = w.name;
       });
       return;
     }
@@ -110,75 +110,75 @@ const Watch = (() => {
     want.forEach((w) => {
       const btn = document.createElement("button");
       btn.type = "button";
-      btn.className = "cam-thumb" + (w.key === secili ? " on" : "");
+      btn.className = "cam-thumb" + (w.key === selected ? " on" : "");
       btn.dataset.key = w.key;
       const img = document.createElement("img");
       img.alt = "";
       img.dataset.q = w.q;
       img.dataset.key = w.key;
       const cap = document.createElement("span");
-      cap.textContent = w.ad;
+      cap.textContent = w.name;
       btn.append(img, cap);
-      btn.onclick = () => { secili = w.key; ciz(); };
+      btn.onclick = () => { selected = w.key; paint(); };
       strip.append(btn);
     });
   }
 
-  function ciz() {
-    const bos = !aktifVar();
-    if (empty) empty.hidden = !bos;
-    if (live) live.hidden = bos;
-    if (bos) {
+  function paint() {
+    const blank = !aktifVar();
+    if (empty) empty.hidden = !blank;
+    if (live) live.hidden = blank;
+    if (blank) {
       if (titleEl) titleEl.textContent = t("Aktif kamera yok");
       if (sightEl) sightEl.textContent = "";
       clearInterval(timer);
       return;
     }
-    const w = secilen();
-    if (titleEl) titleEl.textContent = w ? w.ad : t("Bilgisayar kamerası");
-    if (live) live.alt = w ? w.ad : "";
-    document.title = "Dornick · " + (w ? w.ad : t("Kamera"));
-    serit();
-    tazele();
+    const w = selectedRow();
+    if (titleEl) titleEl.textContent = w ? w.name : t("Bilgisayar kamerası");
+    if (live) live.alt = w ? w.name : "";
+    document.title = "Dornick · " + (w ? w.name : t("Kamera"));
+    paintStrip();
+    refresh();
   }
 
-  function tazele() {
+  function refresh() {
     clearInterval(timer);
     if (document.hidden || !aktifVar()) return;
     const tick = async () => {
       if (document.hidden || !aktifVar()) return;
-      const w = secilen();
+      const w = selectedRow();
       if (!w || !live) return;
       const thumb = strip && [...strip.querySelectorAll("img")]
         .find((el) => imgKey(el) === w.key);
-      const seen = await kareYukle(live, w.q, w.analyze !== false, thumb);
+      const seen = await loadFrame(live, w.q, w.analyze !== false, thumb);
       if (seen && sightEl) sightEl.textContent = seen;
       for (const img of strip.querySelectorAll("img")) {
         if (imgKey(img) === w.key) continue;
-        kareYukle(img, img.dataset.q, false);
+        loadFrame(img, img.dataset.q, false);
       }
     };
     tick();
     timer = setInterval(tick, 450);
   }
 
-  async function yukle() {
+  async function load() {
     try {
       const d = await (await fetch("/api/cameras", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "list" }),
       })).json();
-      acikMi = !!d.enabled && d.live === true;
+      isOpen = !!d.enabled && d.live === true;
       cams = d.cameras || [];
-    } catch { acikMi = false; cams = []; }
-    ciz();
+    } catch { isOpen = false; cams = []; }
+    paint();
   }
 
   document.addEventListener("visibilitychange", () => {
     if (document.hidden) clearInterval(timer);
-    else if (aktifVar()) tazele();
+    else if (aktifVar()) refresh();
   });
-  yukle();
-  setInterval(yukle, 4000);
+  load();
+  setInterval(load, 4000);
 })();

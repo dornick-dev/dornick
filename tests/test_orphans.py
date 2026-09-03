@@ -4,7 +4,7 @@ When the user closes the app at night, the helpers running in the
 background die with the process: the main log has a subagent_start but no
 subagent_end. If nothing is reported in the morning the user is left with
 "I don't know what happened"; the panel could show a stale "running" too.
-The tests here verify the boot scan (yetim_tara), the tombstone
+The tests here verify the boot scan (scan_orphans), the tombstone
 (mark_orphan), adoption into the ledger + the harness note (adopt_orphans)
 and the panel seed (snapshot channels).
 """
@@ -17,7 +17,7 @@ from pathlib import Path
 import pytest
 
 from dornick.events import EventLog
-from dornick.loop import ChildHandle, mark_orphan, yetim_tara
+from dornick.loop import ChildHandle, mark_orphan, scan_orphans
 from tests.test_loop import (  # noqa: F401
     FakeClient,
     build_agent,
@@ -50,7 +50,7 @@ def test_a_start_without_an_end_is_an_orphan(tmp_path: Path) -> None:
     main.close()
     _child_log(sessions, "20250101T000100Z", "gece taraması", "20250101T000000Z")
 
-    orphans = yetim_tara(sessions)
+    orphans = scan_orphans(sessions)
     assert orphans == [{"title": "gece taraması", "session": "20250101T000100Z"}]
 
 
@@ -62,7 +62,7 @@ def test_a_finished_helper_is_not_an_orphan(tmp_path: Path) -> None:
     main.close()
     _child_log(sessions, "c1", "tarama", "ana")
 
-    assert yetim_tara(sessions) == []
+    assert scan_orphans(sessions) == []
 
 
 def test_an_old_style_end_matches_by_title(tmp_path: Path) -> None:
@@ -75,7 +75,7 @@ def test_an_old_style_end_matches_by_title(tmp_path: Path) -> None:
     main.close()
     _child_log(sessions, "c1", "tarama", "ana")
 
-    assert yetim_tara(sessions) == []
+    assert scan_orphans(sessions) == []
 
 
 def test_a_crashed_helper_is_not_an_orphan(tmp_path: Path) -> None:
@@ -88,7 +88,7 @@ def test_a_crashed_helper_is_not_an_orphan(tmp_path: Path) -> None:
     main.close()
     _child_log(sessions, "c1", "tarama", "ana")
 
-    assert yetim_tara(sessions) == []
+    assert scan_orphans(sessions) == []
 
 
 def test_a_missing_child_file_is_not_reported(tmp_path: Path) -> None:
@@ -99,7 +99,7 @@ def test_a_missing_child_file_is_not_reported(tmp_path: Path) -> None:
     main.note("subagent_start", title="tarama", session="hic-dogmadi")
     main.close()
 
-    assert yetim_tara(sessions) == []
+    assert scan_orphans(sessions) == []
 
 
 def test_child_logs_are_not_scanned_as_main_sessions(tmp_path: Path) -> None:
@@ -115,7 +115,7 @@ def test_child_logs_are_not_scanned_as_main_sessions(tmp_path: Path) -> None:
     # one found from the main log.
     _child_log(sessions, "zzz-cocuk", "tarama", "20250101T000000Z")
 
-    orphans = yetim_tara(sessions)
+    orphans = scan_orphans(sessions)
     assert [y["session"] for y in orphans] == ["zzz-cocuk"]
 
 
@@ -128,7 +128,7 @@ def test_marking_prevents_a_second_report(tmp_path: Path) -> None:
     main.close()
     _child_log(sessions, "c1", "tarama", "ana")
 
-    orphans = yetim_tara(sessions)
+    orphans = scan_orphans(sessions)
     assert len(orphans) == 1
 
     mark_orphan(sessions, orphans)
@@ -136,7 +136,7 @@ def test_marking_prevents_a_second_report(tmp_path: Path) -> None:
     text = (sessions / "c1.jsonl").read_text(encoding="utf-8")
     assert "subagent_end" in text and '"orphaned":true' in text.replace(" ", "")
     # Second scan: silence.
-    assert yetim_tara(sessions) == []
+    assert scan_orphans(sessions) == []
 
 
 def test_a_torn_last_line_does_not_break_the_scan(tmp_path: Path) -> None:
@@ -151,11 +151,11 @@ def test_a_torn_last_line_does_not_break_the_scan(tmp_path: Path) -> None:
     with (sessions / "c1.jsonl").open("a", encoding="utf-8") as fh:
         fh.write('{"seq": 99, "ts": "yarim')   # torn line, no newline
 
-    orphans = yetim_tara(sessions)
+    orphans = scan_orphans(sessions)
     assert len(orphans) == 1
 
     mark_orphan(sessions, orphans)
-    assert yetim_tara(sessions) == []
+    assert scan_orphans(sessions) == []
 
 
 # -- adoption into the ledger + harness note ----------------------------
@@ -173,7 +173,7 @@ async def test_adopt_orphans_registers_and_briefs_the_model(
     assert len(adopted) == 1
     handle = adopted[0]
     assert handle.state == "yetim" and handle.session_id == "c1"
-    assert handle.bildirildi, "no separate notice turn should open for an orphan"
+    assert handle.notified, "no separate notice turn should open for an orphan"
     assert handle.id in agent._children
 
     # The harness note lands in front of the model at the start of the first turn.
@@ -198,7 +198,7 @@ async def test_task_say_resumes_an_adopted_orphan(tmp_path: Path, registry) -> N
     await handle.task
 
     assert handle.state == "bitti"
-    assert "devam ettim" in handle.sonuc
+    assert "devam ettim" in handle.outcome
     text = (agent.config.sessions_dir / f"{sid}.jsonl").read_text(encoding="utf-8")
     assert "session_resume" in text
 
@@ -227,7 +227,7 @@ async def test_bridge_resume_task_resumes_orphan(tmp_path: Path, registry) -> No
     assert result.get("ok"), result
     await handle.task
     assert handle.state == "bitti"
-    assert "sürdürüldü" in handle.sonuc
+    assert "sürdürüldü" in handle.outcome
 
     missing = await asyncio.to_thread(bridge.resume_task, "c:yokid")
     assert missing.get("ok") is False
@@ -254,10 +254,10 @@ def test_tasks_marks_orphans_as_resumable(tmp_path: Path, registry) -> None:
     async def scenario() -> dict:
         agent = build_agent(tmp_path, FakeClient(), registry)
         agent._children["y1"] = ChildHandle(
-            id="y1", title="yarım", model="", arka_plan=True,
-            state="yetim", session_id="sess1", sonuc="yarım kaldı")
+            id="y1", title="yarım", model="", background=True,
+            state="yetim", session_id="sess1", outcome="yarım kaldı")
         agent._children["r1"] = ChildHandle(
-            id="r1", title="koşan", model="m", arka_plan=True,
+            id="r1", title="koşan", model="m", background=True,
             state="kosuyor", session_id="sess2")
         bridge = Bridge(_Hub(), asyncio.get_running_loop())
         bridge.agent = agent
@@ -281,14 +281,14 @@ def test_snapshot_channels_mirror_the_ledger(tmp_path: Path, registry) -> None:
 
     agent = build_agent(tmp_path, FakeClient(), registry)
     agent._children["a1"] = ChildHandle(id="a1", title="koşan", model="m",
-                                        arka_plan=True)
+                                        background=True)
     agent._children["b2"] = ChildHandle(id="b2", title="biten", model="m",
-                                        state="bitti", sonuc="üç dosya bulundu")
+                                        state="bitti", outcome="üç dosya bulundu")
     agent._children["c3"] = ChildHandle(id="c3", title="yarım", model="",
-                                        arka_plan=True, state="yetim",
-                                        sonuc="Uygulama kapanınca yarım kaldı.")
+                                        background=True, state="yetim",
+                                        outcome="Uygulama kapanınca yarım kaldı.")
     agent._children["d4"] = ChildHandle(id="d4", title="çöken", model="m",
-                                        state="hata", sonuc="patladı")
+                                        state="hata", outcome="patladı")
 
     rows = {r["id"]: r for r in _live_channels(agent)}
     assert rows["a1"]["state"] == "run" and rows["a1"]["ozet"] == ""
@@ -316,7 +316,7 @@ def test_the_bridge_snapshot_carries_the_channel_list(tmp_path: Path, registry) 
     async def scenario() -> dict:
         agent = build_agent(tmp_path, FakeClient(), registry)
         agent._children["y1"] = ChildHandle(id="y1", title="gece işi", model="",
-                                            arka_plan=True, state="yetim")
+                                            background=True, state="yetim")
         bridge = Bridge(_Hub(), asyncio.get_running_loop())
         bridge.agent = agent
         return bridge.snapshot()

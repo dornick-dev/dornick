@@ -1,15 +1,16 @@
-// Ayar sayfası.
+// Settings page.
 //
-// Sunucudan tek bir görüntü geliyor (`/api/settings`) ve tek bir yamayla
-// geri gidiyor. Alanlar tek tek kaydedilmiyor: yarısı yazılmış bir
-// yapılandırma açılmayan bir programa dönüşüyor.
+// A single snapshot arrives from the server (`/api/settings`) and goes back
+// as a single patch. Fields are not saved one by one: a half-written
+// configuration becomes a program that will not start.
 //
-// API anahtarları buraya hiçbir zaman gelmiyor — sunucu yalnızca "var mı"
-// diyor. Girilen anahtar bir kez gidiyor, bir daha okunamıyor.
+// API keys never come here — the server only says "present or not". A key
+// you enter travels once and can never be read back.
 
-// TR→EN çeviriler (dil.js): kaynak metin Türkçe kalır, İngilizce görüntüde gelir.
+// TR→EN translations (dil.js): the source text stays Turkish and is
+// rendered in English at display time.
 Dil.ekle({
-  // proje kipi
+  // project mode
   "Çalışılan proje": "Working project",
   "boş — yalnızca atölye": "empty — workshop only",
   "Klasör seç…": "Choose a folder…",
@@ -34,18 +35,18 @@ Dil.ekle({
     + "where the work happens.",
   "Dornick'in KENDİ alanı — kendi işleri, denemeleri buraya. Şu an: ":
     "Dornick's OWN area — its own work and experiments go here. Now: ",
-  // yedek model
+  // fallback model
   "Yedek model": "Fallback model",
   "boş — yedek yok": "empty — no fallback",
-  // Anahtar TEK parça olmalı: nesne anahtarı bir ifade olamaz ("a" + "b"
-  // sözdizimi hatası) ve dosyanın tamamı yüklenmezdi. Kaynak metin
-  // `field()` çağrısında birleştiriliyor; buradaki anahtar onun birleşmiş
-  // hâliyle birebir aynı olmak zorunda.
+  // The key must be ONE piece: an object key cannot be an expression
+  // ("a" + "b" is a syntax error) and the whole file failed to load. The
+  // source text is concatenated in the `field()` call; the key here must
+  // match its concatenated form exactly.
   "Asıl model kalıcı olarak yanıt vermezse (kredi bitti, kimlik geçersiz) tur burada sürer ve sohbete tek satır düşer. Geçici hatalar zaten yeniden deneniyor — yedeğe düşmezler.":
     "If the main model fails permanently (out of credit, invalid id) the "
     + "turn continues here and one line appears in the chat. Transient "
     + "errors are already retried — they never reach the fallback.",
-  // durum satırı / genel
+  // status line / general
   "Yükleniyor…": "Loading…",
   "Yukleniyor…": "Loading…",
   "Ayarlar okunamadı": "Could not load settings",
@@ -56,7 +57,7 @@ Dil.ekle({
   "Değişiklik yok": "No changes",
   "Sunucuya ulaşılamadı": "Could not reach the server",
 
-  // taşı / yedek
+  // transfer / backup
   "Dornick'in burada biriktirdikleri — anılar, bağlar, hedefler, ruh, yetenekler — tek bir pakette taşınır. İçe alma üzerine yazmaz, katar: aynı anı iki kez girmez, kimliği ezmez.":
     "Everything Dornick has gathered here — memories, links, goals, persona, skills — travels in a single bundle. Importing does not overwrite, it merges: the same memory never enters twice, the identity is never crushed.",
   "Dışa aktar": "Export",
@@ -73,7 +74,7 @@ Dil.ekle({
   "ruh": "persona",
   "Katıldı: ": "Merged in: ",
   "Yeni bir şey yoktu (hepsi zaten vardı)": "Nothing new (it was all here already)",
-  // taşı: parçalar + sıfırlama
+  // transfer: parts + reset
   "Parçalar": "Parts",
   "Anılar": "Memories",
   "Projeler (atölye)": "Projects (workshop)",
@@ -157,7 +158,7 @@ Dil.ekle({
   "şu an yüklü: ": "loaded now: ",
   "yüklü değil": "not loaded",
 
-  // anahtarlar
+  // keys
   "Kayıtlı — değiştirmek için yaz": "Saved — type to replace",
   "Yapıştır": "Paste",
   "Kabuk ortamından geliyor": "Comes from the shell environment",
@@ -165,7 +166,7 @@ Dil.ekle({
   "\\keys.json içinde tutuluyor ve bu sayfaya bir daha gönderilmiyor. Silmek için alanı boşaltıp kaydet.":
     "\\keys.json and are never sent back to this page. To delete one, clear the field and save.",
 
-  // bağlam
+  // context
   "Algıla": "Detect",
   "Soruluyor…": "Asking…",
   "Sunucu pencere boyutunu bildirmiyor — elle gir":
@@ -184,7 +185,7 @@ Dil.ekle({
   "Pencere %75 dolunca konuşma özetlenip sürüyor; özet aynı anda kalıcı belleğe de yazılıyor, yani oturum kapansa da kaybolmuyor.":
     "Once the window is 75% full the conversation is summarized and continues; the summary is also written to persistent memory, so it survives the session.",
 
-  // kurallar
+  // rules
   "Kurallar okunamadi": "Could not load rules",
   "İzin verilenler": "Allowed",
   "Yasaklananlar": "Denied",
@@ -194,14 +195,14 @@ Dil.ekle({
   "Kurali kaldir": "Remove rule",
   "Ekle": "Add",
 
-  // posta
+  // mail
   "Kayitli — degistirmek icin yaz": "Saved — type to replace",
   "Hesap tanimlaninca `mail_read` ve `mail_send` araclari aciliyor — yeniden baslatmak gerekiyor. Gonderme her seferinde onaydan geciyor: geri alinamaz ve disariya aciliyor.":
     "Once an account is set up, the `mail_read` and `mail_send` tools open up — a restart is needed. Sending always goes through approval: it is irreversible and leaves the machine.",
   "Gelen posta guvenilmeyen bir kaynak. Govdesinde ajana verilmis gibi gorunen bir talimat varsa uygulanmiyor, sana soyleniyor.":
     "Incoming mail is an untrusted source. If its body carries what looks like an instruction to the agent, it is not followed — you are told instead.",
 
-  // görevler
+  // tasks
   "Gorevler okunamadi": "Could not load tasks",
   "durdu": "paused",
   "Çalıştır": "Run",
@@ -236,7 +237,7 @@ Dil.ekle({
   "Kur": "Set up",
   "Gorev metni bos": "Task text is empty",
 
-  // ses
+  // voice
   "Ses paketi kurulu degil. Kurmak icin: pip install \"Dornick[voice]\"":
     "Voice package not installed. To install: pip install \"Dornick[voice]\"",
   "Ses paketi bu kurulumda eksik gorunuyor. Kurulum sihirbazini yeniden calistirmak eksigi onarir.":
@@ -263,7 +264,7 @@ Dil.ekle({
     "Could not fetch the voice list — using the saved voice",
   " ses": " voices",
 
-  // mikrofon
+  // microphone
   "Tanima paketi kurulu degil. Kurmak icin: pip install \"Dornick[listen]\"":
     "Recognition package not installed. To install: pip install \"Dornick[listen]\"",
   "Dinleme bu kuruluma dahil edilmemis. Kurulum sihirbazini yeniden calistirip 'Dinleme (mikrofon)' bilesenini isaretleyerek ekleyebilirsin.":
@@ -307,7 +308,7 @@ Dil.ekle({
   "Goruntuyu modelin anlamasi ayri bir mesele: yerel modellerin cogu goruntu kabul etmiyor. NVIDIA GPU varsa kare yerelde analiz edilir, sohbet modeline metin gider. GPU yoksa Claude ve GPT kareyi kendisi okur.":
     "Whether the model understands the image is a separate matter: most local models don't accept images. With an NVIDIA GPU the frame is analyzed locally and the chat model gets text. Without a GPU, Claude and GPT read the frame themselves.",
 
-  // izlenen kameralar
+  // watched cameras
   "kameralar okunamadi": "could not load cameras",
   "Goruntu paketi kurulu degil. Kurmak icin: pip install \"Dornick[watch]\"":
     "Vision package not installed. To install: pip install \"Dornick[watch]\"",
@@ -346,7 +347,7 @@ Dil.ekle({
   "Esikler": "Thresholds",
   "Kameraya bir ad ver": "Give the camera a name",
 
-  // varlıklar
+  // assets
   "Cihazlar okunamadı": "Could not load devices",
   "＋ Yeni varlık": "＋ New asset",
   "Örneği kendi varlığına göre değiştir. Bilmediğin bir alanı boş bırak — yanlış bir adres fiziksel bir sonuç doğuruyor.":
@@ -392,7 +393,7 @@ Dil.ekle({
   "Kaydet": "Save",
   "JSON okunamadı: ": "Invalid JSON: ",
 
-  // yetenekler
+  // skills
   "Yetenekler okunamadı": "Could not load skills",
   "yüklenemedi": "failed to load",
   "＋ Yeni yetenek": "＋ New skill",
@@ -407,7 +408,7 @@ Dil.ekle({
   "Dosya okunamadı": "Could not read the file",
   "Kaydet ve yükle": "Save & load",
 
-  // bağlantılar (MCP)
+  // connections (MCP)
   "Bağlanılıyor…": "Connecting…",
   "Tarayıcıda giriş bekleniyor…": "Waiting for the browser login…",
   "Bağlayıcılar okunamadı": "Could not load connectors",
@@ -489,7 +490,7 @@ Dil.ekle({
     "The format matches Claude Code's (mcpServers): command/args for a local server, url/headers for a remote one. Don't write secrets into the file — write \"${NAME}\" and add the value under NAME in the Model tab key field.",
   "Kaydet ve bağlan": "Save & connect",
 
-  // konum ve açılış
+  // location and startup
   "Bulunduğun yer": "Where you are",
   "Yazarsan kesin kaynak bu olur; Dornick sorduğunda burayı okur ve bir daha sormaz":
     "If you type it, this becomes the definitive source; when Dornick wonders, it reads this and never asks again",
@@ -508,7 +509,7 @@ Dil.ekle({
   "Kayıt: HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run · Görev Yöneticisi › Başlangıç'tan da görebilirsin":
     "Registry: HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run · also visible under Task Manager › Startup",
 
-  // makine
+  // machine
   "Aynı anda model isteği": "Concurrent model requests",
   "Yerel sunucularda 1 kalmalı: LM Studio meşgul bir modele ikinci istek gelince modelin ikinci bir kopyasını yüklüyor":
     "Keep it at 1 for local servers: when a second request hits a busy model, LM Studio loads a second copy of it",
@@ -535,7 +536,7 @@ Dil.ekle({
   " — aynı model birden çok kez yüklü. \"Aynı anda model isteği\" 1 olduğunda yenisi oluşmaz; duranları LM Studio'da Eject ile kaldır.":
     " — the same model is loaded more than once. With \"Concurrent model requests\" at 1 no new copy appears; remove the idle ones with Eject in LM Studio.",
 
-  // yetki
+  // permissions
   "İzin kipi": "Permission mode",
   "Kurallar": "Rules",
   "arac:hedef-deseni · deny her zaman kazanir": "tool:target-pattern · deny always wins",
@@ -548,7 +549,7 @@ Dil.ekle({
   "Kapatmak ajanın bilgisayardaki her yere yazabilmesi demek":
     "Turning it off means the agent can write anywhere on the computer",
 
-  // dosyalar
+  // files
   "Dizin okunamadı": "Could not read the directory",
   "Çalışma alanı": "Workspace",
   "Boş": "Empty",
@@ -556,7 +557,7 @@ Dil.ekle({
   "İkili dosya — burada gösterilemez": "Binary file — can't be shown here",
   "Dosyanın başı gösteriliyor": "Showing the start of the file",
 
-  // dış kapı
+  // external gate
   "Dış kapı (API)": "External gate (API)",
   "Başka ajanlar ve araçlar sohbete programla yazıp yanıtın tamamını alabilir: POST 127.0.0.1'e /api/gate, gövde {\"text\": \"...\"}. Yalnızca bu makineden erişilir":
     "Other agents and tools can write to the chat programmatically and " +
@@ -565,7 +566,7 @@ Dil.ekle({
   "Dış kapı açıldı": "External gate opened",
   "Dış kapı kapandı": "External gate closed",
 
-  // beni tanı
+  // learn me
   "Beni tanı": "Learn me",
   "Beyin ortada dursun": "Brain takes the stage",
   "Açıkken hiçbir panel açık değilse beyin ekranın ortasında büyür; kapatırsan sağ panelde kalır ve yazılar hiç örtülmez":
@@ -583,7 +584,7 @@ Dil.ekle({
   "Bulut etiketleme onayı geri alındı": "Cloud labeling consent withdrawn",
   " · eğitim düzeneği bu makinede kurulu değil": " · the training rig is not installed on this machine",
 
-  // bölüm başlıkları (pane-head): sekme adı + tek cümlelik ne-işe-yarar
+  // section heads (pane-head): tab name + a one-sentence what-it-is-for
   "Anahtarlar": "Keys",
   "Bağlam": "Context",
   "Kameralar": "Cameras",
@@ -625,7 +626,7 @@ Dil.ekle({
   "Sürüm, eşzamanlılık, arayüz dili, tarayıcı ve dış kapı.":
     "Version, concurrency, interface language, browser and the external gate.",
 
-  // sürüm
+  // version
   "Sürüm": "Version",
   "kurulum": "installed",
   "geliştirme": "development",
@@ -670,29 +671,29 @@ const Settings = (() => {
   };
 
   let state = null;
-  // Kaydedilmemiş değişiklikler. Sunucudan gelen görüntü değil, kullanıcının
-  // dokunduğu alanlar burada birikiyor.
+  // Unsaved changes. Not the snapshot from the server — the fields the user
+  // touched accumulate here.
   let patch = {};
 
-  // Model sekmesi ANINDA uygulanır (Cursor/Claude alışkanlığı: seç = aktif;
-  // "aşağı inip Kaydet" yok). Kısa bekleme art arda tıklamaları tek kayda
-  // indiriyor; metin alanları yazım bitince (change) kaydediliyor, harf harf
-  // değil. save(true): otomatik kayıt panelleri YENİDEN ÇİZMEZ — kullanıcı
-  // yazarken alan elinden alınmasın.
+  // The model tab applies INSTANTLY (the Cursor/Claude habit: pick = active;
+  // no "scroll down and Save"). The short delay collapses rapid clicks into
+  // one save; text fields save when typing ends (change), not letter by
+  // letter. save(true): an automatic save does NOT redraw the panes — a
+  // field must not be pulled from under the user while they type.
   let saveTimer = null;
   function saveSoon(ms) {
     clearTimeout(saveTimer);
     say("Uygulanıyor…");
     saveTimer = setTimeout(() => save(true), ms || 450);
   }
-  // Metin/sayı alanı: yazım bitince kaydet.
+  // Text/number field: save once typing ends.
   const applyOnChange = (node) => {
     node.addEventListener("change", () => saveSoon(150));
     return node;
   };
 
-  // Oto kipinin açıklaması: yalnız OpenRouter + "oto" seçiliyken görünür.
-  const OTO_NOTU =
+  // The auto mode's note: visible only with OpenRouter + "oto" selected.
+  const AUTO_MODE_NOTE =
     "Oto modda OpenRouter'ın ücretsiz modelleri kullanılır; kalite ve hız " +
     "düşebilir, model istek sırasında değişebilir. Bazı ücretsiz uçlar " +
     "veriyi eğitimde kullanabilir; istekler 'veri toplama: reddet' " +
@@ -706,20 +707,20 @@ const Settings = (() => {
   };
 
   function say(text, bad, good) {
-    // Çeviri burada, tek noktada: sunucudan gelen hata eşleşmez, olduğu
-    // gibi görünür; buradaki sabit metinler İngilizceye döner.
+    // Translation happens here, in one place: a server error matches nothing
+    // and shows as-is; the fixed texts here turn English.
     note.textContent = t(text) || "";
     note.className = "panel-note" + (bad ? " bad" : good ? " good" : "");
   }
 
-  // --- açılış / kapanış -------------------------------------------------
+  // --- opening / closing ------------------------------------------------
 
   async function open(tab) {
     const already = !panel.hidden;
     if (!already) {
       panel.hidden = false;
-      // Sohbet sola kaysin: panelin altinda kalan metin okunmuyor ve
-      // kenarlardan sizan parcalar arayuzu bozuk gosteriyordu.
+      // Shift the chat left: text under the panel was unreadable, and the
+      // pieces leaking around the edges made the UI look broken.
       document.body.classList.add("settling");
       say("Yükleniyor…");
       try {
@@ -759,12 +760,12 @@ const Settings = (() => {
     drawTransfer();
   }
 
-  // --- taşı / yedek -----------------------------------------------------
+  // --- transfer / backup ------------------------------------------------
   //
-  // Dornick'in bu makinede biriktirdikleri (anılar, bağlar, hedefler, ruh,
-  // yetenekler) tek bir taşınabilir pakete konup başka bir Dornick'e
-  // BİRLEŞTİRİLEBİLİR. İçe alma üzerine yazmıyor — katıyor: aynı anı iki
-  // kez girmiyor, kimlik (ruh) ezilmiyor.
+  // Everything Dornick has gathered on this machine (memories, links, goals,
+  // persona, skills) goes into a single portable bundle and can be MERGED
+  // into another Dornick. Importing does not overwrite — it adds: the same
+  // memory never enters twice, the identity (persona) is never crushed.
 
   function drawTransfer() {
     const pane = panes.transfer;
@@ -777,43 +778,44 @@ const Settings = (() => {
       "yetenekler — tek bir pakette taşınır. İçe alma üzerine yazmaz, katar: " +
       "aynı anı iki kez girmez, kimliği ezmez.")));
 
-    // Parça seçimi: dışa VE içe aktarma bu kutulara bakıyor. Varsayılan
-    // yalnız anılar — eski paketle birebir aynı; sunucuya taşınırken
-    // "beni tanı" modeli, atölye ve (anahtarsız) ayarlar da eklenebilir.
-    const parca = { anilar: true, tanima: false, projeler: false, ayarlar: false };
-    const PARCA_AD = [["anilar", "Anılar"], ["tanima", "Beni tanı"],
-                      ["projeler", "Projeler (atölye)"], ["ayarlar", "Ayarlar (anahtarsız)"]];
-    const secili = () => PARCA_AD.map(([ad]) => ad).filter((ad) => parca[ad]);
-    const disaUrl = () => "/api/transfer/export?parcalar=" + secili().join(",");
+    // Part selection: both export AND import look at these boxes. Default
+    // is memories only — identical to the old bundle; when moving to a
+    // server, the learn-me model, the workshop and the (key-less) settings
+    // can be added too.
+    const chosenParts = { anilar: true, tanima: false, projeler: false, ayarlar: false };
+    const PART_NAMES = [["anilar", "Anılar"], ["tanima", "Beni tanı"],
+                        ["projeler", "Projeler (atölye)"], ["ayarlar", "Ayarlar (anahtarsız)"]];
+    const selectedParts = () => PART_NAMES.map(([key]) => key).filter((key) => chosenParts[key]);
+    const exportUrl = () => "/api/transfer/export?parcalar=" + selectedParts().join(",");
 
     const parts = el("div", "xfer-parts");
     parts.append(el("span", "xfer-lead", t("Parçalar")));
-    for (const [ad, etiket] of PARCA_AD) {
-      const kutu = el("label", "xfer-part");
+    for (const [key, label] of PART_NAMES) {
+      const wrap = el("label", "xfer-part");
       const chk = el("input");
       chk.type = "checkbox";
       chk.className = "input-check";
-      chk.checked = parca[ad];
-      chk.addEventListener("change", () => { parca[ad] = chk.checked; dl.href = disaUrl(); });
-      kutu.append(chk, el("span", null, t(etiket)));
-      parts.append(kutu);
+      chk.checked = chosenParts[key];
+      chk.addEventListener("change", () => { chosenParts[key] = chk.checked; dl.href = exportUrl(); });
+      wrap.append(chk, el("span", null, t(label)));
+      parts.append(wrap);
     }
     pane.append(parts);
 
-    // Dışa aktar: paketi indir.
+    // Export: download the bundle.
     const out = el("div", "xfer-row");
     const dl = el("a", "xfer-btn out", t("Paketi indir"));
-    dl.href = disaUrl();
+    dl.href = exportUrl();
     dl.setAttribute("download", "");
     out.append(el("span", "xfer-lead", t("Dışa aktar")), dl);
     pane.append(out);
 
-    // İçe al: dosya seç → birleştir (yalnızca seçili parçalar işlenir).
+    // Import: pick a file → merge (only the selected parts are processed).
     const inp = el("input");
     inp.type = "file";
     inp.accept = ".neobundle,.zip";
     inp.className = "xfer-file";
-    inp.addEventListener("change", () => importBundle(inp.files[0], report, secili()));
+    inp.addEventListener("change", () => importBundle(inp.files[0], report, selectedParts()));
 
     const pick = el("button", "xfer-btn in", t("Paket seç ve birleştir"));
     pick.type = "button";
@@ -823,21 +825,22 @@ const Settings = (() => {
     inrow.append(el("span", "xfer-lead", t("İçe al")), pick, inp);
     pane.append(inrow);
 
-    // Sıfırlamalar: iki adımlı onay (apps.js'teki silme kalıbı) — yanlış
-    // tık bir zihni götürmesin. Sunucu silmeden önce yedek alıyor
-    // (.dornick/yedek-<tarih>/); yine de düğme tehlikeli görünmeli.
-    const sifirlaBtn = (etiket, hedef) => {
-      const btn = el("button", "xfer-btn danger", t(etiket));
+    // Resets: two-step confirmation (the delete pattern from apps.js) — a
+    // stray click must not take a mind away. The server backs up before
+    // deleting (.dornick/yedek-<date>/); the button should still look
+    // dangerous.
+    const resetBtn = (label, target) => {
+      const btn = el("button", "xfer-btn danger", t(label));
       btn.type = "button";
       btn.addEventListener("click", async () => {
         if (!btn.dataset.armed) {
           btn.dataset.armed = "1";
-          btn.textContent = t("Emin misin?") + " " + t(etiket);
-          setTimeout(() => { delete btn.dataset.armed; btn.textContent = t(etiket); }, 3500);
+          btn.textContent = t("Emin misin?") + " " + t(label);
+          setTimeout(() => { delete btn.dataset.armed; btn.textContent = t(label); }, 3500);
           return;
         }
         delete btn.dataset.armed;
-        btn.textContent = t(etiket);
+        btn.textContent = t(label);
         report.className = "xfer-report";
         report.textContent = t("Sıfırlanıyor…");
         let res;
@@ -845,7 +848,7 @@ const Settings = (() => {
           res = await (await fetch("/api/reset", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ hedef }),
+            body: JSON.stringify({ hedef: target }),
           })).json();
         } catch { res = { ok: false, error: t("Sunucuya ulaşılamadı") }; }
         if (res && res.ok) {
@@ -860,25 +863,25 @@ const Settings = (() => {
       });
       return btn;
     };
-    // Tehlike bölgesi: sıfırlamalar görsel olarak da ayrık dursun.
+    // Danger zone: the resets should stand visually apart too.
     const resetRow = el("div", "xfer-row danger-zone");
     resetRow.append(el("span", "xfer-lead", t("Sıfırla")),
-                    sifirlaBtn("Anıları sıfırla", "anilar"),
-                    sifirlaBtn("Beni tanımayı sıfırla", "tanima"));
+                    resetBtn("Anıları sıfırla", "anilar"),
+                    resetBtn("Beni tanımayı sıfırla", "tanima"));
     pane.append(resetRow);
 
     const report = el("p", "xfer-report");
     pane.append(report);
   }
 
-  async function importBundle(file, report, parcalar) {
+  async function importBundle(file, report, chosenParts) {
     if (!file) return;
     report.className = "xfer-report";
     report.textContent = t("Birleştiriliyor…");
     let res;
     try {
       const buf = await file.arrayBuffer();
-      res = await (await fetch("/api/transfer/import?parcalar=" + (parcalar || []).join(","), {
+      res = await (await fetch("/api/transfer/import?parcalar=" + (chosenParts || []).join(","), {
         method: "POST",
         headers: { "Content-Type": "application/octet-stream" },
         body: buf,
@@ -909,11 +912,11 @@ const Settings = (() => {
     if (res.yedek) report.textContent += t(" · yedek: ") + res.yedek;
   }
 
-  // --- alan yardımcıları ------------------------------------------------
+  // --- field helpers ----------------------------------------------------
 
-  // Bölüm başlığı: her sekmenin üstünde büyükçe ad + tek cümlelik açıklama.
-  // Sekme listesi adı zaten söylüyor ama içerik alanı başlıksız açılınca
-  // sayfa ortasından başlıyormuş gibi duruyordu.
+  // Section head: a largish name + one-sentence description on top of every
+  // tab. The tab list already says the name, but a content area that opened
+  // without a heading looked like a page starting from its middle.
   function head(pane, title, desc) {
     const box = el("div", "pane-head");
     box.append(el("h2", "pane-title", t(title)));
@@ -922,8 +925,8 @@ const Settings = (() => {
   }
 
   function field(label, hint, control) {
-    // Etiket ve ipucu görüntüleme anında çevriliyor: sunucudan ya da
-    // değişkenden gelen metin eşleşmez ve olduğu gibi kalır.
+    // The label and hint are translated at display time: text arriving from
+    // the server or a variable matches nothing and stays as it is.
     const row = el("label", "field");
     const head = el("span", "field-label", t(label));
     row.append(head, control);
@@ -957,7 +960,7 @@ const Settings = (() => {
     return node;
   }
 
-  // Yamaya iç içe bir alan yazar: patch.model.max_tokens gibi.
+  // Writes a nested field into the patch: patch.model.max_tokens and the like.
   function set(section, key, value) {
     patch[section] = patch[section] || {};
     patch[section][key] = value;
@@ -1007,30 +1010,32 @@ const Settings = (() => {
       card.addEventListener("click", () => {
         if (entry.id === chosen()) return;
         patch.provider = entry.id;
-        // Adres ve anahtar değişkeni sağlayıcıyla birlikte gidiyor; sunucu
-        // da aynısını yapıyor ama kullanıcı sonucu hemen görmeli.
+        // The address and key variable travel with the provider; the server
+        // does the same, but the user should see the result immediately.
         //
-        // Ad da düşüyor: bir sağlayıcının modeli ötekinde yok. Eskisi
-        // kalınca kullanıcı yeni sağlayıcıyı seçiyor ama kaydedilen ad
-        // eskisi oluyor ve "seçtiğim model yüklenmiyor" oluyordu. Yeni
-        // katalog gelince ilki kendiliğinden seçiliyor.
+        // The name drops too: one provider's model does not exist on
+        // another. When the old one lingered, the user picked the new
+        // provider but the saved name stayed old — "the model I picked
+        // won't load". Once the new catalog arrives, its first entry is
+        // selected automatically.
         patch.model = { ...(patch.model || {}), base_url: entry.base_url,
                         provider: entry.provider, api_key_env: entry.env,
                         name: "" };
         drawModel();
-        saveSoon(900);   // katalog ilk modeli yazana kadar küçük pay
+        saveSoon(900);   // a small allowance until the catalog writes the first model
       });
       picker.append(card);
     }
 
     pane.append(field("Sağlayıcı", "", picker));
 
-    // SIRA BİLİNÇLİ: sağlayıcı → anahtar → adres → model. Kurulum sırası
-    // budur; model listesi zaten sağlayıcıdan/anahtardan geliyor. Eski
-    // düzende model üstteydi ve kullanıcı anahtarı bulamadan model seçmeye
-    // çalışıyordu ("provider'ı seçene kadar canım çıktı" — canlı yara, 02.09).
+    // THE ORDER IS DELIBERATE: provider → key → address → model. That is
+    // the setup order; the model list comes from the provider/key anyway.
+    // The old layout put the model on top and the user tried to pick a model
+    // before finding the key ("provider'ı seçene kadar canım çıktı" — live
+    // wound, 02.09).
 
-    // API anahtarı: yalnız seçili sağlayıcı (ayrı Anahtarlar sayfası yok).
+    // API key: only the selected provider (no separate Keys page).
     const pMeta = chosenProvider();
     const authKey = el("input", "input-text");
     authKey.type = "password";
@@ -1045,7 +1050,7 @@ const Settings = (() => {
       const v = authKey.value;
       const env = keyVar || "OPENAI_API_KEY";
       patch.keys = patch.keys || {};
-      // Boş = silme isteği (keys.json'dan düşer).
+      // Empty = a delete request (drops out of keys.json).
       patch.keys[env] = v;
       if (!((patch.model || {}).api_key_env ?? state.model.api_key_env)) {
         set("model", "api_key_env", env);
@@ -1056,7 +1061,7 @@ const Settings = (() => {
     const keyLabel = pMeta && pMeta.label
       ? (pMeta.label + (keyKnown ? " ✓" : ""))
       : t("API anahtarı");
-    // Yerel sunucuda anahtar gerekmiyor: alanı göstermek yerine bunu SÖYLE.
+    // A local server needs no key: instead of showing the field, SAY that.
     if (isLocalBase() && !(pMeta && pMeta.env)) {
       pane.append(field(t("API anahtarı"),
         "Yerel sunucuda anahtar gerekmiyor.",
@@ -1066,11 +1071,11 @@ const Settings = (() => {
       if (pMeta && pMeta.env && !isLocalBase()) {
         const note = authKey.parentElement && authKey.parentElement.querySelector(".field-hint");
         if (note) {
-          const kabuk = pMeta.from_env
+          const fromShell = pMeta.from_env
             ? (" · " + t("Kabuk ortamından geliyor"))
             : "";
           note.textContent = t(apiKeyHintKey())
-            + " · " + (pMeta.hint || "") + " · " + pMeta.env + kabuk;
+            + " · " + (pMeta.hint || "") + " · " + pMeta.env + fromShell;
         }
       } else if (pMeta && pMeta.from_env) {
         const note = authKey.parentElement && authKey.parentElement.querySelector(".field-hint");
@@ -1080,8 +1085,9 @@ const Settings = (() => {
       }
     }
 
-    // Adres (base URL): preset yalnızca başlangıç. Özel bir port, uzak bir
-    // sunucu ya da başka bir OpenAI-uyumlu uç için elle düzenlenebilir.
+    // Address (base URL): the preset is only a starting point. It can be
+    // edited by hand for a custom port, a remote server or another
+    // OpenAI-compatible endpoint.
     const url = applyOnChange(text((patch.model || {}).base_url ?? state.model.base_url ?? "",
                      (v) => set("model", "base_url", v.trim())));
     url.placeholder = isLocalBase()
@@ -1089,9 +1095,9 @@ const Settings = (() => {
       : t("https://…");
     pane.append(field("Adres (base URL)", baseUrlHint(), url));
 
-    // Kimliği elle yazdırmak hataya davetiye: "qwen3.5-9b" ile
-    // "qwen/qwen3.5-9b" arasındaki fark 404 demek ve hata ancak ilk
-    // mesajda görünüyor. Sunucu listeyi veriyorsa seçtiriyoruz.
+    // Making the user type the id invites mistakes: the difference between
+    // "qwen3.5-9b" and "qwen/qwen3.5-9b" is a 404, and the error shows only
+    // on the first message. If the server lists models, we let them pick.
     const slot = el("div", "model-pick");
     slot.append(applyOnChange(text((patch.model || {}).name ?? state.model.name,
                      (v) => set("model", "name", v.trim()))));
@@ -1102,26 +1108,26 @@ const Settings = (() => {
     ));
     fillModels(slot);
 
-    // Yedek model: asıl model KALICI olarak susarsa (kredi bitti, kimlik
-    // geçersiz) tur ölmek yerine bununla sürüyor. Boş bırakmak bugünkü
-    // davranış — hata olduğu gibi yüzeye çıkar. Geçici hatalar buraya hiç
-    // uğramıyor; onlar zaten yeniden deneniyor.
-    const yedek = applyOnChange(text((patch.model || {}).fallback_model ?? state.model.fallback_model ?? "",
+    // Fallback model: if the main model goes PERMANENTLY silent (out of
+    // credit, invalid id) the turn continues with this instead of dying.
+    // Leaving it empty is today's behavior — the error surfaces as-is.
+    // Transient errors never come here; they are already retried.
+    const fallback = applyOnChange(text((patch.model || {}).fallback_model ?? state.model.fallback_model ?? "",
                        (v) => set("model", "fallback_model", v.trim())));
-    yedek.placeholder = t("boş — yedek yok");
-    yedek.setAttribute("list", "yedek-modeller");
-    const yedekListe = el("datalist");
-    yedekListe.id = "yedek-modeller";
-    const yedekAlan = field(
+    fallback.placeholder = t("boş — yedek yok");
+    fallback.setAttribute("list", "yedek-modeller");
+    const fallbackList = el("datalist");
+    fallbackList.id = "yedek-modeller";
+    const fallbackField = field(
       "Yedek model",
       "Asıl model kalıcı olarak yanıt vermezse (kredi bitti, kimlik " +
       "geçersiz) tur burada sürer ve sohbete tek satır düşer. Geçici " +
       "hatalar zaten yeniden deneniyor — yedeğe düşmezler.",
-      yedek
+      fallback
     );
-    yedekAlan.append(yedekListe);
-    pane.append(yedekAlan);
-    fillFallback(yedekListe);
+    fallbackField.append(fallbackList);
+    pane.append(fallbackField);
+    fillFallback(fallbackList);
 
     const effort = el("select", "input-text");
     for (const level of ["low", "medium", "high", "xhigh", "max"]) {
@@ -1148,7 +1154,7 @@ const Settings = (() => {
       thinkingBox
     ));
 
-    // Bağlam — ayrı sekme yok; seçili modelin penceresi burada.
+    // Context — no separate tab; the selected model's window lives here.
     pane.append(el("h3", "pane-sub", t("Bağlam")));
     const window_ = applyOnChange(number((patch.model || {}).context_window ?? state.model.context_window,
                            (v) => set("model", "context_window", v)));
@@ -1160,7 +1166,7 @@ const Settings = (() => {
       let answer = {};
       try {
         answer = await (await fetch("/api/detect-window", { method: "POST" })).json();
-      } catch { /* aşağıda */ }
+      } catch { /* handled below */ }
       detect.textContent = t("Algıla");
       const got = adoptAnswer(answer);
       if (got) {
@@ -1197,9 +1203,9 @@ const Settings = (() => {
       "Bağlam penceresi katalogdan otomatik dolar; Algıla elle yenilemedir.")));
   }
 
-  // Yedek model alanının önerileri. Aynı katalog, ama seçim ZORUNLU değil:
-  // alan serbest metin kalıyor — sunucu liste vermeyen bir uçta da yedek
-  // yazılabilmeli.
+  // Suggestions for the fallback field. The same catalog, but choosing is
+  // NOT mandatory: the field stays free text — a fallback must be writable
+  // even against an endpoint that lists nothing.
   async function fillFallback(listNode) {
     let answer = {};
     const pending = patch.model || {};
@@ -1214,11 +1220,11 @@ const Settings = (() => {
         }),
       })).json();
     } catch { return; }
-    const asil = pending.name ?? state.model.name;
+    const mainName = pending.name ?? state.model.name;
     for (const m of (answer.models || []).slice(0, 400)) {
-      // Asıl modeli yedek diye önermek anlamsız: aynı model iki kez
-      // denenmiş olurdu.
-      if (m.id === asil) continue;
+      // Suggesting the main model as its own fallback is pointless: the
+      // same model would be tried twice.
+      if (m.id === mainName) continue;
       const option = el("option");
       option.value = m.id;
       listNode.append(option);
@@ -1227,9 +1233,9 @@ const Settings = (() => {
 
   async function fillModels(slot) {
     let answer = {};
-    // Henüz kaydedilmemiş sağlayıcı da sorulmalı: sağlayıcıya tıklandığında
-    // değişiklik kaydedilmemiş oluyor ve katalog eski sunucudan geliyordu —
-    // LM Studio'ya geçip OpenRouter'ın listesini görmek gibi.
+    // The not-yet-saved provider must be asked too: when a provider is
+    // clicked the change is unsaved and the catalog came from the old
+    // server — like switching to LM Studio and seeing OpenRouter's list.
     const pending = patch.model || {};
     try {
       answer = await (await fetch("/api/models", {
@@ -1241,12 +1247,12 @@ const Settings = (() => {
           api_key_env: pending.api_key_env ?? state.model.api_key_env,
         }),
       })).json();
-    } catch { /* aşağıda ele alınıyor */ }
+    } catch { /* handled below */ }
 
     const hint = slot.parentElement.querySelector(".field-hint");
     const found = answer.models || [];
     if (!found.length) {
-      // Sunucu listeyi vermiyorsa elle yazma yolu açık kalıyor.
+      // If the server lists nothing, the manual-typing path stays open.
       if (hint) {
         const why = answer.error ? (" — " + answer.error) : "";
         const base = ((patch.model || {}).base_url ?? state.model.base_url)
@@ -1258,22 +1264,23 @@ const Settings = (() => {
     }
 
     let chosen = (patch.model || {}).name ?? state.model.name;
-    // Sağlayıcı yeni değiştiyse ad boş: kataloğun ilki seçiliyor. Boş ad
-    // kaydetmek çalışmayan bir yapılandırma demek.
+    // If the provider just changed, the name is empty: the catalog's first
+    // entry is picked. Saving an empty name means a broken configuration.
     if (!chosen) {
       chosen = found[0].id;
       set("model", "name", chosen);
       set("model", "can_think", null);
       set("model", "vision", null);
       if (chosen !== "oto") adoptCaps(found[0]);
-      saveSoon(200);   // sağlayıcı değişiminin ikinci yarısı: ad da gitsin
+      saveSoon(200);   // second half of the provider switch: send the name too
     }
-    // Native <select> yerine ARAMA + TIKLANABİLİR LİSTE. Neden: 400+ modelde
-    // native select süzülünce ilk seçenek kendiliğinden "seçili" gelir ama
-    // "change" olayı atmaz (zaten seçili), üstüne tıklamak da bir şey
-    // değiştirmez → kullanıcı aradığı modeli görür ama SEÇEMEZ, elle yazmak
-    // zorunda kalırdı ("burada bozulmuş, seçemiyorum modeli"). Liste satırı
-    // ise apaçık bir tıklama: seçileni set eder, işaretler, ipucunu günceller.
+    // SEARCH + CLICKABLE LIST instead of a native <select>. Why: with 400+
+    // models a filtered native select shows its first option as "selected"
+    // but fires no "change" event (already selected), and clicking it
+    // changes nothing → the user sees the model they want but CANNOT pick
+    // it and would have to type by hand ("burada bozulmuş, seçemiyorum
+    // modeli"). A list row is an unambiguous click: it sets the choice,
+    // marks it, updates the hint.
     let selected = chosen;
 
     const search = el("input", "input-text");
@@ -1287,20 +1294,20 @@ const Settings = (() => {
     manual.textContent = t("Kimliği elle yaz…");
     manual.addEventListener("click", () => {
       slot.textContent = "";
-      const t = applyOnChange(text(selected, (v) => set("model", "name", v.trim())));
-      slot.append(t);
-      t.focus();
+      const manualInput = applyOnChange(text(selected, (v) => set("model", "name", v.trim())));
+      slot.append(manualInput);
+      manualInput.focus();
     });
 
     function pick(id) {
       selected = id;
-      set("model", "name", id);   // seçim beklemedeki yapılandırmaya yazılır
+      set("model", "name", id);   // the choice is written into the pending config
       set("model", "can_think", null);
       set("model", "vision", null);
       if (id !== "oto") adoptCaps(found.find((x) => x.id === id));
-      saveSoon();                 // ve ANINDA uygulanır — Kaydet'e inmek yok
+      saveSoon();                 // and applied INSTANTLY — no scrolling to Save
       note(id);
-      renderList();               // işareti taşı
+      renderList();               // move the mark
     }
 
     function renderList() {
@@ -1316,7 +1323,7 @@ const Settings = (() => {
       let shown = 0;
       let selVisible = false;
       for (const m of matched) {
-        if (shown >= 200) {   // 400+ modelde DOM'u şişirme; arama daraltıyor
+        if (shown >= 200) {   // don't bloat the DOM at 400+ models; search narrows
           list.append(el("div", "model-more",
             (matched.length - 200) + t(" model daha — aramayı daralt")));
           break;
@@ -1329,7 +1336,7 @@ const Settings = (() => {
         if (m.name && m.name !== m.id) row.append(el("span", "model-row-note", m.name));
         row.addEventListener("click", () => pick(m.id));
         list.append(row);
-        // Seçili satır görünür değilse (uzun listede aşağıda) ona kaydır.
+        // If the selected row is out of view (far down a long list), scroll to it.
         if (on) requestAnimationFrame(() => row.scrollIntoView({ block: "nearest" }));
         shown++;
       }
@@ -1342,14 +1349,15 @@ const Settings = (() => {
     renderList();
     note(selected);
 
-    // Modelin ne yapabildiği seçimin altında yazıyor: görüntü kabul etmeyen
-    // bir modelde kamerayı açmanın anlamı yok. Katalogda yoksa uydurulmaz.
+    // What the model can do is written under the choice: opening the camera
+    // makes no sense on a model that accepts no images. If the catalog does
+    // not say, nothing is invented.
     function note(id) {
       if (!hint) return;
-      // Oto: gerçek bir model kimliği değil, ücretsiz havuzla çalışan kip.
-      // Not YALNIZ OpenRouter'da (Oto zaten yalnız orada listeleniyor).
+      // Oto: not a real model id but a mode running on the free pool.
+      // The note shows ONLY on OpenRouter (Oto is only listed there anyway).
       if (id === "oto" && (patch.provider || state.provider) === "openrouter") {
-        hint.textContent = t(OTO_NOTU);
+        hint.textContent = t(AUTO_MODE_NOTE);
         return;
       }
       const m = found.find((x) => x.id === id);
@@ -1374,8 +1382,8 @@ const Settings = (() => {
     }
   }
 
-  // Katalog ya da Algıla yanıtındaki bilinen yetenekler. Eksik alan
-  // dokunulmaz — sağlayıcı söylemediyse varsayılan uydurulmaz.
+  // Known capabilities from the catalog or the Detect answer. A missing
+  // field is left alone — if the provider did not say, no default is invented.
   function adoptCaps(m) {
     if (!m) return;
     adoptAnswer({
@@ -1407,7 +1415,8 @@ const Settings = (() => {
     return got;
   }
 
-  // Anahtarlar / Bağlam ayrı sekme değil: seçili sağlayıcıyla Model'de.
+  // Keys / Context are not separate tabs: they live in Model with the
+  // selected provider.
 
   async function loadRules(box, body) {
     let answer = {};
@@ -1469,10 +1478,10 @@ const Settings = (() => {
     }
   }
 
-  // --- posta ------------------------------------------------------------
+  // --- mail -------------------------------------------------------------
   //
-  // Kimlik bilgileri API anahtarlariyla ayni dosyada duruyor ve bu sayfaya
-  // geri gonderilmiyor.
+  // Credentials live in the same file as the API keys and are never sent
+  // back to this page.
 
   function drawMail() {
     const pane = panes.mail;
@@ -1502,10 +1511,10 @@ const Settings = (() => {
       "gorunen bir talimat varsa uygulanmiyor, sana soyleniyor.")));
   }
 
-  // --- gorevler ---------------------------------------------------------
+  // --- tasks ------------------------------------------------------------
   //
-  // Ajanin kurdugu bir otomasyonun kullanicidan gizli calismasi kabul
-  // edilemez: ne oldugu, ne zaman calistigi ve en son ne oldugu burada.
+  // An automation set up by the agent must not run hidden from the user:
+  // what it is, when it runs and what last happened live here.
 
   async function loadTasks(body) {
     let answer = {};
@@ -1533,7 +1542,7 @@ const Settings = (() => {
     openMain.type = "button";
     openMain.addEventListener("click", () => {
       if (window.JobsPanel) JobsPanel.open();
-      // Ayarlar panelini kapat
+      // Close the settings panel
       const settings = document.getElementById("settings");
       if (settings) settings.hidden = true;
     });
@@ -1541,14 +1550,14 @@ const Settings = (() => {
 
     const list = el("div", "rows");
     for (const task of tasks) {
-      const kosuyor = task.last_status === "koşuyor";
+      const running = task.last_status === "koşuyor";
       const line = row({
         name: task.title,
         desc: task.prompt,
-        meta: kosuyor
+        meta: running
           ? t("Bu görev şu an çalışıyor")
           : (task.enabled ? task.describe + " · " + short(task.next_run) : t("durdu")),
-        state: kosuyor ? "live" : (task.enabled ? "" : "off"),
+        state: running ? "live" : (task.enabled ? "" : "off"),
         click: true,
         acts: [
           [t("Çalıştır"), () => loadTasks({ action: "run", id: task.id })],
@@ -1559,28 +1568,28 @@ const Settings = (() => {
       });
       line.addEventListener("click", () => detail(line, (box) => {
         box.append(editTaskForm(task));
-        const durum = el("p", "job-prompt dim");
-        const parcalar = [];
-        if (kosuyor) parcalar.push(t("Bu görev şu an çalışıyor"));
-        else if (task.enabled) parcalar.push(t("Sırada: ") + short(task.next_run));
-        else parcalar.push(t("Durduruldu"));
-        if (task.last_run) parcalar.push(t("Son koşu: ") + short(task.last_run));
+        const statusLine = el("p", "job-prompt dim");
+        const parts = [];
+        if (running) parts.push(t("Bu görev şu an çalışıyor"));
+        else if (task.enabled) parts.push(t("Sırada: ") + short(task.next_run));
+        else parts.push(t("Durduruldu"));
+        if (task.last_run) parts.push(t("Son koşu: ") + short(task.last_run));
         if (task.last_status && task.last_status !== "koşuyor") {
-          parcalar.push(t("Son: ") + task.last_status);
+          parts.push(t("Son: ") + task.last_status);
         }
-        durum.textContent = parcalar.join("  ·  ");
-        box.append(durum);
+        statusLine.textContent = parts.join("  ·  ");
+        box.append(statusLine);
         if (task.last_child_id) {
-          const ac = el("button", "job-act", t("Raporu aç"));
-          ac.type = "button";
-          ac.addEventListener("click", (ev) => {
+          const openReport = el("button", "job-act", t("Raporu aç"));
+          openReport.type = "button";
+          openReport.addEventListener("click", (ev) => {
             ev.stopPropagation();
             if (typeof Viewer !== "undefined" && Viewer.page) {
               Viewer.page("/gorev-rapor/" + encodeURIComponent(task.last_child_id) + "/",
                           task.title || task.last_child_id);
             }
           });
-          box.append(ac);
+          box.append(openReport);
         }
       }, "edit"));
       list.append(line);
@@ -1605,7 +1614,7 @@ const Settings = (() => {
     return node;
   }
 
-  // Uzun ISO damgasi okunmuyor; gun ve saat yeter.
+  // A long ISO stamp is unreadable; day and time suffice.
   function short(stamp) {
     if (!stamp) return "—";
     const when = new Date(stamp);
@@ -1615,7 +1624,7 @@ const Settings = (() => {
   }
 
   function newTaskForm() {
-    // Satir detayinin icine gomuluyor; kendi kart cercevesi tasimiyor.
+    // Embedded inside the row detail; carries no card frame of its own.
     const box = el("div");
     const draft = { action: "add", kind: "every", every_s: 3600, at: "09:00" };
 
@@ -1701,10 +1710,10 @@ const Settings = (() => {
     return box;
   }
 
-  // --- ses --------------------------------------------------------------
+  // --- voice ------------------------------------------------------------
   //
-  // Isletim sisteminin kendi sentezleyicisi robot gibi konusuyor; buradaki
-  // sesler sinirsel ve gercek insan tonunda. Bedeli internet.
+  // The operating system's own synthesizer talks like a robot; the voices
+  // here are neural, with a real human tone. The price is internet.
 
   function drawVoice() {
     const pane = panes.voice;
@@ -1712,8 +1721,9 @@ const Settings = (() => {
     head(pane, "Ses", "Dornick'in sesi: açık/kapalı, ton ve karakter.");
 
     if (!state.voice.available) {
-      // Kurulu duzende pip onermek anlamsiz: paket kuruluma dahil,
-      // yoklugu eksik/bozuk kurulum demek — sihirbaz onarir.
+      // Suggesting pip on an installed build is pointless: the package is
+      // part of the install; its absence means a broken/incomplete install —
+      // the wizard repairs it.
       pane.append(el("p", "pane-note bad", t(state.installed
         ? "Ses paketi bu kurulumda eksik gorunuyor. Kurulum sihirbazini yeniden calistirmak eksigi onarir."
         : "Ses paketi kurulu degil. Kurmak icin: pip install \"Dornick[voice]\"")));
@@ -1747,10 +1757,10 @@ const Settings = (() => {
            (v) => set("voice", "pitch", v.trim()), "+0Hz")
     ));
 
-    // Karakter: sentezleyici gercek bir insan sesi uretiyor ve tek basina
-    // duz duruyor. Turkce seslerde SSML duygu stili de yok (hepsi
-    // "General"), yani uretim tarafindan alinabilecek bir sey kalmiyor.
-    // Bu katman sesin ustune biniyor ve tarayicida uygulaniyor.
+    // Character: the synthesizer produces a real human voice and on its own
+    // it sounds flat. Turkish voices have no SSML emotion styles either (all
+    // "General"), so nothing is left to take from the generation side. This
+    // layer rides on top of the voice and is applied in the browser.
     const current = (patch.voice || {}).character ?? state.voice.character ?? 0;
     const slider = el("input");
     slider.type = "range";
@@ -1798,7 +1808,7 @@ const Settings = (() => {
     let answer = {};
     try {
       answer = await (await fetch("/api/voices", { method: "POST" })).json();
-    } catch { /* asagida ele aliniyor */ }
+    } catch { /* handled below */ }
 
     const list = answer.voices || [];
     const hint = picker.parentElement.querySelector(".field-hint");
@@ -1817,11 +1827,11 @@ const Settings = (() => {
     }
   }
 
-  // --- mikrofon ---------------------------------------------------------
+  // --- microphone -------------------------------------------------------
   //
-  // Tanima sunucuda ve yerel: ses bilgisayardan cikmiyor. Tarayicinin kendi
-  // SpeechRecognition API'si kullanilmiyor — WebView2'de yok, oldugu yerde
-  // de sesi Google'a gonderiyor.
+  // Recognition is on the server and local: audio never leaves the computer.
+  // The browser's own SpeechRecognition API is not used — WebView2 lacks it,
+  // and where it exists it sends the audio to Google.
 
   function drawHearing() {
     const pane = panes.hearing;
@@ -1829,15 +1839,17 @@ const Settings = (() => {
     head(pane, "Mikrofon", "Dinleme ve uyandırma sözü.");
 
     if (!state.listen.available) {
-      // Kuruluda dogru oneri sihirbazdaki bilesen — pip degil.
+      // On an installed build the right suggestion is the wizard component —
+      // not pip.
       pane.append(el("p", "pane-note bad", t(state.installed
         ? "Dinleme bu kuruluma dahil edilmemis. Kurulum sihirbazini yeniden calistirip 'Dinleme (mikrofon)' bilesenini isaretleyerek ekleyebilirsin."
         : "Tanima paketi kurulu degil. Kurmak icin: pip install \"Dornick[listen]\"")));
       return;
     }
 
-    // Makinede mikrofon yoksa düğmeyi açılabilir göstermek, çalışmayan
-    // bir şeye tıklatmak demek — ve neden çalışmadığı hiçbir yerde yazmaz.
+    // Without a microphone on the machine, showing the switch as usable
+    // means letting the user click something that cannot work — with the
+    // reason written nowhere.
     const micBox = toggleBox((patch.listen || {}).enabled ?? state.listen.enabled,
                              (v) => set("listen", "enabled", v));
     const hasMic = (state.hardware || {}).microphone !== false;
@@ -1908,10 +1920,11 @@ const Settings = (() => {
       "tanima her zaman dogru degil ve duzeltme sansin olmali.")));
   }
 
-  // --- izlenen kameralar ------------------------------------------------
+  // --- watched cameras --------------------------------------------------
   //
-  // Model her kareye bakmiyor: hareket yerelde olculuyor ve yalnizca bir sey
-  // degistiginde soru soruluyor. Bos bir odada saatlerce hicbir istek gitmiyor.
+  // The model does not look at every frame: motion is measured locally and a
+  // question is asked only when something changes. In an empty room no
+  // request goes out for hours.
 
   async function loadCameras(body) {
     let answer = {};
@@ -1992,12 +2005,12 @@ const Settings = (() => {
     };
 
     box.append(field("Yeni kamera", "", text("", (v) => (draft.name = v), t("Giris kapisi"))));
-    const tur = el("select", "field-input");
+    const kindSel = el("select", "field-input");
     for (const [v, l] of [["usb", t("Bilgisayar")], ["rtsp", "RTSP (IP)"], ["http", "HTTP / MJPEG"]]) {
-      const o = el("option", null, l); o.value = v; tur.append(o);
+      const o = el("option", null, l); o.value = v; kindSel.append(o);
     }
-    tur.addEventListener("change", () => { draft.kind = tur.value; });
-    box.append(field("Tür", "", tur));
+    kindSel.addEventListener("change", () => { draft.kind = kindSel.value; });
+    box.append(field("Tür", "", kindSel));
     box.append(field("Kaynak / indeks", "Bilgisayar kamerası için 0 · ağ için host aşağıda",
                      text("0", (v) => (draft.source = v), "0")));
     box.append(field("Host", "IP veya ad (RTSP/HTTP)",
@@ -2008,11 +2021,11 @@ const Settings = (() => {
       draft.path = v.includes("/") ? "/" + v.split("/").slice(1).join("/") : "";
     }, "554/stream")));
     box.append(field("Kullanıcı", "", text("", (v) => (draft.user = v), "admin")));
-    const sifre = el("input", "field-input");
-    sifre.type = "password";
-    sifre.placeholder = t("şifre");
-    sifre.addEventListener("input", () => { draft.password = sifre.value; });
-    box.append(field("Şifre", "Yalnız bu makinede cameras.json içinde durur", sifre));
+    const passInput = el("input", "field-input");
+    passInput.type = "password";
+    passInput.placeholder = t("şifre");
+    passInput.addEventListener("input", () => { draft.password = passInput.value; });
+    box.append(field("Şifre", "Yalnız bu makinede cameras.json içinde durur", passInput));
     box.append(field("Ne sorsun", "Hareket goruldugunde modele gidecek soru",
                      text("", (v) => (draft.ask = v), t("Kapi acik kalmis mi bak"))));
 
@@ -2033,14 +2046,14 @@ const Settings = (() => {
     return box;
   }
 
-  // --- cihazlar ---------------------------------------------------------
+  // --- devices ----------------------------------------------------------
   //
-  // Bir PLC, bir kamera, bir seri porttaki kol, bir MCP sunucusu. Hepsi
-  // birbirinden çok farklı ama üç şeyleri ortak: ne oldukları, nasıl
-  // bağlanılacağı, neresine dokunulacağı. Biçim yalnızca onu sabitliyor.
+  // A PLC, a camera, an arm on a serial port, an MCP server. All very
+  // different, but three things in common: what they are, how to connect,
+  // where to touch. The format pins down only that.
   //
-  // Ajan da aynı dosyalara yazıyor (`device` aracı). İki ayrı depo tutmak,
-  // buradan eklenen bir PLC'yi ajanın görmemesi demekti.
+  // The agent writes to the same files (the `device` tool). Two separate
+  // stores would mean the agent never sees a PLC added from here.
 
   const DEVICE_TEMPLATE = {
     id: "kapi-plc",
@@ -2120,7 +2133,8 @@ const Settings = (() => {
         [t("Sil"), () => loadDevices({ action: "remove", id: device.id }), true],
       ],
     });
-    // Satira tiklayinca: baglanti, adresler, bagli yetenekler — asil bilgi.
+    // Clicking the row: connection, addresses, attached skills — the real
+    // information.
     line.addEventListener("click", () => detail(line, (box) => {
       if (where) box.append(el("p", "job-prompt dim", where));
       for (const point of device.points || []) {
@@ -2139,11 +2153,12 @@ const Settings = (() => {
     return line;
   }
 
-  // Ham JSON düzenleyici. `link` ve `points` bilerek şemasız — her
-  // protokolün kendi alanları var ve hepsini alan alan forma dökmek ya
-  // her cihaza uymayan bir kalıp ya da otuz satırlık bir form üretiyordu.
+  // Raw JSON editor. `link` and `points` are deliberately schema-less —
+  // every protocol has its own fields, and turning them all into form
+  // fields produced either a template that fits no device or a
+  // thirty-line form.
   function jsonEditor(device) {
-    // Satir detayinin icine gomuluyor; kendi kart cercevesi tasimiyor.
+    // Embedded inside the row detail; carries no card frame of its own.
     const box = el("div");
     const area = el("textarea", "input-text input-area");
     area.rows = 12;
@@ -2166,12 +2181,12 @@ const Settings = (() => {
     return box;
   }
 
-  // --- yetenekler -------------------------------------------------------
+  // --- skills -----------------------------------------------------------
   //
-  // Ajanın kendine yazdığı betikler. Buradan silmek gerçekten siliyor:
-  // işe yaramayan, yarım kalmış ya da ikinci kez yazılmış bir yetenek
-  // (aynı işi yapan `modbus_oku` ve `modbus_read` gibi) birikiyor ve her
-  // turda araç listesinde yer kaplıyor.
+  // The scripts the agent writes for itself. Deleting here really deletes:
+  // a useless, half-finished or twice-written skill (`modbus_oku` and
+  // `modbus_read` doing the same job) piles up and takes space in the tool
+  // list every turn.
 
   async function loadSkills(body) {
     let answer = {};
@@ -2188,11 +2203,11 @@ const Settings = (() => {
     }
     if (answer.ok === false) {
       say(answer.error || t("Yetenek kaydedilemedi"), true);
-      // Listeyi yine çiz — kullanıcı bozulmuş hali görsün.
+      // Draw the list anyway — the user should see the broken state.
     }
     drawSkills(answer);
     if (typeof loadOrgans === "function") loadOrgans();
-    // Oluştur → hemen kod editörü: ayrı "Düzenle" adımı yok.
+    // Create → straight into the code editor: no separate "Edit" step.
     if (body && body.action === "new" && answer.ok !== false) {
       const name = String(body.name || "").trim().toLowerCase();
       const line = [...panes.skills.querySelectorAll(".row")].find((r) => {
@@ -2203,11 +2218,12 @@ const Settings = (() => {
     }
   }
 
-  // --- kompakt satirlar -------------------------------------------------
+  // --- compact rows -----------------------------------------------------
   //
-  // Kart yerine satir: kartlar uc kayitta guzeldi, on bes yetenekte sayfa
-  // yonetilemez bir duvara donuyor. Bir kayit tek satir; detay tiklayinca
-  // satirin altina acilir — sayfa yalnizca bakilan seye yer harcar.
+  // Rows instead of cards: cards were lovely with three records, at fifteen
+  // skills the page becomes an unmanageable wall. One record is one row;
+  // the detail opens under the row on click — the page spends space only on
+  // what is being looked at.
 
   function row(opts) {
     const line = el("div", "row" + (opts.click ? " click" : "")
@@ -2232,8 +2248,9 @@ const Settings = (() => {
     return line;
   }
 
-  // Satirin altindaki detay kutusu. Ayni tur detaya ikinci tiklama kapatir;
-  // farkli tur (bilgi acikken Duzenle gibi) oncekinin yerine gecer.
+  // The detail box under a row. A second click on the same kind of detail
+  // closes it; a different kind (Edit while info is open) replaces the
+  // previous one.
   function detail(line, build, kind) {
     const open = line.nextElementSibling;
     const opened = open && open.classList.contains("row-detail");
@@ -2336,9 +2353,9 @@ const Settings = (() => {
       "geri gelmez. Dornick da iş sırasında kendine yetenek yazar.")));
   }
 
-  // Skill detayı (Claude Code kalıbı): satıra tıklayınca önce KART —
-  // ad, dosya, tam açıklama (docstring) ve eylemler. Ham kod duvarı
-  // ancak "Kodu göster" denince açılır; Kaydet anında yükler.
+  // Skill detail (the Claude Code pattern): clicking a row shows the CARD
+  // first — name, file, full description (docstring) and actions. The raw
+  // code wall opens only on "Show code"; Save loads instantly.
   async function editSkill(name, line, meta) {
     const open = line.nextElementSibling;
     if (open && open.classList.contains("row-detail") && open.dataset.kind !== "confirm") {
@@ -2358,15 +2375,15 @@ const Settings = (() => {
     if (!answer.ok) { say(answer.error || t("Dosya okunamadı"), true); return; }
 
     detail(line, (box) => {
-      const kart = el("div", "skill-card");
-      const bas = el("div", "skill-card-head");
-      bas.append(el("b", "skill-card-name", name));
-      if (meta && meta.path) bas.append(el("span", "skill-card-path", meta.path));
-      kart.append(bas);
-      const aciklama = (meta && meta.description) || "";
-      kart.append(el("p", "skill-card-desc" + (aciklama ? "" : " empty"),
-        aciklama || t("Açıklama yok — dosyanın başındaki docstring buraya düşer.")));
-      box.append(kart);
+      const card = el("div", "skill-card");
+      const headEl = el("div", "skill-card-head");
+      headEl.append(el("b", "skill-card-name", name));
+      if (meta && meta.path) headEl.append(el("span", "skill-card-path", meta.path));
+      card.append(headEl);
+      const desc = (meta && meta.description) || "";
+      card.append(el("p", "skill-card-desc" + (desc ? "" : " empty"),
+        desc || t("Açıklama yok — dosyanın başındaki docstring buraya düşer.")));
+      box.append(card);
 
       const area = el("textarea", "input-text input-area");
       area.rows = 16;
@@ -2378,31 +2395,31 @@ const Settings = (() => {
       keep.classList.add("add");
       keep.hidden = true;
 
-      const goster = action(t("Kodu göster"), () => {
-        const acik = area.hidden;
-        area.hidden = !acik;
-        keep.hidden = !acik;
-        goster.textContent = acik ? t("Kodu gizle") : t("Kodu göster");
-        if (acik) area.focus();
+      const showBtn = action(t("Kodu göster"), () => {
+        const opening = area.hidden;
+        area.hidden = !opening;
+        keep.hidden = !opening;
+        showBtn.textContent = opening ? t("Kodu gizle") : t("Kodu göster");
+        if (opening) area.focus();
       });
-      box.append(goster, area, keep);
+      box.append(showBtn, area, keep);
     }, "edit");
   }
 
-  // --- bağlantılar (MCP) ------------------------------------------------
+  // --- connections (MCP) ------------------------------------------------
   //
-  // Dış araç sunucuları. Biçim Claude Code'un `mcpServers` biçimiyle aynı:
-  // başka bir istemci için yazılmış bir tanım buraya olduğu gibi
-  // yapıştırılabilir. Gizli değer dosyaya yazılmaz — "${AD}" yazılır,
-  // değeri Anahtarlar sekmesine girilir, bağlanırken doldurulur.
+  // External tool servers. The format matches Claude Code's `mcpServers`: a
+  // definition written for another client can be pasted here as-is. Secrets
+  // are not written into the file — "${NAME}" is written, the value goes
+  // into the Keys tab and is filled in while connecting.
 
   async function loadConnectors(body) {
     const pane = panes.connectors;
     if (!pane.childElementCount) pane.append(el("p", "pane-note dugum-yukleniyor", t("Yükleniyor…")));
-    if (body) say("Bağlanılıyor…");   // npx ilk seferde paket indirebiliyor
+    if (body) say("Bağlanılıyor…");   // npx may download the package the first time
 
     if (body && body.action === "login") {
-      // Tarayıcıda bir giriş sekmesi açıldı; cevap giriş bitince gelecek.
+      // A login tab opened in the browser; the answer comes once login ends.
       say("Tarayıcıda giriş bekleniyor…");
     }
     let answer = {};
@@ -2417,8 +2434,8 @@ const Settings = (() => {
       return;
     }
     if (answer.ok === false) {
-      // Bozuk JSON kaydedilmedi; ekrandaki metne dokunma — kullanıcı
-      // düzeltip yeniden denesin.
+      // Broken JSON was not saved; leave the on-screen text alone — the
+      // user should fix it and retry.
       say(answer.error || "Kaydedilemedi", true);
       return;
     }
@@ -2427,33 +2444,34 @@ const Settings = (() => {
     if (typeof loadOrgans === "function") loadOrgans();
   }
 
-  // Dizin: resmi uzak OAuth uçları + bilinen stdio paketleri.
-  // Adres/komut ezberlenmez; kart tıklanınca forma dolar.
-  const CONN_KATALOG = [
-    { id: "github", ad: "GitHub", kind: "oauth", url: "https://api.githubcopilot.com/mcp/", cmd: "", ne: "depo, PR ve issue", cat: "is" },
-    { id: "linear", ad: "Linear", kind: "oauth", url: "https://mcp.linear.app/mcp", cmd: "", ne: "issue ve proje", cat: "is" },
-    { id: "notion", ad: "Notion", kind: "oauth", url: "https://mcp.notion.com/mcp", cmd: "", ne: "sayfa ve veritabanı", cat: "is" },
-    { id: "atlassian", ad: "Atlassian", kind: "oauth", url: "https://mcp.atlassian.com/v1/sse", cmd: "", ne: "Jira ve Confluence", cat: "is" },
-    { id: "slack", ad: "Slack", kind: "oauth", url: "https://mcp.slack.com/mcp", cmd: "", ne: "kanal ve mesaj", cat: "is" },
-    { id: "asana", ad: "Asana", kind: "oauth", url: "https://mcp.asana.com/sse", cmd: "", ne: "görev ve proje", cat: "is" },
-    { id: "sentry", ad: "Sentry", kind: "oauth", url: "https://mcp.sentry.dev/mcp", cmd: "", ne: "hata ve izleme", cat: "is" },
-    { id: "stripe", ad: "Stripe", kind: "oauth", url: "https://mcp.stripe.com", cmd: "", ne: "ödeme nesneleri", cat: "is" },
-    { id: "paypal", ad: "PayPal", kind: "oauth", url: "https://mcp.paypal.com/mcp", cmd: "", ne: "ödeme ve sipariş", cat: "is" },
-    { id: "figma", ad: "Figma", kind: "oauth", url: "https://mcp.figma.com/mcp", cmd: "", ne: "tasarım dosyaları", cat: "tasarim" },
-    { id: "supabase", ad: "Supabase", kind: "oauth", url: "https://mcp.supabase.com/mcp", cmd: "", ne: "veritabanı ve auth", cat: "bulut" },
-    { id: "vercel", ad: "Vercel", kind: "oauth", url: "https://mcp.vercel.com", cmd: "", ne: "proje ve dağıtım", cat: "bulut" },
-    { id: "huggingface", ad: "Hugging Face", kind: "oauth", url: "https://huggingface.co/mcp", cmd: "", ne: "model ve dataset", cat: "bulut" },
-    { id: "neon", ad: "Neon", kind: "oauth", url: "https://mcp.neon.tech/mcp", cmd: "", ne: "Postgres (sunucusuz)", cat: "bulut" },
-    { id: "playwright", ad: "Playwright", kind: "stdio", url: "", cmd: "npx -y @playwright/mcp@latest", ne: "tarayıcı otomasyonu", cat: "yerel" },
-    { id: "dosyalar", ad: "Dosya sistemi", kind: "stdio", url: "", cmd: "npx -y @modelcontextprotocol/server-filesystem .", ne: "yerel klasör", cat: "yerel" },
-    { id: "bellek", ad: "Bellek", kind: "stdio", url: "", cmd: "npx -y @modelcontextprotocol/server-memory", ne: "kalıcı bilgi grafiği", cat: "yerel" },
-    { id: "git", ad: "Git", kind: "stdio", url: "", cmd: "npx -y @modelcontextprotocol/server-git", ne: "status, diff, commit", cat: "yerel" },
-    { id: "context7", ad: "Context7", kind: "stdio", url: "", cmd: "npx -y @upstash/context7-mcp", ne: "kütüphane belgeleri", cat: "yerel" },
-    { id: "dusunme", ad: "Adım adım", kind: "stdio", url: "", cmd: "npx -y @modelcontextprotocol/server-sequential-thinking", ne: "zincirleme düşünme", cat: "yerel" },
-    { id: "fetch", ad: "Fetch", kind: "stdio", url: "", cmd: "npx -y @modelcontextprotocol/server-fetch", ne: "URL içeriği çek", cat: "yerel" },
+  // Directory: official remote OAuth endpoints + known stdio packages.
+  // No address/command to memorize; clicking a card fills the form.
+  const CONN_CATALOG = [
+    { id: "github", name: "GitHub", kind: "oauth", url: "https://api.githubcopilot.com/mcp/", cmd: "", what: "depo, PR ve issue", cat: "is" },
+    { id: "linear", name: "Linear", kind: "oauth", url: "https://mcp.linear.app/mcp", cmd: "", what: "issue ve proje", cat: "is" },
+    { id: "notion", name: "Notion", kind: "oauth", url: "https://mcp.notion.com/mcp", cmd: "", what: "sayfa ve veritabanı", cat: "is" },
+    { id: "atlassian", name: "Atlassian", kind: "oauth", url: "https://mcp.atlassian.com/v1/sse", cmd: "", what: "Jira ve Confluence", cat: "is" },
+    { id: "slack", name: "Slack", kind: "oauth", url: "https://mcp.slack.com/mcp", cmd: "", what: "kanal ve mesaj", cat: "is" },
+    { id: "asana", name: "Asana", kind: "oauth", url: "https://mcp.asana.com/sse", cmd: "", what: "görev ve proje", cat: "is" },
+    { id: "sentry", name: "Sentry", kind: "oauth", url: "https://mcp.sentry.dev/mcp", cmd: "", what: "hata ve izleme", cat: "is" },
+    { id: "stripe", name: "Stripe", kind: "oauth", url: "https://mcp.stripe.com", cmd: "", what: "ödeme nesneleri", cat: "is" },
+    { id: "paypal", name: "PayPal", kind: "oauth", url: "https://mcp.paypal.com/mcp", cmd: "", what: "ödeme ve sipariş", cat: "is" },
+    { id: "figma", name: "Figma", kind: "oauth", url: "https://mcp.figma.com/mcp", cmd: "", what: "tasarım dosyaları", cat: "tasarim" },
+    { id: "supabase", name: "Supabase", kind: "oauth", url: "https://mcp.supabase.com/mcp", cmd: "", what: "veritabanı ve auth", cat: "bulut" },
+    { id: "vercel", name: "Vercel", kind: "oauth", url: "https://mcp.vercel.com", cmd: "", what: "proje ve dağıtım", cat: "bulut" },
+    { id: "huggingface", name: "Hugging Face", kind: "oauth", url: "https://huggingface.co/mcp", cmd: "", what: "model ve dataset", cat: "bulut" },
+    { id: "neon", name: "Neon", kind: "oauth", url: "https://mcp.neon.tech/mcp", cmd: "", what: "Postgres (sunucusuz)", cat: "bulut" },
+    { id: "playwright", name: "Playwright", kind: "stdio", url: "", cmd: "npx -y @playwright/mcp@latest", what: "tarayıcı otomasyonu", cat: "yerel" },
+    { id: "dosyalar", name: "Dosya sistemi", kind: "stdio", url: "", cmd: "npx -y @modelcontextprotocol/server-filesystem .", what: "yerel klasör", cat: "yerel" },
+    { id: "bellek", name: "Bellek", kind: "stdio", url: "", cmd: "npx -y @modelcontextprotocol/server-memory", what: "kalıcı bilgi grafiği", cat: "yerel" },
+    { id: "git", name: "Git", kind: "stdio", url: "", cmd: "npx -y @modelcontextprotocol/server-git", what: "status, diff, commit", cat: "yerel" },
+    { id: "context7", name: "Context7", kind: "stdio", url: "", cmd: "npx -y @upstash/context7-mcp", what: "kütüphane belgeleri", cat: "yerel" },
+    { id: "dusunme", name: "Adım adım", kind: "stdio", url: "", cmd: "npx -y @modelcontextprotocol/server-sequential-thinking", what: "zincirleme düşünme", cat: "yerel" },
+    { id: "fetch", name: "Fetch", kind: "stdio", url: "", cmd: "npx -y @modelcontextprotocol/server-fetch", what: "URL içeriği çek", cat: "yerel" },
   ];
-  // Marka renkli kare + çizim: Claude / Cursor dizinindeki gibi tanınsın.
-  // Yollar Simple Icons (CC0) veya aynı okunur sadeleştirme — ağdan logo çekilmez.
+  // Brand-colored square + drawing: recognizable like the Claude / Cursor
+  // directory. Paths are Simple Icons (CC0) or an equally readable
+  // simplification — no logo is fetched from the network.
   const CONN_MARKS = {
     github: {
       bg: "#181717", fg: "#fff",
@@ -2654,38 +2672,38 @@ const Settings = (() => {
     return wrap;
   }
 
-  const connFiltre = { q: "", only: "", cat: "" };   // only: "" | "ok" | "bad"
-  let connSonVeri = null;
+  const connFilter = { q: "", only: "", cat: "" };   // only: "" | "ok" | "bad"
+  let connLastData = null;
 
   function drawConnectors(data) {
-    connSonVeri = data;
+    connLastData = data;
     const pane = panes.connectors;
     pane.textContent = "";
     head(pane, t("Bağlayıcılar"),
       t("Hazır dizin veya kendi sunucun. OAuth tarayıcıda açılır; ham JSON ileri seviye."));
 
-    // Arama + durum filtreleri: Claude'daki dizinle aynı okuma düzeni.
+    // Search + status filters: the same reading order as Claude's directory.
     const bar = el("div", "conn-bar");
-    const ara = el("input", "input-text conn-search");
-    ara.type = "search";
-    ara.placeholder = t("Bağlayıcı ara…");
-    ara.value = connFiltre.q;
-    ara.addEventListener("input", () => {
-      connFiltre.q = ara.value.trim().toLowerCase();
-      drawConnectors(connSonVeri);
-      const geri = pane.querySelector(".conn-search");
-      if (geri) { geri.focus(); geri.setSelectionRange(geri.value.length, geri.value.length); }
+    const searchBox = el("input", "input-text conn-search");
+    searchBox.type = "search";
+    searchBox.placeholder = t("Bağlayıcı ara…");
+    searchBox.value = connFilter.q;
+    searchBox.addEventListener("input", () => {
+      connFilter.q = searchBox.value.trim().toLowerCase();
+      drawConnectors(connLastData);
+      const again = pane.querySelector(".conn-search");
+      if (again) { again.focus(); again.setSelectionRange(again.value.length, again.value.length); }
     });
-    bar.append(ara);
-    for (const [kod, ad] of [["", "Tümü"], ["ok", "Bağlı"], ["bad", "Bağlı değil"]]) {
-      const cip = el("button", "conn-chip" + (connFiltre.only === kod ? " on" : ""));
-      cip.type = "button";
-      cip.textContent = t(ad);
-      cip.addEventListener("click", () => {
-        connFiltre.only = kod;
-        drawConnectors(connSonVeri);
+    bar.append(searchBox);
+    for (const [code, label] of [["", "Tümü"], ["ok", "Bağlı"], ["bad", "Bağlı değil"]]) {
+      const chip = el("button", "conn-chip" + (connFilter.only === code ? " on" : ""));
+      chip.type = "button";
+      chip.textContent = t(label);
+      chip.addEventListener("click", () => {
+        connFilter.only = code;
+        drawConnectors(connLastData);
       });
-      bar.append(cip);
+      bar.append(chip);
     }
     pane.append(bar);
 
@@ -2806,43 +2824,43 @@ const Settings = (() => {
       nameBox.focus();
     };
 
-    const kurulu = new Set((data.servers || []).map((s) => s.name));
-    const populer = CONN_KATALOG.filter((c) => !kurulu.has(c.id)
-      && (!connFiltre.q || (c.id + " " + c.ad + " " + c.ne).toLowerCase().includes(connFiltre.q))
-      && (!connFiltre.cat || c.cat === connFiltre.cat));
-    if (populer.length && connFiltre.only !== "ok") {
-      const sec = el("div", "conn-sec");
-      const bas = el("div", "conn-sec-head");
+    const installed = new Set((data.servers || []).map((s) => s.name));
+    const popular = CONN_CATALOG.filter((c) => !installed.has(c.id)
+      && (!connFilter.q || (c.id + " " + c.name + " " + c.what).toLowerCase().includes(connFilter.q))
+      && (!connFilter.cat || c.cat === connFilter.cat));
+    if (popular.length && connFilter.only !== "ok") {
+      const section = el("div", "conn-sec");
+      const headRow = el("div", "conn-sec-head");
       const copy = el("div", "conn-sec-copy");
       copy.append(el("h3", "conn-sec-title", t("Dizin")));
       copy.append(el("p", "conn-sec-sub", t("Tek tıkla forma dolar — adres ezberleme.")));
-      bas.append(copy);
+      headRow.append(copy);
       const cats = el("div", "conn-cats");
-      for (const [kod, ad] of [["", "Tümü"], ["is", "İş"], ["tasarim", "Tasarım"],
-                               ["bulut", "Bulut"], ["yerel", "Yerel"]]) {
-        const cip = el("button", "conn-chip" + (connFiltre.cat === kod ? " on" : ""));
-        cip.type = "button";
-        cip.textContent = t(ad);
-        cip.addEventListener("click", () => {
-          connFiltre.cat = kod;
-          drawConnectors(connSonVeri);
+      for (const [code, label] of [["", "Tümü"], ["is", "İş"], ["tasarim", "Tasarım"],
+                                   ["bulut", "Bulut"], ["yerel", "Yerel"]]) {
+        const chip = el("button", "conn-chip" + (connFilter.cat === code ? " on" : ""));
+        chip.type = "button";
+        chip.textContent = t(label);
+        chip.addEventListener("click", () => {
+          connFilter.cat = code;
+          drawConnectors(connLastData);
         });
-        cats.append(cip);
+        cats.append(chip);
       }
-      bas.append(cats);
-      sec.append(bas);
-      const raf = el("div", "conn-pop");
-      for (const c of populer) {
-        const kart = el("button", "conn-card");
-        kart.type = "button";
+      headRow.append(cats);
+      section.append(headRow);
+      const shelf = el("div", "conn-pop");
+      for (const c of popular) {
+        const cardBtn = el("button", "conn-card");
+        cardBtn.type = "button";
         const mark = connMark(c.id);
-        if (mark) kart.append(mark);
+        if (mark) cardBtn.append(mark);
         const meta = el("span", "conn-card-meta");
-        meta.append(el("b", null, c.ad), el("span", "conn-card-ne", t(c.ne)));
-        kart.append(meta);
-        kart.append(el("i", "conn-kind", c.kind === "stdio" ? "stdio" : "OAuth"));
-        kart.title = c.kind === "stdio" ? c.cmd : c.url;
-        kart.addEventListener("click", () => {
+        meta.append(el("b", null, c.name), el("span", "conn-card-ne", t(c.what)));
+        cardBtn.append(meta);
+        cardBtn.append(el("i", "conn-kind", c.kind === "stdio" ? "stdio" : "OAuth"));
+        cardBtn.title = c.kind === "stdio" ? c.cmd : c.url;
+        cardBtn.addEventListener("click", () => {
           const adder2 = pane.querySelector(".row.adder");
           if (!adder2) return;
           adder2.scrollIntoView({ block: "nearest" });
@@ -2850,17 +2868,17 @@ const Settings = (() => {
             fillConnectorForm(box, { name: c.id, kind: c.kind, url: c.url, cmd: c.cmd });
           }, "add");
         });
-        raf.append(kart);
+        shelf.append(cardBtn);
       }
-      sec.append(raf);
-      pane.append(sec);
+      section.append(shelf);
+      pane.append(section);
     }
 
     for (const server of data.servers || []) {
-      // Arama ve durum filtresi listeyi süzer; veri olduğu gibi durur.
-      if (connFiltre.q && !server.name.toLowerCase().includes(connFiltre.q)) continue;
-      if (connFiltre.only === "ok" && !server.ok) continue;
-      if (connFiltre.only === "bad" && server.ok) continue;
+      // Search and status filters sift the list; the data stays untouched.
+      if (connFilter.q && !server.name.toLowerCase().includes(connFilter.q)) continue;
+      if (connFilter.only === "ok" && !server.ok) continue;
+      if (connFilter.only === "bad" && server.ok) continue;
       const acts = [];
       if (server.kind === "http" && !server.auth) {
         acts.push([t("Giriş yap"), () => loadConnectors({ action: "login", name: server.name })]);
@@ -2958,16 +2976,17 @@ const Settings = (() => {
     pane.append(list);
   }
 
-  // --- konum ve açılış --------------------------------------------------
+  // --- location and startup ---------------------------------------------
   //
-  // "Yarın hava nasıl?" sorusunun cevabı nereye bakılacağına bağlıydı ve
-  // model bunu hiçbir yerden öğrenemiyordu — İstanbul varsayıp cevap
-  // veriyordu.
+  // The answer to "what's the weather tomorrow?" depended on where to look,
+  // and the model could learn it from nowhere — it assumed Istanbul and
+  // answered.
   //
-  // Üç kaynak var ve güvenilirlikleri çok farklı. Elle yazılan kesin.
-  // Saat dilimi ülkeyi veriyor, şehri vermiyor. IP şehir iddia ediyor ama
-  // tutmayabiliyor: aynı anda iki servise soruldu, biri "Manisa" dedi
-  // diğeri "Kayseri". O yüzden IP kapalı geliyor ve ayrı izin istiyor.
+  // There are three sources and their reliability differs wildly. What is
+  // typed by hand is definitive. The timezone gives the country, not the
+  // city. IP claims a city but may miss: two services asked at the same
+  // moment, one said "Manisa", the other "Kayseri". That is why IP comes
+  // disabled and asks for separate permission.
 
   function drawPlace() {
     const pane = panes.place;
@@ -2995,7 +3014,7 @@ const Settings = (() => {
       t("Kapalıyken bile ülke biliniyor: makinenin saat diliminden geliyor, " +
       "ağa çıkmıyor. Şehir gerekiyorsa Dornick sana soruyor.")));
 
-    // --- açılışta başlat ---
+    // --- start at boot ---
     if (!state.startup.available) {
       pane.append(field("Bilgisayar açılınca başlat",
                         "Yalnızca Windows'ta", el("span", "pane-note", t("Yok"))));
@@ -3008,7 +3027,8 @@ const Settings = (() => {
                   (v) => set("startup", "enabled", v))
       ));
 
-      // Ne yazıldığı görünsün: açılışa sessizce bir şey eklemek doğru değil.
+      // What gets written must be visible: silently adding something to
+      // startup would be wrong.
       const line = el("p", "pane-note mono", state.startup.command);
       pane.append(field("Çalıştırılacak satır",
                         "Kayıt: HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run · " +
@@ -3016,7 +3036,7 @@ const Settings = (() => {
                         line));
     }
 
-    // --- Explorer sağ tık ---
+    // --- Explorer right-click ---
     const shell = state.shell_assoc || {};
     if (!shell.available) {
       pane.append(field("Sağ tık · Dornick ile aç",
@@ -3031,101 +3051,102 @@ const Settings = (() => {
     }
   }
 
-  // --- makine -----------------------------------------------------------
+  // --- machine ----------------------------------------------------------
   //
-  // Yerel bir modelde asıl sınır makinenin kendisi. Buradaki üç ayar da
-  // gerçekten yaşanmış bir soruna karşılık geliyor.
+  // With a local model the real limit is the machine itself. Every setting
+  // here corresponds to a problem that actually happened.
 
   function drawMachine() {
     const pane = panes.machine;
     pane.textContent = "";
     head(pane, "Makine", "Sürüm, eşzamanlılık, arayüz dili, tarayıcı ve dış kapı.");
 
-    // Sürüm: salt-okunur. Sahada "hangi sürüm kurulu?" sorusu cevapsızdı —
-    // tek gerçek kaynak pyproject, buraya /api/settings'ten geliyor.
-    // Kurulu/geliştirme ayrımı önemli: iki kopya aynı makinede yaşayabiliyor.
-    const surumYazi = el("span", "surum-deger",
+    // Version: read-only. In the field the question "which version is
+    // installed?" had no answer — the single source of truth is pyproject,
+    // arriving here via /api/settings. The installed/development distinction
+    // matters: two copies can live on the same machine.
+    const versionText = el("span", "surum-deger",
       (state.surum || "?") + " · " + t(state.installed ? "kurulum" : "geliştirme"));
-    const denetle = el("button", "detect", t("Güncellemeleri denetle"));
-    denetle.type = "button";
-    const surumKutu = el("div", "with-action");
-    surumKutu.append(surumYazi, denetle);
-    const surumAlan = field(
+    const checkBtn = el("button", "detect", t("Güncellemeleri denetle"));
+    checkBtn.type = "button";
+    const versionBox = el("div", "with-action");
+    versionBox.append(versionText, checkBtn);
+    const versionField = field(
       "Sürüm",
       "Denetim yalnız bu düğmeyle yapılır — arka planda kendiliğinden ağa çıkılmaz",
-      surumKutu
+      versionBox
     );
-    pane.append(surumAlan);
-    denetle.addEventListener("click", async () => {
-      denetle.disabled = true;
-      denetle.textContent = t("Soruluyor…");
-      let cevap = {};
+    pane.append(versionField);
+    checkBtn.addEventListener("click", async () => {
+      checkBtn.disabled = true;
+      checkBtn.textContent = t("Soruluyor…");
+      let answer = {};
       try {
-        cevap = await (await fetch("/api/surum", { method: "POST" })).json();
-      } catch { /* aşağıda ele alınıyor */ }
-      denetle.disabled = false;
-      denetle.textContent = t("Güncellemeleri denetle");
+        answer = await (await fetch("/api/surum", { method: "POST" })).json();
+      } catch { /* handled below */ }
+      checkBtn.disabled = false;
+      checkBtn.textContent = t("Güncellemeleri denetle");
 
-      // Önceki sonucu temizle: art arda basınca satırlar birikmesin.
-      const eski = surumAlan.querySelector(".surum-sonuc");
-      if (eski) eski.remove();
-      const sonuc = el("span", "surum-sonuc");
-      if (cevap.yeni) {
-        // Kurulum dosyası varsa UYGULAMA İÇİNDEN indir+kur; yoksa yayın
-        // sayfasını tarayıcıda aç (elle indirme).
-        if (cevap.indirme) {
-          const kur = el("button", "surum-yeni");
-          kur.type = "button";
-          kur.textContent = "v" + cevap.yeni + t(" mevcut — indir ve kur");
-          const durum = el("span", "surum-ilerleme");
-          durum.hidden = true;
-          kur.addEventListener("click", async () => {
-            kur.disabled = true;
-            durum.hidden = false;
-            durum.textContent = t("Güncelleme hazırlanıyor…");
-            // İlerleme SSE "guncelleme" olayıyla akıyor (app.js → burası).
+      // Clear the previous result: repeated clicks must not pile up lines.
+      const stale = versionField.querySelector(".surum-sonuc");
+      if (stale) stale.remove();
+      const result = el("span", "surum-sonuc");
+      if (answer.yeni) {
+        // With an installer file, download+install FROM INSIDE THE APP;
+        // otherwise open the release page in the browser (manual download).
+        if (answer.indirme) {
+          const installBtn = el("button", "surum-yeni");
+          installBtn.type = "button";
+          installBtn.textContent = "v" + answer.yeni + t(" mevcut — indir ve kur");
+          const progress = el("span", "surum-ilerleme");
+          progress.hidden = true;
+          installBtn.addEventListener("click", async () => {
+            installBtn.disabled = true;
+            progress.hidden = false;
+            progress.textContent = t("Güncelleme hazırlanıyor…");
+            // Progress flows via the SSE "guncelleme" event (app.js → here).
             window.dispatchEvent(new CustomEvent("dornick:guncelle-baslat",
-              { detail: { durum } }));
+              { detail: { durum: progress } }));
             try {
               const c = await (await fetch("/api/guncelle", { method: "POST" })).json();
               if (c && c.ok === false) {
-                durum.className = "surum-ilerleme bad";
-                durum.textContent = c.hata ? t(c.hata) : t("Güncelleme başlatılamadı");
-                kur.disabled = false;
+                progress.className = "surum-ilerleme bad";
+                progress.textContent = c.hata ? t(c.hata) : t("Güncelleme başlatılamadı");
+                installBtn.disabled = false;
               }
             } catch {
-              durum.className = "surum-ilerleme bad";
-              durum.textContent = t("Güncelleme başlatılamadı");
-              kur.disabled = false;
+              progress.className = "surum-ilerleme bad";
+              progress.textContent = t("Güncelleme başlatılamadı");
+              installBtn.disabled = false;
             }
           });
-          sonuc.append(kur, durum);
+          result.append(installBtn, progress);
         } else {
-          const hedef = cevap.url || "#";
-          const uc = el("a", "surum-yeni", "v" + cevap.yeni + t(" mevcut — indir"));
-          uc.href = hedef;
-          uc.addEventListener("click", (e) => {
+          const target = answer.url || "#";
+          const link = el("a", "surum-yeni", "v" + answer.yeni + t(" mevcut — indir"));
+          link.href = target;
+          link.addEventListener("click", (e) => {
             e.preventDefault();
-            if (cevap.url) window.open(cevap.url, "_blank", "noopener");
+            if (answer.url) window.open(answer.url, "_blank", "noopener");
           });
-          sonuc.append(uc);
+          result.append(link);
         }
-        if (cevap.indirme && cevap.url) {
-          const notlar = el("a", "surum-notlar", t("yayın notları"));
-          notlar.href = cevap.url;
-          notlar.addEventListener("click", (e) => {
+        if (answer.indirme && answer.url) {
+          const notes = el("a", "surum-notlar", t("yayın notları"));
+          notes.href = answer.url;
+          notes.addEventListener("click", (e) => {
             e.preventDefault();
-            window.open(cevap.url, "_blank", "noopener");
+            window.open(answer.url, "_blank", "noopener");
           });
-          sonuc.append(" · ", notlar);
+          result.append(" · ", notes);
         }
-      } else if (cevap.ok) {
-        sonuc.textContent = t("Güncel — daha yeni sürüm yok");
+      } else if (answer.ok) {
+        result.textContent = t("Güncel — daha yeni sürüm yok");
       } else {
-        sonuc.className += " bad";
-        sonuc.textContent = cevap.hata ? t(cevap.hata) : t("Ağa ulaşılamadı — internet bağlantısını denetle");
+        result.className += " bad";
+        result.textContent = answer.hata ? t(answer.hata) : t("Ağa ulaşılamadı — internet bağlantısını denetle");
       }
-      surumKutu.append(sonuc);
+      versionBox.append(result);
     });
 
     pane.append(field(
@@ -3190,20 +3211,21 @@ const Settings = (() => {
              (v) => set("model", "keep_loaded", Number(v)))
     ));
 
-    // Arayüz dili: kaynak Türkçe, İngilizce görüntülemede çevrilir (dil.js).
-    // Sayfa yenilenerek geçilir — yarım çevrili canlı geçiş kafa karıştırır.
-    const dilKutu = el("div", "choices");
-    for (const [kod, ad] of [["tr", "Türkçe"], ["en", "English"]]) {
-      const secim = el("button", "choice" + (Dil.mode === kod ? " on" : ""));
-      secim.type = "button";
-      secim.append(el("b", null, ad));
-      secim.addEventListener("click", () => { if (Dil.mode !== kod) Dil.sec(kod); });
-      dilKutu.append(secim);
+    // Interface language: the source is Turkish, translated at display time
+    // in English (dil.js). Switching reloads the page — a half-translated
+    // live switch confuses.
+    const langBox = el("div", "choices");
+    for (const [code, label] of [["tr", "Türkçe"], ["en", "English"]]) {
+      const choice = el("button", "choice" + (Dil.mode === code ? " on" : ""));
+      choice.type = "button";
+      choice.append(el("b", null, label));
+      choice.addEventListener("click", () => { if (Dil.mode !== code) Dil.sec(code); });
+      langBox.append(choice);
     }
-    pane.append(field("Arayüz dili / Interface language", "", dilKutu));
+    pane.append(field("Arayüz dili / Interface language", "", langBox));
 
-    // Dornick chrome: DevTools kapısıyla sürülen tarayıcı. Kapalı geliyor —
-    // kendi kendine sayfa açan bir asistan istenerek açılmalı.
+    // Dornick chrome: a browser driven through the DevTools gate. Comes
+    // disabled — an assistant that opens pages on its own must be opted into.
     pane.append(field(
       "Dornick chrome (tarayıcı)",
       "Dornick kendi Chrome/Edge profiliyle sayfa açar, okur, görüntü alır. " +
@@ -3212,9 +3234,10 @@ const Settings = (() => {
                 (v) => set("browser", "enabled", v))
     ));
 
-    // Dış kapı: harici araçlar/ajanlar sohbete HTTP'den yazıp tüm yanıtı
-    // alabilir (POST /api/gate). Değerlendirme için var; varsayılan kapalı.
-    const kapiAnahtar = toggleBox(false, async (v) => {
+    // External gate: outside tools/agents can write into the chat over HTTP
+    // and receive the full answer (POST /api/gate). Exists for evaluation;
+    // disabled by default.
+    const gateSwitch = toggleBox(false, async (v) => {
       try {
         await fetch("/api/gate", {
           method: "POST",
@@ -3225,21 +3248,22 @@ const Settings = (() => {
       } catch { say("Kaydedilemedi"); }
     });
     fetch("/api/gate").then((r) => r.json()).then((d) => {
-      kapiAnahtar.checked = !!d.on;
+      gateSwitch.checked = !!d.on;
     }).catch(() => {});
     pane.append(field(
       "Dış kapı (API)",
       "Başka ajanlar ve araçlar sohbete programla yazıp yanıtın tamamını " +
       "alabilir: POST 127.0.0.1'e /api/gate, gövde {\"text\": \"...\"}. " +
       "Yalnızca bu makineden erişilir",
-      kapiAnahtar
+      gateSwitch
     ));
 
-    // Beyin ortada büyüsün mü: görsel tercih — sunucuya değil tarayıcıya
-    // yazılır (localStorage). "Yazılar beynin altında kayboluyor" (31.08).
-    let beyinIlk = true;
-    try { beyinIlk = localStorage.getItem("dornick-brain-ambient") !== "kapali"; } catch {}
-    const beyinAnahtar = toggleBox(beyinIlk, (v) => {
+    // Should the brain grow into the center: a visual preference — written
+    // to the browser (localStorage), not the server. "Text disappears under
+    // the brain" (31.08).
+    let brainOn = true;
+    try { brainOn = localStorage.getItem("dornick-brain-ambient") !== "kapali"; } catch {}
+    const brainSwitch = toggleBox(brainOn, (v) => {
       if (window.beyinOrtada) window.beyinOrtada(v);
       say(v ? "Beyin ortada büyüyecek" : "Beyin sağ panelde kalacak");
     });
@@ -3247,13 +3271,14 @@ const Settings = (() => {
       "Beyin ortada dursun",
       "Açıkken hiçbir panel açık değilse beyin ekranın ortasında büyür; " +
       "kapatırsan sağ panelde kalır ve yazılar hiç örtülmez",
-      beyinAnahtar
+      brainSwitch
     ));
 
-    // Beni tanı: kişisel ince ayar döngüsü (eğitim düzeneği ayrı depoda).
-    // Ayar sunucuda tanima.json'da; kaydet düğmesini beklemeden anında
-    // gidiyor — dış kapı anahtarıyla aynı kalıp.
-    const taniAnahtar = toggleBox(false, async (v) => {
+    // Learn me: the personal fine-tune loop (the training rig lives in a
+    // separate repo). The setting lives in tanima.json on the server; it
+    // goes instantly without waiting for a save button — the same pattern
+    // as the gate switch.
+    const learnSwitch = toggleBox(false, async (v) => {
       try {
         await fetch("/api/tanima", {
           method: "POST",
@@ -3263,19 +3288,20 @@ const Settings = (() => {
         say(v ? "Tanıma eğitimi açıldı" : "Tanıma eğitimi kapatıldı");
       } catch { say("Kaydedilemedi"); }
     });
-    const taniAlan = field(
+    const learnField = field(
       "Beni tanı",
       "Dornick'in yerel taban modeli anılarından gece sessizce öğrenir: " +
       "birikince arka planda, düşük öncelikle ince ayar koşar; gerileyen " +
       "aday sınav kapısında çöpe gider. Etiketleme seçili modelle yapılır: " +
       "yerel modelde veri makineden çıkmaz; bulut modelde bu adım açık onay " +
       "vermedikçe atlanır (onay verilirse anı metni o sağlayıcıya gider)",
-      taniAnahtar
+      learnSwitch
     );
-    pane.append(taniAlan);
-    // Mahremiyet onayı: bulut modelle gece etiketlemesi. Varsayılan kapalı;
-    // açmak anı metnini seçili sağlayıcıya gönderir — ipucu bunu açıkça der.
-    const bulutAnahtar = toggleBox(false, async (v) => {
+    pane.append(learnField);
+    // Privacy consent: nightly labeling with a hosted model. Off by default;
+    // enabling it sends memory text to the chosen provider — the hint says
+    // so explicitly.
+    const cloudSwitch = toggleBox(false, async (v) => {
       try {
         await fetch("/api/tanima", {
           method: "POST",
@@ -3285,21 +3311,22 @@ const Settings = (() => {
         say(v ? "Bulut etiketleme onayı verildi" : "Bulut etiketleme onayı geri alındı");
       } catch { say("Kaydedilemedi"); }
     });
-    const bulutAlan = field(
+    const cloudField = field(
       "Bulut modelle etiketlemeye izin ver",
       "Kapalıyken (varsayılan) gece etiketlemesi yalnız yerel modelle çalışır " +
       "ve anıların makineden çıkmaz. Açarsan anı metinleri etiketleme için " +
       "seçili bulut sağlayıcısına gönderilir",
-      bulutAnahtar
+      cloudSwitch
     );
-    pane.append(bulutAlan);
+    pane.append(cloudField);
     fetch("/api/tanima").then((r) => r.json()).then((d) => {
-      taniAnahtar.checked = !!d.on;
-      bulutAnahtar.checked = !!d.learn_cloud_ok;
-      // Düzenek kurulu değilse anahtar boşa çevrilir; ipucuna not düşülüyor.
+      learnSwitch.checked = !!d.on;
+      cloudSwitch.checked = !!d.learn_cloud_ok;
+      // Without the rig installed the switch would spin idle; a note is
+      // appended to the hint.
       if (!d.hazir) {
-        const ipucu = taniAlan.querySelector(".field-hint");
-        if (ipucu) ipucu.textContent += t(" · eğitim düzeneği bu makinede kurulu değil");
+        const hintEl = learnField.querySelector(".field-hint");
+        if (hintEl) hintEl.textContent += t(" · eğitim düzeneği bu makinede kurulu değil");
       }
     }).catch(() => {});
 
@@ -3313,7 +3340,7 @@ const Settings = (() => {
     let answer = {};
     try {
       answer = await (await fetch("/api/loaded", { method: "POST" })).json();
-    } catch { /* asagida ele aliniyor */ }
+    } catch { /* handled below */ }
 
     slot.textContent = "";
     const models = answer.models || [];
@@ -3322,7 +3349,7 @@ const Settings = (() => {
       return;
     }
 
-    // Aynı taban addan birden çok kopya varsa bellek boşa gidiyor demektir.
+    // Multiple copies of the same base name means memory going to waste.
     const counts = {};
     for (const m of models) counts[m.base] = (counts[m.base] || 0) + 1;
 
@@ -3342,7 +3369,7 @@ const Settings = (() => {
     }
   }
 
-  // --- yetki ------------------------------------------------------------
+  // --- permissions ------------------------------------------------------
 
   function drawAccess() {
     const pane = panes.access;
@@ -3367,9 +3394,8 @@ const Settings = (() => {
 
     pane.append(field("İzin kipi", "", picker));
 
-    // Kural listesi: "hep izin ver" dendiginde buraya bir satir yaziliyor.
-    // Verilen izni geri alabilecegi bir yer olmadan o dugme tek yonlu bir
-    // kapi oluyordu.
+    // Rule list: saying "always allow" writes a line here. Without a place
+    // to take a grant back, that button was a one-way door.
     const rules = el("div", "rules");
     rules.append(el("p", "pane-note", t("Yukleniyor…")));
     pane.append(field("Kurallar", "arac:hedef-deseni · deny her zaman kazanir", rules));
@@ -3380,11 +3406,12 @@ const Settings = (() => {
 
     pane.append(el("hr", "md-rule"));
 
-    // --- proje ---
+    // --- project ---
     //
-    // Kullanıcının kendi klasöründe çalışmak: "atölyeye kopyala" yolu bir
-    // AĞAÇ için işlemiyor (kopyası orijinali olmuyor). Klasörü seçmek bir
-    // onaydır; seçilen yer yazılabilir oluyor. Atölye her koşulda kalıyor.
+    // Working in the user's own folder: the "copy into the workshop" path
+    // does not work for a TREE (the copy is not the original). Choosing the
+    // folder is an approval; the chosen place becomes writable. The
+    // workshop remains in every case.
     projectSection(pane);
 
     pane.append(el("hr", "md-rule"));
@@ -3405,153 +3432,154 @@ const Settings = (() => {
     ));
   }
 
-  // --- proje -------------------------------------------------------------
+  // --- project -----------------------------------------------------------
   //
-  // "Benim projemde çalışacaksan klasörü seçmem gerekiyor." Atölye Dornick'in
-  // kendi işleri için kalıyor; proje kullanıcının kodu. Seçim bir onaydır:
-  // seçilen klasör yazılabilir oluyor.
+  // "If you'll work in my project, I need to choose the folder." The
+  // workshop stays for Dornick's own work; the project is the user's code.
+  // Choosing is an approval: the chosen folder becomes writable.
   //
-  // Proje bir OTURUM değil — değiştirmek zihni, anıları ya da konuşma
-  // geçmişini etkilemiyor. Bu, kullanıcıya da açıkça yazılıyor.
+  // A project is not a SESSION — switching it does not touch the mind, the
+  // memories or the conversation history. This is spelled out for the user.
 
   function projectSection(pane) {
-    const kutu = el("div", "proj-pick");
-    const secili = (patch.sandbox || {}).project ?? state.sandbox.project ?? "";
+    const box = el("div", "proj-pick");
+    const current = (patch.sandbox || {}).project ?? state.sandbox.project ?? "";
 
-    const alan = text(secili, (v) => set("sandbox", "project", v.trim()),
-                      t("boş — yalnızca atölye"));
-    kutu.append(alan);
+    const input = text(current, (v) => set("sandbox", "project", v.trim()),
+                       t("boş — yalnızca atölye"));
+    box.append(input);
 
-    // Durum satırı: neyin geçerli olduğu, hata ve uyarı.
-    const durum = el("div", "proj-state");
-    kutu.append(durum);
+    // Status line: what is in effect, errors and warnings.
+    const statusEl = el("div", "proj-state");
+    box.append(statusEl);
 
-    function durumCiz() {
-      durum.textContent = "";
-      const yol = (patch.sandbox || {}).project ?? state.sandbox.project ?? "";
-      if (!yol.trim()) {
-        durum.append(el("span", "pane-note",
+    function drawStatus() {
+      statusEl.textContent = "";
+      const path = (patch.sandbox || {}).project ?? state.sandbox.project ?? "";
+      if (!path.trim()) {
+        statusEl.append(el("span", "pane-note",
           t("Proje seçilmedi — yazma yalnızca atölyede serbest.")));
         return;
       }
-      if (state.sandbox.project_error && yol === state.sandbox.project) {
-        durum.append(el("span", "pane-note bad", state.sandbox.project_error));
+      if (state.sandbox.project_error && path === state.sandbox.project) {
+        statusEl.append(el("span", "pane-note bad", state.sandbox.project_error));
         return;
       }
-      if (yol !== state.sandbox.project) {
-        durum.append(el("span", "pane-note",
+      if (path !== state.sandbox.project) {
+        statusEl.append(el("span", "pane-note",
           t("Kaydedince burada çalışmaya başlayacağım.")));
         return;
       }
-      const satir = el("span", "pane-note good",
+      const noteRow = el("span", "pane-note good",
         t("Şu an burada çalışıyorum; yazma izni bu klasörde geçerli.")
-        + " " + (state.sandbox.project_root || yol));
-      durum.append(satir);
+        + " " + (state.sandbox.project_root || path));
+      statusEl.append(noteRow);
       if (state.sandbox.project_note) {
-        durum.append(el("span", "pane-note bad", state.sandbox.project_note));
+        statusEl.append(el("span", "pane-note bad", state.sandbox.project_note));
       }
     }
-    durumCiz();
+    drawStatus();
 
-    // Gezgin: native diyalog yok, seçici sayfanın kendi içinde.
-    const gezginKutu = el("div", "proj-browse");
-    gezginKutu.hidden = true;
-    const ac = el("button", "job-act add", t("Klasör seç…"));
-    ac.type = "button";
-    ac.addEventListener("click", () => {
-      gezginKutu.hidden = !gezginKutu.hidden;
-      if (!gezginKutu.hidden) gozat("");
+    // Explorer: no native dialog, the picker lives inside the page itself.
+    const browserBox = el("div", "proj-browse");
+    browserBox.hidden = true;
+    const openBtn = el("button", "job-act add", t("Klasör seç…"));
+    openBtn.type = "button";
+    openBtn.addEventListener("click", () => {
+      browserBox.hidden = !browserBox.hidden;
+      if (!browserBox.hidden) browseTree("");
     });
-    kutu.append(ac);
-    kutu.append(gezginKutu);
+    box.append(openBtn);
+    box.append(browserBox);
 
-    async function gozat(yol) {
-      gezginKutu.textContent = "";
-      gezginKutu.append(el("p", "pane-note", t("Yukleniyor…")));
-      let veri;
+    // The parameter stays named `yol`: tests pin the exact fetch line.
+    async function browseTree(yol) {
+      browserBox.textContent = "";
+      browserBox.append(el("p", "pane-note", t("Yukleniyor…")));
+      let data;
       try {
-        veri = await (await fetch("/api/gozat?yol=" + encodeURIComponent(yol))).json();
+        data = await (await fetch("/api/gozat?yol=" + encodeURIComponent(yol))).json();
       } catch {
-        gezginKutu.textContent = "";
-        gezginKutu.append(el("p", "pane-note bad", t("Sunucuya ulaşılamadı")));
+        browserBox.textContent = "";
+        browserBox.append(el("p", "pane-note bad", t("Sunucuya ulaşılamadı")));
         return;
       }
-      gezginKutu.textContent = "";
-      if (veri.hata) {
-        gezginKutu.append(el("p", "pane-note bad", veri.hata));
+      browserBox.textContent = "";
+      if (data.hata) {
+        browserBox.append(el("p", "pane-note bad", data.hata));
         return;
       }
 
-      // Başlık: nerede olduğumuz + yukarı çık.
-      const bas = el("div", "proj-crumb");
-      if (veri.ust !== null && veri.ust !== undefined) {
-        const yukari = el("button", "crumb-link", "↑ " + t("yukarı"));
-        yukari.type = "button";
-        yukari.addEventListener("click", () => gozat(veri.ust));
-        bas.append(yukari);
+      // Head: where we are + go up.
+      const crumbEl = el("div", "proj-crumb");
+      if (data.ust !== null && data.ust !== undefined) {
+        const upBtn = el("button", "crumb-link", "↑ " + t("yukarı"));
+        upBtn.type = "button";
+        upBtn.addEventListener("click", () => browseTree(data.ust));
+        crumbEl.append(upBtn);
       }
-      bas.append(el("span", "proj-here", veri.yol || t("Bu bilgisayar")));
-      gezginKutu.append(bas);
+      crumbEl.append(el("span", "proj-here", data.yol || t("Bu bilgisayar")));
+      browserBox.append(crumbEl);
 
-      // Buradaki klasörü SEÇ: yalnızca gerçek bir klasördeysek ve engel yoksa.
-      if (veri.yol) {
-        const ozet = [];
-        if (typeof veri.dosya === "number") ozet.push(veri.dosya + t(" dosya"));
-        if (veri.klasorler) ozet.push(veri.klasorler.length + t(" klasör"));
-        if (veri.tur) ozet.push(veri.tur);
-        gezginKutu.append(el("p", "pane-note", ozet.join(" · ")));
+      // PICK the folder here: only inside a real folder with no blocker.
+      if (data.yol) {
+        const summary = [];
+        if (typeof data.dosya === "number") summary.push(data.dosya + t(" dosya"));
+        if (data.klasorler) summary.push(data.klasorler.length + t(" klasör"));
+        if (data.tur) summary.push(data.tur);
+        browserBox.append(el("p", "pane-note", summary.join(" · ")));
 
-        if (veri.engel) {
-          gezginKutu.append(el("p", "pane-note bad", veri.engel));
+        if (data.engel) {
+          browserBox.append(el("p", "pane-note bad", data.engel));
         } else {
-          if (veri.uyari) gezginKutu.append(el("p", "pane-note bad", veri.uyari));
-          const sec = el("button", "job-act add", t("Bu klasörü seç"));
-          sec.type = "button";
-          sec.addEventListener("click", () => {
-            alan.value = veri.yol;
-            set("sandbox", "project", veri.yol);
-            gezginKutu.hidden = true;
-            durumCiz();
+          if (data.uyari) browserBox.append(el("p", "pane-note bad", data.uyari));
+          const pickBtn = el("button", "job-act add", t("Bu klasörü seç"));
+          pickBtn.type = "button";
+          pickBtn.addEventListener("click", () => {
+            input.value = data.yol;
+            set("sandbox", "project", data.yol);
+            browserBox.hidden = true;
+            drawStatus();
           });
-          gezginKutu.append(sec);
+          browserBox.append(pickBtn);
         }
       }
 
-      const liste = el("div", "proj-list");
-      for (const klasor of (veri.klasorler || [])) {
-        const satir = el("button", "proj-row");
-        satir.type = "button";
-        satir.textContent = "▸ " + klasor.ad;
-        satir.addEventListener("click", () => gozat(klasor.yol));
-        liste.append(satir);
+      const listEl = el("div", "proj-list");
+      for (const folder of (data.klasorler || [])) {
+        const rowBtn = el("button", "proj-row");
+        rowBtn.type = "button";
+        rowBtn.textContent = "▸ " + folder.ad;
+        rowBtn.addEventListener("click", () => browseTree(folder.yol));
+        listEl.append(rowBtn);
       }
-      if (!(veri.klasorler || []).length) {
-        liste.append(el("p", "pane-note", t("Alt klasör yok")));
+      if (!(data.klasorler || []).length) {
+        listEl.append(el("p", "pane-note", t("Alt klasör yok")));
       }
-      gezginKutu.append(liste);
+      browserBox.append(listEl);
     }
 
-    // Son projeler: tek tıkla geçiş.
-    const gecmis = state.sandbox.recent || [];
-    if (gecmis.length) {
-      const serit = el("div", "proj-recent");
-      for (const yol of gecmis) {
-        const cip = el("button", "proj-chip" + (yol === secili ? " on" : ""));
-        cip.type = "button";
-        cip.textContent = yol.split(/[\\/]/).filter(Boolean).pop() || yol;
-        cip.title = yol;
-        cip.addEventListener("click", () => {
-          alan.value = yol;
-          set("sandbox", "project", yol);
-          durumCiz();
+    // Recent projects: one-click switch.
+    const recent = state.sandbox.recent || [];
+    if (recent.length) {
+      const strip = el("div", "proj-recent");
+      for (const path of recent) {
+        const chip = el("button", "proj-chip" + (path === current ? " on" : ""));
+        chip.type = "button";
+        chip.textContent = path.split(/[\\/]/).filter(Boolean).pop() || path;
+        chip.title = path;
+        chip.addEventListener("click", () => {
+          input.value = path;
+          set("sandbox", "project", path);
+          drawStatus();
         });
-        serit.append(cip);
+        strip.append(chip);
       }
-      kutu.append(el("span", "field-hint", t("Son projeler")));
-      kutu.append(serit);
+      box.append(el("span", "field-hint", t("Son projeler")));
+      box.append(strip);
     }
 
-    alan.addEventListener("input", durumCiz);
+    input.addEventListener("input", drawStatus);
 
     pane.append(field(
       "Çalışılan proje",
@@ -3559,14 +3587,14 @@ const Settings = (() => {
       "orası yazılabilir olur. Atölye ayrıca durmaya devam eder — Dornick'in " +
       "kendi işleri oraya gider. Proje değiştirmek konuşmayı, anıları ve " +
       "oturum geçmişini ETKİLEMEZ; yalnızca nerede çalışıldığını değiştirir.",
-      kutu
+      box
     ));
   }
 
-  // --- dosyalar ---------------------------------------------------------
+  // --- files ------------------------------------------------------------
 
-  // Gezinme atölyeden başlıyor: izlenmek istenen şey ajanın ürettikleri,
-  // çalışma alanının tamamı değil. Yukarı çıkmak yine mümkün.
+  // Browsing starts from the workshop: what wants watching is what the
+  // agent produces, not the whole workspace. Going up is still possible.
   let here = null;
 
   async function browse(path) {
@@ -3630,7 +3658,7 @@ const Settings = (() => {
       pane.append(el("p", "pane-note", t("İkili dosya — burada gösterilemez")));
       return;
     }
-    // Kod da olabilir düz metin de; biçimlendirici ikisini de doğru çiziyor.
+    // Could be code or plain text; the formatter draws both correctly.
     const body = el("div", "file-body");
     const fenced = "```" + guess(data.path) + "\n" + (data.text || "") + "\n```";
     body.append(Markdown.render(fenced));
@@ -3651,14 +3679,15 @@ const Settings = (() => {
     return (bytes / 1024 / 1024).toFixed(1) + " MB";
   }
 
-  // --- kaydetme ---------------------------------------------------------
+  // --- saving -----------------------------------------------------------
 
   async function save(auto) {
-    // Sağlayıcı değişince ad bir anlığına boş: katalog gelmeden otokayıt
-    // düşerse boş adı diske YAZMA — "Model değişti: ." diye anlamsız bir
-    // satır düşüyor ve yapılandırma çalışmaz hale geliyordu (canlıda
-    // görüldü). Ad, katalog ilk modeli seçince ya da kullanıcı yazınca
-    // kendi kaydını tetikliyor.
+    // Right after a provider switch the name is momentarily empty: if the
+    // autosave fires before the catalog arrives, do NOT write the empty
+    // name to disk — a meaningless "Model değişti: ." line dropped into the
+    // chat and the configuration stopped working (seen live). The name
+    // triggers its own save once the catalog picks the first model or the
+    // user types.
     if (auto && patch.model && patch.model.name === "") delete patch.model.name;
     if (!Object.keys(patch).length) { if (!auto) say("Değişiklik yok"); return; }
     say("Kaydediliyor…");
@@ -3680,42 +3709,42 @@ const Settings = (() => {
     state = answer.settings;
     patch = {};
     say("Kaydedildi", false, true);
-    // Ana ekran da tazelensin: model değişti ama üst şeritte eskisi
-    // yazmaya devam ediyordu.
+    // Refresh the main screen too: the model changed but the top strip kept
+    // showing the old one.
     if (typeof loadState === "function") loadState();
     if (typeof loadOrgans === "function") loadOrgans();
-    // Otomatik kayıt yeniden çizmez: ekrandaki değerler zaten kaydedilen
-    // değerler; çizim, yazılmakta olan alanı elden alıyordu.
+    // An automatic save does not redraw: the on-screen values are the saved
+    // values already; a redraw used to snatch the field being typed in.
     if (!auto) draw();
   }
 
-  // --- bağlama ----------------------------------------------------------
+  // --- wiring -----------------------------------------------------------
 
   document.getElementById("gear").addEventListener("click", toggle);
   document.getElementById("settings-close").addEventListener("click", close);
-  // Claude Code alışkanlığı: Escape diyaloğu kapatır.
+  // The Claude Code habit: Escape closes the dialog.
   document.addEventListener("keydown", (ev) => {
     if (ev.key === "Escape" && !panel.hidden) close();
   });
 
-  // Nav araması: sekme adlarını süzer (Claude Code'daki Search kutusu).
-  // Boş grup başlıkları da gizlenir; kutu boşalınca hepsi geri gelir.
+  // Nav search: filters the tab names (the Search box from Claude Code).
+  // Emptied group headings hide too; clearing the box brings everything back.
   (() => {
     const nav = document.getElementById("tabs");
-    const ara = el("input", "tabs-search");
-    ara.type = "search";
-    ara.placeholder = t("Ayarlarda ara");
-    ara.setAttribute("aria-label", t("Ayarlarda ara"));
-    nav.prepend(ara);
-    ara.addEventListener("input", () => {
-      const q = ara.value.trim().toLocaleLowerCase("tr");
-      let grup = null;
-      for (const dugme of nav.children) {
-        if (dugme === ara) continue;
-        if (dugme.classList.contains("tab-group")) { grup = dugme; dugme.hidden = !!q; continue; }
-        const uyan = !q || dugme.textContent.toLocaleLowerCase("tr").includes(q);
-        dugme.hidden = !uyan;
-        if (uyan && q === "" && grup) grup.hidden = false;
+    const searchBox = el("input", "tabs-search");
+    searchBox.type = "search";
+    searchBox.placeholder = t("Ayarlarda ara");
+    searchBox.setAttribute("aria-label", t("Ayarlarda ara"));
+    nav.prepend(searchBox);
+    searchBox.addEventListener("input", () => {
+      const q = searchBox.value.trim().toLocaleLowerCase("tr");
+      let group = null;
+      for (const btn of nav.children) {
+        if (btn === searchBox) continue;
+        if (btn.classList.contains("tab-group")) { group = btn; btn.hidden = !!q; continue; }
+        const match = !q || btn.textContent.toLocaleLowerCase("tr").includes(q);
+        btn.hidden = !match;
+        if (match && q === "" && group) group.hidden = false;
       }
     });
   })();
@@ -3738,8 +3767,8 @@ const Settings = (() => {
     if (name === "connectors") loadConnectors();
   });
 
-  // Skills / MCP / dosya gibi anlık API sekmelerinde alttaki "Kaydet"
-  // yanıltıcı — patch kaydı değil, o sekmenin kendi düğmesi var.
+  // On instant-API tabs like Skills / MCP / files the bottom "Save" is
+  // misleading — no patch save there; each tab has its own button.
   const LIVE_TABS = new Set([
     "model", "skills", "connectors", "files", "devices", "tasks", "eyes",
   ]);

@@ -1,8 +1,8 @@
-"""Model sağlayıcıları.
+"""Model providers.
 
-Harness tek bir sözleşme görür (`Backend`); hangi modelin konuştuğu
-yapılandırma meselesidir. Aynı zihin ve aynı oturum günlüğü, bugün Opus'la
-yarın yerel bir modelle sürdürülebilir.
+The harness sees a single contract (`Backend`); which model is speaking is
+a matter of configuration. The same mind and the same session log can be
+carried on with Opus today and a local model tomorrow.
 """
 
 from __future__ import annotations
@@ -33,12 +33,13 @@ PROVIDERS = ("anthropic", "openai")
 
 
 def build_client(model: ModelConfig) -> Backend:
-    """Yapılandırmaya göre istemci kurar.
+    """Builds a client according to the configuration.
 
-    Yedek model tanımlıysa asıl istemci bir sarmalayıcının içine giriyor:
-    asıl model kalıcı olarak susarsa (kredi bitti, kimlik geçersiz) tur
-    ölmek yerine yedekle sürüyor. Döngü farkı görmüyor — gördüğü şey yine
-    tek bir `Backend`.
+    If a fallback model is defined, the primary client goes inside a
+    wrapper: when the primary model goes permanently silent (credits
+    exhausted, credentials invalid) the turn continues with the fallback
+    instead of dying. The loop sees no difference — what it sees is still
+    a single `Backend`.
     """
     if (model.fallback_model or "").strip() and model.fallback_model != model.name:
         from .fallback import FallbackBackend

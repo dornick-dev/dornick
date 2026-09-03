@@ -152,12 +152,12 @@ def ask(
     unsubscribe = log.subscribe(listen)
     channel: queue.Queue[str] = hub.register()
     try:
-        # `siraya`: the outer gate's message does NOT barge into the middle
+        # `queue`: the outer gate's message does NOT barge into the middle
         # of a running turn, it waits for its own — the matching (user
         # message → turn_end) only works that way. Fallback for bridges with
         # the old signature.
         try:
-            controller.submit(str(text), str(image or ""), siraya=True)
+            controller.submit(str(text), str(image or ""), queue=True)
         except TypeError:
             controller.submit(str(text), str(image or ""))
         deadline = started + wait_s

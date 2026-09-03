@@ -52,7 +52,7 @@ from .loop import (
     clear_park,
     read_park,
     mark_orphan,
-    yetim_tara,
+    scan_orphans,
 )
 from .mind import open_mind
 from .permissions import PermissionEngine
@@ -573,10 +573,10 @@ def _live_channels(agent: Any) -> list[dict[str, Any]]:
                 "id": h.id,
                 "title": h.title,
                 "model": h.model,
-                "bg": bool(h.arka_plan),
+                "bg": bool(h.background),
                 "kind": h.kind,
                 "state": _CHANNEL_STATE.get(h.state, "fail"),
-                "ozet": "" if h.state == "kosuyor" else (h.sonuc or "")[:200],
+                "ozet": "" if h.state == "kosuyor" else (h.outcome or "")[:200],
             }
             for h in children.values()
         ]
@@ -642,7 +642,7 @@ class Bridge:
         self.loop = loop
         # Lanes: session id -> Lane. The active lane is the session the UI
         # looks at; the others may run in the background (parallel sessions).
-        self.seritler: dict[str, Lane] = {}
+        self.lanes: dict[str, Lane] = {}
         self._active_sid: str | None = None
         # Queue of the first lane — so a message can queue even before the
         # agent exists (boot race). When `agent` is assigned the lane takes
@@ -711,8 +711,8 @@ class Bridge:
     def _lane_fields(self) -> None:
         # Tests build the bridge with `Bridge.__new__` without init; the lane
         # fields are completed lazily on first touch.
-        if not hasattr(self, "seritler"):
-            self.seritler = {}
+        if not hasattr(self, "lanes"):
+            self.lanes = {}
             self._active_sid = None
         if not hasattr(self, "_first_queue"):
             self._first_queue = asyncio.Queue()
@@ -720,7 +720,7 @@ class Bridge:
     @property
     def agent(self) -> Any:
         self._lane_fields()
-        s = self.seritler.get(self._active_sid or "")
+        s = self.lanes.get(self._active_sid or "")
         return s.agent if s else None
 
     @agent.setter
@@ -735,7 +735,7 @@ class Bridge:
         lane = Lane(sid=sid, agent=value, queue=self._first_queue,
                       busy=bool(getattr(self, "_busy_pending", False)))
         self._busy_pending = False
-        self.seritler[sid] = lane
+        self.lanes[sid] = lane
         self._active_sid = sid
         # Bind the stream gates to the lane: if this lane drops to the
         # background its events must not leak into the active chat. The
@@ -751,7 +751,7 @@ class Bridge:
 
     def _lane(self) -> Lane | None:
         self._lane_fields()
-        return self.seritler.get(self._active_sid or "")
+        return self.lanes.get(self._active_sid or "")
 
     @property
     def queue(self) -> asyncio.Queue:
@@ -791,7 +791,7 @@ class Bridge:
 
     # -- called from the HTTP thread ------------------------------------
 
-    def submit(self, text: str, image: str = "", *, siraya: bool = False) -> None:
+    def submit(self, text: str, image: str = "", *, queue: bool = False) -> None:
         """Hands the user message to the agent.
 
         Plain text arriving while the agent is BUSY now goes not to the queue
@@ -801,7 +801,7 @@ class Bridge:
         the turn to end.
 
         The old queue behaviour is kept in three cases:
-          * `siraya=True` — sources such as scheduled tasks and the external
+          * `queue=True` — sources such as scheduled tasks and the external
             gate, which must not mix into the middle of the running job.
           * A message with an image — an image block cannot enter a harness
             note (the system channel is plain text); the old queue keeps it
@@ -812,7 +812,7 @@ class Bridge:
         if not image and _is_ack(text):
             return
         agent = self.agent
-        if (self._busy and not siraya and not image
+        if (self._busy and not queue and not image
                 and agent is not None and not agent.inbox_full()):
             self.hub.emit({"type": "araya", "text": text})
             note = BARGE_NOTE.format(text=text)
@@ -832,7 +832,7 @@ class Bridge:
         The internal marker lands in the queue; when its turn comes (agent
         idle) a resume turn opens. If the agent is busy the marker waits in
         the queue for the turn to end — by then the result may already have
-        been delivered by the note at the start of the turn, and `_surdur`
+        been delivered by the note at the start of the turn, and `_resume`
         does not call the model for nothing. (Backward compat: active lane.
         The lane-specific path is `_lane_child_done` — every agent binds to
         its own lane.)
@@ -943,7 +943,7 @@ class Bridge:
             try:
                 agent.mind.set_session_meta(
                     sid,
-                    ad=folder.name[:80] or "Dornick ile aç",
+                    name=folder.name[:80] or "Dornick ile aç",
                     path=str(folder),
                 )
                 # Write it to the project-folder tag too: group it in the
@@ -1063,8 +1063,8 @@ class Bridge:
         sessions_dir = agent.config.sessions_dir
 
         # Is the target already on a lane (running or waiting in the background)?
-        if sid and sid in self.seritler and sid != self._active_sid:
-            return self._activate(self.seritler[sid], resumed=True)
+        if sid and sid in self.lanes and sid != self._active_sid:
+            return self._activate(self.lanes[sid], resumed=True)
 
         if sid:
             path = Path(sessions_dir) / f"{sid}.jsonl"
@@ -1098,8 +1098,8 @@ class Bridge:
         agent.mind.session_id = session.id
         agent._last_encoded = ""      # reset the instant-encode dedupe in the new session
         active.sid = session.id
-        self.seritler.pop(old_key, None)
-        self.seritler[session.id] = active
+        self.lanes.pop(old_key, None)
+        self.lanes[session.id] = active
         self._active_sid = session.id
         self.server.rebind(session)
         # CLOSE the old session's log file. Windows won't let an open file be
@@ -1110,7 +1110,7 @@ class Bridge:
         try:
             if (old_session is not None and old_session is not session
                     and not any(getattr(s.agent, "session", None) is old_session
-                                for s in self.seritler.values())):
+                                for s in self.lanes.values())):
                 old_session.close()
         except Exception:
             pass
@@ -1224,7 +1224,7 @@ class Bridge:
                 self._lane_child_done, s))
         agent.on_retry_wait = self._swap_model
         lane.agent = agent
-        self.seritler[session.id] = lane
+        self.lanes[session.id] = lane
         lane.task = self.loop.create_task(self._pump_lane(lane))
         return lane
 
@@ -1677,7 +1677,7 @@ class Bridge:
         # under it drops the running turn. It is dropped from the cache only
         # when nobody uses it either.
         in_use = any(s.agent is not None and s.agent.client is old
-                     for s in self.seritler.values())
+                     for s in self.lanes.values())
         if not in_use:
             for key, cached in list(getattr(self, "_clients", {}).items()):
                 if cached is old:
@@ -1779,7 +1779,7 @@ class Bridge:
             # from here. In the field, "which version is open?" must not go
             # unanswered.
             "surum": environment.version(),
-            "kurulu": environment.kurulu_mu(),
+            "kurulu": environment.is_installed(),
             # Can the agent actually authenticate (a key exists, or a local
             # server)? The UI shows the first-run guidance based on this —
             # even if the model comes as "oto", without a key no work is done.
@@ -1955,7 +1955,7 @@ class Bridge:
         """Has the cap been reached? If so, the single line to print in the chat.
 
         The agent loop asks BEFORE every model call (see
-        loop.AgentIO.butce_freni). No network here, no file: only the
+        loop.AgentIO.budget_brake). No network here, no file: only the
         counter we have and the price tag we have.
 
         If the price is unknown (local server, model outside the catalogue)
@@ -1978,7 +1978,7 @@ class Bridge:
         """Was this channel running in the background (for the finished-channel notice)."""
         children = getattr(self.agent, "_children", None) or {}
         handle = children.get(cid)
-        return bool(handle is not None and handle.arka_plan)
+        return bool(handle is not None and handle.background)
 
     def tasks(self) -> dict[str, Any]:
         """Single list of every running (and recently finished) job (HTTP thread).
@@ -2004,7 +2004,7 @@ class Bridge:
         for h in children.values():
             summary = ""
             if h.state != "kosuyor":
-                summary = short_job_summary(h.sonuc or "", title=h.title)[:400]
+                summary = short_job_summary(h.outcome or "", title=h.title)[:400]
             rows.append({
                 "id": "c:" + h.id,
                 "ad": h.title,
@@ -2012,12 +2012,12 @@ class Bridge:
                 "durum": h.state,
                 # For an orphan the real start is unknown (inherited from the
                 # previous session): 0 is sent, the UI draws no duration.
-                "basladi": 0.0 if h.state == "yetim" else h.baslangic_ts,
-                "bitti": h.bitis_ts,
+                "basladi": 0.0 if h.state == "yetim" else h.started_ts,
+                "bitti": h.ended_ts,
                 "ozet": summary,
                 "model": h.model,
                 "oturum": h.session_id,
-                "arka_plan": bool(h.arka_plan),
+                "arka_plan": bool(h.background),
                 "pid": None,
                 "durdurulabilir": h.state == "kosuyor",
                 "surdurulebilir": (
@@ -2025,8 +2025,8 @@ class Bridge:
                     and bool(h.session_id)
                     and h.kind != "iş"
                 ),
-                "son_arac": h.son_arac if h.state == "kosuyor" else "",
-                "son_hedef": h.son_hedef if h.state == "kosuyor" else "",
+                "son_arac": h.last_tool if h.state == "kosuyor" else "",
+                "son_hedef": h.last_goal if h.state == "kosuyor" else "",
                 "wait": h.wait if h.state == "kosuyor" else None,
                 "deliverable": h.deliverable,
                 "usage": dict(h.usage) if h.usage else None,
@@ -2078,7 +2078,7 @@ class Bridge:
         handle = children.get(cid)
         if handle is None:
             return {"ok": False, "error": "Görev bulunamadı."}
-        text = str(handle.sonuc or "").strip()
+        text = str(handle.outcome or "").strip()
         if not text and handle.state == "kosuyor":
             # While running, the current status instead of an empty report —
             # Viewer / Open report.
@@ -2091,10 +2091,10 @@ class Bridge:
                 if w.get("saniye"):
                     line += f" · {w['saniye']}s"
                 parts.append(line)
-            elif handle.son_arac:
-                line = f"Şu an: {handle.son_arac}"
-                if handle.son_hedef:
-                    line += f" — {handle.son_hedef}"
+            elif handle.last_tool:
+                line = f"Şu an: {handle.last_tool}"
+                if handle.last_goal:
+                    line += f" — {handle.last_goal}"
                 parts.append(line)
             else:
                 parts.append("Araç bekleniyor…")
@@ -2201,10 +2201,10 @@ class Bridge:
                 from . import task_runs
                 from .loop import _report_with_meter, _run_meter
 
-                if handle is not None and not getattr(handle, "bitis_ts", 0):
+                if handle is not None and not getattr(handle, "ended_ts", 0):
                     try:
                         import time as _time
-                        handle.bitis_ts = _time.time()
+                        handle.ended_ts = _time.time()
                     except Exception:
                         pass
                 meter = (
@@ -2217,8 +2217,8 @@ class Bridge:
                     if run.child_id and run.child_id != child_id:
                         continue
                     body = "Kullanıcı durdurdu."
-                    if handle is not None and getattr(handle, "sonuc", None):
-                        body = str(handle.sonuc)[:500] or body
+                    if handle is not None and getattr(handle, "outcome", None):
+                        body = str(handle.outcome)[:500] or body
                     report = body
                     if handle is not None:
                         report = _report_with_meter(
@@ -2293,7 +2293,7 @@ class Bridge:
         """Drops an orphaned/finished helper from the ledger AND from the boot scan.
 
         Persistence: a `subagent_end` closure is written into the child's own
-        log — `yetim_tara` never resurrects a log that has seen a closure.
+        log — `scan_orphans` never resurrects a log that has seen a closure.
         ("There is Continue but no Cancel" — live request, 31.08.)
         """
         gid = str(gid or "").strip()
@@ -2400,7 +2400,7 @@ class Bridge:
                 {"type": "session_title", "id": sid, "title": name}),
             # Budget brake: the loop asks before every model call. Since the
             # price and the counters are here, the decision is here too.
-            butce_freni=self._budget_brake,
+            budget_brake=self._budget_brake,
             # Orchestra channels: sub-agents should look live (conductor mode).
             on_child_start=lambda title, model, cid, bg=False: publish(
                 {"type": "child_start", "title": title, "model": model, "id": cid,
@@ -2532,14 +2532,14 @@ class Bridge:
 
     async def _pump_item(self, lane: Lane, item: Any) -> None:
         if item is _CHILD_DONE:
-            await self._surdur(lane)
+            await self._resume(lane)
         elif item is _PARK_RESUME:
-            await self._park_surdur(lane)
+            await self._resume_parked(lane)
         else:
             text, image = item
-            await self._isle(text, image, lane=lane)
+            await self._handle(text, image, lane=lane)
 
-    async def _park_surdur(self, lane: Lane | None = None) -> None:
+    async def _resume_parked(self, lane: Lane | None = None) -> None:
         """Resumes a parked (unfinished) run from where it stopped.
 
         The counterpart of the marker dropped into the queue when a park
@@ -2564,7 +2564,7 @@ class Bridge:
                 self._swap_model()
             self._lane_emit(lane, {"type": "turn_end"})
 
-    async def _surdur(self, lane: Lane | None = None) -> None:
+    async def _resume(self, lane: Lane | None = None) -> None:
         """A helper finished and the agent is idle: the turn that weighs the result.
 
         If nothing is left to report (the result was already delivered at the
@@ -2599,7 +2599,7 @@ class Bridge:
             ev.setdefault("sid", lane.sid)   # see io().publish: the switch race
             self.hub.emit(ev)
 
-    async def _isle(self, text: str, image: str = "", *,
+    async def _handle(self, text: str, image: str = "", *,
                     lane: Lane | None = None) -> None:
         """Processes a single message on its lane (default: the active lane).
 
@@ -2612,7 +2612,7 @@ class Bridge:
         self._lane_status(lane, True)
         agent = lane.agent
         # New user message = new turn: the chip's "this turn" total starts
-        # from zero. The session total is untouched; resume turns (_surdur,
+        # from zero. The session total is untouched; resume turns (_resume,
         # park) count as continuation of the same work and don't reset. The
         # counter is reset only on the active lane — the chip shows the
         # active chat.
@@ -2627,14 +2627,14 @@ class Bridge:
             # with an unintelligible API error, an assistant message that
             # points the way lands in the chat. If the user types again it
             # is repeated; but a message is answered once.
-            if settings.yapilandirilmamis(agent.config.model):
+            if settings.unconfigured(agent.config.model):
                 agent.session.add_user_text(text)
                 agent.session.add_assistant(
-                    [{"type": "text", "text": settings.KURULUM_YONLENDIRME}]
+                    [{"type": "text", "text": settings.SETUP_REDIRECT}]
                 )
                 self._lane_emit(lane,
                                   {"type": "setup_hint",
-                                   "text": settings.KURULUM_YONLENDIRME})
+                                   "text": settings.SETUP_REDIRECT})
                 return
             # The title does not wait for the END of the run: on the left, a
             # "crumb of the first words" hung for the whole of a long run.
@@ -3047,7 +3047,7 @@ async def _boot(config: Config, port: int, resume: bool) -> Runtime:
     # a marker is dropped into the child log at once so a second boot does
     # not report the same orphan again; the news is given below (once the
     # agent is built) to both the user and the model.
-    orphans = yetim_tara(config.sessions_dir)
+    orphans = scan_orphans(config.sessions_dir)
     if orphans:
         mark_orphan(config.sessions_dir, orphans)
 
@@ -3466,7 +3466,7 @@ def run(config: Config, *, port: int = 8765, resume: bool = False,
         raise SystemExit(
             "Bu kurulum eksik görünüyor (pencere paketi yok). Kurulum "
             "sihirbazını yeniden çalıştırmak eksiği onarır."
-            if environment.kurulu_mu() else
+            if environment.is_installed() else
             "Masaüstü penceresi için pywebview gerekli: pip install 'dornick[app]'"
         ) from None
 
@@ -3991,7 +3991,7 @@ def _install_shell() -> bool:
     """
     if sys.platform != "win32":
         return True
-    targets = _dornick_windows(gizli_de=True)   # see _apply_native_styles
+    targets = _dornick_windows(hidden_too=True)   # see _apply_native_styles
     if not targets:
         return False
     ok = False
@@ -4176,7 +4176,7 @@ def _apply_native_styles() -> bool:
         # the shell was never installed, and when the window was shown later
         # Windows' own title bar stayed ON TOP of the app's strip (live
         # wound, 02.09: "two strips at the top").
-        targets = _dornick_windows(gizli_de=True)
+        targets = _dornick_windows(hidden_too=True)
         if not targets:
             return False
         for hwnd in targets:
@@ -4332,14 +4332,14 @@ def _win_do(action: str, window: Any | None = None) -> bool:
         return False
 
 
-def _dornick_windows(*, gizli_de: bool = False) -> list[int]:
+def _dornick_windows(*, hidden_too: bool = False) -> list[int]:
     """HWNDs of the visible top-level windows titled 'dornick' in this process.
 
     FindWindowW(None, title) returns a single match and on some setups found
     nothing at all; EnumWindows reliably gives every match (proven on the
     live window).
 
-    `gizli_de=True` lifts the visibility filter: the one place that needs an
+    `hidden_too=True` lifts the visibility filter: the one place that needs an
     owner HWND even while the window is hidden to the tray is `_confirm_quit`
     — and at exactly that moment the window is hidden.
     """
@@ -4352,7 +4352,7 @@ def _dornick_windows(*, gizli_de: bool = False) -> list[int]:
 
     @ctypes.WINFUNCTYPE(ctypes.c_bool, wintypes.HWND, wintypes.LPARAM)
     def _enum(hwnd, _lparam):
-        if not gizli_de and not user32.IsWindowVisible(hwnd):
+        if not hidden_too and not user32.IsWindowVisible(hwnd):
             return True
         # ONLY this process's window: with two dornick instances open (or a
         # test instance around) the buttons were driving the OTHER instance's
@@ -4725,7 +4725,7 @@ def _confirm_quit(question: str) -> bool:
         MB_SETFOREGROUND = 0x00010000
         IDYES = 6
         try:
-            owners = _dornick_windows(gizli_de=True)
+            owners = _dornick_windows(hidden_too=True)
         except Exception:
             owners = []
         answer = ctypes.windll.user32.MessageBoxW(

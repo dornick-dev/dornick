@@ -66,7 +66,7 @@ def _guard(path: Path, ctx: ToolContext) -> ToolResult | None:
     # otherwise it would bypass the permission gate entirely by deleting
     # the hook that blocks it or writing its own command there. The rule is
     # in one place and every write tool passes through here.
-    if hooks.korunan_mu(path):
+    if hooks.is_protected(path):
         return ToolResult.error(
             f"{path} kanca dosyasıdır ve yazmaya kapalıdır. Kancalar "
             "kullanıcının senin üzerinde kurduğu kurallardır; onay "
@@ -265,7 +265,7 @@ async def _testrun_suffix(path: Path, writes: int) -> str:
     decision is the model's.
     """
     try:
-        return await asyncio.to_thread(testrun.hatirlatma, path, yazim=writes)
+        return await asyncio.to_thread(testrun.reminder, path, writes=writes)
     except Exception:  # pragma: no cover - the reminder never gets in the way
         return ""
 
@@ -287,12 +287,12 @@ async def _diagnosis_suffix(path: Path) -> tuple[str, dict[str, Any]]:
     working tool.
     """
     try:
-        diagnosis = await asyncio.to_thread(diagnostics.denetle, path)
+        diagnosis = await asyncio.to_thread(diagnostics.check, path)
     except Exception:  # pragma: no cover - the diagnosis layer never gets in the way
         return "", {}
     if diagnosis is None:
         return "", {}
-    return "\n\n" + diagnosis.metin(), {"tani": diagnosis.detay()}
+    return "\n\n" + diagnosis.text(), {"tani": diagnosis.detail()}
 
 
 def _esnek_esle(text: str, old: str, new: str):
@@ -924,7 +924,7 @@ cevapta yazar.
         pattern = args.get("pattern") or None
         if target.is_dir():
             paths = await asyncio.to_thread(
-                diagnostics.batch_paths, target, desen=pattern, tavan=MAX_AUDIT_FILES
+                diagnostics.batch_paths, target, pattern=pattern, limit=MAX_AUDIT_FILES
             )
             root: Path | None = target
         else:
@@ -933,10 +933,10 @@ cevapta yazar.
         if not paths:
             return ToolResult(
                 content=f"{target} altında denetlenebilir dosya yok. "
-                        "Tanınan uzantılar: " + ", ".join(sorted(diagnostics.UZANTILAR)) + "."
+                        "Tanınan uzantılar: " + ", ".join(sorted(diagnostics.EXTENSIONS)) + "."
             )
 
-        diagnoses = await asyncio.to_thread(diagnostics.denetle_coklu, paths)
+        diagnoses = await asyncio.to_thread(diagnostics.check_many, paths)
         if not diagnoses:
             # A single file with an unrecognised extension: no invention,
             # say so honestly.
@@ -947,10 +947,10 @@ cevapta yazar.
 
         faulty = sum(1 for t in diagnoses if t.status == "hata")
         return ToolResult(
-            content=diagnostics.ozet(diagnoses, kok=root),
+            content=diagnostics.summary(diagnoses, root=root),
             detail={
                 "path": str(target),
                 "hatali": faulty,
-                "taniler": [t.detay() for t in diagnoses],
+                "taniler": [t.detail() for t in diagnoses],
             },
         )

@@ -428,7 +428,7 @@ def _fake_session(sessions_dir: Path, sid: str, turns: list[tuple[str, str]]) ->
 
 
 def test_a_conversation_can_be_named_and_tagged(tmp_path: Path, mind: Mind) -> None:
-    record = mind.set_session_meta("s1", ad="CMS göçü", etiketler=["cms", "acil"])
+    record = mind.set_session_meta("s1", name="CMS göçü", tags=["cms", "acil"])
     # NOT exact dict equality: the record later gained new fields
     # (model/path/provider — the window handover work) and every new field
     # must not break this test. The test checks that the two fields we gave
@@ -447,7 +447,7 @@ def test_archive_moves_the_log_out_of_the_list(tmp_path: Path, mind: Mind) -> No
     session is not moved."""
     sid = "20260610T090000Z"
     _fake_session(mind.sessions_dir, sid, [("user", "pompa"), ("assistant", "ok")])
-    mind.set_session_meta(sid, ad="Pompa")
+    mind.set_session_meta(sid, name="Pompa")
     mind.set_project(sid, "SCADA")
     assert any(e.session_id == sid for e in mind.sessions())
 
@@ -466,35 +466,35 @@ def test_archive_moves_the_log_out_of_the_list(tmp_path: Path, mind: Mind) -> No
 
 def test_touching_one_field_leaves_the_other_alone(tmp_path: Path, mind: Mind) -> None:
     """A request that changes only the tags must not delete the name."""
-    mind.set_session_meta("s1", ad="CMS göçü", etiketler=["cms"])
-    record = mind.set_session_meta("s1", etiketler=["cms", "borsa"])
+    mind.set_session_meta("s1", name="CMS göçü", tags=["cms"])
+    record = mind.set_session_meta("s1", tags=["cms", "borsa"])
     assert record["ad"] == "CMS göçü"
-    record = mind.set_session_meta("s1", ad="Yeni ad")
+    record = mind.set_session_meta("s1", name="Yeni ad")
     assert record["etiketler"] == ["cms", "borsa"]
 
 
 def test_tags_are_normalised_and_bounded(tmp_path: Path, mind: Mind) -> None:
     """A tag is a filter key: "CMS" and "cms" cannot be two separate sets."""
     record = mind.set_session_meta(
-        "s1", etiketler=["  CMS  ", "cms", "Borsa", "", "   "])
+        "s1", tags=["  CMS  ", "cms", "Borsa", "", "   "])
     assert record["etiketler"] == ["cms", "borsa"]
     # Bound: more than eight tags on one conversation is unreadable in the panel.
-    many = mind.set_session_meta("s2", etiketler=[f"e{i}" for i in range(20)])
+    many = mind.set_session_meta("s2", tags=[f"e{i}" for i in range(20)])
     assert len(many["etiketler"]) == 8
 
 
 def test_an_empty_name_and_no_tags_drops_the_record(tmp_path: Path, mind: Mind) -> None:
     """Deleting the name means falling back to the derived title; empty records must not pile up in the file."""
-    mind.set_session_meta("s1", ad="Bir ad")
-    mind.set_session_meta("s1", ad="")
+    mind.set_session_meta("s1", name="Bir ad")
+    mind.set_session_meta("s1", name="")
     assert "s1" not in mind.session_meta()
 
 
 def test_session_meta_keeps_path_and_model(tmp_path: Path, mind: Mind) -> None:
     """If a folder/model is attached the record does not drop even when the name is deleted."""
     mind.set_session_meta(
-        "s1", ad="İş", path=r"D:\proj\foo", model="openai/gpt-4o-mini")
-    record = mind.set_session_meta("s1", ad="")
+        "s1", name="İş", path=r"D:\proj\foo", model="openai/gpt-4o-mini")
+    record = mind.set_session_meta("s1", name="")
     assert record["path"].endswith("foo")
     assert record["model"] == "openai/gpt-4o-mini"
     assert "s1" in mind.session_meta()
@@ -516,7 +516,7 @@ def test_binding_a_folder_also_files_the_chat_under_that_project(
     assert mind.projects().get("s1") == "Dornick SCADA"
     # No path and no project either → stays empty.
     mind.set_project("s2", "")
-    mind.set_session_meta("s2", ad="yalnız ad")
+    mind.set_session_meta("s2", name="yalnız ad")
     assert "s2" not in mind.projects()
 
 
@@ -533,7 +533,7 @@ def test_the_raw_logs_are_never_touched_by_naming(tmp_path: Path, mind: Mind) ->
     sessions = tmp_path / "sessions"
     _fake_session(sessions, "20260101T000000Z", [("user", "merhaba")])
     before = (sessions / "20260101T000000Z.jsonl").read_bytes()
-    mind.set_session_meta("20260101T000000Z", ad="Selamlaşma", etiketler=["x"])
+    mind.set_session_meta("20260101T000000Z", name="Selamlaşma", tags=["x"])
     assert (sessions / "20260101T000000Z.jsonl").read_bytes() == before
 
 

@@ -18,13 +18,13 @@ stale cache still works when offline). The filter has three layers:
     the full list is fetched and filtered.
 
 Free endpoints have a known temperament: they can slow down, return empty,
-disappear. `Saglik` counts the last few calls per model; a model that errors
+disappear. `Health` counts the last few calls per model; a model that errors
 back-to-back is pushed to the end of the pool for a while — the user does
 not live through "why do I keep getting the same error". In-memory is
 enough: when the process restarts everyone returns with a clean slate.
 
 No field here TOUCHES another provider's request: request shaping only kicks
-in when `oto_mu` is true.
+in when `is_auto` is true.
 """
 
 from __future__ import annotations
@@ -58,7 +58,7 @@ ERROR_THRESHOLD = 2
 PENALTY_S = 15 * 60
 
 
-def oto_mu(model: ModelConfig) -> bool:
+def is_auto(model: ModelConfig) -> bool:
     """Is this configuration auto mode?
 
     Both conditions at once: the address is OpenRouter AND the name is
@@ -146,7 +146,7 @@ _LOCK = threading.Lock()
 _MEMORY: dict[str, tuple[float, list[str]]] = {}
 
 
-def havuz(state_dir: Path | str | None = None, *, now: Callable[[], float] = time.time) -> list[str]:
+def pool(state_dir: Path | str | None = None, *, now: Callable[[], float] = time.time) -> list[str]:
     """The free model pool (at most POOL_SIZE ids).
 
     Order: in-memory (fresh) > cache on disk (fresh) > live list >
@@ -215,7 +215,7 @@ def _write(file: Path, record: dict[str, Any]) -> None:
 # -- health ------------------------------------------------------------
 
 
-class Saglik:
+class Health:
     """Per-model health score: the record of the last WINDOW calls.
 
     Timeout, empty response and error are in the same basket: the call

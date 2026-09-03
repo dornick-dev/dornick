@@ -179,8 +179,8 @@ def test_neighbour_of_what_was_used_is_refreshed(store, sessions, watermark, cal
     Log(sessions, "s1", calendar).touch(y.id).close()
     _night(store, sessions, watermark, calendar)
 
-    assert any(k.etiket == A.SCHEMA for k in store.use_log(x.id))
-    assert not any(k.etiket == A.SCHEMA for k in store.use_log(w.id))
+    assert any(k.label == A.SCHEMA for k in store.use_log(x.id))
+    assert not any(k.label == A.SCHEMA for k in store.use_log(w.id))
 
 
 def test_schema_refresh_raises_activation(
@@ -400,11 +400,11 @@ def test_remaining_sessions_carry_over_when_the_budget_runs_out(
         Log(sessions, f"s{i}", calendar).touch(n.id).close()
 
     report = _night(store, sessions, watermark, calendar, budget_s=0.0)
-    assert report.devreden > 0
+    assert report.carried_over > 0
     assert report.replayed <= 1          # the first unit still completes
 
     second = _night(store, sessions, watermark, calendar, budget_s=300.0)
-    assert second.replayed >= report.devreden - 1
+    assert second.replayed >= report.carried_over - 1
 
 
 def test_processed_session_is_not_replayed_the_second_night(
@@ -456,7 +456,7 @@ def test_calm_record_next_to_a_surprising_event_is_captured(
     g.touch(calm.id).touch(surprising.id).close("basarisiz")
     _night(store, sessions, watermark, calendar)
 
-    assert any(k.etiket == A.CAPTURED for k in store.use_log(calm.id))
+    assert any(k.label == A.CAPTURED for k in store.use_log(calm.id))
 
 
 def test_distant_record_is_not_captured(store, sessions, watermark, calendar) -> None:
@@ -474,7 +474,7 @@ def test_distant_record_is_not_captured(store, sessions, watermark, calendar) ->
     g.touch(surprising.id).close("basarisiz")
     _night(store, sessions, watermark, calendar)
 
-    assert not any(k.etiket == A.CAPTURED for k in store.use_log(distant.id))
+    assert not any(k.label == A.CAPTURED for k in store.use_log(distant.id))
 
 
 # -- distillation gate (Step 6 is a separate PR) -----------------------

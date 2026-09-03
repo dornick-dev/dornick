@@ -1,4 +1,4 @@
-"""Plan aracı — büyük işlerde onaylanabilir adım listesi üretir."""
+"""Plan tool — produces an approvable step list for big jobs."""
 
 from __future__ import annotations
 
@@ -44,8 +44,8 @@ def register(registry: ToolRegistry) -> None:
                 "step": {"type": "integer",
                          "description": "Adım sırası (1'den başlar) — action=step için."},
                 "title": {"type": "string"},
-                # `items` ŞART: Gemini `items`siz bir array gördüğünde
-                # araç listesinin TAMAMINI reddediyor
+                # `items` is REQUIRED: when Gemini sees an array without
+                # `items` it rejects the ENTIRE tool list
                 # ("parameters.properties[steps].items: missing field").
                 "steps": {
                     "type": "array",
@@ -79,7 +79,7 @@ def register(registry: ToolRegistry) -> None:
                 title=str(args.get("title") or "Plan"),
                 steps=args.get("steps") or [],
             )
-            # Olay: arayüz kartı.
+            # Event: the UI card.
             ctx.session.log.note(
                 "plan",
                 id=plan.id, title=plan.title, status=plan.status,
@@ -107,9 +107,10 @@ def register(registry: ToolRegistry) -> None:
                 return ToolResult.error(str(exc))
             if updated is None:
                 return ToolResult.error(f"Plan yok: {pid}")
-            # Olay ŞART: kart canlı güncellenmeli. Eksikliği ölçülen bir
-            # yaraydı — kullanıcı "onaylandı ama kart hâlâ Onayla diyor,
-            # hangi aşamadayız görünmüyor" dedi (29.08).
+            # The event is REQUIRED: the card must update live. Its absence
+            # was a measured wound — the user said "it is approved but the
+            # card still says Approve, we cannot see which stage we are at"
+            # (29.08).
             ctx.session.log.note(
                 "plan",
                 id=updated.id, title=updated.title, status=updated.status,
@@ -122,20 +123,20 @@ def register(registry: ToolRegistry) -> None:
 
         if action == "step":
             pid = str(args.get("id") or "").strip()
-            sira = int(args.get("step") or 0)
+            index = int(args.get("step") or 0)
             status = str(args.get("status") or "bitti").strip()
-            if not pid or sira < 1:
+            if not pid or index < 1:
                 return ToolResult.error("id ve step (1'den başlar) gerekli")
-            mevcut = store.get(state_dir, pid)
-            if mevcut is None:
+            existing = store.get(state_dir, pid)
+            if existing is None:
                 return ToolResult.error(f"Plan yok: {pid}")
-            if sira > len(mevcut.steps):
+            if index > len(existing.steps):
                 return ToolResult.error(
-                    f"Plan {len(mevcut.steps)} adımlı; step={sira} yok")
-            adimlar = [dict(s) for s in mevcut.steps]
-            adimlar[sira - 1]["status"] = status
+                    f"Plan {len(existing.steps)} adımlı; step={index} yok")
+            steps = [dict(s) for s in existing.steps]
+            steps[index - 1]["status"] = status
             try:
-                updated = store.update(state_dir, pid, steps=adimlar)
+                updated = store.update(state_dir, pid, steps=steps)
             except store.PlanError as exc:
                 return ToolResult.error(str(exc))
             ctx.session.log.note(
@@ -143,10 +144,10 @@ def register(registry: ToolRegistry) -> None:
                 id=updated.id, title=updated.title, status=updated.status,
                 steps=updated.steps,
             )
-            biten = sum(1 for s in updated.steps if s.get("status") == "bitti")
+            done = sum(1 for s in updated.steps if s.get("status") == "bitti")
             return ToolResult(
-                f"Adım {sira} → {status} ({biten}/{len(updated.steps)} bitti)",
-                detail={"id": updated.id, "step": sira},
+                f"Adım {index} → {status} ({done}/{len(updated.steps)} bitti)",
+                detail={"id": updated.id, "step": index},
             )
 
         return ToolResult.error(f"Bilinmeyen işlem: {action}")

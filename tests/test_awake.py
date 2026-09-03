@@ -235,7 +235,7 @@ def test_micro_sleep_reduces_debt_without_clearing_it(
     report = awake.micro_sleep(store, sessions, clock=clock,
                                watermark=watermark, budget_s=0.0)
     assert report.replayed >= 1
-    assert report.devreden >= 1              # night still has work left
+    assert report.carried_over >= 1              # night still has work left
 
 
 # -- 3.12.4 local sleep ------------------------------------------------

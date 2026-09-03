@@ -482,9 +482,9 @@ def test_the_turn_reopens_the_window() -> None:
 
     from dornick import desktop
 
-    # Message handling moved from pump to _isle (for the first-setup gate);
+    # Message handling moved from pump to _handle (for the first-setup gate);
     # the call that opens the ear is now there.
-    source = inspect.getsource(desktop.Bridge._isle)
+    source = inspect.getsource(desktop.Bridge._handle)
     assert "self.ear.engage()" in source
 
 

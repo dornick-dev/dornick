@@ -338,7 +338,7 @@ class RecallStore:
                 "UPDATE node SET use_log=? WHERE id=?", rows_to_write)
 
     def add_use(self, node_id: str, *, w: float = 1.0,
-                      etiket: str = activation.OPENED) -> bool:
+                      label: str = activation.OPENED) -> bool:
         """Writes a use into the trace — without bumping the counter.
 
         `open()` is the model reading the record; this is the system giving
@@ -358,7 +358,7 @@ class RecallStore:
                 last_used=row["last_used"], uses=int(row["uses"] or 0))
             self._db.execute(
                 "UPDATE node SET use_log=? WHERE id=?",
-                (activation.append_use(history, self._clock(), w=w, etiket=etiket), node_id))
+                (activation.append_use(history, self._clock(), w=w, label=label), node_id))
             self._db.commit()
         return True
 
@@ -565,7 +565,7 @@ class RecallStore:
         # Inheritance + a new write stamp: the correction takes over the
         # consolidation of what it corrects and puts its own freshness on top.
         inherited = activation.append_use(self.use_log(old_id), self._clock(),
-                                          etiket=activation.WRITTEN)
+                                          label=activation.WRITTEN)
         new = self.remember(
             body,
             kind=kind or old.kind,
@@ -788,10 +788,10 @@ class RecallStore:
             fresh = (written is not None
                      and (now - written).days < fresh_days
                      and not (row["superseded_by"] or ""))
-            distilled = any(k.etiket == activation.DISTILLED for k in history)
+            distilled = any(k.label == activation.DISTILLED for k in history)
             aged = distilled and history and (
                 now - max(k.t for k in history
-                          if k.etiket == activation.DISTILLED)).days >= distilled_days
+                          if k.label == activation.DISTILLED)).days >= distilled_days
             hot = bool((fresh or b >= threshold) and not aged)
             if hot and not row["hot"]:
                 warming.append(row["id"])
@@ -1061,7 +1061,7 @@ class RecallStore:
             self._db.execute(
                 "UPDATE node SET uses=uses+1, last_used=?, use_log=? WHERE id=?",
                 (now, activation.append_use(history, self._clock(),
-                                            etiket=activation.OPENED), node_id),
+                                            label=activation.OPENED), node_id),
             )
             self._db.commit()
         node = self._node(row)

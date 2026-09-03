@@ -278,7 +278,7 @@ def test_tanima_reset_moves_files_and_falls_back(tmp_path: Path, monkeypatch) ->
     assert (backup / "taban.npz").read_bytes() == b"KISISEL"
     assert (backup / "kisisel_korpus.jsonl").is_file()
     # The cache dropped: the next enrichment will probe the disk again.
-    assert writer._writer is None and writer._denendi is False
+    assert writer._writer is None and writer._attempted is False
 
     # Second reset: nothing to move, no backup folder is opened.
     again = recognition.reset(state)

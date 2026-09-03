@@ -2137,7 +2137,7 @@ def test_scheduled_tasks_are_editable_and_not_chat_dumps() -> None:
         / "src" / "dornick" / "loop.py").read_text(encoding="utf-8")
     assert "run_scheduled" in (Path(__file__).resolve().parents[1]
         / "src" / "dornick" / "desktop.py").read_text(encoding="utf-8")
-    assert "sessiz" in (Path(__file__).resolve().parents[1]
+    assert "quiet" in (Path(__file__).resolve().parents[1]
         / "src" / "dornick" / "loop.py").read_text(encoding="utf-8")
 
 

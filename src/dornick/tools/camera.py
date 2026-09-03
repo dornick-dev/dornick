@@ -1,15 +1,16 @@
-"""`kamera` aracı — kayıtlı kameralardan modele anlık kesit.
+"""The `kamera` tool — on-demand snapshots from the registered cameras to the model.
 
-Kullanıcının isteği (29.08): "soru sorduğumuzda kameralardan gerektiği
-kadar kesit alıp modele gönderebilsin". Sürekli izleme ayrı (watch.Watcher,
-hareket algılamalı); burası SORULDUĞUNDA bakma yolu.
+The user's request (29.08): "when we ask a question it should be able to
+take as many frames from the cameras as needed and send them to the
+model". Continuous watching is separate (watch.Watcher, with motion
+detection); this is the look-WHEN-ASKED path.
 
-NVIDIA GPU varsa kare önce yerelde analiz edilir (sight); sohbet modeli
-o metni de görür. GPU yoksa yalnız kesit gider.
+If there is an NVIDIA GPU the frame is analyzed locally first (sight);
+the chat model sees that text too. Without a GPU only the frame goes.
 
-Mahremiyet: `kesit` mutates=True — model kendi kararıyla kamerayı
-açamıyor; izin kipinde kullanıcı görüp onaylıyor. `liste` ve `yol`
-serbest: isimler ve son özet görüntü almak değil.
+Privacy: `kesit` is mutates=True — the model cannot open the camera on
+its own decision; in permission mode the user sees and approves. `liste`
+and `yol` are free: names and the last summary are not capturing images.
 """
 
 from __future__ import annotations
@@ -40,7 +41,7 @@ def _builtin() -> watch.Camera:
 
 
 def _line(cam: watch.Camera) -> str:
-    """Modele giden satır: şifre yok."""
+    """The line that goes to the model: no passwords."""
     bits = [f"  [{cam.id}] {cam.name}"]
     kind = (cam.kind or "usb").strip() or "usb"
     if cam.is_builtin():
@@ -73,10 +74,10 @@ def _line(cam: watch.Camera) -> str:
 
 def _resolve(cameras: list[watch.Camera], args: dict[str, Any]
              ) -> watch.Camera | str:
-    """Kamera kaydı veya hata metni."""
+    """A camera record, or an error text."""
     cid = str(args.get("id") or "").strip()
-    ad = str(args.get("name") or args.get("ad") or "").strip()
-    kaynak = str(args.get("source") or "").strip()
+    name = str(args.get("name") or args.get("ad") or "").strip()
+    source = str(args.get("source") or "").strip()
 
     def by_id(key: str) -> watch.Camera | None:
         return next((c for c in cameras if c.id == key), None)
@@ -88,8 +89,8 @@ def _resolve(cameras: list[watch.Camera], args: dict[str, Any]
             return next((c for c in cameras if c.is_builtin()), None) or _builtin()
         return f"Kamera yok: {cid} — önce liste çek."
 
-    if ad:
-        key = ad.casefold()
+    if name:
+        key = name.casefold()
         if key in (BUILTIN.casefold(), "dahili kamera", "dahili",
                    "bilgisayar kamerasi"):
             return next((c for c in cameras if c.is_builtin()), None) or _builtin()
@@ -98,25 +99,25 @@ def _resolve(cameras: list[watch.Camera], args: dict[str, Any]
             return exact[0]
         loose = [c for c in cameras if key in c.name.casefold()]
         if len(exact) > 1 or len(loose) > 1:
-            adlar = ", ".join(c.name for c in (exact or loose))
-            return f"Birden fazla kamera uydu ({adlar}); id ver."
+            names = ", ".join(c.name for c in (exact or loose))
+            return f"Birden fazla kamera uydu ({names}); id ver."
         if len(loose) == 1:
             return loose[0]
-        return f"Kamera yok: {ad} — önce liste çek."
+        return f"Kamera yok: {name} — önce liste çek."
 
-    if kaynak:
-        if kaynak in ("0",):
+    if source:
+        if source in ("0",):
             return next((c for c in cameras if c.is_builtin()), None) or _builtin()
-        hit = next((c for c in cameras if c.source == kaynak), None)
+        hit = next((c for c in cameras if c.source == source), None)
         if hit:
             return hit
-        return watch.Camera(id="anon", name=kaynak, source=kaynak)
+        return watch.Camera(id="anon", name=source, source=source)
 
     return next((c for c in cameras if c.is_builtin()), None) or _builtin()
 
 
 def _peek_frame(cam: watch.Camera, ctx: ToolContext) -> str:
-    """Açık tampondan kare — kamerayı yeniden açmaz."""
+    """A frame from an already-open buffer — does not reopen the camera."""
     if cam.is_builtin() and ctx.lens is not None and getattr(ctx.lens, "live", False):
         frame, _age = ctx.lens.snapshot()
         return frame or ""
@@ -127,13 +128,13 @@ def _peek_frame(cam: watch.Camera, ctx: ToolContext) -> str:
     return ""
 
 
-def _frames(cam: watch.Camera, adet: int, ctx: ToolContext) -> list[str]:
-    """Açık Lens/Watcher varsa ikinci kez açmaz."""
+def _frames(cam: watch.Camera, count: int, ctx: ToolContext) -> list[str]:
+    """Does not open a second time if a Lens/Watcher is already open."""
     import time
 
     if cam.is_builtin() and ctx.lens is not None and getattr(ctx.lens, "live", False):
         taken: list[str] = []
-        for i in range(adet):
+        for i in range(count):
             if i:
                 time.sleep(0.4)
             frame, _age = ctx.lens.snapshot()
@@ -142,13 +143,13 @@ def _frames(cam: watch.Camera, adet: int, ctx: ToolContext) -> list[str]:
             taken.append(frame)
         if taken:
             return taken
-    if adet == 1:
+    if count == 1:
         if peeked := _peek_frame(cam, ctx):
             return [peeked]
-    return watch.snapshot(cam.connect_source(), adet)
+    return watch.snapshot(cam.connect_source(), count)
 
 
-def _yol_text(cam: watch.Camera, gpu: str = "") -> str:
+def _status_text(cam: watch.Camera, gpu: str = "") -> str:
     lines = [f"{cam.name} [{cam.id}]"]
     if cam.last_seen:
         lines.append(f"  son görülme: {cam.last_seen}")
@@ -184,7 +185,7 @@ def register(registry: ToolRegistry) -> None:
         parallel_safe=False,
         safe_actions=("liste", "yol"),
     )
-    async def kamera(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
+    async def camera(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
         action = str(args.get("action") or "").strip()
 
         if not watch.available():
@@ -210,7 +211,7 @@ def register(registry: ToolRegistry) -> None:
                 if not any(c.is_builtin() for c in shown):
                     shown = [_builtin(), *shown]
                 return ToolResult(
-                    "\n\n".join(_yol_text(c) for c in shown),
+                    "\n\n".join(_status_text(c) for c in shown),
                     detail={"count": len(shown)},
                 )
 
@@ -230,31 +231,31 @@ def register(registry: ToolRegistry) -> None:
                     if frame:
                         gpu = await asyncio.to_thread(sight.analyze_url, frame)
                 return ToolResult(
-                    _yol_text(cam, gpu),
+                    _status_text(cam, gpu),
                     detail={"id": cam.id, "name": cam.name},
                 )
 
-            adet = max(1, min(int(args.get("adet") or 1), 4))
+            count = max(1, min(int(args.get("adet") or 1), 4))
             import asyncio
-            frames = await asyncio.to_thread(_frames, cam, adet, ctx)
+            frames = await asyncio.to_thread(_frames, cam, count, ctx)
             if not frames:
                 return ToolResult.error(
                     f"{cam.name} açılamadı: kamera kapalı, meşgul ya da adres "
                     "ulaşılamaz olabilir.")
             from .. import sight
 
-            analiz = await asyncio.to_thread(
+            analyses = await asyncio.to_thread(
                 lambda: [sight.analyze_url(f) for f in frames])
-            metin = (f"{cam.name} kamerasından {len(frames)} kesit alındı — "
-                     "kareler bir sonraki mesajında gözünün önünde.")
-            if any(analiz):
-                satirlar = []
-                for i, ozet in enumerate(analiz, 1):
-                    if ozet:
-                        satirlar.append(f"  kare {i}: {ozet}")
-                metin += "\nYerel GPU analizi:\n" + "\n".join(satirlar)
+            text = (f"{cam.name} kamerasından {len(frames)} kesit alındı — "
+                    "kareler bir sonraki mesajında gözünün önünde.")
+            if any(analyses):
+                lines = []
+                for i, summary in enumerate(analyses, 1):
+                    if summary:
+                        lines.append(f"  kare {i}: {summary}")
+                text += "\nYerel GPU analizi:\n" + "\n".join(lines)
             return ToolResult(
-                metin,
+                text,
                 detail={"images": frames, "id": cam.id, "name": cam.name},
             )
 
