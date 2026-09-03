@@ -582,7 +582,7 @@ def test_search_only_scans_the_most_recent_sessions(tmp_path: Path, mind: Mind) 
     assert len(mind.search_transcripts("anahtar", limit=2)) == 2
 
 
-def _arac_ortami(tmp_path: Path):
+def _tool_env(tmp_path: Path):
     """Tool registry + context + mind — other test files use this too."""
     mind = open_mind(tmp_path / "mind", tmp_path / "sessions", "cur")
     config = Config.load(tmp_path)

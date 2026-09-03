@@ -544,7 +544,7 @@ def _yazan_arac(registry: ToolRegistry, kok: Path) -> None:
         return ToolResult(f"{yol.name} yazıldı.")
 
 
-def _kabuk_araci(registry: ToolRegistry) -> None:
+def _shell_tool(registry: ToolRegistry) -> None:
     from dornick.tools import ToolResult, object_schema
 
     @registry.tool(name="shell", description="koş",
@@ -591,7 +591,7 @@ def test_running_the_entry_point_closes_the_turn_normally(tmp_path: Path) -> Non
     """Kullanıcının yazacağı komutu çalıştıran model dürtülmüyor."""
     registry = ToolRegistry()
     _yazan_arac(registry, tmp_path)
-    _kabuk_araci(registry)
+    _shell_tool(registry)
     hedef = tmp_path / "ara.py"
     client = FakeClient(
         tool_turn(("c1", "write_file", {"path": str(hedef), "content": CLI_KAYNAK})),
@@ -1058,9 +1058,9 @@ def _kopru(tmp_path: Path):
     kopru = Bridge.__new__(Bridge)
     uygulananlar: list[str] = []
 
-    class _Ajan:
+    class _Agent:
         pass
-    ajan = _Ajan()
+    ajan = _Agent()
     ajan.config = config
     ajan.mind = mind
     kopru.agent = ajan
@@ -1236,7 +1236,7 @@ def test_prime_still_surfaces_the_truly_relevant_memory(tmp_path: Path) -> None:
 # istenmez, uydurma riski yok.
 
 
-def _kabuk_hatali_turlar(n: int):
+def _shell_failing_kinds(n: int):
     turlar = []
     for i in range(n):
         turlar.append(tool_turn((f"c{i}", "shell",
@@ -1245,7 +1245,7 @@ def _kabuk_hatali_turlar(n: int):
     return turlar
 
 
-class _HataliKabukKayit(ToolRegistry):
+class _FailingShellRecord(ToolRegistry):
     pass
 
 
@@ -1266,7 +1266,7 @@ def test_repeated_error_pattern_becomes_a_lesson(tmp_path: Path) -> None:
                      + "dosyayı koş; $ içeren metinlerde tek tırnak kullan."),
             is_error=True)
 
-    client = FakeClient(*_kabuk_hatali_turlar(2))
+    client = FakeClient(*_shell_failing_kinds(2))
     agent = _akilli_agent(tmp_path, client, registry, [])
 
     asyncio.run(agent.run("karmaşık bir betik koştur"))
@@ -1351,7 +1351,7 @@ def test_a_chat_only_run_leaves_no_capsule(tmp_path: Path) -> None:
 # koşucular dosya adı geçmese de koşulmuş sayılır.
 
 
-def _yazan_ve_koan_ajan(tmp_path, turlar):
+def _writing_and_stopping_agent(tmp_path, turlar):
     from dornick.tools.base import ToolResult, object_schema
     registry = ToolRegistry()
 
@@ -1370,7 +1370,7 @@ def _yazan_ve_koan_ajan(tmp_path, turlar):
 
 
 def test_unrun_test_file_blocks_the_done_claim(tmp_path: Path) -> None:
-    agent, client = _yazan_ve_koan_ajan(tmp_path, [
+    agent, client = _writing_and_stopping_agent(tmp_path, [
         tool_turn(("c1", "write_file", {"path": "servis.py"}),
                   ("c2", "write_file", {"path": "test_servis.py"})),
         text_turn("Bitti, servis ve testleri hazır."),
@@ -1384,7 +1384,7 @@ def test_unrun_test_file_blocks_the_done_claim(tmp_path: Path) -> None:
 
 
 def test_bare_pytest_counts_as_running_the_tests(tmp_path: Path) -> None:
-    agent, client = _yazan_ve_koan_ajan(tmp_path, [
+    agent, client = _writing_and_stopping_agent(tmp_path, [
         tool_turn(("c1", "write_file", {"path": "test_servis.py"})),
         tool_turn(("c2", "shell", {"command": "py -m pytest -q"})),
         text_turn("Bitti — 7 test yeşil."),
@@ -1433,7 +1433,7 @@ def test_above_floor_still_primes_in_a_mature_mind() -> None:
     zihin = _sahte_zihin(200, skor=0.9)
     assert len(select_prime(zihin, 'rapor dosyasina bak')) == 1
 
-def _dosya_ctx(tmp_path):
+def _file_ctx(tmp_path):
     import asyncio
     from dornick.config import Config
     from dornick.events import EventLog
@@ -1456,7 +1456,7 @@ def test_read_many_reads_several_files_in_one_call(tmp_path) -> None:
     import asyncio
     from dornick.tools.base import ToolRegistry
     from dornick.tools import files as files_mod
-    ctx = _dosya_ctx(tmp_path)
+    ctx = _file_ctx(tmp_path)
     kok = ctx.sandbox.root
     kok.mkdir(parents=True, exist_ok=True)
     (kok / 'a.py').write_text('x = 1', encoding='utf-8')
@@ -1475,7 +1475,7 @@ def test_read_many_counts_as_reading_for_the_write_gate(tmp_path) -> None:
     import asyncio
     from dornick.tools.base import ToolRegistry
     from dornick.tools import files as files_mod
-    ctx = _dosya_ctx(tmp_path)
+    ctx = _file_ctx(tmp_path)
     kok = ctx.sandbox.root
     kok.mkdir(parents=True, exist_ok=True)
     (kok / 'a.py').write_text('x = 1', encoding='utf-8')
@@ -1540,7 +1540,7 @@ def test_shell_cwd_strips_the_workshop_prefix(tmp_path) -> None:
     import asyncio
     from dornick.tools.base import ToolRegistry
     from dornick.tools import shell as shell_mod
-    ctx = _dosya_ctx(tmp_path)
+    ctx = _file_ctx(tmp_path)
     kok = ctx.sandbox.root
     (kok / 'gorev').mkdir(parents=True)
     reg = ToolRegistry()
@@ -1624,7 +1624,7 @@ def test_read_result_advertises_unread_siblings(tmp_path) -> None:
     import asyncio
     from dornick.tools.base import ToolRegistry
     from dornick.tools import files as files_mod
-    ctx = _dosya_ctx(tmp_path)
+    ctx = _file_ctx(tmp_path)
     kok = ctx.sandbox.root
     kok.mkdir(parents=True, exist_ok=True)
     for ad in ('a.py', 'b.py', 'c.js'):
@@ -1685,7 +1685,7 @@ def test_plan_steps_can_be_ticked_and_the_card_hears_it(tmp_path) -> None:
     import asyncio, json
     from dornick.tools.base import ToolRegistry
     from dornick.tools import plan_tool
-    ctx = _dosya_ctx(tmp_path)
+    ctx = _file_ctx(tmp_path)
     reg = ToolRegistry()
     plan_tool.register(reg)
     r = asyncio.run(reg.get('plan').handler(
@@ -1722,7 +1722,7 @@ def test_camera_tool_lists_and_snapshots_via_monkeypatch(tmp_path, monkeypatch) 
     from dornick import watch
     from dornick.tools.base import ToolRegistry
     from dornick.tools import camera as kamera_mod
-    ctx = _dosya_ctx(tmp_path)
+    ctx = _file_ctx(tmp_path)
     monkeypatch.setattr(watch, 'available', lambda: True)
     monkeypatch.setattr(watch, 'load', lambda sd: [
         watch.Camera(id='cam_1', name='bahce', source='rtsp://x')])

@@ -44,7 +44,7 @@ def _kos(cmd, cwd, tekrar):
     return sureler, son_kod, ""
 
 
-def _ozet(sureler):
+def _summary(sureler):
     s = sorted(sureler)
     n = len(s)
     medyan = s[n // 2] if n % 2 else (s[n // 2 - 1] + s[n // 2]) / 2
@@ -67,7 +67,7 @@ def run(args, ctx):
     if a_kod != 0:
         return (f"Komut kırmızı (çıkış {a_kod}) — süre ölçümü anlamsız.\n"
                 f"Önce yeşile çek:\n{a_hata}")
-    a = _ozet(a_sure)
+    a = _summary(a_sure)
     satirlar.append(f"A `{komut}`: medyan {a['medyan']:.3f} sn "
                     f"(min {a['min']:.3f} / maks {a['maks']:.3f}, n={a['n']})")
 
@@ -77,7 +77,7 @@ def run(args, ctx):
         if b_kod != 0:
             satirlar.append(f"B `{kiyas}`: KIRMIZI (çıkış {b_kod}) — {b_hata}")
         else:
-            b = _ozet(b_sure)
+            b = _summary(b_sure)
             satirlar.append(f"B `{kiyas}`: medyan {b['medyan']:.3f} sn "
                             f"(min {b['min']:.3f} / maks {b['maks']:.3f})")
             if a["medyan"] > 0:

@@ -180,7 +180,7 @@ def test_selective_import_respects_part_filter(tmp_path: Path, monkeypatch) -> N
     assert (cfg_b.state_dir / "taban.npz").read_bytes() == b"KISISEL-NPZ"
 
 
-def test_import_tanima_without_rig_keeps_personal_files(
+def test_import_recognition_without_rig_keeps_personal_files(
         tmp_path: Path, monkeypatch) -> None:
     """On a machine without the rig the personal files must not be lost: to tanima_yedek."""
     data = _fake_rig(monkeypatch, tmp_path)
@@ -258,7 +258,7 @@ def test_reset_memories_backs_up_then_clears(tmp_path: Path) -> None:
         con.close()
 
 
-def test_tanima_reset_moves_files_and_falls_back(tmp_path: Path, monkeypatch) -> None:
+def test_recognition_reset_moves_files_and_falls_back(tmp_path: Path, monkeypatch) -> None:
     """Know-me reset: personal files go to the backup, the cache drops."""
     from dornick.recall import writer
 

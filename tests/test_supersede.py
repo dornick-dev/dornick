@@ -237,9 +237,9 @@ def test_old_memory_opens_with_supersede_columns(tmp_path: Path) -> None:
 
 
 async def test_tool_updates_with_supersedes(tmp_path: Path) -> None:
-    from tests.test_mind import _arac_ortami
+    from tests.test_mind import _tool_env
 
-    registry, ctx, mind = _arac_ortami(tmp_path)
+    registry, ctx, mind = _tool_env(tmp_path)
     first = mind.remember("Raporları PDF istiyorum.", kind="preference")
     out = await _invoke(registry, ctx, "mind_memory", {
         "action": "save", "kind": "preference",
@@ -250,9 +250,9 @@ async def test_tool_updates_with_supersedes(tmp_path: Path) -> None:
 
 async def test_tool_flags_conflict_on_its_own(tmp_path: Path) -> None:
     """If the model forgets to give `supersedes` the system must not stay silent."""
-    from tests.test_mind import _arac_ortami
+    from tests.test_mind import _tool_env
 
-    registry, ctx, mind = _arac_ortami(tmp_path)
+    registry, ctx, mind = _tool_env(tmp_path)
     first = mind.remember("Testler pytest ile kök dizinden koşuluyor.",
                           kind="procedure")
     out = await _invoke(registry, ctx, "mind_memory", {
@@ -263,9 +263,9 @@ async def test_tool_flags_conflict_on_its_own(tmp_path: Path) -> None:
 
 
 async def test_tool_does_not_invent_conflict_on_unrelated_record(tmp_path: Path) -> None:
-    from tests.test_mind import _arac_ortami
+    from tests.test_mind import _tool_env
 
-    registry, ctx, mind = _arac_ortami(tmp_path)
+    registry, ctx, mind = _tool_env(tmp_path)
     mind.remember("Testler pytest ile koşuluyor.", kind="procedure")
     out = await _invoke(registry, ctx, "mind_memory", {
         "action": "save", "kind": "preference",
@@ -274,9 +274,9 @@ async def test_tool_does_not_invent_conflict_on_unrelated_record(tmp_path: Path)
 
 
 async def test_tool_refuses_to_update_missing_record(tmp_path: Path) -> None:
-    from tests.test_mind import _arac_ortami
+    from tests.test_mind import _tool_env
 
-    registry, ctx, mind = _arac_ortami(tmp_path)
+    registry, ctx, mind = _tool_env(tmp_path)
     out = await _invoke(registry, ctx, "mind_memory", {
         "action": "save", "content": "bir şey", "supersedes": "n_yok"},
         expect_error=True)
