@@ -348,3 +348,21 @@ def test_token_soup_is_garbled_not_ambiguous(harness) -> None:
     assert harness.is_garbled(soup)
     assert not harness.is_garbled("Bu durumda önce testi yazarım.\nKARAR: önce testi yazarım")
     assert not harness.is_garbled("kısa")
+
+
+def test_closed_loop_calibrates_and_remeasures(harness, decisions, tmp_path) -> None:
+    """Cycle 1 with the computed lever, gain from what it moved, cycle 2 with
+    the calibrated lever; the report carries both and the deviation from the
+    target must not grow on the fake."""
+    result = harness.run(decisions, _fakes(harness, tmp_path), target=harness.DRY_TARGET,
+                         identity_doc=harness.SAMPLE_IDENTITY, repeats=2,
+                         root=tmp_path / "durum", closed_loop=True)
+    assert result["kapali_cevrim"] is True
+    assert result["sayim"]["cagri"] == harness.plan_calls(2, 2, leverage_on=True, closed_loop=True)
+    for name, model in result["modeller"].items():
+        cal = model["kalibrasyon"]
+        assert set(cal["kazanc"]) == {"yenilik", "sonuc", "sosyal", "sebat", "temkin"}
+        assert cal["sapma_2"] is not None and cal["sapma_1"] is not None
+        assert cal["sapma_2"] <= cal["sapma_1"] + 0.05, name
+        assert "tam2" in model["kollar"] and "kimliksiz" not in model["kollar"]
+    assert result["metrikler"]["tutarlilik_model"] is not None

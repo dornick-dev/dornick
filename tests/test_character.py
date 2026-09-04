@@ -507,3 +507,67 @@ def test_every_axis_has_three_lines_per_direction() -> None:
         for side in ("low", "high"):
             assert len(directions[side]) == 3, (axis, side)
             assert len({directions[side][i] for i in range(3)}) == 3, (axis, side)
+
+
+# -- closed-loop lever calibration ---------------------------------------
+
+
+def test_gain_scales_the_lever_in_log_space() -> None:
+    from dornick.recall import temperament as T
+
+    base, target = Temperament(caution=0.3), Temperament(caution=0.6)   # raw 2.0x
+    assert T.leverage(base, target)["caution"] == pytest.approx(2.0)
+    assert T.leverage(base, target, {"caution": 0.5})["caution"] == pytest.approx(2.0 ** 0.5, abs=0.01)
+    assert T.leverage(base, target, {"caution": 2.0})["caution"] == pytest.approx(T.LEVERAGE_HIGH)  # 4x clamped
+
+
+def test_calibrate_shrinks_on_overshoot_grows_on_undershoot_halves_on_wrong_way() -> None:
+    """Run 3 in numbers: a nudge threw Haiku from 0.56 past 0.5 to 0.27
+    (overshoot), a rule left deepseek's outcome at 0.71 short of 0.5
+    (undershoot), and one axis moved the wrong way."""
+    from dornick.recall import temperament as T
+
+    base = Temperament(novelty=0.56, outcome=0.94, caution=0.4, persistence=0.5)
+    target = Temperament(novelty=0.5, outcome=0.5, caution=0.6, persistence=0.5)
+    reached = {"novelty": 0.27, "outcome": 0.71, "caution": 0.3, "persistence": 0.5,
+               "social": None}
+    gain = T.calibrate(base, target, reached)
+    assert gain["novelty"] < 1.0          # overshoot -> less
+    assert gain["outcome"] > 1.0          # undershoot -> more
+    assert gain["caution"] == pytest.approx(0.5)   # wrong way -> halve
+    assert gain["persistence"] == 1.0     # inside the band: untouched
+    assert gain["social"] == 1.0          # unmeasured: untouched
+    # Bounded.
+    twice = T.calibrate(base, target, reached, gain)
+    assert T.GAIN_LOW <= min(twice.values()) and max(twice.values()) <= T.GAIN_HIGH
+
+
+def test_no_movement_grows_the_gain() -> None:
+    from dornick.recall import temperament as T
+
+    base, target = Temperament(outcome=1.0), Temperament(outcome=0.5)
+    gain = T.calibrate(base, target, {"outcome": 1.0})
+    assert gain["outcome"] == pytest.approx(1.5)
+
+
+def test_gain_round_trips_and_resets_on_model_change(tmp_path: Path) -> None:
+    from dornick.recall import temperament as T
+
+    T.save(tmp_path, Temperament(caution=0.3), Temperament(caution=0.6), "model-a")
+    T.save_gain(tmp_path, {"caution": 0.5})
+    assert T.load_gain(tmp_path)["caution"] == 0.5
+    base, target, _ = T.load(tmp_path)
+    assert target.caution == 0.6                       # untouched by save_gain
+    T.on_model_change(tmp_path, Temperament(caution=0.9), "model-b")
+    assert T.load_gain(tmp_path)["caution"] == 1.0     # a new model starts over
+
+
+def test_the_prompt_uses_the_calibrated_gain(tmp_path: Path) -> None:
+    from dornick import prompt as builder
+    from dornick.recall import temperament as T
+
+    state = tmp_path / ".dornick"
+    T.save(state, Temperament(caution=0.3), Temperament(caution=0.6), "m")   # 2x -> tier 2
+    T.save_gain(state, {"caution": 2.0})                                   # -> 3x -> tier 3
+    system = _built(tmp_path)
+    assert builder.LEVERAGE_LINES["caution"]["high"][2] in system.identity

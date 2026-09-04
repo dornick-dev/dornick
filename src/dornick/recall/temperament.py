@@ -25,6 +25,7 @@ threshold is a fact. Prompts are the last resort, not the first.
 from __future__ import annotations
 
 import json
+import math
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Callable
@@ -76,7 +77,19 @@ def default_target() -> Temperament:
     return Temperament(social=SOCIAL_TARGET)
 
 
-def leverage(baseline: Temperament, target: Temperament) -> dict[str, float]:
+# Per-model gain on the lever, learned in closed loop (see `calibrate`).
+# 1.0 = the computed ratio is applied as is. Bounds keep one bad
+# measurement from silencing or saturating an axis for good.
+GAIN_LOW, GAIN_HIGH = 0.25, 4.0
+GAIN_KEYS = {axis: f"kazanc_{key}" for axis, key in AXIS_KEYS.items()}
+
+
+def neutral_gain() -> dict[str, float]:
+    return {axis: 1.0 for axis in AXES}
+
+
+def leverage(baseline: Temperament, target: Temperament,
+             gain: dict[str, float] | None = None) -> dict[str, float]:
     """What the harness has to do to turn this model into that behaviour.
 
     A cautious model driven by a bold target needs its permission threshold
@@ -84,9 +97,17 @@ def leverage(baseline: Temperament, target: Temperament) -> dict[str, float]:
     does not move — only the correction does.
     """
     out: dict[str, float] = {}
+    gain = gain or {}
     for axis in AXES:
         floor = max(0.05, getattr(baseline, axis))
-        value = max(LEVERAGE_LOW, min(LEVERAGE_HIGH, getattr(target, axis) / floor))
+        raw = getattr(target, axis) / floor
+        # The gain scales the lever in log space: a 2x lever at gain 0.5 is
+        # a 1.41x lever, at gain 2 a 4x lever. One computed ratio moved
+        # Claude Haiku 0.26 on a nudge and deepseek 0.1 on a rule (7.6, run
+        # 3); the same words are a different dose for each model, and the
+        # dose has to be learned per model.
+        raw = math.exp(math.log(max(raw, 1e-6)) * gain.get(axis, 1.0))
+        value = max(LEVERAGE_LOW, min(LEVERAGE_HIGH, raw))
         if axis == "social":
             # Never lever approval-seeking UP. Praise is the cheapest reward
             # to manufacture (reward.SOSYAL_TAVAN exists for the same reason);
@@ -161,6 +182,58 @@ def load(state_dir: Path) -> tuple[Temperament, Temperament, str]:
     return baseline, target, str(data.get("model_id") or "")
 
 
+def load_gain(state_dir: Path) -> dict[str, float]:
+    """The per-model lever gain saved next to the temperament; neutral if none."""
+    try:
+        data = json.loads((Path(state_dir) / "mizac.json").read_text("utf-8"))
+    except (OSError, ValueError):
+        return neutral_gain()
+    stored = data.get("kazanc") or {}
+    return {axis: float(stored.get(AXIS_KEYS[axis], 1.0)) for axis in AXES}
+
+
+def save_gain(state_dir: Path, gain: dict[str, float]) -> None:
+    """Writes the gain into mizac.json without touching baseline/target."""
+    path = Path(state_dir) / "mizac.json"
+    try:
+        data = json.loads(path.read_text("utf-8"))
+    except (OSError, ValueError):
+        data = {}
+    data["kazanc"] = {AXIS_KEYS[axis]: round(float(gain.get(axis, 1.0)), 4) for axis in AXES}
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+
+
+def calibrate(baseline: Temperament, target: Temperament,
+              reached: dict[str, float | None],
+              gain: dict[str, float] | None = None) -> dict[str, float]:
+    """One closed-loop step: adjust each axis's gain from what the lever moved.
+
+    Wanted movement d = ln(target/baseline); achieved a = ln(reached/baseline).
+    Same direction: gain *= d/a (overshoot shrinks it, undershoot grows it).
+    No movement: gain grows by half. Opposite direction: gain halves — the
+    words pushed the wrong way, say less. Axes inside the lever band, or
+    without a measurement, keep their gain.
+    """
+    out = dict(gain or neutral_gain())
+    for axis in AXES:
+        got = reached.get(axis)
+        base = max(0.05, getattr(baseline, axis))
+        want = math.log(max(0.05, getattr(target, axis)) / base)
+        if got is None or abs(want) < 0.1:
+            continue
+        moved = math.log(max(0.05, got) / base)
+        current = out.get(axis, 1.0)
+        if abs(moved) < 0.05:
+            factor = 1.5
+        elif (moved > 0) != (want > 0):
+            factor = 0.5
+        else:
+            factor = want / moved
+        out[axis] = round(max(GAIN_LOW, min(GAIN_HIGH, current * factor)), 4)
+    return out
+
+
 def save(state_dir: Path, baseline: Temperament, target: Temperament,
          model_id: str = "") -> None:
     path = Path(state_dir) / "mizac.json"
@@ -179,4 +252,6 @@ def on_model_change(state_dir: Path, new_baseline: Temperament,
     """
     _old_baseline, target, _old_id = load(state_dir)
     save(state_dir, new_baseline, target, model_id)
+    # A new model's response to the same words is unknown: gain starts over.
+    save_gain(state_dir, neutral_gain())
     return leverage(new_baseline, target)

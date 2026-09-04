@@ -708,7 +708,8 @@ def _character(config: Config) -> str:
         # No measured baseline (a fresh install, or a model never probed)
         # means no leverage: a correction is a distance between two known
         # points, and the second point is not known yet.
-        lines = (leverage_lines(temperament.leverage(baseline, target))
+        lines = (leverage_lines(temperament.leverage(
+                     baseline, target, temperament.load_gain(config.state_dir)))
                  if model_id else [])
     except Exception:
         lines = []

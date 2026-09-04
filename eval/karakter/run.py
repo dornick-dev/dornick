@@ -465,6 +465,7 @@ class Arm:
     identity_doc: str                  # "": no kimlik.md
     variants: int                      # contexts asked on day 0
     repeats: int                       # days asked with context 0
+    gain: dict[str, float] | None = None   # closed-loop lever gain, if calibrated
 
 
 def arm_config(model: Any, arm: Arm, root: Path) -> Config:
@@ -473,6 +474,8 @@ def arm_config(model: Any, arm: Arm, root: Path) -> Config:
     state.mkdir(parents=True, exist_ok=True)
     if arm.baseline is not None and arm.target is not None:
         temperament.save(state, arm.baseline, arm.target, model.name)
+        if arm.gain:
+            temperament.save_gain(state, arm.gain)
     if arm.identity_doc:
         identity.save(state, identity.parse(arm.identity_doc))
     return replace(model.config, state_dir=state, persona_path=None)
@@ -490,9 +493,18 @@ def system_for(config: Config, day: datetime) -> SystemPrompt:
 
 
 def plan_arms(baseline: Temperament, target: Temperament, identity_doc: str, *,
-              repeats: int, leverage_on: bool) -> list[Arm]:
+              repeats: int, leverage_on: bool, closed_loop: bool = False) -> list[Arm]:
     """The arms after the baseline, in run order. Without leverage the
-    control arm is the main arm: target pinned to the measured baseline."""
+    control arm is the main arm: target pinned to the measured baseline.
+
+    Closed loop: the identity-off arm is dropped (run 3 showed the document
+    moves nothing, +0.006) and its budget goes to `tam2`, which is planned
+    only after `tam` has been measured — see `run()`."""
+    if leverage_on and closed_loop:
+        return [
+            Arm("tam", baseline, target, identity_doc, VARIANTS, repeats),
+            Arm("kaldiracsiz", baseline, baseline, identity_doc, VARIANTS, 1),
+        ]
     if leverage_on:
         return [
             Arm("tam", baseline, target, identity_doc, VARIANTS, repeats),
@@ -506,12 +518,15 @@ def plan_arms(baseline: Temperament, target: Temperament, identity_doc: str, *,
 
 
 def plan_calls(models: int, repeats: int, *, leverage_on: bool,
-               decisions: int = TOTAL) -> int:
+               decisions: int = TOTAL, closed_loop: bool = False) -> int:
     """How many model calls the run makes — printed before spending."""
     per_arm = lambda variants, days: decisions * (variants + max(0, days - 1))  # noqa: E731
     total = decisions * VARIANTS                                  # baseline
     total += per_arm(VARIANTS, repeats)                           # main arm
-    total += per_arm(1, repeats)                                  # kimliksiz
+    if leverage_on and closed_loop:
+        total += per_arm(VARIANTS, repeats)                       # tam2 (calibrated)
+    else:
+        total += per_arm(1, repeats)                              # kimliksiz
     if leverage_on:
         total += per_arm(VARIANTS, 1)                             # control
     return total * models
@@ -540,6 +555,8 @@ class ModelResult:
     raw: dict[str, str] = field(default_factory=dict)
     garbled: int = 0
     arm: str = ""
+    gain: dict[str, float] | None = None          # closed loop only
+    leverage_2: dict[str, float] | None = None
 
 
 def _ask(model: Any, system: SystemPrompt, decision: Decision, variant: int,
@@ -628,7 +645,8 @@ def _prompt_marks(system: SystemPrompt) -> dict[str, bool]:
 def run(decisions: list[Decision], models: list[Any], *, target: Temperament,
         identity_doc: str, repeats: int = DEFAULT_REPEATS, day_gap: int = DEFAULT_DAY_GAP,
         leverage_on: bool = True, root: Path | str | None = None,
-        progress: Callable[[str], None] | None = None) -> dict[str, Any]:
+        progress: Callable[[str], None] | None = None,
+        closed_loop: bool = False) -> dict[str, Any]:
     """The whole measurement for one or two models. Returns the report dict."""
     if not 1 <= len(models) <= 2:
         raise ValueError("bir ya da iki model")
@@ -644,16 +662,31 @@ def run(decisions: list[Decision], models: list[Any], *, target: Temperament,
                 progress(f"  {model.name} · taban: {baseline.as_dict()}")
             result.baseline = baseline
             arms = plan_arms(baseline, target, identity_doc,
-                             repeats=repeats, leverage_on=leverage_on)
+                             repeats=repeats, leverage_on=leverage_on,
+                             closed_loop=closed_loop)
             main = arms[0]
             result.target = main.target or baseline
             result.leverage = temperament.leverage(baseline, result.target)
+            if leverage_on and closed_loop:
+                # Cycle 1 with the computed lever, then calibrate the gain
+                # from what it actually moved and measure again.
+                run_arm(model, arms[0], decisions, base, result,
+                        day_gap=day_gap, progress=progress)
+                reached_1 = _reached(result.answers["tam"], decisions)
+                gain = temperament.calibrate(baseline, result.target, reached_1)
+                result.gain = gain
+                result.leverage_2 = temperament.leverage(baseline, result.target, gain)
+                if progress:
+                    progress(f"  {model.name} · kazanç: "
+                             f"{ {AXIS_KEYS[a]: g for a, g in gain.items()} }")
+                arms = [Arm("tam2", baseline, result.target, identity_doc, VARIANTS,
+                            repeats, gain=gain)] + arms[1:]
             for arm in arms:
                 run_arm(model, arm, decisions, base, result,
                         day_gap=day_gap, progress=progress)
             results.append(result)
     return _report(decisions, results, repeats=repeats, day_gap=day_gap,
-                   leverage_on=leverage_on, identity_doc=identity_doc)
+                   leverage_on=leverage_on, identity_doc=identity_doc, closed_loop=closed_loop)
 
 
 # -- metrics ------------------------------------------------------------
@@ -698,6 +731,13 @@ def _reached(answers: dict[Key, Answer], decisions: list[Decision]) -> dict[str,
     return {axis: (round(sum(v) / len(v), 4) if v else None) for axis, v in tally.items()}
 
 
+def _deviation(reached: dict[str, float | None], target: Temperament) -> float | None:
+    """Mean |reached - target| over the measured axes: how far from the
+    character the lever left the model."""
+    gaps = [abs(v - getattr(target, axis)) for axis, v in reached.items() if v is not None]
+    return round(sum(gaps) / len(gaps), 4) if gaps else None
+
+
 def _diff(a: float | None, b: float | None) -> float | None:
     return None if a is None or b is None else round(a - b, 4)
 
@@ -708,14 +748,16 @@ def _mean(values: list[float | None]) -> float | None:
 
 
 def _report(decisions: list[Decision], results: list[ModelResult], *, repeats: int,
-            day_gap: int, leverage_on: bool, identity_doc: str) -> dict[str, Any]:
-    main = "tam" if leverage_on else "kaldiracsiz"
+            day_gap: int, leverage_on: bool, identity_doc: str,
+            closed_loop: bool = False) -> dict[str, Any]:
+    main = ("tam2" if closed_loop else "tam") if leverage_on else "kaldiracsiz"
     per_model: dict[str, Any] = {}
     for r in results:
         main_answers = r.answers[main]
         reached = _reached(main_answers, decisions)
         zaman = _agreement(_time_pairs(main_answers, decisions, repeats))
-        zaman_kimliksiz = _agreement(_time_pairs(r.answers["kimliksiz"], decisions, repeats))
+        zaman_kimliksiz = (_agreement(_time_pairs(r.answers["kimliksiz"], decisions, repeats))
+                           if "kimliksiz" in r.answers else None)
         per_model[r.name] = {
             "taban": r.baseline.as_dict(),
             "hedef": r.target.as_dict(),
@@ -738,6 +780,16 @@ def _report(decisions: list[Decision], results: list[ModelResult], *, repeats: i
             "bozuk": r.garbled,
             "ham": r.raw,
         }
+        if closed_loop and r.gain is not None:
+            reached_1 = _reached(r.answers["tam"], decisions)
+            per_model[r.name]["kalibrasyon"] = {
+                "kazanc": {AXIS_KEYS[a]: v for a, v in r.gain.items()},
+                "kaldirac_2": {AXIS_KEYS[a]: v for a, v in (r.leverage_2 or {}).items()},
+                "ulasilan_1": {AXIS_KEYS[a]: v for a, v in reached_1.items()},
+                "ulasilan_2": {AXIS_KEYS[a]: v for a, v in reached.items()},
+                "sapma_1": _deviation(reached_1, r.target),
+                "sapma_2": _deviation(reached, r.target),
+            }
 
     model_with = model_without = None
     if len(results) == 2:
@@ -766,6 +818,7 @@ def _report(decisions: list[Decision], results: list[ModelResult], *, repeats: i
     return {
         "metrikler": metrics,
         "modeller": per_model,
+        "kapali_cevrim": closed_loop,
         "sayim": {"karar": len(decisions), "baglam": VARIANTS, "tekrar": repeats,
                   "cagri": sum(r.calls for r in results),
                   "belirsiz": sum(r.ambiguous for r in results)},
@@ -902,6 +955,9 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--base-url2", default="", help="ikinci model için adres (yerel sunucu)")
     ap.add_argument("--repeats", "--tekrar", type=int, default=DEFAULT_REPEATS, dest="repeats")
     ap.add_argument("--gun-arasi", "--day-gap", type=int, default=DEFAULT_DAY_GAP, dest="day_gap")
+    ap.add_argument("--kapali-cevrim", "--closed-loop", dest="closed_loop",
+                    action="store_true",
+                    help="kaldıraç kazancını ölçülenden kalibre edip ikinci tur ölç")
     ap.add_argument("--no-leverage", action="store_true", dest="no_leverage",
                     help="yalnız kontrol kolu: hedef = ölçülen taban")
     ap.add_argument("--evet", action="store_true", help="gerçek modelleri çağır (para harcar)")
@@ -929,7 +985,7 @@ def main(argv: list[str] | None = None) -> int:
     real_specs = [s for s in (args.model, args.model2) if s]
     wants_real = bool(real_specs) and not args.dry
     calls = plan_calls(max(1, len(real_specs)) if wants_real else 2, args.repeats,
-                       leverage_on=leverage_on)
+                       leverage_on=leverage_on, closed_loop=args.closed_loop)
 
     if wants_real and not args.evet:
         warn(f"Gerçek ölçüm {calls} model çağrısı yapar ({len(real_specs)} model × "
@@ -966,7 +1022,8 @@ def main(argv: list[str] | None = None) -> int:
     try:
         result = run(decisions, models, target=target, identity_doc=identity_doc,
                      repeats=args.repeats, day_gap=args.day_gap,
-                     leverage_on=leverage_on, progress=say)
+                     leverage_on=leverage_on, progress=say,
+                     closed_loop=args.closed_loop)
     finally:
         for model in models:
             model.close()
