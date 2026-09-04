@@ -127,7 +127,7 @@ ile "yalıtık kayıt kendiliğinden gelmez" kuralı korundu, kapsama bedeli
 | 9 görevlik kodlama bench'i, sıcak/soğuk hafızayla | koşulmadı | İki sürümü 30 gün "yaşatıp" 9 görev; gerçek model çağrısı. |
 | Kirlilik deneyi (28.08 C kolu) yeniden | koşulmadı | Aynı rig. |
 | Gece geçişi süresi 50k/200 oturum | ölçülmedi | Sentetik; koşulabilir. |
-| Playwright uçtan uca (beyin görünümü) | **yazıldı, atlanıyor** | Chromium indirilmemiş: `py -m playwright install chromium`. 4 test hazır. |
+| Playwright uçtan uca (beyin görünümü) | **geçti (4/4)** | Yeniden oynatma düğüm sırası dosyayla aynı; uyanışta hiçbir kare ilerlemiyor; kimlik cümlesi tıklanınca kanıt yanıyor; 5k olaylık gece 60× hızda kare kaybı < %5. |
 
 ---
 

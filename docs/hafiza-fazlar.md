@@ -884,7 +884,7 @@ açık aramada hepsi bulunuyor (`gomulme_recall` ve `geri_donus_recall` 1.00).
 | 4 — Kodlama gücü | ⚠️ faydası kanıtlanmadı |
 | 5 — Bağlam bonusu | ✅ E sızıntısı 0, ceza sorgunun alan sayısına göre |
 | 7 — Ödül, mizaç, karakter | ⚠️ ölçüldü (4 koşu): zaman/bağlam tutarlılığı ✅; kimlik belgesi karakter aracı değil; kapalı çevrim kalibrasyon modeller arası farkı yarıya indirdi (0.215 → 0.111), 'sonuç' ekseni promptla dozlanmıyor |
-| 6 — Beyin görünümü | ✅ bölgeler, gece animasyonu, paneller; Playwright e2e Chromium bekliyor |
+| 6 — Beyin görünümü | ✅ bölgeler, gece animasyonu, paneller; Playwright e2e 4/4 geçti |
 
 ### Eskiye göre (yaşam bench, `hafiza-eski` → bugün) · 2026-09-04 düzeltmesi
 
