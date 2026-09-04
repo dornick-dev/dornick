@@ -48,6 +48,7 @@ import hashlib
 import json
 import re
 import sys
+import time
 import tempfile
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta
@@ -340,7 +341,17 @@ class ProductModel:
         self._loop = asyncio.new_event_loop()
 
     def ask(self, system: SystemPrompt, user: str, meta: dict[str, Any]) -> str:
-        return self._loop.run_until_complete(self._turn(system, user))
+        # Transient failures (a local server unloading the model between
+        # calls, a 5xx, a timeout) must not kill a 720-call run: three
+        # attempts with a growing pause, then the error is real.
+        last: Exception | None = None
+        for attempt in range(3):
+            try:
+                return self._loop.run_until_complete(self._turn(system, user))
+            except RuntimeError as exc:
+                last = exc
+                time.sleep(2.0 * (attempt + 1))
+        raise RuntimeError(f"{last} (3 deneme)")
 
     async def _turn(self, system: SystemPrompt, user: str) -> str:
         prepared = Prepared(system=build_system(system),
@@ -514,7 +525,17 @@ def measure_baseline(model: Any, decisions: list[Decision], root: Path,
         return label
 
     result.answers["taban"] = answers
-    return temperament.measure(probes, answer)
+    measured = temperament.measure(probes, answer)
+    # A model that decided NOTHING has not been measured: measure() returns
+    # a flat 0.5 for an axis with no usable answer, and a run that spends
+    # 700 calls on top of a baseline of five 0.5s reports nonsense with a
+    # straight face (seen 2026-09-04: LM Studio had the model unloaded,
+    # every probe came back empty). Stop here instead.
+    if answers and all(label is None for label in answers.values()):
+        raise RuntimeError(
+            f"taban ölçümü: {model.name} hiçbir sondada karar vermedi "
+            "(boş ya da ayrıştırılamayan cevaplar) — model yüklü ve konuşuyor mu?")
+    return measured
 
 
 def run_arm(model: Any, arm: Arm, decisions: list[Decision], root: Path,
