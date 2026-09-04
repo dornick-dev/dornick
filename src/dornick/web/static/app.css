@@ -5195,6 +5195,30 @@ body.kontrol-canli::after {
   margin-left: 6px; font: 10.5px var(--mono); color: var(--faint);
   letter-spacing: .02em; user-select: none;
 }
+/* An update is available: the version label turns into a quiet amber pill
+   with a pulsing dot — the same chip language as the rest of the shell, not
+   a raw underlined link (which is what it was, 04.09). */
+.side-foot .side-ver .surum-yeni {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 3px 9px 3px 7px; border-radius: 999px;
+  background: #F0A02016; box-shadow: inset 0 0 0 1px #F0A02033;
+  color: var(--cyan); font: 10.5px var(--mono); letter-spacing: .02em;
+  text-decoration: none; cursor: pointer; transition: background .16s, box-shadow .16s;
+}
+.side-foot .side-ver .surum-yeni:hover {
+  background: #F0A02026; box-shadow: inset 0 0 0 1px #F0A02066;
+}
+.side-foot .side-ver .surum-yeni .dot {
+  width: 6px; height: 6px; border-radius: 50%; background: var(--cyan);
+  animation: surum-pulse 2.4s ease-in-out infinite;
+}
+.side-foot .side-ver .surum-yeni .act { color: var(--text); font-weight: 600; }
+.side-foot .side-ver .surum-yeni.busy { cursor: progress; }
+.side-foot .side-ver .surum-yeni.busy .dot { animation-duration: .8s; }
+.side-foot .side-ver .surum-yeni.bad { color: var(--rose); box-shadow: inset 0 0 0 1px #E0505044; background: #E0505012; }
+.side-foot .side-ver .surum-yeni.bad .dot { background: var(--rose); animation: none; }
+@keyframes surum-pulse { 0%, 100% { opacity: .35 } 50% { opacity: 1 } }
+@media (prefers-reduced-motion: reduce) { .side-foot .side-ver .surum-yeni .dot { animation: none; } }
 .side-foot .icon {
   width: 34px; height: 34px; border-radius: 9px;
 }

@@ -296,7 +296,7 @@ Lang.add({
   "Yayınlıyor": "Publishing",
   "yayınlandı": "published", "güncellendi": "updated",
   "yeni — indir": "new — download",
-  "yeni — güncelle": "new — update",
+  "yeni — güncelle": "new — update", "Güncelle": "Update", "İndir": "Download",
   "hata": "error",
   "sürümü yayınlandı.": "is available.",
   "İndir ve kur": "Download & install",
@@ -5679,23 +5679,36 @@ function refreshVersionBadge(info) {
   const link = document.createElement("a");
   link.className = "surum-yeni";
   link.href = "#";
+  // Structure, not a sentence: dot · "v1.4.3" · action. The raw
+  // "v1.4.2 yeni — güncelle" text read like a leftover hyperlink.
+  const dot = document.createElement("span"); dot.className = "dot";
+  const ver = document.createElement("span"); ver.className = "ver";
+  ver.textContent = "v" + info.yeni;
+  const act = document.createElement("span"); act.className = "act";
+  link.append(dot, ver, act);
+  const setState = (text, cls) => {
+    act.textContent = text;
+    link.classList.remove("busy", "bad");
+    if (cls) link.classList.add(cls);
+  };
   if (info.indirme) {
     // Download+install from inside the app. The address does not come from
     // the client; the server finds the trusted GitHub link itself
     // (/api/guncelle).
-    link.textContent = "v" + info.yeni + " " + t("yeni — güncelle");
+    setState(t("Güncelle"));
     link.title = t("Yeni sürüm yayınlandı — indirip kurmak için tıkla");
     link.addEventListener("click", async (e) => {
       e.preventDefault();
-      link.textContent = "v" + info.yeni + " · " + t("İndiriliyor");
+      if (link.classList.contains("busy")) return;
+      setState(t("İndiriliyor"), "busy");
       try {
         const c = await (await fetch("/api/guncelle", { method: "POST" })).json();
-        if (c && c.ok === false) link.textContent = "v" + info.yeni + " · " + t("hata");
-      } catch { link.textContent = "v" + info.yeni + " · " + t("hata"); }
+        if (c && c.ok === false) setState(t("hata"), "bad");
+      } catch { setState(t("hata"), "bad"); }
     });
   } else {
     const target = info.url || "#";
-    link.textContent = "v" + info.yeni + " " + t("yeni — indir");
+    setState(t("İndir"));
     link.title = t("Yeni sürüm yayınlandı — indirmek için tıkla");
     link.href = target;
     link.addEventListener("click", (e) => {
