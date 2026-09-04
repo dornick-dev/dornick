@@ -5750,3 +5750,203 @@ body.mesgul .brand-mark .knot-node {
   body.mesgul .brand-mark .knot,
   body.mesgul .brand-mark .knot-node { animation: none; }
 }
+
+/* ---------- brain regions (Phase 6) ----------
+   A FIXED template around the network: the prefrontal strip and the cortex
+   band above, the thalamus ring, rhythm clock, amygdala and brainstem below.
+   The hippocampus (the network) is the canvas behind; these are gauges.
+   Every region tooltip names the code it stands for. In a narrow panel the
+   gauges stack (.mind.narrow). */
+:root { --world: #A3E635; --cold: #8A8071; }
+.regions-top, .regions-bottom {
+  pointer-events: auto; position: relative; z-index: 2;
+  display: flex; align-items: center; gap: 8px; padding: 4px 12px;
+  min-width: 0; flex-wrap: wrap;
+}
+.regions-top { padding-top: 0; }
+.regions-bottom { padding: 6px 12px 2px; align-items: flex-end; }
+.regions-middle { flex: 1 1 auto; min-height: 0; position: relative; pointer-events: none; }
+.region {
+  display: inline-flex; align-items: center; gap: 6px; min-width: 0;
+  color: var(--faint); cursor: help;
+}
+.region-name {
+  font: 600 9px var(--mono); letter-spacing: .18em; text-transform: uppercase;
+  color: var(--faint); white-space: nowrap;
+}
+/* Prefrontal: the goal strip. Active chips lit, done ones fade and drop. */
+.region.prefrontal { flex: 1 1 160px; }
+.goal-chips { display: inline-flex; gap: 4px; min-width: 0; overflow: hidden; flex-wrap: wrap; }
+.goal-chip {
+  font: 10px var(--font); padding: 1px 7px; border-radius: 999px;
+  color: var(--faint); background: var(--raise); box-shadow: inset 0 0 0 1px var(--edge);
+  white-space: nowrap; max-width: 160px; overflow: hidden; text-overflow: ellipsis;
+  transition: opacity .6s, transform .6s, color .3s, box-shadow .3s;
+}
+.goal-chip.lit { color: var(--goal); box-shadow: inset 0 0 0 1px #F8717155, 0 0 10px #F8717133; }
+.goal-chip.born { animation: chip-born .9s ease-out; }
+.goal-chip.done { opacity: .45; text-decoration: line-through; }
+.goal-chip.fall { opacity: 0; transform: translateY(10px); }
+.goal-chip.none { opacity: .6; }
+@keyframes chip-born { 0% { box-shadow: 0 0 0 0 #F87171aa; } 100% { box-shadow: 0 0 0 10px #F8717100; } }
+/* Cortex: dark grey, frozen. It never animates — the remote model. The
+   patch on it is the base writer: pulses while training, permanent colour
+   once it passed the exam. */
+.region.cortex { flex: 0 0 auto; }
+.cortex-band {
+  display: inline-block; width: 54px; height: 10px; border-radius: 3px;
+  background: repeating-linear-gradient(90deg, #3A3733 0 3px, #2A2724 3px 6px);
+  position: relative; opacity: .8;
+}
+.cortex-patch {
+  position: absolute; left: 36px; top: 2px; width: 8px; height: 6px; border-radius: 2px;
+  background: var(--faint); opacity: .5;
+}
+.cortex-patch.off { opacity: .25; }
+.cortex-patch.training { background: var(--amber); opacity: 1; animation: patch-pulse 1.2s ease-in-out infinite; }
+.cortex-patch.passed { background: var(--mint); opacity: 1; box-shadow: 0 0 8px #86EFAC88; }
+@keyframes patch-pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.5); } }
+/* Sheet tabs: web / identity / temperament / night. */
+.regions-tabs { display: inline-flex; gap: 2px; margin-left: auto; }
+.regions-tabs button {
+  padding: 2px 8px; border: 0; border-radius: 999px; cursor: pointer;
+  font: 10px var(--mono); letter-spacing: .12em; text-transform: uppercase;
+  color: var(--faint); background: transparent; transition: .16s;
+}
+.regions-tabs button:hover { color: var(--ice); background: var(--raise); }
+.regions-tabs button.on { color: var(--cyan); background: #F0A02016; box-shadow: inset 0 0 0 1px #F0A02033; }
+.regions-tabs button:focus-visible { outline: 2px solid var(--cyan); outline-offset: 1px; }
+/* The sheet: a glass card at the bottom of the hole; the brain stays
+   visible above it so evidence nodes can light while reading. */
+.regions-sheet {
+  pointer-events: auto; position: absolute; left: 10px; right: 10px; bottom: 6px;
+  max-height: 62%; overflow-y: auto; overscroll-behavior: contain;
+  padding: 10px 12px; border-radius: 10px;
+  background: var(--panel-glass); backdrop-filter: blur(10px);
+  box-shadow: 0 0 0 1px var(--edge), 0 14px 40px rgba(0, 0, 0, .35);
+  font-size: 12px; color: var(--dim);
+  animation: surface .2s ease-out;
+}
+.sheet-head { font: 600 10px var(--mono); letter-spacing: .18em; text-transform: uppercase; color: var(--cyan); margin-bottom: 6px; }
+.sheet-note { font: 10.5px var(--mono); color: var(--faint); margin: 0 0 8px; white-space: pre-wrap; }
+.sheet-empty { color: var(--faint); font-style: italic; }
+.identity-sentence { display: flex; align-items: baseline; gap: 8px; padding: 3px 0; border-top: 1px solid var(--edge); }
+.identity-sentence.on .identity-text { color: var(--ink); }
+.identity-sentence.objected { opacity: .4; text-decoration: line-through; }
+.identity-text {
+  flex: 1; text-align: left; background: none; border: 0; padding: 0; cursor: pointer;
+  color: var(--dim); font: 12.5px var(--font); line-height: 1.4;
+}
+.identity-text:hover { color: var(--ice); }
+.identity-text:focus-visible { outline: 1px solid var(--cyan); outline-offset: 2px; border-radius: 3px; }
+.identity-object {
+  flex: 0 0 auto; padding: 2px 8px; border: 0; border-radius: 6px; cursor: pointer;
+  background: #F8717118; color: var(--rose); font: 10px var(--mono);
+}
+.identity-object:hover { background: #F8717130; }
+/* Temperament: five axes, three marks on each. */
+.axis { display: grid; grid-template-columns: 64px 1fr auto; align-items: center; gap: 8px; padding: 4px 0; }
+.axis-name { font: 10px var(--mono); letter-spacing: .12em; text-transform: uppercase; color: var(--faint); }
+.axis-bar { position: relative; height: 14px; border-radius: 7px; background: var(--raise); box-shadow: inset 0 0 0 1px var(--edge); }
+.axis-mark { position: absolute; top: 50%; transform: translate(-50%, -50%); font-size: 10px; line-height: 1; font-style: normal; }
+.axis-mark.base { color: var(--dim); }
+.axis-mark.target { color: var(--cyan); }
+.axis-mark.reached { color: var(--mint); }
+.axis-lev { font: 9.5px var(--mono); color: var(--faint); }
+/* Thalamus: the ring gauge. Slices by pattern (solid / dashed / dotted),
+   not only by colour. Four states, four drawings. */
+.region.thalamus-box { flex: 0 0 auto; align-items: center; }
+.thalamus { width: 84px; height: 84px; display: block; }
+.thalamus .th-track { fill: none; stroke: var(--edge); stroke-width: 6; }
+.thalamus .th-slice { fill: none; stroke-width: 6; stroke-linecap: butt; }
+.thalamus .th-slice[data-slice="strengthening"] { stroke: var(--cyan); }
+.thalamus .th-slice[data-slice="debt"] { stroke: var(--rose); stroke-dasharray: 5 3; }
+.thalamus .th-slice[data-slice="heat"] { stroke: var(--amber); stroke-dasharray: 1.5 3; }
+.thalamus .th-tick { stroke: var(--ice); stroke-width: 1.5; opacity: .7; }
+.thalamus .th-tick.alt { stroke: var(--faint); stroke-dasharray: 2 2; }
+.thalamus .th-phase { stroke-width: 2; opacity: .8; transition: stroke .4s; }
+.thalamus .th-text { font: 600 9px var(--mono); fill: var(--dim); letter-spacing: .06em; }
+.thalamus .th-text.cycle { fill: var(--faint); font-size: 8px; }
+.thalamus .th-state > * { display: none; fill: var(--ice); }
+.thalamus.state-uyanik .st-awake { display: block; fill: var(--cyan); }
+.thalamus.state-uykulu .st-sleepy { display: block; fill: var(--amber); animation: th-breathe 3s ease-in-out infinite; transform-origin: 60px 60px; }
+.thalamus.state-uyuyor .st-asleep { display: block; fill: var(--user); opacity: .9; }
+.thalamus.state-uyaniyor .st-waking { display: block; fill: var(--mint); }
+.thalamus.state-uyaniyor .st-waking.ring { fill: none; stroke: var(--mint); stroke-width: 1.5; animation: th-expand 1.6s ease-out infinite; transform-origin: 60px 60px; }
+.thalamus.state-uyaniyor .st-waking.ring.two { animation-delay: .8s; }
+.thalamus.nap .th-state > * { display: none; }
+.thalamus.nap .st-nap { display: block; stroke: var(--lesson); stroke-width: 1.6; animation: th-breathe 2s ease-in-out infinite; transform-origin: 60px 60px; }
+.thalamus.flash .th-track { animation: th-flash .7s ease-out; }
+@keyframes th-breathe { 0%, 100% { transform: scale(.8); opacity: .6; } 50% { transform: scale(1.2); opacity: 1; } }
+@keyframes th-expand { 0% { transform: scale(.5); opacity: 1; } 100% { transform: scale(1.6); opacity: 0; } }
+@keyframes th-flash { 0% { stroke: var(--ice); stroke-width: 10; } 100% { stroke: var(--edge); stroke-width: 6; } }
+.thalamus-meta { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.th-wake, .th-caffeine { font: 9.5px var(--mono); color: var(--faint); white-space: nowrap; }
+.th-tired { display: none; font: 600 9px var(--mono); letter-spacing: .14em; text-transform: uppercase; color: var(--amber); }
+.region.thalamus-box:has(.thalamus.tired) .th-tired { display: inline; }
+/* Rhythm clock: a 24h dial, the hand now, a mark at the expected wake. */
+.region.rhythm-box { flex-direction: column; gap: 2px; }
+.rhythm { width: 48px; height: 48px; display: block; }
+.rhythm .rh-dial { fill: none; stroke: var(--edge); stroke-width: 2; }
+.rhythm .rh-hand { stroke: var(--dim); stroke-width: 1.6; stroke-linecap: round; }
+.rhythm .rh-mark { fill: var(--user); }
+.rhythm .rh-text { font: 8px var(--mono); fill: var(--faint); }
+/* Amygdala: a small node; flashes with surprise (--level sizes it). */
+.region.amygdala { flex-direction: column; gap: 4px; }
+.amygdala-dot {
+  --level: 0.6;
+  display: block; width: 10px; height: 10px; border-radius: 50%;
+  background: var(--rose); opacity: .35; transform: scale(1);
+}
+.amygdala-dot.flash { animation: amyg .9s ease-out; }
+@keyframes amyg {
+  0% { opacity: 1; transform: scale(calc(1 + var(--level) * 2.2)); box-shadow: 0 0 calc(var(--level) * 24px) var(--rose); }
+  100% { opacity: .35; transform: scale(1); box-shadow: 0 0 0 transparent; }
+}
+/* Brainstem: one pulse line. */
+.region.brainstem { flex: 1 1 120px; flex-direction: column; align-items: stretch; gap: 2px; min-width: 90px; }
+.brainstem-svg { width: 100%; height: 22px; display: block; }
+.brainstem-svg polyline { fill: none; stroke: var(--mint); stroke-width: 1.3; opacity: .8; vector-effect: non-scaling-stroke; }
+/* Tooltip: what each region stands for. */
+.region-tip {
+  position: fixed; z-index: 7; max-width: 300px; padding: 8px 10px; border-radius: 8px;
+  background: var(--panel-glass); backdrop-filter: blur(10px);
+  box-shadow: 0 0 0 1px var(--edge), 0 10px 30px rgba(0, 0, 0, .35);
+  font: 11px var(--font); line-height: 1.45; color: var(--dim); white-space: pre-wrap;
+  pointer-events: none;
+}
+/* Night sheet: replay controls, speed bar, freeze badge, report. */
+.night-row { display: flex; gap: 6px; align-items: center; margin-bottom: 6px; }
+.night-row select {
+  flex: 1; min-width: 0; padding: 4px 8px; border: 0; border-radius: 6px;
+  background: var(--field); color: var(--text); font: 11px var(--mono);
+}
+.night-speed { display: inline-flex; gap: 2px; margin-bottom: 6px; }
+.night-speed button {
+  padding: 2px 9px; border: 0; border-radius: 999px; cursor: pointer;
+  font: 10px var(--mono); color: var(--faint); background: var(--raise);
+}
+.night-speed button.on { color: var(--cyan); box-shadow: inset 0 0 0 1px #F0A02044; }
+.night-status, .night-progress { font: 10.5px var(--mono); color: var(--faint); margin: 2px 0; }
+.night-progress.faint { opacity: .5; }
+.night-badge {
+  display: inline-block; margin: 6px 0; padding: 3px 9px; border-radius: 999px;
+  font: 10.5px var(--mono); color: var(--ice); background: #F0A02022; box-shadow: inset 0 0 0 1px #F0A02044;
+}
+.night-report dl { display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; margin: 6px 0 0; }
+.night-report dt { font: 10px var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--faint); }
+.night-report dd { margin: 0; font: 11.5px var(--mono); color: var(--dim); word-break: break-word; }
+/* Narrow panel: the gauges stack — smaller, wrapping onto rows, the pulse
+   line on a row of its own — instead of one long column that would eat
+   the brain's room (seen live: r=4 with the terminal open). */
+.mind.narrow .regions-bottom { gap: 4px 12px; padding-top: 2px; }
+.mind.narrow .regions-bottom .thalamus { width: 64px; height: 64px; }
+.mind.narrow .regions-bottom .rhythm { width: 36px; height: 36px; }
+.mind.narrow .regions-bottom .region.brainstem { flex: 1 1 100%; }
+.mind.narrow .regions-top .regions-tabs { margin-left: 0; width: 100%; }
+.mind.narrow .region-name { letter-spacing: .12em; }
+/* Ambient mode (brain behind the chat): the strips would ride on the text;
+   they show only when the brain is the front surface. */
+body.mind-on:not(.mind-off):not(.no-ambient):not(.viewing):not(.orch-open):not(.cam-open) .regions-top,
+body.mind-on:not(.mind-off):not(.no-ambient):not(.viewing):not(.orch-open):not(.cam-open) .regions-bottom,
+body.mind-on:not(.mind-off):not(.no-ambient):not(.viewing):not(.orch-open):not(.cam-open) .regions-middle { display: none; }

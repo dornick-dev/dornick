@@ -17,6 +17,8 @@ Lang.add({
   // Memory kinds (probe + legend)
   "Ben": "Me", "Kullanıcı": "User", "Tercih": "Preference", "Ders": "Lesson",
   "Yordam": "Procedure", "Bilgi": "Fact", "Hedef": "Goal", "Oturum": "Session",
+  "Dünya": "World", "Gördüklerim": "What I have seen",
+  "doğrulanmamış": "unverified", "doğrulama": "verified", "soğuk": "cold",
   // Show/hide button
   "tüm hatıraları gizle": "hide all memories",
   "ağdaki tüm hatıraları göster": "show all memories in the web",
@@ -49,7 +51,7 @@ const Scene = (() => {
   const LABEL = {
     self: "Ben", user: "Kullanıcı", preference: "Tercih", lesson: "Ders",
     procedure: "Yordam", fact: "Bilgi", goal: "Hedef", session: "Oturum",
-    episode: "Oturum"
+    episode: "Oturum", world: "Dünya"
   };
 
   // Rings: radius multiplier, speed (rad/s), part count, gap ratio.
@@ -124,6 +126,36 @@ const Scene = (() => {
   let pane = null;         // current rect of the right brain panel (null if none)
   let hole = null;         // the hole the rings fit into (minus header/organs/legend)
   let searchHits = null;   // memory search: matching node ids (null if none)
+
+  // --- the event clock (Phase 6) ----------------------------------------
+  // Night events are drawn with the same signal/strike mechanics as the
+  // recall trace, but on their own clock. `uyku.uyandi` freezes that clock:
+  // every event-driven animation (flash decay, signals, stitches, births)
+  // stops in place while the ambient rotation goes on. Thawing continues
+  // from where it stopped — no jump.
+  const animClock = { frozen: false, at: 0, offset: 0 };
+  let animFrames = 0;      // frames in which the event clock advanced
+  let plan = [];           // { at, fn } — scheduled on the event clock
+  let stitches = [];       // dotted edges between far nodes (dikis)
+  let marks = [];          // success / failure glyphs beside a node
+  let injections = [];     // prime injection: core → context window
+  let litLog = [];         // ids in the order they were struck
+  let nightDim = 0;        // 0..1 hippocampus darkening
+  let thinUntil = 0;       // edges drawn thin until this event-clock time
+  // Cold store: the ring around the hippocampus. `count` is the badge,
+  // `warm` the sparks of nodes being opened, `slice` the region local
+  // sleep is working on.
+  let coldRing = { count: 0, warm: [], slice: null, hover: false, badge: null };
+  let onCold = () => {};
+
+  const WARM_MS = 1400;    // cold node: ring → engram
+  const STITCH_MS = 4200;  // a dotted stitch stays visible
+  const PULL_MS = 1100;    // distillation: sources drawn together
+  const BIRTH_MS = 900;    // a distilled node grows in
+  const MARK_MS = 2600;    // ✓ / ✕ beside a node
+  const INJECT_MS = 1500;  // core → context window flow
+  const EDGE_MS = 1200;    // a night-born edge appears
+  const THIN_MS = 900;     // "all edges thin for a moment"
 
   const css = (n) => getComputedStyle(document.documentElement).getPropertyValue("--" + n).trim();
 
@@ -308,8 +340,20 @@ const Scene = (() => {
     const mind = document.getElementById("mind");
     const head = mind && mind.querySelector(".mind-head");
     const foot = mind && mind.querySelector(".mind-foot");
-    const headB = head ? head.getBoundingClientRect().bottom : box.top;
-    const footT = foot ? foot.getBoundingClientRect().top : box.bottom;
+    // The region strips (prefrontal above, thalamus & co. below) are HTML
+    // and push the brain between them, like the header and the foot.
+    const strip = (sel) => {
+      const el = mind && mind.querySelector(sel);
+      if (!el || el.hidden) return null;
+      const r = el.getBoundingClientRect();
+      return r.height > 0 ? r : null;
+    };
+    const topStrip = strip(".regions-top");
+    const bottomStrip = strip(".regions-bottom");
+    const headB = topStrip ? topStrip.bottom
+      : head ? head.getBoundingClientRect().bottom : box.top;
+    const footT = bottomStrip ? bottomStrip.top
+      : foot ? foot.getBoundingClientRect().top : box.bottom;
     const PAD = 8;
     const left = box.left + PAD;
     const right = box.right - PAD;
@@ -408,6 +452,9 @@ const Scene = (() => {
   // stays in recall mode, not guess the number.
   function activate(trace) {
     clearRoute();
+    // The agent is recalling: whatever the night left frozen on screen
+    // gives way to the day.
+    thaw();
     if (!Array.isArray(trace) || !trace.length) { ripple(); return 0; }
 
     // Trace nodes MISSING from the graph must not kill the animation: the
@@ -417,18 +464,12 @@ const Scene = (() => {
     // animations are gone"). An unknown id gets a ghost node with a
     // persistent position: the same memory always lights in the same
     // place; the next graph load sweeps the ghost away.
+    // A record not in the graph came from the cold store (FTS reach, not
+    // spontaneous): it warms in from the ring rather than appearing from
+    // nowhere.
     for (const step of trace) {
       if (!step || !step.node || byId.has(step.node)) continue;
-      const ghost = {
-        id: step.node,
-        label: String(step.label || "anı"),
-        group: step.kind || "fact",
-        size: 7, detail: "", ghost: true,
-        flash: 0, lit: 0, order: 0, from: null,
-      };
-      ghost.p3 = insideBrain(ghost.id);
-      nodes.push(ghost);
-      byId.set(ghost.id, ghost);
+      warm(step.node, step.label || "anı", step.kind);
     }
     place();
 
@@ -501,12 +542,12 @@ const Scene = (() => {
     const step = route[index];
     if (step) {
       const node = byId.get(step.node);
-      if (node) { node.flash = 1; node.lit = now(); showProbeAt(node); }
+      if (node) { node.flash = 1; node.peak = 1; node.lit = tick(); showProbeAt(node); }
     }
     start();
   }
 
-  function ripple() { ripples.push({ born: now() }); start(); }
+  function ripple() { ripples.push({ born: tick() }); start(); }
 
   // A link the agent forged deliberately. What separates it from the
   // automatic weave is visibility: the web growing by itself is silent,
@@ -515,16 +556,17 @@ const Scene = (() => {
     const from = byId.get(src);
     const to = byId.get(dst);
     if (!from || !to) return;
-    bridges.push({ from, to, born: now() });
+    bridges.push({ from, to, born: tick() });
     // While the link is drawn an impulse crosses it: what was forged
     // should be seen to carry a direction.
     signal(src, dst, "link");
-    from.flash = 1; from.lit = now();
-    to.flash = 1; to.lit = now();
+    from.flash = 1; from.peak = 1; from.lit = tick();
+    to.flash = 1; to.peak = 1; to.lit = tick();
     start();
   }
 
   function drawBridges(t) {
+    t = anim(t);
     // Faded ones drop off the list; else they pile up over a long session.
     bridges = bridges.filter((b) => t - b.born < BRIDGE_MS);
     for (const b of bridges) {
@@ -601,7 +643,14 @@ const Scene = (() => {
     recall: "ice",          // web to core: the find coming back
     write:  "mint",         // core to web: writing
     link:   "preference",   // a deliberately forged bridge
-    limb:   "fact"          // core to a device: organ use
+    limb:   "fact",         // core to a device: organ use
+    // Night (Phase 6). Colour is never the only carrier: forward replay
+    // draws solid dots with an arrowhead, reverse replay hollow dots with
+    // the arrow pointing back; success / failure also get a glyph.
+    forward:  "user",       // tekrar.ileri: the session's chain, in order
+    success:  "mint",       // tekrar.geri, outcome good
+    failure:  "rose",       // tekrar.geri, outcome bad
+    evidence: "violet"      // identity sentence → its evidence nodes
   };
 
   let signals = [];
@@ -617,8 +666,11 @@ const Scene = (() => {
     return limb ? { x: limb.x, y: limb.y } : null;
   }
 
-  function signal(from, to, kind, delay) {
-    signals.push({ from, to, kind: kind || "ask", born: now() + (delay || 0) });
+  // `dur` scales one hop (replay speed); `style` carries the direction
+  // arrow and the hollow-dot shape of a reverse replay.
+  function signal(from, to, kind, delay, dur, style) {
+    signals.push({ from, to, kind: kind || "ask", born: tick() + (delay || 0),
+                   dur: dur || SIGNAL_MS, style: style || null });
     start();
   }
 
@@ -639,22 +691,26 @@ const Scene = (() => {
   });
 
   function drawSignals(t) {
+    t = anim(t);
     // Faded ones drop off the list; else they pile up over a long session.
-    signals = signals.filter(sig => t - sig.born < SIGNAL_MS * (1 + TAIL));
+    signals = signals.filter(sig => t - sig.born < sig.dur * (1 + TAIL));
 
     for (const sig of signals) {
       if (t < sig.born) continue;              // delayed: not yet departed
       const a = spot(sig.from), b = spot(sig.to);
       if (!a || !b) continue;
 
-      const head = (t - sig.born) / SIGNAL_MS;
+      const head = (t - sig.born) / sig.dur;
       const c = curve(a, b);
       const color = css(CURRENT[sig.kind] || "cyan");
       // After the head arrives, the tail keeps flowing in.
       const left = head > 1 ? Math.max(0, 1 - (head - 1) / TAIL) : 1;
+      const hollow = !!(sig.style && sig.style.hollow);
 
       ctx.shadowColor = color;
       ctx.fillStyle = color;
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 1.2;
       for (let i = 0; i < DOTS; i++) {
         const k = head - (i / DOTS) * TAIL;
         if (k < 0 || k > 1) continue;
@@ -666,7 +722,22 @@ const Scene = (() => {
         // The head bigger and brighter: the signal's walk toward the
         // memory should be easy to follow by eye (user request).
         ctx.arc(p.x, p.y, 0.9 + fade * 3.3, 0, Math.PI * 2);
-        ctx.fill();
+        if (hollow) ctx.stroke(); else ctx.fill();
+      }
+      // Direction arrow at the head: which way the replay walks must be
+      // readable without colour.
+      if (sig.style && sig.style.arrow && head > 0.04 && head <= 1) {
+        const p = bezier(a, c, b, head);
+        const q = bezier(a, c, b, Math.max(0, head - 0.04));
+        const ang = Math.atan2(p.y - q.y, p.x - q.x);
+        ctx.globalAlpha = Math.min(1, left);
+        ctx.shadowBlur = 0;
+        ctx.beginPath();
+        ctx.moveTo(p.x + Math.cos(ang) * 7, p.y + Math.sin(ang) * 7);
+        ctx.lineTo(p.x + Math.cos(ang + 2.5) * 6, p.y + Math.sin(ang + 2.5) * 6);
+        ctx.lineTo(p.x + Math.cos(ang - 2.5) * 6, p.y + Math.sin(ang - 2.5) * 6);
+        ctx.closePath();
+        if (hollow) ctx.stroke(); else ctx.fill();
       }
     }
     ctx.globalAlpha = 1; ctx.shadowBlur = 0;
@@ -674,16 +745,389 @@ const Scene = (() => {
 
   // A node fired: let it flash and carry its order and where it came
   // from.
-  function strike(id, order, from) {
+  function strike(id, order, from, level) {
     const node = byId.get(id);
     if (!node) return null;
-    node.flash = 1;
-    node.lit = now();
+    node.flash = level === undefined ? 1 : Math.max(0.05, Math.min(1, level));
+    node.peak = node.flash;
+    node.lit = tick();
     if (order) node.order = order;
     if (from !== undefined) node.from = from;
+    litLog.push(id);
     start();
     return node;
   }
+
+  // --- night layer (Phase 6) --------------------------------------------
+  //
+  // Everything below is driven by the frozen event schema
+  // (recall/night_events.py) through night.js; the view never reads
+  // recall.db. The drawing reuses signal() / strike() so a night replay
+  // and a day recall have the same order and timing logic (STEP_MS,
+  // SIGNAL_MS), only scaled by the replay speed.
+
+  // The event clock. tick() stamps births; anim(t) maps a real frame time
+  // onto it. Frozen: the clock stands, every stamp-relative animation
+  // stands with it.
+  function anim(t) {
+    return animClock.frozen ? animClock.at : t - animClock.offset;
+  }
+  const tick = () => anim(performance.now());
+  function freeze() {
+    if (animClock.frozen) return;
+    animClock.at = anim(performance.now());
+    animClock.frozen = true;
+  }
+  function thaw() {
+    if (!animClock.frozen) return;
+    animClock.offset = performance.now() - animClock.at;
+    animClock.frozen = false;
+    start();
+  }
+  const frozen = () => animClock.frozen;
+
+  // Scheduling on the event clock instead of setTimeout: a frozen clock
+  // must hold the queued steps too, else the remaining chain lights up
+  // behind a stopped picture.
+  function schedule(delay, fn) {
+    plan.push({ at: tick() + Math.max(0, delay || 0), fn });
+    start();
+  }
+  function runPlan(ta) {
+    if (!plan.length) return;
+    const due = plan.filter((p) => p.at <= ta).sort((a, b) => a.at - b.at);
+    if (!due.length) return;
+    plan = plan.filter((p) => p.at > ta);
+    for (const p of due) { try { p.fn(); } catch (err) { console.error(err); } }
+  }
+
+  // A node the graph does not carry (cold, old, or born tonight) gets a
+  // persistent ghost: the same id always lands on the same engram, and the
+  // next graph load sweeps it away.
+  function ensureNode(id, label, kind) {
+    const known = byId.get(id);
+    if (known) return known;
+    const ghost = {
+      id, label: String(label || id), group: kind || "fact",
+      size: 7, detail: "", ghost: true,
+      flash: 0, lit: 0, order: 0, from: null,
+    };
+    ghost.p3 = insideBrain(ghost.id);
+    nodes.push(ghost);
+    byId.set(ghost.id, ghost);
+    return ghost;
+  }
+
+  // A cold node opened: it starts on the ring and warms toward its place
+  // in the hippocampus. The ring itself shows the spark (drawColdRing).
+  function warm(id, label, kind) {
+    const known = byId.has(id);
+    const node = ensureNode(id, label, kind);
+    if (!known) {
+      const ang = hash01(id, 0xc01d) * Math.PI * 2;
+      node.p3out = { x: Math.cos(ang) * 1.9, y: (hash01(id, 0xc02d) - 0.5) * 0.4,
+                     z: Math.sin(ang) * 1.9 };
+      node.warm = tick();
+      coldRing.warm.push({ id, born: node.warm, ang });
+    }
+    node.flash = 1; node.peak = 1; node.lit = tick();
+    start();
+    return node;
+  }
+
+  // A chain of nodes lit one after another — the night's replay. Options:
+  //   reverse   walk the chain backwards (tekrar.geri)
+  //   kind      signal colour key (forward / success / failure / evidence)
+  //   shares    id → 0..1, brightness of each strike (paylar)
+  //   speed     1 / 10 / 60 — divides STEP_MS and SIGNAL_MS
+  //   glyph     "✓" / "✕" drawn beside the last node
+  //   labels    id → label for ghosts
+  // Returns the total duration in event-clock ms.
+  function lightSequence(ids, opts) {
+    opts = opts || {};
+    const speed = Math.max(0.1, opts.speed || 1);
+    const step = STEP_MS / speed, hop = SIGNAL_MS / speed;
+    const order = (opts.reverse ? [...ids].reverse() : [...ids]).filter(Boolean);
+    if (!order.length) return 0;
+    const kind = opts.kind || "forward";
+    const style = { arrow: true, hollow: !!opts.reverse };
+    order.forEach((id, i) => {
+      ensureNode(id, opts.labels && opts.labels[id], opts.group);
+      const prev = i > 0 ? order[i - 1] : null;
+      const share = opts.shares && opts.shares[id] !== undefined
+        ? Math.max(0, Math.min(1, Number(opts.shares[id]) || 0)) : 1;
+      if (prev) signal(prev, id, kind, i * step, hop, style);
+      schedule(i * step + (prev ? hop : 0), () => {
+        strike(id, opts.numbered ? i + 1 : 0, prev, 0.4 + 0.6 * share);
+      });
+    });
+    const total = (order.length - 1) * step + hop;
+    if (opts.glyph) {
+      schedule(total, () => mark(order[order.length - 1], opts.glyph, kind));
+    }
+    return total;
+  }
+
+  // dikis: a dotted edge between two far nodes; the node in between
+  // flashes once.
+  // Every night strike goes through schedule(): the plan runs in `at`
+  // order inside the scene's frame, so two events played back to back
+  // light their nodes in the order of the file, whichever rAF callback
+  // (night.js or the scene) happens to run first.
+  function stitch(a, b, via) {
+    ensureNode(a); ensureNode(b);
+    schedule(0, () => {
+      stitches.push({ a, b, born: tick() });
+      if (via) { ensureNode(via); strike(via, 0, null, 1); }
+    });
+  }
+
+  // dokunus: a far, faint node blinks softly.
+  function touch(id) {
+    ensureNode(id);
+    schedule(0, () => strike(id, 0, null, 0.55));
+  }
+
+  // damitma: the sources are drawn together; from between them a new node
+  // is born (REM). `speed` scales the pull like the replay steps.
+  function distil(sources, newId, label, speed) {
+    const dur = PULL_MS / Math.max(0.1, speed || 1);
+    const src = (sources || []).map((id) => ensureNode(id));
+    if (!src.length) { ensureNode(newId, label); schedule(0, () => strike(newId)); return dur; }
+    const c = { x: 0, y: 0, z: 0 };
+    for (const n of src) { c.x += n.p3.x; c.y += n.p3.y; c.z += n.p3.z; }
+    c.x /= src.length; c.y /= src.length; c.z /= src.length;
+    schedule(0, () => {
+      const born = tick();
+      for (const n of src) {
+        n.pull = { to: c, born, dur }; n.flash = 0.7; n.peak = 0.7; n.lit = born; litLog.push(n.id);
+      }
+    });
+    schedule(dur, () => {
+      const fresh = !byId.has(newId);
+      const n = ensureNode(newId, label, "lesson");
+      if (fresh) n.p3 = { x: c.x + (hash01(newId, 7) - 0.5) * 0.06,
+                          y: c.y + (hash01(newId, 8) - 0.5) * 0.06,
+                          z: c.z + (hash01(newId, 9) - 0.5) * 0.06 };
+      n.born = tick();
+      strike(newId);
+      for (const s of src) signal(s.id, newId, "write", 0, Math.max(60, SIGNAL_MS * 0.6 / Math.max(0.1, speed || 1)));
+    });
+    return dur + BIRTH_MS / Math.max(0.1, speed || 1);
+  }
+
+  // A glyph beside a node: ✓ success, ✕ failure. The colour says it too,
+  // but never alone.
+  function mark(id, glyph, kind) {
+    if (!byId.has(id)) return;
+    marks.push({ id, glyph, kind: kind || "success", born: tick() });
+    start();
+  }
+
+  // An edge the night wove: it appears growing from a to b and then stays
+  // as part of the web until the next graph load.
+  function addEdge(a, b, weight) {
+    const na = ensureNode(a), nb = ensureNode(b);
+    if (web.some((e) => (e.a === na && e.b === nb) || (e.a === nb && e.b === na))) return;
+    web.push({ a: na, b: nb, weight: weight || 1, born: tick() });
+    start();
+  }
+
+  // "All edges thin for a moment" — the local shrink at the end of a
+  // regional sleep.
+  function thinEdges() { thinUntil = tick() + THIN_MS; start(); }
+
+  // Hippocampus darkening: 1 asleep, 0 awake, ~0.4 a nap.
+  function dim(level) { nightDim = Math.max(0, Math.min(1, Number(level) || 0)); start(); }
+
+  // Prime injection: the recalled records flow from the core into the
+  // context window — drawn toward the chat column.
+  function inject(ids) {
+    injections.push({ born: tick(), n: Array.isArray(ids) ? ids.length : 1 });
+    start();
+  }
+
+  // Cold store ring: the badge count and the slice local sleep works on.
+  function cold(count) { coldRing.count = Math.max(0, Number(count) || 0); start(); }
+  function coldSlice(name) { coldRing.slice = name ? { name: String(name), born: tick() } : null; start(); }
+  function onColdRing(cb) { onCold = typeof cb === "function" ? cb : () => {}; }
+
+  // Radius of the cold ring: just outside the HUD rings, so the two never
+  // read as one.
+  const coldRadius = () => ringReach(core.r) + 10;
+
+  function drawStitches(t) {
+    const ta = anim(t);
+    stitches = stitches.filter((s) => ta - s.born < STITCH_MS);
+    if (!stitches.length) return;
+    ctx.save();
+    ctx.setLineDash([2, 5]);
+    for (const s of stitches) {
+      const a = byId.get(s.a), b = byId.get(s.b);
+      if (!a || !b) continue;
+      const k = (ta - s.born) / STITCH_MS;
+      const grow = Math.min(1, k * 4);
+      ctx.strokeStyle = css("lesson");
+      ctx.globalAlpha = 0.85 * (1 - Math.max(0, k - 0.6) / 0.4);
+      ctx.lineWidth = 1.3;
+      ctx.beginPath();
+      ctx.moveTo(a.x, a.y);
+      ctx.lineTo(a.x + (b.x - a.x) * grow, a.y + (b.y - a.y) * grow);
+      ctx.stroke();
+    }
+    ctx.restore();
+    ctx.globalAlpha = 1;
+  }
+
+  function drawMarks(t) {
+    const ta = anim(t);
+    marks = marks.filter((m) => ta - m.born < MARK_MS);
+    if (!marks.length) return;
+    const family = getComputedStyle(document.body).fontFamily;
+    ctx.save();
+    ctx.font = "700 12px " + family;
+    ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    for (const m of marks) {
+      const node = byId.get(m.id);
+      if (!node) continue;
+      const k = (ta - m.born) / MARK_MS;
+      const color = css(CURRENT[m.kind] || "ice");
+      ctx.globalAlpha = k < 0.7 ? 1 : 1 - (k - 0.7) / 0.3;
+      ctx.fillStyle = color;
+      ctx.shadowColor = color; ctx.shadowBlur = isLight() ? 0 : 10;
+      ctx.fillText(m.glyph, node.x + 11, node.y - 11 - k * 6);
+    }
+    ctx.restore();
+    ctx.globalAlpha = 1; ctx.shadowBlur = 0;
+  }
+
+  // The flow from the core toward the context window. The chat column is
+  // the window; the nearest edge of it is the target.
+  function drawInjections(t) {
+    const ta = anim(t);
+    injections = injections.filter((j) => ta - j.born < INJECT_MS);
+    if (!injections.length) return;
+    const chat = document.querySelector(".stream");
+    const rect = chat ? chat.getBoundingClientRect() : null;
+    if (!rect || !rect.width) return;
+    const target = {
+      x: Math.max(rect.left, Math.min(rect.right, core.x)),
+      y: Math.max(rect.top, Math.min(rect.bottom, core.y)),
+    };
+    if (target.x === core.x && target.y === core.y) target.x = rect.left;
+    const from = { x: core.x, y: core.y };
+    const c = curve(from, target);
+    const color = css("ice");
+    ctx.save();
+    ctx.fillStyle = color; ctx.shadowColor = color;
+    for (const j of injections) {
+      const head = (ta - j.born) / INJECT_MS;
+      const lanes = Math.min(5, Math.max(1, j.n));
+      for (let l = 0; l < lanes; l++) {
+        for (let i = 0; i < 10; i++) {
+          const k = head * 1.3 - i * 0.04 - l * 0.05;
+          if (k < 0 || k > 1) continue;
+          const p = bezier(from, c, target, k);
+          const fade = (1 - i / 10) * (1 - Math.max(0, head - 0.7) / 0.3);
+          ctx.globalAlpha = Math.max(0, fade * 0.9);
+          ctx.shadowBlur = 12 * fade;
+          ctx.beginPath();
+          ctx.arc(p.x + (l - lanes / 2) * 3, p.y + (l - lanes / 2) * 3, 1 + fade * 2, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+    }
+    ctx.restore();
+    ctx.globalAlpha = 1; ctx.shadowBlur = 0;
+  }
+
+  // The cold store: a faint dashed ring around the hippocampus with the
+  // count badge. Sparks run inward while a cold node is opened; a slice
+  // pulses while local sleep works on a region. Drawn only where the
+  // brain is the front surface (panel) or the web is revealed.
+  function drawColdRing(t) {
+    const ta = anim(t);
+    if (!pane && !reveal) { coldRing.badge = null; return; }
+    const R = coldRadius();
+    const light = isLight();
+    const ink = light ? css("text") : css("dim");
+    ctx.save();
+    ctx.setLineDash([3, 7]);
+    ctx.strokeStyle = ink;
+    ctx.lineWidth = coldRing.hover ? 1.6 : 1;
+    ctx.globalAlpha = (coldRing.hover ? 0.55 : 0.28) * (1 - nightDim * 0.5);
+    ctx.beginPath(); ctx.arc(core.x, core.y, R, 0, Math.PI * 2); ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Local sleep: one slice of the ring in the sleep pattern.
+    if (coldRing.slice) {
+      const a0 = hash01(coldRing.slice.name, 0x5e1) * Math.PI * 2;
+      const pulse = 0.45 + 0.35 * (Math.sin(t / 700) + 1) / 2;
+      ctx.strokeStyle = css("user");
+      ctx.globalAlpha = pulse;
+      ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.arc(core.x, core.y, R, a0, a0 + Math.PI / 3); ctx.stroke();
+    }
+
+    // Sparks: ring → centre.
+    coldRing.warm = coldRing.warm.filter((w) => ta - w.born < WARM_MS);
+    ctx.fillStyle = css("cyan"); ctx.shadowColor = css("cyan"); ctx.strokeStyle = css("cyan");
+    ctx.lineWidth = 1;
+    for (const w of coldRing.warm) {
+      const k = (ta - w.born) / WARM_MS;
+      const node = byId.get(w.id);
+      const tx = node ? node.x : core.x, ty = node ? node.y : core.y;
+      const sx = core.x + Math.cos(w.ang) * R, sy = core.y + Math.sin(w.ang) * R;
+      const e = 1 - Math.pow(1 - k, 3);
+      ctx.globalAlpha = 0.9 * (1 - k * 0.6);
+      ctx.shadowBlur = light ? 0 : 14;
+      ctx.beginPath();
+      ctx.arc(sx + (tx - sx) * e, sy + (ty - sy) * e, 3.2 - k * 1.5, 0, Math.PI * 2);
+      ctx.fill();
+      // The ring glows where the spark left it.
+      ctx.globalAlpha = 0.6 * (1 - k);
+      ctx.beginPath(); ctx.arc(sx, sy, 5 + k * 10, 0, Math.PI * 2); ctx.stroke();
+    }
+    ctx.shadowBlur = 0;
+
+    // Badge: "41.200 soğuk", lower right of the ring.
+    if (coldRing.count > 0) {
+      const family = getComputedStyle(document.body).fontFamily;
+      ctx.font = "600 10px " + family;
+      ctx.textAlign = "left"; ctx.textBaseline = "middle";
+      ctx.globalAlpha = coldRing.hover ? 0.95 : 0.7;
+      ctx.fillStyle = ink;
+      const text = coldRing.count.toLocaleString("tr-TR") + " " + t_("soğuk");
+      const bx = core.x + R * Math.cos(Math.PI / 4) + 4;
+      const by = core.y + R * Math.sin(Math.PI / 4) + 4;
+      ctx.fillText(text, bx, by);
+      coldRing.badge = { x: bx, y: by, w: ctx.measureText(text).width };
+    } else coldRing.badge = null;
+    ctx.restore();
+    ctx.globalAlpha = 1;
+  }
+  // t() is the translation function of lang.js; a local alias keeps the
+  // frame time `t` readable in the drawing code above.
+  const t_ = (s) => (typeof t === "function" ? t(s) : s);
+
+  // Hover on the ring (no node under the pointer): the region tooltip.
+  function coldHit(ev) {
+    if (!pane && !reveal) return false;
+    const d = Math.hypot(ev.clientX - core.x, ev.clientY - core.y);
+    if (Math.abs(d - coldRadius()) <= 9) return true;
+    const b = coldRing.badge;
+    return !!(b && ev.clientX >= b.x - 4 && ev.clientX <= b.x + b.w + 4
+              && Math.abs(ev.clientY - b.y) <= 9);
+  }
+
+  // What the region overlay needs to place itself around the brain.
+  function geometry() {
+    return { x: core.x, y: core.y, r: core.r, reach: ringReach(core.r),
+             cold: coldRadius(), pane: !!pane, hole, dim: nightDim };
+  }
+  const litLogRead = () => litLog.slice();
+  const clearLog = () => { litLog = []; };
+  const frames = () => animFrames;
 
   // Writing: an impulse from the core into the web with the new record at
   // its tip. Called after the graph refreshes, else the target node does
@@ -1181,12 +1625,17 @@ const Scene = (() => {
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+    // `t` is the frame time. The event-driven layers (ripples, signals,
+    // stitches, marks, flashes) map it through anim() themselves: on the
+    // frozen event clock they stand while the ambient rotation goes on.
     drawAura(t);
     drawRipples(t);
     // Memory screen positions derive from the brain's rotation: computed
     // once before drawing, then used by the web and the nodes.
     projectNodes(t);
-    drawWeb();
+    drawColdRing(t);
+    drawWeb(t);
+    drawStitches(t);
     // Memories always on top: the silhouette is ground, node/text stays
     // readable. (The old dark path printed the sparse cloud on top — once
     // the chalk sharpened it would swallow the memories.)
@@ -1195,6 +1644,8 @@ const Scene = (() => {
     drawLimbs(t);
     drawSignals(t);
     drawBridges(t);
+    drawMarks(t);
+    drawInjections(t);
     drawMode(t);
     drawStatus(t);
     drawLegend();
@@ -1245,7 +1696,7 @@ const Scene = (() => {
   // It writes only what is really on screen: showing an empty section
   // would draw something that does not exist as if it did.
   const LEGEND_ORDER = ["user", "preference", "lesson", "procedure",
-                        "voice", "fact", "goal", "episode", "session"];
+                        "voice", "fact", "goal", "world", "episode", "session"];
 
   // NEXT TO each colour is written what it is. A single word ("bilgi",
   // "oturum") did not explain what it stood for; a short gloss is attached
@@ -1258,6 +1709,7 @@ const Scene = (() => {
     voice: "Konuşma biçimin",
     fact: "Öğrendiklerim",
     goal: "İş listesi",
+    world: "Gördüklerim",
     episode: "Geçmiş konuşmalar",
     session: "Geçmiş konuşmalar",
   };
@@ -1387,6 +1839,9 @@ const Scene = (() => {
     const t = now();
     if (t - lastPaint >= PAINT_MS) {
       lastPaint = t;
+      // The event clock: advances with the frame unless frozen.
+      const ta = anim(t);
+      if (!animClock.frozen) { animFrames += 1; runPlan(ta); }
       const mr = mindRect();
       // Height/top too: the camera deck shortens the pane while the width
       // stays — watching only left+width let the brain overflow with its
@@ -1417,24 +1872,36 @@ const Scene = (() => {
 
   // The synapse web: faint but always there. Links on the path stand
   // out.
-  function drawWeb() {
+  function drawWeb(t) {
+    const ta = anim(t);
     ctx.lineWidth = 1;
+    const thin = ta < thinUntil ? 0.35 : 1;
+    const night = 1 - nightDim * 0.6;
     for (const edge of web) {
       const onPath = edge.a.order && edge.b.order &&
         Math.abs(edge.a.order - edge.b.order) === 1;
       const light = isLight();
-      ctx.strokeStyle = onPath ? css(edge.b.group) : (light ? css("text") : "#8A8071");
-      ctx.lineWidth = light ? 1.35 : 1;
-      ctx.globalAlpha = onPath ? (light ? 0.85 : 0.5) : (light ? 0.38 : WEB_ALPHA * (reveal ? 3 : 1));
+      // An edge born tonight grows in from a to b, bright, then settles.
+      let grow = 1, fresh = 0;
+      if (edge.born) {
+        const k = (ta - edge.born) / EDGE_MS;
+        if (k >= 1) edge.born = 0; else { grow = Math.min(1, k * 2); fresh = 1 - k; }
+      }
+      ctx.strokeStyle = onPath || fresh ? css(edge.b.group) : (light ? css("text") : "#8A8071");
+      ctx.lineWidth = (light ? 1.35 : 1) * thin + fresh;
+      ctx.globalAlpha = Math.min(1, (onPath ? (light ? 0.85 : 0.5)
+        : (light ? 0.38 : WEB_ALPHA * (reveal ? 3 : 1))) * night + fresh * 0.6);
       ctx.beginPath();
       ctx.moveTo(edge.a.x, edge.a.y);
-      ctx.lineTo(edge.b.x, edge.b.y);
+      ctx.lineTo(edge.a.x + (edge.b.x - edge.a.x) * grow, edge.a.y + (edge.b.y - edge.a.y) * grow);
       ctx.stroke();
     }
     ctx.globalAlpha = 1;
   }
 
-  function drawNodes(t) {
+  function drawNodes(t, ta) {
+    if (ta === undefined) ta = anim(t);
+    const night = 1 - nightDim * 0.55;
     const family = getComputedStyle(document.body).fontFamily;
     // The chat column is transparent: labels must not bleed through the
     // text.
@@ -1455,9 +1922,21 @@ const Scene = (() => {
       : null;
     for (const node of ordered) {
       if (node.flash > 0 && node.lit) {
-        const k = (t - node.lit) / FLASH_MS;
-        node.flash = k >= 1 ? 0 : 1 - k;
+        // The decay is on the event clock: frozen, the flash holds. The
+        // ceiling is the level the strike set (a touch is fainter than a
+        // replay step), not always 1.
+        const k = (ta - node.lit) / FLASH_MS;
+        const peak = node.peak === undefined ? 1 : node.peak;
+        node.flash = k >= 1 ? 0 : peak * (1 - Math.max(0, k));
       }
+      // Born tonight: grows in from nothing.
+      let grow = 1;
+      if (node.born) {
+        const k = (ta - node.born) / BIRTH_MS;
+        if (k >= 1) node.born = 0; else grow = Math.max(0.05, k);
+      }
+      // A world record nobody verified yet stays faint: seen, not known.
+      const unverified = node.group === "world" && !node.dogrulama;
 
       // Depth: near (front) bright and large, far (back) faint and small.
       const near = ((node.depth ?? 0) + 1.1) / 2.2;   // 0..1
@@ -1494,7 +1973,7 @@ const Scene = (() => {
         }
       }
 
-      const r = (2.2 + heat * 4) * depthSize * (lightNode ? 1.35 : 1);
+      const r = (2.2 + heat * 4) * depthSize * (lightNode ? 1.35 : 1) * grow;
       if (heat > 0.05) {
         const alpha = Math.round(heat * (lightNode ? 200 : 150)).toString(16).padStart(2, "0");
         const g = ctx.createRadialGradient(node.x, node.y, 0, node.x, node.y, r * 5);
@@ -1508,7 +1987,8 @@ const Scene = (() => {
       const twk = 0.68 + 0.32 * (Math.sin(t / 1500 + (node.p3.x - node.p3.z) * 8) * 0.5 + 0.5);
       ctx.globalAlpha = Math.min(1, lightNode
         ? (0.78 + heat * 0.22) * depthAlpha
-        : (LATENT * twk + heat * (1 - LATENT)) * depthAlpha) * dim;
+        : (LATENT * twk + heat * (1 - LATENT)) * depthAlpha) * dim
+        * (unverified ? 0.55 : 1) * (heat > 0.05 ? 1 : night);
       ctx.shadowBlur = heat > 0.05 && !lightNode ? 14 : 0; ctx.shadowColor = color;
       ctx.fillStyle = color;
       ctx.beginPath(); ctx.arc(node.x, node.y, r, 0, Math.PI * 2); ctx.fill();
@@ -1680,16 +2160,40 @@ const Scene = (() => {
   // brain's rotation. Adds a slight drift (a small oscillation tied to
   // the id's phase) — alive inside the brain, not frozen. depth is
   // front/back; drawNodes uses it for brightness and size.
-  function projectNodes(t) {
+  function projectNodes(t, ta) {
+    if (ta === undefined) ta = anim(t);
     const rot = brainSpin(t);
     const r = core.r * 1.45;
     for (const node of nodes) {
       if (!node.p3) node.p3 = insideBrain(node.id);
+      let p = node.p3;
+      // Warming: from the cold ring (outside the volume) to the engram.
+      if (node.warm) {
+        const k = (ta - node.warm) / WARM_MS;
+        if (k >= 1) { node.warm = 0; node.p3out = null; }
+        else if (node.p3out) {
+          const e = 1 - Math.pow(1 - Math.max(0, k), 3);
+          p = { x: node.p3out.x + (p.x - node.p3out.x) * e,
+                y: node.p3out.y + (p.y - node.p3out.y) * e,
+                z: node.p3out.z + (p.z - node.p3out.z) * e };
+        }
+      }
+      // Distillation: drawn toward the sources' centre, then let go.
+      if (node.pull) {
+        const k = (ta - node.pull.born) / (node.pull.dur || PULL_MS);
+        if (k >= 1) node.pull = null;
+        else {
+          const bell = Math.sin(Math.max(0, k) * Math.PI) * 0.6;
+          p = { x: p.x + (node.pull.to.x - p.x) * bell,
+                y: p.y + (node.pull.to.y - p.y) * bell,
+                z: p.z + (node.pull.to.z - p.z) * bell };
+        }
+      }
       const ph = (node.p3.x + node.p3.z) * 6.283, d = 0.018;
       const pr = project3(
-        node.p3.x + Math.sin(t / 2600 + ph) * d,
-        node.p3.y + Math.cos(t / 3100 + ph) * d,
-        node.p3.z + Math.sin(t / 2900 + ph * 1.3) * d,
+        p.x + Math.sin(t / 2600 + ph) * d,
+        p.y + Math.cos(t / 3100 + ph) * d,
+        p.z + Math.sin(t / 2900 + ph * 1.3) * d,
         rot);
       node.x = core.x + pr.x * r;
       node.y = core.y + pr.y * r;
@@ -1872,6 +2376,7 @@ const Scene = (() => {
   }
 
   function drawRipples(t) {
+    t = anim(t);
     const SPAN = 1800;
     ripples = ripples.filter(r => t - r.born < SPAN);
     for (const r of ripples) {
@@ -1912,6 +2417,10 @@ const Scene = (() => {
       if (hovered && !hovered.branchHub) showProbeAt(hovered, ev.clientX, ev.clientY, true);
       else probe.hidden = true;
     }
+    // The cold ring: not a node, but a region with its own tooltip. The
+    // overlay (regions.js) draws that tooltip; the scene only reports.
+    const onRing = !hovered && coldHit(ev);
+    if (onRing !== coldRing.hover) { coldRing.hover = onRing; onCold(onRing ? pointer : null); }
     // In the fan a branch opens temporarily on hover, and stays open over
     // a leaf (it must not close between hub and leaf). In the panel list
     // hover does not open — onMove still marks it, the row brightens, no
@@ -1919,7 +2428,7 @@ const Scene = (() => {
     hoverBranch = hovered && hovered.branchHub ? hovered
                 : hovered && hovered.organ ? hovered.stem
                 : null;
-    canvas.style.cursor = hovered ? "pointer" : "default";
+    canvas.style.cursor = hovered || coldRing.hover ? "pointer" : "default";
   }
 
   function onDown(ev) {
@@ -1977,7 +2486,12 @@ const Scene = (() => {
     } else {
       title.textContent = node.order ? node.order + ". " + node.label : node.label;
       kind.textContent = [t(LABEL[node.group]) || node.group,
-                          mini ? "" : node.meta && node.group === "goal" ? node.meta : ""]
+                          mini ? "" : node.meta && node.group === "goal" ? node.meta : "",
+                          node.group === "world"
+                            ? (node.dogrulama ? t("doğrulama") + ": " + dayStamp(node.dogrulama)
+                                              : t("doğrulanmamış"))
+                            : "",
+                          node.ghost && node.warm ? t("soğuk") : ""]
         .filter(Boolean).join(" · ");
       body.textContent = mini ? "" : (node.detail || "");
       probe.append(title, kind, body);
@@ -2207,5 +2721,10 @@ const Scene = (() => {
 
   return { init, load, activate, focusStep, clearRoute, ripple, bridge,
            signal, deposit, organs, use, release, search, pause, resume,
-           setBusy, setMode, summary, redraw, focus, legend };
+           setBusy, setMode, summary, redraw, focus, legend,
+           // Phase 6 — regions and the night layer.
+           geometry, freeze, thaw, frozen, frames, schedule, tick,
+           lightSequence, stitch, touch, distil, mark, addEdge, thinEdges,
+           dim, warm, inject, cold, coldSlice, onColdRing, ensureNode,
+           strike, litLog: litLogRead, clearLog, planned: () => plan.length };
 })();

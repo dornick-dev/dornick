@@ -2663,3 +2663,133 @@ def test_every_waiting_blank_knits_the_knot() -> None:
     for dosya in ("history.js", "apps.js", "git.js", "jobs.js", "command.js", "settings.js"):
         icerik = (kok / dosya).read_text(encoding="utf-8")
         assert "dugum-yukleniyor" in icerik, dosya
+
+
+# -- beyin görünümü: bölgeler ve gece animasyonu (Faz 6) ----------------
+
+REGIONS_JS = (STATIC / "regions.js").read_text(encoding="utf-8")
+NIGHT_JS = (STATIC / "night.js").read_text(encoding="utf-8")
+SCENE_JS = (STATIC / "scene.js").read_text(encoding="utf-8")
+
+
+def test_every_night_event_in_the_schema_has_a_handler() -> None:
+    """Dondurulmuş şemadaki (night_events.SCHEMA) HER olay türünün night.js'te
+    bir çizimi var. Şemaya eklenen bir olay burada sessizce yere düşmesin:
+    eklendiği gün bu test kırılır ve görseli yazılır."""
+    from dornick.recall.night_events import SCHEMA
+
+    handlers = set(re.findall(r'^\s{4}"([a-z]+\.[a-z]+|[a-z]+)":\s*\(', NIGHT_JS, re.M))
+    missing = set(SCHEMA) - handlers
+    assert not missing, f"night.js'te çizimi olmayan olay: {sorted(missing)}"
+    # Şemada olmayan bir olayın çizimi de olmasın — arayüz yalnız şemayı okur.
+    extra = handlers - set(SCHEMA)
+    assert not extra, f"şemada olmayan olaya çizim: {sorted(extra)}"
+
+
+def test_live_and_replay_share_one_feed() -> None:
+    """Canlı izleme ve yeniden oynatma AYNI kod: SSE `gece` olayı, bugünün
+    dosyasının yoklanması ve /api/gece/<tarih> yanıtı hep `feed()`ten geçer.
+    İkinci bir yol olmasın ki ayrışmasın."""
+    assert "function feed(events)" in NIGHT_JS
+    # Yeniden oynatma feed'den geçer.
+    assert re.search(r"async function replay\(date\)[\s\S]*?feed\(data\.olaylar", NIGHT_JS)
+    # Canlı yoklama feed'den geçer.
+    assert re.search(r"async function poll\(\)[\s\S]*?feed\(data\.olaylar\)", NIGHT_JS)
+    # SSE kanalı da aynı feed'e gider.
+    assert re.search(r'case "gece":\s*\n\s*if \(typeof Night !== "undefined"\) Night\.feed\(', APP_JS)
+    # Arayüz recall.db'ye bakmaz: yalnız olay uçları.
+    assert "recall.db" not in NIGHT_JS.replace("never looks at recall.db", "").replace("recall.db directly", "")
+
+
+def test_the_speed_bar_offers_one_ten_and_sixty() -> None:
+    """Hız çubuğu 1x / 10x / 60x (yol haritası 6.2)."""
+    assert re.search(r"const SPEEDS = \[1, 10, 60\];", NIGHT_JS)
+    # Adım süreleri hıza bölünür: aynı sıra, aynı zamanlama mantığı — recall izi ile.
+    assert "STEP_MS / speed" in SCENE_JS and "SIGNAL_MS / speed" in SCENE_JS
+
+
+def test_waking_stops_the_animation_in_place() -> None:
+    """`uyku.uyandi` sonrası HİÇBİR animasyon karesi ilerlemez: sahnenin olay
+    saati donar, night.js döngüsü durur, kalan dizi soluk kalır. Çözülme
+    kendiliğinden olmaz — yalnız yeni gece ya da kullanıcının Oynat'ı."""
+    handler = re.search(r'"uyku\.uyandi": \(ev\) => \{([\s\S]*?)\n    \},', NIGHT_JS)
+    assert handler, "uyku.uyandi çizimi yok"
+    body = handler.group(1)
+    assert "s.freeze()" in body and "frozen = true" in body
+    # Döngü donmuşken kendini durdurur.
+    assert re.search(r"if \(frozen\) \{ stopLoop\(\); return; \}", NIGHT_JS)
+    # Sahne: donmuş saat, ilerlemeyen kare sayacı.
+    assert "function freeze()" in SCENE_JS and "function thaw()" in SCENE_JS
+    assert re.search(r"if \(!animClock\.frozen\) \{ animFrames \+= 1; runPlan\(ta\); \}", SCENE_JS)
+    # Özet rozeti: "12/30 tekrar edildi · 18 devretti · sebep: kullanıcı".
+    assert 'tekrar edildi' in body and 'devretti' in body and 'sebep' in body
+
+
+def test_every_region_tooltip_names_its_source_code() -> None:
+    """Dürüstlük sınırı (6.1): bölgeler metafor; her bölgenin tooltip'i hangi
+    kodu temsil ettiğini yazar. Tablodaki kaynak adları burada."""
+    block = re.search(r"const REGIONS = \{([\s\S]*?)\n  \};", REGIONS_JS)
+    assert block, "REGIONS tablosu yok"
+    table = block.group(1)
+    expected = {
+        "hippocampus": "store.links(), recall() izi",
+        "cold": "node.sicak",
+        "patch": "tanima.durum()",
+        "prefrontal": "Mind.goals()",
+        "amygdala": "remember()",
+        "thalamus": "uyku.Bekci",
+        "brainstem": "uyku",
+        "identity": ".dornick/kimlik.md",
+        "temperament": ".dornick/mizac.json",
+        "world": "world",
+    }
+    for key, code in expected.items():
+        entry = re.search(rf"{key}: \{{[\s\S]*?code: \"([^\"]+)\"", table)
+        assert entry, f"{key} bölgesi tabloda yok"
+        assert code in entry.group(1), f"{key}: kaynak kod adı tooltip'te yok ({entry.group(1)})"
+    # Korteks: kaynak yok, "donmuş: uzak model".
+    assert "donmuş: uzak model" in table
+    # Tooltip metni kaynak kodu ve metafor uyarısını içerir.
+    assert 'Temsil ettiği kod' in REGIONS_JS
+    assert "Bölge bir metafordur" in REGIONS_JS
+    # Her bölge işaretli öge tooltip alır (title + özel balon).
+    assert re.search(r'querySelectorAll\("\[data-region\]"\)', REGIONS_JS)
+    for region in ("prefrontal", "cortex", "patch", "thalamus", "amygdala", "brainstem"):
+        assert f'data-region="{region}"' in HTML, region
+
+
+def test_night_events_arrive_in_batches_and_draw_on_canvas() -> None:
+    """Teknik (6.4): olaylar 100'lük paketlerle kuyruğa girer, animasyon
+    requestAnimationFrame ile; düğümler canvas'ta (SVG değil)."""
+    assert re.search(r"const BATCH = 100;", NIGHT_JS)
+    assert "requestAnimationFrame(loop)" in NIGHT_JS
+    # Düğümler canvas'ta: bölge şablonu SVG, ağ değil.
+    assert "getContext(\"2d\")" in SCENE_JS
+    assert "<svg class=\"thalamus\"" in HTML
+    # Renk tek başına anlam taşımaz: ok yönü + ✓/✕ simgesi.
+    assert "arrow" in SCENE_JS and '"✓"' in NIGHT_JS and '"✕"' in NIGHT_JS
+    assert "hollow" in SCENE_JS
+
+
+def test_region_scripts_are_served_and_loaded_in_order() -> None:
+    """regions.js ve night.js sahneden sonra, app.js'ten önce yüklenir; sunucu
+    izin listesinde de vardır (menu.js dersi)."""
+    order = [m.group(1) for m in re.finditer(r'<script src="/([a-z]+\.js)"', HTML)]
+    assert order.index("scene.js") < order.index("regions.js") < order.index("night.js") < order.index("app.js")
+    for name in ("/regions.js", "/night.js"):
+        assert f'"{name}"' in SERVER_SRC
+    # Dar pencerede bölgeler yığılır.
+    assert ".mind.narrow .regions-bottom {" in CSS
+    assert ".mind.narrow .regions-bottom .region.brainstem { flex: 1 1 100%; }" in CSS
+    assert "classList.toggle(\"narrow\"" in REGIONS_JS
+
+
+def test_day_view_hooks_are_wired() -> None:
+    """Gündüz (6.3): prime enjeksiyonu çizgisi, open() parlaması, remember()
+    amigdala flaşı, hedef → prefrontal."""
+    assert 'case "prime":' in APP_JS and "Scene.inject(" in APP_JS
+    assert 'case "mind_open":' in APP_JS and "Regions.opened(" in APP_JS
+    assert "Regions.amygdala(" in APP_JS
+    assert "Regions.goalAdded(" in APP_JS and "Regions.goalStatus(" in APP_JS
+    # Sunucu bu iki notu artık akıtır.
+    assert '"prime",' in SERVER_SRC and '"mind_open",' in SERVER_SRC

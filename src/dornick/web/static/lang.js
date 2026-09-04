@@ -182,6 +182,11 @@ Lang.statics("legend-toggle", "Toggle the colour key", "title");
 Lang.statics("legend-toggle", "Toggle the colour key", "aria-label");
 Lang.statics("mind-close", "Hide the brain panel", "title");
 Lang.statics("mind-close", "Hide the brain panel", "aria-label");
+// Brain regions (Phase 6).
+Lang.statics("thalamus", "Thalamus ring", "aria-label");
+Lang.statics("rhythm", "Rhythm clock", "aria-label");
+Lang.statics("brainstem", "Brainstem pulse", "aria-label");
+Lang.statics("regions-tabs", "Brain tabs", "aria-label");
 Lang.statics("mind-open", "Show the brain panel", "title");
 Lang.statics("mind-open", "Show the brain panel", "aria-label");
 Lang.statics("mind-search", "Search memories", "aria-label");

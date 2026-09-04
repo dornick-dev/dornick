@@ -45,6 +45,81 @@
     <div class="reveal" id="reveal" title="Ağdaki tüm hatıraları göster" role="button" aria-label="Ağdaki tüm hatıraları göster">◍</div>
     <button class="mind-hide" id="mind-close" title="Beyin panelini kapat" aria-label="Beyin panelini kapat">›</button>
   </div>
+  <!-- Brain regions (Phase 6.1): a FIXED template around the network. The
+       network itself (hippocampus) is the canvas behind; these strips are
+       gauges. Every region's tooltip names the code it stands for
+       (regions.js REGIONS) — the regions are a metaphor, not anatomy. -->
+  <div class="regions-top" id="regions-top">
+    <div class="region prefrontal" data-region="prefrontal" id="region-prefrontal">
+      <span class="region-name">Prefrontal</span>
+      <span class="goal-chips" id="prefrontal-goals"></span>
+    </div>
+    <div class="region cortex" data-region="cortex" id="region-cortex">
+      <span class="region-name">Korteks</span>
+      <span class="cortex-band"><i class="cortex-patch" id="cortex-patch" data-region="patch"></i></span>
+    </div>
+    <nav class="regions-tabs" id="regions-tabs" aria-label="Beyin sekmeleri">
+      <button type="button" data-sheet="" class="on" title="Ağ görünümü">Ağ</button>
+      <button type="button" data-sheet="identity" data-region="identity">Kimlik</button>
+      <button type="button" data-sheet="temperament" data-region="temperament">Mizaç</button>
+      <button type="button" data-sheet="night">Gece</button>
+    </nav>
+  </div>
+  <div class="regions-middle" id="regions-middle">
+    <div class="regions-sheet" id="regions-sheet" hidden></div>
+  </div>
+  <div class="regions-bottom" id="regions-bottom">
+    <div class="region thalamus-box" data-region="thalamus">
+      <svg class="thalamus" id="thalamus" viewBox="0 0 120 120" aria-label="Talamus halkası" role="img">
+        <circle class="th-track" cx="60" cy="60" r="44"/>
+        <path class="th-slice" data-slice="strengthening" d=""/>
+        <path class="th-slice" data-slice="debt" d=""/>
+        <path class="th-slice" data-slice="heat" d=""/>
+        <line class="th-tick" data-tick="ust" x1="60" y1="10" x2="60" y2="22"/>
+        <line class="th-tick alt" data-tick="alt" x1="60" y1="10" x2="60" y2="22"/>
+        <circle class="th-phase" data-ring="phase" cx="60" cy="60" r="34" fill="none"/>
+        <!-- Four states, four drawings: awake a steady dot, sleepy a slow
+             pulse, asleep a crescent with dashes, waking expanding rings. -->
+        <g class="th-state">
+          <circle class="st-awake" cx="60" cy="60" r="7"/>
+          <circle class="st-sleepy" cx="60" cy="60" r="7"/>
+          <path class="st-asleep" d="M66 50a11 11 0 1 0 0 20a8 8 0 1 1 0-20z"/>
+          <circle class="st-waking" cx="60" cy="60" r="6"/>
+          <circle class="st-waking ring" cx="60" cy="60" r="12"/>
+          <circle class="st-waking ring two" cx="60" cy="60" r="18"/>
+          <path class="st-nap" d="M52 66l4-8 4 8M62 62l3-5 3 5" fill="none"/>
+        </g>
+        <text class="th-text" data-text="state" x="60" y="86" text-anchor="middle">uyanık</text>
+        <text class="th-text cycle" data-text="cycle" x="60" y="98" text-anchor="middle"></text>
+      </svg>
+      <div class="thalamus-meta">
+        <span class="region-name">Talamus</span>
+        <span id="thalamus-wake" class="th-wake"></span>
+        <span id="thalamus-caffeine" class="th-caffeine" hidden></span>
+        <span id="thalamus-tired" class="th-tired">yorgun</span>
+      </div>
+    </div>
+    <div class="region rhythm-box" data-region="thalamus">
+      <svg class="rhythm" id="rhythm" viewBox="0 0 80 80" aria-label="Ritim saati" role="img">
+        <circle class="rh-dial" cx="40" cy="40" r="30"/>
+        <line class="rh-hand" data-hand x1="40" y1="40" x2="40" y2="14"/>
+        <circle class="rh-mark" data-mark="wake" cx="40" cy="9" r="3" hidden/>
+        <text class="rh-text" data-text="wake" x="40" y="66" text-anchor="middle"></text>
+      </svg>
+      <span class="region-name">Ritim</span>
+    </div>
+    <div class="region amygdala" data-region="amygdala">
+      <i class="amygdala-dot" id="amygdala-dot"></i>
+      <span class="region-name">Amigdala</span>
+    </div>
+    <div class="region brainstem" data-region="brainstem">
+      <svg class="brainstem-svg" id="brainstem" viewBox="0 0 160 24" preserveAspectRatio="none" aria-label="Beyin sapı nabzı" role="img">
+        <polyline id="brainstem-line" points="0,12 160,12"/>
+      </svg>
+      <span class="region-name">Beyin sapı</span>
+    </div>
+  </div>
+  <div class="region-tip" id="region-tip" role="tooltip" hidden></div>
   <div class="mind-foot">
     <button class="mind-legend-toggle" id="legend-toggle" type="button"
             title="Renk açıklamasını aç/kapat" aria-label="Renk açıklamasını aç/kapat">Açıklama ▸</button>
@@ -586,6 +661,8 @@
 <script src="/drop.js"></script>
 <script src="/brain.js"></script>
 <script src="/scene.js"></script>
+<script src="/regions.js"></script>
+<script src="/night.js"></script>
 <script src="/app.js"></script>
 <script src="/settings.js"></script>
 <script src="/viewer.js"></script>

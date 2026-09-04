@@ -1121,3 +1121,135 @@ def test_artifact_download_saves_to_downloads_with_full_path(
     finally:
         server.stop()
         log.close()
+
+
+# -- brain regions: read-only endpoints (Phase 6) ----------------------
+
+
+def _get_json(server: MindServer, path: str) -> dict:
+    with urllib.request.urlopen(server.url.rstrip("/") + path, timeout=5) as response:
+        return json.loads(response.read().decode("utf-8"))
+
+
+def test_the_identity_endpoint_serves_sentences_with_their_evidence(
+    tmp_path: Path, mind: Mind,
+) -> None:
+    """The identity panel lights evidence nodes per sentence; the endpoint
+    hands each sentence with its ids and never rewrites the document."""
+    from dornick.config import Config
+    from dornick.recall import identity
+
+    config = Config.load(tmp_path)
+    config.ensure_dirs()
+    identity.save(config.state_dir, identity.Identity(
+        [("41 işin 33'ünde önce test yazdı", ["n_1", "n_2"])]))
+    log = EventLog(tmp_path / "s.jsonl")
+    server = MindServer(mind, log, port=0, config=config)
+    server.start()
+    try:
+        got = _get_json(server, "/api/kimlik")
+        assert got["cumleler"] == [{"metin": "41 işin 33'ünde önce test yazdı",
+                                    "kanit": ["n_1", "n_2"]}]
+        assert got["kelime"] == 6 and got["sinir"] == identity.MAX_WORDS
+    finally:
+        server.stop()
+        log.close()
+
+
+def test_the_identity_endpoint_is_empty_without_a_document(tmp_path: Path, mind: Mind) -> None:
+    from dornick.config import Config
+
+    config = Config.load(tmp_path)
+    config.ensure_dirs()
+    log = EventLog(tmp_path / "s.jsonl")
+    server = MindServer(mind, log, port=0, config=config)
+    server.start()
+    try:
+        assert _get_json(server, "/api/kimlik")["cumleler"] == []
+    finally:
+        server.stop()
+        log.close()
+
+
+def test_the_temperament_endpoint_serves_baseline_and_target(
+    tmp_path: Path, mind: Mind,
+) -> None:
+    """Five axes, Turkish keys as on disk; no invented "reached" value —
+    `ulasilan` is null until something measures it."""
+    from dornick.config import Config
+    from dornick.recall import temperament
+
+    config = Config.load(tmp_path)
+    config.ensure_dirs()
+    temperament.save(config.state_dir, temperament.Temperament(novelty=0.3),
+                     temperament.Temperament(novelty=0.8), "model-x")
+    log = EventLog(tmp_path / "s.jsonl")
+    server = MindServer(mind, log, port=0, config=config)
+    server.start()
+    try:
+        got = _get_json(server, "/api/mizac")
+        assert got["taban"]["yenilik"] == 0.3 and got["hedef"]["yenilik"] == 0.8
+        assert got["model_id"] == "model-x"
+        assert got["ulasilan"] is None
+        assert got["eksenler"] == ["yenilik", "sonuc", "sosyal", "sebat", "temkin"]
+        assert got["kaldirac"]["novelty"] > 1
+    finally:
+        server.stop()
+        log.close()
+
+
+def test_the_regions_endpoint_counts_cold_and_hot_and_lists_goals(
+    tmp_path: Path, mind: Mind,
+) -> None:
+    """The region template reads what the graph does not carry: the cold
+    badge, the goal strip, the cortex patch state. One call."""
+    from dornick.config import Config
+
+    config = Config.load(tmp_path)
+    config.ensure_dirs()
+    mind.remember("Fatih SCADA tarafında.", kind="user")
+    mind.push_goal("modbus cihazı ekle")
+    log = EventLog(tmp_path / "s.jsonl")
+    server = MindServer(mind, log, port=0, config=config)
+    server.start()
+    try:
+        got = _get_json(server, "/api/bolgeler")
+        assert got["toplam"] >= 1 and got["sicak"] + got["soguk"] == got["toplam"]
+        assert any(g["metin"] == "modbus cihazı ekle" and g["durum"] == "active"
+                   for g in got["hedefler"])
+        assert set(got["yama"]) >= {"on", "kosuyor", "hazir"}
+    finally:
+        server.stop()
+        log.close()
+
+
+def test_a_night_replay_can_be_asked_for_what_came_after(tmp_path: Path, mind: Mind) -> None:
+    """Live viewing polls today's file with `?sonra=N`; the answer is the
+    tail of the same replay, plus the total so the next poll knows where
+    it stands."""
+    from datetime import datetime, timezone
+
+    from dornick.config import Config
+    from dornick.recall import night_events as ne
+
+    config = Config.load(tmp_path)
+    config.ensure_dirs()
+    clock = lambda: datetime(2025, 6, 2, 23, 0, tzinfo=timezone.utc)  # noqa: E731
+    night = ne.NightLog(ne.night_path(config.state_dir, "2025-06-02"), clock)
+    night.emit("uyku.basladi", basinc=0.5, tahmini_uyanma="08:30", dongu_sayisi=2)
+    night.emit("dokunus", id="n_1")
+    night.emit("dokunus", id="n_2")
+    log = EventLog(tmp_path / "s.jsonl")
+    server = MindServer(mind, log, port=0, config=config)
+    server.start()
+    try:
+        whole = _get_json(server, "/api/gece/2025-06-02")
+        assert [e["tur"] for e in whole["olaylar"]] == ["uyku.basladi", "dokunus", "dokunus"]
+        assert whole["toplam"] == 3
+        tail = _get_json(server, "/api/gece/2025-06-02?sonra=2")
+        assert [e["id"] for e in tail["olaylar"]] == ["n_2"]
+        assert tail["toplam"] == 3
+        assert _get_json(server, "/api/gece/2025-06-02?sonra=bozuk")["toplam"] == 3
+    finally:
+        server.stop()
+        log.close()

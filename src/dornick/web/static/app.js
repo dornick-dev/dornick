@@ -419,6 +419,10 @@ Scene.init({
   onSession: (id) => { if (typeof History !== "undefined") History.resumeById(id); },
 });
 Scene.load();
+// Brain regions (Phase 6): the template around the network and the night
+// feed. Live watching starts with the page; the sheet's "Gece" tab replays.
+if (typeof Regions !== "undefined") Regions.init();
+if (typeof Night !== "undefined") Night.watch(true);
 
 Lang.add({ "Açıklama ▸": "Key ▸", "Açıklama ▾": "Key ▾" });
 
@@ -5017,6 +5021,10 @@ const CHAT_ONLY = new Set([
   "api_error", "interrupted", "empty_assistant_turn", "turn_limit", "refusal",
 ]);
 
+// Prime injection (Phase 6.3): the ids of the last prime note, drawn as a
+// line into the context window once their recall walk has landed.
+let primeIds = null, primeTimer = null;
+
 function handle(e) {
   if (CHAT_ONLY.has(e.type) && e.sid && sessionId && e.sid !== sessionId) {
     return;   // a piece of another chat — never drawn on this screen
@@ -5345,24 +5353,56 @@ function handle(e) {
       // here went wrong every time the step duration changed.
       const walk = Scene.activate(e.trace) || 0;
       setMode("recalling", undefined, walk + 400);
+      // Prime injection (Phase 6.3): once the walk lands, what was found
+      // flows from the hippocampus into the context window.
+      if (primeIds) {
+        clearTimeout(primeTimer);
+        const ids = primeIds; primeIds = null;
+        primeTimer = setTimeout(() => Scene.inject(ids), walk);
+      }
       break;
     }
 
+    // The prime note lands just before its trace; the injection line is
+    // drawn at the end of the walk. Without a trace (nothing to animate)
+    // the line still flows, a moment later.
+    case "prime":
+      primeIds = Array.isArray(e.ids) ? e.ids : [];
+      clearTimeout(primeTimer);
+      primeTimer = setTimeout(() => { if (primeIds) { Scene.inject(primeIds); primeIds = null; } }, 2500);
+      break;
+
+    // open(): the record glows; a cold one warms in from the ring.
+    case "mind_open":
+      if (typeof Regions !== "undefined") Regions.opened(e.memory_id, e.kind);
+      break;
+
     // Writing is also motion in the web: a signal from the core to the new
     // record. The graph refreshes first, else the target node is not there yet.
+    // The amygdala flashes with the record's surprise (Phase 6.3); an event
+    // without a surprise value gets a middling flash.
     case "mind_write":
       Scene.load(() => Scene.deposit(e.memory_id));
+      if (typeof Regions !== "undefined") Regions.amygdala(e.surpriz ?? e.surprise ?? e.guc);
+      break;
+
+    // A night event on the live channel: the same feed a replay uses.
+    case "gece":
+      if (typeof Night !== "undefined") Night.feed([e.olay || e]);
       break;
 
     case "mind_forget":
       Scene.ripple(); Scene.load(); break;
 
-    // The goal stack changed: a ripple on the scene + the top-right checklist.
+    // The goal stack changed: a ripple on the scene + the top-right checklist
+    // + the prefrontal strip (Phase 6.3).
     case "goal_push":
       Goals.push(e.goal_id, e.text);
+      if (typeof Regions !== "undefined") Regions.goalAdded(e.goal_id, e.text);
       Scene.ripple(); Scene.load(); break;
     case "goal_status":
       Goals.status(e.goal_id, e.status);
+      if (typeof Regions !== "undefined") Regions.goalStatus(e.goal_id, e.status);
       Scene.ripple(); Scene.load(); break;
 
     // The authority mode changed outside the UI (settings page, external
@@ -5387,7 +5427,10 @@ function handle(e) {
     // Learn-me: the personal fine-tune started/finished in the background
     // (or was toggled from the settings page). Not worth a chat line; the
     // chip under the composer + the top-bar icon show the state quietly.
-    case "tanima": trainingChip(e.state); trainingIcon(e.state); break;
+    case "tanima":
+      trainingChip(e.state); trainingIcon(e.state);
+      if (typeof Regions !== "undefined") Regions.patch(e.state);
+      break;
 
     case "usage":
       if (e.prompt_total) {
