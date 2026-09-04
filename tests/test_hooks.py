@@ -540,3 +540,18 @@ async def test_a_broken_hook_layer_never_kills_the_tool(
     block = await _run(registry, ctx, {"path": "app.py"})
     assert traces == ["app.py"]
     assert "kanca katmanı çalışmadı" in block["content"]
+
+
+def test_a_same_size_rewrite_inside_one_timestamp_tick_is_seen(tmp_path: Path) -> None:
+    """mtime and size identical, content different: the digest must catch it.
+    This was the flake of 2026-09-04 (one run in twelve)."""
+    import os
+
+    write_hooks(tmp_path, [{"olay": "arac_oncesi", "komut": "echo bir"}])
+    assert [h.command for h in hooks.load(tmp_path)] == ["echo bir"]
+    path = hooks.file_path(tmp_path)
+    stamp = path.stat().st_mtime_ns
+    write_hooks(tmp_path, [{"olay": "arac_oncesi", "komut": "echo iki"}])
+    os.utime(path, ns=(stamp, stamp))               # force the same tick
+    assert path.stat().st_mtime_ns == stamp
+    assert [h.command for h in hooks.load(tmp_path)] == ["echo iki"]

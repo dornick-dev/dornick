@@ -45,6 +45,7 @@ from __future__ import annotations
 
 import asyncio
 import fnmatch
+import hashlib
 import json
 import os
 from dataclasses import dataclass, field
@@ -200,9 +201,14 @@ def _parse_entries(raw: Any) -> list[Hook]:
 
 
 # A small cache so the file does not look like it is read on every tool
-# call: (path) -> (mtime_ns, size, hooks). The moment the user edits the
-# file the mtime changes and the cache drops by itself — no restart needed.
-_cache: dict[str, tuple[int, int, list[Hook]]] = {}
+# call: (path) -> (mtime_ns, size, digest, hooks). The moment the user edits
+# the file the mtime changes and the cache drops by itself — no restart
+# needed. The digest is the tie-breaker: two same-size writes inside one
+# filesystem timestamp tick (a few ms on NTFS) leave mtime AND size equal,
+# and the cache served the old hooks — a flake that fired in one run of
+# twelve all day (2026-09-04). The file is a few hundred bytes; reading it
+# costs less than the stat we already pay for.
+_cache: dict[str, tuple[int, int, bytes, list[Hook]]] = {}
 
 
 def load(state_dir: Path | str) -> list[Hook]:
@@ -220,20 +226,27 @@ def load(state_dir: Path | str) -> list[Hook]:
         return []
 
     key = str(path)
+    try:
+        data = path.read_bytes()
+    except OSError:
+        _cache.pop(key, None)
+        return []
+    digest = hashlib.blake2b(data, digest_size=16).digest()
     if (previous := _cache.get(key)) is not None:
-        if previous[0] == info.st_mtime_ns and previous[1] == info.st_size:
-            return previous[2]
+        if (previous[0] == info.st_mtime_ns and previous[1] == info.st_size
+                and previous[2] == digest):
+            return previous[3]
 
     try:
-        raw = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
+        raw = json.loads(data.decode("utf-8"))
+    except (UnicodeDecodeError, ValueError):
         # Broken JSON: run without hooks. Not silent — the caller can ask
         # with `broken_reason` and tell the user.
-        _cache[key] = (info.st_mtime_ns, info.st_size, [])
+        _cache[key] = (info.st_mtime_ns, info.st_size, digest, [])
         return []
 
     hooks = _parse_entries(raw)
-    _cache[key] = (info.st_mtime_ns, info.st_size, hooks)
+    _cache[key] = (info.st_mtime_ns, info.st_size, digest, hooks)
     return hooks
 
 
