@@ -883,7 +883,7 @@ açık aramada hepsi bulunuyor (`gomulme_recall` ve `geri_donus_recall` 1.00).
 | 3.11 — Sıcak/soğuk | ✅ %23 (band), komşuluk ısısı ile |
 | 4 — Kodlama gücü | ⚠️ faydası kanıtlanmadı |
 | 5 — Bağlam bonusu | ✅ E sızıntısı 0, ceza sorgunun alan sayısına göre |
-| 7 — Ödül, mizaç, karakter | ⚠️ mekanik + prompt bağlantısı + ölçüm düzeneği hazır; gerçek modelle ölçülmedi |
+| 7 — Ödül, mizaç, karakter | ⚠️ ölçüldü (3 koşu): zaman/bağlam tutarlılığı ✅, kimlik belgesi karakter aracı değil, tek atımlık kaldıraç modelleri yakınlaştırmıyor — kapalı çevrim gerekiyor |
 | 6 — Beyin görünümü | ✅ bölgeler, gece animasyonu, paneller; Playwright e2e Chromium bekliyor |
 
 ### Eskiye göre (yaşam bench, `hafiza-eski` → bugün) · 2026-09-04 düzeltmesi
@@ -1162,3 +1162,55 @@ Haiku'nun yenilik ekseni 0.60'tan yalnız bir "biraz" dürtüsüyle 0.34'e indi
 (hedef 0.5'i aştı). Tek bir satır, kademesi ne olursa olsun, Haiku'yu
 büyük adımlarla oynatıyor — kademeleme gerekli ama yeterli olmayabilir;
 kaldıraç doygunluğu (LEVERAGE_HIGH/LOW) yeni modelde daha dar olmalı.
+
+
+---
+
+## Faz 7.6 üçüncü koşu — onarılmış aletle sonuç · 2026-09-04
+
+Rapor: `docs/charts/karakter-openrouter3.md` (840 çağrı; taban 18 sonda/eksen,
+KARAR önce, bozuk cevap ayrı). Belirsiz oran 0.10 → **0.023** (Haiku 0,
+deepseek 0.045); bozuk 0.007. Bu koşunun sayıları güvenilir, ilk ikisininki
+değildi.
+
+| Metrik | 1 | 2 | **3** | hedef |
+|---|---|---|---|---|
+| `tutarlilik_zaman` (belge açık) | 0.761 | 0.717 | **0.894** | ≥ 0.8 ✅ |
+| `tutarlilik_zaman_kimliksiz` | 0.667 | 0.745 | 0.889 | |
+| `kimlik_farki` | +0.095 | −0.028 | **+0.006** | ≥ 0.05 ✗ |
+| `tutarlilik_baglam` | 0.789 | 0.661 | **0.850** | ≥ 0.85 ✅ |
+| `tutarlilik_model` (kaldıraç açık) | 0.711 | 0.600 | 0.667 | ≥ 0.8 ✗ |
+| `tutarlilik_model_kaldiracsiz` | 0.611 | 0.633 | 0.722 | |
+| `kaldirac_farki` | +0.10 | −0.03 | **−0.06** | ≥ 0.15 ✗ |
+| `sosyal_ulasilan` | 0.10 | 0.15 | 0.08 | |
+| `belirsiz_oran` | 0.103 | 0.129 | **0.023** | ≤ 0.05 ✅ |
+
+**Üç kesin cevap:**
+
+1. **Kimlik belgesi bir karakter aracı değil.** Gürültü gidince zaman
+   tutarlılığı belgeyle 0.894, belgesiz 0.889 — fark yok. Yol haritası 7.8
+   bu durumu önceden yazmış: "belge gösterim aracıdır, karakter aracı
+   değil — bunu belgeye yaz ve belgeyi yine de tut (kullanıcıya görünürlük
+   tek başına değerli)". Öyle yapıldı. İlk koşunun +0.095'i taban gürültüsüydü.
+2. **Kaldıraç satırları iki modeli birbirine yaklaştırmıyor.** Açıkken
+   uyuşma 0.667, kapalıyken 0.722: satırlar her modeli oynatıyor ama ortak
+   bir noktaya değil. Eksen tablosu sebebini gösteriyor: yön 7 eksende 5
+   kez doğru, büyüklük modele göre keyfî. deepseek yenilik 0.82 → 0.57,
+   sonuç 0.94 → 0.71, temkin 1.0 → 0.80 (hepsi hedef 0.5'e doğru); Haiku
+   yenilik 0.56 → 0.27 (bir "biraz" dürtüsü hedefi aşıp geçti), sonuç
+   1.0 → 1.0 (kural görmezden gelindi), temkin 0.67 → 0.50 (tam isabet).
+   Ulaşılan vektörler hâlâ uzak: (0.57, 0.71, 0, 0.70, 0.80) ↔
+   (0.27, 1.0, 0.17, 0.47, 0.50). Kademeleme yönü düzeltiyor, dozu değil.
+   Tek atımlık hesaplanan oran (hedef/taban) yerine **kapalı çevrim**
+   gerekiyor: model değişince ölç → satır ver → yeniden ölç → kazancı
+   modele göre ayarla. Bu, Faz 7.2'nin bir sonraki adımı; düzenek buna
+   hazır (ulaşılan vektör raporda), ölçümü ≈ 840 çağrı.
+3. **Zaman ve bağlam tutarlılığı hedefte** (0.89 ve 0.85). Haiku her ikisinde
+   çok yüksek (0.98 / 0.93), deepseek ikisinde de sınırda (0.81 / 0.77).
+   Karakterin zamanla ve bağlamla savrulmaması iddiası bu iki modelde tutuyor.
+
+**Aletle ilgili ders (üçüncü kez):** iki koşu boyunca "kaldıraç işe
+yarıyor" ve "belge işe yarıyor" gibi görünen şeyler ölçüm gürültüsüydü.
+Gürültünün üç kaynağı (az sonda, KARAR'a gelmeyen cevap, bozuk yol) tek tek
+adlandırılıp kapatılmadan hiçbir sonuç yazılmamalıydı; yazıldı ve geri
+çekildi. Sonuç tablosu ancak üçüncü koşuda okunabilir hale geldi.

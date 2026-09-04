@@ -123,7 +123,7 @@ ile "yalıtık kayıt kendiliğinden gelmez" kuralı korundu, kapsama bedeli
 
 | Deney | Durum | Ne gerekiyor |
 |---|---|---|
-| Model değişimi sonrası karakter tutarlılığı (Faz 7.6) | **iki kez ölçüldü** (deepseek ↔ Claude Haiku, 2×720 çağrı) | İlk koşu kaldıraç +0,10 / belge +0,095 gösterdi; ikinci koşu (kademeli satırlar) ikisini de sıfıra çekti — ama tabanlar koşudan koşuya 0,17–0,33 kaydığı, deepseek'in yolu bozuk cevaplar ürettiği ve modeller KARAR'a gelmeden bitirdiği için **iki sonuç da gürültünün içinde**. Alet düzeltildi (KARAR önce, bozuk cevap ayrı, tekrarlı taban); sonuç bir sonraki koşuda. Sosyal eksende yakalanan tasarım hatası düzeltildi. |
+| Model değişimi sonrası karakter tutarlılığı (Faz 7.6) | **ölçüldü, 3 koşu** (deepseek ↔ Claude Haiku; son koşu 840 çağrı, temiz alet) | Zaman ve bağlam tutarlılığı hedefte (0,89 / 0,85). Kimlik belgesi karakteri değiştirmiyor (fark 0,006) — yol haritasının öngördüğü gibi gösterim aracı, tutuluyor. Tek atımlık kaldıraç satırları iki modeli birbirine yaklaştırmıyor (uyuşma 0,67 açık / 0,72 kapalı): yön doğru, doz modele göre keyfî — kapalı çevrim kalibrasyon gerekiyor. İlk iki koşunun 'işe yarıyor' sonuçları ölçüm gürültüsüydü, geri çekildi. |
 | 9 görevlik kodlama bench'i, sıcak/soğuk hafızayla | koşulmadı | İki sürümü 30 gün "yaşatıp" 9 görev; gerçek model çağrısı. |
 | Kirlilik deneyi (28.08 C kolu) yeniden | koşulmadı | Aynı rig. |
 | Gece geçişi süresi 50k/200 oturum | ölçülmedi | Sentetik; koşulabilir. |
