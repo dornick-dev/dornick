@@ -213,6 +213,21 @@ class BrowserConfig:
 
 
 @dataclass(slots=True)
+class SleepConfig:
+    """Night sleep of the memory (roadmap 3.10): consolidation while the user is away.
+
+    Ships on. With it off the memory still encodes and recalls, but nothing
+    replays, downscales or distils — pressure only grows, and the settings
+    page says so honestly. The bench turns the same mechanism off through
+    `recall.switches`; this is the user's switch.
+
+    `uyku_acik`: the user-facing name (settings label "Gece uykusu").
+    """
+
+    uyku_acik: bool = True
+
+
+@dataclass(slots=True)
 class Config:
     workspace: Path
     state_dir: Path
@@ -226,6 +241,7 @@ class Config:
     listen: ListenConfig = field(default_factory=ListenConfig)
     camera: CameraConfig = field(default_factory=CameraConfig)
     browser: BrowserConfig = field(default_factory=BrowserConfig)
+    sleep: SleepConfig = field(default_factory=SleepConfig)
     # Extra system-prompt piece (personality / standing directive).
     persona_path: Path | None = None
 
@@ -393,6 +409,8 @@ def _merge(cfg: Config, raw: dict[str, Any]) -> Config:
         cfg.camera = replace(cfg.camera, **_only_fields(CameraConfig, c))
     if b := raw.get("browser"):
         cfg.browser = replace(cfg.browser, **_only_fields(BrowserConfig, b))
+    if s := raw.get("sleep"):
+        cfg.sleep = replace(cfg.sleep, **_only_fields(SleepConfig, s))
     if persona := raw.get("persona_path"):
         cfg.persona_path = (cfg.state_dir / persona).resolve()
     return cfg

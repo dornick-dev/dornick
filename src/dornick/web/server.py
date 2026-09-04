@@ -105,6 +105,10 @@ ASSETS = {
     "/drop.js": "text/javascript; charset=utf-8",
     "/workflow.js": "text/javascript; charset=utf-8",
     "/jobs.js": "text/javascript; charset=utf-8",
+    # Brain view, Phase 6: the region template around the network and the
+    # night animation (live + replay through one feed).
+    "/regions.js": "text/javascript; charset=utf-8",
+    "/night.js": "text/javascript; charset=utf-8",
 }
 
 # Meta events streamed to the UI. The rest (session start, permission
@@ -126,6 +130,11 @@ STREAMED_NOTES = frozenset(
         "turn_limit",
         "refusal",
         "recall_trace",
+        # Brain view, Phase 6 (day): the prime injection line hippocampus →
+        # context window, and the glow of an opened record. Both are notes
+        # the loop already writes; the view only needs to see them.
+        "prime",
+        "mind_open",
         "queued",
         # Artifact published/updated: shows up as a card in the chat.
         "artifact",
@@ -870,6 +879,12 @@ class _Handler(BaseHTTPRequestHandler):
             self._night_list()
         elif route.startswith("/api/gece/"):
             self._night_replay(route[len("/api/gece/"):])
+        elif route == "/api/kimlik":
+            self._identity()
+        elif route == "/api/mizac":
+            self._temperament()
+        elif route == "/api/bolgeler":
+            self._regions()
         elif route == "/api/gate":
             config = getattr(self.server, "config", None)
             on = gate.status(config.state_dir) if config is not None else False
@@ -1442,6 +1457,19 @@ class _Handler(BaseHTTPRequestHandler):
         true; this endpoint and the event stream are the only road without
         that race.
         """
+        # The live daemon (recall/daemon.py, started by the Bridge) knows the
+        # real state machine; the computed fallback below is for a server
+        # running without one (tests, headless).
+        controller = getattr(self.server, "controller", None)
+        status_of = getattr(controller, "sleep_status", None)
+        if callable(status_of):
+            try:
+                live = status_of()
+            except Exception:
+                live = None
+            if live is not None:
+                self._json(live)
+                return
         config = getattr(self.server, "config", None)
         mind = getattr(self.server, "mind", None)
         if config is None or mind is None:
@@ -1483,8 +1511,95 @@ class _Handler(BaseHTTPRequestHandler):
 
         path = night_events.night_path(config.state_dir, date)
         events = list(night_events.replay(path))
-        self._json({"tarih": path.stem, "olaylar": events,
-                    "ozet": night_events.summary(events)})
+        # `?sonra=N`: only the events after the first N. Live viewing polls
+        # the current night's file with this; the view feeds the answer
+        # through the same function as a full replay (night.js `feed`).
+        query = parse_qs(urlparse(self.path).query)
+        try:
+            after = max(0, int(query.get("sonra", ["0"])[0]))
+        except ValueError:
+            after = 0
+        self._json({"tarih": path.stem, "olaylar": events[after:],
+                    "ozet": night_events.summary(events),
+                    "toplam": len(events)})
+
+    # -- brain regions (Phase 6, read-only) -----------------------------
+
+    def _identity(self) -> None:
+        """`.dornick/kimlik.md`: the narrative identity, sentence by sentence.
+
+        Every sentence carries the node ids that back it; the identity panel
+        lights those in the hippocampus when a sentence is clicked. Read
+        only — objecting goes through the conversation, not this endpoint.
+        """
+        config = getattr(self.server, "config", None)
+        if config is None:
+            self._json({"cumleler": [], "kelime": 0})
+            return
+        from ..recall import identity
+
+        doc = identity.load(config.state_dir)
+        self._json({
+            "cumleler": [{"metin": text, "kanit": list(evidence)}
+                         for text, evidence in doc.sentences],
+            "kelime": doc.words(),
+            "sinir": identity.MAX_WORDS,
+        })
+
+    def _temperament(self) -> None:
+        """`.dornick/mizac.json`: five axes, the measured baseline and the
+        learned target. There is no "reached" measurement on disk yet; the
+        panel says so instead of inventing one."""
+        config = getattr(self.server, "config", None)
+        if config is None:
+            self._json({"taban": {}, "hedef": {}, "model_id": ""})
+            return
+        from ..recall import temperament
+
+        baseline, target, model_id = temperament.load(config.state_dir)
+        self._json({
+            "taban": baseline.as_dict(),
+            "hedef": target.as_dict(),
+            "ulasilan": None,
+            "kaldirac": temperament.leverage(baseline, target),
+            "model_id": model_id,
+            "eksenler": [temperament.AXIS_KEYS[axis] for axis in temperament.AXES],
+        })
+
+    def _regions(self) -> None:
+        """What the fixed region template reads that the graph does not
+        carry: cold/hot counts, the goal stack, the cortex patch state,
+        world records. One call, one paint."""
+        config = getattr(self.server, "config", None)
+        mind = getattr(self.server, "mind", None)
+        out: dict[str, Any] = {"soguk": 0, "sicak": 0, "toplam": 0, "dunya": 0,
+                               "hedefler": [], "yama": {}}
+        if mind is not None:
+            store = getattr(mind, "store", None)
+            try:
+                total = int(store.count()) if store is not None else 0
+                share = float(store.hot_share()) if store is not None else 0.0
+                hot = int(round(total * share))
+                out.update({"toplam": total, "sicak": hot, "soguk": max(0, total - hot)})
+                out["dunya"] = int(store.count("world")) if store is not None else 0
+            except Exception:
+                pass    # a store without these is an older store, not an error
+            try:
+                out["hedefler"] = [
+                    {"id": g.id, "metin": g.text, "durum": g.status}
+                    for g in mind.goals(active_only=False, all_sessions=True)]
+            except Exception:
+                pass
+        if config is not None:
+            try:
+                status = recognition.status(config.state_dir)
+                out["yama"] = {"on": bool(status.get("on")),
+                               "kosuyor": recognition.running(),
+                               "hazir": recognition.ready(),
+                               "son": status.get("son_kosu", "")}
+            except Exception:
+                pass
+        self._json(out)
 
     def _recognition(self, body: dict[str, Any]) -> None:
         """Recognise me: switch on/off or start right now.

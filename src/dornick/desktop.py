@@ -85,6 +85,13 @@ CALLED_ASK = (
 # be downloaded, and that download takes minutes.
 BOOT_TIMEOUT_S = 300.0
 
+# The night's distillation call (recall/distil.py PROMPT carries the task;
+# this only names the role). Bounded: a hung endpoint must not hold the
+# night past the user's return.
+NIGHT_SYSTEM = ("Sen dornick'in gece damıtıcısısın. Yalnız verilen kayıtlardan "
+                "çalış; istenen biçimde, kısa ve kaynaklı yaz.")
+NIGHT_MODEL_TIMEOUT_S = 120.0
+
 GREET_ASK = (
     "Uzun bir sessizlikten sonra kamerada hareket oldu — biri geldi. "
     "`look now` ile bir kere bak ve kim olduğunu gör. Tanıdıysan kısaca "
@@ -700,6 +707,11 @@ class Bridge:
         # Has the cap been reported once: the brake asked before every model
         # call must not print the same line dozens of times in a turn.
         self._budget_reported = False
+        # The memory's night (recall/daemon.py): started once the mind is
+        # open, stopped in _teardown. The config it reads its switch from is
+        # refreshed on every settings save (see reload).
+        self.sleeper: Any = None
+        self._sleep_config: Config | None = None
 
     # -- lane surface ---------------------------------------------------
     #
@@ -1310,6 +1322,9 @@ class Bridge:
         next model call (between tool rounds): the streaming answer is not cut.
         """
         agent = self.agent
+        # The sleep daemon reads its on/off switch and the model's locality
+        # from here, so a saved setting reaches the next night at once.
+        self._sleep_config = config
         if agent is None:
             self.sync_camera(config)
             self.sync_hearing(config)
@@ -1688,6 +1703,112 @@ class Bridge:
         # should share it.
         if hasattr(self, "_clients"):
             self._clients[(wanted.name, str(wanted.base_url or ""))] = fresh
+
+    # -- the memory's night -----------------------------------------------
+
+    def start_sleep(self, config: Config, mind: Any, *, factory: Any = None) -> Any:
+        """Starts the sleep daemon (recall/daemon.py) once the mind is open.
+
+        The daemon owns its thread; the bridge only hands it what it cannot
+        know on its own: the live hub, the mind's caches, the distillation
+        model, and the two privacy facts the distil gate needs — is the
+        configured model local, and did the user consent to memory text
+        reaching a hosted endpoint (the same consent the recognition loop
+        uses). Those are callables so a settings change reaches a night
+        that starts later, without a restart.
+
+        `factory` lets a test stand a fake daemon in the real place.
+        """
+        global _POWER_LISTENER
+        from .recall import daemon as sleep_daemon
+
+        self._sleep_config = config
+        make = factory or sleep_daemon.SleepDaemon
+        self.sleeper = make(
+            mind.store, config.sessions_dir, config.state_dir,
+            hub=self.hub, caches=mind.clear_caches, model=self._night_model,
+            local_model=lambda: (
+                (c := self._sleep_settings()) is not None
+                and lmstudio.is_local_url(c.model.base_url)),
+            cloud_ok=lambda: bool(
+                recognition.status(config.state_dir).get("learn_cloud_ok")),
+            enabled=lambda: (
+                (c := self._sleep_settings()) is None or bool(c.sleep.uyku_acik)),
+        )
+        self.sleeper.start()
+        # Suspend/resume from the frame shell's WndProc (WM_POWERBROADCAST).
+        _POWER_LISTENER = self._power_event
+        return self.sleeper
+
+    def stop_sleep(self, timeout: float = 5.0) -> bool:
+        """Stops the daemon; a running night is asked to stop and joined."""
+        global _POWER_LISTENER
+        daemon = getattr(self, "sleeper", None)
+        if daemon is None:
+            return True
+        if _POWER_LISTENER == getattr(self, "_power_event", None):
+            _POWER_LISTENER = None
+        try:
+            return bool(daemon.stop(timeout))
+        finally:
+            self.sleeper = None
+
+    def sleep_status(self) -> dict[str, Any] | None:
+        """What GET /api/uyku should prefer; None when no daemon runs."""
+        daemon = getattr(self, "sleeper", None)
+        if daemon is None:
+            return None
+        try:
+            return daemon.status()
+        except Exception as err:
+            return {"durum": "okunamadı", "hata": str(err)}
+
+    def _sleep_settings(self) -> Config | None:
+        cfg = getattr(self, "_sleep_config", None)
+        if cfg is None:
+            cfg = getattr(getattr(self, "agent", None), "config", None)
+        return cfg
+
+    def _power_event(self, kind: str) -> None:
+        daemon = getattr(self, "sleeper", None)
+        if daemon is None:
+            return
+        if kind == "suspend":
+            daemon.os_suspended()
+        elif kind == "resume":
+            daemon.os_resumed()
+
+    def _night_model(self, prompt: str) -> str:
+        """One tool-less, history-less model call for the night's distillation.
+
+        Called from the daemon thread; the request runs on the agent's loop,
+        which is idle while a night runs (the user is away), and an async
+        request would not block it anyway. The daemon calls this only after
+        `distil.gate` allowed it: a local model, or explicit cloud consent.
+        """
+        from .context import Prepared
+
+        agent = self.agent
+        client = getattr(agent, "client", None)
+        if client is None:
+            raise RuntimeError("model yok")
+        prepared = Prepared(
+            system=[{"type": "text", "text": NIGHT_SYSTEM}],
+            messages=[{"role": "user", "content": [{"type": "text", "text": prompt}]}],
+            betas=[], context_management=None)
+        future = asyncio.run_coroutine_threadsafe(
+            asyncio.wait_for(
+                client.turn(prepared, [], cancel=asyncio.Event()),
+                timeout=NIGHT_MODEL_TIMEOUT_S),
+            self.loop)
+        result = future.result(timeout=NIGHT_MODEL_TIMEOUT_S + 5)
+        if result.error or result.interrupted:
+            raise RuntimeError(result.error or "kesildi")
+        return "\n".join(
+            str(block.get("text", ""))
+            for block in result.content
+            if isinstance(block, dict) and block.get("type") == "text"
+        ).strip()
 
     def waking(self, stage: str, *, ready: bool = False) -> None:
         """Announces which step of boot we are at.
@@ -3171,6 +3292,15 @@ async def _boot(config: Config, port: int, resume: bool) -> Runtime:
         agent.on_retry_wait = bridge._swap_model
     bridge.agent = agent
 
+    # The memory's night (roadmap 3.10): the watchman thread that samples
+    # pressure, learns when the user is around, and runs the night while
+    # they are away. It needs the mind (open) and the agent (for the
+    # distillation model); stopped in _teardown.
+    try:
+        bridge.start_sleep(config, mind)
+    except Exception as exc:
+        print(f"[dornick] uyku bekçisi başlatılamadı: {exc}", flush=True)
+
     # Always-on listening lives on the Python side: it can't live in the
     # browser because when the window is hidden Chromium throttles background
     # timers to once a minute and listening dies. Here it runs even while
@@ -3935,6 +4065,30 @@ _CAM_WINDOW: Any = None
 # Shell references (WndProc callback + old proc) must not be GC'd.
 _SHELL: dict[int, tuple[Any, int]] = {}
 
+# OS suspend/resume (roadmap 3.10.9). WM_POWERBROADCAST reaches the frame
+# shell's WndProc above; the sleep daemon subscribes through this hook so
+# the switch stops counting while the lid is closed and re-reads the hour
+# when it opens. No shell installed (a non-Windows desktop, or a window
+# that was never dressed) means no signal — the daemon then treats the
+# clock jump as lived time, which is the conservative error.
+_POWER_LISTENER: Any = None
+_PBT_APMSUSPEND = 0x0004
+_PBT_APMRESUMESUSPEND = 0x0007
+_PBT_APMRESUMEAUTOMATIC = 0x0012
+
+
+def _power_broadcast(wp: int) -> None:
+    listener = _POWER_LISTENER
+    if listener is None:
+        return
+    try:
+        if wp == _PBT_APMSUSPEND:
+            listener("suspend")
+        elif wp in (_PBT_APMRESUMEAUTOMATIC, _PBT_APMRESUMESUSPEND):
+            listener("resume")
+    except Exception:
+        pass
+
 # PRIVATE WinDLL: ctypes.windll is a process-wide SHARED cache — when
 # pystray/pywebview wrote their own argtypes onto the same function objects
 # our calls crashed with broken marshaling (the real root of the access
@@ -4083,6 +4237,8 @@ def _install_shell_on(hwnd: int) -> bool:
                         if right: return 11
                         if top: return 12
                         if bottom: return 15
+                if msg == 0x0218:                  # WM_POWERBROADCAST
+                    _power_broadcast(int(wp))
             except Exception:
                 pass
             return u.CallWindowProcW(old, h, msg, wp, lp)
@@ -4748,6 +4904,11 @@ def _teardown(loop: asyncio.AbstractEventLoop, runtime: Runtime) -> None:
     if runtime.ear is not None:
         runtime.ear.stop()
     runtime.bridge.cancel_pending()
+    # A night in progress finishes its unit and stops; the rest is debt.
+    try:
+        runtime.bridge.stop_sleep()
+    except Exception:
+        pass
     # Open MCP sessions hold child processes; left unclosed, ghosts remain.
     pool = getattr(runtime.server._httpd, "connectors", None)
     if pool is not None:

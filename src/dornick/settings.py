@@ -36,6 +36,7 @@ from .config import (
     ModelConfig,
     PermissionConfig,
     SandboxConfig,
+    SleepConfig,
 )
 from .listen import ListenConfig
 from .place import PlaceConfig
@@ -334,6 +335,10 @@ def snapshot(config: Config) -> dict[str, Any]:
         },
         "camera": asdict(config.camera),
         "browser": asdict(config.browser),
+        # Night sleep of the memory. The label travels with the value so the
+        # settings page can draw the toggle without knowing the mechanism.
+        "sleep": {**asdict(config.sleep),
+                  "label": "Gece uykusu — hafıza pekiştirme (kullanıcı yokken)"},
         "mail": [
             {**entry, "filled": bool(keys.get(entry["env"]) or os.environ.get(entry["env"]))}
             for entry in MAIL_FIELDS
@@ -879,6 +884,10 @@ def apply(config: Config, patch: dict[str, Any]) -> Config:
     hearing = _section(ListenConfig, base.listen, patch.get("listen"))
     eye = _section(CameraConfig, base.camera, patch.get("camera"))
     surfing = _section(BrowserConfig, base.browser, patch.get("browser"))
+    # The label the snapshot adds is not a field; a page echoing the whole
+    # section back must not be refused for it.
+    night = _section(SleepConfig, base.sleep,
+                     {k: v for k, v in (patch.get("sleep") or {}).items() if k != "label"})
 
     if permissions.mode not in {m["id"] for m in PERMISSION_MODES}:
         raise ValueError(f"Bilinmeyen izin kipi: {permissions.mode}")
@@ -911,6 +920,7 @@ def apply(config: Config, patch: dict[str, Any]) -> Config:
         listen=hearing,
         camera=eye,
         browser=surfing,
+        sleep=night,
     )
     _write_config(updated)
 
@@ -1050,6 +1060,7 @@ def _write_config(config: Config) -> None:
         "listen": asdict(config.listen),
         "camera": asdict(config.camera),
         "browser": asdict(config.browser),
+        "sleep": asdict(config.sleep),
         # The mail identity is not here: it is in `keys.json`, just like the
         # API keys. config.json can end up in a project and fall into
         # version control.

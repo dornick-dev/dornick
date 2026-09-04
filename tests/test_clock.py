@@ -133,6 +133,7 @@ def test_no_direct_datetime_now_call_remains() -> None:
         "src/dornick/recall/store.py",
         "src/dornick/recall/weave.py",
         "src/dornick/recall/awake.py",
+        "src/dornick/recall/daemon.py",
         "src/dornick/recall/activation.py",
         "src/dornick/mind/store.py",
         "src/dornick/mind/search.py",
