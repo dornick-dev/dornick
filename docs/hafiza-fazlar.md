@@ -883,7 +883,7 @@ açık aramada hepsi bulunuyor (`gomulme_recall` ve `geri_donus_recall` 1.00).
 | 3.11 — Sıcak/soğuk | ✅ %23 (band), komşuluk ısısı ile |
 | 4 — Kodlama gücü | ⚠️ faydası kanıtlanmadı |
 | 5 — Bağlam bonusu | ✅ E sızıntısı 0, ceza sorgunun alan sayısına göre |
-| 7 — Ödül, mizaç, karakter | ⚠️ ölçüldü (3 koşu): zaman/bağlam tutarlılığı ✅, kimlik belgesi karakter aracı değil, tek atımlık kaldıraç modelleri yakınlaştırmıyor — kapalı çevrim gerekiyor |
+| 7 — Ödül, mizaç, karakter | ⚠️ ölçüldü (4 koşu): zaman/bağlam tutarlılığı ✅; kimlik belgesi karakter aracı değil; kapalı çevrim kalibrasyon modeller arası farkı yarıya indirdi (0.215 → 0.111), 'sonuç' ekseni promptla dozlanmıyor |
 | 6 — Beyin görünümü | ✅ bölgeler, gece animasyonu, paneller; Playwright e2e Chromium bekliyor |
 
 ### Eskiye göre (yaşam bench, `hafiza-eski` → bugün) · 2026-09-04 düzeltmesi
@@ -1214,3 +1214,49 @@ yarıyor" ve "belge işe yarıyor" gibi görünen şeyler ölçüm gürültüsü
 Gürültünün üç kaynağı (az sonda, KARAR'a gelmeyen cevap, bozuk yol) tek tek
 adlandırılıp kapatılmadan hiçbir sonuç yazılmamalıydı; yazıldı ve geri
 çekildi. Sonuç tablosu ancak üçüncü koşuda okunabilir hale geldi.
+
+
+---
+
+## Faz 7.6 dördüncü koşu — kapalı çevrim kalibrasyonu · 2026-09-04
+
+Rapor: `docs/charts/karakter-openrouter4.md` (960 çağrı; taban → tam →
+kazanç kalibrasyonu → tam2 → kontrol; kimliksiz kol düşürüldü). Tabanlar
+üçüncü koşuyla uyumlu (Haiku birebir aynı): 18 sonda/eksen alet kararlı.
+
+| Metrik | 3. koşu | **4. koşu** | hedef |
+|---|---|---|---|
+| `tutarlilik_model` (kaldıraç açık) | 0.667 | **0.722** | ≥ 0.8 ✗ |
+| `tutarlilik_model_kaldiracsiz` | 0.722 | 0.700 | |
+| `kaldirac_farki` | −0.056 | **+0.022** | ≥ 0.15 ✗ |
+| `tutarlilik_zaman` | 0.894 | 0.861 | ≥ 0.8 ✅ |
+| `tutarlilik_baglam` | 0.850 | 0.811 | ≥ 0.85 ✗ (sınırda, ±0.04) |
+| `belirsiz_oran` | 0.023 | 0.032 | ≤ 0.05 ✅ |
+| **modeller arası ortalama eksen farkı** | tur 1: 0.215 | **tur 2: 0.111** | |
+
+**Kapalı çevrim işe yarıyor — hareket edebilen eksenlerde.** İki modelin
+ulaştığı mizaç vektörleri arasındaki ortalama fark bir kalibrasyon turunda
+**yarıya indi** (0.215 → 0.111); mekanizmanın var olma sebebi bu. Eksen
+bazında:
+
+| Eksen | Haiku ulaş1 → ulaş2 (kazanç) | deepseek ulaş1 → ulaş2 (kazanç) | hedef |
+|---|---|---|---|
+| yenilik | 0.27 → **0.60** (0.25: aşırı tepki kısıldı) | 0.50 → 0.66 (1.0) | 0.5 |
+| sebat | 0.40 → **0.50** (0.62) | 0.67 → **0.50** (1.5) | 0.5 |
+| temkin | 0.50 → 0.50 (1.0) | 0.63 → 0.60 (2.25) | 0.5 |
+| sonuç | 1.00 → 1.00 (1.5) | 0.69 → 0.73 (3.17) | 0.5 |
+| sosyal | 0.17 → 0.17 (kaldıraç ≤ 1, satır yok) | 0.04 → 0.04 | 0.5 |
+
+Haiku'nun hedeften ortalama sapması 0.233 → 0.187; deepseek'inki 0.191 →
+0.191 (yenilikte geri kaçtı, sebatta tam isabet). **"Sonuç" ekseni iki
+modelde de kıpırdamıyor**: en güçlü satır (kademe 3, kaldıraç 0.25–0.35)
+bile "işi bitirmeden durma" eğilimini gevşetmiyor — bu eğitimle gelen bir
+davranış, promptla dozlanmıyor. `tutarlilik_model`'in 0.8'e ulaşamamasının
+ana sebebi bu tek eksen (ve düz 0.5 hedefin yapaylığı: gerçek bir kullanıcı
+hedefi sonuç ekseninde muhtemelen zaten yüksek olur).
+
+**Sonuç:** Faz 7'nin iddiası — karakter harness'ta yaşar, model değişince
+yeniden kalibre edilir — hareket edebilen eksenlerde doğrulandı; kalibrasyon
+bir tur ölçüm ister (≈ 150 çağrı/model). Ürün tarafı: `temperament.calibrate`
+ve `kazanc` alanı hazır; model değişiminde otomatik bir kalibrasyon turu
+(30 karar × 3 bağlam) henüz bağlı değil — bir sonraki iş.
