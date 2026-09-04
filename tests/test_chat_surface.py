@@ -520,3 +520,25 @@ def test_the_turn_runs_normally_when_there_is_no_cap(tmp_path: Path) -> None:
 
     assert len(client.seen_messages) == 1
     assert stats.interrupted is False
+
+
+
+def test_opening_a_folder_sends_no_message_on_its_own(tmp_path: Path) -> None:
+    """A folder is a place, not a request. 'Open with Dornick' used to
+    auto-send "Bu klasörü açtım … Ne yapmamı istersin?" and the agent went
+    off reading files before the user typed anything."""
+    from dornick import desktop
+
+    bridge = desktop.Bridge.__new__(desktop.Bridge)
+    bridge.agent = None
+    bridge._switch = lambda sid: {"ok": True, "id": "s1"}       # type: ignore[attr-defined]
+    sent: list[str] = []
+    bridge.submit = lambda text, image="", *, queue=False: sent.append(text)  # type: ignore[assignment]
+
+    folder = tmp_path / "proje"
+    folder.mkdir()
+    assert bridge.open_path(str(folder))["ok"] is True
+    assert sent == []
+    # An explicit message still goes through (second-instance handoff).
+    bridge.open_path(str(folder), message="README'yi özetle")
+    assert sent == ["README'yi özetle"]

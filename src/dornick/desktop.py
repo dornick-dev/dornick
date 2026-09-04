@@ -919,11 +919,15 @@ class Bridge:
         return self._switch(sid)
 
     def open_path(self, path: str, *, message: str = "") -> dict[str, Any]:
-        """Windows 'Open with Dornick': new chat + working folder + optional seed.
+        """Windows 'Open with Dornick': new chat + working folder, and nothing else.
 
         File → parent folder is the project; folder → the project directly.
-        The path is written into the new session's meta; then the optional
-        user message enters the queue.
+        The path is written into the new session's meta. Only an EXPLICIT
+        `message` enters the queue: opening a folder used to auto-send
+        "Bu klasörü açtım … Ne yapmamı istersin?", and the agent answered
+        its own question by reading files and drafting a plan before the
+        user had typed a word (2026-09-04). A folder is a place, not a
+        request; the first message is the user's.
         """
         from pathlib import Path
 
@@ -940,11 +944,6 @@ class Bridge:
 
         folder = target if target.is_dir() else target.parent
         seed = (message or "").strip()
-        if not seed:
-            if target.is_file():
-                seed = f"Bu dosyayı açtım: {target}\nÇalışma klasörü: {folder}\nNe yapmamı istersin?"
-            else:
-                seed = f"Bu klasörü açtım: {folder}\nNe yapmamı istersin?"
 
         switched = self._switch(None)
         if not switched.get("ok"):
