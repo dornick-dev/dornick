@@ -25,8 +25,9 @@ It works with **any model**: Anthropic's API, OpenRouter, or a local server —
 LM Studio, Ollama, vLLM, llama.cpp. Your conversations and memories never
 leave the machine unless you point it at a hosted model.
 
-![dornick's home screen — English UI, light theme: conversation sidebar, task
-list, and the memory brain on the right](docs/screenshots/home-memory-web.png)
+![dornick's home screen — Turkish UI, light theme: conversation sidebar, the
+agent's task list, and the memory brain on the right with its regions —
+prefrontal goal strip, cortex, network, thalamus and brainstem](docs/screenshots/home-memory-web.png)
 
 More screenshots — light/dark shells, viewer tabs, the connectors
 directory, a live session with a real model: [the gallery](docs/gallery/README.md).
@@ -174,9 +175,10 @@ to ask: [docs/gate.md](docs/gate.md).
 
 ## Automations
 
-![The Tasks panel: a list with Simple and Automation badges, and the flow
-graph of a daily mail digest with four steps — read inbox, pick what matters,
-send to WhatsApp, archive the rest](docs/screenshots/automation-flow.png)
+![The Tasks panel, dark theme: a list with Simple and Automation badges, and
+the flow graph of a daily mail digest — read inbox, pick what matters, send to
+WhatsApp, archive the rest, and an error branch that tells you it
+broke](docs/screenshots/automation-flow.png)
 
 Each node names its type (`mail_read`, `agent`, `http`, `skill`), the secrets
 it needs, and whether you edited it by hand — a step marked ✎ *manual* is one
@@ -222,7 +224,9 @@ explicit opt-in (see "Learn me" above).
 
 ### Settings
 
-![dornick settings, showing the model, voice, permissions and machine tabs](docs/screenshots/settings.png)
+![dornick settings — the Model page with the provider grid (Claude, ChatGPT,
+OpenRouter, Gemini, LM Studio, vLLM, Ollama…), and the voice, permissions and
+machine tabs in the side navigation](docs/screenshots/settings.png)
 
 ## Training rig
 
