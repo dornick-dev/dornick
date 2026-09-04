@@ -80,6 +80,13 @@ INERTIA_BUDGET_SECONDS = 2.0
 FLAT_PRIOR = 0.3
 RHYTHM_DAYS = 60
 
+# Housekeeping (roadmap 3.10.10). A backup is taken at the start of EVERY
+# night and the last BACKUP_KEEP are kept; VACUUM and night-log compression
+# are weekly; a night log older than LOG_AGE_DAYS is gzipped.
+BACKUP_KEEP = 7
+WEEKLY_DAYS = 7
+LOG_AGE_DAYS = 30
+
 
 class State(str, Enum):
     AWAKE = "uyanik"
@@ -262,14 +269,75 @@ class SleepSwitch:
         self.caffeine_until: datetime | None = None
         self.sleepy_since: datetime | None = None
         self.transitions: list[Transition] = []
+        # OS suspend (lid closed, hibernate). Wall time passes while the
+        # machine does not exist; the ledger of those gaps is what lets debt
+        # be charged only for time that was actually lived.
+        self.suspended_at: datetime | None = None
+        self.suspensions: list[tuple[datetime, datetime]] = []
 
     # -- inputs --------------------------------------------------------
 
     def user_active(self, active: bool = True) -> None:
         """Orexin. While it is 1, no kind of sleep runs. No exceptions."""
+        if active and self.suspended_at is not None:
+            self.os_resumed()           # the lid was opened by a person
         self.orexin = 1.0 if active else 0.0
         if active and self.state is not State.AWAKE:
             self._go(State.AWAKE, "oreksin")
+
+    def os_suspended(self) -> None:
+        """The OS is going to sleep (`WM_POWERBROADCAST` suspend, 3.10.9).
+
+        Nothing accumulates while suspended: `step()` becomes a no-op, the
+        SLEEPY settle timer and the caffeine hold stop counting. Pressure S
+        itself needs no freezing — it is measured from the store, not from
+        the clock — so what freezes is every counter that reads wall time.
+        A night in progress is left in ASLEEP; the OS took the machine, not
+        the user, so there is nothing to wake for.
+        """
+        if self.suspended_at is None:
+            self.suspended_at = self.clock()
+
+    def os_resumed(self) -> timedelta:
+        """Back from suspend. The gap is booked as a slept period.
+
+        Wall time that the machine did not live through is not debt: the
+        gap is recorded in `suspensions` so `offline_since()` can subtract
+        it from "hours since the last night", and the SLEEPY settle timer
+        and the caffeine hold are shifted forward by it — four hours of "do
+        not sleep now" are four hours of use, not four hours of lid-closed.
+        The clock jump is what makes the rhythm re-evaluate: the next
+        `step()` samples the real hour, not the one before the lid closed.
+        Returns the gap (zero when not suspended).
+        """
+        if self.suspended_at is None:
+            return timedelta(0)
+        now = self.clock()
+        gap = max(timedelta(0), now - self.suspended_at)
+        self.suspensions.append((self.suspended_at, now))
+        del self.suspensions[:-64]
+        self.suspended_at = None
+        if self.caffeine_until is not None:
+            self.caffeine_until += gap
+        if self.sleepy_since is not None:
+            self.sleepy_since = now      # the two minutes restart, honestly
+        return gap
+
+    def offline_since(self, moment: datetime) -> timedelta:
+        """How much of the wall time since `moment` was spent suspended.
+
+        Debt callers subtract this from `hours since the last night`: a
+        laptop closed on Friday and opened on Monday has not been awake for
+        three days, and its micro/local sleep decisions must not think so.
+        """
+        total = timedelta(0)
+        for start, end in self.suspensions:
+            if end <= moment:
+                continue
+            total += end - max(start, moment)
+        if self.suspended_at is not None and self.suspended_at < self.clock():
+            total += self.clock() - max(self.suspended_at, moment)
+        return total
 
     def caffeine(self, hours: float = CAFFEINE_HOURS) -> None:
         """"Don't sleep now." Raises the threshold; does not touch S."""
@@ -281,6 +349,13 @@ class SleepSwitch:
             self._go(State.WAKING, reason)
             return True
         return False
+
+    def night_over(self, reason: str = "gece bitti") -> None:
+        """The night ended without a stimulus: it ran out of work, or the
+        application is closing. ASLEEP → WAKING; the next step() finishes
+        the inertia. Not a stimulus, so it does not pass the threshold."""
+        if self.state is State.ASLEEP:
+            self._go(State.WAKING, reason)
 
     # -- the step ------------------------------------------------------
 
@@ -296,6 +371,8 @@ class SleepSwitch:
 
     def step(self, s: float, *, idle_minutes: float = 0.0) -> State:
         """Advance the state machine one sample (the watchman calls this)."""
+        if self.suspended_at is not None:
+            return self.state           # the machine is not here; nothing moves
         now = self.clock()
         if self.orexin >= 1.0:
             if self.state is not State.AWAKE:
@@ -343,6 +420,8 @@ class NightReport:
     wake_latency_ms: float = 0.0
     seconds: float = 0.0
     phases: list[str] = field(default_factory=list)
+    backup: str = ""
+    housekeeping: dict[str, Any] = field(default_factory=dict)
 
     def as_dict(self) -> dict[str, Any]:
         return {"cycles": self.cycles, "replayed": self.replayed,
@@ -350,7 +429,8 @@ class NightReport:
                 "discarded_clusters": self.discarded_clusters,
                 "woke_reason": self.woke_reason,
                 "wake_latency_ms": round(self.wake_latency_ms, 2),
-                "seconds": round(self.seconds, 3), "phases": self.phases}
+                "seconds": round(self.seconds, 3), "phases": self.phases,
+                "backup": self.backup, "housekeeping": self.housekeeping}
 
 
 def phase_of(cycle: int, *, debt_phase: str = "") -> Phase:
@@ -378,13 +458,17 @@ class Sleeper:
                  clock: Clock | None = None, watermark: Path | None = None,
                  state_dir: Path | None = None,
                  rhythm: Rhythm | None = None,
-                 events: Callable[[str, dict[str, Any]], None] | None = None) -> None:
+                 events: Callable[[str, dict[str, Any]], None] | None = None,
+                 caches: Callable[[], int] | None = None) -> None:
         self.store = store
         self.rhythm = rhythm or Rhythm()
         self.sessions_dir = Path(sessions_dir)
         self.clock = clock or wall_clock
         self.watermark = watermark
         self.state_dir = state_dir
+        # Something that drops the transcript/episode caches and returns how
+        # many entries went (`Mind.clear_caches`). None: nothing to drop.
+        self.caches = caches
         # Events go through the frozen schema (night_events.SCHEMA): the view
         # trusts only that dict and never looks at `recall.db`.
         self.events = events or self._default_event
@@ -427,6 +511,16 @@ class Sleeper:
             "tahmini_uyanma": self.rhythm_arrival(),
             "dongu_sayisi": max_cycles})
 
+        # `run()` IS the night: the switch is ASLEEP by the time it is
+        # called, so the housekeeping guards are passed that state here.
+        # Anyone calling the jobs from elsewhere must pass the real one.
+        if not self._wake:
+            # Night start, every night, before any replay touches the graph:
+            # whatever tonight breaks, this morning's memory is on disk.
+            report.backup = str(self._safely(
+                backup, self.store, State.ASLEEP, self.state_dir,
+                clock=self.clock) or "")
+
         for cycle in range(1, max_cycles + 1):
             if self._wake:
                 break
@@ -436,6 +530,12 @@ class Sleeper:
             remaining = min(cycle_budget_s, budget_s - (time.perf_counter() - started))
             if remaining <= 0:
                 break
+            if phase is Phase.DEEP and not report.housekeeping:
+                # First deep cycle: checkpoint, FTS merge, caches — the jobs
+                # that want no writer around. VACUUM waits for the end.
+                report.housekeeping = self._safely(
+                    housekeeping, self.store, State.ASLEEP,
+                    caches=self.caches) or {}
             night = weave.night_pass(
                 self.store, self.sessions_dir, clock=self.clock,
                 watermark=self.watermark,
@@ -449,6 +549,14 @@ class Sleeper:
             report.distilled += night.distilled_nodes
             if night.replayed == 0 and phase is not Phase.REM:
                 break               # nothing left to replay
+
+        if not self._wake:
+            # Weekly, at the end of the night: S is lowest here (replay is
+            # done) and VACUUM cannot be interrupted once started, so it is
+            # only begun when the rhythm says nobody is due (3.10.10).
+            report.housekeeping.update(self._safely(
+                weekly_housekeeping, self.store, State.ASLEEP, self.state_dir,
+                clock=self.clock, rhythm=self.rhythm) or {})
         report.seconds = time.perf_counter() - started
 
         if self._wake:
@@ -469,6 +577,14 @@ class Sleeper:
             "devreden": report.carried,
             "ts": self.clock().isoformat(timespec="milliseconds")})
         return report
+
+    @staticmethod
+    def _safely(job: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
+        """A failed housekeeping job must not cost the night's replay."""
+        try:
+            return job(*args, **kwargs)
+        except Exception:
+            return None
 
 
 def _debt_read(state_dir: Path | None) -> dict[str, Any]:
@@ -498,20 +614,164 @@ class AwakeError(RuntimeError):
     """Raised when a sleep-only maintenance task is attempted while awake."""
 
 
-def housekeeping(store: Any, state: State, *, vacuum: bool = False) -> dict[str, Any]:
+def _require_asleep(state: State, job: str) -> None:
+    """Every job below runs in deep sleep and nowhere else.
+
+    Not AWAKE, not SLEEPY, not micro-sleep (which never calls these: it is a
+    capped replay, not a night). The single exception, cache clearing under
+    local sleep, does not come through here — `awake.local_sleep` calls the
+    cache callable directly, because that job needs no lock.
+    """
+    if state is not State.ASLEEP:
+        raise AwakeError(
+            f"{job} yalnız uykuda koşar (durum: {state.value})")
+
+
+def housekeeping(store: Any, state: State, *, vacuum: bool = False,
+                 caches: Callable[[], int] | None = None) -> dict[str, Any]:
     """Glymphatic counterpart: the jobs that need the space sleep opens.
 
     SQLite's space-needing work is the same shape. A full WAL checkpoint
     needs no writer; FTS merging is I/O heavy; VACUUM takes an exclusive lock
     and simply cannot run under a live session. Refusing it while awake is a
     guard, not a preference — the alternative is a frozen UI.
+
+    `caches` drops the transcript/episode caches (RAM) — the one job that is
+    also allowed in local sleep, see `awake.local_sleep`.
     """
-    if state is not State.ASLEEP:
-        raise AwakeError(
-            f"bakım işleri yalnız uykuda koşar (durum: {state.value})")
+    _require_asleep(state, "bakım işleri")
     done: dict[str, Any] = {}
     done["wal"] = store.checkpoint()
     done["fts"] = store.optimize_fts()
+    if caches is not None:
+        done["caches"] = clear_caches(caches, state)
     if vacuum:
         done["vacuum"] = store.vacuum()
     return done
+
+
+def clear_caches(caches: Callable[[], int], state: State) -> int:
+    """Drop the transcript/episode caches; returns how many entries went."""
+    _require_asleep(state, "önbellek boşaltma")
+    return int(caches() or 0)
+
+
+def backup(store: Any, state: State, state_dir: Path | None, *,
+           clock: Clock | None = None, keep: int = BACKUP_KEEP) -> Path | None:
+    """A consistent snapshot of the memory, taken before the night touches it.
+
+    `<state_dir>/yedek/recall-<date>.db` through SQLite's backup API (the
+    WAL is included; a raw file copy would miss it). The last `keep` nights
+    are kept, oldest pruned. Same date twice — a night run twice — simply
+    overwrites. Deep sleep only: the copy reads every page and would sit on
+    the same lock a live session writes through.
+    """
+    _require_asleep(state, "yedek")
+    if state_dir is None:
+        return None
+    clock = clock or wall_clock
+    folder = Path(state_dir) / "yedek"
+    target = folder / f"recall-{clock().date().isoformat()}.db"
+    store.backup_to(target)
+    for old in sorted(folder.glob("recall-*.db"))[:-keep] if keep > 0 else []:
+        for stale in (old, old.with_name(old.name + "-wal"),
+                      old.with_name(old.name + "-shm")):
+            try:
+                stale.unlink()
+            except OSError:
+                pass
+    return target
+
+
+def compress_old_nights(state: State, state_dir: Path | None, *,
+                        clock: Clock | None = None,
+                        older_than_days: int = LOG_AGE_DAYS) -> list[Path]:
+    """Gzip night logs under `<state_dir>/gece/` older than `older_than_days`.
+
+    Disk, not RAM: a night's event stream is a few hundred KB of JSON that
+    is read once, if ever, from the replay panel — which reads the `.gz`
+    transparently (`night_events.replay`). The date comes from the file
+    name, so an undated file is left alone rather than guessed at.
+    """
+    _require_asleep(state, "günlük sıkıştırma")
+    if state_dir is None:
+        return []
+    from . import night_events
+
+    clock = clock or wall_clock
+    cutoff = clock().date() - timedelta(days=older_than_days)
+    done: list[Path] = []
+    folder = Path(state_dir) / "gece"
+    for path in sorted(folder.glob("*.jsonl")) if folder.is_dir() else []:
+        try:
+            day = datetime.fromisoformat(path.stem[:10]).date()
+        except ValueError:
+            continue
+        if day > cutoff:
+            continue
+        try:
+            done.append(night_events.compress(path))
+        except OSError:
+            continue        # one unreadable night is not the night's problem
+    return done
+
+
+def weekly_housekeeping(store: Any, state: State, state_dir: Path | None, *,
+                        clock: Clock | None = None,
+                        rhythm: Rhythm | None = None) -> dict[str, Any]:
+    """The weekly jobs: VACUUM and night-log compression, when they are due.
+
+    Both are scheduled through `<state_dir>/bakim.json` (last run per job)
+    so a machine that sleeps every night does them once a week and a machine
+    that sleeps rarely does them the first night it can. VACUUM cannot be
+    interrupted once begun (SQLite), so it is only started when the rhythm
+    says nobody is expected within EARLY_MINUTES — the one job whose wake
+    latency is measured separately, and the reason it runs last, at the
+    lowest S.
+    """
+    _require_asleep(state, "haftalık bakım")
+    clock = clock or wall_clock
+    now = clock()
+    ledger = _maintenance_read(state_dir)
+    done: dict[str, Any] = {}
+
+    if _due(ledger.get("sikistirma"), now):
+        done["compressed"] = len(compress_old_nights(state, state_dir, clock=clock))
+        ledger["sikistirma"] = now.isoformat(timespec="milliseconds")
+
+    if _due(ledger.get("vacuum"), now):
+        arrival = rhythm.probability(now + timedelta(minutes=EARLY_MINUTES)) if rhythm else 0.0
+        if arrival < 0.5:
+            done["vacuum"] = store.vacuum()
+            ledger["vacuum"] = now.isoformat(timespec="milliseconds")
+        else:
+            done["vacuum"] = False      # postponed: the user is due
+
+    _maintenance_write(state_dir, ledger)
+    return done
+
+
+def _due(last: str | None, now: datetime, days: int = WEEKLY_DAYS) -> bool:
+    moment = parse(last) if last else None
+    return moment is None or (now - moment) >= timedelta(days=days)
+
+
+def _maintenance_read(state_dir: Path | None) -> dict[str, Any]:
+    if state_dir is None:
+        return {}
+    try:
+        data = json.loads((Path(state_dir) / "bakim.json").read_text("utf-8"))
+        return data if isinstance(data, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def _maintenance_write(state_dir: Path | None, data: dict[str, Any]) -> None:
+    if state_dir is None:
+        return
+    try:
+        path = Path(state_dir) / "bakim.json"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+    except OSError:
+        pass

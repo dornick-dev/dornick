@@ -28,7 +28,7 @@ import time
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from . import switches, weave
 from .clock import Clock, wall_clock
@@ -79,6 +79,7 @@ class LocalSleepReport:
     shrunk_edges: int = 0
     deleted_edges: int = 0
     skipped_active: int = 0
+    caches_cleared: int = 0
     seconds: float = 0.0
     reason: str = ""
 
@@ -86,6 +87,7 @@ class LocalSleepReport:
         return {"cold_nodes": self.cold_nodes, "shrunk_edges": self.shrunk_edges,
                 "deleted_edges": self.deleted_edges,
                 "skipped_active": self.skipped_active,
+                "caches_cleared": self.caches_cleared,
                 "seconds": self.seconds, "reason": self.reason}
 
 
@@ -263,6 +265,7 @@ def local_sleep(
     *,
     clock: Clock | None = None,
     active_days: int = ACTIVE_DAYS,
+    caches: Callable[[], int] | None = None,
 ) -> LocalSleepReport:
     """Downscale the cold region while the machine stays awake.
 
@@ -272,7 +275,12 @@ def local_sleep(
     downscaled is, by definition, what is not being learned right now.
 
     Not done here: replay, schema refresh, stitching, distillation. All of
-    those need the active region, and the active region is off limits.
+    those need the active region, and the active region is off limits. Of
+    the night's housekeeping (roadmap 3.10.10) exactly one job is allowed
+    here — clearing the transcript/episode caches, passed in as `caches`
+    (typically `Mind.clear_caches`) — because it takes no lock and touches
+    no record. Checkpoint, FTS merge, VACUUM, backup and log compression
+    stay in deep sleep.
     """
     clock = clock or wall_clock
     report = LocalSleepReport()
@@ -287,6 +295,11 @@ def local_sleep(
     if cold:
         report.shrunk_edges, report.deleted_edges = store.shrink_edges_between(
             cold, weave.EPSILON, weave.EDGE_FLOOR)
+    if caches is not None:
+        try:
+            report.caches_cleared = int(caches() or 0)
+        except Exception:
+            report.caches_cleared = 0     # RAM not freed is not a failed sleep
     report.seconds = round(time.perf_counter() - started, 3)
     report.reason = "cold region only; active region untouched"
     return report

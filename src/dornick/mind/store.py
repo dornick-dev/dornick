@@ -925,6 +925,21 @@ class Mind:
                 found[episode.session_id] = hits
         return found
 
+    def clear_caches(self) -> int:
+        """Drop the transcript and episode caches; returns how many entries went.
+
+        Both caches are keyed by file mtime, so dropping them costs nothing
+        but a re-parse on the next lookup — which is exactly why deep sleep
+        (and local sleep, which takes no lock on the graph) may call this
+        while nothing else may: it frees RAM without touching a single
+        record. Roadmap 3.10.10.
+        """
+        with self._lock:
+            dropped = len(self._episode_cache) + len(self._transcript_cache)
+            self._episode_cache.clear()
+            self._transcript_cache.clear()
+        return dropped
+
     def _scan_sessions(self) -> list[Episode]:
         if not self.sessions_dir.is_dir():
             return []

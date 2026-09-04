@@ -18,12 +18,18 @@ second code path to drift.
 
 from __future__ import annotations
 
+import gzip
 import json
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Iterable, Iterator
 
 from .clock import Clock, wall_clock
+
+# An old night is gzipped in deep sleep (sleep.compress_old_nights) and keeps
+# this suffix on top of `.jsonl`. Listing and replay look through it: the
+# view never learns whether a night was compressed.
+COMPRESSED_SUFFIX = ".gz"
 
 # Frozen event vocabulary (roadmap 3.10.5). Each entry lists the fields the
 # view may rely on. A snapshot test compares this dict; editing it is a
@@ -117,7 +123,7 @@ def replay(path: Path) -> Iterator[dict[str, Any]]:
     a power cut should still replay up to the cut.
     """
     try:
-        lines = Path(path).read_text(encoding="utf-8").splitlines()
+        lines = _read_night(Path(path)).splitlines()
     except OSError:
         return
     for line in lines:
@@ -129,12 +135,69 @@ def replay(path: Path) -> Iterator[dict[str, Any]]:
             continue
 
 
+def _read_night(path: Path) -> str:
+    """The night's text, whether it was compressed or not.
+
+    A caller always asks for `<date>.jsonl`; if deep sleep has since gzipped
+    that night, the `.gz` beside it is read instead. A gzip that turns out
+    to be corrupt reads as empty rather than raising: a night that cannot
+    be replayed is a missing night, not a broken view.
+    """
+    if path.suffix == COMPRESSED_SUFFIX:
+        packed = path
+    elif path.is_file():
+        return path.read_text(encoding="utf-8")
+    else:
+        packed = compressed_path(path)
+    try:
+        with gzip.open(packed, "rt", encoding="utf-8") as fh:
+            return fh.read()
+    except (OSError, EOFError, ValueError) as exc:
+        if isinstance(exc, OSError) and not packed.exists():
+            raise
+        return ""
+
+
+def compressed_path(path: Path) -> Path:
+    """`<date>.jsonl.gz` for `<date>.jsonl`."""
+    path = Path(path)
+    return path.with_name(path.name + COMPRESSED_SUFFIX)
+
+
+def compress(path: Path) -> Path:
+    """Gzip one night in place: `<date>.jsonl` becomes `<date>.jsonl.gz`.
+
+    The original is removed only after the compressed copy is complete, so
+    a crash mid-way leaves the readable file, never neither. Already
+    compressed (or missing) nights are left alone.
+    """
+    path = Path(path)
+    target = compressed_path(path)
+    if not path.is_file():
+        return target
+    with path.open("rb") as src, gzip.open(target, "wb") as dst:
+        while chunk := src.read(1 << 16):
+            dst.write(chunk)
+    path.unlink()
+    return target
+
+
+def _night_name(path: Path) -> str:
+    """The date a night file stands for, with or without the gzip suffix."""
+    name = path.name
+    if name.endswith(COMPRESSED_SUFFIX):
+        name = name[: -len(COMPRESSED_SUFFIX)]
+    return name[: -len(".jsonl")] if name.endswith(".jsonl") else name
+
+
 def nights(state_dir: Path) -> list[str]:
-    """Which nights can be replayed, newest first."""
+    """Which nights can be replayed, newest first. Compressed ones included."""
     folder = Path(state_dir) / "gece"
     if not folder.is_dir():
         return []
-    return sorted((p.stem for p in folder.glob("*.jsonl")), reverse=True)
+    names = {_night_name(p) for p in folder.glob("*.jsonl")}
+    names |= {_night_name(p) for p in folder.glob("*.jsonl" + COMPRESSED_SUFFIX)}
+    return sorted(names, reverse=True)
 
 
 def night_path(state_dir: Path, date: str) -> Path:

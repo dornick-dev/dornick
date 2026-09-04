@@ -341,3 +341,187 @@ def test_housekeeping_runs_asleep_and_shrinks_the_wal(store) -> None:
     done = sleep.housekeeping(store, State.ASLEEP, vacuum=True)
     assert done["wal"] < 1_000_000           # < 1 MB after a full checkpoint
     assert done["fts"] is True and done["vacuum"] is True
+
+
+class _Spy:
+    """A store that records which sleep-only jobs were asked of it.
+
+    Delegates everything else to the real store, so replay still works;
+    only the housekeeping surface is observed.
+    """
+
+    WATCHED = ("checkpoint", "optimize_fts", "vacuum", "backup_to")
+
+    def __init__(self, real) -> None:
+        self._real = real
+        self.calls: list[str] = []
+
+    def __getattr__(self, name: str):
+        attr = getattr(self._real, name)
+        if name in self.WATCHED:
+            def record(*args, **kwargs):
+                self.calls.append(name)
+                return attr(*args, **kwargs)
+            return record
+        return attr
+
+
+def test_backup_is_taken_at_the_start_of_the_night_before_any_work(
+        store, sessions, tmp_path, clock) -> None:
+    """The snapshot must predate the night: whatever tonight breaks, this
+    morning's memory is on disk. Proven by content, not by ordering — the
+    backup carries no edge the replay wrote."""
+    import sqlite3
+
+    def edges(path: Path) -> set[tuple[str, str, float]]:
+        db = sqlite3.connect(path)         # a second reader; WAL allows it
+        try:
+            return {(s, d, round(float(w), 4)) for s, d, w in
+                    db.execute("SELECT src, dst, weight FROM link")}
+        finally:
+            db.close()
+
+    nodes = [store.remember(f"Kayıt {i}.", kind="fact") for i in range(3)]
+    _session(sessions, "s1", [n.id for n in nodes], clock)
+    before = edges(store.path)             # `remember` may auto-link; fine
+
+    report = Sleeper(store, sessions, clock=clock, watermark=tmp_path / "w.json",
+                     state_dir=tmp_path).run(max_cycles=2)
+
+    assert edges(store.path) != before, "the night changed the graph"
+    copy = Path(report.backup)
+    assert copy == tmp_path / "yedek" / f"recall-{clock().date().isoformat()}.db"
+    assert copy.is_file()
+    assert edges(copy) == before           # the graph as it was before the night
+    assert store.count() == 3
+
+
+def test_only_the_last_seven_backups_are_kept(store, tmp_path, clock) -> None:
+    for _ in range(sleep.BACKUP_KEEP + 3):
+        sleep.backup(store, State.ASLEEP, tmp_path, clock=clock)
+        clock.advance(days=1)
+    kept = sorted(p.name for p in (tmp_path / "yedek").glob("recall-*.db"))
+    assert len(kept) == sleep.BACKUP_KEEP
+    assert kept[-1] == f"recall-{(clock().date() - timedelta(days=1)).isoformat()}.db"
+    assert f"recall-{MONDAY.date().isoformat()}.db" not in kept   # the oldest went
+
+
+def test_every_housekeeping_job_is_refused_outside_deep_sleep(store, tmp_path,
+                                                              clock) -> None:
+    """AWAKE, SLEEPY, WAKING: none of them is the night. The guard is the
+    same one VACUUM uses, so a new job cannot forget it."""
+    for state in (State.AWAKE, State.SLEEPY, State.WAKING):
+        with pytest.raises(sleep.AwakeError):
+            sleep.backup(store, state, tmp_path, clock=clock)
+        with pytest.raises(sleep.AwakeError):
+            sleep.compress_old_nights(state, tmp_path, clock=clock)
+        with pytest.raises(sleep.AwakeError):
+            sleep.clear_caches(lambda: 1, state)
+        with pytest.raises(sleep.AwakeError):
+            sleep.weekly_housekeeping(store, state, tmp_path, clock=clock)
+    assert not (tmp_path / "yedek").exists()
+
+
+def test_old_night_logs_are_compressed_and_still_replay(tmp_path, clock) -> None:
+    """Disk, not history: a gzipped night lists and replays exactly as before,
+    and the view never learns it was compressed."""
+    from dornick.recall import night_events as ne
+
+    old_day = (clock().date() - timedelta(days=45)).isoformat()
+    fresh_day = (clock().date() - timedelta(days=5)).isoformat()
+    for day in (old_day, fresh_day):
+        ne.NightLog(ne.night_path(tmp_path, day), clock).emit("dokunus", id="n_1")
+
+    done = sleep.compress_old_nights(State.ASLEEP, tmp_path, clock=clock)
+
+    assert [p.name for p in done] == [f"{old_day}.jsonl.gz"]
+    assert not ne.night_path(tmp_path, old_day).exists()          # original gone
+    assert ne.night_path(tmp_path, fresh_day).is_file()           # too young
+    assert ne.nights(tmp_path) == [fresh_day, old_day]
+    assert [e["id"] for e in ne.replay(ne.night_path(tmp_path, old_day))] == ["n_1"]
+    # Idempotent: a second pass finds nothing left to do.
+    assert sleep.compress_old_nights(State.ASLEEP, tmp_path, clock=clock) == []
+
+
+def test_the_first_deep_cycle_clears_the_caches_once(store, sessions, tmp_path,
+                                                     clock) -> None:
+    node = store.remember("Bir kayıt.", kind="fact")
+    for i in range(3):
+        _session(sessions, f"s{i}", [node.id], clock)
+    calls: list[int] = []
+
+    def drop() -> int:
+        calls.append(1)
+        return 7
+
+    report = Sleeper(store, sessions, clock=clock, watermark=tmp_path / "w.json",
+                     state_dir=tmp_path, caches=drop).run(max_cycles=4)
+    assert report.housekeeping["caches"] == 7
+    assert len(calls) == 1                   # first deep cycle, not every cycle
+    assert "wal" in report.housekeeping and report.housekeeping["fts"] is True
+
+
+def test_the_mind_can_drop_its_caches(tmp_path, clock) -> None:
+    """What the sleeper is handed in production: `Mind.clear_caches`."""
+    from dornick.mind import open_mind
+
+    sessions = tmp_path / "sessions"
+    sessions.mkdir()
+    log = EventLog(sessions / "s1.jsonl", clock=clock.text)
+    log.message("user", "Pres hattında kalıp değişimi.")   # a digestible turn
+    log.close()
+    mind = open_mind(tmp_path / "mind", sessions, "cur", clock=clock)
+    try:
+        mind._scan_sessions()                       # fills the episode cache
+        assert mind.clear_caches() >= 1
+        assert mind.clear_caches() == 0             # nothing left to drop
+    finally:
+        mind.store.close()
+
+
+def test_micro_and_local_sleep_do_none_of_it_except_the_caches(
+        store, sessions, tmp_path, clock) -> None:
+    """The table's last line: nothing runs in micro-sleep or local sleep —
+    with one exception, the cache clearing, which takes no lock and is
+    therefore allowed in local sleep only."""
+    from dornick.recall import awake
+
+    node = store.remember("Bir kayıt.", kind="fact")
+    _session(sessions, "s1", [node.id], clock)
+    spy = _Spy(store)
+    dropped: list[int] = []
+
+    awake.micro_sleep(spy, sessions, clock=clock, watermark=tmp_path / "w.json")
+    assert spy.calls == []
+
+    clock.advance(days=30)
+    report = awake.local_sleep(spy, clock=clock, caches=lambda: dropped.append(1) or 5)
+    assert spy.calls == []
+    assert report.caches_cleared == 5 and dropped == [1]
+    assert not (tmp_path / "yedek").exists()
+
+
+def test_weekly_jobs_run_once_a_week_and_wait_for_the_user_to_be_gone(
+        store, tmp_path, clock) -> None:
+    """VACUUM cannot be interrupted, so it is started only when the rhythm
+    says nobody is due; and once done it is not done again for a week."""
+    first = sleep.weekly_housekeeping(store, State.ASLEEP, tmp_path, clock=clock)
+    assert first["vacuum"] is True and first["compressed"] == 0
+
+    clock.advance(days=2)
+    again = sleep.weekly_housekeeping(store, State.ASLEEP, tmp_path, clock=clock)
+    assert "vacuum" not in again and "compressed" not in again   # not due yet
+
+    clock.advance(days=6)
+    busy = Rhythm()                          # the user is always here at this hour
+    for day in range(30):
+        for hour in range(24):
+            busy.observe(clock() + timedelta(days=day, hours=hour))
+    postponed = sleep.weekly_housekeeping(store, State.ASLEEP, tmp_path,
+                                          clock=clock, rhythm=busy)
+    assert postponed["vacuum"] is False      # due, but the user is expected
+
+    quiet = sleep.weekly_housekeeping(store, State.ASLEEP, tmp_path, clock=clock)
+    assert quiet["vacuum"] is True
+    ledger = json.loads((tmp_path / "bakim.json").read_text("utf-8"))
+    assert ledger["vacuum"].startswith(clock().date().isoformat())
