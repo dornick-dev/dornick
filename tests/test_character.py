@@ -308,7 +308,9 @@ def test_the_document_stays_short_enough_to_read(tmp_path: Path) -> None:
 def test_a_missing_temperament_file_is_neutral_not_an_error(tmp_path: Path) -> None:
     baseline, target, model_id = temperament.load(tmp_path / "yok")
     assert baseline.as_dict() == Temperament().as_dict()
-    assert target.as_dict() == Temperament().as_dict()
+    # The default TARGET is neutral on every axis but social, which starts
+    # low: a fresh install must not ask for more approval-seeking.
+    assert target.as_dict() == temperament.default_target().as_dict()
     assert model_id == ""
 
 
@@ -454,3 +456,20 @@ def test_the_character_block_comes_after_the_soul(tmp_path: Path) -> None:
     system = _built(tmp_path)
     assert system.identity.index("Kısa ve teknik konuş.") < system.identity.index(
         builder.IDENTITY_DOC_HEADER)
+
+
+def test_the_social_axis_is_never_levered_up() -> None:
+    """A model that seeks little approval must not be asked to seek more.
+    Measured on the first real 7.6 run: two models at 0.17, a flat 0.5
+    target, leverage 3.0 — the harness was teaching sycophancy."""
+    humble = Temperament(social=0.1)
+    assert temperament.leverage(humble, Temperament(social=0.5))["social"] <= 1.0
+    # Suppressing still works.
+    flatterer = Temperament(social=0.9)
+    assert temperament.leverage(flatterer, Temperament(social=0.2))["social"] < 1.0
+
+
+def test_a_fresh_install_targets_low_approval_seeking(tmp_path: Path) -> None:
+    _base, target, _model = temperament.load(tmp_path)
+    assert target.social == temperament.SOCIAL_TARGET < 0.5
+    assert target.caution == 0.5

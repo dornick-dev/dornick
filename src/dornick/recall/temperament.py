@@ -67,6 +67,15 @@ class Temperament:
         return cls(**{axis: float(data.get(AXIS_KEYS[axis], 0.5)) for axis in AXES})
 
 
+# The target a fresh install starts from. Every axis neutral except social:
+# the default must not ask for MORE approval-seeking than a model brings.
+SOCIAL_TARGET = 0.2
+
+
+def default_target() -> Temperament:
+    return Temperament(social=SOCIAL_TARGET)
+
+
 def leverage(baseline: Temperament, target: Temperament) -> dict[str, float]:
     """What the harness has to do to turn this model into that behaviour.
 
@@ -77,8 +86,16 @@ def leverage(baseline: Temperament, target: Temperament) -> dict[str, float]:
     out: dict[str, float] = {}
     for axis in AXES:
         floor = max(0.05, getattr(baseline, axis))
-        out[axis] = round(max(LEVERAGE_LOW,
-                              min(LEVERAGE_HIGH, getattr(target, axis) / floor)), 4)
+        value = max(LEVERAGE_LOW, min(LEVERAGE_HIGH, getattr(target, axis) / floor))
+        if axis == "social":
+            # Never lever approval-seeking UP. Praise is the cheapest reward
+            # to manufacture (reward.SOSYAL_TAVAN exists for the same reason);
+            # a leverage above 1.0 here would be the harness asking the model
+            # to please the user more. Measured 2026-09-04 on the 7.6 run:
+            # both models sat at 0.17 and the flat 0.5 default target produced
+            # a 3.0× "seek approval" leverage — exactly the wrong lesson.
+            value = min(1.0, value)
+        out[axis] = round(value, 4)
     return out
 
 
@@ -138,7 +155,7 @@ def load(state_dir: Path) -> tuple[Temperament, Temperament, str]:
     try:
         data = json.loads((Path(state_dir) / "mizac.json").read_text("utf-8"))
     except (OSError, ValueError):
-        return Temperament(), Temperament(), ""
+        return Temperament(), default_target(), ""
     baseline = Temperament.from_dict(data.get("taban"))
     target = Temperament.from_dict(data.get("hedef") or data.get("taban"))
     return baseline, target, str(data.get("model_id") or "")

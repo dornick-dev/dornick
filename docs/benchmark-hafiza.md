@@ -123,7 +123,7 @@ ile "yalıtık kayıt kendiliğinden gelmez" kuralı korundu, kapsama bedeli
 
 | Deney | Durum | Ne gerekiyor |
 |---|---|---|
-| Model değişimi sonrası karakter tutarlılığı (Faz 7.6) | **düzenek hazır, ölçülmedi** | `eval/karakter/run.py` — 30 karar, iki model, 3 tekrar, kaldıraçsız kontrol kolu; sahte modelle 33 test geçiyor. Gerçek koşu ≈ 720 çağrı; `--evet` olmadan para harcamaz. |
+| Model değişimi sonrası karakter tutarlılığı (Faz 7.6) | **ölçüldü** (deepseek ↔ Claude Haiku, 720 çağrı) | Kaldıraç modeller arası uyuşmayı 0,61 → 0,71 çıkardı (hedef +0,15'in altında, yönü doğru); kimlik belgesi zaman tutarlılığını +0,095 artırdı (hedef ✓); sosyal eksende yakalanan tasarım hatası düzeltildi. Ayrıntı: `docs/charts/karakter-openrouter.md` ve faz defteri. |
 | 9 görevlik kodlama bench'i, sıcak/soğuk hafızayla | koşulmadı | İki sürümü 30 gün "yaşatıp" 9 görev; gerçek model çağrısı. |
 | Kirlilik deneyi (28.08 C kolu) yeniden | koşulmadı | Aynı rig. |
 | Gece geçişi süresi 50k/200 oturum | ölçülmedi | Sentetik; koşulabilir. |

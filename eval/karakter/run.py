@@ -254,6 +254,19 @@ def parse_decision(text: str, options: tuple[str, str] | list[str]) -> str:
     """
     hits = _KARAR.findall(text or "")
     if not hits:
+        # Lenient fallback: no KARAR line, but the reply names exactly one
+        # of the two options and not the other. Measured on the first real
+        # run: 10% of answers (14% for deepseek) had no KARAR line and every
+        # one of them counted as disagreement, deflating all consistency
+        # numbers. A reply that clearly names one option has decided.
+        # Strict shape: the LAST non-empty line must BE one option (folded),
+        # nothing more. "Sorarım." decides; "Sorarım herhalde." hedges and
+        # stays ambiguous — a decision line is not a paragraph.
+        lines = [ln for ln in (text or "").splitlines() if ln.strip()]
+        last = _norm(lines[-1]) if lines else ""
+        exact = [o for o in options if _norm(o) and _norm(o) == last]
+        if len(exact) == 1:
+            return exact[0]
         raise Ambiguous("KARAR satırı yok")
     resolved: set[str] = set()
     for raw in hits:

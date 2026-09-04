@@ -628,8 +628,12 @@ def _character(config: Config) -> str:
 
     parts: list[str] = []
     try:
-        baseline, target, _model_id = temperament.load(config.state_dir)
-        lines = leverage_lines(temperament.leverage(baseline, target))
+        baseline, target, model_id = temperament.load(config.state_dir)
+        # No measured baseline (a fresh install, or a model never probed)
+        # means no leverage: a correction is a distance between two known
+        # points, and the second point is not known yet.
+        lines = (leverage_lines(temperament.leverage(baseline, target))
+                 if model_id else [])
     except Exception:
         lines = []
     if lines:

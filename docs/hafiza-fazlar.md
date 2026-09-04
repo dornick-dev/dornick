@@ -1057,3 +1057,58 @@ söylediği gibi soğuyor. Bu, hedefin değil veri setinin sınırı; belgelendi
 | holdout `yasak_sizinti` | 12 | 5 | **0** | |
 
 Süreçler-arası determinizm korunuyor; tüm sayılar `docs/charts/yasam-*.json`.
+
+
+---
+
+## Faz 7.6 — karakter tutarlılığı, gerçek modellerle · 2026-09-04
+
+Koşu: `docs/charts/karakter-openrouter.md` — 30 karar, 3 bağlam, 3 tekrar
+(30 gün arayla), 720 çağrı; modeller `deepseek/deepseek-v4-flash-0731`
+(kullanıcının günlük modeli) ve `anthropic/claude-haiku-4.5`, ikisi de
+OpenRouter üzerinden, sıcaklık 0, düşünme kapalı. Ürünün kendi backend'i ve
+promptu.
+
+**Taban mizaçlar gerçekten farklı** (deney anlamlı): yenilik 0.83 / 0.40,
+sonuç 1.0 / 0.80, sebat 0.67 / 0.33, temkin 0.67 / 0.75; sosyal ikisinde 0.17.
+
+| Metrik | deepseek | haiku | ortak | hedef | durum |
+|---|---|---|---|---|---|
+| `tutarlilik_model` (kaldıraç açık) | — | — | **0.711** | ≥ 0.8 | ✗ |
+| `tutarlilik_model_kaldiracsiz` | — | — | 0.611 | rapor | |
+| `kaldirac_farki` | — | — | **+0.10** | ≥ 0.15 | ✗ ama yönü doğru |
+| `tutarlilik_zaman` (belge açık) | 0.667 | 0.856 | 0.761 | ≥ 0.8 | ✗ (haiku ✓) |
+| `tutarlilik_zaman_kimliksiz` | 0.589 | 0.744 | 0.667 | rapor | |
+| `kimlik_farki` | +0.078 | +0.111 | **+0.095** | ≥ 0.05 | ✅ |
+| `tutarlilik_baglam` | 0.778 | 0.800 | 0.789 | ≥ 0.85 | ✗ |
+| `sosyal_ulasilan` | 0.037 | 0.167 | 0.102 | rapor | |
+| `belirsiz_oran` | 0.142 | 0.064 | 0.103 | ≤ 0.05 | ✗ |
+
+**Okuma:**
+
+1. **Kaldıraç iş yapıyor ama yetmiyor.** Kaldıraç açıkken iki model %71,
+   kapalıyken %61 aynı kararı veriyor: +0.10. Yol haritasının eşiği 0.15;
+   "modeller zaten aynı mizaçta" açıklaması taban vektörleriyle çürüyor —
+   mizaçlar farklı, kaldıraç farkı kapatıyor ama tam değil. Eksen tablosu
+   nedenini gösteriyor: yönlendirme satırları kaba. Haiku'nun yenilik ekseni
+   0.40'tan hedefe (0.5) değil 0.67'ye fırladı, sonuç ekseni ters yöne gitti
+   (0.80 → 0.93). Bir sonraki adım: satırların şiddetini kaldıraç
+   büyüklüğüne göre kademelendirmek.
+2. **Kimlik belgesi bir karakter aracı, gösterim aracı değil.** Belge
+   açıkken zaman tutarlılığı +0.095 (hedef ≥ 0.05). Yol haritası 7.8'in
+   sorusuna cevap: belge kalıyor ve iş yapıyor.
+3. **Sosyal eksende bir tasarım hatası yakalandı.** Her iki model onay
+   peşinde koşmuyor (0.17); varsayılan hedef 0.5 olduğu için kaldıraç 3.0×
+   "daha çok onay ara" satırı üretti — tam ters ders. Düzeltildi: varsayılan
+   hedef sosyalde 0.2 (`SOCIAL_TARGET`), sosyal eksende kaldıraç asla 1.0
+   üstüne çıkmıyor (yalakalık yalnız bastırılır), ölçülmemiş modelde hiç
+   kaldıraç satırı yok. Raporun "yalakalık bastırılamıyor" notu bu koşu için
+   yanlış okumaydı: bastırılacak bir şey yoktu.
+4. **Belirsizlik ölçümü aşağı çekiyor.** Cevapların %10'u (deepseek %14)
+   `KARAR:` satırı yazmadı ve hepsi "uyuşmaz" sayıldı; bütün tutarlılık
+   sayıları bu kadar deflasyonlu. Ayrıştırıcıya kesin son-satır yedeği
+   eklendi (ham cevaplar saklanmadığı için bu koşu yeniden ayrıştırılamadı;
+   bir sonraki koşu daha az belirsiz çıkacak).
+5. **Bağlam tutarlılığı 0.79**: kararların beşte biri proje bağlamına göre
+   değişiyor. Kısmen belirsizlik, kısmen gerçek — hangi kararların
+   savrulduğu bir sonraki koşuda karar bazında raporlanmalı.
