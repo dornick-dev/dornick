@@ -374,3 +374,83 @@ def test_curiosity_with_no_relevant_area_hands_back_zeros() -> None:
     assert dist == {"x": 0.0}
     assert curiosity.entropy(dist) == 0.0
     assert curiosity.picks([Area("x", touches=0)]) == []
+
+
+# -- character in the system prompt (7.6) --------------------------------
+
+
+def _built(tmp_path: Path):
+    from dornick import prompt as builder
+    from dornick.config import Config
+    from dornick.tools.base import ToolRegistry
+
+    return builder.build(Config.load(tmp_path), ToolRegistry())
+
+
+def test_an_empty_state_adds_no_character_block(tmp_path: Path) -> None:
+    """No `mizac.json`, no `kimlik.md`, no soul: the identity block stays
+    empty. A missing file must not cost a single token."""
+    from dornick import prompt as builder
+
+    system = _built(tmp_path)
+    assert system.identity == ""
+    assert builder.LEVERAGE_HEADER not in system.rendered()
+    assert builder.IDENTITY_DOC_HEADER not in system.rendered()
+
+
+def test_a_neutral_leverage_renders_no_line(tmp_path: Path) -> None:
+    """Target equal to baseline is leverage 1.0 everywhere — the model
+    already is what the user taught; a line would be noise."""
+    from dornick import prompt as builder
+
+    state = tmp_path / ".dornick"
+    same = Temperament(caution=0.3, social=0.8)
+    temperament.save(state, same, same, "m")
+    assert builder.LEVERAGE_HEADER not in _built(tmp_path).rendered()
+
+
+def test_leverage_renders_as_short_turkish_guidance(tmp_path: Path) -> None:
+    """A cautious target on a bold baseline asks for more caution; a low
+    social target on a flattering baseline asks not to chase approval.
+    Axes inside the neutral band get nothing."""
+    from dornick import prompt as builder
+
+    state = tmp_path / ".dornick"
+    baseline = Temperament(caution=0.3, social=0.8, novelty=0.5)
+    target = Temperament(caution=0.6, social=0.2, novelty=0.52)
+    temperament.save(state, baseline, target, "m")
+
+    system = _built(tmp_path)
+    assert builder.LEVERAGE_HEADER in system.identity
+    assert builder.LEVERAGE_LINES["caution"][1] in system.identity
+    assert builder.LEVERAGE_LINES["social"][0] in system.identity
+    assert builder.LEVERAGE_LINES["novelty"][0] not in system.identity
+    assert builder.LEVERAGE_LINES["novelty"][1] not in system.identity
+    # It rides in the identity block, not the cached core.
+    assert builder.LEVERAGE_HEADER not in system.core
+
+
+def test_the_identity_document_renders_as_its_own_block(tmp_path: Path) -> None:
+    from dornick import prompt as builder
+
+    state = tmp_path / ".dornick"
+    identity.save(state, identity.Identity([("41 işin 33'ünde önce test yazdım.", ["n_1"])]))
+
+    system = _built(tmp_path)
+    assert builder.IDENTITY_DOC_HEADER in system.identity
+    assert "41 işin 33'ünde önce test yazdım. [n_1]" in system.identity
+    assert builder.LEVERAGE_HEADER not in system.identity
+
+
+def test_the_character_block_comes_after_the_soul(tmp_path: Path) -> None:
+    """The persona (or soul) leads; the harness's character follows it."""
+    from dornick import prompt as builder
+
+    state = tmp_path / ".dornick"
+    state.mkdir(parents=True)
+    (state / "persona.md").write_text("Kısa ve teknik konuş.", encoding="utf-8")
+    identity.save(state, identity.Identity([("3 işin 3'ünde sordum.", ["n_9"])]))
+
+    system = _built(tmp_path)
+    assert system.identity.index("Kısa ve teknik konuş.") < system.identity.index(
+        builder.IDENTITY_DOC_HEADER)

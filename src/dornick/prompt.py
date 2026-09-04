@@ -558,7 +558,89 @@ def build(config: Config, registry: ToolRegistry, soul: Any = None) -> SystemPro
     elif persona := _read(config.persona_path):
         identity = persona
 
+    # Character (Phase 7.6): the leverage the harness learned and the
+    # evidenced identity document. Both change between sessions, never
+    # within one, so they ride in the identity block, after the soul.
+    # An empty state dir adds nothing — the join drops empty parts.
+    identity = "\n\n---\n\n".join(p for p in (identity, _character(config)) if p)
+
     return SystemPrompt(core=core, identity=identity)
+
+
+# -- character: leverage lines + identity document ------------------------
+
+# The prompt-side of temperament leverage. `recall/temperament.py` computes
+# `target / baseline` per axis; harness parameters (retry limits, permission
+# thresholds) are the primary lever, and these lines are the request that
+# goes with them. Only an axis whose leverage leaves the neutral band gets a
+# line: a leverage of 1.0 means "this model already is what the user taught",
+# and a line for it would be noise.
+LEVERAGE_BAND = 0.10
+
+# axis -> (line when leverage < 1 - band, line when leverage > 1 + band)
+LEVERAGE_LINES = {
+    "novelty": (
+        "Yeniliği kıs: bildiğin yolu tercih et, keşfi işi bitirdikten sonraya bırak.",
+        "Yeniliğe daha açık ol: bilmediğin dizine, denenmemiş yola daha sık bak.",
+    ),
+    "outcome": (
+        "Sonuç baskısını gevşet: eksik bir şeyi zorla tamamlamaktansa durumu söyle.",
+        "Sonuca daha çok tut: işi bitirmeden durma, ara sonuçla yetinme.",
+    ),
+    "social": (
+        "Onay peşinde koşma: kullanıcı yanılıyorsa söyle, teşekkür için görüş değiştirme.",
+        "Kullanıcının tepkisine daha çok ağırlık ver: itirazını ölç, sözünü kes deme.",
+    ),
+    "persistence": (
+        "Daha erken bırak: ikinci başarısız denemeden sonra kullanıcıya dön.",
+        "Daha sebatlı ol: başarısız denemeden sonra kullanıcıya dönmeden önce bir kez daha dene.",
+    ),
+    "caution": (
+        "Daha az sor: geri alınabilir işleri sormadan yap, yalnız geri alınamayanı sor.",
+        "Daha temkinli ol: değişiklik yapmadan, silmeden, dışarı istek atmadan önce sor.",
+    ),
+}
+
+LEVERAGE_HEADER = "Mizaç düzeltmeleri (ölçüldü, kullanıcının düzeltmeleriyle öğrenildi):"
+IDENTITY_DOC_HEADER = ("Kimlik belgen (her cümle kanıtlı; köşeli parantez içindekiler "
+                       "hafıza kimlikleri — sıfat değil, sayım):")
+
+
+def leverage_lines(leverage: dict[str, float]) -> list[str]:
+    """The Turkish guidance lines for the axes that need correcting."""
+    lines: list[str] = []
+    for axis, (low, high) in LEVERAGE_LINES.items():
+        value = leverage.get(axis, 1.0)
+        if value > 1.0 + LEVERAGE_BAND:
+            lines.append(f"- {high}")
+        elif value < 1.0 - LEVERAGE_BAND:
+            lines.append(f"- {low}")
+    return lines
+
+
+def _character(config: Config) -> str:
+    """Leverage lines and the identity document, from `config.state_dir`.
+
+    Missing files mean neutral leverage and an empty document; both render
+    as nothing. Reading never raises: a corrupt file must not cost a session.
+    """
+    from .recall import identity, temperament
+
+    parts: list[str] = []
+    try:
+        baseline, target, _model_id = temperament.load(config.state_dir)
+        lines = leverage_lines(temperament.leverage(baseline, target))
+    except Exception:
+        lines = []
+    if lines:
+        parts.append(LEVERAGE_HEADER + "\n" + "\n".join(lines))
+    try:
+        document = identity.load(config.state_dir).render().strip()
+    except Exception:
+        document = ""
+    if document:
+        parts.append(IDENTITY_DOC_HEADER + "\n" + document)
+    return "\n\n".join(parts)
 
 
 # Every model below this window counts as "lean". 16k is about the minimum
