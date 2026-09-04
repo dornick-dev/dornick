@@ -509,7 +509,7 @@ def plan_calls(models: int, repeats: int, *, leverage_on: bool,
                decisions: int = TOTAL) -> int:
     """How many model calls the run makes — printed before spending."""
     per_arm = lambda variants, days: decisions * (variants + max(0, days - 1))  # noqa: E731
-    total = decisions                                             # baseline
+    total = decisions * VARIANTS                                  # baseline
     total += per_arm(VARIANTS, repeats)                           # main arm
     total += per_arm(1, repeats)                                  # kimliksiz
     if leverage_on:
@@ -566,14 +566,19 @@ def measure_baseline(model: Any, decisions: list[Decision], root: Path,
     result.arm = "taban"
     system = system_for(config, BASE_DAY)
     result.prompts["taban"] = _prompt_marks(system)
-    by_prompt = {render_message(d, 0): d for d in decisions}
-    probes = [Probe(axis=d.axis, prompt=p, high=d.high) for p, d in by_prompt.items()]
+    # Every context variant, not just the first: six probes per axis moved
+    # a baseline by 0.17 on a single flipped answer and the second real run
+    # re-measured two axes 0.17-0.33 away from the first. Eighteen probes
+    # per axis, on three different framings of each decision, is still a
+    # small sample but three times less jumpy.
+    by_prompt = {render_message(d, v): (d, v) for d in decisions for v in range(VARIANTS)}
+    probes = [Probe(axis=d.axis, prompt=p, high=d.high) for p, (d, _v) in by_prompt.items()]
     answers: dict[Key, Answer] = {}
 
     def answer(prompt: str) -> str:
-        decision = by_prompt[prompt]
-        label = _ask(model, system, decision, 0, 0, result)
-        answers[(decision.id, 0, 0)] = label
+        decision, variant = by_prompt[prompt]
+        label = _ask(model, system, decision, variant, 0, result)
+        answers[(decision.id, variant, 0)] = label
         if label is None:
             raise Ambiguous(decision.id)          # measure() skips it
         return label

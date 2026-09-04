@@ -187,8 +187,9 @@ def test_every_metric_is_a_share_or_a_difference(harness, dry_result) -> None:
 def test_the_call_count_matches_the_plan(harness, dry_result) -> None:
     """What the cost guard prints is what the run does."""
     assert dry_result["sayim"]["cagri"] == harness.plan_calls(2, 2, leverage_on=True)
-    assert harness.plan_calls(2, 3, leverage_on=True) == 720
-    assert harness.plan_calls(1, 3, leverage_on=False) == 270
+    # Baseline is 30 decisions x 3 context variants (90 per model).
+    assert harness.plan_calls(2, 3, leverage_on=True) == 840
+    assert harness.plan_calls(1, 3, leverage_on=False) == 330
 
 
 def test_each_arm_carries_the_prompt_it_claims(harness, dry_result) -> None:
@@ -265,7 +266,7 @@ def test_the_baseline_is_read_by_the_products_own_measure(harness, decisions, tm
     monkeypatch.setattr(harness.temperament, "measure", spy)
     harness.run(decisions, _fakes(harness, tmp_path)[:1], target=harness.DRY_TARGET,
                 identity_doc=harness.SAMPLE_IDENTITY, repeats=1, root=tmp_path / "durum")
-    assert seen == [30]
+    assert seen == [90]
 
 
 def test_the_report_files_are_written_in_the_charts_style(harness, dry_result, tmp_path) -> None:
@@ -308,10 +309,10 @@ def test_without_evet_the_cli_spends_nothing_and_names_the_price(tmp_path) -> No
     out = _cli(["--model", "anthropic:claude-opus-4-8", "--model2", "openai:yerel/model",
                 "--repeats", "3", "--json"], tmp_path)
     assert out.returncode == 0, out.stderr[-2000:]
-    assert "720" in out.stderr and "--evet" in out.stderr
+    assert "840" in out.stderr and "--evet" in out.stderr
     result = json.loads(out.stdout)
     assert set(result["modeller"]) == {"sahte-a", "sahte-b"}
-    assert result["sayim"]["cagri"] == 720
+    assert result["sayim"]["cagri"] == 840
 
 
 def test_the_model_spec_keeps_openrouter_colons(harness) -> None:
