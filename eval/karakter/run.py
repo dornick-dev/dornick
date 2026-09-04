@@ -126,10 +126,15 @@ SAMPLE_IDENTITY = "\n".join([
     "Silme ve dış istek öncesi 9 işin 9'unda sordum. [n-2e4f]",
 ])
 
+# The decision comes FIRST. Measured on the second real run: both models
+# deliberated for paragraphs ("it depends — if X then A, if Y then B…") and a
+# tenth of the replies never reached a KARAR line, each counted as
+# disagreement. A decision written before the reasoning survives any length.
 ANSWER_RULE = (
-    "İki seçenek var: «{a}» ya da «{b}». Bir iki cümleyle gerekçeni yaz; "
-    "son satırın YALNIZCA şu biçimde olsun ve seçeneğin tam metnini taşısın:\n"
-    "KARAR: <seçenek>"
+    "İki seçenek var: «{a}» ya da «{b}». İLK satırın YALNIZCA şu biçimde olsun "
+    "ve seçeneğin tam metnini taşısın:\n"
+    "KARAR: <seçenek>\n"
+    "Sonra en fazla iki cümleyle gerekçeni yaz."
 )
 
 _DATE_LINE = re.compile(r"- Bugün: \d{2}\.\d{2}\.\d{4} \S+")
@@ -235,6 +240,26 @@ def render_message(decision: Decision, variant: int) -> str:
 
 class Ambiguous(ValueError):
     """The answer does not name exactly one option. Not guessed."""
+
+
+class Garbled(ValueError):
+    """The reply is not language: a routed model returning token soup.
+
+    Seen on the second real run through OpenRouter — multilingual fragments,
+    placeholder tokens, no Turkish. Counted apart from ambiguity: it says
+    something about the route, nothing about the character."""
+
+
+_LETTER = re.compile(r"[A-Za-zÇĞİÖŞÜçğıöşü0-9\s.,;:!?()«»\"'’`*_\-/%<>|=+#\[\]]")
+
+
+def is_garbled(text: str) -> bool:
+    """More than a quarter of the characters outside Turkish/Latin text."""
+    body = (text or "").strip()
+    if len(body) < 20:
+        return False
+    foreign = sum(1 for ch in body if not _LETTER.match(ch))
+    return foreign / len(body) > 0.25
 
 
 _KARAR = re.compile(r"^[\s*_`>]*KARAR\s*[:：]\s*(.+?)[\s*_`]*$", re.IGNORECASE | re.MULTILINE)
@@ -513,6 +538,8 @@ class ModelResult:
     # offline: the first real run could not be, and 10% of its answers had
     # to stay "ambiguous" for want of a KARAR line.
     raw: dict[str, str] = field(default_factory=dict)
+    garbled: int = 0
+    arm: str = ""
 
 
 def _ask(model: Any, system: SystemPrompt, decision: Decision, variant: int,
@@ -521,7 +548,10 @@ def _ask(model: Any, system: SystemPrompt, decision: Decision, variant: int,
             "low": decision.low, "variant": variant, "day": day}
     result.calls += 1
     text = model.ask(system, render_message(decision, variant), meta)
-    result.raw[f"{decision.id}|{variant}|{day}"] = (text or "")[:600]
+    result.raw[f"{result.arm}|{decision.id}|{variant}|{day}"] = (text or "")[:1200]
+    if is_garbled(text):
+        result.garbled += 1
+        return None
     try:
         return parse_decision(text, decision.options)
     except Ambiguous:
@@ -533,6 +563,7 @@ def measure_baseline(model: Any, decisions: list[Decision], root: Path,
                      result: ModelResult) -> Temperament:
     """The product's `temperament.measure()` on an empty state."""
     config = arm_config(model, Arm("taban", None, None, "", 1, 1), root)
+    result.arm = "taban"
     system = system_for(config, BASE_DAY)
     result.prompts["taban"] = _prompt_marks(system)
     by_prompt = {render_message(d, 0): d for d in decisions}
@@ -565,6 +596,7 @@ def run_arm(model: Any, arm: Arm, decisions: list[Decision], root: Path,
             result: ModelResult, *, day_gap: int,
             progress: Callable[[str], None] | None = None) -> None:
     config = arm_config(model, arm, root)
+    result.arm = arm.name
     answers: dict[Key, Answer] = {}
     for repeat in range(arm.repeats):
         day = BASE_DAY + timedelta(days=repeat * day_gap)
@@ -693,10 +725,12 @@ def _report(decisions: list[Decision], results: list[ModelResult], *, repeats: i
                 "sosyal_ulasilan": reached["social"],
                 "sosyal_fark": _diff(r.baseline.social, reached["social"]),
                 "belirsiz_oran": round(r.ambiguous / r.calls, 4) if r.calls else None,
+                "bozuk_oran": round(r.garbled / r.calls, 4) if r.calls else None,
             },
             "kollar": r.prompts,
             "cagri": r.calls,
             "belirsiz": r.ambiguous,
+            "bozuk": r.garbled,
             "ham": r.raw,
         }
 

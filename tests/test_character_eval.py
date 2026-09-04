@@ -333,3 +333,17 @@ def test_a_real_model_config_is_cold_and_has_no_fallback(harness, tmp_path) -> N
     local = harness.product_config("openai:yerel", workspace=tmp_path,
                                    base_url="http://localhost:1234/v1")
     assert local.model.base_url == "http://localhost:1234/v1"
+
+
+def test_the_decision_line_is_asked_for_first(harness) -> None:
+    """Deliberation first ran past the end of the reply on a tenth of the
+    real answers; the decision must come before the reasoning."""
+    rule = harness.ANSWER_RULE.format(a="A", b="B")
+    assert rule.index("KARAR") < rule.index("gerekçe")
+
+
+def test_token_soup_is_garbled_not_ambiguous(harness) -> None:
+    soup = "DynamCes Coch活动阐述了심intemplate Elev تح 할-edice 锻炼音乐会 ki酒店的angunan"
+    assert harness.is_garbled(soup)
+    assert not harness.is_garbled("Bu durumda önce testi yazarım.\nKARAR: önce testi yazarım")
+    assert not harness.is_garbled("kısa")

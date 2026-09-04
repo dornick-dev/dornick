@@ -1112,3 +1112,53 @@ sonuç 1.0 / 0.80, sebat 0.67 / 0.33, temkin 0.67 / 0.75; sosyal ikisinde 0.17.
 5. **Bağlam tutarlılığı 0.79**: kararların beşte biri proje bağlamına göre
    değişiyor. Kısmen belirsizlik, kısmen gerçek — hangi kararların
    savrulduğu bir sonraki koşuda karar bazında raporlanmalı.
+
+
+---
+
+## Faz 7.6 ikinci koşu — kademeli kaldıraç · 2026-09-04
+
+Aynı iki model, aynı 720 çağrı, tek fark: kaldıraç satırları üç kademeli
+(`prompt.leverage_tier`). Rapor: `docs/charts/karakter-openrouter2.md`.
+
+| Metrik | 1. koşu | 2. koşu |
+|---|---|---|
+| `tutarlilik_model` | 0.711 | 0.600 |
+| `tutarlilik_model_kaldiracsiz` | 0.611 | 0.633 |
+| `kaldirac_farki` | +0.10 | −0.03 |
+| `tutarlilik_zaman` / kimliksiz | 0.761 / 0.667 | 0.717 / 0.745 |
+| `kimlik_farki` | +0.095 | −0.028 |
+| `tutarlilik_baglam` | 0.789 | 0.661 |
+| `belirsiz_oran` | 0.103 | 0.129 (deepseek 0.203) |
+
+**Dürüst okuma: iki koşu aynı şeyi ölçmedi ve ikisi de gürültünün
+içinde.** Üç sebep, ham cevaplar artık saklandığı için üçü de görüldü:
+
+1. **Taban ölçümü kaymış.** Eksen başına 6 sonda var; tek bir cevap 0.17
+   oynatıyor. deepseek sebat 0.67 → 1.0, temkin 0.67 → 1.0; Haiku yenilik
+   0.40 → 0.60, temkin 0.75 → 0.50. Kaldıraç = hedef / taban olduğu için
+   kaldıraçlar ve kademeler de değişti: Haiku'nun temkin ekseni 1. koşuda
+   "gevşet" satırı alırken 2. koşuda hiç satır almadı ve 0.71'e sürüklendi.
+   1. koşudaki +0.095 "kimlik belgesi" farkı da bu gürültüden büyük değil.
+2. **deepseek'in OpenRouter yolu bozuk cevaplar üretiyor**: çok dilli token
+   çorbası, yer tutucu jetonlar, Türkçe yok. Bunlar "belirsiz" sayılıp
+   uyuşmazlık olarak metriklere girdi. Karakterle ilgisi yok, yolla ilgili.
+3. **Modeller uzun düşünüp KARAR'a gelmeden bitiriyor** ("duruma göre: X ise
+   A, Y ise B…"). İkisi de böyle; deepseek'te beşte bir.
+
+Kademeli satırların işe yarayıp yaramadığı bu aletle **söylenemez**; ölçüm
+yanlışının işareti önce düzeltilmeli. Düzeltmeler (bir sonraki koşu için,
+hepsi testli):
+
+- `KARAR:` satırı cevabın **başında** isteniyor; gerekçe sonra, en fazla iki
+  cümle. Kesilme ve gevezelik artık kararı yutamıyor.
+- Bozuk cevap (`is_garbled`, çeyreğinden fazlası Latin/Türkçe dışı) ayrı
+  sayılıyor (`bozuk_oran`), belirsizle karışmıyor.
+- Ham cevaplar kol adıyla saklanıyor; koşu çevrimdışı yeniden ayrıştırılabilir.
+- Taban ölçümü tekrarlı (aşağıda).
+
+Bir eksen bulgusu yine de duruyor ve aleti düzeltince yeniden ölçülecek:
+Haiku'nun yenilik ekseni 0.60'tan yalnız bir "biraz" dürtüsüyle 0.34'e indi
+(hedef 0.5'i aştı). Tek bir satır, kademesi ne olursa olsun, Haiku'yu
+büyük adımlarla oynatıyor — kademeleme gerekli ama yeterli olmayabilir;
+kaldıraç doygunluğu (LEVERAGE_HIGH/LOW) yeni modelde daha dar olmalı.
