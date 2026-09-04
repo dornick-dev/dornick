@@ -246,6 +246,7 @@ class Tally:
 
     def __init__(self) -> None:
         self.overlap = 0
+        self.reached = 0          # expected records in prime ∪ soul (recall)
         self.prime_size = 0
         self.expected_size = 0
         self.leaks = 0
@@ -258,6 +259,7 @@ class Tally:
         self.fresh_ratios: list[float] = []
         self.question_count = 0
         self.cluster_overlap: dict[str, int] = {}
+        self.cluster_reached: dict[str, int] = {}
         self.cluster_expected: dict[str, int] = {}
         self.cluster_prime: dict[str, int] = {}
         self.cluster_leaks: dict[str, int] = {}
@@ -574,6 +576,17 @@ def _soul_records(soul: Any) -> list[Any]:
     return [*soul.user, *soul.preferences, *soul.lessons, *soul.voice, *soul.procedures]
 
 
+def _soul_resident_slugs(mind: Any, slug_of: dict[str, str]) -> set[str]:
+    """Slugs of the records the soul carries with their full body."""
+    try:
+        soul = mind.soul()
+    except Exception:
+        return set()
+    groups = (getattr(soul, "user", ()), getattr(soul, "preferences", ()),
+              getattr(soul, "lessons", ()), getattr(soul, "voice", ()))
+    return {slug_of.get(m.id, "") for group in groups for m in group} - {""}
+
+
 def _query(mind: Any, event: dict[str, Any], t: Tally, slug_of: dict[str, str],
            id_of: dict[str, str], ses: Session) -> None:
     question = event["icerik"]
@@ -598,11 +611,21 @@ def _query(mind: Any, event: dict[str, Any], t: Tally, slug_of: dict[str, str],
     ses.log.note("prime", ids=[h.item.id for h in hits], query=question)
 
     if cluster in FAIR_CLUSTERS:
+        # A record the soul already put into the prompt with its full body
+        # (user / preference / lesson / voice — the same groups the product's
+        # `_soul_resident` excludes from priming) IS in the model's context;
+        # counting it as "not reached" measured the prime, not the memory.
+        # Recall counts prime ∪ soul; precision and prime_token stay on the
+        # prime alone, and the soul's cost is `ruh_token`.
+        resident = _soul_resident_slugs(mind, slug_of)
         overlap = len(prime_slugs & expected)
+        reached = len((prime_slugs | resident) & expected)
         t.overlap += overlap
+        t.reached += reached
         t.prime_size += len(prime_slugs)
         t.expected_size += len(expected)
         t.cluster_overlap[cluster] = t.cluster_overlap.get(cluster, 0) + overlap
+        t.cluster_reached[cluster] = t.cluster_reached.get(cluster, 0) + reached
         t.cluster_prime[cluster] = t.cluster_prime.get(cluster, 0) + len(prime_slugs)
         t.cluster_expected[cluster] = t.cluster_expected.get(cluster, 0) + len(expected)
 
@@ -708,7 +731,7 @@ def _report(t: Tally, mind: Any) -> dict[str, Any]:
     sleep_present = _module_exists("uyku")
     metrics: dict[str, float | None] = {
         "prime_precision": ratio(t.overlap, t.prime_size),
-        "prime_recall": ratio(t.overlap, t.expected_size),
+        "prime_recall": ratio(t.reached, t.expected_size),
         "yasak_sizinti": float(t.leaks),
         "tuzak_sessizlik": ratio(t.trap_silent, t.trap_total),
         "bayat_ruh": mean(t.stale_daily),
@@ -743,7 +766,7 @@ def _report(t: Tally, mind: Any) -> dict[str, Any]:
     }
     cluster_detail = {
         k: {"precision": ratio(t.cluster_overlap.get(k, 0), t.cluster_prime.get(k, 0)),
-            "recall": ratio(t.cluster_overlap.get(k, 0), t.cluster_expected.get(k, 0)),
+            "recall": ratio(t.cluster_reached.get(k, 0), t.cluster_expected.get(k, 0)),
             "sizinti": float(t.cluster_leaks.get(k, 0))}
         for k in FAIR_CLUSTERS
     }

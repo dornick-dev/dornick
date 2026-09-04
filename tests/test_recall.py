@@ -224,3 +224,52 @@ def test_words_glued_to_numbers_survive() -> None:
 
     assert "port" in _without_numbers("port 502 açık")
     assert "v1" in _without_numbers("api v1 uçları")
+
+
+# -- the literal channel weighs words by rarity -------------------------
+
+
+def _filler(store: RecallStore, n: int = 12) -> None:
+    for i in range(n):
+        store.remember(f"Vardiya {i} notu: sahada kontrol yapılıyor, rapor yazılıyor.",
+                       kind="fact")
+
+
+def test_a_rare_word_outweighs_a_common_one(store: RecallStore) -> None:
+    """The record matching four rare words must clearly beat the record that
+    shares one word found in every note. Measured before the change: 0.50
+    against 0.45 — no separation, five near-ties in every prime."""
+    _filler(store)
+    wanted = store.remember("Su tankının boya kodu RAL yedi bin otuz beş.", kind="fact")
+    noise = store.remember("Kırmızı defterin arkasında modem PIN kodu yazıyor.", kind="fact")
+    scores = {i: s for i, s, _k in store._seed("Su tankının boya kodu neydi?", 10)}
+    assert scores[wanted.id] > scores[noise.id] * 2
+
+
+def test_a_question_word_unknown_to_memory_costs_nothing(store: RecallStore) -> None:
+    """"neydi" is in no record: it must not lower the confidence of the record
+    that matches everything else."""
+    _filler(store)
+    node = store.remember("Su tankının boya kodu RAL yedi bin otuz beş.", kind="fact")
+    with_q = {i: s for i, s, _k in store._seed("Su tankının boya kodu neydi?", 5)}
+    without = {i: s for i, s, _k in store._seed("Su tankının boya kodu", 5)}
+    assert with_q[node.id] == pytest.approx(without[node.id], abs=0.02)
+
+
+def test_a_topic_memory_has_never_seen_is_silence(store: RecallStore) -> None:
+    """All stems unknown → the literal channel says nothing, and the prime
+    stays empty instead of dragging in whatever shares a suffix."""
+    _filler(store)
+    lit = store._seed_literal("Geçen yılki vergi iadesi ne kadardı?", 5)
+    assert lit == []
+
+
+def test_idf_is_high_for_rare_and_low_for_common(store: RecallStore) -> None:
+    _filler(store)
+    store.remember("Zeplin hangarı kuzey sahada.", kind="fact")
+    weights = store._idf(["zepli", "vardi", "yokbu"])
+    assert weights["zepli"] > weights["vardi"] * 2
+    # A stem no record contains is the rarest of all: it keeps its full
+    # weight in the denominator, so a question about an unknown topic scores
+    # low everywhere instead of collapsing onto its one common word.
+    assert weights["yokbu"] >= weights["zepli"]

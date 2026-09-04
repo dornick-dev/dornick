@@ -29,6 +29,7 @@ from .backends import Backend, Callbacks, TurnResult
 from .config import Config
 from .context import ContextPolicy, Prepared, cache_report
 from .permissions import PermissionEngine
+from .recall import daemon as sleep_daemon
 from .session import PendingToolUse, Session, cancelled_result
 from .tools import ToolContext, ToolRegistry, build_registry, execute
 from .tools.base import JobFailed, ToolSpec
@@ -102,7 +103,22 @@ ENCODE_MIN_CHARS = 25
 # relevance filter is no longer the threshold: the direct-match requirement
 # + the letter grounding (_grounded) carry it; the floor only cuts the noise
 # floor.
-RECALL_PRIME_FLOOR = 0.12
+# Below this score nothing is injected on its own (the young-memory
+# exception aside). Raised 0.12 → 0.30 with the IDF-weighted literal
+# channel: scores became absolute rather than saturated, so the floor can do
+# real work. Measured on the life bench (2026-09-04): near-misses sit at
+# p75 0.19 / p90 0.27, expected records at p20 0.26 / p50 0.42. 0.30 was
+# tried first and cut a third of the expected records; the sweep 0.20 /
+# 0.25 / 0.30 gave trap silence 0.825 / 0.925 / 0.975 against recall
+# 0.77 / 0.74 / 0.68 — 0.25 is the first value that clears the 0.9 silence
+# target and keeps most of the recall.
+RECALL_PRIME_FLOOR = 0.25
+# Tail cut relative to the best record: a record scoring below this share
+# of the top score is not shown even if it clears the floor. With the
+# IDF-weighted literal channel the expected record sits well above the
+# near-misses; the tail is where precision was lost (0.27 on the life
+# bench with five near-ties per question).
+RECALL_PRIME_TAIL = 0.6
 
 # Number formats stripped from the priming query: IP address, port, register
 # address, long measurement values.
@@ -1176,6 +1192,10 @@ class Agent:
         understandable error.
         """
         self._arm()
+        # Orexin: the user is here. Wakes a running night at once (recall/daemon.py).
+        # A helper's turn (depth > 0) is automation, and automation does not wake it.
+        if not self.depth:
+            sleep_daemon.user_active()
         if image:
             self.session.add_user_blocks(_with_image(user_input, image))
         else:
@@ -3269,6 +3289,10 @@ class Agent:
     def _observe(self, event: str, data: dict[str, Any]) -> None:
         self.session.log.note(event, **data)
         if event == "tool_start":
+            # A tool call in the user's own turn keeps orexin up for as long
+            # as the turn lasts; a helper's tool call is automation.
+            if not self.depth:
+                sleep_daemon.user_active()
             # If the model wrote to its own ledger the end-of-turn nudge is
             # needless.
             if data.get("tool") == "mind_memory":
@@ -3393,13 +3417,25 @@ def select_prime(mind: Any, user_input: str, *, limit: int = RECALL_PRIME_LIMIT,
         and getattr(hit.item, "hot", True)
         and _passes(hit.item)
     ]
-    # A cold record cannot enter priming. Its score is already low through
-    # the activation multiplier but the rule must be explicit: the
-    # young-memory exception (below) could pass it as the unconditional
-    # top.
+    # A cold record cannot enter priming, not even on an exact cue. The K
+    # cluster of the life bench pins this: a buried record asked about by
+    # name must NOT auto-inject (yasak) and MUST be found by open search
+    # (acik). "Wake a cold record on a two-word cue" was tried (2026-09-04):
+    # it fixed prime recall under a tight hot set but leaked all ten K
+    # questions. The cost lives in COLD_THRESHOLD instead (weave.py).
     if not passed:
         return []
     top = max(passed, key=lambda h: h.score)
+    # A YOUNG mind (under thirty records) gets no floor and no tail cut: with
+    # two records every stem is equally rare, coverage ratios are small, and
+    # there is nothing to protect the context from yet. The floor is for a
+    # memory big enough to have near-misses.
+    try:
+        young = mind.store.count() < 30
+    except Exception:
+        young = True
+    if young:
+        return passed[:limit]
     if top.score < RECALL_PRIME_FLOOR:
         # The unconditional-top exception only in a YOUNG mind. The reason
         # the exception was written was bm25 collapsing in a young corpus
@@ -3409,13 +3445,9 @@ def select_prime(mind: Any, user_input: str, *, limit: int = RECALL_PRIME_LIMIT,
         # EVERY turn — the root cause found by the external review: the
         # +9% prompt tokens in the unrelated 9-task sequence came from
         # here.
-        try:
-            young = mind.store.count() < 30
-        except Exception:
-            young = True
-        if not young:
-            return []
-    return [h for h in passed if h is top or h.score >= RECALL_PRIME_FLOOR][:limit]
+        return []
+    cut = max(RECALL_PRIME_FLOOR, top.score * RECALL_PRIME_TAIL)
+    return [h for h in passed if h is top or h.score >= cut][:limit]
 
 
 def prime_note(hits: list[Any]) -> str:

@@ -33,7 +33,7 @@ Senaryo **yasam-holdout-30** · 34 soru · 47 düğüm · kaynak `hafiza-eski` �
 | `atalet` | ↓ | — | — | **yok** | <= 0 |
 | `buyume_p95` | ↓ | — | — | **yok** | <= 1.5 |
 | `buyume_ram` | ↓ | — | — | **yok** | <= 2 |
-| `gecikme_p95` | ↓ | — | — | **11.37** | <= 20 |
+| `gecikme_p95` | ↓ | — | — | **11.75** | <= 20 |
 
 ## Küme kırılımı (prime precision / recall)
 
@@ -49,7 +49,7 @@ Senaryo **yasam-holdout-30** · 34 soru · 47 düğüm · kaynak `hafiza-eski` �
 
 ## Ölçekte gecikme
 
-50000 düğüm · p50 **8.08 ms** · p95 **11.37 ms** (bütçe 20 ms)
+50000 düğüm · p50 **8.49 ms** · p95 **11.75 ms** (bütçe 20 ms)
 
 ---
 

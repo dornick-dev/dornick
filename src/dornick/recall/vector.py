@@ -69,6 +69,8 @@ STOPWORDS = frozenset(
     """
     ve veya ile için gibi kadar daha çok az bir bu şu o ne nasıl neden
     da de ki mi mı mu mü ben sen biz siz onlar var yok olan olarak
+    hangi hangisi neydi nerede nereye nereden kaçta kaç kim kimin nedir neler
+    mıydı miydi muydu müydü
     the a an and or of to in on for with is are was were be been it this that
     """.split()
 )

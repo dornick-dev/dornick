@@ -121,13 +121,17 @@ def test_a_cold_record_is_not_in_the_signature_index(store, clock) -> None:
 
 
 def test_a_cold_record_cannot_enter_the_prime(store, tmp_path, clock) -> None:
-    """Even the young-memory exception must not push a cold node in."""
+    """Not even when the user names it exactly, and not through the
+    young-memory exception. The K cluster of the life bench pins the same
+    rule: a buried record must not auto-inject, and must be found by open
+    search. (A "wakes to an exact cue" rule was tried and leaked all of K.)"""
     from dornick.loop import select_prime
     from dornick.mind import open_mind
 
     node = store.remember("Sac büküm kalıpları raf altında duruyor.", kind="fact")
     clock.advance(days=200)
     _cool(store, clock)
+    assert store.peek(node.id).hot is False
 
     mind = open_mind(store.path.parent, tmp_path / "sessions", "t", clock=clock)
     try:

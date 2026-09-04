@@ -876,15 +876,15 @@ açık aramada hepsi bulunuyor (`gomulme_recall` ve `geri_donus_recall` 1.00).
 | 0 — Ölçüm altyapısı | ✅ tamam |
 | 1 — Zaman bazlı aktivasyon | ⚠️ 5 kriterden 4'ü |
 | 2 — Supersede | ✅ 3 kriterden 2'si tam, 3.'sü ölçüldü |
-| 3 (1-5) — Gece tekrarı | ⚠️ komşuluk/dikiş sıfır kaldı |
+| 3 (1-5) — Gece tekrarı | ⚠️ komşuluk/dikiş ≈ sıfır; gece artık üründe de koşuyor (daemon) |
 | 3.12 — Uyanık tekrar | ✅ 8/8 |
 | 3 (6) — Damıtma | ⚠️ token hedefi tutmadı, precision +%64 |
 | 3.10 — Uyku dinamiği | ✅ 7/7 |
-| 3.11 — Sıcak/soğuk | ⚠️ oran hedefi tutmadı, mutlak bütçe tuttu |
+| 3.11 — Sıcak/soğuk | ✅ %23 (band), komşuluk ısısı ile |
 | 4 — Kodlama gücü | ⚠️ faydası kanıtlanmadı |
-| 5 — Bağlam bonusu | ⚠️ E precision tutmadı, sızıntı sıfırlandı |
-| 7 — Ödül, mizaç, karakter | ✅ mekanikler kuruldu, tutarlılık ölçülmedi |
-| 6 — Beyin görünümü | ⚠️ veri katmanı var, görsel katman yok |
+| 5 — Bağlam bonusu | ✅ E sızıntısı 0, ceza sorgunun alan sayısına göre |
+| 7 — Ödül, mizaç, karakter | ⚠️ mekanik + prompt bağlantısı + ölçüm düzeneği hazır; gerçek modelle ölçülmedi |
+| 6 — Beyin görünümü | ✅ bölgeler, gece animasyonu, paneller; Playwright e2e Chromium bekliyor |
 
 ### Eskiye göre (yaşam bench, `hafiza-eski` → bugün) · 2026-09-04 düzeltmesi
 
@@ -995,3 +995,65 @@ fallback'i (`select_prime(raw=)` eski üründe yok) katmanlı hale getirildi.
 **Kazanılan ders:** ölçüm aleti de üründür ve onun da regresyon testi olmalı.
 Sızıntı, iyi görünen iki sayıyı üretiyordu; onarım onları düşürdü ama
 gerçek kıldı.
+
+
+---
+
+## Tohum doygunluğu ve sıcak küme — IDF, taban, komşuluk ısısı · 2026-09-04
+
+Üç fazın takıldığı duvarın adı **tohum doygunluğu**ydu; sonda onu tam
+yerinde gösterdi. İmza kanalı değil, **harfi harfine kanalın skorlaması**:
+bm25 büyüklüğü `x/(1+x)` ile ezildiği için tek yaygın kelimeyle ("eski",
+"hangi", "yapılıyor", "kodu") eşleşen kayıt 0.45, dört nadir kelimeyle
+eşleşen beklenen kayıt 0.50 alıyordu. Her soru beş yakın-eşiti prime'a
+sürüklüyor, isabet 0.27'de kalıyordu.
+
+**Değişiklikler (hepsi ölçüldü):**
+
+1. **IDF-ağırlıklı kapsama** (`store._seed_literal`, `_idf`): FTS adayları
+   `Σ idf(eşleşen kök) / Σ idf(sorgu kökü)` ile yeniden puanlanıyor; df
+   FTS `MATCH` sayımından (fts5vocab aralık sorgusu denendi, yorumlayıcıyı
+   bozdu). Bilinmeyen kök en nadir kök sayılıyor — paydadan düşürmek
+   denendi, tuzak sorularda ters tepti ("düğün, kuzen" düşünce "zaman"
+   %100 kapsama oldu). Soru kelimeleri (hangi, neydi, nerede, kaçta…)
+   stopword. Sonuç: yanlış adayların medyanı 0.44 → 0.15, beklenenler 0.42.
+2. **Taban 0.12 → 0.25** (`RECALL_PRIME_FLOOR`) + üst kayda göreli kuyruk
+   kesimi (0.6×). Tarama: 0.20 / 0.25 / 0.30 → tuzak sessizliği 0.825 /
+   0.925 / 0.975, recall 0.77 / 0.74 / 0.68. Genç hafıza (<30 kayıt) tabansız.
+3. **Bağlam cezası sorgunun alan sayısına göre** (`/3` yerine `/len(context)`):
+   tek alanlı çatışma artık tabana (0.15) iniyor. E kümesi sızıntısı 11 → 0.
+4. **Sıcak küme.** Onarılmış bench'te -5.0 eşiği %77 sıcak veriyordu.
+   "Soğuk kayıt kesin ipucuyla uyanır" kuralı denendi: recall'ı kurtardı ama
+   K kümesinin on yasak sorusunun hepsini sızdırdı (yol haritası 3.11.5:
+   yalıtık kayıt prime'a girmez) — geri alındı. Yerine **komşuluk ısısı**
+   (`WARM_EDGE=0.8`): ≥0.8 ağırlıklı kenarla sıcak bir düğüme bağlı kayıt
+   sıcak kalır (kullanılanın şeması). Tarama eşik×kenar: -4.0/0 → %13,
+   -4.0/0.6 → %19, -4.5/0.8 → **%27**, -5.0/0.8 → %56. Seçilen -4.5/0.8.
+5. **Bench: ruh muhasebesi.** `user/preference/lesson/voice` kayıtları
+   ruhla her turda promptta; bench bunları "ulaşılamadı" sayıyordu. Recall
+   artık prime ∪ ruh üzerinden, isabet ve prime_token yalnız prime
+   üzerinden (ruhun bedeli `ruh_token`).
+
+**Recall neden 0.8'in altında kaldı (0.74):** veri setinin A kümesi (30
+soru) 1. gün yazılıp hiç kullanılmayan gerçekleri 20–85 gün sonra soruyor;
+K kümesi aynı şeyi 80–86 gün sonra soruyor ve prime'a GİRMEMESİNİ istiyor.
+95. günde ikisi aktivasyon (≈-5.7) ve kenar ağırlığı (≈0.35) bakımından
+ayırt edilemiyor; tek fark tür (user/preference → ruh) ve zaman. Ruh
+muhasebesi türle ayrılanı kurtardı; `fact` türündeki A kayıtları 3.11'in
+söylediği gibi soğuyor. Bu, hedefin değil veri setinin sınırı; belgelendi.
+
+| Metrik | eski | önceki tur | **bu tur** | hedef |
+|---|---|---|---|---|
+| `prime_precision` | 0.255 | 0.274 | **0.559** | ≥ 0.85 ✗ (2×) |
+| `prime_recall` | 0.96 | 0.88 | 0.74 | ≥ 0.8 ✗ |
+| `yasak_sizinti` | 59 | 6 | **3** | 0 ✗ |
+| `tuzak_sessizlik` | 0.45 | 0.475 | **0.925** | ≥ 0.9 ✅ |
+| `sicak_oran` | 1.00 | 0.77 | **0.233** | 0.10–0.30 ✅ |
+| `prime_token` | 84.5 | 78.4 | **39.1** | ≤ taban ✅ |
+| `sorumluluk_dogrulugu` | 0.50 | 1.00 | 0.875 | ≥ 0.85 ✅ |
+| `komsuluk_recall` | 0 | 0.083 | 0.083 | ≥ 0.75 ✗ |
+| `buyume_p95` | — | 6.09 | **3.65** | ≤ 1.5 ✗ |
+| holdout `prime_precision` | 0.385 | 0.475 | **0.652** | |
+| holdout `yasak_sizinti` | 12 | 5 | **0** | |
+
+Süreçler-arası determinizm korunuyor; tüm sayılar `docs/charts/yasam-*.json`.

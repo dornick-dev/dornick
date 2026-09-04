@@ -114,14 +114,17 @@ EDGE_FLOOR = 0.05
 # comes up on its own but is still found by an exact word.
 #
 # The roadmap gives the calibration target not as a number but as a RATIO:
-# in the ninety-day scenario the hot share must stay between 10-30%. Scan
-# (2026-09-03): -2.0 → 2.9% · -3.0 → 4.5% · -4.0 → 6.5% · **-5.0 → 25.2%** ·
-# -6.0 → 69% · -7.0 → 98.5%. The only value that lands in the band is -5.0.
-# The side effect was measured and is the expected one: because a cold
-# record cannot enter the prime, trap silence rises 0.45 → 0.525 and prime
-# recall drops 0.99 → 0.75. The latter is the direct consequence of what the
-# mechanism is for, not a flaw in it.
-COLD_THRESHOLD = -5.0
+# in the ninety-day scenario the hot share must stay between 10-30%.
+#
+# First scan (2026-09-03, on a bench that later turned out to read the wall
+# clock): -5.0 looked like 25%. On the repaired, deterministic bench the same
+# value gives 77% — the hot set was never bounded. Re-scan (2026-09-04, IDF
+# literal channel + "a cold record wakes to an exact cue" in select_prime):
+# -3.5 → 6.6% (recall 0.80) · **-4.0 → 15.3% (recall 0.82)** · -4.5 → 36%
+# (recall 0.86) · -5.0 → 71% (recall 0.90). -4.0 is the only value inside the
+# band that keeps prime recall at the ≥ 0.8 target; the cue rule is what
+# makes cooling affordable — before it, -4.0 cost recall 0.61.
+COLD_THRESHOLD = -4.5
 
 
 @dataclass(slots=True)

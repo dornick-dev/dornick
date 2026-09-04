@@ -23,6 +23,7 @@ wanted: what is hot stays in RAM, what cools goes to disk, nothing is deleted.
 from __future__ import annotations
 
 import json
+import math
 import re
 import sqlite3
 import threading
@@ -88,6 +89,14 @@ CONTEXT_PENALTY = 1.0
 CONTEXT_FLOOR = 0.15
 
 HOP_DECAY = 0.45
+# How many FTS candidates the literal channel re-scores by IDF coverage.
+# bm25 order is only a coarse net here; the real ranking is the coverage.
+LITERAL_POOL = 40
+# Minimum edge weight over which warmth spreads one hop (update_heat). 0 = off.
+# Calibration: docs/hafiza-fazlar.md "sıcak küme".
+WARM_EDGE = 0.8
+# Document-frequency counting stops here: beyond it a stem is simply common.
+DF_CAP = 500
 MIN_ACTIVATION = 0.02
 
 _WORD = re.compile(r"\w+", re.UNICODE)
@@ -267,6 +276,9 @@ class RecallStore:
         # say) should not pay for it. The process that opens a session can
         # pull it into RAM early in the background with `warm()`.
         self._index: vector.Index | None = None
+        # Stem -> document frequency, see `_idf`.
+        self._df_cache: dict[str, int] = {}
+        self._df_live = 0
         self._index_lock = threading.Lock()
 
     def _now(self) -> str:
@@ -779,6 +791,9 @@ class RecallStore:
                 " superseded_by FROM node WHERE deleted=0").fetchall()
         warming: list[str] = []
         cooling: list[str] = []
+        level: dict[str, float] = {}
+        own: dict[str, bool] = {}
+        aged_ids: set[str] = set()
         for row in rows:
             history = activation.parse_use_log(
                 row["use_log"], created=row["created"],
@@ -792,7 +807,30 @@ class RecallStore:
             aged = distilled and history and (
                 now - max(k.t for k in history
                           if k.label == activation.DISTILLED)).days >= distilled_days
-            hot = bool((fresh or b >= threshold) and not aged)
+            level[row["id"]] = b
+            own[row["id"]] = bool((fresh or b >= threshold) and not aged)
+            aged_ids.add(row["id"]) if aged else None
+        # Warmth spreads one hop over strong edges: a record tied to something
+        # in use is part of the schema in use, not an isolated trace. The hot
+        # set is the associative NEIGHBOURHOOD of what is used — that is what
+        # the night's schema refresh was reaching for, and what keeps a
+        # user's stack/preference facts warm while an isolated note (the
+        # bench's K cluster) still cools. Off when WARM_EDGE is 0.
+        hot_by_id = dict(own)
+        if WARM_EDGE > 0 and any(own.values()):
+            core = [i for i, h in own.items() if h]
+            with self._lock:
+                for chunk_start in range(0, len(core), 400):
+                    chunk = core[chunk_start:chunk_start + 400]
+                    marks = ",".join("?" * len(chunk))
+                    for (other,) in self._db.execute(
+                            f"SELECT dst FROM link WHERE src IN ({marks}) AND weight >= ?"
+                            f" UNION SELECT src FROM link WHERE dst IN ({marks}) AND weight >= ?",
+                            (*chunk, WARM_EDGE, *chunk, WARM_EDGE)):
+                        if other in hot_by_id and other not in aged_ids:
+                            hot_by_id[other] = True
+        for row in rows:
+            hot = hot_by_id[row["id"]]
             if hot and not row["hot"]:
                 warming.append(row["id"])
             elif not hot and row["hot"]:
@@ -1330,9 +1368,16 @@ class RecallStore:
                          if key in stored and stored[key] == value)
             conflicting = sum(1 for key, value in context.items()
                               if key in stored and stored[key] != value)
+            # Scaled by the fields the QUERY context carries, not a fixed
+            # three: a session that knows only its project must be able to
+            # apply the whole penalty on a project conflict. With "/3" a
+            # single-field conflict kept two thirds of its score, and the
+            # kobyte record out-ranked the koru1000 one on a two-word match
+            # (E cluster: 11 forbidden leaks, precision 0.22).
+            fields = max(1, len(context))
             if shared:
                 scores[row["id"]] = round(
-                    min(1.0, scores[row["id"]] * (1 + CONTEXT_BONUS * shared / 3)), 4)
+                    min(1.0, scores[row["id"]] * (1 + CONTEXT_BONUS * shared / fields)), 4)
             elif conflicting:
                 # A record carrying a DIFFERENT value in the same field:
                 # kobyte's report while in the koru1000 session. Not the
@@ -1341,44 +1386,109 @@ class RecallStore:
                 # just harder to get ahead.
                 scores[row["id"]] = round(
                     scores[row["id"]]
-                    * max(CONTEXT_FLOOR, 1 - CONTEXT_PENALTY * conflicting / 3), 4)
+                    * max(CONTEXT_FLOOR, 1 - CONTEXT_PENALTY * conflicting / fields), 4)
         return scores
 
     def _seed_literal(self, query: str, limit: int) -> list[tuple[str, float, str]]:
-        """Exact contact through FTS. No scan: the index goes from term to record."""
+        """Exact contact through FTS. No scan: the index goes from term to record.
+
+        Two stages. FTS narrows the field (any query stem, bm25 order); the
+        candidates are then RE-SCORED by IDF-weighted coverage:
+
+            score = Σ idf(stem matched) / Σ idf(stem in query)
+
+        The previous score was bm25 squashed with x/(1+x). Measured on the
+        life bench (2026-09-04): a record matching ONE common word ("eski",
+        "hangi", "yapılıyor", "kodu") scored 0.45 and the expected record
+        matching four rare words scored 0.50 — no separation, so every
+        question dragged five near-ties into the prime and precision sat at
+        0.27. That is the "seed saturation" the roadmap named. Coverage
+        weighted by rarity gives the four-word match 0.76 and the one-word
+        match 0.20 on the same question.
+
+        Question words ("neydi", "hangi", "nerede") are function words and
+        never reach the stems (vector.STOPWORDS). A content word no record
+        contains stays in the denominator at full rarity weight: a query
+        about a topic memory has never seen scores low on every record, and
+        silence is the right answer.
+        """
         expression = _match_expression(query)
         if not expression:
             return []
+        stems = _query_prefixes(query)
+        weights = self._idf(stems)
+        total = sum(weights.values())
+        if total <= 0.0:
+            return []
         with self._lock:
             rows = self._db.execute(
-                "SELECT n.id, n.kind, n.uses, n.created, n.last_used,"
-                " n.use_log, bm25(node_fts) AS rank"
+                "SELECT n.id, n.kind, n.title, n.body, n.tags, n.uses, n.created,"
+                " n.last_used, n.use_log, bm25(node_fts) AS rank"
                 " FROM node_fts JOIN node n ON n.rowid = node_fts.rowid"
                 " WHERE node_fts MATCH ? AND n.deleted=0"
                 + self._history_filter("n.")
                 + " ORDER BY rank LIMIT ?",
-                (expression, limit),
+                (expression, max(LITERAL_POOL, limit * 4)),
             ).fetchall()
 
         out: list[tuple[str, float, str]] = []
         for row in rows:
-            # bm25 is negative; -rank = match strength (bigger = stronger).
-            # MAGNITUDE instead of RANK: squash into 0..1 with
-            # strength/(1+strength). A weak or accidental match (such as a
-            # record an empty query grazes through prefix expansion) gets
-            # low confidence; a strong match approaches 1. The old
-            # `1/(1+position)` always gave the top entry 1.0 — whatever the
-            # match strength — and top1 could not tell empty from memory.
-            strength = max(0.0, -float(row["rank"]))
-            conf = strength / (1.0 + strength)
-            # A lively trace wakes more easily. The old version was
-            # `min(0.15, 0.03*uses)`: a familiarity share that did not know
-            # time, saturated and only ever ADDED. The activation multiplier
-            # replaced it — even the most forgotten record keeps half its
-            # score (see activation.SEED_FLOOR), so it falls behind but does
-            # not drop out of the search.
+            words = _WORD.findall(f"{row['title']} {row['body']} {row['tags']}".casefold())
+            covered = sum(w for stem, w in weights.items()
+                          if any(word.startswith(stem) for word in words))
+            coverage = covered / total
+            if coverage <= 0.0:
+                continue
+            # A lively trace wakes more easily; even the most forgotten record
+            # keeps half its score (activation.SEED_FLOOR) so it falls behind
+            # but does not drop out of the search.
             factor = activation.seed_factor(self._base_level(row))
-            out.append((row["id"], round(min(1.0, conf * factor), 4), row["kind"]))
+            out.append((row["id"], round(min(1.0, coverage * factor), 4), row["kind"]))
+        out.sort(key=lambda t: -t[1])
+        return out[:limit]
+
+    def _idf(self, stems: Sequence[str]) -> dict[str, float]:
+        """Rarity weight of each stem: ln(1 + N / df) over the live records.
+
+        Document frequency is a prefix MATCH count on the FTS index — the
+        same prefix semantics the seed expression uses, and an index walk,
+        not a scan. (An `fts5vocab` range query was tried first and corrupted
+        the interpreter under load; the MATCH path is the well-trodden one.)
+        A stem no record contains is the RAREST stem of all, and it counts
+        fully — dropping it from the denominator was tried first and it
+        backfired on trap questions: "Kuzenimin düğünü ne zamandı?" lost
+        "düğün" and "kuzen" as unknown, "zaman" alone became 100% coverage,
+        and a procedure about "zamanlanmış görev" primed at 0.55. The user
+        asked about a wedding; memory holding nothing about weddings is the
+        evidence, not noise.
+        """
+        if not stems:
+            return {}
+        with self._lock:
+            live = self._db.execute(
+                "SELECT count(*) FROM node WHERE deleted=0").fetchone()[0]
+            # The count is CAPPED and CACHED so search cost does not grow
+            # with memory: counting every posting of a word that is in three
+            # thousand records made recall scale with the archive again (the
+            # P-set growth test caught it). Past DF_CAP a stem is "common"
+            # and its exact count changes the weight by nothing that matters;
+            # the cache is refreshed when the store has grown by a tenth.
+            if live > self._df_live * 1.1 or live < self._df_live:
+                self._df_cache.clear()
+                self._df_live = live
+            out: dict[str, float] = {}
+            for stem in stems:
+                term = stem.replace('"', "")
+                if not term:
+                    continue
+                df = self._df_cache.get(stem)
+                if df is None:
+                    df = self._db.execute(
+                        "SELECT count(*) FROM (SELECT rowid FROM node_fts"
+                        " WHERE node_fts MATCH ? LIMIT ?)",
+                        (f'"{term}"*', DF_CAP)).fetchone()[0]
+                    self._df_cache[stem] = df
+                out[stem] = math.log(1.0 + live / max(1, df))
         return out
 
     def _seed_signature(self, query: str, limit: int) -> list[tuple[str, float]]:
@@ -1456,6 +1566,13 @@ def _match_expression(query: str) -> str:
     # Asking for the same stem twice does not break bm25 but bloats the
     # expression.
     return " OR ".join(dict.fromkeys(parts))
+
+
+def _query_prefixes(query: str) -> list[str]:
+    """The stems `_match_expression` searches for, as plain prefixes."""
+    terms = [t for t in (m.group(0) for m in _WORD.finditer((query or "").casefold()))
+             if len(t) > 1 and t not in vector.STOPWORDS]
+    return list(dict.fromkeys(t[:STEM_CHARS] for t in terms))
 
 
 def _parse_context(raw) -> dict:

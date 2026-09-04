@@ -1,13 +1,13 @@
 {
  "metrikler": {
-  "prime_precision": 0.475,
-  "prime_recall": 0.95,
-  "yasak_sizinti": 5.0,
+  "prime_precision": 0.6522,
+  "prime_recall": 0.8,
+  "yasak_sizinti": 0.0,
   "tuzak_sessizlik": 0.75,
   "bayat_ruh": 0.0,
   "taze_ruh": 1.0,
   "ruh_token": 113.7833,
-  "prime_token": 50.4118,
+  "prime_token": 34.4559,
   "geri_donus_recall": 1.0,
   "komsuluk_recall": null,
   "sorumluluk_dogrulugu": null,
@@ -16,12 +16,12 @@
   "sema_tazeleme": null,
   "yakalama": null,
   "ders_gecikmesi": null,
-  "sicak_oran": 0.8837,
-  "gece_suresi": 0.0191,
+  "sicak_oran": 0.4884,
+  "gece_suresi": 0.0127,
   "uykusuz_kayip": null,
   "uykusuz_sisme": null,
   "aktif_bolge_ihlali": null,
-  "tur_bloklama": 7.44,
+  "tur_bloklama": 3.7,
   "kesinti_kaybi": null,
   "kesinti_gecikmesi": null,
   "yarim_damitma": null,
@@ -29,28 +29,28 @@
   "atalet": null,
   "buyume_p95": null,
   "buyume_ram": null,
-  "gecikme_p95": 6.68
+  "gecikme_p95": 8.69
  },
  "kume": {
   "A": {
-   "precision": 0.8889,
-   "recall": 1.0,
+   "precision": 0.8333,
+   "recall": 0.75,
    "sizinti": 0.0
   },
   "B": {
-   "precision": 0.4444,
-   "recall": 1.0,
-   "sizinti": 0.0
-  },
-  "D": {
    "precision": 0.5,
    "recall": 1.0,
    "sizinti": 0.0
   },
+  "D": {
+   "precision": 1.0,
+   "recall": 1.0,
+   "sizinti": 0.0
+  },
   "E": {
-   "precision": 0.2778,
-   "recall": 0.8333,
-   "sizinti": 5.0
+   "precision": 0.5714,
+   "recall": 0.6667,
+   "sizinti": 0.0
   },
   "H": {
    "precision": null,
@@ -73,19 +73,19 @@
   "dugum": 43,
   "tuzak": 12,
   "uyan": 0,
-  "kenar": 162
+  "kenar": 138
  },
  "veri": "yasam-holdout-30",
  "kapali": [],
  "damitma": false,
  "kaynak": "calisma-agaci",
- "sure_sn": 1.4,
+ "sure_sn": 1.1,
  "olcek": {
   "dugum": 50000,
   "indeks": 2000,
   "ram_bayt": 144000,
-  "gecikme_p50": 4.4,
-  "gecikme_p95": 6.68
+  "gecikme_p50": 5.6,
+  "gecikme_p95": 8.69
  },
  "etiket": "holdout",
  "sira": 99
