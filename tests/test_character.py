@@ -424,10 +424,13 @@ def test_leverage_renders_as_short_turkish_guidance(tmp_path: Path) -> None:
 
     system = _built(tmp_path)
     assert builder.LEVERAGE_HEADER in system.identity
-    assert builder.LEVERAGE_LINES["caution"][1] in system.identity
-    assert builder.LEVERAGE_LINES["social"][0] in system.identity
-    assert builder.LEVERAGE_LINES["novelty"][0] not in system.identity
-    assert builder.LEVERAGE_LINES["novelty"][1] not in system.identity
+    # caution 0.6/0.3 = 2.0x -> tier 2 (rule); social 0.2/0.8 = 0.25x ->
+    # tier 3 (rule with the case).
+    assert builder.LEVERAGE_LINES["caution"]["high"][1] in system.identity
+    assert builder.LEVERAGE_LINES["social"]["low"][2] in system.identity
+    for side in ("low", "high"):
+        for line in builder.LEVERAGE_LINES["novelty"][side]:
+            assert line not in system.identity
     # It rides in the identity block, not the cached core.
     assert builder.LEVERAGE_HEADER not in system.core
 
@@ -473,3 +476,34 @@ def test_a_fresh_install_targets_low_approval_seeking(tmp_path: Path) -> None:
     _base, target, _model = temperament.load(tmp_path)
     assert target.social == temperament.SOCIAL_TARGET < 0.5
     assert target.caution == 0.5
+
+
+def test_leverage_lines_are_graded_by_size() -> None:
+    """A 1.2x nudge and a 3x correction must not read the same. The first
+    real 7.6 run showed a fixed line overshooting: 1.25x on novelty threw a
+    model from 0.40 past the target to 0.67."""
+    from dornick import prompt
+
+    assert prompt.leverage_tier(1.0) == 0
+    assert prompt.leverage_tier(1.05) == 0
+    assert prompt.leverage_tier(1.25) == 1
+    assert prompt.leverage_tier(0.8) == 1
+    assert prompt.leverage_tier(2.0) == 2
+    assert prompt.leverage_tier(0.5) == 2
+    assert prompt.leverage_tier(3.0) == 3
+    assert prompt.leverage_tier(0.3) == 3
+    nudge = prompt.leverage_lines({"caution": 1.25})[0]
+    rule = prompt.leverage_lines({"caution": 2.0})[0]
+    case = prompt.leverage_lines({"caution": 3.0})[0]
+    assert nudge != rule != case
+    assert "Biraz" in nudge
+    assert len(case) > len(rule) > len(nudge)
+
+
+def test_every_axis_has_three_lines_per_direction() -> None:
+    from dornick import prompt
+
+    for axis, directions in prompt.LEVERAGE_LINES.items():
+        for side in ("low", "high"):
+            assert len(directions[side]) == 3, (axis, side)
+            assert len({directions[side][i] for i in range(3)}) == 3, (axis, side)

@@ -319,11 +319,16 @@ class FakeModel:
         text = system.rendered()
         axis = meta["axis"]
         threshold = self.innate.get(axis, 0.5)
-        low, high = prompt_builder.LEVERAGE_LINES[axis]
-        if high in text:
-            threshold += self.SHIFT
-        elif low in text:
-            threshold -= self.SHIFT
+        # Graded lines: a nudge moves the threshold half as much as a rule,
+        # a rule with the case half again as much more — the dial the real
+        # lines are meant to be.
+        lines = prompt_builder.LEVERAGE_LINES[axis]
+        for tier, line in enumerate(lines["high"]):
+            if line in text:
+                threshold += self.SHIFT * (0.5, 1.0, 1.5)[tier]
+        for tier, line in enumerate(lines["low"]):
+            if line in text:
+                threshold -= self.SHIFT * (0.5, 1.0, 1.5)[tier]
         threshold = max(0.0, min(1.0, threshold))
         scale = (self.JITTER_WITH_IDENTITY if prompt_builder.IDENTITY_DOC_HEADER in text
                  else self.JITTER_WITHOUT_IDENTITY)
@@ -504,6 +509,10 @@ class ModelResult:
     prompts: dict[str, dict[str, bool]] = field(default_factory=dict)
     calls: int = 0
     ambiguous: int = 0
+    # Raw replies, keyed like `answers`, kept so a run can be re-parsed
+    # offline: the first real run could not be, and 10% of its answers had
+    # to stay "ambiguous" for want of a KARAR line.
+    raw: dict[str, str] = field(default_factory=dict)
 
 
 def _ask(model: Any, system: SystemPrompt, decision: Decision, variant: int,
@@ -511,9 +520,10 @@ def _ask(model: Any, system: SystemPrompt, decision: Decision, variant: int,
     meta = {"id": decision.id, "axis": decision.axis, "high": decision.high,
             "low": decision.low, "variant": variant, "day": day}
     result.calls += 1
+    text = model.ask(system, render_message(decision, variant), meta)
+    result.raw[f"{decision.id}|{variant}|{day}"] = (text or "")[:600]
     try:
-        return parse_decision(model.ask(system, render_message(decision, variant), meta),
-                              decision.options)
+        return parse_decision(text, decision.options)
     except Ambiguous:
         result.ambiguous += 1
         return None
@@ -687,6 +697,7 @@ def _report(decisions: list[Decision], results: list[ModelResult], *, repeats: i
             "kollar": r.prompts,
             "cagri": r.calls,
             "belirsiz": r.ambiguous,
+            "ham": r.raw,
         }
 
     model_with = model_without = None

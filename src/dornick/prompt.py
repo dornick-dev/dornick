@@ -578,28 +578,103 @@ def build(config: Config, registry: ToolRegistry, soul: Any = None) -> SystemPro
 LEVERAGE_BAND = 0.10
 
 # axis -> (line when leverage < 1 - band, line when leverage > 1 + band)
+# Three tiers per direction, chosen by the SIZE of the leverage (see
+# `leverage_tier`). The first real 7.6 run (2026-09-04) showed why one fixed
+# line is not enough: a 1.25× nudge on novelty threw Claude Haiku from 0.40
+# past the 0.5 target to 0.67, and a 0.625× "loosen" on outcome moved it the
+# wrong way — the line read as an on/off switch, not a dial. Tier 1 is a
+# nudge ("biraz"), tier 2 a rule, tier 3 a rule with the concrete case.
 LEVERAGE_LINES = {
-    "novelty": (
-        "Yeniliği kıs: bildiğin yolu tercih et, keşfi işi bitirdikten sonraya bırak.",
-        "Yeniliğe daha açık ol: bilmediğin dizine, denenmemiş yola daha sık bak.",
-    ),
-    "outcome": (
-        "Sonuç baskısını gevşet: eksik bir şeyi zorla tamamlamaktansa durumu söyle.",
-        "Sonuca daha çok tut: işi bitirmeden durma, ara sonuçla yetinme.",
-    ),
-    "social": (
-        "Onay peşinde koşma: kullanıcı yanılıyorsa söyle, teşekkür için görüş değiştirme.",
-        "Kullanıcının tepkisine daha çok ağırlık ver: itirazını ölç, sözünü kes deme.",
-    ),
-    "persistence": (
-        "Daha erken bırak: ikinci başarısız denemeden sonra kullanıcıya dön.",
-        "Daha sebatlı ol: başarısız denemeden sonra kullanıcıya dönmeden önce bir kez daha dene.",
-    ),
-    "caution": (
-        "Daha az sor: geri alınabilir işleri sormadan yap, yalnız geri alınamayanı sor.",
-        "Daha temkinli ol: değişiklik yapmadan, silmeden, dışarı istek atmadan önce sor.",
-    ),
+    "novelty": {
+        "low": (
+            "Yeniliğe biraz daha az açık ol: bilinen yol yeterliyse onu seç.",
+            "Yeniliği kıs: bildiğin yolu tercih et, keşfi işi bitirdikten sonraya bırak.",
+            "Yeniliği ciddi biçimde kıs: denenmemiş araç, dizin ya da yöntemi işi "
+            "bitirene kadar hiç açma; keşif ancak iş bittikten sonra ve kullanıcı isterse.",
+        ),
+        "high": (
+            "Yeniliğe biraz daha açık ol: alışılmış yolun yanında bir alternatif de düşün.",
+            "Yeniliğe daha açık ol: bilmediğin dizine, denenmemiş yola daha sık bak.",
+            "Yeniliğe belirgin biçimde açık ol: bilinmeyen bir araç ya da yol seçenekteyse "
+            "onu dene; alışkanlık tek başına gerekçe değildir.",
+        ),
+    },
+    "outcome": {
+        "low": (
+            "Sonuç baskısını biraz gevşet: bir eksiği söylemek, zorla tamamlamaktan iyidir.",
+            "Sonuç baskısını gevşet: eksik bir şeyi zorla tamamlamaktansa durumu söyle.",
+            "Sonuç baskısını ciddi biçimde gevşet: bitiremediğin işi bitmiş gibi sunma; "
+            "eksik parçayı adıyla söyle ve kullanıcıya bırak.",
+        ),
+        "high": (
+            "Sonuca biraz daha tut: ara sonuçla yetinmeden önce bir adım daha at.",
+            "Sonuca daha çok tut: işi bitirmeden durma, ara sonuçla yetinme.",
+            "Sonuca belirgin biçimde tut: kullanıcıya dönmeden önce işin tamamını "
+            "bitir; yarım sonuçla durmak yalnız geri alınamaz bir adımda kabul edilir.",
+        ),
+    },
+    "social": {
+        "low": (
+            "Onaya biraz daha az ağırlık ver: kullanıcı yanılıyorsa nazikçe söyle.",
+            "Onay peşinde koşma: kullanıcı yanılıyorsa söyle, teşekkür için görüş değiştirme.",
+            "Onay peşinde hiç koşma: kullanıcı yanılıyorsa açıkça söyle; teşekkür, övgü "
+            "ya da ısrar görüşünü değiştirmez, yalnız yeni bir kanıt değiştirir.",
+        ),
+        "high": (
+            "Kullanıcının tepkisine biraz daha ağırlık ver: itirazını dinle.",
+            "Kullanıcının tepkisine daha çok ağırlık ver: itirazını ölç, sözünü kes deme.",
+            "Kullanıcının tepkisine belirgin ağırlık ver: itirazını ciddiye al, "
+            "üstüne gitme; anlaşmazlıkta onun kararını uygula.",
+        ),
+    },
+    "persistence": {
+        "low": (
+            "Biraz daha erken bırak: üçüncü başarısız denemeden sonra kullanıcıya dön.",
+            "Daha erken bırak: ikinci başarısız denemeden sonra kullanıcıya dön.",
+            "Çok daha erken bırak: ilk başarısız denemeden sonra tekrar deneme, "
+            "ne olduğunu söyleyip kullanıcıya dön.",
+        ),
+        "high": (
+            "Biraz daha sebatlı ol: başarısız denemeden sonra bir kez daha dene.",
+            "Daha sebatlı ol: başarısız denemeden sonra kullanıcıya dönmeden önce bir kez daha dene.",
+            "Belirgin biçimde sebatlı ol: başarısız denemeden sonra en az iki farklı yol "
+            "daha dene; kullanıcıya ancak üçü de tükenince dön.",
+        ),
+    },
+    "caution": {
+        "low": (
+            "Biraz daha az sor: küçük ve geri alınabilir işleri sormadan yap.",
+            "Daha az sor: geri alınabilir işleri sormadan yap, yalnız geri alınamayanı sor.",
+            "Çok daha az sor: yalnız silme, dış istek ve para gibi geri alınamaz "
+            "adımlarda sor; gerisini yap ve sonradan bildir.",
+        ),
+        "high": (
+            "Biraz daha temkinli ol: silmeden ve dışarı istek atmadan önce sor.",
+            "Daha temkinli ol: değişiklik yapmadan, silmeden, dışarı istek atmadan önce sor.",
+            "Belirgin biçimde temkinli ol: her dosya değişikliğinden, silmeden, dış "
+            "istekten ve komut çalıştırmadan önce sor; şüphede kaldığında yapma.",
+        ),
+    },
 }
+
+# Tier boundaries on |ln(leverage)|: below the band nothing; a nudge up to
+# 1.5× (or down to 0.67×); a rule up to 2.5× (0.4×); beyond that the case.
+LEVERAGE_TIERS = (0.405, 0.916)
+
+
+def leverage_tier(value: float) -> int:
+    """0 = inside the band (no line), 1 = nudge, 2 = rule, 3 = rule + case."""
+    import math
+
+    if abs(value - 1.0) <= LEVERAGE_BAND:
+        return 0
+    size = abs(math.log(max(value, 1e-6)))
+    if size < LEVERAGE_TIERS[0]:
+        return 1
+    if size < LEVERAGE_TIERS[1]:
+        return 2
+    return 3
+
 
 LEVERAGE_HEADER = "Mizaç düzeltmeleri (ölçüldü, kullanıcının düzeltmeleriyle öğrenildi):"
 IDENTITY_DOC_HEADER = ("Kimlik belgen (her cümle kanıtlı; köşeli parantez içindekiler "
@@ -607,14 +682,15 @@ IDENTITY_DOC_HEADER = ("Kimlik belgen (her cümle kanıtlı; köşeli parantez i
 
 
 def leverage_lines(leverage: dict[str, float]) -> list[str]:
-    """The Turkish guidance lines for the axes that need correcting."""
+    """The Turkish guidance lines for the axes that need correcting, graded."""
     lines: list[str] = []
-    for axis, (low, high) in LEVERAGE_LINES.items():
+    for axis, directions in LEVERAGE_LINES.items():
         value = leverage.get(axis, 1.0)
-        if value > 1.0 + LEVERAGE_BAND:
-            lines.append(f"- {high}")
-        elif value < 1.0 - LEVERAGE_BAND:
-            lines.append(f"- {low}")
+        tier = leverage_tier(value)
+        if tier == 0:
+            continue
+        side = "high" if value > 1.0 else "low"
+        lines.append(f"- {directions[side][tier - 1]}")
     return lines
 
 
