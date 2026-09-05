@@ -1,4 +1,4 @@
-; dornick — Windows install wizard (Inno Setup 6).
+﻿; dornick — Windows install wizard (Inno Setup 6).
 ;
 ; installer\build.ps1 runs first: embedded Python + dependencies + source +
 ; training rig are laid out under dist\paket; this script only packages that
@@ -174,10 +174,11 @@ Source: "{#Package}\dornick.cmd"; DestDir: "{app}"; Flags: ignoreversion; Compon
 ; pyproject.toml at the root at runtime — the installed tree carries it at
 ; its root just like the repo.
 Source: "{#Package}\pyproject.toml"; DestDir: "{app}"; Flags: ignoreversion; Components: ana
-Source: "{#Package}\egitim\*"; DestDir: "{app}\egitim"; Flags: recursesubdirs ignoreversion; Components: egitim
+; skipifsourcedoesntexist: a -SkipTorch build ships no training tree; the component then installs nothing.
+Source: "{#Package}\egitim\*"; DestDir: "{app}\egitim"; Flags: recursesubdirs ignoreversion skipifsourcedoesntexist; Components: egitim
 Source: "{#Package}\listen\*"; DestDir: "{app}\listen"; Flags: recursesubdirs ignoreversion; Components: dinleme
 Source: "{#Package}\watch\*"; DestDir: "{app}\watch"; Flags: recursesubdirs ignoreversion; Components: kamera
-Source: "{#Package}\eval\*"; DestDir: "{app}\eval"; Flags: recursesubdirs ignoreversion; Components: egitim
+Source: "{#Package}\eval\*"; DestDir: "{app}\eval"; Flags: recursesubdirs ignoreversion skipifsourcedoesntexist; Components: egitim
 
 [Icons]
 ; Console-less launch: the target is the stamped dornick.exe (pythonw copy).
