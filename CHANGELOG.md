@@ -27,7 +27,7 @@ Five things found in the first hour of using the packaged 1.5.0.
 
 The memory upgrade: human-like consolidation, measured against the old
 version on a 90-day simulated life and repaired until the numbers
-reproduced. Every claim below comes from `docs/benchmark-hafiza.md`.
+reproduced. Every claim below comes from `docs/memory-benchmark.md`.
 
 * **Memory that learns from outcomes.** A failed tool call writes its lesson
   in the same turn (was: ~79 turns later, at best); which memory led to the

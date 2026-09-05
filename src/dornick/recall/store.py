@@ -70,12 +70,12 @@ STEM_CHARS = 5
 # rate, five warnings over sixty noise records. A warning is a suggestion,
 # the record is written regardless — a false alarm costs a sentence, a miss
 # costs a contradiction.
-# See docs/charts/celiski-esigi.md.
+# See docs/charts/contradiction-threshold.md.
 CONFLICT_THRESHOLD = 0.55
 
 # Share gained by a record written in the same context. If all three fields
 # (project, directory, time of day) overlap fully, the multiplier is
-# (1 + CONTEXT_BONUS). Calibration: docs/hafiza-fazlar.md "Faz 5".
+# (1 + CONTEXT_BONUS). Calibration: docs/memory-phases.md "Faz 5".
 CONTEXT_BONUS = 0.15
 # Share lost by a record carrying a CONFLICTING value in the same field. The
 # bonus alone was not enough and the reason was measured: `select_prime`
@@ -93,7 +93,7 @@ HOP_DECAY = 0.45
 # bm25 order is only a coarse net here; the real ranking is the coverage.
 LITERAL_POOL = 40
 # Minimum edge weight over which warmth spreads one hop (update_heat). 0 = off.
-# Calibration: docs/hafiza-fazlar.md "sıcak küme".
+# Calibration: docs/memory-phases.md "sıcak küme".
 WARM_EDGE = 0.8
 # Absolute ceiling of the hot set (see update_heat).
 HOT_CAP = 5000
@@ -877,7 +877,7 @@ class RecallStore:
         """Un-downscaled strengthening: total edge weight / node.
 
         The main term of sleep pressure (SHY). The threshold was measured
-        against this quantity (see docs/charts/basinc-bozulma.md); were it
+        against this quantity (see docs/charts/pressure-decay.md); were it
         not the same quantity, the threshold would be a threshold of
         something else.
         """

@@ -28,7 +28,7 @@ training/checkpoints/*
 training/site/
 
 # Eski sürümün ayrı checkout'u (yasam_bench --eski): git worktree, depoya girmez.
-eval/eski/
+eval/old/
 
 # Kapsam ölçümü çıktısı
 .coverage

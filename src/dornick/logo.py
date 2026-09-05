@@ -31,7 +31,7 @@ _TOP_DOT = (21.5, 5.6, 3.3)              # cx, cy, r
 
 # When the drawing changes the packaged .ico should refresh itself: version
 # sentinel. (Name kept: winicon.py imports it.)
-_SURUM = "dugum-1"
+_VERSION = "dugum-1"
 
 
 def draw(size: int):
@@ -84,10 +84,10 @@ def ensure_ico(path: Path) -> bool:
         # Version sentinel: if the drawing changed (like the hearth migration)
         # the old .ico must not linger silently — regenerate. The side file
         # sits next to the .ico.
-        sentinel = path.with_suffix(".ico.surum")
+        sentinel = path.with_suffix(".ico.version")
         if path.exists():
             try:
-                if sentinel.read_text(encoding="utf-8").strip() == _SURUM:
+                if sentinel.read_text(encoding="utf-8").strip() == _VERSION:
                     return True
             except OSError:
                 pass
@@ -96,7 +96,7 @@ def ensure_ico(path: Path) -> bool:
                   sizes=[(16, 16), (20, 20), (24, 24), (32, 32),
                          (40, 40), (48, 48), (64, 64), (128, 128), (256, 256)])
         try:
-            sentinel.write_text(_SURUM, encoding="utf-8")
+            sentinel.write_text(_VERSION, encoding="utf-8")
         except OSError:
             pass
         return True
@@ -115,16 +115,16 @@ def ensure_png(path: Path, size: int = 256) -> bool:
     """PNG for the Windows toast and the tab. ICO is not accepted as a WinRT src."""
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
-        sentinel = path.with_suffix(".png.surum")
+        sentinel = path.with_suffix(".png.version")
         if path.exists():
             try:
-                if sentinel.read_text(encoding="utf-8").strip() == _SURUM:
+                if sentinel.read_text(encoding="utf-8").strip() == _VERSION:
                     return True
             except OSError:
                 pass
         draw(size).save(path, format="PNG")
         try:
-            sentinel.write_text(_SURUM, encoding="utf-8")
+            sentinel.write_text(_VERSION, encoding="utf-8")
         except OSError:
             pass
         return True

@@ -7,7 +7,7 @@ evidenced identity document. If that claim is true, the same decision gets
 the same answer in a different project, on a different day, and from a
 different model. This rig measures exactly that and nothing else.
 
-Thirty decisions (`kararlar.json`), each forcing a binary choice on one
+Thirty decisions (`decisions.json`), each forcing a binary choice on one
 temperament axis, asked in three project contexts. Four arms per model:
 
     taban        empty state: no leverage lines, no identity document.
@@ -29,10 +29,10 @@ a guess.
 
 Run:
 
-    py eval/karakter/run.py                                   # dry run, fake models
-    py eval/karakter/run.py --model anthropic:claude-opus-4-8 --model2 openai:qwen/qwen3-32b --repeats 3
-    py eval/karakter/run.py --model ... --model2 ... --evet   # actually spend
-    py eval/karakter/run.py --model ... --no-leverage --evet  # control arm only
+    py eval/character/run.py                                   # dry run, fake models
+    py eval/character/run.py --model anthropic:claude-opus-4-8 --model2 openai:qwen/qwen3-32b --repeats 3
+    py eval/character/run.py --model ... --model2 ... --evet   # actually spend
+    py eval/character/run.py --model ... --no-leverage --evet  # control arm only
 
 Without `--evet` the rig prints the number of calls the real run would make
 and runs against a deterministic fake model instead, so the harness itself
@@ -74,10 +74,10 @@ from dornick.recall import identity, temperament  # noqa: E402
 from dornick.recall.temperament import AXES, AXIS_KEYS, Probe, Temperament  # noqa: E402
 from dornick.tools.base import ToolRegistry  # noqa: E402
 
-DECISIONS_PATH = HERE / "kararlar.json"
+DECISIONS_PATH = HERE / "decisions.json"
 # Held-out decisions never measured: model A answers them once and those
 # answers become B's precedent block (recall/exemplars.py).
-EXEMPLARS_PATH = HERE / "ornekler.json"
+EXEMPLARS_PATH = HERE / "exemplars.json"
 DATASET_NAME = "karakter-30"
 
 # Turkish axis name (the file format) -> Python axis name.
@@ -1092,7 +1092,7 @@ def main(argv: list[str] | None = None) -> int:
     data, decisions = load_decisions()
     if problems := validate_decisions(data):
         for problem in problems:
-            print(f"kararlar.json: {problem}", file=sys.stderr)
+            print(f"decisions.json: {problem}", file=sys.stderr)
         return 2
 
     leverage_on = not args.no_leverage
@@ -1135,7 +1135,7 @@ def main(argv: list[str] | None = None) -> int:
         label = args.label or "kuru"
         say(f"Kuru koşu: {calls} sahte çağrı, hedef sentetik, kimlik örnek belge.")
 
-    command = "py eval/karakter/run.py " + " ".join(
+    command = "py eval/character/run.py " + " ".join(
         a for a in (argv if argv is not None else sys.argv[1:]))
     try:
         result = run(decisions, models, target=target, identity_doc=identity_doc,

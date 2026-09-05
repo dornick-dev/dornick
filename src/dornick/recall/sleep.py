@@ -40,12 +40,12 @@ from .clock import Clock, parse, wall_clock
 # scenario with the night switched off and records prime precision against S
 # (unshrunk strengthening: total edge weight / node). Baseline precision was
 # 0.6033; the 5% drop starts at S = 2.3374. Run of 2026-09-02, curve in
-# docs/charts/basinc-bozulma.md. LOWER_THRESHOLD is a third of it (roadmap 3.10.3).
+# docs/charts/pressure-decay.md. LOWER_THRESHOLD is a third of it (roadmap 3.10.3).
 UPPER_THRESHOLD = 2.3374
 LOWER_THRESHOLD = 0.7791
 
 # Pressure weights. Strengthening is the SHY term and dominates; debt and
-# heat are corrections. Calibration note in docs/hafiza-fazlar.md.
+# heat are corrections. Calibration note in docs/memory-phases.md.
 W_STRENGTHENING = 0.6
 W_DEBT = 0.25
 W_HEAT = 0.15

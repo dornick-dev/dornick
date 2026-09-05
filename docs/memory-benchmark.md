@@ -209,4 +209,4 @@ Büyüme (P kümesi): 50k düğümde p95 5,0 ms; 20k→200k gecikme oranı 1,68
 (hedef ≤1,5, sınırda; önceki turlar 6,09 → 3,65), RAM oranı 1 (hedef ≤2, tutuyor).
 
 Ayrıntılı faz defteri, kalibrasyonlar ve olumsuz sonuçlar:
-`docs/hafiza-fazlar.md`. Ham koşular: `docs/charts/yasam-*.json`.
+`docs/memory-phases.md`. Ham koşular: `docs/charts/life-*.json`.

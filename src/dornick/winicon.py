@@ -62,7 +62,7 @@ def ensure_host() -> Path | None:
     """pythonw → dornick.exe copy + ico stamp. None if it cannot be written.
 
     The running image is never written to. The stamp version is locked to
-    logo._SURUM: when the drawing changes the sidecar no longer matches and,
+    logo._VERSION: when the drawing changes the sidecar no longer matches and,
     if pythonw is free, it is copied again.
     """
     if sys.platform != "win32":
@@ -77,13 +77,13 @@ def ensure_host() -> Path | None:
     if source.name.lower() == HOST_NAME:
         return dest if dest.exists() else None
 
-    from .logo import _SURUM, ico_path
+    from .logo import _VERSION, ico_path
 
-    marker = Path(str(dest) + ".surum")
+    marker = Path(str(dest) + ".version")
     need = True
     if dest.exists():
         try:
-            if marker.read_text(encoding="utf-8").strip() == _SURUM:
+            if marker.read_text(encoding="utf-8").strip() == _VERSION:
                 if dest.stat().st_mtime >= source.stat().st_mtime:
                     need = False
         except OSError:
@@ -94,7 +94,7 @@ def ensure_host() -> Path | None:
 
             shutil.copy2(source, dest)
             if stamp_exe_icon(dest, ico_path()):
-                marker.write_text(_SURUM, encoding="utf-8")
+                marker.write_text(_VERSION, encoding="utf-8")
         except OSError:
             if not dest.exists():
                 return None

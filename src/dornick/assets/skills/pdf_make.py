@@ -3,7 +3,7 @@
 Standart yetenek — paketle geldi. Değiştirebilir, silebilirsin.
 """
 
-NAME = "pdf_uret"
+NAME = "pdf_make"
 DESCRIPTION = """Verilen başlık ve metinden düzgün biçimli bir PDF üretir
 (rapor, tutanak, teklif). Markdown-vari yapı anlar: '# ' ile başlayan satır
 bölüm başlığı, '- ' ile başlayan satır madde olur. Kullanıcı "PDF yap",

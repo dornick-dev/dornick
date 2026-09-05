@@ -56,7 +56,7 @@
   <path class="acizgi" d="M835 105 V 60 H 480"/>
   <rect class="kutu vurgu" x="330" y="35" width="150" height="50" rx="8"/>
   <text class="baslik" x="405" y="56" text-anchor="middle">deploy</text>
-  <text class="not" x="405" y="72" text-anchor="middle">new taban.npz takes over</text>
+  <text class="not" x="405" y="72" text-anchor="middle">new base.npz takes over</text>
   <text class="amber" x="650" y="50" text-anchor="middle">passed</text>
 
   <!-- fail -->

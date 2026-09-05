@@ -12,7 +12,7 @@ on:
       - "src/**"
       - "tests/**"
       - "eval/context_memory/**"
-      - ".github/workflows/hafiza.yml"
+      - ".github/workflows/memory.yml"
   push:
     branches: [main]
 
@@ -51,15 +51,15 @@ jobs:
       - name: Old-version worktree
         shell: bash
         run: |
-          git worktree add eval/eski hafiza-eski 2>/dev/null || true
+          git worktree add eval/old memory-old 2>/dev/null || git worktree add eval/old hafiza-eski 2>/dev/null || true
       - name: Life benchmark, holdout set
         shell: bash
         run: |
-          python eval/context_memory/life_bench.py --data holdout --label holdout-taban --old
+          python eval/context_memory/life_bench.py --data holdout --label holdout-baseline --old
           python eval/context_memory/life_bench.py --data holdout --label holdout
           {
             echo "## Life benchmark — holdout"
-            cat docs/charts/yasam-holdout.md
+            cat docs/charts/life-holdout.md
           } >> "$GITHUB_STEP_SUMMARY"
 
   long-arms:
@@ -77,11 +77,11 @@ jobs:
       - name: Threshold curve and growth set
         shell: bash
         run: |
-          python eval/context_memory/life_bench.py --threshold-curve --label esik-egrisi
-          python eval/context_memory/life_bench.py --growth --label buyume
+          python eval/context_memory/life_bench.py --threshold-curve --label threshold-curve
+          python eval/context_memory/life_bench.py --growth --label growth
           {
             echo "## Threshold curve"
-            cat docs/charts/basinc-bozulma.md
+            cat docs/charts/pressure-decay.md
             echo "## Growth"
-            cat docs/charts/yasam-buyume.md
+            cat docs/charts/life-growth.md
           } >> "$GITHUB_STEP_SUMMARY"

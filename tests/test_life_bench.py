@@ -69,7 +69,7 @@ def holdout(bench):
 
 @pytest.fixture(scope="module")
 def main_set(bench):
-    return bench.load_data("ana")
+    return bench.load_data("main")
 
 
 # -- determinism -------------------------------------------------------
@@ -165,7 +165,7 @@ def test_log_stamps_come_from_the_virtual_calendar(bench, holdout, tmp_path) -> 
 # -- dataset consistency -----------------------------------------------
 
 
-@pytest.mark.parametrize("name", ["ana", "holdout"])
+@pytest.mark.parametrize("name", ["main", "holdout"])
 def test_dataset_is_consistent(bench, name: str) -> None:
     data = bench.load_data(name)
     day_count = data["gun_sayisi"]
@@ -196,7 +196,7 @@ def test_dataset_is_consistent(bench, name: str) -> None:
                     assert target in written, f"undefined measurement target: {target}"
 
 
-@pytest.mark.parametrize("name", ["ana", "holdout"])
+@pytest.mark.parametrize("name", ["main", "holdout"])
 def test_every_session_closes_with_an_outcome(bench, name: str) -> None:
     """The night replay walks a session as a whole; a session without an
     outcome is noise, not a source (roadmap 3.1)."""

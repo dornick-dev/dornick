@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import sys
 import traceback
 import types
@@ -144,6 +145,45 @@ def folder(sandbox_root: Path) -> Path:
 # startup would make deleting meaningless.
 SEEDED = ".tohumlar"
 
+# Standard skills that were shipped under a Turkish file name before 1.5.1.
+# The file in the user's workshop is theirs (maybe edited), so it is not
+# replaced: it is renamed to the English name and its NAME line is
+# rewritten, once. The tracking file learns the new name so the packaged
+# copy is not planted a second time next to it.
+LEGACY_NAMES = {
+    "arsivle": "archive",
+    "olcum": "measure",
+    "ozet_csv": "csv_summary",
+    "pdf_metni": "pdf_text",
+    "pdf_uret": "pdf_make",
+    "resim_boyutlandir": "image_resize",
+}
+
+
+def _migrate_legacy_names(place: Path, already: set[str],
+                          state_dir: Path | str | None) -> list[str]:
+    """Renames pre-1.5.1 standard skills to their English names; returns the new stems."""
+    renamed: list[str] = []
+    for old, new in LEGACY_NAMES.items():
+        old_path = place / f"{old}.py"
+        new_path = place / f"{new}.py"
+        if not old_path.is_file() or new_path.exists():
+            continue
+        try:
+            code = old_path.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        code = re.sub(r"^NAME\s*=\s*['\"]" + re.escape(old) + r"['\"]",
+                      f'NAME = "{new}"', code, count=1, flags=re.M)
+        new_path.write_text(code, encoding="utf-8")
+        old_path.unlink()
+        already.discard(f"{old}.py")
+        already.add(f"{new}.py")
+        if state_dir is not None:
+            _approve(state_dir, new_path)
+        renamed.append(new)
+    return renamed
+
 
 def seed(sandbox_root: Path, state_dir: Path | str | None = None) -> list[str]:
     """Copies the standard skills shipped with the package into the workshop — once.
@@ -163,6 +203,8 @@ def seed(sandbox_root: Path, state_dir: Path | str | None = None) -> list[str]:
         already = {line.strip() for line in marker.read_text(encoding="utf-8").splitlines()}
 
     planted: list[str] = []
+    if already:
+        _migrate_legacy_names(place, already, state_dir)
     for packed in sorted(source.glob("*.py")):
         if packed.name in already:
             continue

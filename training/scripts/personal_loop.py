@@ -64,7 +64,7 @@ PERSONAL_CORPUS = DATA / "personal_corpus.jsonl"
 LOG = DATA / "personal_log.md"
 DB = PRODUCT / ".dornick" / "mind" / "recall.db"
 DEPLOYED = PRODUCT / ".dornick" / "taban.npz"       # the personal model goes here
-STOCK = PRODUCT / "src" / "dornick" / "assets" / "taban.npz"
+STOCK = PRODUCT / "src" / "dornick" / "assets" / "base.npz"
 
 
 def _base_checkpoint() -> Path:

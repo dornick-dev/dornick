@@ -56,7 +56,7 @@ $PyZip     = "python-$PyVersion-embed-amd64.zip"
 $PyUrl     = "https://www.python.org/ftp/python/$PyVersion/$PyZip"
 
 # Third parties the app actually uses (src/dornick import scan):
-#   required : anthropic, rich, numpy (taban.npz inference), pywebview (window)
+#   required : anthropic, rich, numpy (base.npz inference), pywebview (window)
 #   practical: pillow (tray/icon/screenshot), pystray (tray),
 #              edge-tts (voice), openai (LM Studio/Ollama), mcp (connectors),
 #              pypdf + reportlab (capabilities shipped with the package)

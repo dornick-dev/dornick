@@ -1,11 +1,11 @@
 # Claude Code'a verilecek talimat
 
-Aşağıdaki metni olduğu gibi yapıştır. `dornick-hafiza-yol-haritasi.md` dosyasını
-repo köküne `docs/hafiza-yol-haritasi.md` olarak koymuş ol.
+Aşağıdaki metni olduğu gibi yapıştır. `dornick-memory-roadmap.md` dosyasını
+repo köküne `docs/memory-roadmap.md` olarak koymuş ol.
 
 ---
 
-Repo: dornick (github.com/dornick-dev/dornick). Görev: `docs/hafiza-yol-haritasi.md`
+Repo: dornick (github.com/dornick-dev/dornick). Görev: `docs/memory-roadmap.md`
 belgesini uygulamak. Belge bağlayıcıdır; kendi tasarımını üstüne koyma, belgede
 olmayan bir şeye ihtiyaç duyarsan önce sor.
 
@@ -16,7 +16,7 @@ olmayan bir şeye ihtiyaç duyarsan önce sor.
    mekanik kod yazma.
 2. **Her faz tek PR** (Faz 3 dört PR). PR açıklaması şablonu:
    - değişen dosyalar ve şema göçü,
-   - `docs/charts/yasam-<faz>.md`: bench önce/sonra tablosu + ablation satırı,
+   - `docs/charts/life-<phase>.md`: bench önce/sonra tablosu + ablation satırı,
    - kabul kriteri listesi, her biri ✓/✗ ve sayısıyla,
    - geçmeyen kriter varsa "kabul edilmedi" notu ve neden.
 3. **Önce test.** Her fazın ilk commit'i belgenin 9. bölümündeki test dosyalarıdır;
@@ -53,7 +53,7 @@ olmayan bir şeye ihtiyaç duyarsan önce sor.
 
 Faz 0'ı aç:
 - `RecallStore` ve `Mind`'a saat enjeksiyonu,
-- `eval/context_memory/yasam_dataset.json` (90 gün, A–S kümeleri, asgari olay sayıları
+- `eval/context_memory/life_dataset.json` (90 gün, A–S kümeleri, asgari olay sayıları
   belgede) — el yazımı, Türkçe, `holdout` ayrı,
 - `life_bench.py` (tüm metrikler, ablation bayrakları, gece geçişi çağrısı — henüz
   yokken no-op),
@@ -61,7 +61,7 @@ Faz 0'ı aç:
 - `tests/fixtures/recall-v1.db` üretimi,
 - `main`'i `hafiza-eski` olarak etiketle; `life_bench.py --old` o etiketi ayrı
   checkout'ta koşturur,
-- `docs/charts/yasam-taban.md`: **eski sistemin** bench sonucu — bu dosya bir daha
+- `docs/charts/life-baseline.md`: **eski sistemin** bench sonucu — bu dosya bir daha
   değişmez.
 
 Taban çizgisi commit'lenmeden Faz 1 PR'ı açma. Bitince PR linkini ve taban tablosunu
@@ -69,7 +69,7 @@ ver; sonra Faz 1'e geç.
 
 Faz 7 bittiğinde belge bölüm 10'daki son karşılaştırmayı koş: yaşam bench + mevcut 9
 görevlik kodlama bench'i sıcak ve soğuk hafızayla, eski ve yeni sürüm, aynı model, 3
-tekrar. Tek dosya: `docs/benchmark-hafiza.md`. README ancak bundan sonra.
+tekrar. Tek dosya: `docs/memory-benchmark.md`. README ancak bundan sonra.
 
 Her fazın sonunda bana şunu yaz: kabul kriterleri tablosu (sayılarla), ablation
 sonucu, ve "kaldırılması gereken mekanik" varsa hangisi. Yorum yapma, tablo ver.

@@ -435,10 +435,43 @@ def test_standard_skills_are_planted_once(tmp_path: Path) -> None:
     assert not victim.exists()
 
 
+def test_legacy_turkish_skill_files_are_renamed_once(tmp_path: Path) -> None:
+    """A workshop seeded before 1.5.1 carries `ozet_csv.py` & co. The file is
+    the user's (maybe edited), so it is renamed, not replaced: the English
+    file name, the English NAME line, the user's edit kept, and the packaged
+    copy is NOT planted next to it."""
+    state = tmp_path / ".dornick"
+    place = skills.folder(tmp_path)
+    place.mkdir(parents=True, exist_ok=True)
+    legacy = place / "ozet_csv.py"
+    legacy.write_text(
+        'NAME = "ozet_csv"\nDESCRIPTION = "x"\nSCHEMA = {"type": "object"}\n'
+        '# user edit\ndef run(args, ctx):\n    return "edited"\n',
+        encoding="utf-8")
+    (place / skills.SEEDED).write_text("ozet_csv.py\n", encoding="utf-8")
+
+    planted = skills.seed(tmp_path, state)
+
+    assert not legacy.exists()
+    renamed = place / "csv_summary.py"
+    assert renamed.is_file()
+    code = renamed.read_text(encoding="utf-8")
+    assert 'NAME = "csv_summary"' in code and "# user edit" in code
+    assert "csv_summary" not in planted, "the packaged copy must not overwrite the user's"
+    assert "csv_summary.py" in (place / skills.SEEDED).read_text(encoding="utf-8")
+    assert "ozet_csv.py" not in (place / skills.SEEDED).read_text(encoding="utf-8")
+    # The renamed file is trusted at startup like any planted skill.
+    found, broken = skills.discover(tmp_path, state_dir=state)
+    assert broken == []
+    assert next(s for s in found if s.name == "csv_summary")
+    # Second start: nothing more to do.
+    assert skills.seed(tmp_path, state) == []
+
+
 def test_planted_csv_skill_actually_works(tmp_path: Path) -> None:
     skills.seed(tmp_path)
     found, _ = skills.discover(tmp_path)
-    summary = next(s for s in found if s.name == "ozet_csv")
+    summary = next(s for s in found if s.name == "csv_summary")
 
     data = tmp_path / "veri.csv"
     data.write_text("ad,deger\npompa1,10\npompa2,30\n", encoding="utf-8")

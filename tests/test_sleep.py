@@ -80,7 +80,7 @@ def test_thresholds_are_the_measured_ones() -> None:
 
     source = (Path(__file__).resolve().parents[1]
               / "src" / "dornick" / "recall" / "sleep.py").read_text("utf-8")
-    assert "basinc-bozulma.md" in source, "the constant's source must be in the comment"
+    assert "pressure-decay.md" in source, "the constant's source must be in the comment"
 
 
 # -- pressure is measured ----------------------------------------------

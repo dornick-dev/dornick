@@ -10,7 +10,7 @@ hit rate 0.87 → 0.93 (eval/context_memory/scale_bench.py, frozen set).
 
 Pure numpy: no torch, no install. The weights are a single .npz file; the
 user's own trained .dornick/taban.npz is looked for first (the personal
-fine-tuning vision), otherwise the assets/taban.npz shipped with the product.
+fine-tuning vision), otherwise the assets/base.npz shipped with the product.
 If neither exists, or numpy is not installed, the layer silently stays out
 and the query passes through as is: recall works WITHOUT this model, the
 model only improves it.
@@ -94,7 +94,7 @@ def _candidates(state_dir: Path | None) -> list[Path]:
     candidates = []
     if state_dir is not None:
         candidates.append(Path(state_dir) / "taban.npz")
-    candidates.append(Path(__file__).parent.parent / "assets" / "taban.npz")
+    candidates.append(Path(__file__).parent.parent / "assets" / "base.npz")
     return candidates
 
 

@@ -22,15 +22,15 @@ from pathlib import Path
 import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
-RUN_PATH = ROOT / "eval" / "karakter" / "run.py"
+RUN_PATH = ROOT / "eval" / "character" / "run.py"
 
 
 def _harness():
     """Loads the rig as a module (eval/ is not a package)."""
-    spec = importlib.util.spec_from_file_location("karakter_run", RUN_PATH)
+    spec = importlib.util.spec_from_file_location("character_run", RUN_PATH)
     assert spec and spec.loader
     module = importlib.util.module_from_spec(spec)
-    sys.modules["karakter_run"] = module
+    sys.modules["character_run"] = module
     spec.loader.exec_module(module)
     return module
 
@@ -271,7 +271,7 @@ def test_the_baseline_is_read_by_the_products_own_measure(harness, decisions, tm
 
 def test_the_report_files_are_written_in_the_charts_style(harness, dry_result, tmp_path) -> None:
     json_path, md_path = harness.write_report("test", dry_result, tmp_path / "charts",
-                                              command="py eval/karakter/run.py", source="sahte")
+                                              command="py eval/character/run.py", source="sahte")
     assert json_path.name == "karakter-test.json" and md_path.name == "karakter-test.md"
     payload = json.loads(json_path.read_text(encoding="utf-8"))
     assert payload["metrikler"] == dry_result["metrikler"]

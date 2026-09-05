@@ -1,14 +1,14 @@
 # İnsan benzeri hafıza — faz defteri
 
-Yol haritası: [`docs/hafiza-yol-haritasi.md`](hafiza-yol-haritasi.md).
-Çalışma düzeni: [`docs/hafiza-calisma-duzeni.md`](hafiza-calisma-duzeni.md).
+Yol haritası: [`docs/memory-roadmap.md`](memory-roadmap.md).
+Çalışma düzeni: [`docs/memory-working-order.md`](memory-working-order.md).
 
 Bu dosya koşum defteri: hangi faz bitti, kabul kriterini geçti mi, geçmediyse
 ne öğrenildi. Negatif sonuç da rapordur ve burada durur.
 
 ```
-Taban çizgisi   py eval/context_memory/life_bench.py --label taban --old
-Faz ölçümü      py eval/context_memory/life_bench.py --label f1 --previous taban
+Taban çizgisi   py eval/context_memory/life_bench.py --label baseline --old
+Faz ölçümü      py eval/context_memory/life_bench.py --label f1 --previous baseline
 Ablation        py eval/context_memory/life_bench.py --disable activation --label f1-ablasyon
 Eşik eğrisi     py eval/context_memory/life_bench.py --threshold-curve
 Büyüme (P)      py eval/context_memory/life_bench.py --growth
@@ -29,8 +29,8 @@ Hiçbir mekanik değişmedi. Değişen tek şey ölçülebilirlik.
 |---|---|
 | `src/dornick/recall/saat.py` | enjekte edilebilir saat; zamanın okunduğu tek yer |
 | `src/dornick/recall/anahtar.py` | mekanik açma/kapama anahtarları (ablation yüzeyi) |
-| `eval/context_memory/yasam_dataset.json` | 90 sanal gün, 895 olay, 286 oturum, A–S kümeleri (dondurulmuş) |
-| `eval/context_memory/yasam_holdout.json` | ayrı 30 günlük senaryo; kalibrasyon ana sette, karar burada |
+| `eval/context_memory/life_dataset.json` | 90 sanal gün, 895 olay, 286 oturum, A–S kümeleri (dondurulmuş) |
+| `eval/context_memory/life_holdout.json` | ayrı 30 günlük senaryo; kalibrasyon ana sette, karar burada |
 | `eval/context_memory/life_bench.py` | senaryoyu sanal saatle oynatan bench + `--old` + `--threshold-curve` + `--growth` |
 | `tests/test_saat.py` | saatin her damgaya ulaştığı + doğrudan `datetime.now()` yasağı |
 | `tests/test_life_bench.py` | bench determinizmi, A–S asgarileri, kümelerin vaadi |
@@ -51,7 +51,7 @@ görecek.
 ### Eski sürümle karşılaştırma altyapısı
 
 `main` (`2c3fd3a`) `hafiza-eski` etiketiyle donduruldu.
-`life_bench.py --old` o etiketi `eval/eski/` worktree'sine alıp **ayrı bir
+`life_bench.py --old` o etiketi `eval/old/` worktree'sine alıp **ayrı bir
 süreçte** koşturuyor (iki `dornick` paketi aynı yorumlayıcıda yan yana
 duramaz). Eski kodda saat enjeksiyonu yok; modül düzeyindeki `_now`
 yamalanıyor — eski kaynağa dokunulmadan iki sürüm **aynı sanal takvimi**
@@ -73,7 +73,7 @@ girmiyor; her birinin kendi metriği var. Unutulmuş bir kaydın kendiliğinden
 önyüklemeye girmemesi tasarımın amacı — onu prime recall'ına saymak mekaniği
 kendi hedefiyle çelişen bir sayıyla cezalandırmak olurdu.
 
-### Taban çizgisi — `docs/charts/yasam-taban.md` (eski sürüm, bir daha değişmez)
+### Taban çizgisi — `docs/charts/life-baseline.md` (eski sürüm, bir daha değişmez)
 
 | Metrik | Yön | eski sürüm | Hedef |
 |---|---|---|---|
@@ -105,7 +105,7 @@ görünüyor ve **sayıyla**: zaman komşuluğu 0, dikiş 0, ders gecikmesi 79 t
 (yani "geceye kadar", ki gece de yok). `sicak_oran` 1.00 — imza indeksi bütün
 düğümleri tutuyor, aktif küme sınırlanmıyor.
 
-### Eşik eğrisi — `docs/charts/basinc-bozulma.md`
+### Eşik eğrisi — `docs/charts/pressure-decay.md`
 
 Gece kapalıyken S (küçültülmemiş güçlenme: toplam kenar ağırlığı / düğüm) gün
 gün ölçüldü. İlk on ölçülen günün precision ortalaması **0.6033**; %5 düşüş
@@ -115,7 +115,7 @@ S = **2.3374**'te başlıyor.
 
 Bu iki sabit Faz 3.10'da `uyku.py`'ye elle değil buradan girecek.
 
-### Büyüme (P kümesi) — `docs/charts/yasam-buyume.md`
+### Büyüme (P kümesi) — `docs/charts/life-growth.md`
 
 Sıcak/soğuk ayrımı (Faz 3.11) henüz yok; imza indeksi bütün düğümleri tutup
 lineer tarıyor. Ölçüldü:
@@ -173,7 +173,7 @@ zamanı bilmeyen, doyan ve yalnızca ekleyen bir aşinalık payıydı. Yerine
   seçildi. Holdout'ta aynı iki değer arasında fark yok (kalibrasyon ana sette
   yapıldı, karar setine sızmadı).
 
-### Ölçüm — `docs/charts/yasam-f1.md`
+### Ölçüm — `docs/charts/life-f1.md`
 
 | Kriter | eski | Faz 1 | Ablation (kapalı) | Kabul | Durum |
 |---|---|---|---|---|---|
@@ -245,7 +245,7 @@ kendi yazım anını koyuyor. Faz 1'in bıraktığı yara buydu: düzeltme sıf�
 başlayınca ruhta düzelttiği şeyin altında kalıyordu. `taze_ruh` 0.808 → 0.942
 ile geri geldi.
 
-### Kalibrasyon — `CELISKI_ESIK` (`docs/charts/celiski-esigi.md`)
+### Kalibrasyon — `CELISKI_ESIK` (`docs/charts/contradiction-threshold.md`)
 
 Yol haritasının önerdiği başlangıç değeri **0.75 hiçbir şey yakalamıyor**
 (yakalama 0.00). 24 düzeltme olayında doğru önceki sürümü yakalama oranı, 60
@@ -262,7 +262,7 @@ Eğri 0.55–0.60 arasında dikleşiyor; diz noktası seçildi. Uyarı bir öner
 kayıt her hâlükârda yazılıyor — yanlış alarmın maliyeti bir cümle,
 kaçırmanınki bir çelişki.
 
-### Ölçüm — `docs/charts/yasam-f2.md`
+### Ölçüm — `docs/charts/life-f2.md`
 
 | Kriter | eski | Faz 1 | Faz 2 | Ablation (kapalı) | Kabul | |
 |---|---|---|---|---|---|---|
@@ -323,7 +323,7 @@ dağıtmıyor (çift sayım testi var).
 * `MIN_ACTIVATION` 0.02 → 0.0005 tarandı; `komsuluk_recall` hiç oynamadı.
   Yani eşik değil, sıralama sorunu (aşağıda).
 
-### Ölçüm — `docs/charts/yasam-f3.md`
+### Ölçüm — `docs/charts/life-f3.md`
 
 | Kriter | Faz 2 | Faz 3 | Ablation | Kabul | |
 |---|---|---|---|---|---|
@@ -401,7 +401,7 @@ dokunulmamış kenarları; mikro-uyku hiç küçültmez. Bu, "bir mekanik neden
 uykuya bağlı" sorusunun tek gerçek cevabı ve `shrink_edges_between` onu
 SQL'de zorluyor, yorumda değil.
 
-### Ölçüm — `docs/charts/yasam-f312.md`
+### Ölçüm — `docs/charts/life-f312.md`
 
 | Kriter | Faz 3 | Faz 3.12 | Ablation | Kabul | |
 |---|---|---|---|---|---|
@@ -520,7 +520,7 @@ mikro-uyku dahil. Test yirmi örneklem boyunca bunu zorluyor.
 **Derin döngüler modeli hiç çağırmıyor.** Erken uyanma yarım bir tahmin
 bırakamaz, çünkü tahmin henüz başlamamıştır. Damıtma yalnız REM'de.
 
-### Ölçüm — `docs/charts/yasam-f310.md`
+### Ölçüm — `docs/charts/life-f310.md`
 
 | Kriter | Değer | Kabul | |
 |---|---|---|---|
@@ -576,7 +576,7 @@ Hedef yol haritasında sayı değil **oran**: doksan günlük senaryoda sıcak o
 
 Banda düşen tek değer −5.0.
 
-### Ölçüm — `docs/charts/yasam-f311.md`
+### Ölçüm — `docs/charts/life-f311.md`
 
 | Kriter | Faz 3.10 | Faz 3.11 | Kabul | |
 |---|---|---|---|---|
@@ -698,7 +698,7 @@ ne yapmıştık" koru1000 oturumundayken de cevaplanabilmeli.
 | 0.7 | 0.415 | 1 | 0.434 | 2 |
 | **1.0** | **0.400** | **0** | **0.433** | **1** |
 
-### Ölçüm — `docs/charts/yasam-f5.md`
+### Ölçüm — `docs/charts/life-f5.md`
 
 | Kriter | Faz 3.11 | Faz 5 | Kabul | |
 |---|---|---|---|---|
@@ -927,7 +927,7 @@ kapsamına girmeyen tek çare `vector.py` için opsiyonel IDF ağırlığı.
 Bütün sabitler (`BOZUNMA`, `OLCEK`, `CELISKI_ESIK`, `BASARI_PAYI`,
 `SOGUK_ESIK`, `BAGLAM_CEZA`, `ESIK_UST/ALT`) ana veri setine bakılarak
 seçildi. Bu, sonuçların o setin şekline uydurulmuş olma ihtimalini doğurur ve
-tek panzehiri hiç bakılmamış bir sette ölçmek. `yasam_holdout.json` Faz 0'da
+tek panzehiri hiç bakılmamış bir sette ölçmek. `life_holdout.json` Faz 0'da
 üretilip bir kez bile koşulmamıştı — bu bir eksiklikti, kapatıldı.
 
 Holdout 30 günlük, 43 düğümlük, 34 soruluk ayrı bir senaryo; gece olayı
@@ -956,13 +956,13 @@ mekanizmadan geldiğini doğruluyor.
 **Yan bulgu — kırık ölçüm aleti.** `--old` kolu Faz 5'ten beri
 çalışmıyordu: bench `Mind.remember(..., baglam=)` çağırıyor, `hafiza-eski`
 o parametreyi bilmiyor, koşu `TypeError` ile ölüyordu. Faz 5'ten sonraki
-"eskiye göre" satırlarının hepsi donmuş `yasam-taban.json`'dan okunmuştu —
+"eskiye göre" satırlarının hepsi donmuş `life-baseline.json`'dan okunmuştu —
 sayılar doğru ama alet bozuktu ve bunu ancak holdout'u koşmaya çalışınca
 gördük. `yaz()` artık `TypeError`'da bağlamı düşürüp devam ediyor
 (`loop.select_prime`'daki aynı desen). İkinci kusur: "eski" sütunu hangi
 veri setinde olursa olsun ana setin tabanını gösteriyordu — holdout
 koşusunda iki farklı senaryoyu aynı satırda karşılaştırmak olurdu. Taban
-etiketi artık veri setine bağlı (`yasam-holdout-taban`).
+etiketi artık veri setine bağlı (`life-holdout-baseline`).
 
 ---
 
@@ -1056,14 +1056,14 @@ söylediği gibi soğuyor. Bu, hedefin değil veri setinin sınırı; belgelendi
 | holdout `prime_precision` | 0.385 | 0.475 | **0.652** | |
 | holdout `yasak_sizinti` | 12 | 5 | **0** | |
 
-Süreçler-arası determinizm korunuyor; tüm sayılar `docs/charts/yasam-*.json`.
+Süreçler-arası determinizm korunuyor; tüm sayılar `docs/charts/life-*.json`.
 
 
 ---
 
 ## Faz 7.6 — karakter tutarlılığı, gerçek modellerle · 2026-09-04
 
-Koşu: `docs/charts/karakter-openrouter.md` — 30 karar, 3 bağlam, 3 tekrar
+Koşu: `docs/charts/character-openrouter.md` — 30 karar, 3 bağlam, 3 tekrar
 (30 gün arayla), 720 çağrı; modeller `deepseek/deepseek-v4-flash-0731`
 (kullanıcının günlük modeli) ve `anthropic/claude-haiku-4.5`, ikisi de
 OpenRouter üzerinden, sıcaklık 0, düşünme kapalı. Ürünün kendi backend'i ve
@@ -1119,7 +1119,7 @@ sonuç 1.0 / 0.80, sebat 0.67 / 0.33, temkin 0.67 / 0.75; sosyal ikisinde 0.17.
 ## Faz 7.6 ikinci koşu — kademeli kaldıraç · 2026-09-04
 
 Aynı iki model, aynı 720 çağrı, tek fark: kaldıraç satırları üç kademeli
-(`prompt.leverage_tier`). Rapor: `docs/charts/karakter-openrouter2.md`.
+(`prompt.leverage_tier`). Rapor: `docs/charts/character-openrouter2.md`.
 
 | Metrik | 1. koşu | 2. koşu |
 |---|---|---|
@@ -1168,7 +1168,7 @@ kaldıraç doygunluğu (LEVERAGE_HIGH/LOW) yeni modelde daha dar olmalı.
 
 ## Faz 7.6 üçüncü koşu — onarılmış aletle sonuç · 2026-09-04
 
-Rapor: `docs/charts/karakter-openrouter3.md` (840 çağrı; taban 18 sonda/eksen,
+Rapor: `docs/charts/character-openrouter3.md` (840 çağrı; taban 18 sonda/eksen,
 KARAR önce, bozuk cevap ayrı). Belirsiz oran 0.10 → **0.023** (Haiku 0,
 deepseek 0.045); bozuk 0.007. Bu koşunun sayıları güvenilir, ilk ikisininki
 değildi.
@@ -1220,7 +1220,7 @@ adlandırılıp kapatılmadan hiçbir sonuç yazılmamalıydı; yazıldı ve ger
 
 ## Faz 7.6 dördüncü koşu — kapalı çevrim kalibrasyonu · 2026-09-04
 
-Rapor: `docs/charts/karakter-openrouter4.md` (960 çağrı; taban → tam →
+Rapor: `docs/charts/character-openrouter4.md` (960 çağrı; taban → tam →
 kazanç kalibrasyonu → tam2 → kontrol; kimliksiz kol düşürüldü). Tabanlar
 üçüncü koşuyla uyumlu (Haiku birebir aynı): 18 sonda/eksen alet kararlı.
 
@@ -1321,7 +1321,7 @@ Sonucu kendi bölümünde.
 
 Gerçek senaryo: kullanıcı A (deepseek) ile yaşamış, hedef A-biçimli; model B
 (Claude Haiku) A'ya kalibre ediliyor. 960 çağrı, kapalı çevrim.
-Rapor: `docs/charts/karakter-openrouter5.md`.
+Rapor: `docs/charts/character-openrouter5.md`.
 
 | Metrik | 4. koşu (hedef 0.5) | **5. koşu (hedef = A)** | hedef |
 |---|---|---|---|
@@ -1352,7 +1352,7 @@ kendi kararlarını (ölçülen, ayrı tutulmuş bir örnek setinden) prompta
 Aynı senaryo (hedef = A tabanı, kapalı çevrim) + `recall/exemplars.py`: A'nın
 ayrı tutulmuş 10 karara verdiği cevaplar B'nin kaldıraçlı kollarına "önceki
 kararların" bloğu olarak giriyor; kontrol kolu çıplak. 970 çağrı.
-Rapor: `docs/charts/karakter-openrouter6.md`.
+Rapor: `docs/charts/character-openrouter6.md`.
 
 | | 5. koşu (satır) | **6. koşu (emsal)** |
 |---|---|---|
@@ -1385,7 +1385,7 @@ Altı ölçümün tarifi ürüne kablolandı (`recall/character.py`, uyku bekçi
 1. Bekçi her tikte yapılandırılan modeli `mizac.json`'daki `model_id` ile
    karşılaştırır; ayarlar kaydedilince (`Bridge.reload`) beklemeden bakar.
 2. Fark varsa: yeni modelin tabanı **çıplak** promptla (boş durum dizini —
-   kaldıraç, kimlik, emsal yok) 10 sondayla ölçülür (`assets/karar_sondalari.json`).
+   kaldıraç, kimlik, emsal yok) 10 sondayla ölçülür (`assets/decision_probes.json`).
    Hiçbir sondada karar yoksa hiçbir şey yazılmaz, altı saat sonra denenir.
 3. İlk kurulumda modelin kendi kararları emsal olarak kaydedilir; gerçek
    değişimde **önceki modelin emsalleri yerinde kalır** — korunacak karakter o.

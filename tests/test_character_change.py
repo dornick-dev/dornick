@@ -1,6 +1,6 @@
 """The character follows the model: what happens on a model change.
 
-Six real measurements settled the recipe (docs/hafiza-fazlar.md, 7.6):
+Six real measurements settled the recipe (docs/memory-phases.md, 7.6):
 measure the new model bare, keep the target, keep the previous model's
 decisions as precedent, learn the lever's dose in closed loop. Here the
 model is a fake with an innate temperament; what is tested is the ORDER and

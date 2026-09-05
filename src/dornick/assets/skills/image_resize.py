@@ -3,7 +3,7 @@
 Standart yetenek — paketle geldi. Değiştirebilir, silebilirsin.
 """
 
-NAME = "resim_boyutlandir"
+NAME = "image_resize"
 DESCRIPTION = """Bir görseli yeniden boyutlandırır ve istenirse biçimini
 değiştirir (png/jpg/webp). Kullanıcı "küçült", "boyutlandır", "jpg yap",
 "web için hafiflet" dediğinde kullan. En-boy oranı korunur."""

@@ -95,7 +95,7 @@ def test_repeating_the_same_thing_writes_weaker_copies(store, clock) -> None:
     at ~0.77, not 1.0, so surprise never reaches zero. Worse, the neighbour's
     own score decays with its activation, so the older the earlier copy the
     more "surprising" a repeat looks. The mechanic works; the proxy it rides
-    on saturates and drifts. Recorded in docs/hafiza-fazlar.md.
+    on saturates and drifts. Recorded in docs/memory-phases.md.
     """
     body = "Vardiya raporu şablonu üç sayfalı bir Excel dosyası olarak duruyor."
     weights = []

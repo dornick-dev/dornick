@@ -58,7 +58,7 @@ and turns repeated work into automations you can watch run step by step.
   *base rewriter*) expands your question with synonyms, abbreviations and
   pronoun resolutions before the memory search. It runs in pure numpy on
   CPU, in milliseconds, fully offline. It ships with the repo
-  (`src/dornick/assets/taban.npz`, ~20 MB).
+  (`src/dornick/assets/base.npz`, ~20 MB).
 * **"Learn me" night school.** With the switch on, dornick quietly fine-tunes
   its base rewriter on *your* memories at night, on your machine, at low
   priority. Every candidate model must pass an exam gate — beat the current

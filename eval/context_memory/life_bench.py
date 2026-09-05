@@ -7,7 +7,7 @@ about time: a used trace strengthens, an unused one falls behind, corrected
 knowledge replaces the old, what happened during the day is replayed at
 night. None of that shows up in a single turn.
 
-This closes that gap: a frozen life scenario (`yasam_dataset.json`, 90
+This closes that gap: a frozen life scenario (`life_dataset.json`, 90
 virtual days, grouped into sessions) is played day by day on a **virtual
 clock**. On every `sor` event the product's own `select_prime`,
 `mind.recall` and `mind.soul()` are called; at the end of each day — if
@@ -16,15 +16,15 @@ the product's own path.
 
 Run:
 
-    py eval/context_memory/life_bench.py --label taban --old
-    py eval/context_memory/life_bench.py --label f1 --previous taban
+    py eval/context_memory/life_bench.py --label baseline --old
+    py eval/context_memory/life_bench.py --label f1 --previous baseline
     py eval/context_memory/life_bench.py --disable activation --label f1-ablasyon
     py eval/context_memory/life_bench.py --data holdout --label holdout --fast
     py eval/context_memory/life_bench.py --threshold-curve
     py eval/context_memory/life_bench.py --growth
     py eval/context_memory/life_bench.py --table
 
-`--old` runs the version at the `hafiza-eski` tag from the `eval/eski/`
+`--old` runs the version at the `memory-old` tag from the `eval/old/`
 worktree in a separate process. The old code has no clock injection; the
 module-level `_now` is patched so both versions see **the same virtual
 calendar**. Metrics of mechanisms the old version never had are reported as
@@ -65,10 +65,10 @@ from typing import Any
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[1]
-OLD_TREE = ROOT / "eval" / "eski"
+OLD_TREE = ROOT / "eval" / "old"
 
 # Which source tree is being measured: the product itself, or the
-# `hafiza-eski` tag.
+# `memory-old` tag.
 SOURCE = Path(os.environ.get("DORNICK_SRC") or (ROOT / "src"))
 sys.path.insert(0, str(SOURCE))
 try:
@@ -204,7 +204,7 @@ class VirtualClock:
 
 
 def load_data(name: str) -> dict[str, Any]:
-    file = {"ana": "yasam_dataset.json", "holdout": "yasam_holdout.json"}.get(name, name)
+    file = {"main": "life_dataset.json", "holdout": "life_holdout.json"}.get(name, name)
     return json.loads((HERE / file).read_text(encoding="utf-8"))
 
 
@@ -366,7 +366,7 @@ def _play(mind: Any, data: dict[str, Any], clock: VirtualClock,
             memory = mind.remember(event["icerik"], **common,
                                    context=event.get("baglam") or {})
         except TypeError:
-            # The old version (`hafiza-eski`) knows nothing about context.
+            # The old version (`memory-old`) knows nothing about context.
             # The bench has to drive both versions with the same data; we
             # drop the field and carry on, because "the old version never
             # did this" is a measurable result.
@@ -1282,9 +1282,9 @@ def _conflict_report(report: dict[str, Any]) -> Path:
     for row in report["tablo"]:
         lines.append(f"| {row['esik']:.2f} | {_fmt(row['yakalama'])} "
                      f"| {_fmt(row['yanlis_alarm'])} | {row['yanlis_sayi']} |")
-    path = CHARTS() / "celiski-esigi.md"
+    path = CHARTS() / "contradiction-threshold.md"
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
-    (CHARTS() / "celiski-esigi.json").write_text(
+    (CHARTS() / "contradiction-threshold.json").write_text(
         json.dumps(report, ensure_ascii=False, indent=1), encoding="utf-8")
     return path
 
@@ -1359,14 +1359,14 @@ def write_markdown(label: str, result: dict[str, Any], old: dict[str, Any] | Non
               f"Üretim: `py eval/context_memory/life_bench.py --label {label}`. "
               "Sayılar deterministiktir: aynı veri seti, aynı sanal takvim, "
               "aynı sonuç."]
-    path = CHARTS() / f"yasam-{label}.md"
+    path = CHARTS() / f"life-{label}.md"
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     return path
 
 
 def summary_table() -> Path:
     runs = []
-    for file in sorted(CHARTS().glob("yasam-*.json")):
+    for file in sorted(CHARTS().glob("life-*.json")):
         try:
             runs.append(json.loads(file.read_text(encoding="utf-8")))
         except ValueError:
@@ -1380,7 +1380,7 @@ def summary_table() -> Path:
         values = [_fmt(k["metrikler"].get(name)) for k in runs]
         lines.append(f"| `{name}` | {TARGETS[name][0]} | " + " | ".join(values)
                      + f" | {_target_text(name)} |")
-    path = CHARTS() / "yasam-ozet.md"
+    path = CHARTS() / "life-summary.md"
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     return path
 
@@ -1405,9 +1405,9 @@ def _threshold_report(report: dict[str, Any]) -> Path:
     for e in report["egri"]:
         lines.append(f"| {e['gun']} | {e['s']:g} | {_fmt(e['precision'])} "
                      f"| {_fmt(e['komsu_dogruluk'])} |")
-    path = CHARTS() / "basinc-bozulma.md"
+    path = CHARTS() / "pressure-decay.md"
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
-    (CHARTS() / "basinc-bozulma.json").write_text(
+    (CHARTS() / "pressure-decay.json").write_text(
         json.dumps(report, ensure_ascii=False, indent=1), encoding="utf-8")
     return path
 
@@ -1415,13 +1415,24 @@ def _threshold_report(report: dict[str, Any]) -> Path:
 # -- old version -------------------------------------------------------
 
 
+# The tag of the old version. `memory-old` is the English name; a checkout
+# that only carries the original `hafiza-eski` tag still works.
+OLD_TAGS = ("memory-old", "hafiza-eski")
+
+
 def old_tree_ready() -> Path:
-    """The separate checkout of the `hafiza-eski` tag (git worktree)."""
+    """The separate checkout of the old-version tag (git worktree)."""
     if (OLD_TREE / "src" / "dornick").is_dir():
         return OLD_TREE
-    subprocess.run(["git", "worktree", "add", str(OLD_TREE), "hafiza-eski"],
-                   cwd=ROOT, check=True, capture_output=True)
-    return OLD_TREE
+    last: Exception | None = None
+    for tag in OLD_TAGS:
+        try:
+            subprocess.run(["git", "worktree", "add", str(OLD_TREE), tag],
+                           cwd=ROOT, check=True, capture_output=True)
+            return OLD_TREE
+        except subprocess.CalledProcessError as exc:
+            last = exc
+    raise RuntimeError(f"old-version tag not found ({', '.join(OLD_TAGS)})") from last
 
 
 def old_run(argv: list[str]) -> dict[str, Any]:
@@ -1462,11 +1473,11 @@ def main(argv: list[str] | None = None) -> int:
     if argv is None:
         _pin_hash_seed()
     ap = argparse.ArgumentParser(description="Life benchmark")
-    ap.add_argument("--data", default="ana", help="ana | holdout | file name")
-    ap.add_argument("--label", default="", help="report name (docs/charts/yasam-<label>)")
+    ap.add_argument("--data", default="main", help="main | holdout | file name")
+    ap.add_argument("--label", default="", help="report name (docs/charts/life-<label>)")
     ap.add_argument("--previous", default="", help="label of the previous phase to compare against")
     ap.add_argument("--old", action="store_true",
-                    help="measure the version at the hafiza-eski tag")
+                    help="measure the version at the memory-old tag")
     ap.add_argument("--disable", default="",
                     help="comma-separated: " + (", ".join(switches.NAMES) if switches else "-"))
     ap.add_argument("--order", type=int, default=99, help="column order in the summary table")
@@ -1524,7 +1535,7 @@ def main(argv: list[str] | None = None) -> int:
         result["veri"] = data["ad"]
         result["kapali"] = list(disabled)
         result["damitma"] = bool(args.distil)
-        result["kaynak"] = "hafiza-eski" if OLD_VERSION else "calisma-agaci"
+        result["kaynak"] = "memory-old" if OLD_VERSION else "calisma-agaci"
         result["sure_sn"] = round(time.perf_counter() - started, 1)
         if not args.fast:
             result["olcek"] = _latency_probe(data, args.scale)
@@ -1555,12 +1566,12 @@ def main(argv: list[str] | None = None) -> int:
     # The "eski" column must come from the baseline run of the SAME dataset.
     # Showing the main set's baseline in a holdout run would compare two
     # different scenarios on one row; the numbers right, the comparison wrong.
-    baseline_label = "taban" if args.data == "ana" else f"{args.data}-taban"
+    baseline_label = "baseline" if args.data == "main" else f"{args.data}-baseline"
     old_report = (None if args.label == baseline_label
                   else _read_report(baseline_label))
     previous_report = _read_report(args.previous) if args.previous else None
     if args.label:
-        (CHARTS() / f"yasam-{args.label}.json").write_text(
+        (CHARTS() / f"life-{args.label}.json").write_text(
             json.dumps(result, ensure_ascii=False, indent=1), encoding="utf-8")
         print(write_markdown(args.label, result, old_report, previous_report))
 
@@ -1572,7 +1583,7 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def _read_report(label: str) -> dict[str, Any] | None:
-    path = CHARTS() / f"yasam-{label}.json"
+    path = CHARTS() / f"life-{label}.json"
     if not path.exists():
         return None
     try:

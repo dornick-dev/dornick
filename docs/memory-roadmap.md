@@ -65,7 +65,7 @@ class RecallStore:
 `Mind` ve `open_mind` aynı parametreyi geçirir. Ürün davranışı değişmez; benchmark
 sanal saati gün gün ilerletebilir. **Bu olmadan Faz 1 test edilemez.**
 
-### 0.2 Yaşam senaryosu veri seti — `eval/context_memory/yasam_dataset.json`
+### 0.2 Yaşam senaryosu veri seti — `eval/context_memory/life_dataset.json`
 
 Bir kullanıcının **90 sanal günü**. Her gün 0–6 olay. Olay türleri:
 
@@ -180,7 +180,7 @@ seed, aynı sonuç). `tests/test_saat.py` — enjekte saatin tüm `created/last_
 alanlarına ulaştığını doğrular.
 
 **Faz 0 kabul:** Bench koşuyor, mevcut ürün için **taban çizgisi** raporu
-`docs/charts/yasam-taban.md` olarak commit'lenmiş. Bu rapor olmadan Faz 1 PR'ı açılmaz.
+`docs/charts/life-baseline.md` olarak commit'lenmiş. Bu rapor olmadan Faz 1 PR'ı açılmaz.
 
 ---
 
@@ -694,7 +694,7 @@ gece geçişi **kapatılır**, S gün gün artarken her gün `prime_precision` v
 `_weave` komşu doğruluğu (komşuların `beklenen` kümede olma oranı) ölçülür. Bozulmanın
 başladığı S değeri (taban çizgisinden %5 düşüş) `ESIK_UST` olur; `ESIK_ALT =
 ESIK_UST / 3`. Bu değerler `uyku.py`'de sabit olarak durur, yanına türetildiği bench
-koşusunun tarihi yazılır. Eğri `docs/charts/basinc-bozulma.md`'ye commit'lenir.
+koşusunun tarihi yazılır. Eğri `docs/charts/pressure-decay.md`'ye commit'lenir.
 
 **Sirkadiyen C — histogram + zeitgeber:**
 
@@ -1412,7 +1412,7 @@ Uzak modelin kendi kişiliği vardır ve cevaplara sızar. Dornick'in karakteri
 **harness'tadır**: mizaç + `self`/`voice`/`lesson` + kimlik belgesi + keşif dağılımı.
 Model değişince karakter kalmalıdır; kalmıyorsa bu faz boşa gitmiştir. Bu ölçülür:
 
-**Karakter tutarlılığı seti** (`eval/karakter/kararlar.json`, 30 karar): izin iste /
+**Karakter tutarlılığı seti** (`eval/character/decisions.json`, 30 karar): izin iste /
 isteme; önce test yaz / yazma; kısa / uzun cevap; hangi dizini keşfet; başarısız
 denemeden sonra tekrar dene / kullanıcıya dön; belirsiz istekte sor / varsay. Her karar
 için aynı hafıza + kimlik + mizaç ile:
@@ -1469,7 +1469,7 @@ Metrikler:
 
 ## 7. Benchmark raporu — nihai tablo şablonu
 
-Her fazın PR açıklamasına `docs/charts/yasam-<faz>.md` eklenir:
+Her fazın PR açıklamasına `docs/charts/life-<phase>.md` eklenir:
 
 ```
 | Metrik              | Taban | F1    | F2    | F3    | F3.10 | F4    | F5    | Hedef |
@@ -1581,13 +1581,13 @@ yeşile çevirir. Testi olmayan mekanik merge edilmez. Mevcut 1678 test kırılm
 | 7 | `tests/test_ozne.py` | 7.3 — `world` `kaynak` zorunlu, güven yarılanması, 30 günde prime'a giremez; `self` yalnız gece yazılır, model çağrısı reddedilir, `model_id` taşır, sıfat listesi |
 | 7 | `tests/test_merak.py` | 7.4 — alaka=0 bütçe yok; web fetch kapalı; entropi tabanı (100 gece simülasyonu); yalnız yapı/meta, içerik kopyalanmıyor |
 | 7 | `tests/test_kimlik.py` | 7.5 — kanıtsız cümle ret; gecede >1 cümle ret; sıfat ret; kullanıcı itirazı cümleyi siler + `lesson`; talimat giremez; `recall.db` sıfırlanınca belge sıfırlanır, hedef mizaç kalır |
-| 7 | `eval/karakter/` | 7.6 — 30 karar seti; bağlam/zaman/model tutarlılığı; kaldıraçsız kontrol kolu |
+| 7 | `eval/character/` | 7.6 — 30 karar seti; bağlam/zaman/model tutarlılığı; kaldıraçsız kontrol kolu |
 | 6 | `tests/test_gece_olaylari.py` | 6.5 — her olay JSON şemasına uyuyor; şema dondurulmuş (snapshot testi: şema değişirse test kırılır, bilerek) |
 | 6 | `tests/e2e/test_beyin.py` (Playwright) | 6.5 — yeniden oynatma düğüm sırası; uyanmada animasyon durur; kimlik cümlesi tıklanınca kanıt yanar; 60× hızda frame drop < %5 |
-| hepsi | `eval/context_memory/yasam_bench.py` | her PR'da koşar; `docs/charts/yasam-<faz>.md` önce/sonra + ablation |
+| hepsi | `eval/context_memory/yasam_bench.py` | her PR'da koşar; `docs/charts/life-<phase>.md` önce/sonra + ablation |
 | hepsi | `eval/context_memory/scale_bench.py` | mevcut tek-tur bench gerilemez |
 
-**CI:** `.github/workflows`'a `hafiza.yml`: birim testler her PR'da; `yasam_bench`
+**CI:** `.github/workflows`'a `memory.yml`: birim testler her PR'da; `yasam_bench`
 holdout bölümü her PR'da (≤ 10 dk); `esik_egrisi` ve P (büyüme) kümesi yalnız
 `main`'e merge'de (uzun). Bench sonucu PR yorumuna tablo olarak yazılır.
 
@@ -1603,17 +1603,17 @@ holdout bölümü her PR'da (≤ 10 dk); `esik_egrisi` ve P (büyüme) kümesi y
 şu yapılır:
 
 1. Mevcut `main` `hafiza-eski` etiketiyle dondurulur. Bench her koşuda bu etiketi ayrı
-   bir checkout'a (`eval/eski/`) alır; `yasam_bench.py --eski` o koda karşı koşar.
+   bir checkout'a (`eval/old/`) alır; `yasam_bench.py --eski` o koda karşı koşar.
    İki sürüm aynı veri setini, aynı sanal saati, aynı sorguları görür.
 2. Eski kodda olmayan mekanik (gece geçişi, supersede, uyku) no-op sayılır; ilgili
    metrikler (H–S, `sema_tazeleme` vb.) eski sürümde doğal olarak düşük çıkar. Bu
    sonuç gizlenmez; "eski sistem bunu hiç yapmıyordu" satırı raporda durur.
-3. `docs/charts/yasam-taban.md` bu koşunun çıktısıdır ve bir daha değişmez.
+3. `docs/charts/life-baseline.md` bu koşunun çıktısıdır ve bir daha değişmez.
 
 **Her PR'da üç sütun zorunlu:** `eski` (etiket) · `önceki faz` · `bu faz`. Yalnız
 "önceki faza göre iyileşti" yetmez; kümülatif "eskiye göre" farkı da görünür.
 
-**Son karşılaştırma (Faz 7 bitince, tek rapor: `docs/benchmark-hafiza.md`):**
+**Son karşılaştırma (Faz 7 bitince, tek rapor: `docs/memory-benchmark.md`):**
 
 | Deney | Eski (`hafiza-eski`) | Yeni | Nasıl |
 |---|---|---|---|

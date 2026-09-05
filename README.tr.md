@@ -17,7 +17,7 @@ vLLM). Yerel modelde konuşmaların ve anıların makineden çıkmaz.
   Yeni anı en yakın komşularına kendiliğinden bağlanır.
 * **Kendine ait minik beyin.** 10.8M paramlı bayt-düzeyi taban yazıcı,
   aramadan önce soruyu eş anlamlı/zamir çözümüyle genişletir; saf numpy,
-  CPU, çevrimdışı (`src/dornick/assets/taban.npz`).
+  CPU, çevrimdışı (`src/dornick/assets/base.npz`).
 * **"Beni tanı" gece okulu.** Açıksa taban yazıcı gece, senin makinende,
   senin anılarınla ince ayarlanır; gerileyen aday sınav kapısında çöpe
   gider. Etiketleme seçili modelle yapılır: yerel modelde veri makineden

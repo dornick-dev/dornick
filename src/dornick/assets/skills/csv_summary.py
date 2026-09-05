@@ -3,7 +3,7 @@
 Standart yetenek — paketle geldi. Değiştirebilir, silebilirsin.
 """
 
-NAME = "ozet_csv"
+NAME = "csv_summary"
 DESCRIPTION = """Bir CSV ya da TSV dosyasının hızlı özeti: satır ve sütun
 sayısı, sütun adları, sayısal sütunların en küçük / en büyük / ortalama
 değerleri ve ilk birkaç satır. Kullanıcı bir veri dosyasından bahsettiğinde

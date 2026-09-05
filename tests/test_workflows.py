@@ -39,7 +39,7 @@ def _sample(**changes) -> dict:
                 "type": "skill",
                 "config": {},
                 "secrets_needed": [],
-                "skill": "ozet_csv",
+                "skill": "csv_summary",
                 "position": {"x": 200, "y": 20},
             },
         ],

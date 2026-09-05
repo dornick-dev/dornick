@@ -5,7 +5,7 @@ This directory is the complete training rig for dornick's **base rewriter**
 message and emits the extra search terms the memory engine will need —
 synonyms, abbreviations, pronoun resolutions — or nothing at all when the
 message has no topic. The product ships a trained copy as
-`src/dornick/assets/taban.npz` and runs it in pure numpy on CPU, in
+`src/dornick/assets/base.npz` and runs it in pure numpy on CPU, in
 milliseconds, fully offline.
 
 Everything needed to reproduce or improve the model is here, **including

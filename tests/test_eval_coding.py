@@ -662,7 +662,7 @@ def test_excluded_files_leave_the_measurement(tmp_path: Path) -> None:
 
     skills = tmp_path / "yetenekler"
     skills.mkdir()
-    (skills / "pdf_uret.py").write_text(
+    (skills / "pdf_make.py").write_text(
         "def run(a, c):\n" + "".join(
             f"{'    ' * (i + 1)}if a.get('{i}'):\n" for i in range(8))
         + "        " * 4 + "    return 1\n", encoding="utf-8")

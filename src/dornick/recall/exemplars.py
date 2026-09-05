@@ -11,7 +11,7 @@ previous model's measured baseline, or the user's corrections — and they
 render as "in situations like these you decided…".
 
 They are not measurement leakage: the harness keeps a separate exemplar set
-(`eval/karakter/ornekler.json`) that never appears among the measured
+(`eval/character/exemplars.json`) that never appears among the measured
 decisions.
 """
 

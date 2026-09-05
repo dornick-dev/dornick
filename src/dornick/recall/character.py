@@ -1,7 +1,7 @@
 """What happens to the character when the model changes.
 
 The roadmap's claim (7.2, 7.5): the character lives in the harness, not in
-the model. Six real measurements (docs/hafiza-fazlar.md, 7.6) settled what
+the model. Six real measurements (docs/memory-phases.md, 7.6) settled what
 that takes in practice:
 
 * the new model's temperament must be MEASURED, not assumed — same probes,
@@ -31,7 +31,7 @@ from . import exemplars as exemplar_store
 from . import temperament
 from .temperament import AXIS_KEYS, Probe, Temperament
 
-PROBES_FILE = Path(__file__).resolve().parents[1] / "assets" / "karar_sondalari.json"
+PROBES_FILE = Path(__file__).resolve().parents[1] / "assets" / "decision_probes.json"
 
 AXIS_OF = {v: k for k, v in AXIS_KEYS.items()}
 

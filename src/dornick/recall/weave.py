@@ -105,7 +105,7 @@ WEAVE_LINKS = 3
 # melts by this ratio every night; at 2% it halves in ~35 nights and reaches
 # the floor in ~150. Edges strengthened tonight grew before the shrink, so
 # they come out with a net gain.
-# Calibration: docs/hafiza-fazlar.md "Faz 3 kalibrasyonu".
+# Calibration: docs/memory-phases.md "Faz 3 kalibrasyonu".
 EPSILON = 0.02
 EDGE_FLOOR = 0.05
 

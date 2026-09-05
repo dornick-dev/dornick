@@ -3,7 +3,7 @@
 Standart yetenek — paketle geldi. Değiştirebilir, silebilirsin.
 """
 
-NAME = "arsivle"
+NAME = "archive"
 DESCRIPTION = """Verilen dosya ve klasörleri tek bir .zip arşivine paketler.
 Kullanıcı "sıkıştır", "arşivle", "tek dosya yap", "paylaşılabilir hale
 getir" dediğinde kullan. Klasör verilirse içi özyinelemeli girer."""

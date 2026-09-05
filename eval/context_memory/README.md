@@ -16,7 +16,7 @@ bench fails instead of measuring the wrong thing.
 ## Life benchmark (yasam_bench.py)
 
 The scale bench above measures a single turn. The life bench measures the
-memory **over days**: a frozen 90-virtual-day scenario (`yasam_dataset.json`,
+memory **over days**: a frozen 90-virtual-day scenario (`life_dataset.json`,
 333 events) replayed with an injected virtual clock, so decay, reinforcement
 and correction become observable.
 
@@ -34,8 +34,8 @@ F traps (nothing should surface) · G long silence · H conversation dumps.
 Reported: prime precision/recall, forbidden-record leakage, silence on
 traps, stale/fresh records in the soul, tokens per turn and per session,
 return-after-silence recall, and p95 latency at 50k nodes. Reports land in
-`docs/charts/yasam-<label>.{json,md}`; the running phase ledger is
-`docs/hafiza-fazlar.md`.
+`docs/charts/life-<label>.{json,md}`; the running phase ledger is
+`docs/memory-phases.md`.
 
 Like the scale bench, the measured path is the product's own
 (`loop.select_prime`, `Mind.soul`) — no copied selection logic.

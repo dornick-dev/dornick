@@ -3,7 +3,7 @@
 Standart yetenek — paketle geldi. Değiştirebilir, silebilirsin.
 """
 
-NAME = "pdf_metni"
+NAME = "pdf_text"
 DESCRIPTION = """Bir PDF dosyasının metnini çıkarır. Kullanıcı bir PDF'ten
 bahsettiğinde ya da bir rapor/şartname okunacaksa bunu kullan. Sayfa aralığı
 verilebilir; uzun belgelerde önce ilk sayfalara bak."""

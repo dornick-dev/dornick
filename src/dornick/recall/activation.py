@@ -51,7 +51,7 @@ from .clock import parse
 # 0.9 / 1.0 / 1.1 were swept. `taze_ruh` 0.68 → 0.72 → 0.78 → 0.81 → 0.82 →
 # 0.83; `prime_precision` peaks at 0.9 (0.2634), after 1.0 `yasak_sizinti`
 # goes from 57 to 58. The knee was chosen.
-# See docs/hafiza-fazlar.md "Faz 1 kalibrasyonu".
+# See docs/memory-phases.md "Faz 1 kalibrasyonu".
 DECAY = 0.9
 
 # `t` is measured in hours, not days: two uses on the same day, morning and

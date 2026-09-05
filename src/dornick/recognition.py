@@ -236,7 +236,7 @@ def reset(state_dir: Path) -> dict:
 
     Nothing deleted, things moved: .dornick/taban.npz plus the corpus +
     watermark in the training rig go under .dornick/yedek-<date>/tanima/.
-    The base cache is dropped immediately so the assets/taban.npz shipped
+    The base cache is dropped immediately so the assets/base.npz shipped
     with the product starts talking without waiting for the 5-minute hot
     refresh.
     """

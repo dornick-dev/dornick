@@ -3,7 +3,7 @@
 Standart yetenek — paketle geldi. Değiştirebilir, silebilirsin.
 """
 
-NAME = "olcum"
+NAME = "measure"
 DESCRIPTION = """Bir komutu N kez koşup süre istatistiği çıkarır (medyan,
 min, maks); ikinci bir komut verilirse A/B kıyaslar ve farkı yüzdeyle
 söyler. Algoritma/performans iddiası ölçmeden teslim edilmez: "daha
