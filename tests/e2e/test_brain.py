@@ -185,7 +185,15 @@ def big_night(sessions: int = 200) -> list[dict]:
 # -- helpers ----------------------------------------------------------------
 
 
+def open_details(page) -> None:
+    """The night tab is one of the details: open the strip first."""
+    if not page.evaluate("Regions.details()"):
+        page.click("#brain-details-toggle")
+    page.wait_for_selector('#regions-tabs button[data-sheet="night"]', state="visible")
+
+
 def open_night_sheet(page, date: str, speed: int) -> None:
+    open_details(page)
     page.click('#regions-tabs button[data-sheet="night"]')
     page.wait_for_selector("#night-select")
     page.select_option("#night-select", date)
@@ -243,6 +251,41 @@ def test_clicking_an_identity_sentence_lights_its_evidence(page, config: Config)
     page.wait_for_function("Scene.litLog().length >= 3", timeout=10000)
 
     assert page.evaluate("Scene.litLog()") == ["ev_1", "ev_2", "ev_3"]
+    assert not page.errors, page.errors
+
+
+def test_the_simple_block_is_the_default_and_follows_the_night(page, config: Config) -> None:
+    """Varsayılan: şerit kapalı, blokta düz cümle, yüzde tam sayı. Ayrıntılar
+    açılınca şerit ve Gece sekmesi görünür, seçim localStorage'da. Gece
+    bitince blok "N konuşma tekrar edildi, M ders çıkardı" der."""
+    events, _ = small_night()
+    write_night(config.state_dir, "2025-06-02", events)
+    page.reload()
+    page.wait_for_function("typeof Regions !== 'undefined' && Regions.sentence")
+
+    assert page.evaluate("Regions.details()") is False
+    assert page.is_hidden("#regions-bottom")
+    assert page.is_hidden('#regions-tabs button[data-sheet="night"]')
+    line = page.text_content("#brain-simple-line")
+    assert line.startswith("Uyanık."), line
+    pct = page.text_content("#brain-simple-pct")
+    assert pct.startswith("%") and pct[1:].isdigit(), pct
+    # The newest recorded night is named under the sentence.
+    page.wait_for_function("!document.getElementById('brain-simple-last').hidden", timeout=10000)
+    assert "1 konuşma tekrar edildi" in page.text_content("#brain-simple-last-text")
+
+    open_details(page)
+    assert page.is_visible("#regions-bottom")
+    assert page.evaluate("localStorage.getItem('dornick-beyin-ayrinti')") == "acik"
+    assert page.text_content("#thalamus-wake").startswith("Uyanıklık %")
+    assert page.text_content("#thalamus-pressure").startswith("Basınç ")
+    assert page.text_content("#amygdala-note") == "Sürpriz: sakin"
+
+    open_night_sheet(page, "2025-06-02", 60)
+    page.wait_for_function("Night.stats().played >= 9 && Night.stats().queued === 0", timeout=20000)
+    last = page.text_content("#brain-simple-last-text")
+    assert "1 konuşma tekrar edildi" in last and "1 ders çıkardı" in last, last
+    assert page.text_content("#brain-simple-line").startswith("Uyanık."), "gece bitti: blok uyanık olmalı"
     assert not page.errors, page.errors
 
 

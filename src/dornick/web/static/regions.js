@@ -14,6 +14,12 @@
 //   temperament  a sheet: five axes, three marks
 //   world map    a colour inside the hippocampus (scene.js)
 //
+// Simple by default, details on demand (live: "too complicated, even I
+// drown in this much detail"): the panel shows ONE status block — an icon,
+// a plain sentence, a sleep-need bar — and the instrument strip above
+// opens only with "Ayrıntılar". Both render from the same `state`; the
+// SSE / poll path is one.
+//
 // Honesty limit: the regions are a metaphor. Every region's tooltip names
 // the code it represents (REGIONS below); the mapping is instructive
 // because it is consistent, not because it is biologically true.
@@ -47,6 +53,20 @@ Lang.add({
   "yenilik": "novelty", "sonuc": "outcome", "sosyal": "social", "sebat": "persistence", "temkin": "caution",
   "sürpriz": "surprise", "kaldıraç": "leverage", "kelime": "words",
   "Kayıt açıldı": "Record opened", "soğuk depodan ısındı": "warmed from the cold store",
+  // The simple block.
+  "Uyanık. Sen yokken uyuyup öğrendiklerini pekiştirir.":
+    "Awake. While you are away it sleeps and consolidates what it learned.",
+  "Uyanık — bu gece uyumayacak (kafein).": "Awake — it will not sleep tonight (caffeine).",
+  "Uykulu — birazdan uyur.": "Sleepy — it will sleep soon.",
+  "Uyuyor: günün konuşmalarını tekrar ediyor": "Asleep: replaying the day's conversations",
+  "Uyanıyor.": "Waking up.", "Kestiriyor: kısa bir mola.": "Napping: a short break.",
+  "Dün gece": "Last night", "gecesi": "night", "konuşma tekrar edildi": "conversations replayed",
+  "ders çıkardı": "lessons drawn", "Uyku ihtiyacı": "Sleep need",
+  "Ayrıntılar ▸": "Details ▸", "Ayrıntıları gizle ▾": "Hide details ▾",
+  "Uyanıklık": "Wakefulness", "Basınç": "Pressure", "Sürpriz": "Surprise",
+  "sakin": "calm", "orta": "medium", "yüksek": "high",
+  "Genelde": "Usually", "arası buradasın": "you are here", "tahmini gece": "expected night",
+  "Ritmini henüz öğreniyor": "Still learning your rhythm", "gün": "days",
 });
 
 const Regions = (() => {
@@ -96,6 +116,8 @@ const Regions = (() => {
   const PHASE = { derin: { color: "user", dash: "" }, hafif: { color: "lesson", dash: "4 3" },
                   rem: { color: "preference", dash: "1 4" } };
   const NARROW = 430;     // below this panel width the gauges stack
+  const DETAILS_KEY = "dornick-beyin-ayrinti";   // "acik" | "kapali", default closed
+  const SURPRISE_FADE_MS = 90000;                // the amygdala caption calms down after this
 
   const $ = (id) => document.getElementById(id);
   const css = (n) => getComputedStyle(document.documentElement).getPropertyValue("--" + n).trim();
@@ -107,10 +129,17 @@ const Regions = (() => {
     sleep: "uyanik", nap: false, tired: false, cycle: 0, phase: "",
     wakeAt: "", caffeine: "", pressure: null, threshold: null, debt: null,
     goals: new Map(), patch: {}, cold: 0, world: 0,
+    // The simple block's extra facts: the last finished night and the
+    // progress of the night now playing (fed by night.js).
+    lastNight: null,                 // { date, replayed, lessons, report, summary }
+    night: { done: 0, total: 0 },
+    nextNight: "", rhythmHours: [], rhythmDays: 0,
   };
   let raf = null, lastBeat = 0;
-  let amygdalaLevel = 0;
+  let amygdalaLevel = 0, amygdalaAt = 0;
   let sheetName = "";
+  let details = false;
+  let lastNightLooked = false;      // the /api/gece fallback ran once
 
   // --- tooltips: every region says what code it stands for --------------
   function tipText(key) {
@@ -168,6 +197,16 @@ const Regions = (() => {
       openSheet(b.dataset.sheet === sheetName ? "" : b.dataset.sheet);
     });
 
+    // Details on demand: the strip opens with the toggle, the choice is
+    // remembered; default closed.
+    let saved = null;
+    try { saved = localStorage.getItem(DETAILS_KEY); } catch { /* file:// */ }
+    setDetails(saved === "acik", false);
+    const toggle = $("brain-details-toggle");
+    if (toggle) toggle.addEventListener("click", () => setDetails(!details, true));
+    const reportLink = $("brain-simple-report");
+    if (reportLink) reportLink.addEventListener("click", () => openSheet(sheetName === "report" ? "" : "report"));
+
     // Narrow panel: the gauges stack instead of sitting in a row.
     const watch = new ResizeObserver(() => {
       mind.classList.toggle("narrow", mind.getBoundingClientRect().width < NARROW);
@@ -189,7 +228,24 @@ const Regions = (() => {
         state.threshold = u.esik || null;
         state.debt = u.borc || null;
       }
+      // The watchman's own state machine, when a daemon runs. A replay in
+      // progress owns the state word; the poll must not fight it.
+      if (u && SLEEP_STATES.includes(u.durum) && !replaying()) state.sleep = u.durum;
+      if (u && "kafein" in u) state.caffeine = String(u.kafein || "");
+      if (u && "sonraki_gece" in u) state.nextNight = String(u.sonraki_gece || "");
+      if (u && u.ritim) {
+        state.rhythmDays = Number(u.ritim.gun) || 0;
+        state.rhythmHours = Array.isArray(u.ritim.saatler) ? u.ritim.saatler.map(Number) : [];
+      }
+      if (u && u.son_gece && u.son_gece.rapor && Object.keys(u.son_gece.rapor).length) {
+        const r = u.son_gece.rapor;
+        state.lastNight = { date: String(u.son_gece.bitti || "").slice(0, 10),
+                            replayed: Number(r.replayed) || 0, lessons: Number(r.lessons_written) || 0,
+                            report: r, summary: null };
+        lastNightLooked = true;
+      }
     } catch { /* server not up yet */ }
+    if (!lastNightLooked) await lookupLastNight();
     try {
       const b = await (await fetch("/api/bolgeler")).json();
       if (b) {
@@ -271,6 +327,8 @@ const Regions = (() => {
   // --- amygdala: surprise ------------------------------------------------------
   function amygdala(surprise) {
     amygdalaLevel = clamp(surprise === undefined || surprise === null ? 0.6 : surprise, 0.1, 1);
+    amygdalaAt = Date.now();
+    renderAmygdalaNote();
     const dot = $("amygdala-dot");
     if (!dot) return;
     dot.style.setProperty("--level", amygdalaLevel.toFixed(2));
@@ -343,7 +401,9 @@ const Regions = (() => {
     // carries no `uyaniklik` of its own yet; the tooltip says derived.
     const wake = clamp(1 - fill, 0, 1);
     const wakeEl = $("thalamus-wake");
-    if (wakeEl) wakeEl.textContent = t("uyanıklık") + " " + wake.toFixed(2);
+    if (wakeEl) wakeEl.textContent = t("Uyanıklık") + " %" + Math.round(wake * 100);
+    const pressEl = $("thalamus-pressure");
+    if (pressEl) pressEl.textContent = t("Basınç") + " " + num(p.total) + " / " + num(upper);
     const caff = $("thalamus-caffeine");
     if (caff) { caff.hidden = !state.caffeine; caff.textContent = state.caffeine ? t("kafein") + " · " + state.caffeine : ""; }
     const box = svg.closest("[data-region]") || svg;
@@ -352,6 +412,128 @@ const Regions = (() => {
       + " · " + t("uyanıklık") + " " + wake.toFixed(2) + " (1 − basınç/eşik)";
     box.title = tipText("thalamus") + "\n" + box.dataset.extra;
     renderClock();
+    renderAmygdalaNote();
+    renderSimple();
+  }
+
+  // One decimal, Turkish comma: "2,1".
+  const num = (v) => clamp(v, 0, 99).toLocaleString("tr-TR", { maximumFractionDigits: 1 });
+  const pad2 = (h) => String(h).padStart(2, "0");
+
+  // Is a recorded night being replayed? Then night.js owns the state word.
+  function replaying() {
+    if (typeof Night === "undefined" || !Night.stats) return false;
+    const st = Night.stats();
+    return !!(st.date && !st.live);
+  }
+
+  // The last finished night, when no daemon reports one: newest file's summary.
+  async function lookupLastNight() {
+    lastNightLooked = true;
+    try {
+      const list = await (await fetch("/api/gece")).json();
+      const date = list && Array.isArray(list.geceler) ? list.geceler[0] : "";
+      if (!date) return;
+      const data = await (await fetch("/api/gece/" + encodeURIComponent(date))).json();
+      if (!data || !data.ozet) return;
+      if (state.lastNight && state.lastNight.report) return;   // the daemon answered meanwhile
+      state.lastNight = { date, replayed: Number(data.ozet.tekrar) || 0, lessons: null,
+                          report: null, summary: data.ozet };
+      renderSimple();
+    } catch { /* offline */ }
+  }
+
+  // --- the simple block: icon + sentence + bar ------------------------------
+  function sentence() {
+    const n = state.night;
+    if (state.nap) return t("Kestiriyor: kısa bir mola.");
+    switch (state.sleep) {
+      case "uykulu": return t("Uykulu — birazdan uyur.");
+      case "uyuyor": {
+        const count = n.total > n.done ? n.done + "/" + n.total : n.done ? String(n.done) : "";
+        return t("Uyuyor: günün konuşmalarını tekrar ediyor") + (count ? " (" + count + ")" : "") + ".";
+      }
+      case "uyaniyor": return t("Uyanıyor.");
+      default:
+        return state.caffeine ? t("Uyanık — bu gece uyumayacak (kafein).")
+                              : t("Uyanık. Sen yokken uyuyup öğrendiklerini pekiştirir.");
+    }
+  }
+
+  function nightLabel(date) {
+    const d = new Date();
+    const today = d.toISOString().slice(0, 10);
+    d.setDate(d.getDate() - 1);
+    const yesterday = d.toISOString().slice(0, 10);
+    return date === today || date === yesterday ? t("Dün gece") : date + " " + t("gecesi");
+  }
+
+  function renderSimple() {
+    const box = $("brain-simple");
+    if (!box) return;
+    const word = state.nap ? "uykulu" : (SLEEP_STATES.includes(state.sleep) ? state.sleep : "uyanik");
+    box.dataset.state = word;
+    const line = $("brain-simple-line");
+    if (line) line.textContent = sentence();
+    // "Dün gece 18 konuşma tekrar edildi, 2 ders çıkardı."
+    const last = $("brain-simple-last"), lastText = $("brain-simple-last-text");
+    if (last && lastText) {
+      const ln = state.lastNight;
+      if (ln && ln.date) {
+        lastText.textContent = nightLabel(ln.date) + " " + ln.replayed + " " + t("konuşma tekrar edildi")
+          + (ln.lessons ? ", " + ln.lessons + " " + t("ders çıkardı") : "") + ".";
+        last.hidden = false;
+      } else last.hidden = true;
+    }
+    // Sleep need: pressure over the upper threshold, whole percent only.
+    const p = state.pressure ? Number(state.pressure.total) || 0 : 0;
+    const upper = state.threshold && state.threshold.ust ? Number(state.threshold.ust) : 1;
+    const pct = Math.round(clamp(p / upper, 0, 1) * 100);
+    const fill = $("brain-simple-fill"), pctEl = $("brain-simple-pct"), bar = $("brain-simple-bar");
+    if (fill) fill.style.width = pct + "%";
+    if (pctEl) pctEl.textContent = "%" + pct;
+    if (bar) bar.setAttribute("aria-valuenow", String(pct));
+    box.classList.toggle("high", pct >= 80);
+  }
+
+  // The strip opens and closes; the night tab lives in it.
+  function setDetails(on, remember) {
+    details = !!on;
+    if (mind) mind.classList.toggle("details", details);
+    const strip = $("regions-bottom");
+    if (strip) strip.hidden = !details;
+    const toggle = $("brain-details-toggle");
+    if (toggle) {
+      toggle.textContent = details ? t("Ayrıntıları gizle ▾") : t("Ayrıntılar ▸");
+      toggle.setAttribute("aria-expanded", details ? "true" : "false");
+      toggle.classList.toggle("on", details);
+    }
+    if (!details && sheetName === "night") openSheet("");
+    if (remember) { try { localStorage.setItem(DETAILS_KEY, details ? "acik" : "kapali"); } catch { /* file:// */ } }
+    if (typeof Scene !== "undefined" && Scene.resume) Scene.resume();   // the hole moved
+  }
+
+  // Night hooks for the simple block (night.js calls them).
+  function nightProgress(done, total) {
+    state.night = { done: Number(done) || 0, total: Number(total) || 0 };
+    renderSimple();
+  }
+  function lastNight(info) {
+    if (!info || !info.date) return;
+    state.lastNight = { date: String(info.date), replayed: Number(info.replayed) || 0,
+                        lessons: info.lessons === null || info.lessons === undefined ? null : Number(info.lessons) || 0,
+                        report: info.report || null, summary: info.summary || null };
+    lastNightLooked = true;
+    renderSimple();
+  }
+
+  // The amygdala caption: "Sürpriz: sakin" — the last flash, fading with time.
+  function renderAmygdalaNote() {
+    const note = $("amygdala-note");
+    if (!note) return;
+    const fresh = amygdalaAt && Date.now() - amygdalaAt < SURPRISE_FADE_MS;
+    const level = fresh ? amygdalaLevel : 0;
+    note.textContent = t("Sürpriz") + ": " + t(level >= 0.7 ? "yüksek" : level >= 0.3 ? "orta" : "sakin");
   }
 
   // The rhythm clock: a 24h dial, the hour hand now, a marker at the
@@ -382,6 +564,19 @@ const Regions = (() => {
     if (label) label.textContent = state.wakeAt ? state.wakeAt.slice(-5) : "";
     const box = svg.closest("[data-region]");
     if (box) box.dataset.extra = t("ritim") + (state.wakeAt ? " · " + t("tahmini uyanma") + " " + state.wakeAt : "");
+    // "Genelde 09–18 arası buradasın · tahmini gece 23:00" — from the
+    // watchman's rhythm; before a week of data it says it is learning.
+    const note = $("rhythm-note");
+    if (note) {
+      const parts = [];
+      const hours = state.rhythmHours;
+      if (hours.length) parts.push(t("Genelde") + " " + pad2(Math.min(...hours)) + "–" + pad2(Math.max(...hours) + 1) + " " + t("arası buradasın"));
+      else if (state.rhythmDays < 7) parts.push(t("Ritmini henüz öğreniyor") + " (" + Math.floor(state.rhythmDays) + "/7 " + t("gün") + ")");
+      const m = /T(\d{2}:\d{2})/.exec(state.nextNight || "");
+      if (m) parts.push(t("tahmini gece") + " " + m[1]);
+      else if (state.wakeAt) parts.push(t("tahmini uyanma") + " " + state.wakeAt.slice(-5));
+      note.textContent = parts.join(" · ");
+    }
   }
 
   // Night hooks (called by night.js).
@@ -439,6 +634,7 @@ const Regions = (() => {
     if (sheetName === "identity") renderIdentity();
     else if (sheetName === "temperament") renderTemperament();
     else if (sheetName === "night" && typeof Night !== "undefined") Night.renderSheet(sheet);
+    else if (sheetName === "report" && typeof Night !== "undefined") Night.renderReportSheet(sheet, state.lastNight, () => openSheet(""));
     if (typeof Scene !== "undefined" && Scene.resume) Scene.resume();   // the hole moved
   }
 
@@ -554,5 +750,6 @@ const Regions = (() => {
   }
 
   return { init, refresh, goalAdded, goalStatus, patch, amygdala, sleep, cycle,
-           wakeAt, caffeine, nap, tired, flash, opened, openSheet, tipText, REGIONS };
+           wakeAt, caffeine, nap, tired, flash, opened, openSheet, tipText, REGIONS,
+           nightProgress, lastNight, setDetails, details: () => details, sentence };
 })();

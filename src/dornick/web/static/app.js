@@ -474,17 +474,26 @@ Lang.add({ "Açıklama ▸": "Key ▸", "Açıklama ▾": "Key ▾" });
   search.addEventListener("input", () => Scene.search(search.value));
 
   // The legend folds; default CLOSED ("it hogged a huge amount of space").
+  // Two buttons, one fold: the foot's (ambient mode, bottom right) and the
+  // one in the details strip's header row (panel mode — the foot used to
+  // float over the brainstem line there).
   const chips = $("legend-toggle");
+  const chipsStrip = $("legend-toggle-strip");
   const applyLegend = (on) => {
     Scene.legend(on);
-    chips.classList.toggle("on", on);
-    chips.textContent = on ? t("Açıklama ▾") : t("Açıklama ▸");
+    for (const b of [chips, chipsStrip]) {
+      if (!b) continue;
+      b.classList.toggle("on", on);
+      b.textContent = on ? t("Açıklama ▾") : t("Açıklama ▸");
+    }
     try { localStorage.setItem("dornick-legend", on ? "acik" : "kapali"); } catch { /* file:// */ }
   };
   let leg = null;
   try { leg = localStorage.getItem("dornick-legend"); } catch { /* file:// */ }
   applyLegend(leg === "acik");
   chips.addEventListener("click", () =>
+    applyLegend(!chips.classList.contains("on")));
+  if (chipsStrip) chipsStrip.addEventListener("click", () =>
     applyLegend(!chips.classList.contains("on")));
 
   // Restore the saved panel width / desk-brain split on startup.
@@ -1285,6 +1294,14 @@ function setBusy(value) {
   // "loading" through long tool-running stretches was a live wound.
   if (value && !busy) turnActivity = false;
   busy = value;
+  // The sidebar row of THIS chat flips to "koşuyor" when the turn starts
+  // and back when it ends (live wound, 05.09: "running work does not show
+  // here") — the list only reloaded on a title event before. The second
+  // poke covers the server flagging itself busy a beat after the click.
+  if (typeof History !== "undefined" && History.laneChanged) {
+    History.laneChanged();
+    if (value) setTimeout(() => { if (busy) History.laneChanged(); }, 1500);
+  }
   // The brand node knits and unknits while work runs (CSS knot-knit).
   document.body.classList.toggle("mesgul", value);
   stopBtn.hidden = !value;

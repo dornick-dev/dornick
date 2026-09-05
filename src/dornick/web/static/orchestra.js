@@ -378,8 +378,21 @@ const Orchestra = (() => {
     document.body.classList.add("orch-open");
   }
   function hide() {
+    if (!deck.hidden) keepPanel();
     deck.hidden = true;
     document.body.classList.remove("orch-open");
+  }
+  // Closing the deck closes the DECK, not the right pane. With the brain in
+  // ambient mode the column folds to zero width the moment `orch-open`
+  // drops (live wound, 05.09: "I close the orchestra and the whole right
+  // window closes"). If nothing else holds the column open, the brain
+  // stays put in the panel — the same switch Settings offers; ambient can
+  // be turned back on there.
+  function keepPanel() {
+    const b = document.body.classList;
+    const brainOn = b.contains("mind-on") && !b.contains("mind-off");
+    const held = b.contains("viewing") || b.contains("cam-open") || b.contains("no-ambient");
+    if (brainOn && !held && typeof window.brainCentered === "function") window.brainCentered(false);
   }
   function toggle() {
     if (deck.hidden) { pinned = true; open(); render(); }

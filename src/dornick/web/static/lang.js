@@ -187,6 +187,15 @@ Lang.statics("thalamus", "Thalamus ring", "aria-label");
 Lang.statics("rhythm", "Rhythm clock", "aria-label");
 Lang.statics("brainstem", "Brainstem pulse", "aria-label");
 Lang.statics("regions-tabs", "Brain tabs", "aria-label");
+// The simple status block and the details strip.
+Lang.statics("brain-simple-icon", "Status icon", "aria-label");
+Lang.statics("brain-simple-bar", "Sleep need", "aria-label");
+Lang.statics("legend-toggle-strip", "Toggle the colour key", "title");
+Lang.statics("legend-toggle-strip", "Toggle the colour key", "aria-label");
+Lang.selectors(".brain-simple-need", "How close the night is", "title");
+Lang.selectors(".brain-simple-need-label", "Sleep need");
+Lang.selectors("#brain-simple-report", "Morning report");
+Lang.selectors(".regions-strip-head .region-name", "Details");
 Lang.statics("mind-open", "Show the brain panel", "title");
 Lang.statics("mind-open", "Show the brain panel", "aria-label");
 Lang.statics("mind-search", "Search memories", "aria-label");

@@ -28,7 +28,7 @@ Lang.add({
   "Rapor kaynağı": "Report source", "gece dosyası özeti": "night file summary",
   "kullanıcı": "user", "basınç": "pressure", "ritim": "rhythm",
   "animasyon durdu — kalan dizi soluk": "animation stopped — the remaining chain stays faint",
-  "Bu gece": "Tonight",
+  "Bu gece": "Tonight", "Kapat": "Close",
 });
 
 const Night = (() => {
@@ -46,6 +46,7 @@ const Night = (() => {
   let nextAt = 0;                 // event-clock time the next event may start
   let frozen = false;
   let played = 0, total = 0;
+  let replayed = 0;               // tekrar.ileri events played: the simple block's "(12/30)"
   let sequences = new Map();      // oturum → dizi, from tekrar.ileri
   let seen = new Set();           // ts+tur signatures, so poll and SSE do not double
   let stats = { frames: 0, dropped: 0, last: 0 };
@@ -116,15 +117,25 @@ const Night = (() => {
     if (on) { poll(); live.timer = setInterval(() => { if (!document.hidden) poll(); }, POLL_MS); }
   }
 
+  // What the simple block shows while asleep: sessions replayed so far,
+  // over the file's count when the night is a recording (live: unknown).
+  function progress() {
+    const r = regions();
+    if (!r || !r.nightProgress) return;
+    const known = !current.live && current.summary ? Number(current.summary.tekrar) || 0 : 0;
+    r.nightProgress(replayed, known);
+  }
+
   function reset() {
     const s = scene();
-    queue = []; pending = []; played = 0; total = 0; nextAt = 0;
+    queue = []; pending = []; played = 0; total = 0; nextAt = 0; replayed = 0;
     sequences = new Map(); seen = new Set();
     current = { date: "", summary: null, report: null, woke: null, badge: "", live: false };
     frozen = false;
     if (s) { s.thaw(); s.clearLog(); s.dim(0); s.coldSlice(null); }
     const r = regions();
     if (r) { r.sleep("uyanik"); r.cycle(0, ""); r.nap(false); r.tired(false); }
+    progress();
     renderStatus();
   }
 
@@ -169,6 +180,8 @@ const Night = (() => {
       if (r) { r.sleep("uyuyor"); r.wakeAt(ev.tahmini_uyanma); r.cycle(0, ""); }
       frozen = false;
       current.woke = null; current.badge = "";
+      replayed = 0;
+      progress();
       return scaled(BEAT * 2);
     },
     "uyku.dongu": (ev) => {
@@ -180,6 +193,8 @@ const Night = (() => {
       const s = scene();
       const chain = Array.isArray(ev.dizi) ? ev.dizi : [];
       if (ev.oturum) sequences.set(ev.oturum, chain);
+      replayed += 1;
+      progress();
       if (!s) return scaled(BEAT);
       const dur = s.lightSequence(chain, { kind: "forward", speed, group: "session", numbered: true });
       // The edges appear between the nodes as the chain walks.
@@ -220,7 +235,7 @@ const Night = (() => {
       current.woke = ev;
       current.badge = done + "/" + (done + carried) + " " + t("tekrar edildi") + " · "
         + carried + " " + t("devretti") + " · " + t("sebep") + ": " + t(reasonWord(ev.sebep));
-      if (r) { r.flash(); r.sleep("uyaniyor"); }
+      if (r) { r.flash(); r.sleep("uyaniyor"); if (r.nightProgress) r.nightProgress(done, done + carried); }
       // The animation stops IN PLACE: the scene's event clock freezes and
       // this loop stops. Whatever was still queued stays faint.
       if (s) s.freeze();
@@ -233,6 +248,14 @@ const Night = (() => {
       current.report = ev.rapor && typeof ev.rapor === "object" ? ev.rapor : null;
       if (s) s.dim(0);
       if (r) { r.sleep("uyanik"); r.cycle(0, ""); }
+      // The simple block's "Dün gece 18 konuşma tekrar edildi, 2 ders çıkardı."
+      if (r && r.lastNight) {
+        const rep = current.report || {};
+        r.lastNight({ date: current.date || String(ev.ts || "").slice(0, 10) || today(),
+                      replayed: "replayed" in rep ? rep.replayed : replayed,
+                      lessons: "lessons_written" in rep ? rep.lessons_written : null,
+                      report: current.report, summary: current.summary });
+      }
       renderStatus();
       return scaled(BEAT);
     },
@@ -379,6 +402,36 @@ const Night = (() => {
     renderStatus();
   }
 
+  // The morning report alone — what "Sabah raporu" under the simple
+  // block opens. No controls, no counters: the report and a close button.
+  // `info` is Regions' last-night record; a night with neither report nor
+  // summary in hand is read from its file.
+  async function renderReportSheet(el, info, onClose) {
+    if (!el) return;
+    el.textContent = "";
+    const head = document.createElement("div");
+    head.className = "sheet-head night-report-head";
+    const title = document.createElement("span");
+    title.textContent = t("Sabah raporu") + (info && info.date ? " · " + info.date : "");
+    const close = document.createElement("button");
+    close.type = "button"; close.className = "sheet-close"; close.textContent = "×";
+    close.setAttribute("aria-label", t("Kapat"));
+    close.addEventListener("click", () => { if (onClose) onClose(); });
+    head.append(title, close);
+    el.append(head);
+    const box = document.createElement("div");
+    box.className = "night-report";
+    el.append(box);
+    let report = info ? info.report : null, summary = info ? info.summary : null;
+    if (!report && !summary && info && info.date) {
+      try {
+        const data = await (await fetch("/api/gece/" + encodeURIComponent(info.date))).json();
+        summary = data && data.ozet ? data.ozet : null;
+      } catch { /* offline */ }
+    }
+    fillReport(box, report, summary, null);
+  }
+
   function renderStatus() {
     const progress = $("night-progress");
     if (progress) {
@@ -411,7 +464,9 @@ const Night = (() => {
   const SUMMARY_LABELS = { dongu: "döngü", tekrar: "tekrar", kenar: "kenar", dikis: "dikiş",
                            damitik: "damıtık", dokunus: "dokunuş", devreden: "devretti", uyandi: "sebep" };
 
-  function renderReport(box) {
+  function renderReport(box) { fillReport(box, current.report, current.summary, current.woke); }
+
+  function fillReport(box, report, summary, woke) {
     box.textContent = "";
     const src = document.createElement("div");
     src.className = "sheet-note";
@@ -421,17 +476,17 @@ const Night = (() => {
       const dd = document.createElement("dd"); dd.textContent = String(value);
       dl.append(dt, dd);
     };
-    if (current.report) {
+    if (report) {
       src.textContent = t("Rapor kaynağı") + ": uyku.bitti.rapor (weave.NightReport)";
-      for (const [key, value] of Object.entries(current.report)) {
+      for (const [key, value] of Object.entries(report)) {
         if (Array.isArray(value)) continue;
         put(REPORT_LABELS[key] || key, typeof value === "number" ? Math.round(value * 100) / 100 : value);
       }
-      if (current.woke && current.woke.borc) put("borç", JSON.stringify(current.woke.borc));
-    } else if (current.summary) {
+      if (woke && woke.borc) put("borç", JSON.stringify(woke.borc));
+    } else if (summary) {
       src.textContent = t("Rapor kaynağı") + ": " + t("gece dosyası özeti") + " (night_events.summary)";
-      for (const [key, value] of Object.entries(current.summary)) put(SUMMARY_LABELS[key] || key, value);
-      if (current.woke && current.woke.borc) put("borç", JSON.stringify(current.woke.borc));
+      for (const [key, value] of Object.entries(summary)) put(SUMMARY_LABELS[key] || key, value);
+      if (woke && woke.borc) put("borç", JSON.stringify(woke.borc));
     } else {
       src.textContent = t("rapor yok: gece bitmedi ya da kesildi");
     }
@@ -445,6 +500,6 @@ const Night = (() => {
     frozen, speed, live: current.live, date: current.date,
   });
 
-  return { feed, replay, watch, poll, reset, resume, setSpeed, renderSheet,
+  return { feed, replay, watch, poll, reset, resume, setSpeed, renderSheet, renderReportSheet,
            stats: statsRead, HANDLERS, SPEEDS, BATCH };
 })();

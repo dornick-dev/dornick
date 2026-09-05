@@ -349,7 +349,9 @@ const Scene = (() => {
       return r.height > 0 ? r : null;
     };
     const topStrip = strip(".regions-top");
-    const bottomStrip = strip(".regions-bottom");
+    // Below: the simple status block sits above the details strip; whichever
+    // is drawn first (from the top) bounds the brain.
+    const bottomStrip = strip(".brain-simple") || strip(".regions-bottom");
     const headB = topStrip ? topStrip.bottom
       : head ? head.getBoundingClientRect().bottom : box.top;
     const footT = bottomStrip ? bottomStrip.top

@@ -208,6 +208,15 @@ Root: HKCU; Subkey: "Software\Classes\Directory\Background\shell\DornickOpen\com
 Filename: "{app}\python\python.exe"; Parameters: "-c ""from dornick.winicon import ensure_host; ensure_host()"""; WorkingDir: "{app}"; Flags: runhidden waituntilterminated
 Filename: "{app}\python\dornick.exe"; Parameters: "-m dornick --app -C ""{app}"""; WorkingDir: "{app}"; Description: "{cm:LaunchProgram,{#AppName}}"; Flags: nowait postinstall skipifsilent skipifdoesntexist
 
+[InstallDelete]
+; Files renamed by the 1.5.0 English translation: an update copies the new
+; names next to the old ones (Inno never removes files it did not write),
+; and a stale script would then be served beside the live one.
+Type: files; Name: "{app}\src\dornick\web\static\degisiklik.js"
+Type: files; Name: "{app}\src\dornick\web\static\dil.js"
+Type: files; Name: "{app}\src\dornick\web\static\gorevler.js"
+Type: files; Name: "{app}\src\dornick\web\static\komut.js"
+
 [UninstallDelete]
 ; Leftovers we produce ourselves: the language choice and the bytecode
 ; caches created while running (__pycache__ sprouts nested in every package,

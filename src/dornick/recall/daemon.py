@@ -645,7 +645,12 @@ class SleepDaemon:
                           if self._rested_until and now < self._rested_until else ""),
             "ritim": {"gun": round(self.rhythm.days, 2),
                       "guven": self.rhythm.confidence,
-                      "simdi": self.rhythm.probability(now)},
+                      "simdi": self.rhythm.probability(now),
+                      # The hours the user is usually here today ("Genelde
+                      # 09–18 arası buradasın"); empty before a week of data.
+                      "saatler": ([h for h in range(24)
+                                   if self.rhythm.probability(now.replace(hour=h)) >= 0.5]
+                                  if self.rhythm.days >= 7 else [])},
             "sonraki_gece": self.next_night(now),
             "son_gece": {
                 "bitti": (self._last_night_end.isoformat(timespec="minutes")

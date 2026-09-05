@@ -68,7 +68,61 @@
   <div class="regions-middle" id="regions-middle">
     <div class="regions-sheet" id="regions-sheet" hidden></div>
   </div>
-  <div class="regions-bottom" id="regions-bottom">
+  <!-- Simple by default, details on demand (live: "too complicated, even I
+       drown in this much detail"). One icon, one sentence, one bar; the
+       instrument strip below opens with "Ayrıntılar". Both read the same
+       state (regions.js renderThalamus → renderSimple): one data path,
+       two renderings. -->
+  <div class="brain-simple" id="brain-simple" data-state="uyanik">
+    <svg class="brain-simple-icon" id="brain-simple-icon" viewBox="0 0 48 48" role="img" aria-label="Durum simgesi">
+      <!-- Four states, four shapes: colour never carries the meaning alone. -->
+      <g class="bs-awake">
+        <circle cx="24" cy="24" r="9"/>
+        <g class="bs-rays" stroke-linecap="round">
+          <line x1="24" y1="4" x2="24" y2="9"/><line x1="24" y1="39" x2="24" y2="44"/>
+          <line x1="4" y1="24" x2="9" y2="24"/><line x1="39" y1="24" x2="44" y2="24"/>
+          <line x1="9.9" y1="9.9" x2="13.4" y2="13.4"/><line x1="34.6" y1="34.6" x2="38.1" y2="38.1"/>
+          <line x1="9.9" y1="38.1" x2="13.4" y2="34.6"/><line x1="34.6" y1="13.4" x2="38.1" y2="9.9"/>
+        </g>
+      </g>
+      <g class="bs-sleepy">
+        <path d="M30 8a17 17 0 1 0 0 32a13 13 0 0 1 0-32z"/>
+      </g>
+      <g class="bs-asleep">
+        <path d="M24 8a15 15 0 1 0 8 27.5a12 12 0 0 1-8-27.5z"/>
+        <text x="33" y="16" class="bs-z">z</text><text x="39" y="10" class="bs-z small">z</text>
+      </g>
+      <g class="bs-waking">
+        <path d="M11 30a13 13 0 0 1 26 0z"/>
+        <line x1="4" y1="34" x2="44" y2="34" stroke-linecap="round"/>
+        <g class="bs-rays" stroke-linecap="round">
+          <line x1="24" y1="8" x2="24" y2="13"/><line x1="10" y1="14" x2="13.5" y2="17.5"/>
+          <line x1="38" y1="14" x2="34.5" y2="17.5"/>
+        </g>
+      </g>
+    </svg>
+    <div class="brain-simple-text">
+      <p class="brain-simple-line" id="brain-simple-line" aria-live="polite">Uyanık. Sen yokken uyuyup öğrendiklerini pekiştirir.</p>
+      <p class="brain-simple-last" id="brain-simple-last" hidden>
+        <span id="brain-simple-last-text"></span>
+        <button type="button" class="brain-simple-link" id="brain-simple-report">Sabah raporu</button>
+      </p>
+      <div class="brain-simple-need" title="Gece ne kadar yakın">
+        <span class="brain-simple-need-label">Uyku ihtiyacı</span>
+        <span class="brain-simple-bar" role="progressbar" aria-label="Uyku ihtiyacı" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" id="brain-simple-bar"><i id="brain-simple-fill"></i></span>
+        <span class="brain-simple-pct" id="brain-simple-pct">%0</span>
+      </div>
+      <button type="button" class="brain-details-toggle" id="brain-details-toggle" aria-expanded="false" aria-controls="regions-bottom">Ayrıntılar ▸</button>
+    </div>
+  </div>
+  <div class="regions-bottom" id="regions-bottom" hidden>
+    <!-- Header row of the strip: the legend fold lives HERE, not floating
+         over the brainstem line (the old bottom-left foot overlapped it). -->
+    <div class="regions-strip-head">
+      <span class="region-name">Ayrıntılar</span>
+      <button class="mind-legend-toggle" id="legend-toggle-strip" type="button"
+              title="Renk açıklamasını aç/kapat" aria-label="Renk açıklamasını aç/kapat">Açıklama ▸</button>
+    </div>
     <div class="region thalamus-box" data-region="thalamus">
       <svg class="thalamus" id="thalamus" viewBox="0 0 120 120" aria-label="Talamus halkası" role="img">
         <circle class="th-track" cx="60" cy="60" r="44"/>
@@ -95,6 +149,7 @@
       <div class="thalamus-meta">
         <span class="region-name">Talamus</span>
         <span id="thalamus-wake" class="th-wake"></span>
+        <span id="thalamus-pressure" class="th-pressure"></span>
         <span id="thalamus-caffeine" class="th-caffeine" hidden></span>
         <span id="thalamus-tired" class="th-tired">yorgun</span>
       </div>
@@ -107,10 +162,12 @@
         <text class="rh-text" data-text="wake" x="40" y="66" text-anchor="middle"></text>
       </svg>
       <span class="region-name">Ritim</span>
+      <span class="region-note" id="rhythm-note"></span>
     </div>
     <div class="region amygdala" data-region="amygdala">
       <i class="amygdala-dot" id="amygdala-dot"></i>
       <span class="region-name">Amigdala</span>
+      <span class="region-note" id="amygdala-note">Sürpriz: sakin</span>
     </div>
     <div class="region brainstem" data-region="brainstem">
       <svg class="brainstem-svg" id="brainstem" viewBox="0 0 160 24" preserveAspectRatio="none" aria-label="Beyin sapı nabzı" role="img">

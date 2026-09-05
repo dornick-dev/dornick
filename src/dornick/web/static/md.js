@@ -423,7 +423,7 @@ const Markdown = (() => {
   // twice stretched the list into unreadability.
   function sourceList() {
     const box = el("div", "md-sources");
-    box.append(el2("div", "md-sources-head", ceviri("Kaynaklar")));
+    box.append(el2("div", "md-sources-head", translate("Kaynaklar")));
 
     const byUrl = new Map();
     for (const [no, source] of sources) {
@@ -523,10 +523,10 @@ const Markdown = (() => {
     if (inline) {
       chip.target = "_blank";
       chip.rel = "noopener noreferrer";
-      chip.title = ceviri("Tıkla — tarayıcıda aç") + "\n" + path;
+      chip.title = translate("Tıkla — tarayıcıda aç") + "\n" + path;
     } else {
       chip.setAttribute("download", "");
-      chip.title = ceviri("Tıkla — indir") + "\n" + path;
+      chip.title = translate("Tıkla — indir") + "\n" + path;
     }
     return chip;
   }
@@ -535,7 +535,7 @@ const Markdown = (() => {
   function fileChip(path, line, label) {
     const chip = el("span", "md-file");
     chip.textContent = label;
-    chip.title = ceviri("Tıkla — görüntüleyicide aç") + "\n" + path
+    chip.title = translate("Tıkla — görüntüleyicide aç") + "\n" + path
                + (line ? ":" + line : "");
     chip.tabIndex = 0;
     const ac = () => {
@@ -619,7 +619,7 @@ const Markdown = (() => {
         const ref = fileRef(icerik);
         if (ref && ref.index === 0 && ref.raw === icerik) {
           node.classList.add("md-file-code");
-          node.title = ceviri("Tıkla — görüntüleyicide aç") + "\n" + icerik;
+          node.title = translate("Tıkla — görüntüleyicide aç") + "\n" + icerik;
           node.tabIndex = 0;
           const ac = () => {
             if (typeof Viewer !== "undefined" && Viewer.open) Viewer.open(ref.path, ref.line);

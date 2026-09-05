@@ -1,5 +1,28 @@
 # Changelog
 
+## 1.5.1 - 2026-09-05
+
+Five things found in the first hour of using the packaged 1.5.0.
+
+* **Fixed: answers vanished after a memory step; the loader knot stayed.**
+  Any reply that mentioned a file path drew a clickable chip, and the chip
+  code still called the translation helper by its old Turkish name. The
+  error aborted the render mid-answer and the turn never closed on screen.
+  A browser test now draws every chip shape with the page error budget at
+  zero, and a grep test keeps the old name out of the scripts.
+* **Fixed: closing the Orchestra deck closed the whole right pane.** With
+  the brain in ambient mode the column folded to zero width the moment the
+  deck went. The brain now stays in the panel; ambient can be turned back
+  on in Settings.
+* **Fixed: a running conversation did not show as running in the sidebar.**
+  The list only reloaded on a title event; the busy flag now refreshes it
+  at turn start and end.
+* **Brain panel is simple by default.** One state block (icon, one plain
+  sentence, last night, sleep need); the instruments open under
+  "Ayrıntılar" and the choice is remembered.
+* **Installer removes the four scripts renamed in 1.5.0** so an updated
+  install no longer serves stale files next to the live ones.
+
 ## 1.5.0 - 2026-09-05
 
 The memory upgrade: human-like consolidation, measured against the old

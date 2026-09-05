@@ -416,7 +416,8 @@ def test_status_has_the_shape_the_ui_reads(store, state, clock) -> None:
     assert status["oreksin"] == 1.0
     assert status["sonraki_gece"] == ""          # a new install does not know yet
     assert set(status["son_gece"]) == {"bitti", "rapor", "damitma"}
-    assert set(status["ritim"]) == {"gun", "guven", "simdi"}
+    assert set(status["ritim"]) == {"gun", "guven", "simdi", "saatler"}
+    assert status["ritim"]["saatler"] == []       # nor the usual hours
     for key in ("bosta_dk", "askida", "kafein", "dinlenmis", "mikro", "yerel"):
         assert key in status
     json.dumps(status)                           # it goes over the wire as JSON

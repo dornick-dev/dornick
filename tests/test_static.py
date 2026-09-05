@@ -2812,6 +2812,70 @@ def test_region_scripts_are_served_and_loaded_in_order() -> None:
     assert "classList.toggle(\"narrow\"" in REGIONS_JS
 
 
+def test_the_brain_panel_is_simple_by_default_and_detailed_on_demand() -> None:
+    """Canlı yara: "çok karmaşık, ben bile boğuluyorum; anlaşılır ve görsel
+    olsun, ayrıntı isteyen açsın." Varsayılan görünüm TEK durum bloğu —
+    simge, düz Türkçe bir cümle, uyku ihtiyacı çubuğu; gösterge şeridi
+    "Ayrıntılar" ile açılır, seçim hatırlanır, varsayılan kapalı."""
+    # The block: one icon (four shapes, not colour alone), one sentence, one bar.
+    block = re.search(r'<div class="brain-simple" id="brain-simple"[\s\S]*?<div class="regions-bottom"', HTML)
+    assert block, "basit durum bloğu yok"
+    simple = block.group(0)
+    for shape in ("bs-awake", "bs-sleepy", "bs-asleep", "bs-waking"):
+        assert f'class="{shape}"' in simple, shape
+    assert 'id="brain-simple-line"' in simple and "Uyanık. Sen yokken uyuyup öğrendiklerini pekiştirir." in simple
+    assert "Uyku ihtiyacı" in simple and 'role="progressbar"' in simple
+    assert 'id="brain-simple-report"' in simple and "Sabah raporu" in simple
+    assert 'id="brain-details-toggle"' in simple and "Ayrıntılar ▸" in simple
+    # Nothing numeric but the percent: no decimals, no metric names, no event
+    # counter (the icon's SVG coordinates are drawing, not text).
+    words = re.sub(r"<svg[\s\S]*?</svg>", "", simple)
+    assert not re.search(r"\d[.,]\d", words), "basit blokta ondalık sayı var"
+    for word in ("basınç", "eşik", "olay", "Oynat", "hız", "uyanıklık"):
+        assert word not in words, word
+    # The strip is hidden by default; the sentence per state; the choice persists.
+    assert '<div class="regions-bottom" id="regions-bottom" hidden>' in HTML
+    assert 'const DETAILS_KEY = "dornick-beyin-ayrinti";' in REGIONS_JS
+    assert re.search(r"try \{ localStorage\.setItem\(DETAILS_KEY", REGIONS_JS)
+    assert re.search(r"try \{ saved = localStorage\.getItem\(DETAILS_KEY\); \} catch", REGIONS_JS)
+    assert 'setDetails(saved === "acik", false)' in REGIONS_JS
+    for text in ("Uykulu — birazdan uyur.", "Uyuyor: günün konuşmalarını tekrar ediyor",
+                 "Uyanıyor.", "Ayrıntıları gizle ▾", "konuşma tekrar edildi", "ders çıkardı"):
+        assert text in REGIONS_JS, text
+    # The percent is a whole number: "%12", never "0.13".
+    assert 'pctEl.textContent = "%" + pct' in REGIONS_JS and "Math.round(clamp(p / upper, 0, 1) * 100)" in REGIONS_JS
+    # One data path, two renderings: the strip's renderer draws the block too.
+    assert re.search(r"renderClock\(\);\n\s+renderAmygdalaNote\(\);\n\s+renderSimple\(\);", REGIONS_JS)
+    assert "Regions.nightProgress" not in APP_JS      # night.js feeds it, not a second SSE path
+    assert "r.nightProgress(replayed, known)" in NIGHT_JS and "r.lastNight({" in NIGHT_JS
+    # The poll reads the watchman's state word (a replay owns it meanwhile).
+    assert "SLEEP_STATES.includes(u.durum) && !replaying()" in REGIONS_JS
+    # Details: labelled numbers and one-line captions, the tooltips' code line stays.
+    assert 't("Uyanıklık") + " %" + Math.round(wake * 100)' in REGIONS_JS
+    assert 't("Basınç") + " " + num(p.total) + " / " + num(upper)' in REGIONS_JS
+    assert 'id="rhythm-note"' in HTML and 'id="amygdala-note"' in HTML
+    assert "arası buradasın" in REGIONS_JS and "tahmini gece" in REGIONS_JS
+    assert 't("Sürpriz") + ": "' in REGIONS_JS
+    # The legend fold sits in the strip's header row, not over the pulse line.
+    assert '<div class="regions-strip-head">' in HTML and 'id="legend-toggle-strip"' in HTML
+    assert 'const chipsStrip = $("legend-toggle-strip");' in APP_JS
+    assert ".regions-strip-head { flex: 1 1 100%;" in CSS
+    # The night tab is a detail; the simple block hides in ambient like the strips.
+    assert '.mind:not(.details) .regions-tabs button[data-sheet="night"] { display: none; }' in CSS
+    assert ":not(.cam-open) .brain-simple," in CSS
+    assert ".mind.narrow .brain-simple {" in CSS
+    # The scene's free area stops at the block, not under it (the organ rows
+    # were drawn behind the sun).
+    assert 'strip(".brain-simple") || strip(".regions-bottom")' in SCENE_JS
+    # Details open in a short panel (the dock leaves ~370px): the block folds
+    # to one line and the strip scrolls instead of pushing the network out.
+    assert ".mind.details .brain-simple-last, .mind.details .brain-simple-need { display: none; }" in CSS
+    assert ".mind.details .regions-bottom { flex: 0 1 auto; min-height: 0; overflow-y: auto;" in CSS
+    # The daemon tells the usual hours for the rhythm caption.
+    daemon = (Path(__file__).resolve().parents[1] / "src" / "dornick" / "recall" / "daemon.py").read_text(encoding="utf-8")
+    assert '"saatler":' in daemon
+
+
 def test_day_view_hooks_are_wired() -> None:
     """Gündüz (6.3): prime enjeksiyonu çizgisi, open() parlaması, remember()
     amigdala flaşı, hedef → prefrontal."""
@@ -2821,3 +2885,36 @@ def test_day_view_hooks_are_wired() -> None:
     assert "Regions.goalAdded(" in APP_JS and "Regions.goalStatus(" in APP_JS
     # Sunucu bu iki notu artık akıtır.
     assert '"prime",' in SERVER_SRC and '"mind_open",' in SERVER_SRC
+
+
+# -- 05.09: the answer must survive the renderer -------------------------
+
+
+def test_static_scripts_never_call_the_old_turkish_translation_helper() -> None:
+    """Live wound (05.09, packaged 1.5.0): md.js built a path chip with
+    `ceviri(...)` — a name the translation had renamed everywhere else. The
+    ReferenceError aborted the render; the answer vanished and the loader
+    knot stayed. The wrapper md.js defines is `translate`; the browser test
+    in tests/e2e/test_chat_render.py draws the failing shapes for real."""
+    for path in sorted(STATIC.glob("*.js")):
+        assert "ceviri(" not in path.read_text(encoding="utf-8"), path.name
+    md = (STATIC / "md.js").read_text(encoding="utf-8")
+    assert "const translate = " in md
+
+
+def test_closing_the_orchestra_deck_keeps_the_right_pane() -> None:
+    """Live wound (05.09): "I close the orchestra and the whole right window
+    closes" — dropping `orch-open` folded the ambient brain to zero width."""
+    src = (STATIC / "orchestra.js").read_text(encoding="utf-8")
+    assert "function keepPanel()" in src
+    assert "window.brainCentered(false)" in src
+    hide = src[src.index("function hide()"):]
+    assert "keepPanel()" in hide[:200]
+
+
+def test_the_sidebar_learns_about_a_running_turn_at_its_start() -> None:
+    """Live wound (05.09): "running work does not show here" — the list only
+    reloaded on a title event; the busy flag now pokes it both ways."""
+    app = (STATIC / "app.js").read_text(encoding="utf-8")
+    body = app[app.index("function setBusy("):][:1500]
+    assert body.count("History.laneChanged()") == 2
