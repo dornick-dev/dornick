@@ -1773,6 +1773,28 @@ class Bridge:
         except Exception as err:
             return {"durum": "okunamadı", "hata": str(err)}
 
+    def sleep_now(self) -> dict[str, Any]:
+        """POST /api/uyku/uyu (`/uyu`): start the night now, if the daemon allows."""
+        daemon = getattr(self, "sleeper", None)
+        if daemon is None:
+            return {"ok": False, "durum": "yok", "error": "Uyku bekçisi çalışmıyor."}
+        try:
+            result = daemon.sleep_now()
+        except Exception as err:
+            return {"ok": False, "durum": "okunamadı", "error": str(err)}
+        return result if isinstance(result, dict) else {"ok": bool(result), "durum": ""}
+
+    def caffeine(self) -> dict[str, Any]:
+        """POST /api/uyku/kafein (`/uyuma`): no night for the next hours."""
+        daemon = getattr(self, "sleeper", None)
+        if daemon is None:
+            return {"ok": False, "durum": "yok", "error": "Uyku bekçisi çalışmıyor."}
+        try:
+            result = daemon.caffeine()
+        except Exception as err:
+            return {"ok": False, "durum": "okunamadı", "error": str(err)}
+        return result if isinstance(result, dict) else {"ok": True, "durum": ""}
+
     def _sleep_settings(self) -> Config | None:
         cfg = getattr(self, "_sleep_config", None)
         if cfg is None:

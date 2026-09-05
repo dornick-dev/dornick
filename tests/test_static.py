@@ -1943,6 +1943,34 @@ def test_every_command_runs_something_that_exists() -> None:
     assert '"/api/compact"' in SERVER_SRC
 
 
+def test_the_sleep_commands_talk_to_the_daemon() -> None:
+    """`/uyu`, `/uyuma`, `/yorgun`: the memory's night from the composer.
+    Each goes to a route that exists; the status card reads the same
+    endpoint as the thalamus ring."""
+    kayit = dict(_defter())
+    assert {"uyu", "uyuma", "yorgun"} <= set(kayit), sorted(kayit)
+    assert kayit["uyu"] == "Geceyi şimdi başlat"
+    assert kayit["uyuma"] == "Bu gece uyuma (kafein)"
+    assert kayit["yorgun"] == "Ne kadar yorgunsun?"
+    for route in ('"/api/uyku/uyu"', '"/api/uyku/kafein"'):
+        assert route in KOMUT_JS and route in SERVER_SRC, route
+    assert 'fetch("/api/uyku")' in KOMUT_JS
+    # The answers are shown, not swallowed: the two toasts and the refusal reason.
+    for text in ("Uyuyor…", "4 saat uyumayacak", "answer.error"):
+        assert text in KOMUT_JS, text
+
+
+def test_the_settings_page_has_the_night_sleep_switch() -> None:
+    """The `sleep.uyku_acik` flag the daemon reads must be reachable from
+    the page, and go through the same patch/save road as the other
+    booleans — a switch that never lands in the patch saves nothing."""
+    assert '"Gece uykusu — hafıza pekiştirme (kullanıcı yokken)"' in SETTINGS_JS_SRC
+    assert '"Kapalıyken gece geçişi, soğutma ve temizlik koşmaz."' in SETTINGS_JS_SRC
+    assert 'set("sleep", "uyku_acik", v)' in SETTINGS_JS_SRC
+    added = re.search(r"Lang\.add\(\{(.*?)\n\}\);", SETTINGS_JS_SRC, re.S)
+    assert added and "Gece uykusu — hafıza pekiştirme" in added.group(1)
+
+
 def test_the_composer_menu_is_a_keyboard_state_machine() -> None:
     """Fare olmadan da kullanılabilmeli: ok tuşları gezer, Enter seçer,
     Escape kapatır. Enter kutuya gitmezse mesaj yanlışlıkla gönderilir."""

@@ -1154,6 +1154,20 @@ class _Handler(BaseHTTPRequestHandler):
             self._json(result if isinstance(result, dict)
                        else {"ok": False, "error": "Sıkıştırma bu köprüde yok."})
             return
+        if route == "/api/uyku/uyu":
+            # `/uyu`: the sleep daemon starts a night now (or says why not).
+            result = self._controller_call("sleep_now")
+            self._json(result if isinstance(result, dict)
+                       else {"ok": False, "durum": "yok",
+                             "error": "Uyku bekçisi bu köprüde yok."})
+            return
+        if route == "/api/uyku/kafein":
+            # `/uyuma`: caffeine — no night for the next hours.
+            result = self._controller_call("caffeine")
+            self._json(result if isinstance(result, dict)
+                       else {"ok": False, "durum": "yok",
+                             "error": "Uyku bekçisi bu köprüde yok."})
+            return
         if route == "/api/session/new":
             # A live new session depends on the bridge: the event stream has
             # to be re-attached to the new log. If the bridge does not

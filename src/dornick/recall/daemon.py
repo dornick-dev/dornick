@@ -173,6 +173,9 @@ class SleepDaemon:
         self._thread: threading.Thread | None = None
         self._stopping = False
         self._kick = threading.Event()
+        # `sleep_now()` set the switch to ASLEEP by hand; the next tick must
+        # run the night instead of letting the thresholds undo the choice.
+        self._force_night = False
 
     # -- lifecycle -----------------------------------------------------
 
@@ -255,10 +258,49 @@ class SleepDaemon:
             sleeper.wake(reason)
         return woke
 
-    def caffeine(self, hours: float = sleep.CAFFEINE_HOURS) -> None:
-        """"Don't sleep now." The threshold rises; the pressure stays honest."""
+    def caffeine(self, hours: float = sleep.CAFFEINE_HOURS) -> dict[str, Any]:
+        """"Don't sleep now." The threshold rises; the pressure stays honest.
+
+        A night already running is asked to stop as well — "not tonight"
+        said during the night means the night, not just the next one.
+        Returns what POST /api/uyku/kafein answers.
+        """
         with self._lock:
             self.switch.caffeine(hours)
+            self._force_night = False
+            sleeper = self._sleeper
+            until = self.switch.caffeine_until
+        if sleeper is not None:
+            sleeper.wake("kafein")
+        return {"ok": True, "durum": self.switch.state.value, "saat": float(hours),
+                "kafein": until.isoformat(timespec="minutes") if until else ""}
+
+    def sleep_now(self) -> dict[str, Any]:
+        """"Start the night now" (`/uyu`). Returns what POST /api/uyku/uyu answers.
+
+        The switch goes to ASLEEP at once and the thread is poked, so the
+        night starts on the next tick rather than waiting for pressure and
+        idle time. Orexin is not consulted: the user asked. If they are in
+        fact still here, their next message pins the switch AWAKE and wakes
+        the night the moment it arrives — as with any night. Refused, with
+        the reason, when the switch is off, the machine is suspended, or a
+        night is already running.
+        """
+        with self._lock:
+            state = self.switch.state.value
+            if not self.enabled():
+                return {"ok": False, "durum": state, "error": "Gece uykusu kapalı."}
+            if self.switch.suspended_at is not None:
+                return {"ok": False, "durum": state, "error": "Makine askıda."}
+            if self._sleeper is not None or self.switch.state is sleep.State.ASLEEP:
+                return {"ok": False, "durum": state, "error": "Zaten uyuyor."}
+            if not self.switch.sleep_now("kullanici istedi"):
+                return {"ok": False, "durum": state, "error": "Uyutulamadı."}
+            self._force_night = True
+            self._journal()
+            state = self.switch.state.value
+        self.poke()
+        return {"ok": True, "durum": state}
 
     def os_suspended(self) -> None:
         """The machine is going to sleep (WM_POWERBROADCAST suspend)."""
@@ -386,12 +428,22 @@ class SleepDaemon:
         with self._lock:
             if idle >= IDLE_MINUTES and self.switch.orexin >= 1.0:
                 self.switch.user_active(False)
+            forced = self._force_night
+            self._force_night = False
 
         pressure = self.measure()
         hours, pending = self.debt()
         with self._lock:
-            state = self.switch.step(self._fed(pressure.total, hours, now),
-                                     idle_minutes=idle)
+            if forced and self.switch.state is sleep.State.ASLEEP:
+                # The user asked for this night: the thresholds do not get
+                # to undo it before it starts. They are re-sampled at the
+                # first cycle boundary as in any night. Had the user come
+                # back in between, orexin already put the switch AWAKE and
+                # the ordinary step runs.
+                state = self.switch.state
+            else:
+                state = self.switch.step(self._fed(pressure.total, hours, now),
+                                         idle_minutes=idle)
             self._journal()
 
         if state is sleep.State.ASLEEP:

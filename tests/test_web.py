@@ -1253,3 +1253,46 @@ def test_a_night_replay_can_be_asked_for_what_came_after(tmp_path: Path, mind: M
     finally:
         server.stop()
         log.close()
+
+
+# -- the composer's sleep commands ------------------------------------------
+
+
+def test_the_sleep_commands_reach_the_bridge_and_refuse_honestly(
+    tmp_path: Path, mind: Mind
+) -> None:
+    """`/uyu` and `/uyuma` are two POST routes in front of the bridge's
+    sleep_now()/caffeine(); a bridge without them answers ok:false with a
+    reason, not a 500."""
+    from types import SimpleNamespace
+
+    calls: list[str] = []
+    bridge = SimpleNamespace(
+        snapshot=lambda: {"busy": False},
+        sleep_now=lambda: calls.append("uyu") or {"ok": True, "durum": "uyuyor"},
+        caffeine=lambda: calls.append("kafein") or {
+            "ok": True, "durum": "uyanik", "saat": 4.0, "kafein": "2025-06-02T13:00"},
+    )
+    log = EventLog(tmp_path / "s.jsonl")
+    server = MindServer(mind, log, port=0, controller=bridge)  # type: ignore[arg-type]
+    server.start()
+    try:
+        assert _post_json(server, "/api/uyku/uyu", {}) == {"ok": True, "durum": "uyuyor"}
+        assert _post_json(server, "/api/uyku/kafein", {})["kafein"] == "2025-06-02T13:00"
+        assert calls == ["uyu", "kafein"]
+    finally:
+        server.stop()
+        log.close()
+
+    log = EventLog(tmp_path / "t.jsonl")
+    bare = MindServer(mind, log, port=0,
+                      controller=SimpleNamespace(snapshot=lambda: {}))  # type: ignore[arg-type]
+    bare.start()
+    try:
+        for route in ("/api/uyku/uyu", "/api/uyku/kafein"):
+            answer = _post_json(bare, route, {})
+            assert answer["ok"] is False and answer["durum"] == "yok"
+            assert "köprüde yok" in answer["error"]
+    finally:
+        bare.stop()
+        log.close()

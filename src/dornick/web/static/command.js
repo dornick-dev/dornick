@@ -43,6 +43,31 @@ Lang.add({
   "Escape — açık kutuyu kapat": "Escape — close the open box",
   "Bağlam sıkıştırılamadı.": "Could not compact the context.",
   "işaret edilen dosya": "mentioned file",
+  "Geceyi şimdi başlat": "Start the night now",
+  "Bu gece uyuma (kafein)": "Don't sleep tonight (caffeine)",
+  "Ne kadar yorgunsun?": "How tired are you?",
+  "Uyuyor…": "Sleeping…",
+  "Uyutulamadı.": "Could not start the night.",
+  "4 saat uyumayacak": "No sleep for 4 hours",
+  "Uyku bekçisine ulaşılamadı.": "Could not reach the sleep daemon.",
+  "Yorgunluk": "Fatigue",
+  "Basınç": "Pressure",
+  "Eşik": "Threshold",
+  "Borç": "Debt",
+  "Durum": "State",
+  "Tahmini gece": "Expected night",
+  "Kafein": "Caffeine",
+  "Dinlenmiş": "Rested",
+  "saat": "h",
+  "oturum": "sessions",
+  "uyanik": "awake",
+  "uykulu": "sleepy",
+  "uyuyor": "asleep",
+  "uyaniyor": "waking",
+  "bilinmiyor": "unknown",
+  "kadar": "until",
+  "henüz bilinmiyor": "not known yet",
+  "uyku kapalı": "sleep is off",
 });
 
 const Command = (() => {
@@ -85,6 +110,12 @@ const Command = (() => {
       run: () => press("apps") },
     { name: "ayarlar", what: "Ayar sayfasını aç", run: () => press("gear") },
     { name: "sifirla", what: "Bağlamı sıkıştır — konuşma kesilmez", run: compactContext },
+    // The memory's night (recall/daemon.py): start it, hold it off, or ask
+    // how heavy the pressure is. All three go to the same daemon the
+    // thalamus ring reads.
+    { name: "uyu", what: "Geceyi şimdi başlat", run: sleepNow },
+    { name: "uyuma", what: "Bu gece uyuma (kafein)", run: caffeine },
+    { name: "yorgun", what: "Ne kadar yorgunsun?", run: howTired },
     // Stopping goes through its own button: opening a second interrupt
     // path means one changes some day and the other stays behind.
     { name: "durdur", what: "Koşan turu durdur", run: () => press("stop") },
@@ -95,6 +126,54 @@ const Command = (() => {
     const answer = await post("/api/compact");
     if (answer && answer.ok === false) {
       line("alert", answer.error || t("Bağlam sıkıştırılamadı."));
+    }
+  }
+
+  // `/uyu`: the daemon puts the switch to ASLEEP and runs the night on its
+  // own thread. The next message wakes it — the command does not lock the
+  // user out of the chat.
+  async function sleepNow() {
+    const answer = await post("/api/uyku/uyu");
+    if (!answer) { line("alert", t("Uyku bekçisine ulaşılamadı.")); return; }
+    if (answer.ok) line("system", t("Uyuyor…"));
+    else line("alert", answer.error || t("Uyutulamadı."));
+  }
+
+  // `/uyuma`: caffeine — the threshold goes out of reach for four hours.
+  async function caffeine() {
+    const answer = await post("/api/uyku/kafein");
+    if (!answer) { line("alert", t("Uyku bekçisine ulaşılamadı.")); return; }
+    if (answer.ok) line("system", t("4 saat uyumayacak"));
+    else line("alert", answer.error || t("Uyutulamadı."));
+  }
+
+  // `/yorgun`: a short card from GET /api/uyku — the same fields the
+  // thalamus ring reads. Numbers are shown as they are measured.
+  async function howTired() {
+    let s = null;
+    try { s = await (await fetch("/api/uyku")).json(); } catch { s = null; }
+    if (!s) { line("alert", t("Uyku bekçisine ulaşılamadı.")); return; }
+    const num = (v, digits) => (typeof v === "number" && isFinite(v)) ? v.toFixed(digits) : "?";
+    const pressure = s.basinc || {};
+    const threshold = s.esik || {};
+    const debt = s.borc || {};
+    const rows = [
+      ["Basınç", num(pressure.total, 3)],
+      ["Eşik", num(threshold.ust, 3) + " / " + num(threshold.alt, 3)],
+      ["Borç", num(debt.saat, 1) + " " + t("saat") + " · " + (debt.oturum ?? "?") + " " + t("oturum")],
+      ["Durum", t(s.durum || "bilinmiyor") + (s.acik === false ? " · " + t("uyku kapalı") : "")],
+      ["Tahmini gece", s.sonraki_gece ? s.sonraki_gece.replace("T", " ") : t("henüz bilinmiyor")],
+    ];
+    if (s.kafein) rows.push(["Kafein", s.kafein.replace("T", " ") + " " + t("kadar")]);
+    if (s.dinlenmis) rows.push(["Dinlenmiş", s.dinlenmis.replace("T", " ") + " " + t("kadar")]);
+    const card = line("help");
+    card.replaceChildren();
+    card.append(el("div", "help-head", t("Yorgunluk")));
+    for (const [label, value] of rows) {
+      const row = el("div", "help-row");
+      row.append(el("b", null, t(label)));
+      row.append(el("span", null, value));
+      card.append(row);
     }
   }
 

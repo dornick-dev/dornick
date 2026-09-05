@@ -350,6 +350,22 @@ class SleepSwitch:
             return True
         return False
 
+    def sleep_now(self, reason: str = "istek") -> bool:
+        """The user asked for the night now: straight to ASLEEP.
+
+        Orexin drops and a caffeine hold is spent — the user's later word
+        wins over the earlier one. The thresholds are not consulted here;
+        they get their say again at the first cycle boundary, so a forced
+        night with nothing to do ends after one cycle. Returns whether the
+        switch moved (not while the machine is suspended).
+        """
+        if self.suspended_at is not None:
+            return False
+        self.orexin = 0.0
+        self.caffeine_until = None
+        self._go(State.ASLEEP, reason)
+        return self.state is State.ASLEEP
+
     def night_over(self, reason: str = "gece bitti") -> None:
         """The night ended without a stimulus: it ran out of work, or the
         application is closing. ASLEEP → WAKING; the next step() finishes

@@ -567,6 +567,10 @@ Lang.add({
   "Dış kapı kapandı": "External gate closed",
 
   // learn me
+  "Gece uykusu — hafıza pekiştirme (kullanıcı yokken)":
+    "Night sleep — memory consolidation (while you are away)",
+  "Kapalıyken gece geçişi, soğutma ve temizlik koşmaz.":
+    "When off, the night pass, cooling and housekeeping do not run.",
   "Beni tanı": "Learn me",
   "Beyin ortada dursun": "Brain takes the stage",
   "Açıkken hiçbir panel açık değilse beyin ekranın ortasında büyür; kapatırsan sağ panelde kalır ve yazılar hiç örtülmez":
@@ -3272,6 +3276,16 @@ const Settings = (() => {
       "Açıkken hiçbir panel açık değilse beyin ekranın ortasında büyür; " +
       "kapatırsan sağ panelde kalır ve yazılar hiç örtülmez",
       brainSwitch
+    ));
+
+    // Night sleep of the memory (recall/daemon.py). A plain config flag:
+    // it goes through the patch and the Save button like the other
+    // booleans on this pane, and the daemon reads it on its next tick.
+    pane.append(field(
+      "Gece uykusu — hafıza pekiştirme (kullanıcı yokken)",
+      "Kapalıyken gece geçişi, soğutma ve temizlik koşmaz.",
+      toggleBox((patch.sleep || {}).uyku_acik ?? (state.sleep || {}).uyku_acik ?? true,
+                (v) => set("sleep", "uyku_acik", v))
     ));
 
     // Learn me: the personal fine-tune loop (the training rig lives in a
