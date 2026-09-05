@@ -3,7 +3,7 @@
 ; installer\build.ps1 runs first: embedded Python + dependencies + source +
 ; training rig are laid out under dist\paket; this script only packages that
 ; tree. The installed tree mimics the developer repo's layout exactly
-; (src\, eval\, egitim\, .dornick\) — the product code knows a single layout,
+; (src\, eval\, training\, .dornick\) — the product code knows a single layout,
 ; there is no second truth called "a different path when installed".
 ;
 ; UPDATE: AppId is fixed; a previous installation is recognized from the
@@ -11,27 +11,27 @@
 ; version", offering three paths: update (default; data is kept), clean
 ; install (code from scratch, data still kept), reset data too (with a
 ; confirmation checkbox + an offer of a zip backup to Documents). In silent
-; mode the default is "update"; the /TEMIZLE=temiz or /TEMIZLE=veri switch
-; selects the other paths in silent mode too (/YEDEK=0 disables the backup —
+; mode the default is "update"; the /CLEAN=clean or /CLEAN=data switch
+; selects the other paths in silent mode too (/BACKUP=0 disables the backup —
 ; for tests/automation).
 ;
 ; SAFETY NETS (against three wounds experienced in the field):
 ;   1. Running-copy detection: EVERY python(w)/dornick.exe process running
 ;      "-m dornick" is found (no install-directory requirement), the list is
 ;      shown; [Close and continue] does a gentle taskkill + verification.
-;      In silent mode /KAPAT=1 closes them.
+;      In silent mode /CLOSE=1 closes them.
 ;   2. Different-directory warning: if the registry has an install location
 ;      and another directory is chosen, an explicit warning page appears —
 ;      the recommendation is "update the existing location".
 ;   3. Memory backup on EVERY path: if .dornick exists, before installing,
 ;      Documents\dornick-backups\dornick-backup-<date>.zip (last 5 are kept);
 ;      a failure does not stop the install but the user is told.
-;      /YEDEKDIZIN=<folder> changes the target in tests.
-; Test hooks: /SADECE_TARA=1 + /SUREC_RAPOR=<file> proves the process scan
+;      /BACKUPDIR=<folder> changes the target in tests.
+; Test hooks: /SCAN_ONLY=1 + /PROCESS_REPORT=<file> proves the process scan
 ; and exits without installing (installer\test_install.ps1).
 ;
 ; The uninstaller does NOT touch .dornick (memories, keys, sessions) or the
-; personal files that accumulate later in egitim\veri — user data remains.
+; personal files that accumulate later in training\veri — user data remains.
 
 ; Name, package path and identity can be overridden with /D: the sandbox
 ; tests of the install logic run under a separate identity (dornick-test)
@@ -84,106 +84,106 @@ Name: "tr"; MessagesFile: "compiler:Languages\Turkish.isl"
 Name: "en"; MessagesFile: "compiler:Default.isl"
 
 [CustomMessages]
-tr.AnaBilesen=dornick (gerekli)
-en.AnaBilesen=dornick (required)
-tr.EgitimBileseni=Beni tanı eğitimi (gece kişisel öğrenme, ~1,5 GB)
-en.EgitimBileseni=Know-me training (nightly personal learning, ~1.5 GB)
-tr.DinlemeBileseni=Dinleme (mikrofon) — yerel tanıma, ~250 MB
-en.DinlemeBileseni=Listening (microphone) — local recognition, ~250 MB
-tr.KameraBileseni=Kamera izleme
-en.KameraBileseni=Camera watching
-tr.OtomatikBaslat=Windows ile başlat
-en.OtomatikBaslat=Start with Windows
-tr.TamKurulum=Tam kurulum (eğitim dahil)
-en.TamKurulum=Full installation (with training)
-tr.KucukKurulum=Yalın kurulum (yalnız uygulama)
-en.KucukKurulum=Compact installation (app only)
-tr.OzelKurulum=Özel kurulum
-en.OzelKurulum=Custom installation
-tr.GuncellemeBaslik=Önceki kurulum bulundu
-en.GuncellemeBaslik=Previous installation found
-tr.GuncellemeMesaj=Kurulu sürüm: %1 → Yeni sürüm: %2. Güncelleme yapılacak; anıların, ayarların, görevlerin ve otomasyonların korunur.
-en.GuncellemeMesaj=Installed version: %1 → New version: %2. This will update dornick; your memories, settings, tasks and automations are kept.
-tr.GuncellemeAciklama=Eski kurulum bulundu. Verilerin (anılar, görevler, otomasyonlar) ne olacak?
-en.GuncellemeAciklama=An existing install was found. What should happen to your data (memories, tasks, automations)?
-tr.SecGuncelle=Güncelle (önerilen) — uygulama yenilenir; anılar, görevler ve otomasyonlar aynen kalır
-en.SecGuncelle=Update (recommended) — app is refreshed; memories, tasks and automations stay untouched
-tr.SecTemiz=Temiz kurulum — uygulama klasörleri sıfırdan yazılır; anılar/görevler/otomasyonlar yine korunur
-en.SecTemiz=Clean install — app folders are rewritten; memories/tasks/automations are still kept
-tr.SecVeri=Verileri de sıfırla — .dornick (anılar, görevler, otomasyonlar), atölye ve eğitim verisi silinir
-en.SecVeri=Reset data too — deletes .dornick (memories, tasks, automations), workshop and training data
-tr.OnayBaslik=Verileri sıfırlama onayı
-en.OnayBaslik=Confirm data reset
-tr.OnayAlt=Bu adım geri alınamaz
-en.OnayAlt=This step cannot be undone
-tr.OnayAciklama=Devam etmek için ilk kutuyu işaretle. Yedek almak istersen ikinci kutu işaretli kalsın.
-en.OnayAciklama=Check the first box to continue. Keep the second box checked if you want a backup.
-tr.OnayAnladim=Anılarım, görevlerim ve kişisel verilerim kalıcı olarak silinecek — anladım
-en.OnayAnladim=My memories, tasks and personal data will be permanently deleted — I understand
-tr.OnayYedek=Silmeden önce yedek al: Belgeler\dornick-backup-<tarih>.zip
-en.OnayYedek=Back up before deleting: Documents\dornick-backup-<date>.zip
-tr.YedekHata=Yedek alınamadı; hiçbir şey silinmedi. Diskte yer aç ya da yedek seçeneğini kaldırıp yeniden dene.
-en.YedekHata=Backup failed; nothing was deleted. Free some disk space or untick the backup option and try again.
-tr.NeoAcikBaslik=Açık dornick kopyaları var
-en.NeoAcikBaslik=dornick is currently running
-tr.NeoAcikListe=Şu dornick kopyaları açık:%n%n%1%nDosyalar kullanımdayken kurulum sağlıklı ilerleyemez. "Kapat ve devam" bu kopyaları nazikçe kapatır; kaydedilmemiş bir konuşma varsa yarıda kalabilir.
-en.NeoAcikListe=These dornick copies are open:%n%n%1%nSetup cannot proceed safely while files are in use. "Close and continue" closes these copies gently; an unsaved conversation may be cut short.
-tr.KapatVeDevam=Kapat ve devam
-en.KapatVeDevam=Close and continue
-tr.IptalEt=İptal
-en.IptalEt=Cancel
-tr.KurulumIptalMesaj=Kurulum kullanıcı isteğiyle iptal edildi.
-en.KurulumIptalMesaj=Setup was cancelled at the user's request.
-tr.DizinBaslik=dornick zaten başka bir konumda kurulu
-en.DizinBaslik=dornick is already installed elsewhere
-tr.DizinMesaj=dornick zaten şurada kurulu: %1%nAynı yere güncellemek yerine %2 içine İKİNCİ bir kopya kurmak üzeresin. İki kopya kafa karıştırır: hangisi açık, anılar hangisinde — sahada bunu yaşadık.
-en.DizinMesaj=dornick is already installed at: %1%nInstead of updating in place, you are about to install a SECOND copy into %2. Two copies get confusing: which one is open, which one holds the memories.
-tr.DizinSoru=Nasıl devam edilsin?
-en.DizinSoru=How should we proceed?
-tr.SecEskiKonum=Eski konuma güncelle (önerilen) — %1
-en.SecEskiKonum=Update the existing location (recommended) — %1
-tr.SecIkinciKopya=Bilerek ikinci kopya kur — %1
-en.SecIkinciKopya=Install a second copy on purpose — %1
-tr.OtoYedekHata=Hafıza yedeği alınamadı. Kurulum sürüyor (bu adımda hiçbir veri silinmez); istersen kurulumdan önce %1 klasörünü elle yedekle.
-en.OtoYedekHata=The memory backup could not be created. Setup continues (nothing is deleted in this step); you may back up %1 by hand first if you wish.
-tr.YedekMemo=Hafıza yedeği (.dornick)
-en.YedekMemo=Memory backup (.dornick)
-tr.YedekMemoSatir=Belgeler\dornick-backups içine otomatik zip alınacak (son 5 yedek tutulur)
-en.YedekMemoSatir=An automatic zip will be written to Documents\dornick-backups (last 5 backups are kept)
+tr.CoreComponent=dornick (gerekli)
+en.CoreComponent=dornick (required)
+tr.TrainingComponent=Beni tanı eğitimi (gece kişisel öğrenme, ~1,5 GB)
+en.TrainingComponent=Know-me training (nightly personal learning, ~1.5 GB)
+tr.ListeningComponent=Dinleme (mikrofon) — yerel tanıma, ~250 MB
+en.ListeningComponent=Listening (microphone) — local recognition, ~250 MB
+tr.CameraComponent=Kamera izleme
+en.CameraComponent=Camera watching
+tr.AutoStart=Windows ile başlat
+en.AutoStart=Start with Windows
+tr.FullInstall=Tam kurulum (eğitim dahil)
+en.FullInstall=Full installation (with training)
+tr.CompactInstall=Yalın kurulum (yalnız uygulama)
+en.CompactInstall=Compact installation (app only)
+tr.CustomInstall=Özel kurulum
+en.CustomInstall=Custom installation
+tr.UpdateTitle=Önceki kurulum bulundu
+en.UpdateTitle=Previous installation found
+tr.UpdateMessage=Kurulu sürüm: %1 → Yeni sürüm: %2. Güncelleme yapılacak; anıların, ayarların, görevlerin ve otomasyonların korunur.
+en.UpdateMessage=Installed version: %1 → New version: %2. This will update dornick; your memories, settings, tasks and automations are kept.
+tr.UpdateExplanation=Eski kurulum bulundu. Verilerin (anılar, görevler, otomasyonlar) ne olacak?
+en.UpdateExplanation=An existing install was found. What should happen to your data (memories, tasks, automations)?
+tr.ChoiceUpdate=Güncelle (önerilen) — uygulama yenilenir; anılar, görevler ve otomasyonlar aynen kalır
+en.ChoiceUpdate=Update (recommended) — app is refreshed; memories, tasks and automations stay untouched
+tr.ChoiceClean=Temiz kurulum — uygulama klasörleri sıfırdan yazılır; anılar/görevler/otomasyonlar yine korunur
+en.ChoiceClean=Clean install — app folders are rewritten; memories/tasks/automations are still kept
+tr.ChoiceData=Verileri de sıfırla — .dornick (anılar, görevler, otomasyonlar), atölye ve eğitim verisi silinir
+en.ChoiceData=Reset data too — deletes .dornick (memories, tasks, automations), workshop and training data
+tr.ConfirmTitle=Verileri sıfırlama onayı
+en.ConfirmTitle=Confirm data reset
+tr.ConfirmSub=Bu adım geri alınamaz
+en.ConfirmSub=This step cannot be undone
+tr.ConfirmExplanation=Devam etmek için ilk kutuyu işaretle. Yedek almak istersen ikinci kutu işaretli kalsın.
+en.ConfirmExplanation=Check the first box to continue. Keep the second box checked if you want a backup.
+tr.ConfirmUnderstood=Anılarım, görevlerim ve kişisel verilerim kalıcı olarak silinecek — anladım
+en.ConfirmUnderstood=My memories, tasks and personal data will be permanently deleted — I understand
+tr.ConfirmBackup=Silmeden önce yedek al: Belgeler\dornick-backup-<tarih>.zip
+en.ConfirmBackup=Back up before deleting: Documents\dornick-backup-<date>.zip
+tr.BackupError=Yedek alınamadı; hiçbir şey silinmedi. Diskte yer aç ya da yedek seçeneğini kaldırıp yeniden dene.
+en.BackupError=Backup failed; nothing was deleted. Free some disk space or untick the backup option and try again.
+tr.NeoRunningTitle=Açık dornick kopyaları var
+en.NeoRunningTitle=dornick is currently running
+tr.NeoRunningList=Şu dornick kopyaları açık:%n%n%1%nDosyalar kullanımdayken kurulum sağlıklı ilerleyemez. "Kapat ve devam" bu kopyaları nazikçe kapatır; kaydedilmemiş bir konuşma varsa yarıda kalabilir.
+en.NeoRunningList=These dornick copies are open:%n%n%1%nSetup cannot proceed safely while files are in use. "Close and continue" closes these copies gently; an unsaved conversation may be cut short.
+tr.CloseAndContinue=Kapat ve devam
+en.CloseAndContinue=Close and continue
+tr.CancelIt=İptal
+en.CancelIt=Cancel
+tr.SetupCancelledMessage=Kurulum kullanıcı isteğiyle iptal edildi.
+en.SetupCancelledMessage=Setup was cancelled at the user's request.
+tr.DirTitle=dornick zaten başka bir konumda kurulu
+en.DirTitle=dornick is already installed elsewhere
+tr.DirMessage=dornick zaten şurada kurulu: %1%nAynı yere güncellemek yerine %2 içine İKİNCİ bir kopya kurmak üzeresin. İki kopya kafa karıştırır: hangisi açık, anılar hangisinde — sahada bunu yaşadık.
+en.DirMessage=dornick is already installed at: %1%nInstead of updating in place, you are about to install a SECOND copy into %2. Two copies get confusing: which one is open, which one holds the memories.
+tr.DirQuestion=Nasıl devam edilsin?
+en.DirQuestion=How should we proceed?
+tr.ChoiceOldLocation=Eski konuma güncelle (önerilen) — %1
+en.ChoiceOldLocation=Update the existing location (recommended) — %1
+tr.ChoiceSecondCopy=Bilerek ikinci kopya kur — %1
+en.ChoiceSecondCopy=Install a second copy on purpose — %1
+tr.AutoBackupError=Hafıza yedeği alınamadı. Kurulum sürüyor (bu adımda hiçbir veri silinmez); istersen kurulumdan önce %1 klasörünü elle yedekle.
+en.AutoBackupError=The memory backup could not be created. Setup continues (nothing is deleted in this step); you may back up %1 by hand first if you wish.
+tr.BackupMemo=Hafıza yedeği (.dornick)
+en.BackupMemo=Memory backup (.dornick)
+tr.BackupMemoLine=Belgeler\dornick-backups içine otomatik zip alınacak (son 5 yedek tutulur)
+en.BackupMemoLine=An automatic zip will be written to Documents\dornick-backups (last 5 backups are kept)
 
 [Types]
-Name: "full"; Description: "{cm:TamKurulum}"
-Name: "compact"; Description: "{cm:KucukKurulum}"
-Name: "custom"; Description: "{cm:OzelKurulum}"; Flags: iscustom
+Name: "full"; Description: "{cm:FullInstall}"
+Name: "compact"; Description: "{cm:CompactInstall}"
+Name: "custom"; Description: "{cm:CustomInstall}"; Flags: iscustom
 
 [Components]
-Name: "ana"; Description: "{cm:AnaBilesen}"; Types: full compact custom; Flags: fixed
-Name: "egitim"; Description: "{cm:EgitimBileseni}"; Types: full
-Name: "dinleme"; Description: "{cm:DinlemeBileseni}"; Types: full
-Name: "kamera"; Description: "{cm:KameraBileseni}"; Types: full
+Name: "core"; Description: "{cm:CoreComponent}"; Types: full compact custom; Flags: fixed
+Name: "training"; Description: "{cm:TrainingComponent}"; Types: full
+Name: "listen"; Description: "{cm:ListeningComponent}"; Types: full
+Name: "camera"; Description: "{cm:CameraComponent}"; Types: full
 
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"
-Name: "autostart"; Description: "{cm:OtomatikBaslat}"; Flags: unchecked
+Name: "autostart"; Description: "{cm:AutoStart}"; Flags: unchecked
 
 [Files]
-Source: "{#Package}\python\*"; DestDir: "{app}\python"; Flags: recursesubdirs ignoreversion; Components: ana
-Source: "{#Package}\src\*"; DestDir: "{app}\src"; Flags: recursesubdirs ignoreversion; Components: ana
-Source: "{#Package}\dornick.cmd"; DestDir: "{app}"; Flags: ignoreversion; Components: ana
+Source: "{#Package}\python\*"; DestDir: "{app}\python"; Flags: recursesubdirs ignoreversion; Components: core
+Source: "{#Package}\src\*"; DestDir: "{app}\src"; Flags: recursesubdirs ignoreversion; Components: core
+Source: "{#Package}\dornick.cmd"; DestDir: "{app}"; Flags: ignoreversion; Components: core
 ; The single source of truth for the version: environment.surum() reads the
 ; pyproject.toml at the root at runtime — the installed tree carries it at
 ; its root just like the repo.
-Source: "{#Package}\pyproject.toml"; DestDir: "{app}"; Flags: ignoreversion; Components: ana
+Source: "{#Package}\pyproject.toml"; DestDir: "{app}"; Flags: ignoreversion; Components: core
 ; skipifsourcedoesntexist: a -SkipTorch build ships no training tree; the component then installs nothing.
-Source: "{#Package}\egitim\*"; DestDir: "{app}\egitim"; Flags: recursesubdirs ignoreversion skipifsourcedoesntexist; Components: egitim
-Source: "{#Package}\listen\*"; DestDir: "{app}\listen"; Flags: recursesubdirs ignoreversion; Components: dinleme
-Source: "{#Package}\watch\*"; DestDir: "{app}\watch"; Flags: recursesubdirs ignoreversion; Components: kamera
-Source: "{#Package}\eval\*"; DestDir: "{app}\eval"; Flags: recursesubdirs ignoreversion skipifsourcedoesntexist; Components: egitim
+Source: "{#Package}\training\*"; DestDir: "{app}\training"; Flags: recursesubdirs ignoreversion skipifsourcedoesntexist; Components: training
+Source: "{#Package}\listen\*"; DestDir: "{app}\listen"; Flags: recursesubdirs ignoreversion; Components: listen
+Source: "{#Package}\watch\*"; DestDir: "{app}\watch"; Flags: recursesubdirs ignoreversion; Components: camera
+Source: "{#Package}\eval\*"; DestDir: "{app}\eval"; Flags: recursesubdirs ignoreversion skipifsourcedoesntexist; Components: training
 
 [Icons]
 ; Console-less launch: the target is the stamped dornick.exe (pythonw copy).
 ; Task Manager looks at the PE icon; a pythonw target would leave the snake.
-; -C "{app}" pins the home to the installation — .dornick and atolye always
+; -C "{app}" pins the home to the installation — .dornick and workshop always
 ; live inside the install.
 Name: "{autoprograms}\{#AppName}"; Filename: "{app}\python\dornick.exe"; Parameters: "-m dornick --app -C ""{app}"""; WorkingDir: "{app}"; IconFilename: "{app}\src\dornick\assets\dornick.ico"; AppUserModelID: "fatih.dornick.app"
 Name: "{autodesktop}\{#AppName}"; Filename: "{app}\python\dornick.exe"; Parameters: "-m dornick --app -C ""{app}"""; WorkingDir: "{app}"; IconFilename: "{app}\src\dornick\assets\dornick.ico"; AppUserModelID: "fatih.dornick.app"; Tasks: desktopicon
@@ -221,7 +221,7 @@ Type: files; Name: "{app}\src\dornick\web\static\komut.js"
 ; Leftovers we produce ourselves: the language choice and the bytecode
 ; caches created while running (__pycache__ sprouts nested in every package,
 ; which is why folders containing PURE CODE are deleted wholesale). .dornick
-; and egitim\veri (personal corpus/watermark) are deliberately NOT listed —
+; and training\veri (personal corpus/watermark) are deliberately NOT listed —
 ; user data remains.
 Type: files; Name: "{app}\setup.json"
 Type: files; Name: "{app}\pyproject.toml"
@@ -230,11 +230,20 @@ Type: files; Name: "{app}\kurulum.json"
 Type: filesandordirs; Name: "{app}\python"
 Type: filesandordirs; Name: "{app}\src"
 Type: filesandordirs; Name: "{app}\eval"
-Type: filesandordirs; Name: "{app}\egitim\sitepaket"
+Type: filesandordirs; Name: "{app}\training\sitepaket"
 Type: filesandordirs; Name: "{app}\listen"
 Type: filesandordirs; Name: "{app}\watch"
+Type: filesandordirs; Name: "{app}\training\betikler\__pycache__"
+Type: filesandordirs; Name: "{app}\training\model\__pycache__"
+Type: filesandordirs; Name: "{app}\training\__pycache__"
+; The rig folder of installs before 1.5.1: the product adopts training\veri
+; from it on first start, the code part is ours to remove.
+Type: filesandordirs; Name: "{app}\egitim\sitepaket"
+Type: filesandordirs; Name: "{app}\egitim\betikler"
+Type: filesandordirs; Name: "{app}\egitim\model"
+Type: filesandordirs; Name: "{app}\egitim\out"
+Type: files; Name: "{app}\egitim\ayarlar.py"
 Type: filesandordirs; Name: "{app}\egitim\betikler\__pycache__"
-Type: filesandordirs; Name: "{app}\egitim\model\__pycache__"
 Type: filesandordirs; Name: "{app}\egitim\__pycache__"
 
 [Code]
@@ -354,13 +363,13 @@ begin
   OldPath := RemoveBackslash(Trim(OldPath));
   Result := True;
 
-  { Test hook: /SADECE_TARA=1 scans running dornick processes, writes the
-    result to the /SUREC_RAPOR file and exits WITHOUT installing anything.
+  { Test hook: /SCAN_ONLY=1 scans running dornick processes, writes the
+    result to the /PROCESS_REPORT file and exits WITHOUT installing anything.
     The wizard pages cannot be driven by automation, so the detection logic
     is proven this way (see installer\test_install.ps1). }
-  if ExpandConstant('{param:SADECE_TARA|0}') = '1' then
+  if ExpandConstant('{param:SCAN_ONLY|0}') = '1' then
   begin
-    Report := ExpandConstant('{param:SUREC_RAPOR|}');
+    Report := ExpandConstant('{param:PROCESS_REPORT|}');
     if Report <> '' then
       SaveStringToFile(Report, DornickProcesses(), False);
     Result := False;
@@ -384,12 +393,12 @@ begin
   if (OldPath <> '') and DirExists(OldPath) then
   begin
     DirWarnPage := CreateInputOptionPage(wpSelectDir,
-      CustomMessage('DizinBaslik'),
-      CustomMessage('DizinSoru'),
-      FmtMessage(CustomMessage('DizinMesaj'), [OldPath, '…']),
+      CustomMessage('DirTitle'),
+      CustomMessage('DirQuestion'),
+      FmtMessage(CustomMessage('DirMessage'), [OldPath, '…']),
       True, False);
-    DirWarnPage.Add(FmtMessage(CustomMessage('SecEskiKonum'), [OldPath]));
-    DirWarnPage.Add(FmtMessage(CustomMessage('SecIkinciKopya'), ['…']));
+    DirWarnPage.Add(FmtMessage(CustomMessage('ChoiceOldLocation'), [OldPath]));
+    DirWarnPage.Add(FmtMessage(CustomMessage('ChoiceSecondCopy'), ['…']));
     DirWarnPage.Values[0] := True;   { recommended: update the existing location }
   end;
 
@@ -398,20 +407,20 @@ begin
 
   { Update path: installed → new version message + three options. }
   ChoicePage := CreateInputOptionPage(wpSelectDir,
-    CustomMessage('GuncellemeBaslik'),
-    FmtMessage(CustomMessage('GuncellemeMesaj'), [OldVersion, '{#Version}']),
-    CustomMessage('GuncellemeAciklama'), True, False);
-  ChoicePage.Add(CustomMessage('SecGuncelle'));
-  ChoicePage.Add(CustomMessage('SecTemiz'));
-  ChoicePage.Add(CustomMessage('SecVeri'));
+    CustomMessage('UpdateTitle'),
+    FmtMessage(CustomMessage('UpdateMessage'), [OldVersion, '{#Version}']),
+    CustomMessage('UpdateExplanation'), True, False);
+  ChoicePage.Add(CustomMessage('ChoiceUpdate'));
+  ChoicePage.Add(CustomMessage('ChoiceClean'));
+  ChoicePage.Add(CustomMessage('ChoiceData'));
   ChoicePage.Values[0] := True;
 
   { Confirmation page shown when "Reset data too" is selected. }
   ConfirmPage := CreateInputOptionPage(ChoicePage.ID,
-    CustomMessage('OnayBaslik'), CustomMessage('OnayAlt'),
-    CustomMessage('OnayAciklama'), False, False);
-  ConfirmPage.Add(CustomMessage('OnayAnladim'));
-  ConfirmPage.Add(CustomMessage('OnayYedek'));
+    CustomMessage('ConfirmTitle'), CustomMessage('ConfirmSub'),
+    CustomMessage('ConfirmExplanation'), False, False);
+  ConfirmPage.Add(CustomMessage('ConfirmUnderstood'));
+  ConfirmPage.Add(CustomMessage('ConfirmBackup'));
   ConfirmPage.Values[1] := True;   { backup checked by default }
   ConfirmPage.CheckListBox.OnClickCheck := @ConfirmChanged;
 end;
@@ -439,9 +448,9 @@ begin
   if (DirWarnPage <> nil) and (CurPageID = DirWarnPage.ID) then
   begin
     DirWarnPage.SubCaptionLabel.Caption :=
-      FmtMessage(CustomMessage('DizinMesaj'), [OldPath, WizardDirValue]);
+      FmtMessage(CustomMessage('DirMessage'), [OldPath, WizardDirValue]);
     DirWarnPage.CheckListBox.ItemCaption[1] :=
-      FmtMessage(CustomMessage('SecIkinciKopya'), [WizardDirValue]);
+      FmtMessage(CustomMessage('ChoiceSecondCopy'), [WizardDirValue]);
   end;
 end;
 
@@ -456,34 +465,34 @@ begin
     WizardForm.DirEdit.Text := OldPath;
 end;
 
-{ Install mode: 'guncelle' | 'temiz' | 'veri'.
-  The /TEMIZLE switch overrides everything (silent test/automation);
+{ Install mode: 'update' | 'clean' | 'data'.
+  The /CLEAN switch overrides everything (silent test/automation);
   otherwise the wizard choice; in silent mode the pages never appear so the
-  default is 'guncelle'. }
+  default is 'update'. }
 function InstallMode(): string;
 var
   P: string;
 begin
-  P := LowerCase(ExpandConstant('{param:TEMIZLE|}'));
-  if (P = 'veri') or (P = 'temiz') then
+  P := LowerCase(ExpandConstant('{param:CLEAN|}'));
+  if (P = 'data') or (P = 'clean') then
   begin
     Result := P;
     exit;
   end;
-  Result := 'guncelle';
+  Result := 'update';
   if (ChoicePage <> nil) then
   begin
     if ChoicePage.Values[2] then
-      Result := 'veri'
+      Result := 'data'
     else if ChoicePage.Values[1] then
-      Result := 'temiz';
+      Result := 'clean';
   end;
 end;
 
 function BackupWanted(): Boolean;
 begin
-  { /YEDEK=0 disables it; if the page never showed (silent), default is on. }
-  if ExpandConstant('{param:YEDEK|1}') = '0' then
+  { /BACKUP=0 disables it; if the page never showed (silent), default is on. }
+  if ExpandConstant('{param:BACKUP|1}') = '0' then
     Result := False
   else if ConfirmPage <> nil then
     Result := ConfirmPage.Values[1]
@@ -495,11 +504,11 @@ end;
   Documents\dornick-backups\dornick-backup-<date>.zip. Only .dornick — the
   memories themselves; in the field the memories were lost once on the
   "install from scratch" path, never again. The last 5 backups are kept,
-  older ones are deleted. /YEDEKDIZIN changes the target folder for tests;
-  /YEDEK=0 disables it entirely. }
+  older ones are deleted. /BACKUPDIR changes the target folder for tests;
+  /BACKUP=0 disables it entirely. }
 function AutoBackupDir(): string;
 begin
-  Result := ExpandConstant('{param:YEDEKDIZIN|}');
+  Result := ExpandConstant('{param:BACKUPDIR|}');
   if Result = '' then
     Result := ExpandConstant('{userdocs}') + '\dornick-backups';
 end;
@@ -523,7 +532,8 @@ begin
     and (ResultCode = 0);
 end;
 
-{ Zip backup to Documents: .dornick + egitim\veri + atolye (those that exist).
+{ Zip backup to Documents: .dornick + training\veri + workshop (those that exist;
+  the pre-1.5.1 names egitim\veri and atolye are taken along as well).
   On failure it does not return empty-handed, it raises the error — deleting
   without a backup, silently, when a backup was requested, is not on. }
 function TakeBackup(var Err: string): Boolean;
@@ -536,6 +546,8 @@ begin
     GetDateTimeString('yyyymmdd-hhnnss', #0, #0) + '.zip';
   Cmd := '-NoProfile -ExecutionPolicy Bypass -Command "' +
     '$k = @(' + PsQuote(AppDir + '\.dornick') + ', ' +
+                PsQuote(AppDir + '\training\veri') + ', ' +
+                PsQuote(AppDir + '\workshop') + ', ' +
                 PsQuote(AppDir + '\egitim\veri') + ', ' +
                 PsQuote(AppDir + '\atolye') + ') | Where-Object { Test-Path $_ }; ' +
     'if ($k) { Compress-Archive -Path $k -DestinationPath ' + PsQuote(Zip) + ' -Force }; ' +
@@ -543,7 +555,7 @@ begin
   Result := Exec('powershell.exe', Cmd, '', SW_HIDE, ewWaitUntilTerminated, ResultCode)
     and (ResultCode = 0);
   if not Result then
-    Err := CustomMessage('YedekHata');
+    Err := CustomMessage('BackupError');
 end;
 
 function PrepareToInstall(var NeedsRestart: Boolean): String;
@@ -559,9 +571,9 @@ begin
     continue] is a gentle taskkill + 5 s wait + verification; if any are
     still standing the list comes back and a second "Close and continue"
     force-kills. [Cancel] stops the install. In silent mode there is no
-    screen to ask on: with /KAPAT=1 they are closed, without it the old
+    screen to ask on: with /CLOSE=1 they are closed, without it the old
     behaviour — continue. }
-  Report := ExpandConstant('{param:SUREC_RAPOR|}');
+  Report := ExpandConstant('{param:PROCESS_REPORT|}');
   List := DornickProcesses();
   if Report <> '' then
     SaveStringToFile(Report, List, False);
@@ -571,20 +583,20 @@ begin
   begin
     if WizardSilent() then
     begin
-      if ExpandConstant('{param:KAPAT|0}') <> '1' then
+      if ExpandConstant('{param:CLOSE|0}') <> '1' then
         break;
     end
     else
     begin
       { Note: the square bracket must not start a line — Inno would take the
         line for a section header. }
-      Answer := TaskDialogMsgBox(CustomMessage('NeoAcikBaslik'),
-        FmtMessage(CustomMessage('NeoAcikListe'), [FormatList(List)]),
-        mbConfirmation, MB_YESNO, [CustomMessage('KapatVeDevam'),
-          CustomMessage('IptalEt')], 0);
+      Answer := TaskDialogMsgBox(CustomMessage('NeoRunningTitle'),
+        FmtMessage(CustomMessage('NeoRunningList'), [FormatList(List)]),
+        mbConfirmation, MB_YESNO, [CustomMessage('CloseAndContinue'),
+          CustomMessage('CancelIt')], 0);
       if Answer <> IDYES then
       begin
-        Result := CustomMessage('KurulumIptalMesaj');
+        Result := CustomMessage('SetupCancelledMessage');
         exit;
       end;
     end;
@@ -600,14 +612,14 @@ begin
   { Memory backup on every path. A failure does NOT stop the install: no
     data is deleted in this step, blocking would be pointless — but the
     user is told. }
-  if (ExpandConstant('{param:YEDEK|1}') <> '0')
+  if (ExpandConstant('{param:BACKUP|1}') <> '0')
      and DirExists(ExpandConstant('{app}\.dornick')) then
     if not AutoBackup() then
-      SuppressibleMsgBox(FmtMessage(CustomMessage('OtoYedekHata'), [
+      SuppressibleMsgBox(FmtMessage(CustomMessage('AutoBackupError'), [
         ExpandConstant('{app}\.dornick')]), mbError, MB_OK, IDOK);
 
   M := InstallMode();
-  if M = 'veri' then
+  if M = 'data' then
   begin
     if BackupWanted() then
       if not TakeBackup(Err) then
@@ -616,12 +628,15 @@ begin
         exit;
       end;
     DelTree(ExpandConstant('{app}\.dornick'), True, True, True);
+    DelTree(ExpandConstant('{app}\workshop'), True, True, True);
+    DelTree(ExpandConstant('{app}\training'), True, True, True);
+    { pre-1.5.1 folder names }
     DelTree(ExpandConstant('{app}\atolye'), True, True, True);
     DelTree(ExpandConstant('{app}\egitim'), True, True, True);
   end;
-  if (M = 'temiz') or (M = 'veri') then
+  if (M = 'clean') or (M = 'data') then
   begin
-    { Code folders from scratch; in 'temiz', egitim\veri (personal corpus)
+    { Code folders from scratch; in 'clean', training\veri (personal corpus)
       stays in place, only the rig's code/model/output part goes. }
     DelTree(ExpandConstant('{app}\python'), True, True, True);
     DelTree(ExpandConstant('{app}\src'), True, True, True);
@@ -629,13 +644,19 @@ begin
     { Listening and camera are pure code: rewritten from scratch in a clean install. }
     DelTree(ExpandConstant('{app}\listen'), True, True, True);
     DelTree(ExpandConstant('{app}\watch'), True, True, True);
-    if M = 'temiz' then
+    if M = 'clean' then
     begin
+      DelTree(ExpandConstant('{app}\training\sitepaket'), True, True, True);
       DelTree(ExpandConstant('{app}\egitim\sitepaket'), True, True, True);
+      DelTree(ExpandConstant('{app}\training\betikler'), True, True, True);
       DelTree(ExpandConstant('{app}\egitim\betikler'), True, True, True);
+      DelTree(ExpandConstant('{app}\training\model'), True, True, True);
       DelTree(ExpandConstant('{app}\egitim\model'), True, True, True);
+      DelTree(ExpandConstant('{app}\training\out'), True, True, True);
       DelTree(ExpandConstant('{app}\egitim\out'), True, True, True);
+      DelTree(ExpandConstant('{app}\training\__pycache__'), True, True, True);
       DelTree(ExpandConstant('{app}\egitim\__pycache__'), True, True, True);
+      DeleteFile(ExpandConstant('{app}\training\ayarlar.py'));
       DeleteFile(ExpandConstant('{app}\egitim\ayarlar.py'));
     end;
   end;
@@ -654,10 +675,10 @@ begin
   if MemoComponentsInfo <> '' then Result := Result + MemoComponentsInfo + NewLine + NewLine;
   if MemoGroupInfo <> '' then Result := Result + MemoGroupInfo + NewLine + NewLine;
   if MemoTasksInfo <> '' then Result := Result + MemoTasksInfo + NewLine + NewLine;
-  if (ExpandConstant('{param:YEDEK|1}') <> '0')
+  if (ExpandConstant('{param:BACKUP|1}') <> '0')
      and DirExists(ExpandConstant('{app}\.dornick')) then
-    Result := Result + CustomMessage('YedekMemo') + NewLine +
-      Space + CustomMessage('YedekMemoSatir') + NewLine;
+    Result := Result + CustomMessage('BackupMemo') + NewLine +
+      Space + CustomMessage('BackupMemoLine') + NewLine;
 end;
 
 procedure CurStepChanged(CurStep: TSetupStep);

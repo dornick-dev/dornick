@@ -35,7 +35,7 @@ def test_export_then_import_carries_memories(tmp_path: Path) -> None:
     m2 = mind_a.remember("Kuyu seviyesi alarmı 2.5m", kind="fact", title="alarm")
     mind_a.bridge(m1.id, m2.id, reason="aynı saha")
     # A skill file (in the workshop).
-    skills = cfg_a.open_sandbox().root / "yetenekler"
+    skills = cfg_a.open_sandbox().root / "skills"
     skills.mkdir(parents=True, exist_ok=True)
     (skills / "modbus.py").write_text("NAME='modbus'\n", encoding="utf-8")
 
@@ -55,7 +55,7 @@ def test_export_then_import_carries_memories(tmp_path: Path) -> None:
     hits = mind_b.recall("pompa verimi")
     assert any("pompa" in h.item.title.lower() or "72" in h.item.content for h in hits)
     # The skill file is at the target.
-    assert (cfg_b.open_sandbox().root / "yetenekler" / "modbus.py").is_file()
+    assert (cfg_b.open_sandbox().root / "skills" / "modbus.py").is_file()
 
 
 def test_import_is_idempotent(tmp_path: Path) -> None:
@@ -182,7 +182,7 @@ def test_selective_import_respects_part_filter(tmp_path: Path, monkeypatch) -> N
 
 def test_import_recognition_without_rig_keeps_personal_files(
         tmp_path: Path, monkeypatch) -> None:
-    """On a machine without the rig the personal files must not be lost: to tanima_yedek."""
+    """On a machine without the rig the personal files must not be lost: to recognition_backup."""
     data = _fake_rig(monkeypatch, tmp_path)
     (data / "kisisel_korpus.jsonl").write_text('{"girdi": "soru"}\n', encoding="utf-8")
     (data / "kisisel_durum.json").write_text('{"son_created": "x"}', encoding="utf-8")
@@ -197,8 +197,8 @@ def test_import_recognition_without_rig_keeps_personal_files(
     result = transfer.import_bundle(cfg_b, mind_b, bundle, ["tanima"])
     assert result["ok"] and result["tanima"] == 3
     assert (cfg_b.state_dir / "taban.npz").is_file()
-    assert (cfg_b.state_dir / "tanima_yedek" / "kisisel_korpus.jsonl").is_file()
-    assert (cfg_b.state_dir / "tanima_yedek" / "kisisel_durum.json").is_file()
+    assert (cfg_b.state_dir / "recognition_backup" / "kisisel_korpus.jsonl").is_file()
+    assert (cfg_b.state_dir / "recognition_backup" / "kisisel_durum.json").is_file()
 
 
 def test_roundtrip_projects_and_settings(tmp_path: Path, monkeypatch) -> None:
@@ -274,7 +274,7 @@ def test_recognition_reset_moves_files_and_falls_back(tmp_path: Path, monkeypatc
         "kisisel_durum.json", "kisisel_korpus.jsonl", "taban.npz"]
     assert not (state / "taban.npz").exists()
     assert not (data / "kisisel_korpus.jsonl").exists()
-    backup = Path(result["yedek"]) / "tanima"
+    backup = Path(result["yedek"]) / "recognition"
     assert (backup / "taban.npz").read_bytes() == b"KISISEL"
     assert (backup / "kisisel_korpus.jsonl").is_file()
     # The cache dropped: the next enrichment will probe the disk again.

@@ -6,7 +6,7 @@ opening the second camera — what these have in common is that all of them
 are small enough for **the agent itself to write**. The long and hard ones
 we provide as tools; the rest it should write.
 
-A skill is a Python file sitting in the `yetenekler/` folder of the workshop:
+A skill is a Python file sitting in the `skills/` folder of the workshop:
 
     NAME = "harita"
     DESCRIPTION = "Koordinatları haritaya işler ve PNG üretir."
@@ -39,8 +39,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from . import legacy_names
+
 # The folder inside the workshop where skills live.
-FOLDER = "yetenekler"
+FOLDER = "skills"
 
 # The approved-skills manifest (inside .dornick): {file_name: sha256}. Only
 # files whose digest matches the one HERE are exec'd automatically AT
@@ -50,7 +52,7 @@ FOLDER = "yetenekler"
 # 01.09). The manifest is in .dornick and guards.py closes it to tool
 # writes — otherwise the same injection would write both the file and the
 # digest and bypass the protection.
-MANIFEST = "skills_onayli.json"
+MANIFEST = "skills_approved.json"
 
 
 def _manifest_path(state_dir: Path | str) -> Path:
@@ -135,6 +137,7 @@ class Skill:
 
 def folder(sandbox_root: Path) -> Path:
     place = sandbox_root / FOLDER
+    legacy_names.adopt(sandbox_root / "yetenekler", place)
     place.mkdir(parents=True, exist_ok=True)
     return place
 
@@ -143,7 +146,8 @@ def folder(sandbox_root: Path) -> Path:
 # here. Whether the folder is empty could not be used — the user may have
 # deliberately deleted a standard skill, and having it come back on every
 # startup would make deleting meaningless.
-SEEDED = ".tohumlar"
+SEEDED = ".seeded"
+LEGACY_SEEDED = ".tohumlar"
 
 # Standard skills that were shipped under a Turkish file name before 1.5.1.
 # The file in the user's workshop is theirs (maybe edited), so it is not
@@ -198,6 +202,7 @@ def seed(sandbox_root: Path, state_dir: Path | str | None = None) -> list[str]:
 
     place = folder(sandbox_root)
     marker = place / SEEDED
+    legacy_names.adopt(place / LEGACY_SEEDED, marker)
     already = set()
     if marker.is_file():
         already = {line.strip() for line in marker.read_text(encoding="utf-8").splitlines()}

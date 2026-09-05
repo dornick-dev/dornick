@@ -831,7 +831,7 @@ const Settings = (() => {
 
     // Resets: two-step confirmation (the delete pattern from apps.js) — a
     // stray click must not take a mind away. The server backs up before
-    // deleting (.dornick/yedek-<date>/); the button should still look
+    // deleting (.dornick/backup-<date>/); the button should still look
     // dangerous.
     const resetBtn = (label, target) => {
       const btn = el("button", "xfer-btn danger", t(label));
@@ -3289,7 +3289,7 @@ const Settings = (() => {
     ));
 
     // Learn me: the personal fine-tune loop (the training rig lives in a
-    // separate repo). The setting lives in tanima.json on the server; it
+    // separate repo). The setting lives in recognition.json on the server; it
     // goes instantly without waiting for a save button — the same pattern
     // as the gate switch.
     const learnSwitch = toggleBox(false, async (v) => {
@@ -3435,7 +3435,7 @@ const Settings = (() => {
       t("Dornick'in KENDİ alanı — kendi işleri, denemeleri buraya. " +
       "Şu an: ") + state.sandbox.root,
       text((patch.sandbox || {}).directory ?? state.sandbox.directory,
-           (v) => set("sandbox", "directory", v), "atolye")
+           (v) => set("sandbox", "directory", v), "workshop")
     ));
 
     pane.append(field(

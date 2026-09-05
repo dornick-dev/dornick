@@ -41,8 +41,8 @@ from typing import Any, Callable
 
 from .config import OPENROUTER_URL, OTO_MODEL, ModelConfig
 
-# Pool cache: .dornick/oto_havuz.json
-POOL_FILE = "oto_havuz.json"
+# Pool cache: .dornick/auto_pool.json
+POOL_FILE = "auto_pool.json"
 POOL_SIZE = 6
 FRESHNESS_S = 24 * 3600
 

@@ -10,7 +10,7 @@
 //   amygdala     a small node that flashes with surprise (remember())
 //   thalamus     ring gauge: pressure, rhythm clock, wakefulness, 4 states
 //   brainstem    a single pulse line — the timer (uyku)
-//   identity     a sheet: kimlik.md, sentence → evidence nodes
+//   identity     a sheet: identity.md, sentence → evidence nodes
 //   temperament  a sheet: five axes, three marks
 //   world map    a colour inside the hippocampus (scene.js)
 //
@@ -99,10 +99,10 @@ const Regions = (() => {
       code: "uyku (zamanlayıcı)" },
     identity: { name: "Kimlik paneli",
       what: "anlatı kimliği; her cümle tıklanınca kanıt düğümleri hipokampusta yanar",
-      code: ".dornick/kimlik.md — GET /api/kimlik" },
+      code: ".dornick/identity.md — GET /api/kimlik" },
     temperament: { name: "Mizaç paneli",
       what: "beş eksen: yenilik, sonuç, sosyal, sebat, temkin; taban (ölçülen), hedef, ulaşılan",
-      code: ".dornick/mizac.json — GET /api/mizac" },
+      code: ".dornick/temperament.json — GET /api/mizac" },
     world: { name: "Dünya haritası",
       what: "world düğümleri: hipokampus içinde ayrı renk; doğrulanmamış olanlar soluk",
       code: "world düğümleri (recall.store kind=world)" },

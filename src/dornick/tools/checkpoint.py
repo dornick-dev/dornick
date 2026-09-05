@@ -154,9 +154,9 @@ class Defter:
         ok, message = self._undo_one(k)
         return ([message], None if ok else message)
 
-    def undo_file(self, dosya: str) -> tuple[list[str], str | None]:
+    def undo_file(self, file_path: str) -> tuple[list[str], str | None]:
         """Reverts the latest record for this path (diff card Undo)."""
-        target = Path(dosya)
+        target = Path(file_path)
         try:
             target_key = str(target.resolve()) if target.exists() else str(target)
         except OSError:

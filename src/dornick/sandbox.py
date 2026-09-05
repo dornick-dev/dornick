@@ -37,11 +37,15 @@ import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
-# The workshop's default name inside the workspace.
-DEFAULT_DIR = "atolye"
+from . import legacy_names
 
-# The recent-projects ledger (`.dornick/projeler.json`) and how many are kept.
-PROJECTS_FILE = "projeler.json"
+# The workshop's default name inside the workspace. Installs from before
+# 1.5.1 have `atolye`; `open()` adopts that folder under the new name once.
+DEFAULT_DIR = "workshop"
+LEGACY_DIR = legacy_names.LEGACY_WORKSHOP
+
+# The recent-projects ledger (`.dornick/projects.json`) and how many are kept.
+PROJECTS_FILE = "projects.json"
 MAX_RECENT = 8
 
 REFUSAL = (
@@ -221,6 +225,9 @@ class Sandbox:
         root = Path(directory).expanduser()
         if not root.is_absolute():
             root = workspace / root
+        if directory == DEFAULT_DIR:
+            legacy_names.adopt(workspace / LEGACY_DIR, root)
+        legacy_names.migrate_workshop(root)
 
         opened: list[Path] = []
         note = ""

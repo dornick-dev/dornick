@@ -66,7 +66,7 @@ def sessions(tmp_path: Path) -> Path:
 
 @pytest.fixture()
 def watermark(tmp_path: Path) -> Path:
-    return tmp_path / "filigran.json"
+    return tmp_path / "watermark.json"
 
 
 class Log:

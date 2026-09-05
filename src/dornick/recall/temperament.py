@@ -30,10 +30,12 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Callable
 
+from .. import legacy_names
+
 # Five axes, each in [0, 1], 0.5 neutral.
 AXES = ("novelty", "outcome", "social", "persistence", "caution")
 
-# The on-disk names of the axes (`mizac.json`, also the "taban"/"hedef"
+# The on-disk names of the axes (`temperament.json`, also the "taban"/"hedef"
 # blocks in it). The file format is frozen in Turkish; the Python fields are
 # English. This map is the only place the two meet.
 AXIS_KEYS = {"novelty": "yenilik", "outcome": "sonuc", "social": "sosyal",
@@ -59,7 +61,7 @@ class Temperament:
     caution: float = 0.5
 
     def as_dict(self) -> dict[str, float]:
-        """The persisted form: Turkish keys, as `mizac.json` has always had."""
+        """The persisted form: Turkish keys, as the temperament file has always had."""
         return {AXIS_KEYS[axis]: round(getattr(self, axis), 4) for axis in AXES}
 
     @classmethod
@@ -170,11 +172,19 @@ def measure(probes: list[Probe], answer: Callable[[str], str]) -> Temperament:
 
 # -- persistence -------------------------------------------------------
 
+FILE_NAME = "temperament.json"
+
+
+def _path(state_dir: Path) -> Path:
+    path = Path(state_dir) / FILE_NAME
+    legacy_names.adopt(Path(state_dir) / "mizac.json", path)
+    return path
+
 
 def load(state_dir: Path) -> tuple[Temperament, Temperament, str]:
     """(baseline, target, model_id). Missing file means neutral, not an error."""
     try:
-        data = json.loads((Path(state_dir) / "mizac.json").read_text("utf-8"))
+        data = json.loads((_path(state_dir)).read_text("utf-8"))
     except (OSError, ValueError):
         return Temperament(), default_target(), ""
     baseline = Temperament.from_dict(data.get("taban"))
@@ -185,7 +195,7 @@ def load(state_dir: Path) -> tuple[Temperament, Temperament, str]:
 def load_gain(state_dir: Path) -> dict[str, float]:
     """The per-model lever gain saved next to the temperament; neutral if none."""
     try:
-        data = json.loads((Path(state_dir) / "mizac.json").read_text("utf-8"))
+        data = json.loads((_path(state_dir)).read_text("utf-8"))
     except (OSError, ValueError):
         return neutral_gain()
     stored = data.get("kazanc") or {}
@@ -193,8 +203,8 @@ def load_gain(state_dir: Path) -> dict[str, float]:
 
 
 def save_gain(state_dir: Path, gain: dict[str, float]) -> None:
-    """Writes the gain into mizac.json without touching baseline/target."""
-    path = Path(state_dir) / "mizac.json"
+    """Writes the gain into temperament.json without touching baseline/target."""
+    path = _path(state_dir)
     try:
         data = json.loads(path.read_text("utf-8"))
     except (OSError, ValueError):
@@ -236,7 +246,7 @@ def calibrate(baseline: Temperament, target: Temperament,
 
 def save(state_dir: Path, baseline: Temperament, target: Temperament,
          model_id: str = "") -> None:
-    path = Path(state_dir) / "mizac.json"
+    path = _path(state_dir)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps({"taban": baseline.as_dict(), "hedef": target.as_dict(),
                                 "model_id": model_id}, ensure_ascii=False),

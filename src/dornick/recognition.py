@@ -29,17 +29,43 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-FILE = "tanima.json"
+from . import legacy_names
+
+FILE = "recognition.json"
 
 # Where the training rig lives. Install layout first: if the package lives
-# under <root>/src/dornick the rig is looked for in <root>/egitim (the
-# Windows installer puts it there). Otherwise the developer path — and if
+# under <root>/src/dornick the rig is looked for in <root>/training (the
+# Windows installer puts it there; installs from before 1.5.1 have it under
+# `egitim` and that folder is adopted once — see `migrate_rig`). Otherwise the developer path — and if
 # that is missing too the feature is passive: the settings page shows a
 # "not installed" note next to the toggle.
-_INSTALL_SCRIPT = (Path(__file__).resolve().parents[2]
-                   / "egitim" / "betikler" / "08_kisisel_dongu.py")
+_INSTALL_ROOT = Path(__file__).resolve().parents[2]
+_INSTALL_SCRIPT = _INSTALL_ROOT / "training" / "betikler" / "08_kisisel_dongu.py"
+_LEGACY_INSTALL_SCRIPT = _INSTALL_ROOT / legacy_names.LEGACY_RIG / "betikler" / "08_kisisel_dongu.py"
 _DEVELOPER_SCRIPT = (Path("D:/Projects/ai/neocp-base-model")
                      / "betikler" / "08_kisisel_dongu.py")
+
+
+def migrate_rig() -> bool:
+    """Adopts an installed rig that still sits under the old `egitim` name.
+
+    The installer writes the new rig under `training`; only the personal
+    files (`veri/`) of an older install are worth carrying over, and only
+    when the new rig has none of its own yet. Returns True if anything moved.
+    """
+    old_root = _LEGACY_INSTALL_SCRIPT.parents[1]
+    new_root = _INSTALL_SCRIPT.parents[1]
+    if not old_root.is_dir():
+        return False
+    if legacy_names.adopt(old_root, new_root):
+        return True
+    moved = False
+    for name in ("kisisel_durum.json", "kisisel_korpus.jsonl"):
+        moved |= legacy_names.adopt(old_root / "veri" / name, new_root / "veri" / name)
+    return moved
+
+
+migrate_rig()
 LOOP_SCRIPT = _INSTALL_SCRIPT if _INSTALL_SCRIPT.exists() else _DEVELOPER_SCRIPT
 
 # The loop's watermark: up to which memory was last harvested lives here.
@@ -235,7 +261,7 @@ def reset(state_dir: Path) -> dict:
     """Returns Know-me to the base model; everything personal goes to a backup.
 
     Nothing deleted, things moved: .dornick/taban.npz plus the corpus +
-    watermark in the training rig go under .dornick/yedek-<date>/tanima/.
+    watermark in the training rig go under .dornick/backup-<date>/recognition/.
     The base cache is dropped immediately so the assets/base.npz shipped
     with the product starts talking without waiting for the 5-minute hot
     refresh.
@@ -247,12 +273,12 @@ def reset(state_dir: Path) -> dict:
 
     from .recall import writer
 
-    backup = Path(state_dir) / f"yedek-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
+    backup = Path(state_dir) / f"backup-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
     moved: list[str] = []
     for source in (Path(state_dir) / "taban.npz", CORPUS, WATERMARK):
         if not source.is_file():
             continue
-        target = backup / "tanima" / source.name
+        target = backup / "recognition" / source.name
         target.parent.mkdir(parents=True, exist_ok=True)
         try:
             shutil.move(str(source), str(target))

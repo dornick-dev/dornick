@@ -237,7 +237,7 @@ UZUN SÜREN SÜREÇLER — iki ayrı kip, karıştırma:
         if not cwd.is_dir() and not cwd.is_absolute():
             # The shell copy of the workshop-prefix trap in the file tools
             # (measured, 29.08 sweep: the pattern of 3 failed calls was
-            # "Çalışma dizini yok: atolye\X"): the model adds the folder
+            # "Çalışma dizini yok: workshop\X"): the model adds the folder
             # name from the system prompt to the path itself.
             # files._resolve fixed this silently for files; the shell cwd
             # should get the same fix.

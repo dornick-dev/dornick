@@ -660,7 +660,7 @@ def test_excluded_files_leave_the_measurement(tmp_path: Path) -> None:
     code health; a file it touched must."""
     import runner
 
-    skills = tmp_path / "yetenekler"
+    skills = tmp_path / "skills"
     skills.mkdir()
     (skills / "pdf_make.py").write_text(
         "def run(a, c):\n" + "".join(

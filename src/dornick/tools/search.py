@@ -26,7 +26,7 @@ from .files import _resolve
 # recycle bin (same reasoning as transfer._ATLA / gate._ATLA). .dornick is
 # here too: session logs and change snapshots fill a search with junk.
 _SKIP = frozenset({".git", "__pycache__", "node_modules", ".venv",
-                   ".mypy_cache", ".geri-donusum", ".dornick"})
+                   ".mypy_cache", ".recycle-bin", ".geri-donusum", ".dornick"})
 
 DEFAULT_RESULTS = 50
 RESULT_CAP = 200

@@ -1056,7 +1056,7 @@ class _Handler(BaseHTTPRequestHandler):
             return
         if route == "/api/apps/remove":
             # Deleting from the panel: not permanent — moves to the
-            # workshop's .geri-donusum. `base` is required: project paths
+            # workshop's .recycle-bin. `base` is required: project paths
             # arrive relative to the workspace ("atolye/…"); resolving
             # without base missed as atolye/atolye/….
             from .. import apps as catalog
@@ -1490,13 +1490,13 @@ class _Handler(BaseHTTPRequestHandler):
             self._json({"durum": "bilinmiyor"})
             return
         try:
-            from ..recall import awake, sleep
+            from ..recall import awake, daemon, sleep
 
             pressure = sleep.pressure(mind.store, config.sessions_dir,
-                                      watermark=config.state_dir / "filigran.json")
+                                      watermark=config.state_dir / daemon.WATERMARK_FILE)
             clock, pending = awake.sleep_debt(
                 config.sessions_dir,
-                watermark=config.state_dir / "filigran.json")
+                watermark=config.state_dir / daemon.WATERMARK_FILE)
             self._json({
                 "basinc": pressure.as_dict(),
                 "esik": {"ust": sleep.UPPER_THRESHOLD, "alt": sleep.LOWER_THRESHOLD},
@@ -1540,7 +1540,7 @@ class _Handler(BaseHTTPRequestHandler):
     # -- brain regions (Phase 6, read-only) -----------------------------
 
     def _identity(self) -> None:
-        """`.dornick/kimlik.md`: the narrative identity, sentence by sentence.
+        """`.dornick/identity.md`: the narrative identity, sentence by sentence.
 
         Every sentence carries the node ids that back it; the identity panel
         lights those in the hippocampus when a sentence is clicked. Read
@@ -1561,7 +1561,7 @@ class _Handler(BaseHTTPRequestHandler):
         })
 
     def _temperament(self) -> None:
-        """`.dornick/mizac.json`: five axes, the measured baseline and the
+        """`.dornick/temperament.json`: five axes, the measured baseline and the
         learned target. There is no "reached" measurement on disk yet; the
         panel says so instead of inventing one."""
         config = getattr(self.server, "config", None)
@@ -3605,7 +3605,7 @@ class _Handler(BaseHTTPRequestHandler):
 
         Memories are joined (not overwritten); while file parts are
         restored, the existing state that would be crushed is first moved
-        under .dornick/yedek-<date>/. `?parcalar=...` processes only the
+        under .dornick/backup-<date>/. `?parcalar=...` processes only the
         requested parts even if the bundle has more.
         """
         from .. import transfer
@@ -3629,7 +3629,7 @@ class _Handler(BaseHTTPRequestHandler):
         """Reset: {"hedef": "anilar"} or {"hedef": "tanima"}.
 
         Neither is destruction but a move: the current state goes under
-        .dornick/yedek-<date>/, then a clean start. Confirmation is in the
+        .dornick/backup-<date>/, then a clean start. Confirmation is in the
         UI (two-step button); here the only safeguard is recognising the
         target name.
         """

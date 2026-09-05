@@ -2625,7 +2625,7 @@ def test_folder_flows_and_task_mirror_are_wired() -> None:
     assert 'closest(".hist-new-row")' in hist
     assert "row.after(box)" in hist
     assert "dugme.after(box)" not in hist
-    assert ".hist-klasor-kutu" in CSS and "margin: 0 12px 10px" in CSS
+    assert ".hist-folder-kutu" in CSS and "margin: 0 12px 10px" in CSS
     git = (STATIC / "git.js").read_text(encoding="utf-8")
     assert "Repo aç" in git and 'act("init")' in git
     assert "/api/apps/reveal" in git
@@ -2688,9 +2688,9 @@ def test_every_waiting_blank_knits_the_knot() -> None:
     komut paleti, ayarlar)."""
     assert ".dugum-yukleniyor::before" in CSS
     root_dir = Path(__file__).resolve().parents[1] / "src" / "dornick" / "web" / "static"
-    for dosya in ("history.js", "apps.js", "git.js", "jobs.js", "command.js", "settings.js"):
-        content = (root_dir / dosya).read_text(encoding="utf-8")
-        assert "dugum-yukleniyor" in content, dosya
+    for name in ("history.js", "apps.js", "git.js", "jobs.js", "command.js", "settings.js"):
+        content = (root_dir / name).read_text(encoding="utf-8")
+        assert "dugum-yukleniyor" in content, name
 
 
 # -- beyin görünümü: bölgeler ve gece animasyonu (Faz 6) ----------------
@@ -2767,8 +2767,8 @@ def test_every_region_tooltip_names_its_source_code() -> None:
         "amygdala": "remember()",
         "thalamus": "uyku.Bekci",
         "brainstem": "uyku",
-        "identity": ".dornick/kimlik.md",
-        "temperament": ".dornick/mizac.json",
+        "identity": ".dornick/identity.md",
+        "temperament": ".dornick/temperament.json",
         "world": "world",
     }
     for key, code in expected.items():
@@ -2918,3 +2918,4 @@ def test_the_sidebar_learns_about_a_running_turn_at_its_start() -> None:
     app = (STATIC / "app.js").read_text(encoding="utf-8")
     body = app[app.index("function setBusy("):][:1500]
     assert body.count("History.laneChanged()") == 2
+

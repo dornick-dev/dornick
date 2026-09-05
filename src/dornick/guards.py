@@ -33,12 +33,12 @@ from typing import Any
 # Files whose reading and writing are both hard refusals (with .dornick in the path).
 _SECRET = re.compile(r"\.dornick[\\/]keys\.json", re.IGNORECASE)
 
-# Only WRITE/shell is a hard refusal; reading is free. skills_onayli.json is
+# Only WRITE/shell is a hard refusal; reading is free. skills_approved.json is
 # here too: the skill approval manifest — if a tool could write it, an
 # injection could write both the file and its digest and bypass the
 # startup-exec protection.
 _SETTINGS = re.compile(
-    r"\.dornick[\\/](?:config|gate|skills_onayli)\.json", re.IGNORECASE)
+    r"\.dornick[\\/](?:config|gate|skills_approved|skills_onayli)\.json", re.IGNORECASE)
 
 # Persistence surfaces: shell/mutation cannot reach.
 _PERSISTENCE = re.compile(

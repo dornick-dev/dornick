@@ -112,12 +112,12 @@ async def _run_one(
     # permission gate (the user should not be asked to approve something we
     # will refuse anyway). `tools/files.py` closed that path for the write
     # tools, but the shell is not a write tool — `Set-Content
-    # .dornick/kancalar.json` did not pass through that gate.
+    # .dornick/hooks.json` did not pass through that gate.
     if spec.mutates and hooks.call_touches_hook(spec.name, call.input):
         observe("kanca_ret", {"tool": spec.name, "id": call.id,
                               "detail": "kanca dosyası"})
         return ToolResult.error(
-            "Bu çağrı kanca dosyasına (.dornick/kancalar.json) uzanıyor ve "
+            "Bu çağrı kanca dosyasına (.dornick/hooks.json) uzanıyor ve "
             "engellendi. Kancalar kullanıcının senin üzerinde kurduğu "
             "kurallardır; onay penceresi olmadan çalışırlar ve tam bu yüzden "
             "senin değiştirebileceğin bir yerde durmazlar. İçeriğini görmek "

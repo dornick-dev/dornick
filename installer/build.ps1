@@ -8,7 +8,7 @@
 #      dornick-base-model rig into the output folder. Keys/data from .dornick
 #      NEVER enter the package — only code, assets and training files.
 #   4. Installs Torch's CPU wheel into the training component's own site
-#      folder (egitim\sitepaket): if the component is not selected the folder
+#      folder (training\sitepaket): if the component is not selected the folder
 #      never reaches the target and the path in python311._pth stays silently
 #      empty — no need to run pip during installation.
 #   5. If Inno Setup (iscc) is found, compiles dornick.iss.
@@ -103,7 +103,7 @@ $pth = Join-Path $PyDir "python311._pth"
     ".",
     "Lib\site-packages",
     "..\src",
-    "..\egitim\sitepaket",
+    "..\training\sitepaket",
     "..\listen\site",
     "..\watch\site",
     "import site"
@@ -144,7 +144,7 @@ if (-not $SkipTorch -and -not (Test-Path $BaseRepo)) {
 
 if (-not $SkipTorch) {
     Step "Copying training rig ($BaseRepo)"
-    $TrainingDir = Join-Path $PackageDir "egitim"
+    $TrainingDir = Join-Path $PackageDir "training"
 
     Copy-Tree (Join-Path $BaseRepo "betikler") (Join-Path $TrainingDir "betikler") @("__pycache__")
     Copy-Tree (Join-Path $BaseRepo "model")    (Join-Path $TrainingDir "model")    @("__pycache__")

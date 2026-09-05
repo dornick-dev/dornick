@@ -92,7 +92,7 @@ def test_noise_is_skipped(tmp_path: Path) -> None:
 
 
 def test_launch_refuses_outside_the_workshop(tmp_path: Path) -> None:
-    root = tmp_path / "atolye"
+    root = tmp_path / "workshop"
     root.mkdir()
     outside = tmp_path / "gizli.py"
     outside.write_text("print(1)", encoding="utf-8")
@@ -153,9 +153,9 @@ def test_projects_are_units_not_loose_files(tmp_path: Path) -> None:
     assert "pip install" in mb["howto"]            # README captured
     assert mb["scope"] == ""                       # no manifest → dornick should ask
 
-    pano = items["pano.html"]
-    assert pano["kind"] == "web" and pano["single"] is True
-    assert pano["scope"] == "in-app"               # a single page opens in the frame
+    page = items["pano.html"]
+    assert page["kind"] == "web" and page["single"] is True
+    assert page["scope"] == "in-app"               # a single page opens in the frame
 
 
 def test_manifest_sets_project_scope_and_howto(tmp_path: Path) -> None:
@@ -371,7 +371,7 @@ def test_dornick_own_process_is_recognised() -> None:
     assert apps.is_dornick_process(r'"C:\dornick\python\dornick.exe" -m dornick --app')
     # The user's app is not dornick — no false alarm.
     assert not apps.is_dornick_process("py app.py")
-    assert not apps.is_dornick_process("python D:\\Projects\\Fatih\\dornick\\atolye\\borsa-ara\\app.py")
+    assert not apps.is_dornick_process("python D:\\Projects\\Fatih\\dornick\\workshop\\borsa-ara\\app.py")
 
 
 def test_dornick_own_copy_is_not_listed_as_an_app(tmp_path: Path) -> None:
@@ -430,7 +430,7 @@ async def test_shell_refuses_to_restart_dornick(tmp_path: Path) -> None:
 
 
 def test_reveal_does_not_leave_the_workshop(tmp_path: Path) -> None:
-    root = tmp_path / "atolye"
+    root = tmp_path / "workshop"
     root.mkdir()
     res = apps.reveal(root, "../gizli")
     assert not res["ok"]

@@ -351,8 +351,8 @@ Araç kullanımı:
   klasörüne bir `app.json` yaz: {name, type (web/service/desktop/tool), entry, run,
   port, scope, desc, howto}. WinExe / .NET GUI için type=`desktop` (betik değil —
   aksi halde panel "betik" der). Manifest uygulamanın KENDİ klasörüne yazılır
-  (`atolye/<uygulama>/app.json`), atölyenin köküne değil; `entry` ve `run` o
-  klasöre GÖRELİDİR (`app.py`, `py app.py` — `atolye/x/app.py` değil). Bir
+  (`workshop/<uygulama>/app.json`), atölyenin köküne değil; `entry` ve `run` o
+  klasöre GÖRELİDİR (`app.py`, `py app.py` — `workshop/x/app.py` değil). Bir
   port dinliyorsa `port` alanını yaz: panel canlı adresi ondan kuruyor.
   `desc` TEK CÜMLE ve kullanıcı dilinde: bu uygulama ne yapar ("BTC fiyatını
   canlı grafikle gösterir" gibi) — panel kartının üstünde görünür. Ve

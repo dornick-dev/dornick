@@ -71,9 +71,9 @@ NIGHT_BUDGET_SECONDS = MAX_CYCLES * sleep.CYCLE_MINUTES * 60.0
 
 # Files under the state directory. The watermark name is the one the web
 # server already reads; the others are this module's.
-WATERMARK_FILE = "filigran.json"
-RHYTHM_FILE = "ritim.json"
-JOURNAL_FILE = "uyku_gunlugu.jsonl"
+WATERMARK_FILE = "watermark.json"
+RHYTHM_FILE = "rhythm.json"
+JOURNAL_FILE = "sleep_journal.jsonl"
 
 # The reason a night stopped because the application is closing. Not a
 # stimulus (nothing is disturbed), so it does not pass through the switch's
@@ -597,7 +597,7 @@ class SleepDaemon:
             pass                        # a lost event is not a lost night
 
     def _journal(self) -> None:
-        """Every switch transition to `uyku_gunlugu.jsonl` (roadmap 3.10.8)."""
+        """Every switch transition to `sleep_journal.jsonl` (roadmap 3.10.8)."""
         fresh = self.switch.transitions[self._journaled:]
         if not fresh:
             return

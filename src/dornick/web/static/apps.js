@@ -56,8 +56,8 @@ Lang.add({
   "Aramana uyan uygulama yok.": "Nothing matches your search.",
   "Okunamadı": "Could not read",
   "Ulaşılamadı": "Unreachable",
-  "arşivlendi (atolye/.geri-donusum içinde — geri alınabilir)":
-    "archived (in atolye/.geri-donusum — recoverable)",
+  "arşivlendi (workshop/.recycle-bin içinde — geri alınabilir)":
+    "archived (in workshop/.recycle-bin — recoverable)",
   "Arşivlenemedi — çalışıyorsa önce durdur":
     "Could not archive — stop it first if it is running",
   "Dornick (kendisi)": "Dornick (itself)",
@@ -69,8 +69,8 @@ Lang.add({
     "Open this app's folder in the file explorer",
   "Emin misin?": "Are you sure?",
   "Açılacak giriş dosyası bulunamadı": "No entry file to open",
-  "Bu uygulama arşivlensin mi? atolye/.geri-donusum içine taşınır.":
-    "Archive this app? It moves into atolye/.geri-donusum.",
+  "Bu uygulama arşivlensin mi? workshop/.recycle-bin içine taşınır.":
+    "Archive this app? It moves into workshop/.recycle-bin.",
 });
 
 const Apps = (() => {
@@ -131,13 +131,13 @@ const Apps = (() => {
 .proj-addr:hover { text-decoration: underline; }
 .apps-group-hint.tidy { color: var(--amber); }
 .apps-issue { margin: 6px 4px 12px; }
-.apps-sorun-row {
+.apps-issue-row {
   padding: 7px 9px; margin: 5px 0; border-radius: 7px;
   background: #F0A0200d; box-shadow: inset 0 0 0 1px #F0A02033;
 }
-.apps-sorun-name { font: 11px var(--mono); color: var(--amber); }
-.apps-sorun-why { font-size: 11px; color: var(--dim); margin-top: 3px; line-height: 1.5; }
-.apps-sorun-fix { font: 10px var(--mono); color: var(--faint); margin-top: 5px; line-height: 1.55; }
+.apps-issue-name { font: 11px var(--mono); color: var(--amber); }
+.apps-issue-why { font-size: 11px; color: var(--dim); margin-top: 3px; line-height: 1.5; }
+.apps-issue-fix { font: 10px var(--mono); color: var(--faint); margin-top: 5px; line-height: 1.55; }
 .apps-proc.self .apps-proc-dot { background: var(--faint); animation: none; }
 .apps-proc-self-note { font: 9px var(--mono); color: var(--faint); flex: 0 0 auto; }
 `;
@@ -270,7 +270,7 @@ const Apps = (() => {
       head.append(el("span", null, g.title));
       // When the unsorted box gets crowded (old experiments, three copies of
       // the same job) a cleanup hint appears: every card has Archive, one
-      // click moves it into .geri-donusum, and it can be recovered.
+      // click moves it into .recycle-bin, and it can be recovered.
       const hint = (g.key === "" && items.length >= 8)
         ? "toplu temizlik: artık kullanmadıklarını Arşivle ile kaldırabilirsin"
         : g.hint;
@@ -514,12 +514,12 @@ const Apps = (() => {
   }
 
   async function archiveNow(p) {
-    if (!confirm(t("Bu uygulama arşivlensin mi? atolye/.geri-donusum içine taşınır."))) return;
+    if (!confirm(t("Bu uygulama arşivlensin mi? workshop/.recycle-bin içine taşınır."))) return;
     const fake = { dataset: { armed: "1" } };
     await archive(p, fake);
   }
 
-  // Archive: moves into .geri-donusum (no permanent delete). Two-step
+  // Archive: moves into .recycle-bin (no permanent delete). Two-step
   // confirmation — a stray click must not take a project away.
   async function archive(p, btn) {
     if (!btn.dataset.armed) {
@@ -536,7 +536,7 @@ const Apps = (() => {
       })).json();
     } catch { res = { ok: false, error: t("Ulaşılamadı") }; }
     if (res.ok) {
-      toast(p.name + " " + t("arşivlendi (atolye/.geri-donusum içinde — geri alınabilir)"));
+      toast(p.name + " " + t("arşivlendi (workshop/.recycle-bin içinde — geri alınabilir)"));
       load();
       document.dispatchEvent(new Event("dornick-side-tazele"));
     } else {
@@ -556,10 +556,10 @@ const Apps = (() => {
     head.append(el("b", "apps-group-count", String(brokenManifests.length)));
     section.append(head);
     for (const s of brokenManifests) {
-      const row = el("div", "apps-sorun-row");
-      row.append(el("div", "apps-sorun-name", "atolye/" + s.path));
-      row.append(el("div", "apps-sorun-why", s.uyari || ""));
-      if (s.ogretici) row.append(el("div", "apps-sorun-fix", s.ogretici));
+      const row = el("div", "apps-issue-row");
+      row.append(el("div", "apps-issue-name", "workshop/" + s.path));
+      row.append(el("div", "apps-issue-why", s.uyari || ""));
+      if (s.ogretici) row.append(el("div", "apps-issue-fix", s.ogretici));
       section.append(row);
     }
     box.append(section);
@@ -594,10 +594,10 @@ const Apps = (() => {
     }
 
     // Where it is + what runs it: the user should find it on disk and see
-    // the command. The path can already arrive with atolye/ — do not prepend
-    // it again and write "atolye/atolye/…".
+    // the command. The path can already arrive with workshop/ — do not prepend
+    // it again and write "workshop/workshop/…".
     const rel = p.path || p.entry || "";
-    view.append(el("p", "proj-path", rel.startsWith("atolye") ? rel : "atolye/" + rel));
+    view.append(el("p", "proj-path", rel.startsWith("workshop") || rel.startsWith("atolye") ? rel : "workshop/" + rel));
     if (p.run) view.append(el("p", "proj-cmd", "» " + p.run));
 
     // Open · Start/Stop · Show folder — the SAME row as the card: two
@@ -639,7 +639,7 @@ const Apps = (() => {
     }
 
     // Delete: two-step confirmation (a stray click must not take a project
-    // away). Not permanent — it moves into the workshop's .geri-donusum
+    // away). Not permanent — it moves into the workshop's .recycle-bin
     // folder; recoverable by hand.
     const del = el("button", "proj-btn danger", "Sil");
     del.onclick = async () => {
@@ -657,7 +657,7 @@ const Apps = (() => {
         })).json();
       } catch { res = { ok: false, error: "Ulaşılamadı" }; }
       if (res.ok) {
-        toast(p.name + " kaldırıldı (atolye/.geri-donusum içinde — geri alınabilir)");
+        toast(p.name + " kaldırıldı (workshop/.recycle-bin içinde — geri alınabilir)");
         load();
       } else {
         toast(res.error || "Silinemedi — çalışıyorsa önce durdur");

@@ -827,7 +827,7 @@ class Mind:
     def archive_session(self, session_id: str) -> dict[str, Any]:
         """Removes the session from the list; moves the log to sessions/.arsiv.
 
-        No permanent deletion — the same idea as the .geri-donusum in the
+        No permanent deletion — the same idea as the .recycle-bin in the
         applications panel: a wrong click must be undoable. The open session
         is not moved (switch to another chat first); otherwise the running
         strip's log would be lost.

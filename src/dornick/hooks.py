@@ -9,7 +9,7 @@ touched". These are the user's own rules and none of them fits into the
 prompt or a permission pattern.
 
 A hook fills that gap: the user writes their own command into the
-`.dornick/kancalar.json` file, and the command runs before or after the tool.
+`.dornick/hooks.json` file, and the command runs before or after the tool.
 
     [
       {"olay": "arac_oncesi", "arac": "write_file",
@@ -34,7 +34,7 @@ SECURITY — two deliberate decisions and their rationale:
   2. **The model CANNOT modify hooks.** The first decision is only safe with
      this one: if the model could write the file, it would bypass the
      permission engine entirely by deleting the hook that blocks it or by
-     putting its own command there. That is why `.dornick/kancalar.json` is
+     putting its own command there. That is why `.dornick/hooks.json` is
      closed to the file-writing tools (`_guard` in `tools/files.py`) and its
      only editor is the user.
 
@@ -52,9 +52,15 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from . import legacy_names
+
 from . import environment
 
-FILE_NAME = "kancalar.json"
+FILE_NAME = "hooks.json"
+# The pre-1.5.1 name: adopted once by `legacy_names`, but a write aimed at it
+# is refused all the same — the fence must not have a hole named "old".
+LEGACY_FILE_NAME = "kancalar.json"
+PROTECTED_NAMES = (FILE_NAME, LEGACY_FILE_NAME)
 
 # Default time given to a hook. Since the hook stands in front of the tool it
 # cannot be generous: 30 seconds added to every `write_file` makes the turn
@@ -125,19 +131,21 @@ class Verdict:
 
 
 def file_path(state_dir: Path | str) -> Path:
-    return Path(state_dir) / FILE_NAME
+    path = Path(state_dir) / FILE_NAME
+    legacy_names.adopt(Path(state_dir) / LEGACY_FILE_NAME, path)
+    return path
 
 
 def is_protected(path: Path | str) -> bool:
     """Is this path a hook file? (the write tools look at this)
 
-    We look not only at the active `.dornick` folder but at `kancalar.json`
+    We look not only at the active `.dornick` folder but at `hooks.json`
     under ANY folder NAMED `.dornick`. The model must not be able to write
     another project's hook file either — and a caller that does not know
     `state_dir` must still be protected.
     """
     path = Path(path)
-    return (path.name.lower() == FILE_NAME
+    return (path.name.lower() in PROTECTED_NAMES
             and path.parent.name.lower() == ".dornick")
 
 
@@ -145,7 +153,7 @@ def call_touches_hook(tool: str, payload: Any) -> bool:
     """Does this MUTATING call reach the hook file? (the executor asks)
 
     `is_protected` closes the path for the write tools; but the shell is not a
-    write tool, and a command like `Set-Content .dornick/kancalar.json`
+    write tool, and a command like `Set-Content .dornick/hooks.json`
     never went through that gate. That was the hole in the claim "the model
     cannot tear down the fence that stops it".
 
@@ -166,7 +174,7 @@ def call_touches_hook(tool: str, payload: Any) -> bool:
         return False  # they have their own gates (`is_protected`); their messages are better
     if not isinstance(payload, dict):
         return False
-    return any(isinstance(v, str) and FILE_NAME in v.lower()
+    return any(isinstance(v, str) and any(name in v.lower() for name in PROTECTED_NAMES)
                for v in payload.values())
 
 
@@ -212,7 +220,7 @@ _cache: dict[str, tuple[int, int, bytes, list[Hook]]] = {}
 
 
 def load(state_dir: Path | str) -> list[Hook]:
-    """The hooks inside `.dornick/kancalar.json`; an empty list if the file is absent.
+    """The hooks inside `.dornick/hooks.json`; an empty list if the file is absent.
 
     The ABSENCE of the file is the normal case: users of hooks are a
     minority and those who do not use them must pay nothing. So the fast

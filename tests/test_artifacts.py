@@ -69,7 +69,7 @@ def test_update_keeps_the_address_and_archives_the_old_page(tmp_path: Path) -> N
     assert updated["surum"] == 2
     target = tmp_path / artifacts.FOLDER / meta["id"]
     assert "v2" in (target / "index.html").read_text(encoding="utf-8")
-    # The old version is not lost: it sits as surumler/1.html.
+    # The old version is not lost: it sits as versions/1.html.
     assert "v1" in (target / artifacts.VERSIONS / "1.html").read_text(encoding="utf-8")
 
 

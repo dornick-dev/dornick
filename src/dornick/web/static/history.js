@@ -656,13 +656,13 @@ const History = (() => {
   // "Burada başlat" opens a new session + assigns the work folder +
   // applies it.
   function startInFolder() {
-    const existing = document.getElementById("hist-klasor-sec");
+    const existing = document.getElementById("hist-folder-sec");
     if (existing) { existing.remove(); return; }
-    const box = el("div", "hist-assign-box hist-klasor-box");
-    box.id = "hist-klasor-sec";
-    const titleEl = el("div", "hist-klasor-yol", "");
-    const listEl = el("div", "hist-klasor-liste");
-    const foot = el("div", "hist-klasor-alt");
+    const box = el("div", "hist-assign-box hist-folder-box");
+    box.id = "hist-folder-sec";
+    const titleEl = el("div", "hist-folder-yol", "");
+    const listEl = el("div", "hist-folder-liste");
+    const foot = el("div", "hist-folder-alt");
     const startBtn = el("button", "plan-btn", t("Burada başlat"));
     startBtn.type = "button";
     const closeBtn = el("button", "plan-btn muted", t("Vazgeç"));
@@ -681,13 +681,13 @@ const History = (() => {
       startBtn.disabled = !selected;
       listEl.replaceChildren();
       if (data.ust !== null && data.ust !== undefined) {
-        const upBtn = el("button", "hist-klasor-satir ust", "‹ " + t("üst klasör"));
+        const upBtn = el("button", "hist-folder-satir ust", "‹ " + t("üst klasör"));
         upBtn.type = "button";
         upBtn.onclick = () => browse(data.ust);
         listEl.append(upBtn);
       }
       for (const k of (data.klasorler || [])) {
-        const row = el("button", "hist-klasor-satir", k.ad || k.yol);
+        const row = el("button", "hist-folder-satir", k.ad || k.yol);
         row.type = "button";
         row.onclick = () => browse(k.yol);
         listEl.append(row);

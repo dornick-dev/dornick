@@ -233,7 +233,7 @@ def test_the_control_arm_pins_target_to_the_measured_baseline(harness, decisions
         for arm, marks in model["kollar"].items():
             assert marks["kaldirac_satiri"] is False, (name, arm)
     # What was written to disk says the same thing.
-    for state in (tmp_path / "durum").glob("*/kaldiracsiz/mizac.json"):
+    for state in (tmp_path / "durum").glob("*/kaldiracsiz/temperament.json"):
         saved = json.loads(state.read_text(encoding="utf-8"))
         assert saved["hedef"] == saved["taban"]
     assert result["metrikler"]["tutarlilik_model"] is None

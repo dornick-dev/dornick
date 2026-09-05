@@ -40,7 +40,7 @@ def test_keys_json_read_and_write_both_denied() -> None:
 
 def test_config_and_gate_write_denied_read_allowed() -> None:
     """config/gate/manifest are closed to WRITING (mode/gate/approval), open to reading."""
-    for target in ("config.json", "gate.json", "skills_onayli.json"):
+    for target in ("config.json", "gate.json", "skills_approved.json", "skills_onayli.json"):
         path = f".dornick/{target}"
         assert guards.hard_deny("write_file", True, {"path": path}), target
         assert guards.hard_deny("shell", True,
@@ -62,7 +62,7 @@ def test_startup_persistence_denied() -> None:
 def test_ordinary_paths_are_not_touched() -> None:
     """Ordinary work is not blocked — the guard is narrow. A keys.json/config.json
     name OUTSIDE `.dornick` is a user file and is free."""
-    assert guards.hard_deny("write_file", True, {"path": "atolye/site/index.html"}) is None
+    assert guards.hard_deny("write_file", True, {"path": "workshop/site/index.html"}) is None
     assert guards.hard_deny("shell", True, {"command": "npm test"}) is None
     # A config.json in the user's own project (not .dornick) can be written.
     assert guards.hard_deny("write_file", True, {"path": "proje/config.json"}) is None
@@ -95,5 +95,5 @@ def test_normal_call_still_flows_through_the_gate() -> None:
     """The guard does not affect an ordinary call: a normal write in yolo is ALLOW."""
     engine = PermissionEngine("yolo", allow=[], deny=[])
     decision, _rule = engine.evaluate(_spec("write_file", mutates=True),
-                                      {"path": "atolye/rapor.md"})
+                                      {"path": "workshop/rapor.md"})
     assert decision is Decision.ALLOW

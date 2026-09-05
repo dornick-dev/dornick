@@ -22,7 +22,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-FILE_NAME = "karar_ornekleri.json"
+from .. import legacy_names
+
+FILE_NAME = "decision_exemplars.json"
 MAX_EXEMPLARS = 12
 MAX_CHARS = 220
 
@@ -39,8 +41,14 @@ class Exemplar:
         return {"eksen": self.axis, "durum": self.situation, "karar": self.decision}
 
 
-def _read(state_dir: Path) -> tuple[str, list[Any]]:
+def _path(state_dir: Path) -> Path:
     path = Path(state_dir) / FILE_NAME
+    legacy_names.adopt(Path(state_dir) / "karar_ornekleri.json", path)
+    return path
+
+
+def _read(state_dir: Path) -> tuple[str, list[Any]]:
+    path = _path(state_dir)
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError):
@@ -71,7 +79,7 @@ def load(state_dir: Path) -> list[Exemplar]:
 
 def save(state_dir: Path, exemplars: list[Exemplar], model_id: str = "") -> None:
     """Writes the decisions with the id of the model that made them."""
-    path = Path(state_dir) / FILE_NAME
+    path = _path(state_dir)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps({"model_id": model_id,
                                 "kararlar": [e.as_dict() for e in exemplars[:MAX_EXEMPLARS]]},

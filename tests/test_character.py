@@ -121,10 +121,10 @@ def test_what_the_user_taught_survives_a_model_swap(tmp_path: Path) -> None:
 
 
 def test_the_temperament_file_keeps_its_turkish_keys(tmp_path: Path) -> None:
-    """`mizac.json` is a persisted format: the axis names on disk do not
+    """`temperament.json` is a persisted format: the axis names on disk do not
     follow the Python field names."""
     temperament.save(tmp_path, Temperament(caution=0.3), Temperament(caution=0.7))
-    data = json.loads((tmp_path / "mizac.json").read_text("utf-8"))
+    data = json.loads((tmp_path / "temperament.json").read_text("utf-8"))
     assert set(data["taban"]) == {"yenilik", "sonuc", "sosyal", "sebat", "temkin"}
     assert data["hedef"]["temkin"] == pytest.approx(0.7)
 
@@ -390,7 +390,7 @@ def _built(tmp_path: Path):
 
 
 def test_an_empty_state_adds_no_character_block(tmp_path: Path) -> None:
-    """No `mizac.json`, no `kimlik.md`, no soul: the identity block stays
+    """No `temperament.json`, no `identity.md`, no soul: the identity block stays
     empty. A missing file must not cost a single token."""
     from dornick import prompt as builder
 

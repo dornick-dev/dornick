@@ -334,7 +334,7 @@ PHPUNIT_FAILING = """\
 PHPUnit 10.5.11 by Sebastian Bergmann and contributors.
 
 Runtime:       PHP 8.2.12
-Configuration: C:\\atolye\\cms\\phpunit.dist.xml
+Configuration: C:\\workshop\\cms\\phpunit.dist.xml
 
 ..F.                                                                4 / 4 (100%)
 
@@ -345,7 +345,7 @@ There was 1 failure:
 1) App\\Tests\\HomeTest::testIndexReturnsString
 Failed asserting that null is of type string.
 
-C:\\atolye\\cms\\tests\\HomeTest.php:23
+C:\\workshop\\cms\\tests\\HomeTest.php:23
 
 FAILURES!
 Tests: 4, Assertions: 6, Failures: 1.

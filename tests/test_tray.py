@@ -211,5 +211,5 @@ def test_installer_asks_keep_or_wipe_data() -> None:
     iss = Path(__file__).resolve().parents[1] / "installer" / "dornick.iss"
     text = iss.read_text(encoding="utf-8-sig")
     assert "görevler" in text.lower() or "tasks" in text.lower()
-    assert "SecVeri" in text and "SecGuncelle" in text
-    assert "OnayAnladim" in text
+    assert "ChoiceData" in text and "ChoiceUpdate" in text
+    assert "ConfirmUnderstood" in text

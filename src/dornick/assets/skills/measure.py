@@ -31,17 +31,17 @@ def _run(cmd, cwd, repeats):
     import time
 
     durations = []
-    son_kod = 0
+    last_code = 0
     for _ in range(repeats):
         t0 = time.perf_counter()
         done = subprocess.run(cmd, shell=True, cwd=cwd, capture_output=True,
                               text=True, timeout=300)
         durations.append(time.perf_counter() - t0)
-        son_kod = done.returncode
-        if son_kod != 0:
+        last_code = done.returncode
+        if last_code != 0:
             # Bozuk komutu tekrar tekrar ölçmenin anlamı yok.
-            return durations, son_kod, (done.stderr or done.stdout or "")[-400:]
-    return durations, son_kod, ""
+            return durations, last_code, (done.stderr or done.stdout or "")[-400:]
+    return durations, last_code, ""
 
 
 def _summary(durations):
@@ -63,9 +63,9 @@ def run(args, ctx):
         return f"Çalışma klasörü yok: {cwd}"
 
     lines = [f"# Ölçüm — {repeats} koşu", ""]
-    a_time, a_kod, a_err = _run(command, cwd, repeats)
-    if a_kod != 0:
-        return (f"Komut kırmızı (çıkış {a_kod}) — süre ölçümü anlamsız.\n"
+    a_time, a_code, a_err = _run(command, cwd, repeats)
+    if a_code != 0:
+        return (f"Komut kırmızı (çıkış {a_code}) — süre ölçümü anlamsız.\n"
                 f"Önce yeşile çek:\n{a_err}")
     a = _summary(a_time)
     lines.append(f"A `{command}`: medyan {a['medyan']:.3f} sn "
@@ -73,9 +73,9 @@ def run(args, ctx):
 
     compare = str(args.get("kiyas") or "").strip()
     if compare:
-        b_time, b_kod, b_err = _run(compare, cwd, repeats)
-        if b_kod != 0:
-            lines.append(f"B `{compare}`: KIRMIZI (çıkış {b_kod}) — {b_err}")
+        b_time, b_code, b_err = _run(compare, cwd, repeats)
+        if b_code != 0:
+            lines.append(f"B `{compare}`: KIRMIZI (çıkış {b_code}) — {b_err}")
         else:
             b = _summary(b_time)
             lines.append(f"B `{compare}`: medyan {b['medyan']:.3f} sn "

@@ -14,7 +14,7 @@
 #      only the newest 5 remain, the oldest are deleted.
 #   4. Running-copy detection — a real "-m dornick" process is started
 #      (recall-mcp: no model, no window, waits on stdin); the installer is
-#      invoked with /SADECE_TARA=1 /SUREC_RAPOR=<file> and the report is
+#      invoked with /SCAN_ONLY=1 /PROCESS_REPORT=<file> and the report is
 #      proven to list that PID. (The wizard page cannot be driven by
 #      automation, so the [Code] logic is tested via the parameter.)
 #   5. Gentle/forced kill chain — proves that a gentle taskkill is not enough
@@ -69,11 +69,11 @@ $Backup  = Join-Path $Root "yedek"
 
 # -- 1) stub package ----------------------------------------------------
 # Every source directory in the [Files] section must exist; content is irrelevant.
-foreach ($d in @("python", "src\dornick\assets", "egitim", "listen", "watch", "eval")) {
+foreach ($d in @("python", "src\dornick\assets", "training", "listen", "watch", "eval")) {
     New-Item -ItemType Directory -Force (Join-Path $Package $d) | Out-Null
 }
 "saplama" | Set-Content (Join-Path $Package "python\bos.txt")
-"saplama" | Set-Content (Join-Path $Package "egitim\bos.txt")
+"saplama" | Set-Content (Join-Path $Package "training\bos.txt")
 "saplama" | Set-Content (Join-Path $Package "listen\bos.txt")
 "saplama" | Set-Content (Join-Path $Package "watch\bos.txt")
 "saplama" | Set-Content (Join-Path $Package "eval\bos.txt")
@@ -94,7 +94,7 @@ $Setup022 = Join-Path $Out "dornick-setup-0.2.2.exe"
 function Install([string]$exe, [string[]]$extra) {
     $argList = @("/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART",
                  "/DIR=$Target", "/MERGETASKS=!desktopicon",
-                 "/YEDEKDIZIN=$Backup") + $extra
+                 "/BACKUPDIR=$Backup") + $extra
     $p = Start-Process -FilePath $exe -ArgumentList $argList -Wait -PassThru
     return $p.ExitCode
 }
@@ -164,8 +164,8 @@ try {
     Check (-not $proc.HasExited) "sandbox dornick process is up (PID $($proc.Id))"
     $Report = Join-Path $Root "surec-raporu.txt"
     $p = Start-Process -FilePath $Setup022 -ArgumentList @(
-        "/VERYSILENT", "/SUPPRESSMSGBOXES", "/SADECE_TARA=1",
-        "/SUREC_RAPOR=$Report") -Wait -PassThru
+        "/VERYSILENT", "/SUPPRESSMSGBOXES", "/SCAN_ONLY=1",
+        "/PROCESS_REPORT=$Report") -Wait -PassThru
     Check ($p.ExitCode -ne 0) "/SADECE_TARA exited without installing (code: $($p.ExitCode))"
     $content = ""
     if (Test-Path $Report) { $content = Get-Content $Report -Raw }
@@ -198,7 +198,7 @@ $staleCode = Join-Path (Join-Path $Target 'src') 'artik.py'
 New-Item -ItemType Directory -Force (Join-Path $Target 'src') | Out-Null
 'eski surumden kalan' | Set-Content $staleCode -Encoding utf8
 
-$code = Install $Setup022 @("/TEMIZLE=temiz")
+$code = Install $Setup022 @("/CLEAN=clean")
 Check ($code -eq 0) "clean install exit code 0 (actual: $code)"
 Check (Test-Path (Join-Path $Dornick "anilar.json")) "memories REMAIN in a CLEAN install"
 Check (Test-Path (Join-Path $Dornick "tasks.json")) "tasks REMAIN in a CLEAN install"
@@ -214,7 +214,7 @@ Write-Host "`n== Scenario 8: RESET DATA TOO — backup first, deletion after" -F
 $prevNewest = (Get-ChildItem $Backup -Filter "dornick-backup-*.zip" -ErrorAction SilentlyContinue |
                Sort-Object LastWriteTime | Select-Object -Last 1).Name
 Start-Sleep -Seconds 1   # backup name is second-stamped: avoid landing in the same second
-$code = Install $Setup022 @("/TEMIZLE=veri")
+$code = Install $Setup022 @("/CLEAN=data")
 Check ($code -eq 0) "data reset exit code 0 (actual: $code)"
 $finalBackups = @(Get-ChildItem $Backup -Filter "dornick-backup-*.zip" -ErrorAction SilentlyContinue)
 $newNewest = ($finalBackups | Sort-Object LastWriteTime | Select-Object -Last 1).Name

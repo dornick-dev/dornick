@@ -220,7 +220,7 @@ def test_the_agent_is_told_where_it_lives(tmp_path: Path) -> None:
     every write and learns by trial and error."""
     briefing = Sandbox.open(tmp_path).briefing()
 
-    assert "atolye" in briefing.lower()
+    assert "workshop" in briefing.lower()
     assert "copy_in" in briefing
 
 
@@ -234,8 +234,8 @@ async def test_the_workshop_name_is_not_nested(
     """The model adds the workshop's name to the path itself.
 
     The full path of the folder is in the system prompt and it infers from
-    there, saying "atolye/merhaba.txt". Joining as-is produced
-    `atolye/atolye/...` — in a real run exactly this happened and the file
+    there, saying "workshop/merhaba.txt". Joining as-is produced
+    `workshop/workshop/...` — in a real run exactly this happened and the file
     landed in a subfolder.
     """
     name = ctx.sandbox.root.name
@@ -285,7 +285,7 @@ from dornick import sandbox as sandbox_module   # noqa: E402
 def test_a_chosen_project_becomes_writable(tmp_path: Path) -> None:
     project = tmp_path / "musteri-projesi"
     project.mkdir()
-    box = Sandbox.open(tmp_path, "atolye", project=str(project))
+    box = Sandbox.open(tmp_path, "workshop", project=str(project))
 
     assert box.contains(project / "src" / "yeni.py")     # a file that does not exist yet, too
     assert box.check(project / "app.py") is not None
@@ -299,7 +299,7 @@ def test_everything_outside_the_open_roots_is_still_refused(tmp_path: Path) -> N
     project = tmp_path / "proje"
     project.mkdir()
     (tmp_path / "baska").mkdir()
-    box = Sandbox.open(tmp_path, "atolye", project=str(project))
+    box = Sandbox.open(tmp_path, "workshop", project=str(project))
 
     with pytest.raises(OutsideSandbox) as caught:
         box.check(tmp_path / "baska" / "dosya.txt")
@@ -309,7 +309,7 @@ def test_everything_outside_the_open_roots_is_still_refused(tmp_path: Path) -> N
 
 
 def test_without_a_project_the_old_rule_holds(tmp_path: Path) -> None:
-    box = Sandbox.open(tmp_path, "atolye")
+    box = Sandbox.open(tmp_path, "workshop")
     assert box.project is None
     assert box.roots == (box.root,)
     with pytest.raises(OutsideSandbox):
@@ -347,7 +347,7 @@ def test_an_invalid_project_falls_back_instead_of_breaking(tmp_path: Path) -> No
     """The settings file may have been edited by hand or the folder deleted:
     the program must not become UNABLE TO OPEN, it should silently fall
     back to the workshop."""
-    box = Sandbox.open(tmp_path, "atolye", project=str(tmp_path / "silinmis"))
+    box = Sandbox.open(tmp_path, "workshop", project=str(tmp_path / "silinmis"))
     assert box.project is None
     assert box.contains(box.root / "x.txt")
 
@@ -357,7 +357,7 @@ def test_covering_neos_own_state_warns_but_does_not_block(tmp_path: Path) -> Non
     is developed exactly that way. A warning, not a block."""
     status = tmp_path / ".dornick"
     status.mkdir()
-    box = Sandbox.open(tmp_path / "ws", "atolye", project=str(tmp_path),
+    box = Sandbox.open(tmp_path / "ws", "workshop", project=str(tmp_path),
                        state_dir=status)
     assert box.project == tmp_path.resolve()      # not blocked
     assert "hafızasına" in box.note               # but said
@@ -369,22 +369,22 @@ def test_the_briefing_tells_the_model_which_folder_is_which(tmp_path: Path) -> N
     project = tmp_path / "musteri"
     project.mkdir()
 
-    plain = Sandbox.open(tmp_path, "atolye").briefing()
+    plain = Sandbox.open(tmp_path, "workshop").briefing()
     assert "yazma yalnızca bu klasörde" in plain
     assert "Çalışılan proje" not in plain
 
-    with_project = Sandbox.open(tmp_path, "atolye", project=str(project)).briefing()
+    with_project = Sandbox.open(tmp_path, "workshop", project=str(project)).briefing()
     assert f"Çalışılan proje: {project.resolve()}" in with_project
     assert "yazma serbest" in with_project
     # The workshop keeps showing too: the two are separate jobs.
-    assert str(Sandbox.open(tmp_path, "atolye").root) in with_project
+    assert str(Sandbox.open(tmp_path, "workshop").root) in with_project
     assert "kendi işlerin" in with_project
 
 
 def test_relative_paths_resolve_against_the_nearest_open_root(tmp_path: Path) -> None:
     project = tmp_path / "proje"
     (project / "src").mkdir(parents=True)
-    box = Sandbox.open(tmp_path, "atolye", project=str(project))
+    box = Sandbox.open(tmp_path, "workshop", project=str(project))
     assert box.relative(project / "src" / "app.py") == "src/app.py"
     assert box.relative(box.root / "not.md") == "not.md"
 

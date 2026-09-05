@@ -478,7 +478,7 @@ const Markdown = (() => {
   );
 
   // Folder path: ends with a separator, at least two segments
-  // ("atolye/borsa-ara/").
+  // ("workshop/borsa-ara/").
   const DIR_REF = /(?:[\w.@+-]+[\\/]){2,}/;
 
   // Something starting with a domain is an address, not a file:

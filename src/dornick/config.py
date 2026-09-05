@@ -12,7 +12,7 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
-from . import sandbox
+from . import legacy_names, sandbox
 from .listen import ListenConfig
 from .place import PlaceConfig
 from .voice import VoiceConfig
@@ -269,6 +269,8 @@ class Config:
         state = Path(os.getenv("DORNICK_STATE_DIR") or (ws / ".dornick"))
         if not os.getenv("DORNICK_STATE_DIR"):
             _adopt_legacy_state(ws, state)
+        # Files that carried Turkish names before 1.5.1 are adopted once.
+        legacy_names.migrate_state(state)
 
         cfg = cls(workspace=ws, state_dir=state)
 
@@ -298,7 +300,7 @@ class Config:
 
 # Workspace (home) resolution. The problem: the home was derived from
 # `Path.cwd()`, so when dornick was launched from another directory (e.g. a
-# parent folder) it set up `.dornick` and `atolye` THERE, scattering its data
+# parent folder) it set up `.dornick` and `workshop` THERE, scattering its data
 # wherever it happened to be — the user: "it must not step outside the place
 # we assigned it". Now once the home is determined it is PINNED: wherever
 # you launch Dornick from, it uses the same home.

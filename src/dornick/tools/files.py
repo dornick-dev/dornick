@@ -42,9 +42,9 @@ def _resolve(raw: str, ctx: ToolContext) -> Path:
 
     root = ctx.sandbox.root
     # The model adds the workshop's name to the path itself
-    # ("atolye/site/index.html"): the full path of the folder is in the
+    # ("workshop/site/index.html"): the full path of the folder is in the
     # system prompt and it infers from there. Joining as-is produced
-    # `atolye/atolye/...` — the file lands in a subfolder rather than the
+    # `workshop/workshop/...` — the file lands in a subfolder rather than the
     # right place and the user cannot find what they are looking for.
     parts = path.parts
     if parts and parts[0] == root.name:

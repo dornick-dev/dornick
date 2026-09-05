@@ -36,7 +36,7 @@ from typing import Any
 FILE = "gate.json"
 
 # Directories skipped in the changed-file scan: tool residue, version control.
-_SKIP = frozenset({".git", "__pycache__", "node_modules", ".venv", ".geri-donusum"})
+_SKIP = frozenset({".git", "__pycache__", "node_modules", ".venv", ".recycle-bin", ".geri-donusum"})
 
 # Maximum time to wait for a turn. Long research turns take minutes; but an
 # HTTP request that waits forever leaks a thread as well.

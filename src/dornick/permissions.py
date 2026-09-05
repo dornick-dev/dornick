@@ -40,13 +40,25 @@ class Decision(str, Enum):
     DENY = "deny"
 
 
+# Tools renamed in 1.5.1. A rule the user saved under the old name
+# (`kos:*` in config.json) must keep meaning what it meant.
+LEGACY_TOOL_NAMES = {"kos": "run", "denetle": "inspect", "semboller": "symbols", "kamera": "camera"}
+
+
+def _modern_rule(rule: str) -> str:
+    tool, sep, rest = rule.partition(":")
+    if sep and tool in LEGACY_TOOL_NAMES:
+        return f"{LEGACY_TOOL_NAMES[tool]}:{rest}"
+    return rule
+
+
 class PermissionEngine:
     def __init__(self, mode: str, allow: list[str], deny: list[str]) -> None:
         if mode not in ("auto", "ask", "plan", "yolo"):
             raise ValueError(f"Bilinmeyen izin modu: {mode}")
         self.mode = mode
-        self.allow = list(allow)
-        self.deny = list(deny)
+        self.allow = [_modern_rule(r) for r in allow]
+        self.deny = [_modern_rule(r) for r in deny]
 
     @classmethod
     def from_config(cls, cfg: Any) -> PermissionEngine:

@@ -26,6 +26,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Iterable
 
+from .. import legacy_names
+
 from .subjects import BANNED_ADJECTIVES
 
 # The document is part of every system prompt, so its length is a per-session
@@ -143,16 +145,24 @@ def object_to(current: Identity, sentence_prefix: str) -> tuple[Identity, list[s
 
 # -- disk --------------------------------------------------------------
 
+FILE_NAME = "identity.md"
+
+
+def _path(state_dir: Path) -> Path:
+    path = Path(state_dir) / FILE_NAME
+    legacy_names.adopt(Path(state_dir) / "kimlik.md", path)
+    return path
+
 
 def load(state_dir: Path) -> Identity:
     try:
-        return parse((Path(state_dir) / "kimlik.md").read_text("utf-8"))
+        return parse((_path(state_dir)).read_text("utf-8"))
     except OSError:
         return Identity()
 
 
 def save(state_dir: Path, identity: Identity) -> None:
-    path = Path(state_dir) / "kimlik.md"
+    path = _path(state_dir)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(identity.render() + "\n", encoding="utf-8")
 
@@ -161,6 +171,6 @@ def reset(state_dir: Path) -> None:
     """A memory reset takes the narrative. Temperament lives elsewhere and
     stays — amnesia does not change what kind of person someone is."""
     try:
-        (Path(state_dir) / "kimlik.md").unlink()
+        (_path(state_dir)).unlink()
     except OSError:
         pass

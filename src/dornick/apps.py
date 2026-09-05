@@ -30,15 +30,17 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
+from . import legacy_names
+
 from . import environment
 
 # Noise skipped in the scan. Showing these makes the catalogue unusable.
 SKIP = {"__pycache__", ".git", ".venv", "node_modules", ".idea", ".vscode"}
 # Dornick's own infrastructure folders sit in the workshop but are NOT
 # projects: showing them as a "run tool" card pollutes the panel (the user:
-# "projects, not a pile of files"). yetenekler=skills, gelen=inbox,
+# "projects, not a pile of files"). skills (pre-1.5.1: yetenekler), gelen=inbox,
 # gorseller=images, cihazlar=device records.
-INTERNAL = {"yetenekler", "gelen", "gorseller", "görseller", "cihazlar"}
+INTERNAL = {"skills", "yetenekler", "gelen", "gorseller", "görseller", "cihazlar"}
 # Files that are NOT an app: build residue, office/binary documents, temp/lock.
 # These do not appear as cards (they are reachable directly from the workshop folder).
 SKIP_SUFFIX = {".pyc", ".pyo", ".log.migrated", ".docx", ".doc", ".xlsx",
@@ -74,7 +76,7 @@ PROJECT_DEPTH = 3
 # Folders never entered during deep discovery: dependency/build/junk. An
 # `app.json` inside these is not the user's app but a package's own
 # manifest — showing it as a card pollutes the catalogue.
-DISCOVERY_SKIP = SKIP | {"vendor", "dist", "build", "site-packages", ".geri-donusum",
+DISCOVERY_SKIP = SKIP | {"vendor", "dist", "build", "site-packages", ".recycle-bin", ".geri-donusum",
                          "bower_components", "target", "obj", "bin"}
 
 # The text returned to the MODEL when the manifest is written in the wrong
@@ -83,7 +85,7 @@ DISCOVERY_SKIP = SKIP | {"vendor", "dist", "build", "site-packages", ".geri-donu
 # sentence and move the manifest to the right place.
 MANIFEST_GUIDE = (
     "Uygulama manifesti uygulamanın KENDİ klasöründe `app.json` olmalı; "
-    "`entry` o klasöre göreli. Örnek: atolye/borsa-ara/app.json → "
+    "`entry` o klasöre göreli. Örnek: workshop/borsa-ara/app.json → "
     '{"entry": "static/index.html", "run": "py app.py"}'
 )
 
@@ -197,8 +199,8 @@ def project_index(sandbox_root: Path, base: Path | None = None,
 def _stray_manifests(root: Path) -> list[dict[str, str]]:
     """Manifests sitting at the workshop ROOT that belong to no app.
 
-    Two cases: (1) `atolye/app.json` — describes the whole workshop as a
-    single app; (2) `atolye/llm-donanim-app.json` — a folder-less manifest
+    Two cases: (1) `workshop/app.json` — describes the whole workshop as a
+    single app; (2) `workshop/llm-donanim-app.json` — a folder-less manifest
     with a made-up name. Neither enters discovery; a one-line warning +
     `MANIFEST_OGRETICI` is returned to the user and the model.
     """
@@ -215,7 +217,7 @@ def _stray_manifests(root: Path) -> list[dict[str, str]]:
             continue
         out.append({
             "path": name,
-            "uyari": f"atolye/{name} geçersiz — manifest uygulamanın kendi "
+            "uyari": f"workshop/{name} geçersiz — manifest uygulamanın kendi "
                      "klasöründe olmalı",
             "ogretici": MANIFEST_GUIDE,
         })
@@ -642,7 +644,7 @@ def catalog(sandbox_root: Path, base: Path | None = None) -> App:
     """
     root = sandbox_root
     ref = (base or root).resolve()
-    node = App(name=root.name or "atolye", path=_rel(root, ref), type="folder")
+    node = App(name=root.name or "workshop", path=_rel(root, ref), type="folder")
     if root.is_dir():
         node.children = _scan(root, ref, 0)
     return node
@@ -1262,7 +1264,7 @@ def remove(sandbox_root: Path, rel_path: str, base: Path | None = None) -> dict[
 
     The user must be able to delete from the panel; but permanently
     destroying a project with one click is dangerous. The project is moved
-    under `atolye/.geri-donusum/<time>-<name>`: it drops from the list
+    under `workshop/.recycle-bin/<time>-<name>`: it drops from the list
     (dot-prefixed folders are skipped anyway), but something deleted by
     mistake can be restored by hand.
     """
@@ -1277,7 +1279,8 @@ def remove(sandbox_root: Path, rel_path: str, base: Path | None = None) -> dict[
     if not target.exists():
         return {"ok": False, "error": f"Yok: {rel_path}"}
 
-    bin_dir = root / ".geri-donusum"
+    bin_dir = root / ".recycle-bin"
+    legacy_names.adopt(root / ".geri-donusum", bin_dir)
     try:
         bin_dir.mkdir(exist_ok=True)
         stamp = _time.strftime("%Y%m%d-%H%M%S")

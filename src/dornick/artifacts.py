@@ -25,6 +25,7 @@ from pathlib import Path
 from typing import Any
 
 from . import canvas
+from . import legacy_names
 from .events import utcnow
 
 # The store folder under state_dir.
@@ -32,12 +33,14 @@ FOLDER = "artifacts"
 
 # The subfolder holding old versions and how many are kept. Hoarding
 # without limit turns the disk into a dump; five versions are enough for
-# "take me back to a moment ago". (`surumler` is a persisted dir name.)
-VERSIONS = "surumler"
+# "take me back to a moment ago". (`versions` is a persisted dir name;
+# pre-1.5.1 stores carry `surumler`, adopted on the next update.)
+VERSIONS = "versions"
+LEGACY_VERSIONS = "surumler"
 KEEP_VERSIONS = 5
 
 # Where a deleted artifact is moved: no permanent delete, recoverable by hand.
-TRASH = ".geri-donusum"
+TRASH = ".recycle-bin"
 
 # Id pattern: title slug + 4 hex. No path is built without passing this
 # pattern; dots, separators and spaces never get in — directory traversal
@@ -135,7 +138,7 @@ def update(state_dir: Path, artifact_id: str, html: str,
            title: str | None = None) -> dict[str, Any]:
     """Writes a new version to the same id; the address does not change.
 
-    The old page is kept as `surumler/<n>.html` (last KEEP_VERSIONS);
+    The old page is kept as `versions/<n>.html` (last KEEP_VERSIONS);
     a wrong update must not lose the previous state.
     """
     if not (html or "").strip():
@@ -146,6 +149,7 @@ def update(state_dir: Path, artifact_id: str, html: str,
     page = target / "index.html"
     if page.is_file():
         versions = target / VERSIONS
+        legacy_names.adopt(target / LEGACY_VERSIONS, versions)
         versions.mkdir(exist_ok=True)
         shutil.copy2(page, versions / f"{meta.get('surum', 1)}.html")
         _prune_versions(versions)

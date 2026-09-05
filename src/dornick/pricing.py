@@ -31,8 +31,8 @@ from typing import Any, Callable
 from .config import OPENROUTER_URL, OTO_MODEL, ModelConfig
 from .automode import LIST_TIMEOUT, FRESHNESS_S, _read, _state_dir, _write
 
-# Price table cache: .dornick/fiyat.json
-PRICE_FILE = "fiyat.json"
+# Price table cache: .dornick/prices.json
+PRICE_FILE = "prices.json"
 
 # So we do not hit the disk a second time within the process; keyed by file
 # path (tests pass separate state_dirs and they must not bleed into each other).

@@ -71,7 +71,7 @@ _SETTINGS = "ayarlar/"
 # other session residue must not enter the package — even if the workshop
 # root one day collides with state.
 _SKIP = frozenset({".git", "__pycache__", "node_modules", ".venv",
-                   ".mypy_cache", ".geri-donusum", ".dornick"})
+                   ".mypy_cache", ".recycle-bin", ".geri-donusum", ".dornick"})
 
 
 def export_bundle(config: Any, mind: Any,
@@ -209,7 +209,7 @@ def import_bundle(config: Any, mind: Any, data: bytes,
                   parts: Sequence[str] | None = None) -> dict[str, Any]:
     """Merges a package into this Dornick. Memories join, they are not
     overwritten; file parts (tanima/projeler/ayarlar) move the existing
-    state under .dornick/yedek-<date>/ before overwriting.
+    state under .dornick/backup-<date>/ before overwriting.
 
     If `parts` is given, only the requested ones are processed even when
     the package has more — selective restore from a single archive. The
@@ -240,7 +240,7 @@ def import_bundle(config: Any, mind: Any, data: bytes,
     summary: dict[str, Any] = {"ok": True, "memories": 0, "links": 0,
                                "goals": 0, "skills": 0, "persona": False}
     # The backup folder is lazy: if nothing is going to be overwritten not
-    # even an empty yedek-<date> folder should be opened.
+    # even an empty backup-<date> folder should be opened.
     backup: list[Path] = []
 
     if "anilar" in wanted:
@@ -287,7 +287,7 @@ def import_bundle(config: Any, mind: Any, data: bytes,
 
 def backup_folder(state_dir: Path) -> Path:
     """Timestamped backup folder — reset and import use the same name."""
-    return Path(state_dir) / f"yedek-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
+    return Path(state_dir) / f"backup-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
 
 
 def _back_up(target: Path, state_dir: Path, backup: list[Path], label: str) -> None:
@@ -308,7 +308,7 @@ def _import_recognition(config: Any, zf: zipfile.ZipFile, names: set[str],
     taban.npz always lands in .Dornick (that is where the product reads it)
     and the base cache is dropped so it kicks in without waiting for the
     5-minute refresh. Corpus/watermark go into place if the training rig is
-    installed, otherwise under .dornick/tanima_yedek/ — so they are not
+    installed, otherwise under .dornick/recognition_backup/ — so they are not
     lost on a machine without the rig.
     """
     state_dir = Path(config.state_dir)
@@ -317,9 +317,9 @@ def _import_recognition(config: Any, zf: zipfile.ZipFile, names: set[str],
     targets = {
         "taban.npz": state_dir / "taban.npz",
         "kisisel_korpus.jsonl": (recognition_mod.CORPUS if rig_present
-                                 else state_dir / "tanima_yedek" / "kisisel_korpus.jsonl"),
+                                 else state_dir / "recognition_backup" / "kisisel_korpus.jsonl"),
         "kisisel_durum.json": (recognition_mod.WATERMARK if rig_present
-                               else state_dir / "tanima_yedek" / "kisisel_durum.json"),
+                               else state_dir / "recognition_backup" / "kisisel_durum.json"),
     }
     for name, target in targets.items():
         if _RECOGNITION + name not in names:
@@ -405,7 +405,7 @@ def reset_memories(config: Any, mind: Any) -> dict[str, Any]:
 
     Memories only: goals, soul, session logs and skills stay in place —
     "forget me" is one thing, "forget who you are" another. The backup is
-    .dornick/yedek-<date>/anilar/recall.db — the way back stays open.
+    .dornick/backup-<date>/anilar/recall.db — the way back stays open.
     """
     backup = backup_folder(config.state_dir)
     try:

@@ -872,7 +872,7 @@ def test_the_tree_carries_no_provider_keys() -> None:
     # REAL key length: short placeholders ("sk-ant-...", test fakes) are not
     # an alarm — documentation and fixtures are legitimate.
     pattern = re.compile(r"sk-or-v1-[0-9a-f]{60,}|sk-ant-[A-Za-z0-9_-]{60,}")
-    skip = {".git", ".dornick", "atolye", "__pycache__", ".pytest_cache",
+    skip = {".git", ".dornick", "workshop", "atolye", "__pycache__", ".pytest_cache",
             "node_modules", "dist"}
     suspects: list[str] = []
     for path in root.rglob("*"):

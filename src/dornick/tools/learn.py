@@ -26,7 +26,7 @@ from .. import skills
 from .base import ToolContext, ToolRegistry, ToolResult, object_schema
 
 DESCRIPTION = """
-Kendine yeni yetenek kazandırır. Bir yetenek, atölyendeki `yetenekler/`
+Kendine yeni yetenek kazandırır. Bir yetenek, atölyendeki `skills/`
 klasöründe duran bir Python dosyası; yüklendiğinde senin araçlarından biri
 olur ve bir daha yazmana gerek kalmaz.
 
@@ -68,7 +68,7 @@ kullanıcı ikinci kez sorduğunda HER ŞEYİ baştan yaparsın — dakikalarca.
 cihazdan/servisten değer okumayı çözdüğün an, onu bir yeteneğe dök: adresi,
 biçimi, bağlantı kurma yöntemini (ör. her okumada taze bağlantı) hepsi orada
 kalsın. O zaman bir sonraki okuma tek bir araç çağrısı olur, saniyeler.
-Atölyendeki `yetenekler/` klasörü boşsa, tekerleği her seferinde yeniden
+Atölyendeki `skills/` klasörü boşsa, tekerleği her seferinde yeniden
 icat ediyorsun demektir — bu en pahalı çalışma biçimidir.
 
 Dosya biçimi:

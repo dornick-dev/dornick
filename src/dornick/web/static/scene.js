@@ -1169,11 +1169,11 @@ const Scene = (() => {
   //
   //   duyular     the machine's own organs: microphone, camera, speaker
   //   cihazlar    attached from outside: PLC, remote camera, serial port
-  //   yetenekler  scripts the agent wrote for itself
+  //   skills      scripts the agent wrote for itself
   const BRANCHES = [
     { id: "duyular", label: "Duyular", kinds: ["sense", "speech"], tone: "fact" },
     { id: "cihazlar", label: "Cihazlar", kinds: ["device"], tone: "amber" },
-    { id: "yetenekler", label: "Yetenekler", kinds: ["module"], tone: "violet" },
+    { id: "skills", label: "Yetenekler", kinds: ["module"], tone: "violet" },
   ];
 
   // The branch's distance from the core and the leaves' from the branch.
