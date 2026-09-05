@@ -1344,3 +1344,34 @@ cümleleri Haiku'nun "işi bitir" ve "sormadan yap" eğilimlerini yenmiyor.
 Kalan tek gerçek kaldıraç: davranışı **tarif etmek yerine örneklemek** — A'nın
 kendi kararlarını (ölçülen, ayrı tutulmuş bir örnek setinden) prompta
 "daha önce şöyle karar verdin" diye koymak. Bir sonraki koşunun konusu.
+
+---
+
+## Faz 7.6 altıncı koşu — emsal kararlar · 2026-09-05
+
+Aynı senaryo (hedef = A tabanı, kapalı çevrim) + `recall/exemplars.py`: A'nın
+ayrı tutulmuş 10 karara verdiği cevaplar B'nin kaldıraçlı kollarına "önceki
+kararların" bloğu olarak giriyor; kontrol kolu çıplak. 970 çağrı.
+Rapor: `docs/charts/karakter-openrouter6.md`.
+
+| | 5. koşu (satır) | **6. koşu (emsal)** |
+|---|---|---|
+| Haiku → A mesafesi (taban / tur1 / tur2) | 0.204 / 0.162 / 0.159 | 0.199 / 0.148 / **0.132** |
+| sonuç ekseni (hedef ≈ 0.7–0.9) | 1.00 → 1.00 (sağır) | 1.00 → **0.93** |
+| temkin ekseni (hedef 0.94) | 0.67 → 0.67 (sağır) | 0.61 → **0.77** |
+| yenilik (hedef ≈ 0.77) | 0.56 → 0.83 | 0.50 → 0.60 |
+| `tutarlilik_model` | 0.722 | 0.722 |
+| `tutarlilik_zaman` / `baglam` | 0.922 / 0.928 | 0.917 / 0.833 |
+
+**Emsal, satırların yapamadığını yapıyor:** beş koşudur hiçbir kural
+cümlesine tepki vermeyen iki eksen (sonuç, temkin) A'nın gerçek kararlarını
+görünce hedefe doğru gitti; toplam mesafe altı koşunun en iyisi. Kural:
+karakter tarif edilmez, gösterilir — yol haritasının kimlik belgesi fikrinin
+davranışa çevrilmiş hâli. Modeller arası karar-başına uyuşma yine 0.72:
+eksen ortalamaları yaklaşırken tek tek kararlar A'nın kendi tutarsızlığıyla
+(bağlam tutarlılığı 0.83–0.93) sınırlı; 0.8 hedefi bu tavanın altında değil.
+Bir sonraki adım (yapılmadı): emsali duruma benzerlikle seçmek ve 12 tavanını
+kullanmak.
+
+Ürün tarafı: `karar_ornekleri.json` promptta okunuyor; dosyayı model
+değişiminde eski modelin sicilinden otomatik üretmek henüz bağlı değil.
