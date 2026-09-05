@@ -39,13 +39,25 @@ class Exemplar:
         return {"eksen": self.axis, "durum": self.situation, "karar": self.decision}
 
 
-def load(state_dir: Path) -> list[Exemplar]:
-    """The recorded decisions; an empty list when the file is absent or broken."""
+def _read(state_dir: Path) -> tuple[str, list[Any]]:
     path = Path(state_dir) / FILE_NAME
     try:
-        rows = json.loads(path.read_text(encoding="utf-8"))
+        data = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError):
-        return []
+        return "", []
+    if isinstance(data, dict):
+        return str(data.get("model_id") or ""), list(data.get("kararlar") or [])
+    return "", data if isinstance(data, list) else []
+
+
+def load_model_id(state_dir: Path) -> str:
+    """Which model's decisions the file holds ("" = unknown / old format)."""
+    return _read(state_dir)[0]
+
+
+def load(state_dir: Path) -> list[Exemplar]:
+    """The recorded decisions; an empty list when the file is absent or broken."""
+    _model, rows = _read(state_dir)
     out: list[Exemplar] = []
     for row in rows if isinstance(rows, list) else []:
         if not isinstance(row, dict):
@@ -57,10 +69,12 @@ def load(state_dir: Path) -> list[Exemplar]:
     return out[:MAX_EXEMPLARS]
 
 
-def save(state_dir: Path, exemplars: list[Exemplar]) -> None:
+def save(state_dir: Path, exemplars: list[Exemplar], model_id: str = "") -> None:
+    """Writes the decisions with the id of the model that made them."""
     path = Path(state_dir) / FILE_NAME
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps([e.as_dict() for e in exemplars[:MAX_EXEMPLARS]],
+    path.write_text(json.dumps({"model_id": model_id,
+                                "kararlar": [e.as_dict() for e in exemplars[:MAX_EXEMPLARS]]},
                                ensure_ascii=False, indent=1), encoding="utf-8")
 
 

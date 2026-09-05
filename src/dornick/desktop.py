@@ -1324,6 +1324,14 @@ class Bridge:
         # The sleep daemon reads its on/off switch and the model's locality
         # from here, so a saved setting reaches the next night at once.
         self._sleep_config = config
+        # The character follows the model: let the sleep daemon look at the
+        # configured model on its next tick instead of next night.
+        poke = getattr(getattr(self, "sleeper", None), "model_changed", None)
+        if callable(poke):
+            try:
+                poke()
+            except Exception:
+                pass
         if agent is None:
             self.sync_camera(config)
             self.sync_hearing(config)
@@ -1733,6 +1741,9 @@ class Bridge:
                 recognition.status(config.state_dir).get("learn_cloud_ok")),
             enabled=lambda: (
                 (c := self._sleep_settings()) is None or bool(c.sleep.uyku_acik)),
+            probe=self._probe_model,
+            model_name=lambda: (
+                (c := self._sleep_settings()) is not None and c.model.name or ""),
         )
         self.sleeper.start()
         # Suspend/resume from the frame shell's WndProc (WM_POWERBROADCAST).
@@ -1776,6 +1787,45 @@ class Bridge:
             daemon.os_suspended()
         elif kind == "resume":
             daemon.os_resumed()
+
+    def _probe_model(self, text: str, bare: bool) -> str:
+        """One tool-less call with the PRODUCT's system prompt — the real one
+        (character block included) or, `bare`, the same prompt built on an
+        empty state dir: no leverage, no identity, no precedent. The
+        character routine measures the new model with the second and
+        re-measures the levered one with the first."""
+        import tempfile
+
+        from .context import Prepared, build_system
+        from .prompt import build as build_prompt
+        from .tools.base import ToolRegistry
+
+        agent = self.agent
+        client = getattr(agent, "client", None)
+        config = self._sleep_settings()
+        if client is None or config is None:
+            raise RuntimeError("model yok")
+        if bare:
+            with tempfile.TemporaryDirectory(prefix="dornick-cıplak-") as tmp:
+                system = build_prompt(replace(config, state_dir=Path(tmp)), ToolRegistry())
+        else:
+            system = build_prompt(config, ToolRegistry())
+        prepared = Prepared(
+            system=build_system(system),
+            messages=[{"role": "user", "content": [{"type": "text", "text": text}]}],
+            betas=[], context_management=None)
+        future = asyncio.run_coroutine_threadsafe(
+            asyncio.wait_for(client.turn(prepared, [], cancel=asyncio.Event()),
+                             timeout=NIGHT_MODEL_TIMEOUT_S),
+            self.loop)
+        result = future.result(timeout=NIGHT_MODEL_TIMEOUT_S + 5)
+        if result.error or result.interrupted:
+            raise RuntimeError(result.error or "kesildi")
+        return "\n".join(
+            str(block.get("text", ""))
+            for block in result.content
+            if isinstance(block, dict) and block.get("type") == "text"
+        ).strip()
 
     def _night_model(self, prompt: str) -> str:
         """One tool-less, history-less model call for the night's distillation.

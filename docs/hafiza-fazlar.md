@@ -1375,3 +1375,26 @@ kullanmak.
 
 Ürün tarafı: `karar_ornekleri.json` promptta okunuyor; dosyayı model
 değişiminde eski modelin sicilinden otomatik üretmek henüz bağlı değil.
+
+---
+
+## Model değişiminde karakter — otomatik bağlandı · 2026-09-05
+
+Altı ölçümün tarifi ürüne kablolandı (`recall/character.py`, uyku bekçisi):
+
+1. Bekçi her tikte yapılandırılan modeli `mizac.json`'daki `model_id` ile
+   karşılaştırır; ayarlar kaydedilince (`Bridge.reload`) beklemeden bakar.
+2. Fark varsa: yeni modelin tabanı **çıplak** promptla (boş durum dizini —
+   kaldıraç, kimlik, emsal yok) 10 sondayla ölçülür (`assets/karar_sondalari.json`).
+   Hiçbir sondada karar yoksa hiçbir şey yazılmaz, altı saat sonra denenir.
+3. İlk kurulumda modelin kendi kararları emsal olarak kaydedilir; gerçek
+   değişimde **önceki modelin emsalleri yerinde kalır** — korunacak karakter o.
+4. Hedef dokunulmaz, taban ve model el değiştirir, kazanç sıfırlanır
+   (`temperament.on_model_change`).
+5. Aynı sondalar tam promptla (kaldıraç + emsal) bir kez daha sorulur;
+   `calibrate` kazancı bu modelin dozuna göre ayarlar ve yazar.
+
+Maliyet: 20 çağrı (ilk kurulumda da 20; emsal, taban cevaplarından
+çıkarılır). Olaylar `karakter.olcum` / `karakter.hata` olarak canlı akışa
+gider. Testler: `tests/test_character_change.py` (sıra, dosyalar, tekrar
+korunması, sessiz model, geri çekilme, bekçi ve ayar kancası).

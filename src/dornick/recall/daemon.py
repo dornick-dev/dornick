@@ -41,6 +41,8 @@ from .clock import Clock, parse, wall_clock
 # switch immediately, not on the tick — and halves the pressure reads on a
 # large store.
 TICK_SECONDS = 60.0
+# A failed character measurement (model unreachable) is retried after this.
+CHARACTER_RETRY_SECONDS = 6 * 3600.0
 
 # Orexin drops when the user has been away this long. The same notion of
 # absence the micro-sleep uses (awake.MICRO_IDLE_MINUTES): one "away", not
@@ -106,6 +108,8 @@ class SleepDaemon:
         enabled: Flag = True,
         interval_s: float = TICK_SECONDS,
         rhythm: sleep.Rhythm | None = None,
+        probe: Callable[[str, bool], str] | None = None,
+        model_name: Callable[[], str] | None = None,
     ) -> None:
         self.store = store
         self.sessions_dir = Path(sessions_dir)
@@ -128,6 +132,16 @@ class SleepDaemon:
 
         self.rhythm = rhythm or rhythm_read(self.state_dir)
         self.switch = sleep.SleepSwitch(clock=self.clock, rhythm=self.rhythm)
+        # Character follows the model: when the configured model is not the
+        # one the temperament file was measured on, the daemon runs the
+        # change routine (recall/character.py) — bare baseline, precedent,
+        # levered re-measure — about thirty calls. `probe(text, bare)` is the
+        # bridge's one-shot call with or without the character block.
+        self._probe = probe
+        self._model_name = model_name
+        self._character_tried: dict[str, float] = {}
+        self._poke_character = False
+        self.last_change: Any = None
         self._lock = threading.RLock()
 
         now = self.clock()
@@ -307,6 +321,55 @@ class SleepDaemon:
 
     # -- the tick ------------------------------------------------------
 
+    def model_changed(self) -> None:
+        """A settings change: look at the model on the next tick, not next night."""
+        self._poke_character = True
+        try:
+            self.poke()
+        except Exception:
+            pass
+
+    def _follow_model(self, now: Any) -> None:
+        if self._probe is None or self._model_name is None:
+            return
+        try:
+            name = str(self._model_name() or "")
+        except Exception:
+            return
+        if not name:
+            return
+        from . import character, temperament as _temperament
+
+        _b, _t, current = _temperament.load(self.state_dir)
+        if current == name and not self._poke_character:
+            return
+        self._poke_character = False
+        last = self._character_tried.get(name)
+        stamp = now.timestamp() if hasattr(now, "timestamp") else 0.0
+        if last is not None and stamp - last < CHARACTER_RETRY_SECONDS:
+            return
+        self._character_tried[name] = stamp
+        try:
+            report = character.handle_model_change(self.state_dir, name, self._probe)
+        except Exception as exc:
+            self._emit_plain("karakter.hata", {"model": name, "hata": str(exc)[:200]})
+            return
+        if report is not None:
+            self.last_change = report
+            self._emit_plain("karakter.olcum", {
+                "model": report.model_id, "onceki": report.previous,
+                "taban": report.baseline, "kazanc": report.gain,
+                "emsal_kaydedildi": report.precedent_recorded, "cagri": report.calls})
+
+    def _emit_plain(self, kind: str, data: dict[str, Any]) -> None:
+        hub = self.hub
+        emit = getattr(hub, "emit", None)
+        if callable(emit):
+            try:
+                emit({"type": "karakter", "olay": kind, **data})
+            except Exception:
+                pass
+
     def tick(self) -> sleep.State:
         """One sample: learn the hour, drop orexin if away, step the switch, act.
 
@@ -315,6 +378,7 @@ class SleepDaemon:
         """
         now = self.clock()
         self._learn_rhythm(now)
+        self._follow_model(now)
         if not self.enabled() or self.switch.suspended_at is not None:
             return self.switch.state
 
