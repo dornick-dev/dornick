@@ -183,7 +183,7 @@ def test_artifact_versions_folder_is_adopted_on_update(tmp_path: Path) -> None:
 # -- the training rig ---------------------------------------------------
 
 
-def test_the_installed_rig_moves_from_egitim_to_training(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_the_installed_rig_moves_from_the_old_folder_to_training(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     root = tmp_path / "app"
     old = root / "egitim"
     (old / "betikler").mkdir(parents=True)
