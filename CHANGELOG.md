@@ -22,6 +22,32 @@ Five things found in the first hour of using the packaged 1.5.0.
   "Ayrıntılar" and the choice is remembered.
 * **Installer removes the four scripts renamed in 1.5.0** so an updated
   install no longer serves stale files next to the live ones.
+* **English names everywhere.** Every file, folder, function, class,
+  variable, parameter and CSS class in the code base is English now; only
+  text shown to you or to the model stays Turkish. Old session logs name
+  the old tool names — the map: `kos` → `run`, `denetle` → `inspect`,
+  `semboller` → `symbols`, `kamera` → `camera`; the standard skills
+  `arsivle` → `archive`, `olcum` → `measure`, `ozet_csv` → `csv_summary`,
+  `pdf_metni` → `pdf_text`, `pdf_uret` → `pdf_make`,
+  `resim_boyutlandir` → `image_resize` (a skill file you edited is renamed
+  in place, your edits kept). Files on disk are adopted once on first
+  start, nothing is copied or lost: the workshop `atolye` → `workshop`
+  (with `yetenekler` → `skills` and `.geri-donusum` → `.recycle-bin`
+  inside it), the installed rig `egitim` → `training`, and inside
+  `.dornick`: `mizac.json` → `temperament.json`, `kimlik.md` →
+  `identity.md`, `karar_ornekleri.json` → `decision_exemplars.json`,
+  `kancalar.json` → `hooks.json` (the old name stays fenced),
+  `skills_onayli.json` → `skills_approved.json`, `oto_havuz.json` →
+  `auto_pool.json`, `fiyat.json` → `prices.json`, `filigran.json` →
+  `watermark.json`, `ritim.json` → `rhythm.json`, `uyku_gunlugu.jsonl` →
+  `sleep_journal.jsonl`, `tanima.json` → `recognition.json`,
+  `projeler.json` → `projects.json`; artifact history `surumler` →
+  `versions`; backups `yedek-<date>` → `backup-<date>`. A permission you
+  granted to `kos:*` is read as `run:*`, nothing to grant again. Keys inside
+  the files (settings, state, session logs, night events, SQLite) are
+  unchanged, so nothing you saved is re-read differently. A test now
+  fails on the first Turkish name in a path, a Python definition or a
+  script declaration.
 
 ## 1.5.0 - 2026-09-05
 
