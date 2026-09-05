@@ -1314,3 +1314,33 @@ Sonucu kendi bölümünde.
 | `prime_token` | 84.5 | 39.1 | **29.1** | ✅ |
 | `gecikme_p95` | 9.3 ms | 7.1 ms | **5.0 ms** | ✅ |
 | `buyume_p95` | — | 3.65 | **1.68** | ≤ 1.5 sınırda |
+
+---
+
+## Faz 7.6 beşinci koşu — hedef = A modelinin tabanı · 2026-09-05
+
+Gerçek senaryo: kullanıcı A (deepseek) ile yaşamış, hedef A-biçimli; model B
+(Claude Haiku) A'ya kalibre ediliyor. 960 çağrı, kapalı çevrim.
+Rapor: `docs/charts/karakter-openrouter5.md`.
+
+| Metrik | 4. koşu (hedef 0.5) | **5. koşu (hedef = A)** | hedef |
+|---|---|---|---|
+| `tutarlilik_model` (kaldıraç açık) | 0.722 | 0.722 | ≥ 0.8 ✗ |
+| `tutarlilik_model_kaldiracsiz` | 0.700 | 0.789 | |
+| `tutarlilik_zaman` | 0.861 | **0.922** | ✅ |
+| `tutarlilik_baglam` | 0.811 | **0.928** | ✅ |
+| Haiku → A mesafesi (taban / tur1 / tur2) | — | 0.204 / 0.162 / **0.159** | |
+| `belirsiz_oran` | 0.032 | **0.014** | ✅ |
+
+Eksen bazında Haiku: yenilik 0.56 → 0.83 (hedef 0.78 ✓), sebat 0.67 → 0.57
+(0.59 ✓), **sonuç 1.0 → 1.0** (hedef 0.72, kıpırdamadı), **temkin
+0.67 → 0.67** (hedef 0.94, "daha temkinli ol" kademe 3 bile etkisiz),
+sosyal 0.17 (hedef 0.0; sosyal eksende kaldıraç bilerek ≤ 1).
+
+**Sonuç:** kaldıraç satırları beş eksenin ikisini hedefe götürüyor, ikisine
+hiç dokunamıyor; modeller arası uyuşma kaldıraçla artmıyor (0.72 ↔ 0.79
+kaldıraçsız). Aynı yaklaşımı daha fazla çevirmek anlamsız — sıfat ve kural
+cümleleri Haiku'nun "işi bitir" ve "sormadan yap" eğilimlerini yenmiyor.
+Kalan tek gerçek kaldıraç: davranışı **tarif etmek yerine örneklemek** — A'nın
+kendi kararlarını (ölçülen, ayrı tutulmuş bir örnek setinden) prompta
+"daha önce şöyle karar verdin" diye koymak. Bir sonraki koşunun konusu.
