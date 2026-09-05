@@ -197,10 +197,10 @@ def test_each_arm_carries_the_prompt_it_claims(harness, dry_result) -> None:
     is also the proof that leverage and identity really reach the model."""
     for model in dry_result["modeller"].values():
         arms = model["kollar"]
-        assert arms["taban"] == {"kaldirac_satiri": False, "kimlik_blogu": False}
-        assert arms["tam"] == {"kaldirac_satiri": True, "kimlik_blogu": True}
-        assert arms["kaldiracsiz"] == {"kaldirac_satiri": False, "kimlik_blogu": True}
-        assert arms["kimliksiz"] == {"kaldirac_satiri": True, "kimlik_blogu": False}
+        assert arms["taban"] == {"kaldirac_satiri": False, "kimlik_blogu": False, "ornek_blogu": False}
+        assert arms["tam"] == {"kaldirac_satiri": True, "kimlik_blogu": True, "ornek_blogu": False}
+        assert arms["kaldiracsiz"] == {"kaldirac_satiri": False, "kimlik_blogu": True, "ornek_blogu": False}
+        assert arms["kimliksiz"] == {"kaldirac_satiri": True, "kimlik_blogu": False, "ornek_blogu": False}
 
 
 def test_the_ablations_move_the_right_way_on_the_fake(dry_result) -> None:
@@ -381,3 +381,22 @@ def test_the_target_can_be_the_first_models_baseline(harness, decisions, tmp_pat
     assert b["hedef"] == a["taban"]
     assert set(a["kaldirac"].values()) == {1.0}
     assert result["metrikler"]["tutarlilik_model"] is not None
+
+
+def test_precedent_from_model_a_reaches_only_model_b_levered_arms(harness, decisions, tmp_path) -> None:
+    """A answers the held-out set once; B's tam/tam2 arms carry the block,
+    the control arm does not, and A never sees its own precedent."""
+    held = harness.load_exemplar_decisions()
+    assert len(held) == 10 and len({d.axis for d in held}) == 5
+    assert not {d.id for d in held} & {d.id for d in decisions}
+    result = harness.run(decisions, _fakes(harness, tmp_path), target=harness.DRY_TARGET,
+                         identity_doc=harness.SAMPLE_IDENTITY, repeats=2,
+                         root=tmp_path / "durum", closed_loop=True, target_from_first=True,
+                         exemplars=True, held_out=held)
+    assert result["ornekli"] is True
+    assert result["sayim"]["cagri"] == harness.plan_calls(2, 2, leverage_on=True,
+                                                           closed_loop=True, exemplars=10)
+    a, b = list(result["modeller"].values())
+    assert all(not m["ornek_blogu"] for m in a["kollar"].values())
+    assert b["kollar"]["tam"]["ornek_blogu"] and b["kollar"]["tam2"]["ornek_blogu"]
+    assert not b["kollar"]["kaldiracsiz"]["ornek_blogu"]

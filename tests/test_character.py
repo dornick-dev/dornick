@@ -571,3 +571,41 @@ def test_the_prompt_uses_the_calibrated_gain(tmp_path: Path) -> None:
     T.save_gain(state, {"caution": 2.0})                                   # -> 3x -> tier 3
     system = _built(tmp_path)
     assert builder.LEVERAGE_LINES["caution"]["high"][2] in system.identity
+
+
+# -- decision exemplars ---------------------------------------------------
+
+
+def test_exemplars_round_trip_and_render(tmp_path: Path) -> None:
+    from dornick.recall import exemplars as X
+
+    rows = [X.Exemplar("temkin", "Görev 'eski günlükleri temizle' diyor; tarih yok.", "tarihi sorarım"),
+            X.Exemplar("sebat", "Derleme iki kez aynı hatayla düştü.", "üçüncü bir yol denerim")]
+    X.save(tmp_path, rows)
+    back = X.load(tmp_path)
+    assert [e.decision for e in back] == ["tarihi sorarım", "üçüncü bir yol denerim"]
+    text = X.render(back)
+    assert text.startswith(X.EXEMPLAR_HEADER)
+    assert "→ tarihi sorarım" in text
+    assert X.render([]) == ""
+    assert X.load(tmp_path / "yok") == []
+
+
+def test_exemplars_are_capped(tmp_path: Path) -> None:
+    from dornick.recall import exemplars as X
+
+    X.save(tmp_path, [X.Exemplar("temkin", f"durum {i}", "sorarım") for i in range(40)])
+    assert len(X.load(tmp_path)) == X.MAX_EXEMPLARS
+
+
+def test_the_prompt_shows_precedent_when_it_exists(tmp_path: Path) -> None:
+    from dornick import prompt as builder
+    from dornick.recall import exemplars as X
+
+    state = tmp_path / ".dornick"
+    assert X.EXEMPLAR_HEADER not in _built(tmp_path).identity
+    X.save(state, [X.Exemplar("temkin", "Tarih yazmıyor.", "tarihi sorarım")])
+    system = _built(tmp_path)
+    assert X.EXEMPLAR_HEADER in system.identity
+    assert "→ tarihi sorarım" in system.identity
+    assert X.EXEMPLAR_HEADER not in system.core

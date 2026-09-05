@@ -721,6 +721,16 @@ def _character(config: Config) -> str:
         document = ""
     if document:
         parts.append(IDENTITY_DOC_HEADER + "\n" + document)
+    # Precedent beats description: the recorded decisions of the character
+    # the user lived with (recall/exemplars.py). Empty file, no block.
+    try:
+        from .recall import exemplars as _exemplars
+
+        shown = _exemplars.render(_exemplars.load(config.state_dir)).strip()
+    except Exception:
+        shown = ""
+    if shown:
+        parts.append(shown)
     return "\n\n".join(parts)
 
 

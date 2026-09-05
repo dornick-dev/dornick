@@ -69,11 +69,15 @@ from dornick import prompt as prompt_builder  # noqa: E402
 from dornick.config import OPENROUTER_URL, Config  # noqa: E402
 from dornick.context import Prepared, build_system  # noqa: E402
 from dornick.prompt import DAYS, SystemPrompt  # noqa: E402
+from dornick.recall import exemplars as exemplar_store  # noqa: E402
 from dornick.recall import identity, temperament  # noqa: E402
 from dornick.recall.temperament import AXES, AXIS_KEYS, Probe, Temperament  # noqa: E402
 from dornick.tools.base import ToolRegistry  # noqa: E402
 
 DECISIONS_PATH = HERE / "kararlar.json"
+# Held-out decisions never measured: model A answers them once and those
+# answers become B's precedent block (recall/exemplars.py).
+EXEMPLARS_PATH = HERE / "ornekler.json"
 DATASET_NAME = "karakter-30"
 
 # Turkish axis name (the file format) -> Python axis name.
@@ -332,6 +336,7 @@ class FakeModel:
     """
 
     SHIFT = 0.35
+    EXEMPLAR_PULL = 0.6
     JITTER_WITH_IDENTITY = 0.12
     JITTER_WITHOUT_IDENTITY = 0.55
 
@@ -354,6 +359,17 @@ class FakeModel:
         for tier, line in enumerate(lines["low"]):
             if line in text:
                 threshold -= self.SHIFT * (0.5, 1.0, 1.5)[tier]
+        if exemplar_store.EXEMPLAR_HEADER in text:
+            # Precedent: the share of "high" choices among the shown decisions
+            # of this axis pulls the threshold toward itself.
+            highs = _exemplar_high().get(axis)
+            if highs:
+                shown = [ln for ln in text.splitlines() if ln.startswith("- ") and " → " in ln]
+                picks = [ln.rsplit(" → ", 1)[1].strip() for ln in shown]
+                mine = [pk for pk in picks if pk in highs[0] or pk in highs[1]]
+                if mine:
+                    share = sum(1 for pk in mine if pk in highs[0]) / len(mine)
+                    threshold += (share - threshold) * self.EXEMPLAR_PULL
         threshold = max(0.0, min(1.0, threshold))
         scale = (self.JITTER_WITH_IDENTITY if prompt_builder.IDENTITY_DOC_HEADER in text
                  else self.JITTER_WITHOUT_IDENTITY)
@@ -365,6 +381,29 @@ class FakeModel:
     def close(self) -> None:
         pass
 
+
+def _exemplar_labels() -> dict[str, tuple[set[str], set[str]]]:
+    """axis -> (high labels, low labels) of the held-out set, for the fake."""
+    try:
+        held = load_exemplar_decisions()
+    except (OSError, ValueError):
+        return {}
+    out: dict[str, tuple[set[str], set[str]]] = {}
+    for d in held:
+        highs, lows = out.setdefault(d.axis, (set(), set()))
+        highs.add(d.high)
+        lows.add(d.low)
+    return out
+
+
+_EXEMPLAR_CACHE: dict[str, tuple[set[str], set[str]]] | None = None
+
+
+def _exemplar_high() -> dict[str, tuple[set[str], set[str]]]:
+    global _EXEMPLAR_CACHE  # noqa: PLW0603 - lazy: the loader is defined below
+    if _EXEMPLAR_CACHE is None:
+        _EXEMPLAR_CACHE = _exemplar_labels()
+    return _EXEMPLAR_CACHE
 
 FAKE_INNATE = {
     "sahte-a": {"novelty": 0.7, "outcome": 0.5, "social": 0.8, "persistence": 0.4, "caution": 0.3},
@@ -466,6 +505,7 @@ class Arm:
     variants: int                      # contexts asked on day 0
     repeats: int                       # days asked with context 0
     gain: dict[str, float] | None = None   # closed-loop lever gain, if calibrated
+    exemplars: list[Any] | None = None     # precedent block (model A's decisions)
 
 
 def arm_config(model: Any, arm: Arm, root: Path) -> Config:
@@ -476,6 +516,8 @@ def arm_config(model: Any, arm: Arm, root: Path) -> Config:
         temperament.save(state, arm.baseline, arm.target, model.name)
         if arm.gain:
             temperament.save_gain(state, arm.gain)
+    if arm.exemplars:
+        exemplar_store.save(state, arm.exemplars)
     if arm.identity_doc:
         identity.save(state, identity.parse(arm.identity_doc))
     return replace(model.config, state_dir=state, persona_path=None)
@@ -518,7 +560,8 @@ def plan_arms(baseline: Temperament, target: Temperament, identity_doc: str, *,
 
 
 def plan_calls(models: int, repeats: int, *, leverage_on: bool,
-               decisions: int = TOTAL, closed_loop: bool = False) -> int:
+               decisions: int = TOTAL, closed_loop: bool = False,
+               exemplars: int = 0) -> int:
     """How many model calls the run makes — printed before spending."""
     per_arm = lambda variants, days: decisions * (variants + max(0, days - 1))  # noqa: E731
     total = decisions * VARIANTS                                  # baseline
@@ -529,7 +572,7 @@ def plan_calls(models: int, repeats: int, *, leverage_on: bool,
         total += per_arm(1, repeats)                              # kimliksiz
     if leverage_on:
         total += per_arm(VARIANTS, 1)                             # control
-    return total * models
+    return total * models + exemplars                             # A's precedent, once
 
 
 # -- the run --------------------------------------------------------------
@@ -557,6 +600,7 @@ class ModelResult:
     arm: str = ""
     gain: dict[str, float] | None = None          # closed loop only
     leverage_2: dict[str, float] | None = None
+    exemplars: list[Any] | None = None            # what this model's decisions taught
 
 
 def _ask(model: Any, system: SystemPrompt, decision: Decision, variant: int,
@@ -574,6 +618,44 @@ def _ask(model: Any, system: SystemPrompt, decision: Decision, variant: int,
     except Ambiguous:
         result.ambiguous += 1
         return None
+
+
+def load_exemplar_decisions(path: Path = EXEMPLARS_PATH) -> list[Decision]:
+    """The held-out set; same shape as the measured one, not validated for
+    size (ten is enough for precedent, two per axis)."""
+    data = json.loads(Path(path).read_text(encoding="utf-8"))
+    out: list[Decision] = []
+    for raw in data.get("kararlar", []):
+        out.append(Decision(
+            id=str(raw.get("id", "")),
+            axis=AXIS_OF.get(str(raw.get("eksen", "")), str(raw.get("eksen", ""))),
+            message=str(raw.get("mesaj", "")),
+            options=tuple(str(o) for o in raw.get("secenekler", ()))[:2],  # type: ignore[arg-type]
+            high=str(raw.get("yuksek", "")),
+            contexts=tuple(str(c) for c in raw.get("baglamlar", ())) or ("",),
+        ))
+    return out
+
+
+def record_exemplars(model: Any, held_out: list[Decision], root: Path,
+                     result: ModelResult) -> list[Any]:
+    """Model A answers the held-out decisions on its bare state; the answers
+    become precedent for model B. One variant, one day: precedent is a
+    record, not a measurement."""
+    config = arm_config(model, Arm("taban", None, None, "", 1, 1), root)
+    result.arm = "ornek"
+    system = system_for(config, BASE_DAY)
+    out: list[Any] = []
+    for decision in held_out:
+        label = _ask(model, system, decision, 0, 0, result)
+        if label is None:
+            continue
+        situation = decision.message
+        if decision.contexts and decision.contexts[0]:
+            situation = f"{decision.contexts[0]} {decision.message}"
+        out.append(exemplar_store.Exemplar(AXIS_KEYS.get(decision.axis, decision.axis),
+                                           situation, label))
+    return out
 
 
 def measure_baseline(model: Any, decisions: list[Decision], root: Path,
@@ -639,14 +721,16 @@ def run_arm(model: Any, arm: Arm, decisions: list[Decision], root: Path,
 def _prompt_marks(system: SystemPrompt) -> dict[str, bool]:
     text = system.rendered()
     return {"kaldirac_satiri": prompt_builder.LEVERAGE_HEADER in text,
-            "kimlik_blogu": prompt_builder.IDENTITY_DOC_HEADER in text}
+            "kimlik_blogu": prompt_builder.IDENTITY_DOC_HEADER in text,
+            "ornek_blogu": exemplar_store.EXEMPLAR_HEADER in text}
 
 
 def run(decisions: list[Decision], models: list[Any], *, target: Temperament,
         identity_doc: str, repeats: int = DEFAULT_REPEATS, day_gap: int = DEFAULT_DAY_GAP,
         leverage_on: bool = True, root: Path | str | None = None,
         progress: Callable[[str], None] | None = None,
-        closed_loop: bool = False, target_from_first: bool = False) -> dict[str, Any]:
+        closed_loop: bool = False, target_from_first: bool = False,
+        exemplars: bool = False, held_out: list[Decision] | None = None) -> dict[str, Any]:
     """The whole measurement for one or two models. Returns the report dict.
 
     `target_from_first`: the target is the FIRST model's measured baseline —
@@ -670,12 +754,24 @@ def run(decisions: list[Decision], models: list[Any], *, target: Temperament,
                 target = baseline
                 if progress:
                     progress(f"  hedef = {model.name} tabanı")
+            if exemplars and index == 0:
+                # The first model's decisions on the held-out set are the
+                # precedent every later model is shown.
+                precedent = record_exemplars(model, held_out or [], base, result)
+                result.exemplars = precedent
+                if progress:
+                    progress(f"  örnekler: {len(precedent)} karar ({model.name})")
             if progress:
                 progress(f"  {model.name} · taban: {baseline.as_dict()}")
             result.baseline = baseline
             arms = plan_arms(baseline, target, identity_doc,
                              repeats=repeats, leverage_on=leverage_on,
                              closed_loop=closed_loop)
+            if exemplars and index > 0 and results and results[0].exemplars:
+                # Precedent goes into the levered arms only; the control arm
+                # stays bare so the block's own effect is visible.
+                arms = [replace(arm, exemplars=results[0].exemplars)
+                        if arm.name.startswith("tam") else arm for arm in arms]
             main = arms[0]
             result.target = main.target or baseline
             result.leverage = temperament.leverage(baseline, result.target)
@@ -692,13 +788,13 @@ def run(decisions: list[Decision], models: list[Any], *, target: Temperament,
                     progress(f"  {model.name} · kazanç: "
                              f"{ {AXIS_KEYS[a]: g for a, g in gain.items()} }")
                 arms = [Arm("tam2", baseline, result.target, identity_doc, VARIANTS,
-                            repeats, gain=gain)] + arms[1:]
+                            repeats, gain=gain, exemplars=arms[0].exemplars)] + arms[1:]
             for arm in arms:
                 run_arm(model, arm, decisions, base, result,
                         day_gap=day_gap, progress=progress)
             results.append(result)
     return _report(decisions, results, repeats=repeats, day_gap=day_gap,
-                   leverage_on=leverage_on, identity_doc=identity_doc, closed_loop=closed_loop, target_from_first=target_from_first)
+                   leverage_on=leverage_on, identity_doc=identity_doc, closed_loop=closed_loop, target_from_first=target_from_first, exemplars=exemplars)
 
 
 # -- metrics ------------------------------------------------------------
@@ -761,7 +857,8 @@ def _mean(values: list[float | None]) -> float | None:
 
 def _report(decisions: list[Decision], results: list[ModelResult], *, repeats: int,
             day_gap: int, leverage_on: bool, identity_doc: str,
-            closed_loop: bool = False, target_from_first: bool = False) -> dict[str, Any]:
+            closed_loop: bool = False, target_from_first: bool = False,
+            exemplars: bool = False) -> dict[str, Any]:
     main = ("tam2" if closed_loop else "tam") if leverage_on else "kaldiracsiz"
     per_model: dict[str, Any] = {}
     for r in results:
@@ -832,6 +929,7 @@ def _report(decisions: list[Decision], results: list[ModelResult], *, repeats: i
         "modeller": per_model,
         "kapali_cevrim": closed_loop,
         "hedef_ilk_model": target_from_first,
+        "ornekli": exemplars,
         "sayim": {"karar": len(decisions), "baglam": VARIANTS, "tekrar": repeats,
                   "cagri": sum(r.calls for r in results),
                   "belirsiz": sum(r.ambiguous for r in results)},
@@ -968,6 +1066,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--base-url2", default="", help="ikinci model için adres (yerel sunucu)")
     ap.add_argument("--repeats", "--tekrar", type=int, default=DEFAULT_REPEATS, dest="repeats")
     ap.add_argument("--gun-arasi", "--day-gap", type=int, default=DEFAULT_DAY_GAP, dest="day_gap")
+    ap.add_argument("--ornekli", "--exemplars", dest="exemplars", action="store_true",
+                    help="ilk modelin ayrı tutulmuş örnek kararları ikinci modelin promptuna emsal")
     ap.add_argument("--hedef-ilk-model", "--target-from-first", dest="target_from_first",
                     action="store_true",
                     help="hedef = ilk modelin ölçülen tabanı (B modeli A gibi davransın)")
@@ -1000,8 +1100,10 @@ def main(argv: list[str] | None = None) -> int:
     charts = Path(args.charts) if args.charts else ROOT / "docs" / "charts"
     real_specs = [s for s in (args.model, args.model2) if s]
     wants_real = bool(real_specs) and not args.dry
+    held_out = load_exemplar_decisions() if args.exemplars else []
     calls = plan_calls(max(1, len(real_specs)) if wants_real else 2, args.repeats,
-                       leverage_on=leverage_on, closed_loop=args.closed_loop)
+                       leverage_on=leverage_on, closed_loop=args.closed_loop,
+                       exemplars=len(held_out))
 
     if wants_real and not args.evet:
         warn(f"Gerçek ölçüm {calls} model çağrısı yapar ({len(real_specs)} model × "
@@ -1040,7 +1142,8 @@ def main(argv: list[str] | None = None) -> int:
                      repeats=args.repeats, day_gap=args.day_gap,
                      leverage_on=leverage_on, progress=say,
                      closed_loop=args.closed_loop,
-                     target_from_first=args.target_from_first)
+                     target_from_first=args.target_from_first,
+                     exemplars=args.exemplars, held_out=held_out)
     finally:
         for model in models:
             model.close()
