@@ -29,8 +29,8 @@ a file-referenced inventory of this codebase plus a sourced market scan.
 | External automation | the gate API — outside agents drive a full turn and receive the complete output |
 | **Working in your own repo** | project mode: point dornick at any folder and it works there, not in a sandbox `atolye` (dangerous roots refused, recents remembered) |
 | **Post-write diagnostics** | every write is compiled/linted in its own language before the model moves on (`compile()`, `php -l`, `node --check`, `tsc`, ruff) — with an honest coverage table for what is *not* checked |
-| **Running the tests** | the `kos` tool detects the project's real test command from evidence (never invents one) and runs it |
-| **Symbols** | `semboller` — definitions and usages across Python (`ast`) and PHP/JS/TS |
+| **Running the tests** | the `run` tool detects the project's real test command from evidence (never invents one) and runs it |
+| **Symbols** | `symbols` — definitions and usages across Python (`ast`) and PHP/JS/TS |
 | **Hooks** | `.dornick/kancalar.json` — user shell commands before/after tool use; a non-zero exit **vetoes** the tool. Deliberately outside the permission engine (your own rule shouldn't ask your permission), and the hook file is closed to the model on two paths — write tools refuse it by path, other mutating calls that name it are refused before the permission gate — so it cannot disarm its own fence by casually reaching for the shell |
 | **Eyes on files** | `read_file` on a PNG/JPG returns an actual image to the model; on a PDF, page text with an explicit "these pages carry no text layer — do not guess" when scanned |
 | **Chat surface** | `/` command book, `@` file mentions, running-tasks ledger with stop and drill-in, "what changed this turn" with undo, budget brake |
@@ -68,7 +68,7 @@ reading this one.
 - **Cross-platform screen/hands** — currently Windows (ctypes/user32).
 - **Nested subagents / typed agents** — depth is capped at 1 by design for now;
   typed agent definitions (per-agent tools and prompt) are the next step.
-- **Real LSP** — `semboller` is an `ast`/regex approximation, good enough for
+- **Real LSP** — `symbols` is an `ast`/regex approximation, good enough for
   "where is this defined", not for rename-safe refactoring.
 - **MCP OAuth** — client-side OAuth for remote MCP servers is not wired.
 - **Memory-informed coding** — the coding pipeline currently runs with an

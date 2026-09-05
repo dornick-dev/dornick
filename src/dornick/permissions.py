@@ -27,7 +27,7 @@ if TYPE_CHECKING:  # pragma: no cover
     from .tools.base import ToolSpec
 
 # Arguments that represent "what a tool targets", in priority order.
-# `komut`: the field of the `kos` tool that overrides detection. Without it
+# `komut`: the field of the `run` tool that overrides detection. Without it
 # here a hand-given command would appear to the gate as `path` — the rule
 # would match the folder, not the command, and a "run tests in that folder"
 # permission would become permission for ANY command in that folder.

@@ -50,7 +50,7 @@ def export_npz(ck_path: Path, npz_path: Path) -> float:
         "son.w": sd["son.weight"].numpy(),
         "son.b": sd["son.bias"].numpy(),
     }
-    for i in range(cfg.kat):
+    for i in range(cfg.layer):
         p = f"bloklar.{i}."
         pack[f"b{i}.n1.w"] = sd[p + "n1.weight"].numpy()
         pack[f"b{i}.n1.b"] = sd[p + "n1.bias"].numpy()
@@ -65,8 +65,8 @@ def export_npz(ck_path: Path, npz_path: Path) -> float:
         pack[f"b{i}.mlp2.w"] = sd[p + "mlp.2.weight"].numpy()
         pack[f"b{i}.mlp2.b"] = sd[p + "mlp.2.bias"].numpy()
 
-    cfg_json = json.dumps({"ctx": cfg.ctx, "d": cfg.d, "kat": cfg.kat,
-                           "kafa": cfg.kafa}).encode("utf-8")
+    cfg_json = json.dumps({"ctx": cfg.ctx, "d": cfg.d, "kat": cfg.layer,
+                           "kafa": cfg.head}).encode("utf-8")
     np.savez_compressed(npz_path, _ayar=np.frombuffer(cfg_json, dtype=np.uint8),
                         **{k: v.astype(np.float16) for k, v in pack.items()})
 

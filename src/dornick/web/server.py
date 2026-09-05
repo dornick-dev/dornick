@@ -1090,7 +1090,7 @@ class _Handler(BaseHTTPRequestHandler):
             if config is None or not path:
                 self._json({"ok": False, "error": "`path` gerekli"})
                 return
-            self._json(catalog.sistemde_ac(config.open_sandbox().root, path,
+            self._json(catalog.open_in_system(config.open_sandbox().root, path,
                                            base=self._opening_base(config)))
             return
         if route == "/api/apps/reveal":
@@ -1137,7 +1137,7 @@ class _Handler(BaseHTTPRequestHandler):
             return
         if route == "/api/gorevler/iptal":
             result = self._controller_call(
-                "gorev_iptal", str((body or {}).get("id") or ""))
+                "cancel_task", str((body or {}).get("id") or ""))
             self._json(result if isinstance(result, dict)
                        else {"ok": False, "error": "Görev iptali desteklenmiyor."})
             return
@@ -2949,7 +2949,7 @@ class _Handler(BaseHTTPRequestHandler):
         `undo` tool uses. No second source of truth is produced: what the
         panel sees is what the agent sees.
         """
-        from ..tools.checkpoint import KLASOR, Defter
+        from ..tools.checkpoint import FOLDER, Defter
 
         config = getattr(self.server, "config", None)
         if config is None:
@@ -2961,7 +2961,7 @@ class _Handler(BaseHTTPRequestHandler):
             sid = str(snap.get("session") or "")
         if not sid:
             return None
-        return Defter(Path(config.state_dir) / KLASOR, sid)
+        return Defter(Path(config.state_dir) / FOLDER, sid)
 
     def _changes(self) -> None:
         """Files written/edited in this session.
@@ -2979,7 +2979,7 @@ class _Handler(BaseHTTPRequestHandler):
             since = int(parse_qs(urlparse(self.path).query).get("since", ["0"])[0])
         except ValueError:
             since = 0
-        records = ledger.list_entries(tavan=200)      # newest first
+        records = ledger.list_entries(cap=200)      # newest first
         last = records[0]["sira"] if records else 0
         out = []
         for k in records:
@@ -3015,7 +3015,7 @@ class _Handler(BaseHTTPRequestHandler):
             seq = int(parse_qs(urlparse(self.path).query).get("sira", ["0"])[0])
         except ValueError:
             seq = 0
-        record = next((k for k in ledger.list_entries(tavan=200) if k["sira"] == seq), None)
+        record = next((k for k in ledger.list_entries(cap=200) if k["sira"] == seq), None)
         if record is None:
             self._json({"ok": False, "error": "Kayıt bulunamadı."})
             return
@@ -3036,7 +3036,7 @@ class _Handler(BaseHTTPRequestHandler):
 
         file_path = Path(str(record.get("dosya") or ""))
         old, old_ok = ("", True) if record.get("yoktu") else (
-            _read(ledger.dizin / str(record.get("goruntu")))
+            _read(ledger.directory / str(record.get("goruntu")))
             if record.get("goruntu") else ("", False))
         new, new_ok = _read(file_path) if file_path.exists() else ("", True)
         self._json({
@@ -3367,7 +3367,7 @@ class _Handler(BaseHTTPRequestHandler):
             return
         try:
             root = config.open_sandbox().root
-            data = catalog.katalog(root, base=Path(config.workspace))
+            data = catalog.project_index(root, base=Path(config.workspace))
         except Exception as exc:
             self._json({"projects": [], "sorunlar": [], "error": str(exc)})
             return

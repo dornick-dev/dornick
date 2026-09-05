@@ -42,19 +42,19 @@ from .test_loop import FakeClient, build_agent, text_turn, tool_turn
 # -- 1) plan refleksi: sinyal -------------------------------------------
 
 
-@pytest.mark.parametrize("istek", [
+@pytest.mark.parametrize("wish", [
     "gelişmiş bir yönetim paneli yap",
     "bana bir web sitesi yap, ürünleri listelesin",
     "Python ile küçük bir kısa-link servisi istiyorum, sen kur",
     "şöyle bir uygulama geliştir: kullanıcı girişi olsun",
     "create a dashboard for the sensor data",
 ])
-def test_a_big_open_ended_request_is_recognised(istek: str) -> None:
+def test_a_big_open_ended_request_is_recognised(wish: str) -> None:
     """Ölçek sözü + yapım fiili: ortada tek dosyalık bir betik yok."""
-    assert big_job(istek) is True
+    assert big_job(wish) is True
 
 
-@pytest.mark.parametrize("istek", [
+@pytest.mark.parametrize("wish", [
     "",
     "naber",
     "app.py'yi çalıştır",
@@ -66,27 +66,27 @@ def test_a_big_open_ended_request_is_recognised(istek: str) -> None:
     # Ölçek sözü var ama yapım fiili yok: soru soruyor.
     "panel neden açılmıyor?",
 ])
-def test_a_small_request_never_asks_for_a_plan(istek: str) -> None:
+def test_a_small_request_never_asks_for_a_plan(wish: str) -> None:
     """Yanlış pozitifin bedeli gereksiz bir plan; her mesajda plan istemek
     kapının kendisini gürültüye çevirir."""
-    assert big_job(istek) is False
+    assert big_job(wish) is False
 
 
 def test_a_long_multi_delivery_request_counts_even_without_a_scale_word() -> None:
     """Çoklu teslimat kendi başına büyüklük sinyali."""
-    istek = (
+    request = (
         "şunları hazırla:\n"
         "- bir toplama betiği\n"
         "- bir temizleme betiği\n"
         "- bir de özet çıktısı\n"
     )
-    assert big_job(istek) is True
+    assert big_job(request) is True
 
 
 # -- 1) plan refleksi: döngüdeki davranış -------------------------------
 
 
-def _harness_notlari(agent: Any) -> list[str]:
+def _harness_notes(agent: Any) -> list[str]:
     """Oturumdaki iç (harness) notlarının metinleri."""
     out: list[str] = []
     for message in agent.session.messages():
@@ -107,9 +107,9 @@ def test_the_plan_note_lands_before_the_model_is_ever_called(tmp_path: Path) -> 
 
     asyncio.run(agent.run("gelişmiş bir yönetim paneli yap"))
 
-    ilk_istek = json.dumps(client.seen_messages[0], ensure_ascii=False)
-    assert PLAN_NOTE in ilk_istek
-    assert "modül listesi" in ilk_istek
+    first_request = json.dumps(client.seen_messages[0], ensure_ascii=False)
+    assert PLAN_NOTE in first_request
+    assert "modül listesi" in first_request
 
 
 def test_the_plan_note_fires_once_per_turn(tmp_path: Path) -> None:
@@ -123,8 +123,8 @@ def test_the_plan_note_fires_once_per_turn(tmp_path: Path) -> None:
 
     asyncio.run(agent.run("gelişmiş bir yönetim paneli yap"))
 
-    kac = sum(1 for metin in _harness_notlari(agent) if PLAN_NOTE in metin)
-    assert kac == 1
+    how_many = sum(1 for text in _harness_notes(agent) if PLAN_NOTE in text)
+    assert how_many == 1
 
 
 def test_a_small_request_leaves_the_context_untouched(tmp_path: Path) -> None:
@@ -142,64 +142,64 @@ def test_the_plan_note_never_reaches_the_conversation(tmp_path: Path) -> None:
     agent = build_agent(tmp_path, client, ToolRegistry())
     asyncio.run(agent.run("gelişmiş bir panel yap"))
 
-    plan_olaylari = [
+    plan_events = [
         ev for ev in agent.session.log.messages()
         if PLAN_NOTE in json.dumps(ev.content, ensure_ascii=False)
     ]
-    assert plan_olaylari, "not günlüğe hiç düşmemiş"
-    assert all(ev.meta.get("internal") for ev in plan_olaylari)
+    assert plan_events, "not günlüğe hiç düşmemiş"
+    assert all(ev.meta.get("internal") for ev in plan_events)
 
 
 # -- 2) kırmızı izi: sinyal ---------------------------------------------
 
 
 def test_a_failing_run_is_red() -> None:
-    """`kos` kırmızıyı kendisi işaretliyor (is_error)."""
-    note = {"tool": "kos", "error": True,
+    """`run` kırmızıyı kendisi işaretliyor (is_error)."""
+    note = {"tool": "run", "error": True,
             "summary": "1 test başarısız, 6 geçti", "detail": {"output": "…"}}
-    assert red_trace("kos", note) == "1 test başarısız, 6 geçti"
+    assert red_trace("run", note) == "1 test başarısız, 6 geçti"
 
 
 def test_the_summary_drops_the_interface_volume_marker() -> None:
     """"(+22 satır)" aracın hükmü değil, arayüzün hacim izi — nota girmez."""
-    note = {"tool": "kos", "error": True,
+    note = {"tool": "run", "error": True,
             "summary": "1 geçti, 1 kaldı.  (+22 satır)", "detail": {}}
-    assert red_trace("kos", note) == "1 geçti, 1 kaldı."
+    assert red_trace("run", note) == "1 geçti, 1 kaldı."
 
 
 def test_a_green_run_is_not_red() -> None:
-    note = {"tool": "kos", "error": False, "summary": "7 test geçti", "detail": {}}
-    assert red_trace("kos", note) == ""
+    note = {"tool": "run", "error": False, "summary": "7 test geçti", "detail": {}}
+    assert red_trace("run", note) == ""
 
 
 def test_a_diagnostic_error_is_red_even_though_the_tool_did_not_fail() -> None:
-    """`denetle` bir bulguyu is_error ile işaretlemiyor: bir denetim
+    """`inspect` bir bulguyu is_error ile işaretlemiyor: bir denetim
     bulgusu yazmayı düşürmemeli. Kırmızı kendi metninde yazıyor."""
-    note = {"tool": "denetle", "error": False,
+    note = {"tool": "inspect", "error": False,
             "summary": "Home.php — php -l, 1 hata:",
             "detail": {"output": "Home.php — php -l, 1 hata:\n  satır 12: syntax error"}}
-    assert red_trace("denetle", note)
+    assert red_trace("inspect", note)
 
 
 def test_a_clean_diagnostic_is_not_red() -> None:
-    note = {"tool": "denetle", "error": False,
+    note = {"tool": "inspect", "error": False,
             "summary": "3 dosya denetlendi, hepsi temiz", "detail": {}}
-    assert red_trace("denetle", note) == ""
+    assert red_trace("inspect", note) == ""
 
 
 def test_console_errors_and_failed_requests_are_red() -> None:
     """Tarayıcı dökümü hiç hata döndürmüyor; sayılar başlıkta."""
-    konsol = {"tool": "browser", "error": False,
-              "summary": "12 konsol kaydı (3 hata) — son 20 tanesi:", "detail": {}}
-    assert "3 hata" in red_trace("browser", konsol)
+    console = {"tool": "browser", "error": False,
+              "summary": "12 console kaydı (3 hata) — son 20 tanesi:", "detail": {}}
+    assert "3 hata" in red_trace("browser", console)
 
     ag = {"tool": "browser", "error": False,
           "summary": "18 istek · 2 başarısız.", "detail": {}}
     assert "2 başarısız" in red_trace("browser", ag)
 
-    temiz = {"tool": "browser", "error": False,
+    clean = {"tool": "browser", "error": False,
              "summary": "9 konsol kaydı (0 hata) — son 9 tanesi:", "detail": {}}
-    assert red_trace("browser", temiz) == ""
+    assert red_trace("browser", clean) == ""
 
 
 def test_a_failing_read_is_not_a_red_run() -> None:
@@ -209,7 +209,7 @@ def test_a_failing_read_is_not_a_red_run() -> None:
     assert red_trace("read_file", note) == ""
 
 
-@pytest.mark.parametrize("cevap,beklenen", [
+@pytest.mark.parametrize("answer,expected", [
     ("Hazır, servis 8099'da çalışıyor.", True),
     ("Bitti.", True),
     ("Tamamlandı — testleri de yazdım.", True),
@@ -221,40 +221,40 @@ def test_a_failing_read_is_not_a_red_run() -> None:
     ("Şimdi testleri koşturuyorum.", False),
 ])
 def test_the_done_claim_is_recognised_but_an_honest_report_is_not(
-    cevap: str, beklenen: bool
+    answer: str, expected: bool
 ) -> None:
-    assert done_claim(cevap) is beklenen
+    assert done_claim(answer) is expected
 
 
 # -- 2) kırmızı kapısı: döngüdeki davranış -------------------------------
 
 
-def _kirmizi_kos_araci(registry: ToolRegistry) -> None:
-    """Her zaman kırmızı dönen sahte bir `kos`."""
+def _red_run_tool(registry: ToolRegistry) -> None:
+    """Her zaman kırmızı dönen sahte bir `run`."""
     from dornick.tools import ToolResult, object_schema
 
-    @registry.tool(name="kos", description="test koşucusu (sahte)",
+    @registry.tool(name="run", description="test koşucusu (sahte)",
                    input_schema=object_schema({"kok": {"type": "string"}}))
-    async def kos(args: dict[str, Any], ctx: Any) -> ToolResult:
+    async def run_tool(args: dict[str, Any], ctx: Any) -> ToolResult:
         return ToolResult("1 test başarısız, 6 geçti", is_error=True,
                           detail={"kalan": 1, "gecen": 6, "cikis_kodu": 1})
 
 
-def _yesil_kos_araci(registry: ToolRegistry) -> None:
+def _green_run_tool(registry: ToolRegistry) -> None:
     from dornick.tools import ToolResult, object_schema
 
-    @registry.tool(name="kos", description="test koşucusu (sahte)",
+    @registry.tool(name="run", description="test koşucusu (sahte)",
                    input_schema=object_schema({"kok": {"type": "string"}}))
-    async def kos(args: dict[str, Any], ctx: Any) -> ToolResult:
+    async def run_tool(args: dict[str, Any], ctx: Any) -> ToolResult:
         return ToolResult("7 test geçti", detail={"kalan": 0, "gecen": 7})
 
 
 def test_saying_done_over_a_red_run_buys_one_more_turn(tmp_path: Path) -> None:
     """Ölçümde yaşanan tam hâli: takım kırmızıyken "hazır" denip teslim."""
     registry = ToolRegistry()
-    _kirmizi_kos_araci(registry)
+    _red_run_tool(registry)
     client = FakeClient(
-        tool_turn(("c1", "kos", {"kok": "."})),
+        tool_turn(("c1", "run", {"kok": "."})),
         text_turn("Hazır, her şey çalışıyor."),
         text_turn("Haklısın — bir test kırmızı, düzeltiyorum."),
     )
@@ -262,9 +262,9 @@ def test_saying_done_over_a_red_run_buys_one_more_turn(tmp_path: Path) -> None:
 
     stats = asyncio.run(agent.run("servisi yaz ve testlerini koştur"))
 
-    notlar = [n for n in _harness_notlari(agent) if "[Doğrulama]" in n]
-    assert len(notlar) == 1, notlar
-    assert "kırmızıydı" in notlar[0]
+    notes = [n for n in _harness_notes(agent) if "[Doğrulama]" in n]
+    assert len(notes) == 1, notes
+    assert "kırmızıydı" in notes[0]
     # Bir tur DAHA verildi: model kapatamadı.
     assert stats.turns == 3
     assert stats.red_warned is True
@@ -272,16 +272,16 @@ def test_saying_done_over_a_red_run_buys_one_more_turn(tmp_path: Path) -> None:
 
 def test_a_green_run_closes_the_turn_normally(tmp_path: Path) -> None:
     registry = ToolRegistry()
-    _yesil_kos_araci(registry)
+    _green_run_tool(registry)
     client = FakeClient(
-        tool_turn(("c1", "kos", {"kok": "."})),
+        tool_turn(("c1", "run", {"kok": "."})),
         text_turn("Hazır, testler geçti."),
     )
     agent = build_agent(tmp_path, client, registry)
 
     stats = asyncio.run(agent.run("servisi yaz ve testlerini koştur"))
 
-    assert not [n for n in _harness_notlari(agent) if "[Doğrulama]" in n]
+    assert not [n for n in _harness_notes(agent) if "[Doğrulama]" in n]
     assert stats.turns == 2
     assert stats.red_warned is False
 
@@ -292,26 +292,26 @@ def test_fixing_the_red_and_rerunning_green_reopens_the_door(tmp_path: Path) -> 
     from dornick.tools import ToolResult, object_schema
 
     registry = ToolRegistry()
-    sayac = {"n": 0}
+    counter = {"n": 0}
 
-    @registry.tool(name="kos", description="test koşucusu (sahte)",
+    @registry.tool(name="run", description="test koşucusu (sahte)",
                    input_schema=object_schema({"kok": {"type": "string"}}))
-    async def kos(args: dict[str, Any], ctx: Any) -> ToolResult:
-        sayac["n"] += 1
-        if sayac["n"] == 1:
+    async def run_tool(args: dict[str, Any], ctx: Any) -> ToolResult:
+        counter["n"] += 1
+        if counter["n"] == 1:
             return ToolResult("1 test başarısız", is_error=True, detail={"kalan": 1})
         return ToolResult("7 test geçti", detail={"kalan": 0})
 
     client = FakeClient(
-        tool_turn(("c1", "kos", {"kok": "."})),
-        tool_turn(("c2", "kos", {"kok": "."})),
+        tool_turn(("c1", "run", {"kok": "."})),
+        tool_turn(("c2", "run", {"kok": "."})),
         text_turn("Hazır, testler geçti."),
     )
     agent = build_agent(tmp_path, client, registry)
 
     stats = asyncio.run(agent.run("servisi yaz ve testlerini koştur"))
 
-    assert not [n for n in _harness_notlari(agent) if "[Doğrulama]" in n]
+    assert not [n for n in _harness_notes(agent) if "[Doğrulama]" in n]
     assert stats.red_warned is False
 
 
@@ -319,9 +319,9 @@ def test_the_door_opens_at_most_once(tmp_path: Path) -> None:
     """Model ikinci turda yine bitirmek isterse bırakılıyor: sonsuz bir
     "hayır bitmedi" döngüsü yarım bir cevaptan kötü."""
     registry = ToolRegistry()
-    _kirmizi_kos_araci(registry)
+    _red_run_tool(registry)
     client = FakeClient(
-        tool_turn(("c1", "kos", {"kok": "."})),
+        tool_turn(("c1", "run", {"kok": "."})),
         text_turn("Hazır."),
         text_turn("Yine de hazır diyorum."),
         text_turn("Ve yine."),
@@ -330,8 +330,8 @@ def test_the_door_opens_at_most_once(tmp_path: Path) -> None:
 
     stats = asyncio.run(agent.run("servisi yaz ve testlerini koştur"))
 
-    notlar = [n for n in _harness_notlari(agent) if "[Doğrulama]" in n]
-    assert len(notlar) == 1
+    notes = [n for n in _harness_notes(agent) if "[Doğrulama]" in n]
+    assert len(notes) == 1
     # Üçüncü tur kapandı: dördüncü cevap hiç istenmedi.
     assert stats.turns == 3
 
@@ -339,16 +339,16 @@ def test_the_door_opens_at_most_once(tmp_path: Path) -> None:
 def test_an_honest_report_over_a_red_run_is_left_alone(tmp_path: Path) -> None:
     """Kırmızıyı söyleyen cevap dürüsttür — kapı ona çarpmaz."""
     registry = ToolRegistry()
-    _kirmizi_kos_araci(registry)
+    _red_run_tool(registry)
     client = FakeClient(
-        tool_turn(("c1", "kos", {"kok": "."})),
+        tool_turn(("c1", "run", {"kok": "."})),
         text_turn("Servisi yazdım ama bir test hâlâ başarısız; sebebi şu."),
     )
     agent = build_agent(tmp_path, client, registry)
 
     stats = asyncio.run(agent.run("servisi yaz ve testlerini koştur"))
 
-    assert not [n for n in _harness_notlari(agent) if "[Doğrulama]" in n]
+    assert not [n for n in _harness_notes(agent) if "[Doğrulama]" in n]
     assert stats.turns == 2
 
 
@@ -356,9 +356,9 @@ def test_the_red_ledger_does_not_leak_into_the_next_turn(tmp_path: Path) -> None
     """"Yalnız BU TURDA üretilmiş kırmızı sayılsın": geçen turun kırmızısı
     yeni bir isteği engellememeli."""
     registry = ToolRegistry()
-    _kirmizi_kos_araci(registry)
+    _red_run_tool(registry)
     client = FakeClient(
-        tool_turn(("c1", "kos", {"kok": "."})),
+        tool_turn(("c1", "run", {"kok": "."})),
         text_turn("Bir test kırmızı."),
     )
     agent = build_agent(tmp_path, client, registry)
@@ -368,31 +368,31 @@ def test_the_red_ledger_does_not_leak_into_the_next_turn(tmp_path: Path) -> None
     client.script = [text_turn("Hazır.")]
     stats = asyncio.run(agent.run("teşekkürler"))
 
-    assert not [n for n in _harness_notlari(agent) if "[Doğrulama]" in n]
+    assert not [n for n in _harness_notes(agent) if "[Doğrulama]" in n]
     assert stats.red_warned is False
 
 
 def test_the_verification_note_never_reaches_the_conversation(tmp_path: Path) -> None:
     registry = ToolRegistry()
-    _kirmizi_kos_araci(registry)
+    _red_run_tool(registry)
     client = FakeClient(
-        tool_turn(("c1", "kos", {"kok": "."})),
+        tool_turn(("c1", "run", {"kok": "."})),
         text_turn("Hazır."),
         text_turn("Peki, düzeltiyorum."),
     )
     agent = build_agent(tmp_path, client, registry)
     asyncio.run(agent.run("testleri koştur"))
 
-    olaylar = [ev for ev in agent.session.log.messages()
+    events = [ev for ev in agent.session.log.messages()
                if "[Doğrulama]" in json.dumps(ev.content, ensure_ascii=False)]
-    assert olaylar
-    assert all(ev.meta.get("internal") for ev in olaylar)
+    assert events
+    assert all(ev.meta.get("internal") for ev in events)
 
 
 def test_the_note_template_says_what_to_do_not_just_what_is_wrong() -> None:
     """Not bir suçlama değil bir sıra kuralı: düzelt ya da açıkça söyle."""
-    metin = RED_NOTE.format(ozet="1 test başarısız")
-    assert "düzelt" in metin and "açıkça söyle" in metin
+    text = RED_NOTE.format(ozet="1 test başarısız")
+    assert "düzelt" in text and "açıkça söyle" in text
 
 
 # -- 3) prompt eklemeleri ------------------------------------------------
@@ -406,11 +406,11 @@ def core(tmp_path: Path) -> str:
 
 
 def test_the_prompt_separates_syntax_checking_from_running(core: str) -> None:
-    """`denetle` geçti demek çalışıyor demek değil — ölçümde tam olarak bu
+    """`inspect` geçti demek çalışıyor demek değil — ölçümde tam olarak bu
     karışıklıkla teslim yapıldı."""
     assert "yalnız SÖZDİZİMİNE bakar" in core
     assert "ÇALIŞTIRMAKTIR" in core
-    assert "`kos`" in core
+    assert "`run`" in core
     assert "koşulanların kapsadığı kadarı doğrulandı" in core
     assert "proje test taşımıyorsa" in core
 
@@ -426,7 +426,7 @@ def test_the_prompt_gives_the_real_web_verification_sequence(core: str) -> None:
 
 
 def test_the_prompt_asks_for_callers_before_changing_a_signature(core: str) -> None:
-    assert "`semboller`" in core
+    assert "`symbols`" in core
     assert "imzasını değiştirmeden önce" in core
     assert "`grep`" in core
 
@@ -452,15 +452,15 @@ def mind(tmp_path: Path) -> Mind:
     return open_mind(tmp_path / "mind", tmp_path / "sessions", "cur")
 
 
-class SahteKoprü:
+class FakeBridge:
     def __init__(self) -> None:
-        self.uyandirildi = 0
+        self.woken = 0
 
     def snapshot(self) -> dict[str, Any]:
         return {"busy": False}
 
     def wake(self) -> None:
-        self.uyandirildi += 1
+        self.woken += 1
 
 
 def test_the_wake_word_can_raise_the_window(tmp_path: Path, mind: Mind) -> None:
@@ -469,8 +469,8 @@ def test_the_wake_word_can_raise_the_window(tmp_path: Path, mind: Mind) -> None:
     config = Config.load(tmp_path)
     config.ensure_dirs()
     log = EventLog(tmp_path / "s.jsonl")
-    koprü = SahteKoprü()
-    server = MindServer(mind, log, port=0, config=config, controller=koprü)  # type: ignore[arg-type]
+    bridge = FakeBridge()
+    server = MindServer(mind, log, port=0, config=config, controller=bridge)  # type: ignore[arg-type]
     server.start()
     try:
         request = urllib.request.Request(
@@ -483,7 +483,7 @@ def test_the_wake_word_can_raise_the_window(tmp_path: Path, mind: Mind) -> None:
         log.close()
 
     assert body["ok"] is True
-    assert koprü.uyandirildi == 1
+    assert bridge.woken == 1
 
 
 def test_a_bridge_that_cannot_wake_says_so(tmp_path: Path, mind: Mind) -> None:
@@ -529,7 +529,7 @@ def test_the_page_still_calls_the_route_it_needs() -> None:
 # vakayı yakalayamaz: takım YEŞİLDİ.
 
 
-def _yazan_arac(registry: ToolRegistry, kok: Path) -> None:
+def _writing_tool(registry: ToolRegistry, root_dir: Path) -> None:
     """Gerçekten dosya yazan sahte bir `write_file`."""
     from dornick.tools import ToolResult, object_schema
 
@@ -537,7 +537,7 @@ def _yazan_arac(registry: ToolRegistry, kok: Path) -> None:
                    input_schema=object_schema({"path": {"type": "string"},
                                                "content": {"type": "string"}}),
                    mutates=True)
-    async def _yaz(args, _ctx) -> ToolResult:
+    async def _write(args, _ctx) -> ToolResult:
         yol = Path(args["path"])
         yol.parent.mkdir(parents=True, exist_ok=True)
         yol.write_text(args.get("content", ""), encoding="utf-8")
@@ -550,17 +550,17 @@ def _shell_tool(registry: ToolRegistry) -> None:
     @registry.tool(name="shell", description="koş",
                    input_schema=object_schema({"command": {"type": "string"}}),
                    mutates=True)
-    async def _kos(args, _ctx) -> ToolResult:
+    async def _run(args, _ctx) -> ToolResult:
         return ToolResult("çıkış 0")
 
 
-CLI_KAYNAK = (
+CLI_SOURCE = (
     "import sys\n\n"
     "def bul(kelime):\n    return []\n\n"
     'if __name__ == "__main__":\n'
     "    print(sys.argv)\n"
 )
-KUTUPHANE_KAYNAK = "def topla(a, b):\n    return a + b\n"
+LIBRARY_SOURCE = "def topla(a, b):\n    return a + b\n"
 
 
 def test_a_written_entry_point_that_was_never_run_buys_one_more_turn(
@@ -568,10 +568,10 @@ def test_a_written_entry_point_that_was_never_run_buys_one_more_turn(
 ) -> None:
     """Yaşanmış vaka: CLI yazıldı, testler yeşil, komut hiç çalıştırılmadı."""
     registry = ToolRegistry()
-    _yazan_arac(registry, tmp_path)
-    hedef = tmp_path / "ara.py"
+    _writing_tool(registry, tmp_path)
+    target = tmp_path / "ara.py"
     client = FakeClient(
-        tool_turn(("c1", "write_file", {"path": str(hedef), "content": CLI_KAYNAK})),
+        tool_turn(("c1", "write_file", {"path": str(target), "content": CLI_SOURCE})),
         text_turn("Hazır, arama aracı çalışıyor."),
         text_turn("Haklısın — komutu çalıştırıp çıktısına bakıyorum."),
     )
@@ -579,10 +579,10 @@ def test_a_written_entry_point_that_was_never_run_buys_one_more_turn(
 
     stats = asyncio.run(agent.run("bir not arama aracı yaz"))
 
-    notlar = [n for n in _harness_notlari(agent) if "[Doğrulama]" in n]
-    assert len(notlar) == 1, notlar
-    assert "ara.py" in notlar[0]
-    assert "ÇALIŞTIRMADIN" in notlar[0]
+    notes = [n for n in _harness_notes(agent) if "[Doğrulama]" in n]
+    assert len(notes) == 1, notes
+    assert "ara.py" in notes[0]
+    assert "ÇALIŞTIRMADIN" in notes[0]
     assert stats.turns == 3
     assert stats.entry_warned is True
 
@@ -590,19 +590,19 @@ def test_a_written_entry_point_that_was_never_run_buys_one_more_turn(
 def test_running_the_entry_point_closes_the_turn_normally(tmp_path: Path) -> None:
     """Kullanıcının yazacağı komutu çalıştıran model dürtülmüyor."""
     registry = ToolRegistry()
-    _yazan_arac(registry, tmp_path)
+    _writing_tool(registry, tmp_path)
     _shell_tool(registry)
-    hedef = tmp_path / "ara.py"
+    target = tmp_path / "ara.py"
     client = FakeClient(
-        tool_turn(("c1", "write_file", {"path": str(hedef), "content": CLI_KAYNAK})),
-        tool_turn(("c2", "shell", {"command": f'py {hedef.name} bul "salmastra"'})),
+        tool_turn(("c1", "write_file", {"path": str(target), "content": CLI_SOURCE})),
+        tool_turn(("c2", "shell", {"command": f'py {target.name} bul "salmastra"'})),
         text_turn("Hazır — komutu koşturdum, doğru notu buluyor."),
     )
     agent = build_agent(tmp_path, client, registry)
 
     stats = asyncio.run(agent.run("bir not arama aracı yaz"))
 
-    assert not [n for n in _harness_notlari(agent) if "[Doğrulama]" in n]
+    assert not [n for n in _harness_notes(agent) if "[Doğrulama]" in n]
     assert stats.entry_warned is False
 
 
@@ -613,18 +613,18 @@ def test_a_library_module_is_never_nagged(tmp_path: Path) -> None:
     bir kapı, hiç uyarmayan bir kapı kadar kötüdür.
     """
     registry = ToolRegistry()
-    _yazan_arac(registry, tmp_path)
-    hedef = tmp_path / "hesap.py"
+    _writing_tool(registry, tmp_path)
+    target = tmp_path / "hesap.py"
     client = FakeClient(
         tool_turn(("c1", "write_file",
-                   {"path": str(hedef), "content": KUTUPHANE_KAYNAK})),
+                   {"path": str(target), "content": LIBRARY_SOURCE})),
         text_turn("Hazır, modül yazıldı."),
     )
     agent = build_agent(tmp_path, client, registry)
 
     stats = asyncio.run(agent.run("toplama modülü yaz"))
 
-    assert not [n for n in _harness_notlari(agent) if "[Doğrulama]" in n]
+    assert not [n for n in _harness_notes(agent) if "[Doğrulama]" in n]
     assert stats.entry_warned is False
 
 
@@ -633,33 +633,33 @@ def test_an_honest_report_about_an_unrun_entry_point_is_left_alone(
 ) -> None:
     """Çalıştırmadığını kendi söyleyen cevap dürtülmez."""
     registry = ToolRegistry()
-    _yazan_arac(registry, tmp_path)
-    hedef = tmp_path / "ara.py"
+    _writing_tool(registry, tmp_path)
+    target = tmp_path / "ara.py"
     client = FakeClient(
-        tool_turn(("c1", "write_file", {"path": str(hedef), "content": CLI_KAYNAK})),
+        tool_turn(("c1", "write_file", {"path": str(target), "content": CLI_SOURCE})),
         text_turn("Dosyayı yazdım ama komutu henüz çalıştırmadım, eksik."),
     )
     agent = build_agent(tmp_path, client, registry)
 
     stats = asyncio.run(agent.run("bir not arama aracı yaz"))
 
-    assert not [n for n in _harness_notlari(agent) if "[Doğrulama]" in n]
+    assert not [n for n in _harness_notes(agent) if "[Doğrulama]" in n]
     assert stats.entry_warned is False
 
 
-@pytest.mark.parametrize("kaynak,giris", [
-    (CLI_KAYNAK, True),
+@pytest.mark.parametrize("source,entry", [
+    (CLI_SOURCE, True),
     ('import argparse\np = argparse.ArgumentParser()\n', True),
     ("const [,, komut] = process.argv;\n", True),
     ("<?php\n$ad = $argv[1];\n", True),
-    (KUTUPHANE_KAYNAK, False),
+    (LIBRARY_SOURCE, False),
     ("class Kutu:\n    pass\n", False),
     ("{\n  \"ad\": \"deneme\"\n}\n", False),
 ])
-def test_which_files_declare_an_entry_point(kaynak: str, giris: bool) -> None:
+def test_which_files_declare_an_entry_point(source: str, entry: bool) -> None:
     from dornick.loop import is_entry_point
 
-    assert is_entry_point(kaynak) is giris
+    assert is_entry_point(source) is entry
 
 
 # -- kabul-listesi kapısı ----------------------------------------------
@@ -670,7 +670,7 @@ def test_which_files_declare_an_entry_point(kaynak: str, giris: bool) -> None:
 # "bitti" cevabı BİR kez geri çevrilir.
 
 
-def _akilli_agent(tmp_path: Path, client: Any, registry: ToolRegistry, hedefler: list[str]):
+def _smart_agent(tmp_path: Path, client: Any, registry: ToolRegistry, targets: list[str]):
     """Zihinli ajan: defterine hedef yazılmış halde."""
     from dornick.mind import open_mind
     from dornick.loop import Agent, AgentIO
@@ -681,8 +681,8 @@ def _akilli_agent(tmp_path: Path, client: Any, registry: ToolRegistry, hedefler:
     config = Config.load(tmp_path)
     config.ensure_dirs()
     mind = open_mind(config.mind_dir, config.sessions_dir, "test")
-    for hedef in hedefler:
-        mind.push_goal(hedef)
+    for target in targets:
+        mind.push_goal(target)
     session = Session(EventLog(tmp_path / "s.jsonl"), "test")
     return Agent(
         config=config,
@@ -701,30 +701,30 @@ def test_open_goals_block_a_done_claim(tmp_path: Path) -> None:
         text_turn("Bitti, her şey hazır."),
         text_turn("Haklısın — zengin metin editörü maddesi açık kalmış, ekliyorum."),
     )
-    agent = _akilli_agent(tmp_path, client, registry,
+    agent = _smart_agent(tmp_path, client, registry,
                           ["M4: zengin metin editörü", "M5: sitemap"])
 
     stats = asyncio.run(agent.run("cms'i bitir"))
 
-    notlar = [n for n in _harness_notlari(agent) if "[Kabul]" in n]
-    assert len(notlar) == 1, notlar
-    assert "zengin metin editörü" in notlar[0]
+    notes = [n for n in _harness_notes(agent) if "[Kabul]" in n]
+    assert len(notes) == 1, notes
+    assert "zengin metin editörü" in notes[0]
     assert stats.turns == 2
     assert stats.acceptance_warned is True
 
 
-def test_no_open_goals_no_kabul_gate(tmp_path: Path) -> None:
+def test_no_open_goals_no_acceptance_gate(tmp_path: Path) -> None:
     registry = ToolRegistry()
     client = FakeClient(text_turn("Bitti, her şey hazır."))
-    agent = _akilli_agent(tmp_path, client, registry, [])
+    agent = _smart_agent(tmp_path, client, registry, [])
 
     stats = asyncio.run(agent.run("küçük işi yap"))
 
-    assert not [n for n in _harness_notlari(agent) if "[Kabul]" in n]
+    assert not [n for n in _harness_notes(agent) if "[Kabul]" in n]
     assert stats.turns == 1
 
 
-def test_kabul_gate_fires_at_most_once(tmp_path: Path) -> None:
+def test_acceptance_gate_fires_at_most_once(tmp_path: Path) -> None:
     """İkinci "bitti" bırakılır: sonsuz "hayır bitmedi" döngüsü yarım
     cevaptan kötü (kırmızı kapısıyla aynı sözleşme)."""
     registry = ToolRegistry()
@@ -732,12 +732,12 @@ def test_kabul_gate_fires_at_most_once(tmp_path: Path) -> None:
         text_turn("Bitti."),
         text_turn("Yine de bitti diyorum."),
     )
-    agent = _akilli_agent(tmp_path, client, registry, ["açık madde"])
+    agent = _smart_agent(tmp_path, client, registry, ["açık madde"])
 
     stats = asyncio.run(agent.run("işi yap"))
 
-    notlar = [n for n in _harness_notlari(agent) if "[Kabul]" in n]
-    assert len(notlar) == 1
+    notes = [n for n in _harness_notes(agent) if "[Kabul]" in n]
+    assert len(notes) == 1
     assert stats.turns == 2
 
 
@@ -746,11 +746,11 @@ def test_an_honest_open_items_report_is_not_a_done_claim(tmp_path: Path) -> None
     İDDİASINDA açılır."""
     registry = ToolRegistry()
     client = FakeClient(text_turn("İki madde açık kaldı: editör ve sitemap; yarın sürerim."))
-    agent = _akilli_agent(tmp_path, client, registry, ["editör", "sitemap"])
+    agent = _smart_agent(tmp_path, client, registry, ["editör", "sitemap"])
 
     stats = asyncio.run(agent.run("işi yap"))
 
-    assert not [n for n in _harness_notlari(agent) if "[Kabul]" in n]
+    assert not [n for n in _harness_notes(agent) if "[Kabul]" in n]
     assert stats.turns == 1
 
 
@@ -774,8 +774,8 @@ def test_small_family_gets_the_brevity_block_and_brief_schemas(tmp_path: Path) -
     config.ensure_dirs()
     config.model = replace(config.model, name="z-ai/glm-5.3-flash")
     registry = ToolRegistry()
-    sistem = p.build(config, registry)
-    assert "Kısalık sözleşmesi" in sistem.core
+    system = p.build(config, registry)
+    assert "Kısalık sözleşmesi" in system.core
 
     agent = build_agent_with_config(tmp_path, FakeClient(text_turn("ok")), registry, config)
     assert agent.brief_schema is True
@@ -827,15 +827,15 @@ def test_a_failed_shell_job_is_a_human_report_not_a_traceback() -> None:
         "    from pymodbus.client import ModbusTcpClient\n"
         "ModuleNotFoundError: No module named 'pymodbus'\n"
     )
-    rapor = job_report(command="py tarama_modbus.py", code=1, text=ham)
-    assert "pymodbus" in rapor
-    assert "pip install pymodbus" in rapor
-    assert "Traceback" not in rapor
-    assert "File " not in rapor
-    eski = "Çıkış kodu 1\n\n" + ham
-    ceviri = human_job_report(eski, title="$ py tarama_modbus.py")
-    assert "Traceback" not in ceviri
-    assert "pymodbus" in short_job_summary(eski, title="$ py tarama_modbus.py")
+    report = job_report(command="py tarama_modbus.py", code=1, text=ham)
+    assert "pymodbus" in report
+    assert "pip install pymodbus" in report
+    assert "Traceback" not in report
+    assert "File " not in report
+    old = "Çıkış kodu 1\n\n" + ham
+    translation = human_job_report(old, title="$ py tarama_modbus.py")
+    assert "Traceback" not in translation
+    assert "pymodbus" in short_job_summary(old, title="$ py tarama_modbus.py")
 
 
 def test_a_successful_shell_job_is_a_short_report_not_a_log_wall() -> None:
@@ -847,15 +847,15 @@ def test_a_successful_shell_job_is_a_short_report_not_a_log_wall() -> None:
         "Extracting the archive.\n"
         "dotnet-sdk-8.0.424-win-x64 installed.\n"
     )
-    rapor = success_report(command="dotnet-install.ps1 -Channel 8.0", text=log)
-    assert rapor.startswith("## Sonuç")
-    assert "dotnet-sdk-8.0.424" in rapor
-    assert "- Komut:" in rapor
-    assert "## Çıktı" in rapor
-    assert "Downloading" in rapor
+    report = success_report(command="dotnet-install.ps1 -Channel 8.0", text=log)
+    assert report.startswith("## Sonuç")
+    assert "dotnet-sdk-8.0.424" in report
+    assert "- Komut:" in report
+    assert "## Çıktı" in report
+    assert "Downloading" in report
     # Eski ham döküm Viewer'da da yapılandırılır.
-    ceviri = human_job_report(log, title="$ dotnet-install.ps1 -Channel 8.0")
-    assert ceviri.startswith("## Sonuç")
+    translation = human_job_report(log, title="$ dotnet-install.ps1 -Channel 8.0")
+    assert translation.startswith("## Sonuç")
     assert "installed" in short_job_summary(log, title="$ dotnet-install.ps1")
 
 
@@ -872,7 +872,7 @@ def test_model_names_unnamed_session(tmp_path: Path) -> None:
         text_turn("CMS iskeleti kuruldu, model katmanı hazır."),
         text_turn("CMS iskeleti kurulumu"),   # başlık çağrısının cevabı
     )
-    agent = _akilli_agent(tmp_path, client, registry, [])
+    agent = _smart_agent(tmp_path, client, registry, [])
 
     asyncio.run(agent.run("bana profesyonel bir cms yap"))
 
@@ -886,7 +886,7 @@ def test_model_names_unnamed_session(tmp_path: Path) -> None:
 def test_named_session_is_not_retitled(tmp_path: Path) -> None:
     registry = ToolRegistry()
     client = FakeClient(text_turn("tamam, yaptım."))
-    agent = _akilli_agent(tmp_path, client, registry, [])
+    agent = _smart_agent(tmp_path, client, registry, [])
     agent.mind.set_session_meta("test", name="Elle verilen ad")
 
     asyncio.run(agent.run("küçük bir iş"))
@@ -903,7 +903,7 @@ def test_named_session_is_not_retitled(tmp_path: Path) -> None:
 # işi: defterde açık madde ya da önceki alışveriş varsa dürtü susar.
 
 
-def _plan_notu_dustu_mu(agent) -> bool:
+def _plan_note_dropped(agent) -> bool:
     return any("plan" in str(n.data).lower()
                for n in agent.session.log.notes("plan_refleksi"))
 
@@ -911,7 +911,7 @@ def _plan_notu_dustu_mu(agent) -> bool:
 def test_plan_nudge_fires_on_fresh_big_request(tmp_path: Path) -> None:
     registry = ToolRegistry()
     client = FakeClient(text_turn("plan geliyor"))
-    agent = _akilli_agent(tmp_path, client, registry, [])
+    agent = _smart_agent(tmp_path, client, registry, [])
 
     asyncio.run(agent.run("bana profesyonel bir cms projesi yap baştan sona"))
 
@@ -922,7 +922,7 @@ def test_plan_nudge_is_silent_while_goals_are_open(tmp_path: Path) -> None:
     registry = ToolRegistry()
     client = FakeClient(text_turn("devam ediyorum"),
                         text_turn("Madde kapatıldı."))
-    agent = _akilli_agent(tmp_path, client, registry,
+    agent = _smart_agent(tmp_path, client, registry,
                           ["M3: yazılar CRUD", "M4: medya"])
 
     asyncio.run(agent.run("bana profesyonel bir cms projesi yap baştan sona"))
@@ -934,7 +934,7 @@ def test_plan_nudge_is_silent_mid_conversation(tmp_path: Path) -> None:
     registry = ToolRegistry()
     client = FakeClient(text_turn("ilk cevap"), text_turn("ikinci cevap"),
                         text_turn("başlık"), text_turn("başlık2"))
-    agent = _akilli_agent(tmp_path, client, registry, [])
+    agent = _smart_agent(tmp_path, client, registry, [])
 
     asyncio.run(agent.run("merhaba, kısa bir soru"))
     asyncio.run(agent.run("şimdi bana profesyonel bir cms projesi yap baştan sona"))
@@ -954,31 +954,31 @@ def test_shell_child_gets_no_stdin(tmp_path: Path) -> None:
     import time
     from dornick.tools.shell import _run_shell
 
-    async def kos():
+    async def run_tool():
         t0 = time.monotonic()
         status, text, code = await _run_shell(
             'py -c "input()"', tmp_path, "t", 20, asyncio.Event())
         return status, code, time.monotonic() - t0
 
-    status, code, gecen = asyncio.run(kos())
+    status, code, elapsed = asyncio.run(run_tool())
     assert status == "ok" and code != 0     # EOFError ile hemen düştü
-    assert gecen < 10, f"stdin bekledi: {gecen:.1f} sn"
+    assert elapsed < 10, f"stdin bekledi: {elapsed:.1f} sn"
 
 
 def test_shell_timeout_kills_the_process_tree(tmp_path: Path) -> None:
     import time
     from dornick.tools.shell import _run_shell
 
-    async def kos():
+    async def run_tool():
         t0 = time.monotonic()
         status, _, _ = await _run_shell(
             'py -c "import time; time.sleep(60)"', tmp_path, "t", 3,
             asyncio.Event())
         return status, time.monotonic() - t0
 
-    status, gecen = asyncio.run(kos())
+    status, elapsed = asyncio.run(run_tool())
     assert status == "timeout"
-    assert gecen < 15, f"ağaç ölmedi, bekleme sürdü: {gecen:.1f} sn"
+    assert elapsed < 15, f"ağaç ölmedi, bekleme sürdü: {elapsed:.1f} sn"
 
 
 # -- edit_file boşluk toleransı ----------------------------------------
@@ -988,50 +988,50 @@ def test_shell_timeout_kills_the_process_tree(tmp_path: Path) -> None:
 # tek-tip girinti kayması — hepsinde eşleşme TEK olmak şartıyla.
 
 
-from dornick.tools.files import _esnek_esle
+from dornick.tools.files import _flexible_match
 
 NL = chr(10)
 CRLF = chr(13) + NL
 
 
-def test_esnek_esle_kuyruk_boslugu() -> None:
+def test_flexible_match_trailing_whitespace() -> None:
     text = NL.join(['a = 1   ', 'b = 2', 'c = 3', ''])
-    hit = _esnek_esle(text, NL.join(['a = 1', 'b = 2']),
+    hit = _flexible_match(text, NL.join(['a = 1', 'b = 2']),
                       NL.join(['a = 9', 'b = 2']))
     assert hit and hit[3] == 'kuyruk boşlukları göz ardı edildi'
-    b, e, yeni, _ = hit
+    b, e, fresh, _ = hit
     assert text[b:e] == NL.join(['a = 1   ', 'b = 2'])
 
 
-def test_esnek_esle_girinti_kaymasi_new_de_kayar() -> None:
+def test_flexible_match_indent_shift_moves_new_too() -> None:
     text = NL.join(['def f():', '    if x:', '        git()', ''])
     # Model bir seviye eksik girintiyle hatırlamış:
-    hit = _esnek_esle(text, NL.join(['if x:', '    git()']),
+    hit = _flexible_match(text, NL.join(['if x:', '    git()']),
                       NL.join(['if x:', '    kal()']))
     assert hit and 'girinti' in hit[3]
-    b, e, yeni, _ = hit
+    b, e, fresh, _ = hit
     assert text[b:e] == NL.join(['    if x:', '        git()'])
-    assert yeni == NL.join(['    if x:', '        kal()'])
+    assert fresh == NL.join(['    if x:', '        kal()'])
 
 
-def test_esnek_esle_crlf() -> None:
+def test_flexible_match_crlf() -> None:
     text = NL.join(['x = 1', 'y = 2', ''])
-    hit = _esnek_esle(text, CRLF.join(['x = 1', 'y = 2']),
+    hit = _flexible_match(text, CRLF.join(['x = 1', 'y = 2']),
                       CRLF.join(['x = 1', 'y = 3']))
     assert hit and hit[3] == 'satır sonları normalize edildi'
     assert hit[2] == NL.join(['x = 1', 'y = 3'])
 
 
-def test_esnek_esle_coklu_aday_belirsiz() -> None:
+def test_flexible_match_many_candidates_is_ambiguous() -> None:
     # Aynı içerik iki farklı tek-tip kaymayla iki yerde: hangisi olduğu
     # belirsiz — dokunma, hata döndür.
     text = NL.join(['  x()', '  y()', 'ara', '    x()', '    y()', ''])
-    hit = _esnek_esle(text, NL.join(['x()', 'y()']), NL.join(['x()', 'z()']))
+    hit = _flexible_match(text, NL.join(['x()', 'y()']), NL.join(['x()', 'z()']))
     assert hit == ('coklu', 2)
 
 
-def test_esnek_esle_icerik_farki_hosgorulmez() -> None:
-    assert _esnek_esle('a = 1' + NL, 'a = 2', 'a = 3') is None
+def test_flexible_match_content_difference_is_not_tolerated() -> None:
+    assert _flexible_match('a = 1' + NL, 'a = 2', 'a = 3') is None
 
 
 # -- sohbete özel model ------------------------------------------------
@@ -1042,7 +1042,7 @@ def test_esnek_esle_icerik_farki_hosgorulmez() -> None:
 # üstüne biner, silinince taban döner.
 
 
-def _kopru(tmp_path: Path):
+def _bridge(tmp_path: Path):
     import json
     from dornick.desktop import Bridge
     from dornick.mind import open_mind
@@ -1055,44 +1055,44 @@ def _kopru(tmp_path: Path):
     config = replace(config, model=replace(config.model, name="kuresel-model"))
 
     mind = open_mind(config.mind_dir, config.sessions_dir, "s1")
-    kopru = Bridge.__new__(Bridge)
-    uygulananlar: list[str] = []
+    bridge = Bridge.__new__(Bridge)
+    applied_ones: list[str] = []
 
     class _Agent:
         pass
-    ajan = _Agent()
-    ajan.config = config
-    ajan.mind = mind
-    kopru.agent = ajan
+    agent = _Agent()
+    agent.config = config
+    agent.mind = mind
+    bridge.agent = agent
 
     def _reload(updated, force=False):
-        ajan.config = updated
-        uygulananlar.append(updated.model.name)
-    kopru.reload = _reload
-    return kopru, ajan, mind, uygulananlar, tmp_path / ".dornick" / "config.json"
+        agent.config = updated
+        applied_ones.append(updated.model.name)
+    bridge.reload = _reload
+    return bridge, agent, mind, applied_ones, tmp_path / ".dornick" / "config.json"
 
 
 def test_session_model_pin_applies_in_memory_only(tmp_path: Path) -> None:
     import json
-    kopru, ajan, mind, uygulanan, disk = _kopru(tmp_path)
+    bridge, agent, mind, applied, disk = _bridge(tmp_path)
     mind.set_session_meta("s1", model="sohbet-modeli")
 
-    kopru._apply_session_context("s1")
+    bridge._apply_session_context("s1")
 
-    assert ajan.config.model.name == "sohbet-modeli"
+    assert agent.config.model.name == "sohbet-modeli"
     # Küresel varsayılan diskte DEĞİŞMEDİ — pin sohbetin, kurulumun değil.
     assert json.loads(disk.read_text(encoding="utf-8"))["model"]["name"] == "kuresel-model"
 
 
 def test_clearing_session_model_returns_to_global(tmp_path: Path) -> None:
-    kopru, ajan, mind, uygulanan, disk = _kopru(tmp_path)
+    bridge, agent, mind, applied, disk = _bridge(tmp_path)
     mind.set_session_meta("s1", model="sohbet-modeli")
-    kopru._apply_session_context("s1")
-    assert ajan.config.model.name == "sohbet-modeli"
+    bridge._apply_session_context("s1")
+    assert agent.config.model.name == "sohbet-modeli"
 
     mind.set_session_meta("s1", model="")
-    kopru._apply_session_context("s1")
-    assert ajan.config.model.name == "kuresel-model"
+    bridge._apply_session_context("s1")
+    assert agent.config.model.name == "kuresel-model"
 
 
 def test_session_path_applies_in_memory_only(tmp_path: Path) -> None:
@@ -1101,14 +1101,14 @@ def test_session_path_applies_in_memory_only(tmp_path: Path) -> None:
     import json
     from dataclasses import replace
 
-    kopru, ajan, mind, _uygulanan, disk = _kopru(tmp_path)
-    proje = tmp_path / "kamera-izleme"
-    proje.mkdir()
-    mind.set_session_meta("s1", path=str(proje))
+    bridge, agent, mind, _applied, disk = _bridge(tmp_path)
+    project = tmp_path / "kamera-izleme"
+    project.mkdir()
+    mind.set_session_meta("s1", path=str(project))
 
-    kopru._apply_session_context("s1")
+    bridge._apply_session_context("s1")
 
-    assert ajan.config.sandbox.project == str(proje)
+    assert agent.config.sandbox.project == str(project)
     raw = json.loads(disk.read_text(encoding="utf-8"))
     assert (raw.get("sandbox") or {}).get("project", "") in ("", None)
 
@@ -1117,27 +1117,27 @@ def test_clearing_session_path_returns_to_global_project(tmp_path: Path) -> None
     import json
     from dataclasses import replace
 
-    kopru, ajan, mind, _uygulanan, disk = _kopru(tmp_path)
-    kuresel = tmp_path / "kuresel-proje"
-    kuresel.mkdir()
-    sohbet = tmp_path / "sohbet-proje"
-    sohbet.mkdir()
+    bridge, agent, mind, _applied, disk = _bridge(tmp_path)
+    global_ = tmp_path / "kuresel-proje"
+    global_.mkdir()
+    chat = tmp_path / "sohbet-proje"
+    chat.mkdir()
     disk.write_text(json.dumps({
         "model": {"name": "kuresel-model"},
-        "sandbox": {"project": str(kuresel)},
+        "sandbox": {"project": str(global_)},
     }), encoding="utf-8")
-    ajan.config = replace(
-        ajan.config,
-        sandbox=replace(ajan.config.sandbox, project=str(kuresel)),
+    agent.config = replace(
+        agent.config,
+        sandbox=replace(agent.config.sandbox, project=str(global_)),
     )
 
-    mind.set_session_meta("s1", path=str(sohbet))
-    kopru._apply_session_context("s1")
-    assert ajan.config.sandbox.project == str(sohbet)
+    mind.set_session_meta("s1", path=str(chat))
+    bridge._apply_session_context("s1")
+    assert agent.config.sandbox.project == str(chat)
 
     mind.set_session_meta("s1", path="")
-    kopru._apply_session_context("s1")
-    assert ajan.config.sandbox.project == str(kuresel)
+    bridge._apply_session_context("s1")
+    assert agent.config.sandbox.project == str(global_)
 
 
 def test_a_new_session_inherits_the_last_pinned_model(tmp_path: Path) -> None:
@@ -1185,13 +1185,13 @@ def test_inherit_does_not_overwrite_an_existing_pin(tmp_path: Path) -> None:
 # gövdeyle tutunan kayıt girmez; gerçek anı (çok gövdeli) girmeye devam eder.
 
 
-O1_ISTEMI = ("Atölyede satislar.csv var: tarih, urun, adet, birim_fiyat. "
+O1_PROMPT = ("Atölyede satislar.csv var: tarih, urun, adet, birim_fiyat. "
              "Rapor çıkaran bir araç istiyorum: her ayın toplam cirosunu "
              "ve en çok ciro yapan 3 ürünü yazsın. --ay 2026-03 deyince "
              "sadece o ayı göstersin.")
 
 
-def _hafizali(tmp_path: Path):
+def _with_memory(tmp_path: Path):
     from dornick.mind import open_mind
     config = Config.load(tmp_path)
     config.ensure_dirs()
@@ -1200,20 +1200,20 @@ def _hafizali(tmp_path: Path):
 
 def test_prime_rejects_junk_grounded_on_one_short_stem(tmp_path: Path) -> None:
     from dornick.loop import select_prime
-    mind = _hafizali(tmp_path)
+    mind = _with_memory(tmp_path)
     for i in range(12):
         mind.remember(f"Kayseri sahasında {i} numaralı pompa istasyonunun "
                       f"salmastra bakımı {i % 9 + 1} ayında yapıldı.",
                       kind="fact", title=f"saha notu {i}")
 
-    hits = select_prime(mind, O1_ISTEMI)
+    hits = select_prime(mind, O1_PROMPT)
 
     assert hits == [], [h.item.title for h in hits]
 
 
 def test_prime_still_surfaces_the_truly_relevant_memory(tmp_path: Path) -> None:
     from dornick.loop import select_prime
-    mind = _hafizali(tmp_path)
+    mind = _with_memory(tmp_path)
     mind.remember("satislar.csv düzeni: tarih,urun,adet,birim_fiyat "
                   "sütunları; ürünler Sensor, Kablo, PLC, Pompa.",
                   kind="fact", title="satislar.csv düzeni")
@@ -1222,11 +1222,11 @@ def test_prime_still_surfaces_the_truly_relevant_memory(tmp_path: Path) -> None:
                       f"salmastra bakımı {i % 9 + 1} ayında yapıldı.",
                       kind="fact", title=f"saha notu {i}")
 
-    hits = select_prime(mind, O1_ISTEMI)
+    hits = select_prime(mind, O1_PROMPT)
 
-    basliklar = [h.item.title for h in hits]
-    assert "satislar.csv düzeni" in basliklar, basliklar
-    assert not any("saha notu" in b for b in basliklar), basliklar
+    titles = [h.item.title for h in hits]
+    assert "satislar.csv düzeni" in titles, titles
+    assert not any("saha notu" in b for b in titles), titles
 
 
 # -- hafıza köprüleri: hata dersi + iş kapsülü -------------------------
@@ -1237,12 +1237,12 @@ def test_prime_still_surfaces_the_truly_relevant_memory(tmp_path: Path) -> None:
 
 
 def _shell_failing_kinds(n: int):
-    turlar = []
+    turns = []
     for i in range(n):
-        turlar.append(tool_turn((f"c{i}", "shell",
+        turns.append(tool_turn((f"c{i}", "shell",
                                  {"command": f"py - <<EOF deneme{i}"})))
-    turlar.append(text_turn("bitti"))
-    return turlar
+    turns.append(text_turn("bitti"))
+    return turns
 
 
 class _FailingShellRecord(ToolRegistry):
@@ -1267,7 +1267,7 @@ def test_repeated_error_pattern_becomes_a_lesson(tmp_path: Path) -> None:
             is_error=True)
 
     client = FakeClient(*_shell_failing_kinds(2))
-    agent = _akilli_agent(tmp_path, client, registry, [])
+    agent = _smart_agent(tmp_path, client, registry, [])
 
     asyncio.run(agent.run("karmaşık bir betik koştur"))
 
@@ -1290,7 +1290,7 @@ def test_past_lesson_is_attached_to_a_fresh_error(tmp_path: Path) -> None:
     client = FakeClient(
         tool_turn(("c1", "edit_file", {"path": "x.py"})),
         text_turn("tamam"))
-    agent = _akilli_agent(tmp_path, client, registry, [])
+    agent = _smart_agent(tmp_path, client, registry, [])
     # Geçmiş OTURUMDAN ders (farklı session_id ile yazılmış olmalı).
     agent.mind.store.remember(
         "edit_file'a old metnini dosyanın GERÇEK halinden kopyala.",
@@ -1298,8 +1298,8 @@ def test_past_lesson_is_attached_to_a_fresh_error(tmp_path: Path) -> None:
 
     asyncio.run(agent.run("dosyayı düzelt"))
 
-    govde = json.dumps(agent.session.messages(), ensure_ascii=False)
-    assert "[Hafıza]" in govde
+    body = json.dumps(agent.session.messages(), ensure_ascii=False)
+    assert "[Hafıza]" in body
 
 
 def test_a_run_that_writes_files_leaves_a_capsule(tmp_path: Path) -> None:
@@ -1321,21 +1321,21 @@ def test_a_run_that_writes_files_leaves_a_capsule(tmp_path: Path) -> None:
         tool_turn(("c1", "write_file", {"path": "rapor.py"})),
         tool_turn(("c2", "shell", {"command": "py rapor.py satislar.csv"})),
         text_turn("bitti, rapor.py hazır"))
-    agent = _akilli_agent(tmp_path, client, registry, [])
+    agent = _smart_agent(tmp_path, client, registry, [])
 
     asyncio.run(agent.run("bana satislar.csv için rapor aracı yaz"))
 
-    kapsuller = [h.item for h in agent.mind.recall("iş kapsülü satislar", limit=5)
+    capsules = [h.item for h in agent.mind.recall("iş kapsülü satislar", limit=5)
                  if str(h.item.title).startswith("iş kapsülü:")]
-    assert len(kapsuller) == 1, [k.title for k in kapsuller]
-    assert "rapor.py" in kapsuller[0].content
-    assert "py rapor.py satislar.csv" in kapsuller[0].content
+    assert len(capsules) == 1, [k.title for k in capsules]
+    assert "rapor.py" in capsules[0].content
+    assert "py rapor.py satislar.csv" in capsules[0].content
 
 
 def test_a_chat_only_run_leaves_no_capsule(tmp_path: Path) -> None:
     registry = ToolRegistry()
     client = FakeClient(text_turn("selam!"))
-    agent = _akilli_agent(tmp_path, client, registry, [])
+    agent = _smart_agent(tmp_path, client, registry, [])
 
     asyncio.run(agent.run("merhaba"))
 
@@ -1351,7 +1351,7 @@ def test_a_chat_only_run_leaves_no_capsule(tmp_path: Path) -> None:
 # koşucular dosya adı geçmese de koşulmuş sayılır.
 
 
-def _writing_and_stopping_agent(tmp_path, turlar):
+def _writing_and_stopping_agent(tmp_path, turns):
     from dornick.tools.base import ToolResult, object_schema
     registry = ToolRegistry()
 
@@ -1365,7 +1365,7 @@ def _writing_and_stopping_agent(tmp_path, turlar):
     async def shell(args, ctx):
         return ToolResult(content="7 passed")
 
-    client = FakeClient(*turlar)
+    client = FakeClient(*turns)
     return build_agent(tmp_path, client, registry), client
 
 
@@ -1379,8 +1379,8 @@ def test_unrun_test_file_blocks_the_done_claim(tmp_path: Path) -> None:
 
     asyncio.run(agent.run("küçük bir servis yaz, testlerini de yaz"))
 
-    notlar = [n for n in _harness_notlari(agent) if "[Doğrulama]" in n and "KOŞMADIN" in n]
-    assert len(notlar) == 1, notlar
+    notes = [n for n in _harness_notes(agent) if "[Doğrulama]" in n and "KOŞMADIN" in n]
+    assert len(notes) == 1, notes
 
 
 def test_bare_pytest_counts_as_running_the_tests(tmp_path: Path) -> None:
@@ -1392,7 +1392,7 @@ def test_bare_pytest_counts_as_running_the_tests(tmp_path: Path) -> None:
 
     asyncio.run(agent.run("testleri yaz ve koş"))
 
-    assert not [n for n in _harness_notlari(agent) if "KOŞMADIN" in n]
+    assert not [n for n in _harness_notes(agent) if "KOŞMADIN" in n]
 
 # -- kosulsuz-top istisnasi yalniz genc zihinde -------------------------
 #
@@ -1402,36 +1402,36 @@ def test_bare_pytest_counts_as_running_the_tests(tmp_path: Path) -> None:
 # sebebi olan GENC zihinle sinirlandi.
 
 
-def _sahte_zihin(kayit_sayisi, skor):
+def _fake_mind(record_count, score):
     from types import SimpleNamespace
     item = SimpleNamespace(id='n1', kind='fact', title='rapor notu',
                            content='rapor dosyasi hakkinda kisa not',
                            tags=[])
-    hit = SimpleNamespace(item=item, score=skor)
-    adim = SimpleNamespace(node='n1', hop=0)
+    hit = SimpleNamespace(item=item, score=score)
+    step = SimpleNamespace(node='n1', hop=0)
     return SimpleNamespace(
         recall=lambda q, limit=8: [hit],
-        last_trace=[adim],
-        store=SimpleNamespace(count=lambda: kayit_sayisi))
+        last_trace=[step],
+        store=SimpleNamespace(count=lambda: record_count))
 
 
-def test_mature_mind_does_not_prime_below_the_floor() -> None:
+def test_mature_minddoes_not_prime_below_the_floor() -> None:
     from dornick.loop import select_prime
-    zihin = _sahte_zihin(200, skor=0.05)   # taban 0.12'nin altinda
-    assert select_prime(zihin, 'rapor dosyasina bak') == []
+    mind = _fake_mind(200, score=0.05)   # taban 0.12'nin altinda
+    assert select_prime(mind, 'rapor dosyasina bak') == []
 
 
-def test_young_mind_keeps_the_top_exemption() -> None:
+def test_young_mindkeeps_the_top_exemption() -> None:
     from dornick.loop import select_prime
-    zihin = _sahte_zihin(3, skor=0.05)     # genc korpus: bm25 cokuk
-    hits = select_prime(zihin, 'rapor dosyasina bak')
+    mind = _fake_mind(3, score=0.05)     # genc korpus: bm25 cokuk
+    hits = select_prime(mind, 'rapor dosyasina bak')
     assert len(hits) == 1
 
 
 def test_above_floor_still_primes_in_a_mature_mind() -> None:
     from dornick.loop import select_prime
-    zihin = _sahte_zihin(200, skor=0.9)
-    assert len(select_prime(zihin, 'rapor dosyasina bak')) == 1
+    mind = _fake_mind(200, score=0.9)
+    assert len(select_prime(mind, 'rapor dosyasina bak')) == 1
 
 def _file_ctx(tmp_path):
     import asyncio
@@ -1457,10 +1457,10 @@ def test_read_many_reads_several_files_in_one_call(tmp_path) -> None:
     from dornick.tools.base import ToolRegistry
     from dornick.tools import files as files_mod
     ctx = _file_ctx(tmp_path)
-    kok = ctx.sandbox.root
-    kok.mkdir(parents=True, exist_ok=True)
-    (kok / 'a.py').write_text('x = 1', encoding='utf-8')
-    (kok / 'b.py').write_text('y = 2', encoding='utf-8')
+    root_dir = ctx.sandbox.root
+    root_dir.mkdir(parents=True, exist_ok=True)
+    (root_dir / 'a.py').write_text('x = 1', encoding='utf-8')
+    (root_dir / 'b.py').write_text('y = 2', encoding='utf-8')
     reg = ToolRegistry()
     files_mod.register(reg)
     r = asyncio.run(reg.get('read_many').handler(
@@ -1476,10 +1476,10 @@ def test_read_many_counts_as_reading_for_the_write_gate(tmp_path) -> None:
     from dornick.tools.base import ToolRegistry
     from dornick.tools import files as files_mod
     ctx = _file_ctx(tmp_path)
-    kok = ctx.sandbox.root
-    kok.mkdir(parents=True, exist_ok=True)
-    (kok / 'a.py').write_text('x = 1', encoding='utf-8')
-    (kok / 'b.py').write_text('y = 2', encoding='utf-8')
+    root_dir = ctx.sandbox.root
+    root_dir.mkdir(parents=True, exist_ok=True)
+    (root_dir / 'a.py').write_text('x = 1', encoding='utf-8')
+    (root_dir / 'b.py').write_text('y = 2', encoding='utf-8')
     reg = ToolRegistry()
     files_mod.register(reg)
     asyncio.run(reg.get('read_many').handler(
@@ -1514,8 +1514,8 @@ def test_workspace_brief_absent_in_lean_prompt(tmp_path) -> None:
     from dornick.tools.base import ToolRegistry
     (tmp_path / 'ipucu-dosyasi.py').write_text('x', encoding='utf-8')
     c = Config(workspace=tmp_path, state_dir=tmp_path)
-    genis = prompt.build(c, ToolRegistry()).core
-    assert 'ipucu-dosyasi.py' in genis
+    wide = prompt.build(c, ToolRegistry()).core
+    assert 'ipucu-dosyasi.py' in wide
     import dataclasses
     dar = dataclasses.replace(c, model=dataclasses.replace(
         c.model, context_window=4096))
@@ -1541,8 +1541,8 @@ def test_shell_cwd_strips_the_workshop_prefix(tmp_path) -> None:
     from dornick.tools.base import ToolRegistry
     from dornick.tools import shell as shell_mod
     ctx = _file_ctx(tmp_path)
-    kok = ctx.sandbox.root
-    (kok / 'gorev').mkdir(parents=True)
+    root_dir = ctx.sandbox.root
+    (root_dir / 'gorev').mkdir(parents=True)
     reg = ToolRegistry()
     shell_mod.register(reg)
     r = asyncio.run(reg.get('shell').handler(
@@ -1553,33 +1553,33 @@ def test_shell_cwd_strips_the_workshop_prefix(tmp_path) -> None:
 # -- kesif dususu (B5): salt-okur kuyruktan sonra dusuk caba + tavan -----
 
 
-def _kuyruk(*son_araclar, kuyruk_rolu='tool'):
-    mesajlar = [
+def _queue(*last_tools, queue_role='tool'):
+    messages = [
         {'role': 'system', 'content': 'sen dornick'},
         {'role': 'user', 'content': 'raporu yaz'},
         {'role': 'assistant', 'content': '',
          'tool_calls': [{'id': f'c{i}', 'type': 'function',
                          'function': {'name': ad, 'arguments': '{}'}}
-                        for i, ad in enumerate(son_araclar)]},
+                        for i, ad in enumerate(last_tools)]},
     ]
-    for i, _ in enumerate(son_araclar):
-        mesajlar.append({'role': 'tool', 'tool_call_id': f'c{i}',
+    for i, _ in enumerate(last_tools):
+        messages.append({'role': 'tool', 'tool_call_id': f'c{i}',
                          'content': 'icerik'})
-    if kuyruk_rolu != 'tool':
-        mesajlar.append({'role': kuyruk_rolu, 'content': 'not'})
-    return mesajlar
+    if queue_role != 'tool':
+        messages.append({'role': queue_role, 'content': 'not'})
+    return messages
 
 
 def test_discovery_turn_detected_only_after_pure_read_results() -> None:
     from dornick.backends.openai_backend import _discovery_turn
-    assert _discovery_turn(_kuyruk('read_file', 'list_dir')) is True
-    assert _discovery_turn(_kuyruk('read_many')) is True
+    assert _discovery_turn(_queue('read_file', 'list_dir')) is True
+    assert _discovery_turn(_queue('read_many')) is True
     # Yazma karisan kuyruk kesif degil: caba kisilmaz.
-    assert _discovery_turn(_kuyruk('read_file', 'write_file')) is False
-    assert _discovery_turn(_kuyruk('shell')) is False
+    assert _discovery_turn(_queue('read_file', 'write_file')) is False
+    assert _discovery_turn(_queue('shell')) is False
     # Kuyrukta taze kullanici/sistem mesaji varsa dokunulmaz.
-    assert _discovery_turn(_kuyruk('read_file', kuyruk_rolu='user')) is False
-    assert _discovery_turn(_kuyruk('read_file', kuyruk_rolu='system')) is False
+    assert _discovery_turn(_queue('read_file', queue_role='user')) is False
+    assert _discovery_turn(_queue('read_file', queue_role='system')) is False
     assert _discovery_turn([{'role': 'user', 'content': 'selam'}]) is False
 
 
@@ -1604,14 +1604,14 @@ def test_discovery_downshift_lowers_effort_for_small_family() -> None:
 
 def test_coding_turn_detected_from_tools_or_user_request() -> None:
     from dornick.prompt import coding_turn
-    assert coding_turn(metin="bana c# ile bir scad programı yazar mısın")
-    assert coding_turn(metin="selam nasılsın") is False
-    assert coding_turn(_kuyruk("write_file")) is True
-    assert coding_turn(_kuyruk("read_file", "edit_file")) is True
+    assert coding_turn(text="bana c# ile bir scad programı yazar mısın")
+    assert coding_turn(text="selam nasılsın") is False
+    assert coding_turn(_queue("write_file")) is True
+    assert coding_turn(_queue("read_file", "edit_file")) is True
     assert coding_turn([{"role": "user", "content": "hava nasıl"}]) is False
 
 
-def test_kisalik_exempts_coding_and_tool_rules_nudge_read_many() -> None:
+def test_brevity_exempts_coding_and_tool_rules_nudge_read_many() -> None:
     from dornick import prompt as p
     assert "İSTİSNA" in p.BREVITY and "write_file" in p.BREVITY
     assert "read_many" in p.TOOL_RULES
@@ -1625,10 +1625,10 @@ def test_read_result_advertises_unread_siblings(tmp_path) -> None:
     from dornick.tools.base import ToolRegistry
     from dornick.tools import files as files_mod
     ctx = _file_ctx(tmp_path)
-    kok = ctx.sandbox.root
-    kok.mkdir(parents=True, exist_ok=True)
+    root_dir = ctx.sandbox.root
+    root_dir.mkdir(parents=True, exist_ok=True)
     for ad in ('a.py', 'b.py', 'c.js'):
-        (kok / ad).write_text('x = 1', encoding='utf-8')
+        (root_dir / ad).write_text('x = 1', encoding='utf-8')
     reg = ToolRegistry()
     files_mod.register(reg)
     r = asyncio.run(reg.get('read_file').handler({'path': 'a.py'}, ctx))
@@ -1696,22 +1696,22 @@ def test_plan_steps_can_be_ticked_and_the_card_hears_it(tmp_path) -> None:
         {'action': 'step', 'id': pid, 'step': 2, 'status': 'bitti'}, ctx))
     assert not r2.is_error and '1/3 bitti' in r2.content
     # Olay akisina plan notu dustu mu (kartin canli guncellenme yolu)?
-    olaylar = [json.loads(l) for l in
+    events = [json.loads(l) for l in
                (tmp_path / 'events.jsonl').read_text(encoding='utf-8').splitlines()]
-    planlar = [e for e in olaylar if e.get('content') == 'plan']
-    assert len(planlar) >= 2, 'create + step olaylari yayinlanmali'
-    assert planlar[-1]['meta']['steps'][1]['status'] == 'bitti'
+    plans = [e for e in events if e.get('content') == 'plan']
+    assert len(plans) >= 2, 'create + step olaylari yayinlanmali'
+    assert plans[-1]['meta']['steps'][1]['status'] == 'bitti'
 
 
 def test_a_short_paragraph_is_not_a_big_job() -> None:
     # Olculen yara: 10 satirlik gorev bile plan durtusu yiyordu (esik 180).
     from dornick.loop import big_job
-    kisa = ('Su CSV dosyasini okuyup satis toplamini hesaplayan bir betik '
+    short = ('Su CSV dosyasini okuyup satis toplamini hesaplayan bir betik '
             'yaz; cikti ekrana gelsin ve kurus yuvarlamasina dikkat et. '
             'Dosya ayraci noktali virgul olabilir, onu da destekle; '
             'ondalik ayirici da bolgeye gore degisebilir.')
-    assert len(kisa) > 180, 'test anlamli olsun: eski esigi asiyor'
-    assert big_job(kisa) is False
+    assert len(short) > 180, 'test anlamli olsun: eski esigi asiyor'
+    assert big_job(short) is False
     assert big_job('Bana bir yonetim paneli yap: kullanici, rol, rapor') is True
 
 # -- kamera: sorulunca kesit + izleme alani ------------------------------
@@ -1727,39 +1727,39 @@ def test_camera_tool_lists_and_snapshots_via_monkeypatch(tmp_path, monkeypatch) 
     monkeypatch.setattr(watch, 'load', lambda sd: [
         watch.Camera(id='cam_1', name='bahce', source='rtsp://x')])
     monkeypatch.setattr(watch, 'snapshot',
-                        lambda src, adet=1, **k: ['data:image/jpeg;base64,QUJD'] * adet)
+                        lambda src, count=1, **k: ['data:image/jpeg;base64,QUJD'] * count)
     from dornick import sight
     monkeypatch.setattr(sight, 'analyze_url', lambda _u: 'kişi, kupa')
     reg = ToolRegistry()
     kamera_mod.register(reg)
-    r = asyncio.run(reg.get('kamera').handler({'action': 'liste'}, ctx))
+    r = asyncio.run(reg.get('camera').handler({'action': 'liste'}, ctx))
     assert 'bahce' in r.content and 'cam_1' in r.content
     assert 'Bilgisayar kamerası' in r.content
-    r2 = asyncio.run(reg.get('kamera').handler(
+    r2 = asyncio.run(reg.get('camera').handler(
         {'action': 'kesit', 'id': 'cam_1', 'adet': 2}, ctx))
     assert not r2.is_error
     assert len(r2.detail['images']) == 2, 'kesitler images listesinde tasinmali'
     assert 'Yerel GPU analizi' in r2.content
     assert 'kişi, kupa' in r2.content
     # İsimle kesit; şifre modele gitmez.
-    bahce = watch.Camera(
+    garden = watch.Camera(
         id='cam_1', name='bahce', kind='rtsp',
         host='192.168.1.10', port=554, path='/stream',
         user='admin', password='s3cret')
-    monkeypatch.setattr(watch, 'load', lambda sd: [bahce])
+    monkeypatch.setattr(watch, 'load', lambda sd: [garden])
     seen = []
 
-    def fake_snap(src, adet=1, **k):
+    def fake_snap(src, count=1, **k):
         seen.append(src)
-        return ['data:image/jpeg;base64,QUJD'] * adet
+        return ['data:image/jpeg;base64,QUJD'] * count
 
     monkeypatch.setattr(watch, 'snapshot', fake_snap)
-    r3 = asyncio.run(reg.get('kamera').handler(
+    r3 = asyncio.run(reg.get('camera').handler(
         {'action': 'kesit', 'name': 'bahce'}, ctx))
     assert not r3.is_error
     assert seen and 's3cret' in str(seen[0])
     assert 's3cret' not in r3.content
-    r4 = asyncio.run(reg.get('kamera').handler({'action': 'yol', 'name': 'bahce'}, ctx))
+    r4 = asyncio.run(reg.get('camera').handler({'action': 'yol', 'name': 'bahce'}, ctx))
     assert not r4.is_error
     assert 'images' not in r4.detail
     assert 'bahce' in r4.content
@@ -1767,7 +1767,7 @@ def test_camera_tool_lists_and_snapshots_via_monkeypatch(tmp_path, monkeypatch) 
 
 def test_prompt_names_cameras_as_an_ability() -> None:
     from dornick.prompt import ABILITIES
-    assert any(title == 'Kameralar' and 'kamera' in names
+    assert any(title == 'Kameralar' and 'camera' in names
                for title, _what, names in ABILITIES)
 
 
@@ -1796,8 +1796,8 @@ def test_motion_frames_do_not_reach_a_cloud_model_without_consent() -> None:
     assert _local_endpoint('https://openrouter.ai/api/v1') is False
     import inspect
     from dornick import desktop
-    kaynak = inspect.getsource(desktop._send_motion)
-    assert 'config.camera.cloud_ok' in kaynak
-    assert 'kare BULUT modele g' in kaynak
-    assert 'Yerel GPU analizi' in kaynak
+    source = inspect.getsource(desktop._send_motion)
+    assert 'config.camera.cloud_ok' in source
+    assert 'kare BULUT modele g' in source
+    assert 'Yerel GPU analizi' in source
 

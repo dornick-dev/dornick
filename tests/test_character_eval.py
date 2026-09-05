@@ -132,7 +132,7 @@ OPTIONS = ("sorarım", "yaparım")
     ("Önce şunu düşündüm.\n\nKARAR: sorarım\n", "sorarım"),
     ("KARAR: bu durumda sorarım", "sorarım"),
 ])
-def test_the_parser_reads_the_karar_line(harness, text: str, expected: str) -> None:
+def test_the_parser_reads_the_decision_line(harness, text: str, expected: str) -> None:
     assert harness.parse_decision(text, OPTIONS) == expected
 
 
@@ -303,13 +303,13 @@ def test_the_cli_runs_dry_and_prints_json(tmp_path) -> None:
     assert (tmp_path / "charts" / "karakter-kuru.md").exists()
 
 
-def test_without_evet_the_cli_spends_nothing_and_names_the_price(tmp_path) -> None:
-    """Real model ids without `--evet`: the call count is printed and the
+def test_without_yes_the_cli_spends_nothing_and_names_the_price(tmp_path) -> None:
+    """Real model ids without `--yes`: the call count is printed and the
     run falls back to the fake — no backend is ever built."""
     out = _cli(["--model", "anthropic:claude-opus-4-8", "--model2", "openai:yerel/model",
                 "--repeats", "3", "--json"], tmp_path)
     assert out.returncode == 0, out.stderr[-2000:]
-    assert "840" in out.stderr and "--evet" in out.stderr
+    assert "840" in out.stderr and "--yes" in out.stderr
     result = json.loads(out.stdout)
     assert set(result["modeller"]) == {"sahte-a", "sahte-b"}
     assert result["sayim"]["cagri"] == 840

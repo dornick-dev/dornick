@@ -111,12 +111,12 @@ def _openrouter(name: str) -> ModelConfig:
 def test_the_label_only_speaks_for_openrouter(tmp_path: Path) -> None:
     """A local server's model is not in this catalogue: None → the chip shows tokens."""
     local = ModelConfig(name="qwen/q3", base_url="http://localhost:1234/v1")
-    assert pricing.etiket(local, tmp_path) is None
+    assert pricing.label(local, tmp_path) is None
 
 
 def test_the_free_pool_costs_zero(tmp_path: Path) -> None:
     """Oto mode runs on the free pool: the price is zero, not unknown."""
-    assert pricing.etiket(_openrouter("oto"), tmp_path) == {"girdi": 0.0, "cikti": 0.0}
+    assert pricing.label(_openrouter("oto"), tmp_path) == {"girdi": 0.0, "cikti": 0.0}
 
 
 def test_an_unknown_model_yields_none_a_known_one_its_price(
@@ -125,10 +125,10 @@ def test_an_unknown_model_yields_none_a_known_one_its_price(
     monkeypatch.setattr(
         pricing, "_download", lambda: {"m/a": {"girdi": 1e-06, "cikti": 2e-06}}
     )
-    assert pricing.etiket(_openrouter("m/a"), tmp_path, ag=True) == {
+    assert pricing.label(_openrouter("m/a"), tmp_path, ag=True) == {
         "girdi": 1e-06, "cikti": 2e-06,
     }
-    assert pricing.etiket(_openrouter("m/yok"), tmp_path) is None
+    assert pricing.label(_openrouter("m/yok"), tmp_path) is None
 
 
 # -- usage-event contract (Bridge) --------------------------------------
@@ -158,7 +158,7 @@ def _bridge(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     from dornick.desktop import Bridge
 
     # The background price thread must not go to the network; the test gives the tag itself.
-    monkeypatch.setattr(desktop_module.fiyatlama, "etiket",
+    monkeypatch.setattr(desktop_module.pricing, "label",
                         lambda *a, **k: None)
     hub = _Hub()
     bridge = Bridge(hub, asyncio.get_running_loop())
@@ -234,7 +234,7 @@ async def test_the_price_label_arrives_in_the_background(
         counter.append(1)
         return {"girdi": 1e-06, "cikti": 2.5e-05}
 
-    monkeypatch.setattr(desktop_module.fiyatlama, "etiket", _tag)
+    monkeypatch.setattr(desktop_module.pricing, "label", _tag)
 
     bridge._usage_yay(_report(1000, 50))
     # Wait for the background thread to finish (returns instantly; the bound is a safety net).

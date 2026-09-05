@@ -59,7 +59,7 @@ def test_the_camera_is_used_by_the_look_tool(tmp_path: Path) -> None:
     guessed there, a new tool would silently stay unmatched."""
     lens = next(o for o in organs.inventory(Config.load(tmp_path)) if o["id"] == "lens")
     assert "look" in lens["tools"]
-    assert "kamera" in lens["tools"]
+    assert "camera" in lens["tools"]
     assert lens["name"] == "Bilgisayar kamerası"
 
 
@@ -75,7 +75,7 @@ def test_named_cameras_are_organs_the_model_can_call(tmp_path: Path) -> None:
     body = organs.inventory(config)
     cam = next(o for o in body if o["id"] == "cam:cam_1")
     assert cam["name"] == "bahçe"
-    assert "kamera" in cam["tools"]
+    assert "camera" in cam["tools"]
     assert "kişi" in cam["detail"]
 
 

@@ -379,7 +379,7 @@ def _forward_replay(store: Any, session: ReplaySession, report: NightReport, *,
             weight = round(ADJACENCY_WEIGHT * ADJACENCY_DECAY ** (j - i - 1), 3)
             if store.connect(a, sequence[j], weight=weight,
                             reason=f"birlikte kullanıldı ({session.id})",
-                            birikimli=True):
+                            cumulative=True):
                 report.new_edges += 1
 
 
@@ -553,7 +553,7 @@ def _stitch(store: Any, sessions: list[ReplaySession], report: NightReport) -> N
                 if store.connect(a, c, weight=0.3,
                                 reason=f"{shared} üzerinden dikildi "
                                        f"({first.id}→{second.id})",
-                                yalniz_yeni=True):
+                                only_new=True):
                     report.stitched += 1
 
 

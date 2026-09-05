@@ -130,7 +130,7 @@ const Apps = (() => {
 }
 .proj-addr:hover { text-decoration: underline; }
 .apps-group-hint.tidy { color: var(--amber); }
-.apps-sorun { margin: 6px 4px 12px; }
+.apps-issue { margin: 6px 4px 12px; }
 .apps-sorun-row {
   padding: 7px 9px; margin: 5px 0; border-radius: 7px;
   background: #F0A0200d; box-shadow: inset 0 0 0 1px #F0A02033;
@@ -549,7 +549,7 @@ const Apps = (() => {
   // panel"): here they stand WITH THE REASON and THE FIX.
   function drawBrokenManifests(box) {
     if (!brokenManifests.length) return;
-    const section = el("div", "apps-sorun");
+    const section = el("div", "apps-issue");
     const head = el("div", "apps-group");
     head.append(el("span", null, "Sorunlu manifestler"));
     head.append(el("i", "apps-group-hint", "yanlış yere yazılmış — uygulama sayılmadı"));

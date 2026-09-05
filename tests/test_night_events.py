@@ -52,7 +52,7 @@ def test_the_vocabulary_is_frozen() -> None:
 
 def test_every_event_carries_a_timestamp_and_a_type() -> None:
     event = ne.build("dokunus", clock, id="n_1")
-    assert set(ne.ORTAK) <= set(event)
+    assert set(ne.SHARED) <= set(event)
     assert event["ts"].startswith("2025-06-02")
 
 

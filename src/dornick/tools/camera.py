@@ -1,4 +1,4 @@
-"""The `kamera` tool — on-demand snapshots from the registered cameras to the model.
+"""The `camera` tool — on-demand snapshots from the registered cameras to the model.
 
 The user's request (29.08): "when we ask a question it should be able to
 take as many frames from the cameras as needed and send them to the
@@ -164,7 +164,7 @@ def _status_text(cam: watch.Camera, gpu: str = "") -> str:
 
 def register(registry: ToolRegistry) -> None:
     @registry.tool(
-        name="kamera",
+        name="camera",
         description=DESCRIPTION,
         input_schema=object_schema(
             {

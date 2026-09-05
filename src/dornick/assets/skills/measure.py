@@ -26,70 +26,70 @@ SCHEMA = {
 }
 
 
-def _kos(cmd, cwd, tekrar):
+def _run(cmd, cwd, repeats):
     import subprocess
     import time
 
-    sureler = []
+    durations = []
     son_kod = 0
-    for _ in range(tekrar):
+    for _ in range(repeats):
         t0 = time.perf_counter()
         done = subprocess.run(cmd, shell=True, cwd=cwd, capture_output=True,
                               text=True, timeout=300)
-        sureler.append(time.perf_counter() - t0)
+        durations.append(time.perf_counter() - t0)
         son_kod = done.returncode
         if son_kod != 0:
             # Bozuk komutu tekrar tekrar ölçmenin anlamı yok.
-            return sureler, son_kod, (done.stderr or done.stdout or "")[-400:]
-    return sureler, son_kod, ""
+            return durations, son_kod, (done.stderr or done.stdout or "")[-400:]
+    return durations, son_kod, ""
 
 
-def _summary(sureler):
-    s = sorted(sureler)
+def _summary(durations):
+    s = sorted(durations)
     n = len(s)
-    medyan = s[n // 2] if n % 2 else (s[n // 2 - 1] + s[n // 2]) / 2
-    return {"medyan": medyan, "min": s[0], "maks": s[-1], "n": n}
+    median = s[n // 2] if n % 2 else (s[n // 2 - 1] + s[n // 2]) / 2
+    return {"medyan": median, "min": s[0], "maks": s[-1], "n": n}
 
 
 def run(args, ctx):
     from pathlib import Path
 
-    komut = str(args.get("komut") or "").strip()
-    if not komut:
+    command = str(args.get("komut") or "").strip()
+    if not command:
         return "Komut boş."
-    tekrar = max(1, min(int(args.get("tekrar") or 5), 20))
+    repeats = max(1, min(int(args.get("tekrar") or 5), 20))
     cwd = str(args.get("cwd") or ctx.sandbox.root)
     if not Path(cwd).is_dir():
         return f"Çalışma klasörü yok: {cwd}"
 
-    satirlar = [f"# Ölçüm — {tekrar} koşu", ""]
-    a_sure, a_kod, a_hata = _kos(komut, cwd, tekrar)
+    lines = [f"# Ölçüm — {repeats} koşu", ""]
+    a_time, a_kod, a_err = _run(command, cwd, repeats)
     if a_kod != 0:
         return (f"Komut kırmızı (çıkış {a_kod}) — süre ölçümü anlamsız.\n"
-                f"Önce yeşile çek:\n{a_hata}")
-    a = _summary(a_sure)
-    satirlar.append(f"A `{komut}`: medyan {a['medyan']:.3f} sn "
+                f"Önce yeşile çek:\n{a_err}")
+    a = _summary(a_time)
+    lines.append(f"A `{command}`: medyan {a['medyan']:.3f} sn "
                     f"(min {a['min']:.3f} / maks {a['maks']:.3f}, n={a['n']})")
 
-    kiyas = str(args.get("kiyas") or "").strip()
-    if kiyas:
-        b_sure, b_kod, b_hata = _kos(kiyas, cwd, tekrar)
+    compare = str(args.get("kiyas") or "").strip()
+    if compare:
+        b_time, b_kod, b_err = _run(compare, cwd, repeats)
         if b_kod != 0:
-            satirlar.append(f"B `{kiyas}`: KIRMIZI (çıkış {b_kod}) — {b_hata}")
+            lines.append(f"B `{compare}`: KIRMIZI (çıkış {b_kod}) — {b_err}")
         else:
-            b = _summary(b_sure)
-            satirlar.append(f"B `{kiyas}`: medyan {b['medyan']:.3f} sn "
+            b = _summary(b_time)
+            lines.append(f"B `{compare}`: medyan {b['medyan']:.3f} sn "
                             f"(min {b['min']:.3f} / maks {b['maks']:.3f})")
             if a["medyan"] > 0:
-                fark = (b["medyan"] - a["medyan"]) / a["medyan"] * 100
-                satirlar.append(f"Fark: B, A'ya göre {fark:+.1f}% "
-                                + ("(B yavaş)" if fark > 0 else "(B hızlı)"))
+                diff = (b["medyan"] - a["medyan"]) / a["medyan"] * 100
+                lines.append(f"Fark: B, A'ya göre {diff:+.1f}% "
+                                + ("(B yavaş)" if diff > 0 else "(B hızlı)"))
 
-    metin = "\n".join(satirlar)
+    text = "\n".join(lines)
     try:
-        (ctx.sandbox.root / "olcum-rapor.md").write_text(metin + "\n",
+        (ctx.sandbox.root / "olcum-rapor.md").write_text(text + "\n",
                                                          encoding="utf-8")
-        metin += "\n\nRapor: olcum-rapor.md"
+        text += "\n\nRapor: olcum-rapor.md"
     except OSError:
         pass
-    return metin
+    return text

@@ -67,7 +67,7 @@ const Tasks = (() => {
   let rows = [];
   let openSet = new Set();      // which task's output is expanded
   let logCache = new Map();     // task id → {steps, ts}
-  const DOKUM_TTL_MS = 2500;
+  const TRANSCRIPT_TTL_MS = 2500;
   let pollTimer = null;
   let tickTimer = null;
 
@@ -231,25 +231,25 @@ const Tasks = (() => {
 
   function output(g) {
     const box = el("div", "task-out");
-    if (g.ozet) box.append(el("div", "task-ozet", g.ozet));
+    if (g.ozet) box.append(el("div", "task-summary", g.ozet));
     if (g.komut) box.append(el("div", "task-cmd", "$ " + g.komut));
     if (!g.oturum) {
-      if (!g.ozet && !g.komut) box.append(el("div", "task-ozet", t("(çıktı yok)")));
+      if (!g.ozet && !g.komut) box.append(el("div", "task-summary", t("(çıktı yok)")));
       return box;
     }
     const cache = logCache.get(g.id);
     const steps = cache === undefined ? undefined
       : (cache === null ? null : cache.steps);
     if (steps === undefined) {
-      box.append(el("div", "task-ozet", t("Adımlar yükleniyor…")));
+      box.append(el("div", "task-summary", t("Adımlar yükleniyor…")));
       return box;
     }
     if (steps === null) {
-      box.append(el("div", "task-ozet", t("Döküm okunamadı.")));
+      box.append(el("div", "task-summary", t("Döküm okunamadı.")));
       return box;
     }
     if (!steps.length) {
-      box.append(el("div", "task-ozet", t("Adım bulunamadı.")));
+      box.append(el("div", "task-summary", t("Adım bulunamadı.")));
       return box;
     }
     const list = el("div", "task-steps");
@@ -272,7 +272,7 @@ const Tasks = (() => {
   async function fetchLog(g, { force = false } = {}) {
     const prev = logCache.get(g.id);
     if (!force && prev && prev !== null
-        && (Date.now() - (prev.ts || 0)) < DOKUM_TTL_MS) {
+        && (Date.now() - (prev.ts || 0)) < TRANSCRIPT_TTL_MS) {
       return;
     }
     // While running, refresh when the TTL expires; once finished, one read is enough.

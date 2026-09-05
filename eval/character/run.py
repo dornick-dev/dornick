@@ -31,10 +31,10 @@ Run:
 
     py eval/character/run.py                                   # dry run, fake models
     py eval/character/run.py --model anthropic:claude-opus-4-8 --model2 openai:qwen/qwen3-32b --repeats 3
-    py eval/character/run.py --model ... --model2 ... --evet   # actually spend
-    py eval/character/run.py --model ... --no-leverage --evet  # control arm only
+    py eval/character/run.py --model ... --model2 ... --yes   # actually spend
+    py eval/character/run.py --model ... --no-leverage --yes  # control arm only
 
-Without `--evet` the rig prints the number of calls the real run would make
+Without `--yes` the rig prints the number of calls the real run would make
 and runs against a deterministic fake model instead, so the harness itself
 is testable and never spends by accident. API keys are loaded the way the
 product loads them (`settings.export_keys`) and are never printed.
@@ -266,7 +266,7 @@ def is_garbled(text: str) -> bool:
     return foreign / len(body) > 0.25
 
 
-_KARAR = re.compile(r"^[\s*_`>]*KARAR\s*[:：]\s*(.+?)[\s*_`]*$", re.IGNORECASE | re.MULTILINE)
+_DECISION = re.compile(r"^[\s*_`>]*KARAR\s*[:：]\s*(.+?)[\s*_`]*$", re.IGNORECASE | re.MULTILINE)
 _STRIP = re.compile(r"[\"'«»“”‘’`*_.!?;:,()\[\]]")
 
 
@@ -281,7 +281,7 @@ def parse_decision(text: str, options: tuple[str, str] | list[str]) -> str:
     (after case/punctuation folding) or contain exactly one of them; if
     several `KARAR:` lines disagree, the answer is ambiguous.
     """
-    hits = _KARAR.findall(text or "")
+    hits = _DECISION.findall(text or "")
     if not hits:
         # Lenient fallback: no KARAR line, but the reply names exactly one
         # of the two options and not the other. Measured on the first real
@@ -864,8 +864,8 @@ def _report(decisions: list[Decision], results: list[ModelResult], *, repeats: i
     for r in results:
         main_answers = r.answers[main]
         reached = _reached(main_answers, decisions)
-        zaman = _agreement(_time_pairs(main_answers, decisions, repeats))
-        zaman_kimliksiz = (_agreement(_time_pairs(r.answers["kimliksiz"], decisions, repeats))
+        time_agreement = _agreement(_time_pairs(main_answers, decisions, repeats))
+        time_without_identity = (_agreement(_time_pairs(r.answers["kimliksiz"], decisions, repeats))
                            if "kimliksiz" in r.answers else None)
         per_model[r.name] = {
             "taban": r.baseline.as_dict(),
@@ -874,9 +874,9 @@ def _report(decisions: list[Decision], results: list[ModelResult], *, repeats: i
             "ulasilan": {AXIS_KEYS[a]: v for a, v in reached.items()},
             "metrikler": {
                 "tutarlilik_baglam": _agreement(_context_pairs(main_answers, decisions)),
-                "tutarlilik_zaman": zaman,
-                "tutarlilik_zaman_kimliksiz": zaman_kimliksiz,
-                "kimlik_farki": _diff(zaman, zaman_kimliksiz),
+                "tutarlilik_zaman": time_agreement,
+                "tutarlilik_zaman_kimliksiz": time_without_identity,
+                "kimlik_farki": _diff(time_agreement, time_without_identity),
                 "sosyal_taban": r.baseline.social,
                 "sosyal_ulasilan": reached["social"],
                 "sosyal_fark": _diff(r.baseline.social, reached["social"]),
@@ -982,7 +982,7 @@ def write_report(label: str, result: dict[str, Any], charts: Path, *,
     charts.mkdir(parents=True, exist_ok=True)
     json_path = charts / f"karakter-{label}.json"
     md_path = charts / f"karakter-{label}.md"
-    payload = dict(result, kaynak=source, komut=command)
+    payload = dict(result, **{"kaynak": source, "komut": command})
     json_path.write_text(json.dumps(payload, ensure_ascii=False, indent=1) + "\n",
                          encoding="utf-8")
 
@@ -1076,7 +1076,7 @@ def main(argv: list[str] | None = None) -> int:
                     help="kaldıraç kazancını ölçülenden kalibre edip ikinci tur ölç")
     ap.add_argument("--no-leverage", action="store_true", dest="no_leverage",
                     help="yalnız kontrol kolu: hedef = ölçülen taban")
-    ap.add_argument("--evet", action="store_true", help="gerçek modelleri çağır (para harcar)")
+    ap.add_argument("--yes", action="store_true", help="gerçek modelleri çağır (para harcar)")
     ap.add_argument("--dry", action="store_true", help="sahte modelle kuru koşu")
     ap.add_argument("--json", action="store_true", help="yalnız JSON yaz")
     ap.add_argument("--etiket", "--label", default="", dest="label",
@@ -1105,9 +1105,9 @@ def main(argv: list[str] | None = None) -> int:
                        leverage_on=leverage_on, closed_loop=args.closed_loop,
                        exemplars=len(held_out))
 
-    if wants_real and not args.evet:
+    if wants_real and not args.yes:
         warn(f"Gerçek ölçüm {calls} model çağrısı yapar ({len(real_specs)} model × "
-             f"{calls // max(1, len(real_specs))}); harcamak için --evet ekle.")
+             f"{calls // max(1, len(real_specs))}); harcamak için --yes ekle.")
         warn("Şimdi sahte modelle kuru koşu yapılıyor.")
         wants_real = False
 

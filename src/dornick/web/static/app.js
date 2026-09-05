@@ -383,9 +383,9 @@ let lastQuery = "";
 // the user's own sentence.
 
 const INTERNAL_NOTE_PATTERNS = [
-  /^\s*\[(Harness notu|Yardımcı|Arka plan işi|Kullanıcı bu arada yazdı|Ana ajandan|Uzun koşu kontrol noktası)/,
+  /^\s*\[(Harness note|Yardımcı|Arka plan işi|Kullanıcı bu arada yazdı|Ana ajandan|Uzun koşu kontrol noktası)/,
   /^\s*Planını yazdın ama uygulamadın/,
-  /^\s*Önceki yanıtın uzunluk sınırında kesildi/,
+  /^\s*Önceki yanıtın length sınırında kesildi/,
   /^\s*Sürdürme hakkın bitti/,
   /^\s*Yukarıdaki görüntü senin kendi bakışın/,
   /^\s*Arka plandaki yardımcı\(lar\) bitti/,
@@ -443,7 +443,7 @@ Lang.add({ "Açıklama ▸": "Key ▸", "Açıklama ▾": "Key ▾" });
 // remembered. While closed the canvas is hidden too (display:none) and scene
 // drawing stops — animating an invisible scene is battery burnt for nothing.
 (() => {
-  const uygula = (on) => {
+  const apply = (on) => {
     document.body.classList.toggle("mind-on", on);
     document.body.classList.toggle("mind-off", !on);
     try { localStorage.setItem("dornick-mind", on ? "acik" : "kapali"); } catch { /* file:// */ }
@@ -451,7 +451,7 @@ Lang.add({ "Açıklama ▸": "Key ▸", "Açıklama ▾": "Key ▾" });
   };
   let saved = null;
   try { saved = localStorage.getItem("dornick-mind"); } catch { /* file:// */ }
-  uygula(saved !== "kapali");
+  apply(saved !== "kapali");
   // Should the brain grow in the CENTRE (ambient)? Managed from Settings;
   // when off the brain stays in the right panel and the centre scene dims —
   // "the text disappears under the brain" (live request, 31.08).
@@ -463,11 +463,11 @@ Lang.add({ "Açıklama ▸": "Key ▸", "Açıklama ▾": "Key ▾" });
     document.body.classList.toggle("no-ambient", !on);
     try { localStorage.setItem("dornick-brain-ambient", on ? "acik" : "kapali"); } catch {}
   };
-  $("mind-close").addEventListener("click", () => uygula(false));
+  $("mind-close").addEventListener("click", () => apply(false));
   // ◍ is now a two-way switch: no floating header (›) in ambient mode; this
   // is the permanent place to close and open the brain.
   $("mind-open").addEventListener("click", () =>
-    uygula(document.body.classList.contains("mind-off")));
+    apply(document.body.classList.contains("mind-off")));
   // Memory search: matching nodes glow, the rest dim. When the box empties
   // the scene returns to normal.
   const search = $("mind-search");
@@ -1194,7 +1194,7 @@ const IMG_EXT = /\.(png|jpe?g|gif|webp|bmp|svg)$/i;
 function reviveUserMedia(row, text) {
   if (!row || !text) return;
   const paths = [];
-  const attach = text.match(/Eklenen dosyalar \(atölyende\):\n((?:[-•]\s+.+\n?)+)/i);
+  const attach = text.match(/Eklenen files \(atölyende\):\n((?:[-•]\s+.+\n?)+)/i);
   if (attach) {
     for (const row2 of attach[1].split("\n")) {
       const path = row2.replace(/^[-•]\s+/, "").trim();
@@ -1364,7 +1364,7 @@ const MODE_LABEL = {
 // Researching" status; the colour comes from the mode too).
 const ACTION = {
   search: "Araştırıyor", fetch: "Araştırıyor", web: "Araştırıyor",
-  grep: "Arıyor", semboller: "Arıyor",
+  grep: "Arıyor", symbols: "Arıyor",
   read_file: "Okuyor", read_many: "Okuyor", list_dir: "Bakıyor", write_file: "Oluşturuyor",
   edit_file: "Düzenliyor", copy_in: "Kopyalıyor", draw: "Çiziyor",
   shell: "Çalıştırıyor",
@@ -1382,7 +1382,7 @@ const ACTION = {
 // icon's job is not decoration but telling kinds apart while scanning rows.
 const TOOL_ICON = {
   shell: "❯", read_file: "≡", read_many: "≡", list_dir: "≡", write_file: "✎", edit_file: "✎",
-  copy_in: "✎", draw: "✎", search: "◌", fetch: "◌", web: "◌", grep: "◌", semboller: "◌",
+  copy_in: "✎", draw: "✎", search: "◌", fetch: "◌", web: "◌", grep: "◌", symbols: "◌",
   mind_recall: "◍", mind_memory: "◍", mind_goals: "◍",
   screen: "▣", hand: "▣", look: "◉", browser: "⌾", device: "⇄", skill: "✦",
   models: "✦", task: "⑃", schedule: "◔", mail_read: "✉", mail_send: "✉",
@@ -3448,7 +3448,7 @@ function paintLive(extra) {
 // Counted so the verb is not locked to one step; readable with the strip
 // closed too.
 const TALLY_FILES = new Set(["read_file", "read_many", "list_dir"]);
-const TALLY_SEARCH = new Set(["grep", "search", "fetch", "web", "semboller"]);
+const TALLY_SEARCH = new Set(["grep", "search", "fetch", "web", "symbols"]);
 const TALLY_EDIT = new Set(["edit_file", "write_file"]);
 const TALLY_RUN = new Set(["shell"]);
 
@@ -5694,7 +5694,7 @@ function refreshVersionBadge(info) {
   if (!badge || !info.yeni) return;
   badge.textContent = "";
   const link = document.createElement("a");
-  link.className = "surum-yeni";
+  link.className = "version-new";
   link.href = "#";
   // Structure, not a sentence: dot · "v1.4.3" · action. The raw
   // "v1.4.2 yeni — güncelle" text read like a leftover hyperlink.
@@ -5742,7 +5742,7 @@ function refreshVersionBadge(info) {
 // reported honestly.
 function updateStatus(e) {
   const badge = document.getElementById("side-ver");
-  const progress = document.querySelector(".surum-ilerleme");
+  const progress = document.querySelector(".version-progress");
   let text = "";
   let bad = false;
   if (e.asama === "indiriliyor") {
@@ -5758,7 +5758,7 @@ function updateStatus(e) {
     bad = true;
   }
   if (progress && text) {
-    progress.className = "surum-ilerleme" + (bad ? " bad" : "");
+    progress.className = "version-progress" + (bad ? " bad" : "");
     progress.textContent = text;
   }
   // The badge: a short summary (long text must not break the sidebar).

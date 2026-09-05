@@ -538,7 +538,7 @@ def check_many(
 
 
 def summary(diagnoses: list[Diagnosis], *, root: Path | None = None) -> str:
-    """Summary of a multi-file check — the reply of the `denetle` tool.
+    """Summary of a multi-file check — the reply of the `inspect` tool.
 
     The faulty ones first (they are the real matter), then a one-line count.
     We do not say "all clean": it says which checker looked.

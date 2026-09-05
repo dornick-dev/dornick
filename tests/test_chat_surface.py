@@ -18,7 +18,7 @@ import pytest
 from dornick.config import Config
 from dornick.events import EventLog
 from dornick.mind import Mind, open_mind
-from dornick.tools.checkpoint import KLASOR, Defter
+from dornick.tools.checkpoint import FOLDER, Defter
 from dornick.web import MindServer
 
 
@@ -316,7 +316,7 @@ def test_a_successful_job_report_page_leads_with_summary_not_logs(
 
 def _write_ledger(config: Config, target: Path, old: str, new: str) -> Defter:
     """The same thing the tool layer does: take a snapshot BEFORE changing."""
-    ledger = Defter(Path(config.state_dir) / KLASOR, "cur")
+    ledger = Defter(Path(config.state_dir) / FOLDER, "cur")
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(old, encoding="utf-8")
     ledger.save(target, "edit_file")
@@ -388,7 +388,7 @@ def test_a_new_file_is_undone_by_deleting_it(tmp_path: Path, mind: Mind) -> None
     server, config, log = _setup(tmp_path, mind)
     fresh = Path(config.workspace) / "taze.txt"
     try:
-        ledger = Defter(Path(config.state_dir) / KLASOR, "cur")
+        ledger = Defter(Path(config.state_dir) / FOLDER, "cur")
         ledger.save(fresh, "write_file")     # the file does not exist yet
         fresh.write_text("içerik", encoding="utf-8")
         record = _get(server, "/api/degisiklikler")["kayitlar"][0]

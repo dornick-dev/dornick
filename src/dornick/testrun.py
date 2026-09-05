@@ -1068,14 +1068,14 @@ def reminder(path: Path | str, *, writes: int = 1) -> str:
 
     if writes >= NAG_THRESHOLD:
         return (f"koşum: {body} — aynı dosyaya {writes}. kez yazıyorsun. "
-                "Gözle düzeltmeyi bırak, `kos` aracıyla çalıştır ve gerçek "
+                "Gözle düzeltmeyi bırak, `run` aracıyla çalıştır ve gerçek "
                 "hatayı gör.")
-    return f"koşum: {body} — değişikliği doğrulamak için `kos` aracını kullan."
+    return f"koşum: {body} — değişikliği doğrulamak için `run` aracını kullan."
 
 
 # -- last touched project ----------------------------------------------
 #
-# `kos` must be callable without a path: the model should not have to write
+# `run` must be callable without a path: the model should not have to write
 # the project of the file it just wrote all over again. The file tools update
 # this on every write; a single module-level value, because one agent writes
 # in one session, and even if guessed wrong the result carries the full path

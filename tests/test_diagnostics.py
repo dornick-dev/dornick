@@ -411,7 +411,7 @@ async def test_the_manual_tool_checks_the_last_written_file(
 ) -> None:
     await call(registry, "write_file", ctx, path="son.py", content="def f(:\n")
 
-    result = await call(registry, "denetle", ctx)
+    result = await call(registry, "inspect", ctx)
 
     assert "son.py" in result.content
     assert result.detail["hatali"] == 1
@@ -420,7 +420,7 @@ async def test_the_manual_tool_checks_the_last_written_file(
 async def test_the_manual_tool_without_a_target_is_honest(
     registry: ToolRegistry, ctx: ToolContext
 ) -> None:
-    result = await call(registry, "denetle", ctx)
+    result = await call(registry, "inspect", ctx)
 
     assert result.is_error
     assert "henüz bir dosya yazmadın" in result.content
@@ -433,7 +433,7 @@ async def test_the_manual_tool_walks_a_folder(
     await call(registry, "write_file", ctx, path="proje/kotu.py", content="def f(:\n")
     await call(registry, "write_file", ctx, path="proje/okuma.md", content="# not\n")
 
-    result = await call(registry, "denetle", ctx, path="proje")
+    result = await call(registry, "inspect", ctx, path="proje")
 
     assert "kotu.py" in result.content
     assert result.detail["hatali"] == 1
@@ -447,7 +447,7 @@ async def test_the_manual_tool_narrows_with_a_pattern(
     await call(registry, "write_file", ctx, path="p/a.py", content="def f(:\n")
     await call(registry, "write_file", ctx, path="p/b.json", content="{oops}\n")
 
-    result = await call(registry, "denetle", ctx, path="p", pattern="*.json")
+    result = await call(registry, "inspect", ctx, path="p", pattern="*.json")
 
     assert result.detail["hatali"] == 1
     assert "a.py" not in result.content
@@ -469,7 +469,7 @@ async def test_the_manual_tool_skips_dependency_folders(
 async def test_the_manual_tool_refuses_a_missing_path(
     registry: ToolRegistry, ctx: ToolContext
 ) -> None:
-    result = await call(registry, "denetle", ctx, path="olmayan/yer.py")
+    result = await call(registry, "inspect", ctx, path="olmayan/yer.py")
 
     assert result.is_error and "Yol yok" in result.content
 
@@ -479,7 +479,7 @@ async def test_the_manual_tool_admits_an_unknown_language(
 ) -> None:
     await call(registry, "write_file", ctx, path="not.txt", content="merhaba\n")
 
-    result = await call(registry, "denetle", ctx, path="not.txt")
+    result = await call(registry, "inspect", ctx, path="not.txt")
 
     assert "denetleyici tanımıyorum" in result.content
 

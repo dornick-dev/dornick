@@ -457,16 +457,16 @@ PLAN_NOTE = (
 # (ToolResult.is_error) and the tool's OWN headline. What they mean differs
 # per tool:
 #
-#   kos      — marks red itself (is_error): failed test, non-zero exit code,
+#   run      — marks red itself (is_error): failed test, non-zero exit code,
 #              timeout, interruption.
-#   denetle  — does not mark an error with is_error (a lint finding must not
+#   inspect  — does not mark an error with is_error (a lint finding must not
 #              fail a write); red is written in its own text.
 #   browser  — the console/network dump never returns an error; the numbers
 #              are in the headline.
 #
 # Only these three count: a failed `read_file` is not a red run.
 
-VERIFICATION_TOOLS = frozenset({"kos", "denetle", "browser"})
+VERIFICATION_TOOLS = frozenset({"run", "inspect", "browser"})
 
 _LINT_ERROR = re.compile(r",\s*\d+\s+hata:")
 _CONSOLE_ERROR = re.compile(r"\((\d+)\s+hata\)")
@@ -487,10 +487,10 @@ def red_trace(tool: str, note: dict[str, Any]) -> str:
     summary = _VOLUME_SUFFIX.sub("", str(note.get("summary") or "").strip())
     body = summary + "\n" + str((note.get("detail") or {}).get("output") or "")
 
-    if tool == "kos":
+    if tool == "run":
         return (summary or "test koşumu başarısız") if note.get("error") else ""
 
-    if tool == "denetle":
+    if tool == "inspect":
         return (summary or "denetimde hata var") if _LINT_ERROR.search(body) else ""
 
     # browser: an error in the console or a failed request.
@@ -1261,8 +1261,8 @@ class Agent:
         if tool in ("write_file", "edit_file"):
             if path := str(args.get("path") or "").strip():
                 self._written.append(path)
-        elif tool in ("shell", "kos"):
-            # `kos` finds its command by itself; what it ran may not be in
+        elif tool in ("shell", "run"):
+            # `run` finds its command by itself; what it ran may not be in
             # the argument either, so the path/pattern fields are collected
             # too.
             for key in ("command", "cmd", "path", "hedef", "argv"):
@@ -2206,7 +2206,7 @@ class Agent:
         self.session.log.note("sahte_arac_cagrisi", deneme=stats.fake_calls)
         # In the auto pool this is a health signal: an endpoint that cannot
         # call tools gets weeded out.
-        self._kusurlu("sahte araç çağrısı")
+        self._faulty("sahte araç çağrısı")
 
         if stats.fake_calls > FAKE_CALL_CAP:
             # Absolute fuse: the model does not recover (usually an endpoint
@@ -2223,7 +2223,7 @@ class Agent:
             FAKE_CALL_NOTE if stats.fake_calls == 1 else FAKE_CALL_HARD_NOTE)
         return True
 
-    def _kusurlu(self, reason: str) -> None:
+    def _faulty(self, reason: str) -> None:
         """The turn technically succeeded but its CONTENT is flawed.
 
         A schema violation and a fake tool call are failures as real as an
@@ -2233,7 +2233,7 @@ class Agent:
         weeded out by itself. Other providers have no equivalent — silently
         skipped.
         """
-        save = getattr(self.client, "kusurlu", None)
+        save = getattr(self.client, "faulty", None)
         if save is None:
             return
         try:
@@ -3322,7 +3322,7 @@ class Agent:
             # counts as a health signal in the auto pool (see _kusurlu).
             # The tool never ran, there is no step line in the UI either —
             # only in the log and the ledger.
-            self._kusurlu("şema ihlali")
+            self._faulty("şema ihlali")
 
 
 def worth_recalling(text: str) -> bool:
@@ -3590,7 +3590,7 @@ def _run_meter(handle: ChildHandle, config: Any) -> dict[str, Any]:
             pass
     if model_cfg is not None and state_dir is not None:
         try:
-            tag = pricing.etiket(model_cfg, state_dir)
+            tag = pricing.label(model_cfg, state_dir)
         except Exception:
             tag = None
         if tag and (usage["girdi"] or usage["cikti"]):

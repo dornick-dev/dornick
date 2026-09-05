@@ -1,4 +1,4 @@
-"""The `semboller` tool: structural navigation in code.
+"""The `symbols` tool: structural navigation in code.
 
 `grep` sees text, this tool sees structure. The answer to "where is this
 function defined, where is it called from?" is a pile of matches in
@@ -22,7 +22,7 @@ from .base import ToolContext, ToolRegistry, ToolResult, object_schema
 
 def register(registry: ToolRegistry) -> None:
     @registry.tool(
-        name="semboller",
+        name="symbols",
         description="""
 Bir projede fonksiyon/sınıf/metot TANIMLARINI ve KULLANIMLARINI bulur.
 

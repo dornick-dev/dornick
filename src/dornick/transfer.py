@@ -70,7 +70,7 @@ _SETTINGS = "ayarlar/"
 # .dornick is on the list too: change snapshots (.dornick/degisiklikler) and
 # other session residue must not enter the package — even if the workshop
 # root one day collides with state.
-_ATLA = frozenset({".git", "__pycache__", "node_modules", ".venv",
+_SKIP = frozenset({".git", "__pycache__", "node_modules", ".venv",
                    ".mypy_cache", ".geri-donusum", ".dornick"})
 
 
@@ -173,7 +173,7 @@ def _export_projects(config: Any, zf: zipfile.ZipFile) -> int:
         if not path.is_file():
             continue
         rel = path.relative_to(root)
-        if any(part in _ATLA for part in rel.parts):
+        if any(part in _SKIP for part in rel.parts):
             continue
         try:
             zf.write(path, _PROJECTS_DIR + rel.as_posix())

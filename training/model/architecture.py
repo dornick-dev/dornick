@@ -27,8 +27,8 @@ VOCAB = 260
 class Config:
     ctx: int = 224          # input ≤152 bytes + terms ≤64 bytes + markers
     d: int = 384
-    kat: int = 6            # layers  (field name frozen: stored in checkpoints)
-    kafa: int = 6           # heads   (field name frozen: stored in checkpoints)
+    layer: int = 6            # layers  (field name frozen: stored in checkpoints)
+    head: int = 6           # heads   (field name frozen: stored in checkpoints)
     dropout: float = 0.1
 
 
@@ -36,7 +36,7 @@ class Block(nn.Module):
     def __init__(self, cfg: Config) -> None:
         super().__init__()
         self.n1 = nn.LayerNorm(cfg.d)
-        self.att = nn.MultiheadAttention(cfg.d, cfg.kafa, dropout=cfg.dropout,
+        self.att = nn.MultiheadAttention(cfg.d, cfg.head, dropout=cfg.dropout,
                                          batch_first=True)
         self.n2 = nn.LayerNorm(cfg.d)
         self.mlp = nn.Sequential(
@@ -60,22 +60,22 @@ class BaseModel(nn.Module):
     def __init__(self, cfg: Config | None = None) -> None:
         super().__init__()
         self.a = cfg or Config()
-        self.gomme = nn.Embedding(VOCAB, self.a.d)
-        self.konum = nn.Embedding(self.a.ctx, self.a.d)
-        self.bloklar = nn.ModuleList(Block(self.a) for _ in range(self.a.kat))
-        self.son = nn.LayerNorm(self.a.d)
+        self.embedding = nn.Embedding(VOCAB, self.a.d)
+        self.position = nn.Embedding(self.a.ctx, self.a.d)
+        self.blocks = nn.ModuleList(Block(self.a) for _ in range(self.a.layer))
+        self.last = nn.LayerNorm(self.a.d)
         self.bas = nn.Linear(self.a.d, VOCAB, bias=False)
-        self.bas.weight = self.gomme.weight  # weight tying
+        self.bas.weight = self.embedding.weight  # weight tying
         mask = torch.triu(torch.full((self.a.ctx, self.a.ctx), float("-inf")), 1)
         self.register_buffer("mask", mask, persistent=False)
 
     def forward(self, seq: torch.Tensor) -> torch.Tensor:
         T = seq.shape[1]
-        x = self.gomme(seq) + self.konum(torch.arange(T, device=seq.device))
+        x = self.embedding(seq) + self.position(torch.arange(T, device=seq.device))
         m = self.mask[:T, :T]
-        for block in self.bloklar:
+        for block in self.blocks:
             x = block(x, m)
-        return self.bas(self.son(x))
+        return self.bas(self.last(x))
 
     def loss(self, seq: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
         logits = self.forward(seq)

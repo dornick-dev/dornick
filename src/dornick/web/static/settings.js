@@ -3069,7 +3069,7 @@ const Settings = (() => {
     // installed?" had no answer — the single source of truth is pyproject,
     // arriving here via /api/settings. The installed/development distinction
     // matters: two copies can live on the same machine.
-    const versionText = el("span", "surum-deger",
+    const versionText = el("span", "version-value",
       (state.surum || "?") + " · " + t(state.installed ? "kurulum" : "geliştirme"));
     const checkBtn = el("button", "detect", t("Güncellemeleri denetle"));
     checkBtn.type = "button";
@@ -3092,17 +3092,17 @@ const Settings = (() => {
       checkBtn.textContent = t("Güncellemeleri denetle");
 
       // Clear the previous result: repeated clicks must not pile up lines.
-      const stale = versionField.querySelector(".surum-sonuc");
+      const stale = versionField.querySelector(".version-result");
       if (stale) stale.remove();
-      const result = el("span", "surum-sonuc");
+      const result = el("span", "version-result");
       if (answer.yeni) {
         // With an installer file, download+install FROM INSIDE THE APP;
         // otherwise open the release page in the browser (manual download).
         if (answer.indirme) {
-          const installBtn = el("button", "surum-yeni");
+          const installBtn = el("button", "version-new");
           installBtn.type = "button";
           installBtn.textContent = "v" + answer.yeni + t(" mevcut — indir ve kur");
-          const progress = el("span", "surum-ilerleme");
+          const progress = el("span", "version-progress");
           progress.hidden = true;
           installBtn.addEventListener("click", async () => {
             installBtn.disabled = true;
@@ -3114,12 +3114,12 @@ const Settings = (() => {
             try {
               const c = await (await fetch("/api/guncelle", { method: "POST" })).json();
               if (c && c.ok === false) {
-                progress.className = "surum-ilerleme bad";
+                progress.className = "version-progress bad";
                 progress.textContent = c.hata ? t(c.hata) : t("Güncelleme başlatılamadı");
                 installBtn.disabled = false;
               }
             } catch {
-              progress.className = "surum-ilerleme bad";
+              progress.className = "version-progress bad";
               progress.textContent = t("Güncelleme başlatılamadı");
               installBtn.disabled = false;
             }
@@ -3127,7 +3127,7 @@ const Settings = (() => {
           result.append(installBtn, progress);
         } else {
           const target = answer.url || "#";
-          const link = el("a", "surum-yeni", "v" + answer.yeni + t(" mevcut — indir"));
+          const link = el("a", "version-new", "v" + answer.yeni + t(" mevcut — indir"));
           link.href = target;
           link.addEventListener("click", (e) => {
             e.preventDefault();

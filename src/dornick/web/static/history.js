@@ -500,9 +500,9 @@ const History = (() => {
     list.replaceChildren(...knownTags.map(x => { const o = el("option"); o.value = x; return o; }));
 
     const save = async () => {
-      const etiketler = input.value.split(",").map(x => x.trim()).filter(Boolean);
+      const labels = input.value.split(",").map(x => x.trim()).filter(Boolean);
       box.remove();
-      const saved = await saveMeta(s.id, { etiketler });
+      const saved = await saveMeta(s.id, { etiketler: labels });
       if (saved) s.tags = saved.etiketler || [];
       for (const tag of s.tags) {
         if (!knownTags.includes(tag)) knownTags.push(tag);

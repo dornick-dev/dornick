@@ -269,7 +269,7 @@ const Orchestra = (() => {
         const row = el("div", "orch-ch-act-row" + (a.phase === "fail" ? " err" : ""));
         row.append(el("span", "orch-ch-act-mark", mark));
         row.append(el("b", null, a.name || ""));
-        if (a.hedef) row.append(el("span", "orch-ch-act-hedef", a.hedef));
+        if (a.hedef) row.append(el("span", "orch-ch-act-target", a.hedef));
         list.append(row);
       }
       wrap.append(list);
@@ -341,7 +341,7 @@ const Orchestra = (() => {
         render();
       });
       if (ch.open && !ch.id) {
-        wrap.append(el("div", "orch-ch-ozet", ch.ozet || t("(özet yok)")));
+        wrap.append(el("div", "orch-ch-summary", ch.ozet || t("(özet yok)")));
       }
     }
     return wrap;

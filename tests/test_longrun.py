@@ -684,7 +684,7 @@ def test_outage_rotates_the_auto_pool() -> None:
     for _ in range(automode.ERROR_THRESHOLD):
         health.save("a/model", False)
 
-    assert health.cezali("a/model")
+    assert health.penalised("a/model")
     assert health.rank(["a/model", "b/model"]) == ["b/model", "a/model"]
 
 

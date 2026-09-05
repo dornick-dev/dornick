@@ -84,7 +84,7 @@ and turns repeated work into automations you can watch run step by step.
 * **Work in your own repo.** Point dornick at a project folder and it works
   *there* — not in a sandbox corner. Every file it writes is compiled or
   linted on the spot (`compile()`, `php -l`, `node --check`, `tsc`, ruff), and
-  the `kos` tool finds the project's real test command from evidence and runs
+  the `run` tool finds the project's real test command from evidence and runs
   it. It never invents a test command it cannot justify.
 * **Your rules, enforced.** `.dornick/kancalar.json` lets you run your own shell
   command before or after any tool; a non-zero exit **vetoes** the tool.
@@ -302,7 +302,7 @@ user-learning model, the living memory, memory-as-MCP, the gate), and
 what is deliberately deferred:
 
 * OS-level shell sandboxing; a real LSP instead of the `ast`/regex
-  approximation behind the `semboller` tool
+  approximation behind the `symbols` tool
 * Typed subagent definitions; MCP client-side OAuth
 * Memory-informed coding — the coding pipeline still runs with an empty mind
 * Stronger English base model; broader platform support (Windows-first today)

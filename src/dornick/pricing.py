@@ -113,7 +113,7 @@ def table(
     return dict(record.get("fiyatlar") or {})
 
 
-def etiket(
+def label(
     model: ModelConfig,
     state_dir: Path | str | None = None,
     *,

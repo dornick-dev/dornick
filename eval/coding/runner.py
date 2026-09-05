@@ -397,17 +397,17 @@ def sweep_workspace(workspace: Path, workshop: Path | None = None,
             # positive would be a python/node/php process born after this
             # rep whose command line happens to name a workshop file —
             # that is the leftover we are hunting, not a bystander.
-            adlar = " -or ".join(
+            name_filter = " -or ".join(
                 f"($_.CommandLine -like '*{n.replace(chr(39), chr(39)*2)}*')"
                 for n in names[:20])
             # CIM date comparison: only processes born after this rep began.
-            baslangic = time.strftime("%Y%m%d%H%M%S",
+            start = time.strftime("%Y%m%d%H%M%S",
                                       time.localtime(started))
             clauses.append(
                 "(($_.Name -match '^(python|node|php)') -and "
-                f"({adlar}) -and "
+                f"({name_filter}) -and "
                 "($_.CreationDate -ge [datetime]::ParseExact("
-                f"'{baslangic}','yyyyMMddHHmmss',$null)))")
+                f"'{start}','yyyyMMddHHmmss',$null)))")
     script = (
         "$p = Get-CimInstance Win32_Process | Where-Object { "
         f"($_.ProcessId -ne $PID) -and ({' -or '.join(clauses)}) }}; "

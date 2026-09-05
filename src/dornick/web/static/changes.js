@@ -134,8 +134,8 @@ const Changes = (() => {
     return btn;
   }
 
-  function rowFor(sira) {
-    return document.querySelector('.chg-row[data-sira="' + sira + '"]');
+  function rowFor(seq) {
+    return document.querySelector('.chg-row[data-sira="' + seq + '"]');
   }
 
   function mark(row, kind) {
@@ -271,16 +271,16 @@ const Changes = (() => {
   }
 
   // Card Keep/Undo — called by app.js diffBlock.
-  async function cardUndo(sira) {
-    if (!sira) return { ok: false, error: "sira yok" };
-    const answer = await undoRequest({ sira });
+  async function cardUndo(seq) {
+    if (!seq) return { ok: false, error: "sira yok" };
+    const answer = await undoRequest({ sira: seq });
     if (answer && answer.ok) takeBase();
     return answer || { ok: false };
   }
 
-  async function cardUndoFile(dosya) {
-    if (!dosya) return { ok: false, error: "dosya yok" };
-    const answer = await undoRequest({ dosya });
+  async function cardUndoFile(file) {
+    if (!file) return { ok: false, error: "dosya yok" };
+    const answer = await undoRequest({ dosya: file });
     if (answer && answer.ok) takeBase();
     return answer || { ok: false };
   }

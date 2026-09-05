@@ -39,7 +39,7 @@ RUN_COMMAND = re.compile(
     re.IGNORECASE | re.MULTILINE,
 )
 # Diagnostic/browser tools: the name alone is evidence.
-VERIFY_TOOLS = {"denetle", "browser"}
+VERIFY_TOOLS = {"inspect", "browser"}
 
 # Plan trail: at least three numbered or bulleted lines before the first tool call.
 PLAN_LINE = re.compile(r"^\s*(?:\d+[.)]\s+|[-*•]\s+|\[[ x]\]\s*)", re.MULTILINE)
@@ -132,21 +132,21 @@ def extract(log: Path, *, gate: dict[str, Any] | None = None,
             # Error texts inside tool results: top patterns go to the report.
             for b in (content if isinstance(content, list) else []):
                 if isinstance(b, dict) and b.get("type") == "tool_result"                         and b.get("is_error"):
-                    ozet = " ".join(str(b.get("content"))[:64].split())
-                    error_kinds[ozet] += 1
+                    summary = " ".join(str(b.get("content"))[:64].split())
+                    error_kinds[summary] += 1
 
         elif kind == "message" and ev.get("role") == "system":
             # Spontaneous-recall blocks: for every injected record, keep
             # its distinctive traces (words of >=6 letters) for the
             # later-usage check.
-            metin = _text(content)
-            if "kendiliginden hatirlandi" in metin:
-                for satir in metin.splitlines():
-                    if satir.startswith("- ["):
-                        izler = {k.casefold() for k in satir.split()
+            text = _text(content)
+            if "kendiliginden hatirlandi" in text:
+                for line in text.splitlines():
+                    if line.startswith("- ["):
+                        traces = {k.casefold() for k in line.split()
                                  if len(k) >= 6 and k[0].isalpha()}
-                        if izler:
-                            primes.append(izler)
+                        if traces:
+                            primes.append(traces)
 
         elif kind == "message" and ev.get("role") == "assistant":
             later_text.append(_text(content))
@@ -167,9 +167,9 @@ def extract(log: Path, *, gate: dict[str, Any] | None = None,
     # Injected-but-unused: does a distinctive trace from the prime block
     # appear in assistant text or tool input AFTER the block?
     # (A rough measure — the first-class metric the external review asked for.)
-    sonrasi = " ".join(later_text).casefold()
-    for izler in primes:
-        if any(iz in sonrasi for iz in izler):
+    later = " ".join(later_text).casefold()
+    for traces in primes:
+        if any(iz in later for iz in traces):
             primes_used += 1
 
     cost = _cost(model_name, prompt_total, output_tokens, state_dir)
@@ -233,7 +233,7 @@ def _cost(model_name: str, prompt_tokens: int, output_tokens: int,
     except Exception:
         return None
     try:
-        tag = price_module.etiket(
+        tag = price_module.label(
             ModelConfig(name=model_name, base_url=OPENROUTER_URL),
             state_dir, ag=False)
     except Exception:

@@ -330,14 +330,14 @@ def registry() -> ToolRegistry:
 
 
 async def call(registry: ToolRegistry, ctx: ToolContext, **args):
-    return await registry.get("semboller").handler(args, ctx)
+    return await registry.get("symbols").handler(args, ctx)
 
 
 def test_the_tool_is_registered_and_read_only() -> None:
     from dornick.tools import build_registry
 
     registry = build_registry(subagents=False)
-    spec = registry.get("semboller")
+    spec = registry.get("symbols")
     assert spec is not None
     # Runs nothing, writes nothing: must not get stuck at the gate.
     assert spec.mutates is False
@@ -385,7 +385,7 @@ async def test_the_tool_rejects_a_missing_folder(
 
 
 def test_the_description_admits_its_limits(registry: ToolRegistry) -> None:
-    description = registry.get("semboller").description
+    description = registry.get("symbols").description
     assert "kesin" in description
     assert "yapısal arama YOKTUR" in description
     assert "`grep`" in description

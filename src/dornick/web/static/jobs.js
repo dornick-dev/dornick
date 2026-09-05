@@ -615,7 +615,7 @@
           const row = el("div", "jobs-live-step" + (a.hata ? " err" : ""));
           row.append(el("span", "jobs-live-mark", a.hata ? "✗" : "·"));
           row.append(el("b", null, a.ad || ""));
-          if (a.hedef) row.append(el("span", "jobs-live-hedef", a.hedef));
+          if (a.hedef) row.append(el("span", "jobs-live-target", a.hedef));
           if (a.ms) row.append(el("span", "jobs-live-ms",
             a.ms >= 1000 ? (a.ms / 1000).toFixed(1) + " sn" : a.ms + " ms"));
           steps.append(row);
@@ -662,10 +662,10 @@
           adimlar: (liveSnap && liveSnap.adimlar) || undefined,
         };
         if (next.oturum) {
-          const dok = await (await fetch(
+          const dump = await (await fetch(
             "/api/gorevler/dokum?oturum=" + encodeURIComponent(next.oturum)
           )).json();
-          if (dok && dok.ok) next.adimlar = dok.adimlar || [];
+          if (dump && dump.ok) next.adimlar = dump.adimlar || [];
         } else {
           next.adimlar = next.adimlar || [];
         }

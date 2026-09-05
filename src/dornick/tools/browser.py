@@ -188,12 +188,12 @@ def register(registry: ToolRegistry) -> None:
 
             if action == "konsol":
                 record = box.snapshot(tab)
-                return ToolResult(_konsol_metni(
+                return ToolResult(_console_text(
                     record, str(args.get("seviye") or "hepsi"), args.get("n")))
 
             if action == "ag":
                 record = box.snapshot(tab)
-                return ToolResult(_ag_metni(record, args.get("n")))
+                return ToolResult(_network_text(record, args.get("n")))
 
             if action == "js":
                 expression = str(args.get("text") or "").strip()
@@ -354,7 +354,7 @@ def _missing_note(record: Any) -> str:
     return ""
 
 
-def _konsol_metni(record: Any, level: str, n: Any) -> str:
+def _console_text(record: Any, level: str, n: Any) -> str:
     from .. import chrome
 
     if getattr(record, "error", ""):
@@ -388,7 +388,7 @@ def _konsol_metni(record: Any, level: str, n: Any) -> str:
     return "\n".join(lines) + _missing_note(record)
 
 
-def _ag_metni(record: Any, n: Any) -> str:
+def _network_text(record: Any, n: Any) -> str:
     from .. import chrome
 
     if getattr(record, "error", ""):

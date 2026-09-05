@@ -295,7 +295,7 @@ async def _diagnosis_suffix(path: Path) -> tuple[str, dict[str, Any]]:
     return "\n\n" + diagnosis.text(), {"tani": diagnosis.detail()}
 
 
-def _esnek_esle(text: str, old: str, new: str):
+def _flexible_match(text: str, old: str, new: str):
     """Tolerant search when there is no exact match. (start, end, new, note)
     or ("coklu", N) or None.
 
@@ -391,7 +391,7 @@ def _esnek_esle(text: str, old: str, new: str):
 def register(registry: ToolRegistry) -> None:
     # For the pre-write staleness check: path -> mtime_ns at last read.
     seen: dict[Path, int] = {}
-    # The file most recently changed in this session: where `denetle`
+    # The file most recently changed in this session: where `inspect`
     # looks when called without a path. So the model can say "I wrote the
     # code, let me check it".
     last_written: list[Path] = []
@@ -693,7 +693,7 @@ Dosyayı önce read_file ile okumuş olman gerekir.
             if count == 0:
                 # Whitespace/indent/line-ending tolerance: if the content is
                 # right the turn is not burned. The match must still be UNIQUE.
-                loose = _esnek_esle(text, old, new)
+                loose = _flexible_match(text, old, new)
                 if isinstance(loose, tuple) and loose and loose[0] == "coklu":
                     return ToolResult.error(
                         f"{which}Aranan metin (boşluk toleransıyla) {loose[1]} kez "
@@ -874,7 +874,7 @@ arar (örn. "**/*.py"). Dizinler sonunda / ile gösterilir.
         return ToolResult(content=f"{root}\n{body}")
 
     @registry.tool(
-        name="denetle",
+        name="inspect",
         description="""
 Kodu, dilinin kendi denetleyicisiyle sınar ve bulduğu hataları satır
 numaralarıyla döndürür (Python derleyicisi/ruff, `php -l`, `node --check`,
@@ -906,7 +906,7 @@ cevapta yazar.
             },
         ),
     )
-    async def denetle(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
+    async def inspect_files(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
         raw = (args.get("path") or "").strip()
         if raw:
             target = _resolve(raw, ctx)

@@ -1,6 +1,6 @@
 """Project test runner: does the agent really run the code it wrote?
 
-The promise under test: `denetle` looks at syntax, `kos` RUNS the code. The
+The promise under test: `inspect` looks at syntax, `run` RUNS the code. The
 gap between them was the class of error that blew up on the user's screen —
 
     public function index(): string { return redirect(); }
@@ -62,7 +62,7 @@ def clean_memory():
 
 
 async def call(registry: ToolRegistry, ctx: ToolContext, **args):
-    return await registry.get("kos").handler(args, ctx)
+    return await registry.get("run").handler(args, ctx)
 
 
 # -- detection: python --------------------------------------------------
@@ -729,7 +729,7 @@ def test_reminder_names_the_command(tmp_path: Path) -> None:
     (tmp_path / "modul.py").write_text("x = 1\n", encoding="utf-8")
     text = testrun.reminder(tmp_path / "modul.py")
     assert "pytest -q" in text
-    assert "`kos`" in text
+    assert "`run`" in text
     assert len(text.splitlines()) == 1   # ONE line: no noise
 
 
@@ -769,12 +769,12 @@ def test_reminder_marks_a_health_command_as_such(tmp_path: Path) -> None:
 def test_tool_is_registered_in_the_real_registry() -> None:
     from dornick.tools import build_registry
 
-    assert "kos" in build_registry(subagents=False)
+    assert "run" in build_registry(subagents=False)
 
 
 def test_tool_is_gated(registry: ToolRegistry) -> None:
     """Running tests runs the project's code: it must be subject to the permission mode."""
-    spec = registry.get("kos")
+    spec = registry.get("run")
     assert spec.mutates is True
     assert spec.parallel_safe is False
 
@@ -861,6 +861,6 @@ async def test_tool_honours_a_manual_command(
 
 def test_the_tool_description_warns_about_scope(registry: ToolRegistry) -> None:
     """The tool schema is the only document the model sees: the limit must be written there too."""
-    description = registry.get("kos").description
+    description = registry.get("run").description
     assert "uydurulmaz" in description
     assert "her şey çalışıyor" in description

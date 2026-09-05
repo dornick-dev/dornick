@@ -699,7 +699,7 @@ class RecallStore:
             self._db.commit()
 
     def connect(self, src: str, dst: str, *, weight: float = 1.0, reason: str = "",
-                birikimli: bool = False, yalniz_yeni: bool = False) -> bool:
+                cumulative: bool = False, only_new: bool = False) -> bool:
         """Creates a link; returns whether the edge actually changed.
 
         `birikimli` (cumulative): when a link with the same reason comes
@@ -718,9 +718,9 @@ class RecallStore:
             existing = self._db.execute(
                 "SELECT weight FROM link WHERE src=? AND dst=?", (src, dst)
             ).fetchone()
-            if existing is not None and yalniz_yeni:
+            if existing is not None and only_new:
                 return False
-            if birikimli and existing is not None:
+            if cumulative and existing is not None:
                 weight = min(1.0, float(existing["weight"]) + weight * 0.5)
             self._link(src, dst, weight, reason)
             self._db.commit()

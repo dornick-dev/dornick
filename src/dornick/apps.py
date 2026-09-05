@@ -81,7 +81,7 @@ DISCOVERY_SKIP = SKIP | {"vendor", "dist", "build", "site-packages", ".geri-donu
 # place or validation fails. It gives a RECIPE, not a rule: where, relative
 # to what, with an example. Kept in one place so the model can read this
 # sentence and move the manifest to the right place.
-MANIFEST_OGRETICI = (
+MANIFEST_GUIDE = (
     "Uygulama manifesti uygulamanın KENDİ klasöründe `app.json` olmalı; "
     "`entry` o klasöre göreli. Örnek: atolye/borsa-ara/app.json → "
     '{"entry": "static/index.html", "run": "py app.py"}'
@@ -144,10 +144,10 @@ def projects(sandbox_root: Path, base: Path | None = None) -> list[dict[str, Any
     Backwards-compatible surface: only the project list. A caller that also
     wants the stray-manifest warnings uses `katalog()`.
     """
-    return katalog(sandbox_root, base)["projects"]
+    return project_index(sandbox_root, base)["projects"]
 
 
-def katalog(sandbox_root: Path, base: Path | None = None,
+def project_index(sandbox_root: Path, base: Path | None = None,
             live: bool = True) -> dict[str, Any]:
     """The workshop's app catalogue: projects + manifest problems.
 
@@ -217,7 +217,7 @@ def _stray_manifests(root: Path) -> list[dict[str, str]]:
             "path": name,
             "uyari": f"atolye/{name} geçersiz — manifest uygulamanın kendi "
                      "klasöründe olmalı",
-            "ogretici": MANIFEST_OGRETICI,
+            "ogretici": MANIFEST_GUIDE,
         })
     return out
 
@@ -881,7 +881,7 @@ def launch(sandbox_root: Path, rel_path: str, base: Path | None = None) -> dict[
             return {"ok": False,
                     "error": "Çalıştırma komutu bulunamadı: app.json'a "
                              "bir `run` satırı ekletebilirsin (Dornick'e sor). "
-                             + MANIFEST_OGRETICI}
+                             + MANIFEST_GUIDE}
 
     if not target.is_file():
         return {"ok": False, "error": f"Dosya yok: {rel_path}"}
@@ -972,7 +972,7 @@ def _discovered_servers(
     """
     out: list[dict[str, Any]] = []
     try:
-        items = katalog(sandbox_root, base, live=False)["projects"]
+        items = project_index(sandbox_root, base, live=False)["projects"]
     except Exception:
         return out
     owner: dict[int, int] = {}     # port → pid
@@ -1181,7 +1181,7 @@ def open_path(sandbox_root: Path, rel_path: str, base: Path | None = None) -> di
 # "Outside the workshop" — the user could not reach the file they produced
 # (live wound, 02.09). The user picks the project folder themselves; that
 # is their area too.
-def _izinli_kokler(sandbox_root: Path, base: Path | None = None) -> list[Path]:
+def _allowed_roots(sandbox_root: Path, base: Path | None = None) -> list[Path]:
     roots = [sandbox_root.resolve()]
     if base is not None:
         try:
@@ -1194,7 +1194,7 @@ def _izinli_kokler(sandbox_root: Path, base: Path | None = None) -> list[Path]:
 def _openable(sandbox_root: Path, rel_path: str,
               base: Path | None = None) -> Any:
     """Resolves the target and checks whether it is allowed. Returns a Path or an error dict."""
-    roots = _izinli_kokler(sandbox_root, base)
+    roots = _allowed_roots(sandbox_root, base)
     ref = (base or sandbox_root).resolve()
     try:
         target = (ref / rel_path).resolve() if rel_path else ref
@@ -1209,7 +1209,7 @@ def _openable(sandbox_root: Path, rel_path: str,
     return target
 
 
-def sistemde_ac(sandbox_root: Path, rel_path: str,
+def open_in_system(sandbox_root: Path, rel_path: str,
                 base: Path | None = None) -> dict[str, Any]:
     """Opens the file in the operating system's DEFAULT app.
 

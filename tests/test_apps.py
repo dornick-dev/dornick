@@ -189,7 +189,7 @@ def test_root_manifest_is_not_an_app_and_warns(tmp_path: Path) -> None:
     )
     (tmp_path / "pano.html").write_text("<title>Pano</title>", encoding="utf-8")
 
-    data = apps.katalog(tmp_path)
+    data = apps.project_index(tmp_path)
     names = {p["name"] for p in data["projects"]}
     assert "Market Lens" not in names        # the root manifest did not become a card
     assert "app.json" not in names           # nor did it leak in as a file
@@ -208,7 +208,7 @@ def test_stray_manifest_at_root_is_ignored_too(tmp_path: Path) -> None:
     (tmp_path / "llm-donanim-app.json").write_text(
         '{"name": "LLM Donanım", "entry": "site/llm-donanim.html"}', encoding="utf-8"
     )
-    data = apps.katalog(tmp_path)
+    data = apps.project_index(tmp_path)
     assert data["projects"] == []
     assert [s["path"] for s in data["sorunlar"]] == ["llm-donanim-app.json"]
 
@@ -357,9 +357,9 @@ def test_unlistened_port_does_not_show_live(tmp_path: Path) -> None:
 
 
 def test_empty_workshop(tmp_path: Path) -> None:
-    data = apps.katalog(tmp_path)
+    data = apps.project_index(tmp_path)
     assert data == {"projects": [], "sorunlar": []}
-    assert apps.katalog(tmp_path / "yok") == {"projects": [], "sorunlar": []}
+    assert apps.project_index(tmp_path / "yok") == {"projects": [], "sorunlar": []}
 
 
 def test_dornick_own_process_is_recognised() -> None:

@@ -427,17 +427,17 @@ const Markdown = (() => {
 
     const byUrl = new Map();
     for (const [no, source] of sources) {
-      const kayit = byUrl.get(source.url)
+      const record = byUrl.get(source.url)
                  || { numbers: [], title: source.title, url: source.url };
-      kayit.numbers.push(no);
-      if (!kayit.title && source.title) kayit.title = source.title;
-      byUrl.set(source.url, kayit);
+      record.numbers.push(no);
+      if (!record.title && source.title) record.title = source.title;
+      byUrl.set(source.url, record);
     }
 
-    for (const kayit of byUrl.values()) {
+    for (const record of byUrl.values()) {
       const row = el("div", "md-source-row");
-      row.append(el2("span", "md-source-no", "[" + kayit.numbers.join(",") + "]"));
-      row.append(sourceChip(kayit.url, kayit.title));
+      row.append(el2("span", "md-source-no", "[" + record.numbers.join(",") + "]"));
+      row.append(sourceChip(record.url, record.title));
       box.append(row);
     }
     return box;
@@ -559,30 +559,30 @@ const Markdown = (() => {
       const file = fileRef(rest);
       const cite = citeHit(rest);
 
-      const adaylar = [
+      const candidates = [
         url && { at: url.index, kind: "url", hit: url },
         file && { at: file.index, kind: "file", hit: file },
         cite && { at: cite.index, kind: "cite", hit: cite },
       ].filter(Boolean).sort((a, b) => a.at - b.at);
 
-      if (!adaylar.length) { signed(parent, rest); return; }
+      if (!candidates.length) { signed(parent, rest); return; }
 
-      const first = adaylar[0];
+      const first = candidates[0];
       if (first.at > 0) signed(parent, rest.slice(0, first.at));
 
-      let uzunluk;
+      let length;
       if (first.kind === "url") {
         const adres = trimUrl(first.hit[0]);
         parent.append(sourceChip(adres, ""));
-        uzunluk = adres.length;
+        length = adres.length;
       } else if (first.kind === "file") {
         parent.append(fileChip(first.hit.path, first.hit.line, first.hit.raw));
-        uzunluk = first.hit.raw.length;
+        length = first.hit.raw.length;
       } else {
         parent.append(citation(first.hit[1]));
-        uzunluk = first.hit[0].length;
+        length = first.hit[0].length;
       }
-      rest = rest.slice(first.at + uzunluk);
+      rest = rest.slice(first.at + length);
     }
   }
 
@@ -609,17 +609,17 @@ const Markdown = (() => {
       if (hit.index > 0) plain(parent, rest.slice(0, hit.index));
 
       if (hit[1]) {
-        const icerik = hit[2].trim();
+        const content = hit[2].trim();
         const node = el("code", "md-inline");
-        node.textContent = icerik;
+        node.textContent = content;
         // The model most often writes file paths in backticks. If the
         // content is ENTIRELY a path, the code look stays but it becomes
         // clickable — we do not search for links inside code, the code
         // ITSELF is a path.
-        const ref = fileRef(icerik);
-        if (ref && ref.index === 0 && ref.raw === icerik) {
+        const ref = fileRef(content);
+        if (ref && ref.index === 0 && ref.raw === content) {
           node.classList.add("md-file-code");
-          node.title = translate("Tıkla — görüntüleyicide aç") + "\n" + icerik;
+          node.title = translate("Tıkla — görüntüleyicide aç") + "\n" + content;
           node.tabIndex = 0;
           const ac = () => {
             if (typeof Viewer !== "undefined" && Viewer.open) Viewer.open(ref.path, ref.line);
@@ -635,10 +635,10 @@ const Markdown = (() => {
         // path link opens the viewer. Everything else stays plain text as
         // before: we do not make the user click something unrecognised the
         // model produced.
-        const hedef = hit[4];
-        const metin = hit[3] || hedef;
-        if (/^https?:\/\//i.test(hedef)) {
-          parent.append(sourceChip(trimUrl(hedef), hit[3] || ""));
+        const target = hit[4];
+        const text = hit[3] || target;
+        if (/^https?:\/\//i.test(target)) {
+          parent.append(sourceChip(trimUrl(target), hit[3] || ""));
         } else {
           // In an explicit link the intent is clear: the author (the model)
           // linked to a FILE. Live complaint: "[open the PDF report]
@@ -647,15 +647,15 @@ const Markdown = (() => {
           // extension list). The type decides: text/code in the viewer,
           // what the browser can render (pdf/image/media) in a new tab, the
           // rest (zip etc.) as a direct download.
-          const ref = fileRef(hedef);
-          if (ref && ref.raw === hedef && !MEDIA_EXT.test(hedef)) {
-            parent.append(fileChip(ref.path, ref.line, metin));
-          } else if (PATHISH.test(hedef) && !HOSTISH.test(hedef)) {
-            parent.append(downloadChip(hedef, metin));
+          const ref = fileRef(target);
+          if (ref && ref.raw === target && !MEDIA_EXT.test(target)) {
+            parent.append(fileChip(ref.path, ref.line, text));
+          } else if (PATHISH.test(target) && !HOSTISH.test(target)) {
+            parent.append(downloadChip(target, text));
           } else {
             const node = el("span", "md-link");
-            node.textContent = metin;
-            node.title = hedef;
+            node.textContent = text;
+            node.title = target;
             parent.append(node);
           }
         }

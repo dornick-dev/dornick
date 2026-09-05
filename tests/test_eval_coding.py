@@ -469,7 +469,7 @@ def test_behavior_does_not_invent_verification(tmp_path: Path) -> None:
 def test_behavior_counts_diagnostics_and_browser_as_verification(tmp_path: Path) -> None:
     path = write_log(tmp_path / "s.jsonl", [
         {"seq": 0, "kind": "meta", "content": "tool_start",
-         "meta": {"tool": "denetle", "input": {"path": "panel"}}},
+         "meta": {"tool": "inspect", "input": {"path": "panel"}}},
         {"seq": 1, "kind": "meta", "content": "tool_start",
          "meta": {"tool": "browser", "input": {"action": "goto"}}},
     ])
@@ -687,7 +687,7 @@ def test_unittest_style_assertions_are_counted(tmp_path: Path) -> None:
     (tmp_path / "mymod.py").write_text(
         "def add(a, b):" + chr(10) + "    return a + b" + chr(10),
         encoding="utf-8")
-    satirlar = [
+    lines = [
         "import unittest",
         "from mymod import add",
         "class T(unittest.TestCase):",
@@ -701,7 +701,7 @@ def test_unittest_style_assertions_are_counted(tmp_path: Path) -> None:
         "    unittest.main()",
     ]
     (tmp_path / "test_mymod.py").write_text(
-        chr(10).join(satirlar) + chr(10), encoding="utf-8")
+        chr(10).join(lines) + chr(10), encoding="utf-8")
     axis = grading.tests_axis(tmp_path, critical=("add",))
     evidence = " ".join(axis.evidence)
     assert "0 assertions" not in evidence, evidence
@@ -760,6 +760,6 @@ def test_behavior_collects_the_top_error_patterns(tmp_path: Path) -> None:
     ])
     b = behavior.extract(path)
     assert len(b['error_kinds']) == 1
-    (kalip, adet), = b['error_kinds'].items()
-    assert 'old_string' in kalip and adet == 2
+    (template, count), = b['error_kinds'].items()
+    assert 'old_string' in template and count == 2
 

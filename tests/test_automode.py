@@ -264,7 +264,7 @@ async def test_failures_are_recorded_and_the_pool_rotates(fixed_pool) -> None:
         with pytest.raises(ConnectionError):
             await be.turn(_prepared(), [], cancel=asyncio.Event())
 
-    assert be._health.cezali("h/1")
+    assert be._health.penalised("h/1")
     fake.explode = False
     await be.turn(_prepared(), [], cancel=asyncio.Event())
     assert fake.seen["model"] == "h/2"
@@ -290,7 +290,7 @@ def test_two_failures_bench_a_model_for_fifteen_minutes() -> None:
     # …and returns with a clean slate once they are.
     clock[0] = automode.PENALTY_S + 1
     assert health.rank(["m/1", "m/2"]) == ["m/1", "m/2"]
-    assert not health.cezali("m/1")
+    assert not health.penalised("m/1")
 
 
 def test_the_window_slides_old_failures_out() -> None:
@@ -300,7 +300,7 @@ def test_the_window_slides_old_failures_out() -> None:
     for _ in range(automode.WINDOW):
         health.save("m", ok=True)
     health.save("m", ok=False)
-    assert not health.cezali("m"), "an error that left the window must not count"
+    assert not health.penalised("m"), "an error that left the window must not count"
 
 
 # -- (d) first-setup guidance -------------------------------------------

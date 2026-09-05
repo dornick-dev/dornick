@@ -297,9 +297,9 @@ Araç kullanımı:
 - Bilmediğin bir şey sorulduğunda tahmin etme: `search` ile bak, bulduğun
   sayfayı `fetch` ile aç. Arama sonucundaki özet yönlendirmek için, cevap
   vermek için değil.
-- `denetle` yalnız SÖZDİZİMİNE bakar — dosyanın ayrıştığını söyler, doğru
+- `inspect` yalnız SÖZDİZİMİNE bakar — dosyanın ayrıştığını söyler, doğru
   çalıştığını değil. Kodun çalıştığını gösteren tek şey ÇALIŞTIRMAKTIR:
-  `kos` projenin kendi test düzeneğini (pytest, npm test, dotnet test…)
+  `run` projenin kendi test düzeneğini (pytest, npm test, dotnet test…)
   bulup koşturur ve sayıları getirir. "Testler geçti" cümlesinin anlamı
   "koşulanların kapsadığı kadarı doğrulandı"dır; proje test taşımıyorsa
   bunu açıkça söyle ve neyi elle denediğini yaz.
@@ -310,7 +310,7 @@ Araç kullanımı:
   satır içi uyarı yetmezse bir kez `konsol`/`ag` çağır. Konsolda hata
   varken "çalışıyor" deme. Sayfaya `js` ile yama atıp düzeltme — yama
   sayfayı yenileyince gider; kaynağı düzelt.
-- Bir fonksiyonun ya da sınıfın imzasını değiştirmeden önce `semboller` ile
+- Bir fonksiyonun ya da sınıfın imzasını değiştirmeden önce `symbols` ile
   çağrılarını gör: nereden çağrıldığını bilmeden değiştirilen imza, sessizce
   kırılan çağrılar demek. Serbest metin (yapılandırma, şablon, belge) için
   `grep`. Birden fazla ilgili dosyayı okuyacaksan `read_file` turlarını
@@ -756,7 +756,7 @@ def small_family(model_name: str) -> bool:
 # code) the flash brevity/effort ceiling loosens — chat still stays short.
 _CODE_TOOLS = frozenset({
     "write_file", "edit_file", "read_file", "read_many", "grep",
-    "semboller", "kos", "denetle", "git", "list_dir",
+    "symbols", "run", "inspect", "git", "list_dir",
 })
 _CODE_REQUEST = re.compile(
     r"(?i)\b("
@@ -770,7 +770,7 @@ _CODE_REQUEST = re.compile(
 def coding_turn(
     messages: list[dict[str, Any]] | None = None,
     *,
-    metin: str = "",
+    text: str = "",
 ) -> bool:
     """Is this turn coding work — write/edit/test a file, or a code request?
 
@@ -778,7 +778,7 @@ def coding_turn(
     exception in the BREVITY text is always written; the effort ceiling
     looks at this at call time.
     """
-    if metin and _CODE_REQUEST.search(metin):
+    if text and _CODE_REQUEST.search(text):
         return True
     if not messages:
         return False
@@ -804,12 +804,12 @@ def coding_turn(
 
 # Hard brevity (distilled from OpenCode's default.txt contract): the small
 # model burns tokens on interim-narration turns and preamble/summary
-# chatter. Coding exception: the 4-line rule was choking write/edit/kos
+# chatter. Coding exception: the 4-line rule was choking write/edit/run
 # work (Cursor/Claude quality expectation, 01.09).
 BREVITY = """Kısalık sözleşmesi (küçük model):
 - Araç çağrıları arasında anlatı yazma; işi yap, biterken tek özet ver.
 - Sohbet cevabı 4 satırı geçmesin (kod ve araç çıktısı hariç); önsöz/özet yok.
-- İSTİSNA — kodlama: `write_file` / `edit_file` / `kos` / çok dosyalı düzeltme
+- İSTİSNA — kodlama: `write_file` / `edit_file` / `run` / çok dosyalı düzeltme
   işlerinde 4 satır kuralı YOK. Gerekli açıklama, imza notu ve kod blokları
   serbest; yine de araç çağrıları arasında boş gevezelik yapma.
 - Bağımsız araç çağrılarını AYNI cevapta paralel gönder.
@@ -903,7 +903,7 @@ ABILITIES: tuple[tuple[str, str, tuple[str, ...]], ...] = (
     ("Ekran ve el", "ekranı görür, fareyi ve klavyeyi sürer, uygulama ve "
      "tarayıcıyı kullanıcı gibi kullanırsın", ("screen", "hand")),
     ("Kameralar", "kayıtlı kameraları isimle bilirsin; yoldan özet alırsın "
-     "ya da gerektiğinde kare çekersin", ("kamera", "look")),
+     "ya da gerektiğinde kare çekersin", ("camera", "look")),
     ("Atölyen", "dosya yazar, değiştirir, dışarıdan kopyalarsın",
      ("write_file", "edit_file", "copy_in")),
     ("Git", "commit, push, GitHub'da repo açarsın", ("git",)),

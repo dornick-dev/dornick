@@ -255,7 +255,7 @@ async def test_a_big_file_is_not_snapshotted_and_undo_says_so(
 ) -> None:
     """Above 2 MB the snapshot is skipped; the write does NOT STOP but undo
     honestly says it cannot take that record back."""
-    big = "x" * (checkpoint.GORUNTU_TAVANI + 1)
+    big = "x" * (checkpoint.SNAPSHOT_CEILING + 1)
     path = await setup_file(registry, ctx, "dev.txt", big)
     await call(registry, "write_file", ctx, path="dev.txt", content="küçüldü\n")
     assert path.read_text(encoding="utf-8") == "küçüldü\n"
@@ -298,13 +298,13 @@ async def test_files_outside_the_workshop_are_not_recorded(
 async def test_old_session_folders_are_swept(
     ctx: ToolContext, tmp_path: Path
 ) -> None:
-    root = Path(ctx.config.state_dir) / checkpoint.KLASOR
+    root = Path(ctx.config.state_dir) / checkpoint.FOLDER
     stale = root / "bayat-oturum"
     stale.mkdir(parents=True)
     (stale / "kayit.jsonl").write_text("{}", encoding="utf-8")
     old_time = time.time() - (checkpoint.CLEANUP_DAYS + 1) * 86400
     os.utime(stale, (old_time, old_time))
-    checkpoint._temizlenen.discard(root)  # reset the process flag for this root
+    checkpoint._cleaned.discard(root)  # reset the process flag for this root
 
     checkpoint.defter(ctx).save(ctx.sandbox.root / "olmayan.txt", "write_file")
 
@@ -316,4 +316,4 @@ def test_the_ledger_never_travels(tmp_path: Path) -> None:
     snapshots) under any circumstances."""
     from dornick import transfer
 
-    assert ".dornick" in transfer._ATLA
+    assert ".dornick" in transfer._SKIP

@@ -177,7 +177,7 @@ def _installer_asset(data: dict) -> tuple[str, int, str]:
 # infrastructure. The address comes from the server's API response (the
 # client does not supply it) and additionally passes the host filter here
 # — a poisoned address cannot be downloaded and executed.
-def _guvenilir_indirme(url: str) -> bool:
+def _trusted_download(url: str) -> bool:
     try:
         host = (urllib.parse.urlparse(url).hostname or "").lower()
     except ValueError:
@@ -202,7 +202,7 @@ def download_update(url: str, target_dir, *, expected_size: int = 0,
     import urllib.parse
     from pathlib import Path
 
-    if not _guvenilir_indirme(url):
+    if not _trusted_download(url):
         raise ValueError(f"Güvenilmeyen indirme adresi: {url!r}")
 
     file_name = name or Path(urllib.parse.urlparse(url).path).name or "dornick-setup.exe"
@@ -218,7 +218,7 @@ def download_update(url: str, target_dir, *, expected_size: int = 0,
     with _ac(request, timeout=60) as response:
         # The final address after redirects must be trusted too.
         final = getattr(response, "url", None) or response.geturl()
-        if not _guvenilir_indirme(final):
+        if not _trusted_download(final):
             raise ValueError(f"Yönlendirme güvenilmeyen adrese gitti: {final!r}")
         total = int(response.headers.get("Content-Length") or expected_size or 0)
         downloaded = 0

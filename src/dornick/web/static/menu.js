@@ -85,13 +85,13 @@ const Menu = (() => {
   // pywebview disables WebView2's default right-click menu IN PRODUCTION
   // (open only in debug): copy/paste was left without a menu (native tour,
   // 31.08). Clipboard access goes through the pywebview bridge
-  // (pano_oku/pano_yaz) — it does not hit the browser permission gate;
+  // (clipboard_read/clipboard_write) — it does not hit the browser permission gate;
   // without the bridge (browser preview) it falls back to navigator.clipboard.
 
   function clipWrite(text) {
     try {
-      if (window.pywebview && window.pywebview.api.pano_yaz) {
-        window.pywebview.api.pano_yaz(String(text));
+      if (window.pywebview && window.pywebview.api.clipboard_write) {
+        window.pywebview.api.clipboard_write(String(text));
         return;
       }
     } catch { /* no bridge */ }
@@ -100,8 +100,8 @@ const Menu = (() => {
 
   async function clipRead() {
     try {
-      if (window.pywebview && window.pywebview.api.pano_oku) {
-        return String(await window.pywebview.api.pano_oku() || "");
+      if (window.pywebview && window.pywebview.api.clipboard_read) {
+        return String(await window.pywebview.api.clipboard_read() || "");
       }
     } catch { /* no bridge */ }
     try { return String(await navigator.clipboard.readText() || ""); }

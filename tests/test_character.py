@@ -347,7 +347,7 @@ def test_the_world_label_is_quiet_on_the_day_it_was_verified() -> None:
 
 
 def test_a_self_record_renders_as_a_count(tmp_path: Path) -> None:
-    record = subjects.SelfRecord("php", tool="kos", successes=2, failures=3,
+    record = subjects.SelfRecord("php", tool="run", successes=2, failures=3,
                                  recurring_error="sınıf bulunamadı")
     line = record.line()
     assert "5 işin 2" in line and "sınıf bulunamadı" in line

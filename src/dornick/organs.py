@@ -154,7 +154,7 @@ def _mic(config: Any, ear: Any) -> Organ:
 
 
 _LENS_NAME = "Bilgisayar kamerası"
-_LENS_TOOLS = ["look", "kamera"]
+_LENS_TOOLS = ["look", "camera"]
 
 
 def _lens(config: Any, lens: Any) -> Organ:
@@ -238,7 +238,7 @@ def _cameras(config: Any) -> list[Organ]:
             detail,
             "izliyor" if getattr(camera, "enabled", True) else "duruyor",
             bool(getattr(camera, "enabled", True)),
-            ["kamera"],
+            ["camera"],
         ))
     return organs
 

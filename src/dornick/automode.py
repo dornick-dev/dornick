@@ -240,13 +240,13 @@ class Health:
             # carry old errors on its back when it returns.
             window.clear()
 
-    def cezali(self, model: str) -> bool:
+    def penalised(self, model: str) -> bool:
         return self._penalty.get(model, 0.0) > self.clock()
 
     def rank(self, pool: list[str]) -> list[str]:
         """Pushes penalised models to the end; leaves the order of the rest alone."""
-        healthy = [m for m in pool if not self.cezali(m)]
-        sick = [m for m in pool if self.cezali(m)]
+        healthy = [m for m in pool if not self.penalised(m)]
+        sick = [m for m in pool if self.penalised(m)]
         return healthy + sick
 
 

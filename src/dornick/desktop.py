@@ -31,7 +31,7 @@ from .backends import build_client
 from . import (
     connectors as linking,
     ear as hearing,
-    pricing as fiyatlama,
+    pricing,
     lmstudio,
     environment,
     prefs,
@@ -2481,7 +2481,7 @@ class Bridge:
             return {"ok": False, "error": "Sürdürme zaman aşımı."}
         return box if box else {"ok": False, "error": "Sürdürülemedi."}
 
-    def gorev_iptal(self, gid: str) -> dict[str, Any]:
+    def cancel_task(self, gid: str) -> dict[str, Any]:
         """Drops an orphaned/finished helper from the ledger AND from the boot scan.
 
         Persistence: a `subagent_end` closure is written into the child's own
@@ -2538,7 +2538,7 @@ class Bridge:
 
         def _run() -> None:
             try:
-                label = fiyatlama.etiket(model, state_dir, ag=True)
+                label = pricing.label(model, state_dir, ag=True)
             except Exception:
                 return
             if label is not None:
@@ -3834,7 +3834,7 @@ def run(config: Config, *, port: int = 8765, resume: bool = False,
     def is_zoomed() -> bool:
         return _is_zoomed()
 
-    def pano_oku() -> str:
+    def clipboard_read() -> str:
         """Reads plain text from the Windows clipboard (ctypes; no extra dependency).
 
         The context menu's "Paste" feeds from here: pywebview disables
@@ -3868,7 +3868,7 @@ def run(config: Config, *, port: int = 8765, resume: bool = False,
         finally:
             u32.CloseClipboard()
 
-    def pano_yaz(text: str = "") -> bool:
+    def clipboard_write(text: str = "") -> bool:
         """Writes plain text to the Windows clipboard (for Copy/Cut)."""
         import ctypes
         CF_UNICODETEXT, GMEM_MOVEABLE = 13, 0x0002
@@ -4037,7 +4037,7 @@ def run(config: Config, *, port: int = 8765, resume: bool = False,
             window.destroy()
 
     for fn in (minimize, maximize, drag, resize, close, is_zoomed,
-               open_camera_window, pano_oku, pano_yaz):
+               open_camera_window, clipboard_read, clipboard_write):
         window.expose(fn)
 
     # The native close (X / Alt+F4) must NOT DESTROY the program, it should

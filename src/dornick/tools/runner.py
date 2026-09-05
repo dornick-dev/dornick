@@ -1,7 +1,7 @@
-"""The `kos` tool: finds the project's own test harness and runs it.
+"""The `run` tool: finds the project's own test harness and runs it.
 
-This tool starts where `denetle` ends. `denetle` looks at the language's
-syntax; `kos` ACTUALLY runs the code. The difference is an entire user
+This tool starts where `inspect` ends. `inspect` looks at the language's
+syntax; `run` ACTUALLY runs the code. The difference is an entire user
 complaint:
 
     public function index(): string { return redirect(); }
@@ -16,11 +16,11 @@ Permission-mode decision — `mutates=True`, the reasoning:
     and recreates databases, goes out to the network, sends e-mail. And the
     code it runs is not OURS but the project's — i.e. third-party code
     running on the user's machine with the user's privileges. `shell` is
-    `mutates=True` for exactly this reason; `kos` is also a shell that runs
+    `mutates=True` for exactly this reason; `run` is also a shell that runs
     a discovered command. `mutates=False` would have meant an agent in plan
     mode could silently trigger the user's test suite (and its side
     effects). Friction is solved by a permission rule: the user says
-    "kos:*" once.
+    "run:*" once.
 
 `parallel_safe=False`: two test runs at the same time enter the same
 database, the same `writable/` folder.
@@ -71,19 +71,19 @@ def _harness_summary(root: Path) -> str:
             lines.append(f"      koşulamaz: {d.blocker}")
     lines.append("")
     lines.append("Bunlar tespit; hiçbiri koşturulmadı. Koşturmak için "
-                 "`kos` aracını `sadece_tespit` olmadan çağır.")
+                 "`run` aracını `sadece_tespit` olmadan çağır.")
     return "\n".join(lines)
 
 
 def register(registry: ToolRegistry) -> None:
     @registry.tool(
-        name="kos",
+        name="run",
         description="""
 Projenin KENDİ test düzeneğini bulur ve çalıştırır; sonucu geçen/kalan
 sayısı, başarısız testlerin adı ve dosya:satır bilgisiyle özetler.
 
 Ne zaman kullan: kod yazdıktan ya da düzelttikten sonra, "bitti" demeden
-önce. `denetle` yalnızca sözdizimine bakar — tip hataları, yanlış dönüş
+önce. `inspect` yalnızca sözdizimine bakar — tip hataları, yanlış dönüş
 değerleri ve bozuk davranış ancak kod ÇALIŞINCA ortaya çıkar.
 
 Komut uydurulmaz: pytest yapılandırması, package.json'daki `scripts.test`,

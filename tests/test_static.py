@@ -108,10 +108,10 @@ def test_model_settings_put_key_before_model() -> None:
     settings_js = (STATIC / "settings.js").read_text(encoding="utf-8")
     # Ölçüm drawModel GÖVDESİNDE: dosyanın başındaki çeviri sözlüğünde de
     # aynı metinler geçiyor ve ham `find` yanlış yeri buluyordu.
-    govde = settings_js[settings_js.find("function drawModel"):]
-    assert govde, "drawModel bulunamadı"
-    key_at = govde.find("field(keyLabel, apiKeyHintKey(), authKey)")
-    model_at = govde.find('"Yüklü modeller soruluyor…"')
+    body = settings_js[settings_js.find("function drawModel"):]
+    assert body, "drawModel bulunamadı"
+    key_at = body.find("field(keyLabel, apiKeyHintKey(), authKey)")
+    model_at = body.find('"Yüklü modeller soruluyor…"')
     assert key_at > 0 and model_at > 0
     assert key_at < model_at, "API anahtarı model seçiminden ÖNCE gelmeli"
 
@@ -134,9 +134,9 @@ def test_produced_files_have_open_actions() -> None:
     viewer = (STATIC / "viewer.js").read_text(encoding="utf-8")
     assert "fileActions" in viewer and "/api/apps/file-open" in viewer
     apps_py = (STATIC.parents[1] / "apps.py").read_text(encoding="utf-8")
-    assert "def sistemde_ac" in apps_py
+    assert "def open_in_system" in apps_py
     # Bağlı proje klasörü de açılabilir olmalı (yalnız atölye değil).
-    assert "_izinli_kokler" in apps_py
+    assert "_allowed_roots" in apps_py
 
 
 def test_update_toast_is_daily_and_dismissible() -> None:
@@ -149,8 +149,8 @@ def test_update_toast_is_daily_and_dismissible() -> None:
 
 def test_default_language_is_english_outside_turkey() -> None:
     """Varsayılan dil İngilizce; yalnız "tr" gelirse Türkçe."""
-    dil = (STATIC / "lang.js").read_text(encoding="utf-8")
-    assert '=== "tr") ? "tr" : "en"' in dil
+    lang = (STATIC / "lang.js").read_text(encoding="utf-8")
+    assert '=== "tr") ? "tr" : "en"' in lang
     server_py = (STATIC.parents[0] / "server.py").read_text(encoding="utf-8")
     assert "_machine_language" in server_py
 
@@ -165,8 +165,8 @@ def test_in_app_update_is_wired() -> None:
     # Sunucu ucu + güvenli indirme sunucu tarafında.
     server_py = (STATIC.parents[0] / "server.py").read_text(encoding="utf-8")
     assert 'route == "/api/guncelle"' in server_py and "_run_update" in server_py
-    ortam_py = (STATIC.parents[1] / "environment.py").read_text(encoding="utf-8")
-    assert "_guvenilir_indirme" in ortam_py and "start_update" in ortam_py
+    environment_py = (STATIC.parents[1] / "environment.py").read_text(encoding="utf-8")
+    assert "_trusted_download" in environment_py and "start_update" in environment_py
 
 
 def test_recall_animation_survives_missing_graph_nodes() -> None:
@@ -220,7 +220,7 @@ def test_ambient_hides_the_brain_header() -> None:
     # beyni tümden gizleyen kuralı ayrı ve yerinde) ve tıklaması iki yönlü.
     assert not re.search(r"body:not\(\.mind-off\) \.mind-open \{ display: none", CSS)
     assert re.search(r"body:not\(\.mind-off\) \.mind-open \{ color", CSS)
-    assert 'uygula(document.body.classList.contains("mind-off"))' in APP_JS
+    assert 'apply(document.body.classList.contains("mind-off"))' in APP_JS
 
 
 def test_hidden_attribute_is_forced() -> None:
@@ -490,15 +490,15 @@ def test_the_formatter_is_loaded_before_the_app_uses_it() -> None:
 VIEWER_JS = (STATIC / "viewer.js").read_text(encoding="utf-8")
 
 
-def _kodu(metin: str) -> str:
+def _code(text: str) -> str:
     """Yorumlari atilmis kaynak.
 
     Guvenlik testleri bir adin GECTIGI yere degil, KULLANILDIGI yere
     bakmali: "srcdoc kullanmiyoruz" diye bir yorum, "srcdoc kullaniyoruz"
     ile ayni metni tasiyor ve ham arama ikisini ayirt edemiyor.
     """
-    metin = re.sub(r"/\*.*?\*/", "", metin, flags=re.S)
-    return re.sub(r"(?m)^\s*//.*$", "", metin)
+    text = re.sub(r"/\*.*?\*/", "", text, flags=re.S)
+    return re.sub(r"(?m)^\s*//.*$", "", text)
 
 
 def test_the_agents_page_runs_isolated() -> None:
@@ -529,14 +529,14 @@ def test_srcdoc_is_only_used_inside_the_isolated_frame() -> None:
     for name in SCRIPTS:
         if name == "viewer.js":
             continue
-        assert "srcdoc" not in _kodu((STATIC / name).read_text(encoding="utf-8")), name
+        assert "srcdoc" not in _code((STATIC / name).read_text(encoding="utf-8")), name
 
-    govde = _kodu(VIEWER_JS)
-    atamalar = re.findall(r"\.srcdoc\s*=", govde)
-    assert len(atamalar) == 1, f"srcdoc {len(atamalar)} yerde atanmis"
+    body = _code(VIEWER_JS)
+    assignments = re.findall(r"\.srcdoc\s*=", body)
+    assert len(assignments) == 1, f"srcdoc {len(atamalar)} yerde atanmis"
     # Ve o tek atama, sandbox'li cerceveyi kuran yardimcinin icinde olmali.
-    frame_govdesi = govde[govde.index("function frame("):].split("\n  }")[0]
-    assert ".srcdoc" in frame_govdesi, \
+    frame_body = body[body.index("function frame("):].split("\n  }")[0]
+    assert ".srcdoc" in frame_body, \
         "srcdoc atamasi sandbox'li frame() disina cikmis"
 
 
@@ -1567,8 +1567,8 @@ def test_the_streaming_cursor_never_hangs() -> None:
     stop = re.search(r'case "interrupted":(.*?)break;', APP_JS, re.S)
     assert stop and "sealLine()" in stop.group(1)
     # Model hiçbir şey döndürmediğinde de (sürdürme turu) imleç temizleniyor.
-    bos = re.search(r'case "empty_assistant_turn":(.*?)break;', APP_JS, re.S)
-    assert bos and "clearCursor()" in bos.group(1)
+    empty = re.search(r'case "empty_assistant_turn":(.*?)break;', APP_JS, re.S)
+    assert empty and "clearCursor()" in empty.group(1)
 
 
 def test_an_empty_block_is_never_born() -> None:
@@ -1806,7 +1806,7 @@ def test_the_history_panel_can_name_and_tag_a_conversation() -> None:
     assert '"/api/session/meta"' in HIST_JS
     # Gönderilmeyen alan sunucuda dokunulmadan kalıyor: iki ayrı çağrı.
     assert "saveMeta(s.id, { ad })" in HIST_JS
-    assert "saveMeta(s.id, { etiketler })" in HIST_JS
+    assert "saveMeta(s.id, { etiketler: labels })" in HIST_JS
     assert re.search(r"\.hist-title\.named \{", CSS)
     # Sınıf adı panelin kendi başlığıyla ÇAKIŞMAMALI: index.html'deki
     # "Konuşmalar" başlığı zaten `.hist-tag` taşıyor (canlıda görüldü).
@@ -1829,8 +1829,8 @@ def test_the_search_box_can_look_inside_transcripts() -> None:
     dökümlere taşıyor. Her tuşta istek atmamalı."""
     assert "hist-deep" in HIST_JS
     assert '"/api/sessions?ara=" + encodeURIComponent(query)' in HIST_JS
-    gecikme = re.search(r"const DEEP_DELAY = (\d+)", HIST_JS)
-    assert gecikme and int(gecikme.group(1)) >= 150
+    delay = re.search(r"const DEEP_DELAY = (\d+)", HIST_JS)
+    assert delay and int(delay.group(1)) >= 150
     plan = re.search(r"function scheduleDeep\(\) \{(.*?)\n  \}", HIST_JS, re.S)
     assert plan, "scheduleDeep() bulunamadı"
     # Kısa sorgu sunucuya hiç gitmiyor: tek harf her konuşmada geçer.
@@ -1898,8 +1898,8 @@ def test_the_settings_page_offers_a_fallback_model() -> None:
 # bağlılar, klavye hangi tuşları anlıyor ve seçilen dosya modele NASIL
 # geçiyor.
 
-KOMUT_JS = (STATIC / "command.js").read_text(encoding="utf-8")
-GOREV_JS = (STATIC / "tasks.js").read_text(encoding="utf-8")
+COMMAND_JS = (STATIC / "command.js").read_text(encoding="utf-8")
+TASKS_JS = (STATIC / "tasks.js").read_text(encoding="utf-8")
 CHG_JS = (STATIC / "changes.js").read_text(encoding="utf-8")
 SERVER_SRC = (Path(__file__).resolve().parents[1]
               / "src" / "dornick" / "web" / "server.py").read_text(encoding="utf-8")
@@ -1907,7 +1907,7 @@ SERVER_SRC = (Path(__file__).resolve().parents[1]
 
 def _defter() -> list[tuple[str, str]]:
     """command.js'teki komut defteri: [(ad, açıklama)]."""
-    block = re.search(r"const BOOK = \[(.*?)\n  \];", KOMUT_JS, re.S)
+    block = re.search(r"const BOOK = \[(.*?)\n  \];", COMMAND_JS, re.S)
     assert block, "komut defteri bulunamadı — desen bayatlamış olabilir"
     return re.findall(r'\{\s*name:\s*"([\w-]+)",\s*what:\s*"([^"]+)"', block.group(1))
 
@@ -1918,12 +1918,12 @@ def test_the_command_book_covers_the_promised_commands() -> None:
     Eksik bir komut sessiz bir boşluk: kullanıcı `/model` yazıyor, menü
     onu göstermiyor ve "yok galiba" diye ayar sayfasına gidiyor.
     """
-    kayit = dict(_defter())
-    beklenen = {"yeni", "gecmis", "model", "yetki", "gorevler", "uygulamalar",
+    record = dict(_defter())
+    expected = {"yeni", "gecmis", "model", "yetki", "gorevler", "uygulamalar",
                 "artifact", "ayarlar", "sifirla", "durdur", "yardim"}
-    assert beklenen <= set(kayit), f"eksik komut: {sorted(beklenen - set(kayit))}"
+    assert expected <= set(record), f"eksik komut: {sorted(beklenen - set(kayit))}"
     # Her komut ne yaptığını TEK satırda söylüyor.
-    for ad, ne in kayit.items():
+    for ad, ne in record.items():
         assert ne.strip() and "\n" not in ne, ad
         assert len(ne) <= 80, f"{ad}: açıklama tek satırdan uzun"
 
@@ -1931,15 +1931,15 @@ def test_the_command_book_covers_the_promised_commands() -> None:
 def test_every_command_runs_something_that_exists() -> None:
     """Uydurma komut yok: her satır ya var olan bir düğmeye basıyor ya da
     sunucuda gerçekten kayıtlı bir uca gidiyor."""
-    block = re.search(r"const BOOK = \[(.*?)\n  \];", KOMUT_JS, re.S)
+    block = re.search(r"const BOOK = \[(.*?)\n  \];", COMMAND_JS, re.S)
     assert block
     for element_id in re.findall(r'run:\s*\(\)\s*=>\s*press\("([\w-]+)"\)', block.group(1)):
         assert f'id="{element_id}"' in HTML, element_id
     # Düğmeye bağlanmayanlar bir fonksiyona bağlı ve o fonksiyon tanımlı.
     for name in re.findall(r"run:\s*(\w+)\s*\}", block.group(1)):
-        assert re.search(rf"function {name}\(", KOMUT_JS), name
+        assert re.search(rf"function {name}\(", COMMAND_JS), name
     # `/sifirla` gerçek bir sıkıştırma ucuna gidiyor.
-    assert '"/api/compact"' in KOMUT_JS
+    assert '"/api/compact"' in COMMAND_JS
     assert '"/api/compact"' in SERVER_SRC
 
 
@@ -1947,17 +1947,17 @@ def test_the_sleep_commands_talk_to_the_daemon() -> None:
     """`/uyu`, `/uyuma`, `/yorgun`: the memory's night from the composer.
     Each goes to a route that exists; the status card reads the same
     endpoint as the thalamus ring."""
-    kayit = dict(_defter())
-    assert {"uyu", "uyuma", "yorgun"} <= set(kayit), sorted(kayit)
-    assert kayit["uyu"] == "Geceyi şimdi başlat"
-    assert kayit["uyuma"] == "Bu gece uyuma (kafein)"
-    assert kayit["yorgun"] == "Ne kadar yorgunsun?"
+    record = dict(_defter())
+    assert {"uyu", "uyuma", "yorgun"} <= set(record), sorted(record)
+    assert record["uyu"] == "Geceyi şimdi başlat"
+    assert record["uyuma"] == "Bu gece uyuma (kafein)"
+    assert record["yorgun"] == "Ne kadar yorgunsun?"
     for route in ('"/api/uyku/uyu"', '"/api/uyku/kafein"'):
-        assert route in KOMUT_JS and route in SERVER_SRC, route
-    assert 'fetch("/api/uyku")' in KOMUT_JS
+        assert route in COMMAND_JS and route in SERVER_SRC, route
+    assert 'fetch("/api/uyku")' in COMMAND_JS
     # The answers are shown, not swallowed: the two toasts and the refusal reason.
     for text in ("Uyuyor…", "4 saat uyumayacak", "answer.error"):
-        assert text in KOMUT_JS, text
+        assert text in COMMAND_JS, text
 
 
 def test_the_settings_page_has_the_night_sleep_switch() -> None:
@@ -1974,7 +1974,7 @@ def test_the_settings_page_has_the_night_sleep_switch() -> None:
 def test_the_composer_menu_is_a_keyboard_state_machine() -> None:
     """Fare olmadan da kullanılabilmeli: ok tuşları gezer, Enter seçer,
     Escape kapatır. Enter kutuya gitmezse mesaj yanlışlıkla gönderilir."""
-    onKey = re.search(r"function onKey\(ev\) \{(.*?)\n  \}", KOMUT_JS, re.S)
+    onKey = re.search(r"function onKey\(ev\) \{(.*?)\n  \}", COMMAND_JS, re.S)
     assert onKey, "onKey() bulunamadı — desen bayatlamış olabilir"
     body = onKey.group(1)
     for key in ("Escape", "ArrowDown", "ArrowUp", "Enter"):
@@ -1983,18 +1983,18 @@ def test_the_composer_menu_is_a_keyboard_state_machine() -> None:
     assert "stopPropagation()" in body
     # Dinleyici belgede ve YAKALAMA evresinde: app.js'in dinleyicisi
     # kompozerin üstünde ve ondan önce çalışmak gerekiyor.
-    assert 'document.addEventListener("keydown", onKey, true)' in KOMUT_JS
+    assert 'document.addEventListener("keydown", onKey, true)' in COMMAND_JS
     # Kutu kapalıyken hiçbir tuşa karışmıyor.
     assert "if (!isOpen()" in body
 
 
 def test_slash_only_triggers_at_the_start_of_a_line() -> None:
     """Cümle ortasındaki bir eğik çizgi (yol, kesir) menü açmamalı."""
-    kalip = re.search(r"const COMMAND_PATTERN = (.+);", KOMUT_JS)
-    assert kalip, "komut kalıbı bulunamadı"
-    assert kalip.group(1).startswith("/(?:^|\\n)\\/"), kalip.group(1)
-    dosya = re.search(r"const FILE_PATTERN = (.+);", KOMUT_JS)
-    assert dosya and "@" in dosya.group(1)
+    template = re.search(r"const COMMAND_PATTERN = (.+);", COMMAND_JS)
+    assert template, "komut kalıbı bulunamadı"
+    assert template.group(1).startswith("/(?:^|\\n)\\/"), template.group(1)
+    file_pattern = re.search(r"const FILE_PATTERN = (.+);", COMMAND_JS)
+    assert file_pattern and "@" in file_pattern.group(1)
 
 
 def test_a_mentioned_file_reaches_the_model_as_a_plain_sentence() -> None:
@@ -2003,24 +2003,24 @@ def test_a_mentioned_file_reaches_the_model_as_a_plain_sentence() -> None:
     Metin kullanıcının gönderdiği mesajın İÇİNDE — sonradan "ben bunu
     yazmadım" diyebileceği görünmez bir ek değil.
     """
-    assert '"Kullanıcı şu dosyayı işaret etti: "' in KOMUT_JS
+    assert '"Kullanıcı şu dosyayı işaret etti: "' in COMMAND_JS
     # Birden çok dosya seçilebiliyor ve her biri ayrı satır.
-    assert "mentions.map(" in KOMUT_JS and 'join("\\n")' in KOMUT_JS
+    assert "mentions.map(" in COMMAND_JS and 'join("\\n")' in COMMAND_JS
     # app.js gönderim yolunda bunu gerçekten çağırıyor.
     assert "withContext(withFiles(withMentions(text)))" in APP_JS
     # Arama gerçek bir uca gidiyor ve o uç sunucuda kayıtlı.
-    assert '"/api/files/search?q="' in KOMUT_JS
+    assert '"/api/files/search?q="' in COMMAND_JS
     assert '"/api/files/search"' in SERVER_SRC
 
 
 def test_the_file_picker_does_not_let_a_stale_answer_win() -> None:
     """Yazarken listenin bir öncekine geri atlaması: geç dönen eski cevap.
     Jeton karşılaştırması olmadan bu her hızlı yazımda oluyor."""
-    ara = re.search(r"function searchFiles\(\) \{(.*?)\n  \}", KOMUT_JS, re.S)
-    assert ara, "searchFiles() bulunamadı"
-    assert "++token" in ara.group(1)
-    assert "mine !== token" in ara.group(1)
-    assert "clearTimeout(searchTimer)" in ara.group(1)
+    search = re.search(r"function searchFiles\(\) \{(.*?)\n  \}", COMMAND_JS, re.S)
+    assert search, "searchFiles() bulunamadı"
+    assert "++token" in search.group(1)
+    assert "mine !== token" in search.group(1)
+    assert "clearTimeout(searchTimer)" in search.group(1)
 
 
 # -- koşan görevler paneli ---------------------------------------------
@@ -2036,18 +2036,18 @@ def test_the_task_panel_speaks_the_same_shape_the_server_sends() -> None:
               / "desktop.py").read_text(encoding="utf-8")
     tasks = re.search(r"def tasks\(self\).*?return \{\"gorevler\"", bridge, re.S)
     assert tasks, "Bridge.tasks() bulunamadı"
-    yazilan = set(re.findall(r'"(\w+)":', tasks.group(0)))
-    for alan in ("id", "ad", "tur", "durum", "basladi", "bitti", "ozet",
+    written = set(re.findall(r'"(\w+)":', tasks.group(0)))
+    for field in ("id", "ad", "tur", "durum", "basladi", "bitti", "ozet",
                  "oturum", "durdurulabilir"):
-        assert alan in yazilan, f"sunucu {alan} yazmıyor"
-        assert re.search(rf"\bg\.{alan}\b", GOREV_JS), f"panel {alan} okumuyor"
+        assert field in written, f"sunucu {field} yazmıyor"
+        assert re.search(rf"\bg\.{field}\b", TASKS_JS), f"panel {field} okumuyor"
 
 
 def test_the_task_panel_can_stop_one_job_and_only_a_stoppable_one() -> None:
     """Kendi kopyasını panelden öldürmek uygulamayı kapatmak olurdu."""
-    assert '"/api/gorevler/durdur"' in GOREV_JS
+    assert '"/api/gorevler/durdur"' in TASKS_JS
     assert '"/api/gorevler/durdur"' in SERVER_SRC
-    assert "if (g.durdurulabilir)" in GOREV_JS
+    assert "if (g.durdurulabilir)" in TASKS_JS
     bridge = (Path(__file__).resolve().parents[1] / "src" / "dornick"
               / "desktop.py").read_text(encoding="utf-8")
     assert '"durdurulabilir": (not finished) and not own' in bridge
@@ -2057,7 +2057,7 @@ def test_a_finished_background_job_knocks_on_the_conversation() -> None:
     """Panel kapalıyken biten iş kaybolmamalı: sohbete tıklanabilir satır.
     Yalnız ARKA PLAN işleri — senkron yardımcının sonucu zaten cevapta."""
     assert re.search(r"case \"child_end\":[\s\S]*?tasksDone\(e\)", APP_JS)
-    done = re.search(r"function done\(ev\) \{(.*?)\n  \}", GOREV_JS, re.S)
+    done = re.search(r"function done\(ev\) \{(.*?)\n  \}", TASKS_JS, re.S)
     assert done, "Tasks.done() bulunamadı"
     assert "if (!ev || !ev.bg) return;" in done.group(1)
     assert "task-note" in done.group(1)
@@ -2107,8 +2107,8 @@ def test_scene_memory_labels_skip_the_chat_column() -> None:
 def test_the_running_time_ticks_without_asking_the_server() -> None:
     """Saniyede bir HTTP isteği atmak paneli açık tutmayı pahalı yapardı:
     satır başlangıç damgasını taşıyor, saymayı tarayıcı yapıyor."""
-    assert "dataset.basladi" in GOREV_JS
-    assert re.search(r"setInterval\(\(\) => \{[^}]*task-time", GOREV_JS, re.S)
+    assert "dataset.basladi" in TASKS_JS
+    assert re.search(r"setInterval\(\(\) => \{[^}]*task-time", TASKS_JS, re.S)
 
 
 def test_the_live_jobs_ledger_stays_separate_from_orchestra() -> None:
@@ -2116,7 +2116,7 @@ def test_the_live_jobs_ledger_stays_separate_from_orchestra() -> None:
     İkisi tek panele indirilirse ya sahne kalıcı olur ya defter kaybolur —
     karar kodda yazılı olsun ki sonra 'kopya panel' diye silinmesin."""
     jobs = (STATIC / "jobs.js").read_text(encoding="utf-8")
-    assert "Orkestra güvertesinden AYRI" in GOREV_JS
+    assert "Orkestra güvertesinden AYRI" in TASKS_JS
     assert 'id="orch-deck"' in HTML
     assert 'id="tasks-panel"' not in HTML
     assert "openLive" in jobs and "Canlı" in jobs
@@ -2192,7 +2192,7 @@ def test_main_jobs_panel_and_artifact_export_exist() -> None:
     assert "KEEP_ACTS" in orch and "orch-ch-acts" in orch
     assert "child_wait" in APP_JS
     assert "Tasks.refresh" in APP_JS
-    assert "DOKUM_TTL_MS" in (STATIC / "tasks.js").read_text(encoding="utf-8")
+    assert "TRANSCRIPT_TTL_MS" in (STATIC / "tasks.js").read_text(encoding="utf-8")
     assert "function planCard" in APP_JS
     assert "flushDeferredPlans" in APP_JS
     assert "enterPlanEdit" in APP_JS
@@ -2232,7 +2232,7 @@ def test_the_turn_summary_reads_the_agents_own_ledger() -> None:
     """İkinci bir defter tutulmuyor: panelin gördüğü, `undo` aracının
     okuduğu defterin aynısı (tools/checkpoint.py)."""
     assert "/api/degisiklikler" in CHG_JS
-    assert "checkpoint import KLASOR, Defter" in SERVER_SRC
+    assert "checkpoint import FOLDER, Defter" in SERVER_SRC
     # Geri alma: tur (n), dosya (sira/siralar) veya path.
     assert "ledger.undo(n)" in SERVER_SRC
     assert "undo_sequence" in SERVER_SRC
@@ -2252,10 +2252,10 @@ def test_the_turn_boundary_is_a_sequence_number_not_a_clock() -> None:
 
 def test_undoing_a_turn_asks_twice() -> None:
     """Yanlışlıkla basılan bir düğmenin turu silmesi kabul edilemez."""
-    dugme = re.search(r"function undoButton\(records, states, onChange\) \{(.*?)\n  \}",
+    button = re.search(r"function undoButton\(records, states, onChange\) \{(.*?)\n  \}",
                       CHG_JS, re.S)
-    assert dugme, "undoButton() bulunamadı"
-    body = dugme.group(1)
+    assert button, "undoButton() bulunamadı"
+    body = button.group(1)
     assert "if (!confirmed)" in body and "Emin misin?" in body
     # Onay penceresi kendiliğinden kapanıyor: kurulu bir düğme unutulmasın.
     assert "setTimeout(" in body
@@ -2359,17 +2359,17 @@ def test_every_toolbar_button_is_translated() -> None:
     İngilizce arayüzde Türkçe etiket duyuyordu.
     """
     html = (STATIC / "index.html").read_text(encoding="utf-8")
-    dil = (STATIC / "lang.js").read_text(encoding="utf-8")
+    lang = (STATIC / "lang.js").read_text(encoding="utf-8")
 
     # index.html'de id'si ve title/aria-label'ı olan her öğe eşlenmiş olmalı.
-    for nitelik in ("title", "aria-label"):
-        desen = re.compile(
-            r'id="([a-z0-9-]+)"[^>]*\b' + nitelik + r'="([^"]+)"', re.I)
-        for eid, metin in desen.findall(html):
-            if not re.search(r"[çğıöşüÇĞİÖŞÜ]", metin):
+    for attribute in ("title", "aria-label"):
+        pattern = re.compile(
+            r'id="([a-z0-9-]+)"[^>]*\b' + attribute + r'="([^"]+)"', re.I)
+        for eid, text in pattern.findall(html):
+            if not re.search(r"[çğıöşüÇĞİÖŞÜ]", text):
                 continue        # zaten Türkçeye özgü harf yoksa atla
-            assert f'"{eid}"' in dil, (
-                f'index.html#{eid} {nitelik}="{metin}" için çeviri yok')
+            assert f'"{eid}"' in lang, (
+                f'index.html#{eid} {attribute}="{text}" için çeviri yok')
 
 def test_explicit_file_links_in_chat_are_actionable() -> None:
     """Canli sikayet (29.08 KPSS raporu): "[PDF raporu ac](rapor.pdf)"
@@ -2544,9 +2544,9 @@ def test_live_strip_survives_joining_a_running_session() -> None:
     kenar cubugundan gecis) canli serit dokumun TEPESINDE kaliyordu —
     kullanici en altta hicbir gosterge gormuyor, "durdu mu calisiyor mu
     belli degil". Dokum yuklendikten sonra serit akisin sonuna iner."""
-    kaynak = APP_JS.split("async function loadTranscript", 1)[1].split("\nfunction ", 1)[0]
-    assert "dockWork(work)" in kaynak
-    assert "kickWork()" in kaynak
+    source = APP_JS.split("async function loadTranscript", 1)[1].split("\nfunction ", 1)[0]
+    assert "dockWork(work)" in source
+    assert "kickWork()" in source
 
 
 def test_waiting_banner_only_before_any_activity() -> None:
@@ -2574,13 +2574,13 @@ def test_every_referenced_static_file_is_served() -> None:
     bulundu). Sinif kapanir: HTML'in istedigi her yerel js/css dosyasi
     sunucunun MIME izin listesinde olmali."""
     watch_html = (STATIC / "watch.html").read_text(encoding="utf-8")
-    istenen = set()
+    wanted = set()
     for h in (HTML, watch_html):
         for m in re.finditer(r'(?:src|href)="(/[^"?#]+)', h):
-            istenen.add(m.group(1))
-    sunulan = set(re.findall(r'"(/[^"]+)":\s*"', SERVER_SRC))
-    eksik = {y for y in istenen if y.endswith((".js", ".css")) and y not in sunulan}
-    assert not eksik, f"sunucu izin listesinde eksik: {sorted(eksik)}"
+            wanted.add(m.group(1))
+    offered = set(re.findall(r'"(/[^"]+)":\s*"', SERVER_SRC))
+    missing = {y for y in wanted if y.endswith((".js", ".css")) and y not in offered}
+    assert not missing, f"sunucu izin listesinde missing: {sorted(missing)}"
 
 
 def test_native_tour_fixes_are_wired() -> None:
@@ -2592,12 +2592,12 @@ def test_native_tour_fixes_are_wired() -> None:
     assert '.compose-shell").addEventListener("mousedown"' in APP_JS
     menu = (STATIC / "menu.js").read_text(encoding="utf-8")
     assert 'addEventListener("contextmenu"' in menu
-    assert "pano_oku" in menu and "pano_yaz" in menu
+    assert "clipboard_read" in menu and "clipboard_write" in menu
     assert "Yapıştır" in menu and "Kopyala" in menu and "Tümünü seç" in menu
     desktop_src = (Path(__file__).resolve().parents[1] / "src" / "dornick"
                    / "desktop.py").read_text(encoding="utf-8")
-    assert "def pano_oku" in desktop_src and "def pano_yaz" in desktop_src
-    assert "pano_oku, pano_yaz" in desktop_src   # ana pencerede expose
+    assert "def clipboard_read" in desktop_src and "def clipboard_write" in desktop_src
+    assert "clipboard_read, clipboard_write" in desktop_src   # ana pencerede expose
     assert "kontrol-canli" in APP_JS
     assert "body.kontrol-canli::after" in CSS
 
@@ -2638,7 +2638,7 @@ def test_folder_flows_and_task_mirror_are_wired() -> None:
     assert ".goals-pane" in CSS
     orch = (STATIC / "orchestra.js").read_text(encoding="utf-8")
     assert "/api/gorevler/iptal" in orch and "İptal et" in orch
-    assert "def gorev_iptal" in (Path(__file__).resolve().parents[1]
+    assert "def cancel_task" in (Path(__file__).resolve().parents[1]
                                  / "src" / "dornick" / "desktop.py").read_text(encoding="utf-8")
     assert '"/api/gorevler/iptal"' in SERVER_SRC
     assert "Math.min(760" in APP_JS
@@ -2664,8 +2664,8 @@ def test_the_git_bar_never_offers_the_scratch_workspace() -> None:
     projede arar; reposuz kok da yalniz projeden gelir."""
     git_src = (Path(__file__).resolve().parents[1] / "src" / "dornick"
                / "git.py").read_text(encoding="utf-8")
-    govde = git_src.split("def repo_root", 1)[1].split("\ndef ", 1)[0]
-    assert "scratch_ok" in govde and "return None" in govde
+    body = git_src.split("def repo_root", 1)[1].split("\ndef ", 1)[0]
+    assert "scratch_ok" in body and "return None" in body
     status = SERVER_SRC.split("def _git_status", 1)[1].split("def _git_action", 1)[0]
     assert "box.project is not None" in status
     assert "box.project or box.root" not in status
@@ -2676,8 +2676,8 @@ def test_the_stream_cursor_is_the_knitting_knot() -> None:
     ORULEN DUGUM - marka kendini cizip sokuyor. Akis imleci SMIL'li data-URI;
     duraksamada soner, bitince kalkar."""
     assert "stroke-dashoffset" in CSS and "data:image/svg+xml" in CSS
-    imlec = CSS.split(".line.agent::after", 1)[1].split("}", 1)[0]
-    assert "animate" in imlec and "repeatCount='indefinite'" in imlec
+    cursor = CSS.split(".line.agent::after", 1)[1].split("}", 1)[0]
+    assert "animate" in cursor and "repeatCount='indefinite'" in cursor
     assert ".line.agent.stall::after" in CSS
     assert ".line.agent.done::after" in CSS
 
@@ -2687,10 +2687,10 @@ def test_every_waiting_blank_knits_the_knot() -> None:
     dugum-yukleniyor, tum panellerde (gecmis, uygulamalar, git, gorevler,
     komut paleti, ayarlar)."""
     assert ".dugum-yukleniyor::before" in CSS
-    kok = Path(__file__).resolve().parents[1] / "src" / "dornick" / "web" / "static"
+    root_dir = Path(__file__).resolve().parents[1] / "src" / "dornick" / "web" / "static"
     for dosya in ("history.js", "apps.js", "git.js", "jobs.js", "command.js", "settings.js"):
-        icerik = (kok / dosya).read_text(encoding="utf-8")
-        assert "dugum-yukleniyor" in icerik, dosya
+        content = (root_dir / dosya).read_text(encoding="utf-8")
+        assert "dugum-yukleniyor" in content, dosya
 
 
 # -- beyin görünümü: bölgeler ve gece animasyonu (Faz 6) ----------------

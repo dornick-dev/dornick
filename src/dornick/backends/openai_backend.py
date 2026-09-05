@@ -76,7 +76,7 @@ def _silence_window(base_url: str | None) -> float | None:
 # effort of writing turns. It is not tied to the `mutates` flag in the
 # tool layer because only the tools' API schema reaches the backend; the
 # names are stable in the product.
-_READ_ONLY = frozenset({"read_file", "read_many", "list_dir", "denetle"})
+_READ_ONLY = frozenset({"read_file", "read_many", "list_dir", "inspect"})
 
 
 def _discovery_turn(messages: list[dict[str, Any]]) -> bool:
@@ -296,7 +296,7 @@ class OpenAIBackend:
             self._health.save(selected, ok=not result.error)
         return result
 
-    def kusurlu(self, reason: str = "") -> None:
+    def faulty(self, reason: str = "") -> None:
         """Content defect: the turn technically succeeded but was wasted.
 
         The loop calls this (see `Agent._kusurlu`): a tool call that

@@ -380,9 +380,9 @@ def test_content_faults_penalise_the_auto_pool() -> None:
     backend = _auto_backend()
     backend._last_selected = "ucuz/model"
     for _ in range(automode.ERROR_THRESHOLD):
-        backend.kusurlu("sahte araç çağrısı")
+        backend.faulty("sahte araç çağrısı")
 
-    assert backend._health.cezali("ucuz/model")
+    assert backend._health.penalised("ucuz/model")
     assert backend._health.rank(["ucuz/model", "saglam/model"]) \
         == ["saglam/model", "ucuz/model"]
 
@@ -396,9 +396,9 @@ def test_a_chosen_model_is_never_punished_behind_the_users_back() -> None:
     backend = OpenAIBackend(ModelConfig(
         provider="openai", name="anthropic/claude", base_url="https://x"))
     backend._last_selected = "anthropic/claude"
-    backend.kusurlu("şema ihlali")
+    backend.faulty("şema ihlali")
 
-    assert not backend._health.cezali("anthropic/claude")
+    assert not backend._health.penalised("anthropic/claude")
 
 
 async def test_the_loop_reports_content_faults_to_the_backend(
@@ -413,8 +413,8 @@ async def test_the_loop_reports_content_faults_to_the_backend(
             super().__init__(*script)
             self.reasons: list[str] = []
 
-        def kusurlu(self, sebep: str = "") -> None:
-            self.reasons.append(sebep)
+        def faulty(self, reason: str = "") -> None:
+            self.reasons.append(reason)
 
     client = _Counting(
         text_turn('<invoke name="shell">'),

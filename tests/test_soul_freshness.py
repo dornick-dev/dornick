@@ -59,7 +59,7 @@ def mind(tmp_path: Path, clock: Clock):
 
 
 def _session(sessions: Path, name: str, node_ids, clock: Clock,
-             *, outcome: str, tool: str = "kos", error: str = "") -> None:
+             *, outcome: str, tool: str = "run", error: str = "") -> None:
     sessions.mkdir(parents=True, exist_ok=True)
     log = EventLog(sessions / f"{name}.jsonl", clock=clock.text)
     log.note("session_start", session_id=name)
@@ -201,7 +201,7 @@ def test_same_procedure_is_not_written_twice(mind, tmp_path, clock) -> None:
         for m in nodes:
             clock.advance(minutes=1)
             log.note("mind_open", memory_id=m.id)
-        log.note("tool_end", tool="kos", error=False, ms=10)
+        log.note("tool_end", tool="run", error=False, ms=10)
         log.note("tool_end", tool="dosya_yaz", error=False, ms=10)
         log.note("sonuc", sonuc="basarili")
         log.close()

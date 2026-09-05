@@ -34,8 +34,8 @@ from typing import Any
 
 from .base import ToolContext, ToolRegistry, ToolResult, object_schema
 
-KLASOR = "degisiklikler"
-GORUNTU_TAVANI = 2 * 1024 * 1024   # files larger than this get no snapshot
+FOLDER = "degisiklikler"
+SNAPSHOT_CEILING = 2 * 1024 * 1024   # files larger than this get no snapshot
 CLEANUP_DAYS = 14
 LIST_CAP = 20
 
@@ -43,11 +43,11 @@ _UNSAFE = re.compile(r"[^\w.\-]+")
 
 # Roots cleaned once per process (the practical form of "at start-up":
 # when the first file write arrives, once for that root).
-_temizlenen: set[Path] = set()
+_cleaned: set[Path] = set()
 
 
 def defter(ctx: ToolContext) -> "Defter":
-    return Defter(Path(ctx.config.state_dir) / KLASOR, ctx.session.id)
+    return Defter(Path(ctx.config.state_dir) / FOLDER, ctx.session.id)
 
 
 class Defter:
@@ -57,8 +57,8 @@ class Defter:
 
     def __init__(self, root: Path, session: str) -> None:
         self.root = root
-        self.dizin = root / (_UNSAFE.sub("_", session or "oturum") or "oturum")
-        self.log_path = self.dizin / "kayit.jsonl"
+        self.directory = root / (_UNSAFE.sub("_", session or "oturum") or "oturum")
+        self.log_path = self.directory / "kayit.jsonl"
 
     # -- recording -----------------------------------------------------
 
@@ -83,11 +83,11 @@ class Defter:
         try:
             if not path.exists():
                 record["yoktu"] = True
-            elif path.stat().st_size > GORUNTU_TAVANI:
+            elif path.stat().st_size > SNAPSHOT_CEILING:
                 record["atlandi"] = "2 MB üstü, görüntü alınmadı"
             else:
                 name = f"{seq:04d}-{(_UNSAFE.sub('_', path.name) or 'dosya')[:80]}"
-                shutil.copy2(path, self.dizin / name)
+                shutil.copy2(path, self.directory / name)
                 record["goruntu"] = name
         except OSError as exc:
             record["goruntu"] = None
@@ -97,9 +97,9 @@ class Defter:
 
     # -- undo ----------------------------------------------------------
 
-    def list_entries(self, tavan: int = LIST_CAP) -> list[dict[str, Any]]:
+    def list_entries(self, cap: int = LIST_CAP) -> list[dict[str, Any]]:
         """The latest records, newest first."""
-        return list(reversed(self._read_records()[-tavan:]))
+        return list(reversed(self._read_records()[-cap:]))
 
     def undo(self, n: int) -> tuple[list[str], str | None]:
         """Applies the last n changes in reverse; returns (done, error).
@@ -133,7 +133,7 @@ class Defter:
                 return done, message
         return done, None
 
-    def undo_sequence(self, sira: int) -> tuple[list[str], str | None]:
+    def undo_sequence(self, seq: int) -> tuple[list[str], str | None]:
         """Reverts a single record sequence (per-file Keep/Undo).
 
         The Undo of one row in the turn strip lands here: other files are
@@ -143,9 +143,9 @@ class Defter:
         records = self._read_records()
         if not records:
             return [], "Bu oturumda kayıtlı değişiklik yok."
-        k = next((x for x in records if int(x.get("sira") or 0) == int(sira)), None)
+        k = next((x for x in records if int(x.get("sira") or 0) == int(seq)), None)
         if k is None:
-            return [], f"{sira}. kayıt bulunamadı."
+            return [], f"{seq}. kayıt bulunamadı."
         if k["goruntu"] is None and not k["yoktu"]:
             return [], (
                 f"{k['sira']}. kayıt geri alınamaz ({k['dosya']}): "
@@ -185,7 +185,7 @@ class Defter:
                 target.unlink(missing_ok=True)
                 return True, f"{k['sira']}. kayıt: {target} silindi (oluşturma geri alındı)."
             target.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(self.dizin / k["goruntu"], target)
+            shutil.copy2(self.directory / k["goruntu"], target)
             return True, f"{k['sira']}. kayıt: {target} eski haline döndü."
         except OSError as exc:
             return False, f"{k['sira']}. kayıt geri alınamadı: {exc}"
@@ -193,10 +193,10 @@ class Defter:
     # -- internals -----------------------------------------------------
 
     def _prepare(self) -> None:
-        self.dizin.mkdir(parents=True, exist_ok=True)
-        if self.root not in _temizlenen:
-            _temizlenen.add(self.root)
-            _clean(self.root, keep=self.dizin)
+        self.directory.mkdir(parents=True, exist_ok=True)
+        if self.root not in _cleaned:
+            _cleaned.add(self.root)
+            _clean(self.root, keep=self.directory)
 
     def _read_records(self) -> list[dict[str, Any]]:
         try:

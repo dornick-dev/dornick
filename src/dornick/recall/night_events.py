@@ -52,7 +52,7 @@ SCHEMA: dict[str, tuple[str, ...]] = {
 }
 
 # Every event carries these two on top of its own fields.
-ORTAK = ("ts", "tur")
+SHARED = ("ts", "tur")
 
 
 class SchemaError(ValueError):
@@ -104,7 +104,7 @@ def validate(event: dict[str, Any]) -> dict[str, Any]:
     """Read side of the same contract — used when replaying a file."""
     if not isinstance(event, dict):
         raise SchemaError("olay bir sözlük değil")
-    for name in ORTAK:
+    for name in SHARED:
         if name not in event:
             raise SchemaError(f"ortak alan eksik: {name}")
     kind = event["tur"]

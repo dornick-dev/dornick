@@ -474,7 +474,7 @@ const Viewer = (() => {
   }
   function feed(e) {
     if (!e) return;
-    if (e.tool === "shell" || e.tool === "kos") {
+    if (e.tool === "shell" || e.tool === "run") {
       const cmd = (e.input && (e.input.command || e.input.cmd)) || "";
       const started = e.ms == null && e.summary == null && !e.detail;
       if (cmd && started) {

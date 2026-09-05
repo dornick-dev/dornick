@@ -73,7 +73,7 @@ def build_registry(mind: Any = None, *, subagents: bool = True) -> ToolRegistry:
     shell.register(registry)
     # Git: commit/push/GitHub — so nobody drops to the shell for `git commit`.
     git_tool.register(registry)
-    # File tools + `denetle`: written code passes through its language's own
+    # File tools + `inspect`: written code passes through its language's own
     # checker the moment it is written and the result goes into the tool's
     # reply. No separate registration line — diagnosis is part of writing a
     # file, not a separate capability.
@@ -81,14 +81,14 @@ def build_registry(mind: Any = None, *, subagents: bool = True) -> ToolRegistry:
     # Content search: one tool for "where does X occur?" instead of reading
     # file by file.
     search.register(registry)
-    # Structural search: `grep` sees text, `semboller` separates definition
+    # Structural search: `grep` sees text, `symbols` separates definition
     # from use — to see the calls of the function whose signature you are
     # about to change.
     code.register(registry)
     # Change ledger: lists and reverts the snapshots the file tools take
     # (undo/redo).
     checkpoint.register(registry)
-    # Test runner: `denetle` looks at syntax, `kos` RUNS the code. This is
+    # Test runner: `inspect` looks at syntax, `run` RUNS the code. This is
     # the only thing that catches type/behaviour errors.
     runner.register(registry)
     web.register(registry)

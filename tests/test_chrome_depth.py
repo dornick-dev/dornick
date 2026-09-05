@@ -322,11 +322,11 @@ def test_the_buffer_has_a_ceiling() -> None:
 
 
 class FakeRecord:
-    def __init__(self, konsol=(), istekler=(), hata="", eksik=False) -> None:
-        self.console = list(konsol)
-        self.requests = list(istekler)
-        self.error = hata
-        self.missing = eksik
+    def __init__(self, console=(), requests=(), error="", missing=False) -> None:
+        self.console = list(console)
+        self.requests = list(requests)
+        self.error = error
+        self.missing = missing
 
 
 def _error(text: str, location: str = "") -> chrome.ConsoleLine:
@@ -335,19 +335,19 @@ def _error(text: str, location: str = "") -> chrome.ConsoleLine:
 
 def test_an_empty_console_is_never_sold_as_proof() -> None:
     """The most important sentence: an empty console does NOT mean 'the page has no errors'."""
-    text = surf._konsol_metni(FakeRecord(), "hepsi", None)
+    text = surf._console_text(FakeRecord(), "hepsi", None)
     assert "hatasız olduğu anlamına GELMEZ" in text
     assert "Davranışı ayrıca doğrula" in text
 
 
 def test_a_late_listener_admits_it() -> None:
-    text = surf._konsol_metni(FakeRecord(eksik=True), "hepsi", None)
+    text = surf._console_text(FakeRecord(missing=True), "hepsi", None)
     assert "SONRA bağlandı" in text
     assert "kaçmış olabilir" in text
 
 
 def test_a_broken_listener_says_it_cannot_see() -> None:
-    text = surf._konsol_metni(FakeRecord(hata="bağlantı reddedildi"), "hepsi", None)
+    text = surf._console_text(FakeRecord(error="bağlantı reddedildi"), "hepsi", None)
     assert "kurulamadı" in text
     assert "göremiyorum" in text
     assert "uydurma yorum yapma" in text
@@ -359,10 +359,10 @@ def test_the_console_filter_narrows_to_errors() -> None:
         chrome.ConsoleLine("uyari", "eski API"),
         _error("TypeError: yok", "app.js:12"),
     ])
-    everything = surf._konsol_metni(record, "hepsi", None)
+    everything = surf._console_text(record, "hepsi", None)
     assert "hazır" in everything and "TypeError" in everything
 
-    only_errors = surf._konsol_metni(record, "hata", None)
+    only_errors = surf._console_text(record, "hata", None)
     assert "TypeError" in only_errors
     assert "hazır" not in only_errors
     assert "eski API" not in only_errors
@@ -370,23 +370,23 @@ def test_the_console_filter_narrows_to_errors() -> None:
 
 def test_an_empty_filter_points_at_the_wider_view() -> None:
     record = FakeRecord([chrome.ConsoleLine("log", "hazır")])
-    text = surf._konsol_metni(record, "hata", None)
+    text = surf._console_text(record, "hata", None)
     assert "toplam 1 mesaj" in text
     assert "seviye: hepsi" in text
 
 
 def test_console_errors_tell_the_model_to_fix_the_source() -> None:
-    text = surf._konsol_metni(FakeRecord([_error("TypeError: yok")]), "hepsi", None)
+    text = surf._console_text(FakeRecord([_error("TypeError: yok")]), "hepsi", None)
     assert "Kaynak koddaki" in text and "düzelt" in text
 
 
 def test_failed_requests_come_first() -> None:
-    record = FakeRecord(istekler=[
+    record = FakeRecord(requests=[
         chrome.Request("http://x/iyi", "GET", 200),
         chrome.Request("http://x/yok", "GET", 404),
         chrome.Request("http://x/patlak", "POST", 500),
     ])
-    text = surf._ag_metni(record, None)
+    text = surf._network_text(record, None)
     assert text.index("Başarısız olanlar") < text.index("Başarılı olanlar")
     assert text.index("/yok") < text.index("/iyi")
     assert "3 istek · 2 başarısız" in text
@@ -394,7 +394,7 @@ def test_failed_requests_come_first() -> None:
 
 
 def test_no_requests_suggests_a_reload() -> None:
-    text = surf._ag_metni(FakeRecord(), None)
+    text = surf._network_text(FakeRecord(), None)
     assert "dinleyici bağlanmadan önce" in text
 
 
@@ -509,7 +509,7 @@ def test_opening_a_tab_attaches_the_listener(tmp_path) -> None:
         assert record.console[0].level == "hata"
         assert record.requests[0].status == 404
 
-        text = surf._konsol_metni(record, "hata", None)
+        text = surf._console_text(record, "hata", None)
         assert "Kaydetme başarısız" in text
         assert "app.js:41" in text
     finally:
@@ -525,7 +525,7 @@ def test_a_listener_attached_late_is_marked_incomplete(tmp_path) -> None:
         tab = box.tabs()[0]
         record = box.snapshot(tab)           # not via `open`, afterwards
         assert record.missing
-        assert "SONRA bağlandı" in surf._konsol_metni(record, "hepsi", None)
+        assert "SONRA bağlandı" in surf._console_text(record, "hepsi", None)
     finally:
         http.stop()
         ws_box.close()
@@ -547,4 +547,4 @@ def test_a_tab_without_a_debug_url_degrades_honestly(tmp_path) -> None:
     box = chrome.Browser(tmp_path, port=1)
     record = box.listen({"id": "T9"})
     assert record.error
-    assert "göremiyorum" in surf._konsol_metni(record, "hepsi", None)
+    assert "göremiyorum" in surf._console_text(record, "hepsi", None)

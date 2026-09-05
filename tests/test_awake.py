@@ -96,7 +96,7 @@ def test_lesson_is_written_in_the_same_session(store, sessions, clock) -> None:
     """The whole point: the user sees the lesson now, not tomorrow morning."""
     bad = store.remember("Şema göçü doğrudan üretimde koşuluyor.", kind="procedure")
     log = Log(sessions, "s1", clock)
-    log.touch(bad.id).tool("kos", error=True, summary="göç yarıda kaldı")
+    log.touch(bad.id).tool("run", error=True, summary="göç yarıda kaldı")
 
     report = awake.on_result(store, log.path, "basarisiz", clock=clock, log=log.log)
 
@@ -110,7 +110,7 @@ def test_success_pays_out_immediately(store, sessions, clock) -> None:
     good = store.remember("Gate yeniden başlatılırken kuyruk boşaltılıyor.",
                           kind="procedure")
     log = Log(sessions, "s1", clock)
-    log.touch(good.id).tool("kos")
+    log.touch(good.id).tool("run")
     awake.on_result(store, log.path, "basarili", clock=clock, log=log.log)
     assert store.track_record(good.id) == (1, 0)
 
@@ -120,7 +120,7 @@ def test_night_skips_a_session_already_replayed_awake(store, sessions,
     """No double counting: one success must leave exactly one `basari` entry."""
     node = store.remember("Kurulum paketi imzalandı.", kind="fact")
     log = Log(sessions, "s1", clock)
-    log.touch(node.id).tool("kos")
+    log.touch(node.id).tool("run")
     awake.on_result(store, log.path, "basarili", clock=clock, log=log.log)
     log.close("basarili")
     after_awake = store.track_record(node.id)
@@ -134,7 +134,7 @@ def test_night_skips_a_session_already_replayed_awake(store, sessions,
 def test_reverse_replay_runs_once_per_session(store, sessions, clock) -> None:
     node = store.remember("Bir kayıt.", kind="fact")
     log = Log(sessions, "s1", clock)
-    log.touch(node.id).tool("kos")
+    log.touch(node.id).tool("run")
     awake.on_result(store, log.path, "basarili", clock=clock, log=log.log)
     second = awake.on_result(store, log.path, "basarili", clock=clock, log=log.log)
     assert second.replayed == 0
@@ -150,7 +150,7 @@ def test_reverse_replay_fits_between_two_turns(store, sessions, clock) -> None:
     log = Log(sessions, "s1", clock)
     for node in nodes:
         log.touch(node.id)
-    log.tool("kos")
+    log.tool("run")
 
     started = time.perf_counter()
     awake.on_result(store, log.path, "basarili", clock=clock, log=log.log)
@@ -304,7 +304,7 @@ def test_awake_replay_is_switchable(store, sessions, clock) -> None:
 
     node = store.remember("Bir kayıt.", kind="fact")
     log = Log(sessions, "s1", clock)
-    log.touch(node.id).tool("kos", error=True, summary="patladı")
+    log.touch(node.id).tool("run", error=True, summary="patladı")
     with switches.disabled("weave"):
         report = awake.on_result(store, log.path, "basarisiz", clock=clock,
                                  log=log.log)

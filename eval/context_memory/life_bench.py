@@ -383,10 +383,10 @@ def _play(mind: Any, data: dict[str, Any], clock: VirtualClock,
             kind = event["tur"]
             if kind == "sessiz":
                 continue
-            ses = session(event["oturum"])
+            sess = session(event["oturum"])
 
             if kind == "kaydet":
-                ses.touch(write(event), "mind_write", kind=event["kind"])
+                sess.touch(write(event), "mind_write", kind=event["kind"])
 
             elif kind == "duzelt":
                 old_id = id_of.get(event["eskisi"], "")
@@ -398,13 +398,13 @@ def _play(mind: Any, data: dict[str, Any], clock: VirtualClock,
                                     tags=event.get("etiketler") or [])
                     id_of[event["slug"]] = memory.id
                     slug_of[memory.id] = event["slug"]
-                    ses.touch(memory.id, "mind_write", kind=event["kind"],
+                    sess.touch(memory.id, "mind_write", kind=event["kind"],
                               supersedes=old_id)
                 else:
                     # Before Phase 2 the product behaves like this: the
                     # conflicting new record is written NEXT TO the old
                     # one, and the old one stays around.
-                    ses.touch(write(event), "mind_write", kind=event["kind"])
+                    sess.touch(write(event), "mind_write", kind=event["kind"])
                 stale.add(event["eskisi"])
                 corrections.append((day, event["slug"], event["kind"]))
 
@@ -412,13 +412,13 @@ def _play(mind: Any, data: dict[str, Any], clock: VirtualClock,
                 for slug in event["hedef"]:
                     if nid := id_of.get(slug):
                         mind.store.open(nid)
-                        ses.touch(nid, "mind_open")
+                        sess.touch(nid, "mind_open")
 
             elif kind == "arac":
-                ses.turn += 1
-                ses.log.note("tool_start", tool=event.get("arac", ""),
+                sess.turn += 1
+                sess.log.note("tool_start", tool=event.get("arac", ""),
                              input={"ozet": event["icerik"]})
-                ses.log.note("tool_end", tool=event.get("arac", ""),
+                sess.log.note("tool_end", tool=event.get("arac", ""),
                              error=bool(event.get("hata")), ms=120,
                              ozet=event["icerik"])
                 if event.get("hata"):
@@ -426,18 +426,18 @@ def _play(mind: Any, data: dict[str, Any], clock: VirtualClock,
                     # is known, inside the session. Leaving the lesson to
                     # the night meant allowing the same mistake to be
                     # repeated in the same session.
-                    _awake_outcome(mind, ses, "basarisiz", t, clock=clock)
+                    _awake_outcome(mind, sess, "basarisiz", t, clock=clock)
 
             elif kind == "sonuc":
-                ses.close(event["sonuc"])
-                _awake_outcome(mind, ses, event["sonuc"], t, clock=clock)
+                sess.close(event["sonuc"])
+                _awake_outcome(mind, sess, event["sonuc"], t, clock=clock)
 
             elif kind == "uyan":
                 t.wake_events += 1
                 _wake(event)
 
             elif kind == "sor":
-                _query(mind, event, t, slug_of, id_of, ses)
+                _query(mind, event, t, slug_of, id_of, sess)
 
         # End of day: the night pass (if any), then the soul's state that day.
         clock.advance(day, 22)
@@ -454,15 +454,15 @@ def _play(mind: Any, data: dict[str, Any], clock: VirtualClock,
         if fresh:
             t.fresh_ratios.append(len(fresh & soul_slugs) / len(fresh))
 
-    for ses in sessions.values():
+    for sess in sessions.values():
         try:
-            ses.log.close()
+            sess.log.close()
         except Exception:
             pass
     return _report(t, mind)
 
 
-def _awake_outcome(mind: Any, ses: "Session", outcome: str,
+def _awake_outcome(mind: Any, sess: "Session", outcome: str,
                    t: "Tally | None" = None, clock: Any = None) -> None:
     """Reverse replay at the moment of the outcome. No counterpart before
     Phase 3.12.
@@ -476,8 +476,8 @@ def _awake_outcome(mind: Any, ses: "Session", outcome: str,
     try:
         # clock=None once let awake stamp WALL time into the virtual
         # calendar: real seconds passed between runs, so activations drifted.
-        awake.on_result(mind.store, ses.log.path, outcome, clock=clock,
-                        log=ses.log)
+        awake.on_result(mind.store, sess.log.path, outcome, clock=clock,
+                        log=sess.log)
     except Exception:
         pass        # a measurement run must not stop because of a mechanism error
     if t is not None:
@@ -588,7 +588,7 @@ def _soul_resident_slugs(mind: Any, slug_of: dict[str, str]) -> set[str]:
 
 
 def _query(mind: Any, event: dict[str, Any], t: Tally, slug_of: dict[str, str],
-           id_of: dict[str, str], ses: Session) -> None:
+           id_of: dict[str, str], sess: Session) -> None:
     question = event["icerik"]
     cluster = event["kume"]
     expected = set(event.get("beklenen") or [])
@@ -607,8 +607,8 @@ def _query(mind: Any, event: dict[str, Any], t: Tally, slug_of: dict[str, str],
     leaked = len(prime_slugs & forbidden)
     t.leaks += leaked
     t.cluster_leaks[cluster] = t.cluster_leaks.get(cluster, 0) + leaked
-    ses.turn += 1
-    ses.log.note("prime", ids=[h.item.id for h in hits], query=question)
+    sess.turn += 1
+    sess.log.note("prime", ids=[h.item.id for h in hits], query=question)
 
     if cluster in FAIR_CLUSTERS:
         # A record the soul already put into the prompt with its full body

@@ -206,10 +206,10 @@ def test_memory_that_led_to_success_ranks_above_the_one_that_led_to_failure(
                           kind="procedure")
     bad = store.remember("Gate servisi doğrudan kill ile durduruluyor.",
                          kind="procedure")
-    Log(sessions, "ok", calendar).touch(good.id).tool("kos").close("basarili")
+    Log(sessions, "ok", calendar).touch(good.id).tool("run").close("basarili")
     calendar.advance(days=1)
     Log(sessions, "hata", calendar).touch(bad.id).tool(
-        "kos", error=True, summary="3 test kırıldı").close("basarisiz")
+        "run", error=True, summary="3 test kırıldı").close("basarisiz")
 
     _night(store, sessions, watermark, calendar)
 
@@ -224,7 +224,7 @@ def test_a_lesson_sits_next_to_the_path_that_led_to_failure(
         store, sessions, watermark, calendar) -> None:
     bad = store.remember("Şema göçü doğrudan üretimde koşuluyor.", kind="procedure")
     Log(sessions, "hata", calendar).touch(bad.id).tool(
-        "kos", error=True, summary="göç yarıda kaldı").close("basarisiz")
+        "run", error=True, summary="göç yarıda kaldı").close("basarisiz")
     report = _night(store, sessions, watermark, calendar)
 
     assert report.lessons_written >= 1
@@ -239,7 +239,7 @@ def test_successful_sequence_writes_a_procedure(store, sessions, watermark, cale
     g = Log(sessions, "ok", calendar)
     for n in three:
         g.touch(n.id)
-    g.tool("kos").tool("dosya_yaz").close("basarili")
+    g.tool("run").tool("dosya_yaz").close("basarili")
 
     report = _night(store, sessions, watermark, calendar)
     assert report.procedures_written >= 1
@@ -255,7 +255,7 @@ def test_mixed_record_beats_never_touched(
         Log(sessions, f"ok{i}", calendar).touch(record.id).close("basarili")
     calendar.advance(days=1)
     Log(sessions, "hata", calendar).touch(record.id).tool(
-        "kos", error=True, summary="patladı").close("basarisiz")
+        "run", error=True, summary="patladı").close("basarisiz")
     _night(store, sessions, watermark, calendar)
 
     assert store.track_record(record.id) == (3, 1)
@@ -386,7 +386,7 @@ def test_failed_session_is_replayed_before_routine(
     b = store.remember("Göç sırasında veri kayboldu.", kind="fact")
     Log(sessions, "rutin", calendar).touch(a.id).close("basarili")
     Log(sessions, "kotu", calendar).touch(b.id).tool(
-        "kos", error=True, summary="kırıldı").close("basarisiz")
+        "run", error=True, summary="kırıldı").close("basarisiz")
 
     ranked = weave.prioritised_sessions(store, sessions, clock=calendar, watermark=watermark)
     assert ranked[0].id == "kotu"

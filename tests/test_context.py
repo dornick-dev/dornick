@@ -28,7 +28,7 @@ from dornick.recall import switches, open_store
 from dornick.recall import store as S
 
 NOW = datetime(2025, 6, 2, 9, 0, tzinfo=timezone.utc)
-KORU = {"proje": "koru1000", "dizin_kok": "D:/Projects/koru1000"}
+PROTECT = {"proje": "koru1000", "dizin_kok": "D:/Projects/koru1000"}
 KOBYTE = {"proje": "kobyte", "dizin_kok": "D:/Projects/kobyte"}
 
 
@@ -67,11 +67,11 @@ def pair(store):
                  "Rapor teslimi vardiya defterine işleniyor.",
                  "Raporlama aracı yeniden yazıldı."):
         store.remember(text, kind="fact")
-    koru = store.remember("Raporlar vardiya sonunda otomatik üretiliyor.",
-                          kind="fact", context=KORU)
+    protect = store.remember("Raporlar vardiya sonunda otomatik üretiliyor.",
+                          kind="fact", context=PROTECT)
     kobyte = store.remember("Raporlar ayın ilk günü müşteriye gönderiliyor.",
                             kind="fact", context=KOBYTE)
-    return koru.id, kobyte.id
+    return protect.id, kobyte.id
 
 
 def _scores(store, query: str, context=None) -> dict[str, float]:
@@ -82,8 +82,8 @@ def _scores(store, query: str, context=None) -> dict[str, float]:
 
 
 def test_context_is_written_and_read_back(store) -> None:
-    node = store.remember("Vardiya defteri kasada.", kind="fact", context=KORU)
-    assert store.peek(node.id).context == KORU
+    node = store.remember("Vardiya defteri kasada.", kind="fact", context=PROTECT)
+    assert store.peek(node.id).context == PROTECT
 
 
 def test_a_record_without_context_is_plain_empty(store) -> None:
@@ -93,47 +93,47 @@ def test_a_record_without_context_is_plain_empty(store) -> None:
 
 def test_a_correction_inherits_the_context(store, clock) -> None:
     first = store.remember("Raporlar PDF üretiliyor.", kind="preference",
-                           context=KORU)
+                           context=PROTECT)
     clock.advance(days=2)
     second = store.update(first.id, "Raporlar xlsx üretiliyor.")
-    assert store.peek(second.id).context == KORU
+    assert store.peek(second.id).context == PROTECT
 
 
 # -- what the bonus does -----------------------------------------------
 
 
 def test_the_same_context_is_preferred(store, pair) -> None:
-    koru, kobyte = pair
+    protect, kobyte = pair
     plain = _scores(store, "Raporlar konusunda ne kararlaştırmıştık?")
-    in_koru = _scores(store, "Raporlar konusunda ne kararlaştırmıştık?",
-                      context=KORU)
-    assert in_koru[koru] > plain[koru]
-    assert in_koru[koru] > in_koru[kobyte]
+    in_protect = _scores(store, "Raporlar konusunda ne kararlaştırmıştık?",
+                      context=PROTECT)
+    assert in_protect[protect] > plain[protect]
+    assert in_protect[protect] > in_protect[kobyte]
 
 
 def test_a_conflicting_context_is_discounted_not_erased(store, pair) -> None:
     """Suppressed, still reachable. The tombstone philosophy, in search."""
-    koru, kobyte = pair
+    protect, kobyte = pair
     plain = _scores(store, "Raporlar konusunda ne kararlaştırmıştık?")
-    in_koru = _scores(store, "Raporlar konusunda ne kararlaştırmıştık?",
-                      context=KORU)
-    assert in_koru[kobyte] < plain[kobyte]
-    assert in_koru[kobyte] > 0.0
+    in_protect = _scores(store, "Raporlar konusunda ne kararlaştırmıştık?",
+                      context=PROTECT)
+    assert in_protect[kobyte] < plain[kobyte]
+    assert in_protect[kobyte] > 0.0
 
 
 def test_an_empty_context_is_never_penalised(store, pair) -> None:
     """Migration must not push a user's whole history to the back."""
     old = store.remember("Raporlar eskiden elle yazılıyordu.", kind="fact")
     plain = _scores(store, "Raporlar nasıl yazılıyor?")
-    in_koru = _scores(store, "Raporlar nasıl yazılıyor?", context=KORU)
-    assert in_koru[old.id] == pytest.approx(plain[old.id])
+    in_protect = _scores(store, "Raporlar nasıl yazılıyor?", context=PROTECT)
+    assert in_protect[old.id] == pytest.approx(plain[old.id])
 
 
 def test_the_switch_turns_it_off(store, pair) -> None:
-    koru, kobyte = pair
+    protect, kobyte = pair
     with switches.disabled("context"):
         scored = _scores(store, "Raporlar konusunda ne kararlaştırmıştık?",
-                         context=KORU)
+                         context=PROTECT)
         plain = _scores(store, "Raporlar konusunda ne kararlaştırmıştık?")
     assert scored == plain
 
@@ -146,14 +146,14 @@ def test_automatic_priming_uses_the_session_context(store, tmp_path,
     from dornick.loop import select_prime
     from dornick.mind import open_mind
 
-    koru, kobyte = pair
+    protect, kobyte = pair
     mind = open_mind(store.path.parent, tmp_path / "sessions", "t", clock=clock)
     try:
         hits = select_prime(mind, "Raporlar konusunda ne kararlaştırmıştık?",
-                            limit=5, context=KORU)
+                            limit=5, context=PROTECT)
         ids = [h.item.id for h in hits]
-        assert koru in ids
-        assert ids.index(koru) < (ids.index(kobyte) if kobyte in ids else 99)
+        assert protect in ids
+        assert ids.index(protect) < (ids.index(kobyte) if kobyte in ids else 99)
     finally:
         mind.store.close()
 
@@ -163,10 +163,10 @@ def test_open_search_is_not_filtered_by_context(store, tmp_path, clock,
     """"What did we do in kobyte" must be answerable from inside koru1000."""
     from dornick.mind import open_mind
 
-    _koru, kobyte = pair
+    _protect, kobyte = pair
     mind = open_mind(store.path.parent, tmp_path / "sessions", "t", clock=clock)
     try:
-        mind.set_context(KORU)
+        mind.set_context(PROTECT)
         found = {h.item.id for h in mind.recall("Raporlar müşteriye ne zaman")}
         assert kobyte in found
     finally:
@@ -202,7 +202,7 @@ def test_an_old_memory_opens_with_empty_contexts(tmp_path: Path) -> None:
     store = RecallStore(target)
     try:
         assert store.peek("n_v1scada").context == {}
-        scored = {i: s for i, s, _k in store._seed("SCADA WinCC", 5, context=KORU)}
+        scored = {i: s for i, s, _k in store._seed("SCADA WinCC", 5, context=PROTECT)}
         plain = {i: s for i, s, _k in store._seed("SCADA WinCC", 5)}
         assert scored == plain          # no bonus, and no penalty either
     finally:
@@ -210,10 +210,10 @@ def test_an_old_memory_opens_with_empty_contexts(tmp_path: Path) -> None:
 
 
 def test_a_broken_context_field_does_not_break_search(store) -> None:
-    node = store.remember("Bir kayıt.", kind="fact", context=KORU)
+    node = store.remember("Bir kayıt.", kind="fact", context=PROTECT)
     with store._lock:                    # noqa: SLF001 — deliberately broken data
         store._db.execute("UPDATE node SET context='bu json değil' WHERE id=?",
                           (node.id,))
         store._db.commit()
     assert store.peek(node.id).context == {}
-    assert store._seed("bir kayıt", 5, context=KORU) is not None
+    assert store._seed("bir kayıt", 5, context=PROTECT) is not None
