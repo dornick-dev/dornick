@@ -646,8 +646,16 @@ def run(decisions: list[Decision], models: list[Any], *, target: Temperament,
         identity_doc: str, repeats: int = DEFAULT_REPEATS, day_gap: int = DEFAULT_DAY_GAP,
         leverage_on: bool = True, root: Path | str | None = None,
         progress: Callable[[str], None] | None = None,
-        closed_loop: bool = False) -> dict[str, Any]:
-    """The whole measurement for one or two models. Returns the report dict."""
+        closed_loop: bool = False, target_from_first: bool = False) -> dict[str, Any]:
+    """The whole measurement for one or two models. Returns the report dict.
+
+    `target_from_first`: the target is the FIRST model's measured baseline —
+    the product's real scenario. A user lives with model A; the target the
+    harness learned is A-shaped; then the model changes to B, and the
+    question is whether B can be levered into A's character. A flat 0.5
+    target asks both models to move to a place neither of them is, and
+    measures nothing a user will meet.
+    """
     if not 1 <= len(models) <= 2:
         raise ValueError("bir ya da iki model")
     if repeats < 1:
@@ -655,9 +663,13 @@ def run(decisions: list[Decision], models: list[Any], *, target: Temperament,
     with tempfile.TemporaryDirectory(prefix="karakter-") as tmp:
         base = Path(root) if root else Path(tmp)
         results: list[ModelResult] = []
-        for model in models:
+        for index, model in enumerate(models):
             result = ModelResult(model.name, Temperament(), target, {})
             baseline = measure_baseline(model, decisions, base, result)
+            if target_from_first and index == 0:
+                target = baseline
+                if progress:
+                    progress(f"  hedef = {model.name} tabanı")
             if progress:
                 progress(f"  {model.name} · taban: {baseline.as_dict()}")
             result.baseline = baseline
@@ -686,7 +698,7 @@ def run(decisions: list[Decision], models: list[Any], *, target: Temperament,
                         day_gap=day_gap, progress=progress)
             results.append(result)
     return _report(decisions, results, repeats=repeats, day_gap=day_gap,
-                   leverage_on=leverage_on, identity_doc=identity_doc, closed_loop=closed_loop)
+                   leverage_on=leverage_on, identity_doc=identity_doc, closed_loop=closed_loop, target_from_first=target_from_first)
 
 
 # -- metrics ------------------------------------------------------------
@@ -749,7 +761,7 @@ def _mean(values: list[float | None]) -> float | None:
 
 def _report(decisions: list[Decision], results: list[ModelResult], *, repeats: int,
             day_gap: int, leverage_on: bool, identity_doc: str,
-            closed_loop: bool = False) -> dict[str, Any]:
+            closed_loop: bool = False, target_from_first: bool = False) -> dict[str, Any]:
     main = ("tam2" if closed_loop else "tam") if leverage_on else "kaldiracsiz"
     per_model: dict[str, Any] = {}
     for r in results:
@@ -819,6 +831,7 @@ def _report(decisions: list[Decision], results: list[ModelResult], *, repeats: i
         "metrikler": metrics,
         "modeller": per_model,
         "kapali_cevrim": closed_loop,
+        "hedef_ilk_model": target_from_first,
         "sayim": {"karar": len(decisions), "baglam": VARIANTS, "tekrar": repeats,
                   "cagri": sum(r.calls for r in results),
                   "belirsiz": sum(r.ambiguous for r in results)},
@@ -955,6 +968,9 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--base-url2", default="", help="ikinci model için adres (yerel sunucu)")
     ap.add_argument("--repeats", "--tekrar", type=int, default=DEFAULT_REPEATS, dest="repeats")
     ap.add_argument("--gun-arasi", "--day-gap", type=int, default=DEFAULT_DAY_GAP, dest="day_gap")
+    ap.add_argument("--hedef-ilk-model", "--target-from-first", dest="target_from_first",
+                    action="store_true",
+                    help="hedef = ilk modelin ölçülen tabanı (B modeli A gibi davransın)")
     ap.add_argument("--kapali-cevrim", "--closed-loop", dest="closed_loop",
                     action="store_true",
                     help="kaldıraç kazancını ölçülenden kalibre edip ikinci tur ölç")
@@ -1023,7 +1039,8 @@ def main(argv: list[str] | None = None) -> int:
         result = run(decisions, models, target=target, identity_doc=identity_doc,
                      repeats=args.repeats, day_gap=args.day_gap,
                      leverage_on=leverage_on, progress=say,
-                     closed_loop=args.closed_loop)
+                     closed_loop=args.closed_loop,
+                     target_from_first=args.target_from_first)
     finally:
         for model in models:
             model.close()

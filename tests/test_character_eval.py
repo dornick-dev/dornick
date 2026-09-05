@@ -366,3 +366,18 @@ def test_closed_loop_calibrates_and_remeasures(harness, decisions, tmp_path) -> 
         assert cal["sapma_2"] <= cal["sapma_1"] + 0.05, name
         assert "tam2" in model["kollar"] and "kimliksiz" not in model["kollar"]
     assert result["metrikler"]["tutarlilik_model"] is not None
+
+
+
+def test_the_target_can_be_the_first_models_baseline(harness, decisions, tmp_path) -> None:
+    """The product's real scenario: B must become A. A gets no lever (it is
+    already the target); B is levered toward A's measured baseline."""
+    result = harness.run(decisions, _fakes(harness, tmp_path), target=harness.DRY_TARGET,
+                         identity_doc=harness.SAMPLE_IDENTITY, repeats=2,
+                         root=tmp_path / "durum", closed_loop=True, target_from_first=True)
+    assert result["hedef_ilk_model"] is True
+    a, b = list(result["modeller"].values())
+    assert a["hedef"] == a["taban"]
+    assert b["hedef"] == a["taban"]
+    assert set(a["kaldirac"].values()) == {1.0}
+    assert result["metrikler"]["tutarlilik_model"] is not None
