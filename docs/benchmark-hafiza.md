@@ -75,9 +75,9 @@ denemesidir; öyle yapmadık.
 | Bu haftaki düzeltme ruhta mı | %100 | **%100** | Bir kuralı bu hafta düzelttiysen ajan yeni hâline göre davranıyor. |
 | Düzeltilen kayda geri dönme | %100 | **%100** | Eski hâli istendiğinde hâlâ bulunuyor; hiçbir şey silinmiyor. |
 | Ruhun token maliyeti | 325,0 | **310,2** | Her oturum başına konan kimlik metni kısaldı. |
-| Öne sürme token maliyeti | 84,5 | **39,1** | Otomatik hatıra enjeksiyonu yarıdan fazla ucuzladı. |
+| Öne sürme token maliyeti | 84,5 | **29,1** | Otomatik hatıra enjeksiyonu üçte bire indi. |
 | Şema tazeleme | yoktu | **0,44** | Gece, kullanılan kaydın eski komşularını da tazeliyor (eskide yoktu). |
-| 50 bin kayıtta arama (p95) | — | **7,2 ms** | Büyük hafızada bile arama hızlı. |
+| 50 bin kayıtta arama (p95) | — | **5,0 ms** | Büyük hafızada bile arama hızlı; 20k → 200k büyüme 1,7×. |
 
 `scale_bench` (eskiden beri olan tek turluk bench) gerilemedi.
 
@@ -97,13 +97,13 @@ düzeltildi; ikisi de artık dürüst ölçümle daha iyi:
 
 | Ne | Eski | Önceki dürüst | **Şimdi** | Durum |
 |---|---|---|---|---|
-| Öne sürme isabeti (`prime_precision`) | 0,255 | 0,274 | **0,559** | İki kattan fazla arttı. Sebep: kelime nadirliği (IDF) skora hiç girmiyordu. Hedef 0,85 hâlâ uzak. |
-| Sıcak hafıza payı (`sicak_oran`) | %100 | %77 | **%23** | **Hedef bandı (%10–30) tutuyor.** Kullanılanın çağrışım komşuluğu sıcak kalıyor, yalıtık kayıt soğuyor. |
-| Tuzak sessizliği (`tuzak_sessizlik`) | %45 | %48 | **%93** | **Hedef (%90) tutuyor.** Bilmediği konuda artık susuyor. |
-| Öne sürmede kapsama (`prime_recall`) | %96 | %88 | %74 | Hedef %80'in altında. Sebep bölüm 4a. |
+| Öne sürme isabeti (`prime_precision`) | 0,255 | 0,559 | **0,675** (holdout **0,857**) | Konu çapası + eşik. Ana sette hedef 0,85'e uzak; görülmemiş sette tutuyor. Kalan boşluk yapısal (bölüm 4a). |
+| Sıcak hafıza payı (`sicak_oran`) | %100 | %23 | **%21** | **Hedef bandı tutuyor.** Artık mutlak tavanı da var (5000). |
+| Tuzak sessizliği (`tuzak_sessizlik`) | %45 | %93 | **%98** | **Hedef (%90) tutuyor.** Bilmediği konuda susuyor. |
+| Öne sürmede kapsama (`prime_recall`) | %96 | %74 | %68 | Hedef %80'in altında; isabet için bilerek ödenen bedel. Sebep bölüm 4a. |
 | Komşuluk / dikiş çağrışımı | 0 | 0,08 / 0 | 0,08 / 0 | Değişmedi. IDF isabeti düzeltti ama yayılma hâlâ tohumları geçemiyor. |
 | Kodlama gücü (Faz 4) | — | etkisiz | etkisiz | Kod duruyor, faydası kanıtlanmadı. |
-| 200 bin düğümde gecikme büyümesi | — | 6,1× | **3,6×** | Sıcak küme daralınca yarıya indi; hedef ≤1,5 hâlâ tutmuyor. Mutlak hız 7 ms. |
+| 200 bin düğümde gecikme büyümesi | — | 3,6× | **1,7×** | Nadir-kök ağı + sıcak tavan. Hedef ≤1,5'e sınırda (ölçüm ±0,3 gürültülü). Mutlak hız 5 ms. |
 
 **4a. Kapsama neden %74'te kaldı.** Yaşam senaryosunun A kümesi 1. gün
 yazılıp hiç kullanılmayan gerçekleri 20–85 gün sonra soruyor; K kümesi
@@ -175,14 +175,14 @@ türü yok.
 
 | Metrik | Yön | eski | yeni | Hedef | Durum |
 |---|---|---|---|---|---|
-| `prime_precision` | ↑ | 0.2553 | **0.5586** | ≥ 0.85 | ✗ |
-| `prime_recall` | ↑ | 0.96 | 0.74 | ≥ 0.8 | ✗ |
+| `prime_precision` | ↑ | 0.2553 | **0.6747** | ≥ 0.85 | ✗ (holdout 0.857 ✓) |
+| `prime_recall` | ↑ | 0.96 | 0.68 | ≥ 0.8 | ✗ |
 | `yasak_sizinti` | ↓ | 59 | **3** | ≤ 0 | ✗ ama −%95 |
-| `tuzak_sessizlik` | ↑ | 0.45 | **0.925** | ≥ 0.9 | ✓ |
+| `tuzak_sessizlik` | ↑ | 0.45 | **0.975** | ≥ 0.9 | ✓ |
 | `bayat_ruh` | ↓ | 3.48 | **0** | ≤ 0 | ✓ |
 | `taze_ruh` | ↑ | 1.00 | **1.00** | ≥ 0.8 | ✓ |
 | `ruh_token` | ↓ | 325.0 | **310.2** | ≤ taban | ✓ |
-| `prime_token` | ↓ | 84.5 | **39.1** | ≤ taban | ✓ |
+| `prime_token` | ↓ | 84.5 | **29.1** | ≤ taban | ✓ |
 | `geri_donus_recall` | ↑ | 1.00 | **1.00** | ≥ 0.7 | ✓ |
 | `komsuluk_recall` | ↑ | 0 | 0.083 | ≥ 0.75 | ✗ |
 | `sorumluluk_dogrulugu` | ↑ | 0.50 | **0.875** | ≥ 0.85 | ✓ |
@@ -191,22 +191,22 @@ türü yok.
 | `sema_tazeleme` | ↑ | yok | **0.44** | > 0 | ✓ |
 | `yakalama` | ↑ | yok | **0.21** | > 0 | ✓ |
 | `ders_gecikmesi` | ↓ | 79.4 | **1.0** | ≤ 1 | ✓ |
-| `sicak_oran` | · | 1.00 | **0.233** | 0.10–0.30 | ✓ |
-| `gecikme_p95` (ms) | ↓ | 9.32 | **7.07** | — | ✓ |
+| `sicak_oran` | · | 1.00 | **0.215** | 0.10–0.30 | ✓ |
+| `gecikme_p95` (ms) | ↓ | 9.32 | **4.98** | — | ✓ |
 
 Holdout (30 gün, hiç bakılmamış set — yalnız gündüz yolu):
 
 | Metrik | eski | yeni |
 |---|---|---|
-| `prime_precision` | 0.3846 | **0.6522** |
-| `prime_recall` | 1.00 | 0.80 |
+| `prime_precision` | 0.3846 | **0.8571** |
+| `prime_recall` | 1.00 | 0.70 |
 | `yasak_sizinti` | 12 | **0** |
 | `bayat_ruh` | 1.63 | **0** |
 | `ruh_token` | 130.0 | **113.8** |
-| `prime_token` | 56.3 | **34.5** |
+| `prime_token` | 56.3 | **26.7** |
 
-Büyüme (P kümesi): 50k düğümde p95 7,2 ms; 20k→200k gecikme oranı 3,65
-(hedef ≤1,5, tutmuyor; önceki tur 6,09), RAM oranı 1 (hedef ≤2, tutuyor).
+Büyüme (P kümesi): 50k düğümde p95 5,0 ms; 20k→200k gecikme oranı 1,68
+(hedef ≤1,5, sınırda; önceki turlar 6,09 → 3,65), RAM oranı 1 (hedef ≤2, tutuyor).
 
 Ayrıntılı faz defteri, kalibrasyonlar ve olumsuz sonuçlar:
 `docs/hafiza-fazlar.md`. Ham koşular: `docs/charts/yasam-*.json`.

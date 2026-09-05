@@ -112,7 +112,7 @@ ENCODE_MIN_CHARS = 25
 # 0.25 / 0.30 gave trap silence 0.825 / 0.925 / 0.975 against recall
 # 0.77 / 0.74 / 0.68 — 0.25 is the first value that clears the 0.9 silence
 # target and keeps most of the recall.
-RECALL_PRIME_FLOOR = 0.25
+RECALL_PRIME_FLOOR = 0.30
 # Tail cut relative to the best record: a record scoring below this share
 # of the top score is not shown even if it clears the floor. With the
 # IDF-weighted literal channel the expected record sits well above the

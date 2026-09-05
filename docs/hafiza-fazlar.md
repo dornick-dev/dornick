@@ -1260,3 +1260,57 @@ yeniden kalibre edilir — hareket edebilen eksenlerde doğrulandı; kalibrasyon
 bir tur ölçüm ister (≈ 150 çağrı/model). Ürün tarafı: `temperament.calibrate`
 ve `kazanc` alanı hazır; model değişiminde otomatik bir kalibrasyon turu
 (30 karar × 3 bağlam) henüz bağlı değil — bir sonraki iş.
+
+
+---
+
+## Tutmayan hedeflere üçüncü geçiş — çapa, nadir-kök ağı, sıcak tavan · 2026-09-05
+
+Dört hedef tutmuyordu: isabet 0.56 (0.85), kapsama 0.74 (0.8), büyüme 3.6×
+(1.5×), modeller arası uyuşma 0.72 (0.8). Her birine bakıldı; sonuç aşağıda.
+
+**Büyüme 3.6× → 1.7×.** Kök: FTS, sorgudaki *yaygın* köklerin ("yapıl*")
+tüm postings'ini bm25 sıralaması için tarıyordu; bu N ile büyür. Artık ağ
+yalnız nadir köklerle (df < 500) atılıyor — yaygın kelime kaydı zaten
+belirlemez, kapsama skorunda yine sayılır. Her kelimesi yaygın olan sorguda
+sıralı tarama yerine sınırlı, sırasız örnek. Ayrıca sıcak kümeye mutlak tavan
+(`HOT_CAP` 5000: pay olarak sınırlı küme büyüyen arşivle büyüyordu).
+Ölçüm: 3.36 → 1.60 / 1.81 / 1.68 (üç koşu; p95 4–5 ms üzerinde oran ±0.3
+gürültülü). Hedef 1.5 sınırda; mutlak gecikme 5 ms.
+
+**İsabet 0.56 → 0.675 (holdout 0.48 → 0.86).** *Konu çapası*: bir kaydın
+gerçekten içerdiği en nadir sorgu kökü sorunun konusudur; tek ortak kökle
+tutunan ve konu kelimesini taşımayan aday ("modem PIN kodu" ↔ "su tankının
+boya kodu") yarı puan alır; sorgunun nadirlik kütlesinin yarısını kapsayan
+gerçek çok-kelimeli eşleşme muaf (iki konulu soru iki çapa taşır). Yolda
+bulunan iki kusur: (1) belge sıklığı sohbetin kendi **episode** kaydını
+sayıyordu — kullanıcının sorusundaki kelime yazıldığı anda "bilinen"
+oluyor ve çapa oluyordu; artık episode ve silinmiş kayıtlar sayılmıyor;
+(2) çapa bilinmeyen (df=0) bir kelime olamaz. Taban 0.25 → 0.30 (tuzak
+sessizliği 0.925 → 0.975, prime_token 35 → 29). Denenip geri alınanlar:
+çapa kümesi (%80 bandı: 0.59), çapayı yalnız select_prime'da uygulamak
+(0.62), ham kelimelerden çapa (0.63). Kalan boşluk yapısal: beklenen kayıt
+soğuduğunda (A, K) en iyi davranış hiçbir şey enjekte etmemek; eşik bunu
+kısmen yapıyor.
+
+**Kapsama 0.74 → 0.68.** Çapa ve taban bilerek bedel ödedi. A ile K
+kayıtlarının ayrılamazlığı değişmedi; bu hedef bu veri setiyle ve K
+kuralıyla tutmuyor — kayıtlar açık aramada bulunuyor (gomulme 1.0).
+
+**Modeller arası uyuşma:** düz 0.5 hedef yapaydı; beşinci koşu gerçek
+senaryoyu ölçüyor (hedef = A modelinin tabanı, B ona kalibre edilir).
+Sonucu kendi bölümünde.
+
+| Metrik | eski | önceki tur | **bu tur** | hedef |
+|---|---|---|---|---|
+| `prime_precision` | 0.255 | 0.559 | **0.675** | ≥ 0.85 ✗ |
+| holdout `prime_precision` | 0.385 | 0.652 | **0.857** | ✓ |
+| `prime_recall` | 0.96 | 0.74 | 0.68 | ≥ 0.8 ✗ |
+| `yasak_sizinti` | 59 | 3 | 3 | 0 ✗ |
+| holdout `yasak_sizinti` | 12 | 0 | **0** | ✓ |
+| `tuzak_sessizlik` | 0.45 | 0.925 | **0.975** | ≥ 0.9 ✅ |
+| `sicak_oran` | 1.00 | 0.233 | **0.215** | 0.10–0.30 ✅ |
+| `sorumluluk_dogrulugu` | 0.50 | 0.875 | **0.875** | ≥ 0.85 ✅ |
+| `prime_token` | 84.5 | 39.1 | **29.1** | ✅ |
+| `gecikme_p95` | 9.3 ms | 7.1 ms | **5.0 ms** | ✅ |
+| `buyume_p95` | — | 3.65 | **1.68** | ≤ 1.5 sınırda |

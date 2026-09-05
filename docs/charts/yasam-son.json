@@ -1,27 +1,27 @@
 {
  "metrikler": {
-  "prime_precision": 0.5586,
-  "prime_recall": 0.74,
+  "prime_precision": 0.6747,
+  "prime_recall": 0.68,
   "yasak_sizinti": 3.0,
-  "tuzak_sessizlik": 0.925,
+  "tuzak_sessizlik": 0.975,
   "bayat_ruh": 0.0,
   "taze_ruh": 1.0,
-  "ruh_token": 310.1611,
-  "prime_token": 39.0995,
+  "ruh_token": 309.9639,
+  "prime_token": 29.1414,
   "geri_donus_recall": 1.0,
   "komsuluk_recall": 0.0833,
   "sorumluluk_dogrulugu": 0.875,
   "dikis_recall": 0.0,
   "gomulme_recall": 1.0,
-  "sema_tazeleme": 0.4414,
-  "yakalama": 0.2101,
+  "sema_tazeleme": 0.4099,
+  "yakalama": 0.2051,
   "ders_gecikmesi": 1.0,
-  "sicak_oran": 0.2327,
-  "gece_suresi": 0.0529,
+  "sicak_oran": 0.2145,
+  "gece_suresi": 0.0469,
   "uykusuz_kayip": null,
   "uykusuz_sisme": null,
   "aktif_bolge_ihlali": null,
-  "tur_bloklama": 7.25,
+  "tur_bloklama": 7.49,
   "kesinti_kaybi": null,
   "kesinti_gecikmesi": null,
   "yarim_damitma": null,
@@ -29,31 +29,31 @@
   "atalet": null,
   "buyume_p95": null,
   "buyume_ram": null,
-  "gecikme_p95": 6.96
+  "gecikme_p95": 4.98
  },
  "kume": {
   "A": {
-   "precision": 0.4211,
-   "recall": 0.6667,
+   "precision": 0.5833,
+   "recall": 0.6333,
    "sizinti": 0.0
   },
   "B": {
-   "precision": 0.6,
-   "recall": 0.75,
+   "precision": 0.7333,
+   "recall": 0.6875,
    "sizinti": 0.0
   },
   "D": {
    "precision": 1.0,
-   "recall": 1.0,
+   "recall": 0.6667,
    "sizinti": 0.0
   },
   "E": {
-   "precision": 0.44,
-   "recall": 0.55,
+   "precision": 0.75,
+   "recall": 0.45,
    "sizinti": 0.0
   },
   "H": {
-   "precision": 0.9231,
+   "precision": 1.0,
    "recall": 1.0,
    "sizinti": 0.0
   },
@@ -73,19 +73,19 @@
   "dugum": 275,
   "tuzak": 40,
   "uyan": 9,
-  "kenar": 1388
+  "kenar": 1308
  },
  "veri": "yasam-90",
  "kapali": [],
  "damitma": false,
  "kaynak": "calisma-agaci",
- "sure_sn": 11.0,
+ "sure_sn": 10.5,
  "olcek": {
   "dugum": 50000,
   "indeks": 2000,
   "ram_bayt": 144000,
-  "gecikme_p50": 4.75,
-  "gecikme_p95": 6.96
+  "gecikme_p50": 3.7,
+  "gecikme_p95": 4.98
  },
  "etiket": "son",
  "sira": 99

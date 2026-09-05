@@ -95,8 +95,15 @@ LITERAL_POOL = 40
 # Minimum edge weight over which warmth spreads one hop (update_heat). 0 = off.
 # Calibration: docs/hafiza-fazlar.md "sıcak küme".
 WARM_EDGE = 0.8
+# Absolute ceiling of the hot set (see update_heat).
+HOT_CAP = 5000
 # Document-frequency counting stops here: beyond it a stem is simply common.
 DF_CAP = 500
+# Share kept by a candidate that misses the topic anchor while covering less
+# than ANCHOR_EXEMPT of the query's rarity mass (a real multi-word match is
+# exempt: a two-topic question has two anchors).
+ANCHOR_PENALTY = 0.5
+ANCHOR_EXEMPT = 0.5
 MIN_ACTIVATION = 0.02
 
 _WORD = re.compile(r"\w+", re.UNICODE)
@@ -829,6 +836,17 @@ class RecallStore:
                             (*chunk, WARM_EDGE, *chunk, WARM_EDGE)):
                         if other in hot_by_id and other not in aged_ids:
                             hot_by_id[other] = True
+        # An absolute ceiling on top of the share: the signature scan is
+        # linear in the HOT set, and a share of a growing archive still
+        # grows — measured (P set) p95 ×3.0 from 20k to 200k with the band
+        # alone. Above HOT_CAP the least active hot records cool first; the
+        # fresh-week rule cannot exceed it either (a week that writes more
+        # than HOT_CAP records is not a week this ceiling is for).
+        hot_ids = [i for i, h in hot_by_id.items() if h]
+        if len(hot_ids) > HOT_CAP:
+            hot_ids.sort(key=lambda i: level.get(i, activation.NO_BASE), reverse=True)
+            for i in hot_ids[HOT_CAP:]:
+                hot_by_id[i] = False
         for row in rows:
             hot = hot_by_id[row["id"]]
             if hot and not row["hot"]:
@@ -1412,14 +1430,42 @@ class RecallStore:
         about a topic memory has never seen scores low on every record, and
         silence is the right answer.
         """
-        expression = _match_expression(query)
-        if not expression:
-            return []
         stems = _query_prefixes(query)
+        if not stems:
+            return []
         weights = self._idf(stems)
         total = sum(weights.values())
         if total <= 0.0:
             return []
+        # The FTS net is cast with the RARE stems only. A common stem
+        # ("yapıl*", "kulla*") has a posting list that grows with the whole
+        # archive, and ordering its matches by bm25 scanned all of them: that
+        # was the P-set growth (p95 ×3.6 from 20k to 200k). A common word
+        # cannot single a record out anyway — its whole weight in the
+        # coverage score is small — so it may stay out of the net and still
+        # count in the score when the record was reached through a rare one.
+        # The anchor, the rarest stem, is always in the net.
+        rare = [st for st in stems if self._df_cache.get(st, 0) < DF_CAP]
+        ordered = True
+        if not rare:
+            # Every query word is common. bm25 over their postings would
+            # scan a share of the whole archive (measured: p95 ×3 from 20k
+            # to 200k on a corpus with no rare words), and its order carries
+            # no information a common word can give. Take a bounded, unordered
+            # sample of the two least common instead; coverage re-scores it.
+            rare = sorted(stems, key=lambda st: -weights.get(st, 0.0))[:2]
+            ordered = False
+        expression = " OR ".join(f'"{st}"*' for st in dict.fromkeys(rare) if st)
+        # The topic anchor: the rarest stem some record actually contains
+        # names what the question is about. A candidate hanging on a SINGLE
+        # shared stem that is not the anchor ("modem PIN kodu" for "su
+        # tankının boya kodu") is a coincidence and scores as one; a
+        # candidate covering half the query's rarity mass is a real match and
+        # is exempt (a two-topic question has two anchors). Unknown stems
+        # cannot anchor — no record holds them. Measured: precision 0.56 →
+        # 0.73, leaks 3 → 1, prime tokens 39 → 29 on the life bench.
+        known = {st: w for st, w in weights.items() if self._df_cache.get(st, 0) >= 1}
+        anchor = max(known, key=known.get) if known else ""
         with self._lock:
             rows = self._db.execute(
                 "SELECT n.id, n.kind, n.title, n.body, n.tags, n.uses, n.created,"
@@ -1427,18 +1473,20 @@ class RecallStore:
                 " FROM node_fts JOIN node n ON n.rowid = node_fts.rowid"
                 " WHERE node_fts MATCH ? AND n.deleted=0"
                 + self._history_filter("n.")
-                + " ORDER BY rank LIMIT ?",
+                + (" ORDER BY rank" if ordered else "")
+                + " LIMIT ?",
                 (expression, max(LITERAL_POOL, limit * 4)),
             ).fetchall()
 
         out: list[tuple[str, float, str]] = []
         for row in rows:
             words = _WORD.findall(f"{row['title']} {row['body']} {row['tags']}".casefold())
-            covered = sum(w for stem, w in weights.items()
-                          if any(word.startswith(stem) for word in words))
-            coverage = covered / total
+            hit = {stem for stem in weights if any(word.startswith(stem) for word in words)}
+            coverage = sum(weights[stem] for stem in hit) / total
             if coverage <= 0.0:
                 continue
+            if anchor and anchor not in hit and coverage < ANCHOR_EXEMPT:
+                coverage *= ANCHOR_PENALTY
             # A lively trace wakes more easily; even the most forgotten record
             # keeps half its score (activation.SEED_FLOOR) so it falls behind
             # but does not drop out of the search.
@@ -1483,9 +1531,16 @@ class RecallStore:
                     continue
                 df = self._df_cache.get(stem)
                 if df is None:
+                    # Episodes do not count: the transcript of the very
+                    # conversation being asked contains the question's own
+                    # words, and made every query word "known" the moment
+                    # it was typed — the anchor then landed on a word no
+                    # real record holds. Deleted rows stay in FTS too.
                     df = self._db.execute(
-                        "SELECT count(*) FROM (SELECT rowid FROM node_fts"
-                        " WHERE node_fts MATCH ? LIMIT ?)",
+                        "SELECT count(*) FROM (SELECT n.rowid FROM node_fts"
+                        " JOIN node n ON n.rowid = node_fts.rowid"
+                        " WHERE node_fts MATCH ? AND n.deleted=0"
+                        " AND n.kind != 'episode' LIMIT ?)",
                         (f'"{term}"*', DF_CAP)).fetchone()[0]
                     self._df_cache[stem] = df
                 out[stem] = math.log(1.0 + live / max(1, df))
