@@ -2919,3 +2919,84 @@ def test_the_sidebar_learns_about_a_running_turn_at_its_start() -> None:
     body = app[app.index("function setBusy("):][:1500]
     assert body.count("History.laneChanged()") == 2
 
+
+
+# -- English names in the scripts --------------------------------------
+#
+# Owner's rule (05.09): no Turkish function, variable or parameter names
+# anywhere. Strings shown to the user stay Turkish; property names that
+# come from the server (SSE fields, JSON keys) are the wire and are not
+# declarations. This looks at DECLARATIONS only: `function x`, `const x`,
+# `let x`, `var x`, `class X`, and the parameters of functions and arrows.
+
+JS_TURKISH_WORDS = frozenset("""
+hafiza karar kararlar karakter ornek ornekler yasam taban egitim atolye gorev gorevler komut komutlar
+olcum ozet sonda arsiv resim kimlik mizac buyume aktivasyon kos denetle semboller sembol bellek dusun
+zihin duyu duyular sohbet mesaj mesajlar kullanici ayar ayarlar durum hata deneme calisma duzen rapor
+sonuc kayit hedef hedefler metin metni icerik uygula gunluk uyku iptal sure sureler tekrar kiyas dosya
+dosyalar klasor dizin cevap soru istek istekler yetenek yetenekler tohum onay onayli surum surumler
+yeni eski deger ilerleme sayi sayfa satir satirlar sutun baslik basliklar liste kisisel korpus tanima
+zaman kaynak kaynaklar esik egri bozulma basinc celiski anahtar izin izinli agirlik ogretici kanca
+kancalar fiyat filigran ritim havuz projeler proje tavan temiz kokler akilli ajan adet adim adimlar
+adlar atamalar beklenen bloklar bos ceviri desen dugme etiket etiketler fark govde gecen gecikme genis
+giris imlec istenen izler kafa kalip katalog kisa konum kopru koru kuresel kuyruk medyan nitelik notlar
+notu olaylar ortam pano planlar sayac sebep sistem skor sonrasi sunulan turlar uygulanan yalniz yazilan
+yazan kabul evet hayir yardim yetki sifirla durdur gecmis uygulamalar kusurlu guvenilir indirme sahte
+kirmizi yesil dokum dongu oturum oturumlar tamamlanan tahmini uyanma uzerinden paylar kenarlar borc
+devreden faz sira siralar sorgu seviye tespit arka dil kod kodu kok yol harita yedek belge kural uzunluk
+adaylar
+""".split())
+
+JS_ALLOWED_NAMES = frozenset({
+    "sec",   # seconds
+})
+
+_JS_STRING = re.compile(r'"(?:\\.|[^"\\\n])*"|\'(?:\\.|[^\'\\\n])*\'|`(?:\\.|[^`\\])*`', re.S)
+_JS_DECL = re.compile(r"\b(?:function|const|let|var|class)\s+([A-Za-z_$][\w$]*)")
+_JS_FUNC_PARAMS = re.compile(r"\bfunction\b[^(]*\(([^)]*)\)")
+_JS_ARROW_PARAMS = re.compile(r"\(([^()]*)\)\s*=>|(?<![\w$.])([A-Za-z_$][\w$]*)\s*=>")
+_JS_DESTRUCTURE = re.compile(r"\b(?:const|let|var)\s*[\[{]([^\]}]*)[\]}]")
+
+
+def _js_declared_names(code: str) -> list[tuple[int, str]]:
+    """(line, name) for every declaration in `code`, strings and comments removed."""
+    code = re.sub(r"/\*.*?\*/", lambda m: "\n" * m.group(0).count("\n"), code, flags=re.S)
+    found: list[tuple[int, str]] = []
+    for lineno, line in enumerate(code.split("\n"), 1):
+        line = _JS_STRING.sub('""', line)
+        line = re.sub(r"//.*$", "", line)
+        for m in _JS_DECL.finditer(line):
+            found.append((lineno, m.group(1)))
+        for m in _JS_FUNC_PARAMS.finditer(line):
+            found.extend((lineno, n) for n in re.findall(r"[A-Za-z_$][\w$]*", m.group(1)))
+        for m in _JS_ARROW_PARAMS.finditer(line):
+            found.extend((lineno, n) for n in re.findall(r"[A-Za-z_$][\w$]*", m.group(1) or m.group(2) or ""))
+        for m in _JS_DESTRUCTURE.finditer(line):
+            found.extend((lineno, n) for n in re.findall(r"[A-Za-z_$][\w$]*", m.group(1)))
+    return found
+
+
+def _js_turkish(name: str) -> str | None:
+    if name in JS_ALLOWED_NAMES:
+        return None
+    for tok in re.findall(r"[A-Z]+(?![a-z])|[A-Z]?[a-z0-9]+", name):
+        if tok.lower() in JS_TURKISH_WORDS:
+            return tok.lower()
+    return None
+
+
+@pytest.mark.parametrize("script", sorted(p.name for p in STATIC.glob("*.js")))
+def test_script_declarations_are_english(script: str) -> None:
+    code = (STATIC / script).read_text(encoding="utf-8")
+    bad = sorted({(line, name, _js_turkish(name)) for line, name in _js_declared_names(code)
+                  if _js_turkish(name)})
+    assert not bad, "Turkish names in " + script + ":\n  " + "\n  ".join(
+        f"line {line}: {name} ({word})" for line, name, word in bad)
+
+
+def test_the_javascript_name_check_sees_a_planted_turkish_name() -> None:
+    """The checker itself must not be a no-op."""
+    planted = 'const hedef = 1;\nfunction f(dosya, ok) {}\nconst g = (kayit) => kayit;\n// const yorum = 0;\nconst s = "metin";\n'
+    names = {name for _line, name in _js_declared_names(planted)}
+    assert {"hedef", "dosya", "kayit"} <= names
+    assert "yorum" not in names and "metin" not in names
