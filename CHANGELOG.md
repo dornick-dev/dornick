@@ -1,4 +1,33 @@
-﻿# Changelog
+# Changelog
+
+## 1.5.0 - 2026-09-05
+
+The memory upgrade: human-like consolidation, measured against the old
+version on a 90-day simulated life and repaired until the numbers
+reproduced. Every claim below comes from `docs/benchmark-hafiza.md`.
+
+* **Memory that learns from outcomes.** A failed tool call writes its lesson
+  in the same turn (was: ~79 turns later, at best); which memory led to the
+  failure is now attributed with 88% accuracy (was a coin flip).
+* **Far fewer wrong memories injected.** Records from another project leaked
+  into the prompt 59 times over 90 simulated days; now 3. On a topic the
+  memory has never seen the agent stays silent 98% of the time (was 45%).
+  Automatic priming is twice as precise at a third of the token cost.
+* **The agent sleeps.** When you are away it runs a night: replays the day's
+  sessions, assigns credit, stitches related memories, cools what is not in
+  use, backs up, compacts. You type — it wakes at once and carries the rest
+  over. Off switch in Settings ("Gece uykusu"); `/uyu`, `/uyuma`, `/yorgun`
+  in the chat.
+* **Brain view.** The memory network is drawn as regions (hippocampus, cold
+  store, cortex, prefrontal goals, thalamus pressure ring); nights animate
+  live and can be replayed; identity and temperament panels.
+* **Character that survives a model change.** Temperament is measured off
+  the model, what you taught stays, and the previous model's own decisions
+  are shown to the new one as precedent; the lever's dose is calibrated
+  per model. Measured on two models from different families.
+* **Nothing is deleted.** Corrections supersede; old versions stay reachable.
+* **Repo-wide English code**, refreshed screenshots, installer scripts
+  translated. Old memory files migrate in place.
 
 ## 1.4.2 - 2026-09-02
 
