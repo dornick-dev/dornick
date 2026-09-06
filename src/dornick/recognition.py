@@ -239,7 +239,7 @@ def maybe_start(state_dir: Path, hub: Any, *, force: bool = False) -> str:
             return "baslatilamadi"
         proc = _proc
 
-    hub.emit({"type": "tanima", "state": "basladi"})
+    hub.emit({"type": "recognition", "state": "started"})
 
     def watch() -> None:
         try:
@@ -251,7 +251,7 @@ def maybe_start(state_dir: Path, hub: Any, *, force: bool = False) -> str:
         d2 = status(state_dir)
         d2["son_kosu"] = datetime.now(timezone.utc).isoformat()
         (state_dir / FILE).write_text(json.dumps(d2, ensure_ascii=False), encoding="utf-8")
-        hub.emit({"type": "tanima", "state": "bitti"})
+        hub.emit({"type": "recognition", "state": "finished"})
 
     threading.Thread(target=watch, daemon=True, name="dornick-tanima").start()
     return "basladi"
@@ -284,12 +284,12 @@ def reset(state_dir: Path) -> dict:
             shutil.move(str(source), str(target))
         except OSError as exc:
             return {"ok": False, "error": f"Taşınamadı ({source.name}): {exc}",
-                    "tasinan": moved}
+                    "moved": moved}
         moved.append(source.name)
 
     writer.reset()
-    return {"ok": True, "tasinan": moved,
-            "yedek": str(backup) if moved else ""}
+    return {"ok": True, "moved": moved,
+            "backup": str(backup) if moved else ""}
 
 
 def start_watcher(state_dir: Path, hub: Any) -> None:

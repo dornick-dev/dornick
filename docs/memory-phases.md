@@ -788,7 +788,7 @@ satır, sayı gelene kadar bir eksiklik olarak durmalı.
 |---|---|
 | `recall/night_events.py` | **dondurulmuş** olay sözlüğü, yazıcı, doğrulayıcı, yeniden oynatma, sabah özeti |
 | `recall/sleep.py` | `Sleeper` olayları o şemadan geçiriyor; günlük `.dornick/gece/<tarih>.jsonl` |
-| `web/server.py` | `GET /api/uyku`, `GET /api/gece`, `GET /api/gece/<tarih>` |
+| `web/server.py` | `GET /api/sleep`, `GET /api/nights`, `GET /api/nights/<tarih>` |
 | `tests/test_night_events.py` | 13 test: şema anlık görüntüsü, eksik/fazla alan, yeniden oynatma, kesilmiş günlük, yol kaçışı |
 
 **Şema bilerek donduruldu.** `SCHEMA` bir anlık görüntü ve testi onu birebir
@@ -802,7 +802,7 @@ konsolide bir grafiği doğruymuş gibi gösterirdi. Canlı izleme ve yeniden
 oynatma **aynı kod yolu**: diskteki dosya olay günlüğünün kendisi, oynatmak
 onu sırayla okumak. Ayrışacak ikinci bir yol yok.
 
-Küçük ama gerçek bir güvenlik detayı: `/api/gece/<tarih>` yolundaki tarih
+Küçük ama gerçek bir güvenlik detayı: `/api/nights/<tarih>` yolundaki tarih
 HTTP'den geliyor, yani güvenilmez girdi. `night_path` onu tek klasöre
 sabitliyor ve test `../../etc/passwd` ile zorluyor.
 

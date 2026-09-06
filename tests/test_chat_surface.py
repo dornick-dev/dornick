@@ -131,10 +131,10 @@ class FakeBridge:
         return {"busy": False}
 
     def tasks(self) -> dict:
-        return {"gorevler": [{"id": "c:abc", "ad": "model eğitimi", "tur": "iş",
-                              "durum": "kosuyor", "basladi": 1.0, "bitti": 0.0,
-                              "ozet": "", "oturum": "", "durdurulabilir": True}],
-                "kosan": 1}
+        return {"tasks": [{"id": "c:abc", "name": "model eğitimi", "kind": "iş",
+                           "state": "kosuyor", "started": 1.0, "ended": 0.0,
+                           "summary": "", "session": "", "stoppable": True}],
+                "running": 1}
 
     def stop_task(self, gid: str) -> dict:
         self.stopped.append(gid)
@@ -147,14 +147,14 @@ def test_the_task_list_and_the_stop_button_reach_the_bridge(
     bridge = FakeBridge()
     server, _config, log = _setup(tmp_path, mind, bridge)
     try:
-        listing = _get(server, "/api/gorevler")
-        stop = _post(server, "/api/gorevler/durdur", {"id": "c:abc"})
+        listing = _get(server, "/api/tasks")
+        stop = _post(server, "/api/tasks/stop", {"id": "c:abc"})
     finally:
         server.stop()
         log.close()
 
-    assert listing["kosan"] == 1
-    assert listing["gorevler"][0]["ad"] == "model eğitimi"
+    assert listing["running"] == 1
+    assert listing["tasks"][0]["name"] == "model eğitimi"
     assert stop["ok"] is True
     assert bridge.stopped == ["c:abc"]
 
@@ -166,9 +166,9 @@ def test_a_bridge_without_the_task_surface_answers_honestly(
     endpoints: it should return an honest ok:false, not a 500."""
     server, _config, log = _setup(tmp_path, mind, SimpleNamespace(snapshot=lambda: {}))
     try:
-        assert _get(server, "/api/gorevler") == {"gorevler": [], "kosan": 0}
-        assert _post(server, "/api/gorevler/durdur", {"id": "c:x"})["ok"] is False
-        assert _post(server, "/api/butce", {"usd": 5})["ok"] is False
+        assert _get(server, "/api/tasks") == {"tasks": [], "running": 0}
+        assert _post(server, "/api/tasks/stop", {"id": "c:x"})["ok"] is False
+        assert _post(server, "/api/budget", {"usd": 5})["ok"] is False
         assert _post(server, "/api/compact", {})["ok"] is False
     finally:
         server.stop()
@@ -194,16 +194,16 @@ def test_a_helper_run_can_be_read_step_by_step(tmp_path: Path, mind: Mind) -> No
     child.write_text("\n".join(json.dumps(s, ensure_ascii=False) for s in lines),
                      encoding="utf-8")
     try:
-        reply = _get(server, "/api/gorevler/dokum?oturum=yardimci1")
+        reply = _get(server, "/api/tasks/transcript?session=yardimci1")
     finally:
         server.stop()
         log.close()
 
     assert reply["ok"] is True
-    steps = reply["adimlar"]
-    assert steps[0] == {"tur": "arac", "ad": "read_file", "hedef": "a.py",
-                        "hata": False, "ms": 12}
-    assert steps[1] == {"tur": "soz", "metin": "Dosyayı okudum."}
+    steps = reply["steps"]
+    assert steps[0] == {"kind": "tool", "name": "read_file", "target": "a.py",
+                        "error": False, "ms": 12}
+    assert steps[1] == {"kind": "say", "text": "Dosyayı okudum."}
     # If an internal note doesn't reach the chat it must not reach the transcript either.
     assert len(steps) == 2
 
@@ -213,7 +213,7 @@ def test_the_step_log_refuses_a_path_shaped_session_id(
 ) -> None:
     server, _config, log = _setup(tmp_path, mind)
     try:
-        reply = _get(server, "/api/gorevler/dokum?oturum=../../gizli")
+        reply = _get(server, "/api/tasks/transcript?session=../../gizli")
     finally:
         server.stop()
         log.close()
@@ -236,7 +236,7 @@ def test_a_failed_job_report_page_reads_like_a_report_not_a_trace(
                 "id": "c:70032d",
                 "title": "$ py tarama_modbus.py",
                 "state": "hata",
-                "metin": job_report(
+                "text": job_report(
                     command="py tarama_modbus.py",
                     code=1,
                     text="ModuleNotFoundError: No module named 'pymodbus'",
@@ -246,7 +246,7 @@ def test_a_failed_job_report_page_reads_like_a_report_not_a_trace(
     server, _config, log = _setup(tmp_path, mind, StubBridge())
     try:
         with urllib.request.urlopen(
-            server.url + "gorev-rapor/70032d/", timeout=8
+            server.url + "task-report/70032d/", timeout=8
         ) as answer:
             page = answer.read().decode("utf-8")
     finally:
@@ -283,7 +283,7 @@ def test_a_successful_job_report_page_leads_with_summary_not_logs(
                 "id": "c:abc123",
                 "title": "$ $ErrorActionPreference='Stop'; ./dotnet-install.ps1",
                 "state": "bitti",
-                "metin": success_report(
+                "text": success_report(
                     command="$ErrorActionPreference='Stop'; ./dotnet-install.ps1",
                     text=log,
                 ),
@@ -292,7 +292,7 @@ def test_a_successful_job_report_page_leads_with_summary_not_logs(
     server, _config, logf = _setup(tmp_path, mind, StubBridge())
     try:
         with urllib.request.urlopen(
-            server.url + "gorev-rapor/abc123/", timeout=8
+            server.url + "task-report/abc123/", timeout=8
         ) as answer:
             page = answer.read().decode("utf-8")
     finally:
@@ -331,19 +331,19 @@ def test_the_ledger_lists_what_changed_and_from_where(
     target = Path(config.workspace) / "rapor.md"
     try:
         _write_ledger(config, target, "bir\niki\n", "bir\nÜÇ\n")
-        everything = _get(server, "/api/degisiklikler")
-        assert everything["son"] == 1
-        assert everything["kayitlar"][0]["ad"] == "rapor.md"
-        assert everything["kayitlar"][0]["arac"] == "edit_file"
-        assert everything["kayitlar"][0]["gerialinabilir"] is True
+        everything = _get(server, "/api/changes")
+        assert everything["last"] == 1
+        assert everything["records"][0]["name"] == "rapor.md"
+        assert everything["records"][0]["tool"] == "edit_file"
+        assert everything["records"][0]["undoable"] is True
 
         # Turn boundary: AFTER this record is empty.
-        assert _get(server, "/api/degisiklikler?since=1")["kayitlar"] == []
+        assert _get(server, "/api/changes?since=1")["records"] == []
 
         # A second change brings only the new record.
         _write_ledger(config, target, "bir\nÜÇ\n", "bir\nDÖRT\n")
-        later = _get(server, "/api/degisiklikler?since=1")
-        assert [k["sira"] for k in later["kayitlar"]] == [2]
+        later = _get(server, "/api/changes?since=1")
+        assert [k["seq"] for k in later["records"]] == [2]
     finally:
         server.stop()
         log.close()
@@ -356,14 +356,14 @@ def test_the_diff_shows_the_snapshot_against_what_is_on_disk_now(
     target = Path(config.workspace) / "rapor.md"
     try:
         _write_ledger(config, target, "eski hâl\n", "yeni hâl\n")
-        diff = _get(server, "/api/degisiklikler/fark?sira=1")
+        diff = _get(server, "/api/changes/diff?seq=1")
     finally:
         server.stop()
         log.close()
 
-    assert diff["ok"] is True and diff["metin"] is True
-    assert diff["eski"] == "eski hâl\n"
-    assert diff["yeni"] == "yeni hâl\n"
+    assert diff["ok"] is True and diff["text"] is True
+    assert diff["old"] == "eski hâl\n"
+    assert diff["new"] == "yeni hâl\n"
 
 
 def test_undoing_the_turn_puts_the_files_back(tmp_path: Path, mind: Mind) -> None:
@@ -374,7 +374,7 @@ def test_undoing_the_turn_puts_the_files_back(tmp_path: Path, mind: Mind) -> Non
     try:
         _write_ledger(config, one, "A", "A-değişti")
         _write_ledger(config, two, "B", "B-değişti")
-        reply = _post(server, "/api/degisiklikler/geri", {"n": 2})
+        reply = _post(server, "/api/changes/undo", {"n": 2})
         assert reply["ok"] is True
         assert one.read_text(encoding="utf-8") == "A"
         assert two.read_text(encoding="utf-8") == "B"
@@ -391,9 +391,9 @@ def test_a_new_file_is_undone_by_deleting_it(tmp_path: Path, mind: Mind) -> None
         ledger = Defter(Path(config.state_dir) / FOLDER, "cur")
         ledger.save(fresh, "write_file")     # the file does not exist yet
         fresh.write_text("içerik", encoding="utf-8")
-        record = _get(server, "/api/degisiklikler")["kayitlar"][0]
-        assert record["yoktu"] is True
-        assert _post(server, "/api/degisiklikler/geri", {"n": 1})["ok"] is True
+        record = _get(server, "/api/changes")["records"][0]
+        assert record["missing"] is True
+        assert _post(server, "/api/changes/undo", {"n": 1})["ok"] is True
         assert not fresh.exists()
     finally:
         server.stop()
@@ -408,14 +408,14 @@ def test_a_single_file_can_be_undone_by_sequence(tmp_path: Path, mind: Mind) -> 
     try:
         _write_ledger(config, one, "A", "A2")
         _write_ledger(config, two, "B", "B2")
-        records = _get(server, "/api/degisiklikler")["kayitlar"]
+        records = _get(server, "/api/changes")["records"]
         # Newest first: two=sira2, one=sira1
-        seq_one = next(k["sira"] for k in records if k["ad"] == "bir.txt")
-        assert _post(server, "/api/degisiklikler/geri", {"sira": seq_one})["ok"] is True
+        seq_one = next(k["seq"] for k in records if k["name"] == "bir.txt")
+        assert _post(server, "/api/changes/undo", {"seq": seq_one})["ok"] is True
         assert one.read_text(encoding="utf-8") == "A"
         assert two.read_text(encoding="utf-8") == "B2"
-        assert _post(server, "/api/degisiklikler/geri",
-                     {"dosya": str(two)})["ok"] is True
+        assert _post(server, "/api/changes/undo",
+                     {"file": str(two)})["ok"] is True
         assert two.read_text(encoding="utf-8") == "B"
     finally:
         server.stop()
@@ -476,11 +476,11 @@ def test_the_brake_will_not_stop_work_on_a_made_up_price() -> None:
 
 def test_an_empty_or_zero_cap_means_no_cap() -> None:
     bridge = FakePricedBridge(1_000_000, 0, {"girdi": 1e-5, "cikti": 3e-5})
-    assert bridge.budget("")["butce"] is None
-    assert bridge.budget(0)["butce"] is None
-    assert bridge.budget(-3)["butce"] is None
+    assert bridge.budget("")["budget"] is None
+    assert bridge.budget(0)["budget"] is None
+    assert bridge.budget(-3)["budget"] is None
     assert bridge.budget("abc")["ok"] is False
-    assert bridge.budget("2.5")["butce"] == 2.5
+    assert bridge.budget("2.5")["budget"] == 2.5
 
 
 # -- does the brake really stop the turn --------------------------------

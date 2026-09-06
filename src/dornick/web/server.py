@@ -436,7 +436,7 @@ def _report_cover(result: dict[str, Any]) -> tuple[str, str, str, str, str]:
             else ""
         )
     summary = ""
-    for line in str(result.get("metin") or "").splitlines():
+    for line in str(result.get("text") or "").splitlines():
         s = line.strip()
         if not s or s.startswith("#") or s.startswith("- "):
             continue
@@ -590,6 +590,21 @@ def _as_json(raw: bytes) -> dict[str, Any]:
         return {}
 
 
+def _session_meta_out(record: dict[str, Any]) -> dict[str, Any]:
+    """The meta record for the wire: English keys.
+
+    On disk (mind.store) the record keeps the field names it always had —
+    renaming those would orphan existing installs — so the translation
+    happens here, once, on the way out.
+    """
+    out = dict(record or {})
+    if "ad" in out:
+        out["name"] = out.pop("ad")
+    if "etiketler" in out:
+        out["tags"] = out.pop("etiketler")
+    return out
+
+
 def _session_title(digest: str) -> str:
     """The conversation's title: the first few words of the digest.
 
@@ -628,7 +643,7 @@ def _starting_places() -> list[dict[str, str]]:
     places: list[dict[str, str]] = []
     try:
         home = Path.home()
-        places.append({"ad": f"~ ({home.name})", "yol": str(home)})
+        places.append({"name": f"~ ({home.name})", "path": str(home)})
     except (OSError, RuntimeError):  # pragma: no cover - home may be undefined
         pass
 
@@ -637,11 +652,11 @@ def _starting_places() -> list[dict[str, str]]:
             drive = Path(f"{letter}:\\")
             try:
                 if drive.is_dir():
-                    places.append({"ad": f"{letter}:", "yol": str(drive)})
+                    places.append({"name": f"{letter}:", "path": str(drive)})
             except OSError:  # pragma: no cover - drive not ready
                 continue
     else:  # pragma: no cover - does not run on this machine
-        places.append({"ad": "/", "yol": "/"})
+        places.append({"name": "/", "path": "/"})
     return places
 
 
@@ -873,30 +888,30 @@ class _Handler(BaseHTTPRequestHandler):
             self._organs()
         elif route == "/api/state":
             self._json(self._controller_call("snapshot") or {"busy": False})
-        elif route == "/api/uyku":
+        elif route == "/api/sleep":
             self._sleep_status()
-        elif route == "/api/gece":
+        elif route == "/api/nights":
             self._night_list()
-        elif route.startswith("/api/gece/"):
-            self._night_replay(route[len("/api/gece/"):])
-        elif route == "/api/kimlik":
+        elif route.startswith("/api/nights/"):
+            self._night_replay(route[len("/api/nights/"):])
+        elif route == "/api/identity":
             self._identity()
-        elif route == "/api/mizac":
+        elif route == "/api/temperament":
             self._temperament()
-        elif route == "/api/bolgeler":
+        elif route == "/api/regions":
             self._regions()
         elif route == "/api/gate":
             config = getattr(self.server, "config", None)
             on = gate.status(config.state_dir) if config is not None else False
             self._json({"on": on})
-        elif route == "/api/tanima":
+        elif route == "/api/recognition":
             config = getattr(self.server, "config", None)
             d = (recognition.status(config.state_dir) if config is not None
                  else {"on": False, "son_kosu": ""})
-            self._json({"on": d["on"], "kosuyor": recognition.running(),
-                        "hazir": recognition.ready(), "son": d["son_kosu"],
+            self._json({"on": d["on"], "running": recognition.running(),
+                        "ready": recognition.ready(), "last": d["son_kosu"],
                         "learn_cloud_ok": d.get("learn_cloud_ok", False)})
-        elif route == "/api/dil":
+        elif route == "/api/language":
             # The UI language the setup wizard chose. localStorage cannot be
             # written from the installer; the wizard drops setup.json into
             # the workspace and lang.js reads it from here on first launch
@@ -920,18 +935,18 @@ class _Handler(BaseHTTPRequestHandler):
                         lang = ""
                     if lang:
                         break
-            self._json({"dil": lang or _machine_language()})
+            self._json({"language": lang or _machine_language()})
         elif route == "/api/settings":
             self._settings()
         elif route == "/api/files":
             self._files()
         elif route == "/api/files/search":
             self._files_search()
-        elif route == "/api/gorevler":
-            self._json(self._controller_call("tasks") or {"gorevler": [], "kosan": 0})
-        elif route == "/api/gorevler/dokum":
+        elif route == "/api/tasks":
+            self._json(self._controller_call("tasks") or {"tasks": [], "running": 0})
+        elif route == "/api/tasks/transcript":
             self._task_dump()
-        elif route == "/api/gorevler/rapor":
+        elif route == "/api/tasks/report":
             self._task_report()
         elif route == "/api/jobs":
             self._jobs_list()
@@ -943,17 +958,17 @@ class _Handler(BaseHTTPRequestHandler):
             self._plans_list()
         elif route == "/api/git":
             self._git_status()
-        elif route.startswith("/gorev-rapor/"):
+        elif route.startswith("/task-report/"):
             self._task_report_page(route)
-        elif route == "/api/degisiklikler":
+        elif route == "/api/changes":
             self._changes()
-        elif route == "/api/degisiklikler/fark":
+        elif route == "/api/changes/diff":
             self._change_diff()
         elif route == "/api/camera/frame":
             self._camera_frame()
         elif route == "/api/raw":
             self._raw_file()
-        elif route == "/api/gozat":
+        elif route == "/api/browse":
             self._browse()
         elif route == "/api/apps":
             self._apps()
@@ -1109,10 +1124,10 @@ class _Handler(BaseHTTPRequestHandler):
         if route == "/api/artifacts":
             self._artifacts_edit(body)
             return
-        if route == "/api/disari-ac":
+        if route == "/api/open-external":
             self._open_outside(body)
             return
-        if route == "/api/artifact/indir":
+        if route == "/api/artifact/download":
             self._artifact_download(body)
             return
         if route == "/api/transfer/import":
@@ -1121,12 +1136,12 @@ class _Handler(BaseHTTPRequestHandler):
         if route == "/api/reset":
             self._reset(body)
             return
-        if route == "/api/gorevler/durdur":
+        if route == "/api/tasks/stop":
             result = self._controller_call("stop_task", str((body or {}).get("id") or ""))
             self._json(result if isinstance(result, dict)
                        else {"ok": False, "error": "Görev durdurma desteklenmiyor."})
             return
-        if route == "/api/gorevler/devam":
+        if route == "/api/tasks/resume":
             result = self._controller_call(
                 "resume_task",
                 str((body or {}).get("id") or ""),
@@ -1135,17 +1150,17 @@ class _Handler(BaseHTTPRequestHandler):
             self._json(result if isinstance(result, dict)
                        else {"ok": False, "error": "Görev sürdürme desteklenmiyor."})
             return
-        if route == "/api/gorevler/iptal":
+        if route == "/api/tasks/cancel":
             result = self._controller_call(
                 "cancel_task", str((body or {}).get("id") or ""))
             self._json(result if isinstance(result, dict)
                        else {"ok": False, "error": "Görev iptali desteklenmiyor."})
             return
-        if route == "/api/degisiklikler/geri":
+        if route == "/api/changes/undo":
             self._change_undo(body)
             return
-        if route == "/api/butce":
-            result = self._controller_call("butce", (body or {}).get("usd"))
+        if route == "/api/budget":
+            result = self._controller_call("budget", (body or {}).get("usd"))
             self._json(result if isinstance(result, dict)
                        else {"ok": False, "error": "Bütçe freni bu köprüde yok."})
             return
@@ -1154,18 +1169,18 @@ class _Handler(BaseHTTPRequestHandler):
             self._json(result if isinstance(result, dict)
                        else {"ok": False, "error": "Sıkıştırma bu köprüde yok."})
             return
-        if route == "/api/uyku/uyu":
+        if route == "/api/sleep/now":
             # `/uyu`: the sleep daemon starts a night now (or says why not).
             result = self._controller_call("sleep_now")
             self._json(result if isinstance(result, dict)
-                       else {"ok": False, "durum": "yok",
+                       else {"ok": False, "status": "none",
                              "error": "Uyku bekçisi bu köprüde yok."})
             return
-        if route == "/api/uyku/kafein":
+        if route == "/api/sleep/caffeine":
             # `/uyuma`: caffeine — no night for the next hours.
             result = self._controller_call("caffeine")
             self._json(result if isinstance(result, dict)
-                       else {"ok": False, "durum": "yok",
+                       else {"ok": False, "status": "none",
                              "error": "Uyku bekçisi bu köprüde yok."})
             return
         if route == "/api/session/new":
@@ -1220,8 +1235,8 @@ class _Handler(BaseHTTPRequestHandler):
                 return
             # A field that was NOT SENT is left untouched: a request that
             # only changes tags must not erase the name.
-            name = body.get("ad") if isinstance(body, dict) else None
-            tags = body.get("etiketler") if isinstance(body, dict) else None
+            name = body.get("name") if isinstance(body, dict) else None
+            tags = body.get("tags") if isinstance(body, dict) else None
             path = body.get("path") if isinstance(body, dict) else None
             model = body.get("model") if isinstance(body, dict) else None
             provider = body.get("provider") if isinstance(body, dict) else None
@@ -1248,7 +1263,7 @@ class _Handler(BaseHTTPRequestHandler):
                         controller.apply_session_context(sid)
                     except Exception:
                         pass
-            self._json({"ok": True, "meta": record})
+            self._json({"ok": True, "meta": _session_meta_out(record)})
             return
         if route == "/api/session/archive":
             # Drop from the list, move the log to sessions/.arsiv. No
@@ -1280,23 +1295,23 @@ class _Handler(BaseHTTPRequestHandler):
                     return
             self._json(mind.archive_session(sid))
             return
-        if route == "/api/surum":
+        if route == "/api/version":
             # The update check is MANUAL only: the button under Settings ›
             # Machine. There is deliberately no check that goes out to the
             # network by itself in the background. POST: an action that hits
             # the network — must not be triggered by accident via GET.
             self._json(environment.check_update())
             return
-        if route == "/api/guncelle":
+        if route == "/api/update":
             self._run_update()
             return
-        if route == "/api/klasor/olustur":
+        if route == "/api/folder/create":
             self._create_folder(body)
             return
         if route == "/api/gate":
             self._gate(body)
             return
-        if route == "/api/tanima":
+        if route == "/api/recognition":
             self._recognition(body)
             return
         if route == "/api/goals":
@@ -1444,7 +1459,7 @@ class _Handler(BaseHTTPRequestHandler):
         except Exception:
             root = None
         try:
-            wait_s = float(body.get("bekle_sn") or gate.DEFAULT_WAIT_S)
+            wait_s = float(body.get("wait_s") or body.get("bekle_sn") or gate.DEFAULT_WAIT_S)
         except (TypeError, ValueError):
             wait_s = gate.DEFAULT_WAIT_S
         try:
@@ -1487,7 +1502,7 @@ class _Handler(BaseHTTPRequestHandler):
         config = getattr(self.server, "config", None)
         mind = getattr(self.server, "mind", None)
         if config is None or mind is None:
-            self._json({"durum": "bilinmiyor"})
+            self._json({"status": "unknown"})
             return
         try:
             from ..recall import awake, daemon, sleep
@@ -1498,44 +1513,44 @@ class _Handler(BaseHTTPRequestHandler):
                 config.sessions_dir,
                 watermark=config.state_dir / daemon.WATERMARK_FILE)
             self._json({
-                "basinc": pressure.as_dict(),
-                "esik": {"ust": sleep.UPPER_THRESHOLD, "alt": sleep.LOWER_THRESHOLD},
-                "borc": {"saat": round(clock, 2), "oturum": pending},
-                "sicak_oran": mind.store.hot_share(),
+                "pressure": pressure.as_dict(),
+                "threshold": {"upper": sleep.UPPER_THRESHOLD, "lower": sleep.LOWER_THRESHOLD},
+                "debt": {"hours": round(clock, 2), "sessions": pending},
+                "hot_share": mind.store.hot_share(),
             })
         except Exception as err:
-            self._json({"durum": "okunamadı", "hata": str(err)})
+            self._json({"status": "unreadable", "error": str(err)})
 
     def _night_list(self) -> None:
         config = getattr(self.server, "config", None)
         if config is None:
-            self._json({"geceler": []})
+            self._json({"nights": []})
             return
         from ..recall import night_events
 
-        self._json({"geceler": night_events.nights(config.state_dir)})
+        self._json({"nights": night_events.nights(config.state_dir)})
 
     def _night_replay(self, date: str) -> None:
         """One night's events, in the order they happened. This is the replay."""
         config = getattr(self.server, "config", None)
         if config is None:
-            self._json({"olaylar": [], "ozet": {}})
+            self._json({"events": [], "summary": {}})
             return
         from ..recall import night_events
 
         path = night_events.night_path(config.state_dir, date)
         events = list(night_events.replay(path))
-        # `?sonra=N`: only the events after the first N. Live viewing polls
+        # `?after=N`: only the events after the first N. Live viewing polls
         # the current night's file with this; the view feeds the answer
         # through the same function as a full replay (night.js `feed`).
         query = parse_qs(urlparse(self.path).query)
         try:
-            after = max(0, int(query.get("sonra", ["0"])[0]))
+            after = max(0, int(query.get("after", ["0"])[0]))
         except ValueError:
             after = 0
-        self._json({"tarih": path.stem, "olaylar": events[after:],
-                    "ozet": night_events.summary(events),
-                    "toplam": len(events)})
+        self._json({"date": path.stem, "events": events[after:],
+                    "summary": night_events.summary(events),
+                    "total": len(events)})
 
     # -- brain regions (Phase 6, read-only) -----------------------------
 
@@ -1548,16 +1563,16 @@ class _Handler(BaseHTTPRequestHandler):
         """
         config = getattr(self.server, "config", None)
         if config is None:
-            self._json({"cumleler": [], "kelime": 0})
+            self._json({"sentences": [], "words": 0})
             return
         from ..recall import identity
 
         doc = identity.load(config.state_dir)
         self._json({
-            "cumleler": [{"metin": text, "kanit": list(evidence)}
+            "sentences": [{"text": text, "evidence": list(evidence)}
                          for text, evidence in doc.sentences],
-            "kelime": doc.words(),
-            "sinir": identity.MAX_WORDS,
+            "words": doc.words(),
+            "limit": identity.MAX_WORDS,
         })
 
     def _temperament(self) -> None:
@@ -1566,18 +1581,18 @@ class _Handler(BaseHTTPRequestHandler):
         panel says so instead of inventing one."""
         config = getattr(self.server, "config", None)
         if config is None:
-            self._json({"taban": {}, "hedef": {}, "model_id": ""})
+            self._json({"baseline": {}, "target": {}, "model_id": ""})
             return
         from ..recall import temperament
 
         baseline, target, model_id = temperament.load(config.state_dir)
         self._json({
-            "taban": baseline.as_dict(),
-            "hedef": target.as_dict(),
-            "ulasilan": None,
-            "kaldirac": temperament.leverage(baseline, target),
+            "baseline": baseline.as_dict(),
+            "target": target.as_dict(),
+            "reached": None,
+            "leverage": temperament.leverage(baseline, target),
             "model_id": model_id,
-            "eksenler": [temperament.AXIS_KEYS[axis] for axis in temperament.AXES],
+            "axes": [temperament.AXIS_KEYS[axis] for axis in temperament.AXES],
         })
 
     def _regions(self) -> None:
@@ -1586,31 +1601,31 @@ class _Handler(BaseHTTPRequestHandler):
         world records. One call, one paint."""
         config = getattr(self.server, "config", None)
         mind = getattr(self.server, "mind", None)
-        out: dict[str, Any] = {"soguk": 0, "sicak": 0, "toplam": 0, "dunya": 0,
-                               "hedefler": [], "yama": {}}
+        out: dict[str, Any] = {"cold": 0, "hot": 0, "total": 0, "world": 0,
+                               "goals": [], "patch": {}}
         if mind is not None:
             store = getattr(mind, "store", None)
             try:
                 total = int(store.count()) if store is not None else 0
                 share = float(store.hot_share()) if store is not None else 0.0
                 hot = int(round(total * share))
-                out.update({"toplam": total, "sicak": hot, "soguk": max(0, total - hot)})
-                out["dunya"] = int(store.count("world")) if store is not None else 0
+                out.update({"total": total, "hot": hot, "cold": max(0, total - hot)})
+                out["world"] = int(store.count("world")) if store is not None else 0
             except Exception:
                 pass    # a store without these is an older store, not an error
             try:
-                out["hedefler"] = [
-                    {"id": g.id, "metin": g.text, "durum": g.status}
+                out["goals"] = [
+                    {"id": g.id, "text": g.text, "status": g.status}
                     for g in mind.goals(active_only=False, all_sessions=True)]
             except Exception:
                 pass
         if config is not None:
             try:
                 status = recognition.status(config.state_dir)
-                out["yama"] = {"on": bool(status.get("on")),
-                               "kosuyor": recognition.running(),
-                               "hazir": recognition.ready(),
-                               "son": status.get("son_kosu", "")}
+                out["patch"] = {"on": bool(status.get("on")),
+                               "running": recognition.running(),
+                               "ready": recognition.ready(),
+                               "last": status.get("son_kosu", "")}
             except Exception:
                 pass
         self._json(out)
@@ -1620,7 +1635,7 @@ class _Handler(BaseHTTPRequestHandler):
 
         If the body has `on` the switch is flipped (comes from the settings
         page) and on switching on it is tried once without waiting for the
-        watchdog; if it has `simdi` it is started skipping the interval
+        watchdog; if it has `now` it is started skipping the interval
         condition — the road for live verification and the "don't wait for
         the night" request. Same pattern as the gate (`/api/gate`): one
         endpoint, two faces.
@@ -1647,11 +1662,11 @@ class _Handler(BaseHTTPRequestHandler):
             # the state change is announced over SSE too — the settings page
             # and the chat tab are separate clients, one cannot see the other.
             if hub is not None:
-                hub.emit({"type": "tanima",
-                          "state": "acik" if body.get("on") else "kapali"})
+                hub.emit({"type": "recognition",
+                          "state": "on" if body.get("on") else "off"})
             if body.get("on") and hub is not None:
                 recognition.maybe_start(config.state_dir, hub)
-        elif (body or {}).get("simdi"):
+        elif (body or {}).get("now"):
             # "Train now" MUST NOT STAY SILENT: the result goes back to the
             # user. The old state showed nothing on pressing the button —
             # while the loop started, said "too little new data" within a
@@ -1659,14 +1674,14 @@ class _Handler(BaseHTTPRequestHandler):
             reason = ("duzenek_yok" if hub is None
                       else recognition.maybe_start(config.state_dir, hub, force=True))
             d = recognition.status(config.state_dir)
-            self._json({"ok": reason == "basladi", "sebep": reason,
-                        "on": d["on"], "kosuyor": recognition.running(),
-                        "hazir": recognition.ready(), "son": d["son_kosu"]})
+            self._json({"ok": reason == "basladi", "reason": reason,
+                        "on": d["on"], "running": recognition.running(),
+                        "ready": recognition.ready(), "last": d["son_kosu"]})
             return
 
         d = recognition.status(config.state_dir)
-        self._json({"ok": True, "on": d["on"], "kosuyor": recognition.running(),
-                    "hazir": recognition.ready(), "son": d["son_kosu"]})
+        self._json({"ok": True, "on": d["on"], "running": recognition.running(),
+                    "ready": recognition.ready(), "last": d["son_kosu"]})
 
     # -- settings -------------------------------------------------------
 
@@ -2794,7 +2809,7 @@ class _Handler(BaseHTTPRequestHandler):
         if config is None:
             self._json({"ok": False, "error": "Yapılandırma yüklü değil"})
             return
-        sid = parse_qs(urlparse(self.path).query).get("oturum", [""])[0]
+        sid = parse_qs(urlparse(self.path).query).get("session", [""])[0]
         if not sid or not re.match(r"^[A-Za-z0-9_-]+$", sid):
             self._json({"ok": False, "error": "geçersiz oturum"})
             return
@@ -2816,28 +2831,28 @@ class _Handler(BaseHTTPRequestHandler):
                     meta = ev.get("meta") or {}
                     if ev.get("content") == "tool_start":
                         steps.append({
-                            "tur": "arac",
-                            "ad": str(meta.get("tool") or ""),
-                            "hedef": _target_summary(meta.get("input")),
+                            "kind": "tool",
+                            "name": str(meta.get("tool") or ""),
+                            "target": _target_summary(meta.get("input")),
                         })
                     elif ev.get("content") == "tool_end" and steps:
                         # Closes the last open tool step: opening a separate
                         # row would double the list, unreadable.
                         last = steps[-1]
-                        if last.get("tur") == "arac" and "hata" not in last:
-                            last["hata"] = bool(meta.get("error"))
+                        if last.get("kind") == "tool" and "error" not in last:
+                            last["error"] = bool(meta.get("error"))
                             last["ms"] = int(meta.get("ms") or 0)
                     elif ev.get("role") == "assistant" and ev.get("kind") == "message":
                         if meta.get("internal") or meta.get("continuation"):
                             continue
                         text = "\n".join(_plain_blocks(ev.get("content"))).strip()
                         if text:
-                            steps.append({"tur": "soz", "metin": text[:2000]})
+                            steps.append({"kind": "say", "text": text[:2000]})
         except OSError as exc:
             self._json({"ok": False, "error": f"Günlük okunamadı: {exc}"})
             return
         # A long run can have hundreds of steps; the last 200 are enough.
-        self._json({"ok": True, "oturum": sid, "adimlar": steps[-200:]})
+        self._json({"ok": True, "session": sid, "steps": steps[-200:]})
 
     def _task_report(self) -> None:
         """Full helper/job text: `?id=c:<cid>` — the panels open it in the Viewer."""
@@ -2849,8 +2864,8 @@ class _Handler(BaseHTTPRequestHandler):
                    else {"ok": False, "error": "Rapor bu köprüde yok."})
 
     def _task_report_page(self, route: str) -> None:
-        """Artifact-like page: /gorev-rapor/<cid>/ → HTML report."""
-        cid = route[len("/gorev-rapor/"):].strip("/")
+        """Artifact-like page: /task-report/<cid>/ → HTML report."""
+        cid = route[len("/task-report/"):].strip("/")
         # Only the raw id in the URL; the API side accepts the c: prefix too.
         result = self._controller_call("task_report", cid)
         if not isinstance(result, dict) or not result.get("ok"):
@@ -2858,7 +2873,7 @@ class _Handler(BaseHTTPRequestHandler):
             return
         title_doc, h1, badge, summary, command = _report_cover(result)
         title = html.escape(title_doc)
-        text = str(result.get("metin") or "")
+        text = str(result.get("text") or "")
         body = _report_html(text)
         deliverable = result.get("deliverable") if isinstance(result.get("deliverable"), dict) else None
         app_block = ""
@@ -2973,7 +2988,7 @@ class _Handler(BaseHTTPRequestHandler):
         """
         ledger = self._ledger()
         if ledger is None:
-            self._json({"son": 0, "kayitlar": []})
+            self._json({"last": 0, "records": []})
             return
         try:
             since = int(parse_qs(urlparse(self.path).query).get("since", ["0"])[0])
@@ -2987,23 +3002,23 @@ class _Handler(BaseHTTPRequestHandler):
                 continue
             file_path = str(k.get("dosya") or "")
             out.append({
-                "sira": k["sira"],
-                "dosya": file_path,
-                "ad": file_path.replace("\\", "/").rsplit("/", 1)[-1],
-                "arac": k.get("arac") or "",
-                "zaman": k.get("zaman") or "",
-                "yoktu": bool(k.get("yoktu")),
-                "atlandi": k.get("atlandi") or "",
+                "seq": k["sira"],
+                "file": file_path,
+                "name": file_path.replace("\\", "/").rsplit("/", 1)[-1],
+                "tool": k.get("arac") or "",
+                "time": k.get("zaman") or "",
+                "missing": bool(k.get("yoktu")),
+                "skipped": k.get("atlandi") or "",
                 # A record without a snapshot cannot be undone; the UI does
                 # not hide that, it says so next to the row.
-                "gerialinabilir": bool(k.get("goruntu")) or bool(k.get("yoktu")),
+                "undoable": bool(k.get("goruntu")) or bool(k.get("yoktu")),
             })
-        self._json({"son": last, "kayitlar": out})
+        self._json({"last": last, "records": out})
 
     def _change_diff(self) -> None:
-        """A single record's diff: `?sira=N` → {eski, yeni}.
+        """A single record's diff: `?seq=N` → {old, new}.
 
-        `eski` is the snapshot in the ledger, `yeni` the file's CURRENT
+        `old` is the snapshot in the ledger, `new` the file's CURRENT
         state. So what is shown is "what happened since this record" — the
         very change the user will see on pressing the undo button.
         """
@@ -3012,7 +3027,7 @@ class _Handler(BaseHTTPRequestHandler):
             self._json({"ok": False, "error": "Değişiklik defteri yok."})
             return
         try:
-            seq = int(parse_qs(urlparse(self.path).query).get("sira", ["0"])[0])
+            seq = int(parse_qs(urlparse(self.path).query).get("seq", ["0"])[0])
         except ValueError:
             seq = 0
         record = next((k for k in ledger.list_entries(cap=200) if k["sira"] == seq), None)
@@ -3041,15 +3056,15 @@ class _Handler(BaseHTTPRequestHandler):
         new, new_ok = _read(file_path) if file_path.exists() else ("", True)
         self._json({
             "ok": True,
-            "sira": seq,
-            "dosya": str(file_path),
-            "ad": file_path.name,
-            "eski": old,
-            "yeni": new,
-            "yoktu": bool(record.get("yoktu")),
+            "seq": seq,
+            "file": str(file_path),
+            "name": file_path.name,
+            "old": old,
+            "new": new,
+            "missing": bool(record.get("yoktu")),
             # No diff is drawn for a binary or unreadable file; the reason is written.
-            "metin": bool(old_ok and new_ok),
-            "atlandi": record.get("atlandi") or "",
+            "text": bool(old_ok and new_ok),
+            "skipped": record.get("atlandi") or "",
         })
 
     def _change_undo(self, body: dict[str, Any]) -> None:
@@ -3057,11 +3072,11 @@ class _Handler(BaseHTTPRequestHandler):
 
         Body options:
           * `{n}` — the last n records (turn undo)
-          * `{sira}` — a single record (file Keep/Undo)
-          * `{siralar: [...]}` — several records (bulk undo other than Accept All)
+          * `{seq}` — a single record (file Keep/Undo)
+          * `{seqs: [...]}` — several records (bulk undo other than Accept All)
 
         Confirmation is in the UI. On a record without a snapshot the ledger
-        writes nothing (the n road) or rejects that row (the sira road).
+        writes nothing (the n road) or rejects that row (the seq road).
         """
         ledger = self._ledger()
         if ledger is None:
@@ -3072,19 +3087,19 @@ class _Handler(BaseHTTPRequestHandler):
         done: list[str] = []
         error: str | None = None
 
-        if body.get("sira") is not None or body.get("siralar") is not None:
-            raw_seqs = body.get("siralar")
+        if body.get("seq") is not None or body.get("seqs") is not None:
+            raw_seqs = body.get("seqs")
             if raw_seqs is None:
-                raw_seqs = [body.get("sira")]
+                raw_seqs = [body.get("seq")]
             if not isinstance(raw_seqs, list) or not raw_seqs:
-                self._json({"ok": False, "error": "Geçersiz sira listesi."})
+                self._json({"ok": False, "error": "Geçersiz seq listesi."})
                 return
             seqs: list[int] = []
             for x in raw_seqs:
                 try:
                     seqs.append(int(x))
                 except (TypeError, ValueError):
-                    self._json({"ok": False, "error": "Geçersiz sira."})
+                    self._json({"ok": False, "error": "Geçersiz seq."})
                     return
             # Newest to oldest: the right order if the same file has stacked records.
             for seq in sorted(seqs, reverse=True):
@@ -3093,8 +3108,8 @@ class _Handler(BaseHTTPRequestHandler):
                 if err:
                     error = err
                     break
-        elif body.get("dosya"):
-            done, error = ledger.undo_file(str(body.get("dosya") or ""))
+        elif body.get("file"):
+            done, error = ledger.undo_file(str(body.get("file") or ""))
         else:
             try:
                 n = int(body.get("n") or 1)
@@ -3104,12 +3119,12 @@ class _Handler(BaseHTTPRequestHandler):
             done, error = ledger.undo(n)
 
         if error:
-            self._json({"ok": False, "error": error, "yapilan": done})
+            self._json({"ok": False, "error": error, "done": done})
             return
         if hub is not None:
             hub.emit({"type": "notice",
                       "text": f"Geri alındı: {len(done)} değişiklik eski haline döndü."})
-        self._json({"ok": True, "yapilan": done})
+        self._json({"ok": True, "done": done})
 
     def _camera_frame(self) -> None:
         """ONE fresh frame (JPEG) from a camera — the watch area's preview.
@@ -3281,20 +3296,20 @@ class _Handler(BaseHTTPRequestHandler):
         permission, SAVING the setting does.
         """
         query = parse_qs(urlparse(self.path).query)
-        requested = (query.get("yol", [""])[0] or "").strip()
+        requested = (query.get("path", [""])[0] or "").strip()
 
         if not requested:
             # Start: drives (Windows) or root + home.
-            self._json({"yol": "", "ust": None, "klasorler": _starting_places()})
+            self._json({"path": "", "parent": None, "folders": _starting_places()})
             return
 
         try:
             target = Path(requested).expanduser().resolve()
         except OSError:
-            self._json({"hata": "Bu yol çözümlenemedi."})
+            self._json({"error": "Bu yol çözümlenemedi."})
             return
         if not target.is_dir():
-            self._json({"hata": f"Böyle bir klasör yok: {target}"})
+            self._json({"error": f"Böyle bir klasör yok: {target}"})
             return
 
         folders: list[dict[str, Any]] = []
@@ -3308,27 +3323,27 @@ class _Handler(BaseHTTPRequestHandler):
                         # them can type the path by hand.
                         if child.name.startswith(".") or child.name in SKIPPED:
                             continue
-                        folders.append({"ad": child.name, "yol": str(child)})
+                        folders.append({"name": child.name, "path": str(child)})
                     else:
                         file_count += 1
                 except OSError:
                     continue
         except OSError as exc:
-            self._json({"hata": f"Klasör okunamadı: {exc}"})
+            self._json({"error": f"Klasör okunamadı: {exc}"})
             return
 
         config = getattr(self.server, "config", None)
         status = config.state_dir if config is not None else None
         self._json({
-            "yol": str(target),
-            "ust": str(target.parent) if target.parent != target else None,
-            "klasorler": folders[:400],
-            "dosya": file_count,
+            "path": str(target),
+            "parent": str(target.parent) if target.parent != target else None,
+            "folders": folders[:400],
+            "files": file_count,
             # Can it be chosen and what should be said if it is: the user
             # should see it BEFORE SAVING.
-            "engel": sandbox.root_block(target) or "",
-            "uyari": sandbox.root_warning(target, state_dir=status),
-            "tur": _project_kind(target),
+            "blocked": sandbox.root_block(target) or "",
+            "warning": sandbox.root_warning(target, state_dir=status),
+            "kind": _project_kind(target),
         })
 
     def _apps(self) -> None:
@@ -3560,20 +3575,20 @@ class _Handler(BaseHTTPRequestHandler):
         self._send(200, "text/html; charset=utf-8", body)
 
     def _parts(self) -> list[str] | None:
-        """The part selection in the request: ?parcalar=anilar,tanima → list.
+        """The part selection in the request: ?parts=memories,recognition → list.
 
         None if the parameter is absent — export/import fall back to the
         old (default) behaviour; unknown names are weeded out by the
         transfer module.
         """
-        raw = parse_qs(urlparse(self.path).query).get("parcalar", [""])[0]
+        raw = parse_qs(urlparse(self.path).query).get("parts", [""])[0]
         selection = [p.strip() for p in raw.split(",") if p.strip()]
         return selection or None
 
     def _transfer_export(self) -> None:
         """Downloads what Dornick has accumulated as a portable bundle.
 
-        Selective with `?parcalar=anilar,tanima,projeler,ayarlar`: when
+        Selective with `?parts=memories,recognition,projects,settings`: when
         moving to a server only what is needed is packed. A request without
         the parameter produces exactly the same bundle as before (backwards
         compatibility).
@@ -3626,7 +3641,7 @@ class _Handler(BaseHTTPRequestHandler):
         self._json(result)
 
     def _reset(self, body: dict[str, Any]) -> None:
-        """Reset: {"hedef": "anilar"} or {"hedef": "tanima"}.
+        """Reset: {"target": "memories"} or {"target": "recognition"}.
 
         Neither is destruction but a move: the current state goes under
         .dornick/backup-<date>/, then a clean start. Confirmation is in the
@@ -3640,9 +3655,9 @@ class _Handler(BaseHTTPRequestHandler):
             self.send_error(503, "Yapılandırma yüklü değil")
             return
         hub = getattr(self.server, "hub", None)
-        target = str((body or {}).get("hedef") or "")
+        target = str((body or {}).get("target") or "")
 
-        if target == "anilar":
+        if target == "memories":
             mind = getattr(self.server, "mind", None)
             if mind is None:
                 self._json({"ok": False, "error": "Bellek bağlı değil"})
@@ -3650,16 +3665,16 @@ class _Handler(BaseHTTPRequestHandler):
             result = transfer.reset_memories(config, mind)
             if result.get("ok") and hub is not None:
                 hub.emit({"type": "notice",
-                          "text": f"Anılar sıfırlandı ({result['silinen']} kayıt) — "
-                                  f"yedek: {result['yedek']}"})
-        elif target == "tanima":
+                          "text": f"Anılar sıfırlandı ({result['deleted']} kayıt) — "
+                                  f"yedek: {result['backup']}"})
+        elif target == "recognition":
             result = recognition.reset(config.state_dir)
             if result.get("ok") and hub is not None:
                 text = ("Beni tanı sıfırlandı — taban modele dönüldü"
-                        + (f" · yedek: {result['yedek']}" if result.get("yedek") else ""))
+                        + (f" · yedek: {result['backup']}" if result.get("backup") else ""))
                 hub.emit({"type": "notice", "text": text})
         else:
-            self._json({"ok": False, "error": "`hedef` anilar ya da tanima olmalı"})
+            self._json({"ok": False, "error": "`target` must be memories or recognition"})
             return
         self._json(result)
 
@@ -3709,10 +3724,10 @@ class _Handler(BaseHTTPRequestHandler):
         except Exception:
             pass
 
-        # With `?ara=` the search also runs INSIDE THE TRANSCRIPTS: the
+        # With `?q=` the search also runs INSIDE THE TRANSCRIPTS: the
         # sought word is usually not in the title but in the middle of the
         # conversation.
-        query = parse_qs(urlparse(self.path).query).get("ara", [""])[0].strip()
+        query = parse_qs(urlparse(self.path).query).get("q", [""])[0].strip()
         inside = {}
         if query and hasattr(mind, "search_transcripts"):
             try:
@@ -3880,41 +3895,41 @@ class _Handler(BaseHTTPRequestHandler):
         """
         from .. import sandbox as sandbox_mod
 
-        parent = str((body or {}).get("ust") or "").strip()
-        name = str((body or {}).get("ad") or "").strip()
+        parent = str((body or {}).get("parent") or "").strip()
+        name = str((body or {}).get("name") or "").strip()
         if not parent or not name:
-            self._json({"ok": False, "hata": "üst klasör ve ad gerekli"})
+            self._json({"ok": False, "error": "parent folder and name are required"})
             return
         # The name must be a single segment: no climbing to the parent via a path separator or `..`.
         if any(sep in name for sep in ("/", "\\")) or name in (".", ".."):
-            self._json({"ok": False, "hata": "Klasör adı yol içeremez"})
+            self._json({"ok": False, "error": "Klasör adı yol içeremez"})
             return
         try:
             root = Path(parent).expanduser().resolve()
             target = (root / name).resolve()
         except OSError:
-            self._json({"ok": False, "hata": "Yol çözümlenemedi"})
+            self._json({"ok": False, "error": "Yol çözümlenemedi"})
             return
         if root != target.parent:
-            self._json({"ok": False, "hata": "Klasör seçilen dizinin altında olmalı"})
+            self._json({"ok": False, "error": "Klasör seçilen dizinin altında olmalı"})
             return
         if not root.is_dir():
-            self._json({"ok": False, "hata": f"Üst klasör yok: {root}"})
+            self._json({"ok": False, "error": f"Üst klasör yok: {root}"})
             return
         # The check is on the PARENT directory: the target does not exist
         # yet and `kok_engeli` rejects a non-existent path with "no such
         # folder". The real question is "is opening this folder in a safe
         # place?" anyway — the parent directory answers that.
         if (block := sandbox_mod.root_block(root)) is not None:
-            self._json({"ok": False, "hata": block})
+            self._json({"ok": False, "error": block})
             return
         try:
             target.mkdir(parents=True, exist_ok=True)
         except OSError as exc:
-            self._json({"ok": False, "hata": f"oluşturulamadı: {exc}"})
+            self._json({"ok": False, "error": f"oluşturulamadı: {exc}"})
             return
-        self._json({"ok": True, "yol": str(target),
-                    "uyari": sandbox_mod.root_warning(target) or ""})
+        self._json({"ok": True, "path": str(target),
+                    "warning": sandbox_mod.root_warning(target) or ""})
 
     def _run_update(self) -> None:
         """Downloads the new version and launches the setup wizard.
@@ -3922,7 +3937,7 @@ class _Handler(BaseHTTPRequestHandler):
         The address DOES NOT COME FROM THE CLIENT: the server asks the
         GitHub release API again and takes the trusted download link from
         there (a poisoned URL cannot be injected). The download runs in the
-        background; progress flows to the UI over SSE (the "guncelleme"
+        background; progress flows to the UI over SSE (the "update"
         event). When done the wizard opens; closing the running application
         is the wizard's own job (PrepareToInstall → "Close and continue").
         """
@@ -3930,9 +3945,9 @@ class _Handler(BaseHTTPRequestHandler):
         import threading
 
         info = environment.check_update()
-        if not info.get("yeni") or not info.get("indirme"):
+        if not info.get("new") or not info.get("download"):
             self._json({"ok": False,
-                        "hata": info.get("hata") or "İndirilecek güncelleme yok"})
+                        "error": info.get("error") or "İndirilecek güncelleme yok"})
             return
 
         hub = getattr(self.server, "hub", None)
@@ -3940,32 +3955,32 @@ class _Handler(BaseHTTPRequestHandler):
         def announce(ev: dict) -> None:
             if hub is not None:
                 try:
-                    hub.emit({"type": "guncelleme", **ev})
+                    hub.emit({"type": "update", **ev})
                 except Exception:
                     pass
 
         def run() -> None:
             try:
-                announce({"asama": "indiriliyor", "yuzde": 0, "yeni": info["yeni"]})
+                announce({"stage": "downloading", "percent": 0, "new": info["new"]})
                 folder = Path(tempfile.gettempdir()) / "dornick-guncelleme"
 
                 def progress(downloaded: int, total: int) -> None:
                     percent = int(downloaded * 100 / total) if total else 0
-                    announce({"asama": "indiriliyor", "yuzde": percent,
-                              "indirilen": downloaded, "toplam": total})
+                    announce({"stage": "downloading", "percent": percent,
+                              "downloaded": downloaded, "total": total})
 
                 path = environment.download_update(
-                    info["indirme"], folder,
-                    expected_size=int(info.get("boyut") or 0),
-                    name=str(info.get("ad") or ""), progress=progress)
-                announce({"asama": "kuruluyor", "yeni": info["yeni"]})
+                    info["download"], folder,
+                    expected_size=int(info.get("size") or 0),
+                    name=str(info.get("name") or ""), progress=progress)
+                announce({"stage": "installing", "new": info["new"]})
                 environment.start_update(path)
-                announce({"asama": "acildi", "yeni": info["yeni"]})
+                announce({"stage": "opened", "new": info["new"]})
             except Exception as exc:  # network/verification/launch — honest error to the UI
-                announce({"asama": "hata", "hata": f"{type(exc).__name__}: {exc}"})
+                announce({"stage": "error", "error": f"{type(exc).__name__}: {exc}"})
 
         threading.Thread(target=run, name="dornick-guncelle", daemon=True).start()
-        self._json({"ok": True, "yeni": info["yeni"]})
+        self._json({"ok": True, "new": info["new"]})
 
     def _send(self, status: int, content_type: str, body: bytes,
               headers: dict[str, str] | None = None) -> None:

@@ -28,33 +28,41 @@ speak to it, nothing off it can.
 curl -s -X POST http://127.0.0.1:8765/api/gate \
   -H "Content-Type: application/json" \
   -d '{"text": "Read satislar.csv and write rapor.py that prints monthly revenue.",
-       "bekle_sn": 600}'
+       "wait_s": 600}'
 ```
 
 ```json
 {
   "ok": true,
-  "yanit": "…the agent's full text answer…",
-  "araclar": ["read_file", "write_file", "shell"],
-  "dosyalar": ["rapor.py"],
-  "kuyrukta_bekledi": false,
-  "gecen_sn": 41.7,
-  "oturum": "20260829T012345Z"
+  "answer": "…the agent's full text answer…",
+  "tools": ["read_file", "write_file", "shell"],
+  "files": ["rapor.py"],
+  "queued": false,
+  "elapsed_s": 41.7,
+  "session": "20260829T012345Z"
 }
 ```
 
 | field | meaning |
 |---|---|
-| `yanit` | the agent's complete text output for the turn |
-| `araclar` | tools it called, in order |
-| `dosyalar` | files that changed in the workspace during the turn |
-| `kuyrukta_bekledi` | `true` if your request queued behind a running turn |
-| `gecen_sn` | wall time |
-| `oturum` | session id — the raw event log is `.dornick/sessions/<oturum>.jsonl` |
-| `bekle_sn` (request) | timeout, default 600 s; on timeout you get `ok:false` + `error` |
+| `answer` | the agent's complete text output for the turn |
+| `tools` | tools it called, in order |
+| `files` | files that changed in the workspace during the turn |
+| `queued` | `true` if your request queued behind a running turn |
+| `elapsed_s` | wall time |
+| `session` | session id — the raw event log is `.dornick/sessions/<session>.jsonl` |
+| `wait_s` (request) | timeout, default 600 s; on timeout you get `ok:false` + `error` |
 
 An optional `image` field takes a base64 data URL. Errors never drop the
 connection — you always get JSON with `ok:false` and a reason.
+
+**Old field names (1.5.3 and earlier).** The gate is the one endpoint other
+people's scripts memorise, so it is the only route that keeps a
+compatibility shim: `bekle_sn` is still accepted as an alias of `wait_s`,
+and the response still carries the old keys next to the new ones —
+`yanit` = `answer`, `araclar` = `tools`, `dosyalar` = `files`,
+`kuyrukta_bekledi` = `queued`, `gecen_sn` = `elapsed_s`, `oturum` = `session`.
+New integrations should use the English names; the aliases are deprecated.
 
 ## Driving dornick from Claude Code (or any agent)
 
@@ -63,7 +71,7 @@ HTTP tooling. A prompt that works verbatim in Claude Code:
 
 > There is a local agent listening at `http://127.0.0.1:8765/api/gate`.
 > POST JSON `{"text": "..."}` to give it a task; the response contains its
-> answer (`yanit`) and the files it changed (`dosyalar`). Delegate the
+> answer (`answer`) and the files it changed (`files`). Delegate the
 > following task to it and review the result: …
 
 That is the whole integration — no SDK. The same shape works from OpenCode,

@@ -104,14 +104,16 @@ def check_update(*, _ac=urllib.request.urlopen) -> dict:
     """Asks GitHub for the latest release and compares it with the current one.
 
     The returned dict is everything the UI draws:
-      ok      did the request reach its destination
-      mevcut  the running version
-      yeni    if a newer release exists its version, otherwise ""
-      url     the new version's release page (opened in the browser)
-      indirme direct link to the installer file (.exe) attached to the release;
-              "" if the release has no installer — the UI then falls back
-              to the release page
-      hata    polite, human-language error text (while ok=False)
+      ok       did the request reach its destination
+      current  the running version
+      new      if a newer release exists its version, otherwise ""
+      url      the new version's release page (opened in the browser)
+      download direct link to the installer file (.exe) attached to the release;
+               "" if the release has no installer — the UI then falls back
+               to the release page
+      size     the installer's byte size (0 if unknown)
+      name     the installer file name
+      error    polite, human-language error text (while ok=False)
     """
     current = version()
     request = urllib.request.Request(
@@ -123,25 +125,25 @@ def check_update(*, _ac=urllib.request.urlopen) -> dict:
     except urllib.error.HTTPError as exc:
         if exc.code == 404:
             # Repo/release not visible: no release may have been published yet.
-            return {"ok": False, "mevcut": current, "yeni": "", "url": "",
-                    "indirme": "", "hata": "Yayınlanmış sürüm bulunamadı"}
-        return {"ok": False, "mevcut": current, "yeni": "", "url": "",
-                "indirme": "",
-                "hata": f"Sürüm servisi cevap vermedi (HTTP {exc.code})"}
+            return {"ok": False, "current": current, "new": "", "url": "",
+                    "download": "", "error": "Yayınlanmış sürüm bulunamadı"}
+        return {"ok": False, "current": current, "new": "", "url": "",
+                "download": "",
+                "error": f"Sürüm servisi cevap vermedi (HTTP {exc.code})"}
     except Exception:
-        return {"ok": False, "mevcut": current, "yeni": "", "url": "",
-                "indirme": "",
-                "hata": "Ağa ulaşılamadı — internet bağlantısını denetle"}
+        return {"ok": False, "current": current, "new": "", "url": "",
+                "download": "",
+                "error": "Ağa ulaşılamadı — internet bağlantısını denetle"}
 
     remote = str(data.get("tag_name") or data.get("name") or "").strip()
     url = str(data.get("html_url") or "")
     if _parse_version(remote) > _parse_version(current):
         download, size, name = _installer_asset(data)
-        return {"ok": True, "mevcut": current, "yeni": remote.lstrip("vV"),
-                "url": url, "indirme": download, "boyut": size, "ad": name,
-                "hata": ""}
-    return {"ok": True, "mevcut": current, "yeni": "", "url": "",
-            "indirme": "", "boyut": 0, "ad": "", "hata": ""}
+        return {"ok": True, "current": current, "new": remote.lstrip("vV"),
+                "url": url, "download": download, "size": size, "name": name,
+                "error": ""}
+    return {"ok": True, "current": current, "new": "", "url": "",
+            "download": "", "size": 0, "name": "", "error": ""}
 
 
 def _installer_asset(data: dict) -> tuple[str, int, str]:

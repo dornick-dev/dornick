@@ -63,7 +63,7 @@ def test_reopened_chat_rebuilds_the_trace() -> None:
     """Yeniden açılan sohbet düşünme ve araç adımlarını da gösterir
     (canlı yara, 01.09: "dosyalar, düşünmeler, adımlar vs gelmiyor")."""
     assert "function historyStrip" in APP_JS
-    assert "dusunme" in APP_JS and "adimlar" in APP_JS
+    assert "turn.thinking" in APP_JS and "turn.steps" in APP_JS
     # Sunucu tarafı: döküm izleri üretir.
     store_py = (STATIC.parents[1] / "mind" / "store.py").read_text(encoding="utf-8")
     assert "_thinking_blocks" in store_py and "_step_summaries" in store_py
@@ -121,9 +121,9 @@ def test_workdir_bar_and_folder_picker_exist() -> None:
     assert 'id="workdir-bar"' in HTML and 'id="workdir-new"' in HTML
     assert '/workdir.js' in HTML
     workdir = (STATIC / "workdir.js").read_text(encoding="utf-8")
-    assert "/api/klasor/olustur" in workdir and "/api/gozat" in workdir
+    assert "/api/folder/create" in workdir and "/api/browse" in workdir
     server_py = (STATIC.parents[0] / "server.py").read_text(encoding="utf-8")
-    assert 'route == "/api/klasor/olustur"' in server_py
+    assert 'route == "/api/folder/create"' in server_py
     assert '"/workdir.js"' in server_py, "statik dosya listesine eklenmeli"
 
 
@@ -156,15 +156,15 @@ def test_default_language_is_english_outside_turkey() -> None:
 
 
 def test_in_app_update_is_wired() -> None:
-    """Uygulama içi güncelleme: SSE 'guncelleme' olayı işleniyor, ilerleme
-    çiziliyor ve /api/guncelle çağrılıyor (kullanıcı isteği, 02.09)."""
-    assert 'case "guncelleme":' in APP_JS
+    """Uygulama içi güncelleme: SSE 'update' olayı işleniyor, ilerleme
+    çiziliyor ve /api/update çağrılıyor (kullanıcı isteği, 02.09)."""
+    assert 'case "update":' in APP_JS
     assert "updateStatus" in APP_JS
     settings_js = (STATIC / "settings.js").read_text(encoding="utf-8")
-    assert "/api/guncelle" in settings_js
+    assert "/api/update" in settings_js
     # Sunucu ucu + güvenli indirme sunucu tarafında.
     server_py = (STATIC.parents[0] / "server.py").read_text(encoding="utf-8")
-    assert 'route == "/api/guncelle"' in server_py and "_run_update" in server_py
+    assert 'route == "/api/update"' in server_py and "_run_update" in server_py
     environment_py = (STATIC.parents[1] / "environment.py").read_text(encoding="utf-8")
     assert "_trusted_download" in environment_py and "start_update" in environment_py
 
@@ -192,8 +192,8 @@ def test_artifact_reaches_real_browser_and_disk() -> None:
     Gerçek adresi yalnız sunucu bilir; indirme diske sunucudan yazılır.
     """
     viewer = (STATIC / "viewer.js").read_text(encoding="utf-8")
-    assert "/api/disari-ac" in viewer
-    assert "/api/artifact/indir" in viewer
+    assert "/api/open-external" in viewer
+    assert "/api/artifact/download" in viewer
     assert "Tarayıcıda aç" in APP_JS   # kartta da düğme var
 
 
@@ -1417,26 +1417,26 @@ def test_usage_events_feed_the_chip_and_the_snapshot_seeds_it() -> None:
     sessizce ölür."""
     usage = re.search(r'case "usage":(.*?)break;', APP_JS, re.S)
     assert usage and "dockCost()" in usage.group(1)
-    price = re.search(r'case "fiyat":(.*?)break;', APP_JS, re.S)
+    price = re.search(r'case "price":(.*?)break;', APP_JS, re.S)
     assert price and "dockCost()" in price.group(1)
     # Tohumlama loadState'te.
-    assert "s.kullanim" in APP_JS and "s.fiyat" in APP_JS
+    assert "s.usage" in APP_JS and "s.price" in APP_JS
     # Sunucu tarafı sözleşme gerçekten yayında: desktop._usage_yay
-    # tur/oturum/fiyat alanlarını basıyor.
+    # turn/session/price alanlarını basıyor.
     DESKTOP = (Path(__file__).resolve().parents[1] / "src" / "dornick" / "desktop.py").read_text(
         encoding="utf-8")
-    assert '"tur": dict(self._turn_usage)' in DESKTOP
-    assert '"oturum": dict(self._session_usage)' in DESKTOP
-    assert '"fiyat": self._price' in DESKTOP
+    assert '"turn": dict(self._turn_usage)' in DESKTOP
+    assert '"session": dict(self._session_usage)' in DESKTOP
+    assert '"price": self._price' in DESKTOP
 
 
 # -- model bekleme durumu (çalışma şeridinde) ---------------------------
 
 
 def test_model_wait_lives_in_the_work_strip_not_the_chat() -> None:
-    """Kesinti sohbete hata duvarı basmaz: "bekleme" olayı line()/alert
+    """Kesinti sohbete hata duvarı basmaz: "waiting" olayı line()/alert
     yoluna değil, şeridi süren bekleme() işleyicisine gider."""
-    block = re.search(r'case "bekleme":(.*?)break;', APP_JS, re.S)
+    block = re.search(r'case "waiting":(.*?)break;', APP_JS, re.S)
     assert block and "onWaiting(e)" in block.group(1)
     assert 'line("alert"' not in block.group(1)
 
@@ -1692,7 +1692,7 @@ def test_goals_can_be_finished_dropped_and_cleared() -> None:
 def test_a_resumed_session_refills_the_context_gauge() -> None:
     """Kapanıp açılan uygulamada çubuk sıfırdan başlıyordu. Snapshot gerçek
     doluluğu taşıyor; tahminse title'da söyleniyor."""
-    assert "dockContext(Number(s.prompt_total) || 0, s.tahmin, s.kirilim)" in APP_JS
+    assert "dockContext(Number(s.prompt_total) || 0, s.estimated, s.breakdown)" in APP_JS
     body = re.search(r"function dockContext\(promptTotal, estimate, breakdown\) \{(.*?)\n\}",
                      APP_JS, re.S)
     assert body and 't("Bağlam doluluğu — yaklaşık (geçmişten tahmin)")' in body.group(1)
@@ -1805,8 +1805,8 @@ def test_the_history_panel_can_name_and_tag_a_conversation() -> None:
     assert "function editTags" in HIST_JS
     assert '"/api/session/meta"' in HIST_JS
     # Gönderilmeyen alan sunucuda dokunulmadan kalıyor: iki ayrı çağrı.
-    assert "saveMeta(s.id, { ad })" in HIST_JS
-    assert "saveMeta(s.id, { etiketler: labels })" in HIST_JS
+    assert "saveMeta(s.id, { name })" in HIST_JS
+    assert "saveMeta(s.id, { tags: labels })" in HIST_JS
     assert re.search(r"\.hist-title\.named \{", CSS)
     # Sınıf adı panelin kendi başlığıyla ÇAKIŞMAMALI: index.html'deki
     # "Konuşmalar" başlığı zaten `.hist-tag` taşıyor (canlıda görüldü).
@@ -1828,7 +1828,7 @@ def test_the_search_box_can_look_inside_transcripts() -> None:
     """Aranan söz çoğu zaman başlıkta değil; 'içinde ara' aramayı
     dökümlere taşıyor. Her tuşta istek atmamalı."""
     assert "hist-deep" in HIST_JS
-    assert '"/api/sessions?ara=" + encodeURIComponent(query)' in HIST_JS
+    assert '"/api/sessions?q=" + encodeURIComponent(query)' in HIST_JS
     delay = re.search(r"const DEEP_DELAY = (\d+)", HIST_JS)
     assert delay and int(delay.group(1)) >= 150
     plan = re.search(r"function scheduleDeep\(\) \{(.*?)\n  \}", HIST_JS, re.S)
@@ -1952,9 +1952,9 @@ def test_the_sleep_commands_talk_to_the_daemon() -> None:
     assert record["uyu"] == "Geceyi şimdi başlat"
     assert record["uyuma"] == "Bu gece uyuma (kafein)"
     assert record["yorgun"] == "Ne kadar yorgunsun?"
-    for route in ('"/api/uyku/uyu"', '"/api/uyku/kafein"'):
+    for route in ('"/api/sleep/now"', '"/api/sleep/caffeine"'):
         assert route in COMMAND_JS and route in SERVER_SRC, route
-    assert 'fetch("/api/uyku")' in COMMAND_JS
+    assert 'fetch("/api/sleep")' in COMMAND_JS
     # The answers are shown, not swallowed: the two toasts and the refusal reason.
     for text in ("Uyuyor…", "4 saat uyumayacak", "answer.error"):
         assert text in COMMAND_JS, text
@@ -2034,23 +2034,23 @@ def test_the_task_panel_speaks_the_same_shape_the_server_sends() -> None:
     """
     bridge = (Path(__file__).resolve().parents[1] / "src" / "dornick"
               / "desktop.py").read_text(encoding="utf-8")
-    tasks = re.search(r"def tasks\(self\).*?return \{\"gorevler\"", bridge, re.S)
+    tasks = re.search(r"def tasks\(self\).*?return \{\"tasks\"", bridge, re.S)
     assert tasks, "Bridge.tasks() bulunamadı"
     written = set(re.findall(r'"(\w+)":', tasks.group(0)))
-    for field in ("id", "ad", "tur", "durum", "basladi", "bitti", "ozet",
-                 "oturum", "durdurulabilir"):
+    for field in ("id", "name", "kind", "state", "started", "ended", "summary",
+                 "session", "stoppable"):
         assert field in written, f"sunucu {field} yazmıyor"
         assert re.search(rf"\bg\.{field}\b", TASKS_JS), f"panel {field} okumuyor"
 
 
 def test_the_task_panel_can_stop_one_job_and_only_a_stoppable_one() -> None:
     """Kendi kopyasını panelden öldürmek uygulamayı kapatmak olurdu."""
-    assert '"/api/gorevler/durdur"' in TASKS_JS
-    assert '"/api/gorevler/durdur"' in SERVER_SRC
-    assert "if (g.durdurulabilir)" in TASKS_JS
+    assert '"/api/tasks/stop"' in TASKS_JS
+    assert '"/api/tasks/stop"' in SERVER_SRC
+    assert "if (g.stoppable)" in TASKS_JS
     bridge = (Path(__file__).resolve().parents[1] / "src" / "dornick"
               / "desktop.py").read_text(encoding="utf-8")
-    assert '"durdurulabilir": (not finished) and not own' in bridge
+    assert '"stoppable": (not finished) and not own' in bridge
 
 
 def test_a_finished_background_job_knocks_on_the_conversation() -> None:
@@ -2107,7 +2107,7 @@ def test_scene_memory_labels_skip_the_chat_column() -> None:
 def test_the_running_time_ticks_without_asking_the_server() -> None:
     """Saniyede bir HTTP isteği atmak paneli açık tutmayı pahalı yapardı:
     satır başlangıç damgasını taşıyor, saymayı tarayıcı yapıyor."""
-    assert "dataset.basladi" in TASKS_JS
+    assert "dataset.started" in TASKS_JS
     assert re.search(r"setInterval\(\(\) => \{[^}]*task-time", TASKS_JS, re.S)
 
 
@@ -2188,7 +2188,7 @@ def test_main_jobs_panel_and_artifact_export_exist() -> None:
     assert "download=1" in (Path("src/dornick/web/server.py").read_text(encoding="utf-8"))
     assert "downloadArtifact" in viewer and "injectScrollCss" in viewer
     assert "function wait(" in orch or "wait(ev)" in orch
-    assert "ch.hedef" in orch or "ev.hedef" in orch
+    assert "ch.target" in orch or "ev.target" in orch
     assert "KEEP_ACTS" in orch and "orch-ch-acts" in orch
     assert "child_wait" in APP_JS
     assert "Tasks.refresh" in APP_JS
@@ -2231,7 +2231,7 @@ def test_main_jobs_panel_and_artifact_export_exist() -> None:
 def test_the_turn_summary_reads_the_agents_own_ledger() -> None:
     """İkinci bir defter tutulmuyor: panelin gördüğü, `undo` aracının
     okuduğu defterin aynısı (tools/checkpoint.py)."""
-    assert "/api/degisiklikler" in CHG_JS
+    assert "/api/changes" in CHG_JS
     assert "checkpoint import FOLDER, Defter" in SERVER_SRC
     # Geri alma: tur (n), dosya (sira/siralar) veya path.
     assert "ledger.undo(n)" in SERVER_SRC
@@ -2260,14 +2260,14 @@ def test_undoing_a_turn_asks_twice() -> None:
     # Onay penceresi kendiliğinden kapanıyor: kurulu bir düğme unutulmasın.
     assert "setTimeout(" in body
     # Geri alınacaklar: bu turda hâlâ açık kayıtların sira listesi.
-    assert "siralar:" in body
+    assert "seqs:" in body
 
 
 def test_the_diff_in_the_summary_is_the_same_diff_card() -> None:
     """İkinci bir diff çizici, bir gün ikisinin ayrı görünmesi demek."""
-    assert "diffHunk(data.eski, data.yeni, 1)" in CHG_JS
+    assert "diffHunk(data.old, data.new, 1)" in CHG_JS
     assert "function diffHunk(" in APP_JS
-    assert "/api/degisiklikler/fark" in CHG_JS
+    assert "/api/changes/diff" in CHG_JS
 
 
 # -- bütçe freni --------------------------------------------------------
@@ -2276,12 +2276,12 @@ def test_the_diff_in_the_summary_is_the_same_diff_card() -> None:
 def test_the_budget_cap_lives_next_to_the_number() -> None:
     """Ayar sayfasında değil: harcamanın yanında, maliyet çipinin kutusunda."""
     assert "function budgetField()" in APP_JS
-    assert '"/api/butce"' in APP_JS and '"/api/butce"' in SERVER_SRC
+    assert '"/api/budget"' in APP_JS and '"/api/budget"' in SERVER_SRC
     # Boş = sınırsız.
     assert 'usd: raw === "" ? null : raw' in APP_JS
     # Ayar sayfasında bir bütçe alanı YOK: iki yerde duran bir sınır, bir
     # gün birbirini tutmayan iki sayı olurdu.
-    assert "butce" not in SETTINGS_JS_SRC
+    assert "/api/budget" not in SETTINGS_JS_SRC
 
 
 def test_the_cost_chip_shows_the_cap_it_is_running_under() -> None:
@@ -2319,10 +2319,10 @@ SETTINGS_CSS = (STATIC / "settings.css").read_text(encoding="utf-8")
 
 def test_the_settings_page_can_choose_a_project_folder() -> None:
     """Native klasör diyaloğu yok: seçici sayfanın kendi içinde ve
-    `/api/gozat` ucunu kullanıyor."""
+    `/api/browse` ucunu kullanıyor."""
     src = (STATIC / "settings.js").read_text(encoding="utf-8")
     assert "function projectSection" in src
-    assert '"/api/gozat?yol=" + encodeURIComponent(path)' in src
+    assert '"/api/browse?path=" + encodeURIComponent(path)' in src
     assert 'set("sandbox", "project"' in src
     # Son projeler tek tıkla geçiş.
     assert "state.sandbox.recent" in src
@@ -2617,7 +2617,7 @@ def test_folder_flows_and_task_mirror_are_wired() -> None:
     sag panel tutamaci 760'a kadar buyur, "Dusundu" tek tiklamada icerige
     iner."""
     hist = (STATIC / "history.js").read_text(encoding="utf-8")
-    assert "startInFolder" in hist and "/api/gozat" in hist
+    assert "startInFolder" in hist and "/api/browse" in hist
     # Klasör düğmesi kalktı: yeni konuşma atölyede; klasör isteğe bağlı.
     assert 'id="hist-new-folder"' not in HTML
     assert "applyTitle" in hist and "session_title" in APP_JS
@@ -2637,10 +2637,10 @@ def test_folder_flows_and_task_mirror_are_wired() -> None:
     assert ".plan-dock {" not in CSS
     assert ".goals-pane" in CSS
     orch = (STATIC / "orchestra.js").read_text(encoding="utf-8")
-    assert "/api/gorevler/iptal" in orch and "İptal et" in orch
+    assert "/api/tasks/cancel" in orch and "İptal et" in orch
     assert "def cancel_task" in (Path(__file__).resolve().parents[1]
                                  / "src" / "dornick" / "desktop.py").read_text(encoding="utf-8")
-    assert '"/api/gorevler/iptal"' in SERVER_SRC
+    assert '"/api/tasks/cancel"' in SERVER_SRC
     assert "Math.min(760" in APP_JS
     assert "thinkingOnly" in APP_JS
     loop_src = (Path(__file__).resolve().parents[1] / "src" / "dornick" / "loop.py").read_text(
@@ -2716,15 +2716,15 @@ def test_every_night_event_in_the_schema_has_a_handler() -> None:
 
 def test_live_and_replay_share_one_feed() -> None:
     """Canlı izleme ve yeniden oynatma AYNI kod: SSE `gece` olayı, bugünün
-    dosyasının yoklanması ve /api/gece/<tarih> yanıtı hep `feed()`ten geçer.
+    dosyasının yoklanması ve /api/nights/<tarih> yanıtı hep `feed()`ten geçer.
     İkinci bir yol olmasın ki ayrışmasın."""
     assert "function feed(events)" in NIGHT_JS
     # Yeniden oynatma feed'den geçer.
-    assert re.search(r"async function replay\(date\)[\s\S]*?feed\(data\.olaylar", NIGHT_JS)
+    assert re.search(r"async function replay\(date\)[\s\S]*?feed\(data\.events", NIGHT_JS)
     # Canlı yoklama feed'den geçer.
-    assert re.search(r"async function poll\(\)[\s\S]*?feed\(data\.olaylar\)", NIGHT_JS)
+    assert re.search(r"async function poll\(\)[\s\S]*?feed\(data\.events\)", NIGHT_JS)
     # SSE kanalı da aynı feed'e gider.
-    assert re.search(r'case "gece":\s*\n\s*if \(typeof Night !== "undefined"\) Night\.feed\(', APP_JS)
+    assert re.search(r'case "night":\s*\n\s*if \(typeof Night !== "undefined"\) Night\.feed\(', APP_JS)
     # Arayüz recall.db'ye bakmaz: yalnız olay uçları.
     assert "recall.db" not in NIGHT_JS.replace("never looks at recall.db", "").replace("recall.db directly", "")
 
@@ -2765,7 +2765,7 @@ def test_every_region_tooltip_names_its_source_code() -> None:
         "patch": "tanima.durum()",
         "prefrontal": "Mind.goals()",
         "amygdala": "remember()",
-        "thalamus": "uyku.Bekci",
+        "thalamus": "sleep daemon",
         "brainstem": "uyku",
         "identity": ".dornick/identity.md",
         "temperament": ".dornick/temperament.json",
@@ -2849,7 +2849,7 @@ def test_the_brain_panel_is_simple_by_default_and_detailed_on_demand() -> None:
     assert "Regions.nightProgress" not in APP_JS      # night.js feeds it, not a second SSE path
     assert "r.nightProgress(replayed, known)" in NIGHT_JS and "r.lastNight({" in NIGHT_JS
     # The poll reads the watchman's state word (a replay owns it meanwhile).
-    assert "SLEEP_STATES.includes(u.durum) && !replaying()" in REGIONS_JS
+    assert "SLEEP_STATES.includes(u.status) && !replaying()" in REGIONS_JS
     # Details: labelled numbers and one-line captions, the tooltips' code line stays.
     assert 't("Uyanıklık") + " %" + Math.round(wake * 100)' in REGIONS_JS
     assert 't("Basınç") + " " + num(p.total) + " / " + num(upper)' in REGIONS_JS
@@ -2873,7 +2873,7 @@ def test_the_brain_panel_is_simple_by_default_and_detailed_on_demand() -> None:
     assert ".mind.details .regions-bottom { flex: 0 1 auto; min-height: 0; overflow-y: auto;" in CSS
     # The daemon tells the usual hours for the rhythm caption.
     daemon = (Path(__file__).resolve().parents[1] / "src" / "dornick" / "recall" / "daemon.py").read_text(encoding="utf-8")
-    assert '"saatler":' in daemon
+    assert '"hours":' in daemon
 
 
 def test_day_view_hooks_are_wired() -> None:

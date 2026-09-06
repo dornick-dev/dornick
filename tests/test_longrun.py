@@ -449,7 +449,7 @@ async def test_child_agent_fails_instead_of_parking_forever(
     assert stats.fail_reason
     assert not agent.session.log.notes("parked"), "a subagent must not park"
     assert read_park(agent.config.state_dir) is None
-    assert any(w.get("kip") == "hata" for w in waits)
+    assert any(w.get("mode") == "error" for w in waits)
     assert client.script, "the successful turn should never have been attempted"
 
 
@@ -499,8 +499,8 @@ async def test_wait_events_carry_the_structured_fields(
     tmp_path: Path, registry: ToolRegistry, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The waiting-state event contract: with the structured channel
-    (on_wait) attached every attempt goes with the kip/deneme/toplam/saniye/
-    detay fields, the recovery is a single "bitti" event and NO RAW ERROR
+    (on_wait) attached every attempt goes with the mode/attempt/total/seconds/
+    detail fields, the recovery is a single "done" event and NO RAW ERROR
     LANDS in the chat channel (on_notice) — the UI draws this as a single
     live line in the work strip."""
     monkeypatch.setattr(loop_module, "RETRY_DELAYS", (0.01, 0.01, 0.01))
@@ -519,12 +519,12 @@ async def test_wait_events_carry_the_structured_fields(
     stats = await agent.run("uzun iş")
 
     assert stats.stop_reason == "end_turn"
-    assert [e["kip"] for e in events] == ["deneme", "deneme", "bitti"]
+    assert [e["mode"] for e in events] == ["retry", "retry", "done"]
     first = events[0]
-    assert first["deneme"] == 1 and first["toplam"] == len(loop_module.RETRY_DELAYS)
-    assert first["saniye"] == 0          # int(0.01) — the field exists and is numeric
-    assert "402" in first["detay"]
-    assert events[-1]["deneme"] == 2, "the bitti event must carry how many attempts it took"
+    assert first["attempt"] == 1 and first["total"] == len(loop_module.RETRY_DELAYS)
+    assert first["seconds"] == 0          # int(0.01) — the field exists and is numeric
+    assert "402" in first["detail"]
+    assert events[-1]["attempt"] == 2, "the done event must carry how many attempts it took"
     # The chat is clean: neither a raw error wall nor a separate "geri geldi" line.
     assert not any("402" in n for n in notices)
     assert not any("geri geldi" in n for n in notices)
@@ -572,10 +572,10 @@ async def test_parked_wait_emits_park_events_but_keeps_the_notice(
     stats = await agent.run("saatlik iş")
 
     assert stats.stop_reason == "end_turn"
-    modes = [e["kip"] for e in events]
-    assert modes[0] == "deneme" and "park" in modes and modes[-1] == "bitti"
-    park = next(e for e in events if e["kip"] == "park")
-    assert park["saniye"] == int(0.01) and "Bağlantı" in park["detay"]
+    modes = [e["mode"] for e in events]
+    assert modes[0] == "retry" and "parked" in modes and modes[-1] == "done"
+    park = next(e for e in events if e["mode"] == "parked")
+    assert park["seconds"] == int(0.01) and "Bağlantı" in park["detail"]
     assert any("bekletiliyor" in n for n in notices), "the park notice stays in the chat"
 
 
@@ -598,12 +598,12 @@ async def test_interrupting_a_wait_emits_the_cancel_event(
     await stopper
 
     assert stats.interrupted is True
-    assert [e["kip"] for e in events] == ["deneme", "iptal"]
+    assert [e["mode"] for e in events] == ["retry", "cancelled"]
 
 
 async def test_the_bridge_publishes_wait_events_to_the_hub(tmp_path: Path) -> None:
     """Bridge contract: the on_wait payload lands in the hub with the
-    "bekleme" type, fields carried as they are — app.js draws the single
+    "waiting" type, fields carried as they are — app.js draws the single
     live line with this."""
     from dornick.desktop import Bridge
 
@@ -619,11 +619,11 @@ async def test_the_bridge_publishes_wait_events_to_the_hub(tmp_path: Path) -> No
     io = bridge.io()
 
     assert io.on_wait is not None, "the desktop bridge must attach the structured channel"
-    io.on_wait({"kip": "deneme", "deneme": 2, "toplam": 5,
-                "saniye": 30, "detay": "APIStatusError 402"})
+    io.on_wait({"mode": "retry", "attempt": 2, "total": 5,
+                "seconds": 30, "detail": "APIStatusError 402"})
 
-    assert hub.events == [{"type": "bekleme", "kip": "deneme", "deneme": 2,
-                           "toplam": 5, "saniye": 30, "detay": "APIStatusError 402"}]
+    assert hub.events == [{"type": "waiting", "mode": "retry", "attempt": 2,
+                           "total": 5, "seconds": 30, "detail": "APIStatusError 402"}]
 
 
 async def test_full_authority_resolves_pending_approval_cards(tmp_path: Path) -> None:
@@ -767,13 +767,13 @@ def test_a_resumed_session_seeds_the_counters_from_real_usage(tmp_path: Path) ->
     assert status["girdi"] == 6600, "cost: the prompts of all turns are summed"
     assert status["output"] == 130, "output is summed over the session"
     assert status["cagri"] == 2
-    assert status["tahmin"] is False
+    assert status["estimated"] is False
 
 
 def test_an_old_log_without_usage_falls_back_to_an_estimate(tmp_path: Path) -> None:
     """Without usage (an old log or a provider that gives no counter)
     showing an approximation is better than showing zero — as long as it is
-    said to be an estimate. The `tahmin` flag becomes a title in the UI."""
+    said to be an estimate. The `estimated` flag becomes a title in the UI."""
     from dornick.desktop import _past_usage
 
     agent = _session_with(tmp_path, [
@@ -783,7 +783,7 @@ def test_an_old_log_without_usage_falls_back_to_an_estimate(tmp_path: Path) -> N
 
     status = _past_usage(agent)
 
-    assert status["tahmin"] is True
+    assert status["estimated"] is True
     assert status["prompt_total"] > 0
     assert status["girdi"] == status["prompt_total"]
     assert status["cagri"] == 0
@@ -796,7 +796,7 @@ def test_a_fresh_session_really_starts_at_zero(tmp_path: Path) -> None:
     agent = _session_with(tmp_path, [])
 
     assert _past_usage(agent) == {
-        "prompt_total": 0, "girdi": 0, "output": 0, "cagri": 0, "tahmin": False}
+        "prompt_total": 0, "girdi": 0, "output": 0, "cagri": 0, "estimated": False}
 
 
 async def test_the_snapshot_carries_the_resumed_context(tmp_path: Path) -> None:
@@ -831,9 +831,9 @@ async def test_the_snapshot_carries_the_resumed_context(tmp_path: Path) -> None:
     state = bridge.snapshot()
 
     assert state["prompt_total"] == 3000
-    assert state["tahmin"] is False
+    assert state["estimated"] is False
     # Item-by-item breakdown: statics + the remaining conversation = prompt_total.
-    breakdown = {p["id"]: p["n"] for p in state["kirilim"]}
+    breakdown = {p["id"]: p["n"] for p in state["breakdown"]}
     assert set(breakdown) == {
         "sistem", "arac", "ruh", "yetenek", "mcp", "yardimci", "sohbet"}
     assert sum(breakdown.values()) == 3000
@@ -841,9 +841,9 @@ async def test_the_snapshot_carries_the_resumed_context(tmp_path: Path) -> None:
         breakdown["sistem"] + breakdown["arac"] + breakdown["ruh"]
         + breakdown["yetenek"] + breakdown["mcp"] + breakdown["yardimci"])
     # The cost chip's session total was seeded from the same source too.
-    assert state["kullanim"]["oturum"] == {"girdi": 3000, "cikti": 50, "cagri": 1}
+    assert state["usage"]["session"] == {"girdi": 3000, "cikti": 50, "cagri": 1}
     # A second snapshot (page reloaded) does NOT INFLATE the total: seeded once.
-    assert bridge.snapshot()["kullanim"]["oturum"]["cagri"] == 1
+    assert bridge.snapshot()["usage"]["session"]["cagri"] == 1
 
 
 def test_context_breakdown_puts_the_remainder_in_conversation() -> None:
@@ -879,7 +879,7 @@ def test_context_breakdown_puts_the_remainder_in_conversation() -> None:
     assert by_n["mcp"] == tok(mcp)
     assert by_n["yardimci"] == tok(task)
     assert by_n["sohbet"] == 1000 - sum(n for k, n in by_n.items() if k != "sohbet")
-    assert [p["ad"] for p in parts] == [
+    assert [p["label"] for p in parts] == [
         "Sistem istemi", "Araç tanımları", "Ruh / kurallar",
         "Yetenekler", "MCP ve dinamik araçlar", "Yardımcı tanımları", "Konuşma",
     ]

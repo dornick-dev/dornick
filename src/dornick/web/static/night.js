@@ -1,8 +1,8 @@
 // The night animation (roadmap Phase 6.2).
 //
 // One feed, two sources. Live events come over the SSE channel
-// (`type: "gece"`) and the poll of the current night's file; a replay
-// reads `/api/gece/<date>` — the same file, the same events, the same
+// (`type: "night"`) and the poll of the current night's file; a replay
+// reads `/api/nights/<date>` — the same file, the same events, the same
 // order. Both go through `feed()`; there is no second code path to drift.
 //
 // The view reads ONLY the frozen event schema (recall/night_events.py
@@ -87,27 +87,27 @@ const Night = (() => {
     current.date = date;
     current.live = false;
     let data = null;
-    try { data = await (await fetch("/api/gece/" + encodeURIComponent(date))).json(); } catch { /* offline */ }
+    try { data = await (await fetch("/api/nights/" + encodeURIComponent(date))).json(); } catch { /* offline */ }
     if (!data) return 0;
-    current.summary = data.ozet || null;
-    const n = feed(data.olaylar || []);
+    current.summary = data.summary || null;
+    const n = feed(data.events || []);
     renderStatus();
     return n;
   }
 
   // --- live ------------------------------------------------------------------
-  // Today's file is polled with `?sonra=N`; the answer feeds the same way.
+  // Today's file is polled with `?after=N`; the answer feeds the same way.
   // SSE `gece` events arrive through feed() directly (app.js).
   async function poll() {
     const date = today();
     if (live.date !== date) { live.date = date; live.seen = 0; }
     try {
-      const data = await (await fetch("/api/gece/" + date + "?sonra=" + live.seen)).json();
-      if (data && Array.isArray(data.olaylar)) {
-        if (data.olaylar.length && !current.live) { current.live = true; current.date = date; }
-        live.seen = Number(data.toplam) || live.seen + data.olaylar.length;
-        if (current.summary === null || current.live) current.summary = data.ozet || current.summary;
-        feed(data.olaylar);
+      const data = await (await fetch("/api/nights/" + date + "?after=" + live.seen)).json();
+      if (data && Array.isArray(data.events)) {
+        if (data.events.length && !current.live) { current.live = true; current.date = date; }
+        live.seen = Number(data.total) || live.seen + data.events.length;
+        if (current.summary === null || current.live) current.summary = data.summary || current.summary;
+        feed(data.events);
       }
     } catch { /* server not up yet */ }
   }
@@ -344,7 +344,7 @@ const Night = (() => {
     liveOpt.value = ""; liveOpt.textContent = t("Canlı") + " · " + t("Bu gece");
     select.append(liveOpt);
     let nights = [];
-    try { nights = ((await (await fetch("/api/gece")).json()).geceler) || []; } catch { /* offline */ }
+    try { nights = ((await (await fetch("/api/nights")).json()).nights) || []; } catch { /* offline */ }
     for (const date of nights) {
       const o = document.createElement("option");
       o.value = date; o.textContent = date;
@@ -425,8 +425,8 @@ const Night = (() => {
     let report = info ? info.report : null, summary = info ? info.summary : null;
     if (!report && !summary && info && info.date) {
       try {
-        const data = await (await fetch("/api/gece/" + encodeURIComponent(info.date))).json();
-        summary = data && data.ozet ? data.ozet : null;
+        const data = await (await fetch("/api/nights/" + encodeURIComponent(info.date))).json();
+        summary = data && data.summary ? data.summary : null;
       } catch { /* offline */ }
     }
     fillReport(box, report, summary, null);

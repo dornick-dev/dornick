@@ -127,7 +127,7 @@ def test_selective_export_only_memories(tmp_path: Path, monkeypatch) -> None:
     mind.remember("bir anı", kind="fact")
     (cfg.open_sandbox().root / "proje.py").write_text("print(1)\n", encoding="utf-8")
 
-    names = _names(transfer.export_bundle(cfg, mind, ["anilar"]))
+    names = _names(transfer.export_bundle(cfg, mind, ["memories"]))
     assert "recall.db" in names
     assert not any(n.startswith(("tanima/", "projeler/", "ayarlar/")) for n in names)
 
@@ -171,10 +171,10 @@ def test_selective_import_respects_part_filter(tmp_path: Path, monkeypatch) -> N
     cfg_a, mind_a = _mind(tmp_path / "A")
     mind_a.remember("taşınmaması gereken anı", kind="fact")
     (cfg_a.state_dir / "taban.npz").write_bytes(b"KISISEL-NPZ")
-    bundle = transfer.export_bundle(cfg_a, mind_a, ["anilar", "tanima"])
+    bundle = transfer.export_bundle(cfg_a, mind_a, ["memories", "recognition"])
 
     cfg_b, mind_b = _mind(tmp_path / "B")
-    result = transfer.import_bundle(cfg_b, mind_b, bundle, ["tanima"])
+    result = transfer.import_bundle(cfg_b, mind_b, bundle, ["recognition"])
     assert result["ok"]
     assert result["memories"] == 0 and mind_b.store.count() == 0
     assert (cfg_b.state_dir / "taban.npz").read_bytes() == b"KISISEL-NPZ"
@@ -188,14 +188,14 @@ def test_import_recognition_without_rig_keeps_personal_files(
     (data / "kisisel_durum.json").write_text('{"son_created": "x"}', encoding="utf-8")
     cfg_a, mind_a = _mind(tmp_path / "A")
     (cfg_a.state_dir / "taban.npz").write_bytes(b"NPZ")
-    bundle = transfer.export_bundle(cfg_a, mind_a, ["tanima"])
+    bundle = transfer.export_bundle(cfg_a, mind_a, ["recognition"])
 
     # At the target the rig is "not installed": the path points at a non-existent folder.
     monkeypatch.setattr(recognition, "CORPUS", tmp_path / "yok" / "kisisel_korpus.jsonl")
     monkeypatch.setattr(recognition, "WATERMARK", tmp_path / "yok" / "kisisel_durum.json")
     cfg_b, mind_b = _mind(tmp_path / "B")
-    result = transfer.import_bundle(cfg_b, mind_b, bundle, ["tanima"])
-    assert result["ok"] and result["tanima"] == 3
+    result = transfer.import_bundle(cfg_b, mind_b, bundle, ["recognition"])
+    assert result["ok"] and result["recognition"] == 3
     assert (cfg_b.state_dir / "taban.npz").is_file()
     assert (cfg_b.state_dir / "recognition_backup" / "kisisel_korpus.jsonl").is_file()
     assert (cfg_b.state_dir / "recognition_backup" / "kisisel_durum.json").is_file()
@@ -214,7 +214,7 @@ def test_roundtrip_projects_and_settings(tmp_path: Path, monkeypatch) -> None:
         "model": {"name": "m", "base_url": "https://openrouter.ai/api/v1",
                   "api_key_env": "OPENROUTER_API_KEY"},
     }), encoding="utf-8")
-    bundle = transfer.export_bundle(cfg_a, mind_a, ["projeler", "ayarlar"])
+    bundle = transfer.export_bundle(cfg_a, mind_a, ["projects", "settings"])
     names = _names(bundle)
     assert "projeler/web/index.html" in names
     assert not any("node_modules" in n for n in names)   # residue stays out
@@ -222,14 +222,14 @@ def test_roundtrip_projects_and_settings(tmp_path: Path, monkeypatch) -> None:
     cfg_b, mind_b = _mind(tmp_path / "B")
     (cfg_b.state_dir / "config.json").write_text('{"eski": true}', encoding="utf-8")
     result = transfer.import_bundle(cfg_b, mind_b, bundle)
-    assert result["ok"] and result["projeler"] == 1 and result["ayarlar"] == 1
+    assert result["ok"] and result["projects"] == 1 and result["settings"] == 1
     assert (cfg_b.open_sandbox().root / "web" / "index.html").read_text(
         encoding="utf-8") == "<b>site</b>"
     # api_key_env did not enter the package but was re-derived from base_url on import.
     back = json.loads((cfg_b.state_dir / "config.json").read_text(encoding="utf-8"))
     assert back["model"]["api_key_env"] == "OPENROUTER_API_KEY"
     # The overwritten old config sits in the backup folder.
-    backup = Path(result["yedek"])
+    backup = Path(result["backup"])
     assert (backup / "ayarlar" / "config.json").read_text(encoding="utf-8") == '{"eski": true}'
 
 
@@ -244,13 +244,13 @@ def test_reset_memories_backs_up_then_clears(tmp_path: Path) -> None:
     mind.push_goal("kalacak hedef")
 
     result = transfer.reset_memories(cfg, mind)
-    assert result["ok"] and result["silinen"] == 2
+    assert result["ok"] and result["deleted"] == 2
     assert mind.store.count() == 0
     assert mind.recall("silinecek") == []
     assert [g.text for g in mind.goals()] == ["kalacak hedef"]   # a goal is not a memory
 
     # The backup is a real memory copy: two records inside.
-    copy = Path(result["yedek"]) / "anilar" / "recall.db"
+    copy = Path(result["backup"]) / "anilar" / "recall.db"
     con = sqlite3.connect(copy)
     try:
         assert con.execute("SELECT COUNT(*) FROM node").fetchone()[0] == 2
@@ -270,11 +270,11 @@ def test_recognition_reset_moves_files_and_falls_back(tmp_path: Path, monkeypatc
     (state / "taban.npz").write_bytes(b"KISISEL")
 
     result = recognition.reset(state)
-    assert result["ok"] and sorted(result["tasinan"]) == [
+    assert result["ok"] and sorted(result["moved"]) == [
         "kisisel_durum.json", "kisisel_korpus.jsonl", "taban.npz"]
     assert not (state / "taban.npz").exists()
     assert not (data / "kisisel_korpus.jsonl").exists()
-    backup = Path(result["yedek"]) / "recognition"
+    backup = Path(result["backup"]) / "recognition"
     assert (backup / "taban.npz").read_bytes() == b"KISISEL"
     assert (backup / "kisisel_korpus.jsonl").is_file()
     # The cache dropped: the next enrichment will probe the disk again.
@@ -282,7 +282,7 @@ def test_recognition_reset_moves_files_and_falls_back(tmp_path: Path, monkeypatc
 
     # Second reset: nothing to move, no backup folder is opened.
     again = recognition.reset(state)
-    assert again["ok"] and again["tasinan"] == [] and again["yedek"] == ""
+    assert again["ok"] and again["moved"] == [] and again["backup"] == ""
 
 
 def test_blank_target_adopts_persona(tmp_path: Path) -> None:

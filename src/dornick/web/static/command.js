@@ -133,7 +133,7 @@ const Command = (() => {
   // own thread. The next message wakes it — the command does not lock the
   // user out of the chat.
   async function sleepNow() {
-    const answer = await post("/api/uyku/uyu");
+    const answer = await post("/api/sleep/now");
     if (!answer) { line("alert", t("Uyku bekçisine ulaşılamadı.")); return; }
     if (answer.ok) line("system", t("Uyuyor…"));
     else line("alert", answer.error || t("Uyutulamadı."));
@@ -141,31 +141,31 @@ const Command = (() => {
 
   // `/uyuma`: caffeine — the threshold goes out of reach for four hours.
   async function caffeine() {
-    const answer = await post("/api/uyku/kafein");
+    const answer = await post("/api/sleep/caffeine");
     if (!answer) { line("alert", t("Uyku bekçisine ulaşılamadı.")); return; }
     if (answer.ok) line("system", t("4 saat uyumayacak"));
     else line("alert", answer.error || t("Uyutulamadı."));
   }
 
-  // `/yorgun`: a short card from GET /api/uyku — the same fields the
+  // `/tired`: a short card from GET /api/sleep — the same fields the
   // thalamus ring reads. Numbers are shown as they are measured.
   async function howTired() {
     let s = null;
-    try { s = await (await fetch("/api/uyku")).json(); } catch { s = null; }
+    try { s = await (await fetch("/api/sleep")).json(); } catch { s = null; }
     if (!s) { line("alert", t("Uyku bekçisine ulaşılamadı.")); return; }
     const num = (v, digits) => (typeof v === "number" && isFinite(v)) ? v.toFixed(digits) : "?";
-    const pressure = s.basinc || {};
-    const threshold = s.esik || {};
-    const debt = s.borc || {};
+    const pressure = s.pressure || {};
+    const threshold = s.threshold || {};
+    const debt = s.debt || {};
     const rows = [
       ["Basınç", num(pressure.total, 3)],
-      ["Eşik", num(threshold.ust, 3) + " / " + num(threshold.alt, 3)],
-      ["Borç", num(debt.saat, 1) + " " + t("saat") + " · " + (debt.oturum ?? "?") + " " + t("oturum")],
-      ["Durum", t(s.durum || "bilinmiyor") + (s.acik === false ? " · " + t("uyku kapalı") : "")],
-      ["Tahmini gece", s.sonraki_gece ? s.sonraki_gece.replace("T", " ") : t("henüz bilinmiyor")],
+      ["Eşik", num(threshold.upper, 3) + " / " + num(threshold.lower, 3)],
+      ["Borç", num(debt.hours, 1) + " " + t("saat") + " · " + (debt.sessions ?? "?") + " " + t("oturum")],
+      ["Durum", t(s.status || "bilinmiyor") + (s.enabled === false ? " · " + t("uyku kapalı") : "")],
+      ["Tahmini gece", s.next_night ? s.next_night.replace("T", " ") : t("henüz bilinmiyor")],
     ];
-    if (s.kafein) rows.push(["Kafein", s.kafein.replace("T", " ") + " " + t("kadar")]);
-    if (s.dinlenmis) rows.push(["Dinlenmiş", s.dinlenmis.replace("T", " ") + " " + t("kadar")]);
+    if (s.caffeine) rows.push(["Kafein", s.caffeine.replace("T", " ") + " " + t("kadar")]);
+    if (s.rested_until) rows.push(["Dinlenmiş", s.rested_until.replace("T", " ") + " " + t("kadar")]);
     const card = line("help");
     card.replaceChildren();
     card.append(el("div", "help-head", t("Yorgunluk")));

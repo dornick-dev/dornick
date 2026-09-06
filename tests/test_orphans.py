@@ -264,10 +264,10 @@ def test_tasks_marks_orphans_as_resumable(tmp_path: Path, registry) -> None:
         return bridge.tasks()
 
     payload = asyncio.run(scenario())
-    by_id = {r["id"]: r for r in payload["gorevler"]}
-    assert by_id["c:y1"]["surdurulebilir"] is True
-    assert by_id["c:r1"]["surdurulebilir"] is False
-    assert by_id["c:r1"]["durdurulabilir"] is True
+    by_id = {r["id"]: r for r in payload["tasks"]}
+    assert by_id["c:y1"]["resumable"] is True
+    assert by_id["c:r1"]["resumable"] is False
+    assert by_id["c:r1"]["stoppable"] is True
 
 
 # -- panel seed (snapshot channels) --------------------------------------
@@ -291,8 +291,8 @@ def test_snapshot_channels_mirror_the_ledger(tmp_path: Path, registry) -> None:
                                         state="hata", outcome="patladı")
 
     rows = {r["id"]: r for r in _live_channels(agent)}
-    assert rows["a1"]["state"] == "run" and rows["a1"]["ozet"] == ""
-    assert rows["b2"]["state"] == "done" and "üç dosya" in rows["b2"]["ozet"]
+    assert rows["a1"]["state"] == "run" and rows["a1"]["summary"] == ""
+    assert rows["b2"]["state"] == "done" and "üç dosya" in rows["b2"]["summary"]
     assert rows["c3"]["state"] == "yetim" and rows["c3"]["bg"]
     assert rows["d4"]["state"] == "fail"
 
@@ -324,7 +324,7 @@ def test_the_bridge_snapshot_carries_the_channel_list(tmp_path: Path, registry) 
     snap = asyncio.run(scenario())
     assert snap["channels"] == [{
         "id": "y1", "title": "gece işi", "model": "", "bg": True,
-        "kind": "yardımcı", "state": "yetim", "ozet": "",
+        "kind": "yardımcı", "state": "yetim", "summary": "",
     }]
 
 
@@ -348,16 +348,16 @@ def test_the_deck_seeds_from_the_snapshot() -> None:
     assert "channels.clear()" in orch_js          # ghosts are wiped
     assert '"Yarım kaldı"' in orch_js             # the orphan state is drawn
     assert '"Yarım kaldı": "Left unfinished"' in orch_js   # EN translation
-    assert "/api/gorevler/devam" in orch_js
+    assert "/api/tasks/resume" in orch_js
     assert "Devam et" in orch_js
 
     tasks_js = (STATIC / "tasks.js").read_text(encoding="utf-8")
-    assert "/api/gorevler/devam" in tasks_js
-    assert "surdurulebilir" in tasks_js or 'durum === "yetim"' in tasks_js
+    assert "/api/tasks/resume" in tasks_js
+    assert "resumable" in tasks_js or 'state === "yetim"' in tasks_js
 
     server = (Path(__file__).resolve().parents[1]
               / "src" / "dornick" / "web" / "server.py").read_text(encoding="utf-8")
-    assert "/api/gorevler/devam" in server
+    assert "/api/tasks/resume" in server
     assert "resume_task" in (
         Path(__file__).resolve().parents[1] / "src" / "dornick" / "desktop.py"
     ).read_text(encoding="utf-8")

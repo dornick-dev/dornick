@@ -238,7 +238,7 @@ def _active_goals(agent: Any) -> list[dict[str, Any]]:
     try:
         return [
             {"id": g.id, "text": g.text,
-             "eski": bool(current and g.session_id and g.session_id != current)}
+             "stale": bool(current and g.session_id and g.session_id != current)}
             for g in mind.goals()[:GOAL_SNAPSHOT_LIMIT]
         ]
     except Exception:
@@ -318,7 +318,7 @@ def context_breakdown(agent: Any, prompt_total: int = 0) -> list[dict[str, Any]]
         fixed = sum(n for _, _, n in parts)
     chat_tokens = max(0, total - fixed) if total else 0
     parts.append(("sohbet", "Konuşma", chat_tokens))
-    return [{"id": k, "ad": label, "n": n} for k, label, n in parts]
+    return [{"id": k, "label": label, "n": n} for k, label, n in parts]
 
 
 def _provider_name(agent: Any) -> str:
@@ -393,7 +393,7 @@ def _past_usage(agent: Any) -> dict[str, Any]:
 
     In a new session both come out empty and the counter truly starts at zero.
     """
-    empty = {"prompt_total": 0, "girdi": 0, "output": 0, "cagri": 0, "tahmin": False}
+    empty = {"prompt_total": 0, "girdi": 0, "output": 0, "cagri": 0, "estimated": False}
     session = getattr(agent, "session", None)
     if session is None:
         return empty
@@ -422,7 +422,7 @@ def _past_usage(agent: Any) -> dict[str, Any]:
             "girdi": total_input,
             "output": total_output,
             "cagri": calls,
-            "tahmin": False,
+            "estimated": False,
         }
 
     # No usage (old log or a provider that gives no counter): rough estimate.
@@ -446,7 +446,7 @@ def _past_usage(agent: Any) -> dict[str, Any]:
         return empty
     estimate = chars // ESTIMATE_DIVISOR
     return {"prompt_total": estimate, "girdi": estimate, "output": 0,
-            "cagri": 0, "tahmin": True}
+            "cagri": 0, "estimated": True}
 
 
 def _text_body(content: Any) -> str:
@@ -583,7 +583,7 @@ def _live_channels(agent: Any) -> list[dict[str, Any]]:
                 "bg": bool(h.background),
                 "kind": h.kind,
                 "state": _CHANNEL_STATE.get(h.state, "fail"),
-                "ozet": "" if h.state == "kosuyor" else (h.outcome or "")[:200],
+                "summary": "" if h.state == "kosuyor" else (h.outcome or "")[:200],
             }
             for h in children.values()
         ]
@@ -826,7 +826,7 @@ class Bridge:
         agent = self.agent
         if (self._busy and not queue and not image
                 and agent is not None and not agent.inbox_full()):
-            self.hub.emit({"type": "araya", "text": text})
+            self.hub.emit({"type": "interject", "text": text})
             note = BARGE_NOTE.format(text=text)
             self.loop.call_soon_threadsafe(
                 lambda: agent.take_note(note, encode=text))
@@ -1764,36 +1764,36 @@ class Bridge:
             self.sleeper = None
 
     def sleep_status(self) -> dict[str, Any] | None:
-        """What GET /api/uyku should prefer; None when no daemon runs."""
+        """What GET /api/sleep should prefer; None when no daemon runs."""
         daemon = getattr(self, "sleeper", None)
         if daemon is None:
             return None
         try:
             return daemon.status()
         except Exception as err:
-            return {"durum": "okunamadı", "hata": str(err)}
+            return {"status": "unreadable", "error": str(err)}
 
     def sleep_now(self) -> dict[str, Any]:
-        """POST /api/uyku/uyu (`/uyu`): start the night now, if the daemon allows."""
+        """POST /api/sleep/now (`/sleep`): start the night now, if the daemon allows."""
         daemon = getattr(self, "sleeper", None)
         if daemon is None:
-            return {"ok": False, "durum": "yok", "error": "Uyku bekçisi çalışmıyor."}
+            return {"ok": False, "status": "none", "error": "Uyku bekçisi çalışmıyor."}
         try:
             result = daemon.sleep_now()
         except Exception as err:
-            return {"ok": False, "durum": "okunamadı", "error": str(err)}
-        return result if isinstance(result, dict) else {"ok": bool(result), "durum": ""}
+            return {"ok": False, "status": "unreadable", "error": str(err)}
+        return result if isinstance(result, dict) else {"ok": bool(result), "status": ""}
 
     def caffeine(self) -> dict[str, Any]:
-        """POST /api/uyku/kafein (`/uyuma`): no night for the next hours."""
+        """POST /api/sleep/caffeine (`/nosleep`): no night for the next hours."""
         daemon = getattr(self, "sleeper", None)
         if daemon is None:
-            return {"ok": False, "durum": "yok", "error": "Uyku bekçisi çalışmıyor."}
+            return {"ok": False, "status": "none", "error": "Uyku bekçisi çalışmıyor."}
         try:
             result = daemon.caffeine()
         except Exception as err:
-            return {"ok": False, "durum": "okunamadı", "error": str(err)}
-        return result if isinstance(result, dict) else {"ok": True, "durum": ""}
+            return {"ok": False, "status": "unreadable", "error": str(err)}
+        return result if isinstance(result, dict) else {"ok": True, "status": ""}
 
     def _sleep_settings(self) -> Config | None:
         cfg = getattr(self, "_sleep_config", None)
@@ -1900,9 +1900,9 @@ class Bridge:
         # If a turn ran in this process the live counter is right; if not
         # (resumed session, fresh boot) the truth is in the session log.
         live_total = int((getattr(agent, "_last_usage", None) or {}).get("prompt_total") or 0)
-        past = ({"prompt_total": live_total, "output": 0, "cagri": 0, "tahmin": False}
+        past = ({"prompt_total": live_total, "output": 0, "cagri": 0, "estimated": False}
                 if live_total else _past_usage(agent) if agent
-                else {"prompt_total": 0, "output": 0, "cagri": 0, "tahmin": False})
+                else {"prompt_total": 0, "output": 0, "cagri": 0, "estimated": False})
         # The cost chip's session total is seeded from the same source: new
         # turns are added ON TOP of it (see _usage_yay).
         self._seed_session_usage(past)
@@ -1930,22 +1930,22 @@ class Bridge:
             "prompt_total": past["prompt_total"],
             # Is the figure a rough estimate rather than the provider's real
             # count? The UI says so in the title — no made-up precision.
-            "tahmin": past["tahmin"],
+            "estimated": past["estimated"],
             # Item-by-item breakdown of the context box (system / tools /
             # soul / skills / MCP / conversation). The fixed items show even
             # without a total.
-            "kirilim": context_breakdown(agent, past["prompt_total"]),
+            "breakdown": context_breakdown(agent, past["prompt_total"]),
             # Cost chip: on a page refresh the spend gauge should start where
             # it left off, not from zero. None if the price is unknown — the
             # chip falls back to token counts.
-            "fiyat": self._price,
-            "kullanim": {
-                "tur": dict(self._turn_usage),
-                "oturum": dict(self._session_usage),
+            "price": self._price,
+            "usage": {
+                "turn": dict(self._turn_usage),
+                "session": dict(self._session_usage),
             },
             # Spend cap set for this session (USD) — None = unlimited. The
             # cost chip must not forget the cap on a page refresh.
-            "butce": self._budget_usd,
+            "budget": self._budget_usd,
             "mode": agent.permissions.mode if agent else "",
             # Active goals: on a page refresh the goal panel has missed the
             # event stream; the panel is seeded with this list and carries
@@ -1970,7 +1970,7 @@ class Bridge:
             # Version of the running copy: the top-bar brand tooltip feeds
             # from here. In the field, "which version is open?" must not go
             # unanswered.
-            "surum": environment.version(),
+            "version": environment.version(),
             "kurulu": environment.is_installed(),
             # Can the agent actually authenticate (a key exists, or a local
             # server)? The UI shows the first-run guidance based on this —
@@ -2087,9 +2087,9 @@ class Bridge:
 
         Event contract (the cost chip in the UI depends on it):
             {type: "usage", ...cache_report fields,
-             tur:    {girdi, cikti, cagri},    total of this user turn
-             oturum: {girdi, cikti, cagri},    total of the session
-             fiyat:  {girdi, cikti} | None}    USD/token; None if unknown
+             turn:    {girdi, cikti, cagri},   total of this user turn
+             session: {girdi, cikti, cagri},   total of the session
+             price:   {girdi, cikti} | None}   USD/token; None if unknown
 
         `girdi` is the whole prompt (prompt_total: cache included) — the
         estimate is deliberately conservative, the cache discount is not
@@ -2103,10 +2103,10 @@ class Bridge:
         breakdown = context_breakdown(self.agent, int(report.get("prompt_total") or 0))
         self.hub.emit({
             "type": "usage", **report,
-            "tur": dict(self._turn_usage),
-            "oturum": dict(self._session_usage),
-            "fiyat": self._price,
-            "kirilim": breakdown,
+            "turn": dict(self._turn_usage),
+            "session": dict(self._session_usage),
+            "price": self._price,
+            "breakdown": breakdown,
         })
 
     # -- budget brake ---------------------------------------------------
@@ -2129,12 +2129,12 @@ class Bridge:
                 value = float(usd)
             except (TypeError, ValueError):
                 return {"ok": False, "error": "Sayı bekleniyordu.",
-                        "butce": self._budget_usd}
+                        "budget": self._budget_usd}
             self._budget_usd = value if value > 0 else None
         # The cap changed: the "reached" line may be printed once more.
         self._budget_reported = False
-        return {"ok": True, "butce": self._budget_usd,
-                "harcanan": self._spent()}
+        return {"ok": True, "budget": self._budget_usd,
+                "spent": self._spent()}
 
     def _spent(self) -> float | None:
         """Estimated spend of this session (USD). None if the price is unknown."""
@@ -2184,7 +2184,7 @@ class Bridge:
           * `apps._PROCS` — detached processes: the `shell` tool's
             `background: true` path and apps launched from the panel.
 
-        The duration is LIVE: the row carries the `basladi` stamp and the
+        The duration is LIVE: the row carries the `started` stamp and the
         UI does the counting — no need to ask the server once a second.
         """
         from . import apps as catalog
@@ -2199,26 +2199,26 @@ class Bridge:
                 summary = short_job_summary(h.outcome or "", title=h.title)[:400]
             rows.append({
                 "id": "c:" + h.id,
-                "ad": h.title,
-                "tur": h.kind,
-                "durum": h.state,
+                "name": h.title,
+                "kind": h.kind,
+                "state": h.state,
                 # For an orphan the real start is unknown (inherited from the
                 # previous session): 0 is sent, the UI draws no duration.
-                "basladi": 0.0 if h.state == "yetim" else h.started_ts,
-                "bitti": h.ended_ts,
-                "ozet": summary,
+                "started": 0.0 if h.state == "yetim" else h.started_ts,
+                "ended": h.ended_ts,
+                "summary": summary,
                 "model": h.model,
-                "oturum": h.session_id,
-                "arka_plan": bool(h.background),
+                "session": h.session_id,
+                "background": bool(h.background),
                 "pid": None,
-                "durdurulabilir": h.state == "kosuyor",
-                "surdurulebilir": (
+                "stoppable": h.state == "kosuyor",
+                "resumable": (
                     h.state in ("yetim", "bitti", "hata")
                     and bool(h.session_id)
                     and h.kind != "iş"
                 ),
-                "son_arac": h.last_tool if h.state == "kosuyor" else "",
-                "son_hedef": h.last_goal if h.state == "kosuyor" else "",
+                "last_tool": h.last_tool if h.state == "kosuyor" else "",
+                "last_target": h.last_goal if h.state == "kosuyor" else "",
                 "wait": h.wait if h.state == "kosuyor" else None,
                 "deliverable": h.deliverable,
                 "usage": dict(h.usage) if h.usage else None,
@@ -2234,27 +2234,27 @@ class Bridge:
                 str(info.get("run") or ""))
             rows.append({
                 "id": "p:" + str(pid),
-                "ad": "Dornick (kendisi)" if own else str(info.get("name") or command or pid),
-                "tur": "süreç",
-                "durum": "bitti" if finished else "kosuyor",
-                "basladi": float(info.get("started") or 0.0),
-                "bitti": 0.0,
-                "ozet": "",
+                "name": "Dornick (kendisi)" if own else str(info.get("name") or command or pid),
+                "kind": "süreç",
+                "state": "bitti" if finished else "kosuyor",
+                "started": float(info.get("started") or 0.0),
+                "ended": 0.0,
+                "summary": "",
                 "model": "",
-                "oturum": "",
-                "arka_plan": True,
+                "session": "",
+                "background": True,
                 "pid": pid,
-                "komut": command,
+                "command": command,
                 # Killing its own copy from the panel would close the app.
-                "durdurulabilir": (not finished) and not own,
+                "stoppable": (not finished) and not own,
             })
 
         # Running ones first, then the most recently finished: what the user
         # is looking for is almost always "what is running right now".
-        rows.sort(key=lambda r: (r["durum"] != "kosuyor",
-                                 -(r["bitti"] or r["basladi"])))
-        return {"gorevler": rows,
-                "kosan": sum(1 for r in rows if r["durum"] == "kosuyor")}
+        rows.sort(key=lambda r: (r["state"] != "kosuyor",
+                                 -(r["ended"] or r["started"])))
+        return {"tasks": rows,
+                "running": sum(1 for r in rows if r["state"] == "kosuyor")}
 
     def task_report(self, gid: str) -> dict[str, Any]:
         """Full helper/job text — to the Viewer when Orchestra/Tasks is clicked.
@@ -2278,10 +2278,10 @@ class Bridge:
             if handle.wait:
                 w = handle.wait
                 line = "Model bekleniyor"
-                if w.get("deneme") and w.get("toplam"):
-                    line += f" ({w['deneme']}/{w['toplam']})"
-                if w.get("saniye"):
-                    line += f" · {w['saniye']}s"
+                if w.get("attempt") and w.get("total"):
+                    line += f" ({w['attempt']}/{w['total']})"
+                if w.get("seconds"):
+                    line += f" · {w['seconds']}s"
                 parts.append(line)
             elif handle.last_tool:
                 line = f"Şu an: {handle.last_tool}"
@@ -2311,7 +2311,7 @@ class Bridge:
             "id": "c:" + handle.id,
             "title": handle.title,
             "state": handle.state,
-            "metin": text or "(çıktı yok)",
+            "text": text or "(çıktı yok)",
             "deliverable": deliverable,
         }
 
@@ -2522,7 +2522,7 @@ class Bridge:
         """Fetches the selected model's price once, in the background.
 
         The network request is NOT in the turn's path: when the thread ends
-        the `fiyat` event is published and the chip turns from token counts
+        the `price` event is published and the chip turns from token counts
         to dollars. A model missing from the catalogue is also looked up once
         and left alone — going out to the network every turn is not on.
         The flag resets when the model changes.
@@ -2543,7 +2543,7 @@ class Bridge:
                 return
             if label is not None:
                 self._price = label
-                self.hub.emit({"type": "fiyat", "fiyat": label})
+                self.hub.emit({"type": "price", "price": label})
 
         threading.Thread(target=_run, daemon=True).start()
 
@@ -2577,8 +2577,8 @@ class Bridge:
             on_notice=lambda text: publish({"type": "notice", "text": text}),
             # Model outage: a structural wait event. The UI renders it as a
             # SINGLE live line in the work strip — no wall of errors printed
-            # into the chat (see app.js "bekleme").
-            on_wait=lambda payload: publish({"type": "bekleme", **payload}),
+            # into the chat (see app.js "waiting").
+            on_wait=lambda payload: publish({"type": "waiting", **payload}),
             # The cost chip shows the active chat: a background lane's spend
             # does not mix into the chip (it already sits in its own session
             # log).
@@ -2599,7 +2599,7 @@ class Bridge:
                  "bg": bool(bg)}),
             on_child_tool=lambda title, tool, phase, target="": publish(
                 {"type": "child_tool", "title": title, "tool": tool,
-                 "phase": phase, "hedef": target or ""}),
+                 "phase": phase, "target": target or ""}),
             # `bg`: was this finished channel running in the background. The
             # tasks panel drops the "finished" notice into the chat ONLY for
             # background jobs — a synchronous helper's result is already
@@ -2629,7 +2629,7 @@ class Bridge:
         usage = dict(getattr(handle, "usage", None) or {}) if handle else {}
         self.hub.emit({
             "type": "child_end", "title": title, "ok": ok, "turns": turns,
-            "tools": tools, "id": cid, "ozet": summary, "bg": bg,
+            "tools": tools, "id": cid, "summary": summary, "bg": bg,
             "deliverable": deliverable,
             "model": getattr(handle, "model", "") if handle else "",
             "usage": usage or None,

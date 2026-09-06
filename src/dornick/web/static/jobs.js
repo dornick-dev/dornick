@@ -115,7 +115,7 @@
   let tab = "runs"; // runs | def | flow | settings
   let workflow = null;
   let livePoll = null;
-  let liveSnap = null; // { son_arac, son_hedef, wait, oturum, deliverable, adimlar }
+  let liveSnap = null; // { last_tool, last_target, wait, session, deliverable, steps }
 
   function viewChips() {
     const chips = el("div", "jobs-chips jobs-view-chips");
@@ -287,7 +287,7 @@
       if (!cid) return;
       let res = null;
       try {
-        res = await (await fetch("/api/gorevler/durdur", {
+        res = await (await fetch("/api/tasks/stop", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ id: "c:" + cid }),
@@ -552,7 +552,7 @@
       openReport.type = "button";
       openReport.onclick = () => {
         if (typeof Viewer !== "undefined" && Viewer.page) {
-          Viewer.page("/gorev-rapor/" + encodeURIComponent(run.child_id) + "/",
+          Viewer.page("/task-report/" + encodeURIComponent(run.child_id) + "/",
                       run.title || task.title);
         }
       };
@@ -587,16 +587,16 @@
     const status = el("div", "jobs-live-status");
     const snap = liveSnap || {};
     if (snap.wait) {
-      const mode = snap.wait.kip || "";
-      let msg = mode === "hata" ? t("Model yanıt vermedi") : t("Model bekleniyor");
-      if (snap.wait.deneme && snap.wait.toplam) {
-        msg += ` (${snap.wait.deneme}/${snap.wait.toplam})`;
+      const mode = snap.wait.mode || "";
+      let msg = mode === "error" ? t("Model yanıt vermedi") : t("Model bekleniyor");
+      if (snap.wait.attempt && snap.wait.total) {
+        msg += ` (${snap.wait.attempt}/${snap.wait.total})`;
       }
-      if (snap.wait.saniye) msg += ` · ${snap.wait.saniye}s`;
+      if (snap.wait.seconds) msg += ` · ${snap.wait.seconds}s`;
       status.append(el("span", "jobs-live-wait", msg));
-    } else if (snap.son_arac) {
-      let line = "▶ " + snap.son_arac;
-      if (snap.son_hedef) line += " · " + snap.son_hedef;
+    } else if (snap.last_tool) {
+      let line = "▶ " + snap.last_tool;
+      if (snap.last_target) line += " · " + snap.last_target;
       status.append(el("span", "jobs-live-tool", line));
     } else {
       status.append(el("span", "jobs-live-tool", t("Araç bekleniyor…")));
@@ -604,23 +604,23 @@
     wrap.append(status);
 
     const steps = el("div", "jobs-live-steps");
-    const stepData = snap.adimlar;
+    const stepData = snap.steps;
     if (stepData === undefined) {
       steps.append(el("div", "jobs-live-empty", t("Adımlar yükleniyor…")));
     } else if (!stepData || !stepData.length) {
       steps.append(el("div", "jobs-live-empty", t("Araç bekleniyor…")));
     } else {
       for (const a of stepData.slice(-40)) {
-        if (a.tur === "arac") {
-          const row = el("div", "jobs-live-step" + (a.hata ? " err" : ""));
-          row.append(el("span", "jobs-live-mark", a.hata ? "✗" : "·"));
-          row.append(el("b", null, a.ad || ""));
-          if (a.hedef) row.append(el("span", "jobs-live-target", a.hedef));
+        if (a.kind === "tool") {
+          const row = el("div", "jobs-live-step" + (a.error ? " err" : ""));
+          row.append(el("span", "jobs-live-mark", a.error ? "✗" : "·"));
+          row.append(el("b", null, a.name || ""));
+          if (a.target) row.append(el("span", "jobs-live-target", a.target));
           if (a.ms) row.append(el("span", "jobs-live-ms",
             a.ms >= 1000 ? (a.ms / 1000).toFixed(1) + " sn" : a.ms + " ms"));
           steps.append(row);
-        } else if (a.tur === "soz" && a.metin) {
-          steps.append(el("div", "jobs-live-say", a.metin));
+        } else if (a.kind === "say" && a.text) {
+          steps.append(el("div", "jobs-live-say", a.text));
         }
       }
     }
@@ -647,31 +647,31 @@
         return;
       }
       try {
-        const data = await (await fetch("/api/gorevler")).json();
-        const row = ((data && data.gorevler) || [])
+        const data = await (await fetch("/api/tasks")).json();
+        const row = ((data && data.tasks) || [])
           .find((g) => g.id === "c:" + cid);
         const next = {
           _cid: cid,
-          son_arac: (row && row.son_arac) || "",
-          son_hedef: (row && row.son_hedef) || "",
+          last_tool: (row && row.last_tool) || "",
+          last_target: (row && row.last_target) || "",
           wait: (row && row.wait) || null,
-          oturum: (row && row.oturum) || "",
+          session: (row && row.session) || "",
           deliverable: (row && row.deliverable) || null,
           model: (row && row.model) || "",
           usage: (row && row.usage) || null,
-          adimlar: (liveSnap && liveSnap.adimlar) || undefined,
+          steps: (liveSnap && liveSnap.steps) || undefined,
         };
-        if (next.oturum) {
+        if (next.session) {
           const dump = await (await fetch(
-            "/api/gorevler/dokum?oturum=" + encodeURIComponent(next.oturum)
+            "/api/tasks/transcript?session=" + encodeURIComponent(next.session)
           )).json();
-          if (dump && dump.ok) next.adimlar = dump.adimlar || [];
+          if (dump && dump.ok) next.steps = dump.steps || [];
         } else {
-          next.adimlar = next.adimlar || [];
+          next.steps = next.steps || [];
         }
         liveSnap = next;
         paintLiveHost();
-        if (row && row.durum && row.durum !== "kosuyor") {
+        if (row && row.state && row.state !== "kosuyor") {
           stopLivePoll();
           liveSnap = null;
           await loadRuns(task.id);

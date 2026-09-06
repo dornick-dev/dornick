@@ -188,14 +188,14 @@ async def test_usage_events_carry_turn_and_session_totals(
     # The cache_report fields stay as they are (the context indicator reads them).
     assert last["prompt_total"] == 1400 and last["output"] == 70
     # The totals accumulate call over call.
-    assert last["tur"] == {"girdi": 2400, "cikti": 120, "cagri": 2}
-    assert last["oturum"] == last["tur"]
+    assert last["turn"] == {"girdi": 2400, "cikti": 120, "cagri": 2}
+    assert last["session"] == last["turn"]
     # Price unknown: None — the chip falls back to the token count, no invented dollars.
-    assert last["fiyat"] is None
+    assert last["price"] is None
     # The context box's item-by-item breakdown goes in the same event.
-    assert {p["id"] for p in last["kirilim"]} == {
+    assert {p["id"] for p in last["breakdown"]} == {
         "sistem", "arac", "ruh", "yetenek", "mcp", "yardimci", "sohbet"}
-    assert sum(p["n"] for p in last["kirilim"]) == 1400
+    assert sum(p["n"] for p in last["breakdown"]) == 1400
 
 
 async def test_a_new_user_turn_resets_the_turn_total_not_the_session(
@@ -214,16 +214,16 @@ async def test_a_new_user_turn_resets_the_turn_total_not_the_session(
     await bridge._handle("ikinci iş", "")
 
     last = hub.only("usage")[-1]
-    assert last["tur"] == {"girdi": 500, "cikti": 20, "cagri": 1}, \
+    assert last["turn"] == {"girdi": 500, "cikti": 20, "cagri": 1}, \
         "a new user message must reset the turn total"
-    assert last["oturum"] == {"girdi": 1000, "cikti": 40, "cagri": 2}, \
+    assert last["session"] == {"girdi": 1000, "cikti": 40, "cagri": 2}, \
         "the session total must not be reset"
 
 
 async def test_the_price_label_arrives_in_the_background(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """When the tag is found a `fiyat` event is published and the following
+    """When the tag is found a `price` event is published and the following
     usage events carry the tag; the network is hit AT MOST once per session."""
     from dornick import desktop as desktop_module
 
@@ -239,15 +239,15 @@ async def test_the_price_label_arrives_in_the_background(
     bridge._usage_yay(_report(1000, 50))
     # Wait for the background thread to finish (returns instantly; the bound is a safety net).
     for _ in range(200):
-        if hub.only("fiyat"):
+        if hub.only("price"):
             break
         await asyncio.sleep(0.01)
 
-    price_events = hub.only("fiyat")
-    assert price_events and price_events[0]["fiyat"]["cikti"] == 2.5e-05
+    price_events = hub.only("price")
+    assert price_events and price_events[0]["price"]["cikti"] == 2.5e-05
 
     bridge._usage_yay(_report(500, 10))
-    assert hub.only("usage")[-1]["fiyat"] == {"girdi": 1e-06, "cikti": 2.5e-05}
+    assert hub.only("usage")[-1]["price"] == {"girdi": 1e-06, "cikti": 2.5e-05}
     assert len(counter) == 1, "the price must be looked up once per session"
 
 
@@ -259,6 +259,6 @@ async def test_the_snapshot_seeds_the_cost_chip(
     bridge._usage_yay(_report(1000, 50))
 
     frame = bridge.snapshot()
-    assert frame["kullanim"]["oturum"] == {"girdi": 1000, "cikti": 50, "cagri": 1}
-    assert frame["kullanim"]["tur"]["cagri"] == 1
-    assert frame["fiyat"] is None
+    assert frame["usage"]["session"] == {"girdi": 1000, "cikti": 50, "cagri": 1}
+    assert frame["usage"]["turn"]["cagri"] == 1
+    assert frame["price"] is None

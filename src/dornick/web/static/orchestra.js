@@ -71,8 +71,8 @@ const Orchestra = (() => {
   function start(ev) {
     channels.set(keyOf(ev), {
       title: ev.title, model: ev.model || "", id: ev.id || "",
-      bg: !!ev.bg, tool: "", hedef: "", tools: 0, state: "run",
-      ozet: "", open: false, acts: [],
+      bg: !!ev.bg, tool: "", target: "", tools: 0, state: "run",
+      summary: "", open: false, acts: [],
     });
     prune();
     open();
@@ -88,25 +88,25 @@ const Orchestra = (() => {
     if (!ch.acts) ch.acts = [];
     if (ev.phase === "start") {
       ch.tool = ev.tool;
-      ch.hedef = ev.hedef || "";
+      ch.target = ev.target || "";
       ch.tools += 1;
       ch.acts.push({
         name: ev.tool || "",
-        hedef: ev.hedef || "",
+        target: ev.target || "",
         phase: "run",
       });
       if (ch.acts.length > KEEP_ACTS) ch.acts.shift();
     } else {
       ch.tool = ev.tool + (ev.phase === "fail" ? " ✗" : " ✓");
-      if (ev.hedef) ch.hedef = ev.hedef;
+      if (ev.target) ch.target = ev.target;
       const last = ch.acts[ch.acts.length - 1];
       if (last && last.name === ev.tool) {
         last.phase = ev.phase === "fail" ? "fail" : "ok";
-        if (ev.hedef) last.hedef = ev.hedef;
+        if (ev.target) last.target = ev.target;
       } else {
         ch.acts.push({
           name: ev.tool || "",
-          hedef: ev.hedef || "",
+          target: ev.target || "",
           phase: ev.phase === "fail" ? "fail" : "ok",
         });
         if (ch.acts.length > KEEP_ACTS) ch.acts.shift();
@@ -122,7 +122,7 @@ const Orchestra = (() => {
     ch.tool = "";
     ch.wait = null;
     ch.turns = ev.turns; ch.tools = ev.tools != null ? ev.tools : ch.tools;
-    if (ev.ozet) ch.ozet = ev.ozet;
+    if (ev.summary) ch.summary = ev.summary;
     if (ev.deliverable) ch.deliverable = ev.deliverable;
     if (ev.model) ch.model = ev.model;
     if (ev.usage) ch.usage = ev.usage;
@@ -141,7 +141,7 @@ const Orchestra = (() => {
     const ch = channels.get(keyOf(ev))
       || [...channels.values()].find(c => c.title === ev.title && c.state === "run");
     if (!ch || ch.state !== "run") return;
-    if (ev.kip === "bitti" || ev.kip === "iptal") {
+    if (ev.mode === "done" || ev.mode === "cancelled") {
       ch.wait = null;
       if (!ch.tool || String(ch.tool).startsWith(t("Model bekleniyor"))
           || String(ch.tool).startsWith(t("Model yanıt vermedi"))) {
@@ -150,14 +150,14 @@ const Orchestra = (() => {
       render();
       return;
     }
-    let msg = ev.kip === "hata"
+    let msg = ev.mode === "error"
       ? t("Model yanıt vermedi")
       : t("Model bekleniyor");
-    if (ev.deneme && ev.toplam) msg += ` (${ev.deneme}/${ev.toplam})`;
-    if (ev.saniye) msg += ` · ${ev.saniye}s`;
+    if (ev.attempt && ev.total) msg += ` (${ev.attempt}/${ev.total})`;
+    if (ev.seconds) msg += ` · ${ev.seconds}s`;
     ch.tool = msg;
     ch.wait = ev;
-    if (ev.kip === "hata") {
+    if (ev.mode === "error") {
       ch.state = "fail";
       ch.wait = null;
     }
@@ -180,7 +180,7 @@ const Orchestra = (() => {
       channels.set(keyOf(ev), {
         title: ev.title || ev.id, model: ev.model || "", id: ev.id || "",
         bg: !!ev.bg, tool: "", tools: 0, state: ev.state || "done",
-        ozet: ev.ozet || "", open: false,
+        summary: ev.summary || "", open: false,
       });
     }
     prune();
@@ -243,7 +243,7 @@ const Orchestra = (() => {
     const line = el("div", "orch-ch-line");
     if (ch.state === "run") {
       const act = (ch.tool ? "▶ " + ch.tool : t("Düşünüyor…"))
-        + (ch.hedef ? " · " + ch.hedef : "");
+        + (ch.target ? " · " + ch.target : "");
       line.append(el("span", "orch-ch-act", act));
     } else if (ch.state === "fail") {
       line.append(el("span", "orch-ch-act fail", t("Hata verdi")));
@@ -269,7 +269,7 @@ const Orchestra = (() => {
         const row = el("div", "orch-ch-act-row" + (a.phase === "fail" ? " err" : ""));
         row.append(el("span", "orch-ch-act-mark", mark));
         row.append(el("b", null, a.name || ""));
-        if (a.hedef) row.append(el("span", "orch-ch-act-target", a.hedef));
+        if (a.target) row.append(el("span", "orch-ch-act-target", a.target));
         list.append(row);
       }
       wrap.append(list);
@@ -284,7 +284,7 @@ const Orchestra = (() => {
         resumeBtn.disabled = true;
         resumeBtn.textContent = t("Sürdürülüyor…");
         try {
-          await fetch("/api/gorevler/devam", {
+          await fetch("/api/tasks/resume", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ id: "c:" + ch.id }),
@@ -307,7 +307,7 @@ const Orchestra = (() => {
         cancelBtn.disabled = true;
         cancelBtn.textContent = t("İptal ediliyor…");
         try {
-          await fetch("/api/gorevler/iptal", {
+          await fetch("/api/tasks/cancel", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ id: "c:" + ch.id }),
@@ -334,14 +334,14 @@ const Orchestra = (() => {
           return;
         }
         if (ch.id && typeof Viewer !== "undefined" && Viewer.page) {
-          Viewer.page("/gorev-rapor/" + encodeURIComponent(ch.id) + "/", ch.title);
+          Viewer.page("/task-report/" + encodeURIComponent(ch.id) + "/", ch.title);
           return;
         }
         ch.open = !ch.open;
         render();
       });
       if (ch.open && !ch.id) {
-        wrap.append(el("div", "orch-ch-summary", ch.ozet || t("(özet yok)")));
+        wrap.append(el("div", "orch-ch-summary", ch.summary || t("(özet yok)")));
       }
     }
     return wrap;

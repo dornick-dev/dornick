@@ -182,18 +182,30 @@ def ask(
         reason = "tur zaman aşımına uğradı"
         if awaiting_approval.is_set():
             reason += " — bir araç izni onay bekliyor (yetki kipini gevşetin ya da onaylayın)"
-        return {"ok": False, "error": reason, "gecen_sn": round(time.time() - started, 1)}
+        elapsed = round(time.time() - started, 1)
+        return {"ok": False, "error": reason, "elapsed_s": elapsed, "gecen_sn": elapsed}
 
     files: list[str] = []
     if sandbox_root is not None:
         files = _changed_files(Path(sandbox_root), started)
 
-    return {
+    elapsed = round(time.time() - started, 1)
+    session_id = getattr(getattr(agent, "session", None), "id", "")
+    answer = {
         "ok": True,
-        "yanit": "\n\n".join(parts).strip(),
-        "araclar": tools,
-        "dosyalar": files,
-        "kuyrukta_bekledi": was_queued,
-        "gecen_sn": round(time.time() - started, 1),
-        "oturum": getattr(getattr(agent, "session", None), "id", ""),
+        "answer": "\n\n".join(parts).strip(),
+        "tools": tools,
+        "files": files,
+        "queued": was_queued,
+        "elapsed_s": elapsed,
+        "session": session_id,
     }
+    # The gate is the one endpoint third-party scripts memorise. The field
+    # names 1.5.3 and older used are still sent (and `bekle_sn` is still
+    # read) so those scripts keep working; new integrations use the English
+    # names above.
+    answer.update({
+        "yanit": answer["answer"], "araclar": tools, "dosyalar": files,
+        "kuyrukta_bekledi": was_queued, "gecen_sn": elapsed, "oturum": session_id,
+    })
+    return answer

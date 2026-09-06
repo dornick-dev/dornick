@@ -1,7 +1,7 @@
 // "What changed this turn" + Keep / Undo / Accept All.
 //
 // Source: the tools/checkpoint.py ledger. Keep is UI only (the file is
-// already written). Undo: /api/degisiklikler/geri {sira} or {n} / {siralar}.
+// already written). Undo: /api/changes/undo {seq} or {n} / {seqs}.
 
 Lang.add({
   " dosya değişti": " file(s) changed",
@@ -37,20 +37,20 @@ const Changes = (() => {
 
   async function ledger(since) {
     try {
-      const url = "/api/degisiklikler" + (since ? "?since=" + since : "");
+      const url = "/api/changes" + (since ? "?since=" + since : "");
       return await (await fetch(url)).json();
     } catch { return null; }
   }
 
   async function takeBase() {
     const data = await ledger(0);
-    base = (data && data.son) || 0;
+    base = (data && data.last) || 0;
     return base;
   }
 
   async function undoRequest(body) {
     try {
-      return await (await fetch("/api/degisiklikler/geri", {
+      return await (await fetch("/api/changes/undo", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
@@ -66,8 +66,8 @@ const Changes = (() => {
   async function turnEnded() {
     const data = await ledger(turnBase);
     if (!data) return;
-    base = data.son || base;
-    const records = data.kayitlar || [];
+    base = data.last || base;
+    const records = data.records || [];
     turnBase = base;
     if (!records.length) return;
     strip(records);
@@ -89,7 +89,7 @@ const Changes = (() => {
     row.append(body);
 
     // Oldest to newest (review order).
-    const ordered = [...records].sort((a, b) => (a.sira || 0) - (b.sira || 0));
+    const ordered = [...records].sort((a, b) => (a.seq || 0) - (b.seq || 0));
     const states = new Map(); // sira → kept|undone
 
     let built = false;
@@ -99,7 +99,7 @@ const Changes = (() => {
       if (!built) {
         built = true;
         buildBody(body, ordered, states, () => {
-          const remaining = ordered.filter((k) => !states.has(k.sira)).length;
+          const remaining = ordered.filter((k) => !states.has(k.seq)).length;
           countEl.textContent = (remaining || ordered.length) + t(" dosya değişti");
           if (!remaining) action.textContent = t("gizle");
         });
@@ -123,9 +123,9 @@ const Changes = (() => {
     btn.type = "button";
     btn.addEventListener("click", () => {
       for (const k of records) {
-        if (states.has(k.sira)) continue;
-        states.set(k.sira, "kept");
-        const row = rowFor(k.sira);
+        if (states.has(k.seq)) continue;
+        states.set(k.seq, "kept");
+        const row = rowFor(k.seq);
         if (row) mark(row, "kept");
       }
       btn.disabled = true;
@@ -152,7 +152,7 @@ const Changes = (() => {
     let confirmed = false;
     let timer = null;
     btn.addEventListener("click", async () => {
-      const active = records.filter((k) => !states.has(k.sira) && k.gerialinabilir);
+      const active = records.filter((k) => !states.has(k.seq) && k.undoable);
       if (!active.length) {
         btn.disabled = true;
         return;
@@ -171,7 +171,7 @@ const Changes = (() => {
       clearTimeout(timer);
       btn.disabled = true;
       btn.textContent = t("Geri alınıyor…");
-      const answer = await undoRequest({ siralar: active.map((k) => k.sira) });
+      const answer = await undoRequest({ seqs: active.map((k) => k.seq) });
       if (!answer || answer.ok === false) {
         line("alert", (answer && answer.error) || t("Fark okunamadı."));
         btn.disabled = false;
@@ -181,12 +181,12 @@ const Changes = (() => {
         return;
       }
       for (const k of active) {
-        states.set(k.sira, "undone");
-        const row = rowFor(k.sira);
+        states.set(k.seq, "undone");
+        const row = rowFor(k.seq);
         if (row) mark(row, "undone");
       }
       btn.replaceWith(el("span", "chg-undone",
-        (answer.yapilan || []).join("\n") || t("geri alındı")));
+        (answer.done || []).join("\n") || t("geri alındı")));
       takeBase();
       onChange();
     });
@@ -195,26 +195,26 @@ const Changes = (() => {
 
   function fileRow(k, states, onChange) {
     const row = el("div", "chg-row");
-    row.dataset.sira = String(k.sira);
+    row.dataset.seq = String(k.seq);
     const head = el("div", "chg-row-head");
-    head.append(el("span", "chg-mark", k.yoktu ? "+" : "~"));
-    const nameEl = el("b", null, k.ad || k.dosya);
-    nameEl.title = k.dosya;
+    head.append(el("span", "chg-mark", k.missing ? "+" : "~"));
+    const nameEl = el("b", null, k.name || k.file);
+    nameEl.title = k.file;
     head.append(nameEl);
-    head.append(el("span", "chg-tool", k.arac || ""));
-    if (k.yoktu) head.append(el("span", "chg-tag new", t("yeni dosya")));
-    if (!k.gerialinabilir) head.append(el("span", "chg-tag warn", t("geri alınamaz")));
+    head.append(el("span", "chg-tool", k.tool || ""));
+    if (k.missing) head.append(el("span", "chg-tag new", t("yeni dosya")));
+    if (!k.undoable) head.append(el("span", "chg-tag warn", t("geri alınamaz")));
 
     const acts = el("div", "chg-row-acts");
     const diffBtn = el("button", "chg-diff-btn", t("farkı gör"));
     diffBtn.type = "button";
     acts.append(diffBtn);
 
-    if (k.gerialinabilir) {
+    if (k.undoable) {
       const keep = el("button", "chg-keep-btn", t("Keep"));
       keep.type = "button";
       keep.addEventListener("click", () => {
-        states.set(k.sira, "kept");
+        states.set(k.seq, "kept");
         mark(row, "kept");
         onChange();
       });
@@ -224,13 +224,13 @@ const Changes = (() => {
       undo.type = "button";
       undo.addEventListener("click", async () => {
         undo.disabled = true;
-        const answer = await undoRequest({ sira: k.sira });
+        const answer = await undoRequest({ seq: k.seq });
         if (!answer || answer.ok === false) {
           line("alert", (answer && answer.error) || t("Fark okunamadı."));
           undo.disabled = false;
           return;
         }
-        states.set(k.sira, "undone");
+        states.set(k.seq, "undone");
         mark(row, "undone");
         takeBase();
         onChange();
@@ -252,7 +252,7 @@ const Changes = (() => {
       loaded = true;
       let data = null;
       try {
-        data = await (await fetch("/api/degisiklikler/fark?sira=" + k.sira)).json();
+        data = await (await fetch("/api/changes/diff?seq=" + k.seq)).json();
       } catch { data = null; }
       box.replaceChildren(diffBox(data));
       scroll();
@@ -264,10 +264,10 @@ const Changes = (() => {
     if (!data || !data.ok) {
       return el("div", "diff-empty", (data && data.error) || t("Fark okunamadı."));
     }
-    if (!data.metin) {
+    if (!data.text) {
       return el("div", "diff-empty", t("İkili ya da okunamayan dosya — fark çizilmiyor."));
     }
-    return diffHunk(data.eski, data.yeni, 1);
+    return diffHunk(data.old, data.new, 1);
   }
 
   // Card Keep/Undo — called by app.js diffBlock.

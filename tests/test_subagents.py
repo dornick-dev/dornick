@@ -421,7 +421,7 @@ async def test_a_note_after_the_final_answer_gets_one_more_step(
 
 def test_the_inbox_note_is_invisible_in_the_chat(tmp_path: Path) -> None:
     """A harness note must not look like a message in the UI (the bubble
-    was already drawn by the `araya` event); when the system channel is
+    was already drawn by the `interject` event); when the system channel is
     not suitable it enters through the user channel but still marked
     `internal`."""
     from dornick.events import EventLog
@@ -552,7 +552,7 @@ async def test_submitting_while_busy_interjects_into_the_running_turn(
     tmp_path: Path
 ) -> None:
     """Plain text arriving while busy enters the running turn's inbox, not
-    the queue; the UI gets an `araya` event (not queued)."""
+    the queue; the UI gets an `interject` event (not queued)."""
     import asyncio
 
     from dornick.desktop import Bridge
@@ -578,7 +578,7 @@ async def test_submitting_while_busy_interjects_into_the_running_turn(
     assert "[Kullanıcı bu arada yazdı]" in notes[0][0]
     assert notes[0][1] == "rengi mavi yap"          # goes to instant memory too
     kinds = [e["type"] for e in hub.events]
-    assert "araya" in kinds and "queued" not in kinds
+    assert "interject" in kinds and "queued" not in kinds
     assert bridge.queue.empty(), "an interjected message must not also land in the queue"
 
 

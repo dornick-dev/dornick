@@ -823,8 +823,8 @@ class AgentIO:
     # counter, collapsible detail) — no raw error wall is printed into the
     # chat. If it stays None (CLI, tests) the old plain-text on_notice path
     # applies.
-    # Contract: {"kip": "deneme"|"park"|"bitti"|"iptal",
-    #            "deneme": int, "toplam": int, "saniye": int, "detay": str}
+    # Contract: {"mode": "retry"|"parked"|"error"|"done"|"cancelled",
+    #            "attempt": int, "total": int, "seconds": int, "detail": str}
     on_wait: Callable[[dict[str, Any]], None] | None = None
     on_usage: Callable[[dict[str, int]], None] = lambda _: None
     # The session title set by the model — the sidebar list updates at once.
@@ -1715,7 +1715,7 @@ class Agent:
                 self._unpark()
                 # If there is a strip the recovery lives in the strip too
                 # (one green line); no separate notice lands in the chat.
-                if not self._wait_event(kip="bitti", deneme=attempts):
+                if not self._wait_event(mode="done", attempt=attempts):
                     self.io.on_notice("Model geri geldi — iş kaldığı yerden sürüyor.")
 
             report = cache_report(result.usage)
@@ -2139,8 +2139,8 @@ class Agent:
             # chat: the work strip runs the countdown in a single live line,
             # the detail opens on click.
             if not self._wait_event(
-                kip="deneme", deneme=stats.api_errors, toplam=retries,
-                saniye=int(delay), detay=_clip(error, 1500),
+                mode="retry", attempt=stats.api_errors, total=retries,
+                seconds=int(delay), detail=_clip(error, 1500),
             ):
                 self.io.on_notice(
                     f"Model yanıt vermiyor; {delay:.0f} sn sonra yeniden denenecek "
@@ -2151,8 +2151,8 @@ class Agent:
             # 300s".
             stats.fail_reason = _clip(error, 400)
             self._wait_event(
-                kip="hata", deneme=stats.api_errors, toplam=retries,
-                saniye=0, detay=stats.fail_reason,
+                mode="error", attempt=stats.api_errors, total=retries,
+                seconds=0, detail=stats.fail_reason,
             )
             self.io.on_notice(
                 f"Model {retries} denemede yanıt vermedi — görev durdu. "
@@ -2165,7 +2165,7 @@ class Agent:
             # bekletiliyor" line stays live (even if the page is reloaded it
             # comes back on the next probe).
             self._wait_event(
-                kip="park", saniye=int(delay), detay=_clip(error, 1500))
+                mode="parked", seconds=int(delay), detail=_clip(error, 1500))
 
         # Interruptible wait: if the user says "stop" the wait ends at once.
         try:
@@ -2183,7 +2183,7 @@ class Agent:
 
         # The user interrupted: a deliberate stop — the park record goes too.
         self._unpark()
-        self._wait_event(kip="iptal")   # close the waiting line in the strip
+        self._wait_event(mode="cancelled")   # close the waiting line in the strip
         self.io.on_notice("Kesildi.")
         return False
 
@@ -2995,8 +2995,8 @@ class Agent:
             if handle.wait:
                 w = handle.wait
                 msg = "Model bekleniyor"
-                if w.get("deneme") and w.get("toplam"):
-                    msg += f" ({w['deneme']}/{w['toplam']})"
+                if w.get("attempt") and w.get("total"):
+                    msg += f" ({w['attempt']}/{w['total']})"
                 lines.append(msg)
             task_runs.patch_run(
                 self.config.state_dir, handle.schedule_id, handle.run_id,
@@ -3016,19 +3016,19 @@ class Agent:
         body = dict(payload or {})
         body.setdefault("title", title)
         body.setdefault("id", cid)
-        mode = str(body.get("kip") or "")
+        mode = str(body.get("mode") or "")
         handle = self._children.get(cid)
         if handle is not None:
-            if mode in ("bitti", "iptal"):
+            if mode in ("done", "cancelled"):
                 handle.wait = None
             else:
                 handle.wait = body
                 handle.last_tool = ""
                 handle.last_goal = ""
-            if mode in ("deneme", "park", "hata"):
+            if mode in ("retry", "parked", "error"):
                 self._maybe_patch_run(handle)
         # Bridge / CLI: without on_child_wait fall back to notice — a short
-        # line except for kip bitti/iptal.
+        # line except for mode done/cancelled.
         emit = getattr(self.io, "on_child_wait", None)
         if callable(emit):
             try:
@@ -3036,15 +3036,15 @@ class Agent:
                 return
             except Exception:
                 pass
-        if mode in ("bitti", "iptal"):
+        if mode in ("done", "cancelled"):
             return
-        if mode in ("deneme", "park", "hata"):
-            detail = _clip(str(body.get("detay") or ""), 120)
-            secs = body.get("saniye")
-            attempt = body.get("deneme")
-            total = body.get("toplam")
+        if mode in ("retry", "parked", "error"):
+            detail = _clip(str(body.get("detail") or ""), 120)
+            secs = body.get("seconds")
+            attempt = body.get("attempt")
+            total = body.get("total")
             msg = f"[{title}] Model yanıt vermiyor"
-            if mode == "hata":
+            if mode == "error":
                 msg = f"[{title}] Model yanıt vermedi — görev durdu"
             if attempt and total:
                 msg += f" ({attempt}/{total})"

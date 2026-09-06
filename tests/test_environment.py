@@ -154,9 +154,9 @@ def test_update_check_reports_a_newer_version(monkeypatch) -> None:
     answer = environment.check_update(
         _ac=lambda *a, **k: _FakeResponse(
             {"tag_name": "v0.9.0", "html_url": "https://ornek/yayin"}))
-    assert answer["ok"] and answer["yeni"] == "0.9.0"
+    assert answer["ok"] and answer["new"] == "0.9.0"
     assert answer["url"] == "https://ornek/yayin"
-    assert answer["mevcut"] == "0.2.2"
+    assert answer["current"] == "0.2.2"
 
 
 def test_update_check_finds_the_installer_asset(monkeypatch) -> None:
@@ -172,8 +172,8 @@ def test_update_check_finds_the_installer_asset(monkeypatch) -> None:
                 {"name": "dornick-setup-0.9.0.exe",
                  "browser_download_url": "https://ornek/setup.exe"},
             ]}))
-    assert answer["yeni"] == "0.9.0"
-    assert answer["indirme"] == "https://ornek/setup.exe"
+    assert answer["new"] == "0.9.0"
+    assert answer["download"] == "https://ornek/setup.exe"
 
 
 def test_update_check_leaves_download_empty_without_assets(monkeypatch) -> None:
@@ -182,14 +182,14 @@ def test_update_check_leaves_download_empty_without_assets(monkeypatch) -> None:
     answer = environment.check_update(
         _ac=lambda *a, **k: _FakeResponse(
             {"tag_name": "v0.9.0", "html_url": "https://ornek/yayin"}))
-    assert answer["yeni"] == "0.9.0" and answer["indirme"] == ""
+    assert answer["new"] == "0.9.0" and answer["download"] == ""
 
 
 def test_update_check_is_silent_on_the_same_version(monkeypatch) -> None:
     monkeypatch.setattr(environment, "version", lambda: "0.2.2")
     answer = environment.check_update(
         _ac=lambda *a, **k: _FakeResponse({"tag_name": "v0.2.2"}))
-    assert answer["ok"] and answer["yeni"] == "" and answer["hata"] == ""
+    assert answer["ok"] and answer["new"] == "" and answer["error"] == ""
 
 
 def test_update_check_gives_a_polite_error_offline(monkeypatch) -> None:
@@ -201,8 +201,8 @@ def test_update_check_gives_a_polite_error_offline(monkeypatch) -> None:
 
     monkeypatch.setattr(environment, "version", lambda: "0.2.2")
     answer = environment.check_update(_ac=offline)
-    assert not answer["ok"] and answer["yeni"] == ""
-    assert "internet" in answer["hata"].lower() or "ağ" in answer["hata"].lower()
+    assert not answer["ok"] and answer["new"] == ""
+    assert "internet" in answer["error"].lower() or "ağ" in answer["error"].lower()
 
 
 def test_update_check_says_so_when_there_is_no_release(monkeypatch) -> None:
@@ -216,7 +216,7 @@ def test_update_check_says_so_when_there_is_no_release(monkeypatch) -> None:
     monkeypatch.setattr(environment, "version", lambda: "0.2.2")
     answer = environment.check_update(_ac=missing)
     assert not answer["ok"]
-    assert "sürüm" in answer["hata"].lower() or "yayın" in answer["hata"].lower()
+    assert "sürüm" in answer["error"].lower() or "yayın" in answer["error"].lower()
 
 
 # -- in-app update download (security) ---------------------------------

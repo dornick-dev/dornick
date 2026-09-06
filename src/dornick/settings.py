@@ -318,7 +318,7 @@ def snapshot(config: Config) -> dict[str, Any]:
         "installed": environment.is_installed(),
         # The field question "which version is installed?" had no answer:
         # the Machine tab shows it read-only, installed/dev distinction from installed.
-        "surum": environment.version(),
+        "version": environment.version(),
         "hardware": {
             "microphone": organs.has_microphone(),
             "camera": organs.has_camera(),

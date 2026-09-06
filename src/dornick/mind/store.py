@@ -634,9 +634,9 @@ class Mind:
                 return
             turn: dict[str, Any] = {"role": "assistant", "text": text}
             if thoughts:
-                turn["dusunme"] = "\n\n———\n\n".join(thoughts)[:20000]
+                turn["thinking"] = "\n\n———\n\n".join(thoughts)[:20000]
             if steps:
-                turn["adimlar"] = steps[:200]
+                turn["steps"] = steps[:200]
             out.append(turn)
             thoughts = []
             steps = []
@@ -1180,7 +1180,7 @@ def _step_summaries(content: Any) -> list[dict[str, str]]:
                     break
         if len(summary) > 160:
             summary = summary[:160].rstrip() + "…"
-        out.append({"tool": str(b.get("name") or ""), "ozet": summary})
+        out.append({"tool": str(b.get("name") or ""), "summary": summary})
     return out
 
 

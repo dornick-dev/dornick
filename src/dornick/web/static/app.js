@@ -1053,7 +1053,7 @@ async function loadTranscript(id) {
   // id is now checked at every step; on mismatch drawing is silently dropped.
   if (transcriptFor !== id) return;
   const turns = (data.turns || []).filter(
-    (t) => drawable(t.text) || (t.adimlar && t.adimlar.length) || t.dusunme);
+    (t) => drawable(t.text) || (t.steps && t.steps.length) || t.thinking);
   const start = Math.max(0, turns.length - TRANSCRIPT_LAST);
   transcriptBatch = true;
   const prevFollow = follow;
@@ -1090,7 +1090,7 @@ function transcriptTurn(turn, before) {
     const el = line("user", turn.text);
     reviveUserMedia(el, turn.text || "");
   } else {
-    if (turn.dusunme || (turn.adimlar && turn.adimlar.length)) historyStrip(turn);
+    if (turn.thinking || (turn.steps && turn.steps.length)) historyStrip(turn);
     if (drawable(turn.text)) {
       const el = line("agent", "");
       el._rawText = turn.text || "";
@@ -1143,7 +1143,7 @@ function historyStrip(turn) {
 
   const verb = document.createElement("span");
   verb.className = "head-verb";
-  const stepCount = (turn.adimlar || []).length;
+  const stepCount = (turn.steps || []).length;
   verb.textContent = stepCount ? stepsWord(stepCount) : t("Düşündü");
   head.append(verb);
   head.onclick = () => {
@@ -1152,10 +1152,10 @@ function historyStrip(turn) {
     head.classList.toggle("open", !body.hidden);
   };
 
-  if (turn.dusunme) {
+  if (turn.thinking) {
     const think = document.createElement("div");
     think.className = "act note think done";
-    const words = turn.dusunme.split(/\s+/).length;
+    const words = turn.thinking.split(/\s+/).length;
     const label = t("✻ Düşündü") + " · " + words + t(" kelime");
     think.textContent = label;
     think.title = t("Tıkla — bu turun muhakemesini gör");
@@ -1163,12 +1163,12 @@ function historyStrip(turn) {
     think.onclick = (ev) => {
       ev.stopPropagation();
       open = !open;
-      think.textContent = open ? turn.dusunme : label;
+      think.textContent = open ? turn.thinking : label;
       think.classList.toggle("open", open);
     };
     body.append(think);
   }
-  for (const step of (turn.adimlar || [])) {
+  for (const step of (turn.steps || [])) {
     const row = document.createElement("div");
     row.className = "act ok";
     const spark = document.createElement("span");
@@ -1180,8 +1180,8 @@ function historyStrip(turn) {
     who.title = step.tool;
     const what = document.createElement("span");
     what.className = "what";
-    what.textContent = step.ozet || "";
-    what.title = step.ozet || "";
+    what.textContent = step.summary || "";
+    what.title = step.summary || "";
     if (CODE_TOOLS.has(step.tool)) { row.dataset.kod = "1"; what.classList.add("kod"); }
     row.append(spark, who, what);
     body.append(row);
@@ -2336,8 +2336,8 @@ setTimeout(syncTitlebar, 800);
 // --- learn-me icon -------------------------------------------------------
 //
 // The sprout in the top bar: visible while the feature is on, pulses while
-// training runs, trains immediately on click. Two sources: GET /api/tanima
-// on startup, then SSE "tanima" events (acik/kapali/basladi/bitti) — even if
+// training runs, trains immediately on click. Two sources: GET /api/recognition
+// on startup, then SSE "recognition" events (on/off/started/finished) — even if
 // the switch on the settings page is flipped in another tab, the icon
 // adapts instantly.
 
@@ -2361,15 +2361,15 @@ function trainingDate() {
 function trainingIcon(state) {
   const icon = $("tanima-ikon");
   if (!icon) return;
-  if (state === "acik") icon.hidden = false;
-  else if (state === "kapali") icon.hidden = true;
-  else if (state === "basladi") { trainingRunning = true; trainingStartedAt = Date.now(); }
-  else if (state === "bitti") {
+  if (state === "on") icon.hidden = false;
+  else if (state === "off") icon.hidden = true;
+  else if (state === "started") { trainingRunning = true; trainingStartedAt = Date.now(); }
+  else if (state === "finished") {
     // The pulse must show for AT LEAST this long: training sometimes takes
     // under a second and when the user pressed the button it looked like
     // nothing had happened. "Something happened" must be visible.
     const left = TRAINING_MIN_PULSE_MS - (Date.now() - trainingStartedAt);
-    if (left > 0) { setTimeout(() => trainingIcon("bitti"), left); return; }
+    if (left > 0) { setTimeout(() => trainingIcon("finished"), left); return; }
     trainingRunning = false;
     lastTrainedAt = new Date().toISOString();
   }
@@ -2398,15 +2398,15 @@ $("tanima-ikon").addEventListener("click", async () => {
   // A click while running is silently ignored: the tooltip already says the
   // state, and opening a second run is impossible anyway (singleton process).
   if (trainingRunning) return;
-  const answer = await post("/api/tanima", { simdi: true });
-  const reason = (answer && answer.sebep) || "baslatilamadi";
+  const answer = await post("/api/recognition", { now: true });
+  const reason = (answer && answer.reason) || "baslatilamadi";
   line("alert", t(TRAINING_REASONS[reason] || TRAINING_REASONS.baslatilamadi));
 });
 
-fetch("/api/tanima").then((r) => r.json()).then((d) => {
-  lastTrainedAt = d.son || "";
-  trainingRunning = !!d.kosuyor;
-  trainingIcon(d.on ? "acik" : "kapali");
+fetch("/api/recognition").then((r) => r.json()).then((d) => {
+  lastTrainedAt = d.last || "";
+  trainingRunning = !!d.running;
+  trainingIcon(d.on ? "on" : "off");
 }).catch(() => {});
 
 // --- left panel resizing ------------------------------------------------
@@ -2753,7 +2753,7 @@ function paintCtxBar(bar, breakdown, window_, used) {
   for (const p of parts) {
     const i = mk("i", "ctx-seg " + (p.id || ""));
     i.style.width = Math.max(0.4, (p.n / cap) * 100) + "%";
-    i.title = t(p.ad) + " · " + shortNum(p.n);
+    i.title = t(p.label) + " · " + shortNum(p.n);
     bar.append(i);
   }
 }
@@ -2784,7 +2784,7 @@ function dockContext(promptTotal, estimate, breakdown) {
 // this-turn + session breakdown.
 
 let price = null;                              // {girdi, cikti} USD/token | null
-let usage = { tur: null, oturum: null };    // totals from the usage event
+let usage = { turn: null, session: null };    // totals from the usage event
 // Spend cap for this session (USD); null = unlimited. The real brake is on
 // the server (see desktop.Bridge._butce_freni): the counter there stops the
 // turn loop. The copy here only displays and pre-fills the box.
@@ -2808,8 +2808,8 @@ function isPremium() { return !!(price && price.cikti * 1e6 > PREMIUM_USD_M); }
 
 function dockCost() {
   const chip = $("dock-cost");
-  const turn = usage.tur;
-  const session = usage.oturum;
+  const turn = usage.turn;
+  const session = usage.session;
   // The chip shows the SESSION total — reopening a conversation seeds past
   // spend here too. "This turn" stays in the breakdown.
   const hasAny = session && (session.girdi || session.cikti || session.cagri);
@@ -2840,7 +2840,7 @@ $("dock-cost").addEventListener("click", () => {
   pop.append(mk("div", "pop-head", t("Tahmini harcama")));
   const tr = (n) => (n || 0).toLocaleString("tr-TR");
   const row = (text) => pop.append(mk("div", "pop-note", text));
-  const turn = usage.tur, session = usage.oturum;
+  const turn = usage.turn, session = usage.session;
   if (!session || !session.cagri) {
     row(t("Bu oturumda henüz tur yok."));
   } else if (price) {
@@ -2883,12 +2883,12 @@ function budgetField() {
 
   const apply = async () => {
     const raw = field.value.trim().replace(",", ".");
-    const answer = await post("/api/butce", { usd: raw === "" ? null : raw });
+    const answer = await post("/api/budget", { usd: raw === "" ? null : raw });
     if (!answer || answer.ok === false) {
       hint.textContent = (answer && answer.error) || t("Sınır kaydedilemedi.");
       return;
     }
-    budget = answer.butce == null ? null : Number(answer.butce);
+    budget = answer.budget == null ? null : Number(answer.budget);
     dockCost();
     hidePop();
   };
@@ -2909,10 +2909,10 @@ function trainingChip(state) {
   const chip = $("dock-tanima");
   if (!chip) return;
   clearTimeout(trainingTimer);
-  if (state === "basladi") {
+  if (state === "started") {
     chip.textContent = "· " + t("Tanıma eğitimi arka planda");
     chip.hidden = false;
-  } else if (state === "bitti") {
+  } else if (state === "finished") {
     chip.textContent = "· " + t("Tanıma eğitimi tamamlandı");
     chip.hidden = false;
     trainingTimer = setTimeout(() => { chip.hidden = true; }, 5000);
@@ -3149,7 +3149,7 @@ $("dock-ctx").addEventListener("click", () => {
   for (const p of breakdown) {
     const row = mk("div", "pop-ctx-row");
     row.append(mk("i", "ctx-dot " + (p.id || "")));
-    row.append(mk("span", "pop-ctx-ad", t(p.ad)));
+    row.append(mk("span", "pop-ctx-ad", t(p.label)));
     row.append(mk("b", "pop-ctx-n", shortNum(p.n)));
     pop.append(row);
   }
@@ -3930,7 +3930,7 @@ function waitHead() {
   if (!waitState) return "";
   const left = Math.max(0, Math.ceil((waitState.deadline - Date.now()) / 1000));
   const secs = left > 0 ? left + " sn" : t("yeniden deneniyor…");
-  if (waitState.phase === "park")
+  if (waitState.phase === "parked")
     return t("İş bekletiliyor — model erişilebilir olunca sürecek") + " · " + secs;
   return t("Model bekleniyor") + " · " + t("deneme") + " "
        + waitState.attempt + "/" + waitState.total + " · " + secs;
@@ -3943,7 +3943,7 @@ function paintWait() {
 }
 
 function onWaiting(e) {
-  if (e.kip === "bitti" || e.kip === "iptal") { closeWait(e); return; }
+  if (e.mode === "done" || e.mode === "cancelled") { closeWait(e); return; }
 
   const w = ensureWork();
   foldNarration();
@@ -3982,21 +3982,21 @@ function onWaiting(e) {
     scroll();
   }
 
-  waitState.phase = e.kip;
-  waitState.attempt = e.deneme || 0;
-  waitState.total = e.toplam || 0;
-  waitState.deadline = Date.now() + (e.saniye || 0) * 1000;
+  waitState.phase = e.mode;
+  waitState.attempt = e.attempt || 0;
+  waitState.total = e.total || 0;
+  waitState.deadline = Date.now() + (e.seconds || 0) * 1000;
 
-  const brief = String(e.detay || "").split("\n")[0];
+  const brief = String(e.detail || "").split("\n")[0];
   waitState.row.querySelector(".what").textContent =
     brief.length > HEAD_ARG ? brief.slice(0, HEAD_ARG) + "…" : brief;
-  waitState.row.querySelector(".took").textContent = e.kip === "park"
+  waitState.row.querySelector(".took").textContent = e.mode === "parked"
     ? t("bekletiliyor")
     : t("deneme") + " " + waitState.attempt + "/" + waitState.total;
-  waitState.detail.textContent = e.detay || "";
+  waitState.detail.textContent = e.detail || "";
   // The scene and top strip must tell the same truth: not a frozen
   // "Düşünüyor" but the wait state (like Claude Code's status line).
-  setMode("thinking", e.kip === "park" ? t("İş bekletiliyor") : t("Model bekleniyor"));
+  setMode("thinking", e.mode === "parked" ? t("İş bekletiliyor") : t("Model bekleniyor"));
   // The "Model yükleniyor…" sentinel tells the wrong story here: nothing
   // streams but the reason is known — the model is BEING WAITED FOR. The
   // sentinel is silenced.
@@ -4011,12 +4011,12 @@ function closeWait(e) {
   if (!waitState) return;
   const { row } = waitState;
   waitState = null;
-  if (e && e.kip === "bitti") {
+  if (e && e.mode === "done") {
     row.classList.add("ok");
     row.querySelector(".spark").textContent = "✓";
     row.querySelector(".who").textContent = t("Model geri geldi");
     row.querySelector(".what").textContent =
-      e.deneme ? e.deneme + t(" deneme sonrası") : "";
+      e.attempt ? e.attempt + t(" deneme sonrası") : "";
     row.querySelector(".took").textContent = "";
   } else {
     row.classList.add("err");
@@ -4378,7 +4378,7 @@ const GOAL_DESCRIPTION =
   + "Sohbet geçmişi değil — madde yoksa sekme de yok. Sen de ekleyip silebilirsin.";
 
 const Goals = (() => {
-  const items = new Map();   // id → { text, status, eski } — in insertion order
+  const items = new Map();   // id → { text, status, stale } — in insertion order
   // FOLDED BY DEFAULT: the panel is born as one line ("3 iş listesi"), the
   // curious open it. A panel born open shoved a list the user never asked
   // for into their face on every launch.
@@ -4529,7 +4529,7 @@ const Goals = (() => {
       label.title = g.text + (g.status === "done" ? " — " + t("tamamlandı")
                             : g.status === "dropped" ? " — " + t("bırakıldı") : "");
       row.append(mark, label);
-      if (g.eski) {
+      if (g.stale) {
         const badge = document.createElement("span");
         badge.className = "goal-eski";
         badge.textContent = t("eski");
@@ -4613,7 +4613,7 @@ const Goals = (() => {
   function seed(list) {
     items.clear();
     for (const g of list || []) {
-      if (g && g.id) items.set(g.id, { text: g.text || g.id, status: "active", eski: !!g.eski });
+      if (g && g.id) items.set(g.id, { text: g.text || g.id, status: "active", stale: !!g.stale });
     }
     render();
   }
@@ -5033,7 +5033,7 @@ async function applyPlan() {
 // background lane's permission must be asked too.
 const CHAT_ONLY = new Set([
   "assistant_delta", "thinking_delta", "message", "tool_start", "tool_end",
-  "tool_cancelled", "queued", "araya", "artifact", "plan", "bekleme",
+  "tool_cancelled", "queued", "interject", "artifact", "plan", "waiting",
   "child_start", "child_tool", "child_wait", "turn_end", "recall_trace",
   "api_error", "interrupted", "empty_assistant_turn", "turn_limit", "refusal",
 ]);
@@ -5089,7 +5089,7 @@ function handle(e) {
     // in history as a user message there is no message-echo match; the row
     // here is permanent. The strip is pulled right below it so "work goes on
     // in the background / you interjected" reads at a single glance.
-    case "araya": {
+    case "interject": {
       if (agentLine) finishAgentLine();
       closeThought();
       const row = line("user", e.text);
@@ -5181,7 +5181,7 @@ function handle(e) {
 
     // In-app update: download progress + install start. Paints the status
     // line in Settings if open, and the sidebar badge in any case.
-    case "guncelleme":
+    case "update":
       updateStatus(e);
       break;
 
@@ -5207,7 +5207,7 @@ function handle(e) {
       resumeFollow(false);   // fresh transcript: follow on from the start
       // The counters are per-chat: old spend must not dangle in a new
       // conversation; in a resumed chat loadState writes the past total.
-      usage = { tur: null, oturum: null };
+      usage = { turn: null, session: null };
       budget = null;
       dockCost();
       // A resumed session: the COUNTERS must resume just like the transcript.
@@ -5253,7 +5253,7 @@ function handle(e) {
     case "notice": clearWelcome(); line("alert", e.text); break;
     // Model outage: NO line lands in the chat — the work strip's live header
     // turns into the state; the detail lives in the strip's step row.
-    case "bekleme": onWaiting(e); break;
+    case "waiting": onWaiting(e); break;
     // The api_error note in the log is NOT printed into the chat: a
     // transient error lives in the strip's wait row (raw detail on click)
     // and a fatal one already arrives as a notice. This event used to dump a
@@ -5400,12 +5400,12 @@ function handle(e) {
     // without a surprise value gets a middling flash.
     case "mind_write":
       Scene.load(() => Scene.deposit(e.memory_id));
-      if (typeof Regions !== "undefined") Regions.amygdala(e.surpriz ?? e.surprise ?? e.guc);
+      if (typeof Regions !== "undefined") Regions.amygdala(e.surprise ?? e.strength);
       break;
 
     // A night event on the live channel: the same feed a replay uses.
-    case "gece":
-      if (typeof Night !== "undefined") Night.feed([e.olay || e]);
+    case "night":
+      if (typeof Night !== "undefined") Night.feed([e.event || e]);
       break;
 
     case "mind_forget":
@@ -5444,7 +5444,7 @@ function handle(e) {
     // Learn-me: the personal fine-tune started/finished in the background
     // (or was toggled from the settings page). Not worth a chat line; the
     // chip under the composer + the top-bar icon show the state quietly.
-    case "tanima":
+    case "recognition":
       trainingChip(e.state); trainingIcon(e.state);
       if (typeof Regions !== "undefined") Regions.patch(e.state);
       break;
@@ -5454,20 +5454,20 @@ function handle(e) {
         tokenNote = e.prompt_total.toLocaleString("tr-TR") + t(" token")
           + (e.cache_read ? " · " + e.cache_read.toLocaleString("tr-TR") + t(" önbellek") : "");
         showMeta();
-        dockContext(e.prompt_total, false, e.kirilim);
+        dockContext(e.prompt_total, false, e.breakdown);
         lastUsage = e;
       }
       // Cost chip: turn/session totals and the price tag arrive in the same
       // event (see the desktop._usage_yay contract).
-      if (e.tur) usage = { tur: e.tur, oturum: e.oturum || usage.oturum };
-      if (e.fiyat !== undefined && e.fiyat !== null) price = e.fiyat;
+      if (e.turn) usage = { turn: e.turn, session: e.session || usage.session };
+      if (e.price !== undefined && e.price !== null) price = e.price;
       dockCost();
       break;
 
     // The price tag arrived later in the background: the chip turns from
     // token counts to dollars — without waiting for the next turn.
-    case "fiyat":
-      price = e.fiyat || null;
+    case "price":
+      price = e.price || null;
       dockCost();
       break;
   }
@@ -5533,14 +5533,14 @@ async function loadState() {
     // The brand's tooltip in the top bar: which version, which layout. In
     // the field it was invisible which of two copies was open — hover the
     // brand and the answer is here.
-    if (s.surum) {
+    if (s.version) {
       const brand = document.querySelector(".brand");
-      if (brand) brand.title = "Dornick " + s.surum +
+      if (brand) brand.title = "Dornick " + s.version +
         (s.kurulu ? t(" · kurulum") : t(" · geliştirme"));
       // A small version badge at the bottom of the sidebar (user request,
       // 01.09): which version is installed shows without searching.
       const badge = document.getElementById("side-ver");
-      if (badge) badge.textContent = "v" + s.surum;
+      if (badge) badge.textContent = "v" + s.version;
     }
     modelName = s.model || "";
     providerName = s.provider || "";
@@ -5569,21 +5569,21 @@ async function loadState() {
     dockEffort = s.effort || "";
     contextWindow = Number(s.context_window) || 0;
     dockRender();
-    if (s.kirilim) lastBreakdownSeed = s.kirilim;
+    if (s.breakdown) lastBreakdownSeed = s.breakdown;
     // The running session's last usage: a refreshed page resumes where it
     // was. The fixed items (system + tools) show before the first turn too.
-    if (Number(s.prompt_total) || (s.kirilim && s.kirilim.length)) {
-      dockContext(Number(s.prompt_total) || 0, s.tahmin, s.kirilim);
+    if (Number(s.prompt_total) || (s.breakdown && s.breakdown.length)) {
+      dockContext(Number(s.prompt_total) || 0, s.estimated, s.breakdown);
       if (!lastUsage && Number(s.prompt_total)) {
-        lastUsage = { prompt_total: Number(s.prompt_total), kirilim: s.kirilim };
+        lastUsage = { prompt_total: Number(s.prompt_total), breakdown: s.breakdown };
       }
     }
     // The cost chip is seeded from here for the same reason: a refresh must
     // not zero the spend gauge.
-    if (s.fiyat) price = s.fiyat;
-    if (s.kullanim && s.kullanim.oturum && s.kullanim.oturum.cagri) usage = s.kullanim;
+    if (s.price) price = s.price;
+    if (s.usage && s.usage.session && s.usage.session.cagri) usage = s.usage;
     // The budget cap comes from the seed too: a refreshed page must not forget the seatbelt.
-    budget = s.butce == null ? null : Number(s.butce);
+    budget = s.budget == null ? null : Number(s.budget);
     dockCost();
     // A refresh does not end the session: whatever the reason for the reload
     // (language change, F5) the running conversation's transcript must come
@@ -5620,19 +5620,19 @@ setTimeout(async () => {
   try {
     const saved = JSON.parse(localStorage.getItem(CHECK_KEY) || "{}");
     if (saved.zaman && Date.now() - saved.zaman < 24 * 60 * 60 * 1000) {
-      if (saved.yeni) refreshVersionBadge(saved);
+      if (saved.new) refreshVersionBadge(saved);
       return;
     }
   } catch { /* corrupt record — carry on with the check */ }
   try {
-    const answer = await (await fetch("/api/surum", { method: "POST" })).json();
+    const answer = await (await fetch("/api/version", { method: "POST" })).json();
     try {
       localStorage.setItem(CHECK_KEY, JSON.stringify({
-        zaman: Date.now(), yeni: answer.yeni || "",
-        url: answer.url || "", indirme: answer.indirme || "",
+        zaman: Date.now(), new: answer.new || "",
+        url: answer.url || "", download: answer.download || "",
       }));
     } catch { /* localStorage may be off */ }
-    if (answer.yeni) { refreshVersionBadge(answer); updateToast(answer); }
+    if (answer.new) { refreshVersionBadge(answer); updateToast(answer); }
   } catch { /* no network — pass silently */ }
 }, 8000);
 
@@ -5641,15 +5641,15 @@ setTimeout(async () => {
 // badge stays put; whoever wants updates from there without the toast
 // nagging.
 function updateToast(info) {
-  if (!info || !info.yeni || document.getElementById("update-toast")) return;
+  if (!info || !info.new || document.getElementById("update-toast")) return;
   const KEY = "dornickGuncellemeBildirim";
   try {
     const k = JSON.parse(localStorage.getItem(KEY) || "{}");
-    if (k.kapatilan === info.yeni) return;                    // they handled this version
+    if (k.kapatilan === info.new) return;                    // they handled this version
     if (k.zaman && Date.now() - k.zaman < 24 * 60 * 60 * 1000) return;  // once a day
   } catch { /* corrupt record — show */ }
   try {
-    localStorage.setItem(KEY, JSON.stringify({ zaman: Date.now(), surum: info.yeni }));
+    localStorage.setItem(KEY, JSON.stringify({ zaman: Date.now(), surum: info.new }));
   } catch { /* localStorage off */ }
 
   const box = document.createElement("div");
@@ -5658,20 +5658,20 @@ function updateToast(info) {
   const txt = document.createElement("span");
   txt.className = "u-txt";
   const bold = document.createElement("b");
-  bold.textContent = "v" + info.yeni;
+  bold.textContent = "v" + info.new;
   txt.append(bold, document.createTextNode(" " + t("sürümü yayınlandı.")));
   const goBtn = document.createElement("button");
   goBtn.type = "button";
   goBtn.className = "u-go";
-  goBtn.textContent = t(info.indirme ? "İndir ve kur" : "İndir");
+  goBtn.textContent = t(info.download ? "İndir ve kur" : "İndir");
   goBtn.onclick = async () => {
-    if (!info.indirme) {
+    if (!info.download) {
       if (info.url) window.open(info.url, "_blank", "noopener");
       return;
     }
     goBtn.disabled = true;
     goBtn.textContent = t("İndiriliyor");
-    try { await fetch("/api/guncelle", { method: "POST" }); } catch { /* the event stream tells */ }
+    try { await fetch("/api/update", { method: "POST" }); } catch { /* the event stream tells */ }
   };
   const closeBtn = document.createElement("button");
   closeBtn.type = "button";
@@ -5681,7 +5681,7 @@ function updateToast(info) {
   closeBtn.onclick = () => {
     try {
       localStorage.setItem(KEY, JSON.stringify({
-        zaman: Date.now(), surum: info.yeni, kapatilan: info.yeni }));
+        zaman: Date.now(), surum: info.new, kapatilan: info.new }));
     } catch { /* localStorage off */ }
     box.remove();
   };
@@ -5691,7 +5691,7 @@ function updateToast(info) {
 
 function refreshVersionBadge(info) {
   const badge = document.getElementById("side-ver");
-  if (!badge || !info.yeni) return;
+  if (!badge || !info.new) return;
   badge.textContent = "";
   const link = document.createElement("a");
   link.className = "version-new";
@@ -5700,7 +5700,7 @@ function refreshVersionBadge(info) {
   // "v1.4.2 yeni — güncelle" text read like a leftover hyperlink.
   const dot = document.createElement("span"); dot.className = "dot";
   const ver = document.createElement("span"); ver.className = "ver";
-  ver.textContent = "v" + info.yeni;
+  ver.textContent = "v" + info.new;
   const act = document.createElement("span"); act.className = "act";
   link.append(dot, ver, act);
   const setState = (text, cls) => {
@@ -5708,10 +5708,10 @@ function refreshVersionBadge(info) {
     link.classList.remove("busy", "bad");
     if (cls) link.classList.add(cls);
   };
-  if (info.indirme) {
+  if (info.download) {
     // Download+install from inside the app. The address does not come from
     // the client; the server finds the trusted GitHub link itself
-    // (/api/guncelle).
+    // (/api/update).
     setState(t("Güncelle"));
     link.title = t("Yeni sürüm yayınlandı — indirip kurmak için tıkla");
     link.addEventListener("click", async (e) => {
@@ -5719,7 +5719,7 @@ function refreshVersionBadge(info) {
       if (link.classList.contains("busy")) return;
       setState(t("İndiriliyor"), "busy");
       try {
-        const c = await (await fetch("/api/guncelle", { method: "POST" })).json();
+        const c = await (await fetch("/api/update", { method: "POST" })).json();
         if (c && c.ok === false) setState(t("hata"), "bad");
       } catch { setState(t("hata"), "bad"); }
     });
@@ -5736,7 +5736,7 @@ function refreshVersionBadge(info) {
   badge.append(link);
 }
 
-// Reflects the "guncelleme" SSE event on both the status line in settings
+// Reflects the "update" SSE event on both the status line in settings
 // (if present) and the sidebar badge. The progress percentage streams during
 // the download; "kuruluyor/acildi" says the installer opened; "hata" is
 // reported honestly.
@@ -5745,16 +5745,16 @@ function updateStatus(e) {
   const progress = document.querySelector(".version-progress");
   let text = "";
   let bad = false;
-  if (e.asama === "indiriliyor") {
-    const pct = Number(e.yuzde) || 0;
+  if (e.stage === "downloading") {
+    const pct = Number(e.percent) || 0;
     text = t("İndiriliyor") + " %" + pct;
     if (badge) badge.setAttribute("data-guncelleme", "%" + pct);
-  } else if (e.asama === "kuruluyor") {
+  } else if (e.stage === "installing") {
     text = t("Kurulum açılıyor…");
-  } else if (e.asama === "acildi") {
+  } else if (e.stage === "opened") {
     text = t("Kurulum açıldı — yönergeleri izle (Dornick kapatılacak)");
-  } else if (e.asama === "hata") {
-    text = e.hata || t("Güncelleme başlatılamadı");
+  } else if (e.stage === "error") {
+    text = e.error || t("Güncelleme başlatılamadı");
     bad = true;
   }
   if (progress && text) {
@@ -5762,7 +5762,7 @@ function updateStatus(e) {
     progress.textContent = text;
   }
   // The badge: a short summary (long text must not break the sidebar).
-  if (badge && (e.asama === "kuruluyor" || e.asama === "acildi")) {
+  if (badge && (e.stage === "installing" || e.stage === "opened")) {
     const link = badge.querySelector("a");
     if (link) link.textContent = t("Kurulum açılıyor…");
   }

@@ -16,20 +16,20 @@ const Lang = (() => {
   try { mode = localStorage.getItem("dornick-dil") || ""; } catch { /* file:// */ }
   if (!mode) {
     // First launch: the language picked in the setup wizard is read from
-    // the server (/api/dil → setup.json). The synchronous request is
+    // the server (/api/language → setup.json). The synchronous request is
     // deliberate: the translation mode must be known while the very first
     // script loads; on a local server this is a millisecond's work. Whatever
     // the answer, the decision is written to localStorage so everything from
     // here on follows the user's own choice.
     try {
       const req = new XMLHttpRequest();
-      req.open("GET", "/api/dil", false);
+      req.open("GET", "/api/language", false);
       req.send();
       // The server reports either the wizard's language or the machine's.
       // DEFAULT ENGLISH: Turkish only when "tr" comes back (user request,
       // 02.09 — the product opens to the world in English, ships Turkish in
       // Turkey).
-      mode = (JSON.parse(req.responseText).dil === "tr") ? "tr" : "en";
+      mode = (JSON.parse(req.responseText).language === "tr") ? "tr" : "en";
     } catch {
       // Serverless preview: check the browser language, else English.
       const nav = (navigator.language || "").toLowerCase();

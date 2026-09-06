@@ -152,10 +152,10 @@ def test_the_daemon_measures_a_new_model_on_its_tick(daemon) -> None:
     d, hub, name = daemon
     d.tick()
     assert temperament.load(d.state_dir)[2] == "model-a"
-    kinds = [e["olay"] for e in hub.events if e.get("type") == "karakter"]
+    kinds = [e["event"] for e in hub.events if e.get("type") == "character"]
     assert kinds == ["karakter.olcum"]
     d.tick()
-    assert len([e for e in hub.events if e.get("type") == "karakter"]) == 1   # once
+    assert len([e for e in hub.events if e.get("type") == "character"]) == 1   # once
 
 
 def test_a_settings_change_is_picked_up_on_the_next_tick(daemon) -> None:

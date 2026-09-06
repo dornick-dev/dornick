@@ -116,7 +116,7 @@ class SleepDaemon:
         self.state_dir = Path(state_dir)
         self.clock = clock or wall_clock
         # Live event sink (web.server.Hub or anything with `emit`): every
-        # night event goes to the browser as `{"type": "gece", "olay": ...}`,
+        # night event goes to the browser as `{"type": "night", "event": ...}`,
         # the shape night.js already consumes.
         self.hub = hub
         self.caches = caches
@@ -263,7 +263,7 @@ class SleepDaemon:
 
         A night already running is asked to stop as well — "not tonight"
         said during the night means the night, not just the next one.
-        Returns what POST /api/uyku/kafein answers.
+        Returns what POST /api/sleep/caffeine answers.
         """
         with self._lock:
             self.switch.caffeine(hours)
@@ -272,11 +272,11 @@ class SleepDaemon:
             until = self.switch.caffeine_until
         if sleeper is not None:
             sleeper.wake("kafein")
-        return {"ok": True, "durum": self.switch.state.value, "saat": float(hours),
-                "kafein": until.isoformat(timespec="minutes") if until else ""}
+        return {"ok": True, "status": self.switch.state.value, "hours": float(hours),
+                "caffeine": until.isoformat(timespec="minutes") if until else ""}
 
     def sleep_now(self) -> dict[str, Any]:
-        """"Start the night now" (`/uyu`). Returns what POST /api/uyku/uyu answers.
+        """"Start the night now" (`/sleep`). Returns what POST /api/sleep/now answers.
 
         The switch goes to ASLEEP at once and the thread is poked, so the
         night starts on the next tick rather than waiting for pressure and
@@ -289,18 +289,18 @@ class SleepDaemon:
         with self._lock:
             state = self.switch.state.value
             if not self.enabled():
-                return {"ok": False, "durum": state, "error": "Gece uykusu kapalı."}
+                return {"ok": False, "status": state, "error": "Gece uykusu kapalı."}
             if self.switch.suspended_at is not None:
-                return {"ok": False, "durum": state, "error": "Makine askıda."}
+                return {"ok": False, "status": state, "error": "Makine askıda."}
             if self._sleeper is not None or self.switch.state is sleep.State.ASLEEP:
-                return {"ok": False, "durum": state, "error": "Zaten uyuyor."}
+                return {"ok": False, "status": state, "error": "Zaten uyuyor."}
             if not self.switch.sleep_now("kullanici istedi"):
-                return {"ok": False, "durum": state, "error": "Uyutulamadı."}
+                return {"ok": False, "status": state, "error": "Uyutulamadı."}
             self._force_night = True
             self._journal()
             state = self.switch.state.value
         self.poke()
-        return {"ok": True, "durum": state}
+        return {"ok": True, "status": state}
 
     def os_suspended(self) -> None:
         """The machine is going to sleep (WM_POWERBROADCAST suspend)."""
@@ -408,7 +408,7 @@ class SleepDaemon:
         emit = getattr(hub, "emit", None)
         if callable(emit):
             try:
-                emit({"type": "karakter", "olay": kind, **data})
+                emit({"type": "character", "event": kind, **data})
             except Exception:
                 pass
 
@@ -587,7 +587,7 @@ class SleepDaemon:
             if self.hub is not None:
                 hub = self.hub
                 log.listeners.append(
-                    lambda event: hub.emit({"type": "gece", "olay": event}))
+                    lambda event: hub.emit({"type": "night", "event": event}))
             self._logs[day] = log
         try:
             log.emit(kind, **data)
@@ -618,7 +618,7 @@ class SleepDaemon:
     # -- status --------------------------------------------------------
 
     def status(self) -> dict[str, Any]:
-        """What GET /api/uyku returns, plus the state the watchman holds."""
+        """What GET /api/sleep returns, plus the state the watchman holds."""
         now = self.clock()
         pressure = self.measure()
         hours, pending = self.debt()
@@ -628,38 +628,38 @@ class SleepDaemon:
             hot = 0.0
         report = self._last_report
         return {
-            "basinc": pressure.as_dict(),
-            "esik": {"ust": sleep.UPPER_THRESHOLD, "alt": sleep.LOWER_THRESHOLD},
-            "borc": {"saat": round(hours, 2), "oturum": pending},
-            "sicak_oran": hot,
-            "durum": self.switch.state.value,
-            "acik": self.enabled(),
-            "kosuyor": self.running,
-            "oreksin": self.switch.orexin,
-            "bosta_dk": round(self.idle_minutes(now), 1),
-            "askida": self.switch.suspended_at is not None,
-            "kafein": (self.switch.caffeine_until.isoformat(timespec="minutes")
+            "pressure": pressure.as_dict(),
+            "threshold": {"upper": sleep.UPPER_THRESHOLD, "lower": sleep.LOWER_THRESHOLD},
+            "debt": {"hours": round(hours, 2), "sessions": pending},
+            "hot_share": hot,
+            "status": self.switch.state.value,
+            "enabled": self.enabled(),
+            "running": self.running,
+            "orexin": self.switch.orexin,
+            "idle_min": round(self.idle_minutes(now), 1),
+            "suspended": self.switch.suspended_at is not None,
+            "caffeine": (self.switch.caffeine_until.isoformat(timespec="minutes")
                        if self.switch.caffeine_until and now < self.switch.caffeine_until
                        else ""),
-            "dinlenmis": (self._rested_until.isoformat(timespec="minutes")
+            "rested_until": (self._rested_until.isoformat(timespec="minutes")
                           if self._rested_until and now < self._rested_until else ""),
-            "ritim": {"gun": round(self.rhythm.days, 2),
-                      "guven": self.rhythm.confidence,
-                      "simdi": self.rhythm.probability(now),
+            "rhythm": {"days": round(self.rhythm.days, 2),
+                      "confidence": self.rhythm.confidence,
+                      "now": self.rhythm.probability(now),
                       # The hours the user is usually here today ("Genelde
                       # 09–18 arası buradasın"); empty before a week of data.
-                      "saatler": ([h for h in range(24)
+                      "hours": ([h for h in range(24)
                                    if self.rhythm.probability(now.replace(hour=h)) >= 0.5]
                                   if self.rhythm.days >= 7 else [])},
-            "sonraki_gece": self.next_night(now),
-            "son_gece": {
-                "bitti": (self._last_night_end.isoformat(timespec="minutes")
+            "next_night": self.next_night(now),
+            "last_night": {
+                "ended": (self._last_night_end.isoformat(timespec="minutes")
                           if self._last_night_end else ""),
-                "rapor": report.as_dict() if report else {},
-                "damitma": self._distil_note,
+                "report": report.as_dict() if report else {},
+                "distil": self._distil_note,
             },
-            "mikro": self._micro_report.as_dict() if self._micro_report else {},
-            "yerel": self._local_report.as_dict() if self._local_report else {},
+            "micro": self._micro_report.as_dict() if self._micro_report else {},
+            "local": self._local_report.as_dict() if self._local_report else {},
         }
 
 

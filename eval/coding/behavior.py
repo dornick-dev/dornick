@@ -202,13 +202,13 @@ def extract(log: Path, *, gate: dict[str, Any] | None = None,
         "error_kinds": dict(error_kinds.most_common(3)) or None,
     }
     if gate:
-        out["duration_s"] = gate.get("gecen_sn")
+        out["duration_s"] = gate.get("elapsed_s", gate.get("gecen_sn"))
         try:
-            out["model_time_s"] = round(float(gate.get("gecen_sn") or 0)
+            out["model_time_s"] = round(float(gate.get("elapsed_s") or gate.get("gecen_sn") or 0)
                                         - tool_ms / 1000, 1)
         except (TypeError, ValueError):
             pass
-        out["changed_files"] = len(gate.get("dosyalar") or [])
+        out["changed_files"] = len(gate.get("files") or gate.get("dosyalar") or [])
         out["gate_ok"] = bool(gate.get("ok"))
         if not gate.get("ok"):
             out["gate_error"] = gate.get("error")

@@ -93,16 +93,16 @@ const Regions = (() => {
       code: "remember() olayı (mind_write)" },
     thalamus: { name: "Talamus",
       what: "uyarılma kapısı: eşik, basınç, ritim, durum makinesi (uyanık / uykulu / uyuyor / uyanıyor)",
-      code: "uyku.Bekci — GET /api/uyku" },
+      code: "sleep daemon — GET /api/sleep" },
     brainstem: { name: "Beyin sapı",
       what: "tetikleyici / zamanlayıcı; tek nabız çizgisi",
       code: "uyku (zamanlayıcı)" },
     identity: { name: "Kimlik paneli",
       what: "anlatı kimliği; her cümle tıklanınca kanıt düğümleri hipokampusta yanar",
-      code: ".dornick/identity.md — GET /api/kimlik" },
+      code: ".dornick/identity.md — GET /api/identity" },
     temperament: { name: "Mizaç paneli",
       what: "beş eksen: yenilik, sonuç, sosyal, sebat, temkin; taban (ölçülen), hedef, ulaşılan",
-      code: ".dornick/temperament.json — GET /api/mizac" },
+      code: ".dornick/temperament.json — GET /api/temperament" },
     world: { name: "Dünya haritası",
       what: "world düğümleri: hipokampus içinde ayrı renk; doğrulanmamış olanlar soluk",
       code: "world düğümleri (recall.store kind=world)" },
@@ -139,7 +139,7 @@ const Regions = (() => {
   let amygdalaLevel = 0, amygdalaAt = 0;
   let sheetName = "";
   let details = false;
-  let lastNightLooked = false;      // the /api/gece fallback ran once
+  let lastNightLooked = false;      // the /api/nights fallback ran once
 
   // --- tooltips: every region says what code it stands for --------------
   function tipText(key) {
@@ -222,24 +222,24 @@ const Regions = (() => {
   // --- data: what the template reads --------------------------------------
   async function refresh() {
     try {
-      const u = await (await fetch("/api/uyku")).json();
-      if (u && u.basinc) {
-        state.pressure = u.basinc;
-        state.threshold = u.esik || null;
-        state.debt = u.borc || null;
+      const u = await (await fetch("/api/sleep")).json();
+      if (u && u.pressure) {
+        state.pressure = u.pressure;
+        state.threshold = u.threshold || null;
+        state.debt = u.debt || null;
       }
       // The watchman's own state machine, when a daemon runs. A replay in
       // progress owns the state word; the poll must not fight it.
-      if (u && SLEEP_STATES.includes(u.durum) && !replaying()) state.sleep = u.durum;
-      if (u && "kafein" in u) state.caffeine = String(u.kafein || "");
-      if (u && "sonraki_gece" in u) state.nextNight = String(u.sonraki_gece || "");
-      if (u && u.ritim) {
-        state.rhythmDays = Number(u.ritim.gun) || 0;
-        state.rhythmHours = Array.isArray(u.ritim.saatler) ? u.ritim.saatler.map(Number) : [];
+      if (u && SLEEP_STATES.includes(u.status) && !replaying()) state.sleep = u.status;
+      if (u && "caffeine" in u) state.caffeine = String(u.caffeine || "");
+      if (u && "next_night" in u) state.nextNight = String(u.next_night || "");
+      if (u && u.rhythm) {
+        state.rhythmDays = Number(u.rhythm.days) || 0;
+        state.rhythmHours = Array.isArray(u.rhythm.hours) ? u.rhythm.hours.map(Number) : [];
       }
-      if (u && u.son_gece && u.son_gece.rapor && Object.keys(u.son_gece.rapor).length) {
-        const r = u.son_gece.rapor;
-        state.lastNight = { date: String(u.son_gece.bitti || "").slice(0, 10),
+      if (u && u.last_night && u.last_night.report && Object.keys(u.last_night.report).length) {
+        const r = u.last_night.report;
+        state.lastNight = { date: String(u.last_night.ended || "").slice(0, 10),
                             replayed: Number(r.replayed) || 0, lessons: Number(r.lessons_written) || 0,
                             report: r, summary: null };
         lastNightLooked = true;
@@ -247,13 +247,13 @@ const Regions = (() => {
     } catch { /* server not up yet */ }
     if (!lastNightLooked) await lookupLastNight();
     try {
-      const b = await (await fetch("/api/bolgeler")).json();
+      const b = await (await fetch("/api/regions")).json();
       if (b) {
-        state.cold = Number(b.soguk) || 0;
-        state.world = Number(b.dunya) || 0;
+        state.cold = Number(b.cold) || 0;
+        state.world = Number(b.world) || 0;
         if (typeof Scene !== "undefined" && Scene.cold) Scene.cold(state.cold);
-        state.goals = new Map((b.hedefler || []).map((g) => [g.id, { text: g.metin, status: g.durum }]));
-        state.patch = b.yama || {};
+        state.goals = new Map((b.goals || []).map((g) => [g.id, { text: g.text, status: g.status }]));
+        state.patch = b.patch || {};
         renderGoals();
         renderPatch();
       }
@@ -309,17 +309,17 @@ const Regions = (() => {
     const el = $("cortex-patch");
     if (!el) return;
     const p = state.patch || {};
-    el.classList.toggle("training", !!p.kosuyor);
-    el.classList.toggle("passed", !!p.hazir);
+    el.classList.toggle("training", !!p.running);
+    el.classList.toggle("passed", !!p.ready);
     el.classList.toggle("off", !p.on);
-    const word = p.kosuyor ? t("eğitimde") : p.hazir ? t("sınavı geçti") : p.on ? t("hazır değil") : t("kapalı");
-    el.dataset.extra = t("yama: taban yazıcı") + " · " + word + (p.son ? " · " + p.son : "");
+    const word = p.running ? t("eğitimde") : p.ready ? t("sınavı geçti") : p.on ? t("hazır değil") : t("kapalı");
+    el.dataset.extra = t("yama: taban yazıcı") + " · " + word + (p.last ? " · " + p.last : "");
     el.title = tipText("patch") + "\n" + el.dataset.extra;
   }
   function patch(stateWord) {
-    // From the SSE `tanima` event: running → pulse, ready → permanent colour.
-    state.patch = { ...(state.patch || {}), kosuyor: stateWord === "running" || stateWord === "kosuyor",
-                    hazir: stateWord === "ready" || stateWord === "hazir" || !!(state.patch && state.patch.hazir),
+    // From the SSE `recognition` event: started → pulse, finished → permanent colour.
+    state.patch = { ...(state.patch || {}), running: stateWord === "started",
+                    ready: stateWord === "finished" || !!(state.patch && state.patch.ready),
                     on: true };
     renderPatch();
   }
@@ -431,14 +431,14 @@ const Regions = (() => {
   async function lookupLastNight() {
     lastNightLooked = true;
     try {
-      const list = await (await fetch("/api/gece")).json();
-      const date = list && Array.isArray(list.geceler) ? list.geceler[0] : "";
+      const list = await (await fetch("/api/nights")).json();
+      const date = list && Array.isArray(list.nights) ? list.nights[0] : "";
       if (!date) return;
-      const data = await (await fetch("/api/gece/" + encodeURIComponent(date))).json();
-      if (!data || !data.ozet) return;
+      const data = await (await fetch("/api/nights/" + encodeURIComponent(date))).json();
+      if (!data || !data.summary) return;
       if (state.lastNight && state.lastNight.report) return;   // the daemon answered meanwhile
-      state.lastNight = { date, replayed: Number(data.ozet.tekrar) || 0, lessons: null,
-                          report: null, summary: data.ozet };
+      state.lastNight = { date, replayed: Number(data.summary.tekrar) || 0, lessons: null,
+                          report: null, summary: data.summary };
       renderSimple();
     } catch { /* offline */ }
   }
@@ -639,40 +639,40 @@ const Regions = (() => {
   }
 
   async function renderIdentity() {
-    let doc = { cumleler: [], kelime: 0 };
-    try { doc = await (await fetch("/api/kimlik")).json(); } catch { /* offline */ }
+    let doc = { sentences: [], words: 0 };
+    try { doc = await (await fetch("/api/identity")).json(); } catch { /* offline */ }
     if (sheetName !== "identity") return;
     sheet.textContent = "";
     const head = document.createElement("div");
     head.className = "sheet-head";
     head.dataset.region = "identity";
-    head.textContent = t("Kimlik") + " · " + (doc.kelime || 0) + " " + t("kelime")
-      + (doc.sinir ? " / " + doc.sinir : "");
+    head.textContent = t("Kimlik") + " · " + (doc.words || 0) + " " + t("kelime")
+      + (doc.limit ? " / " + doc.limit : "");
     sheet.append(head);
     const note = document.createElement("p");
     note.className = "sheet-note";
     note.textContent = t("Kanıt düğümleri hipokampusta yanar");
     sheet.append(note);
-    if (!doc.cumleler || !doc.cumleler.length) {
+    if (!doc.sentences || !doc.sentences.length) {
       const empty = document.createElement("p");
       empty.className = "sheet-empty";
       empty.textContent = t("Kimlik belgesi boş — gece henüz cümle yazmadı.");
       sheet.append(empty);
     }
-    for (const row of doc.cumleler || []) {
+    for (const row of doc.sentences || []) {
       const line = document.createElement("div");
       line.className = "identity-sentence";
       const text = document.createElement("button");
       text.type = "button";
       text.className = "identity-text";
-      text.textContent = row.metin;
-      text.title = (row.kanit || []).join(", ");
+      text.textContent = row.text;
+      text.title = (row.evidence || []).join(", ");
       text.addEventListener("click", () => {
         for (const el of sheet.querySelectorAll(".identity-sentence")) el.classList.remove("on");
         line.classList.add("on");
         if (typeof Scene !== "undefined") {
           Scene.thaw();
-          Scene.lightSequence(row.kanit || [], { kind: "evidence", numbered: true, group: "self" });
+          Scene.lightSequence(row.evidence || [], { kind: "evidence", numbered: true, group: "self" });
         }
       });
       const object = document.createElement("button");
@@ -683,7 +683,7 @@ const Regions = (() => {
       object.addEventListener("click", () => {
         fetch("/api/chat", {
           method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ text: t("Kimlik belgesindeki şu cümleye itiraz ediyorum") + ': "' + row.metin + '"' }),
+          body: JSON.stringify({ text: t("Kimlik belgesindeki şu cümleye itiraz ediyorum") + ': "' + row.text + '"' }),
         }).catch(() => {});
         line.classList.add("objected");
       });
@@ -694,8 +694,8 @@ const Regions = (() => {
   }
 
   async function renderTemperament() {
-    let data = { taban: {}, hedef: {}, ulasilan: null, model_id: "", eksenler: [] };
-    try { data = await (await fetch("/api/mizac")).json(); } catch { /* offline */ }
+    let data = { baseline: {}, target: {}, reached: null, model_id: "", axes: [] };
+    try { data = await (await fetch("/api/temperament")).json(); } catch { /* offline */ }
     if (sheetName !== "temperament") return;
     sheet.textContent = "";
     const head = document.createElement("div");
@@ -707,9 +707,9 @@ const Regions = (() => {
     note.className = "sheet-note";
     note.textContent = t("Bu model böyle geldi") + (data.model_id ? ": " + data.model_id : "") + " · "
       + t("model tabanı (ölçülen)") + " ○ · " + t("hedef (öğrenilen / elle)") + " ◆ · "
-      + (data.ulasilan ? t("ulaşılan") + " ●" : t("ulaşılan: henüz ölçülmüyor"));
+      + (data.reached ? t("ulaşılan") + " ●" : t("ulaşılan: henüz ölçülmüyor"));
     sheet.append(note);
-    const axes = (data.eksenler && data.eksenler.length) ? data.eksenler
+    const axes = (data.axes && data.axes.length) ? data.axes
       : ["yenilik", "sonuc", "sosyal", "sebat", "temkin"];
     for (const axis of axes) {
       const row = document.createElement("div");
@@ -728,13 +728,13 @@ const Regions = (() => {
         m.title = label + " " + fmt(value);
         bar.append(m);
       };
-      put("base", (data.taban || {})[axis], "○", t("model tabanı (ölçülen)"));
-      put("target", (data.hedef || {})[axis], "◆", t("hedef (öğrenilen / elle)"));
-      put("reached", data.ulasilan ? data.ulasilan[axis] : null, "●", t("ulaşılan"));
+      put("base", (data.baseline || {})[axis], "○", t("model tabanı (ölçülen)"));
+      put("target", (data.target || {})[axis], "◆", t("hedef (öğrenilen / elle)"));
+      put("reached", data.reached ? data.reached[axis] : null, "●", t("ulaşılan"));
       const lev = document.createElement("span");
       lev.className = "axis-lev";
       const key = { yenilik: "novelty", sonuc: "outcome", sosyal: "social", sebat: "persistence", temkin: "caution" }[axis];
-      lev.textContent = data.kaldirac && key in data.kaldirac ? t("kaldıraç") + " ×" + data.kaldirac[key] : "";
+      lev.textContent = data.leverage && key in data.leverage ? t("kaldıraç") + " ×" + data.leverage[key] : "";
       row.append(name, bar, lev);
       sheet.append(row);
     }

@@ -213,7 +213,7 @@ def test_server_serves_page_and_graph(tmp_path: Path, mind: Mind) -> None:
 
 
 def test_install_language_is_served_from_setup_json(tmp_path: Path, mind: Mind) -> None:
-    """The setup wizard's language choice is read from /api/dil.
+    """The setup wizard's language choice is read from /api/language.
 
     localStorage cannot be written from the installer; the wizard drops
     setup.json into the workspace and lang.js reads it from here on first
@@ -231,25 +231,25 @@ def test_install_language_is_served_from_setup_json(tmp_path: Path, mind: Mind) 
     server.start()
 
     def fetch() -> dict:
-        with urllib.request.urlopen(server.url + "api/dil", timeout=5) as response:
+        with urllib.request.urlopen(server.url + "api/language", timeout=5) as response:
             return json.loads(response.read().decode("utf-8"))
 
     try:
         # No wizard file: the machine language (whatever it is on this
         # machine) must come back — NOT empty, because the UI needs a default.
-        assert fetch()["dil"] in ("tr", "en")
+        assert fetch()["language"] in ("tr", "en")
         # The old name on its own: backwards compatibility (existing installs).
         (tmp_path / "kurulum.json").write_text('{"dil": "en"}', encoding="utf-8")
-        assert fetch() == {"dil": "en"}
+        assert fetch() == {"language": "en"}
         # The new name takes precedence.
         (tmp_path / "setup.json").write_text('{"dil": "tr"}', encoding="utf-8")
-        assert fetch() == {"dil": "tr"}
+        assert fetch() == {"language": "tr"}
         # A broken new file must not bring the server down; falls back to the old name.
         (tmp_path / "setup.json").write_text("{bozuk", encoding="utf-8")
-        assert fetch() == {"dil": "en"}
+        assert fetch() == {"language": "en"}
         # A broken file on its own: silently back to the machine language.
         (tmp_path / "kurulum.json").unlink()
-        assert fetch()["dil"] in ("tr", "en")
+        assert fetch()["language"] in ("tr", "en")
     finally:
         server.stop()
         log.close()
@@ -457,7 +457,7 @@ def test_bridge_snapshot_carries_the_version() -> None:
     loop = asyncio.new_event_loop()
     try:
         status = Bridge(Hub(), loop).snapshot()
-        assert status["surum"] == environment.version()
+        assert status["version"] == environment.version()
         assert isinstance(status["kurulu"], bool)
     finally:
         loop.close()
@@ -466,24 +466,24 @@ def test_bridge_snapshot_carries_the_version() -> None:
 def test_the_version_check_endpoint_works_without_network(
     tmp_path: Path, mind: Mind, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """POST /api/surum checks on the server side; the test never goes to the network."""
+    """POST /api/version checks on the server side; the test never goes to the network."""
     from dornick.web import server as server_module
 
     monkeypatch.setattr(
         server_module.environment, "check_update",
-        lambda: {"ok": True, "mevcut": "0.2.2", "yeni": "0.3.0",
-                 "url": "https://ornek/yayin", "hata": ""})
+        lambda: {"ok": True, "current": "0.2.2", "new": "0.3.0",
+                 "url": "https://ornek/yayin", "error": ""})
 
     log = EventLog(tmp_path / "s.jsonl")
     server = MindServer(mind, log, port=0)
     server.start()
     try:
         request = urllib.request.Request(
-            server.url + "api/surum", data=b"{}",
+            server.url + "api/version", data=b"{}",
             headers={"Content-Type": "application/json"}, method="POST")
         with urllib.request.urlopen(request, timeout=5) as response:
             data = json.loads(response.read().decode("utf-8"))
-        assert data["yeni"] == "0.3.0" and data["url"] == "https://ornek/yayin"
+        assert data["new"] == "0.3.0" and data["url"] == "https://ornek/yayin"
     finally:
         server.stop()
         log.close()
@@ -636,8 +636,8 @@ def test_naming_a_session_reaches_the_listing(tmp_path: Path, mind: Mind) -> Non
 
         request = urllib.request.Request(
             server.url + "api/session/meta",
-            data=json.dumps({"id": "20260101T000000Z", "ad": "Kayseri teklifi",
-                             "etiketler": ["scada", "teklif"]}).encode("utf-8"),
+            data=json.dumps({"id": "20260101T000000Z", "name": "Kayseri teklifi",
+                             "tags": ["scada", "teklif"]}).encode("utf-8"),
             headers={"Content-Type": "application/json"}, method="POST")
         with urllib.request.urlopen(request, timeout=5) as response:
             assert json.loads(response.read().decode("utf-8"))["ok"] is True
@@ -662,7 +662,7 @@ def test_the_meta_endpoint_refuses_a_path_shaped_id(tmp_path: Path, mind: Mind) 
     try:
         request = urllib.request.Request(
             server.url + "api/session/meta",
-            data=json.dumps({"id": "../gizli", "ad": "x"}).encode("utf-8"),
+            data=json.dumps({"id": "../gizli", "name": "x"}).encode("utf-8"),
             headers={"Content-Type": "application/json"}, method="POST")
         with urllib.request.urlopen(request, timeout=5) as response:
             data = json.loads(response.read().decode("utf-8"))
@@ -717,7 +717,7 @@ def test_the_listing_searches_inside_transcripts(tmp_path: Path, mind: Mind) -> 
     server = MindServer(mind, log, port=0)
     server.start()
     try:
-        with urllib.request.urlopen(server.url + "api/sessions?ara=modbus", timeout=5) as response:
+        with urllib.request.urlopen(server.url + "api/sessions?q=modbus", timeout=5) as response:
             data = json.loads(response.read().decode("utf-8"))
         assert data["searched"] is True
         matched = {s["id"]: s["hits"] for s in data["sessions"] if s["hits"]}
@@ -753,15 +753,15 @@ def test_the_browser_lists_folders_anywhere_but_only_folders(
     server = MindServer(mind, log, port=0)
     server.start()
     try:
-        address = server.url + "api/gozat?yol=" + urllib.parse.quote(str(root))
+        address = server.url + "api/browse?path=" + urllib.parse.quote(str(root))
         with urllib.request.urlopen(address, timeout=5) as response:
             data = json.loads(response.read().decode("utf-8"))
 
-        names = [k["ad"] for k in data["klasorler"]]
+        names = [k["name"] for k in data["folders"]]
         assert names == ["proje"]          # folders only, hidden ones weeded out
-        assert data["dosya"] == 1          # files only as a COUNT
-        assert data["ust"] == str(tmp_path)
-        assert data["engel"] == ""         # selectable
+        assert data["files"] == 1          # files only as a COUNT
+        assert data["parent"] == str(tmp_path)
+        assert data["blocked"] == ""         # selectable
         # File names or contents never come back.
         assert "not.txt" not in json.dumps(data)
     finally:
@@ -778,20 +778,20 @@ def test_the_browser_says_when_a_folder_cannot_be_a_project(
     server.start()
     try:
         root = Path(tmp_path.anchor or "/")
-        address = server.url + "api/gozat?yol=" + urllib.parse.quote(str(root))
+        address = server.url + "api/browse?path=" + urllib.parse.quote(str(root))
         with urllib.request.urlopen(address, timeout=5) as response:
             data = json.loads(response.read().decode("utf-8"))
-        assert data["engel"]
+        assert data["blocked"]
 
         # A missing folder: an error, not a crash.
-        missing = server.url + "api/gozat?yol=" + urllib.parse.quote(str(tmp_path / "yok"))
+        missing = server.url + "api/browse?path=" + urllib.parse.quote(str(tmp_path / "yok"))
         with urllib.request.urlopen(missing, timeout=5) as response:
-            assert json.loads(response.read().decode("utf-8"))["hata"]
+            assert json.loads(response.read().decode("utf-8"))["error"]
 
         # A request without a path: the starting places (drives / home).
-        with urllib.request.urlopen(server.url + "api/gozat", timeout=5) as response:
+        with urllib.request.urlopen(server.url + "api/browse", timeout=5) as response:
             start = json.loads(response.read().decode("utf-8"))
-        assert start["klasorler"] and start["ust"] is None
+        assert start["folders"] and start["parent"] is None
     finally:
         server.stop()
         log.close()
@@ -856,7 +856,7 @@ def _post_raw(server: MindServer, path: str, headers: dict) -> int:
 def test_the_update_endpoint_downloads_reports_progress_and_launches(
     tmp_path: Path, mind: Mind, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """In-app update end to end: /api/guncelle detects the version,
+    """In-app update end to end: /api/update detects the version,
     downloads it (progress flows over SSE) and launches the setup wizard.
 
     No .exe is really run — `start_update` is mocked; the address comes
@@ -867,11 +867,11 @@ def test_the_update_endpoint_downloads_reports_progress_and_launches(
 
     monkeypatch.setattr(
         server_module.environment, "check_update",
-        lambda: {"ok": True, "mevcut": "1.0.0", "yeni": "9.9.9",
+        lambda: {"ok": True, "current": "1.0.0", "new": "9.9.9",
                  "url": "https://github.com/dornick-dev/dornick/releases/tag/v9.9.9",
-                 "indirme": "https://github.com/dornick-dev/dornick/releases/download/v9.9.9/dornick-setup-9.9.9.exe",
-                 "boyut": 2 * 1024 * 1024, "ad": "dornick-setup-9.9.9.exe",
-                 "hata": ""})
+                 "download": "https://github.com/dornick-dev/dornick/releases/download/v9.9.9/dornick-setup-9.9.9.exe",
+                 "size": 2 * 1024 * 1024, "name": "dornick-setup-9.9.9.exe",
+                 "error": ""})
 
     downloaded = tmp_path / "dornick-setup-9.9.9.exe"
 
@@ -899,12 +899,12 @@ def test_the_update_endpoint_downloads_reports_progress_and_launches(
     channel = server.hub.register()   # SSE listener: progress events
     server.start()
     try:
-        response = _post_json(server, "/api/guncelle", {})
-        assert response["ok"] is True and response["yeni"] == "9.9.9"
+        response = _post_json(server, "/api/update", {})
+        assert response["ok"] is True and response["new"] == "9.9.9"
         assert finished.wait(5), "download/launch thread did not finish in time"
         assert launched["path"].endswith("dornick-setup-9.9.9.exe")
 
-        # SSE events: at least one "indiriliyor" percentage and one install stage.
+        # SSE events: at least one "downloading" percentage and one install stage.
         events = []
         import queue as _q
         try:
@@ -912,9 +912,9 @@ def test_the_update_endpoint_downloads_reports_progress_and_launches(
                 events.append(json.loads(channel.get_nowait()))
         except _q.Empty:
             pass
-        stages = [o.get("asama") for o in events if o.get("type") == "guncelleme"]
-        assert "indiriliyor" in stages
-        assert "kuruluyor" in stages and "acildi" in stages
+        stages = [o.get("stage") for o in events if o.get("type") == "update"]
+        assert "downloading" in stages
+        assert "installing" in stages and "opened" in stages
     finally:
         server.stop()
         log.close()
@@ -923,14 +923,14 @@ def test_the_update_endpoint_downloads_reports_progress_and_launches(
 def test_the_update_endpoint_politely_refuses_without_a_new_version(
     tmp_path: Path, mind: Mind, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """With no update to download /api/guncelle returns ok:false; download
+    """With no update to download /api/update returns ok:false; download
     or launch is NEVER attempted."""
     from dornick.web import server as server_module
 
     monkeypatch.setattr(
         server_module.environment, "check_update",
-        lambda: {"ok": True, "mevcut": "1.0.0", "yeni": "", "url": "",
-                 "indirme": "", "boyut": 0, "ad": "", "hata": ""})
+        lambda: {"ok": True, "current": "1.0.0", "new": "", "url": "",
+                 "download": "", "size": 0, "name": "", "error": ""})
 
     def boom(*a, **k):  # if called the test breaks
         raise AssertionError("güncelleme yokken indirme denenmemeli")
@@ -941,7 +941,7 @@ def test_the_update_endpoint_politely_refuses_without_a_new_version(
     server = MindServer(mind, log, port=0)
     server.start()
     try:
-        response = _post_json(server, "/api/guncelle", {})
+        response = _post_json(server, "/api/update", {})
         assert response["ok"] is False
     finally:
         server.stop()
@@ -959,20 +959,20 @@ def test_create_folder_creates_and_refuses_bad_targets(
     try:
         parent = tmp_path / "projeler"
         parent.mkdir()
-        c = _post_json(server, "/api/klasor/olustur",
-                       {"ust": str(parent), "ad": "yeni-is"})
+        c = _post_json(server, "/api/folder/create",
+                       {"parent": str(parent), "name": "yeni-is"})
         assert c["ok"] is True
         assert (parent / "yeni-is").is_dir()
-        assert c["yol"].endswith("yeni-is")
+        assert c["path"].endswith("yeni-is")
 
         # The name cannot contain a path: an attempt to escape to the parent directory.
-        bad = _post_json(server, "/api/klasor/olustur",
-                         {"ust": str(parent), "ad": "../disari"})
+        bad = _post_json(server, "/api/folder/create",
+                         {"parent": str(parent), "name": "../disari"})
         assert bad["ok"] is False
         assert not (tmp_path / "disari").exists()
 
         # Missing field.
-        assert _post_json(server, "/api/klasor/olustur", {"ust": str(parent)})["ok"] is False
+        assert _post_json(server, "/api/folder/create", {"parent": str(parent)})["ok"] is False
     finally:
         server.stop()
         log.close()
@@ -990,8 +990,8 @@ def test_the_language_endpoint_falls_back_to_the_machine_language(
     server = MindServer(mind, log, port=0)
     server.start()
     try:
-        with urllib.request.urlopen(server.url + "api/dil", timeout=5) as response:
-            assert json.loads(response.read().decode("utf-8"))["dil"] == "en"
+        with urllib.request.urlopen(server.url + "api/language", timeout=5) as response:
+            assert json.loads(response.read().decode("utf-8"))["language"] == "en"
     finally:
         server.stop()
         log.close()
@@ -1023,14 +1023,14 @@ def test_foreign_origin_post_is_rejected(tmp_path: Path, mind: Mind) -> None:
     try:
         ours = server.url.rstrip("/")   # http://127.0.0.1:PORT
         # Foreign origin: must be rejected.
-        assert _post_raw(server, "/api/surum",
+        assert _post_raw(server, "/api/version",
                          {"Origin": "https://evil.example"}) == 403
         # Same origin (the UI itself): must pass.
-        assert _post_raw(server, "/api/surum", {"Origin": ours}) == 200
+        assert _post_raw(server, "/api/version", {"Origin": ours}) == 200
         # No origin at all (curl/test/benchmark): must pass.
-        assert _post_raw(server, "/api/surum", {}) == 200
+        assert _post_raw(server, "/api/version", {}) == 200
         # Rejected even when only the Referer is foreign.
-        assert _post_raw(server, "/api/surum",
+        assert _post_raw(server, "/api/version",
                          {"Referer": "https://evil.example/x"}) == 403
     finally:
         server.stop()
@@ -1060,11 +1060,11 @@ def test_open_outside_opens_only_local_pages(
     server = MindServer(mind, log, port=0, config=config)
     server.start()
     try:
-        assert _post_json(server, "/api/disari-ac", {"path": "https://kotu.example/"})["ok"] is False
-        assert _post_json(server, "/api/disari-ac", {"path": "//kotu.example/x"})["ok"] is False
+        assert _post_json(server, "/api/open-external", {"path": "https://kotu.example/"})["ok"] is False
+        assert _post_json(server, "/api/open-external", {"path": "//kotu.example/x"})["ok"] is False
         assert opened == []
 
-        out = _post_json(server, "/api/disari-ac", {"path": "/artifact/x-1a2b/"})
+        out = _post_json(server, "/api/open-external", {"path": "/artifact/x-1a2b/"})
         assert out["ok"] is True
         assert opened == [out["url"]]
         assert out["url"].startswith("http://127.0.0.1:")
@@ -1105,18 +1105,18 @@ def test_artifact_download_saves_to_downloads_with_full_path(
     server.start()
     try:
         address = f"/artifact/{meta['id']}/"
-        first = _post_json(server, "/api/artifact/indir", {"path": address})
+        first = _post_json(server, "/api/artifact/download", {"path": address})
         assert first["ok"] is True
         path = Path(first["path"])
         assert path.is_file() and path.parent == home / "Downloads"
         assert "rapor" in path.read_text(encoding="utf-8")
 
         # A second download does not crush the first.
-        second = _post_json(server, "/api/artifact/indir", {"path": address})
+        second = _post_json(server, "/api/artifact/download", {"path": address})
         assert second["ok"] is True and second["path"] != first["path"]
 
         # An id escape does not touch the disk.
-        escape = _post_json(server, "/api/artifact/indir", {"path": "/artifact/../gizli/"})
+        escape = _post_json(server, "/api/artifact/download", {"path": "/artifact/../gizli/"})
         assert escape["ok"] is False
     finally:
         server.stop()
@@ -1147,10 +1147,10 @@ def test_the_identity_endpoint_serves_sentences_with_their_evidence(
     server = MindServer(mind, log, port=0, config=config)
     server.start()
     try:
-        got = _get_json(server, "/api/kimlik")
-        assert got["cumleler"] == [{"metin": "41 işin 33'ünde önce test yazdı",
-                                    "kanit": ["n_1", "n_2"]}]
-        assert got["kelime"] == 6 and got["sinir"] == identity.MAX_WORDS
+        got = _get_json(server, "/api/identity")
+        assert got["sentences"] == [{"text": "41 işin 33'ünde önce test yazdı",
+                                     "evidence": ["n_1", "n_2"]}]
+        assert got["words"] == 6 and got["limit"] == identity.MAX_WORDS
     finally:
         server.stop()
         log.close()
@@ -1165,7 +1165,7 @@ def test_the_identity_endpoint_is_empty_without_a_document(tmp_path: Path, mind:
     server = MindServer(mind, log, port=0, config=config)
     server.start()
     try:
-        assert _get_json(server, "/api/kimlik")["cumleler"] == []
+        assert _get_json(server, "/api/identity")["sentences"] == []
     finally:
         server.stop()
         log.close()
@@ -1187,12 +1187,12 @@ def test_the_temperament_endpoint_serves_baseline_and_target(
     server = MindServer(mind, log, port=0, config=config)
     server.start()
     try:
-        got = _get_json(server, "/api/mizac")
-        assert got["taban"]["yenilik"] == 0.3 and got["hedef"]["yenilik"] == 0.8
+        got = _get_json(server, "/api/temperament")
+        assert got["baseline"]["yenilik"] == 0.3 and got["target"]["yenilik"] == 0.8
         assert got["model_id"] == "model-x"
-        assert got["ulasilan"] is None
-        assert got["eksenler"] == ["yenilik", "sonuc", "sosyal", "sebat", "temkin"]
-        assert got["kaldirac"]["novelty"] > 1
+        assert got["reached"] is None
+        assert got["axes"] == ["yenilik", "sonuc", "sosyal", "sebat", "temkin"]
+        assert got["leverage"]["novelty"] > 1
     finally:
         server.stop()
         log.close()
@@ -1213,18 +1213,18 @@ def test_the_regions_endpoint_counts_cold_and_hot_and_lists_goals(
     server = MindServer(mind, log, port=0, config=config)
     server.start()
     try:
-        got = _get_json(server, "/api/bolgeler")
-        assert got["toplam"] >= 1 and got["sicak"] + got["soguk"] == got["toplam"]
-        assert any(g["metin"] == "modbus cihazı ekle" and g["durum"] == "active"
-                   for g in got["hedefler"])
-        assert set(got["yama"]) >= {"on", "kosuyor", "hazir"}
+        got = _get_json(server, "/api/regions")
+        assert got["total"] >= 1 and got["hot"] + got["cold"] == got["total"]
+        assert any(g["text"] == "modbus cihazı ekle" and g["status"] == "active"
+                   for g in got["goals"])
+        assert set(got["patch"]) >= {"on", "running", "ready"}
     finally:
         server.stop()
         log.close()
 
 
 def test_a_night_replay_can_be_asked_for_what_came_after(tmp_path: Path, mind: Mind) -> None:
-    """Live viewing polls today's file with `?sonra=N`; the answer is the
+    """Live viewing polls today's file with `?after=N`; the answer is the
     tail of the same replay, plus the total so the next poll knows where
     it stands."""
     from datetime import datetime, timezone
@@ -1243,13 +1243,13 @@ def test_a_night_replay_can_be_asked_for_what_came_after(tmp_path: Path, mind: M
     server = MindServer(mind, log, port=0, config=config)
     server.start()
     try:
-        whole = _get_json(server, "/api/gece/2025-06-02")
-        assert [e["tur"] for e in whole["olaylar"]] == ["uyku.basladi", "dokunus", "dokunus"]
-        assert whole["toplam"] == 3
-        tail = _get_json(server, "/api/gece/2025-06-02?sonra=2")
-        assert [e["id"] for e in tail["olaylar"]] == ["n_2"]
-        assert tail["toplam"] == 3
-        assert _get_json(server, "/api/gece/2025-06-02?sonra=bozuk")["toplam"] == 3
+        whole = _get_json(server, "/api/nights/2025-06-02")
+        assert [e["tur"] for e in whole["events"]] == ["uyku.basladi", "dokunus", "dokunus"]
+        assert whole["total"] == 3
+        tail = _get_json(server, "/api/nights/2025-06-02?after=2")
+        assert [e["id"] for e in tail["events"]] == ["n_2"]
+        assert tail["total"] == 3
+        assert _get_json(server, "/api/nights/2025-06-02?after=bozuk")["total"] == 3
     finally:
         server.stop()
         log.close()
@@ -1269,16 +1269,16 @@ def test_the_sleep_commands_reach_the_bridge_and_refuse_honestly(
     calls: list[str] = []
     bridge = SimpleNamespace(
         snapshot=lambda: {"busy": False},
-        sleep_now=lambda: calls.append("uyu") or {"ok": True, "durum": "uyuyor"},
+        sleep_now=lambda: calls.append("uyu") or {"ok": True, "status": "uyuyor"},
         caffeine=lambda: calls.append("kafein") or {
-            "ok": True, "durum": "uyanik", "saat": 4.0, "kafein": "2025-06-02T13:00"},
+            "ok": True, "status": "uyanik", "hours": 4.0, "caffeine": "2025-06-02T13:00"},
     )
     log = EventLog(tmp_path / "s.jsonl")
     server = MindServer(mind, log, port=0, controller=bridge)  # type: ignore[arg-type]
     server.start()
     try:
-        assert _post_json(server, "/api/uyku/uyu", {}) == {"ok": True, "durum": "uyuyor"}
-        assert _post_json(server, "/api/uyku/kafein", {})["kafein"] == "2025-06-02T13:00"
+        assert _post_json(server, "/api/sleep/now", {}) == {"ok": True, "status": "uyuyor"}
+        assert _post_json(server, "/api/sleep/caffeine", {})["caffeine"] == "2025-06-02T13:00"
         assert calls == ["uyu", "kafein"]
     finally:
         server.stop()
@@ -1289,9 +1289,9 @@ def test_the_sleep_commands_reach_the_bridge_and_refuse_honestly(
                       controller=SimpleNamespace(snapshot=lambda: {}))  # type: ignore[arg-type]
     bare.start()
     try:
-        for route in ("/api/uyku/uyu", "/api/uyku/kafein"):
+        for route in ("/api/sleep/now", "/api/sleep/caffeine"):
             answer = _post_json(bare, route, {})
-            assert answer["ok"] is False and answer["durum"] == "yok"
+            assert answer["ok"] is False and answer["status"] == "none"
             assert "köprüde yok" in answer["error"]
     finally:
         bare.stop()

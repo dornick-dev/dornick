@@ -49,10 +49,20 @@ from . import recognition as recognition_mod
 
 BUNDLE_VERSION = 1
 
-# Selectable parts. "anilar" is the whole of the old package (memories,
+# Selectable parts. "memories" is the whole of the old package (memories,
 # links, goals, soul, session→project mapping, skills) — backwards
 # compatibility: a request without parts produces exactly the old package.
-PARTS = ("anilar", "tanima", "projeler", "ayarlar")
+PARTS = ("memories", "recognition", "projects", "settings")
+
+# The names 1.5.3 and older wrote into manifests and accepted on the wire.
+# Old bundles and old scripts keep working: every incoming part name goes
+# through `_normalise_parts` once.
+_LEGACY_PARTS = {"anilar": "memories", "tanima": "recognition",
+                 "projeler": "projects", "ayarlar": "settings"}
+
+
+def _normalise_parts(parts: Sequence[str] | None) -> list[str]:
+    return [_LEGACY_PARTS.get(str(p), str(p)) for p in (parts or ())]
 
 # Fixed names inside the zip.
 _MANIFEST = "manifest.json"
@@ -78,16 +88,16 @@ def export_bundle(config: Any, mind: Any,
                   parts: Sequence[str] | None = None) -> bytes:
     """Puts the selected parts into a single zip and returns its bytes.
 
-    If `parts` is not given, the old behaviour: only "anilar" (the whole of
+    If `parts` is not given, the old behaviour: only "memories" (the whole of
     the old package). Unknown names are dropped silently — a broken request
     should produce a package with what it knows, not an empty one.
     """
-    chosen = [p for p in (parts or ("anilar",)) if p in PARTS] or ["anilar"]
+    chosen = [p for p in _normalise_parts(parts or ("memories",)) if p in PARTS] or ["memories"]
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
         counts = {"memories": 0, "links": 0, "goals": 0, "skills": 0}
 
-        if "anilar" in chosen:
+        if "memories" in chosen:
             # Memory: a consistent copy (WAL included), via a temp file.
             with tempfile.TemporaryDirectory() as tmp:
                 db_copy = Path(tmp) / _DB
@@ -122,21 +132,21 @@ def export_bundle(config: Any, mind: Any,
                         zf.writestr(_SKILLS + rel, path.read_bytes())
                         counts["skills"] += 1
 
-        if "tanima" in chosen:
-            counts["tanima"] = _export_recognition(config, zf)
+        if "recognition" in chosen:
+            counts["recognition"] = _export_recognition(config, zf)
 
-        if "projeler" in chosen:
-            counts["projeler"] = _export_projects(config, zf)
+        if "projects" in chosen:
+            counts["projects"] = _export_projects(config, zf)
 
-        if "ayarlar" in chosen:
-            counts["ayarlar"] = _export_settings(config, zf)
+        if "settings" in chosen:
+            counts["settings"] = _export_settings(config, zf)
 
         manifest = {
             "kind": "neobundle",
             "version": BUNDLE_VERSION,
             "created": datetime.now(timezone.utc).isoformat(timespec="seconds"),
             "counts": counts,
-            "parcalar": chosen,
+            "parts": chosen,
         }
         zf.writestr(_MANIFEST, json.dumps(manifest, ensure_ascii=False, indent=2))
 
@@ -231,19 +241,19 @@ def import_bundle(config: Any, mind: Any, data: bytes,
     if manifest.get("kind") != "neobundle":
         return {"ok": False, "error": "Tanınmayan paket türü."}
     # Old packages have no notion of parts: the memory file is mandatory. A
-    # selective package (the manifest carries "parcalar") may be valid
-    # without memory.
-    if "parcalar" not in manifest and _DB not in names:
+    # selective package (the manifest carries "parts"; 1.5.3 and older wrote
+    # "parcalar") may be valid without memory.
+    if "parts" not in manifest and "parcalar" not in manifest and _DB not in names:
         return {"ok": False, "error": "Bu bir dornick paketi değil (bellek yok)."}
 
-    wanted = set(p for p in (parts or PARTS) if p in PARTS)
+    wanted = set(p for p in _normalise_parts(parts or PARTS) if p in PARTS)
     summary: dict[str, Any] = {"ok": True, "memories": 0, "links": 0,
                                "goals": 0, "skills": 0, "persona": False}
     # The backup folder is lazy: if nothing is going to be overwritten not
     # even an empty backup-<date> folder should be opened.
     backup: list[Path] = []
 
-    if "anilar" in wanted:
+    if "memories" in wanted:
         if _DB in names:
             # Memory merge: write to a temp file and fold it into the store.
             with tempfile.TemporaryDirectory() as tmp:
@@ -268,17 +278,17 @@ def import_bundle(config: Any, mind: Any, data: bytes,
         # Skills: copy the files, do not crush existing ones.
         summary["skills"] = _merge_skills(config, zf, names)
 
-    if "tanima" in wanted:
-        summary["tanima"] = _import_recognition(config, zf, names, backup)
+    if "recognition" in wanted:
+        summary["recognition"] = _import_recognition(config, zf, names, backup)
 
-    if "projeler" in wanted:
-        summary["projeler"] = _import_projects(config, zf, names, backup)
+    if "projects" in wanted:
+        summary["projects"] = _import_projects(config, zf, names, backup)
 
-    if "ayarlar" in wanted:
-        summary["ayarlar"] = _import_settings(config, zf, names, backup)
+    if "settings" in wanted:
+        summary["settings"] = _import_settings(config, zf, names, backup)
 
     if backup:
-        summary["yedek"] = str(backup[0])
+        summary["backup"] = str(backup[0])
     return summary
 
 
@@ -414,7 +424,7 @@ def reset_memories(config: Any, mind: Any) -> dict[str, Any]:
         # No deletion without a backup: if the backup cannot be taken there is no reset either.
         return {"ok": False, "error": f"Yedek alınamadı: {exc}"}
     deleted = mind.store.reset()
-    return {"ok": True, "silinen": deleted, "yedek": str(backup)}
+    return {"ok": True, "deleted": deleted, "backup": str(backup)}
 
 
 # -- merge helpers -----------------------------------------------------------

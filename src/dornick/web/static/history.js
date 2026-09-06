@@ -117,7 +117,7 @@ const History = (() => {
     if (!loaded) { body.textContent = ""; body.append(el("p", "hist-blank dugum-yukleniyor", t("Yükleniyor…"))); }
     let data;
     try {
-      const url = query ? "/api/sessions?ara=" + encodeURIComponent(query) : "/api/sessions";
+      const url = query ? "/api/sessions?q=" + encodeURIComponent(query) : "/api/sessions";
       data = await (await fetch(url)).json();
     } catch {
       body.textContent = "";
@@ -463,15 +463,15 @@ const History = (() => {
     input.value = s.named ? s.title : "";
 
     const save = async () => {
-      const ad = input.value.trim();
+      const name = input.value.trim();
       box.remove();
-      const saved = await saveMeta(s.id, { ad });
+      const saved = await saveMeta(s.id, { name });
       if (saved) {
-        s.named = !!saved.ad;
-        if (saved.ad) s.title = saved.ad;
+        s.named = !!saved.name;
+        if (saved.name) s.title = saved.name;
       }
       // If the name was deleted, the server knows the derived title: refresh.
-      if (!ad) await load();
+      if (!name) await load();
       else render();
     };
     input.onkeydown = (ev) => {
@@ -502,8 +502,8 @@ const History = (() => {
     const save = async () => {
       const labels = input.value.split(",").map(x => x.trim()).filter(Boolean);
       box.remove();
-      const saved = await saveMeta(s.id, { etiketler: labels });
-      if (saved) s.tags = saved.etiketler || [];
+      const saved = await saveMeta(s.id, { tags: labels });
+      if (saved) s.tags = saved.tags || [];
       for (const tag of s.tags) {
         if (!knownTags.includes(tag)) knownTags.push(tag);
       }
@@ -652,7 +652,7 @@ const History = (() => {
   }
 
   // Start in a folder (live request, 31.08 — "let me pick a folder and
-  // start a conversation like yours"): a mini explorer via /api/gozat;
+  // start a conversation like yours"): a mini explorer via /api/browse;
   // "Burada başlat" opens a new session + assigns the work folder +
   // applies it.
   function startInFolder() {
@@ -674,22 +674,22 @@ const History = (() => {
     async function browse(dirPath) {
       let data;
       try {
-        data = await (await fetch("/api/gozat?yol=" + encodeURIComponent(dirPath || ""))).json();
+        data = await (await fetch("/api/browse?path=" + encodeURIComponent(dirPath || ""))).json();
       } catch { return; }
-      selected = data.yol || "";
+      selected = data.path || "";
       titleEl.textContent = selected || t("Sürücü seç");
       startBtn.disabled = !selected;
       listEl.replaceChildren();
-      if (data.ust !== null && data.ust !== undefined) {
+      if (data.parent !== null && data.parent !== undefined) {
         const upBtn = el("button", "hist-folder-satir ust", "‹ " + t("üst klasör"));
         upBtn.type = "button";
-        upBtn.onclick = () => browse(data.ust);
+        upBtn.onclick = () => browse(data.parent);
         listEl.append(upBtn);
       }
-      for (const k of (data.klasorler || [])) {
-        const row = el("button", "hist-folder-satir", k.ad || k.yol);
+      for (const k of (data.folders || [])) {
+        const row = el("button", "hist-folder-satir", k.name || k.path);
         row.type = "button";
-        row.onclick = () => browse(k.yol);
+        row.onclick = () => browse(k.path);
         listEl.append(row);
       }
     }

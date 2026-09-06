@@ -440,8 +440,8 @@ def test_snapshot_carries_the_version(config: Config) -> None:
     from dornick import environment
 
     snap = settings.snapshot(config)
-    assert snap["surum"] == environment.version()
-    assert snap["surum"] not in ("", "0.0.0")
+    assert snap["version"] == environment.version()
+    assert snap["version"] not in ("", "0.0.0")
 
 
 def test_catalog_providers_have_unique_ids_and_openai_urls() -> None:

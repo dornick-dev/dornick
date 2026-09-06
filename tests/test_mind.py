@@ -130,7 +130,7 @@ def test_goal_lifecycle_and_digest(mind: Mind) -> None:
 def test_snapshot_lists_only_active_goals(mind: Mind) -> None:
     """The goal panel in the UI is seeded from the snapshot on page refresh:
     the dump must carry only the active ones — id, text and whether the item
-    is left over from a past session (`eski`). A mindless agent (or a read
+    is left over from a past session (`stale`). A mindless agent (or a read
     that blows up) means an empty list — the chat must not go down."""
     from dornick.desktop import _active_goals
 
@@ -140,7 +140,7 @@ def test_snapshot_lists_only_active_goals(mind: Mind) -> None:
 
     agent = type("A", (), {"mind": mind})()
     assert _active_goals(agent) == [
-        {"id": keep.id, "text": "kalan iş", "eski": False}]
+        {"id": keep.id, "text": "kalan iş", "stale": False}]
     assert _active_goals(type("A", (), {"mind": None})()) == []
     assert _active_goals(object()) == []
 
@@ -314,8 +314,8 @@ def test_transcript_returns_spoken_turns_with_trace(tmp_path):
     assert turns == [
         {"role": "user", "text": "kuyu seviyesi ne kadar"},
         {"role": "assistant", "text": "Seviye 2,77 m.",
-         "dusunme": "Önce dosyaya bakayım.",
-         "adimlar": [{"tool": "shell", "ozet": "cat x"}]},
+         "thinking": "Önce dosyaya bakayım.",
+         "steps": [{"tool": "shell", "summary": "cat x"}]},
     ]
 
 
@@ -340,7 +340,7 @@ def test_transcript_orphan_trace_attaches_to_empty_turn(tmp_path):
     assert turns == [
         {"role": "user", "text": "dosyayı düzelt"},
         {"role": "assistant", "text": "",
-         "adimlar": [{"tool": "edit_file", "ozet": "a.py"}]},
+         "steps": [{"tool": "edit_file", "summary": "a.py"}]},
         {"role": "user", "text": "dur, vazgeçtim"},
     ]
 

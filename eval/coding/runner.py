@@ -258,7 +258,7 @@ class Instance:
         """Give the raw brief through the gate; return the whole turn."""
         if not self.url and self.error:
             return {"ok": False, "error": self.error}
-        body = json.dumps({"text": text, "bekle_sn": wait_s}).encode("utf-8")
+        body = json.dumps({"text": text, "wait_s": wait_s}).encode("utf-8")
         request = urllib.request.Request(
             f"http://127.0.0.1:{self.port}/api/gate", data=body,
             headers={"Content-Type": "application/json"})
@@ -311,7 +311,7 @@ def run_once(task: Task, source_state: Path, model: str | None,
                 gate = instance.ask(task.brief, wait_s)
                 if not gate.get("ok"):
                     notes.append(f"gate: {gate.get('error')}")
-            session_id = gate.get("oturum") or instance.session
+            session_id = gate.get("session") or gate.get("oturum") or instance.session
 
         count = write_exclusions(workshop, before)
         if count:

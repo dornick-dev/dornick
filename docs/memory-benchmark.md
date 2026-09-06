@@ -137,7 +137,7 @@ ile "yalıtık kayıt kendiliğinden gelmez" kuralı korundu, kapsama bedeli
   korteks + yama, prefrontal hedef şeridi, amigdala, talamus basınç halkası, beyin
   sapı), 14 gece olayının hepsi için animasyon, canlı ve yeniden oynatma tek yoldan
   (1×/10×/60×), sabah raporu, kimlik ve mizaç sekmeleri, gündüz görünümü. Yeni uçlar:
-  `/api/kimlik`, `/api/mizac`, `/api/bolgeler`. 8 statik + 5 uç testi.
+  `/api/identity`, `/api/temperament`, `/api/regions`. 8 statik + 5 uç testi.
 - **Uyku bekçisi ürüne bağlandı**: yükseltmenin en büyük açığı buydu — gece
   mekaniği (pekiştirme, soğutma, temizlik, damıtma) yalnız bench'te koşuyor,
   üründe hiçbir yer onu başlatmıyordu. Artık `recall/daemon.py` dakikada bir

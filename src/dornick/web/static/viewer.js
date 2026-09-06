@@ -583,7 +583,7 @@ const Viewer = (() => {
       body.textContent = "";
       body.append(frame(html));
       if (url.startsWith("/artifact/") || url.includes("/artifact/")
-          || url.startsWith("/gorev-rapor/") || url.includes("/gorev-rapor/")) {
+          || url.startsWith("/task-report/") || url.includes("/task-report/")) {
         modes.textContent = "";
         modes.append(pageExportActs(url));
       }
@@ -1069,7 +1069,7 @@ const Viewer = (() => {
     if (!p.startsWith("/")) { window.open(p, "_blank", "noopener"); return; }
     let out = null;
     try {
-      out = await (await fetch("/api/disari-ac", {
+      out = await (await fetch("/api/open-external", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ path: p }),
@@ -1118,7 +1118,7 @@ const Viewer = (() => {
     if (/^\/artifact\//.test(base)) {
       let out = null;
       try {
-        out = await (await fetch("/api/artifact/indir", {
+        out = await (await fetch("/api/artifact/download", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ path: base }),

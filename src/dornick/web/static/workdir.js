@@ -98,62 +98,62 @@ const WorkDir = (() => {
     browse(browsing || boundPath || workshop || "", bodyEl, mode);
   }
 
-  // Directory browsing via the server's /api/gozat (no native file dialog:
+  // Directory browsing via the server's /api/browse (no native file dialog:
   // the desktop layer is a separate process; this in-browser explorer is
   // deliberate).
   async function browse(path, bodyEl, mode) {
     bodyEl.textContent = Lang.t("Yükleniyor…");
     let data;
     try {
-      data = await (await fetch("/api/gozat?yol=" + encodeURIComponent(path || ""))).json();
+      data = await (await fetch("/api/browse?path=" + encodeURIComponent(path || ""))).json();
     } catch {
       bodyEl.textContent = Lang.t("Bu klasör seçilemez");
       return;
     }
-    browsing = data.yol || "";
+    browsing = data.path || "";
     bodyEl.textContent = "";
 
     // Location row + parent folder.
     const crumb = document.createElement("div");
     crumb.className = "workdir-crumb";
     const pathCode = document.createElement("code");
-    pathCode.textContent = data.yol || Lang.t("Buradasın");
+    pathCode.textContent = data.path || Lang.t("Buradasın");
     crumb.append(pathCode);
-    if (data.ust) {
+    if (data.parent) {
       const upBtn = document.createElement("button");
       upBtn.type = "button";
       upBtn.className = "workdir-up";
       upBtn.textContent = "↑ " + Lang.t("Üst klasör");
-      upBtn.onclick = () => browse(data.ust, bodyEl, mode);
+      upBtn.onclick = () => browse(data.parent, bodyEl, mode);
       crumb.append(upBtn);
     }
     bodyEl.append(crumb);
 
-    if (data.hata) {
+    if (data.error) {
       const h = document.createElement("div");
       h.className = "workdir-warn";
-      h.textContent = data.hata;
+      h.textContent = data.error;
       bodyEl.append(h);
     }
-    if (data.uyari) {
+    if (data.warning) {
       const u = document.createElement("div");
       u.className = "workdir-warn";
-      u.textContent = data.uyari;
+      u.textContent = data.warning;
       bodyEl.append(u);
     }
 
     // Subfolders.
     const list = document.createElement("div");
     list.className = "workdir-list";
-    for (const k of (data.klasorler || [])) {
+    for (const k of (data.folders || [])) {
       const row = document.createElement("button");
       row.type = "button";
       row.className = "workdir-row";
-      row.textContent = "📁 " + k.ad;
-      row.onclick = () => browse(k.yol, bodyEl, mode);
+      row.textContent = "📁 " + k.name;
+      row.onclick = () => browse(k.path, bodyEl, mode);
       list.append(row);
     }
-    if (!(data.klasorler || []).length) {
+    if (!(data.folders || []).length) {
       const blank = document.createElement("div");
       blank.className = "workdir-empty";
       blank.textContent = "—";
@@ -179,20 +179,20 @@ const WorkDir = (() => {
         createBtn.disabled = true;
         let c;
         try {
-          c = await (await fetch("/api/klasor/olustur", {
+          c = await (await fetch("/api/folder/create", {
             method: "POST", headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ ust: data.yol, ad: name }),
+            body: JSON.stringify({ parent: data.path, name }),
           })).json();
         } catch { c = { ok: false }; }
         createBtn.disabled = false;
         if (!c || !c.ok) {
           const h = document.createElement("div");
           h.className = "workdir-warn";
-          h.textContent = (c && c.hata) || Lang.t("Klasör oluşturulamadı");
+          h.textContent = (c && c.error) || Lang.t("Klasör oluşturulamadı");
           actions.append(h);
           return;
         }
-        await bind(c.yol);
+        await bind(c.path);
       };
       actions.append(nameInput, createBtn);
     } else {
@@ -200,9 +200,9 @@ const WorkDir = (() => {
       chooseBtn.type = "button";
       chooseBtn.className = "workdir-go";
       chooseBtn.textContent = Lang.t("Bu klasörde çalış");
-      chooseBtn.disabled = !!data.engel || !data.yol;
-      if (data.engel) chooseBtn.title = data.engel;
-      chooseBtn.onclick = () => bind(data.yol);
+      chooseBtn.disabled = !!data.blocked || !data.path;
+      if (data.blocked) chooseBtn.title = data.blocked;
+      chooseBtn.onclick = () => bind(data.path);
       actions.append(chooseBtn);
       if (boundPath) {
         const backBtn = document.createElement("button");

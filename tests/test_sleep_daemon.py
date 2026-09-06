@@ -58,11 +58,11 @@ class Hub:
             self.on(event)
 
     def kinds(self) -> list[str]:
-        return [e["olay"]["tur"] for e in self.events if e.get("type") == "gece"]
+        return [e["event"]["tur"] for e in self.events if e.get("type") == "night"]
 
     def find(self, kind: str) -> dict:
-        return next(e["olay"] for e in self.events
-                    if e.get("type") == "gece" and e["olay"]["tur"] == kind)
+        return next(e["event"] for e in self.events
+                    if e.get("type") == "night" and e["event"]["tur"] == kind)
 
 
 @pytest.fixture()
@@ -152,7 +152,7 @@ def test_pressure_puts_it_to_sleep_and_the_night_reaches_both_sinks(
     path = night_events.night_path(state, clock().date().isoformat())
     replayed = [e["tur"] for e in night_events.replay(path)]
     assert replayed == kinds
-    report = daemon.status()["son_gece"]["rapor"]
+    report = daemon.status()["last_night"]["report"]
     assert report["replayed"] == 4 and report["carried"] == 0
 
     # A finished night rests: the pressure the downscale leaves behind does
@@ -160,7 +160,7 @@ def test_pressure_puts_it_to_sleep_and_the_night_reaches_both_sinks(
     clock.advance(hours=1)
     assert daemon.tick() is State.AWAKE
     assert kinds.count("uyku.basladi") == 1
-    assert daemon.status()["dinlenmis"]
+    assert daemon.status()["rested_until"]
 
 
 def _one_unit(store, sessions_dir, *, clock=None, watermark=None, **_):
@@ -191,7 +191,7 @@ def test_user_activity_wakes_the_night_and_the_rest_is_carried(
     # The user comes back during the first cycle — from the UI thread, as
     # it were: the hub listener is where the event surfaces.
     def come_back(event: dict) -> None:
-        if event.get("type") == "gece" and event["olay"]["tur"] == "uyku.dongu":
+        if event.get("type") == "night" and event["event"]["tur"] == "uyku.dongu":
             hub.on = None
             daemon.user_active()
     hub.on = come_back
@@ -203,7 +203,7 @@ def test_user_activity_wakes_the_night_and_the_rest_is_carried(
     assert woke["devreden"] == 5
     assert "uyku.bitti" not in hub.kinds()
     assert json.loads((state / "sleep_debt.json").read_text("utf-8"))["devreden"] == 5
-    assert daemon.status()["dinlenmis"] == ""             # interrupted, not rested
+    assert daemon.status()["rested_until"] == ""             # interrupted, not rested
 
     # The next idle window resumes the debt and this time finishes it.
     assert _fall_asleep(daemon, clock) is State.WAKING
@@ -222,7 +222,7 @@ def test_the_switch_off_means_no_night(store, state, clock) -> None:
         assert daemon.tick() is State.AWAKE
         clock.advance(minutes=3)
     assert hub.events == []
-    assert daemon.status()["acik"] is False
+    assert daemon.status()["enabled"] is False
 
     # The bench's ablation flag is the same door.
     live = _daemon(store, state, clock, hub, enabled=True)
@@ -312,7 +312,7 @@ def test_suspend_and_resume_do_not_charge_debt(store, state, clock) -> None:
     clock.advance(hours=60)
     assert daemon.tick() is State.AWAKE            # nothing moves, nothing runs
     assert hub.events == []
-    assert daemon.status()["askida"] is True
+    assert daemon.status()["suspended"] is True
 
     gap = daemon.os_resumed()
     assert gap == timedelta(hours=60)
@@ -321,7 +321,7 @@ def test_suspend_and_resume_do_not_charge_debt(store, state, clock) -> None:
     assert not awake.should_local_sleep(hours, pending)
     daemon.tick()
     assert "yerel.basladi" not in hub.kinds()
-    assert daemon.status()["askida"] is False
+    assert daemon.status()["suspended"] is False
 
 
 def test_the_rhythm_is_learned_by_the_hour_and_kept_on_disk(store, state, clock) -> None:
@@ -405,20 +405,20 @@ def test_the_turn_loop_reaches_the_daemon_through_the_module(store, state, clock
 def test_status_has_the_shape_the_ui_reads(store, state, clock) -> None:
     daemon = _daemon(store, state, clock)
     status = daemon.status()
-    # What /api/uyku returned before the daemon existed…
-    assert set(status["basinc"]) == {"strengthening", "debt", "heat", "total"}
-    assert status["esik"] == {"ust": sleep.UPPER_THRESHOLD, "alt": sleep.LOWER_THRESHOLD}
-    assert set(status["borc"]) == {"saat", "oturum"}
-    assert "sicak_oran" in status
+    # What /api/sleep returned before the daemon existed…
+    assert set(status["pressure"]) == {"strengthening", "debt", "heat", "total"}
+    assert status["threshold"] == {"upper": sleep.UPPER_THRESHOLD, "lower": sleep.LOWER_THRESHOLD}
+    assert set(status["debt"]) == {"hours", "sessions"}
+    assert "hot_share" in status
     # …plus what only the watchman knows.
-    assert status["durum"] == "uyanik"
-    assert status["acik"] is True and status["kosuyor"] is False
-    assert status["oreksin"] == 1.0
-    assert status["sonraki_gece"] == ""          # a new install does not know yet
-    assert set(status["son_gece"]) == {"bitti", "rapor", "damitma"}
-    assert set(status["ritim"]) == {"gun", "guven", "simdi", "saatler"}
-    assert status["ritim"]["saatler"] == []       # nor the usual hours
-    for key in ("bosta_dk", "askida", "kafein", "dinlenmis", "mikro", "yerel"):
+    assert status["status"] == "uyanik"
+    assert status["enabled"] is True and status["running"] is False
+    assert status["orexin"] == 1.0
+    assert status["next_night"] == ""          # a new install does not know yet
+    assert set(status["last_night"]) == {"ended", "report", "distil"}
+    assert set(status["rhythm"]) == {"days", "confidence", "now", "hours"}
+    assert status["rhythm"]["hours"] == []       # nor the usual hours
+    for key in ("idle_min", "suspended", "caffeine", "rested_until", "micro", "local"):
         assert key in status
     json.dumps(status)                           # it goes over the wire as JSON
 
@@ -464,7 +464,7 @@ class FakeDaemon:
         return True
 
     def status(self) -> dict:
-        return {"durum": "uyanik"}
+        return {"status": "uyanik"}
 
     def os_suspended(self) -> None:
         self.suspended += 1
@@ -489,7 +489,7 @@ def test_the_bridge_starts_the_daemon_after_the_mind_and_stops_it_on_teardown(
     assert daemon.kw["local_model"]() is True
     assert daemon.kw["cloud_ok"]() is False                      # no consent on disk
     assert daemon.kw["enabled"]() is True
-    assert bridge.sleep_status() == {"durum": "uyanik"}
+    assert bridge.sleep_status() == {"status": "uyanik"}
 
     # The settings page saves: the daemon reads the new switch at once.
     bridge.reload(replace(config, sleep=SleepConfig(uyku_acik=False)))
@@ -527,9 +527,9 @@ def test_sleep_now_runs_a_night_on_the_next_tick(store, state, clock, monkeypatc
     # The user asks for the night: the switch moves at once, without the
     # thresholds or the five idle minutes.
     answer = daemon.sleep_now()
-    assert answer == {"ok": True, "durum": "uyuyor"}
-    assert daemon.status()["durum"] == "uyuyor"
-    assert daemon.sleep_now() == {"ok": False, "durum": "uyuyor", "error": "Zaten uyuyor."}
+    assert answer == {"ok": True, "status": "uyuyor"}
+    assert daemon.status()["status"] == "uyuyor"
+    assert daemon.sleep_now() == {"ok": False, "status": "uyuyor", "error": "Zaten uyuyor."}
 
     # The next tick runs the night instead of stepping the switch back.
     clock.advance(seconds=daemon_module.TICK_SECONDS)
@@ -537,7 +537,7 @@ def test_sleep_now_runs_a_night_on_the_next_tick(store, state, clock, monkeypatc
     assert after in (State.WAKING, State.AWAKE)
     assert hub.kinds()[0] == "uyku.basladi"
     assert not daemon.night_running
-    assert daemon.status()["son_gece"]["rapor"]["replayed"] >= 1
+    assert daemon.status()["last_night"]["report"]["replayed"] >= 1
     # Journalled like any transition, with the user's reason.
     journal = (state / daemon_module.JOURNAL_FILE).read_text("utf-8").splitlines()
     assert any(json.loads(row)["sebep"] == "kullanici istedi" for row in journal)
@@ -552,17 +552,17 @@ def test_sleep_now_yields_to_the_user_and_to_the_switch(store, state, clock) -> 
     daemon.user_active()
     assert daemon.tick() is State.AWAKE
     assert hub.events == []
-    assert daemon.status()["durum"] == "uyanik"
+    assert daemon.status()["status"] == "uyanik"
 
     # Caffeine is spent by an explicit "sleep now" — the later word wins.
     daemon.caffeine()
-    assert daemon.status()["kafein"]
+    assert daemon.status()["caffeine"]
     assert daemon.sleep_now()["ok"] is True
-    assert daemon.status()["kafein"] == ""
+    assert daemon.status()["caffeine"] == ""
 
     # The user's switch off: refused with the reason, nothing moves.
     off = _daemon(store, state, clock, Hub(), enabled=False)
-    assert off.sleep_now() == {"ok": False, "durum": "uyanik", "error": "Gece uykusu kapalı."}
+    assert off.sleep_now() == {"ok": False, "status": "uyanik", "error": "Gece uykusu kapalı."}
     assert off.tick() is State.AWAKE
 
 
@@ -578,8 +578,8 @@ def test_caffeine_holds_the_night_off_and_wakes_a_running_one(
     daemon = _daemon(store, state, clock, hub)
 
     answer = daemon.caffeine()
-    assert answer["ok"] is True and answer["saat"] == float(sleep.CAFFEINE_HOURS)
-    assert answer["kafein"] == daemon.status()["kafein"]
+    assert answer["ok"] is True and answer["hours"] == float(sleep.CAFFEINE_HOURS)
+    assert answer["caffeine"] == daemon.status()["caffeine"]
     # Away and under pressure — but the threshold is out of reach.
     clock.advance(minutes=daemon_module.IDLE_MINUTES + 1)
     assert daemon.tick() is State.AWAKE
@@ -591,7 +591,7 @@ def test_caffeine_holds_the_night_off_and_wakes_a_running_one(
     clock.advance(hours=sleep.CAFFEINE_HOURS)
 
     def not_tonight(event: dict) -> None:
-        if event.get("type") == "gece" and event["olay"]["tur"] == "uyku.dongu":
+        if event.get("type") == "night" and event["event"]["tur"] == "uyku.dongu":
             hub.on = None
             daemon.caffeine()
     hub.on = not_tonight
@@ -608,11 +608,11 @@ class FakeSleepingDaemon(FakeDaemon):
 
     def sleep_now(self) -> dict:
         self.calls.append("uyu")
-        return {"ok": True, "durum": "uyuyor"}
+        return {"ok": True, "status": "uyuyor"}
 
     def caffeine(self) -> dict:
         self.calls.append("kafein")
-        return {"ok": True, "durum": "uyanik", "saat": 4.0, "kafein": "2025-06-02T13:00"}
+        return {"ok": True, "status": "uyanik", "hours": 4.0, "caffeine": "2025-06-02T13:00"}
 
 
 def test_the_bridge_relays_the_sleep_commands_or_refuses_without_a_daemon(
@@ -625,8 +625,8 @@ def test_the_bridge_relays_the_sleep_commands_or_refuses_without_a_daemon(
     assert bridge.caffeine()["ok"] is False and bridge.caffeine()["error"]
 
     daemon = bridge.start_sleep(config, mind, factory=FakeSleepingDaemon)
-    assert bridge.sleep_now() == {"ok": True, "durum": "uyuyor"}
-    assert bridge.caffeine()["kafein"] == "2025-06-02T13:00"
+    assert bridge.sleep_now() == {"ok": True, "status": "uyuyor"}
+    assert bridge.caffeine()["caffeine"] == "2025-06-02T13:00"
     assert daemon.calls == ["uyu", "kafein"]
     assert bridge.stop_sleep() is True
     assert bridge.sleep_now()["ok"] is False

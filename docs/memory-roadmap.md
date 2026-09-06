@@ -1180,7 +1180,7 @@ kullanıcı "bu gece uyuyacak" olduğunu görür.
 - Olay şeması 3.10.5'te dondurulmuş; arayüz yalnız o şemayı okur, `recall.db`'ye
   doğrudan bakmaz (gece yazarken okuma yarışı olmasın).
 - Olay akışı mevcut hub/SSE kanalı (`events.py` → `web/`). Yeni uçlar:
-  `GET /api/gece/<tarih>` (yeniden oynatma), `GET /api/uyku` (durum: basınç, ritim,
+  `GET /api/nights/<tarih>` (yeniden oynatma), `GET /api/sleep` (durum: basınç, ritim,
   borç, uyaniklik).
 - Performans: 200 oturumluk gece ≈ 2-5k olay; arayüz olayları toplu alır (100'lük
   paketler), animasyon `requestAnimationFrame` ile 60 fps, 50k düğümde canvas (SVG

@@ -786,11 +786,11 @@ const Settings = (() => {
     // is memories only — identical to the old bundle; when moving to a
     // server, the learn-me model, the workshop and the (key-less) settings
     // can be added too.
-    const chosenParts = { anilar: true, tanima: false, projeler: false, ayarlar: false };
-    const PART_NAMES = [["anilar", "Anılar"], ["tanima", "Beni tanı"],
-                        ["projeler", "Projeler (atölye)"], ["ayarlar", "Ayarlar (anahtarsız)"]];
+    const chosenParts = { memories: true, recognition: false, projects: false, settings: false };
+    const PART_NAMES = [["memories", "Anılar"], ["recognition", "Beni tanı"],
+                        ["projects", "Projeler (atölye)"], ["settings", "Ayarlar (anahtarsız)"]];
     const selectedParts = () => PART_NAMES.map(([key]) => key).filter((key) => chosenParts[key]);
-    const exportUrl = () => "/api/transfer/export?parcalar=" + selectedParts().join(",");
+    const exportUrl = () => "/api/transfer/export?parts=" + selectedParts().join(",");
 
     const parts = el("div", "xfer-parts");
     parts.append(el("span", "xfer-lead", t("Parçalar")));
@@ -852,13 +852,13 @@ const Settings = (() => {
           res = await (await fetch("/api/reset", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ hedef: target }),
+            body: JSON.stringify({ target }),
           })).json();
         } catch { res = { ok: false, error: t("Sunucuya ulaşılamadı") }; }
         if (res && res.ok) {
           report.className = "xfer-report good";
-          report.textContent = res.yedek
-            ? t("Sıfırlandı — yedek: ") + res.yedek
+          report.textContent = res.backup
+            ? t("Sıfırlandı — yedek: ") + res.backup
             : t("Sıfırlandı (taşınacak bir şey yoktu)");
         } else {
           report.className = "xfer-report bad";
@@ -870,8 +870,8 @@ const Settings = (() => {
     // Danger zone: the resets should stand visually apart too.
     const resetRow = el("div", "xfer-row danger-zone");
     resetRow.append(el("span", "xfer-lead", t("Sıfırla")),
-                    resetBtn("Anıları sıfırla", "anilar"),
-                    resetBtn("Beni tanımayı sıfırla", "tanima"));
+                    resetBtn("Anıları sıfırla", "memories"),
+                    resetBtn("Beni tanımayı sıfırla", "recognition"));
     pane.append(resetRow);
 
     const report = el("p", "xfer-report");
@@ -885,7 +885,7 @@ const Settings = (() => {
     let res;
     try {
       const buf = await file.arrayBuffer();
-      res = await (await fetch("/api/transfer/import?parcalar=" + (chosenParts || []).join(","), {
+      res = await (await fetch("/api/transfer/import?parts=" + (chosenParts || []).join(","), {
         method: "POST",
         headers: { "Content-Type": "application/octet-stream" },
         body: buf,
@@ -906,14 +906,14 @@ const Settings = (() => {
     if (res.goals) parts.push(res.goals + t(" hedef"));
     if (res.skills) parts.push(res.skills + t(" yetenek"));
     if (res.persona) parts.push(t("ruh"));
-    if (res.tanima) parts.push(res.tanima + t(" tanıma dosyası"));
-    if (res.projeler) parts.push(res.projeler + t(" proje dosyası"));
-    if (res.ayarlar) parts.push(t("ayarlar"));
+    if (res.recognition) parts.push(res.recognition + t(" tanıma dosyası"));
+    if (res.projects) parts.push(res.projects + t(" proje dosyası"));
+    if (res.settings) parts.push(t("ayarlar"));
     report.className = "xfer-report good";
     report.textContent = parts.length
       ? t("Katıldı: ") + parts.join(" · ")
       : t("Yeni bir şey yoktu (hepsi zaten vardı)");
-    if (res.yedek) report.textContent += t(" · yedek: ") + res.yedek;
+    if (res.backup) report.textContent += t(" · yedek: ") + res.backup;
   }
 
   // --- field helpers ----------------------------------------------------
@@ -1589,7 +1589,7 @@ const Settings = (() => {
           openReport.addEventListener("click", (ev) => {
             ev.stopPropagation();
             if (typeof Viewer !== "undefined" && Viewer.page) {
-              Viewer.page("/gorev-rapor/" + encodeURIComponent(task.last_child_id) + "/",
+              Viewer.page("/task-report/" + encodeURIComponent(task.last_child_id) + "/",
                           task.title || task.last_child_id);
             }
           });
@@ -3086,7 +3086,7 @@ const Settings = (() => {
       checkBtn.textContent = t("Soruluyor…");
       let answer = {};
       try {
-        answer = await (await fetch("/api/surum", { method: "POST" })).json();
+        answer = await (await fetch("/api/version", { method: "POST" })).json();
       } catch { /* handled below */ }
       checkBtn.disabled = false;
       checkBtn.textContent = t("Güncellemeleri denetle");
@@ -3095,27 +3095,27 @@ const Settings = (() => {
       const stale = versionField.querySelector(".version-result");
       if (stale) stale.remove();
       const result = el("span", "version-result");
-      if (answer.yeni) {
+      if (answer.new) {
         // With an installer file, download+install FROM INSIDE THE APP;
         // otherwise open the release page in the browser (manual download).
-        if (answer.indirme) {
+        if (answer.download) {
           const installBtn = el("button", "version-new");
           installBtn.type = "button";
-          installBtn.textContent = "v" + answer.yeni + t(" mevcut — indir ve kur");
+          installBtn.textContent = "v" + answer.new + t(" mevcut — indir ve kur");
           const progress = el("span", "version-progress");
           progress.hidden = true;
           installBtn.addEventListener("click", async () => {
             installBtn.disabled = true;
             progress.hidden = false;
             progress.textContent = t("Güncelleme hazırlanıyor…");
-            // Progress flows via the SSE "guncelleme" event (app.js → here).
+            // Progress flows via the SSE "update" event (app.js → here).
             window.dispatchEvent(new CustomEvent("dornick:guncelle-baslat",
               { detail: { durum: progress } }));
             try {
-              const c = await (await fetch("/api/guncelle", { method: "POST" })).json();
+              const c = await (await fetch("/api/update", { method: "POST" })).json();
               if (c && c.ok === false) {
                 progress.className = "version-progress bad";
-                progress.textContent = c.hata ? t(c.hata) : t("Güncelleme başlatılamadı");
+                progress.textContent = c.error ? t(c.error) : t("Güncelleme başlatılamadı");
                 installBtn.disabled = false;
               }
             } catch {
@@ -3127,7 +3127,7 @@ const Settings = (() => {
           result.append(installBtn, progress);
         } else {
           const target = answer.url || "#";
-          const link = el("a", "version-new", "v" + answer.yeni + t(" mevcut — indir"));
+          const link = el("a", "version-new", "v" + answer.new + t(" mevcut — indir"));
           link.href = target;
           link.addEventListener("click", (e) => {
             e.preventDefault();
@@ -3135,7 +3135,7 @@ const Settings = (() => {
           });
           result.append(link);
         }
-        if (answer.indirme && answer.url) {
+        if (answer.download && answer.url) {
           const notes = el("a", "surum-notlar", t("yayın notları"));
           notes.href = answer.url;
           notes.addEventListener("click", (e) => {
@@ -3148,7 +3148,7 @@ const Settings = (() => {
         result.textContent = t("Güncel — daha yeni sürüm yok");
       } else {
         result.className += " bad";
-        result.textContent = answer.hata ? t(answer.hata) : t("Ağa ulaşılamadı — internet bağlantısını denetle");
+        result.textContent = answer.error ? t(answer.error) : t("Ağa ulaşılamadı — internet bağlantısını denetle");
       }
       versionBox.append(result);
     });
@@ -3294,7 +3294,7 @@ const Settings = (() => {
     // as the gate switch.
     const learnSwitch = toggleBox(false, async (v) => {
       try {
-        await fetch("/api/tanima", {
+        await fetch("/api/recognition", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ on: v }),
@@ -3317,7 +3317,7 @@ const Settings = (() => {
     // so explicitly.
     const cloudSwitch = toggleBox(false, async (v) => {
       try {
-        await fetch("/api/tanima", {
+        await fetch("/api/recognition", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ learn_cloud_ok: v }),
@@ -3333,12 +3333,12 @@ const Settings = (() => {
       cloudSwitch
     );
     pane.append(cloudField);
-    fetch("/api/tanima").then((r) => r.json()).then((d) => {
+    fetch("/api/recognition").then((r) => r.json()).then((d) => {
       learnSwitch.checked = !!d.on;
       cloudSwitch.checked = !!d.learn_cloud_ok;
       // Without the rig installed the switch would spin idle; a note is
       // appended to the hint.
-      if (!d.hazir) {
+      if (!d.ready) {
         const hintEl = learnField.querySelector(".field-hint");
         if (hintEl) hintEl.textContent += t(" · eğitim düzeneği bu makinede kurulu değil");
       }
@@ -3512,46 +3512,46 @@ const Settings = (() => {
       browserBox.append(el("p", "pane-note", t("Yukleniyor…")));
       let data;
       try {
-        data = await (await fetch("/api/gozat?yol=" + encodeURIComponent(path))).json();
+        data = await (await fetch("/api/browse?path=" + encodeURIComponent(path))).json();
       } catch {
         browserBox.textContent = "";
         browserBox.append(el("p", "pane-note bad", t("Sunucuya ulaşılamadı")));
         return;
       }
       browserBox.textContent = "";
-      if (data.hata) {
-        browserBox.append(el("p", "pane-note bad", data.hata));
+      if (data.error) {
+        browserBox.append(el("p", "pane-note bad", data.error));
         return;
       }
 
       // Head: where we are + go up.
       const crumbEl = el("div", "proj-crumb");
-      if (data.ust !== null && data.ust !== undefined) {
+      if (data.parent !== null && data.parent !== undefined) {
         const upBtn = el("button", "crumb-link", "↑ " + t("yukarı"));
         upBtn.type = "button";
-        upBtn.addEventListener("click", () => browseTree(data.ust));
+        upBtn.addEventListener("click", () => browseTree(data.parent));
         crumbEl.append(upBtn);
       }
-      crumbEl.append(el("span", "proj-here", data.yol || t("Bu bilgisayar")));
+      crumbEl.append(el("span", "proj-here", data.path || t("Bu bilgisayar")));
       browserBox.append(crumbEl);
 
       // PICK the folder here: only inside a real folder with no blocker.
-      if (data.yol) {
+      if (data.path) {
         const summary = [];
-        if (typeof data.dosya === "number") summary.push(data.dosya + t(" dosya"));
-        if (data.klasorler) summary.push(data.klasorler.length + t(" klasör"));
-        if (data.tur) summary.push(data.tur);
+        if (typeof data.files === "number") summary.push(data.files + t(" dosya"));
+        if (data.folders) summary.push(data.folders.length + t(" klasör"));
+        if (data.kind) summary.push(data.kind);
         browserBox.append(el("p", "pane-note", summary.join(" · ")));
 
-        if (data.engel) {
-          browserBox.append(el("p", "pane-note bad", data.engel));
+        if (data.blocked) {
+          browserBox.append(el("p", "pane-note bad", data.blocked));
         } else {
-          if (data.uyari) browserBox.append(el("p", "pane-note bad", data.uyari));
+          if (data.warning) browserBox.append(el("p", "pane-note bad", data.warning));
           const pickBtn = el("button", "job-act add", t("Bu klasörü seç"));
           pickBtn.type = "button";
           pickBtn.addEventListener("click", () => {
-            input.value = data.yol;
-            set("sandbox", "project", data.yol);
+            input.value = data.path;
+            set("sandbox", "project", data.path);
             browserBox.hidden = true;
             drawStatus();
           });
@@ -3560,14 +3560,14 @@ const Settings = (() => {
       }
 
       const listEl = el("div", "proj-list");
-      for (const folder of (data.klasorler || [])) {
+      for (const folder of (data.folders || [])) {
         const rowBtn = el("button", "proj-row");
         rowBtn.type = "button";
-        rowBtn.textContent = "▸ " + folder.ad;
-        rowBtn.addEventListener("click", () => browseTree(folder.yol));
+        rowBtn.textContent = "▸ " + folder.name;
+        rowBtn.addEventListener("click", () => browseTree(folder.path));
         listEl.append(rowBtn);
       }
-      if (!(data.klasorler || []).length) {
+      if (!(data.folders || []).length) {
         listEl.append(el("p", "pane-note", t("Alt klasör yok")));
       }
       browserBox.append(listEl);
