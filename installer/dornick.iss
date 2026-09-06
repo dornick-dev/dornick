@@ -79,7 +79,7 @@ WizardStyle=modern
 [Languages]
 ; The wizard's language comes from here; the choice is also written to
 ; setup.json and the app's UI language comes from there on first launch
-; (/api/dil → dil.js).
+; (/api/language → lang.js).
 Name: "tr"; MessagesFile: "compiler:Languages\Turkish.isl"
 Name: "en"; MessagesFile: "compiler:Default.isl"
 
@@ -695,7 +695,7 @@ var
 begin
   { The language chosen in the wizard is carried to the UI: localStorage
     cannot be written from the installer; the app reads this file on first
-    launch via /api/dil. }
+    launch via /api/language. }
   if CurStep = ssPostInstall then
   begin
     if ActiveLanguage = 'en' then Lang := 'en' else Lang := 'tr';
