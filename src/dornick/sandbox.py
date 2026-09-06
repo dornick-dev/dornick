@@ -222,6 +222,12 @@ class Sandbox:
         project: str = "",
         state_dir: Path | None = None,
     ) -> Sandbox:
+        # Settings written by 1.4 carry the old default name verbatim
+        # ("atolye"), so the plain equality test never saw a default and no
+        # install ever got its workshop renamed (live, 06.09). The legacy
+        # default IS the default: it is adopted under the new name.
+        if directory == LEGACY_DIR:
+            directory = DEFAULT_DIR
         root = Path(directory).expanduser()
         if not root.is_absolute():
             root = workspace / root

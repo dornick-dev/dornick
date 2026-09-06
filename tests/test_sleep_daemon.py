@@ -202,14 +202,14 @@ def test_user_activity_wakes_the_night_and_the_rest_is_carried(
     assert woke["dongu"] == 1 and woke["tamamlanan"] == 1
     assert woke["devreden"] == 5
     assert "uyku.bitti" not in hub.kinds()
-    assert json.loads((state / "uyku_borcu.json").read_text("utf-8"))["devreden"] == 5
+    assert json.loads((state / "sleep_debt.json").read_text("utf-8"))["devreden"] == 5
     assert daemon.status()["dinlenmis"] == ""             # interrupted, not rested
 
     # The next idle window resumes the debt and this time finishes it.
     assert _fall_asleep(daemon, clock) is State.WAKING
     assert hub.kinds().count("uyku.basladi") == 2
     assert hub.kinds()[-1] == "uyku.bitti"
-    assert json.loads((state / "uyku_borcu.json").read_text("utf-8"))["devreden"] == 0
+    assert json.loads((state / "sleep_debt.json").read_text("utf-8"))["devreden"] == 0
 
 
 def test_the_switch_off_means_no_night(store, state, clock) -> None:

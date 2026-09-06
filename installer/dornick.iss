@@ -216,6 +216,14 @@ Type: files; Name: "{app}\src\dornick\web\static\degisiklik.js"
 Type: files; Name: "{app}\src\dornick\web\static\dil.js"
 Type: files; Name: "{app}\src\dornick\web\static\gorevler.js"
 Type: files; Name: "{app}\src\dornick\web\static\komut.js"
+; The training rig moved from egitim\ to training\ in 1.5.2. The old code
+; and its 1.5 GB of packages go here; egitimeri (personal corpus) stays for
+; the product to adopt on first start.
+Type: filesandordirs; Name: "{app}\egitim\sitepaket"
+Type: filesandordirs; Name: "{app}\egitimetikler"
+Type: filesandordirs; Name: "{app}\egitim\model"
+Type: filesandordirs; Name: "{app}\egitim\out"
+Type: files; Name: "{app}\egitimyarlar.py"
 
 [UninstallDelete]
 ; Leftovers we produce ourselves: the language choice and the bytecode

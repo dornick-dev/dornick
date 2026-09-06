@@ -697,7 +697,7 @@ def _write_watermark(path: Path | None, status: dict[str, Any]) -> None:
 def _append_journal(sessions_dir: Path, report: NightReport, clock: Clock) -> None:
     """The night's summary to disk: the "memory health" panel in the UI reads it."""
     try:
-        path = Path(sessions_dir).parent / "gece.jsonl"
+        path = Path(sessions_dir).parent / "nights.jsonl"
         path.parent.mkdir(parents=True, exist_ok=True)
         with path.open("a", encoding="utf-8") as fh:
             fh.write(json.dumps({"ts": _stamp(clock), **report.as_dict()},

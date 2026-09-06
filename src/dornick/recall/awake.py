@@ -313,7 +313,7 @@ def write_report(state_dir: Path, kind: str, payload: dict[str, Any],
     """Append one line to `.dornick/gece.jsonl`. The UI reads it."""
     clock = clock or wall_clock
     try:
-        path = Path(state_dir) / "gece.jsonl"
+        path = Path(state_dir) / "nights.jsonl"
         path.parent.mkdir(parents=True, exist_ok=True)
         with path.open("a", encoding="utf-8") as fh:
             fh.write(json.dumps({"ts": clock().isoformat(timespec="milliseconds"),

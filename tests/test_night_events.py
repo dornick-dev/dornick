@@ -89,14 +89,14 @@ def test_reading_validates_the_same_contract() -> None:
 
 def test_a_night_replays_in_the_order_it_happened(tmp_path: Path) -> None:
     """Live view and replay are the same code path; there is no second one."""
-    log = ne.NightLog(tmp_path / "gece" / "2025-06-02.jsonl", clock)
+    log = ne.NightLog(tmp_path / "nights" / "2025-06-02.jsonl", clock)
     log.emit("uyku.basladi", basinc=1.2, tahmini_uyanma="08:30", dongu_sayisi=4)
     log.emit("tekrar.ileri", oturum="s1", dizi=["n_1", "n_2"],
              kenarlar=[["n_1", "n_2", 0.6]])
     log.emit("dikis", a="n_1", b="n_3", uzerinden="n_2", oturumlar=["s1", "s2"])
     log.emit("uyku.bitti", sebep="basinc", rapor={"tekrar": 1})
 
-    read_back = list(ne.replay(tmp_path / "gece" / "2025-06-02.jsonl"))
+    read_back = list(ne.replay(tmp_path / "nights" / "2025-06-02.jsonl"))
     assert [e["tur"] for e in read_back] == [
         "uyku.basladi", "tekrar.ileri", "dikis", "uyku.bitti"]
     assert read_back[1]["dizi"] == ["n_1", "n_2"]
@@ -104,7 +104,7 @@ def test_a_night_replays_in_the_order_it_happened(tmp_path: Path) -> None:
 
 def test_a_truncated_log_replays_up_to_the_cut(tmp_path: Path) -> None:
     """A power cut mid-write should cost the last line, not the night."""
-    path = tmp_path / "gece" / "2025-06-02.jsonl"
+    path = tmp_path / "nights" / "2025-06-02.jsonl"
     path.parent.mkdir(parents=True)
     path.write_text(
         json.dumps({"ts": "x", "tur": "dokunus", "id": "n_1"}) + "\n"
@@ -115,7 +115,7 @@ def test_a_truncated_log_replays_up_to_the_cut(tmp_path: Path) -> None:
 
 def test_a_live_listener_sees_what_the_file_gets(tmp_path: Path) -> None:
     seen: list[str] = []
-    log = ne.NightLog(tmp_path / "gece" / "x.jsonl", clock,
+    log = ne.NightLog(tmp_path / "nights" / "x.jsonl", clock,
                       listeners=[lambda e: seen.append(e["tur"])])
     log.emit("dokunus", id="n_1")
     assert seen == ["dokunus"]
@@ -126,7 +126,7 @@ def test_a_broken_view_does_not_stop_the_night(tmp_path: Path) -> None:
     def blow_up(_event):
         raise RuntimeError("the view crashed")
 
-    log = ne.NightLog(tmp_path / "gece" / "x.jsonl", clock, listeners=[blow_up])
+    log = ne.NightLog(tmp_path / "nights" / "x.jsonl", clock, listeners=[blow_up])
     log.emit("dokunus", id="n_1")
     assert [e["id"] for e in ne.replay(log.path)] == ["n_1"]
 
@@ -135,7 +135,7 @@ def test_a_broken_view_does_not_stop_the_night(tmp_path: Path) -> None:
 
 
 def test_the_summary_counts_what_a_person_would_ask(tmp_path: Path) -> None:
-    log = ne.NightLog(tmp_path / "gece" / "x.jsonl", clock)
+    log = ne.NightLog(tmp_path / "nights" / "x.jsonl", clock)
     log.emit("uyku.basladi", basinc=1.0, tahmini_uyanma="08:30", dongu_sayisi=4)
     log.emit("uyku.dongu", no=1, faz="derin")
     log.emit("tekrar.ileri", oturum="s1", dizi=["n_1"], kenarlar=[["n_1", "n_2", 0.6]])
@@ -153,7 +153,7 @@ def test_the_summary_counts_what_a_person_would_ask(tmp_path: Path) -> None:
 
 def test_nights_are_listed_newest_first(tmp_path: Path) -> None:
     for date in ("2025-06-01", "2025-06-03", "2025-06-02"):
-        ne.NightLog(tmp_path / "gece" / f"{date}.jsonl", clock).emit(
+        ne.NightLog(tmp_path / "nights" / f"{date}.jsonl", clock).emit(
             "dokunus", id="n_1")
     assert ne.nights(tmp_path) == ["2025-06-03", "2025-06-02", "2025-06-01"]
 
@@ -161,5 +161,5 @@ def test_nights_are_listed_newest_first(tmp_path: Path) -> None:
 def test_the_date_from_a_request_cannot_escape_the_folder(tmp_path: Path) -> None:
     """The date reaches this from an HTTP path; it is untrusted input."""
     path = ne.night_path(tmp_path, "../../etc/passwd")
-    assert path.parent == tmp_path / "gece"
+    assert path.parent == tmp_path / "nights"
     assert ".." not in path.name

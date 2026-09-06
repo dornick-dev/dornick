@@ -1,5 +1,21 @@
 # Changelog
 
+## 1.5.3 - 2026-09-06
+
+Found by installing 1.5.2 over a real 1.4 install.
+
+* **Fixed: the workshop was never renamed.** Settings written by 1.4 carry
+  the old default name verbatim, so the "only when default" test never
+  matched; the old default now counts as the default and `atolye` becomes
+  `workshop` with everything inside it.
+* **The last Turkish names on disk go too:** `.dornick/gece` → `nights`,
+  `gece.jsonl` → `nights.jsonl`, `yedek` → `backups`, `degisiklikler` →
+  `changes`, `uyku_borcu.json` → `sleep_debt.json`, `bakim.json` →
+  `maintenance.json` — adopted once, like the rest.
+* **Installer removes the old rig's code** (`egitim\sitepaket`, scripts,
+  model, out — 1.5 GB) on update; `egitimeri` stays for the product to
+  adopt.
+
 ## 1.5.2 - 2026-09-06
 
 One change, everywhere.

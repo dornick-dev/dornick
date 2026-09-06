@@ -221,3 +221,24 @@ def test_only_personal_files_move_when_the_new_rig_is_already_installed(tmp_path
     assert old.is_dir() and not (old / "veri" / "kisisel_durum.json").exists()
     # Running again: nothing left to move.
     assert recognition.migrate_rig() is False
+
+
+def test_a_settings_file_that_names_the_old_default_workshop_still_migrates(tmp_path: Path) -> None:
+    """1.4 wrote "atolye" into settings verbatim; that value is the default."""
+    (tmp_path / "atolye").mkdir()
+    (tmp_path / "atolye" / "note.txt").write_text("keep", encoding="utf-8")
+    box = Sandbox.open(tmp_path, "atolye")
+    assert box.root == tmp_path / "workshop"
+    assert (tmp_path / "workshop" / "note.txt").read_text(encoding="utf-8") == "keep"
+    assert not (tmp_path / "atolye").exists()
+
+
+def test_the_nights_backups_and_changes_folders_are_adopted(tmp_path: Path) -> None:
+    state = tmp_path / ".dornick"
+    for old in ("gece", "yedek", "degisiklikler"):
+        (state / old).mkdir(parents=True)
+        (state / old / "x").write_text("1", encoding="utf-8")
+    Config.load(tmp_path)
+    for new in ("nights", "backups", "changes"):
+        assert (state / new / "x").is_file(), new
+    assert not any((state / old).exists() for old in ("gece", "yedek", "degisiklikler"))

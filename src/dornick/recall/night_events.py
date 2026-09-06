@@ -192,7 +192,7 @@ def _night_name(path: Path) -> str:
 
 def nights(state_dir: Path) -> list[str]:
     """Which nights can be replayed, newest first. Compressed ones included."""
-    folder = Path(state_dir) / "gece"
+    folder = Path(state_dir) / "nights"
     if not folder.is_dir():
         return []
     names = {_night_name(p) for p in folder.glob("*.jsonl")}
@@ -203,7 +203,7 @@ def nights(state_dir: Path) -> list[str]:
 def night_path(state_dir: Path, date: str) -> Path:
     """`.dornick/gece/<date>.jsonl`, with the date treated as untrusted."""
     safe = "".join(ch for ch in date if ch.isalnum() or ch in "-_")
-    return Path(state_dir) / "gece" / f"{safe}.jsonl"
+    return Path(state_dir) / "nights" / f"{safe}.jsonl"
 
 
 def summary(events: Iterable[dict[str, Any]]) -> dict[str, Any]:

@@ -34,7 +34,7 @@ from typing import Any
 
 from .base import ToolContext, ToolRegistry, ToolResult, object_schema
 
-FOLDER = "degisiklikler"
+FOLDER = "changes"
 SNAPSHOT_CEILING = 2 * 1024 * 1024   # files larger than this get no snapshot
 CLEANUP_DAYS = 14
 LIST_CAP = 20

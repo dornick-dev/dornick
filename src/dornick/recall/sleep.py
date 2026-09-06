@@ -607,7 +607,7 @@ def _debt_read(state_dir: Path | None) -> dict[str, Any]:
     if state_dir is None:
         return {}
     try:
-        return json.loads((Path(state_dir) / "uyku_borcu.json").read_text("utf-8"))
+        return json.loads((Path(state_dir) / "sleep_debt.json").read_text("utf-8"))
     except (OSError, ValueError):
         return {}
 
@@ -616,7 +616,7 @@ def _debt_write(state_dir: Path | None, data: dict[str, Any]) -> None:
     if state_dir is None:
         return
     try:
-        path = Path(state_dir) / "uyku_borcu.json"
+        path = Path(state_dir) / "sleep_debt.json"
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
     except OSError:
@@ -686,7 +686,7 @@ def backup(store: Any, state: State, state_dir: Path | None, *,
     if state_dir is None:
         return None
     clock = clock or wall_clock
-    folder = Path(state_dir) / "yedek"
+    folder = Path(state_dir) / "backups"
     target = folder / f"recall-{clock().date().isoformat()}.db"
     store.backup_to(target)
     for old in sorted(folder.glob("recall-*.db"))[:-keep] if keep > 0 else []:
@@ -717,7 +717,7 @@ def compress_old_nights(state: State, state_dir: Path | None, *,
     clock = clock or wall_clock
     cutoff = clock().date() - timedelta(days=older_than_days)
     done: list[Path] = []
-    folder = Path(state_dir) / "gece"
+    folder = Path(state_dir) / "nights"
     for path in sorted(folder.glob("*.jsonl")) if folder.is_dir() else []:
         try:
             day = datetime.fromisoformat(path.stem[:10]).date()
@@ -776,7 +776,7 @@ def _maintenance_read(state_dir: Path | None) -> dict[str, Any]:
     if state_dir is None:
         return {}
     try:
-        data = json.loads((Path(state_dir) / "bakim.json").read_text("utf-8"))
+        data = json.loads((Path(state_dir) / "maintenance.json").read_text("utf-8"))
         return data if isinstance(data, dict) else {}
     except (OSError, ValueError):
         return {}
@@ -786,7 +786,7 @@ def _maintenance_write(state_dir: Path | None, data: dict[str, Any]) -> None:
     if state_dir is None:
         return
     try:
-        path = Path(state_dir) / "bakim.json"
+        path = Path(state_dir) / "maintenance.json"
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
     except OSError:

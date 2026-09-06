@@ -33,6 +33,13 @@ STATE_FILES: dict[str, str] = {
     "tanima.json": "recognition.json",
     "projeler.json": "projects.json",
     "skills_onayli.json": "skills_approved.json",
+    "uyku_borcu.json": "sleep_debt.json",
+    "bakim.json": "maintenance.json",
+    "gece.jsonl": "nights.jsonl",
+    # folders inside .dornick: adopt() renames a folder like a file
+    "gece": "nights",
+    "yedek": "backups",
+    "degisiklikler": "changes",
 }
 
 # Inside the workshop: old folder name -> new folder name.

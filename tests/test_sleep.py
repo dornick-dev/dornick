@@ -320,7 +320,7 @@ def test_the_debt_file_records_what_was_missed(store, sessions, tmp_path,
     _session(sessions, "s1", [node.id], clock)
     Sleeper(store, sessions, clock=clock, watermark=tmp_path / "w.json",
             state_dir=tmp_path).run(max_cycles=1)
-    debt = json.loads((tmp_path / "uyku_borcu.json").read_text("utf-8"))
+    debt = json.loads((tmp_path / "sleep_debt.json").read_text("utf-8"))
     assert "devreden" in debt and "ts" in debt
 
 
@@ -390,7 +390,7 @@ def test_backup_is_taken_at_the_start_of_the_night_before_any_work(
 
     assert edges(store.path) != before, "the night changed the graph"
     copy = Path(report.backup)
-    assert copy == tmp_path / "yedek" / f"recall-{clock().date().isoformat()}.db"
+    assert copy == tmp_path / "backups" / f"recall-{clock().date().isoformat()}.db"
     assert copy.is_file()
     assert edges(copy) == before           # the graph as it was before the night
     assert store.count() == 3
@@ -400,7 +400,7 @@ def test_only_the_last_seven_backups_are_kept(store, tmp_path, clock) -> None:
     for _ in range(sleep.BACKUP_KEEP + 3):
         sleep.backup(store, State.ASLEEP, tmp_path, clock=clock)
         clock.advance(days=1)
-    kept = sorted(p.name for p in (tmp_path / "yedek").glob("recall-*.db"))
+    kept = sorted(p.name for p in (tmp_path / "backups").glob("recall-*.db"))
     assert len(kept) == sleep.BACKUP_KEEP
     assert kept[-1] == f"recall-{(clock().date() - timedelta(days=1)).isoformat()}.db"
     assert f"recall-{MONDAY.date().isoformat()}.db" not in kept   # the oldest went
@@ -419,7 +419,7 @@ def test_every_housekeeping_job_is_refused_outside_deep_sleep(store, tmp_path,
             sleep.clear_caches(lambda: 1, state)
         with pytest.raises(sleep.AwakeError):
             sleep.weekly_housekeeping(store, state, tmp_path, clock=clock)
-    assert not (tmp_path / "yedek").exists()
+    assert not (tmp_path / "backups").exists()
 
 
 def test_old_night_logs_are_compressed_and_still_replay(tmp_path, clock) -> None:
@@ -498,7 +498,7 @@ def test_micro_and_local_sleep_do_none_of_it_except_the_caches(
     report = awake.local_sleep(spy, clock=clock, caches=lambda: dropped.append(1) or 5)
     assert spy.calls == []
     assert report.caches_cleared == 5 and dropped == [1]
-    assert not (tmp_path / "yedek").exists()
+    assert not (tmp_path / "backups").exists()
 
 
 def test_weekly_jobs_run_once_a_week_and_wait_for_the_user_to_be_gone(
@@ -523,5 +523,5 @@ def test_weekly_jobs_run_once_a_week_and_wait_for_the_user_to_be_gone(
 
     quiet = sleep.weekly_housekeeping(store, State.ASLEEP, tmp_path, clock=clock)
     assert quiet["vacuum"] is True
-    ledger = json.loads((tmp_path / "bakim.json").read_text("utf-8"))
+    ledger = json.loads((tmp_path / "maintenance.json").read_text("utf-8"))
     assert ledger["vacuum"].startswith(clock().date().isoformat())
