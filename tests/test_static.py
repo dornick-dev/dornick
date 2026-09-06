@@ -1919,9 +1919,9 @@ def test_the_command_book_covers_the_promised_commands() -> None:
     onu göstermiyor ve "yok galiba" diye ayar sayfasına gidiyor.
     """
     record = dict(_defter())
-    expected = {"yeni", "gecmis", "model", "yetki", "gorevler", "uygulamalar",
-                "artifact", "ayarlar", "sifirla", "durdur", "yardim"}
-    assert expected <= set(record), f"eksik komut: {sorted(beklenen - set(kayit))}"
+    expected = {"new", "history", "model", "mode", "tasks", "apps",
+                "artifact", "settings", "compact", "stop", "help"}
+    assert expected <= set(record), f"eksik komut: {sorted(expected - set(record))}"
     # Her komut ne yaptığını TEK satırda söylüyor.
     for ad, ne in record.items():
         assert ne.strip() and "\n" not in ne, ad
@@ -1944,14 +1944,14 @@ def test_every_command_runs_something_that_exists() -> None:
 
 
 def test_the_sleep_commands_talk_to_the_daemon() -> None:
-    """`/uyu`, `/uyuma`, `/yorgun`: the memory's night from the composer.
+    """`/sleep`, `/nosleep`, `/tired`: the memory's night from the composer.
     Each goes to a route that exists; the status card reads the same
     endpoint as the thalamus ring."""
     record = dict(_defter())
-    assert {"uyu", "uyuma", "yorgun"} <= set(record), sorted(record)
-    assert record["uyu"] == "Geceyi şimdi başlat"
-    assert record["uyuma"] == "Bu gece uyuma (kafein)"
-    assert record["yorgun"] == "Ne kadar yorgunsun?"
+    assert {"sleep", "nosleep", "tired"} <= set(record), sorted(record)
+    assert record["sleep"] == "Geceyi şimdi başlat"
+    assert record["nosleep"] == "Bu gece uyuma (kafein)"
+    assert record["tired"] == "Ne kadar yorgunsun?"
     for route in ('"/api/sleep/now"', '"/api/sleep/caffeine"'):
         assert route in COMMAND_JS and route in SERVER_SRC, route
     assert 'fetch("/api/sleep")' in COMMAND_JS

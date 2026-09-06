@@ -98,6 +98,10 @@ and turns repeated work into automations you can watch run step by step.
 * **External gate (API).** Other agents and tools can talk to dornick
   programmatically: `POST /api/gate` on `127.0.0.1` with
   `{"text": "..."}` returns the full answer. Off by default.
+* **Slash commands.** Type `/` in the composer: `/new`, `/history`, `/model`,
+  `/mode`, `/tasks`, `/apps`, `/artifact`, `/settings`, `/compact`, `/sleep`,
+  `/nosleep`, `/tired`, `/stop`, `/help`. The Turkish names from 1.5.3 and
+  earlier (`/uyu`, `/yardim`…) still work as aliases.
 * **MCP connectors and skills.** Connect Model Context Protocol servers
   from the settings page; dornick also writes and keeps its own skills
   (small scripts it learns to reuse).

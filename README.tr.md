@@ -27,6 +27,10 @@ vLLM). Yerel modelde konuşmaların ve anıların makineden çıkmaz.
   canlı yanar, çıktı aynı ekranda.
 * **Dış kapı.** Başka her harness (Claude Code, OpenCode, betik) tek yerel
   uçtan dornick'ya iş verip tam sonucu alabilir: [docs/gate.md](docs/gate.md).
+* **Eğik çizgi komutları.** Yazı kutusuna `/` yaz: `/new`, `/history`, `/model`,
+  `/mode`, `/tasks`, `/apps`, `/artifact`, `/settings`, `/compact`, `/sleep`,
+  `/nosleep`, `/tired`, `/stop`, `/help`. 1.5.3 ve öncesinin Türkçe adları
+  (`/uyu`, `/yardim`…) takma ad olarak çalışmaya devam eder.
 * **Hafıza MCP sunucusu olarak** başka araçlara da bağlanır.
 
 ## Hızlı başlangıç

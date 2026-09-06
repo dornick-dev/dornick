@@ -10,8 +10,12 @@
 //
 //   * Every row of the command book binds to a path that ALREADY EXISTS.
 //     No invented commands: `/model` opens the model box in the dock,
-//     `/durdur` presses the Stop button. Adding a command is one line in
+//     `/stop` presses the Stop button. Adding a command is one line in
 //     the book.
+//   * The names are English. The Turkish names the book had until 1.5.3
+//     (`/uyu`, `/yardim`…) still work: ONE alias table below maps each old
+//     name to its command, the menu shows the alias while it matches, the
+//     help card lists it.
 //   * A file picked with `@` is not added SECRETLY. It shows as a chip and
 //     the sentence entering the message is the very path written on the
 //     chip: "Kullanıcı şu dosyayı işaret etti: <path>". The user can read
@@ -93,34 +97,46 @@ const Command = (() => {
   // --- command book ----------------------------------------------------
   //
   // The single source of truth. Adding a command is one line here; the
-  // menu, the filter, the keyboard navigation and the `/yardim` listing
+  // menu, the filter, the keyboard navigation and the `/help` listing
   // learn it by themselves.
   const BOOK = [
-    { name: "yeni", what: "Yeni konuşma başlat", run: () => press("hist-new") },
-    { name: "gecmis", what: "Geçmiş konuşmalar", run: () => press("history") },
+    { name: "new", what: "Yeni konuşma başlat", run: () => press("hist-new") },
+    { name: "history", what: "Geçmiş konuşmalar", run: () => press("history") },
     { name: "model", what: "Model seç — katalogda ara", run: () => press("dock-model") },
-    { name: "yetki", what: "Yetki kipini değiştir", run: () => press("dock-mode") },
-    { name: "gorevler", what: "Koşan görevler — arka plan işleri ve yardımcılar",
+    { name: "mode", what: "Yetki kipini değiştir", run: () => press("dock-mode") },
+    { name: "tasks", what: "Koşan görevler — arka plan işleri ve yardımcılar",
       run: () => {
         if (window.JobsPanel && JobsPanel.openLive) JobsPanel.openLive();
         else press("jobs");
       } },
-    { name: "uygulamalar", what: "Atölyedeki uygulamalar", run: () => press("apps") },
+    { name: "apps", what: "Atölyedeki uygulamalar", run: () => press("apps") },
     { name: "artifact", what: "Yayınlanan artifact'lar — Uygulamalar panelinde",
       run: () => press("apps") },
-    { name: "ayarlar", what: "Ayar sayfasını aç", run: () => press("gear") },
-    { name: "sifirla", what: "Bağlamı sıkıştır — konuşma kesilmez", run: compactContext },
+    { name: "settings", what: "Ayar sayfasını aç", run: () => press("gear") },
+    { name: "compact", what: "Bağlamı sıkıştır — konuşma kesilmez", run: compactContext },
     // The memory's night (recall/daemon.py): start it, hold it off, or ask
     // how heavy the pressure is. All three go to the same daemon the
     // thalamus ring reads.
-    { name: "uyu", what: "Geceyi şimdi başlat", run: sleepNow },
-    { name: "uyuma", what: "Bu gece uyuma (kafein)", run: caffeine },
-    { name: "yorgun", what: "Ne kadar yorgunsun?", run: howTired },
+    { name: "sleep", what: "Geceyi şimdi başlat", run: sleepNow },
+    { name: "nosleep", what: "Bu gece uyuma (kafein)", run: caffeine },
+    { name: "tired", what: "Ne kadar yorgunsun?", run: howTired },
     // Stopping goes through its own button: opening a second interrupt
     // path means one changes some day and the other stays behind.
-    { name: "durdur", what: "Koşan turu durdur", run: () => press("stop") },
-    { name: "yardim", what: "Komutlar ve kısayollar", run: showHelp },
+    { name: "stop", what: "Koşan turu durdur", run: () => press("stop") },
+    { name: "help", what: "Komutlar ve kısayollar", run: showHelp },
   ];
+
+  // The old (Turkish) names, 1.5.3 and earlier → the command they mean.
+  // User-facing on purpose: a hand that learnt `/uyu` keeps working. This
+  // is the ONLY place an old name lives; nothing else in the book knows
+  // about it.
+  const ALIASES = {
+    yeni: "new", gecmis: "history", yetki: "mode", gorevler: "tasks",
+    uygulamalar: "apps", ayarlar: "settings", sifirla: "compact",
+    uyu: "sleep", uyuma: "nosleep", yorgun: "tired", durdur: "stop",
+    yardim: "help",
+  };
+  const aliasesOf = (name) => Object.keys(ALIASES).filter((old) => ALIASES[old] === name);
 
   async function compactContext() {
     const answer = await post("/api/compact");
@@ -129,7 +145,7 @@ const Command = (() => {
     }
   }
 
-  // `/uyu`: the daemon puts the switch to ASLEEP and runs the night on its
+  // `/sleep`: the daemon puts the switch to ASLEEP and runs the night on its
   // own thread. The next message wakes it — the command does not lock the
   // user out of the chat.
   async function sleepNow() {
@@ -139,7 +155,7 @@ const Command = (() => {
     else line("alert", answer.error || t("Uyutulamadı."));
   }
 
-  // `/uyuma`: caffeine — the threshold goes out of reach for four hours.
+  // `/nosleep`: caffeine — the threshold goes out of reach for four hours.
   async function caffeine() {
     const answer = await post("/api/sleep/caffeine");
     if (!answer) { line("alert", t("Uyku bekçisine ulaşılamadı.")); return; }
@@ -177,8 +193,9 @@ const Command = (() => {
     }
   }
 
-  // `/yardim`: a card drawn from the book itself. A second, hand-kept list
-  // would drift away from the book one day.
+  // `/help`: a card drawn from the book itself. A second, hand-kept list
+  // would drift away from the book one day. The old name rides along in
+  // brackets so the hand that learnt it finds the new one.
   function showHelp() {
     // Its own class: the `system` row is styled for a one-line note
     // (nowrap + ellipsis) and makes a multi-line card invisible.
@@ -187,7 +204,8 @@ const Command = (() => {
     card.append(el("div", "help-head", t("Komutlar")));
     for (const k of BOOK) {
       const row = el("div", "help-row");
-      row.append(el("b", null, "/" + k.name));
+      const old = aliasesOf(k.name);
+      row.append(el("b", null, "/" + k.name + (old.length ? " (/" + old.join(", /") + ")" : "")));
       row.append(el("span", null, t(k.what)));
       card.append(row);
     }
@@ -202,7 +220,7 @@ const Command = (() => {
 
   // --- state machine ---------------------------------------------------
   //
-  // mode: "" (closed) · "komut" (command) · "dosya" (file)
+  // mode: "" (closed) · "command" · "file"
   // at:  position of the trigger character in the text — on selection the
   //      `@query` or `/query` fragment is deleted from exactly here.
   const state = { mode: "", query: "", at: -1, items: [], selected: 0, title: "" };
@@ -218,9 +236,9 @@ const Command = (() => {
     const caret = input.selectionStart;
     const before = input.value.slice(0, caret);
     let m = COMMAND_PATTERN.exec(before);
-    if (m) return openPop("komut", m[1], caret - m[1].length - 1);
+    if (m) return openPop("command", m[1], caret - m[1].length - 1);
     m = FILE_PATTERN.exec(before);
-    if (m) return openPop("dosya", m[1], caret - m[1].length - 1);
+    if (m) return openPop("file", m[1], caret - m[1].length - 1);
     closePop();
   }
 
@@ -230,7 +248,7 @@ const Command = (() => {
     state.query = query;
     state.at = at;
     if (modeChanged) state.selected = 0;
-    if (mode === "komut") drawCommands();
+    if (mode === "command") drawCommands();
     else searchFiles();
   }
 
@@ -271,7 +289,7 @@ const Command = (() => {
     const mode = state.mode;
     trimTrigger();
     closePop();
-    if (mode === "komut") item.run();
+    if (mode === "command") item.run();
     else addMentionPath(item.path);
     input.focus();
   }
@@ -290,7 +308,10 @@ const Command = (() => {
 
   function drawCommands() {
     const want = state.query.toLowerCase();
-    state.items = BOOK.filter(k => !want || k.name.includes(want));
+    // A query matches the command by its own name or by an old name; the
+    // row then shows which name matched, so `/uyu` reads `/uyu → /sleep`.
+    state.items = BOOK.filter(k => !want || k.name.includes(want)
+      || aliasesOf(k.name).some((old) => old.includes(want)));
     if (state.selected >= state.items.length) state.selected = 0;
     draw(t("Komutlar"));
   }
@@ -304,17 +325,28 @@ const Command = (() => {
     if (state.title) pop.append(el("div", "pop-head", state.title));
     if (!state.items.length) {
       pop.append(el("div", "pop-note",
-        state.mode === "komut" ? t("Eşleşen komut yok.") : t("Eşleşen dosya yok.")));
+        state.mode === "command" ? t("Eşleşen komut yok.") : t("Eşleşen dosya yok.")));
     }
     state.items.forEach((item, i) => {
       const row = el("div", "pop-row" + (i === state.selected ? " sel" : ""));
-      row.append(el("b", null, state.mode === "komut" ? "/" + item.name : item.name));
-      row.append(el("span", null, state.mode === "komut" ? t(item.what) : item.path));
+      row.append(el("b", null, state.mode === "command" ? "/" + commandLabel(item) : item.name));
+      row.append(el("span", null, state.mode === "command" ? t(item.what) : item.path));
       // Mouse selection goes the same way: no two separate selection logics.
       row.addEventListener("mousedown", (ev) => { ev.preventDefault(); select(i); });
       pop.append(row);
     });
     place();
+  }
+
+  // The label of a command row: its name, or `old → name` while the query
+  // matches only an old name (the user learns the new one in passing).
+  function commandLabel(item) {
+    const want = state.query.toLowerCase();
+    if (want && !item.name.includes(want)) {
+      const old = aliasesOf(item.name).find((o) => o.includes(want));
+      if (old) return old + " → /" + item.name;
+    }
+    return item.name;
   }
 
   function place() {
@@ -343,7 +375,7 @@ const Command = (() => {
         const answer = await (await fetch("/api/files/search?q=" + encodeURIComponent(q))).json();
         found = (answer && answer.files) || [];
       } catch { found = []; }
-      if (mine !== token || state.mode !== "dosya") return;
+      if (mine !== token || state.mode !== "file") return;
       state.items = found;
       if (state.selected >= state.items.length) state.selected = 0;
       draw(t("Dosya ara"));
@@ -404,5 +436,5 @@ const Command = (() => {
   input.addEventListener("blur", () => setTimeout(closePop, 120));
   document.addEventListener("keydown", onKey, true);
 
-  return { BOOK, state, openPop, closePop, onKey, select, isOpen, addHint, hints: () => mentions.slice() };
+  return { BOOK, ALIASES, state, openPop, closePop, onKey, select, isOpen, addHint, hints: () => mentions.slice() };
 })();
