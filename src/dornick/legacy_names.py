@@ -12,7 +12,9 @@ Names that are NOT here on purpose (the reasons are in the changelog):
   here would break the rig's hot deploy.
 * the training rig's own layout (`veri/`, `betikler/`, `ayarlar.py`) — a
   separate repository owns those names.
-* keys inside JSON/JSONL files, SQLite columns and SSE events — the wire.
+* keys and values INSIDE the files (a task state, a temperament axis, a
+  night event) — those live in `legacy_values`, which upgrades a record as
+  it is read.
 """
 
 from __future__ import annotations

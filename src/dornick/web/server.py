@@ -2199,7 +2199,7 @@ class _Handler(BaseHTTPRequestHandler):
             if action == "approve":
                 plan = plan_store.update(
                     config.state_dir, str(body.get("id") or ""),
-                    status="onaylandi")
+                    status="approved")
                 if plan is None:
                     self._json({"ok": False, "error": "plan yok"})
                     return

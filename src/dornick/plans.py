@@ -114,7 +114,8 @@ def get(state_dir: Path, plan_id: str) -> Plan | None:
         id=str(raw.get("id") or plan_id),
         title=str(raw.get("title") or "Plan"),
         status=legacy_values.state(raw.get("status") or "waiting"),
-        steps=list(raw.get("steps") or []),
+        steps=[{**s, "status": legacy_values.state(s.get("status") or "waiting")}
+               if isinstance(s, dict) else s for s in (raw.get("steps") or [])],
         created=str(raw.get("created") or ""),
         updated=str(raw.get("updated") or ""),
     )

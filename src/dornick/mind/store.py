@@ -725,13 +725,15 @@ class Mind:
     # cheap, but not a name the user chose. Someone looking for "where was
     # that CMS job?" is looking for the name they gave it.
     #
-    # Name and tags live in `_oturumlar.json`, in the SAME pattern as
+    # Name and tags live in `_sessions.json`, in the SAME pattern as
     # projects: a separate mapping file, never touching the raw logs. The log
     # must be immutable — memories are produced from it, and a hand-edited
     # name would mean rewriting history.
 
     def _meta_path(self) -> Path:
-        return self.sessions_dir / "_oturumlar.json"
+        path = self.sessions_dir / "_sessions.json"
+        legacy_names.adopt(self.sessions_dir / "_oturumlar.json", path)   # pre-1.5.5 name
+        return path
 
     def session_meta(self) -> dict[str, dict[str, Any]]:
         """Session → {name, tags, path, model, provider}.

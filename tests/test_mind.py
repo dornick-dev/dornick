@@ -523,7 +523,7 @@ def test_binding_a_folder_also_files_the_chat_under_that_project(
 def test_a_corrupt_meta_file_does_not_break_the_panel(tmp_path: Path, mind: Mind) -> None:
     """A file corrupted by hand editing must not shut down the history panel."""
     (tmp_path / "sessions").mkdir(parents=True, exist_ok=True)
-    (tmp_path / "sessions" / "_oturumlar.json").write_text("{bozuk", encoding="utf-8")
+    (tmp_path / "sessions" / "_sessions.json").write_text("{bozuk", encoding="utf-8")
     assert mind.session_meta() == {}
 
 

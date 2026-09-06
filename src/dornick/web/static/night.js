@@ -122,7 +122,7 @@ const Night = (() => {
   function progress() {
     const r = regions();
     if (!r || !r.nightProgress) return;
-    const known = !current.live && current.summary ? Number(current.summary.tekrar) || 0 : 0;
+    const known = !current.live && current.summary ? Number(current.summary.replays) || 0 : 0;
     r.nightProgress(replayed, known);
   }
 

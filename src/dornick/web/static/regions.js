@@ -453,7 +453,7 @@ const Regions = (() => {
       const data = await (await fetch("/api/nights/" + encodeURIComponent(date))).json();
       if (!data || !data.summary) return;
       if (state.lastNight && state.lastNight.report) return;   // the daemon answered meanwhile
-      state.lastNight = { date, replayed: Number(data.summary.tekrar) || 0, lessons: null,
+      state.lastNight = { date, replayed: Number(data.summary.replays) || 0, lessons: null,
                           report: null, summary: data.summary };
       renderSimple();
     } catch { /* offline */ }
