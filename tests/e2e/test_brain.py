@@ -77,9 +77,9 @@ def page(browser, server: MindServer):
     # The brain as a PANEL (not ambient behind the chat): the region strips
     # and the night sheet live in the panel.
     context.add_init_script(
-        'localStorage.setItem("dornick-brain-ambient", "kapali");'
-        'localStorage.setItem("dornick-mind", "acik");'
-        'localStorage.setItem("dornick-dil", "tr");')
+        'localStorage.setItem("dornick-brain-ambient", "off");'
+        'localStorage.setItem("dornick-mind", "on");'
+        'localStorage.setItem("dornick-language", "tr");')
     pg = context.new_page()
     errors: list[str] = []
     pg.on("pageerror", lambda err: errors.append(str(err)))
@@ -124,17 +124,17 @@ def small_night() -> tuple[list[dict], list[str]]:
     clock = ticking()
     b = lambda kind, **f: ne.build(kind, clock, **f)   # noqa: E731
     events = [
-        b("uyku.basladi", basinc=0.7, tahmini_uyanma="08:30", dongu_sayisi=2),
-        b("uyku.dongu", no=1, faz="derin"),
-        b("tekrar.ileri", oturum="s1", dizi=["n_a", "n_b", "n_c"],
-          kenarlar=[["n_a", "n_b", 0.6], ["n_b", "n_c", 0.4]]),
-        b("tekrar.geri", oturum="s1", sonuc="basari",
-          paylar={"n_a": 0.5, "n_b": 0.3, "n_c": 0.2}),
-        b("dikis", a="n_a", b="n_c", uzerinden="n_b", oturumlar=["s1", "s2"]),
-        b("dokunus", id="n_d"),
-        b("uyku.dongu", no=2, faz="rem"),
-        b("damitma", kaynaklar=["n_a", "n_d"], yeni="n_new"),
-        b("uyku.bitti", sebep="basinc", rapor={"session_count": 1, "new_edges": 2,
+        b("sleep.started", pressure=0.7, wake_estimate="08:30", cycle_count=2),
+        b("sleep.cycle", no=1, phase="deep"),
+        b("replay.forward", session="s1", sequence=["n_a", "n_b", "n_c"],
+          edges=[["n_a", "n_b", 0.6], ["n_b", "n_c", 0.4]]),
+        b("replay.reverse", session="s1", outcome="success",
+          shares={"n_a": 0.5, "n_b": 0.3, "n_c": 0.2}),
+        b("stitch", a="n_a", b="n_c", via="n_b", sessions=["s1", "s2"]),
+        b("touch", id="n_d"),
+        b("sleep.cycle", no=2, phase="rem"),
+        b("distil", sources=["n_a", "n_d"], new="n_new"),
+        b("sleep.ended", reason="pressure", report={"session_count": 1, "new_edges": 2,
                                                 "lessons_written": 1, "contradictions": 0}),
     ]
     expected = (["n_a", "n_b", "n_c"] + ["n_c", "n_b", "n_a"] + ["n_b"] + ["n_d"]
@@ -147,13 +147,13 @@ def cut_night() -> list[dict]:
     clock = ticking()
     b = lambda kind, **f: ne.build(kind, clock, **f)   # noqa: E731
     return [
-        b("uyku.basladi", basinc=0.9, tahmini_uyanma="07:45", dongu_sayisi=3),
-        b("uyku.dongu", no=1, faz="derin"),
-        b("tekrar.ileri", oturum="s1", dizi=["k_1", "k_2", "k_3"], kenarlar=[]),
-        b("uyku.uyandi", sebep="kullanici", dongu=1, tamamlanan=12, devreden=18,
-          borc={"faz": "rem"}),
-        b("tekrar.ileri", oturum="s2", dizi=["late_1", "late_2"], kenarlar=[]),
-        b("dokunus", id="late_3"),
+        b("sleep.started", pressure=0.9, wake_estimate="07:45", cycle_count=3),
+        b("sleep.cycle", no=1, phase="deep"),
+        b("replay.forward", session="s1", sequence=["k_1", "k_2", "k_3"], edges=[]),
+        b("sleep.woke", reason="user", cycle=1, completed=12, carried=18,
+          debt={"phase": "rem"}),
+        b("replay.forward", session="s2", sequence=["late_1", "late_2"], edges=[]),
+        b("touch", id="late_3"),
     ]
 
 
@@ -161,24 +161,24 @@ def big_night(sessions: int = 200) -> list[dict]:
     """≈5k events: the roadmap's 200-session night."""
     clock = ticking()
     b = lambda kind, **f: ne.build(kind, clock, **f)   # noqa: E731
-    out = [b("uyku.basladi", basinc=1.0, tahmini_uyanma="08:00", dongu_sayisi=6)]
+    out = [b("sleep.started", pressure=1.0, wake_estimate="08:00", cycle_count=6)]
     for cycle in range(1, 7):
-        out.append(b("uyku.dongu", no=cycle, faz="derin" if cycle < 4 else "rem"))
+        out.append(b("sleep.cycle", no=cycle, phase="deep" if cycle < 4 else "rem"))
         for s in range(sessions // 6 + 1):
             sid = f"s{cycle}_{s}"
             chain = [f"{sid}_n{i}" for i in range(8)]
-            out.append(b("tekrar.ileri", oturum=sid, dizi=chain,
-                         kenarlar=[[chain[i], chain[i + 1], 0.5] for i in range(7)]))
-            out.append(b("tekrar.geri", oturum=sid, sonuc="basari" if s % 3 else "basarisiz",
-                         paylar={n: 1 / 8 for n in chain}))
+            out.append(b("replay.forward", session=sid, sequence=chain,
+                         edges=[[chain[i], chain[i + 1], 0.5] for i in range(7)]))
+            out.append(b("replay.reverse", session=sid, outcome="success" if s % 3 else "failed",
+                         shares={n: 1 / 8 for n in chain}))
             for k in range(7):
-                out.append(b("dikis", a=chain[0], b=chain[7], uzerinden=chain[k + 1],
-                             oturumlar=[sid]))
+                out.append(b("stitch", a=chain[0], b=chain[7], via=chain[k + 1],
+                             sessions=[sid]))
             for k in range(15):
-                out.append(b("dokunus", id=f"{sid}_t{k}"))
+                out.append(b("touch", id=f"{sid}_t{k}"))
             if cycle >= 4:
-                out.append(b("damitma", kaynaklar=chain[:3], yeni=f"{sid}_d"))
-    out.append(b("uyku.bitti", sebep="basinc", rapor={"session_count": sessions}))
+                out.append(b("distil", sources=chain[:3], new=f"{sid}_d"))
+    out.append(b("sleep.ended", reason="pressure", report={"session_count": sessions}))
     return out
 
 
@@ -276,7 +276,7 @@ def test_the_simple_block_is_the_default_and_follows_the_night(page, config: Con
 
     open_details(page)
     assert page.is_visible("#regions-bottom")
-    assert page.evaluate("localStorage.getItem('dornick-beyin-ayrinti')") == "acik"
+    assert page.evaluate("localStorage.getItem('dornick-brain-details')") == "on"
     assert page.text_content("#thalamus-wake").startswith("Uyanıklık %")
     assert page.text_content("#thalamus-pressure").startswith("Basınç ")
     assert page.text_content("#amygdala-note") == "Sürpriz: sakin"
