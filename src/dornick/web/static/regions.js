@@ -61,7 +61,7 @@ Lang.add({
   "Uyuyor: günün konuşmalarını tekrar ediyor": "Asleep: replaying the day's conversations",
   "Uyanıyor.": "Waking up.", "Kestiriyor: kısa bir mola.": "Napping: a short break.",
   "Dün gece": "Last night", "gecesi": "night", "konuşma tekrar edildi": "conversations replayed",
-  "ders çıkardı": "lessons drawn", "Uyku ihtiyacı": "Sleep need",
+  "ders çıkardı": "lessons drawn", "Toparlama ihtiyacı": "Tidy-up need",
   "Ayrıntılar ▸": "Details ▸", "Ayrıntıları gizle ▾": "Hide details ▾",
   "Uyanıklık": "Wakefulness", "Basınç": "Pressure", "Sürpriz": "Surprise",
   "sakin": "calm", "orta": "medium", "yüksek": "high",

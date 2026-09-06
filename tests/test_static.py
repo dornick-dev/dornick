@@ -2824,7 +2824,7 @@ def test_the_brain_panel_is_simple_by_default_and_detailed_on_demand() -> None:
     for shape in ("bs-awake", "bs-sleepy", "bs-asleep", "bs-waking"):
         assert f'class="{shape}"' in simple, shape
     assert 'id="brain-simple-line"' in simple and "Uyanık. Sen yokken uyuyup öğrendiklerini pekiştirir." in simple
-    assert "Uyku ihtiyacı" in simple and 'role="progressbar"' in simple
+    assert "Toparlama ihtiyacı" in simple and 'role="progressbar"' in simple
     assert 'id="brain-simple-report"' in simple and "Sabah raporu" in simple
     assert 'id="brain-details-toggle"' in simple and "Ayrıntılar ▸" in simple
     # Nothing numeric but the percent: no decimals, no metric names, no event
