@@ -1,5 +1,129 @@
 # Changelog
 
+## 1.5.4 - 2026-09-06
+
+The last Turkish surface goes: the HTTP API and the chat's slash commands.
+Everything below changed **outright** — the browser UI and the server ship
+together, so the old routes answer 404. Only the gate keeps aliases (it is
+the one endpoint other people's scripts memorise). If a bookmark, script
+or curl of yours calls an old route, map it with the table.
+
+**Routes (old → new)**
+
+| old | new |
+|---|---|
+| `POST /api/artifact/indir` | `POST /api/artifact/download` |
+| `GET /api/bolgeler` | `GET /api/regions` |
+| `POST /api/butce` | `POST /api/budget` |
+| `GET /api/degisiklikler` | `GET /api/changes` |
+| `GET /api/degisiklikler/fark?sira=` | `GET /api/changes/diff?seq=` |
+| `POST /api/degisiklikler/geri` | `POST /api/changes/undo` |
+| `GET /api/dil` | `GET /api/language` |
+| `POST /api/disari-ac` | `POST /api/open-external` |
+| `GET /api/gece`, `GET /api/gece/<date>?sonra=` | `GET /api/nights`, `GET /api/nights/<date>?after=` |
+| `GET /api/gorevler` | `GET /api/tasks` |
+| `POST /api/gorevler/devam` | `POST /api/tasks/resume` |
+| `GET /api/gorevler/dokum?oturum=` | `GET /api/tasks/transcript?session=` |
+| `POST /api/gorevler/durdur` | `POST /api/tasks/stop` |
+| `POST /api/gorevler/iptal` | `POST /api/tasks/cancel` |
+| `GET /api/gorevler/rapor` | `GET /api/tasks/report` |
+| `GET /api/gozat?yol=` | `GET /api/browse?path=` |
+| `POST /api/guncelle` | `POST /api/update` |
+| `GET /api/kimlik` | `GET /api/identity` |
+| `POST /api/klasor/olustur` | `POST /api/folder/create` |
+| `GET /api/mizac` | `GET /api/temperament` |
+| `GET /api/sessions?ara=` | `GET /api/sessions?q=` |
+| `POST /api/surum` | `POST /api/version` |
+| `GET /api/tanima`, `POST /api/tanima` | `GET /api/recognition`, `POST /api/recognition` |
+| `GET /api/transfer/export?parcalar=` | `GET /api/transfer/export?parts=` |
+| `POST /api/transfer/import?parcalar=` | `POST /api/transfer/import?parts=` |
+| `GET /api/uyku` | `GET /api/sleep` |
+| `POST /api/uyku/uyu` | `POST /api/sleep/now` |
+| `POST /api/uyku/kafein` | `POST /api/sleep/caffeine` |
+| `/gorev-rapor/<id>/` (report page) | `/task-report/<id>/` |
+
+**Request and response keys** went with the routes. The main ones:
+sleep `basinc/esik/borc/sicak_oran/durum/acik/kosuyor/kafein/dinlenmis/
+ritim/sonraki_gece/son_gece` → `pressure/threshold/debt/hot_share/status/
+enabled/running/caffeine/rested_until/rhythm/next_night/last_night`;
+nights `geceler/olaylar/ozet/tarih/toplam` → `nights/events/summary/date/
+total`; identity `cumleler/metin/kanit/kelime/sinir` → `sentences/text/
+evidence/words/limit`; temperament `taban/hedef/ulasilan/kaldirac/eksenler`
+→ `baseline/target/reached/leverage/axes`; regions `soguk/sicak/toplam/
+dunya/hedefler/yama` → `cold/hot/total/world/goals/patch`; recognition
+`kosuyor/hazir/son/simdi/sebep` → `running/ready/last/now/reason`; tasks
+`gorevler/kosan` and rows `ad/tur/durum/basladi/bitti/ozet/oturum/arka_plan/
+durdurulabilir/surdurulebilir/son_arac/son_hedef/komut` → `tasks/running`,
+`name/kind/state/started/ended/summary/session/background/stoppable/
+resumable/last_tool/last_target/command`; transcript `adimlar` steps
+`tur/ad/hedef/hata/metin` → `steps`, `kind/name/target/error/text`; report
+`metin` → `text`; changes `son/kayitlar` and records `sira/dosya/ad/arac/
+zaman/yoktu/atlandi/gerialinabilir` → `last/records`, `seq/file/name/tool/
+time/missing/skipped/undoable`; diff `eski/yeni/metin` → `old/new/text`;
+undo body `sira/siralar/dosya` → `seq/seqs/file`, reply `yapilan` → `done`;
+browse `yol/ust/klasorler/dosya/engel/uyari/tur/hata` → `path/parent/
+folders/files/blocked/warning/kind/error`; folder create `ust/ad` → `parent/
+name`, reply `yol/uyari/hata` → `path/warning/error`; version `mevcut/yeni/
+indirme/boyut/ad/hata` → `current/new/download/size/name/error`; reset
+`hedef: anilar|tanima` → `target: memories|recognition`, reply `silinen/
+yedek` → `deleted/backup`; transfer parts `anilar/tanima/projeler/ayarlar`
+→ `memories/recognition/projects/settings` (old bundles still import);
+session meta `ad/etiketler` → `name/tags`; language `dil` → `language`;
+state snapshot `tahmin/kirilim/fiyat/kullanim{tur,oturum}/butce/surum` →
+`estimated/breakdown/price/usage{turn,session}/budget/version`; budget
+reply `butce/harcanan` → `budget/spent`; session transcript `dusunme/
+adimlar/ozet` → `thinking/steps/summary`; goals `eski` → `stale`.
+
+**SSE events**: `gece{olay}` → `night{event}`, `tanima{state: acik|kapali|
+basladi|bitti}` → `recognition{state: on|off|started|finished}`,
+`karakter{olay}` → `character{event}`, `guncelleme{asama,yuzde,indirilen,
+toplam,yeni,hata}` → `update{stage: downloading|installing|opened|error,
+percent,downloaded,total,new,error}`, `fiyat{fiyat}` → `price{price}`,
+`bekleme{kip,deneme,toplam,saniye,detay}` → `waiting{mode: retry|parked|
+error|done|cancelled, attempt,total,seconds,detail}` (same fields on
+`child_wait`), `araya` → `interject`, `usage{tur,oturum,fiyat,kirilim}` →
+`usage{turn,session,price,breakdown}`, `child_tool{hedef}` → `{target}`,
+`child_end{ozet}` → `{summary}`, `mind_write{surpriz|guc}` → `{surprise|strength}`.
+
+**The gate** (`POST /api/gate`) answers with `answer/tools/files/queued/
+elapsed_s/session` and still sends `yanit/araclar/dosyalar/kuyrukta_bekledi/
+gecen_sn/oturum` beside them; `bekle_sn` is still read as an alias of
+`wait_s`. Deprecated, documented in `docs/gate.md`.
+
+**Slash commands** are English; the old names keep working through one
+alias table and the `/help` card shows both:
+
+| old | new |
+|---|---|
+| `/yeni` | `/new` |
+| `/gecmis` | `/history` |
+| `/yetki` | `/mode` |
+| `/gorevler` | `/tasks` |
+| `/uygulamalar` | `/apps` |
+| `/ayarlar` | `/settings` |
+| `/sifirla` | `/compact` |
+| `/uyu` | `/sleep` |
+| `/uyuma` | `/nosleep` |
+| `/yorgun` | `/tired` |
+| `/durdur` | `/stop` |
+| `/yardim` | `/help` |
+
+`/model` and `/artifact` were already English.
+
+**Also fixed:** `POST /api/butce` called a bridge method that did not exist,
+so the budget cap could never be set from the chat; `/api/budget` reaches it.
+
+**Left as it was, on purpose** (on disk, or a value the UI compares
+against): the night-event kinds and their inner fields (`uyku.basladi`,
+`basinc`, `sebep`, `rapor`…), the sleep journal, the change ledger's own
+record keys, the session-meta files, the temperament axis keys (`yenilik`,
+`sonuc`…), `setup.json`'s `dil`, the task-run usage counters
+(`girdi/cikti/cagri`), the state values `kosuyor/bitti/yetim/hata` and
+`uyanik/uykulu/uyuyor/uyaniyor`, the workflow-run status keys, the context
+breakdown ids (`sistem`, `arac`… — CSS class names), the artifact meta
+field `surum`. New regression tests (`tests/test_wire_names.py`) fail on a
+Turkish route segment, SSE event name or slash command from now on.
+
 ## 1.5.3 - 2026-09-06
 
 Found by installing 1.5.2 over a real 1.4 install.
