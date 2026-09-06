@@ -242,7 +242,7 @@ def test_install_language_is_served_from_setup_json(tmp_path: Path, mind: Mind) 
         (tmp_path / "kurulum.json").write_text('{"dil": "en"}', encoding="utf-8")
         assert fetch() == {"language": "en"}
         # The new name takes precedence.
-        (tmp_path / "setup.json").write_text('{"dil": "tr"}', encoding="utf-8")
+        (tmp_path / "setup.json").write_text('{"language": "tr"}', encoding="utf-8")
         assert fetch() == {"language": "tr"}
         # A broken new file must not bring the server down; falls back to the old name.
         (tmp_path / "setup.json").write_text("{bozuk", encoding="utf-8")
@@ -674,7 +674,7 @@ def test_the_meta_endpoint_refuses_a_path_shaped_id(tmp_path: Path, mind: Mind) 
 
 def test_archiving_a_session_drops_it_from_the_listing(
         tmp_path: Path, mind: Mind) -> None:
-    """Right-click Archive: the log moves to .arsiv, the list no longer sees
+    """Right-click Archive: the log moves to .archive, the list no longer sees
     it. The id turns into a file name — no escaping with `..`."""
     _write_session(mind.sessions_dir, "20260101T000000Z",
                    [("user", "pompa bakımı"), ("assistant", "tamam")])
@@ -693,7 +693,7 @@ def test_archiving_a_session_drops_it_from_the_listing(
         with urllib.request.urlopen(server.url + "api/sessions", timeout=5) as response:
             ids = [s["id"] for s in json.loads(response.read().decode("utf-8"))["sessions"]]
         assert "20260101T000000Z" not in ids
-        assert (mind.sessions_dir / ".arsiv" / "20260101T000000Z.jsonl").is_file()
+        assert (mind.sessions_dir / ".archive" / "20260101T000000Z.jsonl").is_file()
 
         bad = urllib.request.Request(
             server.url + "api/session/archive",
@@ -1188,10 +1188,10 @@ def test_the_temperament_endpoint_serves_baseline_and_target(
     server.start()
     try:
         got = _get_json(server, "/api/temperament")
-        assert got["baseline"]["yenilik"] == 0.3 and got["target"]["yenilik"] == 0.8
+        assert got["baseline"]["novelty"] == 0.3 and got["target"]["novelty"] == 0.8
         assert got["model_id"] == "model-x"
         assert got["reached"] is None
-        assert got["axes"] == ["yenilik", "sonuc", "sosyal", "sebat", "temkin"]
+        assert got["axes"] == ["novelty", "outcome", "social", "persistence", "caution"]
         assert got["leverage"]["novelty"] > 1
     finally:
         server.stop()
@@ -1236,15 +1236,15 @@ def test_a_night_replay_can_be_asked_for_what_came_after(tmp_path: Path, mind: M
     config.ensure_dirs()
     clock = lambda: datetime(2025, 6, 2, 23, 0, tzinfo=timezone.utc)  # noqa: E731
     night = ne.NightLog(ne.night_path(config.state_dir, "2025-06-02"), clock)
-    night.emit("uyku.basladi", basinc=0.5, tahmini_uyanma="08:30", dongu_sayisi=2)
-    night.emit("dokunus", id="n_1")
-    night.emit("dokunus", id="n_2")
+    night.emit("sleep.started", pressure=0.5, wake_estimate="08:30", cycle_count=2)
+    night.emit("touch", id="n_1")
+    night.emit("touch", id="n_2")
     log = EventLog(tmp_path / "s.jsonl")
     server = MindServer(mind, log, port=0, config=config)
     server.start()
     try:
         whole = _get_json(server, "/api/nights/2025-06-02")
-        assert [e["tur"] for e in whole["events"]] == ["uyku.basladi", "dokunus", "dokunus"]
+        assert [e["kind"] for e in whole["events"]] == ["sleep.started", "touch", "touch"]
         assert whole["total"] == 3
         tail = _get_json(server, "/api/nights/2025-06-02?after=2")
         assert [e["id"] for e in tail["events"]] == ["n_2"]

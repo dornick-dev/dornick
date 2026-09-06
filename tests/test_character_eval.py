@@ -95,13 +95,13 @@ def test_context_variants_do_not_change_the_decision(harness, decisions) -> None
 def test_the_validator_catches_a_broken_set(harness) -> None:
     data, _rows = harness.load_decisions()
     broken = json.loads(json.dumps(data))
-    broken["kararlar"][0]["id"] = broken["kararlar"][1]["id"]
-    broken["kararlar"][2]["yuksek"] = "yok böyle bir seçenek"
-    broken["kararlar"][3]["baglamlar"] = ["a", "a", "b"]
-    del broken["kararlar"][4]
+    broken["decisions"][0]["id"] = broken["decisions"][1]["id"]
+    broken["decisions"][2]["high"] = "yok böyle bir seçenek"
+    broken["decisions"][3]["contexts"] = ["a", "a", "b"]
+    del broken["decisions"][4]
     problems = harness.validate_decisions(broken)
     assert any("tekil" in p for p in problems)
-    assert any("yuksek" in p for p in problems)
+    assert any("high" in p for p in problems)
     assert any("bağlam" in p for p in problems)
     assert any("30 karar" in p for p in problems)
 
@@ -235,7 +235,7 @@ def test_the_control_arm_pins_target_to_the_measured_baseline(harness, decisions
     # What was written to disk says the same thing.
     for state in (tmp_path / "durum").glob("*/kaldiracsiz/temperament.json"):
         saved = json.loads(state.read_text(encoding="utf-8"))
-        assert saved["hedef"] == saved["taban"]
+        assert saved["target"] == saved["baseline"]
     assert result["metrikler"]["tutarlilik_model"] is None
     assert result["metrikler"]["kaldirac_farki"] is None
     assert result["metrikler"]["tutarlilik_model_kaldiracsiz"] is not None
@@ -361,7 +361,7 @@ def test_closed_loop_calibrates_and_remeasures(harness, decisions, tmp_path) -> 
     assert result["sayim"]["cagri"] == harness.plan_calls(2, 2, leverage_on=True, closed_loop=True)
     for name, model in result["modeller"].items():
         cal = model["kalibrasyon"]
-        assert set(cal["kazanc"]) == {"yenilik", "sonuc", "sosyal", "sebat", "temkin"}
+        assert set(cal["kazanc"]) == {"novelty", "outcome", "social", "persistence", "caution"}
         assert cal["sapma_2"] is not None and cal["sapma_1"] is not None
         assert cal["sapma_2"] <= cal["sapma_1"] + 0.05, name
         assert "tam2" in model["kollar"] and "kimliksiz" not in model["kollar"]

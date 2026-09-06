@@ -269,7 +269,7 @@
   }
 
   function taskRunning(task) {
-    return task.last_status === "koşuyor" && !!task.last_child_id;
+    return task.last_status === "running" && !!task.last_child_id;
   }
 
   async function openTask(task) {
@@ -332,7 +332,7 @@
   function rowDotClass(task) {
     if (taskRunning(task)) return "live";
     if (!task.enabled) return "off";
-    if (task.last_status === "hata" || task.last_status === "başlatılamadı") return "bad";
+    if (task.last_status === "error" || task.last_status === "failed_to_start") return "bad";
     return "";
   }
 
@@ -374,7 +374,7 @@
       row.append(sub);
       if (taskRunning(task)) {
         row.append(el("span", "jobs-row-status live", t("Bu görev şu an çalışıyor")));
-      } else if (task.last_status && task.last_status !== "koşuyor") {
+      } else if (task.last_status && task.last_status !== "running") {
         row.append(el("span", "jobs-row-status", task.last_status));
       } else if (!task.enabled) {
         row.append(el("span", "jobs-row-status", t("Durduruldu")));
@@ -529,9 +529,9 @@
     }
     const content = el("div", "jobs-run-content");
     const run = runs.find((r) => r.id === selectedRunId) || runs[0];
-    const running = (run.status || "") === "koşuyor" || (run.status || "") === "kosuyor";
+    const running = (run.status || "") === "running";
     content.append(el("div", "jobs-run-meta",
-      (run.status || "") + (run.finished ? " · " + short(run.finished) : "")));
+      t(run.status || "") + (run.finished ? " · " + short(run.finished) : "")));
     const meter = formatRunMeter(run, liveSnap);
     content.append(el("div", "jobs-run-meter",
       meter || t("(ölçüm yok — koşu kısa kesildi veya model yanıt vermedi)")));
@@ -571,7 +571,7 @@
       const ul = el("ul", "jobs-nodes");
       for (const n of run.nodes_progress) {
         ul.append(el("li", null,
-          (n.status === "bitti" ? "✓ " : n.status === "hata" ? "✗ " : "… ") +
+          (n.status === "done" ? "✓ " : n.status === "error" ? "✗ " : "… ") +
           (n.title || n.id) + (n.detail ? " — " + n.detail : "")));
       }
       content.append(ul);
@@ -671,7 +671,7 @@
         }
         liveSnap = next;
         paintLiveHost();
-        if (row && row.state && row.state !== "kosuyor") {
+        if (row && row.state && row.state !== "running") {
           stopLivePoll();
           liveSnap = null;
           await loadRuns(task.id);
@@ -711,7 +711,7 @@
     const task = tasks.find((x) => x.id === selectedId);
     const run = runs.find((r) => r.id === selectedRunId) || runs[0];
     if (!task || !run) return;
-    const running = (run.status || "") === "koşuyor" || (run.status || "") === "kosuyor";
+    const running = (run.status || "") === "running";
     if (running) startLivePoll(run, task);
   }
 
@@ -743,11 +743,11 @@
       parts.push(i < 0 ? s : s.slice(i + 1));
     }
     if (usage) {
-      const tok = Number(usage.girdi || 0) + Number(usage.cikti || 0);
+      const tok = Number(usage.input || 0) + Number(usage.output || 0);
       if (tok) {
         parts.push(tok >= 1000 ? (tok / 1000).toFixed(1) + "k tok" : tok + " tok");
       }
-      if (usage.cagri) parts.push(String(usage.cagri) + " " + t("tur"));
+      if (usage.calls) parts.push(String(usage.calls) + " " + t("tur"));
     }
     if (tools) parts.push(String(tools) + " " + t("araç"));
     if (durationS) parts.push(fmtDuration(durationS));
@@ -871,7 +871,7 @@
 
   function renderSettingsForm(task) {
     const box = el("div", "jobs-form");
-    const running = task.last_status === "koşuyor";
+    const running = task.last_status === "running";
     const draft = {
       action: "update",
       id: task.id,
@@ -922,8 +922,8 @@
     else if (draft.enabled && task.next_run) parts.push(t("Sırada") + ": " + short(task.next_run));
     else if (!draft.enabled) parts.push(t("Durduruldu"));
     if (task.last_run) parts.push(t("Son koşu") + ": " + short(task.last_run));
-    if (task.last_status && task.last_status !== "koşuyor") {
-      parts.push(t("Son") + ": " + task.last_status);
+    if (task.last_status && task.last_status !== "running") {
+      parts.push(t("Son") + ": " + t(task.last_status));
     }
     if (parts.length) box.append(el("p", "jobs-meta", parts.join(" · ")));
 

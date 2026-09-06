@@ -25,7 +25,7 @@ from pathlib import Path
 from typing import Any
 
 from . import canvas
-from . import legacy_names
+from . import legacy_names, legacy_values
 from .events import utcnow
 
 # The store folder under state_dir.
@@ -105,7 +105,8 @@ def read_meta(state_dir: Path, artifact_id: str) -> dict[str, Any]:
         raise ArtifactError(f"Artifact bulunamadı: {artifact_id}") from exc
     if not isinstance(meta, dict):
         raise ArtifactError(f"Artifact kaydı bozuk: {artifact_id}")
-    return meta
+    # A meta written before 1.5.5 says `surum`; the next update rewrites it.
+    return legacy_values.keys(meta, legacy_values.ARTIFACT_KEYS)
 
 
 def _write_meta(target: Path, meta: dict[str, Any]) -> None:
@@ -129,7 +130,7 @@ def publish(state_dir: Path, title: str, html: str) -> dict[str, Any]:
 
     now = utcnow()
     meta = {"id": artifact_id, "title": title, "created": now,
-            "updated": now, "surum": 1}
+            "updated": now, "version": 1}
     _write_meta(target, meta)
     return meta
 
@@ -151,11 +152,11 @@ def update(state_dir: Path, artifact_id: str, html: str,
         versions = target / VERSIONS
         legacy_names.adopt(target / LEGACY_VERSIONS, versions)
         versions.mkdir(exist_ok=True)
-        shutil.copy2(page, versions / f"{meta.get('surum', 1)}.html")
+        shutil.copy2(page, versions / f"{meta.get('version', 1)}.html")
         _prune_versions(versions)
 
     page.write_text(html, encoding="utf-8")
-    meta["surum"] = int(meta.get("surum", 1)) + 1
+    meta["version"] = int(meta.get("version", 1)) + 1
     meta["updated"] = utcnow()
     if title and title.strip():
         meta["title"] = title.strip()

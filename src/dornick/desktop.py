@@ -295,7 +295,7 @@ def context_breakdown(agent: Any, prompt_total: int = 0) -> list[dict[str, Any]]
                 name = str(schema.get("name") or "")
             if src.startswith("mcp"):
                 mcp_tokens += n
-            elif src == "yetenek":
+            elif src == "skill":
                 skill_tokens += n
             elif name in _HELPER_TOOLS:
                 helper_tokens += n
@@ -303,12 +303,12 @@ def context_breakdown(agent: Any, prompt_total: int = 0) -> list[dict[str, Any]]
                 tool_tokens += n
 
     parts: list[tuple[str, str, int]] = [
-        ("sistem", "Sistem istemi", system_tokens),
-        ("arac", "Araç tanımları", tool_tokens),
-        ("ruh", "Ruh / kurallar", soul_tokens),
-        ("yetenek", "Yetenekler", skill_tokens),
+        ("system", "Sistem istemi", system_tokens),
+        ("tools", "Araç tanımları", tool_tokens),
+        ("soul", "Ruh / kurallar", soul_tokens),
+        ("skills", "Yetenekler", skill_tokens),
         ("mcp", "MCP ve dinamik araçlar", mcp_tokens),
-        ("yardimci", "Yardımcı tanımları", helper_tokens),
+        ("helpers", "Yardımcı tanımları", helper_tokens),
     ]
     fixed = sum(n for _, _, n in parts)
     total = max(0, int(prompt_total or 0))
@@ -317,7 +317,7 @@ def context_breakdown(agent: Any, prompt_total: int = 0) -> list[dict[str, Any]]
         parts = [(k, label, int(n * ratio)) for k, label, n in parts]
         fixed = sum(n for _, _, n in parts)
     chat_tokens = max(0, total - fixed) if total else 0
-    parts.append(("sohbet", "Konuşma", chat_tokens))
+    parts.append(("chat", "Konuşma", chat_tokens))
     return [{"id": k, "label": label, "n": n} for k, label, n in parts]
 
 
@@ -393,7 +393,7 @@ def _past_usage(agent: Any) -> dict[str, Any]:
 
     In a new session both come out empty and the counter truly starts at zero.
     """
-    empty = {"prompt_total": 0, "girdi": 0, "output": 0, "cagri": 0, "estimated": False}
+    empty = {"prompt_total": 0, "input": 0, "output": 0, "calls": 0, "estimated": False}
     session = getattr(agent, "session", None)
     if session is None:
         return empty
@@ -419,9 +419,9 @@ def _past_usage(agent: Any) -> dict[str, Any]:
     if last is not None:
         return {
             "prompt_total": int(last.get("prompt_total") or 0),
-            "girdi": total_input,
+            "input": total_input,
             "output": total_output,
-            "cagri": calls,
+            "calls": calls,
             "estimated": False,
         }
 
@@ -445,8 +445,8 @@ def _past_usage(agent: Any) -> dict[str, Any]:
     if not chars:
         return empty
     estimate = chars // ESTIMATE_DIVISOR
-    return {"prompt_total": estimate, "girdi": estimate, "output": 0,
-            "cagri": 0, "estimated": True}
+    return {"prompt_total": estimate, "input": estimate, "output": 0,
+            "calls": 0, "estimated": True}
 
 
 def _text_body(content: Any) -> str:
@@ -475,9 +475,9 @@ def _text_body(content: Any) -> str:
     return "\n".join(parts)
 
 
-# UI language of the helper states. The ledger keeps the Turkish forms;
-# the panel side expects the same words as the events (run/done/fail).
-_CHANNEL_STATE = {"kosuyor": "run", "bitti": "done", "yetim": "yetim"}
+# UI language of the helper states: the panel side expects the same words
+# as the events (run/done/fail); an orphan keeps its own word.
+_CHANNEL_STATE = {"running": "run", "done": "done", "orphan": "orphan"}
 
 
 def _local_endpoint(base_url: str) -> bool:
@@ -555,7 +555,7 @@ def _drop_finished_channels(agent: Any) -> None:
     try:
         children = getattr(agent, "_children", None) or {}
         for cid in [cid for cid, h in children.items()
-                    if h.state not in ("kosuyor", "yetim")]:
+                    if h.state not in ("running", "orphan")]:
             children.pop(cid, None)
     except Exception:
         pass
@@ -583,7 +583,7 @@ def _live_channels(agent: Any) -> list[dict[str, Any]]:
                 "bg": bool(h.background),
                 "kind": h.kind,
                 "state": _CHANNEL_STATE.get(h.state, "fail"),
-                "summary": "" if h.state == "kosuyor" else (h.outcome or "")[:200],
+                "summary": "" if h.state == "running" else (h.outcome or "")[:200],
             }
             for h in children.values()
         ]
@@ -693,8 +693,8 @@ class Bridge:
         # waits on the network.
         self._price: dict[str, float] | None = None
         self._price_checked = False
-        self._turn_usage = {"girdi": 0, "cikti": 0, "cagri": 0}
-        self._session_usage = {"girdi": 0, "cikti": 0, "cagri": 0}
+        self._turn_usage = {"input": 0, "output": 0, "calls": 0}
+        self._session_usage = {"input": 0, "output": 0, "calls": 0}
         # The past spend of a resumed session is seeded once; see
         # _seed_session_usage. No seed in a new session — the counter is
         # truly zero.
@@ -1740,7 +1740,7 @@ class Bridge:
             cloud_ok=lambda: bool(
                 recognition.status(config.state_dir).get("learn_cloud_ok")),
             enabled=lambda: (
-                (c := self._sleep_settings()) is None or bool(c.sleep.uyku_acik)),
+                (c := self._sleep_settings()) is None or bool(c.sleep.enabled)),
             probe=self._probe_model,
             model_name=lambda: (
                 (c := self._sleep_settings()) is not None and c.model.name or ""),
@@ -1900,9 +1900,9 @@ class Bridge:
         # If a turn ran in this process the live counter is right; if not
         # (resumed session, fresh boot) the truth is in the session log.
         live_total = int((getattr(agent, "_last_usage", None) or {}).get("prompt_total") or 0)
-        past = ({"prompt_total": live_total, "output": 0, "cagri": 0, "estimated": False}
+        past = ({"prompt_total": live_total, "output": 0, "calls": 0, "estimated": False}
                 if live_total else _past_usage(agent) if agent
-                else {"prompt_total": 0, "output": 0, "cagri": 0, "estimated": False})
+                else {"prompt_total": 0, "output": 0, "calls": 0, "estimated": False})
         # The cost chip's session total is seeded from the same source: new
         # turns are added ON TOP of it (see _usage_yay).
         self._seed_session_usage(past)
@@ -2056,8 +2056,8 @@ class Bridge:
         complaint). Reset; the seed comes from the right log on the next
         snapshot / explicit seed call.
         """
-        self._turn_usage = {"girdi": 0, "cikti": 0, "cagri": 0}
-        self._session_usage = {"girdi": 0, "cikti": 0, "cagri": 0}
+        self._turn_usage = {"input": 0, "output": 0, "calls": 0}
+        self._session_usage = {"input": 0, "output": 0, "calls": 0}
         self._session_seeded = False
 
     def _seed_session_usage(self, past: dict[str, Any]) -> None:
@@ -2069,17 +2069,17 @@ class Bridge:
         (page refresh) would inflate the total. `girdi` is the sum over all
         turns; the same language as the live `_usage_yay` accounting.
         """
-        if self._session_seeded or self._session_usage["cagri"]:
+        if self._session_seeded or self._session_usage["calls"]:
             return
-        if not past.get("cagri"):
+        if not past.get("calls"):
             return
         self._session_seeded = True
         # Old logs may carry only prompt_total — backward compat.
-        input_total = int(past.get("girdi") or past.get("prompt_total") or 0)
+        input_total = int(past.get("input") or past.get("prompt_total") or 0)
         self._session_usage = {
-            "girdi": input_total,
-            "cikti": int(past.get("output") or 0),
-            "cagri": int(past.get("cagri") or 0),
+            "input": input_total,
+            "output": int(past.get("output") or 0),
+            "calls": int(past.get("calls") or 0),
         }
 
     def _usage_yay(self, report: dict[str, int]) -> None:
@@ -2096,9 +2096,9 @@ class Bridge:
         counted. If the price is None the chip shows token counts.
         """
         for counter in (self._turn_usage, self._session_usage):
-            counter["girdi"] += int(report.get("prompt_total") or 0)
-            counter["cikti"] += int(report.get("output") or 0)
-            counter["cagri"] += 1
+            counter["input"] += int(report.get("prompt_total") or 0)
+            counter["output"] += int(report.get("output") or 0)
+            counter["calls"] += 1
         self._fetch_price()
         breakdown = context_breakdown(self.agent, int(report.get("prompt_total") or 0))
         self.hub.emit({
@@ -2141,7 +2141,7 @@ class Bridge:
         if not self._price:
             return None
         o = self._session_usage
-        return o["girdi"] * self._price["girdi"] + o["cikti"] * self._price["cikti"]
+        return o["input"] * self._price["input"] + o["output"] * self._price["output"]
 
     def _budget_brake(self) -> str:
         """Has the cap been reached? If so, the single line to print in the chat.
@@ -2178,9 +2178,9 @@ class Bridge:
         Two sources merge, because to the user both are "something running
         in the back":
 
-          * `Agent._children` — background helpers (`kind="yardımcı"`) and
-            background shell jobs (`kind="iş"`, the `shell` tool's
-            `arka_plan: true` path).
+          * `Agent._children` — background helpers (`kind="helper"`) and
+            background shell jobs (`kind="job"`, the `shell` tool's
+            `background: true` path).
           * `apps._PROCS` — detached processes: the `shell` tool's
             `background: true` path and apps launched from the panel.
 
@@ -2195,7 +2195,7 @@ class Bridge:
         from .tools.shell import short_job_summary
         for h in children.values():
             summary = ""
-            if h.state != "kosuyor":
+            if h.state != "running":
                 summary = short_job_summary(h.outcome or "", title=h.title)[:400]
             rows.append({
                 "id": "c:" + h.id,
@@ -2204,22 +2204,22 @@ class Bridge:
                 "state": h.state,
                 # For an orphan the real start is unknown (inherited from the
                 # previous session): 0 is sent, the UI draws no duration.
-                "started": 0.0 if h.state == "yetim" else h.started_ts,
+                "started": 0.0 if h.state == "orphan" else h.started_ts,
                 "ended": h.ended_ts,
                 "summary": summary,
                 "model": h.model,
                 "session": h.session_id,
                 "background": bool(h.background),
                 "pid": None,
-                "stoppable": h.state == "kosuyor",
+                "stoppable": h.state == "running",
                 "resumable": (
-                    h.state in ("yetim", "bitti", "hata")
+                    h.state in ("orphan", "done", "error")
                     and bool(h.session_id)
-                    and h.kind != "iş"
+                    and h.kind != "job"
                 ),
-                "last_tool": h.last_tool if h.state == "kosuyor" else "",
-                "last_target": h.last_goal if h.state == "kosuyor" else "",
-                "wait": h.wait if h.state == "kosuyor" else None,
+                "last_tool": h.last_tool if h.state == "running" else "",
+                "last_target": h.last_goal if h.state == "running" else "",
+                "wait": h.wait if h.state == "running" else None,
                 "deliverable": h.deliverable,
                 "usage": dict(h.usage) if h.usage else None,
             })
@@ -2235,8 +2235,8 @@ class Bridge:
             rows.append({
                 "id": "p:" + str(pid),
                 "name": "Dornick (kendisi)" if own else str(info.get("name") or command or pid),
-                "kind": "süreç",
-                "state": "bitti" if finished else "kosuyor",
+                "kind": "process",
+                "state": "done" if finished else "running",
                 "started": float(info.get("started") or 0.0),
                 "ended": 0.0,
                 "summary": "",
@@ -2251,10 +2251,10 @@ class Bridge:
 
         # Running ones first, then the most recently finished: what the user
         # is looking for is almost always "what is running right now".
-        rows.sort(key=lambda r: (r["state"] != "kosuyor",
+        rows.sort(key=lambda r: (r["state"] != "running",
                                  -(r["ended"] or r["started"])))
         return {"tasks": rows,
-                "running": sum(1 for r in rows if r["state"] == "kosuyor")}
+                "running": sum(1 for r in rows if r["state"] == "running")}
 
     def task_report(self, gid: str) -> dict[str, Any]:
         """Full helper/job text — to the Viewer when Orchestra/Tasks is clicked.
@@ -2271,7 +2271,7 @@ class Bridge:
         if handle is None:
             return {"ok": False, "error": "Görev bulunamadı."}
         text = str(handle.outcome or "").strip()
-        if not text and handle.state == "kosuyor":
+        if not text and handle.state == "running":
             # While running, the current status instead of an empty report —
             # Viewer / Open report.
             parts: list[str] = ["Görev hâlâ çalışıyor."]
@@ -2332,7 +2332,7 @@ class Bridge:
             children = getattr(self.agent, "_children", None) or {}
             handle = children.get(cid)
 
-            if handle is not None and handle.state == "kosuyor":
+            if handle is not None and handle.state == "running":
                 def _stop(h=handle) -> None:
                     h.cancel.set()
                     agent = h.agent
@@ -2352,7 +2352,7 @@ class Bridge:
             if handle is None:
                 return {"ok": True, "id": gid, "cleared": True,
                         "note": "Kayıt temizlendi (canlı yardımcı yoktu)."}
-            if handle.state != "kosuyor":
+            if handle.state != "running":
                 return {"ok": True, "id": gid, "cleared": cleared,
                         "note": "Görev zaten bitmişti; durum güncellendi."}
             return {"ok": True, "id": gid, "cleared": cleared}
@@ -2380,10 +2380,10 @@ class Bridge:
         for task in book.all():
             if task.last_child_id != child_id:
                 continue
-            if task.last_status != "koşuyor":
+            if task.last_status != "running":
                 continue
             try:
-                book.note_run(task.id, "kesildi")
+                book.note_run(task.id, "interrupted")
                 cleared = True
             except Exception:
                 continue
@@ -2404,7 +2404,7 @@ class Bridge:
                     if handle is not None else {}
                 )
                 for run in task_runs.list_runs(state_dir, task.id, limit=8):
-                    if run.status != "koşuyor":
+                    if run.status != "running":
                         continue
                     if run.child_id and run.child_id != child_id:
                         continue
@@ -2419,7 +2419,7 @@ class Bridge:
                         report = body + "\n\n---\n" + meter["line"]
                     task_runs.finish_run(
                         state_dir, task.id, run.id,
-                        status="hata",
+                        status="error",
                         report=report,
                         child_id=child_id,
                         model=meter.get("model") or (
@@ -2452,9 +2452,9 @@ class Bridge:
         handle = children.get(cid)
         if handle is None:
             return {"ok": False, "error": "Görev bulunamadı."}
-        if handle.kind == "iş":
+        if handle.kind == "job":
             return {"ok": False, "error": "Arka plan süreci sürdürülemez."}
-        if handle.state == "kosuyor":
+        if handle.state == "running":
             return {"ok": False, "error": "Bu görev zaten koşuyor."}
         if not handle.session_id:
             return {"ok": False, "error": "Oturum yok; sürdürülemiyor."}
@@ -2499,7 +2499,7 @@ class Bridge:
         handle = children.get(cid)
         if handle is None:
             return {"ok": False, "error": "Görev bulunamadı."}
-        if handle.state == "kosuyor":
+        if handle.state == "running":
             return {"ok": False, "error": "Koşan görev iptal edilmez — önce durdur."}
         sid = str(getattr(handle, "session_id", "") or "")
         if sid and re.match(r"^[A-Za-z0-9_-]+$", sid):
@@ -2809,7 +2809,7 @@ class Bridge:
         # counter is reset only on the active lane — the chip shows the
         # active chat.
         if lane.sid == self._active_sid:
-            self._turn_usage = {"girdi": 0, "cikti": 0, "cagri": 0}
+            self._turn_usage = {"input": 0, "output": 0, "calls": 0}
         # New message = new attempt: if the cap is still exceeded the brake
         # should speak once more. Otherwise the user types and nothing happens.
         self._budget_reported = False
@@ -2862,7 +2862,7 @@ class Bridge:
                 title = ""
                 try:
                     meta = (lane.agent.mind.session_meta() or {}).get(lane.sid) or {}
-                    title = str(meta.get("ad") or "")
+                    title = str(meta.get("name") or "")
                 except Exception:
                     pass
                 self.hub.emit({"type": "notice",

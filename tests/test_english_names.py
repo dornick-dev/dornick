@@ -49,14 +49,7 @@ belge kural mekanizma bulunamadi okunamadi calistirilamadi
 # key, or an English abbreviation that happens to look Turkish.
 ALLOWED_NAMES = frozenset({
     "BOS",            # beginning-of-sequence token (training rig)
-    "uyku_acik",      # config.json key `sleep.uyku_acik` (settings label "Gece uykusu")
-    "eksik", "neden", # App dataclass fields, serialised to the apps API as-is
-    "elle",           # workflow step field, persisted in the workflow JSON
-    "surum",          # artifact meta field, persisted and shown on the page
     "uygulama",       # `Uygulama` = the dataclass behind the apps API
-    "sorgu",          # tool-schema key of the `symbols` tool (model-facing)
-    "komut", "sadece_tespit", "zaman_asimi",   # tool-schema keys of `run`
-    "_ayar",          # array key inside base.npz (the model file format)
     "tutarlilik_zaman", "kimlik_farki",        # character-report JSON keys
 })
 

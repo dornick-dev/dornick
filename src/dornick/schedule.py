@@ -33,6 +33,8 @@ from pathlib import Path
 from typing import Any, Callable, Iterable
 from uuid import uuid4
 
+from . import legacy_values
+
 TASKS_FILE = "tasks.json"
 
 # Two repeat forms. These instead of a cron expression: easy to read and
@@ -214,7 +216,7 @@ class Schedule:
             if datetime.fromisoformat(task.next_run) > moment:
                 return False
             task.next_run = next_after(task, moment).isoformat(timespec="seconds")
-            task.last_status = "atlandı"
+            task.last_status = "skipped"
             self._write()
         return True
 
@@ -264,12 +266,12 @@ class Schedule:
                 self._write()
 
     def mark_running(self, task_id: str, child_id: str) -> None:
-        """The task got bound to a background helper — the detail panel should show 'koşuyor'."""
+        """The task got bound to a background helper — the detail panel should show 'running'."""
         with self._lock:
             if task := self._tasks.get(task_id):
                 task.last_child_id = str(child_id or "")
                 task.last_run = _now().isoformat(timespec="seconds")
-                task.last_status = "koşuyor"
+                task.last_status = "running"
                 self._write()
 
     # -- disk ----------------------------------------------------------
@@ -288,7 +290,10 @@ class Schedule:
                 continue
             # Dropping unknown fields keeps a hand-edited file from
             # rendering the program unable to open.
-            self._tasks[entry["id"]] = Task(**{k: v for k, v in entry.items() if k in known})
+            task = Task(**{k: v for k, v in entry.items() if k in known})
+            # A file written before 1.5.5 says koşuyor/atlandı/başlatılamadı.
+            task.last_status = legacy_values.state(task.last_status)
+            self._tasks[entry["id"]] = task
 
     def _write(self) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
@@ -323,7 +328,7 @@ async def run_forever(
                 try:
                     submit(task)
                 except Exception:  # a single task must not bring the scheduler down
-                    schedule.note_run(task.id, "başlatılamadı")
+                    schedule.note_run(task.id, "failed_to_start")
         await naptime(tick_s)
 
 

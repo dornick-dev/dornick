@@ -83,7 +83,7 @@ def register(registry: ToolRegistry) -> None:
             if not rows:
                 return ToolResult(content="Henüz yayınlanmış artifact yok.")
             lines = [
-                f"- {m['id']} · {m.get('title', '')} · v{m.get('surum', 1)}"
+                f"- {m['id']} · {m.get('title', '')} · v{m.get('version', 1)}"
                 f" · {store.address(m['id'])} · güncellenme {m.get('updated', '')}"
                 for m in rows
             ]
@@ -123,7 +123,7 @@ def register(registry: ToolRegistry) -> None:
             _announce(ctx, meta, "update")
             return ToolResult(
                 content=(
-                    f"Artifact güncellendi: {meta['id']} → v{meta['surum']} — "
+                    f"Artifact güncellendi: {meta['id']} → v{meta['version']} — "
                     f"adres aynı: {store.address(meta['id'])}"
                 ),
                 detail={"artifact": meta},
@@ -143,7 +143,7 @@ def _announce(ctx: ToolContext, meta: dict[str, Any], action: str) -> None:
         "artifact",
         id=meta["id"],
         title=meta.get("title", ""),
-        surum=int(meta.get("surum", 1)),
+        version=int(meta.get("version", 1)),
         action=action,
         address=store.address(meta["id"]),
     )

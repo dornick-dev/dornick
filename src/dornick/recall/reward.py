@@ -61,8 +61,7 @@ class Reward:
                                    + temperament.social * self.social)), 4)
 
     def as_dict(self) -> dict[str, float]:
-        # Reported form — the keys are the Turkish channel names the report reads.
-        return {"sonuc": self.outcome, "bilgi": self.information, "sosyal": self.social}
+        return {"outcome": self.outcome, "information": self.information, "social": self.social}
 
 
 def expected_success(successes: int, failures: int) -> float:

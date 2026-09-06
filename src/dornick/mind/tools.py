@@ -456,7 +456,7 @@ Tek adımlık işler için kullanma; kayıt tutmanın maliyeti getirisinden fazl
                 return ToolResult.error(
                     f"'{args.get('id')}' diye bir hedef yok. action=list ile aktifleri gör."
                 )
-            ctx.session.log.note("goal_status", goal_id=goal.id, durum=status)
+            ctx.session.log.note("goal_status", goal_id=goal.id, status=status)
             digest = mind.goal_digest() or "Aktif hedef kalmadı."
             return ToolResult(content=f"[{goal.id}] {status}\n\n{digest}")
 

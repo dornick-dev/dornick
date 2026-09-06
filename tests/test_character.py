@@ -125,8 +125,8 @@ def test_the_temperament_file_keeps_its_turkish_keys(tmp_path: Path) -> None:
     follow the Python field names."""
     temperament.save(tmp_path, Temperament(caution=0.3), Temperament(caution=0.7))
     data = json.loads((tmp_path / "temperament.json").read_text("utf-8"))
-    assert set(data["taban"]) == {"yenilik", "sonuc", "sosyal", "sebat", "temkin"}
-    assert data["hedef"]["temkin"] == pytest.approx(0.7)
+    assert set(data["baseline"]) == {"novelty", "outcome", "social", "persistence", "caution"}
+    assert data["target"]["caution"] == pytest.approx(0.7)
 
 
 def test_plasticity_decays_but_never_dies() -> None:
@@ -343,7 +343,7 @@ def test_the_world_label_is_quiet_on_the_day_it_was_verified() -> None:
     now = datetime(2025, 6, 30, 12, tzinfo=timezone.utc)
     record = subjects.world_record("Testler pytest ile koşuluyor.",
                                    source="pyproject.toml", clock=lambda: now)
-    assert subjects.world_label(record["dogrulama"], clock=lambda: now) == ""
+    assert subjects.world_label(record["verified"], clock=lambda: now) == ""
 
 
 def test_a_self_record_renders_as_a_count(tmp_path: Path) -> None:

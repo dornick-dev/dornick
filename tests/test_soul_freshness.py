@@ -67,7 +67,7 @@ def _session(sessions: Path, name: str, node_ids, clock: Clock,
         clock.advance(minutes=1)
         log.note("mind_open", memory_id=node_id)
     log.note("tool_end", tool=tool, error=bool(error), ms=10, ozet=error)
-    log.note("sonuc", sonuc=outcome)
+    log.note("outcome", outcome=outcome)
     log.close()
 
 
@@ -146,7 +146,7 @@ def test_same_error_does_not_write_a_second_lesson(mind, tmp_path, clock) -> Non
     for i in range(4):
         clock.advance(days=1)
         _session(sessions, f"hata{i}", [source.id], clock,
-                 outcome="basarisiz", error="sqlite database is locked")
+                 outcome="failed", error="sqlite database is locked")
         weave.night_pass(mind.store, sessions, clock=clock,
                          watermark=tmp_path / "w.json")
 
@@ -159,14 +159,14 @@ def test_repeated_lesson_is_reinforced(mind, tmp_path, clock) -> None:
     source = mind.remember("Şema göçü doğrudan üretimde koşuluyor.",
                            kind="procedure")
     sessions = tmp_path / "sessions"
-    _session(sessions, "h1", [source.id], clock, outcome="basarisiz",
+    _session(sessions, "h1", [source.id], clock, outcome="failed",
              error="göç yarıda kaldı")
     weave.night_pass(mind.store, sessions, clock=clock, watermark=tmp_path / "w.json")
     lesson = mind.store.by_kind("lesson", limit=5)[0]
     first = len(mind.store.use_log(lesson.id))
 
     clock.advance(days=1)
-    _session(sessions, "h2", [source.id], clock, outcome="basarisiz",
+    _session(sessions, "h2", [source.id], clock, outcome="failed",
              error="göç yarıda kaldı")
     weave.night_pass(mind.store, sessions, clock=clock, watermark=tmp_path / "w.json")
 
@@ -181,7 +181,7 @@ def test_a_different_error_writes_a_new_lesson(mind, tmp_path, clock) -> None:
     for i, error in enumerate(("sqlite database is locked",
                                "sertifika doğrulanamadı")):
         clock.advance(days=1)
-        _session(sessions, f"h{i}", [source.id], clock, outcome="basarisiz",
+        _session(sessions, f"h{i}", [source.id], clock, outcome="failed",
                  error=error)
         weave.night_pass(mind.store, sessions, clock=clock,
                          watermark=tmp_path / "w.json")
@@ -203,7 +203,7 @@ def test_same_procedure_is_not_written_twice(mind, tmp_path, clock) -> None:
             log.note("mind_open", memory_id=m.id)
         log.note("tool_end", tool="run", error=False, ms=10)
         log.note("tool_end", tool="dosya_yaz", error=False, ms=10)
-        log.note("sonuc", sonuc="basarili")
+        log.note("outcome", outcome="succeeded")
         log.close()
         weave.night_pass(mind.store, sessions, clock=clock,
                          watermark=tmp_path / "w.json")

@@ -868,12 +868,12 @@ class ChildHandle:
     id: str
     title: str
     model: str
-    # "yardımcı": a model-running subagent · "iş": a background process (long
+    # "helper": a model-running subagent · "job": a background process (long
     # command). Both share the same ledger and the same notification path.
-    kind: str = "yardımcı"
+    kind: str = "helper"
     background: bool = False
     session_id: str = ""
-    state: str = "kosuyor"          # kosuyor | bitti | hata
+    state: str = "running"          # running | done | error
     outcome: str = ""
     # When it started. The record is created the moment the work starts, so
     # the default "now" is the right answer: the tasks panel counts the
@@ -913,9 +913,9 @@ class ChildHandle:
     last_tool: str = ""
     last_goal: str = ""
     wait: dict[str, Any] | None = None
-    # Run meter: {girdi, cikti, cagri} — same units as the chat dock.
+    # Run meter: {input, output, calls} — same units as the chat dock.
     usage: dict[str, int] = field(
-        default_factory=lambda: {"girdi": 0, "cikti": 0, "cagri": 0})
+        default_factory=lambda: {"input": 0, "output": 0, "calls": 0})
     # Mid-run task_runs.patch_run throttle.
     last_patch_ts: float = 0.0
     # How many tool calls started (panel + run archive).
@@ -1150,7 +1150,7 @@ class Agent:
         """
         self.cancel.set()
         for handle in self._children.values():
-            if handle.state == "kosuyor":
+            if handle.state == "running":
                 handle.cancel.set()
 
     def take_note(self, note: str, *, encode: str = "") -> None:
@@ -1254,7 +1254,7 @@ class Agent:
                if m.get("role") == "user") > 1:
             return
         self.session.add_harness_note(PLAN_NOTE)
-        self.session.log.note("plan_refleksi")
+        self.session.log.note("plan_reflex")
 
     def _delivery_trace(self, tool: str, args: dict[str, Any]) -> None:
         """What was written, what was run in this turn — the two ledgers the gate reads."""
@@ -1303,7 +1303,7 @@ class Agent:
         if not file:
             return False
         stats.test_warned = True
-        self.session.log.note("test_kapisi", dosya=file)
+        self.session.log.note("test_gate", file=file)
         self.session.add_harness_note(TEST_NOTE.format(dosya=file))
         return True
 
@@ -1350,7 +1350,7 @@ class Agent:
         if not file:
             return False
         stats.entry_warned = True
-        self.session.log.note("giris_kapisi", dosya=file)
+        self.session.log.note("entry_gate", file=file)
         self.session.add_harness_note(ENTRY_NOTE.format(dosya=file))
         return True
 
@@ -1372,7 +1372,7 @@ class Agent:
             return False
         stats.red_warned = True
         summary = "; ".join(self._red.values())[:200]
-        self.session.log.note("kirmizi_kapisi", ozet=summary)
+        self.session.log.note("red_gate", summary=summary)
         self.session.add_harness_note(RED_NOTE.format(ozet=summary))
         return True
 
@@ -1397,7 +1397,7 @@ class Agent:
         summary = "; ".join(t[:60] for t in open_items[:5])
         if len(open_items) > 5:
             summary += f"; (+{len(open_items) - 5})"
-        self.session.log.note("kabul_kapisi", acik=len(open_items))
+        self.session.log.note("acceptance_gate", open=len(open_items))
         self.session.add_harness_note(ACCEPTANCE_NOTE.format(ozet=summary))
         return True
 
@@ -1423,7 +1423,7 @@ class Agent:
             return   # nudging a second time on the same topic is fatigue
         self._last_nudge = quote
         self.session.add_harness_note(MIND_NUDGE.format(alinti=quote))
-        self.session.log.note("zihin_durtusu")
+        self.session.log.note("mind_impulse")
 
     def _encode_turn(self, role: str, text: str) -> None:
         """Writes a conversation turn to searchable memory **instantly**.
@@ -1580,7 +1580,7 @@ class Agent:
             awake.on_result(self.mind.store, self.session.log.path, outcome,
                             log=self.session.log)
         except Exception as exc:
-            self.session.log.note("uyanik_tekrar_failed", error=str(exc))
+            self.session.log.note("awake_replay_failed", error=str(exc))
 
     def _worth_recalling(self, text: str) -> bool:
         return worth_recalling(text)
@@ -1634,7 +1634,7 @@ class Agent:
             # separately would be interrupting twice the work the parent
             # already interrupted.
             if self.depth == 0 and (brake := self.io.budget_brake()):
-                self.session.log.note("butce_freni", detay=_clip(brake, 200))
+                self.session.log.note("budget_brake", detail=_clip(brake, 200))
                 self.io.on_notice(brake)
                 self.interrupt()
                 stats.interrupted = True
@@ -1867,7 +1867,7 @@ class Agent:
                 self.mind.remember(
                     f"{tool or 'araç'} hatası tekrar etti — {recipe}",
                     kind="lesson", title=title)
-                self.session.log.note("hata_dersi", anahtar=switches)
+                self.session.log.note("error_lesson", keys=switches)
             except Exception:
                 pass
 
@@ -1907,7 +1907,7 @@ class Agent:
                 return
             self.mind.remember(content, kind="fact", title=title)
             self._capsule_written = True
-            self.session.log.note("is_kapsulu", dosyalar=files[:6])
+            self.session.log.note("job_capsule", files=files[:6])
         except Exception:
             pass
 
@@ -1928,7 +1928,7 @@ class Agent:
             return
         try:
             meta = (self.mind.session_meta() or {}).get(self.session.id) or {}
-            if meta.get("ad"):
+            if meta.get("name"):
                 return
             messages = self.session.messages()
             # The title may fail to be generated on the first attempt (a
@@ -1969,7 +1969,7 @@ class Agent:
                 getattr(result.message, "content", None) or [])).strip().strip("\"'.!*# ")
             if _title_valid(title):
                 self.mind.set_session_meta(self.session.id, name=title)
-                self.session.log.note("baslik", ad=title)
+                self.session.log.note("title", name=title)
                 # Don't make the sidebar list wait for the 5 s poll — carry
                 # it over at once.
                 try:
@@ -2203,7 +2203,7 @@ class Agent:
             return False
 
         stats.fake_calls += 1
-        self.session.log.note("sahte_arac_cagrisi", deneme=stats.fake_calls)
+        self.session.log.note("fake_tool_call", attempts=stats.fake_calls)
         # In the auto pool this is a health signal: an endpoint that cannot
         # call tools gets weeded out.
         self._faulty("sahte araç çağrısı")
@@ -2289,7 +2289,7 @@ class Agent:
         built-ins. Skills and MCP tools were added AFTER startup only to the
         main registry — the subagent could not see a skill written for a
         device or a connected MCP server. The built-ins' `source` is None;
-        the skill/MCP one is set ("yetenek", "mcp:<ad>"). We copy the set
+        the skill/MCP one is set ("skill", "mcp:<name>"). We copy the set
         ones from the main registry — whatever exists at that moment goes
         down to the subagent too.
         """
@@ -2416,7 +2416,7 @@ class Agent:
             try:
                 report, progress, ok = await execute_workflow(
                     wf, self, handle)
-                handle.state = "bitti" if ok else "hata"
+                handle.state = "done" if ok else "error"
                 handle.outcome = report
                 handle.ended_ts = time.time()
                 if not handle.deliverable:
@@ -2426,7 +2426,7 @@ class Agent:
                     handle.title, ok, 0, len(progress or []),
                     handle.id, _clip(report, 200))
             except Exception as exc:
-                handle.state = "hata"
+                handle.state = "error"
                 handle.outcome = f"{type(exc).__name__}: {exc}"
                 handle.ended_ts = time.time()
                 self.io.on_child_end(
@@ -2440,7 +2440,7 @@ class Agent:
                     meter = _run_meter(handle, self.config)
                     tr.finish_run(
                         self.config.state_dir, handle.schedule_id, handle.run_id,
-                        status="bitti" if handle.state == "bitti" else "hata",
+                        status="done" if handle.state == "done" else "error",
                         report=_report_with_meter(handle, self.config),
                         child_id=handle.id,
                         nodes_progress=progress or None,
@@ -2466,7 +2466,7 @@ class Agent:
         try:
             await self._child_round(handle, instruction, resume=resume)
         except Exception as exc:  # a crash in the background must not stay silent
-            handle.state = "hata"
+            handle.state = "error"
             handle.outcome = f"Alt ajan hata verdi: {type(exc).__name__}: {exc}"
             handle.ended_ts = time.time()
             self.session.log.note("subagent_failed", title=handle.title,
@@ -2477,7 +2477,7 @@ class Agent:
             handle.notified = True
         if handle.schedule_id and self.schedule is not None:
             try:
-                status = ("bitti" if handle.state == "bitti"
+                status = ("done" if handle.state == "done"
                           else f"hata: {_clip(handle.outcome, 80)}")
                 self.schedule.note_run(handle.schedule_id, status)
             except Exception:
@@ -2488,7 +2488,7 @@ class Agent:
                 meter = _run_meter(handle, self.config)
                 task_runs.finish_run(
                     self.config.state_dir, handle.schedule_id, handle.run_id,
-                    status="bitti" if handle.state == "bitti" else "hata",
+                    status="done" if handle.state == "done" else "error",
                     report=_report_with_meter(handle, self.config),
                     child_id=handle.id,
                     model=meter["model"],
@@ -2523,7 +2523,7 @@ class Agent:
         try:
             await self._acquire_agent_gate(handle)
         except asyncio.CancelledError:
-            handle.state = "hata"
+            handle.state = "error"
             handle.outcome = "(kesildi)"
             handle.notified = True
             handle.ended_ts = time.time()
@@ -2592,7 +2592,7 @@ class Agent:
             except Exception as exc:  # a helper's crash must not bring the main turn down
                 self.session.log.note("subagent_failed", title=handle.title,
                                       session=handle.session_id, error=str(exc))
-                handle.state = "hata"
+                handle.state = "error"
                 handle.outcome = f"Alt ajan hata verdi: {type(exc).__name__}: {exc}"
                 self.io.on_child_end(handle.title, False, 0, 0, handle.id,
                                      _clip(handle.outcome, 200))
@@ -2611,7 +2611,7 @@ class Agent:
             # No notification turn is opened for an interrupted helper: the
             # one who stopped it is the user themselves — or the model
             # stopped with max retries.
-            handle.state = "hata"
+            handle.state = "error"
             if stats.fail_reason:
                 handle.outcome = (
                     f"Model {len(RETRY_DELAYS)} denemede yanıt vermedi.\n"
@@ -2621,7 +2621,7 @@ class Agent:
                 handle.outcome = answer or "(kesildi)"
             handle.notified = True
         else:
-            handle.state = "bitti"
+            handle.state = "done"
             handle.outcome = answer
         if not handle.deliverable:
             handle.deliverable = _infer_deliverable(instruction, handle.outcome or "")
@@ -2641,7 +2641,7 @@ class Agent:
         # The ledger is bounded: a running one is not thrown out, the oldest
         # finished ones drop.
         while len(self._children) > MAX_CHILDREN:
-            finished = [h for h in self._children.values() if h.state != "kosuyor"]
+            finished = [h for h in self._children.values() if h.state != "running"]
             if not finished:
                 break
             oldest = min(finished, key=lambda h: h.ended_ts)
@@ -2668,7 +2668,7 @@ class Agent:
                 model="",
                 background=True,
                 session_id=sid,
-                state="yetim",
+                state="orphan",
                 outcome=ORPHAN_RESULT,
                 ended_ts=time.time(),
                 # Don't open a notification turn: the news note is already
@@ -2700,13 +2700,13 @@ class Agent:
     def _drain_children(self) -> None:
         """Turns finished and not-yet-reported helper/job results into notes."""
         for handle in self._children.values():
-            if handle.state == "kosuyor" or handle.notified:
+            if handle.state == "running" or handle.notified:
                 continue
             handle.notified = True
-            if handle.kind == "iş":
-                template = JOB_DONE_NOTE if handle.state == "bitti" else JOB_FAIL_NOTE
+            if handle.kind == "job":
+                template = JOB_DONE_NOTE if handle.state == "done" else JOB_FAIL_NOTE
             else:
-                template = CHILD_DONE_NOTE if handle.state == "bitti" else CHILD_FAIL_NOTE
+                template = CHILD_DONE_NOTE if handle.state == "done" else CHILD_FAIL_NOTE
             self.session.add_harness_note(template.format(
                 title=handle.title, id=handle.id,
                 # The full text goes to the panel; the model gets only a
@@ -2720,7 +2720,7 @@ class Agent:
             self.session.add_harness_note(self._inbox.popleft())
 
     def has_unreported_children(self) -> bool:
-        return any(h.state != "kosuyor" and not h.notified
+        return any(h.state != "running" and not h.notified
                    for h in self._children.values())
 
     async def resume_for_children(self) -> TurnStats | None:
@@ -2732,7 +2732,7 @@ class Agent:
         never called.
         """
         done = [h for h in self._children.values()
-                if h.state != "kosuyor" and not h.notified]
+                if h.state != "running" and not h.notified]
         if not done:
             return None
         self._arm()
@@ -2748,10 +2748,10 @@ class Agent:
             known = ", ".join(self._children) or "(defter boş)"
             return False, (f"'{cid}' diye bir yardımcı yok. Defterdekiler: {known}. "
                            "`task_status` ile bak.")
-        if handle.kind == "iş":
+        if handle.kind == "job":
             return False, (f"'{handle.title}' bir arka plan işi (süreç), mesaj almaz. "
                            "Bitince çıktısı zaten sana bildirilecek.")
-        if handle.state == "kosuyor":
+        if handle.state == "running":
             if handle.agent is None:
                 # In line at the agent gate: the object is not built yet.
                 return False, (f"'{handle.title}' henüz sırada (ajan kapısı dolu); "
@@ -2763,7 +2763,7 @@ class Agent:
             return False, f"'{handle.title}' oturumsuz bitti; sürdürülemiyor."
         # Finished helper: its session is opened from disk and resumed in
         # the background.
-        handle.state = "kosuyor"
+        handle.state = "running"
         handle.notified = False
         handle.outcome = ""
         handle.cancel = asyncio.Event()
@@ -2782,11 +2782,11 @@ class Agent:
             if wanted and h.id != wanted:
                 continue
             row = f"- id={h.id} · {h.title} · {h.state}"
-            if h.kind == "iş":
+            if h.kind == "job":
                 row += " · süreç"
             if h.background:
                 row += " · arka plan"
-            if h.state != "kosuyor" and h.outcome:
+            if h.state != "running" and h.outcome:
                 row += f" · sonuç: {_clip(h.outcome, 300)}"
             rows.append(row)
         if not rows:
@@ -2806,10 +2806,10 @@ class Agent:
         `interrupt()` sets it.
         """
         handle = ChildHandle(id=uuid4().hex[:6], title=title, model="",
-                             kind="iş", background=True)
+                             kind="job", background=True)
         self._register_child(handle)
         self.session.log.note("job_start", title=title, id=handle.id)
-        self.io.on_child_start(handle.title, "süreç", handle.id, True)
+        self.io.on_child_start(handle.title, "process", handle.id, True)
         handle.task = asyncio.get_running_loop().create_task(
             self._job_round(handle, runner))
         return handle
@@ -2820,18 +2820,18 @@ class Agent:
             # The full output is in the panels/Viewer; the clip for the
             # harness note is separate.
             handle.outcome = await runner(handle.cancel)
-            handle.state = "bitti"
+            handle.state = "done"
         except JobFailed as exc:
             # The command finished but failed — let's not say 'completed'.
-            handle.state = "hata"
+            handle.state = "error"
             handle.outcome = str(exc)
         except Exception as exc:  # a job's crash must not bring the agent down
-            handle.state = "hata"
+            handle.state = "error"
             handle.outcome = f"{type(exc).__name__}: {exc}"
         handle.ended_ts = time.time()
         self.session.log.note("job_end", title=handle.title, id=handle.id,
                               state=handle.state)
-        self.io.on_child_end(handle.title, handle.state == "bitti", 0, 0,
+        self.io.on_child_end(handle.title, handle.state == "done", 0, 0,
                              handle.id, _clip(handle.outcome, 200))
         self._children_settled()
 
@@ -2935,11 +2935,11 @@ class Agent:
             h = self._children.get(_c)
             if h is None:
                 return
-            h.usage["girdi"] = int(h.usage.get("girdi") or 0) + int(
+            h.usage["input"] = int(h.usage.get("input") or 0) + int(
                 report.get("prompt_total") or 0)
-            h.usage["cikti"] = int(h.usage.get("cikti") or 0) + int(
+            h.usage["output"] = int(h.usage.get("output") or 0) + int(
                 report.get("output") or 0)
-            h.usage["cagri"] = int(h.usage.get("cagri") or 0) + 1
+            h.usage["calls"] = int(h.usage.get("calls") or 0) + 1
 
         return AgentIO(
             # Tool events are written to the subagent's channel (not the
@@ -3575,9 +3575,9 @@ def _run_meter(handle: ChildHandle, config: Any) -> dict[str, Any]:
     from . import pricing
 
     usage = {
-        "girdi": int((handle.usage or {}).get("girdi") or 0),
-        "cikti": int((handle.usage or {}).get("cikti") or 0),
-        "cagri": int((handle.usage or {}).get("cagri") or 0),
+        "input": int((handle.usage or {}).get("input") or 0),
+        "output": int((handle.usage or {}).get("output") or 0),
+        "calls": int((handle.usage or {}).get("calls") or 0),
     }
     cost: float | None = None
     model_name = str(handle.model or "")
@@ -3593,10 +3593,10 @@ def _run_meter(handle: ChildHandle, config: Any) -> dict[str, Any]:
             tag = pricing.label(model_cfg, state_dir)
         except Exception:
             tag = None
-        if tag and (usage["girdi"] or usage["cikti"]):
+        if tag and (usage["input"] or usage["output"]):
             cost = (
-                usage["girdi"] * float(tag["girdi"])
-                + usage["cikti"] * float(tag["cikti"])
+                usage["input"] * float(tag["input"])
+                + usage["output"] * float(tag["output"])
             )
     end = handle.ended_ts or time.time()
     start = handle.started_ts or end
@@ -3631,11 +3631,11 @@ def _meter_line(
     parts: list[str] = []
     if model:
         parts.append(model.rsplit("/", 1)[-1])
-    tok = int(usage.get("girdi") or 0) + int(usage.get("cikti") or 0)
+    tok = int(usage.get("input") or 0) + int(usage.get("output") or 0)
     if tok:
         parts.append(f"{tok} tok")
-    if usage.get("cagri"):
-        parts.append(f"{usage['cagri']} tur")
+    if usage.get("calls"):
+        parts.append(f"{usage['calls']} tur")
     if tools:
         parts.append(f"{tools} araç")
     if duration_s:

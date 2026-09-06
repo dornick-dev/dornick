@@ -265,7 +265,7 @@ class Session:
         return bool(msgs) and msgs[-1].role == "user"
 
     def close(self) -> None:
-        self.log.note("sonuc", sonuc=self.outcome())
+        self.log.note("outcome", outcome=self.outcome())
         self.log.note("session_end")
         self.log.close()
 
@@ -274,26 +274,26 @@ class Session:
 
         Four values, all derived from traces already sitting in the log:
 
-            basarisiz   the last verification tool broke or a tool errored
-            duzeltildi  the user corrected — a `lesson` was written or a
+            failed      the last verification tool broke or a tool errored
+            corrected   the user corrected — a `lesson` was written or a
                         record was superseded
-            acik        a goal was left open
-            basarili    if none of the above
+            open        a goal was left open
+            succeeded   if none of the above
 
-        `basarisiz` and `duzeltildi` are the sessions that teach the most
+        `failed` and `corrected` are the sessions that teach the most
         (Mattar-Daw: gain × need); the night replays them first.
         """
         last_error = False
         for event in self.log.notes("tool_end"):
             last_error = bool(event.meta.get("error"))
         if last_error:
-            return "basarisiz"
+            return "failed"
         for event in self.log.notes("mind_write"):
             if event.meta.get("kind") == "lesson" or event.meta.get("supersedes"):
-                return "duzeltildi"
+                return "corrected"
         open_goals = {o.meta.get("goal_id") for o in self.log.notes("goal_push")}
         open_goals -= {o.meta.get("goal_id") for o in self.log.notes("goal_status")}
-        return "acik" if open_goals else "basarili"
+        return "open" if open_goals else "succeeded"
 
 
 def blocks_to_dicts(content: Iterable[Any]) -> list[Block]:

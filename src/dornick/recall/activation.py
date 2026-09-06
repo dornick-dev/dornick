@@ -40,6 +40,7 @@ from datetime import datetime
 from typing import Any, Iterable, Sequence
 
 from . import switches
+from .. import legacy_values
 from .clock import parse
 
 # Decay exponent. The standard value in the ACT-R literature is 0.5, and that
@@ -92,17 +93,17 @@ MAX_USES = 30
 # Use labels. Phase 1 writes only the first two; the rest belong to Phase 3
 # (reverse replay, schema refresh, capture) and Phase 4. The field is opened
 # in this shape from the start so later phases do not change the schema.
-WRITTEN = "yazildi"
-OPENED = "acildi"
-SUCCESS = "basari"
-FAILURE = "hata"
-SCHEMA = "sema"
-CAPTURED = "yakalandi"
+WRITTEN = "written"
+OPENED = "opened"
+SUCCESS = "success"
+FAILURE = "error"
+SCHEMA = "schema"
+CAPTURED = "caught"
 # Distillation source: its essence was moved into a short `fact`, itself
 # pulled into the background. It needs its own label — had it counted as
-# `sema`, the measurement of schema refresh would have been confused with the
+# `schema`, the measurement of schema refresh would have been confused with the
 # pull-back of distillation (measured: `sema_tazeleme` went negative).
-DISTILLED = "damitildi"
+DISTILLED = "distilled"
 LABELS = (WRITTEN, OPENED, SUCCESS, FAILURE, SCHEMA, CAPTURED, DISTILLED)
 
 
@@ -116,7 +117,7 @@ class Use:
 
     def as_dict(self) -> dict[str, Any]:
         return {"t": self.t.isoformat(timespec="milliseconds"),
-                "w": round(self.w, 4), "etiket": self.label}
+                "w": round(self.w, 4), "label": self.label}
 
 
 def base_activation(use_log: Sequence[Use], now: datetime) -> float:
@@ -207,7 +208,8 @@ def _entries(raw: Any) -> list[Use]:
                 w = float(entry.get("w", 1.0))
             except (TypeError, ValueError):
                 w = 1.0
-            label = str(entry.get("etiket") or OPENED)
+            # An entry written before 1.5.5 says `etiket` and a Turkish label.
+            label = legacy_values.use_label(entry.get("label") or entry.get("etiket") or OPENED)
             out.append(Use(moment, w, label))
         elif isinstance(entry, str):
             if (moment := parse(entry)) is not None:
@@ -285,7 +287,7 @@ def first_stamp(created: str, strength: float = 1.0) -> str:
     first entry does.
     """
     return json.dumps([{"t": created, "w": round(float(strength), 4),
-                        "etiket": WRITTEN}], ensure_ascii=False)
+                        "label": WRITTEN}], ensure_ascii=False)
 
 
 def track_record(use_log: Sequence[Use]) -> tuple[int, int]:

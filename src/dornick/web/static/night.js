@@ -11,7 +11,7 @@
 // HANDLERS below has one entry per schema event; a test pins that.
 //
 // Timing is the recall trace's: STEP_MS between nodes, SIGNAL_MS for a
-// hop (scene.js), divided by the replay speed. `uyku.uyandi` freezes the
+// hop (scene.js), divided by the replay speed. `sleep.woke` freezes the
 // scene's event clock and stops this loop — the remaining chain stays
 // faint on the sheet, nothing advances until the next night or the user
 // presses play again.
@@ -46,8 +46,8 @@ const Night = (() => {
   let nextAt = 0;                 // event-clock time the next event may start
   let frozen = false;
   let played = 0, total = 0;
-  let replayed = 0;               // tekrar.ileri events played: the simple block's "(12/30)"
-  let sequences = new Map();      // oturum → dizi, from tekrar.ileri
+  let replayed = 0;               // replay.forward events played: the simple block's "(12/30)"
+  let sequences = new Map();      // session → sequence, from replay.forward
   let seen = new Set();           // ts+tur signatures, so poll and SSE do not double
   let stats = { frames: 0, dropped: 0, last: 0 };
   let current = { date: "", summary: null, report: null, woke: null, badge: "", live: false };
@@ -66,8 +66,8 @@ const Night = (() => {
     let took = 0;
     for (let i = 0; i < events.length; i += BATCH) {
       const batch = events.slice(i, i + BATCH).filter((ev) => {
-        if (!ev || typeof ev.tur !== "string" || !(ev.tur in HANDLERS)) return false;
-        const sig = String(ev.ts) + "|" + ev.tur;
+        if (!ev || typeof ev.kind !== "string" || !(ev.kind in HANDLERS)) return false;
+        const sig = String(ev.ts) + "|" + ev.kind;
         if (seen.has(sig)) return false;
         seen.add(sig);
         return true;
@@ -134,7 +134,7 @@ const Night = (() => {
     frozen = false;
     if (s) { s.thaw(); s.clearLog(); s.dim(0); s.coldSlice(null); }
     const r = regions();
-    if (r) { r.sleep("uyanik"); r.cycle(0, ""); r.nap(false); r.tired(false); }
+    if (r) { r.sleep("awake"); r.cycle(0, ""); r.nap(false); r.tired(false); }
     progress();
     renderStatus();
   }
@@ -174,68 +174,68 @@ const Night = (() => {
   // Each handler returns how long the next event should wait, in
   // event-clock ms (already divided by the speed).
   const HANDLERS = {
-    "uyku.basladi": (ev) => {
+    "sleep.started": (ev) => {
       const s = scene(), r = regions();
       if (s) { s.thaw(); s.dim(1); }
-      if (r) { r.sleep("uyuyor"); r.wakeAt(ev.tahmini_uyanma); r.cycle(0, ""); }
+      if (r) { r.sleep("asleep"); r.wakeAt(ev.wake_estimate); r.cycle(0, ""); }
       frozen = false;
       current.woke = null; current.badge = "";
       replayed = 0;
       progress();
       return scaled(BEAT * 2);
     },
-    "uyku.dongu": (ev) => {
+    "sleep.cycle": (ev) => {
       const r = regions();
-      if (r) r.cycle(ev.no, ev.faz);
+      if (r) r.cycle(ev.no, ev.phase);
       return scaled(BEAT);
     },
-    "tekrar.ileri": (ev) => {
+    "replay.forward": (ev) => {
       const s = scene();
-      const chain = Array.isArray(ev.dizi) ? ev.dizi : [];
-      if (ev.oturum) sequences.set(ev.oturum, chain);
+      const chain = Array.isArray(ev.sequence) ? ev.sequence : [];
+      if (ev.session) sequences.set(ev.session, chain);
       replayed += 1;
       progress();
       if (!s) return scaled(BEAT);
       const dur = s.lightSequence(chain, { kind: "forward", speed, group: "session", numbered: true });
       // The edges appear between the nodes as the chain walks.
-      for (const edge of ev.kenarlar || []) {
+      for (const edge of ev.edges || []) {
         if (Array.isArray(edge) && edge.length >= 2) s.schedule(dur * 0.5, () => s.addEdge(edge[0], edge[1], edge[2]));
       }
       return dur;
     },
-    "tekrar.geri": (ev) => {
+    "replay.reverse": (ev) => {
       const s = scene();
-      const shares = ev.paylar && typeof ev.paylar === "object" ? ev.paylar : {};
-      const chain = sequences.get(ev.oturum) || Object.keys(shares);
+      const shares = ev.shares && typeof ev.shares === "object" ? ev.shares : {};
+      const chain = sequences.get(ev.session) || Object.keys(shares);
       if (!s || !chain.length) return scaled(BEAT);
-      const good = isSuccess(ev.sonuc);
+      const good = isSuccess(ev.outcome);
       return s.lightSequence(chain, {
         reverse: true, kind: good ? "success" : "failure", speed, shares,
         glyph: good ? "✓" : "✕", group: "session",
       });
     },
-    "dikis": (ev) => {
+    "stitch": (ev) => {
       const s = scene();
-      if (s) s.stitch(ev.a, ev.b, ev.uzerinden);
+      if (s) s.stitch(ev.a, ev.b, ev.via);
       return scaled(BEAT * 1.5);
     },
-    "dokunus": (ev) => {
+    "touch": (ev) => {
       const s = scene();
       if (s) s.touch(ev.id);
       return scaled(BEAT * 0.5);
     },
-    "damitma": (ev) => {
+    "distil": (ev) => {
       const s = scene();
       if (!s) return scaled(BEAT);
-      return s.distil(Array.isArray(ev.kaynaklar) ? ev.kaynaklar : [], ev.yeni, undefined, speed);
+      return s.distil(Array.isArray(ev.sources) ? ev.sources : [], ev.new, undefined, speed);
     },
-    "uyku.uyandi": (ev) => {
+    "sleep.woke": (ev) => {
       const s = scene(), r = regions();
-      const done = Number(ev.tamamlanan) || 0, carried = Number(ev.devreden) || 0;
+      const done = Number(ev.completed) || 0, carried = Number(ev.carried) || 0;
       current.woke = ev;
       current.badge = done + "/" + (done + carried) + " " + t("tekrar edildi") + " · "
-        + carried + " " + t("devretti") + " · " + t("sebep") + ": " + t(reasonWord(ev.sebep));
-      if (r) { r.flash(); r.sleep("uyaniyor"); if (r.nightProgress) r.nightProgress(done, done + carried); }
+        + carried + " " + t("devretti") + " · " + t("sebep") + ": " + t(reasonWord(ev.reason));
+      if (r) { r.flash(); r.sleep("waking"); if (r.nightProgress) r.nightProgress(done, done + carried); }
       // The animation stops IN PLACE: the scene's event clock freezes and
       // this loop stops. Whatever was still queued stays faint.
       if (s) s.freeze();
@@ -243,11 +243,11 @@ const Night = (() => {
       renderStatus();
       return 0;
     },
-    "uyku.bitti": (ev) => {
+    "sleep.ended": (ev) => {
       const s = scene(), r = regions();
-      current.report = ev.rapor && typeof ev.rapor === "object" ? ev.rapor : null;
+      current.report = ev.report && typeof ev.report === "object" ? ev.report : null;
       if (s) s.dim(0);
-      if (r) { r.sleep("uyanik"); r.cycle(0, ""); }
+      if (r) { r.sleep("awake"); r.cycle(0, ""); }
       // The simple block's "Dün gece 18 konuşma tekrar edildi, 2 ders çıkardı."
       if (r && r.lastNight) {
         const rep = current.report || {};
@@ -259,39 +259,39 @@ const Night = (() => {
       renderStatus();
       return scaled(BEAT);
     },
-    "uyanik.ters": (ev) => {
+    "awake.reverse": (ev) => {
       // Day: the session's chain, backwards, a short glow — without
       // waiting for the morning.
       const s = scene();
-      const chain = sequences.get(ev.oturum) || (ev.oturum ? [ev.oturum] : []);
+      const chain = sequences.get(ev.session) || (ev.session ? [ev.session] : []);
       if (!s || !chain.length) return scaled(BEAT);
-      const good = isSuccess(ev.sonuc);
+      const good = isSuccess(ev.outcome);
       return s.lightSequence(chain, {
         reverse: true, kind: good ? "success" : "failure", speed: Math.max(speed, 2),
         glyph: good ? "✓" : "✕", group: "session",
       });
     },
-    "mikro.basladi": () => {
+    "micro.started": () => {
       const s = scene(), r = regions();
       if (s) s.dim(NAP_DIM);
       if (r) r.nap(true);
       return scaled(BEAT);
     },
-    "mikro.bitti": () => {
+    "micro.ended": () => {
       const s = scene(), r = regions();
       if (s) s.dim(0);
       if (r) r.nap(false);
       return scaled(BEAT);
     },
-    "yerel.basladi": (ev) => {
+    "local.started": (ev) => {
       // Local sleep: the hippocampus does NOT darken; one slice of the
       // cold ring takes the sleep pattern and the "tired" badge shows.
       const s = scene(), r = regions();
-      if (s) s.coldSlice(ev.bolge || "yerel");
+      if (s) s.coldSlice(ev.region || "local");
       if (r) r.tired(true);
       return scaled(BEAT);
     },
-    "yerel.bitti": () => {
+    "local.ended": () => {
       const s = scene(), r = regions();
       if (s) { s.coldSlice(null); s.thinEdges(); }
       if (r) r.tired(false);
@@ -300,14 +300,15 @@ const Night = (() => {
   };
 
   function play(ev) {
-    const handler = HANDLERS[ev.tur];
+    const handler = HANDLERS[ev.kind];
     if (!handler) return 0;
     try { return handler(ev) || 0; }
-    catch (err) { console.error("gece olayı çizilemedi", ev.tur, err); return 0; }
+    catch (err) { console.error("gece olayı çizilemedi", ev.kind, err); return 0; }
   }
 
-  const isSuccess = (word) => /^(basari|basarili|success|ok|true)$/i.test(String(word || ""));
-  const reasonWord = (word) => ({ kullanici: "kullanıcı", user: "kullanıcı", basinc: "basınç", ritim: "ritim" })[word] || String(word || "");
+  const isSuccess = (word) => /^(succeeded|success|basari|basarili|ok|true)$/i.test(String(word || ""));
+  const reasonWord = (word) => ({ user: "kullanıcı", pressure: "basınç", rhythm: "ritim", caffeine: "kafein",
+                                   kullanici: "kullanıcı", basinc: "basınç", ritim: "ritim" })[word] || String(word || "");
 
   // --- speed bar & controls ---------------------------------------------------
   function setSpeed(value) {
@@ -450,7 +451,7 @@ const Night = (() => {
     if (play) play.textContent = frozen ? t("Devam") : t("Oynat");
   }
 
-  // The morning report: the NightReport dict from `uyku.bitti` when the
+  // The morning report: the NightReport dict from `sleep.ended` when the
   // night finished, else the file summary. The keys are shown as they
   // are named in weave.NightReport, so the panel and the report cannot
   // drift.
@@ -461,8 +462,8 @@ const Night = (() => {
     goals_written: "hedef", warmed: "ısınan", cooled: "soğuyan", rolled_back: "geri alınan",
     seconds: "saniye",
   };
-  const SUMMARY_LABELS = { dongu: "döngü", tekrar: "tekrar", kenar: "kenar", dikis: "dikiş",
-                           damitik: "damıtık", dokunus: "dokunuş", devreden: "devretti", uyandi: "sebep" };
+  const SUMMARY_LABELS = { cycles: "döngü", replays: "tekrar", edges: "kenar", stitches: "dikiş",
+                           distilled: "damıtık", touches: "dokunuş", carried: "devretti", woke: "sebep" };
 
   function renderReport(box) { fillReport(box, current.report, current.summary, current.woke); }
 
@@ -477,16 +478,16 @@ const Night = (() => {
       dl.append(dt, dd);
     };
     if (report) {
-      src.textContent = t("Rapor kaynağı") + ": uyku.bitti.rapor (weave.NightReport)";
+      src.textContent = t("Rapor kaynağı") + ": sleep.ended.report (weave.NightReport)";
       for (const [key, value] of Object.entries(report)) {
         if (Array.isArray(value)) continue;
         put(REPORT_LABELS[key] || key, typeof value === "number" ? Math.round(value * 100) / 100 : value);
       }
-      if (woke && woke.borc) put("borç", JSON.stringify(woke.borc));
+      if (woke && woke.debt) put("borç", JSON.stringify(woke.debt));
     } else if (summary) {
       src.textContent = t("Rapor kaynağı") + ": " + t("gece dosyası özeti") + " (night_events.summary)";
       for (const [key, value] of Object.entries(summary)) put(SUMMARY_LABELS[key] || key, value);
-      if (woke && woke.borc) put("borç", JSON.stringify(woke.borc));
+      if (woke && woke.debt) put("borç", JSON.stringify(woke.debt));
     } else {
       src.textContent = t("rapor yok: gece bitmedi ya da kesildi");
     }

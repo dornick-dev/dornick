@@ -201,7 +201,7 @@ const Apps = (() => {
     try {
       const data = await (await fetch("/api/projects")).json();
       all = data.projects || [];
-      brokenManifests = data.sorunlar || [];
+      brokenManifests = data.problems || [];
     } catch {
       body.append(el("p", "apps-blank", "Okunamadı"));
       return;
@@ -327,7 +327,7 @@ const Apps = (() => {
       p.desc || "Açıklama yok — Dornick'e sorup app.json'a yazdırabilirsin."));
     // If incomplete, WHY: "entry bulunamadı: static/index.html". Both the
     // user and the model should be able to read what is wrong.
-    if (p.eksik && p.neden) wrap.append(el("p", "proj-why", p.neden));
+    if (p.missing && p.reason) wrap.append(el("p", "proj-why", p.reason));
 
     // The live address sits on the card: reaching a running app should not
     // require opening the card.
@@ -398,7 +398,7 @@ const Apps = (() => {
   // incomplete (amber).
   function state(p) {
     if (liveOf(p)) return { cls: "live", label: "çalışıyor" };
-    if (p.eksik) return { cls: "gap", label: "eksik" };
+    if (p.missing) return { cls: "gap", label: "eksik" };
     return { cls: "idle", label: "durdu" };
   }
 
@@ -428,7 +428,7 @@ const Apps = (() => {
       return;
     }
     if (typeof Viewer !== "undefined" && p.entry) { Viewer.present(p.entry); close(); return; }
-    toast(p.name + ": " + (p.neden || t("Açılacak giriş dosyası bulunamadı")));
+    toast(p.name + ": " + (p.reason || t("Açılacak giriş dosyası bulunamadı")));
   }
 
   // Refreshes the live state on the cards: green dot + state badge + action.
@@ -581,7 +581,7 @@ const Apps = (() => {
     // moment's snapshot).
     paintViewLive(view, p);
     // The incomplete manifest's reason here too: "entry bulunamadı: static/index.html".
-    if (p.eksik && p.neden) view.append(el("p", "proj-why", p.neden));
+    if (p.missing && p.reason) view.append(el("p", "proj-why", p.reason));
 
     // How to run (README). Rendered as markdown when available, else plain text.
     if (p.howto) {
@@ -794,7 +794,7 @@ const Apps = (() => {
     const main = el("div", "arts-main");
     main.append(el("div", "arts-name", a.title || a.id));
     main.append(el("div", "arts-meta",
-      "v" + (a.surum || 1) + (a.updated ? " · " + artWhen(a.updated) : "")));
+      "v" + (a.version || 1) + (a.updated ? " · " + artWhen(a.updated) : "")));
 
     const openArt = () => {
       if (typeof Viewer !== "undefined" && Viewer.page) {
@@ -947,7 +947,7 @@ const Apps = (() => {
         body: JSON.stringify({ pid: p.pid }),
       })).json();
     } catch { res = { ok: false, error: "Ulaşılamadı" }; }
-    toast(res.ok ? (p.name || "süreç") + " durduruldu"
+    toast(res.ok ? (p.name || t("süreç")) + " durduruldu"
                  : (res.error || "Durdurulamadı"));
     for (const ms of [600, 1600, 3200]) setTimeout(drawRunning, ms);
     drawRunning();

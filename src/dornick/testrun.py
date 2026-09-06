@@ -137,7 +137,7 @@ class Result:
     ecosystem: str
     label: str
     root: str
-    status: str              # kostu | zaman_asimi | baslatilamadi | yok
+    status: str              # ran | timeout | failed_to_start | none | interrupted
     exit_code: int = 0
     duration: float = 0.0
     count: Count = field(default_factory=Count)
@@ -148,7 +148,7 @@ class Result:
 
     @property
     def succeeded(self) -> bool:
-        return self.status == "kostu" and self.exit_code == 0
+        return self.status == "ran" and self.exit_code == 0
 
     def text(self) -> str:
         """The text that goes to the model.
@@ -156,21 +156,21 @@ class Result:
         Three rules: (1) if there are numbers they come first, (2) failures
         by name, (3) the closing sentence never says "everything works".
         """
-        if self.status == "kesildi":
+        if self.status == "interrupted":
             return (
                 f"Durduruldu — {self.label} ve altındaki süreçler "
                 f"sonlandırıldı ({self.duration:.0f} sn sonra).\n\n"
                 + (self.raw or "(çıktı yok)")
             )
-        if self.status == "zaman_asimi":
+        if self.status == "timeout":
             return (
                 f"{self.label} {self.duration:.0f} saniyede bitmedi ve durduruldu. "
-                "Takım gerçekten uzunsa `zaman_asimi` değerini artır; bir test "
+                "Takım gerçekten uzunsa `timeout` değerini artır; bir test "
                 "asılı kalıyorsa asıl mesele o — aşağıdaki yarım çıktının son "
                 "satırı çoğu zaman nerede takıldığını söyler.\n\n"
                 + (self.raw or "(çıktı yok)")
             )
-        if self.status == "baslatilamadi":
+        if self.status == "failed_to_start":
             return f"{self.label} başlatılamadı — {self.raw}"
 
         headline = [f"{self.label} koştu · çıkış kodu {self.exit_code} · "
@@ -242,18 +242,18 @@ class Result:
     def detail(self) -> dict:
         """Machine-readable form so the UI can draw a badge."""
         return {
-            "ekosistem": self.ecosystem,
-            "komut": self.label,
-            "kok": self.root,
-            "durum": self.status,
-            "cikis_kodu": self.exit_code,
-            "sure": round(self.duration, 2),
-            "gecen": self.count.passed,
-            "kalan": self.count.failed,
-            "atlanan": self.count.skipped,
-            "okundu": self.count.parsed,
-            "basarisizlar": [
-                {"ad": f.name, "mesaj": f.message, "yer": f.location}
+            "ecosystem": self.ecosystem,
+            "command": self.label,
+            "root": self.root,
+            "status": self.status,
+            "exit_code": self.exit_code,
+            "duration": round(self.duration, 2),
+            "passed": self.count.passed,
+            "failed": self.count.failed,
+            "skipped": self.count.skipped,
+            "parsed": self.count.parsed,
+            "failures": [
+                {"name": f.name, "message": f.message, "location": f.location}
                 for f in self.failures[:MAX_FAILURES]
             ],
         }
@@ -883,13 +883,13 @@ async def run_harness(
     """Runs the setup and returns the normalised result."""
     if not harness.runnable:
         return Result(harness.ecosystem, harness.label, str(harness.root),
-                      "yok", raw=harness.blocker, notes=list(harness.notes),
+                      "none", raw=harness.blocker, notes=list(harness.notes),
                       kind=harness.kind)
 
     exe = _parse(harness.argv[0])
     if exe is None:
         return Result(
-            harness.ecosystem, harness.label, str(harness.root), "baslatilamadi",
+            harness.ecosystem, harness.label, str(harness.root), "failed_to_start",
             raw=f"`{harness.argv[0]}` bu makinede bulunamadı.",
             notes=list(harness.notes), kind=harness.kind,
         )
@@ -967,7 +967,7 @@ async def _run(
         else:
             proc = await asyncio.create_subprocess_exec(*(argv or []), **common)
     except (OSError, ValueError) as exc:
-        return Result(ecosystem, label, str(root), "baslatilamadi",
+        return Result(ecosystem, label, str(root), "failed_to_start",
                       raw=f"{type(exc).__name__}: {exc}",
                       notes=notes or [], kind=kind)
 
@@ -1008,7 +1008,7 @@ async def _run(
             stop.cancel()
         piece = (partial or b"").decode("utf-8", errors="replace")
         return Result(ecosystem, label, str(root),
-                      "kesildi" if interrupted else "zaman_asimi", duration=elapsed,
+                      "interrupted" if interrupted else "timeout", duration=elapsed,
                       raw=trim(piece.replace("\r\n", "\n")),
                       notes=notes or [], kind=kind)
 
@@ -1020,7 +1020,7 @@ async def _run(
 
     count, failures = normalize(ecosystem, text)
     return Result(
-        ecosystem=ecosystem, label=label, root=str(root), status="kostu",
+        ecosystem=ecosystem, label=label, root=str(root), status="ran",
         exit_code=proc.returncode or 0, duration=elapsed, count=count,
         failures=failures, raw=trim(text), notes=notes or [], kind=kind,
     )

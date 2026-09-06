@@ -36,7 +36,7 @@ def test_publish_writes_page_and_meta(tmp_path: Path) -> None:
     assert (target / "index.html").read_text(encoding="utf-8").endswith("<p>x</p>")
     saved = json.loads((target / "meta.json").read_text(encoding="utf-8"))
     assert saved["title"] == "Günlük Rapor"
-    assert saved["surum"] == 1
+    assert saved["version"] == 1
     assert saved["created"] == saved["updated"]
 
 
@@ -66,7 +66,7 @@ def test_update_keeps_the_address_and_archives_the_old_page(tmp_path: Path) -> N
     updated = artifacts.update(tmp_path, meta["id"], "<p>v2</p>")
 
     assert updated["id"] == meta["id"]          # the address does not change
-    assert updated["surum"] == 2
+    assert updated["version"] == 2
     target = tmp_path / artifacts.FOLDER / meta["id"]
     assert "v2" in (target / "index.html").read_text(encoding="utf-8")
     # The old version is not lost: it sits as versions/1.html.
@@ -183,7 +183,7 @@ def test_tool_publish_returns_id_and_announces(registry, ctx) -> None:
     notes = ctx.session.log.notes("artifact")
     assert len(notes) == 1
     assert notes[0].meta["id"] == meta["id"]
-    assert notes[0].meta["surum"] == 1
+    assert notes[0].meta["version"] == 1
     assert notes[0].meta["action"] == "publish"
 
 
@@ -199,7 +199,7 @@ def test_tool_update_bumps_the_version(registry, ctx) -> None:
 
     assert not result.is_error
     assert "v2" in result.content and artifact_id in result.content
-    assert ctx.session.log.notes("artifact")[-1].meta["surum"] == 2
+    assert ctx.session.log.notes("artifact")[-1].meta["version"] == 2
 
 
 def test_tool_list_shows_what_was_published(registry, ctx) -> None:
@@ -314,9 +314,9 @@ def test_artifact_notes_reach_the_stream(tmp_path: Path) -> None:
     from dornick.web.server import _payload
 
     note = Event(seq=0, ts=utcnow(), kind="meta", content="artifact",
-                 meta={"id": "pano-1a2b", "title": "Pano", "surum": 2,
+                 meta={"id": "pano-1a2b", "title": "Pano", "version": 2,
                        "action": "update", "address": "/artifact/pano-1a2b/"})
     payload = _payload(note)
     assert payload is not None
     assert payload["type"] == "artifact"
-    assert payload["id"] == "pano-1a2b" and payload["surum"] == 2
+    assert payload["id"] == "pano-1a2b" and payload["version"] == 2

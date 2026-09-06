@@ -635,7 +635,7 @@ async def test_a_preference_nudges_the_agent_to_remember(
     assert "mind_memory" in content
     assert "tablo yaz" in content, "not neyi kastettiğini söylemeli"
     assert "yok say" in content, "emir değil davet: yanlış pozitifte zararsız"
-    assert agent.session.log.notes("zihin_durtusu")
+    assert agent.session.log.notes("mind_impulse")
 
 
 async def test_no_nudge_when_the_agent_already_wrote(
@@ -657,7 +657,7 @@ async def test_no_nudge_when_the_agent_already_wrote(
 
     await agent.run("bundan sonra raporları hep tablo yaz")
 
-    assert not agent.session.log.notes("zihin_durtusu")
+    assert not agent.session.log.notes("mind_impulse")
 
 
 async def test_no_nudge_without_a_lasting_signal(
@@ -670,7 +670,7 @@ async def test_no_nudge_without_a_lasting_signal(
 
     await agent.run("saat kaç")
 
-    assert not agent.session.log.notes("zihin_durtusu")
+    assert not agent.session.log.notes("mind_impulse")
 
 
 async def test_the_nudge_does_not_repeat_for_the_same_sentence(
@@ -684,7 +684,7 @@ async def test_the_nudge_does_not_repeat_for_the_same_sentence(
     await agent.run("bundan sonra hep tablo yaz")
     await agent.run("bundan sonra hep tablo yaz")
 
-    assert len(agent.session.log.notes("zihin_durtusu")) == 1
+    assert len(agent.session.log.notes("mind_impulse")) == 1
 
 
 def test_the_scent_reads_both_languages() -> None:
@@ -791,7 +791,7 @@ def test_the_ui_has_a_line_for_every_outcome() -> None:
     APP_JS = (Path(__file__).resolve().parents[1]
               / "src" / "dornick" / "web" / "static" / "app.js").read_text(encoding="utf-8")
     for code in ("basladi", "veri_yok", "kosuyor", "duzenek_yok",
-                 "kapali", "ara_yok", "baslatilamadi"):
+                 "kapali", "ara_yok", "failed_to_start"):
         assert re.search(rf"\b{code}:", APP_JS), code
     # The pulse must show even on very short runs.
     assert re.search(r"const TRAINING_MIN_PULSE_MS = \d+", APP_JS)

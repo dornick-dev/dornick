@@ -30,16 +30,14 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Callable
 
-from .. import legacy_names
+from .. import legacy_names, legacy_values
 
-# Five axes, each in [0, 1], 0.5 neutral.
+# Five axes, each in [0, 1], 0.5 neutral. The on-disk names in
+# `temperament.json` (its `baseline`/`target`/`gain` blocks) are these same
+# words since 1.5.5; a file written earlier (`taban`/`hedef`/`kazanc`,
+# `yenilik`/`sonuc`/`sosyal`/`sebat`/`temkin`) is read through
+# `legacy_values` and rewritten in this form on the next save.
 AXES = ("novelty", "outcome", "social", "persistence", "caution")
-
-# The on-disk names of the axes (`temperament.json`, also the "taban"/"hedef"
-# blocks in it). The file format is frozen in Turkish; the Python fields are
-# English. This map is the only place the two meet.
-AXIS_KEYS = {"novelty": "yenilik", "outcome": "sonuc", "social": "sosyal",
-             "persistence": "sebat", "caution": "temkin"}
 
 # Plasticity decays but never reaches zero: the hundredth session moves the
 # needle half as far as the first, the thousandth still moves it.
@@ -61,13 +59,13 @@ class Temperament:
     caution: float = 0.5
 
     def as_dict(self) -> dict[str, float]:
-        """The persisted form: Turkish keys, as the temperament file has always had."""
-        return {AXIS_KEYS[axis]: round(getattr(self, axis), 4) for axis in AXES}
+        """The persisted form: the axis names, English."""
+        return {axis: round(getattr(self, axis), 4) for axis in AXES}
 
     @classmethod
     def from_dict(cls, data: dict[str, Any] | None) -> Temperament:
-        data = data or {}
-        return cls(**{axis: float(data.get(AXIS_KEYS[axis], 0.5)) for axis in AXES})
+        data = legacy_values.temperament_axes(data or {})
+        return cls(**{axis: float(data.get(axis, 0.5)) for axis in AXES})
 
 
 # The target a fresh install starts from. Every axis neutral except social:
@@ -83,7 +81,6 @@ def default_target() -> Temperament:
 # 1.0 = the computed ratio is applied as is. Bounds keep one bad
 # measurement from silencing or saturating an axis for good.
 GAIN_LOW, GAIN_HIGH = 0.25, 4.0
-GAIN_KEYS = {axis: f"kazanc_{key}" for axis, key in AXIS_KEYS.items()}
 
 
 def neutral_gain() -> dict[str, float]:
@@ -183,33 +180,43 @@ def _path(state_dir: Path) -> Path:
 
 def load(state_dir: Path) -> tuple[Temperament, Temperament, str]:
     """(baseline, target, model_id). Missing file means neutral, not an error."""
+    data = _read(state_dir)
+    if data is None:
+        return Temperament(), default_target(), ""
+    baseline = Temperament.from_dict(data.get("baseline"))
+    target = Temperament.from_dict(data.get("target") or data.get("baseline"))
+    return baseline, target, str(data.get("model_id") or "")
+
+
+def _read(state_dir: Path) -> dict[str, Any] | None:
+    """The temperament file with its blocks and axes in the 1.5.5 names."""
     try:
         data = json.loads((_path(state_dir)).read_text("utf-8"))
     except (OSError, ValueError):
-        return Temperament(), default_target(), ""
-    baseline = Temperament.from_dict(data.get("taban"))
-    target = Temperament.from_dict(data.get("hedef") or data.get("taban"))
-    return baseline, target, str(data.get("model_id") or "")
+        return None
+    if not isinstance(data, dict):
+        return None
+    data = legacy_values.keys(data, legacy_values.TEMPERAMENT_KEYS)
+    for block in ("baseline", "target", "gain"):
+        if isinstance(data.get(block), dict):
+            data[block] = legacy_values.temperament_axes(data[block])
+    return data
 
 
 def load_gain(state_dir: Path) -> dict[str, float]:
     """The per-model lever gain saved next to the temperament; neutral if none."""
-    try:
-        data = json.loads((_path(state_dir)).read_text("utf-8"))
-    except (OSError, ValueError):
+    data = _read(state_dir)
+    if data is None:
         return neutral_gain()
-    stored = data.get("kazanc") or {}
-    return {axis: float(stored.get(AXIS_KEYS[axis], 1.0)) for axis in AXES}
+    stored = data.get("gain") or {}
+    return {axis: float(stored.get(axis, 1.0)) for axis in AXES}
 
 
 def save_gain(state_dir: Path, gain: dict[str, float]) -> None:
     """Writes the gain into temperament.json without touching baseline/target."""
     path = _path(state_dir)
-    try:
-        data = json.loads(path.read_text("utf-8"))
-    except (OSError, ValueError):
-        data = {}
-    data["kazanc"] = {AXIS_KEYS[axis]: round(float(gain.get(axis, 1.0)), 4) for axis in AXES}
+    data = _read(state_dir) or {}
+    data["gain"] = {axis: round(float(gain.get(axis, 1.0)), 4) for axis in AXES}
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
 
@@ -248,7 +255,7 @@ def save(state_dir: Path, baseline: Temperament, target: Temperament,
          model_id: str = "") -> None:
     path = _path(state_dir)
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps({"taban": baseline.as_dict(), "hedef": target.as_dict(),
+    path.write_text(json.dumps({"baseline": baseline.as_dict(), "target": target.as_dict(),
                                 "model_id": model_id}, ensure_ascii=False),
                     encoding="utf-8")
 

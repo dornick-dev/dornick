@@ -79,10 +79,10 @@ def register(registry: ToolRegistry) -> None:
                     "enum": [
                         "tabs", "open", "go", "read", "look",
                         "click", "fill", "submit", "type", "press",
-                        "konsol", "ag", "js",
+                        "console", "network", "js",
                     ],
                     "description": "tabs/open/go/read/look/click/fill/submit/"
-                                   "type/press/konsol/ag/js.",
+                                   "type/press/console/network/js.",
                 },
                 "url": {"type": "string", "description": "open ve go için adres."},
                 "text": {
@@ -90,14 +90,14 @@ def register(registry: ToolRegistry) -> None:
                     "description": "click için tıklanacak metin; fill/type için "
                                    "yazılacak metin; js için çalıştırılacak ifade.",
                 },
-                "seviye": {
+                "level": {
                     "type": "string",
-                    "enum": ["hepsi", "hata", "uyari"],
-                    "description": "konsol için süzgeç (varsayılan hepsi).",
+                    "enum": ["all", "errors", "warnings"],
+                    "description": "console için süzgeç (varsayılan all).",
                 },
                 "n": {
                     "type": "integer",
-                    "description": "konsol/ag için kaç kayıt gösterilsin.",
+                    "description": "console/network için kaç kayıt gösterilsin.",
                 },
                 "selector": {
                     "type": "string",
@@ -186,12 +186,12 @@ def register(registry: ToolRegistry) -> None:
                     + f"\n\n{seen['text']}" + _warning_suffix(box, tab)
                 )
 
-            if action == "konsol":
+            if action == "console":
                 record = box.snapshot(tab)
                 return ToolResult(_console_text(
-                    record, str(args.get("seviye") or "hepsi"), args.get("n")))
+                    record, str(args.get("level") or "all"), args.get("n")))
 
-            if action == "ag":
+            if action == "network":
                 record = box.snapshot(tab)
                 return ToolResult(_network_text(record, args.get("n")))
 
@@ -203,7 +203,7 @@ def register(registry: ToolRegistry) -> None:
                         "`document.querySelectorAll('.satir').length`."
                     )
                 answer = box.js(tab, expression)
-                if answer["tip"] == "hata":
+                if answer["type"] == "error":
                     return ToolResult(
                         f"İfade hata verdi — bu bir bulgudur, aracın arızası değil:"
                         f"\n{answer['deger']}",
@@ -211,7 +211,7 @@ def register(registry: ToolRegistry) -> None:
                     )
                 import json as _json
 
-                value = answer["deger"]
+                value = answer["value"]
                 body = (value if isinstance(value, str)
                         else _json.dumps(value, ensure_ascii=False, indent=1))
                 return ToolResult(
@@ -300,14 +300,14 @@ def _error_suffix(seen: dict[str, Any]) -> str:
     At the top of the page, not the bottom: a note standing at the end of a
     long stack trace was not being read.
     """
-    error = seen.get("hata")
-    if not isinstance(error, dict) or not error.get("tur"):
+    error = seen.get("error")
+    if not isinstance(error, dict) or not error.get("kind"):
         return ""
-    lines = [f"\n\n!! Bu bir HATA SAYFASI ({error['tur']})."]
-    if error.get("baslik"):
-        lines.append(f"   {error['baslik']}")
-    if error.get("mesaj"):
-        lines.append(f"   {error['mesaj']}")
+    lines = [f"\n\n!! Bu bir HATA SAYFASI ({error['kind']})."]
+    if error.get("title"):
+        lines.append(f"   {error['title']}")
+    if error.get("message"):
+        lines.append(f"   {error['message']}")
     if error.get("yer"):
         lines.append(f"   {error['yer']}")
     lines.append("   Sayfa açıldı ama uygulama patladı; bunu 'çalışıyor' "
@@ -328,7 +328,7 @@ def _warning_suffix(box: Any, tab: dict[str, Any]) -> str:
     if getattr(record, "error", ""):
         return ("\n\n(konsol/ağ dinleyicisi kurulamadı — bu sayfada JS hatası "
                 "olup olmadığını göremiyorum.)")
-    errors = [k for k in getattr(record, "console", ()) if k.level == "hata"]
+    errors = [k for k in getattr(record, "console", ()) if k.level == "error"]
     bad = [i for i in getattr(record, "requests", ()) if i.failed]
     if not errors and not bad:
         return ""
@@ -364,19 +364,19 @@ def _console_text(record: Any, level: str, n: Any) -> str:
 
     count = max(1, min(int(n or chrome.DEFAULT_N), chrome.BUFFER))
     everything = list(record.console)
-    sieve = {"hata": {"hata"}, "uyari": {"uyari", "hata"}}.get(level)
+    sieve = {"errors": {"error"}, "warnings": {"warning", "error"}}.get(level)
     chosen = [k for k in everything if k.level in sieve] if sieve else everything
 
     if not chosen:
         tail = _missing_note(record)
         if everything:
             return (f"Bu süzgeçle ({level}) kayıt yok; konsolda toplam "
-                    f"{len(everything)} mesaj var (`seviye: hepsi` ile bak)." + tail)
+                    f"{len(everything)} mesaj var (`level: all` ile bak)." + tail)
         return ("Konsolda hiç kayıt yok. Bu, sayfanın hatasız olduğu anlamına "
                 "GELMEZ: sessizce yanlış davranan kod konsola bir şey yazmaz. "
                 "Davranışı ayrıca doğrula." + tail)
 
-    errors = sum(1 for k in chosen if k.level == "hata")
+    errors = sum(1 for k in chosen if k.level == "error")
     heading = (f"{len(chosen)} konsol kaydı ({errors} hata) — son "
                f"{min(count, len(chosen))} tanesi:")
     lines = [heading]

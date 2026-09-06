@@ -433,16 +433,16 @@ def test_a_conversation_can_be_named_and_tagged(tmp_path: Path, mind: Mind) -> N
     # (model/path/provider — the window handover work) and every new field
     # must not break this test. The test checks that the two fields we gave
     # come back correctly.
-    assert record["ad"] == "CMS göçü"
-    assert record["etiketler"] == ["cms", "acil"]
+    assert record["name"] == "CMS göçü"
+    assert record["tags"] == ["cms", "acil"]
 
     # Also there when read fresh from disk: the panel re-reads on every open.
     fresh = open_mind(tmp_path / "mind", tmp_path / "sessions", "cur")
-    assert fresh.session_meta()["s1"]["ad"] == "CMS göçü"
+    assert fresh.session_meta()["s1"]["name"] == "CMS göçü"
 
 
 def test_archive_moves_the_log_out_of_the_list(tmp_path: Path, mind: Mind) -> None:
-    """Archiving is not permanent deletion: the log goes to sessions/.arsiv,
+    """Archiving is not permanent deletion: the log goes to sessions/.archive,
     drops from the list, and the name/project mapping goes too. The open
     session is not moved."""
     sid = "20260610T090000Z"
@@ -454,7 +454,7 @@ def test_archive_moves_the_log_out_of_the_list(tmp_path: Path, mind: Mind) -> No
     out = mind.archive_session(sid)
     assert out["ok"] is True
     assert not (mind.sessions_dir / f"{sid}.jsonl").is_file()
-    assert (mind.sessions_dir / ".arsiv" / f"{sid}.jsonl").is_file()
+    assert (mind.sessions_dir / ".archive" / f"{sid}.jsonl").is_file()
     assert sid not in mind.session_meta()
     assert sid not in mind.projects()
     assert all(e.session_id != sid for e in mind.sessions())
@@ -468,19 +468,19 @@ def test_touching_one_field_leaves_the_other_alone(tmp_path: Path, mind: Mind) -
     """A request that changes only the tags must not delete the name."""
     mind.set_session_meta("s1", name="CMS göçü", tags=["cms"])
     record = mind.set_session_meta("s1", tags=["cms", "borsa"])
-    assert record["ad"] == "CMS göçü"
+    assert record["name"] == "CMS göçü"
     record = mind.set_session_meta("s1", name="Yeni ad")
-    assert record["etiketler"] == ["cms", "borsa"]
+    assert record["tags"] == ["cms", "borsa"]
 
 
 def test_tags_are_normalised_and_bounded(tmp_path: Path, mind: Mind) -> None:
     """A tag is a filter key: "CMS" and "cms" cannot be two separate sets."""
     record = mind.set_session_meta(
         "s1", tags=["  CMS  ", "cms", "Borsa", "", "   "])
-    assert record["etiketler"] == ["cms", "borsa"]
+    assert record["tags"] == ["cms", "borsa"]
     # Bound: more than eight tags on one conversation is unreadable in the panel.
     many = mind.set_session_meta("s2", tags=[f"e{i}" for i in range(20)])
-    assert len(many["etiketler"]) == 8
+    assert len(many["tags"]) == 8
 
 
 def test_an_empty_name_and_no_tags_drops_the_record(tmp_path: Path, mind: Mind) -> None:

@@ -12,7 +12,7 @@ Why not schtasks: with scheduling inside the product the user can switch it
 on and off with a single toggle, the run's start/finish shows in the UI and
 on a machine without the rig the feature stays quietly passive.
 
-`son_kosu` is written when the run FINISHES: a run cut short (computer shut
+`last_run` is written when the run FINISHES: a run cut short (computer shut
 down, process killed) must stay repeatable. The loop's own state
 (watermark, threshold) is in its own store anyway — a half run loses no data.
 """
@@ -29,6 +29,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from . import legacy_values
 from . import legacy_names
 
 FILE = "recognition.json"
@@ -105,8 +106,10 @@ def status(state_dir: Path) -> dict:
     try:
         d = json.loads((state_dir / FILE).read_text(encoding="utf-8"))
     except (OSError, ValueError):
-        return {"on": False, "son_kosu": "", "learn_cloud_ok": False}
-    return {"on": bool(d.get("on")), "son_kosu": str(d.get("son_kosu") or ""),
+        return {"on": False, "last_run": "", "learn_cloud_ok": False}
+    # A file written before 1.5.5 says `son_kosu`.
+    d = legacy_values.keys(d, legacy_values.RECOGNITION_KEYS)
+    return {"on": bool(d.get("on")), "last_run": str(d.get("last_run") or ""),
             # Privacy consent: explicit permission for labelling with the
             # hosted model. Normalised here and WRITTEN BACK so that
             # read-modify-write flows like `configure` do not wipe the flag.
@@ -180,7 +183,7 @@ def maybe_start(state_dir: Path, hub: Any, *, force: bool = False) -> str:
         kosuyor      already running
         veri_yok     no new data (nothing to train on)
         ara_yok      the time/accumulation condition has not formed yet
-        baslatilamadi the process could not be opened
+        failed_to_start the process could not be opened
 
     Returning a reason is deliberate: the "Train now" button was silently
     doing nothing. The truth was — the loop started and in under a second
@@ -203,9 +206,9 @@ def maybe_start(state_dir: Path, hub: Any, *, force: bool = False) -> str:
             return "kosuyor"
         if force and _new_memory_count(state_dir) <= 0:
             return "veri_yok"
-        if not force and d["son_kosu"]:
+        if not force and d["last_run"]:
             try:
-                last = datetime.fromisoformat(d["son_kosu"])
+                last = datetime.fromisoformat(d["last_run"])
                 elapsed = (datetime.now(timezone.utc) - last).total_seconds()
             except ValueError:
                 elapsed = float("inf")  # a broken date must not block
@@ -236,7 +239,7 @@ def maybe_start(state_dir: Path, hub: Any, *, force: bool = False) -> str:
             )
         except OSError:
             logfile.close()
-            return "baslatilamadi"
+            return "failed_to_start"
         proc = _proc
 
     hub.emit({"type": "recognition", "state": "started"})
@@ -246,10 +249,10 @@ def maybe_start(state_dir: Path, hub: Any, *, force: bool = False) -> str:
             proc.wait()
         finally:
             logfile.close()
-        # `son_kosu` on finish: a half-finished run can be retried on the
+        # `last_run` on finish: a half-finished run can be retried on the
         # next poll.
         d2 = status(state_dir)
-        d2["son_kosu"] = datetime.now(timezone.utc).isoformat()
+        d2["last_run"] = datetime.now(timezone.utc).isoformat()
         (state_dir / FILE).write_text(json.dumps(d2, ensure_ascii=False), encoding="utf-8")
         hub.emit({"type": "recognition", "state": "finished"})
 

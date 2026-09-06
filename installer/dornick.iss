@@ -700,6 +700,6 @@ begin
   begin
     if ActiveLanguage = 'en' then Lang := 'en' else Lang := 'tr';
     SaveStringToFile(ExpandConstant('{app}\setup.json'),
-      '{"dil": "' + Lang + '"}', False);
+      '{"language": "' + Lang + '"}', False);
   end;
 end;

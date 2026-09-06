@@ -19,6 +19,7 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
+from . import legacy_values
 from .events import utcnow
 
 FOLDER = "workflows"
@@ -51,8 +52,9 @@ class WorkflowNode:
     position: dict[str, Any] = field(default_factory=dict)
     # Did the user edit this step BY HAND? Self-repair checks this:
     # the model rewriting a step the user deliberately wrote would not be
-    # a "fix" but a silent revert. (`elle` is a persisted JSON key.)
-    elle: bool = False
+    # a "fix" but a silent revert. (`manual` is a persisted JSON key; a file
+    # written before 1.5.5 says `elle`.)
+    manual: bool = False
 
 
 @dataclass(slots=True)
@@ -60,7 +62,7 @@ class WorkflowEdge:
     """A transition between two nodes.
 
     `from_` is written as `from` in JSON — `from` is a Python keyword.
-    on: under which condition (e.g. "ok", "hata", ""); empty = always.
+    on: under which condition (e.g. "ok", "error", ""); empty = always.
     """
 
     from_: str
@@ -129,7 +131,7 @@ def _parse_node(raw: Any, index: int) -> WorkflowNode:
         secrets_needed=[str(s).strip() for s in secrets if str(s).strip()],
         skill=str(raw.get("skill") or "").strip(),
         position=dict(position),
-        elle=bool(raw.get("elle")),
+        manual=bool(raw.get("manual", raw.get("elle"))),
     )
 
 
@@ -141,7 +143,8 @@ def _parse_edge(raw: Any, index: int) -> WorkflowEdge:
     dst = str(raw.get("to") or "").strip()
     if not src or not dst:
         raise WorkflowError(f"edges[{index}] from ve to zorunlu.")
-    return WorkflowEdge(from_=src, to=dst, on=str(raw.get("on") or "").strip())
+    return WorkflowEdge(from_=src, to=dst,
+                        on=legacy_values.edge_condition(str(raw.get("on") or "").strip()))
 
 
 def parse(raw: Any) -> Workflow:

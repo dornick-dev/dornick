@@ -12,15 +12,20 @@ A hook fills that gap: the user writes their own command into the
 `.dornick/hooks.json` file, and the command runs before or after the tool.
 
     [
-      {"olay": "arac_oncesi", "arac": "write_file",
-       "komut": "py .dornick/koru.py", "zaman_asimi": 10},
-      {"olay": "arac_sonrasi", "arac": "write_file|edit_file",
-       "komut": "black -q \\"%DORNICK_YOL%\\" && echo bicimlendirildi"}
+      {"event": "before_tool", "tool": "write_file",
+       "command": "py .dornick/guard.py", "timeout": 10},
+      {"event": "after_tool", "tool": "write_file|edit_file",
+       "command": "black -q \\"%DORNICK_PATH%\\" && echo formatted"}
+
+A file written before 1.5.5 (`olay`/`arac`/`komut`/`zaman_asimi`,
+`arac_oncesi`/`arac_sonrasi`, `%DORNICK_YOL%`) still loads: the keys and
+event names are read through `legacy_values`, and the old environment
+variable names are set beside the new ones.
     ]
 
-`arac_oncesi` has VETO power: if the command returns with a non-zero exit
+`before_tool` has VETO power: if the command returns with a non-zero exit
 code the tool does not run at all and the command's output goes to the model
-as the reason. `arac_sonrasi` only informs; its output is appended to the
+as the reason. `after_tool` only informs; its output is appended to the
 tool result as a single line.
 
 SECURITY — two deliberate decisions and their rationale:
@@ -52,7 +57,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from . import legacy_names
+from . import legacy_values, legacy_names
 
 from . import environment
 
@@ -72,7 +77,7 @@ MAX_TIMEOUT = 120.0
 # a reason, not a report.
 MAX_OUTPUT = 1200
 
-EVENTS = ("arac_oncesi", "arac_sonrasi")
+EVENTS = ("before_tool", "after_tool")
 
 
 @dataclass(slots=True)
@@ -104,22 +109,22 @@ class Output:
     hook: Hook
     code: int = 0
     text: str = ""
-    status: str = "kostu"        # kostu | zaman_asimi | baslatilamadi
+    status: str = "ran"          # ran | timeout | failed_to_start
 
     @property
     def blocks(self) -> bool:
-        """For `arac_oncesi`: should the tool NOT run?
+        """For `before_tool`: should the tool NOT run?
 
         A timeout blocks too. That is the safe side: if the user wrote a
         gatekeeper and the gatekeeper does not answer, saying "it would
         probably have allowed it" removes the gatekeeper's reason to exist.
         """
-        return self.status == "zaman_asimi" or (self.status == "kostu" and self.code != 0)
+        return self.status == "timeout" or (self.status == "ran" and self.code != 0)
 
 
 @dataclass(slots=True)
 class Verdict:
-    """The combined result of the `arac_oncesi` hooks."""
+    """The combined result of the `before_tool` hooks."""
 
     allowed: bool = True
     reason: str = ""
@@ -191,17 +196,19 @@ def _parse_entries(raw: Any) -> list[Hook]:
     for entry in raw:
         if not isinstance(entry, dict):
             continue
-        event = str(entry.get("olay") or "").strip()
-        command = str(entry.get("komut") or "").strip()
+        entry = legacy_values.keys(entry, legacy_values.HOOK_KEYS)
+        event = str(entry.get("event") or "").strip()
+        event = legacy_values.HOOK_EVENTS.get(event, event)
+        command = str(entry.get("command") or "").strip()
         if event not in EVENTS or not command:
             continue
         try:
-            seconds = float(entry.get("zaman_asimi") or DEFAULT_TIMEOUT)
+            seconds = float(entry.get("timeout") or DEFAULT_TIMEOUT)
         except (TypeError, ValueError):
             seconds = DEFAULT_TIMEOUT
         found.append(Hook(
             event=event,
-            tool=str(entry.get("arac") or "*").strip() or "*",
+            tool=str(entry.get("tool") or "*").strip() or "*",
             command=command,
             timeout=max(1.0, min(seconds, MAX_TIMEOUT)),
         ))
@@ -296,17 +303,17 @@ def _environment(tool: str, args: dict[str, Any], session: str) -> dict[str, str
     problem.
     """
     env = dict(os.environ)
-    env["DORNICK_ARAC"] = tool
-    env["DORNICK_OTURUM"] = session
+    env["DORNICK_TOOL"] = env["DORNICK_ARAC"] = tool
+    env["DORNICK_SESSION"] = env["DORNICK_OTURUM"] = session
     try:
         env["DORNICK_ARGS"] = json.dumps(args, ensure_ascii=False)[:32_000]
     except (TypeError, ValueError):  # pragma: no cover - unserialisable argument
         env["DORNICK_ARGS"] = "{}"
     # The most used field separately and bare: being able to write
-    # `$DORNICK_YOL` without parsing JSON is what makes one-line hooks
+    # `$DORNICK_PATH` without parsing JSON is what makes one-line hooks
     # possible.
     path = args.get("path") or args.get("target") or ""
-    env["DORNICK_YOL"] = str(path) if isinstance(path, str) else ""
+    env["DORNICK_PATH"] = env["DORNICK_YOL"] = str(path) if isinstance(path, str) else ""
     return env
 
 
@@ -375,7 +382,7 @@ async def run(
     except (OSError, ValueError) as exc:
         # The hook's own fault must not kill the tool: this is a
         # configuration problem, not an obstacle to the user's work.
-        return Output(hook, status="baslatilamadi",
+        return Output(hook, status="failed_to_start",
                       text=f"{type(exc).__name__}: {exc}")
 
     job = asyncio.ensure_future(proc.communicate())
@@ -391,7 +398,7 @@ async def run(
             await asyncio.wait_for(job, 5)
         except (asyncio.TimeoutError, asyncio.CancelledError, OSError):
             job.cancel()
-        return Output(hook, status="zaman_asimi")
+        return Output(hook, status="timeout")
 
     raw = (out or b"").decode("utf-8", errors="replace").strip()
     if not raw:
@@ -414,10 +421,10 @@ async def before_tool(
     only costs time (and possible side effects).
     """
     decision = Verdict()
-    for hook in matching(state_dir, "arac_oncesi", tool):
+    for hook in matching(state_dir, "before_tool", tool):
         result = await run(hook, tool=tool, args=args, session=session, cwd=cwd)
 
-        if result.status == "baslatilamadi":
+        if result.status == "failed_to_start":
             # A broken hook does not block the tool, but it is not hidden
             # either: the user must know their rule never ran.
             decision.notes.append(
@@ -426,7 +433,7 @@ async def before_tool(
             )
             continue
 
-        if result.status == "zaman_asimi":
+        if result.status == "timeout":
             decision.allowed = False
             decision.reason = (
                 f"Kanca reddetti: `{hook.command}` {hook.timeout:.0f} "
@@ -464,12 +471,12 @@ async def after_tool(
     consequence, the exit code only goes in as a note.
     """
     lines: list[str] = []
-    for hook in matching(state_dir, "arac_sonrasi", tool):
+    for hook in matching(state_dir, "after_tool", tool):
         result = await run(hook, tool=tool, args=args, session=session, cwd=cwd)
-        if result.status == "baslatilamadi":
+        if result.status == "failed_to_start":
             lines.append(f"kanca çalıştırılamadı (`{hook.command}`): {result.text}")
             continue
-        if result.status == "zaman_asimi":
+        if result.status == "timeout":
             lines.append(
                 f"kanca `{hook.command}` {hook.timeout:.0f} saniyede "
                 "bitmedi ve durduruldu.")

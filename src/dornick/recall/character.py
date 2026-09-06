@@ -27,13 +27,15 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
 
+from .. import legacy_values
 from . import exemplars as exemplar_store
 from . import temperament
-from .temperament import AXIS_KEYS, Probe, Temperament
+from .temperament import Probe, Temperament
 
 PROBES_FILE = Path(__file__).resolve().parents[1] / "assets" / "decision_probes.json"
 
-AXIS_OF = {v: k for k, v in AXIS_KEYS.items()}
+# An axis as a probe file names it; the pre-1.5.5 Turkish names still read.
+AXIS_OF = legacy_values.AXES
 
 ANSWER_RULE = (
     "İki seçenek var: «{a}» ya da «{b}». İLK satırın YALNIZCA şu biçimde olsun "
@@ -68,19 +70,21 @@ class ProbeDecision:
 
 
 def load_probes(path: Path = PROBES_FILE) -> list[ProbeDecision]:
-    data = json.loads(Path(path).read_text(encoding="utf-8"))
+    data = legacy_values.keys(json.loads(Path(path).read_text(encoding="utf-8")),
+                              legacy_values.PROBE_KEYS)
     out: list[ProbeDecision] = []
-    for raw in data.get("kararlar", []):
-        options = tuple(str(o) for o in raw.get("secenekler", ()))[:2]
+    for raw in data.get("decisions", []):
+        raw = legacy_values.keys(raw, legacy_values.PROBE_KEYS)
+        options = tuple(str(o) for o in raw.get("options", ()))[:2]
         if len(options) != 2:
             continue
-        contexts = [str(c) for c in raw.get("baglamlar", ())]
+        contexts = [str(c) for c in raw.get("contexts", ())]
         out.append(ProbeDecision(
             id=str(raw.get("id", "")),
-            axis=AXIS_OF.get(str(raw.get("eksen", "")), str(raw.get("eksen", ""))),
-            message=str(raw.get("mesaj", "")),
+            axis=AXIS_OF.get(str(raw.get("axis", "")), str(raw.get("axis", ""))),
+            message=str(raw.get("message", "")),
             options=options,  # type: ignore[arg-type]
-            high=str(raw.get("yuksek", "")),
+            high=str(raw.get("high", "")),
             context=contexts[0] if contexts else "",
         ))
     return out
@@ -146,7 +150,7 @@ def precedent_from(answers: dict[str, str], probes: list[ProbeDecision]) -> list
         choice = answers.get(probe.id, "")
         if choice:
             situation = f"{probe.context} {probe.message}".strip()
-            out.append(exemplar_store.Exemplar(AXIS_KEYS.get(probe.axis, probe.axis), situation, choice))
+            out.append(exemplar_store.Exemplar(probe.axis, situation, choice))
     return out
 
 
@@ -205,6 +209,5 @@ def handle_model_change(state_dir: Path, model_id: str, ask: Ask,
     temperament.save_gain(state_dir, gain)
     return ChangeReport(model_id=model_id, previous=previous,
                         baseline=baseline.as_dict(),
-                        reached={AXIS_KEYS.get(a, a): v for a, v in reached.items()},
-                        gain={AXIS_KEYS.get(a, a): v for a, v in gain.items()},
+                        reached=dict(reached), gain=dict(gain),
                         precedent_recorded=recorded, calls=calls)

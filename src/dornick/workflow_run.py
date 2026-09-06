@@ -52,14 +52,14 @@ async def execute_workflow(
         try:
             from . import task_runs
             lines = "\n".join(
-                ("✓" if p.get("status") == "bitti"
-                 else "…" if p.get("status") == "koşuyor" else "✗")
+                ("✓" if p.get("status") == "done"
+                 else "…" if p.get("status") == "running" else "✗")
                 + " " + str(p.get("title") or p.get("id"))
                 for p in entries
             )
             task_runs.patch_run(
                 agent.config.state_dir, handle.schedule_id, handle.run_id,
-                report=lines or "(koşuyor)",
+                report=lines or "(running)",
                 nodes_progress=[dict(p) for p in entries],
                 model=getattr(handle, "model", "") or "",
             )
@@ -84,11 +84,11 @@ async def execute_workflow(
         visited += 1
         node = by_id.get(current)
         if node is None:
-            progress.append({"id": current, "status": "hata", "detail": "düğüm yok"})
+            progress.append({"id": current, "status": "error", "detail": "düğüm yok"})
             ok = False
             break
         step = {"id": node.id, "title": node.title or node.id,
-                "type": node.type, "status": "koşuyor"}
+                "type": node.type, "status": "running"}
         progress.append(step)
         # Live trace: like an Orchestra tool event.
         try:
@@ -103,7 +103,7 @@ async def execute_workflow(
 
         try:
             out = await _run_node(node, ctx, agent)
-            step["status"] = "bitti"
+            step["status"] = "done"
             step["detail"] = str(out)[:500]
             ctx["last"] = out
             ctx["vars"][node.id] = out
@@ -117,7 +117,7 @@ async def execute_workflow(
             repair = ""
             if node.id not in repaired and len(repaired) < MAX_REPAIRS:
                 repaired.add(node.id)
-                step["status"] = "onarılıyor"
+                step["status"] = "repairing"
                 _announce(progress, agent, handle)
                 repair = await _try_repair(
                     wf, node, exc, agent, getattr(agent.config, "state_dir", None))
@@ -126,25 +126,25 @@ async def execute_workflow(
                 try:
                     out = await _run_node(node, ctx, agent)
                 except Exception as exc2:
-                    step["status"] = "hata"
+                    step["status"] = "error"
                     step["detail"] = (
                         f"onarım denendi ({repair}) ama yine düştü — "
                         f"{type(exc2).__name__}: {exc2}")
-                    step["onarim"] = repair
+                    step["repair"] = repair
                     ok = False
-                    edge_on = "hata"
+                    edge_on = "error"
                 else:
-                    step["status"] = "bitti"
+                    step["status"] = "done"
                     step["detail"] = str(out)[:500]
-                    step["onarim"] = repair
+                    step["repair"] = repair
                     ctx["last"] = out
                     ctx["vars"][node.id] = out
                     edge_on = "ok"
             else:
-                step["status"] = "hata"
+                step["status"] = "error"
                 step["detail"] = f"{type(exc).__name__}: {exc}"
                 ok = False
-                edge_on = "hata"
+                edge_on = "error"
                 step["heal"] = True
         try:
             agent.io.on_child_tool(handle.title, f"node:{node.id}", "end")
@@ -154,13 +154,13 @@ async def execute_workflow(
         _announce(progress, agent, handle)
 
         nxt = _next_node(wf, current, edge_on)
-        if nxt is None and edge_on == "hata":
+        if nxt is None and edge_on == "error":
             break
         current = nxt or ""
 
     report_lines = [f"# {wf.title}", ""]
     for p in progress:
-        mark = "✓" if p.get("status") == "bitti" else ("…" if p.get("status") == "koşuyor" else "✗")
+        mark = "✓" if p.get("status") == "done" else ("…" if p.get("status") == "running" else "✗")
         report_lines.append(f"{mark} [{p.get('type')}] {p.get('title')}: {p.get('detail') or ''}")
     if ctx.get("last"):
         report_lines.extend(["", "## Son çıktı", str(ctx["last"])[:4000]])
@@ -360,14 +360,14 @@ async def _try_repair(
 
       * ONE attempt per step per run (the caller counts). Unlimited repair
         means an automation that keeps breaking itself all night long.
-      * A step with `elle=True` is NOT TOUCHED. The model rewriting a step
+      * A step with `manual=True` is NOT TOUCHED. The model rewriting a step
         the user deliberately wrote is not a fix but a silent revert.
       * Only `config` and `skill` may change; the node's type, its id and
         the shape of the graph are not left to the model.
       * What changed is returned and written into the report — a silent
         repair is not a repair, it is a surprise.
     """
-    if node.elle:
+    if node.manual:
         return ""
     if not hasattr(agent, "_spawn"):
         return ""

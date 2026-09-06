@@ -212,9 +212,9 @@ const Orchestra = (() => {
     if (running > 0) {
       status.textContent = t("Şef bekliyor · ") + running + t(" kanal çalışıyor");
       status.className = "orch-status waiting";
-    } else if (list.some(c => c.state === "yetim")) {
+    } else if (list.some(c => c.state === "orphan")) {
       status.textContent = t("Yarım kalan yardımcı var — istersen sürdürülebilir");
-      status.className = "orch-status yetim";
+      status.className = "orch-status orphan";
     } else if (list.length) {
       status.textContent = t("Şef sürüyor · tüm kanallar bitti");
       status.className = "orch-status done";
@@ -247,14 +247,14 @@ const Orchestra = (() => {
       line.append(el("span", "orch-ch-act", act));
     } else if (ch.state === "fail") {
       line.append(el("span", "orch-ch-act fail", t("Hata verdi")));
-    } else if (ch.state === "yetim") {
-      line.append(el("span", "orch-ch-act yetim", t("Yarım kaldı")));
+    } else if (ch.state === "orphan") {
+      line.append(el("span", "orch-ch-act orphan", t("Yarım kaldı")));
     } else {
       line.append(el("span", "orch-ch-act ok", t("Bitti")));
     }
     // No tool counter on an orphan: the previous session's count is unknown
     // and writing "0 tools" would be wrong information.
-    if (ch.state !== "yetim") {
+    if (ch.state !== "orphan") {
       line.append(el("span", "orch-ch-count", ch.tools + t(" araç")));
     }
     const meter = formatUsage(ch.usage);
@@ -275,7 +275,7 @@ const Orchestra = (() => {
       wrap.append(list);
     }
 
-    if (ch.state === "yetim" && ch.id) {
+    if (ch.state === "orphan" && ch.id) {
       const acts = el("div", "orch-ch-resume-row");
       const resumeBtn = el("button", "orch-resume", t("Devam et"));
       resumeBtn.type = "button";
@@ -355,7 +355,7 @@ const Orchestra = (() => {
 
   function formatUsage(u) {
     if (!u) return "";
-    const g = Number(u.girdi || 0) + Number(u.cikti || 0);
+    const g = Number(u.input || 0) + Number(u.output || 0);
     if (!g) return "";
     return g >= 1000 ? (g / 1000).toFixed(1) + "k tok" : g + " tok";
   }

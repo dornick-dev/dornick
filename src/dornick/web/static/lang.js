@@ -13,7 +13,14 @@
 const Lang = (() => {
   const EN = {};
   let mode = "tr";
-  try { mode = localStorage.getItem("dornick-dil") || ""; } catch { /* file:// */ }
+  try {
+    mode = localStorage.getItem("dornick-language") || "";
+    if (!mode) {
+      // Adopt the pre-1.5.5 key once.
+      const old = localStorage.getItem("dornick-dil");
+      if (old) { mode = old; localStorage.setItem("dornick-language", old); localStorage.removeItem("dornick-dil"); }
+    }
+  } catch { /* file:// */ }
   if (!mode) {
     // First launch: the language picked in the setup wizard is read from
     // the server (/api/language → setup.json). The synchronous request is
@@ -35,7 +42,7 @@ const Lang = (() => {
       const nav = (navigator.language || "").toLowerCase();
       mode = nav.startsWith("tr") ? "tr" : "en";
     }
-    try { localStorage.setItem("dornick-dil", mode); } catch { /* file:// */ }
+    try { localStorage.setItem("dornick-language", mode); } catch { /* file:// */ }
   }
 
   function add(pairs) { Object.assign(EN, pairs); }
@@ -47,7 +54,7 @@ const Lang = (() => {
   }
 
   function pick(next) {
-    try { localStorage.setItem("dornick-dil", next); } catch { /* file:// */ }
+    try { localStorage.setItem("dornick-language", next); } catch { /* file:// */ }
     location.reload();
   }
 

@@ -33,25 +33,25 @@ def clock() -> datetime:
 def test_the_vocabulary_is_frozen() -> None:
     """If this test fails, the view's contract changed. That is the point."""
     assert ne.SCHEMA == {
-        "uyku.basladi":  ("basinc", "tahmini_uyanma", "dongu_sayisi"),
-        "uyku.dongu":    ("no", "faz"),
-        "tekrar.ileri":  ("oturum", "dizi", "kenarlar"),
-        "tekrar.geri":   ("oturum", "sonuc", "paylar"),
-        "dikis":         ("a", "b", "uzerinden", "oturumlar"),
-        "dokunus":       ("id",),
-        "damitma":       ("kaynaklar", "yeni"),
-        "uyku.uyandi":   ("sebep", "dongu", "tamamlanan", "devreden", "borc"),
-        "uyku.bitti":    ("sebep", "rapor"),
-        "uyanik.ters":   ("oturum", "sonuc"),
-        "mikro.basladi": ("basinc",),
-        "mikro.bitti":   ("tamamlanan",),
-        "yerel.basladi": ("bolge",),
-        "yerel.bitti":   ("kuculen", "atlanan"),
+        "sleep.started":  ("pressure", "wake_estimate", "cycle_count"),
+        "sleep.cycle":    ("no", "phase"),
+        "replay.forward": ("session", "sequence", "edges"),
+        "replay.reverse": ("session", "outcome", "shares"),
+        "stitch":         ("a", "b", "via", "sessions"),
+        "touch":          ("id",),
+        "distil":         ("sources", "new"),
+        "sleep.woke":     ("reason", "cycle", "completed", "carried", "debt"),
+        "sleep.ended":    ("reason", "report"),
+        "awake.reverse":  ("session", "outcome"),
+        "micro.started":  ("pressure",),
+        "micro.ended":    ("completed",),
+        "local.started":  ("region",),
+        "local.ended":    ("shrunk", "skipped"),
     }
 
 
 def test_every_event_carries_a_timestamp_and_a_type() -> None:
-    event = ne.build("dokunus", clock, id="n_1")
+    event = ne.build("touch", clock, id="n_1")
     assert set(ne.SHARED) <= set(event)
     assert event["ts"].startswith("2025-06-02")
 
@@ -61,27 +61,27 @@ def test_every_event_carries_a_timestamp_and_a_type() -> None:
 
 def test_an_unknown_event_is_refused() -> None:
     with pytest.raises(ne.SchemaError):
-        ne.build("uyku.ruya", clock)
+        ne.build("sleep.dream", clock)
 
 
 def test_a_missing_field_is_refused() -> None:
     with pytest.raises(ne.SchemaError):
-        ne.build("dikis", clock, a="n_1", b="n_2")       # no `uzerinden`
+        ne.build("stitch", clock, a="n_1", b="n_2")      # no `via`
 
 
 def test_an_extra_field_is_refused() -> None:
     """The view may only rely on what the schema promises, so nothing else
     is allowed to sneak in and become load-bearing."""
     with pytest.raises(ne.SchemaError):
-        ne.build("dokunus", clock, id="n_1", renk="mavi")
+        ne.build("touch", clock, id="n_1", colour="blue")
 
 
 def test_reading_validates_the_same_contract() -> None:
     with pytest.raises(ne.SchemaError):
-        ne.validate({"tur": "dokunus"})                  # no ts
+        ne.validate({"kind": "touch"})                  # no ts
     with pytest.raises(ne.SchemaError):
-        ne.validate({"ts": "x", "tur": "dokunus"})       # no id
-    ne.validate({"ts": "x", "tur": "dokunus", "id": "n_1"})
+        ne.validate({"ts": "x", "kind": "touch"})       # no id
+    ne.validate({"ts": "x", "kind": "touch", "id": "n_1"})
 
 
 # -- writing and replaying ---------------------------------------------
@@ -90,16 +90,16 @@ def test_reading_validates_the_same_contract() -> None:
 def test_a_night_replays_in_the_order_it_happened(tmp_path: Path) -> None:
     """Live view and replay are the same code path; there is no second one."""
     log = ne.NightLog(tmp_path / "nights" / "2025-06-02.jsonl", clock)
-    log.emit("uyku.basladi", basinc=1.2, tahmini_uyanma="08:30", dongu_sayisi=4)
-    log.emit("tekrar.ileri", oturum="s1", dizi=["n_1", "n_2"],
-             kenarlar=[["n_1", "n_2", 0.6]])
-    log.emit("dikis", a="n_1", b="n_3", uzerinden="n_2", oturumlar=["s1", "s2"])
-    log.emit("uyku.bitti", sebep="basinc", rapor={"tekrar": 1})
+    log.emit("sleep.started", pressure=1.2, wake_estimate="08:30", cycle_count=4)
+    log.emit("replay.forward", session="s1", sequence=["n_1", "n_2"],
+             edges=[["n_1", "n_2", 0.6]])
+    log.emit("stitch", a="n_1", b="n_3", via="n_2", sessions=["s1", "s2"])
+    log.emit("sleep.ended", reason="pressure", report={"replays": 1})
 
     read_back = list(ne.replay(tmp_path / "nights" / "2025-06-02.jsonl"))
-    assert [e["tur"] for e in read_back] == [
-        "uyku.basladi", "tekrar.ileri", "dikis", "uyku.bitti"]
-    assert read_back[1]["dizi"] == ["n_1", "n_2"]
+    assert [e["kind"] for e in read_back] == [
+        "sleep.started", "replay.forward", "stitch", "sleep.ended"]
+    assert read_back[1]["sequence"] == ["n_1", "n_2"]
 
 
 def test_a_truncated_log_replays_up_to_the_cut(tmp_path: Path) -> None:
@@ -107,8 +107,8 @@ def test_a_truncated_log_replays_up_to_the_cut(tmp_path: Path) -> None:
     path = tmp_path / "nights" / "2025-06-02.jsonl"
     path.parent.mkdir(parents=True)
     path.write_text(
-        json.dumps({"ts": "x", "tur": "dokunus", "id": "n_1"}) + "\n"
-        + '{"ts": "x", "tur": "doku',      # cut off
+        json.dumps({"ts": "x", "kind": "touch", "id": "n_1"}) + "\n"
+        + '{"ts": "x", "kind": "tou',      # cut off
         encoding="utf-8")
     assert [e["id"] for e in ne.replay(path)] == ["n_1"]
 
@@ -116,10 +116,10 @@ def test_a_truncated_log_replays_up_to_the_cut(tmp_path: Path) -> None:
 def test_a_live_listener_sees_what_the_file_gets(tmp_path: Path) -> None:
     seen: list[str] = []
     log = ne.NightLog(tmp_path / "nights" / "x.jsonl", clock,
-                      listeners=[lambda e: seen.append(e["tur"])])
-    log.emit("dokunus", id="n_1")
-    assert seen == ["dokunus"]
-    assert [e["tur"] for e in ne.replay(log.path)] == ["dokunus"]
+                      listeners=[lambda e: seen.append(e["kind"])])
+    log.emit("touch", id="n_1")
+    assert seen == ["touch"]
+    assert [e["kind"] for e in ne.replay(log.path)] == ["touch"]
 
 
 def test_a_broken_view_does_not_stop_the_night(tmp_path: Path) -> None:
@@ -127,7 +127,7 @@ def test_a_broken_view_does_not_stop_the_night(tmp_path: Path) -> None:
         raise RuntimeError("the view crashed")
 
     log = ne.NightLog(tmp_path / "nights" / "x.jsonl", clock, listeners=[blow_up])
-    log.emit("dokunus", id="n_1")
+    log.emit("touch", id="n_1")
     assert [e["id"] for e in ne.replay(log.path)] == ["n_1"]
 
 
@@ -136,25 +136,25 @@ def test_a_broken_view_does_not_stop_the_night(tmp_path: Path) -> None:
 
 def test_the_summary_counts_what_a_person_would_ask(tmp_path: Path) -> None:
     log = ne.NightLog(tmp_path / "nights" / "x.jsonl", clock)
-    log.emit("uyku.basladi", basinc=1.0, tahmini_uyanma="08:30", dongu_sayisi=4)
-    log.emit("uyku.dongu", no=1, faz="derin")
-    log.emit("tekrar.ileri", oturum="s1", dizi=["n_1"], kenarlar=[["n_1", "n_2", 0.6]])
-    log.emit("tekrar.ileri", oturum="s2", dizi=["n_3"], kenarlar=[])
-    log.emit("dikis", a="n_1", b="n_3", uzerinden="n_2", oturumlar=["s1", "s2"])
-    log.emit("damitma", kaynaklar=["n_1", "n_3"], yeni="n_9")
-    log.emit("uyku.uyandi", sebep="kullanici", dongu=2, tamamlanan=2,
-             devreden=5, borc={"faz": "rem"})
+    log.emit("sleep.started", pressure=1.0, wake_estimate="08:30", cycle_count=4)
+    log.emit("sleep.cycle", no=1, phase="deep")
+    log.emit("replay.forward", session="s1", sequence=["n_1"], edges=[["n_1", "n_2", 0.6]])
+    log.emit("replay.forward", session="s2", sequence=["n_3"], edges=[])
+    log.emit("stitch", a="n_1", b="n_3", via="n_2", sessions=["s1", "s2"])
+    log.emit("distil", sources=["n_1", "n_3"], new="n_9")
+    log.emit("sleep.woke", reason="user", cycle=2, completed=2,
+             carried=5, debt={"phase": "rem"})
 
     summary = ne.summary(ne.replay(log.path))
-    assert summary["tekrar"] == 2 and summary["kenar"] == 1
-    assert summary["dikis"] == 1 and summary["damitik"] == 1
-    assert summary["uyandi"] == "kullanici" and summary["devreden"] == 5
+    assert summary["replays"] == 2 and summary["edges"] == 1
+    assert summary["stitches"] == 1 and summary["distilled"] == 1
+    assert summary["woke"] == "user" and summary["carried"] == 5
 
 
 def test_nights_are_listed_newest_first(tmp_path: Path) -> None:
     for date in ("2025-06-01", "2025-06-03", "2025-06-02"):
         ne.NightLog(tmp_path / "nights" / f"{date}.jsonl", clock).emit(
-            "dokunus", id="n_1")
+            "touch", id="n_1")
     assert ne.nights(tmp_path) == ["2025-06-03", "2025-06-02", "2025-06-01"]
 
 

@@ -17,7 +17,7 @@ from dornick.schedule import Schedule, Task
 def test_start_and_get_run(tmp_path: Path) -> None:
     run = task_runs.start_run(tmp_path, "job_abc", title="Sabah raporu", child_id="child_1")
 
-    assert run.status == "koşuyor"
+    assert run.status == "running"
     assert run.started
     assert not run.finished
 
@@ -36,23 +36,23 @@ def test_finish_run_archives_report(tmp_path: Path) -> None:
         tmp_path,
         "job_x",
         run.id,
-        status="bitti",
+        status="done",
         report="BIST %1.2 yükseldi.\n" * 3,
-        nodes_progress=[{"id": "n1", "status": "bitti"}],
+        nodes_progress=[{"id": "n1", "status": "done"}],
         model="openai/gpt-4o-mini",
-        usage={"girdi": 1200, "cikti": 400, "cagri": 3},
+        usage={"input": 1200, "output": 400, "calls": 3},
         cost_usd=0.0123,
         tools=12,
         duration_s=273,
         last_tool="browser · open",
     )
 
-    assert done.status == "bitti"
+    assert done.status == "done"
     assert done.finished
     assert "BIST" in done.report
     assert done.nodes_progress and done.nodes_progress[0]["id"] == "n1"
     assert done.model == "openai/gpt-4o-mini"
-    assert done.usage == {"girdi": 1200, "cikti": 400, "cagri": 3}
+    assert done.usage == {"input": 1200, "output": 400, "calls": 3}
     assert done.cost_usd == pytest.approx(0.0123)
     assert done.tools == 12
     assert done.duration_s == 273
@@ -60,9 +60,9 @@ def test_finish_run_archives_report(tmp_path: Path) -> None:
 
     loaded = task_runs.get_run(tmp_path, "job_x", run.id)
     assert loaded is not None
-    assert loaded.status == "bitti"
+    assert loaded.status == "done"
     assert loaded.model == "openai/gpt-4o-mini"
-    assert loaded.usage and loaded.usage["cagri"] == 3
+    assert loaded.usage and loaded.usage["calls"] == 3
     assert loaded.tools == 12
     assert loaded.duration_s == 273
     assert loaded.last_tool == "browser · open"
@@ -70,8 +70,8 @@ def test_finish_run_archives_report(tmp_path: Path) -> None:
 
 def test_finish_run_error(tmp_path: Path) -> None:
     run = task_runs.start_run(tmp_path, "job_y")
-    failed = task_runs.finish_run(tmp_path, "job_y", run.id, status="hata", report="timeout")
-    assert failed.status == "hata"
+    failed = task_runs.finish_run(tmp_path, "job_y", run.id, status="error", report="timeout")
+    assert failed.status == "error"
     assert failed.report == "timeout"
 
 
@@ -80,18 +80,18 @@ def test_patch_run_updates_live_report(tmp_path: Path) -> None:
     patched = task_runs.patch_run(
         tmp_path, "job_live", run.id,
         report="Araç: browser · open",
-        nodes_progress=[{"id": "n1", "status": "koşuyor", "title": "Tara"}],
+        nodes_progress=[{"id": "n1", "status": "running", "title": "Tara"}],
         model="gpt-test",
-        usage={"girdi": 10, "cikti": 2, "cagri": 1},
+        usage={"input": 10, "output": 2, "calls": 1},
     )
     assert patched is not None
-    assert patched.status == "koşuyor"
+    assert patched.status == "running"
     assert "browser" in patched.report
     assert patched.nodes_progress and patched.nodes_progress[0]["id"] == "n1"
     assert patched.model == "gpt-test"
-    assert patched.usage and patched.usage["cagri"] == 1
+    assert patched.usage and patched.usage["calls"] == 1
 
-    task_runs.finish_run(tmp_path, "job_live", run.id, status="bitti", report="bitti")
+    task_runs.finish_run(tmp_path, "job_live", run.id, status="done", report="done")
     assert task_runs.patch_run(tmp_path, "job_live", run.id, report="x") is None
 
 
@@ -100,7 +100,7 @@ def test_list_runs_newest_first_with_limit(tmp_path: Path) -> None:
     for i in range(5):
         run = task_runs.start_run(tmp_path, "job_z", title=f"tur {i}", run_id=f"run_{i:02d}")
         ids.append(run.id)
-        task_runs.finish_run(tmp_path, "job_z", run.id, status="bitti", report=f"ok {i}")
+        task_runs.finish_run(tmp_path, "job_z", run.id, status="done", report=f"ok {i}")
 
     listed = task_runs.list_runs(tmp_path, "job_z", limit=3)
     assert len(listed) == 3
@@ -111,7 +111,7 @@ def test_list_runs_newest_first_with_limit(tmp_path: Path) -> None:
 def test_report_is_clipped(tmp_path: Path) -> None:
     run = task_runs.start_run(tmp_path, "job_clip")
     huge = "x" * (task_runs.REPORT_CLIP + 500)
-    done = task_runs.finish_run(tmp_path, "job_clip", run.id, status="bitti", report=huge)
+    done = task_runs.finish_run(tmp_path, "job_clip", run.id, status="done", report=huge)
     assert len(done.report) <= task_runs.REPORT_CLIP
     assert done.report.endswith("…")
 
@@ -119,7 +119,7 @@ def test_report_is_clipped(tmp_path: Path) -> None:
 def test_unknown_status_refused(tmp_path: Path) -> None:
     run = task_runs.start_run(tmp_path, "job_bad")
     with pytest.raises(task_runs.TaskRunError):
-        task_runs.finish_run(tmp_path, "job_bad", run.id, status="koşuyor")
+        task_runs.finish_run(tmp_path, "job_bad", run.id, status="running")
 
 
 def test_schedule_task_carries_workflow_fields(tmp_path: Path) -> None:

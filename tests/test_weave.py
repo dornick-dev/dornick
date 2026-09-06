@@ -88,9 +88,9 @@ class Log:
         self.log.note("tool_end", tool=name, error=error, ms=10, ozet=summary)
         return self
 
-    def close(self, outcome: str = "basarili") -> Log:
+    def close(self, outcome: str = "succeeded") -> Log:
         self.calendar.advance(minutes=1)
-        self.log.note("sonuc", sonuc=outcome)
+        self.log.note("outcome", outcome=outcome)
         self.log.close()
         return self
 
@@ -206,10 +206,10 @@ def test_memory_that_led_to_success_ranks_above_the_one_that_led_to_failure(
                           kind="procedure")
     bad = store.remember("Gate servisi doğrudan kill ile durduruluyor.",
                          kind="procedure")
-    Log(sessions, "ok", calendar).touch(good.id).tool("run").close("basarili")
+    Log(sessions, "ok", calendar).touch(good.id).tool("run").close("succeeded")
     calendar.advance(days=1)
     Log(sessions, "hata", calendar).touch(bad.id).tool(
-        "run", error=True, summary="3 test kırıldı").close("basarisiz")
+        "run", error=True, summary="3 test kırıldı").close("failed")
 
     _night(store, sessions, watermark, calendar)
 
@@ -224,7 +224,7 @@ def test_a_lesson_sits_next_to_the_path_that_led_to_failure(
         store, sessions, watermark, calendar) -> None:
     bad = store.remember("Şema göçü doğrudan üretimde koşuluyor.", kind="procedure")
     Log(sessions, "hata", calendar).touch(bad.id).tool(
-        "run", error=True, summary="göç yarıda kaldı").close("basarisiz")
+        "run", error=True, summary="göç yarıda kaldı").close("failed")
     report = _night(store, sessions, watermark, calendar)
 
     assert report.lessons_written >= 1
@@ -239,7 +239,7 @@ def test_successful_sequence_writes_a_procedure(store, sessions, watermark, cale
     g = Log(sessions, "ok", calendar)
     for n in three:
         g.touch(n.id)
-    g.tool("run").tool("dosya_yaz").close("basarili")
+    g.tool("run").tool("dosya_yaz").close("succeeded")
 
     report = _night(store, sessions, watermark, calendar)
     assert report.procedures_written >= 1
@@ -252,10 +252,10 @@ def test_mixed_record_beats_never_touched(
     untouched = store.remember("Priz grubu topraklı tip.", kind="fact")
     for i in range(3):
         calendar.advance(days=1)
-        Log(sessions, f"ok{i}", calendar).touch(record.id).close("basarili")
+        Log(sessions, f"ok{i}", calendar).touch(record.id).close("succeeded")
     calendar.advance(days=1)
     Log(sessions, "hata", calendar).touch(record.id).tool(
-        "run", error=True, summary="patladı").close("basarisiz")
+        "run", error=True, summary="patladı").close("failed")
     _night(store, sessions, watermark, calendar)
 
     assert store.track_record(record.id) == (3, 1)
@@ -264,7 +264,7 @@ def test_mixed_record_beats_never_touched(
 
 def test_open_goal_writes_where_you_left_off(store, sessions, watermark, calendar) -> None:
     a = store.remember("Kurulum paketi imzalanacak.", kind="fact")
-    Log(sessions, "acik", calendar).touch(a.id).close("acik")
+    Log(sessions, "acik", calendar).touch(a.id).close("open")
     _night(store, sessions, watermark, calendar)
     assert store.by_kind("goal", limit=5)
 
@@ -384,9 +384,9 @@ def test_failed_session_is_replayed_before_routine(
         store, sessions, watermark, calendar) -> None:
     a = store.remember("Rutin saha notu.", kind="fact")
     b = store.remember("Göç sırasında veri kayboldu.", kind="fact")
-    Log(sessions, "rutin", calendar).touch(a.id).close("basarili")
+    Log(sessions, "rutin", calendar).touch(a.id).close("succeeded")
     Log(sessions, "kotu", calendar).touch(b.id).tool(
-        "run", error=True, summary="kırıldı").close("basarisiz")
+        "run", error=True, summary="kırıldı").close("failed")
 
     ranked = weave.prioritised_sessions(store, sessions, clock=calendar, watermark=watermark)
     assert ranked[0].id == "kotu"
@@ -411,7 +411,7 @@ def test_processed_session_is_not_replayed_the_second_night(
         store, sessions, watermark, calendar) -> None:
     """No double counting: the same session must not pay out twice."""
     n = store.remember("Kurulum paketi imzalandı.", kind="fact")
-    Log(sessions, "s1", calendar).touch(n.id).close("basarili")
+    Log(sessions, "s1", calendar).touch(n.id).close("succeeded")
     _night(store, sessions, watermark, calendar)
     first_record = store.track_record(n.id)
 
@@ -426,7 +426,7 @@ def test_watermark_is_written_to_disk(store, sessions, watermark, calendar) -> N
     Log(sessions, "s1", calendar).touch(n.id).close()
     _night(store, sessions, watermark, calendar)
     status = json.loads(watermark.read_text(encoding="utf-8"))
-    assert "s1" in status["islenen"]
+    assert "s1" in status["processed"]
 
 
 def test_unclosed_session_is_not_replayed(store, sessions, watermark, calendar) -> None:
@@ -453,7 +453,7 @@ def test_calm_record_next_to_a_surprising_event_is_captured(
         "Ana pano yandı; bütün saha elektriksiz kaldı ve üretim durdu.",
         kind="lesson")
     g = Log(sessions, "s1", calendar)
-    g.touch(calm.id).touch(surprising.id).close("basarisiz")
+    g.touch(calm.id).touch(surprising.id).close("failed")
     _night(store, sessions, watermark, calendar)
 
     assert any(k.label == A.CAPTURED for k in store.use_log(calm.id))
@@ -471,7 +471,7 @@ def test_distant_record_is_not_captured(store, sessions, watermark, calendar) ->
     g = Log(sessions, "s1", calendar)
     g.touch(distant.id)
     calendar.advance(minutes=200)
-    g.touch(surprising.id).close("basarisiz")
+    g.touch(surprising.id).close("failed")
     _night(store, sessions, watermark, calendar)
 
     assert not any(k.label == A.CAPTURED for k in store.use_log(distant.id))

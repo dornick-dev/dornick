@@ -71,7 +71,7 @@ def test_resume_is_booked_as_a_slept_period_not_as_debt(clock, tmp_path) -> None
     last_night = clock() - timedelta(hours=1)
     watermark = tmp_path / "w.json"
     watermark.write_text(json.dumps(
-        {"son_kosu": last_night.isoformat(timespec="milliseconds"), "islenen": {}}),
+        {"last_run": last_night.isoformat(timespec="milliseconds"), "processed": {}}),
         encoding="utf-8")
     sessions = tmp_path / "sessions"
     sessions.mkdir()

@@ -195,8 +195,8 @@ def test_root_manifest_is_not_an_app_and_warns(tmp_path: Path) -> None:
     assert "app.json" not in names           # nor did it leak in as a file
     assert "pano.html" in names              # the rest is discovered normally
 
-    assert len(data["sorunlar"]) == 1
-    problem = data["sorunlar"][0]
+    assert len(data["problems"]) == 1
+    problem = data["problems"][0]
     assert problem["path"] == "app.json"
     assert "manifest uygulamanın kendi klasöründe olmalı" in problem["uyari"]
     # The warning teaches: where, relative to what, with an example.
@@ -210,7 +210,7 @@ def test_stray_manifest_at_root_is_ignored_too(tmp_path: Path) -> None:
     )
     data = apps.project_index(tmp_path)
     assert data["projects"] == []
-    assert [s["path"] for s in data["sorunlar"]] == ["llm-donanim-app.json"]
+    assert [s["path"] for s in data["problems"]] == ["llm-donanim-app.json"]
 
 
 def test_discovery_descends_three_levels(tmp_path: Path) -> None:
@@ -252,8 +252,8 @@ def test_invalid_entry_does_not_drop_the_app_but_marks_it_incomplete(tmp_path: P
         encoding="utf-8",
     )
     p = {x["name"]: x for x in apps.projects(tmp_path)}["LLM Donanım"]
-    assert p["eksik"] is True
-    assert p["neden"] == "entry bulunamadı: site/llm-donanım.html"
+    assert p["missing"] is True
+    assert p["reason"] == "entry bulunamadı: site/llm-donanım.html"
 
 
 def test_meaningless_run_command_is_marked_incomplete(tmp_path: Path) -> None:
@@ -265,8 +265,8 @@ def test_meaningless_run_command_is_marked_incomplete(tmp_path: Path) -> None:
         encoding="utf-8",
     )
     p = {x["name"]: x for x in apps.projects(tmp_path)}["Araç"]
-    assert p["eksik"] is True
-    assert "run komutu anlaşılmadı" in p["neden"]
+    assert p["missing"] is True
+    assert "run komutu anlaşılmadı" in p["reason"]
 
 
 def test_sound_manifest_is_not_incomplete(tmp_path: Path) -> None:
@@ -281,7 +281,7 @@ def test_sound_manifest_is_not_incomplete(tmp_path: Path) -> None:
         encoding="utf-8",
     )
     p = {x["name"]: x for x in apps.projects(tmp_path)}["Market Lens"]
-    assert p["eksik"] is False and p["neden"] == ""
+    assert p["missing"] is False and p["reason"] == ""
     assert p["scope"] == "in-app"                     # goes to the IN-APP section
     assert p["desc"] == "Piyasa nabzı"
     assert p["port"] == 8090                          # read from source
@@ -358,8 +358,8 @@ def test_unlistened_port_does_not_show_live(tmp_path: Path) -> None:
 
 def test_empty_workshop(tmp_path: Path) -> None:
     data = apps.project_index(tmp_path)
-    assert data == {"projects": [], "sorunlar": []}
-    assert apps.project_index(tmp_path / "yok") == {"projects": [], "sorunlar": []}
+    assert data == {"projects": [], "problems": []}
+    assert apps.project_index(tmp_path / "yok") == {"projects": [], "problems": []}
 
 
 def test_dornick_own_process_is_recognised() -> None:

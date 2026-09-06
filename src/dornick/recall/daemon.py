@@ -78,7 +78,7 @@ JOURNAL_FILE = "sleep_journal.jsonl"
 # The reason a night stopped because the application is closing. Not a
 # stimulus (nothing is disturbed), so it does not pass through the switch's
 # arousal threshold — the daemon asks the sleeper directly.
-SHUTDOWN = "kapanis"
+SHUTDOWN = "shutdown"
 
 Flag = bool | Callable[[], bool]
 
@@ -160,7 +160,7 @@ class SleepDaemon:
         # would sleep again seven minutes after the user left.
         self._rested_until: datetime | None = (
             self._last_night_end + timedelta(hours=REST_HOURS)
-            if self._last_night_end is not None and not int(debt.get("devreden") or 0)
+            if self._last_night_end is not None and not int(debt.get("carried") or 0)
             else None)
         self._last_micro: datetime | None = None
         self._micro_report: Any = None
@@ -246,7 +246,7 @@ class SleepDaemon:
             sleeper = self._sleeper
             self._journal()
         if sleeper is not None:
-            sleeper.wake("kullanici")
+            sleeper.wake("user")
 
     def wake(self, reason: str, *, writes: bool = False) -> bool:
         """An external stimulus. Whether it wakes us is `sleep.wakes_us`'s call."""
@@ -271,7 +271,7 @@ class SleepDaemon:
             sleeper = self._sleeper
             until = self.switch.caffeine_until
         if sleeper is not None:
-            sleeper.wake("kafein")
+            sleeper.wake("caffeine")
         return {"ok": True, "status": self.switch.state.value, "hours": float(hours),
                 "caffeine": until.isoformat(timespec="minutes") if until else ""}
 
@@ -294,7 +294,7 @@ class SleepDaemon:
                 return {"ok": False, "status": state, "error": "Makine askıda."}
             if self._sleeper is not None or self.switch.state is sleep.State.ASLEEP:
                 return {"ok": False, "status": state, "error": "Zaten uyuyor."}
-            if not self.switch.sleep_now("kullanici istedi"):
+            if not self.switch.sleep_now("user asked"):
                 return {"ok": False, "status": state, "error": "Uyutulamadı."}
             self._force_night = True
             self._journal()
@@ -394,14 +394,14 @@ class SleepDaemon:
         try:
             report = character.handle_model_change(self.state_dir, name, self._probe)
         except Exception as exc:
-            self._emit_plain("karakter.hata", {"model": name, "hata": str(exc)[:200]})
+            self._emit_plain("character.error", {"model": name, "error": str(exc)[:200]})
             return
         if report is not None:
             self.last_change = report
-            self._emit_plain("karakter.olcum", {
-                "model": report.model_id, "onceki": report.previous,
-                "taban": report.baseline, "kazanc": report.gain,
-                "emsal_kaydedildi": report.precedent_recorded, "cagri": report.calls})
+            self._emit_plain("character.measured", {
+                "model": report.model_id, "previous": report.previous,
+                "baseline": report.baseline, "gain": report.gain,
+                "precedent_recorded": report.precedent_recorded, "calls": report.calls})
 
     def _emit_plain(self, kind: str, data: dict[str, Any]) -> None:
         hub = self.hub
@@ -505,7 +505,7 @@ class SleepDaemon:
             self._last_night_end = now
             if not report.woke_reason:
                 self._rested_until = now + timedelta(hours=REST_HOURS)
-                self.switch.night_over("gece bitti")
+                self.switch.night_over("night over")
             elif self.switch.state is sleep.State.ASLEEP:
                 # Stopped by something that is not a stimulus (shutdown, an
                 # error): the switch did not see it, so it is told here.
@@ -517,7 +517,7 @@ class SleepDaemon:
         """Every night event goes to the file and to the live hub; a cycle
         boundary is also where the switch is re-sampled (roadmap 3.10.4)."""
         self._emit(kind, data)
-        if kind != "uyku.dongu" or int(data.get("no") or 0) <= 1:
+        if kind != "sleep.cycle" or int(data.get("no") or 0) <= 1:
             return
         sleeper = self._sleeper
         if sleeper is None:
@@ -528,7 +528,7 @@ class SleepDaemon:
             state = self.switch.step(self._fed(pressure.total, hours, self.clock()))
             self._journal()
         if state is not sleep.State.ASLEEP:
-            sleeper.wake(self._last_reason() or "ritim")
+            sleeper.wake(self._last_reason() or "rhythm")
 
     def _night_model(self) -> Callable[[str], str] | None:
         """The distillation model, or None with the reason the gate gave."""
@@ -547,7 +547,7 @@ class SleepDaemon:
         return self._last_micro is None or self._last_micro < self._last_active
 
     def _micro(self, pressure: sleep.Pressure) -> None:
-        self._emit("mikro.basladi", {"basinc": pressure.total})
+        self._emit("micro.started", {"pressure": pressure.total})
         try:
             report = awake.micro_sleep(self.store, self.sessions_dir, clock=self.clock,
                                        watermark=self.watermark,
@@ -556,23 +556,23 @@ class SleepDaemon:
             report = None
         self._last_micro = self.clock()
         self._micro_report = report
-        self._emit("mikro.bitti", {"tamamlanan": report.replayed if report else 0})
+        self._emit("micro.ended", {"completed": report.replayed if report else 0})
 
     def _local_due(self, now: datetime) -> bool:
         return (self._last_local is None
                 or now - self._last_local >= timedelta(minutes=awake.REGION_REFRESH_MINUTES))
 
     def _local(self) -> None:
-        self._emit("yerel.basladi", {"bolge": "soguk"})
+        self._emit("local.started", {"region": "cold"})
         try:
             report = awake.local_sleep(self.store, clock=self.clock, caches=self.caches)
         except Exception:
             report = None
         self._last_local = self.clock()
         self._local_report = report
-        self._emit("yerel.bitti", {
-            "kuculen": report.shrunk_edges if report else 0,
-            "atlanan": report.skipped_active if report else 0})
+        self._emit("local.ended", {
+            "shrunk": report.shrunk_edges if report else 0,
+            "skipped": report.skipped_active if report else 0})
 
     # -- sinks ---------------------------------------------------------
 
@@ -609,8 +609,8 @@ class SleepDaemon:
                 for t in fresh:
                     fh.write(json.dumps({
                         "ts": t.at.isoformat(timespec="milliseconds"),
-                        "eski": t.old.value, "yeni": t.new.value,
-                        "sebep": t.reason, "S": self._pressure.as_dict()},
+                        "old": t.old.value, "new": t.new.value,
+                        "reason": t.reason, "S": self._pressure.as_dict()},
                         ensure_ascii=False) + "\n")
         except OSError:
             pass

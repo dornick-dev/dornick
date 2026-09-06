@@ -191,7 +191,7 @@ def test_a_console_error_reaches_the_buffer(make_record) -> None:
     record = make_record([CONSOLE_ERROR])
     assert wait_for(lambda: len(record.console) == 1)
     line = record.console[0]
-    assert line.level == "hata"
+    assert line.level == "error"
     assert line.text == "Kaydetme başarısız"
     assert line.location == "app.js:41"        # CDP counts from 0, humans from 1
 
@@ -201,8 +201,8 @@ def test_an_uncaught_exception_keeps_its_stack(make_record) -> None:
     record = make_record([EXCEPTION])
     assert wait_for(lambda: len(record.console) == 1)
     line = record.console[0]
-    assert line.level == "hata"
-    assert line.source == "istisna"
+    assert line.level == "error"
+    assert line.source == "exception"
     assert "yok.forEach is not a function" in line.text
 
 
@@ -210,9 +210,9 @@ def test_browser_level_log_entries_are_captured(make_record) -> None:
     """The 404's console line is NOT a `console.*` call — it is Log.entryAdded."""
     record = make_record([BROWSER_ENTRY])
     assert wait_for(lambda: len(record.console) == 1)
-    assert record.console[0].level == "hata"
+    assert record.console[0].level == "error"
     assert "404" in record.console[0].text
-    assert record.console[0].source == "tarayici"
+    assert record.console[0].source == "browser"
 
 
 def test_levels_are_normalised(make_record) -> None:
@@ -221,7 +221,7 @@ def test_levels_are_normalised(make_record) -> None:
                           "args": [{"type": "string", "value": "dikkat"}]}}
     record = make_record([CONSOLE_LOG, warning])
     assert wait_for(lambda: len(record.console) == 2)
-    assert [k.level for k in record.console] == ["log", "uyari"]
+    assert [k.level for k in record.console] == ["log", "warning"]
 
 
 def test_object_arguments_are_rendered(make_record) -> None:
@@ -330,24 +330,24 @@ class FakeRecord:
 
 
 def _error(text: str, location: str = "") -> chrome.ConsoleLine:
-    return chrome.ConsoleLine("hata", text, location)
+    return chrome.ConsoleLine("error", text, location)
 
 
 def test_an_empty_console_is_never_sold_as_proof() -> None:
     """The most important sentence: an empty console does NOT mean 'the page has no errors'."""
-    text = surf._console_text(FakeRecord(), "hepsi", None)
+    text = surf._console_text(FakeRecord(), "all", None)
     assert "hatasız olduğu anlamına GELMEZ" in text
     assert "Davranışı ayrıca doğrula" in text
 
 
 def test_a_late_listener_admits_it() -> None:
-    text = surf._console_text(FakeRecord(missing=True), "hepsi", None)
+    text = surf._console_text(FakeRecord(missing=True), "all", None)
     assert "SONRA bağlandı" in text
     assert "kaçmış olabilir" in text
 
 
 def test_a_broken_listener_says_it_cannot_see() -> None:
-    text = surf._console_text(FakeRecord(error="bağlantı reddedildi"), "hepsi", None)
+    text = surf._console_text(FakeRecord(error="bağlantı reddedildi"), "all", None)
     assert "kurulamadı" in text
     assert "göremiyorum" in text
     assert "uydurma yorum yapma" in text
@@ -356,13 +356,13 @@ def test_a_broken_listener_says_it_cannot_see() -> None:
 def test_the_console_filter_narrows_to_errors() -> None:
     record = FakeRecord([
         chrome.ConsoleLine("log", "hazır"),
-        chrome.ConsoleLine("uyari", "eski API"),
+        chrome.ConsoleLine("warning", "eski API"),
         _error("TypeError: yok", "app.js:12"),
     ])
-    everything = surf._console_text(record, "hepsi", None)
+    everything = surf._console_text(record, "all", None)
     assert "hazır" in everything and "TypeError" in everything
 
-    only_errors = surf._console_text(record, "hata", None)
+    only_errors = surf._console_text(record, "errors", None)
     assert "TypeError" in only_errors
     assert "hazır" not in only_errors
     assert "eski API" not in only_errors
@@ -370,13 +370,13 @@ def test_the_console_filter_narrows_to_errors() -> None:
 
 def test_an_empty_filter_points_at_the_wider_view() -> None:
     record = FakeRecord([chrome.ConsoleLine("log", "hazır")])
-    text = surf._console_text(record, "hata", None)
+    text = surf._console_text(record, "errors", None)
     assert "toplam 1 mesaj" in text
-    assert "seviye: hepsi" in text
+    assert "level: all" in text
 
 
 def test_console_errors_tell_the_model_to_fix_the_source() -> None:
-    text = surf._console_text(FakeRecord([_error("TypeError: yok")]), "hepsi", None)
+    text = surf._console_text(FakeRecord([_error("TypeError: yok")]), "all", None)
     assert "Kaynak koddaki" in text and "düzelt" in text
 
 
@@ -424,11 +424,11 @@ def test_a_clean_page_gets_no_noise() -> None:
 
 
 def test_a_framework_error_page_is_hoisted_to_the_top() -> None:
-    suffix = surf._error_suffix({"hata": {
-        "tur": "CodeIgniter 4 hata sayfası",
-        "baslik": "TypeError",
-        "mesaj": "Home::index(): Return value must be of type string",
-        "yer": "app/Controllers/Home.php:12",
+    suffix = surf._error_suffix({"error": {
+        "kind": "CodeIgniter 4 hata sayfası",
+        "title": "TypeError",
+        "message": "Home::index(): Return value must be of type string",
+        "where": "app/Controllers/Home.php:12",
     }})
     assert "HATA SAYFASI" in suffix
     assert "Return value must be of type string" in suffix
@@ -436,7 +436,7 @@ def test_a_framework_error_page_is_hoisted_to_the_top() -> None:
 
 
 def test_an_ordinary_page_has_no_error_layer() -> None:
-    assert surf._error_suffix({"hata": None}) == ""
+    assert surf._error_suffix({"error": None}) == ""
     assert surf._error_suffix({}) == ""
 
 
@@ -450,9 +450,9 @@ def test_the_tool_offers_the_new_actions() -> None:
     surf.register(registry)
     spec = registry.get("browser")
     actions = spec.input_schema["properties"]["action"]["enum"]
-    for name in ("konsol", "ag", "js"):
+    for name in ("console", "network", "js"):
         assert name in actions
-    for prop in ("seviye", "n"):
+    for prop in ("level", "n"):
         assert prop in spec.input_schema["properties"]
 
 
@@ -477,7 +477,7 @@ def test_the_js_wrapper_survives_unserialisable_results() -> None:
     assert "JSON.parse(JSON.stringify" in wrapped
     assert "String(r)" in wrapped
     # The expression's own exception is caught and returned as a finding.
-    assert "catch (e) { return {hata:" in wrapped
+    assert "catch (e) { return {error:" in wrapped
 
 
 def test_the_js_wrapper_carries_the_expression() -> None:
@@ -506,10 +506,10 @@ def test_opening_a_tab_attaches_the_listener(tmp_path) -> None:
         record = box.snapshot(made)
         assert not record.missing           # attached during `open`
         assert wait_for(lambda: len(record.console) == 1 and len(record.requests) == 1)
-        assert record.console[0].level == "hata"
+        assert record.console[0].level == "error"
         assert record.requests[0].status == 404
 
-        text = surf._console_text(record, "hata", None)
+        text = surf._console_text(record, "errors", None)
         assert "Kaydetme başarısız" in text
         assert "app.js:41" in text
     finally:
@@ -525,7 +525,7 @@ def test_a_listener_attached_late_is_marked_incomplete(tmp_path) -> None:
         tab = box.tabs()[0]
         record = box.snapshot(tab)           # not via `open`, afterwards
         assert record.missing
-        assert "SONRA bağlandı" in surf._console_text(record, "hepsi", None)
+        assert "SONRA bağlandı" in surf._console_text(record, "all", None)
     finally:
         http.stop()
         ws_box.close()
@@ -547,4 +547,4 @@ def test_a_tab_without_a_debug_url_degrades_honestly(tmp_path) -> None:
     box = chrome.Browser(tmp_path, port=1)
     record = box.listen({"id": "T9"})
     assert record.error
-    assert "göremiyorum" in surf._console_text(record, "hepsi", None)
+    assert "göremiyorum" in surf._console_text(record, "all", None)

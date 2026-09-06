@@ -235,7 +235,7 @@ def test_the_night_recomputes_the_active_set(store, tmp_path, clock) -> None:
     log = EventLog(sessions / "s1.jsonl",
                    clock=lambda: clock().isoformat(timespec="milliseconds"))
     log.note("mind_open", memory_id=fresh.id)
-    log.note("sonuc", sonuc="basarili")
+    log.note("outcome", outcome="succeeded")
 
     report = weave.night_pass(store, sessions, clock=clock,
                               watermark=tmp_path / "w.json")

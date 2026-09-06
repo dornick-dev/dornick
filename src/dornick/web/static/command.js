@@ -64,15 +64,18 @@ Lang.add({
   "Dinlenmiş": "Rested",
   "saat": "h",
   "oturum": "sessions",
-  "uyanik": "awake",
-  "uykulu": "sleepy",
-  "uyuyor": "asleep",
-  "uyaniyor": "waking",
+  "awake": "awake",
+  "sleepy": "sleepy",
+  "asleep": "asleep",
+  "waking": "waking",
   "bilinmiyor": "unknown",
   "kadar": "until",
   "henüz bilinmiyor": "not known yet",
   "uyku kapalı": "sleep is off",
 });
+
+// Wire sleep state → the Turkish word (Lang renders it in English).
+const SLEEP_WORD = { awake: "uyanık", sleepy: "uykulu", asleep: "uyuyor", waking: "uyanıyor" };
 
 const Command = (() => {
   const input = document.getElementById("input");
@@ -177,7 +180,7 @@ const Command = (() => {
       ["Basınç", num(pressure.total, 3)],
       ["Eşik", num(threshold.upper, 3) + " / " + num(threshold.lower, 3)],
       ["Borç", num(debt.hours, 1) + " " + t("saat") + " · " + (debt.sessions ?? "?") + " " + t("oturum")],
-      ["Durum", t(s.status || "bilinmiyor") + (s.enabled === false ? " · " + t("uyku kapalı") : "")],
+      ["Durum", t(SLEEP_WORD[s.status] || s.status || "bilinmiyor") + (s.enabled === false ? " · " + t("uyku kapalı") : "")],
       ["Tahmini gece", s.next_night ? s.next_night.replace("T", " ") : t("henüz bilinmiyor")],
     ];
     if (s.caffeine) rows.push(["Kafein", s.caffeine.replace("T", " ") + " " + t("kadar")]);

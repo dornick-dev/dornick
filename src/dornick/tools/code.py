@@ -44,7 +44,7 @@ bağımlılık klasörlerine (node_modules, vendor, .venv) hiç girmez.
         """,
         input_schema=object_schema(
             {
-                "sorgu": {
+                "query": {
                     "type": "string",
                     "description": "Aranan sembolün adı (fonksiyon, sınıf, metot).",
                 },
@@ -53,28 +53,28 @@ bağımlılık klasörlerine (node_modules, vendor, .venv) hiç girmez.
                     "description": "Taranacak klasör ya da içindeki bir dosya. "
                                    "Verilmezse atölye.",
                 },
-                "tur": {
+                "kind": {
                     "type": "string",
-                    "enum": ["tanim", "kullanim", "hepsi"],
+                    "enum": ["definitions", "usages", "all"],
                     "description": "Yalnızca tanımlar, yalnızca kullanımlar ya "
                                    "da ikisi (varsayılan hepsi).",
                 },
-                "dil": {
+                "language": {
                     "type": "string",
                     "enum": ["python", "php", "js", "ts"],
                     "description": "Yalnızca bu dildeki dosyalara bak "
                                    "(isteğe bağlı).",
                 },
             },
-            required=["sorgu"],
+            required=["query"],
         ),
         mutates=False,
     )
     async def symbols_tool(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
-        query = str(args.get("sorgu") or "").strip()
+        query = str(args.get("query") or "").strip()
         if not query:
             return ToolResult.error(
-                "`sorgu` boş. Aradığın fonksiyon/sınıf adını ver."
+                "`query` boş. Aradığın fonksiyon/sınıf adını ver."
             )
         # A symbol name carries no whitespace; if it does, the model is
         # searching free text and the right tool is `grep`.
@@ -88,20 +88,20 @@ bağımlılık klasörlerine (node_modules, vendor, .venv) hiç girmez.
         if not root.is_dir():
             return ToolResult.error(f"Klasör yok: {root}")
 
-        kind = str(args.get("tur") or "hepsi")
-        lang = str(args.get("dil") or "") or None
+        kind = str(args.get("kind") or "all")
+        lang = str(args.get("language") or "") or None
 
         result = await asyncio.to_thread(
             symbols.search, root, query, kind=kind, language=lang)
         return ToolResult(
             content=result.text(kind=kind),
             detail={
-                "sorgu": query,
-                "kok": str(root),
-                "tanim": len(result.definitions),
-                "kullanim": len(result.usages),
-                "taranan": result.scanned,
-                "kesin": result.exact,
+                "query": query,
+                "root": str(root),
+                "definitions": len(result.definitions),
+                "usages": len(result.usages),
+                "scanned": result.scanned,
+                "exact": result.exact,
             },
         )
 

@@ -435,7 +435,7 @@ def register(registry: Any, skills: list[Skill]) -> tuple[list[str], list[str]]:
     updated: list[str] = []
     for skill in skills:
         existing = registry.get(skill.name)
-        if existing is not None and existing.source != "yetenek":
+        if existing is not None and existing.source != "skill":
             continue
 
         spec = ToolSpec(
@@ -447,7 +447,7 @@ def register(registry: Any, skills: list[Skill]) -> tuple[list[str], list[str]]:
             # network. It has to pass the permission gate.
             mutates=True,
             parallel_safe=False,
-            source="yetenek",
+            source="skill",
         )
         if existing is None:
             registry.register(spec)

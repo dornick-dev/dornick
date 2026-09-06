@@ -56,7 +56,13 @@ class Event:
 
     @classmethod
     def from_json(cls, line: str) -> Event:
-        return cls(**json.loads(line))
+        ev = cls(**json.loads(line))
+        # A log written before 1.5.5 names its notes in Turkish; the reader
+        # sees the English names only (legacy_values is the one map).
+        if ev.kind == META and isinstance(ev.content, str):
+            from . import legacy_values
+            ev.content, ev.meta = legacy_values.session_note(ev.content, ev.meta)
+        return ev
 
     @property
     def is_message(self) -> bool:

@@ -1404,7 +1404,7 @@ def test_an_expensive_model_turns_the_chip_amber() -> None:
     "premium model" der — göze batmadan, iki temada da (token --amber)."""
     eşik = re.search(r"const PREMIUM_USD_M = (\d+)", APP_JS)
     assert eşik and int(eşik.group(1)) == 20
-    assert re.search(r"cikti \* 1e6 > PREMIUM_USD_M", APP_JS)
+    assert re.search(r"output \* 1e6 > PREMIUM_USD_M", APP_JS)
     assert "premium model" in APP_JS
     rule = re.search(r"#dock-cost\.premium \{([^}]*)\}", CSS)
     assert rule and "var(--amber)" in rule.group(1), \
@@ -1718,8 +1718,8 @@ def test_the_context_popup_lists_prompt_parts_like_cursor() -> None:
     assert 'id="dock-ctx-bar"' in HTML
     assert re.search(r"^\.pop-ctx-row \{", CSS, re.M)
     assert re.search(r"^\.pop-ctx-head \{", CSS, re.M)
-    assert re.search(r"^\.ctx-seg\.sohbet \{", CSS, re.M)
-    assert re.search(r"^\.ctx-seg\.yardimci \{", CSS, re.M)
+    assert re.search(r"^.ctx-seg.chat {", CSS, re.M)
+    assert re.search(r"^.ctx-seg.helpers {", CSS, re.M)
     assert "context_breakdown" in (
         Path(__file__).resolve().parents[1] / "src" / "dornick" / "desktop.py"
     ).read_text(encoding="utf-8")
@@ -1966,7 +1966,7 @@ def test_the_settings_page_has_the_night_sleep_switch() -> None:
     booleans — a switch that never lands in the patch saves nothing."""
     assert '"Gece uykusu — hafıza pekiştirme (kullanıcı yokken)"' in SETTINGS_JS_SRC
     assert '"Kapalıyken gece geçişi, soğutma ve temizlik koşmaz."' in SETTINGS_JS_SRC
-    assert 'set("sleep", "uyku_acik", v)' in SETTINGS_JS_SRC
+    assert 'set("sleep", "enabled", v)' in SETTINGS_JS_SRC
     added = re.search(r"Lang\.add\(\{(.*?)\n\}\);", SETTINGS_JS_SRC, re.S)
     assert added and "Gece uykusu — hafıza pekiştirme" in added.group(1)
 
@@ -2232,7 +2232,7 @@ def test_the_turn_summary_reads_the_agents_own_ledger() -> None:
     """İkinci bir defter tutulmuyor: panelin gördüğü, `undo` aracının
     okuduğu defterin aynısı (tools/checkpoint.py)."""
     assert "/api/changes" in CHG_JS
-    assert "checkpoint import FOLDER, Defter" in SERVER_SRC
+    assert "checkpoint import FOLDER, Ledger" in SERVER_SRC
     # Geri alma: tur (n), dosya (sira/siralar) veya path.
     assert "ledger.undo(n)" in SERVER_SRC
     assert "undo_sequence" in SERVER_SRC
@@ -2737,11 +2737,11 @@ def test_the_speed_bar_offers_one_ten_and_sixty() -> None:
 
 
 def test_waking_stops_the_animation_in_place() -> None:
-    """`uyku.uyandi` sonrası HİÇBİR animasyon karesi ilerlemez: sahnenin olay
+    """`sleep.woke` sonrası HİÇBİR animasyon karesi ilerlemez: sahnenin olay
     saati donar, night.js döngüsü durur, kalan dizi soluk kalır. Çözülme
     kendiliğinden olmaz — yalnız yeni gece ya da kullanıcının Oynat'ı."""
-    handler = re.search(r'"uyku\.uyandi": \(ev\) => \{([\s\S]*?)\n    \},', NIGHT_JS)
-    assert handler, "uyku.uyandi çizimi yok"
+    handler = re.search(r'"sleep\.woke": \(ev\) => \{([\s\S]*?)\n    \},', NIGHT_JS)
+    assert handler, "sleep.woke çizimi yok"
     body = handler.group(1)
     assert "s.freeze()" in body and "frozen = true" in body
     # Döngü donmuşken kendini durdurur.
@@ -2835,10 +2835,10 @@ def test_the_brain_panel_is_simple_by_default_and_detailed_on_demand() -> None:
         assert word not in words, word
     # The strip is hidden by default; the sentence per state; the choice persists.
     assert '<div class="regions-bottom" id="regions-bottom" hidden>' in HTML
-    assert 'const DETAILS_KEY = "dornick-beyin-ayrinti";' in REGIONS_JS
+    assert 'const DETAILS_KEY = "dornick-brain-details";' in REGIONS_JS
     assert re.search(r"try \{ localStorage\.setItem\(DETAILS_KEY", REGIONS_JS)
-    assert re.search(r"try \{ saved = localStorage\.getItem\(DETAILS_KEY\); \} catch", REGIONS_JS)
-    assert 'setDetails(saved === "acik", false)' in REGIONS_JS
+    assert re.search(r"saved = localStorage\.getItem\(DETAILS_KEY\);", REGIONS_JS)
+    assert 'setDetails(saved === "on", false)' in REGIONS_JS
     for text in ("Uykulu — birazdan uyur.", "Uyuyor: günün konuşmalarını tekrar ediyor",
                  "Uyanıyor.", "Ayrıntıları gizle ▾", "konuşma tekrar edildi", "ders çıkardı"):
         assert text in REGIONS_JS, text

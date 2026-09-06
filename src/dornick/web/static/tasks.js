@@ -71,8 +71,9 @@ const Tasks = (() => {
   let pollTimer = null;
   let tickTimer = null;
 
+  // Wire state → the word shown (Turkish; `t()` renders it in English).
   const STATUS_LABEL = {
-    kosuyor: "koşuyor", bitti: "bitti", hata: "hata", yetim: "yarım kaldı",
+    running: "koşuyor", done: "bitti", error: "hata", orphan: "yarım kaldı",
   };
 
   // --- data ------------------------------------------------------------
@@ -87,7 +88,7 @@ const Tasks = (() => {
       draw();
       // Refresh the log of expanded running cards with the TTL.
       for (const g of rows) {
-        if (openSet.has(g.id) && g.session && g.state === "kosuyor") {
+        if (openSet.has(g.id) && g.session && g.state === "running") {
           fetchLog(g);
         }
       }
@@ -126,7 +127,7 @@ const Tasks = (() => {
     }
     for (const g of rows) body.append(card(g));
 
-    const running = rows.filter(g => g.state === "kosuyor").length;
+    const running = rows.filter(g => g.state === "running").length;
     if (statusLine) {
       statusLine.textContent = running
         ? running + t(" iş koşuyor")
@@ -148,17 +149,17 @@ const Tasks = (() => {
     const timeEl = el("span", "task-time");
     timeEl.dataset.started = String(g.started || 0);
     timeEl.dataset.ended = String(g.ended || 0);
-    timeEl.dataset.running = g.state === "kosuyor" ? "1" : "";
+    timeEl.dataset.running = g.state === "running" ? "1" : "";
     timeEl.textContent = durationText(timeEl);
     line.append(timeEl);
     if (g.model) line.append(el("span", "task-model", shortModel(g.model)));
-    if (g.state === "kosuyor" && g.wait) {
+    if (g.state === "running" && g.wait) {
       let msg = t("Model bekleniyor");
       const w = g.wait;
       if (w.attempt && w.total) msg += ` (${w.attempt}/${w.total})`;
       if (w.seconds) msg += ` · ${w.seconds}s`;
       line.append(el("span", "task-wait", msg));
-    } else if (g.state === "kosuyor" && g.last_tool) {
+    } else if (g.state === "running" && g.last_tool) {
       let toolLine = "▶ " + g.last_tool;
       if (g.last_target) toolLine += " · " + g.last_target;
       line.append(el("span", "task-tool", toolLine));
@@ -187,7 +188,7 @@ const Tasks = (() => {
       });
       line.append(stopBtn);
     }
-    if (g.resumable || g.state === "yetim") {
+    if (g.resumable || g.state === "orphan") {
       const resumeBtn = el("button", "task-resume", t("Devam et"));
       resumeBtn.type = "button";
       resumeBtn.addEventListener("click", async (ev) => {
@@ -205,16 +206,16 @@ const Tasks = (() => {
     }
     wrap.append(line);
 
-    const drillable = g.state !== "kosuyor" || !!g.session;
+    const drillable = g.state !== "running" || !!g.session;
     if (drillable) {
       wrap.classList.add("clickable");
       wrap.addEventListener("click", () => {
-        if (g.state !== "kosuyor" && g.deliverable && g.deliverable.url
+        if (g.state !== "running" && g.deliverable && g.deliverable.url
             && typeof Viewer !== "undefined" && Viewer.page) {
           Viewer.page(g.deliverable.url, g.name || g.id);
           return;
         }
-        if (g.state !== "kosuyor" && String(g.id || "").startsWith("c:")
+        if (g.state !== "running" && String(g.id || "").startsWith("c:")
             && typeof Viewer !== "undefined" && Viewer.page) {
           Viewer.page("/task-report/" + encodeURIComponent(g.id.slice(2)) + "/",
                       g.name || g.id);
@@ -276,7 +277,7 @@ const Tasks = (() => {
       return;
     }
     // While running, refresh when the TTL expires; once finished, one read is enough.
-    if (!force && g.state !== "kosuyor" && prev !== undefined) return;
+    if (!force && g.state !== "running" && prev !== undefined) return;
     let data;
     try {
       data = await (await fetch("/api/tasks/transcript?session="
@@ -312,8 +313,8 @@ const Tasks = (() => {
     return cut.length > 20 ? cut.slice(0, 20) + "…" : cut;
   };
 
-  const kindClass = (kind) => (kind === "süreç" ? "proc"
-    : kind === "iş" ? "job" : "helper");
+  const kindClass = (kind) => (kind === "process" ? "proc"
+    : kind === "job" ? "job" : "helper");
 
   // --- visibility ------------------------------------------------------
 

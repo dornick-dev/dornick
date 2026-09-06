@@ -13,7 +13,9 @@
 // text stays Turkish; it is translated at display time with t("...").
 Lang.add({
   "şu an açık": "open now",
-  "koşuyor": "running",
+  "running": "running",
+  "open": "open",
+  "finished": "finished",
   "biten": "done",
   "Tümü": "All",
   "Açık": "Open",
@@ -135,7 +137,7 @@ const History = (() => {
     // event carries it instantly; this poll is the backup (a missed event
     // reaches the left side within 2 s).
     clearTimeout(liveRefresh);
-    if (!query && panelOpen() && sessions.some((s) => s.status === "koşuyor")) {
+    if (!query && panelOpen() && sessions.some((s) => s.status === "running")) {
       liveRefresh = setTimeout(() => { if (panelOpen()) load(); }, 2000);
     }
   }
@@ -187,12 +189,12 @@ const History = (() => {
             .toLowerCase().includes(q) || (s.hits || []).length)
       : sessions;
     if (tagFilter) shown = shown.filter(s => (s.tags || []).includes(tagFilter));
-    if (statusFilter === "açık") {
-      shown = shown.filter(s => s.current || s.status === "açık" || s.status === "koşuyor");
-    } else if (statusFilter === "koşuyor") {
-      shown = shown.filter(s => s.status === "koşuyor");
+    if (statusFilter === "open") {
+      shown = shown.filter(s => s.current || s.status === "open" || s.status === "running");
+    } else if (statusFilter === "running") {
+      shown = shown.filter(s => s.status === "running");
     } else if (statusFilter === "biten") {
-      shown = shown.filter(s => !s.current && s.status !== "koşuyor");
+      shown = shown.filter(s => !s.current && s.status !== "running");
     }
 
     drawTools();
@@ -277,9 +279,9 @@ const History = (() => {
     const filters = el("div", "hist-status-filters");
     for (const [id, label, tip] of [
       ["", "Tümü", "Tüm konuşmalar"],
-      ["açık", "Açık", "Bitmemiş konuşmalar"],
-      ["koşuyor", "Koşuyor", "Şu an çalışan"],
-      ["biten", "Biten", "Tamamlananlar"],
+      ["open", "Açık", "Bitmemiş konuşmalar"],
+      ["running", "Koşuyor", "Şu an çalışan"],
+      ["finished", "Biten", "Tamamlananlar"],
     ]) {
       const chip = el("button", "hist-status" + (statusFilter === id ? " on" : ""));
       chip.type = "button";
@@ -325,15 +327,15 @@ const History = (() => {
 
   function row(s) {
     const wrap = el("div", "hist-item" + (s.current ? " current" : "")
-      + (s.status === "koşuyor" ? " running" : ""));
+      + (s.status === "running" ? " running" : ""));
     const line = el("div", "hist-row");
     const dot = el("span", "hist-dot"
-      + (s.status === "koşuyor" ? " run" : (s.current ? " on" : "")));
+      + (s.status === "running" ? " run" : (s.current ? " on" : "")));
     line.append(dot);
     const titleEl = el("span", "hist-title" + (s.named ? " named" : ""), s.title);
     titleEl.title = s.named ? s.title : s.preview || s.title;
     line.append(titleEl);
-    if (s.status === "koşuyor") line.append(el("span", "hist-live", t("koşuyor")));
+    if (s.status === "running") line.append(el("span", "hist-live", t("koşuyor")));
     else if (s.current) line.append(el("span", "hist-live", t("şu an açık")));
     const bits = [_time(s.date)];
     if (s.turns) bits.push(s.turns + t(" tur"));
@@ -410,7 +412,7 @@ const History = (() => {
 
   function chatMenu(s, wrap, ev) {
     if (typeof Menu === "undefined") return;
-    const running = s.status === "koşuyor";
+    const running = s.status === "running";
     Menu.open(ev, [
       { label: "Aç", action: () => {
         if (s.current) { if (innerWidth <= 860) close(); }
@@ -820,7 +822,7 @@ const History = (() => {
     panel.hidden = false;
     document.body.classList.add("hist-open");
     document.getElementById("history").classList.add("on");
-    try { localStorage.setItem("dornick-rail", "acik"); } catch { /* file:// */ }
+    try { localStorage.setItem("dornick-rail", "on"); } catch { /* file:// */ }
     load();
   }
   let userClosed = false;   // manually closed in this session
@@ -912,8 +914,8 @@ Lang.add({
     for (const task of tasks.slice(0, 40)) {
       const row = elx("button", "side-row");
       row.type = "button";
-      const stateCls = task.last_status === "koşuyor" ? " run"
-        : (task.last_status === "hata" || task.last_status === "başlatılamadı") ? " bad"
+      const stateCls = task.last_status === "running" ? " run"
+        : (task.last_status === "error" || task.last_status === "failed_to_start") ? " bad"
         : task.kind_ui === "automation" ? " auto"
         : task.enabled ? " on" : "";
       row.append(elx("i", "side-row-dot" + stateCls),
@@ -933,14 +935,14 @@ Lang.add({
     // The sidebar shows only REAL apps: a known kind and not incomplete.
     // Stray workshop files (rapor.txt, betik.ps1) may sit as "unclear" in
     // the catalogue but must not litter the list here.
-    projects = projects.filter((p) => p.kind && !p.eksik);
+    projects = projects.filter((p) => p.kind && !p.missing);
     countEl.textContent = projects.length || "";
     list.textContent = "";
     if (!projects.length) { list.append(elx("div", "side-blank", t("Uygulama yok"))); return; }
     for (const p of projects.slice(0, 40)) {
       const row = elx("button", "side-row");
       row.type = "button";
-      row.append(elx("i", "side-row-dot" + (p.eksik ? " bad" : "")),
+      row.append(elx("i", "side-row-dot" + (p.missing ? " bad" : "")),
                  elx("span", "side-row-name", p.name));
       // The centre area holds only the CHOSEN one's detail: not the
       // catalogue, that app's page (the list is already here, on the
@@ -969,7 +971,7 @@ Lang.add({
     const apply = (isOn) => {
       list.hidden = !isOn;
       head.querySelector(".side-fold").textContent = isOn ? "▾" : "▸";
-      try { localStorage.setItem(storeKey, isOn ? "acik" : "kapali"); } catch { /* file:// */ }
+      try { localStorage.setItem(storeKey, isOn ? "on" : "off"); } catch { /* file:// */ }
       if (isOn) fill(list, countEl);
     };
     head.addEventListener("click", () => apply(list.hidden));
@@ -977,7 +979,7 @@ Lang.add({
     let saved = null;
     try { saved = localStorage.getItem(storeKey); } catch { /* file:// */ }
     // Default open: the sidebar should show everything at a glance.
-    apply(saved !== "kapali");
+    apply(saved !== "off" && saved !== "kapali");
     document.addEventListener("dornick-side-tazele", () => {
       if (!list.hidden) fill(list, countEl);
     });

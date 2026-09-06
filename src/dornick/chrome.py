@@ -237,7 +237,7 @@ DEFAULT_N = 20
 # Common names of the CDP levels. "warning" and "warn" are the same thing.
 _LEVELS = {
     "log": "log", "info": "info", "debug": "debug", "verbose": "debug",
-    "warning": "uyari", "warn": "uyari", "error": "hata", "assert": "hata",
+    "warning": "warning", "warn": "warning", "error": "error", "assert": "error",
     "trace": "log", "dir": "log", "table": "log",
 }
 
@@ -246,13 +246,13 @@ _LEVELS = {
 class ConsoleLine:
     """A single console message or uncaught exception."""
 
-    level: str             # log | info | debug | uyari | hata
+    level: str             # log | info | debug | warning | error
     text: str
     location: str = ""     # file:line
-    source: str = "konsol"  # konsol | istisna | tarayici
+    source: str = "console"  # console | exception | browser
 
     def format(self) -> str:
-        label = {"hata": "HATA", "uyari": "UYARI"}.get(self.level, self.level)
+        label = {"error": "HATA", "warning": "UYARI"}.get(self.level, self.level)
         tail = f"  ({self.location})" if self.location else ""
         return f"[{label}] {self.text}{tail}"
 
@@ -416,7 +416,7 @@ class Record:
             first = frames[0] if frames else {}
             self.console.append(ConsoleLine(
                 level, text.strip() or "(boş mesaj)",
-                _location(first.get("url"), first.get("lineNumber")), "konsol"))
+                _location(first.get("url"), first.get("lineNumber")), "console"))
 
         elif method == "Runtime.exceptionThrown":
             details = p.get("exceptionDetails") or {}
@@ -425,8 +425,8 @@ class Record:
             text = str(obj.get("description") or details.get("text")
                        or "yakalanmamış istisna")
             self.console.append(ConsoleLine(
-                "hata", text.strip(),
-                _location(details.get("url"), details.get("lineNumber")), "istisna"))
+                "error", text.strip(),
+                _location(details.get("url"), details.get("lineNumber")), "exception"))
 
         elif method == "Log.entryAdded":
             # The browser's own log: "Failed to load resource: 404", CSP
@@ -436,7 +436,7 @@ class Record:
             level = _LEVELS.get(str(entry.get("level") or "info"), "log")
             self.console.append(ConsoleLine(
                 level, str(entry.get("text") or "").strip() or "(boş kayıt)",
-                _location(entry.get("url"), entry.get("lineNumber")), "tarayici"))
+                _location(entry.get("url"), entry.get("lineNumber")), "browser"))
 
         elif method == "Network.requestWillBeSent":
             request = p.get("request") or {}
@@ -725,7 +725,7 @@ class Browser:
             "text": text[:limit] + ("\n… (kırpıldı)" if clipped else ""),
             # Framework error page — a separate field if present. A
             # "Whoops!" heading lost inside the text was being overlooked.
-            "hata": self.error_page(tab),
+            "error": self.error_page(tab),
         }
 
     def error_page(self, tab: dict[str, Any]) -> dict[str, Any] | None:
@@ -745,7 +745,7 @@ class Browser:
             finding = self.eval(tab, _ERROR_JS)
         except BrowseError:  # pragma: no cover - stay quiet if the page cannot be read
             return None
-        return finding if isinstance(finding, dict) and finding.get("tur") else None
+        return finding if isinstance(finding, dict) and finding.get("kind") else None
 
     def js(self, tab: dict[str, Any], expression: str) -> dict[str, Any]:
         """Runs a small expression on the page and returns the RESULT (diagnosis).
@@ -760,10 +760,10 @@ class Browser:
         """
         answer = self.eval(tab, _JS_WRAP % json.dumps(expression))
         if not isinstance(answer, dict):  # pragma: no cover - the wrapper always returns a dict
-            return {"tip": "?", "deger": answer}
-        if answer.get("hata"):
-            return {"tip": "hata", "deger": str(answer["hata"])}
-        return {"tip": str(answer.get("tip") or "?"), "deger": answer.get("deger")}
+            return {"type": "?", "value": answer}
+        if answer.get("error"):
+            return {"type": "error", "value": str(answer["error"])}
+        return {"type": str(answer.get("type") or "?"), "value": answer.get("value")}
 
     def screenshot(self, tab: dict[str, Any]) -> str:
         """Image of the visible area, as a data: URL."""
@@ -1087,10 +1087,10 @@ _SUBMIT_JS = """(() => { // dornick:submit
 _JS_WRAP = """(function () { // dornick:js
   let r;
   try { r = eval(%s); }
-  catch (e) { return {hata: String((e && (e.stack || e.message)) || e)}; }
+  catch (e) { return {error: String((e && (e.stack || e.message)) || e)}; }
   const t = (r === null) ? "null" : typeof r;
-  try { return {tip: t, deger: JSON.parse(JSON.stringify(r === undefined ? null : r))}; }
-  catch (e) { return {tip: t, deger: String(r).slice(0, 2000)}; }
+  try { return {type: t, value: JSON.parse(JSON.stringify(r === undefined ? null : r))}; }
+  catch (e) { return {type: t, value: String(r).slice(0, 2000)}; }
 })()"""
 
 # Signatures of framework error pages. Every item is a marker really found
@@ -1105,36 +1105,36 @@ _ERROR_JS = """(() => { // dornick:hata
   // CodeIgniter 4 — "Whoops!" heading, .header h1 carries the exception class.
   if (q(".container.text-center h1") && /whoops/i.test(document.body.innerText.slice(0, 400))) {
     const h = q("h1"), p = q(".header p") || q("p");
-    return {tur: "CodeIgniter 4 hata sayfası", baslik: kes(h && h.innerText, 200),
-            mesaj: kes(p && p.innerText, 300),
+    return {kind: "CodeIgniter 4 hata sayfası", title: kes(h && h.innerText, 200),
+            message: kes(p && p.innerText, 300),
             yer: kes((q(".source") || {}).innerText, 200)};
   }
   if (/whoops/i.test(baslik) || q("#exception-card") || q(".exception__message")) {
     const h = q(".exception__title, .exception-message, h1");
-    return {tur: "PHP çerçeve hata sayfası (Whoops/Ignition)",
-            baslik: kes(h && h.innerText, 200), mesaj: kes(baslik, 200), yer: ""};
+    return {kind: "PHP çerçeve hata sayfası (Whoops/Ignition)",
+            title: kes(h && h.innerText, 200), message: kes(baslik, 200), where: ""};
   }
   // Django debug page: "TypeError at /path"
   if (q("#summary") && q("#traceback") && / at \\//.test(baslik)) {
     const h = q("#summary h1"), p = q("#summary pre.exception_value");
-    return {tur: "Django hata sayfası", baslik: kes(h && h.innerText, 200),
-            mesaj: kes(p && p.innerText, 300), yer: ""};
+    return {kind: "Django hata sayfası", title: kes(h && h.innerText, 200),
+            message: kes(p && p.innerText, 300), where: ""};
   }
   // Flask/Werkzeug debugger
   if (/werkzeug debugger/i.test(baslik) || q(".traceback .frame")) {
     const h = q("h1"), p = q(".errormsg") || q(".detail .errormsg");
-    return {tur: "Werkzeug (Flask) hata ayıklayıcı", baslik: kes(h && h.innerText, 200),
-            mesaj: kes(p && p.innerText, 300), yer: ""};
+    return {kind: "Werkzeug (Flask) hata ayıklayıcı", title: kes(h && h.innerText, 200),
+            message: kes(p && p.innerText, 300), where: ""};
   }
   // Bare PHP: "Fatal error:" / "Parse error:" / "Warning:" at the head of the body
   const bas = (document.body ? document.body.innerText : "").slice(0, 500);
   const m = bas.match(/(Fatal error|Parse error|Warning|Notice|Deprecated):\\s*([^\\n]+)/);
-  if (m) return {tur: "PHP " + m[1], baslik: kes(m[1], 60), mesaj: kes(m[2], 300),
+  if (m) return {kind: "PHP " + m[1], title: kes(m[1], 60), message: kes(m[2], 300),
                  yer: kes((bas.match(/ in (.+ on line \\d+)/) || [])[1], 200)};
   // Node/Express default error page
   if (q("pre") && /^\\s*(Error|TypeError|ReferenceError):/.test(q("pre").innerText || ""))
-    return {tur: "Node/Express hata sayfası", baslik: kes(q("pre").innerText.split("\\n")[0], 200),
-            mesaj: "", yer: ""};
+    return {kind: "Node/Express hata sayfası", title: kes(q("pre").innerText.split("\\n")[0], 200),
+            mesaj: "", where: ""};
   return null;
 })()"""
 

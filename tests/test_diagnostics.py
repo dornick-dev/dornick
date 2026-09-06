@@ -83,7 +83,7 @@ def test_a_huge_file_is_skipped_honestly(tmp_path: Path) -> None:
     path.write_text("x=1;\n" * 500_000, encoding="utf-8")
 
     diagnosis = diagnostics.check(path)
-    assert diagnosis is not None and diagnosis.status == "yok"
+    assert diagnosis is not None and diagnosis.status == "none"
     assert "büyük" in diagnosis.reason
 
 
@@ -96,7 +96,7 @@ def test_broken_python_is_caught_with_a_line_number(tmp_path: Path) -> None:
 
     diagnosis = diagnostics.check(path)
     assert diagnosis is not None
-    assert diagnosis.status == "hata"
+    assert diagnosis.status == "error"
     assert diagnosis.findings
     assert diagnosis.findings[0].line > 0
     assert "satır" in diagnosis.text()
@@ -107,7 +107,7 @@ def test_clean_python_never_claims_everything_is_fine(tmp_path: Path) -> None:
     path.write_text("def f():\n    return 1\n", encoding="utf-8")
 
     diagnosis = diagnostics.check(path)
-    assert diagnosis is not None and diagnosis.status == "temiz"
+    assert diagnosis is not None and diagnosis.status == "clean"
     text = diagnosis.text()
     # Says "the checker saw no error"; does NOT say "the code works".
     assert "hata görmedi" in text
@@ -119,7 +119,7 @@ def test_python_null_byte_is_reported_not_crashed(tmp_path: Path) -> None:
     path.write_bytes(b"x = 1\x00\n")
 
     diagnosis = diagnostics.check(path)
-    assert diagnosis is not None and diagnosis.status == "hata"
+    assert diagnosis is not None and diagnosis.status == "error"
 
 
 # -- php ----------------------------------------------------------------
@@ -134,7 +134,7 @@ def test_broken_php_is_caught(tmp_path: Path) -> None:
     )
 
     diagnosis = diagnostics.check(path)
-    assert diagnosis is not None and diagnosis.status == "hata"
+    assert diagnosis is not None and diagnosis.status == "error"
     assert diagnosis.findings[0].line == 4
     assert "syntax error" in diagnosis.findings[0].message
 
@@ -149,7 +149,7 @@ def test_php_catches_a_void_function_returning_a_value(tmp_path: Path) -> None:
     )
 
     diagnosis = diagnostics.check(path)
-    assert diagnosis is not None and diagnosis.status == "hata"
+    assert diagnosis is not None and diagnosis.status == "error"
     assert "void" in diagnosis.findings[0].message.lower()
 
 
@@ -169,7 +169,7 @@ def test_php_says_out_loud_what_it_cannot_see(tmp_path: Path) -> None:
     )
 
     diagnosis = diagnostics.check(path)
-    assert diagnosis is not None and diagnosis.status == "temiz"
+    assert diagnosis is not None and diagnosis.status == "clean"
     assert "tip hataları" in diagnosis.scope
     assert "tip hataları" in diagnosis.text()
 
@@ -180,7 +180,7 @@ def test_php_without_the_checker_is_honest(tmp_path: Path, monkeypatch) -> None:
     path.write_text("<?php echo 1;\n", encoding="utf-8")
 
     diagnosis = diagnostics.check(path)
-    assert diagnosis is not None and diagnosis.status == "yok"
+    assert diagnosis is not None and diagnosis.status == "none"
     assert "bulunamadı" in diagnosis.reason
     assert "kontrol edilemedi" in diagnosis.text()
 
@@ -194,7 +194,7 @@ def test_broken_js_is_caught(tmp_path: Path) -> None:
     path.write_text("function f() {\n  const x = ;\n}\n", encoding="utf-8")
 
     diagnosis = diagnostics.check(path)
-    assert diagnosis is not None and diagnosis.status == "hata"
+    assert diagnosis is not None and diagnosis.status == "error"
     assert diagnosis.findings[0].line == 2
     assert "SyntaxError" in diagnosis.findings[0].message
 
@@ -205,7 +205,7 @@ def test_clean_js_is_clean(tmp_path: Path) -> None:
     path.write_text("const x = 1;\nconsole.log(x);\n", encoding="utf-8")
 
     diagnosis = diagnostics.check(path)
-    assert diagnosis is not None and diagnosis.status == "temiz"
+    assert diagnosis is not None and diagnosis.status == "clean"
 
 
 def test_broken_json_gets_a_line(tmp_path: Path) -> None:
@@ -213,7 +213,7 @@ def test_broken_json_gets_a_line(tmp_path: Path) -> None:
     path.write_text('{\n  "a": 1,\n  "b":\n}\n', encoding="utf-8")
 
     diagnosis = diagnostics.check(path)
-    assert diagnosis is not None and diagnosis.status == "hata"
+    assert diagnosis is not None and diagnosis.status == "error"
     assert diagnosis.findings[0].line == 4
 
 
@@ -222,7 +222,7 @@ def test_clean_json_is_clean(tmp_path: Path) -> None:
     path.write_text('{"a": 1}\n', encoding="utf-8")
 
     diagnosis = diagnostics.check(path)
-    assert diagnosis is not None and diagnosis.status == "temiz"
+    assert diagnosis is not None and diagnosis.status == "clean"
 
 
 def test_broken_yaml_gets_a_line(tmp_path: Path) -> None:
@@ -231,7 +231,7 @@ def test_broken_yaml_gets_a_line(tmp_path: Path) -> None:
     path.write_text("a: 1\n  b: 2\n", encoding="utf-8")
 
     diagnosis = diagnostics.check(path)
-    assert diagnosis is not None and diagnosis.status == "hata"
+    assert diagnosis is not None and diagnosis.status == "error"
     assert diagnosis.findings[0].line >= 1
 
 
@@ -241,7 +241,7 @@ def test_typescript_without_a_project_says_so(tmp_path: Path) -> None:
     path.write_text("const x: number = 1;\n", encoding="utf-8")
 
     diagnosis = diagnostics.check(path)
-    assert diagnosis is not None and diagnosis.status == "yok"
+    assert diagnosis is not None and diagnosis.status == "none"
     assert "tsconfig" in diagnosis.reason
 
 
@@ -307,7 +307,7 @@ def test_a_slow_checker_is_reported_as_unchecked(tmp_path: Path, monkeypatch) ->
     path.write_text("<?php echo 1;\n", encoding="utf-8")
 
     diagnosis = diagnostics.check(path, timeout=0.01)
-    assert diagnosis.status == "yok"
+    assert diagnosis.status == "none"
     assert "bitmedi" in diagnosis.reason
 
 
@@ -320,7 +320,7 @@ def test_a_crashing_checker_never_invents_a_finding(tmp_path: Path, monkeypatch)
     path.write_text("<?php echo 1;\n", encoding="utf-8")
 
     diagnosis = diagnostics.check(path)
-    assert diagnosis.status == "yok" and not diagnosis.findings
+    assert diagnosis.status == "none" and not diagnosis.findings
 
 
 # -- integration with the write tools -----------------------------------
@@ -340,8 +340,8 @@ async def test_write_file_hands_the_error_back_to_the_model(
     assert "tanı:" in result.content
     assert "satır 2" in result.content
     assert "Düzeltmeden devam etme" in result.content
-    assert result.detail["tani"]["durum"] == "hata"
-    assert result.detail["tani"]["bulgular"][0]["satir"] == 2
+    assert result.detail["diagnosis"]["status"] == "error"
+    assert result.detail["diagnosis"]["findings"][0]["line"] == 2
 
 
 async def test_write_file_reports_a_clean_check_in_one_line(
@@ -352,7 +352,7 @@ async def test_write_file_reports_a_clean_check_in_one_line(
     )
 
     assert "tanı: temiz" in result.content
-    assert result.detail["tani"]["durum"] == "temiz"
+    assert result.detail["diagnosis"]["status"] == "clean"
 
 
 async def test_write_file_says_nothing_for_an_unknown_language(
@@ -376,7 +376,7 @@ async def test_edit_file_checks_what_the_edit_produced(
     result = await call(registry, "edit_file", ctx, path="a.py", old="y = 2", new="y = (2")
 
     assert "güncellendi" in result.content
-    assert result.detail["tani"]["durum"] == "hata"
+    assert result.detail["diagnosis"]["status"] == "error"
     assert "tanı:" in result.content
 
 
@@ -414,7 +414,7 @@ async def test_the_manual_tool_checks_the_last_written_file(
     result = await call(registry, "inspect", ctx)
 
     assert "son.py" in result.content
-    assert result.detail["hatali"] == 1
+    assert result.detail["faulty"] == 1
 
 
 async def test_the_manual_tool_without_a_target_is_honest(
@@ -436,7 +436,7 @@ async def test_the_manual_tool_walks_a_folder(
     result = await call(registry, "inspect", ctx, path="proje")
 
     assert "kotu.py" in result.content
-    assert result.detail["hatali"] == 1
+    assert result.detail["faulty"] == 1
     # The clean file is counted but not declared "solid".
     assert "çalıştığı anlamına gelmez" in result.content
 
@@ -449,7 +449,7 @@ async def test_the_manual_tool_narrows_with_a_pattern(
 
     result = await call(registry, "inspect", ctx, path="p", pattern="*.json")
 
-    assert result.detail["hatali"] == 1
+    assert result.detail["faulty"] == 1
     assert "a.py" not in result.content
 
 

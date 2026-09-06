@@ -24,6 +24,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Iterable, Iterator
 
+from .. import legacy_values
 from .clock import Clock, wall_clock
 
 # An old night is gzipped in deep sleep (sleep.compress_old_nights) and keeps
@@ -35,24 +36,31 @@ COMPRESSED_SUFFIX = ".gz"
 # view may rely on. A snapshot test compares this dict; editing it is a
 # decision, not an accident.
 SCHEMA: dict[str, tuple[str, ...]] = {
-    "uyku.basladi":  ("basinc", "tahmini_uyanma", "dongu_sayisi"),
-    "uyku.dongu":    ("no", "faz"),
-    "tekrar.ileri":  ("oturum", "dizi", "kenarlar"),
-    "tekrar.geri":   ("oturum", "sonuc", "paylar"),
-    "dikis":         ("a", "b", "uzerinden", "oturumlar"),
-    "dokunus":       ("id",),
-    "damitma":       ("kaynaklar", "yeni"),
-    "uyku.uyandi":   ("sebep", "dongu", "tamamlanan", "devreden", "borc"),
-    "uyku.bitti":    ("sebep", "rapor"),
-    "uyanik.ters":   ("oturum", "sonuc"),
-    "mikro.basladi": ("basinc",),
-    "mikro.bitti":   ("tamamlanan",),
-    "yerel.basladi": ("bolge",),
-    "yerel.bitti":   ("kuculen", "atlanan"),
+    "sleep.started":  ("pressure", "wake_estimate", "cycle_count"),
+    "sleep.cycle":    ("no", "phase"),
+    "replay.forward": ("session", "sequence", "edges"),
+    "replay.reverse": ("session", "outcome", "shares"),
+    "stitch":         ("a", "b", "via", "sessions"),
+    "touch":          ("id",),
+    "distil":         ("sources", "new"),
+    "sleep.woke":     ("reason", "cycle", "completed", "carried", "debt"),
+    "sleep.ended":    ("reason", "report"),
+    "awake.reverse":  ("session", "outcome"),
+    "micro.started":  ("pressure",),
+    "micro.ended":    ("completed",),
+    "local.started":  ("region",),
+    "local.ended":    ("shrunk", "skipped"),
 }
 
 # Every event carries these two on top of its own fields.
-SHARED = ("ts", "tur")
+SHARED = ("ts", "kind")
+
+# A night written before 1.5.5 names the same events in Turkish
+# (`uyku.basladi`, `tur`, `basinc`…). `validate` — and so `replay` and the
+# replay endpoint — upgrades each line as it is read; the file on disk is
+# not rewritten, and a new night is written in this vocabulary only.
+LEGACY_KINDS = legacy_values.NIGHT_KINDS
+LEGACY_FIELDS = legacy_values.NIGHT_FIELDS
 
 
 class SchemaError(ValueError):
@@ -97,17 +105,18 @@ def build(kind: str, clock: Clock = wall_clock, **fields: Any) -> dict[str, Any]
     extra = [name for name in fields if name not in SCHEMA[kind]]
     if extra:
         raise SchemaError(f"{kind}: şemada olmayan alan {', '.join(extra)}")
-    return {"ts": clock().isoformat(timespec="milliseconds"), "tur": kind, **fields}
+    return {"ts": clock().isoformat(timespec="milliseconds"), "kind": kind, **fields}
 
 
 def validate(event: dict[str, Any]) -> dict[str, Any]:
     """Read side of the same contract — used when replaying a file."""
     if not isinstance(event, dict):
         raise SchemaError("olay bir sözlük değil")
+    event = legacy_values.night_event(event)
     for name in SHARED:
         if name not in event:
             raise SchemaError(f"ortak alan eksik: {name}")
-    kind = event["tur"]
+    kind = event["kind"]
     if kind not in SCHEMA:
         raise SchemaError(f"şemada olmayan olay: {kind}")
     for name in SCHEMA[kind]:
@@ -201,29 +210,30 @@ def nights(state_dir: Path) -> list[str]:
 
 
 def night_path(state_dir: Path, date: str) -> Path:
-    """`.dornick/gece/<date>.jsonl`, with the date treated as untrusted."""
+    """`.dornick/nights/<date>.jsonl`, with the date treated as untrusted."""
     safe = "".join(ch for ch in date if ch.isalnum() or ch in "-_")
     return Path(state_dir) / "nights" / f"{safe}.jsonl"
 
 
 def summary(events: Iterable[dict[str, Any]]) -> dict[str, Any]:
     """The morning report: what the night did, in the numbers a person reads."""
-    out = {"dongu": 0, "tekrar": 0, "kenar": 0, "dikis": 0, "damitik": 0,
-           "dokunus": 0, "uyandi": "", "devreden": 0}
+    out = {"cycles": 0, "replays": 0, "edges": 0, "stitches": 0, "distilled": 0,
+           "touches": 0, "woke": "", "carried": 0}
     for event in events:
-        kind = event["tur"]
-        if kind == "uyku.dongu":
-            out["dongu"] = max(out["dongu"], int(event.get("no") or 0))
-        elif kind == "tekrar.ileri":
-            out["tekrar"] += 1
-            out["kenar"] += len(event.get("kenarlar") or [])
-        elif kind == "dikis":
-            out["dikis"] += 1
-        elif kind == "damitma":
-            out["damitik"] += 1
-        elif kind == "dokunus":
-            out["dokunus"] += 1
-        elif kind == "uyku.uyandi":
-            out["uyandi"] = str(event.get("sebep") or "")
-            out["devreden"] = int(event.get("devreden") or 0)
+        event = legacy_values.night_event(event)
+        kind = event["kind"]
+        if kind == "sleep.cycle":
+            out["cycles"] = max(out["cycles"], int(event.get("no") or 0))
+        elif kind == "replay.forward":
+            out["replays"] += 1
+            out["edges"] += len(event.get("edges") or [])
+        elif kind == "stitch":
+            out["stitches"] += 1
+        elif kind == "distil":
+            out["distilled"] += 1
+        elif kind == "touch":
+            out["touches"] += 1
+        elif kind == "sleep.woke":
+            out["woke"] = str(event.get("reason") or "")
+            out["carried"] = int(event.get("carried") or 0)
     return out

@@ -301,12 +301,12 @@ async def test_old_session_folders_are_swept(
     root = Path(ctx.config.state_dir) / checkpoint.FOLDER
     stale = root / "bayat-oturum"
     stale.mkdir(parents=True)
-    (stale / "kayit.jsonl").write_text("{}", encoding="utf-8")
+    (stale / "ledger.jsonl").write_text("{}", encoding="utf-8")
     old_time = time.time() - (checkpoint.CLEANUP_DAYS + 1) * 86400
     os.utime(stale, (old_time, old_time))
     checkpoint._cleaned.discard(root)  # reset the process flag for this root
 
-    checkpoint.defter(ctx).save(ctx.sandbox.root / "olmayan.txt", "write_file")
+    checkpoint.ledger(ctx).save(ctx.sandbox.root / "olmayan.txt", "write_file")
 
     assert not stale.exists()
 

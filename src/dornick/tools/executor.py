@@ -18,7 +18,7 @@ import asyncio
 import time
 from typing import Any, Awaitable, Callable, Sequence
 
-from .. import hooks
+from .. import legacy_values, hooks
 from ..permissions import Decision, PermissionEngine
 from ..session import PendingToolUse, cancelled_result
 from .base import Block, ToolContext, ToolRegistry, ToolResult, ToolSpec, schema_violation
@@ -198,6 +198,10 @@ async def _run_one(
                               "detail": verdict.reason})
         return ToolResult.error(verdict.reason).to_block(call.id)
 
+    # A call that names a pre-1.5.5 parameter (`komut`, `arka_plan`…) or an
+    # enum value (`konsol`, `tanim`…) — from a replayed session log or a model
+    # that learnt the old words — means what it meant.
+    call.input = legacy_values.tool_args(spec.name, call.input)
     observe("tool_start", {"tool": spec.name, "input": call.input, "id": call.id})
     started = time.monotonic()
     # If the tool asked for its own timeout (e.g. shell was given
@@ -304,7 +308,7 @@ def _append_hook_notes(result: ToolResult, notes: list[str]) -> ToolResult:
     added: squeezing text between the blocks breaks the contract and a hook
     note on an image tool is rare anyway. It is still carried in the detail.
     """
-    detail = {**result.detail, "kancalar": list(notes)}
+    detail = {**result.detail, "hooks": list(notes)}
     if not isinstance(result.content, str):
         return ToolResult(content=result.content, is_error=result.is_error,
                           detail=detail)

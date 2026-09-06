@@ -31,7 +31,8 @@ from typing import Any, Callable
 from .config import OPENROUTER_URL, OTO_MODEL, ModelConfig
 from .automode import LIST_TIMEOUT, FRESHNESS_S, _read, _state_dir, _write
 
-# Price table cache: .dornick/prices.json
+# Price table cache: .dornick/prices.json — {"ts", "prices": {id: {"input", "output"}}}.
+# A file written before 1.5.5 says "fiyatlar" and "girdi"/"cikti"; `_read` upgrades it.
 PRICE_FILE = "prices.json"
 
 # So we do not hit the disk a second time within the process; keyed by file
@@ -41,7 +42,7 @@ _MEMORY: dict[str, tuple[float, dict[str, dict[str, float]]]] = {}
 
 
 def sift(entries: list[Any]) -> dict[str, dict[str, float]]:
-    """Price table from the model list: {id: {"girdi": $, "cikti": $}}.
+    """Price table from the model list: {id: {"input": $, "output": $}}.
 
     Prices are USD/token; OpenRouter returns strings ("0.000003") and any
     entry that cannot be parsed to a number is skipped silently — a single
@@ -59,7 +60,7 @@ def sift(entries: list[Any]) -> dict[str, dict[str, float]]:
             continue
         if prompt_price < 0 or completion_price < 0:
             continue   # negative price: broken entry
-        table[str(entry["id"])] = {"girdi": prompt_price, "cikti": completion_price}
+        table[str(entry["id"])] = {"input": prompt_price, "output": completion_price}
     return table
 
 
@@ -74,6 +75,21 @@ def _download() -> dict[str, dict[str, float]]:
         return {}
     data = payload.get("data") if isinstance(payload, dict) else None
     return sift(data) if isinstance(data, list) else {}
+
+
+def _upgrade(record: dict[str, Any]) -> dict[str, Any]:
+    """A `prices.json` written before 1.5.5 (`fiyatlar`, `girdi`/`cikti`) in
+    the current shape. The next network refresh rewrites it."""
+    if not isinstance(record, dict) or "fiyatlar" not in record:
+        return record
+    out = {k: v for k, v in record.items() if k != "fiyatlar"}
+    if "prices" not in out:
+        out["prices"] = {
+            str(model): {"input": float((tag or {}).get("girdi", (tag or {}).get("input", 0.0)) or 0.0),
+                         "output": float((tag or {}).get("cikti", (tag or {}).get("output", 0.0)) or 0.0)}
+            for model, tag in (record.get("fiyatlar") or {}).items()
+            if isinstance(tag, dict)}
+    return out
 
 
 def table(
@@ -94,23 +110,23 @@ def table(
     if held and now() - ts < FRESHNESS_S:
         return dict(held)
 
-    record = _read(file)
-    if record.get("fiyatlar") and now() - float(record.get("ts") or 0) < FRESHNESS_S:
+    record = _upgrade(_read(file))
+    if record.get("prices") and now() - float(record.get("ts") or 0) < FRESHNESS_S:
         with _LOCK:
-            _MEMORY[str(file)] = (float(record["ts"]), dict(record["fiyatlar"]))
-        return dict(record["fiyatlar"])
+            _MEMORY[str(file)] = (float(record["ts"]), dict(record["prices"]))
+        return dict(record["prices"])
 
     if ag:
         fresh = _download()
         if fresh:
-            record.update({"ts": now(), "fiyatlar": fresh})
+            record.update({"ts": now(), "prices": fresh})
             _write(file, record)
             with _LOCK:
                 _MEMORY[str(file)] = (now(), dict(fresh))
             return fresh
 
     # No network, or network forbidden: a stale table beats nothing.
-    return dict(record.get("fiyatlar") or {})
+    return dict(record.get("prices") or {})
 
 
 def label(
@@ -120,7 +136,7 @@ def label(
     ag: bool = False,
     now: Callable[[], float] = time.time,
 ) -> dict[str, float] | None:
-    """The selected model's price tag: {"girdi": USD/token, "cikti": USD/token}.
+    """The selected model's price tag: {"input": USD/token, "output": USD/token}.
 
     Only meaningful on OpenRouter: another provider's (local server,
     Anthropic) price is not in this catalogue → None. "Oto" mode runs on
@@ -131,5 +147,5 @@ def label(
         return None
     name = (model.name or "").strip()
     if name.lower() == OTO_MODEL:
-        return {"girdi": 0.0, "cikti": 0.0}
+        return {"input": 0.0, "output": 0.0}
     return table(state_dir, ag=ag, now=now).get(name)

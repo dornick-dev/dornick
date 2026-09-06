@@ -33,6 +33,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, Callable, Iterable
 
+from .. import legacy_values
 from . import switches, weave
 from .clock import Clock, parse, wall_clock
 
@@ -89,15 +90,15 @@ LOG_AGE_DAYS = 30
 
 
 class State(str, Enum):
-    AWAKE = "uyanik"
-    SLEEPY = "uykulu"
-    ASLEEP = "uyuyor"
-    WAKING = "uyaniyor"
+    AWAKE = "awake"
+    SLEEPY = "sleepy"
+    ASLEEP = "asleep"
+    WAKING = "waking"
 
 
 class Phase(str, Enum):
-    DEEP = "derin"
-    LIGHT = "hafif"
+    DEEP = "deep"
+    LIGHT = "light"
     REM = "rem"
 
 
@@ -283,7 +284,7 @@ class SleepSwitch:
             self.os_resumed()           # the lid was opened by a person
         self.orexin = 1.0 if active else 0.0
         if active and self.state is not State.AWAKE:
-            self._go(State.AWAKE, "oreksin")
+            self._go(State.AWAKE, "orexin")
 
     def os_suspended(self) -> None:
         """The OS is going to sleep (`WM_POWERBROADCAST` suspend, 3.10.9).
@@ -366,7 +367,7 @@ class SleepSwitch:
         self._go(State.ASLEEP, reason)
         return self.state is State.ASLEEP
 
-    def night_over(self, reason: str = "gece bitti") -> None:
+    def night_over(self, reason: str = "night over") -> None:
         """The night ended without a stimulus: it ran out of work, or the
         application is closing. ASLEEP → WAKING; the next step() finishes
         the inertia. Not a stimulus, so it does not pass the threshold."""
@@ -392,25 +393,25 @@ class SleepSwitch:
         now = self.clock()
         if self.orexin >= 1.0:
             if self.state is not State.AWAKE:
-                self._go(State.AWAKE, "oreksin")
+                self._go(State.AWAKE, "orexin")
             return self.state
 
         if self.state is State.AWAKE:
             circadian = 1.0 - self.rhythm.probability(now + timedelta(hours=1))
             if s + circadian * 0.5 >= self.upper_threshold() and idle_minutes >= 1:
-                self._go(State.SLEEPY, "basinc")
+                self._go(State.SLEEPY, "pressure")
         elif self.state is State.SLEEPY:
             waited = ((now - self.sleepy_since).total_seconds() / 60.0
                       if self.sleepy_since else 0.0)
             if waited >= SLEEPY_MINUTES:
-                self._go(State.ASLEEP, "hazir")
+                self._go(State.ASLEEP, "ready")
         elif self.state is State.ASLEEP:
             if s <= LOWER_THRESHOLD:
-                self._go(State.WAKING, "basinc dustu")
+                self._go(State.WAKING, "pressure dropped")
             elif self.rhythm.probability(now + timedelta(minutes=EARLY_MINUTES)) >= 0.5:
-                self._go(State.WAKING, "ritim")
+                self._go(State.WAKING, "rhythm")
         elif self.state is State.WAKING:
-            self._go(State.AWAKE, "atalet bitti")
+            self._go(State.AWAKE, "inertia over")
         return self.state
 
     def _go(self, new: State, reason: str) -> None:
@@ -504,7 +505,7 @@ class Sleeper:
         except Exception:
             pass        # the night still happened if its log could not be written
 
-    def wake(self, reason: str = "kullanici") -> None:
+    def wake(self, reason: str = "user") -> None:
         """Ask the night to stop. The running unit finishes; none starts."""
         self._wake = reason
         self._wake_at = time.perf_counter()
@@ -518,14 +519,14 @@ class Sleeper:
             cycle_budget_s: float = CYCLE_MINUTES * 60.0) -> NightReport:
         report = NightReport()
         if not switches.ACTIVE.weave:
-            report.woke_reason = "orgu kapali"
+            report.woke_reason = "weave off"
             return report
         started = time.perf_counter()
         debt = _debt_read(self.state_dir)
-        self.events("uyku.basladi", {
-            "basinc": round(debt.get("devreden", 0) / max(DEBT_FULL, 1), 4),
-            "tahmini_uyanma": self.rhythm_arrival(),
-            "dongu_sayisi": max_cycles})
+        self.events("sleep.started", {
+            "pressure": round(debt.get("carried", 0) / max(DEBT_FULL, 1), 4),
+            "wake_estimate": self.rhythm_arrival(),
+            "cycle_count": max_cycles})
 
         # `run()` IS the night: the switch is ASLEEP by the time it is
         # called, so the housekeeping guards are passed that state here.
@@ -540,9 +541,9 @@ class Sleeper:
         for cycle in range(1, max_cycles + 1):
             if self._wake:
                 break
-            phase = phase_of(cycle, debt_phase=debt.get("faz", ""))
+            phase = phase_of(cycle, debt_phase=debt.get("phase", ""))
             report.phases.append(phase.value)
-            self.events("uyku.dongu", {"no": cycle, "faz": phase.value})
+            self.events("sleep.cycle", {"no": cycle, "phase": phase.value})
             remaining = min(cycle_budget_s, budget_s - (time.perf_counter() - started))
             if remaining <= 0:
                 break
@@ -581,16 +582,16 @@ class Sleeper:
             # A cluster whose model call was in flight is dropped, not half
             # written: an interrupted guess is a wrong guess, not a small one.
             report.discarded_clusters = 0
-            self.events("uyku.uyandi", {
-                "sebep": self._wake, "dongu": report.cycles,
-                "tamamlanan": report.replayed, "devreden": report.carried,
-                "borc": debt})
+            self.events("sleep.woke", {
+                "reason": self._wake, "cycle": report.cycles,
+                "completed": report.replayed, "carried": report.carried,
+                "debt": debt})
         else:
-            self.events("uyku.bitti", {"sebep": "basinc", "rapor": report.as_dict()})
+            self.events("sleep.ended", {"reason": "pressure", "report": report.as_dict()})
 
         _debt_write(self.state_dir, {
-            "faz": Phase.REM.value if report.distilled == 0 else "",
-            "devreden": report.carried,
+            "phase": Phase.REM.value if report.distilled == 0 else "",
+            "carried": report.carried,
             "ts": self.clock().isoformat(timespec="milliseconds")})
         return report
 
@@ -607,7 +608,11 @@ def _debt_read(state_dir: Path | None) -> dict[str, Any]:
     if state_dir is None:
         return {}
     try:
-        return json.loads((Path(state_dir) / "sleep_debt.json").read_text("utf-8"))
+        data = json.loads((Path(state_dir) / "sleep_debt.json").read_text("utf-8"))
+        # A file written before 1.5.5 says `faz`/`devreden`; the next night rewrites it.
+        data = legacy_values.keys(data, legacy_values.DEBT_KEYS)
+        data["phase"] = legacy_values.phase(data.get("phase", ""))
+        return data
     except (OSError, ValueError):
         return {}
 

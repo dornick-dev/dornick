@@ -108,7 +108,7 @@ def test_python_definitions_are_exact(project: Path) -> None:
 
 
 def test_python_signature_carries_arguments_and_return(project: Path) -> None:
-    result = symbols.search(project, "kaydet", kind="tanim")
+    result = symbols.search(project, "kaydet", kind="definitions")
     signature = next(s.signature for s in result.definitions if s.scope == "")
     assert signature.startswith("def kaydet(")
     assert "yol: str" in signature
@@ -116,19 +116,19 @@ def test_python_signature_carries_arguments_and_return(project: Path) -> None:
 
 
 def test_a_method_names_its_class(project: Path) -> None:
-    result = symbols.search(project, "kaydet", kind="tanim")
-    text = result.text(kind="tanim")
+    result = symbols.search(project, "kaydet", kind="definitions")
+    text = result.text(kind="definitions")
     assert "Depo sınıfının metodu" in text
 
 
 def test_async_definitions_are_found(project: Path) -> None:
-    result = symbols.search(project, "toplu_kaydet", kind="tanim")
+    result = symbols.search(project, "toplu_kaydet", kind="definitions")
     assert len(result.definitions) == 1
     assert result.definitions[0].signature.startswith("async def toplu_kaydet(")
 
 
 def test_classes_are_found(project: Path) -> None:
-    result = symbols.search(project, "Depo", kind="tanim")
+    result = symbols.search(project, "Depo", kind="definitions")
     assert [s.kind for s in result.definitions] == ["sinif"]
     assert result.definitions[0].signature == "class Depo"
 
@@ -146,7 +146,7 @@ def test_python_ignores_comments_and_strings(project: Path) -> None:
 def test_python_usages_are_classified(project: Path) -> None:
     result = symbols.search(project, "kaydet")
     kinds = {u.kind for u in result.usages}
-    assert "cagri" in kinds
+    assert "call" in kinds
     # Definition lines are not counted as usages.
     definition_lines = {s.line for s in result.definitions}
     assert not (definition_lines & {u.line for u in result.usages})
@@ -156,7 +156,7 @@ def test_imports_count_as_usage(tmp_path: Path) -> None:
     (tmp_path / "a.py").write_text("def kaydet():\n    pass\n", encoding="utf-8")
     (tmp_path / "b.py").write_text("from a import kaydet\n", encoding="utf-8")
     result = symbols.search(tmp_path, "kaydet")
-    assert any(u.kind == "ice_aktarma" for u in result.usages)
+    assert any(u.kind == "import" for u in result.usages)
 
 
 def test_a_broken_python_file_is_reported_not_silently_skipped(tmp_path: Path) -> None:
@@ -172,7 +172,7 @@ def test_a_broken_python_file_is_reported_not_silently_skipped(tmp_path: Path) -
 
 def test_php_definitions(tmp_path: Path) -> None:
     (tmp_path / "Home.php").write_text(PHP_SOURCE, encoding="utf-8")
-    result = symbols.search(tmp_path, "kaydet", kind="tanim")
+    result = symbols.search(tmp_path, "kaydet", kind="definitions")
     lines = sorted(s.line for s in result.definitions)
     assert 13 in lines             # private static function kaydet
     assert 19 in lines             # free function kaydet
@@ -181,7 +181,7 @@ def test_php_definitions(tmp_path: Path) -> None:
 
 def test_php_class_definition(tmp_path: Path) -> None:
     (tmp_path / "Home.php").write_text(PHP_SOURCE, encoding="utf-8")
-    result = symbols.search(tmp_path, "Home", kind="tanim")
+    result = symbols.search(tmp_path, "Home", kind="definitions")
     assert [s.kind for s in result.definitions] == ["sinif"]
 
 
@@ -202,7 +202,7 @@ def test_php_comment_lines_are_dropped(tmp_path: Path) -> None:
 def test_php_new_is_an_instantiation(tmp_path: Path) -> None:
     (tmp_path / "Home.php").write_text(PHP_SOURCE, encoding="utf-8")
     result = symbols.search(tmp_path, "Depo")
-    assert any(u.kind == "kurulum" for u in result.usages)
+    assert any(u.kind == "setup" for u in result.usages)
 
 
 # -- JS -----------------------------------------------------------------
@@ -210,13 +210,13 @@ def test_php_new_is_an_instantiation(tmp_path: Path) -> None:
 
 def test_js_function_class_and_arrow(tmp_path: Path) -> None:
     (tmp_path / "depo.js").write_text(JS_SOURCE, encoding="utf-8")
-    everything = symbols.search(tmp_path, "kaydet", kind="tanim")
+    everything = symbols.search(tmp_path, "kaydet", kind="definitions")
     assert any(s.line == 2 for s in everything.definitions)     # export function
 
-    arrow = symbols.search(tmp_path, "yukle", kind="tanim")   # const yukle = async () =>
+    arrow = symbols.search(tmp_path, "yukle", kind="definitions")   # const yukle = async () =>
     assert arrow.definitions and arrow.definitions[0].kind == "fonksiyon"
 
-    klass = symbols.search(tmp_path, "Depo", kind="tanim")
+    klass = symbols.search(tmp_path, "Depo", kind="definitions")
     assert klass.definitions and klass.definitions[0].kind == "sinif"
 
 
@@ -225,9 +225,9 @@ def test_js_control_keywords_are_not_symbols(tmp_path: Path) -> None:
     (tmp_path / "a.js").write_text(
         "class A {\n  metot() {\n    if (x) {\n      return 1;\n    }\n  }\n}\n",
         encoding="utf-8")
-    result = symbols.search(tmp_path, "if", kind="tanim")
+    result = symbols.search(tmp_path, "if", kind="definitions")
     assert result.definitions == []
-    method = symbols.search(tmp_path, "metot", kind="tanim")
+    method = symbols.search(tmp_path, "metot", kind="definitions")
     assert method.definitions and method.definitions[0].kind == "metot"
 
 
@@ -346,17 +346,17 @@ def test_the_tool_is_registered_and_read_only() -> None:
 async def test_the_tool_finds_a_definition(
     registry: ToolRegistry, ctx: ToolContext, project: Path
 ) -> None:
-    result = await call(registry, ctx, sorgu="kaydet", path=str(project))
+    result = await call(registry, ctx, query="kaydet", path=str(project))
     assert "def kaydet(" in result.content
-    assert result.detail["tanim"] >= 2
-    assert result.detail["kesin"] is True
+    assert result.detail["definitions"] >= 2
+    assert result.detail["exact"] is True
 
 
 async def test_the_tool_refuses_free_text(
     registry: ToolRegistry, ctx: ToolContext, project: Path
 ) -> None:
     """A query with spaces is not a symbol name; the right tool is `grep`."""
-    result = await call(registry, ctx, sorgu="veri kaydedilemedi", path=str(project))
+    result = await call(registry, ctx, query="veri kaydedilemedi", path=str(project))
     assert result.is_error
     assert "`grep`" in result.content
 
@@ -365,14 +365,14 @@ async def test_the_tool_accepts_a_file_path(
     registry: ToolRegistry, ctx: ToolContext, project: Path
 ) -> None:
     """The model gives the only thing it has: the path of the file."""
-    result = await call(registry, ctx, sorgu="Depo", path=str(project / "depo.py"))
+    result = await call(registry, ctx, query="Depo", path=str(project / "depo.py"))
     assert "class Depo" in result.content
 
 
 async def test_the_tool_can_show_definitions_only(
     registry: ToolRegistry, ctx: ToolContext, project: Path
 ) -> None:
-    result = await call(registry, ctx, sorgu="kaydet", path=str(project), tur="tanim")
+    result = await call(registry, ctx, query="kaydet", path=str(project), kind="definitions")
     assert "tanım" in result.content
     assert "kullanım" not in result.content
 
@@ -380,7 +380,7 @@ async def test_the_tool_can_show_definitions_only(
 async def test_the_tool_rejects_a_missing_folder(
     registry: ToolRegistry, ctx: ToolContext, tmp_path: Path
 ) -> None:
-    result = await call(registry, ctx, sorgu="x", path=str(tmp_path / "yok" / "yok"))
+    result = await call(registry, ctx, query="x", path=str(tmp_path / "yok" / "yok"))
     assert result.is_error
 
 

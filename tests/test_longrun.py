@@ -208,9 +208,9 @@ async def test_a_background_job_reports_when_done(
         return "derleme tamam: 0 hata"
 
     handle = agent._job_bg("derleme", runner)
-    assert handle.state == "kosuyor" and handle.kind == "iş"
+    assert handle.state == "running" and handle.kind == "job"
     await handle.task
-    assert handle.state == "bitti"
+    assert handle.state == "done"
     assert agent.has_unreported_children()
 
     await agent.run("nasıl gitti?")
@@ -242,7 +242,7 @@ async def test_a_failed_background_job_is_not_reported_as_done(
 
     handle = agent._job_bg("$ py tarama_modbus.py", runner)
     await handle.task
-    assert handle.state == "hata"
+    assert handle.state == "error"
     assert oks == [False]
     assert "pymodbus" in (handle.outcome or "")
     assert "Traceback" not in (handle.outcome or "")
@@ -273,7 +273,7 @@ async def test_shell_background_returns_immediately(tmp_path: Path) -> None:
                       cancel=asyncio.Event(), job_bg=job_bg)
 
     result = await reg.get("shell").handler(
-        {"command": "echo merhaba-dunya", "arka_plan": True}, ctx)
+        {"command": "echo merhaba-dunya", "job": True}, ctx)
 
     assert not result.is_error
     assert "id=j1" in result.content, "the tool must return without waiting"
@@ -312,7 +312,7 @@ async def test_shell_background_failure_raises_a_readable_error(
     ctx = ToolContext(config=config, session=session,
                       cancel=asyncio.Event(), job_bg=job_bg)
     await reg.get("shell").handler(
-        {"command": "py tarama_modbus.py", "arka_plan": True}, ctx)
+        {"command": "py tarama_modbus.py", "job": True}, ctx)
     with pytest.raises(JobFailed) as caught:
         await started["runner"](asyncio.Event())
     msg = str(caught.value)
@@ -582,7 +582,7 @@ async def test_parked_wait_emits_park_events_but_keeps_the_notice(
 async def test_interrupting_a_wait_emits_the_cancel_event(
     tmp_path: Path, registry: ToolRegistry, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """"Stop" while waiting: the live line in the strip closes with the "iptal" event."""
+    """"Stop" while waiting: the live line in the strip closes with the "cancelled" event."""
     monkeypatch.setattr(loop_module, "RETRY_DELAYS", (30.0,))   # will be interrupted while waiting
     client = FakeClient(*[TurnResult(error="Bağlantı kurulamadı") for _ in range(3)])
     agent = build_agent(tmp_path, client, registry)
@@ -764,9 +764,9 @@ def test_a_resumed_session_seeds_the_counters_from_real_usage(tmp_path: Path) ->
     status = _past_usage(agent)
 
     assert status["prompt_total"] == 5400, "the LAST turn's prompt is the valid one"
-    assert status["girdi"] == 6600, "cost: the prompts of all turns are summed"
+    assert status["input"] == 6600, "cost: the prompts of all turns are summed"
     assert status["output"] == 130, "output is summed over the session"
-    assert status["cagri"] == 2
+    assert status["calls"] == 2
     assert status["estimated"] is False
 
 
@@ -785,8 +785,8 @@ def test_an_old_log_without_usage_falls_back_to_an_estimate(tmp_path: Path) -> N
 
     assert status["estimated"] is True
     assert status["prompt_total"] > 0
-    assert status["girdi"] == status["prompt_total"]
-    assert status["cagri"] == 0
+    assert status["input"] == status["prompt_total"]
+    assert status["calls"] == 0
 
 
 def test_a_fresh_session_really_starts_at_zero(tmp_path: Path) -> None:
@@ -796,7 +796,7 @@ def test_a_fresh_session_really_starts_at_zero(tmp_path: Path) -> None:
     agent = _session_with(tmp_path, [])
 
     assert _past_usage(agent) == {
-        "prompt_total": 0, "girdi": 0, "output": 0, "cagri": 0, "estimated": False}
+        "prompt_total": 0, "input": 0, "output": 0, "calls": 0, "estimated": False}
 
 
 async def test_the_snapshot_carries_the_resumed_context(tmp_path: Path) -> None:
@@ -835,15 +835,15 @@ async def test_the_snapshot_carries_the_resumed_context(tmp_path: Path) -> None:
     # Item-by-item breakdown: statics + the remaining conversation = prompt_total.
     breakdown = {p["id"]: p["n"] for p in state["breakdown"]}
     assert set(breakdown) == {
-        "sistem", "arac", "ruh", "yetenek", "mcp", "yardimci", "sohbet"}
+        "system", "tools", "soul", "skills", "mcp", "helpers", "chat"}
     assert sum(breakdown.values()) == 3000
-    assert breakdown["sohbet"] == 3000 - (
-        breakdown["sistem"] + breakdown["arac"] + breakdown["ruh"]
-        + breakdown["yetenek"] + breakdown["mcp"] + breakdown["yardimci"])
+    assert breakdown["chat"] == 3000 - (
+        breakdown["system"] + breakdown["tools"] + breakdown["soul"]
+        + breakdown["skills"] + breakdown["mcp"] + breakdown["helpers"])
     # The cost chip's session total was seeded from the same source too.
-    assert state["usage"]["session"] == {"girdi": 3000, "cikti": 50, "cagri": 1}
+    assert state["usage"]["session"] == {"input": 3000, "output": 50, "calls": 1}
     # A second snapshot (page reloaded) does NOT INFLATE the total: seeded once.
-    assert bridge.snapshot()["usage"]["session"]["cagri"] == 1
+    assert bridge.snapshot()["usage"]["session"]["calls"] == 1
 
 
 def test_context_breakdown_puts_the_remainder_in_conversation() -> None:
@@ -864,7 +864,7 @@ def test_context_breakdown_puts_the_remainder_in_conversation() -> None:
         _system=SimpleNamespace(core="S" * 40, identity="R" * 20),
         registry=SimpleNamespace(all=lambda: [
             SimpleNamespace(name="x", source="", api_schema=lambda: schema),
-            SimpleNamespace(name="sk", source="yetenek", api_schema=lambda: skill),
+            SimpleNamespace(name="sk", source="skill", api_schema=lambda: skill),
             SimpleNamespace(name="m", source="mcp:uzak", api_schema=lambda: mcp),
             SimpleNamespace(name="task", source="", api_schema=lambda: task),
         ]),
@@ -872,13 +872,13 @@ def test_context_breakdown_puts_the_remainder_in_conversation() -> None:
     )
     parts = context_breakdown(agent, 1000)
     by_n = {p["id"]: p["n"] for p in parts}
-    assert by_n["sistem"] == 10
-    assert by_n["ruh"] == 5
-    assert by_n["arac"] == tok(schema)
-    assert by_n["yetenek"] == tok(skill)
+    assert by_n["system"] == 10
+    assert by_n["soul"] == 5
+    assert by_n["tools"] == tok(schema)
+    assert by_n["skills"] == tok(skill)
     assert by_n["mcp"] == tok(mcp)
-    assert by_n["yardimci"] == tok(task)
-    assert by_n["sohbet"] == 1000 - sum(n for k, n in by_n.items() if k != "sohbet")
+    assert by_n["helpers"] == tok(task)
+    assert by_n["chat"] == 1000 - sum(n for k, n in by_n.items() if k != "chat")
     assert [p["label"] for p in parts] == [
         "Sistem istemi", "Araç tanımları", "Ruh / kurallar",
         "Yetenekler", "MCP ve dinamik araçlar", "Yardımcı tanımları", "Konuşma",
@@ -894,8 +894,8 @@ def test_context_breakdown_scales_when_static_exceeds_total() -> None:
         registry=None,
     )
     parts = {p["id"]: p["n"] for p in context_breakdown(agent, 40)}
-    assert parts["sistem"] == 40
-    assert parts["sohbet"] == 0
+    assert parts["system"] == 40
+    assert parts["chat"] == 0
     assert sum(parts.values()) == 40
 
 
@@ -903,9 +903,9 @@ def test_context_breakdown_without_agent_is_all_conversation() -> None:
     from dornick.desktop import context_breakdown
 
     parts = {p["id"]: p["n"] for p in context_breakdown(None, 500)}
-    assert parts["sohbet"] == 500
-    assert parts["sistem"] == parts["arac"] == parts["ruh"] == 0
-    assert parts["yetenek"] == parts["mcp"] == parts["yardimci"] == 0
+    assert parts["chat"] == 500
+    assert parts["system"] == parts["tools"] == parts["soul"] == 0
+    assert parts["skills"] == parts["mcp"] == parts["helpers"] == 0
 
 
 def test_context_breakdown_shows_statics_before_the_first_turn() -> None:
@@ -917,5 +917,5 @@ def test_context_breakdown_shows_statics_before_the_first_turn() -> None:
         registry=None,
     )
     parts = {p["id"]: p["n"] for p in context_breakdown(agent, 0)}
-    assert parts["sistem"] == 10
-    assert parts["sohbet"] == 0
+    assert parts["system"] == 10
+    assert parts["chat"] == 0

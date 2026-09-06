@@ -37,8 +37,8 @@ def test_the_price_table_is_parsed_from_strings() -> None:
         _entry("acme/pahali", "0.000015", "0.000075"),
         _entry("acme/bedava", "0", "0.000000"),
     ])
-    assert table["acme/pahali"] == {"girdi": 1.5e-05, "cikti": 7.5e-05}
-    assert table["acme/bedava"] == {"girdi": 0.0, "cikti": 0.0}
+    assert table["acme/pahali"] == {"input": 1.5e-05, "output": 7.5e-05}
+    assert table["acme/bedava"] == {"input": 0.0, "output": 0.0}
 
 
 def test_a_broken_entry_does_not_drop_the_table() -> None:
@@ -76,14 +76,14 @@ def test_a_fresh_download_is_cached_to_disk_and_memory(
     counter = []
     monkeypatch.setattr(
         pricing, "_download",
-        lambda: counter.append(1) or {"m/a": {"girdi": 1e-06, "cikti": 2e-06}},
+        lambda: counter.append(1) or {"m/a": {"input": 1e-06, "output": 2e-06}},
     )
 
     first = pricing.table(tmp_path, ag=True)
-    assert first["m/a"]["cikti"] == 2e-06
+    assert first["m/a"]["output"] == 2e-06
     # The disk record was written and the second call does not go back to the network.
     record = json.loads((tmp_path / pricing.PRICE_FILE).read_text(encoding="utf-8"))
-    assert record["fiyatlar"]["m/a"]["girdi"] == 1e-06
+    assert record["prices"]["m/a"]["input"] == 1e-06
     assert pricing.table(tmp_path, ag=True) == first
     assert len(counter) == 1, "must not re-download while the cache is fresh"
 
@@ -94,11 +94,11 @@ def test_a_stale_table_still_serves_when_the_network_is_gone(
     """When offline a stale table beats nothing — the same as the automode pool pattern."""
     (tmp_path / pricing.PRICE_FILE).write_text(json.dumps({
         "ts": time.time() - 2 * pricing.FRESHNESS_S,
-        "fiyatlar": {"m/eski": {"girdi": 3e-06, "cikti": 4e-06}},
+        "prices": {"m/eski": {"input": 3e-06, "output": 4e-06}},
     }), encoding="utf-8")
     monkeypatch.setattr(pricing, "_download", lambda: {})
 
-    assert pricing.table(tmp_path, ag=True)["m/eski"]["cikti"] == 4e-06
+    assert pricing.table(tmp_path, ag=True)["m/eski"]["output"] == 4e-06
 
 
 # -- tag ----------------------------------------------------------------
@@ -116,17 +116,17 @@ def test_the_label_only_speaks_for_openrouter(tmp_path: Path) -> None:
 
 def test_the_free_pool_costs_zero(tmp_path: Path) -> None:
     """Oto mode runs on the free pool: the price is zero, not unknown."""
-    assert pricing.label(_openrouter("oto"), tmp_path) == {"girdi": 0.0, "cikti": 0.0}
+    assert pricing.label(_openrouter("oto"), tmp_path) == {"input": 0.0, "output": 0.0}
 
 
 def test_an_unknown_model_yields_none_a_known_one_its_price(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(
-        pricing, "_download", lambda: {"m/a": {"girdi": 1e-06, "cikti": 2e-06}}
+        pricing, "_download", lambda: {"m/a": {"input": 1e-06, "output": 2e-06}}
     )
     assert pricing.label(_openrouter("m/a"), tmp_path, ag=True) == {
-        "girdi": 1e-06, "cikti": 2e-06,
+        "input": 1e-06, "output": 2e-06,
     }
     assert pricing.label(_openrouter("m/yok"), tmp_path) is None
 
@@ -188,13 +188,13 @@ async def test_usage_events_carry_turn_and_session_totals(
     # The cache_report fields stay as they are (the context indicator reads them).
     assert last["prompt_total"] == 1400 and last["output"] == 70
     # The totals accumulate call over call.
-    assert last["turn"] == {"girdi": 2400, "cikti": 120, "cagri": 2}
+    assert last["turn"] == {"input": 2400, "output": 120, "calls": 2}
     assert last["session"] == last["turn"]
     # Price unknown: None — the chip falls back to the token count, no invented dollars.
     assert last["price"] is None
     # The context box's item-by-item breakdown goes in the same event.
     assert {p["id"] for p in last["breakdown"]} == {
-        "sistem", "arac", "ruh", "yetenek", "mcp", "yardimci", "sohbet"}
+        "system", "tools", "soul", "skills", "mcp", "helpers", "chat"}
     assert sum(p["n"] for p in last["breakdown"]) == 1400
 
 
@@ -214,9 +214,9 @@ async def test_a_new_user_turn_resets_the_turn_total_not_the_session(
     await bridge._handle("ikinci iş", "")
 
     last = hub.only("usage")[-1]
-    assert last["turn"] == {"girdi": 500, "cikti": 20, "cagri": 1}, \
+    assert last["turn"] == {"input": 500, "output": 20, "calls": 1}, \
         "a new user message must reset the turn total"
-    assert last["session"] == {"girdi": 1000, "cikti": 40, "cagri": 2}, \
+    assert last["session"] == {"input": 1000, "output": 40, "calls": 2}, \
         "the session total must not be reset"
 
 
@@ -232,7 +232,7 @@ async def test_the_price_label_arrives_in_the_background(
 
     def _tag(*a, **k):
         counter.append(1)
-        return {"girdi": 1e-06, "cikti": 2.5e-05}
+        return {"input": 1e-06, "output": 2.5e-05}
 
     monkeypatch.setattr(desktop_module.pricing, "label", _tag)
 
@@ -244,10 +244,10 @@ async def test_the_price_label_arrives_in_the_background(
         await asyncio.sleep(0.01)
 
     price_events = hub.only("price")
-    assert price_events and price_events[0]["price"]["cikti"] == 2.5e-05
+    assert price_events and price_events[0]["price"]["output"] == 2.5e-05
 
     bridge._usage_yay(_report(500, 10))
-    assert hub.only("usage")[-1]["price"] == {"girdi": 1e-06, "cikti": 2.5e-05}
+    assert hub.only("usage")[-1]["price"] == {"input": 1e-06, "output": 2.5e-05}
     assert len(counter) == 1, "the price must be looked up once per session"
 
 
@@ -259,6 +259,6 @@ async def test_the_snapshot_seeds_the_cost_chip(
     bridge._usage_yay(_report(1000, 50))
 
     frame = bridge.snapshot()
-    assert frame["usage"]["session"] == {"girdi": 1000, "cikti": 50, "cagri": 1}
-    assert frame["usage"]["turn"]["cagri"] == 1
+    assert frame["usage"]["session"] == {"input": 1000, "output": 50, "calls": 1}
+    assert frame["usage"]["turn"]["calls"] == 1
     assert frame["price"] is None

@@ -63,12 +63,14 @@ TURN_BUDGET_MS = 50.0
 # Marker written into the session log once awake reverse replay has run, so
 # the night skips that session. Without it every payout would be counted
 # twice: once awake, once asleep.
-REVERSE_DONE = "ters_tekrar_kostu"
+REVERSE_DONE = "reverse_replay_done"
+# The same marker as an older build wrote it: an old session file still counts.
+_LEGACY_REVERSE_DONE = "ters_tekrar_kostu"
 
 # How far forward replay has already walked this session's sequence. Without
 # it, running after every turn would keep inflating the same edge with no new
 # information — the accumulation rule would turn a habit into a certainty.
-FORWARD_MARK = "ileri_tekrar_kostu"
+FORWARD_MARK = "forward_replay_mark"
 
 
 @dataclass(slots=True)
@@ -125,7 +127,7 @@ def on_result(
     weave.reverse_replay(store, session, report=report)
     report.replayed = 1
     if log is not None:
-        log.note(REVERSE_DONE, oturum=session.id, sonuc=outcome)
+        log.note(REVERSE_DONE, session=session.id, outcome=outcome)
     return report
 
 
@@ -134,7 +136,7 @@ def _already_replayed(log_path: Path) -> bool:
         text = log_path.read_text(encoding="utf-8")
     except OSError:
         return False
-    return f'"{REVERSE_DONE}"' in text
+    return f'"{REVERSE_DONE}"' in text or f'"{_LEGACY_REVERSE_DONE}"' in text
 
 
 # -- 3.12.2 awake forward replay ---------------------------------------
@@ -165,7 +167,7 @@ def forward_replay(store: Any, log_path: Path, *, clock: Clock | None = None,
     weave._forward_replay(store, session, report,      # noqa: SLF001
                        start=session.forward_index)
     if log is not None:
-        log.note(FORWARD_MARK, oturum=session.id, n=length)
+        log.note(FORWARD_MARK, session=session.id, n=length)
     return report.new_edges
 
 
@@ -221,7 +223,7 @@ def micro_sleep(
         if not _already_replayed(sessions_dir / f"{session.id}.jsonl"):
             weave.reverse_replay(store, session, report=report)
         replayed.append(session)
-        state.setdefault("islenen", {})[session.id] = weave._stamp(clock)  # noqa: SLF001
+        state.setdefault("processed", {})[session.id] = weave._stamp(clock)  # noqa: SLF001
         report.replayed += 1
     weave._stitch(store, replayed, report)                    # noqa: SLF001
     report.carried_over = len(sessions) - len(replayed)
@@ -243,10 +245,10 @@ def sleep_debt(
     """(hours since the last night, number of un-replayed sessions)."""
     clock = clock or wall_clock
     state = weave._read_watermark(watermark)             # noqa: SLF001
-    done = set((state.get("islenen") or {}).keys())
+    done = set((state.get("processed") or {}).keys())
     pending = sum(1 for p in Path(sessions_dir).glob("*.jsonl")
                   if p.stem not in done)
-    last = state.get("son_kosu")
+    last = state.get("last_run")
     from .clock import parse
 
     moment = parse(last) if last else None

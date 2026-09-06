@@ -877,7 +877,7 @@ def test_model_names_unnamed_session(tmp_path: Path) -> None:
     asyncio.run(agent.run("bana profesyonel bir cms yap"))
 
     meta = agent.mind.session_meta()
-    assert meta["test"]["ad"] == "CMS iskeleti kurulumu"
+    assert meta["test"]["name"] == "CMS iskeleti kurulumu"
     # Başlık çağrısı araçsız gider ve sistemi ana istem değil kısa yönerge.
     assert client.seen_tools[-1] == []
     assert "başlık" in client.seen_system[-1][0]["text"].lower()
@@ -891,7 +891,7 @@ def test_named_session_is_not_retitled(tmp_path: Path) -> None:
 
     asyncio.run(agent.run("küçük bir iş"))
 
-    assert agent.mind.session_meta()["test"]["ad"] == "Elle verilen ad"
+    assert agent.mind.session_meta()["test"]["name"] == "Elle verilen ad"
     # Ek başlık çağrısı hiç gitmedi: tek tur görüldü.
     assert len(client.seen_messages) == 1
 
@@ -905,7 +905,7 @@ def test_named_session_is_not_retitled(tmp_path: Path) -> None:
 
 def _plan_note_dropped(agent) -> bool:
     return any("plan" in str(n.data).lower()
-               for n in agent.session.log.notes("plan_refleksi"))
+               for n in agent.session.log.notes("plan_reflex"))
 
 
 def test_plan_nudge_fires_on_fresh_big_request(tmp_path: Path) -> None:
@@ -915,7 +915,7 @@ def test_plan_nudge_fires_on_fresh_big_request(tmp_path: Path) -> None:
 
     asyncio.run(agent.run("bana profesyonel bir cms projesi yap baştan sona"))
 
-    assert len(agent.session.log.notes("plan_refleksi")) == 1
+    assert len(agent.session.log.notes("plan_reflex")) == 1
 
 
 def test_plan_nudge_is_silent_while_goals_are_open(tmp_path: Path) -> None:
@@ -927,7 +927,7 @@ def test_plan_nudge_is_silent_while_goals_are_open(tmp_path: Path) -> None:
 
     asyncio.run(agent.run("bana profesyonel bir cms projesi yap baştan sona"))
 
-    assert not agent.session.log.notes("plan_refleksi")
+    assert not agent.session.log.notes("plan_reflex")
 
 
 def test_plan_nudge_is_silent_mid_conversation(tmp_path: Path) -> None:
@@ -939,7 +939,7 @@ def test_plan_nudge_is_silent_mid_conversation(tmp_path: Path) -> None:
     asyncio.run(agent.run("merhaba, kısa bir soru"))
     asyncio.run(agent.run("şimdi bana profesyonel bir cms projesi yap baştan sona"))
 
-    assert not agent.session.log.notes("plan_refleksi")
+    assert not agent.session.log.notes("plan_reflex")
 
 
 # -- kabuk: stdin kapalı, zaman aşımı ağacı öldürür --------------------
@@ -1669,10 +1669,10 @@ def test_switching_sessions_drops_finished_helper_channels() -> None:
     from types import SimpleNamespace
     from dornick.desktop import _drop_finished_channels
     defter = {
-        'a': SimpleNamespace(state='bitti'),
-        'b': SimpleNamespace(state='hata'),
-        'c': SimpleNamespace(state='kosuyor'),
-        'd': SimpleNamespace(state='yetim'),
+        'a': SimpleNamespace(state='done'),
+        'b': SimpleNamespace(state='error'),
+        'c': SimpleNamespace(state='running'),
+        'd': SimpleNamespace(state='orphan'),
     }
     agent = SimpleNamespace(_children=defter)
     _drop_finished_channels(agent)
@@ -1693,14 +1693,14 @@ def test_plan_steps_can_be_ticked_and_the_card_hears_it(tmp_path) -> None:
          'steps': ['oku', 'yaz', 'test et']}, ctx))
     pid = r.detail['id']
     r2 = asyncio.run(reg.get('plan').handler(
-        {'action': 'step', 'id': pid, 'step': 2, 'status': 'bitti'}, ctx))
+        {'action': 'step', 'id': pid, 'step': 2, 'status': 'done'}, ctx))
     assert not r2.is_error and '1/3 bitti' in r2.content
     # Olay akisina plan notu dustu mu (kartin canli guncellenme yolu)?
     events = [json.loads(l) for l in
                (tmp_path / 'events.jsonl').read_text(encoding='utf-8').splitlines()]
     plans = [e for e in events if e.get('content') == 'plan']
     assert len(plans) >= 2, 'create + step olaylari yayinlanmali'
-    assert plans[-1]['meta']['steps'][1]['status'] == 'bitti'
+    assert plans[-1]['meta']['steps'][1]['status'] == 'done'
 
 
 def test_a_short_paragraph_is_not_a_big_job() -> None:
@@ -1732,11 +1732,11 @@ def test_camera_tool_lists_and_snapshots_via_monkeypatch(tmp_path, monkeypatch) 
     monkeypatch.setattr(sight, 'analyze_url', lambda _u: 'kişi, kupa')
     reg = ToolRegistry()
     kamera_mod.register(reg)
-    r = asyncio.run(reg.get('camera').handler({'action': 'liste'}, ctx))
+    r = asyncio.run(reg.get('camera').handler({'action': 'list'}, ctx))
     assert 'bahce' in r.content and 'cam_1' in r.content
     assert 'Bilgisayar kamerası' in r.content
     r2 = asyncio.run(reg.get('camera').handler(
-        {'action': 'kesit', 'id': 'cam_1', 'adet': 2}, ctx))
+        {'action': 'capture', 'id': 'cam_1', 'count': 2}, ctx))
     assert not r2.is_error
     assert len(r2.detail['images']) == 2, 'kesitler images listesinde tasinmali'
     assert 'Yerel GPU analizi' in r2.content
@@ -1755,11 +1755,11 @@ def test_camera_tool_lists_and_snapshots_via_monkeypatch(tmp_path, monkeypatch) 
 
     monkeypatch.setattr(watch, 'snapshot', fake_snap)
     r3 = asyncio.run(reg.get('camera').handler(
-        {'action': 'kesit', 'name': 'bahce'}, ctx))
+        {'action': 'capture', 'name': 'bahce'}, ctx))
     assert not r3.is_error
     assert seen and 's3cret' in str(seen[0])
     assert 's3cret' not in r3.content
-    r4 = asyncio.run(reg.get('camera').handler({'action': 'yol', 'name': 'bahce'}, ctx))
+    r4 = asyncio.run(reg.get('camera').handler({'action': 'path', 'name': 'bahce'}, ctx))
     assert not r4.is_error
     assert 'images' not in r4.detail
     assert 'bahce' in r4.content

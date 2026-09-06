@@ -337,7 +337,7 @@ class Session:
             self.sequence.append(node_id)
 
     def close(self, outcome: str) -> None:
-        self.log.note("sonuc", sonuc=outcome, dizi=self.sequence, tur=self.turn)
+        self.log.note("outcome", outcome=outcome, sequence=self.sequence, turn=self.turn)
 
 
 def _play(mind: Any, data: dict[str, Any], clock: VirtualClock,
@@ -1011,7 +1011,7 @@ def interrupt_experiment(data: dict[str, Any]) -> dict[str, Any]:
                     log.note("session_start", session_id=f"k{round_no}_{i}")
                     clock.advance(40 + round_no, 9 + (i % 8))
                     log.note("mind_open", memory_id=node.id)
-                    log.note("sonuc", sonuc="basarili")
+                    log.note("outcome", outcome="succeeded")
                     log.close()
 
                 sleeper = _sleep.Sleeper(store, sessions, clock=clock,

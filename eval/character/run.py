@@ -71,7 +71,8 @@ from dornick.context import Prepared, build_system  # noqa: E402
 from dornick.prompt import DAYS, SystemPrompt  # noqa: E402
 from dornick.recall import exemplars as exemplar_store  # noqa: E402
 from dornick.recall import identity, temperament  # noqa: E402
-from dornick.recall.temperament import AXES, AXIS_KEYS, Probe, Temperament  # noqa: E402
+from dornick import legacy_values  # noqa: E402
+from dornick.recall.temperament import AXES, Probe, Temperament  # noqa: E402
 from dornick.tools.base import ToolRegistry  # noqa: E402
 
 DECISIONS_PATH = HERE / "decisions.json"
@@ -81,7 +82,9 @@ EXEMPLARS_PATH = HERE / "exemplars.json"
 DATASET_NAME = "karakter-30"
 
 # Turkish axis name (the file format) -> Python axis name.
-AXIS_OF = {tr: en for en, tr in AXIS_KEYS.items()}
+# An axis as the data file names it (the pre-1.5.5 Turkish names still read).
+AXIS_OF = {**legacy_values.AXES, **{a: a for a in AXES}}
+AXIS_KEYS = {a: a for a in AXES}
 PER_AXIS = 6
 VARIANTS = 3
 MIXED = 6
@@ -168,16 +171,16 @@ def load_decisions(path: Path = DECISIONS_PATH) -> tuple[dict[str, Any], list[De
     decisions = [
         Decision(
             id=str(raw.get("id", "")),
-            axis=AXIS_OF.get(str(raw.get("eksen", "")), str(raw.get("eksen", ""))),
-            message=str(raw.get("mesaj", "")),
-            options=tuple(str(o) for o in raw.get("secenekler", ()))[:2],  # type: ignore[arg-type]
-            high=str(raw.get("yuksek", "")),
-            contexts=tuple(str(c) for c in raw.get("baglamlar", ())),
-            mixed=bool(raw.get("karma", False)),
-            secondary=(AXIS_OF.get(raw["ikincil_eksen"], raw["ikincil_eksen"])
-                       if raw.get("ikincil_eksen") else None),
+            axis=AXIS_OF.get(str(raw.get("axis", "")), str(raw.get("axis", ""))),
+            message=str(raw.get("message", "")),
+            options=tuple(str(o) for o in raw.get("options", ()))[:2],  # type: ignore[arg-type]
+            high=str(raw.get("high", "")),
+            contexts=tuple(str(c) for c in raw.get("contexts", ())),
+            mixed=bool(raw.get("mixed", False)),
+            secondary=(AXIS_OF.get(raw["secondary_axis"], raw["secondary_axis"])
+                       if raw.get("secondary_axis") else None),
         )
-        for raw in data.get("kararlar", [])
+        for raw in data.get("decisions", [])
     ]
     return data, decisions
 
@@ -185,7 +188,7 @@ def load_decisions(path: Path = DECISIONS_PATH) -> tuple[dict[str, Any], list[De
 def validate_decisions(data: dict[str, Any]) -> list[str]:
     """Every problem with the set, as a list; empty means it validates."""
     problems: list[str] = []
-    rows = data.get("kararlar")
+    rows = data.get("decisions")
     if not isinstance(rows, list):
         return ["`kararlar` listesi yok"]
     if len(rows) != TOTAL:
@@ -196,35 +199,35 @@ def validate_decisions(data: dict[str, Any]) -> list[str]:
     for raw in rows:
         rid = str(raw.get("id") or "?")
         ids.append(rid)
-        axis = raw.get("eksen")
+        axis = raw.get("axis")
         if axis not in AXIS_OF:
             problems.append(f"{rid}: bilinmeyen eksen {axis!r}")
-        per_axis[str(axis)] = per_axis.get(str(axis), 0) + 1
-        options = raw.get("secenekler")
+        per_axis[AXIS_OF.get(str(axis), str(axis))] = per_axis.get(AXIS_OF.get(str(axis), str(axis)), 0) + 1
+        options = raw.get("options")
         if not (isinstance(options, list) and len(options) == 2
                 and all(isinstance(o, str) and o.strip() for o in options)
                 and options[0] != options[1]):
             problems.append(f"{rid}: iki farklı seçenek gerekli")
             options = []
-        if raw.get("yuksek") not in options:
-            problems.append(f"{rid}: `yuksek` seçeneklerden biri değil")
-        if not str(raw.get("mesaj") or "").strip():
+        if raw.get("high") not in options:
+            problems.append(f"{rid}: `high` seçeneklerden biri değil")
+        if not str(raw.get("message") or "").strip():
             problems.append(f"{rid}: mesaj boş")
-        contexts = raw.get("baglamlar")
+        contexts = raw.get("contexts")
         if not (isinstance(contexts, list) and len(contexts) == VARIANTS
                 and all(isinstance(c, str) and c.strip() for c in contexts)
                 and len(set(contexts)) == VARIANTS):
             problems.append(f"{rid}: {VARIANTS} farklı bağlam gerekli")
-        if raw.get("karma"):
+        if raw.get("mixed"):
             mixed += 1
-            secondary = raw.get("ikincil_eksen")
+            secondary = raw.get("secondary_axis")
             if secondary not in AXIS_OF or secondary == axis:
                 problems.append(f"{rid}: karma karar için farklı bir ikincil eksen gerekli")
-        elif raw.get("ikincil_eksen"):
+        elif raw.get("secondary_axis"):
             problems.append(f"{rid}: karma değil ama ikincil eksen taşıyor")
     if len(set(ids)) != len(ids):
         problems.append("kimlikler tekil değil")
-    for axis in AXIS_OF:
+    for axis in AXES:
         if per_axis.get(axis, 0) != PER_AXIS:
             problems.append(f"{axis}: {PER_AXIS} karar bekleniyor, {per_axis.get(axis, 0)} var")
     if mixed != MIXED:
@@ -625,14 +628,14 @@ def load_exemplar_decisions(path: Path = EXEMPLARS_PATH) -> list[Decision]:
     size (ten is enough for precedent, two per axis)."""
     data = json.loads(Path(path).read_text(encoding="utf-8"))
     out: list[Decision] = []
-    for raw in data.get("kararlar", []):
+    for raw in data.get("decisions", []):
         out.append(Decision(
             id=str(raw.get("id", "")),
-            axis=AXIS_OF.get(str(raw.get("eksen", "")), str(raw.get("eksen", ""))),
-            message=str(raw.get("mesaj", "")),
-            options=tuple(str(o) for o in raw.get("secenekler", ()))[:2],  # type: ignore[arg-type]
-            high=str(raw.get("yuksek", "")),
-            contexts=tuple(str(c) for c in raw.get("baglamlar", ())) or ("",),
+            axis=AXIS_OF.get(str(raw.get("axis", "")), str(raw.get("axis", ""))),
+            message=str(raw.get("message", "")),
+            options=tuple(str(o) for o in raw.get("options", ()))[:2],  # type: ignore[arg-type]
+            high=str(raw.get("high", "")),
+            contexts=tuple(str(c) for c in raw.get("contexts", ())) or ("",),
         ))
     return out
 

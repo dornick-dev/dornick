@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from .. import plans as store
+from .. import legacy_values, plans as store
 from .base import ToolContext, ToolRegistry, ToolResult, object_schema
 
 DESCRIPTION = """
@@ -124,7 +124,7 @@ def register(registry: ToolRegistry) -> None:
         if action == "step":
             pid = str(args.get("id") or "").strip()
             index = int(args.get("step") or 0)
-            status = str(args.get("status") or "bitti").strip()
+            status = legacy_values.state(str(args.get("status") or "done").strip())
             if not pid or index < 1:
                 return ToolResult.error("id ve step (1'den başlar) gerekli")
             existing = store.get(state_dir, pid)
@@ -144,7 +144,7 @@ def register(registry: ToolRegistry) -> None:
                 id=updated.id, title=updated.title, status=updated.status,
                 steps=updated.steps,
             )
-            done = sum(1 for s in updated.steps if s.get("status") == "bitti")
+            done = sum(1 for s in updated.steps if s.get("status") == "done")
             return ToolResult(
                 f"Adım {index} → {status} ({done}/{len(updated.steps)} bitti)",
                 detail={"id": updated.id, "step": index},

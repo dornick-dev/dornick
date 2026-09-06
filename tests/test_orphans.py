@@ -172,7 +172,7 @@ async def test_adopt_orphans_registers_and_briefs_the_model(
 
     assert len(adopted) == 1
     handle = adopted[0]
-    assert handle.state == "yetim" and handle.session_id == "c1"
+    assert handle.state == "orphan" and handle.session_id == "c1"
     assert handle.notified, "no separate notice turn should open for an orphan"
     assert handle.id in agent._children
 
@@ -197,7 +197,7 @@ async def test_task_say_resumes_an_adopted_orphan(tmp_path: Path, registry) -> N
     assert ok, msg
     await handle.task
 
-    assert handle.state == "bitti"
+    assert handle.state == "done"
     assert "devam ettim" in handle.outcome
     text = (agent.config.sessions_dir / f"{sid}.jsonl").read_text(encoding="utf-8")
     assert "session_resume" in text
@@ -226,18 +226,18 @@ async def test_bridge_resume_task_resumes_orphan(tmp_path: Path, registry) -> No
     result = await asyncio.to_thread(bridge.resume_task, "c:" + handle.id)
     assert result.get("ok"), result
     await handle.task
-    assert handle.state == "bitti"
+    assert handle.state == "done"
     assert "sürdürüldü" in handle.outcome
 
     missing = await asyncio.to_thread(bridge.resume_task, "c:yokid")
     assert missing.get("ok") is False
 
     running = ChildHandle(id="run1", title="koşan", model="m",
-                          session_id="x", state="kosuyor")
+                          session_id="x", state="running")
     agent._children["run1"] = running
     busy = await asyncio.to_thread(bridge.resume_task, "c:run1")
     assert busy.get("ok") is False
-    assert "koşuyor" in (busy.get("error") or "").lower() or "zaten" in (
+    assert "running" in (busy.get("error") or "").lower() or "zaten" in (
         busy.get("error") or "").lower()
 
 
@@ -255,10 +255,10 @@ def test_tasks_marks_orphans_as_resumable(tmp_path: Path, registry) -> None:
         agent = build_agent(tmp_path, FakeClient(), registry)
         agent._children["y1"] = ChildHandle(
             id="y1", title="yarım", model="", background=True,
-            state="yetim", session_id="sess1", outcome="yarım kaldı")
+            state="orphan", session_id="sess1", outcome="yarım kaldı")
         agent._children["r1"] = ChildHandle(
             id="r1", title="koşan", model="m", background=True,
-            state="kosuyor", session_id="sess2")
+            state="running", session_id="sess2")
         bridge = Bridge(_Hub(), asyncio.get_running_loop())
         bridge.agent = agent
         return bridge.tasks()
@@ -283,17 +283,17 @@ def test_snapshot_channels_mirror_the_ledger(tmp_path: Path, registry) -> None:
     agent._children["a1"] = ChildHandle(id="a1", title="koşan", model="m",
                                         background=True)
     agent._children["b2"] = ChildHandle(id="b2", title="biten", model="m",
-                                        state="bitti", outcome="üç dosya bulundu")
+                                        state="done", outcome="üç dosya bulundu")
     agent._children["c3"] = ChildHandle(id="c3", title="yarım", model="",
-                                        background=True, state="yetim",
+                                        background=True, state="orphan",
                                         outcome="Uygulama kapanınca yarım kaldı.")
     agent._children["d4"] = ChildHandle(id="d4", title="çöken", model="m",
-                                        state="hata", outcome="patladı")
+                                        state="error", outcome="patladı")
 
     rows = {r["id"]: r for r in _live_channels(agent)}
     assert rows["a1"]["state"] == "run" and rows["a1"]["summary"] == ""
     assert rows["b2"]["state"] == "done" and "üç dosya" in rows["b2"]["summary"]
-    assert rows["c3"]["state"] == "yetim" and rows["c3"]["bg"]
+    assert rows["c3"]["state"] == "orphan" and rows["c3"]["bg"]
     assert rows["d4"]["state"] == "fail"
 
     # On an agent-less (model not configured) boot, silently empty.
@@ -316,7 +316,7 @@ def test_the_bridge_snapshot_carries_the_channel_list(tmp_path: Path, registry) 
     async def scenario() -> dict:
         agent = build_agent(tmp_path, FakeClient(), registry)
         agent._children["y1"] = ChildHandle(id="y1", title="gece işi", model="",
-                                            background=True, state="yetim")
+                                            background=True, state="orphan")
         bridge = Bridge(_Hub(), asyncio.get_running_loop())
         bridge.agent = agent
         return bridge.snapshot()
@@ -324,7 +324,7 @@ def test_the_bridge_snapshot_carries_the_channel_list(tmp_path: Path, registry) 
     snap = asyncio.run(scenario())
     assert snap["channels"] == [{
         "id": "y1", "title": "gece işi", "model": "", "bg": True,
-        "kind": "yardımcı", "state": "yetim", "summary": "",
+        "kind": "helper", "state": "orphan", "summary": "",
     }]
 
 
@@ -353,7 +353,7 @@ def test_the_deck_seeds_from_the_snapshot() -> None:
 
     tasks_js = (STATIC / "tasks.js").read_text(encoding="utf-8")
     assert "/api/tasks/resume" in tasks_js
-    assert "resumable" in tasks_js or 'state === "yetim"' in tasks_js
+    assert "resumable" in tasks_js or 'state === "orphan"' in tasks_js
 
     server = (Path(__file__).resolve().parents[1]
               / "src" / "dornick" / "web" / "server.py").read_text(encoding="utf-8")
@@ -364,5 +364,5 @@ def test_the_deck_seeds_from_the_snapshot() -> None:
 
     css = (STATIC / "app.css").read_text(encoding="utf-8")
     # With tokens that work in both themes: the orphan state is tied to the visual language.
-    assert ".orch-ch.yetim" in css and "--amber" in css
+    assert ".orch-ch.orphan" in css and "--amber" in css
     assert ".task-resume" in css and ".orch-resume" in css

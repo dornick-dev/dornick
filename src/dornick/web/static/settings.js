@@ -1554,7 +1554,7 @@ const Settings = (() => {
 
     const list = el("div", "rows");
     for (const task of tasks) {
-      const running = task.last_status === "koşuyor";
+      const running = task.last_status === "running";
       const line = row({
         name: task.title,
         desc: task.prompt,
@@ -1578,7 +1578,7 @@ const Settings = (() => {
         else if (task.enabled) parts.push(t("Sırada: ") + short(task.next_run));
         else parts.push(t("Durduruldu"));
         if (task.last_run) parts.push(t("Son koşu: ") + short(task.last_run));
-        if (task.last_status && task.last_status !== "koşuyor") {
+        if (task.last_status && task.last_status !== "running") {
           parts.push(t("Son: ") + task.last_status);
         }
         statusLine.textContent = parts.join("  ·  ");
@@ -3070,7 +3070,7 @@ const Settings = (() => {
     // arriving here via /api/settings. The installed/development distinction
     // matters: two copies can live on the same machine.
     const versionText = el("span", "version-value",
-      (state.surum || "?") + " · " + t(state.installed ? "kurulum" : "geliştirme"));
+      (state.version || "?") + " · " + t(state.installed ? "kurulum" : "geliştirme"));
     const checkBtn = el("button", "detect", t("Güncellemeleri denetle"));
     checkBtn.type = "button";
     const versionBox = el("div", "with-action");
@@ -3284,8 +3284,8 @@ const Settings = (() => {
     pane.append(field(
       "Gece uykusu — hafıza pekiştirme (kullanıcı yokken)",
       "Kapalıyken gece geçişi, soğutma ve temizlik koşmaz.",
-      toggleBox((patch.sleep || {}).uyku_acik ?? (state.sleep || {}).uyku_acik ?? true,
-                (v) => set("sleep", "uyku_acik", v))
+      toggleBox((patch.sleep || {}).enabled ?? (state.sleep || {}).enabled ?? true,
+                (v) => set("sleep", "enabled", v))
     ));
 
     // Learn me: the personal fine-tune loop (the training rig lives in a

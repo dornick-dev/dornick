@@ -93,7 +93,7 @@ phpunit, go.mod gibi gerçek dosya kanıtları aranır. Hiçbiri yoksa araç
 `path` vermezsen bu oturumda en son dosya yazdığın proje kullanılır.
 `komut` verirsen tespit atlanır ve o komut koşar (dar bir dilim koşturmak
 için: `py -m pytest -q tests/test_x.py`).
-`sadece_tespit: true` hiçbir şey çalıştırmadan yalnızca ne bulunduğunu söyler.
+`detect_only: true` hiçbir şey çalıştırmadan yalnızca ne bulunduğunu söyler.
 
 Bir koşumun geçmesi "her şey çalışıyor" demek DEĞİLDİR; yalnızca koşulan
 testlerin kapsadığı kadarını doğrular. Sonuç metni bunu her seferinde
@@ -106,18 +106,18 @@ yazıyor — kullanıcıya aktarırken de aynı sınırı koru.
                     "description": "Proje klasörü ya da içindeki bir dosya. "
                                    "Verilmezse en son dokunulan proje kullanılır.",
                 },
-                "komut": {
+                "command": {
                     "type": "string",
                     "description": "Tespiti geçersiz kılan komut. Yalnızca "
                                    "gerçekten bildiğin bir komutu ver.",
                 },
-                "zaman_asimi": {
+                "timeout": {
                     "type": "integer",
                     "description": "Saniye cinsinden süre tavanı "
                                    f"(varsayılan {int(testrun.DEFAULT_TIMEOUT)}, "
                                    f"en fazla {int(testrun.MAX_TIMEOUT)}).",
                 },
-                "sadece_tespit": {
+                "detect_only": {
                     "type": "boolean",
                     "description": "Hiçbir şey çalıştırma; yalnızca bu projede "
                                    "hangi düzeneğin bulunduğunu söyle.",
@@ -134,13 +134,13 @@ yazıyor — kullanıcıya aktarırken de aynı sınırı koru.
                 f"Klasör yok: {root}. `path` ile var olan bir proje klasörü ver."
             )
 
-        if args.get("sadece_tespit"):
+        if args.get("detect_only"):
             return ToolResult(content=_harness_summary(root),
                               detail={"kok": str(root), "tespit": True})
 
-        timeout = float(args.get("zaman_asimi") or testrun.DEFAULT_TIMEOUT)
+        timeout = float(args.get("timeout") or testrun.DEFAULT_TIMEOUT)
 
-        if command := (args.get("komut") or "").strip():
+        if command := (args.get("command") or "").strip():
             result = await testrun.run_command(
                 command, root, timeout=timeout, cancel=ctx.cancel)
             return _reply(result)
@@ -175,7 +175,7 @@ def _reply(result: testrun.Result) -> ToolResult:
     it wrote.
     """
     faulty = (
-        result.status in ("zaman_asimi", "baslatilamadi", "kesildi")
+        result.status in ("timeout", "failed_to_start", "interrupted")
         or result.exit_code != 0
         or result.count.failed > 0
     )

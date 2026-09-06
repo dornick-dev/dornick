@@ -168,22 +168,22 @@ def register(registry: ToolRegistry) -> None:
         description=DESCRIPTION,
         input_schema=object_schema(
             {
-                "action": {"type": "string", "enum": ["liste", "yol", "kesit"]},
+                "action": {"type": "string", "enum": ["list", "path", "capture"]},
                 "id": {"type": "string",
-                       "description": "Kayıtlı kamera kimliği (liste'den)."},
+                       "description": "Kayıtlı kamera kimliği (list'ten)."},
                 "name": {"type": "string",
                          "description": "Kamera adı (ör. bahçe, Bilgisayar kamerası)."},
                 "source": {"type": "string",
                            "description": "Doğrudan kaynak: dahili için \"0\", "
                                           "ağ kamerası için tam adres."},
-                "adet": {"type": "integer",
-                         "description": "kesit: kaç kare (1-4, varsayılan 1)."},
+                "count": {"type": "integer",
+                          "description": "capture: kaç kare (1-4, varsayılan 1)."},
             },
             required=["action"],
         ),
         mutates=True,
         parallel_safe=False,
-        safe_actions=("liste", "yol"),
+        safe_actions=("list", "path"),
     )
     async def camera(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
         action = str(args.get("action") or "").strip()
@@ -193,19 +193,19 @@ def register(registry: ToolRegistry) -> None:
 
         cameras = watch.load(ctx.config.state_dir)
 
-        if action == "liste":
+        if action == "list":
             shown = list(cameras)
             if not any(c.is_builtin() for c in shown):
                 shown = [_builtin(), *shown]
             lines = [f"{len(shown)} kamera:"]
             lines.extend(_line(c) for c in shown)
             lines.append(
-                "Özet için action=yol, kare için action=kesit — name veya id ver.")
+                "Özet için action=path, kare için action=capture — name veya id ver.")
             return ToolResult("\n".join(lines), detail={"count": len(shown)})
 
-        if action == "yol":
+        if action == "path":
             picked = any(str(args.get(k) or "").strip()
-                         for k in ("id", "name", "ad", "source"))
+                         for k in ("id", "name", "source"))
             if not picked:
                 shown = list(cameras)
                 if not any(c.is_builtin() for c in shown):
@@ -215,13 +215,13 @@ def register(registry: ToolRegistry) -> None:
                     detail={"count": len(shown)},
                 )
 
-        if action in ("yol", "kesit"):
+        if action in ("path", "capture"):
             found = _resolve(cameras, args)
             if isinstance(found, str):
                 return ToolResult.error(found)
             cam = found
 
-            if action == "yol":
+            if action == "path":
                 import asyncio
                 from .. import sight
 
@@ -235,7 +235,7 @@ def register(registry: ToolRegistry) -> None:
                     detail={"id": cam.id, "name": cam.name},
                 )
 
-            count = max(1, min(int(args.get("adet") or 1), 4))
+            count = max(1, min(int(args.get("count") or 1), 4))
             import asyncio
             frames = await asyncio.to_thread(_frames, cam, count, ctx)
             if not frames:

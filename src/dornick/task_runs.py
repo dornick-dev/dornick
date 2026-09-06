@@ -16,12 +16,14 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
+from . import legacy_values
 from .events import utcnow
 
 FOLDER = "task-runs"
 
-# Statuses are Turkish: the panel and the tool use the same words.
-STATUSES = ("koşuyor", "bitti", "hata")
+# The panel and the tool use the same words. A record written before 1.5.5
+# says koşuyor/bitti/hata; `parse` reads it as running/done/error.
+STATUSES = ("running", "done", "error")
 
 # Truncation for the report panel; hoarding without bounds bloats the disk.
 REPORT_CLIP = 8000
@@ -39,7 +41,7 @@ class TaskRun:
     task_id: str
     started: str = ""
     finished: str = ""
-    status: str = "koşuyor"
+    status: str = "running"
     child_id: str = ""
     title: str = ""
     report: str = ""
@@ -95,7 +97,7 @@ def parse(raw: Any) -> TaskRun:
         raise TaskRunError("Koşum kaydı bir nesne olmalı.")
     rid = _safe_id(str(raw.get("id") or ""), "id")
     tid = _safe_id(str(raw.get("task_id") or ""), "task_id")
-    status = str(raw.get("status") or "koşuyor").strip()
+    status = legacy_values.state(str(raw.get("status") or "running").strip())
     if status not in STATUSES:
         raise TaskRunError(f"status şunlardan biri olmalı: {', '.join(STATUSES)}")
 
@@ -106,11 +108,7 @@ def parse(raw: Any) -> TaskRun:
     usage_raw = raw.get("usage")
     usage: dict[str, int] | None = None
     if isinstance(usage_raw, dict):
-        usage = {
-            "girdi": int(usage_raw.get("girdi") or 0),
-            "cikti": int(usage_raw.get("cikti") or 0),
-            "cagri": int(usage_raw.get("cagri") or 0),
-        }
+        usage = legacy_values.usage(usage_raw)
 
     cost_raw = raw.get("cost_usd")
     cost: float | None
@@ -179,7 +177,7 @@ def start_run(
         task_id=tid,
         started=utcnow(),
         finished="",
-        status="koşuyor",
+        status="running",
         child_id=str(child_id or ""),
         title=str(title or "").strip(),
         report="",
@@ -194,7 +192,7 @@ def finish_run(
     task_id: str,
     run_id: str,
     *,
-    status: str = "bitti",
+    status: str = "done",
     report: str = "",
     child_id: str | None = None,
     nodes_progress: list[dict[str, Any]] | None = None,
@@ -205,9 +203,9 @@ def finish_run(
     duration_s: int | None = None,
     last_tool: str | None = None,
 ) -> TaskRun:
-    """Closes the run. status must be bitti|hata (koşuyor is not left behind)."""
-    if status not in ("bitti", "hata"):
-        raise TaskRunError("finish_run status 'bitti' veya 'hata' olmalı.")
+    """Closes the run. status must be done|error (running is not left behind)."""
+    if status not in ("done", "error"):
+        raise TaskRunError("finish_run status 'done' veya 'error' olmalı.")
 
     existing = get_run(state_dir, task_id, run_id)
     if existing is None:
@@ -224,11 +222,7 @@ def finish_run(
     if model is not None:
         existing.model = str(model or "").strip()
     if usage is not None:
-        existing.usage = {
-            "girdi": int(usage.get("girdi") or 0),
-            "cikti": int(usage.get("cikti") or 0),
-            "cagri": int(usage.get("cagri") or 0),
-        }
+        existing.usage = legacy_values.usage(usage)
     if cost_usd is not None:
         existing.cost_usd = float(cost_usd)
     if tools is not None:
@@ -257,12 +251,12 @@ def patch_run(
     last_tool: str | None = None,
     cost_usd: float | None = None,
 ) -> TaskRun | None:
-    """Live-updates a running run (status stays koşuyor).
+    """Live-updates a running run (status stays running).
 
     None if missing / finished. So the last-run panel is not empty mid-run.
     """
     existing = get_run(state_dir, task_id, run_id)
-    if existing is None or existing.status != "koşuyor":
+    if existing is None or existing.status != "running":
         return None
 
     if report is not None:
@@ -278,11 +272,7 @@ def patch_run(
     if model is not None:
         existing.model = str(model or "").strip()
     if usage is not None:
-        existing.usage = {
-            "girdi": int(usage.get("girdi") or 0),
-            "cikti": int(usage.get("cikti") or 0),
-            "cagri": int(usage.get("cagri") or 0),
-        }
+        existing.usage = legacy_values.usage(usage)
     if cost_usd is not None:
         existing.cost_usd = float(cost_usd)
     if tools is not None:

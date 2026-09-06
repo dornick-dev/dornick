@@ -12,10 +12,10 @@ from dornick.workflow_run import _next_node
 
 def test_plan_create_and_approve_flow(tmp_path: Path) -> None:
     p = plans.create(tmp_path, title="Büyük iş", steps=["a", "b", {"text": "c"}])
-    assert p.status == "bekliyor"
+    assert p.status == "waiting"
     assert len(p.steps) == 3
-    updated = plans.update(tmp_path, p.id, status="onaylandi")
-    assert updated is not None and updated.status == "onaylandi"
+    updated = plans.update(tmp_path, p.id, status="approved")
+    assert updated is not None and updated.status == "approved"
     assert any(x["id"] == p.id for x in plans.listing(tmp_path))
 
 
@@ -30,11 +30,11 @@ def test_workflow_next_edge_prefers_exact_on() -> None:
         ],
         "edges": [
             {"from": "a", "to": "b", "on": "ok"},
-            {"from": "a", "to": "c", "on": "hata"},
+            {"from": "a", "to": "c", "on": "error"},
         ],
     })
     assert _next_node(wf, "a", "ok") == "b"
-    assert _next_node(wf, "a", "hata") == "c"
+    assert _next_node(wf, "a", "error") == "c"
 
 
 def test_workflow_save_assigns_id(tmp_path: Path) -> None:

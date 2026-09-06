@@ -150,7 +150,7 @@ ile "yalıtık kayıt kendiliğinden gelmez" kuralı korundu, kapsama bedeli
 - **Mizaç kaldıracı ve kimlik belgesi artık sistem promptuna giriyor** — bu tura
   kadar hiç girmiyordu (Faz 7'nin mekaniği kuruluydu, çıktısı promptta yoktu).
 
-Kalan: `sleep.uyku_acik` için ayarlar arayüzünde anahtar; kilit/klavye/pil
+Kalan: `sleep.enabled` için ayarlar arayüzünde anahtar; kilit/klavye/pil
 zeitgeber'leri; `uyu` / `şimdi uyuma` sohbet komutları; ilgili büyüme hedefi
 (≤1,5×) ve çağrışım yayılması.
 

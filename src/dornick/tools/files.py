@@ -90,7 +90,7 @@ def _snapshot(path: Path, ctx: ToolContext, tool: str) -> None:
     """
     try:
         if ctx.sandbox.contains(path):
-            checkpoint.defter(ctx).save(path, tool)
+            checkpoint.ledger(ctx).save(path, tool)
     except OSError:
         pass
 
@@ -292,7 +292,7 @@ async def _diagnosis_suffix(path: Path) -> tuple[str, dict[str, Any]]:
         return "", {}
     if diagnosis is None:
         return "", {}
-    return "\n\n" + diagnosis.text(), {"tani": diagnosis.detail()}
+    return "\n\n" + diagnosis.text(), {"diagnosis": diagnosis.detail()}
 
 
 def _flexible_match(text: str, old: str, new: str):
@@ -945,12 +945,12 @@ cevapta yazar.
                         f"({target.suffix or 'uzantısız'}). Kontrol edilmedi."
             )
 
-        faulty = sum(1 for t in diagnoses if t.status == "hata")
+        faulty = sum(1 for t in diagnoses if t.status == "error")
         return ToolResult(
             content=diagnostics.summary(diagnoses, root=root),
             detail={
                 "path": str(target),
-                "hatali": faulty,
+                "faulty": faulty,
                 "taniler": [t.detail() for t in diagnoses],
             },
         )

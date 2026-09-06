@@ -60,8 +60,8 @@ def world_record(body: str, *, source: str, clock: Clock | None = None) -> dict[
     if not source or not source.strip():
         raise ValueError("`world` kaydı kaynaksız yazılamaz (yol, URL ya da komut)")
     clock = clock or wall_clock
-    return {"body": body, "kaynak": source.strip(),
-            "dogrulama": clock().isoformat(timespec="milliseconds")}
+    return {"body": body, "source": source.strip(),
+            "verified": clock().isoformat(timespec="milliseconds")}
 
 
 def confidence(verified_at: str | None, *, clock: Clock | None = None) -> float:
@@ -118,10 +118,9 @@ class SelfRecord:
         return piece
 
     def as_dict(self) -> dict[str, Any]:
-        # Record form — the keys are the Turkish meta names, like `world_record`'s.
-        return {"alan": self.area, "arac": self.tool, "basari": self.successes,
-                "hata": self.failures, "ort_deneme": self.mean_attempts,
-                "tekrar_eden_hata": self.recurring_error,
+        return {"area": self.area, "tool": self.tool, "successes": self.successes,
+                "failures": self.failures, "mean_attempts": self.mean_attempts,
+                "recurring_error": self.recurring_error,
                 "model_id": self.model_id}
 
 

@@ -60,13 +60,13 @@ def sessions(tmp_path: Path) -> Path:
 
 
 def _session(sessions: Path, name: str, node_ids, clock: Clock,
-             outcome: str = "basarili") -> None:
+             outcome: str = "succeeded") -> None:
     log = EventLog(sessions / f"{name}.jsonl", clock=clock.text)
     log.note("session_start", session_id=name)
     for node_id in node_ids:
         clock.advance(minutes=1)
         log.note("mind_open", memory_id=node_id)
-    log.note("sonuc", sonuc=outcome)
+    log.note("outcome", outcome=outcome)
     log.close()
 
 
@@ -186,7 +186,7 @@ def test_the_predicted_window_makes_falling_asleep_easier(clock) -> None:
 
 
 def test_only_the_right_stimuli_wake_it() -> None:
-    assert sleep.wakes_us("kullanici")
+    assert sleep.wakes_us("user")
     assert sleep.wakes_us("voice")
     assert not sleep.wakes_us("otomasyon")
     assert not sleep.wakes_us("tepsi")
@@ -204,7 +204,7 @@ def test_a_stimulus_below_threshold_does_not_interrupt(clock) -> None:
 
     assert switch.stimulus("otomasyon") is False
     assert switch.state is State.ASLEEP
-    assert switch.stimulus("kullanici") is True
+    assert switch.stimulus("user") is True
     assert switch.state is State.WAKING
 
 
@@ -276,10 +276,10 @@ def test_waking_stops_the_night_and_carries_the_rest(store, sessions,
 
     sleeper = Sleeper(store, sessions, clock=clock,
                       watermark=tmp_path / "w.json", state_dir=tmp_path)
-    sleeper.wake("kullanici")
+    sleeper.wake("user")
     report = sleeper.run(max_cycles=4)
 
-    assert report.woke_reason == "kullanici"
+    assert report.woke_reason == "user"
     assert report.cycles == 0                # no unit started after the ask
     assert report.wake_latency_ms < 500      # the budget, measured
 
@@ -298,7 +298,7 @@ def test_an_uninterrupted_night_finishes_and_reports(store, sessions,
 
     assert report.replayed == 4
     assert report.carried == 0
-    assert "uyku.basladi" in events and "uyku.bitti" in events
+    assert "sleep.started" in events and "sleep.ended" in events
 
 
 def test_deep_cycles_never_call_the_model(store, sessions, tmp_path,
@@ -321,7 +321,7 @@ def test_the_debt_file_records_what_was_missed(store, sessions, tmp_path,
     Sleeper(store, sessions, clock=clock, watermark=tmp_path / "w.json",
             state_dir=tmp_path).run(max_cycles=1)
     debt = json.loads((tmp_path / "sleep_debt.json").read_text("utf-8"))
-    assert "devreden" in debt and "ts" in debt
+    assert "carried" in debt and "ts" in debt
 
 
 # -- housekeeping ------------------------------------------------------
@@ -430,7 +430,7 @@ def test_old_night_logs_are_compressed_and_still_replay(tmp_path, clock) -> None
     old_day = (clock().date() - timedelta(days=45)).isoformat()
     fresh_day = (clock().date() - timedelta(days=5)).isoformat()
     for day in (old_day, fresh_day):
-        ne.NightLog(ne.night_path(tmp_path, day), clock).emit("dokunus", id="n_1")
+        ne.NightLog(ne.night_path(tmp_path, day), clock).emit("touch", id="n_1")
 
     done = sleep.compress_old_nights(State.ASLEEP, tmp_path, clock=clock)
 

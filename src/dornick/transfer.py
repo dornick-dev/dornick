@@ -334,7 +334,7 @@ def _import_recognition(config: Any, zf: zipfile.ZipFile, names: set[str],
     for name, target in targets.items():
         if _RECOGNITION + name not in names:
             continue
-        _back_up(target, state_dir, backup, "tanima")
+        _back_up(target, state_dir, backup, "recognition")
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes(zf.read(_RECOGNITION + name))
         written += 1
@@ -363,7 +363,7 @@ def _import_projects(config: Any, zf: zipfile.ZipFile, names: set[str],
         # Escape-outside-the-folder (zip-slip) protection.
         if root not in target.parents and target != root:
             continue
-        _back_up(target, Path(config.state_dir), backup, "projeler")
+        _back_up(target, Path(config.state_dir), backup, "projects")
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes(zf.read(name))
         written += 1
@@ -391,7 +391,7 @@ def _import_settings(config: Any, zf: zipfile.ZipFile, names: set[str],
         if env:
             model["api_key_env"] = env
     target = Path(config.state_dir) / "config.json"
-    _back_up(target, Path(config.state_dir), backup, "ayarlar")
+    _back_up(target, Path(config.state_dir), backup, "settings")
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(json.dumps(data, ensure_ascii=False, indent=2),
                       encoding="utf-8")
@@ -419,7 +419,7 @@ def reset_memories(config: Any, mind: Any) -> dict[str, Any]:
     """
     backup = backup_folder(config.state_dir)
     try:
-        mind.store.backup_to(backup / "anilar" / "recall.db")
+        mind.store.backup_to(backup / "memories" / "recall.db")
     except Exception as exc:
         # No deletion without a backup: if the backup cannot be taken there is no reset either.
         return {"ok": False, "error": f"Yedek alınamadı: {exc}"}

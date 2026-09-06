@@ -12,7 +12,7 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
-from . import legacy_names, sandbox
+from . import legacy_names, legacy_values, sandbox
 from .listen import ListenConfig
 from .place import PlaceConfig
 from .voice import VoiceConfig
@@ -221,10 +221,12 @@ class SleepConfig:
     page says so honestly. The bench turns the same mechanism off through
     `recall.switches`; this is the user's switch.
 
-    `uyku_acik`: the user-facing name (settings label "Gece uykusu").
+    `enabled`: the user-facing switch (settings label "Gece uykusu"). A
+    config.json written before 1.5.5 says `uyku_acik`; `Config.load` reads
+    it as `enabled` and the next save writes the new name.
     """
 
-    uyku_acik: bool = True
+    enabled: bool = True
 
 
 @dataclass(slots=True)
@@ -412,6 +414,7 @@ def _merge(cfg: Config, raw: dict[str, Any]) -> Config:
     if b := raw.get("browser"):
         cfg.browser = replace(cfg.browser, **_only_fields(BrowserConfig, b))
     if s := raw.get("sleep"):
+        s = legacy_values.keys(s, legacy_values.SLEEP_CONFIG_KEYS)
         cfg.sleep = replace(cfg.sleep, **_only_fields(SleepConfig, s))
     if persona := raw.get("persona_path"):
         cfg.persona_path = (cfg.state_dir / persona).resolve()

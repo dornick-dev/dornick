@@ -148,8 +148,8 @@ Bu satır Faz 3.11'in var olma gerekçesidir.
 | `tests/test_aktivasyon.py` | formül, ağırlıklı/negatif toplam, depoya bağlanış, göç, bozuk kayıt, ablation |
 
 Şema: `ALTER TABLE node ADD COLUMN kullanimlar TEXT NOT NULL DEFAULT '[]'` —
-son 30 kullanım, `[{"t","w","etiket"}]`. Ağırlık negatif olabiliyor (Faz 3
-ters tekrarı) ve etiket alanı baştan açık (`yazildi | acildi | basari | hata |
+son 30 kullanım, `[{"t","w","label"}]` (1.5.5 öncesi `etiket`). Ağırlık negatif olabiliyor (Faz 3
+ters tekrarı) ve etiket alanı baştan açık (`written | opened | success | error |
 sema | yakalandi`) ki sonraki fazlar şema değiştirmesin. Göç sütunu eklendiği
 anda `created` + `last_used`×`uses` ile dolduruyor; okuma tarafı sütun boş ya
 da bozuk olsa da aynı hesabı yapıyor.

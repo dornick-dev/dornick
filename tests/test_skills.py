@@ -223,7 +223,7 @@ def test_a_skill_goes_through_the_permission_gate(
 
     spec = registry.get("topla")
     assert spec.mutates
-    assert spec.source == "yetenek"
+    assert spec.source == "skill"
 
 
 # -- running -----------------------------------------------------------

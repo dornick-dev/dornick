@@ -530,7 +530,7 @@ def test_short_output_is_untouched() -> None:
 
 def _result(**kw) -> testrun.Result:
     base = dict(ecosystem="python", label="py -m pytest -q", root="C:/x",
-                status="kostu")
+                status="ran")
     base.update(kw)
     return testrun.Result(**base)
 
@@ -585,10 +585,10 @@ def test_health_check_is_not_sold_as_a_test() -> None:
 
 
 def test_timeout_text_explains_both_causes() -> None:
-    result = _result(status="zaman_asimi", duration=300.0)
+    result = _result(status="timeout", duration=300.0)
     text = result.text()
     assert "bitmedi ve durduruldu" in text
-    assert "zaman_asimi" in text
+    assert "timeout" in text
 
 
 # -- a real run ---------------------------------------------------------
@@ -627,7 +627,7 @@ async def test_a_real_passing_suite_runs(tmp_path: Path, own_python) -> None:
     harness = testrun.detect(tmp_path)
     assert harness is not None
     result = await testrun.run_harness(harness, timeout=120)
-    assert result.status == "kostu"
+    assert result.status == "ran"
     assert result.exit_code == 0
     assert result.count.parsed and result.count.passed == 1
 
@@ -667,7 +667,7 @@ async def test_timeout_kills_the_whole_process_tree(tmp_path: Path) -> None:
         f'"{sys.executable}" -c "{HANGING}"', tmp_path, timeout=2,
     )
     elapsed = time.monotonic() - start
-    assert result.status == "zaman_asimi"
+    assert result.status == "timeout"
     # The real guarantee: the call returns right after the timeout.
     assert elapsed < 20, f"koşum {elapsed:.0f} sn asılı kaldı"
 
@@ -697,7 +697,7 @@ async def test_cancel_stops_the_run(tmp_path: Path) -> None:
     )
     elapsed = time.monotonic() - start
     await task
-    assert result.status == "kesildi"          # NOT a timeout
+    assert result.status == "interrupted"          # NOT a timeout
     assert "Durduruldu" in result.text()
     assert elapsed < 20, f"kesme {elapsed:.0f} sn sürdü"
 
@@ -708,7 +708,7 @@ async def test_missing_executable_is_honest(tmp_path: Path) -> None:
         tmp_path, "go.mod",
     )
     result = await testrun.run_harness(harness)
-    assert result.status == "baslatilamadi"
+    assert result.status == "failed_to_start"
     assert "bulunamadı" in result.text()
 
 
@@ -717,7 +717,7 @@ async def test_blocked_setup_is_not_run(tmp_path: Path) -> None:
     harness = testrun.detect(tmp_path)
     assert harness is not None
     result = await testrun.run_harness(harness)
-    assert result.status == "yok"
+    assert result.status == "none"
     assert "node_modules" in result.raw
 
 
@@ -783,7 +783,7 @@ def test_manual_command_is_the_permission_subject() -> None:
     """A hand-given command must not appear at the gate as `path`."""
     from dornick.permissions import describe
 
-    assert describe({"path": "C:/proje", "komut": "npm test"}) == "npm test"
+    assert describe({"path": "C:/proje", "command": "npm test"}) == "npm test"
     assert describe({"path": "C:/proje"}) == "C:/proje"
 
 
@@ -802,7 +802,7 @@ async def test_tool_detection_only_mode_runs_nothing(
 ) -> None:
     (tmp_path / "pytest.ini").write_text("[pytest]\n", encoding="utf-8")
     (tmp_path / "spark").write_text("#!/usr/bin/env php\n", encoding="utf-8")
-    result = await call(registry, ctx, path=str(tmp_path), sadece_tespit=True)
+    result = await call(registry, ctx, path=str(tmp_path), detect_only=True)
     assert "pytest -q" in result.content
     assert "php spark routes" in result.content
     assert "hiçbiri koşturulmadı" in result.content
@@ -817,7 +817,7 @@ async def test_tool_uses_the_last_touched_project(
     project.mkdir()
     (project / "pytest.ini").write_text("[pytest]\n", encoding="utf-8")
     testrun.touched(project / "modul.py")
-    result = await call(registry, ctx, sadece_tespit=True)
+    result = await call(registry, ctx, detect_only=True)
     assert str(project) in result.content
 
 
@@ -833,19 +833,19 @@ async def test_tool_runs_a_real_suite_end_to_end(
     registry: ToolRegistry, ctx: ToolContext, tmp_path: Path, own_python
 ) -> None:
     _fake_python_project(tmp_path, "def test_gecer():\n    assert True\n")
-    result = await call(registry, ctx, path=str(tmp_path), zaman_asimi=120)
+    result = await call(registry, ctx, path=str(tmp_path), timeout=120)
     assert not result.is_error
     assert "1 geçti, 0 kaldı" in result.content
-    assert result.detail["gecen"] == 1
+    assert result.detail["passed"] == 1
 
 
 async def test_tool_marks_a_failing_suite_as_an_error(
     registry: ToolRegistry, ctx: ToolContext, tmp_path: Path, own_python
 ) -> None:
     _fake_python_project(tmp_path, "def test_kalir():\n    assert 1 == 2\n")
-    result = await call(registry, ctx, path=str(tmp_path), zaman_asimi=120)
+    result = await call(registry, ctx, path=str(tmp_path), timeout=120)
     assert result.is_error
-    assert result.detail["kalan"] == 1
+    assert result.detail["failed"] == 1
 
 
 async def test_tool_honours_a_manual_command(
@@ -854,7 +854,7 @@ async def test_tool_honours_a_manual_command(
     """A manual command: detection is skipped."""
     result = await call(
         registry, ctx, path=str(tmp_path),
-        komut=f'"{sys.executable}" -c "print(\'merhaba\')"', zaman_asimi=60,
+        command=f'"{sys.executable}" -c "print(\'merhaba\')"', timeout=60,
     )
     assert "merhaba" in result.content
 

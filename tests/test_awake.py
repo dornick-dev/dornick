@@ -83,9 +83,9 @@ class Log:
         self.log.note("tool_end", tool=name, error=error, ms=10, ozet=summary)
         return self
 
-    def close(self, outcome: str = "basarili") -> Log:
+    def close(self, outcome: str = "succeeded") -> Log:
         self.clock.advance(minutes=1)
-        self.log.note("sonuc", sonuc=outcome)
+        self.log.note("outcome", outcome=outcome)
         return self
 
 
@@ -98,7 +98,7 @@ def test_lesson_is_written_in_the_same_session(store, sessions, clock) -> None:
     log = Log(sessions, "s1", clock)
     log.touch(bad.id).tool("run", error=True, summary="göç yarıda kaldı")
 
-    report = awake.on_result(store, log.path, "basarisiz", clock=clock, log=log.log)
+    report = awake.on_result(store, log.path, "failed", clock=clock, log=log.log)
 
     assert report.lessons_written == 1
     lessons = store.by_kind("lesson", limit=5)
@@ -111,7 +111,7 @@ def test_success_pays_out_immediately(store, sessions, clock) -> None:
                           kind="procedure")
     log = Log(sessions, "s1", clock)
     log.touch(good.id).tool("run")
-    awake.on_result(store, log.path, "basarili", clock=clock, log=log.log)
+    awake.on_result(store, log.path, "succeeded", clock=clock, log=log.log)
     assert store.track_record(good.id) == (1, 0)
 
 
@@ -121,8 +121,8 @@ def test_night_skips_a_session_already_replayed_awake(store, sessions,
     node = store.remember("Kurulum paketi imzalandı.", kind="fact")
     log = Log(sessions, "s1", clock)
     log.touch(node.id).tool("run")
-    awake.on_result(store, log.path, "basarili", clock=clock, log=log.log)
-    log.close("basarili")
+    awake.on_result(store, log.path, "succeeded", clock=clock, log=log.log)
+    log.close("succeeded")
     after_awake = store.track_record(node.id)
 
     weave.night_pass(store, sessions, clock=clock, watermark=watermark)
@@ -135,8 +135,8 @@ def test_reverse_replay_runs_once_per_session(store, sessions, clock) -> None:
     node = store.remember("Bir kayıt.", kind="fact")
     log = Log(sessions, "s1", clock)
     log.touch(node.id).tool("run")
-    awake.on_result(store, log.path, "basarili", clock=clock, log=log.log)
-    second = awake.on_result(store, log.path, "basarili", clock=clock, log=log.log)
+    awake.on_result(store, log.path, "succeeded", clock=clock, log=log.log)
+    second = awake.on_result(store, log.path, "succeeded", clock=clock, log=log.log)
     assert second.replayed == 0
     assert store.track_record(node.id) == (1, 0)
 
@@ -153,7 +153,7 @@ def test_reverse_replay_fits_between_two_turns(store, sessions, clock) -> None:
     log.tool("run")
 
     started = time.perf_counter()
-    awake.on_result(store, log.path, "basarili", clock=clock, log=log.log)
+    awake.on_result(store, log.path, "succeeded", clock=clock, log=log.log)
     elapsed_ms = (time.perf_counter() - started) * 1000.0
     assert elapsed_ms < awake.TURN_BUDGET_MS * 20      # thread fallback margin
 
@@ -306,7 +306,7 @@ def test_awake_replay_is_switchable(store, sessions, clock) -> None:
     log = Log(sessions, "s1", clock)
     log.touch(node.id).tool("run", error=True, summary="patladı")
     with switches.disabled("weave"):
-        report = awake.on_result(store, log.path, "basarisiz", clock=clock,
+        report = awake.on_result(store, log.path, "failed", clock=clock,
                                  log=log.log)
     assert report.lessons_written == 0
     assert not store.by_kind("lesson", limit=5)

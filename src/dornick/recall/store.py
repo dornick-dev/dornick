@@ -122,11 +122,12 @@ CREATE TABLE IF NOT EXISTS node (
     deleted   INTEGER NOT NULL DEFAULT 0,
     sig       BLOB,
     -- Usage history: the last 30 uses, as a JSON array.
-    --   [{"t": "<ISO>", "w": 1.0, "etiket": "acildi"}, ...]
+    --   [{"t": "<ISO>", "w": 1.0, "label": "opened"}, ...]
     -- The moment of writing is the first use (w = 1.0; Phase 4 replaces this
     -- with surprise). w can be negative (Phase 3 reverse replay): a use that
-    -- led to a failure weakens the trace. etiket: yazildi | acildi | basari |
-    -- hata | sema | yakalandi. Phase 1 writes only the first two; the field
+    -- led to a failure weakens the trace. label: written | opened | success |
+    -- error | schema | caught | distilled (pre-1.5.5 rows say `etiket` and
+    -- Turkish labels; activation.parse_use_log reads both). Phase 1 writes only the first two; the field
     -- is opened in this shape from the start so later phases need not
     -- change the schema.
     -- `uses`/`last_used` are kept (the UI reads them) but activation is

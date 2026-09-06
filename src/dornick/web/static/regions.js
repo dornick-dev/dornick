@@ -108,15 +108,20 @@ const Regions = (() => {
       code: "world düğümleri (recall.store kind=world)" },
   };
 
-  const SLEEP_STATES = ["uyanik", "uykulu", "uyuyor", "uyaniyor"];
-  const STATE_LABEL = { uyanik: "uyanık", uykulu: "uykulu", uyuyor: "uyuyor",
-                        uyaniyor: "uyanıyor", kestirme: "kestirme" };
+  // The wire's sleep states (recall.sleep.State) → the word shown.
+  const SLEEP_STATES = ["awake", "sleepy", "asleep", "waking"];
+  const STATE_LABEL = { awake: "uyanık", sleepy: "uykulu", asleep: "uyuyor",
+                        waking: "uyanıyor", nap: "kestirme" };
+  const PHASE_LABEL = { deep: "derin", light: "hafif", rem: "rem" };
+  const AXIS_LABEL = { novelty: "yenilik", outcome: "sonuc", social: "sosyal",
+                       persistence: "sebat", caution: "temkin" };
   // Phase colours (6.2): deep blue, light teal, REM purple — and a
   // pattern per phase for the ring so colour is not alone.
-  const PHASE = { derin: { color: "user", dash: "" }, hafif: { color: "lesson", dash: "4 3" },
+  const PHASE = { deep: { color: "user", dash: "" }, light: { color: "lesson", dash: "4 3" },
                   rem: { color: "preference", dash: "1 4" } };
   const NARROW = 430;     // below this panel width the gauges stack
-  const DETAILS_KEY = "dornick-beyin-ayrinti";   // "acik" | "kapali", default closed
+  const DETAILS_KEY = "dornick-brain-details";   // "on" | "off", default closed
+  const LEGACY_DETAILS_KEY = "dornick-beyin-ayrinti";   // pre-1.5.5 name and "acik"/"kapali" words
   const SURPRISE_FADE_MS = 90000;                // the amygdala caption calms down after this
 
   const $ = (id) => document.getElementById(id);
@@ -126,7 +131,7 @@ const Regions = (() => {
 
   let mind, tip, sheet, tabs;
   let state = {
-    sleep: "uyanik", nap: false, tired: false, cycle: 0, phase: "",
+    sleep: "awake", nap: false, tired: false, cycle: 0, phase: "",
     wakeAt: "", caffeine: "", pressure: null, threshold: null, debt: null,
     goals: new Map(), patch: {}, cold: 0, world: 0,
     // The simple block's extra facts: the last finished night and the
@@ -200,8 +205,19 @@ const Regions = (() => {
     // Details on demand: the strip opens with the toggle, the choice is
     // remembered; default closed.
     let saved = null;
-    try { saved = localStorage.getItem(DETAILS_KEY); } catch { /* file:// */ }
-    setDetails(saved === "acik", false);
+    try {
+      saved = localStorage.getItem(DETAILS_KEY);
+      if (saved === null) {
+        // Adopt the pre-1.5.5 key once: read the old word, write the new one.
+        const old = localStorage.getItem(LEGACY_DETAILS_KEY);
+        if (old !== null) {
+          saved = old === "acik" ? "on" : "off";
+          localStorage.setItem(DETAILS_KEY, saved);
+          localStorage.removeItem(LEGACY_DETAILS_KEY);
+        }
+      }
+    } catch { /* file:// */ }
+    setDetails(saved === "on", false);
     const toggle = $("brain-details-toggle");
     if (toggle) toggle.addEventListener("click", () => setDetails(!details, true));
     const reportLink = $("brain-simple-report");
@@ -390,7 +406,7 @@ const Regions = (() => {
     const stateWord = svg.querySelector("[data-text=state]");
     if (stateWord) stateWord.textContent = t(state.nap ? "kestirme" : STATE_LABEL[state.sleep] || state.sleep);
     const cyc = svg.querySelector("[data-text=cycle]");
-    if (cyc) cyc.textContent = state.cycle ? state.cycle + " · " + t(state.phase || "") : "";
+    if (cyc) cyc.textContent = state.cycle ? state.cycle + " · " + t(PHASE_LABEL[state.phase] || state.phase || "") : "";
     const ring = svg.querySelector("[data-ring=phase]");
     if (ring) {
       const ph = PHASE[state.phase];
@@ -448,12 +464,12 @@ const Regions = (() => {
     const n = state.night;
     if (state.nap) return t("Kestiriyor: kısa bir mola.");
     switch (state.sleep) {
-      case "uykulu": return t("Uykulu — birazdan uyur.");
-      case "uyuyor": {
+      case "sleepy": return t("Uykulu — birazdan uyur.");
+      case "asleep": {
         const count = n.total > n.done ? n.done + "/" + n.total : n.done ? String(n.done) : "";
         return t("Uyuyor: günün konuşmalarını tekrar ediyor") + (count ? " (" + count + ")" : "") + ".";
       }
-      case "uyaniyor": return t("Uyanıyor.");
+      case "waking": return t("Uyanıyor.");
       default:
         return state.caffeine ? t("Uyanık — bu gece uyumayacak (kafein).")
                               : t("Uyanık. Sen yokken uyuyup öğrendiklerini pekiştirir.");
@@ -471,7 +487,7 @@ const Regions = (() => {
   function renderSimple() {
     const box = $("brain-simple");
     if (!box) return;
-    const word = state.nap ? "uykulu" : (SLEEP_STATES.includes(state.sleep) ? state.sleep : "uyanik");
+    const word = state.nap ? "sleepy" : (SLEEP_STATES.includes(state.sleep) ? state.sleep : "awake");
     box.dataset.state = word;
     const line = $("brain-simple-line");
     if (line) line.textContent = sentence();
@@ -509,7 +525,7 @@ const Regions = (() => {
       toggle.classList.toggle("on", details);
     }
     if (!details && sheetName === "night") openSheet("");
-    if (remember) { try { localStorage.setItem(DETAILS_KEY, details ? "acik" : "kapali"); } catch { /* file:// */ } }
+    if (remember) { try { localStorage.setItem(DETAILS_KEY, details ? "on" : "off"); } catch { /* file:// */ } }
     if (typeof Scene !== "undefined" && Scene.resume) Scene.resume();   // the hole moved
   }
 
@@ -604,7 +620,7 @@ const Regions = (() => {
     if (now - lastBeat < 40) return;
     lastBeat = now;
     const p = state.pressure ? clamp(state.pressure.total / ((state.threshold && state.threshold.ust) || 1), 0, 1) : 0;
-    const asleep = state.sleep === "uyuyor";
+    const asleep = state.sleep === "asleep";
     const period = asleep ? 2400 : 1400 - p * 600;
     beatPhase = (beatPhase + 40 / period) % 1;
     const k = beatPhase;
@@ -710,13 +726,13 @@ const Regions = (() => {
       + (data.reached ? t("ulaşılan") + " ●" : t("ulaşılan: henüz ölçülmüyor"));
     sheet.append(note);
     const axes = (data.axes && data.axes.length) ? data.axes
-      : ["yenilik", "sonuc", "sosyal", "sebat", "temkin"];
+      : ["novelty", "outcome", "social", "persistence", "caution"];
     for (const axis of axes) {
       const row = document.createElement("div");
       row.className = "axis";
       const name = document.createElement("span");
       name.className = "axis-name";
-      name.textContent = t(axis);
+      name.textContent = t(AXIS_LABEL[axis] || axis);
       const bar = document.createElement("span");
       bar.className = "axis-bar";
       const put = (cls, value, glyph, label) => {
@@ -733,8 +749,7 @@ const Regions = (() => {
       put("reached", data.reached ? data.reached[axis] : null, "●", t("ulaşılan"));
       const lev = document.createElement("span");
       lev.className = "axis-lev";
-      const key = { yenilik: "novelty", sonuc: "outcome", sosyal: "social", sebat: "persistence", temkin: "caution" }[axis];
-      lev.textContent = data.leverage && key in data.leverage ? t("kaldıraç") + " ×" + data.leverage[key] : "";
+      lev.textContent = data.leverage && axis in data.leverage ? t("kaldıraç") + " ×" + data.leverage[axis] : "";
       row.append(name, bar, lev);
       sheet.append(row);
     }

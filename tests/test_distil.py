@@ -123,7 +123,7 @@ def test_the_night_runs_its_first_five_steps_without_a_model(
                    clock=lambda: clock().isoformat(timespec="milliseconds"))
     for node in (a, b):
         log.note("mind_open", memory_id=node.id)
-    log.note("sonuc", sonuc="basarili")
+    log.note("outcome", outcome="succeeded")
 
     report = weave.night_pass(store, sessions, clock=clock,
                               watermark=tmp_path / "w.json", model=None)
@@ -291,7 +291,7 @@ def test_the_exam_never_undoes_what_actually_happened(store, tmp_path,
                    clock=lambda: clock().isoformat(timespec="milliseconds"))
     for node_id in (a.id, b.id, *ids):
         log.note("mind_open", memory_id=node_id)
-    log.note("sonuc", sonuc="basarili")
+    log.note("outcome", outcome="succeeded")
 
     model = fake_model(f"Raporlar xlsx üretiliyor. [{ids[0]}]")
     exam = iter([{"prime_precision": 0.60, "tuzak_sessizlik": 0.90},

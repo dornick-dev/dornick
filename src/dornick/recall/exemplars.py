@@ -22,7 +22,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from .. import legacy_names
+from .. import legacy_names, legacy_values
 
 FILE_NAME = "decision_exemplars.json"
 MAX_EXEMPLARS = 12
@@ -38,7 +38,7 @@ class Exemplar:
     decision: str
 
     def as_dict(self) -> dict[str, str]:
-        return {"eksen": self.axis, "durum": self.situation, "karar": self.decision}
+        return {"axis": self.axis, "situation": self.situation, "decision": self.decision}
 
 
 def _path(state_dir: Path) -> Path:
@@ -54,7 +54,8 @@ def _read(state_dir: Path) -> tuple[str, list[Any]]:
     except (OSError, ValueError):
         return "", []
     if isinstance(data, dict):
-        return str(data.get("model_id") or ""), list(data.get("kararlar") or [])
+        data = legacy_values.keys(data, legacy_values.EXEMPLAR_KEYS)
+        return str(data.get("model_id") or ""), list(data.get("decisions") or [])
     return "", data if isinstance(data, list) else []
 
 
@@ -70,10 +71,14 @@ def load(state_dir: Path) -> list[Exemplar]:
     for row in rows if isinstance(rows, list) else []:
         if not isinstance(row, dict):
             continue
-        situation = str(row.get("durum") or "").strip()
-        decision = str(row.get("karar") or "").strip()
+        # A file written before 1.5.5 says eksen/durum/karar and names the
+        # axis in Turkish.
+        row = legacy_values.keys(row, legacy_values.EXEMPLAR_KEYS)
+        situation = str(row.get("situation") or "").strip()
+        decision = str(row.get("decision") or "").strip()
         if situation and decision:
-            out.append(Exemplar(str(row.get("eksen") or ""), situation, decision))
+            axis = str(row.get("axis") or "")
+            out.append(Exemplar(legacy_values.AXES.get(axis, axis), situation, decision))
     return out[:MAX_EXEMPLARS]
 
 
@@ -82,7 +87,7 @@ def save(state_dir: Path, exemplars: list[Exemplar], model_id: str = "") -> None
     path = _path(state_dir)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps({"model_id": model_id,
-                                "kararlar": [e.as_dict() for e in exemplars[:MAX_EXEMPLARS]]},
+                                "decisions": [e.as_dict() for e in exemplars[:MAX_EXEMPLARS]]},
                                ensure_ascii=False, indent=1), encoding="utf-8")
 
 

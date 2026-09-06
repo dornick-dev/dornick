@@ -104,7 +104,7 @@ def register(registry: ToolRegistry) -> None:
                         "ya da önce `models` ile bak."
                     ),
                 },
-                "arka_plan": {
+                "background": {
                     "type": "boolean",
                     "description": (
                         "true: yardımcı arka planda koşar, bu araç hemen "
@@ -137,7 +137,7 @@ def register(registry: ToolRegistry) -> None:
         title = str(args.get("title") or "").strip() or _headline(instruction)
         model, warning = _validate_model(str(args.get("model") or ""), ctx)
 
-        if bool(args.get("arka_plan")) and ctx.spawn_bg is not None:
+        if bool(args.get("background")) and ctx.spawn_bg is not None:
             handle = ctx.spawn_bg(title, instruction, model)
             return ToolResult(
                 content=warning + (

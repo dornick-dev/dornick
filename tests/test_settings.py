@@ -756,10 +756,10 @@ def test_ollama_show_is_skipped_when_the_catalog_already_knows(
 def test_the_night_sleep_switch_round_trips(config: Config) -> None:
     """The settings page echoes the whole `sleep` section, label included;
     the flag lands on disk and comes back in the next snapshot."""
-    assert settings.snapshot(config)["sleep"]["uyku_acik"] is True
+    assert settings.snapshot(config)["sleep"]["enabled"] is True
     updated = settings.apply(config, {"sleep": {
-        "uyku_acik": False, "label": settings.snapshot(config)["sleep"]["label"]}})
-    assert updated.sleep.uyku_acik is False
-    assert Config.load(config.workspace).sleep.uyku_acik is False
-    assert settings.snapshot(updated)["sleep"]["uyku_acik"] is False
-    assert settings.apply(updated, {"sleep": {"uyku_acik": True}}).sleep.uyku_acik is True
+        "enabled": False, "label": settings.snapshot(config)["sleep"]["label"]}})
+    assert updated.sleep.enabled is False
+    assert Config.load(config.workspace).sleep.enabled is False
+    assert settings.snapshot(updated)["sleep"]["enabled"] is False
+    assert settings.apply(updated, {"sleep": {"enabled": True}}).sleep.enabled is True

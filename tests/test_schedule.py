@@ -136,9 +136,9 @@ def test_mark_running_binds_child_and_status(book: Schedule) -> None:
     got = book.get(created.id)
     assert got is not None
     assert got.last_child_id == "ab12cd"
-    assert got.last_status == "koşuyor"
-    book.note_run(created.id, "bitti")
-    assert book.get(created.id).last_status == "bitti"
+    assert got.last_status == "running"
+    book.note_run(created.id, "done")
+    assert book.get(created.id).last_status == "done"
     assert book.get(created.id).last_child_id == "ab12cd"
 
 
@@ -222,7 +222,7 @@ async def test_one_failing_task_does_not_stop_the_ticker(book: Schedule) -> None
         await run_forever(book, boom, sleep=once)
 
     assert rounds == 1
-    assert book.all()[0].last_status == "başlatılamadı"
+    assert book.all()[0].last_status == "failed_to_start"
 
 
 def test_overdue_peeks_without_advancing(book: Schedule) -> None:
@@ -246,7 +246,7 @@ def test_skip_occurrence_advances_to_next_slot(book: Schedule) -> None:
     got = book.get(created.id)
     assert got is not None
     assert got.next_run != before
-    assert got.last_status == "atlandı"
+    assert got.last_status == "skipped"
     assert book.overdue(moment) == []
 
 

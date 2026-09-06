@@ -3,7 +3,7 @@
 Right before write_file/edit_file/copy_in change a file INSIDE the
 workshop they stop here: the file's current state is copied under
 `.dornick/degisiklikler/<session>/<seq>-<name>`, the record lands in
-`kayit.jsonl`. The `undo` tool lists those records and applies them in
+`ledger.jsonl`. The `undo` tool lists those records and applies them in
 reverse.
 
 Two deliberate decisions:
@@ -32,6 +32,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from .. import legacy_names, legacy_values
 from .base import ToolContext, ToolRegistry, ToolResult, object_schema
 
 FOLDER = "changes"
@@ -46,52 +47,59 @@ _UNSAFE = re.compile(r"[^\w.\-]+")
 _cleaned: set[Path] = set()
 
 
-def defter(ctx: ToolContext) -> "Defter":
-    return Defter(Path(ctx.config.state_dir) / FOLDER, ctx.session.id)
+LOG_NAME = "ledger.jsonl"
+LEGACY_LOG_NAME = "kayit.jsonl"      # the pre-1.5.5 name, adopted once
 
 
-class Defter:
-    """One session's change records. The real source is kayit.jsonl on
+def ledger(ctx: ToolContext) -> "Ledger":
+    return Ledger(Path(ctx.config.state_dir) / FOLDER, ctx.session.id)
+
+
+class Ledger:
+    """One session's change records. The real source is ledger.jsonl on
     disk — nothing is lost if the process restarts or the tool layer is
-    rebuilt."""
+    rebuilt. A record written before 1.5.5 (`sira`/`dosya`/`arac`/`zaman`/
+    `goruntu`/`yoktu`/`atlandi`) is read as `seq`/`file`/`tool`/`time`/
+    `snapshot`/`missing`/`skipped`; the file is not rewritten."""
 
     def __init__(self, root: Path, session: str) -> None:
         self.root = root
-        self.directory = root / (_UNSAFE.sub("_", session or "oturum") or "oturum")
-        self.log_path = self.directory / "kayit.jsonl"
+        self.directory = root / (_UNSAFE.sub("_", session or "session") or "session")
+        self.log_path = self.directory / LOG_NAME
+        legacy_names.adopt(self.directory / LEGACY_LOG_NAME, self.log_path)
 
     # -- recording -----------------------------------------------------
 
     def save(self, path: Path, tool: str) -> None:
         """Called RIGHT BEFORE the file changes; stores its current state.
 
-        For a file that does not exist yet a "yoktu" (did not exist) record
-        is written — undo deletes that file.
+        For a file that does not exist yet a "missing" (did not exist)
+        record is written — undo deletes that file.
         """
         self._prepare()
         records = self._read_records()
-        seq = (records[-1]["sira"] + 1) if records else 1
+        seq = (records[-1]["seq"] + 1) if records else 1
         record: dict[str, Any] = {
-            "sira": seq,
-            "dosya": str(path),
-            "arac": tool,
-            "zaman": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-            "goruntu": None,
-            "yoktu": False,
-            "atlandi": None,
+            "seq": seq,
+            "file": str(path),
+            "tool": tool,
+            "time": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            "snapshot": None,
+            "missing": False,
+            "skipped": None,
         }
         try:
             if not path.exists():
-                record["yoktu"] = True
+                record["missing"] = True
             elif path.stat().st_size > SNAPSHOT_CEILING:
-                record["atlandi"] = "2 MB üstü, görüntü alınmadı"
+                record["skipped"] = "2 MB üstü, görüntü alınmadı"
             else:
-                name = f"{seq:04d}-{(_UNSAFE.sub('_', path.name) or 'dosya')[:80]}"
+                name = f"{seq:04d}-{(_UNSAFE.sub('_', path.name) or 'file')[:80]}"
                 shutil.copy2(path, self.directory / name)
-                record["goruntu"] = name
+                record["snapshot"] = name
         except OSError as exc:
-            record["goruntu"] = None
-            record["atlandi"] = f"görüntü alınamadı: {exc}"
+            record["snapshot"] = None
+            record["skipped"] = f"görüntü alınamadı: {exc}"
         with self.log_path.open("a", encoding="utf-8") as f:
             f.write(json.dumps(record, ensure_ascii=False) + "\n")
 
@@ -119,10 +127,10 @@ class Defter:
 
         chosen = records[-n:]
         for k in chosen:
-            if k["goruntu"] is None and not k["yoktu"]:
+            if k["snapshot"] is None and not k["missing"]:
                 return [], (
-                    f"{k['sira']}. kayıt geri alınamaz ({k['dosya']}): "
-                    f"{k['atlandi'] or 'görüntü yok'}. Hiçbir şey geri alınmadı."
+                    f"{k['seq']}. kayıt geri alınamaz ({k['file']}): "
+                    f"{k['skipped'] or 'görüntü yok'}. Hiçbir şey geri alınmadı."
                 )
 
         done: list[str] = []
@@ -143,13 +151,13 @@ class Defter:
         records = self._read_records()
         if not records:
             return [], "Bu oturumda kayıtlı değişiklik yok."
-        k = next((x for x in records if int(x.get("sira") or 0) == int(seq)), None)
+        k = next((x for x in records if int(x.get("seq") or 0) == int(seq)), None)
         if k is None:
             return [], f"{seq}. kayıt bulunamadı."
-        if k["goruntu"] is None and not k["yoktu"]:
+        if k["snapshot"] is None and not k["missing"]:
             return [], (
-                f"{k['sira']}. kayıt geri alınamaz ({k['dosya']}): "
-                f"{k['atlandi'] or 'görüntü yok'}."
+                f"{k['seq']}. kayıt geri alınamaz ({k['file']}): "
+                f"{k['skipped'] or 'görüntü yok'}."
             )
         ok, message = self._undo_one(k)
         return ([message], None if ok else message)
@@ -164,7 +172,7 @@ class Defter:
         target_norm = target_key.replace("\\", "/").lower()
         records = self._read_records()
         for k in reversed(records):
-            raw = str(k.get("dosya") or "")
+            raw = str(k.get("file") or "")
             if not raw:
                 continue
             p = Path(raw)
@@ -173,22 +181,22 @@ class Defter:
             except OSError:
                 key = raw
             if key.replace("\\", "/").lower() == target_norm:
-                return self.undo_sequence(int(k["sira"]))
-        return [], f"Bu oturumda {dosya!r} için kayıt yok."
+                return self.undo_sequence(int(k["seq"]))
+        return [], f"Bu oturumda {file_path!r} için kayıt yok."
 
     def _undo_one(self, k: dict[str, Any]) -> tuple[bool, str]:
         """Applies one record; (ok, message). Calls save first, for redo."""
-        target = Path(k["dosya"])
+        target = Path(k["file"])
         self.save(target, "undo")
         try:
-            if k["yoktu"]:
+            if k["missing"]:
                 target.unlink(missing_ok=True)
-                return True, f"{k['sira']}. kayıt: {target} silindi (oluşturma geri alındı)."
+                return True, f"{k['seq']}. kayıt: {target} silindi (oluşturma geri alındı)."
             target.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(self.directory / k["goruntu"], target)
-            return True, f"{k['sira']}. kayıt: {target} eski haline döndü."
+            shutil.copy2(self.directory / k["snapshot"], target)
+            return True, f"{k['seq']}. kayıt: {target} eski haline döndü."
         except OSError as exc:
-            return False, f"{k['sira']}. kayıt geri alınamadı: {exc}"
+            return False, f"{k['seq']}. kayıt geri alınamadı: {exc}"
 
     # -- internals -----------------------------------------------------
 
@@ -206,9 +214,11 @@ class Defter:
         records = []
         for line in text.splitlines():
             try:
-                records.append(json.loads(line))
+                record = json.loads(line)
             except ValueError:
                 continue  # a half-written line must not bring the ledger down
+            if isinstance(record, dict):
+                records.append(legacy_values.keys(record, legacy_values.LEDGER_KEYS))
         return records
 
 
@@ -259,7 +269,7 @@ ile ileri dönebilirsin (redo).
         parallel_safe=False,
     )
     async def undo(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
-        d = defter(ctx)
+        d = ledger(ctx)
         action = str(args.get("action") or "")
 
         if action == "list":
@@ -268,11 +278,11 @@ ile ileri dönebilirsin (redo).
                 return ToolResult(content="Bu oturumda kayıtlı değişiklik yok.")
             lines = [f"Son {len(records)} değişiklik (en yenisi önce):", ""]
             for k in records:
-                trace = f"{k['sira']:>4}. {k['dosya']} — {k['arac']} ({k['zaman']})"
-                if k["yoktu"]:
+                trace = f"{k['seq']:>4}. {k['file']} — {k['tool']} ({k['time']})"
+                if k["missing"]:
                     trace += " [dosya yoktu, yeni oluşturuldu]"
-                elif k["atlandi"]:
-                    trace += f" [{k['atlandi']}]"
+                elif k["skipped"]:
+                    trace += f" [{k['skipped']}]"
                 lines.append(trace)
             return ToolResult(content="\n".join(lines), detail={"count": len(records)})
 

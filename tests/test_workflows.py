@@ -237,12 +237,12 @@ async def test_progress_is_reported_when_a_node_STARTS(tmp_path: Path) -> None:
     assert ok, report
     # There must be at least one snapshot showing node "a" WHILE RUNNING.
     running = [g for g in snapshots
-               if any(s["id"] == "a" and s["status"] == "koşuyor" for s in g)]
+               if any(s["id"] == "a" and s["status"] == "running" for s in g)]
     assert running, "no snapshot shows a running step — live tracking impossible"
     # And in that first snapshot the second node must not appear at all yet.
     assert all(s["id"] != "b" for s in running[0])
     # In the last snapshot both must be finished.
-    assert {s["id"]: s["status"] for s in snapshots[-1]} == {"a": "bitti", "b": "bitti"}
+    assert {s["id"]: s["status"] for s in snapshots[-1]} == {"a": "done", "b": "done"}
 
 
 async def test_a_broken_progress_listener_never_kills_the_run(tmp_path: Path) -> None:
@@ -262,7 +262,7 @@ async def test_a_broken_progress_listener_never_kills_the_run(tmp_path: Path) ->
     _report, progress, ok = await execute_workflow(
         wf, _FakeAgent(tmp_path), _FakeHandle(), on_progress=blows_up)
     assert ok
-    assert [s["status"] for s in progress] == ["bitti"]
+    assert [s["status"] for s in progress] == ["done"]
 
 
 # -- self-repair --------------------------------------------------------
@@ -289,7 +289,7 @@ def _broken_flow(tmp_path: Path, *, hand_edited: bool = False):
         "id": "onar", "title": "Onarım denemesi",
         "nodes": [{"id": "a", "title": "Bozuk adım", "type": "shell",
                    "config": {"command": "kesinlikle-olmayan-komut-xyz"},
-                   "elle": hand_edited}],
+                   "manual": hand_edited}],
         "edges": [],
     })
 
@@ -305,8 +305,8 @@ async def test_a_failing_step_is_repaired_and_retried(tmp_path: Path) -> None:
 
     assert ok, report
     (step,) = progress
-    assert step["status"] == "bitti"
-    assert step.get("onarim"), "what changed must be in the report — a silent repair is a surprise"
+    assert step["status"] == "done"
+    assert step.get("repair"), "what changed must be in the report — a silent repair is a surprise"
     # The change must also be written to DISK; otherwise the same error tomorrow.
     assert workflows.get(tmp_path, "onar").nodes[0].config["command"] == "echo duzeldi"
 
@@ -324,7 +324,7 @@ async def test_a_hand_edited_step_is_never_rewritten(tmp_path: Path) -> None:
     _report, progress, ok = await execute_workflow(wf, agent, _FakeHandle())
 
     assert not ok
-    assert progress[0]["status"] == "hata"
+    assert progress[0]["status"] == "error"
     assert not agent.prompts, "no repair must be REQUESTED for a hand-edited step"
     assert workflows.get(tmp_path, "onar").nodes[0].config["command"] \
         == "kesinlikle-olmayan-komut-xyz"
@@ -354,7 +354,7 @@ async def test_an_unusable_repair_answer_changes_nothing(tmp_path: Path) -> None
     _report, progress, ok = await execute_workflow(wf, agent, _FakeHandle())
 
     assert not ok
-    assert not progress[0].get("onarim")
+    assert not progress[0].get("repair")
     assert workflows.get(tmp_path, "onar").nodes[0].config["command"] \
         == "kesinlikle-olmayan-komut-xyz"
 
@@ -406,7 +406,7 @@ async def test_http_post_node_requires_approval(tmp_path: Path) -> None:
     _report, progress, ok = await execute_workflow(wf, agent, _FakeHandle())
 
     assert not ok, "a refused http node must not count as successful"
-    assert progress[0]["status"] == "hata"
+    assert progress[0]["status"] == "error"
     assert agent.asked, "approval SHOULD have been asked for the http POST"
     # The local-address warning must have made it into the approval text.
     assert "YEREL" in (agent.asked[0].get("istek") or "")

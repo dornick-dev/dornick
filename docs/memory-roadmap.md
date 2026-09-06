@@ -194,7 +194,7 @@ kadar güçlü.
 
 ```sql
 ALTER TABLE node ADD COLUMN kullanimlar TEXT NOT NULL DEFAULT '[]';
--- JSON dizi, son 30 kullanım: [{"t": "<ISO>", "w": 1.0, "etiket": "acildi"}, ...]
+-- JSON dizi, son 30 kullanım: [{"t": "<ISO>", "w": 1.0, "label": "opened"}, ...]
 -- Yazım anı (created) ilk kullanımdır (w = 1.0; Faz 4 bunu sürprizle değiştirir).
 -- w negatif olabilir (Faz 3 ters tekrar). etiket: acildi | basari | hata | gece-dokunuş
 -- Faz 1'de yalnız "acildi" yazılır; alan baştan bu biçimde açılır ki sonraki fazlar
@@ -734,19 +734,21 @@ varsa ertesi gece döngü tablosu **borçlu faz öne alınarak** yeniden sırala
 Her adım `events.py` üzerinden olay yayınlar; `recall()` izinin aktığı kanalın aynısı:
 
 ```
-uyku.basladi        {basinc, tahmini_uyanma, dongu_sayisi}
-uyku.dongu          {no, faz}
-tekrar.ileri        {oturum, dizi: [id...], kenarlar: [(a,b,w)]}
-tekrar.geri         {oturum, sonuc, paylar: [(id, w)]}
-dikis               {a, b, uzerinden, oturumlar}
-dokunus             {id}
-damitma             {kaynaklar: [id...], yeni: id}          # REM
-uyku.uyandi         {sebep, dongu, tamamlanan, devreden, borc}
-uyku.bitti          {sebep: "basinc" | "ritim", rapor}
+sleep.started       {pressure, wake_estimate, cycle_count}
+sleep.cycle         {no, phase}
+replay.forward      {session, sequence: [id...], edges: [(a,b,w)]}
+replay.reverse      {session, outcome, shares: [(id, w)]}
+stitch              {a, b, via, sessions}
+touch               {id}
+distil              {sources: [id...], new: id}             # REM
+sleep.woke          {reason, cycle, completed, carried, debt}
+sleep.ended         {reason: "pressure" | "rhythm", report}
 ```
 
-Olaylar `.dornick/gece/<tarih>.jsonl`'a da yazılır; sabah "dün gece" yeniden
-oynatılabilir (Faz 6).
+(1.5.5'e kadar bu olaylar ve alanları Türkçeydi — `uyku.basladi`, `tur`,
+`basinc`…; eski gece dosyaları okunurken `legacy_values` ile bu adlara
+çevrilir.) Olaylar `.dornick/nights/<tarih>.jsonl`'a da yazılır; sabah "dün
+gece" yeniden oynatılabilir (Faz 6).
 
 #### 3.10.6 Testler
 
@@ -953,7 +955,7 @@ Tetik: oturum içinde bir **sonuç olayı** oluşur oluşmaz —
 O anda `orgu.ters_tekrar(store, dizi_su_ana_kadar, sonuc)` koşar: kullanım ağırlıkları
 dağıtılır, `lesson`/`procedure` **hemen** yazılır. Kullanıcı aynı oturumda dersi görür;
 model bir sonraki turda `mind_recall` ile ona ulaşabilir. Oturum günlüğüne
-`ters_tekrar_kostu: true` yazılır; gece o oturumu atlar.
+`reverse_replay_done` yazılır; gece o oturumu atlar.
 
 Bütçe: tek oturumun ters tekrarı < 50 ms (dizi ≤ 200 düğüm). Tur arasına sığar; sığmazsa
 (`> 200 ms`) yarıda kesilmez, arka plan thread'inde biter — tur bloklanmaz.
@@ -1029,7 +1031,7 @@ Metrikler:
 
 #### 3.12.7 Testler
 
-- Sonuç olayı → ters tekrar aynı turda; `ters_tekrar_kostu` işaretli; gece o oturumu
+- Sonuç olayı → ters tekrar aynı turda; `reverse_replay_done` işaretli; gece o oturumu
   atlıyor (çift sayım yok: `kullanimlar`'da tek `basari`/`hata` girdisi).
 - Tur arası ileri tekrar artımlı: 3 turluk oturumda 2. turdan sonra yazılan kenar 3.
   turdan sonra yeniden yazılmıyor (idempotent).
@@ -1070,7 +1072,7 @@ if supersedes: guc = 1.0                                 # düzeltme her zaman t
 ```
 
 `guc`, `kullanimlar` listesinin ilk girdisine `w` olarak yazılır
-(`[{"t": created, "w": guc, "etiket": "yazildi"}]`); `taban_aktivasyon` zaten ağırlıklı
+(`[{"t": created, "w": guc, "label": "written"}]`); `taban_aktivasyon` zaten ağırlıklı
 toplam alıyor (Faz 1). Şema değişmez.
 
 ### 4.2 Testler
@@ -1151,18 +1153,18 @@ ve zamanlama mantığı:
 
 | Olay | Görsel |
 |---|---|
-| `uyku.basladi` | hipokampus kararır, talamus halkası "uyuyor" moduna geçer, tahmini uyanma saati yazılır |
-| `uyku.dongu` | halka üstünde döngü numarası; faz rengi (derin: mavi, hafif: teal, REM: mor) |
-| `tekrar.ileri` | oturum dizisinin düğümleri **sırayla ileri** yanar (ripple), aralarına beliren kenarlar çizilir |
-| `tekrar.geri` | aynı dizi **tersten** yanar; başarıda yeşil, hatada kırmızı; pay büyüklüğü parlaklık |
-| `dikis` | iki uzak düğüm arasına **noktalı** kenar çizilir, ortadaki düğüm bir an parlar |
-| `dokunus` | uzak, soluk bir düğüm hafifçe yanıp söner |
-| `damitma` | kaynak düğümler birbirine çekilir, aralarından yeni düğüm doğar (REM fazı) |
-| `uyku.uyandi` | talamus flaşı, animasyon **olduğu yerde durur** (kalan dizi soluk kalır), özet rozeti: "12/30 tekrar edildi · 18 devretti · sebep: kullanıcı" |
-| `uyku.bitti` | halka "uyanık"; sabah raporu paneli açılabilir |
-| `uyanik.ters` | gündüz: oturum dizisi tersten kısa bir parıltı (yeşil/kırmızı); sabahı beklemeden |
-| `mikro.basladi/bitti` | talamus halkası kısa "kestirme" deseni; hipokampus hafifçe kararır, 2 dk |
-| `yerel.basladi/bitti` | hipokampus kararmaz; soğuk halkanın bir dilimi uyku desenine geçer; "yorgun" rozeti |
+| `sleep.started` | hipokampus kararır, talamus halkası "uyuyor" moduna geçer, tahmini uyanma saati yazılır |
+| `sleep.cycle` | halka üstünde döngü numarası; faz rengi (derin: mavi, hafif: teal, REM: mor) |
+| `replay.forward` | oturum dizisinin düğümleri **sırayla ileri** yanar (ripple), aralarına beliren kenarlar çizilir |
+| `replay.reverse` | aynı dizi **tersten** yanar; başarıda yeşil, hatada kırmızı; pay büyüklüğü parlaklık |
+| `stitch` | iki uzak düğüm arasına **noktalı** kenar çizilir, ortadaki düğüm bir an parlar |
+| `touch` | uzak, soluk bir düğüm hafifçe yanıp söner |
+| `distil` | kaynak düğümler birbirine çekilir, aralarından yeni düğüm doğar (REM fazı) |
+| `sleep.woke` | talamus flaşı, animasyon **olduğu yerde durur** (kalan dizi soluk kalır), özet rozeti: "12/30 tekrar edildi · 18 devretti · sebep: kullanıcı" |
+| `sleep.ended` | halka "uyanık"; sabah raporu paneli açılabilir |
+| `awake.reverse` | gündüz: oturum dizisi tersten kısa bir parıltı (yeşil/kırmızı); sabahı beklemeden |
+| `micro.started/ended` | talamus halkası kısa "kestirme" deseni; hipokampus hafifçe kararır, 2 dk |
+| `local.started/ended` | hipokampus kararmaz; soğuk halkanın bir dilimi uyku desenine geçer; "yorgun" rozeti |
 
 Canlı izleme ve **yeniden oynatma** aynı kod: `.dornick/gece/<tarih>.jsonl` okunup
 aynı olaylar aynı sırayla verilir; hız çubuğu (1x, 10x, 60x). Sabah raporu paneli:

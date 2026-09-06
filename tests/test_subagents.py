@@ -274,7 +274,7 @@ async def test_a_background_helper_returns_immediately_and_reports_later(
     of the next turn."""
     parent = FakeClient(
         tool_turn(("c1", "task", {"title": "sayım", "task": "dosyaları say",
-                                  "arka_plan": True, "model": "kucuk"})),
+                                  "background": True, "model": "kucuk"})),
         text_turn("başlattım, beklemeden devam ediyorum"),
         text_turn("sonucu gördüm"),
     )
@@ -292,7 +292,7 @@ async def test_a_background_helper_returns_immediately_and_reports_later(
 
     # Wait until the child finishes: the result is in the ledger, not yet reported.
     await handle.task
-    assert handle.state == "bitti"
+    assert handle.state == "done"
     assert "42 dosya var" in handle.outcome
     assert agent.has_unreported_children()
 
@@ -316,7 +316,7 @@ async def test_resume_for_children_opens_a_continuation_turn(
     await agent.run("merhaba de")   # so there is at least one turn in the history
 
     handle = ChildHandle(id="ab12cd", title="şiir", model="m",
-                         background=True, state="bitti", outcome="beş kelimelik şiir hazır")
+                         background=True, state="done", outcome="beş kelimelik şiir hazır")
     agent._children[handle.id] = handle
 
     stats = await agent.resume_for_children()
@@ -349,12 +349,12 @@ async def test_interrupt_stops_a_background_helper(tmp_path: Path, full) -> None
 
     handle = agent._spawn_bg("uzun iş", "hiç bitmeyecek bir şey yap", "kucuk")
     await asyncio.sleep(0.05)   # let the child take the gate and start running
-    assert handle.state == "kosuyor"
+    assert handle.state == "running"
 
     agent.interrupt()
     await handle.task
 
-    assert handle.state == "hata"
+    assert handle.state == "error"
     assert handle.notified, "no report turn should open for a cancelled helper"
 
 
@@ -482,14 +482,14 @@ async def test_task_say_resumes_a_finished_child(tmp_path: Path, full) -> None:
     await agent.run("başla")
 
     handle = next(iter(agent._children.values()))
-    assert handle.state == "bitti" and handle.session_id
+    assert handle.state == "done" and handle.session_id
     before = handle.session_id
 
     ok, msg = agent._child_say(handle.id, "şimdi bir de özet çıkar")
     assert ok, msg
     await handle.task
 
-    assert handle.state == "bitti"
+    assert handle.state == "done"
     assert handle.session_id == before, "the same session must continue, not a new one"
     assert "devam cevabı" in handle.outcome
     assert agent.has_unreported_children()
@@ -513,12 +513,12 @@ async def test_task_status_reports_the_ledger(tmp_path: Path, full) -> None:
     agent._children["aa11"] = ChildHandle(id="aa11", title="koşan", model="m",
                                           background=True)
     agent._children["bb22"] = ChildHandle(id="bb22", title="biten", model="m",
-                                          state="bitti", outcome="üç dosya bulundu")
+                                          state="done", outcome="üç dosya bulundu")
 
     await agent.run("yardımcılar ne durumda")
 
     history = str(agent.session.messages())
-    assert "id=aa11" in history and "kosuyor" in history
+    assert "id=aa11" in history and "running" in history
     assert "id=bb22" in history and "üç dosya bulundu" in history
 
 
@@ -530,7 +530,7 @@ def test_the_ledger_keeps_at_most_eight_finished_children(tmp_path: Path, full) 
     for i in range(12):
         agent._register_child(ChildHandle(
             id=f"h{i:02d}", title=f"iş {i}", model="m",
-            state="bitti", ended_ts=float(i), notified=True))
+            state="done", ended_ts=float(i), notified=True))
 
     assert len(agent._children) == MAX_CHILDREN
     # The oldest dropped, the newest remain.

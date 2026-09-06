@@ -57,10 +57,10 @@ def test_no_file_means_no_hooks(tmp_path: Path) -> None:
 
 
 def test_hooks_are_parsed(tmp_path: Path) -> None:
-    write_hooks(tmp_path, [{"olay": "arac_oncesi", "arac": "write_file",
-                            "komut": "echo x", "zaman_asimi": 5}])
+    write_hooks(tmp_path, [{"event": "before_tool", "tool": "write_file",
+                            "command": "echo x", "timeout": 5}])
     (hook,) = hooks.load(tmp_path)
-    assert hook.event == "arac_oncesi"
+    assert hook.event == "before_tool"
     assert hook.command == "echo x"
     assert hook.timeout == 5
 
@@ -68,10 +68,10 @@ def test_hooks_are_parsed(tmp_path: Path) -> None:
 def test_broken_entries_drop_but_good_ones_survive(tmp_path: Path) -> None:
     """A typo must not stop the whole tool layer."""
     write_hooks(tmp_path, [
-        {"olay": "yanlis_olay", "komut": "echo a"},     # unknown event
-        {"olay": "arac_oncesi"},                        # no command
+        {"event": "yanlis_olay", "command": "echo a"},     # unknown event
+        {"event": "before_tool"},                        # no command
         "düz metin",                                    # not even an entry
-        {"olay": "arac_sonrasi", "komut": "echo b"},    # sound
+        {"event": "after_tool", "command": "echo b"},    # sound
     ])
     loaded = hooks.load(tmp_path)
     assert [h.command for h in loaded] == ["echo b"]
@@ -90,15 +90,15 @@ def test_a_missing_file_is_not_broken(tmp_path: Path) -> None:
 
 def test_the_cache_follows_the_user_edit(tmp_path: Path) -> None:
     """When the user edits the file no restart should be needed."""
-    write_hooks(tmp_path, [{"olay": "arac_oncesi", "komut": "echo bir"}])
+    write_hooks(tmp_path, [{"event": "before_tool", "command": "echo bir"}])
     assert [h.command for h in hooks.load(tmp_path)] == ["echo bir"]
-    write_hooks(tmp_path, [{"olay": "arac_oncesi", "komut": "echo iki"}])
+    write_hooks(tmp_path, [{"event": "before_tool", "command": "echo iki"}])
     assert [h.command for h in hooks.load(tmp_path)] == ["echo iki"]
 
 
 def test_the_timeout_is_capped(tmp_path: Path) -> None:
-    write_hooks(tmp_path, [{"olay": "arac_oncesi", "komut": "echo x",
-                            "zaman_asimi": 99999}])
+    write_hooks(tmp_path, [{"event": "before_tool", "command": "echo x",
+                            "timeout": 99999}])
     assert hooks.load(tmp_path)[0].timeout == hooks.MAX_TIMEOUT
 
 
@@ -116,16 +116,16 @@ def test_the_timeout_is_capped(tmp_path: Path) -> None:
     ("write_file | edit_file", "edit_file", True),   # whitespace tolerance
 ])
 def test_tool_patterns(pattern: str, tool: str, expected: bool) -> None:
-    hook = hooks.Hook("arac_oncesi", pattern, "echo x")
+    hook = hooks.Hook("before_tool", pattern, "echo x")
     assert hook.matches(tool) is expected
 
 
 def test_matching_respects_the_event(tmp_path: Path) -> None:
     write_hooks(tmp_path, [
-        {"olay": "arac_oncesi", "arac": "*", "komut": "echo once"},
-        {"olay": "arac_sonrasi", "arac": "*", "komut": "echo sonra"},
+        {"event": "before_tool", "tool": "*", "command": "echo once"},
+        {"event": "after_tool", "tool": "*", "command": "echo sonra"},
     ])
-    before = hooks.matching(tmp_path, "arac_oncesi", "shell")
+    before = hooks.matching(tmp_path, "before_tool", "shell")
     assert [h.command for h in before] == ["echo once"]
 
 
@@ -133,8 +133,8 @@ def test_matching_respects_the_event(tmp_path: Path) -> None:
 
 
 async def test_a_zero_exit_lets_the_tool_run(tmp_path: Path) -> None:
-    write_hooks(tmp_path, [{"olay": "arac_oncesi", "arac": "write_file",
-                            "komut": script("pass")}])
+    write_hooks(tmp_path, [{"event": "before_tool", "tool": "write_file",
+                            "command": script("pass")}])
     decision = await hooks.before_tool(tmp_path, "write_file", {}, cwd=tmp_path)
     assert decision.allowed
     assert decision.reason == ""
@@ -142,8 +142,8 @@ async def test_a_zero_exit_lets_the_tool_run(tmp_path: Path) -> None:
 
 async def test_a_nonzero_exit_blocks_the_tool(tmp_path: Path) -> None:
     """The core scenario: block writing to a forbidden file."""
-    write_hooks(tmp_path, [{"olay": "arac_oncesi", "arac": "write_file",
-                            "komut": script("import sys; print('uretim dosyasi, dokunma'); "
+    write_hooks(tmp_path, [{"event": "before_tool", "tool": "write_file",
+                            "command": script("import sys; print('uretim dosyasi, dokunma'); "
                                             "sys.exit(1)")}])
     decision = await hooks.before_tool(tmp_path, "write_file", {}, cwd=tmp_path)
     assert not decision.allowed
@@ -154,8 +154,8 @@ async def test_a_nonzero_exit_blocks_the_tool(tmp_path: Path) -> None:
 
 
 async def test_an_unmatched_tool_is_untouched(tmp_path: Path) -> None:
-    write_hooks(tmp_path, [{"olay": "arac_oncesi", "arac": "write_file",
-                            "komut": script("import sys; sys.exit(1)")}])
+    write_hooks(tmp_path, [{"event": "before_tool", "tool": "write_file",
+                            "command": script("import sys; sys.exit(1)")}])
     decision = await hooks.before_tool(tmp_path, "read_file", {}, cwd=tmp_path)
     assert decision.allowed
 
@@ -164,10 +164,10 @@ async def test_the_first_refusal_stops_the_chain(tmp_path: Path) -> None:
     """Once the decision is made there is no point asking a second gatekeeper."""
     trace = tmp_path / "iz.txt"
     write_hooks(tmp_path, [
-        {"olay": "arac_oncesi", "arac": "*",
-         "komut": script("import sys; print('ilk'); sys.exit(3)")},
-        {"olay": "arac_oncesi", "arac": "*",
-         "komut": script(f"open(r'{trace}', 'w').write('kostum')")},
+        {"event": "before_tool", "tool": "*",
+         "command": script("import sys; print('ilk'); sys.exit(3)")},
+        {"event": "before_tool", "tool": "*",
+         "command": script(f"open(r'{trace}', 'w').write('kostum')")},
     ])
     decision = await hooks.before_tool(tmp_path, "shell", {}, cwd=tmp_path)
     assert not decision.allowed
@@ -178,9 +178,9 @@ async def test_the_first_refusal_stops_the_chain(tmp_path: Path) -> None:
 async def test_a_timeout_blocks_on_the_safe_side(tmp_path: Path) -> None:
     """If the gatekeeper does not answer, saying 'it would probably have
     allowed it' removes the gatekeeper."""
-    write_hooks(tmp_path, [{"olay": "arac_oncesi", "arac": "*",
-                            "komut": script("import time; time.sleep(60)"),
-                            "zaman_asimi": 2}])
+    write_hooks(tmp_path, [{"event": "before_tool", "tool": "*",
+                            "command": script("import time; time.sleep(60)"),
+                            "timeout": 2}])
     import time as _t
 
     start = _t.monotonic()
@@ -203,7 +203,7 @@ async def test_a_hook_that_cannot_start_is_skipped_and_reported(
         raise OSError("kabuk bulunamadı")
 
     monkeypatch.setattr(hooks, "_launch", crash)
-    write_hooks(tmp_path, [{"olay": "arac_oncesi", "arac": "*", "komut": "her neyse"}])
+    write_hooks(tmp_path, [{"event": "before_tool", "tool": "*", "command": "her neyse"}])
     decision = await hooks.before_tool(tmp_path, "shell", {}, cwd=tmp_path)
     assert decision.allowed                    # the tool keeps running
     assert decision.notes
@@ -225,14 +225,16 @@ async def test_the_hook_receives_its_context_in_the_environment(tmp_path: Path) 
     hook_py.write_text(
         "import json, os, pathlib\n"
         "pathlib.Path(r'''" + str(target) + "''').write_text(json.dumps({\n"
-        "    'arac': os.environ.get('DORNICK_ARAC'),\n"
+        "    'tool': os.environ.get('DORNICK_TOOL'),\n"
         "    'args': os.environ.get('DORNICK_ARGS'),\n"
-        "    'yol': os.environ.get('DORNICK_YOL'),\n"
-        "    'oturum': os.environ.get('DORNICK_OTURUM'),\n"
+        "    'path': os.environ.get('DORNICK_PATH'),\n"
+        "    'session': os.environ.get('DORNICK_SESSION'),\n"
+        "    'legacy': [os.environ.get('DORNICK_ARAC'), os.environ.get('DORNICK_YOL'),\n"
+        "               os.environ.get('DORNICK_OTURUM')],\n"
         "}), encoding='utf-8')\n",
         encoding="utf-8")
-    write_hooks(tmp_path, [{"olay": "arac_oncesi", "arac": "*",
-                            "komut": f'& "{PY}" "{hook_py}"'}])
+    write_hooks(tmp_path, [{"event": "before_tool", "tool": "*",
+                            "command": f'& "{PY}" "{hook_py}"'}])
 
     await hooks.before_tool(
         tmp_path, "write_file",
@@ -240,9 +242,11 @@ async def test_the_hook_receives_its_context_in_the_environment(tmp_path: Path) 
         session="20260101T0000Z", cwd=tmp_path)
 
     seen = json.loads(target.read_text(encoding="utf-8"))
-    assert seen["arac"] == "write_file"
-    assert seen["yol"] == "C:/proje/app.py"
-    assert seen["oturum"] == "20260101T0000Z"
+    assert seen["tool"] == "write_file"
+    assert seen["path"] == "C:/proje/app.py"
+    assert seen["session"] == "20260101T0000Z"
+    # The pre-1.5.5 names stay set: a hook written against them keeps working.
+    assert seen["legacy"] == ["write_file", "C:/proje/app.py", "20260101T0000Z"]
     # The full arguments are passed as JSON as well.
     assert json.loads(seen["args"])["content"] == "x = 1"
 
@@ -256,8 +260,8 @@ async def test_a_pathless_call_still_defines_the_variable(tmp_path: Path) -> Non
         "pathlib.Path(r'''" + str(target) + "''').write_text("
         "repr(os.environ.get('DORNICK_YOL')))\n",
         encoding="utf-8")
-    write_hooks(tmp_path, [{"olay": "arac_oncesi", "arac": "*",
-                            "komut": f'& "{PY}" "{hook_py}"'}])
+    write_hooks(tmp_path, [{"event": "before_tool", "tool": "*",
+                            "command": f'& "{PY}" "{hook_py}"'}])
     await hooks.before_tool(tmp_path, "shell", {"command": "ls"}, cwd=tmp_path)
     assert target.read_text() == "''"
 
@@ -266,16 +270,16 @@ async def test_a_pathless_call_still_defines_the_variable(tmp_path: Path) -> Non
 
 
 async def test_a_post_hook_reports_its_output(tmp_path: Path) -> None:
-    write_hooks(tmp_path, [{"olay": "arac_sonrasi", "arac": "write_file",
-                            "komut": script("print('bicimlendirildi')")}])
+    write_hooks(tmp_path, [{"event": "after_tool", "tool": "write_file",
+                            "command": script("print('bicimlendirildi')")}])
     notes = await hooks.after_tool(tmp_path, "write_file", {}, cwd=tmp_path)
     assert notes == ["kanca: bicimlendirildi"]
 
 
 async def test_a_post_hook_cannot_veto(tmp_path: Path) -> None:
     """The work is already done; 'I refuse' has no consequence."""
-    write_hooks(tmp_path, [{"olay": "arac_sonrasi", "arac": "*",
-                            "komut": script("import sys; print('begenmedim'); sys.exit(2)")}])
+    write_hooks(tmp_path, [{"event": "after_tool", "tool": "*",
+                            "command": script("import sys; print('begenmedim'); sys.exit(2)")}])
     notes = await hooks.after_tool(tmp_path, "shell", {}, cwd=tmp_path)
     assert len(notes) == 1
     assert "çıkış 2" in notes[0] and "begenmedim" in notes[0]
@@ -284,29 +288,29 @@ async def test_a_post_hook_cannot_veto(tmp_path: Path) -> None:
 async def test_a_silent_post_hook_says_nothing(tmp_path: Path) -> None:
     """Producing no noise is essential: an empty line under every write makes
     the real warnings go unread too."""
-    write_hooks(tmp_path, [{"olay": "arac_sonrasi", "arac": "*", "komut": script("pass")}])
+    write_hooks(tmp_path, [{"event": "after_tool", "tool": "*", "command": script("pass")}])
     assert await hooks.after_tool(tmp_path, "shell", {}, cwd=tmp_path) == []
 
 
 async def test_multiline_output_becomes_one_line(tmp_path: Path) -> None:
-    write_hooks(tmp_path, [{"olay": "arac_sonrasi", "arac": "*",
-                            "komut": script("print('bir'); print('iki')")}])
+    write_hooks(tmp_path, [{"event": "after_tool", "tool": "*",
+                            "command": script("print('bir'); print('iki')")}])
     (note,) = await hooks.after_tool(tmp_path, "shell", {}, cwd=tmp_path)
     assert "\n" not in note
     assert "bir iki" in note
 
 
 async def test_stderr_is_used_when_stdout_is_empty(tmp_path: Path) -> None:
-    write_hooks(tmp_path, [{"olay": "arac_sonrasi", "arac": "*",
-                            "komut": script("import sys; print('uyari', file=sys.stderr)")}])
+    write_hooks(tmp_path, [{"event": "after_tool", "tool": "*",
+                            "command": script("import sys; print('uyari', file=sys.stderr)")}])
     (note,) = await hooks.after_tool(tmp_path, "shell", {}, cwd=tmp_path)
     assert "uyari" in note
 
 
 async def test_post_hook_timeout_is_reported_not_fatal(tmp_path: Path) -> None:
-    write_hooks(tmp_path, [{"olay": "arac_sonrasi", "arac": "*",
-                            "komut": script("import time; time.sleep(60)"),
-                            "zaman_asimi": 2}])
+    write_hooks(tmp_path, [{"event": "after_tool", "tool": "*",
+                            "command": script("import time; time.sleep(60)"),
+                            "timeout": 2}])
     (note,) = await hooks.after_tool(tmp_path, "shell", {}, cwd=tmp_path)
     assert "bitmedi ve durduruldu" in note
 
@@ -364,14 +368,14 @@ async def test_the_model_cannot_edit_the_hook_file(
 ) -> None:
     target = ctx.config.state_dir / "hooks.json"
     target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text('[{"olay": "arac_oncesi", "komut": "x"}]', encoding="utf-8")
+    target.write_text('[{"event": "before_tool", "command": "x"}]', encoding="utf-8")
     await registry.get("read_file").handler({"path": str(target)}, ctx)
     result = await registry.get("edit_file").handler(
-        {"path": str(target), "old": "arac_oncesi", "new": "hicbirsey"}, ctx)
+        {"path": str(target), "old": "before_tool", "new": "hicbirsey"}, ctx)
     assert result.is_error
     assert "yazmaya kapalıdır" in result.content
     # The file stands as it was.
-    assert "arac_oncesi" in target.read_text(encoding="utf-8")
+    assert "before_tool" in target.read_text(encoding="utf-8")
 
 
 def _shell_registry() -> tuple[ToolRegistry, list[str]]:
@@ -493,8 +497,8 @@ async def _run(registry: ToolRegistry, ctx: ToolContext, args: dict) -> dict:
 
 async def test_the_executor_blocks_a_refused_call(ctx: ToolContext) -> None:
     write_hooks(ctx.config.state_dir, [{
-        "olay": "arac_oncesi", "arac": "write_file",
-        "komut": script("import sys; print('bu depoda yazma'); sys.exit(1)")}])
+        "event": "before_tool", "tool": "write_file",
+        "command": script("import sys; print('bu depoda yazma'); sys.exit(1)")}])
     registry, traces = _registry()
     block = await _run(registry, ctx, {"path": "app.py"})
     assert block["is_error"]
@@ -504,7 +508,7 @@ async def test_the_executor_blocks_a_refused_call(ctx: ToolContext) -> None:
 
 async def test_the_executor_lets_an_approved_call_through(ctx: ToolContext) -> None:
     write_hooks(ctx.config.state_dir, [{
-        "olay": "arac_oncesi", "arac": "write_file", "komut": script("pass")}])
+        "event": "before_tool", "tool": "write_file", "command": script("pass")}])
     registry, traces = _registry()
     block = await _run(registry, ctx, {"path": "app.py"})
     assert not block["is_error"]
@@ -513,8 +517,8 @@ async def test_the_executor_lets_an_approved_call_through(ctx: ToolContext) -> N
 
 async def test_the_executor_appends_post_hook_output(ctx: ToolContext) -> None:
     write_hooks(ctx.config.state_dir, [{
-        "olay": "arac_sonrasi", "arac": "write_file",
-        "komut": script("print('black ile bicimlendirildi')")}])
+        "event": "after_tool", "tool": "write_file",
+        "command": script("print('black ile bicimlendirildi')")}])
     registry, _traces = _registry()
     block = await _run(registry, ctx, {"path": "app.py"})
     assert "app.py yazıldı." in block["content"]
@@ -548,11 +552,11 @@ def test_a_same_size_rewrite_inside_one_timestamp_tick_is_seen(tmp_path: Path) -
     This was the flake of 2026-09-04 (one run in twelve)."""
     import os
 
-    write_hooks(tmp_path, [{"olay": "arac_oncesi", "komut": "echo bir"}])
+    write_hooks(tmp_path, [{"event": "before_tool", "command": "echo bir"}])
     assert [h.command for h in hooks.load(tmp_path)] == ["echo bir"]
     path = hooks.file_path(tmp_path)
     stamp = path.stat().st_mtime_ns
-    write_hooks(tmp_path, [{"olay": "arac_oncesi", "komut": "echo iki"}])
+    write_hooks(tmp_path, [{"event": "before_tool", "command": "echo iki"}])
     os.utime(path, ns=(stamp, stamp))               # force the same tick
     assert path.stat().st_mtime_ns == stamp
     assert [h.command for h in hooks.load(tmp_path)] == ["echo iki"]

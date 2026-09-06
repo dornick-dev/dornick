@@ -38,13 +38,14 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Callable, Iterable
 
+from .. import legacy_values
 from . import activation, switches
 from .clock import Clock, parse, wall_clock
 
 # Step 1 — Mattar-Daw: gain × need. Failed and corrected sessions are the
 # ones that teach the most; there is little to learn from a routine session.
-GAIN = {"basarisiz": 1.0, "duzeltildi": 1.0, "acik": 0.7,
-          "basarili": 0.4, "rutin": 0.1}
+GAIN = {"failed": 1.0, "corrected": 1.0, "open": 0.7,
+          "succeeded": 0.4, "routine": 0.1}
 
 # The bound for counting as routine: no tool error, no goal, no correction
 # and at most this many turns.
@@ -155,11 +156,11 @@ class ReplaySession:
         return bool(self.outcome)
 
     def gain_class(self) -> str:
-        if self.outcome in ("basarisiz", "duzeltildi", "acik"):
+        if self.outcome in ("failed", "corrected", "open"):
             return self.outcome
         if (not self.error_text and not self.goal_open and not self.correction
                 and self.turns <= ROUTINE_KIND):
-            return "rutin"
+            return "routine"
         return self.outcome or "rutin"
 
 
@@ -240,7 +241,7 @@ def night_pass(
             reverse_replay(store, session, report=report)
         touched.extend(session.sequence)
         processed.append(session)
-        status.setdefault("islenen", {})[session.id] = _stamp(clock)
+        status.setdefault("processed", {})[session.id] = _stamp(clock)
         report.replayed += 1
     report.carried_over = len(sessions) - len(processed)
 
@@ -271,7 +272,7 @@ def night_pass(
     # budget 20).
     report.warmed, report.cooled = store.update_heat(COLD_THRESHOLD)
 
-    status["son_kosu"] = _stamp(clock)
+    status["last_run"] = _stamp(clock)
     _write_watermark(watermark, status)
     report.seconds = round(time.perf_counter() - started, 3)
     _append_journal(sessions_dir, report, clock)
@@ -296,7 +297,7 @@ def prioritised_sessions(
     will touch them in the future too.
     """
     status = status if status is not None else _read_watermark(watermark)
-    processed = set((status.get("islenen") or {}).keys())
+    processed = set((status.get("processed") or {}).keys())
     now = clock()
     out: list[ReplaySession] = []
     for path in sorted(sessions_dir.glob("*.jsonl")):
@@ -457,7 +458,7 @@ def reverse_replay(store: Any, session: ReplaySession, *,
     if not sequence:
         return report
 
-    if session.outcome == "basarili":
+    if session.outcome == "succeeded":
         for k, node_id in enumerate(reversed(sequence)):
             store.add_use(node_id, w=SUCCESS_SHARE * SHARE_DECAY ** k,
                                 label=activation.SUCCESS)
@@ -472,7 +473,7 @@ def reverse_replay(store: Any, session: ReplaySession, *,
                                links=sequence[-3:], session=session.id)
                 report.procedures_written += 1
 
-    elif session.outcome in ("basarisiz", "duzeltildi"):
+    elif session.outcome in ("failed", "corrected"):
         for k, node_id in enumerate(reversed(sequence)):
             store.add_use(node_id, w=FAILURE_SHARE * SHARE_DECAY ** k,
                                 label=activation.FAILURE)
@@ -502,12 +503,12 @@ def reverse_replay(store: Any, session: ReplaySession, *,
                     tags=["gece", "hata"], links=[source], session=session.id)
                 report.lessons_written += 1
 
-    elif session.outcome == "acik":
+    elif session.outcome == "open":
         # An open goal is left alone — let Phase 1 decay do its work. But
         # "where you left off" should be a node the next session can find.
         store.remember(
             f"Yarım kalan iş ({session.id}): son dokunulan kayıtlar {', '.join(sequence[-2:])}",
-            kind="goal", tags=["acik"], links=sequence[-2:], session=session.id)
+            kind="goal", tags=["open"], links=sequence[-2:], session=session.id)
         report.goals_written += 1
     return report
 
@@ -630,8 +631,8 @@ def _read_session(path: Path) -> ReplaySession | None:
             continue
         if event.get("kind") != "meta":
             continue
-        name = event.get("content")
-        meta = event.get("meta") or {}
+        name, meta = legacy_values.session_note(
+            str(event.get("content") or ""), event.get("meta") or {})
         moment = parse(event.get("ts"))
 
         if name in TOUCH:
@@ -651,18 +652,18 @@ def _read_session(path: Path) -> ReplaySession | None:
         elif name == "tool_end":
             session.tools.append(str(meta.get("tool") or ""))
             if meta.get("error"):
-                session.error_text = str(meta.get("ozet") or meta.get("tool") or "hata")
+                session.error_text = str(meta.get("summary") or meta.get("tool") or "error")
         elif name == "goal_push":
             session.goal_open = True
         elif name == "goal_status":
             session.goal_open = False
-        elif name == "ters_tekrar_kostu":
+        elif name == "reverse_replay_done":
             session.reverse_done = True
-        elif name == "ileri_tekrar_kostu":
+        elif name == "forward_replay_mark":
             session.forward_index = max(session.forward_index,
                                         int(meta.get("n") or 0))
-        elif name == "sonuc":
-            session.outcome = str(meta.get("sonuc") or "")
+        elif name == "outcome":
+            session.outcome = str(meta.get("outcome") or "")
             session.end = moment
     if session.end is None:
         session.end = parse(json.loads(lines[-1]).get("ts")) if lines else None
@@ -678,12 +679,14 @@ def _stamp(clock: Clock) -> str:
 
 def _read_watermark(path: Path | None) -> dict[str, Any]:
     if path is None or not Path(path).exists():
-        return {"islenen": {}}
+        return {"processed": {}}
     try:
         status = json.loads(Path(path).read_text(encoding="utf-8"))
     except (OSError, ValueError):
-        return {"islenen": {}}
-    status.setdefault("islenen", {})
+        return {"processed": {}}
+    # A watermark written before 1.5.5 keys the same map `islenen`.
+    status = legacy_values.keys(status, legacy_values.WATERMARK_KEYS)
+    status.setdefault("processed", {})
     return status
 
 

@@ -145,7 +145,7 @@ def test_logs_are_written_in_the_products_own_format(bench, holdout, tmp_path) -
             if event["kind"] == "meta":
                 kinds.add(event["content"])
     # What the night replay needs: what was touched, how the session ended.
-    assert {"session_start", "mind_write", "mind_open", "prime", "sonuc"} <= kinds
+    assert {"session_start", "mind_write", "mind_open", "prime", "outcome"} <= kinds
 
 
 def test_log_stamps_come_from_the_virtual_calendar(bench, holdout, tmp_path) -> None:

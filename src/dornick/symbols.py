@@ -101,7 +101,7 @@ class Reference:
     file: str
     line: int
     text: str
-    kind: str = "anma"   # cagri | kurulum | ice_aktarma | anma
+    kind: str = "mention"   # call | setup | import | mention
 
     def format(self, root: Path | None = None) -> str:
         return f"{_short(self.file, root)}:{self.line}: {self.text}"
@@ -127,7 +127,7 @@ class Result:
         """Only a result coming from a real parser is exact."""
         return bool(self.languages) and self.languages <= EXACT
 
-    def text(self, *, kind: str = "hepsi") -> str:
+    def text(self, *, kind: str = "all") -> str:
         if not self.languages:
             return (
                 f"{self.root} altında yapısal arama yapabildiğim bir dosya yok. "
@@ -136,9 +136,9 @@ class Result:
             )
 
         lines: list[str] = []
-        if kind in ("tanim", "hepsi"):
+        if kind in ("definitions", "all"):
             lines += self._definition_section()
-        if kind in ("kullanim", "hepsi"):
+        if kind in ("usages", "all"):
             if lines:
                 lines.append("")
             lines += self._usage_section()
@@ -348,15 +348,15 @@ def python_usages(
             ident = (getattr(target, "id", None) if isinstance(target, ast.Name)
                      else getattr(target, "attr", None))
             if ident == name:
-                add(node.lineno, "cagri")
+                add(node.lineno, "call")
         elif isinstance(node, (ast.Import, ast.ImportFrom)):
             for alias in node.names:
                 if alias.name.rsplit(".", 1)[-1] == name or alias.asname == name:
-                    add(node.lineno, "ice_aktarma")
+                    add(node.lineno, "import")
         elif isinstance(node, ast.Name) and node.id == name:
-            add(node.lineno, "anma")
+            add(node.lineno, "mention")
         elif isinstance(node, ast.Attribute) and node.attr == name:
-            add(node.lineno, "anma")
+            add(node.lineno, "mention")
     return list(found.values())
 
 
@@ -435,13 +435,13 @@ def _usage_pattern(name: str) -> re.Pattern[str]:
 def _usage_kind(line: str, name: str) -> str:
     flat = line.strip()
     if re.search(rf"\bnew\s+{re.escape(name)}\b", flat):
-        return "kurulum"
+        return "setup"
     if re.match(r"^\s*(use|import|require|from|include)\b", flat):
-        return "ice_aktarma"
+        return "import"
     if re.search(rf"(?<![\w$]){re.escape(name)}\s*\(", flat) or \
        re.search(rf"->\s*{re.escape(name)}\s*\(", flat):
-        return "cagri"
-    return "anma"
+        return "call"
+    return "mention"
 
 
 def pattern_usages(
@@ -466,7 +466,7 @@ def search(
     root: Path | str,
     query: str,
     *,
-    kind: str = "hepsi",
+    kind: str = "all",
     language: str | None = None,
     limit: int = MAX_FILES,
     depth: int = MAX_DEPTH,
@@ -517,7 +517,7 @@ def search(
                            if needle in s.name.lower()]
         result.loose = bool(result.definitions)
 
-    if kind == "tanim":
+    if kind == "definitions":
         return result
 
     # Usages always go by the EXACT name: while searching "kaydet" in loose

@@ -194,7 +194,7 @@ UZUN SÜREN SÜREÇLER — iki ayrı kip, karıştırma:
                     "description": "HİÇ bitmeyen süreç (sunucu gibi) için: detached "
                                    "başlar, komutun bitmesini beklemez, turu bloke etmez.",
                 },
-                "arka_plan": {
+                "job": {
                     "type": "boolean",
                     "description": "Uzun ama BİTEN iş (derleme, kurulum, test, "
                                    "indirme) için: komut arkada koşar, araç hemen "
@@ -313,7 +313,7 @@ UZUN SÜREN SÜREÇLER — iki ayrı kip, karıştırma:
         # with a harness note (the same notification infrastructure as the
         # helpers). A server-type command does not enter here — it never
         # ends, the detached path above is for it.
-        if args.get("arka_plan") and ctx.job_bg is not None:
+        if args.get("job") and ctx.job_bg is not None:
             session_id = ctx.session.id
             job_timeout = float(args.get("timeout") or JOB_TIMEOUT_S)
 

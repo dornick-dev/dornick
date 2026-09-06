@@ -18,7 +18,7 @@ import pytest
 from dornick.config import Config
 from dornick.events import EventLog
 from dornick.mind import Mind, open_mind
-from dornick.tools.checkpoint import FOLDER, Defter
+from dornick.tools.checkpoint import FOLDER, Ledger
 from dornick.web import MindServer
 
 
@@ -131,8 +131,8 @@ class FakeBridge:
         return {"busy": False}
 
     def tasks(self) -> dict:
-        return {"tasks": [{"id": "c:abc", "name": "model eğitimi", "kind": "iş",
-                           "state": "kosuyor", "started": 1.0, "ended": 0.0,
+        return {"tasks": [{"id": "c:abc", "name": "model eğitimi", "kind": "job",
+                           "state": "running", "started": 1.0, "ended": 0.0,
                            "summary": "", "session": "", "stoppable": True}],
                 "running": 1}
 
@@ -235,7 +235,7 @@ def test_a_failed_job_report_page_reads_like_a_report_not_a_trace(
                 "ok": True,
                 "id": "c:70032d",
                 "title": "$ py tarama_modbus.py",
-                "state": "hata",
+                "state": "error",
                 "text": job_report(
                     command="py tarama_modbus.py",
                     code=1,
@@ -282,7 +282,7 @@ def test_a_successful_job_report_page_leads_with_summary_not_logs(
                 "ok": True,
                 "id": "c:abc123",
                 "title": "$ $ErrorActionPreference='Stop'; ./dotnet-install.ps1",
-                "state": "bitti",
+                "state": "done",
                 "text": success_report(
                     command="$ErrorActionPreference='Stop'; ./dotnet-install.ps1",
                     text=log,
@@ -314,9 +314,9 @@ def test_a_successful_job_report_page_leads_with_summary_not_logs(
 # -- "what changed this turn" + undo ------------------------------------
 
 
-def _write_ledger(config: Config, target: Path, old: str, new: str) -> Defter:
+def _write_ledger(config: Config, target: Path, old: str, new: str) -> Ledger:
     """The same thing the tool layer does: take a snapshot BEFORE changing."""
-    ledger = Defter(Path(config.state_dir) / FOLDER, "cur")
+    ledger = Ledger(Path(config.state_dir) / FOLDER, "cur")
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(old, encoding="utf-8")
     ledger.save(target, "edit_file")
@@ -388,7 +388,7 @@ def test_a_new_file_is_undone_by_deleting_it(tmp_path: Path, mind: Mind) -> None
     server, config, log = _setup(tmp_path, mind)
     fresh = Path(config.workspace) / "taze.txt"
     try:
-        ledger = Defter(Path(config.state_dir) / FOLDER, "cur")
+        ledger = Ledger(Path(config.state_dir) / FOLDER, "cur")
         ledger.save(fresh, "write_file")     # the file does not exist yet
         fresh.write_text("içerik", encoding="utf-8")
         record = _get(server, "/api/changes")["records"][0]
@@ -440,20 +440,20 @@ class FakePricedBridge:
     _budget_brake = Bridge._budget_brake
 
     def __init__(self, input_tokens: int, output_tokens: int, pricing: dict | None) -> None:
-        self._session_usage = {"girdi": input_tokens, "cikti": output_tokens, "cagri": 1}
+        self._session_usage = {"input": input_tokens, "output": output_tokens, "calls": 1}
         self._price = pricing
         self._budget_usd = None
         self._budget_reported = False
 
 
 def test_the_brake_stays_silent_without_a_cap() -> None:
-    bridge = FakePricedBridge(1_000_000, 0, {"girdi": 1e-5, "cikti": 3e-5})
+    bridge = FakePricedBridge(1_000_000, 0, {"input": 1e-5, "output": 3e-5})
     assert bridge._budget_brake() == ""
 
 
 def test_the_brake_speaks_once_the_session_passes_the_cap() -> None:
     # 1M input × $10/M = $10 spent; cap $5.
-    bridge = FakePricedBridge(1_000_000, 0, {"girdi": 1e-5, "cikti": 3e-5})
+    bridge = FakePricedBridge(1_000_000, 0, {"input": 1e-5, "output": 3e-5})
     bridge.budget(5)
     message = bridge._budget_brake()
     assert "Bütçe sınırına ulaşıldı ($5.00)" in message
@@ -475,7 +475,7 @@ def test_the_brake_will_not_stop_work_on_a_made_up_price() -> None:
 
 
 def test_an_empty_or_zero_cap_means_no_cap() -> None:
-    bridge = FakePricedBridge(1_000_000, 0, {"girdi": 1e-5, "cikti": 3e-5})
+    bridge = FakePricedBridge(1_000_000, 0, {"input": 1e-5, "output": 3e-5})
     assert bridge.budget("")["budget"] is None
     assert bridge.budget(0)["budget"] is None
     assert bridge.budget(-3)["budget"] is None

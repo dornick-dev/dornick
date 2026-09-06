@@ -30,7 +30,7 @@ async def test_stop_task_clears_ghost_running_schedule(
     book = Schedule(tmp_path)
     task = Task(
         id="job_ml", title="Market Lens", prompt="tara",
-        last_status="koşuyor", last_child_id="dead01",
+        last_status="running", last_child_id="dead01",
     )
     book.add(task)
 
@@ -42,7 +42,7 @@ async def test_stop_task_clears_ghost_running_schedule(
     result = await asyncio.to_thread(bridge.stop_task, "c:dead01")
     assert result.get("ok") is True
     assert result.get("cleared") is True
-    assert book.get("job_ml").last_status == "kesildi"
+    assert book.get("job_ml").last_status == "interrupted"
 
 
 @pytest.mark.asyncio
@@ -55,7 +55,7 @@ async def test_stop_task_archives_meter_on_stop(
     book = Schedule(tmp_path)
     task = Task(
         id="job_ml2", title="Market Lens", prompt="tara",
-        last_status="koşuyor", last_child_id="live01",
+        last_status="running", last_child_id="live01",
     )
     book.add(task)
 
@@ -68,7 +68,7 @@ async def test_stop_task_archives_meter_on_stop(
         started_ts=__import__("time").time() - 125,
         last_tool="web_search", last_goal="BIST",
         tools_count=7,
-        usage={"girdi": 8000, "cikti": 400, "cagri": 5},
+        usage={"input": 8000, "output": 400, "calls": 5},
     )
     run = task_runs.start_run(
         state, "job_ml2", title="Market Lens", child_id="live01")
@@ -83,9 +83,9 @@ async def test_stop_task_archives_meter_on_stop(
 
     done = task_runs.get_run(state, "job_ml2", run.id)
     assert done is not None
-    assert done.status == "hata"
+    assert done.status == "error"
     assert "Kullanıcı durdurdu" in (done.report or "")
-    assert done.usage and done.usage["girdi"] == 8000
+    assert done.usage and done.usage["input"] == 8000
     assert done.tools == 7
     assert done.duration_s >= 120
     assert "web_search" in (done.last_tool or "")
@@ -115,4 +115,4 @@ async def test_child_waiting_at_agent_gate_can_be_stopped(
     await stop_task
 
     assert out == "(kesildi)"
-    assert handle.state == "hata"
+    assert handle.state == "error"

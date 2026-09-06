@@ -446,22 +446,22 @@ Lang.add({ "Açıklama ▸": "Key ▸", "Açıklama ▾": "Key ▾" });
   const apply = (on) => {
     document.body.classList.toggle("mind-on", on);
     document.body.classList.toggle("mind-off", !on);
-    try { localStorage.setItem("dornick-mind", on ? "acik" : "kapali"); } catch { /* file:// */ }
+    try { localStorage.setItem("dornick-mind", on ? "on" : "off"); } catch { /* file:// */ }
     if (on) Scene.resume(); else Scene.pause();
   };
   let saved = null;
   try { saved = localStorage.getItem("dornick-mind"); } catch { /* file:// */ }
-  apply(saved !== "kapali");
+  apply(saved !== "off" && saved !== "kapali");
   // Should the brain grow in the CENTRE (ambient)? Managed from Settings;
   // when off the brain stays in the right panel and the centre scene dims —
   // "the text disappears under the brain" (live request, 31.08).
   try {
-    if (localStorage.getItem("dornick-brain-ambient") === "kapali")
+    if (["off", "kapali"].includes(localStorage.getItem("dornick-brain-ambient")))
       document.body.classList.add("no-ambient");
   } catch { /* file:// */ }
   window.brainCentered = (on) => {
     document.body.classList.toggle("no-ambient", !on);
-    try { localStorage.setItem("dornick-brain-ambient", on ? "acik" : "kapali"); } catch {}
+    try { localStorage.setItem("dornick-brain-ambient", on ? "on" : "off"); } catch {}
   };
   $("mind-close").addEventListener("click", () => apply(false));
   // ◍ is now a two-way switch: no floating header (›) in ambient mode; this
@@ -486,11 +486,11 @@ Lang.add({ "Açıklama ▸": "Key ▸", "Açıklama ▾": "Key ▾" });
       b.classList.toggle("on", on);
       b.textContent = on ? t("Açıklama ▾") : t("Açıklama ▸");
     }
-    try { localStorage.setItem("dornick-legend", on ? "acik" : "kapali"); } catch { /* file:// */ }
+    try { localStorage.setItem("dornick-legend", on ? "on" : "off"); } catch { /* file:// */ }
   };
   let leg = null;
   try { leg = localStorage.getItem("dornick-legend"); } catch { /* file:// */ }
-  applyLegend(leg === "acik");
+  applyLegend(leg === "on" || leg === "acik");
   chips.addEventListener("click", () =>
     applyLegend(!chips.classList.contains("on")));
   if (chipsStrip) chipsStrip.addEventListener("click", () =>
@@ -1294,7 +1294,7 @@ function setBusy(value) {
   // "loading" through long tool-running stretches was a live wound.
   if (value && !busy) turnActivity = false;
   busy = value;
-  // The sidebar row of THIS chat flips to "koşuyor" when the turn starts
+  // The sidebar row of THIS chat flips to "running" when the turn starts
   // and back when it ends (live wound, 05.09: "running work does not show
   // here") — the list only reloaded on a title event before. The second
   // poke covers the server flagging itself busy a beat after the click.
@@ -2373,7 +2373,7 @@ function trainingIcon(state) {
     trainingRunning = false;
     lastTrainedAt = new Date().toISOString();
   }
-  icon.classList.toggle("kosuyor", trainingRunning);
+  icon.classList.toggle("running", trainingRunning);
   icon.title = trainingRunning
     ? t("Şu an seni tanıyorum — eğitim arka planda sürüyor")
     : t("Beni tanı açık") + " · " + t("son eğitim") + ": " + trainingDate()
@@ -2391,7 +2391,7 @@ const TRAINING_REASONS = {
   duzenek_yok: "Eğitim düzeneği bu makinede kurulu değil.",
   kapali: "Beni tanı kapalı — Ayarlar'dan açabilirsin.",
   ara_yok: "Henüz sırası değil — yeni anılar biriktikçe kendiliğinden çalışacak.",
-  baslatilamadi: "Eğitim başlatılamadı.",
+  failed_to_start: "Eğitim başlatılamadı.",
 };
 
 $("tanima-ikon").addEventListener("click", async () => {
@@ -2399,8 +2399,8 @@ $("tanima-ikon").addEventListener("click", async () => {
   // state, and opening a second run is impossible anyway (singleton process).
   if (trainingRunning) return;
   const answer = await post("/api/recognition", { now: true });
-  const reason = (answer && answer.reason) || "baslatilamadi";
-  line("alert", t(TRAINING_REASONS[reason] || TRAINING_REASONS.baslatilamadi));
+  const reason = (answer && answer.reason) || "failed_to_start";
+  line("alert", t(TRAINING_REASONS[reason] || TRAINING_REASONS.failed_to_start));
 });
 
 fetch("/api/recognition").then((r) => r.json()).then((d) => {
@@ -2745,7 +2745,7 @@ function paintCtxBar(bar, breakdown, window_, used) {
   const cap = window_ || used || 1;
   const parts = (breakdown || []).filter((p) => (p.n || 0) > 0);
   if (!parts.length && used) {
-    const i = mk("i", "ctx-seg sohbet");
+    const i = mk("i", "ctx-seg chat");
     i.style.width = Math.min(100, (used / cap) * 100) + "%";
     bar.append(i);
     return;
@@ -2800,11 +2800,11 @@ function money(n) {
   return "$" + (n >= 0.01 || n === 0 ? n.toFixed(2) : n.toFixed(3));
 }
 
-function costOf(k) { return k.girdi * price.girdi + k.cikti * price.cikti; }
+function costOf(k) { return k.input * price.input + k.output * price.output; }
 
 function shortTok(n) { return (n >= 1000 ? (n / 1000).toFixed(1) + "k" : String(n)); }
 
-function isPremium() { return !!(price && price.cikti * 1e6 > PREMIUM_USD_M); }
+function isPremium() { return !!(price && price.output * 1e6 > PREMIUM_USD_M); }
 
 function dockCost() {
   const chip = $("dock-cost");
@@ -2812,14 +2812,14 @@ function dockCost() {
   const session = usage.session;
   // The chip shows the SESSION total — reopening a conversation seeds past
   // spend here too. "This turn" stays in the breakdown.
-  const hasAny = session && (session.girdi || session.cikti || session.cagri);
+  const hasAny = session && (session.input || session.output || session.calls);
   if (!hasAny && !budget) { chip.hidden = true; return; }
   chip.hidden = false;
   chip.classList.toggle("premium", isPremium());
   const spent = price && session ? costOf(session) : null;
   let text = !hasAny ? "≈$0.00"
     : price ? "≈" + money(spent)
-    : shortTok((session.girdi || 0) + (session.cikti || 0)) + " tok";
+    : shortTok((session.input || 0) + (session.output || 0)) + " tok";
   // With a cap the chip carries two numbers at once: what the session spent
   // and what the ceiling is. "How much is left" gets answered without
   // opening the box.
@@ -2827,7 +2827,7 @@ function dockCost() {
   chip.textContent = text;
   chip.classList.toggle("over", !!(budget && spent != null && spent >= budget));
   chip.title = t("Bu oturumun tahmini toplam harcaması — tıkla: kırılım")
-    + (turn && (turn.girdi || turn.cikti) && price
+    + (turn && (turn.input || turn.output) && price
       ? t(" · bu tur: ") + "≈" + money(costOf(turn)) : "")
     + (budget ? t(" · oturum sınırı: ") + money(budget) : "")
     + (isPremium() ? t(" · premium model (çıktı > $20/M)") : "");
@@ -2841,21 +2841,21 @@ $("dock-cost").addEventListener("click", () => {
   const tr = (n) => (n || 0).toLocaleString("tr-TR");
   const row = (text) => pop.append(mk("div", "pop-note", text));
   const turn = usage.turn, session = usage.session;
-  if (!session || !session.cagri) {
+  if (!session || !session.calls) {
     row(t("Bu oturumda henüz tur yok."));
   } else if (price) {
     if (isPremium()) row(t("Premium model: çıktı priceı $20/M üstünde."));
     row(t("Bu tur: ") + "≈" + money(turn ? costOf(turn) : 0)
       + " · " + t("oturum: ") + "≈" + money(costOf(session)));
-    row(t("Girdi: ") + tr(session.girdi) + t(" token") + " × $"
-      + (price.girdi * 1e6).toFixed(2) + "/M = " + money(session.girdi * price.girdi));
-    row(t("Çıktı: ") + tr(session.cikti) + t(" token") + " × $"
-      + (price.cikti * 1e6).toFixed(2) + "/M = " + money(session.cikti * price.cikti));
+    row(t("Girdi: ") + tr(session.input) + t(" token") + " × $"
+      + (price.input * 1e6).toFixed(2) + "/M = " + money(session.input * price.input));
+    row(t("Çıktı: ") + tr(session.output) + t(" token") + " × $"
+      + (price.output * 1e6).toFixed(2) + "/M = " + money(session.output * price.output));
     row(t("Tahmin — önbellek indirimi hesaba katılmaz."));
   } else {
     row(t("Fiyat bilinmiyor — yalnız token sayısı."));
-    row(t("Girdi: ") + tr(session.girdi) + t(" token")
-      + " · " + t("Çıktı: ") + tr(session.cikti) + t(" token"));
+    row(t("Girdi: ") + tr(session.input) + t(" token")
+      + " · " + t("Çıktı: ") + tr(session.output) + t(" token"));
   }
   pop.append(budgetField());
   placePop($("dock-cost"));
@@ -4004,8 +4004,8 @@ function onWaiting(e) {
   paintWait();
 }
 
-// The wait ended: "bitti" → the row turns green and the strip returns to
-// normal; "iptal" → the row dims. In both cases the warning tone leaves the
+// The wait ended: "done" → the row turns green and the strip returns to
+// normal; "cancelled" → the row dims. In both cases the warning tone leaves the
 // header.
 function closeWait(e) {
   if (!waitState) return;
@@ -4697,7 +4697,7 @@ function artifactCard(e) {
     // Update: the card stays in place; the title and badge refresh.
     found.querySelector(".art-title").textContent = e.title || e.id;
     const badge = found.querySelector(".art-badge");
-    badge.textContent = "v" + (e.surum || 1) + " · " + t("güncellendi");
+    badge.textContent = "v" + (e.version || 1) + " · " + t("güncellendi");
     badge.classList.add("fresh");
     found._art = e;
     reflash(found);
@@ -4736,7 +4736,7 @@ function artifactCard(e) {
   main.append(meta);
 
   const badge = el2("span", "art-badge",
-    "v" + (e.surum || 1) + " · " + t(e.surum > 1 ? "güncellendi" : "yayınlandı"));
+    "v" + (e.version || 1) + " · " + t(e.version > 1 ? "güncellendi" : "yayınlandı"));
 
   const open = el2("button", "art-open", t("Aç"));
   open.type = "button";
@@ -4824,13 +4824,13 @@ function pinPlanCards() {
 }
 
 function planPending(card) {
-  const status = (card._plan && card._plan.status) || "bekliyor";
-  return status === "bekliyor";
+  const status = (card._plan && card._plan.status) || "waiting";
+  return status === "waiting";
 }
 
 function applyPlanDecision(card) {
   // Decision buttons have no business on a decided card: Approve/Edit/Cancel
-  // only show in the "bekliyor" state.
+  // only show in the "waiting" state.
   const acts = card.querySelector(".plan-acts");
   if (acts) acts.style.display = planPending(card) ? "" : "none";
 }
@@ -4858,7 +4858,7 @@ function showPlanCard(e) {
   const head = el2("div", "plan-head");
   head.append(el2("span", "plan-kind", t("Plan")));
   head.append(el2("span", "plan-title", e.title || e.id));
-  head.append(el2("span", "plan-status", e.status || "bekliyor"));
+  head.append(el2("span", "plan-status", t(e.status || "waiting")));
   card.append(head);
   renderPlanSteps(card, e);
   const acts = el2("div", "plan-acts");
@@ -4946,7 +4946,7 @@ function enterPlanEdit(card) {
       });
       card._plan = {
         ...plan,
-        steps: listSteps.map((text, i) => ({ id: "s" + (i + 1), text, status: "bekliyor" })),
+        steps: listSteps.map((text, i) => ({ id: "s" + (i + 1), text, status: "waiting" })),
       };
     } finally {
       leave();
@@ -4967,10 +4967,10 @@ function renderPlanSteps(card, e) {
   // As the agent marks via the `plan` tool's step action the card advances
   // live — on an approved plan, "which stage are we at" reads from here.
   for (const s of e.steps || []) {
-    const st = (s && s.status) || "bekliyor";
-    const li = el2("li", "plan-step " + st);
+    const st = (s && s.status) || "waiting";
+    const li = el2("li", "plan-step step-" + st);
     li.append(el2("span", "plan-tick",
-                  st === "bitti" ? "✓" : st === "yapiliyor" ? "▸" : "○"));
+                  st === "done" ? "✓" : st === "in_progress" ? "▸" : "○"));
     li.append(el2("span", null, s.text || s.title || String(s)));
     list.append(li);
   }
@@ -5581,7 +5581,7 @@ async function loadState() {
     // The cost chip is seeded from here for the same reason: a refresh must
     // not zero the spend gauge.
     if (s.price) price = s.price;
-    if (s.usage && s.usage.session && s.usage.session.cagri) usage = s.usage;
+    if (s.usage && s.usage.session && s.usage.session.calls) usage = s.usage;
     // The budget cap comes from the seed too: a refreshed page must not forget the seatbelt.
     budget = s.budget == null ? null : Number(s.budget);
     dockCost();
@@ -5642,14 +5642,19 @@ setTimeout(async () => {
 // nagging.
 function updateToast(info) {
   if (!info || !info.new || document.getElementById("update-toast")) return;
-  const KEY = "dornickGuncellemeBildirim";
+  const KEY = "dornick-update-notice";
+  const LEGACY_KEY = "dornickGuncellemeBildirim";   // pre-1.5.5 key: {zaman, surum, kapatilan}
   try {
-    const k = JSON.parse(localStorage.getItem(KEY) || "{}");
-    if (k.kapatilan === info.new) return;                    // they handled this version
-    if (k.zaman && Date.now() - k.zaman < 24 * 60 * 60 * 1000) return;  // once a day
+    let k = JSON.parse(localStorage.getItem(KEY) || "{}");
+    if (!k.time && !k.version) {
+      const old = JSON.parse(localStorage.getItem(LEGACY_KEY) || "{}");
+      k = { time: old.zaman, version: old.surum, dismissed: old.kapatilan };
+    }
+    if (k.dismissed === info.new) return;                    // they handled this version
+    if (k.time && Date.now() - k.time < 24 * 60 * 60 * 1000) return;  // once a day
   } catch { /* corrupt record — show */ }
   try {
-    localStorage.setItem(KEY, JSON.stringify({ zaman: Date.now(), surum: info.new }));
+    localStorage.setItem(KEY, JSON.stringify({ time: Date.now(), version: info.new }));
   } catch { /* localStorage off */ }
 
   const box = document.createElement("div");
@@ -5681,7 +5686,7 @@ function updateToast(info) {
   closeBtn.onclick = () => {
     try {
       localStorage.setItem(KEY, JSON.stringify({
-        zaman: Date.now(), surum: info.new, kapatilan: info.new }));
+        time: Date.now(), version: info.new, dismissed: info.new }));
     } catch { /* localStorage off */ }
     box.remove();
   };

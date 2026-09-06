@@ -128,11 +128,11 @@ class Project:
     howto: str = ""           # README / how to run (short)
     single: bool = False      # single-file (not a folder)
     # Validation: if the manifest promises something and does not deliver
-    # the app is NOT DROPPED from the list — it stays with an "eksik" badge
+    # the app is NOT DROPPED from the list — it stays with a "missing" badge
     # and its REASON. Silently vanishing ("I made my app but it isn't in the
     # panel") was exactly the flaw fixed. (Wire keys: `eksik`, `neden`.)
-    eksik: bool = False
-    neden: str = ""
+    missing: bool = False
+    reason: str = ""
     # Live state: is there a running process belonging to this app.
     pid: int = 0
     address: str = ""         # "http://127.0.0.1:8090"
@@ -161,13 +161,13 @@ def project_index(sandbox_root: Path, base: Path | None = None,
     Manifests at the workshop ROOT are NOT apps: the workshop is not an app,
     it is where apps live. Stray files like `app.json` or
     `llm-donanim-app.json` at the root are ignored and reported under
-    `sorunlar` WITH THE REASON — when the model writes the manifest in the
+    `problems` WITH THE REASON — when the model writes the manifest in the
     wrong place it gets an instructive warning, not silence.
     """
     root = sandbox_root.resolve()
     ref = (base or root).resolve()
     if not root.is_dir():
-        return {"projects": [], "sorunlar": []}
+        return {"projects": [], "problems": []}
 
     problems = _stray_manifests(root)
     stray = {s["path"] for s in problems}
@@ -176,7 +176,7 @@ def project_index(sandbox_root: Path, base: Path | None = None,
     try:
         entries = sorted(root.iterdir(), key=lambda p: (p.is_file(), p.name.lower()))
     except OSError:
-        return {"projects": [], "sorunlar": problems}
+        return {"projects": [], "problems": problems}
 
     for path in entries:
         # Hidden, internal infrastructure, or temp/lock files (~$Word.docx,
@@ -193,7 +193,7 @@ def project_index(sandbox_root: Path, base: Path | None = None,
 
     if live:
         _mark_live(out, root, ref)
-    return {"projects": [asdict(p) for p in out], "sorunlar": problems}
+    return {"projects": [asdict(p) for p in out], "problems": problems}
 
 
 def _stray_manifests(root: Path) -> list[dict[str, str]]:
@@ -289,8 +289,8 @@ def _project_from_folder(folder: Path, root: Path) -> Project:
             url=str(manifest.get("url") or ""),
             desc=str(manifest.get("desc") or "") or _first_line(howto),
             howto=str(manifest.get("howto") or howto),
-            eksik=bool(reason),
-            neden=reason,
+            missing=bool(reason),
+            reason=reason,
             port=_port_hint(folder, manifest, entry_rel),
         )
 
@@ -310,7 +310,7 @@ def _project_from_folder(folder: Path, root: Path) -> Project:
 def _validate(folder: Path, entry_rel: str, run_cmd: str) -> str:
     """Does the manifest keep its promise? If not, the REASON (else empty text).
 
-    The app does not drop from the list — it stays with the "eksik" badge
+    The app does not drop from the list — it stays with the "missing" badge
     and its reason. A mistyped `entry` ("site/llm-donanım.html" while the
     file is `llm-donanim.html`) used to silently become an empty Open
     button; now the reason is written on the card.

@@ -102,7 +102,7 @@ def test_calibration_uses_what_the_levered_prompt_moved(tmp_path: Path) -> None:
     temperament.save(tmp_path, base, Temperament(caution=0.9), "model-a")
     report = character.handle_model_change(tmp_path, "model-deaf", _fake_ask({"caution": 0.5}, levered_shift=0.0))
     assert report is not None
-    assert report.gain["temkin"] > 1.0                        # no movement -> more
+    assert report.gain["caution"] > 1.0                        # no movement -> more
 
 
 def test_exemplar_file_keeps_the_model_id_and_reads_the_old_list_form(tmp_path: Path) -> None:
@@ -153,7 +153,7 @@ def test_the_daemon_measures_a_new_model_on_its_tick(daemon) -> None:
     d.tick()
     assert temperament.load(d.state_dir)[2] == "model-a"
     kinds = [e["event"] for e in hub.events if e.get("type") == "character"]
-    assert kinds == ["karakter.olcum"]
+    assert kinds == ["character.measured"]
     d.tick()
     assert len([e for e in hub.events if e.get("type") == "character"]) == 1   # once
 

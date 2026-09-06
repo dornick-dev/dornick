@@ -26,6 +26,7 @@ from pathlib import Path
 from typing import Any, Iterable
 from uuid import uuid4
 
+from .. import legacy_names, legacy_values
 from ..recall import Step, open_store
 from ..recall.clock import Clock, stamp, wall_clock
 from .search import Scored, excerpt, rank
@@ -733,7 +734,7 @@ class Mind:
         return self.sessions_dir / "_oturumlar.json"
 
     def session_meta(self) -> dict[str, dict[str, Any]]:
-        """Session → {ad, etiketler, path, model, provider}.
+        """Session → {name, tags, path, model, provider}.
 
         Sessions without a record are absent. `path` is the working folder;
         `model`/`provider` the model specific to this chat (applied on switch).
@@ -751,10 +752,12 @@ class Mind:
         for key, value in data.items():
             if not isinstance(value, dict):
                 continue
-            tags = value.get("etiketler")
+            # A file written before 1.5.5 says `ad`/`etiketler`.
+            value = legacy_values.keys(value, legacy_values.SESSION_META_KEYS)
+            tags = value.get("tags")
             out[str(key)] = {
-                "ad": str(value.get("ad") or ""),
-                "etiketler": [str(e) for e in tags] if isinstance(tags, list) else [],
+                "name": str(value.get("name") or ""),
+                "tags": [str(e) for e in tags] if isinstance(tags, list) else [],
                 "path": str(value.get("path") or "").strip(),
                 "model": str(value.get("model") or "").strip(),
                 "provider": str(value.get("provider") or "").strip(),
@@ -779,17 +782,17 @@ class Mind:
         with self._lock:
             mapping = self.session_meta()
             record = mapping.get(session_id, {
-                "ad": "", "etiketler": [], "path": "", "model": "", "provider": "",
+                "name": "", "tags": [], "path": "", "model": "", "provider": "",
             })
             if name is not None:
-                record["ad"] = " ".join(str(name).split())[:80]
+                record["name"] = " ".join(str(name).split())[:80]
             if tags is not None:
                 clean: list[str] = []
                 for tag in tags:
                     flat = " ".join(str(tag).split()).strip().lower()[:24]
                     if flat and flat not in clean:
                         clean.append(flat)
-                record["etiketler"] = clean[:8]
+                record["tags"] = clean[:8]
             if path is not None:
                 record["path"] = str(path or "").strip()[:500]
             if model is not None:
@@ -797,7 +800,7 @@ class Mind:
             if provider is not None:
                 record["provider"] = str(provider or "").strip()[:40]
 
-            if (record.get("ad") or record.get("etiketler")
+            if (record.get("name") or record.get("tags")
                     or record.get("path") or record.get("model")
                     or record.get("provider")):
                 mapping[session_id] = record
@@ -811,7 +814,7 @@ class Mind:
             except OSError:
                 pass
             result = mapping.get(session_id, {
-                "ad": "", "etiketler": [], "path": "", "model": "", "provider": "",
+                "name": "", "tags": [], "path": "", "model": "", "provider": "",
             })
         # Outside the lock: once a folder is attached, fill the project folder
         # too (like Cursor Repositories — conversations grouped under the
@@ -825,7 +828,7 @@ class Mind:
         return result
 
     def archive_session(self, session_id: str) -> dict[str, Any]:
-        """Removes the session from the list; moves the log to sessions/.arsiv.
+        """Removes the session from the list; moves the log to sessions/.archive.
 
         No permanent deletion — the same idea as the .recycle-bin in the
         applications panel: a wrong click must be undoable. The open session
@@ -841,7 +844,8 @@ class Mind:
         if not src.is_file():
             return {"ok": False, "error": "oturum bulunamadı"}
         with self._lock:
-            dest_dir = self.sessions_dir / ".arsiv"
+            dest_dir = self.sessions_dir / ".archive"
+            legacy_names.adopt(self.sessions_dir / ".arsiv", dest_dir)
             try:
                 dest_dir.mkdir(parents=True, exist_ok=True)
                 dest = dest_dir / f"{sid}.jsonl"

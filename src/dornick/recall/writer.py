@@ -25,6 +25,8 @@ import json
 import threading
 from pathlib import Path
 
+from .. import legacy_values
+
 BOS, SEP, EOS, PAD = 256, 257, 258, 259
 
 # Greedy decoding can get stuck repeating the same word; repeats are dropped
@@ -153,9 +155,16 @@ class BaseWriter:
     def __init__(self, path: str | Path) -> None:
         np = _np()
         bundle = np.load(Path(path), allow_pickle=False)
-        self.w = {k: bundle[k].astype(np.float32) for k in bundle.files if k != "_ayar"}
-        self.a = json.loads(bytes(bundle["_ayar"]).decode("utf-8"))
-        self.heads = self.a["kafa"]
+        # A bundle written by the training rig (or shipped before 1.5.5)
+        # names its config block `_ayar` and its arrays `gomme`/`konum`/
+        # `son.*`; the same weights are read under the English names.
+        names = legacy_values.WRITER_ARRAYS
+        self.w = {names.get(k, k): bundle[k].astype(np.float32)
+                  for k in bundle.files if k not in ("_ayar", "_config")}
+        raw = bundle["_config"] if "_config" in bundle.files else bundle["_ayar"]
+        self.a = legacy_values.keys(json.loads(bytes(raw).decode("utf-8")),
+                                    legacy_values.WRITER_CONFIG_KEYS)
+        self.heads = self.a["heads"]
 
     def _ln(self, x, w, b, eps=1e-5):
         mu = x.mean(-1, keepdims=True)
@@ -201,17 +210,17 @@ class BaseWriter:
     def _forward(self, sequence: list[int], start: int, cache: list):
         w = self.w
         fresh = sequence[start:]
-        x = w["gomme"][fresh] + w["konum"][start: start + len(fresh)]
-        for i in range(self.a["kat"]):
+        x = w["embed"][fresh] + w["pos"][start: start + len(fresh)]
+        for i in range(self.a["layers"]):
             x = self._block(x, i, cache)
-        x = self._ln(x, w["son.w"], w["son.b"])
-        return x[-1] @ w["gomme"].T
+        x = self._ln(x, w["final.w"], w["final.b"])
+        return x[-1] @ w["embed"].T
 
     def expand(self, text: str, max_bytes: int = MAX_BYTES) -> str:
         """Terms to append to the query; an empty string if there is no topic."""
         np = _np()
         sequence = [BOS] + list(text.encode("utf-8")[-152:]) + [SEP]
-        cache: list = [None] * self.a["kat"]
+        cache: list = [None] * self.a["layers"]
         logits = self._forward(sequence, 0, cache)
         generated: list[int] = []
         for _ in range(max_bytes):

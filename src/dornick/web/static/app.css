@@ -1383,13 +1383,13 @@ a.md-source { text-decoration: none; color: inherit; }
   flex: 0 0 auto;
   background: var(--cyan);
 }
-.ctx-seg.sistem { background: #8B8680; }
-.ctx-seg.arac { background: #A78BFA; }
-.ctx-seg.ruh { background: #4ADE80; }
-.ctx-seg.yetenek { background: #F0A020; }
+.ctx-seg.system { background: #8B8680; }
+.ctx-seg.tools { background: #A78BFA; }
+.ctx-seg.soul { background: #4ADE80; }
+.ctx-seg.skills { background: #F0A020; }
 .ctx-seg.mcp { background: #E8A0BF; }
-.ctx-seg.yardimci { background: #7DD3FC; }
-.ctx-seg.sohbet { background: #E8A07A; }
+.ctx-seg.helpers { background: #7DD3FC; }
+.ctx-seg.chat { background: #E8A07A; }
 /* The colour warns as it approaches full: noticeable without reading the
    number. */
 .dock-ctx.warn b { color: var(--amber); }
@@ -1475,13 +1475,13 @@ a.md-source { text-decoration: none; color: inherit; }
   flex: 0 0 auto; width: 8px; height: 8px; border-radius: 2px;
   background: var(--faint);
 }
-.ctx-dot.sistem { background: #8B8680; }
-.ctx-dot.arac { background: #A78BFA; }
-.ctx-dot.ruh { background: #4ADE80; }
-.ctx-dot.yetenek { background: #F0A020; }
+.ctx-dot.system { background: #8B8680; }
+.ctx-dot.tools { background: #A78BFA; }
+.ctx-dot.soul { background: #4ADE80; }
+.ctx-dot.skills { background: #F0A020; }
 .ctx-dot.mcp { background: #E8A0BF; }
-.ctx-dot.yardimci { background: #7DD3FC; }
-.ctx-dot.sohbet { background: #E8A07A; }
+.ctx-dot.helpers { background: #7DD3FC; }
+.ctx-dot.chat { background: #E8A07A; }
 /* ---------- vision ----------
    Live preview. Not a bare video: corner brackets, a scan line and, below,
    what the agent said. The model does the recognising — with a real face
@@ -2014,17 +2014,17 @@ body.focus #focus.on { color: var(--cyan); }
 .icon:hover { color: var(--ice); background: #F0A02012; }
 /* Learn-me icon: a soft pulse while training runs; with reduced motion, no
    animation, only the colour accent remains. */
-#tanima-ikon.kosuyor { color: var(--cyan); }
-#tanima-ikon.kosuyor svg { animation: tanima-pulse 2s ease-in-out infinite; }
+#tanima-ikon.running { color: var(--cyan); }
+#tanima-ikon.running svg { animation: tanima-pulse 2s ease-in-out infinite; }
 @keyframes tanima-pulse {
   0%, 100% { opacity: .55; transform: scale(1); }
   50% { opacity: 1; transform: scale(1.12); }
 }
 /* A class instead of an id: an #id selector inside a @media body trips the
-   colour audit's hex scan. Only this icon takes .kosuyor; the selector is
+   colour audit's hex scan. Only this icon takes .running; the selector is
    equivalent. */
 @media (prefers-reduced-motion: reduce) {
-  .icon.kosuyor svg { animation: none; }
+  .icon.running svg { animation: none; }
 }
 
 #stop { color: var(--rose); }
@@ -3349,7 +3349,7 @@ body.left-resize { cursor: ew-resize; user-select: none; }
   content: "◍ "; animation: throb 1.3s ease-in-out infinite; display: inline;
 }
 .orch-status.done { color: var(--mint); }
-.orch-status.yetim { color: var(--amber); }
+.orch-status.orphan { color: var(--amber); }
 .orch-head .close { font-size: 17px; flex: 0 0 auto; }
 #cam-stop { flex: 0 0 auto; font-size: 11px; white-space: nowrap; }
 
@@ -3367,7 +3367,7 @@ body.left-resize { cursor: ew-resize; user-select: none; }
 .orch-ch.fail { box-shadow: inset 2px 0 0 var(--rose); }
 /* Orphan: a helper left half-done from the previous session — faded amber;
    not running, not dead either: can be resumed on request. */
-.orch-ch.yetim { box-shadow: inset 2px 0 0 var(--amber); opacity: .72; }
+.orch-ch.orphan { box-shadow: inset 2px 0 0 var(--amber); opacity: .72; }
 .orch-ch-top { display: flex; align-items: center; gap: 7px; }
 .orch-ch-dot {
   flex: 0 0 auto; width: 6px; height: 6px; border-radius: 50%; background: var(--faint);
@@ -3375,7 +3375,7 @@ body.left-resize { cursor: ew-resize; user-select: none; }
 .orch-ch.run .orch-ch-dot { background: var(--cyan); box-shadow: 0 0 9px var(--cyan); animation: throb 1.1s ease-in-out infinite; }
 .orch-ch.done .orch-ch-dot { background: var(--mint); box-shadow: 0 0 8px var(--mint); }
 .orch-ch.fail .orch-ch-dot { background: var(--rose); box-shadow: 0 0 8px var(--rose); }
-.orch-ch.yetim .orch-ch-dot { background: var(--amber); box-shadow: 0 0 8px var(--amber); }
+.orch-ch.orphan .orch-ch-dot { background: var(--amber); box-shadow: 0 0 8px var(--amber); }
 .orch-ch-title {
   flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   font: 12px var(--font); color: var(--ice);
@@ -3388,7 +3388,7 @@ body.left-resize { cursor: ew-resize; user-select: none; }
 }
 .orch-ch-act.ok { color: var(--mint); }
 .orch-ch-act.fail { color: var(--rose); }
-.orch-ch-act.yetim { color: var(--amber); }
+.orch-ch-act.orphan { color: var(--amber); }
 .orch-ch-count { flex: 0 0 auto; font: 9px var(--mono); color: var(--faint); }
 .orch-ch-acts {
   margin-top: 6px; padding-top: 4px;
@@ -4073,16 +4073,16 @@ body.settling .mentions { /* between rail and mind */ }
   display: block; font: 10px/1.3 ui-monospace, Consolas, monospace;
   color: var(--type-color, var(--dim)); letter-spacing: .02em;
 }
-.wf-node [data-tur="gelen"]   { --type-color: var(--violet); }
-.wf-node [data-tur="ag"]      { --type-color: var(--cyan); }
-.wf-node [data-tur="sistem"]  { --type-color: var(--amber); }
-.wf-node [data-tur="yetenek"] { --type-color: var(--mint); }
-.wf-node [data-tur="model"]   { --type-color: var(--ice); }
-.wf-node:has([data-tur="gelen"])   { --type-color: var(--violet); }
-.wf-node:has([data-tur="ag"])      { --type-color: var(--cyan); }
-.wf-node:has([data-tur="sistem"])  { --type-color: var(--amber); }
-.wf-node:has([data-tur="yetenek"]) { --type-color: var(--mint); }
-.wf-node:has([data-tur="model"])   { --type-color: var(--ice); }
+.wf-node [data-category="inbound"]   { --type-color: var(--violet); }
+.wf-node [data-category="network"]      { --type-color: var(--cyan); }
+.wf-node [data-category="system"]  { --type-color: var(--amber); }
+.wf-node [data-category="skill"] { --type-color: var(--mint); }
+.wf-node [data-category="model"]   { --type-color: var(--ice); }
+.wf-node:has([data-category="inbound"])   { --type-color: var(--violet); }
+.wf-node:has([data-category="network"])      { --type-color: var(--cyan); }
+.wf-node:has([data-category="system"])  { --type-color: var(--amber); }
+.wf-node:has([data-category="skill"]) { --type-color: var(--mint); }
+.wf-node:has([data-category="model"])   { --type-color: var(--ice); }
 
 .wf-node-title {
   display: block; margin-top: 3px; font: 600 12px/1.35 var(--font);
@@ -4171,21 +4171,21 @@ body.settling .mentions { /* between rail and mind */ }
 .tasks-blank-hint { color: var(--faint); font-size: 11px; }
 
 .task { border-radius: 9px; padding: 8px 10px; background: var(--raise); transition: .14s; }
-.task.kosuyor { box-shadow: inset 2px 0 0 var(--cyan); background: #F0A0200c; }
-.task.bitti { box-shadow: inset 2px 0 0 var(--mint); }
-.task.hata { box-shadow: inset 2px 0 0 var(--rose); }
-.task.yetim { box-shadow: inset 2px 0 0 var(--amber); opacity: .75; }
+.task.running { box-shadow: inset 2px 0 0 var(--cyan); background: #F0A0200c; }
+.task.done { box-shadow: inset 2px 0 0 var(--mint); }
+.task.error { box-shadow: inset 2px 0 0 var(--rose); }
+.task.orphan { box-shadow: inset 2px 0 0 var(--amber); opacity: .75; }
 .task.clickable { cursor: pointer; }
 .task.clickable:hover { background: #F0A02012; }
 .task-top { display: flex; align-items: center; gap: 7px; }
 .task-dot { flex: 0 0 auto; width: 6px; height: 6px; border-radius: 50%; background: var(--faint); }
-.task.kosuyor .task-dot {
+.task.running .task-dot {
   background: var(--cyan); box-shadow: 0 0 9px var(--cyan);
   animation: throb 1.1s ease-in-out infinite;
 }
-.task.bitti .task-dot { background: var(--mint); box-shadow: 0 0 8px var(--mint); }
-.task.hata .task-dot { background: var(--rose); box-shadow: 0 0 8px var(--rose); }
-.task.yetim .task-dot { background: var(--amber); box-shadow: 0 0 8px var(--amber); }
+.task.done .task-dot { background: var(--mint); box-shadow: 0 0 8px var(--mint); }
+.task.error .task-dot { background: var(--rose); box-shadow: 0 0 8px var(--rose); }
+.task.orphan .task-dot { background: var(--amber); box-shadow: 0 0 8px var(--amber); }
 .task-name {
   flex: 1; min-width: 0; font: 12px var(--font); color: var(--ice);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
@@ -4200,8 +4200,8 @@ body.settling .mentions { /* between rail and mind */ }
 .task-kind.proc { color: var(--mint); background: #86EFAC14; }
 .task-line { display: flex; align-items: baseline; gap: 9px; margin-top: 4px; }
 .task-state { font: 10px var(--mono); color: var(--dim); }
-.task.kosuyor .task-state { color: var(--cyan); }
-.task.hata .task-state { color: var(--rose); }
+.task.running .task-state { color: var(--cyan); }
+.task.error .task-state { color: var(--rose); }
 .task-time { font: 10px var(--mono); color: var(--faint); font-variant-numeric: tabular-nums; }
 .task-model {
   flex: 1; font: 9px var(--mono); color: var(--faint); opacity: .8;
@@ -5380,11 +5380,11 @@ body.kontrol-canli::after {
    readable), ▸ in progress (accented), ○ waiting. */
 .plan-step { display: flex; gap: 8px; align-items: baseline; }
 .plan-tick { flex: 0 0 auto; font-family: var(--mono); }
-.plan-step.bitti .plan-tick { color: var(--mint); }
-.plan-step.bitti { opacity: .75; }
-.plan-step.yapiliyor .plan-tick { color: var(--hl-num); }
-.plan-step.yapiliyor { font-weight: 600; }
-.plan-step.bekliyor .plan-tick { color: var(--faint); }
+.plan-step.step-done .plan-tick { color: var(--mint); }
+.plan-step.step-done { opacity: .75; }
+.plan-step.step-in_progress .plan-tick { color: var(--hl-num); }
+.plan-step.step-in_progress { font-weight: 600; }
+.plan-step.step-waiting .plan-tick { color: var(--faint); }
 
 /* Camera: must not get clipped in the right column — a position:fixed
    floating window. An overflow:hidden ancestor (right-col) clipped fixed.
@@ -5896,12 +5896,12 @@ body.mesgul .brand-mark .knot-node {
 .thalamus .th-text { font: 600 9px var(--mono); fill: var(--dim); letter-spacing: .06em; }
 .thalamus .th-text.cycle { fill: var(--faint); font-size: 8px; }
 .thalamus .th-state > * { display: none; fill: var(--ice); }
-.thalamus.state-uyanik .st-awake { display: block; fill: var(--cyan); }
-.thalamus.state-uykulu .st-sleepy { display: block; fill: var(--amber); animation: th-breathe 3s ease-in-out infinite; transform-origin: 60px 60px; }
-.thalamus.state-uyuyor .st-asleep { display: block; fill: var(--user); opacity: .9; }
-.thalamus.state-uyaniyor .st-waking { display: block; fill: var(--mint); }
-.thalamus.state-uyaniyor .st-waking.ring { fill: none; stroke: var(--mint); stroke-width: 1.5; animation: th-expand 1.6s ease-out infinite; transform-origin: 60px 60px; }
-.thalamus.state-uyaniyor .st-waking.ring.two { animation-delay: .8s; }
+.thalamus.state-awake .st-awake { display: block; fill: var(--cyan); }
+.thalamus.state-sleepy .st-sleepy { display: block; fill: var(--amber); animation: th-breathe 3s ease-in-out infinite; transform-origin: 60px 60px; }
+.thalamus.state-asleep .st-asleep { display: block; fill: var(--user); opacity: .9; }
+.thalamus.state-waking .st-waking { display: block; fill: var(--mint); }
+.thalamus.state-waking .st-waking.ring { fill: none; stroke: var(--mint); stroke-width: 1.5; animation: th-expand 1.6s ease-out infinite; transform-origin: 60px 60px; }
+.thalamus.state-waking .st-waking.ring.two { animation-delay: .8s; }
 .thalamus.nap .th-state > * { display: none; }
 .thalamus.nap .st-nap { display: block; stroke: var(--lesson); stroke-width: 1.6; animation: th-breathe 2s ease-in-out infinite; transform-origin: 60px 60px; }
 .thalamus.flash .th-track { animation: th-flash .7s ease-out; }
@@ -5949,14 +5949,14 @@ body.mesgul .brand-mark .knot-node {
 .brain-simple-icon .bs-rays line, .brain-simple-icon .bs-waking line { fill: none; stroke-width: 2.4; }
 .brain-simple-icon .bs-z { font: 700 11px var(--mono); }
 .brain-simple-icon .bs-z.small { font-size: 8px; }
-.brain-simple[data-state="uyanik"] .bs-awake { display: block; fill: var(--cyan); }
-.brain-simple[data-state="uyanik"] .bs-awake line { stroke: var(--cyan); }
-.brain-simple[data-state="uykulu"] .bs-sleepy { display: block; fill: var(--amber); animation: bs-breathe 3.2s ease-in-out infinite; transform-origin: 24px 24px; }
-.brain-simple[data-state="uyuyor"] .bs-asleep { display: block; fill: var(--user); }
-.brain-simple[data-state="uyuyor"] .bs-z { animation: bs-z 2.4s ease-in-out infinite; }
-.brain-simple[data-state="uyuyor"] .bs-z.small { animation-delay: .8s; }
-.brain-simple[data-state="uyaniyor"] .bs-waking { display: block; fill: var(--mint); }
-.brain-simple[data-state="uyaniyor"] .bs-waking line { stroke: var(--mint); }
+.brain-simple[data-state="awake"] .bs-awake { display: block; fill: var(--cyan); }
+.brain-simple[data-state="awake"] .bs-awake line { stroke: var(--cyan); }
+.brain-simple[data-state="sleepy"] .bs-sleepy { display: block; fill: var(--amber); animation: bs-breathe 3.2s ease-in-out infinite; transform-origin: 24px 24px; }
+.brain-simple[data-state="asleep"] .bs-asleep { display: block; fill: var(--user); }
+.brain-simple[data-state="asleep"] .bs-z { animation: bs-z 2.4s ease-in-out infinite; }
+.brain-simple[data-state="asleep"] .bs-z.small { animation-delay: .8s; }
+.brain-simple[data-state="waking"] .bs-waking { display: block; fill: var(--mint); }
+.brain-simple[data-state="waking"] .bs-waking line { stroke: var(--mint); }
 @keyframes bs-breathe { 0%, 100% { opacity: .7; transform: scale(.94); } 50% { opacity: 1; transform: scale(1); } }
 @keyframes bs-z { 0%, 100% { opacity: .25; } 50% { opacity: 1; } }
 .brain-simple-text { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 4px; }

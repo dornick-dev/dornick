@@ -21,17 +21,19 @@ from enum import Enum
 from fnmatch import fnmatch
 from typing import Any, TYPE_CHECKING
 
-from . import guards
+from . import guards, legacy_values
 
 if TYPE_CHECKING:  # pragma: no cover
     from .tools.base import ToolSpec
 
 # Arguments that represent "what a tool targets", in priority order.
-# `komut`: the field of the `run` tool that overrides detection. Without it
-# here a hand-given command would appear to the gate as `path` — the rule
-# would match the folder, not the command, and a "run tests in that folder"
-# permission would become permission for ANY command in that folder.
-SUBJECT_KEYS = ("command", "komut", "path", "url", "target", "query", "pattern")
+# `command` is also the field of the `run` tool that overrides detection.
+# Without it here a hand-given command would appear to the gate as `path` —
+# the rule would match the folder, not the command, and a "run tests in that
+# folder" permission would become permission for ANY command in that folder.
+# (`komut`, the pre-1.5.5 name of that field, is translated by the executor
+# before the gate sees the arguments.)
+SUBJECT_KEYS = ("command", "path", "url", "target", "query", "pattern")
 
 
 class Decision(str, Enum):
@@ -65,6 +67,7 @@ class PermissionEngine:
         return cls(cfg.mode, cfg.allow, cfg.deny)
 
     def evaluate(self, spec: "ToolSpec", args: dict[str, Any]) -> tuple[Decision, str]:
+        args = legacy_values.tool_args(spec.name, args)
         subject = f"{spec.name}:{describe(args)}"
 
         # Fixed guards BEFORE EVERYTHING: even the user's allow/yolo

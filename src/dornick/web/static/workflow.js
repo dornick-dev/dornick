@@ -43,10 +43,10 @@ const WorkflowView = (() => {
       "Sığdır": "Fit",
       "Akışın tamamını panele sığdır": "Fit the whole flow in the panel",
       "Yeni adım": "New step",
-      "koşuyor": "running",
-      "onarılıyor": "repairing",
-      "bitti": "done",
-      "hata": "failed",
+      "running": "running",
+      "repairing": "repairing",
+      "done": "done",
+      "error": "failed",
       "Elle düzenlendi — otomatik onarım bu adıma dokunmaz.":
         "Edited by hand — automatic repair leaves this step alone.",
       "Akış yok — ajan oluşturabilir veya Kaydet ile başlat.":
@@ -76,27 +76,25 @@ const WorkflowView = (() => {
   // ask the model". An unknown type stays neutral — a made-up color carries
   // no information.
   const CATEGORY = {
-    mail_read: "gelen", mail: "gelen", http: "ag", browser: "ag",
-    shell: "sistem", skill: "yetenek", agent: "model", custom: "model",
+    mail_read: "inbound", mail: "inbound", http: "network", browser: "network",
+    shell: "system", skill: "skill", agent: "model", custom: "model",
   };
-  const categoryOf = (kind) => CATEGORY[String(kind || "").toLowerCase()] || "notr";
+  const categoryOf = (kind) => CATEGORY[String(kind || "").toLowerCase()] || "neutral";
 
   // The edge label uses its own dictionary: the same Turkish word wants two
-  // different renderings in two contexts — node status "hata" → *failed*,
-  // branch condition "hata" → *on error*. In a single dictionary one crushed
+  // different renderings in two contexts — node status "error" → *failed*,
+  // branch condition "error" → *on error*. In a single dictionary one crushed
   // the other.
-  const BRANCH_LABEL = { hata: "on error", fail: "on error", ok: "on ok" };
+  const BRANCH_LABEL = { error: "on error", hata: "on error", fail: "on error", ok: "on ok" };
   function branchLabel(on) {
     const raw = String(on || "");
     if (typeof Lang === "undefined" || Lang.mode !== "en") return raw;
     return BRANCH_LABEL[raw.toLowerCase()] || raw;
   }
 
-  const STATE_CLASS = { "koşuyor": "wf-run", "kosuyor": "wf-run",
-                        "onarılıyor": "wf-run",
-                        "bitti": "wf-done", "hata": "wf-fail" };
-  const STATE_MARK = { "koşuyor": "…", "kosuyor": "…", "onarılıyor": "⟳",
-                       "bitti": "✓", "hata": "✗" };
+  const STATE_CLASS = { running: "wf-run", repairing: "wf-run",
+                        done: "wf-done", error: "wf-fail" };
+  const STATE_MARK = { running: "…", repairing: "⟳", done: "✓", error: "✗" };
 
   // -- layout -----------------------------------------------------------
   //
@@ -242,7 +240,7 @@ const WorkflowView = (() => {
       card.tabIndex = 0;
 
       const typeTag = el("span", "wf-node-type", n.type || "custom");
-      typeTag.dataset.tur = categoryOf(n.type);
+      typeTag.dataset.category = categoryOf(n.type);
       card.append(typeTag);
       card.append(el("b", "wf-node-title", n.title || n.id));
       if (step) {
@@ -260,7 +258,7 @@ const WorkflowView = (() => {
       if ((n.secrets_needed || []).length) {
         foot.append(el("span", "wf-node-sec", "🔑 " + n.secrets_needed.join(", ")));
       }
-      if (n.elle) {
+      if (n.manual) {
         const lock = el("span", "wf-node-lock", "✎ " + t("elle"));
         lock.title = t("Elle düzenlendi — otomatik onarım bu adıma dokunmaz.");
         foot.append(lock);
@@ -343,10 +341,10 @@ const WorkflowView = (() => {
         const a = byId[e.from || e.from_];
         const b = byId[e.to];
         if (!a || !b) continue;
-        const isFail = (e.on || "") === "hata" || (e.on || "") === "fail";
+        const isFail = (e.on || "") === "error" || (e.on || "") === "hata" || (e.on || "") === "fail";
         const fromStep = steps[e.from || e.from_];
-        const live = e.to === running && fromStep && fromStep.status === "bitti";
-        const passed = fromStep && fromStep.status === "bitti";
+        const live = e.to === running && fromStep && fromStep.status === "done";
+        const passed = fromStep && fromStep.status === "done";
 
         // Leaves from the card's EDGE and enters at the edge; drawing center
         // to center ran the line under the card. Rightward flow is a
@@ -375,7 +373,7 @@ const WorkflowView = (() => {
           `url(#${live ? "wf-ok-canli" : isFail ? "wf-ok-hata" : "wf-ok"})`);
         svg.append(pathEl);
 
-        // Conditional branch label: the "hata" branch looked the same as a
+        // Conditional branch label: the "error" branch looked the same as a
         // normal one.
         if (e.on && e.on !== "ok") {
           const tag = document.createElementNS("http://www.w3.org/2000/svg", "text");
@@ -422,16 +420,16 @@ const WorkflowView = (() => {
     // app, we do not send the user to the Apps panel: the screen that builds
     // the flow, runs it and reads its result is the same one. The apps list
     // is not a source — at most an example.
-    if (status && (status.rapor || status.cikti)) {
+    if (status && (status.report || status.output)) {
       const out = el("div", "wf-out");
       out.append(el("h3", null, t("Çıktı")));
-      if (status.cikti && status.cikti.yol) {
+      if (status.output && status.output.path) {
         const openBtn = el("button", "jobs-act jobs-act-primary",
-          status.cikti.baslik || t("Çıktıyı aç"));
+          status.output.title || t("Çıktıyı aç"));
         openBtn.type = "button";
         openBtn.onclick = () => {
           // On the same screen: opens in the viewer panel.
-          if (typeof Viewer !== "undefined" && Viewer.open) Viewer.open(status.cikti.yol);
+          if (typeof Viewer !== "undefined" && Viewer.open) Viewer.open(status.output.path);
         };
         out.append(openBtn);
       }
@@ -588,7 +586,7 @@ const WorkflowView = (() => {
       else if (next.skill) { node.skill = next.skill; delete next.skill; }
       node.config = Object.assign({}, node.config || {}, next);
       node.secrets_needed = secrets.value.split(",").map((s) => s.trim()).filter(Boolean);
-      node.elle = true;
+      node.manual = true;
       if (onSave) onSave(wf);
     };
     box.append(

@@ -82,20 +82,20 @@ class Diagnosis:
     # The error classes this checker CANNOT see. Written next to a clean
     # result so that the illusion "I checked it, it is solid" does not arise.
     scope: str = ""
-    # While status == "yok": why it could not be run.
+    # While status == "none": why it could not be run.
     reason: str = ""
 
     @property
     def faulty(self) -> bool:
-        return self.status == "hata"
+        return self.status == "error"
 
     def text(self) -> str:
         """The human- (and model-) readable text appended to the tool result."""
         name = Path(self.file).name
-        if self.status == "yok":
+        if self.status == "none":
             return f"tanı: {name} kontrol edilemedi — {self.reason}."
 
-        if self.status == "temiz":
+        if self.status == "clean":
             closing = f"tanı: temiz — {self.checker} bu dosyada hata görmedi."
             if self.scope:
                 closing += f" ({self.scope})"
@@ -117,12 +117,12 @@ class Diagnosis:
     def detail(self) -> dict:
         """Machine-readable form so the UI can draw a badge."""
         return {
-            "dosya": self.file,
-            "dil": self.language,
-            "denetleyici": self.checker,
-            "durum": self.status,
-            "bulgular": [
-                {"satir": f.line, "mesaj": f.message} for f in self.findings
+            "file": self.file,
+            "language": self.language,
+            "checker": self.checker,
+            "status": self.status,
+            "findings": [
+                {"line": f.line, "message": f.message} for f in self.findings
             ],
         }
 
@@ -309,20 +309,20 @@ def _python(path: Path, timeout: float) -> Diagnosis:
     try:
         source = path.read_text(encoding="utf-8", errors="replace")
     except OSError as exc:
-        return Diagnosis(str(path), "python", "python derleyicisi", "yok",
+        return Diagnosis(str(path), "python", "python derleyicisi", "none",
                          reason=f"dosya okunamadı ({exc.strerror or exc})")
 
     try:
         compile(source, str(path), "exec")
     except SyntaxError as exc:
         return Diagnosis(
-            str(path), "python", "python derleyicisi", "hata",
+            str(path), "python", "python derleyicisi", "error",
             findings=[Finding(exc.lineno or 0, exc.msg or "sözdizimi hatası", str(path))],
             raw=f"{type(exc).__name__}: {exc}",
         )
     except ValueError as exc:  # a NUL byte in the source, for instance
         return Diagnosis(
-            str(path), "python", "python derleyicisi", "hata",
+            str(path), "python", "python derleyicisi", "error",
             findings=[Finding(0, str(exc), str(path))], raw=str(exc),
         )
 
@@ -340,12 +340,12 @@ def _python(path: Path, timeout: float) -> Diagnosis:
         findings = _py_findings(output)
         label = f"python derleyicisi + {name}"
         if findings:
-            return Diagnosis(str(path), "python", label, "hata",
+            return Diagnosis(str(path), "python", label, "error",
                              findings=findings, raw=_trim(output))
-        return Diagnosis(str(path), "python", label, "temiz", scope=base_scope)
+        return Diagnosis(str(path), "python", label, "clean", scope=base_scope)
 
     return Diagnosis(
-        str(path), "python", "python derleyicisi", "temiz",
+        str(path), "python", "python derleyicisi", "clean",
         scope="yalnızca sözdizimi denetlendi; tanımsız isim ve tip hataları "
               "ancak çalıştırınca görünür",
     )
@@ -362,27 +362,27 @@ def _php(path: Path, timeout: float) -> Diagnosis:
     """
     exe = checker_path("php")
     if exe is None:
-        return Diagnosis(str(path), "php", "php -l", "yok",
+        return Diagnosis(str(path), "php", "php -l", "none",
                          reason="php bu makinede bulunamadı")
     # -n: do not read php.ini — missing-extension warnings must not mix into
     # the findings.
     result = _run([exe, "-n", "-l", str(path)], timeout)
     if result is None:
-        return Diagnosis(str(path), "php", "php -l", "yok",
+        return Diagnosis(str(path), "php", "php -l", "none",
                          reason=f"php -l {timeout:.0f} sn'de bitmedi")
     code, output = result
     findings = _php_findings(output)
     if findings:
-        return Diagnosis(str(path), "php", "php -l", "hata",
+        return Diagnosis(str(path), "php", "php -l", "error",
                          findings=findings, raw=_trim(output))
     if code != 0:
         # The exit code says error but we could not resolve the line: hand
         # over the raw output as it is, do not invent.
-        return Diagnosis(str(path), "php", "php -l", "hata",
+        return Diagnosis(str(path), "php", "php -l", "error",
                          findings=[Finding(0, output.splitlines()[0] if output else
                                            f"çıkış kodu {code}", str(path))],
                          raw=_trim(output))
-    return Diagnosis(str(path), "php", "php -l", "temiz",
+    return Diagnosis(str(path), "php", "php -l", "clean",
                      scope="php -l yalnızca sözdizimini görür; tip hataları "
                            "(bildirilen dönüş tipiyle uyuşmayan return) ve "
                            "bulunamayan sınıflar ancak çalıştırınca ortaya çıkar")
@@ -391,21 +391,21 @@ def _php(path: Path, timeout: float) -> Diagnosis:
 def _js(path: Path, timeout: float) -> Diagnosis:
     exe = checker_path("node")
     if exe is None:
-        return Diagnosis(str(path), "js", "node --check", "yok",
+        return Diagnosis(str(path), "js", "node --check", "none",
                          reason="node bu makinede bulunamadı")
     result = _run([exe, "--check", str(path)], timeout)
     if result is None:
-        return Diagnosis(str(path), "js", "node --check", "yok",
+        return Diagnosis(str(path), "js", "node --check", "none",
                          reason=f"node --check {timeout:.0f} sn'de bitmedi")
     code, output = result
     if code == 0:
-        return Diagnosis(str(path), "js", "node --check", "temiz",
+        return Diagnosis(str(path), "js", "node --check", "clean",
                          scope="yalnızca sözdizimi; tanımsız değişken ve tip "
                                "hataları ancak çalıştırınca görünür")
     findings = _node_findings(output) or [
         Finding(0, output.splitlines()[0] if output else f"çıkış kodu {code}", str(path))
     ]
-    return Diagnosis(str(path), "js", "node --check", "hata",
+    return Diagnosis(str(path), "js", "node --check", "error",
                      findings=findings, raw=_trim(output))
 
 
@@ -427,27 +427,27 @@ def _ts(path: Path, timeout: float) -> Diagnosis:
     found" errors that do not really exist — a violation of the first rule.
     """
     if _tsconfig(path) is None:
-        return Diagnosis(str(path), "ts", "tsc", "yok",
+        return Diagnosis(str(path), "ts", "tsc", "none",
                          reason="tsconfig.json bulunamadı, proje bağlamı olmadan "
                                 "TypeScript denetlenemez")
     exe = checker_path("npx") or checker_path("npx.cmd")
     if exe is None:
-        return Diagnosis(str(path), "ts", "tsc", "yok", reason="npx bulunamadı")
+        return Diagnosis(str(path), "ts", "tsc", "none", reason="npx bulunamadı")
     result = _run([exe, "--no-install", "tsc", "--noEmit", str(path)], timeout)
     if result is None:
-        return Diagnosis(str(path), "ts", "tsc", "yok",
+        return Diagnosis(str(path), "ts", "tsc", "none",
                          reason=f"tsc {timeout:.0f} sn'de bitmedi")
     code, output = result
     findings = _ts_findings(output)
     if findings:
-        return Diagnosis(str(path), "ts", "tsc", "hata",
+        return Diagnosis(str(path), "ts", "tsc", "error",
                          findings=findings, raw=_trim(output))
     if code != 0:
         # If tsc is not installed, npx --no-install blows up here: that is
         # not a code error but the absence of the checker.
-        return Diagnosis(str(path), "ts", "tsc", "yok",
+        return Diagnosis(str(path), "ts", "tsc", "none",
                          reason="tsc çalıştırılamadı (projede kurulu olmayabilir)")
-    return Diagnosis(str(path), "ts", "tsc", "temiz",
+    return Diagnosis(str(path), "ts", "tsc", "clean",
                      scope="tsc çalışma zamanı davranışını değil tipleri denetler")
 
 
@@ -455,14 +455,14 @@ def _json(path: Path, timeout: float) -> Diagnosis:
     try:
         text = path.read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError) as exc:
-        return Diagnosis(str(path), "json", "json ayrıştırıcı", "yok",
+        return Diagnosis(str(path), "json", "json ayrıştırıcı", "none",
                          reason=f"dosya okunamadı ({exc})")
     try:
         json.loads(text)
     except json.JSONDecodeError as exc:
-        return Diagnosis(str(path), "json", "json ayrıştırıcı", "hata",
+        return Diagnosis(str(path), "json", "json ayrıştırıcı", "error",
                          findings=[Finding(exc.lineno, exc.msg, str(path))], raw=str(exc))
-    return Diagnosis(str(path), "json", "json ayrıştırıcı", "temiz",
+    return Diagnosis(str(path), "json", "json ayrıştırıcı", "clean",
                      scope="yalnızca biçim; alanların doğruluğu denetlenmedi")
 
 
@@ -470,12 +470,12 @@ def _yaml(path: Path, timeout: float) -> Diagnosis:
     try:
         import yaml  # type: ignore
     except ImportError:
-        return Diagnosis(str(path), "yaml", "yaml ayrıştırıcı", "yok",
+        return Diagnosis(str(path), "yaml", "yaml ayrıştırıcı", "none",
                          reason="PyYAML kurulu değil")
     try:
         text = path.read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError) as exc:
-        return Diagnosis(str(path), "yaml", "yaml ayrıştırıcı", "yok",
+        return Diagnosis(str(path), "yaml", "yaml ayrıştırıcı", "none",
                          reason=f"dosya okunamadı ({exc})")
     try:
         list(yaml.safe_load_all(text))
@@ -483,9 +483,9 @@ def _yaml(path: Path, timeout: float) -> Diagnosis:
         mark = getattr(exc, "problem_mark", None)
         message = getattr(exc, "problem", None) or str(exc).splitlines()[0]
         line = (mark.line + 1) if mark is not None else 0
-        return Diagnosis(str(path), "yaml", "yaml ayrıştırıcı", "hata",
+        return Diagnosis(str(path), "yaml", "yaml ayrıştırıcı", "error",
                          findings=[Finding(line, message, str(path))], raw=_trim(str(exc)))
-    return Diagnosis(str(path), "yaml", "yaml ayrıştırıcı", "temiz",
+    return Diagnosis(str(path), "yaml", "yaml ayrıştırıcı", "clean",
                      scope="yalnızca biçim; alanların doğruluğu denetlenmedi")
 
 
@@ -513,7 +513,7 @@ def check(path: Path | str, *, timeout: float = TIMEOUT) -> Diagnosis | None:
         if not path.is_file():
             return None
         if path.stat().st_size > MAX_SIZE:
-            return Diagnosis(str(path), language, "-", "yok",
+            return Diagnosis(str(path), language, "-", "none",
                              reason="dosya denetim için fazla büyük")
     except OSError:
         return None
@@ -521,7 +521,7 @@ def check(path: Path | str, *, timeout: float = TIMEOUT) -> Diagnosis | None:
     try:
         return _CHECKERS[language](path, timeout)
     except Exception as exc:  # the checker crashed: do not produce a fake finding
-        return Diagnosis(str(path), language, "-", "yok",
+        return Diagnosis(str(path), language, "-", "none",
                          reason=f"denetleyici çalıştırılamadı ({type(exc).__name__})",
                          raw=_trim(str(exc)))
 
@@ -555,9 +555,9 @@ def summary(diagnoses: list[Diagnosis], *, root: Path | None = None) -> str:
         except ValueError:
             return d.file
 
-    faulty = [d for d in diagnoses if d.status == "hata"]
-    clean = [d for d in diagnoses if d.status == "temiz"]
-    unchecked = [d for d in diagnoses if d.status == "yok"]
+    faulty = [d for d in diagnoses if d.status == "error"]
+    clean = [d for d in diagnoses if d.status == "clean"]
+    unchecked = [d for d in diagnoses if d.status == "none"]
 
     lines: list[str] = []
     for diagnosis in faulty:

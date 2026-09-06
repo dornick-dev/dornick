@@ -230,7 +230,7 @@ def test_roundtrip_projects_and_settings(tmp_path: Path, monkeypatch) -> None:
     assert back["model"]["api_key_env"] == "OPENROUTER_API_KEY"
     # The overwritten old config sits in the backup folder.
     backup = Path(result["backup"])
-    assert (backup / "ayarlar" / "config.json").read_text(encoding="utf-8") == '{"eski": true}'
+    assert (backup / "settings" / "config.json").read_text(encoding="utf-8") == '{"eski": true}'
 
 
 # -- reset -------------------------------------------------------------------
@@ -250,7 +250,7 @@ def test_reset_memories_backs_up_then_clears(tmp_path: Path) -> None:
     assert [g.text for g in mind.goals()] == ["kalacak hedef"]   # a goal is not a memory
 
     # The backup is a real memory copy: two records inside.
-    copy = Path(result["backup"]) / "anilar" / "recall.db"
+    copy = Path(result["backup"]) / "memories" / "recall.db"
     con = sqlite3.connect(copy)
     try:
         assert con.execute("SELECT COUNT(*) FROM node").fetchone()[0] == 2

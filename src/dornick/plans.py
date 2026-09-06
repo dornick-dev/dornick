@@ -14,11 +14,12 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
+from . import legacy_values
 from .events import utcnow
 
 FOLDER = "plans"
 _ID = re.compile(r"^[a-z0-9][a-z0-9_-]{0,48}$")
-STATUSES = ("bekliyor", "onaylandi", "yapiliyor", "bitti", "iptal")
+STATUSES = ("waiting", "approved", "in_progress", "done", "cancelled")
 
 
 class PlanError(Exception):
@@ -29,7 +30,7 @@ class PlanError(Exception):
 class Plan:
     id: str
     title: str
-    status: str = "bekliyor"
+    status: str = "waiting"
     steps: list[dict[str, Any]] = field(default_factory=list)
     created: str = ""
     updated: str = ""
@@ -57,11 +58,11 @@ def create(
             normalized.append({
                 "id": str(s.get("id") or f"s{i+1}"),
                 "text": str(s.get("text") or s.get("title") or ""),
-                "status": str(s.get("status") or "bekliyor"),
+                "status": legacy_values.state(s.get("status") or "waiting"),
             })
         else:
-            normalized.append({"id": f"s{i+1}", "text": str(s), "status": "bekliyor"})
-    plan = Plan(id=rid, title=title.strip() or "Plan", status="bekliyor",
+            normalized.append({"id": f"s{i+1}", "text": str(s), "status": "waiting"})
+    plan = Plan(id=rid, title=title.strip() or "Plan", status="waiting",
                 steps=normalized, created=now, updated=now)
     _write(state_dir, plan)
     return plan
@@ -92,10 +93,10 @@ def update(
                 plan.steps.append({
                     "id": str(s.get("id") or f"s{i+1}"),
                     "text": str(s.get("text") or ""),
-                    "status": str(s.get("status") or "bekliyor"),
+                    "status": legacy_values.state(s.get("status") or "waiting"),
                 })
             else:
-                plan.steps.append({"id": f"s{i+1}", "text": str(s), "status": "bekliyor"})
+                plan.steps.append({"id": f"s{i+1}", "text": str(s), "status": "waiting"})
     plan.updated = utcnow()
     _write(state_dir, plan)
     return plan
@@ -112,7 +113,7 @@ def get(state_dir: Path, plan_id: str) -> Plan | None:
     return Plan(
         id=str(raw.get("id") or plan_id),
         title=str(raw.get("title") or "Plan"),
-        status=str(raw.get("status") or "bekliyor"),
+        status=legacy_values.state(raw.get("status") or "waiting"),
         steps=list(raw.get("steps") or []),
         created=str(raw.get("created") or ""),
         updated=str(raw.get("updated") or ""),

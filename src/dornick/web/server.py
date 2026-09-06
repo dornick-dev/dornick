@@ -420,10 +420,10 @@ def _report_cover(result: dict[str, Any]) -> tuple[str, str, str, str, str]:
     raw_title = str(result.get("title") or "Rapor").strip()
     state = str(result.get("state") or "")
     command = raw_title[2:].strip() if raw_title.startswith("$ ") else ""
-    if state == "hata":
+    if state == "error":
         h1 = "İş başarısız"
         badge = '<span class="badge err">Başarısız</span>'
-    elif state == "kosuyor":
+    elif state == "running":
         h1 = "İş sürüyor"
         badge = '<span class="badge">Sürüyor</span>'
     elif command:
@@ -432,7 +432,7 @@ def _report_cover(result: dict[str, Any]) -> tuple[str, str, str, str, str]:
     else:
         h1 = raw_title or "Rapor"
         badge = (
-            '<span class="badge ok">Tamamlandı</span>' if state == "bitti"
+            '<span class="badge ok">Tamamlandı</span>' if state == "done"
             else ""
         )
     summary = ""
@@ -907,9 +907,9 @@ class _Handler(BaseHTTPRequestHandler):
         elif route == "/api/recognition":
             config = getattr(self.server, "config", None)
             d = (recognition.status(config.state_dir) if config is not None
-                 else {"on": False, "son_kosu": ""})
+                 else {"on": False, "last_run": ""})
             self._json({"on": d["on"], "running": recognition.running(),
-                        "ready": recognition.ready(), "last": d["son_kosu"],
+                        "ready": recognition.ready(), "last": d["last_run"],
                         "learn_cloud_ok": d.get("learn_cloud_ok", False)})
         elif route == "/api/language":
             # The UI language the setup wizard chose. localStorage cannot be
@@ -930,7 +930,8 @@ class _Handler(BaseHTTPRequestHandler):
                     try:
                         lang = str(json.loads(
                             (config.workspace / name).read_text(encoding="utf-8")
-                        ).get("dil") or "")
+                        ).get("language") or ""
+                        or json.loads((config.workspace / name).read_text(encoding="utf-8")).get("dil") or "")
                     except (OSError, ValueError):
                         lang = ""
                     if lang:
@@ -1266,7 +1267,7 @@ class _Handler(BaseHTTPRequestHandler):
             self._json({"ok": True, "meta": _session_meta_out(record)})
             return
         if route == "/api/session/archive":
-            # Drop from the list, move the log to sessions/.arsiv. No
+            # Drop from the list, move the log to sessions/.archive. No
             # permanent deletion. A running lane's log is not moved; the
             # open chat first switches to a new empty session, then the old
             # one is archived.
@@ -1592,7 +1593,7 @@ class _Handler(BaseHTTPRequestHandler):
             "reached": None,
             "leverage": temperament.leverage(baseline, target),
             "model_id": model_id,
-            "axes": [temperament.AXIS_KEYS[axis] for axis in temperament.AXES],
+            "axes": list(temperament.AXES),
         })
 
     def _regions(self) -> None:
@@ -1625,7 +1626,7 @@ class _Handler(BaseHTTPRequestHandler):
                 out["patch"] = {"on": bool(status.get("on")),
                                "running": recognition.running(),
                                "ready": recognition.ready(),
-                               "last": status.get("son_kosu", "")}
+                               "last": status.get("last_run", "")}
             except Exception:
                 pass
         self._json(out)
@@ -1676,12 +1677,12 @@ class _Handler(BaseHTTPRequestHandler):
             d = recognition.status(config.state_dir)
             self._json({"ok": reason == "basladi", "reason": reason,
                         "on": d["on"], "running": recognition.running(),
-                        "ready": recognition.ready(), "last": d["son_kosu"]})
+                        "ready": recognition.ready(), "last": d["last_run"]})
             return
 
         d = recognition.status(config.state_dir)
         self._json({"ok": True, "on": d["on"], "running": recognition.running(),
-                    "ready": recognition.ready(), "last": d["son_kosu"]})
+                    "ready": recognition.ready(), "last": d["last_run"]})
 
     # -- settings -------------------------------------------------------
 
@@ -2218,7 +2219,7 @@ class _Handler(BaseHTTPRequestHandler):
             if action == "cancel":
                 plan = plan_store.update(
                     config.state_dir, str(body.get("id") or ""),
-                    status="iptal")
+                    status="cancelled")
                 self._json({"ok": True, "plan": plan_store.to_dict(plan) if plan else None})
                 return
             self._json({"ok": False, "error": "bilinmeyen eylem"})
@@ -2957,14 +2958,14 @@ class _Handler(BaseHTTPRequestHandler):
     # -- change ledger ---------------------------------------------------
 
     def _ledger(self) -> Any:
-        """This session's change ledger (`tools/checkpoint.Defter`).
+        """This session's change ledger (`tools/checkpoint.Ledger`).
 
         The tool layer writes the ledger (write_file/edit_file/copy_in
         before every change); this ONLY reads it and calls the undo road the
         `undo` tool uses. No second source of truth is produced: what the
         panel sees is what the agent sees.
         """
-        from ..tools.checkpoint import FOLDER, Defter
+        from ..tools.checkpoint import FOLDER, Ledger
 
         config = getattr(self.server, "config", None)
         if config is None:
@@ -2976,7 +2977,7 @@ class _Handler(BaseHTTPRequestHandler):
             sid = str(snap.get("session") or "")
         if not sid:
             return None
-        return Defter(Path(config.state_dir) / FOLDER, sid)
+        return Ledger(Path(config.state_dir) / FOLDER, sid)
 
     def _changes(self) -> None:
         """Files written/edited in this session.
@@ -2995,23 +2996,23 @@ class _Handler(BaseHTTPRequestHandler):
         except ValueError:
             since = 0
         records = ledger.list_entries(cap=200)      # newest first
-        last = records[0]["sira"] if records else 0
+        last = records[0]["seq"] if records else 0
         out = []
         for k in records:
-            if since and k["sira"] <= since:
+            if since and k["seq"] <= since:
                 continue
-            file_path = str(k.get("dosya") or "")
+            file_path = str(k.get("file") or "")
             out.append({
-                "seq": k["sira"],
+                "seq": k["seq"],
                 "file": file_path,
                 "name": file_path.replace("\\", "/").rsplit("/", 1)[-1],
-                "tool": k.get("arac") or "",
-                "time": k.get("zaman") or "",
-                "missing": bool(k.get("yoktu")),
-                "skipped": k.get("atlandi") or "",
+                "tool": k.get("tool") or "",
+                "time": k.get("time") or "",
+                "missing": bool(k.get("missing")),
+                "skipped": k.get("skipped") or "",
                 # A record without a snapshot cannot be undone; the UI does
                 # not hide that, it says so next to the row.
-                "undoable": bool(k.get("goruntu")) or bool(k.get("yoktu")),
+                "undoable": bool(k.get("snapshot")) or bool(k.get("missing")),
             })
         self._json({"last": last, "records": out})
 
@@ -3030,7 +3031,7 @@ class _Handler(BaseHTTPRequestHandler):
             seq = int(parse_qs(urlparse(self.path).query).get("seq", ["0"])[0])
         except ValueError:
             seq = 0
-        record = next((k for k in ledger.list_entries(cap=200) if k["sira"] == seq), None)
+        record = next((k for k in ledger.list_entries(cap=200) if k["seq"] == seq), None)
         if record is None:
             self._json({"ok": False, "error": "Kayıt bulunamadı."})
             return
@@ -3049,10 +3050,10 @@ class _Handler(BaseHTTPRequestHandler):
             except UnicodeDecodeError:
                 return "", False
 
-        file_path = Path(str(record.get("dosya") or ""))
-        old, old_ok = ("", True) if record.get("yoktu") else (
-            _read(ledger.directory / str(record.get("goruntu")))
-            if record.get("goruntu") else ("", False))
+        file_path = Path(str(record.get("file") or ""))
+        old, old_ok = ("", True) if record.get("missing") else (
+            _read(ledger.directory / str(record.get("snapshot")))
+            if record.get("snapshot") else ("", False))
         new, new_ok = _read(file_path) if file_path.exists() else ("", True)
         self._json({
             "ok": True,
@@ -3061,10 +3062,10 @@ class _Handler(BaseHTTPRequestHandler):
             "name": file_path.name,
             "old": old,
             "new": new,
-            "missing": bool(record.get("yoktu")),
+            "missing": bool(record.get("missing")),
             # No diff is drawn for a binary or unreadable file; the reason is written.
             "text": bool(old_ok and new_ok),
-            "skipped": record.get("atlandi") or "",
+            "skipped": record.get("skipped") or "",
         })
 
     def _change_undo(self, body: dict[str, Any]) -> None:
@@ -3384,9 +3385,9 @@ class _Handler(BaseHTTPRequestHandler):
             root = config.open_sandbox().root
             data = catalog.project_index(root, base=Path(config.workspace))
         except Exception as exc:
-            self._json({"projects": [], "sorunlar": [], "error": str(exc)})
+            self._json({"projects": [], "problems": [], "error": str(exc)})
             return
-        # `sorunlar`: stray manifests at the workshop root. The panel shows
+        # `problems`: stray manifests at the workshop root. The panel shows
         # them in a separate "problematic" section with the reason — a
         # manifest written to the wrong place must not vanish silently.
         self._json(data)
@@ -3752,19 +3753,19 @@ class _Handler(BaseHTTPRequestHandler):
             out.append({
                 "id": ep.session_id,
                 # The user-given name if any; otherwise derived from the digest.
-                "title": record.get("ad") or _session_title(ep.digest),
-                "named": bool(record.get("ad")),
-                "tags": record.get("etiketler") or [],
+                "title": record.get("name") or _session_title(ep.digest),
+                "named": bool(record.get("name")),
+                "tags": record.get("tags") or [],
                 "date": _stem_date(ep.session_id),
                 "turns": ep.turns,
                 "tools": ep.tools[:6],
                 "preview": ep.digest[:160],
                 "current": is_current,
-                # açık = currently selected; koşuyor = EVERY lane whose turn
-                # is running (active or background); biten = the rest.
-                "status": ("koşuyor" if ((is_current and busy)
+                # open = currently selected; running = EVERY lane whose turn
+                # is running (active or background); finished = the rest.
+                "status": ("running" if ((is_current and busy)
                                          or ep.session_id in running)
-                           else ("açık" if is_current else "biten")),
+                           else ("open" if is_current else "finished")),
                 "project": project,
                 "path": path,
                 "model": record.get("model") or "",
@@ -3772,7 +3773,7 @@ class _Handler(BaseHTTPRequestHandler):
                 "hits": inside.get(ep.session_id, []),
             })
 
-        tags = sorted({e for k in meta.values() for e in (k.get("etiketler") or [])})
+        tags = sorted({e for k in meta.values() for e in (k.get("tags") or [])})
         self._json({
             "sessions": out,
             "projects": sorted(project_names),
