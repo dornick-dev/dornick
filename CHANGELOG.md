@@ -1,5 +1,104 @@
 # Changelog
 
+## 1.5.5 - 2026-09-06
+
+The last Turkish inside the files goes: the values Dornick compares
+against and the keys of what it writes to disk. Nothing you have is lost —
+every old file is read through one map (`legacy_values`) and comes out in
+the new words; a file whose reader also writes it back is rewritten in the
+new form on its next save, the rest stay as they are on disk and are
+upgraded on every read. No old record is deleted, moved or rewritten just
+to be renamed.
+
+**State values (old → new)**
+
+| where | old | new |
+|---|---|---|
+| task runs, helpers, lanes, schedule, workflows, plans, session list | `koşuyor`/`kosuyor` `bitti` `hata` `yetim` `kesildi` `iptal` `bekliyor` `onaylandi` `yapiliyor` `atlandı` `başlatılamadı` `onarılıyor` `zaman_asimi` `kostu` `temiz` `yok` `açık` `biten` | `running` `done` `error` `orphan` `interrupted` `cancelled` `waiting` `approved` `in_progress` `skipped` `failed_to_start` `repairing` `timeout` `ran` `clean` `none` `open` `finished` |
+| helper kinds | `yardımcı` `iş` `süreç` | `helper` `job` `process` |
+| session outcomes (session log, night gain) | `basarisiz` `duzeltildi` `acik` `basarili` `rutin` | `failed` `corrected` `open` `succeeded` `routine` |
+| sleep switch | `uyanik` `uykulu` `uyuyor` `uyaniyor` `kestirme` | `awake` `sleepy` `asleep` `waking` `nap` |
+| night phases | `derin` `hafif` `rem` | `deep` `light` `rem` |
+| switch reasons (journal, night events) | `basinc` `basinc dustu` `hazir` `ritim` `atalet bitti` `oreksin` `kullanici` `kullanici istedi` `kafein` `gece bitti` `orgu kapali` `kapanis` | `pressure` `pressure dropped` `ready` `rhythm` `inertia over` `orexin` `user` `user asked` `caffeine` `night over` `weave off` `shutdown` |
+| memory use-log labels | `yazildi` `acildi` `basari` `hata` `sema` `yakalandi` `damitildi` | `written` `opened` `success` `error` `schema` `caught` `distilled` |
+| workflow edge condition | `hata` | `error` |
+| chrome console | levels `uyari`/`hata`, sources `konsol`/`istisna`/`tarayici` | `warning`/`error`, `console`/`exception`/`browser` |
+| symbol usages | `cagri` `kurulum` `ice_aktarma` `anma` | `call` `setup` `import` `mention` |
+| context breakdown ids (dock, CSS) | `sistem` `arac` `ruh` `yetenek` `mcp` `yardimci` `sohbet` | `system` `tools` `soul` `skills` `mcp` `helpers` `chat` |
+| tool source tag | `yetenek` | `skill` |
+
+**Schema keys (old → new)**
+
+| file | old | new |
+|---|---|---|
+| `nights/<date>.jsonl` (kinds) | `uyku.basladi` `uyku.dongu` `tekrar.ileri` `tekrar.geri` `dikis` `dokunus` `damitma` `uyku.uyandi` `uyku.bitti` `uyanik.ters` `mikro.basladi/bitti` `yerel.basladi/bitti` | `sleep.started` `sleep.cycle` `replay.forward` `replay.reverse` `stitch` `touch` `distil` `sleep.woke` `sleep.ended` `awake.reverse` `micro.started/ended` `local.started/ended` |
+| `nights/<date>.jsonl` (fields) | `tur` `basinc` `tahmini_uyanma` `dongu_sayisi` `faz` `oturum` `dizi` `kenarlar` `sonuc` `paylar` `uzerinden` `oturumlar` `kaynaklar` `yeni` `sebep` `dongu` `tamamlanan` `devreden` `borc` `rapor` `bolge` `kuculen` `atlanan` | `kind` `pressure` `wake_estimate` `cycle_count` `phase` `session` `sequence` `edges` `outcome` `shares` `via` `sessions` `sources` `new` `reason` `cycle` `completed` `carried` `debt` `report` `region` `shrunk` `skipped` |
+| night summary (`/api/nights/<date>`) | `dongu` `tekrar` `kenar` `dikis` `damitik` `dokunus` `uyandi` `devreden` | `cycles` `replays` `edges` `stitches` `distilled` `touches` `woke` `carried` |
+| `sleep_journal.jsonl` | `eski` `yeni` `sebep` | `old` `new` `reason` |
+| `sleep_debt.json` | `faz` `devreden` | `phase` `carried` |
+| night watermark | `islenen` `son_kosu` | `processed` `last_run` |
+| session logs (note names) | `sonuc` `baslik` `butce_freni` `giris_kapisi` `hata_dersi` `is_kapsulu` `kabul_kapisi` `kirmizi_kapisi` `plan_refleksi` `sahte_arac_cagrisi` `test_kapisi` `uyanik_tekrar_failed` `zihin_durtusu` `ters_tekrar_kostu` `ileri_tekrar_kostu` | `outcome` `title` `budget_brake` `entry_gate` `error_lesson` `job_capsule` `acceptance_gate` `red_gate` `plan_reflex` `fake_tool_call` `test_gate` `awake_replay_failed` `mind_impulse` `reverse_replay_done` `forward_replay_mark` |
+| session logs (note meta) | `sonuc` `ozet` `oturum` `dosya` `dosyalar` `ad` `durum` `acik` `detay` `anahtar` `deneme` | `outcome` `summary` `session` `file` `files` `name` `status` `open` `detail` `keys` `attempts` |
+| `temperament.json` | `taban` `hedef` `kazanc`; axes `yenilik` `sonuc` `sosyal` `sebat` `temkin` | `baseline` `target` `gain`; `novelty` `outcome` `social` `persistence` `caution` |
+| `decision_exemplars.json` | `kararlar` `eksen` `durum` `karar` | `decisions` `axis` `situation` `decision` |
+| `assets/decision_probes.json`, `eval/character/*.json` | `ad` `aciklama` `surum` `eksenler` `kararlar` `eksen` `ikincil_eksen` `karma` `mesaj` `secenekler` `yuksek` `baglamlar` | `name` `description` `version` `axes` `decisions` `axis` `secondary_axis` `mixed` `message` `options` `high` `contexts` |
+| character SSE (`character{event}`) | `karakter.hata` `karakter.olcum`; `onceki` `taban` `kazanc` `emsal_kaydedildi` `cagri` `hata` | `character.error` `character.measured`; `previous` `baseline` `gain` `precedent_recorded` `calls` `error` |
+| task-run archive, helper meter, price table | `girdi` `cikti` `cagri` | `input` `output` `calls` |
+| `prices.json` | `fiyatlar` | `prices` |
+| `config.json` | `sleep.uyku_acik` | `sleep.enabled` |
+| `setup.json` (installer) | `dil` | `language` |
+| `sessions/_oturumlar.json` → `sessions/_sessions.json` | `ad` `etiketler` | `name` `tags` |
+| artifact `meta.json` | `surum` | `version` |
+| `changes/<session>/kayit.jsonl` → `ledger.jsonl` | `sira` `dosya` `arac` `zaman` `goruntu` `yoktu` `atlandi` | `seq` `file` `tool` `time` `snapshot` `missing` `skipped` |
+| `hooks.json` | `olay` `arac` `komut` `zaman_asimi`; events `arac_oncesi` `arac_sonrasi`; env `DORNICK_ARAC` `DORNICK_YOL` `DORNICK_OTURUM` | `event` `tool` `command` `timeout`; `before_tool` `after_tool`; `DORNICK_TOOL` `DORNICK_PATH` `DORNICK_SESSION` (the old env names are still set beside them) |
+| `recognition.json` | `son_kosu` | `last_run` |
+| memory `use_log` entries | `etiket` | `label` |
+| `base.npz` / `taban.npz` | `_ayar` (`kat` `kafa`), arrays `gomme` `konum` `son.w` `son.b` | `_config` (`layers` `heads`), `embed` `pos` `final.w` `final.b` |
+| workflow files | node `elle` | node `manual` |
+| apps API | `eksik` `neden` `sorunlar` | `missing` `reason` `problems` |
+| symbols tool detail | `sorgu` `kok` `tanim` `kullanim` `taranan` `kesin` | `query` `root` `definitions` `usages` `scanned` `exact` |
+| run / inspect tool detail | `ekosistem` `komut` `kok` `durum` `cikis_kodu` `sure` `gecen` `kalan` `atlanan` `okundu` `basarisizlar{ad,mesaj,yer}`; `tani{dosya,dil,denetleyici,durum,bulgular{satir,mesaj}}` `hatali` `kancalar` | `ecosystem` `command` `root` `status` `exit_code` `duration` `passed` `failed` `skipped` `parsed` `failures{name,message,location}`; `diagnosis{file,language,checker,status,findings{line,message}}` `faulty` `hooks` |
+| reset backup folders | `anilar`, `tanima`, `projeler`, `ayarlar` | `memories`, `recognition`, `projects`, `settings` |
+| `sessions/.arsiv` | — | `sessions/.archive` (adopted once) |
+| browser localStorage | `dornick-dil`, `dornick-beyin-ayrinti`, `dornickGuncellemeBildirim{zaman,surum,kapatilan}`; the words `acik`/`kapali` | `dornick-language`, `dornick-brain-details`, `dornick-update-notice{time,version,dismissed}`; `on`/`off` (old keys and words are read once) |
+
+**Tool parameters (model-facing; old → new)**
+
+| tool | old | new |
+|---|---|---|
+| `run` | `komut` `zaman_asimi` `sadece_tespit` | `command` `timeout` `detect_only` |
+| `symbols` | `sorgu` `tur` (`tanim`/`kullanim`/`hepsi`) `dil` | `query` `kind` (`definitions`/`usages`/`all`) `language` |
+| `browser` | actions `konsol` `ag`; `seviye` (`hepsi`/`hata`/`uyari`) | `console` `network`; `level` (`all`/`errors`/`warnings`) |
+| `camera` | actions `liste` `yol` `kesit`; `adet` | `list` `path` `capture`; `count` |
+| `task` | `arka_plan` | `background` |
+| `shell` | `arka_plan` (a long job that ends; `background` already meant "detached, never ends") | `job` |
+
+The executor and the permission gate translate a call that still uses the
+old names — a replayed session log, a rule saved as `run:…`, a model that
+learnt the old words — before anything looks at it.
+
+**Migrations, all on read:** night files (also gzipped ones; the replay
+endpoint serves upgraded events), the sleep journal is append-only, the
+watermark and `sleep_debt.json`, session logs (`Event.from_json`), the
+task-run archive, plans, `tasks.json`, workflows, `hooks.json`, the change
+ledger (`kayit.jsonl` adopted as `ledger.jsonl`), `temperament.json` and
+`decision_exemplars.json` (rewritten on the next save), the probe sets,
+`config.json` (`Config.load`), `setup.json` (`language`, then `dil`),
+session meta (`_oturumlar.json` adopted as `_sessions.json`), artifact
+meta, `prices.json`, `recognition.json`, use-log entries, writer bundles
+(a rig-trained `taban.npz` still loads), old tool arguments and enum values.
+
+**Left as it was, on purpose:** the words shown to you or to the model
+(labels, sentences, tool descriptions, `README.tr.md`, the recognition
+corpus), the training rig's own file `taban.npz` name and its layout, the
+character bench's report vocabulary (`eval/character/run.py` output:
+`metrikler`, `sayim`… — a bench artefact, not a product file) and the
+life bench's dataset format (`eval/context_memory/*.json`).
+
+New regression tests (`tests/test_schema_names.py`) fail on a Turkish
+state value, schema key, CSS state class or tool parameter, and read every
+old file format back.
+
 ## 1.5.4 - 2026-09-06
 
 The last Turkish surface goes: the HTTP API and the chat's slash commands.
