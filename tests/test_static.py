@@ -2841,6 +2841,7 @@ def test_the_brain_panel_is_simple_by_default_and_detailed_on_demand() -> None:
     assert 'setDetails(saved === "on", false)' in REGIONS_JS
     for text in ("Uykulu — birazdan uyur.", "Uyuyor: günün konuşmalarını tekrar ediyor",
                  "Uyanık — arka planda tekrar ediyor", "Uyanık — kaydedilmiş geceyi oynatıyor",
+                 "Uyanık ve dinlenmiş — sıradaki gece en erken",
                  "Uyanıyor.", "Ayrıntıları gizle ▾", "konuşma tekrar edildi", "ders çıkardı"):
         assert text in REGIONS_JS, text
     # The percent is a whole number: "%12", never "0.13".

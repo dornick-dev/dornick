@@ -61,6 +61,8 @@ Lang.add({
   "Uyuyor: günün konuşmalarını tekrar ediyor": "Asleep: replaying the day's conversations",
   "Uyanıyor.": "Waking up.", "Kestiriyor: kısa bir mola.": "Napping: a short break.",
   "Uyanık — arka planda kısa bir tekrar yapıyor.": "Awake — a short replay in the background.",
+  "Uyanık ve dinlenmiş — sıradaki gece en erken": "Awake and rested — next night no earlier than",
+  "yarın": "tomorrow",
   "Uyanık — arka planda tekrar ediyor": "Awake — replaying in the background",
   "Uyanık — kaydedilmiş geceyi oynatıyor": "Awake — playing a recorded night",
   "Dün gece": "Last night", "gecesi": "night", "konuşma tekrar edildi": "conversations replayed",
@@ -134,7 +136,7 @@ const Regions = (() => {
 
   let mind, tip, sheet, tabs;
   let state = {
-    sleep: "awake", daemon: "", nap: false, tired: false, cycle: 0, phase: "",
+    sleep: "awake", daemon: "", restedUntil: "", nap: false, tired: false, cycle: 0, phase: "",
     wakeAt: "", caffeine: "", pressure: null, threshold: null, debt: null,
     goals: new Map(), patch: {}, cold: 0, world: 0,
     // The simple block's extra facts: the last finished night and the
@@ -254,6 +256,7 @@ const Regions = (() => {
         if (!replaying()) state.sleep = u.status;
       }
       if (u && "caffeine" in u) state.caffeine = String(u.caffeine || "");
+      if (u && "rested_until" in u) state.restedUntil = String(u.rested_until || "");
       if (u && "next_night" in u) state.nextNight = String(u.next_night || "");
       if (u && u.rhythm) {
         state.rhythmDays = Number(u.rhythm.days) || 0;
@@ -486,10 +489,26 @@ const Regions = (() => {
       case "asleep":
         return t("Uyuyor: günün konuşmalarını tekrar ediyor") + (count ? " (" + count + ")" : "") + ".";
       case "waking": return t("Uyanıyor.");
-      default:
-        return state.caffeine ? t("Uyanık — bu gece uyumayacak (kafein).")
-                              : t("Uyanık. Sen yokken uyuyup öğrendiklerini pekiştirir.");
+      default: {
+        if (state.caffeine) return t("Uyanık — bu gece uyumayacak (kafein).");
+        // A finished night earns a rest: no new night before `rested_until`,
+        // however high the bar reads — say so, with the hour (live 07.09:
+        // "does it sleep by itself?" while the bar sat at 100%).
+        const until = restedHour();
+        if (until) return t("Uyanık ve dinlenmiş — sıradaki gece en erken") + " " + until + ".";
+        return t("Uyanık. Sen yokken uyuyup öğrendiklerini pekiştirir.");
+      }
     }
+  }
+
+  // "21:21" in local time when rested_until lies ahead; "" otherwise.
+  function restedHour() {
+    if (!state.restedUntil) return "";
+    const at = new Date(state.restedUntil);
+    if (isNaN(at.getTime()) || at.getTime() <= Date.now()) return "";
+    const hh = String(at.getHours()).padStart(2, "0"), mm = String(at.getMinutes()).padStart(2, "0");
+    const tomorrow = at.toDateString() !== new Date().toDateString();
+    return (tomorrow ? t("yarın") + " " : "") + hh + ":" + mm;
   }
 
   function nightLabel(date) {

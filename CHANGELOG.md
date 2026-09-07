@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.5.9 - 2026-09-07
+
+* **Brain panel: "Uyanık ve dinlenmiş — sıradaki gece en erken 23:21".**
+  A finished night earns twelve hours of rest, so the watchman does not
+  sleep again in the next idle window even when the bar reads high. The
+  sentence now says so, with the hour (local time; "yarın" when it falls
+  on the next day), instead of promising a sleep that is not due.
+
 ## 1.5.8 - 2026-09-07
 
 * **Fixed: sessions without an outcome note were owed forever.** 1.5.7
