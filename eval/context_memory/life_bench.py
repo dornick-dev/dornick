@@ -195,9 +195,37 @@ class VirtualClock:
     def text(self) -> str:
         return self.now.isoformat(timespec="milliseconds")
 
-    def advance(self, day: int, hour: int) -> None:
+    def advance(self, day: int, hour: int, *, active: bool = True) -> None:
         target = self.start + timedelta(days=day - 1, hours=hour)
         self.now = max(target, self.now + timedelta(minutes=1))
+
+
+class SteppingClock(VirtualClock):
+    """A virtual clock that lets the watchman live through the idle hours.
+
+    `advance` no longer jumps: it walks to the target in `step_minutes`
+    strides and calls `on_step` at each one — that is where the sleep
+    daemon ticks, exactly as it does once a minute in the product. Reaching
+    the target of an `active` advance calls `on_event`: the user is here.
+    The two end-of-day advances (`_play` reads the soul at 22 and 23) are
+    not user activity and say so.
+    """
+
+    def __init__(self, start: datetime, step_minutes: int,
+                 on_step: Any, on_event: Any) -> None:
+        super().__init__(start)
+        self.step = timedelta(minutes=step_minutes)
+        self.on_step = on_step
+        self.on_event = on_event
+
+    def advance(self, day: int, hour: int, *, active: bool = True) -> None:
+        target = self.start + timedelta(days=day - 1, hours=hour)
+        while self.now + self.step <= target:
+            self.now += self.step
+            self.on_step()
+        super().advance(day, hour, active=active)
+        if active:
+            self.on_event()
 
 
 # -- scenario ----------------------------------------------------------
@@ -273,8 +301,18 @@ class Tally:
 
 
 def run(data: dict[str, Any], *, disabled: tuple[str, ...] = (),
-        root: Path | None = None, distillation: bool = False) -> dict[str, Any]:
-    """Plays the scenario day by day and returns the metrics."""
+        root: Path | None = None, distillation: bool = False,
+        watchman: bool = False) -> dict[str, Any]:
+    """Plays the scenario day by day and returns the metrics.
+
+    `watchman`: the night is not run at 22:00 by the bench; the product's
+    own sleep daemon (`recall/daemon.py`) ticks every `WATCHMAN_STEP_MINUTES`
+    of virtual time and decides when to sleep from the pressure it measures,
+    the thresholds, the twenty-hour insurance and the rest after a night —
+    the schedule a real install would produce. The result then carries a
+    `nobet` (watch) summary: nights, what started them, what the panel bar
+    would have read.
+    """
     global DISTIL_MODEL
     DISTIL_MODEL = _extractor_model if distillation else None    # noqa: PLW0603
     _neutralise_budgets()
@@ -287,7 +325,12 @@ def run(data: dict[str, Any], *, disabled: tuple[str, ...] = (),
     start = datetime.fromisoformat(data["baslangic"])
     if start.tzinfo is None:
         start = start.replace(tzinfo=timezone.utc)
-    clock = VirtualClock(start)
+    watch: _Watch | None = None
+    if watchman:
+        watch = _Watch()
+        clock = SteppingClock(start, WATCHMAN_STEP_MINUTES, watch.step, watch.event)
+    else:
+        clock = VirtualClock(start)
 
     tmp = None
     if root is None:
@@ -297,8 +340,15 @@ def run(data: dict[str, Any], *, disabled: tuple[str, ...] = (),
     mind = None
     try:
         mind = _open_mind(root, clock)
+        if watch is not None:
+            watch.start(mind, root, clock)
+            result = _play(mind, data, clock, root / "sessions", night=_no_night)
+            result["nobet"] = watch.summary(mind)
+            return result
         return _play(mind, data, clock, root / "sessions")
     finally:
+        if watch is not None:
+            watch.stop()
         DISTIL_MODEL = None
         if switches is not None:
             switches.reset()
@@ -341,7 +391,8 @@ class Session:
 
 
 def _play(mind: Any, data: dict[str, Any], clock: VirtualClock,
-          sessions_dir: Path) -> dict[str, Any]:
+          sessions_dir: Path, *, night: Any = None) -> dict[str, Any]:
+    night = _night_pass if night is None else night
     day_count = int(data["gun_sayisi"])
     daily: dict[int, list[dict[str, Any]]] = {}
     for event in data["olaylar"]:
@@ -440,11 +491,11 @@ def _play(mind: Any, data: dict[str, Any], clock: VirtualClock,
                 _query(mind, event, t, slug_of, id_of, sess)
 
         # End of day: the night pass (if any), then the soul's state that day.
-        clock.advance(day, 22)
-        if (duration := _night_pass(mind, sessions_dir, clock)) is not None:
+        clock.advance(day, 22, active=False)
+        if (duration := night(mind, sessions_dir, clock)) is not None:
             t.night_durations.append(duration)
 
-        clock.advance(day, 23)
+        clock.advance(day, 23, active=False)
         soul = mind.soul()
         soul_slugs = {slug_of.get(m.id, "") for m in _soul_records(soul)}
         t.soul_tokens.append(tokens_of(soul.render()))
@@ -559,6 +610,118 @@ def _night_pass(mind: Any, sessions_dir: Path, clock: VirtualClock) -> float | N
         weave.night_pass(mind.store, sessions_dir, clock=clock,
                          watermark=sessions_dir.parent / "filigran.json")
     return time.perf_counter() - started
+
+
+def _no_night(mind: Any, sessions_dir: Path, clock: VirtualClock) -> None:
+    """The bench does not run the night: the watchman decides (see `run`)."""
+    return None
+
+
+# The watchman's tick in virtual minutes. The product ticks once a minute;
+# thirty is enough to see every decision (idle after five minutes, two
+# minutes of SLEEPY, the twenty-hour insurance) without 130k ticks.
+WATCHMAN_STEP_MINUTES = 30
+# The scenario is sparse — ten events a day — while a real user types
+# between them. An event counts as the user being around for this long, so
+# the hour a session happens in is an awake hour, not five idle windows.
+WATCHMAN_PRESENT_MINUTES = 60
+
+
+class _Watch:
+    """Drives the product's sleep daemon through the scenario and keeps the book.
+
+    Every step samples what the panel would show — S against the upper
+    threshold — and every night the daemon starts is classified by what
+    started it: the pressure itself, or the twenty-hour insurance that
+    feeds the threshold when no night has happened for a day.
+    """
+
+    def __init__(self) -> None:
+        self.daemon: Any = None
+        self.events: list[dict[str, Any]] = []
+        self.samples: list[dict[str, Any]] = []
+        self.nights: list[dict[str, Any]] = []
+        self._upper = 1.0
+        self._last_event: datetime | None = None
+
+    def start(self, mind: Any, root: Path, clock: VirtualClock) -> None:
+        from dornick.recall import daemon as _daemon, sleep as _sleep
+
+        self._upper = float(_sleep.UPPER_THRESHOLD)
+        state = root / "state"
+        state.mkdir(parents=True, exist_ok=True)
+        (root / "sessions").mkdir(parents=True, exist_ok=True)
+        self.daemon = _daemon.SleepDaemon(
+            mind.store, root / "sessions", state, clock=clock, hub=self)
+
+    def stop(self) -> None:
+        self.daemon = None
+
+    # The hub: every night event lands here.
+    def emit(self, event: dict[str, Any]) -> None:
+        if event.get("type") != "night":
+            return
+        inner = event["event"]
+        self.events.append(inner)
+        if inner["kind"] == "sleep.started":
+            pressure = self.daemon._pressure          # noqa: SLF001 - measured this tick
+            hours, pending = self.daemon.debt()
+            self.nights.append({
+                "ts": inner["ts"], "S": pressure.as_dict(),
+                "oran": round(pressure.total / self._upper, 4),
+                "tetik": "basinc" if pressure.total >= self._upper else "sigorta",
+                "saat_sonra": round(hours, 1), "bekleyen": pending})
+        elif inner["kind"] in ("sleep.ended", "sleep.woke") and self.nights:
+            self.nights[-1]["bitis"] = inner["kind"]
+            self.nights[-1]["neden"] = inner.get("reason", "")
+
+    def event(self) -> None:
+        if self.daemon is not None:
+            self._last_event = self.daemon.clock()
+            self.daemon.user_active()
+
+    def step(self) -> None:
+        if self.daemon is None:
+            return
+        now = self.daemon.clock()
+        if (self._last_event is not None
+                and now - self._last_event < timedelta(minutes=WATCHMAN_PRESENT_MINUTES)):
+            self.daemon.user_active()
+        state = self.daemon.tick()
+        pressure = self.daemon._pressure                # noqa: SLF001 - measured this tick
+        self.samples.append({
+            "ts": self.daemon.clock().isoformat(timespec="minutes"),
+            "oran": round(pressure.total / self._upper, 4),
+            "S": pressure.as_dict(), "durum": state.value})
+
+    def summary(self, mind: Any) -> dict[str, Any]:
+        ratios = [x["oran"] for x in self.samples]
+        finished = [n for n in self.nights if n.get("bitis") == "sleep.ended"]
+        by_trigger = {"basinc": 0, "sigorta": 0}
+        for n in self.nights:
+            by_trigger[n["tetik"]] = by_trigger.get(n["tetik"], 0) + 1
+        by_end: dict[str, int] = {}
+        for n in self.nights:
+            key = n.get("neden") or n.get("bitis") or "?"
+            by_end[key] = by_end.get(key, 0) + 1
+        awake = [x["oran"] for x in self.samples if x["durum"] == "awake"]
+        days = max(1, len({x["ts"][:10] for x in self.samples}))
+        return {
+            "gece": len(self.nights), "biten": len(finished),
+            "kesilen": len(self.nights) - len(finished),
+            "gunde": round(len(self.nights) / days, 3),
+            "tetik": by_trigger,
+            "bitis": by_end,
+            "gece_ortalama_oran": (round(statistics.fmean(n["oran"] for n in self.nights), 4)
+                                   if self.nights else None),
+            "cubuk_ortalama": round(statistics.fmean(awake), 4) if awake else None,
+            "cubuk_en_yuksek": round(max(ratios), 4) if ratios else None,
+            "cubuk_tam_pay": (round(sum(1 for r in awake if r >= 1.0) / len(awake), 4)
+                              if awake else None),
+            "son_S": mind.store.strengthening(),
+            "geceler": self.nights,
+            "ornekler": self.samples,
+        }
 
 
 def _wake(event: dict[str, Any]) -> None:
@@ -1169,12 +1332,13 @@ def _same_topic(a: str, b: str) -> bool:
 
 
 def _strengthening(store: Any) -> float:
-    with store._lock:                                   # noqa: SLF001 — measurement
-        total = store._db.execute(
-            "SELECT COALESCE(SUM(weight), 0) FROM link").fetchone()[0]
-        nodes = store._db.execute(
-            "SELECT COUNT(*) FROM node WHERE deleted=0").fetchone()[0]
-    return float(total) / max(int(nodes), 1)
+    """S exactly as the product measures it (`sleep.pressure`), with no night
+    on record: edge weight grown since the last night per record, which with
+    the night off is the total. The threshold must be a threshold of the
+    quantity the switch reads, so the bench does not keep a copy of it."""
+    from dornick.recall import sleep as _sleep
+
+    return _sleep.pressure(store).strengthening
 
 
 def _derive_thresholds(curve: list[dict[str, Any]]) -> dict[str, float | None]:
@@ -1390,11 +1554,13 @@ def _threshold_report(report: dict[str, Any]) -> Path:
     lines = [
         "# Basınç–bozulma eğrisi (`esik_egrisi`)",
         "",
-        "Gece geçişi **kapalı**. S (küçültülmemiş güçlenme: toplam kenar "
-        "ağırlığı / düğüm) gün gün artarken önyükleme precision'ı ve yeni "
-        "kaydın komşu doğruluğu ölçülüyor. `ESIK_UST`, ilk on ölçülen günün "
-        "ortalamasından %5 düşüşün başladığı S değeridir; `ESIK_ALT` onun "
-        "üçte biri. Bu sayılar elle seçilmez — `sleep.py` onları buradan alır.",
+        "Gece geçişi **kapalı**. S (küçültülmemiş güçlenme: son geceden beri "
+        "büyüyen kenar ağırlığı / düğüm — gece hiç koşmadığı için burada toplam "
+        "ağırlık) gün gün artarken önyükleme precision'ı ve yeni kaydın komşu "
+        "doğruluğu ölçülüyor. `ESIK_UST`, ilk on ölçülen günün ortalamasından "
+        "%5 düşüşün başladığı S değeridir; `ESIK_ALT` onun üçte biri. Bu sayılar "
+        "elle seçilmez — `sleep.py` onları buradan alır; S de bench'in kendi "
+        "kopyası değil, ürünün `sleep.pressure` ölçümüdür.",
         "",
         f"- taban precision: **{_fmt(thresholds['taban_precision'])}**",
         f"- `ESIK_UST` = **{_fmt(thresholds['ESIK_UST'])}**",
@@ -1409,6 +1575,58 @@ def _threshold_report(report: dict[str, Any]) -> Path:
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     (CHARTS() / "pressure-decay.json").write_text(
         json.dumps(report, ensure_ascii=False, indent=1), encoding="utf-8")
+    return path
+
+
+def _watch_report(result: dict[str, Any], label: str = "sleep-schedule") -> Path:
+    """`docs/charts/sleep-schedule.md`: the schedule the watchman produced."""
+    watch = result["nobet"]
+    by_day: dict[str, dict[str, Any]] = {}
+    for x in watch["ornekler"]:
+        day = by_day.setdefault(x["ts"][:10], {"en_yuksek": 0.0, "gece": []})
+        day["en_yuksek"] = max(day["en_yuksek"], x["oran"])
+    for n in watch["geceler"]:
+        by_day.setdefault(n["ts"][:10], {"en_yuksek": 0.0, "gece": []})["gece"].append(n)
+    lines = [
+        "# Uyku çizelgesi (`--watchman`)",
+        "",
+        "Gece bench tarafından 22:00'de koşturulmuyor; ürünün kendi uyku bekçisi "
+        f"(`recall/daemon.py`) sanal saatte {WATCHMAN_STEP_MINUTES} dakikada bir "
+        "tik atıyor ve ölçtüğü basınca, eşiklere, yirmi saatlik sigortaya ve gece "
+        "sonrası dinlenmeye göre kendisi karar veriyor. Çubuk = S / `UPPER_THRESHOLD`; "
+        "panelin gösterdiği yüzde.",
+        "",
+        f"- gece sayısı: **{watch['gece']}** (biten {watch['biten']}, kesilen "
+        f"{watch['kesilen']}; günde {watch['gunde']:g})",
+        f"- tetik: basınç **{watch['tetik'].get('basinc', 0)}** · sigorta "
+        f"**{watch['tetik'].get('sigorta', 0)}**",
+        "- bitiş: " + " · ".join(f"{k} **{v}**" for k, v in sorted(watch["bitis"].items())),
+        f"- gece başlarken çubuk ortalaması: **{_fmt(watch['gece_ortalama_oran'])}**",
+        f"- uyanıkken çubuk: ortalama **{_fmt(watch['cubuk_ortalama'])}** · en yüksek "
+        f"**{_fmt(watch['cubuk_en_yuksek'])}** · %100'de geçen pay "
+        f"**{_fmt(watch['cubuk_tam_pay'])}**",
+        f"- 90. gün sonunda mutlak S (toplam kenar ağırlığı / düğüm): **{watch['son_S']:g}**",
+        f"- gündüz metrikleri aynı koşudan: prime precision "
+        f"**{_fmt(result['metrikler'].get('prime_precision'))}** · recall "
+        f"**{_fmt(result['metrikler'].get('prime_recall'))}** · sıcak oran "
+        f"**{_fmt(result['metrikler'].get('sicak_oran'))}**",
+        "",
+        "| Gün | çubuk en yüksek | gece | tetik | gece başı S (güçlenme / borç / ısı) |",
+        "|---|---|---|---|---|",
+    ]
+    for day, row in sorted(by_day.items()):
+        nights = row["gece"]
+        lines.append(
+            f"| {day} | {row['en_yuksek']:g} | {len(nights)} | "
+            f"{', '.join(n['tetik'] for n in nights) or '—'} | "
+            + ("; ".join(f"{n['S']['strengthening']:g} / {n['S']['debt']:g} / {n['S']['heat']:g}"
+                         for n in nights) or "—") + " |")
+    path = CHARTS() / f"{label}.md"
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    slim = dict(result)
+    slim["nobet"] = {k: v for k, v in watch.items() if k != "ornekler"}
+    (CHARTS() / f"{label}.json").write_text(
+        json.dumps(slim, ensure_ascii=False, indent=1), encoding="utf-8")
     return path
 
 
@@ -1494,6 +1712,9 @@ def main(argv: list[str] | None = None) -> int:
                     help="CELISKI_ESIK calibration (Phase 2.4)")
     ap.add_argument("--threshold-curve", action="store_true", dest="threshold",
                     help="degradation curve with the night off; UPPER_THRESHOLD comes from here")
+    ap.add_argument("--watchman", action="store_true",
+                    help="let the product's sleep daemon schedule the nights; "
+                         "writes docs/charts/sleep-schedule.md")
     ap.add_argument("--json", action="store_true", help="print JSON only")
     ap.add_argument("--table", action="store_true", help="produce the accumulated summary table")
     args = ap.parse_args(argv)
@@ -1516,6 +1737,15 @@ def main(argv: list[str] | None = None) -> int:
         report = threshold_curve(data)
         print(_threshold_report(report))
         print(json.dumps(report["esik"], ensure_ascii=False))
+        return 0
+
+    if args.watchman:
+        result = run(data, watchman=True)
+        result["veri"] = data["ad"]
+        print(_watch_report(result, args.label or "sleep-schedule"))
+        watch = result["nobet"]
+        print(json.dumps({k: v for k, v in watch.items()
+                          if k not in ("geceler", "ornekler")}, ensure_ascii=False))
         return 0
 
     if args.old and not OLD_VERSION:

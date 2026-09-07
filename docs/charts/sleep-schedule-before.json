@@ -1,0 +1,1646 @@
+{
+ "metrikler": {
+  "prime_precision": 0.6271,
+  "prime_recall": 0.5,
+  "yasak_sizinti": 0.0,
+  "tuzak_sessizlik": 1.0,
+  "bayat_ruh": 0.0,
+  "taze_ruh": 1.0,
+  "ruh_token": 304.7417,
+  "prime_token": 23.1558,
+  "geri_donus_recall": 1.0,
+  "komsuluk_recall": 0.0,
+  "sorumluluk_dogrulugu": 0.75,
+  "dikis_recall": 0.0,
+  "gomulme_recall": 1.0,
+  "sema_tazeleme": 0.2085,
+  "yakalama": 0.3464,
+  "ders_gecikmesi": 79.4,
+  "sicak_oran": 0.1023,
+  "gece_suresi": null,
+  "uykusuz_kayip": null,
+  "uykusuz_sisme": null,
+  "aktif_bolge_ihlali": null,
+  "tur_bloklama": 6.53,
+  "kesinti_kaybi": null,
+  "kesinti_gecikmesi": null,
+  "yarim_damitma": null,
+  "ritim_isabeti": null,
+  "atalet": null,
+  "buyume_p95": null,
+  "buyume_ram": null,
+  "gecikme_p95": 4.76
+ },
+ "kume": {
+  "A": {
+   "precision": 0.2857,
+   "recall": 0.5,
+   "sizinti": 0.0
+  },
+  "B": {
+   "precision": 0.7857,
+   "recall": 0.6875,
+   "sizinti": 0.0
+  },
+  "D": {
+   "precision": 1.0,
+   "recall": 0.8333,
+   "sizinti": 0.0
+  },
+  "E": {
+   "precision": 0.25,
+   "recall": 0.05,
+   "sizinti": 0.0
+  },
+  "H": {
+   "precision": 1.0,
+   "recall": 1.0,
+   "sizinti": 0.0
+  },
+  "J": {
+   "precision": 1.0,
+   "recall": 1.0,
+   "sizinti": 0.0
+  },
+  "K": {
+   "precision": 0.0,
+   "recall": 0.0,
+   "sizinti": 0.0
+  }
+ },
+ "sayim": {
+  "soru": 191,
+  "dugum": 264,
+  "tuzak": 40,
+  "uyan": 9,
+  "kenar": 427
+ },
+ "nobet": {
+  "gece": 103,
+  "biten": 59,
+  "kesilen": 44,
+  "gunde": 1.144,
+  "tetik": {
+   "basinc": 0,
+   "sigorta": 103
+  },
+  "bitis": {
+   "pressure": 59,
+   "rhythm": 9,
+   "pressure dropped": 35
+  },
+  "gece_ortalama_oran": 0.4135,
+  "cubuk_ortalama": 0.4051,
+  "cubuk_en_yuksek": 0.65,
+  "cubuk_tam_pay": 0.0,
+  "son_S": 0.4608,
+  "geceler": [
+   {
+    "ts": "2025-01-06T01:00:00.000+00:00",
+    "S": {
+     "strengthening": 0.0,
+     "debt": 0.0,
+     "heat": 0.0,
+     "total": 0.0
+    },
+    "oran": 0.0,
+    "tetik": "sigorta",
+    "saat_sonra": 48.0,
+    "bekleyen": 0,
+    "bitis": "sleep.ended",
+    "neden": "pressure"
+   },
+   {
+    "ts": "2025-01-06T21:30:00.000+00:00",
+    "S": {
+     "strengthening": 1.6067,
+     "debt": 0.0,
+     "heat": 1.0,
+     "total": 1.114
+    },
+    "oran": 0.4766,
+    "tetik": "sigorta",
+    "saat_sonra": 20.5,
+    "bekleyen": 0,
+    "bitis": "sleep.ended",
+    "neden": "pressure"
+   },
+   {
+    "ts": "2025-01-07T19:32:00.000+00:00",
+    "S": {
+     "strengthening": 0.8229,
+     "debt": 0.06,
+     "heat": 1.0,
+     "total": 0.6587
+    },
+    "oran": 0.2818,
+    "tetik": "sigorta",
+    "saat_sonra": 22.0,
+    "bekleyen": 3,
+    "bitis": "sleep.ended",
+    "neden": "pressure"
+   },
+   {
+    "ts": "2025-01-08T16:04:00.000+00:00",
+    "S": {
+     "strengthening": 1.4768,
+     "debt": 0.04,
+     "heat": 1.0,
+     "total": 1.0461
+    },
+    "oran": 0.4475,
+    "tetik": "sigorta",
+    "saat_sonra": 20.5,
+    "bekleyen": 2,
+    "bitis": "sleep.ended",
+    "neden": "pressure"
+   },
+   {
+    "ts": "2025-01-09T12:34:00.000+00:00",
+    "S": {
+     "strengthening": 1.5221,
+     "debt": 0.04,
+     "heat": 1.0,
+     "total": 1.0733
+    },
+    "oran": 0.4592,
+    "tetik": "sigorta",
+    "saat_sonra": 20.5,
+    "bekleyen": 2,
+    "bitis": "sleep.ended",
+    "neden": "pressure"
+   },
+   {
+    "ts": "2025-01-10T10:39:00.000+00:00",
+    "S": {
+     "strengthening": 1.5735,
+     "debt": 0.06,
+     "heat": 1.0,
+     "total": 1.1091
+    },
+    "oran": 0.4745,
+    "tetik": "sigorta",
+    "saat_sonra": 22.1,
+    "bekleyen": 3,
+    "bitis": "sleep.ended",
+    "neden": "pressure"
+   },
+   {
+    "ts": "2025-01-11T07:31:00.000+00:00",
+    "S": {
+     "strengthening": 2.0986,
+     "debt": 0.0,
+     "heat": 1.0,
+     "total": 1.4092
+    },
+    "oran": 0.6029,
+    "tetik": "sigorta",
+    "saat_sonra": 20.9,
+    "bekleyen": 0,
+    "bitis": "sleep.ended",
+    "neden": "pressure"
+   },
+   {
+    "ts": "2025-01-12T04:30:00.000+00:00",
+    "S": {
+     "strengthening": 2.0155,
+     "debt": 0.0,
+     "heat": 1.0,
+     "total": 1.3593
+    },
+    "oran": 0.5815,
+    "tetik": "sigorta",
+    "saat_sonra": 21.0,
+    "bekleyen": 0,
+    "bitis": "sleep.ended",
+    "neden": "pressure"
+   },
+   {
+    "ts": "2025-01-13T01:01:00.000+00:00",
+    "S": {
+     "strengthening": 1.9357,
+     "debt": 0.0,
+     "heat": 1.0,
+     "total": 1.3114
+    },
+    "oran": 0.5611,
+    "tetik": "sigorta",
+    "saat_sonra": 20.5,
+    "bekleyen": 0,
+    "bitis": "sleep.ended",
+    "neden": "pressure"
+   },
+   {
+    "ts": "2025-01-13T21:34:00.000+00:00",
+    "S": {
+     "strengthening": 2.1662,
+     "debt": 0.02,
+     "heat": 1.0,
+     "total": 1.4547
+    },
+    "oran": 0.6224,
+    "tetik": "sigorta",
+    "saat_sonra": 20.6,
+    "bekleyen": 1,
+    "bitis": "sleep.ended",
+    "neden": "pressure"
+   },
+   {
+    "ts": "2025-01-14T19:32:00.000+00:00",
+    "S": {
+     "strengthening": 2.0884,
+     "debt": 0.04,
+     "heat": 0.9683,
+     "total": 1.4083
+    },
+    "oran": 0.6025,
+    "tetik": "sigorta",
+    "saat_sonra": 22.0,
+    "bekleyen": 2,
+    "bitis": "sleep.ended",
+    "neden": "pressure"
+   },
+   {
+    "ts": "2025-01-15T17:30:00.000+00:00",
+    "S": {
+     "strengthening": 2.1817,
+     "debt": 0.1,
+     "heat": 1.0,
+     "total": 1.484
+    },
+    "oran": 0.6349,
+    "tetik": "sigorta",
+    "saat_sonra": 22.0,
+    "bekleyen": 5,
+    "bitis": "sleep.woke",
+    "neden": "rhythm"
+   },
+   {
+    "ts": "2025-01-16T14:03:00.000+00:00",
+    "S": {
+     "strengthening": 2.2367,
+     "debt": 0.04,
+     "heat": 0.8496,
+     "total": 1.4795
+    },
+    "oran": 0.633,
+    "tetik": "sigorta",
+    "saat_sonra": 20.6,
+    "bekleyen": 2,
+    "bitis": "sleep.ended",
+    "neden": "pressure"
+   },
+   {
+    "ts": "2025-01-17T12:31:00.000+00:00",
+    "S": {
+     "strengthening": 2.2235,
+     "debt": 0.06,
+     "heat": 0.7506,
+     "total": 1.4617
+    },
+    "oran": 0.6254,
+    "tetik": "sigorta",
+    "saat_sonra": 22.5,
+    "bekleyen": 3,
+    "bitis": "sleep.ended",
+    "neden": "pressure"
+   },
+   {
+    "ts": "2025-01-18T10:30:00.000+00:00",
+    "S": {
+     "strengthening": 2.2286,
+     "debt": 0.02,
+     "heat": 0.5692,
+     "total": 1.4275
+    },
+    "oran": 0.6107,
+    "tetik": "sigorta",
+    "saat_sonra": 22.0,
+    "bekleyen": 1,
+    "bitis": "sleep.ended",
+    "neden": "pressure"
+   },
+   {
+    "ts": "2025-01-19T07:00:00.000+00:00",
+    "S": {
+     "strengthening": 2.1404,
+     "debt": 0.0,
+     "heat": 0.5465,
+     "total": 1.3662
+    },
+    "oran": 0.5845,
+    "tetik": "sigorta",
+    "saat_sonra": 20.5,
+    "bekleyen": 0,
+    "bitis": "sleep.ended",
+    "neden": "pressure"
+   },
+   {
+    "ts": "2025-01-20T04:30:00.000+00:00",
+    "S": {
+     "strengthening": 2.0556,
+     "debt": 0.02,
+     "heat": 0.4331,
+     "total": 1.3033
+    },
+    "oran": 0.5576,
+    "tetik": "sigorta",
+    "saat_sonra": 21.5,
+    "bekleyen": 1,
+    "bitis": "sleep.ended",
+    "neden": "pressure"
+   },
+   {
+    "ts": "2025-01-21T01:01:00.000+00:00",
+    "S": {
+     "strengthening": 2.0716,
+     "debt": 0.02,
+     "heat": 0.3878,
+     "total": 1.3061
+    },
+    "oran": 0.5588,
+    "tetik": "sigorta",
+    "saat_sonra": 20.5,
+    "bekleyen": 1,
+    "bitis": "sleep.ended",
+    "neden": "pressure"
+   },
+   {
+    "ts": "2025-01-21T21:33:00.000+00:00",
+    "S": {
+     "strengthening": 2.0311,
+     "debt": 0.04,
+     "heat": 0.3738,
+     "total": 1.2847
+    },
+    "oran": 0.5496,
+    "tetik": "sigorta",
+    "saat_sonra": 20.5,
+    "bekleyen": 2,
+    "bitis": "sleep.ended",
+    "neden": "pressure"
+   },
+   {
+    "ts": "2025-01-22T19:32:00.000+00:00",
+    "S": {
+     "strengthening": 1.9787,
+     "debt": 0.04,
+     "heat": 0.2952,
+     "total": 1.2415
+    },
+    "oran": 0.5311,
+    "tetik": "sigorta",
+    "saat_sonra": 22.0,
+    "bekleyen": 2,
+    "bitis": "sleep.ended",
+    "neden": "pressure"
+   },
+   {
+    "ts": "2025-01-23T17:30:00.000+00:00",
+    "S": {
+     "strengthening": 2.0067,
+     "debt": 0.08,
+     "heat": 0.2945,
+     "total": 1.2682
+    },
+    "oran": 0.5426,
+    "tetik": "sigorta",
+    "saat_sonra": 22.0,
+    "bekleyen": 4,
+    "bitis": "sleep.woke",
+    "neden": "rhythm"
+   },
+   {
+    "ts": "2025-01-24T17:30:00.000+00:00",
+    "S": {
+     "strengthening": 2.0931,
+     "debt": 0.1,
+     "heat": 0.2045,
+     "total": 1.3115
+    },
+    "oran": 0.5611,
+    "tetik": "sigorta",
+    "saat_sonra": 24.0,
+    "bekleyen": 5,
+    "bitis": "sleep.woke",
+    "neden": "rhythm"
+   },
+   {
+    "ts": "2025-01-25T14:00:00.000+00:00",
+    "S": {
+     "strengthening": 2.0879,
+     "debt": 0.0,
+     "heat": 0.3182,
+     "total": 1.3005
+    },
+    "oran": 0.5564,
+    "tetik": "sigorta",
+    "saat_sonra": 20.5,
+    "bekleyen": 0,
+    "bitis": "sleep.ended",
+    "neden": "pressure"
+   },
+   {
+    "ts": "2025-01-26T10:31:00.000+00:00",
+    "S": {
+     "strengthening": 2.0053,
+     "debt": 0.0,
+     "heat": 0.4156,
+     "total": 1.2655
+    },
+    "oran": 0.5414,
+    "tetik": "sigorta",
+    "saat_sonra": 20.5,
+    "bekleyen": 0,
+    "bitis": "sleep.ended",
+    "neden": "pressure"
+   },
+   {
+    "ts": "2025-01-27T07:30:00.000+00:00",
+    "S": {
+     "strengthening": 1.9258,
+     "debt": 0.02,
+     "heat": 0.1883,
+     "total": 1.1887
+    },
+    "oran": 0.5086,
+    "tetik": "sigorta",
+    "saat_sonra": 21.0,
+    "bekleyen": 1,
+    "bitis": "sleep.ended",
+    "neden": "pressure"
+   },
+   {
+    "ts": "2025-01-28T04:01:00.000+00:00",
+    "S": {
+     "strengthening": 2.2211,
+     "debt": 0.02,
+     "heat": 0.2926,
+     "total": 1.3816
+    },
+    "oran": 0.5911,
+    "tetik": "sigorta",
+    "saat_sonra": 20.5,
+    "bekleyen": 1,
+    "bitis": "sleep.ended",
+    "neden": "pressure"
+   },
+   {
+    "ts": "2025-01-29T00:31:00.000+00:00",
+    "S": {
+     "strengthening": 2.3017,
+     "debt": 0.0,
+     "heat": 0.3896,
+     "total": 1.4395
+    },
+    "oran": 0.6159,
+    "tetik": "sigorta",
+    "saat_sonra": 20.5,
+    "bekleyen": 0,
+    "bitis": "sleep.ended",
+    "neden": "pressure"
+   },
+   {
+    "ts": "2025-01-29T21:04:00.000+00:00",
+    "S": {
+     "strengthening": 2.2926,
+     "debt": 0.0,
+     "heat": 0.4139,
+     "total": 1.4376
+    },
+    "oran": 0.615,
+    "tetik": "sigorta",
+    "saat_sonra": 20.6,
+    "bekleyen": 0,
+    "bitis": "sleep.ended",
+    "neden": "pressure"
+   },
+   {
+    "ts": "2025-01-30T19:32:00.000+00:00",
+    "S": {
+     "strengthening": 2.1962,
+     "debt": 0.06,
+     "heat": 0.6019,
+     "total": 1.423
+    },
+    "oran": 0.6088,
+    "tetik": "sigorta",
+    "saat_sonra": 22.5,
+    "bekleyen": 3,
+    "bitis": "sleep.ended",
+    "neden": "pressure"
+   },
+   {
+    "ts": "2025-01-31T17:30:00.000+00:00",
+    "S": {
+     "strengthening": 2.3228,
+     "debt": 0.12,
+     "heat": 0.4392,
+     "total": 1.4896
+    },
+    "oran": 0.6373,
+    "tetik": "sigorta",
+    "saat_sonra": 22.0,
+    "bekleyen": 6,
+    "bitis": "sleep.woke",
+    "neden": "rhythm"
+   },
+   {
+    "ts": "2025-02-01T14:00:00.000+00:00",
+    "S": {
+     "strengthening": 2.3741,
+     "debt": 0.0,
+     "heat": 0.418,
+     "total": 1.4872
+    },
+    "oran": 0.6363,
+    "tetik": "sigorta",
+    "saat_sonra": 20.5,
+    "bekleyen": 0,
+    "bitis": "sleep.ended",
+    "neden": "pressure"
+   },
+   {
+    "ts": "2025-02-02T10:31:00.000+00:00",
+    "S": {
+     "strengthening": 2.28,
+     "debt": 0.0,
+     "heat": 0.4286,
+     "total": 1.4323
+    },
+    "oran": 0.6128,
+    "tetik": "sigorta",
+    "saat_sonra": 20.5,
+    "bekleyen": 0,
+    "bitis": "sleep.ended",
+    "neden": "pressure"
+   },
+   {
+    "ts": "2025-02-03T07:30:00.000+00:00",
+    "S": {
+     "strengthening": 2.1898,
+     "debt": 0.02,
+     "heat": 0.3333,
+     "total": 1.3689
+    },
+    "oran": 0.5857,
+    "tetik": "sigorta",
+    "saat_sonra": 21.0,
+    "bekleyen": 1,
+    "bitis": "sleep.ended",
+    "neden": "pressure"
+   },
+   {
+    "ts": "2025-02-04T04:01:00.000+00:00",
+    "S": {
+     "strengthening": 2.3952,
+     "debt": 0.04,
+     "heat": 0.3243,
+     "total": 1.4958
+    },
+    "oran": 0.6399,
+    "tetik": "sigorta",
+    "saat_sonra": 20.5,
+    "bekleyen": 2,
+    "bitis": "sleep.ended",
+    "neden": "pressure"
+   },
+   {
+    "ts": "2025-02-05T00:31:00.000+00:00",
+    "S": {
+     "strengthening": 2.3967,
+     "debt": 0.0,
+     "heat": 0.5421,
+     "total": 1.5193
+    },
+    "oran": 0.65,
+    "tetik": "sigorta",
+    "saat_sonra": 20.5,
+    "bekleyen": 0,
+    "bitis": "sleep.ended",
+    "neden": "pressure"
+   },
+   {
+    "ts": "2025-02-05T21:03:00.000+00:00",
+    "S": {
+     "strengthening": 2.3338,
+     "debt": 0.02,
+     "heat": 0.4789,
+     "total": 1.4771
+    },
+    "oran": 0.6319,
+    "tetik": "sigorta",
+    "saat_sonra": 20.5,
+    "bekleyen": 1,
+    "bitis": "sleep.ended",
+    "neden": "pressure"
+   },
+   {
+    "ts": "2025-02-06T18:00:00.000+00:00",
+    "S": {
+     "strengthening": 2.2618,
+     "debt": 0.04,
+     "heat": 0.3739,
+     "total": 1.4232
+    },
+    "oran": 0.6089,
+    "tetik": "sigorta",
+    "saat_sonra": 20.9,
+    "bekleyen": 2,
+    "bitis": "sleep.woke",
+    "neden": "rhythm"
+   },
+   {
+    "ts": "2025-02-07T17:30:00.000+00:00",
+    "S": {
+     "strengthening": 2.2525,
+     "debt": 0.14,
+     "heat": 0.2941,
+     "total": 1.4306
+    },
+    "oran": 0.612,
+    "tetik": "sigorta",
+    "saat_sonra": 23.5,
+    "bekleyen": 7,
+    "bitis": "sleep.woke",
+    "neden": "rhythm"
+   },
+   {
+    "ts": "2025-02-08T14:00:00.000+00:00",
+    "S": {
+     "strengthening": 2.3,
+     "debt": 0.02,
+     "heat": 0.3109,
+     "total": 1.4316
+    },
+    "oran": 0.6125,
+    "tetik": "sigorta",
+    "saat_sonra": 20.5,
+    "bekleyen": 1,
+    "bitis": "sleep.ended",
+    "neden": "pressure"
+   },
+   {
+    "ts": "2025-02-09T10:31:00.000+00:00",
+    "S": {
+     "strengthening": 2.2089,
+     "debt": 0.0,
+     "heat": 0.3697,
+     "total": 1.3808
+    },
+    "oran": 0.5907,
+    "tetik": "sigorta",
+    "saat_sonra": 20.5,
+    "bekleyen": 0,
+    "bitis": "sleep.ended",
+    "neden": "pressure"
+   },
+   {
+    "ts": "2025-02-10T07:30:00.000+00:00",
+    "S": {
+     "strengthening": 2.1214,
+     "debt": 0.02,
+     "heat": 0.2101,
+     "total": 1.3094
+    },
+    "oran": 0.5602,
+    "tetik": "sigorta",
+    "saat_sonra": 21.0,
+    "bekleyen": 1,
+    "bitis": "sleep.ended",
+    "neden": "pressure"
+   },
+   {
+    "ts": "2025-02-11T04:01:00.000+00:00",
+    "S": {
+     "strengthening": 2.1039,
+     "debt": 0.06,
+     "heat": 0.1883,
+     "total": 1.3056
+    },
+    "oran": 0.5586,
+    "tetik": "sigorta",
+    "saat_sonra": 20.5,
+    "bekleyen": 3,
+    "bitis": "sleep.ended",
+    "neden": "pressure"
+   },
+   {
+    "ts": "2025-02-12T00:31:00.000+00:00",
+    "S": {
+     "strengthening": 2.0206,
+     "debt": 0.02,
+     "heat": 0.1315,
+     "total": 1.2371
+    },
+    "oran": 0.5293,
+    "tetik": "sigorta",
+    "saat_sonra": 20.5,
+    "bekleyen": 1,
+    "bitis": "sleep.ended",
+    "neden": "pressure"
+   },
+   {
+    "ts": "2025-02-12T21:02:00.000+00:00",
+    "S": {
+     "strengthening": 2.0141,
+     "debt": 0.0,
+     "heat": 0.1304,
+     "total": 1.228
+    },
+    "oran": 0.5254,
+    "tetik": "sigorta",
+    "saat_sonra": 20.5,
+    "bekleyen": 0,
+    "bitis": "sleep.ended",
+    "neden": "pressure"
+   },
+   {
+    "ts": "2025-02-13T19:33:00.000+00:00",
+    "S": {
+     "strengthening": 1.9592,
+     "debt": 0.08,
+     "heat": 0.1717,
+     "total": 1.2213
+    },
+    "oran": 0.5225,
+    "tetik": "sigorta",
+    "saat_sonra": 22.5,
+    "bekleyen": 4,
+    "bitis": "sleep.ended",
+    "neden": "pressure"
+   },
+   {
+    "ts": "2025-02-14T17:31:00.000+00:00",
+    "S": {
+     "strengthening": 1.9714,
+     "debt": 0.06,
+     "heat": 0.1784,
+     "total": 1.2246
+    },
+    "oran": 0.5239,
+    "tetik": "sigorta",
+    "saat_sonra": 22.0,
+    "bekleyen": 3,
+    "bitis": "sleep.woke",
+    "neden": "rhythm"
+   },
+   {
+    "ts": "2025-02-15T14:30:00.000+00:00",
+    "S": {
+     "strengthening": 1.9194,
+     "debt": 0.02,
+     "heat": 0.0822,
+     "total": 1.169
+    },
+    "oran": 0.5001,
+    "tetik": "sigorta",
+    "saat_sonra": 21.0,
+    "bekleyen": 1,
+    "bitis": "sleep.ended",
+    "neden": "pressure"
+   },
+   {
+    "ts": "2025-02-16T11:01:00.000+00:00",
+    "S": {
+     "strengthening": 1.8434,
+     "debt": 0.0,
+     "heat": 0.097,
+     "total": 1.1206
+    },
+    "oran": 0.4794,
+    "tetik": "sigorta",
+    "saat_sonra": 20.5,
+    "bekleyen": 0,
+    "bitis": "sleep.ended",
+    "neden": "pressure"
+   },
+   {
+    "ts": "2025-02-17T08:00:00.000+00:00",
+    "S": {
+     "strengthening": 1.7699,
+     "debt": 0.02,
+     "heat": 0.0,
+     "total": 1.0669
+    },
+    "oran": 0.4564,
+    "tetik": "sigorta",
+    "saat_sonra": 21.0,
+    "bekleyen": 1,
+    "bitis": "sleep.ended",
+    "neden": "pressure"
+   },
+   {
+    "ts": "2025-02-18T04:31:00.000+00:00",
+    "S": {
+     "strengthening": 1.8238,
+     "debt": 0.06,
+     "heat": 0.0,
+     "total": 1.1093
+    },
+    "oran": 0.4746,
+    "tetik": "sigorta",
+    "saat_sonra": 20.5,
+    "bekleyen": 3,
+    "bitis": "sleep.ended",
+    "neden": "pressure"
+   },
+   {
+    "ts": "2025-02-19T01:01:00.000+00:00",
+    "S": {
+     "strengthening": 1.8269,
+     "debt": 0.04,
+     "heat": 0.1777,
+     "total": 1.1328
+    },
+    "oran": 0.4846,
+    "tetik": "sigorta",
+    "saat_sonra": 20.5,
+    "bekleyen": 2,
+    "bitis": "sleep.ended",
+    "neden": "pressure"
+   },
+   {
+    "ts": "2025-02-19T21:31:00.000+00:00",
+    "S": {
+     "strengthening": 1.8023,
+     "debt": 0.0,
+     "heat": 0.0865,
+     "total": 1.0944
+    },
+    "oran": 0.4682,
+    "tetik": "sigorta",
+    "saat_sonra": 20.5,
+    "bekleyen": 0,
+    "bitis": "sleep.ended",
+    "neden": "pressure"
+   },
+   {
+    "ts": "2025-02-20T19:32:00.000+00:00",
+    "S": {
+     "strengthening": 1.7625,
+     "debt": 0.06,
+     "heat": 0.061,
+     "total": 1.0817
+    },
+    "oran": 0.4628,
+    "tetik": "sigorta",
+    "saat_sonra": 22.0,
+    "bekleyen": 3,
+    "bitis": "sleep.ended",
+    "neden": "pressure"
+   },
+   {
+    "ts": "2025-02-21T17:31:00.000+00:00",
+    "S": {
+     "strengthening": 1.7651,
+     "debt": 0.1,
+     "heat": 0.0631,
+     "total": 1.0935
+    },
+    "oran": 0.4678,
+    "tetik": "sigorta",
+    "saat_sonra": 22.0,
+    "bekleyen": 5,
+    "bitis": "sleep.woke",
+    "neden": "rhythm"
+   },
+   {
+    "ts": "2025-02-22T14:30:00.000+00:00",
+    "S": {
+     "strengthening": 1.7438,
+     "debt": 0.02,
+     "heat": 0.0565,
+     "total": 1.0598
+    },
+    "oran": 0.4534,
+    "tetik": "sigorta",
+    "saat_sonra": 21.0,
+    "bekleyen": 1,
+    "bitis": "sleep.ended",
+    "neden": "pressure"
+   },
+   {
+    "ts": "2025-02-23T11:01:00.000+00:00",
+    "S": {
+     "strengthening": 1.6739,
+     "debt": 0.0,
+     "heat": 0.0033,
+     "total": 1.0048
+    },
+    "oran": 0.4299,
+    "tetik": "sigorta",
+    "saat_sonra": 20.5,
+    "bekleyen": 0,
+    "bitis": "sleep.ended",
+    "neden": "pressure"
+   },
+   {
+    "ts": "2025-02-24T08:00:00.000+00:00",
+    "S": {
+     "strengthening": 1.6076,
+     "debt": 0.02,
+     "heat": 0.0,
+     "total": 0.9696
+    },
+    "oran": 0.4148,
+    "tetik": "sigorta",
+    "saat_sonra": 21.0,
+    "bekleyen": 1,
+    "bitis": "sleep.ended",
+    "neden": "pressure"
+   },
+   {
+    "ts": "2025-02-25T04:31:00.000+00:00",
+    "S": {
+     "strengthening": 1.6472,
+     "debt": 0.04,
+     "heat": 0.0,
+     "total": 0.9983
+    },
+    "oran": 0.4271,
+    "tetik": "sigorta",
+    "saat_sonra": 20.5,
+    "bekleyen": 2,
+    "bitis": "sleep.ended",
+    "neden": "pressure"
+   },
+   {
+    "ts": "2025-02-26T01:01:00.000+00:00",
+    "S": {
+     "strengthening": 1.5859,
+     "debt": 0.0,
+     "heat": 0.0756,
+     "total": 0.9629
+    },
+    "oran": 0.412,
+    "tetik": "sigorta",
+    "saat_sonra": 20.5,
+    "bekleyen": 0,
+    "bitis": "sleep.ended",
+    "neden": "pressure"
+   },
+   {
+    "ts": "2025-02-26T21:31:00.000+00:00",
+    "S": {
+     "strengthening": 1.529,
+     "debt": 0.0,
+     "heat": 0.0,
+     "total": 0.9174
+    },
+    "oran": 0.3925,
+    "tetik": "sigorta",
+    "saat_sonra": 20.5,
+    "bekleyen": 0,
+    "bitis": "sleep.ended",
+    "neden": "pressure"
+   },
+   {
+    "ts": "2025-02-27T19:32:00.000+00:00",
+    "S": {
+     "strengthening": 1.4851,
+     "debt": 0.06,
+     "heat": 0.0,
+     "total": 0.9061
+    },
+    "oran": 0.3877,
+    "tetik": "sigorta",
+    "saat_sonra": 22.0,
+    "bekleyen": 3,
+    "bitis": "sleep.ended",
+    "neden": "pressure"
+   },
+   {
+    "ts": "2025-02-28T17:33:00.000+00:00",
+    "S": {
+     "strengthening": 1.5061,
+     "debt": 0.28,
+     "heat": 0.0354,
+     "total": 0.979
+    },
+    "oran": 0.4188,
+    "tetik": "sigorta",
+    "saat_sonra": 22.0,
+    "bekleyen": 14,
+    "bitis": "sleep.woke",
+    "neden": "rhythm"
+   },
+   {
+    "ts": "2025-03-01T14:30:00.000+00:00",
+    "S": {
+     "strengthening": 1.6468,
+     "debt": 0.02,
+     "heat": 0.1392,
+     "total": 1.014
+    },
+    "oran": 0.4338,
+    "tetik": "sigorta",
+    "saat_sonra": 20.9,
+    "bekleyen": 1,
+    "bitis": "sleep.ended",
+    "neden": "pressure"
+   },
+   {
+    "ts": "2025-03-02T11:01:00.000+00:00",
+    "S": {
+     "strengthening": 1.5804,
+     "debt": 0.0,
+     "heat": 0.1087,
+     "total": 0.9645
+    },
+    "oran": 0.4126,
+    "tetik": "sigorta",
+    "saat_sonra": 20.5,
+    "bekleyen": 0,
+    "bitis": "sleep.ended",
+    "neden": "pressure"
+   },
+   {
+    "ts": "2025-03-03T07:31:00.000+00:00",
+    "S": {
+     "strengthening": 1.5162,
+     "debt": 0.0,
+     "heat": 0.0,
+     "total": 0.9097
+    },
+    "oran": 0.3892,
+    "tetik": "sigorta",
+    "saat_sonra": 20.5,
+    "bekleyen": 0,
+    "bitis": "sleep.ended",
+    "neden": "pressure"
+   },
+   {
+    "ts": "2025-03-04T04:30:00.000+00:00",
+    "S": {
+     "strengthening": 1.4558,
+     "debt": 0.0,
+     "heat": 0.0,
+     "total": 0.8735
+    },
+    "oran": 0.3737,
+    "tetik": "sigorta",
+    "saat_sonra": 21.0,
+    "bekleyen": 0,
+    "bitis": "sleep.ended",
+    "neden": "pressure"
+   },
+   {
+    "ts": "2025-03-05T01:01:00.000+00:00",
+    "S": {
+     "strengthening": 1.3934,
+     "debt": 0.0,
+     "heat": 0.0,
+     "total": 0.836
+    },
+    "oran": 0.3577,
+    "tetik": "sigorta",
+    "saat_sonra": 20.5,
+    "bekleyen": 0,
+    "bitis": "sleep.ended",
+    "neden": "pressure"
+   },
+   {
+    "ts": "2025-03-05T22:00:00.000+00:00",
+    "S": {
+     "strengthening": 1.3339,
+     "debt": 0.0,
+     "heat": 0.0,
+     "total": 0.8003
+    },
+    "oran": 0.3424,
+    "tetik": "sigorta",
+    "saat_sonra": 21.0,
+    "bekleyen": 0,
+    "bitis": "sleep.ended",
+    "neden": "pressure"
+   },
+   {
+    "ts": "2025-03-06T18:31:00.000+00:00",
+    "S": {
+     "strengthening": 1.2744,
+     "debt": 0.0,
+     "heat": 0.0,
+     "total": 0.7646
+    },
+    "oran": 0.3271,
+    "tetik": "sigorta",
+    "saat_sonra": 20.5,
+    "bekleyen": 0,
+    "bitis": "sleep.woke",
+    "neden": "pressure dropped"
+   },
+   {
+    "ts": "2025-03-07T15:30:00.000+00:00",
+    "S": {
+     "strengthening": 1.2164,
+     "debt": 0.0,
+     "heat": 0.0,
+     "total": 0.7298
+    },
+    "oran": 0.3122,
+    "tetik": "sigorta",
+    "saat_sonra": 21.0,
+    "bekleyen": 0,
+    "bitis": "sleep.woke",
+    "neden": "pressure dropped"
+   },
+   {
+    "ts": "2025-03-08T12:01:00.000+00:00",
+    "S": {
+     "strengthening": 1.1604,
+     "debt": 0.0,
+     "heat": 0.0,
+     "total": 0.6962
+    },
+    "oran": 0.2979,
+    "tetik": "sigorta",
+    "saat_sonra": 20.5,
+    "bekleyen": 0,
+    "bitis": "sleep.woke",
+    "neden": "pressure dropped"
+   },
+   {
+    "ts": "2025-03-09T08:31:00.000+00:00",
+    "S": {
+     "strengthening": 1.1113,
+     "debt": 0.0,
+     "heat": 0.0,
+     "total": 0.6668
+    },
+    "oran": 0.2853,
+    "tetik": "sigorta",
+    "saat_sonra": 20.5,
+    "bekleyen": 0,
+    "bitis": "sleep.woke",
+    "neden": "pressure dropped"
+   },
+   {
+    "ts": "2025-03-10T05:30:00.000+00:00",
+    "S": {
+     "strengthening": 1.0649,
+     "debt": 0.0,
+     "heat": 0.0,
+     "total": 0.6389
+    },
+    "oran": 0.2733,
+    "tetik": "sigorta",
+    "saat_sonra": 21.0,
+    "bekleyen": 0,
+    "bitis": "sleep.woke",
+    "neden": "pressure dropped"
+   },
+   {
+    "ts": "2025-03-11T02:01:00.000+00:00",
+    "S": {
+     "strengthening": 1.0941,
+     "debt": 0.02,
+     "heat": 0.0,
+     "total": 0.6615
+    },
+    "oran": 0.283,
+    "tetik": "sigorta",
+    "saat_sonra": 20.5,
+    "bekleyen": 1,
+    "bitis": "sleep.woke",
+    "neden": "pressure dropped"
+   },
+   {
+    "ts": "2025-03-11T23:00:00.000+00:00",
+    "S": {
+     "strengthening": 1.0395,
+     "debt": 0.04,
+     "heat": 0.0,
+     "total": 0.6337
+    },
+    "oran": 0.2711,
+    "tetik": "sigorta",
+    "saat_sonra": 21.0,
+    "bekleyen": 2,
+    "bitis": "sleep.woke",
+    "neden": "pressure dropped"
+   },
+   {
+    "ts": "2025-03-12T19:33:00.000+00:00",
+    "S": {
+     "strengthening": 1.0518,
+     "debt": 0.08,
+     "heat": 0.0,
+     "total": 0.6511
+    },
+    "oran": 0.2786,
+    "tetik": "sigorta",
+    "saat_sonra": 20.6,
+    "bekleyen": 4,
+    "bitis": "sleep.woke",
+    "neden": "pressure dropped"
+   },
+   {
+    "ts": "2025-03-13T17:31:00.000+00:00",
+    "S": {
+     "strengthening": 1.0323,
+     "debt": 0.04,
+     "heat": 0.0,
+     "total": 0.6294
+    },
+    "oran": 0.2693,
+    "tetik": "sigorta",
+    "saat_sonra": 22.0,
+    "bekleyen": 2,
+    "bitis": "sleep.woke",
+    "neden": "pressure dropped"
+   },
+   {
+    "ts": "2025-03-14T14:31:00.000+00:00",
+    "S": {
+     "strengthening": 0.9977,
+     "debt": 0.08,
+     "heat": 0.0,
+     "total": 0.6186
+    },
+    "oran": 0.2647,
+    "tetik": "sigorta",
+    "saat_sonra": 21.0,
+    "bekleyen": 4,
+    "bitis": "sleep.woke",
+    "neden": "pressure dropped"
+   },
+   {
+    "ts": "2025-03-15T11:30:00.000+00:00",
+    "S": {
+     "strengthening": 0.9489,
+     "debt": 0.0,
+     "heat": 0.0,
+     "total": 0.5693
+    },
+    "oran": 0.2436,
+    "tetik": "sigorta",
+    "saat_sonra": 21.0,
+    "bekleyen": 0,
+    "bitis": "sleep.woke",
+    "neden": "pressure dropped"
+   },
+   {
+    "ts": "2025-03-16T08:00:00.000+00:00",
+    "S": {
+     "strengthening": 0.9065,
+     "debt": 0.0,
+     "heat": 0.0,
+     "total": 0.5439
+    },
+    "oran": 0.2327,
+    "tetik": "sigorta",
+    "saat_sonra": 20.5,
+    "bekleyen": 0,
+    "bitis": "sleep.woke",
+    "neden": "pressure dropped"
+   },
+   {
+    "ts": "2025-03-17T04:31:00.000+00:00",
+    "S": {
+     "strengthening": 0.8694,
+     "debt": 0.0,
+     "heat": 0.0,
+     "total": 0.5216
+    },
+    "oran": 0.2232,
+    "tetik": "sigorta",
+    "saat_sonra": 20.5,
+    "bekleyen": 0,
+    "bitis": "sleep.woke",
+    "neden": "pressure dropped"
+   },
+   {
+    "ts": "2025-03-18T01:01:00.000+00:00",
+    "S": {
+     "strengthening": 0.9232,
+     "debt": 0.0,
+     "heat": 0.0,
+     "total": 0.5539
+    },
+    "oran": 0.237,
+    "tetik": "sigorta",
+    "saat_sonra": 20.5,
+    "bekleyen": 0,
+    "bitis": "sleep.woke",
+    "neden": "pressure dropped"
+   },
+   {
+    "ts": "2025-03-18T21:32:00.000+00:00",
+    "S": {
+     "strengthening": 0.8879,
+     "debt": 0.02,
+     "heat": 0.0,
+     "total": 0.5377
+    },
+    "oran": 0.23,
+    "tetik": "sigorta",
+    "saat_sonra": 20.5,
+    "bekleyen": 1,
+    "bitis": "sleep.woke",
+    "neden": "pressure dropped"
+   },
+   {
+    "ts": "2025-03-19T19:32:00.000+00:00",
+    "S": {
+     "strengthening": 0.8546,
+     "debt": 0.06,
+     "heat": 0.0,
+     "total": 0.5278
+    },
+    "oran": 0.2258,
+    "tetik": "sigorta",
+    "saat_sonra": 22.0,
+    "bekleyen": 3,
+    "bitis": "sleep.woke",
+    "neden": "pressure dropped"
+   },
+   {
+    "ts": "2025-03-20T17:30:00.000+00:00",
+    "S": {
+     "strengthening": 0.8743,
+     "debt": 0.06,
+     "heat": 0.0,
+     "total": 0.5396
+    },
+    "oran": 0.2309,
+    "tetik": "sigorta",
+    "saat_sonra": 22.0,
+    "bekleyen": 3,
+    "bitis": "sleep.woke",
+    "neden": "pressure dropped"
+   },
+   {
+    "ts": "2025-03-21T17:30:00.000+00:00",
+    "S": {
+     "strengthening": 0.8711,
+     "debt": 0.06,
+     "heat": 0.0,
+     "total": 0.5377
+    },
+    "oran": 0.23,
+    "tetik": "sigorta",
+    "saat_sonra": 24.0,
+    "bekleyen": 3,
+    "bitis": "sleep.woke",
+    "neden": "pressure dropped"
+   },
+   {
+    "ts": "2025-03-22T14:00:00.000+00:00",
+    "S": {
+     "strengthening": 0.8348,
+     "debt": 0.0,
+     "heat": 0.0,
+     "total": 0.5009
+    },
+    "oran": 0.2143,
+    "tetik": "sigorta",
+    "saat_sonra": 20.5,
+    "bekleyen": 0,
+    "bitis": "sleep.woke",
+    "neden": "pressure dropped"
+   },
+   {
+    "ts": "2025-03-23T10:31:00.000+00:00",
+    "S": {
+     "strengthening": 0.7968,
+     "debt": 0.0,
+     "heat": 0.0,
+     "total": 0.4781
+    },
+    "oran": 0.2045,
+    "tetik": "sigorta",
+    "saat_sonra": 20.5,
+    "bekleyen": 0,
+    "bitis": "sleep.woke",
+    "neden": "pressure dropped"
+   },
+   {
+    "ts": "2025-03-24T07:01:00.000+00:00",
+    "S": {
+     "strengthening": 0.7638,
+     "debt": 0.0,
+     "heat": 0.0,
+     "total": 0.4583
+    },
+    "oran": 0.1961,
+    "tetik": "sigorta",
+    "saat_sonra": 20.5,
+    "bekleyen": 0,
+    "bitis": "sleep.woke",
+    "neden": "pressure dropped"
+   },
+   {
+    "ts": "2025-03-25T04:30:00.000+00:00",
+    "S": {
+     "strengthening": 0.8019,
+     "debt": 0.02,
+     "heat": 0.0,
+     "total": 0.4861
+    },
+    "oran": 0.208,
+    "tetik": "sigorta",
+    "saat_sonra": 21.5,
+    "bekleyen": 1,
+    "bitis": "sleep.woke",
+    "neden": "pressure dropped"
+   },
+   {
+    "ts": "2025-03-26T01:01:00.000+00:00",
+    "S": {
+     "strengthening": 0.7693,
+     "debt": 0.04,
+     "heat": 0.0,
+     "total": 0.4716
+    },
+    "oran": 0.2018,
+    "tetik": "sigorta",
+    "saat_sonra": 20.5,
+    "bekleyen": 2,
+    "bitis": "sleep.woke",
+    "neden": "pressure dropped"
+   },
+   {
+    "ts": "2025-03-26T21:31:00.000+00:00",
+    "S": {
+     "strengthening": 0.7323,
+     "debt": 0.02,
+     "heat": 0.0,
+     "total": 0.4444
+    },
+    "oran": 0.1901,
+    "tetik": "sigorta",
+    "saat_sonra": 20.5,
+    "bekleyen": 1,
+    "bitis": "sleep.woke",
+    "neden": "pressure dropped"
+   },
+   {
+    "ts": "2025-03-27T19:32:00.000+00:00",
+    "S": {
+     "strengthening": 0.6967,
+     "debt": 0.04,
+     "heat": 0.0,
+     "total": 0.428
+    },
+    "oran": 0.1831,
+    "tetik": "sigorta",
+    "saat_sonra": 22.0,
+    "bekleyen": 2,
+    "bitis": "sleep.woke",
+    "neden": "pressure dropped"
+   },
+   {
+    "ts": "2025-03-28T17:32:00.000+00:00",
+    "S": {
+     "strengthening": 0.6883,
+     "debt": 0.06,
+     "heat": 0.0,
+     "total": 0.428
+    },
+    "oran": 0.1831,
+    "tetik": "sigorta",
+    "saat_sonra": 22.0,
+    "bekleyen": 3,
+    "bitis": "sleep.woke",
+    "neden": "pressure dropped"
+   },
+   {
+    "ts": "2025-03-29T14:30:00.000+00:00",
+    "S": {
+     "strengthening": 0.6541,
+     "debt": 0.0,
+     "heat": 0.0,
+     "total": 0.3925
+    },
+    "oran": 0.1679,
+    "tetik": "sigorta",
+    "saat_sonra": 21.0,
+    "bekleyen": 0,
+    "bitis": "sleep.woke",
+    "neden": "pressure dropped"
+   },
+   {
+    "ts": "2025-03-30T11:01:00.000+00:00",
+    "S": {
+     "strengthening": 0.622,
+     "debt": 0.0,
+     "heat": 0.0,
+     "total": 0.3732
+    },
+    "oran": 0.1597,
+    "tetik": "sigorta",
+    "saat_sonra": 20.5,
+    "bekleyen": 0,
+    "bitis": "sleep.woke",
+    "neden": "pressure dropped"
+   },
+   {
+    "ts": "2025-03-31T07:31:00.000+00:00",
+    "S": {
+     "strengthening": 0.5943,
+     "debt": 0.0,
+     "heat": 0.0,
+     "total": 0.3566
+    },
+    "oran": 0.1526,
+    "tetik": "sigorta",
+    "saat_sonra": 20.5,
+    "bekleyen": 0,
+    "bitis": "sleep.woke",
+    "neden": "pressure dropped"
+   },
+   {
+    "ts": "2025-04-01T04:01:00.000+00:00",
+    "S": {
+     "strengthening": 0.567,
+     "debt": 0.02,
+     "heat": 0.0,
+     "total": 0.3452
+    },
+    "oran": 0.1477,
+    "tetik": "sigorta",
+    "saat_sonra": 20.5,
+    "bekleyen": 1,
+    "bitis": "sleep.woke",
+    "neden": "pressure dropped"
+   },
+   {
+    "ts": "2025-04-02T00:31:00.000+00:00",
+    "S": {
+     "strengthening": 0.5488,
+     "debt": 0.0,
+     "heat": 0.0,
+     "total": 0.3293
+    },
+    "oran": 0.1409,
+    "tetik": "sigorta",
+    "saat_sonra": 20.5,
+    "bekleyen": 0,
+    "bitis": "sleep.woke",
+    "neden": "pressure dropped"
+   },
+   {
+    "ts": "2025-04-02T21:01:00.000+00:00",
+    "S": {
+     "strengthening": 0.5226,
+     "debt": 0.0,
+     "heat": 0.0,
+     "total": 0.3136
+    },
+    "oran": 0.1342,
+    "tetik": "sigorta",
+    "saat_sonra": 20.5,
+    "bekleyen": 0,
+    "bitis": "sleep.woke",
+    "neden": "pressure dropped"
+   },
+   {
+    "ts": "2025-04-03T17:34:00.000+00:00",
+    "S": {
+     "strengthening": 0.4951,
+     "debt": 0.02,
+     "heat": 0.0,
+     "total": 0.3021
+    },
+    "oran": 0.1292,
+    "tetik": "sigorta",
+    "saat_sonra": 20.6,
+    "bekleyen": 1,
+    "bitis": "sleep.woke",
+    "neden": "pressure dropped"
+   },
+   {
+    "ts": "2025-04-04T14:35:00.000+00:00",
+    "S": {
+     "strengthening": 0.4842,
+     "debt": 0.04,
+     "heat": 0.0,
+     "total": 0.3005
+    },
+    "oran": 0.1286,
+    "tetik": "sigorta",
+    "saat_sonra": 21.0,
+    "bekleyen": 2,
+    "bitis": "sleep.woke",
+    "neden": "pressure dropped"
+   },
+   {
+    "ts": "2025-04-05T11:30:00.000+00:00",
+    "S": {
+     "strengthening": 0.4823,
+     "debt": 0.0,
+     "heat": 0.0,
+     "total": 0.2894
+    },
+    "oran": 0.1238,
+    "tetik": "sigorta",
+    "saat_sonra": 20.9,
+    "bekleyen": 0,
+    "bitis": "sleep.woke",
+    "neden": "pressure dropped"
+   }
+  ]
+ },
+ "veri": "yasam-90"
+}

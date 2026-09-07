@@ -383,3 +383,39 @@ def test_ablation_names_line_up_with_targets(bench) -> None:
     assert set(switches.NAMES) == {"activation", "supersede", "weave", "distillation",
                                   "encoding", "context"}
     assert all(len(v) == 3 for v in bench.TARGETS.values())
+
+
+# -- the watchman arm ----------------------------------------------------
+
+
+def test_the_stepping_clock_lives_through_the_idle_hours(bench) -> None:
+    from datetime import datetime, timezone
+
+    steps: list[datetime] = []
+    events: list[datetime] = []
+    start = datetime(2025, 1, 6, tzinfo=timezone.utc)
+    clock = bench.SteppingClock(start, 30, lambda: steps.append(clock()),
+                                lambda: events.append(clock()))
+    clock.advance(1, 9)
+    assert len(steps) == 18 and steps[0].hour == 0 and steps[0].minute == 30
+    assert events == [clock()]
+    clock.advance(1, 9)                       # same hour again: a minute later, no step
+    assert len(steps) == 18 and len(events) == 2
+    clock.advance(1, 22, active=False)        # the soul reading is not the user
+    assert len(events) == 2 and len(steps) > 18
+
+
+def test_the_watchman_arm_lets_the_daemon_schedule_the_nights(bench, holdout) -> None:
+    """The bench's own night runs at 22:00 every day; this arm hands the
+    decision to the product's sleep daemon and counts what it did."""
+    result = bench.run(holdout, watchman=True)
+    assert set(result["metrikler"]) == set(bench.TARGETS)
+    assert result["metrikler"]["gece_suresi"] is None      # the bench ran no night
+    watch = result["nobet"]
+    assert watch["gece"] >= 1
+    assert watch["gece"] == watch["biten"] + watch["kesilen"]
+    assert watch["gece"] == sum(watch["tetik"].values()) == sum(watch["bitis"].values())
+    assert len(watch["geceler"]) == watch["gece"]
+    assert all(0.0 <= x["oran"] for x in watch["ornekler"])
+    # A store the night keeps consolidating never pins the panel at 100%.
+    assert watch["cubuk_tam_pay"] == 0.0
