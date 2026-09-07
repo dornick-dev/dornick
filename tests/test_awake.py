@@ -296,6 +296,30 @@ def test_sleep_debt_counts_unreplayed_sessions(store, sessions, watermark,
     assert hours < 1
 
 
+def test_sessions_with_nothing_to_replay_stop_counting_as_debt(store, sessions, watermark,
+                                                               clock) -> None:
+    """Live wound (07.09): 40 finished sessions that never touched a memory
+    were skipped by every night — and never marked, so the debt stayed at
+    40, the pressure at its ceiling, the panel's bar at 100%, and the
+    watchman ran a 0.25-second night in every idle minute. A session that
+    is still running stays owed; a finished one with nothing to replay is
+    settled and marked."""
+    Log(sessions, "empty", clock).close()                 # finished, touched nothing
+    node = store.remember("Kayıt.", kind="fact")
+    Log(sessions, "open", clock).touch(node.id)           # still running
+    assert awake.sleep_debt(sessions, clock=clock, watermark=watermark)[1] == 2
+
+    report = weave.night_pass(store, sessions, clock=clock, watermark=watermark)
+
+    assert report.replayed == 0 and report.settled == 1
+    assert awake.sleep_debt(sessions, clock=clock, watermark=watermark)[1] == 1
+    # The next night owes the open one only once it is finished.
+    Log(sessions, "open", clock).touch(node.id).close()
+    report = weave.night_pass(store, sessions, clock=clock, watermark=watermark)
+    assert report.replayed == 1
+    assert awake.sleep_debt(sessions, clock=clock, watermark=watermark)[1] == 0
+
+
 # -- ablation ----------------------------------------------------------
 
 

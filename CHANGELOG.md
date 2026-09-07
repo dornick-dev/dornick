@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.5.7 - 2026-09-07
+
+* **Fixed: the tidy-up need stuck at 100% and the night did nothing.**
+  Finished sessions that never touched a memory (a one-line "hello", an
+  aborted chat) were skipped by every night — and never marked, so they
+  counted as debt forever. On a real install 40 such sessions kept the
+  pressure at its ceiling; the watchman ran a 0.25-second night in every
+  idle minute and replayed nothing. A finished session with nothing to
+  replay is now settled and marked; a session still running stays owed.
+  The night report carries the count (`settled`).
+
 ## 1.5.6 - 2026-09-07
 
 * **Brain panel: awake stays awake while a replay runs.** The block said

@@ -171,6 +171,7 @@ class NightReport:
     session_count: int = 0
     replayed: int = 0
     carried_over: int = 0       # read by sleep.py
+    settled: int = 0            # finished sessions with nothing to replay, marked done
     new_edges: int = 0
     schema_touches: int = 0
     captured: int = 0
@@ -225,9 +226,14 @@ def night_pass(
         return report
 
     status = _read_watermark(watermark)
+    settled: list[str] = []
     sessions = prioritised_sessions(store, sessions_dir, clock=clock,
-                                    watermark=watermark, status=status)
+                                    watermark=watermark, status=status,
+                                    settled=settled)
     report.session_count = len(sessions)
+    for sid in settled:
+        status.setdefault("processed", {})[sid] = _stamp(clock)
+    report.settled = len(settled)
 
     touched: list[str] = []
     processed: list[ReplaySession] = []
@@ -289,12 +295,19 @@ def prioritised_sessions(
     clock: Clock,
     watermark: Path | None = None,
     status: dict[str, Any] | None = None,
+    settled: list[str] | None = None,
 ) -> list[ReplaySession]:
     """The sessions to replay, in gain × need order.
 
     Gain comes from the outcome (a failed session teaches the most), need
     from the number of nodes touched: a session that touched many memories
     will touch them in the future too.
+
+    `settled` collects the ids of finished sessions the night will never
+    replay — nothing touched, or older than the lookback. They are owed
+    nothing; the caller marks them processed. Left unmarked they counted as
+    debt forever: 40 such sessions kept the pressure at its ceiling and the
+    watchman running a 0.25-second night in every idle minute (live, 07.09).
     """
     status = status if status is not None else _read_watermark(watermark)
     processed = set((status.get("processed") or {}).keys())
@@ -304,11 +317,15 @@ def prioritised_sessions(
         if path.stem in processed:
             continue
         session = _read_session(path)
-        if session is None or not session.disabled or not session.sequence:
-            continue
+        if session is None or not session.disabled:
+            continue        # unreadable or still running: owed, replayed later
         age = _days_between(now, session.end)
-        if age > LOOKBACK_DAYS:
-            continue        # the old is consolidated by schema, not by scanning
+        if not session.sequence or age > LOOKBACK_DAYS:
+            # Nothing to replay, or the old is consolidated by schema, not
+            # by scanning: settled, never owed again.
+            if settled is not None:
+                settled.append(path.stem)
+            continue
         mean_surprise = _mean_surprise(store, session.sequence)
         session.priority = (
             GAIN.get(session.gain_class(), 0.1)
