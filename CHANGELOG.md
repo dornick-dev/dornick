@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.5.11 - 2026-09-07
+
+* **Brain panel hover cards, done properly.** The card lives on the page
+  body above every strip, sits below the element it explains with a small
+  arrow (above it only when the window's bottom is too close), and is
+  clamped to the window. The one-line version of 1.5.10 was drawn above
+  the tab and ended up under the top strip.
+
 ## 1.5.10 - 2026-09-07
 
 * **The pressure bar reads what a night can change.** On the owner's real

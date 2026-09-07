@@ -6009,13 +6009,22 @@ body.mesgul .brand-mark .knot-node {
 .sheet-close { border: 0; background: none; color: var(--faint); font: 16px/1 var(--font); cursor: pointer; padding: 0 2px; }
 .sheet-close:hover { color: var(--ice); }
 /* Tooltip: what each region stands for. */
+/* The hover card: on <body>, above every strip (z 90 > the HUD and the
+   viewer), below the element it explains, with a small arrow. */
 .region-tip {
-  position: fixed; z-index: 7; max-width: 300px; padding: 8px 10px; border-radius: 8px;
+  position: fixed; z-index: 90; max-width: 300px; padding: 8px 10px; border-radius: 8px;
   background: var(--panel-glass); backdrop-filter: blur(10px);
   box-shadow: 0 0 0 1px var(--edge), 0 10px 30px rgba(0, 0, 0, .35);
   font: 11px var(--font); line-height: 1.45; color: var(--dim); white-space: pre-wrap;
   pointer-events: none;
 }
+.region-tip::before {
+  content: ""; position: absolute; left: var(--arrow-x, 50%); width: 10px; height: 10px;
+  transform: translateX(-50%) rotate(45deg); background: inherit;
+  box-shadow: -1px -1px 0 0 var(--edge);
+}
+.region-tip[data-side="below"]::before { top: -5px; }
+.region-tip[data-side="above"]::before { bottom: -5px; box-shadow: 1px 1px 0 0 var(--edge); }
 /* Night sheet: replay controls, speed bar, freeze badge, report. */
 .night-row { display: flex; gap: 6px; align-items: center; margin-bottom: 6px; }
 .night-row select {

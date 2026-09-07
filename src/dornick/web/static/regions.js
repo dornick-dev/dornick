@@ -161,15 +161,27 @@ const Regions = (() => {
     return t(r.name) + " — " + t(r.what);
   }
 
-  function showTip(key, x, y, extra) {
+  // The hover card lives on <body>, above every strip and panel, and sits
+  // BELOW the element it explains (inside the panel, where the eye already
+  // is); above it only when the bottom of the window is too close. The
+  // browser's own title box, and then a card placed above the tab, both
+  // ended up under the top strip (live 07.09).
+  function showTip(key, rect, extra) {
     if (!tip) return;
+    if (tip.parentElement !== document.body) document.body.append(tip);
     tip.textContent = tipText(key) + (extra ? "\n" + extra : "");
     tip.hidden = false;
+    const GAP = 8, PAD = 6;
     const w = tip.offsetWidth || 240, h = tip.offsetHeight || 60;
-    tip.style.left = Math.max(6, Math.min(window.innerWidth - w - 6, x - w / 2)) + "px";
-    // Above the element when there is room, below it otherwise — never on it.
-    const above = y - h - 14;
-    tip.style.top = (above >= 6 ? above : Math.min(window.innerHeight - h - 6, y + 28)) + "px";
+    const below = rect.bottom + GAP;
+    const side = below + h <= window.innerHeight - PAD ? "below" : "above";
+    const top = side === "below" ? below : Math.max(PAD, rect.top - GAP - h);
+    const left = Math.max(PAD, Math.min(window.innerWidth - w - PAD, rect.left + rect.width / 2 - w / 2));
+    tip.style.top = top + "px";
+    tip.style.left = left + "px";
+    tip.dataset.side = side;
+    // The arrow points at the element's centre even when the card is clamped.
+    tip.style.setProperty("--arrow-x", Math.max(12, Math.min(w - 12, rect.left + rect.width / 2 - left)) + "px");
   }
   const hideTip = () => { if (tip) tip.hidden = true; };
 
@@ -181,8 +193,7 @@ const Regions = (() => {
       el.removeAttribute("title");
       if (!el.getAttribute("aria-label")) el.setAttribute("aria-label", tipText(key));
       el.addEventListener("mouseenter", (ev) => {
-        const r = el.getBoundingClientRect();
-        showTip(key, r.left + r.width / 2, r.top, el.dataset.extra || "");
+        showTip(key, el.getBoundingClientRect(), el.dataset.extra || "");
         ev.stopPropagation();
       });
       el.addEventListener("mouseleave", hideTip);
