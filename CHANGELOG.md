@@ -38,6 +38,13 @@
   run kept as `sleep-schedule-before.md`). 103 nights in 90 days both
   before and after — the schedule was the insurance's all along — but the
   bar at night start goes from 41% to 4%, and cut nights from 35 to 0.
+* **Brain panel hover cards no longer cover the panel.** The region
+  tooltips were three lines of the browser's own title box; they are one
+  line now, drawn above the element or below it when there is no room.
+* **A bare "h.t" is a word, not a file.** A token with a one-letter stem
+  (or a one-letter extension on a short stem) no longer draws a file chip.
+* The last Turkish element ids (`tanima-ikon`, `dock-tanima`) are English.
+
 
 ## 1.5.9 - 2026-09-07
 
