@@ -57,6 +57,7 @@ ROUTINE_KIND = 3
 # Anything older is not scanned — the old is consolidated by schema refresh,
 # not by scanning.
 LOOKBACK_DAYS = 7
+ABANDONED_HOURS = 24        # no event for this long: the session is over, note or not
 LOOKBACK_DECAY = 0.5
 
 # Step 2 — temporal adjacency window and weight. Neighbour 0.6, two away 0.42.
@@ -150,10 +151,24 @@ class ReplaySession:
     # harmless.
     reverse_done: bool = False
     forward_index: int = 0
+    ended: bool = False          # a session_end note was written
 
     @property
     def disabled(self) -> bool:
         return bool(self.outcome)
+
+    def finished(self, now: datetime) -> bool:
+        """Is this session over, so the night may replay or settle it?
+
+        An outcome note says so; so does a session_end note; and a session
+        whose last event is a day old is over whether or not anything said
+        so — the app was closed, the machine slept, the note never came.
+        Waiting for it kept 37 real sessions owed forever (live, 07.09).
+        """
+        if self.disabled or self.ended:
+            return True
+        return (self.end is not None
+                and (now - self.end) >= timedelta(hours=ABANDONED_HOURS))
 
     def gain_class(self) -> str:
         if self.outcome in ("failed", "corrected", "open"):
@@ -317,7 +332,7 @@ def prioritised_sessions(
         if path.stem in processed:
             continue
         session = _read_session(path)
-        if session is None or not session.disabled:
+        if session is None or not session.finished(now):
             continue        # unreadable or still running: owed, replayed later
         age = _days_between(now, session.end)
         if not session.sequence or age > LOOKBACK_DAYS:
@@ -676,6 +691,8 @@ def _read_session(path: Path) -> ReplaySession | None:
             session.goal_open = False
         elif name == "reverse_replay_done":
             session.reverse_done = True
+        elif name == "session_end":
+            session.ended = True
         elif name == "forward_replay_mark":
             session.forward_index = max(session.forward_index,
                                         int(meta.get("n") or 0))

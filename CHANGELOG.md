@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.5.8 - 2026-09-07
+
+* **Fixed: sessions without an outcome note were owed forever.** 1.5.7
+  settled the empty ones, but 37 real sessions on the same install had no
+  outcome note at all (the app was closed, the machine slept, the note
+  never came) and still counted as "running". A session is over when it
+  has an outcome note, a session_end note, or no event for a day; the
+  night then replays it (if it touched memories) or settles it.
+
 ## 1.5.7 - 2026-09-07
 
 * **Fixed: the tidy-up need stuck at 100% and the night did nothing.**

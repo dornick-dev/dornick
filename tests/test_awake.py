@@ -320,6 +320,26 @@ def test_sessions_with_nothing_to_replay_stop_counting_as_debt(store, sessions, 
     assert awake.sleep_debt(sessions, clock=clock, watermark=watermark)[1] == 0
 
 
+def test_a_session_silent_for_a_day_counts_as_finished(store, sessions, watermark,
+                                                     clock) -> None:
+    """Live wound (07.09): 37 real sessions had no outcome note (the app was
+    closed, the machine slept) and stayed "running" — owed forever. A day
+    of silence ends a session; a session_end note ends it at once; a fresh
+    one without either is still owed."""
+    node = store.remember("Kayıt.", kind="fact")
+    Log(sessions, "fresh", clock).touch(node.id)          # no outcome, minutes old
+    old = Clock(NOW - timedelta(days=2))
+    Log(sessions, "silent", old).touch(node.id)           # no outcome, two days old
+    ended = Log(sessions, "ended", clock).touch(node.id)
+    ended.log.note("session_end")
+    assert awake.sleep_debt(sessions, clock=clock, watermark=watermark)[1] == 3
+
+    report = weave.night_pass(store, sessions, clock=clock, watermark=watermark)
+
+    assert report.replayed == 2                            # silent + ended
+    assert awake.sleep_debt(sessions, clock=clock, watermark=watermark)[1] == 1   # fresh
+
+
 # -- ablation ----------------------------------------------------------
 
 
