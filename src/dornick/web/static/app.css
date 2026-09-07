@@ -1357,7 +1357,7 @@ a.md-source { text-decoration: none; color: inherit; }
 }
 .dock-chip:hover { color: var(--ice); background: var(--raise); }
 /* Learn-me chip: a quiet, non-clickable sign while training runs behind. */
-.dock-tanima { color: var(--faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dock-recognition { color: var(--faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 /* Cost chip: this turn's estimated spend. Tabular so the digits keep their
    alignment; on an expensive model (output > $20/M) it turns amber — both
    themes' token (--amber) supplies its own counterpart, warning without
@@ -2014,9 +2014,9 @@ body.focus #focus.on { color: var(--cyan); }
 .icon:hover { color: var(--ice); background: #F0A02012; }
 /* Learn-me icon: a soft pulse while training runs; with reduced motion, no
    animation, only the colour accent remains. */
-#tanima-ikon.running { color: var(--cyan); }
-#tanima-ikon.running svg { animation: tanima-pulse 2s ease-in-out infinite; }
-@keyframes tanima-pulse {
+#recognition-icon.running { color: var(--cyan); }
+#recognition-icon.running svg { animation: recognition-pulse 2s ease-in-out infinite; }
+@keyframes recognition-pulse {
   0%, 100% { opacity: .55; transform: scale(1); }
   50% { opacity: 1; transform: scale(1.12); }
 }

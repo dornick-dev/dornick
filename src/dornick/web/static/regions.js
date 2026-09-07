@@ -80,28 +80,28 @@ const Regions = (() => {
   const REGIONS = {
     hippocampus: { name: "Hipokampus",
       what: "sıcak düğümler (sicak=1) ve kenarları: indeks ve çağrışım",
-      code: "store.links(), recall() izi" },
+      code: "store.links(), recall() trace" },
     cold: { name: "Soğuk depo",
       what: "sicak=0 düğümler: FTS'ten ulaşılır, kendiliğinden gelmez; open() edilince halkadan merkeze süzülür",
-      code: "node.sicak" },
+      code: "node.hot" },
     cortex: { name: "Korteks",
       what: "uzak model: dünya bilgisi, dil; yazılamaz — bu bölge donmuş: uzak model",
-      code: "yok (uzak model)" },
+      code: "none (remote model)" },
     patch: { name: "Korteks yaması",
       what: "taban yazıcı (10.8M), plastik tek parça; gece ince ayarında nabız atar, sınavı geçince kalıcı renk",
-      code: "tanima.durum()" },
+      code: "recognition.status()" },
     prefrontal: { name: "Prefrontal",
       what: "hedef yığını ve açık goal düğümleri; aktif hedefler yanar, done sönerek düşer",
       code: "Mind.goals()" },
     amygdala: { name: "Amigdala",
       what: "sürpriz / önem işaretleyici; yüksek sürprizli kayıt yazılırken parlar",
-      code: "remember() olayı (mind_write)" },
+      code: "remember() event (mind_write)" },
     thalamus: { name: "Talamus",
       what: "uyarılma kapısı: eşik, basınç, ritim, durum makinesi (uyanık / uykulu / uyuyor / uyanıyor)",
       code: "sleep daemon — GET /api/sleep" },
     brainstem: { name: "Beyin sapı",
       what: "tetikleyici / zamanlayıcı; tek nabız çizgisi",
-      code: "uyku (zamanlayıcı)" },
+      code: "sleep daemon (rhythm)" },
     identity: { name: "Kimlik paneli",
       what: "anlatı kimliği; her cümle tıklanınca kanıt düğümleri hipokampusta yanar",
       code: ".dornick/identity.md — GET /api/identity" },
@@ -110,7 +110,7 @@ const Regions = (() => {
       code: ".dornick/temperament.json — GET /api/temperament" },
     world: { name: "Dünya haritası",
       what: "world düğümleri: hipokampus içinde ayrı renk; doğrulanmamış olanlar soluk",
-      code: "world düğümleri (recall.store kind=world)" },
+      code: "world nodes (recall.store kind=world)" },
   };
 
   // The wire's sleep states (recall.sleep.State) → the word shown.
@@ -152,11 +152,13 @@ const Regions = (() => {
   let lastNightLooked = false;      // the /api/nights fallback ran once
 
   // --- tooltips: every region says what code it stands for --------------
+  // One line for the hover card. The code it stands for and the metaphor
+  // note were two more lines: the browser's own title box then covered the
+  // panel (live 07.09: "the title comes up and covers everything").
   function tipText(key) {
     const r = REGIONS[key];
     if (!r) return "";
-    return t(r.name) + " — " + t(r.what) + "\n" + t("Temsil ettiği kod") + ": " + r.code
-      + "\n" + t("Bölge bir metafordur; biyolojik sadakat iddiası yok.");
+    return t(r.name) + " — " + t(r.what);
   }
 
   function showTip(key, x, y, extra) {
@@ -165,15 +167,19 @@ const Regions = (() => {
     tip.hidden = false;
     const w = tip.offsetWidth || 240, h = tip.offsetHeight || 60;
     tip.style.left = Math.max(6, Math.min(window.innerWidth - w - 6, x - w / 2)) + "px";
-    tip.style.top = Math.max(6, y - h - 14) + "px";
+    // Above the element when there is room, below it otherwise — never on it.
+    const above = y - h - 14;
+    tip.style.top = (above >= 6 ? above : Math.min(window.innerHeight - h - 6, y + 28)) + "px";
   }
   const hideTip = () => { if (tip) tip.hidden = true; };
 
   function bindTips(root) {
     for (const el of root.querySelectorAll("[data-region]")) {
       const key = el.dataset.region;
-      // Native title too: reachable by keyboard and screen readers.
-      el.title = tipText(key);
+      // No native title: the browser's box sat on the panel. Screen readers
+      // get the one-line text through aria-label instead.
+      el.removeAttribute("title");
+      if (!el.getAttribute("aria-label")) el.setAttribute("aria-label", tipText(key));
       el.addEventListener("mouseenter", (ev) => {
         const r = el.getBoundingClientRect();
         showTip(key, r.left + r.width / 2, r.top, el.dataset.extra || "");
@@ -339,7 +345,7 @@ const Regions = (() => {
     el.classList.toggle("off", !p.on);
     const word = p.running ? t("eğitimde") : p.ready ? t("sınavı geçti") : p.on ? t("hazır değil") : t("kapalı");
     el.dataset.extra = t("yama: taban yazıcı") + " · " + word + (p.last ? " · " + p.last : "");
-    el.title = tipText("patch") + "\n" + el.dataset.extra;
+    el.setAttribute("aria-label", tipText("patch") + " · " + el.dataset.extra);
   }
   function patch(stateWord) {
     // From the SSE `recognition` event: started → pulse, finished → permanent colour.
@@ -435,7 +441,7 @@ const Regions = (() => {
     box.dataset.extra = t("basınç") + " " + fmt(p.total) + " / " + t("eşik") + " " + fmt(upper)
       + (state.debt ? " · " + t("borç") + " " + (state.debt.oturum || 0) : "")
       + " · " + t("uyanıklık") + " " + wake.toFixed(2) + " (1 − basınç/eşik)";
-    box.title = tipText("thalamus") + "\n" + box.dataset.extra;
+    box.setAttribute("aria-label", tipText("thalamus") + " · " + box.dataset.extra);
     renderClock();
     renderAmygdalaNote();
     renderSimple();

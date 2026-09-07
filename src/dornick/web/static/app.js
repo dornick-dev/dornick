@@ -2359,7 +2359,7 @@ function trainingDate() {
 }
 
 function trainingIcon(state) {
-  const icon = $("tanima-ikon");
+  const icon = $("recognition-icon");
   if (!icon) return;
   if (state === "on") icon.hidden = false;
   else if (state === "off") icon.hidden = true;
@@ -2394,7 +2394,7 @@ const TRAINING_REASONS = {
   failed_to_start: "Eğitim başlatılamadı.",
 };
 
-$("tanima-ikon").addEventListener("click", async () => {
+$("recognition-icon").addEventListener("click", async () => {
   // A click while running is silently ignored: the tooltip already says the
   // state, and opening a second run is impossible anyway (singleton process).
   if (trainingRunning) return;
@@ -2906,7 +2906,7 @@ function budgetField() {
 // a permanent badge.
 let trainingTimer = null;
 function trainingChip(state) {
-  const chip = $("dock-tanima");
+  const chip = $("dock-recognition");
   if (!chip) return;
   clearTimeout(trainingTimer);
   if (state === "started") {

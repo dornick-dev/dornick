@@ -499,6 +499,15 @@ const Markdown = (() => {
     // separator or a line number it really is a file; otherwise a single
     // capitalised segment is left alone.
     if (!sep && !hit[1] && /^[A-Z]/.test(stem)) return null;
+    // A bare word needs a real name before the dot: "h.t", "a.c", "v.py"
+    // are prose (a one-letter stem, or a one-letter extension on a short
+    // stem), not files (live 07.09: "h.t" drew a chip). With a separator
+    // or a line number it is a file whatever its length.
+    if (!sep && !hit[1]) {
+      const dot = stem.lastIndexOf(".");
+      const name = stem.slice(0, dot), ext = stem.slice(dot + 1);
+      if (name.length < 2 || (ext.length < 2 && name.length < 3)) return null;
+    }
     // A single word with no separator and no number is a weak-ish signal,
     // but things like "1.5" never match the extension list anyway.
     return { index: hit.index, raw, path, line: Number(hit[1] || 0) };

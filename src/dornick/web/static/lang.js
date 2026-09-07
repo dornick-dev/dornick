@@ -130,7 +130,7 @@ Lang.statics("gear", "Settings", "title");
 Lang.statics("reveal", "Show every memory in the web", "title");
 Lang.statics("authority", "Permissions", "title");
 Lang.statics("jobs", "Tasks", "title");
-Lang.statics("tanima-ikon", "Learn me", "title");
+Lang.statics("recognition-icon", "Learn me", "title");
 Lang.statics("cams", "Camera off — click to turn on", "title");
 Lang.statics("cam-index", "Device index", "title");
 Lang.statics("cam-head", "Drag — keep over the brain", "title");
@@ -148,7 +148,7 @@ for (const [id, text] of [
   ["jobs", "Tasks"],
   ["orchestra", "Subagents"],
   ["focus", "Focus mode"],
-  ["tanima-ikon", "Learn me"],
+  ["recognition-icon", "Learn me"],
   ["theme", "Light / dark mode"],
   ["gear", "Settings"],
   ["stop", "Stop"],
@@ -201,7 +201,7 @@ Lang.statics("legend-toggle-strip", "Toggle the colour key", "title");
 Lang.statics("legend-toggle-strip", "Toggle the colour key", "aria-label");
 Lang.selectors(".brain-simple-need", "How close the night is", "title");
 Lang.selectors(".brain-simple-need-label", "Tidy-up need");
-Lang.statics("brain-simple-need-label", "The memory work it will do in its sleep while you are away. Near 100% it falls asleep by itself after 5 idle minutes; /sleep puts it to sleep now, /nosleep keeps it awake for 4 hours.", "title");
+Lang.statics("brain-simple-need-label", "Work it will tidy in its sleep; it sleeps by itself after 5 idle minutes. /sleep sleeps now, /nosleep keeps it awake 4 hours.", "title");
 Lang.selectors("#brain-simple-report", "Morning report");
 Lang.selectors(".regions-strip-head .region-name", "Details");
 Lang.statics("mind-open", "Show the brain panel", "title");

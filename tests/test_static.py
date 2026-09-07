@@ -2760,13 +2760,13 @@ def test_every_region_tooltip_names_its_source_code() -> None:
     assert block, "REGIONS tablosu yok"
     table = block.group(1)
     expected = {
-        "hippocampus": "store.links(), recall() izi",
-        "cold": "node.sicak",
-        "patch": "tanima.durum()",
+        "hippocampus": "store.links(), recall() trace",
+        "cold": "node.hot",
+        "patch": "recognition.status()",
         "prefrontal": "Mind.goals()",
         "amygdala": "remember()",
         "thalamus": "sleep daemon",
-        "brainstem": "uyku",
+        "brainstem": "sleep daemon (rhythm)",
         "identity": ".dornick/identity.md",
         "temperament": ".dornick/temperament.json",
         "world": "world",
