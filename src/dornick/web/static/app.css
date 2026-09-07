@@ -6058,3 +6058,7 @@ body.mind-on:not(.mind-off):not(.no-ambient):not(.viewing):not(.orch-open):not(.
 body.mind-on:not(.mind-off):not(.no-ambient):not(.viewing):not(.orch-open):not(.cam-open) .regions-bottom,
 body.mind-on:not(.mind-off):not(.no-ambient):not(.viewing):not(.orch-open):not(.cam-open) .brain-simple,
 body.mind-on:not(.mind-off):not(.no-ambient):not(.viewing):not(.orch-open):not(.cam-open) .regions-middle { display: none; }
+
+/* Awake but replaying: the sun stays, a soft ring breathes around it. */
+.brain-simple.replaying .brain-simple-icon { animation: brain-simple-replay 2.4s ease-in-out infinite; }
+@keyframes brain-simple-replay { 0%, 100% { filter: drop-shadow(0 0 0 transparent); } 50% { filter: drop-shadow(0 0 6px var(--cyan)); } }

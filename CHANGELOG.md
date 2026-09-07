@@ -1,5 +1,20 @@
 # Changelog
 
+## 1.5.6 - 2026-09-07
+
+* **Brain panel: awake stays awake while a replay runs.** The block said
+  "Uyuyor" while the watchman itself said awake — during a micro-replay
+  while you work, while a live night's pictures were still being drawn
+  after the wake, or while you replayed a recorded night. On a computer
+  that reads as the machine being asleep. The watchman's own word is now
+  kept apart from the picture's; awake + replay is its own sentence
+  ("Uyanık — arka planda tekrar ediyor (n/m)", "… kaydedilmiş geceyi
+  oynatıyor") with the sun icon breathing.
+* **Fixed: the tidy-up bar showed 100%.** The panel still read the
+  pre-1.5.4 threshold keys (`ust`/`alt`), so the bar divided by 1.
+* The label "Uyku ihtiyacı" became "Toparlama ihtiyacı" (see 1.5.5 notes)
+  with a tooltip that says when it sleeps by itself.
+
 ## 1.5.5 - 2026-09-06
 
 The last Turkish inside the files goes: the values Dornick compares

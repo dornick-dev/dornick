@@ -60,6 +60,9 @@ Lang.add({
   "Uykulu — birazdan uyur.": "Sleepy — it will sleep soon.",
   "Uyuyor: günün konuşmalarını tekrar ediyor": "Asleep: replaying the day's conversations",
   "Uyanıyor.": "Waking up.", "Kestiriyor: kısa bir mola.": "Napping: a short break.",
+  "Uyanık — arka planda kısa bir tekrar yapıyor.": "Awake — a short replay in the background.",
+  "Uyanık — arka planda tekrar ediyor": "Awake — replaying in the background",
+  "Uyanık — kaydedilmiş geceyi oynatıyor": "Awake — playing a recorded night",
   "Dün gece": "Last night", "gecesi": "night", "konuşma tekrar edildi": "conversations replayed",
   "ders çıkardı": "lessons drawn", "Toparlama ihtiyacı": "Tidy-up need",
   "Ayrıntılar ▸": "Details ▸", "Ayrıntıları gizle ▾": "Hide details ▾",
@@ -131,7 +134,7 @@ const Regions = (() => {
 
   let mind, tip, sheet, tabs;
   let state = {
-    sleep: "awake", nap: false, tired: false, cycle: 0, phase: "",
+    sleep: "awake", daemon: "", nap: false, tired: false, cycle: 0, phase: "",
     wakeAt: "", caffeine: "", pressure: null, threshold: null, debt: null,
     goals: new Map(), patch: {}, cold: 0, world: 0,
     // The simple block's extra facts: the last finished night and the
@@ -246,7 +249,10 @@ const Regions = (() => {
       }
       // The watchman's own state machine, when a daemon runs. A replay in
       // progress owns the state word; the poll must not fight it.
-      if (u && SLEEP_STATES.includes(u.status) && !replaying()) state.sleep = u.status;
+      if (u && SLEEP_STATES.includes(u.status)) {
+        state.daemon = u.status;          // what the watchman itself says
+        if (!replaying()) state.sleep = u.status;
+      }
       if (u && "caffeine" in u) state.caffeine = String(u.caffeine || "");
       if (u && "next_night" in u) state.nextNight = String(u.next_night || "");
       if (u && u.rhythm) {
@@ -368,8 +374,8 @@ const Regions = (() => {
     const svg = $("thalamus");
     if (!svg) return;
     const p = state.pressure || { total: 0, strengthening: 0, debt: 0, heat: 0 };
-    const upper = state.threshold && state.threshold.ust ? Number(state.threshold.ust) : 1;
-    const lower = state.threshold && state.threshold.alt ? Number(state.threshold.alt) : upper / 3;
+    const upper = state.threshold && state.threshold.upper ? Number(state.threshold.upper) : 1;
+    const lower = state.threshold && state.threshold.lower ? Number(state.threshold.lower) : upper / 3;
     const fill = clamp(p.total / upper, 0, 1);
     // Slices per component, sized by their share of the total. The
     // weights live in sleep.py; here only the proportion is shown, and the
@@ -460,15 +466,25 @@ const Regions = (() => {
   }
 
   // --- the simple block: icon + sentence + bar ------------------------------
+  // Awake but replaying: a micro-replay while you work, a live night whose
+  // pictures are still being drawn after the watchman woke, or a recorded
+  // night you opened. The word stays "awake" — "asleep" was read as the
+  // machine being asleep (live, 06.09).
+  function awakeReplay() {
+    if (state.nap) return true;
+    return state.sleep === "asleep" && state.daemon === "awake";
+  }
   function sentence() {
     const n = state.night;
-    if (state.nap) return t("Kestiriyor: kısa bir mola.");
+    const count = n.total > n.done ? n.done + "/" + n.total : n.done ? String(n.done) : "";
+    if (state.nap) return t("Uyanık — arka planda kısa bir tekrar yapıyor.");
+    if (awakeReplay())
+      return t(replaying() ? "Uyanık — kaydedilmiş geceyi oynatıyor" : "Uyanık — arka planda tekrar ediyor")
+        + (count ? " (" + count + ")" : "") + ".";
     switch (state.sleep) {
       case "sleepy": return t("Uykulu — birazdan uyur.");
-      case "asleep": {
-        const count = n.total > n.done ? n.done + "/" + n.total : n.done ? String(n.done) : "";
+      case "asleep":
         return t("Uyuyor: günün konuşmalarını tekrar ediyor") + (count ? " (" + count + ")" : "") + ".";
-      }
       case "waking": return t("Uyanıyor.");
       default:
         return state.caffeine ? t("Uyanık — bu gece uyumayacak (kafein).")
@@ -487,8 +503,9 @@ const Regions = (() => {
   function renderSimple() {
     const box = $("brain-simple");
     if (!box) return;
-    const word = state.nap ? "sleepy" : (SLEEP_STATES.includes(state.sleep) ? state.sleep : "awake");
+    const word = awakeReplay() ? "awake" : (SLEEP_STATES.includes(state.sleep) ? state.sleep : "awake");
     box.dataset.state = word;
+    box.classList.toggle("replaying", awakeReplay());
     const line = $("brain-simple-line");
     if (line) line.textContent = sentence();
     // "Dün gece 18 konuşma tekrar edildi, 2 ders çıkardı."
@@ -503,7 +520,7 @@ const Regions = (() => {
     }
     // Sleep need: pressure over the upper threshold, whole percent only.
     const p = state.pressure ? Number(state.pressure.total) || 0 : 0;
-    const upper = state.threshold && state.threshold.ust ? Number(state.threshold.ust) : 1;
+    const upper = state.threshold && state.threshold.upper ? Number(state.threshold.upper) : 1;
     const pct = Math.round(clamp(p / upper, 0, 1) * 100);
     const fill = $("brain-simple-fill"), pctEl = $("brain-simple-pct"), bar = $("brain-simple-bar");
     if (fill) fill.style.width = pct + "%";
@@ -619,7 +636,7 @@ const Regions = (() => {
     raf = requestAnimationFrame(loop);
     if (now - lastBeat < 40) return;
     lastBeat = now;
-    const p = state.pressure ? clamp(state.pressure.total / ((state.threshold && state.threshold.ust) || 1), 0, 1) : 0;
+    const p = state.pressure ? clamp(state.pressure.total / ((state.threshold && state.threshold.upper) || 1), 0, 1) : 0;
     const asleep = state.sleep === "asleep";
     const period = asleep ? 2400 : 1400 - p * 600;
     beatPhase = (beatPhase + 40 / period) % 1;

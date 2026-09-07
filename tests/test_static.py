@@ -2840,6 +2840,7 @@ def test_the_brain_panel_is_simple_by_default_and_detailed_on_demand() -> None:
     assert re.search(r"saved = localStorage\.getItem\(DETAILS_KEY\);", REGIONS_JS)
     assert 'setDetails(saved === "on", false)' in REGIONS_JS
     for text in ("Uykulu — birazdan uyur.", "Uyuyor: günün konuşmalarını tekrar ediyor",
+                 "Uyanık — arka planda tekrar ediyor", "Uyanık — kaydedilmiş geceyi oynatıyor",
                  "Uyanıyor.", "Ayrıntıları gizle ▾", "konuşma tekrar edildi", "ders çıkardı"):
         assert text in REGIONS_JS, text
     # The percent is a whole number: "%12", never "0.13".
@@ -2849,7 +2850,7 @@ def test_the_brain_panel_is_simple_by_default_and_detailed_on_demand() -> None:
     assert "Regions.nightProgress" not in APP_JS      # night.js feeds it, not a second SSE path
     assert "r.nightProgress(replayed, known)" in NIGHT_JS and "r.lastNight({" in NIGHT_JS
     # The poll reads the watchman's state word (a replay owns it meanwhile).
-    assert "SLEEP_STATES.includes(u.status) && !replaying()" in REGIONS_JS
+    assert "if (!replaying()) state.sleep = u.status;" in REGIONS_JS
     # Details: labelled numbers and one-line captions, the tooltips' code line stays.
     assert 't("Uyanıklık") + " %" + Math.round(wake * 100)' in REGIONS_JS
     assert 't("Basınç") + " " + num(p.total) + " / " + num(upper)' in REGIONS_JS
@@ -3000,3 +3001,19 @@ def test_the_javascript_name_check_sees_a_planted_turkish_name() -> None:
     names = {name for _line, name in _js_declared_names(planted)}
     assert {"hedef", "dosya", "kayit"} <= names
     assert "yorum" not in names and "metin" not in names
+
+
+def test_the_simple_block_keeps_awake_while_a_replay_runs() -> None:
+    """Live wound (06.09): the block said "Uyuyor" while the watchman said
+    awake — a micro-replay, or a live night still being drawn after the wake.
+    On a computer "asleep" reads as the machine being asleep. The daemon's
+    own word is kept apart from the picture's, and awake + replay is its own
+    sentence with the awake icon."""
+    src = (STATIC / "regions.js").read_text(encoding="utf-8")
+    assert "state.daemon = u.status" in src
+    assert "function awakeReplay()" in src
+    assert 'state.sleep === "asleep" && state.daemon === "awake"' in src
+    assert 'box.classList.toggle("replaying", awakeReplay())' in src
+    # the stale pre-rename keys never come back, and the HTML default is English
+    assert ".threshold.ust" not in src and ".threshold.alt" not in src
+    assert 'data-state="awake"' in (STATIC / "index.html").read_text(encoding="utf-8")
