@@ -20,7 +20,7 @@ from pathlib import Path
 import pytest
 
 from dornick.events import EventLog
-from dornick.recall import open_store, sleep
+from dornick.recall import open_store, sleep, weave
 from dornick.recall.sleep import Phase, Rhythm, SleepSwitch, Sleeper, State
 
 MONDAY = datetime(2025, 6, 2, 9, 0, tzinfo=timezone.utc)
@@ -75,7 +75,7 @@ def _session(sessions: Path, name: str, node_ids, clock: Clock,
 
 def test_thresholds_are_the_measured_ones() -> None:
     """Not chosen: derived from the degradation curve with the night off."""
-    assert sleep.UPPER_THRESHOLD == pytest.approx(2.3374)
+    assert sleep.UPPER_THRESHOLD == pytest.approx(2.3647)
     assert sleep.LOWER_THRESHOLD == pytest.approx(sleep.UPPER_THRESHOLD / 3, rel=1e-3)
 
     source = (Path(__file__).resolve().parents[1]
@@ -525,3 +525,121 @@ def test_weekly_jobs_run_once_a_week_and_wait_for_the_user_to_be_gone(
     assert quiet["vacuum"] is True
     ledger = json.loads((tmp_path / "maintenance.json").read_text("utf-8"))
     assert ledger["vacuum"].startswith(clock().date().isoformat())
+
+
+# -- 1.5.10: pressure is growth since the last night -------------------
+
+
+def _small_real_store(store, records: int = 30, links: int = 5, weight: float = 0.4):
+    """The owner's real store in miniature: a hundred fresh records, five
+    links each at ~0.4 — absolute strengthening around 4 per record."""
+    nodes = [store.remember(f"Saha notu {i}.", kind="fact") for i in range(records)]
+    for i, node in enumerate(nodes):
+        for k in range(1, links + 1):
+            store.link(node.id, nodes[(i + k) % records].id, weight=weight, reason="elle")
+    return nodes
+
+
+def test_a_small_store_with_everything_hot_reads_below_the_threshold_after_a_night(
+        store, sessions, clock, tmp_path) -> None:
+    """Measured on the real install (docs/charts/pressure-real-store.md): 102
+    records, all hot by the fresh rule, 4.7 links each. The absolute total
+    read 104% of the threshold for ever — a night trims two percent, replay
+    grows it back. Pressure is what has grown since the last night."""
+    _small_real_store(store)
+    watermark = tmp_path / "watermark.json"
+    fresh = sleep.pressure(store, sessions, watermark=watermark, clock=clock)
+    # No night on record: the whole weight is un-downscaled, as on the curve.
+    assert fresh.strengthening == pytest.approx(store.strengthening())
+    assert fresh.strengthening > sleep.UPPER_THRESHOLD
+    assert fresh.heat == 0.0                    # all fresh: nothing to cool
+    assert fresh.total > sleep.UPPER_THRESHOLD  # the old reading, honest here
+
+    weave.night_pass(store, sessions, clock=clock, watermark=watermark)
+    rested = sleep.pressure(store, sessions, watermark=watermark, clock=clock)
+    assert rested.strengthening == 0.0 and rested.heat == 0.0
+    assert rested.total < sleep.LOWER_THRESHOLD
+    assert rested.total / sleep.UPPER_THRESHOLD < 1.0        # the panel bar
+
+    # A week of nights on an untouched store: still rested, never "tired".
+    for _ in range(7):
+        clock.advance(days=1)
+        weave.night_pass(store, sessions, clock=clock, watermark=watermark)
+        assert sleep.pressure(store, sessions, watermark=watermark,
+                              clock=clock).total < sleep.LOWER_THRESHOLD
+
+
+def test_the_night_records_the_baseline_and_pressure_climbs_with_use(
+        store, sessions, clock, tmp_path) -> None:
+    nodes = _small_real_store(store)
+    watermark = tmp_path / "watermark.json"
+    weave.night_pass(store, sessions, clock=clock, watermark=watermark)
+    status = json.loads(watermark.read_text("utf-8"))
+    assert status["weight"] == pytest.approx(store.total_weight()[0], abs=1e-3)
+    assert sleep.baseline_weight(watermark) == pytest.approx(status["weight"])
+    assert sleep.pressure(store, watermark=watermark).strengthening == 0.0
+
+    # A day of use: new records woven in, a lesson linked by the awake replay.
+    for i in range(10):
+        fresh = store.remember(f"Yeni not {i}.", kind="fact")
+        store.link(fresh.id, nodes[i].id, weight=0.8, reason="elle")
+    used = sleep.pressure(store, watermark=watermark)
+    total, count = store.total_weight()
+    assert used.strengthening == pytest.approx((total - status["weight"]) / count, abs=1e-3)
+    assert 0.0 < used.strengthening < sleep.UPPER_THRESHOLD
+    assert used.total > 0.0
+
+    # The next night moves the baseline: rested again.
+    clock.advance(days=1)
+    weave.night_pass(store, sessions, clock=clock, watermark=watermark)
+    assert sleep.pressure(store, watermark=watermark).strengthening == 0.0
+    assert json.loads(watermark.read_text("utf-8"))["weight"] < total
+
+
+def test_a_watermark_without_a_baseline_reads_the_absolute_total(
+        store, sessions, clock, tmp_path) -> None:
+    """A watermark written before 1.5.10 has no `weight`: until its next
+    night the store reads as if it had never slept — the honest fallback,
+    and one night old."""
+    _small_real_store(store)
+    watermark = tmp_path / "watermark.json"
+    weave._write_watermark(watermark, {                                 # noqa: SLF001
+        "processed": {}, "last_run": clock().isoformat(timespec="milliseconds")})
+    assert sleep.baseline_weight(watermark) == 0.0
+    assert sleep.baseline_weight(None) == 0.0
+    assert sleep.baseline_weight(tmp_path / "missing.json") == 0.0
+    old = sleep.pressure(store, sessions, watermark=watermark, clock=clock)
+    assert old.strengthening == pytest.approx(store.strengthening())
+    # Edges pruned below the baseline never read negative.
+    weave.night_pass(store, sessions, clock=clock, watermark=watermark)
+    store.shrink_edges(0.5, 0.0)
+    assert sleep.pressure(store, watermark=watermark).strengthening == 0.0
+
+
+def test_heat_counts_only_what_the_night_could_cool(store, clock) -> None:
+    """The old heat term read "hot share above 30%": 1.0 on any young store,
+    and no night could lower it. Heat is now the share of records whose
+    own trace has cooled below the cold threshold while they are still hot
+    — what `update_heat` would cool tonight."""
+    nodes = [store.remember(f"Kayıt {i}.", kind="fact") for i in range(10)]
+    assert store.hot_share() == 1.0
+    assert store.cooling_debt(weave.COLD_THRESHOLD) == (0, 10)   # fresh: hot by rule
+    assert sleep.pressure(store).heat == 0.0
+
+    clock.advance(days=30)                    # nothing touched, no night: all owed
+    assert store.cooling_debt(weave.COLD_THRESHOLD) == (10, 10)
+    assert sleep.pressure(store).heat == 1.0
+
+    store.open(nodes[0].id)                   # used today: its trace is warm again
+    assert store.cooling_debt(weave.COLD_THRESHOLD) == (9, 10)
+    assert sleep.pressure(store).heat == pytest.approx(min(1.0, 0.9 / (1 - sleep.HEAT_TARGET)))
+
+    store.update_heat(weave.COLD_THRESHOLD)   # the night pays the debt
+    # What stays hot is the opened record and the neighbours its strong
+    # edges keep warm (`WARM_EDGE`); the debt counts those neighbours, whose
+    # own traces are cold — the documented over-count, nothing else.
+    hot = round(store.hot_share() * 10)
+    assert 1 <= hot < 10
+    assert store.cooling_debt(weave.COLD_THRESHOLD) == (hot - 1, 10)
+    assert sleep.pressure(store).heat == pytest.approx(
+        min(1.0, (hot - 1) / 10 / (1 - sleep.HEAT_TARGET)), abs=1e-3)

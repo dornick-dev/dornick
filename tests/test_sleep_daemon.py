@@ -630,3 +630,61 @@ def test_the_bridge_relays_the_sleep_commands_or_refuses_without_a_daemon(
     assert daemon.calls == ["uyu", "kafein"]
     assert bridge.stop_sleep() is True
     assert bridge.sleep_now()["ok"] is False
+
+
+# -- 1.5.10: the night is told the pressure it began with ------------------
+
+
+def _one_unit_with_baseline(store, sessions_dir, *, clock=None, watermark=None, **kw):
+    """`_one_unit`, plus what the real night writes since 1.5.10: the weight
+    it leaves behind, the baseline pressure is measured against."""
+    report = _one_unit(store, sessions_dir, clock=clock, watermark=watermark, **kw)
+    status = weave._read_watermark(watermark)                          # noqa: SLF001
+    status["weight"] = store.total_weight()[0]
+    weave._write_watermark(watermark, status)                          # noqa: SLF001
+    return report
+
+
+def test_a_night_is_not_cut_by_the_baseline_it_rewrites(store, state, clock,
+                                                        monkeypatch) -> None:
+    """Pressure is growth since the last night, and the first cycle moves
+    that baseline. Read live at the second boundary the switch would see
+    zero, call it "pressure dropped", and no night would reach its REM
+    cycles — the owner's journal showed exactly that. The night is told
+    the pressure it began with; it ends by its own work."""
+    monkeypatch.setattr(weave, "night_pass", _one_unit_with_baseline)
+    nodes = _pressurise(store)
+    for i in range(daemon_module.MAX_CYCLES):
+        _session(state, f"s{i}", [nodes[i].id], clock)
+    _last_night(state, clock, hours_ago=1)
+    hub = Hub()
+    daemon = _daemon(store, state, clock, hub)
+
+    assert _fall_asleep(daemon, clock) is State.WAKING
+    kinds = hub.kinds()
+    assert "sleep.woke" not in kinds and kinds[-1] == "sleep.ended"
+    assert kinds.count("sleep.cycle") == daemon_module.MAX_CYCLES
+    assert daemon.status()["last_night"]["report"]["replayed"] == daemon_module.MAX_CYCLES
+    assert daemon.status()["rested_until"]                # finished, so it rests
+    # And the reading the panel gets afterwards is the rested one.
+    assert daemon.measure().strengthening == 0.0
+
+
+def test_a_night_the_user_asked_for_runs_whole(store, state, clock, monkeypatch) -> None:
+    """`/sleep` on a rested store: the thresholds are not consulted before it
+    starts, nor at its cycle boundaries — a whole night was asked for."""
+    monkeypatch.setattr(weave, "night_pass", _one_unit_with_baseline)
+    nodes = _pressurise(store)
+    hub = Hub()
+    daemon = _daemon(store, state, clock, hub)
+    daemon.sleep_now()
+    daemon.tick()                                          # nothing to do: one cycle
+    assert hub.kinds()[-1] == "sleep.ended"
+    for i in range(4):
+        _session(state, f"t{i}", [nodes[i].id], clock)
+    clock.advance(minutes=1)
+    assert daemon.sleep_now()["ok"] is True                # rested, but asked
+    daemon.tick()
+    assert hub.kinds().count("sleep.started") == 2
+    assert "sleep.woke" not in hub.kinds()
+    assert hub.kinds().count("sleep.cycle") >= 4

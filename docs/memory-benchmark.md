@@ -150,6 +150,19 @@ ile "yalıtık kayıt kendiliğinden gelmez" kuralı korundu, kapsama bedeli
 - **Mizaç kaldıracı ve kimlik belgesi artık sistem promptuna giriyor** — bu tura
   kadar hiç girmiyordu (Faz 7'nin mekaniği kuruluydu, çıktısı promptta yoktu).
 
+- **Uyku basıncı gerçek depoya göre yeniden kalibre edildi (1.5.10,
+  `docs/charts/pressure-real-store.md`)**: sahibin 102 kayıtlık deposunda çubuk
+  beş gün %104'te durdu — basınç mutlak kenar ağırlığını sayıyordu, gece %2
+  indiriyor, tekrar oynatma geri büyütüyordu; ısı terimi de soğuk kaydı olamayacak
+  kadar genç depoda 1,0 okuyordu. Güçlenme artık son gecenin bıraktığı ağırlığa
+  göre büyüme (eğrinin zaten ölçtüğü şey), ısı gecenin bu gece soğutabileceği
+  kayıt payı. Eşikler onarılmış bench'le yeniden türetildi: `ESIK_UST` 2,3374 →
+  2,3647, `ESIK_ALT` 0,7791 → 0,7882. Yeni `--watchman` kolu geceyi ürünün
+  bekçisine bırakıp sayıyor: 90 günde 103 gece (hepsi yirmi saatlik sigortadan),
+  gece başı çubuk %41 → %4, "basınç düştü" diye kesilen gece 35 → 0, gündüz
+  metrikleri aynı. Dinlenmiş gerçek depo %0 okuyor, her yeni kayıt ~%0,65
+  ekliyor.
+
 Kalan: `sleep.enabled` için ayarlar arayüzünde anahtar; kilit/klavye/pil
 zeitgeber'leri; `uyu` / `şimdi uyuma` sohbet komutları; ilgili büyüme hedefi
 (≤1,5×) ve çağrışım yayılması.

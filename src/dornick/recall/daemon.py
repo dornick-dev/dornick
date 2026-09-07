@@ -167,6 +167,9 @@ class SleepDaemon:
         self._last_local: datetime | None = None
         self._local_report: Any = None
         self._pressure = sleep.Pressure()
+        # What the running night is told at its cycle boundaries: the
+        # pressure it began with, or the threshold when the user asked.
+        self._night_fed = 0.0
 
         self._logs: dict[str, night_events.NightLog] = {}
         self._journaled = 0
@@ -434,16 +437,18 @@ class SleepDaemon:
         pressure = self.measure()
         hours, pending = self.debt()
         with self._lock:
+            fed = self._fed(pressure.total, hours, now)
             if forced and self.switch.state is sleep.State.ASLEEP:
                 # The user asked for this night: the thresholds do not get
-                # to undo it before it starts. They are re-sampled at the
-                # first cycle boundary as in any night. Had the user come
-                # back in between, orexin already put the switch AWAKE and
-                # the ordinary step runs.
+                # to undo it before it starts, nor at its cycle boundaries
+                # — a whole night was asked for. Had the user come back in
+                # between, orexin already put the switch AWAKE and the
+                # ordinary step runs.
                 state = self.switch.state
+                fed = max(fed, sleep.UPPER_THRESHOLD)
             else:
-                state = self.switch.step(self._fed(pressure.total, hours, now),
-                                         idle_minutes=idle)
+                state = self.switch.step(fed, idle_minutes=idle)
+            self._night_fed = fed
             self._journal()
 
         if state is sleep.State.ASLEEP:
@@ -515,17 +520,24 @@ class SleepDaemon:
 
     def _night_event(self, kind: str, data: dict[str, Any]) -> None:
         """Every night event goes to the file and to the live hub; a cycle
-        boundary is also where the switch is re-sampled (roadmap 3.10.4)."""
+        boundary is also where the switch is re-sampled (roadmap 3.10.4).
+
+        The switch is told the pressure the night began with, not a fresh
+        reading. Pressure is growth since the last night, and the first
+        cycle rewrites that baseline: read live, every night would drop to
+        zero at its second boundary and be cut before its REM cycles. The
+        night ends by its own work — nothing left to replay, the cycle
+        budget — and the rhythm still wakes it when the user is due.
+        """
         self._emit(kind, data)
         if kind != "sleep.cycle" or int(data.get("no") or 0) <= 1:
             return
         sleeper = self._sleeper
         if sleeper is None:
             return
-        pressure = self.measure()
-        hours, _pending = self.debt()
+        self.measure()                          # the journal shows the live value
         with self._lock:
-            state = self.switch.step(self._fed(pressure.total, hours, self.clock()))
+            state = self.switch.step(self._night_fed)
             self._journal()
         if state is not sleep.State.ASLEEP:
             sleeper.wake(self._last_reason() or "rhythm")

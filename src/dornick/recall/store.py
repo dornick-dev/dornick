@@ -874,20 +874,61 @@ class RecallStore:
                 "SELECT COUNT(*) FROM node WHERE deleted=0 AND hot=1").fetchone()[0]
         return round(float(hot) / max(int(total), 1), 4)
 
-    def strengthening(self) -> float:
-        """Un-downscaled strengthening: total edge weight / node.
+    def total_weight(self) -> tuple[float, int]:
+        """(total edge weight over both directions, live node count).
 
-        The main term of sleep pressure (SHY). The threshold was measured
-        against this quantity (see docs/charts/pressure-decay.md); were it
-        not the same quantity, the threshold would be a threshold of
-        something else.
+        The raw pair behind sleep pressure: `sleep.pressure` reads the
+        weight the graph has grown since the night last downscaled it and
+        divides by the records it is spread over.
         """
         with self._lock:
             total = self._db.execute(
                 "SELECT COALESCE(SUM(weight), 0) FROM link").fetchone()[0]
             nodes = self._db.execute(
                 "SELECT COUNT(*) FROM node WHERE deleted=0").fetchone()[0]
-        return round(float(total) / max(int(nodes), 1), 4)
+        return float(total), int(nodes)
+
+    def strengthening(self) -> float:
+        """Absolute strengthening: total edge weight / node.
+
+        What the pressure term was until 1.5.10 and what the night-off
+        threshold curve measures (docs/charts/pressure-decay.md) — with no
+        night ever run the two coincide. The product's pressure now counts
+        only the part grown since the last night; see `sleep.pressure`.
+        """
+        total, nodes = self.total_weight()
+        return round(total / max(nodes, 1), 4)
+
+    def cooling_debt(self, threshold: float, fresh_days: int = 7) -> tuple[int, int]:
+        """(hot records the night would cool tonight, live records).
+
+        A record is owed cooling when it is hot, older than `fresh_days`
+        (younger ones are hot by rule, not by drift) and its own trace has
+        already fallen below `threshold` — the same activation and the same
+        rule `update_heat` applies at the end of the night. Warmth spread
+        over strong edges is not modelled here, so this is a slight
+        over-count; it is the heat term of sleep pressure, where a store
+        whose hot set the night cannot shrink must read zero. Bounded by
+        HOT_CAP rows.
+        """
+        now = self._clock()
+        with self._lock:
+            total = self._db.execute(
+                "SELECT COUNT(*) FROM node WHERE deleted=0").fetchone()[0]
+            rows = self._db.execute(
+                "SELECT created, last_used, uses, use_log FROM node"
+                " WHERE deleted=0 AND hot=1").fetchall()
+        cooled = 0
+        for row in rows:
+            written = parse(row["created"])
+            if written is not None and (now - written).days < fresh_days:
+                continue
+            history = activation.parse_use_log(
+                row["use_log"], created=row["created"],
+                last_used=row["last_used"], uses=int(row["uses"] or 0))
+            if activation.base_activation(history, now) < threshold:
+                cooled += 1
+        return cooled, int(total)
 
     def checkpoint(self) -> int:
         """Fully closes the WAL. Done when there is no writer — that is, only in sleep."""

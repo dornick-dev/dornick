@@ -107,11 +107,14 @@ düğümleri tutuyor, aktif küme sınırlanmıyor.
 
 ### Eşik eğrisi — `docs/charts/pressure-decay.md`
 
-Gece kapalıyken S (küçültülmemiş güçlenme: toplam kenar ağırlığı / düğüm) gün
-gün ölçüldü. İlk on ölçülen günün precision ortalaması **0.6033**; %5 düşüş
-S = **2.3374**'te başlıyor.
+Gece kapalıyken S (küçültülmemiş güçlenme: son geceden beri büyüyen kenar
+ağırlığı / düğüm — gece hiç koşmadığı için toplam) gün gün ölçüldü. İlk on
+ölçülen günün precision ortalaması **0.8273**; %5 düşüş S = **2.3647**'de
+başlıyor. (2026-09-02 koşusu aynı S sütununda 2.3374 okumuştu; precision
+serisi bench onarımından önceydi. 1.5.10'da eğri onarılmış bench'le yeniden
+üretildi ve sabitler onu izledi.)
 
-    ESIK_UST = 2.3374        ESIK_ALT = 0.7791        (2026-09-02 koşusu)
+    ESIK_UST = 2.3647        ESIK_ALT = 0.7882        (2026-09-07 koşusu)
 
 Bu iki sabit Faz 3.10'da `uyku.py`'ye elle değil buradan girecek.
 
@@ -504,8 +507,13 @@ güvenilemeyeceği anlamına geliyor.
 | `recall/store.py` | `strengthening`, `checkpoint`, `optimize_fts`, `vacuum` |
 | `tests/test_sleep.py` | 23 test: eşiğin kaynağı, basınç, narkolepsi, uyarılma tablosu, ritim, jet lag, kesilme, bakım kapısı |
 
-**Eşikler seçilmedi, türetildi.** `ESIK_UST = 2.3374`, `ESIK_ALT = 0.7791` —
-gece kapalıyken ölçülen bozulma eğrisinden (`--threshold-curve`, 2026-09-02).
+**Eşikler seçilmedi, türetildi.** `ESIK_UST = 2.3647`, `ESIK_ALT = 0.7882` —
+gece kapalıyken ölçülen bozulma eğrisinden (`--threshold-curve`, 2026-09-07;
+ilk türetim 2026-09-02'de 2.3374 / 0.7791 idi). S'nin tanımı 1.5.10'da
+"toplam ağırlık / düğüm"den "son geceden beri büyüyen ağırlık / düğüm"e
+çekildi — eğri gece kapalıyken ölçüldüğü için aynı büyüklük, ama üründe
+gece geçmiş bir depo artık sıfırdan okunuyor; ölçüm ve gerekçe
+`docs/charts/pressure-real-store.md`'de.
 Bir test sabitin kaynağının yorumda yazılı olduğunu da zorluyor: kaynağı
 kaybolan bir sabit sihirli sayıya döner.
 

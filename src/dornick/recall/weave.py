@@ -294,6 +294,13 @@ def night_pass(
     report.warmed, report.cooled = store.update_heat(COLD_THRESHOLD)
 
     status["last_run"] = _stamp(clock)
+    # The weight this night leaves behind is the baseline sleep pressure is
+    # measured against from now on (`sleep.pressure`): what grows on top of
+    # it is un-downscaled, what is under it the night has already settled.
+    try:
+        status["weight"] = round(store.total_weight()[0], 4)
+    except Exception:
+        pass
     _write_watermark(watermark, status)
     report.seconds = round(time.perf_counter() - started, 3)
     _append_journal(sessions_dir, report, clock)

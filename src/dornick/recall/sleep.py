@@ -39,11 +39,14 @@ from .clock import Clock, parse, wall_clock
 
 # Derived, not chosen. `life_bench.py --threshold-curve` runs the 90-day
 # scenario with the night switched off and records prime precision against S
-# (unshrunk strengthening: total edge weight / node). Baseline precision was
-# 0.6033; the 5% drop starts at S = 2.3374. Run of 2026-09-02, curve in
+# (unshrunk strengthening: edge weight grown since the last night, per
+# record — with no night ever run, the total). Baseline precision is
+# 0.8273; the 5% drop starts at S = 2.3647. Run of 2026-09-07 on the
+# deterministic bench (the 2026-09-02 run read 2.3374 on the same S column;
+# its precision series predated the bench repair), curve in
 # docs/charts/pressure-decay.md. LOWER_THRESHOLD is a third of it (roadmap 3.10.3).
-UPPER_THRESHOLD = 2.3374
-LOWER_THRESHOLD = 0.7791
+UPPER_THRESHOLD = 2.3647
+LOWER_THRESHOLD = 0.7882
 
 # Pressure weights. Strengthening is the SHY term and dominates; debt and
 # heat are corrections. Calibration note in docs/memory-phases.md.
@@ -53,7 +56,9 @@ W_HEAT = 0.15
 
 # Normalisers so the three components share a scale.
 DEBT_FULL = 50.0          # this many un-replayed sessions counts as "full"
-HEAT_TARGET = 0.30        # hot-node share above which heat starts to count
+# Heat: the share of records the night would cool tonight, full when it
+# alone would take a fully hot store down to the 30% band (roadmap 3.11).
+HEAT_TARGET = 0.30
 
 # A cycle is 15 minutes — the scaled version of the biological 90. Early
 # cycles are deep (replay), late cycles are REM (distillation).
@@ -135,6 +140,19 @@ class Pressure:
                 "total": self.total}
 
 
+def baseline_weight(watermark: Path | None) -> float:
+    """The total edge weight the last night left behind; 0 with no night on record.
+
+    `weave.night_pass` writes it into the watermark after its downscale
+    (`weight`). A watermark from before 1.5.10 has none: the store reads as
+    if it had never slept until its next night writes one.
+    """
+    try:
+        return max(0.0, float(weave._read_watermark(watermark).get("weight") or 0.0))  # noqa: SLF001
+    except (TypeError, ValueError):
+        return 0.0
+
+
 def pressure(
     store: Any,
     sessions_dir: Path | None = None,
@@ -144,26 +162,38 @@ def pressure(
 ) -> Pressure:
     """Measure S. Nothing here is a feeling; every term is counted.
 
-    `strengthening` is the SHY term: total edge weight per node, the same
-    quantity the threshold curve was derived against. `debt` is un-replayed
-    sessions. `heat` is how far the hot set has drifted past its target.
+    `strengthening` is the SHY term: the edge weight the graph has grown
+    since the night last downscaled it, per record. That is the quantity
+    the threshold curve was measured on — the night off, the baseline
+    zero — and the quantity a night actually relieves: what the last night
+    consolidated is not pressure, however heavy the graph is. Until 1.5.10
+    the term was the absolute total, and a small real store (100 records,
+    5 links each) read above the threshold for ever: a night trims it by
+    two percent and replay grows it back. Measured in
+    docs/charts/pressure-real-store.md.
+
+    `debt` is un-replayed sessions. `heat` is the share of records the night
+    would cool tonight (`store.cooling_debt`): hot, past the fresh week, and
+    with a trace already below the cold threshold. A young store whose
+    records are all hot by the fresh rule owes no cooling and reads zero;
+    the old "hot share above 30%" read 1.0 there and could never fall.
     """
     clock = clock or wall_clock
     out = Pressure()
     try:
-        out.strengthening = store.strengthening()
+        total, nodes = store.total_weight()
     except Exception:
         return out
+    out.strengthening = round(max(0.0, total - baseline_weight(watermark)) / max(nodes, 1), 4)
     if sessions_dir is not None:
         from .awake import sleep_debt
 
         _hours, pending = sleep_debt(sessions_dir, clock=clock, watermark=watermark)
         out.debt = min(1.0, pending / DEBT_FULL)
     try:
-        total = store.count()
-        if total:
-            share = len(store.index) / total
-            out.heat = max(0.0, (share - HEAT_TARGET) / (1.0 - HEAT_TARGET))
+        cooled, count = store.cooling_debt(weave.COLD_THRESHOLD)
+        if count:
+            out.heat = round(min(1.0, (cooled / count) / (1.0 - HEAT_TARGET)), 4)
     except Exception:
         pass
     return out
